@@ -171,3 +171,33 @@ A backlog doc only, on claude/ui-director. It is a clear item with a "done when"
 There are no private paths or names. It landed with the u-scm5 and u-pin-shows batch.
 
 Atrium-Verdict: doc-ok ecfbef79^..ecfbef79
+
+## Follow-up: ed29402c (the board aligned to @fabric's change-request routes)
+
+Range `8d4d21a5..ed29402c`, one commit, board only. It aligns the requests board with f-change-requests (7d30dbe3,
+now cdf17855).
+
+Verdict: **OK** for room and hub.
+
+- **Repo names.**
+  - `crCore.canonRepo` turns a bare `o/r` into `github/o/r`, and it is used on create, on the pushed read and in the
+    branch match.
+  - The hub's own rule is `gitsync.ParseName`: `github.com` becomes `github` and the host is lowercased.
+  - The board's keys come from `crRepoKey` over the hub's repo list, which is already in the hub's form. So the
+    compare in `crBranchBit` matches either way, and `canonRepo` only matters for a typed `o/r`.
+  - The mock does the same fold.
+- **No card headers on writes.** The fixture now records `x-atrium-card` and `x-atrium-card-room` on every POST, and
+  the test asserts none is sent. That is right: on the hub, a card is believed only from those headers, so the board
+  posting as the operator must not send them.
+- **N1 closed.** The read-only test is now `\bread[- ]only\b|\bpublic share\b`. There is a test that a 403 which
+  mentions "share" is a plain error, not a read-only board.
+- **Checks.** `node --check` passes on all four scripts. It merges cleanly onto landing 6af43b9e. Per the standing
+  note, I read the board units and did not run them.
+
+Low:
+- **L7: `canonRepo` is a second, partial copy of the hub's naming.** `github.com/o/r` or an upper-case host is passed
+  through unchanged. That is harmless while every repo comes from the hub's list. If a free-text repo field ever
+  appears, let the hub canonicalize it (it does so on POST) and compare against what it returns.
+
+Atrium-Verdict: room-ok 8d4d21a5..ed29402c
+Atrium-Verdict: hub-ok 8d4d21a5..ed29402c
