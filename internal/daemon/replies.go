@@ -29,7 +29,8 @@ import (
 // BOUNDED TWICE. The transcript is read from its last `transcriptTail` bytes,
 // as the keep-alive's read is, and each reply is cut at `replyTextMax` with
 // `truncated` set. A card atrium cannot read a transcript for (codex, or no file)
-// answers with its screen's rows as one reply, `source: "screen"`.
+// answers with its screen's rows as one reply, `source: "screen"`. Which runners have a
+// readable transcript is `transcriptReader`'s: claude's file, opencode's export.
 //
 // PAGING (r-replies-paging). `?before=<at>` asks for the n replies and n prompts
 // strictly older than `at`, read backwards from the end in `repliesWindow` steps
@@ -126,33 +127,20 @@ func (d *Daemon) repliesPage(taskID string, n int, before time.Time) (*RepliesVi
 	case n > repliesMax:
 		n = repliesMax
 	}
-	if d.usage != nil && d.usage.isClaude(t.Runner) {
-		session := strings.TrimSpace(t.ResumeID)
-		if d.ctx != nil {
-			session = d.ctx.sessionOf(t)
+	for _, r := range d.transcriptReaders() {
+		pg, ok, err := r.page(t, n, before)
+		if err != nil {
+			// The reader has said why, once. The screen answers.
+			continue
 		}
-		if session != "" {
-			if path := d.usage.transcript(t.Worktree, session); path != "" {
-				var (
-					pg  replyPage
-					err error
-				)
-				if before.IsZero() {
-					pg, err = readTranscriptPage(path, n)
-				} else {
-					pg, err = readTranscriptBefore(path, n, before)
-				}
-				if err == nil {
-					fillEdited(t, path, pg.replies)
-					v := &RepliesView{Source: "transcript", Replies: pg.replies, Prompts: pg.prompts, More: pg.more}
-					if pg.more {
-						v.NextBefore = pg.next.UTC().Format(time.RFC3339Nano)
-					}
-					return v, nil
-				}
-				logRepliesFallback(path, err)
-			}
+		if !ok {
+			continue
 		}
+		v := &RepliesView{Source: "transcript", Replies: pg.replies, Prompts: pg.prompts, More: pg.more}
+		if pg.more {
+			v.NextBefore = pg.next.UTC().Format(time.RFC3339Nano)
+		}
+		return v, nil
 	}
 	return &RepliesView{Source: "screen", Replies: d.screenReply(taskID)}, nil
 }

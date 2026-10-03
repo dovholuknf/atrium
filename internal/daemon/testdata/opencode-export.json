@@ -1,0 +1,68 @@
+{
+  "info": {
+    "id": "ses_f06a7011dffeuZx11lJZVjRBnv",
+    "slug": "glowing-wizard",
+    "projectID": "global",
+    "directory": "D:\\tmp\\opencode-test",
+    "path": "tmp/opencode-test",
+    "title": "Echo hello-atrium and create note.txt",
+    "agent": "build",
+    "model": {"id": "kimi-k2.7-code", "providerID": "opencode-go"},
+    "version": "1.18.34",
+    "summary": {"additions": 0, "deletions": 0, "files": 0},
+    "cost": 0.02339715,
+    "tokens": {"input": 15053, "output": 77, "reasoning": 130, "cache": {"read": 43520, "write": 0}},
+    "time": {"created": 1790889754338, "updated": 1790889810390}
+  },
+  "messages": [
+    {
+      "info": {"role": "user", "time": {"created": 1790889754676}, "agent": "build", "model": {"providerID": "opencode-go", "modelID": "kimi-k2.7-code"}, "summary": {"diffs": []}, "id": "msg_0f95900330019ZXM4J2mUzj1bi", "sessionID": "ses_f06a7011dffeuZx11lJZVjRBnv"},
+      "parts": [
+        {"type": "text", "text": "Use your bash tool to run exactly this command: echo hello-atrium. Then use your write tool to create note.txt containing the word hi. Then stop.", "id": "prt_0f9590037001d12nXQo43W0MgM", "sessionID": "ses_f06a7011dffeuZx11lJZVjRBnv", "messageID": "msg_0f95900330019ZXM4J2mUzj1bi"}
+      ]
+    },
+    {
+      "info": {"parentID": "msg_0f95900330019ZXM4J2mUzj1bi", "role": "assistant", "mode": "build", "agent": "build", "path": {"cwd": "D:\\tmp\\opencode-test", "root": "/"}, "cost": 0.0142133, "tokens": {"total": 14605, "input": 14494, "output": 50, "reasoning": 61, "cache": {"write": 0, "read": 0}}, "modelID": "kimi-k2.7-code", "providerID": "opencode-go", "time": {"created": 1790889754743, "completed": 1790889764313}, "finish": "tool-calls", "id": "msg_0f9590077001K3TMykjcYZZKZb", "sessionID": "ses_f06a7011dffeuZx11lJZVjRBnv"},
+      "parts": [
+        {"type": "step-start", "id": "prt_0f9591d78001JR8SSDic660KGt", "sessionID": "ses_f06a7011dffeuZx11lJZVjRBnv", "messageID": "msg_0f9590077001K3TMykjcYZZKZb"},
+        {"type": "reasoning", "text": "The user gave a clear three-step instruction: 1) use bash to run `echo hello-atrium`, 2) use write to create note.txt containing \"hi\", 3) stop. I should follow it exactly. The bash and write operations are independent and can be done in parallel.", "time": {"start": 1790889762174, "end": 1790889762836}, "id": "prt_0f9591d7e001WbQ9fFTMX8Z6bj", "sessionID": "ses_f06a7011dffeuZx11lJZVjRBnv", "messageID": "msg_0f9590077001K3TMykjcYZZKZb"},
+        {"type": "tool", "tool": "bash", "callID": "bash_0_fa4bdf71", "state": {"status": "completed", "input": {"command": "echo hello-atrium"}, "output": "hello-atrium\r\n", "metadata": {"output": "hello-atrium\r\n", "exit": 0, "truncated": false}, "title": "echo hello-atrium", "time": {"start": 1790889762882, "end": 1790889764299}}, "id": "prt_0f959201a001P2DwEHybM4FFPu", "sessionID": "ses_f06a7011dffeuZx11lJZVjRBnv", "messageID": "msg_0f9590077001K3TMykjcYZZKZb"},
+        {"type": "tool", "tool": "write", "callID": "write_1_dbab74a9", "state": {"status": "completed", "input": {"content": "hi\n", "filePath": "D:\\tmp\\opencode-test\\note.txt"}, "output": "Wrote file successfully.", "metadata": {"diagnostics": {}, "filepath": "D:\\tmp\\opencode-test\\note.txt", "exists": false, "truncated": false}, "title": "tmp\\opencode-test\\note.txt", "time": {"start": 1790889763077, "end": 1790889763327}}, "id": "prt_0f9592047001DkmISX6fGxtAOV", "sessionID": "ses_f06a7011dffeuZx11lJZVjRBnv", "messageID": "msg_0f9590077001K3TMykjcYZZKZb"},
+        {"reason": "tool-calls", "type": "step-finish", "tokens": {"total": 14605, "input": 14494, "output": 50, "reasoning": 61, "cache": {"write": 0, "read": 0}}, "cost": 0.0142133, "id": "prt_0f95925d0001h6KiCOpu0XtFK5", "sessionID": "ses_f06a7011dffeuZx11lJZVjRBnv", "messageID": "msg_0f9590077001K3TMykjcYZZKZb"}
+      ]
+    },
+    {
+      "info": {"parentID": "msg_0f95900330019ZXM4J2mUzj1bi", "role": "assistant", "mode": "build", "agent": "build", "path": {"cwd": "D:\\tmp\\opencode-test", "root": "/"}, "cost": 0.00312369, "tokens": {"total": 14667, "input": 303, "output": 4, "reasoning": 24, "cache": {"write": 0, "read": 14336}}, "modelID": "kimi-k2.7-code", "providerID": "opencode-go", "time": {"created": 1790889764318, "completed": 1790889765982}, "finish": "stop", "id": "msg_0f95925de001k1H2JleipBYuG2", "sessionID": "ses_f06a7011dffeuZx11lJZVjRBnv"},
+      "parts": [
+        {"type": "step-start", "id": "prt_0f9592ba7001ZxYLUebeoMAsny", "sessionID": "ses_f06a7011dffeuZx11lJZVjRBnv", "messageID": "msg_0f95925de001k1H2JleipBYuG2"},
+        {"type": "reasoning", "text": "Both operations completed successfully. The user said \"Then stop.\" so I should provide a brief confirmation and stop there.", "time": {"start": 1790889765806, "end": 1790889765963}, "id": "prt_0f9592bae001d8Yx7xr93EZtK8", "sessionID": "ses_f06a7011dffeuZx11lJZVjRBnv", "messageID": "msg_0f95925de001k1H2JleipBYuG2"},
+        {"type": "text", "text": "Done.", "time": {"start": 1790889765966, "end": 1790889765970}, "id": "prt_0f9592c4e0012prM0r6K8wZwOM", "sessionID": "ses_f06a7011dffeuZx11lJZVjRBnv", "messageID": "msg_0f95925de001k1H2JleipBYuG2"},
+        {"reason": "stop", "type": "step-finish", "tokens": {"total": 14667, "input": 303, "output": 4, "reasoning": 24, "cache": {"write": 0, "read": 14336}}, "cost": 0.00312369, "id": "prt_0f9592c55001ioFy37DlMk8Aub", "sessionID": "ses_f06a7011dffeuZx11lJZVjRBnv", "messageID": "msg_0f95925de001k1H2JleipBYuG2"}
+      ]
+    },
+    {
+      "info": {"role": "user", "time": {"created": 1790889805061}, "agent": "build", "model": {"providerID": "opencode-go", "modelID": "kimi-k2.7-code"}, "summary": {"diffs": []}, "id": "msg_0f959c505001E6r35REVdmsCcM", "sessionID": "ses_f06a7011dffeuZx11lJZVjRBnv"},
+      "parts": [
+        {"type": "text", "text": "Use your bash tool to run: echo second-turn. Then stop.", "id": "prt_0f959c507001UZEdAdWddWAq32", "sessionID": "ses_f06a7011dffeuZx11lJZVjRBnv", "messageID": "msg_0f959c505001E6r35REVdmsCcM"}
+      ]
+    },
+    {
+      "info": {"parentID": "msg_0f959c505001E6r35REVdmsCcM", "role": "assistant", "mode": "build", "agent": "build", "path": {"cwd": "D:\\tmp\\opencode-test", "root": "/"}, "cost": 0.00304368, "tokens": {"total": 14733, "input": 96, "output": 19, "reasoning": 26, "cache": {"write": 0, "read": 14592}}, "modelID": "kimi-k2.7-code", "providerID": "opencode-go", "time": {"created": 1790889805105, "completed": 1790889807908}, "finish": "tool-calls", "id": "msg_0f959c531001U2ITTR3rcBTfEr", "sessionID": "ses_f06a7011dffeuZx11lJZVjRBnv"},
+      "parts": [
+        {"type": "step-start", "id": "prt_0f959caff0019QMiW7UcP03LVT", "sessionID": "ses_f06a7011dffeuZx11lJZVjRBnv", "messageID": "msg_0f959c531001U2ITTR3rcBTfEr"},
+        {"type": "reasoning", "text": "The user asks me to use the bash tool to run `echo second-turn` and then stop. I'll run the command.", "time": {"start": 1790889806595, "end": 1790889806835}, "id": "prt_0f959cb03001AdLAEctKFOgb2B", "sessionID": "ses_f06a7011dffeuZx11lJZVjRBnv", "messageID": "msg_0f959c531001U2ITTR3rcBTfEr"},
+        {"type": "tool", "tool": "bash", "callID": "bash_2_56876cb8", "state": {"status": "completed", "input": {"command": "echo second-turn"}, "output": "second-turn\r\n", "metadata": {"output": "second-turn\r\n", "exit": 0, "truncated": false}, "title": "echo second-turn", "time": {"start": 1790889806915, "end": 1790889807896}}, "id": "prt_0f959cbf7001cjMpTfmxo1I68V", "sessionID": "ses_f06a7011dffeuZx11lJZVjRBnv", "messageID": "msg_0f959c531001U2ITTR3rcBTfEr"},
+        {"reason": "tool-calls", "type": "step-finish", "tokens": {"total": 14733, "input": 96, "output": 19, "reasoning": 26, "cache": {"write": 0, "read": 14592}}, "cost": 0.00304368, "id": "prt_0f959d01e001R6zQ7J8Mr8a12r", "sessionID": "ses_f06a7011dffeuZx11lJZVjRBnv", "messageID": "msg_0f959c531001U2ITTR3rcBTfEr"}
+      ]
+    },
+    {
+      "info": {"parentID": "msg_0f959c505001E6r35REVdmsCcM", "role": "assistant", "mode": "build", "agent": "build", "path": {"cwd": "D:\\tmp\\opencode-test", "root": "/"}, "cost": 0.00301648, "tokens": {"total": 14775, "input": 160, "output": 4, "reasoning": 19, "cache": {"write": 0, "read": 14592}}, "modelID": "kimi-k2.7-code", "providerID": "opencode-go", "time": {"created": 1790889807913, "completed": 1790889810374}, "finish": "stop", "id": "msg_0f959d028001SPSmbgYkO5VWhZ", "sessionID": "ses_f06a7011dffeuZx11lJZVjRBnv"},
+      "parts": [
+        {"type": "step-start", "id": "prt_0f959d8b40017WIpVQHgtfULEt", "sessionID": "ses_f06a7011dffeuZx11lJZVjRBnv", "messageID": "msg_0f959d028001SPSmbgYkO5VWhZ"},
+        {"type": "reasoning", "text": "The command executed successfully. The user said to stop, so I'll provide a brief confirmation.", "time": {"start": 1790889810104, "end": 1790889810217}, "id": "prt_0f959d8b8001360MA3pwvRdkJ9", "sessionID": "ses_f06a7011dffeuZx11lJZVjRBnv", "messageID": "msg_0f959d028001SPSmbgYkO5VWhZ"},
+        {"type": "text", "text": "Done.", "time": {"start": 1790889810221, "end": 1790889810361}, "id": "prt_0f959d92c001yCmUGWjhq575AE", "sessionID": "ses_f06a7011dffeuZx11lJZVjRBnv", "messageID": "msg_0f959d028001SPSmbgYkO5VWhZ"},
+        {"reason": "stop", "type": "step-finish", "tokens": {"total": 14775, "input": 160, "output": 4, "reasoning": 19, "cache": {"write": 0, "read": 14592}}, "cost": 0.00301648, "id": "prt_0f959d9bd001cd1wjYYnelf444", "sessionID": "ses_f06a7011dffeuZx11lJZVjRBnv", "messageID": "msg_0f959d028001SPSmbgYkO5VWhZ"}
+      ]
+    }
+  ]
+}

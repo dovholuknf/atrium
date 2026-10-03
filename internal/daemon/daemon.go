@@ -231,6 +231,9 @@ type Daemon struct {
 
 	// usage records every Claude card's token use, a row per turn. See usage.go.
 	usage *usageTracker
+	// opencode reads opencode cards' sessions, made on first use. See opencodereader.go.
+	opencode     *opencodeReader
+	opencodeOnce sync.Once
 
 	// limitLast is the last limit figure kept per card and kind, so a repeated
 	// statusline post writes nothing. See keepLimitReadings.

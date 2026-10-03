@@ -8382,3 +8382,18 @@ Covered by headless unit `growlOff`; the existing growler units seed the setting
 4. A runner row with empty `autocompact_args` (codex, ollama) launches with nothing added and no refusal. A row whose args lack `{autocompact}` is refused.
 5. With a claude whose `--help` has no `--autocompact`, a launch has no flag and the details foot says "runner does not take autocompact". A card on `claude-opus-5-5` with a 300k limit starts at `--autocompact 200k`, and on a `[1m]` model at 330k.
 Covered by `TestAnOlderClaude*`, `TestTheWindowNeverPassesTheModels`, `TestAutocompactK*`, `TestCardLimitIsWhatAutoThresholdStartsFrom`, `TestTheRunnerRowSaysHowItTakesTheWindow`, `TestAResumeAndAPromptCarryTheWindow`, `TestARunnerWithoutTheFlagIsLeftAlone`, `TestAutocompactArgsMustCarryThePlaceholder`. Items 1 to 3 live: a throwaway card started with `--autocompact 330k` on the live room ran.
+
+## IE. An opencode card draws bubbles (r-opencode-bubbles, stage 1)
+
+Needs a room with opencode installed and a card running it (its resume id is `ses_...`).
+
+1. Give the card two prompts that each end in a plain answer. `curl -s 'http://127.0.0.1:<board port>/v1/tasks/<id>/replies?n=5'`
+   answers `"source":"transcript"`, the answers as `replies` (text only: no tool calls, no reasoning) and both
+   prompts as `prompts`, oldest first.
+2. `?n=1` answers one reply and one prompt with `more` true. Pass its `next_before` as `before` and the older pair comes.
+3. The room's log shows no `opencode export` per request: poll 10 times in a second and at most one process runs.
+4. Take opencode off the room's PATH (or give the card a made-up resume id). The same call answers `"source":"screen"`.
+
+Covered by headless units in `opencodereader_test.go` with a fake exec and the recorded export in
+`testdata/opencode-export.json`: the leading non-JSON line, two user turns, text-only replies, `before` paging,
+truncation, over-cap output, a bad session id, exec failure, timeout, a missing binary, one export in flight.
