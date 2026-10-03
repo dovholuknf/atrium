@@ -26,8 +26,9 @@ type relayRoom struct {
 	// post fails with this status.
 	noSay   bool
 	msgCode int
-	// sayAnswer, when set, is what POST /v1/say answers.
+	// sayAnswer, when set, is what POST /v1/say answers, and sayCode the status it answers it with.
 	sayAnswer map[string]any
+	sayCode   int
 	// launched is the body of the last POST /v1/launch, and launchCode a status the
 	// room answers it with instead of starting anything.
 	launched   map[string]any
@@ -124,6 +125,9 @@ func (f *relayRoom) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		body := stringsOf(raw)
 		f.said = append(f.said, body)
 		if f.sayAnswer != nil {
+			if f.sayCode != 0 {
+				w.WriteHeader(f.sayCode)
+			}
 			_ = json.NewEncoder(w).Encode(f.sayAnswer)
 			return
 		}

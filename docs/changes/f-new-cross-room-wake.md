@@ -29,8 +29,18 @@ from `<you>@m1mini`.
 
 1. Stop the sg4 room, wait for the hub to show it detached, then `atrium_say` to `<handle>@claude-sg4` with `wake: true`.
 
-**Expected:** an error that names claude-sg4 and says it is not attached, and that nothing was sent or held. Start sg4
-again and nothing arrives by itself.
+2. Do it again as a card on the hub's own control (`atrium_say` on the hub tool), not from a room.
+
+**Expected:** an error that names claude-sg4 and says it is not attached, and that nothing was sent or held. In 2 it is
+an error too, never `unconfirmed`. Start sg4 again and nothing arrives by itself.
+
+### @LETTER@4b. A slow resume reads unconfirmed, and lands
+
+1. Make the resume slower than 8 seconds (a Windows target with a cold runner), then `atrium_say` with `wake: true` from
+   the hub's tool.
+
+**Expected:** the answer may be `unconfirmed` while the card does resume and gets the text. Nothing is sent twice. Ask
+before sending again.
 
 ### @LETTER@5. The same from a room's own tool
 

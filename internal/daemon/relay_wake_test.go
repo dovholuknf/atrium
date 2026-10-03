@@ -38,8 +38,8 @@ func TestAWakeSayToAnUnreachableRoomIsRefusedNotHeld(t *testing.T) {
 	} {
 		f.set(down)
 		code, out := sayAny(t, d, map[string]any{"from": "sa1", "to": "orch@claude-sg4", "text": "x", "wake": true})
-		if code != http.StatusServiceUnavailable || !strings.Contains(out["error"].(string), "claude-sg4") {
-			t.Fatalf("%d %+v, want a 503 naming the room", code, out)
+		if code != http.StatusFailedDependency || !strings.Contains(out["error"].(string), "claude-sg4") {
+			t.Fatalf("%d %+v, want a 424 naming the room", code, out)
 		}
 		if len(owed(t, d)) != 0 {
 			t.Fatal("a wake say was held")
@@ -55,5 +55,28 @@ func TestAnUnconfirmedWakeSayIsNotHeld(t *testing.T) {
 	_, out := sayAny(t, d, map[string]any{"from": "sa1", "to": "orch@claude-sg4", "text": "x", "wake": true})
 	if out["delivered"] != "unconfirmed" || len(owed(t, d)) != 0 {
 		t.Fatalf("%+v", out)
+	}
+}
+
+// L1 of the review. An older hub drops the wake and the target answers `parked`. The sender is told
+// the hub is too old, never to send again with wake=true, which would loop.
+func TestAWakeSayAnsweredParkedMeansTheHubIsOld(t *testing.T) {
+	d, f := roomDaemon(t)
+	peerCard(t, d, "sa1")
+	f.set(func(s RelaySay) (RelayResult, error) {
+		return RelayResult{OK: true, Delivered: "parked", Warning: "not sent: this card is parked, send again with wake=true",
+			To: s.To + "@" + s.Room, Card: s.Room + "~L1"}, nil
+	})
+	code, out := sayAny(t, d, map[string]any{"from": "sa1", "to": "orch@claude-sg4", "text": "x", "wake": true})
+	msg, _ := out["error"].(string)
+	if code != http.StatusFailedDependency || !strings.Contains(msg, "older than cross-room wake") ||
+		strings.Contains(msg, "send again") {
+		t.Fatalf("%d %+v", code, out)
+	}
+
+	// Without wake a parked answer is the target's own, and passes through as it always did.
+	code, out = sayAny(t, d, map[string]any{"from": "sa1", "to": "orch@claude-sg4", "text": "x"})
+	if code != http.StatusOK || out["delivered"] != "parked" {
+		t.Fatalf("%d %+v", code, out)
 	}
 }

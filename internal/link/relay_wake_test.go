@@ -148,3 +148,42 @@ func TestTheWakeParameterIsNotDescribedAsLocalOnly(t *testing.T) {
 		t.Fatalf("jsonschema = %q", tag)
 	}
 }
+
+// M1 of the review. The sender's room refuses a wake say it could not relay with a 424 and says
+// nothing was sent. The hub's own atrium_say must hand that to the caller as an error, in those
+// words, and not as `unconfirmed`, which tells it to wait and ask a card that is parked.
+func TestAHubSideWakeSayTheSendersRoomRefusesIsAnErrorNotUnconfirmed(t *testing.T) {
+	x := newRelayPair(t)
+	defer x.stop()
+	x.mini.mu.Lock()
+	x.mini.sayCode = http.StatusFailedDependency
+	x.mini.sayAnswer = map[string]any{"error": "could not reach sg4 (not attached). nothing was sent or held, " +
+		"since a held message cannot wake a card. send it again with wake=true when the room is back"}
+	x.mini.mu.Unlock()
+
+	_, out, err := x.control.sayHandler(relayCtx(t), ctlReq("sa1", "m1mini"),
+		sayInput{To: "atrium-87300@sg4", Text: "hello", Wake: true})
+	if err == nil || out.Delivered == "unconfirmed" || strings.Contains(err.Error(), "ask whether it arrived") {
+		t.Fatalf("out = %+v, err = %v, want an error that says nothing was sent", out, err)
+	}
+	if !strings.Contains(err.Error(), "nothing was sent or held") {
+		t.Fatalf("err = %q, want the room's own wording", err)
+	}
+}
+
+// The same answer as a 503 is what the hub reads as in flight. This pins the reason the refusal is
+// not one.
+func TestAHubSideSayReadsA503FromTheSendersRoomAsUnconfirmed(t *testing.T) {
+	x := newRelayPair(t)
+	defer x.stop()
+	x.mini.mu.Lock()
+	x.mini.sayCode = http.StatusServiceUnavailable
+	x.mini.sayAnswer = map[string]any{"error": "x"}
+	x.mini.mu.Unlock()
+
+	_, out, err := x.control.sayHandler(relayCtx(t), ctlReq("sa1", "m1mini"),
+		sayInput{To: "atrium-87300@sg4", Text: "hello", Wake: true})
+	if err != nil || out.Delivered != "unconfirmed" {
+		t.Fatalf("out = %+v, err = %v", out, err)
+	}
+}

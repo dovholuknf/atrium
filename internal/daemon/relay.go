@@ -320,7 +320,11 @@ func (d *Daemon) sayAcross(ctx context.Context, from, name, room, text, when str
 		if wake {
 			// NOT HELD: the outbox row has no wake, so it would arrive at a parked card and be
 			// refused there, and the sender would have been told it was sent.
-			return http.StatusServiceUnavailable, errBody("could not reach " + room + " (" + why +
+			// A 424, NOT A 503. The hub's own atrium_say reads a 502, 503 or 504 from this room as
+			// "it may still deliver", which is the opposite of this: nothing was sent. 424 is the
+			// request's dependency (the hub or the room) failing, a code nothing else here uses
+			// for an in-flight message, and 409 is already this door's "two cards match".
+			return http.StatusFailedDependency, errBody("could not reach " + room + " (" + why +
 				"). nothing was sent or held, since a held message cannot wake a card. send it again with wake=true " +
 				"when the room is back")
 		}
@@ -359,6 +363,16 @@ func (d *Daemon) sayAcross(ctx context.Context, from, name, room, text, when str
 			code = http.StatusBadGateway
 		}
 		return code, errBody(res.Error)
+	}
+	if wake && res.Delivered == "parked" {
+		// THE HUB DROPPED THE WAKE. An older hub ignores the field, and the target answered as it
+		// does to any say without one. Sending again with wake=true would loop. A 424 for the
+		// reason given at the refusal above.
+		log.Printf("[atrium] %s's wake say to %s came back parked: the hub is older than cross-room wake", wire, to)
+		rec.State, rec.Note = store.SayRefused, "parked: the hub is older than cross-room wake"
+		d.recordSay(rec, text)
+		return http.StatusFailedDependency, errBody("not delivered: " + to + " is parked, and the hub is older than " +
+			"cross-room wake, so it did not resume it. update the hub, or ask someone on " + room + " to resume it")
 	}
 	if res.To != "" {
 		to = res.To
