@@ -29,6 +29,18 @@ function isDoer(t) {
     t.tags.some(x => String(x).trim().toLowerCase() === DOER_TAG));
 }
 
+// AN AGENT-LAUNCHED CARD THAT ENDED A TURN WITH NO OPEN QUESTION IS IDLE, not waiting for the operator: its launcher is who
+// it answers to. This is the one test every surface shares (board, /m, counts, bell). A question, a permission ask (its
+// own status) or an operator-launched card (no origin:agent tag) is still waiting.
+function cardHasOpenQuestion(t) {
+  const s = t && t.seen;
+  const open = !!s && s.answered === false && ((Array.isArray(s.open_questions) && s.open_questions.length > 0) || !!s.questions_unparsed);
+  return open || ((t && t.asks_open) || 0) > 0;
+}
+function agentIdle(t) {
+  return !!t && t.status === "needs-input" && isDoer(t) && !cardHasOpenQuestion(t);
+}
+
 // The project rule as a callable, compiled from the same source the settings dialog shows and cached.
 let cardProjectRule;
 function cardProjectOf(task) {

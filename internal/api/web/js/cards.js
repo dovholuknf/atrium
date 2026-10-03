@@ -71,7 +71,7 @@ function dropCard(id) {
 // oldest wait first. A card from a room that is not answering is left out, as
 // the hub's fan-out of `/v1/waiting` left it out.
 function waitingRow(t) {
-  return (t.status === "needs-input" || t.status === "needs-permission") &&
+  return (t.status === "needs-input" || t.status === "needs-permission") && !agentIdle(t) &&
     !!t.wire_name && !t.archived_at && !t.offline;
 }
 // A card that launched another still running is not waiting on the human, whatever its own status says. The ready

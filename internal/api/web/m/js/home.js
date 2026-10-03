@@ -80,13 +80,13 @@
         text: n === 1 ? "1 message held for it" : n + " messages held for it",
       });
     }
-    if (s.unseen && s.turn_ended_at) {
+    if (s.unseen && s.turn_ended_at && !agentIdle(t)) {
       const at = U.ts(s.turn_ended_at);
       const age = U.ago(now - at);
       out.push({ kind: "unseen", since: at,
         text: (age === "now" ? "finished just now" : "finished " + age + " ago") + ", not read" });
     }
-    if (t.status === "needs-input" && !out.length) {
+    if (t.status === "needs-input" && !out.length && !agentIdle(t)) {
       out.push({
         kind: "ready", since: U.ts(t.waiting_since),
         text: t.waiting_reason === "started" ? "started, waiting for its first prompt" : "waiting for you",
@@ -187,6 +187,7 @@
   // All mode: working, waiting, idle.
   function groupOf(t) {
     if (t.status === "running") return "working";
+    if (agentIdle(t)) return "idle";
     if (t.status === "needs-input" || t.status === "needs-permission") return "waiting";
     return "idle";
   }
