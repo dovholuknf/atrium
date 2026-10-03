@@ -14263,6 +14263,100 @@ async function mOwnMessagesSection(browser) {
   if (!bad) console.log("mOwnMessages ok");
 }
 
+// Bubble text selects and copies, each bubble has copy and reply, and a reply is a markdown quote in the composer.
+// Phone layout, paper and the default dark skin. The thread is not redrawn under a selection.
+async function mBubblesSection(browser) {
+  const st = mServer({});
+  const c = mCard("bub-1", { alias: "quoter", display_title: "quoter", status: "needs-input", waiting_since: mIso(2 * M_MIN), seen: { turn_ended_at: mIso(20 * M_MIN) } });
+  st.tasks = [c];
+  const LONG = ("word ".repeat(120)).trim();
+  const MULTI = "first line\n\nthird line after a blank\nfourth";
+  const replies = [{ at: mIso(30 * M_MIN), text: "Plain reply." }, { at: mIso(20 * M_MIN), text: MULTI }, { at: mIso(10 * M_MIN), text: LONG }];
+  st.replies["bub-1"] = { source: "transcript", replies };
+  await st.open();
+  try {
+    for (const skin of ["", "paper"]) {
+      const vp = M_VIEWS[0];
+      st.replies["bub-1"] = { source: "transcript", replies };
+      const { ctx, p, errors } = await mPage(browser, st, vp, skin);
+      const tag = "mBubbles " + (skin || "dark") + ": ";
+      await p.evaluate(() => { window.__copied = []; Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText: t => { window.__copied.push(t); return Promise.resolve(); } } }); });
+      await p.waitForSelector("#m-seg-all", { timeout: slow(10000) });
+      await p.tap("#m-seg-all");
+      await p.waitForSelector("#m-list .row", { timeout: slow(10000) });
+      await p.tap('#m-list .row[data-id="bub-1"]');
+      await p.waitForSelector("#m-replies .reply", { timeout: slow(5000) });
+      await p.waitForSelector("#m-compose textarea", { timeout: slow(5000) });
+      const bub = i => "#m-replies .reply:nth-of-type(" + i + ")";
+      // selectable: no user-select none on the text, and each bubble has the two actions with a 40px hit area and readable colour
+      await p.waitForTimeout(700);
+      const info = await p.evaluate(() => {
+        const lum = c => { const m = c.match(/[\d.]+/g).map(Number); const f = v => { v /= 255; return v <= .03928 ? v / 12.92 : Math.pow((v + .055) / 1.055, 2.4); }; return .2126 * f(m[0]) + .7152 * f(m[1]) + .0722 * f(m[2]); };
+        const r = document.querySelectorAll("#m-replies .reply")[1], md = r.querySelector(".md"), b = r.querySelector(".bact");
+        r.scrollIntoView({ block: "center" });
+        const bg = getComputedStyle(r).backgroundColor, fg = getComputedStyle(b).color;
+        const a = lum(bg), z = lum(fg), ratio = (Math.max(a, z) + .05) / (Math.min(a, z) + .05);
+        const bb = b.getBoundingClientRect(), cx = bb.left + bb.width / 2;
+        // the hit area, found by what a finger would reach 19px above and below the middle: 40px tall in all
+        const reach = dy => { const e = document.elementFromPoint(cx, bb.top + bb.height / 2 + dy); return !!e && (e === b || b.contains(e)); };
+        return { us: getComputedStyle(md).userSelect || getComputedStyle(md).webkitUserSelect, n: r.querySelectorAll(".bact").length, ratio, hitH: reach(-19) && reach(19) ? 40 : 0, w: bb.width };
+      });
+      if (info.us !== "text") fail(tag + "bubble text is not selectable: " + info.us);
+      if (info.n !== 2) fail(tag + "a bubble has " + info.n + " actions");
+      if (info.ratio < 4.5) fail(tag + "action contrast " + info.ratio.toFixed(2));
+      if (info.hitH < 40 || info.w < 40) fail(tag + "action hit area too small: " + JSON.stringify(info));
+      // a programmatic selection survives a redraw that arrives while it is held, and the redraw lands when it goes
+      await p.evaluate(sel => { const n = document.querySelector(sel + " .md p, " + sel + " .md"); const r = document.createRange(); r.selectNodeContents(n); const s = getSelection(); s.removeAllRanges(); s.addRange(r); }, bub(1));
+      const at2 = mIso(M_MIN);
+      st.replies["bub-1"] = { source: "transcript", replies: replies.concat([{ at: at2, text: "Newest arrives mid-selection." }]) };
+      st.send("task", Object.assign({}, c, { row: 1, output_at: at2 }));
+      await p.waitForTimeout(900);
+      const held = await p.evaluate(() => ({ sel: String(getSelection()), has: /Newest arrives/.test(document.getElementById("m-replies").textContent) }));
+      if (held.sel !== "Plain reply.") fail(tag + "the selection was lost to a redraw: " + JSON.stringify(held));
+      if (held.has) fail(tag + "the thread was redrawn under a selection");
+      await p.evaluate(() => getSelection().removeAllRanges());
+      await p.waitForFunction(() => /Newest arrives/.test(document.getElementById("m-replies").textContent), null, { timeout: slow(5000) });
+      // copy writes the bubble's own text, whole, and says so
+      await p.tap(bub(2) + " .bact[data-act=copy]");
+      await p.waitForFunction(() => window.__copied.length === 1, null, { timeout: slow(3000) });
+      const copied = await p.evaluate(() => window.__copied[0]);
+      if (copied !== MULTI) fail(tag + "copy wrote " + JSON.stringify(copied));
+      if (!/copied/.test(await p.textContent(bub(2) + " .bact[data-act=copy]"))) fail(tag + "copy gave no feedback");
+      // reply: the quote, a "> " on every line, a blank line, the caret at the end
+      const ta = "#m-compose textarea";
+      const box = () => p.evaluate(s => { const t = document.querySelector(s); return { v: t.value, at: t.selectionStart, end: t.selectionEnd, focus: document.activeElement === t }; }, ta);
+      await p.tap(bub(2) + " .bact[data-act=reply]");
+      let b = await box();
+      const want = "> first line\n> \n> third line after a blank\n> fourth\n\n";
+      if (b.v !== want) fail(tag + "multi-line quote is " + JSON.stringify(b.v));
+      if (b.at !== b.v.length || b.end !== b.v.length || !b.focus) fail(tag + "caret not at the end, focused: " + JSON.stringify(b));
+      // a draft is kept, above the quote
+      await p.fill(ta, "my half sentence");
+      await p.tap(bub(1) + " .bact[data-act=reply]");
+      b = await box();
+      if (b.v !== "my half sentence\n\n> Plain reply.\n\n") fail(tag + "the draft was not kept above the quote: " + JSON.stringify(b.v));
+      if (b.at !== b.v.length) fail(tag + "caret not at the end after a draft");
+      // a long bubble is cut near 300 with an ellipsis
+      await p.fill(ta, "");
+      await p.tap(bub(3) + " .bact[data-act=reply]");
+      b = await box();
+      const line = b.v.split("\n")[0];
+      if (!/^> word/.test(line) || !/\u2026$/.test(line) || line.length < 295 || line.length > 305) fail(tag + "long quote is " + line.length + " chars: " + line.slice(-20));
+      if (!/\n\n$/.test(b.v)) fail(tag + "long quote has no blank line after it");
+      // no text: nothing happens
+      await p.fill(ta, "keep me");
+      const none = await p.evaluate(() => window.mCompose.quote("   "));
+      b = await box();
+      if (none !== false || b.v !== "keep me") fail(tag + "an empty text changed the box: " + JSON.stringify(b.v));
+      await mShot(p, "bubbles-" + (skin || "dark"));
+      if (await mNoSideways(p)) fail(tag + "the card scrolls sideways");
+      if (errors.length) fail(tag + "page errors: " + errors.join(" | "));
+      await ctx.close();
+    }
+  } finally { await st.close(); }
+  if (!bad) console.log("mBubbles ok");
+}
+
 // How many messages fit on the 390x844 phone at once, how wide they are, and what a send leaves behind.
 async function mCompactCount(p) {
   return p.evaluate(() => {
@@ -19862,7 +19956,7 @@ async function main() {
       u001Audit: u001AuditSection,
       pasteStart: pasteStartSection, pasteDone: pasteDoneSection, pasteOldRoom: pasteOldRoomSection, pasteClose: pasteCloseSection,
       growlQuestionShots: growlQuestionShotsSection, growlQuestionBody: growlQuestionBodySection, growlReplyGrow: growlReplyGrowSection, growlChoices: growlChoicesSection, growlStable: growlStableSection, growlOnIt: growlOnItSection, mGrowlQuestion: mGrowlQuestionSection,
-      bootClean: bootCleanSection, mWorking: mWorkingSection, mOwnMessages: mOwnMessagesSection, mRecapSheet: mRecapSheetSection,
+      bootClean: bootCleanSection, mWorking: mWorkingSection, mOwnMessages: mOwnMessagesSection, mBubbles: mBubblesSection, mRecapSheet: mRecapSheetSection,
       mHomeOrder: mHomeOrderSection, cardUrlWayOut: cardUrlWayOutSection, phoneBoot: phoneBootSection, sayEnter: sayEnterSection, sendArrow: sendArrowSection, mTables: mTablesSection, mMarkdown: mMarkdownSection, mHostile: mHostileSection, mPictures: mPicturesSection, soundPhone: soundPhoneSection, phoneBell: phoneBellSection, mBell: mBellSection,
       mHomeOrder: mHomeOrderSection, cardUrlWayOut: cardUrlWayOutSection, phoneBoot: phoneBootSection, sayEnter: sayEnterSection, sendArrow: sendArrowSection, mTables: mTablesSection, mMarkdown: mMarkdownSection, mHostile: mHostileSection, mPictures: mPicturesSection, phoneRedirect: phoneRedirectSection,
       mHomeOrder: mHomeOrderSection, cardUrlWayOut: cardUrlWayOutSection, phoneBoot: phoneBootSection, sayEnter: sayEnterSection, sendArrow: sendArrowSection, mTables: mTablesSection, mMarkdown: mMarkdownSection, mHostile: mHostileSection, mPictures: mPicturesSection, mHidden: mHiddenSection, soundPhone: soundPhoneSection, phoneBell: phoneBellSection, mBell: mBellSection,
@@ -21879,6 +21973,7 @@ async function main() {
     await unit("bootClean", () => bootCleanSection(browser, base));
     await unit("mWorking", () => mWorkingSection(browser));
     await unit("mOwnMessages", () => mOwnMessagesSection(browser));
+    await unit("mBubbles", () => mBubblesSection(browser));
     await unit("mRecapSheet", () => mRecapSheetSection(browser));
     await unit("mHomeOrder", () => mHomeOrderSection(browser));
     await unit("cardUrlWayOut", () => cardUrlWayOutSection(browser, base));
