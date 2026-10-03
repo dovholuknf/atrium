@@ -242,10 +242,8 @@ func cardReason(id string, payload json.RawMessage) (notifyCard, bool) {
 	// `input` for a session that has only just started is noise
 	// (atrium-87300, 2026-09-30). Only where the room sent its seen row: an
 	// older room cannot say, and keeps notifying as before.
-	// A session that REPORTED is waiting on somebody, finished turn or not. So is
-	// one that ASKED: the Notification hook sets waiting_reason `asked` and
-	// writes no turn end. It is not a report, so it stays out of `report`.
-	case p.Status == "needs-input" && sent && p.Seen.TurnEndedAt == "" && report == "" && p.WaitingReason != "asked":
+	// A session that REPORTED is waiting on somebody, finished turn or not.
+	case p.Status == "needs-input" && sent && p.Seen.TurnEndedAt == "" && report == "":
 		return notifyCard{}, false
 	case p.Status == "needs-input":
 		reason, at = ReasonInput, waited
