@@ -48,10 +48,14 @@ What it tells:
   `cr|<id>`) is raised instead, on the room of the source, the owner or the creator, and it ends with the request. It is
   raised once per request: a finished request does not come back as a question. A request the operator made itself, on a
   hub-pushed branch with no owner, has no room to hang one on and raises none.
-- The audit log, `change-request-create|close|withdraw|merged` with the id and nothing else.
+- The audit log, `change-request-create|close|withdraw|merged` with the id as the detail and nothing else of the request,
+  recorded in the ACTING card's room (no room when the operator did it), so the log says where an action came from.
 
 A room name is folded to ASCII lowercase when a request is stored, as room names are everywhere else, so `source.room`
-reads back lowercase and two asks that differ only in the room's case are one request (409 hands the first back).
+reads back lowercase and two asks that differ only in the room's case are one request (409 hands the first back). A repo's
+owner and name are compared without regard to case too (`github/O/R` and `github/o/r` are one open request, and `?repo=`
+finds either), and the row keeps the spelling of the first ask. A `?state=` the list does not know is a 400 that names
+open, closed, merged, withdrawn and all.
 
 Storage: migration 0009 `change_request`, with a unique index on the open request per repo, source and target. The hub
 holds a growler about neither a card nor a room's health (`GrowlRaise`, `GrowlEnd`), because the room-growler row is one

@@ -115,6 +115,40 @@ func TestCRRoomsThatDifferOnlyInCaseAreOneSource(t *testing.T) {
 	}
 }
 
+// A REPOSITORY IS ONE NAME in any case (github/O/R is github/o/r): two asks that differ only there are one open
+// request, and the list finds it by either spelling. The row keeps the spelling of the first ask.
+func TestCRReposThatDifferOnlyInCaseAreOneRepo(t *testing.T) {
+	s := open(t)
+	in := newCR("claude/x", "main")
+	in.Repo = "github/O/R"
+	a := mustCR(t, s, in)
+	if a.Repo != "github/O/R" {
+		t.Fatalf("the repo is stored as %q", a.Repo)
+	}
+	for _, repo := range []string{"github/o/r", "GITHUB/O/R", "github/o/R"} {
+		again := in
+		again.Repo = repo
+		b, existed, err := s.CRCreate(again)
+		if err != nil || !existed || b.ID != a.ID {
+			t.Fatalf("%q: %+v existed=%v err=%v", repo, b, existed, err)
+		}
+	}
+	if rows, _ := s.CRList(CRFilter{}); len(rows) != 1 {
+		t.Fatalf("%d requests, want 1", len(rows))
+	}
+	for _, repo := range []string{"github/o/r", "github/O/R", "GITHUB/o/R"} {
+		if rows, _ := s.CRList(CRFilter{Repo: repo}); len(rows) != 1 {
+			t.Fatalf("repo %q finds %d", repo, len(rows))
+		}
+	}
+	// another repo is not folded into it
+	other := in
+	other.Repo = "github/o/r2"
+	if b, existed, err := s.CRCreate(other); err != nil || existed || b.ID == a.ID {
+		t.Fatalf("another repo: %+v existed=%v err=%v", b, existed, err)
+	}
+}
+
 func TestCRTheTableItselfRefusesASecondOpenRequest(t *testing.T) {
 	s := open(t)
 	mustCR(t, s, newCR("claude/x", "main"))

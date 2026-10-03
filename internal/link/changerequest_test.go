@@ -519,6 +519,37 @@ func TestTwoAsksThatDifferOnlyInTheRoomsCaseAreOneRequest(t *testing.T) {
 	}
 }
 
+// A repository's owner and name are one name in any case, so two asks for github/O/R and github/o/r are one request.
+// (A room's branch, so that the store's directory, which tells the cases apart on some disks, is not what is tested.)
+func TestTwoAsksThatDifferOnlyInTheReposCaseAreOneRequest(t *testing.T) {
+	x := newCRRig(t)
+	x.tip("sg4", "claude/q", x.c[1])
+	first := roomReq("sg4", "claude/q", "release")
+	first["repo"] = "github/Some/Repo"
+	code, made := x.create(t, x.op, first)
+	if code != http.StatusCreated {
+		t.Fatalf("first = %d %v", code, made)
+	}
+	x.events(t, "change-request")
+	for _, repo := range []string{"github/some/repo", "GITHUB/SOME/REPO"} {
+		again := roomReq("sg4", "claude/q", "release")
+		again["repo"] = repo
+		code, got := x.create(t, x.op, again)
+		if code != http.StatusConflict || str(got, "id") != str(made, "id") {
+			t.Errorf("%s = %d %v", repo, code, got)
+		}
+	}
+	if ev := x.events(t, "change-request"); len(ev) != 0 {
+		t.Errorf("a duplicate was announced: %v", ev)
+	}
+	for _, q := range []string{"github/some/repo", "github/Some/Repo"} {
+		_, raw := x.op("GET", "/_hub/change-requests?repo="+q, "")
+		if reqs, _ := obj(t, raw)["requests"].([]any); len(reqs) != 1 {
+			t.Errorf("repo=%s finds %d", q, len(reqs))
+		}
+	}
+}
+
 func TestACardMakesOneOnlyForItsOwnRoomOrTheHub(t *testing.T) {
 	x := newCRRig(t)
 	x.hubPush(t, x.c[1], "claude/x")
@@ -682,6 +713,10 @@ func TestTheListFiltersByStateRoomTargetAndRepo(t *testing.T) {
 	_, raw := x.op("GET", "/_hub/change-requests?room=nowhere", "")
 	if strings.Contains(raw, "null") {
 		t.Errorf("an empty list is %s", raw)
+	}
+	// the words of the refusal name every state there is, merged and withdrawn too
+	if _, raw := x.op("GET", "/_hub/change-requests?state=weird", ""); !strings.Contains(raw, "merged") || !strings.Contains(raw, "withdrawn") {
+		t.Errorf("the state refusal does not name merged and withdrawn: %s", raw)
 	}
 	for _, q := range []string{"?state=weird", "?repo=..", "?room=a%20b", "?target=--x"} {
 		if code, _ := x.op("GET", "/_hub/change-requests"+q, ""); code != 400 {
@@ -1097,6 +1132,24 @@ func TestTheOwnerOfARoomBranchIsTheOneCardWhoseWorktreeIsNamedForIt(t *testing.T
 	}
 }
 
+// A branch with another slash in it is no folder's name: claude/f/x is not the card in .../f-x.
+func TestASlashInABranchIsNotFoldedIntoAFolderName(t *testing.T) {
+	x := newCRRig(t)
+	x.tip("sg4", "claude/f-x", x.c[1])
+	x.tip("sg4", "claude/f/x", x.c[1])
+	x.rp.sg4.mu.Lock()
+	x.rp.sg4.tasks = append(x.rp.sg4.tasks,
+		map[string]any{"id": "s7", "wire_name": "f-x", "status": "working", "worktree": "/w/atrium-worktrees/f-x"})
+	x.rp.sg4.mu.Unlock()
+	if code, c := x.create(t, x.op, roomReq("sg4", "claude/f-x", "release")); code != http.StatusCreated || str(c, "owner", "card") != "s7" {
+		t.Fatalf("the folder's own branch = %d %v", code, c)
+	}
+	code, c := x.create(t, x.op, roomReq("sg4", "claude/f/x", "release"))
+	if code != http.StatusCreated || str(c, "owner", "card") != "" || str(c, "owner", "room") != "" {
+		t.Errorf("claude/f/x was given the owner of f-x: %d %v", code, c["owner"])
+	}
+}
+
 // ── what is written down ────────────────────────────────
 
 var onlyAnID = regexp.MustCompile(`^cr_[1-9][0-9]*$`)
@@ -1125,6 +1178,7 @@ func TestTheAuditLinesCarryIdsAndNeverTheWords(t *testing.T) {
 	kinds := map[string]int{}
 	for _, r := range rows {
 		kinds[r.kind]++
+		// the operator did all of these, and the operator has no room
 		if r.room != "" || !onlyAnID.MatchString(r.detail) || strings.Contains(r.detail+r.kind+r.room, "SECRET") {
 			t.Errorf("a line with more than an id: %+v", r)
 		}
@@ -1138,6 +1192,29 @@ func TestTheAuditLinesCarryIdsAndNeverTheWords(t *testing.T) {
 	for _, e := range x.events(t, "audit") {
 		if strings.Contains(js(e), "SECRET") {
 			t.Errorf("the audit event carries the words: %v", e)
+		}
+	}
+}
+
+// A card's action is recorded in the card's room, so the audit log says where it came from: the id is all it holds
+// of the request, and the room is all it holds of the actor.
+func TestTheAuditLineOfACardsActionNamesItsRoom(t *testing.T) {
+	x := newCRRig(t)
+	x.hubPush(t, x.c[1], "claude/x")
+	code, c := x.create(t, x.asCard("m1mini", "m1"), hubReq("claude/x", "release"))
+	if code != http.StatusCreated {
+		t.Fatalf("create = %d %v", code, c)
+	}
+	if code, m := x.do(t, x.asCard("m1mini", "m1"), str(c, "id"), map[string]any{"do": "withdraw"}); code != 200 {
+		t.Fatalf("withdraw = %d %v", code, m)
+	}
+	rows := x.audit.mine()
+	if len(rows) != 2 || rows[0].kind != "change-request-create" || rows[1].kind != "change-request-withdraw" {
+		t.Fatalf("audit = %v", rows)
+	}
+	for _, r := range rows {
+		if r.room != "m1mini" || r.detail != str(c, "id") {
+			t.Errorf("a card's line is %+v", r)
 		}
 	}
 }

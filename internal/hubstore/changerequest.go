@@ -166,11 +166,14 @@ func (s *Store) CRCreate(in CRNew) (c ChangeRequest, existed bool, err error) {
 	// A ROOM NAME IS FOLDED, as it is everywhere else (fold, and keyOf in link): the lookup below and the unique index
 	// both compare source_room as stored, so "Room-A" and "room-a" would otherwise be two open requests for one source.
 	in.SourceRoom = fold(in.SourceRoom)
+	// A REPOSITORY'S OWNER AND NAME ARE ONE NAME IN ANY CASE too (the forge says so), so the lookup below compares them
+	// lowercased. They are NOT folded in the row: the hub's store keeps the spelling it was made with, and on a disk
+	// that tells Foo from foo the row's repo has to find that directory. The first ask's spelling is the row's.
 	at := ts(now())
 	err = s.tx(func(t *sql.Tx) error {
 		c, existed = ChangeRequest{}, false
 		prior, err := scanCR(t.QueryRow(`SELECT `+crCols+` FROM change_request
-			WHERE repo = ? AND source_room = ? AND source_branch = ? AND target_branch = ? AND state = 'open'`,
+			WHERE lower(repo) = lower(?) AND source_room = ? AND source_branch = ? AND target_branch = ? AND state = 'open'`,
 			in.Repo, in.SourceRoom, in.SourceBranch, in.Target))
 		if err == nil {
 			c, existed = prior, true
@@ -228,7 +231,7 @@ func (s *Store) CRList(f CRFilter) ([]ChangeRequest, error) {
 			where, args = append(where, "target_branch = ?"), append(args, f.Target)
 		}
 		if f.Repo != "" {
-			where, args = append(where, "repo = ?"), append(args, f.Repo)
+			where, args = append(where, "lower(repo) = lower(?)"), append(args, f.Repo)
 		}
 		if f.Room != "" {
 			where, args = append(where, "(lower(source_room) = lower(?) OR lower(owner_room) = lower(?))"), append(args, f.Room, f.Room)
