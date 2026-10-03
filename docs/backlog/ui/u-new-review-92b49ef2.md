@@ -142,3 +142,26 @@ Verdict: **OK** for room and hub.
 
 Atrium-Verdict: room-ok 92ed8faa..5a0c33f2
 Atrium-Verdict: hub-ok 92ed8faa..5a0c33f2
+
+## Follow-up: 98326d70 (the phone fold chevron)
+
+Range `5a0c33f2..98326d70`: phone.css, the harness and the item doc.
+
+Verdict: **OK** for room and hub.
+
+- **The grid.** A parent row's `.card-line` gets a fifth `auto` column, and `.tkidfold` is placed at column 5, row 1.
+  The name spans columns 3-4, or only column 3 when the name is the path. The `aspath` rule is more specific, so it
+  wins on a row that has both. Before, the button was auto-placed into a third grid row, which added about 20px.
+- **The test.** Parent row height must equal the same row without the button, at density 1, 0.72 and 0.3, on desktop
+  and phone. Per @ui, the old phone.css fails all six phone cases. The "PINNED" heading is harness-only (a stale
+  `scrollTop`), and it is now reset and asserted. `node --check` passes. It merges cleanly onto 7ad42ff2.
+- **The PNGs** (`/tmp/u-row-flood/real3/`): I looked at `before-` and `after-phone390-paper-density0.72.png`. The
+  chevron is on the first line, and the f-new-git-url row is the height of the others.
+
+Low:
+- **L3: the fifth column is kept on line 2 as well.** On a parent row the path and chips line stops one chevron short
+  of the right edge, so its chips do not line up with the rows below. Spanning the chips over 4/6 on a parent row
+  would line them up. This is cosmetic.
+
+Atrium-Verdict: room-ok 5a0c33f2..98326d70
+Atrium-Verdict: hub-ok 5a0c33f2..98326d70
