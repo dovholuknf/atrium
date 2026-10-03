@@ -183,3 +183,43 @@ Atrium-Verdict: hold ef406235..3ad9d658
 Quality: a careful token design that is scoped, checked in constant time and revoked by card state, and the forwarder
 refuses before any link traffic. The room's own push and one test still trust what the card controls. m1mini commits
 are unsigned.
+
+## Re-read: 89847d7d
+
+One commit, rebased onto landing 29efa251, so the range is `29efa251..89847d7d`. `git range-diff` against 3ad9d658
+shows only the fixes below.
+
+Closed:
+- **M1.**
+  - `hubPushTarget` now reads `get-url --push --all` and needs exactly one line, the forwarder's.
+  - `PushToHub` clears `remote.<name>.proxy`, `http.<push url>.proxy` and `http.<base>.proxy` with `-c`.
+  - There is a test for the second pushurl, and one each for the four proxy keys.
+  - Mutants: dropping `--all` fails, dropping the one-line rule fails, and dropping the `remote.<name>.proxy` clear
+    fails, with the probe proxy seeing the request.
+- **M2.** The client headers are set under `ExtraHeaderKey(f.base)`. The Del-and-Add mutant now fails both that test
+  and the new raw two-values test.
+- **L1.** The code comment says `issued` holds tokens in the clear.
+- **L2.** It is covered by the raw two-values test through the forwarder.
+- **L3.** `inheritedTaint` is tested for `GIT_CONFIG_COUNT`, `_KEY_*` and `_VALUE_*`, case-insensitively, and leaves
+  `GIT_CONFIG_GLOBAL` alone.
+- **L4.** The revoke skips a token minted after the exiting run started.
+  - The mint, in `launch.go`, comes before `startTerm`, and `r.started` is set after it. So a run's own exit still
+    revokes its token, and a resume's newer token survives the old run's exit.
+  - The test is deterministic, and removing the guard fails it.
+  - A runner adopted after a restart takes its start time from the pty host. `issued` is empty after a restart, so
+    the revoke goes ahead, which is right.
+- **L5.** Only an empty or unspecified host maps to 127.0.0.1. Both mutants fail the new test.
+
+Gates, with `ATRIUM_LOCATION` and `ATRIUM_DEBUG_INPUTLAG` unset:
+- gitsync, link, cli and store pass;
+- the daemon Hub, GitPush, Token, Outside, GitClone, Launch, AgentAddr, Resume and Wake tests pass;
+- vet is clean;
+- gofmt flags only the known `fyi_test.go`.
+
+Note, not a hold:
+- **N1: the `http.<base>.proxy` clear is redundant.** Dropping it survives, because the exact-URL clear is the more
+  specific key and wins. Keeping it does no harm.
+
+Atrium-Verdict: room-ok 29efa251..89847d7d
+Quality: every finding is closed, with a test that a mutant fails, and the push now ignores anything the clone's config
+says about where the push goes.
