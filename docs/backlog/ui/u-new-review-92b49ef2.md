@@ -87,3 +87,37 @@ Notes, none holds it:
 
 Atrium-Verdict: room-ok a602d6ff..89fa4e32
 Atrium-Verdict: hub-ok a602d6ff..89fa4e32
+
+## Re-read: 6dcb0723 (restore the 3e9ca7a1 bar, rebased on 92ed8faa)
+
+Range `92ed8faa..6dcb0723`, one commit. It drops the inset strip, the reserved band and the `::after` hit area. In
+their place is a 4px bar, flush with the row's bottom edge and sides, inside the card (`.card` clips it with
+`overflow: hidden`). It has a gradient for warm and hot, a one-off pulse, and the bar's own tooltip.
+
+Verdict: **HOLD** on M1. It is a one-line fix, and I will re-read it at once.
+
+## How it was checked
+
+- I read the diff. `--warn-rgb` and `--danger-rgb` exist in every theme. `.card` clips, so the corners are cut by the
+  row.
+- **The PNGs:** I looked at after-2000-paper, after-390-graphite and before-2000-paper in `/tmp/u-row-flood/real/`,
+  taken from the live copy on m1mini. The bar sits inside the bottom edge, nothing meets the path line, and the
+  near-limit row is amber.
+  - These shots are at the default density.
+  - The 390 shots are the desktop board squeezed, not `/m`, as @ui says.
+
+## M1: below normal density, the bar is taller than the padding it sits in
+
+The bar is 4px at `bottom: 0`, inside a bottom padding of `--row-y-xs`, which is `5px × --uiscale × --density`. The
+board offers density 0.72 (tight), 0.5 (tighter) and 0.3 (tightest). At those settings the padding is 3.6px, 2.5px
+and 1.5px, so the bar runs 0.4px, 1.5px and 2.5px into the content box. That is the path line's last pixels. A
+`--uiscale` below 0.8 does the same.
+
+This is likely the cause the first fix could not reproduce. Mock rows run at density 1, where 5px covers a 3px strip
+at `bottom: 3px` with nothing to spare. On a tight board, the same rows put the strip through the path line.
+
+Fix, in `css/terminal.css`: `.term-list .card { padding-bottom: max(var(--row-y-xs), 5px); }`. The phone (5px) and
+`mini` (6px) rules are fixed values and already clear it. Add a `ctxLine` case at density 0.3, and at a small
+`--uiscale`, that runs the same text and chip clash walk.
+
+Atrium-Verdict: hold 92ed8faa..6dcb0723
