@@ -3,6 +3,7 @@ package link
 import (
 	"context"
 	"errors"
+	"net"
 	"net/http"
 	"strings"
 
@@ -28,22 +29,39 @@ import (
 // serveGitStore answers anything under /git/ on the board's listeners.
 func (p *Proxy) serveGitStore(w http.ResponseWriter, r *http.Request) {
 	g := p.git()
-	if g == nil || !strings.HasPrefix(r.URL.Path, gitsync.StorePrefix) {
+	store, pass := strings.HasPrefix(r.URL.Path, gitsync.StorePrefix), strings.HasPrefix(r.URL.Path, gitsync.PassPrefix)
+	if g == nil || (!store && !pass) {
 		http.NotFound(w, r)
 		return
 	}
+	reach := ""
 	switch edge.ReachOf(r) {
 	case edge.ReachZrokPublic:
 		// The same answer as a path that is not there: a public share does not say it is a git server.
 		http.NotFound(w, r)
 		return
-	case edge.ReachOverlay, edge.ReachZrokPrivate:
+	case edge.ReachOverlay:
+		reach = "overlay"
+	case edge.ReachZrokPrivate:
+		reach = "zrok-private"
 	default:
 		if !edge.LocalOperator(r) {
 			http.Error(w, "the hub's git store is reached from the machine the hub runs on, or over the board's overlay"+
 				edge.ProxyNote(r), http.StatusForbidden)
 			return
 		}
+		reach = "loopback"
+	}
+	// A FETCH PASSED THROUGH TO A ROOM, for the operator. A card on a room is not served here (it would come in
+	// on the link's git kind, which does not route /git/room/), so there is no card to name and none is read.
+	if pass {
+		host, _, err := net.SplitHostPort(r.RemoteAddr)
+		if err != nil {
+			host = r.RemoteAddr
+		}
+		ctx := gitsync.WithReader(r.Context(), gitsync.Reader{Reach: reach, Key: reach + ":" + host})
+		g.PassHandler().ServeHTTP(w, r.WithContext(ctx))
+		return
 	}
 	ctx := gitsync.WithCaller(r.Context(), gitsync.Caller{Kind: gitsync.CallerOperator})
 	g.StoreHandler().ServeHTTP(w, r.WithContext(ctx))
