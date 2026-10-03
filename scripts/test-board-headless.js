@@ -8713,12 +8713,15 @@ async function ctxLineSection(browser, base) {
         const i = b && b.querySelector("i"), s = b && b.querySelector("s");
         out[el.dataset.id] = !b ? null : {
           cls: b.className, width: i.style.width, tick: s.style.left, tip: b.getAttribute("data-tip"),
-          bottom: Math.abs(br.bottom - r.bottom) < 2, wide: br.width > r.width - 4, tall: br.height > r.height - 4,
+          bottom: r.bottom - br.bottom >= 0 && r.bottom - br.bottom <= 8, h: br.height, wide: br.width > r.width - 4,
+          inset: br.left - r.left >= 6 && r.right - br.right >= 6,
+          barBg: getComputedStyle(b).backgroundColor, fillBg: getComputedStyle(i).backgroundColor,
+          rowBg: getComputedStyle(el).backgroundColor, rowBorder: getComputedStyle(el).borderTopColor,
           pe: getComputedStyle(b).pointerEvents, z: getComputedStyle(b).zIndex,
           floorPe: getComputedStyle(b, "::after").pointerEvents,
           landchip: !!el.querySelector(".chip.ctxland"), chiptext: (el.querySelector(".chip.ctxland") || {}).textContent,
           anim: getComputedStyle(i).animationIterationCount, name: getComputedStyle(i).animationName,
-          fill: getComputedStyle(i).backgroundImage,
+          fill: getComputedStyle(i).backgroundColor,
           chip: !!el.querySelector(".chip.ctxwarn"), cycle: !!el.querySelector(".chip") && /context 2\/4/.test(el.textContent)
         };
       }
@@ -8731,6 +8734,27 @@ async function ctxLineSection(browser, base) {
       shared.innerHTML = ctxMeter(201000, 200000, "", "201k of 200k (land the plane)");
       return { rows: out, popover: pb ? pb.outerHTML : null, meter: shared.firstElementChild.outerHTML };
     });
+    // For checking by eye: ROWFLOOD_SHOTS=<dir> ROWFLOOD_TAG=before|after writes four rows side by side (a plain one,
+    // and a context at 10%, 80% and 130% of the land line) at 2000px and 390px on a light and a dark skin.
+    if (process.env.ROWFLOOD_SHOTS) {
+      const dir = process.env.ROWFLOOD_SHOTS, tag = process.env.ROWFLOOD_TAG || "shot";
+      const keep = wornTasks;
+      wornTasks = [row("sh-plain", null, { display_title: "runtime", status: "working", worktree: "/tmp/cl/runtime" }),
+        row("sh-10", 20000, { display_title: "review", worktree: "/tmp/cl/review" }),
+        row("sh-80", 160000, { display_title: "r-owed-answers", worktree: "/tmp/cl/r-owed-answers" }),
+        row("sh-130", 260000, { display_title: "fabric", worktree: "/tmp/cl/fabric" })];
+      for (const [w, h] of [[2000, 700], [390, 700]]) {
+        await wp.setViewportSize({ width: w, height: h });
+        for (const skin of ["paper", "graphite"]) {
+          await wp.evaluate(async sk => { applySkin(sk); await loadCards().catch(() => {}); await renderTermList(); }, skin);
+          await wp.waitForTimeout(1500);
+          await wp.screenshot({ path: require("path").join(dir, `${tag}-${w}-${skin}.png`) });
+        }
+      }
+      await wp.setViewportSize({ width: 1400, height: 900 });
+      wornTasks = keep;
+      await wp.evaluate(async () => { await loadCards().catch(() => {}); await renderTermList(); });
+    }
     const r = got.rows;
     for (const [id, w, cls] of [["cl-40", "27.3%", "peek-bar ctxline"], ["cl-70", "47.7%", "peek-bar ctxline"],
       ["cl-90", "61.4%", "peek-bar ctxline"], ["cl-warm", "77.3%", "peek-bar ctxline warm"],
@@ -8740,16 +8764,29 @@ async function ctxLineSection(browser, base) {
       if (b.cls !== cls) fail(id + " line class is " + b.cls + ", want " + cls);
       if (b.width !== w) fail(id + " fill is " + b.width + ", want " + w);
       if (b.tick !== "90.9%") fail(id + " tick is at " + b.tick);
-      if (!b.wide || !b.tall) fail(id + " flood does not cover the row: " + JSON.stringify(b));
-      if (b.pe !== "none" || b.floorPe !== "auto" || b.z !== "-1") fail(id + " flood layering/pointer: " + JSON.stringify(b));
+      // A thin strip along the row's bottom edge, inset from the corners (so the left accent bar is untouched), never
+      // a fill behind the title and path.
+      if (!b.bottom || b.h > 4 || b.h < 2 || !b.inset) fail(id + " context line is not a thin strip on the bottom edge: " + JSON.stringify(b));
+      if (b.z !== "auto" || b.pe !== "none" || b.floorPe !== "auto") fail(id + " context line layering/pointer (no z-index layer behind the row, hover area on): " + JSON.stringify(b));
+      if (b.fill === "rgba(0, 0, 0, 0)") fail(id + " context line has no fill colour.");
     }
     if (r["cl-over"] && (r["cl-over"].anim !== "1" || r["cl-over"].name !== "ctxline-pulse")) {
       fail("past the limit the line does not pulse exactly once: " + r["cl-over"].anim + " " + r["cl-over"].name);
     }
     if (r["cl-warm"] && r["cl-warm"].name !== "none") fail("a line under the land line animates.");
     if (r["cl-over"] && r["cl-over"].tip !== "201k of 200k (land the plane), window 1M") fail("the line's tooltip: " + (r["cl-over"] || {}).tip);
-    if (r["cl-over"] && (!r["cl-over"].landchip || r["cl-over"].chiptext !== "LAND 201k")) fail("past the land line the row has no LAND badge: " + JSON.stringify(r["cl-over"]));
-    if (r["cl-warm"] && (!r["cl-warm"].chip || r["cl-warm"].landchip)) fail("between warn and land the row must have the amber mark and no badge.");
+    if (r["cl-over"] && r["cl-over"].landchip) fail("past the land line the row draws a LAND badge: " + JSON.stringify(r["cl-over"]));
+    if (r["cl-over"] && !r["cl-over"].chip) fail("past the land line the row lost the amber warn mark.");
+    // Heat steps: neutral, amber at warn, danger at land: three different fills.
+    if (r["cl-70"] && r["cl-warm"] && r["cl-over"] && new Set([r["cl-70"].fill, r["cl-warm"].fill, r["cl-over"].fill]).size !== 3) {
+      fail("the context line's heat steps are not three colours: " + [r["cl-70"].fill, r["cl-warm"].fill, r["cl-over"].fill]);
+    }
+    // A row with a context figure looks as strong as a plain one: same row background and border whatever the context.
+    for (const id of ["cl-40", "cl-warm", "cl-over"]) {
+      if (r[id] && r["cl-70"] && (r[id].rowBg !== r["cl-70"].rowBg || r[id].rowBorder !== r["cl-70"].rowBorder)) {
+        fail(id + " row is tinted or bordered differently from a low-context row: " + JSON.stringify([r[id].rowBg, r[id].rowBorder, r["cl-70"].rowBg, r["cl-70"].rowBorder]));
+      }
+    }    if (r["cl-warm"] && (!r["cl-warm"].chip || r["cl-warm"].landchip)) fail("between warn and land the row must have the amber mark and no badge.");
     if (r["cl-70"] && (r["cl-70"].chip || r["cl-70"].landchip)) fail("a card under the warn line has a mark.");
     if (r["cl-none"]) fail("a row with no context_size has a line.");
     if (r["cl-shelf"]) fail("a shelved card has a line.");
@@ -8767,7 +8804,7 @@ async function ctxLineSection(browser, base) {
       const fillOk = await wp.evaluate(async sk => {
         try { applySkin(sk); } catch (e) { return "noskin"; }
         const i = document.querySelector('#term-list [data-id="cl-over"] .ctxline i');
-        return /rgb/.test(getComputedStyle(i).backgroundImage);
+        return /rgb\(/.test(getComputedStyle(i).backgroundColor);
       }, skin);
       if (fillOk === false) fail("the line has no fill colour in skin " + skin);
     }
@@ -8778,7 +8815,7 @@ async function ctxLineSection(browser, base) {
   if (errors.length) fail("the terminals list threw: " + errors.join(" | "));
 }
 
-// The land-the-plane line: a per-browser pref (atrium.landThePlaneK, js/peek.js), the red LAND badge, the amber
+// The land-the-plane line: a per-browser pref (atrium.landThePlaneK, js/peek.js), no badge, the danger line, the amber
 // zone below it, the gear field, the popover meter and a phone-width row.
 async function landThePlaneSection(browser, base) {
   const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
@@ -8815,14 +8852,14 @@ async function landThePlaneSection(browser, base) {
     });
     let r = await read();
     // Default 200k: only 201k is past it. 170k is amber with the small mark, 100k is neutral.
-    if (!/ hot over/.test(r["lp-201"].cls) || r["lp-201"].badge !== "LAND 201k") fail("201k with the default line has no red badge: " + JSON.stringify(r["lp-201"]));
+    if (!/ hot over/.test(r["lp-201"].cls) || r["lp-201"].badge) fail("201k with the default line is not a danger line without a badge: " + JSON.stringify(r["lp-201"]));
     if (!/ warm$/.test(r["lp-170"].cls) || r["lp-170"].badge || !r["lp-170"].mark) fail("170k is not amber with the small mark: " + JSON.stringify(r["lp-170"]));
     if (/ (warm|hot)/.test(r["lp-100"].cls) || r["lp-100"].badge) fail("100k is not neutral: " + JSON.stringify(r["lp-100"]));
-    if (r["lp-201"].border === r["lp-100"].border) fail("a card past the line does not have a red border.");
+    if (r["lp-201"].border !== r["lp-100"].border) fail("a card past the line has a different border from a plain one.");
     // The pref moves the line. 160k: 170k and 201k are past it, 100k still not.
     await wp.evaluate(() => localStorage.setItem("atrium.landThePlaneK", "160"));
     r = await read();
-    if (r["lp-170"].badge !== "LAND 170k" || !/ hot over/.test(r["lp-170"].cls)) fail("a 160k line does not mark 170k: " + JSON.stringify(r["lp-170"]));
+    if (r["lp-170"].badge || !/ hot over/.test(r["lp-170"].cls)) fail("a 160k line does not mark 170k: " + JSON.stringify(r["lp-170"]));
     if (!/^170k of 160k \(land the plane\)/.test(r["lp-170"].tip)) fail("the tooltip does not follow the pref: " + r["lp-170"].tip);
     if (r["lp-100"].badge) fail("a 160k line marks 100k.");
     // Junk reads as 200. A line under the warn line is held at the warn line (150k), so 160k is past it, 100k is not.
@@ -8852,11 +8889,11 @@ async function landThePlaneSection(browser, base) {
       if (!box) return { missing: true };
       const out = { placeholder: box.placeholder, hint: (document.querySelector("#s-landk-field .hintline") || {}).textContent || "" };
       box.value = "5"; saveLandK(); out.junk = localStorage.getItem("atrium.landThePlaneK");
-      const before = document.querySelector('#term-list [data-id="lp-170"] .ctxland') ? "badge" : "none";
+      const before = document.querySelector('#term-list [data-id="lp-170"] .ctxline.hot') ? "badge" : "none";
       box.value = "160"; saveLandK(); out.saved = localStorage.getItem("atrium.landThePlaneK");
       await new Promise(r => setTimeout(r, 400));
       out.rowBefore = before;
-      out.rowAfter = document.querySelector('#term-list [data-id="lp-170"] .ctxland') ? "badge" : "none";
+      out.rowAfter = document.querySelector('#term-list [data-id="lp-170"] .ctxline.hot') ? "badge" : "none";
       box.value = ""; saveLandK(); out.cleared = localStorage.getItem("atrium.landThePlaneK");
       return out;
     });
@@ -8886,39 +8923,23 @@ async function landThePlaneSection(browser, base) {
     if (!/lands at 200k/.test(pop.scale)) fail("the popover scale does not name the line: " + pop.scale);
     if (pop.h < 8) fail("the popover bar is a thin line: " + pop.h + "px.");
     if (!/rgb\(255, 107, 107\)|rgb\(\d+, \d+, \d+\)/.test(pop.bg)) fail("the popover fill has no colour: " + pop.bg);
-    // The badge reads on every skin: its text against its fill is at least 4.5:1 (small bold text), light and dark.
-    const skins = (await (await fetch(base + "/css/themes.css")).text()).match(/:root\[data-skin="[a-z]+"\]/g)
-      .map(x => x.replace(/.*="|"\]/g, ""));
-    const contrast = await wp.evaluate(async list => {
-      await renderTermList();
-      const lum = c => { const [r, g, b] = c.match(/[\d.]+/g).slice(0, 3).map(Number).map(v => { v /= 255; return v <= .03928 ? v / 12.92 : ((v + .055) / 1.055) ** 2.4; }); return .2126 * r + .7152 * g + .0722 * b; };
-      const out = {};
-      for (const sk of list) {
-        document.documentElement.setAttribute("data-skin", sk);
-        const b = document.querySelector('#term-list [data-id="lp-201"] .chip.ctxland');
-        if (!b) { out[sk] = "nochip"; continue; }
-        const cs = getComputedStyle(b), a = lum(cs.backgroundColor), f = lum(cs.color);
-        out[sk] = (Math.max(a, f) + .05) / (Math.min(a, f) + .05);
-      }
-      return out;
-    }, skins);
-    if (skins.length < 20) fail("read only " + skins.length + " skins from themes.css.");
-    for (const [sk, v] of Object.entries(contrast)) if (!(v >= 4.5)) fail("the LAND badge on skin " + sk + " has contrast " + (typeof v === "number" ? v.toFixed(2) : v) + ", want 4.5.");
-    // Phone width: the badge is on the row, inside it, and the row does not scroll sideways.
+    // Phone width: no badge, the strip is inside the row, and the row does not scroll sideways.
     await wp.setViewportSize({ width: 340, height: 800 });
     const ph = await wp.evaluate(async () => {
       await renderTermList();
       const el = document.querySelector('#term-list [data-id="lp-201"]');
       if (!el) return { none: true };
-      const b = el.querySelector(".chip.ctxland"), rr = el.getBoundingClientRect();
+      const b = el.querySelector(".peek-bar.ctxline"), rr = el.getBoundingClientRect();
       const br = b && b.getBoundingClientRect();
-      return { has: !!b, inside: !!br && br.left >= rr.left - 1 && br.right <= rr.right + 1 && br.width > 0,
-        text: b && b.textContent, page: document.documentElement.scrollWidth <= window.innerWidth + 1 };
+      return { has: !!b, badge: !!el.querySelector(".chip.ctxland"),
+        inside: !!br && br.left >= rr.left - 1 && br.right <= rr.right + 1 && br.width > 0,
+        page: document.documentElement.scrollWidth <= window.innerWidth + 1 };
     });
-    if (ph.none || !ph.has) fail("no badge on a phone-width row: " + JSON.stringify(ph));
+    if (ph.none || !ph.has) fail("no context line on a phone-width row: " + JSON.stringify(ph));
     else {
-      if (!ph.inside) fail("the badge is clipped at 340px: " + JSON.stringify(ph));
-      if (ph.text !== "LAND 201k") fail("the phone badge text: " + ph.text);
+      if (ph.badge) fail("a LAND badge on a phone-width row.");
+      if (!ph.inside) fail("the context line is clipped at 340px: " + JSON.stringify(ph));
+      if (!ph.page) fail("the page scrolls sideways at 340px.");
     }
   } finally {
     await ctx.close();
@@ -9022,8 +9043,8 @@ async function contextSizeSection(browser, base) {
         const m = root && root.querySelector(".chip.ctxwarn");
         return { mark: m ? { warnColour: getComputedStyle(m).color === warnColour, text: m.textContent.trim(),
           tip: m.getAttribute("data-tip") || "", svg: !!m.querySelector("svg"), land: m.classList.contains("ctxland") } : null,
-          // The LAND badge is the one place the number is drawn, past the land-the-plane line.
-          number: /\b(90|212)k\b/.test(root ? Array.from(root.querySelectorAll(".chip.ctxland")).reduce((t, n) => t.replace(n.textContent, ""), root.textContent) : "") };
+          // No number on a face: the old LAND badge was the one place it was drawn.
+          number: /\b(90|212)k\b/.test(root ? root.textContent : "") };
       };
       const row = id => read(document.querySelector(`#stack-list .stackrow[data-id="${id}"]`));
       const board = card => {
@@ -9041,9 +9062,8 @@ async function contextSizeSection(browser, base) {
     }, CTX_CARDS);
     if (!got.big.mark) fail("a card past the context threshold has no mark on its stack row.");
     else {
-      // 212k is past the land-the-plane line (200k), so it wears the red badge; the amber icon below it is in landThePlane.
-      if (!got.big.mark.land || got.big.mark.text !== "LAND 212k") fail("a card past the land-the-plane line has no LAND badge: " + JSON.stringify(got.big.mark));
-      if (!/212k of 200k \(land the plane\)/.test(got.big.mark.tip)) fail("the badge's tooltip does not say tokens of the line: " + got.big.mark.tip);
+      // 212k is past the land-the-plane line (200k): no LAND badge any more (the card is auto-cleared there), the amber mark stays.
+      if (got.big.mark.land || got.big.mark.text !== "" || !got.big.mark.svg) fail("a card past the land-the-plane line wears something other than the amber mark: " + JSON.stringify(got.big.mark));
     }
     if (got.small.mark || got.none.mark) fail("a card under the threshold, or with no size, wears the context mark.");
     if (!got.boardBig.mark) fail("a board card past the threshold has no context mark.");

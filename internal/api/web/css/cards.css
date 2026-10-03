@@ -752,50 +752,23 @@
     box-shadow: 0 0 12px rgba(var(--danger-rgb),.55);
   }
   .peek-ctx.hot .peek-num b, .peek-ctx.hot .peek-scale span:first-child { color: var(--danger); }
-  /* THE FLOOD (ctxLine, js/board.js): the same meter as a layer behind a row, so the row itself is the gauge.
-     It sits under the row's text (z-index -1 inside the row's own stacking context), never takes the pointer,
-     and carries a 5px floor along the bottom edge that does, so the bar's tooltip is a hover on the floor. */
-  .card:has(> .peek-bar.ctxline) { isolation: isolate; }
-  .card:has(> .peek-bar.ctxline.hot) { border-color: var(--danger); }
+  /* THE CONTEXT LINE (ctxLine, js/board.js): the same meter as a thin strip along the bottom of a row, inset from
+     the corners so it never touches the row's left accent bar or its border. It is never a fill behind the title
+     and path: a row with a context figure is as strong as a plain one. Neutral under the warn line, amber from
+     there, danger from the land line. The strip is 3px, so a transparent hit area above it carries the tooltip. */
   .peek-bar.ctxline {
-    position: absolute; inset: 0; height: auto; margin: 0; z-index: -1; overflow: hidden;
-    border-radius: inherit; background: none; pointer-events: none;
+    position: absolute; left: 10px; right: 10px; bottom: 3px; top: auto; height: 3px; margin: 0;
+    border-radius: 2px; background: rgba(var(--stroke-rgb),.22); pointer-events: none;
   }
-  .peek-bar.ctxline::after {
-    content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 5px; pointer-events: auto;
-    background: rgba(var(--stroke-rgb),.3);
-  }
-  .peek-bar.ctxline i {
-    border-radius: 0; box-shadow: none;
-    background: linear-gradient(90deg, rgba(var(--stroke-rgb),.06), rgba(var(--stroke-rgb),.16));
-  }
-  .peek-bar.ctxline i::after {
-    content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 5px; z-index: 1;
-    background: rgba(var(--stroke-rgb),.7);
-  }
-  .peek-bar.ctxline s { top: 0; bottom: 0; opacity: .35; }
-  .peek-bar.ctxline.warm i { background: linear-gradient(90deg, rgba(var(--warn-rgb),.08), rgba(var(--warn-rgb),.26)); }
-  .peek-bar.ctxline.warm i::after { background: var(--warn); }
-  .peek-bar.ctxline.hot i {
-    background: linear-gradient(90deg, rgba(var(--danger-rgb),.18), rgba(var(--danger-rgb),.42));
-    border-right: 3px solid var(--danger);
-  }
-  .peek-bar.ctxline.hot i::after { background: var(--danger); }
-  .peek-bar.ctxline.hot s { background: var(--danger); opacity: .6; }
-  /* One pulse as it crosses the line, never a loop: this is drawn on every row. */
+  .peek-bar.ctxline::after { content: ""; position: absolute; left: 0; right: 0; top: -5px; bottom: -3px; pointer-events: auto; }
+  .peek-bar.ctxline i { border-radius: 2px; box-shadow: none; background: rgba(var(--stroke-rgb),.6); }
+  .peek-bar.ctxline s { top: -1px; bottom: -1px; opacity: .5; }
+  .peek-bar.ctxline.warm i { background: var(--warn); }
+  .peek-bar.ctxline.hot i { background: var(--danger); }
+  .peek-bar.ctxline.hot s { background: var(--danger); opacity: .8; }
+  /* One glow as it crosses the line, never a loop: this is drawn on every row. */
   .peek-bar.ctxline.over i { animation: ctxline-pulse 1.2s ease-out 1; }
-  @keyframes ctxline-pulse { 0% { box-shadow: inset 0 0 0 0 rgba(var(--danger-rgb),.9); } 100% { box-shadow: inset 0 0 18px 4px rgba(var(--danger-rgb),0); } }
-  /* The badge: solid, so red means land the plane and nothing else. */
-  .chip.ctxland {
-    background: var(--danger); border-color: var(--danger); color: var(--on-danger);
-    font-weight: 800; letter-spacing: .08em; white-space: nowrap;
-  }
-  .chip.ctxland em { font-style: normal; font-weight: 600; opacity: .9; }
-  /* The terminals list is a narrow column: the number is in the tooltip there, and the name keeps a floor so the
-     badge cannot squeeze it out. A phone row has the width for the number. */
-  .term-list .chip.ctxland em { display: none; }
-  .term-list .card:has(.ctxland) .title { min-width: 6em; }
-  @media (max-width: 520px) and (pointer: coarse) { .term-list .chip.ctxland em { display: inline; } }
+  @keyframes ctxline-pulse { 0% { box-shadow: 0 0 8px 2px rgba(var(--danger-rgb),.9); } 100% { box-shadow: 0 0 0 0 rgba(var(--danger-rgb),0); } }
   .peek-bar s { position: absolute; top: -3px; bottom: -3px; width: 1px; background: var(--dim); opacity: .7; }
   .peek-scale {
     display: flex; justify-content: space-between; gap: 8px;
