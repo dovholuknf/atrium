@@ -25,6 +25,10 @@ func TestServedHideIsAPureFunctionOfTheLiveBranches(t *testing.T) {
 		{"one", []string{"fix/x"}, append(append([]string{}, base...), "!refs/heads/fix/x")},
 		{"sorted and once each", []string{"b", "a", "b"}, append(append([]string{}, base...), "!refs/heads/a", "!refs/heads/b")},
 		{"claude/main is never served", []string{"claude/main"}, base},
+		// A card working in the clone's own checkout on its default branch is not served that branch: the operator's
+		// unpushed work may be there.
+		{"the clone's own branches are never served", []string{"main", "master", "hub-main", "claude/main", "fix/x"},
+			append(append([]string{}, base...), "!refs/heads/fix/x")},
 		{"not a branch name", []string{"", "refs/stash", "refs/heads/x", "-x", "a b", "a..b", "a:b", "a*", "a/", "/a", "x.lock", "a//b", "a/.b", "@{u}", "x\ny", "!refs/heads/y", "a\"b"}, base},
 	}
 	for _, c := range cases {
@@ -203,6 +207,30 @@ func TestTheRoomsUploadPackSpeaksV0AndOffersNoFilterOrAnySha(t *testing.T) {
 		}
 		if strings.Contains(adv, cap) {
 			t.Errorf("the room offers %s: %q", cap, adv)
+		}
+	}
+}
+
+func TestACardIsMatchedToItsRepositoryOnTheFullNameWhenItRecordedOne(t *testing.T) {
+	for _, c := range []struct {
+		name, host, org, repo string
+		want                  bool
+	}{
+		{"github/o/r", "", "", "r", true},
+		{"github/o/r", "github", "o", "r", true},
+		{"github/o/r", "github.com", "O", "R", true},
+		{"o/r", "", "o", "r", true},
+		// A card that recorded no org or host matches on the folder name alone.
+		{"github/o/r", "", "", "r", true},
+		{"github/o/r", "", "", "other", false},
+		{"github/o/r", "", "x", "r", false},
+		{"github/o/r", "gitlab", "o", "r", false},
+		{"github/o/r", "github", "x", "r", false},
+		{"github/o/r", "", "", "", false},
+		{"../r", "", "", "r", false},
+	} {
+		if got := RepoMatches(c.name, c.host, c.org, c.repo); got != c.want {
+			t.Errorf("%+v = %v", c, got)
 		}
 	}
 }

@@ -20,16 +20,18 @@ import (
 //	refs/heads/claude/main     then claude/main out again: it came from the hub in the first place
 //	!refs/heads/<b>            then one per live card's branch, under the name it has on the room
 //
-// A live branch that is not a plain branch name is left out rather than written into the config, and so is
-// claude/main, which stays unserved whatever a card is on. Duplicates are written once and the order is sorted,
-// so the same set always gives the same configuration.
+// A live branch that is not a plain branch name is left out rather than written into the config. So is each of
+// the clone's own integration branches (see neverServed): a card working in the clone's checkout on `main` is
+// NOT served `main`, because that is where the operator's unpushed work may be, and the card's own work is
+// reached on a branch of its own. Duplicates are written once and the order is sorted, so the same set always
+// gives the same configuration.
 func ServedHide(live []string) []string {
 	out := []string{"HEAD", "refs", "!refs/heads/claude/", "refs/heads/claude/main"}
 	seen := map[string]bool{}
 	var add []string
 	for _, b := range live {
 		b = strings.TrimSpace(b)
-		if b == "claude/main" || !servableBranch(b) || seen[b] {
+		if neverServed[b] || !servableBranch(b) || seen[b] {
 			continue
 		}
 		seen[b] = true
@@ -40,6 +42,29 @@ func ServedHide(live []string) []string {
 		out = append(out, "!refs/heads/"+b)
 	}
 	return out
+}
+
+// neverServed is the branches a live card never makes servable: the hub's own (claude/main, and the room's copy
+// of it, hub-main) and the names a clone's default branch usually has.
+var neverServed = map[string]bool{"claude/main": true, "hub-main": true, "main": true, "master": true}
+
+// RepoMatches says whether a card's place is the repository `name` (`<host>/<owner>/<repo>`). The card's repo is
+// the folder name its work is in. Its org and host are matched as well when the card recorded them, and a card
+// that did not (the launcher did not know) matches on the folder name alone, which is looser: two repositories
+// with one folder name can then each serve a branch name of the other's card. Stage 2's scm path records the full
+// name, and a card with it is matched exactly.
+func RepoMatches(name, host, org, repo string) bool {
+	ref, err := ParseName(name)
+	if err != nil || repo == "" || !strings.EqualFold(repo, ref.Repo) {
+		return false
+	}
+	if org = strings.TrimSpace(org); org != "" && !strings.EqualFold(org, ref.Owner) {
+		return false
+	}
+	if host = strings.TrimSpace(host); host != "" && canonicalHost(host) != ref.Host {
+		return false
+	}
+	return true
 }
 
 // servableBranch says whether a card's branch name may become a hideRefs value. A name git would not take as a
