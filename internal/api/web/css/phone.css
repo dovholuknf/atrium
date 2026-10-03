@@ -505,6 +505,13 @@
     .term-list .card .card-line:has(.tname.aspath) > .chips { grid-row: 1; }
     .term-list .card .card-line:has(.tname.aspath) .tname { grid-column: 3; }
     .term-list .card .card-line > .chips .chip { max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+    /* The fold button of a parent row is a grid item like the rest. Left to auto-placement it fell to a
+       third grid row under the path and made the parent taller than a childless row. It gets a column of
+       its own at the end of the first line, and the name stops short of it. */
+    .term-list .card .card-line:has(> .tkidfold) { grid-template-columns: auto auto minmax(0, 1fr) auto auto; }
+    .term-list .card .card-line:has(> .tkidfold) .title .tname { grid-column: 3 / 5; }
+    .term-list .card .card-line:has(> .tkidfold) .title .tname.aspath { grid-column: 3; }
+    .term-list .card .card-line > .tkidfold { grid-column: 5; grid-row: 1; }
 
     /* The stack: one line for the name and the age, the path under it, chips under that. */
     .stackrow {

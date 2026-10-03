@@ -66,3 +66,16 @@ room chips (hub mode, `room~id` ids), a parent with nested children, five pinned
 1, 0.72 and 0.3, paper and graphite, at 2000px on the desktop board and 390px in a touch, mobile-viewport context
 (phone.css applies). The phone's pinned rows are NOT clipped in that layout; the clipped left edge seen when the desktop
 board was squeezed to 390px is an artefact of that squeeze, so no `u-new-phone-pinned-clipped` item is needed.
+
+## Third pass: the fold button on the phone, and the pinned heading in the shots
+
+- On the phone grid the fold button (`.tkidfold`) of a parent row was a fifth grid item with no placement, so it
+  fell to a third grid row under the path and made that row about 20px taller than a childless one at every
+  density. It now has a fifth column at the end of the first line and the name stops short of it (phone.css).
+  The real-row harness asserts, per density and skin, that a parent row is as tall as the same row without its
+  button; with the old CSS that fails on the phone, with the fix it passes at 1, 0.72 and 0.3, desktop and phone.
+- "PINNED" cut under the filter box on the desktop shots was the harness: the list kept the scrollTop an
+  earlier render left (60px at density 1, 48 at 0.72, 5 at 0.3), so the heading had scrolled up under the tray.
+  The layout itself is fine (heading top equals the list top at scrollTop 0). The harness now starts each shot
+  at the top of the list and asserts the heading is not above the list's top edge.
+- The "before" shots in real3 use the same new harness, so they differ from real2 only by the scroll reset.
