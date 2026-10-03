@@ -1,12 +1,16 @@
 package gitsync
 
 import (
+	"bufio"
 	"context"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -209,5 +213,272 @@ func TestARoomThatPredatesGitOrDoesNotAnswerIs503(t *testing.T) {
 		if rec := ask(dead, "GET", refsPath, "", "a"); rec.Code != http.StatusServiceUnavailable || strings.Contains(rec.Body.String(), "running already") {
 			t.Fatalf("attempt %d: %d %q", i, rec.Code, rec.Body)
 		}
+	}
+}
+
+// ── deadlines: a stall frees the slot, progress is never cut ──────────────────────────────────
+
+// served is the pass-through on a real listener, because the deadlines are the connection's.
+func servePass(t *testing.T, p *Pass) *httptest.Server {
+	t.Helper()
+	srv := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		p.ServeHTTP(w, r.WithContext(WithReader(r.Context(), Reader{Reach: "loopback", Key: r.Header.Get("X-Reader")})))
+	}))
+	srv.Start()
+	t.Cleanup(srv.Close)
+	return srv
+}
+
+func slots(p *Pass) int {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.running["sg3"]
+}
+
+// freed waits for the room's slot to be taken, which proves the request got there, and then to be given back.
+func freed(t *testing.T, p *Pass, what string) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for slots(p) == 0 {
+		if time.Now().After(deadline) {
+			t.Fatalf("%s: the request never took the slot", what)
+		}
+		time.Sleep(time.Millisecond)
+	}
+	gone(t, p, what)
+}
+
+// gone waits for the slot to be given back, for a test whose own answer already proves the request was holding it.
+func gone(t *testing.T, p *Pass, what string) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for slots(p) != 0 {
+		if time.Now().After(deadline) {
+			t.Fatalf("%s: the room's slot was never given back", what)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+func rawConn(t *testing.T, srv *httptest.Server) net.Conn {
+	t.Helper()
+	c, err := net.Dial("tcp", strings.TrimPrefix(srv.URL, "http://"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { c.Close() })
+	return c
+}
+
+// endless is a body that is always ready, so a reader that does not read fills every buffer between here and it.
+type endless struct{}
+
+func (endless) Read(b []byte) (int, error) { return len(b), nil }
+func (endless) Close() error               { return nil }
+
+// ctxBody sends some bytes and then blocks until the request is cancelled, like a room that went quiet mid-pack.
+type ctxBody struct {
+	ctx  context.Context
+	sent bool
+}
+
+func (c *ctxBody) Read(b []byte) (int, error) {
+	if !c.sent {
+		c.sent = true
+		return copy(b, "abc"), nil
+	}
+	<-c.ctx.Done()
+	return 0, c.ctx.Err()
+}
+func (c *ctxBody) Close() error { return nil }
+
+// ctxReader fails once its request is cancelled, as a transport's response body does.
+type ctxReader struct {
+	ctx context.Context
+	rc  io.ReadCloser
+}
+
+func (c *ctxReader) Read(b []byte) (int, error) {
+	n, err := c.rc.Read(b)
+	if cerr := c.ctx.Err(); cerr != nil {
+		return 0, cerr
+	}
+	return n, err
+}
+func (c *ctxReader) Close() error { return c.rc.Close() }
+
+func quickPass(rt http.RoundTripper) *Pass {
+	p := passFor([]RoomInfo{{Name: "sg3", Git: true}}, rt)
+	p.PerRoom = 1
+	p.FetchesPerMinute, p.RoundsPerMinute = 1000, 1000
+	p.BodyIdle, p.RoomHeaderWait, p.RoomIdle, p.WriteIdle = 300*time.Millisecond, 300*time.Millisecond, 300*time.Millisecond, 300*time.Millisecond
+	return p
+}
+
+func TestAReaderThatStopsReadingGivesTheSlotBack(t *testing.T) {
+	var normal atomic.Bool
+	p := quickPass(rtFunc(func(r *http.Request) (*http.Response, error) {
+		if normal.Load() {
+			return &http.Response{StatusCode: 200, Header: http.Header{}, Body: io.NopCloser(strings.NewReader("ok"))}, nil
+		}
+		return &http.Response{StatusCode: 200, Header: http.Header{}, Body: endless{}}, nil
+	}))
+	srv := servePass(t, p)
+	c := rawConn(t, srv)
+	if _, err := c.Write([]byte("GET " + refsPath + " HTTP/1.1\r\nHost: x\r\nX-Reader: a\r\n\r\n")); err != nil {
+		t.Fatal(err)
+	}
+	// It never reads. The slot is taken, and then it is not, though the connection is still open.
+	freed(t, p, "a reader that stopped reading")
+	// With the room's one slot free again, another reader is served.
+	normal.Store(true)
+	req, _ := http.NewRequest("GET", srv.URL+refsPath, nil)
+	req.Header.Set("X-Reader", "b")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != 200 {
+		t.Fatalf("the next fetch = %d", resp.StatusCode)
+	}
+}
+
+func TestARoomThatNeverAnswersGivesTheSlotBackAndTheReaderA504(t *testing.T) {
+	p := quickPass(rtFunc(func(r *http.Request) (*http.Response, error) {
+		<-r.Context().Done()
+		return nil, r.Context().Err()
+	}))
+	srv := servePass(t, p)
+	start := time.Now()
+	resp, err := http.Get(srv.URL + refsPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusGatewayTimeout || !strings.Contains(string(b), "sg3 did not answer in time") {
+		t.Fatalf("%d %q", resp.StatusCode, b)
+	}
+	if time.Since(start) > 3*time.Second {
+		t.Fatalf("took %v", time.Since(start))
+	}
+	gone(t, p, "a room that never answered")
+}
+
+func TestARoomThatGoesQuietMidAnswerGivesTheSlotBack(t *testing.T) {
+	p := quickPass(rtFunc(func(r *http.Request) (*http.Response, error) {
+		return &http.Response{StatusCode: 200, Header: http.Header{}, Body: &ctxBody{ctx: r.Context()}}, nil
+	}))
+	srv := servePass(t, p)
+	resp, err := http.Get(srv.URL + refsPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// What came is cut short, and the reader's git sees a broken answer.
+	_, _ = io.ReadAll(resp.Body)
+	resp.Body.Close()
+	gone(t, p, "a room that went quiet")
+}
+
+func TestABodyThatStopsGivesTheSlotBack(t *testing.T) {
+	p := quickPass(okRT("ok"))
+	srv := servePass(t, p)
+	c := rawConn(t, srv)
+	// A hundred bytes promised, ten sent, and then nothing and the connection stays open.
+	if _, err := c.Write([]byte("POST /git/room/sg3/github/o/r.git/git-upload-pack HTTP/1.1\r\nHost: x\r\n" +
+		"Content-Type: application/x-git-upload-pack-request\r\nContent-Length: 100\r\n\r\n0032want aaa")); err != nil {
+		t.Fatal(err)
+	}
+	freed(t, p, "a body that stopped")
+	// And the room's next fetch runs.
+	resp, err := http.Get(srv.URL + refsPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != 200 {
+		t.Fatalf("the next fetch = %d", resp.StatusCode)
+	}
+}
+
+// A fetch that keeps moving is not cut, though it takes far longer than any one deadline.
+func TestAFetchThatKeepsMakingProgressIsNotCut(t *testing.T) {
+	const chunks = 12
+	p := quickPass(rtFunc(func(r *http.Request) (*http.Response, error) {
+		pr, pw := io.Pipe()
+		go func() {
+			for i := 0; i < chunks; i++ {
+				time.Sleep(100 * time.Millisecond)
+				if _, err := pw.Write([]byte("0123456789")); err != nil {
+					return
+				}
+			}
+			pw.Close()
+		}()
+		// Like the real transport's body, it fails once the request's context is cancelled.
+		return &http.Response{StatusCode: 200, Header: http.Header{}, Body: &ctxReader{ctx: r.Context(), rc: pr}}, nil
+	}))
+	srv := servePass(t, p)
+	start := time.Now()
+	resp, err := http.Get(srv.URL + refsPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if err != nil || resp.StatusCode != 200 || len(b) != chunks*10 {
+		t.Fatalf("%d, %d bytes, %v", resp.StatusCode, len(b), err)
+	}
+	if time.Since(start) < 1000*time.Millisecond {
+		t.Fatalf("it was not slower than the deadlines (%v), so it proved nothing", time.Since(start))
+	}
+
+	// The same for a want list that arrives a few bytes at a time.
+	body := string(pktLine("want "+strings.Repeat("a", 40)+"\n")) + "0000" + string(pktLine("done\n"))
+	c := rawConn(t, srv)
+	head := "POST /git/room/sg3/github/o/r.git/git-upload-pack HTTP/1.1\r\nHost: x\r\n" +
+		"Content-Type: application/x-git-upload-pack-request\r\nContent-Length: " + strconv.Itoa(len(body)) + "\r\n\r\n"
+	if _, err := c.Write([]byte(head)); err != nil {
+		t.Fatal(err)
+	}
+	var sent time.Duration
+	for i := 0; i < len(body); i += 12 {
+		end := min(i+12, len(body))
+		if _, err := c.Write([]byte(body[i:end])); err != nil {
+			t.Fatal(err)
+		}
+		time.Sleep(100 * time.Millisecond)
+		sent += 100 * time.Millisecond
+	}
+	if sent < 400*time.Millisecond {
+		t.Fatalf("the body was not slower than the deadline (%v)", sent)
+	}
+	line, err := bufio.NewReader(c).ReadString('\n')
+	if err != nil || !strings.Contains(line, "200") {
+		t.Fatalf("a slow but moving body was cut: %q %v", line, err)
+	}
+}
+
+// The connection may carry the reader's next request, so a deadline that passed must not be left on it.
+func TestTheDeadlinesAreClearedWhenTheRequestEnds(t *testing.T) {
+	p := quickPass(okRT("ok"))
+	srv := servePass(t, p)
+	c := &http.Client{Transport: &http.Transport{MaxIdleConnsPerHost: 1}}
+	defer c.CloseIdleConnections()
+	body := string(pktLine("want "+strings.Repeat("a", 40)+"\n")) + "0000" + string(pktLine("done\n"))
+	for i := 0; i < 3; i++ {
+		req, _ := http.NewRequest("POST", srv.URL+"/git/room/sg3/github/o/r.git/git-upload-pack", strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/x-git-upload-pack-request")
+		resp, err := c.Do(req)
+		if err != nil {
+			t.Fatalf("request %d on the same connection: %v", i, err)
+		}
+		_, _ = io.Copy(io.Discard, resp.Body)
+		resp.Body.Close()
+		if resp.StatusCode != 200 {
+			t.Fatalf("request %d = %d", i, resp.StatusCode)
+		}
+		time.Sleep(450 * time.Millisecond) // longer than every deadline, so a stale one would have passed
 	}
 }

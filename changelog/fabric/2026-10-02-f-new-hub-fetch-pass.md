@@ -12,6 +12,16 @@ the repo and the caller's reach (loopback, overlay or zrok private). The operato
 a zrok private share may ask. A zrok public share answers 404. A card on a room asking over the link gets 404: that
 reach is stage 1's forwarder and is not served here.
 
+After review (the hub half, 131e2be6 held on M1): a pass-through now has its own deadlines, so a stall frees its slot
+instead of holding one of the room's two until the client closes. Each deadline is for one read or one write and is moved
+forward whenever bytes move, so a large fetch that keeps making progress is never cut, however long it takes in all:
+- the request body: 30 s with no byte arriving (it is a want list, at most 64 MiB);
+- the room's answer: 2 minutes to its first byte, then 60 s between reads (a room that never answers gets
+  `504 <room> did not answer in time`, and one that goes quiet mid-pack has the answer cut);
+- the reader's side: 30 s for any one write or flush to be taken, so a reader that stopped reading, or a phone that
+  dropped off a share without a FIN, gives the slot back.
+The deadlines are cleared when the request ends, because the connection may carry the reader's next request.
+
 What the room serves is now its own configuration, so a want outside it is refused by the room's git: `hide refs`
 and `HEAD`, then `claude/*` back, `claude/main` out again, then one branch per LIVE card, written on every request.
 Upload-pack runs on environment-only config with `getanyfile`, `allowFilter` and every sha-in-want setting off. Tests
@@ -19,8 +29,10 @@ fetch `refs/stash`, a `refs/notes/*` ref, an unserved branch, `claude/main` and 
 and by sha.
 
 Decisions on the review's lows (the room half, 453e754a):
-- A card working in the clone's own checkout on `main`, `master`, `hub-main` or `claude/main` is NOT served that branch:
-  the operator's unpushed work may be there, and the card's own work is reached on a branch of its own.
+- A card working in the clone's own checkout on `main`, `master`, `hub-main` or `claude/main` is NOT served that branch,
+  and nor is the clone's default branch whatever it is called: `origin/HEAD`'s branch (`develop`, `trunk`) and
+  `init.defaultBranch` are read on every fetch. The operator's unpushed work may be there, and the card's own work is
+  reached on a branch of its own.
 - A card is live by its status (running, needs-input, needs-permission), not by whether a process runs. A PARKED card
   keeps its status and keeps being served. A done, shelved, dead or backlog card is not served.
 - A card is matched to a repository by its folder name, plus its org and host when the card recorded them. A card that
@@ -29,4 +41,8 @@ Decisions on the review's lows (the room half, 453e754a):
 
 Not done: `atrium git setup` (the `insteadOf` lines) was left for its own item, because it needs the room list, the
 operator token and a prompt. The URL form works without it: `git fetch http://<hub>/git/room/sg3/<owner>/<repo>.git
-<branch>`. A fetch that reaches the room through an overlay shares one rate bucket per peer address.
+<branch>`. The rate is counted per reader: per peer address on loopback, and PER REACH on the OpenZiti service and a zrok
+share. A ziti peer has no IP (the SDK's RemoteAddr is `ziti-edge-router connId=<n>, logical=<router>`, one per
+connection, naming nobody), so keying on it would make every new connection a new reader and the rate could be walked
+around. Every reader on one overlay therefore shares one budget of 6 fetches a minute: a fairness cost, not a hole,
+since every reader there is the operator.

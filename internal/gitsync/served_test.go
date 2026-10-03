@@ -78,10 +78,10 @@ func newRoomRepo(t *testing.T) *roomRepo {
 
 	b := &Backend{
 		Resolve: func(name string) (string, bool) { return r.dir, name == "github/o/r" },
-		HideFor: func(string) []string {
+		HideFor: func(_, dir string) []string {
 			r.mu.Lock()
 			defer r.mu.Unlock()
-			return ServedHide(r.card)
+			return ServedHide(r.card, DefaultBranches(nil, dir)...)
 		},
 	}
 	r.srv = httptest.NewServer(b)
@@ -232,5 +232,43 @@ func TestACardIsMatchedToItsRepositoryOnTheFullNameWhenItRecordedOne(t *testing.
 		if got := RepoMatches(c.name, c.host, c.org, c.repo); got != c.want {
 			t.Errorf("%+v = %v", c, got)
 		}
+	}
+}
+
+func TestAClonesDefaultBranchWhateverItIsCalledIsNeverServedToALiveCard(t *testing.T) {
+	// The pure half.
+	got := ServedHide([]string{"develop", "trunk", "fix/x"}, "develop", "trunk")
+	want := []string{"HEAD", "refs", "!refs/heads/claude/", "refs/heads/claude/main", "!refs/heads/fix/x"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("got %q want %q", got, want)
+	}
+
+	// Through a real clone: origin/HEAD points at develop, and init.defaultBranch is trunk.
+	r := newRoomRepo(t)
+	work := filepath.Dir(r.dir)
+	git(t, work, "branch", "develop", "claude/main")
+	git(t, work, "branch", "trunk", "claude/main")
+	r.setLive("develop", "trunk", "fix/live")
+	// Neither is a default yet, so a card on either would be served: this is what the test is about.
+	got2 := r.advertised(t)
+	if got2["refs/heads/develop"] == "" || got2["refs/heads/trunk"] == "" {
+		t.Fatalf("a live card on develop and trunk is served until they are the defaults: %v", got2)
+	}
+	git(t, work, "update-ref", "refs/remotes/origin/develop", "claude/main")
+	git(t, work, "symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/develop")
+	got2 = r.advertised(t)
+	if _, ok := got2["refs/heads/develop"]; ok {
+		t.Fatalf("origin/HEAD's branch is served: %v", got2)
+	}
+	if got2["refs/heads/trunk"] == "" {
+		t.Fatalf("trunk went with it: %v", got2)
+	}
+	git(t, work, "config", "init.defaultBranch", "trunk")
+	got2 = r.advertised(t)
+	if _, ok := got2["refs/heads/trunk"]; ok {
+		t.Fatalf("init.defaultBranch's branch is served: %v", got2)
+	}
+	if got2["refs/heads/fix/live"] != r.live {
+		t.Fatalf("the card's own branch stopped being served: %v", got2)
 	}
 }

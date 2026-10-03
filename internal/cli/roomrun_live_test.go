@@ -39,3 +39,19 @@ func TestSelectLiveServesRunningAndWaitingAndParkedCardsAndNoOthers(t *testing.T
 		t.Fatalf("got %q want %q", got, want)
 	}
 }
+
+// The same org and repository on two hosts are two repositories: a card is served only on the clone whose host it
+// recorded (a card that recorded none is the folder-name case, and matches both).
+func TestSelectLiveMatchesTheHostAsWellAsTheOrgAndRepo(t *testing.T) {
+	tasks := []*store.Task{
+		{Status: store.StatusRunning, Repo: "r", Org: "o", Host: "github.com", Branch: "fix/gh"},
+		{Status: store.StatusRunning, Repo: "r", Org: "o", Host: "gitlab.com", Branch: "fix/gl"},
+		{Status: store.StatusRunning, Repo: "r", Org: "o", Branch: "fix/nohost"},
+	}
+	if got, want := selectLive("github/o/r", tasks), []string{"fix/gh", "fix/nohost"}; !reflect.DeepEqual(got, want) {
+		t.Errorf("github: got %q want %q", got, want)
+	}
+	if got, want := selectLive("gitlab.com/o/r", tasks), []string{"fix/gl", "fix/nohost"}; !reflect.DeepEqual(got, want) {
+		t.Errorf("gitlab: got %q want %q", got, want)
+	}
+}

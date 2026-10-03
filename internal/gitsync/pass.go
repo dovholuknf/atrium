@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -43,6 +44,22 @@ const (
 	passPerRoom          = 2
 )
 
+// THE DEADLINES, because a slot is held for as long as the request is open and the board's listeners set no
+// read, write or idle timeout of their own (only ReadHeaderTimeout). A reader that stalls, a room that stalls and a
+// body that stalls would each hold one of a room's two slots until the client closed, and a phone that drops off a
+// share without a FIN would hold it until TCP gave up. Each deadline is for ONE read or ONE write, moved forward every
+// time bytes move, so a large fetch that keeps making progress is never cut, however long it takes in all:
+//
+//	the request body     30 s with no byte arriving (a want list, at most 64 MiB)
+//	the room's answer    2 min to its first byte (upload-pack may count objects first), then 60 s between reads
+//	the reader's side    30 s for any one write or flush to be taken
+const (
+	passBodyIdle       = 30 * time.Second
+	passRoomHeaderWait = 2 * time.Minute
+	passRoomIdle       = 60 * time.Second
+	passWriteIdle      = 30 * time.Second
+)
+
 // Reader is who is on the other end of a pass-through, as the listener knows it.
 type Reader struct {
 	// Reach names how the request arrived: `loopback`, `overlay` or `zrok-private`. It is the listener's mark.
@@ -71,6 +88,8 @@ type Pass struct {
 	Now func() time.Time
 	// FetchesPerMinute, RoundsPerMinute and PerRoom override the limits above when above zero. A test sets them.
 	FetchesPerMinute, RoundsPerMinute, PerRoom int
+	// BodyIdle, RoomHeaderWait, RoomIdle and WriteIdle override the deadlines above when above zero. A test sets them.
+	BodyIdle, RoomHeaderWait, RoomIdle, WriteIdle time.Duration
 
 	mu      sync.Mutex
 	fetches map[string][]time.Time
@@ -88,6 +107,29 @@ func (h *Hub) PassHandler() *Pass {
 	}
 	return h.pass
 }
+
+func dur(v, def time.Duration) time.Duration {
+	if v > 0 {
+		return v
+	}
+	return def
+}
+
+// idleReader is a body whose read deadline is moved forward before every read, so it is bounded by a stall and not
+// by its length.
+type idleReader struct {
+	rc   *http.ResponseController
+	body io.ReadCloser
+	idle time.Duration
+}
+
+func (i *idleReader) Read(b []byte) (int, error) {
+	// An error is a writer that has no deadlines (a test's recorder), and then there is nothing to move.
+	_ = i.rc.SetReadDeadline(time.Now().Add(i.idle))
+	return i.body.Read(b)
+}
+
+func (i *idleReader) Close() error { return i.body.Close() }
 
 func (p *Pass) now() time.Time {
 	if p.Now != nil {
@@ -165,6 +207,16 @@ func (p *Pass) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	room = info.Name
 
+	// The deadlines are cleared on the way out: the connection may carry the reader's next request, and a deadline
+	// that had passed would break it.
+	rc := http.NewResponseController(w)
+	writeIdle := dur(p.WriteIdle, passWriteIdle)
+	_ = rc.SetWriteDeadline(time.Now().Add(writeIdle))
+	defer func() {
+		_ = rc.SetReadDeadline(time.Time{})
+		_ = rc.SetWriteDeadline(time.Time{})
+	}()
+
 	release, why := p.admit(room, reader.Key, tail == "info/refs")
 	if release == nil {
 		w.Header().Set("Retry-After", "10")
@@ -181,6 +233,7 @@ func (p *Pass) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	var body io.Reader
 	if tail == "git-upload-pack" {
+		r.Body = &idleReader{rc: rc, body: r.Body, idle: dur(p.BodyIdle, passBodyIdle)}
 		raw, err := readBody(r, maxRequest)
 		if err != nil {
 			if err == errTooBig {
@@ -202,10 +255,20 @@ func (p *Pass) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		body = bytes.NewReader(raw)
+		_ = rc.SetReadDeadline(time.Time{})
 	} else {
 		p.h.audit(room, "git-passed", name+" via "+reader.Reach)
 	}
-	out, err := http.NewRequestWithContext(r.Context(), r.Method, target, body)
+	// THE ROOM'S SIDE has a watchdog: it cancels the request to the room when the room has said nothing for too long,
+	// and is moved forward whenever bytes arrive.
+	ctx, cancel := context.WithCancel(r.Context())
+	defer cancel()
+	var stalled atomic.Bool
+	roomIdle := dur(p.RoomIdle, passRoomIdle)
+	watchdog := time.AfterFunc(dur(p.RoomHeaderWait, passRoomHeaderWait), func() { stalled.Store(true); cancel() })
+	defer watchdog.Stop()
+
+	out, err := http.NewRequestWithContext(ctx, r.Method, target, body)
 	if err != nil {
 		http.Error(w, "that is not a request the hub can pass on", http.StatusBadRequest)
 		return
@@ -217,6 +280,11 @@ func (p *Pass) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	resp, err := p.h.Rooms.Transport(room).RoundTrip(out)
 	if err != nil {
+		_ = rc.SetWriteDeadline(time.Now().Add(writeIdle))
+		if stalled.Load() {
+			http.Error(w, room+" did not answer in time", http.StatusGatewayTimeout)
+			return
+		}
 		http.Error(w, room+" is not connected", http.StatusServiceUnavailable)
 		return
 	}
@@ -226,17 +294,20 @@ func (p *Pass) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set(k, v)
 		}
 	}
+	_ = rc.SetWriteDeadline(time.Now().Add(writeIdle))
 	w.WriteHeader(resp.StatusCode)
-	fl, _ := w.(http.Flusher)
 	buf := make([]byte, 32<<10)
 	for {
+		watchdog.Reset(roomIdle)
 		n, err := resp.Body.Read(buf)
 		if n > 0 {
+			// A write that is not taken in time ends the request: a reader that stopped reading holds nothing.
+			_ = rc.SetWriteDeadline(time.Now().Add(writeIdle))
 			if _, werr := w.Write(buf[:n]); werr != nil {
 				return
 			}
-			if fl != nil {
-				fl.Flush()
+			if ferr := rc.Flush(); ferr != nil && ferr != http.ErrNotSupported {
+				return
 			}
 		}
 		if err != nil {

@@ -413,3 +413,35 @@ func TestSevenFetchesInAMinuteFromOneReaderAreTooMany(t *testing.T) {
 		t.Fatalf("answers: %v, want six 200 and two 429", codes)
 	}
 }
+
+// A ziti service's peers have no IP: RemoteAddr is one string per connection. They share one budget, so opening a new
+// connection is not a new reader.
+func TestReadersWithNoAddressShareTheReachsBudgetAndPeersWithOneDoNot(t *testing.T) {
+	if got := readerKey("overlay", "ziti-edge-router connId=7, logical=er1"); got != "overlay" {
+		t.Errorf("a ziti peer is keyed %q", got)
+	}
+	if readerKey("overlay", "ziti-edge-router connId=7, logical=er1") != readerKey("overlay", "ziti-edge-router connId=8, logical=er2") {
+		t.Error("two connections of the overlay are two readers")
+	}
+	if a, b := readerKey("loopback", "127.0.0.1:5555"), readerKey("loopback", "127.0.0.1:6666"); a != b || a != "loopback:127.0.0.1" {
+		t.Errorf("one address on two ports: %q %q", a, b)
+	}
+	if readerKey("zrok-private", "192.0.2.7:1") == readerKey("zrok-private", "192.0.2.8:1") {
+		t.Error("two addresses are one reader")
+	}
+
+	x := newPassRig(t)
+	x.g.PassHandler().FetchesPerMinute = 0
+	overlay := edge.MarkReach(x.proxy, edge.ReachOverlay)
+	codes := map[int]int{}
+	for i := 0; i < 8; i++ {
+		req := httptest.NewRequest("GET", "http://atrium.ziti/git/room/sg3/github/o/r.git/info/refs?service=git-upload-pack", nil)
+		req.RemoteAddr = fmt.Sprintf("ziti-edge-router connId=%d, logical=er1", i)
+		rec := httptest.NewRecorder()
+		overlay.ServeHTTP(rec, req)
+		codes[rec.Code]++
+	}
+	if codes[200] != 6 || codes[http.StatusTooManyRequests] != 2 {
+		t.Fatalf("eight connections of the overlay: %v, want six 200 and two 429", codes)
+	}
+}
