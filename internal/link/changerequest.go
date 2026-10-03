@@ -1,7 +1,6 @@
 package link
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -255,7 +254,7 @@ func (p *Proxy) crList(w http.ResponseWriter, r *http.Request, cr *changeRequest
 	case hubstore.CRMerged, hubstore.CRWithdrawn:
 		f.State = s
 	default:
-		crFail(w, http.StatusBadRequest, "state is open, closed or all")
+		crFail(w, http.StatusBadRequest, "state is open, closed, merged, withdrawn or all")
 		return
 	}
 	if repo := q.Get("repo"); repo != "" {
@@ -428,7 +427,7 @@ func (p *Proxy) crCreate(w http.ResponseWriter, r *http.Request, cr *changeReque
 		crJSON(w, http.StatusConflict, c)
 		return
 	}
-	p.RecordAudit("", "change-request-create", c.ID)
+	p.RecordAudit(actor.room, "change-request-create", c.ID)
 	p.crAnnounce(c, actor, true)
 	crJSON(w, http.StatusCreated, c)
 }
@@ -536,11 +535,11 @@ func (p *Proxy) crDo(w http.ResponseWriter, r *http.Request, cr *changeRequests,
 	case errors.Is(err, hubstore.ErrCRNotFound):
 		crFail(w, http.StatusNotFound, "no change request has that id")
 		return
-	case errors.Is(err, hubstore.ErrCRNotFound) || err != nil:
+	case err != nil:
 		crFail(w, http.StatusServiceUnavailable, "could not record that: "+err.Error())
 		return
 	}
-	p.RecordAudit("", "change-request-"+in.Do, end.ID)
+	p.RecordAudit(actor.room, "change-request-"+in.Do, end.ID)
 	p.crAnnounce(end, actor, false)
 	crJSON(w, http.StatusOK, end)
 }
@@ -648,7 +647,11 @@ func (p *Proxy) crOwner(ctx context.Context, g *gitsync.Hub, repo, room, branch 
 		return hubstore.CRParty{}
 	}
 	// A card's worktree is named for its branch: claude/f-x is the card in .../f-x.
-	tail := strings.ReplaceAll(strings.TrimPrefix(branch, "claude/"), "/", "-")
+	// A branch with another slash in it (claude/f/x) is no folder's name, and is not folded into one (f-x).
+	tail := strings.TrimPrefix(branch, "claude/")
+	if strings.Contains(tail, "/") {
+		return hubstore.CRParty{}
+	}
 	var found []string
 	for _, t := range body.Tasks {
 		switch t.Status {
@@ -724,5 +727,3 @@ func firstOf(s ...string) string {
 	}
 	return ""
 }
-
-var _ = bytes.MinRead

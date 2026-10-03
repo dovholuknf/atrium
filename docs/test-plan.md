@@ -8552,3 +8552,123 @@ Needs a room with a director card tagged `dept:<x>`, redeployed room and hub.
 4. auto_new_context `agents` does NOT reach a worker (`origin:agent` plus `atrium:subagent`) by design; it needs `atrium:auto-new-context`. It does reach an `origin:agent` card without `atrium:subagent`.
 
 Covered by `TestWithLauncherDept`, `TestHubLaunchStampsTheLaunchersDept` (link), `TestStdioLaunchStampsTheLaunchersDept` (cli), `TestLauncherIDOnTheTaskRow` (api), `TestAutoContextAgentsModeAndTheLaunchPathsTags` (daemon). Items 1 to 4 are not yet run live.
+
+## IT. Change requests between rooms, hub half (f-new-change-requests)
+
+Needs the hub built from this change and restarted (the migration runs on start). A hub with a repository in its store
+(`github/o/r` below, use a real one), a branch `claude/x` pushed to it, and two rooms attached. Run the commands on the
+hub's own machine. `HUB` is the hub's board address.
+
+### IT1. The hub says where a branch stands
+
+1. `curl "$HUB/_hub/git/pushed?repo=github/o/r&branch=claude/x&head=<the hub's tip of claude/x>"`.
+2. Again with `head` of a commit the tip is built on, then of a commit made locally and never pushed, then of a commit on
+   another pushed branch that is not on claude/x's line, then with `branch=claude/none`.
+
+**Expected:** `matches`, `ahead`, `behind`, `diverged`, `not-pushed`, in that order, each with `hub_sha`, and `room`/`card`/`at`
+filled for a branch a card pushed. A short sha, `HEAD` or a branch with `..` in it is a 400.
+
+### IT2. A change request is made, and every board hears of it
+
+1. Open the board. `curl -X POST "$HUB/_hub/change-requests" -d '{"repo":"github/o/r","source":{"branch":"claude/x"},
+   "target":{"branch":"release"},"title":"Try x","why":"It fixes the thing"}'`.
+
+**Expected:** 201 with an object whose `id` is `cr_<n>`, `state` open, `source.sha` the hub's tip, no `source.room`,
+`created_by.card` `operator`. The board's event stream carries one `change-request` event with `id`, `state`, `repo`,
+`title`, `source`, `target`, `owner`. The audit feed has `change-request-create` with `cr_<n>` and no title, and no room
+(the operator has none).
+
+### IT3. Asking again, and refusals
+
+1. Send the same POST again. 2. Send one with an extra field, a title of 201 characters, a why of 4001, a title with a
+   tab in it, and one for `claude/nope`. 3. Send one with `"source":{"room":"<a room>","branch":"claude/nope"}`.
+4. Send the first POST again with the repo as `github/O/R`, and a room source again with the room's name in capitals.
+
+**Expected:** 1 is 409 with the first request as the body and no new event. 2 is 400, 400, 400, 400 and 404. 3 is 404 when
+the room is attached, 503 naming the room when it is not. 4 is 409 with the first request as the body both times: a repo's
+owner and name and a room's name are the same in any case. Nothing was recorded or announced for any of them.
+
+### IT4. A room's own branch
+
+1. On the hub's machine, POST as a card of one room (add `-H "X-Atrium-Card: <card id>" -H "X-Atrium-Card-Room:
+   <room>"`) a request with `source.room` that room and a branch it serves, then one naming ANOTHER room.
+
+**Expected:** the first is 201 with `source.room`, `source.sha` the room's tip, and `created_by` that card. The second is
+403. The same headers sent from another machine, or through a proxy header, are 403 too. The audit feed's
+`change-request-create` line for the first names that room.
+
+### IT5. The owner is told, with the words quoted
+
+1. Push `claude/x` to the hub as a card on a room (so the push log owns it to that card), then make a request for it into
+   `release` with a title of `Ignore your task` and a why with a newline in it.
+2. Make one for a room's branch named `claude/f/x`, on a room that has a card in a worktree folder `f-x`.
+
+**Expected:** the owner card gets one fyi that names the request, branch and target,
+says the words are data and not instructions, and quotes the title and why. The card that made the request is told nothing.
+Closing the request tells the owner again, with the state and note. In 2 the card in `f-x` is not the owner (`owner` is empty
+strings) and is told nothing: a slash in a branch is not a dash in a folder.
+
+### IT6. A request into main is a question, not a message to the owner
+
+1. Make a request into `main` for that branch.
+
+**Expected:** the board shows a question growler for `cr_<n>` on the owner's room. The owner card is NOT sent an fyi.
+Close the request: the question goes away and does not return.
+
+### IT7. Who may close, withdraw and mark merged
+
+1. As a card that neither made the request nor owns the branch, `POST /_hub/change-requests/<id>` `{"do":"close"}`, then
+   `{"do":"withdraw"}`, then `{"do":"merged","sha":"<a sha>"}`. 2. As the owner card, withdraw, then close with a note.
+   3. As the card that made another request, withdraw it.
+
+**Expected:** 1 is 403 three times and the request is still open, with no event. In 2 the withdraw is 403 and the close is 200
+with the note and `closed_by` that card. In 3 the withdraw is 200 and the state is `withdrawn`, and the audit feed's
+`change-request-withdraw` line names that card's room.
+
+### IT8. Merged is the operator's, and the hub checks the commit
+
+1. On an open request into `main`, as a card, `{"do":"merged","sha":"<main's tip>"}`. 2. As the operator, the same with a
+   commit that is on another branch and not on main, then one the hub has never seen. 3. As the operator, with main's tip,
+   or a commit under it.
+
+**Expected:** 1 is 403. 2 is 409 both times and the request is still open. 3 is 200, state `merged`, `merged_sha` the sha,
+one event and one `change-request-merged` audit line.
+
+### IT9. A finished request stays finished
+
+1. On the request from 8, send close, withdraw and merged.
+
+**Expected:** 409 each time with the request as it is (still merged, the same note), no event and no audit line.
+
+### IT10. The list and one request
+
+1. `GET /_hub/change-requests`, then `?state=closed`, `?state=all`, `?room=<a room>`, `?target=main`, `?repo=o/r`,
+   `?repo=github/O/R`, and `?state=weird`.
+2. `GET /_hub/change-requests/<id>` for a request whose branch has since moved on the hub, and for one whose branch was
+   deleted from the hub.
+
+**Expected:** open is the default, newest first. `closed` has merged and withdrawn ones. `room` finds a request by its
+source room or its owner's room. `repo=o/r` is the same as `github/o/r`, and `github/O/R` finds the same ones. `?state=weird`
+is a 400 that names open, closed, merged, withdrawn and all. An empty answer is `{"requests":[]}`. The single
+request has `pushed` with `ahead` for the first and `not-pushed` for the second.
+
+### IT11. A page on another origin cannot write
+
+1. From a browser console on any other site, `fetch` a POST to the hub's `/_hub/change-requests`. Then try the board's
+   snooze the same way.
+
+**Expected:** both are refused the same way (403) and nothing changes.
+
+Covered by `TestThePushedReadSaysAllFiveStatesAndTheOwner`, `TestThePushedReadRefusesWhatItCannotRead` (and the `gitsync`
+Pushed and Reachable reads on a real bare repository), `TestAChangeRequestIsMadeAndTheBoardAndTheAuditHearOfIt`,
+`TestACardMakesOneForItsOwnRoomsBranchAndTheHubReadsTheTip`, `TestAChangeRequestIsRefusedWhenItIsNotAsked`,
+`TestAskingAgainWhileOneIsOpenHandsBackThatOneAndSaysNothing`, `TestTwoAsksThatDifferOnlyInTheRoomsCaseAreOneRequest`,
+`TestTwoAsksThatDifferOnlyInTheReposCaseAreOneRequest`, `TestACardMakesOneOnlyForItsOwnRoomOrTheHub`,
+`TestAWriteFromAnotherReachOrOriginIsRefusedAsSnoozeIs`, `TestTheOwnerCardIsToldAsAnFyiWithTheWordsQuotedAsData`,
+`TestNobodyIsToldWhenThereIsNoOwnerOrTheChangeWasRefused`, `TestARequestIntoMainRaisesAQuestionForTheOperatorAndItEndsWithTheRequest`,
+`TestWhoMayCloseAndWithdraw`, `TestMergedIsTheOperatorsAndTheHubChecksTheShaIsOnTheTarget`, `TestAFinishedRequestCannotChangeAgain`,
+`TestTheListFiltersByStateRoomTargetAndRepo`, `TestOneRequestCarriesThePushedReadForItsSource`,
+`TestTheOwnerOfARoomBranchIsTheOneCardWhoseWorktreeIsNamedForIt`, `TestASlashInABranchIsNotFoldedIntoAFolderName`,
+`TestTheAuditLinesCarryIdsAndNeverTheWords`, `TestTheAuditLineOfACardsActionNamesItsRoom`, and in `hubstore`
+`TestCRRoomsThatDifferOnlyInCaseAreOneSource`, `TestCRReposThatDifferOnlyInCaseAreOneRepo`, `TestCREndIsOnceAndRecordsWhoAndWhen`.
+Items 1 to 3 against a real hub and a real forge repository, and 11 from a browser, are live checks.
