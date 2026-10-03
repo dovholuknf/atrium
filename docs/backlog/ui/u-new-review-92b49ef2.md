@@ -121,3 +121,24 @@ Fix, in `css/terminal.css`: `.term-list .card { padding-bottom: max(var(--row-y-
 `--uiscale`, that runs the same text and chip clash walk.
 
 Atrium-Verdict: hold 92ed8faa..6dcb0723
+
+## Re-read: 5a0c33f2 (M1 closed)
+
+Range `92ed8faa..5a0c33f2`. `ba3cf9fa` is the M1 fix: `.term-list .card { padding-bottom: max(var(--row-y-xs),
+5px); }`, with a comment saying why. `5a0c33f2` changes only the shot harness and the item doc.
+
+Verdict: **OK** for room and hub.
+
+- **M1 is closed.** The 4px bar now always has at least 5px of padding, at any density or `--uiscale`. The phone (5px)
+  and `mini` (6px) rules were already fixed values.
+- **The test.** `ctxLine` redraws at density 0.3 and 0.5, at uiscale 0.6, and at 0.3 with 0.6, and runs the clash
+  walk each time. Per @ui, removing the `max` fails it, and so does running it against 6dcb0723. `node --check`
+  passes. Per the standing note, I read the board units and did not run them.
+- **The PNGs** are in `/tmp/u-row-flood/real2/` on m1mini, from the live task copy. I looked at three:
+  - `after-2000-paper-density0.3.png`: the bar is clear under every path line.
+  - `before-bar-6dcb0723-2000-paper-density0.3.png`: the bar touches the path line, which is the bug.
+  - `after-phone390-graphite-density0.72.png`: fine, with room chips and nested rows.
+- It merges cleanly onto landing 1c2997c6.
+
+Atrium-Verdict: room-ok 92ed8faa..5a0c33f2
+Atrium-Verdict: hub-ok 92ed8faa..5a0c33f2
