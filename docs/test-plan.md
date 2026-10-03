@@ -8472,3 +8472,15 @@ Covered by `TestInACardEnvGitPushHubLandsWithTheCardInThePushLog`, `TestAProcess
 `TestAHubRemotePointingElsewhereIsLeftAloneAndAtriumHubIsAdded`, `TestEnsureRemotesAddsHubFollowsAPortChangeAndGuardsOriginOnAtriumMadeClones`,
 `TestACardThatRunsOutsideCodeGetsNoGitTokenInItsEnv`, `TestAPRRunnersCommandsAndForksHaveNoGitTokenInTheirEnv`,
 `TestACardsLaunchEnvCarriesItsGitTokenScopedToTheForwarder`, `TestGitPushSetting`. Items 1 and 2 live on m1mini against the hub.
+
+## @LETTER@. A stdio launch has a launcher (r-stdio-launch-lineage)
+
+Needs a room and a session whose MCP is the stdio `atrium control` (a room-local session, not through the hub), with `ATRIUM_AGENT_NAME` set.
+
+1. From that session call `atrium_launch` with a `cwd` and a `prompt`. The new card's tags include `origin:agent` and `atrium:subagent`, its launcher (`spawned_by`) is the caller's name, and the prompt it was started with ends "When you finish, get blocked, or need an answer, call atrium_report ...".
+2. The worker calls `atrium_report`: the launcher is told, and the card is not shown as "report waiting" with nobody told.
+3. Launch with `tags: ["atrium:director"]`: no `atrium:subagent` tag.
+4. Run the same MCP by hand with `ATRIUM_AGENT_NAME` unset and launch: it starts, and the card's launcher is empty, not a blank name.
+
+Covered by `TestAStdioLaunch*` and `TestAHandRunStdioLaunch*` (cli). Items 1 to 4 are not yet run live.
+
