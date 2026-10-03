@@ -123,3 +123,107 @@ Add a test with a reader that stalls and a room that stalls. Each should show th
 Atrium-Verdict: hold 3212e158..131e2be6
 Quality: a careful pass-through. Every refusal fires before the room sees a byte, the hide holds under v2 and gzip, and
 the tests catch nearly every mutant. Only the missing deadlines keep it from landing. m1mini commits are unsigned.
+
+## Re-read: 156fcd2c
+
+The range is `3212e158..156fcd2c`: one new commit on top of 131e2be6, with no amend. It merges onto landing 8bfdcdb1
+cleanly (the only auto-merge is `internal/cli/roomrun.go`), and the merged tree builds and vets.
+
+Verdict: **hub-ok**. M1 and L1 to L3 are closed. The notes below can follow.
+
+### How it was checked
+
+- I read the code diff (`pass.go`, `served.go`, `backend.go`, `room.go`, `git_store.go`), the new tests and the
+  changelog and test-plan text.
+- Gates, with `ATRIUM_LOCATION` and `ATRIUM_DEBUG_INPUTLAG` unset:
+  - gitsync, link (the hub side) and cli pass;
+  - vet is clean;
+  - gofmt flags only the known `fyi_test.go` and `cmd/ptyhost-spike/pipe_windows.go`, and this branch changes
+    neither.
+- Twelve mutants of my own, beyond @fabric's 13:
+
+| Mutant | Result |
+|---|---|
+| The write deadline is not moved forward on each write | caught (`TestAFetchThatKeepsMakingProgressIsNotCut`) |
+| No `idleReader` on the body | caught (`TestABodyThatStopsGivesTheSlotBack`) |
+| A stalled room answers 503, not 504 | caught (`TestARoomThatNeverAnswers...A504`) |
+| The room's first-byte wait multiplied by 1000 | caught, after 300 s |
+| The room's idle reset multiplied by 1000 | **passes after 300 s** (N2) |
+| A Flush error is ignored | survives: equivalent, since the next Write fails |
+| No write deadline before `admit` | survives (N3) |
+| `readerKey` per connection, as before | caught (`TestReadersWithNoAddress...`) |
+| `readerKey` always per reach | caught (same test) |
+| Defaults ignored in `ServedHide` | caught |
+| `origin/HEAD` read as `HEAD` | caught |
+| `init.defaultBranch` not read | not run (the build failed). Read instead: the test sets `init.defaultBranch` to trunk and asserts trunk is hidden. |
+
+### M1: closed
+
+- **Each deadline covers one read or one write, and moves forward on progress.**
+  - The body's read deadline is set before every `Read` (30 s), and cleared once the body is read.
+  - The room has a watchdog that cancels the room request's context: 2 min to the first byte, then reset to 60 s
+    before every `Read`.
+  - The reader's write deadline is set before `WriteHeader` and before every `Write` (30 s). A Flush error ends the
+    request.
+- **Each stall gives the slot back, and each has a test:**
+  - a reader that stops reading;
+  - a room that never answers, which gives the reader a 504 `<room> did not answer in time`;
+  - a room that goes quiet mid-answer;
+  - a body that stops.
+- **A slow but moving fetch is not cut,** and there is a test for it.
+- **The deadlines are cleared on the way out,** in a defer, and there is a test. Go 1.26 clears them too, so the
+  mutant that drops the clear is equivalent, as @fabric said.
+- **The numbers in the changelog** (30 s, 2 min, 60 s, 30 s) match the constants. Test-plan 5a and 5b describe the
+  checks on the real machines.
+
+### L1 to L3: closed
+
+- **L1.** `selectLive` is tested with the same org and repo on github.com and gitlab.com, and only the clone whose
+  host matches is served.
+- **L2.** `DefaultBranches` reads `origin/HEAD` and `init.defaultBranch` on every request, through `HideFor(name,
+  gitDir)`. Each git command has a 5 s timeout, and `neverServed` still holds if a read fails. The test covers develop
+  through `origin/HEAD` and trunk through `init.defaultBranch`.
+  - `git config --get` also reads the operator's global `init.defaultBranch`. That only ever hides more, which is the
+    safe direction.
+- **L3.** I agree with @fabric's finding. The ziti `RemoteAddr` is per connection and names nobody. The old code
+  failed `SplitHostPort` and keyed on the whole string, so every connection was a new reader and the rate did nothing
+  on the overlays.
+  - Now any address that is not an IP counts as the whole reach.
+  - The code, the test plan and a test all say so.
+
+### The shared budget (@fabric's question)
+
+There are two separate limits:
+- **The rate.** A sliding one-minute window per reader key: 6 info/refs and 60 rounds. A refused request is not
+  counted.
+- **The concurrency cap.** 2 running requests per room, across every reader and every reach. This cap was already
+  shared by everyone before this change.
+
+One reader on the overlay or a zrok private share can use all 6 fetches a minute for that reach. Another reader on the
+same reach then gets `429 that is 6 fetches a minute from one reader. wait a little`, with `Retry-After: 10`, until the
+oldest fetch leaves the window, which is at most a minute. Loopback readers and other reaches are not affected.
+
+That is not worse than before:
+- Before, the overlays had no working rate at all, so one reader could open fetches without limit. The lockout that
+  mattered then was the 2-slot room cap, and a stalled reader held a slot until TCP gave up.
+- Now a stalled reader frees its slot within 30 s, a stalled body within 30 s, and a stalled room within 60 s, or 2 min
+  before the first byte.
+- So the worst case now is a minute without new fetches on one reach, or a 30 s wait behind a stall. Before, it was
+  every fetch from that room blocked for as long as TCP took to give up.
+- Every reader on those reaches is the operator, so this is a fairness cost, not a security one, as the comment says.
+
+### Notes (not holds)
+
+- **N1: a trickle still holds a slot.** A reader that reads a little every few seconds, or a body that sends a byte
+  every 29 s (up to 64 MiB), is "progress", so it keeps the slot as long as it likes. That is the price of never
+  cutting a slow fetch, and it is fine for operator-only reaches. If the slots ever need to be fair between readers,
+  give the body (a want list) a total time, such as 2 min, as well as the idle one.
+- **N2: the quiet-room test has no bound of its own.** `io.ReadAll` waits until the watchdog fires. So a watchdog
+  that resets to something far longer than `RoomIdle` still passes, just slowly: 300 s in my mutant. Give the test
+  client a timeout a little above the test's `RoomIdle`.
+- **N3: no test covers the write deadline set before `admit`.** It covers the 429, 400 and 503 bodies to a reader that
+  does not read. Those bodies are small, so this is low.
+
+Atrium-Verdict: hub-ok 3212e158..156fcd2c
+Quality: a careful fix. Every deadline moves with progress and every stall has its own test. The ziti `RemoteAddr`
+finding turned a guess into the right key.
