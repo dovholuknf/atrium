@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"strings"
+	"unicode"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -31,6 +32,10 @@ import (
 
 // auditErrMax bounds the outcome a failed call writes.
 const auditErrMax = 200
+
+// auditWhatMax bounds the "what" of a line, which carries caller text such as an
+// alias or a branch name.
+const auditWhatMax = 200
 
 // refusedError is a call turned away by a rule rather than one that failed, such
 // as the launch cap. The audit line says `refused:` for it, which is the line
@@ -71,7 +76,22 @@ func auditDetail(req *mcp.CallToolRequest, what string, err error) string {
 	if r := roomOf(req); r != "" {
 		by += "@" + r
 	}
-	return "by " + by + " (claimed): " + what + ", " + auditOutcome(err)
+	return "by " + by + " (claimed): " + auditWhat(what) + ", " + auditOutcome(err)
+}
+
+// auditWhat strips control characters from what, so caller text cannot start a
+// second line, and cuts it to auditWhatMax characters.
+func auditWhat(what string) string {
+	what = strings.Map(func(r rune) rune {
+		if unicode.IsControl(r) {
+			return -1
+		}
+		return r
+	}, what)
+	if r := []rune(what); len(r) > auditWhatMax {
+		what = string(r[:auditWhatMax])
+	}
+	return what
 }
 
 // auditOutcome is `ok`, `refused: <why>` or the error's first line, cut to

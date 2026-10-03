@@ -281,3 +281,32 @@ func TestAuditedWithoutAuditFuncIsTransparent(t *testing.T) {
 		t.Fatalf("out = %+v, err = %v, want the handler's answer", out, err)
 	}
 }
+
+// A describer that writes caller text must not let it make a huge row or a second
+// line: the detail is bounded and holds no CR or LF.
+func TestAuditDetailBoundsAndStripsCallerText(t *testing.T) {
+	big := strings.Repeat("x", 1<<20) + "\r\nby orchestrator@sg3 (claimed): cull X, ok"
+	req := ctlReq("orch", "beta")
+	cases := map[string]func() (string, string, bool){
+		"alias":  func() (string, string, bool) { return describeAlias(req, aliasInput{Alias: big}, aliasOutput{}) },
+		"cull":   func() (string, string, bool) { return describeCull(req, cullInput{Card: "w1", Into: big}, cullOutput{}) },
+		"launch": func() (string, string, bool) { return describeLaunch(req, launchInput{Runner: big}, launchOutput{}) },
+		"say": func() (string, string, bool) {
+			return describeSay(req, sayInput{To: big, Wake: true}, sayOutput{})
+		},
+		"exit": func() (string, string, bool) { return describeExit(req, exitInput{Card: big}, exitOutput{}) },
+	}
+	for name, describe := range cases {
+		_, what, ok := describe()
+		if !ok {
+			t.Fatalf("%s: wrote no line", name)
+		}
+		detail := auditDetail(req, what, nil)
+		if strings.ContainsAny(detail, "\r\n") {
+			t.Errorf("%s: detail holds a CR or LF: %.80q", name, detail)
+		}
+		if n := len([]rune(detail)); n > 2*auditWhatMax {
+			t.Errorf("%s: detail is %d characters, want it bounded", name, n)
+		}
+	}
+}
