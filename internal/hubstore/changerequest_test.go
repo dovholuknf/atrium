@@ -86,6 +86,35 @@ func TestCRAnOpenRequestForTheSameSourceAndTargetIsHandedBack(t *testing.T) {
 	}
 }
 
+// A ROOM NAME IS ONE NAME in any case, as it is everywhere else: two asks that differ only in the source room's case
+// are one request, and the room is stored folded so the table's own index agrees.
+func TestCRRoomsThatDifferOnlyInCaseAreOneSource(t *testing.T) {
+	s := open(t)
+	in := newCR("claude/x", "main")
+	in.SourceRoom = "Room-A"
+	a := mustCR(t, s, in)
+	if a.Source.Room != "room-a" {
+		t.Fatalf("the room is stored as %q", a.Source.Room)
+	}
+	for _, room := range []string{"room-a", "ROOM-A", "rOOm-A"} {
+		again := in
+		again.SourceRoom = room
+		b, existed, err := s.CRCreate(again)
+		if err != nil || !existed || b.ID != a.ID {
+			t.Fatalf("%q: %+v existed=%v err=%v", room, b, existed, err)
+		}
+	}
+	if rows, _ := s.CRList(CRFilter{}); len(rows) != 1 {
+		t.Fatalf("%d requests, want 1", len(rows))
+	}
+	// and the list finds it by any case of the room
+	for _, room := range []string{"room-a", "ROOM-A"} {
+		if rows, _ := s.CRList(CRFilter{Room: room}); len(rows) != 1 {
+			t.Fatalf("room %q finds %d", room, len(rows))
+		}
+	}
+}
+
 func TestCRTheTableItselfRefusesASecondOpenRequest(t *testing.T) {
 	s := open(t)
 	mustCR(t, s, newCR("claude/x", "main"))

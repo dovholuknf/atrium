@@ -493,6 +493,32 @@ func TestAskingAgainWhileOneIsOpenHandsBackThatOneAndSaysNothing(t *testing.T) {
 	}
 }
 
+// A room not attached keeps the name it was asked in, so the store has to fold it: the same source in another case is
+// the same request, and 409 hands it back.
+func TestTwoAsksThatDifferOnlyInTheRoomsCaseAreOneRequest(t *testing.T) {
+	x := newCRRig(t)
+	for _, r := range []string{"Spare", "spare", "SPARE"} {
+		x.tip(r, "claude/q", x.c[1])
+	}
+	code, first := x.create(t, x.op, roomReq("Spare", "claude/q", "release"))
+	if code != http.StatusCreated || str(first, "source", "room") != "spare" {
+		t.Fatalf("first = %d %v", code, first)
+	}
+	x.events(t, "change-request")
+	for _, r := range []string{"spare", "SPARE"} {
+		code, again := x.create(t, x.op, roomReq(r, "claude/q", "release"))
+		if code != http.StatusConflict || str(again, "id") != str(first, "id") {
+			t.Errorf("%s = %d %v", r, code, again)
+		}
+	}
+	if ev := x.events(t, "change-request"); len(ev) != 0 {
+		t.Errorf("a duplicate was announced: %v", ev)
+	}
+	if rows, _ := x.st.CRList(hubstore.CRFilter{}); len(rows) != 1 {
+		t.Errorf("%d requests exist, want 1", len(rows))
+	}
+}
+
 func TestACardMakesOneOnlyForItsOwnRoomOrTheHub(t *testing.T) {
 	x := newCRRig(t)
 	x.hubPush(t, x.c[1], "claude/x")

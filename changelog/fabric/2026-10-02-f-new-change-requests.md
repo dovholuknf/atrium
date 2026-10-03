@@ -50,6 +50,9 @@ What it tells:
   hub-pushed branch with no owner, has no room to hang one on and raises none.
 - The audit log, `change-request-create|close|withdraw|merged` with the id and nothing else.
 
+A room name is folded to ASCII lowercase when a request is stored, as room names are everywhere else, so `source.room`
+reads back lowercase and two asks that differ only in the room's case are one request (409 hands the first back).
+
 Storage: migration 0009 `change_request`, with a unique index on the open request per repo, source and target. The hub
 holds a growler about neither a card nor a room's health (`GrowlRaise`, `GrowlEnd`), because the room-growler row is one
 per room and reason and a card sync would end a row with a card id.

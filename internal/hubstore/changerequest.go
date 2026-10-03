@@ -163,6 +163,9 @@ func (s *Store) CRCreate(in CRNew) (c ChangeRequest, existed bool, err error) {
 	if why := in.Check(); why != "" {
 		return c, false, refuse(errors.New(why))
 	}
+	// A ROOM NAME IS FOLDED, as it is everywhere else (fold, and keyOf in link): the lookup below and the unique index
+	// both compare source_room as stored, so "Room-A" and "room-a" would otherwise be two open requests for one source.
+	in.SourceRoom = fold(in.SourceRoom)
 	at := ts(now())
 	err = s.tx(func(t *sql.Tx) error {
 		c, existed = ChangeRequest{}, false
