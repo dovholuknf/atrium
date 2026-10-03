@@ -8805,6 +8805,29 @@ async function ctxLineSection(browser, base) {
               await renderTermList();
             }, [skin, dens]);
             await page.waitForTimeout(900);
+            // A parent row is as tall as it is without its fold button, and the pinned heading is not under the
+            // controls tray (the list's own scrollTop, not the header, is what a screenshot can get wrong).
+            const m = await page.evaluate(async () => {
+              // The list keeps whatever scrollTop an earlier render left it at (60px at density 1, 48 at 0.72), which
+              // slid the heading under the tray in the shots. Start every shot from the top of the list.
+              const top = document.querySelector(".termscroll"); if (top) top.scrollTop = 0;
+              await new Promise(r => setTimeout(r, 100));
+              const row = [...document.querySelectorAll("#term-list .card .tkidfold")].map(b => b.closest(".card"))[0];
+              const out = { row: !!row };
+              if (row) {
+                out.h = row.getBoundingClientRect().height;
+                const b = row.querySelector(".tkidfold"), nx = b.nextSibling, par = b.parentNode;
+                par.removeChild(b); out.bare = row.getBoundingClientRect().height; par.insertBefore(b, nx);
+              }
+              const sc = document.querySelector(".termscroll"), hd = document.querySelector("#term-list .pinnedhead");
+              out.scrollTop = sc ? sc.scrollTop : -1;
+              if (sc && hd) { out.headTop = hd.getBoundingClientRect().top; out.scTop = sc.getBoundingClientRect().top; }
+              return out;
+            });
+            if (!m.row) fail(`${kind} density ${dens}: no parent row with a fold button.`);
+            else if (Math.abs(m.h - m.bare) > 0.5) fail(`${kind} ${skin} density ${dens}: a parent row is ${m.h}px, ${m.bare}px without its fold button.`);
+            if (m.headTop !== undefined && m.headTop < m.scTop - 0.5) fail(`${kind} ${skin} density ${dens}: the pinned heading is ${(m.scTop - m.headTop).toFixed(1)}px under the controls tray at scrollTop ${m.scrollTop}.`);
+            if (process.env.ROWFLOOD_DEBUG) console.log("rowflood", kind, skin, dens, JSON.stringify(m));
             await page.screenshot({ path: path.join(dir, `${tag}-${kind}-${skin}-density${dens}.png`) });
           }
         }
