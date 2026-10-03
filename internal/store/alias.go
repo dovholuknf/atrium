@@ -92,6 +92,9 @@ func (s *Store) SetAlias(id, alias string) error {
 	if err := ValidAlias(alias); err != nil {
 		return err
 	}
+	if isReserved(alias) {
+		return ErrReservedName
+	}
 	// A refusal is an answer, not a storage failure, so it is carried out of
 	// `guard` in this variable. Returned through it, guard would halt the
 	// store over somebody picking a name already in use.

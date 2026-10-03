@@ -27,6 +27,14 @@ const (
 // NoticeFYI is the source of a held fyi, as `held notice` readers see it.
 const NoticeFYI = "fyi"
 
+// owedKind is the kind a say carries as owing sees it: a reply answers and asks nothing.
+func owedKind(kind string, reply bool) string {
+	if reply {
+		return KindFYI
+	}
+	return parseKind(kind)
+}
+
 // parseKind is the kind a sender asked for. Never an error.
 func parseKind(s string) string {
 	if strings.EqualFold(strings.TrimSpace(s), KindFYI) {
@@ -62,7 +70,7 @@ func (d *Daemon) holdFyi(sender, target *store.Task, door, text string) {
 	rec := sayRecordFor(sender.WireName, target, sayTrace{}, false, door, "", false)
 	rec.State, rec.Note = store.SayDelivered, "held on the card as an fyi"
 	d.recordSay(rec, text)
-	d.peerSaid(sender.WireName, target, text)
+	d.peerSaid(sender.WireName, target, text, KindFYI)
 }
 
 // heldNoticesFor is how many held notices a card has not read and when the oldest was held,

@@ -668,7 +668,7 @@ func (d *Daemon) handleMessage(w http.ResponseWriter, r *http.Request) {
 			}
 			d.askAnswered(taskID, "the operator")
 			if target, err := d.st.Get(taskID); err == nil {
-				d.peerSaid(from, target, body.Text)
+				d.peerSaid(from, target, body.Text, owedKind(body.Kind, body.Reply))
 			}
 			if from == "" {
 				d.seenAnswered(taskID, store.SeenMessage)
@@ -748,7 +748,7 @@ func (d *Daemon) handleMessage(w http.ResponseWriter, r *http.Request) {
 		d.saySettled(from, target)
 	}
 	if target, err := d.st.Get(taskID); err == nil {
-		d.peerSaid(from, target, body.Text)
+		d.peerSaid(from, target, body.Text, owedKind(body.Kind, body.Reply))
 		reach, why := d.reachability(target)
 		out["delivered"] = deliveredWord(reach)
 		out["reachable"] = reach

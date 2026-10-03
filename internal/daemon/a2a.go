@@ -390,7 +390,7 @@ func (d *Daemon) notifyRemoteLauncher(worker *store.Task, source, key, body stri
 // launcher on the worker's item, and the launcher's to the worker likewise, so
 // what used to scroll away in a terminal is on record. Never moves the work: free
 // text cannot be checked. A failure is logged, the posture of a hook.
-func (d *Daemon) peerSaid(from string, target *store.Task, text string) {
+func (d *Daemon) peerSaid(from string, target *store.Task, text, kind string) {
 	from = strings.TrimSpace(from)
 	if from == "" || target == nil {
 		return
@@ -403,6 +403,7 @@ func (d *Daemon) peerSaid(from string, target *store.Task, text string) {
 		log.Printf("[atrium] could not put %s's message to %s on the work ledger: %v",
 			sender.DisplayTitle(), target.DisplayTitle(), err)
 	}
+	d.owedSaid(sender, target, kind, text)
 	if !sender.Launched() {
 		return
 	}

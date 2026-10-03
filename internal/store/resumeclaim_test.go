@@ -65,15 +65,15 @@ func TestClaimResumeIDRanksTheClaimant(t *testing.T) {
 // card. The same name told to the hook still does.
 func TestRegisterWillNotMatchADoneCardByADirectoryName(t *testing.T) {
 	s := openTestStore(t)
-	done := claimCard(t, s, "atrium")
+	done := claimCard(t, s, "atriumx")
 	if err := s.SetStatus(done.ID, StatusDone); err != nil {
 		t.Fatal(err)
 	}
-	_, _, err := s.Register(Observed{WireName: "atrium", NameSource: NameFromDir})
+	_, _, err := s.Register(Observed{WireName: "atriumx", NameSource: NameFromDir})
 	if !errors.Is(err, ErrStaleName) {
 		t.Fatalf("want ErrStaleName, got %v", err)
 	}
-	got, created, err := s.Register(Observed{WireName: "atrium"})
+	got, created, err := s.Register(Observed{WireName: "atriumx"})
 	if err != nil || created || got.ID != done.ID {
 		t.Fatalf("a told name must still match: %v %v %v", got, created, err)
 	}
@@ -81,7 +81,7 @@ func TestRegisterWillNotMatchADoneCardByADirectoryName(t *testing.T) {
 	if err := s.SetStatus(done.ID, StatusRunning); err != nil {
 		t.Fatal(err)
 	}
-	got, _, err = s.Register(Observed{WireName: "atrium", NameSource: NameFromDir})
+	got, _, err = s.Register(Observed{WireName: "atriumx", NameSource: NameFromDir})
 	if err != nil || got.ID != done.ID {
 		t.Fatalf("a live card should match a directory name: %v %v", got, err)
 	}
@@ -106,14 +106,14 @@ func TestClaimResumeIDMissingClaimantKeepsTheHolder(t *testing.T) {
 // r-042: the archived half of "finished or archived", which the done test skips.
 func TestRegisterWillNotMatchAnArchivedCardByADirectoryName(t *testing.T) {
 	s := openTestStore(t)
-	card := claimCard(t, s, "atrium")
+	card := claimCard(t, s, "atriumx")
 	if _, err := s.db.Exec(`UPDATE task SET archived_at = ? WHERE id = ?`, ts(now()), card.ID); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := s.Register(Observed{WireName: "atrium", NameSource: NameFromDir}); !errors.Is(err, ErrStaleName) {
+	if _, _, err := s.Register(Observed{WireName: "atriumx", NameSource: NameFromDir}); !errors.Is(err, ErrStaleName) {
 		t.Fatalf("want ErrStaleName, got %v", err)
 	}
-	got, created, err := s.Register(Observed{WireName: "atrium"})
+	got, created, err := s.Register(Observed{WireName: "atriumx"})
 	if err != nil || created || got.ID != card.ID {
 		t.Fatalf("a told name must still match: %v %v %v", got, created, err)
 	}

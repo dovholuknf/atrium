@@ -172,6 +172,14 @@ func (s *Store) Register(obs Observed) (*Task, bool, error) {
 	// one boundary where a name off the wire becomes a name in the database.
 	// A session that says it is called `atrium` on a machine called `sg4` is
 	// stored as `sg4/atrium`, and cannot claim another machine's card.
+	// THE RESERVED HANDLE is atrium's own voice. A name told by a session is refused; one a hook
+	// guessed from a folder called `atrium` is renamed, since the folder is not the session's choice.
+	if isReserved(obs.WireName) {
+		if obs.NameSource != NameFromDir {
+			return nil, false, ErrReservedName
+		}
+		obs.WireName = ReservedDerived
+	}
 	obs.WireName = s.Qualify(obs.WireName)
 
 	var (

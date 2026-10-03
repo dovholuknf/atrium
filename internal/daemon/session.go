@@ -342,6 +342,8 @@ func (d *Daemon) onSession(in SessionEvent) error {
 		// somebody put it in.
 		d.turnResumed(task.ID)
 		d.sayReset(task.ID, "compact")
+		// ITS CONTEXT JUST WENT, and so did anything typed into it. See listOwed.
+		d.listOwed(task)
 		// Set compacting after turnResumed, which sets thinking and would overwrite
 		// it. See ActivityCompacting for how it clears without a completion hook.
 		d.act.set(task.ID, ActivityCompacting, "")
@@ -405,6 +407,9 @@ func (d *Daemon) onSession(in SessionEvent) error {
 		// after-restart wake waits for. See restartwake.go.
 		d.noteAnnounced(task.ID, in.Resume)
 		d.wakeSawSession(task.ID, in.Resume)
+		// A NEW CONVERSATION (`/clear`, an automatic new context, a resume) lost whatever was typed
+		// into the last one. One line lists what its workers still owe. See listOwed.
+		d.listOwed(task)
 		// The session its context is read from from now on, which after a
 		// `/clear` is not the resume id yet. See contextSizes.started.
 		if d.ctx != nil {

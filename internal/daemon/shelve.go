@@ -52,6 +52,8 @@ func (d *Daemon) StopRunner(taskID string) error {
 		return fmt.Errorf("atrium does not own a terminal for %s, so there is "+
 			"nothing here to exit", t.DisplayTitle())
 	}
+	// A launcher that exits its worker has answered it.
+	d.closeOwed(taskID, "it was asked to exit")
 	// awaitExit records the exit and moves the card, so nothing to do here but
 	// say it happened.
 	log.Printf("[atrium] %s asked to exit", t.DisplayTitle())
