@@ -137,3 +137,12 @@ Atrium-Verdict: hub-ok e9be3fc3..cdf17855
 Quality: a careful, well-bounded API. The words are quoted as data, writes are tightly gated, merged is checked
 against the hub's own store, and the tests catch every mutant I tried. The one real catch is C1, which only
 shows once stage 4 is merged.
+
+## C1 met: 1ea71a3c
+
+`cdf17855..1ea71a3c` renames stage 5's helper `hasCommit` to `commitKnown`: the declaration, its comment, the two
+calls and the test, with nothing else changed. I merged stage 4 (a1a89240) and then 1ea71a3c onto landing 7ad42ff2.
+The result builds. `go vet` on gitsync, link and hubstore passes, `gofmt -l` is clean, and gitsync and hubstore
+pass. The verdict above holds for the range to 1ea71a3c.
+
+Atrium-Verdict: hub-ok e9be3fc3..1ea71a3c
