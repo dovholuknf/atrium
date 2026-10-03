@@ -18192,6 +18192,92 @@ async function phoneRedirectSection(browser, base) {
 }
 
 // ── the bell and the sound on /m ─────────────────────────────────────────
+// ── The phone page picks up a new build ──────────────────────────────────
+// `/v1/health` carries the build id. A change reloads /m once, not while a draft, a focused box or a selection is up (an
+// "update ready" button shows instead, and the reload comes when it clears), and never twice for the same build.
+async function mReloadSection(browser) {
+  const st = mServer({});
+  st.tasks = [mCard("r-1", { alias: "alpha", display_title: "alpha", status: "running", last_reply: "hello there, a line to select" })];
+  await st.open();
+  try {
+    const ctx = await browser.newContext({ viewport: M_VIEWS[0], hasTouch: true, isMobile: true });
+    const p = await ctx.newPage();
+    const errors = [];
+    p.on("pageerror", e => errors.push(String(e)));
+    let loads = 0;
+    p.on("load", () => loads++);
+    await p.goto(st.url + "/m/", { waitUntil: "load" });
+    await p.waitForFunction(() => window.mNet.loaded() && window.mBuild, null, { timeout: slow(10000) });
+    await p.evaluate(() => window.mBuild.check());
+    const base = loads;
+    const settle = ms => p.waitForTimeout(ms);
+    const tag = "mReload: ";
+
+    // same id: nothing
+    await p.evaluate(() => window.mBuild.check());
+    await settle(400);
+    if (loads !== base) fail(tag + "the same build reloaded the page");
+
+    // a draft holds it, with the cue up
+    await p.evaluate(() => { const t = document.createElement("textarea"); t.id = "fake-draft"; t.value = "half a thought"; document.body.appendChild(t); });
+    st.build = "build-2";
+    await p.evaluate(() => window.mBuild.check());
+    await settle(600);
+    if (loads !== base) fail(tag + "a draft did not hold the reload");
+    if (!(await p.evaluate(() => { const c = document.querySelector(".m-update"); return !!c && c.getClientRects().length > 0; }))) fail(tag + "no cue while it waits");
+    // the hub answers with the id this page runs again: the wait and its cue are dropped, with no reload
+    st.build = "build-1";
+    await p.evaluate(() => window.mBuild.check());
+    await settle(400);
+    if (await p.evaluate(() => !!document.querySelector(".m-update"))) fail(tag + "the cue stayed after the id came back to the one this page runs");
+    if (loads !== base) fail(tag + "reloaded though the id went back");
+    st.build = "build-2";
+    await p.evaluate(() => window.mBuild.check());
+    await settle(400);
+    if (!(await p.evaluate(() => !!document.querySelector(".m-update")))) fail(tag + "the cue did not come back for the new id");
+    await p.evaluate(() => { document.getElementById("fake-draft").value = ""; });
+    await p.waitForEvent("load", { timeout: slow(6000) }).catch(() => fail(tag + "the reload did not come once the draft cleared"));
+    await settle(300);
+    if (loads !== base + 1) fail(tag + "expected one reload, saw " + (loads - base));
+
+    // the reloaded page learned the new id, so it does not reload again, and the guard stops a flapping hub
+    await p.waitForFunction(() => window.mNet.loaded() && window.mBuild, null, { timeout: slow(10000) });
+    await p.evaluate(() => window.mBuild.check());
+    await settle(500);
+    if (loads !== base + 1) fail(tag + "reloaded again for a build it already has");
+    st.build = "build-3";
+    await p.evaluate(() => window.mBuild.check());
+    await settle(500);
+    const afterThree = loads;
+    await p.waitForFunction(() => window.mNet.loaded() && window.mBuild, null, { timeout: slow(10000) });
+    st.build = "build-2";
+    await p.evaluate(() => window.mBuild.check());
+    await settle(500);
+    st.build = "build-3";
+    await p.evaluate(() => window.mBuild.check());
+    await settle(800);
+    if (loads > afterThree) fail(tag + "a flapping hub made " + (loads - afterThree) + " reloads in a row");
+
+    // a live selection holds it too
+    await p.waitForFunction(() => window.mNet.loaded() && window.mBuild, null, { timeout: slow(10000) });
+    await p.evaluate(() => { sessionStorage.removeItem("atrium.m.reloaded"); });
+    const b4 = loads;
+    await p.evaluate(() => {
+      const d = document.createElement("p"); d.id = "fake-sel"; d.textContent = "select this text please"; document.body.appendChild(d);
+      const r = document.createRange(); r.selectNodeContents(d); const s = getSelection(); s.removeAllRanges(); s.addRange(r);
+    });
+    st.build = "build-9";
+    await p.evaluate(() => window.mBuild.check());
+    await settle(600);
+    if (loads !== b4) fail(tag + "a selection did not hold the reload");
+    await p.evaluate(() => getSelection().removeAllRanges());
+    await p.waitForEvent("load", { timeout: slow(6000) }).catch(() => fail(tag + "the reload did not come once the selection cleared"));
+    if (errors.length) fail(tag + "page errors: " + errors.join(" | "));
+    await ctx.close();
+  } finally { await st.close(); }
+  if (!bad) console.log("mReload ok");
+}
+
 async function mBellSection(browser) {
   const st = mServer({});
   st.tasks = [mCard("b-1", { alias: "alpha", display_title: "alpha", status: "running" })];
@@ -20324,7 +20410,7 @@ async function main() {
       u001Audit: u001AuditSection,
       pasteStart: pasteStartSection, pasteDone: pasteDoneSection, pasteOldRoom: pasteOldRoomSection, pasteClose: pasteCloseSection,
       growlQuestionShots: growlQuestionShotsSection, growlQuestionBody: growlQuestionBodySection, growlReplyGrow: growlReplyGrowSection, growlChoices: growlChoicesSection, growlStable: growlStableSection, growlOnIt: growlOnItSection, mGrowlQuestion: mGrowlQuestionSection,
-      bootClean: bootCleanSection, mWorking: mWorkingSection, mOwnMessages: mOwnMessagesSection, mBubbles: mBubblesSection, mRecapSheet: mRecapSheetSection,
+      bootClean: bootCleanSection, mReload: mReloadSection, mWorking: mWorkingSection, mOwnMessages: mOwnMessagesSection, mBubbles: mBubblesSection, mRecapSheet: mRecapSheetSection,
       mHomeOrder: mHomeOrderSection, cardUrlWayOut: cardUrlWayOutSection, phoneBoot: phoneBootSection, sayEnter: sayEnterSection, sendArrow: sendArrowSection, mTables: mTablesSection, mMarkdown: mMarkdownSection, mHostile: mHostileSection, mPictures: mPicturesSection, soundPhone: soundPhoneSection, phoneBell: phoneBellSection, mBell: mBellSection,
       mHomeOrder: mHomeOrderSection, cardUrlWayOut: cardUrlWayOutSection, phoneBoot: phoneBootSection, sayEnter: sayEnterSection, sendArrow: sendArrowSection, mTables: mTablesSection, mMarkdown: mMarkdownSection, mHostile: mHostileSection, mPictures: mPicturesSection, phoneRedirect: phoneRedirectSection,
       mHomeOrder: mHomeOrderSection, cardUrlWayOut: cardUrlWayOutSection, phoneBoot: phoneBootSection, sayEnter: sayEnterSection, sendArrow: sendArrowSection, mTables: mTablesSection, mMarkdown: mMarkdownSection, mHostile: mHostileSection, mPictures: mPicturesSection, mHidden: mHiddenSection, soundPhone: soundPhoneSection, phoneBell: phoneBellSection, mBell: mBellSection,
@@ -22599,6 +22685,7 @@ function mServer(state) {
       return json(200, { tasks: rm ? state.tasks.filter(t => !t.room || t.room === rm) : state.tasks });
     }
     if (p === "/v1/permissions") return json(200, { permissions: state.perms });
+    if (p === "/v1/health") { state.healthHits = (state.healthHits || 0) + 1; return json(200, { build: state.build || "build-1" }); }
     if (p === "/v1/settings") return json(200, { board_skins: ["default", "daylight"], board_skin: state.skin || "default" });
     if (p === "/_hub/rooms") return json(404, { error: "not a hub" });
     if (p === "/v1/events") {
