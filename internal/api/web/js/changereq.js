@@ -240,7 +240,7 @@ function crView() {
 function crBranchBit(repo, b) {
   if (!cr.loaded) return "";
   const key = crRepoKey(repo);
-  const open = cr.reqs.find(r => r.state === "open" && r.repo === key && r.source.branch === b.name);
+  const open = cr.reqs.find(r => r.state === "open" && crCore.canonRepo(r.repo) === key && r.source.branch === b.name);
   if (open) return '<button type="button" class="cr-chip" data-cr="goto" data-id="' + esc(open.id) + '" aria-label="open request ' + esc(open.id) + '">' + esc(open.id) + " · into " + esc(open.target.branch) + "</button>";
   if (b.released || crCore.state.readOnly) return "";
   return '<button type="button" class="cr-chip ask" data-cr="new" data-repo="' + esc(key) + '" data-branch="' + esc(b.name) + '">ask to merge</button>';
@@ -273,7 +273,7 @@ async function crSubmitNew() {
   const title = f.title.trim(), branch = f.branch.trim(), target = f.target.trim();
   if (!branch || !target || !title) { f.err = "A request needs the branch to send, where it goes and a title."; hubReposPaint(); return; }
   await crWrite(async () => {
-    const r = await crCore.api.create({ repo: f.repo, source: { branch }, target: { branch: target }, title, why: f.why.trim() });
+    const r = await crCore.api.create({ repo: crCore.canonRepo(f.repo), source: { branch }, target: { branch: target }, title, why: f.why.trim() });
     if (r.ok || r.status === 409) {
       const got = r.body && r.body.id ? r.body : null;
       if (r.status === 409 && !got) { f.err = crCore.errText(r); hubReposPaint(); return; }

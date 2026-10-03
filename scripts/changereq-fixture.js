@@ -42,7 +42,7 @@
         if (state.mode === "old") return r.fulfill({ status: 404, body: "no" });
         if (state.mode === "down") return json(r, 503, { error: "hub is restarting" });
         const body = m === "POST" ? JSON.parse(req.postData() || "{}") : null;
-        if (m === "POST") state.calls.push({ path: u.pathname, body });
+        if (m === "POST") state.calls.push({ path: u.pathname, body, card: req.headers()["x-atrium-card"] || req.headers()["x-atrium-card-room"] || "" });
         if (m === "POST" && state.mode === "readonly") return json(r, 403, { error: "this link is a read-only share" });
         if (m === "POST" && state.mode === "forbid") return json(r, 403, { error: "only the owner may withdraw this request" });
         if (u.pathname === "/_hub/git/pushed") { const b = u.searchParams.get("branch"); const x = rows.find(q => q.source.branch === b); return json(r, 200, x ? x.pushed : { state: "not-pushed" }); }

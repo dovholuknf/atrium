@@ -20823,6 +20823,24 @@ async function changeReqSection(browser, base) {
       if (await p.evaluate(() => crCore.mockOn() || !!document.getElementById("cr-mockbar"))) fail(tag + ": localStorage still turns the mock on");
     } finally { await ctx.close(); }
 
+    // ---- repo names the way the hub canonicalizes them; the board posts as the operator -----------------------------------
+    ({ ctx, p, errors, hub } = await crFixturePage(browser, base, {}));
+    try {
+      const cn = await p.evaluate(() => ["o/r", "github/o/r", "gitlab.example/o/r", " o/r ", ""].map(crCore.canonRepo).join("|"));
+      if (cn !== "github/o/r|github/o/r|gitlab.example/o/r|github/o/r|") fail(tag + ": canonRepo is wrong " + cn);
+      await p.click('[data-cr="withdraw"]');
+      await p.waitForFunction(() => /Withdrawn/.test((document.querySelector(".cr-ended") || {}).textContent || ""));
+      if (hub.calls.some(c => c.card)) fail(tag + ": a write carried a card header " + JSON.stringify(hub.calls));
+    } finally { await ctx.close(); }
+    // a 403 that merely mentions a share is not a read-only board
+    ({ ctx, p, errors } = await crFixturePage(browser, base, {}));
+    try {
+      await p.route(/change-requests\/cr_9$/, r => r.request().method() === "POST" ? r.fulfill({ status: 403, contentType: "application/json", body: JSON.stringify({ error: "you cannot share this card here" }) }) : r.fallback());
+      await p.click('[data-cr="withdraw"]');
+      await p.waitForSelector(".cr-err");
+      if (await p.evaluate(() => !!document.querySelector(".cr-ro") || crCore.state.readOnly)) fail(tag + ": a 403 that says share made the board read-only");
+    } finally { await ctx.close(); }
+
     // ---- a 403 that is the action's own is an error, not a read-only board; one list read at a time -------------------------
     ({ ctx, p, errors } = await crFixturePage(browser, base, { mode: "forbid" }));
     try {
