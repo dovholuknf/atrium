@@ -2148,6 +2148,11 @@ func (d *Daemon) awaitExit(r *runner) {
 		log.Printf("[atrium] lost the pty host link for %s, its runner may still be running", r.taskID)
 		return
 	}
+	// The runner is gone, and so is its right to push. Unless a newer start of the same card has already taken over:
+	// its token was minted after this one's runner began, and is not this exit's to revoke.
+	if d.sup.get(r.taskID) == nil {
+		d.revokeHubGit(r.taskID, r.started)
+	}
 	_, err := d.fileExitChecked(runExit{
 		taskID: r.taskID, runID: r.runID, code: code, tail: tail, lived: lived,
 		resumed: r.resumed, spec: r.spec,

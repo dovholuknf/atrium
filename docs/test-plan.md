@@ -8440,3 +8440,35 @@ Needs a room with a director, a worker it launched, and a second unrelated worke
    like the caller. A director on B is refused with force.
 
 Covered by `TestExitGuard*` (api), `TestAHubSideExitWithNoCardExitsTheCaller` and `TestStdioExitWithNoCardExitsTheCaller`.
+## II. The room's hub remote, and cards pushing to it only (r-hub-remote)
+
+1. On a room attached to a hub, launch a card in a clone the room syncs. `git remote -v` shows `hub` at
+   `http://127.0.0.1:<agent port>/git/hub/<host>/<owner>/<repo>.git` with the host as `github`, not `github.com`.
+   `git config -l` in the clone shows NO `extraHeader`: the card's token is only in its environment
+   (`GIT_CONFIG_COUNT`, `GIT_CONFIG_KEY_n` = `http.http://127.0.0.1:<port>/git/.extraHeader`).
+2. In that card, `git push hub fix/x`. The branch is on the hub and the hub's push log names this room and this card.
+3. From a plain shell outside any card, the same push fails with "this room's hub remote answers a card with its atrium
+   token". Nothing reached the hub.
+4. Set `git_push` to `none` (settings API, `{"git_push":"none"}`). The card's push is refused with "git.push is none",
+   `git ls-remote hub` still works. Set it back to `hub` and it lands.
+5. In the card, `git fetch` from any other http server (a second remote, a dependency): the server receives no
+   `X-Atrium-*` header. Run a header-recording server and fetch from it to see it.
+6. On a clone atrium made (a sync with init), `git push origin fix/x` fails on `atrium-refused://origin-push`. On a clone
+   the operator made, `origin` is left alone and the sync's detail says it is not guarded and needs the operator's yes.
+7. Give a clone its own `hub` remote pointing at another server, then sync it. The sync leaves that `hub` alone, adds
+   `atrium-hub`, and says so in its detail. `atrium_git_push {branch}` pushes through `atrium-hub`. With no `atrium-hub`
+   it refuses and names where `hub` pushes.
+8. Put `[url "/elsewhere/"] pushInsteadOf = http://127.0.0.1:<port>/` in `~/.gitconfig`. `atrium_git_push` refuses ("not
+   only this room's hub forwarder"), and `/elsewhere/` gets nothing. A second `remote.hub.pushurl` pointing at another server is refused the same way, and a `remote.hub.proxy` or `http.<url>.proxy` in the clone's config is not used (a listener there sees nothing, and the push lands).
+9. `atrium_git_push` with `+fix/x`, `fix/x:main`, `--force`, `refs/tags/v1` or `HEAD` is refused before anything runs.
+10. A card launched with `outside_code` (or tagged `atrium:outside-code`) has no `GIT_CONFIG_*` in its environment and
+    `atrium_git_push` refuses it. A PR review fork's environment has none either.
+11. Close a card: a copy of its token no longer works at the forwarder. Restart the room: a card launched before it must be
+    relaunched to push, and `atrium_git_push` says so.
+
+Covered by `TestInACardEnvGitPushHubLandsWithTheCardInThePushLog`, `TestAProcessWithNoCardTokenIsRefusedByTheForwarderBeforeTheHub`,
+`TestGitPushNoneRefusesReceivePackAndStillFetches`, `TestAClientsOwnCardHeadersNeverReachTheHub`,
+`TestAFetchFromAnotherServerInACardEnvReceivesNoAtriumHeader`, `TestPushToHubRefusesWhenAGlobalPushInsteadOfSendsTheForwarderElsewhere`,
+`TestAHubRemotePointingElsewhereIsLeftAloneAndAtriumHubIsAdded`, `TestEnsureRemotesAddsHubFollowsAPortChangeAndGuardsOriginOnAtriumMadeClones`,
+`TestACardThatRunsOutsideCodeGetsNoGitTokenInItsEnv`, `TestAPRRunnersCommandsAndForksHaveNoGitTokenInTheirEnv`,
+`TestACardsLaunchEnvCarriesItsGitTokenScopedToTheForwarder`, `TestGitPushSetting`. Items 1 and 2 live on m1mini against the hub.

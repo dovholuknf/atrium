@@ -170,6 +170,11 @@ type LaunchRequest struct {
 	// for sending it, so no session can point another card's reports at a third
 	// party. It sets the launcher and nothing else: no tag, room or permission.
 	ReportTo string `json:"report_to,omitempty"`
+
+	// OutsideCode says this card runs code that is not the room's own (a PR's tests, `prove`, an outside target). It
+	// gets no git token in its environment, so that code cannot read it and push as the card. It can only take
+	// something away, so any caller may set it. The tag atrium:outside-code says the same and survives a reopen.
+	OutsideCode bool `json:"outside_code,omitempty"`
 }
 
 // TerminalTemplate wraps a command so it opens in a real terminal window.
@@ -1106,6 +1111,9 @@ func (d *Daemon) launchLocked(req LaunchRequest) (*store.Task, error) {
 		"ATRIUM_RUNNER": h.ID,
 	}
 	d.tellWhereIAm(atrium)
+	// THE CARD'S GIT TOKEN for the room's hub forwarder, scoped to the forwarder's URL. Nothing for a card that runs
+	// outside code. See hubGitEnv.
+	d.hubGitEnv(task.ID, isOutsideCode(req, task), overEnv(h.Env, addedEnv), atrium)
 	// WHICH ROOM THIS SESSION BELONGS TO, so its HTTP control MCP registration
 	// resolves ${ATRIUM_ROOM} and the hub scopes control calls to this room.
 	// Only set when this daemon is a room: a plain daemon with no hub has no

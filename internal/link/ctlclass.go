@@ -48,6 +48,8 @@ var workerTools = map[string]bool{
 	"atrium_alias":  true,
 	// Workers write the reports, so a worker publishes. See docs_mcp.go.
 	"atrium_publish": true,
+	// The cards that push to the hub are workers. See git_hub.go.
+	"atrium_git_push": true,
 }
 
 // inClass reports whether a tool is served to a class.

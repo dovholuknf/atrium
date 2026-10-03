@@ -196,6 +196,9 @@ type Server struct {
 	// was checked to contain, which this room's worktree has to be sitting on.
 	// Empty when the proof is made here.
 	Cull func(taskID, into, tip string) (any, error)
+	// GitPush is atrium_git_push: the room pushes one plain branch from the card's own directory to the hub through
+	// its hub forwarder, under the same rules as `git push hub <branch>`. See internal/daemon/hubremote.go.
+	GitPush func(taskID, branch string) (any, error)
 	// HoldCull keeps a worker: the merged-cull mark is dropped and nothing marks
 	// it again. A route of its own, and not a flag on cull, because a room that
 	// predates the hold would read `hold=true` as an ordinary cull and cull it.
@@ -592,6 +595,9 @@ func (s *Server) Handler() http.Handler {
 	}
 	if s.HoldCull != nil {
 		mux.HandleFunc("POST /v1/tasks/{id}/cull/hold", s.holdCull)
+	}
+	if s.GitPush != nil {
+		mux.HandleFunc("POST /v1/tasks/{id}/git-push", s.gitPush)
 	}
 	if s.Merged != nil {
 		mux.HandleFunc("POST /v1/merged", s.merged)
@@ -2279,6 +2285,25 @@ func (s *Server) cullRunner(w http.ResponseWriter, r *http.Request) {
 	}
 	if t, err := s.st.Get(r.PathValue("id")); err == nil {
 		s.PublishTask(t)
+	}
+	writeJSON(w, http.StatusOK, res)
+}
+
+// gitPush is atrium_git_push. A refusal is a 409 carrying the sentence, git's own words included.
+func (s *Server) gitPush(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Branch string `json:"branch"`
+	}
+	dec := json.NewDecoder(io.LimitReader(r.Body, 1<<12))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&body); err != nil {
+		writeErr(w, http.StatusBadRequest, fmt.Errorf("a push is {\"branch\": \"fix/x\"} and nothing else: %v", err))
+		return
+	}
+	res, err := s.GitPush(r.PathValue("id"), body.Branch)
+	if err != nil {
+		writeErr(w, http.StatusConflict, err)
+		return
 	}
 	writeJSON(w, http.StatusOK, res)
 }

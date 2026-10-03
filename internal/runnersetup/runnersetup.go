@@ -337,6 +337,12 @@ func InheritedTaint(key string) bool {
 		// session's room to the ones it launches: a child gets THIS daemon's
 		// room or none.
 		return true
+	case upper == "GIT_CONFIG_COUNT" || strings.HasPrefix(upper, "GIT_CONFIG_KEY_") ||
+		strings.HasPrefix(upper, "GIT_CONFIG_VALUE_"):
+		// A card's git token rides in these, scoped to the room's hub forwarder. A daemon started from inside a
+		// card would otherwise hand that card's token to every card it launches. A runner that wants its own
+		// names them in its harness env, which is applied after this filter.
+		return true
 	case strings.HasPrefix(upper, "ATRIUM_DEBUG_"):
 		// Diagnostics for THIS process. The live scripts turn on
 		// ATRIUM_DEBUG_INPUTLAG for the room, and a runner that inherited it

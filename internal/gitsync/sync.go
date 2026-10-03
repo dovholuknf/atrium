@@ -29,6 +29,9 @@ type Result struct {
 	State  string `json:"state"`
 	SHA    string `json:"sha,omitempty"`
 	Detail string `json:"detail,omitempty"`
+	// Remote is what the room did about the clone's hub remote and origin, when there is anything to say. See
+	// ensureRemotes.
+	Remote string `json:"remote,omitempty"`
 }
 
 // Syncer syncs one room's clones, one at a time, and remembers the last answer for each.
@@ -36,6 +39,9 @@ type Syncer struct {
 	Runner *Runner
 	// Root is where clones live: `<Root>/<name>`.
 	Root func() string
+	// HubRemote is the stable URL of a repository on this room's hub forwarder, given its canonical name
+	// (`github/owner/repo`), or empty when there is none yet. Nil means the room does not add a `hub` remote.
+	HubRemote func(canonical string) string
 
 	mu   sync.Mutex
 	last map[string]Status
@@ -114,6 +120,7 @@ func (s *Syncer) sync(ctx context.Context, name string, init bool, hub func() (h
 		return failed("no git root is set on this room")
 	}
 	clone := filepath.Join(root, filepath.FromSlash(name))
+	madeHere := false
 	if _, err := os.Stat(filepath.Join(clone, ".git")); err != nil {
 		if !os.IsNotExist(err) {
 			return failed(err.Error())
@@ -127,6 +134,7 @@ func (s *Syncer) sync(ctx context.Context, name string, init bool, hub func() (h
 		if _, err := g.Git(ctx, clone, "init", "--quiet"); err != nil {
 			return failed(firstLine(err))
 		}
+		madeHere = true
 	}
 
 	// A SECOND GUARD, beside the hub skipping its own machine's room. A clone that already has
@@ -135,6 +143,37 @@ func (s *Syncer) sync(ctx context.Context, name string, init bool, hub func() (h
 	if msg := originMismatch(ctx, g, clone, name); msg != "" {
 		return failed(msg)
 	}
+	remote := s.remotes(ctx, g, clone, name, madeHere)
+	res := s.fetch(ctx, g, clone, name, hub)
+	if remote != "" {
+		res.Remote = remote
+		// The same sentence in Detail, which is what the hub reads back, without hiding a failure's own.
+		if res.Detail == "" {
+			res.Detail = remote
+		} else {
+			res.Detail += ". " + remote
+		}
+	}
+	return res
+}
+
+// remotes puts the hub remote, and the origin guard, on the clone. Nothing when the room has no forwarder URL.
+func (s *Syncer) remotes(ctx context.Context, g *Runner, clone, name string, madeHere bool) string {
+	if s.HubRemote == nil {
+		return ""
+	}
+	ref, err := ParseName(name)
+	if err != nil {
+		return ""
+	}
+	u := s.HubRemote(ref.Name())
+	if u == "" {
+		return ""
+	}
+	return ensureRemotes(ctx, g, clone, u, madeHere)
+}
+
+func (s *Syncer) fetch(ctx context.Context, g *Runner, clone, name string, hub func() (http.RoundTripper, error)) Result {
 	if hub == nil {
 		return failed("this hub predates git sync")
 	}

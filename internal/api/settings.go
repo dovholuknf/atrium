@@ -209,6 +209,8 @@ func globalAutoView(s *Server) map[string]any {
 	inputLagView(out)
 	// Reported even when unset, so the setting can be read back as `above_normal`.
 	out["lean_worker_gateway"] = s.st.LeanWorkerGateway()
+	// What the room's hub forwarder lets a card do: `hub` or `none`. See store.SettingGitPush.
+	out["git_push"] = s.st.GitPush()
 	out["runner_priority"] = "above_normal"
 	if !s.st.RunnerPriorityRaised() {
 		out["runner_priority"] = "normal"
@@ -315,6 +317,8 @@ func (s *Server) setSettings(w http.ResponseWriter, r *http.Request) {
 		// The name of the mcp.json server that stands in for `mercurius` on a default
 		// lean launch. A name, never a URL. See `store.SettingLeanWorkerGateway`.
 		LeanWorkerGateway *string `json:"lean_worker_gateway"`
+		// `hub` or `none`: whether a card may push to the hub through this room. See `store.SettingGitPush`.
+		GitPush *string `json:"git_push"`
 		// Whether this room logs terminal input lag. Applied at once, with no
 		// restart. See inputlag.go.
 		InputLag *bool `json:"input_lag_log"`
@@ -710,6 +714,23 @@ func (s *Server) setSettings(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		if err := s.st.SetSetting(store.SettingLeanWorkerGateway, v); err != nil {
+			s.fail(w, err)
+			return
+		}
+	}
+
+	if body.GitPush != nil {
+		// Refused rather than stored: an unknown value would read as `none` and look like it took.
+		v := strings.ToLower(strings.TrimSpace(*body.GitPush))
+		if v == "" {
+			v = store.GitPushHub
+		}
+		if v != store.GitPushHub && v != store.GitPushNone {
+			writeErr(w, http.StatusBadRequest, fmt.Errorf(
+				"git_push is hub or none, and %q is neither. none stops cards pushing to the hub, hub lets them", v))
+			return
+		}
+		if err := s.st.SetSetting(store.SettingGitPush, v); err != nil {
 			s.fail(w, err)
 			return
 		}

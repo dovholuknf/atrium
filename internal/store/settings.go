@@ -300,3 +300,29 @@ func MercuriusFor(tags []string, gateway string) string {
 	}
 	return "mercurius: " + gateway
 }
+
+// SettingGitPush is the room setting `git.push`: whether a card may push finished work to the hub through the
+// room's stable hub forwarder. `hub` (the default, empty reads as it) or `none`. With `none` the forwarder refuses
+// receive-pack, and fetch still works. A card that runs outside code is held to `none` whatever this says. It is
+// not exported: an import must not turn pushing on.
+const SettingGitPush = "git_push"
+
+// The two values of SettingGitPush.
+const (
+	GitPushHub  = "hub"
+	GitPushNone = "none"
+)
+
+// GitPush is the setting in force: GitPushHub unless the room said `none`. Anything unreadable or unrecognised
+// is `none`, so a damaged row closes the door rather than opens it.
+func (s *Store) GitPush() string {
+	v, err := s.Setting(SettingGitPush)
+	if err != nil {
+		return GitPushNone
+	}
+	switch strings.ToLower(strings.TrimSpace(v)) {
+	case "", GitPushHub:
+		return GitPushHub
+	}
+	return GitPushNone
+}

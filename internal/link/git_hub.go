@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -312,6 +313,9 @@ func (c *controlMCP) registerGit(s *mcp.Server, class ctlClass) {
 		audited(c, "ctl-git-sync", describeGitSync, c.gitSyncHandler))
 	addTool(s, class, &mcp.Tool{Name: "atrium_git_collect", Description: gitCollectToolDesc},
 		audited(c, "ctl-git-collect", describeGitCollect, c.gitCollectHandler))
+	// In the worker set too (workerTools): the cards that push are workers.
+	addTool(s, class, &mcp.Tool{Name: "atrium_git_push", Description: gitPushToolDesc},
+		audited(c, "ctl-git-push", describeGitPush, c.gitPushHandler))
 }
 
 // describeGitSync names the room and repository, and whether it may have made a clone.
@@ -328,6 +332,56 @@ func describeGitSync(_ *mcp.CallToolRequest, in gitSyncInput, _ gitSyncOutput) (
 
 func describeGitCollect(_ *mcp.CallToolRequest, in gitCollectInput, _ gitsync.CollectResult) (string, string, bool) {
 	return in.Room, "git collect", true
+}
+
+const gitPushToolDesc = "Push your branch to the hub, the same push `git push hub <branch>` is, with no shell.\n\n" +
+	"A PLAIN BRANCH PUSH ONLY: a branch name like `fix/x`. No force, no `+` refspec, no tag, no delete. The room " +
+	"pushes from YOUR directory through its hub forwarder, with your card on the push, and the hub's own rules " +
+	"apply (no non-fast-forward, nothing to `main`, a branch another card owns is refused). The answer is git's " +
+	"report, and a refusal is the hub's sentence.\n\n" +
+	"REFUSED when the room's git.push is none, when your clone's `hub` remote does not push to this room's " +
+	"forwarder (after every url rewrite), when your card runs outside code, and when you are not a card on a room."
+
+type gitPushInput struct {
+	Branch string `json:"branch" jsonschema:"the branch to push, by name, like fix/x. nothing else is taken"`
+}
+
+type gitPushOutput struct {
+	Card   string `json:"card"`
+	Branch string `json:"branch"`
+	Report string `json:"report" jsonschema:"git's own report of the push"`
+}
+
+func describeGitPush(_ *mcp.CallToolRequest, in gitPushInput, _ gitPushOutput) (string, string, bool) {
+	return "", "git push " + in.Branch, true
+}
+
+// gitPushHandler is for the CALLER's own card: the push is run in its directory with its token, so a name is never
+// taken for it. The caller is the `X-Atrium-Agent` claim, as for every tool here.
+func (c *controlMCP) gitPushHandler(ctx context.Context, req *mcp.CallToolRequest, in gitPushInput) (
+	*mcp.CallToolResult, gitPushOutput, error) {
+
+	var out gitPushOutput
+	room, me := roomOf(req), agentOf(req)
+	if me == "" {
+		return nil, out, fmt.Errorf("this pushes for a card, and nothing says which card is asking")
+	}
+	if why := gitsync.CheckPushBranch(strings.TrimSpace(in.Branch)); why != "" {
+		return nil, out, fmt.Errorf("%s", why)
+	}
+	id, _, err := c.resolvePeer(ctx, room, me)
+	if err != nil {
+		return nil, out, err
+	}
+	err = c.longClient().ask(ctx, http.MethodPost, "/v1/tasks/"+url.PathEscape(id)+"/git-push", room,
+		map[string]string{"branch": strings.TrimSpace(in.Branch)}, &out)
+	if err != nil {
+		var be *boardError
+		if errors.As(err, &be) && be.bare && be.code == http.StatusNotFound {
+			return nil, out, fmt.Errorf("this room predates atrium_git_push. update the room")
+		}
+	}
+	return nil, out, err
 }
 
 func (c *controlMCP) longClient() *controlMCP {
