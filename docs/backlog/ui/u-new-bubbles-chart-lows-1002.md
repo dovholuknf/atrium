@@ -34,3 +34,10 @@ Each fix gets an assert and, for the shape ones, a mutant.
   asserted at 2000px. Mutant at 4px fails.
 - Chart L3: rate buckets that end before the limit window starts are not drawn, nor counted in the strip's scale.
   Assert at 2000px; mutant fails.
+
+## Left after review of 147e7c70 (both low)
+
+- The bubbles selection hold's 60 s cap can clear a selection someone is still dragging. Reset the timer on
+  selectionchange while held.
+- The copy/reply hit area now reaches 21px up. Check the gap between bubbles at 360 and split the growth if it is under
+  21px.
