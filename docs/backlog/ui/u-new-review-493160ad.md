@@ -164,3 +164,10 @@ Note, not a hold:
 Atrium-Verdict: room-ok 29efa251..b2c2a8bc
 Atrium-Verdict: hub-ok 29efa251..b2c2a8bc
 Quality: every finding is closed. The mock now says it is on and cannot stay on by accident.
+
+## Doc: u-new-peek-cold-twice ecfbef79
+
+A backlog doc only, on claude/ui-director. It is a clear item with a "done when" that a headless check can hold.
+There are no private paths or names. It landed with the u-scm5 and u-pin-shows batch.
+
+Atrium-Verdict: doc-ok ecfbef79^..ecfbef79
