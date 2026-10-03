@@ -7224,6 +7224,95 @@ async function phoneKeyboardSection(browser, base) {
   if (errors.length) fail("phoneKeyboard: the page threw: " + errors.join(" | "));
 }
 
+// ── u-new-terminals-list-last-row-phone: the opened list on a phone reaches its last row ──────────────────
+// A phone browser's bottom bar makes the visual viewport shorter than the layout viewport (100vh). The opened
+// session list floated over the terminal with `max-height: 70vh`, so with enough rows its bottom sat below the
+// visible screen and `main` clipped it: the last row could not be scrolled to. The list is emulated here with a
+// visual viewport 84px shorter than innerHeight (the bar), 14 rows and a terminal attached, in the plain phone
+// view and the tray (term-phone) view. The last row, scrolled to the end, must end above the visual viewport's
+// bottom, and the keyboard case (a far shorter viewport) must hold the same.
+async function termListLastRowSection(browser, base) {
+  const was = tasksMode;
+  tasksMode = "land";
+  landList = [];
+  for (let i = 0; i < 14; i++) landList.push(landCard("tls-" + i, { supervised: true, created_at: "2026-09-19T12:00:00Z", display_title: "row " + i, worktree: "/w/r" + i, repo: "r" + i, branch: "b" + i }));
+  landPerms = [];
+  const errors = [];
+  const shots = process.env.TERMLIST_SHOTS || "";
+  const fakeSock = () => {
+    const Real = window.WebSocket;
+    window.WebSocket = function (url, protocols) {
+      if (!/\/attach(\?|$)/.test(url)) return new Real(url, protocols);
+      const s = { url, readyState: 0, binaryType: "arraybuffer", bufferedAmount: 0, onopen: null, onclose: null, onmessage: null, onerror: null,
+        send() {}, close() { this.readyState = 3; } };
+      setTimeout(() => { s.readyState = 1; if (s.onopen) s.onopen({}); }, 0);
+      return s;
+    };
+    Object.assign(window.WebSocket, { CONNECTING: 0, OPEN: 1, CLOSING: 2, CLOSED: 3 });
+  };
+  try {
+    for (const vp of [{ width: 390, height: 844 }, { width: 412, height: 915 }]) {
+      for (const tray of [false, true]) {
+        const ctx = await browser.newContext({ viewport: vp, hasTouch: true, isMobile: true });
+        await ctx.addInitScript((t) => {
+          localStorage.setItem("atrium.skipconfirm", JSON.stringify({ "width-floor": true }));
+          if (t) localStorage.setItem("atrium.termphone", "1");
+        }, tray);
+        await ctx.addInitScript(fakeSock);
+        const p = await ctx.newPage();
+        p.on("pageerror", e => errors.push(String(e.stack || e)));
+        await p.goto(base, { waitUntil: "domcontentloaded" });
+        await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
+        await p.evaluate(() => attachTask("tls-0"));
+        await p.waitForFunction(() => termSock && termSock.readyState === 1 && termTask && termTask.id === "tls-0", null, { timeout: slow(10000) });
+        await p.evaluate(() => {
+          const vv = window.visualViewport;
+          window.__vv = (px) => new Promise(res => {
+            Object.defineProperty(vv, "height", { configurable: true, get: () => window.innerHeight - px });
+            Object.defineProperty(vv, "offsetTop", { configurable: true, get: () => 0 });
+            vv.dispatchEvent(new Event("resize"));
+            requestAnimationFrame(() => requestAnimationFrame(() => setTimeout(res, 150)));
+          });
+        });
+        for (const gap of [84, 300]) {
+          await p.evaluate((g) => window.__vv(g), gap);
+          // open the list: the tray's picker on the tray view, the trigger's caret otherwise
+          await p.evaluate((t) => {
+            if (t) { document.body.classList.add("tray-open"); }
+            const l = document.querySelector(".term-layout");
+            l.classList.add("tl-open");
+          }, tray);
+          await p.waitForTimeout(300);
+          const tag = "termListLastRow " + vp.width + "x" + vp.height + (tray ? " tray" : " plain") + " gap " + gap + ": ";
+          const r = await p.evaluate(() => {
+            const vv = window.visualViewport, vis = vv.offsetTop + vv.height;
+            const body = document.querySelector(".termbody"), sc = document.querySelector(".termscroll");
+            const rows = [...document.querySelectorAll(".term-list .termscroll .card")];
+            if (!sc || !rows.length) return { rows: rows.length };
+            sc.scrollTop = sc.scrollHeight;
+            const last = rows[rows.length - 1].getBoundingClientRect();
+            const bb = body.getBoundingClientRect();
+            const sr = sc.getBoundingClientRect();
+            return { rows: rows.length, vis, lastBottom: last.bottom, bodyBottom: bb.bottom, scBottom: sr.bottom, scrolls: sc.scrollHeight > sc.clientHeight,
+              mainBottom: document.querySelector("main").getBoundingClientRect().bottom };
+          });
+          if (r.rows < 12) fail(tag + "only " + r.rows + " rows drew " + JSON.stringify(r));
+          else {
+            if (r.lastBottom > r.vis + 0.5) fail(tag + "the last row ends below the visible screen " + JSON.stringify(r));
+            if (r.bodyBottom > r.vis + 0.5) fail(tag + "the opened list ends below the visible screen " + JSON.stringify(r));
+          }
+          if (shots) { fs.mkdirSync(shots, { recursive: true }); await p.screenshot({ path: path.join(shots, tag.replace(/[^a-z0-9]+/gi, "-") + ".png") }); }
+          await p.evaluate(() => { document.body.classList.remove("tray-open"); document.querySelector(".term-layout").classList.remove("tl-open"); });
+        }
+        await ctx.close();
+      }
+    }
+  } finally {
+    tasksMode = was;
+  }
+  if (errors.length) fail("termListLastRow: the page threw: " + errors.join(" | "));
+}
+
 // ── copy on select answers the pointer, not the find bar ──────────────────
 // Test plan BJ. The search addon shows a match by selecting it, so copy on
 // select used to copy every find keystroke, step and re-search. Typing in the
@@ -20216,7 +20305,7 @@ async function main() {
       questionsClick: questionsClickSection, walk: walkSection, linkReuse: linkReuseSection,
       usageCacheReads: usageCacheReadsSection, roomsDash: roomsDashSection, phoneView: phoneViewSection, heldLine: heldLineSection, u016: u016Section, phoneHeader: phoneHeaderSection, phoneFocus: phoneFocusSection, phoneTermBar: phoneTermBarSection, phoneShare: phoneShareSection, phonePan: phonePanSection, phoneFollow: phoneFollowSection, phoneTap: phoneTapSection, phoneKeyboard: phoneKeyboardSection, phoneCompose: phoneComposeSection, mCompose: mComposeSection, mPerms: mPermsSection, usagePolish: usagePolishSection, usageLimits: usageLimitsSection, usageGroups: usageGroupsSection,
       eventDriven: eventDrivenSection, idleBudget: idleBudgetSection, pollsGone: pollsGoneSection,
-      phoneListFit: phoneListFitSection, phoneNudge: phoneNudgeSection,
+      phoneListFit: phoneListFitSection, termListLastRow: termListLastRowSection, phoneNudge: phoneNudgeSection,
       growlStack: growlStackSection, growlActions: growlActionsSection, growlModal: growlModalSection, growlQuiet: growlQuietSection, growlAttention: growlAttentionSection, growlPhone: growlPhoneSection, mGrowl: mGrowlSection, growlPopout: growlPopoutSection, growlOff: growlOffSection, growlRemind: growlRemindSection,
       cacheChip: cacheChipSection, cacheLine: cacheLineSection, mHome: mHomeSection, mCard: mCardSection, mServe: mServeSection, phoneKeyLabel: phoneKeyLabelSection, phoneKeyLit: phoneKeyLitSection, shiftMenu: shiftMenuSection, notifyCommand: notifyCommandSection, presence: presenceSection, tallPty: tallPtySection, roomsMachine: roomsMachineSection, readyOnce: readyOnceSection, readyPopout: readyPopoutSection, popoutNotify: popoutNotifySection, readyTwoWindows: readyTwoWindowsSection,
       cardUrlTable: cardUrlTableSection, cardUrlClash: cardUrlClashSection, cardUrlLinks: cardUrlLinksSection, cardUrlRoom: cardUrlRoomSection, mCardUrl: (b) => mCardUrlSection(b), cardUrlNotify: cardUrlNotifySection,
@@ -22197,6 +22286,7 @@ async function main() {
     await unit("landThePlane", () => landThePlaneSection(browser, base));
     await unit("peekEverywhere", () => peekEverywhereSection(browser, base));
     await unit("phoneListFit", () => phoneListFitSection(browser, base));
+    await unit("termListLastRow", () => termListLastRowSection(browser, base));
     await unit("phoneNudge", () => phoneNudgeSection(browser, base));
     await unit("cacheChip", () => cacheChipSection(browser, base));
     await unit("cacheLine", () => cacheLineSection(browser, base));
