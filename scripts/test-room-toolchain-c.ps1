@@ -680,7 +680,7 @@ foreach ($fn in 'Invoke-CMsys2', 'Get-CMsys', 'Get-PathPre', 'Need', 'Show-Tail'
 $script:steps = @()
 function Step { param([string] $step, [string] $status, [string] $detail = '') $script:steps += "$step $status $detail".TrimEnd() }
 function Note-Fail { param([int] $code) if ($script:rc -eq 0) { $script:rc = $code } }
-function CCall { param([string] $act, [hashtable] $vars = @{}) $script:calls += [pscustomobject]@{ Act = $act; Vars = $vars }; $r = & $script:mock $act $vars; if ($r) { $r } else { New-Res } }
+function CCall { param([string] $act, [hashtable] $vars = @{}) $script:calls += [pscustomobject]@{ Act = $act; Vars = $vars }; $r = & $script:mock $act $vars; if ($r) { $r } elseif ($act -eq 'cdisk') { New-Res @{ 'drive.root' = 'V:\'; 'drive.exists' = 'True'; 'drive.readable' = 'True'; anc = 'V:\work'; 'anc.writable' = 'True'; free = '53687091200' } } else { New-Res } }
 function New-Res { param($kv = @{}, [string[]] $out = @(), [int] $rc = 0, [string] $err = '') [pscustomobject]@{ Kv = $kv; Out = $out; Rc = $rc; Err = $err; Tail = @() } }
 $mdir = 'V:\work\tools\msys64'
 function New-Probe {
@@ -771,7 +771,7 @@ $script:mock = { param($act, $vars)
     } }
 function Get-Asset { param($t) [pscustomobject]@{ Url = 'https://repo.msys2.org/distrib/x86_64/msys2-base-x86_64-20260927.sfx.exe'; File = 'msys2-base-x86_64-20260927.sfx.exe'; Sha = ('ab' * 32); Version = '20260927' } }
 Invoke-CMsys2 6>$null | Out-Null
-Check 'flow fresh: install, then pacman with the first start' (Seq) 'cmsys,cinstall,cmsys,cpacman,cmsys'
+Check 'flow fresh: install, then pacman with the first start' (Seq) 'cmsys,cdisk,cinstall,cmsys,cpacman,cmsys'
 Check 'flow fresh: the install is given the verified hash and the url' @((Call 'cinstall').Vars.Sha, (Call 'cinstall').Vars.Msys2Dir, (Call 'cpacman').Vars.Init) @(('ab' * 32), $mdir, '1')
 # 7. a bad hash fails with 4 and nothing else runs
 Reset-Flow
@@ -783,7 +783,7 @@ $script:mock = { param($act, $vars)
     } }
 Invoke-CMsys2 6>$null | Out-Null
 Check 'flow bad hash: -TestBadHash corrupts the expected hash it sends' ((Call 'cinstall').Vars.Sha -ne ('ab' * 32)) $true
-Check 'flow bad hash: exit code 4, nothing after the install' @($script:rc, (Seq)) @(4, 'cmsys,cinstall')
+Check 'flow bad hash: exit code 4, nothing after the install' @($script:rc, (Seq)) @(4, 'cmsys,cdisk,cinstall')
 
 
 # ── four lows: TLS 1.2 for the download, a grant that was cut off, every ACE put back, the 5.1 layout ──
@@ -1108,7 +1108,7 @@ Check 'act cdisk: the probe file is gone and free space is a number' @(@(Get-Chi
 function New-NotFound { $p = New-Probe -missing $allMissing; $p.Kv['msys2.found'] = 'False'; $p }
 foreach ($chk in $false, $true) {
     Reset-Flow $chk
-    $script:mock = { param($act, $vars) switch ($act) { 'cmsys' { New-NotFound } 'cdisk' { New-Res (With-Kv @{ 'drive.readable' = 'False' }) } default { throw "called $act" } } }
+    $script:mock = { param($act, $vars) switch ($act) { 'cmsys' { New-NotFound } 'cdisk' { New-Res (With-Kv @{ 'drive.readable' = 'False' }) } 'cacls' { } default { throw "called $act" } } }
     Invoke-CMsys2 6>$null | Out-Null
     $tag = "stage blocked (check=$chk)"
     Check "$tag`: only the probes ran, nothing was installed" (Seq) 'cmsys,cdisk'
@@ -1117,9 +1117,9 @@ foreach ($chk in $false, $true) {
 }
 # not blocked: the install goes on exactly as before
 Reset-Flow $true
-$script:mock = { param($act, $vars) switch ($act) { 'cmsys' { New-NotFound } 'cdisk' { New-Res $okKv } default { throw "called $act" } } }
+$script:mock = { param($act, $vars) switch ($act) { 'cmsys' { New-NotFound } 'cdisk' { New-Res $okKv } 'cacls' { } default { throw "called $act" } } }
 Invoke-CMsys2 6>$null | Out-Null
-Check 'stage ok target: -Check says would install, as before' @(($script:steps -like 'msys2 warn MISSING*would install*').Count, $script:needs.Count) @(1, 0)
+Check 'stage ok target: -Check says would install, as before' @(($script:steps -like 'msys2 warn MISSING*would install*').Count, ($script:steps -like 'msys2 needs-human*').Count) @(1, 0)
 
 # identity
 $ip = Get-GitIdentityPlan 'Old' 'old@x.org' '' ''

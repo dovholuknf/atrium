@@ -506,7 +506,7 @@ try { $ex = Test-Path -LiteralPath $root; if ($ex) { $null = @(Get-ChildItem -Li
 "drive.exists=$ex"; "drive.readable=$rd"
 $a = $d; while ($a -and -not (Test-Path -LiteralPath $a)) { $a = Split-Path -Parent $a }
 "anc=$a"; $w = $false
-if ($a -and $rd) { try { $s = New-Object IO.FileStream((J $a ('.atrium-probe-' + [guid]::NewGuid().ToString('N'))), 'CreateNew', 'Write', 'None', 4096, 'DeleteOnClose'); $s.Close(); $w = $true } catch {} }
+if ($a -and $rd) { try { $s = New-Object IO.FileStream((J $a ('.atrium-probe-' + [guid]::NewGuid().ToString('N'))), 'CreateNew', 'Write', 'None', 4096, 'DeleteOnClose'); $n = $s.Name; $s.Close(); Remove-Item -LiteralPath $n -Force -ErrorAction SilentlyContinue; $w = $true } catch {} }
 "anc.writable=$w"; $f = -1; try { $f = (New-Object IO.DriveInfo $root).AvailableFreeSpace } catch {}; "free=$f"
 '@ }
 
