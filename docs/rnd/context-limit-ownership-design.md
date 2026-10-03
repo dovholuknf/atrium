@@ -54,8 +54,9 @@ The sources are m1mini only, from 09-28 to 10-03 01:30Z:
 - `atrium.db`, opened read-only;
 - a script that pairs each event with the 10 calls that follow it.
 
-The orchestrator runs on sg4-control, so it is not in the sample. The raw numbers are off-repo
-(`/tmp/rnd-ctx-measure.md` on m1mini).
+The orchestrator runs on sg4-control, so it is not in the sample. The raw numbers and the measuring
+scripts are off-repo, because they read transcripts: `/Users/claude/blog-sources/rndctx/` on m1mini (`main.py` and
+`report.py`, with the report `rnd-ctx-measure.md`). L5 reruns them.
 
 | | Compaction | Clear + handoff |
 |---|---|---|
@@ -161,15 +162,40 @@ The fix is one function. Both numbers come from it, at launch and in the watcher
 ```
 buffer   = the runner row's compaction margin (claude: 33k, a new field, measured, not guessed)
 headroom = 20k  (a capture turn's growth)
-window   = the model's window (modelWindowK), or the statusline's when it is fresh
-threshold = min(cardLimit, window − buffer − headroom)
-flag      = min(threshold + buffer + headroom, window)
+window   = the model's window (modelWindowK), fixed at launch
+flag      = min(min(cardLimit, window − buffer − headroom) + buffer + headroom, window)   (fixed at launch)
+threshold = min(cardLimit, window′ − buffer − headroom, flag − buffer − headroom)
+            where window′ is the statusline's window when it is fresh, else window
 ```
+
+The flag is passed at launch and cannot move until the next launch or resume, while the threshold is re-read on every
+tick. The threshold is therefore also bounded by the flag the card actually carries. A statusline window that differs
+from `modelWindowK`'s guess (an unnamed model, say) can only lower the threshold. It can never put the threshold past
+the flag's compaction point.
+
+For a worker, which is never cycled (L2), the flag is `cardLimit + buffer`, clamped the same way. Its compaction
+comes at its limit, not at the limit plus the headroom.
 
 - 1M window, k = 200: the threshold is 200k and the flag is 253k, so compaction comes at about 220k, after atrium.
 - 200k window: the threshold is 147k and the flag is 200k, so compaction comes at about 167k.
 
 This keeps one rule: atrium always acts first by `headroom`. It replaces both the 70% factor and the 10% factor.
+
+**What the headroom does not cover.** The 20k covers a capture turn started between turns. It does not cover a long
+turn that crosses the threshold mid-turn. atrium's cycle waits for that turn to end, and if the turn grows more than
+20k first, the runner compacts it. **That is by design:** the backstop exists for exactly this case, and 16 of the
+26 measured compactions were mid-turn with no harm found. A larger headroom would only move the line, because a turn
+has no bound on its growth, and it would waste window on every card. L5 measures how much a turn grows from the
+crossing to its end. If most cycles are being lost to mid-turn compactions, the headroom is raised then, from that
+figure.
+
+**The margin is measured, not known.** The 33k comes from two points (330k fired at about 297k, 165k at about 133k)
+on one Claude Code version, 2.1.288. A fixed margin fits both, and a ratio would not, since 10% would put the second
+point at about 148k. It is therefore a runner-row field, not a constant, and it is re-checked in two ways:
+
+- by L1 from every automatic compaction, whose `compact_boundary` carries `preTokens`. A compaction more than 5k away
+  from `flag − margin` logs the observed margin and shows it in the runner editor;
+- by hand at each Claude Code upgrade, with the real-card check in L0's done-when.
 
 **The interim, until it is built:** no setting fixes it, because both numbers derive from the same k. Raising k to 330
 or more puts compaction at k or later, but with no headroom, and it gives up the 200k the orchestrator wanted. The
@@ -222,10 +248,10 @@ Notes for the build:
 
 | Stage | What | Size | Done when |
 |---|---|---|---|
-| L0 | Backstop math (section 3): one function for the threshold and the flag, the margin as a runner row field, `threshold_k` in the card details, and the 70% and 10% factors gone | S, room deploy | a card at k = 200 on a 1M model starts with `--autocompact 253k` and is cleared, not compacted, in a test daemon with a fake transcript |
+| L0 | Backstop math (section 3): one function for the threshold and the flag, the margin as a runner row field, `threshold_k` in the card details, and the 70% and 10% factors gone | S, room deploy | a card at k = 200 on a 1M model starts with `--autocompact 253k` and is cleared, not compacted, in a test daemon with a fake transcript; and on a real card, launched at k = 200 on a 1M model, the transcript's first automatic `compact_boundary` shows `preTokens` of about 220k (±5k) on a turn long enough to pass atrium's cycle |
 | LL | The limit layer (r-new-context-limit-layer, held): a stored per-runner limit as layer 2 of the function, in the API and the three runner editors, and the row's bar reading `threshold_k` | S + the board half | a codex row limit of 150 moves only codex cards' thresholds |
 | L1 | After a compaction: re-anchor line, handoff marked stale, `compacted` events by session | S | a fake PostCompact gives one line and a stale note in the next capture prompt |
-| L2 | Workers get `compact` at the limit: the flag from the same function, never a cycle. The mode `agents` stays as it is | XS | a worker's flag follows k |
+| L2 | Workers get `compact` at the limit: the flag is `cardLimit + buffer` (section 3), never a cycle, so the worker follows its runner row's limit (LL) and k like any card. The mode `agents` stays as it is | XS | a worker's flag follows k and its runner row's limit |
 | L3 | `restart` action: exit, then launch with the wake prompt, journalled like a cycle, with a step for an exited runner that a room restart relaunches (section 7) | M | a non-Claude test runner is cycled by restart |
 | L4 | Per-runner readers and margins: OpenCode, then Codex | M each | each runner's size shows on the card, and its cycle fires |
 | L5 | Re-measure one week after L0, with the same script, on all rooms | research | the table in section 1 with more than 30 clears |
@@ -291,12 +317,18 @@ The item is held for the pause, and it belongs to `u-new-context-bar-on-rows`. I
 - a default per runner kind;
 - the row's context bar reading the limit from the API.
 
-It becomes one layer of the one function. From the most specific layer to the least:
+It becomes one layer of the one function. How the layers combine:
 
-1. the card's tags (the ceiling, `context_ceiling_k`);
-2. the runner row's stored limit, from this item, when it is set;
-3. the global setting `auto_new_context_k`, which is the default for every runner kind;
-4. bounded by `window − margin − headroom`, from the model's window and the runner row's margin (L0).
+1. **The runner's limit:** the runner row's stored limit, from this item, when it is set. It REPLACES the global
+   setting `auto_new_context_k` for that runner's cards. Otherwise the global setting applies, as the default for
+   every runner kind.
+2. **The ceiling:** a ceiling card (`context_ceiling_k`) takes the LOWER of the ceiling and the limit from step 1
+   when the mode also reaches it, and the ceiling alone when it does not. That is what `cardLimit` does today with
+   the global k.
+3. **The bound:** the result is bounded by `window − margin − headroom`, from the model's window and the runner row's
+   margin (L0), taking the lower.
+
+So only the runner row overrides. The ceiling and the bound only take the lower of two.
 
 That function gives four numbers:
 
