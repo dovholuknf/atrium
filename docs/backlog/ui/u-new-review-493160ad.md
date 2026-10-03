@@ -132,3 +132,42 @@ The owed-chip doc describes `reported_at` as r-owed-answers 6b8ae15f had it. The
 again for cards the operator launched, so re-read that paragraph before the chip is built.
 
 Atrium-Verdict: doc-ok 29efa251..b7ecc0f8
+
+## Re-read: b2c2a8bc
+
+One commit on 493160ad, so the range is `29efa251..b2c2a8bc`.
+
+Closed:
+- **M1.** Only `?crmock=1` turns the mock on, for that load alone. The localStorage switch is gone. While the mock is
+  on, a fixed banner with `role="status"` says "Mock data: nothing here reaches the hub." It is built with
+  `textContent`, and its "Turn off" button reloads the page without the parameter. Both pages load
+  `changereq-core.js`, so both show it.
+- **L1.** A 401, or a 403 whose text says read-only or share, makes the board read-only. Any other 403 is shown as
+  that action's error.
+- **L2.** The ended line says "Withdrawn", with who from `closed_by`, on both pages.
+- **L3.** A sha is exactly 40 or 64 hex characters, matching the hub's `ValidSHA`, on both pages and in the mock. The
+  input's `maxlength` is 64.
+- **L4.** `esc(r.state)` is used in the class name.
+- **L5.** The doc wording is fixed.
+- **L6.** `crLoad` keeps one read in flight and queues one rerun, and `inflight` is no longer cleared by force.
+
+Checked:
+- `node --check` passes on the four changereq files.
+- `git merge-tree` onto `claude/landing` is clean.
+- Per the standing note, I read the board units and did not run them.
+
+Note, not a hold:
+- **N1: the read-only test is loose.** `readOnlyWords` matches `/share/i` alone, so a 403 that only mentions a share,
+  such as "that branch is not shared", would set read-only. Once @fabric fixes the refusal text, match that exact
+  wording instead.
+
+Atrium-Verdict: room-ok 29efa251..b2c2a8bc
+Atrium-Verdict: hub-ok 29efa251..b2c2a8bc
+Quality: every finding is closed. The mock now says it is on and cannot stay on by accident.
+
+## Doc: u-new-peek-cold-twice ecfbef79
+
+A backlog doc only, on claude/ui-director. It is a clear item with a "done when" that a headless check can hold.
+There are no private paths or names. It landed with the u-scm5 and u-pin-shows batch.
+
+Atrium-Verdict: doc-ok ecfbef79^..ecfbef79
