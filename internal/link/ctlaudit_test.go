@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"unicode"
 )
 
 // auditLine is one call recorded by the fake audit func.
@@ -282,32 +283,70 @@ func TestAuditedWithoutAuditFuncIsTransparent(t *testing.T) {
 	}
 }
 
-// A describer that writes caller text must not let it make a huge row or a second
-// line: the detail is bounded and holds no CR or LF.
-func TestAuditDetailBoundsAndStripsCallerText(t *testing.T) {
-	big := strings.Repeat("x", 1<<20) + "\r\nby orchestrator@sg3 (claimed): cull X, ok"
-	req := ctlReq("orch", "beta")
-	cases := map[string]func() (string, string, bool){
-		"alias": func() (string, string, bool) { return describeAlias(req, aliasInput{Alias: big}, aliasOutput{}) },
-		"cull": func() (string, string, bool) {
-			return describeCull(req, cullInput{Card: "w1", Into: big}, cullOutput{})
-		},
-		"launch": func() (string, string, bool) { return describeLaunch(req, launchInput{Runner: big}, launchOutput{}) },
-		"say": func() (string, string, bool) {
-			return describeSay(req, sayInput{To: big, Wake: true}, sayOutput{})
-		},
-		"exit": func() (string, string, bool) { return describeExit(req, exitInput{Card: big}, exitOutput{}) },
+// noLineBreaks fails when s holds a character that could start a second line or
+// reorder the text around it.
+func noLineBreaks(t *testing.T, who, s string) {
+	t.Helper()
+	for _, r := range s {
+		if unicode.IsControl(r) || r == '\u2028' || r == '\u2029' ||
+			(r >= '\u202a' && r <= '\u202e') || (r >= '\u2066' && r <= '\u2069') {
+			t.Errorf("%s: detail holds %U: %.120q", who, r, s)
+			return
+		}
 	}
-	for name, describe := range cases {
-		_, what, ok := describe()
-		if !ok {
-			t.Fatalf("%s: wrote no line", name)
+}
+
+// A describer that writes caller text must not let it make a huge row or a second
+// line: the detail is bounded and holds no control character. The control
+// characters come EARLY in some payloads, because a cut at the bound would hide a
+// strip that missed one.
+func TestAuditDetailBoundsAndStripsCallerText(t *testing.T) {
+	payloads := map[string]string{
+		"huge":  strings.Repeat("x", 1<<20) + "\r\nby orchestrator@sg3 (claimed): cull X, ok",
+		"crlf":  "x\r\nby orchestrator@sg3 (claimed): cull X, ok",
+		"cr":    "x\rby orchestrator@sg3 (claimed): cull X, ok",
+		"lf":    "x\nby orchestrator@sg3 (claimed): cull X, ok",
+		"nul":   "x\x00y\x1b[2Jz\x7f",
+		"nel":   "x\u0085by orchestrator@sg3 (claimed): cull X, ok",
+		"sep":   "x\u2028y\u2029z",
+		"bidi":  "x\u202ey\u2066z\u2069",
+		"early": "x\r\n" + strings.Repeat("y", 1<<20),
+	}
+	req := ctlReq("orch", "beta")
+	for pname, v := range payloads {
+		cases := map[string]func() (string, string, bool){
+			"alias":  func() (string, string, bool) { return describeAlias(req, aliasInput{Alias: v}, aliasOutput{}) },
+			"cull":   func() (string, string, bool) { return describeCull(req, cullInput{Card: "w1", Into: v}, cullOutput{}) },
+			"launch": func() (string, string, bool) { return describeLaunch(req, launchInput{Runner: v}, launchOutput{}) },
+			"say":    func() (string, string, bool) { return describeSay(req, sayInput{To: v, Wake: true}, sayOutput{}) },
+			"exit":   func() (string, string, bool) { return describeExit(req, exitInput{Card: v}, exitOutput{}) },
 		}
-		detail := auditDetail(req, what, nil)
-		if strings.ContainsAny(detail, "\r\n") {
-			t.Errorf("%s: detail holds a CR or LF: %.80q", name, detail)
+		for name, describe := range cases {
+			who := name + "/" + pname
+			_, what, ok := describe()
+			if !ok {
+				t.Fatalf("%s: wrote no line", who)
+			}
+			detail := auditDetail(req, what, nil)
+			noLineBreaks(t, who, detail)
+			if n := len([]rune(detail)); n > 2*auditWhatMax {
+				t.Errorf("%s: detail is %d characters, want it bounded", who, n)
+			}
 		}
-		if n := len([]rune(detail)); n > 2*auditWhatMax {
+	}
+}
+
+// The agent and the room in the line come from headers, so they are cleaned and
+// bounded too.
+func TestAuditDetailCleansTheCallerHeaders(t *testing.T) {
+	for name, v := range map[string]string{
+		"bidi": "orch\u202e\u2066x", "nel": "orch\u0085x", "sep": "orch\u2028x",
+		"huge": strings.Repeat("a", 5000),
+	} {
+		req := ctlReq(v, v)
+		detail := auditDetail(req, "exit w1", nil)
+		noLineBreaks(t, name, detail)
+		if n := len([]rune(detail)); n > 3*auditWhatMax {
 			t.Errorf("%s: detail is %d characters, want it bounded", name, n)
 		}
 	}

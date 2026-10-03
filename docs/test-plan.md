@@ -8472,3 +8472,20 @@ Covered by `TestInACardEnvGitPushHubLandsWithTheCardInThePushLog`, `TestAProcess
 `TestAHubRemotePointingElsewhereIsLeftAloneAndAtriumHubIsAdded`, `TestEnsureRemotesAddsHubFollowsAPortChangeAndGuardsOriginOnAtriumMadeClones`,
 `TestACardThatRunsOutsideCodeGetsNoGitTokenInItsEnv`, `TestAPRRunnersCommandsAndForksHaveNoGitTokenInTheirEnv`,
 `TestACardsLaunchEnvCarriesItsGitTokenScopedToTheForwarder`, `TestGitPushSetting`. Items 1 and 2 live on m1mini against the hub.
+
+## IJ. Launch caps refuse a case-duplicate room and an unknown field (f-027)
+
+1. `env -u ATRIUM_LOCATION go test -run 'TestTheLaunchCaps|TestAStoredCaseDuplicateIsLoggedOnce' ./internal/link`
+   passes.
+2. On a hub, `PUT /_hub/launch-caps` from the hub's machine with `{"rooms":{"SG3":1,"sg3":50}}` answers 400, and so
+   does `{"room":{"sg3":5}}`. `GET /_hub/launch-caps` afterwards shows the caps as they were.
+3. If a hub already stored such a duplicate, every room reads the default cap. The hub log says
+   `the stored launch caps are unusable` once, with the reason. Check the stored `launch_caps` before deploying.
+
+## IK. The control audit line is one bounded line (f-028)
+
+1. `env -u ATRIUM_LOCATION go test -run 'TestAuditDetail' ./internal/link` passes. It puts CR, LF, NUL, ESC, U+0085,
+   U+2028, U+2029 and the bidi controls early in a 1 MiB value for the alias, cull, launch, say and exit describers,
+   and in the agent and room headers. A strip of only LF, or of only C0, fails it.
+2. Call `atrium_alias` with a long alias that holds a newline. The audit row for it is one line of at most about 300
+   characters, and the agent and room in it are the cleaned header values.

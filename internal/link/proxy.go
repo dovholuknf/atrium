@@ -113,6 +113,9 @@ type Proxy struct {
 	// capStore holds the per-room launch caps. Nil until SetLaunchCaps wires
 	// it, and then every room gets the default cap. See launchcaps.go.
 	capStore HubSettings
+	// capBad is the stored launch_caps value last logged as unusable, so the
+	// log says it once and not on every read.
+	capBad string
 	// deps is the item gates. Nil until SetDeps wires it, and a hub without one answers
 	// /_hub/deps 404 and checks no launch. See deps.go.
 	deps *deps

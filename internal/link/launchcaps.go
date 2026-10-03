@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"strings"
 
@@ -71,7 +72,7 @@ func (lc LaunchCaps) check() error {
 		}
 		// Room names match without regard to case, so two keys that fold together
 		// would give the room whichever cap the map yields first.
-		folded := strings.ToLower(name)
+		folded := lowerASCII(name)
 		if other, dup := seen[folded]; dup {
 			return fmt.Errorf("%s and %s are the same room, give it one cap", other, name)
 		}
@@ -107,7 +108,18 @@ func (p *Proxy) launchCaps() LaunchCaps {
 		return LaunchCaps{}
 	}
 	var lc LaunchCaps
-	if json.Unmarshal([]byte(v), &lc) != nil || lc.check() != nil {
+	err = json.Unmarshal([]byte(v), &lc)
+	if err == nil {
+		err = lc.check()
+	}
+	if err != nil {
+		p.mu.Lock()
+		first := p.capBad != v
+		p.capBad = v
+		p.mu.Unlock()
+		if first {
+			log.Printf("[hub] the stored launch caps are unusable, so every room gets the default cap: %v", err)
+		}
 		return LaunchCaps{}
 	}
 	return lc

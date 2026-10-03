@@ -4,8 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"sync"
 	"testing"
@@ -242,5 +244,22 @@ func TestTheLaunchCapsRefuseCaseDuplicatesAndUnknownFields(t *testing.T) {
 		if st.m[SettingLaunchCaps] != "" {
 			t.Fatalf("PUT %s saved %q", bad, st.m[SettingLaunchCaps])
 		}
+	}
+}
+
+// A stored value that fails check() reads as no caps, and the hub says so once.
+func TestAStoredCaseDuplicateIsLoggedOnce(t *testing.T) {
+	var buf strings.Builder
+	log.SetOutput(&buf)
+	defer log.SetOutput(os.Stderr)
+	p := NewProxy(NewHub(Timings{}), nil, "", nil)
+	p.SetLaunchCaps(&fakeSettings{m: map[string]string{SettingLaunchCaps: `{"rooms":{"SG3":1,"sg3":50}}`}})
+	for i := 0; i < 3; i++ {
+		if n := p.launchCaps().For("sg3"); n != DefaultLaunchCap {
+			t.Fatalf("sg3 got %d, not the default", n)
+		}
+	}
+	if got := strings.Count(buf.String(), "launch caps are unusable"); got != 1 {
+		t.Errorf("logged %d times, want 1: %q", got, buf.String())
 	}
 }

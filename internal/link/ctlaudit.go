@@ -69,21 +69,27 @@ func audited[In, Out any](c *controlMCP, kind string, describe auditDescribe[In,
 
 // auditDetail is `by <agent>@<caller room> (claimed): <what>, <outcome>`.
 func auditDetail(req *mcp.CallToolRequest, what string, err error) string {
-	by := agentOf(req)
+	// The agent and room come from headers anybody on loopback can set, so they
+	// are cleaned like the text is.
+	by := auditWhat(agentOf(req))
 	if by == "" {
 		by = "unnamed"
 	}
-	if r := roomOf(req); r != "" {
+	if r := auditWhat(roomOf(req)); r != "" {
 		by += "@" + r
 	}
 	return "by " + by + " (claimed): " + auditWhat(what) + ", " + auditOutcome(err)
 }
 
 // auditWhat strips control characters from what, so caller text cannot start a
-// second line, and cuts it to auditWhatMax characters.
+// second line, and cuts it to auditWhatMax characters. Besides C0, DEL and C1 it
+// strips the line and paragraph separators and the bidi controls, which a log
+// viewer uses to reorder the text around them.
 func auditWhat(what string) string {
 	what = strings.Map(func(r rune) rune {
-		if unicode.IsControl(r) {
+		switch {
+		case unicode.IsControl(r), r == '\u2028', r == '\u2029',
+			r >= '\u202a' && r <= '\u202e', r >= '\u2066' && r <= '\u2069':
 			return -1
 		}
 		return r
