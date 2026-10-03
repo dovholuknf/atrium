@@ -66,6 +66,7 @@ type Hub struct {
 
 	mu     sync.Mutex
 	store  *Store
+	pass   *Pass
 	locks  map[string]*sync.Mutex
 	mirror map[string]MirrorState
 	rooms  map[string]*RoomState

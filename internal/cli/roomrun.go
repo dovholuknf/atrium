@@ -462,19 +462,29 @@ func roomHandler(d *daemon.Daemon, room *link.Room) http.Handler {
 }
 
 // liveBranches is the branches of this room's live cards in the repository `name` (`github/o/r`), which the
-// room's git route serves beside claude/*. A card is live while it is running or waiting on somebody: a done,
-// shelved or dead card is not, and neither is one on the backlog, which has no branch of its own yet. A card is
-// matched to a repository by the folder name its work is in, which is what the board records as its repo.
-// It is asked on every fetch, so a card that ends stops being served at once.
+// room's git route serves beside claude/*. It is asked on every fetch, so a card that ends stops being served at
+// once.
 func liveBranches(d *daemon.Daemon, name string) []string {
 	tasks, err := d.Store().List(store.StatusRunning, store.StatusNeedsInput, store.StatusNeedsPermission)
 	if err != nil {
 		return nil
 	}
-	repo := name[strings.LastIndex(name, "/")+1:]
+	return selectLive(name, tasks)
+}
+
+// selectLive picks the branches of the live cards in a repository. LIVE IS THE CARD'S STATUS, not whether a process
+// is running: a card is live while it is running or waiting on somebody, and a PARKED card (no process, its status
+// kept) is still live, so a review it owes keeps being served until it ends. A done, shelved, dead or backlog card
+// is not live (a backlog card has no branch of its own yet). A card is matched to its repository by gitsync.RepoMatches.
+func selectLive(name string, tasks []*store.Task) []string {
 	var out []string
 	for _, t := range tasks {
-		if t.Repo == repo && t.Branch != "" {
+		switch t.Status {
+		case store.StatusRunning, store.StatusNeedsInput, store.StatusNeedsPermission:
+		default:
+			continue
+		}
+		if t.Branch != "" && gitsync.RepoMatches(name, t.Host, t.Org, t.Repo) {
 			out = append(out, t.Branch)
 		}
 	}

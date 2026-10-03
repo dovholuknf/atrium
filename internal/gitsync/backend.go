@@ -36,9 +36,9 @@ type Backend struct {
 	Resolve func(name string) (gitDir string, ok bool)
 	// Hide is each uploadpack.hideRefs value, in order.
 	Hide []string
-	// HideFor, when set, is the hideRefs for one request and replaces Hide. It is asked for the repository name,
-	// and the answer is written into the CGI environment for that request alone.
-	HideFor func(name string) []string
+	// HideFor, when set, is the hideRefs for one request and replaces Hide. It is asked for the repository name and
+	// its git directory, and the answer is written into the CGI environment for that request alone.
+	HideFor func(name, gitDir string) []string
 	// Git is the git executable. Empty finds `git` on PATH.
 	Git string
 }
@@ -161,7 +161,7 @@ func (b *Backend) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	hide := b.Hide
 	if b.HideFor != nil {
-		hide = b.HideFor(name)
+		hide = b.HideFor(name, dir)
 	}
 	for _, h := range hide {
 		cfg = append(cfg, [2]string{"uploadpack.hideRefs", h})

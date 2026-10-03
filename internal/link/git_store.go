@@ -3,6 +3,7 @@ package link
 import (
 	"context"
 	"errors"
+	"net"
 	"net/http"
 	"strings"
 
@@ -28,25 +29,55 @@ import (
 // serveGitStore answers anything under /git/ on the board's listeners.
 func (p *Proxy) serveGitStore(w http.ResponseWriter, r *http.Request) {
 	g := p.git()
-	if g == nil || !strings.HasPrefix(r.URL.Path, gitsync.StorePrefix) {
+	store, pass := strings.HasPrefix(r.URL.Path, gitsync.StorePrefix), strings.HasPrefix(r.URL.Path, gitsync.PassPrefix)
+	if g == nil || (!store && !pass) {
 		http.NotFound(w, r)
 		return
 	}
+	reach := ""
 	switch edge.ReachOf(r) {
 	case edge.ReachZrokPublic:
 		// The same answer as a path that is not there: a public share does not say it is a git server.
 		http.NotFound(w, r)
 		return
-	case edge.ReachOverlay, edge.ReachZrokPrivate:
+	case edge.ReachOverlay:
+		reach = "overlay"
+	case edge.ReachZrokPrivate:
+		reach = "zrok-private"
 	default:
 		if !edge.LocalOperator(r) {
 			http.Error(w, "the hub's git store is reached from the machine the hub runs on, or over the board's overlay"+
 				edge.ProxyNote(r), http.StatusForbidden)
 			return
 		}
+		reach = "loopback"
+	}
+	// A FETCH PASSED THROUGH TO A ROOM, for the operator. A card on a room is not served here (it would come in
+	// on the link's git kind, which does not route /git/room/), so there is no card to name and none is read.
+	if pass {
+		ctx := gitsync.WithReader(r.Context(), gitsync.Reader{Reach: reach, Key: readerKey(reach, r.RemoteAddr)})
+		g.PassHandler().ServeHTTP(w, r.WithContext(ctx))
+		return
 	}
 	ctx := gitsync.WithCaller(r.Context(), gitsync.Caller{Kind: gitsync.CallerOperator})
 	g.StoreHandler().ServeHTTP(w, r.WithContext(ctx))
+}
+
+// readerKey is who the rate and the budget count a reader as: the reach and the peer's address.
+//
+// IT IS PER PEER ONLY WHERE THE PEER HAS A REAL ADDRESS. Loopback does, and so does a listener that hands out TCP
+// connections. A ziti service listener (and a zrok share, which rides ziti) does not: the SDK's RemoteAddr is
+// `ziti-edge-router connId=<n>, logical=<router>`, one per CONNECTION and naming nobody. Keyed on that, every new
+// connection would be a new reader and the rate could be walked around by opening another. So an address that is not
+// an IP is counted as the whole reach: every reader on the overlay or a private share shares one budget, which
+// is a fairness cost (one busy phone can use up another's six fetches a minute) and not a hole, and every reader
+// there is the operator anyway. The rate is per peer address on loopback, and per reach on the overlays.
+func readerKey(reach, remote string) string {
+	host, _, err := net.SplitHostPort(remote)
+	if err != nil || net.ParseIP(host) == nil {
+		return reach
+	}
+	return reach + ":" + host
 }
 
 // GitCards answers gitsync.CardLookup through the hub's own relay, which asks the room the way a card on

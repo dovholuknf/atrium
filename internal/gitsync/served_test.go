@@ -25,6 +25,10 @@ func TestServedHideIsAPureFunctionOfTheLiveBranches(t *testing.T) {
 		{"one", []string{"fix/x"}, append(append([]string{}, base...), "!refs/heads/fix/x")},
 		{"sorted and once each", []string{"b", "a", "b"}, append(append([]string{}, base...), "!refs/heads/a", "!refs/heads/b")},
 		{"claude/main is never served", []string{"claude/main"}, base},
+		// A card working in the clone's own checkout on its default branch is not served that branch: the operator's
+		// unpushed work may be there.
+		{"the clone's own branches are never served", []string{"main", "master", "hub-main", "claude/main", "fix/x"},
+			append(append([]string{}, base...), "!refs/heads/fix/x")},
 		{"not a branch name", []string{"", "refs/stash", "refs/heads/x", "-x", "a b", "a..b", "a:b", "a*", "a/", "/a", "x.lock", "a//b", "a/.b", "@{u}", "x\ny", "!refs/heads/y", "a\"b"}, base},
 	}
 	for _, c := range cases {
@@ -74,10 +78,10 @@ func newRoomRepo(t *testing.T) *roomRepo {
 
 	b := &Backend{
 		Resolve: func(name string) (string, bool) { return r.dir, name == "github/o/r" },
-		HideFor: func(string) []string {
+		HideFor: func(_, dir string) []string {
 			r.mu.Lock()
 			defer r.mu.Unlock()
-			return ServedHide(r.card)
+			return ServedHide(r.card, DefaultBranches(nil, dir)...)
 		},
 	}
 	r.srv = httptest.NewServer(b)
@@ -204,5 +208,67 @@ func TestTheRoomsUploadPackSpeaksV0AndOffersNoFilterOrAnySha(t *testing.T) {
 		if strings.Contains(adv, cap) {
 			t.Errorf("the room offers %s: %q", cap, adv)
 		}
+	}
+}
+
+func TestACardIsMatchedToItsRepositoryOnTheFullNameWhenItRecordedOne(t *testing.T) {
+	for _, c := range []struct {
+		name, host, org, repo string
+		want                  bool
+	}{
+		{"github/o/r", "", "", "r", true},
+		{"github/o/r", "github", "o", "r", true},
+		{"github/o/r", "github.com", "O", "R", true},
+		{"o/r", "", "o", "r", true},
+		// A card that recorded no org or host matches on the folder name alone.
+		{"github/o/r", "", "", "r", true},
+		{"github/o/r", "", "", "other", false},
+		{"github/o/r", "", "x", "r", false},
+		{"github/o/r", "gitlab", "o", "r", false},
+		{"github/o/r", "github", "x", "r", false},
+		{"github/o/r", "", "", "", false},
+		{"../r", "", "", "r", false},
+	} {
+		if got := RepoMatches(c.name, c.host, c.org, c.repo); got != c.want {
+			t.Errorf("%+v = %v", c, got)
+		}
+	}
+}
+
+func TestAClonesDefaultBranchWhateverItIsCalledIsNeverServedToALiveCard(t *testing.T) {
+	// The pure half.
+	got := ServedHide([]string{"develop", "trunk", "fix/x"}, "develop", "trunk")
+	want := []string{"HEAD", "refs", "!refs/heads/claude/", "refs/heads/claude/main", "!refs/heads/fix/x"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("got %q want %q", got, want)
+	}
+
+	// Through a real clone: origin/HEAD points at develop, and init.defaultBranch is trunk.
+	r := newRoomRepo(t)
+	work := filepath.Dir(r.dir)
+	git(t, work, "branch", "develop", "claude/main")
+	git(t, work, "branch", "trunk", "claude/main")
+	r.setLive("develop", "trunk", "fix/live")
+	// Neither is a default yet, so a card on either would be served: this is what the test is about.
+	got2 := r.advertised(t)
+	if got2["refs/heads/develop"] == "" || got2["refs/heads/trunk"] == "" {
+		t.Fatalf("a live card on develop and trunk is served until they are the defaults: %v", got2)
+	}
+	git(t, work, "update-ref", "refs/remotes/origin/develop", "claude/main")
+	git(t, work, "symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/develop")
+	got2 = r.advertised(t)
+	if _, ok := got2["refs/heads/develop"]; ok {
+		t.Fatalf("origin/HEAD's branch is served: %v", got2)
+	}
+	if got2["refs/heads/trunk"] == "" {
+		t.Fatalf("trunk went with it: %v", got2)
+	}
+	git(t, work, "config", "init.defaultBranch", "trunk")
+	got2 = r.advertised(t)
+	if _, ok := got2["refs/heads/trunk"]; ok {
+		t.Fatalf("init.defaultBranch's branch is served: %v", got2)
+	}
+	if got2["refs/heads/fix/live"] != r.live {
+		t.Fatalf("the card's own branch stopped being served: %v", got2)
 	}
 }

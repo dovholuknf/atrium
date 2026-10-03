@@ -62,12 +62,12 @@ func (h *RoomHandler) Handler() http.Handler {
 		// Everything, then claude/* back, then claude/main out again, then each live card's branch: the room
 		// offers what its workers made and not what came from the hub in the first place. See ServedHide.
 		// Written per request, so a card's branch is served for as long as the card is live.
-		HideFor: func(name string) []string {
+		HideFor: func(name, gitDir string) []string {
 			var live []string
 			if h.Live != nil {
 				live = h.Live(name)
 			}
-			return ServedHide(live)
+			return ServedHide(live, DefaultBranches(h.Syncer.Runner, gitDir)...)
 		},
 	})
 	return mux

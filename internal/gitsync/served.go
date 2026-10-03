@@ -1,8 +1,10 @@
 package gitsync
 
 import (
+	"context"
 	"sort"
 	"strings"
+	"time"
 )
 
 // What a room offers to a reader the hub passes through. See docs/rnd/hub-forge-design.md 3.3.
@@ -20,16 +22,23 @@ import (
 //	refs/heads/claude/main     then claude/main out again: it came from the hub in the first place
 //	!refs/heads/<b>            then one per live card's branch, under the name it has on the room
 //
-// A live branch that is not a plain branch name is left out rather than written into the config, and so is
-// claude/main, which stays unserved whatever a card is on. Duplicates are written once and the order is sorted,
-// so the same set always gives the same configuration.
-func ServedHide(live []string) []string {
+// A live branch that is not a plain branch name is left out rather than written into the config. So is each of
+// the clone's own integration branches (see neverServed, and `defaults`, the clone's default branch whatever it is
+// called, from DefaultBranches): a card working in the clone's checkout on `main` is
+// NOT served `main`, because that is where the operator's unpushed work may be, and the card's own work is
+// reached on a branch of its own. Duplicates are written once and the order is sorted, so the same set always
+// gives the same configuration.
+func ServedHide(live []string, defaults ...string) []string {
+	isDefault := map[string]bool{}
+	for _, d := range defaults {
+		isDefault[strings.TrimSpace(d)] = true
+	}
 	out := []string{"HEAD", "refs", "!refs/heads/claude/", "refs/heads/claude/main"}
 	seen := map[string]bool{}
 	var add []string
 	for _, b := range live {
 		b = strings.TrimSpace(b)
-		if b == "claude/main" || !servableBranch(b) || seen[b] {
+		if neverServed[b] || isDefault[b] || !servableBranch(b) || seen[b] {
 			continue
 		}
 		seen[b] = true
@@ -40,6 +49,53 @@ func ServedHide(live []string) []string {
 		out = append(out, "!refs/heads/"+b)
 	}
 	return out
+}
+
+// neverServed is the branches a live card never makes servable: the hub's own (claude/main, and the room's copy
+// of it, hub-main) and the names a clone's default branch usually has.
+var neverServed = map[string]bool{"claude/main": true, "hub-main": true, "main": true, "master": true}
+
+// DefaultBranches is the clone's own default branch names: where `origin/HEAD` points (what the forge calls its
+// default, `develop` or `trunk` as well as `main`), and `init.defaultBranch`, which is the name a clone with no origin
+// made its first branch. A name that cannot be read is simply missing, and neverServed still holds. It runs two
+// short git commands and is read on every fetch, like the live branches.
+func DefaultBranches(g *Runner, gitDir string) []string {
+	if g == nil {
+		g = Default
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	var out []string
+	if ref, err := g.Git(ctx, gitDir, "symbolic-ref", "-q", "refs/remotes/origin/HEAD"); err == nil {
+		if b, ok := strings.CutPrefix(strings.TrimSpace(ref), "refs/remotes/origin/"); ok && b != "" {
+			out = append(out, b)
+		}
+	}
+	if b, err := g.Git(ctx, gitDir, "config", "--get", "init.defaultBranch"); err == nil {
+		if b = strings.TrimSpace(b); b != "" {
+			out = append(out, b)
+		}
+	}
+	return out
+}
+
+// RepoMatches says whether a card's place is the repository `name` (`<host>/<owner>/<repo>`). The card's repo is
+// the folder name its work is in. Its org and host are matched as well when the card recorded them, and a card
+// that did not (the launcher did not know) matches on the folder name alone, which is looser: two repositories
+// with one folder name can then each serve a branch name of the other's card. Stage 2's scm path records the full
+// name, and a card with it is matched exactly.
+func RepoMatches(name, host, org, repo string) bool {
+	ref, err := ParseName(name)
+	if err != nil || repo == "" || !strings.EqualFold(repo, ref.Repo) {
+		return false
+	}
+	if org = strings.TrimSpace(org); org != "" && !strings.EqualFold(org, ref.Owner) {
+		return false
+	}
+	if host = strings.TrimSpace(host); host != "" && canonicalHost(host) != ref.Host {
+		return false
+	}
+	return true
 }
 
 // servableBranch says whether a card's branch name may become a hideRefs value. A name git would not take as a

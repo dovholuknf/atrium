@@ -174,8 +174,9 @@ func TestThePushReachesAreTheOperatorsOrRefused(t *testing.T) {
 			t.Errorf("%s = %d", r, code)
 		}
 	}
-	// What is not the store is not served here either.
-	for _, p := range []string{"/git/room/sg4/github/o/r.git/info/refs?service=git-upload-pack", "/git/", "/git/hub", "/git/github/o/r.git/info/refs"} {
+	// What is not the store is not served here either. (A room's pass-through, /git/room/, is its own route: see
+	// git_pass_test.go.)
+	for _, p := range []string{"/git/", "/git/hub", "/git/github/o/r.git/info/refs", "/git/room", "/git/room/"} {
 		rec := httptest.NewRecorder()
 		req := httptest.NewRequest("GET", "http://127.0.0.1:7778"+p, nil)
 		req.RemoteAddr = loop
