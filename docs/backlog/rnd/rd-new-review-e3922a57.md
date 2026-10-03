@@ -90,3 +90,34 @@ checks the real margin.
 Atrium-Verdict: doc-ok 30cd5837..e3922a57
 Quality: a measured study that found a live bug in the shipped backstop, with the arithmetic shown and the fix
 reduced to one function.
+
+## Re-read: 94e46c8b
+
+Read as one range, `30cd5837..94e46c8b`. The new commit changes only the context-limit doc: it rewrites section 7,
+adds `threshold_k` to L0, and adds stage LL.
+
+Verdict: **doc-ok.** The two sg4 items are folded in faithfully, and the bar reading the threshold is the right call.
+
+What reads well:
+- **r-clear-vs-restart is placed correctly.** Its four asks shipped in 7323b17f. What carries forward is the
+  exited-but-not-relaunched journal step for L3, which is a real gap. Without it, a room that comes back would leave
+  the card exited.
+- **"Compacted during capture" on the chip.** It is honest about the handoff's source. It also accepts that a capture
+  waiting mid-turn can still be overtaken after L0, which partly answers M1 above. M1's other half still stands for
+  L0: size the headroom from the data, or say the mid-turn case in section 3.
+- **The limit layer.**
+  - The per-runner limit becomes layer 2, and the margin is shown read-only in the editors.
+  - `threshold_k` is the bar's denominator. The 73% example shows why the setting would mislead.
+  - LL's done-when ("a codex row limit of 150 moves only codex cards' thresholds") can be tested.
+
+Lows:
+- **L4: say how the layers combine.** "From the most specific layer to the least" reads as "the first one set wins".
+  Today `cardLimit` is different: it takes the **lower** of the ceiling and the global k when the mode reaches the
+  card.
+  - With a runner layer in between, say which rule applies at each step, override or min.
+  - For example: does a ceiling of 150 on a codex row whose limit is 120 give 150 or 120?
+- **L5: a runner limit and workers.** L2 says a worker's flag "follows k". After LL it follows the function, so it
+  follows the runner's row limit too. Say that in L2, so a codex row limit also moves codex workers' compaction.
+
+Atrium-Verdict: doc-ok 30cd5837..94e46c8b
+Quality: a faithful fold-in that turns two loose items into one place in the function and one journal step.
