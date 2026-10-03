@@ -1684,6 +1684,7 @@ func (d *Daemon) Kill(taskID string) error {
 	if err := d.st.SetStatus(taskID, store.StatusDead); err != nil {
 		return err
 	}
+	d.recordUsage(taskID)
 	d.publishTask(taskID)
 	return nil
 }

@@ -285,6 +285,56 @@ func (u *usageTracker) stopped(t *store.Task) {
 	}()
 }
 
+// flushed is a worker's work ending any way but a Stop hook: a report, an exit, a
+// terminate, the runner's process going. Launched workers may have no Stop hook
+// at all, and their turns never reached the ledger. It reads what the card has
+// spent so far through the same record path, so the cursor is what keeps a Stop
+// that follows, or one that came first, from counting a reply twice.
+//
+// The turn is NOT ended: its cause and resume flag stay for the Stop (or the
+// next flush) that closes it, and a flag is cleared only once a row took it.
+// Best effort, and never on the caller's path: a failure is logged.
+func (u *usageTracker) flushed(t *store.Task) {
+	if u == nil || t == nil || t.ResumeID == "" || t.Worktree == "" || !u.isClaude(t.Runner) {
+		return
+	}
+	u.mu.Lock()
+	seg := usageSegment{cause: u.cause[t.ID], afterResume: u.resumed[t.ID], stop: time.Now().UTC()}
+	u.mu.Unlock()
+	if seg.cause == "" {
+		seg.cause = store.UsageUnknown
+	}
+	if seg.afterResume && (seg.cause == store.UsageOperator || seg.cause == store.UsageUnknown) {
+		seg.cause = store.UsageResume
+	}
+	task := *t
+	go func() {
+		time.Sleep(u.settle)
+		row, err := u.record(&task, seg)
+		if err != nil {
+			log.Printf("[atrium] could not record token use on %s: %v", task.ID, err)
+			return
+		}
+		if row != nil && seg.afterResume {
+			u.mu.Lock()
+			delete(u.resumed, task.ID)
+			u.mu.Unlock()
+		}
+	}()
+}
+
+// recordUsage is flushed for a card by id. A card that cannot be read is left.
+func (d *Daemon) recordUsage(taskID string) {
+	if d.usage == nil {
+		return
+	}
+	t, err := d.st.Get(taskID)
+	if err != nil || t == nil {
+		return
+	}
+	d.usage.flushed(t)
+}
+
 // record reads a card's transcript from where the last read stopped, and writes
 // one row for the replies stamped before the Stop, and one `subagent` row for
 // what its subagents spent in the same time. It returns the main row, or nil
