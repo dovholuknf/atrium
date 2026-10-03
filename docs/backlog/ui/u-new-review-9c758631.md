@@ -52,3 +52,20 @@ Atrium-Verdict: room-ok 8bfdcdb1..9c758631
 Atrium-Verdict: hub-ok 8bfdcdb1..9c758631
 Quality: a small, well-aimed fix that measures against the layout, not the viewport, and is honest about what the test
 does and does not reproduce.
+
+## Re-read: 1de218e4
+
+One commit on landing d032abf0, so the range is `d032abf0..1de218e4`.
+
+Closed:
+- **L1.** Both new rules now have a plain `max-height: 70vh;` before them. A browser without `cqh` keeps the old cap.
+  The section reads phone.css and fails when a fallback is missing:
+  - it needs two `min()` rules or more;
+  - it needs one fallback for every `min()` rule.
+
+  `fs` and `path` are already imported, and `node --check` passes.
+- **N1.** The item doc now says that only the 300 px case catches the old rule, and that the 84 px case is a guard.
+
+Atrium-Verdict: room-ok d032abf0..1de218e4
+Atrium-Verdict: hub-ok d032abf0..1de218e4
+Quality: both notes closed, and the fallback has a test.
