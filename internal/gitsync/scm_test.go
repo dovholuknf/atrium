@@ -3,6 +3,8 @@ package gitsync
 import (
 	"context"
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -294,5 +296,78 @@ func TestHTTPSURLIsBuiltFromTheCheckedParts(t *testing.T) {
 	r, _ = ParseURL("https://git.example.org/a/b")
 	if got := httpsURL(r); got != "https://git.example.org/a/b.git" {
 		t.Fatal(got)
+	}
+}
+
+func TestCredentialHelperIsScopedToTheCheckedHostAndOnlyForListedHosts(t *testing.T) {
+	c, _ := newSCM(t)
+	c.CredentialHelper = func() string { return "store" }
+	gh, _ := ParseURL("https://github.com/a/b")
+	other, _ := ParseURL("https://collector.example/a/b")
+
+	if got := strings.Join(c.credentialArgs(gh), " "); got != "-c credential.https://github.com.helper=store" {
+		t.Fatalf("github args = %q", got)
+	}
+	if got := c.credentialArgs(other); got != nil {
+		t.Fatalf("a host not in git.credential_hosts got %v", got)
+	}
+	c.CredentialHosts = func() string { return "git.example.org, Collector.Example" }
+	if got := strings.Join(c.credentialArgs(other), " "); got != "-c credential.https://collector.example.helper=store" {
+		t.Fatalf("listed host args = %q", got)
+	}
+	if got := c.credentialArgs(gh); got != nil {
+		t.Fatalf("github was not listed but got %v", got)
+	}
+	c.CredentialHelper = func() string { return "" }
+	if got := c.credentialArgs(other); got != nil {
+		t.Fatalf("no helper still gave %v", got)
+	}
+}
+
+// A helper for another host is never called: the clone is of a stub https server that answers 401,
+// the helper writes a marker file when git runs it, and the marker must not exist afterwards.
+func TestAHelperIsNeverCalledForAHostNotListed(t *testing.T) {
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("WWW-Authenticate", `Basic realm="x"`)
+		w.WriteHeader(http.StatusUnauthorized)
+	}))
+	defer srv.Close()
+	dir := t.TempDir()
+	marker := filepath.Join(dir, "called")
+	script := filepath.Join(dir, "helper.sh")
+	if err := os.WriteFile(script, []byte("#!/bin/sh\ntouch '"+filepath.ToSlash(marker)+"'\necho username=u\necho password=p\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		name   string
+		hosts  string
+		called bool
+	}{
+		// The clone's host is "github" -> github.com, which is listed, but the stub is at 127.0.0.1:
+		// the scoped key is for github.com, so the stub is never asked either.
+		{"default list", "", false},
+		{"another list", "example.org", false},
+	} {
+		os.Remove(marker)
+		c, _ := newSCM(t)
+		c.source = func(Ref) string { return srv.URL + "/a/b.git" }
+		c.extra = []string{"-c", "http.sslVerify=false"}
+		c.CredentialHelper = func() string { return "!" + filepath.ToSlash(script) }
+		c.CredentialHosts = func() string { return tc.hosts }
+		if _, err := c.Clone(context.Background(), "https://github.com/acme/widget"); err == nil {
+			t.Fatalf("%s: a 401 stub cloned", tc.name)
+		}
+		if _, err := os.Stat(marker); (err == nil) != tc.called {
+			t.Errorf("%s: helper called = %v, want %v", tc.name, err == nil, tc.called)
+		}
+	}
+}
+
+func TestStableHubURLNeverNamesAllInterfaces(t *testing.T) {
+	r := Ref{Host: "github", Owner: "a", Repo: "b"}
+	for _, addr := range []string{"0.0.0.0:7782", ":7782", "[::]:7782", "127.0.0.1:7782"} {
+		if got := StableHubURL(addr, r); got != "http://127.0.0.1:7782/git/hub/github/a/b.git" {
+			t.Errorf("%s -> %s", addr, got)
+		}
 	}
 }

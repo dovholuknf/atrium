@@ -30,4 +30,15 @@ func TestGitSCMRootSavesReadsBackAndRefusesARelativePath(t *testing.T) {
 	if rec := settingsPost(t, srv, `{"git_scm_root":""}`); rec.Code != http.StatusOK {
 		t.Fatalf("clearing answered %d", rec.Code)
 	}
+	if rec := settingsPost(t, srv, `{"git_credential_hosts":"github.com, git.example.org"}`); rec.Code != http.StatusOK {
+		t.Fatalf("hosts answered %d", rec.Code)
+	}
+	if out := settingsGet(t, srv); out["git_credential_hosts"] != "github.com, git.example.org" {
+		t.Fatalf("hosts read back %v", out["git_credential_hosts"])
+	}
+	for _, body := range []string{`{"git_credential_hosts":"https://evil/x"}`, `{"git_credential_hosts":"a@b"}`} {
+		if rec := settingsPost(t, srv, body); rec.Code != http.StatusBadRequest {
+			t.Errorf("%s answered %d, want 400", body, rec.Code)
+		}
+	}
 }

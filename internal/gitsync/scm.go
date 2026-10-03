@@ -23,6 +23,14 @@ import (
 // never by the hub. It is NOT `git_root`, which is where the hub's git sync keeps its clones.
 const SettingSCMRoot = "git.scm_root"
 
+// SettingCredentialHosts lists the hosts atrium's credential helper may be asked about, comma or space
+// separated. Empty means `github.com`. A clone of any other host runs with no helper at all, so a card
+// that names a host of its own cannot make the room send the operator's credential there.
+const SettingCredentialHosts = "git.credential_hosts"
+
+// DefaultCredentialHosts is what an empty git.credential_hosts means.
+const DefaultCredentialHosts = "github.com"
+
 // SettingCredentialHelper is the credential helper the operator configured for atrium's clones,
 // as git would write it after `credential.helper=`. Empty means none, and a public repository
 // needs none. Atrium's git runs with every other helper switched off.
@@ -74,6 +82,8 @@ type SCM struct {
 	Root func() string
 	// CredentialHelper is the git.credential_helper setting. Nil or empty means none.
 	CredentialHelper func() string
+	// CredentialHosts is the git.credential_hosts setting. Nil or empty means github.com.
+	CredentialHosts func() string
 	// Yes asks the operator, on the board, once for a clone atrium did not make. It answers
 	// ErrAsked while nobody has answered and ErrDenied for a no. A nil Yes refuses every such clone.
 	Yes func(ctx context.Context, clone string) error
@@ -84,12 +94,16 @@ type SCM struct {
 	// source is the URL git clones from. It is unexported, so only this package's tests set it:
 	// they point it at a local bare repository, and production always clones from the https URL.
 	source func(Ref) string
+	// extra is git config for the clone, `-c k=v` pairs, and is for the same tests.
+	extra []string
 
 	mu    sync.Mutex
 	locks map[string]*sync.Mutex
 }
 
 func (c *SCM) lock(dir string) func() {
+	// Lowercased: on a case-insensitive disk Foo/bar and foo/bar are one folder.
+	dir = strings.ToLower(dir)
 	c.mu.Lock()
 	if c.locks == nil {
 		c.locks = map[string]*sync.Mutex{}
@@ -119,6 +133,34 @@ func httpsURL(r Ref) string {
 		host = "github.com"
 	}
 	return "https://" + host + "/" + r.Owner + "/" + r.Repo + ".git"
+}
+
+// credentialArgs passes the operator's helper for THIS host only, and only when the host is in
+// git.credential_hosts. The key is scoped to the https URL of the checked host, so git asks the helper
+// about no other host, a redirect target included. An unscoped helper is asked about every host, and
+// a server that answers 401 gets whatever it returns.
+func (c *SCM) credentialArgs(r Ref) []string {
+	if c.CredentialHelper == nil {
+		return nil
+	}
+	h := strings.TrimSpace(c.CredentialHelper())
+	if h == "" {
+		return nil
+	}
+	host := strings.TrimPrefix(httpsURL(r), "https://")
+	host = host[:strings.Index(host, "/")]
+	list := DefaultCredentialHosts
+	if c.CredentialHosts != nil {
+		if v := strings.TrimSpace(c.CredentialHosts()); v != "" {
+			list = v
+		}
+	}
+	for _, allowed := range strings.FieldsFunc(list, func(r rune) bool { return r == ',' || r == ' ' || r == '\t' || r == '\n' }) {
+		if strings.EqualFold(allowed, host) {
+			return []string{"-c", "credential.https://" + host + ".helper=" + h}
+		}
+	}
+	return nil
 }
 
 // ClonePath is where a repository's clone is, checked to stay under the scm folder after
@@ -188,11 +230,8 @@ func (c *SCM) Clone(ctx context.Context, rawURL string) (SCMResult, error) {
 	} else {
 		args = append(args, "-c", "protocol.allow=never", "-c", "protocol.https.allow=always")
 	}
-	if c.CredentialHelper != nil {
-		if h := strings.TrimSpace(c.CredentialHelper()); h != "" {
-			args = append(args, "-c", "credential.helper="+h)
-		}
-	}
+	args = append(args, c.extra...)
+	args = append(args, c.credentialArgs(ref)...)
 	// An argv slice, never a shell. `--` ends options, though the URL was built from checked
 	// parts and cannot start with a dash. The output is capped, and the runner bounds the time.
 	args = append(args, "clone", "--no-tags", "--", src, dest)

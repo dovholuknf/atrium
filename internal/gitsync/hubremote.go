@@ -3,6 +3,7 @@ package gitsync
 import (
 	"context"
 	"fmt"
+	"net"
 	"strings"
 )
 
@@ -21,7 +22,13 @@ const (
 
 // StableHubURL is the hub remote of a repository on a room whose agent listener is at `agentAddr`
 // (host:port): `http://<agent>/git/hub/<host>/<owner>/<repo>.git`.
+//
+// An agent listener on all interfaces (`0.0.0.0:7782`, `:7782` or `[::]:7782`) is reached at 127.0.0.1,
+// because http://0.0.0.0 is not an address a client can rely on.
 func StableHubURL(agentAddr string, r Ref) string {
+	if h, p, err := net.SplitHostPort(agentAddr); err == nil && (h == "" || h == "0.0.0.0" || h == "::") {
+		agentAddr = net.JoinHostPort("127.0.0.1", p)
+	}
 	return "http://" + agentAddr + "/git/hub/" + r.Name() + ".git"
 }
 

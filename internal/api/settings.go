@@ -89,6 +89,7 @@ func globalAutoView(s *Server) map[string]any {
 		// says how to set it, and no helper means public repositories only.
 		gitsync.SettingSCMRoot:          "git_scm_root",
 		gitsync.SettingCredentialHelper: "git_credential_helper",
+		gitsync.SettingCredentialHosts:  "git_credential_hosts",
 		// A second address file, for callers running as another account.
 		// Empty means only the per-user one, which is right when the daemon
 		// and its callers are the same person.
@@ -282,6 +283,7 @@ func (s *Server) setSettings(w http.ResponseWriter, r *http.Request) {
 		// for atrium's clones. Pointers, because clearing one is a request.
 		GitSCMRoot          *string `json:"git_scm_root"`
 		GitCredentialHelper *string `json:"git_credential_helper"`
+		GitCredentialHosts  *string `json:"git_credential_hosts"`
 		// Where to publish the address for other accounts, and clearing it
 		// back to nowhere is a request like the rest of these.
 		SharedLocation *string `json:"shared_location"`
@@ -583,6 +585,17 @@ func (s *Server) setSettings(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if err := s.st.SetSetting(gitsync.SettingSCMRoot, v); err != nil {
+			s.fail(w, err)
+			return
+		}
+	}
+	if body.GitCredentialHosts != nil {
+		v := strings.TrimSpace(*body.GitCredentialHosts)
+		if strings.ContainsAny(v, "\x00\n\r/@:") {
+			writeErr(w, http.StatusBadRequest, fmt.Errorf("git.credential_hosts is plain hostnames, separated by commas or spaces"))
+			return
+		}
+		if err := s.st.SetSetting(gitsync.SettingCredentialHosts, v); err != nil {
 			s.fail(w, err)
 			return
 		}

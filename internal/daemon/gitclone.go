@@ -40,6 +40,7 @@ func (d *Daemon) scm(task *store.Task) *gitsync.SCM {
 		Runner:           gitsync.Default,
 		Root:             setting(gitsync.SettingSCMRoot),
 		CredentialHelper: setting(gitsync.SettingCredentialHelper),
+		CredentialHosts:  setting(gitsync.SettingCredentialHosts),
 		Yes:              func(ctx context.Context, clone string) error { return d.askToAdopt(task, clone) },
 		HubURL: func(r gitsync.Ref) (string, error) {
 			if agent == "" {
