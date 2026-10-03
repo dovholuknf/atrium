@@ -223,3 +223,24 @@ func TestTheLaunchCapsRouteNeedsAStore(t *testing.T) {
 		t.Errorf("GET without a store answered %d", code)
 	}
 }
+
+// Two room keys that differ only in case would give the room a cap at random, so
+// the body is refused, and a misspelt key is a 400 that saves nothing.
+func TestTheLaunchCapsRefuseCaseDuplicatesAndUnknownFields(t *testing.T) {
+	if err := (LaunchCaps{Rooms: map[string]int{"SG3": 1, "sg3": 50}}).check(); err == nil {
+		t.Error("check accepted SG3 and sg3 as two rooms")
+	}
+	p := NewProxy(NewHub(Timings{}), nil, "", nil)
+	st := &fakeSettings{m: map[string]string{}}
+	p.SetLaunchCaps(st)
+	front := httptest.NewServer(p)
+	defer front.Close()
+	for _, bad := range []string{`{"rooms":{"SG3":1,"sg3":50}}`, `{"room":{"sg3":5}}`} {
+		if code, _ := do(t, http.MethodPut, front.URL+"/_hub/launch-caps", "application/json", bad); code != http.StatusBadRequest {
+			t.Errorf("PUT %s answered %d, not 400", bad, code)
+		}
+		if st.m[SettingLaunchCaps] != "" {
+			t.Fatalf("PUT %s saved %q", bad, st.m[SettingLaunchCaps])
+		}
+	}
+}

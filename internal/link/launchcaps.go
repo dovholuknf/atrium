@@ -64,10 +64,18 @@ func (lc LaunchCaps) check() error {
 	if lc.Default != nil && (*lc.Default < 0 || *lc.Default > maxRoomCap) {
 		return fmt.Errorf("the default cap has to be 0 to %d", maxRoomCap)
 	}
+	seen := map[string]string{}
 	for name, n := range lc.Rooms {
 		if strings.TrimSpace(name) == "" {
 			return fmt.Errorf("a room cap needs the room's name")
 		}
+		// Room names match without regard to case, so two keys that fold together
+		// would give the room whichever cap the map yields first.
+		folded := strings.ToLower(name)
+		if other, dup := seen[folded]; dup {
+			return fmt.Errorf("%s and %s are the same room, give it one cap", other, name)
+		}
+		seen[folded] = name
 		if n < 0 || n > maxRoomCap {
 			return fmt.Errorf("the cap for %s has to be 0 to %d", name, maxRoomCap)
 		}
@@ -131,7 +139,9 @@ func (p *Proxy) serveLaunchCaps(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		var lc LaunchCaps
-		if err := json.NewDecoder(io.LimitReader(r.Body, 1<<16)).Decode(&lc); err != nil {
+		dec := json.NewDecoder(io.LimitReader(r.Body, 1<<16))
+		dec.DisallowUnknownFields()
+		if err := dec.Decode(&lc); err != nil {
 			fail(http.StatusBadRequest, "could not read that: "+err.Error())
 			return
 		}
