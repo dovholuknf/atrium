@@ -87,7 +87,7 @@ func TestBriefPromptPutsTheReadFirst(t *testing.T) {
 
 func TestBriefFileCarriesTheGitURLLineOnce(t *testing.T) {
 	dir := t.TempDir()
-	if _, err := writeBriefFile(dir, "do the thing"); err != nil {
+	if _, err := writeBriefFile(dir, "do the thing", true); err != nil {
 		t.Fatal(err)
 	}
 	raw, _ := os.ReadFile(filepath.Join(dir, briefFileName))
@@ -102,7 +102,7 @@ func TestBriefFileCarriesTheGitURLLineOnce(t *testing.T) {
 func TestABriefThatAlreadyHasTheLineIsNotDoubled(t *testing.T) {
 	dir := t.TempDir()
 	once := "task\n\n" + gitURLLine + "\n"
-	if _, err := writeBriefFile(dir, once); err != nil {
+	if _, err := writeBriefFile(dir, once, true); err != nil {
 		t.Fatal(err)
 	}
 	raw, _ := os.ReadFile(filepath.Join(dir, briefFileName))
@@ -167,5 +167,56 @@ func TestAResumeTakesNoGitURLLine(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(dir, briefFileName)); !os.IsNotExist(err) {
 		t.Fatalf("a resume wrote a brief: %v", err)
+	}
+}
+
+func TestAnOutsideCodeCardsBriefAndPromptCarryNoGitURLLine(t *testing.T) {
+	dir := t.TempDir()
+	if _, err := writeBriefFile(dir, "task", false); err != nil {
+		t.Fatal(err)
+	}
+	raw, _ := os.ReadFile(filepath.Join(dir, briefFileName))
+	if strings.Contains(string(raw), "atrium_git_url") {
+		t.Fatalf("brief %q", raw)
+	}
+	d := testDaemon(t)
+	got := promptSeenBy(t, d, LaunchRequest{Prompt: "just do it", OutsideCode: true})
+	if got == "" || strings.Contains(got, "atrium_git_url") {
+		t.Fatalf("prompt %q", got)
+	}
+	tagged := promptSeenBy(t, d, LaunchRequest{Prompt: "just do it", Tags: []string{OutsideCodeTag}})
+	if tagged == "" || strings.Contains(tagged, "atrium_git_url") {
+		t.Fatalf("tagged prompt %q", tagged)
+	}
+}
+
+// A runner with no atrium control MCP cannot see the tool, so the line says "if you have it".
+func TestTheGitURLLineIsConditionalOnHavingTheTool(t *testing.T) {
+	if !strings.HasPrefix(gitURLLine, "If you have `atrium_git_url`") {
+		t.Fatalf("the line is unconditional: %q", gitURLLine)
+	}
+	if !strings.Contains(gitURLLine, "Never ask for a paste.") {
+		t.Fatalf("the line lost its last sentence: %q", gitURLLine)
+	}
+}
+
+func TestALaunchedOutsideCodeCardsBriefFileHasNoGitURLLine(t *testing.T) {
+	d, _, cancel, _ := startDaemon(t)
+	defer cancel()
+	h := briefHarness(t, d)
+	for name, req := range map[string]LaunchRequest{
+		"flag": {OutsideCode: true},
+		"tag":  {Tags: []string{OutsideCodeTag}},
+	} {
+		dir := t.TempDir()
+		req.Harness, req.Cwd, req.Brief = h, dir, "the task"
+		_, _ = d.Launch(req)
+		raw, err := os.ReadFile(filepath.Join(dir, briefFileName))
+		if err != nil || !strings.Contains(string(raw), "the task") {
+			t.Fatalf("%s: brief not written: %v %q", name, err, raw)
+		}
+		if strings.Contains(string(raw), "atrium_git_url") {
+			t.Fatalf("%s: outside-code brief carries the line: %q", name, raw)
+		}
 	}
 }

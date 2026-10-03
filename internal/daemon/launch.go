@@ -907,14 +907,16 @@ func (d *Daemon) launchLocked(req LaunchRequest) (*store.Task, error) {
 	// no first prompt, and rewriting the file under a session that already read
 	// it would be a second source of truth it believes. See writeBriefFile.
 	briefPath := ""
+	// An outside-code card has no git token, so the room's forwarder is no use to it.
+	outside := isOutsideCode(req, task)
 	if brief := strings.TrimSpace(req.Brief); brief != "" && req.Resume == "" {
-		p, err := writeBriefFile(cwd, brief)
+		p, err := writeBriefFile(cwd, brief, !outside)
 		if err != nil {
 			return nil, err
 		}
 		briefPath = filepath.ToSlash(p)
 		wanted = briefPrompt(wanted)
-	} else if req.Resume == "" && wanted != "" {
+	} else if req.Resume == "" && wanted != "" && !outside {
 		// NO BRIEF, so no BRIEF.md to carry the line. It rides on the prompt
 		// instead, on a fresh start only, like the brief.
 		wanted = withGitURLLine(wanted)
@@ -1555,9 +1557,12 @@ const briefFileName = "BRIEF.md"
 // Overwrites. See briefFileName. The directory is expected to exist already:
 // Launch has stat'd cwd by the time this runs, so a missing one is a launch
 // failure that happened earlier and not here.
-func writeBriefFile(cwd, brief string) (string, error) {
+func writeBriefFile(cwd, brief string, gitURL bool) (string, error) {
 	path := filepath.Join(cwd, briefFileName)
-	body := withGitURLLine(brief)
+	body := brief
+	if gitURL {
+		body = withGitURLLine(brief)
+	}
 	if !strings.HasSuffix(body, "\n") {
 		body += "\n"
 	}
@@ -1567,11 +1572,12 @@ func writeBriefFile(cwd, brief string) (string, error) {
 	return filepath.ToSlash(path), nil
 }
 
-// gitURLLine is the line every launched card's brief carries (hub-forge design,
+// gitURLLine is the line a launched card's brief carries, worded "if you have" because a runner
+// without atrium's control MCP cannot see the tool (and never on an outside-code card, which has no git token) (hub-forge design,
 // section 4): where to read code that is not in its directory. The hub's
 // atrium_git_url answers it.
-const gitURLLine = "To read code that is not in your cwd, call `atrium_git_url`, then fetch it from the URL it gives. " +
-	"Never ask for a paste."
+const gitURLLine = "If you have `atrium_git_url`: to read code that is not in your cwd, call it, then fetch it from the " +
+	"URL it gives. Never ask for a paste."
 
 // withGitURLLine appends gitURLLine to a brief or prompt, once: text that already
 // has it (any capitalisation of the first word) is returned as it is.
