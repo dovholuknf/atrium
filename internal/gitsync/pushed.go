@@ -99,8 +99,8 @@ func (s *Store) tipOf(ctx context.Context, dir, branch string) (string, bool, er
 	return sha, true, nil
 }
 
-// hasCommit says whether the repository holds a commit by that id.
-func (s *Store) hasCommit(ctx context.Context, dir, sha string) (bool, error) {
+// commitKnown says whether the repository holds a commit by that id.
+func (s *Store) commitKnown(ctx context.Context, dir, sha string) (bool, error) {
 	_, err := s.git(ctx, dir, "rev-parse", "--verify", "-q", sha+"^{commit}")
 	switch {
 	case err == nil:
@@ -159,7 +159,7 @@ func (s *Store) Pushed(ctx context.Context, name, branch, head string) (Pushed, 
 	case tip == head:
 		out.State = PushedMatches
 	default:
-		known, err := s.hasCommit(ctx, dir, head)
+		known, err := s.commitKnown(ctx, dir, head)
 		if err != nil {
 			return Pushed{}, err
 		}
@@ -220,7 +220,7 @@ func (s *Store) Reachable(ctx context.Context, name, branch, sha string) (bool, 
 	if err != nil || !ok {
 		return false, err
 	}
-	known, err := s.hasCommit(ctx, dir, sha)
+	known, err := s.commitKnown(ctx, dir, sha)
 	if err != nil || !known {
 		return false, err
 	}

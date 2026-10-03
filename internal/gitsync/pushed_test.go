@@ -288,8 +288,8 @@ func TestRoomBranchOfARoomThatAnswersBadlyIsUnreachableNotAbsent(t *testing.T) {
 func TestAGitFailureIsAnErrorAndNotANo(t *testing.T) {
 	x, sha := pushedFixture(t)
 	notARepo := t.TempDir()
-	if ok, err := x.h.Store().hasCommit(bg, notARepo, sha["first"]); err == nil || ok {
-		t.Fatalf("hasCommit in a directory that is no repository: %v, %v", ok, err)
+	if ok, err := x.h.Store().commitKnown(bg, notARepo, sha["first"]); err == nil || ok {
+		t.Fatalf("commitKnown in a directory that is no repository: %v, %v", ok, err)
 	}
 	if ok, err := x.h.Store().isAncestor(bg, notARepo, sha["first"], sha["later"]); err == nil || ok {
 		t.Fatalf("isAncestor in a directory that is no repository: %v, %v", ok, err)
