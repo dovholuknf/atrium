@@ -8541,3 +8541,14 @@ Covered by `TestLaunchIdleAfterGraceWithNoHook`, `TestLaunchIdleWaitsOutTheGrace
 `TestAnUpdateBannerIsNotAPromptButAnUpdateDialogIs`, `TestASilentStopWinsOverAMenuOnAnEndedTurn`,
 `TestAPendingPermissionOrNeedsPermissionIsNotAMenu`, `TestAResumeAfterAnExitStartsUnheard`, `TestDirectorWhoseWorkersAllEndedIsNotSilent`, `TestDirectorWithNoWorkersIsNotSilent`,
 `TestUntaggedLauncherSessionStillOwesAndIsSilent`, `TestPermSkipsBothSubagentToolNames`. Items 1 to 3 need a live claude.
+
+## IR. Workers carry their launcher's dept, and rows say who launched them (r-worker-tags)
+
+Needs a room with a director card tagged `dept:<x>`, redeployed room and hub.
+
+1. From the director call `atrium_launch` (stdio and through the hub). The new card has `dept:<x>` beside `origin:agent` and `atrium:subagent`, and lands under that department on the board, not Untagged. Launch with `tags: ["dept:other"]`: only `dept:other`. From a launcher with no dept tag: none stamped.
+2. `GET /v1/tasks`: the new card's row has `launcher_id` equal to the director's bare card id (no `room~` prefix). An operator-launched card and one launched by a card on another room have no `launcher_id`.
+3. `GET /v1/tasks/<id>` and the SSE `task` event for the same card carry the same `launcher_id`.
+4. auto_new_context `agents` does NOT reach a worker (`origin:agent` plus `atrium:subagent`) by design; it needs `atrium:auto-new-context`. It does reach an `origin:agent` card without `atrium:subagent`.
+
+Covered by `TestWithLauncherDept`, `TestHubLaunchStampsTheLaunchersDept` (link), `TestStdioLaunchStampsTheLaunchersDept` (cli), `TestLauncherIDOnTheTaskRow` (api), `TestAutoContextAgentsModeAndTheLaunchPathsTags` (daemon). Items 1 to 4 are not yet run live.

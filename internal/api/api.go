@@ -793,6 +793,10 @@ func (s *Server) roomStats(w http.ResponseWriter, r *http.Request) {
 type view struct {
 	*store.Task
 	DisplayTitle string `json:"display_title"`
+	// LauncherID is the BARE id of the card on this room that launched this one, computed by
+	// store.LauncherID and never stored. Absent for an operator launch, an unlaunched session and a
+	// launcher on another room (spawned_by keeps `name@room`). The aggregate view prefixes the room.
+	LauncherID string `json:"launcher_id,omitempty"`
 	// DisplayRepo is the repo a client should render: an override, else what
 	// the launcher recorded, else a guess read off the worktree path.
 	//
@@ -1069,6 +1073,7 @@ func (s *Server) withAskCounts(vs []view) []view {
 // withAskCounts.
 func (s *Server) taskEvent(t *store.Task) view {
 	v := toView(t)
+	v.LauncherID = s.st.LauncherID(t)
 	v.Mercurius = store.MercuriusFor(t.Tags, s.st.LeanWorkerGateway())
 	if n, err := s.st.RepliesOwedFor(t.ID); err == nil {
 		v.RepliesOwed = n
@@ -1173,6 +1178,11 @@ func (s *Server) flushTask(id string) {
 // swallowing a failure for the same reason `withAskCounts` does: it decorates
 // a row that is worth serving without it.
 func (s *Server) withSeen(vs []view) []view {
+	for i := range vs {
+		if vs[i].Task != nil {
+			vs[i].LauncherID = s.st.LauncherID(vs[i].Task)
+		}
+	}
 	if gw := s.st.LeanWorkerGateway(); gw != "" {
 		for i := range vs {
 			if vs[i].Task != nil {
@@ -1592,6 +1602,7 @@ func (s *Server) patchTask(w http.ResponseWriter, r *http.Request) {
 	}
 	s.PublishTask(t)
 	out := toView(t)
+	out.LauncherID = s.st.LauncherID(t)
 	if canceled > 0 {
 		s.Broadcast("permission", map[string]any{"canceled": canceled, "task": id})
 	}

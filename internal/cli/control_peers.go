@@ -735,15 +735,17 @@ func launchHandler(ctx context.Context, _ *mcp.CallToolRequest, in LaunchInput) 
 	// launched it, the origin marker, the worker marker and the report line. Without them the room
 	// filed every stdio launch as the board's own dialog (`@human`), so the worker had no launcher
 	// and its reports and notices reached nobody. The hub's launch cap stays the hub's.
+	me := strings.TrimSpace(os.Getenv("ATRIUM_AGENT_NAME"))
 	req := map[string]any{
 		"harness": harness, "cwd": in.Cwd, "title": in.Title,
-		"why": in.Why, "prompt": link.WithReportLine(prompt), "tags": link.AgentLaunchTags(in.Tags),
+		"why": in.Why, "prompt": link.WithReportLine(prompt),
+		"tags":  link.WithLauncherDept(link.AgentLaunchTags(in.Tags), myTags(ctx, me)),
 		"model": in.Model, "effort": in.Effort, "args": in.Args, "env": in.Env,
 		"lean_agents": in.LeanAgents, "lean_skills": in.LeanSkills,
 	}
 	// A hand-run session has no name to attribute a launch to, and is left unattributed rather
 	// than filed under a blank one.
-	if me := strings.TrimSpace(os.Getenv("ATRIUM_AGENT_NAME")); me != "" {
+	if me != "" {
 		req["spawned_by"] = me
 	}
 	var t card
@@ -765,6 +767,26 @@ func launchHandler(ctx context.Context, _ *mcp.CallToolRequest, in LaunchInput) 
 	missed = append(missed, link.LeanAgentsDropped(in.LeanAgents, in.LeanSkills, t.Tags)...)
 	out.Note = link.LaunchDroppedWarning(missed) + out.Note
 	return nil, out, nil
+}
+
+// myTags is the tags of this session's own card on this room, for passing its department on to
+// a worker. Nil for a hand-run session or a card that cannot be read: no dept is stamped then.
+func myTags(ctx context.Context, me string) []string {
+	if me == "" {
+		return nil
+	}
+	var body struct {
+		Tasks []card `json:"tasks"`
+	}
+	if err := ask(ctx, http.MethodGet, "/v1/tasks", nil, &body); err != nil {
+		return nil
+	}
+	for _, t := range body.Tasks {
+		if t.Wire == me {
+			return t.Tags
+		}
+	}
+	return nil
 }
 
 // ── one card ────────────────────────────────────────────────────────────────

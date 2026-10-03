@@ -150,3 +150,41 @@ func TestStdioTaskDismissClosesAnItemOnTheCallersOwnCard(t *testing.T) {
 		t.Fatal("a nameless session dismissed something")
 	}
 }
+
+// The stdio atrium_launch passes its own card's dept on, read off the room's task list.
+func TestStdioLaunchStampsTheLaunchersDept(t *testing.T) {
+	var got map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.Method == http.MethodGet {
+			_ = json.NewEncoder(w).Encode(map[string]any{"tasks": []map[string]any{
+				{"id": "d1", "wire_name": "boss", "tags": []string{"dept:ui"}},
+				{"id": "d2", "wire_name": "plain", "tags": []string{"origin:agent"}},
+			}})
+			return
+		}
+		_ = json.NewDecoder(r.Body).Decode(&got)
+		_ = json.NewEncoder(w).Encode(map[string]any{"id": "card1", "wire_name": "kid"})
+	}))
+	defer srv.Close()
+	loc := filepath.Join(t.TempDir(), "daemon.json")
+	raw, _ := json.Marshal(map[string]any{"board": srv.URL, "pid": os.Getpid()})
+	if err := os.WriteFile(loc, raw, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("ATRIUM_LOCATION", loc)
+	t.Setenv("ATRIUM_SHARED_LOCATION", "-")
+	for _, k := range []struct {
+		me   string
+		in   []string
+		want bool
+	}{{"boss", nil, true}, {"plain", nil, false}, {"boss", []string{"dept:runtime"}, false}, {"", nil, false}} {
+		t.Setenv("ATRIUM_AGENT_NAME", k.me)
+		if _, _, err := launchHandler(context.Background(), nil, LaunchInput{Cwd: "/w", Tags: k.in}); err != nil {
+			t.Fatal(err)
+		}
+		if has := hasTagIn(tagsOf(got), "dept:ui"); has != k.want {
+			t.Fatalf("me=%q tags %v: dept:ui stamped = %v, want %v (%v)", k.me, k.in, has, k.want, tagsOf(got))
+		}
+	}
+}

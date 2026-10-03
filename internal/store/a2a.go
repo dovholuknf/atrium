@@ -287,3 +287,45 @@ func (t *Task) PromptKey() string {
 	}
 	return t.OwedAt.UTC().Format(time.RFC3339Nano)
 }
+
+// LauncherID is the BARE id of the card on THIS room that launched `t`, or "". COMPUTED, never
+// stored: the stored `spawned_by_id` is only the fallback it ends on. Resolved the way the daemon's
+// launcherOf finds a delivery's launcher: the card's `report_to` (a handle, alias or id), then
+// `spawned_by_id`, then `spawned_by` as a wire name. Empty for an operator launch (`@human`), for a
+// session nobody launched, and for a launcher on another room (`name@room`, `room~id`), which stay
+// in spawned_by and spawned_by_id.
+func (s *Store) LauncherID(t *Task) string {
+	if t == nil || t.SpawnedBy == "" || t.SpawnedBy == HumanLauncher {
+		return ""
+	}
+	if name := s.ReportTo(t.ID); name != "" {
+		if l := s.localCard(name); l != nil && l.ID != t.ID {
+			return l.ID
+		}
+	}
+	if t.SpawnedByID != "" {
+		if l, err := s.Get(t.SpawnedByID); err == nil && l.ID != t.ID {
+			return l.ID
+		}
+	}
+	if !strings.Contains(t.SpawnedBy, "@") {
+		if l, err := s.GetByWireName(t.SpawnedBy); err == nil && l.ID != t.ID {
+			return l.ID
+		}
+	}
+	return ""
+}
+
+// localCard finds a card on this room by handle, alias or id, all exact.
+func (s *Store) localCard(name string) *Task {
+	if t, err := s.GetByWireName(name); err == nil {
+		return t
+	}
+	if t, err := s.GetByAlias(name); err == nil {
+		return t
+	}
+	if t, err := s.Get(name); err == nil {
+		return t
+	}
+	return nil
+}
