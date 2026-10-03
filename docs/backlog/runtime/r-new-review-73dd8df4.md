@@ -92,3 +92,26 @@ to `TestLauncherIDResolveAndTheBatchAgrees`. As a second guard, have `LauncherID
 Atrium-Verdict: hold 1c2997c6..ca5a1be3
 Quality: a well-aimed fix. One SELECT and one map copy the store's own lookup order, and the agreement test is the
 right shape. The hold is a NULL scan that the test table never contains.
+
+## Re-read: f7642322 (M3 closed)
+
+Range `1c2997c6..f7642322`. The second commit, on ca5a1be3, takes M3, L5, L6 and N1.
+
+Verdict: **OK** for room and hub.
+
+- **M3.** `LauncherIDs` selects `COALESCE(wire_name, '')` and returns nil when the read fails, so `withSeen` falls
+  back to the per-row path. The agreement test adds a newer intake card with a NULL wire name and asserts the batch
+  is non-nil and agrees.
+  - Every NULL-wire row now lands in `wire[""]`. That is harmless: `byWire` is only reached with a non-empty name
+    (`r.by` is checked, and `local(r.reportTo)` is used only when `reportTo` is set), and `Qualify` never makes a
+    name empty.
+  - Skipping `r.wire == ""` when building the map would say so in the code (N2).
+- **L5.** The alias rules are pinned: a live alias beats a newer done one, and an archived card holds none.
+- **L6.** `myTags` trusts a row only when it is named `me` by wire name, bare name, alias or id. A cli test covers a
+  single row that is not the caller.
+- **N1.** The `?name=` comment says it answers the thinner single-GET row.
+- **Checks.** I read the diff. Per @runtime, the mutants (no COALESCE, an archived alias, done before live, the L6
+  check dropped) are each killed. My gates and the merge onto landing are below.
+
+Atrium-Verdict: room-ok 1c2997c6..f7642322
+Atrium-Verdict: hub-ok 1c2997c6..f7642322
