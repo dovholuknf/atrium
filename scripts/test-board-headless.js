@@ -232,11 +232,11 @@ const LOOSE = Object.assign({}, T1, { id: "loose1", display_title: "loose card",
 // SUBAGENTS carry the `origin:agent` tag the launch cap counts; AGENTS do not (a
 // human's own session). A dead UNPINNED session is not in the strip at all
 // (nothing to switch to), so the dead rows are PINNED, drawn cold, which also
-// proves a pinned session is never hidden, whatever its toggle says. The
+// proves a pinned session hides like any other once its toggle is on. The
 // subagent side has three rows to separate its rule from the agents' rule:
 // WORKING (stays), IDLE (supervised but not computing, hides - the difference
-// from the agents rule) and DEAD (pinned, stays). The agent side has an
-// IDLE-BUT-LIVE row (stays) and a DEAD row (pinned, cold, stays).
+// from the agents rule) and DEAD (pinned, hides). The agent side has an
+// IDLE-BUT-LIVE row (stays) and a DEAD row (pinned, cold, hides).
 const SUBLIVE = {
   id: "sublive", status: "running", display_title: "idle subagent", runner: "claude",
   rank: 1, worktree: "/tmp/sublive", why: "", idle_seconds: 0, wait_seconds: 0,
@@ -247,7 +247,7 @@ const SUBWORK = Object.assign({}, SUBLIVE, {
   id: "subwork", display_title: "working subagent", activity: { what: "thinking" }
 });
 // Runner gone, held by its pin, drawn cold: not working (and exited), so the
-// subagents toggle keeps it, the pin wins.
+// subagents toggle hides it despite the pin.
 const SUBDEAD = Object.assign({}, SUBLIVE, {
   id: "subdead", display_title: "dead subagent", status: "dead",
   supervised: false, pinned: true, pid: 0
@@ -255,7 +255,7 @@ const SUBDEAD = Object.assign({}, SUBLIVE, {
 const AGLIVE = Object.assign({}, SUBLIVE, {
   id: "aglive", display_title: "my terminal", tags: []
 });
-// A dead agent (no tag), pinned cold: the agents toggle keeps it, drawn grey.
+// A dead agent (no tag), pinned cold: the agents toggle hides it despite the pin.
 const AGDEAD = Object.assign({}, SUBLIVE, {
   id: "agdead", display_title: "my dead terminal", tags: [],
   status: "dead", supervised: false, pinned: true, pid: 0
@@ -16941,59 +16941,6 @@ async function childUnderParentSection(browser, base) {
   if (!bad) console.log("childUnderParent ok");
 }
 
-// A PINNED CARD ALWAYS SHOWS (u-new-pin-shows). The row is the shape a remote room on an old build serves for a card that
-// was a subagent, lost its tags and was pinned: runner opencode, needs-input, supervised, pinned, no tags, a Windows home
-// directory, and a `room~uuid` id. Drawn with every pill state, grouping, sort and fold.
-async function pinShowsSection(browser, base) {
-  const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 } });
-  const p = await ctx.newPage();
-  const errors = [];
-  p.on("pageerror", e => errors.push(e.message));
-  try {
-    await p.goto(base + "/", { waitUntil: "domcontentloaded" });
-    await p.waitForFunction(() => typeof setTermSortMode === "function" && typeof renderTermList === "function",
-      null, { timeout: slow(15000) });
-    await p.evaluate(() => switchView("terms"));
-    const out = await p.evaluate(async () => {
-      const card = (id, extra) => ({ id, status: "running", supervised: true, pinned: false, title: id,
-        display_title: id, tags: [], created_at: "2026-09-30T10:00:00Z", worktree: "/r/" + id, runner: "claude", ...extra });
-      const PINID = "sg4-control~11111111-2222-3333-4444-555555555555";
-      const old = { id: PINID, status: "needs-input", runner: "opencode", supervised: true, pinned: true, offline: null,
-        parked_at: null, archived_at: null, joined: null, pid: 4242, tags: [], worktree: "C:/Users/claude",
-        wire_name: "w", display_title: "pinned old", created_at: "2026-09-30T09:00:00Z" };
-      const variants = { base: {}, notags: { tags: undefined }, unsup: { supervised: false },
-        unsupDone: { supervised: false, status: "done" }, offline: { offline: true }, doer: { tags: ["origin:agent"] },
-        parked: { supervised: false, parked_at: "2026-09-30T10:00:00Z" }, nopath: { worktree: "" } };
-      let cards;
-      boardCards = async () => cards;
-      const res = {};
-      for (const [vn, ve] of Object.entries(variants)) {
-      cards = [card("a"), card("b", { pinned: true }), card("c", { tags: ["origin:agent"], status: "done", supervised: false }), { ...old, ...ve }];
-      for (const hs of ["none", "on"]) for (const ha of ["none", "on"])
-        for (const grp of ["off", "project", "recency", "tag"]) for (const sort of ["name", "activity", "started"])
-          for (const fold of [false, true]) {
-            setHideSubagents(hs); setHideAgents(ha); setGroupMode(grp); setTermSortMode(sort);
-            const f = foldedColumns().filter(k => k !== PINNED_FOLD);
-            if (fold) f.push(PINNED_FOLD);
-            localStorage.setItem("atrium.folded", JSON.stringify(f));
-            await renderTermList();
-            res[[vn, hs, ha, grp, sort, fold].join("/")] = !!document.querySelector(`#term-list .card.tab[data-id="${PINID}"]`);
-          }
-      }
-      localStorage.removeItem("atrium.folded");
-      setHideSubagents("on"); setHideAgents("none"); setGroupMode("project"); setTermSortMode("activity");
-      return res;
-    });
-    // Every variant but `offline` (an unreachable room's card is not a terminal row, by design) draws the pinned
-    // card, with every pill, grouping and sort, including the doer that the default-on subagents pill used to take out
-    // and the cold one the agents pill used to take out. A folded pinned bucket is the operator's own fold.
-    const gone = Object.entries(out).filter(([k, v]) => !v && !k.endsWith("/true") && !k.startsWith("offline/")).map(([k]) => k);
-    if (gone.length) fail("pinShows: a pinned card was not drawn in " + gone.length + " states, e.g. " + gone.slice(0, 6).join(" "));
-    if (Object.entries(out).some(([k, v]) => v && k.startsWith("offline/"))) fail("pinShows: a card from an offline room was drawn");
-    if (errors.length) fail("pinShows: page errors: " + errors.join(" | "));
-  } finally { await ctx.close(); }
-}
-
 // A parent row folds its spawned cards. A card that needs the human stays drawn, the fold is remembered per card and
 // followed by a second window, and a bad stored value reads as expanded.
 async function childFoldSection(browser, base) {
@@ -17877,8 +17824,8 @@ async function termBoxSection(browser, base) {
         if (!v.arrows) fail(tag + "the width buttons are gone.");
         if (w === 150 && v.wide > 160) fail(tag + "the list is not at its narrowest, so the overrun check proves nothing: " + v.wide);
         if (v.overrun || v.summaryOverArrow || v.arrowOut) fail(tag + "the tray overruns the box or the shrink button: " + JSON.stringify(v));
-        if (k.startsWith("on/") && k.endsWith("allHidden") && !/hiding inactive agents, subagents$/.test(v.sum)) {
-          fail(tag + "the summary counts a pinned row as hidden (a pin is never hidden): " + JSON.stringify(v.sum));
+        if (k.startsWith("on/") && k.endsWith("allHidden") && !/hiding inactive agents, subagents \(2\)/.test(v.sum)) {
+          fail(tag + "the summary does not count what is hidden: " + JSON.stringify(v.sum));
         }
         if (k.startsWith("none/") && !/hiding nothing/.test(v.sum)) fail(tag + "the summary says something is hidden: " + JSON.stringify(v.sum));
         if (k.includes("/flat/") && !/ungrouped/.test(v.sum)) fail(tag + "the summary does not say ungrouped: " + JSON.stringify(v.sum));
@@ -21301,7 +21248,7 @@ async function main() {
       coverPoll: coverPollSection, coverSteps: coverStepsSection, termBox: termBoxSection,
       termDebug: termDebugSection, termSortStarted: termSortStartedSection,
       noReadyChildren: noReadyChildrenSection, childUnderParent: childUnderParentSection, topNav: topNavSection,
-      childFold: childFoldSection, pinShows: pinShowsSection, liveHome: liveHomeSection,
+      childFold: childFoldSection, liveHome: liveHomeSection,
       pulls: pullsSection, hubRepos: hubReposSection, hubReposShelf: hubReposShelfSection, hubReposLedger: hubReposLedgerSection, hubReposFeed: hubReposFeedSection, changeReq: changeReqSection, mChangeReq: mChangeReqSection, trayHead: trayHeadSection, pullsAbsent: pullsAbsentSection, oneTooltip: oneTooltipSection, burnChart: burnChartSection, burnReadout: burnReadoutSection, switchPrewarm: switchPrewarmSection, attachAtOnce: attachAtOnceSection, keepAlive: keepAliveSection, switchBackCost: switchBackCostSection, keepMemory: keepMemorySection };
     try {
       for (const n of process.env.HEADLESS_ONLY.split(",")) await only[n](browser, base);
@@ -21546,8 +21493,9 @@ async function main() {
     // idle AND the dead one (not-working-right-now), while the agents segment keeps
     // any LIVE agent - the idle one included - and hides only the dead one (no
     // live connection). The idle subagent hiding while the idle agent stays is the
-    // whole point: same idle state, different rule. Pinning exempts a row from
-    // both: the dead rows are pinned and always stay, drawn grey (`.cold`). The on/off combinations are
+    // whole point: same idle state, different rule. Pinning exempts nothing: the
+    // dead rows are pinned and still hide. And the agents toggle hides exactly the
+    // agent rows drawn grey (`.cold`), never more or fewer. The on/off combinations are
     // each asserted, so the two toggles are proven independent. Driven through the
     // board's own functions so the device-scoped persistence for BOTH keys is
     // exercised, not faked.
@@ -21562,8 +21510,8 @@ async function main() {
       return {
         idleSub: has("sublive"), workingSub: has("subwork"), deadSub: has("subdead"),
         liveAgent: has("aglive"), deadAgent: has("agdead"),
-        // Agent (non-doer) rows drawn grey right now. A pinned cold one stays
-        // drawn, grey, whatever the toggles say.
+        // Agent (non-doer) rows drawn grey right now. With the agents toggle on
+        // this must be empty: grey and hidden are one predicate.
         coldAgents: [...document.querySelectorAll("#term-list .card.tab.cold")]
           .map(c => c.dataset.id).filter(id => id === "aglive" || id === "agdead"),
         // The pinned bucket's heading count and its empty line, and every other
@@ -21586,8 +21534,8 @@ async function main() {
     });
 
     // DEFAULT, with neither key ever set: the subagents side is ON and the agents
-    // side OFF. So the idle subagent is hidden out of the box (count 1), the
-    // working one and the pinned dead one stay (the pin wins), and both agent rows stay (the
+    // side OFF. So the idle and the dead (pinned) subagent are hidden out of the
+    // box (count 2), the working one stays, and both agent rows stay (the
     // idle-but-live one and the dead one). This is the "subagents default on,
     // agents default off" contract. A stale value is written under the legacy `atrium.hidedoers`
     // key to prove it does NOT override the new default: the toggle now reads the
@@ -21608,22 +21556,23 @@ async function main() {
       fail("the hide defaults are not subagents-on / agents-off when unset: " +
         JSON.stringify(hDef));
     }
-    if (hDef.idleSub) {
-      fail("the subagents side did not default on: an idle subagent was still " +
-        "shown: " + JSON.stringify(hDef));
+    if (hDef.idleSub || hDef.deadSub) {
+      fail("the subagents side did not default on: an idle or dead (pinned) " +
+        "subagent was still shown: " + JSON.stringify(hDef));
     }
-    if (!hDef.workingSub || !hDef.deadSub || !hDef.liveAgent || !hDef.deadAgent) {
+    if (!hDef.workingSub || !hDef.liveAgent || !hDef.deadAgent) {
       fail("the default state hid a row it should not have (the working subagent, " +
         "or an agent): " + JSON.stringify(hDef));
     }
-    if (!hDef.subLit || hDef.agentLit || !/^subagents \(1\)$/.test(hDef.subLabel)) {
+    if (!hDef.subLit || hDef.agentLit || !/^subagents \(2\)$/.test(hDef.subLabel)) {
       fail("the default did not light the subagents segment alone with a count of " +
-        "1 (the idle one; the pinned dead one is not counted): " + JSON.stringify(hDef));
+        "2 (idle, dead): " + JSON.stringify(hDef));
     }
-    // Both pinned rows are drawn, so the pinned heading reads a plain 2.
-    if (hDef.pinnedCount !== "2") {
-      fail("the pinned heading does not read a plain 2 with both pinned rows " +
-        "drawn: " + JSON.stringify(hDef));
+    // The pinned heading counts shown out of total: the dead pinned subagent is
+    // hidden, the dead pinned agent is not, so `1/2`.
+    if (hDef.pinnedCount !== "1/2") {
+      fail("the pinned heading does not read shown/total (1/2) with a pinned row " +
+        "hidden: " + JSON.stringify(hDef));
     }
     // The subagents segment says, in its tooltip, that a subagent is an
     // atrium-launched session, so the word is not left to guess at.
@@ -21680,9 +21629,9 @@ async function main() {
       fail("the subagents toggle left an idle subagent in the strip: an unpinned " +
         "subagent that is not working right now must hide.");
     }
-    if (!hSub.deadSub) {
-      fail("the subagents toggle hid a PINNED subagent that exited: a pinned " +
-        "card is never removed by a hide pill.");
+    if (hSub.deadSub) {
+      fail("the subagents toggle left a PINNED subagent that exited in the strip: " +
+        "a pin does not exempt a row from hide inactive.");
     }
     if (!hSub.workingSub) {
       fail("the subagents toggle hid the WORKING subagent: an actively-computing " +
@@ -21697,23 +21646,24 @@ async function main() {
       fail("the subagents toggle did not light its own segment alone: " +
         JSON.stringify(hSub));
     }
-    if (!/^subagents \(1\)$/.test(hSub.subLabel)) {
-      fail("the lit subagents segment did not show its hidden count of 1 (idle; " +
-        "the pinned dead one is not counted) in parens: " + JSON.stringify(hSub));
+    if (!/^subagents \(2\)$/.test(hSub.subLabel)) {
+      fail("the lit subagents segment did not show its hidden count of 2 (idle, " +
+        "dead) in parens: " + JSON.stringify(hSub));
     }
 
-    // AGENTS on too: now BOTH are on. The dead agent stays because it is pinned
-    // (drawn grey), the idle-but-live agent stays (its own rule is liveness, not
-    // working-now), the working subagent and the pinned dead subagent stay, and
-    // only the idle unpinned subagent is hidden. Both segments are lit at once, which
+    // AGENTS on too: now BOTH are on. The dead agent goes although it is pinned,
+    // the idle-but-live agent stays (its own rule is liveness, not working-now),
+    // the working subagent still stays, and both inactive subagents stay hidden.
+    // No grey agent row is left. Both segments are lit at once, which
     // agent|shell (one-of-two) cannot do.
     await page.evaluate(async () => { setHideAgents("on"); await loadCards().catch(() => {}).then(renderTermList); });
     const hBoth = await hideState();
-    if (hBoth.idleSub) {
-      fail("with both toggles on an idle unpinned subagent survived: " + JSON.stringify(hBoth));
+    if (hBoth.idleSub || hBoth.deadSub) {
+      fail("with both toggles on an inactive subagent survived: " + JSON.stringify(hBoth));
     }
-    if (!hBoth.deadSub || !hBoth.deadAgent || hBoth.coldAgents.join() !== "agdead") {
-      fail("with both toggles on a pinned cold row was removed: " + JSON.stringify(hBoth));
+    if (hBoth.deadAgent || hBoth.coldAgents.length) {
+      fail("with both toggles on a grey (cold, pinned) agent was still listed: " +
+        JSON.stringify(hBoth));
     }
     if (!hBoth.workingSub || !hBoth.liveAgent) {
       fail("with both toggles on the working subagent or the live agent was " +
@@ -21723,15 +21673,16 @@ async function main() {
         hBoth.agentMode !== "on" || hBoth.subMode !== "on") {
       fail("both segments are not lit with both toggles on: " + JSON.stringify(hBoth));
     }
-    if (!/^agents$/.test(hBoth.agentLabel) ||
-        !/^subagents \(1\)$/.test(hBoth.subLabel)) {
-      fail("the lit segments did not show no count for agents (the only inactive " +
-        "one is pinned) and 1 for subagents (idle): " + JSON.stringify(hBoth));
+    if (!/^agents \(1\)$/.test(hBoth.agentLabel) ||
+        !/^subagents \(2\)$/.test(hBoth.subLabel)) {
+      fail("the two lit segments did not show hidden counts of 1 (dead agent) " +
+        "and 2 (idle, dead subagent): " + JSON.stringify(hBoth));
     }
-    // Both pinned rows drawn: the bucket reads a plain 2 and never says rows are
-    // hidden. The idle subagent is unpinned, so a group heading below reads shown/total.
-    if (hBoth.pinnedCount !== "2" || /hidden/.test(hBoth.pinnedEmpty)) {
-      fail("with both toggles on the pinned bucket does not read a plain 2: " +
+    // Both pinned rows hidden: the bucket reads `0/2` and says why it is empty
+    // rather than offering a first drag. The idle subagent is unpinned, so some
+    // group heading below also reads shown/total.
+    if (hBoth.pinnedCount !== "0/2" || !/^2 hidden by hide inactive$/.test(hBoth.pinnedEmpty)) {
+      fail("with every pinned row hidden the bucket does not read 0/2 and say so: " +
         JSON.stringify(hBoth));
     }
     // Grouped by age every unpinned row lands in one bucket: three rows, the idle
@@ -21762,8 +21713,8 @@ async function main() {
       fail("turning the subagents toggle off did not restore the subagent rows: " +
         JSON.stringify(hAgent));
     }
-    if (!hAgent.deadAgent || hAgent.coldAgents.join() !== "agdead") {
-      fail("the agents toggle removed a grey (cold, pinned) agent: " +
+    if (hAgent.deadAgent || hAgent.coldAgents.length) {
+      fail("the agents toggle left a grey (cold, pinned) agent in the strip: " +
         JSON.stringify(hAgent));
     }
     if (!hAgent.liveAgent) {
@@ -21852,7 +21803,7 @@ async function main() {
     if (!gearSec.pane || !gearSec.shown || gearSec.labels.join("|") !== "sort|hide inactive|group|cache") {
       fail("the gear has no terminal list section with sort, hide inactive, group and cache: " + JSON.stringify(gearSec));
     }
-    if (gearSec.sortOn.length !== 1 || gearSec.groupPills < 6 || gearSec.hide.join("|") !== "agents|subagents (1)*") {
+    if (gearSec.sortOn.length !== 1 || gearSec.groupPills < 6 || gearSec.hide.join("|") !== "agents|subagents (2)*") {
       fail("the gear's terminal list controls do not show the defaults: " + JSON.stringify(gearSec));
     }
     // Changing them there changes the list the way the old row did, and the gear follows.
@@ -23358,7 +23309,6 @@ async function main() {
     await unit("noReadyChildren", () => noReadyChildrenSection(browser, base));
     await unit("childUnderParent", () => childUnderParentSection(browser, base));
     await unit("childFold", () => childFoldSection(browser, base));
-    await unit("pinShows", () => pinShowsSection(browser, base));
     await unit("liveHome", () => liveHomeSection(browser, base));
     await unit("burnChart", () => burnChartSection(browser, base));
     await unit("burnReadout", () => burnReadoutSection(browser, base));
@@ -23416,7 +23366,7 @@ async function main() {
     "connection) and inactive subagents (idle, waiting, or exited - not working " +
     "right now) each on their own (both/either/neither, subagents on by default), " +
     "so an idle subagent hides while an idle-but-live agent stays, a pinned row " +
-    "is never hidden by either toggle (drawn grey when cold, not counted as hidden), the " +
+    "hides like any other, the agents toggle hides exactly the grey rows, the pinned and " +
     "group headings read shown/total while rows are hidden, counting each " +
     "kind's hidden rows in parens, " +
     "the controls are a tray above the rows' own scroll box that folds to a one-line " +
