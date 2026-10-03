@@ -392,6 +392,48 @@ function ConvertTo-AclOps {
     (@($Ops) | ForEach-Object { ($_.Args | ForEach-Object { "$_" }) -join '|' }) -join "`n"
 }
 
+# ── can the MSYS2 target be installed into, and the git identity ─────────────
+
+# What an MSYS2 install needs free on the target's drive: about 1.5 GB for the unpacked base, about 3 GB for what pacman adds
+# (gcc, cmake, ninja, openssl and what they pull in), and the unpack goes to <dir>.tmp first. 6 GB covers that. The figure is this
+# script's own estimate, not the publisher's; it is the one place to change it.
+$script:Msys2NeedBytes = 6GB
+
+# The verdict on the -Msys2Dir target from what the cdisk act measured: drive.root, drive.exists, drive.readable, anc (the
+# nearest ancestor of the target that exists), anc.writable, free (bytes, -1 when the drive cannot say). Nothing is installed
+# unless Ok. Otherwise Why says what is wrong and Cmds are the commands for a person, each a list of words for Format-AdminCommand.
+function Test-Msys2Target {
+    param($Kv, [string] $Dir, [string] $User, [long] $NeedBytes = $script:Msys2NeedBytes)
+    $root = "$($Kv['drive.root'])"; $anc = "$($Kv['anc'])"
+    $bad = { param($why, $cmds) [pscustomobject]@{ Ok = $false; Why = $why; Cmds = @($cmds) } }
+    if ($Kv['drive.exists'] -ne 'True') {
+        return (& $bad "the drive $root for $Dir does not exist for $User on the room (a mapped drive belongs to one logon session and is not there over ssh). pick a -Msys2Dir on a drive this list shows" @(, @('Get-PSDrive', '-PSProvider', 'FileSystem')))
+    }
+    if ($Kv['drive.readable'] -ne 'True') {
+        return (& $bad "$User cannot read $root, the drive of $Dir. if it is a permission, an admin runs this (a drive that is not ready or locked is not fixed by it)" @(, (@('icacls') + (New-IcaclsArgs $root $User 'grant' 'RX'))))
+    }
+    if ($Kv['anc.writable'] -ne 'True') {
+        return (& $bad "$User cannot write $anc, the nearest folder of $Dir that exists, so MSYS2 cannot be unpacked there. an admin, or the owner of $anc, runs this" @(, (@('icacls') + (New-IcaclsArgs $anc $User 'grant' 'M'))))
+    }
+    $free = [long]"$($Kv['free'])"
+    if ($free -ge 0 -and $free -lt $NeedBytes) {
+        return (& $bad "$root has $([Math]::Round($free / 1GB, 1)) GB free and MSYS2 with its packages needs $([Math]::Round($NeedBytes / 1GB, 1)) GB. free space, or pick a -Msys2Dir on another drive. this lists the drives" @(, @('Get-PSDrive', '-PSProvider', 'FileSystem')))
+    }
+    [pscustomobject]@{ Ok = $true; Why = ''; Cmds = @() }
+}
+
+# What to do about -GitUserName and -GitUserEmail against the global config. A value is set when it was given and the config does
+# not say exactly that, or is empty; Lack is a value that is neither configured nor given (left for a person, never invented).
+# Nothing given leaves the config alone.
+function Get-GitIdentityPlan {
+    param([string] $CfgName, [string] $CfgEmail, [string] $GivenName, [string] $GivenEmail)
+    [pscustomobject]@{
+        SetName = $(if ($GivenName -and $GivenName -cne $CfgName) { $GivenName } else { '' })
+        SetEmail = $(if ($GivenEmail -and $GivenEmail -cne $CfgEmail) { $GivenEmail } else { '' })
+        LackName = (-not $CfgName -and -not $GivenName); LackEmail = (-not $CfgEmail -and -not $GivenEmail)
+    }
+}
+
 # ── exit code and the needs-human summary ───────────────────────────────────
 
 # 1..5 are the existing failures. 6 is only for a run that finished and needs a person.
@@ -452,6 +494,20 @@ if (Test-Path -LiteralPath (J $M 'usr' 'bin' 'pacman.exe')) {
     $ok = $false; try { $s = [IO.File]::Open($w, 'Open', 'Write', 'ReadWrite'); $s.Close(); $ok = $true } catch {}; "writable=$ok"
     & icacls.exe $M 2>&1 | ForEach-Object { "acl=$_" }
 }
+'@ }
+
+# Can the -Msys2Dir target take an install: its drive, the nearest folder that exists, the free space. Writes nothing (the write
+# probe makes one file that is deleted on close).
+$script:CActs['cdisk'] = @{ Vars = @('Msys2Dir'); Uses = @(); Body = @'
+$d = try { $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($Msys2Dir) } catch { $Msys2Dir }
+$root = [IO.Path]::GetPathRoot($d); "drive.root=$root"
+$ex = $false; $rd = $false
+try { $ex = Test-Path -LiteralPath $root; if ($ex) { $null = @(Get-ChildItem -LiteralPath $root -Force -ErrorAction Stop | Select-Object -First 1); $rd = $true } } catch {}
+"drive.exists=$ex"; "drive.readable=$rd"
+$a = $d; while ($a -and -not (Test-Path -LiteralPath $a)) { $a = Split-Path -Parent $a }
+"anc=$a"; $w = $false
+if ($a -and $rd) { try { $s = New-Object IO.FileStream((J $a ('.atrium-probe-' + [guid]::NewGuid().ToString('N'))), 'CreateNew', 'Write', 'None', 4096, 'DeleteOnClose'); $n = $s.Name; $s.Close(); Remove-Item -LiteralPath $n -Force -ErrorAction SilentlyContinue; $w = $true } catch {} }
+"anc.writable=$w"; $f = -1; try { $f = (New-Object IO.DriveInfo $root).AvailableFreeSpace } catch {}; "free=$f"
 '@ }
 
 # Unpack the verified MSYS2 base archive. Windows PowerShell 5.1 offers only TLS 1.0 and 1.1 unless told and repo.msys2.org wants
