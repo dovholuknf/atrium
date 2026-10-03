@@ -64,7 +64,7 @@ func TestExitGuardForceIsRecorded(t *testing.T) {
 	srv, st, stopped := exitGuardRoom(t)
 	exitCard(t, st, "me")
 	stranger := exitCard(t, st, "stranger")
-	if rec := postExit(srv, stranger.ID, `{"from":"me","force":true,"why":"stuck"}`); rec.Code != 200 {
+	if rec := postExit(srv, stranger.ID, `{"from":"me","force":true}`); rec.Code != 200 {
 		t.Fatalf("forced exit answered %d %s", rec.Code, rec.Body.String())
 	}
 	if len(*stopped) != 1 {
@@ -103,14 +103,81 @@ func TestExitGuardDirectorsAreNeverAnAgents(t *testing.T) {
 	}
 }
 
-// A name from another room is not this room's card of the same name.
+// A name from another room is not this room's card of the same name: `me` with
+// foreign set is a stranger to the local `me`, whatever the names say.
 func TestExitGuardForeignCallerIsNotTheLocalCard(t *testing.T) {
 	srv, st, _ := exitGuardRoom(t)
 	me := exitCard(t, st, "me")
-	if rec := postExit(srv, me.ID, `{"from":"me@elsewhere","foreign":true}`); rec.Code != 403 {
+	if rec := postExit(srv, me.ID, `{"from":"me","foreign":true}`); rec.Code != 403 {
 		t.Fatalf("a foreign me exiting the local me answered %d, want 403", rec.Code)
 	}
-	if rec := postExit(srv, me.ID, `{"from":"me@elsewhere","foreign":true,"force":true}`); rec.Code != 200 {
+	if rec := postExit(srv, me.ID, `{"from":"me","foreign":true,"force":true}`); rec.Code != 200 {
 		t.Fatalf("a forced foreign exit answered %d", rec.Code)
+	}
+}
+
+// A card launched from another room records its launcher as `name@room`, and the
+// foreign asker of that name may exit it without force. Any other foreign name
+// may not.
+func TestExitGuardForeignLauncherMayExitItsChild(t *testing.T) {
+	srv, st, stopped := exitGuardRoom(t)
+	kid := exitCard(t, st, "kid")
+	if err := st.SetLineage(kid.ID, "boss@claude-sg4", "claude-sg4~01ABC"); err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range []struct {
+		body string
+		want int
+	}{
+		{`{"from":"other@claude-sg4","foreign":true}`, 403},
+		{`{"from":"boss@claude-mini","foreign":true}`, 403},
+		{`{"from":"BOSS@claude-sg4","foreign":true}`, 200},
+	} {
+		if rec := postExit(srv, kid.ID, c.body); rec.Code != c.want {
+			t.Fatalf("%s answered %d %s, want %d", c.body, rec.Code, rec.Body.String(), c.want)
+		}
+	}
+	if len(*stopped) != 1 {
+		t.Fatalf("stopped %v", *stopped)
+	}
+}
+
+// A director is told it is the one being refused when it asks to exit itself.
+func TestExitGuardADirectorExitingItselfIsToldSo(t *testing.T) {
+	srv, st, _ := exitGuardRoom(t)
+	d := exitCard(t, st, "boss", "atrium:director")
+	rec := postExit(srv, d.ID, `{"from":"boss"}`)
+	if rec.Code != 403 || !strings.Contains(rec.Body.String(), "you are a director") {
+		t.Fatalf("answered %d %s", rec.Code, rec.Body.String())
+	}
+}
+
+// A body that does not parse is refused, never taken for the operator's. No body
+// at all is the operator's.
+func TestExitGuardMalformedBodyIsNotTheOperator(t *testing.T) {
+	srv, st, stopped := exitGuardRoom(t)
+	d := exitCard(t, st, "boss", "atrium:director")
+	if rec := postExit(srv, d.ID, `{"from":"me","for`); rec.Code != 400 {
+		t.Fatalf("a truncated body answered %d, want 400", rec.Code)
+	}
+	if len(*stopped) != 0 {
+		t.Fatalf("stopped %v", *stopped)
+	}
+	if rec := postExit(srv, d.ID, ``); rec.Code != 200 {
+		t.Fatalf("no body answered %d", rec.Code)
+	}
+}
+
+// A launcher recorded by id is matched by id only: a later card that reuses the
+// launcher's name is not the launcher.
+func TestExitGuardLauncherIsMatchedByIDWhenThereIsOne(t *testing.T) {
+	srv, st, _ := exitGuardRoom(t)
+	kid := exitCard(t, st, "kid")
+	if err := st.SetLineage(kid.ID, "gone", "some-other-id"); err != nil {
+		t.Fatal(err)
+	}
+	exitCard(t, st, "gone")
+	if rec := postExit(srv, kid.ID, `{"from":"gone"}`); rec.Code != 403 {
+		t.Fatalf("a card reusing the launcher's name answered %d, want 403", rec.Code)
 	}
 }

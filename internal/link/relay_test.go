@@ -32,8 +32,9 @@ type relayRoom struct {
 	// room answers it with instead of starting anything.
 	launched   map[string]any
 	launchCode int
-	// exited is the card ids asked to exit.
-	exited []string
+	// exited is the card ids asked to exit, and exitBodies the JSON each was asked with.
+	exited     []string
+	exitBodies []map[string]any
 	// posts is every POST body a cull route received, keyed by path, verbatim.
 	// noCull is a room older than the cull, answering those routes bare 404.
 	posts  map[string][]string
@@ -70,6 +71,9 @@ func (f *relayRoom) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case strings.HasPrefix(r.URL.Path, "/v1/tasks/") && strings.HasSuffix(r.URL.Path, "/exit") &&
 		r.Method == http.MethodPost:
 		f.exited = append(f.exited, strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/v1/tasks/"), "/exit"))
+		var eb map[string]any
+		_ = json.NewDecoder(r.Body).Decode(&eb)
+		f.exitBodies = append(f.exitBodies, eb)
 		_ = json.NewEncoder(w).Encode(map[string]any{"ok": true})
 	case r.Method == http.MethodPost && !f.noCull && (r.URL.Path == "/v1/merged" ||
 		strings.HasSuffix(r.URL.Path, "/cull") || strings.HasSuffix(r.URL.Path, "/cull/hold")):
@@ -125,6 +129,12 @@ func (f *relayRoom) exits() []string {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return append([]string(nil), f.exited...)
+}
+
+func (f *relayRoom) exitAsks() []map[string]any {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]map[string]any(nil), f.exitBodies...)
 }
 
 func (f *relayRoom) says() []map[string]string {
@@ -669,5 +679,66 @@ func TestAHubSideExitWithNoCardExitsTheCaller(t *testing.T) {
 	raw, _ := json.Marshal(sayOutput{To: "sa1", ToCard: "m1"})
 	if strings.Contains(string(raw), `"card"`) || !strings.Contains(string(raw), `"to_card"`) {
 		t.Fatalf("a say reply is %s: the recipient must be to_card and there must be no card", raw)
+	}
+}
+
+// THE CROSS-ROOM GUARD ARRIVES. Every hop of an ask to exit a card on another room
+// has to carry who is asking: the room tool, the hub's relay op, and the hub's
+// own tool. A hop that drops it turns an agent into the operator at the target,
+// where an empty `from` is not checked. The target must receive `from` as
+// `<asker>@<its room>`, `foreign: true`, and the force as given, for a director
+// and for a stranger alike.
+func TestACrossRoomExitCarriesWhoIsAskingToTheTarget(t *testing.T) {
+	x := newRelayPair(t)
+	defer x.stop()
+	x.sg4.mu.Lock()
+	x.sg4.tasks = append(x.sg4.tasks, map[string]any{"id": "s3", "wire_name": "boss", "status": "working",
+		"alias": "boss", "tags": []string{"atrium:director"}})
+	x.sg4.mu.Unlock()
+
+	want := func(t *testing.T, got map[string]any, force bool) {
+		t.Helper()
+		if got["from"] != "sa1@m1mini" || got["foreign"] != true || (got["force"] == true) != force {
+			t.Fatalf("the target room was asked with %v, want from sa1@m1mini, foreign true, force %v", got, force)
+		}
+	}
+	// The hub's own tool, called by sa1 on m1mini.
+	for _, c := range []struct {
+		card  string
+		force bool
+	}{{"sg4~s1", false}, {"sg4~s1", true}, {"sg4~s3", false}, {"sg4~s3", true}} {
+		before := len(x.sg4.exitAsks())
+		if _, _, err := x.control.exitHandler(relayCtx(t), ctlReq("sa1", "m1mini"),
+			exitInput{Card: c.card, Force: c.force}); err != nil {
+			t.Fatalf("hub tool %+v: %v", c, err)
+		}
+		asks := x.sg4.exitAsks()
+		if len(asks) != before+1 {
+			t.Fatalf("hub tool %+v: the target room was asked %d times", c, len(asks)-before)
+		}
+		want(t, asks[len(asks)-1], c.force)
+	}
+	// The relay op, sent by a room for a session on it.
+	for _, force := range []bool{false, true} {
+		for _, to := range []string{"orch", "boss"} {
+			before := len(x.sg4.exitAsks())
+			ans, err := x.miniR.Relay(relayCtx(t), RelayRequest{Op: RelayExit, Room: "sg4", To: to, From: "sa1", Force: force})
+			if err != nil || !ans.OK {
+				t.Fatalf("relay exit %s: %+v, %v", to, ans, err)
+			}
+			asks := x.sg4.exitAsks()
+			if len(asks) != before+1 {
+				t.Fatalf("relay exit %s: the target room was asked %d times", to, len(asks)-before)
+			}
+			want(t, asks[len(asks)-1], force)
+		}
+	}
+	// An ask with no asker is the operator's, and says so by sending nothing.
+	before := len(x.sg4.exitAsks())
+	if ans, err := x.miniR.Relay(relayCtx(t), RelayRequest{Op: RelayExit, Room: "sg4", To: "orch"}); err != nil || !ans.OK {
+		t.Fatalf("operator relay exit: %+v, %v", ans, err)
+	}
+	if asks := x.sg4.exitAsks(); len(asks) != before+1 || asks[len(asks)-1]["from"] != nil {
+		t.Fatalf("an ask with no asker arrived as %v", asks[len(asks)-1])
 	}
 }

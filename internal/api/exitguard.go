@@ -24,7 +24,6 @@ type exitAsk struct {
 	From    string `json:"from"`
 	Foreign bool   `json:"foreign"`
 	Force   bool   `json:"force"`
-	Why     string `json:"why"`
 }
 
 // guardExit decides whether `from` may ask `target` to leave. Nil is yes. The
@@ -44,18 +43,36 @@ func (s *Server) guardExit(target *store.Task, in exitAsk) (forced bool, err err
 	if from == "" {
 		return false, nil
 	}
+	var me *store.Task
+	if !in.Foreign {
+		me = s.callerCard(from)
+	}
 	if hasExitTag(target.Tags, exitDirectorTag) || hasExitTag(target.Tags, exitCeilingTag) {
+		if me != nil && me.ID == target.ID {
+			return false, fmt.Errorf("you are a director: only the operator ends you")
+		}
 		return false, fmt.Errorf("%s is a director. an agent cannot exit one, force or not: only the operator can", target.DisplayTitle())
 	}
-	if !in.Foreign {
-		if me := s.callerCard(from); me != nil {
-			if me.ID == target.ID {
+	if in.Foreign {
+		// A cross-room launch records its launcher as `name@room`, the name the
+		// asking room gave it, and that is what a foreign `from` is. Matching it
+		// is the launched-child rule for a card launched across.
+		if target.SpawnedBy != "" && strings.EqualFold(target.SpawnedBy, from) {
+			return false, nil
+		}
+	} else if me != nil {
+		if me.ID == target.ID {
+			return false, nil
+		}
+		// THE ID WHEN ONE IS RECORDED, the name only on a row from before there
+		// was one. A name can be reused by a later card, so it is the weaker
+		// proof and is never consulted once an id is there.
+		if target.SpawnedByID != "" {
+			if target.SpawnedByID == me.ID {
 				return false, nil
 			}
-			if target.SpawnedByID == me.ID || (target.SpawnedByID == "" && target.SpawnedBy != "" &&
-				strings.EqualFold(target.SpawnedBy, me.WireName)) {
-				return false, nil
-			}
+		} else if target.SpawnedBy != "" && strings.EqualFold(target.SpawnedBy, me.WireName) {
+			return false, nil
 		}
 	}
 	if in.Force {
