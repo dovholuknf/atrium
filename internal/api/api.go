@@ -795,7 +795,9 @@ type view struct {
 	DisplayTitle string `json:"display_title"`
 	// LauncherID is the BARE id of the card on this room that launched this one, computed by
 	// store.LauncherID and never stored. Absent for an operator launch, an unlaunched session and a
-	// launcher on another room (spawned_by keeps `name@room`). The aggregate view prefixes the room.
+	// launcher on another room (spawned_by keeps `name@room`). The hub's aggregate list tags only `id`, so this
+	// goes through BARE and a client pairs it with the row's `room`. A remembered (offline) card is served
+	// from the cached stored row and has none.
 	LauncherID string `json:"launcher_id,omitempty"`
 	// DisplayRepo is the repo a client should render: an override, else what
 	// the launcher recorded, else a guess read off the worktree path.
@@ -1178,8 +1180,18 @@ func (s *Server) flushTask(id string) {
 // swallowing a failure for the same reason `withAskCounts` does: it decorates
 // a row that is worth serving without it.
 func (s *Server) withSeen(vs []view) []view {
+	// One SELECT for a list, the per-card resolve for a single row.
+	var launchers map[string]string
+	if len(vs) > 1 {
+		launchers = s.st.LauncherIDs()
+	}
 	for i := range vs {
-		if vs[i].Task != nil {
+		if vs[i].Task == nil {
+			continue
+		}
+		if launchers != nil {
+			vs[i].LauncherID = launchers[vs[i].Task.ID]
+		} else {
 			vs[i].LauncherID = s.st.LauncherID(vs[i].Task)
 		}
 	}
@@ -1284,6 +1296,18 @@ func (s *Server) listTasks(w http.ResponseWriter, r *http.Request) {
 	var statuses []string
 	if raw := r.URL.Query().Get("status"); raw != "" {
 		statuses = strings.Split(raw, ",")
+	}
+	// ?name= is the one card a handle, alias or id means, as a list of one (or none), for a caller that
+	// wants a single card's tags and not the whole board. The row is the thinner one a single GET
+	// gives (no per-list decorations beyond asks, seen and launcher_id), not the list's. A room older than this ignores it and answers
+	// the whole list, which a caller then matches itself.
+	if name := strings.TrimSpace(r.URL.Query().Get("name")); name != "" {
+		one := []*store.Task{}
+		if t := s.st.LocalCard(name); t != nil {
+			one = append(one, t)
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"tasks": s.withAskCounts(toViews(one))})
+		return
 	}
 	tasks, err := s.st.List(statuses...)
 	if err != nil {

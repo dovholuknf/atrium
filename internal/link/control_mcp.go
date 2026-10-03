@@ -1233,7 +1233,8 @@ func (c *controlMCP) launcherTags(ctx context.Context, callerRoom, who string) [
 	var body struct {
 		Tasks []ctlCard `json:"tasks"`
 	}
-	if err := c.ask(ctx, http.MethodGet, "/v1/tasks", callerRoom, nil, &body); err != nil {
+	// The one card, not the board (a room that predates ?name= answers the whole list, matched below).
+	if err := c.ask(ctx, http.MethodGet, "/v1/tasks?name="+url.QueryEscape(who), callerRoom, nil, &body); err != nil {
 		return nil
 	}
 	if t, ok := matchCard(body.Tasks, who); ok {
