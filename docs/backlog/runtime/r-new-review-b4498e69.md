@@ -123,3 +123,36 @@ Atrium-Verdict: hold 5f2bcd58..b4498e69
 Quality: the right fix in the right place: one guard in the room route that every caller reaches, the director
 checked first, and an honest statement of what it does not stop. The cross-room path, which it most needs to cover,
 is the one left untested.
+
+## Re-read: e7e8a9a6
+
+Range `5f2bcd58..e7e8a9a6`. The branch is rebased onto landing `3c4d8fbb` (df481132 + e7e8a9a6), and its test plan
+is IG.
+
+Closed:
+- **M1.**
+  - `TestACrossRoomExitCarriesWhoIsAskingToTheTarget` (a link relay pair, via the hub tool and the relay op) and
+    `TestACrossRoomExitHandsTheHubWhoIsAsking` (the daemon's `handleRoomExit`) assert from, foreign and force at the
+    target. They cover a stranger and a director, and an operator ask sends no `from`.
+  - I re-ran the hop mutants:
+    - `exitAcross` sending no body fails the link test;
+    - `handleRoomExit` passing `""` and `false` fails the daemon test.
+- **M2.** A foreign `from` that matches `SpawnedBy`, ignoring case, exits its cross-room child without force. A mutant
+  that drops the match fails `TestExitGuardForeignLauncherMayExitItsChild`.
+- **L1.** A bad body is a 400, and EOF is the operator.
+- **L3, L4 and L5.**
+- **L2** is dropped by choice, and the changelog says why is not recorded.
+
+Open, Lows, none holding:
+- **N1: two mutants still survive.**
+  - `linkRelay.Exit` dropping `From` and `Force` (internal/cli/roomrelay.go:56) survives. The new tests drive link
+    directly, not the cli glue. That is the same gap as f-cross-room-wake's L2, so one cli wire test can cover both.
+  - `guardExit` ignoring `Foreign` (`if !in.Foreign` set to always true) survives, because no test sends a foreign
+    `from` that equals a local wire name. Add `from: "me", foreign: true` against the local `me`.
+- The reds at the tip are the known hostterm pair (`TestALiveExitIsFiledOnce…`, `TestAnOldExitedRun…`), not this
+  change.
+
+Atrium-Verdict: room-ok 5f2bcd58..e7e8a9a6
+Atrium-Verdict: hub-ok 5f2bcd58..e7e8a9a6
+Quality: the cross-room hops are now tested where it mattered, and the cross-room child case is handled by the
+recorded launcher name.
