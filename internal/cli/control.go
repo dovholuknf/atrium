@@ -120,6 +120,7 @@ func controlServer() *mcp.Server {
 	// The other agents on this board: finding them, talking to them, starting
 	// one, and asking one to leave. See control_peers.go.
 	addPeerTools(s)
+	addGitCloneTool(s)
 
 	return s
 }
