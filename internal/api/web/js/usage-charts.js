@@ -252,6 +252,7 @@ function ucPaint() {
       `Its usage is not in these charts.</div>`;
   }
   if (!series.length) {
+    UC.cum = null;   // no chart, so no crosshair keeps reading the last one
     html += `<div class="empty">${okRooms.length ? "No turn ended in this range." : "Nothing to draw."}</div>` + ulSection();
     body.innerHTML = html;
     ucAfterPaint(body);
@@ -367,16 +368,17 @@ function ucLimitFor(series, now) {
   return tok > 0 ? { kind, name: UC_LIMIT_NAME[kind], reset: g.reset, start, pct: g.best.pct, perPct: tok / g.best.pct } : null;
 }
 
-// Where the time axis puts its labels: hours on the day ranges, local midnights on the week.
-function ucTicks(first, end) {
+// Where the time axis puts its labels: hours on the day ranges, local midnights on the week. `hourly` is the
+// zoomed chart, which holds one 5h window and so wants a label an hour.
+function ucTicks(first, end, hourly) {
   const out = [], d = new Date(first);
-  if (UC.range === "7d") {
+  if (UC.range === "7d" && !hourly) {
     d.setHours(0, 0, 0, 0);
     while (d.getTime() < first) d.setDate(d.getDate() + 1);
     for (; d.getTime() <= end; d.setDate(d.getDate() + 1)) out.push([d.getTime(), d.toLocaleDateString([], { weekday: "short", day: "numeric" })]);
     return out;
   }
-  const step = { "1h": 10, "6h": 60, "24h": 180 }[UC.range] || 180;
+  const step = hourly ? 60 : { "1h": 10, "6h": 60, "24h": 180 }[UC.range] || 180;
   if (step < 60) d.setMinutes(Math.floor(d.getMinutes() / step) * step, 0, 0); else d.setMinutes(0, 0, 0);
   const ok = t => step < 60 || t.getHours() % (step / 60) === 0;
   while (d.getTime() < first || !ok(d)) d.setTime(d.getTime() + (step < 60 ? step : 60) * 60000);
@@ -384,12 +386,21 @@ function ucTicks(first, end) {
   return out;
 }
 
+// A round tick step (1, 2 or 5 times a power of ten) that puts about four ticks under `max`. 0 when there is no max.
+function ucNiceStep(max) {
+  if (!(max > 0) || !isFinite(max)) return 0;
+  const raw = max / 4, p = 10 ** Math.floor(Math.log10(raw)), f = raw / p;
+  return (f <= 1 ? 1 : f <= 2 ? 2 : f <= 5 ? 5 : 10) * p;
+}
+
 // The running total of what the charts add up, oldest on the left, following the toggle. On 24h and 7d a
 // dashed line carries on from now to the coming midnight at the pace of the last hour. It says "at this
 // pace" because it does not see the future, and it is left out when the last hour was empty.
 // When a card has reported a limit the y axis is percent of that limit, with the 100% line, the time the
-// projection crosses it and the resets, and the line then runs on to the reset of the window. UC.cum keeps
-// what the hover needs.
+// projection crosses it and the resets, and the line then runs on to the reset of the window. On the day
+// ranges that chart is zoomed to the window (half an hour of lead-in) and carries the even-pace diagonal:
+// 100% exactly at the reset. Under it a strip of the rate, a bar a bucket, on the same time axis.
+// UC.cum keeps what the hover needs (ucCumAt, ucCumHover).
 function ucCumulative(series, now) {
   now = now || ucNow();
   const ax = ucAxis(series, now);
@@ -399,8 +410,9 @@ function ucCumulative(series, now) {
   for (let i = 0; i < ax.n; i++) {
     const s = byT.get(ax.first + i * ax.ms);
     if (!s) continue;
-    run += ucShown(s.total);
-    pts.push([ax.first + (i + 1) * ax.ms, run]);
+    const tok = ucShown(s.total);
+    run += tok;
+    pts.push([ax.first + (i + 1) * ax.ms, run, tok]);   // the bucket's end, the total then, the bucket's own tokens
   }
   const nowMs = Math.min(now, ax.first + ax.n * ax.ms);
   // The pace: whole buckets from the one holding an hour ago up to now, over the time they cover.
@@ -409,47 +421,67 @@ function ucCumulative(series, now) {
   for (const s of series) if (s.t >= from) hour += ucShown(s.total);
   const rate = hour / Math.max(now - from, 1);
   const lim = ucLimitFor(series, now);
+  const zoom = !!lim && UC.range !== "7d";
+  const x0 = zoom ? Math.max(ax.first, lim.start - 1800000) : ax.first;
   const midnight = ucMidnight(now);
   const project = lim ? hour > 0 && lim.reset > now : (UC.range === "24h" || UC.range === "7d") && hour > 0 && midnight > now;
   const end = project ? (lim ? lim.reset : midnight) : (lim ? Math.max(nowMs, lim.reset) : nowMs);
-  const span = Math.max(end - ax.first, 1);
+  const span = Math.max(end - x0, 1);
   const W = 600, H = 100;
-  const X = t => (Math.min(t, end) - ax.first) / span * W;
+  const X = t => (Math.min(Math.max(t, x0), end) - x0) / span * W;
   const proj = project ? run + rate * (end - now) : run;
-  let Y, ymax = 0, base = 0, pctRate = 0;
+  let Y, ymax = 0, base = 0, pctRate = 0, top = 0, step = 0;
   if (lim) {
     base = run - lim.pct * lim.perPct;
     pctRate = rate / lim.perPct;                       // points per ms
     ymax = Math.max(120, Math.ceil((lim.pct + 10) / 10) * 10);
     Y = v => H - 2 - Math.max(0, Math.min(ymax, (v - base) / lim.perPct)) / ymax * (H - 4);
   } else {
-    Y = v => H - 2 - v / (proj || 1) * (H - 4);
+    step = ucNiceStep(proj);
+    top = step ? Math.ceil(proj / step - 1e-9) * step : 1;
+    Y = v => H - 2 - Math.max(0, Math.min(top, v)) / top * (H - 4);
   }
   // In percent the line is the window's own, so it starts where the window did and not at the range's edge.
-  let d = lim ? `M${X(lim.start).toFixed(2)} ${Y(base).toFixed(2)}` : `M0 ${Y(0).toFixed(2)}`;
-  for (const [t, v] of pts) if (!lim || t > lim.start) d += ` L${X(Math.min(t, nowMs)).toFixed(2)} ${Y(v).toFixed(2)}`;
+  const xy = [[lim ? X(lim.start) : 0, Y(lim ? base : 0)]];
+  for (const [t, v] of pts) if (!lim || t > lim.start) xy.push([X(Math.min(t, nowMs)), Y(v)]);
+  const d = "M" + xy.map(p => p[0].toFixed(2) + " " + p[1].toFixed(2)).join(" L");
+  const last = xy[xy.length - 1], floor = Y(lim ? base : 0);
   let svg = "", over = "", yax = "", phrase = "";
-  const left = t => ((t - ax.first) / span * 100).toFixed(2) + "%";
+  const left = t => ((t - x0) / span * 100).toFixed(2) + "%";
+  // The fill under the line: teal at the bottom, warm and then red toward the limit.
+  svg += `<defs><linearGradient id="ucgrad" gradientUnits="userSpaceOnUse" x1="0" x2="0" y1="${Y(lim ? base + 100 * lim.perPct : top).toFixed(2)}" y2="${floor.toFixed(2)}">` +
+    (lim ? `<stop offset="0" class="ucg-hot"></stop><stop offset=".4" class="ucg-warm"></stop>` : "") + `<stop offset="1" class="ucg-cool"></stop></linearGradient></defs>`;
   if (lim) {
     for (const p of [0, 25, 50, 75, 100].concat(ymax > 100 ? [ymax] : [])) {
       const y = Y(base + p * lim.perPct);
       svg += `<line class="${p === 100 ? "ulcap" : "ulgrid"}" x1="0" x2="${W}" y1="${y.toFixed(2)}" y2="${y.toFixed(2)}"></line>`;
       yax += `<span class="ucy${p === 100 ? " ucy100" : ""}" data-pct="${p}" style="top:${(y / H * 100).toFixed(2)}%">${p}%<small> ${usageTokens(Math.round(p * lim.perPct))}</small></span>`;
     }
+    // The even pace: the line a window spent steadily would draw, 0% at the start and 100% at the reset. Above it
+    // the window is being spent faster than it lasts.
+    svg += `<line class="ucpace" x1="${X(lim.start).toFixed(2)}" y1="${floor.toFixed(2)}" x2="${X(lim.reset).toFixed(2)}" y2="${Y(base + 100 * lim.perPct).toFixed(2)}"></line>`;
+    over += `<span class="ucpacelab" style="left:${left(lim.reset)};top:${(Y(base + 100 * lim.perPct) / H * 100).toFixed(2)}%">even pace</span>`;
     // The resets of both windows: the coming one is named, the ones behind it are the same mark unnamed.
     for (const kind of Object.keys(UL_WINDOW)) {
       if (kind === "five_hour" && UC.range === "7d") continue;   // a mark every 5 hours across a week is a comb
       for (const g of ulGroups(kind, now)) {
         if (!g.reset) continue;
-        for (let t = g.reset, k = 0; t >= ax.first; t -= UL_WINDOW[kind], k++) {
+        for (let t = g.reset, k = 0; t >= x0; t -= UL_WINDOW[kind], k++) {
           if (t > end) continue;
           const x = X(t).toFixed(2);
           svg += `<line class="ulresetln" data-reset="${kind}" data-at="${t}" x1="${x}" x2="${x}" y1="0" y2="${H}"></line>`;
-          if (k === 0 && t > now) over += `<span class="ulresetlab" data-reset="${kind}" style="left:${left(t)}">${UC_LIMIT_NAME[kind]} reset ${esc(ulClock(t, now))}</span>`;
+          if (k === 0 && t > now) over += `<span class="ulresetlab${t >= end - span / 50 ? " ucend" : ""}" data-reset="${kind}" style="left:${left(t)}">${UC_LIMIT_NAME[kind]} reset ${esc(ulClock(t, now))}</span>`;
         }
       }
     }
+  } else {
+    for (let v = 0; step && v <= top + step / 1000; v += step) {
+      const y = Y(v);
+      svg += `<line class="ulgrid" x1="0" x2="${W}" y1="${y.toFixed(2)}" y2="${y.toFixed(2)}"></line>`;
+      yax += `<span class="ucy ucyk" data-tok="${Math.round(v)}" style="top:${(y / H * 100).toFixed(2)}%">${usageTokens(Math.round(v))}</span>`;
+    }
   }
+  svg += `<path class="ucarea" d="${d} L${last[0].toFixed(2)} ${floor.toFixed(2)} L${xy[0][0].toFixed(2)} ${floor.toFixed(2)} Z"></path>`;
   svg += `<path class="uck-line" d="${d}"></path>`;
   if (project) {
     let tEnd = end;
@@ -471,13 +503,27 @@ function ucCumulative(series, now) {
   }
   svg += `<line class="ucnowln" x1="${X(nowMs).toFixed(2)}" x2="${X(nowMs).toFixed(2)}" y1="0" y2="${H}"></line>`;
   over += `<span class="ucnowlab" style="left:${left(nowMs)}">now</span>`;
-  const times = ucTicks(ax.first, end).map(([t, lab]) => `<span style="left:${left(t)}">${lab}</span>`).join("");
-  UC.cum = { first: ax.first, end, nowMs, now, pts, run, rate, lim, base };
-  return `<h4 class="uch">cumulative tokens <span class="ucnote">${UC.cacheReads ? "" : "counted, "}${lim ? `since the ${lim.name} window began, as percent of its limit` : "running total over the range"}</span></h4>` +
-    `<div class="ucchart${lim ? " uclim" : ""}" data-chart="cumulative"><div class="ucplot">${yax}<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img" ` +
-    `aria-label="running total of tokens over time">${svg}</svg>${over}<i class="uchov" hidden></i><div class="uctimes">${times}</div></div>` +
-    `<div class="ucaxis"><span>0</span>${phrase}<span data-n="cumtotal" data-tip="${esc(USAGE_TIPS.cumTotal)}">${usageTokens(lim ? Math.round(lim.pct * lim.perPct) : run)}</span></div>` +
-    `<div class="ucread" aria-live="off">hover the line</div></div>`;
+  // The rate under the plot: a bar a bucket, on the plot's own time axis, so the crosshair runs through both.
+  let bars = "", maxTok = 0;
+  for (const p of pts) if (p[0] > x0) maxTok = Math.max(maxTok, p[2]);
+  for (const p of pts) {
+    if (p[0] <= x0 || !(p[2] > 0)) continue;
+    const x = X(p[0] - ax.ms), w = Math.max(X(Math.min(p[0], nowMs)) - x - 0.5, 0.5), h = p[2] / maxTok * 38;
+    bars += `<rect class="uck-bar" data-t="${p[0] - ax.ms}" x="${x.toFixed(2)}" y="${(40 - h).toFixed(2)}" width="${w.toFixed(2)}" height="${h.toFixed(2)}"></rect>`;
+  }
+  const rateAx = maxTok > 0 ? `<span class="ucrl" style="top:0">${usageTokens(Math.round(maxTok / ax.ms * 3600000))}/h</span><span class="ucrl ucrl0" style="top:100%">0</span>` : "";
+  const times = ucTicks(x0, end, zoom).map(([t, lab]) => `<span style="left:${left(t)}">${lab}</span>`).join("");
+  UC.cum = { first: x0, axFirst: ax.first, end, nowMs, now, pts, run, rate, lim, base, ms: ax.ms, Y };
+  const note = lim ? `since the ${lim.name} window began, as percent of its limit, from what atrium counted` : "running total over the range";
+  return `<h4 class="uch">cumulative tokens <span class="ucnote ucnote-cum"${lim ? ` data-tip="${esc(USAGE_TIPS.cumPct)}"` : ""}>${UC.cacheReads ? "" : "counted, "}${note}</span></h4>` +
+    `<div class="ucchart${lim ? " uclim" : ""}" data-chart="cumulative"><div class="ucread" aria-live="off" data-t="">hover the chart</div>` +
+    `<div class="ucstrip" aria-live="off"><span class="uchint">drag across the chart</span></div>` +
+    `<div class="ucstage"><div class="ucplot">${yax}<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img" ` +
+    `aria-label="running total of tokens over time">${svg}</svg>${over}</div>` +
+    `<div class="ucrate">${rateAx}<svg viewBox="0 0 ${W} 40" preserveAspectRatio="none" role="img" aria-label="tokens per hour, a bar a bucket">${bars}</svg></div>` +
+    `<div class="uctimes">${times}</div>` +
+    `<i class="uchov" hidden></i><i class="uchovdot" hidden></i><b class="uchovtag" hidden></b></div>` +
+    `<div class="ucaxis">${lim ? "" : "<span>0</span>"}${phrase}<span data-n="cumtotal" data-tip="${esc(USAGE_TIPS.cumTotal)}">${usageTokens(lim ? Math.round(lim.pct * lim.perPct) : run)}</span></div></div>`;
 }
 
 // A live reading moved the limit: the cumulative chart is drawn again in place.
@@ -730,35 +776,117 @@ document.addEventListener("mousemove", ev => {
     nodes.map(k => `${k[1]} ${usageTokens(b[k[0]])}`).join(" · ");
 });
 
-// Hover on the cumulative line: the time under the pointer, the total there and the percent of the limit.
-document.addEventListener("mousemove", ev => {
-  const plot = ev.target.closest && ev.target.closest(".ucchart[data-chart=cumulative] .ucplot");
-  const c = UC.cum;
-  if (!plot || !c) return;
-  const r = plot.getBoundingClientRect();
-  if (!(r.width > 0)) return;
-  const f = Math.max(0, Math.min(1, (ev.clientX - r.left) / r.width));
-  const t = c.first + f * (c.end - c.first);
-  let v = c.run;
-  if (t <= c.nowMs) {
-    let a = [c.first, 0];
-    v = 0;
-    for (const p of c.pts) {
-      if (t <= p[0]) { v = a[1] + (p[1] - a[1]) * (t - a[0]) / Math.max(p[0] - a[0], 1); break; }
-      a = p;
-      v = p[1];
-    }
+// ---- the cumulative chart's crosshair ----
+
+// What the chart holds at time t (clamped to the chart): the total, the percent of the limit, the rate in
+// that bucket, and which bucket it is. Pure on UC.cum, so a test can drive it.
+function ucCumAt(c, t) {
+  t = Math.max(c.first, Math.min(c.end, t));
+  const out = { t, v: 0, tok: 0, pct: null, rate: 0, bucket: null, proj: t > c.nowMs, before: false, ahead: null };
+  if (t > c.nowMs) {
+    out.v = c.run + c.rate * (t - c.nowMs);
+    out.rate = c.rate * 3600000;
   } else {
-    v = c.run + c.rate * (t - c.nowMs);
+    let prev = 0;
+    out.v = 0;
+    for (const p of c.pts) {
+      const s = p[0] - c.ms;
+      if (t <= s) { out.v = prev; break; }                    // a gap, no turn ended in it
+      if (t <= p[0]) {
+        out.v = prev + p[2] * (t - s) / c.ms;
+        out.bucket = s;
+        const gone = Math.min(c.ms, c.nowMs - s);
+        out.rate = gone > 0 ? p[2] / gone * 3600000 : 0;
+        break;
+      }
+      prev = p[1];
+      out.v = prev;
+    }
   }
-  if (c.lim && t < c.lim.start) {
-    plot.parentNode.querySelector(".ucread").textContent = ulClock(t, c.now) + ` · before the ${c.lim.name} window`;
-    return;
+  out.tok = c.lim ? Math.max(0, out.v - c.base) : out.v;
+  if (c.lim) {
+    if (t < c.lim.start) { out.before = true; return out; }
+    out.pct = out.tok / c.lim.perPct;
+    out.ahead = out.pct - 100 * Math.max(0, Math.min(1, (t - c.lim.start) / (c.lim.reset - c.lim.start)));
   }
-  const pct = c.lim ? Math.max(0, (v - c.base) / c.lim.perPct) : null;
-  plot.parentNode.querySelector(".ucread").textContent = ulClock(t, c.now) + " · " + usageTokens(Math.round(v)) + " tokens" +
-    (pct == null ? "" : ` · ${Math.round(pct)}% of the ${c.lim.name} limit`) + (t > c.nowMs ? " · projected" : "");
-  const hov = plot.querySelector(".uchov");
+  return out;
+}
+
+const ucNum = n => isFinite(n) ? usageTokens(Math.round(n)) : "–";
+const ucPctNum = n => isFinite(n) ? String(Math.round(n)) : "–";
+function ucAheadText(a) {
+  if (a == null || !isFinite(a)) return "";
+  const n = Math.round(Math.abs(a));
+  return n < 1 ? "on even pace" : `${n} pt${n === 1 ? "" : "s"} ${a > 0 ? "ahead of" : "behind"} even pace`;
+}
+
+// One line: when, how much, how much of the limit, how fast, and ahead or behind the even pace.
+function ucCumLine(c, a) {
+  const when = ulClock(a.t, c.now);
+  if (a.before) return `${when} · before the ${c.lim.name} window`;
+  return [when, `${ucNum(a.tok)} tokens`, c.lim ? `${ucPctNum(a.pct)}% of the ${c.lim.name} limit` : "", `${ucNum(a.rate)}/h`,
+    c.lim ? ucAheadText(a.ahead) : "", a.proj ? "projected" : ""].filter(Boolean).join(" · ");
+}
+
+// The phone's headline: the same numbers, big enough to read under a finger on the chart.
+function ucCumStrip(c, a) {
+  const cell = (big, small, cap) => `<div class="ucstat"><b>${big}${small ? `<small>${small}</small>` : ""}</b><i>${cap}</i></div>`;
+  if (a.before) return cell(esc(ulClock(a.t, c.now)), "", `before the ${c.lim.name} window`);
+  return (c.lim ? cell(ucPctNum(a.pct), "%", `of the ${c.lim.name} limit`) : "") + cell(ucNum(a.tok), "", "tokens counted") +
+    cell(ucNum(a.rate), "/h", "rate that hour") + cell(esc(ulClock(a.t, c.now)), "", a.proj ? "projected at this pace" : (c.lim ? ucAheadText(a.ahead) : "when"));
+}
+
+function ucCumHide(chart) {
+  if (!chart) return;
+  for (const s of [".uchov", ".uchovdot", ".uchovtag"]) { const e = chart.querySelector(s); if (e) e.hidden = true; }
+  const rd = chart.querySelector(".ucread"); if (rd) { rd.textContent = "hover the chart"; rd.dataset.t = ""; }
+  const st = chart.querySelector(".ucstrip"); if (st) st.innerHTML = `<span class="uchint">drag across the chart</span>`;
+  for (const b of chart.querySelectorAll(".ucrate rect.on")) b.classList.remove("on");
+}
+
+// x is a client x. Nothing is drawn for a chart with no turns in it.
+function ucCumHover(stage, x) {
+  const c = UC.cum, chart = stage.closest(".ucchart");
+  if (!c || !c.pts.length || !chart) return;
+  const r = stage.getBoundingClientRect();
+  if (!(r.width > 0) || !isFinite(x)) return;
+  const f = Math.max(0, Math.min(1, (x - r.left) / r.width));
+  const a = ucCumAt(c, c.first + f * (c.end - c.first));
+  const rd = chart.querySelector(".ucread");
+  rd.textContent = ucCumLine(c, a);
+  rd.dataset.t = a.bucket == null ? "" : String(a.bucket);
+  chart.querySelector(".ucstrip").innerHTML = ucCumStrip(c, a);
+  for (const b of chart.querySelectorAll(".ucrate rect")) b.classList.toggle("on", a.bucket != null && b.dataset.t === String(a.bucket));
+  const hov = chart.querySelector(".uchov"), dot = chart.querySelector(".uchovdot"), tag = chart.querySelector(".uchovtag");
   hov.hidden = false;
   hov.style.left = (f * 100).toFixed(2) + "%";
+  const y = c.Y(a.v) / 100 * stage.querySelector(".ucplot").offsetHeight;
+  if (a.before || !isFinite(y)) { dot.hidden = true; tag.hidden = true; return; }
+  dot.hidden = false; tag.hidden = false;
+  dot.style.left = hov.style.left; dot.style.top = y.toFixed(1) + "px";
+  tag.textContent = c.lim ? `${ucPctNum(a.pct)}% · ${ucNum(a.tok)}` : `${ucNum(a.tok)} tokens`;
+  tag.style.left = hov.style.left; tag.style.top = Math.max(0, y - 30).toFixed(1) + "px";
+  tag.classList.toggle("flip", f > 0.6);
+}
+
+// Pointer events, so a mouse and a finger do the same. The stage is touch-action: pan-y, so a vertical swipe is
+// the page's to scroll (the browser cancels the pointer) and a horizontal drag is ours to scrub with.
+// A mouse's crosshair goes when it leaves; a finger's stays where it lifted until the next touch elsewhere.
+document.addEventListener("pointermove", ev => {
+  const st = ev.target.closest && ev.target.closest(".ucchart[data-chart=cumulative] .ucstage");
+  if (st) ucCumHover(st, ev.clientX);
+});
+document.addEventListener("pointerdown", ev => {
+  const st = ev.target.closest && ev.target.closest(".ucchart[data-chart=cumulative] .ucstage");
+  if (st) { ucCumHover(st, ev.clientX); return; }
+  for (const ch of document.querySelectorAll(".ucchart[data-chart=cumulative]")) ucCumHide(ch);
+});
+document.addEventListener("pointercancel", ev => {
+  const st = ev.target.closest && ev.target.closest(".ucchart[data-chart=cumulative]");
+  if (st) ucCumHide(st);
+});
+document.addEventListener("pointerout", ev => {
+  if (ev.pointerType === "touch") return;
+  const st = ev.target.closest && ev.target.closest(".ucchart[data-chart=cumulative] .ucstage");
+  if (st && !st.contains(ev.relatedTarget)) ucCumHide(st.closest(".ucchart"));
 });

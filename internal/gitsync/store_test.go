@@ -861,7 +861,10 @@ func TestAnInitOfAMirrorTakesTheMirrorsLock(t *testing.T) {
 	if _, err := x.h.Mirror(bg); err != nil {
 		t.Fatal(err)
 	}
-	blocked := func(name, url string) bool {
+	// wait is how long an init is given to finish while the lock is held. A held init never finishes, so
+	// the blocked case is short, but a free init is a real git init and takes over a second under -race, so
+	// its window is long: it ends the moment the init does.
+	blocked := func(name, url string, wait time.Duration) bool {
 		l := x.h.lock("mirror:" + name)
 		l.Lock()
 		done := make(chan struct{})
@@ -873,17 +876,17 @@ func TestAnInitOfAMirrorTakesTheMirrorsLock(t *testing.T) {
 		case <-done:
 			l.Unlock()
 			return false
-		case <-time.After(300 * time.Millisecond):
+		case <-time.After(wait):
 		}
 		l.Unlock()
 		<-done
 		return true
 	}
-	if !blocked("github/o/atrium", "https://github.com/o/atrium") {
+	if !blocked("github/o/atrium", "https://github.com/o/atrium", 300*time.Millisecond) {
 		t.Fatal("an init of a mirror ran while the mirror pass held its lock")
 	}
 	// Another repository is not held up by that mirror's lock name.
-	if blocked("github/o/atrium", "https://github.com/o/free") {
+	if blocked("github/o/atrium", "https://github.com/o/free", 60*time.Second) {
 		t.Fatal("an init of a repository that is not the mirror waited for the mirror's lock")
 	}
 }

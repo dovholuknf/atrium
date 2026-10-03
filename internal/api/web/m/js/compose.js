@@ -703,7 +703,28 @@
     return true;
   }
 
+  // A reply to a bubble: its text as a markdown quote, "> " on every line, cut to QUOTE_MAX characters with an ellipsis, then
+  // a blank line and the caret after it. A draft already in the box is kept above the quote, so the caret lands at the end
+  // and the reply is typed under what is quoted. Returns false for no text or nothing mounted.
+  const QUOTE_MAX = 300;
+  function quote(text) {
+    if (!cur) return false;
+    let t = String(text || "").replace(/\r\n?/g, "\n").trim();
+    if (!t) return false;
+    if (t.length > QUOTE_MAX) t = t.slice(0, QUOTE_MAX).trimEnd() + "\u2026";
+    const q = t.split("\n").map(l => "> " + l).join("\n") + "\n\n";
+    const ta = cur.ta, draft = ta.value.replace(/\s+$/, "");
+    ta.value = (draft ? draft + "\n\n" : "") + q;
+    follow(cur, ta.value);
+    cur.refresh();
+    ta.focus({ preventScroll: true });
+    try { ta.setSelectionRange(ta.value.length, ta.value.length); } catch (e) {}
+    ta.scrollTop = ta.scrollHeight;
+    ta.dispatchEvent(new Event("input", { bubbles: true }));
+    return true;
+  }
+
   // Whether a send or an upload is in flight on the mounted card, which a page reload would lose.
   const busy = () => !!cur && (cur.sending > 0 || cur.uploading > 0);
-  window.mCompose = { mount, unmount, insert, attach, busy, addComment, quoteAll };
+  window.mCompose = { mount, unmount, insert, quote, attach, busy, addComment, quoteAll };
 })();

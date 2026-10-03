@@ -10596,7 +10596,7 @@ async function usageTabSection(browser, base) {
       const read = (html) => {
         const div = document.createElement("div");
         div.innerHTML = html;
-        const paths = [...div.querySelectorAll("svg path")];
+        const paths = [...div.querySelectorAll("svg path:not(.ucarea)")];
         const ys = paths[0] ? [...paths[0].getAttribute("d").matchAll(/[ML]\S+ (\S+)/g)].map(m => Number(m[1])) : [];
         return { n: paths.length, dashed: !!div.querySelector(".uck-proj"), ys,
           axis: div.querySelector(".ucaxis").textContent, total: (div.querySelector("[data-n=cumtotal]") || {}).textContent,
@@ -14261,6 +14261,100 @@ async function mOwnMessagesSection(browser) {
     }
   } finally { await st.close(); }
   if (!bad) console.log("mOwnMessages ok");
+}
+
+// Bubble text selects and copies, each bubble has copy and reply, and a reply is a markdown quote in the composer.
+// Phone layout, paper and the default dark skin. The thread is not redrawn under a selection.
+async function mBubblesSection(browser) {
+  const st = mServer({});
+  const c = mCard("bub-1", { alias: "quoter", display_title: "quoter", status: "needs-input", waiting_since: mIso(2 * M_MIN), seen: { turn_ended_at: mIso(20 * M_MIN) } });
+  st.tasks = [c];
+  const LONG = ("word ".repeat(120)).trim();
+  const MULTI = "first line\n\nthird line after a blank\nfourth";
+  const replies = [{ at: mIso(30 * M_MIN), text: "Plain reply." }, { at: mIso(20 * M_MIN), text: MULTI }, { at: mIso(10 * M_MIN), text: LONG }];
+  st.replies["bub-1"] = { source: "transcript", replies };
+  await st.open();
+  try {
+    for (const skin of ["", "paper"]) {
+      const vp = M_VIEWS[0];
+      st.replies["bub-1"] = { source: "transcript", replies };
+      const { ctx, p, errors } = await mPage(browser, st, vp, skin);
+      const tag = "mBubbles " + (skin || "dark") + ": ";
+      await p.evaluate(() => { window.__copied = []; Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText: t => { window.__copied.push(t); return Promise.resolve(); } } }); });
+      await p.waitForSelector("#m-seg-all", { timeout: slow(10000) });
+      await p.tap("#m-seg-all");
+      await p.waitForSelector("#m-list .row", { timeout: slow(10000) });
+      await p.tap('#m-list .row[data-id="bub-1"]');
+      await p.waitForSelector("#m-replies .reply", { timeout: slow(5000) });
+      await p.waitForSelector("#m-compose textarea", { timeout: slow(5000) });
+      const bub = i => "#m-replies .reply:nth-of-type(" + i + ")";
+      // selectable: no user-select none on the text, and each bubble has the two actions with a 40px hit area and readable colour
+      await p.waitForTimeout(700);
+      const info = await p.evaluate(() => {
+        const lum = c => { const m = c.match(/[\d.]+/g).map(Number); const f = v => { v /= 255; return v <= .03928 ? v / 12.92 : Math.pow((v + .055) / 1.055, 2.4); }; return .2126 * f(m[0]) + .7152 * f(m[1]) + .0722 * f(m[2]); };
+        const r = document.querySelectorAll("#m-replies .reply")[1], md = r.querySelector(".md"), b = r.querySelector(".bact");
+        r.scrollIntoView({ block: "center" });
+        const bg = getComputedStyle(r).backgroundColor, fg = getComputedStyle(b).color;
+        const a = lum(bg), z = lum(fg), ratio = (Math.max(a, z) + .05) / (Math.min(a, z) + .05);
+        const bb = b.getBoundingClientRect(), cx = bb.left + bb.width / 2;
+        // the hit area, found by what a finger would reach 19px above and below the middle: 40px tall in all
+        const reach = dy => { const e = document.elementFromPoint(cx, bb.top + bb.height / 2 + dy); return !!e && (e === b || b.contains(e)); };
+        return { us: getComputedStyle(md).userSelect || getComputedStyle(md).webkitUserSelect, n: r.querySelectorAll(".bact").length, ratio, hitH: reach(-19) && reach(19) ? 40 : 0, w: bb.width };
+      });
+      if (info.us !== "text") fail(tag + "bubble text is not selectable: " + info.us);
+      if (info.n !== 2) fail(tag + "a bubble has " + info.n + " actions");
+      if (info.ratio < 4.5) fail(tag + "action contrast " + info.ratio.toFixed(2));
+      if (info.hitH < 40 || info.w < 40) fail(tag + "action hit area too small: " + JSON.stringify(info));
+      // a programmatic selection survives a redraw that arrives while it is held, and the redraw lands when it goes
+      await p.evaluate(sel => { const n = document.querySelector(sel + " .md p, " + sel + " .md"); const r = document.createRange(); r.selectNodeContents(n); const s = getSelection(); s.removeAllRanges(); s.addRange(r); }, bub(1));
+      const at2 = mIso(M_MIN);
+      st.replies["bub-1"] = { source: "transcript", replies: replies.concat([{ at: at2, text: "Newest arrives mid-selection." }]) };
+      st.send("task", Object.assign({}, c, { row: 1, output_at: at2 }));
+      await p.waitForTimeout(900);
+      const held = await p.evaluate(() => ({ sel: String(getSelection()), has: /Newest arrives/.test(document.getElementById("m-replies").textContent) }));
+      if (held.sel !== "Plain reply.") fail(tag + "the selection was lost to a redraw: " + JSON.stringify(held));
+      if (held.has) fail(tag + "the thread was redrawn under a selection");
+      await p.evaluate(() => getSelection().removeAllRanges());
+      await p.waitForFunction(() => /Newest arrives/.test(document.getElementById("m-replies").textContent), null, { timeout: slow(5000) });
+      // copy writes the bubble's own text, whole, and says so
+      await p.tap(bub(2) + " .bact[data-act=copy]");
+      await p.waitForFunction(() => window.__copied.length === 1, null, { timeout: slow(3000) });
+      const copied = await p.evaluate(() => window.__copied[0]);
+      if (copied !== MULTI) fail(tag + "copy wrote " + JSON.stringify(copied));
+      if (!/copied/.test(await p.textContent(bub(2) + " .bact[data-act=copy]"))) fail(tag + "copy gave no feedback");
+      // reply: the quote, a "> " on every line, a blank line, the caret at the end
+      const ta = "#m-compose textarea";
+      const box = () => p.evaluate(s => { const t = document.querySelector(s); return { v: t.value, at: t.selectionStart, end: t.selectionEnd, focus: document.activeElement === t }; }, ta);
+      await p.tap(bub(2) + " .bact[data-act=reply]");
+      let b = await box();
+      const want = "> first line\n> \n> third line after a blank\n> fourth\n\n";
+      if (b.v !== want) fail(tag + "multi-line quote is " + JSON.stringify(b.v));
+      if (b.at !== b.v.length || b.end !== b.v.length || !b.focus) fail(tag + "caret not at the end, focused: " + JSON.stringify(b));
+      // a draft is kept, above the quote
+      await p.fill(ta, "my half sentence");
+      await p.tap(bub(1) + " .bact[data-act=reply]");
+      b = await box();
+      if (b.v !== "my half sentence\n\n> Plain reply.\n\n") fail(tag + "the draft was not kept above the quote: " + JSON.stringify(b.v));
+      if (b.at !== b.v.length) fail(tag + "caret not at the end after a draft");
+      // a long bubble is cut near 300 with an ellipsis
+      await p.fill(ta, "");
+      await p.tap(bub(3) + " .bact[data-act=reply]");
+      b = await box();
+      const line = b.v.split("\n")[0];
+      if (!/^> word/.test(line) || !/\u2026$/.test(line) || line.length < 295 || line.length > 305) fail(tag + "long quote is " + line.length + " chars: " + line.slice(-20));
+      if (!/\n\n$/.test(b.v)) fail(tag + "long quote has no blank line after it");
+      // no text: nothing happens
+      await p.fill(ta, "keep me");
+      const none = await p.evaluate(() => window.mCompose.quote("   "));
+      b = await box();
+      if (none !== false || b.v !== "keep me") fail(tag + "an empty text changed the box: " + JSON.stringify(b.v));
+      await mShot(p, "bubbles-" + (skin || "dark"));
+      if (await mNoSideways(p)) fail(tag + "the card scrolls sideways");
+      if (errors.length) fail(tag + "page errors: " + errors.join(" | "));
+      await ctx.close();
+    }
+  } finally { await st.close(); }
+  if (!bad) console.log("mBubbles ok");
 }
 
 // How many messages fit on the 390x844 phone at once, how wide they are, and what a send leaves behind.
@@ -19719,7 +19813,7 @@ async function burnChartSection(browser, base) {
     const line = c => ch.querySelector("line." + c);
     return {
       now, first: UC.cum.first, end: UC.cum.end,
-      ys: q(".ucy", e => e.textContent.trim()), pcts: q(".ucy", e => e.dataset.pct),
+      ys: q(".ucy:not(.ucyk)", e => e.textContent.trim()), pcts: q(".ucy:not(.ucyk)", e => e.dataset.pct), toks: q(".ucyk", e => e.textContent.trim()),
       cap: line("ulcap") ? Number(line("ulcap").getAttribute("y1")) : null, zero: line("ulgrid") ? Number(line("ulgrid").getAttribute("y1")) : null,
       times: q(".uctimes span", e => e.textContent),
       nowLeft: ch.querySelector(".ucnowlab") ? ch.querySelector(".ucnowlab").style.left : "",
@@ -19755,13 +19849,14 @@ async function burnChartSection(browser, base) {
     let r = await draw("24h", day);
     if (r.pcts.join() !== "0,25,50,75,100,120" || !/^100%/.test(r.ys[4])) fail("burnChart: the y axis reads " + r.ys);
     if (!(r.cap != null && r.zero != null && r.cap < r.zero && r.cap > 0)) fail("burnChart: the 100% line is at " + r.cap + " and 0% at " + r.zero);
-    if (r.times.join() !== "18:00,21:00,00:00,03:00,06:00,09:00,12:00,15:00") fail("burnChart: the day's hour ticks read " + r.times);
-    if (!r.nowLine || r.nowLeft !== ((86400000 / (r.end - r.first)) * 100).toFixed(2) + "%") fail("burnChart: now is marked at " + r.nowLeft);
+    // zoomed to the window: half an hour of lead-in before 12:30, out to the 17:30 reset, a label an hour
+    if (r.times.join() !== "12:00,13:00,14:00,15:00,16:00,17:00") fail("burnChart: the day's hour ticks read " + r.times);
+    if (!r.nowLine || r.nowLeft !== (((r.now - r.first) / (r.end - r.first)) * 100).toFixed(2) + "%") fail("burnChart: now is marked at " + r.nowLeft);
     if (r.phrase !== "hits 5h limit 16:47" || r.crossLab !== "16:47") fail("burnChart: the crossing reads " + JSON.stringify([r.phrase, r.crossLab]));
     const wantX = (r.now + 77.142857 * MIN - r.first) / (r.end - r.first) * 600;
     if (r.cross == null || Math.abs(r.cross - wantX) > 0.1) fail("burnChart: the crossing is drawn at x " + r.cross + ", want " + wantX.toFixed(2));
     const marks = r.resets.map(m => m[1]);
-    if (r.resets.some(m => m[0] !== "five_hour") || marks[0] !== r.now + 2 * HOUR || marks[1] !== r.now - 3 * HOUR || marks.length !== 6)
+    if (r.resets.some(m => m[0] !== "five_hour") || marks[0] !== r.now + 2 * HOUR || marks[1] !== r.now - 3 * HOUR || marks.length !== 2)
       fail("burnChart: the 5h resets are " + marks.map(t => (t - r.now) / HOUR));
     if (r.resetLabs.join() !== "5h reset 17:30") fail("burnChart: the reset labels read " + r.resetLabs);
     if (!r.dashed || !/percent of its limit/.test(r.note)) fail("burnChart: the heading reads " + r.note);
@@ -19789,13 +19884,13 @@ async function burnChartSection(browser, base) {
     // Hover on the line: the time, the total and the percent of the limit, and past now it says projected.
     await draw("24h", day);
     const box = await (await sp.$('#uc-body .ucchart[data-chart=cumulative] .ucplot svg')).boundingBox();
-    await sp.mouse.move(box.x + box.width * 0.9, box.y + box.height / 2);
+    await sp.mouse.move(box.x + box.width * 0.6, box.y + box.height / 2);
     let read = await sp.textContent('#uc-body .ucchart[data-chart=cumulative] .ucread');
-    let m = /^1[45]:\d\d · (\S+) tokens · (\d+)% of the 5h limit$/.exec(read);
+    let m = /^15:1\d · (\S+) tokens · (\d+)% of the 5h limit · (\S+)\/h · \d+ pts? (ahead of|behind) even pace$/.exec(read);
     if (!m || Number(m[2]) < 1 || Number(m[2]) > 69) fail("burnChart: hovering near now reads " + read);
-    await sp.mouse.move(box.x + box.width * 0.97, box.y + box.height / 2);
+    await sp.mouse.move(box.x + box.width * 0.9, box.y + box.height / 2);
     read = await sp.textContent('#uc-body .ucchart[data-chart=cumulative] .ucread');
-    if (!/ · \d+% of the 5h limit · projected$/.test(read)) fail("burnChart: hovering past now reads " + read);
+    if (!/ · \d+% of the 5h limit · \S+\/h · \d+ pts? (ahead of|behind) even pace · projected$/.test(read)) fail("burnChart: hovering past now reads " + read);
 
     // The 24h line starts where the 5h window did: 12:30, 3h before now, and the first point is not at the range's edge.
     r = await draw("24h", day);
@@ -19805,7 +19900,7 @@ async function burnChartSection(browser, base) {
     if ((await sp.textContent("#uc-body .ucchart[data-chart=cumulative] [data-n=cumtotal]")) !== "60k") fail("burnChart: the total beside the line is not the window 60k: " + await sp.textContent("#uc-body .ucchart[data-chart=cumulative] [data-n=cumtotal]"));
     // hovering before the window says so
     let b2 = await (await sp.$('#uc-body .ucchart[data-chart=cumulative] .ucplot svg')).boundingBox();
-    await sp.mouse.move(b2.x + b2.width * 0.2, b2.y + b2.height / 2);
+    await sp.mouse.move(b2.x + b2.width * 0.04, b2.y + b2.height / 2);
     read = await sp.textContent('#uc-body .ucchart[data-chart=cumulative] .ucread');
     if (!/before the 5h window$/.test(read)) fail("burnChart: hovering before the window reads " + read);
 
@@ -19813,18 +19908,231 @@ async function burnChartSection(browser, base) {
     // point of the limit weighs, so both keep the token chart and invent no crossing.
     r = await draw("24h", day);
     await sp.evaluate(() => { UC.range = "1h"; UC.bw = 60; UC.since = UC.now - 3600000; });
-    r = await sp.evaluate(() => { ucPaint(); const ch = document.querySelector("#uc-body .ucchart[data-chart=cumulative]"); return { ys: ch.querySelectorAll(".ucy").length, phrase: (ch.querySelector("[data-n=cumproj]") || {}).textContent || "" }; });
+    r = await sp.evaluate(() => { ucPaint(); const ch = document.querySelector("#uc-body .ucchart[data-chart=cumulative]"); return { ys: ch.querySelectorAll(".ucy:not(.ucyk)").length, phrase: (ch.querySelector("[data-n=cumproj]") || {}).textContent || "" }; });
     if (r.ys || /limit/.test(r.phrase)) fail("burnChart: a 1h range reads " + JSON.stringify(r));
     await draw("24h", day);
-    r = await sp.evaluate(() => { UC.card = { room: "", id: "c1" }; ucPaint(); const ch = document.querySelector("#uc-body .ucchart[data-chart=cumulative]"); const o = { ys: ch.querySelectorAll(".ucy").length, phrase: (ch.querySelector("[data-n=cumproj]") || {}).textContent || "" }; UC.card = null; return o; });
+    r = await sp.evaluate(() => { UC.card = { room: "", id: "c1" }; ucPaint(); const ch = document.querySelector("#uc-body .ucchart[data-chart=cumulative]"); const o = { ys: ch.querySelectorAll(".ucy:not(.ucyk)").length, phrase: (ch.querySelector("[data-n=cumproj]") || {}).textContent || "" }; UC.card = null; return o; });
     if (r.ys || /limit/.test(r.phrase)) fail("burnChart: a card filter reads " + JSON.stringify(r));
 
     // No reading, no percent: the old picture keeps its token axis and gains the time axis and now.
     r = await draw("24h", { ...day, readings: [] });
-    if (r.ys.length || r.cap != null || r.resets.length || !r.times.length || !r.nowLine || !/^at this pace: \d+k by midnight$/.test(r.phrase)) fail("burnChart: with no limit reading " + JSON.stringify(r));
+    if (r.ys.length || r.toks.join() !== "0,100k,200k,300k,400k" || r.cap != null || r.resets.length || !r.times.length || !r.nowLine || !/^at this pace: \d+k by midnight$/.test(r.phrase)) fail("burnChart: with no limit reading " + JSON.stringify(r));
     if (errors.length) fail("burnChart: page errors " + errors.join("; "));
     if (!bad) console.log("burnChart ok");
   } finally { await ctx.close(); }
+}
+
+// u-usage-chart: the cumulative chart's crosshair. Hover at x names the bucket, the total, the percent of the limit
+// and the rate; the edges clamp; a finger scrubs the same way and a vertical swipe stays the page's; a window with no
+// tokens or no turns draws no readout and no NaN; every text the chart adds reads at 4.5:1 on every skin.
+// One fixed `now` (UC.now). USAGE_SHOT=<dir> writes the pictures.
+async function burnReadoutSection(browser, base) {
+  const errors = [];
+  const setup = async (vp, touch) => {
+    const ctx = await browser.newContext({ viewport: vp, hasTouch: !!touch });
+    const sp = await ctx.newPage();
+    sp.on("pageerror", e => errors.push(String(e)));
+    await ctx.route("**/v1/usage*", route => route.fulfill({ json: { buckets: [] } }));
+    await ctx.route("**/v1/settings", route => route.fulfill({ json: { usage_cache_reads: false, board_skin: "harbour", board_skins: SKINS } }));
+    await sp.goto(base, { waitUntil: "domcontentloaded" });
+    await sp.waitForSelector("#stack-list .stackrow", { state: "attached", timeout: slow(15000) });
+    await sp.evaluate(() => switchView("usage"));
+    await sp.waitForFunction(() => document.getElementById("uc-body") && typeof ucPaint === "function", null, { timeout: slow(10000) });
+    await sp.waitForTimeout(1200);
+    return { ctx, sp };
+  };
+  // 24h of 15 minute buckets; the last 20 hold `hot` counted tokens each; the 5h limit (if `pct`) was read 5 minutes ago.
+  const draw = (sp, spec) => sp.evaluate(spec => {
+    const HOUR = 3600000, ms = 900000;
+    const now = new Date(2026, 8, 15, 15, 30).getTime();
+    UC.now = now; UC.cacheReads = false; UC.range = "24h"; UC.bw = ms / 1000; UC.group = "card"; UC.card = null; UC.since = now - 24 * HOUR;
+    const last = Math.floor(now / ms) * ms, buckets = new Map();
+    for (let i = 1; i <= 96; i++) {
+      if (spec.empty) break;
+      const v = i <= 20 ? spec.hot : 0;
+      if (!v && !spec.zeros) continue;
+      const s = { rows: 1, replies: 1, input: v, output: 0, cache_write_5m: 0, cache_write_1h: 0, cache_read: 0, cost: 0 };
+      buckets.set(last - i * ms, { t: last - i * ms, total: ucAdd(ucSums(), s), cards: { c1: ucAdd(ucSums(), s) }, causes: { operator: ucAdd(ucSums(), s) }, groups: {} });
+    }
+    UC.rooms = { "": { state: "ok", why: "", noGroups: false, buckets } };
+    UL.readings = []; UL.last.clear(); UL.html = "";
+    if (spec.pct) ulAdd({ at: now - 5 * 60000, room: "", card: "c1", kind: "five_hour", pct: spec.pct, reset: now + 2 * HOUR });
+    ucPaint();
+    return { now, cum: !!UC.cum, first: UC.cum && UC.cum.first, end: UC.cum && UC.cum.end };
+  }, spec);
+  const stage = '#uc-body .ucchart[data-chart=cumulative] .ucstage';
+  const state = sp => sp.evaluate(() => {
+    const ch = document.querySelector('#uc-body .ucchart[data-chart=cumulative]');
+    if (!ch) return null;
+    const hov = ch.querySelector(".uchov"), dot = ch.querySelector(".uchovdot"), tag = ch.querySelector(".uchovtag");
+    return {
+      read: ch.querySelector(".ucread").textContent, bucket: ch.querySelector(".ucread").dataset.t,
+      hovHidden: hov.hidden, hovLeft: hov.style.left, dotHidden: dot.hidden, tagHidden: tag.hidden, tag: tag.textContent,
+      on: [...ch.querySelectorAll(".ucrate rect.on")].map(r => r.dataset.t), strip: ch.querySelector(".ucstrip").textContent,
+      stats: ch.querySelectorAll(".ucstat").length, html: ch.outerHTML,
+    };
+  });
+  const ptr = (sp, type, x, y, kind) => sp.evaluate(({ type, x, y, kind }) => {
+    const el = document.elementFromPoint(x, y) || document.body;
+    el.dispatchEvent(new PointerEvent(type, { clientX: x, clientY: y, pointerType: kind, pointerId: 7, bubbles: true, cancelable: true, relatedTarget: null }));
+  }, { type, x, y, kind });
+  const day = { hot: 5000, pct: 70 };
+  const dir = process.env.USAGE_SHOT;
+  const shot = async (sp, name) => {
+    if (!dir) return;
+    fs.mkdirSync(dir, { recursive: true });
+    const h = await sp.$('#uc-body .ucchart[data-chart=cumulative]');
+    await h.scrollIntoViewIfNeeded();
+    await h.screenshot({ path: dir + "/" + name + ".png" });
+  };
+  {
+    const { ctx, sp } = await setup({ width: 1400, height: 900 });
+    try {
+      const r0 = await draw(sp, day);
+      const box = await (await sp.$(stage)).boundingBox();
+      const at = f => [box.x + box.width * f, box.y + 60];
+
+      // Hover at 60% of the chart: 15:18, in the 15:15 bucket. The window began 12:30 with 857 tokens a point; 11 whole
+      // buckets of 5000 and 3 of the 15 minutes of the twelfth is 56000 tokens, 65.3 points; 20000 tokens an hour.
+      await sp.mouse.move(...at(0.6));
+      let st = await state(sp);
+      const t60 = r0.first + 0.6 * (r0.end - r0.first), b60 = Math.floor(t60 / 900000) * 900000;
+      if (st.bucket !== String(b60) || st.on.join() !== String(b60)) fail("burnReadout: hover at 60% gives bucket " + st.bucket + " (bar " + st.on + "), want " + b60);
+      if (!/^15:18 · 56k tokens · 65% of the 5h limit · 20k\/h · \d+ pts? (ahead of|behind) even pace$/.test(st.read)) fail("burnReadout: the line reads " + st.read);
+      if (st.hovHidden || st.dotHidden || st.tagHidden || st.tag !== "65% · 56k" || Math.abs(parseFloat(st.hovLeft) - 60) > 0.2) fail("burnReadout: the crosshair is " + JSON.stringify({ h: st.hovHidden, d: st.dotHidden, tag: st.tag, left: st.hovLeft }));
+      const a = await sp.evaluate(t => ucCumAt(UC.cum, t), t60);
+      if (Math.abs(a.tok - 56000) > 2 || Math.abs(a.pct - 65.33) > 0.05 || Math.abs(a.rate - 20000) > 1) fail("burnReadout: ucCumAt gives " + JSON.stringify(a));
+      // the dot sits on the line: its top is the line's y at that time
+      const dotOn = await sp.evaluate(() => { const c = UC.cum, d = document.querySelector(".uchovdot"), p = document.querySelector(".ucplot"); return [parseFloat(d.style.top), c.Y(ucCumAt(c, c.first + 0.6 * (c.end - c.first)).v) / 100 * p.offsetHeight]; });
+      if (Math.abs(dotOn[0] - dotOn[1]) > 1) fail("burnReadout: the dot is at " + dotOn[0] + ", the line at " + dotOn[1]);
+      await shot(sp, "hover-day");
+
+      // Another x is another bucket.
+      await sp.mouse.move(...at(0.35));
+      st = await state(sp);
+      if (st.bucket !== String(Math.floor((r0.first + 0.35 * (r0.end - r0.first)) / 900000) * 900000)) fail("burnReadout: hover at 35% gives bucket " + st.bucket);
+
+      // The edges clamp: far past either side reads the first and the last instant, and never more.
+      const edge = await sp.evaluate(() => ({ lo: ucCumAt(UC.cum, -1e15).t === UC.cum.first, hi: ucCumAt(UC.cum, 1e15).t === UC.cum.end, hiRead: ucCumLine(UC.cum, ucCumAt(UC.cum, 1e15)), loRead: ucCumLine(UC.cum, ucCumAt(UC.cum, -1e15)) }));
+      if (!edge.lo || !edge.hi || !/before the 5h window$/.test(edge.loRead) || !/projected$/.test(edge.hiRead)) fail("burnReadout: the edges read " + JSON.stringify(edge));
+      await sp.mouse.move(box.x + box.width + 300, box.y + 60);   // outside: the mouse has left, the crosshair goes
+      st = await state(sp);
+      if (!st.hovHidden || !st.dotHidden || !st.tagHidden || st.read !== "hover the chart" || st.on.length) fail("burnReadout: after the mouse left " + JSON.stringify({ h: st.hovHidden, read: st.read, on: st.on }));
+      await sp.mouse.move(box.x + box.width - 1, box.y + 60);
+      st = await state(sp);
+      if (Math.abs(parseFloat(st.hovLeft) - 100) > 0.5 || !/ · projected$/.test(st.read)) fail("burnReadout: at the right edge " + JSON.stringify([st.hovLeft, st.read]));
+
+      // A finger: touch-action leaves the vertical swipe to the page; a pointerdown shows the crosshair, a horizontal
+      // move scrubs it, lifting keeps it, a cancelled pointer (the browser took the swipe) clears it, and a touch
+      // elsewhere clears it too.
+      const ta = await sp.evaluate(s => getComputedStyle(document.querySelector(s)).touchAction, stage);
+      if (ta !== "pan-y") fail("burnReadout: the chart's touch-action is " + ta + ", a vertical swipe would not scroll");
+      await ptr(sp, "pointerdown", ...at(0.5), "touch");
+      const s1 = await state(sp);
+      await ptr(sp, "pointermove", ...at(0.7), "touch");
+      const s2 = await state(sp);
+      if (s1.hovHidden || Math.abs(parseFloat(s1.hovLeft) - 50) > 0.2 || Math.abs(parseFloat(s2.hovLeft) - 70) > 0.2 || s1.read === s2.read) fail("burnReadout: touch-drag " + JSON.stringify([s1.hovLeft, s2.hovLeft, s1.read, s2.read]));
+      await ptr(sp, "pointerup", ...at(0.7), "touch");
+      await ptr(sp, "pointerout", ...at(0.7), "touch");
+      if ((await state(sp)).hovHidden) fail("burnReadout: lifting the finger took the crosshair away");
+      await ptr(sp, "pointercancel", ...at(0.7), "touch");
+      if (!(await state(sp)).hovHidden) fail("burnReadout: a cancelled pointer (a vertical swipe) left the crosshair");
+      await ptr(sp, "pointerdown", ...at(0.5), "touch");
+      await sp.evaluate(() => document.body.dispatchEvent(new PointerEvent("pointerdown", { pointerType: "touch", bubbles: true })));
+      if (!(await state(sp)).hovHidden) fail("burnReadout: a touch elsewhere left the crosshair");
+
+      // No reading: plain tokens, no percent, no pace diagonal, and the line says so.
+      await draw(sp, { hot: 5000 });
+      const box2 = await (await sp.$(stage)).boundingBox();
+      await sp.mouse.move(box2.x + box2.width * 0.5, box2.y + 60);
+      st = await state(sp);
+      if (/%|even pace|NaN|undefined/.test(st.read) || !/ tokens · \S+\/h/.test(st.read) || /ucpace/.test(st.html) || /uclim/.test(st.html)) fail("burnReadout: with no reading " + st.read);
+      if (/NaN|undefined|Infinity/.test(st.html)) fail("burnReadout: NaN in the chart with no reading");
+
+      // Turns with zero tokens: a chart, no percent, no NaN, and hovering it is quiet.
+      await draw(sp, { hot: 0, zeros: true, pct: 0 });
+      const box3 = await (await sp.$(stage)).boundingBox();
+      await sp.mouse.move(box3.x + box3.width * 0.5, box3.y + 60);
+      st = await state(sp);
+      if (!st || /NaN|undefined|Infinity/.test(st.html) || /NaN|undefined/.test(st.read)) fail("burnReadout: zero-token window " + (st && st.read));
+
+      // A window with no turns draws no chart and no readout; a pointer over where it was does nothing.
+      await draw(sp, { empty: true, pct: 70 });
+      await sp.mouse.move(box.x + box.width * 0.5, box.y + 60);
+      await ptr(sp, "pointerdown", ...at(0.5), "touch");
+      if (await state(sp)) fail("burnReadout: an empty window drew a chart");
+      if ((await sp.evaluate(() => UC.cum)) !== null) fail("burnReadout: an empty window kept the last chart's readout data");
+      if (await sp.evaluate(() => !!document.querySelector(".uchov:not([hidden]), .uchovtag:not([hidden])"))) fail("burnReadout: an empty window shows a readout");
+    } finally { await ctx.close(); }
+  }
+  {
+    // The phone: the headline strip is the readout, the plot fits the screen, nothing scrolls sideways.
+    const { ctx, sp } = await setup({ width: 390, height: 844 }, true);
+    try {
+      await draw(sp, day);
+      await (await sp.$(stage)).scrollIntoViewIfNeeded();
+      const box = await (await sp.$(stage)).boundingBox();
+      await ptr(sp, "pointerdown", box.x + box.width * 0.6, box.y + 60, "touch");
+      const st = await state(sp);
+      const vis = await sp.evaluate(() => ({ read: getComputedStyle(document.querySelector(".ucchart[data-chart=cumulative] .ucread")).display, strip: getComputedStyle(document.querySelector(".ucchart[data-chart=cumulative] .ucstrip")).display,
+        over: document.documentElement.scrollWidth - innerWidth, chart: (() => { const c = document.querySelector(".ucchart[data-chart=cumulative]"); return c.scrollWidth - c.clientWidth; })() }));
+      if (vis.read !== "none" || vis.strip === "none" || st.stats !== 4 || !/^65%of the 5h limit56k/.test(st.strip) || /NaN/.test(st.strip)) fail("burnReadout: the phone headline " + JSON.stringify([vis, st.stats, st.strip]));
+      if (vis.over > 0 || vis.chart > 0) fail("burnReadout: the phone chart scrolls sideways " + JSON.stringify(vis));
+      await shot(sp, "hover-phone");
+    } finally { await ctx.close(); }
+  }
+  {
+    // Contrast: every text the chart carries, against what it sits on, on every skin, hovered.
+    const { ctx, sp } = await setup({ width: 1400, height: 900 });
+    try {
+      await draw(sp, day);
+      const box = await (await sp.$(stage)).boundingBox();
+      await sp.mouse.move(box.x + box.width * 0.6, box.y + 60);
+      const skins = [...fs.readFileSync(path.join(__dirname, "..", "internal/api/web/css/themes.css"), "utf8").matchAll(/:root\[data-skin="([^"]+)"\]/g)].map(m => m[1]);
+      const worst = [];
+      for (const skin of ["harbour"].concat(skins)) {
+        const rows = await sp.evaluate(skin => {
+          applySkin(skin);
+          const parse = c => { const k = /^color\(srgb ([^)]+)\)/.exec(c); if (k) { const p = k[1].split(/[ \/]+/).map(Number); return { r: p[0] * 255, g: p[1] * 255, b: p[2] * 255, a: p.length > 3 ? p[3] : 1 }; } const m = /rgba?\(([^)]+)\)/.exec(c); if (!m) return null; const p = m[1].split(/[ ,\/]+/).map(Number); return { r: p[0], g: p[1], b: p[2], a: p.length > 3 && !isNaN(p[3]) ? p[3] : 1 }; };
+          const over = (f, b) => ({ r: f.r * f.a + b.r * (1 - f.a), g: f.g * f.a + b.g * (1 - f.a), b: f.b * f.a + b.b * (1 - f.a), a: 1 });
+          const lum = c => { const f = v => { v /= 255; return v <= .03928 ? v / 12.92 : ((v + .055) / 1.055) ** 2.4; }; return .2126 * f(c.r) + .7152 * f(c.g) + .0722 * f(c.b); };
+          const ratio = (a, b) => { const x = lum(a), y = lum(b); return (Math.max(x, y) + .05) / (Math.min(x, y) + .05); };
+          // what a text sits on: the backgrounds up the tree, composited; a gradient counts as each of its stops
+          const backs = el => {
+            const layers = [];
+            for (let e = el; e; e = e.parentElement) {
+              const cs = getComputedStyle(e), bg = parse(cs.backgroundColor);
+              if (cs.backgroundImage && cs.backgroundImage !== "none") { let cols = [...cs.backgroundImage.matchAll(/rgba?\([^)]+\)/g)].map(m => parse(m[0])); if (cols.some(c => c.a > .99)) cols = cols.filter(c => c.a > .99); if (cols.length) layers.push(cols); }
+              if (bg && bg.a > 0) layers.push([bg]);
+              if (bg && bg.a === 1) break;
+            }
+            const page = parse(getComputedStyle(document.documentElement).backgroundColor);
+            let outs = [page && page.a ? page : { r: 255, g: 255, b: 255, a: 1 }];
+            for (const L of layers.reverse()) outs = outs.flatMap(o => L.map(c => over(c, o)));
+            return outs;
+          };
+          const sels = [".ucy:not(.ucy100)", ".ucy100", ".ucy small", ".ucrl", ".uctimes span", ".ucnowlab", ".ucpacelab", ".ulresetlab", ".ulcrosslab", ".ucread", ".uchovtag", ".ucaxis span", ".ucaxis .ucwarn", "#uc-body .ucnote-cum"];
+          const out = [];
+          for (const s of sels) {
+            const el = document.querySelector(s.startsWith("#") ? s : '#uc-body .ucchart[data-chart=cumulative] ' + s);
+            if (!el) { out.push([s, 0, "missing"]); continue; }
+            const cs = getComputedStyle(el), fg = parse(cs.color), own = parse(cs.backgroundColor);
+            const bs = own && own.a > 0.9 ? [own] : backs(el);
+            let min = 99;
+            for (const b of bs) min = Math.min(min, ratio(over(fg, b), b));
+            out.push([s, Math.round(min * 100) / 100]);
+          }
+          return out;
+        }, skin);
+        for (const [s, r, why] of rows) if (why || r < 4.5) worst.push(skin + " " + s + " " + (why || r));
+      }
+      await sp.evaluate(() => applySkin("harbour"));
+      if (process.env.USAGE_CONTRAST) console.log(worst.join("\n"));
+      if (worst.length) fail("burnReadout: text under 4.5:1 or missing: " + worst.slice(0, 12).join("; ") + (worst.length > 12 ? " ... " + worst.length : ""));
+    } finally { await ctx.close(); }
+  }
+  if (errors.length) fail("burnReadout: page errors " + errors.join("; "));
+  if (!bad) console.log("burnReadout ok");
 }
 
 async function main() {
@@ -19862,7 +20170,7 @@ async function main() {
       u001Audit: u001AuditSection,
       pasteStart: pasteStartSection, pasteDone: pasteDoneSection, pasteOldRoom: pasteOldRoomSection, pasteClose: pasteCloseSection,
       growlQuestionShots: growlQuestionShotsSection, growlQuestionBody: growlQuestionBodySection, growlReplyGrow: growlReplyGrowSection, growlChoices: growlChoicesSection, growlStable: growlStableSection, growlOnIt: growlOnItSection, mGrowlQuestion: mGrowlQuestionSection,
-      bootClean: bootCleanSection, mWorking: mWorkingSection, mOwnMessages: mOwnMessagesSection, mRecapSheet: mRecapSheetSection,
+      bootClean: bootCleanSection, mWorking: mWorkingSection, mOwnMessages: mOwnMessagesSection, mBubbles: mBubblesSection, mRecapSheet: mRecapSheetSection,
       mHomeOrder: mHomeOrderSection, cardUrlWayOut: cardUrlWayOutSection, phoneBoot: phoneBootSection, sayEnter: sayEnterSection, sendArrow: sendArrowSection, mTables: mTablesSection, mMarkdown: mMarkdownSection, mHostile: mHostileSection, mPictures: mPicturesSection, soundPhone: soundPhoneSection, phoneBell: phoneBellSection, mBell: mBellSection,
       mHomeOrder: mHomeOrderSection, cardUrlWayOut: cardUrlWayOutSection, phoneBoot: phoneBootSection, sayEnter: sayEnterSection, sendArrow: sendArrowSection, mTables: mTablesSection, mMarkdown: mMarkdownSection, mHostile: mHostileSection, mPictures: mPicturesSection, phoneRedirect: phoneRedirectSection,
       mHomeOrder: mHomeOrderSection, cardUrlWayOut: cardUrlWayOutSection, phoneBoot: phoneBootSection, sayEnter: sayEnterSection, sendArrow: sendArrowSection, mTables: mTablesSection, mMarkdown: mMarkdownSection, mHostile: mHostileSection, mPictures: mPicturesSection, mHidden: mHiddenSection, soundPhone: soundPhoneSection, phoneBell: phoneBellSection, mBell: mBellSection,
@@ -19878,7 +20186,7 @@ async function main() {
       termDebug: termDebugSection, termSortStarted: termSortStartedSection,
       noReadyChildren: noReadyChildrenSection, childUnderParent: childUnderParentSection, topNav: topNavSection,
       childFold: childFoldSection, liveHome: liveHomeSection,
-      pulls: pullsSection, hubRepos: hubReposSection, hubReposShelf: hubReposShelfSection, hubReposLedger: hubReposLedgerSection, hubReposFeed: hubReposFeedSection, trayHead: trayHeadSection, pullsAbsent: pullsAbsentSection, oneTooltip: oneTooltipSection, burnChart: burnChartSection, switchPrewarm: switchPrewarmSection, attachAtOnce: attachAtOnceSection, keepAlive: keepAliveSection, switchBackCost: switchBackCostSection, keepMemory: keepMemorySection };
+      pulls: pullsSection, hubRepos: hubReposSection, hubReposShelf: hubReposShelfSection, hubReposLedger: hubReposLedgerSection, hubReposFeed: hubReposFeedSection, trayHead: trayHeadSection, pullsAbsent: pullsAbsentSection, oneTooltip: oneTooltipSection, burnChart: burnChartSection, burnReadout: burnReadoutSection, switchPrewarm: switchPrewarmSection, attachAtOnce: attachAtOnceSection, keepAlive: keepAliveSection, switchBackCost: switchBackCostSection, keepMemory: keepMemorySection };
     try {
       for (const n of process.env.HEADLESS_ONLY.split(",")) await only[n](browser, base);
     } catch (e) { fail("the headless run threw: " + (e && e.message ? e.message : e) + threwAt(e)); }
@@ -21879,6 +22187,7 @@ async function main() {
     await unit("bootClean", () => bootCleanSection(browser, base));
     await unit("mWorking", () => mWorkingSection(browser));
     await unit("mOwnMessages", () => mOwnMessagesSection(browser));
+    await unit("mBubbles", () => mBubblesSection(browser));
     await unit("mRecapSheet", () => mRecapSheetSection(browser));
     await unit("mHomeOrder", () => mHomeOrderSection(browser));
     await unit("cardUrlWayOut", () => cardUrlWayOutSection(browser, base));
@@ -21936,6 +22245,7 @@ async function main() {
     await unit("childFold", () => childFoldSection(browser, base));
     await unit("liveHome", () => liveHomeSection(browser, base));
     await unit("burnChart", () => burnChartSection(browser, base));
+    await unit("burnReadout", () => burnReadoutSection(browser, base));
     await unit("switchPrewarm", () => switchPrewarmSection(browser, base));
     await unit("attachAtOnce", () => attachAtOnceSection(browser, base));
     await unit("keepAlive", () => keepAliveSection(browser, base));

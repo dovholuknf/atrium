@@ -70,9 +70,13 @@
     for (let i = 0; i < t.length; i++) h = ((h << 5) + h + t.charCodeAt(i)) | 0;
     return String(at || "") + "~" + (h >>> 0).toString(36) + t.length;
   }
-  function headerHTML(who, at, tag, note) {
+  // The text each drawn bubble was made from, by its key, for copy and reply: the source as written, not the rendered markup.
+  const bubbleText = new Map();
+  const ACTS = '<span class="acts"><button type="button" class="bact" data-act="copy">copy</button><button type="button" class="bact" data-act="reply">reply</button></span>';
+  function headerHTML(who, at, tag, note, text, key) {
+    if (key) bubbleText.set(key, String(text || ""));
     return '<header class="rh"><span class="src">' + U.esc(who) + "</span>" + (note ? '<span class="note">' + U.esc(note) + "</span>" : "") +
-      (at ? '<time datetime="' + U.esc(at) + '">' + U.esc(agoOf(at)) + "</time>" : "") + (tag ? '<b class="tag">' + U.esc(tag) + "</b>" : "") + "</header>";
+      (at ? '<time datetime="' + U.esc(at) + '">' + U.esc(agoOf(at)) + "</time>" : "") + (tag ? '<b class="tag">' + U.esc(tag) + "</b>" : "") + (key ? ACTS : "") + "</header>";
   }
   function whoOf(t) {
     const nm = U.cardName(t);
@@ -81,7 +85,8 @@
   }
   function replyHTML(r, screen, who) {
     const body = screen ? '<pre class="screen">' + U.esc(r.text) + "</pre>" : '<div class="md">' + MD.render(r.text, mdCtx()) + "</div>";
-    return '<article class="reply' + (screen ? " from-screen" : "") + '" data-k="' + U.esc(entryKey(r.at, r.text)) + '">' + headerHTML(who, r.at, "", screen ? "from the screen" : "") + body +
+    const k = entryKey(r.at, r.text);
+    return '<article class="reply' + (screen ? " from-screen" : "") + '" data-k="' + U.esc(k) + '">' + headerHTML(who, r.at, "", screen ? "from the screen" : "", r.text, k) + body +
       (r.truncated ? '<p class="cut">cut short here. the rest is in the terminal</p>' : "") +
       // How many files this turn's edit calls named, from /replies and with no git number: the diff is read when this is tapped.
       (r.edited > 0 ? '<button type="button" class="chg-chip" data-at="' + U.esc(r.at) + '">' + r.edited + (r.edited === 1 ? " file" : " files") + " edited</button>" : "") + "</article>";
@@ -229,7 +234,8 @@
   const OWN_TAG = { pending: "sending", failed: "not sent, back in the box", sent: "delivered", queued: "queued" };
   function ownHTML(m) {
     const st = m.state || m.kind || "";
-    return '<article class="reply mine' + (st === "pending" || st === "failed" ? " " + st : "") + '" data-k="' + U.esc(entryKey(m.at, m.text)) + '">' + headerHTML("you", m.at, OWN_TAG[st] || "") +
+    const k = entryKey(m.at, m.text);
+    return '<article class="reply mine' + (st === "pending" || st === "failed" ? " " + st : "") + '" data-k="' + U.esc(k) + '">' + headerHTML("you", m.at, OWN_TAG[st] || "", "", m.text, k) +
       '<div class="own">' + U.esc(m.text) + "</div></article>";
   }
 
@@ -254,14 +260,14 @@
   function promptHTML(p) {
     const cut = p.truncated ? '<p class="cut">cut</p>' : "";
     const text = String(p.text || "");
-    const dk = ' data-k="' + U.esc(entryKey(p.at, p.text)) + '"';
+    const k = entryKey(p.at, p.text), dk = ' data-k="' + U.esc(k) + '"';
     const body = t => '<div class="own">' + U.esc(t) + "</div>" + cut + "</article>";
-    if (p.kind === "command") return '<article class="reply prompt command"' + dk + '>' + headerHTML("command", p.at, "") + body(text);
+    if (p.kind === "command") return '<article class="reply prompt command"' + dk + '>' + headerHTML("command", p.at, "", "", text, k) + body(text);
     if (p.kind === "peer") {
       const m = /^\[atrium\] (.+?) says:\s*/.exec(text);
-      return '<article class="reply prompt peer"' + dk + '>' + headerHTML(m ? m[1] : "a peer", p.at, "") + body(m ? text.slice(m[0].length) : text);
+      return '<article class="reply prompt peer"' + dk + '>' + headerHTML(m ? m[1] : "a peer", p.at, "", "", m ? text.slice(m[0].length) : text, k) + body(m ? text.slice(m[0].length) : text);
     }
-    return '<article class="reply mine prompt"' + dk + '>' + headerHTML("you", p.at, "") + body(text);
+    return '<article class="reply mine prompt"' + dk + '>' + headerHTML("you", p.at, "", "", text, k) + body(text);
   }
   const sameText = (a, b) => String(a).trim().slice(0, 200) === String(b).trim().slice(0, 200);
 
@@ -537,12 +543,49 @@
 
   // The thread is redrawn only when nobody's finger is on it, and a reader keeps the bubble they were reading where it
   // was: the first bubble in view is found again after the redraw and the scroll is moved by exactly what it shifted.
-  let paintLater = 0;
+  let paintLater = 0, heldBySel = false;
+  function selecting() {
+    const s = window.getSelection && window.getSelection();
+    return !!(s && !s.isCollapsed && s.rangeCount && els && els.replies.contains(s.anchorNode) && String(s).length);
+  }
+  // Copy: the bubble's own text to the clipboard, through the async API where the page may use it, else a hidden textarea
+  // and execCommand. The button says "copied" for a moment.
+  function copyText(text) {
+    const old = () => {
+      const ta = document.createElement("textarea");
+      ta.value = text; ta.setAttribute("readonly", ""); ta.style.cssText = "position:fixed;top:0;left:0;opacity:0;pointer-events:none";
+      const keep = window.getSelection && window.getSelection().rangeCount ? window.getSelection().getRangeAt(0) : null;
+      document.body.appendChild(ta); ta.select(); ta.setSelectionRange(0, text.length);
+      let ok = false;
+      try { ok = document.execCommand("copy"); } catch (e) {}
+      ta.remove();
+      if (keep) { const s = window.getSelection(); s.removeAllRanges(); s.addRange(keep); }
+      return ok;
+    };
+    if (navigator.clipboard && navigator.clipboard.writeText) return navigator.clipboard.writeText(text).then(() => true, () => old());
+    return Promise.resolve(old());
+  }
+  function bubbleAct(e) {
+    const b = e.target.closest && e.target.closest(".bact");
+    if (!b) return;
+    const art = b.closest("[data-k]");
+    const text = art ? bubbleText.get(art.dataset.k) : "";
+    if (!text) return;
+    if (b.dataset.act === "reply") { if (window.mCompose && window.mCompose.quote) window.mCompose.quote(text); return; }
+    copyText(text).then(ok => {
+      if (!b.isConnected) return;
+      b.textContent = ok ? "copied" : "not copied"; b.classList.add("done");
+      setTimeout(() => { b.textContent = "copy"; b.classList.remove("done"); }, 1400);
+    });
+  }
   function paintReplies() {
     const t = window.mStore.card(openId);
     if (!t) return;
     const html = repliesHTML(t, cache.get(openId));
     if (els.replies.dataset.sig === html) { settle(); return; }
+    // Not under a selection: a redraw replaces every node, so the text being selected would be lost. It is drawn when
+    // the selection goes (selectionchange).
+    if (selecting()) { heldBySel = true; return; }
     if (!stick && active()) {
       if (!paintLater) paintLater = setTimeout(() => { paintLater = 0; if (els && openId) paintReplies(); }, 150);
       return;
@@ -710,6 +753,7 @@
     offs = [];
     unmountAll();
     seq++;
+    bubbleText.clear(); heldBySel = false;
     document.body.classList.remove("sheet-open");
     els.sheet.classList.remove("on");
     const id = openId, tok = ++closeTok;
@@ -973,6 +1017,8 @@
     els.pick.addEventListener("click", menuToggle);
     // The card's changes, and the chip on a reply that edited files. Both open the changes sheet over the thread.
     q("m-card-changes").addEventListener("click", () => { if (openId && window.mChanges) window.mChanges.openCard(openId); });
+    els.replies.addEventListener("click", bubbleAct);
+    document.addEventListener("selectionchange", () => { if (heldBySel && els && openId && !selecting()) { heldBySel = false; paintReplies(); } });
     els.replies.addEventListener("click", e => {
       const c = e.target.closest && e.target.closest(".chg-chip");
       if (c && openId && window.mChanges) window.mChanges.openTurn(openId, c.dataset.at);
