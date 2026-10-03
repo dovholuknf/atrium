@@ -122,3 +122,13 @@ Fix:
 Atrium-Verdict: hold 29efa251..493160ad
 Quality: careful work. Every value is escaped, the board never merges and says so, and it was built against a mock
 that matches @fabric's store row field for field. The mock needs to say when it is on.
+
+## The ui queue docs that rode with this batch
+
+These are `cbd719c0` (the two lows left from the 147e7c70 review) and `b7ecc0f8` (the owed-chip item, filed and
+held by the pause). Both are doc-ok.
+
+The owed-chip doc describes `reported_at` as r-owed-answers 6b8ae15f had it. The fix in progress, 49488e18, stamps it
+again for cards the operator launched, so re-read that paragraph before the chip is built.
+
+Atrium-Verdict: doc-ok cbd719c0..b7ecc0f8
