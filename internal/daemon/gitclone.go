@@ -6,7 +6,6 @@ import (
 	"errors"
 	"io"
 	"net/http"
-	"strings"
 	"time"
 
 	"github.com/dovholuknf/atrium/internal/gitsync"
@@ -32,10 +31,7 @@ func (d *Daemon) scm(task *store.Task) *gitsync.SCM {
 			return v
 		}
 	}
-	agent := strings.TrimSpace(d.opts.AgentAddr)
-	if strings.HasPrefix(agent, ":") {
-		agent = "127.0.0.1" + agent
-	}
+	agent := d.agentAddr()
 	return &gitsync.SCM{
 		Runner:           gitsync.Default,
 		Root:             setting(gitsync.SettingSCMRoot),

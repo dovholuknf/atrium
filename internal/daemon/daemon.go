@@ -24,6 +24,7 @@ import (
 
 	"github.com/dovholuknf/atrium/internal/api"
 	"github.com/dovholuknf/atrium/internal/edge"
+	"github.com/dovholuknf/atrium/internal/gitsync"
 	"github.com/dovholuknf/atrium/internal/mcprule"
 	"github.com/dovholuknf/atrium/internal/shellpick"
 	"github.com/dovholuknf/atrium/internal/store"
@@ -275,6 +276,9 @@ type Daemon struct {
 	// worktreegone.go.
 	gone goneWatch
 
+	// hubGit is the room's stable hub remote. See hubremote.go.
+	hubGit hubGit
+
 	mu          sync.Mutex
 	agentServer *http.Server
 }
@@ -339,6 +343,7 @@ func New(opts Options) (*Daemon, error) {
 		peerLimit: newPeerLimiter(),
 		launching: newKeyedMutex(),
 	}
+	d.hubGit.cards = &gitsync.CardTokens{Live: d.cardLive}
 	d.pending = newPendingInjector(d)
 	d.wake = newWakes()
 	d.holds = newHoldState()
@@ -421,6 +426,7 @@ func New(opts Options) (*Daemon, error) {
 	d.ap.StopRunner = d.StopRunner
 	d.ap.Cull = func(id, into, tip string) (any, error) { return d.CullProved(id, into, tip) }
 	d.ap.HoldCull = d.HoldCull
+	d.ap.GitPush = d.GitPush
 	d.ap.Merged = func(into string, branches []string) (any, error) { return d.Merged(into, branches) }
 	d.ap.MergeProof = func(dir, ref, into string) (any, error) { return d.MergeProof(dir, ref, into) }
 	d.ap.ArchiveWorkers = func(dryRun bool) (any, error) { return d.ArchiveWorkers(dryRun) }
@@ -1087,6 +1093,9 @@ func (d *Daemon) Run(ctx context.Context) error {
 	agentMux.HandleFunc("/peers", d.handlePeers)
 	agentMux.HandleFunc("/tell", d.handleTell)
 	agentMux.HandleFunc("/hooks-changed", d.handleHooksChanged)
+	// The room's stable hub remote: a card's git reaches the hub's store through here, on its own token, and
+	// the token opens this route and no other. See hubremote.go.
+	agentMux.Handle(gitsync.HubRemotePrefix, d.hubRemote())
 
 	// THE BROWSER EDGE on both: a web page on this machine cannot write here,
 	// rebind a name onto it, or open a terminal. See internal/edge.
@@ -1101,6 +1110,7 @@ func (d *Daemon) Run(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("agent listener: %w", err)
 	}
+	d.setAgentAddr(agentLn.Addr())
 	// NO BOARD OF ITS OWN, when asked for with `-`.
 	//
 	// A room attached to a hub is reached through that hub, and its loopback

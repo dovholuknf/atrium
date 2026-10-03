@@ -169,6 +169,8 @@ var exportedSettings = []string{
 var neverExported = []string{
 	// A server name from the runner's mcp.json. Machine-specific, so it stays.
 	store.SettingLeanWorkerGateway,
+	// Whether cards may push to the hub. An import must not turn it on.
+	store.SettingGitPush,
 	store.SettingGlobalAuto,
 	SettingOverlayZrok,
 	SettingOverlayZiti,

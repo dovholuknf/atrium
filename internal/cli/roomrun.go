@@ -397,6 +397,13 @@ func runRoom(keys link.Keys, db, human, agent string, restartAfter time.Duration
 	room.Handler = edge.MarkLink(roomHandler(d, room))
 	room.OnAttach = d.RelayAttached
 	d.SetRelay(linkRelay{room: room})
+	// The room's stable hub remote forwards over the same link's git kind.
+	d.SetHubGit(func() (http.RoundTripper, error) {
+		if !room.HubServesGit() {
+			return nil, link.ErrNoGit
+		}
+		return room.GitTransport(), nil
+	})
 	go func() {
 		if err := room.Run(ctx); err != nil {
 			log.Printf("[link] gave up on the hub: %v", err)
@@ -437,7 +444,7 @@ func roomHandler(d *daemon.Daemon, room *link.Room) http.Handler {
 			return strings.TrimSpace(v)
 		}
 		return gitsync.DefaultRoot()
-	}}
+	}, HubRemote: func(canonical string) string { return d.HubRemoteURL(canonical) }}
 	gh := &gitsync.RoomHandler{Syncer: sy, Hub: func() (http.RoundTripper, error) {
 		if !room.HubServesGit() {
 			return nil, link.ErrNoGit
