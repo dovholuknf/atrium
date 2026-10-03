@@ -121,3 +121,32 @@ Lows:
 
 Atrium-Verdict: doc-ok 30cd5837..94e46c8b
 Quality: a faithful fold-in that turns two loose items into one place in the function and one journal step.
+
+## Re-read: 5557182b
+
+Range `94e46c8b..5557182b`, one commit, on the context-limit doc only. It folds in M1, M2 and L1 to L5.
+
+Verdict: **hold, on one line.** The content closes every note. The new section 1 line names a home-directory path on
+m1mini in this public repo.
+
+Closed:
+- **M1.** Section 3 now says that a mid-turn crossing that grows past the headroom is compacted by design. It also
+  says why a larger headroom only moves the line, and has L5 measure the growth.
+- **M2.** The margin is re-checked from every automatic `compact_boundary` `preTokens`, logged when it is more than 5k
+  off. L0's done-when now has a real-card check: `preTokens` of about 220k (±5k).
+- **L1.** The worker flag is `cardLimit + buffer`.
+- **L2.** The flag is fixed at launch from `modelWindowK`. The threshold is also bounded by `flag − buffer − headroom`,
+  so a different statusline window can only lower it.
+  - I checked the arithmetic. 1M at k = 200 gives a flag of 253k and a threshold of 200k. A 200k window gives a flag
+    of 200k and a threshold of 147k.
+- **L4.** Only the runner row overrides. The ceiling and the bound each take the lower. That matches `cardLimit`
+  today.
+- **L5.** L2 now follows the runner row's limit, and its done-when tests it.
+
+Hold:
+- **H1: a private path.** Section 1 now gives `/Users/claude/blog-sources/rndctx/`. Write it as "off-repo on m1mini, in
+  the blog sources (`rndctx/`: `main.py`, `report.py`)", or use a `~`-relative path with no account name.
+
+Atrium-Verdict: hold 94e46c8b..5557182b
+Quality: every note is closed with care. The threshold bounded by the launch-time flag is a neat fix. One path to
+scrub.
