@@ -8716,12 +8716,10 @@ async function ctxLineSection(browser, base) {
         out[el.dataset.id] = !b ? null : {
           cls: b.className, width: i.style.width, tick: s.style.left, tip: b.getAttribute("data-tip"),
           bottom: r.bottom - br.bottom >= 0 && r.bottom - br.bottom <= 8, h: br.height, wide: br.width > r.width - 4,
-          inset: br.left - r.left >= 6 && r.right - br.right >= 6,
+          flush: Math.abs(br.left - r.left) <= 2 && Math.abs(r.right - br.right) <= 2,
           barBg: getComputedStyle(b).backgroundColor, fillBg: getComputedStyle(i).backgroundColor,
           rowBg: getComputedStyle(el).backgroundColor, rowBorder: getComputedStyle(el).borderTopColor,
           pe: getComputedStyle(b).pointerEvents, z: getComputedStyle(b).zIndex,
-          floorPe: getComputedStyle(b, "::after").pointerEvents,
-          hitH: parseFloat(getComputedStyle(b, "::after").height), padB: parseFloat(getComputedStyle(el).paddingBottom),
           rowH: r.height, hitTop: br.top,
           clash: (() => {
             // The strip's box (hit area excluded) against every text run and chip in the row.
@@ -8741,7 +8739,7 @@ async function ctxLineSection(browser, base) {
           })(),
           landchip: !!el.querySelector(".chip.ctxland"), chiptext: (el.querySelector(".chip.ctxland") || {}).textContent,
           anim: getComputedStyle(i).animationIterationCount, name: getComputedStyle(i).animationName,
-          fill: getComputedStyle(i).backgroundColor,
+          fill: getComputedStyle(i).backgroundImage,
           chip: !!el.querySelector(".chip.ctxwarn"), cycle: !!el.querySelector(".chip") && /context 2\/4/.test(el.textContent)
         };
       }
@@ -8776,6 +8774,26 @@ async function ctxLineSection(browser, base) {
       wornTasks = keep;
       await wp.evaluate(async () => { await loadCards().catch(() => {}); await renderTermList(); });
     }
+    // ROWFLOOD_REAL=<tasks.json> ROWFLOOD_REAL_SHOTS=<dir> ROWFLOOD_TAG=before|after: the same board drawn from a COPY of a
+    // live /v1/tasks answer (rows with context, the first ones pinned), at 2000px and 390px on a light and a dark skin.
+    if (process.env.ROWFLOOD_REAL) {
+      const d = JSON.parse(require("fs").readFileSync(process.env.ROWFLOOD_REAL, "utf8"));
+      const list = (Array.isArray(d) ? d : d.tasks).filter(t => t.context_size).slice(0, 14);
+      const keep = wornTasks;
+      wornTasks = list.map((t, i) => Object.assign({}, t, { supervised: true, pinned: i < 5 }));
+      const tag = process.env.ROWFLOOD_TAG || "shot", dir = process.env.ROWFLOOD_REAL_SHOTS;
+      for (const [w, h] of [[2000, 1000], [390, 1400]]) {
+        await wp.setViewportSize({ width: w, height: h });
+        for (const skin of ["paper", "graphite"]) {
+          await wp.evaluate(async sk => { applySkin(sk); await loadCards().catch(() => {}); await renderTermList(); }, skin);
+          await wp.waitForTimeout(1500);
+          await wp.screenshot({ path: require("path").join(dir, `${tag}-${w}-${skin}.png`) });
+        }
+      }
+      await wp.setViewportSize({ width: 1400, height: 900 });
+      wornTasks = keep;
+      await wp.evaluate(async () => { await loadCards().catch(() => {}); await renderTermList(); });
+    }
     const r = got.rows;
     if (!(r.plainH > 0)) fail("no plain row to compare the height with.");
     for (const [id, w, cls] of [["cl-40", "27.3%", "peek-bar ctxline"], ["cl-70", "47.7%", "peek-bar ctxline"],
@@ -8786,14 +8804,13 @@ async function ctxLineSection(browser, base) {
       if (b.cls !== cls) fail(id + " line class is " + b.cls + ", want " + cls);
       if (b.width !== w) fail(id + " fill is " + b.width + ", want " + w);
       if (b.tick !== "90.9%") fail(id + " tick is at " + b.tick);
-      // A thin strip along the row's bottom edge, inset from the corners (so the left accent bar is untouched), never
+      // A thin line along the row's bottom edge, inside the card and flush with its sides (as it was at 3e9ca7a1), never
       // a fill behind the title and path.
-      if (!b.bottom || b.h > 4 || b.h < 2 || !b.inset) fail(id + " context line is not a thin strip on the bottom edge: " + JSON.stringify(b));
-      if (b.z !== "auto" || b.pe !== "none" || b.floorPe !== "auto") fail(id + " context line layering/pointer (no z-index layer behind the row, hover area on): " + JSON.stringify(b));
-      if (!(b.hitH >= 5 && b.hitH <= 7)) fail(id + " tooltip hit area is " + b.hitH + "px tall, want about 5-6.");
+      if (!b.bottom || b.h > 4 || b.h < 2 || !b.flush) fail(id + " context line is not a thin strip on the bottom edge: " + JSON.stringify(b));
+      if (b.z !== "auto" || b.pe === "none") fail(id + " context line layering/pointer (no z-index layer behind the row, the bar takes the hover): " + JSON.stringify(b));
       if (b.clash.length) fail(id + " context line overlaps the row's own text or chips: " + b.clash.join(", "));
       if (Math.abs(b.rowH - r.plainH) > 0.5) fail(id + " row is " + b.rowH + "px tall, a row without a line is " + r.plainH + "px.");
-      if (b.fill === "rgba(0, 0, 0, 0)") fail(id + " context line has no fill colour.");
+      if (b.fill === "none") fail(id + " context line has no fill colour.");
     }
     if (r["cl-over"] && (r["cl-over"].anim !== "1" || r["cl-over"].name !== "ctxline-pulse")) {
       fail("past the limit the line does not pulse exactly once: " + r["cl-over"].anim + " " + r["cl-over"].name);
@@ -8831,7 +8848,7 @@ async function ctxLineSection(browser, base) {
       const fillOk = await wp.evaluate(async sk => {
         try { applySkin(sk); } catch (e) { return "noskin"; }
         const i = document.querySelector('#term-list [data-id="cl-over"] .ctxline i');
-        return /rgb\(/.test(getComputedStyle(i).backgroundColor);
+        return /rgb/.test(getComputedStyle(i).backgroundImage);
       }, skin);
       if (fillOk === false) fail("the line has no fill colour in skin " + skin);
     }

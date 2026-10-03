@@ -148,7 +148,7 @@
      taller than the full one it replaced.
      The star goes entirely. Pinning is a decision, and a decision does not belong on the control you shrank
      to get it out of the way. It is on the card in `full`, and in the right-click menu in both. */
-  .tl-mini .term-list .card { padding: 6px 4px 12px; --row-pad-b: 6px; }
+  .tl-mini .term-list .card { padding: 6px 4px; }
   .tl-mini .term-list .card .chips, .tl-mini .term-list .card .title .pin { display: none; }
   /* The headings survive `mini` where the star above does not, which looks inconsistent and is not. A heading
      is the shape of the list rather than a control, and with no stars here it is the only thing left saying
@@ -239,8 +239,7 @@
      smaller gap between them than the board's own cards carry. */
   .term-list .card {
     margin-bottom: var(--sp-2);
-    --row-pad-b: var(--row-y-xs);
-    padding-top: var(--row-y-xs); padding-bottom: calc(var(--row-y-xs) + 6px);
+    padding-top: var(--row-y-xs); padding-bottom: var(--row-y-xs);
   }
   .term-list .card:hover { transform: none; box-shadow: var(--shadow-card); }
 

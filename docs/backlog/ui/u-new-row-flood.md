@@ -41,3 +41,16 @@ a plain one. Also the hit area is 5-7px and a strip row has at least 2px more bo
 ## What is left
 
 Nothing known. The pulse is the only part of the old design that changed shape rather than going away.
+
+## Second pass: back to the 3e9ca7a1 look
+
+The inset 3px strip and the reserved band under every row looked detached and cost row height. The context line is
+back to how it was at 3e9ca7a1: a 4px line flush with the bottom edge inside the card (the row clips it to its
+corners), gradient fills (teal, amber from the warn line, danger from the land line), the one-off pulse, and the
+bar's own tooltip with tokens, limit and window. The band, the `::after` hit area and the padding rules are gone.
+The line sits inside the row's existing bottom padding (5-6px), so it never meets the path line or a chip and a row
+is exactly as tall with or without it (both asserted in `ctxLine`). Still no LAND badge and no flood.
+
+Real-row check: `ROWFLOOD_REAL=<tasks.json> ROWFLOOD_REAL_SHOTS=<dir> ROWFLOOD_TAG=before|after
+HEADLESS_ONLY=ctxLine node scripts/test-board-headless.js` draws the board from a copy of a live `/v1/tasks` answer
+(`/tmp/u-row-flood/real/tasks-live-copy.json`, five rows pinned) at 2000px and 390px on paper and graphite.
