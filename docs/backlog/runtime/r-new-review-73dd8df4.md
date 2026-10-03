@@ -1,169 +1,94 @@
-# Review: r-worker-tags 73dd8df4
 
-Range `d739825c..73dd8df4`, one commit, 10 files, room and hub.
 
-- Both `atrium_launch` paths add the launcher's `dept:*` tag to a worker, through `link.WithLauncherDept`: the hub's
-  `launchOnRoom` (the relayed launch takes it too) and the room's stdio `launchHandler`.
-- A card row gains `launcher_id`, computed by `store.LauncherID`. It is on `/v1/tasks`, `/v1/tasks/{id}`, the SSE
-  `task` event and the PATCH answer.
-- A daemon test pins why auto_new_context `agents` mode skips workers.
+## Re-read: ca5a1be3
 
-Verdict: **OK** for room and hub. Two Mediums and four Lows can follow. M2 should be fixed before the board starts
-reading `launcher_id`.
+Range `1c2997c6..ca5a1be3`, one commit, for the room and the hub. It takes M1, M2 and L1 to L4.
+
+Verdict: **HOLD** on M3, a one-line fix. Everything else is closed. No board reads `launcher_id` yet, so M3 makes the
+field wrong but harms nothing today.
 
 ## How it was checked
 
-- I read the whole diff. Beside it I read:
-  - `launcherOf` and `currentLauncher`, `localTarget`, and `Qualify` with `SetLineage` (spawned_by is written once and
-    stored qualified, and a `name@room` launcher is kept as it is);
-  - `usageGroups`, the only reader of a `dept:` tag;
-  - `matchCard`, and the hub's `agentOf` and `resolvePeer` flow;
-  - the hub fan-out's id tagging, and `withSeen` and `withAskCounts`.
-- gofmt is clean on the changed files. `go build ./...` and `go vet` (store, link, cli, api, daemon) pass at the tip.
-- Tests at the tip:
-  - store and cli pass.
-  - link passes on its own (143s). Run beside the other four packages it hit the 10-minute default timeout, so that
-    was load, not a hang.
+- I read the diff, then `LauncherID` and `LocalCard` beside `GetByWireName`, `GetByAlias`, `Get` and `getBy`. I also
+  read the task schema, the task insert, `launcherTags` with `matchCard`, and `myTags`.
+- gofmt is clean on store, api, cli and link, and `go vet` passes on all four.
+- Tests:
+  - store, cli and link pass. I ran link alone, on the trial merge.
   - api fails only on TestTheWalkerLaunchSetAndClear, which is known.
-  - daemon fails only on known reds: the hostterm and ptyhost reattach and run tests, keepalive-fork, and
-    TestNoTestHereCanReachALiveRoom.
-- Onto current `claude/landing` (f0d3a1a4): `git merge-tree` conflicts only in `docs/test-plan.md`, where both sides
-  append a section. The Go diff applied onto landing builds, and the new and related tests pass there.
-- I checked `LauncherID` with throwaway store tests, since deleted. Every case returned what `launcherOf` would:
-  - `report_to` as an alias, a handle and a card id;
-  - a stale `report_to`, which falls back to spawned_by_id;
-  - a `report_to` that names the card itself;
-  - `report_to` set to `boss@other`;
-  - a cross-room launch with a local `report_to`, which gives the local card;
-  - an id-only lineage, which is empty on both sides.
-- Cost: `GET /v1/tasks` with 301 cards, all with lineage and `report_to`, best of 5: **36.9ms with the `withSeen` loop,
-  5.3ms without it.**
-- Mutants, run on the merged tree, with backups in my own temp dir:
+  - daemon is unchanged in the range.
+- Onto `claude/landing` 7ad42ff2 it merges with no conflict, and `go build ./...` passes.
+- Timing for `GET /v1/tasks` with 301 cards, each launched by `boss` with spawned_by_id and `report_to`, best of 5:
+  - **6.2ms at the tip**;
+  - **42.4ms** with the per-row path forced, as at 1c2997c6;
+  - **3.9ms** with no `launcher_id` at all.
 
-| # | Mutant | Result |
-|---|--------|--------|
-| 1 | hub path drops `WithLauncherDept` | killed |
-| 2 | stdio path drops `WithLauncherDept` | killed |
-| 3 | caller's own `dept:` no longer wins (`hasTagPrefix` forced false) | killed |
-| 4 | `LauncherID` skips the `report_to` step | **survives** (api and the full store package) |
-| 5 | `LauncherID` drops all three self checks | **survives** |
-| 6 | `LauncherID` drops the `@` guard | survives, equivalent (a `name@room` never matches a local wire name) |
-| 7 | `withSeen` loop removed | killed |
-| 8 | `taskEvent` line removed | killed |
-| 9 | `patchTask` line removed | killed |
-| 10 | hub `launcherTags` keeps the `@room` suffix | **survives** |
-| 11 | last `dept:*` instead of first | **survives** (no test launcher has two) |
-| 12 | `omitempty` removed | killed |
-| 13 | auto-context `agents` mode no longer skips `atrium:subagent` | killed |
+  So the decoration now costs about 2ms, down from about 38ms.
+- Mutants, with backups in my own temp dir:
 
-## Their points
+| Mutant | Result |
+|---|---|
+| The batch's `report_to` self check dropped | killed |
+| `?name=` ignored by `listTasks` | killed |
+| A done alias wins over a live one in the batch | **survives** (L5) |
+| The batch keeps an archived card's alias | **survives** (L5) |
+| `myTags` without its one-card answer | **survives** (L6) |
+| The wire map keeps the last row, not the first | survives, equivalent: `wire_name` is UNIQUE |
 
-1. **WithLauncherDept.**
-   - **"Already carry one" means the requested tags.** That is the caller's `in.Tags` after `AgentLaunchTags`, as
-     found in the r-stdio-launch-lineage review. So a caller can always choose its dept, and inheriting is only the
-     default. Fine, because a dept grants nothing:
-     - its only reader is `usageGroups`, which files spend under it;
-     - the launch cap counts `atrium:subagent`;
-     - no permission or routing reads `dept:`.
-   - **Finding the launcher on the hub.**
-     - `callerRoom` comes from the connection, and `agentOf` is the caller's self-asserted header.
-     - So a card can name another card on its own room and inherit that card's dept. That gives nothing beyond writing
-       `dept:x` itself.
-     - It cannot reach another room's cards: the lookup is on `callerRoom`.
-   - **"First `dept:*"`** follows the stored tag order, so it is deterministic. Mutant 11 shows the order is not
-     pinned.
-   - **A failed lookup** stamps nothing and never fails the launch. That is right.
-2. **launcher_id.**
-   - **It matches `launcherOf`** in every case above:
-     - `localCard` is `localTarget` (handle, alias, id, all exact);
-     - `GetByWireName` qualifies, so leaving out `Qualify` loses nothing;
-     - spawned_by_id is a bare local id or `room~id`, and `Get` misses the second.
-   - **The one difference:** a card whose spawned_by_id is its own id. `launcherOf` returns the card itself, and
-     `LauncherID` skips it and goes on to spawned_by. `LauncherID` is the better answer. No real launch can produce
-     this, since a card cannot launch itself.
-   - **Read-only.** It never writes the `SetLauncher` correction that `currentLauncher` makes, which is right for a
-     GET.
-   - **omitempty** is right, and pinned (mutant 12).
-   - **The exact-JSON test is honest about what it checks:** it decodes the real handler output, it requires the key to
-     be absent, not empty, and it covers the list, the single GET and the event. It does not cover `report_to` (M1).
-   - Cost: M2.
-3. **auto_new_context `agents` mode not reaching workers. Agreed.**
-   - `autocontext.go:206` requires `origin:agent` and no `atrium:subagent`, so workers are excluded on purpose.
-     `atrium:auto-new-context` is how one opts in.
-   - Their test pins it (mutant 13).
+## Closed
 
-## Interactions
+- **M1.** `TestLauncherIDResolveAndTheBatchAgrees` covers:
+  - `report_to` by alias, handle and id;
+  - a stale `report_to`;
+  - a self `report_to`, a self `spawned_by_id` and a self `spawned_by`;
+  - `@human`, another room, and a card nobody launched.
 
-- **r-stdio-launch-lineage (632db27e).** `WithLauncherDept` wraps `AgentLaunchTags` and adds the tag after it, so the
-  origin and worker markers are untouched.
-  - The stdio path now reads `ATRIUM_AGENT_NAME` once, for both the tags and `spawned_by`.
-  - The daemon sets that variable to the card's stored `WireName`, so `myTags`'s exact `t.Wire == me` matches a daemon
-    launch (L3 covers a hand-set name).
-- **r-owed-answers (8d1d31ed, not landed).**
-  - It reads `launcherOf`, and `LauncherID` agrees with it, so the board and the owed-answer notices name the same
-    launcher.
-  - `git merge-tree 8d1d31ed 73dd8df4` conflicts in `docs/test-plan.md` and in
-    `internal/cli/control_launch_lineage_test.go`. Both are appends at the end of the file, so whichever lands second
-    keeps both sides.
-  - For that review, not this one: its park check (`SpawnedByID == target.ID || Qualify(SpawnedBy) == WireName`) is a
-    third way of finding a launcher, and it ignores `report_to`.
-- **Landing.** The only conflict is the test-plan append, and the merged tree builds.
+  It holds `LauncherID` equal to `LauncherIDs` on every card. The batch's self check is pinned.
+- **M2.** `LauncherIDs` is one SELECT, resolved in memory, in the same order as `LauncherID`: `report_to` through
+  wire name, live alias, done alias, then id; then `spawned_by_id`; then `spawned_by` as a wire name, never `@` and
+  never the card itself.
+  - The alias maps copy `GetByAlias`: normalized, never dead or archived, live before done, newest first.
+  - The wire map copies `GetByWireName`: `Qualify`, exact, and unique.
+  - `withSeen` uses the batch for a list of more than one row. A single row, the event and PATCH keep `LauncherID`.
+    That threshold is right.
+- **L1.** `launcherTags` has a test for `boss@room` and for two dept tags, where the first is stamped.
+- **L2.** `GET /v1/tasks?name=` answers `LocalCard(name)` as a list of one or none.
+  - It is a parameterized lookup on the same route and auth as the full list, and the query value is escaped by
+    both callers.
+  - A name resolves to one card, never several: the wire name is unique, and the alias order is fixed.
+  - On the hub, the answer still goes through `matchCard`. So a room that ignores `?name=` is matched exactly, and a
+    new room's card that `matchCard` would not accept stamps nothing. That is the safe side.
+- **L3.** `myTags` takes the one card the room resolved, so a bare name or an alias works on a new room.
+- **L4.** The `view.LauncherID` comment now says the hub does not prefix the id and a remembered card has none.
 
-## Mediums
+## M3: a card with no wire name empties the whole batch
 
-### M1: the `report_to` step, the step that matches `launcherOf`, is untested
+`wire_name` is a nullable column. The insert writes `nullable(t.WireName)`, so an intake card (`Offer`) or a work item
+with no session is stored with NULL, and `scanTask` reads it as `sql.NullString`. `LauncherIDs` scans it into a plain
+string instead. The Scan fails on the first NULL row. The error is dropped in `guard`, so `rows` holds only what came
+before it. The query is `ORDER BY created_at DESC`, so one newer intake card means an empty map.
 
-The changelog sells `launcher_id` as "`report_to`, then `spawned_by_id`, then `spawned_by` as a wire name, as the
-daemon's `launcherOf` resolves it". No test sets `report_to`. Removing that step leaves every test green (mutant 4),
-and so does removing all three self checks (mutant 5).
+A probe proved it: a launched `kid` and one `Offer` made after it. `LauncherID(kid)` is boss's id. `LauncherIDs()` is
+`map[]`. Because `withSeen` uses the map whenever it is non-nil, every row in the list loses its `launcher_id`, while
+the single GET still has it.
 
-My throwaway cases show the code is right today. Add these rows to `TestLauncherIDOnTheTaskRow`, or a store test:
-- `report_to` by alias, giving a different card than spawned_by_id;
-- a stale `report_to`, which falls back to spawned_by_id;
-- a `report_to` naming the card itself, which falls back;
-- a card whose spawned_by is its own handle, which is omitted.
-
-### M2: `launcher_id` makes `/v1/tasks` about 7x slower, and nothing reads it yet
-
-`withSeen` calls `LauncherID` once per row:
-- one `ReportTo` query;
-- then one to five lookups (`GetByWireName`, `GetByAlias`, `Get`).
-
-Every other decoration on this path is one batched map (`RepliesOwed`, `OpenAskCounts`, `MergedViews`, `SeenAll`). At
-301 cards the list went from 5.3ms to 36.9ms, all of it on the store's single connection, and the hub fans
-`/v1/tasks` out to every room for every board.
-
-No board JS reads `launcher_id` yet (`git grep launcher_id internal/api/web` is empty), so today this is pure cost.
-
-Fix: add a `store.LauncherIDs()` that reads `id, wire_name, alias, spawned_by, spawned_by_id, report_to` in one SELECT
-and resolves in memory, with the same order and self checks. Keep `LauncherID` for the single-card paths (the event
-and PATCH).
+Fix: select `COALESCE(wire_name, '')`, or scan into `sql.NullString`. Add one NULL-wire card, newer than the others,
+to `TestLauncherIDResolveAndTheBatchAgrees`. As a second guard, have `LauncherIDs` return nil when the query fails, so
+`withSeen` falls back to the per-row path rather than serving an empty map.
 
 ## Lows
 
-- **L1: the hub lookup's `name@room` handling and the first-dept order are untested** (mutants 10 and 11). Add a
-  `launcherTags` case with `who = "boss@room"`, and a launcher carrying two dept tags.
-- **L2: one more full list per launch.**
-  - `launcherTags` (hub) and `myTags` (stdio) each GET the whole `/v1/tasks` to read one card's tags. With M2 that is
-    the slow list.
-  - On a cross-room hub launch, `resolvePeer` has just read the same room's list. Reuse it.
-  - Otherwise fetch the one card, `/v1/tasks/{id}`, when an id is known.
-- **L3: `myTags` matches only the exact wire name.** That is fine for a daemon-launched card, where
-  `ATRIUM_AGENT_NAME` is its `WireName`. A hand-set bare name on a tenant-named room stamps no dept, though the room
-  still qualifies `spawned_by` and files the launch. The hub's `matchCard` accepts a bare name and an alias. Use the
-  same rule, or say why not.
-- **L4: the `view.LauncherID` comment says "The aggregate view prefixes the room".**
-  - The hub's fan-out tags only `id`, so `launcher_id` goes through bare, and a client has to pair it with `room`.
-  - Remembered (offline) cards are served from the cached stored row, so they have no `launcher_id` at all.
-  - Change the comment to say both. The changelog's "bare" is right.
+- **L5: the batch's alias rules are not pinned.** Putting done before live, or keeping an archived card's alias,
+  passes every test, and either would make the batch disagree with `GetByAlias`. Add a live card and a done card
+  with the same alias, plus an archived card holding one, to the agreement test.
+- **L6: the `myTags` paths are untested on the cli side.**
+  - Dropping the one-card answer passes the cli tests, so the alias case of L3 has no cli test.
+  - The one-card answer also trusts any single row. If a room ignores `?name=` and holds exactly one card that is not
+    the caller (a hand-named session on an older daemon), its dept is stamped.
+  - Check the row against `me` (handle, bare name or alias) before taking it, and test both cases.
+- **N1: `?name=` answers a thinner row than the list.** It adds ask counts but not `withSeen` and the other list
+  decorations, and it ignores `?status=`. That is fine for the two callers that want tags. Say so in the comment, so
+  nobody uses it as a one-row list.
 
-## Test plan
-
-The new section is still headed `@LETTER@`. Landing's `docs/test-plan.md` has IG, II, IN, IO, IP and IQ, with ID, IE,
-IH, IF, IJ, IK, IL and IM reserved. **IR** is the next free letter.
-
-Atrium-Verdict: room-ok d739825c..73dd8df4
-Atrium-Verdict: hub-ok d739825c..73dd8df4
-Quality: small and well aimed. One shared helper serves both launch paths, a failed lookup never fails the launch, and
-`launcher_id` matches `launcherOf` case for case. What is missing is a test of its `report_to` step, and a batched
-version before the board reads it.
+Atrium-Verdict: hold 1c2997c6..ca5a1be3
+Quality: a well-aimed fix. One SELECT and one map copy the store's own lookup order, and the agreement test is the
+right shape. The hold is a NULL scan that the test table never contains.

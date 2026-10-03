@@ -146,3 +146,29 @@ The result builds. `go vet` on gitsync, link and hubstore passes, `gofmt -l` is 
 pass. The verdict above holds for the range to 1ea71a3c.
 
 Atrium-Verdict: hub-ok e9be3fc3..1ea71a3c
+
+## Lows: 5ef9f08c
+
+Range `1ea71a3c..5ef9f08c`. Stage 5 itself is landed at 514afab8. This takes L2 to L5.
+
+Verdict: **OK** for the hub.
+
+- **L2.** The owner match no longer folds `/` to `-`. A branch tail with a slash in it gives no owner.
+  `TestASlashInABranchIsNotFoldedIntoAFolderName` pins it. My mutant that drops the early return survives, but it is
+  equivalent: with no fold, `f/x` can never equal a folder name. So the return is only belt and braces.
+- **L3: nothing slips past the index.**
+  - The open lookup in `CRCreate` now compares `lower(repo)`. The lookup and the insert are in one `tx`, on a store
+    with one open connection (`SetMaxOpenConns(1)`), so two creates run one after the other. The second sees the
+    first, whatever its case.
+  - `CRCreate` is the only place a row is inserted. The case-sensitive unique index stays as a second guard for the
+    same spelling.
+  - The row keeps the first ask's spelling, which is right on a case-sensitive disk.
+  - SQLite's `lower()` folds only ASCII, which is all a repo name can hold after `ParseName`.
+  - My mutant that puts back `repo = ?` fails the hubstore test.
+- **L4.** The 400 message names merged and withdrawn. The `bytes` keepalive and the dead `ErrCRNotFound` case are
+  gone. The audit line carries the acting card's room, which is an allowlisted name and so carries no words. My
+  mutant that blanks it fails `TestTheAuditLineOfACardsActionNamesItsRoom`.
+- **L5.** The test plan has section IT, plus a change doc and a changelog.
+- **Gates.** It builds, vet passes on hubstore and link, gofmt is clean, hubstore passes, and link passes in full.
+
+Atrium-Verdict: hub-ok 1ea71a3c..5ef9f08c
