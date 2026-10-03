@@ -219,3 +219,30 @@ later report answered it. "The launcher acts" stays, as the other way to close i
 Atrium-Verdict: hold e373918c..a2ea5e98
 Quality: a sharp diagnosis from a real stall, each case traced to the line that lets it through. The store-kept
 item is the right shape. M1 to M3 make sure it fires on the room that needs it, and only when something is owed.
+
+## Re-read: 30cd5837
+
+Range `e373918c..30cd5837`, one file.
+
+Closed:
+- **M1.** "Finding the orchestrator" resolves in order:
+  1. a local `atrium:orchestrator` card;
+  2. else the hub's, through the relay outbox, the way `notifyRemoteLauncher` (`a2a.go:360`) reaches a remote
+     launcher, and held if the hub is away;
+  3. else the chip.
+
+  An orphan's item stays on this room, on the local orchestrator's card or on the worker's row.
+- **M2.** "Owes" (b) now needs an ask: a `needs` say, or a report with `ask`. That is the same test as `exitsOnReport`
+  (`exitonreport.go:38` checks `in.Ask`). A done report with no ask and a `fyi` open nothing.
+- **M3.** The owing condition is checked again before every push, and an item whose reason is gone closes without a
+  push. Acceptance has the permission-approved case.
+- **L1.** The bound is 2 + N, with one listing line per clear for all items, and the orchestrator is never told
+  about itself.
+- **L2.** W6's row names `NameFromDir` (`internal/store/tasks.go:184`).
+- **L3 and L4.**
+- **The pointers.** `stoppedSilently` `:460`, `peers.go:523`, and SessionStart `compact` with no extra hook.
+
+Nothing is open. The repo is public: "clint" appears only as the operator, in paraphrase.
+
+Atrium-Verdict: doc-ok e373918c..30cd5837
+Quality: every point folded in precisely, with pointers that resolve. W6 is ready for @runtime.
