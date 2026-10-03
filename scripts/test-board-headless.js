@@ -8697,6 +8697,7 @@ async function ctxLineSection(browser, base) {
   try {
     wornTasks = [row("cl-40", 60000), row("cl-70", 105000), row("cl-90", 135000), row("cl-warm", 170000),
       row("cl-over", 201000, { telemetry: { window: 1000000 } }),
+      row("cl-long", 135000, { display_title: "a very long card title that has to wrap onto a second line in a narrow list" }),
       row("cl-none", null), row("cl-shelf", 201000, { status: "shelved" }),
       row("cl-cycle", 201000, { new_context: { step: "clear", n: 2, of: 4, label: "clearing" } })];
     tasksMode = "worn";
@@ -8711,6 +8712,7 @@ async function ctxLineSection(browser, base) {
         const r = el.getBoundingClientRect();
         const br = b && b.getBoundingClientRect();
         const i = b && b.querySelector("i"), s = b && b.querySelector("s");
+        if (!b) out.plainH = r.height;
         out[el.dataset.id] = !b ? null : {
           cls: b.className, width: i.style.width, tick: s.style.left, tip: b.getAttribute("data-tip"),
           bottom: r.bottom - br.bottom >= 0 && r.bottom - br.bottom <= 8, h: br.height, wide: br.width > r.width - 4,
@@ -8719,6 +8721,24 @@ async function ctxLineSection(browser, base) {
           rowBg: getComputedStyle(el).backgroundColor, rowBorder: getComputedStyle(el).borderTopColor,
           pe: getComputedStyle(b).pointerEvents, z: getComputedStyle(b).zIndex,
           floorPe: getComputedStyle(b, "::after").pointerEvents,
+          hitH: parseFloat(getComputedStyle(b, "::after").height), padB: parseFloat(getComputedStyle(el).paddingBottom),
+          rowH: r.height, hitTop: br.top,
+          clash: (() => {
+            // The strip's box (hit area excluded) against every text run and chip in the row.
+            const hits = [];
+            const w = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+            for (let n; (n = w.nextNode());) {
+              if (!n.textContent.trim() || b.contains(n)) continue;
+              const rg = document.createRange(); rg.selectNodeContents(n);
+              for (const q of rg.getClientRects()) if (q.width && q.bottom > br.top - 0.5 && q.top < br.bottom) hits.push("text:" + n.textContent.trim().slice(0, 20));
+            }
+            for (const ch of el.querySelectorAll(".chip, .pin, .rmark, svg")) {
+              if (b.contains(ch)) continue;
+              const q = ch.getBoundingClientRect();
+              if (q.width && q.bottom > br.top - 0.5 && q.top < br.bottom) hits.push("chip:" + ch.className);
+            }
+            return hits;
+          })(),
           landchip: !!el.querySelector(".chip.ctxland"), chiptext: (el.querySelector(".chip.ctxland") || {}).textContent,
           anim: getComputedStyle(i).animationIterationCount, name: getComputedStyle(i).animationName,
           fill: getComputedStyle(i).backgroundColor,
@@ -8742,7 +8762,8 @@ async function ctxLineSection(browser, base) {
       wornTasks = [row("sh-plain", null, { display_title: "runtime", status: "working", worktree: "/tmp/cl/runtime" }),
         row("sh-10", 20000, { display_title: "review", worktree: "/tmp/cl/review" }),
         row("sh-80", 160000, { display_title: "r-owed-answers", worktree: "/tmp/cl/r-owed-answers" }),
-        row("sh-130", 260000, { display_title: "fabric", worktree: "/tmp/cl/fabric" })];
+        row("sh-130", 260000, { display_title: "fabric", worktree: "/tmp/cl/fabric" }),
+        row("sh-long", 135000, { display_title: "a very long card title that has to wrap onto a second line in a narrow list", worktree: "/tmp/cl/orchestrator-with-a-long-path" })];
       for (const [w, h] of [[2000, 700], [390, 700]]) {
         await wp.setViewportSize({ width: w, height: h });
         for (const skin of ["paper", "graphite"]) {
@@ -8756,6 +8777,7 @@ async function ctxLineSection(browser, base) {
       await wp.evaluate(async () => { await loadCards().catch(() => {}); await renderTermList(); });
     }
     const r = got.rows;
+    if (!(r.plainH > 0)) fail("no plain row to compare the height with.");
     for (const [id, w, cls] of [["cl-40", "27.3%", "peek-bar ctxline"], ["cl-70", "47.7%", "peek-bar ctxline"],
       ["cl-90", "61.4%", "peek-bar ctxline"], ["cl-warm", "77.3%", "peek-bar ctxline warm"],
       ["cl-over", "91.4%", "peek-bar ctxline hot over"]]) {
@@ -8768,6 +8790,9 @@ async function ctxLineSection(browser, base) {
       // a fill behind the title and path.
       if (!b.bottom || b.h > 4 || b.h < 2 || !b.inset) fail(id + " context line is not a thin strip on the bottom edge: " + JSON.stringify(b));
       if (b.z !== "auto" || b.pe !== "none" || b.floorPe !== "auto") fail(id + " context line layering/pointer (no z-index layer behind the row, hover area on): " + JSON.stringify(b));
+      if (!(b.hitH >= 5 && b.hitH <= 7)) fail(id + " tooltip hit area is " + b.hitH + "px tall, want about 5-6.");
+      if (b.clash.length) fail(id + " context line overlaps the row's own text or chips: " + b.clash.join(", "));
+      if (Math.abs(b.rowH - r.plainH) > 0.5) fail(id + " row is " + b.rowH + "px tall, a row without a line is " + r.plainH + "px.");
       if (b.fill === "rgba(0, 0, 0, 0)") fail(id + " context line has no fill colour.");
     }
     if (r["cl-over"] && (r["cl-over"].anim !== "1" || r["cl-over"].name !== "ctxline-pulse")) {
@@ -8790,6 +8815,8 @@ async function ctxLineSection(browser, base) {
     if (r["cl-70"] && (r["cl-70"].chip || r["cl-70"].landchip)) fail("a card under the warn line has a mark.");
     if (r["cl-none"]) fail("a row with no context_size has a line.");
     if (r["cl-shelf"]) fail("a shelved card has a line.");
+    if (!r["cl-long"]) fail("the long-title row has no context line.");
+    else if (r["cl-long"].clash.length) fail("a two-line title overlaps the context line: " + r["cl-long"].clash.join(", "));
     const c = r["cl-cycle"];
     if (!c) fail("a cycling card has no line.");
     else {

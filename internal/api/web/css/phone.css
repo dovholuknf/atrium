@@ -486,7 +486,7 @@
     .termscroll { padding: 0 2px 6px; }
     .tnest { margin-left: 0; padding-left: 5px; border-left-width: 2px; }
     .tnest .tnest { margin-left: 1px; padding-left: 4px; }
-    .term-list .card { min-width: 0; width: 100%; box-sizing: border-box; padding: 5px 8px; }
+    .term-list .card { min-width: 0; width: 100%; box-sizing: border-box; padding: 5px 8px 11px; --row-pad-b: 5px; }
     .tgroup { max-width: 100%; min-width: 0; }
     .term-list .card .card-line {
       display: grid; grid-template-columns: auto auto minmax(0, 1fr) auto; column-gap: 6px; row-gap: 1px;

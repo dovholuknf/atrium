@@ -755,12 +755,16 @@
   /* THE CONTEXT LINE (ctxLine, js/board.js): the same meter as a thin strip along the bottom of a row, inset from
      the corners so it never touches the row's left accent bar or its border. It is never a fill behind the title
      and path: a row with a context figure is as strong as a plain one. Neutral under the warn line, amber from
-     there, danger from the land line. The strip is 3px, so a transparent hit area above it carries the tooltip. */
+     there, danger from the land line. The strip is 3px, so a transparent 6px hit area carries the tooltip. */
   .peek-bar.ctxline {
-    position: absolute; left: 10px; right: 10px; bottom: 3px; top: auto; height: 3px; margin: 0;
+    position: absolute; left: 10px; right: 10px; bottom: 2px; top: auto; height: 3px; margin: 0;
     border-radius: 2px; background: rgba(var(--stroke-rgb),.22); pointer-events: none;
   }
-  .peek-bar.ctxline::after { content: ""; position: absolute; left: 0; right: 0; top: -5px; bottom: -3px; pointer-events: auto; }
+  .peek-bar.ctxline::after { content: ""; position: absolute; left: 0; right: 0; top: -2px; bottom: -1px; pointer-events: auto; }
+  /* The strip's own band: 6px of padding under everything in the row, the strip in the bottom 5px of it, so it
+     never touches the path line or a chip. A terminals row reserves the band whether or not it has a strip (see
+     `.term-list .card` in css/terminal.css), so row height does not depend on the context figure. */
+  .card:has(> .peek-bar.ctxline) { padding-bottom: calc(var(--row-pad-b, var(--row-y-sm)) + 6px); }
   .peek-bar.ctxline i { border-radius: 2px; box-shadow: none; background: rgba(var(--stroke-rgb),.6); }
   .peek-bar.ctxline s { top: -1px; bottom: -1px; opacity: .5; }
   .peek-bar.ctxline.warm i { background: var(--warn); }
