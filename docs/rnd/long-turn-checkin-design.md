@@ -224,6 +224,7 @@ R3's `escalate.turn_after` (45 minutes) stays for cards without a meter: gemini,
 | W3 | `atrium_checkin` and `allow_minutes` on `atrium_launch`, with the chain-up on no answer | @runtime | S | room and hub (MCP tool list) |
 | W4 | the board chip, tooltip and filter, which replaces U1's `turn` chip. Test: with the stuck setting at "alert", a card climbing to level 4 never rings the bell | @ui | S | hub |
 | W5 | after a week: the churn count, and tuning the defaults from the check-ins actually sent and answered | @rnd | S | none |
+| W6 | owed answers that survive (section 11): an open item on the launcher's card for every worker that stops owing an answer, a push to the orchestrator at 10 minutes, the list re-shown after the launcher's context clears, the W2 reservation of the `atrium` handle and alias checked on the room and on the hub | @runtime | S | room |
 
 **Acceptance for W1-W3**, on a test room with a fake clock:
 - A worker 30 minutes in with no commit gets one check-in at its next tool call, and the launcher gets its three
@@ -238,7 +239,9 @@ R3's `escalate.turn_after` (45 minutes) stays for cards without a meter: gemini,
 - A card waiting 40 minutes on a permission dialog is at level 0.
 - A restart in the middle of a turn keeps the clock.
 
-The build waits for the pause to end, like everything else.
+**Acceptance for W6** is in section 11.
+
+W6 does not depend on W1 to W5 and can be built first. The build waits for the pause to end, like everything else.
 
 ## 9. Questions for clint, held until asked
 
@@ -272,3 +275,75 @@ When clint is ready, the orchestrator's interviewer card can run section 9 with 
 - Question 5 last, and it may be answered just by looking at a mock of the chips.
 
 The answers come back to @rnd as a file outside the repo, and the doc is revised from them.
+
+## 11. Owed answers: a worker stops, and nobody hears it
+
+Added 2026-10-02 evening, from the orchestrator. A separate failure from the long turn, folded in here because the
+fix is the same kind of thing: atrium notices, and pushes it up the chain.
+
+**What happened.** On the evening of 10-02, clint said go on the scm work, and it stalled for an hour without anyone
+noticing. The details are in the evening entry of the factory log on sg4.
+- @fabric launched nothing.
+- r-hub-remote sat at needs-input for 67 minutes.
+- r-scm-clone finished and reported to nobody.
+- u-usage-chart's question to @ui was lost when @ui's context was cleared.
+
+**What atrium does today, and where each case slips through:**
+- **A silent stop** (`silentStop`, `internal/daemon/a2a.go:423`). It tells the launcher once, and only when a
+  worker ends a turn at needs-input without saying anything. A worker that asked a question and is waiting for the
+  answer has "reported", so it is not silent. That is r-hub-remote.
+- **The ended notice** (`internal/store/ledger.go:786`). It is queued when a worker's session ends without a final
+  report. If the stored launcher no longer resolves, there is nobody to tell (`launcherOf`, a2a.go:243). That may
+  be r-scm-clone (verify, from the log).
+- **Delivery.** A launcher without `atrium:hold-notices` has every notice, report and question **typed into its
+  conversation** (`deliverPeer`). A context clear erases it, and nothing ever says it again, because
+  `notifyLauncher` sends once per event (a2a.go:277). That is u-usage-chart.
+- **Nobody above the launcher.** Nothing goes to the orchestrator when a launcher does not act. That is the hour.
+
+**The change: an open item, kept by the board on the launcher's card.**
+1. **It opens** when a worker that has a launcher reaches done, ended, needs-input or needs-permission, and owes
+   an answer. "Owes" means one of these:
+   - the worker ended with no report;
+   - the worker's last message to its launcher came after the launcher's last message to it, i.e. a question or a
+     report nobody answered;
+   - the worker has been at needs-permission for 5 minutes.
+2. **It is stored** with the held notices on the launcher's card (`holdNotice`, a2a.go:333), **whether or not the
+   launcher holds notices.** A launcher that has its notices typed still gets the typed line, as a nudge. The
+   record lives in the store, not in the conversation.
+   A worker whose launcher no longer resolves keeps its item on the orchestrator's card, so it is never kept by
+   nobody.
+3. **It closes** when the launcher acts on that worker: it messages the worker, exits it, relaunches it, or
+   dismisses the item with `atrium_task` (a new `dismiss` field). Only reading the notices does not close it. Reading
+   is what @ui did before its context was cleared.
+4. **At 10 minutes open,** atrium sends the orchestrator one held notice. For example: "fabric-director has not
+   answered r-hub-remote for 10 minutes. r-hub-remote is waiting at needs-input. Its last words: <first 200
+   characters>." The orchestrator holds notices, so this pages nobody, clint included. If the launcher is the
+   orchestrator itself, the board's row chip is all there is.
+5. **After the launcher's context clears**, by a `/clear`, an automatic new context, or a compaction: at its first
+   tool call, step 2 of the permission chain delivers one line, "3 open items from your workers: r-hub-remote
+   (needs-input 67m), r-scm-clone (done, no report), u-usage-chart (asked you a question 40m ago). atrium_task
+   notices to read them." A new conversation is seen through SessionStart (`internal/cli/session.go`). (Verify:
+   that a compaction gives a SessionStart, or else key this on the compact hook.)
+6. **On the board,** the launcher's row shows `📬 3 owed`, and the chip turns amber at 10 minutes. It reuses the
+   `held_notices` count already on the row, counting only open items. It never rings the bell.
+
+**The bound.** Each open item is pushed at most three times: once to the launcher, once to the orchestrator, and
+once more after each of the launcher's context clears. Every push goes upward. Nothing is written to the worker.
+None of these pushes can start another.
+
+**Not covered: a director that launches nothing after a go.**
+- If the go came as a message from the orchestrator, the director's silent stop already tells the orchestrator,
+  held (`stoppedSilently`, a2a.go:466).
+- If clint typed it into the director, the director owes no report today.
+- W0 also checks which of these happened to @fabric. A director that sits idle after a prompt from the operator
+  belongs to the operator-focus design, not here.
+
+**Acceptance for W6,** on a test room:
+- A worker that ends with no report opens an item on its launcher's card. The launcher's row shows `📬 1 owed`.
+- With no action in 10 minutes, the orchestrator gets one held notice, and nothing calls a push or notification path.
+- A worker that asks its launcher a question and waits opens an item. The launcher's reply closes it.
+- With the launcher's notices typed (no hold tag), the item is still on its card. After a `/clear`, the launcher's
+  first tool call carries the one-line list.
+- Exiting or dismissing the worker closes the item. Reading the notices does not.
+- A worker whose launcher no longer resolves opens its item on the orchestrator's card, which shows it.
+
