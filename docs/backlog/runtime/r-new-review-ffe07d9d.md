@@ -62,3 +62,59 @@ code, served on the board API, so hub-ok too, since the board reads the replies 
 Quality: after the Sonnet switch, the work is clean. The interface move is behaviour-neutral, the reader follows
 every rule of the brief, and the tests fake the exec well. The miss is a classic one: a timeout on the parent is not
 a timeout on its output pipe, and the Windows shim makes it the common case.
+
+## Re-read: b305efd5
+
+Range `6bce194f..b305efd5`. b305efd5 is one commit on ffe07d9d, in `internal/daemon/` only (opencodereader.go, the
+new opencodeproc_unix.go and opencodeproc_windows.go, two fields on Daemon, and tests), plus the changelog line.
+Unsigned, like every m1mini commit.
+
+Closed:
+- **The High: the export is now bounded.**
+  - stdout is a `cappedWriter` on `cmd.Stdout`. There is no pipe read to EOF any more.
+  - `cmd.WaitDelay` is 1 s.
+  - The export starts in its own process group (`Setpgid`), and `cmd.Cancel` kills `-pgid`. `reapTree` kills
+    whatever is left in the group once the export returns.
+  - On Windows, `cmd.Cancel` runs `taskkill /T /F /PID`. If taskkill fails, WaitDelay still bounds `Wait`, and Go
+    then kills the direct child.
+  - Rerun on m1mini against the real `opencodeExec`, with a 1 s context and the default 1 s WaitDelay, each fake
+    called twice:
+    - the fake that prints a good export and leaves `sleep 20 &`: **1.13 s and 1.01 s**, down from 20.1 s. The
+      export is kept and parses, and the `sleep 20` is gone afterwards, so the group kill took it.
+    - the fake whose `sleep 30` outlives the parent: **1.00 s and 1.00 s**, down from 30.2 s, with `signal: killed`.
+    - a third fake, whose child leaves the group with `setsid` and holds stdout: **1.17 s and 1.01 s**. The call is
+      bounded, and only the escaped child survives (N2).
+  - The card's lock is still held across the export, but the export now ends within `opencodeTimeout` (8 s) plus
+    1 s, so a poll waits at most that long.
+  - `TestOpencodeExecIsBoundedAgainstAChildHoldingStdout` covers both of my fakes, with a second call each.
+- **The cap.** Past `max`, the writer marks the export as over, cancels the context (which kills the group), and
+  the call returns nothing. The test runs `yes` against a 1 KiB cap.
+- **A good answer printed before a timeout is kept.** The output is parsed whatever the error, and a cut-off JSON
+  fails the parse, so only a complete export is used. `TestOpencodeKeepsAnAnswerPrintedBeforeATimeout` covers this.
+- **The three Lows.**
+  - `opencodeEnv()` drops every `ATRIUM_*` variable, and a test checks it.
+  - At most 3 cards export at once (`opencodeSlots`).
+  - The reader is on the Daemon, behind a `sync.Once`, so the package-level map is gone.
+
+`go vet` is clean, and so is `GOOS=windows go vet`. `go test ./internal/daemon/ -run 'Opencode|Replies|Transcript'
+-count=1` passes all 33. `gofmt -l` flags only `fyi_test.go`, the known low from before.
+
+Open, Lows, none of which holds the merge:
+- **N1: `reapTree` kills `-pgid` after `Wait` has reaped the leader.**
+  - If the group is empty by then, its id is free, and in theory a new process could start a group with the same
+    number and take the SIGKILL.
+  - That needs the pid to be reused within microseconds, so the risk is small.
+  - Kill the group only when the export did not exit cleanly, or note the race.
+- **N2: a child that calls `setsid` leaves the group and survives on unix.** The call itself is still bounded by
+  WaitDelay. A comment saying so is enough. A real opencode does not do this.
+- **N3: the slot is taken and given back by hand, not with `defer`.** A panic inside `opencodeExec` would keep a
+  slot. Give it back in a closure with `defer`.
+- **Cost:** an export that exits normally but leaves a background child holding stdout costs the full 1 s WaitDelay
+  on every call. That is acceptable at a 3 s cache.
+
+Landing note: its test-plan section "IC" collides with landing's IC and ID, so it lands renamed to **IE**.
+
+Atrium-Verdict: room-ok 6bce194f..b305efd5
+Atrium-Verdict: hub-ok 6bce194f..b305efd5
+Quality: a complete fix. Each of the four suggested parts is in, the Windows shim case is handled by reading the
+tree kill, and the tests cover the bug that was proven.
