@@ -364,6 +364,8 @@ func serveAtrium(f atriumFlags, up atriumUp) error {
 	proxy.SetLaunchCaps(store)
 	// THE HUB'S DOCUMENTS, rows in the store and bytes beside it. See link/docs_api.go.
 	proxy.SetDocs(store)
+	// CHANGE REQUESTS BETWEEN ROOMS, rows in the store. See link/changerequest.go.
+	proxy.SetChangeRequests(store)
 	// THE NAMES THE HUB ANSWERS, beside $ATRIUM_HOSTS, from the same store. Before
 	// any listener is up. See hosts.go.
 	link.LoadExtraHosts(store)

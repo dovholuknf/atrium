@@ -454,11 +454,18 @@ func TestGitPushMigrationToleratesBeingThere(t *testing.T) {
 	t.Fatal("no 0008_git_push migration")
 }
 
-// THE PUSH LOG MIGRATION IS LAST, so a hub that already has 0007 applies it.
-func TestGitPushMigrationIsAtTheEnd(t *testing.T) {
-	if got := migrations[len(migrations)-1].name; got != "0008_git_push" {
-		t.Fatalf("the last migration is %q", got)
+// THE PUSH LOG MIGRATION CAME AFTER 0007, so a hub that already has 0007 applies it. 0009 is last now, and
+// is checked in changerequest_test.go.
+func TestGitPushMigrationFollowsDocs(t *testing.T) {
+	for i, m := range migrations {
+		if m.name == "0008_git_push" {
+			if i == 0 || migrations[i-1].name != "0007_docs" {
+				t.Fatalf("0008_git_push is migration %d, after %q", i+1, migrations[i-1].name)
+			}
+			return
+		}
 	}
+	t.Fatal("no 0008_git_push migration")
 }
 
 // A hub database from before the push log, which has every earlier migration recorded and no table, gets the

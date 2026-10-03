@@ -363,6 +363,51 @@ var migrations = []struct {
 			`CREATE INDEX IF NOT EXISTS git_push_pending ON git_push (state, repo)`,
 		},
 	},
+	{
+		// CHANGE REQUESTS BETWEEN ROOMS: one row per request, kept for good. See changerequest.go and
+		// docs/rnd/hub-forge-design.md section 6. Nothing is deleted: a request ends by changing `state`, once.
+		//
+		// `id` is `cr_<n>` and `n` is its own column, taken inside the transaction as the table's highest n plus
+		// one (the rule 0008 gives its ids), so an id is never reused and the order of ids is the order of
+		// creation. Rooms and cards are TEXT with no foreign key, for the reason room_audit has none: a request
+		// outlives the card and the room it was about.
+		//
+		// A source room of '' is a branch pushed to the hub. A card of 'operator' is the operator. `closed_at` of
+		// '' is a request still open, and the closer is the closed_* pair. The partial index is the rule that only
+		// one OPEN request exists for a source and a target, as 0004's does for gates: a closed one may be asked
+		// again.
+		name: "0009_change_request",
+		stmts: []string{
+			`CREATE TABLE IF NOT EXISTS change_request (
+				id            TEXT PRIMARY KEY,
+				n             INTEGER NOT NULL UNIQUE,
+				repo          TEXT NOT NULL,
+				source_room   TEXT NOT NULL DEFAULT '',
+				source_branch TEXT NOT NULL,
+				source_sha    TEXT NOT NULL DEFAULT '',
+				target_branch TEXT NOT NULL,
+				title         TEXT NOT NULL,
+				why           TEXT NOT NULL DEFAULT '',
+				change_id     TEXT NOT NULL DEFAULT '',
+				state         TEXT NOT NULL DEFAULT 'open' CHECK (state IN ('open','merged','closed','withdrawn')),
+				created_room  TEXT NOT NULL DEFAULT '',
+				created_card  TEXT NOT NULL,
+				created_at    TEXT NOT NULL,
+				closed_at     TEXT NOT NULL DEFAULT '',
+				closed_room   TEXT NOT NULL DEFAULT '',
+				closed_card   TEXT NOT NULL DEFAULT '',
+				note          TEXT NOT NULL DEFAULT '',
+				merged_sha    TEXT NOT NULL DEFAULT '',
+				owner_room    TEXT NOT NULL DEFAULT '',
+				owner_card    TEXT NOT NULL DEFAULT ''
+			)`,
+			`CREATE INDEX IF NOT EXISTS change_request_state ON change_request (state)`,
+			`CREATE INDEX IF NOT EXISTS change_request_repo ON change_request (repo)`,
+			`CREATE INDEX IF NOT EXISTS change_request_source_room ON change_request (source_room)`,
+			`CREATE UNIQUE INDEX IF NOT EXISTS change_request_open
+				ON change_request (repo, source_room, source_branch, target_branch) WHERE state = 'open'`,
+		},
+	},
 }
 
 func (s *Store) migrate() error {

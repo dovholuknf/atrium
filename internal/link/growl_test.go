@@ -63,6 +63,16 @@ func (g testGrowlStore) Room(room, reason string, on bool, row GrowlRow) (bool, 
 	return g.s.GrowlRoom(id, reason, on, toHub(row))
 }
 
+func (g testGrowlStore) Raise(room string, row GrowlRow) (bool, error) {
+	id, err := g.id(room)
+	if err != nil {
+		return false, err
+	}
+	return g.s.GrowlRaise(id, toHub(row))
+}
+
+func (g testGrowlStore) End(id string) (bool, error) { return g.s.GrowlEnd(id) }
+
 func (g testGrowlStore) Fill(id, subject, body string) (bool, error) {
 	return g.s.GrowlFill(id, subject, body)
 }
