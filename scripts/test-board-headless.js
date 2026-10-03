@@ -8782,14 +8782,17 @@ async function ctxLineSection(browser, base) {
       const keep = wornTasks;
       wornTasks = list.map((t, i) => Object.assign({}, t, { supervised: true, pinned: i < 5 }));
       const tag = process.env.ROWFLOOD_TAG || "shot", dir = process.env.ROWFLOOD_REAL_SHOTS;
-      for (const [w, h] of [[2000, 1000], [390, 1400]]) {
+      const dens = process.env.ROWFLOOD_DENSITY || "";
+      await wp.evaluate(d => { if (d) document.documentElement.style.setProperty("--density", d); }, dens);
+      for (const [w, h] of process.env.ROWFLOOD_DENSITY ? [[2000, 1000]] : [[2000, 1000], [390, 1400]]) {
         await wp.setViewportSize({ width: w, height: h });
         for (const skin of ["paper", "graphite"]) {
           await wp.evaluate(async sk => { applySkin(sk); await loadCards().catch(() => {}); await renderTermList(); }, skin);
           await wp.waitForTimeout(1500);
-          await wp.screenshot({ path: require("path").join(dir, `${tag}-${w}-${skin}.png`) });
+          await wp.screenshot({ path: require("path").join(dir, `${tag}-${w}-${skin}${dens ? "-density" + dens : ""}.png`) });
         }
       }
+      await wp.evaluate(() => document.documentElement.style.removeProperty("--density"));
       await wp.setViewportSize({ width: 1400, height: 900 });
       wornTasks = keep;
       await wp.evaluate(async () => { await loadCards().catch(() => {}); await renderTermList(); });
@@ -8834,6 +8837,34 @@ async function ctxLineSection(browser, base) {
     if (r["cl-shelf"]) fail("a shelved card has a line.");
     if (!r["cl-long"]) fail("the long-title row has no context line.");
     else if (r["cl-long"].clash.length) fail("a two-line title overlaps the context line: " + r["cl-long"].clash.join(", "));
+    // Tight density and a small text size shrink the row's padding: the line must still sit clear of the path and chips.
+    for (const [dens, scale] of [["0.3", "1"], ["0.5", "1"], ["1", "0.6"], ["0.3", "0.6"]]) {
+      const hits = await wp.evaluate(async ([d, u]) => {
+        const rs = document.documentElement.style;
+        rs.setProperty("--density", d); rs.setProperty("--uiscale", u);
+        await renderTermList();
+        const out = [];
+        for (const id of ["cl-40", "cl-warm", "cl-over", "cl-long"]) {
+          const el = document.querySelector(`#term-list [data-id="${id}"]`), b = el && el.querySelector(".peek-bar.ctxline");
+          if (!b) { out.push(id + ": no line"); continue; }
+          const br = b.getBoundingClientRect(), w = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+          for (let n; (n = w.nextNode());) {
+            if (!n.textContent.trim() || b.contains(n)) continue;
+            const rg = document.createRange(); rg.selectNodeContents(n);
+            for (const q of rg.getClientRects()) if (q.width && q.bottom > br.top + 0.01) out.push(id + ": text " + n.textContent.trim().slice(0, 16) + " reaches " + (q.bottom - br.top).toFixed(1) + "px into the line");
+          }
+          for (const ch of el.querySelectorAll(".chip, .pin, .rmark, svg")) {
+            if (b.contains(ch)) continue;
+            const q = ch.getBoundingClientRect();
+            if (q.width && q.bottom > br.top + 0.01) out.push(id + ": chip " + ch.className);
+          }
+        }
+        rs.removeProperty("--density"); rs.removeProperty("--uiscale");
+        return out;
+      }, [dens, scale]);
+      if (hits.length) fail("at density " + dens + " and uiscale " + scale + " the context line meets the row's text or chips: " + hits.join(" | "));
+    }
+    await wp.evaluate(async () => { await renderTermList(); });
     const c = r["cl-cycle"];
     if (!c) fail("a cycling card has no line.");
     else {
