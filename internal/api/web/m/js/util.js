@@ -49,6 +49,7 @@
     const a = t && t.activity;
     if (!t || t.status === "dead" || t.status === "done" || t.status === "shelved") return "";
     if (t.status === "needs-permission") return "waiting on a permission";
+    if (agentIdle(t)) return "idle";
     if (t.status === "needs-input") return "waiting for you";
     if (!a || !a.what) return t.status === "running" ? "working" : "";
     let w = a.what === "tool" ? (a.tool ? "running " + a.tool : "running a tool") : String(a.what);

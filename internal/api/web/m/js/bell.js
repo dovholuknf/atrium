@@ -142,7 +142,7 @@
       const key = t.id + "@" + (t.waiting_since || "");
       if (seenWait.has(key)) return;
       seenWait.add(key);
-      if (first || (isDoer(t))) return;
+      if (first || agentIdle(t)) return;
       if (watching(t.id)) return;
       record(name(t) + " is waiting for you", "", t.id);
       rang = true;

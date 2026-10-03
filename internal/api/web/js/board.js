@@ -339,7 +339,7 @@ function firstSeen(iso) {
     : `${date} ${t.getFullYear()}`;
 }
 
-const isWaiting = (t) => t.status === "needs-input" || t.status === "needs-permission";
+const isWaiting = (t) => (t.status === "needs-input" || t.status === "needs-permission") && !agentIdle(t);
 
 const VIEWS = ["board", "stack", "perms", "runners", "terms", "history", "usage", "audit", "pulls", "hubrepos"];
 

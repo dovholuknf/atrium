@@ -18518,12 +18518,15 @@ async function mHomeLiveSection(browser) {
   await st.open();
   // ── the expectations ──
   const ms = x => Date.parse(x);
+  const agentIdleOf = t => { const s = t.seen || {};
+    return t.status === "needs-input" && t.tags.includes("origin:agent") && !(s.answered === false && ((s.open_questions || []).length || s.questions_unparsed)) && !(t.asks_open > 0); };
   const needSince = t => {
     const s = t.seen || {};
     const out = [];
+    const idle = agentIdleOf(t);
     if (s.answered === false && ((s.open_questions || []).length || s.questions_unparsed)) out.push(ms(s.questions_at) || ms(s.turn_ended_at) || 0);
-    if (s.unseen && s.turn_ended_at) out.push(ms(s.turn_ended_at));
-    if (t.status === "needs-input" && !out.length) out.push(ms(t.waiting_since) || 0);
+    if (s.unseen && s.turn_ended_at && !idle) out.push(ms(s.turn_ended_at));
+    if (t.status === "needs-input" && !out.length && !idle) out.push(ms(t.waiting_since) || 0);
     return out.length ? Math.min(...out.filter(Boolean).concat(out.some(Boolean) ? [] : [Infinity])) : null;
   };
   const NOT_SUB = ["atrium:director", "atrium:orchestrator", "orchestrators", "atrium:hold-notices", "atrium:context-ceiling"];
@@ -18540,7 +18543,7 @@ async function mHomeLiveSection(browser) {
   const newest = (a, b) => ms(b.last_activity_at) - ms(a.last_activity_at) || (a.created_at || "").localeCompare(b.created_at || "") || a.id.localeCompare(b.id);
   const needSet = live.filter(t => needSince(t) !== null);
   const needIds = new Set(needSet.map(t => t.id));
-  const cls = t => t.status === "running" ? 0 : (t.status === "needs-input" || t.status === "needs-permission") ? 1 : 2;
+  const cls = t => t.status === "running" ? 0 : agentIdleOf(t) ? 2 : (t.status === "needs-input" || t.status === "needs-permission") ? 1 : 2;
   const expected = state => {
     const all = state.mode === "all";
     const listed = all ? live.slice() : needSet.slice();
@@ -19852,7 +19855,7 @@ async function main() {
       clock: clockSection,
       composeImages: composeImagesSection, composePaste: composePasteSection, mComposeImages: mComposeImagesSection,
       usageTab: usageTabSection,
-      mHome: mHomeSection, mCard: mCardSection, mServe: mServeSection,
+      mAgentIdle: mAgentIdleSection, mHome: mHomeSection, mCard: mCardSection, mServe: mServeSection,
       phoneKeyLabel: phoneKeyLabelSection, phoneKeyLit: phoneKeyLitSection,
       notifyCommand: notifyCommandSection, presence: presenceSection, shiftMenu: shiftMenuSection, tallPty: tallPtySection,
       cacheChip: cacheChipSection, cacheLine: cacheLineSection, roomsMachine: roomsMachineSection,
@@ -21897,6 +21900,7 @@ async function main() {
     await unit("phoneBoardCompact", () => phoneBoardCompactSection(browser, base));
     await unit("phoneBell", () => phoneBellSection(browser, base));
     await unit("mBell", () => mBellSection(browser));
+    await unit("mAgentIdle", () => mAgentIdleSection(browser));
     await unit("phoneRedirect", () => phoneRedirectSection(browser, base));
     await unit("gearTermList", () => gearTermListSection(browser, base));
     await unit("growlLinks", () => growlLinksSection(browser, base));
@@ -22263,6 +22267,72 @@ function mNeedsCards() {
   ];
 }
 const M_PERMS = () => [{ id: "p1", task_id: "new-1", tool: "Bash", command: "go test ./...", requested_at: mIso(2 * M_MIN) }];
+
+// A card an agent launched (origin:agent) that ended a turn with no open question is idle: not in the needs list or its count,
+// not belled, and it does not say "waiting for you". A question, a permission ask and an operator-launched card still do.
+async function mAgentIdleSection(browser) {
+  const tag = "mAgentIdle: ";
+  const agent = (id, over) => mCard(id, Object.assign({ alias: id, display_title: id, tags: ["origin:agent", "atrium:director"], status: "needs-input",
+    waiting_since: mIso(5 * M_MIN), waiting_reason: "turn" }, over || {}));
+  const st = mServer({});
+  st.tasks = [
+    agent("a-idle"),
+    agent("a-ask", { seen: { answered: false, open_questions: ["land it?"], questions_at: mIso(4 * M_MIN) } }),
+    agent("a-perm", { status: "needs-permission" }),
+    mCard("op-wait", { alias: "op-wait", display_title: "op-wait", status: "needs-input", waiting_since: mIso(6 * M_MIN), waiting_reason: "turn" }),
+    mCard("busy", { alias: "busy", display_title: "busy", status: "running" }),
+  ];
+  st.perms = [{ id: "pp", task_id: "a-perm", tool: "Bash", command: "ls", requested_at: mIso(3 * M_MIN) }];
+  await st.open();
+  try {
+    const vp = M_VIEWS[0];
+    const { ctx, p, errors } = await mPage(browser, st, vp, "");
+    await p.waitForSelector("#m-list .row", { timeout: slow(10000) });
+    await p.waitForFunction(() => window.mNet.loaded(), null, { timeout: slow(8000) });
+    const names = await p.$$eval("#m-list .row .name b", e => e.map(x => x.textContent).sort());
+    if (names.join(",") !== "a-ask,a-perm,op-wait") fail(tag + "the needs list is " + names.join(","));
+    if (!/^\(3\)/.test(await p.title())) fail(tag + "the tab title count is " + (await p.title()));
+    const said = await p.evaluate(() => {
+      const c = id => window.mStore.card(id);
+      return ["a-idle", "a-ask", "op-wait"].map(id => window.mUtil.activityText(c(id)));
+    });
+    if (said[0] !== "idle") fail(tag + "an idle agent card reads " + said[0]);
+    if (said[1] !== "waiting for you" || said[2] !== "waiting for you") fail(tag + "a question or operator card reads " + said.join("|"));
+    const rows = await p.evaluate(() => ["a-idle", "a-ask", "op-wait"].map(id => agentIdle(window.mStore.card(id))));
+    if (rows.join() !== "true,false,false") fail(tag + "the shared predicate says " + rows.join());
+    await p.tap("#m-seg-all");
+    await p.waitForSelector("#m-list h2.grp", { timeout: slow(5000) });
+    const grp = await p.evaluate(() => {
+      const hs = [...document.querySelectorAll("#m-list h2.grp")];
+      const by = {};
+      document.querySelectorAll("#m-list .row").forEach(r => {
+        const h = hs.filter(x => x.compareDocumentPosition(r) & Node.DOCUMENT_POSITION_FOLLOWING).pop();
+        const g = h ? h.textContent.trim().split(/\s/)[0] : "none";
+        by[g] = (by[g] || "") + " " + r.querySelector(".name b").textContent;
+      });
+      return Object.keys(by).map(g => g + ":" + by[g]);
+    });
+    const waitingGrp = grp.find(g => /^Waiting/.test(g)) || "", idleGrp = grp.find(g => /^Idle/.test(g)) || "";
+    if (/a-idle/.test(waitingGrp) || !/a-idle/.test(idleGrp)) fail(tag + "the idle agent card is not under Idle: " + grp.join(" | "));
+    if (!/a-ask/.test(waitingGrp) || !/op-wait/.test(waitingGrp)) fail(tag + "a question or operator card left Waiting: " + grp.join(" | "));
+    // the bell: a card that goes idle rings nothing, an operator card and a question do
+    // the permission ask above already rang once; what follows is counted from there
+    const logged = () => p.evaluate(() => JSON.parse(localStorage.getItem("atrium.toastlog") || "[]").map(r => r.title + " " + r.body));
+    const waits = async () => (await logged()).filter(l => /is waiting for you/.test(l));
+    await p.waitForTimeout(500);
+    if ((await waits()).length) fail(tag + "the first load rang for a wait: " + (await waits()).join("|"));
+    const push = async (t) => { st.tasks.push(t); st.send("task", t); await p.waitForTimeout(800); };
+    await push(agent("a-new-idle", { waiting_since: mIso(0) }));
+    if ((await waits()).length) fail(tag + "an idle agent card rang the bell: " + (await waits()).join("|"));
+    await push(agent("a-new-ask", { waiting_since: mIso(0), seen: { answered: false, open_questions: ["ok?"] } }));
+    if ((await waits()).length !== 1) fail(tag + "an agent card with a question did not ring the bell: " + (await waits()).join("|"));
+    await push(mCard("op-new", { alias: "op-new", display_title: "op-new", status: "needs-input", waiting_since: mIso(0) }));
+    if ((await waits()).length !== 2) fail(tag + "an operator-launched card did not ring the bell: " + (await waits()).join("|"));
+    if (errors.length) fail(tag + "page errors: " + errors.join(" | "));
+    await ctx.close();
+  } finally { await st.close(); }
+  if (!bad) console.log("mAgentIdle ok");
+}
 
 async function mHomeSection(browser) {
   const st = mServer({});
