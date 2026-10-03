@@ -301,7 +301,7 @@
   async function submitForm() {
     const f = st.form, title = f.title.trim(), branch = f.branch.trim(), target = f.target.trim();
     if (!branch || !target || !title) { f.err = "A request needs the branch to send, where it goes and a title."; draw(false); return; }
-    const r = await C.api.create({ repo: f.repo, source: { branch }, target: { branch: target }, title, why: f.why.trim() });
+    const r = await C.api.create({ repo: C.canonRepo(f.repo), source: { branch }, target: { branch: target }, title, why: f.why.trim() });
     if (r.ok || (r.status === 409 && r.body && r.body.id)) {
       st.form = null; await load();
       const id = r.body.id; st.tab = "open"; delete st.detail[id];

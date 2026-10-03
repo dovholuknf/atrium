@@ -71,7 +71,7 @@
   // by someone who is not the owner, say) and is shown as its error. See `readOnlyLine`.
   const state = { readOnly: false };
   const listeners = [];
-  const readOnlyWords = r => /read[- ]only|public share|share/i.test(errText(r));
+  const readOnlyWords = r => /\bread[- ]only\b|\bpublic share\b/i.test(errText(r));
   function noteWrite(r) {
     if (r && (r.status === 401 || (r.status === 403 && readOnlyWords(r))) && !state.readOnly) {
       state.readOnly = true;
@@ -88,7 +88,7 @@
   const api = {
     list: o => call("GET", "/_hub/change-requests" + q(o)),
     get: id => call("GET", "/_hub/change-requests/" + encodeURIComponent(id)),
-    pushed: (repo, branch, head) => call("GET", "/_hub/git/pushed" + q({ repo, branch, head })),
+    pushed: (repo, branch, head) => call("GET", "/_hub/git/pushed" + q({ repo: canonRepo(repo), branch, head })),
     create: b => call("POST", "/_hub/change-requests", b).then(noteWrite),
     act: (id, b) => call("POST", "/_hub/change-requests/" + encodeURIComponent(id), b).then(noteWrite),
   };
@@ -101,6 +101,8 @@
 
   const sha7 = s => String(s || "").slice(0, 7);
   const isSha = s => SHA_RE.test(String(s || "").trim());
+  // The hub names a repo host/owner/repo and answers o/r as github/o/r, so a repo typed or compared here is put the same way.
+  const canonRepo = r => { const s = String(r || "").trim(); return s && s.split("/").length === 2 ? "github/" + s : s; };
   const repoShort = r => String(r || "").replace(/^github\//, "");
   // Open and aimed at main: stage 5 is manual, so someone merges on the hub's side and records it.
   const needsOperator = r => !!r && r.state === "open" && r.target && r.target.branch === "main";
@@ -149,7 +151,7 @@
 
   window.crCore = {
     mockOn, mockOff, mockBanner, SHA_HINT, call, api, errText, state, readOnlyLine, onReadOnly: f => listeners.push(f),
-    STATE, STATE_TONE, PUSHED_TONE, PUSHED_SHORT, sha7, isSha, repoShort, needsOperator, isOpen, sourceLabel, sourceRoom,
+    STATE, STATE_TONE, PUSHED_TONE, PUSHED_SHORT, sha7, isSha, canonRepo, repoShort, needsOperator, isOpen, sourceLabel, sourceRoom,
     pushedLine, notPushedHow, timeline, byTarget, recordLines,
   };
 })();
