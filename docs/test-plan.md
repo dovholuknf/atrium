@@ -8472,3 +8472,14 @@ Covered by `TestInACardEnvGitPushHubLandsWithTheCardInThePushLog`, `TestAProcess
 `TestAHubRemotePointingElsewhereIsLeftAloneAndAtriumHubIsAdded`, `TestEnsureRemotesAddsHubFollowsAPortChangeAndGuardsOriginOnAtriumMadeClones`,
 `TestACardThatRunsOutsideCodeGetsNoGitTokenInItsEnv`, `TestAPRRunnersCommandsAndForksHaveNoGitTokenInTheirEnv`,
 `TestACardsLaunchEnvCarriesItsGitTokenScopedToTheForwarder`, `TestGitPushSetting`. Items 1 and 2 live on m1mini against the hub.
+
+## IK. Every brief says where to read code that is not in the cwd (r-git-url-brief)
+
+1. Launch a card with a brief. The end of its `BRIEF.md` is "To read code that is not in your cwd, call `atrium_git_url`,
+   then fetch it from the URL it gives. Never ask for a paste." exactly once.
+2. Launch with a brief that already contains that sentence: it is still there once.
+3. Launch with a prompt and no brief (the board's dialog): the runner's first prompt ends with the same line, once.
+4. Reopen or resume a card: no `BRIEF.md` is written and nothing is added to what it is told.
+
+Covered by `TestBriefFileCarriesTheGitURLLineOnce`, `TestABriefThatAlreadyHasTheLineIsNotDoubled`,
+`TestALaunchWithNoBriefCarriesTheLineOnItsPromptOnce`, `TestAResumeTakesNoGitURLLine`, `TestLaunchSkipsBriefOnResume`.

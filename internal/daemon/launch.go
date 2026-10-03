@@ -914,6 +914,10 @@ func (d *Daemon) launchLocked(req LaunchRequest) (*store.Task, error) {
 		}
 		briefPath = filepath.ToSlash(p)
 		wanted = briefPrompt(wanted)
+	} else if req.Resume == "" && wanted != "" {
+		// NO BRIEF, so no BRIEF.md to carry the line. It rides on the prompt
+		// instead, on a fresh start only, like the brief.
+		wanted = withGitURLLine(wanted)
 	}
 	// THE CARD'S MODEL IS THE FALLBACK, exactly as its prompt is, and for a
 	// different reason: a relaunch or an unshelve of a card that was started
@@ -1553,7 +1557,7 @@ const briefFileName = "BRIEF.md"
 // failure that happened earlier and not here.
 func writeBriefFile(cwd, brief string) (string, error) {
 	path := filepath.Join(cwd, briefFileName)
-	body := brief
+	body := withGitURLLine(brief)
 	if !strings.HasSuffix(body, "\n") {
 		body += "\n"
 	}
@@ -1561,6 +1565,21 @@ func writeBriefFile(cwd, brief string) (string, error) {
 		return "", fmt.Errorf("could not write the briefing to %s: %w", path, err)
 	}
 	return filepath.ToSlash(path), nil
+}
+
+// gitURLLine is the line every launched card's brief carries (hub-forge design,
+// section 4): where to read code that is not in its directory. The hub's
+// atrium_git_url answers it.
+const gitURLLine = "To read code that is not in your cwd, call `atrium_git_url`, then fetch it from the URL it gives. " +
+	"Never ask for a paste."
+
+// withGitURLLine appends gitURLLine to a brief or prompt, once: text that already
+// has it (any capitalisation of the first word) is returned as it is.
+func withGitURLLine(text string) string {
+	if strings.Contains(strings.ToLower(text), strings.ToLower(gitURLLine)) {
+		return text
+	}
+	return strings.TrimRight(text, "\n") + "\n\n" + gitURLLine
 }
 
 // briefPrompt puts the instruction to read the briefing ahead of the task.

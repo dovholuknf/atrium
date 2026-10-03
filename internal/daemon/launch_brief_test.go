@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/dovholuknf/atrium/internal/store"
 )
@@ -81,5 +82,90 @@ func TestBriefPromptPutsTheReadFirst(t *testing.T) {
 	empty := briefPrompt("")
 	if !strings.Contains(empty, "do what it asks") {
 		t.Fatalf("an empty prompt should still tell it to act on the brief: %q", empty)
+	}
+}
+
+func TestBriefFileCarriesTheGitURLLineOnce(t *testing.T) {
+	dir := t.TempDir()
+	if _, err := writeBriefFile(dir, "do the thing"); err != nil {
+		t.Fatal(err)
+	}
+	raw, _ := os.ReadFile(filepath.Join(dir, briefFileName))
+	if n := strings.Count(string(raw), "atrium_git_url"); n != 1 {
+		t.Fatalf("the line appears %d times: %q", n, raw)
+	}
+	if !strings.Contains(string(raw), "Never ask for a paste.") || !strings.HasPrefix(string(raw), "do the thing") {
+		t.Fatalf("brief body wrong: %q", raw)
+	}
+}
+
+func TestABriefThatAlreadyHasTheLineIsNotDoubled(t *testing.T) {
+	dir := t.TempDir()
+	once := "task\n\n" + gitURLLine + "\n"
+	if _, err := writeBriefFile(dir, once); err != nil {
+		t.Fatal(err)
+	}
+	raw, _ := os.ReadFile(filepath.Join(dir, briefFileName))
+	if n := strings.Count(string(raw), "atrium_git_url"); n != 1 {
+		t.Fatalf("doubled: %q", raw)
+	}
+	// and a second pass (a relaunch writing its own brief again) stays at one
+	if got := withGitURLLine(withGitURLLine("x")); strings.Count(got, "atrium_git_url") != 1 {
+		t.Fatalf("not idempotent: %q", got)
+	}
+}
+
+// promptSeenBy launches `req` on a runner that writes the first prompt it was
+// given to a file, and returns what it wrote ("" if it was never started).
+func promptSeenBy(t *testing.T, d *Daemon, req LaunchRequest) string {
+	t.Helper()
+	out := filepath.Join(t.TempDir(), "prompt.txt")
+	if _, err := d.st.SaveHarness(store.Harness{
+		ID: "promptcatch", Label: "prompt catch", Enabled: true, Cmd: "sh", LaunchMode: store.LaunchPTY,
+		PromptArgs: []string{"-c", `printf %s "$0" > ` + out + `; sleep 5`, "{prompt}"},
+		ResumeArgs: []string{"-c", `printf %s "resumed:$0 $1" > ` + out + `; sleep 5`, "{resume}", "{prompt}"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	req.Harness, req.Cwd = "promptcatch", t.TempDir()
+	task, err := d.Launch(req)
+	if err != nil {
+		t.Skipf("could not spawn a test runner here: %v", err)
+	}
+	t.Cleanup(func() { _ = d.StopRunner(task.ID) })
+	for i := 0; i < 100; i++ {
+		if raw, err := os.ReadFile(out); err == nil {
+			return string(raw)
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	return ""
+}
+
+func TestALaunchWithNoBriefCarriesTheLineOnItsPromptOnce(t *testing.T) {
+	d := testDaemon(t)
+	got := promptSeenBy(t, d, LaunchRequest{Prompt: "just do it"})
+	if !strings.HasPrefix(got, "just do it") || strings.Count(got, "atrium_git_url") != 1 {
+		t.Fatalf("prompt %q", got)
+	}
+	again := promptSeenBy(t, d, LaunchRequest{Prompt: withGitURLLine("already")})
+	if strings.Count(again, "atrium_git_url") != 1 {
+		t.Fatalf("doubled: %q", again)
+	}
+}
+
+// A resume is refused when it carries a prompt, and takes none of its own, so
+// nothing can carry the line onto one. Pinned here so a change that lets a resume
+// take a prompt meets this test.
+func TestAResumeTakesNoGitURLLine(t *testing.T) {
+	d := testDaemon(t)
+	h := briefHarness(t, d)
+	dir := t.TempDir()
+	_, err := d.Launch(LaunchRequest{Harness: h, Cwd: dir, Prompt: "carry on", Resume: "sess-y"})
+	if err == nil || !strings.Contains(err.Error(), "already has its instruction") {
+		t.Fatalf("a resume with a prompt was not refused: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, briefFileName)); !os.IsNotExist(err) {
+		t.Fatalf("a resume wrote a brief: %v", err)
 	}
 }
