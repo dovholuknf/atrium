@@ -47,3 +47,28 @@ Land this in the same deploy as @fabric's tool, or after it.
 Atrium-Verdict: room-ok e9be3fc3..b5e61438
 Quality: small and exact, with the line written once, and the resume and the stored prompt left alone. It needs the
 tool it points at to land first.
+
+## Re-read: bf291380
+
+One commit on b5e61438, so the range is `e9be3fc3..bf291380`.
+
+Closed:
+- **L1.** An outside-code card, set by the flag or the tag through `isOutsideCode`, gets no line in BRIEF.md or in the
+  prompt. `writeBriefFile` takes a `gitURL` bool.
+- **L2.** The line is now worded "If you have `atrium_git_url`: ...". I accept that over detecting the MCP, since
+  there is no reliable per-runner signal and the wording is safe either way. This differs from the design's sentence,
+  and the changelog says so.
+
+Checked in a scratch worktree: vet is clean, and the Brief, GitURL, Resume and Outside daemon tests pass. The four
+mutants the worker reports are in the tests I read.
+
+Notes:
+- **The merge.** It conflicts only in `docs/test-plan.md`, against IN (r-stdio-launch-lineage, landed at 632db27e).
+  Keep both sections.
+- **This lands second, so r-stdio-launch-lineage's L2 falls to it.** The cli's `writeBrief` should append the same
+  line, or a stdio-launched card's BRIEF.md has no line (it rides on the prompt). That can be a follow-up.
+- **The landing condition still stands.** Land with or after @fabric's `atrium_git_url`, which is in review now at
+  a1a89240.
+
+Atrium-Verdict: room-ok e9be3fc3..bf291380
+Quality: both Lows closed simply and tested.
