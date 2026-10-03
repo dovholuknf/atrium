@@ -150,3 +150,45 @@ Fix:
 Atrium-Verdict: hold 8bfdcdb1..990428c4
 Quality: a well-built watchdog, with a cheap memo, honest derivation each tick and good mutation coverage. The one hold
 is that it trusts any line of the screen to be claude's own menu.
+
+## Re-read: c65bec80
+
+Range `8bfdcdb1..c65bec80`. The fix commit is c65bec80, on top of 990428c4.
+
+Closed:
+- **M1.**
+  - **The footer is anchored.** `readFrame` looks for the whole `menuFooter` ("enter to select · ↑/↓ to navigate")
+    on the last two non-blank lines only.
+  - **A silent stop wins.** `launchStuck` returns nil for terminal-menu when `stoppedSilently` is true.
+  - **Probes rerun:**
+    - **The original probe frame** (`quotedFooterFrame`): `readFrame` reports no menu and `launchStuck` returns nil.
+      With the turn ended and a report owed, `stuckNow` now gives `silent-stop`.
+    - **A `cat` whose last output line is the whole footer, then the input box and `? for shortcuts`:** no menu. The
+      same frame without the status line is also no menu, because the input box takes the last two lines.
+  - **Mutants**, each failing a test:
+    - dropping the anchor;
+    - widening it to three lines;
+    - matching on either half of the footer;
+    - dropping the silent-stop check.
+- **L1.** `TestAPendingPermissionOrNeedsPermissionIsNotAMenu` covers both skips. Dropping either one fails it. On
+  this store `RecordPermission` works, so the test runs and is not skipped.
+- **L2.** `TestAResumeAfterAnExitStartsUnheard` fails if `forget` stops deleting `sessions`.
+- **L3.** The changelog says what a director shows until W6 lands.
+- **L4.** "update available" counts as a prompt only on a menu. Treating a banner as a prompt fails
+  `TestAnUpdateBannerIsNotAPromptButAnUpdateDialogIs`.
+
+Left over, not a hold:
+- **N1: a footer inside the input box itself.** One case still reads as a menu: the footer's own text sits on the
+  last line inside the input box, with no status line drawn below it. The agent never types there. Only a person, or
+  a prompt typed in but never sent, can leave it there, and only for 30 s of quiet. Let it be.
+
+Test plan: the section is lettered IL, and it is the only IL.
+
+Merge onto claude/landing a9307bc7:
+- `docs/test-plan.md` conflicts at the end of the file, against IO and IP. Keeping both sides resolves it.
+- The Go code merges cleanly, `go build ./...` passes, and store, cli and link pass.
+- daemon shows only the known reds.
+
+Atrium-Verdict: room-ok 8bfdcdb1..c65bec80
+Quality: a tight fix. Each point from the hold now has a test that fails when the fix is reverted, and the
+silent-stop ordering is handled where it belongs.
