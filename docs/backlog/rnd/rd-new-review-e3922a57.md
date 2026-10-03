@@ -150,3 +150,14 @@ Hold:
 Atrium-Verdict: hold 94e46c8b..5557182b
 Quality: every note is closed with care. The threshold bounded by the launch-time flag is a neat fix. One path to
 scrub.
+
+## Re-read: be230af3
+
+Range `94e46c8b..be230af3`: 5557182b plus a two-line fix.
+
+- **H1 closed.** Section 1 now names the scripts by place, with no account path.
+- Section 4's `/tmp` path was changed the same way.
+- The only path left is the generic `~/.claude/projects`.
+
+Atrium-Verdict: doc-ok 94e46c8b..be230af3
+Quality: closed as asked, and the second path was caught without being asked.
