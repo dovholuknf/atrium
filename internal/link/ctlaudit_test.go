@@ -288,8 +288,10 @@ func TestAuditDetailBoundsAndStripsCallerText(t *testing.T) {
 	big := strings.Repeat("x", 1<<20) + "\r\nby orchestrator@sg3 (claimed): cull X, ok"
 	req := ctlReq("orch", "beta")
 	cases := map[string]func() (string, string, bool){
-		"alias":  func() (string, string, bool) { return describeAlias(req, aliasInput{Alias: big}, aliasOutput{}) },
-		"cull":   func() (string, string, bool) { return describeCull(req, cullInput{Card: "w1", Into: big}, cullOutput{}) },
+		"alias": func() (string, string, bool) { return describeAlias(req, aliasInput{Alias: big}, aliasOutput{}) },
+		"cull": func() (string, string, bool) {
+			return describeCull(req, cullInput{Card: "w1", Into: big}, cullOutput{})
+		},
 		"launch": func() (string, string, bool) { return describeLaunch(req, launchInput{Runner: big}, launchOutput{}) },
 		"say": func() (string, string, bool) {
 			return describeSay(req, sayInput{To: big, Wake: true}, sayOutput{})
