@@ -442,3 +442,28 @@ func TestTheToolReturnsTheEndpointsJSONAndALine(t *testing.T) {
 		t.Error("an empty repo was taken")
 	}
 }
+
+// A branch pushed by a room that is not attached is on the hub, and the room is named as away: its work in progress
+// may be newer than what was pushed, and cannot be read now.
+func TestABranchPushedByARoomThatIsGoneNamesTheRoomAsAway(t *testing.T) {
+	x := newURLRig(t)
+	log := &gitsync.MemPushLog{}
+	x.g.PushLog = log
+	x.pushToStore(t, x.claudeW1, "feat/done")
+	batch, err := log.Begin(context.Background(), gitsync.PushRow{Repo: "github/o/r", Ref: "refs/heads/feat/done",
+		New: x.claudeW1, Room: "m1mini", Card: "c1", At: time.Now()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := log.Settle(context.Background(), batch, "refs/heads/feat/done"); err != nil {
+		t.Fatal(err)
+	}
+	a := x.ask(t, "repo=o/r&branch=feat/done")
+	if a.State != gitsync.URLFound || len(a.Offline) != 1 || a.Offline[0] != "m1mini" {
+		t.Fatalf("%+v", a)
+	}
+	// Asked of that room, it is not connected.
+	if a := x.ask(t, "repo=o/r&branch=feat/done&room=m1mini"); a.State != gitsync.URLOffline {
+		t.Fatalf("%+v", a)
+	}
+}
