@@ -243,7 +243,11 @@ func cardReason(id string, payload json.RawMessage) (notifyCard, bool) {
 	// (atrium-87300, 2026-09-30). Only where the room sent its seen row: an
 	// older room cannot say, and keeps notifying as before.
 	// A session that REPORTED is waiting on somebody, finished turn or not.
-	case p.Status == "needs-input" && sent && p.Seen.TurnEndedAt == "" && report == "":
+	// So is one that ASKED: a permission or elicitation Notification moves
+	// the card with no Stop, so no turn end. The room writes `asked` for
+	// those and not for an idle prompt. Gate only: it is not a report.
+	case p.Status == "needs-input" && sent && p.Seen.TurnEndedAt == "" && report == "" &&
+		p.WaitingReason != "asked":
 		return notifyCard{}, false
 	case p.Status == "needs-input":
 		reason, at = ReasonInput, waited

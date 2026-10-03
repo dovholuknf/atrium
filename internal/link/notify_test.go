@@ -223,6 +223,13 @@ func TestNotifyIdentityPerReasonAndPriority(t *testing.T) {
 		{"input with seen null", `{"status":"needs-input","waiting_since":"T2","seen":null}`, "input", "a|input|T2"},
 		{"input after a turn", `{"status":"needs-input","waiting_since":"T2","seen":{"turn_ended_at":"T1"}}`,
 			"input", "a|input|T2"},
+		// A card that ASKED (a permission or elicitation Notification, no Stop
+		// yet) is waiting on somebody though no turn has ended.
+		{"asked before any turn", `{"status":"needs-input","waiting_since":"T2","waiting_reason":"asked","seen":{}}`,
+			"input", "a|input|T2"},
+		// An idle prompt writes no reason, so a fresh card stays quiet (87300).
+		{"idle prompt before any turn", `{"status":"needs-input","waiting_since":"T2","waiting_reason":"","seen":{}}`, "", ""},
+		{"started before any turn", `{"status":"needs-input","waiting_since":"T2","waiting_reason":"started","seen":{}}`, "", ""},
 		// Permission is asked whatever the turns say.
 		{"permission before any turn", `{"status":"needs-permission","waiting_since":"T1","seen":{}}`,
 			"permission", "a|permission|T1"},

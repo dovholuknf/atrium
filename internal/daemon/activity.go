@@ -869,7 +869,16 @@ func (d *Daemon) onActivity(in ActivityEvent) string {
 			break
 		}
 		if in.Event == "waiting" {
-			d.turnEndedBecause(taskID, store.WaitingAsked)
+			// An idle prompt is the prompt sitting idle (~60 s), not a
+			// question. It says nothing, so it writes no reason: a real
+			// earlier `asked` survives through the store (an empty reason
+			// defers to it), and a card that never asked is not given one,
+			// which the hub's input notice reads. See link/notify.go.
+			why := store.WaitingAsked
+			if in.Notification == "idle_prompt" {
+				why = ""
+			}
+			d.turnEndedBecause(taskID, why)
 			// A PROMPT ON THE RUNNER'S OWN SCREEN, which is not the same as
 			// one atrium raised.
 			//

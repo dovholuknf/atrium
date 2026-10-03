@@ -8484,3 +8484,13 @@ Needs a room and a session whose MCP is the stdio `atrium control` (a room-local
 
 Covered by `TestAStdioLaunch*` and `TestAHandRunStdioLaunch*` (cli). Items 1 to 4 are not yet run live.
 
+
+## @LETTER@. A card that asked raises `input`; an idle prompt does not (r-notify-input-turn-end)
+
+Needs a room with the hub's phone notice on (a notify command set) and a claude card.
+
+1. Launch a card and leave it at its prompt for over a minute (the `idle_prompt` notification). No `input` notice is raised, and the card's waiting reason is empty.
+2. Make a card hit a permission prompt or a question dialog before its first Stop. An `input` (or `permission`) notice is raised.
+3. Have a card ask a question with the asking tool, finish the turn, and sit idle a minute: the card still reads `asked`.
+
+Covered by `TestARealNotificationRecordsThatTheCardAsked`, `TestAnIdlePromptDoesNotRecordAnAsk`, `TestAnIdlePromptKeepsARealEarlierAsk` (daemon) and the `asked before any turn`, `idle prompt before any turn` and `started before any turn` cases of `TestNotifyIdentityPerReasonAndPriority` (link). Items 1 to 3 are not yet run live.
