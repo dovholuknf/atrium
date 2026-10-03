@@ -114,3 +114,29 @@ handlers cover the common phone case. A named `ping` event from the hub would cl
 Atrium-Verdict: hold 110c224a..c7462aba
 Quality: careful work. The reload never loops, never loses typed text, and backs off on a failure. One line keeps the
 chips safe too.
+
+## Re-read: 005dc4f1
+
+One commit on c7462aba, so the range is `110c224a..005dc4f1`.
+
+Closed:
+- **M1.** `mCompose.holding()` is true when the mounted box has an attachment or a comment chip, and `busy()` in
+  build.js counts it. `atts` and `cmts` are always arrays (compose.js:214), so the check cannot throw.
+  - `mReload` has a new step: with a chip and an empty, unfocused box, there is no reload and the cue shows. The page
+    reloads once the chip is removed. The mutant that drops `holding()` fails.
+  - The attachment half has no headless line, because the mock has no upload route. It is the same `||`, so I accept
+    that.
+- **L1.** A turn end or an `output_at` move takes the activity key and cancels the pending timer. The thread is read
+  once.
+- **L2.** The activity read fires only for a row with no `output_at`.
+- **L3.** Cards and permissions each count their own failures, and permissions now resets on success. `mReadRetry`
+  checks the backoff, and the shared-counter mutant fails.
+- **L4.** A 401 or 403 is not retried. `api()` sets `status` on the 401 it throws, and the general error path already
+  set it for a 403. `mReadRetry` checks both.
+
+`node --check` passes on build.js, card.js, compose.js and store.js. Per the standing note, I read the board units and
+did not run them. The cards backoff is not mutant-checked, and the item doc says so.
+
+Atrium-Verdict: room-ok 110c224a..005dc4f1
+Atrium-Verdict: hub-ok 110c224a..005dc4f1
+Quality: M1 and all four Lows are closed, each with an assert a mutant fails where the mock can reach it.
