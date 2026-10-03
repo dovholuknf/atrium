@@ -8472,3 +8472,27 @@ Covered by `TestInACardEnvGitPushHubLandsWithTheCardInThePushLog`, `TestAProcess
 `TestAHubRemotePointingElsewhereIsLeftAloneAndAtriumHubIsAdded`, `TestEnsureRemotesAddsHubFollowsAPortChangeAndGuardsOriginOnAtriumMadeClones`,
 `TestACardThatRunsOutsideCodeGetsNoGitTokenInItsEnv`, `TestAPRRunnersCommandsAndForksHaveNoGitTokenInTheirEnv`,
 `TestACardsLaunchEnvCarriesItsGitTokenScopedToTheForwarder`, `TestGitPushSetting`. Items 1 and 2 live on m1mini against the hub.
+
+## IJ. A card stuck at its terminal is escalated (r-launch-stuck)
+
+1. Launch a worker into a folder claude has not been told to trust (launch it with a trust-less config). Within about 10 s
+   its card shows a red `launch-prompt` escalation, "stuck at the folder-trust prompt", `prompt` = `folder-trust`, and its
+   launcher is told once. Answer the dialog in the terminal: the first hook clears it.
+2. Launch a worker whose claude never reaches a hook (point it at a runner that prints and waits). After a minute and 30 s
+   of quiet the card says "no activity since launch, N min" (`launch-idle`), and never "stopped without reporting".
+3. Leave a director on claude's "Model switch" menu (Opus safeguards, "Enter to select · ↑/↓ to navigate"). After 30 s of
+   quiet the card shows `terminal-menu` with `prompt` = `model-switch` and the text naming "Model switch". It rings on the
+   usual rhythm. Choose an option: it clears.
+4. A director tagged `atrium:director` ends a turn waiting for work, with no workers: no silent-stop notice, no STUCK mark.
+5. A hand-started claude with no atrium hooks, idle at its prompt for ten minutes, shows nothing.
+6. A card on a permission the room holds, or one claude's notification raised, shows its own wording and no menu escalation.
+7. The permission hook never gates `Agent` or `Task`.
+
+Covered by `TestLaunchIdleAfterGraceWithNoHook`, `TestLaunchIdleWaitsOutTheGrace`, `TestLaunchIdleNeedsAQuietTerminal`,
+`TestLaunchIdleIsForCardsWhoseHooksAreExpected`, `TestAHookClearsLaunchIdle`, `TestLaunchPromptFolderTrust`,
+`TestLaunchPromptKinds`, `TestLaunchPromptNeedsQuiet`, `TestLaunchPromptBeatsLaunchIdle`, `TestTerminalMenuModelSwitch`,
+`TestTerminalMenuOtherAndOnNonReportingCard`, `TestTerminalMenuNeedsQuietAndAMenu`,
+`TestTerminalMenuIsMemoizedWhileTheTerminalIsQuiet`, `TestBusyCardIsNeverRendered`, `TestAPendingPermissionIsNotAMenu`,
+`TestACardNoHookHasHeardIsLaunchIdleNeverSilentStop`, `TestEscalationCountsFromWhenItBecameStuck`,
+`TestDirectorWhoseWorkersAllEndedIsNotSilent`, `TestDirectorWithNoWorkersIsNotSilent`,
+`TestUntaggedLauncherSessionStillOwesAndIsSilent`, `TestPermSkipsBothSubagentToolNames`. Items 1 to 3 need a live claude.

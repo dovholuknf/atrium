@@ -202,6 +202,9 @@ type activityTracker struct {
 	// and in memory like the rest: a restart is a new turn anyway.
 	turnAt map[string]time.Time
 	calls  map[string][]time.Time
+	// sessions is each card whose runner's own session hook has spoken since it
+	// was last forgotten. See heard.
+	sessions map[string]bool
 }
 
 // callWindow is how far back the tool-call count for a long turn looks.
@@ -691,6 +694,7 @@ func (a *activityTracker) forget(taskID string) {
 	delete(a.bgWork, taskID)
 	delete(a.turnAt, taskID)
 	delete(a.calls, taskID)
+	delete(a.sessions, taskID)
 }
 
 // bgHold is what a card's last Stop said about background work that is not a

@@ -205,6 +205,10 @@ func (d *Daemon) onSession(in SessionEvent) error {
 		return err
 	}
 
+	// The runner's own session hook has spoken: it is past its launch prompts.
+	// See launchStuck.
+	d.act.sessionSpoke(task.ID)
+
 	// A supervised runner dies with the daemon, which owns its pseudo terminal.
 	// The id the harness resumes from turns that into a restart rather than a
 	// loss.
