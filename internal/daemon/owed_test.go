@@ -697,3 +697,115 @@ func TestADismissedQuestionStaysClosedUntilANewOne(t *testing.T) {
 		t.Fatalf("a dismissed question reopened: %d", n)
 	}
 }
+
+// A launcher that re-tasks a worker by TYPING writes the prompt before peerSaid closes the item, so the
+// close is stamped after it. The worker's next silent ending still owes. M6 of the review.
+func TestARetaskedWorkerOwesAgainInTheTypedAndTheQueuedOrder(t *testing.T) {
+	for _, typed := range []bool{true, false} {
+		d := testDaemon(t)
+		launcher, worker := launchedPair(t, d)
+		endWorker(t, d, worker)
+		d.owedPass(time.Now())
+		if n, _, _ := d.owedFor(launcher); n != 1 {
+			t.Fatalf("typed %v: the first ending opened %d", typed, n)
+		}
+		time.Sleep(5 * time.Millisecond)
+		retask := func() {
+			if err := d.st.SetStatus(worker.ID, store.StatusRunning); err != nil {
+				t.Fatal(err)
+			}
+			if err := d.st.AppendEvent(worker.ID, store.EventPrompted, map[string]any{
+				"text": "one more thing", "via": "terminal", "from_peer": launcher.WireName}); err != nil {
+				t.Fatal(err)
+			}
+		}
+		say := func() {
+			w, _ := d.st.Get(worker.ID)
+			d.peerSaid(launcher.WireName, w, "one more thing", KindNeeds)
+		}
+		if typed {
+			retask()
+			say()
+		} else {
+			say()
+			time.Sleep(5 * time.Millisecond)
+			retask()
+		}
+		if n, _, _ := d.owedFor(launcher); n != 0 {
+			t.Fatalf("typed %v: the say left %d open", typed, n)
+		}
+		time.Sleep(5 * time.Millisecond)
+		endWorker(t, d, worker)
+		d.owedPass(time.Now().Add(time.Second))
+		if n, _, _ := d.owedFor(launcher); n != 1 {
+			t.Fatalf("typed %v: the second silent ending opened %d, want one", typed, n)
+		}
+	}
+}
+
+// A question asked while an older one's item is open is answered by the close, however it closes.
+func TestAQuestionAskedWhileAnItemIsOpenIsClosedWithIt(t *testing.T) {
+	d := testDaemon(t)
+	launcher, worker := launchedPair(t, d)
+	d.peerSaid(worker.WireName, launcher, "which table?", KindNeeds)
+	if err := d.st.SetStatus(worker.ID, store.StatusNeedsInput); err != nil {
+		t.Fatal(err)
+	}
+	d.owedPass(time.Now())
+	time.Sleep(5 * time.Millisecond)
+	d.peerSaid(worker.WireName, launcher, "and which column?", KindNeeds)
+	time.Sleep(5 * time.Millisecond)
+	d.closeOwed(worker.ID, "dismissed")
+	d.owedPass(time.Now().Add(time.Minute))
+	if n, _, _ := d.owedFor(launcher); n != 0 {
+		t.Fatalf("a question asked before the close reopened it: %d", n)
+	}
+}
+
+// A dismissed permission wait does not let an old, stale question open an item.
+func TestADifferentReasonFromBeforeTheCloseDoesNotReopen(t *testing.T) {
+	d := testDaemon(t)
+	launcher, worker := launchedPair(t, d)
+	d.peerSaid(worker.WireName, launcher, "which table?", KindNeeds)
+	if err := d.st.SetStatus(worker.ID, store.StatusNeedsPermission); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now()
+	d.owedPass(now.Add(owedPermAfter + time.Second))
+	it, _ := d.st.OwedItemOf(worker.ID)
+	if it == nil || it.Reason != owedPermission {
+		t.Fatalf("item = %+v", it)
+	}
+	time.Sleep(5 * time.Millisecond)
+	d.closeOwed(worker.ID, "dismissed")
+	if err := d.st.SetStatus(worker.ID, store.StatusNeedsInput); err != nil {
+		t.Fatal(err)
+	}
+	d.owedPass(now.Add(2 * owedPermAfter))
+	if n, _, _ := d.owedFor(launcher); n != 0 {
+		t.Fatalf("a stale question reopened after a dismissed permission wait: %d", n)
+	}
+}
+
+// An orphan's report was its one notice. Re-tasked, and ending silent again, it owes again.
+func TestAnOrphanThatIsRetaskedAfterItsReportOwesAgain(t *testing.T) {
+	stopAfter := stopAfterReport
+	stopAfterReport = func(*Daemon, string) error { return nil }
+	t.Cleanup(func() { stopAfterReport = stopAfter })
+	d := testDaemon(t)
+	w := orphanWorker(t, d, "worker", "ghost")
+	orch := orchCard(t, d, "chief")
+	finishWith(t, d, FinishRequest{Agent: "worker", Status: ReportDone, NoCommit: "research", Recap: "done"})
+	d.owedPass(time.Now())
+	if n := len(heldOn(t, d, orch.ID)); n != 1 {
+		t.Fatalf("the report made %d notices", n)
+	}
+	time.Sleep(5 * time.Millisecond)
+	prompt(t, d, w.ID)
+	endWorker(t, d, w)
+	d.owedPass(time.Now().Add(time.Second))
+	d.owedPass(time.Now().Add(owedPushAfter + time.Minute))
+	if it, _ := d.st.OwedItemOf(w.ID); it == nil {
+		t.Fatal("a re-tasked orphan that ended silently owes nothing")
+	}
+}

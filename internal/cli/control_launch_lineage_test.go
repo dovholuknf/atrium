@@ -112,3 +112,41 @@ func TestAStdioLaunchWithABriefStillEndsWithTheReportLine(t *testing.T) {
 		t.Fatalf("prompt = %q", p)
 	}
 }
+
+func TestStdioTaskDismissClosesAnItemOnTheCallersOwnCard(t *testing.T) {
+	var posted, body string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case strings.HasSuffix(r.URL.Path, "/owed-dismiss"):
+			raw := make([]byte, 200)
+			n, _ := r.Body.Read(raw)
+			posted, body = r.URL.Path, string(raw[:n])
+			_, _ = w.Write([]byte(`{"ok":true,"closed":true}`))
+		case r.URL.Path == "/v1/tasks":
+			_, _ = w.Write([]byte(`{"tasks":[{"id":"BOSSID","wire_name":"boss","status":"running"},{"id":"KIDID","wire_name":"kid","status":"done"}]}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+	loc := filepath.Join(t.TempDir(), "daemon.json")
+	raw, _ := json.Marshal(map[string]any{"board": srv.URL, "pid": os.Getpid()})
+	if err := os.WriteFile(loc, raw, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("ATRIUM_LOCATION", loc)
+	t.Setenv("ATRIUM_SHARED_LOCATION", "-")
+	t.Setenv("ATRIUM_AGENT_NAME", "boss")
+	if _, _, err := taskHandler(context.Background(), nil, TaskInput{Dismiss: "kid"}); err != nil {
+		t.Fatal(err)
+	}
+	if posted != "/v1/tasks/BOSSID/owed-dismiss" || !strings.Contains(body, "KIDID") {
+		t.Fatalf("posted %q %q", posted, body)
+	}
+	// A session with no name has no card of its own to dismiss from.
+	t.Setenv("ATRIUM_AGENT_NAME", "")
+	if _, _, err := taskHandler(context.Background(), nil, TaskInput{Dismiss: "kid"}); err == nil {
+		t.Fatal("a nameless session dismissed something")
+	}
+}

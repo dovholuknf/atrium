@@ -221,9 +221,13 @@ func (d *Daemon) mayReopen(t *store.Task, reason string, since time.Time) bool {
 		return since.After(c.At)
 	}
 	if reason == owedEnded {
-		return t.OwedAt != nil && t.OwedAt.After(c.At)
+		// A PROMPT AFTER THE WORKER LAST ENDED is new work. Compared with when it ended and not with
+		// the close: a typed say writes the prompt before it closes the item, so the close is
+		// always the later of the two. A status change moves last activity, not owed_at, so an
+		// exit followed by the card going dead stays closed.
+		return t.OwedAt != nil && t.OwedAt.After(c.Since)
 	}
-	return since.After(c.Since) && since.After(c.At)
+	return since.After(c.At)
 }
 
 // pushOwed tells the orchestrator once, held. The order: a card here tagged atrium:orchestrator,

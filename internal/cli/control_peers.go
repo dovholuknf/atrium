@@ -770,7 +770,9 @@ func launchHandler(ctx context.Context, _ *mcp.CallToolRequest, in LaunchInput) 
 // ── one card ────────────────────────────────────────────────────────────────
 
 type TaskInput struct {
-	Card string `json:"card" jsonschema:"a card id, handle or alias. name@room or room~id for a card on another room"`
+	Card string `json:"card,omitempty" jsonschema:"a card id, handle or alias. name@room or room~id for a card on another room. empty with dismiss"`
+	// Dismiss closes the owed item a worker left on YOUR card. See internal/daemon/owed.go.
+	Dismiss string `json:"dismiss,omitempty" jsonschema:"a worker whose owed item on your card you are closing, by handle. an item also closes when you message, exit or relaunch the worker"`
 	// Events includes the recent history, which is what a card DID rather than
 	// where it is now.
 	Events bool `json:"events,omitempty" jsonschema:"include recent events"`
@@ -820,6 +822,29 @@ func taskHandler(ctx context.Context, _ *mcp.CallToolRequest, in TaskInput) (
 
 	out := TaskOutput{}
 	who := strings.TrimSpace(in.Card)
+	if dismiss := strings.TrimSpace(in.Dismiss); dismiss != "" {
+		me := strings.TrimSpace(os.Getenv("ATRIUM_AGENT_NAME"))
+		if me == "" {
+			return nil, out, fmt.Errorf("dismiss closes an item on your own card, and this session has no " +
+				"ATRIUM_AGENT_NAME to mean itself by")
+		}
+		myID, _, err := resolvePeer(ctx, me)
+		if err != nil {
+			return nil, out, err
+		}
+		workerID, _, err := resolvePeer(ctx, dismiss)
+		if err != nil {
+			return nil, out, err
+		}
+		if err := ask(ctx, http.MethodPost, "/v1/tasks/"+url.PathEscape(myID)+"/owed-dismiss",
+			map[string]string{"worker": workerID}, nil); err != nil {
+			return nil, out, err
+		}
+		if who == "" {
+			out.Note = "dismissed, if " + dismiss + " had an item open on your card."
+			return nil, out, nil
+		}
+	}
 	if isAcross(who) {
 		// ANOTHER ROOM, by way of this room's hub. See item 68 in
 		// docs/backlog-2.md.
