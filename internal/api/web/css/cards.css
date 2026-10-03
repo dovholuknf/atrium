@@ -752,27 +752,20 @@
     box-shadow: 0 0 12px rgba(var(--danger-rgb),.55);
   }
   .peek-ctx.hot .peek-num b, .peek-ctx.hot .peek-scale span:first-child { color: var(--danger); }
-  /* THE CONTEXT LINE (ctxLine, js/board.js): the same meter as a thin strip along the bottom of a row, inset from
-     the corners so it never touches the row's left accent bar or its border. It is never a fill behind the title
-     and path: a row with a context figure is as strong as a plain one. Neutral under the warn line, amber from
-     there, danger from the land line. The strip is 3px, so a transparent 6px hit area carries the tooltip. */
+  /* THE CONTEXT LINE (ctxLine, js/board.js): the same meter as a thin line along the bottom edge of a row, inside
+     the card (the row clips it to its corners), part of the card. 4px sits inside the row's bottom padding, so it
+     never meets the path line or a chip and the row is no taller for having it. Never a fill behind the title
+     and path. The tooltip is the bar's own, so it takes the pointer, and a click on it reaches the row. */
   .peek-bar.ctxline {
-    position: absolute; left: 10px; right: 10px; bottom: 2px; top: auto; height: 3px; margin: 0;
-    border-radius: 2px; background: rgba(var(--stroke-rgb),.22); pointer-events: none;
+    position: absolute; left: 0; right: 0; bottom: 0; height: 4px; margin: 0; border-radius: 0;
   }
-  .peek-bar.ctxline::after { content: ""; position: absolute; left: 0; right: 0; top: -2px; bottom: -1px; pointer-events: auto; }
-  /* The strip's own band: 6px of padding under everything in the row, the strip in the bottom 5px of it, so it
-     never touches the path line or a chip. A terminals row reserves the band whether or not it has a strip (see
-     `.term-list .card` in css/terminal.css), so row height does not depend on the context figure. */
-  .card:has(> .peek-bar.ctxline) { padding-bottom: calc(var(--row-pad-b, var(--row-y-sm)) + 6px); }
-  .peek-bar.ctxline i { border-radius: 2px; box-shadow: none; background: rgba(var(--stroke-rgb),.6); }
-  .peek-bar.ctxline s { top: -1px; bottom: -1px; opacity: .5; }
-  .peek-bar.ctxline.warm i { background: var(--warn); }
-  .peek-bar.ctxline.hot i { background: var(--danger); }
-  .peek-bar.ctxline.hot s { background: var(--danger); opacity: .8; }
-  /* One glow as it crosses the line, never a loop: this is drawn on every row. */
+  .peek-bar.ctxline i { border-radius: 0; box-shadow: none; }
+  .peek-bar.ctxline s { top: 0; bottom: 0; }
+  .peek-bar.ctxline.warm i { background: linear-gradient(90deg, rgba(var(--warn-rgb),.45), var(--warn)); }
+  .peek-bar.ctxline.hot i { background: linear-gradient(90deg, rgba(var(--danger-rgb),.45), var(--danger)); }
+  /* One pulse as it appears, never a loop: this is drawn on every row. */
   .peek-bar.ctxline.over i { animation: ctxline-pulse 1.2s ease-out 1; }
-  @keyframes ctxline-pulse { 0% { box-shadow: 0 0 8px 2px rgba(var(--danger-rgb),.9); } 100% { box-shadow: 0 0 0 0 rgba(var(--danger-rgb),0); } }
+  @keyframes ctxline-pulse { 0% { box-shadow: 0 0 0 0 rgba(var(--danger-rgb),.9); } 100% { box-shadow: 0 0 10px 3px rgba(var(--danger-rgb),0); } }
   .peek-bar s { position: absolute; top: -3px; bottom: -3px; width: 1px; background: var(--dim); opacity: .7; }
   .peek-scale {
     display: flex; justify-content: space-between; gap: 8px;

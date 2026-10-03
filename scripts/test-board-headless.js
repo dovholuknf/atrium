@@ -8716,12 +8716,10 @@ async function ctxLineSection(browser, base) {
         out[el.dataset.id] = !b ? null : {
           cls: b.className, width: i.style.width, tick: s.style.left, tip: b.getAttribute("data-tip"),
           bottom: r.bottom - br.bottom >= 0 && r.bottom - br.bottom <= 8, h: br.height, wide: br.width > r.width - 4,
-          inset: br.left - r.left >= 6 && r.right - br.right >= 6,
+          flush: Math.abs(br.left - r.left) <= 2 && Math.abs(r.right - br.right) <= 2,
           barBg: getComputedStyle(b).backgroundColor, fillBg: getComputedStyle(i).backgroundColor,
           rowBg: getComputedStyle(el).backgroundColor, rowBorder: getComputedStyle(el).borderTopColor,
           pe: getComputedStyle(b).pointerEvents, z: getComputedStyle(b).zIndex,
-          floorPe: getComputedStyle(b, "::after").pointerEvents,
-          hitH: parseFloat(getComputedStyle(b, "::after").height), padB: parseFloat(getComputedStyle(el).paddingBottom),
           rowH: r.height, hitTop: br.top,
           clash: (() => {
             // The strip's box (hit area excluded) against every text run and chip in the row.
@@ -8741,7 +8739,7 @@ async function ctxLineSection(browser, base) {
           })(),
           landchip: !!el.querySelector(".chip.ctxland"), chiptext: (el.querySelector(".chip.ctxland") || {}).textContent,
           anim: getComputedStyle(i).animationIterationCount, name: getComputedStyle(i).animationName,
-          fill: getComputedStyle(i).backgroundColor,
+          fill: getComputedStyle(i).backgroundImage,
           chip: !!el.querySelector(".chip.ctxwarn"), cycle: !!el.querySelector(".chip") && /context 2\/4/.test(el.textContent)
         };
       }
@@ -8776,6 +8774,63 @@ async function ctxLineSection(browser, base) {
       wornTasks = keep;
       await wp.evaluate(async () => { await loadCards().catch(() => {}); await renderTermList(); });
     }
+    // ROWFLOOD_REAL=<tasks.json> ROWFLOOD_REAL_SHOTS=<dir> ROWFLOOD_TAG=before|after: the board drawn from a COPY of a live
+    // /v1/tasks answer, set up like a real operator's: rows with context, five pinned, cards wearing a theme, a room chip
+    // (hub mode) on some, nested children under one, a wide list so full titles show; at default, tight (0.72) and
+    // tightest (0.3) density, on paper and graphite, at 2000px on the desktop board and 390px in a real phone context
+    // (touch, mobile viewport, so phone.css applies).
+    if (process.env.ROWFLOOD_REAL) {
+      const d = JSON.parse(require("fs").readFileSync(process.env.ROWFLOOD_REAL, "utf8"));
+      const list = (Array.isArray(d) ? d : d.tasks).filter(t => t.context_size).slice(0, 14);
+      const themes = ["active-work", "electric-purple", "crimson-cave", "deep-ocean", "garnet", "forest-night", "", "cocoa"];
+      const keep = wornTasks;
+      const roomOfRow = i => i % 3 === 0 ? "sg4-control" : i % 3 === 1 ? "claude-sg4" : "";
+      const tagged = (i, id) => roomOfRow(i) ? roomOfRow(i) + "~" + id : id;
+      wornTasks = list.map((t, i) => Object.assign({}, t, {
+        id: tagged(i, t.id), supervised: true, pinned: i < 5, theme: themes[i % themes.length], room: roomOfRow(i),
+        // rows 8 to 10 are subagents of row 7, so row 7 wears a child count
+        spawned_by_id: i >= 8 && i <= 10 ? list[7].id : t.spawned_by_id,
+        tags: i >= 8 && i <= 10 ? Array.from(new Set((t.tags || []).concat("atrium:subagent"))) : t.tags
+      }));
+      const tag = process.env.ROWFLOOD_TAG || "shot", dir = process.env.ROWFLOOD_REAL_SHOTS;
+      const path = require("path");
+      const prep = async page => {
+        await page.evaluate(async () => { hubIsHub = true; try { setTermW(520); } catch (e) {} if (hideSubagentsMode() !== "none") toggleHideSubagents(); await loadCards().catch(() => {}); await renderTermList(); });
+      };
+      const shoot = async (page, kind, shotsAt) => {
+        for (const dens of ["1", "0.72", "0.3"]) {
+          for (const skin of ["paper", "graphite"]) {
+            await page.evaluate(async ([sk, dn]) => {
+              applySkin(sk); document.documentElement.style.setProperty("--density", dn);
+              await renderTermList();
+            }, [skin, dens]);
+            await page.waitForTimeout(900);
+            await page.screenshot({ path: path.join(dir, `${tag}-${kind}-${skin}-density${dens}.png`) });
+          }
+        }
+      };
+      await wp.setViewportSize({ width: 2000, height: 1000 });
+      await prep(wp);
+      await shoot(wp, "2000");
+      await wp.evaluate(() => document.documentElement.style.removeProperty("--density"));
+      const phoneCtx = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true, deviceScaleFactor: 2 });
+      const pp = await phoneCtx.newPage();
+      await pp.addInitScript(() => {
+        let all = {};
+        try { all = JSON.parse(localStorage.getItem("atrium.skipconfirm") || "{}"); } catch (e) {}
+        all["width-floor"] = true;
+        localStorage.setItem("atrium.skipconfirm", JSON.stringify(all));
+      });
+      await pp.goto(base, { waitUntil: "domcontentloaded" });
+      await pp.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
+      await pp.click('.tab[data-view="terms"]').catch(() => {});
+      await prep(pp);
+      await shoot(pp, "phone390");
+      await phoneCtx.close();
+      await wp.setViewportSize({ width: 1400, height: 900 });
+      wornTasks = keep;
+      await wp.evaluate(async () => { hubIsHub = false; await loadCards().catch(() => {}); await renderTermList(); });
+    }
     const r = got.rows;
     if (!(r.plainH > 0)) fail("no plain row to compare the height with.");
     for (const [id, w, cls] of [["cl-40", "27.3%", "peek-bar ctxline"], ["cl-70", "47.7%", "peek-bar ctxline"],
@@ -8786,14 +8841,13 @@ async function ctxLineSection(browser, base) {
       if (b.cls !== cls) fail(id + " line class is " + b.cls + ", want " + cls);
       if (b.width !== w) fail(id + " fill is " + b.width + ", want " + w);
       if (b.tick !== "90.9%") fail(id + " tick is at " + b.tick);
-      // A thin strip along the row's bottom edge, inset from the corners (so the left accent bar is untouched), never
+      // A thin line along the row's bottom edge, inside the card and flush with its sides (as it was at 3e9ca7a1), never
       // a fill behind the title and path.
-      if (!b.bottom || b.h > 4 || b.h < 2 || !b.inset) fail(id + " context line is not a thin strip on the bottom edge: " + JSON.stringify(b));
-      if (b.z !== "auto" || b.pe !== "none" || b.floorPe !== "auto") fail(id + " context line layering/pointer (no z-index layer behind the row, hover area on): " + JSON.stringify(b));
-      if (!(b.hitH >= 5 && b.hitH <= 7)) fail(id + " tooltip hit area is " + b.hitH + "px tall, want about 5-6.");
+      if (!b.bottom || b.h > 4 || b.h < 2 || !b.flush) fail(id + " context line is not a thin strip on the bottom edge: " + JSON.stringify(b));
+      if (b.z !== "auto" || b.pe === "none") fail(id + " context line layering/pointer (no z-index layer behind the row, the bar takes the hover): " + JSON.stringify(b));
       if (b.clash.length) fail(id + " context line overlaps the row's own text or chips: " + b.clash.join(", "));
       if (Math.abs(b.rowH - r.plainH) > 0.5) fail(id + " row is " + b.rowH + "px tall, a row without a line is " + r.plainH + "px.");
-      if (b.fill === "rgba(0, 0, 0, 0)") fail(id + " context line has no fill colour.");
+      if (b.fill === "none") fail(id + " context line has no fill colour.");
     }
     if (r["cl-over"] && (r["cl-over"].anim !== "1" || r["cl-over"].name !== "ctxline-pulse")) {
       fail("past the limit the line does not pulse exactly once: " + r["cl-over"].anim + " " + r["cl-over"].name);
@@ -8817,6 +8871,34 @@ async function ctxLineSection(browser, base) {
     if (r["cl-shelf"]) fail("a shelved card has a line.");
     if (!r["cl-long"]) fail("the long-title row has no context line.");
     else if (r["cl-long"].clash.length) fail("a two-line title overlaps the context line: " + r["cl-long"].clash.join(", "));
+    // Tight density and a small text size shrink the row's padding: the line must still sit clear of the path and chips.
+    for (const [dens, scale] of [["0.3", "1"], ["0.5", "1"], ["1", "0.6"], ["0.3", "0.6"]]) {
+      const hits = await wp.evaluate(async ([d, u]) => {
+        const rs = document.documentElement.style;
+        rs.setProperty("--density", d); rs.setProperty("--uiscale", u);
+        await renderTermList();
+        const out = [];
+        for (const id of ["cl-40", "cl-warm", "cl-over", "cl-long"]) {
+          const el = document.querySelector(`#term-list [data-id="${id}"]`), b = el && el.querySelector(".peek-bar.ctxline");
+          if (!b) { out.push(id + ": no line"); continue; }
+          const br = b.getBoundingClientRect(), w = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+          for (let n; (n = w.nextNode());) {
+            if (!n.textContent.trim() || b.contains(n)) continue;
+            const rg = document.createRange(); rg.selectNodeContents(n);
+            for (const q of rg.getClientRects()) if (q.width && q.bottom > br.top + 0.01) out.push(id + ": text " + n.textContent.trim().slice(0, 16) + " reaches " + (q.bottom - br.top).toFixed(1) + "px into the line");
+          }
+          for (const ch of el.querySelectorAll(".chip, .pin, .rmark, svg")) {
+            if (b.contains(ch)) continue;
+            const q = ch.getBoundingClientRect();
+            if (q.width && q.bottom > br.top + 0.01) out.push(id + ": chip " + ch.className);
+          }
+        }
+        rs.removeProperty("--density"); rs.removeProperty("--uiscale");
+        return out;
+      }, [dens, scale]);
+      if (hits.length) fail("at density " + dens + " and uiscale " + scale + " the context line meets the row's text or chips: " + hits.join(" | "));
+    }
+    await wp.evaluate(async () => { await renderTermList(); });
     const c = r["cl-cycle"];
     if (!c) fail("a cycling card has no line.");
     else {
@@ -8831,7 +8913,7 @@ async function ctxLineSection(browser, base) {
       const fillOk = await wp.evaluate(async sk => {
         try { applySkin(sk); } catch (e) { return "noskin"; }
         const i = document.querySelector('#term-list [data-id="cl-over"] .ctxline i');
-        return /rgb\(/.test(getComputedStyle(i).backgroundColor);
+        return /rgb/.test(getComputedStyle(i).backgroundImage);
       }, skin);
       if (fillOk === false) fail("the line has no fill colour in skin " + skin);
     }
