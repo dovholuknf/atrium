@@ -15,9 +15,9 @@ orchestrator compacted at about 190k, and workers at 236k to 300k. The orchestra
 3. Should the runner's autocompact then sit above atrium's limit, or be off?
 
 It also asks to fold in `docs/backlog/runtime/r-new-context-clear-vs-restart.md` and `r-new-context-limit-layer.md`.
-**Neither file exists on any ref in the m1mini clone.** They are probably on sg4 only. Section 7 folds them in under the
-names they suggest: clear against restart, and which layer holds the limit. If they say something else, send them and
-this doc gets revised.
+They were untracked on sg4, and the orchestrator sent copies. Section 7 folds them in. One is a restart that lands
+during a clear, which is already built. The other is a stored per-runner limit, which is held, and which this design
+gives a place in the one function.
 
 ## The answer
 
@@ -222,10 +222,11 @@ Notes for the build:
 
 | Stage | What | Size | Done when |
 |---|---|---|---|
-| L0 | Backstop math (section 3): one function for the threshold and the flag, the margin as a runner row field, and the 70% and 10% factors gone | S, room deploy | a card at k = 200 on a 1M model starts with `--autocompact 253k` and is cleared, not compacted, in a test daemon with a fake transcript |
+| L0 | Backstop math (section 3): one function for the threshold and the flag, the margin as a runner row field, `threshold_k` in the card details, and the 70% and 10% factors gone | S, room deploy | a card at k = 200 on a 1M model starts with `--autocompact 253k` and is cleared, not compacted, in a test daemon with a fake transcript |
+| LL | The limit layer (r-new-context-limit-layer, held): a stored per-runner limit as layer 2 of the function, in the API and the three runner editors, and the row's bar reading `threshold_k` | S + the board half | a codex row limit of 150 moves only codex cards' thresholds |
 | L1 | After a compaction: re-anchor line, handoff marked stale, `compacted` events by session | S | a fake PostCompact gives one line and a stale note in the next capture prompt |
 | L2 | Workers get `compact` at the limit: the flag from the same function, never a cycle. The mode `agents` stays as it is | XS | a worker's flag follows k |
-| L3 | `restart` action: exit, then launch with the wake prompt, journalled like a cycle (r-clear-vs-restart) | M | a non-Claude test runner is cycled by restart |
+| L3 | `restart` action: exit, then launch with the wake prompt, journalled like a cycle, with a step for an exited runner that a room restart relaunches (section 7) | M | a non-Claude test runner is cycled by restart |
 | L4 | Per-runner readers and margins: OpenCode, then Codex | M each | each runner's size shows on the card, and its cycle fires |
 | L5 | Re-measure one week after L0, with the same script, on all rooms | research | the table in section 1 with more than 30 clears |
 
@@ -253,17 +254,63 @@ L0 stands alone, and it is the one that makes tonight's settings mean what they 
 
 ## 7. Folding in the two items
 
-- **Clear against restart.** The answer is both, chosen by runner:
-  - `clear` where the runner has a tested clear and a SessionStart to wait for (Claude);
-  - `restart` everywhere else (section 2, stage L3).
-  - The journal and deploy wait from r-clear-vs-restart (7323b17f) cover a restart cycle unchanged, because it is a
-    step in the same run.
-- **The limit layer.** One function, from the most specific layer to the least:
-  1. the card's tags (ceiling);
-  2. the setting (`auto_new_context_k`, `context_ceiling_k`);
-  3. the model's window;
-  4. the runner's margin.
+### r-new-context-clear-vs-restart: a restart that lands during a clear
 
-  That function gives atrium's threshold, the runner's flag and what the card details show. Today those are three
-  places (`cardLimit`, `autoThreshold`'s 70%, `autocompactK`'s 10%), and they disagree (section 3). A per-role limit
-  is not needed: the action differs by role, and the number does not.
+The item is not about clearing against restarting. It is about two cases on 10-01:
+
+- a hub deploy that ran during a clear on the orchestrator, after which the clear sat at step 1 of 3;
+- an idle card whose capture waited for a turn end that never came.
+
+It asked for four things:
+
+- an idle card typed at once;
+- the 409 naming the step;
+- input refused during a clear;
+- deploys waiting for a clear, and a restart ending a cut-off clear with its reason.
+
+All four shipped as r-clear-vs-restart (7323b17f, re-read c685f9b6). Its open question, whether a clear is stored,
+is answered by the `new_context_journal` setting.
+
+Two things carry into this design:
+
+- **The `restart` action (L3) is a run in the same journal.** A room restart during a restart cycle must end it the
+  same way, with "the room restarted during step N" on the chip, and the deploy wait covers it unchanged. A restart
+  cycle has a step a clear does not: the runner is exited and not yet relaunched. The journal must name that step,
+  so a room that comes back relaunches the card with the wake prompt and does not leave it exited.
+- **A compaction during a clear.** On 10-02 at 18:44, review's deferred capture was overtaken by a compaction. The
+  card wrote its handoff from the summary, and no clear followed. With L0, atrium acts first by the headroom, so this
+  can only happen on a capture that waits mid-turn. In that case the cycle carries on, because the capture token
+  still proves the handoff. The chip says "compacted during capture", so the person reading it knows the handoff was
+  written from a summary.
+
+### r-new-context-limit-layer: a stored limit per runner
+
+The item is held for the pause, and it belongs to `u-new-context-bar-on-rows`. It wants:
+
+- a limit per runner, stored, readable through the API, and editable in the board's three runner editors;
+- a default per runner kind;
+- the row's context bar reading the limit from the API.
+
+It becomes one layer of the one function. From the most specific layer to the least:
+
+1. the card's tags (the ceiling, `context_ceiling_k`);
+2. the runner row's stored limit, from this item, when it is set;
+3. the global setting `auto_new_context_k`, which is the default for every runner kind;
+4. bounded by `window − margin − headroom`, from the model's window and the runner row's margin (L0).
+
+That function gives four numbers:
+
+- atrium's threshold;
+- the runner's flag;
+- the card details;
+- the denominator of the row's bar.
+
+The bar must read the **threshold**, not the setting. A 200k-window card at k = 200 acts at 147k, so a bar measured
+against 200k would show 73% at the moment of the clear. The card details already carry `autocompact.limit_k` and
+`window_k`. L0 adds `threshold_k` beside them, and the bar reads it.
+
+The margin and the limit are both runner-row fields, but only the limit is edited by a person. The margin is measured
+per runner version, so the editors show it read-only.
+
+Today those numbers come from three places (`cardLimit`, `autoThreshold`'s 70%, `autocompactK`'s 10%), and they
+disagree (section 3). A per-role limit is not needed: the action differs by role, and the number does not.
