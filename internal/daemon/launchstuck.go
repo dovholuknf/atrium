@@ -56,6 +56,9 @@ const (
 	PromptOther       = "other"
 )
 
+// menuFooter is the marker every Claude Code selection menu ends on, lower case.
+const menuFooter = "enter to select · ↑/↓ to navigate"
+
 // menuTailBytes is how much of the ring is rendered to read a menu: a screen,
 // not the scrollback.
 const menuTailBytes = 32 << 10
@@ -183,6 +186,11 @@ func (d *Daemon) launchStuck(t *store.Task, now time.Time) *Escalation {
 		if !hit.menu {
 			return nil
 		}
+		// A MENU WAITING FOR AN ANSWER IS NOT A FINISHED TURN: when the turn has
+		// ended and a report is owed, that is a silent stop, and it says so.
+		if _, silent := d.stoppedSilently(t); silent {
+			return nil
+		}
 		kind := PromptOther
 		if strings.Contains(strings.ToLower(hit.title), "model switch") {
 			kind = PromptModelSwitch
@@ -242,10 +250,12 @@ func readFrame(text string) termHit {
 		}
 	}
 	h := termHit{}
+	// THE FOOTER IS ANCHORED to the last two lines of the screen, and is the whole
+	// marker in one piece. A real menu draws it there, with no input box below it,
+	// so the same words in a grep or a doc higher up the screen are only text.
 	foot := -1
-	for i := len(lines) - 1; i >= 0; i-- {
-		l := strings.ToLower(lines[i])
-		if strings.Contains(l, "enter to select") && strings.Contains(l, "to navigate") {
+	for i := len(lines) - 1; i >= 0 && i >= len(lines)-2; i-- {
+		if strings.Contains(strings.ToLower(lines[i]), menuFooter) {
 			foot = i
 			break
 		}
@@ -261,7 +271,8 @@ func readFrame(text string) termHit {
 	case strings.Contains(low, "select login method") || strings.Contains(low, "paste code here") ||
 		strings.Contains(low, "browser didn't open"):
 		h.prompt, h.title = PromptLogin, "login"
-	case strings.Contains(low, "update available"):
+	// An update BANNER is not a prompt: only a dialog waiting for an answer is.
+	case h.menu && strings.Contains(low, "update available"):
 		h.prompt, h.title = PromptUpdate, "update"
 	case h.menu:
 		h.prompt = PromptOther

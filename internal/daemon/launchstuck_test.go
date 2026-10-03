@@ -110,9 +110,9 @@ func TestLaunchPromptFolderTrust(t *testing.T) {
 
 func TestLaunchPromptKinds(t *testing.T) {
 	cases := map[string]string{
-		"Select login method:\r\n 1. Claude account\r\n":            PromptLogin,
-		"Update available! Run claude update\r\n":                   PromptUpdate,
-		" Weird\r\n 1. a\r\n Enter to select · ↑/↓ to navigate\r\n": PromptOther,
+		"Select login method:\r\n 1. Claude account\r\n":                                PromptLogin,
+		"Update available!\r\n 1. Update now\r\n Enter to select · ↑/↓ to navigate\r\n": PromptUpdate,
+		" Weird\r\n 1. a\r\n Enter to select · ↑/↓ to navigate\r\n":                     PromptOther,
 	}
 	for frame, want := range cases {
 		h := readFrame(frame)
@@ -322,5 +322,105 @@ func TestASessionStartHookCountsAsHeard(t *testing.T) {
 	}
 	if x := d.launchStuck(task, time.Now()); x != nil {
 		t.Fatalf("%+v after its session hook spoke", x)
+	}
+}
+
+const clearScreen = "\x1b[2J\x1b[H"
+
+// The review's probe: a grep output line quoting the footer, above claude's input box.
+const quotedFooterFrame = clearScreen +
+	"⏺ Bash(grep -n navigate launchstuck_test.go)\r\n" +
+	"  ⎿  17:  \" Enter to select · ↑/↓ to navigate · Esc\" +\r\n" +
+	"     18:  \" to cancel\"\r\n\r\n" +
+	"╭──────────────────────────────────────────────────────╮\r\n" +
+	"│ > \r\n" +
+	"╰──────────────────────────────────────────────────────╯\r\n" +
+	"  ? for shortcuts\r\n"
+
+func TestAFooterQuotedAboveTheInputBoxIsNotAMenu(t *testing.T) {
+	if h := readFrame(strings.TrimPrefix(quotedFooterFrame, clearScreen)); h.menu || h.prompt != "" {
+		t.Fatalf("a quoted footer read as a menu: %+v", h)
+	}
+	d := testDaemon(t)
+	task, _ := stuckWorker(t, d, quotedFooterFrame, time.Hour, time.Minute)
+	d.act.set(task.ID, ActivityThinking, "")
+	if x := d.launchStuck(task, time.Now()); x != nil {
+		t.Fatalf("%+v for a footer quoted in tool output", x)
+	}
+}
+
+func TestTheFooterMustBeWholeAndOnTheLastTwoLines(t *testing.T) {
+	menu := " Pick\r\n 1. a\r\n Enter to select · ↑/↓ to navigate · Esc to cancel\r\n"
+	if !readFrame(menu).menu {
+		t.Fatal("the footer on the last line was missed")
+	}
+	if !readFrame(menu + " extra status line\r\n").menu {
+		t.Fatal("the footer on the second to last line was missed")
+	}
+	if readFrame(menu + " one\r\n two\r\n").menu {
+		t.Fatal("a footer three lines up read as a menu")
+	}
+	// the two halves apart, on separate lines at the bottom, are not the marker
+	if readFrame(" Pick\r\n Enter to select\r\n ↑/↓ to navigate\r\n").menu {
+		t.Fatal("the halves matched separately")
+	}
+}
+
+func TestAnUpdateBannerIsNotAPromptButAnUpdateDialogIs(t *testing.T) {
+	if h := readFrame(" Update available! Run claude update\r\n"); h.prompt != "" {
+		t.Fatalf("a banner read as %q", h.prompt)
+	}
+	if h := readFrame(" Update available!\r\n 1. Update now\r\n Enter to select · ↑/↓ to navigate\r\n"); h.prompt != PromptUpdate {
+		t.Fatalf("a dialog read as %q", h.prompt)
+	}
+}
+
+// A real silent stop is not hidden behind a menu on the screen.
+func TestASilentStopWinsOverAMenuOnAnEndedTurn(t *testing.T) {
+	d := testDaemon(t)
+	task, _ := stuckWorker(t, d, modelSwitchFrame, time.Hour, time.Hour)
+	d.act.set(task.ID, ActivityThinking, "")
+	stopTurn(t, d, "stuck-worker")
+	got, _ := d.st.Get(task.ID)
+	if _, ok := d.stoppedSilently(got); !ok {
+		t.Fatal("setup: the turn ended and owes a report, so this is a silent stop")
+	}
+	x := d.stuckNow(got, time.Now().Add(time.Hour))
+	if x == nil || x.Source != NoticeSilentStop {
+		t.Fatalf("got %+v, want the silent stop", x)
+	}
+}
+
+func TestAPendingPermissionOrNeedsPermissionIsNotAMenu(t *testing.T) {
+	d := testDaemon(t)
+	task, _ := stuckWorker(t, d, modelSwitchFrame, time.Hour, time.Hour)
+	d.act.set(task.ID, ActivityThinking, "")
+	if x := d.launchStuck(task, time.Now()); x == nil {
+		t.Fatal("setup: a menu should escalate")
+	}
+	task.Status = store.StatusNeedsPermission
+	if x := d.launchStuck(task, time.Now()); x != nil {
+		t.Fatalf("%+v on a card waiting on a permission", x)
+	}
+	task.Status = store.StatusRunning
+	if _, _, err := d.st.RecordPermission(task.ID, "Bash", "ls", "k1", ""); err != nil {
+		t.Skipf("no way to raise a pending permission here: %v", err)
+	}
+	if x := d.launchStuck(task, time.Now()); x != nil {
+		t.Fatalf("%+v on a card with a permission atrium holds", x)
+	}
+}
+
+// A resume starts unheard: the last run's session hook must not count.
+func TestAResumeAfterAnExitStartsUnheard(t *testing.T) {
+	d := testDaemon(t)
+	task, _ := stuckWorker(t, d, "x\r\n", 10*time.Minute, 10*time.Minute)
+	d.act.sessionSpoke(task.ID)
+	if x := d.launchStuck(task, time.Now()); x != nil {
+		t.Fatalf("%+v after the session hook", x)
+	}
+	d.act.forget(task.ID)
+	if x := d.launchStuck(task, time.Now()); x == nil || x.Source != NoticeLaunchIdle {
+		t.Fatalf("a resumed card counted as heard from its last run: %+v", x)
 	}
 }
