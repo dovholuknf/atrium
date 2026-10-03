@@ -4,7 +4,7 @@ From clint, 2026-10-02, by the orchestrator, on the usage tab's "cumulative toke
 readable from m1mini). He likes the graph but wants a percentage on it, a labelled Y axis, and the values shown
 wherever the pointer is on the chart.
 
-State: filed, not started. Batched after keep-alive and the context-bar badge (u-new-ctx-bar-land-the-plane.md).
+State: built on claude/u-usage-chart (direction C, "pace": zoomed 5h window, even-pace diagonal, rate strip, crosshair, phone headline strip); awaiting review. Was: filed, not started. Batched after keep-alive and the context-bar badge (u-new-ctx-bar-land-the-plane.md).
 Lands through @review. Visual work: clint's bar is the repos redesign (memory ui-design-bar), so show directions as
 screenshot file paths first, at 2000px and phone, paper and dark.
 

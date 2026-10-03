@@ -69,6 +69,7 @@ const USAGE_TIPS = {
   causeCounted: "counted tokens in the range for this cause: uncached in, out and cache writes. cache reads are the dim column",
   causeAll: "all five kinds of tokens in the range for this cause, cache reads included",
   cumTotal: "the running total over the range: counted tokens, or all five kinds with cache reads shown. it matches tokens by kind",
+  cumPct: "percent of the limit your cards reported, read against the tokens atrium counted in the window: one point is the tokens counted since the window began divided by the percent. spend atrium did not see (other tools, other accounts) is not in it, so the chart can sit short of the real limit. with no card reading it shows plain tokens and no percent",
   cumProj: "the last hour's pace carried on to the coming midnight. it does not see the future, so a quiet or busy evening changes it",
   scope: "covers the whole card: every session it has run, including before a /clear, and keep-alive refreshes " +
     "and subagents",

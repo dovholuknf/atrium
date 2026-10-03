@@ -274,25 +274,69 @@
   .ulflame { margin-left: var(--sp-3); }
   .ucchart { position: relative; }
   /* The cumulative chart's axes: percent of the limit on the left, the time under it. See ucCumulative in js/usage-charts.js. */
-  .ucchart.uclim { padding-left: 74px; }
-  .ucplot { position: relative; margin-bottom: 1.5em; }
-  .ucplot .ucy { position: absolute; left: -74px; width: 68px; text-align: right; transform: translateY(-50%); font: var(--fs-xs) var(--mono); color: var(--dim); pointer-events: none; }
-  .ucplot .ucy small { color: var(--dimmest); }
-  .ucplot .ucy100 { color: rgb(var(--danger-rgb)); }
+  /* The chart's small text: the skin's label tone pulled toward its ink so it holds 4.5:1 on every skin. */
+  .ucchart[data-chart=cumulative] { padding-left: 74px; --uct: color-mix(in srgb, var(--label) 70%, var(--head)); }
+  .ucstage { position: relative; touch-action: pan-y; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; cursor: crosshair; }
+  .ucplot { position: relative; }
+  .ucchart[data-chart=cumulative] .ucplot svg { height: 220px; }
+  .ucplot .ucy, .ucrate .ucrl { position: absolute; left: -74px; width: 68px; text-align: right; transform: translateY(-50%); font: var(--fs-xs) var(--mono); color: var(--uct); pointer-events: none; }
+  .ucplot .ucy small { color: var(--uct); }
+  .ucplot .ucy100 { color: var(--danger-text); }
   .ulcap { stroke: rgb(var(--danger-rgb)); stroke-width: 1; stroke-dasharray: 2 3; vector-effect: non-scaling-stroke; }
   .ulgrid { stroke: var(--stroke-dim); stroke-width: 1; vector-effect: non-scaling-stroke; }
   .ulresetln { stroke: rgba(var(--teal-rgb), .55); stroke-width: 1; stroke-dasharray: 4 3; vector-effect: non-scaling-stroke; }
   .ulresetln[data-reset=weekly] { stroke: rgba(var(--warn-rgb), .6); }
   .ucnowln { stroke: var(--dim); stroke-width: 1; vector-effect: non-scaling-stroke; }
   .ulcross { stroke: rgb(var(--danger-rgb)); stroke-width: 1; vector-effect: non-scaling-stroke; }
-  .ucplot .ulresetlab, .ucplot .ulcrosslab, .ucplot .ucnowlab { position: absolute; top: 2px; font: var(--fs-xs) var(--mono); pointer-events: none; white-space: nowrap; }
-  .ucplot .ulresetlab { transform: translateX(4px); color: var(--teal); }
-  .ucplot .ulresetlab[data-reset=weekly] { color: rgb(var(--warn-rgb)); }
-  .ucplot .ulcrosslab { top: auto; bottom: 2px; transform: translateX(-100%); color: rgb(var(--danger-rgb)); }
-  .ucplot .ucnowlab { transform: translateX(calc(-100% - 4px)); color: var(--dim); }
-  .ucplot .uchov { position: absolute; top: 0; bottom: 0; width: 0; border-left: 1px solid var(--dim); pointer-events: none; }
-  .uctimes { position: absolute; top: 100%; left: 0; right: 0; height: 1.4em; font: var(--fs-xs) var(--mono); color: var(--dimmest); }
-  .uctimes span { position: absolute; top: 2px; transform: translateX(-50%); white-space: nowrap; }
+  .ucpace { stroke: var(--dim); stroke-width: 1; stroke-dasharray: 2 5; vector-effect: non-scaling-stroke; }
+  .ucarea { fill: url(#ucgrad); stroke: none; }
+  .ucg-hot { stop-color: rgb(var(--danger-rgb)); stop-opacity: .5; }
+  .ucg-warm { stop-color: rgb(var(--warn-rgb)); stop-opacity: .32; }
+  .ucg-cool { stop-color: rgb(var(--teal-rgb)); stop-opacity: .12; }
+  .ucplot .ulresetlab, .ucplot .ulcrosslab, .ucplot .ucnowlab, .ucplot .ucpacelab { position: absolute; top: 2px; font: var(--fs-xs) var(--mono); pointer-events: none; white-space: nowrap; }
+  .ucplot .ulresetlab { transform: translateX(4px); color: color-mix(in srgb, var(--teal) 45%, var(--head)); }
+  .ucplot .ulresetlab.ucend { transform: translateX(calc(-100% - 4px)); }
+  .ucplot .ulresetlab[data-reset=weekly] { color: color-mix(in srgb, var(--warn) 45%, var(--head)); }
+  .ucplot .ulcrosslab { top: auto; bottom: 2px; transform: translateX(-100%); color: var(--danger-text); }
+  .ucplot .ucnowlab { transform: translateX(calc(-100% - 4px)); color: var(--uct); }
+  .ucplot .ucpacelab { transform: translate(-100%, 5px); color: var(--uct); }
+  .ucrate { position: relative; margin-top: 6px; }
+  .ucchart[data-chart=cumulative] .ucrate svg { height: 44px; border-bottom: 1px solid var(--stroke-dim); }
+  .ucrate .ucrl { transform: none; }
+  .ucrate .ucrl0 { transform: translateY(-100%); }
+  .ucchart[data-chart=cumulative] .uck-line { stroke: var(--teal); stroke-width: 2.5; }
+  .ucchart.uclim .uck-proj { stroke: rgb(var(--danger-rgb)); opacity: .85; }
+  .ucrate rect.uck-bar { opacity: .55; }
+  .ucrate rect.uck-bar.on { opacity: 1; }
+  .uctimes { position: relative; height: 1.5em; font: var(--fs-xs) var(--mono); color: var(--uct); }
+  .uctimes span { position: absolute; top: 3px; transform: translateX(-50%); white-space: nowrap; }
+  /* The crosshair spans the plot and the rate strip, not the time row under them. */
+  .ucstage .uchov { position: absolute; top: 0; bottom: 1.5em; width: 0; border-left: 1px solid var(--head); opacity: .6; pointer-events: none; }
+  .ucstage .uchovdot { position: absolute; width: 10px; height: 10px; margin: -5px 0 0 -5px; border-radius: 50%; background: var(--bg-0); border: 2px solid var(--head); pointer-events: none; }
+  .ucstage .uchovtag { position: absolute; transform: translateX(10px); padding: 2px 9px; border-radius: 11px; background: var(--head); color: var(--bg-0); font: 700 var(--fs-xs) var(--mono); white-space: nowrap; pointer-events: none; }
+  .ucstage .uchovtag.flip { transform: translateX(calc(-100% - 10px)); }
+  .ucchart[data-chart=cumulative] .ucaxis { color: var(--uct); }
+  /* With the percent chart the axis is the plot's own; the row keeps only the pace phrase (the window total stays in the markup for tests and readers). */
+  .ucchart.uclim .ucaxis { justify-content: center; }
+  .ucchart.uclim .ucaxis [data-n=cumtotal] { display: none; }
+  .ucchart[data-chart=cumulative] .ucaxis .ucwarn { color: var(--danger-text); }
+  .ucchart[data-chart=cumulative] .ucread { min-height: 1.6em; margin-bottom: 4px; color: var(--uct); }
+  .ucnote-cum { color: color-mix(in srgb, var(--label) 70%, var(--head)); }
+  .ucstrip { display: none; }
+  .ucstat b { display: block; font: 700 22px/1.1 var(--mono); color: var(--head); }
+  .ucstat b small { font-size: 13px; font-weight: 400; }
+  .ucstat i { display: block; font: normal var(--fs-xs) var(--mono); color: var(--uct); }
+  .uchint { font: var(--fs-xs) var(--mono); color: var(--uct); }
+  @media (max-width: 600px) {
+    .ucchart[data-chart=cumulative] { padding-left: 46px; }
+    .ucchart[data-chart=cumulative] .ucread { display: none; }
+    .ucplot .ucy, .ucrate .ucrl { left: -46px; width: 42px; }
+    .ucplot .ucy small { display: none; }
+    .ucchart[data-chart=cumulative] .ucplot svg { height: 170px; }
+    .ucstrip { display: flex; flex-wrap: wrap; gap: 4px 16px; align-items: flex-end; min-height: 3.6em; margin-bottom: 6px; }
+    .ucstat b { font-size: 20px; }
+    .ucstage .uchovtag, .ucplot .ucpacelab, .ucplot .ucnowlab { display: none; }   /* the labels run into the reset label at this width; the lines stay */
+  }
   .ucaxis .ucwarn { color: rgb(var(--danger-rgb)); }
   .ulband { fill: var(--teal-bg); }
   .ulbandedge { stroke: rgba(var(--teal-rgb), .45); stroke-width: 1; vector-effect: non-scaling-stroke; }
