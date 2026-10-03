@@ -16,6 +16,7 @@ import (
 	"github.com/dovholuknf/atrium/internal/edge"
 	"github.com/dovholuknf/atrium/internal/gitsync"
 	"github.com/dovholuknf/atrium/internal/link"
+	"github.com/dovholuknf/atrium/internal/store"
 	"github.com/spf13/cobra"
 )
 
@@ -442,7 +443,7 @@ func roomHandler(d *daemon.Daemon, room *link.Room) http.Handler {
 			return nil, link.ErrNoGit
 		}
 		return room.GitTransport(), nil
-	}}
+	}, Live: func(name string) []string { return liveBranches(d, name) }}
 	git, board := gh.Handler(), d.BoardHandler()
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasPrefix(r.URL.Path, "/v1/git/") {
@@ -451,6 +452,26 @@ func roomHandler(d *daemon.Daemon, room *link.Room) http.Handler {
 		}
 		board.ServeHTTP(w, r)
 	})
+}
+
+// liveBranches is the branches of this room's live cards in the repository `name` (`github/o/r`), which the
+// room's git route serves beside claude/*. A card is live while it is running or waiting on somebody: a done,
+// shelved or dead card is not, and neither is one on the backlog, which has no branch of its own yet. A card is
+// matched to a repository by the folder name its work is in, which is what the board records as its repo.
+// It is asked on every fetch, so a card that ends stops being served at once.
+func liveBranches(d *daemon.Daemon, name string) []string {
+	tasks, err := d.Store().List(store.StatusRunning, store.StatusNeedsInput, store.StatusNeedsPermission)
+	if err != nil {
+		return nil
+	}
+	repo := name[strings.LastIndex(name, "/")+1:]
+	var out []string
+	for _, t := range tasks {
+		if t.Repo == repo && t.Branch != "" {
+			out = append(out, t.Branch)
+		}
+	}
+	return out
 }
 
 // defaultRoomName is the machine's name, because that is what somebody would

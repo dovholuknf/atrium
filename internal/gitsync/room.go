@@ -26,11 +26,15 @@ func DefaultRoot() string {
 //
 //	POST /v1/git/sync          {name, init}, sent by the hub over the link
 //	GET  /v1/git/status        the last answer of each sync, from memory
-//	     /v1/git/<name>.git/   upload-pack over the clone, claude/* except claude/main
+//	     /v1/git/<name>.git/   upload-pack over the clone, claude/* except claude/main, and live cards' branches
 type RoomHandler struct {
 	Syncer *Syncer
 	// Hub reaches the hub for one sync. An error says why it cannot.
 	Hub func() (http.RoundTripper, error)
+	// Live is the branches of this room's LIVE cards for one repository (its name, `github/o/r`), as they are
+	// named on the room. They are served beside claude/*, and read again on every request, so a card that ends
+	// stops being served at once. Nil serves claude/* alone.
+	Live func(name string) []string
 }
 
 // Handler builds the mux.
@@ -55,10 +59,16 @@ func (h *RoomHandler) Handler() http.Handler {
 			}
 			return dir, true
 		},
-		// Everything, then claude/* back, then claude/main out again: the room offers what its
-		// workers made and not what came from the hub in the first place.
-		// HEAD too: it is not under refs, and the clone's HEAD may be any branch at all.
-		Hide: []string{"HEAD", "refs", "!refs/heads/claude/", "refs/heads/claude/main"},
+		// Everything, then claude/* back, then claude/main out again, then each live card's branch: the room
+		// offers what its workers made and not what came from the hub in the first place. See ServedHide.
+		// Written per request, so a card's branch is served for as long as the card is live.
+		HideFor: func(name string) []string {
+			var live []string
+			if h.Live != nil {
+				live = h.Live(name)
+			}
+			return ServedHide(live)
+		},
 	})
 	return mux
 }

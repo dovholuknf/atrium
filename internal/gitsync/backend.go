@@ -36,6 +36,9 @@ type Backend struct {
 	Resolve func(name string) (gitDir string, ok bool)
 	// Hide is each uploadpack.hideRefs value, in order.
 	Hide []string
+	// HideFor, when set, is the hideRefs for one request and replaces Hide. It is asked for the repository name,
+	// and the answer is written into the CGI environment for that request alone.
+	HideFor func(name string) []string
 	// Git is the git executable. Empty finds `git` on PATH.
 	Git string
 }
@@ -150,8 +153,17 @@ func (b *Backend) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		{"http.receivepack", "false"},
 		{"http.getanyfile", "false"},
 		{"http.uploadarch", "false"},
+		// A want is an advertised tip and nothing else, and no partial clone.
+		{"uploadpack.allowFilter", "false"},
+		{"uploadpack.allowAnySHA1InWant", "false"},
+		{"uploadpack.allowTipSHA1InWant", "false"},
+		{"uploadpack.allowReachableSHA1InWant", "false"},
 	}
-	for _, h := range b.Hide {
+	hide := b.Hide
+	if b.HideFor != nil {
+		hide = b.HideFor(name)
+	}
+	for _, h := range hide {
 		cfg = append(cfg, [2]string{"uploadpack.hideRefs", h})
 	}
 
@@ -178,7 +190,7 @@ func (b *Backend) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		out.Header.Set("Content-Length", strconv.Itoa(len(raw)))
 	}
 
-	gitCGI(exe, dir, cfg, nil).ServeHTTP(w, out)
+	gitCGI(exe, dir, cfg, cgiEnv()).ServeHTTP(w, out)
 }
 
 // gitCGI is `git http-backend` for one repository directory. The request it is given has its path
