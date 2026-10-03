@@ -12,5 +12,5 @@ tray view the offset is `--trayh` instead of the trigger.
 
 **Done.** `termListLastRow` (HEADLESS_ONLY) opens the list with 14 rows at 390x844 and 412x915, plain and tray view,
 with the visual viewport 84px and 300px shorter than the layout viewport, and asserts the last row ends above the
-visual viewport's bottom. It fails on the old `70vh` rule (the 300px case) and passes now. phoneKeyboard, phoneView,
+visual viewport's bottom. It fails on the old `70vh` rule only in the 300px case (the 84px case fits under the old cap, so it is a guard, not the catch) and passes now. Each `cqh` rule has a plain `70vh` declaration before it, for a browser without `cqh`; the section checks the file for it. phoneKeyboard, phoneView,
 phoneShare, phoneTermBar, phoneFocus, phonePan and bootClean pass alone.

@@ -148,7 +148,7 @@
        in `.termscroll` under it. */
     .term-layout.has-term.tl-open .termbody {
       display: flex; flex-direction: column; position: absolute; top: 100%; left: 0; right: 0;
-      max-height: min(70vh, calc(100cqh - 100%)); overflow: hidden; z-index: 40;
+      max-height: 70vh; max-height: min(70vh, calc(100cqh - 100%)); overflow: hidden; z-index: 40;
       background: var(--shell-0); border: 1px solid var(--stroke-dim);
       border-top: none; border-radius: 0 0 var(--r-lg) var(--r-lg);
       box-shadow: 0 18px 40px rgba(var(--shadow-rgb), .45); padding: 6px 3px 0;
@@ -372,7 +372,7 @@
   /* the card picker moved into the tray, so the separate row above the terminal is gone */
   body.term-phone .term-layout.has-term .termdrop { display: none; }
   body.term-phone .term-layout.has-term .term-list { height: 0; padding: 0; }
-  body.term-phone .term-layout.has-term.tl-open .termbody { top: var(--trayh, 48px); max-height: min(70vh, calc(100cqh - var(--trayh, 48px))); }
+  body.term-phone .term-layout.has-term.tl-open .termbody { top: var(--trayh, 48px); max-height: 70vh; max-height: min(70vh, calc(100cqh - var(--trayh, 48px))); }
 
   /* fit this screen lives IN the tray on a phone (`phoneFitPlace` moves it there), so the key bar is the only bar at
      the bottom. Its tooltip stays. */

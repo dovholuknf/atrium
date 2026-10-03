@@ -7310,6 +7310,11 @@ async function termListLastRowSection(browser, base) {
   } finally {
     tasksMode = was;
   }
+  // A browser without `cqh` drops the min() declaration, so each one needs a plain 70vh declaration before it.
+  const css = fs.readFileSync(path.join(__dirname, "..", "internal", "api", "web", "css", "phone.css"), "utf8");
+  const minRules = css.match(/max-height: min\(70vh, calc\(100cqh/g) || [];
+  const fallbacks = css.match(/max-height: 70vh; max-height: min\(70vh, calc\(100cqh/g) || [];
+  if (minRules.length < 2 || fallbacks.length !== minRules.length) fail("termListLastRow: a cqh max-height has no 70vh fallback before it (" + fallbacks.length + " of " + minRules.length + ")");
   if (errors.length) fail("termListLastRow: the page threw: " + errors.join(" | "));
 }
 
