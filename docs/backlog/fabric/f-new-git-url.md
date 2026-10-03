@@ -24,7 +24,7 @@ After the hold (M1 and the lows):
 - a room's work in progress has no URL for a card until a `/git/room/` forwarder exists, and the line says to ask the
   card on that room to `atrium_git_push` it;
 - the four untested bounds, the hostForURL test, the ambiguous short name, the down room and the sync states, and the
-  cut of `room` are each tested, mutation-checked, and in section IR of `docs/test-plan.md`.
+  cut of `room` are each tested, mutation-checked, and in section IS of `docs/test-plan.md`.
 
 Left:
 - The card-brief line is @runtime's (`internal/daemon` launch brief / CLAUDE-side text), not edited here: "To read code

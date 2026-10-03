@@ -34,3 +34,21 @@ Atrium-Verdict: room-ok a9307bc7..51ff1715
 Atrium-Verdict: hub-ok a9307bc7..51ff1715
 Quality: a small change at the right point, with the pill counts kept in step and an assert that covers the whole
 state grid.
+
+## Reverted: 310d75be, then u-pin-tests b343ac5d
+
+The orchestrator reverted u-pin-shows on claude/main (310d75be) because cold pinned cards flooded the list: a pin
+kept every dead pinned row on screen. That is the cost the old comment named. So the OK above was right about the
+code but wrong on the rule, and I should have weighed the old rule's reason against clint's ask. The original report
+(a pinned row missing) is still open.
+
+u-pin-tests b343ac5d (range `310d75be..b343ac5d`) is test-script and docs only. It removes `pinShows` and its `only`
+entry, restores the hide-strip asserts, and deletes the u-pin-shows item and changes doc.
+
+Verdict: **OK** for room and hub.
+- Against `a9307bc7`, the last tree before 51ff1715, no line that mentions a pin differs in the headless script.
+  `terminal-list.js` is identical. `node --check` passes.
+- It merges cleanly onto landing after the revert.
+
+Atrium-Verdict: room-ok 310d75be..b343ac5d
+Atrium-Verdict: hub-ok 310d75be..b343ac5d

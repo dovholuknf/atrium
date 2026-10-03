@@ -84,6 +84,7 @@
       const r = { id: "cr_" + (++n), repo: body.repo, source: body.source, target: body.target, title: body.title, why: body.why || "", change: body.change || "", state: "open",
         created_by: { room: body.source.room || "hub", card: "operator" }, created_at: new Date().toISOString(), closed_at: null, closed_by: null, note: "", merged_sha: null, owner: { room: body.source.room || "hub", card: "operator" },
         _pushed: { state: "matches", hub_sha: "0123456", room: body.source.room || "hub", card: "operator", at: new Date().toISOString(), released: false } };
+      r.repo = /^[^/]+\/[^/]+$/.test(r.repo) ? "github/" + r.repo : r.repo;
       rows.unshift(r);
       return Promise.resolve(res(201, pub(r)));
     }

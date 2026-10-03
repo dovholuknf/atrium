@@ -62,7 +62,7 @@ After review (hold a1a89240, M1 and the lows):
   bad-Host test now calls `serveGitURL` on the overlay, where the hosts guard does not stand in front, so it reaches
   the regex; an ambiguous short name is answered by `Lookup` with the candidates; a `down` room is asked again and an
   answering room is held; only an `ok` or `behind` sync counts a room as having a repository; and the `room`, and a branch
-  that is not there, are cut like every other echo of what the caller typed. The test plan is section IR of
+  that is not there, are cut like every other echo of what the caller typed. The test plan is section IS of
   `docs/test-plan.md`.
 
 For @runtime, to go in the launch brief / CLAUDE-side card text (not edited here, `internal/daemon` is theirs): "To read

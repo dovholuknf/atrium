@@ -1436,6 +1436,9 @@ func launchedName(title, cwd string, taken func(string) (bool, error)) (string, 
 	name := base
 	for n := 2; ; n++ {
 		held, err := taken(name)
+		// THE RESERVED HANDLE IS TAKEN: a launch with no title in a folder called `atrium` (this
+		// repository's own checkout) moves on to atrium-2 rather than failing at Register.
+		held = held || store.IsReserved(name)
 		if err != nil {
 			return "", fmt.Errorf("checking wire name %q: %w", name, err)
 		}

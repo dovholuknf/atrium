@@ -127,6 +127,8 @@ type RemotePeer struct {
 	// Everywhere is set by a hub that knows cards on every room, on the rows that
 	// are there because of it. An older hub never sets it.
 	Everywhere bool `json:"everywhere,omitempty"`
+	// Tags are the card's tags, when the hub sends them. W6 looks for atrium:orchestrator.
+	Tags []string `json:"tags,omitempty"`
 }
 
 // The three failures a Relay reports, which decide what is held.

@@ -66,7 +66,7 @@ func TestATaskBoundResumeMovesOrIsRefusedByLiveness(t *testing.T) {
 	d, _, cancel, errCh := startDaemon(t)
 	defer func() { cancel(); <-errCh }()
 
-	old := resumeCard(t, d, "atrium", "conv-1")
+	old := resumeCard(t, d, "atriumx", "conv-1")
 	mine := resumeCard(t, d, "merge", "")
 	if err := d.st.SetStatus(old.ID, store.StatusDone); err != nil {
 		t.Fatal(err)
@@ -158,12 +158,12 @@ func TestADirectoryNameNeverReachesADoneCard(t *testing.T) {
 	d, _, cancel, errCh := startDaemon(t)
 	defer func() { cancel(); <-errCh }()
 
-	old := resumeCard(t, d, "atrium", "")
+	old := resumeCard(t, d, "atriumx", "")
 	if err := d.st.SetStatus(old.ID, store.StatusDone); err != nil {
 		t.Fatal(err)
 	}
 	stopBody(t, d, map[string]any{
-		"agent": "atrium", "name_source": "dir", "resume": "stray-1", "resumable": true,
+		"agent": "atriumx", "name_source": "dir", "resume": "stray-1", "resumable": true,
 		"cwd": "D:/git/atrium",
 	})
 	if got := resumeIDOf(t, d, old.ID); got != "" {
@@ -182,14 +182,14 @@ func TestTheStrandedConversationMovesWhenItsOwnerStarts(t *testing.T) {
 	d, _, cancel, errCh := startDaemon(t)
 	defer func() { cancel(); <-errCh }()
 
-	stranded := resumeCard(t, d, "atrium", "18fa6feb")
+	stranded := resumeCard(t, d, "atriumx", "18fa6feb")
 	if err := d.st.SetStatus(stranded.ID, store.StatusDone); err != nil {
 		t.Fatal(err)
 	}
 	merge := resumeCard(t, d, "merge", "")
 	d.sup.runners[merge.ID] = &runner{taskID: merge.ID, pid: 55}
 	yes := true
-	if err := d.onSession(SessionEvent{Agent: "atrium", NameSource: "dir", Event: "start", TaskID: merge.ID,
+	if err := d.onSession(SessionEvent{Agent: "atriumx", NameSource: "dir", Event: "start", TaskID: merge.ID,
 		PID: 55, Resume: "18fa6feb", Resumable: &yes}); err != nil {
 		t.Fatal(err)
 	}
@@ -200,7 +200,7 @@ func TestTheStrandedConversationMovesWhenItsOwnerStarts(t *testing.T) {
 		t.Fatalf("the stranded card kept it: %q", got)
 	}
 	// And the card was not renamed by a name it did not choose.
-	if got, _ := d.st.Get(merge.ID); got.WireName == "" || strings.HasSuffix(got.WireName, "/atrium") || got.WireName == "atrium" {
+	if got, _ := d.st.Get(merge.ID); got.WireName == "" || strings.HasSuffix(got.WireName, "/atriumx") || got.WireName == "atriumx" {
 		t.Fatalf("merge's wire name was overwritten: %q", got.WireName)
 	}
 }

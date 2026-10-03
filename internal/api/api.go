@@ -569,6 +569,7 @@ func (s *Server) Handler() http.Handler {
 	}
 	mux.HandleFunc("GET /v1/tasks/{id}/events", s.taskEvents)
 	mux.HandleFunc("POST /v1/tasks/{id}/notices-read", s.noticesRead)
+	mux.HandleFunc("POST /v1/tasks/{id}/owed-dismiss", s.owedDismiss)
 	mux.HandleFunc("GET /v1/tasks/{id}/review", s.reviewTask)
 	mux.HandleFunc("GET /v1/waiting", s.waiting)
 	mux.HandleFunc("GET /v1/permissions", s.listPermissions)
@@ -798,6 +799,10 @@ func (s *Server) roomStats(w http.ResponseWriter, r *http.Request) {
 type view struct {
 	*store.Task
 	DisplayTitle string `json:"display_title"`
+	// LauncherID is the BARE id of the card on this room that launched this one, computed by
+	// store.LauncherID and never stored. Absent for an operator launch, an unlaunched session and a
+	// launcher on another room (spawned_by keeps `name@room`). The aggregate view prefixes the room.
+	LauncherID string `json:"launcher_id,omitempty"`
 	// DisplayRepo is the repo a client should render: an override, else what
 	// the launcher recorded, else a guess read off the worktree path.
 	//
@@ -874,8 +879,14 @@ type view struct {
 	// OldestHeldAt is when the oldest was held, RFC3339. Only a card that holds its
 	// notices carries them, and only while there are some. A read is an
 	// `atrium_task` with `notices` by the card itself. See internal/daemon/a2a.go.
-	HeldNotices  int    `json:"held_notices,omitempty"`
-	OldestHeldAt string `json:"oldest_held_at,omitempty"`
+	HeldNotices int `json:"held_notices,omitempty"`
+	// Owed is how many workers owe this card an answer (the row's `📬 N owed`), OwedSince when the
+	// oldest opened, and OwedNoLauncher that an item on this row is its own, with no launcher to
+	// keep it. Open items only: reading the notices does not change them.
+	Owed           int    `json:"owed,omitempty"`
+	OwedSince      string `json:"owed_since,omitempty"`
+	OwedNoLauncher bool   `json:"owed_no_launcher,omitempty"`
+	OldestHeldAt   string `json:"oldest_held_at,omitempty"`
 	// AsksOpen is how many questions this card has outstanding.
 	//
 	// `Task.Ask` is the OLDEST of them and is what the row draws. That was the
@@ -964,6 +975,10 @@ var OutputAtOf func(taskID string) string
 // held, RFC3339. Supplied by the daemon, which knows which cards hold their notices.
 var HeldNoticesOf func(t *store.Task) (int, string)
 
+// OwedOf is how many open owed items a card keeps, when the oldest opened, and whether one is
+// an orphan kept on the worker's own row. See internal/daemon/owed.go.
+var OwedOf func(t *store.Task) (int, string, bool)
+
 func toView(t *store.Task) view {
 	v := view{
 		Task:         t,
@@ -1011,6 +1026,9 @@ func toView(t *store.Task) view {
 	}
 	if HeldNoticesOf != nil {
 		v.HeldNotices, v.OldestHeldAt = HeldNoticesOf(t)
+	}
+	if OwedOf != nil {
+		v.Owed, v.OwedSince, v.OwedNoLauncher = OwedOf(t)
 	}
 	if t.WaitingSince != nil {
 		v.WaitSeconds = int64(time.Since(*t.WaitingSince).Seconds())
@@ -1061,6 +1079,7 @@ func (s *Server) withAskCounts(vs []view) []view {
 // withAskCounts.
 func (s *Server) taskEvent(t *store.Task) view {
 	v := toView(t)
+	v.LauncherID = s.st.LauncherID(t)
 	v.Mercurius = store.MercuriusFor(t.Tags, s.st.LeanWorkerGateway())
 	if n, err := s.st.RepliesOwedFor(t.ID); err == nil {
 		v.RepliesOwed = n
@@ -1165,6 +1184,11 @@ func (s *Server) flushTask(id string) {
 // swallowing a failure for the same reason `withAskCounts` does: it decorates
 // a row that is worth serving without it.
 func (s *Server) withSeen(vs []view) []view {
+	for i := range vs {
+		if vs[i].Task != nil {
+			vs[i].LauncherID = s.st.LauncherID(vs[i].Task)
+		}
+	}
 	if gw := s.st.LeanWorkerGateway(); gw != "" {
 		for i := range vs {
 			if vs[i].Task != nil {
@@ -1584,6 +1608,7 @@ func (s *Server) patchTask(w http.ResponseWriter, r *http.Request) {
 	}
 	s.PublishTask(t)
 	out := toView(t)
+	out.LauncherID = s.st.LauncherID(t)
 	if canceled > 0 {
 		s.Broadcast("permission", map[string]any{"canceled": canceled, "task": id})
 	}
@@ -1765,6 +1790,39 @@ func (s *Server) noticesRead(w http.ResponseWriter, r *http.Request) {
 		s.PublishTask(t)
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "changed": changed})
+}
+
+// owedDismiss is a launcher closing the owed item a worker left on its card, which is what
+// `atrium_task` with `dismiss` is. Only the card the item is kept on can close it: the body
+// names the worker, and an item kept elsewhere is left alone.
+func (s *Server) owedDismiss(w http.ResponseWriter, r *http.Request) {
+	t, err := s.st.Get(r.PathValue("id"))
+	if err != nil {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": err.Error()})
+		return
+	}
+	var body struct {
+		Worker string `json:"worker"`
+	}
+	_ = json.NewDecoder(io.LimitReader(r.Body, 1<<10)).Decode(&body)
+	it, err := s.st.OwedItemOf(strings.TrimSpace(body.Worker))
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	if it == nil || (it.Host != t.ID && it.Launcher != t.ID) {
+		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "closed": false})
+		return
+	}
+	closed, err := s.st.CloseOwedItem(it.Worker)
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	if host, err := s.st.Get(it.Host); err == nil {
+		s.PublishTask(host)
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "closed": closed})
 }
 
 // reviewTask answers "what did this session actually do".

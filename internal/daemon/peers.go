@@ -463,7 +463,7 @@ func (d *Daemon) handleTell(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	d.recordTell(from, target, text, in.When, in.Reply, typed, msgID)
-	d.peerSaid(from, target, text)
+	d.peerSaid(from, target, text, owedKind(in.Kind, in.Reply))
 	log.Printf("[atrium] %s told %s something (%d chars, typed %v, waits for the turn %v)",
 		from, to, len(text), typed, waitTurn)
 

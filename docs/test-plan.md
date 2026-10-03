@@ -8497,11 +8497,67 @@ Needs a room with the hub's phone notice on (a notify command set) and a claude 
 
 Covered by `TestARealNotificationRecordsThatTheCardAsked`, `TestAnIdlePromptDoesNotRecordAnAsk`, `TestAnIdlePromptKeepsARealEarlierAsk` (daemon) and the `asked before any turn`, `idle prompt before any turn` and `started before any turn` cases of `TestNotifyIdentityPerReasonAndPriority` (link). Items 1 to 3 are not yet run live.
 
+## IJ. Owed answers survive (r-owed-answers)
+
+Needs a room with an orchestrator card (tag `atrium:orchestrator`), a launcher and a worker it launched, and the board. Set `ATRIUM_OWED_PUSH=1m` and `ATRIUM_OWED_PERMISSION=30s` to shorten the waits.
+
+1. Exit the worker's session with no report. Within a tick the launcher's row shows `📬 1 owed`, and `atrium_task` with `notices` on the launcher lists "owes an answer". Reading it does not change the count. `atrium_task {dismiss: <worker>}` drops it.
+2. Leave another worker's item open for a minute: the orchestrator's card gets one held notice, "has not answered", nothing is typed anywhere, and a second minute adds no second one. An item on a worker the orchestrator launched itself adds none.
+3. The worker `atrium_say`s its launcher a question and waits. The launcher's row shows the item, and the launcher's reply to the worker closes it. The same with an `fyi`: nothing opens. A done report with `ask` opens one, a done report without it opens none.
+4. Leave a worker at a permission dialog for 30 seconds: an item opens. Approve it before the push and the item goes without a push.
+5. `/clear` the launcher with an item open. Its first tool call carries one line, "1 open item from your workers", from `atrium`.
+6. Launch a worker whose launcher is gone: with an orchestrator on the room the item shows on its card, without one it shows on the worker's own row.
+7. A worker launched with no launcher reports done: the card is not marked reported, and the orchestrator's card holds "has no launcher to hear it".
+8. `atrium_task`/the board: setting an alias of `atrium` is refused, and a session started in a folder called `atrium` gets the handle `atrium-dir`.
+
+Covered by `TestAWorkerThatEnds*`, `TestTheOrchestrator*`, `TestAQuestionOpens*`, `TestAnFYIOpensNothing`, `TestADoneReportOwes*`, `TestReadingTheNotices*`, `TestADismiss*`, `TestExitingTheWorker*`, `TestTheListingLine*`, `TestAnOrphan*`, `TestAPermissionItem*`, `TestAReportThatReachesNobody*` (daemon) and `TestTheAtriumHandle*`, `TestAnOwedItem*` (store). Items 1 to 8 are not yet run live.
+
+## IL. A card stuck at its terminal is escalated (r-launch-stuck)
+
+1. Launch a worker into a folder claude has not been told to trust (launch it with a trust-less config). Within about 10 s
+   its card shows a red `launch-prompt` escalation, "stuck at the folder-trust prompt", `prompt` = `folder-trust`, and its
+   launcher is told once. Answer the dialog in the terminal: the first hook clears it.
+2. Launch a worker whose claude never reaches a hook (point it at a runner that prints and waits). After a minute and 30 s
+   of quiet the card says "no activity since launch, N min" (`launch-idle`), and never "stopped without reporting".
+3. Leave a director on claude's "Model switch" menu (Opus safeguards, "Enter to select · ↑/↓ to navigate"). After 30 s of
+   quiet the card shows `terminal-menu` with `prompt` = `model-switch` and the text naming "Model switch". It rings on the
+   usual rhythm. Choose an option: it clears.
+4. A director tagged `atrium:director` ends a turn waiting for work, with no workers: no silent-stop notice, no STUCK mark.
+5. A hand-started claude with no atrium hooks, idle at its prompt for ten minutes, shows nothing.
+6. `grep -n navigate` on a file that quotes the "Enter to select · ↑/↓ to navigate" footer, then 30 s of quiet: the card shows
+   no menu escalation, because the footer is only a menu on the last two lines of the screen. A card whose turn ended
+   with a report owed and a menu on screen shows the silent stop, not the menu. A claude update banner before the first hook is
+   not a launch-prompt.
+7. A card on a permission the room holds, or one claude's notification raised, shows its own wording and no menu escalation.
+8. The permission hook never gates `Agent` or `Task`.
+
+Covered by `TestLaunchIdleAfterGraceWithNoHook`, `TestLaunchIdleWaitsOutTheGrace`, `TestLaunchIdleNeedsAQuietTerminal`,
+`TestLaunchIdleIsForCardsWhoseHooksAreExpected`, `TestAHookClearsLaunchIdle`, `TestLaunchPromptFolderTrust`,
+`TestLaunchPromptKinds`, `TestLaunchPromptNeedsQuiet`, `TestLaunchPromptBeatsLaunchIdle`, `TestTerminalMenuModelSwitch`,
+`TestTerminalMenuOtherAndOnNonReportingCard`, `TestTerminalMenuNeedsQuietAndAMenu`,
+`TestTerminalMenuIsMemoizedWhileTheTerminalIsQuiet`, `TestBusyCardIsNeverRendered`, `TestAPendingPermissionIsNotAMenu`,
+`TestACardNoHookHasHeardIsLaunchIdleNeverSilentStop`, `TestEscalationCountsFromWhenItBecameStuck`,
+`TestAFooterQuotedAboveTheInputBoxIsNotAMenu`, `TestTheFooterMustBeWholeAndOnTheLastTwoLines`,
+`TestAnUpdateBannerIsNotAPromptButAnUpdateDialogIs`, `TestASilentStopWinsOverAMenuOnAnEndedTurn`,
+`TestAPendingPermissionOrNeedsPermissionIsNotAMenu`, `TestAResumeAfterAnExitStartsUnheard`, `TestDirectorWhoseWorkersAllEndedIsNotSilent`, `TestDirectorWithNoWorkersIsNotSilent`,
+`TestUntaggedLauncherSessionStillOwesAndIsSilent`, `TestPermSkipsBothSubagentToolNames`. Items 1 to 3 need a live claude.
+
+## IR. Workers carry their launcher's dept, and rows say who launched them (r-worker-tags)
+
+Needs a room with a director card tagged `dept:<x>`, redeployed room and hub.
+
+1. From the director call `atrium_launch` (stdio and through the hub). The new card has `dept:<x>` beside `origin:agent` and `atrium:subagent`, and lands under that department on the board, not Untagged. Launch with `tags: ["dept:other"]`: only `dept:other`. From a launcher with no dept tag: none stamped.
+2. `GET /v1/tasks`: the new card's row has `launcher_id` equal to the director's bare card id (no `room~` prefix). An operator-launched card and one launched by a card on another room have no `launcher_id`.
+3. `GET /v1/tasks/<id>` and the SSE `task` event for the same card carry the same `launcher_id`.
+4. auto_new_context `agents` does NOT reach a worker (`origin:agent` plus `atrium:subagent`) by design; it needs `atrium:auto-new-context`. It does reach an `origin:agent` card without `atrium:subagent`.
+
+Covered by `TestWithLauncherDept`, `TestHubLaunchStampsTheLaunchersDept` (link), `TestStdioLaunchStampsTheLaunchersDept` (cli), `TestLauncherIDOnTheTaskRow` (api), `TestAutoContextAgentsModeAndTheLaunchPathsTags` (daemon). Items 1 to 4 are not yet run live.
+
 ## Test plan
 
-## IR. A card asks the hub where to fetch code instead of asking for a paste
+## IS. A card asks the hub where to fetch code instead of asking for a paste
 
-### IR1. The real-world plan: finished work, found by a card on m1mini
+### IS1. The real-world plan: finished work, found by a card on m1mini
 
 On sg3, in its atrium clone, have a card finish a change on a `fix/<x>` branch and push it to the hub
 (`atrium_git_push`). From a card on m1mini, call `atrium_git_url` with `repo` = `<owner>/<repo>` and
@@ -8511,60 +8567,60 @@ On sg3, in its atrium clone, have a card finish a change on a `fix/<x>` branch a
 (the card's environment carries it), and `git diff FETCH_HEAD~1 FETCH_HEAD` is the change. Nobody was asked for a paste.
 The same call from a shell with no card token (a script the card runs) fetches nothing: the forwarder refuses it.
 
-### IR1a. A room's work in progress is not given to a card
+### IS1a. A room's work in progress is not given to a card
 
 Have sg3's card commit on `claude/<x>` and NOT push. From the m1mini card ask for `claude/<x>`: the room source has no
 URL and a note, and the text says a card cannot fetch it and to ask the card on sg3 to `atrium_git_push` it. After sg3's
 card pushes, ask again: the hub source answers, with its forwarder URL. The operator (the tool called with no card,
 or the board's loopback) is still given the room's `/git/room/sg3/...` URL, and fetches the unpushed commit with it.
 
-### IR1b. A room that does not say where its forwarder is
+### IS1b. A room that does not say where its forwarder is
 
 On a room older than this build (it answers 404 to `GET /v1/hub-remote`), or with the room stopped mid-call, a card's answer
 has no URL for any source, with the note that its room did not say where its hub remote is, and the text does not tell
 it to fetch.
 
-### IR2. Finished work answers hub; both answers both
+### IS2. Finished work answers hub; both answers both
 
 Push a branch to the hub's store (`git push` to `/git/hub/...`) and ask for it: source `hub`, URL under
 `/git/hub/<host>/<owner>/<repo>.git`. Now have a live card on sg3 commit once more on that same branch and ask again: both
 sources are answered with their shas and `ahead` is true on the room's. Push that commit: `ahead` is false.
 
-### IR3. No branch lists the branches
+### IS3. No branch lists the branches
 
 Call `atrium_git_url` with only `repo`. Every branch the hub holds and every branch an attached room would serve is listed
 once, each with its sources. `refs/stash`, a `refs/notes/*` ref, `claude/main`, `hub-main` and a branch of sg3's clone's
 own checkout (`main`, or `develop` when that is `origin/HEAD`) are not in the list.
 
-### IR4. A miss names the closest
+### IS4. A miss names the closest
 
 Ask for a repo with a typo (`<owner>/<repo>x`) and for a real repo with a branch typo. Each answers `not found` with at
 most 5 closest repos, or branches, and sg3's atrium log shows no `info/refs` request for the unknown repo.
 
-### IR5. An offline room answers offline
+### IS5. An offline room answers offline
 
 Detach sg3 (stop its room, or `atrium rooms` shows it offline). Ask for a branch that exists only there: `offline`, naming
 sg3, with no fetch tried. Ask for one that is also pushed to the hub: it is answered with the hub source, and the room
 shown as not online.
 
-### IR6. The URL host is the host the caller used
+### IS6. The URL host is the host the caller used
 
 Ask the endpoint (`GET /_hub/git/url?repo=...`) over the board's loopback and over the OpenZiti service name (and a zrok
 private share). Each answer's URLs begin with the host and scheme that request came in on, never another. (The tool
 rewrites a card's hub URLs onto its room's forwarder; the operator's tool call is on the hub's own board address.)
 
-### IR7. Who may ask
+### IS7. Who may ask
 
 From the hub machine's loopback, over the OpenZiti service and over a zrok private share the endpoint answers. Over a zrok public
 share `GET /_hub/git/url?repo=...` answers 404, the same as a path that is not there. A request from a non-loopback
 address with no overlay answers 403.
 
-### IR8. A repeat within 10 s does not ask the room again
+### IS8. A repeat within 10 s does not ask the room again
 
 Ask for the same repo twice in a few seconds and watch sg3's atrium log: one `info/refs` request, not two. After 10 s a
 new one is asked.
 
-### IR9. Automated
+### IS9. Automated
 
 `env -u ATRIUM_LOCATION go test -timeout 120m -race -run 'ABranchOn|AMissAnswers|AnOfflineRoomAnswers|ABranchTheRoomWouldNot|TheURLIsOnTheHost|OnlyTheReachesOfAFetchMayAskForAURL|ARoomsAnswerIsHeld|TheToolReturns|ABranchPushedByARoom|ACardOnAnotherRoom|ACardIsGivenNoURL|ACardWhoseRoom|ForwarderBase|AHostThatIsNot|ParseAdvert|ClosestNames|EditDistance|ResolveRepo|TheLineAModelReads|AnAdvertisement|AnAnswerIsCut|AnAmbiguous|ADownRoom|OnlyAnOkOrBehind|ARoomNamedAtLength|ForCard' ./internal/link ./internal/gitsync`
 passes, and `env -u ATRIUM_LOCATION go test -timeout 120m ./internal/link ./internal/cli ./internal/gitsync ./internal/api` passes.

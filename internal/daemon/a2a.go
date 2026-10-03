@@ -390,7 +390,7 @@ func (d *Daemon) notifyRemoteLauncher(worker *store.Task, source, key, body stri
 // launcher on the worker's item, and the launcher's to the worker likewise, so
 // what used to scroll away in a terminal is on record. Never moves the work: free
 // text cannot be checked. A failure is logged, the posture of a hook.
-func (d *Daemon) peerSaid(from string, target *store.Task, text string) {
+func (d *Daemon) peerSaid(from string, target *store.Task, text, kind string) {
 	from = strings.TrimSpace(from)
 	if from == "" || target == nil {
 		return
@@ -403,6 +403,7 @@ func (d *Daemon) peerSaid(from string, target *store.Task, text string) {
 		log.Printf("[atrium] could not put %s's message to %s on the work ledger: %v",
 			sender.DisplayTitle(), target.DisplayTitle(), err)
 	}
+	d.owedSaid(sender, target, kind, text)
 	if !sender.Launched() {
 		return
 	}
@@ -466,7 +467,16 @@ func (d *Daemon) stoppedSilently(t *store.Task) (time.Time, bool) {
 	if isParked(t) {
 		return time.Time{}, false
 	}
-	if hasTag(t.Tags, DirectorTag) && d.hasOutstandingWorker(t.ID) {
+	// A DIRECTOR IS NOT A WORKER OWING A REPORT. It is resident: it ends a turn
+	// waiting for work or for its workers, and its launcher prompting it created
+	// the debt this checks. The tag is what atrium_launch sets for it. Its real
+	// blockers (a menu, a stuck tool) have their own escalations.
+	if hasTag(t.Tags, DirectorTag) {
+		return time.Time{}, false
+	}
+	// A CARD NO HOOK HAS SPOKEN FOR SINCE LAUNCH never began a turn to stop. Its
+	// escalation is launch-idle. See launchStuck.
+	if d.neverHeard(t) {
 		return time.Time{}, false
 	}
 	ended, err := d.st.TurnEndedAt(t.ID)
@@ -547,8 +557,12 @@ func deliveredWord(reach string) string {
 // Escalation is a worker the board should hear about, served on the card. The
 // board rings each time Count goes up.
 type Escalation struct {
-	// Source is `silent-stop`, `long-tool` or `long-turn`.
+	// Source is `silent-stop`, `long-tool`, `long-turn`, `launch-idle`,
+	// `launch-prompt` or `terminal-menu`.
 	Source string `json:"source"`
+	// Prompt names which prompt a launch-prompt or terminal-menu is stuck at:
+	// folder-trust, login, update, model-switch or other. Empty otherwise.
+	Prompt string `json:"prompt,omitempty"`
 	// Since is when it became stuck. The backoff counts from here.
 	Since time.Time `json:"since"`
 	// Count is how many steps of the backoff have passed.
@@ -656,13 +670,16 @@ func (d *Daemon) watchWorkers(now time.Time) error {
 		} else {
 			// A LONG TURN IS SHOWN ON EVERY CARD, clint's own included. Only a
 			// card with a launcher has somebody to tell.
-			x = d.longTurn(t, now)
+			if x = d.launchStuck(t, now); x == nil {
+				x = d.longTurn(t, now)
+			}
 		}
 		live[t.ID] = true
 		if d.esc.put(t.ID, x) {
 			d.publishTask(t.ID)
 		}
 	}
+	d.scans.forgetExcept(live)
 	for _, id := range d.esc.forgetExcept(live) {
 		d.publishTask(id)
 	}
@@ -716,6 +733,11 @@ func (d *Daemon) wakeLauncher(t *store.Task, x *Escalation) {
 // when the launcher has not been told yet. Nil when the card is fine.
 func (d *Daemon) stuckNow(t *store.Task, now time.Time) *Escalation {
 	who := t.DisplayTitle()
+	if x := d.launchStuck(t, now); x != nil {
+		d.notifyLauncher(t, x.Source, x.Since.UTC().Format(time.RFC3339Nano), fmt.Sprintf(
+			"%s. atrium cannot answer it for the session, so this is a report. card %s", x.Text, t.ID))
+		return x
+	}
 	if since, ok := d.stoppedSilently(t); ok {
 		if now.Sub(since) >= SilentStopNotifyAfter {
 			d.silentStop(t.ID)

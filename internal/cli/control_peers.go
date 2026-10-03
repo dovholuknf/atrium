@@ -735,15 +735,17 @@ func launchHandler(ctx context.Context, _ *mcp.CallToolRequest, in LaunchInput) 
 	// launched it, the origin marker, the worker marker and the report line. Without them the room
 	// filed every stdio launch as the board's own dialog (`@human`), so the worker had no launcher
 	// and its reports and notices reached nobody. The hub's launch cap stays the hub's.
+	me := strings.TrimSpace(os.Getenv("ATRIUM_AGENT_NAME"))
 	req := map[string]any{
 		"harness": harness, "cwd": in.Cwd, "title": in.Title,
-		"why": in.Why, "prompt": link.WithReportLine(prompt), "tags": link.AgentLaunchTags(in.Tags),
+		"why": in.Why, "prompt": link.WithReportLine(prompt),
+		"tags":  link.WithLauncherDept(link.AgentLaunchTags(in.Tags), myTags(ctx, me)),
 		"model": in.Model, "effort": in.Effort, "args": in.Args, "env": in.Env,
 		"lean_agents": in.LeanAgents, "lean_skills": in.LeanSkills,
 	}
 	// A hand-run session has no name to attribute a launch to, and is left unattributed rather
 	// than filed under a blank one.
-	if me := strings.TrimSpace(os.Getenv("ATRIUM_AGENT_NAME")); me != "" {
+	if me != "" {
 		req["spawned_by"] = me
 	}
 	var t card
@@ -767,10 +769,32 @@ func launchHandler(ctx context.Context, _ *mcp.CallToolRequest, in LaunchInput) 
 	return nil, out, nil
 }
 
+// myTags is the tags of this session's own card on this room, for passing its department on to
+// a worker. Nil for a hand-run session or a card that cannot be read: no dept is stamped then.
+func myTags(ctx context.Context, me string) []string {
+	if me == "" {
+		return nil
+	}
+	var body struct {
+		Tasks []card `json:"tasks"`
+	}
+	if err := ask(ctx, http.MethodGet, "/v1/tasks", nil, &body); err != nil {
+		return nil
+	}
+	for _, t := range body.Tasks {
+		if t.Wire == me {
+			return t.Tags
+		}
+	}
+	return nil
+}
+
 // ── one card ────────────────────────────────────────────────────────────────
 
 type TaskInput struct {
-	Card string `json:"card" jsonschema:"a card id, handle or alias. name@room or room~id for a card on another room"`
+	Card string `json:"card,omitempty" jsonschema:"a card id, handle or alias. name@room or room~id for a card on another room. empty with dismiss"`
+	// Dismiss closes the owed item a worker left on YOUR card. See internal/daemon/owed.go.
+	Dismiss string `json:"dismiss,omitempty" jsonschema:"a worker whose owed item on your card you are closing, by handle. an item also closes when you message, exit or relaunch the worker"`
 	// Events includes the recent history, which is what a card DID rather than
 	// where it is now.
 	Events bool `json:"events,omitempty" jsonschema:"include recent events"`
@@ -820,6 +844,29 @@ func taskHandler(ctx context.Context, _ *mcp.CallToolRequest, in TaskInput) (
 
 	out := TaskOutput{}
 	who := strings.TrimSpace(in.Card)
+	if dismiss := strings.TrimSpace(in.Dismiss); dismiss != "" {
+		me := strings.TrimSpace(os.Getenv("ATRIUM_AGENT_NAME"))
+		if me == "" {
+			return nil, out, fmt.Errorf("dismiss closes an item on your own card, and this session has no " +
+				"ATRIUM_AGENT_NAME to mean itself by")
+		}
+		myID, _, err := resolvePeer(ctx, me)
+		if err != nil {
+			return nil, out, err
+		}
+		workerID, _, err := resolvePeer(ctx, dismiss)
+		if err != nil {
+			return nil, out, err
+		}
+		if err := ask(ctx, http.MethodPost, "/v1/tasks/"+url.PathEscape(myID)+"/owed-dismiss",
+			map[string]string{"worker": workerID}, nil); err != nil {
+			return nil, out, err
+		}
+		if who == "" {
+			out.Note = "dismissed, if " + dismiss + " had an item open on your card."
+			return nil, out, nil
+		}
+	}
 	if isAcross(who) {
 		// ANOTHER ROOM, by way of this room's hub. See item 68 in
 		// docs/backlog-2.md.

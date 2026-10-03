@@ -85,24 +85,23 @@ func TestDirectorWithLiveWorkerNotSilent(t *testing.T) {
 	stuckAgrees(t, d, director.ID, false)
 }
 
-func TestDirectorAllWorkersEndedIsSilent(t *testing.T) {
+// A director is resident: ending a turn waiting for work is not a stop, with
+// workers outstanding or without. See stoppedSilently.
+func TestDirectorWhoseWorkersAllEndedIsNotSilent(t *testing.T) {
 	d := testDaemon(t)
 	orch, director, worker := directorRig(t, d)
 	liveRunner(d, worker.ID)
 	stopTurn(t, d, "director")
-	if n := len(pendingFrom(t, d, orch.ID)); n != 0 {
-		t.Fatalf("%d notices with a live worker", n)
-	}
 	endRunner(d, worker.ID)
-	stuckAgrees(t, d, director.ID, true)
+	stuckAgrees(t, d, director.ID, false)
 	stopTurn(t, d, "director")
 	stopTurn(t, d, "director")
-	if n := len(pendingFrom(t, d, orch.ID)); n != 1 {
-		t.Fatalf("%d notices once every worker ended, want one", n)
+	if n := len(pendingFrom(t, d, orch.ID)); n != 0 {
+		t.Fatalf("%d notices for a director that ended a turn waiting, want none", n)
 	}
 }
 
-func TestDirectorWithNoWorkersIsSilent(t *testing.T) {
+func TestDirectorWithNoWorkersIsNotSilent(t *testing.T) {
 	d := testDaemon(t)
 	orch := peerCard(t, d, "orchestrator")
 	director := peerCard(t, d, "director")
@@ -114,10 +113,26 @@ func TestDirectorWithNoWorkersIsSilent(t *testing.T) {
 	}
 	prompt(t, d, director.ID)
 	stopTurn(t, d, "director")
-	if n := len(pendingFrom(t, d, orch.ID)); n != 1 {
-		t.Fatalf("%d notices, want one", n)
+	if n := len(pendingFrom(t, d, orch.ID)); n != 0 {
+		t.Fatalf("%d notices, want none", n)
 	}
-	stuckAgrees(t, d, director.ID, true)
+	stuckAgrees(t, d, director.ID, false)
+}
+
+// Without the director tag the same card is a worker owing a report.
+func TestUntaggedLauncherSessionStillOwesAndIsSilent(t *testing.T) {
+	d := testDaemon(t)
+	orch := peerCard(t, d, "orchestrator")
+	card := peerCard(t, d, "resident")
+	if err := d.st.SetTags(card.ID, []string{OriginAgentTag}); err != nil {
+		t.Fatal(err)
+	}
+	if err := d.st.SetLineage(card.ID, "orchestrator", orch.ID); err != nil {
+		t.Fatal(err)
+	}
+	prompt(t, d, card.ID)
+	stopTurn(t, d, "resident")
+	stuckAgrees(t, d, card.ID, true)
 }
 
 func TestWorkerSilentStopUnchanged(t *testing.T) {

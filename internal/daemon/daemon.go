@@ -150,6 +150,8 @@ type Daemon struct {
 	// many times it has. In memory, like the activity it is derived from: a
 	// restart recomputes it on the next tick. See a2a.go.
 	esc escalations
+	// scans is the last screen read of each quiet card. See launchstuck.go.
+	scans termScans
 	// looksIdleFired counts every looks-idle firing since start. See looksidle.go.
 	looksIdleFired atomic.Int64
 
@@ -369,6 +371,7 @@ func New(opts Options) (*Daemon, error) {
 	}
 	st.OnHalt = d.onHalt
 	api.HeldNoticesOf = d.heldNoticesFor
+	api.OwedOf = d.owedFor
 	d.ledgerDirty = make(chan struct{}, 1)
 	st.OnLedgerChange = d.ledgerChanged
 	st.OnLedgerNotice = d.ledgerNotice

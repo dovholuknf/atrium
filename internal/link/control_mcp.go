@@ -981,6 +981,9 @@ type taskInput struct {
 	// Notices is what a launcher that holds its notices reads instead of having
 	// them typed. See holdsNotices in internal/daemon/a2a.go.
 	Notices bool `json:"notices,omitempty" jsonschema:"include the automatic notices held on the card, newest last"`
+	// Dismiss closes the owed item a worker left on your card, by the worker's handle. Reading
+	// the notices does not close an item. See internal/daemon/owed.go.
+	Dismiss string `json:"dismiss,omitempty" jsonschema:"a worker whose owed item on your card you are closing, by handle. an item also closes when you message, exit or relaunch the worker"`
 }
 
 type taskEvent struct {
@@ -1052,6 +1055,19 @@ func (c *controlMCP) taskHandler(ctx context.Context, req *mcp.CallToolRequest, 
 	}
 	if err != nil {
 		return nil, out, err
+	}
+	if dismiss := strings.TrimSpace(in.Dismiss); dismiss != "" {
+		if strings.TrimSpace(in.Card) != "" {
+			return nil, out, fmt.Errorf("dismiss closes an item on your own card, so leave card empty")
+		}
+		wscope, wid, _, derr := c.resolveCard(ctx, room, dismiss)
+		if derr != nil || wscope != scope {
+			return nil, out, fmt.Errorf("no worker of yours called %q on this room to dismiss", dismiss)
+		}
+		if err := c.ask(ctx, http.MethodPost, "/v1/tasks/"+url.PathEscape(id)+"/owed-dismiss", scope,
+			map[string]string{"worker": wid}, nil); err != nil {
+			return nil, out, err
+		}
 	}
 	t, events, notices, err := c.readCard(ctx, scope, id, in.Events, in.Notices)
 	if err != nil {
@@ -1173,6 +1189,57 @@ func AgentLaunchTags(callerTags []string) []string {
 		tags = append(tags, SubagentTag)
 	}
 	return tags
+}
+
+// DeptTagPrefix is the tag that files a card under a department (daemon's deptTagPrefix).
+const DeptTagPrefix = "dept:"
+
+// WithLauncherDept passes the launching card's department on: the first `dept:*` tag of the
+// launcher is added to the launch's tags unless the caller's own already carry one. A launcher
+// with no dept tag, or none known, stamps nothing. Shared by the hub's atrium_launch and a
+// room's stdio one, like AgentLaunchTags, so a director's workers file under its department.
+func WithLauncherDept(tags, launcherTags []string) []string {
+	if hasTagPrefix(tags, DeptTagPrefix) {
+		return tags
+	}
+	for _, t := range launcherTags {
+		if t = strings.TrimSpace(t); len(t) > len(DeptTagPrefix) && strings.EqualFold(t[:len(DeptTagPrefix)], DeptTagPrefix) {
+			return append(append([]string{}, tags...), t)
+		}
+	}
+	return tags
+}
+
+// hasTagPrefix reports whether any tag starts with prefix, case-insensitively, and has more after it.
+func hasTagPrefix(tags []string, prefix string) bool {
+	for _, t := range tags {
+		if t = strings.TrimSpace(t); len(t) > len(prefix) && strings.EqualFold(t[:len(prefix)], prefix) {
+			return true
+		}
+	}
+	return false
+}
+
+// launcherTags is the tags of the card that is launching, on the room its cards are named from,
+// or nil when it cannot be found. `who` may be `name@room`: the room part is dropped, the card
+// is looked up on callerRoom. A failed lookup stamps no dept, it never fails the launch.
+func (c *controlMCP) launcherTags(ctx context.Context, callerRoom, who string) []string {
+	if i := strings.Index(who, "@"); i >= 0 {
+		who = who[:i]
+	}
+	if strings.TrimSpace(who) == "" {
+		return nil
+	}
+	var body struct {
+		Tasks []ctlCard `json:"tasks"`
+	}
+	if err := c.ask(ctx, http.MethodGet, "/v1/tasks", callerRoom, nil, &body); err != nil {
+		return nil
+	}
+	if t, ok := matchCard(body.Tasks, who); ok {
+		return t.Tags
+	}
+	return nil
 }
 
 // WithReportLine ends a launch prompt with the one line of the worker contract a prompt most
@@ -1462,7 +1529,7 @@ func (c *controlMCP) launchOnRoom(ctx context.Context, in launchInput, harness, 
 	// stores it without knowing what it is (see OriginTag). It is how an agent
 	// launch is told apart from a human's hand-started session. The cap counts
 	// SubagentTag instead, which the caller supplies in its own tags.
-	tags := AgentLaunchTags(in.Tags)
+	tags := WithLauncherDept(AgentLaunchTags(in.Tags), c.launcherTags(ctx, callerRoom, spawnedBy))
 	// WHO IS LAUNCHING, from the caller's own identity header, so the room can
 	// record the lineage and route the worker's reports back. See
 	// docs/runtime/a2a-reliability-design.md.
