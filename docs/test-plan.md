@@ -8409,3 +8409,16 @@ Needs a room, a card on it, and the operator's board. No hub is needed. Checked 
 5. Clone a repository yourself under `~/git/github/<owner>/<repo>` with plain git, then call the tool from a card. It answers `asked` and the board shows one permission on that card, `atrium_git_clone`. The clone still has only `origin`. Answer yes and call again: `hub` is added, origin's push URL is set, and a third call asks nothing. Answer no on another such clone: the tool is refused and the clone is untouched.
 6. In an operator clone that already has a `hub` remote pointing at your own server, say yes and call again. `hub` is not touched and atrium's remote is `atrium-hub`, reported in `hub` and `note`.
 Covered by `TestClone*`, `TestAnOperatorsCloneIsUntouchedUntilOneYes`, `TestADeniedYesChangesNothing`, `TestAnExistingHubRemoteElsewhere*`, `TestGitClone*` (daemon) and `TestGitSCMRoot*`. Items 1 to 6 are not yet run live.
+
+## IF. A restart keeps the daemon's bind (r-restart-loopback)
+
+Needs a daemon started by hand on a spare port, and a second machine (or `ipconfig getifaddr en0`) to reach it from.
+
+1. `atrium daemon --http 127.0.0.1:7788 --addr 127.0.0.1:7787 --location-file /tmp/loc.json --db /tmp/t.db`.
+   `loc.json` has `board_listen` and `agent_listen` as given.
+2. `curl http://<lan address>:7788/v1/health` is refused. `curl http://127.0.0.1:7788/v1/health` answers.
+3. With no `--http` or `--addr` at all, `lsof -iTCP -sTCP:LISTEN -P | grep atrium` shows 127.0.0.1, not `*`.
+4. Run `restart_atrium`. The daemon returns on the same two addresses: step 2 again, the same.
+5. Start another with `--http 0.0.0.0:7788` and restart it: it returns on `0.0.0.0:7788`, because the operator chose it.
+
+Covered by `TestRestartKeepsTheDaemonsBind` and `TestDaemonDefaultsAreLoopback`.
