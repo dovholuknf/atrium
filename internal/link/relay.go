@@ -68,6 +68,9 @@ type RelayRequest struct {
 	To   string `json:"to,omitempty"`
 	Text string `json:"text,omitempty"`
 	When string `json:"when,omitempty"`
+	// Wake resumes a parked target before the message is delivered, for `say`. An older hub
+	// ignores it, and the target answers `parked` as it always did.
+	Wake bool `json:"wake,omitempty"`
 	// All includes cards with no session, for `peers`.
 	All bool `json:"all,omitempty"`
 	// Everywhere asks `peers` for the cards tagged atrium:everywhere on other
