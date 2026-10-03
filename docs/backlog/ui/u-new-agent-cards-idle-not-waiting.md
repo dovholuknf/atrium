@@ -10,7 +10,7 @@ workers. None is waiting on the operator.
 
 ## Fix
 
-A card launched by an agent (tag origin:agent, atrium:director or atrium:subagent) that ends a turn with no open
+A card launched by an agent (tag origin:agent; the code tests only that tag) that ends a turn with no open
 question reads "idle", not "waiting for you", and drops out of the waiting-for-you count and the bell. "Waiting for
 you" stays for a card with an open question, a permission ask, or a card the operator launched. Places to look: the
 "ready" reason in m/js/home.js, activityText in m/js/util.js, the bell in m/js/bell.js (it already has an isDoer
@@ -25,3 +25,8 @@ although its director launched it, and the director never received the report (f
 worker's report is addressed and surfaced: if the report is addressed to the operator rather than the launching
 session, or spawned_by is wrong for a card launched by an agent, that is the delivery half and belongs to @runtime;
 file it to them with what was found. The board half is only the label.
+
+## Known limit
+
+A director that asks the operator something in prose the question parser misses reads idle and does not ring. Accepted
+(review L1); a parser miss was already invisible in the open-questions count.

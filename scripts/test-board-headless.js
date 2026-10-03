@@ -14299,12 +14299,16 @@ async function mBubblesSection(browser) {
         const bb = b.getBoundingClientRect(), cx = bb.left + bb.width / 2;
         // the hit area, found by what a finger would reach 19px above and below the middle: 40px tall in all
         const reach = dy => { const e = document.elementFromPoint(cx, bb.top + bb.height / 2 + dy); return !!e && (e === b || b.contains(e)); };
-        return { us: getComputedStyle(md).userSelect || getComputedStyle(md).webkitUserSelect, n: r.querySelectorAll(".bact").length, ratio, hitH: reach(-19) && reach(19) ? 40 : 0, w: bb.width };
+        let hitH = 0, below = 0;
+        for (let dy = -40; dy <= 40; dy++) if (reach(dy)) { hitH++; if (dy > bb.height / 2) below++; }
+        return { us: getComputedStyle(md).userSelect || getComputedStyle(md).webkitUserSelect, n: r.querySelectorAll(".bact").length, ratio, hitH, below, w: bb.width };
       });
       if (info.us !== "text") fail(tag + "bubble text is not selectable: " + info.us);
       if (info.n !== 2) fail(tag + "a bubble has " + info.n + " actions");
       if (info.ratio < 4.5) fail(tag + "action contrast " + info.ratio.toFixed(2));
       if (info.hitH < 40 || info.w < 40) fail(tag + "action hit area too small: " + JSON.stringify(info));
+      // L4: the reach into the text under the header is a few pixels, not a line of it
+      if (info.below > 5) fail(tag + "the action's hit area reaches " + info.below + "px into the text below it");
       // a programmatic selection survives a redraw that arrives while it is held, and the redraw lands when it goes
       await p.evaluate(sel => { const n = document.querySelector(sel + " .md p, " + sel + " .md"); const r = document.createRange(); r.selectNodeContents(n); const s = getSelection(); s.removeAllRanges(); s.addRange(r); }, bub(1));
       const at2 = mIso(M_MIN);
@@ -14343,6 +14347,43 @@ async function mBubblesSection(browser) {
       const line = b.v.split("\n")[0];
       if (!/^> word/.test(line) || !/\u2026$/.test(line) || line.length < 295 || line.length > 305) fail(tag + "long quote is " + line.length + " chars: " + line.slice(-20));
       if (!/\n\n$/.test(b.v)) fail(tag + "long quote has no blank line after it");
+      // L2: the cut counts characters, so an emoji at the boundary is whole (or gone), never half
+      await p.fill(ta, "");
+      await p.evaluate(() => window.mCompose.quote("a".repeat(299) + "\u{1F600}\u{1F600} tail"));
+      b = await box();
+      if (/[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/.test(b.v) || !/a\u{1F600}\u2026/u.test(b.v)) fail(tag + "the cut split a surrogate pair: " + JSON.stringify(b.v.slice(-8)));
+      // L3: with no async clipboard (plain http) the execCommand path copies the same text and leaves no textarea behind
+      await p.evaluate(() => {
+        window.__copied = []; Object.defineProperty(navigator, "clipboard", { configurable: true, value: undefined });
+        document.execCommand = c => { const a = document.activeElement; window.__copied.push(c === "copy" && a && a.tagName === "TEXTAREA" ? a.value : "wrong:" + c); return true; };
+      });
+      await p.tap(bub(2) + " .bact[data-act=copy]");
+      await p.waitForFunction(() => window.__copied.length === 1, null, { timeout: slow(3000) });
+      const old = await p.evaluate(() => ({ t: window.__copied[0], strays: [...document.body.children].filter(e => e.tagName === "TEXTAREA").length }));
+      if (old.t !== MULTI || old.strays) fail(tag + "the execCommand copy gave " + JSON.stringify(old));
+      if (!/copied/.test(await p.textContent(bub(2) + " .bact[data-act=copy]"))) fail(tag + "the execCommand copy gave no feedback");
+      // L1: a selection left behind holds the thread only until the composer takes focus, or a minute passes
+      const hold = async n => {
+        await p.evaluate(() => document.activeElement && document.activeElement.blur());
+        await p.evaluate(sel => { const r = document.createRange(); r.selectNodeContents(document.querySelector(sel + " .md")); const s = getSelection(); s.removeAllRanges(); s.addRange(r); }, bub(1));
+        const at = mIso(-n * M_MIN);
+        st.replies["bub-1"] = { source: "transcript", replies: replies.concat([{ at: mIso(M_MIN), text: "Newest arrives mid-selection." }, { at, text: "Held " + n }]) };
+        st.send("task", Object.assign({}, c, { row: 1, output_at: at }));
+        await p.waitForTimeout(700);
+        return () => p.evaluate(n => ({ drawn: document.getElementById("m-replies").textContent.includes("Held " + n), sel: String(getSelection()).length }), n);
+      };
+      let probe = await hold(1);
+      if ((await probe()).drawn) fail(tag + "the thread was redrawn under a held selection (L1)");
+      await p.focus(ta);
+      await p.waitForFunction(() => document.getElementById("m-replies").textContent.includes("Held 1"), null, { timeout: slow(4000) }).catch(() => fail(tag + "focusing the composer did not release the held redraw"));
+      if ((await probe()).sel) fail(tag + "the selection outlived the release");
+      await p.clock.install();
+      probe = await hold(2);
+      if ((await probe()).drawn) fail(tag + "the thread was redrawn under a held selection (L1 cap)");
+      await p.clock.fastForward(30000);
+      if ((await probe()).drawn) fail(tag + "the hold ended before a minute");
+      await p.clock.fastForward(31000);
+      await p.waitForFunction(() => document.getElementById("m-replies").textContent.includes("Held 2"), null, { timeout: slow(4000) }).catch(() => fail(tag + "a minute did not release the held redraw"));
       // no text: nothing happens
       await p.fill(ta, "keep me");
       const none = await p.evaluate(() => window.mCompose.quote("   "));
@@ -17471,6 +17512,8 @@ async function hubReposLedgerSection(browser, base) {
     try {
       const row = await ph.p.evaluate(() => getComputedStyle(document.querySelector(".hr-list")).flexDirection);
       if (row !== "row") fail(tag + ": at 390px the list is not a strip");
+      const fade = await ph.p.evaluate(() => { const l = getComputedStyle(document.querySelector(".hr-list")); return (l.maskImage || l.webkitMaskImage || "none") + "|" + l.scrollSnapType; });
+      if (/^none/.test(fade) || /\|none$/.test(fade)) fail(tag + ": the strip's edge cuts a repo with no fade or snap: " + fade);
       await hubReposNoOverflow(ph.p, tag + " at 390");
       await ph.p.click('.hr-li[data-repo=""]');
       await hubReposNoOverflow(ph.p, tag + " at 390, all repos");
@@ -20082,6 +20125,22 @@ async function burnReadoutSection(browser, base) {
     } finally { await ctx.close(); }
   }
   {
+    // Wide: the reset label stands clear of the window's end line (it sat on it at 2000px), and the rate strip starts with the curve.
+    const { ctx, sp } = await setup({ width: 2000, height: 900 });
+    try {
+      await draw(sp, day);
+      const m = await sp.evaluate(() => {
+        const ch = document.querySelector('#uc-body .ucchart[data-chart=cumulative]'), lab = ch.querySelector(".ulresetlab"), pl = ch.querySelector(".ucplot").getBoundingClientRect();
+        const ln = [...ch.querySelectorAll("line.ulresetln")].map(l => l.getBoundingClientRect()).sort((a, b) => b.left - a.left)[0], lb = lab.getBoundingClientRect();
+        const x0 = UC.cum.first, lim = UC.cum.lim, per = ch.querySelector(".ucrate svg").getBoundingClientRect();
+        const early = [...ch.querySelectorAll(".ucrate rect.uck-bar")].filter(r => Number(r.dataset.t) + UC.cum.ms <= lim.start).length;
+        return { gap: ln.left - lb.right, over: lb.right - pl.right, early, cls: lab.className, w: pl.width };
+      });
+      if (m.gap < 7 || m.over > 0) fail("burnReadout: the reset label meets the end line at 2000px " + JSON.stringify(m));
+      if (m.early) fail("burnReadout: " + m.early + " rate bars end before the limit window starts " + JSON.stringify(m));
+    } finally { await ctx.close(); }
+  }
+  {
     // Contrast: every text the chart carries, against what it sits on, on every skin, hovered.
     const { ctx, sp } = await setup({ width: 1400, height: 900 });
     try {
@@ -20111,7 +20170,7 @@ async function burnReadoutSection(browser, base) {
             for (const L of layers.reverse()) outs = outs.flatMap(o => L.map(c => over(c, o)));
             return outs;
           };
-          const sels = [".ucy:not(.ucy100)", ".ucy100", ".ucy small", ".ucrl", ".uctimes span", ".ucnowlab", ".ucpacelab", ".ulresetlab", ".ulcrosslab", ".ucread", ".uchovtag", ".ucaxis span", ".ucaxis .ucwarn", "#uc-body .ucnote-cum"];
+          const sels = [".ucy:not(.ucy100)", ".ucy100", ".ucy small", ".ucrl", ".uctimes span", ".ucnowlab", ".ucpacelab", ".ulresetlab", ".ulcrosslab", ".ucread", ".uchovtag", ".ucaxis span", ".ucaxis .ucwarn", "#uc-body .ucnote-cum", ".ucstat b", ".ucstat b small", ".ucstat i"];
           const out = [];
           for (const s of sels) {
             const el = document.querySelector(s.startsWith("#") ? s : '#uc-body .ucchart[data-chart=cumulative] ' + s);
@@ -20134,6 +20193,7 @@ async function burnReadoutSection(browser, base) {
   if (errors.length) fail("burnReadout: page errors " + errors.join("; "));
   if (!bad) console.log("burnReadout ok");
 }
+
 
 async function main() {
   if (!LIST_MODE) await new Promise(r => server.listen(0, "127.0.0.1", r));

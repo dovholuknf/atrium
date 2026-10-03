@@ -543,7 +543,8 @@
 
   // The thread is redrawn only when nobody's finger is on it, and a reader keeps the bubble they were reading where it
   // was: the first bubble in view is found again after the redraw and the scroll is moved by exactly what it shifted.
-  let paintLater = 0, heldBySel = false;
+  let paintLater = 0, heldBySel = false, holdTimer = 0;
+  const HOLD_MAX = 60000;
   function selecting() {
     const s = window.getSelection && window.getSelection();
     return !!(s && !s.isCollapsed && s.rangeCount && els && els.replies.contains(s.anchorNode) && String(s).length);
@@ -578,6 +579,14 @@
       setTimeout(() => { b.textContent = "copy"; b.classList.remove("done"); }, 1400);
     });
   }
+  function releaseHold() {
+    clearTimeout(holdTimer); holdTimer = 0;
+    if (!heldBySel) return;
+    const s = window.getSelection && window.getSelection();
+    if (s && els && els.replies.contains(s.anchorNode)) s.removeAllRanges();
+    heldBySel = false;
+    if (els && openId) paintReplies();
+  }
   function paintReplies() {
     const t = window.mStore.card(openId);
     if (!t) return;
@@ -585,7 +594,9 @@
     if (els.replies.dataset.sig === html) { settle(); return; }
     // Not under a selection: a redraw replaces every node, so the text being selected would be lost. It is drawn when
     // the selection goes (selectionchange).
-    if (selecting()) { heldBySel = true; return; }
+    // A selection left after a native copy would hold it for good, so the hold ends when the composer takes focus (the
+    // browser moves the selection into the box, and selectionchange draws) or, failing that, after a minute (releaseHold).
+    if (selecting()) { heldBySel = true; if (!holdTimer) holdTimer = setTimeout(releaseHold, HOLD_MAX); return; }
     if (!stick && active()) {
       if (!paintLater) paintLater = setTimeout(() => { paintLater = 0; if (els && openId) paintReplies(); }, 150);
       return;
@@ -753,7 +764,7 @@
     offs = [];
     unmountAll();
     seq++;
-    bubbleText.clear(); heldBySel = false;
+    bubbleText.clear(); heldBySel = false; clearTimeout(holdTimer); holdTimer = 0;
     document.body.classList.remove("sheet-open");
     els.sheet.classList.remove("on");
     const id = openId, tok = ++closeTok;
@@ -1018,7 +1029,7 @@
     // The card's changes, and the chip on a reply that edited files. Both open the changes sheet over the thread.
     q("m-card-changes").addEventListener("click", () => { if (openId && window.mChanges) window.mChanges.openCard(openId); });
     els.replies.addEventListener("click", bubbleAct);
-    document.addEventListener("selectionchange", () => { if (heldBySel && els && openId && !selecting()) { heldBySel = false; paintReplies(); } });
+    document.addEventListener("selectionchange", () => { if (heldBySel && els && openId && !selecting()) { heldBySel = false; clearTimeout(holdTimer); holdTimer = 0; paintReplies(); } });
     els.replies.addEventListener("click", e => {
       const c = e.target.closest && e.target.closest(".chg-chip");
       if (c && openId && window.mChanges) window.mChanges.openTurn(openId, c.dataset.at);

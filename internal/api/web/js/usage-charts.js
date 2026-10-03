@@ -505,9 +505,11 @@ function ucCumulative(series, now) {
   over += `<span class="ucnowlab" style="left:${left(nowMs)}">now</span>`;
   // The rate under the plot: a bar a bucket, on the plot's own time axis, so the crosshair runs through both.
   let bars = "", maxTok = 0;
-  for (const p of pts) if (p[0] > x0) maxTok = Math.max(maxTok, p[2]);
+  // Not the buckets that end before the limit window began: the curve starts at the window, and the strip starts with it.
+  const drawn = p => p[0] > x0 && !(lim && p[0] <= lim.start);
+  for (const p of pts) if (drawn(p)) maxTok = Math.max(maxTok, p[2]);
   for (const p of pts) {
-    if (p[0] <= x0 || !(p[2] > 0)) continue;
+    if (!drawn(p) || !(p[2] > 0)) continue;
     const x = X(p[0] - ax.ms), w = Math.max(X(Math.min(p[0], nowMs)) - x - 0.5, 0.5), h = p[2] / maxTok * 38;
     bars += `<rect class="uck-bar" data-t="${p[0] - ax.ms}" x="${x.toFixed(2)}" y="${(40 - h).toFixed(2)}" width="${w.toFixed(2)}" height="${h.toFixed(2)}"></rect>`;
   }

@@ -711,7 +711,9 @@
     if (!cur) return false;
     let t = String(text || "").replace(/\r\n?/g, "\n").trim();
     if (!t) return false;
-    if (t.length > QUOTE_MAX) t = t.slice(0, QUOTE_MAX).trimEnd() + "\u2026";
+    // Counted in characters, not UTF-16 units, so an emoji at the cut is whole or gone.
+    const chars = Array.from(t);
+    if (chars.length > QUOTE_MAX) t = chars.slice(0, QUOTE_MAX).join("").trimEnd() + "\u2026";
     const q = t.split("\n").map(l => "> " + l).join("\n") + "\n\n";
     const ta = cur.ta, draft = ta.value.replace(/\s+$/, "");
     ta.value = (draft ? draft + "\n\n" : "") + q;
