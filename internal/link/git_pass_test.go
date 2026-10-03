@@ -38,6 +38,8 @@ type passRig struct {
 	hubDir string
 	// posts counts upload-pack POSTs that reached the room.
 	posts atomic.Int32
+	// advs counts ref advertisements that reached the room.
+	advs atomic.Int32
 
 	mu    sync.Mutex
 	audit []string
@@ -108,6 +110,9 @@ func newPassRig(t *testing.T) *passRig {
 	x.room.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasSuffix(r.URL.Path, "/git-upload-pack") {
 			x.posts.Add(1)
+		}
+		if strings.HasSuffix(r.URL.Path, "/info/refs") {
+			x.advs.Add(1)
 		}
 		inner.ServeHTTP(w, r)
 	})

@@ -63,7 +63,11 @@ type Hub struct {
 	// CreateOnPush says whether a card's first push of a repository the hub lacks may make it: the
 	// `git.create_on_push` setting. Nil is off. Read on every push.
 	CreateOnPush func() bool
+	// LookupTTL and LookupWait override how long a room's answer to the lookup is held, and how long a room has
+	// to give it, when above zero. A test sets them. See lookup.go.
+	LookupTTL, LookupWait time.Duration
 
+	look   lookupState
 	mu     sync.Mutex
 	store  *Store
 	pass   *Pass

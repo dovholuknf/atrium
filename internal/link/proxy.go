@@ -1444,7 +1444,7 @@ func (p *Proxy) serveHubAPI(w http.ResponseWriter, r *http.Request) {
 		p.forgetInventory(w, r)
 	case "notify", "notify/test":
 		p.serveNotify(w, r, sub)
-	case "git/sync", "git/collect", "git/status", "git/init", "git/repos", "git/settings", "git/release":
+	case "git/sync", "git/collect", "git/status", "git/init", "git/repos", "git/settings", "git/release", "git/url":
 		p.serveGit(w, r, sub)
 	case "launch-caps":
 		p.serveLaunchCaps(w, r)

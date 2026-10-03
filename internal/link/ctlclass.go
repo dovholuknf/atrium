@@ -50,6 +50,8 @@ var workerTools = map[string]bool{
 	"atrium_publish": true,
 	// The cards that push to the hub are workers. See git_hub.go.
 	"atrium_git_push": true,
+	// And the ones that read code that is not in their cwd. See git_url.go.
+	"atrium_git_url": true,
 }
 
 // inClass reports whether a tool is served to a class.
