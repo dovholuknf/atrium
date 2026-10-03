@@ -1841,6 +1841,8 @@ function connect() {
   });
   // The hub's whole set of growlers, said on every change and once when the stream opens. See js/growl.js.
   es.addEventListener("growls", e => { if (typeof onGrowlsEvent === "function") onGrowlsEvent(e); });
+  // A change request was opened or moved (data {id, state, repo, title, source, target, owner}). See js/changereq.js.
+  es.addEventListener("change-request", () => { if (typeof crOnEvent === "function") crOnEvent(); });
   // An item moved: handed to a room, started there, or refused. The queue is
   // only drawn on the runners pane, and `renderDispatch` is a single fetch, so
   // this redraws rather than trying to patch a row.

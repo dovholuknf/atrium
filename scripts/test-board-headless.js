@@ -17215,7 +17215,7 @@ async function hubReposSection(browser, base) {
     await p.evaluate(() => { localStorage.removeItem("atrium.reposView"); hubReposPaint(); });
     let v = await viewNow();
     if (v.view !== "shelf" || v.checked.join() !== "shelf" || v.tabbable.join() !== "shelf") fail("hubRepos: nothing stored is not Shelf: " + JSON.stringify(v));
-    if ((await p.locator("#hubrepos-views [role=radio]").count()) !== 3 || (await p.getAttribute("#hubrepos-views", "role")) !== "radiogroup") fail("hubRepos: the switcher is not a three-way radio group");
+    if ((await p.locator("#hubrepos-views [role=radio]").count()) !== 4 || (await p.getAttribute("#hubrepos-views", "role")) !== "radiogroup") fail("hubRepos: the switcher is not a four-way radio group");
     await p.click('#hubrepos-views [data-hrview="ledger"]');
     v = await viewNow();
     if (v.view !== "ledger" || v.stored !== "ledger" || v.checked.join() !== "ledger") fail("hubRepos: clicking Ledger did not stick: " + JSON.stringify(v));
@@ -17225,9 +17225,11 @@ async function hubReposSection(browser, base) {
     if (v.view !== "feed" || v.stored !== "feed" || v.tabbable.join() !== "feed") fail("hubRepos: ArrowRight did not move to Feed: " + JSON.stringify(v));
     if ((await p.evaluate(() => document.activeElement.dataset.hrview)) !== "feed") fail("hubRepos: the arrow key did not carry focus along");
     await p.keyboard.press("ArrowRight");
+    if ((await viewNow()).view !== "requests") fail("hubRepos: ArrowRight from Feed is not Requests");
+    await p.keyboard.press("ArrowRight");
     if ((await viewNow()).view !== "shelf") fail("hubRepos: the arrows do not wrap round to Shelf");
     await p.keyboard.press("End");
-    if ((await viewNow()).view !== "feed") fail("hubRepos: End is not the last view");
+    if ((await viewNow()).view !== "requests") fail("hubRepos: End is not the last view");
     await p.keyboard.press("Home");
     if ((await viewNow()).view !== "shelf") fail("hubRepos: Home is not the first view");
     await p.evaluate(() => { localStorage.setItem("atrium.reposView", "bogus"); window.dispatchEvent(new StorageEvent("storage", { key: "atrium.reposView" })); });
@@ -20195,6 +20197,565 @@ async function burnReadoutSection(browser, base) {
 }
 
 
+// Change requests on the desktop board (js/changereq.js, the Requests view of the repos area), against a hub simulated by
+// scripts/changereq-fixture.js in @fabric's stage 5 draft shape: the strip for requests into main, the ledger, a page with
+// the Pushed line, the operator's three actions, the sha check and the server's 409 text, a read-only board, a branch the
+// push log has never seen, an empty hub, an offline hub, an old hub, opening a request, the Ledger's branch rows, text-only
+// titles, the swappable mock, the phone's width and 4.5:1 text on every skin.
+async function crFixturePage(browser, base, o) {
+  o = o || {};
+  const fx = require("./hubrepos-fixture.js")(Date.now());
+  const hub = require("./changereq-fixture.js")(Date.now());
+  if (o.mutate) o.mutate(hub);
+  const ctx = await browser.newContext({ viewport: { width: o.w || 2000, height: o.h || 1100 } });
+  const errors = [];
+  const p = await ctx.newPage();
+  p.on("pageerror", e => errors.push(e.message));
+  await p.route(/\/_hub\/git\/repos$/, r => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ repos: fx.repos }) }));
+  if (!o.noHub) await hub.route(p, { mode: o.mode || "ok" });
+  await p.goto(base + "/" + (o.query || ""), { waitUntil: "domcontentloaded" });
+  await p.waitForFunction(() => { const t = document.querySelector('.tab[data-view="hubrepos"]'); return t && !t.hidden; }, null, { timeout: slow(15000) });
+  await p.evaluate(({ tasks, view }) => { lastTasks = tasks; localStorage.setItem("atrium.reposView", view); return switchView("hubrepos"); }, { tasks: fx.tasks, view: o.view || "requests" });
+  await p.waitForFunction(() => document.querySelector("#hubrepos-list .cr-ledger, #hubrepos-list .cr-offline, #hubrepos-list .hr-hero, #hubrepos-list .hr-ledger"), null, { timeout: slow(10000) });
+  // The requests are read once by the view and once more when the repos arrive; both are settled before a test touches the page.
+  await p.waitForFunction(() => hubRepos.loaded && !hubRepos.inflight && !cr.inflight, null, { timeout: slow(8000) });
+  await p.waitForTimeout(300);
+  await p.waitForFunction(() => !cr.inflight, null, { timeout: slow(5000) });
+  return { ctx, p, errors, hub, fx };
+}
+
+async function changeReqSection(browser, base) {
+  const wasHub = hubMode; hubMode = true;
+  const tag = "changeReq";
+  const text = (p, sel) => p.evaluate(s => (document.querySelector(s) || {}).textContent || "", sel);
+  try {
+    // ---- the full page --------------------------------------------------------------------------------------------
+    let { ctx, p, errors, hub } = await crFixturePage(browser, base, {});
+    try {
+      const r = await p.evaluate(() => ({
+        radios: [...document.querySelectorAll("#hubrepos-views [role=radio]")].map(b => b.dataset.hrview + ":" + b.getAttribute("aria-checked")).join(),
+        count: document.getElementById("hubrepos-count").textContent,
+        strip: [...document.querySelectorAll(".cr-hero")].map(h => h.querySelector("h3").textContent),
+        items: [...document.querySelectorAll(".cr-li")].map(b => b.dataset.id), groups: [...document.querySelectorAll(".cr-tg span")].map(x => x.textContent),
+        needs: document.querySelectorAll(".cr-li .cr-needs").length, cur: [...document.querySelectorAll('.cr-li[aria-current="true"]')].map(b => b.dataset.id),
+        title: (document.querySelector(".cr-title") || {}).textContent, lane: (document.querySelector(".cr-lane") || {}).innerText.replace(/\s+/g, " "),
+        pills: [...document.querySelectorAll(".cr-detail .hr-badges .hr-state")].map(x => x.textContent.trim()), gate: (document.querySelector(".cr-gate") || {}).textContent,
+        panels: [...document.querySelectorAll(".cr-detail .cr-panel .hr-h")].map(x => x.textContent), why: (document.querySelector(".cr-why") || {}).textContent,
+        pushedLine: (document.querySelector(".cr-line") || {}).textContent, tl: document.querySelectorAll(".cr-tl li").length,
+        buttons: [...document.querySelectorAll("#hubrepos-list button")].map(b => b.textContent.trim()).filter(Boolean) }));
+      if (r.radios !== "shelf:false,ledger:false,feed:false,requests:true") fail(tag + ": the switcher is wrong " + r.radios);
+      if (r.count !== "3") fail(tag + ": the count is the open requests, want 3, got " + r.count);
+      if (r.strip.join("|") !== "Fix the router link flap|Edge router policies v2") fail(tag + ": the strip is not the open requests into main " + JSON.stringify(r.strip));
+      if (r.items.join() !== "cr_9,cr_8,cr_7" || r.groups.join() !== "into main,into release/1.x" || r.needs !== 2 || r.cur.join() !== "cr_9") fail(tag + ": the list is wrong " + JSON.stringify(r));
+      if (r.title !== "Fix the router link flap" || !/^from sg4?\s*fix\/router-link-flap.*into main$/i.test(r.lane.replace(/\n/g, " "))) fail(tag + ": the page head is wrong " + JSON.stringify([r.title, r.lane]));
+      if (r.pills.join() !== "Open,pushed, hub head matches") fail(tag + ": the state and Pushed pills are wrong " + r.pills);
+      if (!/Needs the orchestrator or clint/.test(r.gate) || !/Nothing on the board does it/.test(r.gate)) fail(tag + ": a request into main does not say it needs the orchestrator or clint " + r.gate);
+      if (r.panels.join() !== "Why,On the hub,Change record,History" || r.tl < 2) fail(tag + ": the page does not fill " + JSON.stringify([r.panels, r.tl]));
+      if (r.pushedLine !== "Pushedpushed at abcdef0, hub head matches") fail(tag + ": the Pushed line is wrong " + JSON.stringify(r.pushedLine));
+      if (!/Finished and reviewed\.\nTests ran/.test(r.why)) fail(tag + ": the why lost its line break " + JSON.stringify(r.why));
+      // The board merges nothing: no control is worded as a merge, and the only merge-ish one says it records.
+      const merge = r.buttons.filter(b => /merge/i.test(b));
+      if (merge.join() !== "Record that it was merged") fail(tag + ": merge wording on a button is " + JSON.stringify(merge));
+      if (/\b(merge now|merge it|merge request)\b/i.test(await text(p, "#hubrepos-list").then(t => t.replace(/Merge it on the hub's side/g, "")))) fail(tag + ": the page says the board merges");
+
+      // ---- selecting: behind, diverged and a branch with no change record -----------------------------------------
+      await p.click('.cr-li[data-id="cr_8"]');
+      await p.waitForFunction(() => /hub is behind/.test(document.querySelector(".cr-detail .hr-badges").textContent));
+      if (!/pushed at abcdef0, hub is behind/.test(await text(p, ".cr-line"))) fail(tag + ": behind is not said " + await text(p, ".cr-line"));
+      await p.click('.cr-li[data-id="cr_7"]');
+      await p.waitForFunction(() => /diverged/.test(document.querySelector(".cr-detail .hr-badges").textContent));
+      const d = await p.evaluate(() => ({ gate: document.querySelector(".cr-gate > b").textContent, why: document.querySelector(".cr-quiet") && [...document.querySelectorAll(".cr-detail .cr-quiet")].map(x => x.textContent).join("|"), room: document.querySelector(".cr-lane .cr-av, .cr-lane .hr-av").textContent }));
+      if (d.gate !== "Waiting to be merged" || !/No reason was given/.test(d.why) || !/No change record is attached/.test(d.why)) fail(tag + ": a request with no why or record reads wrong " + JSON.stringify(d));
+
+      // ---- the sha check, the server's 409 and a real record -------------------------------------------------------
+      await p.click('.cr-li[data-id="cr_9"]');
+      await p.waitForFunction(() => /fix\/router/.test(document.querySelector(".cr-lane").textContent) && /hub head matches/.test(document.querySelector(".cr-detail .hr-badges").textContent));
+      const dis = () => p.evaluate(() => ({ off: document.querySelector('[data-cr="merge-do"]').disabled, bad: document.getElementById("cr-shahint").classList.contains("bad"), hint: document.getElementById("cr-shahint").textContent }));
+      let s = await dis();
+      if (!s.off) fail(tag + ": record merged is enabled with no sha");
+      for (const [v, ok] of [["xyz", false], ["e40a3c", false], ["E40A3C2", true], ["e40a3c2d00112233445566778899aabbccddeeff", true], ["e40a3cg", false]]) {
+        await p.fill("#cr-sha", v);
+        s = await dis();
+        if (s.off === ok) fail(tag + ": sha " + JSON.stringify(v) + " should be " + (ok ? "accepted" : "refused"));
+        if (v && !ok && !s.bad) fail(tag + ": a bad sha has no hint " + v);
+      }
+      await p.fill("#cr-sha", "0000000");
+      await p.click('[data-cr="merge-do"]');
+      await p.waitForSelector(".cr-err");
+      if ((await text(p, ".cr-err")) !== "0000000 is not reachable from main") fail(tag + ": the server's 409 text is not shown " + await text(p, ".cr-err"));
+      if (!(await p.evaluate(() => /Needs the orchestrator/.test(document.querySelector(".cr-gate").textContent)))) fail(tag + ": a refused record changed the request");
+      await p.fill("#cr-sha", "e40a3c2");
+      await p.click('[data-cr="merge-do"]');
+      await p.waitForFunction(() => /Recorded as merged at e40a3c2/.test((document.querySelector(".cr-ended") || {}).textContent || ""));
+      const post = hub.calls.filter(c => c.body.do === "merged").map(c => JSON.stringify(c.body));
+      if (post.join() !== '{"do":"merged","sha":"0000000"},{"do":"merged","sha":"e40a3c2"}') fail(tag + ": the board posted " + post);
+      if (await p.evaluate(() => !!document.querySelector(".cr-gate"))) fail(tag + ": a merged request still has the gate");
+      if (await p.evaluate(() => document.querySelectorAll('.cr-li[data-id="cr_9"]').length)) fail(tag + ": a merged request is still in the open list");
+      await p.click('.cr-seg [data-tab="closed"]');
+      const cl = await p.evaluate(() => [...document.querySelectorAll(".cr-li")].map(b => b.dataset.id).join());
+      if (cl !== "cr_9,cr_6,cr_5,cr_4") fail(tag + ": the closed list is " + cl);
+
+      // ---- closed records: merged_sha, the timeline and the note ---------------------------------------------------
+      await p.click('.cr-li[data-id="cr_6"]');
+      await p.waitForFunction(() => /Bump Go/.test(document.querySelector(".cr-title").textContent) && document.querySelectorAll(".cr-tl li").length >= 3);
+      const m = await p.evaluate(() => ({ ended: document.querySelector(".cr-ended").innerText.replace(/\s+/g, " "), tl: [...document.querySelectorAll(".cr-tl li")].map(x => x.innerText.replace(/\s+/g, " ")), note: document.querySelector(".cr-ended .cr-note, .cr-tl .cr-note").textContent }));
+      if (!/Recorded as merged at e40a3c2 by the operator/.test(m.ended) || !/merged on the hub, re-signed/.test(m.ended)) fail(tag + ": a merged request does not say how it ended " + JSON.stringify(m.ended));
+      if (m.tl.length !== 3 || !/pushed abcdef0 to the hub/.test(m.tl[0]) || !/opened into main/.test(m.tl[1]) || !/recorded as merged at e40a3c2/.test(m.tl[2])) fail(tag + ": the history is wrong " + JSON.stringify(m.tl));
+      // a withdrawn request whose branch the push log has never seen
+      await p.click('.cr-li[data-id="cr_5"]');
+      await p.waitForFunction(() => /Terminator race/.test(document.querySelector(".cr-title").textContent) && /not pushed/.test(document.querySelector(".cr-detail .hr-badges").textContent));
+      const w = await p.evaluate(() => ({ ended: document.querySelector(".cr-ended").textContent, line: document.querySelector(".cr-line").textContent, how: [...document.querySelectorAll(".cr-detail .cr-quiet")].map(x => x.textContent).join("|"), pill: [...document.querySelectorAll(".cr-detail .hr-badges .hr-state")].map(x => x.textContent.trim()).join() }));
+      if (!/Withdrawn by its owner/.test(w.ended) || !/never seen test\/flaky-terminator-race/.test(w.line) || !/git push hub test\/flaky-terminator-race/.test(w.how) || w.pill !== "Withdrawn,not pushed") fail(tag + ": an unseen branch reads wrong " + JSON.stringify(w));
+      if (errors.length) fail(tag + ": page errors: " + errors.join(" | "));
+    } finally { await ctx.close(); }
+
+    // ---- withdraw and close with a note -----------------------------------------------------------------------------
+    ({ ctx, p, errors, hub } = await crFixturePage(browser, base, {}));
+    try {
+      await p.click('[data-cr="withdraw"]');
+      await p.waitForFunction(() => /Withdrawn by its owner/.test((document.querySelector(".cr-ended") || {}).textContent || ""));
+      await p.click('.cr-seg [data-tab="open"]'); await p.click('.cr-li[data-id="cr_8"]');
+      await p.waitForFunction(() => /Edge router/.test(document.querySelector(".cr-title").textContent));
+      await p.click('[data-cr="close-open"]');
+      await p.fill("#cr-note", "landed on the other branch");
+      await p.click('[data-cr="close-do"]');
+      await p.waitForFunction(() => /Closed/.test((document.querySelector(".cr-ended") || {}).textContent || ""));
+      if (hub.calls.map(c => JSON.stringify(c.body)).join() !== '{"do":"withdraw"},{"do":"close","note":"landed on the other branch"}') fail(tag + ": posted " + hub.calls.map(c => JSON.stringify(c.body)));
+      if (!/landed on the other branch/.test(await text(p, ".cr-ended"))) fail(tag + ": the close note is not shown");
+      if (errors.length) fail(tag + ": page errors: " + errors.join(" | "));
+    } finally { await ctx.close(); }
+
+    // ---- a board that cannot write -----------------------------------------------------------------------------------
+    ({ ctx, p, errors } = await crFixturePage(browser, base, { mode: "readonly" }));
+    try {
+      await p.click('[data-cr="withdraw"]');
+      await p.waitForSelector(".cr-ro");
+      const ro = await p.evaluate(() => ({ line: document.querySelector(".cr-ro").textContent, btns: [...document.querySelectorAll("#hubrepos-list button")].map(b => b.dataset.cr).filter(Boolean).filter(x => x !== "sel" && x !== "tab"), input: !!document.getElementById("cr-sha"), open: !!document.querySelector('.cr-bar [data-cr="new"]') }));
+      if (!/public share without a login/.test(ro.line) || ro.btns.length || ro.input || ro.open) fail(tag + ": a read-only board still offers writes " + JSON.stringify(ro));
+      if (errors.length) fail(tag + ": page errors: " + errors.join(" | "));
+    } finally { await ctx.close(); }
+
+    // ---- empty, offline, down, and an old hub -------------------------------------------------------------------------
+    for (const [mode, want] of [["empty", /Nothing is waiting to be merged/], ["offline", /hub is not answering/], ["down", /would not list change requests: hub is restarting/], ["old", /does not have change requests yet/]]) {
+      ({ ctx, p, errors } = await crFixturePage(browser, base, { mode }));
+      try {
+        const t = await text(p, "#hubrepos-list");
+        if (!want.test(t)) fail(tag + " " + mode + ": reads " + t.slice(0, 200));
+        if (mode === "empty" && !(await p.$('.hr-hero [data-cr="new"]'))) fail(tag + " empty: no way to open a request");
+        if (mode !== "empty" && !(await p.$('[data-cr="retry"]'))) fail(tag + " " + mode + ": no try again");
+        if (errors.length) fail(tag + " " + mode + ": page errors: " + errors.join(" | "));
+      } finally { await ctx.close(); }
+    }
+
+    // ---- opening a request, the 404, the 409, and the Ledger's branch rows ---------------------------------------------
+    ({ ctx, p, errors, hub } = await crFixturePage(browser, base, { view: "ledger" }));
+    try {
+      const rows = await p.evaluate(() => [...document.querySelectorAll(".hr-ev")].map(e => ({ name: (e.querySelector(".hr-name") || {}).textContent, chip: (e.querySelector(".cr-chip") || {}).textContent || "" })));
+      const flap = rows.find(x => x.name === "fix/router-link-flap"), docs = rows.find(x => x.name === "feat/metrics-exemplars"), other = rows.find(x => x.name === "docs/quickstart-refresh"), old = rows.find(x => x.name === "refactor/identity-store-batching");
+      if (!flap || flap.chip !== "cr_9 · into main") fail(tag + ": a branch with an open request does not show it " + JSON.stringify(flap));
+      if (!docs || docs.chip !== "ask to merge" || !old || old.chip !== "") fail(tag + ": a branch with none offers one, a released one does not " + JSON.stringify([docs, old]));
+      if (!other || other.chip !== "cr_7 · into release/1.x") fail(tag + ": a request into another branch is not shown on its branch " + JSON.stringify(other));
+      await p.click('.hr-ev:has(.hr-name:text-is("feat/metrics-exemplars")) .cr-chip.ask');
+      await p.waitForSelector(".cr-form");
+      const f = await p.evaluate(() => ({ view: hubReposView(), repo: document.getElementById("cr-f-repo").value, branch: document.getElementById("cr-f-branch").value, target: document.getElementById("cr-f-target").value, title: document.getElementById("cr-f-title").value }));
+      if (f.view !== "requests" || f.repo !== "github/openziti/ziti" || f.branch !== "feat/metrics-exemplars" || f.target !== "main") fail(tag + ": the form is not filled from the branch " + JSON.stringify(f));
+      await p.fill("#cr-f-branch", "nope/missing");
+      await p.fill("#cr-f-title", "A request");
+      await p.click('[data-cr="new-do"]');
+      await p.waitForSelector(".cr-form .cr-err");
+      if (!/hub has no branch called nope\/missing.*git push hub nope\/missing/.test(await text(p, ".cr-form .cr-err"))) fail(tag + ": the 404 is not explained " + await text(p, ".cr-form .cr-err"));
+      await p.fill("#cr-f-branch", "feat/metrics-exemplars");
+      await p.fill("#cr-f-why", "line one\n<b>not bold</b>");
+      await p.click('[data-cr="new-do"]');
+      await p.waitForSelector(".cr-ledger");
+      const created = hub.calls.filter(c => c.path === "/_hub/change-requests").pop().body;
+      if (JSON.stringify(created) !== '{"repo":"github/openziti/ziti","source":{"branch":"feat/metrics-exemplars"},"target":{"branch":"main"},"title":"A request","why":"line one\\n<b>not bold</b>"}') fail(tag + ": the create body is " + JSON.stringify(created));
+      if (!/A request/.test(await text(p, ".cr-title")) || await p.evaluate(() => !!document.querySelector(".cr-why b"))) fail(tag + ": the new request is not shown as text");
+      // the same again is a 409 that shows the one that exists
+      await p.evaluate(() => crClick({ dataset: { cr: "new", repo: "github/openziti/ziti", branch: "fix/router-link-flap" } }));
+      await p.waitForSelector(".cr-form");
+      await p.fill("#cr-f-title", "Again");
+      await p.click('[data-cr="new-do"]');
+      await p.waitForFunction(() => /already exists/.test((document.querySelector(".cr-err") || {}).textContent || ""));
+      if (!/Fix the router link flap/.test(await text(p, ".cr-title"))) fail(tag + ": a 409 does not open the request that exists");
+      if (errors.length) fail(tag + ": page errors: " + errors.join(" | "));
+    } finally { await ctx.close(); }
+
+    // ---- title and why are text ----------------------------------------------------------------------------------------
+    ({ ctx, p, errors } = await crFixturePage(browser, base, { mutate: h => { h.rows[0].title = '<img src=x onerror=window.__x=1>Title'; h.rows[0].why = '<script>window.__x=2<\/script> why'; h.rows[0].source.branch = '"><i>b</i>'; h.rows[0].note = '<u>n</u>'; } }));
+    try {
+      const x = await p.evaluate(() => ({ x: window.__x, img: [...document.querySelectorAll("#hubrepos-list img, #hubrepos-list i, #hubrepos-list u, #hubrepos-list script")].filter(e => e.tagName !== "I" || e.textContent).length, t: document.getElementById("hubrepos-list").textContent }));
+      if (x.x || x.img || !x.t.includes("<img src=x onerror=window.__x=1>Title") || !x.t.includes("<script>window.__x=2</script> why")) fail(tag + ": a title or why became markup or was lost " + JSON.stringify({ x: x.x, img: x.img }));
+    } finally { await ctx.close(); }
+
+    // ---- the mock is used only when asked, and is swappable --------------------------------------------------------------
+    ({ ctx, p, errors } = await crFixturePage(browser, base, { noHub: true, query: "?crmock=1" }));
+    try {
+      const mk = await p.evaluate(() => ({ on: crCore.mockOn(), n: document.querySelectorAll(".cr-li").length, t: document.querySelector(".cr-title").textContent }));
+      if (!mk.on || mk.n !== 3 || !/Hub receives pushes/.test(mk.t)) fail(tag + ": the mock layer did not serve the view " + JSON.stringify(mk));
+      await p.fill("#cr-sha", "0000000"); await p.click('[data-cr="merge-do"]'); await p.waitForSelector(".cr-err");
+      if (!/not reachable from main/.test(await text(p, ".cr-err"))) fail(tag + ": the mock does not follow the draft's 409");
+    } finally { await ctx.close(); }
+    ({ ctx, p, errors } = await crFixturePage(browser, base, { noHub: true, mode: "ok" }));
+    try {
+      if (await p.evaluate(() => crCore.mockOn())) fail(tag + ": the mock is on without being asked");
+      if (!/hub is not answering|does not have change requests|would not list/.test(await text(p, "#hubrepos-list"))) fail(tag + ": with the mock off and no hub the view shows rows: " + (await text(p, "#hubrepos-list")).slice(0, 120));
+    } finally { await ctx.close(); }
+
+    // ---- the phone's width ------------------------------------------------------------------------------------------------
+    ({ ctx, p, errors } = await crFixturePage(browser, base, { w: 390, h: 844 }));
+    try {
+      await hubReposNoOverflow(p, tag + " at 390");
+      const ph = await p.evaluate(() => ({ disp: getComputedStyle(document.querySelector(".cr-ledger")).display, cols: getComputedStyle(document.querySelector(".cr-cols")).gridTemplateColumns.split(" ").length, hit: Math.min(...[...document.querySelectorAll(".cr-btn, .cr-li")].map(b => b.getBoundingClientRect().height)) }));
+      if (ph.disp !== "block" || ph.cols !== 1 || ph.hit < 34) fail(tag + ": at 390px the layout is wrong " + JSON.stringify(ph));
+    } finally { await ctx.close(); }
+
+    await crContrast(browser, base, tag);
+    await crShots(browser, base);
+  } finally { hubMode = wasHub; }
+  if (!bad) console.log("changeReq ok");
+}
+
+// 4.5:1 for the text a page draws, on every skin: each element is painted with its text transparent, the pixels under it are
+// read from a screenshot, and the worst of them is compared with the text's own colour. Gradients and tints are what is really
+// there, not a guess. `before(skin)` may put the page in the state to measure after the skin is set.
+async function crInkCheck(p, skins, sels, width, before) {
+  const bad = [];
+    for (const skin of skins) {
+      await p.evaluate(s => { if (s) document.documentElement.setAttribute("data-skin", s); else document.documentElement.removeAttribute("data-skin"); }, skin);
+      if (before) await before(skin);
+      await p.waitForTimeout(80);
+      for (const sel of sels) {
+        let box = null, ratio = 99;
+        // A repaint under the shot (an event, a late read) shows the text and reads as 1:1, so a miss is measured again before it counts.
+        for (let tries = 0; tries < 3 && ratio < 4.5 || tries === 0; tries++) {
+          ratio = 99;
+          box = await p.evaluate(s => { const e = document.querySelector(s); if (!e) return null; e.scrollIntoView({ block: "center" }); const tn = [...e.childNodes].find(n => n.nodeType === 3 && n.textContent.trim()) || (e.firstElementChild && [...e.firstElementChild.childNodes].find(n => n.nodeType === 3 && n.textContent.trim())) || e;
+          const rg = document.createRange(); rg.selectNodeContents(tn); const r = tn === e ? e.getBoundingClientRect() : rg.getBoundingClientRect(), col = getComputedStyle(tn === e ? e : tn.parentElement).color;
+          const kill = (tn === e ? e : tn.parentElement); kill.dataset.crk = "1"; kill.style.transition = "none"; kill.style.color = "transparent"; return { x: r.x, y: r.y, w: r.width, h: r.height, c: col, dbg: process_dbg(kill) };
+          function process_dbg(k) { const c = getComputedStyle(k); return c.backgroundColor + " " + c.backgroundImage.slice(0, 40); } }, sel);
+          if (!box || box.w < 2 || box.h < 2) break;
+          const png = await p.screenshot({ clip: { x: Math.max(0, box.x), y: Math.max(0, box.y), width: Math.min(box.w, width - Math.max(0, box.x)), height: box.h } });
+          await p.evaluate(() => { document.querySelectorAll("[data-crk]").forEach(k => { k.style.color = ""; k.style.transition = ""; delete k.dataset.crk; }); });
+          ratio = await p.evaluate(async ({ b64, col }) => {
+            const img = new Image(); img.src = "data:image/png;base64," + b64; await img.decode();
+            const cv = document.createElement("canvas"); cv.width = img.width; cv.height = img.height; const g = cv.getContext("2d"); g.drawImage(img, 0, 0);
+            const d = g.getImageData(0, 0, cv.width, cv.height).data;
+            const lin = v => { v /= 255; return v <= .03928 ? v / 12.92 : Math.pow((v + .055) / 1.055, 2.4); };
+            const L = (r, gg, b) => .2126 * lin(r) + .7152 * lin(gg) + .0722 * lin(b);
+            let m = /rgba?\(([\d.]+),\s*([\d.]+),\s*([\d.]+)(?:,\s*([\d.]+))?/.exec(col);
+            if (!m) { const c = /color\(srgb ([\d.]+) ([\d.]+) ([\d.]+)(?: \/ ([\d.]+))?\)/.exec(col); m = c && [c[0], c[1] * 255, c[2] * 255, c[3] * 255, c[4]]; }
+            const a = m[4] === undefined ? 1 : +m[4];
+            let worst = 99;
+            for (let i = 0; i < d.length; i += 4 * 3) {
+              const bg = [d[i], d[i + 1], d[i + 2]], fg = [0, 1, 2].map(k => +m[k + 1] * a + bg[k] * (1 - a));
+              const l1 = L(...fg), l2 = L(...bg), r = (Math.max(l1, l2) + .05) / (Math.min(l1, l2) + .05);
+              if (r < worst) worst = r;
+            }
+            return worst;
+          }, { b64: png.toString("base64"), col: box.c });
+        }
+        if (!box) { bad.push(skin + " " + sel + " missing"); continue; }
+        if (box.w < 2 || box.h < 2) continue;
+        if (ratio < 4.5) bad.push(skin + " " + sel + " " + ratio.toFixed(2) + (process.env.CR_CONTRAST && !skin ? " color " + box.c + " bg " + box.dbg : ""));
+      }
+    }
+  return bad;
+}
+
+async function crContrast(browser, base, tag) {
+  const skins = [""].concat(((await (await fetch(base + "/css/themes.css")).text()).match(/:root\[data-skin="([a-z]+)"\]/g) || []).map(s => /"([a-z]+)"/.exec(s)[1]));
+  const { ctx, p } = await crFixturePage(browser, base, { w: 1700, h: 1500 });
+  const sels = [".cr-h2", ".cr-k", ".cr-hero h3", ".cr-hero .cr-quiet", ".cr-hero .cr-btn", ".cr-li.sel .cr-lt", ".cr-li.sel .cr-lm", ".cr-li .cr-needs", ".cr-seg button[aria-pressed=true]", ".cr-tg span", ".cr-crumb", ".cr-title",
+    ".cr-detail .hr-badges .hr-state", ".cr-gate > b", ".cr-gate > span", ".cr-steps li", ".cr-field label", ".cr-btn.go", ".cr-hint", ".cr-panel .hr-h", ".cr-why", ".cr-line", ".cr-kv dt", ".cr-kv dd", ".cr-quiet", ".cr-tl .cr-tlt", ".cr-lane .cr-br", ".cr-end small", ".cr-hero .cr-br"];
+  let bad;
+  try { bad = await crInkCheck(p, skins, sels, 1700, () => p.fill("#cr-sha", "xyz")); } finally { await ctx.close(); }
+  if (process.env.CR_CONTRAST) console.log(bad.join("\n"));
+  if (bad.length) fail(tag + ": text under 4.5:1 on " + bad.length + " pairs: " + bad.slice(0, 14).join("; "));
+}
+
+// Real-board shots for review: CR_SHOTS=/dir. Paper and dark, 2000 and 390, the list and the page.
+async function crShots(browser, base) {
+  const dir = process.env.CR_SHOTS;
+  if (!dir) return;
+  require("fs").mkdirSync(dir, { recursive: true });
+  for (const w of [2000, 390]) for (const skin of ["paper", "dark"]) for (const st of ["full", "closed", "empty", "readonly"]) {
+    const { ctx, p } = await crFixturePage(browser, base, { w, h: 900, mode: st === "empty" ? "empty" : st === "readonly" ? "readonly" : "ok" });
+    try {
+      await p.evaluate(s => { if (s === "paper") document.documentElement.setAttribute("data-skin", "paper"); else document.documentElement.removeAttribute("data-skin"); }, skin);
+      if (st === "closed") { await p.click('.cr-seg [data-tab="closed"]'); await p.click('.cr-li[data-id="cr_6"]'); await p.waitForFunction(() => /Bump Go/.test(document.querySelector(".cr-title").textContent)); }
+      if (st === "readonly") { await p.click('[data-cr="withdraw"]'); await p.waitForSelector(".cr-ro"); }
+      await p.waitForTimeout(250);
+      const h = await p.evaluate(() => { const l = document.getElementById("hubrepos-list"); return Math.ceil(l.scrollHeight + l.getBoundingClientRect().top + 24); });
+      await p.setViewportSize({ width: w, height: Math.min(6000, Math.max(600, h)) });
+      await p.waitForTimeout(200);
+      await p.screenshot({ path: require("path").join(dir, "requests-" + st + "-" + w + "-" + skin + ".png") });
+    } finally { await ctx.close(); }
+  }
+}
+
+// Change requests on the phone (m/js/changereq.js): the "requests" door in the header, the list and a request's page as two
+// screens of one sheet with history for back, the same operator actions and sha check as the desktop, a read-only board, an
+// empty, offline and old hub, opening a request, text-only titles, and the changes sheet's Pushed line (the hub's push log,
+// with the hub not answering and a branch it has never seen). Against scripts/changereq-fixture.js.
+async function mChangeReqPage(browser, st, vp, o) {
+  o = o || {};
+  const hub = require("./changereq-fixture.js")(Date.now());
+  if (o.mutate) o.mutate(hub);
+  const ctx = await browser.newContext({ viewport: vp, hasTouch: true, isMobile: true, deviceScaleFactor: 1 });
+  const errors = [];
+  const p = await ctx.newPage();
+  p.on("pageerror", e => errors.push(String(e)));
+  const fx = require("./hubrepos-fixture.js")(Date.now());
+  await p.route(/\/_hub\/git\/repos$/, r => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ repos: fx.repos }) }));
+  await hub.route(p, { mode: o.mode || "ok" });
+  // Routes are matched newest first, so the push log's own answer, when a test gives one, goes on after the hub's.
+  if (o.pushed) await p.route(/\/_hub\/git\/pushed/, r => o.pushed(r));
+  await p.goto(st.url + "/m/" + (o.query || ""), { waitUntil: "domcontentloaded" });
+  await p.waitForSelector("#m-seg-all", { timeout: slow(10000) });
+  await p.waitForFunction(() => window.mRequests && window.mRequests.state && (window.mRequests.state.loaded || window.mRequests.state.note), null, { timeout: slow(8000) });
+  await p.waitForTimeout(150);
+  return { ctx, p, errors, hub };
+}
+
+async function mChangeReqSection(browser) {
+  const tag0 = "mChangeReq";
+  const st = mServer({});
+  st.tasks = [mCard("cr-1", { alias: "coder", display_title: "coder", runner: "claude", worktree: "/w/card", status: "needs-input", waiting_since: mIso(2 * M_MIN), seen: { turn_ended_at: mIso(20 * M_MIN) } })];
+  st.replies["cr-1"] = { source: "transcript", replies: [{ at: new Date(Date.now() - 600000).toISOString(), text: "done", edited: 1 }] };
+  await st.open();
+  try {
+    for (const vp of M_VIEWS) {
+      const tag = tag0 + " " + vp.width + ": ";
+      let { ctx, p, errors, hub } = await mChangeReqPage(browser, st, vp);
+      try {
+        const door = await p.evaluate(() => { const b = document.getElementById("m-req-btn"); const r = b.getBoundingClientRect(); return { hidden: b.hidden, text: b.textContent, h: r.height, right: r.right, vw: innerWidth }; });
+        if (door.hidden || !/^requests\s*2$/.test(door.text) || door.h < 40) fail(tag + "the door is wrong " + JSON.stringify(door));
+        const hdr = await p.evaluate(() => { const h = document.querySelector("header"); return h ? h.scrollWidth - h.clientWidth : 0; });
+        if (hdr > 1) fail(tag + "the header scrolls sideways by " + hdr);
+        await p.tap("#m-req-btn");
+        await p.waitForSelector("#m-requests:not([hidden]) .crm-list");
+        const l = await p.evaluate(() => ({ title: document.querySelector(".crm-title").textContent, hero: document.querySelectorAll(".crm-hero").length, rows: [...document.querySelectorAll(".crm-li")].map(b => b.dataset.id).join(),
+          groups: [...document.querySelectorAll(".crm-tg span")].map(x => x.textContent).join("|"), needs: document.querySelectorAll(".crm-needs").length, seg: [...document.querySelectorAll(".crm-seg button")].map(b => b.textContent + ":" + b.getAttribute("aria-pressed")).join(),
+          hit: Math.min(...[...document.querySelectorAll(".crm-li, .crm-btn, .crm-seg button")].map(b => b.getBoundingClientRect().height)), page: document.documentElement.scrollWidth - innerWidth }));
+        if (l.title !== "Change requests" || l.hero !== 2 || l.rows !== "cr_9,cr_8,cr_7" || l.groups !== "into main|into release/1.x" || l.needs !== 2 || l.seg !== "Open 3:true,Closed 3:false") fail(tag + "the list is wrong " + JSON.stringify(l));
+        if (l.hit < 40 || l.page > 1) fail(tag + "tap targets or width: " + JSON.stringify([l.hit, l.page]));
+        const h0 = await p.evaluate(() => history.length);
+        await p.tap('.crm-li[data-id="cr_9"]');
+        await p.waitForFunction(() => document.querySelector(".crm-title").textContent === "cr_9" && /hub head matches/.test(document.querySelector(".crm-badges").textContent));
+        const pg = await p.evaluate(() => ({ ttl: document.querySelector(".crm-ttl").textContent, gate: document.querySelector(".crm-gate").textContent, panels: [...document.querySelectorAll(".crm-panel h3")].map(x => x.textContent).join(),
+          line: document.querySelector(".crm-line").textContent, hist: history.length, btns: [...document.querySelectorAll("#m-requests button")].map(b => b.textContent.trim()).filter(x => /merge/i.test(x)).join(), page: document.documentElement.scrollWidth - innerWidth }));
+        if (pg.ttl !== "Fix the router link flap" || !/Needs the orchestrator or clint/.test(pg.gate) || !/Nothing on the board does it/.test(pg.gate) || pg.panels !== "Why,On the hub,Change record,History" || pg.line !== "pushed at abcdef0, hub head matches") fail(tag + "the page is wrong " + JSON.stringify(pg));
+        if (pg.hist !== h0 + 1) fail(tag + "opening a request did not push one history entry " + JSON.stringify([h0, pg.hist]));
+        if (pg.btns !== "Record that it was merged") fail(tag + "merge wording on a button: " + pg.btns);
+        // the sha check, the server's 409, a record
+        const dis = () => p.evaluate(() => ({ off: [...document.querySelectorAll(".crm-btn.go")].pop().disabled, bad: document.getElementById("crm-shahint").classList.contains("bad") }));
+        if (!(await dis()).off) fail(tag + "record merged is enabled with no sha");
+        for (const [v, ok] of [["xyz", false], ["e40a3c", false], ["E40A3C2", true], ["e40a3cg", false]]) {
+          await p.fill("#crm-sha", v);
+          const d = await dis();
+          if (d.off === ok || (v && !ok && !d.bad)) fail(tag + "sha " + v + " should be " + (ok ? "accepted" : "refused") + " with a hint " + JSON.stringify(d));
+        }
+        await p.fill("#crm-sha", "0000000");
+        await p.tap(".crm-gate .crm-btn.go");
+        await p.waitForSelector(".crm-err");
+        if ((await text0(p, ".crm-err")) !== "0000000 is not reachable from main") fail(tag + "the 409 text is not shown: " + await text0(p, ".crm-err"));
+        await p.fill("#crm-sha", "e40a3c2");
+        await p.tap(".crm-gate .crm-btn.go");
+        await p.waitForFunction(() => /Recorded as merged at e40a3c2/.test((document.querySelector(".crm-ended") || {}).textContent || ""));
+        if (hub.calls.filter(c => c.body.do === "merged").map(c => c.body.sha).join() !== "0000000,e40a3c2") fail(tag + "posted " + JSON.stringify(hub.calls.map(c => c.body)));
+        // back is history: the page goes to the list, the list closes the sheet
+        await p.evaluate(() => history.back());
+        await p.waitForSelector(".crm-list");
+        if (await p.evaluate(() => document.getElementById("m-requests").hidden)) fail(tag + "back from a page closed the sheet");
+        const n3 = await p.evaluate(() => [...document.querySelectorAll(".crm-li")].map(b => b.dataset.id).join());
+        if (n3 !== "cr_8,cr_7") fail(tag + "the merged request is still open " + n3);
+        await p.evaluate(() => history.back());
+        await p.waitForFunction(() => document.getElementById("m-requests").hidden);
+        // closed records and the unseen branch
+        await p.tap("#m-req-btn"); await p.waitForSelector(".crm-list");
+        await p.tap(".crm-seg button:nth-child(2)");
+        await p.tap('.crm-li[data-id="cr_5"]');
+        await p.waitForFunction(() => /not pushed/.test((document.querySelector(".crm-badges") || {}).textContent || ""));
+        const w = await p.evaluate(() => ({ ended: document.querySelector(".crm-ended").textContent, line: document.querySelector(".crm-line").textContent, how: document.querySelector(".crm-panel .crm-note, .crm-panel .crm-quiet") && [...document.querySelectorAll(".crm-note")].map(x => x.textContent).join("|") }));
+        if (!/Withdrawn by its owner/.test(w.ended) || !/never seen test\/flaky-terminator-race/.test(w.line) || !/git push hub test\/flaky-terminator-race/.test(w.how)) fail(tag + "an unseen branch reads wrong " + JSON.stringify(w));
+        if (errors.length) fail(tag + "page errors: " + errors.join(" | "));
+      } finally { await ctx.close(); }
+
+      // withdraw and close with a note
+      ({ ctx, p, errors, hub } = await mChangeReqPage(browser, st, vp));
+      try {
+        await p.tap("#m-req-btn"); await p.waitForSelector(".crm-list");
+        await p.tap('.crm-li[data-id="cr_9"]'); await p.waitForSelector(".crm-gate");
+        await p.tap(".crm-acts .crm-btn:nth-child(1)");
+        await p.waitForFunction(() => /Withdrawn by its owner/.test((document.querySelector(".crm-ended") || {}).textContent || ""));
+        await p.evaluate(() => history.back());
+        await p.tap('.crm-li[data-id="cr_8"]'); await p.waitForSelector(".crm-gate");
+        await p.tap(".crm-acts .crm-btn:nth-child(2)");
+        await p.fill("#crm-note", "landed on the other branch");
+        await p.tap('.crm-row .crm-btn:text-is("Close request")');
+        await p.waitForFunction(() => /Closed/.test((document.querySelector(".crm-ended") || {}).textContent || ""));
+        if (hub.calls.map(c => JSON.stringify(c.body)).join() !== '{"do":"withdraw"},{"do":"close","note":"landed on the other branch"}') fail(tag + "posted " + hub.calls.map(c => JSON.stringify(c.body)));
+        if (errors.length) fail(tag + "page errors: " + errors.join(" | "));
+      } finally { await ctx.close(); }
+
+      // a board that cannot write
+      ({ ctx, p, errors } = await mChangeReqPage(browser, st, vp, { mode: "readonly" }));
+      try {
+        await p.tap("#m-req-btn"); await p.waitForSelector(".crm-list");
+        await p.tap('.crm-li[data-id="cr_9"]'); await p.waitForSelector(".crm-gate");
+        await p.tap(".crm-acts .crm-btn:nth-child(1)");
+        await p.waitForSelector(".crm-ro");
+        const ro = await p.evaluate(() => ({ line: document.querySelector(".crm-ro").textContent, inputs: document.querySelectorAll("#m-requests input, #m-requests .crm-acts").length }));
+        if (!/public share without a login/.test(ro.line) || ro.inputs) fail(tag + "a read-only board still offers writes " + JSON.stringify(ro));
+        await p.evaluate(() => history.back());
+        await p.waitForSelector(".crm-list");
+        if (await p.$(".crm-bar .crm-btn")) fail(tag + "a read-only board offers to open a request");
+      } finally { await ctx.close(); }
+
+      // empty, and the doors that stay shut
+      ({ ctx, p } = await mChangeReqPage(browser, st, vp, { mode: "empty" }));
+      try {
+        await p.tap("#m-req-btn");
+        await p.waitForSelector(".crm-empty");
+        if (!/Nothing is waiting to be merged/.test(await text0(p, ".crm-empty"))) fail(tag + "the empty hub reads wrong");
+      } finally { await ctx.close(); }
+      for (const mode of ["old", "offline"]) {
+        ({ ctx, p } = await mChangeReqPage(browser, st, vp, { mode }));
+        try { if (!(await p.evaluate(() => document.getElementById("m-req-btn").hidden))) fail(tag + mode + " hub: the door is open"); } finally { await ctx.close(); }
+      }
+      // a hub that goes away after the door opened says so, with a way to try again
+      ({ ctx, p } = await mChangeReqPage(browser, st, vp));
+      try {
+        await p.evaluate(() => { window.mRequests.state.loaded = false; });
+        await p.unroute(/\/_hub\/(change-requests|git\/pushed)/);
+        await p.route(/\/_hub\/change-requests/, r => r.abort("failed"));
+        await p.tap("#m-req-btn");
+        await p.waitForSelector(".crm-warn");
+        if (!/hub is not answering/.test(await text0(p, ".crm-warn")) || !(await p.$(".crm-list .crm-btn"))) fail(tag + "a hub that went away reads wrong: " + await text0(p, ".crm-list"));
+      } finally { await ctx.close(); }
+
+      // opening a request, the 404, the 409
+      ({ ctx, p, errors, hub } = await mChangeReqPage(browser, st, vp));
+      try {
+        await p.tap("#m-req-btn"); await p.waitForSelector(".crm-list");
+        await p.tap(".crm-bar .crm-btn");
+        await p.waitForSelector(".crm-form");
+        await p.fill("#crm-f-branch", "nope/missing"); await p.fill("#crm-f-title", "A request");
+        await p.tap(".crm-form .crm-btn.go");
+        await p.waitForSelector(".crm-form .crm-err");
+        if (!/hub has no branch called nope\/missing.*git push hub nope\/missing/.test(await text0(p, ".crm-form .crm-err"))) fail(tag + "the 404 is not explained");
+        await p.fill("#crm-f-branch", "feat/metrics-exemplars"); await p.fill("#crm-f-why", "line one\n<b>not bold</b>");
+        await p.tap(".crm-form .crm-btn.go");
+        await p.waitForFunction(() => /A request/.test((document.querySelector(".crm-ttl") || {}).textContent || ""));
+        const c = hub.calls.filter(x => x.path === "/_hub/change-requests").pop().body;
+        if (JSON.stringify(c) !== '{"repo":"github/openziti/ziti","source":{"branch":"feat/metrics-exemplars"},"target":{"branch":"main"},"title":"A request","why":"line one\\n<b>not bold</b>"}') fail(tag + "the create body is " + JSON.stringify(c));
+        if (await p.$(".crm-why b")) fail(tag + "a why became markup");
+        await p.evaluate(() => history.back());
+        await p.waitForSelector(".crm-list");
+        await p.tap(".crm-bar .crm-btn");
+        await p.waitForSelector(".crm-form");
+        await p.fill("#crm-f-branch", "fix/router-link-flap"); await p.fill("#crm-f-title", "Again");
+        await p.tap(".crm-form .crm-btn.go");
+        await p.waitForFunction(() => /already exists/.test((document.querySelector(".crm-err") || {}).textContent || ""));
+        if (!/Fix the router link flap/.test(await text0(p, ".crm-ttl"))) fail(tag + "a 409 does not open the request that exists");
+        if (errors.length) fail(tag + "page errors: " + errors.join(" | "));
+      } finally { await ctx.close(); }
+
+      // title and why are text
+      ({ ctx, p } = await mChangeReqPage(browser, st, vp, { mutate: h => { h.rows[0].title = '<img src=x onerror=window.__x=1>T'; h.rows[0].why = '<script>window.__x=2<\/script>w'; } }));
+      try {
+        await p.tap("#m-req-btn"); await p.waitForSelector(".crm-list");
+        await p.tap('.crm-li[data-id="cr_9"]'); await p.waitForSelector(".crm-why");
+        const x = await p.evaluate(() => ({ x: window.__x, n: document.querySelectorAll("#m-requests img, #m-requests script, #m-requests b:not(.crm-b)").length - document.querySelectorAll("#m-requests .crm-steps b, #m-requests .crm-seg b, #m-requests .crm-ended b, #m-requests .crm-gate > b, #m-requests .crm-tl b").length, t: document.getElementById("m-requests").textContent }));
+        if (x.x || x.n > 0 || !x.t.includes("<img src=x onerror=window.__x=1>T")) fail(tag + "a title became markup " + JSON.stringify({ x: x.x, n: x.n }));
+      } finally { await ctx.close(); }
+    }
+
+    // contrast on every skin, phone
+    {
+      const skins = [""].concat(((await (await fetch(st.url + "/css/themes.css")).text()).match(/:root\[data-skin="([a-z]+)"\]/g) || []).map(s => /"([a-z]+)"/.exec(s)[1]));
+      const { ctx, p } = await mChangeReqPage(browser, st, M_VIEWS[0]);
+      let bad;
+      try {
+        await p.tap("#m-req-btn"); await p.waitForSelector(".crm-list");
+        const list = [".crm-title", ".crm-k", ".crm-hero h3", ".crm-hero .crm-quiet", ".crm-hero .crm-btn", ".crm-seg button[aria-pressed=true]", ".crm-tg span", ".crm-li .crm-lt", ".crm-li .crm-lm", ".crm-li .crm-needs", ".crm-bar .crm-btn"];
+        bad = await crInkCheck(p, skins, list, 390);
+        await p.tap('.crm-li[data-id="cr_9"]'); await p.waitForFunction(() => /hub head matches/.test(document.querySelector(".crm-badges").textContent));
+        const page = [".crm-crumb", ".crm-ttl", ".crm-badges .crm-pill", ".crm-end small", ".crm-gate > b", ".crm-gate > span", ".crm-steps li", ".crm-field label", ".crm-hint", ".crm-gate .crm-btn.go", ".crm-panel h3", ".crm-why", ".crm-line", ".crm-kv dt", ".crm-kv dd", ".crm-tl li span", ".crm-lane .crm-br"];
+        bad = bad.concat(await crInkCheck(p, skins, page, 390, () => p.fill("#crm-sha", "e40a3c2")));
+      } finally { await ctx.close(); }
+      if (process.env.CR_CONTRAST) console.log(bad.join("\n"));
+      if (bad.length) fail(tag0 + ": text under 4.5:1 on " + bad.length + " pairs: " + bad.slice(0, 14).join("; "));
+    }
+
+    // the changes sheet's Pushed line
+    for (const [mode, want] of [["matches", /^Pushedpushed at abcdef0, hub head matches$/], ["behind", /hub is behind/], ["not-pushed", /never seen feat\/x.*git push hub feat\/x/], ["offline", /the hub did not say: the hub is not answering/]]) {
+      const vp = M_VIEWS[0];
+      st.changesFor = (card, q) => card !== "cr-1" ? { status: 404, body: { error: "not a worktree" } } : { status: 200, body: { against: "head", base: "aaaaaaa1", head: "1a2b3c4d5e6f", dirty: false, total: 1, repo: "github/o/r", branch: "feat/x", files: [{ path: "a.js", status: "modified", added: 1, removed: 1, hunks: "@@ -1 +1 @@\n-a\n+b\n" }] } };
+      const asked = [];
+      const { ctx, p } = await mChangeReqPage(browser, st, vp, { pushed: r => { asked.push(new URL(r.request().url()).search); if (mode === "offline") return r.abort("failed");
+        return r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ state: mode, hub_sha: "abcdef0123456789", room: "sg4", card: "c-1", at: new Date().toISOString(), released: false }) }); } });
+      try {
+        await p.tap("#m-seg-all"); await p.waitForSelector("#m-list .row");
+        await p.tap('#m-list .row[data-id="cr-1"]'); await p.waitForSelector("#m-replies .md");
+        await p.tap("#m-card-changes");
+        await p.waitForSelector(".cg-pushed .cg-pk");
+        await p.waitForFunction(() => !/reading/.test(document.querySelector(".cg-pushed").textContent), null, { timeout: slow(5000) });
+        const t = await text0(p, ".cg-pushed");
+        if (!want.test(t)) fail(tag0 + " pushed " + mode + ": reads " + t);
+        if (asked.length !== 1 || asked[0] !== "?repo=github%2Fo%2Fr&branch=feat%2Fx&head=1a2b3c4d5e6f") fail(tag0 + " pushed " + mode + ": asked " + JSON.stringify(asked));
+      } finally { await ctx.close(); }
+    }
+    // a card whose changes name no branch gets no line and no call
+    {
+      st.changesFor = (card, q) => ({ status: 200, body: { against: "head", base: "a", head: "1a2b3c4d5e6f", dirty: false, total: 0, files: [] } });
+      const asked = [];
+      const { ctx, p } = await mChangeReqPage(browser, st, M_VIEWS[0], { pushed: r => { asked.push(1); return r.abort(); } });
+      try {
+        await p.tap("#m-seg-all"); await p.waitForSelector("#m-list .row");
+        await p.tap('#m-list .row[data-id="cr-1"]'); await p.waitForSelector("#m-replies .md");
+        await p.tap("#m-card-changes"); await p.waitForSelector(".cg-sub");
+        await p.waitForTimeout(200);
+        if (await p.$(".cg-pushed") || asked.length) fail(tag0 + ": a card with no branch got a Pushed line or a call");
+      } finally { await ctx.close(); }
+    }
+    await mCrShots(browser, st);
+  } finally { await st.close(); }
+  if (!bad) console.log("mChangeReq ok");
+}
+// Phone shots of the real /m sheet for review: CR_SHOTS=/dir. 390 wide, paper and dark, each screen it has.
+async function mCrShots(browser, st) {
+  const dir = process.env.CR_SHOTS;
+  if (!dir) return;
+  require("fs").mkdirSync(dir, { recursive: true });
+  st.changesFor = () => ({ status: 200, body: { against: "head", base: "aaaaaaa1", head: "1a2b3c4d5e6f", dirty: false, total: 2, repo: "github/o/r", branch: "feat/x",
+    files: [{ path: "internal/hub/receive.go", status: "modified", added: 40, removed: 6, hunks: "@@ -1 +1 @@\n-a\n+b\n" }, { path: "docs/notes.md", status: "added", added: 12, removed: 0, hunks: "@@ -0,0 +1 @@\n+x\n" }] } });
+  for (const skin of ["paper", "dark"]) for (const view of ["list", "page", "closed", "readonly", "empty", "form", "changes"]) {
+    const { ctx, p } = await mChangeReqPage(browser, st, { width: 390, height: 844 }, { mode: view === "empty" ? "empty" : view === "readonly" ? "readonly" : "ok", pushed: view === "changes" ? (r => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ state: "behind", hub_sha: "abcdef0123456789", room: "sg4", card: "c-101", at: new Date(Date.now() - 3600e3).toISOString() }) })) : undefined });
+    try {
+      await p.evaluate(s => { if (s === "paper") document.documentElement.setAttribute("data-skin", "paper"); else document.documentElement.removeAttribute("data-skin"); }, skin);
+      if (view === "changes") {
+        await p.tap("#m-seg-all"); await p.waitForSelector("#m-list .row"); await p.tap('#m-list .row[data-id="cr-1"]'); await p.waitForSelector("#m-replies .md");
+        await p.tap("#m-card-changes"); await p.waitForFunction(() => document.querySelector(".cg-pushed") && !/reading/.test(document.querySelector(".cg-pushed").textContent));
+      } else {
+        await p.tap("#m-req-btn"); await p.waitForSelector("#m-requests .crm-view");
+        if (view === "page" || view === "readonly") { await p.tap('.crm-li[data-id="cr_9"]'); await p.waitForFunction(() => /hub head matches/.test((document.querySelector(".crm-badges") || {}).textContent || "")); }
+        if (view === "readonly") { await p.tap(".crm-acts .crm-btn:nth-child(1)"); await p.waitForSelector(".crm-ro"); }
+        if (view === "closed") { await p.tap(".crm-seg button:nth-child(2)"); await p.tap('.crm-li[data-id="cr_6"]'); await p.waitForFunction(() => /Bump Go/.test((document.querySelector(".crm-ttl") || {}).textContent || "") && document.querySelectorAll(".crm-tl li").length >= 3); }
+        if (view === "form") { await p.tap(".crm-bar .crm-btn"); await p.waitForSelector(".crm-form"); }
+      }
+      await p.waitForTimeout(250);
+      const h = await p.evaluate(() => { const sc = document.querySelector("#m-requests:not([hidden]) .crm-scroll") || document.querySelector(".v-scroll"); return sc ? sc.scrollHeight + 90 : 844; });
+      await p.setViewportSize({ width: 390, height: Math.min(5000, Math.max(844, h)) });
+      await p.waitForTimeout(200);
+      await p.screenshot({ path: require("path").join(dir, "m-requests-" + view + "-390-" + skin + ".png") });
+    } finally { await ctx.close(); }
+  }
+}
+
+const text0 = (p, sel) => p.evaluate(s => (document.querySelector(s) || {}).textContent || "", sel);
+
 async function main() {
   if (!LIST_MODE) await new Promise(r => server.listen(0, "127.0.0.1", r));
   const base = LIST_MODE ? "" : "http://127.0.0.1:" + server.address().port;
@@ -20246,7 +20807,7 @@ async function main() {
       termDebug: termDebugSection, termSortStarted: termSortStartedSection,
       noReadyChildren: noReadyChildrenSection, childUnderParent: childUnderParentSection, topNav: topNavSection,
       childFold: childFoldSection, liveHome: liveHomeSection,
-      pulls: pullsSection, hubRepos: hubReposSection, hubReposShelf: hubReposShelfSection, hubReposLedger: hubReposLedgerSection, hubReposFeed: hubReposFeedSection, trayHead: trayHeadSection, pullsAbsent: pullsAbsentSection, oneTooltip: oneTooltipSection, burnChart: burnChartSection, burnReadout: burnReadoutSection, switchPrewarm: switchPrewarmSection, attachAtOnce: attachAtOnceSection, keepAlive: keepAliveSection, switchBackCost: switchBackCostSection, keepMemory: keepMemorySection };
+      pulls: pullsSection, hubRepos: hubReposSection, hubReposShelf: hubReposShelfSection, hubReposLedger: hubReposLedgerSection, hubReposFeed: hubReposFeedSection, changeReq: changeReqSection, mChangeReq: mChangeReqSection, trayHead: trayHeadSection, pullsAbsent: pullsAbsentSection, oneTooltip: oneTooltipSection, burnChart: burnChartSection, burnReadout: burnReadoutSection, switchPrewarm: switchPrewarmSection, attachAtOnce: attachAtOnceSection, keepAlive: keepAliveSection, switchBackCost: switchBackCostSection, keepMemory: keepMemorySection };
     try {
       for (const n of process.env.HEADLESS_ONLY.split(",")) await only[n](browser, base);
     } catch (e) { fail("the headless run threw: " + (e && e.message ? e.message : e) + threwAt(e)); }
@@ -22243,6 +22804,8 @@ async function main() {
     await unit("hubReposShelf", () => hubReposShelfSection(browser, base));
     await unit("hubReposLedger", () => hubReposLedgerSection(browser, base));
     await unit("hubReposFeed", () => hubReposFeedSection(browser, base));
+    await unit("changeReq", () => changeReqSection(browser, base));
+    await unit("mChangeReq", () => mChangeReqSection(browser));
     await unit("trayHead", () => trayHeadSection(browser, base));
     await unit("bootClean", () => bootCleanSection(browser, base));
     await unit("mWorking", () => mWorkingSection(browser));
@@ -22593,7 +23156,7 @@ function mServer(state) {
     let file = null;
     if (p === "/m/" || p === "/m" || p === "/m/docs" || /^\/d\/[^/]*$/.test(p)) file = path.join(M_ROOT, "index.html");
     else if (p.startsWith("/m/")) file = path.join(M_ROOT, p.slice(3));
-    else if (p.startsWith("/css/") || /^\/js\/(cardrules|sounds)\.js$/.test(p)) file = path.join(WEB_ROOT, p);
+    else if (p.startsWith("/css/") || /^\/js\/(cardrules|sounds|changereq-core|changereq-mock)\.js$/.test(p)) file = path.join(WEB_ROOT, p);
     if (file && !path.relative(WEB_ROOT, file).startsWith("..") && fs.existsSync(file) && fs.statSync(file).isFile()) {
       res.writeHead(200, { "Content-Type": M_TYPES[path.extname(file)] || "application/octet-stream" });
       return res.end(fs.readFileSync(file));

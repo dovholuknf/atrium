@@ -38,3 +38,8 @@
 .cg-row.on { outline: 2px solid var(--warn); outline-offset: -2px; background: var(--diff-sel, color-mix(in srgb, var(--warn) 18%, transparent)); }
 .cg-row.cg-add .cg-sg { color: var(--teal); }
 .cg-row.cg-del .cg-sg { color: var(--danger, #e5534b); }
+.cg-pushed { margin: 8px 0 0; display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: baseline; color: var(--head); font-size: 14px; overflow-wrap: anywhere; }
+.cg-pk { color: var(--label); font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .1em; }
+.cg-pushed.p-behind, .cg-pushed.p-diverged, .cg-pushed.warn { color: var(--warn); }
+.cg-pushed.p-not-pushed { color: var(--body); }
+.cg-how { flex-basis: 100%; color: var(--body); font-size: 13px; }

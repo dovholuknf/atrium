@@ -144,6 +144,32 @@
     els.body.replaceChildren(body);
   }
 
+  // ── the Pushed line ──────────────────────────────────────────────────────
+  // One read per repo, branch and head, kept on the view, so a redraw does not ask again and a late answer for an old
+  // head is dropped. The hub not answering, and a branch it has never seen, each have their own sentence.
+  function pushedLine(v, d) {
+    const C = window.crCore;
+    if (!C || v.kind !== "card" || !d || !d.repo || !d.branch || !d.head) return null;
+    const key = d.repo + "|" + d.branch + "|" + d.head;
+    if (v.pk !== key) {
+      v.pk = key; v.pushed = null;
+      C.api.pushed(d.repo, d.branch, d.head).then(r => {
+        if (view !== v || v.pk !== key) return;
+        v.pushed = r.ok && r.body && r.body.state ? r.body : { err: r.offline ? "the hub is not answering" : C.errText(r) };
+        draw();
+      });
+    }
+    const p = v.pushed;
+    const line = el("div", "cg-pushed");
+    line.appendChild(el("span", "cg-pk", "Pushed"));
+    if (!p) { line.appendChild(el("span", "", "reading the hub's push log")); return line; }
+    if (p.err) { line.classList.add("warn"); line.appendChild(el("span", "", "the hub did not say: " + p.err)); return line; }
+    line.classList.add("p-" + p.state);
+    line.appendChild(el("span", "", C.pushedLine(p, d.branch)));
+    if (p.state === "not-pushed") line.appendChild(el("span", "cg-how", C.notPushedHow(d.branch)));
+    return line;
+  }
+
   function drawList(body, v, card) {
     const d = v.data || { files: [] };
     const files = d.files || [];
@@ -161,6 +187,11 @@
       });
       head.appendChild(tog);
     }
+    // The change record's "Pushed" line, read from the hub's push log and not from a forge. Drawn only for the card's own
+    // changes, and only when the answer names the repo and branch (the room's `repo` and `branch` on /changes, which the
+    // hub's `/_hub/git/pushed` takes with the head). A card on no branch, or a room that does not say, gets no line and no guess.
+    const pl = pushedLine(v, d);
+    if (pl) head.appendChild(pl);
     body.appendChild(head);
     // Said once, at the top, and not on the chip: the agent is still going, or a turn's list may be missing command changes.
     if (card && card.status === "running") body.appendChild(note("the agent is still working"));
