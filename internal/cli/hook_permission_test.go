@@ -94,6 +94,23 @@ func TestPermSkippedToolNeverPosts(t *testing.T) {
 	}
 }
 
+func TestPermSkipsBothSubagentToolNames(t *testing.T) {
+	h := newFakeHub(t, true, 200, `{"decision":"approve"}`)
+	permEnv(t, "force")
+	for _, tool := range []string{"Task", "Agent"} {
+		if !permSkipTools[tool] {
+			t.Fatalf("%s is not in permSkipTools", tool)
+		}
+		p := `{"tool_name":"` + tool + `","tool_input":{"prompt":"x"}}`
+		if out := runPermissionHook(h.srv.URL, []byte(p), 1); out != nil {
+			t.Fatalf("%s produced output", tool)
+		}
+	}
+	if len(h.posts) != 0 {
+		t.Fatalf("a subagent tool posted")
+	}
+}
+
 func TestPermProbeNotGatedAndTimeout(t *testing.T) {
 	// Answers "not gated" and there is no .mcp.json.
 	h := newFakeHub(t, false, 200, `{"decision":"approve"}`)

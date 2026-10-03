@@ -150,6 +150,8 @@ type Daemon struct {
 	// many times it has. In memory, like the activity it is derived from: a
 	// restart recomputes it on the next tick. See a2a.go.
 	esc escalations
+	// scans is the last screen read of each quiet card. See launchstuck.go.
+	scans termScans
 	// looksIdleFired counts every looks-idle firing since start. See looksidle.go.
 	looksIdleFired atomic.Int64
 

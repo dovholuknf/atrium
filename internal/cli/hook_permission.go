@@ -29,10 +29,10 @@ import (
 const permissionEvent = "permission"
 
 // permSkipTools are never gated: pure reads, and ToolSearch, whose eventual
-// tool call is what gets gated.
+// tool call is what gets gated. Claude Code renamed Task to Agent; both stay.
 var permSkipTools = map[string]bool{
 	"Read": true, "Grep": true, "Glob": true, "WebFetch": true, "WebSearch": true,
-	"TodoWrite": true, "Task": true, "ToolSearch": true,
+	"TodoWrite": true, "Task": true, "Agent": true, "ToolSearch": true,
 }
 
 // permMaxDetails caps details so a huge write does not become a wall of text
