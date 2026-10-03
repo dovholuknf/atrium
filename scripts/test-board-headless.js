@@ -8774,28 +8774,62 @@ async function ctxLineSection(browser, base) {
       wornTasks = keep;
       await wp.evaluate(async () => { await loadCards().catch(() => {}); await renderTermList(); });
     }
-    // ROWFLOOD_REAL=<tasks.json> ROWFLOOD_REAL_SHOTS=<dir> ROWFLOOD_TAG=before|after: the same board drawn from a COPY of a
-    // live /v1/tasks answer (rows with context, the first ones pinned), at 2000px and 390px on a light and a dark skin.
+    // ROWFLOOD_REAL=<tasks.json> ROWFLOOD_REAL_SHOTS=<dir> ROWFLOOD_TAG=before|after: the board drawn from a COPY of a live
+    // /v1/tasks answer, set up like a real operator's: rows with context, five pinned, cards wearing a theme, a room chip
+    // (hub mode) on some, nested children under one, a wide list so full titles show; at default, tight (0.72) and
+    // tightest (0.3) density, on paper and graphite, at 2000px on the desktop board and 390px in a real phone context
+    // (touch, mobile viewport, so phone.css applies).
     if (process.env.ROWFLOOD_REAL) {
       const d = JSON.parse(require("fs").readFileSync(process.env.ROWFLOOD_REAL, "utf8"));
       const list = (Array.isArray(d) ? d : d.tasks).filter(t => t.context_size).slice(0, 14);
+      const themes = ["active-work", "electric-purple", "crimson-cave", "deep-ocean", "garnet", "forest-night", "", "cocoa"];
       const keep = wornTasks;
-      wornTasks = list.map((t, i) => Object.assign({}, t, { supervised: true, pinned: i < 5 }));
+      const roomOfRow = i => i % 3 === 0 ? "sg4-control" : i % 3 === 1 ? "claude-sg4" : "";
+      const tagged = (i, id) => roomOfRow(i) ? roomOfRow(i) + "~" + id : id;
+      wornTasks = list.map((t, i) => Object.assign({}, t, {
+        id: tagged(i, t.id), supervised: true, pinned: i < 5, theme: themes[i % themes.length], room: roomOfRow(i),
+        // rows 8 to 10 are subagents of row 7, so row 7 wears a child count
+        spawned_by_id: i >= 8 && i <= 10 ? list[7].id : t.spawned_by_id,
+        tags: i >= 8 && i <= 10 ? Array.from(new Set((t.tags || []).concat("atrium:subagent"))) : t.tags
+      }));
       const tag = process.env.ROWFLOOD_TAG || "shot", dir = process.env.ROWFLOOD_REAL_SHOTS;
-      const dens = process.env.ROWFLOOD_DENSITY || "";
-      await wp.evaluate(d => { if (d) document.documentElement.style.setProperty("--density", d); }, dens);
-      for (const [w, h] of process.env.ROWFLOOD_DENSITY ? [[2000, 1000]] : [[2000, 1000], [390, 1400]]) {
-        await wp.setViewportSize({ width: w, height: h });
-        for (const skin of ["paper", "graphite"]) {
-          await wp.evaluate(async sk => { applySkin(sk); await loadCards().catch(() => {}); await renderTermList(); }, skin);
-          await wp.waitForTimeout(1500);
-          await wp.screenshot({ path: require("path").join(dir, `${tag}-${w}-${skin}${dens ? "-density" + dens : ""}.png`) });
+      const path = require("path");
+      const prep = async page => {
+        await page.evaluate(async () => { hubIsHub = true; try { setTermW(520); } catch (e) {} if (hideSubagentsMode() !== "none") toggleHideSubagents(); await loadCards().catch(() => {}); await renderTermList(); });
+      };
+      const shoot = async (page, kind, shotsAt) => {
+        for (const dens of ["1", "0.72", "0.3"]) {
+          for (const skin of ["paper", "graphite"]) {
+            await page.evaluate(async ([sk, dn]) => {
+              applySkin(sk); document.documentElement.style.setProperty("--density", dn);
+              await renderTermList();
+            }, [skin, dens]);
+            await page.waitForTimeout(900);
+            await page.screenshot({ path: path.join(dir, `${tag}-${kind}-${skin}-density${dens}.png`) });
+          }
         }
-      }
+      };
+      await wp.setViewportSize({ width: 2000, height: 1000 });
+      await prep(wp);
+      await shoot(wp, "2000");
       await wp.evaluate(() => document.documentElement.style.removeProperty("--density"));
+      const phoneCtx = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true, deviceScaleFactor: 2 });
+      const pp = await phoneCtx.newPage();
+      await pp.addInitScript(() => {
+        let all = {};
+        try { all = JSON.parse(localStorage.getItem("atrium.skipconfirm") || "{}"); } catch (e) {}
+        all["width-floor"] = true;
+        localStorage.setItem("atrium.skipconfirm", JSON.stringify(all));
+      });
+      await pp.goto(base, { waitUntil: "domcontentloaded" });
+      await pp.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
+      await pp.click('.tab[data-view="terms"]').catch(() => {});
+      await prep(pp);
+      await shoot(pp, "phone390");
+      await phoneCtx.close();
       await wp.setViewportSize({ width: 1400, height: 900 });
       wornTasks = keep;
-      await wp.evaluate(async () => { await loadCards().catch(() => {}); await renderTermList(); });
+      await wp.evaluate(async () => { hubIsHub = false; await loadCards().catch(() => {}); await renderTermList(); });
     }
     const r = got.rows;
     if (!(r.plainH > 0)) fail("no plain row to compare the height with.");
