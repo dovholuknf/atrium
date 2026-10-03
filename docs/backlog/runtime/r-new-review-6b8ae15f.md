@@ -307,3 +307,52 @@ Atrium-Verdict: hold 8bfdcdb1..49488e18
 Quality: a thorough fix round. Every finding is closed, mostly with a test a mutant fails, and the look-alike check is
 careful. The reason-keyed reopen compares a launcher's typed prompt with a close stamped after it, which loses a
 re-tasked worker's second silent ending.
+
+## Re-read: 8d1d31ed
+
+Range `632db27e..8d1d31ed`, rebased onto landing 632db27e. Fix commits 816130f5 (M1 to M5) and 8d1d31ed (M6, L4,
+L6). I ran `go vet` and the tests with ATRIUM_LOCATION and ATRIUM_DEBUG_INPUTLAG unset.
+
+Closed:
+- **M6.** A finished item now reopens when `t.OwedAt` is after the item's `Since`, which is when the worker ended.
+  `TestARetaskedWorkerOwesAgainInTheTypedAndTheQueuedOrder` runs both orders: retask then say, and say then retask.
+  Each time it ends the worker again and wants one open item on the next pass, and both orders pass. Changing the
+  check back to `t.OwedAt.After(c.At)` fails the test.
+  - Can a pass move `Since` forward in between? No. `openOwed` returns early when an item already exists, so `Since`
+    is written only when the item opens.
+- **L6.** The dropped `since.After(c.Since)` term was redundant. `CloseOwedItem` stores `Since` as it was at open
+  time, and the close time `At` comes later. Nothing writes `Since` again, so `c.Since <= c.At` always holds and
+  `since.After(c.At)` implies the dropped term.
+  - The only way to break it is the wall clock stepping back between open and close. Then the new form reopens a
+    little sooner than the old one, which is the safe side.
+  - Every remaining branch of `mayReopen` has a test that fails when the branch is mutated:
+    - a same-reason item that always reopens fails `TestADismissedQuestionStaysClosedUntilANewOne` and
+      `TestAQuestionAskedWhileAnItemIsOpenIsClosedWithIt`;
+    - a different reason that always reopens fails `TestADifferentReasonFromBeforeTheCloseDoesNotReopen`;
+    - an orphan mark that never expires fails `TestAnOrphanThatIsRetaskedAfterItsReportOwesAgain`.
+- **L4.** A dismiss closes only an item on the caller's own card, on both paths.
+  - **stdio:** the card to dismiss on is the caller's own `ATRIUM_AGENT_NAME`. An explicit `card` only picks the card
+    read afterwards, and never the card the item is closed on. Changing the target to the worker's card fails
+    `TestStdioTaskDismissClosesAnItemOnTheCallersOwnCard`. The name in that variable is the caller's own claim, the
+    same trust as every other loopback call.
+  - **hub `control_mcp`:** a non-empty `card` is refused. The caller's card comes from the connection (`agentOf`),
+    and the worker must be in the caller's own scope.
+
+Lows, neither holds:
+- **N1: the two paths treat an explicit `card` differently.** stdio dismisses on your own card and then reads `card`.
+  The hub refuses the call. Pick one; refusing is clearer.
+- **N2: the hub dismiss has no test in `internal/link`.** Add one case each for the refused `card` and for a worker
+  in another scope.
+
+Test plan: IJ appears once, at "## IJ. Owed answers survive (r-owed-answers)".
+
+Merge onto claude/landing a9307bc7:
+- `docs/test-plan.md` conflicts at the end of the file, where landing adds IO and IP and this branch adds IJ. Keeping
+  both sides resolves it.
+- The Go code merges cleanly, `go build ./...` passes, and store, cli and link pass.
+- daemon shows only the known reds: hostterm, ptyhost, keepalive-fork and TestNoTestHereCanReachALiveRoom.
+
+Atrium-Verdict: room-ok 632db27e..8d1d31ed
+Atrium-Verdict: hub-ok 632db27e..8d1d31ed
+Quality: M6 is fixed at its root, with each time compared against the right moment. The tests run both orders and
+fail on every mutant I tried.
