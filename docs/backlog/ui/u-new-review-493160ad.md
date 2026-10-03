@@ -131,4 +131,4 @@ held by the pause). Both are doc-ok.
 The owed-chip doc describes `reported_at` as r-owed-answers 6b8ae15f had it. The fix in progress, 49488e18, stamps it
 again for cards the operator launched, so re-read that paragraph before the chip is built.
 
-Atrium-Verdict: doc-ok cbd719c0..b7ecc0f8
+Atrium-Verdict: doc-ok 29efa251..b7ecc0f8
