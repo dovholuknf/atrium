@@ -373,6 +373,7 @@ func (d *Daemon) onSession(in SessionEvent) error {
 		}
 		// Left behind, the last activity would have the card claiming to run a
 		// tool inside a process that has exited.
+		d.recordUsage(task.ID)
 		d.act.forget(task.ID)
 		// And a message held for its line. Forgetting the chip was not enough: a
 		// runner that outlives its session kept the retry going, and the next

@@ -2247,6 +2247,8 @@ func (d *Daemon) fileExitChecked(x runExit) (bool, error) {
 		exitLine += ", " + firstLine(tail)
 	}
 	d.emitLifecycle("session-exit", exitLine)
+	// The runner's last turns, for a worker that has no Stop hook. See usage.go.
+	d.recordUsage(x.taskID)
 
 	// A resume that died on the way up gets one try as a fresh start.
 	//

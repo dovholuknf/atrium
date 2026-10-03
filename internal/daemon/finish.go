@@ -324,6 +324,8 @@ func (d *Daemon) finish(task *store.Task, in FinishRequest) (map[string]any, int
 		d.act.forget(task.ID)
 	}
 	d.publishTask(task.ID)
+	// A worker with no Stop hook never records its spend otherwise. See usage.go.
+	d.recordUsage(task.ID)
 	told := res.Notice != nil || res.Relayed
 	if d.exitsOnReport(task, in) {
 		go d.exitAfterReport(task.ID)

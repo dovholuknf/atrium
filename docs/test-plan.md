@@ -8672,3 +8672,15 @@ Pushed and Reachable reads on a real bare repository), `TestAChangeRequestIsMade
 `TestTheAuditLinesCarryIdsAndNeverTheWords`, `TestTheAuditLineOfACardsActionNamesItsRoom`, and in `hubstore`
 `TestCRRoomsThatDifferOnlyInCaseAreOneSource`, `TestCRReposThatDifferOnlyInCaseAreOneRepo`, `TestCREndIsOnceAndRecordsWhoAndWhen`.
 Items 1 to 3 against a real hub and a real forge repository, and 11 from a browser, are live checks.
+
+## IU. A worker with no Stop hook still has its usage recorded (r-usage-no-stop)
+
+Needs a room with a Claude worker launched by `atrium_launch` (no Stop hook), redeployed room.
+
+1. Launch a worker, let it work a few turns, then have it `atrium_report` done. Its card's usage details show rows for those turns (before this, none). The reply count matches the transcript.
+2. If a Stop does fire after the report, the rows do not grow for the replies already recorded; only replies written after the report are added.
+3. `atrium_exit` the worker (or kill it): replies written since the last row are recorded once; a second exit adds nothing.
+4. A worker whose transcript has been deleted, or that never got a resume id: report and exit still succeed, no row, only a log line.
+5. The historical gap is not filled by this change; see the backfill note in the changelog.
+
+Covered by `TestFlushedRecordsWithoutAStop`, `TestReportThenStopThenExitCountEachReplyOnce`, `TestStopThenReportThenExitCountEachReplyOnce`, `TestFlushedLeavesTheTurnsCauseForTheStop`, `TestFlushedWithoutATranscriptIsQuiet`, `TestFlushedReadsSubagentFiles`, `TestAReportRecordsTheWorkersUsage`, `TestASessionEndRecordsTheWorkersUsage`, `TestARunnerExitRecordsTheWorkersUsage`, `TestATerminateRecordsTheWorkersUsage` (daemon). Items 1 to 4 are not yet run live.
