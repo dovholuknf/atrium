@@ -32,6 +32,8 @@ body.m.sheet-open { overscroll-behavior-y: none; }
 .bar .room { color: var(--head); font-weight: 600; font-size: 15px; letter-spacing: .01em; }
 .bar .live { width: 9px; height: 9px; border-radius: 50%; background: var(--warn); box-shadow: 0 0 0 4px rgba(var(--warn-rgb), .16); transition: background .3s, box-shadow .3s; }
 .bar .live.on { background: var(--teal); box-shadow: 0 0 0 4px rgba(var(--teal-rgb), .16); }
+/* A new build is waiting for the page to be clear (js/build.js). Quiet: text only, no fill. */
+.bar .m-update { min-height: 44px; padding: 0 8px; background: none; border: 0; color: var(--teal); font: inherit; font-size: 13px; }
 .bar .board { display: inline-flex; align-items: center; min-height: 44px; padding: 0 4px; color: var(--label); text-decoration: none; font-size: 14px; }
 
 /* the home */

@@ -138,6 +138,7 @@
 <script src="/m/js/docs.js"></script>
 <script src="/m/js/compose.js" onerror="void 0"></script>
 <script src="/m/js/perms.js" onerror="void 0"></script>
+<script src="/m/js/build.js" onerror="void 0"></script>
 <script>
 (function () {
   function themeColor() {
@@ -166,6 +167,7 @@
   document.getElementById("m-desktop").addEventListener("click", function () { try { sessionStorage.setItem("atrium.m.desktop", "1"); } catch (e) {} });
   window.addEventListener("m-skin", themeColor);
   window.mNet.start();
+  if (window.mBuild) window.mBuild.init();
   themeColor();
 })();
 </script>

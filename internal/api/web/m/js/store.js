@@ -38,7 +38,7 @@
     if (opts.body && !headers.get("Content-Type")) headers.set("Content-Type", "application/json");
     opts.headers = headers;
     return fetch(path, opts).then(async res => {
-      if (res.status === 401) throw new Error("sign in again");
+      if (res.status === 401) { const err = new Error("sign in again"); err.status = 401; throw err; }
       if (!res.ok && res.status !== 204) {
         let msg = "", body = null;
         try { msg = await res.text(); } catch (e) {}
@@ -86,6 +86,13 @@
   }
 
   // ── reads ────────────────────────────────────────────────────────────────
+  // A read that failed is tried again on a backoff while the page is in front. Right after a hub restart the stream can be
+  // up before the room answers, and the one read the stream opening asks for would otherwise stand for the 60s resync.
+  // Counted per read, so one that keeps failing backs off on its own. Not retried on a refusal: a 401 or 403 stays one
+  // until somebody signs in again.
+  let tasksFails = 0, permsFails = 0;
+  const retryMs = n => Math.min(1000 * Math.pow(2, Math.max(0, n - 1)), 15000);
+  const refused = e => !!e && (e.status === 401 || e.status === 403);
   let tasksTimer = 0, tasksBusy = false, tasksAgain = false;
   function tasksSoon(ms) {
     clearTimeout(tasksTimer);
@@ -101,8 +108,12 @@
       cards.clear();
       next.forEach((v, k) => cards.set(k, v));
       loaded = true;
+      tasksFails = 0;
       mark("cards");
-    } catch (e) { /* keep what is held. the next event or resync tries again */ }
+    } catch (e) {
+      // Keep what is held, and ask again soon.
+      if (!refused(e) && document.visibilityState === "visible") tasksSoon(retryMs(++tasksFails));
+    }
     tasksBusy = false;
     if (tasksAgain) { tasksAgain = false; tasksSoon(); }
   }
@@ -118,8 +129,11 @@
     try {
       const r = await api("/v1/permissions");
       perms = (r && r.permissions) || [];
+      permsFails = 0;
       mark("perms");
-    } catch (e) {}
+    } catch (e) {
+      if (!refused(e) && document.visibilityState === "visible") permsSoon(retryMs(++permsFails));
+    }
     permsBusy = false;
     if (permsAgain) { permsAgain = false; permsSoon(); }
   }

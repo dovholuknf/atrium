@@ -18212,6 +18212,257 @@ async function phoneRedirectSection(browser, base) {
 }
 
 // ── the bell and the sound on /m ─────────────────────────────────────────
+// ── The phone page picks up a new build ──────────────────────────────────
+// `/v1/health` carries the build id. A change reloads /m once, not while a draft, a focused box or a selection is up (an
+// "update ready" button shows instead, and the reload comes when it clears), and never twice for the same build.
+async function mReloadSection(browser) {
+  const st = mServer({});
+  st.tasks = [mCard("r-1", { alias: "alpha", display_title: "alpha", status: "running", last_reply: "hello there, a line to select" })];
+  await st.open();
+  try {
+    const ctx = await browser.newContext({ viewport: M_VIEWS[0], hasTouch: true, isMobile: true });
+    const p = await ctx.newPage();
+    const errors = [];
+    p.on("pageerror", e => errors.push(String(e)));
+    let loads = 0;
+    p.on("load", () => loads++);
+    await p.goto(st.url + "/m/", { waitUntil: "load" });
+    await p.waitForFunction(() => window.mNet.loaded() && window.mBuild, null, { timeout: slow(10000) });
+    await p.evaluate(() => window.mBuild.check());
+    const base = loads;
+    const settle = ms => p.waitForTimeout(ms);
+    const tag = "mReload: ";
+
+    // same id: nothing
+    await p.evaluate(() => window.mBuild.check());
+    await settle(400);
+    if (loads !== base) fail(tag + "the same build reloaded the page");
+
+    // a draft holds it, with the cue up
+    await p.evaluate(() => { const t = document.createElement("textarea"); t.id = "fake-draft"; t.value = "half a thought"; document.body.appendChild(t); });
+    st.build = "build-2";
+    await p.evaluate(() => window.mBuild.check());
+    await settle(600);
+    if (loads !== base) fail(tag + "a draft did not hold the reload");
+    if (!(await p.evaluate(() => { const c = document.querySelector(".m-update"); return !!c && c.getClientRects().length > 0; }))) fail(tag + "no cue while it waits");
+    // the hub answers with the id this page runs again: the wait and its cue are dropped, with no reload
+    st.build = "build-1";
+    await p.evaluate(() => window.mBuild.check());
+    await settle(400);
+    if (await p.evaluate(() => !!document.querySelector(".m-update"))) fail(tag + "the cue stayed after the id came back to the one this page runs");
+    if (loads !== base) fail(tag + "reloaded though the id went back");
+    st.build = "build-2";
+    await p.evaluate(() => window.mBuild.check());
+    await settle(400);
+    if (!(await p.evaluate(() => !!document.querySelector(".m-update")))) fail(tag + "the cue did not come back for the new id");
+    await p.evaluate(() => { document.getElementById("fake-draft").value = ""; });
+    await p.waitForEvent("load", { timeout: slow(6000) }).catch(() => fail(tag + "the reload did not come once the draft cleared"));
+    await settle(300);
+    if (loads !== base + 1) fail(tag + "expected one reload, saw " + (loads - base));
+
+    // the reloaded page learned the new id, so it does not reload again, and the guard stops a flapping hub
+    await p.waitForFunction(() => window.mNet.loaded() && window.mBuild, null, { timeout: slow(10000) });
+    await p.evaluate(() => window.mBuild.check());
+    await settle(500);
+    if (loads !== base + 1) fail(tag + "reloaded again for a build it already has");
+    st.build = "build-3";
+    await p.evaluate(() => window.mBuild.check());
+    await settle(500);
+    const afterThree = loads;
+    await p.waitForFunction(() => window.mNet.loaded() && window.mBuild, null, { timeout: slow(10000) });
+    st.build = "build-2";
+    await p.evaluate(() => window.mBuild.check());
+    await settle(500);
+    st.build = "build-3";
+    await p.evaluate(() => window.mBuild.check());
+    await settle(800);
+    if (loads > afterThree) fail(tag + "a flapping hub made " + (loads - afterThree) + " reloads in a row");
+
+    // a live selection holds it too
+    await p.waitForFunction(() => window.mNet.loaded() && window.mBuild, null, { timeout: slow(10000) });
+    await p.evaluate(() => { sessionStorage.removeItem("atrium.m.reloaded"); });
+    const b4 = loads;
+    await p.evaluate(() => {
+      const d = document.createElement("p"); d.id = "fake-sel"; d.textContent = "select this text please"; document.body.appendChild(d);
+      const r = document.createRange(); r.selectNodeContents(d); const s = getSelection(); s.removeAllRanges(); s.addRange(r);
+    });
+    st.build = "build-9";
+    await p.evaluate(() => window.mBuild.check());
+    await settle(600);
+    if (loads !== b4) fail(tag + "a selection did not hold the reload");
+    await p.evaluate(() => getSelection().removeAllRanges());
+    await p.waitForEvent("load", { timeout: slow(6000) }).catch(() => fail(tag + "the reload did not come once the selection cleared"));
+    // two restarts back to back while a draft holds: one reload, for the newest build, and the page then rests on it
+    await p.waitForFunction(() => window.mNet.loaded() && window.mBuild, null, { timeout: slow(10000) });
+    await p.evaluate(() => { sessionStorage.removeItem("atrium.m.reloaded"); const t = document.createElement("textarea"); t.id = "fake-draft2"; t.value = "still typing"; document.body.appendChild(t); });
+    const b5 = loads;
+    st.build = "build-10";
+    await p.evaluate(() => window.mBuild.check());
+    st.build = "build-11";
+    await p.evaluate(() => window.mBuild.check());
+    await settle(600);
+    if (loads !== b5) fail(tag + "back to back restarts reloaded under a draft");
+    await p.evaluate(() => { document.getElementById("fake-draft2").value = ""; });
+    await p.waitForEvent("load", { timeout: slow(6000) }).catch(() => fail(tag + "no reload after the draft cleared"));
+    await p.waitForFunction(() => window.mNet.loaded() && window.mBuild, null, { timeout: slow(10000) });
+    await p.evaluate(() => window.mBuild.check());
+    await settle(2500);
+    if (loads !== b5 + 1) fail(tag + "back to back restarts made " + (loads - b5) + " reloads, not 1");
+
+    // a review-comment chip with an empty box is something a reload loses and nothing saves: it holds the reload too
+    await p.waitForFunction(() => window.mNet.loaded() && window.mBuild, null, { timeout: slow(10000) });
+    await p.evaluate(() => { sessionStorage.removeItem("atrium.m.reloaded"); window.mCard.open("r-1"); });
+    await p.waitForSelector("#m-compose .mc-box", { timeout: slow(8000) });
+    const added = await p.evaluate(() => { const ok = window.mCompose.addComment({ path: "a/b.js", line: 3, kind: "+", text: "" }); document.activeElement && document.activeElement.blur && document.activeElement.blur(); return ok; });
+    if (!added) fail(tag + "the comment chip was not added");
+    if ((await p.$eval("#m-compose .mc-box", t => t.value)) !== "") fail(tag + "the box is not empty for the chip case");
+    const b6 = loads;
+    st.build = "build-20";
+    await p.evaluate(() => window.mBuild.check());
+    await settle(700);
+    if (loads !== b6) fail(tag + "a comment chip did not hold the reload");
+    if (!(await p.evaluate(() => !!document.querySelector(".m-update")))) fail(tag + "no cue while a chip holds it");
+    await p.click("#m-compose .mc-cmt .mc-fx");
+    await p.waitForEvent("load", { timeout: slow(6000) }).catch(() => fail(tag + "the reload did not come once the chip was removed"));
+    if (errors.length) fail(tag + "page errors: " + errors.join(" | "));
+    await ctx.close();
+  } finally { await st.close(); }
+  if (!bad) console.log("mReload ok");
+}
+
+// ── The phone page after a hub restart ──────────────────────────────────
+// The stream drops and the hub is down for a few connects, then answers, and its first read of the cards fails because
+// the room is not up yet. The page must reconnect on its backoff, read again until it gets an answer (not wait 60s for the
+// resync), and read the open card's thread, which no event announces.
+async function mReconnectSection(browser) {
+  const st = mServer({});
+  st.tasks = [mCard("r-1", { alias: "alpha", display_title: "alpha", status: "running" })];
+  st.replies["r-1"] = { source: "transcript", replies: [{ at: mIso(9 * M_MIN), text: "the first reply" }] };
+  await st.open();
+  const tag = "mReconnect: ";
+  try {
+    const ctx = await browser.newContext({ viewport: M_VIEWS[0], hasTouch: true, isMobile: true });
+    const p = await ctx.newPage();
+    const errors = [];
+    p.on("pageerror", e => errors.push(String(e)));
+    await p.goto(st.url + "/m/", { waitUntil: "domcontentloaded" });
+    await p.waitForFunction(() => window.mNet.loaded() && window.mNet.live(), null, { timeout: slow(10000) });
+    await p.evaluate(() => window.mCard.open("r-1"));
+    await p.waitForFunction(() => /the first reply/.test(document.getElementById("m-replies").textContent), null, { timeout: slow(8000) })
+      .catch(() => fail(tag + "the card did not show its reply"));
+    const hits0 = st.eventHits;
+    // the hub goes down: the stream ends, two connects are refused, the first read after it fails, and meanwhile things moved
+    st.eventsFail = 2;
+    st.tasksFail = 1;
+    st.tasks = [st.tasks[0], mCard("r-2", { alias: "beta", display_title: "beta", status: "running" })];
+    st.perms = [{ id: "pm1", task_id: "r-1", tool: "Bash", command: "ls", requested_at: mIso(0) }];
+    st.replies["r-1"] = { source: "transcript", replies: [{ at: mIso(9 * M_MIN), text: "the first reply" }, { at: mIso(M_MIN), text: "the second reply" }] };
+    st.streams.forEach(r => r.end());
+    await p.waitForFunction(() => !window.mNet.live(), null, { timeout: slow(4000) }).catch(() => fail(tag + "the page did not notice the stream drop"));
+    await p.waitForFunction(() => window.mNet.live(), null, { timeout: slow(20000) }).catch(() => fail(tag + "the page never reconnected"));
+    if (st.eventHits - hits0 < 3) fail(tag + "expected a backoff through the refused connects, saw " + (st.eventHits - hits0) + " connects");
+    await p.waitForFunction(() => window.mStore.cards().length === 2 && window.mStore.perms().length === 1, null, { timeout: slow(12000) })
+      .catch(async () => fail(tag + "the cards and permissions missed while down were not read: " + JSON.stringify(await p.evaluate(() => ({ c: window.mStore.cards().length, p: window.mStore.perms().length })))));
+    await p.waitForFunction(() => /the second reply/.test(document.getElementById("m-replies").textContent), null, { timeout: slow(8000) })
+      .catch(() => fail(tag + "the open card did not read the reply that landed while down"));
+    if (errors.length) fail(tag + "page errors: " + errors.join(" | "));
+    await ctx.close();
+  } finally { await st.close(); }
+  if (!bad) console.log("mReconnect ok");
+}
+
+// ── The open card reads its thread when the row's activity moves ─────────
+// A room that reports no `output_at` still moves `last_activity_at`. The read is throttled to one per 5s with the last
+// change always read, and a row that did not change reads nothing.
+async function mActivityReadSection(browser) {
+  const st = mServer({});
+  const T0 = mIso(10 * M_MIN), created = mIso(3600000);
+  const row = over => mCard("a-1", Object.assign({ alias: "alpha", display_title: "alpha", status: "running", output_at: null, created_at: created, last_activity_at: T0 }, over || {}));
+  st.tasks = [row()];
+  st.replies["a-1"] = { source: "transcript", replies: [{ at: mIso(9 * M_MIN), text: "a reply" }] };
+  await st.open();
+  const tag = "mActivityRead: ";
+  const reads = () => st.hits.filter(h => h.indexOf("a-1?") === 0).length;
+  const push = r => { st.tasks = [r]; st.send("task", Object.assign({ row: 1 }, r)); };
+  try {
+    const ctx = await browser.newContext({ viewport: M_VIEWS[0], hasTouch: true, isMobile: true });
+    const p = await ctx.newPage();
+    const errors = [];
+    p.on("pageerror", e => errors.push(String(e)));
+    await p.goto(st.url + "/m/", { waitUntil: "domcontentloaded" });
+    await p.waitForFunction(() => window.mNet.loaded() && window.mNet.live(), null, { timeout: slow(10000) });
+    await p.evaluate(() => window.mCard.open("a-1"));
+    await p.waitForFunction(() => /a reply/.test(document.getElementById("m-replies").textContent), null, { timeout: slow(8000) });
+    await p.waitForTimeout(300);
+    const r0 = reads();
+    // nothing changed, and the last read is more than 5s old so the throttle cannot be what holds it: no read
+    await p.waitForTimeout(5300);
+    push(row());
+    await p.waitForTimeout(1200);
+    if (reads() !== r0) fail(tag + "an unchanged row made a read");
+    // last_activity_at moved with output_at still null: one read, a moment later at most
+    push(row({ last_activity_at: mIso(5 * M_MIN) }));
+    await p.waitForTimeout(800);
+    if (reads() !== r0 + 1) fail(tag + "a moved last_activity_at made " + (reads() - r0) + " reads, not 1");
+    // ten changes in about a second: held, then one trailing read
+    for (let i = 0; i < 10; i++) { push(row({ last_activity_at: mIso(4 * M_MIN - i * 1000) })); await p.waitForTimeout(100); }
+    if (reads() !== r0 + 1) fail(tag + "the throttle let a read through inside 5s: " + (reads() - r0));
+    await p.waitForTimeout(5500);
+    if (reads() !== r0 + 2) fail(tag + "ten changes made " + (reads() - r0 - 1) + " reads after the first, not 1");
+    // prompted_at counts too
+    const T = mIso(2 * M_MIN);
+    await p.waitForTimeout(5200);
+    push(row({ last_activity_at: T }));
+    await p.waitForTimeout(800);
+    if (reads() !== r0 + 3) fail(tag + "a moved last_activity_at after a quiet spell did not read");
+    await p.waitForTimeout(5200);
+    push(row({ last_activity_at: T, prompted_at: mIso(M_MIN) }));
+    await p.waitForTimeout(800);
+    if (reads() !== r0 + 4) fail(tag + "a moved prompted_at alone did not read");
+    // a turn end on a row with no output_at moves the turn and the activity together: one read, not a second one 5s later
+    await p.waitForTimeout(5200);
+    push(row({ last_activity_at: mIso(M_MIN * 2), seen: { turn_ended_at: mIso(M_MIN * 2) } }));
+    await p.waitForTimeout(6500);
+    if (reads() !== r0 + 5) fail(tag + "a turn end made " + (reads() - r0 - 4) + " reads, not 1");
+    // the same with output_at reported
+    await p.waitForTimeout(200);
+    const OUT = mIso(M_MIN), PR = mIso(M_MIN);
+    push(row({ last_activity_at: mIso(M_MIN), prompted_at: PR, output_at: OUT }));
+    await p.waitForTimeout(6500);
+    if (reads() !== r0 + 6) fail(tag + "a turn end with output_at made " + (reads() - r0 - 5) + " reads, not 1");
+    // a room that reports output_at: activity alone is not a reason to read
+    push(row({ last_activity_at: mIso(30000), prompted_at: PR, output_at: OUT }));
+    await p.waitForTimeout(6500);
+    if (reads() !== r0 + 6) fail(tag + "activity alone read though the row reports output_at");
+    if (errors.length) fail(tag + "page errors: " + errors.join(" | "));
+    await ctx.close();
+  } finally { await st.close(); }
+  if (!bad) console.log("mActivityRead ok");
+}
+
+// ── Failed reads back off on their own and stop on a refusal ────────────
+async function mReadRetrySection(browser) {
+  const tag = "mReadRetry: ";
+  for (const status of [0, 401, 403]) {
+    const st = mServer({});
+    st.tasks = [mCard("q-1", { alias: "alpha", display_title: "alpha" })];
+    st.permsStatus = status || 503;
+    await st.open();
+    try {
+      const ctx = await browser.newContext({ viewport: M_VIEWS[0], hasTouch: true, isMobile: true });
+      const p = await ctx.newPage();
+      await p.goto(st.url + "/m/", { waitUntil: "domcontentloaded" });
+      await p.waitForFunction(() => window.mNet.loaded(), null, { timeout: slow(10000) });
+      await p.waitForTimeout(6500);
+      const n = st.permsHits;
+      if (!status && (n < 3 || n > 5)) fail(tag + "a 503 on permissions was read " + n + " times in 6.5s; backoff wants 3 to 5");
+      if (status && n > 2) fail(tag + "a " + status + " was retried: " + n + " reads");
+      await ctx.close();
+    } finally { await st.close(); }
+  }
+  if (!bad) console.log("mReadRetry ok");
+}
+
 async function mBellSection(browser) {
   const st = mServer({});
   st.tasks = [mCard("b-1", { alias: "alpha", display_title: "alpha", status: "running" })];
@@ -20344,7 +20595,7 @@ async function main() {
       u001Audit: u001AuditSection,
       pasteStart: pasteStartSection, pasteDone: pasteDoneSection, pasteOldRoom: pasteOldRoomSection, pasteClose: pasteCloseSection,
       growlQuestionShots: growlQuestionShotsSection, growlQuestionBody: growlQuestionBodySection, growlReplyGrow: growlReplyGrowSection, growlChoices: growlChoicesSection, growlStable: growlStableSection, growlOnIt: growlOnItSection, mGrowlQuestion: mGrowlQuestionSection,
-      bootClean: bootCleanSection, mWorking: mWorkingSection, mOwnMessages: mOwnMessagesSection, mBubbles: mBubblesSection, mRecapSheet: mRecapSheetSection,
+      bootClean: bootCleanSection, mReload: mReloadSection, mReconnect: mReconnectSection, mActivityRead: mActivityReadSection, mReadRetry: mReadRetrySection, mWorking: mWorkingSection, mOwnMessages: mOwnMessagesSection, mBubbles: mBubblesSection, mRecapSheet: mRecapSheetSection,
       mHomeOrder: mHomeOrderSection, cardUrlWayOut: cardUrlWayOutSection, phoneBoot: phoneBootSection, sayEnter: sayEnterSection, sendArrow: sendArrowSection, mTables: mTablesSection, mMarkdown: mMarkdownSection, mHostile: mHostileSection, mPictures: mPicturesSection, soundPhone: soundPhoneSection, phoneBell: phoneBellSection, mBell: mBellSection,
       mHomeOrder: mHomeOrderSection, cardUrlWayOut: cardUrlWayOutSection, phoneBoot: phoneBootSection, sayEnter: sayEnterSection, sendArrow: sendArrowSection, mTables: mTablesSection, mMarkdown: mMarkdownSection, mHostile: mHostileSection, mPictures: mPicturesSection, phoneRedirect: phoneRedirectSection,
       mHomeOrder: mHomeOrderSection, cardUrlWayOut: cardUrlWayOutSection, phoneBoot: phoneBootSection, sayEnter: sayEnterSection, sendArrow: sendArrowSection, mTables: mTablesSection, mMarkdown: mMarkdownSection, mHostile: mHostileSection, mPictures: mPicturesSection, mHidden: mHiddenSection, soundPhone: soundPhoneSection, phoneBell: phoneBellSection, mBell: mBellSection,
@@ -22616,12 +22867,20 @@ function mServer(state) {
     if (p === "/v1/tasks") {
       // A page scoped to a room asks with that room in a header, and the hub answers with that room's cards.
       const rm = req.headers["x-atrium-room"];
+      if (state.tasksFail > 0) { state.tasksFail--; return json(503, { error: "the room is not up yet" }); }
       return json(200, { tasks: rm ? state.tasks.filter(t => !t.room || t.room === rm) : state.tasks });
     }
-    if (p === "/v1/permissions") return json(200, { permissions: state.perms });
+    if (p === "/v1/permissions") {
+      state.permsHits = (state.permsHits || 0) + 1;
+      if (state.permsStatus) return json(state.permsStatus, { error: "no" });
+      return json(200, { permissions: state.perms });
+    }
+    if (p === "/v1/health") { state.healthHits = (state.healthHits || 0) + 1; return json(200, { build: state.build || "build-1" }); }
     if (p === "/v1/settings") return json(200, { board_skins: ["default", "daylight"], board_skin: state.skin || "default" });
     if (p === "/_hub/rooms") return json(404, { error: "not a hub" });
     if (p === "/v1/events") {
+      state.eventHits = (state.eventHits || 0) + 1;
+      if (state.eventsFail > 0) { state.eventsFail--; res.writeHead(503); return res.end(); }
       res.writeHead(200, { "Content-Type": "text/event-stream", "Cache-Control": "no-cache" });
       res.write(": hi\n\n");
       state.streams.push(res);
