@@ -8711,6 +8711,7 @@ async function ctxLineSection(browser, base) {
         const r = el.getBoundingClientRect();
         const br = b && b.getBoundingClientRect();
         const i = b && b.querySelector("i"), s = b && b.querySelector("s");
+        if (!b) out.plainPad = parseFloat(getComputedStyle(el).paddingBottom);
         out[el.dataset.id] = !b ? null : {
           cls: b.className, width: i.style.width, tick: s.style.left, tip: b.getAttribute("data-tip"),
           bottom: r.bottom - br.bottom >= 0 && r.bottom - br.bottom <= 8, h: br.height, wide: br.width > r.width - 4,
@@ -8719,6 +8720,7 @@ async function ctxLineSection(browser, base) {
           rowBg: getComputedStyle(el).backgroundColor, rowBorder: getComputedStyle(el).borderTopColor,
           pe: getComputedStyle(b).pointerEvents, z: getComputedStyle(b).zIndex,
           floorPe: getComputedStyle(b, "::after").pointerEvents,
+          hitH: parseFloat(getComputedStyle(b, "::after").height), padB: parseFloat(getComputedStyle(el).paddingBottom),
           landchip: !!el.querySelector(".chip.ctxland"), chiptext: (el.querySelector(".chip.ctxland") || {}).textContent,
           anim: getComputedStyle(i).animationIterationCount, name: getComputedStyle(i).animationName,
           fill: getComputedStyle(i).backgroundColor,
@@ -8756,6 +8758,7 @@ async function ctxLineSection(browser, base) {
       await wp.evaluate(async () => { await loadCards().catch(() => {}); await renderTermList(); });
     }
     const r = got.rows;
+    if (!(r.plainPad > 0)) fail("no plain row to compare the padding with.");
     for (const [id, w, cls] of [["cl-40", "27.3%", "peek-bar ctxline"], ["cl-70", "47.7%", "peek-bar ctxline"],
       ["cl-90", "61.4%", "peek-bar ctxline"], ["cl-warm", "77.3%", "peek-bar ctxline warm"],
       ["cl-over", "91.4%", "peek-bar ctxline hot over"]]) {
@@ -8768,6 +8771,8 @@ async function ctxLineSection(browser, base) {
       // a fill behind the title and path.
       if (!b.bottom || b.h > 4 || b.h < 2 || !b.inset) fail(id + " context line is not a thin strip on the bottom edge: " + JSON.stringify(b));
       if (b.z !== "auto" || b.pe !== "none" || b.floorPe !== "auto") fail(id + " context line layering/pointer (no z-index layer behind the row, hover area on): " + JSON.stringify(b));
+      if (!(b.hitH >= 5 && b.hitH <= 7)) fail(id + " tooltip hit area is " + b.hitH + "px tall, want about 5-6.");
+      if (!(b.padB >= r.plainPad + 2)) fail(id + " row has no room under its path line for the strip: padding-bottom " + b.padB + " vs " + r.plainPad);
       if (b.fill === "rgba(0, 0, 0, 0)") fail(id + " context line has no fill colour.");
     }
     if (r["cl-over"] && (r["cl-over"].anim !== "1" || r["cl-over"].name !== "ctxline-pulse")) {
