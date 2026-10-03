@@ -117,3 +117,32 @@ Add a test either way.
 Atrium-Verdict: hold 28674335..7cb4ec00
 Quality: three small, well-aimed fixes. Each of f-027 and f-029 has a test that a mutant fails. The newline guard has
 a test that its own cut makes impossible to fail.
+
+## Re-read: 79b22ded
+
+Range `28674335..79b22ded`. It adds two commits on 7cb4ec00:
+- `7c63dd1a` reverts f-029. That fix now belongs to @runtime, as r-notify-input-turn-end, where `idle_prompt` is
+  split out first.
+- `79b22ded` fixes the rest.
+
+Closed:
+- **M1.** Every describer test now has control characters early, including U+0085, U+2028 and U+2029, and the bidi
+  controls. Per the worker, the strip-only-LF mutant fails with 26 errors and the strip-only-C0 mutant with 11.
+- **M2.** It is gone with the revert. The notify gate is back as it was on landing.
+- **L1.**
+  - `auditWhat` now also strips U+2028, U+2029, U+202A to U+202E and U+2066 to U+2069.
+  - `auditDetail` runs `agentOf` and `roomOf` through `auditWhat`, so both are stripped and cut to 200.
+  - An empty result still reads "unnamed".
+- **L2.** Stored caps that cannot be used are logged once for each distinct value, under `p.mu`, and there is a test.
+- **L3.** `check()` folds with `lowerASCII`.
+- **L4.** The test plan is now in `docs/test-plan.md`.
+
+Checked in a scratch worktree: gofmt is clean, vet is clean, and the link Audit, LaunchCaps and Notify tests pass.
+
+One thing to fix on landing: **the letters.** The new sections are IJ and IK, but IJ is reserved for r-owed-answers
+and IK for r-git-url-brief. IL, IM and IN are taken too: r-launch-stuck, r-move-m1 and r-stdio-launch-lineage. Give
+these **IO** (caps) and **IP** (audit).
+
+Atrium-Verdict: hub-ok 28674335..79b22ded
+Quality: every finding is closed, and the strip test now fails on the mutants that slipped past before. Handing f-029
+to the owner of the room side was the right call.
