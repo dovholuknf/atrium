@@ -135,8 +135,8 @@ document.addEventListener("pointerout", e => {
 //     waiting on you (connected at a prompt is still a session you can go to), and
 //     drops only the dead ones.
 // `none` shows every session of that kind. The attached one is never hidden by
-// either toggle (see `sessionHiddenBy`). A pinned one is: with a toggle on, a
-// pinned row whose runner has gone hides like any other inactive row.
+// either toggle (see `sessionHiddenBy`), and neither is a pinned one: a pinned
+// row stays whatever the toggles say, drawn cold when its runner has gone.
 //
 // TWO SIGNALS. The agents rule reads `termCold`, the same test the row reads to
 // draw itself grey (see `termRow`), so the toggle hides exactly the grey agents. The subagents rule reads `workingNow`, the same live-activity test the
@@ -277,11 +277,12 @@ async function joinedClick(id) {
 // or exited one hides; an agent is inactive when it is cold (`termCold`), so only
 // a dead one hides.
 //
-// A PINNED SESSION HIDES LIKE ANY OTHER when its toggle is on. With the toggles
-// off a pinned row still outlives its runner, drawn cold; turning a toggle on is
-// the operator asking for the inactive ones to go, pinned or not.
+// A PINNED SESSION IS NEVER HIDDEN. Pinning is "always here", so a hide pill
+// that took it out would break the one promise the pin makes. A pinned row whose
+// runner has gone is still drawn cold, and a pinned subagent still draws with
+// the subagents pill on.
 function sessionHiddenBy(t, keep) {
-  if (keep(t)) return false;
+  if (keep(t) || t.pinned) return false;
   if (isDoer(t)) return !workingNow(t) && hideSubagentsMode() !== "none";
   return termCold(t) && hideAgentsMode() !== "none";
 }
@@ -1878,7 +1879,7 @@ async function renderTermList() {
   // the toggles say, since hiding must never yank the pane out from under whatever
   // is open (the teardown below keys off this same list); a live agent is kept by
   // its own rule, an actively-working subagent by its own (see `sessionHiddenBy`).
-  // A pinned session is NOT kept: with a toggle on it hides like any other (see
+  // A pinned session is kept too, drawn cold if its runner is gone (see
   // `sessionHiddenBy`). What is removed is counted per kind so the pill can say
   // how many, and everything downstream draws `shown` rather than `tasks`.
   const keep = t => !!(termTask && t.id === termTask.id);
@@ -1890,8 +1891,8 @@ async function renderTermList() {
   // offering while its toggle is off, the second is the count a lit segment
   // shows. Each uses its own kind's inactive signal - agents on `termCold`,
   // subagents on working-right-now - so the offer and the act agree.
-  const inactiveAgent = t => !keep(t) && termCold(t);
-  const inactiveSub = t => !keep(t) && !workingNow(t);
+  const inactiveAgent = t => !keep(t) && !t.pinned && termCold(t);
+  const inactiveSub = t => !keep(t) && !t.pinned && !workingNow(t);
   const hideCounts = {
     agentHideable: tasks.filter(t => !isDoer(t) && inactiveAgent(t)).length,
     subHideable: tasks.filter(t => isDoer(t) && inactiveSub(t)).length,
@@ -2042,9 +2043,9 @@ let pinnedNow = [];
 // does when it is open.
 //
 // SHOWN OUT OF HOW MANY, like every group heading (see `termHeading`). `hide
-// inactive` reaches into the bucket, so `total` is every pinned row and the
-// count reads `5/15` while any are hidden. A bucket whose rows are all hidden
-// says so rather than inviting a first drag.
+// inactive` no longer reaches into the bucket (a pinned row is never hidden, see
+// `sessionHiddenBy`), so `total` and the rows drawn agree and the count is plain.
+// The `5/15` form stays for a caller that hands in fewer rows than the total.
 function termBucketHTML(pinned, total, folded) {
   const rows = folded ? "" : pinned.map(t => termRow(t, false)).join("");
   const hidden = total - pinned.length;
