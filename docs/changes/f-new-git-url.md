@@ -2,12 +2,28 @@
 
 ## @LETTER@. A card asks the hub where to fetch code instead of asking for a paste
 
-### @LETTER@1. The real-world plan: sg3's unpushed work, found by a card on m1mini
+### @LETTER@1. The real-world plan: finished work, found by a card on m1mini
 
-On sg3, in its atrium clone, make a card commit a trivial change on a `claude/<x>` branch and do NOT push it. From a card
-on m1mini, call `atrium_git_url` with `repo` = `<owner>/<repo>` and `branch` = `claude/<x>`. The answer has source `room`,
-room `sg3`, `online` true, a URL under `/git/room/sg3/...` and the text `fetch it with: git fetch <url> claude/<x>`. Run
-that command: it succeeds and `git diff FETCH_HEAD~1 FETCH_HEAD` is the commit. Nobody was asked for a paste.
+On sg3, in its atrium clone, have a card finish a change on a `fix/<x>` branch and push it to the hub
+(`atrium_git_push`). From a card on m1mini, call `atrium_git_url` with `repo` = `<owner>/<repo>` and
+`branch` = `fix/<x>`. The answer has source `hub`, and its URL is on m1mini's OWN forwarder
+(`http://127.0.0.1:<m1mini's agent port>/git/hub/<host>/<owner>/<repo>.git`), not the hub's address, with the text
+`fetch it with: git fetch <url> fix/<x>`. Run that command in the card's own shell: it succeeds with no token typed
+(the card's environment carries it), and `git diff FETCH_HEAD~1 FETCH_HEAD` is the change. Nobody was asked for a paste.
+The same call from a shell with no card token (a script the card runs) fetches nothing: the forwarder refuses it.
+
+### @LETTER@1a. A room's work in progress is not given to a card
+
+Have sg3's card commit on `claude/<x>` and NOT push. From the m1mini card ask for `claude/<x>`: the room source has no
+URL and a note, and the text says a card cannot fetch it and to ask the card on sg3 to `atrium_git_push` it. After sg3's
+card pushes, ask again: the hub source answers, with its forwarder URL. The operator (the tool called with no card,
+or the board's loopback) is still given the room's `/git/room/sg3/...` URL, and fetches the unpushed commit with it.
+
+### @LETTER@1b. A room that does not say where its forwarder is
+
+On a room older than this build (it answers 404 to `GET /v1/hub-remote`), or with the room stopped mid-call, a card's answer
+has no URL for any source, with the note that its room did not say where its hub remote is, and the text does not tell
+it to fetch.
 
 ### @LETTER@2. Finished work answers hub; both answers both
 
@@ -34,12 +50,13 @@ shown as not online.
 
 ### @LETTER@6. The URL host is the host the caller used
 
-Ask over the board's loopback and over the OpenZiti service name (and a zrok private share). Each answer's URLs begin with
-the host and scheme that request came in on, never another.
+Ask the endpoint (`GET /_hub/git/url?repo=...`) over the board's loopback and over the OpenZiti service name (and a zrok
+private share). Each answer's URLs begin with the host and scheme that request came in on, never another. (The tool
+rewrites a card's hub URLs onto its room's forwarder; the operator's tool call is on the hub's own board address.)
 
 ### @LETTER@7. Who may ask
 
-From the hub machine's loopback, over the OpenZiti service and over a zrok private share it answers. Over a zrok public
+From the hub machine's loopback, over the OpenZiti service and over a zrok private share the endpoint answers. Over a zrok public
 share `GET /_hub/git/url?repo=...` answers 404, the same as a path that is not there. A request from a non-loopback
 address with no overlay answers 403.
 
@@ -50,5 +67,7 @@ new one is asked.
 
 ### @LETTER@9. Automated
 
-`env -u ATRIUM_LOCATION go test -timeout 120m -race -run 'ABranchOn|AMissAnswers|AnOfflineRoomAnswers|ABranchTheRoomWouldNot|TheURLIsOnTheHost|OnlyTheReachesOfAFetchMayAskForAURL|ARoomsAnswerIsHeld|TheToolReturns|ABranchPushedByARoom|ParseAdvert|ClosestNames|EditDistance|ResolveRepo|TheLineAModelReads' ./internal/link ./internal/gitsync ./internal/cli`
-passes, and `env -u ATRIUM_LOCATION go test -timeout 120m ./internal/link ./internal/cli ./internal/gitsync` passes.
+`env -u ATRIUM_LOCATION go test -timeout 120m -race -run 'ABranchOn|AMissAnswers|AnOfflineRoomAnswers|ABranchTheRoomWouldNot|TheURLIsOnTheHost|OnlyTheReachesOfAFetchMayAskForAURL|ARoomsAnswerIsHeld|TheToolReturns|ABranchPushedByARoom|ACardOnAnotherRoom|ACardIsGivenNoURL|ACardWhoseRoom|ForwarderBase|AHostThatIsNot|ParseAdvert|ClosestNames|EditDistance|ResolveRepo|TheLineAModelReads|AnAdvertisement|AnAnswerIsCut|AnAmbiguous|ADownRoom|OnlyAnOkOrBehind|ARoomNamedAtLength|ForCard' ./internal/link ./internal/gitsync`
+passes, and `env -u ATRIUM_LOCATION go test -timeout 120m ./internal/link ./internal/cli ./internal/gitsync ./internal/api` passes.
+`TestACardOnAnotherRoomIsGivenItsRoomsForwarderAndFetchesThroughIt` runs a real forwarder in front of the hub's board and
+a real `git fetch` of the URL it was given, with the card's token.

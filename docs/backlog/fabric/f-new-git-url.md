@@ -1,6 +1,7 @@
 # f-new-git-url: a card asks the hub where to fetch code (hub forge stage 4, `atrium_git_url`)
 
-Status: BUILT on claude/f-git-url (from claude/landing e9be3fc3), waiting for @review via @fabric. Not landed. Owner @fabric,
+Status: BUILT on claude/f-git-url (from claude/landing e9be3fc3), held by @review on M1 (a card was handed the hub's loopback address),
+fixed in the next commits, waiting for @review via @fabric. Not landed. Owner @fabric,
 with @runtime for the card-brief line.
 Design: `docs/rnd/hub-forge-design.md` section 4 and the stage 4 row of 7.
 
@@ -17,12 +18,20 @@ Done:
   is 404;
 - tests for every case in the brief and 12 mutations, each red.
 
+After the hold (M1 and the lows):
+- a card is given its OWN room's forwarder for the hub's URLs (the room says where it is, `GET /v1/hub-remote`), tested with a
+  real forwarder and a real fetch with the card's token; a room that does not say leaves the card no URL and says why;
+- a room's work in progress has no URL for a card until a `/git/room/` forwarder exists, and the line says to ask the
+  card on that room to `atrium_git_push` it;
+- the four untested bounds, the hostForURL test, the ambiguous short name, the down room and the sync states, and the
+  cut of `room` are each tested, mutation-checked, and in section IR of `docs/test-plan.md`.
+
 Left:
 - The card-brief line is @runtime's (`internal/daemon` launch brief / CLAUDE-side text), not edited here: "To read code
-  that is not in your cwd, call atrium_git_url, then fetch it from the URL it gives. Never ask for a paste."
+  that is not in your cwd, call atrium_git_url, then fetch it from the URL it gives. Never ask for a paste." It can land
+  with the hub half now that a card's URL is one it can fetch.
+- A `/git/room/` route on the room's forwarder (and the link's git kind), so a card can read another room's work in
+  progress. Until then a card asks the card on that room to push.
 - No CLI door: `atrium_git_sync` and the other git tools have none. Add one if a person at a terminal should ask.
-- The URL host a card on ANOTHER room sees is the board address its control MCP asks by (loopback for the hub's own
-  control MCP). Until @runtime's stable forwarder (stage 1) lands, a card on another room cannot always use it as is.
-- A pass-through of a card on a room over the link is still stage 1's forwarder and answers 404 on the board.
 - Matching a room's branches to a repository by FULL name for every card waits for stage 2's scm path (as in stage 3).
 - The real run across sg3 and m1mini (`docs/changes/f-new-git-url.md`, step 1) is the orchestrator's.

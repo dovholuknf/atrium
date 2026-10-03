@@ -36,11 +36,34 @@ Decisions:
   put the store under `hub/` so a room name can never shadow a host). The answer carries the real one.
 - When a branch is on both, the URL `atrium_git_url` text names is the room's if the room is ahead and online, otherwise
   the hub's, otherwise the room's.
-- No CLI door: the other git tools (`atrium_git_sync`, `atrium_git_collect`, `atrium_git_push`) have none either. A card on another room
+- No CLI door: the other git tools (`atrium_git_sync`, `atrium_git_collect`, `atrium_git_push`) have none either. A card
   reaches this through the hub control MCP like they do.
-- The tool's URL host is whatever board address the control MCP asks by (loopback for the hub's own control MCP) until
-  @runtime's stable forwarder lands; a card on another room should read it as "the hub, reached from here" and not copy
-  it to a machine that cannot reach loopback.
+
+After review (hold a1a89240, M1 and the lows):
+- A CARD IS GIVEN A URL IT CAN FETCH. The first build put the hub's loopback address (the board the control tool asks by)
+  in every URL, which is no address at all to a card on another room. Now, when the caller is a card (the tool call
+  carries its agent), the tool asks the card's own room where its hub forwarder is (`GET /v1/hub-remote` on the room, new,
+  answering `http://127.0.0.1:<agent port>/git/`) and rewrites each `hub` URL onto it: the path after `/git/` is the same
+  (`<forwarder>hub/<host>/<owner>/<repo>.git`), and the card's own environment carries the token to that base and
+  nowhere else. A base the room gives that is not `http://<loopback>:<port>/git/` is not used. A room that does not say
+  (older than this, or not answering) leaves its card with NO url and the sentence why, never a wrong one. The operator's
+  call (no agent) keeps the hub's own address.
+- A ROOM'S WORK IN PROGRESS HAS NO URL FOR A CARD. The room route (`/git/room/...`) has no forwarder yet (the link's git
+  kind does not route it), so a `room` source for a card has `url` empty and a `note`, and the line says a card cannot
+  fetch it and to ask the card on that room to `atrium_git_push` it, then ask again. `pick` never chooses a source with no
+  URL, so a branch on both gives the hub's URL (with the room's newer work named) and a branch only on a room gives the
+  way on and no `git fetch`. The operator is still given the room's URL. This holds until a `/git/room/` forwarder exists.
+- The fetch is tested end to end: a real forwarder in front of the hub's board, the URL the tool gave a card on another
+  room, and a real `git fetch` of it with the card's token, which gets the branch out of the store. The same URL with no
+  token is refused.
+- The lows: the 4 MiB advertisement cap, the 500-branch cap on an answer (two rooms of 500), the early exit in
+  `editDistance` and the 300-character cap of `resolveRepo` each have a test that goes red without them (the advert cap
+  is a read limit AND a length check, so the test is red with both gone and the check alone is redundant); the
+  bad-Host test now calls `serveGitURL` on the overlay, where the hosts guard does not stand in front, so it reaches
+  the regex; an ambiguous short name is answered by `Lookup` with the candidates; a `down` room is asked again and an
+  answering room is held; only an `ok` or `behind` sync counts a room as having a repository; and the `room`, and a branch
+  that is not there, are cut like every other echo of what the caller typed. The test plan is section IR of
+  `docs/test-plan.md`.
 
 For @runtime, to go in the launch brief / CLAUDE-side card text (not edited here, `internal/daemon` is theirs): "To read
 code that is not in your cwd, call atrium_git_url, then fetch it from the URL it gives. Never ask for a paste."
