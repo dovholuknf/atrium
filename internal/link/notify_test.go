@@ -218,6 +218,14 @@ func TestNotifyIdentityPerReasonAndPriority(t *testing.T) {
 		// A card that has never finished a turn is not news: whoever launched it
 		// is already there or gave it its prompt.
 		{"input before any turn", `{"status":"needs-input","waiting_since":"T2","seen":{"unseen":false}}`, "", ""},
+		// A card that asked through the Notification hook has no turn end but is
+		// waiting on somebody, so it notifies. The same card with no reason is
+		// still dropped.
+		{"input asked before any turn",
+			`{"status":"needs-input","waiting_since":"T2","waiting_reason":"asked","seen":{"unseen":false}}`,
+			"input", "a|input|T2"},
+		{"input no reason before any turn",
+			`{"status":"needs-input","waiting_since":"T2","waiting_reason":"","seen":{"unseen":false}}`, "", ""},
 		// A room that could not read its seen table sends null, which is "cannot
 		// say", so input notifies rather than going quiet.
 		{"input with seen null", `{"status":"needs-input","waiting_since":"T2","seen":null}`, "input", "a|input|T2"},
