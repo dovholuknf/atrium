@@ -510,7 +510,6 @@ service field offers, start, and reach the board from another machine on that ne
 
 Until somebody does that, `docs/fabric/overlays.md` says so rather than implying both halves are equally proved.
 
-
 ### H5. The zrok account block counts what the account is holding
 
 **Steps**
@@ -548,7 +547,6 @@ delete shares over a block deleting shares does not lift.
 **Expect**, when a name reservation is refused for the name ceiling, a message that says to release a name.
 **The failure this replaces is the one to watch for:** "that name is taken, try a longer one", which is what an
 account at its name limit used to be told, and no longer name would have helped.
-
 
 ### H7. Pasting into a terminal over a share
 
@@ -930,7 +928,6 @@ before starting a daemon.
 from a new copy. A preview that silently re-copied would produce "why are these cards stale" an hour later, and
 one that silently kept them would produce the same question the other way round.
 
-
 ## M. Cutting a release
 
 Nothing here touches the board. It is in this document because a release is the one procedure that gets run
@@ -995,7 +992,6 @@ release. A "cannot find atrium.exe" means `extract_dir` and the archive layout d
 the designed outcome and not a bug. Prefer the workflow once it has worked once, and use `--from-tag` locally
 after that.
 
-
 ## N. Which of these want me
 
 `atrium peers` grouped by what each card wants. The states it separates are the ones that were repeatedly
@@ -1058,7 +1054,6 @@ using the default and looking like an answer.
 
 **Expect** the finished card is absent. The plain list is the addressing list for `atrium tell`, and offering a
 session that has ended wastes a turn and produces a message nobody reads. It is still grouped and ranked.
-
 
 ## O. The board does not throw away where you were
 
@@ -1153,7 +1148,6 @@ worse than one that flickers, and it will look calm while doing it.
 **Expect** every one of those shows up on the board within a poll, in the right column, with the right text.
 A card that arrives in the wrong place, keeps an old title, or refuses to leave is this fix failing.
 
-
 ## P. Saying only what was verified
 
 Four places where the board reported an outcome it had not checked. Every one of them looks fine on a board
@@ -1221,7 +1215,6 @@ terminal it no longer has.
 **Expect** `nothing appeared`, naming Windows as the likely cause. Before, the button was silent, and silent
 reads as working. Turn notifications back on and press it again: `it is on screen`.
 
-
 ## Q. The login on the published board
 
 Everything here needs a provider, which is what the Go tests cannot have. They run against a fake one that
@@ -1285,7 +1278,6 @@ comes back, so it is under an attacker's control from end to end, and a link tha
 domain the moment they finish signing in is the oldest phishing primitive there is.
 `TestALoginCannotSendSomebodyOffThisBoard` covers the parsing. This covers the browser, which is the only thing
 that decides what `//example.com` means.
-
 
 ## R. Statusline telemetry
 
@@ -1361,7 +1353,6 @@ never-stored rule is about.
 That difference is deliberate: an activity goes wrong fast, a context figure only grows, and an idle card is
 exactly the one whose context decides whether you resume it.
 
-
 ## S. The switcher
 
 Everything here is a browser question, which is why none of it is in `go test`. `scripts/check-switcher.js`
@@ -1435,7 +1426,6 @@ one the window was opened on.
 **Expect** step 2 is refused, saying B already has a window. At step 3 the board LETS GO of card C, its pane
 goes back to nothing attached, and it says so. Neither case ends with two live views on one terminal.
 
-
 ## T. A session asking another session for help
 
 Two gated sessions on the board, on the same machine. `atrium peers` from either one names the other, and the
@@ -1499,7 +1489,6 @@ quoted back, and the card returns to running when the session actually reads it,
 
 **Expect** the card is in done with the recap, and the question is gone. A card in done that is still asking
 makes the field meaningless.
-
 
 ## U. Sending work to another machine
 
@@ -1594,7 +1583,6 @@ curl.exe -s -X POST http://localhost:7778/v1/dispatch/<item>/result `
 **Expect** 409, and the row unchanged. The token is the whole of the authorization and there is no room
 identity to trust. If this ever answers 200, anything that can reach the board can mark somebody's queue item
 started.
-
 
 ## V. What the round 1 to 8 review turned up, fixed
 
@@ -4585,7 +4573,6 @@ goes when the details open. `tooltip` checks that off the cards tooltips are as 
 **Expected:** 1 shows no tooltip at half a second or ever, only the details at one second, under the pointer. Their
 head has the card's whole name, not cut off, its `repo/worktree:branch` address, and the chip's tooltip text as the
 last line, which changes as the pointer moves to another chip. 2 shows the gear's tooltip as before.
-
 
 ## CA. A launch picks its model and effort, and passes extra args and env
 
@@ -8032,7 +8019,6 @@ the hub routing and the control tool.
 6. On a transcript over 16MB with replies spread through it, a deep page still answers: the 16MB bound counts from
    the `before` position, not from the end of the file.
 
-
 ## HO. A director held to a context ceiling (r-director-ceiling)
 
 Tagging is the orchestrator's job, never a worker's. There is no `atrium tag` command. Use the board's tag editor, or
@@ -8472,3 +8458,41 @@ Covered by `TestInACardEnvGitPushHubLandsWithTheCardInThePushLog`, `TestAProcess
 `TestAHubRemotePointingElsewhereIsLeftAloneAndAtriumHubIsAdded`, `TestEnsureRemotesAddsHubFollowsAPortChangeAndGuardsOriginOnAtriumMadeClones`,
 `TestACardThatRunsOutsideCodeGetsNoGitTokenInItsEnv`, `TestAPRRunnersCommandsAndForksHaveNoGitTokenInTheirEnv`,
 `TestACardsLaunchEnvCarriesItsGitTokenScopedToTheForwarder`, `TestGitPushSetting`. Items 1 and 2 live on m1mini against the hub.
+
+## IN. A stdio launch has a launcher (r-stdio-launch-lineage)
+
+Needs a room and a session whose MCP is the stdio `atrium control` (a room-local session, not through the hub), with `ATRIUM_AGENT_NAME` set.
+
+1. From that session call `atrium_launch` with a `cwd` and a `prompt`. The new card's tags include `origin:agent` and `atrium:subagent`, its launcher (`spawned_by`) is the caller's name, and the prompt it was started with ends "When you finish, get blocked, or need an answer, call atrium_report ...".
+2. The worker calls `atrium_report`: the launcher is told, and the card is not shown as "report waiting" with nobody told.
+3. Launch with `tags: ["atrium:director"]`: no `atrium:subagent` tag.
+4. Run the same MCP by hand with `ATRIUM_AGENT_NAME` unset and launch: it starts, and the card's launcher is empty, not a blank name.
+
+Covered by `TestAStdioLaunch*` and `TestAHandRunStdioLaunch*` (cli). Items 1 to 4 are not yet run live.
+
+## IO. Launch caps refuse a case-duplicate room and an unknown field (f-027)
+
+1. `env -u ATRIUM_LOCATION go test -run 'TestTheLaunchCaps|TestAStoredCaseDuplicateIsLoggedOnce' ./internal/link`
+   passes.
+2. On a hub, `PUT /_hub/launch-caps` from the hub's machine with `{"rooms":{"SG3":1,"sg3":50}}` answers 400, and so
+   does `{"room":{"sg3":5}}`. `GET /_hub/launch-caps` afterwards shows the caps as they were.
+3. If a hub already stored such a duplicate, every room reads the default cap. The hub log says
+   `the stored launch caps are unusable` once, with the reason. Check the stored `launch_caps` before deploying.
+
+## IP. The control audit line is one bounded line (f-028)
+
+1. `env -u ATRIUM_LOCATION go test -run 'TestAuditDetail' ./internal/link` passes. It puts CR, LF, NUL, ESC, U+0085,
+   U+2028, U+2029 and the bidi controls early in a 1 MiB value for the alias, cull, launch, say and exit describers,
+   and in the agent and room headers. A strip of only LF, or of only C0, fails it.
+2. Call `atrium_alias` with a long alias that holds a newline. The audit row for it is one line of at most about 300
+   characters, and the agent and room in it are the cleaned header values.
+
+## IQ. A card that asked raises `input`; an idle prompt does not (r-notify-input-turn-end)
+
+Needs a room with the hub's phone notice on (a notify command set) and a claude card.
+
+1. Launch a card and leave it at its prompt for over a minute (the `idle_prompt` notification). No `input` notice is raised, and the card's waiting reason is empty.
+2. Make a card hit a permission prompt or a question dialog before its first Stop. An `input` (or `permission`) notice is raised.
+3. Have a card ask a question with the asking tool, finish the turn, and sit idle a minute: the card still reads `asked`.
+
+Covered by `TestARealNotificationRecordsThatTheCardAsked`, `TestAnIdlePromptDoesNotRecordAnAsk`, `TestAnIdlePromptKeepsARealEarlierAsk` (daemon) and the `asked before any turn`, `idle prompt before any turn` and `started before any turn` cases of `TestNotifyIdentityPerReasonAndPriority` (link). Items 1 to 3 are not yet run live.

@@ -731,11 +731,20 @@ func launchHandler(ctx context.Context, _ *mcp.CallToolRequest, in LaunchInput) 
 		prompt = briefPrompt(prompt)
 		out.Brief = path
 	}
+	// THE SAME LINEAGE THE HUB'S atrium_launch RECORDS, for the parts that are this room's: who
+	// launched it, the origin marker, the worker marker and the report line. Without them the room
+	// filed every stdio launch as the board's own dialog (`@human`), so the worker had no launcher
+	// and its reports and notices reached nobody. The hub's launch cap stays the hub's.
 	req := map[string]any{
 		"harness": harness, "cwd": in.Cwd, "title": in.Title,
-		"why": in.Why, "prompt": prompt, "tags": in.Tags,
+		"why": in.Why, "prompt": link.WithReportLine(prompt), "tags": link.AgentLaunchTags(in.Tags),
 		"model": in.Model, "effort": in.Effort, "args": in.Args, "env": in.Env,
 		"lean_agents": in.LeanAgents, "lean_skills": in.LeanSkills,
+	}
+	// A hand-run session has no name to attribute a launch to, and is left unattributed rather
+	// than filed under a blank one.
+	if me := strings.TrimSpace(os.Getenv("ATRIUM_AGENT_NAME")); me != "" {
+		req["spawned_by"] = me
 	}
 	var t card
 	if err := ask(ctx, http.MethodPost, "/v1/launch", req, &t); err != nil {

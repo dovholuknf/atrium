@@ -232,11 +232,11 @@ const LOOSE = Object.assign({}, T1, { id: "loose1", display_title: "loose card",
 // SUBAGENTS carry the `origin:agent` tag the launch cap counts; AGENTS do not (a
 // human's own session). A dead UNPINNED session is not in the strip at all
 // (nothing to switch to), so the dead rows are PINNED, drawn cold, which also
-// proves a pinned session hides like any other once its toggle is on. The
+// proves a pinned session is never hidden, whatever its toggle says. The
 // subagent side has three rows to separate its rule from the agents' rule:
 // WORKING (stays), IDLE (supervised but not computing, hides - the difference
-// from the agents rule) and DEAD (pinned, hides). The agent side has an
-// IDLE-BUT-LIVE row (stays) and a DEAD row (pinned, cold, hides).
+// from the agents rule) and DEAD (pinned, stays). The agent side has an
+// IDLE-BUT-LIVE row (stays) and a DEAD row (pinned, cold, stays).
 const SUBLIVE = {
   id: "sublive", status: "running", display_title: "idle subagent", runner: "claude",
   rank: 1, worktree: "/tmp/sublive", why: "", idle_seconds: 0, wait_seconds: 0,
@@ -247,7 +247,7 @@ const SUBWORK = Object.assign({}, SUBLIVE, {
   id: "subwork", display_title: "working subagent", activity: { what: "thinking" }
 });
 // Runner gone, held by its pin, drawn cold: not working (and exited), so the
-// subagents toggle hides it despite the pin.
+// subagents toggle keeps it, the pin wins.
 const SUBDEAD = Object.assign({}, SUBLIVE, {
   id: "subdead", display_title: "dead subagent", status: "dead",
   supervised: false, pinned: true, pid: 0
@@ -255,7 +255,7 @@ const SUBDEAD = Object.assign({}, SUBLIVE, {
 const AGLIVE = Object.assign({}, SUBLIVE, {
   id: "aglive", display_title: "my terminal", tags: []
 });
-// A dead agent (no tag), pinned cold: the agents toggle hides it despite the pin.
+// A dead agent (no tag), pinned cold: the agents toggle keeps it, drawn grey.
 const AGDEAD = Object.assign({}, SUBLIVE, {
   id: "agdead", display_title: "my dead terminal", tags: [],
   status: "dead", supervised: false, pinned: true, pid: 0
@@ -8713,12 +8713,15 @@ async function ctxLineSection(browser, base) {
         const i = b && b.querySelector("i"), s = b && b.querySelector("s");
         out[el.dataset.id] = !b ? null : {
           cls: b.className, width: i.style.width, tick: s.style.left, tip: b.getAttribute("data-tip"),
-          bottom: Math.abs(br.bottom - r.bottom) < 2, wide: br.width > r.width - 4, tall: br.height > r.height - 4,
+          bottom: r.bottom - br.bottom >= 0 && r.bottom - br.bottom <= 8, h: br.height, wide: br.width > r.width - 4,
+          inset: br.left - r.left >= 6 && r.right - br.right >= 6,
+          barBg: getComputedStyle(b).backgroundColor, fillBg: getComputedStyle(i).backgroundColor,
+          rowBg: getComputedStyle(el).backgroundColor, rowBorder: getComputedStyle(el).borderTopColor,
           pe: getComputedStyle(b).pointerEvents, z: getComputedStyle(b).zIndex,
           floorPe: getComputedStyle(b, "::after").pointerEvents,
           landchip: !!el.querySelector(".chip.ctxland"), chiptext: (el.querySelector(".chip.ctxland") || {}).textContent,
           anim: getComputedStyle(i).animationIterationCount, name: getComputedStyle(i).animationName,
-          fill: getComputedStyle(i).backgroundImage,
+          fill: getComputedStyle(i).backgroundColor,
           chip: !!el.querySelector(".chip.ctxwarn"), cycle: !!el.querySelector(".chip") && /context 2\/4/.test(el.textContent)
         };
       }
@@ -8731,6 +8734,27 @@ async function ctxLineSection(browser, base) {
       shared.innerHTML = ctxMeter(201000, 200000, "", "201k of 200k (land the plane)");
       return { rows: out, popover: pb ? pb.outerHTML : null, meter: shared.firstElementChild.outerHTML };
     });
+    // For checking by eye: ROWFLOOD_SHOTS=<dir> ROWFLOOD_TAG=before|after writes four rows side by side (a plain one,
+    // and a context at 10%, 80% and 130% of the land line) at 2000px and 390px on a light and a dark skin.
+    if (process.env.ROWFLOOD_SHOTS) {
+      const dir = process.env.ROWFLOOD_SHOTS, tag = process.env.ROWFLOOD_TAG || "shot";
+      const keep = wornTasks;
+      wornTasks = [row("sh-plain", null, { display_title: "runtime", status: "working", worktree: "/tmp/cl/runtime" }),
+        row("sh-10", 20000, { display_title: "review", worktree: "/tmp/cl/review" }),
+        row("sh-80", 160000, { display_title: "r-owed-answers", worktree: "/tmp/cl/r-owed-answers" }),
+        row("sh-130", 260000, { display_title: "fabric", worktree: "/tmp/cl/fabric" })];
+      for (const [w, h] of [[2000, 700], [390, 700]]) {
+        await wp.setViewportSize({ width: w, height: h });
+        for (const skin of ["paper", "graphite"]) {
+          await wp.evaluate(async sk => { applySkin(sk); await loadCards().catch(() => {}); await renderTermList(); }, skin);
+          await wp.waitForTimeout(1500);
+          await wp.screenshot({ path: require("path").join(dir, `${tag}-${w}-${skin}.png`) });
+        }
+      }
+      await wp.setViewportSize({ width: 1400, height: 900 });
+      wornTasks = keep;
+      await wp.evaluate(async () => { await loadCards().catch(() => {}); await renderTermList(); });
+    }
     const r = got.rows;
     for (const [id, w, cls] of [["cl-40", "27.3%", "peek-bar ctxline"], ["cl-70", "47.7%", "peek-bar ctxline"],
       ["cl-90", "61.4%", "peek-bar ctxline"], ["cl-warm", "77.3%", "peek-bar ctxline warm"],
@@ -8740,16 +8764,29 @@ async function ctxLineSection(browser, base) {
       if (b.cls !== cls) fail(id + " line class is " + b.cls + ", want " + cls);
       if (b.width !== w) fail(id + " fill is " + b.width + ", want " + w);
       if (b.tick !== "90.9%") fail(id + " tick is at " + b.tick);
-      if (!b.wide || !b.tall) fail(id + " flood does not cover the row: " + JSON.stringify(b));
-      if (b.pe !== "none" || b.floorPe !== "auto" || b.z !== "-1") fail(id + " flood layering/pointer: " + JSON.stringify(b));
+      // A thin strip along the row's bottom edge, inset from the corners (so the left accent bar is untouched), never
+      // a fill behind the title and path.
+      if (!b.bottom || b.h > 4 || b.h < 2 || !b.inset) fail(id + " context line is not a thin strip on the bottom edge: " + JSON.stringify(b));
+      if (b.z !== "auto" || b.pe !== "none" || b.floorPe !== "auto") fail(id + " context line layering/pointer (no z-index layer behind the row, hover area on): " + JSON.stringify(b));
+      if (b.fill === "rgba(0, 0, 0, 0)") fail(id + " context line has no fill colour.");
     }
     if (r["cl-over"] && (r["cl-over"].anim !== "1" || r["cl-over"].name !== "ctxline-pulse")) {
       fail("past the limit the line does not pulse exactly once: " + r["cl-over"].anim + " " + r["cl-over"].name);
     }
     if (r["cl-warm"] && r["cl-warm"].name !== "none") fail("a line under the land line animates.");
     if (r["cl-over"] && r["cl-over"].tip !== "201k of 200k (land the plane), window 1M") fail("the line's tooltip: " + (r["cl-over"] || {}).tip);
-    if (r["cl-over"] && (!r["cl-over"].landchip || r["cl-over"].chiptext !== "LAND 201k")) fail("past the land line the row has no LAND badge: " + JSON.stringify(r["cl-over"]));
-    if (r["cl-warm"] && (!r["cl-warm"].chip || r["cl-warm"].landchip)) fail("between warn and land the row must have the amber mark and no badge.");
+    if (r["cl-over"] && r["cl-over"].landchip) fail("past the land line the row draws a LAND badge: " + JSON.stringify(r["cl-over"]));
+    if (r["cl-over"] && !r["cl-over"].chip) fail("past the land line the row lost the amber warn mark.");
+    // Heat steps: neutral, amber at warn, danger at land: three different fills.
+    if (r["cl-70"] && r["cl-warm"] && r["cl-over"] && new Set([r["cl-70"].fill, r["cl-warm"].fill, r["cl-over"].fill]).size !== 3) {
+      fail("the context line's heat steps are not three colours: " + [r["cl-70"].fill, r["cl-warm"].fill, r["cl-over"].fill]);
+    }
+    // A row with a context figure looks as strong as a plain one: same row background and border whatever the context.
+    for (const id of ["cl-40", "cl-warm", "cl-over"]) {
+      if (r[id] && r["cl-70"] && (r[id].rowBg !== r["cl-70"].rowBg || r[id].rowBorder !== r["cl-70"].rowBorder)) {
+        fail(id + " row is tinted or bordered differently from a low-context row: " + JSON.stringify([r[id].rowBg, r[id].rowBorder, r["cl-70"].rowBg, r["cl-70"].rowBorder]));
+      }
+    }    if (r["cl-warm"] && (!r["cl-warm"].chip || r["cl-warm"].landchip)) fail("between warn and land the row must have the amber mark and no badge.");
     if (r["cl-70"] && (r["cl-70"].chip || r["cl-70"].landchip)) fail("a card under the warn line has a mark.");
     if (r["cl-none"]) fail("a row with no context_size has a line.");
     if (r["cl-shelf"]) fail("a shelved card has a line.");
@@ -8767,7 +8804,7 @@ async function ctxLineSection(browser, base) {
       const fillOk = await wp.evaluate(async sk => {
         try { applySkin(sk); } catch (e) { return "noskin"; }
         const i = document.querySelector('#term-list [data-id="cl-over"] .ctxline i');
-        return /rgb/.test(getComputedStyle(i).backgroundImage);
+        return /rgb\(/.test(getComputedStyle(i).backgroundColor);
       }, skin);
       if (fillOk === false) fail("the line has no fill colour in skin " + skin);
     }
@@ -8778,7 +8815,7 @@ async function ctxLineSection(browser, base) {
   if (errors.length) fail("the terminals list threw: " + errors.join(" | "));
 }
 
-// The land-the-plane line: a per-browser pref (atrium.landThePlaneK, js/peek.js), the red LAND badge, the amber
+// The land-the-plane line: a per-browser pref (atrium.landThePlaneK, js/peek.js), no badge, the danger line, the amber
 // zone below it, the gear field, the popover meter and a phone-width row.
 async function landThePlaneSection(browser, base) {
   const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
@@ -8815,14 +8852,14 @@ async function landThePlaneSection(browser, base) {
     });
     let r = await read();
     // Default 200k: only 201k is past it. 170k is amber with the small mark, 100k is neutral.
-    if (!/ hot over/.test(r["lp-201"].cls) || r["lp-201"].badge !== "LAND 201k") fail("201k with the default line has no red badge: " + JSON.stringify(r["lp-201"]));
+    if (!/ hot over/.test(r["lp-201"].cls) || r["lp-201"].badge) fail("201k with the default line is not a danger line without a badge: " + JSON.stringify(r["lp-201"]));
     if (!/ warm$/.test(r["lp-170"].cls) || r["lp-170"].badge || !r["lp-170"].mark) fail("170k is not amber with the small mark: " + JSON.stringify(r["lp-170"]));
     if (/ (warm|hot)/.test(r["lp-100"].cls) || r["lp-100"].badge) fail("100k is not neutral: " + JSON.stringify(r["lp-100"]));
-    if (r["lp-201"].border === r["lp-100"].border) fail("a card past the line does not have a red border.");
+    if (r["lp-201"].border !== r["lp-100"].border) fail("a card past the line has a different border from a plain one.");
     // The pref moves the line. 160k: 170k and 201k are past it, 100k still not.
     await wp.evaluate(() => localStorage.setItem("atrium.landThePlaneK", "160"));
     r = await read();
-    if (r["lp-170"].badge !== "LAND 170k" || !/ hot over/.test(r["lp-170"].cls)) fail("a 160k line does not mark 170k: " + JSON.stringify(r["lp-170"]));
+    if (r["lp-170"].badge || !/ hot over/.test(r["lp-170"].cls)) fail("a 160k line does not mark 170k: " + JSON.stringify(r["lp-170"]));
     if (!/^170k of 160k \(land the plane\)/.test(r["lp-170"].tip)) fail("the tooltip does not follow the pref: " + r["lp-170"].tip);
     if (r["lp-100"].badge) fail("a 160k line marks 100k.");
     // Junk reads as 200. A line under the warn line is held at the warn line (150k), so 160k is past it, 100k is not.
@@ -8852,11 +8889,11 @@ async function landThePlaneSection(browser, base) {
       if (!box) return { missing: true };
       const out = { placeholder: box.placeholder, hint: (document.querySelector("#s-landk-field .hintline") || {}).textContent || "" };
       box.value = "5"; saveLandK(); out.junk = localStorage.getItem("atrium.landThePlaneK");
-      const before = document.querySelector('#term-list [data-id="lp-170"] .ctxland') ? "badge" : "none";
+      const before = document.querySelector('#term-list [data-id="lp-170"] .ctxline.hot') ? "badge" : "none";
       box.value = "160"; saveLandK(); out.saved = localStorage.getItem("atrium.landThePlaneK");
       await new Promise(r => setTimeout(r, 400));
       out.rowBefore = before;
-      out.rowAfter = document.querySelector('#term-list [data-id="lp-170"] .ctxland') ? "badge" : "none";
+      out.rowAfter = document.querySelector('#term-list [data-id="lp-170"] .ctxline.hot') ? "badge" : "none";
       box.value = ""; saveLandK(); out.cleared = localStorage.getItem("atrium.landThePlaneK");
       return out;
     });
@@ -8886,39 +8923,23 @@ async function landThePlaneSection(browser, base) {
     if (!/lands at 200k/.test(pop.scale)) fail("the popover scale does not name the line: " + pop.scale);
     if (pop.h < 8) fail("the popover bar is a thin line: " + pop.h + "px.");
     if (!/rgb\(255, 107, 107\)|rgb\(\d+, \d+, \d+\)/.test(pop.bg)) fail("the popover fill has no colour: " + pop.bg);
-    // The badge reads on every skin: its text against its fill is at least 4.5:1 (small bold text), light and dark.
-    const skins = (await (await fetch(base + "/css/themes.css")).text()).match(/:root\[data-skin="[a-z]+"\]/g)
-      .map(x => x.replace(/.*="|"\]/g, ""));
-    const contrast = await wp.evaluate(async list => {
-      await renderTermList();
-      const lum = c => { const [r, g, b] = c.match(/[\d.]+/g).slice(0, 3).map(Number).map(v => { v /= 255; return v <= .03928 ? v / 12.92 : ((v + .055) / 1.055) ** 2.4; }); return .2126 * r + .7152 * g + .0722 * b; };
-      const out = {};
-      for (const sk of list) {
-        document.documentElement.setAttribute("data-skin", sk);
-        const b = document.querySelector('#term-list [data-id="lp-201"] .chip.ctxland');
-        if (!b) { out[sk] = "nochip"; continue; }
-        const cs = getComputedStyle(b), a = lum(cs.backgroundColor), f = lum(cs.color);
-        out[sk] = (Math.max(a, f) + .05) / (Math.min(a, f) + .05);
-      }
-      return out;
-    }, skins);
-    if (skins.length < 20) fail("read only " + skins.length + " skins from themes.css.");
-    for (const [sk, v] of Object.entries(contrast)) if (!(v >= 4.5)) fail("the LAND badge on skin " + sk + " has contrast " + (typeof v === "number" ? v.toFixed(2) : v) + ", want 4.5.");
-    // Phone width: the badge is on the row, inside it, and the row does not scroll sideways.
+    // Phone width: no badge, the strip is inside the row, and the row does not scroll sideways.
     await wp.setViewportSize({ width: 340, height: 800 });
     const ph = await wp.evaluate(async () => {
       await renderTermList();
       const el = document.querySelector('#term-list [data-id="lp-201"]');
       if (!el) return { none: true };
-      const b = el.querySelector(".chip.ctxland"), rr = el.getBoundingClientRect();
+      const b = el.querySelector(".peek-bar.ctxline"), rr = el.getBoundingClientRect();
       const br = b && b.getBoundingClientRect();
-      return { has: !!b, inside: !!br && br.left >= rr.left - 1 && br.right <= rr.right + 1 && br.width > 0,
-        text: b && b.textContent, page: document.documentElement.scrollWidth <= window.innerWidth + 1 };
+      return { has: !!b, badge: !!el.querySelector(".chip.ctxland"),
+        inside: !!br && br.left >= rr.left - 1 && br.right <= rr.right + 1 && br.width > 0,
+        page: document.documentElement.scrollWidth <= window.innerWidth + 1 };
     });
-    if (ph.none || !ph.has) fail("no badge on a phone-width row: " + JSON.stringify(ph));
+    if (ph.none || !ph.has) fail("no context line on a phone-width row: " + JSON.stringify(ph));
     else {
-      if (!ph.inside) fail("the badge is clipped at 340px: " + JSON.stringify(ph));
-      if (ph.text !== "LAND 201k") fail("the phone badge text: " + ph.text);
+      if (ph.badge) fail("a LAND badge on a phone-width row.");
+      if (!ph.inside) fail("the context line is clipped at 340px: " + JSON.stringify(ph));
+      if (!ph.page) fail("the page scrolls sideways at 340px.");
     }
   } finally {
     await ctx.close();
@@ -9022,8 +9043,8 @@ async function contextSizeSection(browser, base) {
         const m = root && root.querySelector(".chip.ctxwarn");
         return { mark: m ? { warnColour: getComputedStyle(m).color === warnColour, text: m.textContent.trim(),
           tip: m.getAttribute("data-tip") || "", svg: !!m.querySelector("svg"), land: m.classList.contains("ctxland") } : null,
-          // The LAND badge is the one place the number is drawn, past the land-the-plane line.
-          number: /\b(90|212)k\b/.test(root ? Array.from(root.querySelectorAll(".chip.ctxland")).reduce((t, n) => t.replace(n.textContent, ""), root.textContent) : "") };
+          // No number on a face: the old LAND badge was the one place it was drawn.
+          number: /\b(90|212)k\b/.test(root ? root.textContent : "") };
       };
       const row = id => read(document.querySelector(`#stack-list .stackrow[data-id="${id}"]`));
       const board = card => {
@@ -9041,9 +9062,8 @@ async function contextSizeSection(browser, base) {
     }, CTX_CARDS);
     if (!got.big.mark) fail("a card past the context threshold has no mark on its stack row.");
     else {
-      // 212k is past the land-the-plane line (200k), so it wears the red badge; the amber icon below it is in landThePlane.
-      if (!got.big.mark.land || got.big.mark.text !== "LAND 212k") fail("a card past the land-the-plane line has no LAND badge: " + JSON.stringify(got.big.mark));
-      if (!/212k of 200k \(land the plane\)/.test(got.big.mark.tip)) fail("the badge's tooltip does not say tokens of the line: " + got.big.mark.tip);
+      // 212k is past the land-the-plane line (200k): no LAND badge any more (the card is auto-cleared there), the amber mark stays.
+      if (got.big.mark.land || got.big.mark.text !== "" || !got.big.mark.svg) fail("a card past the land-the-plane line wears something other than the amber mark: " + JSON.stringify(got.big.mark));
     }
     if (got.small.mark || got.none.mark) fail("a card under the threshold, or with no size, wears the context mark.");
     if (!got.boardBig.mark) fail("a board card past the threshold has no context mark.");
@@ -16921,6 +16941,59 @@ async function childUnderParentSection(browser, base) {
   if (!bad) console.log("childUnderParent ok");
 }
 
+// A PINNED CARD ALWAYS SHOWS (u-new-pin-shows). The row is the shape a remote room on an old build serves for a card that
+// was a subagent, lost its tags and was pinned: runner opencode, needs-input, supervised, pinned, no tags, a Windows home
+// directory, and a `room~uuid` id. Drawn with every pill state, grouping, sort and fold.
+async function pinShowsSection(browser, base) {
+  const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+  const p = await ctx.newPage();
+  const errors = [];
+  p.on("pageerror", e => errors.push(e.message));
+  try {
+    await p.goto(base + "/", { waitUntil: "domcontentloaded" });
+    await p.waitForFunction(() => typeof setTermSortMode === "function" && typeof renderTermList === "function",
+      null, { timeout: slow(15000) });
+    await p.evaluate(() => switchView("terms"));
+    const out = await p.evaluate(async () => {
+      const card = (id, extra) => ({ id, status: "running", supervised: true, pinned: false, title: id,
+        display_title: id, tags: [], created_at: "2026-09-30T10:00:00Z", worktree: "/r/" + id, runner: "claude", ...extra });
+      const PINID = "sg4-control~11111111-2222-3333-4444-555555555555";
+      const old = { id: PINID, status: "needs-input", runner: "opencode", supervised: true, pinned: true, offline: null,
+        parked_at: null, archived_at: null, joined: null, pid: 4242, tags: [], worktree: "C:/Users/claude",
+        wire_name: "w", display_title: "pinned old", created_at: "2026-09-30T09:00:00Z" };
+      const variants = { base: {}, notags: { tags: undefined }, unsup: { supervised: false },
+        unsupDone: { supervised: false, status: "done" }, offline: { offline: true }, doer: { tags: ["origin:agent"] },
+        parked: { supervised: false, parked_at: "2026-09-30T10:00:00Z" }, nopath: { worktree: "" } };
+      let cards;
+      boardCards = async () => cards;
+      const res = {};
+      for (const [vn, ve] of Object.entries(variants)) {
+      cards = [card("a"), card("b", { pinned: true }), card("c", { tags: ["origin:agent"], status: "done", supervised: false }), { ...old, ...ve }];
+      for (const hs of ["none", "on"]) for (const ha of ["none", "on"])
+        for (const grp of ["off", "project", "recency", "tag"]) for (const sort of ["name", "activity", "started"])
+          for (const fold of [false, true]) {
+            setHideSubagents(hs); setHideAgents(ha); setGroupMode(grp); setTermSortMode(sort);
+            const f = foldedColumns().filter(k => k !== PINNED_FOLD);
+            if (fold) f.push(PINNED_FOLD);
+            localStorage.setItem("atrium.folded", JSON.stringify(f));
+            await renderTermList();
+            res[[vn, hs, ha, grp, sort, fold].join("/")] = !!document.querySelector(`#term-list .card.tab[data-id="${PINID}"]`);
+          }
+      }
+      localStorage.removeItem("atrium.folded");
+      setHideSubagents("on"); setHideAgents("none"); setGroupMode("project"); setTermSortMode("activity");
+      return res;
+    });
+    // Every variant but `offline` (an unreachable room's card is not a terminal row, by design) draws the pinned
+    // card, with every pill, grouping and sort, including the doer that the default-on subagents pill used to take out
+    // and the cold one the agents pill used to take out. A folded pinned bucket is the operator's own fold.
+    const gone = Object.entries(out).filter(([k, v]) => !v && !k.endsWith("/true") && !k.startsWith("offline/")).map(([k]) => k);
+    if (gone.length) fail("pinShows: a pinned card was not drawn in " + gone.length + " states, e.g. " + gone.slice(0, 6).join(" "));
+    if (Object.entries(out).some(([k, v]) => v && k.startsWith("offline/"))) fail("pinShows: a card from an offline room was drawn");
+    if (errors.length) fail("pinShows: page errors: " + errors.join(" | "));
+  } finally { await ctx.close(); }
+}
+
 // A parent row folds its spawned cards. A card that needs the human stays drawn, the fold is remembered per card and
 // followed by a second window, and a bad stored value reads as expanded.
 async function childFoldSection(browser, base) {
@@ -17309,7 +17382,7 @@ async function hubReposSection(browser, base) {
     await p.evaluate(() => { localStorage.removeItem("atrium.reposView"); hubReposPaint(); });
     let v = await viewNow();
     if (v.view !== "shelf" || v.checked.join() !== "shelf" || v.tabbable.join() !== "shelf") fail("hubRepos: nothing stored is not Shelf: " + JSON.stringify(v));
-    if ((await p.locator("#hubrepos-views [role=radio]").count()) !== 3 || (await p.getAttribute("#hubrepos-views", "role")) !== "radiogroup") fail("hubRepos: the switcher is not a three-way radio group");
+    if ((await p.locator("#hubrepos-views [role=radio]").count()) !== 4 || (await p.getAttribute("#hubrepos-views", "role")) !== "radiogroup") fail("hubRepos: the switcher is not a four-way radio group");
     await p.click('#hubrepos-views [data-hrview="ledger"]');
     v = await viewNow();
     if (v.view !== "ledger" || v.stored !== "ledger" || v.checked.join() !== "ledger") fail("hubRepos: clicking Ledger did not stick: " + JSON.stringify(v));
@@ -17319,9 +17392,11 @@ async function hubReposSection(browser, base) {
     if (v.view !== "feed" || v.stored !== "feed" || v.tabbable.join() !== "feed") fail("hubRepos: ArrowRight did not move to Feed: " + JSON.stringify(v));
     if ((await p.evaluate(() => document.activeElement.dataset.hrview)) !== "feed") fail("hubRepos: the arrow key did not carry focus along");
     await p.keyboard.press("ArrowRight");
+    if ((await viewNow()).view !== "requests") fail("hubRepos: ArrowRight from Feed is not Requests");
+    await p.keyboard.press("ArrowRight");
     if ((await viewNow()).view !== "shelf") fail("hubRepos: the arrows do not wrap round to Shelf");
     await p.keyboard.press("End");
-    if ((await viewNow()).view !== "feed") fail("hubRepos: End is not the last view");
+    if ((await viewNow()).view !== "requests") fail("hubRepos: End is not the last view");
     await p.keyboard.press("Home");
     if ((await viewNow()).view !== "shelf") fail("hubRepos: Home is not the first view");
     await p.evaluate(() => { localStorage.setItem("atrium.reposView", "bogus"); window.dispatchEvent(new StorageEvent("storage", { key: "atrium.reposView" })); });
@@ -17802,8 +17877,8 @@ async function termBoxSection(browser, base) {
         if (!v.arrows) fail(tag + "the width buttons are gone.");
         if (w === 150 && v.wide > 160) fail(tag + "the list is not at its narrowest, so the overrun check proves nothing: " + v.wide);
         if (v.overrun || v.summaryOverArrow || v.arrowOut) fail(tag + "the tray overruns the box or the shrink button: " + JSON.stringify(v));
-        if (k.startsWith("on/") && k.endsWith("allHidden") && !/hiding inactive agents, subagents \(2\)/.test(v.sum)) {
-          fail(tag + "the summary does not count what is hidden: " + JSON.stringify(v.sum));
+        if (k.startsWith("on/") && k.endsWith("allHidden") && !/hiding inactive agents, subagents$/.test(v.sum)) {
+          fail(tag + "the summary counts a pinned row as hidden (a pin is never hidden): " + JSON.stringify(v.sum));
         }
         if (k.startsWith("none/") && !/hiding nothing/.test(v.sum)) fail(tag + "the summary says something is hidden: " + JSON.stringify(v.sum));
         if (k.includes("/flat/") && !/ungrouped/.test(v.sum)) fail(tag + "the summary does not say ungrouped: " + JSON.stringify(v.sum));
@@ -18192,6 +18267,257 @@ async function phoneRedirectSection(browser, base) {
 }
 
 // ── the bell and the sound on /m ─────────────────────────────────────────
+// ── The phone page picks up a new build ──────────────────────────────────
+// `/v1/health` carries the build id. A change reloads /m once, not while a draft, a focused box or a selection is up (an
+// "update ready" button shows instead, and the reload comes when it clears), and never twice for the same build.
+async function mReloadSection(browser) {
+  const st = mServer({});
+  st.tasks = [mCard("r-1", { alias: "alpha", display_title: "alpha", status: "running", last_reply: "hello there, a line to select" })];
+  await st.open();
+  try {
+    const ctx = await browser.newContext({ viewport: M_VIEWS[0], hasTouch: true, isMobile: true });
+    const p = await ctx.newPage();
+    const errors = [];
+    p.on("pageerror", e => errors.push(String(e)));
+    let loads = 0;
+    p.on("load", () => loads++);
+    await p.goto(st.url + "/m/", { waitUntil: "load" });
+    await p.waitForFunction(() => window.mNet.loaded() && window.mBuild, null, { timeout: slow(10000) });
+    await p.evaluate(() => window.mBuild.check());
+    const base = loads;
+    const settle = ms => p.waitForTimeout(ms);
+    const tag = "mReload: ";
+
+    // same id: nothing
+    await p.evaluate(() => window.mBuild.check());
+    await settle(400);
+    if (loads !== base) fail(tag + "the same build reloaded the page");
+
+    // a draft holds it, with the cue up
+    await p.evaluate(() => { const t = document.createElement("textarea"); t.id = "fake-draft"; t.value = "half a thought"; document.body.appendChild(t); });
+    st.build = "build-2";
+    await p.evaluate(() => window.mBuild.check());
+    await settle(600);
+    if (loads !== base) fail(tag + "a draft did not hold the reload");
+    if (!(await p.evaluate(() => { const c = document.querySelector(".m-update"); return !!c && c.getClientRects().length > 0; }))) fail(tag + "no cue while it waits");
+    // the hub answers with the id this page runs again: the wait and its cue are dropped, with no reload
+    st.build = "build-1";
+    await p.evaluate(() => window.mBuild.check());
+    await settle(400);
+    if (await p.evaluate(() => !!document.querySelector(".m-update"))) fail(tag + "the cue stayed after the id came back to the one this page runs");
+    if (loads !== base) fail(tag + "reloaded though the id went back");
+    st.build = "build-2";
+    await p.evaluate(() => window.mBuild.check());
+    await settle(400);
+    if (!(await p.evaluate(() => !!document.querySelector(".m-update")))) fail(tag + "the cue did not come back for the new id");
+    await p.evaluate(() => { document.getElementById("fake-draft").value = ""; });
+    await p.waitForEvent("load", { timeout: slow(6000) }).catch(() => fail(tag + "the reload did not come once the draft cleared"));
+    await settle(300);
+    if (loads !== base + 1) fail(tag + "expected one reload, saw " + (loads - base));
+
+    // the reloaded page learned the new id, so it does not reload again, and the guard stops a flapping hub
+    await p.waitForFunction(() => window.mNet.loaded() && window.mBuild, null, { timeout: slow(10000) });
+    await p.evaluate(() => window.mBuild.check());
+    await settle(500);
+    if (loads !== base + 1) fail(tag + "reloaded again for a build it already has");
+    st.build = "build-3";
+    await p.evaluate(() => window.mBuild.check());
+    await settle(500);
+    const afterThree = loads;
+    await p.waitForFunction(() => window.mNet.loaded() && window.mBuild, null, { timeout: slow(10000) });
+    st.build = "build-2";
+    await p.evaluate(() => window.mBuild.check());
+    await settle(500);
+    st.build = "build-3";
+    await p.evaluate(() => window.mBuild.check());
+    await settle(800);
+    if (loads > afterThree) fail(tag + "a flapping hub made " + (loads - afterThree) + " reloads in a row");
+
+    // a live selection holds it too
+    await p.waitForFunction(() => window.mNet.loaded() && window.mBuild, null, { timeout: slow(10000) });
+    await p.evaluate(() => { sessionStorage.removeItem("atrium.m.reloaded"); });
+    const b4 = loads;
+    await p.evaluate(() => {
+      const d = document.createElement("p"); d.id = "fake-sel"; d.textContent = "select this text please"; document.body.appendChild(d);
+      const r = document.createRange(); r.selectNodeContents(d); const s = getSelection(); s.removeAllRanges(); s.addRange(r);
+    });
+    st.build = "build-9";
+    await p.evaluate(() => window.mBuild.check());
+    await settle(600);
+    if (loads !== b4) fail(tag + "a selection did not hold the reload");
+    await p.evaluate(() => getSelection().removeAllRanges());
+    await p.waitForEvent("load", { timeout: slow(6000) }).catch(() => fail(tag + "the reload did not come once the selection cleared"));
+    // two restarts back to back while a draft holds: one reload, for the newest build, and the page then rests on it
+    await p.waitForFunction(() => window.mNet.loaded() && window.mBuild, null, { timeout: slow(10000) });
+    await p.evaluate(() => { sessionStorage.removeItem("atrium.m.reloaded"); const t = document.createElement("textarea"); t.id = "fake-draft2"; t.value = "still typing"; document.body.appendChild(t); });
+    const b5 = loads;
+    st.build = "build-10";
+    await p.evaluate(() => window.mBuild.check());
+    st.build = "build-11";
+    await p.evaluate(() => window.mBuild.check());
+    await settle(600);
+    if (loads !== b5) fail(tag + "back to back restarts reloaded under a draft");
+    await p.evaluate(() => { document.getElementById("fake-draft2").value = ""; });
+    await p.waitForEvent("load", { timeout: slow(6000) }).catch(() => fail(tag + "no reload after the draft cleared"));
+    await p.waitForFunction(() => window.mNet.loaded() && window.mBuild, null, { timeout: slow(10000) });
+    await p.evaluate(() => window.mBuild.check());
+    await settle(2500);
+    if (loads !== b5 + 1) fail(tag + "back to back restarts made " + (loads - b5) + " reloads, not 1");
+
+    // a review-comment chip with an empty box is something a reload loses and nothing saves: it holds the reload too
+    await p.waitForFunction(() => window.mNet.loaded() && window.mBuild, null, { timeout: slow(10000) });
+    await p.evaluate(() => { sessionStorage.removeItem("atrium.m.reloaded"); window.mCard.open("r-1"); });
+    await p.waitForSelector("#m-compose .mc-box", { timeout: slow(8000) });
+    const added = await p.evaluate(() => { const ok = window.mCompose.addComment({ path: "a/b.js", line: 3, kind: "+", text: "" }); document.activeElement && document.activeElement.blur && document.activeElement.blur(); return ok; });
+    if (!added) fail(tag + "the comment chip was not added");
+    if ((await p.$eval("#m-compose .mc-box", t => t.value)) !== "") fail(tag + "the box is not empty for the chip case");
+    const b6 = loads;
+    st.build = "build-20";
+    await p.evaluate(() => window.mBuild.check());
+    await settle(700);
+    if (loads !== b6) fail(tag + "a comment chip did not hold the reload");
+    if (!(await p.evaluate(() => !!document.querySelector(".m-update")))) fail(tag + "no cue while a chip holds it");
+    await p.click("#m-compose .mc-cmt .mc-fx");
+    await p.waitForEvent("load", { timeout: slow(6000) }).catch(() => fail(tag + "the reload did not come once the chip was removed"));
+    if (errors.length) fail(tag + "page errors: " + errors.join(" | "));
+    await ctx.close();
+  } finally { await st.close(); }
+  if (!bad) console.log("mReload ok");
+}
+
+// ── The phone page after a hub restart ──────────────────────────────────
+// The stream drops and the hub is down for a few connects, then answers, and its first read of the cards fails because
+// the room is not up yet. The page must reconnect on its backoff, read again until it gets an answer (not wait 60s for the
+// resync), and read the open card's thread, which no event announces.
+async function mReconnectSection(browser) {
+  const st = mServer({});
+  st.tasks = [mCard("r-1", { alias: "alpha", display_title: "alpha", status: "running" })];
+  st.replies["r-1"] = { source: "transcript", replies: [{ at: mIso(9 * M_MIN), text: "the first reply" }] };
+  await st.open();
+  const tag = "mReconnect: ";
+  try {
+    const ctx = await browser.newContext({ viewport: M_VIEWS[0], hasTouch: true, isMobile: true });
+    const p = await ctx.newPage();
+    const errors = [];
+    p.on("pageerror", e => errors.push(String(e)));
+    await p.goto(st.url + "/m/", { waitUntil: "domcontentloaded" });
+    await p.waitForFunction(() => window.mNet.loaded() && window.mNet.live(), null, { timeout: slow(10000) });
+    await p.evaluate(() => window.mCard.open("r-1"));
+    await p.waitForFunction(() => /the first reply/.test(document.getElementById("m-replies").textContent), null, { timeout: slow(8000) })
+      .catch(() => fail(tag + "the card did not show its reply"));
+    const hits0 = st.eventHits;
+    // the hub goes down: the stream ends, two connects are refused, the first read after it fails, and meanwhile things moved
+    st.eventsFail = 2;
+    st.tasksFail = 1;
+    st.tasks = [st.tasks[0], mCard("r-2", { alias: "beta", display_title: "beta", status: "running" })];
+    st.perms = [{ id: "pm1", task_id: "r-1", tool: "Bash", command: "ls", requested_at: mIso(0) }];
+    st.replies["r-1"] = { source: "transcript", replies: [{ at: mIso(9 * M_MIN), text: "the first reply" }, { at: mIso(M_MIN), text: "the second reply" }] };
+    st.streams.forEach(r => r.end());
+    await p.waitForFunction(() => !window.mNet.live(), null, { timeout: slow(4000) }).catch(() => fail(tag + "the page did not notice the stream drop"));
+    await p.waitForFunction(() => window.mNet.live(), null, { timeout: slow(20000) }).catch(() => fail(tag + "the page never reconnected"));
+    if (st.eventHits - hits0 < 3) fail(tag + "expected a backoff through the refused connects, saw " + (st.eventHits - hits0) + " connects");
+    await p.waitForFunction(() => window.mStore.cards().length === 2 && window.mStore.perms().length === 1, null, { timeout: slow(12000) })
+      .catch(async () => fail(tag + "the cards and permissions missed while down were not read: " + JSON.stringify(await p.evaluate(() => ({ c: window.mStore.cards().length, p: window.mStore.perms().length })))));
+    await p.waitForFunction(() => /the second reply/.test(document.getElementById("m-replies").textContent), null, { timeout: slow(8000) })
+      .catch(() => fail(tag + "the open card did not read the reply that landed while down"));
+    if (errors.length) fail(tag + "page errors: " + errors.join(" | "));
+    await ctx.close();
+  } finally { await st.close(); }
+  if (!bad) console.log("mReconnect ok");
+}
+
+// ── The open card reads its thread when the row's activity moves ─────────
+// A room that reports no `output_at` still moves `last_activity_at`. The read is throttled to one per 5s with the last
+// change always read, and a row that did not change reads nothing.
+async function mActivityReadSection(browser) {
+  const st = mServer({});
+  const T0 = mIso(10 * M_MIN), created = mIso(3600000);
+  const row = over => mCard("a-1", Object.assign({ alias: "alpha", display_title: "alpha", status: "running", output_at: null, created_at: created, last_activity_at: T0 }, over || {}));
+  st.tasks = [row()];
+  st.replies["a-1"] = { source: "transcript", replies: [{ at: mIso(9 * M_MIN), text: "a reply" }] };
+  await st.open();
+  const tag = "mActivityRead: ";
+  const reads = () => st.hits.filter(h => h.indexOf("a-1?") === 0).length;
+  const push = r => { st.tasks = [r]; st.send("task", Object.assign({ row: 1 }, r)); };
+  try {
+    const ctx = await browser.newContext({ viewport: M_VIEWS[0], hasTouch: true, isMobile: true });
+    const p = await ctx.newPage();
+    const errors = [];
+    p.on("pageerror", e => errors.push(String(e)));
+    await p.goto(st.url + "/m/", { waitUntil: "domcontentloaded" });
+    await p.waitForFunction(() => window.mNet.loaded() && window.mNet.live(), null, { timeout: slow(10000) });
+    await p.evaluate(() => window.mCard.open("a-1"));
+    await p.waitForFunction(() => /a reply/.test(document.getElementById("m-replies").textContent), null, { timeout: slow(8000) });
+    await p.waitForTimeout(300);
+    const r0 = reads();
+    // nothing changed, and the last read is more than 5s old so the throttle cannot be what holds it: no read
+    await p.waitForTimeout(5300);
+    push(row());
+    await p.waitForTimeout(1200);
+    if (reads() !== r0) fail(tag + "an unchanged row made a read");
+    // last_activity_at moved with output_at still null: one read, a moment later at most
+    push(row({ last_activity_at: mIso(5 * M_MIN) }));
+    await p.waitForTimeout(800);
+    if (reads() !== r0 + 1) fail(tag + "a moved last_activity_at made " + (reads() - r0) + " reads, not 1");
+    // ten changes in about a second: held, then one trailing read
+    for (let i = 0; i < 10; i++) { push(row({ last_activity_at: mIso(4 * M_MIN - i * 1000) })); await p.waitForTimeout(100); }
+    if (reads() !== r0 + 1) fail(tag + "the throttle let a read through inside 5s: " + (reads() - r0));
+    await p.waitForTimeout(5500);
+    if (reads() !== r0 + 2) fail(tag + "ten changes made " + (reads() - r0 - 1) + " reads after the first, not 1");
+    // prompted_at counts too
+    const T = mIso(2 * M_MIN);
+    await p.waitForTimeout(5200);
+    push(row({ last_activity_at: T }));
+    await p.waitForTimeout(800);
+    if (reads() !== r0 + 3) fail(tag + "a moved last_activity_at after a quiet spell did not read");
+    await p.waitForTimeout(5200);
+    push(row({ last_activity_at: T, prompted_at: mIso(M_MIN) }));
+    await p.waitForTimeout(800);
+    if (reads() !== r0 + 4) fail(tag + "a moved prompted_at alone did not read");
+    // a turn end on a row with no output_at moves the turn and the activity together: one read, not a second one 5s later
+    await p.waitForTimeout(5200);
+    push(row({ last_activity_at: mIso(M_MIN * 2), seen: { turn_ended_at: mIso(M_MIN * 2) } }));
+    await p.waitForTimeout(6500);
+    if (reads() !== r0 + 5) fail(tag + "a turn end made " + (reads() - r0 - 4) + " reads, not 1");
+    // the same with output_at reported
+    await p.waitForTimeout(200);
+    const OUT = mIso(M_MIN), PR = mIso(M_MIN);
+    push(row({ last_activity_at: mIso(M_MIN), prompted_at: PR, output_at: OUT }));
+    await p.waitForTimeout(6500);
+    if (reads() !== r0 + 6) fail(tag + "a turn end with output_at made " + (reads() - r0 - 5) + " reads, not 1");
+    // a room that reports output_at: activity alone is not a reason to read
+    push(row({ last_activity_at: mIso(30000), prompted_at: PR, output_at: OUT }));
+    await p.waitForTimeout(6500);
+    if (reads() !== r0 + 6) fail(tag + "activity alone read though the row reports output_at");
+    if (errors.length) fail(tag + "page errors: " + errors.join(" | "));
+    await ctx.close();
+  } finally { await st.close(); }
+  if (!bad) console.log("mActivityRead ok");
+}
+
+// ── Failed reads back off on their own and stop on a refusal ────────────
+async function mReadRetrySection(browser) {
+  const tag = "mReadRetry: ";
+  for (const status of [0, 401, 403]) {
+    const st = mServer({});
+    st.tasks = [mCard("q-1", { alias: "alpha", display_title: "alpha" })];
+    st.permsStatus = status || 503;
+    await st.open();
+    try {
+      const ctx = await browser.newContext({ viewport: M_VIEWS[0], hasTouch: true, isMobile: true });
+      const p = await ctx.newPage();
+      await p.goto(st.url + "/m/", { waitUntil: "domcontentloaded" });
+      await p.waitForFunction(() => window.mNet.loaded(), null, { timeout: slow(10000) });
+      await p.waitForTimeout(6500);
+      const n = st.permsHits;
+      if (!status && (n < 3 || n > 5)) fail(tag + "a 503 on permissions was read " + n + " times in 6.5s; backoff wants 3 to 5");
+      if (status && n > 2) fail(tag + "a " + status + " was retried: " + n + " reads");
+      await ctx.close();
+    } finally { await st.close(); }
+  }
+  if (!bad) console.log("mReadRetry ok");
+}
+
 async function mBellSection(browser) {
   const st = mServer({});
   st.tasks = [mCard("b-1", { alias: "alpha", display_title: "alpha", status: "running" })];
@@ -20289,6 +20615,642 @@ async function burnReadoutSection(browser, base) {
 }
 
 
+// Change requests on the desktop board (js/changereq.js, the Requests view of the repos area), against a hub simulated by
+// scripts/changereq-fixture.js in @fabric's stage 5 draft shape: the strip for requests into main, the ledger, a page with
+// the Pushed line, the operator's three actions, the sha check and the server's 409 text, a read-only board, a branch the
+// push log has never seen, an empty hub, an offline hub, an old hub, opening a request, the Ledger's branch rows, text-only
+// titles, the swappable mock, the phone's width and 4.5:1 text on every skin.
+async function crFixturePage(browser, base, o) {
+  o = o || {};
+  const fx = require("./hubrepos-fixture.js")(Date.now());
+  const hub = require("./changereq-fixture.js")(Date.now());
+  if (o.mutate) o.mutate(hub);
+  const ctx = await browser.newContext({ viewport: { width: o.w || 2000, height: o.h || 1100 } });
+  const errors = [];
+  const p = await ctx.newPage();
+  p.on("pageerror", e => errors.push(e.message));
+  await p.route(/\/_hub\/git\/repos$/, r => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ repos: fx.repos }) }));
+  if (!o.noHub) await hub.route(p, { mode: o.mode || "ok" });
+  await p.goto(base + "/" + (o.query || ""), { waitUntil: "domcontentloaded" });
+  await p.waitForFunction(() => { const t = document.querySelector('.tab[data-view="hubrepos"]'); return t && !t.hidden; }, null, { timeout: slow(15000) });
+  await p.evaluate(({ tasks, view }) => { lastTasks = tasks; localStorage.setItem("atrium.reposView", view); return switchView("hubrepos"); }, { tasks: fx.tasks, view: o.view || "requests" });
+  await p.waitForFunction(() => document.querySelector("#hubrepos-list .cr-ledger, #hubrepos-list .cr-offline, #hubrepos-list .hr-hero, #hubrepos-list .hr-ledger"), null, { timeout: slow(10000) });
+  // The requests are read once by the view and once more when the repos arrive; both are settled before a test touches the page.
+  await p.waitForFunction(() => hubRepos.loaded && !hubRepos.inflight && !cr.inflight, null, { timeout: slow(8000) });
+  await p.waitForTimeout(300);
+  await p.waitForFunction(() => !cr.inflight, null, { timeout: slow(5000) });
+  return { ctx, p, errors, hub, fx };
+}
+
+async function changeReqSection(browser, base) {
+  const wasHub = hubMode; hubMode = true;
+  const tag = "changeReq";
+  const text = (p, sel) => p.evaluate(s => (document.querySelector(s) || {}).textContent || "", sel);
+  try {
+    // ---- the full page --------------------------------------------------------------------------------------------
+    let { ctx, p, errors, hub } = await crFixturePage(browser, base, {});
+    try {
+      const r = await p.evaluate(() => ({
+        radios: [...document.querySelectorAll("#hubrepos-views [role=radio]")].map(b => b.dataset.hrview + ":" + b.getAttribute("aria-checked")).join(),
+        count: document.getElementById("hubrepos-count").textContent,
+        strip: [...document.querySelectorAll(".cr-hero")].map(h => h.querySelector("h3").textContent),
+        items: [...document.querySelectorAll(".cr-li")].map(b => b.dataset.id), groups: [...document.querySelectorAll(".cr-tg span")].map(x => x.textContent),
+        needs: document.querySelectorAll(".cr-li .cr-needs").length, cur: [...document.querySelectorAll('.cr-li[aria-current="true"]')].map(b => b.dataset.id),
+        title: (document.querySelector(".cr-title") || {}).textContent, lane: (document.querySelector(".cr-lane") || {}).innerText.replace(/\s+/g, " "),
+        pills: [...document.querySelectorAll(".cr-detail .hr-badges .hr-state")].map(x => x.textContent.trim()), gate: (document.querySelector(".cr-gate") || {}).textContent,
+        panels: [...document.querySelectorAll(".cr-detail .cr-panel .hr-h")].map(x => x.textContent), why: (document.querySelector(".cr-why") || {}).textContent,
+        pushedLine: (document.querySelector(".cr-line") || {}).textContent, tl: document.querySelectorAll(".cr-tl li").length,
+        buttons: [...document.querySelectorAll("#hubrepos-list button")].map(b => b.textContent.trim()).filter(Boolean) }));
+      if (r.radios !== "shelf:false,ledger:false,feed:false,requests:true") fail(tag + ": the switcher is wrong " + r.radios);
+      if (r.count !== "3") fail(tag + ": the count is the open requests, want 3, got " + r.count);
+      if (r.strip.join("|") !== "Fix the router link flap|Edge router policies v2") fail(tag + ": the strip is not the open requests into main " + JSON.stringify(r.strip));
+      if (r.items.join() !== "cr_9,cr_8,cr_7" || r.groups.join() !== "into main,into release/1.x" || r.needs !== 2 || r.cur.join() !== "cr_9") fail(tag + ": the list is wrong " + JSON.stringify(r));
+      if (r.title !== "Fix the router link flap" || !/^from sg4?\s*fix\/router-link-flap.*into main$/i.test(r.lane.replace(/\n/g, " "))) fail(tag + ": the page head is wrong " + JSON.stringify([r.title, r.lane]));
+      if (r.pills.join() !== "Open,pushed, hub head matches") fail(tag + ": the state and Pushed pills are wrong " + r.pills);
+      if (!/Needs the orchestrator or clint/.test(r.gate) || !/Nothing on the board does it/.test(r.gate)) fail(tag + ": a request into main does not say it needs the orchestrator or clint " + r.gate);
+      if (r.panels.join() !== "Why,On the hub,Change record,History" || r.tl < 2) fail(tag + ": the page does not fill " + JSON.stringify([r.panels, r.tl]));
+      if (r.pushedLine !== "Pushedpushed at abcdef0, hub head matches") fail(tag + ": the Pushed line is wrong " + JSON.stringify(r.pushedLine));
+      if (!/Finished and reviewed\.\nTests ran/.test(r.why)) fail(tag + ": the why lost its line break " + JSON.stringify(r.why));
+      // The board merges nothing: no control is worded as a merge, and the only merge-ish one says it records.
+      const merge = r.buttons.filter(b => /merge/i.test(b));
+      if (merge.join() !== "Record that it was merged") fail(tag + ": merge wording on a button is " + JSON.stringify(merge));
+      if (/\b(merge now|merge it|merge request)\b/i.test(await text(p, "#hubrepos-list").then(t => t.replace(/Merge it on the hub's side/g, "")))) fail(tag + ": the page says the board merges");
+
+      // ---- selecting: behind, diverged and a branch with no change record -----------------------------------------
+      await p.click('.cr-li[data-id="cr_8"]');
+      await p.waitForFunction(() => /hub is behind/.test(document.querySelector(".cr-detail .hr-badges").textContent));
+      if (!/pushed at abcdef0, hub is behind/.test(await text(p, ".cr-line"))) fail(tag + ": behind is not said " + await text(p, ".cr-line"));
+      await p.click('.cr-li[data-id="cr_7"]');
+      await p.waitForFunction(() => /diverged/.test(document.querySelector(".cr-detail .hr-badges").textContent));
+      const d = await p.evaluate(() => ({ gate: document.querySelector(".cr-gate > b").textContent, why: document.querySelector(".cr-quiet") && [...document.querySelectorAll(".cr-detail .cr-quiet")].map(x => x.textContent).join("|"), room: document.querySelector(".cr-lane .cr-av, .cr-lane .hr-av").textContent }));
+      if (d.gate !== "Waiting to be merged" || !/No reason was given/.test(d.why) || !/No change record is attached/.test(d.why)) fail(tag + ": a request with no why or record reads wrong " + JSON.stringify(d));
+
+      // ---- the sha check, the server's 409 and a real record -------------------------------------------------------
+      await p.click('.cr-li[data-id="cr_9"]');
+      await p.waitForFunction(() => /fix\/router/.test(document.querySelector(".cr-lane").textContent) && /hub head matches/.test(document.querySelector(".cr-detail .hr-badges").textContent));
+      const dis = () => p.evaluate(() => ({ off: document.querySelector('[data-cr="merge-do"]').disabled, bad: document.getElementById("cr-shahint").classList.contains("bad"), hint: document.getElementById("cr-shahint").textContent }));
+      let s = await dis();
+      if (!s.off) fail(tag + ": record merged is enabled with no sha");
+      for (const [v, ok] of CR_SHAS) {
+        await p.fill("#cr-sha", v);
+        s = await dis();
+        if (s.off === ok) fail(tag + ": sha " + JSON.stringify(v) + " should be " + (ok ? "accepted" : "refused"));
+        if (v && !ok && !s.bad) fail(tag + ": a bad sha has no hint " + v);
+        if (v && !ok && !/full 40 \(or 64\) hex/.test(s.hint)) fail(tag + ": the hint does not say the rule " + s.hint);
+      }
+      await p.fill("#cr-sha", CR_ZERO);
+      await p.click('[data-cr="merge-do"]');
+      await p.waitForSelector(".cr-err");
+      if ((await text(p, ".cr-err")) !== CR_ZERO + " is not reachable from main") fail(tag + ": the server's 409 text is not shown " + await text(p, ".cr-err"));
+      if (!(await p.evaluate(() => /Needs the orchestrator/.test(document.querySelector(".cr-gate").textContent)))) fail(tag + ": a refused record changed the request");
+      await p.fill("#cr-sha", CR_FULL);
+      await p.click('[data-cr="merge-do"]');
+      await p.waitForFunction(() => /Recorded as merged at e40a3c2/.test((document.querySelector(".cr-ended") || {}).textContent || ""));
+      const post = hub.calls.filter(c => c.body.do === "merged").map(c => JSON.stringify(c.body));
+      if (post.join() !== '{"do":"merged","sha":"' + CR_ZERO + '"},{"do":"merged","sha":"' + CR_FULL + '"}') fail(tag + ": the board posted " + post);
+      if (await p.evaluate(() => !!document.querySelector(".cr-gate"))) fail(tag + ": a merged request still has the gate");
+      if (await p.evaluate(() => document.querySelectorAll('.cr-li[data-id="cr_9"]').length)) fail(tag + ": a merged request is still in the open list");
+      await p.click('.cr-seg [data-tab="closed"]');
+      const cl = await p.evaluate(() => [...document.querySelectorAll(".cr-li")].map(b => b.dataset.id).join());
+      if (cl !== "cr_9,cr_6,cr_5,cr_4") fail(tag + ": the closed list is " + cl);
+
+      // ---- closed records: merged_sha, the timeline and the note ---------------------------------------------------
+      await p.click('.cr-li[data-id="cr_6"]');
+      await p.waitForFunction(() => /Bump Go/.test(document.querySelector(".cr-title").textContent) && document.querySelectorAll(".cr-tl li").length >= 3);
+      const m = await p.evaluate(() => ({ ended: document.querySelector(".cr-ended").innerText.replace(/\s+/g, " "), tl: [...document.querySelectorAll(".cr-tl li")].map(x => x.innerText.replace(/\s+/g, " ")), note: document.querySelector(".cr-ended .cr-note, .cr-tl .cr-note").textContent }));
+      if (!/Recorded as merged at e40a3c2 by the operator/.test(m.ended) || !/merged on the hub, re-signed/.test(m.ended)) fail(tag + ": a merged request does not say how it ended " + JSON.stringify(m.ended));
+      if (m.tl.length !== 3 || !/pushed abcdef0 to the hub/.test(m.tl[0]) || !/opened into main/.test(m.tl[1]) || !/recorded as merged at e40a3c2/.test(m.tl[2])) fail(tag + ": the history is wrong " + JSON.stringify(m.tl));
+      // a withdrawn request whose branch the push log has never seen
+      await p.click('.cr-li[data-id="cr_5"]');
+      await p.waitForFunction(() => /Terminator race/.test(document.querySelector(".cr-title").textContent) && /not pushed/.test(document.querySelector(".cr-detail .hr-badges").textContent));
+      const w = await p.evaluate(() => ({ ended: document.querySelector(".cr-ended").textContent, line: document.querySelector(".cr-line").textContent, how: [...document.querySelectorAll(".cr-detail .cr-quiet")].map(x => x.textContent).join("|"), pill: [...document.querySelectorAll(".cr-detail .hr-badges .hr-state")].map(x => x.textContent.trim()).join() }));
+      if (!/Withdrawn/.test(w.ended) || /by its owner/.test(w.ended) || !/never seen test\/flaky-terminator-race/.test(w.line) || !/git push hub test\/flaky-terminator-race/.test(w.how) || w.pill !== "Withdrawn,not pushed") fail(tag + ": an unseen branch reads wrong " + JSON.stringify(w));
+      if (errors.length) fail(tag + ": page errors: " + errors.join(" | "));
+    } finally { await ctx.close(); }
+
+    // ---- withdraw and close with a note -----------------------------------------------------------------------------
+    ({ ctx, p, errors, hub } = await crFixturePage(browser, base, {}));
+    try {
+      await p.click('[data-cr="withdraw"]');
+      await p.waitForFunction(() => /Withdrawn/.test((document.querySelector(".cr-ended") || {}).textContent || ""));
+      await p.click('.cr-seg [data-tab="open"]'); await p.click('.cr-li[data-id="cr_8"]');
+      await p.waitForFunction(() => /Edge router/.test(document.querySelector(".cr-title").textContent));
+      await p.click('[data-cr="close-open"]');
+      await p.fill("#cr-note", "landed on the other branch");
+      await p.click('[data-cr="close-do"]');
+      await p.waitForFunction(() => /Closed/.test((document.querySelector(".cr-ended") || {}).textContent || ""));
+      if (hub.calls.map(c => JSON.stringify(c.body)).join() !== '{"do":"withdraw"},{"do":"close","note":"landed on the other branch"}') fail(tag + ": posted " + hub.calls.map(c => JSON.stringify(c.body)));
+      if (!/landed on the other branch/.test(await text(p, ".cr-ended"))) fail(tag + ": the close note is not shown");
+      if (errors.length) fail(tag + ": page errors: " + errors.join(" | "));
+    } finally { await ctx.close(); }
+
+    // ---- a board that cannot write -----------------------------------------------------------------------------------
+    ({ ctx, p, errors } = await crFixturePage(browser, base, { mode: "readonly" }));
+    try {
+      await p.click('[data-cr="withdraw"]');
+      await p.waitForSelector(".cr-ro");
+      const ro = await p.evaluate(() => ({ line: document.querySelector(".cr-ro").textContent, btns: [...document.querySelectorAll("#hubrepos-list button")].map(b => b.dataset.cr).filter(Boolean).filter(x => x !== "sel" && x !== "tab"), input: !!document.getElementById("cr-sha"), open: !!document.querySelector('.cr-bar [data-cr="new"]') }));
+      if (!/public share without a login/.test(ro.line) || ro.btns.length || ro.input || ro.open) fail(tag + ": a read-only board still offers writes " + JSON.stringify(ro));
+      if (errors.length) fail(tag + ": page errors: " + errors.join(" | "));
+    } finally { await ctx.close(); }
+
+    // ---- empty, offline, down, and an old hub -------------------------------------------------------------------------
+    for (const [mode, want] of [["empty", /Nothing is waiting to be merged/], ["offline", /hub is not answering/], ["down", /would not list change requests: hub is restarting/], ["old", /does not have change requests yet/]]) {
+      ({ ctx, p, errors } = await crFixturePage(browser, base, { mode }));
+      try {
+        const t = await text(p, "#hubrepos-list");
+        if (!want.test(t)) fail(tag + " " + mode + ": reads " + t.slice(0, 200));
+        if (mode === "empty" && !(await p.$('.hr-hero [data-cr="new"]'))) fail(tag + " empty: no way to open a request");
+        if (mode !== "empty" && !(await p.$('[data-cr="retry"]'))) fail(tag + " " + mode + ": no try again");
+        if (errors.length) fail(tag + " " + mode + ": page errors: " + errors.join(" | "));
+      } finally { await ctx.close(); }
+    }
+
+    // ---- opening a request, the 404, the 409, and the Ledger's branch rows ---------------------------------------------
+    ({ ctx, p, errors, hub } = await crFixturePage(browser, base, { view: "ledger" }));
+    try {
+      const rows = await p.evaluate(() => [...document.querySelectorAll(".hr-ev")].map(e => ({ name: (e.querySelector(".hr-name") || {}).textContent, chip: (e.querySelector(".cr-chip") || {}).textContent || "" })));
+      const flap = rows.find(x => x.name === "fix/router-link-flap"), docs = rows.find(x => x.name === "feat/metrics-exemplars"), other = rows.find(x => x.name === "docs/quickstart-refresh"), old = rows.find(x => x.name === "refactor/identity-store-batching");
+      if (!flap || flap.chip !== "cr_9 · into main") fail(tag + ": a branch with an open request does not show it " + JSON.stringify(flap));
+      if (!docs || docs.chip !== "ask to merge" || !old || old.chip !== "") fail(tag + ": a branch with none offers one, a released one does not " + JSON.stringify([docs, old]));
+      if (!other || other.chip !== "cr_7 · into release/1.x") fail(tag + ": a request into another branch is not shown on its branch " + JSON.stringify(other));
+      await p.click('.hr-ev:has(.hr-name:text-is("feat/metrics-exemplars")) .cr-chip.ask');
+      await p.waitForSelector(".cr-form");
+      const f = await p.evaluate(() => ({ view: hubReposView(), repo: document.getElementById("cr-f-repo").value, branch: document.getElementById("cr-f-branch").value, target: document.getElementById("cr-f-target").value, title: document.getElementById("cr-f-title").value }));
+      if (f.view !== "requests" || f.repo !== "github/openziti/ziti" || f.branch !== "feat/metrics-exemplars" || f.target !== "main") fail(tag + ": the form is not filled from the branch " + JSON.stringify(f));
+      await p.fill("#cr-f-branch", "nope/missing");
+      await p.fill("#cr-f-title", "A request");
+      await p.click('[data-cr="new-do"]');
+      await p.waitForSelector(".cr-form .cr-err");
+      if (!/hub has no branch called nope\/missing.*git push hub nope\/missing/.test(await text(p, ".cr-form .cr-err"))) fail(tag + ": the 404 is not explained " + await text(p, ".cr-form .cr-err"));
+      await p.fill("#cr-f-branch", "feat/metrics-exemplars");
+      await p.fill("#cr-f-why", "line one\n<b>not bold</b>");
+      await p.click('[data-cr="new-do"]');
+      await p.waitForSelector(".cr-ledger");
+      const created = hub.calls.filter(c => c.path === "/_hub/change-requests").pop().body;
+      if (JSON.stringify(created) !== '{"repo":"github/openziti/ziti","source":{"branch":"feat/metrics-exemplars"},"target":{"branch":"main"},"title":"A request","why":"line one\\n<b>not bold</b>"}') fail(tag + ": the create body is " + JSON.stringify(created));
+      if (!/A request/.test(await text(p, ".cr-title")) || await p.evaluate(() => !!document.querySelector(".cr-why b"))) fail(tag + ": the new request is not shown as text");
+      // the same again is a 409 that shows the one that exists
+      await p.evaluate(() => crClick({ dataset: { cr: "new", repo: "github/openziti/ziti", branch: "fix/router-link-flap" } }));
+      await p.waitForSelector(".cr-form");
+      await p.fill("#cr-f-title", "Again");
+      await p.click('[data-cr="new-do"]');
+      await p.waitForFunction(() => /already exists/.test((document.querySelector(".cr-err") || {}).textContent || ""));
+      if (!/Fix the router link flap/.test(await text(p, ".cr-title"))) fail(tag + ": a 409 does not open the request that exists");
+      if (errors.length) fail(tag + ": page errors: " + errors.join(" | "));
+    } finally { await ctx.close(); }
+
+    // ---- title and why are text ----------------------------------------------------------------------------------------
+    ({ ctx, p, errors } = await crFixturePage(browser, base, { mutate: h => { h.rows[0].title = '<img src=x onerror=window.__x=1>Title'; h.rows[0].why = '<script>window.__x=2<\/script> why'; h.rows[0].source.branch = '"><i>b</i>'; h.rows[0].note = '<u>n</u>'; } }));
+    try {
+      const x = await p.evaluate(() => ({ x: window.__x, img: [...document.querySelectorAll("#hubrepos-list img, #hubrepos-list i, #hubrepos-list u, #hubrepos-list script")].filter(e => e.tagName !== "I" || e.textContent).length, t: document.getElementById("hubrepos-list").textContent }));
+      if (x.x || x.img || !x.t.includes("<img src=x onerror=window.__x=1>Title") || !x.t.includes("<script>window.__x=2</script> why")) fail(tag + ": a title or why became markup or was lost " + JSON.stringify({ x: x.x, img: x.img }));
+    } finally { await ctx.close(); }
+
+    // ---- the mock is used only when asked, and is swappable --------------------------------------------------------------
+    ({ ctx, p, errors } = await crFixturePage(browser, base, { noHub: true, query: "?crmock=1" }));
+    try {
+      const mk = await p.evaluate(() => ({ on: crCore.mockOn(), n: document.querySelectorAll(".cr-li").length, t: document.querySelector(".cr-title").textContent }));
+      if (!mk.on || mk.n !== 3 || !/Hub receives pushes/.test(mk.t)) fail(tag + ": the mock layer did not serve the view " + JSON.stringify(mk));
+      await p.fill("#cr-sha", CR_ZERO); await p.click('[data-cr="merge-do"]'); await p.waitForSelector(".cr-err");
+      if (!/not reachable from main/.test(await text(p, ".cr-err"))) fail(tag + ": the mock does not follow the draft's 409");
+    } finally { await ctx.close(); }
+    ({ ctx, p, errors } = await crFixturePage(browser, base, { noHub: true, mode: "ok" }));
+    try {
+      if (await p.evaluate(() => crCore.mockOn())) fail(tag + ": the mock is on without being asked");
+      if (!/hub is not answering|does not have change requests|would not list/.test(await text(p, "#hubrepos-list"))) fail(tag + ": with the mock off and no hub the view shows rows: " + (await text(p, "#hubrepos-list")).slice(0, 120));
+    } finally { await ctx.close(); }
+
+    // a state word from the hub is not markup either (it lands in a class name)
+    ({ ctx, p, errors } = await crFixturePage(browser, base, { mutate: h => { h.rows.find(r => r.id === "cr_6").state = 'merged" data-x="1'; } }));
+    try {
+      await p.click('.cr-seg [data-tab="closed"]');
+      await p.click('.cr-li[data-id="cr_6"]');
+      await p.waitForFunction(() => document.querySelector(".cr-ended"));
+      if (await p.evaluate(() => !!document.querySelector(".cr-ended[data-x]"))) fail(tag + ": a state word became an attribute");
+    } finally { await ctx.close(); }
+
+    // ---- the mock says it is on, and only the URL turns it on --------------------------------------------------------------
+    ({ ctx, p, errors } = await crFixturePage(browser, base, { noHub: true, query: "?crmock=1" }));
+    try {
+      const bn = await p.evaluate(() => { const b = document.getElementById("cr-mockbar"); const r = b && b.getBoundingClientRect(); return b ? { t: b.textContent, pos: getComputedStyle(b).position, vis: r.width > 100 && r.height > 10, btn: !!b.querySelector("button") } : null; });
+      if (!bn || !/Mock data: nothing here reaches the hub/.test(bn.t) || bn.pos !== "fixed" || !bn.vis || !bn.btn) fail(tag + ": the mock is on without a banner " + JSON.stringify(bn));
+      await p.click("#cr-mockbar button");
+      await p.waitForFunction(() => !/crmock/.test(location.search) && !document.getElementById("cr-mockbar"), null, { timeout: slow(8000) });
+      if (await p.evaluate(() => crCore.mockOn())) fail(tag + ": turn off left the mock on");
+    } finally { await ctx.close(); }
+    ({ ctx, p, errors } = await crFixturePage(browser, base, { noHub: true }));
+    try {
+      if (await p.evaluate(() => !!document.getElementById("cr-mockbar"))) fail(tag + ": a banner with the mock off");
+      // the old localStorage switch is not honoured: a reload without the parameter is live
+      await p.evaluate(() => localStorage.setItem("atrium.crMock", "1"));
+      await p.reload({ waitUntil: "domcontentloaded" });
+      await p.waitForTimeout(300);
+      if (await p.evaluate(() => crCore.mockOn() || !!document.getElementById("cr-mockbar"))) fail(tag + ": localStorage still turns the mock on");
+    } finally { await ctx.close(); }
+
+    // ---- a 403 that is the action's own is an error, not a read-only board; one list read at a time -------------------------
+    ({ ctx, p, errors } = await crFixturePage(browser, base, { mode: "forbid" }));
+    try {
+      await p.click('[data-cr="withdraw"]');
+      await p.waitForSelector(".cr-err");
+      const fb = await p.evaluate(() => ({ err: document.querySelector(".cr-err").textContent, ro: !!document.querySelector(".cr-ro"), flag: crCore.state.readOnly, withdraw: !!document.querySelector('[data-cr="withdraw"]') }));
+      if (fb.err !== "only the owner may withdraw this request" || fb.ro || fb.flag || !fb.withdraw) fail(tag + ": an action's own 403 hid the page's actions " + JSON.stringify(fb));
+    } finally { await ctx.close(); }
+    ({ ctx, p, errors } = await crFixturePage(browser, base, {}));
+    try {
+      const lr = await p.evaluate(async () => {
+        const f = window.fetch; let now = 0, max = 0, n = 0;
+        window.fetch = function (u) { const lst = /change-requests\?/.test(String(u)); if (lst) { now++; n++; max = Math.max(max, now); } return f.apply(this, arguments).finally(() => { if (lst) now--; }); };
+        await Promise.all([crLoad(), crLoad(), crLoad()]);
+        window.fetch = f;
+        return { max, n, run: cr.run, inflight: cr.inflight };
+      });
+      if (lr.max !== 1 || lr.n !== 2 || lr.run || lr.inflight) fail(tag + ": list reads overlap or are not settled " + JSON.stringify(lr));
+    } finally { await ctx.close(); }
+
+    // ---- the phone's width ------------------------------------------------------------------------------------------------
+    ({ ctx, p, errors } = await crFixturePage(browser, base, { w: 390, h: 844 }));
+    try {
+      await hubReposNoOverflow(p, tag + " at 390");
+      const ph = await p.evaluate(() => ({ disp: getComputedStyle(document.querySelector(".cr-ledger")).display, cols: getComputedStyle(document.querySelector(".cr-cols")).gridTemplateColumns.split(" ").length, hit: Math.min(...[...document.querySelectorAll(".cr-btn, .cr-li")].map(b => b.getBoundingClientRect().height)) }));
+      if (ph.disp !== "block" || ph.cols !== 1 || ph.hit < 34) fail(tag + ": at 390px the layout is wrong " + JSON.stringify(ph));
+    } finally { await ctx.close(); }
+
+    await crContrast(browser, base, tag);
+    await crShots(browser, base);
+  } finally { hubMode = wasHub; }
+  if (!bad) console.log("changeReq ok");
+}
+
+// 4.5:1 for the text a page draws, on every skin: each element is painted with its text transparent, the pixels under it are
+// read from a screenshot, and the worst of them is compared with the text's own colour. Gradients and tints are what is really
+// there, not a guess. `before(skin)` may put the page in the state to measure after the skin is set.
+async function crInkCheck(p, skins, sels, width, before) {
+  const bad = [];
+    for (const skin of skins) {
+      await p.evaluate(s => { if (s) document.documentElement.setAttribute("data-skin", s); else document.documentElement.removeAttribute("data-skin"); }, skin);
+      if (before) await before(skin);
+      await p.waitForTimeout(80);
+      for (const sel of sels) {
+        let box = null, ratio = 99;
+        // A repaint under the shot (an event, a late read) shows the text and reads as 1:1, so a miss is measured again before it counts.
+        for (let tries = 0; tries < 3 && ratio < 4.5 || tries === 0; tries++) {
+          ratio = 99;
+          box = await p.evaluate(s => { const e = document.querySelector(s); if (!e) return null; e.scrollIntoView({ block: "center" }); const tn = [...e.childNodes].find(n => n.nodeType === 3 && n.textContent.trim()) || (e.firstElementChild && [...e.firstElementChild.childNodes].find(n => n.nodeType === 3 && n.textContent.trim())) || e;
+          const rg = document.createRange(); rg.selectNodeContents(tn); const r = tn === e ? e.getBoundingClientRect() : rg.getBoundingClientRect(), col = getComputedStyle(tn === e ? e : tn.parentElement).color;
+          const kill = (tn === e ? e : tn.parentElement); kill.dataset.crk = "1"; kill.style.transition = "none"; kill.style.color = "transparent"; return { x: r.x, y: r.y, w: r.width, h: r.height, c: col, dbg: process_dbg(kill) };
+          function process_dbg(k) { const c = getComputedStyle(k); return c.backgroundColor + " " + c.backgroundImage.slice(0, 40); } }, sel);
+          if (!box || box.w < 2 || box.h < 2) break;
+          const png = await p.screenshot({ clip: { x: Math.max(0, box.x), y: Math.max(0, box.y), width: Math.min(box.w, width - Math.max(0, box.x)), height: box.h } });
+          await p.evaluate(() => { document.querySelectorAll("[data-crk]").forEach(k => { k.style.color = ""; k.style.transition = ""; delete k.dataset.crk; }); });
+          ratio = await p.evaluate(async ({ b64, col }) => {
+            const img = new Image(); img.src = "data:image/png;base64," + b64; await img.decode();
+            const cv = document.createElement("canvas"); cv.width = img.width; cv.height = img.height; const g = cv.getContext("2d"); g.drawImage(img, 0, 0);
+            const d = g.getImageData(0, 0, cv.width, cv.height).data;
+            const lin = v => { v /= 255; return v <= .03928 ? v / 12.92 : Math.pow((v + .055) / 1.055, 2.4); };
+            const L = (r, gg, b) => .2126 * lin(r) + .7152 * lin(gg) + .0722 * lin(b);
+            let m = /rgba?\(([\d.]+),\s*([\d.]+),\s*([\d.]+)(?:,\s*([\d.]+))?/.exec(col);
+            if (!m) { const c = /color\(srgb ([\d.]+) ([\d.]+) ([\d.]+)(?: \/ ([\d.]+))?\)/.exec(col); m = c && [c[0], c[1] * 255, c[2] * 255, c[3] * 255, c[4]]; }
+            const a = m[4] === undefined ? 1 : +m[4];
+            let worst = 99;
+            for (let i = 0; i < d.length; i += 4 * 3) {
+              const bg = [d[i], d[i + 1], d[i + 2]], fg = [0, 1, 2].map(k => +m[k + 1] * a + bg[k] * (1 - a));
+              const l1 = L(...fg), l2 = L(...bg), r = (Math.max(l1, l2) + .05) / (Math.min(l1, l2) + .05);
+              if (r < worst) worst = r;
+            }
+            return worst;
+          }, { b64: png.toString("base64"), col: box.c });
+        }
+        if (!box) { bad.push(skin + " " + sel + " missing"); continue; }
+        if (box.w < 2 || box.h < 2) continue;
+        if (ratio < 4.5) bad.push(skin + " " + sel + " " + ratio.toFixed(2) + (process.env.CR_CONTRAST && !skin ? " color " + box.c + " bg " + box.dbg : ""));
+      }
+    }
+  return bad;
+}
+
+async function crContrast(browser, base, tag) {
+  const skins = [""].concat(((await (await fetch(base + "/css/themes.css")).text()).match(/:root\[data-skin="([a-z]+)"\]/g) || []).map(s => /"([a-z]+)"/.exec(s)[1]));
+  const { ctx, p } = await crFixturePage(browser, base, { w: 1700, h: 1500 });
+  const sels = [".cr-h2", ".cr-k", ".cr-hero h3", ".cr-hero .cr-quiet", ".cr-hero .cr-btn", ".cr-li.sel .cr-lt", ".cr-li.sel .cr-lm", ".cr-li .cr-needs", ".cr-seg button[aria-pressed=true]", ".cr-tg span", ".cr-crumb", ".cr-title",
+    ".cr-detail .hr-badges .hr-state", ".cr-gate > b", ".cr-gate > span", ".cr-steps li", ".cr-field label", ".cr-btn.go", ".cr-hint", ".cr-panel .hr-h", ".cr-why", ".cr-line", ".cr-kv dt", ".cr-kv dd", ".cr-quiet", ".cr-tl .cr-tlt", ".cr-lane .cr-br", ".cr-end small", ".cr-hero .cr-br"];
+  let bad;
+  try { bad = await crInkCheck(p, skins, sels, 1700, () => p.fill("#cr-sha", "xyz")); } finally { await ctx.close(); }
+  if (process.env.CR_CONTRAST) console.log(bad.join("\n"));
+  if (bad.length) fail(tag + ": text under 4.5:1 on " + bad.length + " pairs: " + bad.slice(0, 14).join("; "));
+}
+
+// Real-board shots for review: CR_SHOTS=/dir. Paper and dark, 2000 and 390, the list and the page.
+async function crShots(browser, base) {
+  const dir = process.env.CR_SHOTS;
+  if (!dir) return;
+  require("fs").mkdirSync(dir, { recursive: true });
+  for (const w of [2000, 390]) for (const skin of ["paper", "dark"]) for (const st of ["full", "closed", "empty", "readonly"]) {
+    const { ctx, p } = await crFixturePage(browser, base, { w, h: 900, mode: st === "empty" ? "empty" : st === "readonly" ? "readonly" : "ok" });
+    try {
+      await p.evaluate(s => { if (s === "paper") document.documentElement.setAttribute("data-skin", "paper"); else document.documentElement.removeAttribute("data-skin"); }, skin);
+      if (st === "closed") { await p.click('.cr-seg [data-tab="closed"]'); await p.click('.cr-li[data-id="cr_6"]'); await p.waitForFunction(() => /Bump Go/.test(document.querySelector(".cr-title").textContent)); }
+      if (st === "readonly") { await p.click('[data-cr="withdraw"]'); await p.waitForSelector(".cr-ro"); }
+      await p.waitForTimeout(250);
+      const h = await p.evaluate(() => { const l = document.getElementById("hubrepos-list"); return Math.ceil(l.scrollHeight + l.getBoundingClientRect().top + 24); });
+      await p.setViewportSize({ width: w, height: Math.min(6000, Math.max(600, h)) });
+      await p.waitForTimeout(200);
+      await p.screenshot({ path: require("path").join(dir, "requests-" + st + "-" + w + "-" + skin + ".png") });
+    } finally { await ctx.close(); }
+  }
+}
+
+// Change requests on the phone (m/js/changereq.js): the "requests" door in the header, the list and a request's page as two
+// screens of one sheet with history for back, the same operator actions and sha check as the desktop, a read-only board, an
+// empty, offline and old hub, opening a request, text-only titles, and the changes sheet's Pushed line (the hub's push log,
+// with the hub not answering and a branch it has never seen). Against scripts/changereq-fixture.js.
+async function mChangeReqPage(browser, st, vp, o) {
+  o = o || {};
+  const hub = require("./changereq-fixture.js")(Date.now());
+  if (o.mutate) o.mutate(hub);
+  const ctx = await browser.newContext({ viewport: vp, hasTouch: true, isMobile: true, deviceScaleFactor: 1 });
+  const errors = [];
+  const p = await ctx.newPage();
+  p.on("pageerror", e => errors.push(String(e)));
+  const fx = require("./hubrepos-fixture.js")(Date.now());
+  await p.route(/\/_hub\/git\/repos$/, r => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ repos: fx.repos }) }));
+  await hub.route(p, { mode: o.mode || "ok" });
+  // Routes are matched newest first, so the push log's own answer, when a test gives one, goes on after the hub's.
+  if (o.pushed) await p.route(/\/_hub\/git\/pushed/, r => o.pushed(r));
+  await p.goto(st.url + "/m/" + (o.query || ""), { waitUntil: "domcontentloaded" });
+  await p.waitForSelector("#m-seg-all", { timeout: slow(10000) });
+  await p.waitForFunction(() => window.mRequests && window.mRequests.state && (window.mRequests.state.loaded || window.mRequests.state.note), null, { timeout: slow(8000) });
+  await p.waitForTimeout(150);
+  return { ctx, p, errors, hub };
+}
+
+async function mChangeReqSection(browser) {
+  const tag0 = "mChangeReq";
+  const st = mServer({});
+  st.tasks = [mCard("cr-1", { alias: "coder", display_title: "coder", runner: "claude", worktree: "/w/card", status: "needs-input", waiting_since: mIso(2 * M_MIN), seen: { turn_ended_at: mIso(20 * M_MIN) } })];
+  st.replies["cr-1"] = { source: "transcript", replies: [{ at: new Date(Date.now() - 600000).toISOString(), text: "done", edited: 1 }] };
+  await st.open();
+  try {
+    for (const vp of M_VIEWS) {
+      const tag = tag0 + " " + vp.width + ": ";
+      let { ctx, p, errors, hub } = await mChangeReqPage(browser, st, vp);
+      try {
+        const door = await p.evaluate(() => { const b = document.getElementById("m-req-btn"); const r = b.getBoundingClientRect(); return { hidden: b.hidden, text: b.textContent, h: r.height, right: r.right, vw: innerWidth }; });
+        if (door.hidden || !/^requests\s*2$/.test(door.text) || door.h < 40) fail(tag + "the door is wrong " + JSON.stringify(door));
+        const hdr = await p.evaluate(() => { const h = document.querySelector("header"); return h ? h.scrollWidth - h.clientWidth : 0; });
+        if (hdr > 1) fail(tag + "the header scrolls sideways by " + hdr);
+        await p.tap("#m-req-btn");
+        await p.waitForSelector("#m-requests:not([hidden]) .crm-list");
+        const l = await p.evaluate(() => ({ title: document.querySelector(".crm-title").textContent, hero: document.querySelectorAll(".crm-hero").length, rows: [...document.querySelectorAll(".crm-li")].map(b => b.dataset.id).join(),
+          groups: [...document.querySelectorAll(".crm-tg span")].map(x => x.textContent).join("|"), needs: document.querySelectorAll(".crm-needs").length, seg: [...document.querySelectorAll(".crm-seg button")].map(b => b.textContent + ":" + b.getAttribute("aria-pressed")).join(),
+          hit: Math.min(...[...document.querySelectorAll(".crm-li, .crm-btn, .crm-seg button")].map(b => b.getBoundingClientRect().height)), page: document.documentElement.scrollWidth - innerWidth }));
+        if (l.title !== "Change requests" || l.hero !== 2 || l.rows !== "cr_9,cr_8,cr_7" || l.groups !== "into main|into release/1.x" || l.needs !== 2 || l.seg !== "Open 3:true,Closed 3:false") fail(tag + "the list is wrong " + JSON.stringify(l));
+        if (l.hit < 40 || l.page > 1) fail(tag + "tap targets or width: " + JSON.stringify([l.hit, l.page]));
+        const h0 = await p.evaluate(() => history.length);
+        await p.tap('.crm-li[data-id="cr_9"]');
+        await p.waitForFunction(() => document.querySelector(".crm-title").textContent === "cr_9" && /hub head matches/.test(document.querySelector(".crm-badges").textContent));
+        const pg = await p.evaluate(() => ({ ttl: document.querySelector(".crm-ttl").textContent, gate: document.querySelector(".crm-gate").textContent, panels: [...document.querySelectorAll(".crm-panel h3")].map(x => x.textContent).join(),
+          line: document.querySelector(".crm-line").textContent, hist: history.length, btns: [...document.querySelectorAll("#m-requests button")].map(b => b.textContent.trim()).filter(x => /merge/i.test(x)).join(), page: document.documentElement.scrollWidth - innerWidth }));
+        if (pg.ttl !== "Fix the router link flap" || !/Needs the orchestrator or clint/.test(pg.gate) || !/Nothing on the board does it/.test(pg.gate) || pg.panels !== "Why,On the hub,Change record,History" || pg.line !== "pushed at abcdef0, hub head matches") fail(tag + "the page is wrong " + JSON.stringify(pg));
+        if (pg.hist !== h0 + 1) fail(tag + "opening a request did not push one history entry " + JSON.stringify([h0, pg.hist]));
+        if (pg.btns !== "Record that it was merged") fail(tag + "merge wording on a button: " + pg.btns);
+        // the sha check, the server's 409, a record
+        const dis = () => p.evaluate(() => ({ off: [...document.querySelectorAll(".crm-btn.go")].pop().disabled, bad: document.getElementById("crm-shahint").classList.contains("bad") }));
+        if (!(await dis()).off) fail(tag + "record merged is enabled with no sha");
+        for (const [v, ok] of CR_SHAS) {
+          await p.fill("#crm-sha", v);
+          const d = await dis();
+          if (d.off === ok || (v && !ok && !d.bad)) fail(tag + "sha " + v + " should be " + (ok ? "accepted" : "refused") + " with a hint " + JSON.stringify(d));
+        }
+        await p.fill("#crm-sha", CR_ZERO);
+        await p.tap(".crm-gate .crm-btn.go");
+        await p.waitForSelector(".crm-err");
+        if ((await text0(p, ".crm-err")) !== CR_ZERO + " is not reachable from main") fail(tag + "the 409 text is not shown: " + await text0(p, ".crm-err"));
+        await p.fill("#crm-sha", CR_FULL);
+        await p.tap(".crm-gate .crm-btn.go");
+        await p.waitForFunction(() => /Recorded as merged at e40a3c2/.test((document.querySelector(".crm-ended") || {}).textContent || ""));
+        if (hub.calls.filter(c => c.body.do === "merged").map(c => c.body.sha).join() !== CR_ZERO + "," + CR_FULL) fail(tag + "posted " + JSON.stringify(hub.calls.map(c => c.body)));
+        // back is history: the page goes to the list, the list closes the sheet
+        await p.evaluate(() => history.back());
+        await p.waitForSelector(".crm-list");
+        if (await p.evaluate(() => document.getElementById("m-requests").hidden)) fail(tag + "back from a page closed the sheet");
+        const n3 = await p.evaluate(() => [...document.querySelectorAll(".crm-li")].map(b => b.dataset.id).join());
+        if (n3 !== "cr_8,cr_7") fail(tag + "the merged request is still open " + n3);
+        await p.evaluate(() => history.back());
+        await p.waitForFunction(() => document.getElementById("m-requests").hidden);
+        // closed records and the unseen branch
+        await p.tap("#m-req-btn"); await p.waitForSelector(".crm-list");
+        await p.tap(".crm-seg button:nth-child(2)");
+        await p.tap('.crm-li[data-id="cr_5"]');
+        await p.waitForFunction(() => /not pushed/.test((document.querySelector(".crm-badges") || {}).textContent || ""));
+        const w = await p.evaluate(() => ({ ended: document.querySelector(".crm-ended").textContent, line: document.querySelector(".crm-line").textContent, how: document.querySelector(".crm-panel .crm-note, .crm-panel .crm-quiet") && [...document.querySelectorAll(".crm-note")].map(x => x.textContent).join("|") }));
+        if (!/Withdrawn/.test(w.ended) || !/never seen test\/flaky-terminator-race/.test(w.line) || !/git push hub test\/flaky-terminator-race/.test(w.how)) fail(tag + "an unseen branch reads wrong " + JSON.stringify(w));
+        if (errors.length) fail(tag + "page errors: " + errors.join(" | "));
+      } finally { await ctx.close(); }
+
+      // withdraw and close with a note
+      ({ ctx, p, errors, hub } = await mChangeReqPage(browser, st, vp));
+      try {
+        await p.tap("#m-req-btn"); await p.waitForSelector(".crm-list");
+        await p.tap('.crm-li[data-id="cr_9"]'); await p.waitForSelector(".crm-gate");
+        await p.tap(".crm-acts .crm-btn:nth-child(1)");
+        await p.waitForFunction(() => /Withdrawn/.test((document.querySelector(".crm-ended") || {}).textContent || ""));
+        await p.evaluate(() => history.back());
+        await p.tap('.crm-li[data-id="cr_8"]'); await p.waitForSelector(".crm-gate");
+        await p.tap(".crm-acts .crm-btn:nth-child(2)");
+        await p.fill("#crm-note", "landed on the other branch");
+        await p.tap('.crm-row .crm-btn:text-is("Close request")');
+        await p.waitForFunction(() => /Closed/.test((document.querySelector(".crm-ended") || {}).textContent || ""));
+        if (hub.calls.map(c => JSON.stringify(c.body)).join() !== '{"do":"withdraw"},{"do":"close","note":"landed on the other branch"}') fail(tag + "posted " + hub.calls.map(c => JSON.stringify(c.body)));
+        if (errors.length) fail(tag + "page errors: " + errors.join(" | "));
+      } finally { await ctx.close(); }
+
+      // a board that cannot write
+      ({ ctx, p, errors } = await mChangeReqPage(browser, st, vp, { mode: "readonly" }));
+      try {
+        await p.tap("#m-req-btn"); await p.waitForSelector(".crm-list");
+        await p.tap('.crm-li[data-id="cr_9"]'); await p.waitForSelector(".crm-gate");
+        await p.tap(".crm-acts .crm-btn:nth-child(1)");
+        await p.waitForSelector(".crm-ro");
+        const ro = await p.evaluate(() => ({ line: document.querySelector(".crm-ro").textContent, inputs: document.querySelectorAll("#m-requests input, #m-requests .crm-acts").length }));
+        if (!/public share without a login/.test(ro.line) || ro.inputs) fail(tag + "a read-only board still offers writes " + JSON.stringify(ro));
+        await p.evaluate(() => history.back());
+        await p.waitForSelector(".crm-list");
+        if (await p.$(".crm-bar .crm-btn")) fail(tag + "a read-only board offers to open a request");
+      } finally { await ctx.close(); }
+
+      // the mock says it is on, and only the URL turns it on
+      ({ ctx, p } = await mChangeReqPage(browser, st, vp, { query: "?crmock=1" }));
+      try {
+        const bn = await p.evaluate(() => { const b = document.getElementById("cr-mockbar"); const r = b && b.getBoundingClientRect(); return b ? { t: b.textContent, pos: getComputedStyle(b).position, vis: r.width > 100 && r.height > 10 } : null; });
+        if (!bn || !/Mock data: nothing here reaches the hub/.test(bn.t) || bn.pos !== "fixed" || !bn.vis) fail(tag + "the mock is on without a banner " + JSON.stringify(bn));
+      } finally { await ctx.close(); }
+      ({ ctx, p } = await mChangeReqPage(browser, st, vp, {}));
+      try {
+        if (await p.evaluate(() => !!document.getElementById("cr-mockbar"))) fail(tag + "a banner with the mock off");
+        await p.evaluate(() => localStorage.setItem("atrium.crMock", "1"));
+        await p.reload({ waitUntil: "domcontentloaded" }); await p.waitForTimeout(400);
+        if (await p.evaluate(() => crCore.mockOn() || !!document.getElementById("cr-mockbar"))) fail(tag + "localStorage still turns the mock on");
+      } finally { await ctx.close(); }
+
+      // a 403 that is the action's own is shown as its error and the page stays writable
+      ({ ctx, p } = await mChangeReqPage(browser, st, vp, { mode: "forbid" }));
+      try {
+        await p.tap("#m-req-btn"); await p.waitForSelector(".crm-list");
+        await p.tap('.crm-li[data-id="cr_9"]'); await p.waitForSelector(".crm-gate");
+        await p.tap(".crm-acts .crm-btn:nth-child(1)");
+        await p.waitForSelector(".crm-err");
+        const fb = await p.evaluate(() => ({ err: document.querySelector(".crm-err").textContent, ro: !!document.querySelector(".crm-ro"), acts: !!document.querySelector(".crm-acts") }));
+        if (fb.err !== "only the owner may withdraw this request" || fb.ro || !fb.acts) fail(tag + "an action's own 403 hid the actions " + JSON.stringify(fb));
+      } finally { await ctx.close(); }
+
+      // empty, and the doors that stay shut
+      ({ ctx, p } = await mChangeReqPage(browser, st, vp, { mode: "empty" }));
+      try {
+        await p.tap("#m-req-btn");
+        await p.waitForSelector(".crm-empty");
+        if (!/Nothing is waiting to be merged/.test(await text0(p, ".crm-empty"))) fail(tag + "the empty hub reads wrong");
+      } finally { await ctx.close(); }
+      for (const mode of ["old", "offline"]) {
+        ({ ctx, p } = await mChangeReqPage(browser, st, vp, { mode }));
+        try { if (!(await p.evaluate(() => document.getElementById("m-req-btn").hidden))) fail(tag + mode + " hub: the door is open"); } finally { await ctx.close(); }
+      }
+      // a hub that goes away after the door opened says so, with a way to try again
+      ({ ctx, p } = await mChangeReqPage(browser, st, vp));
+      try {
+        await p.evaluate(() => { window.mRequests.state.loaded = false; });
+        await p.unroute(/\/_hub\/(change-requests|git\/pushed)/);
+        await p.route(/\/_hub\/change-requests/, r => r.abort("failed"));
+        await p.tap("#m-req-btn");
+        await p.waitForSelector(".crm-warn");
+        if (!/hub is not answering/.test(await text0(p, ".crm-warn")) || !(await p.$(".crm-list .crm-btn"))) fail(tag + "a hub that went away reads wrong: " + await text0(p, ".crm-list"));
+      } finally { await ctx.close(); }
+
+      // opening a request, the 404, the 409
+      ({ ctx, p, errors, hub } = await mChangeReqPage(browser, st, vp));
+      try {
+        await p.tap("#m-req-btn"); await p.waitForSelector(".crm-list");
+        await p.tap(".crm-bar .crm-btn");
+        await p.waitForSelector(".crm-form");
+        await p.fill("#crm-f-branch", "nope/missing"); await p.fill("#crm-f-title", "A request");
+        await p.tap(".crm-form .crm-btn.go");
+        await p.waitForSelector(".crm-form .crm-err");
+        if (!/hub has no branch called nope\/missing.*git push hub nope\/missing/.test(await text0(p, ".crm-form .crm-err"))) fail(tag + "the 404 is not explained");
+        await p.fill("#crm-f-branch", "feat/metrics-exemplars"); await p.fill("#crm-f-why", "line one\n<b>not bold</b>");
+        await p.tap(".crm-form .crm-btn.go");
+        await p.waitForFunction(() => /A request/.test((document.querySelector(".crm-ttl") || {}).textContent || ""));
+        const c = hub.calls.filter(x => x.path === "/_hub/change-requests").pop().body;
+        if (JSON.stringify(c) !== '{"repo":"github/openziti/ziti","source":{"branch":"feat/metrics-exemplars"},"target":{"branch":"main"},"title":"A request","why":"line one\\n<b>not bold</b>"}') fail(tag + "the create body is " + JSON.stringify(c));
+        if (await p.$(".crm-why b")) fail(tag + "a why became markup");
+        await p.evaluate(() => history.back());
+        await p.waitForSelector(".crm-list");
+        await p.tap(".crm-bar .crm-btn");
+        await p.waitForSelector(".crm-form");
+        await p.fill("#crm-f-branch", "fix/router-link-flap"); await p.fill("#crm-f-title", "Again");
+        await p.tap(".crm-form .crm-btn.go");
+        await p.waitForFunction(() => /already exists/.test((document.querySelector(".crm-err") || {}).textContent || ""));
+        if (!/Fix the router link flap/.test(await text0(p, ".crm-ttl"))) fail(tag + "a 409 does not open the request that exists");
+        if (errors.length) fail(tag + "page errors: " + errors.join(" | "));
+      } finally { await ctx.close(); }
+
+      // title and why are text
+      ({ ctx, p } = await mChangeReqPage(browser, st, vp, { mutate: h => { h.rows[0].title = '<img src=x onerror=window.__x=1>T'; h.rows[0].why = '<script>window.__x=2<\/script>w'; } }));
+      try {
+        await p.tap("#m-req-btn"); await p.waitForSelector(".crm-list");
+        await p.tap('.crm-li[data-id="cr_9"]'); await p.waitForSelector(".crm-why");
+        const x = await p.evaluate(() => ({ x: window.__x, n: document.querySelectorAll("#m-requests img, #m-requests script, #m-requests b:not(.crm-b)").length - document.querySelectorAll("#m-requests .crm-steps b, #m-requests .crm-seg b, #m-requests .crm-ended b, #m-requests .crm-gate > b, #m-requests .crm-tl b").length, t: document.getElementById("m-requests").textContent }));
+        if (x.x || x.n > 0 || !x.t.includes("<img src=x onerror=window.__x=1>T")) fail(tag + "a title became markup " + JSON.stringify({ x: x.x, n: x.n }));
+      } finally { await ctx.close(); }
+    }
+
+    // contrast on every skin, phone
+    {
+      const skins = [""].concat(((await (await fetch(st.url + "/css/themes.css")).text()).match(/:root\[data-skin="([a-z]+)"\]/g) || []).map(s => /"([a-z]+)"/.exec(s)[1]));
+      const { ctx, p } = await mChangeReqPage(browser, st, M_VIEWS[0]);
+      let bad;
+      try {
+        await p.tap("#m-req-btn"); await p.waitForSelector(".crm-list");
+        const list = [".crm-title", ".crm-k", ".crm-hero h3", ".crm-hero .crm-quiet", ".crm-hero .crm-btn", ".crm-seg button[aria-pressed=true]", ".crm-tg span", ".crm-li .crm-lt", ".crm-li .crm-lm", ".crm-li .crm-needs", ".crm-bar .crm-btn"];
+        bad = await crInkCheck(p, skins, list, 390);
+        await p.tap('.crm-li[data-id="cr_9"]'); await p.waitForFunction(() => /hub head matches/.test(document.querySelector(".crm-badges").textContent));
+        const page = [".crm-crumb", ".crm-ttl", ".crm-badges .crm-pill", ".crm-end small", ".crm-gate > b", ".crm-gate > span", ".crm-steps li", ".crm-field label", ".crm-hint", ".crm-gate .crm-btn.go", ".crm-panel h3", ".crm-why", ".crm-line", ".crm-kv dt", ".crm-kv dd", ".crm-tl li span", ".crm-lane .crm-br"];
+        bad = bad.concat(await crInkCheck(p, skins, page, 390, () => p.fill("#crm-sha", CR_FULL)));
+      } finally { await ctx.close(); }
+      if (process.env.CR_CONTRAST) console.log(bad.join("\n"));
+      if (bad.length) fail(tag0 + ": text under 4.5:1 on " + bad.length + " pairs: " + bad.slice(0, 14).join("; "));
+    }
+
+    // the changes sheet's Pushed line
+    for (const [mode, want] of [["matches", /^Pushedpushed at abcdef0, hub head matches$/], ["behind", /hub is behind/], ["not-pushed", /never seen feat\/x.*git push hub feat\/x/], ["offline", /the hub did not say: the hub is not answering/]]) {
+      const vp = M_VIEWS[0];
+      st.changesFor = (card, q) => card !== "cr-1" ? { status: 404, body: { error: "not a worktree" } } : { status: 200, body: { against: "head", base: "aaaaaaa1", head: "1a2b3c4d5e6f", dirty: false, total: 1, repo: "github/o/r", branch: "feat/x", files: [{ path: "a.js", status: "modified", added: 1, removed: 1, hunks: "@@ -1 +1 @@\n-a\n+b\n" }] } };
+      const asked = [];
+      const { ctx, p } = await mChangeReqPage(browser, st, vp, { pushed: r => { asked.push(new URL(r.request().url()).search); if (mode === "offline") return r.abort("failed");
+        return r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ state: mode, hub_sha: "abcdef0123456789", room: "sg4", card: "c-1", at: new Date().toISOString(), released: false }) }); } });
+      try {
+        await p.tap("#m-seg-all"); await p.waitForSelector("#m-list .row");
+        await p.tap('#m-list .row[data-id="cr-1"]'); await p.waitForSelector("#m-replies .md");
+        await p.tap("#m-card-changes");
+        await p.waitForSelector(".cg-pushed .cg-pk");
+        await p.waitForFunction(() => !/reading/.test(document.querySelector(".cg-pushed").textContent), null, { timeout: slow(5000) });
+        const t = await text0(p, ".cg-pushed");
+        if (!want.test(t)) fail(tag0 + " pushed " + mode + ": reads " + t);
+        if (asked.length !== 1 || asked[0] !== "?repo=github%2Fo%2Fr&branch=feat%2Fx&head=1a2b3c4d5e6f") fail(tag0 + " pushed " + mode + ": asked " + JSON.stringify(asked));
+      } finally { await ctx.close(); }
+    }
+    // a card whose changes name no branch gets no line and no call
+    {
+      st.changesFor = (card, q) => ({ status: 200, body: { against: "head", base: "a", head: "1a2b3c4d5e6f", dirty: false, total: 0, files: [] } });
+      const asked = [];
+      const { ctx, p } = await mChangeReqPage(browser, st, M_VIEWS[0], { pushed: r => { asked.push(1); return r.abort(); } });
+      try {
+        await p.tap("#m-seg-all"); await p.waitForSelector("#m-list .row");
+        await p.tap('#m-list .row[data-id="cr-1"]'); await p.waitForSelector("#m-replies .md");
+        await p.tap("#m-card-changes"); await p.waitForSelector(".cg-sub");
+        await p.waitForTimeout(200);
+        if (await p.$(".cg-pushed") || asked.length) fail(tag0 + ": a card with no branch got a Pushed line or a call");
+      } finally { await ctx.close(); }
+    }
+    await mCrShots(browser, st);
+  } finally { await st.close(); }
+  if (!bad) console.log("mChangeReq ok");
+}
+// Phone shots of the real /m sheet for review: CR_SHOTS=/dir. 390 wide, paper and dark, each screen it has.
+async function mCrShots(browser, st) {
+  const dir = process.env.CR_SHOTS;
+  if (!dir) return;
+  require("fs").mkdirSync(dir, { recursive: true });
+  st.changesFor = () => ({ status: 200, body: { against: "head", base: "aaaaaaa1", head: "1a2b3c4d5e6f", dirty: false, total: 2, repo: "github/o/r", branch: "feat/x",
+    files: [{ path: "internal/hub/receive.go", status: "modified", added: 40, removed: 6, hunks: "@@ -1 +1 @@\n-a\n+b\n" }, { path: "docs/notes.md", status: "added", added: 12, removed: 0, hunks: "@@ -0,0 +1 @@\n+x\n" }] } });
+  for (const skin of ["paper", "dark"]) for (const view of ["list", "page", "closed", "readonly", "empty", "form", "changes"]) {
+    const { ctx, p } = await mChangeReqPage(browser, st, { width: 390, height: 844 }, { mode: view === "empty" ? "empty" : view === "readonly" ? "readonly" : "ok", pushed: view === "changes" ? (r => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ state: "behind", hub_sha: "abcdef0123456789", room: "sg4", card: "c-101", at: new Date(Date.now() - 3600e3).toISOString() }) })) : undefined });
+    try {
+      await p.evaluate(s => { if (s === "paper") document.documentElement.setAttribute("data-skin", "paper"); else document.documentElement.removeAttribute("data-skin"); }, skin);
+      if (view === "changes") {
+        await p.tap("#m-seg-all"); await p.waitForSelector("#m-list .row"); await p.tap('#m-list .row[data-id="cr-1"]'); await p.waitForSelector("#m-replies .md");
+        await p.tap("#m-card-changes"); await p.waitForFunction(() => document.querySelector(".cg-pushed") && !/reading/.test(document.querySelector(".cg-pushed").textContent));
+      } else {
+        await p.tap("#m-req-btn"); await p.waitForSelector("#m-requests .crm-view");
+        if (view === "page" || view === "readonly") { await p.tap('.crm-li[data-id="cr_9"]'); await p.waitForFunction(() => /hub head matches/.test((document.querySelector(".crm-badges") || {}).textContent || "")); }
+        if (view === "readonly") { await p.tap(".crm-acts .crm-btn:nth-child(1)"); await p.waitForSelector(".crm-ro"); }
+        if (view === "closed") { await p.tap(".crm-seg button:nth-child(2)"); await p.tap('.crm-li[data-id="cr_6"]'); await p.waitForFunction(() => /Bump Go/.test((document.querySelector(".crm-ttl") || {}).textContent || "") && document.querySelectorAll(".crm-tl li").length >= 3); }
+        if (view === "form") { await p.tap(".crm-bar .crm-btn"); await p.waitForSelector(".crm-form"); }
+      }
+      await p.waitForTimeout(250);
+      const h = await p.evaluate(() => { const sc = document.querySelector("#m-requests:not([hidden]) .crm-scroll") || document.querySelector(".v-scroll"); return sc ? sc.scrollHeight + 90 : 844; });
+      await p.setViewportSize({ width: 390, height: Math.min(5000, Math.max(844, h)) });
+      await p.waitForTimeout(200);
+      await p.screenshot({ path: require("path").join(dir, "m-requests-" + view + "-390-" + skin + ".png") });
+    } finally { await ctx.close(); }
+  }
+}
+
+// The sha forms: the hub's ValidSHA, a full 40 (sha-1) or 64 (sha-256) hex, either case; nothing shorter or longer.
+const CR_FULL = "e40a3c2d00112233445566778899aabbccddeeff", CR_ZERO = "0".repeat(40), CR_64 = "ab".repeat(32);
+const CR_SHAS = [["xyz", false], ["e40a3c2", false], [CR_FULL.slice(1), false], [CR_FULL + "0", false], [CR_FULL.replace("e", "g"), false], [CR_FULL.toUpperCase(), true], [CR_FULL, true], [CR_64, true], [CR_64.slice(1), false]];
+const text0 = (p, sel) => p.evaluate(s => (document.querySelector(s) || {}).textContent || "", sel);
+
 async function main() {
   if (!LIST_MODE) await new Promise(r => server.listen(0, "127.0.0.1", r));
   const base = LIST_MODE ? "" : "http://127.0.0.1:" + server.address().port;
@@ -20324,7 +21286,7 @@ async function main() {
       u001Audit: u001AuditSection,
       pasteStart: pasteStartSection, pasteDone: pasteDoneSection, pasteOldRoom: pasteOldRoomSection, pasteClose: pasteCloseSection,
       growlQuestionShots: growlQuestionShotsSection, growlQuestionBody: growlQuestionBodySection, growlReplyGrow: growlReplyGrowSection, growlChoices: growlChoicesSection, growlStable: growlStableSection, growlOnIt: growlOnItSection, mGrowlQuestion: mGrowlQuestionSection,
-      bootClean: bootCleanSection, mWorking: mWorkingSection, mOwnMessages: mOwnMessagesSection, mBubbles: mBubblesSection, mRecapSheet: mRecapSheetSection,
+      bootClean: bootCleanSection, mReload: mReloadSection, mReconnect: mReconnectSection, mActivityRead: mActivityReadSection, mReadRetry: mReadRetrySection, mWorking: mWorkingSection, mOwnMessages: mOwnMessagesSection, mBubbles: mBubblesSection, mRecapSheet: mRecapSheetSection,
       mHomeOrder: mHomeOrderSection, cardUrlWayOut: cardUrlWayOutSection, phoneBoot: phoneBootSection, sayEnter: sayEnterSection, sendArrow: sendArrowSection, mTables: mTablesSection, mMarkdown: mMarkdownSection, mHostile: mHostileSection, mPictures: mPicturesSection, soundPhone: soundPhoneSection, phoneBell: phoneBellSection, mBell: mBellSection,
       mHomeOrder: mHomeOrderSection, cardUrlWayOut: cardUrlWayOutSection, phoneBoot: phoneBootSection, sayEnter: sayEnterSection, sendArrow: sendArrowSection, mTables: mTablesSection, mMarkdown: mMarkdownSection, mHostile: mHostileSection, mPictures: mPicturesSection, phoneRedirect: phoneRedirectSection,
       mHomeOrder: mHomeOrderSection, cardUrlWayOut: cardUrlWayOutSection, phoneBoot: phoneBootSection, sayEnter: sayEnterSection, sendArrow: sendArrowSection, mTables: mTablesSection, mMarkdown: mMarkdownSection, mHostile: mHostileSection, mPictures: mPicturesSection, mHidden: mHiddenSection, soundPhone: soundPhoneSection, phoneBell: phoneBellSection, mBell: mBellSection,
@@ -20339,8 +21301,8 @@ async function main() {
       coverPoll: coverPollSection, coverSteps: coverStepsSection, termBox: termBoxSection,
       termDebug: termDebugSection, termSortStarted: termSortStartedSection,
       noReadyChildren: noReadyChildrenSection, childUnderParent: childUnderParentSection, topNav: topNavSection,
-      childFold: childFoldSection, liveHome: liveHomeSection,
-      pulls: pullsSection, hubRepos: hubReposSection, hubReposShelf: hubReposShelfSection, hubReposLedger: hubReposLedgerSection, hubReposFeed: hubReposFeedSection, trayHead: trayHeadSection, pullsAbsent: pullsAbsentSection, oneTooltip: oneTooltipSection, burnChart: burnChartSection, burnReadout: burnReadoutSection, switchPrewarm: switchPrewarmSection, attachAtOnce: attachAtOnceSection, keepAlive: keepAliveSection, switchBackCost: switchBackCostSection, keepMemory: keepMemorySection };
+      childFold: childFoldSection, pinShows: pinShowsSection, liveHome: liveHomeSection,
+      pulls: pullsSection, hubRepos: hubReposSection, hubReposShelf: hubReposShelfSection, hubReposLedger: hubReposLedgerSection, hubReposFeed: hubReposFeedSection, changeReq: changeReqSection, mChangeReq: mChangeReqSection, trayHead: trayHeadSection, pullsAbsent: pullsAbsentSection, oneTooltip: oneTooltipSection, burnChart: burnChartSection, burnReadout: burnReadoutSection, switchPrewarm: switchPrewarmSection, attachAtOnce: attachAtOnceSection, keepAlive: keepAliveSection, switchBackCost: switchBackCostSection, keepMemory: keepMemorySection };
     try {
       for (const n of process.env.HEADLESS_ONLY.split(",")) await only[n](browser, base);
     } catch (e) { fail("the headless run threw: " + (e && e.message ? e.message : e) + threwAt(e)); }
@@ -20584,9 +21546,8 @@ async function main() {
     // idle AND the dead one (not-working-right-now), while the agents segment keeps
     // any LIVE agent - the idle one included - and hides only the dead one (no
     // live connection). The idle subagent hiding while the idle agent stays is the
-    // whole point: same idle state, different rule. Pinning exempts nothing: the
-    // dead rows are pinned and still hide. And the agents toggle hides exactly the
-    // agent rows drawn grey (`.cold`), never more or fewer. The on/off combinations are
+    // whole point: same idle state, different rule. Pinning exempts a row from
+    // both: the dead rows are pinned and always stay, drawn grey (`.cold`). The on/off combinations are
     // each asserted, so the two toggles are proven independent. Driven through the
     // board's own functions so the device-scoped persistence for BOTH keys is
     // exercised, not faked.
@@ -20601,8 +21562,8 @@ async function main() {
       return {
         idleSub: has("sublive"), workingSub: has("subwork"), deadSub: has("subdead"),
         liveAgent: has("aglive"), deadAgent: has("agdead"),
-        // Agent (non-doer) rows drawn grey right now. With the agents toggle on
-        // this must be empty: grey and hidden are one predicate.
+        // Agent (non-doer) rows drawn grey right now. A pinned cold one stays
+        // drawn, grey, whatever the toggles say.
         coldAgents: [...document.querySelectorAll("#term-list .card.tab.cold")]
           .map(c => c.dataset.id).filter(id => id === "aglive" || id === "agdead"),
         // The pinned bucket's heading count and its empty line, and every other
@@ -20625,8 +21586,8 @@ async function main() {
     });
 
     // DEFAULT, with neither key ever set: the subagents side is ON and the agents
-    // side OFF. So the idle and the dead (pinned) subagent are hidden out of the
-    // box (count 2), the working one stays, and both agent rows stay (the
+    // side OFF. So the idle subagent is hidden out of the box (count 1), the
+    // working one and the pinned dead one stay (the pin wins), and both agent rows stay (the
     // idle-but-live one and the dead one). This is the "subagents default on,
     // agents default off" contract. A stale value is written under the legacy `atrium.hidedoers`
     // key to prove it does NOT override the new default: the toggle now reads the
@@ -20647,23 +21608,22 @@ async function main() {
       fail("the hide defaults are not subagents-on / agents-off when unset: " +
         JSON.stringify(hDef));
     }
-    if (hDef.idleSub || hDef.deadSub) {
-      fail("the subagents side did not default on: an idle or dead (pinned) " +
-        "subagent was still shown: " + JSON.stringify(hDef));
+    if (hDef.idleSub) {
+      fail("the subagents side did not default on: an idle subagent was still " +
+        "shown: " + JSON.stringify(hDef));
     }
-    if (!hDef.workingSub || !hDef.liveAgent || !hDef.deadAgent) {
+    if (!hDef.workingSub || !hDef.deadSub || !hDef.liveAgent || !hDef.deadAgent) {
       fail("the default state hid a row it should not have (the working subagent, " +
         "or an agent): " + JSON.stringify(hDef));
     }
-    if (!hDef.subLit || hDef.agentLit || !/^subagents \(2\)$/.test(hDef.subLabel)) {
+    if (!hDef.subLit || hDef.agentLit || !/^subagents \(1\)$/.test(hDef.subLabel)) {
       fail("the default did not light the subagents segment alone with a count of " +
-        "2 (idle, dead): " + JSON.stringify(hDef));
+        "1 (the idle one; the pinned dead one is not counted): " + JSON.stringify(hDef));
     }
-    // The pinned heading counts shown out of total: the dead pinned subagent is
-    // hidden, the dead pinned agent is not, so `1/2`.
-    if (hDef.pinnedCount !== "1/2") {
-      fail("the pinned heading does not read shown/total (1/2) with a pinned row " +
-        "hidden: " + JSON.stringify(hDef));
+    // Both pinned rows are drawn, so the pinned heading reads a plain 2.
+    if (hDef.pinnedCount !== "2") {
+      fail("the pinned heading does not read a plain 2 with both pinned rows " +
+        "drawn: " + JSON.stringify(hDef));
     }
     // The subagents segment says, in its tooltip, that a subagent is an
     // atrium-launched session, so the word is not left to guess at.
@@ -20720,9 +21680,9 @@ async function main() {
       fail("the subagents toggle left an idle subagent in the strip: an unpinned " +
         "subagent that is not working right now must hide.");
     }
-    if (hSub.deadSub) {
-      fail("the subagents toggle left a PINNED subagent that exited in the strip: " +
-        "a pin does not exempt a row from hide inactive.");
+    if (!hSub.deadSub) {
+      fail("the subagents toggle hid a PINNED subagent that exited: a pinned " +
+        "card is never removed by a hide pill.");
     }
     if (!hSub.workingSub) {
       fail("the subagents toggle hid the WORKING subagent: an actively-computing " +
@@ -20737,24 +21697,23 @@ async function main() {
       fail("the subagents toggle did not light its own segment alone: " +
         JSON.stringify(hSub));
     }
-    if (!/^subagents \(2\)$/.test(hSub.subLabel)) {
-      fail("the lit subagents segment did not show its hidden count of 2 (idle, " +
-        "dead) in parens: " + JSON.stringify(hSub));
+    if (!/^subagents \(1\)$/.test(hSub.subLabel)) {
+      fail("the lit subagents segment did not show its hidden count of 1 (idle; " +
+        "the pinned dead one is not counted) in parens: " + JSON.stringify(hSub));
     }
 
-    // AGENTS on too: now BOTH are on. The dead agent goes although it is pinned,
-    // the idle-but-live agent stays (its own rule is liveness, not working-now),
-    // the working subagent still stays, and both inactive subagents stay hidden.
-    // No grey agent row is left. Both segments are lit at once, which
+    // AGENTS on too: now BOTH are on. The dead agent stays because it is pinned
+    // (drawn grey), the idle-but-live agent stays (its own rule is liveness, not
+    // working-now), the working subagent and the pinned dead subagent stay, and
+    // only the idle unpinned subagent is hidden. Both segments are lit at once, which
     // agent|shell (one-of-two) cannot do.
     await page.evaluate(async () => { setHideAgents("on"); await loadCards().catch(() => {}).then(renderTermList); });
     const hBoth = await hideState();
-    if (hBoth.idleSub || hBoth.deadSub) {
-      fail("with both toggles on an inactive subagent survived: " + JSON.stringify(hBoth));
+    if (hBoth.idleSub) {
+      fail("with both toggles on an idle unpinned subagent survived: " + JSON.stringify(hBoth));
     }
-    if (hBoth.deadAgent || hBoth.coldAgents.length) {
-      fail("with both toggles on a grey (cold, pinned) agent was still listed: " +
-        JSON.stringify(hBoth));
+    if (!hBoth.deadSub || !hBoth.deadAgent || hBoth.coldAgents.join() !== "agdead") {
+      fail("with both toggles on a pinned cold row was removed: " + JSON.stringify(hBoth));
     }
     if (!hBoth.workingSub || !hBoth.liveAgent) {
       fail("with both toggles on the working subagent or the live agent was " +
@@ -20764,16 +21723,15 @@ async function main() {
         hBoth.agentMode !== "on" || hBoth.subMode !== "on") {
       fail("both segments are not lit with both toggles on: " + JSON.stringify(hBoth));
     }
-    if (!/^agents \(1\)$/.test(hBoth.agentLabel) ||
-        !/^subagents \(2\)$/.test(hBoth.subLabel)) {
-      fail("the two lit segments did not show hidden counts of 1 (dead agent) " +
-        "and 2 (idle, dead subagent): " + JSON.stringify(hBoth));
+    if (!/^agents$/.test(hBoth.agentLabel) ||
+        !/^subagents \(1\)$/.test(hBoth.subLabel)) {
+      fail("the lit segments did not show no count for agents (the only inactive " +
+        "one is pinned) and 1 for subagents (idle): " + JSON.stringify(hBoth));
     }
-    // Both pinned rows hidden: the bucket reads `0/2` and says why it is empty
-    // rather than offering a first drag. The idle subagent is unpinned, so some
-    // group heading below also reads shown/total.
-    if (hBoth.pinnedCount !== "0/2" || !/^2 hidden by hide inactive$/.test(hBoth.pinnedEmpty)) {
-      fail("with every pinned row hidden the bucket does not read 0/2 and say so: " +
+    // Both pinned rows drawn: the bucket reads a plain 2 and never says rows are
+    // hidden. The idle subagent is unpinned, so a group heading below reads shown/total.
+    if (hBoth.pinnedCount !== "2" || /hidden/.test(hBoth.pinnedEmpty)) {
+      fail("with both toggles on the pinned bucket does not read a plain 2: " +
         JSON.stringify(hBoth));
     }
     // Grouped by age every unpinned row lands in one bucket: three rows, the idle
@@ -20804,8 +21762,8 @@ async function main() {
       fail("turning the subagents toggle off did not restore the subagent rows: " +
         JSON.stringify(hAgent));
     }
-    if (hAgent.deadAgent || hAgent.coldAgents.length) {
-      fail("the agents toggle left a grey (cold, pinned) agent in the strip: " +
+    if (!hAgent.deadAgent || hAgent.coldAgents.join() !== "agdead") {
+      fail("the agents toggle removed a grey (cold, pinned) agent: " +
         JSON.stringify(hAgent));
     }
     if (!hAgent.liveAgent) {
@@ -20894,7 +21852,7 @@ async function main() {
     if (!gearSec.pane || !gearSec.shown || gearSec.labels.join("|") !== "sort|hide inactive|group|cache") {
       fail("the gear has no terminal list section with sort, hide inactive, group and cache: " + JSON.stringify(gearSec));
     }
-    if (gearSec.sortOn.length !== 1 || gearSec.groupPills < 6 || gearSec.hide.join("|") !== "agents|subagents (2)*") {
+    if (gearSec.sortOn.length !== 1 || gearSec.groupPills < 6 || gearSec.hide.join("|") !== "agents|subagents (1)*") {
       fail("the gear's terminal list controls do not show the defaults: " + JSON.stringify(gearSec));
     }
     // Changing them there changes the list the way the old row did, and the gear follows.
@@ -22338,6 +23296,8 @@ async function main() {
     await unit("hubReposShelf", () => hubReposShelfSection(browser, base));
     await unit("hubReposLedger", () => hubReposLedgerSection(browser, base));
     await unit("hubReposFeed", () => hubReposFeedSection(browser, base));
+    await unit("changeReq", () => changeReqSection(browser, base));
+    await unit("mChangeReq", () => mChangeReqSection(browser));
     await unit("trayHead", () => trayHeadSection(browser, base));
     await unit("bootClean", () => bootCleanSection(browser, base));
     await unit("mWorking", () => mWorkingSection(browser));
@@ -22398,6 +23358,7 @@ async function main() {
     await unit("noReadyChildren", () => noReadyChildrenSection(browser, base));
     await unit("childUnderParent", () => childUnderParentSection(browser, base));
     await unit("childFold", () => childFoldSection(browser, base));
+    await unit("pinShows", () => pinShowsSection(browser, base));
     await unit("liveHome", () => liveHomeSection(browser, base));
     await unit("burnChart", () => burnChartSection(browser, base));
     await unit("burnReadout", () => burnReadoutSection(browser, base));
@@ -22455,7 +23416,7 @@ async function main() {
     "connection) and inactive subagents (idle, waiting, or exited - not working " +
     "right now) each on their own (both/either/neither, subagents on by default), " +
     "so an idle subagent hides while an idle-but-live agent stays, a pinned row " +
-    "hides like any other, the agents toggle hides exactly the grey rows, the pinned and " +
+    "is never hidden by either toggle (drawn grey when cold, not counted as hidden), the " +
     "group headings read shown/total while rows are hidden, counting each " +
     "kind's hidden rows in parens, " +
     "the controls are a tray above the rows' own scroll box that folds to a one-line " +
@@ -22596,12 +23557,20 @@ function mServer(state) {
     if (p === "/v1/tasks") {
       // A page scoped to a room asks with that room in a header, and the hub answers with that room's cards.
       const rm = req.headers["x-atrium-room"];
+      if (state.tasksFail > 0) { state.tasksFail--; return json(503, { error: "the room is not up yet" }); }
       return json(200, { tasks: rm ? state.tasks.filter(t => !t.room || t.room === rm) : state.tasks });
     }
-    if (p === "/v1/permissions") return json(200, { permissions: state.perms });
+    if (p === "/v1/permissions") {
+      state.permsHits = (state.permsHits || 0) + 1;
+      if (state.permsStatus) return json(state.permsStatus, { error: "no" });
+      return json(200, { permissions: state.perms });
+    }
+    if (p === "/v1/health") { state.healthHits = (state.healthHits || 0) + 1; return json(200, { build: state.build || "build-1" }); }
     if (p === "/v1/settings") return json(200, { board_skins: ["default", "daylight"], board_skin: state.skin || "default" });
     if (p === "/_hub/rooms") return json(404, { error: "not a hub" });
     if (p === "/v1/events") {
+      state.eventHits = (state.eventHits || 0) + 1;
+      if (state.eventsFail > 0) { state.eventsFail--; res.writeHead(503); return res.end(); }
       res.writeHead(200, { "Content-Type": "text/event-stream", "Cache-Control": "no-cache" });
       res.write(": hi\n\n");
       state.streams.push(res);
@@ -22688,7 +23657,7 @@ function mServer(state) {
     let file = null;
     if (p === "/m/" || p === "/m" || p === "/m/docs" || /^\/d\/[^/]*$/.test(p)) file = path.join(M_ROOT, "index.html");
     else if (p.startsWith("/m/")) file = path.join(M_ROOT, p.slice(3));
-    else if (p.startsWith("/css/") || /^\/js\/(cardrules|sounds)\.js$/.test(p)) file = path.join(WEB_ROOT, p);
+    else if (p.startsWith("/css/") || /^\/js\/(cardrules|sounds|changereq-core|changereq-mock)\.js$/.test(p)) file = path.join(WEB_ROOT, p);
     if (file && !path.relative(WEB_ROOT, file).startsWith("..") && fs.existsSync(file) && fs.statSync(file).isFile()) {
       res.writeHead(200, { "Content-Type": M_TYPES[path.extname(file)] || "application/octet-stream" });
       return res.end(fs.readFileSync(file));

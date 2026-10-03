@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"strings"
+	"unicode"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -31,6 +32,10 @@ import (
 
 // auditErrMax bounds the outcome a failed call writes.
 const auditErrMax = 200
+
+// auditWhatMax bounds the "what" of a line, which carries caller text such as an
+// alias or a branch name.
+const auditWhatMax = 200
 
 // refusedError is a call turned away by a rule rather than one that failed, such
 // as the launch cap. The audit line says `refused:` for it, which is the line
@@ -64,14 +69,35 @@ func audited[In, Out any](c *controlMCP, kind string, describe auditDescribe[In,
 
 // auditDetail is `by <agent>@<caller room> (claimed): <what>, <outcome>`.
 func auditDetail(req *mcp.CallToolRequest, what string, err error) string {
-	by := agentOf(req)
+	// The agent and room come from headers anybody on loopback can set, so they
+	// are cleaned like the text is.
+	by := auditWhat(agentOf(req))
 	if by == "" {
 		by = "unnamed"
 	}
-	if r := roomOf(req); r != "" {
+	if r := auditWhat(roomOf(req)); r != "" {
 		by += "@" + r
 	}
-	return "by " + by + " (claimed): " + what + ", " + auditOutcome(err)
+	return "by " + by + " (claimed): " + auditWhat(what) + ", " + auditOutcome(err)
+}
+
+// auditWhat strips control characters from what, so caller text cannot start a
+// second line, and cuts it to auditWhatMax characters. Besides C0, DEL and C1 it
+// strips the line and paragraph separators and the bidi controls, which a log
+// viewer uses to reorder the text around them.
+func auditWhat(what string) string {
+	what = strings.Map(func(r rune) rune {
+		switch {
+		case unicode.IsControl(r), r == '\u2028', r == '\u2029',
+			r >= '\u202a' && r <= '\u202e', r >= '\u2066' && r <= '\u2069':
+			return -1
+		}
+		return r
+	}, what)
+	if r := []rune(what); len(r) > auditWhatMax {
+		what = string(r[:auditWhatMax])
+	}
+	return what
 }
 
 // auditOutcome is `ok`, `refused: <why>` or the error's first line, cut to

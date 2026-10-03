@@ -31,6 +31,7 @@
 <link rel="stylesheet" href="/m/cardurl.css">
 <link rel="stylesheet" href="/m/working.css">
 <link rel="stylesheet" href="/m/docs.css">
+<link rel="stylesheet" href="/m/changereq.css">
 </head>
 <body class="m">
 <div class="app">
@@ -41,6 +42,7 @@
     <span class="live" id="m-live" role="status" aria-label="connecting"></span>
     <button type="button" id="m-bell" class="bell" aria-label="notifications"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 16V11a6 6 0 0112 0v5l1.5 2h-15z"/><path d="M10 21h4"/><path class="slash" d="M4 4l16 16"/></svg><span class="n" id="m-bell-n"></span></button>
     <button type="button" id="m-docs-btn" class="docsbtn" hidden>documents</button>
+    <button type="button" id="m-req-btn" class="docsbtn" hidden>requests</button>
     <a class="board" id="m-desktop" href="/" aria-label="open the desktop board">desktop board</a>
   </header>
 
@@ -136,8 +138,12 @@
 <script src="/m/js/viewer.js"></script>
 <script src="/m/js/changes.js"></script>
 <script src="/m/js/docs.js"></script>
+<script src="/js/changereq-mock.js"></script>
+<script src="/js/changereq-core.js"></script>
+<script src="/m/js/changereq.js"></script>
 <script src="/m/js/compose.js" onerror="void 0"></script>
 <script src="/m/js/perms.js" onerror="void 0"></script>
+<script src="/m/js/build.js" onerror="void 0"></script>
 <script>
 (function () {
   function themeColor() {
@@ -166,6 +172,7 @@
   document.getElementById("m-desktop").addEventListener("click", function () { try { sessionStorage.setItem("atrium.m.desktop", "1"); } catch (e) {} });
   window.addEventListener("m-skin", themeColor);
   window.mNet.start();
+  if (window.mBuild) window.mBuild.init();
   themeColor();
 })();
 </script>

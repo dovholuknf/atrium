@@ -3,7 +3,8 @@
 // docs/rnd/hub-forge-design.md sections 2, 3.2 and 7 (u-new-hub-repos-list). A list, not a code browser: each repo
 // shows its `main`, the branches rooms pushed (room, card, when) and a clone URL to copy.
 //
-// THREE VIEWS OF ONE SET OF DATA, chosen with the switcher in the tab head and remembered per browser:
+// THREE VIEWS OF ONE SET OF DATA, chosen with the switcher in the tab head and remembered per browser (a fourth, `requests`,
+// is not the repos at all but the change requests between rooms, drawn by js/changereq.js in the same area):
 //   shelf   (the default)  a grid of repo cards: identicon tile, branch count, main sha, a heat strip of pushes
 //   ledger                 a repo list and the selected repo as a hero, with its branches on a vertical rail
 //   feed                   every push of every repo, newest first, with the repos as a rail of filters
@@ -24,7 +25,7 @@
 const hubRepos = { repos: [], loaded: false, note: "", inflight: false, mem: "", sel: null, filter: "", mode: {}, open: {} };
 
 const HR_VIEW_KEY = "atrium.reposView";
-const HR_VIEWS = ["shelf", "ledger", "feed"];
+const HR_VIEWS = ["shelf", "ledger", "feed", "requests"];
 
 function hubReposView() {
   let v = "";
@@ -37,6 +38,8 @@ function setHubReposView(v) {
   if (!HR_VIEWS.includes(v)) v = "shelf";
   hubRepos.mem = v;
   try { localStorage.setItem(HR_VIEW_KEY, v); } catch (e) {}
+  // Change requests are read when you go there (js/changereq.js), and the paint below shows "reading" until they arrive.
+  if (v === "requests" && typeof cr !== "undefined" && !cr.loaded && !cr.inflight) crLoad();
   hubReposPaint();
 }
 
@@ -318,7 +321,8 @@ function hubReposRailEvent(e) {
   return '<div class="hr-ev' + (b.released ? " released" : "") + (fresh ? " fresh" : "") + " " + hubReposAccent("room" + b.room) + '">' + hubReposAvatar(b.room, 38) +
     '<div class="hr-evbody"><span class="hr-name" title="' + esc(b.name) + '">' + esc(b.name) + '</span><div class="hr-evsub"><span class="hr-chip">' +
     esc((b.room + (b.card ? " " + b.card : "")).trim()) + "</span>" + (hubReposWho(b).title ? '<span class="hr-title">' + esc(hubReposWho(b).title) + "</span>" : "") + "</div></div>" +
-    '<div class="hr-evwhen">' + hubReposAge(b.at, "hr-when") + (b.released ? '<span class="hr-released">' + HR_SVG.lock + "released</span>" : '<code class="hr-sha">' + esc(hubReposSha(b.sha)) + "</code>") + "</div></div>";
+    '<div class="hr-evwhen">' + hubReposAge(b.at, "hr-when") + (b.released ? '<span class="hr-released">' + HR_SVG.lock + "released</span>" : '<code class="hr-sha">' + esc(hubReposSha(b.sha)) + "</code>") + "</div>" +
+    (typeof crBranchBit === "function" ? crBranchBit(e.r, b) : "") + "</div>";
 }
 
 function hubReposTerminal(r) {
@@ -426,10 +430,11 @@ function hubReposPaint() {
   if (!list) return;
   hubReposSyncSwitch();
   const count = document.getElementById("hubrepos-count");
-  if (count) count.textContent = hubRepos.note || !hubRepos.loaded ? "" : String(hubRepos.repos.length);
   const view = hubReposView();
+  if (count) count.textContent = view === "requests" ? (cr.loaded ? String(crOpen().length) : "") : hubRepos.note || !hubRepos.loaded ? "" : String(hubRepos.repos.length);
   let html;
-  if (hubRepos.note) html = '<p class="pane-lead hr-note" role="alert">' + esc(hubRepos.note) + "</p>";
+  if (view === "requests") html = crView();
+  else if (hubRepos.note) html = '<p class="pane-lead hr-note" role="alert">' + esc(hubRepos.note) + "</p>";
   else if (!hubRepos.repos.length) html = hubReposHero(null);
   else html = view === "ledger" ? hubReposLedger(hubRepos.repos) : view === "feed" ? hubReposFeed(hubRepos.repos) : hubReposShelf(hubRepos.repos);
   // A control the keyboard is on survives the repaint, so toggling ssh | http or opening a repo does not drop focus.
@@ -462,6 +467,8 @@ async function loadHubRepos() {
     if (refresh) refresh.disabled = false;
   }
   hubReposPaint();
+  // The requests are read with the repos, so a branch row can say it has one. A failure here is the requests view's to show.
+  if (typeof crLoad === "function") crLoad();
 }
 
 async function hubReposCopy(btn) {

@@ -208,3 +208,102 @@ Quality: a careful build of section 11 with good tests: six of seven mutants die
 - an orphan report counted twice;
 - the board's mark for cards the operator launched;
 - the launch path the reservation missed.
+
+## Re-read: 49488e18
+
+One fix commit on top of the rebased W6 commit, on landing 8bfdcdb1, so the range is `8bfdcdb1..49488e18`.
+
+Closed:
+- **M1.**
+  - `remoteOrchestrator` matches by tag only.
+  - When the hub answers and lists no tagged peer, the remembered orchestrator is cleared.
+  - The remembered one is used only when Peers fails.
+  - Tested: the untagged peer probe now gets nothing and is not remembered.
+  - The changelog says plainly that a push to another room reaches nobody until the hub sends tags (f-new-peers-tags).
+- **M3.**
+  - `orphanReport` marks the report as told, and `owes` opens no `ended` item for that report.
+  - An orphan's push reads "has no launcher".
+  - My probe (orphan, done report, `owedPass` at 0 and at 10 minutes) now leaves exactly one notice on the
+    orchestrator.
+- **M4.** `UnheardIsUnsent` is set only for an agent-launched worker, so a card the operator launched stamps
+  `reported_at` again. Tested. Both mutants, the flag forced true and forced false, fail a test.
+- **M5.** `launchedName` treats the reserved handle as taken, so the folder `atrium` or the title "Atrium" gives
+  `atrium-2`. Tested.
+- **L1.** The skeleton compare drops marks and invisible characters, folds full-width and look-alike letters, and
+  ignores anything after `@`.
+  - Caught: `аtrium` (Cyrillic а), `аtrіum`, `atr<ZWSP>ium`, `<ZWSP>atrium`, `atrium<ZWJ>`, `ａｔｒｉｕｍ`, `ＡＴＲＩＵＭ`,
+    `atri<U+0301>um`, `atrium@x`, `Atrium@sg4` and `sg4/atrium`.
+  - Passed as legitimate: `atrium-2`, `atriumx`, `my-atrium`, `atrium-dir`, `atrum`, `trium` and `x@atrium`.
+  - Mutants on all five of the skeleton's steps fail `TestTheReservedHandleCannotBeSpelledAround`.
+- **L2.** Tested: an orphan with no orchestrator writes nothing to its own card. The `host.ID != t.ID` mutant now
+  fails.
+- **L3.** The changelog says that an `atrium` card from before this change is passed over, and how to rename it.
+- **L5.** `RemoteLauncher` is named on the item and in the push. Tested, and the mutant fails.
+
+M2 is closed for the cases it named:
+- An exit followed by `dead`, and a dismiss followed by `done` and `dead`, stay closed with one notice.
+- A new question after a dismissed one opens a new item.
+- A second permission wait after a dismissed one opens a new item, and the same wait does not.
+
+The fix opens M6 below.
+
+### M6: a launcher's typed message to a worker never lets a new `ended` item open
+
+`mayReopen` reopens an `ended` item only when `t.OwedAt.After(c.At)`. When a say is typed, two things happen in this
+order:
+1. The `prompted` event is written, which sets `owed_at` to the time it was typed: `notePeerTyped` in peers.go, and
+   the typed path in messages.go.
+2. `peerSaid` runs, `owedSaid` closes the item, and the close is stamped with `now()`.
+
+So the close is always later than the prompt that went with it. Suppose the launcher re-tasks a worker by typing to it,
+and the worker ends again without a report. Then `owed_at` is earlier than the close, and nothing reopens. The debt is
+lost, the launcher holds nothing, and the orchestrator is never told.
+
+The queued path does not have this problem, because there the prompt is written later, at delivery.
+
+Probe:
+- A worker ended, and its item opened.
+- On the worker: status running, then `AppendEvent(prompted, from_peer=launcher)`, then `peerSaid` from the launcher.
+- The item closed, with `owed_at` = 01:34:02.951 and close `At` = 01:34:02.951.
+- The worker reached done again, and `owedPass` ran.
+- Result: **0 items**.
+- The same steps in the queued order (`peerSaid` first, then the prompt) give 1 item.
+
+Fix: compare the prompt with the ended item's `since`, not with the close. Reopen an `ended` item when
+`t.OwedAt.After(c.Since)`. `c.Since` is when the worker last ended, so a prompt after that is new work. A status change
+moves `last_activity_at`, not `owed_at`, so exit-then-dead still stays closed. Add the typed-order case as a test.
+
+### Lows
+
+- **L6: four guards have no test that fails without them.** Each of these mutants survives, apart from the known reds:
+  - in `mayReopen`, `since.After(c.Since)` and `since.After(c.At)`, each dropped on its own;
+  - a different reason always reopening;
+  - the orphan-report mark never expiring on a later `owed_at`.
+
+  The third would let a stale question reopen after a dismissed permission wait. The fourth would let a re-tasked
+  orphan that ends silently owe nothing. Add a test for each.
+- **L4 (still open, now confirmed).** The stdio `atrium_task` exists, at `internal/cli/control_peers.go:139`, and has
+  no `dismiss`. Only the hub's `control_mcp.go` gained it. Either add it there, or say in the tool's description that
+  a dismiss goes through the hub.
+
+Gates, with `ATRIUM_LOCATION` and `ATRIUM_DEBUG_INPUTLAG` unset:
+- store, link and cli pass.
+- api fails only on `TestTheWalkerLaunchSetAndClear`.
+- daemon fails only on reds that were there before this change:
+  - the hostterm set, including `TestAnOldExitedRunDoesNotKillACardWithANewerLiveOne`;
+  - `TestKeepaliveForkCarriesALeanCardsPromptToolsAndMCP`;
+  - `TestNoTestHereCanReachALiveRoom`.
+- vet is clean.
+- gofmt flags only `internal/daemon/fyi_test.go` and `cmd/ptyhost-spike/pipe_windows.go`, and this branch changes
+  neither.
+
+The merge onto `claude/landing` 110c224a is clean. `docs/test-plan.md` then reads ID, IE, IH, IF, IG, II and **IJ**.
+IJ is used once, and IG and II are intact.
+
+The changes reach the hub's `atrium_task dismiss` in `internal/link/control_mcp.go`, so both verdicts apply when this
+lands.
+
+Atrium-Verdict: hold 8bfdcdb1..49488e18
+Quality: a thorough fix round. Every finding is closed, mostly with a test a mutant fails, and the look-alike check is
+careful. The reason-keyed reopen compares a launcher's typed prompt with a close stamped after it, which loses a
+re-tasked worker's second silent ending.

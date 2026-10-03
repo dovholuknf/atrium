@@ -4,8 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"sync"
 	"testing"
@@ -221,5 +223,43 @@ func TestTheLaunchCapsRouteNeedsAStore(t *testing.T) {
 	defer front.Close()
 	if code, _ := do(t, http.MethodGet, front.URL+"/_hub/launch-caps", "", ""); code != http.StatusNotFound {
 		t.Errorf("GET without a store answered %d", code)
+	}
+}
+
+// Two room keys that differ only in case would give the room a cap at random, so
+// the body is refused, and a misspelt key is a 400 that saves nothing.
+func TestTheLaunchCapsRefuseCaseDuplicatesAndUnknownFields(t *testing.T) {
+	if err := (LaunchCaps{Rooms: map[string]int{"SG3": 1, "sg3": 50}}).check(); err == nil {
+		t.Error("check accepted SG3 and sg3 as two rooms")
+	}
+	p := NewProxy(NewHub(Timings{}), nil, "", nil)
+	st := &fakeSettings{m: map[string]string{}}
+	p.SetLaunchCaps(st)
+	front := httptest.NewServer(p)
+	defer front.Close()
+	for _, bad := range []string{`{"rooms":{"SG3":1,"sg3":50}}`, `{"room":{"sg3":5}}`} {
+		if code, _ := do(t, http.MethodPut, front.URL+"/_hub/launch-caps", "application/json", bad); code != http.StatusBadRequest {
+			t.Errorf("PUT %s answered %d, not 400", bad, code)
+		}
+		if st.m[SettingLaunchCaps] != "" {
+			t.Fatalf("PUT %s saved %q", bad, st.m[SettingLaunchCaps])
+		}
+	}
+}
+
+// A stored value that fails check() reads as no caps, and the hub says so once.
+func TestAStoredCaseDuplicateIsLoggedOnce(t *testing.T) {
+	var buf strings.Builder
+	log.SetOutput(&buf)
+	defer log.SetOutput(os.Stderr)
+	p := NewProxy(NewHub(Timings{}), nil, "", nil)
+	p.SetLaunchCaps(&fakeSettings{m: map[string]string{SettingLaunchCaps: `{"rooms":{"SG3":1,"sg3":50}}`}})
+	for i := 0; i < 3; i++ {
+		if n := p.launchCaps().For("sg3"); n != DefaultLaunchCap {
+			t.Fatalf("sg3 got %d, not the default", n)
+		}
+	}
+	if got := strings.Count(buf.String(), "launch caps are unusable"); got != 1 {
+		t.Errorf("logged %d times, want 1: %q", got, buf.String())
 	}
 }

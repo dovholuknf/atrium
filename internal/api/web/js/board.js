@@ -649,18 +649,12 @@ function contextChip(t) {
   return `<span class="chip ctx${heat}" data-tip="${esc(contextTitle(c))}">ctx ${c.pct}%</span>` + limits;
 }
 
-// TWO LINES, as the status line has them. Past the warn line (the daemon's `warn`, the gear's context threshold,
-// 150k) a card gets the small amber mark. Past the land-the-plane line (the browser's own pref, `landThePlaneK` in
-// js/peek.js, 200k) the mark becomes a solid red badge with the number, short enough to fit a phone row. Never
-// stored. The number is also in the card's details, asked for by opening them.
+// Past the warn line (the daemon's `warn`, the gear's context threshold, 150k) a card gets the small amber mark.
+// There is no badge for the land-the-plane line: atrium clears an agent card at that line on its own, and the
+// row's context line (ctxLine) turns danger there. Never stored. The number is also in the card's details.
 function ctxWarnMark(t) {
   const c = t.context_size;
   if (!c || over(t) || t.status === "shelved") return "";
-  if (typeof landOver === "function" && landOver(t)) {
-    const tip = `${landTip(t)}. every turn re-reads all of it: land the plane. hover the card for its details`;
-    return `<span class="chip ctxwarn ctxland" aria-label="${esc(tip)}" data-tip="${esc(tip)}"
-      >LAND<em> ${esc(fmtTokens(c.tokens))}</em></span>`;
-  }
   if (!c.warn) return "";
   const tip = `past ${c.threshold_k}k tokens of context, and every turn re-reads all of it. ` +
     `hover the card for its details`;
@@ -670,9 +664,9 @@ function ctxWarnMark(t) {
       ><path d="M2.5 4.5h11M2.5 8h11M2.5 11.5h6"/><path d="M12 10.5v3M12 15.2v.1"/></svg></span>`;
 }
 
-// THE FLOOD BEHIND A ROW: the context now against the land-the-plane line, the same drawing as the details' meter
-// (ctxMeter in js/peek.js), no text. Faint and neutral under the warn line so the list is not a rainbow, amber
-// from the warn line up to the land line, danger from there, with a one-off pulse as it crosses (never a loop),
+// THE CONTEXT LINE ALONG A ROW'S BOTTOM EDGE: the context now against the land-the-plane line, the same drawing as
+// the details' meter (ctxMeter in js/peek.js), no text. Faint and neutral under the warn line so the list is not a rainbow, amber
+// from the warn line up to the land line, danger from there, with a one-off glow as it crosses (never a loop),
 // unless the card is cycling its context, which says that itself. Full at the line plus ten percent. Drawn from
 // the row's own context_size, so no read of its own. Same guards as the mark.
 function ctxLine(t) {

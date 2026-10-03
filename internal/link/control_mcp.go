@@ -1162,6 +1162,29 @@ const OriginTag = "origin:agent"
 const reportLine = "When you finish, get blocked, or need an answer, call atrium_report " +
 	"(or atrium_say your launcher) before you end your turn."
 
+// AgentLaunchTags is what an agent launch's tags become: the caller's own, the origin marker,
+// and a WORKER marker unless the caller says it is a director or already a subagent. The
+// merged-cull only ever touches workers, so the default has to be the one that can be culled
+// and the exception has to be asked for. Shared by the hub's atrium_launch and a room's stdio
+// one (internal/cli), so the two cannot drift.
+func AgentLaunchTags(callerTags []string) []string {
+	tags := append(append([]string{}, callerTags...), OriginTag)
+	if !hasTag(callerTags, DirectorTag) && !hasTag(callerTags, SubagentTag) {
+		tags = append(tags, SubagentTag)
+	}
+	return tags
+}
+
+// WithReportLine ends a launch prompt with the one line of the worker contract a prompt most
+// often leaves out. An empty prompt stays empty: there is nothing to scope.
+func WithReportLine(prompt string) string {
+	prompt = strings.TrimSpace(prompt)
+	if prompt != "" {
+		prompt += "\n\n" + reportLine
+	}
+	return prompt
+}
+
 // SubagentTag marks a worker an orchestrator launched to do one piece of work.
 // The launch cap counts only running cards carrying it. The launcher puts it on
 // through `tags`; the hub does not stamp it, so an orchestrator, the resident
@@ -1439,13 +1462,7 @@ func (c *controlMCP) launchOnRoom(ctx context.Context, in launchInput, harness, 
 	// stores it without knowing what it is (see OriginTag). It is how an agent
 	// launch is told apart from a human's hand-started session. The cap counts
 	// SubagentTag instead, which the caller supplies in its own tags.
-	tags := append(append([]string{}, in.Tags...), OriginTag)
-	// A launch from an agent is a WORKER unless the caller says it is a director:
-	// the merged-cull only ever touches workers, so the default has to be the
-	// one that can be culled and the exception has to be asked for.
-	if !hasTag(in.Tags, DirectorTag) && !hasTag(in.Tags, SubagentTag) {
-		tags = append(tags, SubagentTag)
-	}
+	tags := AgentLaunchTags(in.Tags)
 	// WHO IS LAUNCHING, from the caller's own identity header, so the room can
 	// record the lineage and route the worker's reports back. See
 	// docs/runtime/a2a-reliability-design.md.
@@ -1453,10 +1470,7 @@ func (c *controlMCP) launchOnRoom(ctx context.Context, in launchInput, harness, 
 	// The prompt ends with the one line of the worker contract a launch prompt
 	// most often leaves out. A launch prompt that lists steps scopes the turn to
 	// those steps, and the worker stops without a word.
-	prompt := strings.TrimSpace(in.Prompt)
-	if prompt != "" {
-		prompt += "\n\n" + reportLine
-	}
+	prompt := WithReportLine(in.Prompt)
 	reqBody := map[string]any{
 		"harness": harness, "cwd": in.Cwd, "title": in.Title,
 		"why": in.Why, "prompt": prompt,
