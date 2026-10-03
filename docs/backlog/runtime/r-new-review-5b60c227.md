@@ -84,3 +84,34 @@ The fix is one line: scope it to the host being cloned.
 Atrium-Verdict: hold fa5bb21b..5b60c227
 Quality: careful work: argv-only git, a rebuilt URL, contained paths, a fixed failure sentence and a real yes. M1
 is the one place the room's credential can leave the host it was meant for. m1mini commits are unsigned.
+
+## Re-read: f3d01f03
+
+Range `526337e1..f3d01f03`. The branch is rebased on landing `526337e1`, with the original 5b60c227 now 4cf5b7e1,
+plus the fix f3d01f03. The verdict's range starts at the rebase base, since the original base fa5bb21b is an
+ancestor of it.
+
+Closed:
+- **M1.**
+  - The helper goes in as `credential.https://<host>.helper=<h>`, with the host taken from the checked `Ref`, and
+    only when that host is in `git.credential_hosts` (default `github.com`). Any other host runs with no helper at
+    all.
+  - The runner's hardening `-c credential.helper=` comes first. An empty helper value clears the one helper list
+    that both the plain and the URL-scoped keys feed, so the operator's own scoped helpers from global config are
+    cleared too. Only atrium's scoped one is left.
+  - A redirect to another host does not match the scoped key.
+  - The settings route refuses `/`, `@` and `:` in the host list.
+  - Tests: the args, and a stub https 401 server where a helper that writes a marker is never called. Two mutants
+    fail `TestCredentialHelperIsScopedToTheCheckedHostAndOnlyForListedHosts`: an unscoped key, and skipping the
+    host list.
+- **L1 and L2** are noted in the changelog.
+- **L3.** The lock key is lowercased.
+- **L4.** `StableHubURL` maps `0.0.0.0`, a bare `:port` and `[::]` to `127.0.0.1`, and a test covers it.
+
+The gitsync tests for the clone, the credential and the hub URL pass, and so do the daemon clone and api scm tests.
+
+Landing note: its test-plan section IE lands renamed to **IH**.
+
+Atrium-Verdict: room-ok 526337e1..f3d01f03
+Atrium-Verdict: hub-ok 526337e1..f3d01f03
+Quality: a precise fix that closes the leak at git's own config layer and tests it end to end with a stub server.
