@@ -52,8 +52,8 @@ func (l linkRelay) Card(ctx context.Context, room, to string, events bool) (daem
 	return l.reach(ctx, link.RelayRequest{Op: link.RelayCard, Room: room, To: to, Events: events})
 }
 
-func (l linkRelay) Exit(ctx context.Context, room, to string) (daemon.RelayResult, error) {
-	return l.reach(ctx, link.RelayRequest{Op: link.RelayExit, Room: room, To: to})
+func (l linkRelay) Exit(ctx context.Context, room, to, from string, force bool) (daemon.RelayResult, error) {
+	return l.reach(ctx, link.RelayRequest{Op: link.RelayExit, Room: room, To: to, From: from, Force: force})
 }
 
 func (l linkRelay) Launch(ctx context.Context, r daemon.RelayLaunch) (daemon.RelayResult, error) {

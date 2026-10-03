@@ -48,7 +48,7 @@ func (c *controlMCP) relay(ctx context.Context, from string, req RelayRequest) R
 			return ans
 		}
 		if req.Op == RelayExit {
-			return c.exitAcross(ctx, target, req.To)
+			return c.exitAcross(ctx, target, req.To, strings.TrimSpace(req.From), from, req.Force)
 		}
 		return c.cardAcross(ctx, target, req.To, req.Events)
 	case RelayLaunch:
@@ -169,12 +169,21 @@ func (c *controlMCP) cardAcross(ctx context.Context, room, to string, withEvents
 // exitAcross asks `to` on `room` to leave, for a room's atrium_exit. Asking
 // twice asks the same session to leave twice, which is harmless, so a failure
 // here is just what it is and nothing is held.
-func (c *controlMCP) exitAcross(ctx context.Context, room, to string) RelayAnswer {
+//
+// `sender` is the asking session on `fromRoom`, and it goes to the target's room
+// as a FOREIGN name: never the target room's card of the same name, so it is
+// neither that card nor its launcher. Only force gets past that, and a director
+// is refused even then. An empty sender is the operator's own ask.
+func (c *controlMCP) exitAcross(ctx context.Context, room, to, sender, fromRoom string, force bool) RelayAnswer {
 	id, handle, err := c.resolvePeer(ctx, room, to)
 	if err != nil {
 		return refusal(err)
 	}
-	if err := c.ask(ctx, http.MethodPost, "/v1/tasks/"+url.PathEscape(id)+"/exit", room, nil, nil); err != nil {
+	var body any
+	if sender != "" {
+		body = map[string]any{"from": sender + "@" + fromRoom, "foreign": true, "force": force}
+	}
+	if err := c.ask(ctx, http.MethodPost, "/v1/tasks/"+url.PathEscape(id)+"/exit", room, body, nil); err != nil {
 		return refusal(err)
 	}
 	card, wire := namedFrom("", room, id, handle)
@@ -276,7 +285,7 @@ func (c *controlMCP) sayAcross(ctx context.Context, req *mcp.CallToolRequest, ro
 		if !ans.OK {
 			return nil, out, errors.New(ans.Error)
 		}
-		out.Delivered, out.To, out.Card, out.When = ans.Delivered, ans.To, ans.Card, ans.When
+		out.Delivered, out.To, out.ToCard, out.When = ans.Delivered, ans.To, ans.Card, ans.When
 		out.Note = "your room is older than cross-room say, so the hub delivered this itself and your " +
 			"room's work ledger has no record of it."
 		if ans.Warning != "" {
@@ -298,7 +307,7 @@ func (c *controlMCP) sayAcross(ctx context.Context, req *mcp.CallToolRequest, ro
 	if err != nil {
 		return nil, out, err
 	}
-	out.Delivered, out.To, out.Card, out.When = res.Delivered, res.To, res.Card, res.When
+	out.Delivered, out.To, out.ToCard, out.When = res.Delivered, res.To, res.Card, res.When
 	out.Note = res.Note
 	if res.Warning != "" {
 		out.Note = res.Warning

@@ -413,9 +413,11 @@ type SayOutput struct {
 	// has not and will not until that session next reaches a hook.
 	Delivered string `json:"delivered"`
 	To        string `json:"to"`
-	Card      string `json:"card"`
-	When      string `json:"when,omitempty"`
-	Note      string `json:"note,omitempty"`
+	// ToCard is the RECIPIENT's card id, never yours. It was `card`. See the
+	// hub's sayOutput.
+	ToCard string `json:"to_card"`
+	When   string `json:"when,omitempty"`
+	Note   string `json:"note,omitempty"`
 }
 
 func sayHandler(ctx context.Context, _ *mcp.CallToolRequest, in SayInput) (
@@ -471,7 +473,7 @@ func sayHandler(ctx context.Context, _ *mcp.CallToolRequest, in SayInput) (
 	if err != nil {
 		return nil, out, err
 	}
-	out.Delivered, out.To, out.Card, out.When = res.Delivered, res.To, res.Card, res.When
+	out.Delivered, out.To, out.ToCard, out.When = res.Delivered, res.To, res.Card, res.When
 	out.Say, out.Via = res.Say, res.Via
 	if res.Note != "" {
 		out.Note = res.Note
@@ -492,7 +494,7 @@ func sayByCard(ctx context.Context, to, from, text, when string) (*mcp.CallToolR
 	if err != nil {
 		return nil, out, err
 	}
-	out.To, out.Card = handle, id
+	out.To, out.ToCard = handle, id
 	var res struct {
 		Delivered string `json:"delivered"`
 		When      string `json:"when"`
@@ -938,7 +940,8 @@ func localAfterAll(who, local string, err error) (string, error) {
 // ── exit ────────────────────────────────────────────────────────────────────
 
 type ExitInput struct {
-	Card string `json:"card" jsonschema:"a card id, handle or alias. name@room or room~id for a card on another room"`
+	Card  string `json:"card,omitempty" jsonschema:"the card to exit: an id, handle or alias, name@room or room~id on another room. LEAVE IT OUT TO EXIT YOURSELF. never copy it from an atrium_say reply: that names who you spoke to"`
+	Force bool   `json:"force,omitempty" jsonschema:"exit a card that is neither you nor one you launched. recorded on that card. a director cannot be exited by an agent at all"`
 }
 
 type ExitOutput struct {
@@ -952,7 +955,15 @@ func exitHandler(ctx context.Context, _ *mcp.CallToolRequest, in ExitInput) (
 	*mcp.CallToolResult, ExitOutput, error) {
 
 	out := ExitOutput{}
+	// NO CARD IS YOU. See the hub's exitHandler.
+	me := strings.TrimSpace(os.Getenv("ATRIUM_AGENT_NAME"))
 	who := strings.TrimSpace(in.Card)
+	if who == "" {
+		if me == "" {
+			return nil, out, fmt.Errorf("say which card to exit. this session has no ATRIUM_AGENT_NAME to mean itself by")
+		}
+		who = me
+	}
 	if isAcross(who) {
 		// ANOTHER ROOM, by way of this room's hub. See item 68 in
 		// docs/backlog-2.md.
@@ -962,7 +973,7 @@ func exitHandler(ctx context.Context, _ *mcp.CallToolRequest, in ExitInput) (
 			Handle string `json:"handle"`
 			Asked  bool   `json:"asked"`
 		}
-		err := ask(ctx, http.MethodPost, "/v1/peers/exit", map[string]string{"to": who}, &res)
+		err := ask(ctx, http.MethodPost, "/v1/peers/exit", map[string]any{"to": who, "from": me, "force": in.Force}, &res)
 		if who, err = localAfterAll(who, res.Local, err); err != nil {
 			return nil, out, err
 		}
@@ -977,8 +988,12 @@ func exitHandler(ctx context.Context, _ *mcp.CallToolRequest, in ExitInput) (
 		return nil, out, err
 	}
 	out.Card, out.Handle = id, handle
+	var body map[string]any
+	if me != "" {
+		body = map[string]any{"from": me, "force": in.Force}
+	}
 	if err := ask(ctx, http.MethodPost,
-		"/v1/tasks/"+url.PathEscape(id)+"/exit", nil, nil); err != nil {
+		"/v1/tasks/"+url.PathEscape(id)+"/exit", body, nil); err != nil {
 		return nil, out, err
 	}
 	out.Asked = true

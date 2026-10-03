@@ -8422,3 +8422,21 @@ Needs a daemon started by hand on a spare port, and a second machine (or `ipconf
 5. Start another with `--http 0.0.0.0:7788` and restart it: it returns on `0.0.0.0:7788`, because the operator chose it.
 
 Covered by `TestRestartKeepsTheDaemonsBind` and `TestDaemonDefaultsAreLoopback`.
+
+## IG. atrium_exit cannot take the wrong card (r-exit-guard)
+
+Needs a room with a director, a worker it launched, and a second unrelated worker.
+
+1. From the worker, `atrium_exit` with no card. The worker exits, nobody else.
+2. From the worker, `atrium_say` to the director, then `atrium_exit` with the `to_card` from the reply as `card`. Refused:
+   the director is not exited and stays where it was. There is no `card` field in the say reply.
+3. Same, with `force: true`. Still refused: a director is the operator's to exit, tagged `atrium:director` or
+   `atrium:context-ceiling`.
+4. The director calls `atrium_exit` on the worker it launched: it exits. On the unrelated worker: refused, saying it is not
+   theirs. With `force: true` it exits, and the unrelated card's events show a notice with `forced_exit`.
+5. `atrium exit <worker>` in a shell with `ATRIUM_AGENT_NAME` set to the unrelated worker is refused the same way; unset, it
+   exits, because that is the operator.
+6. Across rooms: from a worker on room A, `atrium_exit` on `x@B` is refused unless `force`, even when room B has a card named
+   like the caller. A director on B is refused with force.
+
+Covered by `TestExitGuard*` (api), `TestAHubSideExitWithNoCardExitsTheCaller` and `TestStdioExitWithNoCardExitsTheCaller`.

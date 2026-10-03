@@ -151,7 +151,7 @@ func TestStdioSayAgainstAnOlderRoom(t *testing.T) {
 	stdioAgainst(t, b, "m1mini")
 
 	_, out, err := sayHandler(context.Background(), nil, SayInput{To: "sa2", Text: "hi"})
-	if err != nil || out.Card != "c2" {
+	if err != nil || out.ToCard != "c2" {
 		t.Fatalf("say = %+v, %v", out, err)
 	}
 	if len(b.message) != 1 || b.message[0]["from"] != "sa1" {
@@ -255,5 +255,28 @@ func TestStdioPeersAppendTheEverywhereCards(t *testing.T) {
 	_, out, err = peersHandler(context.Background(), nil, PeersInput{})
 	if err != nil || len(out.Peers) != 1 {
 		t.Fatalf("an older room's list = %+v, %v", out.Peers, err)
+	}
+}
+
+// atrium_exit with no card exits this session, by the name the room launched it
+// with. And a say reply names the recipient as to_card, never card.
+func TestStdioExitWithNoCardExitsTheCaller(t *testing.T) {
+	b := &stdioBoard{}
+	stdioAgainst(t, b, "m1mini")
+	t.Setenv("ATRIUM_AGENT_NAME", "sa2")
+	_, out, err := exitHandler(context.Background(), nil, ExitInput{})
+	if err != nil || !out.Asked || out.Card != "c2" {
+		t.Fatalf("exit with no card = %+v, %v", out, err)
+	}
+	if len(b.exited) != 1 || b.exited[0] != "c2" {
+		t.Fatalf("exited %v, want only the caller's c2", b.exited)
+	}
+	t.Setenv("ATRIUM_AGENT_NAME", "")
+	if _, _, err := exitHandler(context.Background(), nil, ExitInput{}); err == nil {
+		t.Fatal("an exit with no card and no session name was accepted")
+	}
+	raw, _ := json.Marshal(SayOutput{To: "sa2", ToCard: "c2"})
+	if strings.Contains(string(raw), `"card"`) || !strings.Contains(string(raw), `"to_card"`) {
+		t.Fatalf("a say reply is %s: the recipient must be to_card and there must be no card", raw)
 	}
 }

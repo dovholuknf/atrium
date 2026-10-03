@@ -78,6 +78,9 @@ type RelayRequest struct {
 	// Launch is the session to start, for `launch`. An older hub ignores it and
 	// refuses the op by name.
 	Launch *RelayLaunchSpec `json:"launch,omitempty"`
+	// Force, for `exit`, is the asker overriding the guard on a card that is
+	// neither theirs nor their own. The room that owns the card records it.
+	Force bool `json:"force,omitempty"`
 }
 
 // RelayLaunchSpec is one launch for another room, field for field what the hub's own

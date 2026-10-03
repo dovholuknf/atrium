@@ -92,7 +92,7 @@ error: no session called "atrium-87300@claude-sg4". these would have worked: sa1
 After, the sender:
 
 ```
-{"delivered":"queued","to":"atrium-87300@claude-sg4","card":"claude-sg4~01K...","when":"immediate",
+{"delivered":"queued","to":"atrium-87300@claude-sg4","to_card":"claude-sg4~01K...","when":"immediate",
  "note":"queued, not typed yet. ..."}
 ```
 

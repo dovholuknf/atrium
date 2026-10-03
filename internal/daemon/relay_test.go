@@ -67,8 +67,12 @@ func (f *fakeRelay) Card(_ context.Context, room, to string, events bool) (Relay
 	return f.reached(RelaySay{Room: room, To: to, Text: "card", When: fmt.Sprint(events)})
 }
 
-func (f *fakeRelay) Exit(_ context.Context, room, to string) (RelayResult, error) {
-	return f.reached(RelaySay{Room: room, To: to, Text: "exit"})
+func (f *fakeRelay) Exit(_ context.Context, room, to, from string, force bool) (RelayResult, error) {
+	s := RelaySay{Room: room, To: to, From: from, Text: "exit"}
+	if force {
+		s.When = "force"
+	}
+	return f.reached(s)
 }
 
 func (f *fakeRelay) reached(s RelaySay) (RelayResult, error) {
@@ -623,5 +627,30 @@ func TestACardAcrossRoomsWithNoHubIsRefused(t *testing.T) {
 	code, out := roomCard(d, "orch@claude-sg4", false)
 	if code != http.StatusServiceUnavailable || !strings.Contains(fmt.Sprint(out["error"]), "not a room linked") {
 		t.Fatalf("%d %+v", code, out)
+	}
+}
+
+// A room's ask to exit a card on another room hands the hub WHO is asking and
+// whether they force it. Dropping them here turns an agent into the operator at
+// the target room. See api.guardExit.
+func TestACrossRoomExitHandsTheHubWhoIsAsking(t *testing.T) {
+	d, f := roomDaemon(t)
+	for _, c := range []struct {
+		body string
+		want RelaySay
+	}{
+		{`{"to":"claude-sg4~01ABC","from":"me"}`, RelaySay{Room: "claude-sg4", To: "01ABC", From: "me", Text: "exit"}},
+		{`{"to":"claude-sg4~01ABC","from":"me","force":true}`,
+			RelaySay{Room: "claude-sg4", To: "01ABC", From: "me", Text: "exit", When: "force"}},
+	} {
+		rec := httptest.NewRecorder()
+		d.handleRoomExit(rec, httptest.NewRequest(http.MethodPost, "/v1/peers/exit", strings.NewReader(c.body)))
+		if rec.Code != http.StatusOK {
+			t.Fatalf("%s answered %d", c.body, rec.Code)
+		}
+		got := f.reachedAll()
+		if last := got[len(got)-1]; last != c.want {
+			t.Fatalf("%s: the hub was asked %+v, want %+v", c.body, last, c.want)
+		}
 	}
 }
