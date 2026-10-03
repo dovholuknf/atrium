@@ -125,6 +125,8 @@ type Proxy struct {
 	// docs is the hub's documents. Nil until SetDocs wires it, and a hub without one answers
 	// /_hub/docs 404. See docs_api.go.
 	docs *hubstore.Store
+	// cr is the change requests between rooms. See changerequest.go.
+	cr *changeRequests
 }
 
 // NewProxy wires a hub, its board and a room chooser into one handler.
@@ -1422,7 +1424,13 @@ func (p *Proxy) serveHubAPI(w http.ResponseWriter, r *http.Request) {
 		p.serveGrowls(w, r, sub)
 		return
 	}
+	if sub == "change-requests" || strings.HasPrefix(sub, "change-requests/") {
+		p.serveChangeRequests(w, r, sub)
+		return
+	}
 	switch sub {
+	case "git/pushed":
+		p.servePushed(w, r)
 	case "rooms":
 		// ATTACHED ONLY, and every other pane on the board depends on that.
 		// The room picker, the grouping, the counter and the question about

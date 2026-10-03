@@ -60,6 +60,17 @@ func (g growlStore) Room(room, reason string, on bool, row link.GrowlRow) (bool,
 	return g.s.GrowlRoom(id, reason, on, toHubGrowl(row))
 }
 
+// Raise and End are the question a change request into main is, under an id of its own. See link/changerequest.go.
+func (g growlStore) Raise(room string, row link.GrowlRow) (bool, error) {
+	id, err := g.roomID(room)
+	if err != nil {
+		return false, err
+	}
+	return g.s.GrowlRaise(id, toHubGrowl(row))
+}
+
+func (g growlStore) End(id string) (bool, error) { return g.s.GrowlEnd(id) }
+
 func (g growlStore) Fill(id, subject, body string) (bool, error) {
 	return g.s.GrowlFill(id, subject, body)
 }

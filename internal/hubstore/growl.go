@@ -262,6 +262,49 @@ func (s *Store) GrowlRoom(roomID, reason string, on bool, g Growl) (raised, chan
 	return raised, changed, err
 }
 
+// GrowlRaise is a question that is about neither a card nor a room's health: one thing waiting on the operator,
+// under an id the caller chose (a change request's). It has no card, so a room's card sync never touches it, and
+// it ends only when GrowlEnd says its reason did, or a human handles it. An id that was ever raised is not raised
+// again, ended or not, so a request that is finished does not come back as a growler.
+func (s *Store) GrowlRaise(roomID string, g Growl) (raised bool, err error) {
+	at := now()
+	err = s.tx(func(t *sql.Tx) error {
+		raised = false
+		res, err := t.Exec(`INSERT INTO growl (id, room_id, reason, title, body, subject, raised_at, state,
+			changed_at, changed_via) VALUES (?, ?, 'question', ?, ?, ?, ?, 'open', ?, 'hub') ON CONFLICT (id) DO NOTHING`,
+			g.ID, roomID, g.Title, g.Body, g.Subject, ts(at), ts(at))
+		if err != nil {
+			return err
+		}
+		n, _ := res.RowsAffected()
+		raised = n == 1
+		return nil
+	})
+	return raised, err
+}
+
+// GrowlEnd ends a growler's reason by id, whatever a human did with it. Reports whether a screen would change. An
+// id the hub never held, or one already ended, is not an error.
+func (s *Store) GrowlEnd(id string) (changed bool, err error) {
+	at := now()
+	err = s.tx(func(t *sql.Tx) error {
+		changed = false
+		had, err := queryGrowls(t, `g.id = ? AND g.ended_at = ''`, id)
+		if err != nil {
+			return err
+		}
+		for _, h := range had {
+			live, err := endGrowl(t, h, at)
+			if err != nil {
+				return err
+			}
+			changed = changed || live
+		}
+		return nil
+	})
+	return changed, err
+}
+
 // GrowlFill sets what only the room could say about a growler, its subject
 // and body, while its reason has not ended. Reports whether a live row moved.
 func (s *Store) GrowlFill(id, subject, body string) (bool, error) {

@@ -243,3 +243,45 @@ func TestGrowlPrune(t *testing.T) {
 		t.Fatalf("a dismissal whose card is still cached was pruned: %v", err)
 	}
 }
+
+// A QUESTION WITH NO CARD is raised once under its own id, is left alone by a room's card sync, and ends when its
+// reason does, which is not undone by a second raise.
+func TestGrowlRaiseIsOnceUntouchedByCardSyncAndEndsByID(t *testing.T) {
+	s := open(t)
+	r := added(t, s, "sparta")
+	q := Growl{ID: "cr|cr_1", Reason: GrowlQuestion, Title: "a change request", Body: "into main", Subject: "cr_1"}
+	if raised, err := s.GrowlRaise(r.ID, q); err != nil || !raised {
+		t.Fatalf("first raise: %v %v", raised, err)
+	}
+	if raised, err := s.GrowlRaise(r.ID, q); err != nil || raised {
+		t.Fatalf("a second raise of the same id: %v %v", raised, err)
+	}
+	// The room announces every card it has and wants nothing: a card growler would end here, this one is not a card's.
+	if _, changed, err := s.GrowlSync(r.ID, cardReasons, nil, map[string]bool{"a": true}); err != nil || changed {
+		t.Fatalf("a card sync touched it: changed %v (%v)", changed, err)
+	}
+	live, err := s.GrowlLive()
+	if err != nil || len(live) != 1 || live[0].ID != q.ID || live[0].Reason != GrowlQuestion || live[0].CardID != "" ||
+		live[0].Subject != "cr_1" || live[0].RoomName != "sparta" {
+		t.Fatalf("live: %+v %v", live, err)
+	}
+	if changed, err := s.GrowlEnd(q.ID); err != nil || !changed {
+		t.Fatalf("end: %v %v", changed, err)
+	}
+	if changed, err := s.GrowlEnd(q.ID); err != nil || changed {
+		t.Fatalf("a second end: %v %v", changed, err)
+	}
+	if changed, err := s.GrowlEnd("cr|never"); err != nil || changed {
+		t.Fatalf("an id never held: %v %v", changed, err)
+	}
+	if raised, _ := s.GrowlRaise(r.ID, q); raised {
+		t.Fatal("an ended question was raised again")
+	}
+	if got, _ := s.GrowlLive(); len(got) != 0 {
+		t.Fatalf("live after end: %+v", got)
+	}
+	// An action on an ended one is stale, the same as for any growler.
+	if _, err := s.GrowlAct(q.ID, GrowlDismissed, time.Time{}, "board", ""); !errors.Is(err, ErrGrowlStale) {
+		t.Fatalf("act on an ended question: %v", err)
+	}
+}

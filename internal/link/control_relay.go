@@ -126,6 +126,12 @@ func (c *controlMCP) reachable(ctx context.Context, room string) (RelayAnswer, b
 // and delivers nothing, and one that may have happened and was not answered (502, 503, 504)
 // is unconfirmed below, never sent again.
 func (c *controlMCP) deliverAcross(ctx context.Context, room, to, fromWire, text, when string, wake bool) RelayAnswer {
+	return c.deliverAs(ctx, room, to, fromWire, text, when, "", wake)
+}
+
+// deliverAs is deliverAcross with the weight of the message: kind is `fyi` for news the receiver need not act on,
+// or empty for the ordinary say. See internal/daemon/fyi.go.
+func (c *controlMCP) deliverAs(ctx context.Context, room, to, fromWire, text, when, kind string, wake bool) RelayAnswer {
 	id, handle, err := c.resolvePeer(ctx, room, to)
 	if err != nil {
 		return refusal(err)
@@ -136,6 +142,9 @@ func (c *controlMCP) deliverAcross(ctx context.Context, room, to, fromWire, text
 	}
 	if wake {
 		body["wake"] = true
+	}
+	if k := strings.TrimSpace(kind); k != "" {
+		body["kind"] = k
 	}
 	var res struct {
 		Delivered string `json:"delivered"`

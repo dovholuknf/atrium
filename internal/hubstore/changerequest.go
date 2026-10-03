@@ -90,11 +90,13 @@ type CRNew struct {
 	Owner                    CRParty
 }
 
-// CRFilter narrows a list. Empty fields match everything. State is one state, or "" for all of them.
+// CRFilter narrows a list. Empty fields match everything. State is one state, or "" for all of them, and Finished
+// is every state but open (and takes the place of State). Room matches the source room OR the owner's room, without
+// regard to case, as a room's name is anywhere else.
 type CRFilter struct {
 	State, Target, Repo string
-	// Room matches the source room OR the owner's room.
-	Room string
+	Finished            bool
+	Room                string
 }
 
 // CRText says why a piece of a request's words is refused, or "". A control character is refused, and so are
@@ -213,7 +215,10 @@ func (s *Store) CRList(f CRFilter) ([]ChangeRequest, error) {
 	err := s.guard(func() error {
 		out = []ChangeRequest{}
 		where, args := []string{"1 = 1"}, []any{}
-		if f.State != "" {
+		switch {
+		case f.Finished:
+			where = append(where, "state <> 'open'")
+		case f.State != "":
 			where, args = append(where, "state = ?"), append(args, f.State)
 		}
 		if f.Target != "" {
@@ -223,7 +228,7 @@ func (s *Store) CRList(f CRFilter) ([]ChangeRequest, error) {
 			where, args = append(where, "repo = ?"), append(args, f.Repo)
 		}
 		if f.Room != "" {
-			where, args = append(where, "(source_room = ? OR owner_room = ?)"), append(args, f.Room, f.Room)
+			where, args = append(where, "(lower(source_room) = lower(?) OR lower(owner_room) = lower(?))"), append(args, f.Room, f.Room)
 		}
 		rows, err := s.db.Query(`SELECT `+crCols+` FROM change_request WHERE `+strings.Join(where, " AND ")+
 			` ORDER BY n DESC`, args...)
