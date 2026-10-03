@@ -778,8 +778,13 @@ func myTags(ctx context.Context, me string) []string {
 	var body struct {
 		Tasks []card `json:"tasks"`
 	}
-	if err := ask(ctx, http.MethodGet, "/v1/tasks", nil, &body); err != nil {
+	// The room resolves a handle, bare name or alias to the one card; a room that predates ?name=
+	// answers the whole list, and then only an exact handle matches.
+	if err := ask(ctx, http.MethodGet, "/v1/tasks?name="+url.QueryEscape(me), nil, &body); err != nil {
 		return nil
+	}
+	if len(body.Tasks) == 1 {
+		return body.Tasks[0].Tags
 	}
 	for _, t := range body.Tasks {
 		if t.Wire == me {

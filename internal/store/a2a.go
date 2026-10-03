@@ -299,7 +299,7 @@ func (s *Store) LauncherID(t *Task) string {
 		return ""
 	}
 	if name := s.ReportTo(t.ID); name != "" {
-		if l := s.localCard(name); l != nil && l.ID != t.ID {
+		if l := s.LocalCard(name); l != nil && l.ID != t.ID {
 			return l.ID
 		}
 	}
@@ -316,8 +316,8 @@ func (s *Store) LauncherID(t *Task) string {
 	return ""
 }
 
-// localCard finds a card on this room by handle, alias or id, all exact.
-func (s *Store) localCard(name string) *Task {
+// LocalCard finds a card on this room by handle, alias or id, all exact.
+func (s *Store) LocalCard(name string) *Task {
 	if t, err := s.GetByWireName(name); err == nil {
 		return t
 	}
@@ -328,4 +328,84 @@ func (s *Store) localCard(name string) *Task {
 		return t
 	}
 	return nil
+}
+
+// LauncherIDs is LauncherID for every card at once, as one SELECT resolved in memory, for the list
+// that decorates every row (a per-row LauncherID is up to five queries a card on the store's one
+// connection). Keyed by card id; a card with no launcher is absent. Same order and same checks as
+// LauncherID, and a test holds the two equal over one table.
+func (s *Store) LauncherIDs() map[string]string {
+	type row struct{ id, wire, alias, status, archived, by, byID, reportTo string }
+	var rows []row
+	_ = s.guard(func() error {
+		rows = nil
+		// newest first, so the first match of an alias is the one GetByAlias picks
+		q, err := s.db.Query(`SELECT id, wire_name, alias, status, archived_at, spawned_by, spawned_by_id, report_to
+			FROM task ORDER BY created_at DESC`)
+		if err != nil {
+			return err
+		}
+		defer q.Close()
+		for q.Next() {
+			var r row
+			if err := q.Scan(&r.id, &r.wire, &r.alias, &r.status, &r.archived, &r.by, &r.byID, &r.reportTo); err != nil {
+				return err
+			}
+			rows = append(rows, r)
+		}
+		return q.Err()
+	})
+	ids := make(map[string]bool, len(rows))
+	wire := make(map[string]string, len(rows))
+	liveAlias := map[string]string{}
+	doneAlias := map[string]string{}
+	for _, r := range rows {
+		ids[r.id] = true
+		if _, ok := wire[r.wire]; !ok {
+			wire[r.wire] = r.id
+		}
+		if a := NormalizeAlias(r.alias); a != "" && r.status != StatusDead && r.archived == "" {
+			m := liveAlias
+			if r.status == StatusDone {
+				m = doneAlias
+			}
+			if _, ok := m[a]; !ok {
+				m[a] = r.id
+			}
+		}
+	}
+	byWire := func(name string) string { return wire[s.Qualify(name)] }
+	local := func(name string) string {
+		if id := byWire(name); id != "" {
+			return id
+		}
+		if a := NormalizeAlias(name); a != "" {
+			if id := liveAlias[a]; id != "" {
+				return id
+			}
+			if id := doneAlias[a]; id != "" {
+				return id
+			}
+		}
+		if ids[name] {
+			return name
+		}
+		return ""
+	}
+	out := map[string]string{}
+	for _, r := range rows {
+		if r.by == "" || r.by == HumanLauncher {
+			continue
+		}
+		if id := local(r.reportTo); r.reportTo != "" && id != "" && id != r.id {
+			out[r.id] = id
+		} else if r.byID != "" && ids[r.byID] && r.byID != r.id {
+			out[r.id] = r.byID
+		} else if !strings.Contains(r.by, "@") {
+			if id := byWire(r.by); id != "" && id != r.id {
+				out[r.id] = id
+			}
+		}
+	}
+	return out
 }

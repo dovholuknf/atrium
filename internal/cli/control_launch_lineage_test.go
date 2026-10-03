@@ -188,3 +188,23 @@ func TestStdioLaunchStampsTheLaunchersDept(t *testing.T) {
 		}
 	}
 }
+
+// myTags takes the one card the room resolved a bare name or alias to, not only an exact handle.
+func TestMyTagsTakesTheRoomsOneCardForAnAlias(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Get("name") != "bo" {
+			t.Errorf("asked %q, want the one card by name", r.URL.RawQuery)
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"tasks": []map[string]any{
+			{"id": "d1", "wire_name": "tenant/boss", "tags": []string{"dept:ui"}}}})
+	}))
+	defer srv.Close()
+	loc := filepath.Join(t.TempDir(), "daemon.json")
+	raw, _ := json.Marshal(map[string]any{"board": srv.URL, "pid": os.Getpid()})
+	_ = os.WriteFile(loc, raw, 0o600)
+	t.Setenv("ATRIUM_LOCATION", loc)
+	t.Setenv("ATRIUM_SHARED_LOCATION", "-")
+	if got := myTags(context.Background(), "bo"); len(got) != 1 || got[0] != "dept:ui" {
+		t.Fatalf("myTags = %v, want [dept:ui]", got)
+	}
+}

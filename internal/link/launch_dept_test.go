@@ -66,3 +66,23 @@ func TestHubLaunchStampsTheLaunchersDept(t *testing.T) {
 		}
 	}
 }
+
+// launcherTags drops a `@room` suffix and the first dept tag is the one passed on.
+func TestLauncherTagsHandlesAtRoomAndFirstDept(t *testing.T) {
+	var asked string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		asked = r.URL.RawQuery
+		_ = json.NewEncoder(w).Encode(map[string]any{"tasks": []map[string]any{
+			{"id": "d1", "wire_name": "boss", "tags": []string{"dept:ui", "dept:runtime"}},
+		}})
+	}))
+	defer srv.Close()
+	c := &controlMCP{board: srv.URL, client: srv.Client()}
+	tags := c.launcherTags(context.Background(), "beta", "boss@elsewhere")
+	if asked != "name=boss" {
+		t.Fatalf("asked %q, want the one card by bare name", asked)
+	}
+	if got := WithLauncherDept(nil, tags); !reflect.DeepEqual(got, []string{"dept:ui"}) {
+		t.Fatalf("got %v, want the first dept only", got)
+	}
+}
