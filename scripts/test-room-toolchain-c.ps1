@@ -1080,6 +1080,62 @@ Check 'L5 label: Format-AdminCommand puts the note after the command and keeps i
 Check 'L5 label: a note cannot carry a command' (Format-AdminCommand @('icacls', 'a') "x`n; calc.exe `$(1)") 'icacls a # x calc.exe 1'
 
 
+# ── f-c-preflight: the -Msys2Dir target is probed before anything is said to be installable; an explicit identity is honoured ──
+
+$tdir = 'V:\work\tools\msys64'; $tuser = 'SG3\claude'
+$okKv = @{ 'drive.root' = 'V:\'; 'drive.exists' = 'True'; 'drive.readable' = 'True'; anc = 'V:\work'; 'anc.writable' = 'True'; free = "$(50GB)" }
+function With-Kv { param($over) $k = $okKv.Clone(); foreach ($n in $over.Keys) { $k[$n] = $over[$n] }; $k }
+$v = Test-Msys2Target $okKv $tdir $tuser
+Check 'target: a readable drive, a writable folder and room is ok' @($v.Ok, $v.Cmds.Count) @($true, 0)
+$v = Test-Msys2Target (With-Kv @{ 'drive.exists' = 'False'; 'drive.readable' = 'False' }) $tdir $tuser
+Check 'target: a drive that is not there is not ok, and the command lists the drives' @($v.Ok, (Format-AdminCommand $v.Cmds[0]), [bool]($v.Why -like 'the drive V:\ for *does not exist*')) @($false, 'Get-PSDrive -PSProvider FileSystem', $true)
+$v = Test-Msys2Target (With-Kv @{ 'drive.readable' = 'False' }) $tdir $tuser
+Check 'target: an unreadable drive is not ok, and the exact icacls line grants RX' @($v.Ok, (Format-AdminCommand $v.Cmds[0])) @($false, "icacls V:\ /grant 'SG3\claude:(OI)(CI)RX'")
+$v = Test-Msys2Target (With-Kv @{ 'anc.writable' = 'False' }) $tdir $tuser
+Check 'target: a read-only ancestor is not ok, and the exact icacls line grants Modify on it' @($v.Ok, (Format-AdminCommand $v.Cmds[0])) @($false, "icacls V:\work /grant 'SG3\claude:(OI)(CI)M'")
+$v = Test-Msys2Target (With-Kv @{ free = "$(1GB)" }) $tdir $tuser
+Check 'target: too little space is not ok and says both figures' @($v.Ok, [bool]($v.Why -like 'V:\ has 1 GB free and MSYS2 with its packages needs 6 GB*')) @($false, $true)
+Check 'target: space exactly at the need is ok' (Test-Msys2Target (With-Kv @{ free = "$($script:Msys2NeedBytes)" }) $tdir $tuser).Ok $true
+Check 'target: a drive that cannot say its free space does not block' (Test-Msys2Target (With-Kv @{ free = '-1' }) $tdir $tuser).Ok $true
+Check 'target: the drive is judged before the folder' (Test-Msys2Target (With-Kv @{ 'drive.readable' = 'False'; 'anc.writable' = 'False' }) $tdir $tuser).Cmds[0][1] 'V:\'
+
+# the act, run under pwsh on this disk (no drive letters here): an existing writable folder, a target below it that is not there
+$r = Invoke-Act 'cdisk' @{ Msys2Dir = (Join-Path $tmp 'not/yet/msys64') }
+Check 'act cdisk: the nearest existing ancestor is found, and it is writable' @($r.Kv['anc'], $r.Kv['anc.writable']) @($tmp, 'True')
+Check 'act cdisk: the probe file is gone and free space is a number' @(@(Get-ChildItem -LiteralPath $tmp -Force | Where-Object { $_.Name -like '.atrium-probe-*' }).Count, ([long]$r.Kv['free'] -gt 0)) @(0, $true)
+
+# the stage: MSYS2 not found. Blocked: needs-human, nothing installed, never "would install", the tools not claimed MISSING-and-installable
+function New-NotFound { $p = New-Probe -missing $allMissing; $p.Kv['msys2.found'] = 'False'; $p }
+foreach ($chk in $false, $true) {
+    Reset-Flow $chk
+    $script:mock = { param($act, $vars) switch ($act) { 'cmsys' { New-NotFound } 'cdisk' { New-Res (With-Kv @{ 'drive.readable' = 'False' }) } default { throw "called $act" } } }
+    Invoke-CMsys2 6>$null | Out-Null
+    $tag = "stage blocked (check=$chk)"
+    Check "$tag`: only the probes ran, nothing was installed" (Seq) 'cmsys,cdisk'
+    Check "$tag`: one needs-human step with the icacls line, no would-install" @(($script:steps -like 'msys2 needs-human *').Count, ($script:steps -like '*would install*').Count, ($script:steps -like 'msys2 warn*').Count, ($script:needs -join '|')) @(1, 0, 0, "icacls V:\ /grant 'SG3\claude:(OI)(CI)RX'")
+    Check "$tag`: exit code 6 path, not a failure" @($script:rc, (Get-CExitCode $script:rc $script:needs.Count)) @(0, 6)
+}
+# not blocked: the install goes on exactly as before
+Reset-Flow $true
+$script:mock = { param($act, $vars) switch ($act) { 'cmsys' { New-NotFound } 'cdisk' { New-Res $okKv } default { throw "called $act" } } }
+Invoke-CMsys2 6>$null | Out-Null
+Check 'stage ok target: -Check says would install, as before' @(($script:steps -like 'msys2 warn MISSING*would install*').Count, $script:needs.Count) @(1, 0)
+
+# identity
+$ip = Get-GitIdentityPlan 'Old' 'old@x.org' '' ''
+Check 'identity plan: nothing given leaves the config alone' @($ip.SetName, $ip.SetEmail, $ip.LackName, $ip.LackEmail) @('', '', $false, $false)
+$ip = Get-GitIdentityPlan 'Old' 'old@x.org' 'Old' 'old@x.org'
+Check 'identity plan: given and the same is nothing to set' @($ip.SetName, $ip.SetEmail) @('', '')
+$ip = Get-GitIdentityPlan 'Old' 'old@x.org' 'New' 'new@x.org'
+Check 'identity plan: given and different is set, both' @($ip.SetName, $ip.SetEmail) @('New', 'new@x.org')
+$ip = Get-GitIdentityPlan 'Old' 'old@x.org' '' 'new@x.org'
+Check 'identity plan: only the email given and different sets only the email' @($ip.SetName, $ip.SetEmail) @('', 'new@x.org')
+$ip = Get-GitIdentityPlan '' '' 'New' ''
+Check 'identity plan: an empty config takes the given name and still lacks the email' @($ip.SetName, $ip.LackName, $ip.LackEmail) @('New', $false, $true)
+$ip = Get-GitIdentityPlan 'Old' 'old@x.org' 'old' 'OLD@x.org'
+Check 'identity plan: a difference of case is a difference' @($ip.SetName, $ip.SetEmail) @('old', 'OLD@x.org')
+
+
 } finally {
     Remove-Item -LiteralPath $tmp -Recurse -Force -ErrorAction SilentlyContinue
 }

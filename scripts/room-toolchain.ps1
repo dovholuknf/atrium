@@ -108,7 +108,8 @@
 #                  not shadow Git for Windows. The record is per user, so for another runner account run this as that user
 #                  too (the step says so). The user and machine Path are not touched.
 #   git-identity   user.name and user.email come only from -GitUserName and -GitUserEmail, never invented and never copied.
-#                  Ones already in the global config are left alone. Missing and not given is NEEDS-HUMAN with the commands.
+#                  A given one that differs from the global config is set (-Check says would set), and a set that does not take is
+#                  NEEDS-HUMAN, never ok. Ones not given and already in the config are left alone. Missing and not given is NEEDS-HUMAN with the commands.
 #   git-credential Git Credential Manager (it ships in the PortableGit this installs) is the helper NAME, set with
 #                  `credential.helper manager` when no config has it. This script never takes, stores or prints a token. It
 #                  checks access with `git ls-remote` (no prompt, 45 s) on https://github.com/openziti/ziti-sdk-c.git and, when
@@ -759,6 +760,11 @@ function Invoke-CMsys2 {
     if ($p.Kv['msys2.found'] -eq 'True') {
         Step 'msys2' 'ok' "$dir (found, used as it is)"
     } else {
+        # Before anything is said to be installable: can the target take it (drive, folder, space)? Check and a run say the same.
+        $dk = CCall 'cdisk' @{ Msys2Dir = $dir }
+        if ($dk.Rc -ne 0 -or -not $dk.Kv.ContainsKey('drive.exists')) { Step 'msys2' 'fail' "could not probe the drive of $dir on $where"; $dk.Out | ForEach-Object { Write-Host "    $_" }; Note-Fail 3; return }
+        $tv = Test-Msys2Target $dk.Kv $dir $p.Kv.user
+        if (-not $tv.Ok) { Need 'msys2' "MISSING at $dir and it cannot be installed there: $($tv.Why)" $tv.Cmds; return }
         try { $asset = Get-Asset 'msys2' }
         catch { Step 'msys2' 'fail' "MISSING at $dir. and the publisher's list could not be read: $($_.Exception.Message)"; Note-Fail 1; return }
         if ($Check) {
@@ -867,24 +873,34 @@ function Invoke-CRest {
         Step 'git-identity' 'warn' 'MISSING: git is not on the room yet, so no identity can be checked. the git step above installs it'
         Step 'git-credential' 'warn' 'MISSING: git is not on the room yet'
     } else {
-        $hasName = [bool]$gk['git.name']; $hasEmail = [bool]$gk['git.email']
-        $setName = if (-not $hasName -and $GitUserName) { $GitUserName } else { '' }
-        $setEmail = if (-not $hasEmail -and $GitUserEmail) { $GitUserEmail } else { '' }
-        $lackName = -not $hasName -and -not $GitUserName; $lackEmail = -not $hasEmail -and -not $GitUserEmail
+        $ip = Get-GitIdentityPlan "$($gk['git.name'])" "$($gk['git.email'])" $GitUserName $GitUserEmail
         $helpers = @("$($gk['git.helper'])|$($gk['git.syshelper'])" -split '\|' | Where-Object { $_ })
         $hasHelper = [bool]($helpers | Where-Object { $_ -match '^(manager|manager-core)$' -or $_ -match 'git-credential-manager' })
         $setHelper = if ($hasHelper) { '' } else { 'manager' }
-        if (($setName -or $setEmail -or $setHelper) -and -not $Check) {
-            $sc = CCall 'cgitset' @{ Name = $setName; Email = $setEmail; Helper = $setHelper }
-            if ($sc.Rc -ne 0) { Step 'git-identity' 'fail' "git config --global failed on $where"; $sc.Out | ForEach-Object { Write-Host "    $_" }; Note-Fail 3 }
+        $setText = @(if ($ip.SetName) { "user.name '$($ip.SetName)'" }; if ($ip.SetEmail) { "user.email '$($ip.SetEmail)'" }) -join ' and '
+        $cfgNow = @(if ($ip.SetName -and $gk['git.name']) { "user.name is '$($gk['git.name'])'" }; if ($ip.SetEmail -and $gk['git.email']) { "user.email is '$($gk['git.email'])'" }) -join ' and '
+        $stuck = $null
+        if (($ip.SetName -or $ip.SetEmail -or $setHelper) -and -not $Check) {
+            $sc = CCall 'cgitset' @{ Name = $ip.SetName; Email = $ip.SetEmail; Helper = $setHelper }
+            # what git now says decides, not what was asked: a value that is still different is not ok
+            $g2 = (CCall 'cgit' @{}).Kv
+            $after = Get-GitIdentityPlan "$($g2['git.name'])" "$($g2['git.email'])" $GitUserName $GitUserEmail
+            if ($after.SetName -or $after.SetEmail) { $stuck = $after }
+            elseif ($sc.Rc -ne 0 -and $setHelper -and -not $ip.SetName -and -not $ip.SetEmail) { Step 'git-identity' 'fail' "git config --global failed on $where"; $sc.Out | ForEach-Object { Write-Host "    $_" }; Note-Fail 3 }
         }
         # identity
-        if ($hasName -and $hasEmail) { Step 'git-identity' 'ok' "$($gk['git.name']) <$($gk['git.email'])> (already in the global config, left alone)" }
-        elseif ($lackName -or $lackEmail) {
-            $cmds = @(); if ($lackName) { $cmds += , @('git', 'config', '--global', 'user.name', 'Your Name') }; if ($lackEmail) { $cmds += , @('git', 'config', '--global', 'user.email', 'you@example.com') }
-            Need 'git-identity' "no $(if ($lackName) { 'user.name' })$(if ($lackName -and $lackEmail) { ' and ' })$(if ($lackEmail) { 'user.email' }) in the global config of $($script:cUser) and none was given (-GitUserName, -GitUserEmail). this script never invents one. as that user" $cmds
+        $said = $false
+        if ($stuck) {
+            $cmds = @(); if ($stuck.SetName) { $cmds += , @('git', 'config', '--global', 'user.name', $stuck.SetName) }; if ($stuck.SetEmail) { $cmds += , @('git', 'config', '--global', 'user.email', $stuck.SetEmail) }
+            Need 'git-identity' "git config --global did not take: the global config of $($script:cUser) still differs from what was given ($setText). as that user" $cmds; $said = $true
+        } elseif ($ip.LackName -or $ip.LackEmail) {
+            $cmds = @(); if ($ip.LackName) { $cmds += , @('git', 'config', '--global', 'user.name', 'Your Name') }; if ($ip.LackEmail) { $cmds += , @('git', 'config', '--global', 'user.email', 'you@example.com') }
+            Need 'git-identity' "no $(if ($ip.LackName) { 'user.name' })$(if ($ip.LackName -and $ip.LackEmail) { ' and ' })$(if ($ip.LackEmail) { 'user.email' }) in the global config of $($script:cUser) and none was given (-GitUserName, -GitUserEmail). this script never invents one. as that user" $cmds; $said = $true
         }
-        else { Step 'git-identity' $(if ($Check) { 'warn' } else { 'done' }) "$(if ($Check) { 'would set' } else { 'set' }) $(@(if ($setName) { "user.name '$setName'" }; if ($setEmail) { "user.email '$setEmail'" }) -join ' and ') in the global config" }
+        if (($ip.SetName -or $ip.SetEmail) -and -not $stuck) {
+            Step 'git-identity' $(if ($Check) { 'warn' } else { 'done' }) "$(if ($Check) { 'would set' } else { 'set' }) $setText in the global config$(if ($cfgNow) { " ($cfgNow)" })"; $said = $true
+        }
+        if (-not $said) { Step 'git-identity' 'ok' "$($gk['git.name']) <$($gk['git.email'])> (already in the global config, left alone)" }
         # the helper and the access
         $gcmOk = [bool](Get-ToolVersion "$($gk.gcm)")
         $repos = @('https://github.com/openziti/ziti-sdk-c.git'); $checkUrl = $null
