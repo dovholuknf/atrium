@@ -981,6 +981,9 @@ type taskInput struct {
 	// Notices is what a launcher that holds its notices reads instead of having
 	// them typed. See holdsNotices in internal/daemon/a2a.go.
 	Notices bool `json:"notices,omitempty" jsonschema:"include the automatic notices held on the card, newest last"`
+	// Dismiss closes the owed item a worker left on your card, by the worker's handle. Reading
+	// the notices does not close an item. See internal/daemon/owed.go.
+	Dismiss string `json:"dismiss,omitempty" jsonschema:"a worker whose owed item on your card you are closing, by handle. an item also closes when you message, exit or relaunch the worker"`
 }
 
 type taskEvent struct {
@@ -1052,6 +1055,19 @@ func (c *controlMCP) taskHandler(ctx context.Context, req *mcp.CallToolRequest, 
 	}
 	if err != nil {
 		return nil, out, err
+	}
+	if dismiss := strings.TrimSpace(in.Dismiss); dismiss != "" {
+		if strings.TrimSpace(in.Card) != "" {
+			return nil, out, fmt.Errorf("dismiss closes an item on your own card, so leave card empty")
+		}
+		wscope, wid, _, derr := c.resolveCard(ctx, room, dismiss)
+		if derr != nil || wscope != scope {
+			return nil, out, fmt.Errorf("no worker of yours called %q on this room to dismiss", dismiss)
+		}
+		if err := c.ask(ctx, http.MethodPost, "/v1/tasks/"+url.PathEscape(id)+"/owed-dismiss", scope,
+			map[string]string{"worker": wid}, nil); err != nil {
+			return nil, out, err
+		}
 	}
 	t, events, notices, err := c.readCard(ctx, scope, id, in.Events, in.Notices)
 	if err != nil {

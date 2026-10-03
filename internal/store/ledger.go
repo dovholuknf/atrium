@@ -1037,8 +1037,13 @@ func (s *Store) RecordReport(r ReportWrite) (*ReportResult, error) {
 		if err := failpoint("status"); err != nil {
 			return err
 		}
-		if _, err := tx.Exec(`UPDATE task SET reported_at = ? WHERE id = ?`, ts(now()), r.TaskID); err != nil {
-			return err
+		// STAMPED ONLY WHEN SOMEBODY IS TOLD. A report nobody was queued to hear is not a report
+		// the board may call sent: "report waiting" with a launcher that heard nothing was the
+		// r-scm-clone failure. See docs/backlog/runtime/r-new-report-no-launcher.md.
+		if r.Notice != nil || r.Relay != nil {
+			if _, err := tx.Exec(`UPDATE task SET reported_at = ? WHERE id = ?`, ts(now()), r.TaskID); err != nil {
+				return err
+			}
 		}
 		if err := failpoint("reported"); err != nil {
 			return err

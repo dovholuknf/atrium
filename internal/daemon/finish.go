@@ -304,6 +304,20 @@ func (d *Daemon) finish(task *store.Task, in FinishRequest) (map[string]any, int
 	if res.Relayed {
 		d.kickRelays()
 	}
+	// A QUESTION IN A REPORT is owed an answer until the launcher gives one; any report without
+	// one withdraws it. See owed.go.
+	if ask := strings.TrimSpace(in.Ask); ask != "" {
+		if err := d.st.SetOwedAsk(task.ID, firstWords(ask)); err != nil {
+			log.Printf("[atrium] could not record %s's question: %v", task.DisplayTitle(), err)
+		}
+	} else {
+		_ = d.st.ClearOwedAsk(task.ID)
+	}
+	// A REPORT THAT REACHED NOBODY is made visible, to the orchestrator, held. Before, it stamped
+	// reported_at and left the board saying a report was waiting.
+	if res.Notice == nil && !res.Relayed && in.Status != ReportProgress && agentLaunched(task) {
+		d.orphanReport(task, reportBody(task, in.Status, sha, unverified, recap))
+	}
 	if status == store.StatusDone || in.Status == store.StatusNeedsInput {
 		// Whatever it was doing, it is not doing now. Not for a worker's
 		// report mid-work, which is still doing it.

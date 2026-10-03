@@ -8484,3 +8484,18 @@ Needs a room and a session whose MCP is the stdio `atrium control` (a room-local
 
 Covered by `TestAStdioLaunch*` and `TestAHandRunStdioLaunch*` (cli). Items 1 to 4 are not yet run live.
 
+
+## IJ. Owed answers survive (r-owed-answers)
+
+Needs a room with an orchestrator card (tag `atrium:orchestrator`), a launcher and a worker it launched, and the board. Set `ATRIUM_OWED_PUSH=1m` and `ATRIUM_OWED_PERMISSION=30s` to shorten the waits.
+
+1. Exit the worker's session with no report. Within a tick the launcher's row shows `📬 1 owed`, and `atrium_task` with `notices` on the launcher lists "owes an answer". Reading it does not change the count. `atrium_task {dismiss: <worker>}` drops it.
+2. Leave another worker's item open for a minute: the orchestrator's card gets one held notice, "has not answered", nothing is typed anywhere, and a second minute adds no second one. An item on a worker the orchestrator launched itself adds none.
+3. The worker `atrium_say`s its launcher a question and waits. The launcher's row shows the item, and the launcher's reply to the worker closes it. The same with an `fyi`: nothing opens. A done report with `ask` opens one, a done report without it opens none.
+4. Leave a worker at a permission dialog for 30 seconds: an item opens. Approve it before the push and the item goes without a push.
+5. `/clear` the launcher with an item open. Its first tool call carries one line, "1 open item from your workers", from `atrium`.
+6. Launch a worker whose launcher is gone: with an orchestrator on the room the item shows on its card, without one it shows on the worker's own row.
+7. A worker launched with no launcher reports done: the card is not marked reported, and the orchestrator's card holds "has no launcher to hear it".
+8. `atrium_task`/the board: setting an alias of `atrium` is refused, and a session started in a folder called `atrium` gets the handle `atrium-dir`.
+
+Covered by `TestAWorkerThatEnds*`, `TestTheOrchestrator*`, `TestAQuestionOpens*`, `TestAnFYIOpensNothing`, `TestADoneReportOwes*`, `TestReadingTheNotices*`, `TestADismiss*`, `TestExitingTheWorker*`, `TestTheListingLine*`, `TestAnOrphan*`, `TestAPermissionItem*`, `TestAReportThatReachesNobody*` (daemon) and `TestTheAtriumHandle*`, `TestAnOwedItem*` (store). Items 1 to 8 are not yet run live.

@@ -170,15 +170,15 @@ func TestALiveCardBeatsADoneOneForAnAlias(t *testing.T) {
 // handle is matched first. Refused, naming whose handle it is.
 func TestAnAliasCannotBeAnotherCardsHandle(t *testing.T) {
 	s := openTestStore(t)
-	a := aliasCard(t, s, "atrium")
+	a := aliasCard(t, s, "atriumx")
 	b := aliasCard(t, s, "sa91-x")
-	err := s.SetAlias(b.ID, "atrium")
+	err := s.SetAlias(b.ID, "atriumx")
 	var taken *AliasTakenError
 	if !errors.As(err, &taken) || !taken.ByHandle || taken.Holder.ID != a.ID {
 		t.Fatalf("an alias equal to a live handle was not refused: %v", err)
 	}
 	// Its own handle is fine.
-	if err := s.SetAlias(a.ID, "atrium"); err != nil {
+	if err := s.SetAlias(a.ID, "atriumx"); err != nil {
 		t.Fatalf("a card could not take its own handle as its alias: %v", err)
 	}
 }

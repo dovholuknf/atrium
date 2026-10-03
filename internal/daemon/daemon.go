@@ -369,6 +369,7 @@ func New(opts Options) (*Daemon, error) {
 	}
 	st.OnHalt = d.onHalt
 	api.HeldNoticesOf = d.heldNoticesFor
+	api.OwedOf = d.owedFor
 	d.ledgerDirty = make(chan struct{}, 1)
 	st.OnLedgerChange = d.ledgerChanged
 	st.OnLedgerNotice = d.ledgerNotice

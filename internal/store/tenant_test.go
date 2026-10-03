@@ -138,14 +138,14 @@ func TestLookupsQualifyToo(t *testing.T) {
 		t.Fatal(err)
 	}
 	made, _, err := s.Register(Observed{
-		WireName: "atrium", Worktree: "/work/atrium", Runner: "claude",
+		WireName: "atriumx", Worktree: "/work/atrium", Runner: "claude",
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	// Unqualified, the way a hook sends it.
-	got, err := s.GetByWireName("atrium")
+	got, err := s.GetByWireName("atriumx")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -153,7 +153,7 @@ func TestLookupsQualifyToo(t *testing.T) {
 		t.Fatal("an unqualified lookup did not find the card")
 	}
 	// Qualified, the way the board holds it.
-	got, err = s.GetByWireName("sg4/atrium")
+	got, err = s.GetByWireName("sg4/atriumx")
 	if err != nil {
 		t.Fatal(err)
 	}
