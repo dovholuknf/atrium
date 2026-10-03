@@ -4,9 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net"
 	"net/http"
 	"net/url"
 	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/dovholuknf/atrium/internal/gitsync"
@@ -21,7 +23,8 @@ import (
 //
 // WHO MAY ASK is who may fetch: the reaches of the pass-through and the store (gitReach), so loopback on the hub's
 // machine, the overlay and a zrok private share, and a zrok public share gets the 404 a path that is not there gets.
-// A card reaches it through the control tool, which is loopback on the hub's machine.
+// A card reaches it through the control tool, which is loopback on the hub's machine, and which gives a card the
+// hub's URLs on its own room's forwarder (gitURLHandler).
 //
 // THE URLS ARE BUILT ON THE HOST THE CALLER REACHED THE HUB BY (the request's Host, which the listener has already
 // checked is a name the hub answers to), never on a name made up here. Nothing in the query is given to git: a
@@ -68,7 +71,10 @@ const gitURLToolDesc = "Get the URL to fetch code that is not in your cwd. Call 
 	"answers both, with each sha, and `ahead` says the room has commits the hub does not. The `state` is " +
 	"`found`, `not found` (with the closest repositories and branches) or `offline` (the room that has it " +
 	"is not connected, so say so and do not retry).\n\n" +
-	"The URL is on the name you reached the hub by. Nothing is copied: a room's work is read from the room."
+	"The URL is on your own room's forwarder, which carries your card's token, so `git fetch` it from your " +
+	"checkout as it stands. A room's work in progress (`room`) has no URL for a card yet: the answer says so, " +
+	"and the way to it is to ask the card on that room to `atrium_git_push` the branch, then ask again. " +
+	"Nothing is copied: the hub's store is read from the hub."
 
 type gitURLInput struct {
 	Repo   string `json:"repo" jsonschema:"the repository: <owner>/<repo>, <host>/<owner>/<repo> or its name"`
@@ -82,7 +88,24 @@ type gitURLOutput struct {
 	Text string `json:"text"`
 }
 
-func (c *controlMCP) gitURLHandler(ctx context.Context, _ *mcp.CallToolRequest, in gitURLInput) (
+// forwarderBase is what a room said its hub forwarder is, if it is one: `http://<loopback address>:<port>/git/` and
+// nothing else, so a room cannot send a card's fetch to another host. It is "" otherwise.
+func forwarderBase(base string) string {
+	u, err := url.Parse(base)
+	if err != nil || u.Scheme != "http" || u.User != nil || u.RawQuery != "" || u.Fragment != "" || u.Path != "/git/" {
+		return ""
+	}
+	host := u.Hostname()
+	if ip := net.ParseIP(host); (ip == nil || !ip.IsLoopback()) && host != "localhost" {
+		return ""
+	}
+	if p, err := strconv.Atoi(u.Port()); err != nil || p < 1 || p > 65535 {
+		return ""
+	}
+	return base
+}
+
+func (c *controlMCP) gitURLHandler(ctx context.Context, req *mcp.CallToolRequest, in gitURLInput) (
 	*mcp.CallToolResult, gitURLOutput, error) {
 
 	var out gitURLOutput
@@ -98,6 +121,21 @@ func (c *controlMCP) gitURLHandler(ctx context.Context, _ *mcp.CallToolRequest, 
 	}
 	if err := c.ask(ctx, http.MethodGet, "/_hub/git/url?"+v.Encode(), "", nil, &out.URLAnswer); err != nil {
 		return nil, out, err
+	}
+	// A CARD FETCHES THROUGH ITS OWN ROOM'S FORWARDER. The URLs above are on the address this tool reached the hub by,
+	// which is the hub's loopback: right for a card on the hub's machine, and no address at all for a card on another
+	// room. So for a card the hub's URLs are rewritten onto its room's forwarder base (the path after /git/ is the
+	// same), the room being the one that knows its agent port. A room that does not say, or says something that is
+	// not a forwarder on its own loopback, leaves the card with no URL and the sentence why, not a wrong one.
+	// A room's work in progress has no forwarder route yet, so a card is given no URL for it (gitsync.ForCard).
+	if agentOf(req) != "" {
+		var fw struct {
+			Base string `json:"base"`
+		}
+		if err := c.ask(ctx, http.MethodGet, "/v1/hub-remote", roomOf(req), nil, &fw); err != nil {
+			fw.Base = ""
+		}
+		out.URLAnswer = out.URLAnswer.ForCard(forwarderBase(fw.Base))
 	}
 	out.Text = out.URLAnswer.Text()
 	return nil, out, nil

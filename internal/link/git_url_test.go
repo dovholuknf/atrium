@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -465,5 +466,220 @@ func TestABranchPushedByARoomThatIsGoneNamesTheRoomAsAway(t *testing.T) {
 	// Asked of that room, it is not connected.
 	if a := x.ask(t, "repo=o/r&branch=feat/done&room=m1mini"); a.State != gitsync.URLOffline {
 		t.Fatalf("%+v", a)
+	}
+}
+
+// ── a card on another room ─────────────────────────────────────────────────────────────────────────────────
+
+// toolAs is a session of the control tool as a card of a room (or, with no agent, as the operator), and a call of
+// atrium_git_url that returns the decoded answer and its line.
+func (x *urlRig) toolAs(t *testing.T, agent, room string) func(args map[string]any) (gitsync.URLAnswer, string) {
+	t.Helper()
+	c := &controlMCP{board: x.srv.URL, client: x.srv.Client(), audit: func(string, string, string) {}}
+	ts := httptest.NewServer(c.handler())
+	t.Cleanup(ts.Close)
+	cl := mcp.NewClient(&mcp.Implementation{Name: "t", Version: "v0"}, nil)
+	s, err := cl.Connect(context.Background(), &mcp.StreamableClientTransport{
+		Endpoint: ts.URL, HTTPClient: &http.Client{Transport: headerTransport{agent, room}},
+		DisableStandaloneSSE: true, MaxRetries: -1}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { s.Close() })
+	return func(args map[string]any) (gitsync.URLAnswer, string) {
+		t.Helper()
+		res, err := s.CallTool(context.Background(), &mcp.CallToolParams{Name: "atrium_git_url", Arguments: args})
+		if err != nil || res.IsError {
+			t.Fatalf("%v %+v", err, res)
+		}
+		raw, _ := json.Marshal(res.StructuredContent)
+		var out struct {
+			gitsync.URLAnswer
+			Text string `json:"text"`
+		}
+		if err := json.Unmarshal(raw, &out); err != nil {
+			t.Fatal(err)
+		}
+		return out.URLAnswer, out.Text
+	}
+}
+
+// forwarder stands a card's room's hub forwarder up in front of the hub's board, the way r-hub-remote's tests do, and
+// has the room say that is where it is. The forwarder reaches the hub's store as the hub's own loopback.
+func (x *urlRig) forwarder(t *testing.T) (base string, cards *gitsync.CardTokens) {
+	t.Helper()
+	cards = &gitsync.CardTokens{}
+	hubURL, _ := url.Parse(x.srv.URL)
+	fw := httptest.NewServer(&gitsync.HubForwarder{
+		Auth: cards,
+		Push: func() string { return "hub" },
+		Transport: func() (http.RoundTripper, error) {
+			return rtFunc(func(r *http.Request) (*http.Response, error) {
+				out := r.Clone(r.Context())
+				out.URL.Scheme, out.URL.Host, out.Host = hubURL.Scheme, hubURL.Host, hubURL.Host
+				return http.DefaultTransport.RoundTrip(out)
+			}), nil
+		},
+	})
+	t.Cleanup(fw.Close)
+	base = fw.URL + "/git/"
+	x.setRemote(base)
+	return base, cards
+}
+
+type rtFunc func(*http.Request) (*http.Response, error)
+
+func (f rtFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
+
+// A card on another room is handed a URL on ITS room's forwarder, not the hub's loopback, and a real git fetch of it
+// with the card's token gets the branch out of the hub's store.
+func TestACardOnAnotherRoomIsGivenItsRoomsForwarderAndFetchesThroughIt(t *testing.T) {
+	x := newURLRig(t)
+	x.setLive("fix/live")
+	x.pushToStore(t, x.liveSHA, "fix/live")
+	base, cards := x.forwarder(t)
+	ans, text := x.toolAs(t, "card1", "SG3")(map[string]any{"repo": "o/r", "branch": "fix/live"})
+
+	hub := sourceOf(branchOf(ans, "fix/live"), "hub")
+	if hub == nil || hub.URL != base+"hub/github/o/r.git" {
+		t.Fatalf("the hub source is %+v, want a URL on the forwarder %s", hub, base)
+	}
+	if !strings.HasPrefix(text, "fetch it with: git fetch "+hub.URL+" fix/live") {
+		t.Fatalf("the line is %q", text)
+	}
+	// The operator, asking the same, gets the hub's own address.
+	op, _ := x.toolAs(t, "", "")(map[string]any{"repo": "o/r", "branch": "fix/live"})
+	if h := sourceOf(branchOf(op, "fix/live"), "hub"); h == nil || !strings.HasPrefix(h.URL, x.srv.URL+"/git/hub/") {
+		t.Fatalf("the operator's hub source is %+v, want one on %s", h, x.srv.URL)
+	}
+
+	// The URL is fetched through the forwarder, with the card's token and nothing else.
+	tok, err := cards.Mint("card1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	env := append(gitsync.PushEnv(base, tok, 0), "GIT_CONFIG_GLOBAL="+os.DevNull, "GIT_CONFIG_NOSYSTEM=1")
+	dst := t.TempDir()
+	gitRun(t, dst, "init", "-q")
+	if out, err := gitsync.Default.GitEnv(context.Background(), dst, env, "fetch", "-q", hub.URL, "fix/live"); err != nil {
+		t.Fatalf("fetch %s: %v %s", hub.URL, err, out)
+	}
+	if got := gitRun(t, dst, "rev-parse", "FETCH_HEAD"); got != x.liveSHA {
+		t.Fatalf("fetched %s, want %s", got, x.liveSHA)
+	}
+	// And with no token the same URL is refused: the forwarder is the card's door and not an open one.
+	noTok := []string{"GIT_CONFIG_GLOBAL=" + os.DevNull, "GIT_CONFIG_NOSYSTEM=1"}
+	if _, err := gitsync.Default.GitEnv(context.Background(), dst, noTok, "fetch", "-q", hub.URL, "fix/live"); err == nil {
+		t.Fatal("the forwarder served a fetch with no card token")
+	}
+}
+
+// A room's work in progress is passed through on the hub's board only, and a card's room has no forwarder for it. So a
+// card is given no URL for it, with the way on, and the operator still is.
+func TestACardIsGivenNoURLForARoomsWorkInProgress(t *testing.T) {
+	x := newURLRig(t)
+	x.setLive("fix/live")
+	base, _ := x.forwarder(t)
+	card := x.toolAs(t, "card1", "SG3")
+
+	ans, text := card(map[string]any{"repo": "o/r", "branch": "claude/w1"})
+	room := sourceOf(branchOf(ans, "claude/w1"), "room")
+	if room == nil || room.URL != "" || room.Note != gitsync.NoRoomForCards {
+		t.Fatalf("a card's room source is %+v, want no URL and the note", room)
+	}
+	if strings.Contains(text, "git fetch") || !strings.Contains(text, "atrium_git_push") {
+		t.Fatalf("the line is %q, want no fetch and the way on", text)
+	}
+	// A branch that is on both: the hub's URL is the one the line gives, and the room's ahead work is not.
+	x.pushToStore(t, x.liveSHA, "fix/live")
+	x.commit(t, "fix/live", "more.txt")
+	both, line := card(map[string]any{"repo": "o/r", "branch": "fix/live"})
+	b := branchOf(both, "fix/live")
+	if r := sourceOf(b, "room"); r == nil || r.URL != "" {
+		t.Fatalf("the room source of a card is %+v", r)
+	}
+	if h := sourceOf(b, "hub"); h == nil || h.URL != base+"hub/github/o/r.git" {
+		t.Fatalf("the hub source is %+v", h)
+	}
+	if !strings.Contains(line, "git fetch "+base+"hub/github/o/r.git fix/live") || !strings.Contains(line, "atrium_git_push") {
+		t.Fatalf("the line is %q", line)
+	}
+	// The operator is still given the room's pass-through.
+	op, _ := x.toolAs(t, "", "")(map[string]any{"repo": "o/r", "branch": "claude/w1"})
+	if r := sourceOf(branchOf(op, "claude/w1"), "room"); r == nil || !strings.Contains(r.URL, "/git/room/") {
+		t.Fatalf("the operator's room source is %+v", r)
+	}
+}
+
+// A room that does not say where its forwarder is (older than it, or not answering), or that says an address that is
+// not a forwarder on its own loopback, leaves its card with no URL and the sentence why.
+func TestACardWhoseRoomDoesNotSayWhereItsForwarderIsIsGivenNoURL(t *testing.T) {
+	x := newURLRig(t)
+	x.setLive("fix/live")
+	x.pushToStore(t, x.liveSHA, "fix/live")
+	for name, remote := range map[string]string{
+		"a room that predates it":  "",
+		"another host":             "http://evil.example:7777/git/",
+		"another path":             "http://127.0.0.1:7777/",
+		"a credential in the base": "http://u:p@127.0.0.1:7777/git/",
+		"a secure scheme":          "https://127.0.0.1:7777/git/",
+	} {
+		x.setRemote(remote)
+		ans, text := x.toolAs(t, "card1", "SG3")(map[string]any{"repo": "o/r", "branch": "fix/live"})
+		hub := sourceOf(branchOf(ans, "fix/live"), "hub")
+		if hub == nil || hub.URL != "" || hub.Note != gitsync.NoHubRemote {
+			t.Fatalf("%s: the hub source is %+v, want no URL and the note", name, hub)
+		}
+		if strings.Contains(text, "git fetch") {
+			t.Fatalf("%s: the line is %q", name, text)
+		}
+	}
+}
+
+func TestForwarderBaseIsOnlyAForwarderOnTheRoomsOwnLoopback(t *testing.T) {
+	for base, ok := range map[string]bool{
+		"http://127.0.0.1:7777/git/":         true,
+		"http://localhost:7777/git/":         true,
+		"http://[::1]:7777/git/":             true,
+		"":                                   false,
+		"http://127.0.0.1:7777/git":          false,
+		"http://127.0.0.1:7777/git/hub/":     false,
+		"http://127.0.0.1/git/":              false,
+		"http://127.0.0.1:99999/git/":        false,
+		"http://10.0.0.5:7777/git/":          false,
+		"http://127.0.0.1:7777/git/?x=1":     false,
+		"https://127.0.0.1:7777/git/":        false,
+		"http://u@127.0.0.1:7777/git/":       false,
+		"http://127.0.0.1.evil.io:7777/git/": false,
+	} {
+		if got := forwarderBase(base); (got != "") != ok {
+			t.Errorf("forwarderBase(%q) = %q, want ok=%v", base, got, ok)
+		}
+	}
+}
+
+// The Host check is the second line, behind the hosts guard that refuses a Host the hub does not answer to: called
+// directly on the overlay (where a Host is not held to loopback), serveGitURL still refuses a Host that is not a name
+// and a port, so a URL is never made of one.
+func TestAHostThatIsNotANameAndAPortIsNotMadeIntoAURL(t *testing.T) {
+	x := newURLRig(t)
+	call := func(host string) int {
+		req := httptest.NewRequest("GET", "http://127.0.0.1:7778/_hub/git/url?repo=o%2Fr", nil)
+		req.Host, req.RemoteAddr = host, offLoopback
+		rec := httptest.NewRecorder()
+		edge.MarkReach(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			x.proxy.serveGitURL(w, r, x.g, func(code int, msg string) { w.WriteHeader(code) })
+		}), edge.ReachOverlay).ServeHTTP(rec, req)
+		return rec.Code
+	}
+	for _, host := range []string{"hub.example:7778/x", "a b", "u@hub", "hub:1:2", "hub\"", "", "hub:", "-hub"} {
+		if code := call(host); code != http.StatusBadRequest {
+			t.Errorf("Host %q answered %d, want 400", host, code)
+		}
+	}
+	for _, host := range []string{"127.0.0.1:7778", "[::1]:7778", "hub.local", "hub-1.example.com:443", "atrium.ziti"} {
+		if code := call(host); code != http.StatusOK {
+			t.Errorf("Host %q answered %d, want 200", host, code)
+		}
 	}
 }

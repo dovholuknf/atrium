@@ -3,6 +3,7 @@ package link
 import (
 	"context"
 	"crypto/sha256"
+	"encoding/json"
 	"fmt"
 	"io"
 	"io/fs"
@@ -44,9 +45,13 @@ type passRig struct {
 	mu    sync.Mutex
 	audit []string
 	live  []string
+	// remote is what the room says its hub forwarder is, at GET /v1/hub-remote. Empty is a room that predates it (404).
+	remote string
 
 	claudeW1, stash, notes, secret, liveSHA string
 }
+
+func (x *passRig) setRemote(base string) { x.mu.Lock(); x.remote = base; x.mu.Unlock() }
 
 func (x *passRig) setLive(b ...string) { x.mu.Lock(); x.live = b; x.mu.Unlock() }
 
@@ -108,6 +113,17 @@ func newPassRig(t *testing.T) *passRig {
 	}
 	inner := rh.Handler()
 	x.room.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/v1/hub-remote" {
+			x.mu.Lock()
+			base := x.remote
+			x.mu.Unlock()
+			if base == "" {
+				http.NotFound(w, r)
+				return
+			}
+			_ = json.NewEncoder(w).Encode(map[string]string{"base": base})
+			return
+		}
 		if strings.HasSuffix(r.URL.Path, "/git-upload-pack") {
 			x.posts.Add(1)
 		}

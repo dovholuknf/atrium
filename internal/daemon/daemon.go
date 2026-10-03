@@ -414,6 +414,7 @@ func New(opts Options) (*Daemon, error) {
 	d.ap.RoomLaunch = d.handleRoomLaunch
 	d.ap.Report = d.handleReport
 	d.ap.GitClone = d.handleGitClone
+	d.ap.HubRemote = d.HubRemoteBase
 	d.ap.RestartWake = d.handleRestartWake
 	d.ap.Hold = d.handleHold
 	d.ap.NewContext = d.handleNewContext

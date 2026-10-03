@@ -79,6 +79,8 @@ type URLSource struct {
 	Online bool   `json:"online,omitempty"`
 	// Ahead is on a room source of a branch the hub has as well: the room's tip is a commit the hub's store lacks.
 	Ahead *bool `json:"ahead,omitempty"`
+	// Note is said of a source a card cannot fetch from, which has no URL (ForCard).
+	Note string `json:"note,omitempty"`
 }
 
 // URLBranch is a branch and where it can be fetched from.
@@ -224,11 +226,13 @@ func (h *Hub) Lookup(ctx context.Context, q URLQuery) URLAnswer {
 				names = append(names, a.Name)
 			}
 			sort.Strings(names)
-			note := q.Room + " is not connected, so what it has cannot be fetched now"
+			// What the caller typed is cut like every other echo of it, in the note and in the list.
+			room := cutText(q.Room)
+			note := shown(q.Room) + " is not connected, so what it has cannot be fetched now"
 			if len(names) > 0 {
 				note += ". connected: " + strings.Join(names, ", ")
 			}
-			return URLAnswer{State: URLOffline, Branch: q.Branch, Offline: []string{q.Room}, Note: note}
+			return URLAnswer{State: URLOffline, Branch: cutText(q.Branch), Offline: []string{room}, Note: note}
 		}
 	}
 
@@ -342,6 +346,8 @@ func (h *Hub) Lookup(ctx context.Context, q URLQuery) URLAnswer {
 
 	if q.Branch != "" {
 		if !names[q.Branch] {
+			// A name that is not one the repository has is what the caller typed, so it is cut like the rest.
+			out.Branch = cutText(q.Branch)
 			out.Closest = &URLClosest{Branches: closestNames(q.Branch, sorted, LookupClosestMax)}
 			switch {
 			case len(out.Offline) > 0:
@@ -383,14 +389,17 @@ func (h *Hub) Lookup(ctx context.Context, q URLQuery) URLAnswer {
 	return out
 }
 
-// shown is what the caller typed, cut and on one line, for a sentence. It is never put anywhere else.
-func shown(s string) string {
+// cutText is what the caller typed, cut and on one line, for an answer or a sentence.
+func cutText(s string) string {
 	s = strings.Join(strings.Fields(s), " ")
 	if r := []rune(s); len(r) > 80 {
 		s = string(r[:80]) + "..."
 	}
-	return "`" + s + "`"
+	return s
 }
+
+// shown is cutText in quotes, for a sentence. It is never put anywhere else.
+func shown(s string) string { return "`" + cutText(s) + "`" }
 
 func (h *Hub) attachedByName() map[string]RoomInfo {
 	out := map[string]RoomInfo{}
@@ -665,6 +674,9 @@ func (a URLAnswer) Text() string {
 	case URLFound:
 		if a.Branch != "" && len(a.Branches) == 1 {
 			src, why := a.Branches[0].pick()
+			if src.URL == "" {
+				return a.Branch + " cannot be fetched by a card from here: " + why
+			}
 			return "fetch it with: git fetch " + src.URL + " " + a.Branch + " (" + why + ")"
 		}
 		names := make([]string, 0, len(a.Branches))
@@ -694,12 +706,18 @@ func (a URLAnswer) Text() string {
 }
 
 // pick is the source to fetch a branch from, and why. A room that is ahead of the hub's copy has the newer work, and
-// a branch on the hub alone, or a room alone, has only the one.
+// a branch on the hub alone, or a room alone, has only the one. A source with no URL (ForCard took it out) is never
+// the one to fetch from, and a branch with no other says so.
 func (b URLBranch) pick() (URLSource, string) {
 	var hub *URLSource
+	var cut *URLSource
 	for i := range b.Sources {
 		s := b.Sources[i]
 		switch {
+		case s.URL == "":
+			if cut == nil || s.Source == "hub" {
+				cut = &b.Sources[i]
+			}
 		case s.Source == "hub":
 			hub = &b.Sources[i]
 		case s.Ahead != nil && *s.Ahead:
@@ -707,8 +725,54 @@ func (b URLBranch) pick() (URLSource, string) {
 		}
 	}
 	if hub != nil {
-		return *hub, "finished, on the hub"
+		why := "finished, on the hub"
+		if cut != nil && cut.Source == "room" {
+			why += ". " + cut.Room + " has work in progress that a card cannot fetch: ask the card on it to " +
+				"atrium_git_push it, then ask again"
+		}
+		return *hub, why
+	}
+	if cut != nil {
+		return *cut, cut.Note
 	}
 	s := b.Sources[0]
 	return s, "in progress on " + s.Room
+}
+
+// NoRoomForCards is what a room's work in progress is answered with to a card: the fetch of it is passed through to
+// the room on the hub's own board, and a card's room has no forwarder for it (only for the hub's store). The operator
+// can fetch it, and so can a card once the room has pushed it.
+const NoRoomForCards = "a card cannot fetch a room's work in progress: its room has no forwarder for it yet. " +
+	"ask the card on that room to atrium_git_push it (then it is on the hub), or ask the operator"
+
+// NoHubRemote is what the hub's own work is answered with to a card whose room did not say where its hub forwarder is.
+const NoHubRemote = "this card's room did not say where its hub remote is (a room older than the forwarder, or one " +
+	"that is not answering), so there is no URL a card here can fetch from. update the room, or ask the operator"
+
+// ForCard is the answer for a card on a room. The URLs the lookup built are the hub's own, on the address the caller
+// reached the hub by, which for the control tool is the hub's loopback and is no address at all to a card on another
+// machine. A card fetches the hub's store through its own room's forwarder, whose base is `forwarder`
+// (`http://127.0.0.1:<agent port>/git/`, the room's HubRemoteBase), and the path after /git/ is the same. A room
+// source has no forwarder, so it has no URL and says so. An empty `forwarder` is a room that did not say, and then
+// no source has a URL. The answer is a copy.
+func (a URLAnswer) ForCard(forwarder string) URLAnswer {
+	out := a
+	out.Branches = make([]URLBranch, len(a.Branches))
+	for i, b := range a.Branches {
+		nb := URLBranch{Name: b.Name, Sources: make([]URLSource, len(b.Sources))}
+		for j, s := range b.Sources {
+			switch {
+			case s.Source == "hub" && forwarder != "":
+				_, path, _ := strings.Cut(s.URL, "/git/")
+				s.URL = forwarder + strings.TrimPrefix(path, "/")
+			case s.Source == "hub":
+				s.URL, s.Note = "", NoHubRemote
+			default:
+				s.URL, s.Note = "", NoRoomForCards
+			}
+			nb.Sources[j] = s
+		}
+		out.Branches[i] = nb
+	}
+	return out
 }
