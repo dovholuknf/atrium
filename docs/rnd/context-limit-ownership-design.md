@@ -1,0 +1,269 @@
+# Who owns the context limit: atrium's new context or the runner's compaction
+
+Status: study by @rnd, 2026-10-02 late, asked by the orchestrator. Design only, nothing built. For @runtime.
+
+## The ask
+
+On 10-02 every room had `auto_new_context` off, at the default limit of 300k, so Claude Code compacted on its own. The
+orchestrator compacted at about 190k, and workers at 236k to 300k. The orchestrator then set mode `agents` and
+`auto_new_context_k` = 200 on sg4-control, claude-sg4, m1mini and sg3. Three questions:
+
+1. Which gives better work after the event: a clear plus a handoff, or a compaction? Compare quality, tokens, lost
+   state and re-ramp time, measured on real cards.
+2. Should atrium own the limit and the cycle for every runner (claude, opencode, others), instead of relying on each
+   runner's compaction? What does each runner expose that makes this possible?
+3. Should the runner's autocompact then sit above atrium's limit, or be off?
+
+It also asks to fold in `docs/backlog/runtime/r-new-context-clear-vs-restart.md` and `r-new-context-limit-layer.md`.
+**Neither file exists on any ref in the m1mini clone.** They are probably on sg4 only. Section 7 folds them in under the
+names they suggest: clear against restart, and which layer holds the limit. If they say something else, send them and
+this doc gets revised.
+
+## The answer
+
+1. **On the measured numbers they tie. On what atrium needs, the clear is better for long-lived cards, and compaction
+   is better for short workers.**
+   - Tokens over the next 10 calls are the same.
+   - Compaction gets back to work faster, and it ran mid-turn without breaking anything that was measured.
+   - The clear leaves a file that a person can read, that survives a restart, and that can move to another runner. A
+     compaction summary is none of those.
+   - Repeated compactions do not shrink, and they leave the handoff file stale.
+2. **Yes: atrium owns the limit and the timing for every runner. The runner's mechanism differs per runner, and it
+   runs through a per-runner adapter.**
+   - There are three actions:
+     - `clear`, which is the new-context cycle;
+     - `restart`, which exits and relaunches with the wake prompt (the one action every runner can do);
+     - `compact`, which is the runner's own compaction, at a size atrium sets.
+   - Policy:
+     - directors and the orchestrator get `clear` at the limit;
+     - workers get `compact` at the limit;
+     - runners that cannot clear get `restart`.
+3. **Above atrium's limit, never off. The shipped backstop math is wrong, though, and that is the first thing to
+   fix.**
+   - Claude compacts about 33k below its `--autocompact` value.
+   - The shipped flag is the limit plus 10%. That fires before atrium's limit at every limit under about 330k, which
+     includes tonight's 200k.
+   - So the new settings do not do what they were set to do. Claude cards launched since the change compact at about
+     187k, before atrium's 200k cycle can start (section 3).
+
+## 1. What was measured
+
+The sources are m1mini only, from 09-28 to 10-03 01:30Z:
+
+- the transcripts under `~/.claude/projects`;
+- `atrium.db`, opened read-only;
+- a script that pairs each event with the 10 calls that follow it.
+
+The orchestrator runs on sg4-control, so it is not in the sample. The raw numbers are off-repo
+(`/tmp/rnd-ctx-measure.md` on m1mini).
+
+| | Compaction | Clear + handoff |
+|---|---|---|
+| Events | 26, all automatic (13 director, 8 worker, 1 other, 4 forks of review) | 5 (one ceiling card, three directors, one worker) |
+| Context before (median / p90) | 298k / 360k | 204k / 437k |
+| Context on the first call after | about 36k | about 36k |
+| Context by the 10th call | about 53k | about 51k |
+| Tokens over the next 10 calls (input + cache) | 0.43M | 0.44M |
+| Reads before the first edit, say or commit (median / p90) | 2 / 4 | 5 / 10, the handoff plus 2 to 4 orientation calls |
+| Wall time to that first act (median / p90) | 0.2 / 2.0 min | 0.6 / 5.9 min |
+| Cost of the event itself | blocks the card 56 / 74 s, plus one summarising call over about 300k that is recorded nowhere | 18 to 47 s, plus a capture turn of 0.3M to 1.4M tokens |
+| Carried state | a summary of about 13.5k chars (median), inside the conversation | a handoff of 4k to 12k chars at the wake. Director files on disk are now 21k to 28k |
+| Lost state found | none, by machine check plus 6 read by hand | none |
+
+For scale, a fresh worker starting from BRIEF.md makes 14 / 30 reads before its first act.
+
+What the table cannot say:
+
+- Five clears give no meaningful p90.
+- All 26 compactions fall in about 7 hours of one evening, after the `--autocompact` deploy at about 18:43.
+- Lost state is hard to see. A decision that was quietly dropped from a summary does not show up as "where was I".
+
+The data shows no quality gap either way. The decision therefore rests on the differences the table does not price.
+
+**For the clear:**
+
+- **The handoff is an artifact.** It is a file in the worktree that a person, the launcher or a later card can read.
+  It survives a room restart and a move to another runner (runner-switch design). It is also the input of the lean
+  cycle's rewrite. A compaction summary lives inside one runner's conversation and dies with it.
+- **Compaction chains.** Every card that compacted twice did so with no clear in between: review 5 times, ui 4,
+  runtime and rnd 2 each. The summary did not shrink along the chain, so each step carries the previous summary
+  forward. The vendors say themselves that compaction loses information, and that early instructions can get lost.
+  The public issue trackers of all four runners carry reports of lost instructions and of compaction loops.
+- **The handoff goes stale.** ui ran three compactions while noting that HANDOFF.ui.md was out of date. Its next clear
+  would have woken from an old file. That makes compaction worse than it looks: the risk is deferred to the next
+  clear.
+
+**For compaction:**
+
+- **No capture turn.** A clear's capture turn costs 0.3M to 1.4M tokens of input and cache. Compaction's one
+  summarising call is over a similar context, so the event costs about the same. The clear, though, also pays the
+  orientation reads after the wake.
+- **It works mid-turn.** 16 of the 26 compactions happened inside a turn, and each card carried on. atrium's cycle
+  types only between turns (r-new-context-mid-turn), so a long turn that crosses the limit can only be compacted.
+- **Workers ramp in about 2 reads.** A worker has no handoff discipline. Its brief is BRIEF.md, and its launcher holds
+  the record. A clear plus a handoff would add a capture turn to a card that lives an hour.
+
+## 2. Policy: one limit, three actions
+
+atrium owns:
+
+- the number;
+- the reading of the context size;
+- the decision when to act.
+
+The runner owns only the mechanism.
+
+| Card | Action at the limit | Why |
+|---|---|---|
+| Orchestrator, director, ceiling card | `clear`: capture, `/clear`, wake | Resident for days. The handoff is the record, and it is what survives a room restart or a runner switch |
+| Worker (`atrium:subagent`) | `compact`, at a size atrium sets | Short-lived and cheap to re-ramp. Its record is BRIEF.md plus its launcher |
+| Any card on a runner with no usable clear | `restart`: exit, then launch fresh with the wake prompt | The one action every runner supports |
+| A card that crosses the limit mid-turn | the runner's `compact`, as the backstop | atrium cannot type the capture mid-turn. The long-turn check-in (W1-W2) covers the turn itself |
+
+`restart` exists because `clear` is a typed `/clear` plus a wait for a new SessionStart. That is a Claude mechanism,
+and Gemini has an equivalent, but Codex and OpenCode do it differently, and an unknown runner may have none. Exiting
+and relaunching with the wake prompt as the launch prompt is what atrium already does for a resume, so it costs no
+per-runner code. It costs a process start and an MCP reconnect, a few seconds. The transcript is dropped either way.
+
+After a compaction, atrium does two things it does not do today:
+
+- **It re-anchors the card.** It types one line with who the card is, its launcher and the handoff file name. These
+  are the lines lean-cycle part B puts in the wake, and they are what a summary drops first. The signals are
+  PostCompact, SessionStart with source `compact`, or a `compact_boundary` line in the transcript.
+- **It marks the handoff stale.** The next capture prompt says "your handoff predates N compactions, rewrite it", so
+  the next clear does not wake from an old file.
+
+## 3. The backstop, and the bug in it
+
+Since r-autocompact (16488230, c30db92c), every claude card starts with `--autocompact` set to `cardLimit` plus 10%,
+clamped to the model's window. The intent was that atrium cycles at the limit and Claude compacts 10% later.
+
+Measured on Claude Code 2.1.288, **compaction fires about 33k below the flag value**:
+
+- a flag of 330k compacted at about 297k;
+- a flag of 165k compacted at about 133k.
+
+Claude reserves that margin for the summary itself. So the real backstop is `limit × 1.1 − 33k`, which is below the
+limit whenever `0.1 × limit < 33k`, that is, at any limit under 330k.
+
+| Card | atrium's threshold | Flag | Real compaction | Who acts first |
+|---|---|---|---|---|
+| 1M-window card, k = 200 (tonight's setting) | 200k | 220k | about 187k | compaction |
+| 200k-window card, k = 200 | 140k (70% of the window, when the statusline is fresh) | 200k (clamped) | about 167k | atrium, by 27k |
+| 200k-window ceiling card, ceiling 150k (ui, runtime) | 140k | 165k | about 133k | compaction |
+| 1M-window card, mode off, k = 300 (10-02) | none | 330k | about 297k | compaction, as intended then |
+
+This is why m1mini shows 26 compactions against 5 clears. At 18:44, review's deferred capture was overtaken by a
+compaction. The card then wrote its handoff from the summary, and no clear ever followed.
+
+The fix is one function. Both numbers come from it, at launch and in the watcher:
+
+```
+buffer   = the runner row's compaction margin (claude: 33k, a new field, measured, not guessed)
+headroom = 20k  (a capture turn's growth)
+window   = the model's window (modelWindowK), or the statusline's when it is fresh
+threshold = min(cardLimit, window − buffer − headroom)
+flag      = min(threshold + buffer + headroom, window)
+```
+
+- 1M window, k = 200: the threshold is 200k and the flag is 253k, so compaction comes at about 220k, after atrium.
+- 200k window: the threshold is 147k and the flag is 200k, so compaction comes at about 167k.
+
+This keeps one rule: atrium always acts first by `headroom`. It replaces both the 70% factor and the 10% factor.
+
+**The interim, until it is built:** no setting fixes it, because both numbers derive from the same k. Raising k to 330
+or more puts compaction at k or later, but with no headroom, and it gives up the 200k the orchestrator wanted. The
+honest interim is to accept that cards compact at about 187k tonight, which is the old behaviour at a lower number.
+Nothing is lost, as section 1 shows.
+
+**Off, or above?** Above, never off:
+
+- **Claude with autocompact off** stops at the window with "Context limit reached · /compact or /clear to continue".
+  A card mid-turn would sit dead until someone acted.
+- **OpenCode** errors the same way.
+- **Gemini** refuses to send the turn.
+- **Codex** cannot turn it off at all.
+- **The PreCompact veto** (Claude only) was considered and rejected. A veto skips that compaction, but the next
+  request at the hard limit fails. It turns a backstop into a stall.
+
+## 4. What each runner gives atrium
+
+Checked on 2026-10-02 against Claude Code 2.1.288 and codex-cli 0.159.0, both installed on m1mini. OpenCode v1.18 and
+v2, and Gemini CLI 0.62, were checked from their docs and source only. The full notes are off-repo
+(`/tmp/rnd-ctx-runners.md`).
+
+| | Claude Code | Codex CLI | OpenCode | Gemini CLI |
+|---|---|---|---|---|
+| Set the compaction size | `--autocompact <100k-1M>`, shipped in atrium | `-c model_auto_compact_token_limit=`, which can only lower its 90%-of-window cap | config v1 `compaction.reserved`, v2 `buffer` | `model.compressionThreshold` (a fraction) |
+| Turn it off | yes, but not wanted (section 3) | no | yes | no switch |
+| Read the context size | the transcript usage atrium reads today, plus the statusline window | `token_count` events in the session file | the session API (v2 `GET /api/session/{id}/context`) | token counts in the session files |
+| Learn that it compacted | PostCompact, SessionStart `compact`, `compact_boundary` | PostCompact, SessionStart `compact` | event `session.compacted` (v1) or `session.compaction.*` (v2) | none |
+| Clear and inject | `/clear`, then the wake (shipped) | `/new`, then the wake | HTTP: execute-command, then append and submit the prompt | `/clear`, then the wake |
+| Compact on demand | `/compact` typed | app-server `thread/compact/start` | `POST /session/:id/summarize` (v1) | none |
+| Action atrium uses | `clear` or `compact` | `restart` first, `clear` once tested | `clear` over HTTP | `restart` |
+
+So the adapter is three fields on the runner row, next to `autocompact_args`:
+
+- the compaction margin;
+- how to read the size;
+- which of `clear` and `restart` the runner supports.
+
+The watcher (`watchContext`) runs on Claude cards only today (`isClaude`). It widens one runner at a time, as each
+runner's reader lands.
+
+Notes for the build:
+
+- The PreCompact payload in `docs/rnd/hook-coverage-spike.md` names `triggered_by`. The current docs say `trigger` and
+  `custom_instructions`. Check it against a captured payload before anything reads it.
+- Forks of review inherit 250k to 272k and compact within 1 to 3 minutes. atrium credits those compactions to the
+  review card. The `compacted` events should name the session, not just the card.
+
+## 5. Stages
+
+| Stage | What | Size | Done when |
+|---|---|---|---|
+| L0 | Backstop math (section 3): one function for the threshold and the flag, the margin as a runner row field, and the 70% and 10% factors gone | S, room deploy | a card at k = 200 on a 1M model starts with `--autocompact 253k` and is cleared, not compacted, in a test daemon with a fake transcript |
+| L1 | After a compaction: re-anchor line, handoff marked stale, `compacted` events by session | S | a fake PostCompact gives one line and a stale note in the next capture prompt |
+| L2 | Workers get `compact` at the limit: the flag from the same function, never a cycle. The mode `agents` stays as it is | XS | a worker's flag follows k |
+| L3 | `restart` action: exit, then launch with the wake prompt, journalled like a cycle (r-clear-vs-restart) | M | a non-Claude test runner is cycled by restart |
+| L4 | Per-runner readers and margins: OpenCode, then Codex | M each | each runner's size shows on the card, and its cycle fires |
+| L5 | Re-measure one week after L0, with the same script, on all rooms | research | the table in section 1 with more than 30 clears |
+
+L0 stands alone, and it is the one that makes tonight's settings mean what they say. L5 decides whether directors keep
+`clear` or go to `compact` too: if the re-measure still shows no quality gap and the handoffs are not being read,
+`compact` is cheaper.
+
+## 6. Questions for clint (held)
+
+1. **Workers compact, directors clear.**
+   - Scenario: an hour into f-hub-receive's brief, it reaches 200k. atrium sets its compaction at the limit, it
+     compacts, and it carries on with a summary. It does not stop to write a handoff.
+   - Meanwhile @fabric at 200k writes HANDOFF.fabric.md, clears and wakes.
+   - Suggested: yes. A worker re-ramps in about 2 reads, and its record is its brief and its launcher.
+2. **Restart where clear is not there.**
+   - Scenario: a Codex card reaches its limit. atrium exits it and starts a new Codex on the same worktree, with "read
+     HANDOFF.x.md" as the prompt.
+   - It takes a few seconds longer than a clear, and you see the card restart.
+   - Suggested: yes, for every runner except Claude, until each one's clear is tested.
+3. **The runner's compaction is never off.**
+   - Scenario: a director is 40 minutes into one turn when it crosses the limit. atrium cannot type the capture
+     mid-turn, so the runner compacts it and it carries on.
+   - With compaction off, it would stop at the window and wait for someone.
+   - Suggested: never off. It sits just above atrium's limit as the backstop.
+
+## 7. Folding in the two items
+
+- **Clear against restart.** The answer is both, chosen by runner:
+  - `clear` where the runner has a tested clear and a SessionStart to wait for (Claude);
+  - `restart` everywhere else (section 2, stage L3).
+  - The journal and deploy wait from r-clear-vs-restart (7323b17f) cover a restart cycle unchanged, because it is a
+    step in the same run.
+- **The limit layer.** One function, from the most specific layer to the least:
+  1. the card's tags (ceiling);
+  2. the setting (`auto_new_context_k`, `context_ceiling_k`);
+  3. the model's window;
+  4. the runner's margin.
+
+  That function gives atrium's threshold, the runner's flag and what the card details show. Today those are three
+  places (`cardLimit`, `autoThreshold`'s 70%, `autocompactK`'s 10%), and they disagree (section 3). A per-role limit
+  is not needed: the action differs by role, and the number does not.
