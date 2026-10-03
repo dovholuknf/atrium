@@ -248,7 +248,7 @@ func (d *Daemon) finish(task *store.Task, in FinishRequest) (map[string]any, int
 		SetSHA: status == store.StatusDone, SHA: sha, Unverified: unverified,
 		MoveStatus: task.Status != store.StatusShelved && status != task.Status,
 		Status:     status, Reason: reason,
-		ReportStatus: in.Status,
+		ReportStatus: in.Status, UnheardIsUnsent: agentLaunched(task),
 	}
 	if status == store.StatusDone {
 		out := &store.WorkOutputs{NoCommit: strings.TrimSpace(in.NoCommit)}

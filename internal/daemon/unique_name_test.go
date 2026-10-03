@@ -17,28 +17,28 @@ func TestLaunchedNameDisambiguatesACollision(t *testing.T) {
 	live := map[string]bool{}
 	taken := func(n string) (bool, error) { return live[n], nil }
 
-	first, _ := launchedName("", "/work/atrium", taken)
-	if first != "atrium" {
-		t.Fatalf("first launch got %q, want the directory leaf %q", first, "atrium")
+	first, _ := launchedName("", "/work/atriumx", taken)
+	if first != "atriumx" {
+		t.Fatalf("first launch got %q, want the directory leaf %q", first, "atriumx")
 	}
 	live[first] = true
 
-	second, _ := launchedName("", "/work/atrium", taken)
+	second, _ := launchedName("", "/work/atriumx", taken)
 	if second == first {
 		t.Fatalf("a second launch in the same dir reused %q", second)
 	}
-	if second != "atrium-2" {
-		t.Fatalf("the disambiguated name was %q, want %q", second, "atrium-2")
+	if second != "atriumx-2" {
+		t.Fatalf("the disambiguated name was %q, want %q", second, "atriumx-2")
 	}
 }
 
 // A run of collisions keeps counting up rather than sticking at -2 forever.
 func TestLaunchedNameCountsPastTheFirstCollision(t *testing.T) {
-	live := map[string]bool{"atrium": true, "atrium-2": true, "atrium-3": true}
+	live := map[string]bool{"atriumx": true, "atriumx-2": true, "atriumx-3": true}
 	taken := func(n string) (bool, error) { return live[n], nil }
-	got, _ := launchedName("", "/work/atrium", taken)
-	if got != "atrium-4" {
-		t.Fatalf("with -2 and -3 taken the next name was %q, want %q", got, "atrium-4")
+	got, _ := launchedName("", "/work/atriumx", taken)
+	if got != "atriumx-4" {
+		t.Fatalf("with -2 and -3 taken the next name was %q, want %q", got, "atriumx-4")
 	}
 }
 
@@ -46,7 +46,7 @@ func TestLaunchedNameCountsPastTheFirstCollision(t *testing.T) {
 // the title and a name slugged from it reads as the same work.
 func TestLaunchedNamePrefersTheTitle(t *testing.T) {
 	free := func(string) (bool, error) { return false, nil }
-	got, _ := launchedName("Fix the flaky attach test", "/work/atrium", free)
+	got, _ := launchedName("Fix the flaky attach test", "/work/atriumx", free)
 	if got != "fix-the-flaky-attach-test" {
 		t.Fatalf("title-derived name was %q", got)
 	}
@@ -57,7 +57,7 @@ func TestLaunchedNamePrefersTheTitle(t *testing.T) {
 func TestLaunchedNameDisambiguatesADuplicateTitle(t *testing.T) {
 	live := map[string]bool{"review-the-pr": true}
 	taken := func(n string) (bool, error) { return live[n], nil }
-	got, _ := launchedName("review the PR", "/work/atrium", taken)
+	got, _ := launchedName("review the PR", "/work/atriumx", taken)
 	if got != "review-the-pr-2" {
 		t.Fatalf("duplicate title was named %q, want %q", got, "review-the-pr-2")
 	}

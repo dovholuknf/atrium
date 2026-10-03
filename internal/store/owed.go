@@ -24,6 +24,9 @@ type OwedItem struct {
 	Host     string `json:"host"`
 	Launcher string `json:"launcher,omitempty"`
 	Orphan   bool   `json:"orphan,omitempty"`
+	// RemoteLauncher is `name@room` when the launcher is on another room: the item is kept here as
+	// an orphan's is, but the push names who has not answered.
+	RemoteLauncher string `json:"remote_launcher,omitempty"`
 	// Reason is `ended`, `asked`, `stopped` or `permission`.
 	Reason string `json:"reason"`
 	// Status is the worker's status when it opened, for the listing line.
@@ -72,12 +75,42 @@ func (s *Store) CloseOwedItem(workerID string) (bool, error) {
 	if err := s.SetSetting(owedPrefix+workerID, ""); err != nil {
 		return false, err
 	}
-	return true, s.SetSetting(closePrefix+workerID, ts(now()))
+	raw, _ := json.Marshal(OwedClosed{At: now(), Reason: it.Reason, Since: it.Since})
+	return true, s.SetSetting(closePrefix+workerID, string(raw))
 }
 
-// OwedClosedAt is when a worker's last item closed, zero if never.
-func (s *Store) OwedClosedAt(workerID string) time.Time {
+// OwedClosed is what is remembered of a worker's last closed item, so the same reason cannot
+// reopen it: a status change moves a card's last activity, and that is not a new reason.
+type OwedClosed struct {
+	At     time.Time `json:"at"`
+	Reason string    `json:"reason"`
+	Since  time.Time `json:"since"`
+}
+
+// OwedClosedOf is a worker's last closed item, nil if none.
+func (s *Store) OwedClosedOf(workerID string) *OwedClosed {
 	raw, _ := s.Setting(closePrefix + workerID)
+	if raw == "" {
+		return nil
+	}
+	var c OwedClosed
+	if json.Unmarshal([]byte(raw), &c) != nil {
+		return nil
+	}
+	return &c
+}
+
+const reportedPrefix = "owed_reported:"
+
+// SetOwedReported records that a report of the worker's went to the orchestrator because it had
+// no launcher. That report IS the item: it must not open another.
+func (s *Store) SetOwedReported(workerID string) error {
+	return s.SetSetting(reportedPrefix+workerID, ts(now()))
+}
+
+// OwedReportedAt is when that was, zero if never.
+func (s *Store) OwedReportedAt(workerID string) time.Time {
+	raw, _ := s.Setting(reportedPrefix + workerID)
 	if at, err := parseTS(raw); err == nil {
 		return at
 	}

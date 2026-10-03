@@ -954,6 +954,10 @@ func failpoint(step string) error {
 // statements, and the ledger's.
 type ReportWrite struct {
 	TaskID string
+	// UnheardIsUnsent is set for an agent-launched worker: its report, if nobody is queued to hear
+	// it, is not stamped as sent. A card the operator launched is stamped either way, which is what
+	// the board's "report waiting" and "Last report" read.
+	UnheardIsUnsent bool
 	// Recap is the composed recap, bounded like SetRecap.
 	Recap string
 	// SetSHA writes SHA and Unverified onto the card, for a `done`.
@@ -1040,7 +1044,7 @@ func (s *Store) RecordReport(r ReportWrite) (*ReportResult, error) {
 		// STAMPED ONLY WHEN SOMEBODY IS TOLD. A report nobody was queued to hear is not a report
 		// the board may call sent: "report waiting" with a launcher that heard nothing was the
 		// r-scm-clone failure. See docs/backlog/runtime/r-new-report-no-launcher.md.
-		if r.Notice != nil || r.Relay != nil {
+		if r.Notice != nil || r.Relay != nil || !r.UnheardIsUnsent {
 			if _, err := tx.Exec(`UPDATE task SET reported_at = ? WHERE id = ?`, ts(now()), r.TaskID); err != nil {
 				return err
 			}

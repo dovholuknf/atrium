@@ -3,6 +3,7 @@ package store
 import (
 	"errors"
 	"strings"
+	"unicode"
 )
 
 // ReservedHandle is the sender atrium itself uses: the line that lists a launcher's owed items
@@ -20,7 +21,34 @@ const ReservedDerived = "atrium-dir"
 // ErrReservedName is a told name or an alias that is the reserved handle.
 var ErrReservedName = errors.New(`"atrium" is atrium's own name and cannot be a card's handle or alias`)
 
-// isReserved says whether a bare or machine-qualified name is the reserved handle.
-func isReserved(name string) bool {
-	return strings.EqualFold(strings.TrimSpace(LocalName(name)), ReservedHandle)
+// lookalikes are letters of "atrium" written in another script, folded to the ASCII they pass for.
+var lookalikes = map[rune]rune{
+	'а': 'a', 'ɑ': 'a', 'α': 'a', 'і': 'i', 'ı': 'i', 'ι': 'i', 'ᴛ': 't', 'т': 't', 'г': 'r', 'ꭇ': 'r',
+	'υ': 'u', 'ᴜ': 'u', 'м': 'm', 'ᴍ': 'm',
 }
+
+// skeleton is a name as a reader sees it: marks and invisible characters dropped, full-width and
+// look-alike letters folded, anything after an `@` ignored (`atrium@x` reads as atrium's voice on x).
+func skeleton(name string) string {
+	var b strings.Builder
+	for _, r := range LocalName(strings.TrimSpace(name)) {
+		switch {
+		case r == '@':
+			return strings.ToLower(b.String())
+		case unicode.Is(unicode.Cf, r), unicode.Is(unicode.Mn, r), unicode.IsSpace(r) && b.Len() == 0:
+			continue
+		case r >= 0xFF01 && r <= 0xFF5E:
+			r -= 0xFEE0
+		}
+		if f, ok := lookalikes[unicode.ToLower(r)]; ok {
+			r = f
+		}
+		b.WriteRune(r)
+	}
+	return strings.ToLower(strings.TrimSpace(b.String()))
+}
+
+// IsReserved says whether a bare or machine-qualified name is, or reads as, the reserved handle.
+func IsReserved(name string) bool { return skeleton(name) == ReservedHandle }
+
+func isReserved(name string) bool { return IsReserved(name) }

@@ -66,7 +66,12 @@ func (d *Daemon) owes(t *store.Task, now time.Time) (reason, text string, since 
 			}
 			return "", "", time.Time{}
 		}
-		if t.OwesReport() && now.Sub(t.LastActivityAt) < owedStale {
+		// A report that went to the orchestrator because there was no launcher IS the item.
+		reported := d.st.OwedReportedAt(t.ID)
+		if reported.IsZero() || (t.OwedAt != nil && reported.Before(*t.OwedAt)) {
+			reported = time.Time{}
+		}
+		if reported.IsZero() && t.OwesReport() && now.Sub(t.LastActivityAt) < owedStale {
 			return owedEnded, t.Recap, t.LastActivityAt
 		}
 	}
@@ -104,6 +109,9 @@ func (d *Daemon) openOwed(t *store.Task, reason, text string, since time.Time) {
 		it.Host, it.Launcher = launcher.ID, launcher.ID
 	default:
 		// NOBODY KEPT BY NOBODY: the local orchestrator keeps it, else the worker's own row.
+		if name, room, ok := d.remoteLauncher(t); ok {
+			it.RemoteLauncher = name + "@" + room
+		}
 		it.Orphan = true
 		it.Host = t.ID
 		if o := d.localOrchestrator(t.ID); o != nil {
@@ -194,10 +202,28 @@ func (d *Daemon) owedPass(now time.Time) {
 		return
 	}
 	for _, t := range tasks {
-		if reason, text, since := d.owes(t, now); reason != "" && since.After(d.st.OwedClosedAt(t.ID)) {
+		if reason, text, since := d.owes(t, now); reason != "" && d.mayReopen(t, reason, since) {
 			d.openOwed(t, reason, text, since)
 		}
 	}
+}
+
+// mayReopen says whether a closed item's reason is a NEW one. A status change moves a card's last
+// activity, so an exited or dismissed item must not come back because the card went dead: an ended
+// item reopens only on a launcher prompt newer than the close, any other reason on a new
+// occurrence of it (a new question, a new permission wait).
+func (d *Daemon) mayReopen(t *store.Task, reason string, since time.Time) bool {
+	c := d.st.OwedClosedOf(t.ID)
+	if c == nil {
+		return true
+	}
+	if reason != c.Reason {
+		return since.After(c.At)
+	}
+	if reason == owedEnded {
+		return t.OwedAt != nil && t.OwedAt.After(c.At)
+	}
+	return since.After(c.Since) && since.After(c.At)
 }
 
 // pushOwed tells the orchestrator once, held. The order: a card here tagged atrium:orchestrator,
@@ -212,15 +238,23 @@ func (d *Daemon) pushOwed(worker *store.Task, it store.OwedItem, now time.Time) 
 	if hasTag(worker.Tags, OrchestratorTag) {
 		return
 	}
-	who := "its launcher"
-	if l, err := d.st.Get(it.Launcher); err == nil && it.Launcher != "" {
+	mins := int(now.Sub(it.Since) / time.Minute)
+	var text string
+	switch l, err := d.st.Get(it.Launcher); {
+	case it.Launcher != "" && err == nil:
 		if hasTag(l.Tags, OrchestratorTag) {
 			return
 		}
-		who = l.WireName
+		text = fmt.Sprintf("%s has not answered %s for %d minutes. %s is waiting at %s. Its last words: %s",
+			l.WireName, it.WorkerWire, mins, it.WorkerWire, it.Status, orWord(it.Text, "none"))
+	case it.RemoteLauncher != "":
+		text = fmt.Sprintf("%s has not answered %s for %d minutes. %s is waiting at %s. Its last words: %s",
+			it.RemoteLauncher, it.WorkerWire, mins, it.WorkerWire, it.Status, orWord(it.Text, "none"))
+	default:
+		text = fmt.Sprintf("%s has no launcher, and has been waiting at %s for %d minutes. Its last words: %s",
+			it.WorkerWire, it.Status, mins, orWord(it.Text, "none"))
 	}
-	text := truncatePeer(fmt.Sprintf("%s has not answered %s for %d minutes. %s is waiting at %s. Its last words: %s",
-		who, it.WorkerWire, int(now.Sub(it.Since)/time.Minute), it.WorkerWire, it.Status, orWord(it.Text, "none")))
+	text = truncatePeer(text)
 	if o := d.localOrchestrator(worker.ID); o != nil {
 		d.holdNotice(o, worker, NoticeOwed, text)
 		return
@@ -249,15 +283,22 @@ func (d *Daemon) remoteOrchestrator() (name, room string) {
 		list, _, err := rl.Peers(ctx, true, false)
 		cancel()
 		if err == nil {
+			// BY TAG ONLY. A card on any room may be told the name `orchestrator`, and would
+			// otherwise be sent every orphan report. A hub that sends no tags gets the chip only.
 			for _, p := range list {
-				if hasTag(p.Tags, OrchestratorTag) || (len(p.Tags) == 0 && strings.EqualFold(p.Handle, "orchestrator")) {
+				if hasTag(p.Tags, OrchestratorTag) {
 					_ = d.st.SetSetting(remoteOrchestratorKey, p.Handle+"@"+p.Room)
 					return p.Handle, p.Room
 				}
 			}
+			// The hub answered and lists none: whatever was remembered is stale.
+			_ = d.st.SetSetting(remoteOrchestratorKey, "")
+			return "", ""
 		}
 	}
-	if n, r, err := SplitAddress(func() string { v, _ := d.st.Setting(remoteOrchestratorKey); return v }()); err == nil {
+	// THE HUB IS AWAY: the one last found by tag, so the notice is held.
+	v, _ := d.st.Setting(remoteOrchestratorKey)
+	if n, r, err := SplitAddress(v); err == nil {
 		return n, r
 	}
 	return "", ""
@@ -348,6 +389,10 @@ func (d *Daemon) orphanReport(worker *store.Task, body string) {
 		return
 	}
 	text := truncatePeer(worker.WireName + " reported, and has no launcher to hear it: " + body)
+	// THIS NOTICE IS THE ITEM: the worker is not also "ended with no report".
+	if err := d.st.SetOwedReported(worker.ID); err != nil {
+		log.Printf("[atrium] could not mark %s's report as told: %v", worker.DisplayTitle(), err)
+	}
 	if o := d.localOrchestrator(worker.ID); o != nil {
 		d.holdNotice(o, worker, NoticeNoLauncher, text)
 		return

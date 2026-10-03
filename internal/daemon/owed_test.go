@@ -1,6 +1,7 @@
 package daemon
 
 import (
+	"context"
 	"strings"
 	"testing"
 	"time"
@@ -303,7 +304,7 @@ func TestAnOrphanOnARoomWithNoOrchestratorTellsTheHubsOne(t *testing.T) {
 	rl.mu.Lock()
 	defer rl.mu.Unlock()
 	if len(rl.got) != 1 || rl.got[0].To != "chief" || rl.got[0].Room != "sg4-control" ||
-		!strings.Contains(rl.got[0].Text, "has not answered") {
+		!strings.Contains(rl.got[0].Text, "has no launcher") {
 		t.Fatalf("the hub's orchestrator was told %+v", rl.got)
 	}
 }
@@ -469,5 +470,230 @@ func TestAnOrchestratorsOwnWorkNeverReachesTheOrchestratorsRow(t *testing.T) {
 		if h["source"] == NoticeNoLauncher {
 			t.Fatalf("an orchestrator's report was held for another: %v", h)
 		}
+	}
+}
+
+// peersDown is a relay whose hub does not answer a peers call.
+type peersDown struct{ *fakeRelay }
+
+func (peersDown) Peers(context.Context, bool, bool) ([]RemotePeer, string, error) {
+	return nil, "", ErrRelayDown
+}
+
+func orphanEndedAndPushed(t *testing.T, d *Daemon) {
+	t.Helper()
+	w := orphanWorker(t, d, "worker", "ghost")
+	endWorker(t, d, w)
+	now := time.Now()
+	d.owedPass(now)
+	d.owedPass(now.Add(owedPushAfter + time.Second))
+}
+
+func waitSays(rl *fakeRelay, want int) []RelaySay {
+	for end := time.Now().Add(2 * time.Second); time.Now().Before(end); time.Sleep(20 * time.Millisecond) {
+		rl.mu.Lock()
+		n := len(rl.got)
+		rl.mu.Unlock()
+		if n >= want {
+			break
+		}
+	}
+	time.Sleep(100 * time.Millisecond)
+	rl.mu.Lock()
+	defer rl.mu.Unlock()
+	return append([]RelaySay(nil), rl.got...)
+}
+
+func TestAnUntaggedPeerCalledOrchestratorGetsNothingAndIsNotRemembered(t *testing.T) {
+	d := testDaemon(t)
+	rl := &fakeRelay{peers: []RemotePeer{{Handle: "orchestrator", Room: "someroom"}}}
+	d.SetRelay(rl)
+	orphanEndedAndPushed(t, d)
+	if got := waitSays(rl, 1); len(got) != 0 {
+		t.Fatalf("an untagged peer was sent %+v", got)
+	}
+	// And a hub that is away does not bring it back from a cache.
+	d.SetRelay(peersDown{rl})
+	if n, r := d.remoteOrchestrator(); n != "" || r != "" {
+		t.Fatalf("remembered %s@%s", n, r)
+	}
+}
+
+func TestTheRememberedOrchestratorIsUsedOnlyWhenTheHubIsAway(t *testing.T) {
+	d := testDaemon(t)
+	rl := &fakeRelay{peers: []RemotePeer{{Handle: "chief", Room: "sg4", Tags: []string{OrchestratorTag}}}}
+	d.SetRelay(rl)
+	if n, r := d.remoteOrchestrator(); n != "chief" || r != "sg4" {
+		t.Fatalf("found %s@%s", n, r)
+	}
+	d.SetRelay(peersDown{rl})
+	if n, r := d.remoteOrchestrator(); n != "chief" || r != "sg4" {
+		t.Fatalf("away: %s@%s, want the remembered one", n, r)
+	}
+	// The hub answers and lists none: what was remembered is stale.
+	rl.peers = nil
+	d.SetRelay(rl)
+	if n, _ := d.remoteOrchestrator(); n != "" {
+		t.Fatalf("a stale orchestrator %q survived an answer with none", n)
+	}
+	d.SetRelay(peersDown{rl})
+	if n, _ := d.remoteOrchestrator(); n != "" {
+		t.Fatalf("a stale orchestrator %q came back", n)
+	}
+}
+
+func TestAnExitedItemDoesNotReopenWhenTheCardGoesDead(t *testing.T) {
+	d := testDaemon(t)
+	launcher, worker := launchedPair(t, d)
+	endWorker(t, d, worker)
+	d.owedPass(time.Now())
+	d.closeOwed(worker.ID, "exited")
+	if err := d.st.SetStatus(worker.ID, store.StatusDead); err != nil {
+		t.Fatal(err)
+	}
+	d.owedPass(time.Now().Add(time.Second))
+	d.owedPass(time.Now().Add(owedPushAfter + time.Minute))
+	if n, _, _ := d.owedFor(launcher); n != 0 {
+		t.Fatalf("the item reopened: %d", n)
+	}
+	if n := owedHeld(t, d, launcher.ID, "owes an answer"); n != 1 {
+		t.Fatalf("%d notices, want the one from the first opening", n)
+	}
+}
+
+func TestANewQuestionAfterAClosedOneOpensANewItem(t *testing.T) {
+	d := testDaemon(t)
+	launcher, worker := launchedPair(t, d)
+	d.peerSaid(worker.WireName, launcher, "which table?", KindNeeds)
+	if err := d.st.SetStatus(worker.ID, store.StatusNeedsInput); err != nil {
+		t.Fatal(err)
+	}
+	d.owedPass(time.Now())
+	d.closeOwed(worker.ID, "dismissed")
+	time.Sleep(10 * time.Millisecond)
+	d.peerSaid(worker.WireName, launcher, "and which column?", KindNeeds)
+	d.owedPass(time.Now().Add(time.Second))
+	if n, _, _ := d.owedFor(launcher); n != 1 {
+		t.Fatalf("a new question opened %d", n)
+	}
+}
+
+func TestAnOrphansDoneReportIsTheOnlyNoticeTheOrchestratorGets(t *testing.T) {
+	stopAfter := stopAfterReport
+	stopAfterReport = func(*Daemon, string) error { return nil }
+	t.Cleanup(func() { stopAfterReport = stopAfter })
+	d := testDaemon(t)
+	w := orphanWorker(t, d, "worker", "ghost")
+	if got, _ := d.st.Get(w.ID); !got.OwesReport() {
+		t.Fatal("the fixture does not owe a report, so it proves nothing")
+	}
+	orch := orchCard(t, d, "chief")
+	finishWith(t, d, FinishRequest{Agent: "worker", Status: ReportDone, NoCommit: "research", Recap: "the clone is done"})
+	now := time.Now()
+	d.owedPass(now)
+	d.owedPass(now.Add(2 * owedPushAfter))
+	if held := heldOn(t, d, orch.ID); len(held) != 1 || held[0]["source"] != NoticeNoLauncher {
+		t.Fatalf("the orchestrator holds %v, want only the report", held)
+	}
+	if n, _, _ := d.owedFor(w); n != 0 {
+		t.Fatalf("the worker also owes: %d", n)
+	}
+}
+
+func TestAnOrphansPushDoesNotNameALauncher(t *testing.T) {
+	d := testDaemon(t)
+	orch := orchCard(t, d, "chief")
+	w := orphanWorker(t, d, "worker", "ghost")
+	endWorker(t, d, w)
+	now := time.Now()
+	d.owedPass(now)
+	d.owedPass(now.Add(owedPushAfter + time.Second))
+	found := false
+	for _, h := range heldOn(t, d, orch.ID) {
+		txt := h["text"].(string)
+		if strings.Contains(txt, "no launcher, and has been waiting") {
+			found = true
+		}
+		if strings.Contains(txt, "has not answered") || strings.Contains(txt, "its launcher") {
+			t.Fatalf("an orphan's push names a launcher: %q", txt)
+		}
+	}
+	if !found {
+		t.Fatalf("no push for the orphan: %v", heldOn(t, d, orch.ID))
+	}
+}
+
+func TestAWorkerWhoseLauncherIsOnAnotherRoomIsNamedNotCalledLauncherless(t *testing.T) {
+	d := testDaemon(t)
+	orch := orchCard(t, d, "chief")
+	w := orphanWorker(t, d, "worker", "boss@sg4")
+	endWorker(t, d, w)
+	now := time.Now()
+	d.owedPass(now)
+	d.owedPass(now.Add(owedPushAfter + time.Second))
+	for _, h := range heldOn(t, d, orch.ID) {
+		if strings.Contains(h["text"].(string), "boss@sg4 has not answered") {
+			return
+		}
+	}
+	t.Fatalf("the push does not name the remote launcher: %v", heldOn(t, d, orch.ID))
+}
+
+func TestAnOrphanWithNoOrchestratorHoldsNothingOnItsOwnCard(t *testing.T) {
+	d := testDaemon(t)
+	w := orphanWorker(t, d, "worker", "ghost")
+	endWorker(t, d, w)
+	d.owedPass(time.Now())
+	if n, _, orphan := d.owedFor(w); n != 1 || !orphan {
+		t.Fatalf("the row shows %d (orphan %v)", n, orphan)
+	}
+	if held := heldOn(t, d, w.ID); len(held) != 0 {
+		t.Fatalf("the worker was written to: %v", held)
+	}
+	if msgs := pendingFrom(t, d, w.ID); len(msgs) != 0 {
+		t.Fatalf("the worker was queued: %v", msgs)
+	}
+}
+
+func TestACardTheOperatorLaunchedStillStampsItsReport(t *testing.T) {
+	stopAfter := stopAfterReport
+	stopAfterReport = func(*Daemon, string) error { return nil }
+	t.Cleanup(func() { stopAfterReport = stopAfter })
+	d := testDaemon(t)
+	w := peerCard(t, d, "worker")
+	if err := d.st.SetLineage(w.ID, store.HumanLauncher, ""); err != nil {
+		t.Fatal(err)
+	}
+	prompt(t, d, w.ID)
+	rec, _ := finishWith(t, d, FinishRequest{Agent: "worker", Status: ReportDone, NoCommit: "research", Recap: "done"})
+	if rec.Code != 200 {
+		t.Fatalf("%d %s", rec.Code, rec.Body)
+	}
+	if got, _ := d.st.Get(w.ID); got.ReportedAt == nil {
+		t.Fatal("the operator's card reported and reported_at stayed empty")
+	}
+}
+
+func TestALaunchNamedAtriumMovesOnToTheNextName(t *testing.T) {
+	free := func(string) (bool, error) { return false, nil }
+	for title, cwd := range map[string]string{"": "/home/c/atrium", "Atrium": "/x/y", "ATRIUM": "/x/y"} {
+		if got, err := launchedName(title, cwd, free); err != nil || got != "atrium-2" {
+			t.Fatalf("title %q cwd %q: %q %v", title, cwd, got, err)
+		}
+	}
+}
+
+func TestADismissedQuestionStaysClosedUntilANewOne(t *testing.T) {
+	d := testDaemon(t)
+	launcher, worker := launchedPair(t, d)
+	d.peerSaid(worker.WireName, launcher, "which table?", KindNeeds)
+	if err := d.st.SetStatus(worker.ID, store.StatusNeedsInput); err != nil {
+		t.Fatal(err)
+	}
+	d.owedPass(time.Now())
+	d.closeOwed(worker.ID, "dismissed")
+	d.owedPass(time.Now().Add(time.Minute))
+	if n, _, _ := d.owedFor(launcher); n != 0 {
+		t.Fatalf("a dismissed question reopened: %d", n)
 	}
 }

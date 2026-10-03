@@ -45,7 +45,21 @@ func TestAnOwedItemSurvivesAndClosesOnce(t *testing.T) {
 	if items, _ := s.OpenOwedItems(); len(items) != 0 {
 		t.Fatalf("%d open after close", len(items))
 	}
-	if s.OwedClosedAt("w1").IsZero() {
+	if c := s.OwedClosedOf("w1"); c == nil || c.At.IsZero() {
 		t.Fatal("no close stamp")
+	}
+}
+
+func TestTheReservedHandleCannotBeSpelledAround(t *testing.T) {
+	s := openTestStore(t)
+	for _, name := range []string{"atrium@x", "аtrium", "atrium​", "ATRIUM", " atrium", "ａｔｒｉｕｍ", "átrium", "sg4/atrium@x"} {
+		if _, _, err := s.Register(Observed{WireName: name, Runner: "claude"}); !errors.Is(err, ErrReservedName) {
+			t.Errorf("%q registered: %v", name, err)
+		}
+	}
+	for _, name := range []string{"atriumx", "atrium-2", "my-atrium", "atria"} {
+		if IsReserved(name) {
+			t.Errorf("%q is not reserved", name)
+		}
 	}
 }
