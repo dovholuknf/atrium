@@ -94,3 +94,27 @@ Atrium-Verdict: hold 526337e1..54af8c02
 Quality: a small, well-placed change. It reuses the target's existing wake gate and the say op, and the rule that
 refuses to hold a wake is right and well argued. M1 is the one place the hub contradicts it. m1mini commits are
 unsigned.
+
+## Re-read: 4ab2ef76
+
+Range `526337e1..4ab2ef76`. 4ab2ef76 is a second commit on 54af8c02.
+
+Closed:
+- **M1.** The room's wake refusal is a 424. 409 is already this route's "two cards match", and the hub reads only
+  502, 503 and 504 as in flight.
+  - `TestAHubSideWakeSayTheSendersRoomRefusesIsAnErrorNotUnconfirmed` checks that the hub tool returns the room's
+    wording as an error.
+  - `TestAHubSideSayReadsA503FromTheSendersRoomAsUnconfirmed` keeps the old reading for a real 503.
+  - Mutant: 424 back to 503 fails `TestAWakeSayToAnUnreachableRoomIsRefusedNotHeld`.
+- **L1.** When wake was sent and the answer is still `parked`, the room answers 424 "the hub is older than cross-room
+  wake" and records it refused, with no "send again". A new hub always unparks on wake, so `parked` there can only
+  mean the field was dropped.
+- **L2.** `TestTheRoomsRelaySayCarriesWakeToTheHub` drives `linkRelay.Say` against a real `link.Hub`. Mutant:
+  dropping `Wake: s.Wake` fails it.
+- **L3.** It is documented in the change doc, the backlog item and the changelog.
+
+At the tip, link (full), cli `Wake|Say|Relay` and daemon `Wake|Relay|Say` pass.
+
+Atrium-Verdict: room-ok 526337e1..4ab2ef76
+Atrium-Verdict: hub-ok 526337e1..4ab2ef76
+Quality: every point closed with a test that a mutant breaks. Deploy the hub and the sending room together.
