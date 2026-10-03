@@ -21,8 +21,10 @@ Two things on a terminals row (and the stack row, which shares the mark) looked 
 - `.peek-bar.ctxline` (`css/cards.css`) is now a 3px strip along the bottom of the row, inset 10px from the corners
   so it never touches the left accent bar or the border. No fill behind the title and path, no stacking context, no
   danger border. A transparent 6px hit area (2px above, 1px below the strip) carries the tooltip. Review fixes: it was 11px and
-  covered the row's bottom band; rows that carry the strip also get 3px more bottom padding so the path line's
-  descenders clear it (they are 3px taller than a plain row). Heat steps kept: neutral, amber at
+  covered the row's bottom band. A live hub showed the strip through the path line, so every terminals row now
+  reserves a 6px band under its content (`.term-list .card` in terminal.css, phone and mini variants too) and the
+  strip sits in the bottom 5px of it. Row height no longer depends on having a context figure; the board's cards
+  add the band only when they carry a strip. Heat steps kept: neutral, amber at
   warn, danger at land. The one-off pulse became a one-off glow, which still reads on a thin bar.
 - Unchanged: `landOver` and `landTip` (auto-clear, the details), the details' meter in `js/peek.js`, `ctxMeter`'s
   markup.
