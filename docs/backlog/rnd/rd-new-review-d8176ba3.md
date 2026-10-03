@@ -125,3 +125,97 @@ Verdict: doc-ok (re-read, 74d44a19..e373918c)
 Quality: every note is closed, in the section where it belongs.
 
 Atrium-Verdict: doc-ok 74d44a19..e373918c
+
+## Re-read: a2ea5e98
+
+Range `e373918c..a2ea5e98`, one file, `docs/rnd/long-turn-checkin-design.md`. It adds W6 and section 11, "owed
+answers that survive", after the 10-02 evening scm stall.
+
+Pointers, checked at a2ea5e98:
+- `silentStop` is `a2a.go:423`, `launcherOf` `:243`, `notifyLauncher` `:277` (once per worker, source and key) and
+  `holdNotice` `:333`.
+- The ended notice is the `queueNotice(NoticeEnded)` call at `ledger.go:786`.
+- SessionStart is in `internal/cli/session.go`, and step 2 is still the queued-message block at
+  `daemon.go:873-884`.
+- One is off by a few lines: `a2a.go:466` is the parked guard inside `stoppedSilently`, which starts at `:460`.
+  Point at `:460`.
+- `deliverPeer` is `peers.go:523`. Name the file.
+
+The diagnosis reads right, case by case:
+- A worker that asked a question has reported, so it is not silent.
+- `notifyLauncher` types its notice once, and a context clear erases it.
+- Nothing goes above the launcher.
+
+Keeping the item in the store, not in the conversation, is the right fix. W6 not depending on W1 to W5 is right
+too.
+
+On the Verify in item 5: Claude Code's SessionStart fires with source `compact` after a compaction, as well as for
+`startup`, `resume` and `clear`. So SessionStart covers all three, and no compact hook is needed. Say so, and check
+codex's SessionStart the same way.
+
+Verdict: **HOLD on M1 to M3.** Each is a few lines of the doc. W6 goes to @runtime as soon as this lands, so they
+need to be settled first.
+
+### M1: "the orchestrator" has no lookup, and on m1mini it is on another room
+
+Item 4 sends a held notice to the orchestrator, and item 2 keeps an orphan's item on "the orchestrator's card".
+Nothing in the daemon finds the orchestrator today:
+- `OrchestratorTag` is read only as a property of a card that is already in hand (`a2a.go:321`, `idlepark.go`).
+- On m1mini, where the 10-02 stall happened, the orchestrator is a card on sg4-control. A local lookup finds
+  nothing, so the 10-minute push goes nowhere on exactly the room it was written for.
+
+Say how it resolves, in order:
+1. A local card tagged `atrium:orchestrator`.
+2. Otherwise, the hub's orchestrator through the cross-room say. That one is held by the receiver, as the hub
+   already does for `name@room`.
+3. Otherwise, the board chip alone.
+
+Say also where an orphan's item lives when the orchestrator is remote. It should stay on the worker's room and be
+visible in that room's board, with the notice sent across.
+
+### M2: a final report opens an item on every finished worker
+
+"Owes" (b) is "the worker's last message to its launcher came after the launcher's last message to it". A worker
+that reports done and ends meets that, because launchers rarely answer a done report. Every finished worker would
+then hold an item, and 10 minutes later the orchestrator gets a notice for it. That is the noise this design exists
+to avoid.
+
+Fix it in item 1:
+- A `done` report closes its own debt. It opens an item only when it asks something, using the same
+  question-or-not test the board's STUCK mark uses.
+- Or let reading a done report close it, and keep "reading does not close" for questions and needs-input.
+
+### M3: an item can outlive what it was about
+
+An item closes only when the launcher acts. Two common cases leave it open after the reason is gone:
+- The operator approves the worker's permission on the board.
+- The worker is unblocked by someone else, or files a later report.
+
+The orchestrator then gets a 10-minute notice about a worker that is running again.
+
+Add a mechanical close, checked when the 10-minute push fires: the item closes when the worker's owing condition no
+longer holds. That means the permission was decided, the worker's status left needs-input or needs-permission, or a
+later report answered it. "The launcher acts" stays, as the other way to close it.
+
+### Lows
+
+- **L1: the bound contradicts itself.** "At most three times" lists "once more after **each** of the launcher's
+  context clears", which is 2 + N pushes for N clears. Each push is one line listing every item, so say that: the
+  launcher's line once, the orchestrator once, and one listing line per context clear. None of these pushes can
+  start another. Also say that the orphan case and the case where the launcher is the orchestrator never send the
+  orchestrator a notice about itself. Item 4 says this only for the second case.
+- **L2: the `atrium` reservation has to cover names derived from a folder.**
+  - Today a card started in a folder named `atrium` (this repository) registers the handle `atrium`
+    (`resumeclaim_test.go:72`, `NameFromDir`).
+  - An alias can also equal it when that card owns it (`alias_test.go:173-181`).
+  - The ended notice already uses `atrium` as its sender (`ledger.go:858`).
+  - W6's check must refuse a derived name as well as a typed handle or alias, and give the folder-named card a
+    suffix. Otherwise the most likely holder of `atrium` is the atrium repo itself.
+- **L3: "W0 also checks" adds to W0 without touching W0's row.** Add it to the table, or move it to W6.
+- **L4: the director case in "Not covered".** A director's silent stop reaches the orchestrator only if the
+  orchestrator is its launcher (`reportsToLauncher`: agent-launched, or `report_to` set). A resident director
+  started by the operator has neither. Say so, or name that as the case operator focus covers.
+
+Atrium-Verdict: hold e373918c..a2ea5e98
+Quality: a sharp diagnosis from a real stall, each case traced to the line that lets it through. The store-kept
+item is the right shape. M1 to M3 make sure it fires on the room that needs it, and only when something is owed.
