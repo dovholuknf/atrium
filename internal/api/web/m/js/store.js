@@ -235,6 +235,7 @@
     src.addEventListener("task-removed", onRemoved);
     src.addEventListener("permission", () => permsSoon());
     src.addEventListener("rooms", () => { loadRooms(); tasksSoon(); });
+    src.addEventListener("change-request", () => { if (window.mRequests) window.mRequests.onEvent(); });
     src.addEventListener("growls", e => {
       let d = null;
       try { d = JSON.parse(e.data); } catch (err) { return; }
