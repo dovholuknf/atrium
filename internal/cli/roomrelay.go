@@ -15,7 +15,7 @@ type linkRelay struct{ room *link.Room }
 
 func (l linkRelay) Say(ctx context.Context, s daemon.RelaySay) (daemon.RelayResult, error) {
 	ans, err := l.room.Relay(ctx, link.RelayRequest{
-		Op: link.RelaySay, From: s.From, Room: s.Room, To: s.To, Text: s.Text, When: s.When,
+		Op: link.RelaySay, From: s.From, Room: s.Room, To: s.To, Text: s.Text, When: s.When, Wake: s.Wake,
 	})
 	if err != nil {
 		return daemon.RelayResult{}, relayErr(err)

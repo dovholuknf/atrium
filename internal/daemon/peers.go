@@ -369,7 +369,7 @@ func (d *Daemon) handleTell(w http.ResponseWriter, r *http.Request) {
 	// ANOTHER ROOM, `name@room`, relayed through the hub. See relay.go.
 	if name, room, err := SplitAddress(in.To); err == nil {
 		if other := d.otherRoom(room); other != "" {
-			code, body := d.sayAcross(r.Context(), strings.TrimSpace(in.From), name, other, in.Text, in.When, in.Reply)
+			code, body := d.sayAcross(r.Context(), strings.TrimSpace(in.From), name, other, in.Text, in.When, in.Reply, in.Wake)
 			if code < 400 {
 				// The two words `atrium tell` reads, beside the rest.
 				body["typed"] = body["delivered"] == "terminal"
@@ -392,7 +392,7 @@ func (d *Daemon) handleTell(w http.ResponseWriter, r *http.Request) {
 	// atrium:everywhere on the others. Only a name that is nobody here.
 	if d.localTarget(in.To) == nil && from != to {
 		raw := strings.TrimSpace(in.From)
-		done, note := d.sayEverywhere(w, r.Context(), raw, strings.TrimSpace(in.To), text, in.When, in.Reply,
+		done, note := d.sayEverywhere(w, r.Context(), raw, strings.TrimSpace(in.To), text, in.When, in.Reply, in.Wake,
 			func(code int, body map[string]any) {
 				if code < 400 {
 					body["typed"] = body["delivered"] == "terminal"

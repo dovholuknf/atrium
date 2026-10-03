@@ -37,7 +37,7 @@ func (c *controlMCP) relay(ctx context.Context, from string, req RelayRequest) R
 		if ans, ok := c.reachable(ctx, target); !ok {
 			return ans
 		}
-		return c.deliverAcross(ctx, target, req.To, sender+"@"+from, req.Text, req.When)
+		return c.deliverAcross(ctx, target, req.To, sender+"@"+from, req.Text, req.When, req.Wake)
 	case RelayCard, RelayExit:
 		target := strings.TrimSpace(req.Room)
 		if target == "" || equalFold(target, from) {
@@ -119,14 +119,23 @@ func (c *controlMCP) reachable(ctx context.Context, room string) (RelayAnswer, b
 
 // deliverAcross resolves `to` on `room` and posts the message there, from
 // `fromWire`, which is always `handle@room`.
-func (c *controlMCP) deliverAcross(ctx context.Context, room, to, fromWire, text, when string) RelayAnswer {
+//
+// WAKE rides on the message post, and the room resumes a parked card inside it, the same
+// resume `POST /v1/tasks/{id}/resume` runs, before it queues the text. A card that is not
+// parked is delivered to as it would be without wake. A resume that fails answers an error
+// and delivers nothing, and one that may have happened and was not answered (502, 503, 504)
+// is unconfirmed below, never sent again.
+func (c *controlMCP) deliverAcross(ctx context.Context, room, to, fromWire, text, when string, wake bool) RelayAnswer {
 	id, handle, err := c.resolvePeer(ctx, room, to)
 	if err != nil {
 		return refusal(err)
 	}
-	body := map[string]string{"text": text, "from": fromWire}
+	body := map[string]any{"text": text, "from": fromWire}
 	if w := strings.TrimSpace(when); w != "" {
 		body["when"] = w
+	}
+	if wake {
+		body["wake"] = true
 	}
 	var res struct {
 		Delivered string `json:"delivered"`
@@ -252,9 +261,12 @@ func (c *controlMCP) sayAcross(ctx context.Context, req *mcp.CallToolRequest, ro
 		return nil, out, fmt.Errorf("a message to another room needs to say which session sent it, or it " +
 			"would be typed as the operator. this call carries no " + AgentHeader)
 	}
-	body := map[string]string{"from": me, "to": name + "@" + target, "text": in.Text}
+	body := map[string]any{"from": me, "to": name + "@" + target, "text": in.Text}
 	if w := strings.TrimSpace(in.When); w != "" {
 		body["when"] = w
+	}
+	if in.Wake {
+		body["wake"] = true
 	}
 	var res struct {
 		Delivered string `json:"delivered"`
@@ -272,7 +284,7 @@ func (c *controlMCP) sayAcross(ctx context.Context, req *mcp.CallToolRequest, ro
 		if ans, ok := c.reachable(ctx, target); !ok {
 			return nil, out, errors.New(ans.Error)
 		}
-		ans := c.deliverAcross(ctx, target, name, me+"@"+room, in.Text, in.When)
+		ans := c.deliverAcross(ctx, target, name, me+"@"+room, in.Text, in.When, in.Wake)
 		if !ans.OK {
 			return nil, out, errors.New(ans.Error)
 		}

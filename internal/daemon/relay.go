@@ -64,6 +64,9 @@ type Relay interface {
 // with no room: the hub adds this room's name from its certificate.
 type RelaySay struct {
 	From, Room, To, Text, When string
+	// Wake resumes a parked target so the message can be delivered. A held row carries no wake,
+	// so a say that asks for one is refused, not held, when the hub cannot be reached.
+	Wake bool
 }
 
 // RelayResult is what the hub said. OK false is a refusal, with Code and
@@ -182,7 +185,7 @@ type sayIn struct {
 	When string `json:"when"`
 	// Reply asks for an answer, which stays owed on the receiver until given.
 	Reply bool `json:"reply"`
-	// Wake resumes a parked card so the message can be delivered. Local only.
+	// Wake resumes a parked card so the message can be delivered, here or on the room it is for.
 	Wake bool `json:"wake"`
 	// Kind is `fyi` or `needs`. See fyi.go. Local targets only.
 	Kind string `json:"kind"`
@@ -207,14 +210,14 @@ func (d *Daemon) handleSay(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if other := d.otherRoom(room); other != "" {
-		code, body := d.sayAcross(r.Context(), strings.TrimSpace(in.From), name, other, in.Text, in.When, in.Reply)
+		code, body := d.sayAcross(r.Context(), strings.TrimSpace(in.From), name, other, in.Text, in.When, in.Reply, in.Wake)
 		writeJSONCode(w, code, body)
 		return
 	}
 	target, via := d.localTargetVia(name)
 	if target == nil {
 		from := strings.TrimSpace(in.From)
-		done, note := d.sayEverywhere(w, r.Context(), from, name, in.Text, in.When, in.Reply, nil)
+		done, note := d.sayEverywhere(w, r.Context(), from, name, in.Text, in.When, in.Reply, in.Wake, nil)
 		if !done {
 			d.writeMissNote(w, from, name, "say", in.Text, in.When, in.Reply, note)
 		}
@@ -265,7 +268,7 @@ func (d *Daemon) localTargetVia(name string) (*store.Task, string) {
 }
 
 // sayAcross relays one message to `name` on `room`, and answers the sender.
-func (d *Daemon) sayAcross(ctx context.Context, from, name, room, text, when string, reply bool) (int, map[string]any) {
+func (d *Daemon) sayAcross(ctx context.Context, from, name, room, text, when string, reply, wake bool) (int, map[string]any) {
 	text = strings.TrimSpace(text)
 	to := name + "@" + room
 	switch {
@@ -305,7 +308,7 @@ func (d *Daemon) sayAcross(ctx context.Context, from, name, room, text, when str
 	// when it lands. See docs/runtime/say-lifecycle-design.md.
 	rec := store.Say{FromWire: wire, FromTask: d.senderTask(from), ToInput: to, ToWire: to, Via: "remote",
 		Room: room, Door: "say", When: whenWord(when == WhenDone), ReplyWant: reply}
-	res, err := rl.Say(cctx, RelaySay{From: wire, Room: room, To: name, Text: text, When: when})
+	res, err := rl.Say(cctx, RelaySay{From: wire, Room: room, To: name, Text: text, When: when, Wake: wake})
 	switch {
 	case errors.Is(err, ErrRelayOld):
 		return http.StatusBadGateway, errBody(err.Error())
@@ -313,6 +316,13 @@ func (d *Daemon) sayAcross(ctx context.Context, from, name, room, text, when str
 		why := res.Error
 		if err != nil {
 			why = err.Error()
+		}
+		if wake {
+			// NOT HELD: the outbox row has no wake, so it would arrive at a parked card and be
+			// refused there, and the sender would have been told it was sent.
+			return http.StatusServiceUnavailable, errBody("could not reach " + room + " (" + why +
+				"). nothing was sent or held, since a held message cannot wake a card. send it again with wake=true " +
+				"when the room is back")
 		}
 		held, herr := d.holdRelay(sender, wire, name, room, "", text, when, store.RelaySourceSay)
 		if herr != nil {
@@ -660,7 +670,7 @@ func (d *Daemon) findEverywhere(ctx context.Context, name string) (room, handle 
 // `name@room`. Two or more is a 409. It reports whether it answered, and
 // otherwise leaves the miss to the caller, with the note to put on it.
 func (d *Daemon) sayEverywhere(w http.ResponseWriter, ctx context.Context, from, name, text, when string,
-	reply bool, after func(int, map[string]any)) (bool, string) {
+	reply, wake bool, after func(int, map[string]any)) (bool, string) {
 
 	// A say with no sender or no words is refused by sayAcross as it would be
 	// for a typed address, and is not worth a trip to the hub to find out.
@@ -670,7 +680,7 @@ func (d *Daemon) sayEverywhere(w http.ResponseWriter, ctx context.Context, from,
 	room, handle, code, note := d.findEverywhere(ctx, name)
 	switch {
 	case room != "":
-		c, body := d.sayAcross(ctx, from, handle, room, text, when, reply)
+		c, body := d.sayAcross(ctx, from, handle, room, text, when, reply, wake)
 		if after != nil {
 			after(c, body)
 		}

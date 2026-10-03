@@ -40,6 +40,35 @@ type relayRoom struct {
 	noCull bool
 	// preflights counts GET /v1/preflight.
 	preflights int
+	// parked is the card ids this room holds parked: a message to one with no wake is answered
+	// `parked` and not delivered, and one with wake resumes it (into resumed) first. wakeCode
+	// is a status the resume fails with instead, delivering nothing.
+	parked   map[string]bool
+	resumed  []string
+	wakeCode int
+}
+
+// stringsOf is a decoded body with its strings kept and `wake: true` written as "wake"="true",
+// which is all the fake room's tests read of it.
+func stringsOf(in map[string]any) map[string]string {
+	out := map[string]string{}
+	for k, v := range in {
+		switch x := v.(type) {
+		case string:
+			out[k] = x
+		case bool:
+			if x {
+				out[k] = "true"
+			}
+		}
+	}
+	return out
+}
+
+func (f *relayRoom) resumes() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]string(nil), f.resumed...)
 }
 
 func (f *relayRoom) posted(path string) []string {
@@ -90,8 +119,9 @@ func (f *relayRoom) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewDecoder(r.Body).Decode(&f.launched)
 		_ = json.NewEncoder(w).Encode(map[string]any{"id": "kid", "wire_name": "kid", "status": "running"})
 	case r.URL.Path == "/v1/say" && r.Method == http.MethodPost && !f.noSay:
-		var body map[string]string
-		_ = json.NewDecoder(r.Body).Decode(&body)
+		var raw map[string]any
+		_ = json.NewDecoder(r.Body).Decode(&raw)
+		body := stringsOf(raw)
 		f.said = append(f.said, body)
 		if f.sayAnswer != nil {
 			_ = json.NewEncoder(w).Encode(f.sayAnswer)
@@ -105,9 +135,24 @@ func (f *relayRoom) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			_, _ = w.Write([]byte(`{"error":"the room fell over"}`))
 			return
 		}
-		var body map[string]string
-		_ = json.NewDecoder(r.Body).Decode(&body)
-		body["id"] = strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/v1/tasks/"), "/message")
+		var raw map[string]any
+		_ = json.NewDecoder(r.Body).Decode(&raw)
+		body := stringsOf(raw)
+		id := strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/v1/tasks/"), "/message")
+		body["id"] = id
+		if f.parked[id] {
+			if body["wake"] != "true" {
+				_ = json.NewEncoder(w).Encode(map[string]any{"delivered": "parked", "warning": "not sent: this card is parked"})
+				return
+			}
+			if f.wakeCode != 0 {
+				w.WriteHeader(f.wakeCode)
+				_, _ = w.Write([]byte(`{"error":"could not resume it"}`))
+				return
+			}
+			delete(f.parked, id)
+			f.resumed = append(f.resumed, id)
+		}
 		f.got = append(f.got, body)
 		_ = json.NewEncoder(w).Encode(map[string]any{"delivered": "queued", "when": "immediate"})
 	default:
