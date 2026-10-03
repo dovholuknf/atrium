@@ -55,7 +55,7 @@ The sources are m1mini only, from 09-28 to 10-03 01:30Z:
 - a script that pairs each event with the 10 calls that follow it.
 
 The orchestrator runs on sg4-control, so it is not in the sample. The raw numbers and the measuring
-scripts are off-repo, because they read transcripts: `/Users/claude/blog-sources/rndctx/` on m1mini (`main.py` and
+scripts are off-repo on m1mini, because they read transcripts. They are in the blog sources (`rndctx/`: `main.py` and
 `report.py`, with the report `rnd-ctx-measure.md`). L5 reruns them.
 
 | | Compaction | Clear + handoff |
@@ -216,7 +216,7 @@ Nothing is lost, as section 1 shows.
 
 Checked on 2026-10-02 against Claude Code 2.1.288 and codex-cli 0.159.0, both installed on m1mini. OpenCode v1.18 and
 v2, and Gemini CLI 0.62, were checked from their docs and source only. The full notes are off-repo
-(`/tmp/rnd-ctx-runners.md`).
+(`rnd-ctx-runners.md`, beside the scripts in the blog sources).
 
 | | Claude Code | Codex CLI | OpenCode | Gemini CLI |
 |---|---|---|---|---|
