@@ -21,6 +21,8 @@ import (
 	"time"
 
 	"github.com/dovholuknf/atrium/internal/claudeconf"
+	"github.com/dovholuknf/atrium/internal/forge"
+	"github.com/dovholuknf/atrium/internal/gitsync"
 	"github.com/dovholuknf/atrium/internal/mcprule"
 	"github.com/dovholuknf/atrium/internal/store"
 )
@@ -69,6 +71,12 @@ type Server struct {
 	// an operator-written command, and looking at the directory the templates
 	// named needs the daemon's filesystem rather than the browser's.
 	Recognise func(url string) (*store.Resolved, error)
+	// PRForge picks the forge for a host, for making a worktree of a pull request. Owned by the daemon.
+	PRForge func(host string) (forge.Forge, error)
+	// SCMClone is the scm clone path (atrium_git_clone), for a PR on a repo with no checkout.
+	SCMClone func(ctx context.Context, url string) (gitsync.SCMResult, error)
+	// PRFetch fetches a PR head into a ref of the checkout. Nil runs git over https. A seam for tests.
+	PRFetch func(ctx context.Context, dir string, spec forge.FetchSpec, dst string) error
 	// PRRunner runs pull request reviews. Nil means the stub that fails every run
 	// as `runner not built`. See prs.go.
 	PRRunner PRRunner
@@ -556,6 +564,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /v1/providers/{name}/discover", s.discoverNow)
 	mux.HandleFunc("POST /v1/providers/{name}/check-worktrees", s.checkWorktrees)
 	mux.HandleFunc("POST /v1/providers/{name}/worktree", s.makeProviderWorktree)
+	mux.HandleFunc("POST /v1/providers/{name}/pr-worktree", s.makePRWorktree)
 	mux.HandleFunc("GET /v1/providers/{name}/repos", s.listProviderRepos)
 	mux.HandleFunc("GET /v1/providers/{name}/worktrees", s.listRepoWorktrees)
 	mux.HandleFunc("PUT /v1/providers/{name}/repos", s.saveProviderRepo)

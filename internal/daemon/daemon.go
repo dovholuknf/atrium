@@ -396,6 +396,8 @@ func New(opts Options) (*Daemon, error) {
 	d.ap.Recognise = d.Recognise
 	d.prr = newPRRunner(st, d.ap.PublishPR)
 	d.ap.PRRunner = d.prr
+	d.ap.PRForge = d.prr.forgeFor
+	d.ap.SCMClone = d.prWorktreeClone
 	d.ap.RunAction = d.handleRunAction
 	d.ap.CancelPending = d.CancelPending
 	d.ap.Settling = d.Settling

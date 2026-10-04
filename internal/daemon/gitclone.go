@@ -104,3 +104,17 @@ func (d *Daemon) handleGitClone(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(res)
 }
+
+// errPRCloneAdopt is what a PR worktree answers for a clone the operator made and has not said yes to. There is no
+// card to ask on, so the one yes comes from a card's atrium_git_clone.
+var errPRCloneAdopt = errors.New("the clone of this repo in the scm folder was made by the operator and atrium has " +
+	"not been given a yes to add its remotes to it. Run atrium_git_clone for it from a card, answer the question " +
+	"on the board, and ask again")
+
+// prWorktreeClone is the scm clone path for a pull request's worktree: the clone with its `hub` remote and `origin`
+// push guarded, the same as atrium_git_clone. A clone the operator made is not touched without the yes.
+func (d *Daemon) prWorktreeClone(ctx context.Context, url string) (gitsync.SCMResult, error) {
+	s := d.scm(nil)
+	s.Yes = func(context.Context, string) error { return errPRCloneAdopt }
+	return s.Clone(ctx, url)
+}
