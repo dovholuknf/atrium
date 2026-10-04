@@ -17172,13 +17172,18 @@ async function pullsSection(browser, base) {
     posts: [], gets: 0
   };
   const FINDINGS = [
-    { key: "f-1", position: 1, sev: "med", path: "a/b.go", line: 7, code: "x = 1", leak: "", walk: { state: "open", at: "", url: "" } },
-    { key: "f-2", position: 2, sev: "low", path: "c.go", line: 0, code: "y", leak: "secret", walk: { state: "open", at: "", url: "" } }
+    { key: "f-1", position: 1, file: "01-med-b.go-L7.txt", sev: "med", path: "a/b.go", line: 7, code: "x = 1", link: "", comment: "* c", evidence: {}, leak: "",
+      hunk: "", walk: { state: "open", at: "", url: "" }, text: "t", hash: "h1" },
+    { key: "f-2", position: 2, file: "02-low-c.go-L0.txt", sev: "low", path: "c.go", line: 0, code: "y", link: "", comment: "* c", evidence: {}, leak: "secret",
+      hunk: "", walk: { state: "open", at: "", url: "" }, text: "t", hash: "h2" }
   ];
+  const HALTED = { error: "atrium is halted and will not recover without a restart", cause: "disk full", halted: true };
   const navOf = () => st.rows.filter(r => !r.archived_at && (r.state === "ready" || r.state === "failed")).length;
   const json = (route, status, body) => route.fulfill({ status, contentType: "application/json", body: JSON.stringify(body) });
   const emit = (r) => put(r) || openStreams.forEach(s => { try { s.write("event: pr\ndata: " + JSON.stringify({ pr: r }) + "\n\n"); } catch (e) {} });
   const put = (r) => { const i = st.rows.findIndex(x => x.id === r.id); if (i >= 0) st.rows[i] = r; else st.rows.push(r); };
+  // the walker card does not exist in this mock, so the attach after a launch fails and the board stays on the pulls view
+  await ctx.route(/\/v1\/tasks\/t-walker$/, route => json(route, 404, { error: "no such task" }));
   await ctx.route(/\/v1\/prs(\/|\?|$)/, async route => {
     const req = route.request();
     const u = new URL(req.url());
@@ -17186,14 +17191,16 @@ async function pullsSection(browser, base) {
     const p = u.pathname;
     if (m === "GET" && p === "/v1/prs") {
       st.gets++;
-      if (st.halted) return json(route, 503, { error: "atrium is halted and will not recover without a restart", halted: true });
+      if (st.halted) return json(route, 503, HALTED);
       const rows = st.rows.slice().sort((a, b) => (a.created_at < b.created_at ? 1 : -1));
-      return json(route, 200, { prs: rows, counts: {}, nav_count: navOf() });
+      const counts = { queued: 0, fetching: 0, running: 0, ready: 0, failed: 0, aborted: 0 };
+      st.rows.filter(r => !r.archived_at).forEach(r => { counts[r.state]++; });
+      return json(route, 200, { prs: rows, counts, nav_count: navOf() });
     }
     st.posts.push(m + " " + p + " " + (req.postData() || ""));
     if (m === "POST" && p === "/v1/prs") {
       const b = JSON.parse(req.postData() || "{}");
-      if (st.halted) return json(route, 503, { error: "atrium is halted and will not recover without a restart", halted: true });
+      if (st.halted) return json(route, 503, HALTED);
       if (b.url.indexOf("nowhere") >= 0) return json(route, 422, { error: "no recogniser matches this", code: "no_recogniser" });
       if (b.url.indexOf("dup") >= 0) return json(route, 200, { pr: st.rows[0], created: false });
       const r = row("pr_new", { number: 99, title: "", state: "queued", created_at: "2026-10-01T12:00:00Z", why: b.why, url: b.url });
@@ -17205,18 +17212,29 @@ async function pullsSection(browser, base) {
     const cur = st.rows.find(r => r.id === id);
     if (!cur) return json(route, 404, { error: "no such pr", code: "not_found" });
     if (m === "POST" && rest === "/abort") {
-      if (cur.state === "ready") return json(route, 409, { error: "only a queued, fetching or running row can be aborted", code: "not_abortable", state: cur.state });
+      if (["queued", "fetching", "running"].indexOf(cur.state) < 0) return json(route, 409, { error: "only a queued, fetching or running row can be aborted", code: "not_abortable", state: cur.state });
       const r = Object.assign({}, cur, { state: "aborted", run_state: "" }); put(r); return json(route, 200, { pr: r });
     }
-    if (m === "POST" && rest === "/retry") { const r = Object.assign({}, cur, { state: "queued", run_error: "" }); put(r); return json(route, 202, { pr: r }); }
-    if (m === "POST" && rest === "/start") { const r = Object.assign({}, cur, { state: "fetching", run_state: "fetch" }); put(r); return json(route, 202, { pr: r }); }
-    if (m === "GET" && rest === "/findings") return json(route, 200, { pr: cur, findings: FINDINGS });
+    if (m === "POST" && rest === "/retry") {
+      if (cur.state !== "failed" && cur.state !== "aborted") return json(route, 409, { error: "only a failed or aborted row can be retried", code: "not_retryable", state: cur.state });
+      const r = Object.assign({}, cur, { state: "queued", run_error: "" }); put(r); return json(route, 202, { pr: r }); }
+    if (m === "POST" && rest === "/start") {
+      if (cur.state !== "queued") return json(route, 409, { error: "only a queued row can be started", code: "not_startable", state: cur.state });
+      const r = Object.assign({}, cur, { state: "fetching", run_state: "fetch" }); put(r); return json(route, 202, { pr: r }); }
+    if (m === "GET" && rest === "/findings") {
+      if (cur.state !== "ready") return json(route, 409, { error: "the review is not ready", code: "not_ready", state: cur.state });
+      return json(route, 200, { pr: cur, findings: FINDINGS });
+    }
     if (m === "GET" && rest === "") return json(route, 200, { pr: cur, run_log: "14:02:11 fetch start\n14:02:12 fetch FAILED\n" });
     if (m === "POST" && /^\/findings\/[^/]+\/walk$/.test(rest)) {
       const b = JSON.parse(req.postData());
+      if (["done", "skipped", "deferred", "open"].indexOf(b.state) < 0) return json(route, 400, { error: "state is done, deferred, skipped or open", code: "bad_request" });
       return json(route, 200, { ok: true, walk: { state: b.state, at: "2026-10-01T14:20:00Z", url: "" }, counts: { done: 1, skipped: 0, deferred: 0, open: 16 } });
     }
-    if (m === "POST" && rest === "/walker") { const r = Object.assign({}, cur, { walker_task: "t-walker" }); put(r); return json(route, 201, { pr: r, task: "t-walker", launched: true }); }
+    if (m === "POST" && rest === "/walker") {
+      if (cur.state !== "ready") return json(route, 409, { error: "the review is not ready", code: "not_ready", state: cur.state });
+      const r = Object.assign({}, cur, { walker_task: "t-walker" }); put(r); return json(route, 201, { pr: r, task: "t-walker", launched: true });
+    }
     return json(route, 404, { error: "no route", code: "not_found" });
   });
   const open = async () => {
@@ -17255,7 +17273,7 @@ async function pullsSection(browser, base) {
     if ((await text(p, "pr_a", ".pull-second")) !== "2nd: codex: 2 disputed, settled") fail("pulls: second: " + await text(p, "pr_a", ".pull-second"));
     // buttons per state
     const btns = id => p.evaluate(id => [...document.querySelectorAll('#pulls-list .pull[data-id="' + id + '"] .pull-acts button')].map(b => b.dataset.act).join(), id);
-    const want = { pr_a: "open,walker", pr_b: "abort", pr_c: "retry,log", pr_d: "start,abort", pr_e: "retry", pr_f: "abort" };
+    const want = { pr_a: "walk", pr_b: "abort", pr_c: "retry,log", pr_d: "start,abort", pr_e: "retry", pr_f: "abort" };
     for (const k of Object.keys(want)) { const b = await btns(k); if (b !== want[k]) fail("pulls: buttons of " + k + ": " + b); }
     // nav count from the load: one ready, one failed
     if (await nav(p) !== "2") fail("pulls: nav count at load: " + await nav(p));
@@ -17324,17 +17342,12 @@ async function pullsSection(browser, base) {
     await p.waitForFunction(() => /halted/.test(document.getElementById("pulls-note").textContent), null, { timeout: slow(5000) })
       .catch(() => fail("pulls: a halted 503 did not show the halted word"));
     st.halted = false;
-    // findings and walk marks, the walker (pr_b is ready now)
-    await p.click('#pulls-list .pull[data-id="pr_b"] button[data-act="open"]');
-    await p.waitForFunction(() => document.querySelectorAll('#pulls-list .pull[data-id="pr_b"] .pull-finding').length === 2, null, { timeout: slow(5000) })
-      .catch(() => fail("pulls: the findings did not draw"));
-    await p.click('#pulls-list .pull[data-id="pr_b"] .pull-finding[data-key="f-1"] button[data-state="done"]');
-    await p.waitForFunction(() => document.querySelector('#pulls-list .pull[data-id="pr_b"] .pull-finding[data-key="f-1"]').dataset.walk === "done", null, { timeout: slow(5000) })
-      .catch(() => fail("pulls: a walk mark did not land"));
-    if (!st.posts.some(x => x.indexOf("/findings/f-1/walk") >= 0 && x.indexOf('"state":"done"') >= 0)) fail("pulls: the walk mark did not post");
-    await p.click('#pulls-list .pull[data-id="pr_b"] button[data-act="walker"]');
-    await p.waitForFunction(() => document.querySelector('#pulls-list .pull[data-id="pr_b"] button[data-act="walker"]').textContent === "walker", null, { timeout: slow(5000) })
+    // the walk button on a ready row (pr_b is ready now) starts a walker. The drawer itself is pullsDrawer's
+    await p.click('#pulls-list .pull[data-id="pr_b"] button[data-act="walk"]');
+    await p.waitForFunction(() => pulls.rows.find(r => r.id === "pr_b").walker_task === "t-walker", null, { timeout: slow(5000) })
       .catch(() => fail("pulls: the walker launch did not land"));
+    if (!st.posts.some(x => x === 'POST /v1/prs/pr_b/walker {"action":"launch"}')) fail("pulls: the walk button did not post a launch");
+    if (await p.evaluate(() => document.querySelector("#pulls-list .pull-finding"))) fail("pulls: findings are still drawn inline");
     // the log of a failed row
     await p.click('#pulls-list .pull[data-id="pr_c"] button[data-act="log"]');
     await p.waitForFunction(() => /fetch FAILED/.test((document.querySelector('#pulls-list .pull[data-id="pr_c"] .pull-log') || {}).textContent || ""), null, { timeout: slow(5000) })
@@ -17847,6 +17860,243 @@ async function trayHeadSection(browser, base) {
     } finally { await ctx.close(); }
   }
   if (!bad) console.log("trayHead ok");
+}
+
+// The walk drawer over the real pulls routes: findings from /v1/prs/{id}/findings, an edit behind a content hash,
+// walk marks that move the row's counts, and the walker launch from the row's walk button.
+async function pullsDrawerSection(browser, base) {
+  const crypto = require("crypto");
+  const sha = t => crypto.createHash("sha256").update(t).digest("hex");
+  const was = tasksMode;
+  tasksMode = "land";
+  landList = [
+    landCard("land-pw1", { supervised: true, worktree: "/pr/walker" }),
+    landCard("land-pw2", { supervised: true, worktree: "/pr/walker2" }),
+    landCard("land-pw3", { supervised: true, worktree: "/pr/walker3" }),
+    landCard("land-pw4", { supervised: true, worktree: "/pr/walker4" })
+  ];
+  landPerms = [];
+  const errors = [];
+  const PR = "https://github.com/openziti/r/pull/1";
+  const mk = (key, pos, sev, file, line, code, bullet) => {
+    const text = PR + "\n" + sev.toUpperCase() + " " + file + " line " + line + ": " + code + "\n" + PR + "/files#diff-a" + line + "\n\n" +
+      bullet + "\n\nEvidence\nId: " + key.slice(2) + "\n";
+    return { key, position: pos, file: String(pos).padStart(2, "0") + "-" + sev + "-" + file.split("/").pop() + "-L" + line + ".txt", sev, path: file,
+      line, code, link: PR + "/files#diff-a" + line, comment: bullet, evidence: {}, leak: "",
+      hunk: "@@ -" + (line - 2) + ",3 +" + (line - 2) + ",4 @@\n before\n context\n+" + code + "\n after",
+      walk: { state: "open", at: "", url: "" }, text, hash: sha(text) };
+  };
+  const row = (id, extra) => Object.assign({
+    id, url: PR, host: "github.com", org: "openziti", repo: "r", org_repo: "openziti/r", number: 1, title: "title of " + id, why: "",
+    head: "", head7: "abc1234", state: "ready", run_state: "", run_error: "", cost_usd: 0, started_at: "", ready_at: "2026-10-01T09:20:00Z",
+    created_at: "2026-10-01T09:00:00Z", archived_at: "", run_dir: "", second: { state: "none", summary: "", error: "" }, author: "ekoby",
+    findings: { high: 0, med: 1, low: 1, nit: 0, leak: 0 }, walk: { done: 0, skipped: 0, deferred: 0, open: 2 }, walker_task: ""
+  }, extra);
+  const st = {
+    rows: [row("pr_w", { walker_task: "land-pw1", number: 1 }), row("pr_l", { number: 2, created_at: "2026-10-01T08:00:00Z" }),
+      // its walker's card is done, which the row does not know
+      row("pr_d", { number: 3, walker_task: "land-pwdead", created_at: "2026-10-01T07:00:00Z" }),
+      row("pr_x", { number: 4, walker_task: "land-pw4", created_at: "2026-10-01T06:00:00Z" })],
+    f: {}, puts: [], posts: [], files: 0, findingGets: 0
+  };
+  const fresh = () => [mk("f-1", 1, "med", "a/b.go", 7, "x = 1", "* first bullet"), mk("f-2", 2, "low", "c.go", 20, "y = 2", "* second bullet")];
+  st.f.pr_w = fresh();
+  st.f.pr_l = fresh();
+  st.f.pr_d = fresh();
+  st.f.pr_x = fresh();
+  st.gate = null;
+  const counts = id => {
+    const c = { done: 0, skipped: 0, deferred: 0, open: 0 };
+    for (const f of st.f[id]) c[f.walk.state]++;
+    return c;
+  };
+  const json = (route, status, body) => route.fulfill({ status, contentType: "application/json", body: JSON.stringify(body) });
+  const ctx = await landContext(browser);
+  await ctx.addInitScript(() => {
+    const Real = window.WebSocket;
+    window.WebSocket = function (url, protocols) {
+      if (!/\/attach(\?|$)/.test(url)) return new Real(url, protocols);
+      const s = { url, readyState: 0, binaryType: "arraybuffer", onopen: null, onclose: null, onmessage: null,
+        onerror: null, send() {}, close() { this.readyState = 3; } };
+      setTimeout(() => { s.readyState = 1; if (s.onopen) s.onopen({}); }, 0);
+      return s;
+    };
+    Object.assign(window.WebSocket, { CONNECTING: 0, OPEN: 1, CLOSING: 2, CLOSED: 3 });
+  });
+  const entry = { name: "01-med-b.go-L7.txt", dir: false, mtime: "2026-10-01T09:00:00Z", size: 10 };
+  await ctx.route(/\/v1\/tasks\/land-pw4\/files\/list/, route => json(route, 200, { entries: [entry] }));
+  await ctx.route(/\/v1\/tasks\/land-pw4\/files\/text/, route => json(route, 200, { text: st.f.pr_x[0].text, hash: "h", eol: "\n" }));
+  await ctx.route(/\/v1\/tasks\/land-pw[12]\/files\//, async route => { st.files++; return json(route, 404, { error: "no files here" }); });
+  await ctx.route(/\/v1\/prs(\/|\?|$)/, async route => {
+    const req = route.request();
+    const m = req.method();
+    const p = new URL(req.url()).pathname;
+    if (m === "GET" && p === "/v1/prs") {
+      if (st.gate) await st.gate;
+      st.rows.forEach(r => { r.walk = counts(r.id); });
+      return json(route, 200, { prs: st.rows, counts: { queued: 0, fetching: 0, running: 0, ready: 2, failed: 0, aborted: 0 }, nav_count: 2 });
+    }
+    if (m !== "GET") st.posts.push(m + " " + p + " " + (req.postData() || ""));
+    const mm = p.match(/^\/v1\/prs\/([^/]+)(\/.*)?$/);
+    const id = mm && mm[1], rest = (mm && mm[2]) || "";
+    const cur = st.rows.find(r => r.id === id);
+    if (!cur) return json(route, 404, { error: "no such pr", code: "not_found" });
+    if (m === "GET" && rest === "/findings") {
+      st.findingGets++;
+      cur.walk = counts(id);
+      return json(route, 200, { pr: cur, findings: st.f[id] });
+    }
+    const fm = rest.match(/^\/findings\/([^/]+)(\/walk)?$/);
+    const f = fm && st.f[id].find(x => x.key === decodeURIComponent(fm[1]));
+    if (fm && !f) return json(route, 404, { error: "no such finding", code: "not_found" });
+    if (m === "PUT" && fm && !fm[2]) {
+      const b = JSON.parse(req.postData() || "{}");
+      st.puts.push({ key: f.key, hash: b.hash, text: b.text, eol: b.eol });
+      if (!b.hash) return json(route, 400, { error: "a write has to say what it was based on", code: "bad_request" });
+      if (b.hash !== f.hash) {
+        return json(route, 409, { error: "that file changed while you were editing it. nothing was written.", code: "changed", text: f.text, hash: f.hash });
+      }
+      f.text = b.text;
+      f.hash = sha(b.text);
+      if (b.text.indexOf("NEWKEY") >= 0) f.key = f.key + "x";
+      return json(route, 200, { ok: true, hash: f.hash, key: f.key });
+    }
+    if (m === "POST" && fm && fm[2]) {
+      const b = JSON.parse(req.postData() || "{}");
+      if (["done", "skipped", "deferred", "open"].indexOf(b.state) < 0) return json(route, 400, { error: "state is done, deferred, skipped or open", code: "bad_request" });
+      f.walk = b.state === "open" ? { state: "open", at: "", url: "" } : { state: b.state, at: "2026-10-01T14:20:00Z", url: b.url || "" };
+      return json(route, 200, { ok: true, walk: f.walk, counts: counts(id) });
+    }
+    if (m === "POST" && rest === "/walker") {
+      // a live walker is answered as it is, a done one is replaced
+      if (cur.walker_task && cur.walker_task !== "land-pwdead") return json(route, 200, { pr: cur, task: cur.walker_task, launched: false });
+      cur.walker_task = cur.id === "pr_d" ? "land-pw3" : "land-pw2";
+      return json(route, 201, { pr: cur, task: cur.walker_task, launched: true });
+    }
+    return json(route, 404, { error: "no route", code: "not_found" });
+  });
+  const S = "#walk-drawer ";
+  try {
+    const p = await ctx.newPage();
+    p.on("pageerror", e => errors.push(String(e)));
+    await p.goto(base, { waitUntil: "domcontentloaded" });
+    await p.waitForSelector('#stack-list .stackrow[data-id="land-pw1"]', { state: "attached", timeout: slow(15000) });
+    await p.waitForFunction(() => typeof pulls !== "undefined" && pulls.loaded, null, { timeout: slow(15000) });
+    await p.evaluate(() => attachTask("land-pw1"));
+    await p.waitForFunction(() => termSock && termSock.readyState === 1 && termTask && termTask.id === "land-pw1", null, { timeout: slow(10000) });
+    await p.waitForSelector("#t-walk:not([hidden])", { timeout: slow(10000) })
+      .catch(() => fail("pullsDrawer: the walker of a pulls row has no walk button"));
+    await p.click("#t-walk");
+    await p.waitForFunction(() => document.querySelectorAll("#walk-rail .wk-row").length === 2, null, { timeout: slow(10000) })
+      .catch(() => fail("pullsDrawer: the rail did not draw the two findings of /v1/prs/pr_w/findings"));
+    if (!st.findingGets) fail("pullsDrawer: the findings were not read from /v1/prs");
+    if (st.files) fail("pullsDrawer: the drawer read the card's files: " + st.files);
+    const comment = () => p.textContent(S + ".wk-comment");
+    if (!/first bullet/.test(await comment())) fail("pullsDrawer: the comment is " + (await comment()));
+    const code = await p.$$eval(S + ".wk-code .wk-l", e => e.length);
+    if (code < 3) fail("pullsDrawer: the hunk drew " + code + " code lines");
+
+    // an edit quotes the hash it read, and follows the key the daemon gives back
+    const hash0 = st.f.pr_w[0].hash;
+    await p.focus("#walk-drawer");
+    await p.keyboard.press("e");
+    await p.fill("#walk-edit-text", "MED a/b.go line 7: x = 1\n\n* edited NEWKEY");
+    await p.click(S + '[data-act="save"]');
+    await p.waitForFunction(() => /edited NEWKEY/.test(document.querySelector("#walk-item .wk-comment")?.textContent || ""), null, { timeout: slow(5000) })
+      .catch(() => fail("pullsDrawer: a saved edit did not show"));
+    if (st.puts.length !== 1 || st.puts[0].key !== "f-1" || st.puts[0].hash !== hash0 || !/edited NEWKEY/.test(st.puts[0].text)) {
+      fail("pullsDrawer: the edit put " + JSON.stringify(st.puts));
+    }
+    if (await p.evaluate(() => dock.cur) !== "f-1x") fail("pullsDrawer: the drawer did not follow the new key: " + await p.evaluate(() => dock.cur));
+    const hash1 = st.f.pr_w[0].hash;
+    await p.focus("#walk-drawer");
+    await p.keyboard.press("e");
+    await p.fill("#walk-edit-text", "MED a/b.go line 7: x = 1\n\n* edited again");
+    await p.click(S + '[data-act="save"]');
+    await p.waitForFunction(() => /edited again/.test(document.querySelector("#walk-item .wk-comment")?.textContent || ""), null, { timeout: slow(5000) })
+      .catch(() => fail("pullsDrawer: a second edit did not show"));
+    if (st.puts.length !== 2 || st.puts[1].key !== "f-1x" || st.puts[1].hash !== hash1) fail("pullsDrawer: the second edit put " + JSON.stringify(st.puts[1]));
+
+    // a stale hash is said in words and nothing is written until it is chosen
+    const f0 = st.f.pr_w[0];
+    f0.text = f0.text.replace("* edited again", "* changed elsewhere");
+    f0.hash = sha(f0.text);
+    const diskHash = f0.hash;
+    await p.focus("#walk-drawer");
+    await p.keyboard.press("e");
+    await p.fill("#walk-edit-text", "MED a/b.go line 7: x = 1\n\n* mine");
+    await p.click(S + '[data-act="save"]');
+    await p.waitForSelector("#walk-cmp-disk", { timeout: slow(5000) })
+      .catch(() => fail("pullsDrawer: a stale hash did not open the compare"));
+    if (!/changed elsewhere/.test(await p.textContent("#walk-cmp-disk")) || !/mine/.test(await p.textContent("#walk-cmp-mine"))) fail("pullsDrawer: the compare lost a side");
+    if (!/nothing was written/.test(await p.textContent(S + ".wk-warns") || "")) fail("pullsDrawer: the stale answer was not said in words");
+    if (f0.text.indexOf("* mine") >= 0) fail("pullsDrawer: a stale write landed");
+    await p.click(S + '[data-act="keep"]');
+    await p.waitForFunction(() => /mine/.test(document.querySelector("#walk-item .wk-comment")?.textContent || ""), null, { timeout: slow(5000) })
+      .catch(() => fail("pullsDrawer: keep mine did not write"));
+    if (st.puts.length !== 4 || st.puts[3].hash !== diskHash) fail("pullsDrawer: keep mine put " + JSON.stringify(st.puts[3]));
+
+    // walk marks move the row's counts
+    const walkOf = () => p.evaluate(() => JSON.stringify(pulls.rows.find(r => r.id === "pr_w").walk));
+    await p.focus("#walk-drawer");
+    await p.keyboard.press("s");
+    await p.waitForFunction(() => document.querySelector("#walk-rail .wk-row.cur.skipped"), null, { timeout: slow(5000) })
+      .catch(() => fail("pullsDrawer: s did not mark the row skipped"));
+    if (await walkOf() !== JSON.stringify({ done: 0, skipped: 1, deferred: 0, open: 1 })) fail("pullsDrawer: the row counts after a skip: " + await walkOf());
+    await p.keyboard.press("j");
+    await p.keyboard.press("d");
+    await p.waitForFunction(() => document.querySelector("#walk-rail .wk-row.cur.deferred"), null, { timeout: slow(5000) })
+      .catch(() => fail("pullsDrawer: d did not defer the finding"));
+    if (await walkOf() !== JSON.stringify({ done: 0, skipped: 1, deferred: 1, open: 0 })) fail("pullsDrawer: the row counts after a defer: " + await walkOf());
+    if (!st.posts.some(x => x.indexOf("/findings/f-2/walk") >= 0 && x.indexOf('"state":"deferred"') >= 0)) fail("pullsDrawer: the defer did not post");
+    await p.keyboard.press("u");
+    await p.waitForFunction(() => !document.querySelector("#walk-rail .wk-row.deferred"), null, { timeout: slow(5000) })
+      .catch(() => fail("pullsDrawer: u did not put the finding back to open"));
+    if (await walkOf() !== JSON.stringify({ done: 0, skipped: 1, deferred: 0, open: 1 })) fail("pullsDrawer: the row counts after an undo: " + await walkOf());
+    await p.evaluate(() => switchView("pulls"));
+    const said = await p.evaluate(() => document.querySelector('#pulls-list .pull[data-id="pr_w"] .pull-state').textContent);
+    if (said !== "walking 1 of 2") fail("pullsDrawer: the pulls row says " + JSON.stringify(said));
+
+    // the walk button launches a walker when there is none, attaches it and opens the drawer
+    await p.click('#pulls-list .pull[data-id="pr_l"] button[data-act="walk"]');
+    await p.waitForFunction(() => termTask && termTask.id === "land-pw2" && !document.getElementById("walk-drawer").hidden, null, { timeout: slow(10000) })
+      .catch(() => fail("pullsDrawer: the walk button did not open the new walker's drawer"));
+    if (!st.posts.some(x => x === 'POST /v1/prs/pr_l/walker {"action":"launch"}')) fail("pullsDrawer: no walker launch was posted: " + st.posts.join(" | "));
+    await p.waitForFunction(() => document.querySelectorAll("#walk-rail .wk-row").length === 2, null, { timeout: slow(10000) })
+      .catch(() => fail("pullsDrawer: the launched walker's drawer has no findings"));
+    // the walker of a row finished: the daemon replaces a done walker and answers a live one as it is
+    await p.evaluate(() => switchView("pulls"));
+    await p.click('#pulls-list .pull[data-id="pr_d"] button[data-act="walk"]');
+    await p.waitForFunction(() => termTask && termTask.id === "land-pw3" && !document.getElementById("walk-drawer").hidden, null, { timeout: slow(10000) })
+      .catch(() => fail("pullsDrawer: walk on a row whose walker is done did not reach a new walker"));
+    await p.evaluate(() => switchView("pulls"));
+    await p.click('#pulls-list .pull[data-id="pr_d"] button[data-act="walk"]');
+    await p.waitForTimeout(300);
+    if (st.posts.filter(x => x === 'POST /v1/prs/pr_d/walker {"action":"launch"}').length !== 2) fail("pullsDrawer: walk did not ask the daemon for the walker every time");
+    if (await p.evaluate(() => termTask.id) !== "land-pw3") fail("pullsDrawer: a live walker was replaced");
+    await p.close();
+
+    // a walker's card attached before the rows are known is re-probed when they arrive, so its marks go to walk.txt
+    let release;
+    st.gate = new Promise(r => { release = r; });
+    const q = await ctx.newPage();
+    q.on("pageerror", e => errors.push(String(e)));
+    await q.goto(base, { waitUntil: "domcontentloaded" });
+    await q.waitForSelector('#stack-list .stackrow[data-id="land-pw4"]', { state: "attached", timeout: slow(15000) });
+    await q.evaluate(() => attachTask("land-pw4"));
+    await q.waitForSelector("#t-walk:not([hidden])", { timeout: slow(10000) });
+    if (await q.evaluate(() => walkTenant.prId)) fail("pullsDrawer: the review was known before the rows were");
+    st.gate = null;
+    release();
+    await q.waitForFunction(() => walkTenant.prId === "pr_x", null, { timeout: slow(10000) })
+      .catch(() => fail("pullsDrawer: a walker attached before the rows loaded stayed on the files source"));
+    if (errors.length) fail("pullsDrawer: the page threw: " + errors.join(" | "));
+  } finally {
+    await ctx.close();
+    tasksMode = was;
+    landList = [];
+  }
+  if (!bad) console.log("pullsDrawer ok");
 }
 
 // One hover per row: a row carries the tooltip and no descendant repeats it.
@@ -21399,7 +21649,7 @@ async function main() {
       termDebug: termDebugSection, termSortStarted: termSortStartedSection,
       noReadyChildren: noReadyChildrenSection, childUnderParent: childUnderParentSection, topNav: topNavSection,
       childFold: childFoldSection, liveHome: liveHomeSection,
-      pulls: pullsSection, hubRepos: hubReposSection, hubReposShelf: hubReposShelfSection, hubReposLedger: hubReposLedgerSection, hubReposFeed: hubReposFeedSection, changeReq: changeReqSection, mChangeReq: mChangeReqSection, trayHead: trayHeadSection, pullsAbsent: pullsAbsentSection, oneTooltip: oneTooltipSection, burnChart: burnChartSection, burnReadout: burnReadoutSection, switchPrewarm: switchPrewarmSection, attachAtOnce: attachAtOnceSection, keepAlive: keepAliveSection, switchBackCost: switchBackCostSection, keepMemory: keepMemorySection };
+      pulls: pullsSection, hubRepos: hubReposSection, hubReposShelf: hubReposShelfSection, hubReposLedger: hubReposLedgerSection, hubReposFeed: hubReposFeedSection, changeReq: changeReqSection, mChangeReq: mChangeReqSection, trayHead: trayHeadSection, pullsAbsent: pullsAbsentSection, oneTooltip: oneTooltipSection, burnChart: burnChartSection, burnReadout: burnReadoutSection, switchPrewarm: switchPrewarmSection, attachAtOnce: attachAtOnceSection, keepAlive: keepAliveSection, switchBackCost: switchBackCostSection, keepMemory: keepMemorySection, pullsDrawer: pullsDrawerSection };
     try {
       for (const n of process.env.HEADLESS_ONLY.split(",")) await only[n](browser, base);
     } catch (e) { fail("the headless run threw: " + (e && e.message ? e.message : e) + threwAt(e)); }
@@ -23465,6 +23715,7 @@ async function main() {
     await unit("switchPrewarm", () => switchPrewarmSection(browser, base));
     await unit("attachAtOnce", () => attachAtOnceSection(browser, base));
     await unit("keepAlive", () => keepAliveSection(browser, base));
+    await unit("pullsDrawer", () => pullsDrawerSection(browser, base));
   } catch (e) {
     // a listing has no browser, so a bare section call throws here, and the guard below names it
     if (!LIST_MODE) fail("the headless run threw: " + (e && e.message ? e.message : e) + threwAt(e));
