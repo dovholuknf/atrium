@@ -32,8 +32,15 @@
 # (docs/fabric/remote-launch.md section 3).
 #
 # THE REMOTE runs plain `sh -s` on Unix and Windows PowerShell 5.1 (-EncodedCommand) on Windows, the way
-# provision-room.ps1 does. No pwsh is needed there, only git. When git is missing the script names the install and
-# stops with exit 3.
+# provision-room.ps1 does. No pwsh is needed there, only git. When git is missing on macOS or Linux the script names the
+# install (they need sudo or xcode-select) and stops with exit 3.
+#
+# GIT ON A BARE WINDOWS BOX. A Windows remote with no git has no winget and no admin over ssh either, so `init` installs
+# MinGit itself: the latest git-for-windows release (or -GitVersion 2.56.0), its zip for the remote's architecture
+# downloaded HERE, checked against the SHA256 the release publishes, copied over, checked again there, unpacked to
+# ~\.local\git and ~\.local\git\cmd put on the user's Path. Nothing is pinned silently, and a zip that does not match is
+# never unpacked. Step line: `room-git git done MinGit <version> ...`. A rerun finds git and says `ok`. `init -Check`
+# installs nothing and reports git as missing. Nothing undoes it (`remove` takes the clone, not git).
 #
 # WINDOWS REMOTES. git-over-ssh runs `git-upload-pack '<path>'` in the ssh server's default shell. That works in
 # PowerShell, which is what a stock OpenSSH for Windows install uses here. It cannot work in cmd, which does not
@@ -88,7 +95,10 @@ param(
     [switch] $Force,
     # init: write nothing anywhere, report what init and push-base would have to fix.
     [switch] $Check,
+    # init, on a Windows remote with no git: the MinGit release to install. Default the latest. See "git on a bare Windows box".
+    [string] $GitVersion,
     [string] $Ssh = 'ssh',
+    [string] $Scp = 'scp',
     [string[]] $SshOption = @()
 )
 
@@ -145,7 +155,18 @@ $Repo = (Resolve-Path -LiteralPath $Repo).Path
 
 # git's ssh, with BatchMode so a target that wants a password fails at once rather than at a prompt.
 $sshBase = @('-o', 'BatchMode=yes', '-o', 'ConnectTimeout=25') + $SshOption
-$env:GIT_SSH_COMMAND = (@($Ssh) + $sshBase | ForEach-Object { if ($_ -match '\s') { "'$_'" } else { $_ } }) -join ' '
+. (Join-Path $PSScriptRoot 'room-mingit.ps1')
+
+# SCP FROM BESIDE SSH, when it was not named, as provision-room.ps1 does: Git's own scp runs its own ssh.
+if (-not $PSBoundParameters.ContainsKey('Scp')) {
+    $sshPath = (Get-Command $Ssh -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1).Source
+    if ($sshPath) {
+        $sib = Get-ChildItem -LiteralPath (Split-Path -Parent $sshPath) -Filter 'scp*' -ErrorAction SilentlyContinue |
+            Where-Object { $_.BaseName -eq 'scp' } | Select-Object -First 1
+        if ($sib) { $Scp = $sib.FullName }
+    }
+}
+$env:GIT_SSH_COMMAND =(@($Ssh) + $sshBase | ForEach-Object { if ($_ -match '\s') { "'$_'" } else { $_ } }) -join ' '
 
 function Invoke-Git {
     param([string[]] $gitArgs)
@@ -242,7 +263,7 @@ function Test-Ssh {
 function Get-GitInstallHint {
     switch ($script:remoteKind) {
         'mac' { 'xcode-select --install' }
-        'windows' { 'winget install --id Git.Git -e' }
+        'windows' { 'rerun init without -Check, which installs MinGit with no admin. or winget install --id Git.Git -e where there is a winget' }
         default {
             $r = Invoke-Remote 'if [ -r /etc/os-release ]; then . /etc/os-release; echo "id=$ID $ID_LIKE"; fi'
             $id = (ConvertFrom-KeyValue $r.Out).id
@@ -267,10 +288,47 @@ function Test-RemoteGit {
     }
     $r = Invoke-Remote $s
     if ($r.Code -ne 0) {
-        Fail 'git' 3 "git is not on $($script:sshTarget). install it there, then rerun: $(Get-GitInstallHint)"
+        if ($script:remoteOS -ne 'windows') {
+            Fail 'git' 3 "git is not on $($script:sshTarget). install it there, then rerun: $(Get-GitInstallHint)"
+        }
+        $v = Install-MinGit
+        Step 'git' 'done' "$v on $($script:sshTarget)"
+        return
     }
     $v = (ConvertFrom-KeyValue $r.Out).git
     Step 'git' 'ok' "$v on $($script:sshTarget)"
+}
+
+# Install-MinGit puts MinGit in the remote's home, see "git on a bare Windows box". Returns what it installed, as text.
+# A failure is `room-git git fail` and exit 3, since a human has to look (no network here, a release with no hash).
+function Install-MinGit {
+    $a = Invoke-Remote '"arch=$(if ($env:PROCESSOR_ARCHITEW6432) { $env:PROCESSOR_ARCHITEW6432 } else { $env:PROCESSOR_ARCHITECTURE })"'
+    $arch = (ConvertFrom-KeyValue $a.Out).arch
+    try { $rel = Get-MinGitRelease $GitVersion $arch }
+    catch { Fail 'git' 3 "git is not on $($script:sshTarget), and MinGit could not be chosen: $($_.Exception.Message). install git there, then rerun: $(Get-GitInstallHint)" }
+
+    $dir = Join-Path ([IO.Path]::GetTempPath()) 'atrium-mingit'
+    New-Item -ItemType Directory -Force -Path $dir | Out-Null
+    $zip = Join-Path $dir $rel.Name
+    $have = if (Test-Path -LiteralPath $zip) { (Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash.ToLower() } else { $null }
+    if ($have -ne $rel.Sha256) {
+        try { Invoke-WebRequest -Uri $rel.Url -OutFile $zip -UseBasicParsing -TimeoutSec 600 }
+        catch { Fail 'git' 3 "could not download $($rel.Url): $($_.Exception.Message)" }
+        $have = (Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash.ToLower()
+    }
+    if ($have -ne $rel.Sha256) {
+        Remove-Item -LiteralPath $zip -Force -ErrorAction SilentlyContinue
+        Fail 'git' 3 "SHA256 of $($rel.Name) is $have, and $($rel.Source) says $($rel.Sha256). not installed"
+    }
+
+    $zipRel = ".local\$($rel.Name)"
+    $null = Invoke-Remote 'New-Item -ItemType Directory -Force -Path (Join-Path $HOME ".local") | Out-Null'
+    $c = & $Scp @sshBase -q $zip "$($script:sshTarget):.local/$($rel.Name)" 2>&1
+    if ($LASTEXITCODE -ne 0) { Fail 'git' 3 "scp of $($rel.Name) to $($script:sshTarget) failed" @($c | ForEach-Object { "$_" }) }
+    $i = Invoke-Remote (Get-MinGitInstallScript $zipRel $rel.Sha256)
+    $kv = ConvertFrom-KeyValue $i.Out
+    if ($i.Code -ne 0 -or -not $kv.git) { Fail 'git' 3 "MinGit would not install on $($script:sshTarget): $($kv.err)" $i.Out }
+    "$($kv.git), MinGit $($rel.Version) from $($rel.Url), SHA256 $($rel.Sha256) ($($rel.Source)) verified, in ~\$($script:MinGitHome) and on the user Path"
 }
 
 # Get-RemoteHome is the remote home as an absolute path with forward slashes.
@@ -461,12 +519,17 @@ $new = -not (Test-Path (Join-Path $C '.git'))
 if ($new) { git init -q 2>&1 | Out-Null; if ($LASTEXITCODE -ne 0) { exit 4 } }
 $cur = "$(git config receive.denyCurrentBranch 2>$null)"
 if ($cur -ne 'updateInstead') { git config receive.denyCurrentBranch updateInstead; "config=changed" } else { "config=same" }
+# THE MARK THE ROOM'S GIT SYNC READS: atrium made this clone, so it is not the operator's and needs no "origin is not guarded" ask.
+# A clone with an origin was somebody's own, so only a new one or one with no origin (made by an earlier init) is marked.
+if (($new -or -not "$(git config remote.origin.url 2>$null)") -and "$(git config atrium.clone 2>$null)" -ne 'made') { git config atrium.clone made }
 "repo=$(if ($new) { 'new' } else { 'existing' })"
 '@
     } else {
         "C=$(Quote-Sh $clone)`n" + @'
 mkdir -p "$C" && cd "$C" || exit 4
 if [ -e .git ]; then echo repo=existing; else git init -q >/dev/null 2>&1 || exit 4; echo repo=new; fi
+# THE MARK THE ROOM'S GIT SYNC READS: atrium made this clone. A clone that has an origin was somebody's own.
+if [ -z "$(git config remote.origin.url 2>/dev/null)" ] && [ "$(git config atrium.clone 2>/dev/null)" != made ]; then git config atrium.clone made; fi
 if [ "$(git config receive.denyCurrentBranch 2>/dev/null)" = updateInstead ]; then echo config=same; else git config receive.denyCurrentBranch updateInstead; echo config=changed; fi
 '@
     }

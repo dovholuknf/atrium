@@ -721,6 +721,9 @@ script never reads or carries a credential, and the room is fine without it. `sm
 claude worker on the room through the hub (`-SmokeCwd`, `-SmokeTo`, `-SmokeTimeout` 180), waits for its report to
 carry a nonce, exits the card and confirms it left. It runs in the clone `room-git.ps1 init` made, else the path from this
 repository's git remote for the room, else `~/.atrium/smoke`, which it makes. Never the remote home. It is skipped when auth warned or with `-NoSmoke`, and a smoke that does not report is exit 8.
+A smoke card that does not report is read through the hub before it is exited, and the last lines of its own screen are
+printed under the `fail` line (`card: ...`), with the fix when it knows it: a card whose claude has no atrium-control
+tools means the `mcp` step did not run (a provision that stopped early), so rerun without `-SmokeOnly`.
 `-SmokeOnly` runs just `auth` and `smoke` against a room already provisioned. It stops before anything is written,
 so it is the one form that is safe against a room in use.
 
@@ -752,6 +755,13 @@ so it has the PATH a terminal has), registers nothing, and runs until the machin
 a room provisioned without autostart stays that way, and only an explicit `-Autostart` on the rerun registers it.
 `atrium-service.sh` leaves lingering off unless `ATRIUM_LINGER=1`, which `-Linger` passes. The package postinstall is
 unchanged.
+
+**A Windows machine nobody is logged in at.** The logon task is Interactive, so `schtasks /Run` does nothing while no
+one is at the machine, and a box reached only over ssh is that (last result 267011, 0x41303). Provision then starts the
+room with `room --detach`, which outlives the ssh session, and says `start warn` with the reason: the task starts the
+room at the next logon. The run goes on to the git step, the room's tools, auth and the smoke. Only when `room --detach`
+fails too is it `start fail` (exit 3). A start problem never skips the steps after it. The script is
+`scripts/room-start.ps1`, tested in `scripts/test-room-start.ps1`.
 
 **The account.** `-User localai` names the account the room must run as. It is checked over the ssh login and never
 created, because making one needs admin. A missing account prints the command (`net user localai /add` on Windows,
@@ -786,6 +796,16 @@ Then `push-base <room>` refreshes `hub-main`, `worktree <room> <name>` makes `cl
 the path for `atrium_launch room=<room>`, and `fetch <room>` brings the room's `claude/*` branches back to
 `<room>/claude/*` for the Release department to merge. The atrium binary does no git. See `docs/fabric/remote-launch.md`
 section 6.
+
+**Git on a bare Windows box.** A Windows room with no git has no winget and no admin over ssh, so `room-git.ps1 init`
+installs MinGit itself, from provision or by hand: the latest git-for-windows release (or `-GitVersion 2.56.0`), the zip
+for the remote's architecture downloaded on the hub's side, checked against the SHA256 the release publishes (its notes,
+else the asset's digest), copied over, checked again there, unpacked to `~\.local\git`, with `~\.local\git\cmd` put on the
+user's Path. A zip that does not match is never unpacked, and nothing is pinned silently. The step is `git done`, and a
+rerun finds git and says `ok`. macOS and Linux still print the install command (`xcode-select --install`, or the
+package manager), because those need sudo. `-Remove` leaves MinGit, since a git is useful to the account on its own.
+The clone `init` makes carries `atrium.clone=made` in its config, so the room's git sync knows atrium made it and does
+not ask the operator about guarding `origin` (the clone has no origin: it is filled by push).
 
 **Allowed folders.** A room has a list of folders atrium may launch in (its `browse_roots` setting), and claude's folder
 trust is written for each, so a launch never sits at "do you trust this folder" with nobody to answer. The `folders`

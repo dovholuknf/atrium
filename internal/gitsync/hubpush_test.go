@@ -178,6 +178,27 @@ func TestEnsureRemotesAddsHubFollowsAPortChangeAndGuardsOriginOnAtriumMadeClones
 	}
 }
 
+func TestEnsureRemotesLeavesARoomGitCloneAloneAndSilent(t *testing.T) {
+	// room-git.ps1 init makes the clone by push: no origin, and atrium.clone=made.
+	c := t.TempDir()
+	git(t, c, "init", "-q", "-b", "main")
+	git(t, c, "config", cfgMade, "made")
+	if note := ensureRemotes(bg, Default, c, "http://127.0.0.1:7777/git/hub/github/o/r.git", false); note != "" {
+		t.Fatalf("a room-git clone had something to say: %q", note)
+	}
+	if out, err := Default.Git(bg, c, "config", "--get", "remote.origin.pushurl"); err == nil {
+		t.Fatalf("a pushurl was made for an origin that is not there: %s", out)
+	}
+	// With an origin and the marker, it is guarded like any clone atrium made.
+	git(t, c, "remote", "add", "origin", t.TempDir())
+	if note := ensureRemotes(bg, Default, c, "http://127.0.0.1:7777/git/hub/github/o/r.git", false); note != "" {
+		t.Fatalf("a marked clone with an origin had something to say: %q", note)
+	}
+	if got := git(t, c, "config", "remote.origin.pushurl"); got != OriginPushURL {
+		t.Fatalf("origin pushurl is %q", got)
+	}
+}
+
 func TestSyncAddsTheHubRemoteAndGuardsTheOriginOfACloneItMade(t *testing.T) {
 	s := freshServed(t)
 	sy, root := newSyncer(t)

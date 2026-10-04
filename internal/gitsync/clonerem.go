@@ -23,7 +23,22 @@ func ensureRemotes(ctx context.Context, g *Runner, clone, forwarder string, made
 		notes = append(notes, note)
 	}
 
+	// A clone room-git.ps1 made by push has no origin at all, so there is no forge to push to and nothing to guard,
+	// and it carries atrium.clone=made so it is not mistaken for the operator's.
+	hasOrigin := false
+	if u, err := g.Git(ctx, clone, "config", "--get", "remote.origin.url"); err == nil && strings.TrimSpace(u) != "" {
+		hasOrigin = true
+	}
+	marked := false
+	if !madeHere {
+		if m, err := g.Git(ctx, clone, "config", "--get", cfgMade); err == nil && strings.TrimSpace(m) == "made" {
+			marked, madeHere = true, true
+		}
+	}
+
 	switch {
+	case marked && !hasOrigin:
+		// nothing to guard
 	case madeHere:
 		if _, err := g.Git(ctx, clone, "config", "remote.origin.pushurl", OriginPushURL); err != nil {
 			notes = append(notes, "could not guard origin against pushes: "+firstLine(err))
