@@ -1,0 +1,16 @@
+[
+  {
+    "id": "bitbucket-pull-request",
+    "label": "bitbucket pull request",
+    "enabled": true,
+    "rank": 30,
+    "pattern": "^https?://(?P<host>bitbucket\\.org)/(?P<org>[A-Za-z0-9_-][A-Za-z0-9_.-]*)/(?P<repo>[A-Za-z0-9_-][A-Za-z0-9_.-]*)/pull-requests/(?P<num>\\d+)(?:[/?#].*)?$",
+    "kind": "bitbucket",
+    "title": "{org}/{repo} PR {num}",
+    "tags": "pull-request,{repo}",
+    "cwd": "D:/worktrees/bitbucket/{org}/{repo}/pr-{num}",
+    "window": "pull-requests",
+    "prompt": "Review the pull request at {url}. The worktree is already on its branch.",
+    "notes": "The same thing as a github pull request with a different spelling in the path, which is exactly why the host is a field of its own rather than an assumption. No fetch here: fill one in with whatever reads your bitbucket, and the title and branch templates start working."
+  }
+]

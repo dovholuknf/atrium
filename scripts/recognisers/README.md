@@ -1,0 +1,103 @@
+# Recognisers
+
+A recogniser is a row that says what a URL means. Paste a pull request into the board and you get a launch
+dialog that already knows the repository, the organisation, the host, the branch, the title and a first
+instruction.
+
+**Atrium learns nothing about GitHub, Bitbucket, Jira or any ticketing system.** A recogniser is a pattern and a
+mapping, and whoever wrote the row did the understanding. That is the rule that lets this serve a system nobody
+has thought of yet, and it is why the table ships empty. These files are how you fill it. See `docs/runtime/scm-design.md`.
+
+## The shape
+
+```
+  pattern      a regular expression with named groups
+  rank         ordered, most specific first
+  label        what to call this kind of thing, shown when it answers
+  cwd          a template: where the work happens
+  title        a template
+  tags         a template, comma separated
+  prompt       a template: what the agent is told first
+  branch       a template, recorded on the card
+  window       a template: which pile the card lands in
+  theme        a template: the terminal palette
+  kind         a template: what to record as the source
+  fetch        OPTIONAL: an argv that prints more facts as JSON
+```
+
+Templates read `{host}`, `{org}`, `{repo}`, `{num}`, `{url}` and anything a `fetch` command adds. Whatever the
+pattern captures is a variable by that name.
+
+`host`, `org` and `repo` also go onto the card as themselves, which is how two forks of one repository stop
+landing in the same pile.
+
+## The three rules worth knowing before you write one
+
+**Order is the dispatch.** A URL matches the first enabled row that wants it, lowest rank first.
+`.../pull/5/files` and `.../pull/5` are the same pull request, and a generic "any repository" pattern will
+happily swallow both, so the specific rows sit above the generic one. Keep a shrug at the bottom: a URL on a
+host you know that matches nothing specific is still worth a dialog.
+
+**A hole is left standing.** A template that reads `{branch}` when nothing supplied one produces a field that
+still says `{branch}`, and the dialog says so. It is not blanked, because `feature/{branch}` blanked becomes
+`feature/`, which is a directory somebody creates by accident.
+
+**Atrium never makes the directory.** `cwd` is a path, and how that path comes into existence is somebody else's
+command. Where it is not there, the dialog says `... is not here yet. make the worktree, then start it`, and
+you go and make it with whatever makes worktrees here. Atrium does not know git and is not going to learn.
+
+## `fetch`, and why it holds no credential
+
+The pattern gives you an issue number. Turning that into a title needs an authenticated network call, and atrium
+does not make one. It runs an argv you wrote and reads a JSON object off its stdout:
+
+```
+  gh pr view {num} --repo {org}/{repo} --json title,headRefName
+```
+
+Every key in that object becomes a variable. `gh` already has a token, in the keyring it already uses. There is
+nowhere in a recogniser to put a credential, the same as a source, and that is the design rather than an
+omission.
+
+**The captures win.** A fetched fact only fills a name the pattern left empty, and never overwrites one it
+filled. A fetch reads whatever an issue tracker holds, and anybody can write into an issue tracker: one that
+could redefine `repo` could move `cwd`, which would mean the contents of an issue chose the directory a runner
+starts in.
+
+**A failing fetch is never fatal and never switches the row off.** The reason goes on the row, and the URL still
+resolves from its captures. Unlike a source, which is a timer nobody is watching, a recogniser runs because
+somebody just pasted a link with the board in front of them, and a row that switched itself off would turn "gh
+was not logged in" into "atrium is broken".
+
+Other rules, the same as a source: one megabyte of output, and thirty seconds. A fetch answering one issue
+number with more than that is reporting a repository.
+
+## What is in here
+
+| File | What it recognises |
+| --- | --- |
+| `github.json` | Pull requests, issues, and a bare repository as the shrug at the bottom. |
+| `bitbucket.json` | Pull requests, which are the same thing spelled differently in the path. |
+| `load.ps1` | Loads a file of rows into atrium. A loop over `PUT /v1/recognisers/{id}`. |
+
+Every example points at this operator's worktree layout, which is not yours. Pass `-Root` or edit the `cwd` of
+each row afterwards.
+
+```powershell
+./load.ps1 -Path ./github.json -Root D:/worktrees/github
+atrium open https://github.com/openziti/ziti/pull/4211
+```
+
+## Writing your own
+
+Write the pattern first and try it with nothing else filled in. `atrium open <url>` prints what resolved and
+starts nothing, which is the loop: paste, look, adjust a template, paste again. The same box is in the edit
+dialog under "try a url", and it names the row that answered, so "the generic row above swallowed my URL" is a
+thing you find out rather than wonder about.
+
+Add `fetch` last. A row with a good pattern and no fetch already fills in the directory, the tags and the
+window, which is most of what makes pasting a link better than typing a path.
+
+The most valuable row for a team is probably not a pull request at all. It is whatever your support tool's
+ticket URL looks like, pointing at a repository somebody has to be asked about, with a prompt that says what to
+read first.
