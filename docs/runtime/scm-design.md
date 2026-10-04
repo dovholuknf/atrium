@@ -268,7 +268,12 @@ One through four are built. Five is not, and is `docs/backlog.md` item 2.
 The table is `recogniser` in the store, `GET`/`PUT`/`DELETE /v1/recognisers` on the API, `POST /v1/recognise`
 for the verb, `atrium open <url>` on the command line, and a pane under runners on the board. The three places a
 URL gets pasted are all there: the launch dialog's link box, the CLI, and an offered card in the inbox whose
-link is put in that box ready to press. `scripts/recognisers` holds working rows and a README.
+link is put in that box ready to press. `scripts/recognisers` holds `github.json` (pull request, issue, and a bare
+repository as the shrug), `bitbucket.json` (pull request), `load.ps1` and a README. The table itself still ships
+empty: `./load.ps1 -Path ./github.json -Root <your worktrees>` PUTs each row to `/v1/recognisers/{id}`, and runs under
+`pwsh` on macOS and Linux as well as Windows. The rows' `cwd` templates are the original operator's layout, so pass
+`-Root` or edit them. The pull request patterns allow a trailing path, query or fragment and nothing in front of the
+marker, and `internal/api/recognisers_rows_test.go` loads each row through the real route to prove it.
 
 **A failing `fetch` does not switch the row off,** which the `fetch` section above says it should, by analogy
 with a source. The analogy is wrong in one respect and it is the deciding one. A source is a timer nobody is

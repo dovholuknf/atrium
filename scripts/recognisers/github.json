@@ -1,0 +1,65 @@
+[
+  {
+    "id": "github-pull-request",
+    "label": "github pull request",
+    "enabled": true,
+    "rank": 10,
+    "pattern": "^https?://(?P<host>github\\.com)/(?P<org>[^/]+)/(?P<repo>[^/]+)/pull/(?P<num>\\d+)(?:[/?#].*)?$",
+    "kind": "github",
+    "title": "{org}/{repo}#{num} {title}",
+    "tags": "pull-request,{repo}",
+    "cwd": "D:/worktrees/github/{org}/{repo}/pr-{num}",
+    "branch": "{headRefName}",
+    "window": "pull-requests",
+    "prompt": "Review the pull request at {url}.\n\nThe worktree is already on its branch. Read the diff against the base branch first, then the description, then the discussion. Report what you would block on and what is only a preference.",
+    "fetch": "gh",
+    "fetch_args": [
+      "pr",
+      "view",
+      "{num}",
+      "--repo",
+      "{org}/{repo}",
+      "--json",
+      "title,headRefName,baseRefName,isDraft"
+    ],
+    "notes": "A trailing path, query or fragment is allowed on purpose. .../pull/5/files and .../pull/5 are the same pull request. A path in front of /pull, or letters glued to the number, is not a pull request and does not match."
+  },
+  {
+    "id": "github-issue",
+    "label": "github issue",
+    "enabled": true,
+    "rank": 20,
+    "pattern": "^https?://(?P<host>github\\.com)/(?P<org>[^/]+)/(?P<repo>[^/]+)/issues/(?P<num>\\d+)(?:[/?#].*)?$",
+    "kind": "github",
+    "title": "{org}/{repo}#{num} {title}",
+    "tags": "issue,{repo}",
+    "cwd": "D:/worktrees/github/{org}/{repo}/issue-{num}",
+    "branch": "issue-{num}",
+    "window": "active-work",
+    "prompt": "Work on {url}.\n\n{body}",
+    "fetch": "gh",
+    "fetch_args": [
+      "issue",
+      "view",
+      "{num}",
+      "--repo",
+      "{org}/{repo}",
+      "--json",
+      "title,body"
+    ],
+    "notes": "An issue has no branch of its own, so the branch is named for the issue and the worktree is one you make before starting."
+  },
+  {
+    "id": "github-repo",
+    "label": "a repository on github",
+    "enabled": true,
+    "rank": 900,
+    "pattern": "^https?://(?P<host>github\\.com)/(?P<org>[^/]+)/(?P<repo>[^/]+)/?$",
+    "kind": "github",
+    "title": "{org}/{repo}",
+    "tags": "{repo}",
+    "cwd": "D:/git/github/{org}/{repo}",
+    "window": "active-work",
+    "notes": "THE SHRUG, and it belongs at the bottom. A url on a host we know that matches nothing more specific still gets a dialog, pointed at the clone. Refusing would be correct and useless."
+  }
+]

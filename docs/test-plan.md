@@ -8770,3 +8770,19 @@ Covered by `TestBriefFileCarriesTheGitURLLineOnce`, `TestABriefThatAlreadyHasThe
 `TestALaunchWithNoBriefCarriesTheLineOnItsPromptOnce`, `TestAResumeTakesNoGitURLLine`, `TestLaunchSkipsBriefOnResume`,
 `TestAnOutsideCodeCardsBriefAndPromptCarryNoGitURLLine`, `TestALaunchedOutsideCodeCardsBriefFileHasNoGitURLLine`,
 `TestTheGitURLLineIsConditionalOnHavingTheTool`.
+
+## IV. The shipped recogniser rows resolve pasted pull request links (r-scm-recognisers)
+
+Needs a throwaway board, never a live one, and `pwsh`.
+
+1. Run `pwsh scripts/recognisers/load.ps1 -Path scripts/recognisers/github.json -Root /tmp/wt` and the same for `bitbucket.json`.
+   Each row prints `loaded <id>`, and the board's recognisers pane lists four rows.
+2. `atrium open https://github.com/openziti/ziti/pull/4211` names `github-pull-request`, org `openziti`, repo `ziti`, and a cwd under
+   `/tmp/wt`. `.../pull/4211/files` resolves the same.
+3. `atrium open https://bitbucket.org/acme/widgets/pull-requests/77` names `bitbucket-pull-request` with title `acme/widgets PR 77`.
+4. An issue URL on Bitbucket, `.../extra/pull/4211`, and `.../pull/4211x` are each answered with "nothing recognises this".
+5. On macOS or Linux the loader runs the same as on Windows.
+
+Covered by `TestTheShippedGitHubRowsResolvePullRequestsAndIssues`, `TestTheShippedBitbucketRowResolvesAPullRequest` and
+`TestTheShippedRowsDoNotAnswerNearMisses` (api), which PUT each shipped row through the real route. The `fetch` step (`gh`) and item 5 on a real
+board are live checks.
