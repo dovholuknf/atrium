@@ -136,6 +136,8 @@ func TestTheShippedSupportRowsDefaultToZiti(t *testing.T) {
 			"discourse-topic", "6158", "D:/worktrees/github/openziti/ziti/discourse-6158"},
 		{"https://openziti.discourse.group/t/6158", "discourse-topic", "6158",
 			"D:/worktrees/github/openziti/ziti/discourse-6158"},
+		{"https://openziti.discourse.group/t/6158/6", "discourse-topic", "6158",
+			"D:/worktrees/github/openziti/ziti/discourse-6158"},
 	}
 	for _, c := range cases {
 		code, got := recogniseOver(t, s, st, c.url)

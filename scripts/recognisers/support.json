@@ -19,7 +19,7 @@
     "label": "discourse topic",
     "enabled": true,
     "rank": 55,
-    "pattern": "^https?://(?P<host>openziti\\.discourse\\.group)/t/(?:(?P<slug>[A-Za-z0-9_-]+)/)?(?P<num>\\d+)(?:[/?#].*)?$",
+    "pattern": "^https?://(?P<host>openziti\\.discourse\\.group)/t/(?:(?P<slug>[A-Za-z0-9_-]*[A-Za-z_-][A-Za-z0-9_-]*)/)?(?P<num>\\d+)(?:[/?#].*)?$",
     "kind": "discourse",
     "title": "discourse-{num}",
     "tags": "discourse,support,discourse-{num}",
