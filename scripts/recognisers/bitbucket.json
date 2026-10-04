@@ -12,5 +12,35 @@
     "window": "pull-requests",
     "prompt": "Review the pull request at {url}. The worktree is already on its branch.",
     "notes": "The same thing as a github pull request with a different spelling in the path, which is exactly why the host is a field of its own rather than an assumption. No fetch here: fill one in with whatever reads your bitbucket, and the title and branch templates start working."
+  },
+  {
+    "id": "bitbucket-issue",
+    "label": "bitbucket issue",
+    "enabled": true,
+    "rank": 40,
+    "pattern": "^https?://(?P<host>bitbucket\\.org)/(?P<org>[A-Za-z0-9_-][A-Za-z0-9_.-]*)/(?P<repo>[A-Za-z0-9_-][A-Za-z0-9_.-]*)/issues/(?P<num>\\d+)(?:[/?#].*)?$",
+    "kind": "bitbucket",
+    "title": "{org}/{repo} issue {num}",
+    "tags": "issue,{repo}",
+    "cwd": "D:/worktrees/bitbucket/{org}/{repo}/issue-{num}",
+    "branch": "issue-{num}",
+    "window": "active-work",
+    "prompt": "Work on {url}.",
+    "notes": "The trailing slug bitbucket adds after the number is allowed and ignored. No fetch, so the agent reads the issue itself."
+  },
+  {
+    "id": "bitbucket-branch",
+    "label": "bitbucket branch",
+    "enabled": true,
+    "rank": 45,
+    "pattern": "^https?://(?P<host>bitbucket\\.org)/(?P<org>[A-Za-z0-9_-][A-Za-z0-9_.-]*)/(?P<repo>[A-Za-z0-9_-][A-Za-z0-9_.-]*)/branch/(?P<ref>[A-Za-z0-9_-][A-Za-z0-9_.-]*(?:/[A-Za-z0-9_-][A-Za-z0-9_.-]*)*)/?(?:[?#].*)?$",
+    "kind": "bitbucket",
+    "title": "{org}/{repo} {ref}",
+    "tags": "branch,{repo}",
+    "cwd": "D:/worktrees/bitbucket/{org}/{repo}/{ref}",
+    "branch": "{ref}",
+    "window": "active-work",
+    "prompt": "Continue the work on branch {ref} of {org}/{repo} ({url}).\n\nRead the log against the default branch first, then say what the branch is doing and what looks unfinished.",
+    "notes": "The branch page, /branch/<name>. A /src/<name>/<path> url mixes the branch and a file path, so it is not matched."
   }
 ]

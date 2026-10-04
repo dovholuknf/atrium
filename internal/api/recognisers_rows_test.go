@@ -64,8 +64,8 @@ func recogniseOver(t *testing.T, s *Server, st *store.Store, url string) (int, s
 
 func TestTheShippedGitHubRowsResolvePullRequestsAndIssues(t *testing.T) {
 	s, st := recogniserServer(t)
-	if n := loadShippedRows(t, s, "github.json"); n != 3 {
-		t.Fatalf("github.json holds %d rows, wanted 3", n)
+	if n := loadShippedRows(t, s, "github.json"); n != 4 {
+		t.Fatalf("github.json holds %d rows, wanted 4", n)
 	}
 
 	cases := []struct {
@@ -104,8 +104,8 @@ func TestTheShippedGitHubRowsResolvePullRequestsAndIssues(t *testing.T) {
 
 func TestTheShippedBitbucketRowResolvesAPullRequest(t *testing.T) {
 	s, st := recogniserServer(t)
-	if n := loadShippedRows(t, s, "bitbucket.json"); n != 1 {
-		t.Fatalf("bitbucket.json holds %d rows, wanted 1", n)
+	if n := loadShippedRows(t, s, "bitbucket.json"); n != 3 {
+		t.Fatalf("bitbucket.json holds %d rows, wanted 3", n)
 	}
 	code, got := recogniseOver(t, s, st, "https://bitbucket.org/acme/widgets/pull-requests/77")
 	if code != http.StatusOK {
@@ -124,6 +124,37 @@ func TestTheShippedBitbucketRowResolvesAPullRequest(t *testing.T) {
 	}
 }
 
+func TestTheShippedSupportRowsDefaultToZiti(t *testing.T) {
+	s, st := recogniserServer(t)
+	if n := loadShippedRows(t, s, "support.json"); n != 2 {
+		t.Fatalf("support.json holds %d rows, wanted 2", n)
+	}
+	cases := []struct{ url, row, num, cwd string }{
+		{"https://netfoundry.zendesk.com/agent/tickets/15925", "zendesk-ticket", "15925",
+			"D:/worktrees/github/openziti/ziti/zendesk-15925"},
+		{"https://openziti.discourse.group/t/one-client-with-wrong-clock-caused-whole-network-down/6158/6",
+			"discourse-topic", "6158", "D:/worktrees/github/openziti/ziti/discourse-6158"},
+		{"https://openziti.discourse.group/t/6158", "discourse-topic", "6158",
+			"D:/worktrees/github/openziti/ziti/discourse-6158"},
+	}
+	for _, c := range cases {
+		code, got := recogniseOver(t, s, st, c.url)
+		if code != http.StatusOK || got.Recogniser != c.row || got.Vars["num"] != c.num || got.Cwd != c.cwd {
+			t.Fatalf("%s answered %d: %+v", c.url, code, got)
+		}
+	}
+	for _, url := range []string{
+		"https://netfoundry.zendesk.com/agent/tickets/15925x",
+		"https://other.zendesk.com/agent/tickets/15925",
+		"https://openziti.discourse.group/t/../6158",
+		"https://openziti.discourse.group/c/general/5",
+	} {
+		if code, got := recogniseOver(t, s, st, url); code != http.StatusNotFound {
+			t.Fatalf("%s answered %d by %q, wanted 404", url, code, got.Recogniser)
+		}
+	}
+}
+
 // Near misses. An issue is not a pull request, extra path IN FRONT of the
 // marker is a different thing, and letters glued to the number are not a number.
 // None may be answered by the pull request rows.
@@ -133,7 +164,6 @@ func TestTheShippedRowsDoNotAnswerNearMisses(t *testing.T) {
 	loadShippedRows(t, s, "bitbucket.json")
 
 	for _, url := range []string{
-		"https://bitbucket.org/acme/widgets/issues/77",
 		"https://bitbucket.org/acme/widgets/extra/pull-requests/77",
 		"https://bitbucket.org/acme/widgets/pull-requests/77x",
 		"https://bitbucket.org/acme/widgets/pull-requests/",
@@ -147,6 +177,9 @@ func TestTheShippedRowsDoNotAnswerNearMisses(t *testing.T) {
 		"https://github.com/../..",
 		"https://bitbucket.org/../widgets/pull-requests/77",
 		"https://bitbucket.org/acme/./pull-requests/77",
+		"https://github.com/openziti/ziti/tree/../x",
+		"https://github.com/openziti/ziti/tree/main/../..",
+		"https://bitbucket.org/acme/widgets/branch/./x",
 	} {
 		if code, got := recogniseOver(t, s, st, url); code != http.StatusNotFound {
 			t.Fatalf("%s answered %d by %q, wanted 404", url, code, got.Recogniser)
@@ -157,6 +190,17 @@ func TestTheShippedRowsDoNotAnswerNearMisses(t *testing.T) {
 	_, got := recogniseOver(t, s, st, "https://github.com/openziti/ziti/issues/12")
 	if got.Recogniser == "github-pull-request" {
 		t.Fatal("an issue was answered as a pull request")
+	}
+	if _, got := recogniseOver(t, s, st, "https://bitbucket.org/acme/widgets/issues/77"); got.Recogniser != "bitbucket-issue" {
+		t.Fatalf("a bitbucket issue: %+v", got)
+	}
+	for url, want := range map[string]string{
+		"https://github.com/openziti/ziti/tree/feature/x":     "D:/worktrees/github/openziti/ziti/feature/x",
+		"https://bitbucket.org/acme/widgets/branch/feature/x": "D:/worktrees/bitbucket/acme/widgets/feature/x",
+	} {
+		if _, got := recogniseOver(t, s, st, url); got.Cwd != want || got.Branch != "feature/x" {
+			t.Fatalf("%s: %+v", url, got)
+		}
 	}
 	// The shrug at the bottom takes a bare repository and nothing longer.
 	if _, repo := recogniseOver(t, s, st, "https://github.com/openziti/ziti"); repo.Recogniser != "github-repo" {

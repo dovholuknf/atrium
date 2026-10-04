@@ -50,6 +50,21 @@
     "notes": "An issue has no branch of its own, so the branch is named for the issue and the worktree is one you make before starting."
   },
   {
+    "id": "github-branch",
+    "label": "github branch",
+    "enabled": true,
+    "rank": 25,
+    "pattern": "^https?://(?P<host>github\\.com)/(?P<org>[A-Za-z0-9_-][A-Za-z0-9_.-]*)/(?P<repo>[A-Za-z0-9_-][A-Za-z0-9_.-]*)/tree/(?P<ref>[A-Za-z0-9_-][A-Za-z0-9_.-]*(?:/[A-Za-z0-9_-][A-Za-z0-9_.-]*)*)/?(?:[?#].*)?$",
+    "kind": "github",
+    "title": "{org}/{repo} {ref}",
+    "tags": "branch,{repo}",
+    "cwd": "D:/worktrees/github/{org}/{repo}/{ref}",
+    "branch": "{ref}",
+    "window": "active-work",
+    "prompt": "Continue the work on branch {ref} of {org}/{repo} ({url}).\n\nRead the log against the default branch first, then say what the branch is doing and what looks unfinished.",
+    "notes": "A tree url can also carry a folder after the branch, and the url alone cannot say where the branch name stops. The whole tail is taken as the branch, so paste the branch page, not a folder in it. Every segment starts with a letter, digit, _ or -, so no segment is . or .. and the worktree path cannot climb out."
+  },
+  {
     "id": "github-repo",
     "label": "a repository on github",
     "enabled": true,
