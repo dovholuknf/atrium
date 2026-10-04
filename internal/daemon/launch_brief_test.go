@@ -119,7 +119,8 @@ func TestABriefThatAlreadyHasTheLineIsNotDoubled(t *testing.T) {
 // given to a file, and returns what it wrote ("" if it was never started).
 func promptSeenBy(t *testing.T, d *Daemon, req LaunchRequest) string {
 	t.Helper()
-	out := filepath.Join(t.TempDir(), "prompt.txt")
+	// forward slashes: sh on Windows reads a backslash in the redirect as an escape
+	out := filepath.ToSlash(filepath.Join(t.TempDir(), "prompt.txt"))
 	if _, err := d.st.SaveHarness(store.Harness{
 		ID: "promptcatch", Label: "prompt catch", Enabled: true, Cmd: "sh", LaunchMode: store.LaunchPTY,
 		PromptArgs: []string{"-c", `printf %s "$0" > ` + out + `; sleep 5`, "{prompt}"},
