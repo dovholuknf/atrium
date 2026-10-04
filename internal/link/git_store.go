@@ -34,23 +34,9 @@ func (p *Proxy) serveGitStore(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	reach := ""
-	switch edge.ReachOf(r) {
-	case edge.ReachZrokPublic:
-		// The same answer as a path that is not there: a public share does not say it is a git server.
-		http.NotFound(w, r)
+	reach, ok := gitReach(w, r)
+	if !ok {
 		return
-	case edge.ReachOverlay:
-		reach = "overlay"
-	case edge.ReachZrokPrivate:
-		reach = "zrok-private"
-	default:
-		if !edge.LocalOperator(r) {
-			http.Error(w, "the hub's git store is reached from the machine the hub runs on, or over the board's overlay"+
-				edge.ProxyNote(r), http.StatusForbidden)
-			return
-		}
-		reach = "loopback"
 	}
 	// A FETCH PASSED THROUGH TO A ROOM, for the operator. A card on a room is not served here (it would come in
 	// on the link's git kind, which does not route /git/room/), so there is no card to name and none is read.
@@ -61,6 +47,28 @@ func (p *Proxy) serveGitStore(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx := gitsync.WithCaller(r.Context(), gitsync.Caller{Kind: gitsync.CallerOperator})
 	g.StoreHandler().ServeHTTP(w, r.WithContext(ctx))
+}
+
+// gitReach says which of the hub's git reaches a request came in on, and writes the refusal when it may not use any:
+// a zrok public share is 404 whatever else is true, an overlay or a zrok private share is the operator's, and anything
+// else has to be loopback on this machine. The pass-through, the store and the lookup (git_url.go) share this rule.
+func gitReach(w http.ResponseWriter, r *http.Request) (reach string, ok bool) {
+	switch edge.ReachOf(r) {
+	case edge.ReachZrokPublic:
+		// The same answer as a path that is not there: a public share does not say it is a git server.
+		http.NotFound(w, r)
+		return "", false
+	case edge.ReachOverlay:
+		return "overlay", true
+	case edge.ReachZrokPrivate:
+		return "zrok-private", true
+	}
+	if !edge.LocalOperator(r) {
+		http.Error(w, "the hub's git store is reached from the machine the hub runs on, or over the board's overlay"+
+			edge.ProxyNote(r), http.StatusForbidden)
+		return "", false
+	}
+	return "loopback", true
 }
 
 // readerKey is who the rate and the budget count a reader as: the reach and the peer's address.

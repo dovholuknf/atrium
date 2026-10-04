@@ -634,45 +634,62 @@ func (s *Store) View(ctx context.Context) ([]RepoView, error) {
 	}
 	out := make([]RepoView, 0, len(ents))
 	for _, e := range ents {
-		v := RepoView{
-			Host: e.Ref.Host, Owner: e.Ref.Owner, Repo: e.Ref.Repo, URL: CloneURL(e.Ref),
-			Path: "/git/hub/" + e.Ref.Name() + ".git", Branches: []BranchView{},
-		}
-		heads, _ := s.heads(ctx, e.Dir)
-		// THE PUSH LOG says who owns each branch and when it was last pushed. A row whose ref is gone is
-		// ignored, because only the refs git has are listed, and a branch with no row (made on the hub's disk)
-		// shows its commit time and no owner.
-		recs := map[string]BranchRecord{}
-		if s.h.PushLog != nil {
-			if rs, err := s.h.PushLog.Branches(ctx, e.Ref.Name()); err == nil {
-				for _, r := range rs {
-					recs[r.Ref] = r
-				}
-			}
-		}
-		for _, h := range heads {
-			switch h.name {
-			case "main":
-				v.Main.SHA = h.SHA
-				if at := s.mainAt(ctx, e.Ref.Name(), Tip{SHA: h.SHA, At: h.at}); at != nil {
-					str := at.UTC().Format(time.RFC3339)
-					v.Main.At = &str
-				}
-			case "claude/main":
-			default:
-				b := BranchView{Name: h.name, SHA: h.SHA, At: h.at.UTC().Format(time.RFC3339)}
-				if r, ok := recs[headsPrefix+h.name]; ok {
-					b.Room, b.Card, b.Released = r.Room, r.Card, r.Released
-					if !r.At.IsZero() {
-						b.At = r.At.UTC().Format(time.RFC3339)
-					}
-				}
-				v.Branches = append(v.Branches, b)
-			}
-		}
-		out = append(out, v)
+		out = append(out, s.viewEntry(ctx, e))
 	}
 	return out, nil
+}
+
+// ViewOne is View for one repository, by its canonical name. False when the store does not hold it.
+func (s *Store) ViewOne(ctx context.Context, name string) (RepoView, bool) {
+	ref, err := ParseName(name)
+	if err != nil {
+		return RepoView{}, false
+	}
+	dir := s.dir(ref)
+	if !isMarked(dir) {
+		return RepoView{}, false
+	}
+	return s.viewEntry(ctx, Entry{Ref: ref, Dir: dir}), true
+}
+
+func (s *Store) viewEntry(ctx context.Context, e Entry) RepoView {
+	v := RepoView{
+		Host: e.Ref.Host, Owner: e.Ref.Owner, Repo: e.Ref.Repo, URL: CloneURL(e.Ref),
+		Path: "/git/hub/" + e.Ref.Name() + ".git", Branches: []BranchView{},
+	}
+	heads, _ := s.heads(ctx, e.Dir)
+	// THE PUSH LOG says who owns each branch and when it was last pushed. A row whose ref is gone is
+	// ignored, because only the refs git has are listed, and a branch with no row (made on the hub's disk)
+	// shows its commit time and no owner.
+	recs := map[string]BranchRecord{}
+	if s.h.PushLog != nil {
+		if rs, err := s.h.PushLog.Branches(ctx, e.Ref.Name()); err == nil {
+			for _, r := range rs {
+				recs[r.Ref] = r
+			}
+		}
+	}
+	for _, h := range heads {
+		switch h.name {
+		case "main":
+			v.Main.SHA = h.SHA
+			if at := s.mainAt(ctx, e.Ref.Name(), Tip{SHA: h.SHA, At: h.at}); at != nil {
+				str := at.UTC().Format(time.RFC3339)
+				v.Main.At = &str
+			}
+		case "claude/main":
+		default:
+			b := BranchView{Name: h.name, SHA: h.SHA, At: h.at.UTC().Format(time.RFC3339)}
+			if r, ok := recs[headsPrefix+h.name]; ok {
+				b.Room, b.Card, b.Released = r.Room, r.Card, r.Released
+				if !r.At.IsZero() {
+					b.At = r.At.UTC().Format(time.RFC3339)
+				}
+			}
+			v.Branches = append(v.Branches, b)
+		}
+	}
+	return v
 }
 
 // mainAt is the time shown for main: the hook if a test set one, else the last push of main by the operator,

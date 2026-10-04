@@ -24,6 +24,8 @@ import (
 // is parsed into host, owner and repository and refused if it carries a credential, and only
 // those three parts are kept (internal/gitsync/store_name.go). Everything else is a room, a
 // repository name from `git_repos`, and whether to init, and the rest is the operator's setting.
+// GET /_hub/git/url and atrium_git_url take a repository and a branch to LOOK UP, and give neither to git: the repository
+// is found in the list the hub knows, and the branch is compared with the names that were listed (git_url.go).
 
 // GitRooms adapts this hub to what internal/gitsync needs of the link.
 func (h *Hub) GitRooms() gitsync.Rooms { return hubGitRooms{h} }
@@ -69,7 +71,7 @@ func (p *Proxy) SetGitSettings(s GitSettings, hubDir string) {
 	p.gitSettings, p.gitDir = s, hubDir
 }
 
-// serveGit answers /_hub/git/{sync,collect,status,init,release,settings,repos}. Loopback only, like the
+// serveGit answers /_hub/git/{sync,collect,status,init,release,settings,repos,url}. Loopback only, like the
 // control server, for everything but the list of repos: these start work on a room or on the
 // hub's disk, and an overlay is not an auth layer.
 func (p *Proxy) serveGit(w http.ResponseWriter, r *http.Request, sub string) {
@@ -95,6 +97,11 @@ func (p *Proxy) serveGit(w http.ResponseWriter, r *http.Request, sub string) {
 			return
 		}
 		_ = json.NewEncoder(w).Encode(map[string]any{"repos": repos})
+		return
+	}
+	// THE LOOKUP has the reaches of a fetch, not of a sync: it starts no work and names no path. See git_url.go.
+	if sub == "git/url" {
+		p.serveGitURL(w, r, g, fail)
 		return
 	}
 	if !edge.LocalOperator(r) {
@@ -316,6 +323,8 @@ func (c *controlMCP) registerGit(s *mcp.Server, class ctlClass) {
 	// In the worker set too (workerTools): the cards that push are workers.
 	addTool(s, class, &mcp.Tool{Name: "atrium_git_push", Description: gitPushToolDesc},
 		audited(c, "ctl-git-push", describeGitPush, c.gitPushHandler))
+	// And the cards that read code they do not have. A read, so no audit line. See git_url.go.
+	addTool(s, class, &mcp.Tool{Name: "atrium_git_url", Description: gitURLToolDesc}, c.gitURLHandler)
 }
 
 // describeGitSync names the room and repository, and whether it may have made a clone.
