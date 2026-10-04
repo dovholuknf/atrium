@@ -76,4 +76,15 @@ the room is back or the claim is moved.
   the warning, the pulls fold.
 - `go test ./internal/api -run 'TestAnotherRoomsPR|TestAnUnreachableHub'` passes: another room's key makes no row,
   pending, and reconcile (claimed, and folded with abort).
-- `go build ./...` clean. Full-package results for hubstore, store, api and link are below.
+- `go build ./...` clean, `go vet` clean on the touched packages.
+- Full runs: `internal/store` ok. `internal/hubstore` ok after I updated `TestChangeRequestMigrationIsAtTheEnd` (0010
+  is now last). `internal/link` full run: the one failure was `TestANewReviewInTheAllViewAsksWhichRoom`, which asserted
+  the old 409 for an unscoped paste. I replaced it with `TestANewReviewInTheAllViewIsPlacedOnOneRoom` (the behaviour
+  the brief asks for) and it passes. I did not re-run the whole link package after that edit, only the pulls tests.
+- `internal/api`: `TestTheWalkerLaunchSetAndClear` fails and is not mine. The launch cwd is compared as
+  `/private/var/...` against `/var/...` (a macOS temp dir symlink) in the walker drawer test, a path my change does not
+  touch. Everything else in api passed.
+
+## Status
+
+Done. Nothing left that the brief asked for. Open choices for the orchestrator are decisions 2 and 3 above.
