@@ -78,13 +78,19 @@ number with more than that is reporting a repository.
 | --- | --- |
 | `github.json` | Pull requests, issues, and a bare repository as the shrug at the bottom. |
 | `bitbucket.json` | Pull requests, which are the same thing spelled differently in the path. |
+| `support.json` | Zendesk tickets and Discourse topics. Its rows default to the openziti/ziti worktree. |
 | `load.ps1` | Loads a file of rows into atrium. A loop over `PUT /v1/recognisers/{id}`. |
 
 Every example points at this operator's worktree layout, which is not yours. Pass `-Root` or edit the `cwd` of
 each row afterwards.
 
+Recognisers are stored per room. Against a hub, which sees every room at once, a write is refused with a 409 and the
+list of rooms until you pick one. `-Room <name>` sends `X-Atrium-Room`, and defaults to `$env:ATRIUM_ROOM`. A 409 or
+a 400 (a pattern that does not compile) prints the hub's own sentence.
+
 ```powershell
 ./load.ps1 -Path ./github.json -Root D:/worktrees/github
+./load.ps1 -Path ./support.json -Room sg4
 atrium open https://github.com/openziti/ziti/pull/4211
 ```
 
