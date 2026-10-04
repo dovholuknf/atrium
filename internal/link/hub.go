@@ -106,6 +106,10 @@ type Hub struct {
 	// GitStore serves the hub's own store (`/git/hub/...`) to a room on the same `git` kind, as that room.
 	// Nil serves rooms the mirrors alone. The board serves the same store to the operator. See git_store.go.
 	GitStore http.Handler
+	// PRClaim answers a room's claim on a PR key, on the same `git` kind connection, at PRClaimPrefix. The room is the
+	// one the hello named, set on the request by serveGit and never read from the room's own headers. Nil answers 404,
+	// which a room reads as a hub that cannot be asked, so its row is `claim: pending`. See prclaim.go.
+	PRClaim http.Handler
 
 	mu    sync.Mutex
 	rooms map[string]*attached

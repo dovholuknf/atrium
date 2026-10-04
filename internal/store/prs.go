@@ -9,6 +9,7 @@ import (
 	"path"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 )
 
@@ -83,18 +84,20 @@ type PRReview struct {
 	// WalkerTask is the card walking it. An override: only a person or the walker
 	// launch ever writes it.
 	WalkerTask string `json:"walker_task"`
+	// Claim is where the row stands with the hub's claim table. See migration 0081.
+	Claim string `json:"claim,omitempty"`
 }
 
 const prColumns = `id, run_dir, url, why, host, org, repo, number, reviewed_head, observed_title,
 	observed_author, walker_task, archived_at, state, run_state, run_error, cost_usd,
-	started_at, ready_at, second_state, second_summary, second_error, created_at`
+	started_at, ready_at, second_state, second_summary, second_error, created_at, claim`
 
 func scanPR(sc interface{ Scan(...any) error }) (*PRReview, error) {
 	var p PRReview
 	if err := sc.Scan(&p.ID, &p.RunDir, &p.URL, &p.Why, &p.Host, &p.Org, &p.Repo, &p.Number,
 		&p.Head, &p.Title, &p.Author, &p.WalkerTask, &p.Archived, &p.State, &p.RunState,
 		&p.RunError, &p.CostUSD, &p.StartedAt, &p.ReadyAt, &p.Second.State,
-		&p.Second.Summary, &p.Second.Error, &p.CreatedAt); err != nil {
+		&p.Second.Summary, &p.Second.Error, &p.CreatedAt, &p.Claim); err != nil {
 		return nil, err
 	}
 	p.OrgRepo = p.Org + "/" + p.Repo
@@ -116,6 +119,8 @@ type NewPR struct {
 	// step fills it in.
 	Head   string
 	RunDir string
+	// Claim is '' or what the hub said when the row was made, 'claimed' or 'pending'.
+	Claim string
 }
 
 var hexHead = regexp.MustCompile(`^[0-9a-fA-F]{7,40}$`)
@@ -152,10 +157,10 @@ func (st *Store) CreatePR(in NewPR) (*PRReview, bool, error) {
 		}
 		id := newID()
 		_, err := st.db.Exec(`INSERT INTO pr_review
-			(id, run_dir, url, why, host, org, repo, number, reviewed_head, created_at)
-			VALUES (?,?,?,?,?,?,?,?,?,?)`,
+			(id, run_dir, url, why, host, org, repo, number, reviewed_head, created_at, claim)
+			VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
 			id, in.RunDir, strings.TrimSpace(in.URL), in.Why, in.Host, in.Org, in.Repo,
-			in.Number, strings.ToLower(in.Head), ts(now()))
+			in.Number, strings.ToLower(in.Head), ts(now()), in.Claim)
 		if err != nil {
 			return err
 		}
@@ -814,4 +819,39 @@ func literalChars(glob string) int {
 		}
 	}
 	return n
+}
+
+// SetPRClaim records where a row stands with the hub's claim table.
+func (st *Store) SetPRClaim(id, claim string) error {
+	return st.guard(func() error {
+		_, err := st.db.Exec(`UPDATE pr_review SET claim = ? WHERE id = ?`, claim, id)
+		return err
+	})
+}
+
+// PendingClaims is the rows made while the hub could not be reached, oldest first.
+func (st *Store) PendingClaims() ([]*PRReview, error) {
+	var out []*PRReview
+	err := st.guard(func() error {
+		rows, err := st.db.Query(`SELECT ` + prColumns + ` FROM pr_review WHERE claim = 'pending' ORDER BY created_at`)
+		if err != nil {
+			return err
+		}
+		defer rows.Close()
+		for rows.Next() {
+			p, err := scanPR(rows)
+			if err != nil {
+				return err
+			}
+			out = append(out, p)
+		}
+		return rows.Err()
+	})
+	return out, err
+}
+
+// PRKey is the canonical key of a pull request across rooms, host/org/repo/number in lower case. The hub's claim
+// table is keyed on the same string.
+func PRKey(host, org, repo string, number int) string {
+	return strings.ToLower(host + "/" + org + "/" + repo + "/" + strconv.Itoa(number))
 }

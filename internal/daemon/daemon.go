@@ -1467,3 +1467,12 @@ func (d *Daemon) blockedAgents() int {
 	}
 	return len(pending)
 }
+
+// SetPRClaim gives the PR door its way to the hub's claim table. Called once the link is built, as SetHubGit is. Nil is
+// a room with no hub.
+func (d *Daemon) SetPRClaim(f func(ctx context.Context, ask api.PRClaimAsk) (api.PRClaimReply, error)) {
+	d.ap.ClaimPR = f
+}
+
+// ReconcilePRClaims asks the hub about the PR rows made while it could not be reached. The room's attach calls it.
+func (d *Daemon) ReconcilePRClaims() { d.ap.ReconcilePRClaims() }

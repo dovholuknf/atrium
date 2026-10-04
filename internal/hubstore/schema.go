@@ -408,6 +408,26 @@ var migrations = []struct {
 				ON change_request (repo, source_room, source_branch, target_branch) WHERE state = 'open'`,
 		},
 	},
+	{
+		// ONE OWNER PER PR ACROSS ROOMS: an index, never a copy. The findings, the diff and the run folder stay on the
+		// room that holds the row. `key` is host/org/repo/number, lower case. `room` is the room NAME, with no foreign
+		// key, for the reason room_audit has none: a claim outlives the room's attachment, and a claim whose room is
+		// offline stays where it is, because a PR is never re-placed automatically. `warned` and `warn_n` belong to
+		// the offline warning: `warned` is 1 while a growler for the current spell is up, and `warn_n` makes each
+		// spell's growler id new, since an id that was ever raised is never raised again. See prclaim.go.
+		name: "0010_pr_claim",
+		stmts: []string{
+			`CREATE TABLE IF NOT EXISTS pr_claim (
+				key        TEXT PRIMARY KEY,
+				room       TEXT NOT NULL,
+				source     TEXT NOT NULL DEFAULT '',
+				claimed_at TEXT NOT NULL,
+				warned     INTEGER NOT NULL DEFAULT 0,
+				warn_n     INTEGER NOT NULL DEFAULT 0
+			)`,
+			`CREATE INDEX IF NOT EXISTS pr_claim_room ON pr_claim (room)`,
+		},
+	},
 }
 
 func (s *Store) migrate() error {

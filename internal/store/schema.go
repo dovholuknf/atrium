@@ -2004,6 +2004,15 @@ var migrations = []struct {
 			     AND (autocompact_args IS NULL OR autocompact_args = '' OR autocompact_args = '[]')`,
 		},
 	},
+	{
+		// WHERE A PR ROW STANDS WITH THE HUB'S CLAIM TABLE: '' for a room with no hub, 'claimed', 'pending' for a row
+		// made while the hub could not be reached (asked again when it returns), or 'folded into <room>' for one the
+		// hub says another room owns. See docs/rnd/scm-forge-design.md section 6.
+		name: "0081_pr_claim",
+		stmts: []string{
+			`ALTER TABLE pr_review ADD COLUMN claim TEXT NOT NULL DEFAULT ''`,
+		},
+	},
 }
 
 // migrate applies any migration not already recorded. This runs before the

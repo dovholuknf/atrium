@@ -126,6 +126,15 @@ func (h *Hub) serveGit(name, session string, conn net.Conn, br *bufio.Reader) {
 		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			// THE HUB'S OWN STORE is served to a room as that room, named by the certificate the hello was
 			// checked against. The card headers the room's forwarder adds are read there, and only there.
+			if strings.HasPrefix(r.URL.Path, PRClaimPrefix) {
+				if h.PRClaim == nil {
+					http.NotFound(w, r)
+					return
+				}
+				r.Header.Set(PRClaimRoomHeader, name)
+				h.PRClaim.ServeHTTP(w, r)
+				return
+			}
 			if h.GitStore != nil && strings.HasPrefix(r.URL.Path, gitsync.StorePrefix) {
 				ctx := gitsync.WithCaller(r.Context(), gitsync.Caller{Kind: gitsync.CallerRoom, Room: name})
 				h.GitStore.ServeHTTP(w, r.WithContext(ctx))

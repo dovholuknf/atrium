@@ -64,7 +64,9 @@ type Room struct {
 	session string
 	up      bool
 	// hubGit is whether the hub said, in its welcome, that it serves git.
-	hubGit  bool
+	hubGit bool
+	// claimRT is the transport PR claims go over, made once. See prclaim.go.
+	claimRT http.RoundTripper
 	since   time.Time
 	lastErr string
 	// taking makes sure one offer is acted on once, however many times the hub

@@ -207,6 +207,8 @@ type Growler struct {
 	hold     func(ctx context.Context, room string) roomHold
 	pending  func(ctx context.Context, room string) []pendingPerm
 	phone    func(Notice)
+	// prWait is the sweep for PRs claimed by a room that is offline. See prclaim.go.
+	prWait func() bool
 
 	// pubMu is publish's, held while a set is built and compared.
 	pubMu  sync.Mutex
@@ -517,6 +519,9 @@ func (g *Growler) tick(ctx context.Context) {
 	if g.checkRooms(ctx, rooms) {
 		changed = true
 	}
+	if g.prWait != nil && g.prWait() {
+		changed = true
+	}
 	remind, err := g.st.Wake()
 	if err != nil {
 		return
@@ -821,6 +826,7 @@ func (p *Proxy) SetGrowler(g *Growler) {
 			n.Remind(x)
 		}
 	}
+	g.prWait = func() bool { return p.prWarnSweep(g) }
 	p.mu.Lock()
 	p.growl = g
 	p.mu.Unlock()

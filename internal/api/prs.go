@@ -171,6 +171,23 @@ func (s *Server) postPR(w http.ResponseWriter, r *http.Request) {
 			"that url matched a recogniser, but it is not a pull request: it has to capture host, org, repo and num", nil)
 		return
 	}
+	// ASK THE HUB BEFORE MAKING A ROW, and not under prOpMu: the hub may hand the paste to another room. A room that
+	// already has a live row for the PR says so, and is recorded as its owner. See prclaim.go.
+	claim := ""
+	if s.ClaimPR != nil {
+		held := false
+		if body.Head == "" {
+			if live, err := s.st.LivePR(host, org, repo, num); err == nil && live != nil {
+				held = true
+			}
+		}
+		var answered bool
+		claim, answered = s.claimPR(w, r, PRClaimAsk{Key: store.PRKey(host, org, repo, num), URL: body.URL,
+			Why: body.Why, Head: body.Head, Held: held})
+		if answered {
+			return
+		}
+	}
 	prOpMu.Lock()
 	defer prOpMu.Unlock()
 	// With no head the folder is named `pending` and the fetch step moves it, so a
@@ -196,7 +213,7 @@ func (s *Server) postPR(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	row, created, err := s.st.CreatePR(store.NewPR{URL: body.URL, Why: body.Why, Host: host, Org: org,
-		Repo: repo, Number: num, Head: body.Head, RunDir: named})
+		Repo: repo, Number: num, Head: body.Head, RunDir: named, Claim: claim})
 	if err != nil {
 		if halted, _ := s.st.Halted(); halted {
 			s.fail(w, err)
