@@ -10,7 +10,10 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+
 	"time"
+
+	"github.com/dovholuknf/atrium/internal/store"
 )
 
 // POST /v1/preflight: what THIS room process can see and run.
@@ -80,6 +83,14 @@ type preflightRequest struct {
 	RunnerAuth []string `json:"runner_auth"`
 	Tools      []string `json:"tools"`
 	EnvPresent []string `json:"env_present"`
+	// Forges names the forge CLIs to ask for their login status. The command is the room's own setting, never this body's.
+	Forges []preflightForge `json:"forges"`
+}
+
+type preflightForge struct {
+	Tool   string   `json:"tool"`
+	Host   string   `json:"host"`
+	Scopes []string `json:"scopes"`
 }
 
 type preflightItem struct {
@@ -93,8 +104,10 @@ type preflightAnswer struct {
 	Tools      map[string]preflightItem `json:"tools"`
 	RunnerAuth map[string]preflightItem `json:"runner_auth"`
 	EnvPresent map[string]bool          `json:"env_present"`
-	PID        int                      `json:"pid"`
-	StartedBy  string                   `json:"started_by"`
+	// Forges is keyed tool@host. A failure also raises the board alert.
+	Forges    map[string]forgeStatus `json:"forges"`
+	PID       int                    `json:"pid"`
+	StartedBy string                 `json:"started_by"`
 }
 
 // runPreflightCommand runs one resolved command, from this process's own
@@ -118,7 +131,7 @@ func (d *Daemon) handlePreflight(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if len(req.RunnerAuth) > preflightMaxKeys || len(req.Tools) > preflightMaxKeys ||
-		len(req.EnvPresent) > preflightMaxKeys {
+		len(req.EnvPresent) > preflightMaxKeys || len(req.Forges) > preflightMaxKeys {
 		http.Error(w, "too many keys in one request", http.StatusBadRequest)
 		return
 	}
@@ -130,6 +143,7 @@ func (d *Daemon) handlePreflight(w http.ResponseWriter, r *http.Request) {
 		Tools:      map[string]preflightItem{},
 		RunnerAuth: map[string]preflightItem{},
 		EnvPresent: map[string]bool{},
+		Forges:     map[string]forgeStatus{},
 		PID:        os.Getpid(),
 		StartedBy:  d.opts.StartedBy,
 	}
@@ -154,6 +168,15 @@ func (d *Daemon) handlePreflight(w http.ResponseWriter, r *http.Request) {
 			exe = h.Exe()
 		}
 		ans.RunnerAuth[k] = d.preflightOne(ctx, k, append([]string{exe}, args...), exe)
+	}
+	for _, fg := range req.Forges {
+		if fg.Host != "" && !store.ValidForgeHost(fg.Host) {
+			ans.Forges[fg.Tool+"@"+fg.Host] = forgeStatus{Tool: fg.Tool, Host: fg.Host, State: forgeUnknown, Message: "not a host name, nothing was run"}
+			continue
+		}
+		st := d.checkForge(ctx, fg.Tool, fg.Host, fg.Scopes)
+		d.applyForge(st)
+		ans.Forges[st.Tool+"@"+st.Host] = st
 	}
 	for _, n := range req.EnvPresent {
 		// Presence only. The value is never read into anything that leaves.

@@ -92,6 +92,9 @@ type Options struct {
 
 // Daemon owns the store and both listeners.
 type Daemon struct {
+	// forgeOpen is the forge access alerts open now, by tool@host. See forgeaccess.go.
+	forgeMu   sync.Mutex
+	forgeOpen map[string]ForgeAlert
 	// acProbe knows which runners take --autocompact. See autocompact.go.
 	acProbe *autocompactProbe
 	// windingDown is set when shutdown begins. A session ending after it is the
@@ -426,6 +429,8 @@ func New(opts Options) (*Daemon, error) {
 	d.ap.SwitchModel = d.handleModel
 	d.ap.Shutdown = d.handleShutdown
 	d.ap.Preflight = d.handlePreflight
+	d.ap.ForgeCheck = d.handleForgeCheck
+	d.ap.ForgeAccess = d.ForgeAlerts
 	d.ap.Shelve = d.Shelve
 	d.ap.StopRunner = d.StopRunner
 	d.ap.Cull = func(id, into, tip string) (any, error) { return d.CullProved(id, into, tip) }
