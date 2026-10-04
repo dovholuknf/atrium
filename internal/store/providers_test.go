@@ -22,7 +22,7 @@ func TestProviderMigrationRunsOnAnExistingDatabase(t *testing.T) {
 	for _, stmt := range []string{
 		`DROP TABLE provider_repo`,
 		`DROP TABLE provider`,
-		`DELETE FROM schema_migration WHERE name = '0053_provider'`,
+		`DELETE FROM schema_migration WHERE name IN ('0053_provider', '0081_provider_forge')`,
 	} {
 		if _, err := s.db.Exec(stmt); err != nil {
 			t.Fatal(err)
@@ -313,5 +313,24 @@ func mustProvider(t *testing.T, s *Store, name, root string) {
 	t.Helper()
 	if _, err := s.SaveProvider(Provider{Name: name, Root: root, Enabled: true}); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestProviderForgeIsValidatedAndKept(t *testing.T) {
+	st := openTestStore(t)
+	base := Provider{Name: "ghe", Root: "/r", Host: "ghe.example", Enabled: true}
+	for _, bad := range []Provider{
+		{Name: "a", Root: "/r", Forge: "svn"},
+		{Name: "b", Root: "/r", Forge: "github", ForgeCmd: "gh --token x"},
+		{Name: "c", Root: "/r", Forge: "github", ForgeCmd: "/usr/bin/gh"},
+	} {
+		if _, err := st.SaveProvider(bad); err == nil {
+			t.Errorf("%+v was saved", bad)
+		}
+	}
+	base.Forge, base.ForgeCmd = "GitHub", "ghw"
+	got, err := st.SaveProvider(base)
+	if err != nil || got.Forge != "github" || got.ForgeCmd != "ghw" {
+		t.Fatalf("%+v %v", got, err)
 	}
 }

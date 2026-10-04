@@ -14,6 +14,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/dovholuknf/atrium/internal/forge"
 	prrender "github.com/dovholuknf/atrium/internal/prreview/render"
 	"github.com/dovholuknf/atrium/internal/store"
 )
@@ -47,22 +48,18 @@ const (
 var prSteps = []string{"fetch", "prime", "panel", "verify", "critics", "merge", "write"}
 
 // prCmd is one named outbound command.
-type prCmd struct {
-	Name    string
-	Args    []string
-	Dir     string
-	Timeout time.Duration
-	Limit   int
-}
+type prCmd = forge.Cmd
 
 // prRunner is the daemon's PRRunner.
 type prRunner struct {
 	st      *store.Store
 	publish func(id string)
-	// fork runs one claude call. run runs gh and git. Both are seams for tests.
+	// fork runs one claude call. run runs the forge's CLI and git. Both are seams for tests.
 	fork func(ctx context.Context, spec forkSpec) ([]byte, error)
 	run  func(ctx context.Context, c prCmd) ([]byte, error)
-	now  func() time.Time
+	// forgeOf, when set, picks the forge for a host instead of the providers. A seam for tests.
+	forgeOf func(host string) (forge.Forge, error)
+	now     func() time.Time
 	// baseEnv is the environment every child starts from.
 	baseEnv func() []string
 	// agentsDir is where the panel's agent definitions are.
@@ -160,7 +157,7 @@ func (r *prRunner) runBounded(ctx context.Context, c prCmd) ([]byte, error) {
 	label := c.Name
 	if len(c.Args) > 0 {
 		label += " " + c.Args[0]
-		if c.Name == "gh" && len(c.Args) > 1 {
+		if c.Name != "git" && len(c.Args) > 1 {
 			label += " " + c.Args[1]
 		}
 	}
@@ -175,7 +172,7 @@ func (r *prRunner) runBounded(ctx context.Context, c prCmd) ([]byte, error) {
 		if errOut.Len() > 0 {
 			return nil, fmt.Errorf("%s: %s", label, firstLine(errOut.String()))
 		}
-		return nil, fmt.Errorf("%s: %v", label, err)
+		return nil, fmt.Errorf("%s: %w", label, err)
 	}
 	return out.Bytes(), nil
 }
@@ -259,11 +256,7 @@ type prRun struct {
 	final    []prrender.Finding
 }
 
-type prFile struct {
-	Path      string `json:"path"`
-	Additions int    `json:"additions"`
-	Deletions int    `json:"deletions"`
-}
+type prFile = forge.File
 
 // errStopped means the row left the states a runner may move it from: it was
 // aborted, and the run ends without writing anything.
@@ -509,40 +502,57 @@ func (pr *prRun) finish() {
 
 // ---- 1 fetch ----
 
-type ghPRView struct {
-	Title  string `json:"title"`
-	Author struct {
-		Login string `json:"login"`
-	} `json:"author"`
-	HeadRefOid     string            `json:"headRefOid"`
-	BaseRefName    string            `json:"baseRefName"`
-	ReviewRequests []json.RawMessage `json:"reviewRequests"`
-	Files          []prFile          `json:"files"`
-}
-
-func (pr *prRun) repoArg() string {
-	if pr.row.Host == "github.com" || pr.row.Host == "" {
-		return pr.row.Org + "/" + pr.row.Repo
+// forge is the forge of the row's host: an enabled provider with that host and its
+// forge field, else the built-in default for the host.
+func (pr *prRun) forge() (forge.Forge, error) {
+	if pr.r.forgeOf != nil {
+		return pr.r.forgeOf(pr.row.Host)
 	}
-	return pr.row.Host + "/" + pr.row.Org + "/" + pr.row.Repo
+	return pr.r.forgeFor(pr.row.Host)
 }
 
-func (pr *prRun) prURL() string {
-	host := pr.row.Host
+func (r *prRunner) forgeFor(host string) (forge.Forge, error) {
 	if host == "" {
 		host = "github.com"
 	}
-	return fmt.Sprintf("https://%s/%s/%s/pull/%d", host, pr.row.Org, pr.row.Repo, pr.row.Number)
+	var entries []forge.Entry
+	if r.st != nil {
+		rows, err := r.st.Providers()
+		if err != nil {
+			return nil, err
+		}
+		for _, p := range rows {
+			if p.Enabled && p.Host != "" {
+				entries = append(entries, forge.Entry{Host: p.Host, Forge: p.Forge, Cmd: p.ForgeCmd})
+			}
+		}
+	}
+	return forge.For(host, entries, r.run)
 }
 
-func (pr *prRun) readPRJSON() (*ghPRView, error) {
+func (pr *prRun) ref() forge.Ref {
+	return forge.Ref{Host: pr.row.Host, Org: pr.row.Org, Repo: pr.row.Repo, Number: pr.row.Number}
+}
+
+func (pr *prRun) prURL() string {
+	f, err := pr.forge()
+	if err != nil {
+		return ""
+	}
+	return f.PRURL(pr.ref())
+}
+
+func (pr *prRun) readPRJSON() (*forge.PR, error) {
 	b, err := os.ReadFile(filepath.Join(pr.dir, "pr.json"))
 	if err != nil {
 		return nil, err
 	}
-	var v ghPRView
+	var v forge.PR
 	if err := json.Unmarshal(b, &v); err != nil {
 		return nil, err
+	}
+	if v.Head == "" {
+		return nil, errors.New("pr.json holds no head")
 	}
 	pr.files = v.Files
 	return &v, nil
@@ -555,48 +565,49 @@ func (pr *prRun) fetch() error {
 			return nil
 		}
 	}
-	num := fmt.Sprint(pr.row.Number)
-	out, err := pr.r.run(pr.ctx, prCmd{Name: "gh", Dir: pr.dir, Timeout: prGHTimeout, Limit: prJSONLimit,
-		Args: []string{"pr", "view", num, "--repo", pr.repoArg(), "--json",
-			"title,author,headRefOid,baseRefName,reviewRequests,files"}})
+	f, err := pr.forge()
 	if err != nil {
 		return err
 	}
-	var v ghPRView
-	if err := json.Unmarshal(out, &v); err != nil {
-		return fmt.Errorf("gh pr view printed something that is not json: %w", err)
+	ref := pr.ref()
+	v, err := f.View(pr.ctx, ref)
+	if err != nil {
+		return err
 	}
-	if !store.ValidPRHead(v.HeadRefOid) || v.HeadRefOid == "" {
-		return errors.New("gh pr view gave no head")
+	if !store.ValidPRHead(v.Head) || v.Head == "" {
+		return errors.New(f.Kind() + " gave no usable head")
 	}
 	// The folder is named for the head, which a caller who did not know it left as
 	// `pending`. Done first, so every later write lands in the final name.
-	if err := pr.rename(v.HeadRefOid); err != nil {
+	if err := pr.rename(v.Head); err != nil {
+		return err
+	}
+	out, err := json.MarshalIndent(v, "", "  ")
+	if err != nil {
 		return err
 	}
 	if err := pr.write("pr.json", out); err != nil {
 		return err
 	}
 	pr.files = v.Files
-	diff, err := pr.r.run(pr.ctx, prCmd{Name: "gh", Dir: pr.dir, Timeout: prGHTimeout, Limit: prDiffLimit,
-		Args: []string{"pr", "diff", num, "--repo", pr.repoArg()}})
+	diff, err := f.Diff(pr.ctx, ref)
 	if err != nil {
 		return err
 	}
 	if err := pr.write("pr.diff", diff); err != nil {
 		return err
 	}
-	if err := pr.fetchSource(v.HeadRefOid); err != nil {
+	if err := pr.fetchSource(f.FetchSpec(ref), v.Head); err != nil {
 		return err
 	}
-	bundle := pr.bundle(&v, string(diff))
+	bundle := pr.bundle(v, string(diff))
 	if err := pr.write("bundle.md", []byte(bundle)); err != nil {
 		return err
 	}
 	pr.mu.Lock()
-	pr.review.Head = strings.ToLower(v.HeadRefOid)
+	pr.review.Head = strings.ToLower(v.Head)
 	pr.mu.Unlock()
-	row, err := pr.r.st.SetPRFetched(pr.id, v.HeadRefOid, v.Title, v.Author.Login, filepath.ToSlash(pr.dir))
+	row, err := pr.r.st.SetPRFetched(pr.id, v.Head, v.Title, v.Author, filepath.ToSlash(pr.dir))
 	if err != nil {
 		return err
 	}
@@ -641,7 +652,7 @@ func (pr *prRun) rename(head string) error {
 }
 
 // fetchSource is a blobless shallow fetch of the PR head into src/.
-func (pr *prRun) fetchSource(head string) error {
+func (pr *prRun) fetchSource(spec forge.FetchSpec, head string) error {
 	src := filepath.Join(pr.dir, "src")
 	if err := os.RemoveAll(src); err != nil {
 		return err
@@ -649,15 +660,10 @@ func (pr *prRun) fetchSource(head string) error {
 	if err := os.MkdirAll(src, 0o755); err != nil {
 		return err
 	}
-	host := pr.row.Host
-	if host == "" {
-		host = "github.com"
-	}
-	remote := fmt.Sprintf("https://%s/%s/%s.git", host, pr.row.Org, pr.row.Repo)
 	for _, args := range [][]string{
 		{"init", "-q"},
-		{"remote", "add", "origin", remote},
-		{"fetch", "-q", "--depth", "1", "--filter=blob:none", "origin", fmt.Sprintf("pull/%d/head", pr.row.Number)},
+		{"remote", "add", "origin", spec.Remote},
+		{"fetch", "-q", "--depth", "1", "--filter=blob:none", "origin", spec.Refspec},
 		{"checkout", "-q", "--detach", "FETCH_HEAD"},
 	} {
 		if _, err := pr.r.run(pr.ctx, prCmd{Name: "git", Args: args, Dir: src, Timeout: prGitTimeout,
@@ -678,10 +684,10 @@ func (pr *prRun) fetchSource(head string) error {
 
 // bundle is what the prime reads, built here so no model builds it: a summary,
 // the diff, and each changed file in full at the head.
-func (pr *prRun) bundle(v *ghPRView, diff string) string {
+func (pr *prRun) bundle(v *forge.PR, diff string) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "# Pull request %s/%s #%d: %s\n\nauthor: %s\nbase: %s\nhead: %s\n\n## Changed files\n\n",
-		pr.row.Org, pr.row.Repo, pr.row.Number, v.Title, v.Author.Login, v.BaseRefName, v.HeadRefOid)
+		pr.row.Org, pr.row.Repo, pr.row.Number, v.Title, v.Author, v.BaseRef, v.Head)
 	for _, f := range v.Files {
 		fmt.Fprintf(&b, "- %s (+%d -%d)\n", f.Path, f.Additions, f.Deletions)
 	}

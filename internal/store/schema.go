@@ -2004,6 +2004,16 @@ var migrations = []struct {
 			     AND (autocompact_args IS NULL OR autocompact_args = '' OR autocompact_args = '[]')`,
 		},
 	},
+	{
+		// The forge a provider's host speaks, and an optional command NAME for it.
+		// No CHECK: the list is `ProviderForges` in Go. Empty forge means infer from
+		// the host. Never a token.
+		name: "0081_provider_forge",
+		stmts: []string{
+			`ALTER TABLE provider ADD COLUMN forge TEXT NOT NULL DEFAULT ''`,
+			`ALTER TABLE provider ADD COLUMN forge_cmd TEXT NOT NULL DEFAULT ''`,
+		},
+	},
 }
 
 // migrate applies any migration not already recorded. This runs before the

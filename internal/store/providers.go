@@ -30,6 +30,10 @@ import (
 // Here it is one line.
 var ProviderKinds = []string{"git"}
 
+// ProviderForges is every forge a provider's host may speak. Empty is also valid
+// and means infer from the host. A SLICE, NOT A CHECK, for the reason above.
+var ProviderForges = []string{"github", "bitbucket", "gitlab", "none"}
+
 // Provider is one named root and what is true about it.
 type Provider struct {
 	// Name is as the operator typed it, and it is the key. Renaming is a
@@ -49,6 +53,11 @@ type Provider struct {
 	// day be a provider reference rather than an absolute path. Empty means
 	// this provider is local only, which is a real arrangement.
 	Host string `json:"host"`
+	// Forge is what the host speaks: one of ProviderForges, or empty to infer it
+	// from Host. ForgeCmd overrides the NAME of the forge's command, for a wrapper
+	// on a machine. It is a name, never a token.
+	Forge    string `json:"forge"`
+	ForgeCmd string `json:"forge_cmd"`
 	// Enabled off keeps every row and contributes nothing. The alternative for
 	// a drive that is not plugged in would be deleting the provider, which
 	// throws away every typed repository and every hidden decision.
@@ -130,7 +139,7 @@ func ProviderPath(root, org, repo string) string {
 }
 
 const providerColumns = `name, kind, root, worktrees, worktree_root, host, enabled,
-	exclude, max_repos, last_error, last_scan, last_scan_at, created_at, updated_at`
+	exclude, max_repos, forge, forge_cmd, last_error, last_scan, last_scan_at, created_at, updated_at`
 
 func scanProvider(sc interface{ Scan(...any) error }) (*Provider, error) {
 	var (
@@ -140,7 +149,7 @@ func scanProvider(sc interface{ Scan(...any) error }) (*Provider, error) {
 		created, updated   string
 	)
 	if err := sc.Scan(&p.Name, &p.Kind, &p.Root, &worktrees, &p.WorktreeRoot, &p.Host,
-		&enabled, &p.Exclude, &p.MaxRepos, &p.LastError, &p.LastScan, &scanAt,
+		&enabled, &p.Exclude, &p.MaxRepos, &p.Forge, &p.ForgeCmd, &p.LastError, &p.LastScan, &scanAt,
 		&created, &updated); err != nil {
 		return nil, err
 	}
@@ -248,6 +257,15 @@ func (st *Store) SaveProvider(p Provider) (*Provider, error) {
 		p.MaxRepos = 0
 	}
 	p.Host = strings.TrimSpace(p.Host)
+	p.Forge = strings.ToLower(strings.TrimSpace(p.Forge))
+	if p.Forge != "" && !knownForge(p.Forge) {
+		return nil, errors.New("there is no forge called " + p.Forge + ". the choices are " +
+			strings.Join(ProviderForges, ", ") + ", or leave it empty to infer it from the host")
+	}
+	p.ForgeCmd = strings.TrimSpace(p.ForgeCmd)
+	if strings.ContainsAny(p.ForgeCmd, " \t\r\n/\\=") {
+		return nil, errors.New("the forge command is a command name such as gh, with no path, spaces or token in it")
+	}
 
 	err := st.guard(func() error {
 		stamp := ts(now())
@@ -273,16 +291,16 @@ func (st *Store) SaveProvider(p Provider) (*Provider, error) {
 		// first spelling is the key everything else already refers to.
 		_, err := st.db.Exec(`INSERT INTO provider
 			(name, name_key, kind, root, worktrees, worktree_root, host, enabled,
-			 exclude, max_repos, last_error, last_scan, last_scan_at, created_at, updated_at)
-			VALUES (?,?,?,?,?,?,?,?,?,?,'','','',?,?)
+			 exclude, max_repos, forge, forge_cmd, last_error, last_scan, last_scan_at, created_at, updated_at)
+			VALUES (?,?,?,?,?,?,?,?,?,?,?,?,'','','',?,?)
 			ON CONFLICT(name_key) DO UPDATE SET
 				kind = excluded.kind, root = excluded.root,
 				worktrees = excluded.worktrees, worktree_root = excluded.worktree_root,
 				host = excluded.host, enabled = excluded.enabled,
 				exclude = excluded.exclude, max_repos = excluded.max_repos,
-				updated_at = excluded.updated_at`,
+				forge = excluded.forge, forge_cmd = excluded.forge_cmd, updated_at = excluded.updated_at`,
 			p.Name, providerKey(p.Name), p.Kind, p.Root, worktrees, p.WorktreeRoot,
-			p.Host, enabled, p.Exclude, p.MaxRepos, created, stamp)
+			p.Host, enabled, p.Exclude, p.MaxRepos, p.Forge, p.ForgeCmd, created, stamp)
 		return err
 	})
 	if err != nil {
@@ -519,6 +537,15 @@ func (st *Store) ProviderOrgs(name string) ([]string, error) {
 	}
 	sort.Slice(out, func(i, j int) bool { return providerKey(out[i]) < providerKey(out[j]) })
 	return out, nil
+}
+
+func knownForge(f string) bool {
+	for _, v := range ProviderForges {
+		if v == f {
+			return true
+		}
+	}
+	return false
 }
 
 func knownKind(k string) bool {
