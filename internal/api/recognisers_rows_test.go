@@ -140,6 +140,13 @@ func TestTheShippedRowsDoNotAnswerNearMisses(t *testing.T) {
 		"https://github.com/openziti/ziti/extra/pull/4211",
 		"https://github.com/openziti/ziti/pull/4211x",
 		"https://github.com/openziti/ziti/pull/",
+		// a dot segment would walk the worktree path out of its root
+		"https://github.com/../ziti/pull/1",
+		"https://github.com/openziti/../pull/1",
+		"https://github.com/openziti/..",
+		"https://github.com/../..",
+		"https://bitbucket.org/../widgets/pull-requests/77",
+		"https://bitbucket.org/acme/./pull-requests/77",
 	} {
 		if code, got := recogniseOver(t, s, st, url); code != http.StatusNotFound {
 			t.Fatalf("%s answered %d by %q, wanted 404", url, code, got.Recogniser)

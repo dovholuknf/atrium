@@ -4,7 +4,7 @@
     "label": "bitbucket pull request",
     "enabled": true,
     "rank": 30,
-    "pattern": "^https?://(?P<host>bitbucket\\.org)/(?P<org>[^/]+)/(?P<repo>[^/]+)/pull-requests/(?P<num>\\d+)(?:[/?#].*)?$",
+    "pattern": "^https?://(?P<host>bitbucket\\.org)/(?P<org>[A-Za-z0-9_-][A-Za-z0-9_.-]*)/(?P<repo>[A-Za-z0-9_-][A-Za-z0-9_.-]*)/pull-requests/(?P<num>\\d+)(?:[/?#].*)?$",
     "kind": "bitbucket",
     "title": "{org}/{repo} PR {num}",
     "tags": "pull-request,{repo}",
