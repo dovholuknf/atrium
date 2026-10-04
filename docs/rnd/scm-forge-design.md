@@ -3,6 +3,9 @@
 Status: design by @rnd, 2026-10-04, ordered by clint ("keep going with scm, move it along"), revised the same day
 after the item files landed on claude/main (ebf16c00). Design only, nothing under `internal/` or `cmd/` changes.
 
+**clint answered the open questions on 2026-10-04, and several answers overrule the body below.** Read "Answers"
+at the end first. Where a section disagrees with it, the answer wins.
+
 Read for this design:
 - `docs/backlog/rnd/rnd-new-scm-forge.md`, the seven questions. Section numbers 1 to 7 below are its questions.
 - the six waiting items: `r-new-forge-interface`, `r-new-pr-lifecycle`, `r-new-scm-recognisers-salvage`,
@@ -447,3 +450,29 @@ forge" and never "forge" alone.
    `gh auth status` at build. A fine-grained token is a warning, not a failure. Is that the policy you want?
 8. **Review on arrival when requested of you** (decided in the pulls design) is kept. Confirm it holds across
    providers, since `bb` may not say "requested of me" at all.
+
+## Answers (clint, 2026-10-04)
+
+The questions above are kept as asked. These are the answers, and they overrule the body where the two disagree.
+
+1. **The PR's host picks the forge.** A repo with no provider is still worked: `github.com` uses `gh`,
+   `bitbucket.org` uses `bb`. Any other host needs a provider row naming its forge. This is section 1 as written.
+   The question's "github.com fallback" wording was wrong, not the design.
+2. **Yes.** A same-repo PR checks out on its real branch, a fork PR on `pr-<N>`.
+3. **A PR goes to the least busy room.** Fewest running sessions, ties broken by idle CPU. Whether the room has a
+   checkout does not rank it. A room without one gets the code **from the hub**, which clones and fetches. This was
+   already decided on 2026-10-02 in `docs/rnd/hub-forge-answers.md` and this design missed it: section 9's "the hub
+   never serves PR code" and section 10's "atrium does not clone" are both overruled. A private repo the hub cannot
+   read fails with a sentence telling the operator to clone it.
+4. **Never re-placed automatically.** A PR on an offline room waits for that room or for the operator, and the board
+   raises a warning alert saying so.
+5. **No PR list and no source row.** Atrium never polls GitHub or Bitbucket and never takes a webhook from them,
+   since a webhook needs reach the hub does not always have. A PR reaches the board when the operator puts it there:
+   a pasted URL through a recogniser, or gwt. Section 4's source row and the stage 1 PR list are dropped. Timers stay
+   only for atrium's own hygiene.
+6. **All three forges are on ask.** Nothing is built ahead of a need. When an action needs `gh`, `bb` or `glab` and
+   the access is missing or not logged in, atrium raises an alert, says what is needed in a message, and offers the
+   configuration to fix it.
+7. **Answered by 6.** Missing access or a missing scope is the same alert, message and configuration. No separate
+   scope policy.
+8. **Dropped.** Review on arrival needs something to arrive on its own, and nothing does.
