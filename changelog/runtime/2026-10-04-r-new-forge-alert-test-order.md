@@ -1,0 +1,1 @@
+- **The hub's forge alert ids no longer collide on a coarse clock.** (Hub, needs deploy.) Two forge alerts raised within one clock tick got the same growler id, which a growler takes once ever, so on Windows the second raise after an ended alert could repeat the first. The id now carries a sequence number after the time. Item r-new-forge-alert-test-order.

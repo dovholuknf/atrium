@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/dovholuknf/atrium/internal/forge"
@@ -338,9 +339,13 @@ func forgeSay(tool, cmd, host, state string, missing []string, login string) (me
 	return fmt.Sprintf("%s is not logged in on the hub for %s: run `%s` on the hub", cmd, host, login), login
 }
 
+// forgeAlertSeq makes two raises in one clock tick differ, as the Windows clock is coarser than a raise is quick.
+var forgeAlertSeq atomic.Uint64
+
 // forgeAlertID is the growler of one open alert. A growler id is raised once ever, so each raise has its own.
 func forgeAlertID(tool, host string, at time.Time) string {
-	return "forge|" + tool + "@" + host + "|" + strconv.FormatInt(at.UnixNano(), 36)
+	return "forge|" + tool + "@" + host + "|" + strconv.FormatInt(at.UnixNano(), 36) + "." +
+		strconv.FormatUint(forgeAlertSeq.Add(1), 36)
 }
 
 func forgeAlertPrefix(tool, host string) string { return "forge|" + tool + "@" + host + "|" }
