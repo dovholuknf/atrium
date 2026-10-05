@@ -17,6 +17,7 @@ import (
 	"github.com/dovholuknf/atrium/internal/edge"
 	"github.com/dovholuknf/atrium/internal/gitsync"
 	"github.com/dovholuknf/atrium/internal/link"
+	"github.com/dovholuknf/atrium/internal/roomstats"
 	"github.com/dovholuknf/atrium/internal/store"
 	"github.com/spf13/cobra"
 )
@@ -371,6 +372,8 @@ func runRoom(keys link.Keys, db, human, agent string, restartAfter time.Duration
 		Host:    hostname(),
 		// SAYS GIT in the hello, so the hub will ask this room to sync. See internal/gitsync.
 		Git: true,
+		// IDLE CPU rides on the heartbeat, so the hub can break a tie between rooms with the same session count.
+		IdleCPU: roomstats.NewIdleMeter().Idle,
 		// WHETHER THIS ROOM WILL TAKE A BUILD ITS HUB IS RUNNING, which is the
 		// operator's decision and is off unless they made it. A hub can always
 		// SAY what it has; nothing happens here unless this is on. See

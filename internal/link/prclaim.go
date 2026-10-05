@@ -103,20 +103,40 @@ func (p *Proxy) markedRooms() map[string]bool {
 	return out
 }
 
-// placePRRoom picks the room for a new PR: the least busy online room, a tie to the lower name. `fallback` is the
-// answer when no room could be asked, which is the asker for a claim and nothing for a paste.
+// roomLoad is what placement knows of one room. n is running sessions, negative for a room not to be used, ok whether
+// it answered, idle the idle CPU percent it last reported and nil when it never has.
+type roomLoad struct {
+	room string
+	n    int
+	ok   bool
+	idle *float64
+}
+
+// lessLoaded is whether l is a better home than o: fewer sessions, then more idle CPU with a room that reported a
+// figure ahead of one that did not, then the lower name.
+func (l roomLoad) lessLoaded(o roomLoad) bool {
+	if l.n != o.n {
+		return l.n < o.n
+	}
+	if (l.idle == nil) != (o.idle == nil) {
+		return l.idle != nil
+	}
+	if l.idle != nil && *l.idle != *o.idle {
+		return *l.idle > *o.idle
+	}
+	return keyOf(l.room) < keyOf(o.room)
+}
+
+// placePRRoom picks the room for a new PR: the least busy online room, a tie to the one with more idle CPU, then the
+// lower name.
+// `fallback` is the answer when no room could be asked, which is the asker for a claim and nothing for a paste.
 func (p *Proxy) placePRRoom(ctx context.Context, fallback string) string {
 	rooms := p.hub.Rooms()
 	marked := p.markedRooms()
-	type load struct {
-		room string
-		n    int
-		ok   bool
-	}
-	got := make([]load, len(rooms))
+	got := make([]roomLoad, len(rooms))
 	var wg sync.WaitGroup
 	for i, a := range rooms {
-		got[i].room = a.Name
+		got[i].room, got[i].idle = a.Name, a.IdleCPU
 		if marked[keyOf(a.Name)] {
 			got[i].n = -1
 			continue
@@ -128,14 +148,14 @@ func (p *Proxy) placePRRoom(ctx context.Context, fallback string) string {
 		}(i, a.Name)
 	}
 	wg.Wait()
-	var best *load
+	var best *roomLoad
 	for pass := 0; pass < 2 && best == nil; pass++ {
 		for i := range got {
 			l := &got[i]
 			if l.n < 0 || (pass == 0 && !l.ok) {
 				continue
 			}
-			if best == nil || l.n < best.n || (l.n == best.n && keyOf(l.room) < keyOf(best.room)) {
+			if best == nil || l.lessLoaded(*best) {
 				best = l
 			}
 		}

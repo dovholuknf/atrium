@@ -90,6 +90,9 @@ type note struct {
 	// The echo is not decoration: it is how a room finds out its socket is a
 	// half-open one that will never error on write.
 	Beat int64 `json:"beat,omitempty"`
+	// IdleCPU is a room's idle CPU percent, riding on its beat. A pointer so a room at 0 is not mistaken for one
+	// that did not say, and an older room that never sends it reads as unknown. See `placePRRoom`.
+	IdleCPU *float64 `json:"idle_cpu,omitempty"`
 	// Bye is a side closing deliberately, so the other end logs a shutdown
 	// rather than a failure.
 	Bye string `json:"bye,omitempty"`

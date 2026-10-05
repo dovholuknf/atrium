@@ -93,6 +93,12 @@ type claimHub struct {
 
 func newClaimHub(t *testing.T, running map[string]int) *claimHub {
 	t.Helper()
+	return newClaimHubIdle(t, running, nil)
+}
+
+// newClaimHubIdle is newClaimHub with the idle CPU some rooms report on their beat. A room not in idle says none.
+func newClaimHubIdle(t *testing.T, running map[string]int, idle map[string]float64) *claimHub {
+	t.Helper()
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
@@ -112,6 +118,9 @@ func newClaimHub(t *testing.T, running map[string]int) *claimHub {
 		cr.stop = rstop
 		cr.room = &Room{Name: name, Dial: plain{addr: ln.Addr().String()}, Handler: cr,
 			T: Timings{Beat: 200 * time.Millisecond, Warm: 2, Backoff: 50 * time.Millisecond}}
+		if v, ok := idle[name]; ok {
+			cr.room.IdleCPU = func() (float64, bool) { return v, true }
+		}
 		go func() { _ = cr.room.Run(rctx) }()
 		x.rooms[name] = cr
 	}
@@ -347,3 +356,57 @@ func (f *fakeGrowls) Rooms() ([]string, error)  { return nil, nil }
 func (f *fakeGrowls) Wake() ([]string, error)   { return nil, nil }
 
 func (f *fakeGrowls) Setting(string) (string, error) { return "", nil }
+
+func f64(v float64) *float64 { return &v }
+
+// THE ORDER: sessions first, then idle CPU (a reported figure before none), then the name.
+func TestRoomLoadOrdering(t *testing.T) {
+	cases := []struct {
+		name string
+		a, b roomLoad
+		want bool
+	}{
+		{"fewer sessions beat more idle", roomLoad{room: "z", n: 1, idle: f64(5)}, roomLoad{room: "a", n: 2, idle: f64(90)}, true},
+		{"more idle wins a tie", roomLoad{room: "z", n: 1, idle: f64(80)}, roomLoad{room: "a", n: 1, idle: f64(20)}, true},
+		{"less idle loses a tie", roomLoad{room: "a", n: 1, idle: f64(20)}, roomLoad{room: "z", n: 1, idle: f64(80)}, false},
+		{"a figure beats none", roomLoad{room: "z", n: 1, idle: f64(0)}, roomLoad{room: "a", n: 1}, true},
+		{"none loses to a figure", roomLoad{room: "a", n: 1}, roomLoad{room: "z", n: 1, idle: f64(0)}, false},
+		{"equal idle goes to the name", roomLoad{room: "a", n: 1, idle: f64(50)}, roomLoad{room: "b", n: 1, idle: f64(50)}, true},
+		{"neither known goes to the name", roomLoad{room: "b", n: 1}, roomLoad{room: "a", n: 1}, false},
+		{"neither known, lower name", roomLoad{room: "a", n: 1}, roomLoad{room: "b", n: 1}, true},
+	}
+	for _, c := range cases {
+		if got := c.a.lessLoaded(c.b); got != c.want {
+			t.Errorf("%s: got %v, want %v", c.name, got, c.want)
+		}
+	}
+}
+
+// A TIE ON SESSIONS goes to the room reporting more idle CPU, and a room that reports none sorts after one that does.
+func TestPlacementBreaksATieOnIdleCPU(t *testing.T) {
+	// alpha says nothing, beta is busier than gamma.
+	x := newClaimHubIdle(t, map[string]int{"alpha": 1, "beta": 1, "gamma": 1}, map[string]float64{"beta": 20, "gamma": 70})
+	defer x.done()
+	waitFor(t, 5*time.Second, func() bool {
+		n := 0
+		for _, a := range x.hub.Rooms() {
+			if a.IdleCPU != nil {
+				n++
+			}
+		}
+		return n == 2
+	})
+	if got := x.proxy.placePRRoom(context.Background(), ""); got != "gamma" {
+		t.Fatalf("placed on %q, want gamma (most idle CPU)", got)
+	}
+	// Sessions still come first: gamma is idlest but busier by a session.
+	x.rooms["gamma"].running = 2
+	if got := x.proxy.placePRRoom(context.Background(), ""); got != "beta" {
+		t.Fatalf("placed on %q, want beta (a figure before none, fewer sessions than gamma)", got)
+	}
+	// With no figure anywhere the name decides, as before.
+	x.rooms["alpha"].running, x.rooms["beta"].running = 0, 1
+	if got := x.proxy.placePRRoom(context.Background(), ""); got != "alpha" {
+		t.Fatalf("placed on %q, want alpha (fewest sessions)", got)
+	}
+}
