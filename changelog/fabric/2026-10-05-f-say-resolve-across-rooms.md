@@ -1,0 +1,3 @@
+# a bare name in atrium_say reaches the one card on another room
+
+A bare handle or alias that nobody answers to on the caller's own room is now looked for on every other attached room, not only among cards tagged `atrium:everywhere`. Exactly one live match is routed to as if `name@room` had been typed, and the answer says which room it went to. Two or more are refused and listed as `name@room`. A local match still wins, and a parked match is woken only when the call passed `wake`. The "these would have worked" list now names cards from every room. `atrium_exit` still does not guess across rooms, since it cannot be taken back.

@@ -58,7 +58,7 @@ func (c *controlMCP) relay(ctx context.Context, from string, req RelayRequest) R
 		if err != nil {
 			return RelayAnswer{Code: code, Error: err.Error()}
 		}
-		return RelayAnswer{OK: true, To: card.Wire + "@" + card.Room, Card: tagFor(card.Room, card.ID)}
+		return RelayAnswer{OK: true, To: card.sendName() + "@" + card.Room, Card: tagFor(card.Room, card.ID)}
 	case RelayPeers:
 		if req.Everywhere && c.hub != nil {
 			// ONLY THE CARDS TAGGED atrium:everywhere, from the index, with no

@@ -700,6 +700,15 @@ func (d *Daemon) sayEverywhere(w http.ResponseWriter, ctx context.Context, from,
 	switch {
 	case room != "":
 		c, body := d.sayAcross(ctx, from, handle, room, text, when, reply, wake)
+		if c < 400 {
+			// SAID, because the sender typed a bare name and should learn where it went.
+			routed := fmt.Sprintf("%q is not on this room. it went to %s on room %s, the one card that answers to it.",
+				name, handle, room)
+			if n, _ := body["note"].(string); n != "" {
+				routed += " " + n
+			}
+			body["note"] = routed
+		}
 		if after != nil {
 			after(c, body)
 		}

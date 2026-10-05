@@ -256,3 +256,56 @@ func TestForgettingARoomDropsItFromTheIndex(t *testing.T) {
 		t.Fatalf("still indexed after the forget: %+v", got)
 	}
 }
+
+// A bare name with no tag on the card at all still routes when exactly one
+// card on another room answers to it, and the miss lists untagged cards too.
+func TestHubSideSayRoutesToTheOneUntaggedCardOnAnotherRoom(t *testing.T) {
+	x := newRelayPair(t)
+	defer x.stop()
+	x.hub.IndexEverywhere("sg4", []CardState{everyRow("s1", "running", "atrium-87300", "orchestrator")})
+
+	if _, _, err := x.control.sayHandler(relayCtx(t), ctlReq("sa1", "m1mini"),
+		sayInput{To: "orchestrator", Text: "hello"}); err != nil {
+		t.Fatalf("say: %v", err)
+	}
+	said := x.mini.says()
+	if len(said) != 1 || said[0]["to"] != "atrium-87300@sg4" {
+		t.Fatalf("m1mini's /v1/say got %+v", said)
+	}
+	_, _, err := x.control.sayHandler(relayCtx(t), ctlReq("sa1", "m1mini"), sayInput{To: "nobody", Text: "x"})
+	if err == nil || !strings.Contains(err.Error(), "atrium-87300@sg4") {
+		t.Fatalf("the miss does not list the card on the other room: %v", err)
+	}
+}
+
+// Two untagged matches on two rooms are refused, both named as name@room.
+func TestHubSideSayRefusesTwoUntaggedMatches(t *testing.T) {
+	x := newRelayPair(t)
+	defer x.stop()
+	x.hub.IndexEverywhere("sg4", []CardState{everyRow("s1", "running", "atrium-87300", "review")})
+	x.hub.IndexEverywhere("sg3", []CardState{everyRow("t1", "running", "atrium-5120", "review")})
+
+	_, _, err := x.control.sayHandler(relayCtx(t), ctlReq("sa1", "m1mini"), sayInput{To: "review", Text: "x"})
+	if err == nil || !strings.Contains(err.Error(), "atrium-87300@sg4") ||
+		!strings.Contains(err.Error(), "atrium-5120@sg3") {
+		t.Fatalf("err = %v", err)
+	}
+	if len(x.mini.says()) != 0 {
+		t.Fatal("something was sent")
+	}
+}
+
+// A local match still wins over an untagged card elsewhere.
+func TestHubSideLocalCardShadowsAnUntaggedOneElsewhere(t *testing.T) {
+	x := newRelayPair(t)
+	defer x.stop()
+	x.hub.IndexEverywhere("sg4", []CardState{everyRow("s1", "running", "atrium-87300", "sa1")})
+
+	if _, _, err := x.control.sayHandler(relayCtx(t), ctlReq("other", "m1mini"),
+		sayInput{To: "sa1", Text: "hello"}); err != nil {
+		t.Fatalf("say: %v", err)
+	}
+	if len(x.mini.says()) != 0 || len(x.mini.messages()) != 1 {
+		t.Fatalf("the local card was not used: says=%+v messages=%+v", x.mini.says(), x.mini.messages())
+	}
+}
