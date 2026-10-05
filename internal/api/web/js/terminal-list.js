@@ -821,6 +821,13 @@ async function termMenu(e, id) {
     } : null,
     { label: "rename…", act: () => renameTask(id, t.display_title) },
     typeof aliasMenuItem === "function" ? aliasMenuItem(t) : null,
+    // The card layer of the context limit: board default, then the runner, then this. Only Claude cards carry one.
+    t.context_size
+      ? { label: "context limit…", note: limitFrom(t),
+          help: "The size at which this card's context is marked. It overrides its runner's limit and the " +
+            "board default. Empty goes back to them.",
+          act: () => setTaskContextLimit(id, t) }
+      : null,
     // Beside rename because they are the same kind of act: both write an
     // override, both survive the runner reconnecting and reporting for itself.
     // Rename decides what the row says, this decides where it sits.
@@ -941,6 +948,18 @@ async function renameTask(id, currentName) {
     "reconnects and reports its own name again.", currentName || "");
   if (name === null) return;
   await patchTask(id, { overrides: { title: name.trim() } });
+  refresh();
+}
+
+// THE CARD LAYER OF THE CONTEXT LIMIT, an override on the card (`context_limit_k`, in thousands of tokens). Empty
+// clears it, and the runner's limit or the board default applies again. The daemon checks the range.
+async function setTaskContextLimit(id, t) {
+  const own = t.overrides && t.overrides.context_limit_k || "";
+  const v = await askText("context limit for this card",
+    `In thousands of tokens, from 10 to 2000. Now ${limitFrom(t)}. This is the card's own setting and wins over ` +
+    "its runner's limit (runners page) and the board default (settings). Leave it empty to go back to them.", own);
+  if (v === null) return;
+  await patchTask(id, { overrides: { context_limit_k: v.trim() } });
   refresh();
 }
 

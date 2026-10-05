@@ -2062,6 +2062,14 @@ var migrations = []struct {
 			)`,
 		},
 	},
+	{
+		// THE RUNNER LAYER OF THE CONTEXT LIMIT, in thousands of tokens. 0 means none: the board default
+		// applies. See docs/backlog/ui/u-new-context-bar-on-rows.md.
+		name: "0085_harness_context_limit",
+		stmts: []string{
+			`ALTER TABLE harness ADD COLUMN context_limit_k INTEGER NOT NULL DEFAULT 0`,
+		},
+	},
 }
 
 // migrate applies any migration not already recorded. This runs before the

@@ -1,0 +1,3 @@
+# The context limit has three layers, and every row says which one it is using
+
+The line a card's context is held against can now be set per runner as well as for the whole board. A card's own limit wins, then its runner's, then the board default. Set the board default in settings, a runner's on the runners page (edit the runner), and a card's from its menu (context limit). Each editor says which layer it is. The row's bar tooltip, the amber mark's tooltip and the details meter name the layer they used, as in "limit 150k from runner". The line along the bottom of each terminals row now goes green, then yellow from 60% of the limit, then red from 85%, and pulses once when it is full. No "limit" chip was added: the red line and the amber mark say it.
