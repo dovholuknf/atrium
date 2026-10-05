@@ -1072,10 +1072,11 @@ async function recogniseLink() {
     note.classList.add("warn");
     // A url nothing matches is a 404 and reads as one. Not a failure: this
     // atrium has no row for that shape yet, and the fix is to write one.
-    note.textContent = /404|no recogniser/i.test(e.message)
+    const none = /404|no recogniser/i.test(e.message);
+    note.textContent = none
       ? "nothing here knows what that is yet. add a row for it under runners, recognisers."
       : e.message;
-    return;
+    return none ? "none" : null;
   }
   launchResolved = got;
 
@@ -1097,11 +1098,37 @@ async function recogniseLink() {
   // A missing worktree, a hole in a template or a broken fetch all read the
   // same way here: something to go and do before pressing launch.
   note.classList.toggle("warn", !!(got.problem || got.fetch_error));
+  if (pastedPR()) leastBusyRoom();
   // The recogniser just filled fields that live behind the fold, and the fold
   // is where the operator is standing. Without this the title and the prompt it
   // wrote would be out of sight at the moment they most want reading.
   syncMore();
+  return got;
 }
+
+// A pull request with the room left to the hub. The room box otherwise starts on its first machine, which would be a
+// choice nobody made. Choosing another machine in the box still wins.
+function leastBusyRoom() {
+  const field = document.getElementById("l-room-field");
+  const sel = document.getElementById("l-room");
+  if (!field || field.hidden || !sel || sel.querySelector('option[value=""]')) return;
+  sel.insertAdjacentHTML("afterbegin", '<option value="">least busy</option>');
+  sel.value = "";
+}
+
+// A link pasted on the board, outside any box, is a link to recognise: the launch dialog opens on it and fills in.
+// A link nothing recognises is left alone, so pasting an ordinary url on the board does nothing. Pasting into a box,
+// a terminal or while a dialog is open is the page's own business.
+document.addEventListener("paste", async e => {
+  const t = e.target;
+  if ((t && (t.closest ? t.closest("input, textarea, select, [contenteditable], .xterm") : null)) ||
+      document.querySelector("dialog[open]")) return;
+  const text = ((e.clipboardData && e.clipboardData.getData("text")) || "").trim();
+  if (!/^https?:\/\/\S+$/.test(text)) return;
+  e.preventDefault();
+  await openLaunch(null, "", "", null, { url: text });
+  if (await recogniseLink() === "none") document.getElementById("launch").close();
+});
 
 // setLaunchModel clears the field when the dialog opens or the runner changes.
 // The card remembers the model for restarts, but each launch starts with an
@@ -1498,6 +1525,50 @@ function syncMore() {
 // no longer running, which is a different query against the same data and is a
 // genuine "again, where I was" rather than a list of occupied rooms.
 
+// A pasted pull request is a worktree to make before it is a card to start.
+//
+// The recogniser only names where the worktree would be. Pressing launch on a pull request row asks the room for it
+// through `pr-worktree`, which reads the PR from the forge, picks the branch and clones through the hub when the room
+// has no checkout. On the hub with no room named, the hub places the request on the room that holds the PR or else
+// the least busy one, and says which in a header so the launch lands on the same room. Nothing is made when the
+// directory was typed over, or when no provider covers the host: the launch then goes as it always did.
+function pastedPR() {
+  const r = launchResolved;
+  const v = (r && r.vars) || {};
+  if (!r || !(r.tags || []).includes("pull-request") || !v.org || !v.repo || !(Number(v.num) > 0)) return null;
+  if (document.getElementById("l-cwd").value.trim() !== (r.cwd || "").trim()) return null;
+  return { host: r.host || v.host || "", org: v.org, repo: v.repo, number: Number(v.num) };
+}
+
+async function makePastedWorktree(pr) {
+  const note = document.getElementById("l-link-note");
+  const providers = (await api("/v1/providers")).providers || [];
+  const p = providers.find(x => x.worktrees && (x.host || "github.com") === pr.host);
+  if (!p) return null;
+  note.classList.remove("warn");
+  note.textContent = "making the worktree for " + pr.org + "/" + pr.repo + "#" + pr.number + "...";
+  const headers = { "Content-Type": "application/json" };
+  const chosen = document.getElementById("l-room-field");
+  if (chosen && !chosen.hidden && document.getElementById("l-room").value) {
+    headers["X-Atrium-Room"] = document.getElementById("l-room").value;
+  }
+  let room = "";
+  let made;
+  try {
+    made = await cappedFetch(fetch, "/v1/providers/" + encodeURIComponent(p.name) + "/pr-worktree", {
+      method: "POST", headers, body: JSON.stringify(pr)
+    }, async res => { room = res.headers.get("X-Atrium-Placed-Room") || ""; return apiFinish(res); });
+  } catch (e) {
+    // The forge's own sentence, as it came, beside the link it is about.
+    note.classList.add("warn");
+    note.textContent = e.message;
+    throw e;
+  }
+  document.getElementById("l-cwd").value = made.path;
+  note.textContent = (made.existed ? "the worktree was already there: " : "made the worktree: ") + made.path;
+  return { path: made.path, room };
+}
+
 // Through `busyWhile`, so the press shows and a second one, by click or by
 // Enter, is refused while the first is starting. See js/core.js.
 function doLaunch() {
@@ -1513,6 +1584,8 @@ async function launchNow() {
   // a directory is supplied, so a previous field value must not carry through.
   const throwaway = !document.getElementById("l-throwaway-field").hidden &&
     document.getElementById("l-throwaway-on").checked;
+  const pr = throwaway ? null : pastedPR();
+  const wt = pr ? await makePastedWorktree(pr) : null;
   const body = Object.assign({}, launchTarget, {
     harness: document.getElementById("l-pick-field").hidden ? launchTarget.harness : picker.value,
     // AS HELD, `room~id` and all. The room's store keys by the plain id, and
@@ -1566,6 +1639,8 @@ async function launchNow() {
     const want = document.getElementById("l-room").value;
     if (want) headers["X-Atrium-Room"] = want;
   }
+  // The room the hub put the pull request on wins over an unset field, since the worktree is only there.
+  if (wt && wt.room && !headers["X-Atrium-Room"]) headers["X-Atrium-Room"] = wt.room;
   // A refusal throws, and `busyWhile` puts the reason in this dialog with the
   // form still filled in, rather than closing it and stacking a modal.
   const task = await api("/v1/launch", {

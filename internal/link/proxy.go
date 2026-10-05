@@ -556,6 +556,10 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if r, placed = p.placeNewPR(w, r); !placed {
 		return
 	}
+	// A PASTED PR'S WORKTREE GOES TO THE ROOM THAT HOLDS THE PR, OR THE LEAST BUSY ONE. See prworktreeroute.go.
+	if r, placed = p.placePRWorktree(w, r); !placed {
+		return
+	}
 	// AN UNSCOPED LAUNCH GOES TO THE ROOM ON THE CALLER'S MACHINE THAT HAS THE
 	// DIRECTORY. Ahead of startsNothing so that sees the room it lands on. See
 	// launchroute.go.
