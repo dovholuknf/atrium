@@ -558,22 +558,28 @@ function paintEditorElsewhere() {
     : "";
 }
 
-// openFileTab reads the file in a browser tab, served by atrium.
+// Where a file is read in a tab.
 //
-// NOT THE FILE'S OWN BYTES ON THE BOARD'S ORIGIN. `downloadFile` is always an
-// attachment and always octet-stream, deliberately: serving an HTML file out
-// of a working directory inline would be attacker-authored script running on
-// the origin that holds the settings, the grouping expression and every card.
-// That rule is not worth a convenience.
-//
-// So the tab gets atrium's own reader, which renders the file as TEXT whatever
-// it contains. Same origin, nothing executed, and it works from another
-// machine because the bytes still come from the room.
+// Markdown goes to `read.html`, which renders it. Everything else goes straight to
+// the hub's view route, which streams the bytes as text/plain or a raster image,
+// with no download prompt and never as a document: `downloadFile` is an attachment
+// on purpose, and an HTML or SVG file an agent wrote must not run on this origin.
+// See `fileview.go`.
+function fileTabURL(id, path) {
+  if (/\.(md|markdown)$/i.test(path)) {
+    return "/read.html#" + encodeURIComponent(id) + "/" + encodeURIComponent(path);
+  }
+  return "/v1/tasks/" + encodeURIComponent(id) + "/files/view?path=" + encodeURIComponent(path);
+}
+
+function openFileTabFor(id, path) {
+  window.open(fileTabURL(id, path), "_blank", "noopener");
+}
+
+// openFileTab reads the editor's file in a browser tab, served by atrium.
 function openFileTab() {
   if (!editing) return;
-  const url = "/read.html#" + encodeURIComponent(editing.taskID) +
-    "/" + encodeURIComponent(editing.path);
-  window.open(url, "_blank", "noopener");
+  openFileTabFor(editing.taskID, editing.path);
 }
 
 // openFileThere opens it with the editor command, on the machine it is on.

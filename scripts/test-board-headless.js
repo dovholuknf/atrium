@@ -610,6 +610,11 @@ const server = http.createServer((req, res) => {
     res.end(fs.readFileSync(path.join(WEB_ROOT, "index.html")));
     return;
   }
+  if (url === "/read.html" || url === "/read.js") {
+    res.writeHead(200, { "Content-Type": url.endsWith(".js") ? "application/javascript" : "text/html" });
+    res.end(fs.readFileSync(path.join(WEB_ROOT, url)));
+    return;
+  }
   if (/^\/(js|css)\/[A-Za-z0-9_.-]+\.(js|css)$/.test(url)) {
     return fs.readFile(path.join(WEB_ROOT, url), (err, body) => {
       if (err) { res.writeHead(404); res.end(""); return; }
@@ -5727,6 +5732,164 @@ async function linkTipSection(browser, base) {
     t = await tip();
     if (t.on) fail("a scroll left the path's tip up: " + JSON.stringify(t));
     if (errors.length) fail("the link tip page threw uncaught errors: " + errors.join(" | "));
+  } finally {
+    tasksMode = was;
+    await ctx.close();
+  }
+}
+
+// ── a file link asks where to open, and a .md renders in a tab (u-file-open-outside) ──
+// Clicking a file path in the terminal offers atrium's editor, a tab, and, only when that room has an
+// editor_command, the machine it opens on. The tab renders markdown from the room's bytes, and the markdown
+// is hostile: script, an onerror image, a javascript: link and raw HTML must all arrive inert.
+// FOUTSIDE_SHOTS=dir writes the PNGs; FOUTSIDE_BEFORE=1 takes shots only, for the build without the feature.
+async function fileOpenOutsideSection(browser, base) {
+  const was = tasksMode;
+  tasksMode = "land";
+  landCard("land-live", { supervised: true, room: "sg4", created_at: "2026-09-19T12:00:00Z" });
+  landList = [LAND["land-live"]];
+  landPerms = [];
+  const errors = [];
+  const shots = process.env.FOUTSIDE_SHOTS || "";
+  const before = !!process.env.FOUTSIDE_BEFORE;
+  const shot = (pg, name) => shots ? pg.screenshot({ path: path.join(shots, name + ".png") }) : null;
+  let editorCommand = "explorer.exe {path}";
+  let opened = [], settingsRooms = [];
+  const ctx = await landContext(browser);
+  await ctx.addInitScript(() => {
+    const Real = window.WebSocket;
+    window.WebSocket = function (url, protocols) {
+      if (!/\/attach(\?|$)/.test(url)) return new Real(url, protocols);
+      const s = { url, readyState: 0, binaryType: "arraybuffer", bufferedAmount: 0,
+        onopen: null, onclose: null, onmessage: null, onerror: null,
+        send() {}, close() { this.readyState = 3; } };
+      setTimeout(() => { s.readyState = 1; if (s.onopen) s.onopen({}); }, 0);
+      return s;
+    };
+    Object.assign(window.WebSocket, { CONNECTING: 0, OPEN: 1, CLOSING: 2, CLOSED: 3 });
+    window.__tabs = [];
+    window.open = (u) => { window.__tabs.push(u); return null; };
+  });
+  await ctx.route("**/files/probe", route => {
+    const paths = JSON.parse(route.request().postData() || "{}").paths || [];
+    const found = paths.filter(p => /\//.test(p)).map(p => ({ path: p, rel: p, size: 1234, dir: false }));
+    route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ found }) });
+  });
+  await ctx.route("**/v1/settings", route => {
+    settingsRooms.push(route.request().headers()["x-atrium-room"] || "");
+    route.fulfill({ status: 200, contentType: "application/json",
+      body: JSON.stringify(Object.assign({}, settingsBody(""), { editor_command: editorCommand })) });
+  });
+  await ctx.route("**/files/open", route => {
+    opened.push(JSON.parse(route.request().postData() || "{}").path);
+    route.fulfill({ status: 200, contentType: "application/json", body: '{"ok":true}' });
+  });
+  try {
+    const p = await ctx.newPage();
+    p.on("pageerror", e => errors.push(String(e)));
+    await p.goto(base, { waitUntil: "domcontentloaded" });
+    await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
+    await p.evaluate(() => attachTask("land-live"));
+    await p.waitForFunction(() => termSock && termSock.readyState === 1 && termTask && termTask.id === "land-live", null,
+      { timeout: slow(10000) });
+    await p.waitForTimeout(300);
+    await p.evaluate(() => termSock.onmessage({ data: "see docs/plan.md here\r\nsrc/beta.go\r\n" }));
+    await p.waitForTimeout(200);
+    const box = await p.locator("#t-screen .xterm-screen").boundingBox();
+    const cell = await p.evaluate(() => {
+      const d = term._core._renderService.dimensions.css.cell;
+      return { w: d.width, h: d.height };
+    });
+    const at = (col, r) => [box.x + cell.w * (col + 0.5), box.y + cell.h * (r + 0.5)];
+    await p.mouse.move(...at(40, 5));
+    await p.mouse.move(...at(8, 0), { steps: 3 });
+    await p.waitForTimeout(800);
+    if (before) await shot(p, "popup-before");
+    await p.mouse.click(...at(8, 0));
+    await p.waitForTimeout(400);
+    if (before) { await shot(p, "popup-before-click"); return; }
+    await shot(p, "popup-after");
+    const menu = () => p.evaluate(() => {
+      const m = document.getElementById("cardmenu");
+      return { on: m.classList.contains("on"), items: [...m.querySelectorAll(":scope > button")].map(b => b.textContent.trim()) };
+    });
+    let m = await menu();
+    if (!m.on) { fail("clicking a file path did not open the menu: " + JSON.stringify(m)); return; }
+    const want = ["open in atrium's editor", "open in a tab", "open on sg4"];
+    if (JSON.stringify(m.items) !== JSON.stringify(want)) fail("the file menu offered " + JSON.stringify(m.items) + ", want " + JSON.stringify(want));
+    if (!settingsRooms.includes("sg4")) fail("the card's room was not the one asked for its editor_command: " + JSON.stringify(settingsRooms));
+
+    // open on sg4 calls files/open with the path.
+    await p.locator("#cardmenu button", { hasText: "open on sg4" }).click();
+    await p.waitForTimeout(300);
+    if (JSON.stringify(opened) !== JSON.stringify(["docs/plan.md"])) fail("open on sg4 sent " + JSON.stringify(opened));
+
+    // open in a tab: a .md goes to the renderer, anything else to the view route.
+    await p.mouse.move(...at(40, 5));
+    await p.mouse.click(...at(8, 0));
+    await p.waitForTimeout(400);
+    await p.locator("#cardmenu button", { hasText: "open in a tab" }).click();
+    await p.mouse.move(...at(40, 5));
+    await p.mouse.move(...at(3, 1), { steps: 2 });
+    await p.waitForTimeout(500);
+    await p.mouse.click(...at(3, 1));
+    await p.waitForTimeout(400);
+    await p.locator("#cardmenu button", { hasText: "open in a tab" }).click();
+    const tabs = await p.evaluate(() => window.__tabs);
+    if (tabs[0] !== "/read.html#land-live/docs%2Fplan.md") fail("a .md tab opened " + tabs[0]);
+    if (tabs[1] !== "/v1/tasks/land-live/files/view?path=src%2Fbeta.go") fail("a .go tab opened " + tabs[1]);
+
+    // without an editor_command there is no third entry, and no default is invented.
+    editorCommand = "";
+    await p.mouse.move(...at(40, 5));
+    await p.mouse.move(...at(8, 0), { steps: 2 });
+    await p.waitForTimeout(500);
+    await p.mouse.click(...at(8, 0));
+    await p.waitForTimeout(400);
+    m = await menu();
+    if (JSON.stringify(m.items) !== JSON.stringify(want.slice(0, 2))) fail("with no editor_command the menu offered " + JSON.stringify(m.items));
+    await p.keyboard.press("Escape");
+
+    // The markdown tab, fed hostile markdown.
+    const hostile = [
+      "# Title", "", "<script>window.__pwn = 1</script>",
+      '<img src=x onerror="window.__pwn = 2">', "",
+      "[bad](javascript:window.__pwn=3) [ok](other.md) [file](data/a.txt) [web](https://example.org/)", "",
+      "![pic](img/p.png) ![remote](http://evil.test/x.png)", "",
+      '<a href="javascript:window.__pwn=4">raw</a>', "",
+      "| a | b |", "| - | - |", "| 1 | 2 |", "", "```", "code <b>x</b>", "```"
+    ].join("\n");
+    const tabPage = await ctx.newPage();
+    tabPage.on("pageerror", e => errors.push(String(e)));
+    const tabReqs = [];
+    tabPage.on("request", r => tabReqs.push(r.url()));
+    await ctx.route("**/files/view?*", route => route.fulfill({ status: 200,
+      contentType: /\.png/.test(route.request().url()) ? "image/png" : "text/plain; charset=utf-8",
+      headers: { "X-Content-Type-Options": "nosniff", "Content-Security-Policy": "sandbox" },
+      body: /\.png/.test(route.request().url()) ? Buffer.from("iVBORw0KGgo=", "base64") : hostile }));
+    await tabPage.goto(base + "/read.html#land-live/docs%2Fplan.md", { waitUntil: "domcontentloaded" });
+    await tabPage.waitForSelector("#md h1", { timeout: slow(8000) });
+    await tabPage.waitForTimeout(300);
+    const r = await tabPage.evaluate(() => ({
+      pwn: window.__pwn, scripts: document.querySelectorAll("#md script").length,
+      handlers: [...document.querySelectorAll("#md *")].filter(e => [...e.attributes].some(a => /^on/i.test(a.name))).length,
+      hrefs: [...document.querySelectorAll("#md a")].map(a => a.getAttribute("href")),
+      imgs: [...document.querySelectorAll("#md img")].map(i => i.getAttribute("src")),
+      text: document.getElementById("md").textContent,
+      table: document.querySelectorAll("#md table td").length
+    }));
+    if (r.pwn !== undefined) fail("markdown ran script: __pwn=" + r.pwn);
+    if (r.scripts || r.handlers) fail("markdown left a script or an event handler: " + JSON.stringify(r));
+    if (r.hrefs.some(h => /javascript:/i.test(h || ""))) fail("a javascript: link survived: " + JSON.stringify(r.hrefs));
+    if (!r.hrefs.includes("/read.html#land-live/docs%2Fother.md")) fail("a relative .md link did not stay in the tab: " + JSON.stringify(r.hrefs));
+    if (!r.hrefs.includes("/v1/tasks/land-live/files/view?path=docs%2Fdata%2Fa.txt")) fail("a relative file link did not go to the view route: " + JSON.stringify(r.hrefs));
+    if (!r.hrefs.includes("https://example.org/")) fail("an https link was lost: " + JSON.stringify(r.hrefs));
+    if (JSON.stringify(r.imgs) !== JSON.stringify(["/v1/tasks/land-live/files/view?path=docs%2Fimg%2Fp.png"])) fail("images were " + JSON.stringify(r.imgs));
+    if (tabReqs.some(u => /evil\.test/.test(u))) fail("a remote image was fetched");
+    if (!/<script>window\.__pwn/.test(r.text)) fail("raw HTML was dropped rather than shown as text: " + r.text.slice(0, 200));
+    if (r.table !== 2) fail("the table did not render: " + r.table);
+    await shot(tabPage, "markdown-tab");
+    if (errors.length) fail("the file-open page threw uncaught errors: " + errors.join(" | "));
   } finally {
     tasksMode = was;
     await ctx.close();
@@ -23109,7 +23272,7 @@ async function main() {
     const only = { boardDocs: boardDocsSection, phoneBoardCompact: phoneBoardCompactSection, termWear: termWearSection, bridge: bridgeSection, settingsOnce: settingsOnceSection,
       groupRemove: groupRemoveSection, worn: wornSection, restartGate: restartGateSection, restartStays: restartStaysSection, atriumDown: atriumDownSection,
       toastStays: toastStaysSection, groupColor: groupColorSection,
-      groupDrag: groupDragSection, tooltip: tooltipSection, linkTip: linkTipSection,popoutTagFlip: popoutTagFlipSection, prefsEverywhere: prefsEverywhereSection, mPrefsEverywhere: (b) => mPrefsEverywhereSection(b), idleRate: idleRateSection, foldStill: foldStillSection,
+      groupDrag: groupDragSection, tooltip: tooltipSection, linkTip: linkTipSection, fileOpenOutside: fileOpenOutsideSection,popoutTagFlip: popoutTagFlipSection, prefsEverywhere: prefsEverywhereSection, mPrefsEverywhere: (b) => mPrefsEverywhereSection(b), idleRate: idleRateSection, foldStill: foldStillSection,
       untaggedSort: untaggedSortSection, newCard: newCardSection, themePreview: themePreviewSection, themeLab: themeLabSection, land: landSection, reselect: reselectSection, clearKeepsPage: clearKeepsPageSection,
       resumeSpinner: resumeSpinnerSection, toastsTop: toastsTopSection, sayWhen: sayWhenSection, pasteSpinner: pasteSpinnerSection,
       pasteBig: pasteBigSection, pasteBusy: pasteBusySection, typing: typingSection, alias: aliasSection, askAgain: askAgainSection, copySelect: copySelectSection, busyGuard: busyGuardSection, keepalive: keepaliveSection,
@@ -25196,6 +25359,7 @@ async function main() {
     await unit("changeReq", () => changeReqSection(browser, base));
     await unit("mChangeReq", () => mChangeReqSection(browser));
     await unit("trayHead", () => trayHeadSection(browser, base));
+    await unit("fileOpenOutside", () => fileOpenOutsideSection(browser, base));
     await unit("bootClean", () => bootCleanSection(browser, base));
     await unit("mWorking", () => mWorkingSection(browser));
     await unit("mOwnMessages", () => mOwnMessagesSection(browser));

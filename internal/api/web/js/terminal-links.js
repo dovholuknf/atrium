@@ -150,12 +150,14 @@ function fileLink(id, range, hit) {
       ev.preventDefault();
       linkTipHide();
       hideTip();
-      openFromTerminal(id, hit);
+      // A directory has one place to go. A file asks, because there are three.
+      if (hit.dir) openFromTerminal(id, hit);
+      else fileLinkMenu(ev, id, hit);
     },
     hover: (ev) => {
       const text = hit.dir
         ? hit.rel + "/\nopens the file browser here"
-        : hit.rel + "  " + bytes(hit.size) + "\nopens in atrium's own editor, in this browser";
+        : hit.rel + "  " + bytes(hit.size) + "\nclick to open it: in atrium's editor, in a tab, or on the machine it is on";
       const same = linkTip.path === hit.rel;
       clearTimeout(linkTip.timer);
       linkTip.timer = 0;
@@ -201,6 +203,43 @@ function linkTipHide() {
 
 // The pointer leaving the terminal is leaving, not a repaint.
 document.getElementById("t-screen").addEventListener("mouseleave", linkTipHide);
+
+// A clicked file asks where it should open, and the answer is one of three.
+//
+//   in atrium's editor   here, in this browser, in the drawer. Always offered.
+//   in a tab             here, in a new browser tab, streamed from the room that
+//                        holds the card. Always offered, and the only way to read a
+//                        markdown file rendered.
+//   open on <machine>    `files/open`, which runs the operator's `editor_command` on
+//                        the machine the file is on. Offered ONLY when that room has
+//                        one set, and named for the machine, because over a share it
+//                        is not the machine in front of you. There is no default.
+//
+// The room's own setting decides, not the board's: a card on another room is
+// opened by that room's command, and asked of that room.
+async function fileLinkMenu(ev, id, hit) {
+  const at = { clientX: ev && ev.clientX || 0, clientY: ev && ev.clientY || 0 };
+  const where = (termTask && termTask.id === id && termTask.room) || "";
+  let cmd = "";
+  try {
+    const s = await api("/v1/settings", where ? { headers: { "X-Atrium-Room": where } } : undefined);
+    cmd = (s && s.editor_command) || "";
+  } catch (e) {
+    cmd = (typeof pastePrefs !== "undefined" && pastePrefs && pastePrefs.editor_command) || "";
+  }
+  if (!termTask || termTask.id !== id) return;
+  const items = [
+    { label: "open in atrium's editor", act: () => openFromTerminal(id, hit) },
+    { label: "open in a tab", act: () => openFileTabFor(id, hit.rel) }
+  ];
+  if (cmd) {
+    items.push({
+      label: where ? "open on " + where : "open where the file is",
+      act: () => openOnDaemon(id, hit.rel)
+    });
+  }
+  showMenu(at, items);
+}
 
 // Where a clicked path opens, WHICH IS HERE.
 //

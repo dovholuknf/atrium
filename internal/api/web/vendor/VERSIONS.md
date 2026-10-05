@@ -10,8 +10,12 @@ The board has to work offline and over an overlay, so nothing here comes from a 
 | `xterm-addon-webgl.js` | `@xterm/addon-webgl` | 0.18.0 | `9ffa9ac3ff6d47d4e6216ed1972ca8e0b5336cef744f50ebdc3f67b0ed727cdb` |
 | `xterm-addon-search.js` | `@xterm/addon-search` | 0.15.0 | `3cf52d71d9deb4ba60125087434c53e3fb35bb2249db9b13987991fd2db1c7bd` |
 | `xterm-addon-web-links.js` | `@xterm/addon-web-links` | 0.11.0 | `f230a6c8211ce4614dda5441f27b603c7c1ca95151a655bc0efac6377ee643f0` |
+| `marked.js` | `marked` (`lib/marked.umd.js`) | 12.0.2 | `27ade2eccd4d58ab5edeb4f046eae71f204979547c4575fa11e294332d30a291` |
+| `purify.js` | `dompurify` (`dist/purify.min.js`) | 3.1.6 | `c0845096a7c4a6741f362ac506c94c1c7d27dc603bcc1bf64a587f76f2dbe3a1` |
 
-**They move together.** A renderer addon built against a different core than the one beside it fails at
+`marked` and `purify` render the markdown tab (`read.html`). marked turns text into HTML and is never trusted to make it safe: every result goes through DOMPurify before it touches the page.
+
+**The xterm files move together.** A renderer addon built against a different core than the one beside it fails at
 load, and the failure is silent: xterm falls back to its DOM renderer and everything still works, slowly. That
 is exactly the state this repo was in before the webgl addon was added, and the symptom was one browser tab
 holding a quarter of a CPU.

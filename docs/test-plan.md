@@ -8786,3 +8786,20 @@ Needs a throwaway board, never a live one, and `pwsh`.
 Covered by `TestTheShippedGitHubRowsResolvePullRequestsAndIssues`, `TestTheShippedBitbucketRowResolvesAPullRequest` and
 `TestTheShippedRowsDoNotAnswerNearMisses` (api), which PUT each shipped row through the real route. The `fetch` step (`gh`) and item 5 on a real
 board are live checks.
+
+## IW. A file link asks where to open, and a .md renders in a tab (u-file-open-outside)
+
+1. On a throwaway board with a card whose directory holds `docs/plan.md`, `page.html`, `pic.svg` and `shot.png`, have the terminal print
+   each path and click `docs/plan.md`. The menu offers "open in atrium's editor" and "open in a tab", and no third entry while
+   `editor_command` is empty.
+2. Set `editor_command` in settings (`explorer.exe {path}`, or `open {path}` on macOS). Click again: a third entry reads "open on <room>"
+   and starts that command on the room's machine. On a card in another room the entry names that room and uses that room's setting.
+3. "open in a tab" on `plan.md` opens a rendered page. Put `<script>`, an `<img onerror>`, a `javascript:` link and a remote image in it:
+   none runs or loads, and the raw HTML is shown as text. A relative `[x](other.md)` opens `other.md` in the same page, and `![](a.png)` shows the card's file.
+4. "open in a tab" on `page.html` and `pic.svg` shows their source as text, never a page. `shot.png` shows the image. The response headers
+   include `nosniff` and `Content-Security-Policy: sandbox`.
+5. `.../files/view?path=../../etc/passwd` and a path in another card answer 403.
+
+Covered by `TestAViewIsNeverADocument`, `TestAViewTypesWhatTheLinkResolvesTo`, `TestAViewOutsideTheCardIsRefused`,
+`TestAViewOfNothingOrADirectory` and `TestAViewCannotReachAnotherCardsFile` (api), and `fileOpenOutsideSection` in
+`scripts/test-board-headless.js` (`HEADLESS_ONLY=fileOpenOutside`). Item 2 on a real second room is a live check.
