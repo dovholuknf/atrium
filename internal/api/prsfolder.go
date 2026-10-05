@@ -26,6 +26,7 @@ type PRFindingCounts struct {
 
 // PRWalkCounts is the findings of a run by walk state.
 type PRWalkCounts struct {
+	Accepted int `json:"accepted"`
 	Done     int `json:"done"`
 	Skipped  int `json:"skipped"`
 	Deferred int `json:"deferred"`
@@ -119,7 +120,7 @@ func parseWalkLine(s string) (walkLine, bool) {
 		return walkLine{}, false
 	}
 	switch state {
-	case "open", "done", "skipped", "deferred":
+	case "open", "accepted", "done", "skipped", "deferred":
 	default:
 		return walkLine{}, false
 	}

@@ -61,9 +61,11 @@
   .wk-row:hover { background: var(--lift); }
   .wk-row.cur { background: var(--lift-strong); box-shadow: inset 2px 0 0 var(--teal); color: var(--head); }
   .wk-row.brk { border-top: 1px solid var(--stroke-dim); }
-  .wk-row.skipped, .wk-row.posted { opacity: .7; }
+  .wk-row.dismissed, .wk-row.posted { opacity: .7; }
   .wk-g { width: 1.2em; text-align: center; color: var(--teal); }
-  .wk-row.skipped .wk-g { color: var(--dim); }
+  .wk-row.dismissed .wk-g { color: var(--dim); }
+  .wk-row.accepted .wk-g { color: var(--blue); }
+  .wk-row.deferred .wk-g { color: var(--warn); }
   .wk-n { color: var(--dim); }
   .wk-p { overflow: hidden; text-overflow: ellipsis; min-width: 0; }
   .wk-lk { color: var(--danger); margin-left: auto; }
@@ -95,7 +97,9 @@
   .wk-num { color: var(--head); font: 600 var(--fs-md) var(--mono); }
   .wk-where { color: var(--label); font: var(--fs-sm) var(--mono); }
   .wk-state { font-size: var(--fs-xs); color: var(--teal); }
-  .wk-state.skipped { color: var(--dim); }
+  .wk-state.dismissed { color: var(--dim); }
+  .wk-state.accepted { color: var(--blue); }
+  .wk-state.deferred { color: var(--warn); }
   .wk-warns { margin-bottom: var(--vs-2); }
   .wk-warn { color: var(--warn); font-size: var(--fs-xs); }
 

@@ -237,14 +237,14 @@ function walkParseFinding(name, text, hash, eol, meta) {
   const code = lm ? lm[4].trim() : "";
   const id = field(/^Id:\s*(.+)$/);
   const wl = field(/^Walk:\s*(.+)$/);
-  const wm = /^(posted|skipped)\s*(\S*)\s*(.*)$/.exec(wl);
+  const wm = /^(accepted|posted|skipped)\s*(\S*)\s*(.*)$/.exec(wl);
   return {
     name, text, hash, eol: eol || "\n", mtime: (meta && meta.mtime) || "", size: (meta && meta.size) || 0,
     lines, ev, prUrl: (lines[0] || "").trim(), label, link, comment, evLines,
     num: nm.num, sev: nm.sev, sevText: lm ? lm[1].toUpperCase() : nm.sevWord.toUpperCase(),
     path, line: lm ? Number(lm[3]) : nm.line, code,
     id, leak: evLines.some(l => /^Leak:/.test(l)),
-    state: wm ? wm[1] : "", stateAt: wm ? wm[2] : "", stateUrl: wm ? wm[3].trim() : "",
+    state: wm ? walkUiState(wm[1] === "posted" ? "done" : wm[1]) : "", stateAt: wm ? wm[2] : "", stateUrl: wm ? wm[3].trim() : "",
     key: "", isNew: false, flash: null
   };
 }
@@ -366,7 +366,10 @@ function walkPrOf(taskId) {
 }
 
 // The API's walk words and the drawer's: done is posted.
-function walkUiState(s) { return s === "done" ? "posted" : s === "skipped" || s === "deferred" ? s : ""; }
+// accepted is clint agreeing it should be raised, dismissed is `skipped` on the wire. The wire words stay.
+function walkUiState(s) {
+  return s === "done" ? "posted" : s === "skipped" ? "dismissed" : s === "accepted" || s === "deferred" ? s : "";
+}
 
 // One finding of `GET /v1/prs/{id}/findings` as a drawer item. Its hunk becomes a one-file diff, so the code view
 // is the one the file source draws.
@@ -511,19 +514,18 @@ const walkTenant = {
   },
 
   summary(items) {
-    const posted = items.filter(i => i.state === "posted").length;
-    const skipped = items.filter(i => i.state === "skipped").length;
-    const deferred = items.filter(i => i.state === "deferred").length;
-    return `${posted + skipped} of ${items.length}` + (posted || skipped || deferred
-      ? `: ${posted} posted, ${skipped} skipped` + (deferred ? `, ${deferred} deferred` : "") : "");
+    const n = s => items.filter(i => i.state === s).length;
+    const a = n("accepted"), p = n("posted"), d = n("dismissed"), f = n("deferred");
+    return `${p + d} of ${items.length}` + (a || p || d || f
+      ? `: ${a} accepted, ${p} posted, ${d} dismissed` + (f ? `, ${f} deferred` : "") : "");
   },
 
   segments(items) {
-    return items.map(i => ({ cls: "s-" + i.sev + (i.leak ? " leak" : ""), done: !!i.state }));
+    return items.map(i => ({ cls: "s-" + i.sev + (i.leak ? " leak" : ""), done: i.state === "posted" || i.state === "dismissed" }));
   },
 
   railRow(it, i, d) {
-    const glyph = it.state === "posted" ? "✓" : it.state === "skipped" ? "─" : it.state === "deferred" ? "…" : "";
+    const glyph = it.state === "posted" ? "✓" : it.state === "accepted" ? "●" : it.state === "dismissed" ? "─" : it.state === "deferred" ? "…" : "";
     const prev = d.items[i - 1];
     return `<button type="button" class="wk-row s-${it.sev}${it.key === d.cur ? " cur" : ""}${it.state ? " " + it.state : ""}${
         prev && prev.sev !== it.sev ? " brk" : ""}" data-i="${i}" role="option"
@@ -560,10 +562,11 @@ const walkTenant = {
         <button type="button" data-act="e" data-tip="edit the comment (e)">e edit</button>
         <button type="button" data-act="c" data-tip="copy the comment (c). C copies then opens the line">c copy</button>
         <button type="button" data-act="o" data-tip="open the line on GitHub (o)"${it.link ? "" : " disabled"}>o open</button>
-        <button type="button" data-act="p" data-tip="mark posted (p)">p posted</button>
-        <button type="button" data-act="s" data-tip="skip (s)">s skip</button>${this.prId
-          ? `<button type="button" data-act="d" data-tip="come back to it later (d)">d defer</button>` : ""}
-        <button type="button" data-act="u" data-tip="undo the last posted or skipped (u)"${it.state ? "" : " disabled"}>u undo</button>
+        <button type="button" data-act="y" data-tip="accept: it should be raised, not posted yet (y)">y accept</button>
+        <button type="button" data-act="d" data-tip="mark posted, with the comment link if you have it (d)">d posted</button>
+        <button type="button" data-act="s" data-tip="dismiss: do not raise it (s)">s dismiss</button>${this.prId
+          ? `<button type="button" data-act="f" data-tip="come back to it later (f)">f defer</button>` : ""}
+        <button type="button" data-act="u" data-tip="set it back to open (u)"${it.state ? "" : " disabled"}>u undo</button>
       </div>`;
   },
 
@@ -630,11 +633,13 @@ function walkKeydown(e) {
   const t = e.target;
   if (t && (t.tagName === "TEXTAREA" || t.tagName === "INPUT" || t.tagName === "SELECT")) return;
   const k = e.key;
-  if (!"aAecCopsdujkg".includes(k) || k.length !== 1) return;
+  const key = k === "Enter" ? "C" : k;
+  if (k === "Enter" && t && (t.tagName === "BUTTON" || t.tagName === "A")) return;
+  if (!"aAecCopsdyfujkg".includes(key) || key.length !== 1) return;
   if (dock.editing || dock.conflict) return;
   e.preventDefault();
   e.stopPropagation();
-  walkAct(k);
+  walkAct(key);
 }
 
 async function walkAct(k) {
@@ -660,9 +665,10 @@ async function walkAct(k) {
       if (await walkCopy(it.comment, "copied the comment")) walkOpenLink(it);
       return;
     case "o": return walkOpenLink(it);
-    case "p": return walkPosted(it);
+    case "p": case "d": return walkPosted(it);
+    case "y": return void walkWriteState(it, `Walk: accepted ${walkNow()}`, "accepted");
     case "s": return void walkWriteState(it, `Walk: skipped ${walkNow()}`, "skipped");
-    case "d":
+    case "f":
       if (!walkTenant.prId) return;
       return void walkWriteState(it, null, "deferred");
     case "u":
@@ -759,7 +765,7 @@ function walkAdopt(it, text, hash, key) {
   return fresh;
 }
 
-// posted, skipped, undo. Only the Walk line changes, so when the file has moved on it is safe to say the same
+// accepted, posted, dismissed, undo. Only the Walk line changes, so when the file has moved on it is safe to say the same
 // thing again on what the daemon hands back, once. An edit is not like that and goes through the compare.
 async function walkWriteState(it, line, state, url) {
   if (walkTenant.prId) return walkMark(it, state, url);
@@ -879,10 +885,10 @@ function walkTakeTheirs(it) {
 }
 
 // "walk done" types the words into the walker's terminal and submits them, which is the existing brief's way to
-// end a walk. A leak that is neither posted nor skipped asks once first: rule 5 lets clint leave a leak out of the
+// end a walk. A leak that is neither posted nor dismissed asks once first: rule 5 lets clint leave a leak out of the
 // comments, and does not let the tab do it for clint.
 async function walkDone() {
-  const open = dock.items.filter(i => i.leak && !i.state).map(i => "`" + i.num + "`");
+  const open = dock.items.filter(i => i.leak && i.state !== "posted" && i.state !== "dismissed").map(i => "`" + i.num + "`");
   if (open.length) {
     const who = open.length === 1 ? open[0] + " is a leak and is not posted"
       : open.slice(0, -1).join(", ") + " and " + open[open.length - 1] + " are leaks and are not posted";

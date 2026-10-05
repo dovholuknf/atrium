@@ -144,9 +144,13 @@ function pullStateWords(r) {
     case "aborted": return "aborted";
     case "ready": {
       const total = pullFindingTotal(r);
-      const seen = (w.done || 0) + (w.skipped || 0) + (w.deferred || 0);
-      if (total > 0 && !w.open && !w.deferred) return "walked";
-      if (seen > 0) return "walking " + seen + " of " + total;
+      // Reviewed is every finding posted or dismissed. Accepted and deferred are not, and accepted counts as open.
+      const seen = (w.done || 0) + (w.skipped || 0);
+      if (total > 0 && seen >= total) return "reviewed";
+      if (seen > 0 || w.accepted || w.deferred) {
+        return seen + " of " + total + ": " + (w.accepted || 0) + " accepted, " + (w.done || 0) + " posted, " +
+          (w.skipped || 0) + " dismissed" + (w.deferred ? ", " + w.deferred + " deferred" : "");
+      }
       return "ready to walk";
     }
   }
