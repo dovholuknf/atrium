@@ -79,6 +79,16 @@
 # `sudo useradd -m localai`) and stops with exit 11. An account that exists but is
 # not the ssh login is exit 1: target `localai@host`.
 #
+# THE LOCALAI ACCOUNT AND THE SHARED FOLDER (backlog 75), for a NEW machine, one with no manifest and no room.json.
+# With no -User, the account must be localai, checked exactly as -User is: missing prints the command and stops with
+# exit 11, and an ssh login that is not localai is exit 1. A machine that already is a room is left alone and the
+# `account` line says `skip ... already provisioned under <login>` (sg3 stays on claude). `-KeepAccount` is the explicit
+# opt-out for a new machine that runs under its own login. Then `shared-folder` makes C:\Users\Public\atrium,
+# /Users/Shared/atrium or /srv/atrium, or when the login may not (usually /srv) fails with exit 12 and the one command an
+# administrator runs, having changed nothing. Clones go under it (room-git.ps1 init -GitRoot). `-NoSharedFolder` keeps
+# them in ~/git. The room's `git_root` setting is NOT set: nothing sets it yet, so the `git-root` line is a `warn`.
+# `-Check` runs the steps up to here read only and ends, so it changes nothing and needs no admin. A rerun skips both.
+#
 # THE ACCOUNT'S RIGHTS. The ssh login IS the account the room runs as, since everything here runs as that login. Right
 # after the account check, `account-rights` (a provision run only, not -Remove, -Restart or -SmokeOnly) reads who that
 # login is, read only, and says so loudly when it is an administrator (Windows: an elevated token, Administrators,
@@ -141,6 +151,8 @@
 #      was stopped
 #  11  -User names an account that does not exist on the remote. The line prints the
 #      command to create it, which this never runs. Nothing was changed
+#  12  the shared folder is missing or not writable for the ssh login. The line prints the command an administrator
+#      runs. Nothing was changed
 #  (-Restart also uses 3 for a stop or start that did not work, 4 for a room
 #  that did not come back attached, and 6 for a machine this did not provision)
 #
@@ -197,6 +209,12 @@ param(
     [switch] $Force,
     # The account the room must run as, for example localai. Checked, never created: see "the account".
     [string] $User,
+    # A NEW machine must be provisioned as localai: see "the localai account". -KeepAccount is the explicit opt-out, for a
+    # machine that runs under another account (sg3 on claude), and -NoSharedFolder keeps the clones in ~/git.
+    [switch] $KeepAccount,
+    [switch] $NoSharedFolder,
+    # Read only: the account and shared folder steps say what they find and what they would do, then the run ends.
+    [switch] $Check,
     # The account's rights, see "the account's rights". The operator's own accounts: name, DOMAIN\name or name@host.
     [string[]] $OperatorAccount = @(),
     [switch] $IAcceptRunningAsMe,
@@ -278,6 +296,10 @@ if ($Restart -and ($Remove -or $SmokeOnly -or $Autostart -or $NoAutostart -or $I
 }
 if (($Yes -or $Force) -and -not $Restart) { Write-Host 'provision args fail -Yes and -Force belong to -Restart'; exit 1 }
 if ($IAcceptRunningAsMe -and $RequireDedicatedAccount) { Write-Host 'provision args fail -IAcceptRunningAsMe and -RequireDedicatedAccount say opposite things'; exit 1 }
+if ($KeepAccount -and $User) { Write-Host 'provision args fail -KeepAccount and -User say opposite things'; exit 1 }
+if (($Check -or $KeepAccount -or $NoSharedFolder) -and ($Remove -or $Restart -or $SmokeOnly)) {
+    Write-Host 'provision args fail -Check, -KeepAccount and -NoSharedFolder belong to a provision run, not -Remove, -Restart or -SmokeOnly'; exit 1
+}
 if ($AllowedFolders.Count -and ($Remove -or $Restart -or $SmokeOnly)) {
     Write-Host 'provision args fail -AllowedFolders changes the room, so it goes with none of -Remove, -Restart, -SmokeOnly'; exit 1
 }
@@ -558,7 +580,8 @@ function Get-CreateAccountCommand {
         default   { "sudo useradd -m $user" }
     }
 }
-if ($User) {
+function Test-Account {
+    param([string] $User, [bool] $byDefault)
     $q = switch ($os) {
         'windows' { "net user $(Quote-Ps $User) 2>&1 | Out-Null; if (`$LASTEXITCODE -eq 0) { 'exists=True' } else { 'exists=False' }`n'login=' + `$env:USERNAME" }
         'darwin'  { "if dscl . -read /Users/$(Quote-Sh $User) >/dev/null 2>&1; then echo exists=True; else echo exists=False; fi; echo login=`$(id -un)" }
@@ -570,9 +593,28 @@ if ($User) {
         Finish 11
     }
     if ($acct.login -and $acct.login -ne $User) {
-        Fail 'account' 1 "$User exists, and $Target logs in as $($acct.login). target $User@<host> so the room runs as $User"
+        $or = if ($byDefault) { ", or pass -KeepAccount to run the room as $($acct.login)" } else { '' }
+        Fail 'account' 1 "$User exists, and $Target logs in as $($acct.login). target $User@<host> so the room runs as $User$or"
     }
     Step 'account' 'ok' "$User, the account this room runs as"
+}
+if ($User) { Test-Account $User $false }
+
+# THE LOCALAI ACCOUNT, for a machine added from now on (backlog 75). Once the state is read, a NEW machine, one with no
+# manifest and no room.json, must be provisioned as localai: the same check as -User, so a missing account prints the
+# command and stops with 11. A machine that already is a room is left alone, whatever account it runs under (sg3 on
+# claude), and -KeepAccount is the explicit opt-out for a new machine that is meant to run under its own login.
+# Returns $true for a new machine that is to get the shared folder.
+function Invoke-LocalAiCheck {
+    if ($User) { return -not ($manifest -or $state.joinedroom) }
+    if ($KeepAccount) { Step 'account' 'skip' '-KeepAccount, so the room runs as the ssh login and localai is not checked'; return $false }
+    if ($manifest -or $state.joinedroom) {
+        $who = (ConvertFrom-KeyValue (Invoke-Remote $(if ($os -eq 'windows') { "'login=' + `$env:USERNAME" } else { 'echo login=$(id -un)' })).Out).login
+        Step 'account' 'skip' "already provisioned$(if ($who) { " under $who" }), left alone. localai applies to new machines only"
+        return $false
+    }
+    Test-Account 'localai' $true
+    $true
 }
 
 # The rights of the account the room runs as, see "the account's rights". Read only.
@@ -772,6 +814,75 @@ function Set-ManifestStateDir {
         $script:manifest | Add-Member -NotePropertyName statedir -NotePropertyValue $r.Dir -Force
         Save-Manifest
     }
+}
+
+# THE SHARED FOLDER, for a new machine (backlog 75): a local path that holds the repository clones, readable by the
+# operator's account and by localai. C:\Users\Public\atrium, /Users/Shared/atrium, /srv/atrium. Made when the ssh login
+# may, and when it may not (usually /srv on Linux) the step fails with the one command an administrator runs, exit 12,
+# having changed nothing. -Check only reports. Returns the path, or $null when there is to be none.
+function Invoke-SharedFolder {
+    param([bool] $newMachine, [string] $account)
+    if (-not $newMachine -or $NoSharedFolder) {
+        Step 'shared-folder' 'skip' $(if ($NoSharedFolder) { '-NoSharedFolder, so clones stay under ~/git' } else { 'already provisioned or -KeepAccount, so its clones stay where they are' })
+        return $null
+    }
+    $dir = switch ($os) { 'windows' { 'C:\Users\Public\atrium' } 'darwin' { '/Users/Shared/atrium' } default { '/srv/atrium' } }
+    $make = -not $Check
+    $q = if ($os -eq 'windows') {
+        "`$d = $(Quote-Ps $dir); `$mk = `$$make`n" + @'
+if (-not (Test-Path -LiteralPath $d)) {
+    'exists=False'
+    if ($mk) { try { New-Item -ItemType Directory -Force -Path $d | Out-Null; 'made=True' } catch { 'made=False' } }
+}
+if (Test-Path -LiteralPath $d) {
+    $t = Join-Path $d ".atrium-probe-$PID"
+    try { [IO.File]::WriteAllText($t, 'x'); Remove-Item -LiteralPath $t -Force; 'writable=True' } catch { 'writable=False' }
+}
+'@
+    } else {
+        "d=$(Quote-Sh $dir); mk=$(if ($make) { 1 } else { 0 })`n" + @'
+if [ ! -d "$d" ]; then
+  echo exists=False
+  if [ "$mk" = 1 ]; then if mkdir -p "$d" 2>/dev/null; then chmod 2775 "$d" 2>/dev/null; echo made=True; else echo made=False; fi; fi
+fi
+if [ -d "$d" ]; then if [ -w "$d" ]; then echo writable=True; else echo writable=False; fi; fi
+'@
+    }
+    $k = ConvertFrom-KeyValue (Invoke-Remote $q).Out
+    $fix = switch ($os) {
+        'windows' { "mkdir $dir" }
+        'darwin'  { "sudo mkdir -p $dir && sudo chown ${account}:staff $dir && sudo chmod 2775 $dir" }
+        default   { "sudo install -d -o $account -g $account -m 2775 $dir" }
+    }
+    if ($k.exists -eq 'False' -and $Check) {
+        Step 'shared-folder' 'warn' "$dir is missing on $remoteHost. a run without -Check makes it, and prints this when it may not: $fix"
+        return $dir
+    }
+    if ($k.made -eq 'False') {
+        Step 'shared-folder' 'fail' "$dir is missing and $Target may not make it. this never needs admin itself. an administrator runs: $fix"
+        Finish 12
+    }
+    if ($k.writable -ne 'True') {
+        Step 'shared-folder' 'fail' "$dir exists and $Target cannot write to it. an administrator runs: $fix"
+        Finish 12
+    }
+    if ($k.made -eq 'True') { Step 'shared-folder' 'done' "$dir made, the folder the room's clones go under" }
+    else { Step 'shared-folder' 'ok' "$dir, the folder the room's clones go under" }
+    $dir
+}
+
+# Right after the state is read, on a provision run. A refusal here has changed nothing.
+$sharedDir = $null
+if (-not ($Remove -or $Restart -or $SmokeOnly)) {
+    $newMachine = Invoke-LocalAiCheck
+    $acctName = if ($User) { $User } else { 'localai' }
+    $sharedDir = Invoke-SharedFolder $newMachine $acctName
+    if ($sharedDir) {
+        # THE ROOM'S git_root SETTING IS NOT SET HERE: nothing in atrium sets it yet (no verb and no settings field), see
+        # backlog 75. The clone goes under the shared folder by room-git.ps1 -GitRoot, and the line says what is left.
+        Step 'git-root' 'warn' "clones go under $sharedDir, but the room's git_root setting stays at its default (~/git) until atrium has a way to set it. see docs/backlog/fabric/75.md"
+    }
+    if ($Check) { Step 'check' 'ok' 'read only: nothing was changed'; Finish 0 }
 }
 
 # ── -Remove ─────────────────────────────────────────────────────────────────
@@ -2613,7 +2724,7 @@ fi
 # The clone, made by room-git.ps1 init. Its `room-git cwd ok <path>` line is
 # where the smoke card below runs, when init succeeded.
 $clonePath = $null
-if ($Repo -ne 'none') { & pwsh -NoProfile -File (Join-Path $PSScriptRoot 'room-git.ps1') init $Name -Target $Target -Ssh $Ssh -Scp $Scp @(if ($GitVersion) { '-GitVersion'; $GitVersion }) @(if ($SshOption) { '-SshOption'; $SshOption -join ',' }) *>&1 | ForEach-Object { Write-Host $_; if ("$_" -match '^room-git cwd ok (.+)$') { $clonePath = $Matches[1].Trim() } }; if ($LASTEXITCODE -ne 0) { $clonePath = $null; Step 'git' 'warn' "room-git init exited $LASTEXITCODE. rerun: room-git.ps1 init $Name -Target $Target" } }
+if ($Repo -ne 'none') { & pwsh -NoProfile -File (Join-Path $PSScriptRoot 'room-git.ps1') init $Name -Target $Target -Ssh $Ssh -Scp $Scp @(if ($sharedDir) { '-GitRoot'; $sharedDir }) @(if ($GitVersion) { '-GitVersion'; $GitVersion }) @(if ($SshOption) { '-SshOption'; $SshOption -join ',' }) *>&1 | ForEach-Object { Write-Host $_; if ("$_" -match '^room-git cwd ok (.+)$') { $clonePath = $Matches[1].Trim() } }; if ($LASTEXITCODE -ne 0) { $clonePath = $null; Step 'git' 'warn' "room-git init exited $LASTEXITCODE. rerun: room-git.ps1 init $Name -Target $Target" } }
 
 # The permission gate, after the hooks: room-gate.ps1 copies the one dotfiles script and registers it first.
 & pwsh -NoProfile -File (Join-Path $PSScriptRoot 'room-gate.ps1') $Name -Target $Target -Ssh $Ssh -Scp $Scp @(if ($SshOption) { '-SshOption'; $SshOption -join ',' }) *>&1 | ForEach-Object { Write-Host $_ }; if ($LASTEXITCODE -ne 0) { Step 'gate' 'warn' "room-gate exited $LASTEXITCODE. rerun: room-gate.ps1 $Name -Target $Target" }

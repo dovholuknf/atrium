@@ -118,6 +118,20 @@ it only runs for a provision, not for `-Remove`, `-Restart` or `-SmokeOnly`. `ro
 is only ever `ok` or `warn`, never fixed and never counted as unmet. Provisioning never creates an account, so it never
 makes an administrator one. Whoever creates the account decides, and the next section creates a standard one.
 
+## New machines: localai and the shared folder
+
+A machine added from now on is provisioned as `localai`, with no flag. `provision-room.ps1` checks for the account on a
+new machine (no manifest, no room) and never creates it. When it is missing the `account` line prints the one command
+(`net user localai /add`, `sysadminctl -addUser localai` or `sudo useradd -m localai`) and the run stops with exit 11.
+A machine that already is a room is left alone, whatever account it runs under, so sg3 stays on `claude`.
+`-KeepAccount` is the explicit opt-out for a new machine that should run under its own login.
+
+The `shared-folder` step then makes `C:\Users\Public\atrium`, `/Users/Shared/atrium` or `/srv/atrium` for the repository
+clones, which `room-git.ps1 init -GitRoot` places under it. When the login may not make it (usually `/srv`) the line
+prints the command an administrator runs and the run stops with exit 12. `-NoSharedFolder` keeps clones in `~/git`.
+`provision-room.ps1 -Check` runs these steps read only and changes nothing. The room's `git_root` setting is not set
+yet, see docs/backlog/fabric/75.md.
+
 ## Set one up
 
 Each block says what it does, then does it. Swap in your own names, paths and key. The administrator runs everything
