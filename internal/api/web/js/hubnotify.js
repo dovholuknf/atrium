@@ -132,3 +132,36 @@ async function testHubNotify() {
   } catch (e) { out.textContent = "could not reach the hub"; return; }
   loadHubNotify(true);
 }
+
+// ── the growler reminder ladder, per reason ─────────────────────────────────
+
+const GL_HINT = "Off for questions by default: a question alerts once, then waits in the bell. A permission blocks " +
+  "its card, so it keeps its reminders. Saved on the hub, so every board follows it.";
+
+async function loadGrowlLadder() {
+  const row = hnEl("s-gl-row");
+  if (!row) return;
+  if (typeof isGuest === "function" && isGuest()) { row.hidden = true; return; }
+  let l;
+  try {
+    const r = await plainFetch("/_hub/growl-ladder");
+    if (!r.ok) { row.hidden = true; return; }
+    l = await r.json();
+  } catch (e) { return; }
+  row.hidden = false;
+  hnEl("s-gl-permission").checked = !!l.permission;
+  hnEl("s-gl-question").checked = !!l.question;
+}
+
+async function saveGrowlLadder() {
+  const msg = hnEl("s-gl-msg");
+  try {
+    const r = await plainFetch("/_hub/growl-ladder", { method: "PUT", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ permission: hnEl("s-gl-permission").checked, question: hnEl("s-gl-question").checked }) });
+    if (!r.ok) { msg.textContent = "the hub refused it: " + ((await r.text()) || r.status); return; }
+    const l = await r.json();
+    hnEl("s-gl-permission").checked = !!l.permission;
+    hnEl("s-gl-question").checked = !!l.question;
+    msg.textContent = "saved. " + GL_HINT;
+  } catch (e) { msg.textContent = "could not reach the hub"; }
+}

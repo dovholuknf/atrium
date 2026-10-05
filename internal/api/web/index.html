@@ -1723,6 +1723,20 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
         no undo bar and no growler sound, and desktop notifications follow the setting above. A permission request
         shows as its usual toast, on the permissions tab, and in the bell. Kept in this browser.</span>
     </div>
+    <!-- u-new-no-question-reminders: which reasons the hub re-raises. Hidden until the hub answers. See js/hubnotify.js. -->
+    <div class="field" id="s-gl-row" hidden>
+      <label class="eyebrow">growler reminders (on the hub)</label>
+      <label class="check">
+        <input type="checkbox" id="s-gl-permission" onchange="saveGrowlLadder()">
+        <span>remind me about a permission request</span>
+      </label>
+      <label class="check">
+        <input type="checkbox" id="s-gl-question" onchange="saveGrowlLadder()">
+        <span>remind me about a question</span>
+      </label>
+      <span class="hintline" id="s-gl-msg">Off for questions by default: a question alerts once, then waits in the
+        bell. A permission blocks its card, so it keeps its reminders. Saved on the hub, so every board follows it.</span>
+    </div>
     <!-- u-030: the hub's notify command. Hidden until the hub answers, so a board with no hub never draws it.
          See js/hubnotify.js. -->
     <div class="field" id="s-hn-row" hidden>
