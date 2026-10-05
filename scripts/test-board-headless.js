@@ -4729,11 +4729,11 @@ async function typingSection(browser, base) {
       const help = document.querySelector(".term-help");
       return { hidden: el.hidden, text: el.textContent, shut: el.classList.contains("shut"),
         aboveHelp: el.nextElementSibling === help,
-        stored: localStorage.getItem("atrium.debug.typing") };
+        stored: localStorage.getItem("atrium.debug.typing.land-live") };
     });
     if (on.hidden) fail("the typing readout stayed hidden after it was switched on.");
     if (!on.aboveHelp) fail("the typing readout is not the line directly above the shortcut strip.");
-    if (on.stored !== "1") fail("switching the readout on was not remembered in this browser.");
+    if (on.stored !== "1") fail("switching the readout on was not remembered for this card.");
     if (!/^1 message from @runtime waits: 13 chars on your line$/.test(on.text)) {
       fail("the blocking line does not say who waits and how many chars: " + JSON.stringify(on.text));
     }
@@ -4835,7 +4835,7 @@ async function termDebugSection(browser, base) {
     p.on("pageerror", e => errors.push(String(e)));
     await p.goto(base, { waitUntil: "domcontentloaded" });
     await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
-    await p.evaluate(() => { localStorage.removeItem("atrium.debug.typing"); localStorage.removeItem("atrium.debug.inputlag"); });
+    await p.evaluate(() => { localStorage.removeItem("atrium.debug.typing.land-live"); localStorage.removeItem("atrium.debug.inputlag.land-live"); });
     await p.evaluate(() => attachTask("land-live"));
     await p.waitForFunction(() => termSock && termSock.readyState === 1 && termTask && termTask.id === "land-live",
       { timeout: slow(10000) });
@@ -4945,19 +4945,20 @@ async function termDebugSection(browser, base) {
     if (!(await p.evaluate(() => termDrawerOpen))) fail("Escape aimed outside the terminal and the drawer closed it.");
     await p.evaluate(() => toggleTermDrawer(false));
 
-    // The input lag box takes the machine's answer on every open, and the pinned note shows.
+    // The input lag box shows this card's switch, not the machine's answer: the machine logging says nothing about
+    // which card is timed. The pinned note shows when ATRIUM_DEBUG_INPUTLAG decides.
     const lagState = () => p.evaluate(() => ({ box: document.getElementById("s-inputlag").checked, lag: lagOn,
       pinned: !document.getElementById("s-inputlag-pinned").hidden }));
     // The opens above each asked for the settings and a read still in flight is shared, so let them land first.
     await p.waitForFunction(() => !settingsInflight.size, null, { timeout: slow(5000) });
     kaSettings = { input_lag_log: true, input_lag_pinned: false };
     await p.evaluate(() => toggleTermDrawer(true));
-    await p.waitForFunction(() => document.getElementById("s-inputlag").checked && lagOn, null, { timeout: slow(5000) })
-      .catch(() => {});
+    await p.waitForFunction(() => !settingsInflight.size, null, { timeout: slow(5000) });
+    await p.waitForTimeout(200);
     const lagOnState = await lagState();
     await p.evaluate(() => { toggleTermDrawer(false); toggleInputLag(false); });
-    if (!lagOnState.box || !lagOnState.lag || lagOnState.pinned) {
-      fail("the drawer did not take the machine's input lag answer: " + JSON.stringify(lagOnState));
+    if (lagOnState.box || lagOnState.lag || lagOnState.pinned) {
+      fail("the machine logging switched this card's input lag box on: " + JSON.stringify(lagOnState));
     }
     // Pinned by ATRIUM_DEBUG_INPUTLAG: the note shows and this browser is left as it was.
     kaSettings = { input_lag_log: true, input_lag_pinned: true };
@@ -4988,6 +4989,9 @@ async function termDebugSection(browser, base) {
     await q.goto(base, { waitUntil: "domcontentloaded" });
     await q.waitForFunction(() => typeof toggleInputLag === "function" && typeof toggleTypingReadout === "function",
       null, { timeout: slow(15000) });
+    await q.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
+    await q.evaluate(() => attachTask("land-live"));
+    await q.waitForFunction(() => termTask && termTask.id === "land-live", null, { timeout: slow(10000) });
     await p.evaluate(() => { toggleInputLag(true); toggleTypingReadout(true); });
     await q.waitForFunction(() => lagOn && typingOn, null, { timeout: slow(5000) }).catch(() => {});
     const on = await q.evaluate(() => ({ lag: lagOn, typing: typingOn,
@@ -5004,6 +5008,353 @@ async function termDebugSection(browser, base) {
   landList = []; landPerms = [];
   tasksMode = was;
   if (!bad) console.log("termDebug ok");
+}
+
+// ── typing lag with several terminals streaming ──────────────────────────
+// Four cards attached in turn, so three are kept hidden and one shows, every one of them streaming a TUI's redraw
+// the way a working agent does. Traced with CDP for TERMLAG_SECS (default 20): long tasks per minute, the worst
+// animation frame, and every forced layout with the script that forced it. Prints the numbers and fails on a forced
+// layout from inside an animation frame, which is what turned xterm's render frame into a 147ms one.
+// TERMLAG_TRACE=<file> keeps the raw trace. See REPORT.md on claude/u-term-debug-and-lag.
+async function termLagSection(browser, base) {
+  const was = tasksMode;
+  tasksMode = "land";
+  const ids = ["lag-a", "lag-b", "lag-c", "lag-d"];
+  ids.forEach((id, i) => landCard(id, { supervised: true, created_at: "2026-09-19T12:0" + i + ":00Z", activity: { what: "working" } }));
+  // The rest of a busy board: TERMLAG_CARDS cards in all, some working, their activity moving every refresh.
+  const more = [];
+  for (let i = 0; i < +(process.env.TERMLAG_CARDS || 120) - ids.length; i++) {
+    more.push(landCard("lag-x" + i, { supervised: i % 3 === 0, status: i % 7 === 0 ? "needs-input" : "running",
+      display_title: "busy card " + i, worktree: "/w/github/x/repo" + (i % 9),
+      created_at: "2026-09-19T11:" + String(i % 60).padStart(2, "0") + ":00Z",
+      activity: { what: i % 4 === 0 ? "working" : "idle" } }));
+  }
+  landList = ids.map(id => LAND[id]).concat(more);
+  let tick = 0;
+  const churn = setInterval(() => {
+    tick++;
+    for (const c of landList) {
+      if (c.activity && c.activity.what === "working") {
+        c.activity = Object.assign({}, c.activity, { tool: "Bash", tokens: tick * 97, since_seconds: tick * 2 });
+        c.idle_seconds = 0;
+        c.last_activity_at = new Date().toISOString();
+        c.context_tokens = 20000 + tick * 1000;
+      }
+    }
+  }, 1000);
+  landPerms = [];
+  const errors = [];
+  const ctx = await landContext(browser);
+  await ctx.addInitScript(() => {
+    const Real = window.WebSocket;
+    window.__socks = [];
+    window.WebSocket = function (url, protocols) {
+      if (!/\/attach(\?|$)/.test(url)) return new Real(url, protocols);
+      const s = { url, readyState: 0, binaryType: "arraybuffer", bufferedAmount: 0,
+        onopen: null, onclose: null, onmessage: null, onerror: null,
+        send() {}, close() { this.readyState = 3; } };
+      window.__socks.push(s);
+      setTimeout(() => { s.readyState = 1; if (s.onopen) s.onopen({}); }, 0);
+      return s;
+    };
+    Object.assign(window.WebSocket, { CONNECTING: 0, OPEN: 1, CLOSING: 2, CLOSED: 3 });
+  });
+  const secs = +(process.env.TERMLAG_SECS || 20);
+  try {
+    const p = await ctx.newPage();
+    p.on("pageerror", e => errors.push(String(e)));
+    await p.goto(base, { waitUntil: "domcontentloaded" });
+    await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
+    for (const id of ids) {
+      await p.evaluate(id => attachTask(id), id);
+      await p.waitForFunction(id => termSock && termSock.readyState === 1 && termTask && termTask.id === id, id,
+        { timeout: slow(10000) });
+      await p.waitForTimeout(300);
+    }
+    // A working agent's screen: a block of new text now and then, and a status block under it redrawn ten times a
+    // second, with colour and a spinner, as Claude Code's does.
+    await p.evaluate(() => {
+      const enc = new TextEncoder();
+      const spin = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏";
+      let n = 0;
+      window.__stream = setInterval(() => {
+        n++;
+        for (const s of window.__socks) {
+          if (s.readyState !== 1 || !s.onmessage) continue;
+          let out = "";
+          if (n % 5 === 0) out += "\x1b[4A\x1b[0J\x1b[38;5;250m" + "line " + n + " of the agent's answer, ".repeat(3) + "\x1b[0m\r\n\r\n\r\n\r\n";
+          out += "\x1b[4A\r\x1b[2K\x1b[38;5;174m" + spin[n % spin.length] + " Working… \x1b[38;5;246m(" + (n / 10).toFixed(1) +
+            "s · ↓ " + (n * 13) + " tokens · esc to interrupt)\x1b[0m\r\n\x1b[2K\r\n\x1b[2K\x1b[38;5;244m╭" + "─".repeat(70) +
+            "╮\x1b[0m\r\n\x1b[2K\x1b[38;5;244m│\x1b[0m > \x1b[7m \x1b[0m\r";
+          s.onmessage({ data: enc.encode(out).buffer });
+        }
+      }, 100);
+    });
+    // The SSE stream says something changed every couple of seconds on a busy board, and the board refreshes.
+    if (process.env.TERMLAG_REFRESH !== "0") await p.evaluate(() => { window.__refresh = setInterval(() => refresh(), 2000); });
+    await p.waitForTimeout(1500);
+    if (process.env.TERMLAG_PROBE) {
+      console.log(JSON.stringify(await p.evaluate(() => ({
+        canvases: [...document.querySelectorAll("canvas")].map(c => c.width + "x" + c.height + (c.offsetParent ? "" : " hidden") + " " + (c.className || "")),
+        anims: document.getAnimations().map(a => (a.animationName || a.constructor.name) + " on " +
+          (a.effect && a.effect.target ? a.effect.target.tagName + "." + String(a.effect.target.className).slice(0, 40) + "#" + a.effect.target.id : "?") +
+          " " + a.playState),
+        xterms: document.querySelectorAll(".xterm").length,
+        dpr: devicePixelRatio
+      })), null, 1));
+    }
+    const cdp = await ctx.newCDPSession(p);
+    const events = [];
+    cdp.on("Tracing.dataCollected", e => { for (const x of e.value) events.push(x); });
+    const doneP = new Promise(r => cdp.once("Tracing.tracingComplete", r));
+    await cdp.send("Tracing.start", { transferMode: "ReportEvents", traceConfig: { includedCategories: [
+      "devtools.timeline", "disabled-by-default-devtools.timeline", "disabled-by-default-devtools.timeline.stack",
+      "disabled-by-default-devtools.timeline.frame", "blink.user_timing", "toplevel"] } });
+    // Typing while it streams: a key every 150ms, through xterm, as the operator does.
+    const typer = setInterval(() => { p.keyboard.press("a").catch(() => {}); }, 150);
+    await p.focus("#t-screen textarea").catch(() => {});
+    await p.waitForTimeout(secs * 1000);
+    clearInterval(typer);
+    await cdp.send("Tracing.end");
+    await doneP;
+    await p.evaluate(() => { clearInterval(window.__stream); clearInterval(window.__refresh); });
+    if (process.env.TERMLAG_TRACE) fs.writeFileSync(process.env.TERMLAG_TRACE, JSON.stringify({ traceEvents: events }));
+
+    // The renderer's main thread: the one the CrRendererMain thread name is on.
+    const main = events.find(e => e.name === "thread_name" && e.args && e.args.name === "CrRendererMain" &&
+      events.some(x => x.pid === e.pid && x.name === "FireAnimationFrame"));
+    const onMain = e => main && e.pid === main.pid && e.tid === main.tid;
+    const ms = e => (e.dur || 0) / 1000;
+    const tasks = events.filter(e => onMain(e) && e.name === "RunTask" && e.ph === "X");
+    const long = tasks.filter(e => ms(e) >= 50);
+    const raf = events.filter(e => onMain(e) && e.name === "FireAnimationFrame" && e.ph === "X");
+    const worstRaf = raf.reduce((m, e) => Math.max(m, ms(e)), 0);
+    const inside = (e, outer) => outer.some(o => e.ts >= o.ts && e.ts < o.ts + o.dur);
+    // Forced: a layout or style recalc with a JS stack, meaning script asked for geometry and waited for it.
+    const forced = events.filter(e => onMain(e) && (e.name === "Layout" || e.name === "UpdateLayoutTree") &&
+      e.args && e.args.beginData && e.args.beginData.stackTrace && e.args.beginData.stackTrace.length);
+    const byWho = {};
+    for (const e of forced) {
+      const st = e.args.beginData.stackTrace;
+      const at = st.slice(0, 3).map(f => (f.functionName || "(anon)") + "@" + String(f.url || "").split("/").pop() + ":" + f.lineNumber).join(" < ");
+      const k = (inside(e, raf) ? "rAF  " : "task ") + e.name + " " + at;
+      byWho[k] = byWho[k] || { n: 0, ms: 0 };
+      byWho[k].n++;
+      // The layout's own time comes on its end event when it is a B/E pair.
+      byWho[k].ms += ms(e);
+    }
+    const perMin = long.length * 60 / secs;
+    console.log("termLag: " + secs + "s, " + tasks.length + " tasks, " + long.length + " long (" + perMin.toFixed(1) +
+      "/min), worst task " + tasks.reduce((m, e) => Math.max(m, ms(e)), 0).toFixed(1) + "ms, " + raf.length +
+      " animation frames, worst " + worstRaf.toFixed(1) + "ms, " + forced.length + " forced layouts");
+    for (const [k, v] of Object.entries(byWho).sort((a, b) => b[1].n - a[1].n).slice(0, 15)) {
+      console.log("  " + String(v.n).padStart(5) + "x " + v.ms.toFixed(1).padStart(7) + "ms  " + k);
+    }
+    const inRaf = forced.filter(e => inside(e, raf));
+    if (process.env.TERMLAG_STRICT && inRaf.length) fail("termLag: " + inRaf.length + " forced layouts inside an animation frame.");
+  } finally {
+    await ctx.close();
+  }
+  clearInterval(churn);
+  if (errors.length) fail("the terminal lag page threw: " + errors.join(" | "));
+  landList = []; landPerms = [];
+  tasksMode = was;
+  if (!bad) console.log("termLag ok");
+}
+
+// ── a hidden terminal drawn by xterm's DOM renderer does not redraw ──────
+// A kept terminal past the WebGL ones falls to xterm's DOM renderer while `display: none`, and xterm 5.5 redraws
+// every row of it for each line it scrolls, measuring each cell at zero width and forcing a style recalc for it. Five
+// hundred lines into such a terminal must measure next to nothing, and showing it again must draw what came. See
+// `holdHiddenRedraw` in js/terminal-list.js.
+async function termHiddenRedrawSection(browser, base) {
+  const was = tasksMode;
+  tasksMode = "land";
+  landCard("hid-a", { supervised: true, created_at: "2026-09-19T12:00:00Z", activity: { what: "working" } });
+  landCard("hid-b", { supervised: true, created_at: "2026-09-19T12:01:00Z", activity: { what: "working" } });
+  landList = [LAND["hid-a"], LAND["hid-b"]];
+  landPerms = [];
+  const errors = [];
+  const ctx = await landContext(browser);
+  await ctx.addInitScript(() => {
+    const Real = window.WebSocket;
+    window.__socks = [];
+    window.WebSocket = function (url, protocols) {
+      if (!/\/attach(\?|$)/.test(url)) return new Real(url, protocols);
+      const s = { url, readyState: 0, binaryType: "arraybuffer", bufferedAmount: 0,
+        onopen: null, onclose: null, onmessage: null, onerror: null,
+        send() {}, close() { this.readyState = 3; } };
+      window.__socks.push(s);
+      setTimeout(() => { s.readyState = 1; if (s.onopen) s.onopen({}); }, 0);
+      return s;
+    };
+    Object.assign(window.WebSocket, { CONNECTING: 0, OPEN: 1, CLOSING: 2, CLOSED: 3 });
+  });
+  try {
+    const p = await ctx.newPage();
+    p.on("pageerror", e => errors.push(String(e)));
+    await p.goto(base, { waitUntil: "domcontentloaded" });
+    await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
+    for (const id of ["hid-a", "hid-b"]) {
+      await p.evaluate(id => attachTask(id), id);
+      await p.waitForFunction(id => termSock && termSock.readyState === 1 && termTask && termTask.id === id, id,
+        { timeout: slow(10000) });
+      await p.waitForTimeout(300);
+    }
+    // hid-a is kept and hidden. Its WebGL context goes, as `keepEnforce` takes it past the first few, and its DOM
+    // renderer starts with an empty width cache, under `display: none`.
+    const r = await p.evaluate(async () => {
+      const slot = keptTerms.get("hid-a");
+      if (!slot) return { err: "hid-a is not kept" };
+      dropWebgl(slot.term);
+      await new Promise(r => setTimeout(r, 200));
+      const rd = slot.term._core._renderService._renderer.value;
+      const wc = rd && rd._widthCache;
+      if (!wc) return { err: "no DOM renderer width cache on the kept terminal" };
+      let n = 0;
+      const P = Object.getPrototypeOf(wc), real = P._measure;
+      P._measure = function () { n++; return real.apply(this, arguments); };
+      const sock = window.__socks.find(s => /hid-a/.test(s.url));
+      const enc = new TextEncoder();
+      for (let i = 0; i < 500; i++) {
+        sock.onmessage({ data: enc.encode("hidden line " + i + " of what the agent said\r\n").buffer });
+        if (i % 25 === 0) await new Promise(r => requestAnimationFrame(r));
+      }
+      await new Promise(r => setTimeout(r, 300));
+      P._measure = real;
+      return { measured: n };
+    });
+    if (r.err) fail("termHiddenRedraw: " + r.err);
+    else if (r.measured > 200) fail("termHiddenRedraw: a hidden DOM-rendered terminal measured " + r.measured +
+      " cells for 500 lines; it redraws while hidden.");
+    await p.evaluate(() => attachTask("hid-a"));
+    await p.waitForFunction(() => termTask && termTask.id === "hid-a", null, { timeout: slow(10000) });
+    await p.waitForTimeout(500);
+    const shown = await p.evaluate(() => {
+      const b = term.buffer.active, out = [];
+      for (let i = 0; i < term.rows; i++) { const l = b.getLine(b.viewportY + i); out.push(l ? l.translateToString(true) : ""); }
+      const rows = document.querySelector("#t-screen .xterm-rows");
+      return { buf: out.join("\n"), dom: rows ? rows.textContent : null, gl: !!term._atriumGl };
+    });
+    if (!/hidden line 499/.test(shown.buf)) fail("termHiddenRedraw: hid-a's buffer lost what came while hidden.");
+    if (!shown.gl && shown.dom !== null && !/hidden line 499/.test(shown.dom))
+      fail("termHiddenRedraw: hid-a shown again without drawing what came while hidden.");
+  } finally {
+    await ctx.close();
+  }
+  if (errors.length) fail("the hidden redraw page threw: " + errors.join(" | "));
+  landList = []; landPerms = [];
+  tasksMode = was;
+  if (!bad) console.log("termHiddenRedraw ok");
+}
+
+// ── the debug switches are per card ──────────────────────────────────────
+// The drawer belongs to one card, so its two switches do too: on for one terminal, the next terminal shows them off
+// and is neither timed nor polled. The hub and the room log for the whole machine, so they are told "on" while any
+// card is. See js/peek-debug.js, js/inputlag.js and js/typing.js.
+async function termDebugPerCardSection(browser, base) {
+  const was = tasksMode;
+  tasksMode = "land";
+  landCard("land-live", { supervised: true, created_at: "2026-09-19T12:00:00Z", activity: { what: "idle" } });
+  landCard("land-b", { supervised: true, created_at: "2026-09-19T12:01:00Z", activity: { what: "idle" } });
+  landList = [LAND["land-live"], LAND["land-b"]];
+  landPerms = [];
+  typingPolls = [];
+  typingAnswer = { line: "", count: 0, since_ms: 9000, open: true, reason: "line empty and quiet" };
+  const errors = [];
+  const posted = [];
+  const ctx = await landContext(browser);
+  await ctx.addInitScript(() => {
+    const Real = window.WebSocket;
+    window.WebSocket = function (url, protocols) {
+      if (!/\/attach(\?|$)/.test(url)) return new Real(url, protocols);
+      const s = { url, readyState: 0, binaryType: "arraybuffer", bufferedAmount: 0,
+        onopen: null, onclose: null, onmessage: null, onerror: null,
+        send() {}, close() { this.readyState = 3; } };
+      setTimeout(() => { s.readyState = 1; if (s.onopen) s.onopen({}); }, 0);
+      return s;
+    };
+    Object.assign(window.WebSocket, { CONNECTING: 0, OPEN: 1, CLOSING: 2, CLOSED: 3 });
+  });
+  try {
+    const p = await ctx.newPage();
+    p.on("pageerror", e => errors.push(String(e)));
+    p.on("request", r => {
+      if (r.method() !== "POST" || !/\/v1\/settings$/.test(r.url())) return;
+      try { const b = JSON.parse(r.postData() || "{}"); if ("input_lag_log" in b) posted.push(b.input_lag_log); } catch (e) {}
+    });
+    await p.goto(base, { waitUntil: "domcontentloaded" });
+    await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
+    // A browser that had the old browser-wide switch on drops it.
+    await p.evaluate(() => { localStorage.setItem("atrium.debug.inputlag", "1"); localStorage.setItem("atrium.debug.typing", "1"); });
+    await p.reload({ waitUntil: "domcontentloaded" });
+    await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
+    const legacy = await p.evaluate(() => [localStorage.getItem("atrium.debug.inputlag"), localStorage.getItem("atrium.debug.typing")]);
+    if (legacy[0] !== null || legacy[1] !== null) fail("the old browser-wide debug keys were left behind: " + JSON.stringify(legacy));
+
+    const attach = id => p.evaluate(id => attachTask(id), id)
+      .then(() => p.waitForFunction(id => termSock && termSock.readyState === 1 && termTask && termTask.id === id,
+        id, { timeout: slow(10000) }));
+    const state = () => p.evaluate(() => ({ card: termTask && termTask.id, lag: lagOn, typing: typingOn,
+      lagBox: document.getElementById("s-inputlag").checked, typingBox: document.getElementById("s-typing").checked,
+      line: !document.getElementById("t-typing").hidden }));
+    const click = id => p.evaluate(id => {
+      const el = document.getElementById(id);
+      el.checked = !el.checked;
+      el.dispatchEvent(new Event("change"));
+    }, id);
+
+    await attach("land-live");
+    await p.evaluate(() => toggleTermDrawer(true));
+    await click("s-typing");
+    await click("s-inputlag");
+    await p.waitForFunction(() => !document.getElementById("t-typing").hidden, null, { timeout: slow(5000) }).catch(() => {});
+    const a = await state();
+    if (!a.lag || !a.typing || !a.lagBox || !a.typingBox || !a.line) fail("switching both on for one card did not take: " + JSON.stringify(a));
+    if (posted[posted.length - 1] !== true) fail("the hub and room were not told to log: " + JSON.stringify(posted));
+
+    // The other card: both off, the line hidden, its gate never asked for by the line.
+    await attach("land-b");
+    await p.evaluate(() => toggleTermDrawer(false));
+    await p.waitForTimeout(300);
+    const n = typingPolls.filter(u => u.includes("/land-b/")).length;
+    await p.waitForTimeout(1300);
+    const b = await state();
+    const bPolls = typingPolls.filter(u => u.includes("/land-b/")).length - n;
+    if (b.lag || b.typing || b.lagBox || b.typingBox || b.line) fail("a card switched on carried over to another card: " + JSON.stringify(b));
+    if (bPolls) fail("the gate line polled a card it is not switched on for: " + bPolls + "x");
+    const stored = await p.evaluate(() => ({ lagB: localStorage.getItem("atrium.debug.inputlag.land-b"),
+      typB: localStorage.getItem("atrium.debug.typing.land-b") }));
+    if (stored.lagB !== null || stored.typB !== null) fail("the other card was stored as switched: " + JSON.stringify(stored));
+
+    // Switching the other card off-then-on and off keeps the machine on while the first card still is.
+    await p.evaluate(() => toggleTermDrawer(true));
+    await click("s-inputlag");
+    await click("s-inputlag");
+    await p.waitForTimeout(300);
+    if (posted[posted.length - 1] !== true) fail("unticking one card told the hub to stop while another card is on: " + JSON.stringify(posted));
+    await p.evaluate(() => toggleTermDrawer(false));
+
+    // Back to the first: both on again, with no click.
+    await attach("land-live");
+    await p.waitForFunction(() => !document.getElementById("t-typing").hidden, null, { timeout: slow(5000) }).catch(() => {});
+    const c = await state();
+    if (!c.lag || !c.typing || !c.lagBox || !c.typingBox || !c.line) fail("the first card lost its switches across a switch away and back: " + JSON.stringify(c));
+
+    // Its last card off: the hub and room are told to stop.
+    await p.evaluate(() => toggleTermDrawer(true));
+    await click("s-inputlag");
+    await click("s-typing");
+    await p.waitForTimeout(300);
+    if (posted[posted.length - 1] !== false) fail("the last card switched off did not tell the hub to stop: " + JSON.stringify(posted));
+    await p.evaluate(() => toggleTermDrawer(false));
+  } finally {
+    await ctx.close();
+  }
+  if (errors.length) fail("the per-card debug page threw: " + errors.join(" | "));
+  landList = []; landPerms = [];
+  tasksMode = was;
+  if (!bad) console.log("termDebugPerCard ok");
 }
 
 // ── a card's alias ────────────────────────────────────────────────────────
@@ -23472,7 +23823,7 @@ async function main() {
       mSwitcher: mSwitcherSection,
       mPull: mPullSection, joinedLive: joinedLiveSection, joinedClick: joinedClickSection,
       coverPoll: coverPollSection, coverSteps: coverStepsSection, termBox: termBoxSection, termRowBleed: termRowBleedSection,
-      termDebug: termDebugSection, termSortStarted: termSortStartedSection,
+      termDebug: termDebugSection, termDebugPerCard: termDebugPerCardSection, termLag: termLagSection, termHiddenRedraw: termHiddenRedrawSection, termSortStarted: termSortStartedSection,
       noReadyChildren: noReadyChildrenSection, childUnderParent: childUnderParentSection, topNav: topNavSection,
       u002: u002Section, childFold: childFoldSection, liveHome: liveHomeSection,
       pulls: pullsSection, prMove: prMoveSection, hubRepos: hubReposSection, hubReposShelf: hubReposShelfSection, hubReposLedger: hubReposLedgerSection, hubReposFeed: hubReposFeedSection, changeReq: changeReqSection, mChangeReq: mChangeReqSection, trayHead: trayHeadSection, pullsAbsent: pullsAbsentSection, oneTooltip: oneTooltipSection, burnChart: burnChartSection, burnReadout: burnReadoutSection, switchPrewarm: switchPrewarmSection, attachAtOnce: attachAtOnceSection, fileView: fileViewSection, keepAlive: keepAliveSection, switchBackCost: switchBackCostSection, keepMemory: keepMemorySection, pullsDrawer: pullsDrawerSection };
@@ -25577,6 +25928,8 @@ async function main() {
     await unit("termBox", () => termBoxSection(browser, base));
     await unit("termRowBleed", () => termRowBleedSection(browser, base));
     await unit("termDebug", () => termDebugSection(browser, base));
+    await unit("termDebugPerCard", () => termDebugPerCardSection(browser, base));
+    await unit("termHiddenRedraw", () => termHiddenRedrawSection(browser, base));
     await unit("termSortStarted", () => termSortStartedSection(browser, base));
     await unit("topNav", () => topNavSection(browser, base));
     await unit("pulls", () => pullsSection(browser, base));
@@ -26148,10 +26501,11 @@ async function prefsEverywhereSection(browser, base) {
     const SPAN = slow(4000);
     // Each: [name, run in A, wait in B (returns true once B shows the change)]
     const cases = [
-      ["input lag log", () => toggleInputLag(true), () => lagOn === true],
-      ["input lag log off", () => toggleInputLag(false), () => lagOn === false],
-      ["typing gate readout", () => toggleTypingReadout(true), () => typingOn === true && document.getElementById("s-typing").checked],
-      ["typing gate readout off", () => toggleTypingReadout(false), () => typingOn === false],
+      // Per card: switched in A for the card B shows.
+      ["input lag log", () => toggleInputLag(true, "s1"), () => lagOn === true],
+      ["input lag log off", () => toggleInputLag(false, "s1"), () => lagOn === false],
+      ["typing gate readout", () => toggleTypingReadout(true, "s1"), () => typingOn === true && document.getElementById("s-typing").checked],
+      ["typing gate readout off", () => toggleTypingReadout(false, "s1"), () => typingOn === false],
       ["copy on select", () => toggleCopyOnSelect(), () => copyOnSelect === true],
       ["focus on hover", () => toggleHoverFocus(true), () => hoverFocus === true && document.getElementById("s-hoverfocus").checked],
       ["card colours", () => toggleCardColors(true), () => cardColors === true && document.getElementById("s-cardcolors").checked],

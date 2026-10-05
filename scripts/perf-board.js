@@ -1,7 +1,7 @@
 // Board performance measurements, one entry point. Reruns give a table that diffs.
 //
 //   node scripts/perf-board.js [--label NAME] [--out FILE.json] [--cards 120] [--live 12] [--terms 4]
-//        [--reps 3] [--idle-secs 20] [--mem-mins 20] [--only load,idle,burst,attach,anims,mem] [--dir WORKTREE] [--inject EXPERIMENT.css]
+//        [--reps 3] [--idle-secs 20] [--mem-mins 20] [--only load,idle,burst,attach,anims,mem,lag] [--lag-secs 30] [--lag-trace FILE] [--dir WORKTREE] [--inject EXPERIMENT.css]
 //   node scripts/perf-board.js --diff A.json B.json
 //
 // README: starts its own `atrium preview` (own db, ports and address file, never the machine's atrium) on a copy of
@@ -345,6 +345,88 @@ async function mMem() {
   await b.close();
 }
 
+// Typing while --terms terminals stream and the live cards chatter: long tasks per minute, the worst animation frame,
+// the GPU process, and every layout script forced, by who forced it and whether it was inside an animation frame.
+// --lag-secs (default 30) long, --lag-trace FILE keeps the trace. The repro for the "rAF handler took 147ms" report.
+async function mLag() {
+  const secs = +opt("lag-secs", 30);
+  const { b, ctx, page } = await launch(); const bs = await b.newBrowserCDPSession();
+  // --lag-dom: no WebGL addon, so every terminal draws with xterm's DOM renderer, as it does when WebGL is refused.
+  if (argv.includes("--lag-dom")) await ctx.addInitScript(() => { Object.defineProperty(window, "WebglAddon", { get: () => undefined, set() {} }); });
+  await openBoard(page, "terms"); await attachN(page, NTERMS);
+  await page.waitForTimeout(2000);
+  // xterm's viewport refresh, the frame callback that forces the layout, timed on the shown terminal and on the kept
+  // hidden ones apart. A private method of the vendored xterm 5.5, read here only to measure.
+  await page.evaluate(() => {
+    window.__vp = { shown: { n: 0, ms: 0, max: 0 }, hidden: { n: 0, ms: 0, max: 0 } };
+    const vp = term && term._core && term._core.viewport;
+    if (!vp) return;
+    const P = Object.getPrototypeOf(vp), real = P._innerRefresh;
+    P._innerRefresh = function () {
+      const t0 = performance.now(); const r = real.apply(this, arguments); const d = performance.now() - t0;
+      const k = this._viewportElement && this._viewportElement.offsetParent ? "shown" : "hidden";
+      const o = window.__vp[k]; o.n++; o.ms += d; o.max = Math.max(o.max, d); return r;
+    };
+  });
+  // --lag-probe: who asks the selection to redraw, by stack, since a DOM renderer redraws every row for it even paused.
+  if (argv.includes("--lag-probe")) await page.evaluate(() => {
+    window.__selwho = {}; const ss = term._core._selectionService, P = Object.getPrototypeOf(ss), real = P.refresh;
+    P.refresh = function () { const k = String(new Error().stack).split("\n").slice(2, 6).map(l => l.trim().replace(/https?:\/\/[^/]+/, "")).join(" < ");
+      window.__selwho[k] = (window.__selwho[k] || 0) + 1; return real.apply(this, arguments); };
+  });
+  const cs = await page.context().newCDPSession(page);
+  const events = [];
+  cs.on("Tracing.dataCollected", e => { for (const x of e.value) events.push(x); });
+  const done = new Promise(r => cs.once("Tracing.tracingComplete", r));
+  await cs.send("Tracing.start", { transferMode: "ReportEvents", traceConfig: { recordMode: "recordContinuously", includedCategories: [
+    "devtools.timeline", "disabled-by-default-devtools.timeline", "disabled-by-default-devtools.timeline.stack", "toplevel"] } });
+  let stop = false, tick = 0;
+  // Activity on the live cards four times a second, and every two seconds a burst of card edits across 50 cards, so
+  // the board re-renders its lists while the terminals stream: what a hub with a dozen working agents sends.
+  const chatter = (async () => { while (!stop) { const i = tick++ % Math.max(NLIVE, 1);
+    await act(i, tick % 2 ? "tool-end" : "tool-start", ["Bash", "Edit", "Read"][tick % 3]);
+    if (tick % 8 === 0) await Promise.all(ids.slice(0, 50).map((c, k) => j("PATCH", BOARD + "/v1/tasks/" + c[0], { why: "lag " + tick + " " + k }).catch(() => {})));
+    await sleep(250); } })();
+  // The visible terminal is the last attached, a fake agent: what is typed goes nowhere that matters.
+  await page.focus("#t-screen textarea").catch(() => {});
+  const typing = (async () => { while (!stop) { await page.keyboard.press("a").catch(() => {}); await sleep(150); } })();
+  const cpu = await cpuWindow(page, bs, secs * 1000);
+  stop = true; await Promise.all([chatter, typing]);
+  await cs.send("Tracing.end"); await done;
+  if (opt("lag-trace", "")) fs.writeFileSync(opt("lag-trace", ""), JSON.stringify({ traceEvents: events }));
+  const main = events.find(e => e.name === "thread_name" && e.args && e.args.name === "CrRendererMain" &&
+    events.some(x => x.pid === e.pid && x.tid === e.tid && x.name === "FireAnimationFrame"));
+  const on = events.filter(e => main && e.pid === main.pid && e.tid === main.tid && e.ph === "X");
+  const ms = e => (e.dur || 0) / 1000;
+  const tasks = on.filter(e => e.name === "RunTask"), raf = on.filter(e => e.name === "FireAnimationFrame");
+  const inRaf = e => raf.some(o => e.ts >= o.ts && e.ts < o.ts + o.dur);
+  const forced = on.filter(e => (e.name === "Layout" || e.name === "UpdateLayoutTree") && e.args && e.args.beginData &&
+    e.args.beginData.stackTrace && e.args.beginData.stackTrace.length);
+  const who = {};
+  for (const e of forced) {
+    const f = e.args.beginData.stackTrace.slice(0, +opt("lag-depth", 2)).map(f => (f.functionName || "(anon)") + "@" + String(f.url || "").split("/").pop() + ":" + f.lineNumber + ":" + f.columnNumber).join(" < ");
+    const k = (inRaf(e) ? "rAF " : "task ") + e.name + " " + f;
+    who[k] = who[k] || { n: 0, ms: 0 }; who[k].n++; who[k].ms += ms(e);
+  }
+  for (const [k, v] of Object.entries(who).sort((a, b) => b[1].ms - a[1].ms).slice(0, 12)) log("forced", v.n + "x", v.ms.toFixed(1) + "ms", k);
+  M["lag.long_tasks_per_min"] = r1(tasks.filter(e => ms(e) >= 50).length * 60 / secs);
+  M["lag.worst_task_ms"] = r1(tasks.reduce((m, e) => Math.max(m, ms(e)), 0));
+  M["lag.worst_raf_ms"] = r1(raf.reduce((m, e) => Math.max(m, ms(e)), 0));
+  M["lag.raf_over_16ms"] = raf.filter(e => ms(e) > 16).length;
+  M["lag.forced_layouts_in_raf"] = forced.filter(inRaf).length;
+  M["lag.forced_layout_ms_in_raf"] = r1(forced.filter(inRaf).reduce((t, e) => t + ms(e), 0));
+  M["lag.forced_layouts"] = forced.length;
+  M["lag.layout_ms_per_s"] = r1(on.filter(e => e.name === "Layout").reduce((t, e) => t + ms(e), 0) / secs);
+  M["lag.gpu_cpu_pct"] = r1(cpu.gpu); M["lag.renderer_cpu_pct"] = r1(cpu.renderer);
+  if (argv.includes("--lag-probe")) log("kept", JSON.stringify(await page.evaluate(() => Array.from(keptTerms.values()).map(s => {
+    const rs = s.term._core._renderService; return { gl: !!s.term._atriumGl, paused: rs._isPaused, renderer: rs._renderer && rs._renderer.value && rs._renderer.value.constructor.name }; }))));
+  if (argv.includes("--lag-probe")) log("selection refresh", JSON.stringify(await page.evaluate(() => window.__selwho), null, 1));
+  const vp = await page.evaluate(() => window.__vp);
+  for (const k of ["shown", "hidden"]) { M[`lag.viewport_${k}_calls`] = vp[k].n; M[`lag.viewport_${k}_ms`] = r1(vp[k].ms); M[`lag.viewport_${k}_max_ms`] = r1(vp[k].max); }
+  M["lag.webgl_contexts"] = await page.evaluate(() => [...document.querySelectorAll(".xterm canvas")].filter(c => !c.classList.contains("xterm-link-layer")).length);
+  await b.close();
+}
+
 function table() {
   const keys = Object.keys(M).filter(k => !k.startsWith("_")); const w = Math.max(...keys.map(k => k.length));
   const lines = [`| ${"metric".padEnd(w)} | ${label.padStart(10)} |`, `|${"-".repeat(w + 2)}|${"-".repeat(12)}|`];
@@ -356,7 +438,7 @@ function table() {
   const stop = () => { try { hub && hub.kill(); } catch (e) {} };
   process.on("exit", stop); process.on("SIGINT", () => { stop(); process.exit(130); });
   await startHub(); await setLive(); await sleep(1500);
-  for (const [name, fn] of [["load", mLoad], ["idle", mIdle], ["burst", mBurst], ["attach", mAttach], ["anims", mAnims], ["mem", mMem]]) {
+  for (const [name, fn] of [["load", mLoad], ["idle", mIdle], ["burst", mBurst], ["attach", mAttach], ["anims", mAnims], ["mem", mMem], ["lag", mLag]]) {
     if (!only.has(name)) continue;
     log("measuring", name); await setLive(); await sleep(1000);
     try { await fn(); } catch (e) { M[name + ".error"] = String(e.message || e).slice(0, 80); log(name, "failed:", e); }

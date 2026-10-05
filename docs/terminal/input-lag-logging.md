@@ -6,16 +6,18 @@ delay. All of it is off by default and costs one boolean test per keystroke when
 
 ## Turning it on
 
-**One checkbox for all of it.** Open a terminal's **details** drawer and tick **log terminal input lag** under **debug**. It takes effect at once, with no
-restart, in the browser, the hub and the room. In the all-rooms view the hub passes it to every attached room, and a
-room that attaches later is told when it arrives. Scoped to one room, it switches that room and the hub. The hub and
-the room keep it across a restart. Opening a terminal's details drawer (or the settings) in another browser shows the
-box ticked and starts timing there too.
+**One checkbox per terminal.** Open a terminal's **details** drawer and tick **log terminal input lag** under
+**debug**. The switch belongs to that card: the browser times keystrokes only while the terminal shows it, and
+another card's terminal stays untimed until its own box is ticked. It is remembered per card in this browser and
+reaches every window of it. The hub and the room log for the whole machine, so they take effect at once, with no
+restart, while any card in this browser has the box ticked, and stop when the last one is unticked. In the
+all-rooms view the hub passes it to every attached room, and a room that attaches later is told when it arrives.
+Scoped to one room, it switches that room and the hub. The hub and the room keep it across a restart.
 
-**Browser only.** Without the settings dialog, run this in the console:
+**Browser only.** Without the drawer, run this in the console with the terminal showing the card:
 
 ```js
-localStorage.setItem("atrium.debug.inputlag", "1")   // then reload
+localStorage.setItem("atrium.debug.inputlag." + termTask.id, "1")   // then switch away and back
 ```
 
 Output goes to the browser's console. Chrome hides `console.debug` lines by default, so set the level filter to
@@ -34,7 +36,8 @@ The variable stays with the process it was set on. A runner the room launches, a
 on a card do not inherit it, or any other `ATRIUM_DEBUG_` variable, so a worker's `go test` and the atrium binaries
 it runs are not timed. To time one runner, name the variable in its `environment` field.
 
-While it is set, settings says so under the checkbox, and the box reaches only the browser. Only a hop over the
+While it is set, the drawer says so under the checkbox, the hub and the room log for every card as it says, and
+the box only switches the browser's timing. Only a hop over the
 threshold is logged, so a healthy session stays quiet. Switching from the checkbox writes one `[inputlag] on from
 settings` or `off from settings` line. Every timing line starts with `[inputlag]` and a clock to the millisecond:
 
