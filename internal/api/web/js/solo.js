@@ -687,7 +687,8 @@ async function soloRefresh() {
 
   // By bare id: this window's hash keeps the spelling it opened with, and the
   // lists spell the card however the current room set does. See `BareIdMap`.
-  const mine = perms ? perms.filter(p => sameCard(p.task_id || p.id, soloID)) : null;
+  // Not while board-wide auto is about to answer it. See `permsToAnnounce`.
+  const mine = perms ? permsToAnnounce(perms).filter(p => sameCard(p.task_id || p.id, soloID)) : null;
   const ready = waiting
     ? waiting.some(t => sameCard(t.id, soloID) && t.status !== "needs-permission")
     : null;
@@ -767,7 +768,7 @@ function soloSpeak(kind, item) {
     ? `${who} needs permission`
     : `${who} is ${soloTask && justStarted(soloTask) ? "up" : "ready"}`;
   const body = kind === "perm" && item
-    ? `${item.tool}: ${(item.command || "").slice(0, 120)}`
+    ? permLine(item)
     : readyBecause(soloTask || {});
 
   // A card an agent launched is logged and not said. The mark above stays.

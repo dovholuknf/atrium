@@ -1679,9 +1679,10 @@ async function pass(signal) {
       // Named too. "permission needed" told you something needed answering and
       // not which of eight agents was frozen, which is the one fact that
       // decides whether it can wait.
-      alerting.check("permission", perms, p => ({
+      // Not while board-wide auto is about to answer it. See `permsToAnnounce`.
+      alerting.check("permission", permsToAnnounce(perms), p => ({
         title: `${p.agent || "an agent"} needs permission`,
-        body: `${p.tool}: ${(p.command || "").slice(0, 120)}`
+        body: permLine(p)
       }));
       alerting.nag(perms);
     }
