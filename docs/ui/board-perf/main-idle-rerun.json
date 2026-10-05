@@ -1,0 +1,39 @@
+{
+ "label": "main",
+ "meta": {
+  "label": "main",
+  "head": "d54cfc84",
+  "cards": 120,
+  "live": 12,
+  "terms": 4,
+  "reps": 3,
+  "idleSecs": 20,
+  "memMins": 20,
+  "host": "m1mini",
+  "chrome": "153.0.8010.12"
+ },
+ "metrics": {
+  "idle.terms.gpu_cpu_pct": 14.9,
+  "idle.terms.renderer_cpu_pct": 6.1,
+  "idle.terms.browser_cpu_pct": 0.7,
+  "idle.terms.script_pct": 0.8,
+  "idle.terms.layouts_per_s": 6.2,
+  "idle.terms.styles_per_s": 36.8,
+  "idle.terms.frames_per_s": 60,
+  "idle.board.gpu_cpu_pct": 12.4,
+  "idle.board.renderer_cpu_pct": 9.3,
+  "idle.board.browser_cpu_pct": 0.4,
+  "idle.board.script_pct": 0.3,
+  "idle.board.layouts_per_s": 0,
+  "idle.board.styles_per_s": 7.6,
+  "idle.board.frames_per_s": 60,
+  "idle.stack.gpu_cpu_pct": 16.5,
+  "idle.stack.renderer_cpu_pct": 7.8,
+  "idle.stack.browser_cpu_pct": 0.4,
+  "idle.stack.script_pct": 0.3,
+  "idle.stack.layouts_per_s": 0,
+  "idle.stack.styles_per_s": 7.6,
+  "idle.stack.frames_per_s": 60.2,
+  "idle.anims_running": 109
+ }
+}

@@ -1,0 +1,249 @@
+{
+ "label": "main",
+ "meta": {
+  "label": "main",
+  "head": "d54cfc84",
+  "cards": 120,
+  "live": 12,
+  "terms": 4,
+  "reps": 3,
+  "idleSecs": 20,
+  "memMins": 20,
+  "host": "m1mini",
+  "chrome": "153.0.8010.12"
+ },
+ "metrics": {
+  "load.cold.ttfb_ms": 1,
+  "load.cold.fcp_ms": 144,
+  "load.cold.dcl_ms": 172,
+  "load.cold.load_ms": 198,
+  "load.cold.inter_ms": 588,
+  "load.cold.tbt_ms": 0,
+  "load.cold.requests": 124,
+  "load.cold.transfer_kb": 1348,
+  "load.warm.ttfb_ms": 3,
+  "load.warm.fcp_ms": 84,
+  "load.warm.dcl_ms": 78,
+  "load.warm.load_ms": 81,
+  "load.warm.inter_ms": 421,
+  "load.warm.tbt_ms": 0,
+  "load.warm.requests": 124,
+  "load.warm.transfer_kb": 575,
+  "load.decoded_kb": 3398,
+  "load.dom_nodes": 4555,
+  "idle.terms.gpu_cpu_pct": 12.5,
+  "idle.terms.renderer_cpu_pct": 5.9,
+  "idle.terms.browser_cpu_pct": 0.9,
+  "idle.terms.script_pct": 0.9,
+  "idle.terms.layouts_per_s": 6.1,
+  "idle.terms.styles_per_s": 43.9,
+  "idle.terms.frames_per_s": 60.2,
+  "idle.board.gpu_cpu_pct": 9.7,
+  "idle.board.renderer_cpu_pct": 13.3,
+  "idle.board.browser_cpu_pct": 0.5,
+  "idle.board.script_pct": 0.4,
+  "idle.board.layouts_per_s": 0,
+  "idle.board.styles_per_s": 19.1,
+  "idle.board.frames_per_s": 60,
+  "idle.stack.gpu_cpu_pct": 11.2,
+  "idle.stack.renderer_cpu_pct": 9,
+  "idle.stack.browser_cpu_pct": 0.5,
+  "idle.stack.script_pct": 0.4,
+  "idle.stack.layouts_per_s": 0,
+  "idle.stack.styles_per_s": 20.2,
+  "idle.stack.frames_per_s": 60,
+  "idle.anims_running": 109,
+  "burst.board.script_ms": 7,
+  "burst.board.style_ms": 18,
+  "burst.board.layout_ms": 14,
+  "burst.board.layouts": 12,
+  "burst.board.styles": 15,
+  "burst.board.long_task_ms": 0,
+  "burst.board.sse_events": 200,
+  "burst.board.fetches": 0,
+  "burst.board.fetch_kb": 0,
+  "burst.board.dom_added": 120,
+  "burst.board.dom_removed": 108,
+  "burst.board.attr_writes": 18,
+  "burst.board.text_writes": 38,
+  "burst.board.rows_rebuilt": "38/120",
+  "burst.terms.script_ms": 4,
+  "burst.terms.style_ms": 1,
+  "burst.terms.layout_ms": 0,
+  "burst.terms.layouts": 1,
+  "burst.terms.styles": 2,
+  "burst.terms.long_task_ms": 0,
+  "burst.terms.sse_events": 200,
+  "burst.terms.fetches": 0,
+  "burst.terms.fetch_kb": 0,
+  "burst.terms.dom_added": 0,
+  "burst.terms.dom_removed": 0,
+  "burst.terms.attr_writes": 136,
+  "burst.terms.text_writes": 0,
+  "burst.terms.rows_rebuilt": "0/240",
+  "burst.stack.script_ms": 5,
+  "burst.stack.style_ms": 2,
+  "burst.stack.layout_ms": 0,
+  "burst.stack.layouts": 1,
+  "burst.stack.styles": 2,
+  "burst.stack.long_task_ms": 0,
+  "burst.stack.sse_events": 200,
+  "burst.stack.fetches": 0,
+  "burst.stack.fetch_kb": 0,
+  "burst.stack.dom_added": 0,
+  "burst.stack.dom_removed": 0,
+  "burst.stack.attr_writes": 14,
+  "burst.stack.text_writes": 0,
+  "burst.stack.rows_rebuilt": "0/310",
+  "attach.webgl.first_byte_ms": 45,
+  "attach.webgl.painted_ms": 70,
+  "attach.webgl.gl_on": "yes",
+  "attach.dom.first_byte_ms": 30,
+  "attach.dom.painted_ms": 62,
+  "attach.dom.gl_on": "no",
+  "mem.minutes": 20,
+  "mem.heap_start_mb": 10.2,
+  "mem.heap_end_mb": 12,
+  "mem.heap_growth_mb_per_h": 0.7,
+  "mem.nodes_start": 14534,
+  "mem.nodes_end": 40431,
+  "mem.nodes_growth_per_h": -78,
+  "mem.listeners_start": 1485,
+  "mem.listeners_end": 2746,
+  "mem.listeners_growth_per_h": 0
+ },
+ "series": [
+  [
+   0,
+   10.2,
+   14534,
+   1485
+  ],
+  [
+   1,
+   11.4,
+   34299,
+   2746
+  ],
+  [
+   2,
+   11.7,
+   40349,
+   2746
+  ],
+  [
+   3,
+   11.7,
+   40375,
+   2746
+  ],
+  [
+   4,
+   11.8,
+   40493,
+   2746
+  ],
+  [
+   5,
+   11.8,
+   40349,
+   2746
+  ],
+  [
+   6,
+   11.6,
+   40375,
+   2746
+  ],
+  [
+   7,
+   11.9,
+   40493,
+   2746
+  ],
+  [
+   8,
+   11.8,
+   40349,
+   2746
+  ],
+  [
+   9,
+   11.7,
+   40375,
+   2746
+  ],
+  [
+   10,
+   11.9,
+   40493,
+   2746
+  ],
+  [
+   11,
+   11.9,
+   40349,
+   2746
+  ],
+  [
+   12,
+   11.9,
+   40349,
+   2746
+  ],
+  [
+   13,
+   11.8,
+   40375,
+   2746
+  ],
+  [
+   14,
+   12,
+   40493,
+   2746
+  ],
+  [
+   15,
+   11.9,
+   40349,
+   2746
+  ],
+  [
+   16,
+   11.8,
+   40313,
+   2746
+  ],
+  [
+   17,
+   12,
+   40431,
+   2746
+  ],
+  [
+   18,
+   12,
+   40299,
+   2746
+  ],
+  [
+   19,
+   11.8,
+   40313,
+   2746
+  ],
+  [
+   20,
+   12,
+   40431,
+   2746
+  ],
+  [
+   20,
+   12,
+   40431,
+   2746
+  ]
+ ]
+}

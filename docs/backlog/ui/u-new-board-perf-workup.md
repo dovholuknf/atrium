@@ -1,7 +1,12 @@
 # u-new-board-perf-workup: a performance workup of the hub board UI
 
-Status: filed 2026-10-02 by @ui, from clint via the orchestrator. Owner @ui. Queued behind the repos pass and the tray wrap.
-Not started. Measure first, then fix.
+Status: measured 2026-10-05 by a worker. Harness `scripts/perf-board.js`, findings `docs/ui/board-perf-findings.md`,
+numbers `docs/ui/board-perf/`. No fix built here: the one clear win is `u-new-board-gpu-cpu-fix` (1a84e706), measured
+against main in the findings. Proposals for clint are in the findings, the largest being to stop the waiting `pulse`
+dots after a few pulses (stack view idle GPU 14% to under 1% with them off). The long memory run was shortened to 20
+minutes with a growth rate per hour (heap flat). Not measured: `/m`, remote (zrok) load, hub side caching (@fabric),
+rooms event volume (@runtime). Performance panel traces were not saved, the harness reads animations and frames.
+Owner @ui. Next: clint picks from the proposals, @fabric looks at asset caching.
 
 ## Scope
 
