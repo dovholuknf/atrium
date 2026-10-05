@@ -276,3 +276,53 @@ func TestPRWorktreeFetchFailureSentence(t *testing.T) {
 		t.Fatalf("%d %v", code, out)
 	}
 }
+
+// A HEAD IN THE HUB'S STORE is fetched over the room's loopback, http alone and with no credential helper, even when
+// the forge has one.
+func TestAHubHeadIsFetchedWithNoCredential(t *testing.T) {
+	spec := forge.FetchSpec{Remote: "http://127.0.0.1:9/tok/git/hub/github/o/r.git", Refspec: "refs/atrium/pr/7",
+		Hub: "github/o/r"}
+	args := strings.Join(fetchArgs(spec, "refs/atrium/pr/7", "!gh auth git-credential"), " ")
+	if strings.Contains(args, "credential") || strings.Contains(args, "https.allow") ||
+		!strings.Contains(args, "protocol.http.allow=always") ||
+		!strings.HasSuffix(args, "-- "+spec.Remote+" +refs/atrium/pr/7:refs/atrium/pr/7") {
+		t.Fatalf("%s", args)
+	}
+}
+
+// A ROOM WITH A HUB reads the head through the hub's store and never from the forge, and says why when it cannot.
+func TestPRWorktreeWithAHubReadsTheHeadFromTheHubsStore(t *testing.T) {
+	f := &fakeForge{pr: forge.PR{HeadRef: "feat"}}
+	hn := newPRHarness(t, f)
+	hn.checkout(t, "o", "r")
+	f.spec = forge.FetchSpec{Hub: "github/o/r", Refspec: "refs/atrium/pr/7"}
+	hn.srv.PRFetch = nil
+	var asked []string
+	hn.srv.HubSource = func(_ context.Context, name string) (string, func(), error) {
+		asked = append(asked, name)
+		return "", nil, errors.New("the hub cannot be asked right now")
+	}
+	code, out := hn.ask(t)
+	if code != http.StatusBadRequest || !strings.Contains(real(out["error"]), "the hub cannot be asked right now") {
+		t.Fatalf("%d %v", code, out)
+	}
+	if len(asked) != 1 || asked[0] != "github/o/r" {
+		t.Fatalf("asked %v", asked)
+	}
+}
+
+// THE HUB PLACES BY HOST, so a provider with another name on this room still takes the PR.
+func TestPRWorktreeFindsTheProviderByHost(t *testing.T) {
+	hn := newPRHarness(t, &fakeForge{pr: forge.PR{HeadRef: "feat"}})
+	hn.checkout(t, "o", "r")
+	rec := post(t, hn.h, "/v1/providers/gh/pr-worktree",
+		map[string]any{"host": "github.com", "org": "o", "repo": "r", "number": 7})
+	if rec.Code != 200 {
+		t.Fatalf("%d %s", rec.Code, rec.Body.String())
+	}
+	rec = post(t, hn.h, "/v1/providers/gh/pr-worktree",
+		map[string]any{"host": "bitbucket.org", "org": "o", "repo": "r", "number": 7})
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("another host = %d %s", rec.Code, rec.Body.String())
+	}
+}
