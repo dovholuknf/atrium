@@ -47,8 +47,8 @@ func TestAnFYIReportIsHeldNotTypedForBothTags(t *testing.T) {
 		d := testDaemon(t)
 		launcher, worker := holdingPair(t, d, tag)
 
-			rec, out := finishWith(t, d, FinishRequest{Agent: "worker", Status: ReportProgress, Kind: "fyi",
-				Recap: "the matrix is written up"})
+		rec, out := finishWith(t, d, FinishRequest{Agent: "worker", Status: ReportProgress, Kind: "fyi",
+			Recap: "the matrix is written up"})
 		if rec.Code != http.StatusOK || out["launcher_told"] != true {
 			t.Fatalf("%s: report answered %d: %s", tag, rec.Code, rec.Body)
 		}

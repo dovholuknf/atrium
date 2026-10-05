@@ -245,6 +245,31 @@ func TestPermDecisions(t *testing.T) {
 			t.Fatalf("%v", o)
 		}
 	})
+	t.Run("an edit that does not parse is a deny", func(t *testing.T) {
+		for name, p := range map[string]string{
+			"mcp call":    `{"tool_name":"mcp__x__do","tool_use_id":"u","tool_input":{"a":1,"b":"z"}}`,
+			"apply_patch": `{"tool_name":"apply_patch","tool_use_id":"u","tool_input":{"patch":"*** Begin Patch"}}`,
+		} {
+			h := newFakeHub(t, true, 200, `{"decision":"approve","command":"{\"a\":1,"}`)
+			permEnv(t, "force")
+			o := parse(t, runPermissionHook(h.srv.URL, []byte(p), 1))
+			if o["permissionDecision"] != "deny" ||
+				o["permissionDecisionReason"] != "the edit did not parse, nothing was run" ||
+				o["updatedInput"] != nil {
+				t.Fatalf("%s: %v", name, o)
+			}
+		}
+	})
+	t.Run("an edit that parses still allows", func(t *testing.T) {
+		h := newFakeHub(t, true, 200, `{"decision":"approve","command":"{\"a\":2}"}`)
+		permEnv(t, "force")
+		p := `{"tool_name":"mcp__x__do","tool_use_id":"u","tool_input":{"a":1}}`
+		o := parse(t, runPermissionHook(h.srv.URL, []byte(p), 1))
+		u, _ := o["updatedInput"].(map[string]any)
+		if o["permissionDecision"] != "allow" || u["a"] != float64(2) {
+			t.Fatalf("%v", o)
+		}
+	})
 	t.Run("a block never rewrites", func(t *testing.T) {
 		h := newFakeHub(t, true, 200, `{"decision":"block","command":"ls -l"}`)
 		permEnv(t, "force")

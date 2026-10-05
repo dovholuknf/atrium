@@ -159,6 +159,11 @@ func permissionHook(hubURL string, stdin []byte, pidOf func() int) []byte {
 	if ans.Decision == "approve" && ans.Command != "" && ans.Command != summary {
 		if upd := editedInput(input, ans.Command); upd != nil {
 			out["updatedInput"] = upd
+		} else {
+			// Allowing without updatedInput would run the original call,
+			// the one the human changed.
+			out["permissionDecision"] = "deny"
+			out["permissionDecisionReason"] = "the edit did not parse, nothing was run"
 		}
 	}
 	b, err := json.Marshal(map[string]any{"hookSpecificOutput": out})
