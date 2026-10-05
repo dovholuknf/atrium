@@ -167,6 +167,20 @@ func (s *Store) RecordNotice(workerID, source, key string) (bool, error) {
 	return fresh, err
 }
 
+// NoticeAt is when a notice was claimed, and false when it never was.
+func (s *Store) NoticeAt(workerID, source, key string) (time.Time, bool) {
+	var raw string
+	err := s.guard(func() error {
+		return s.db.QueryRow(`SELECT created_at FROM a2a_notice WHERE worker_id = ? AND source = ? AND key = ?`,
+			workerID, source, key).Scan(&raw)
+	})
+	if err != nil {
+		return time.Time{}, false
+	}
+	at, err := parseTS(raw)
+	return at, err == nil
+}
+
 // ForgetNotices drops a worker's claimed notices from one source, so the next
 // sighting of that event is a new notice. For an event that can end and come
 // back, like a card falling back under the context threshold.

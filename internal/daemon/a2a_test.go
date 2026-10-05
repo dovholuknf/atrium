@@ -58,6 +58,38 @@ func stopTurn(t *testing.T, d *Daemon, agent string) string {
 	return strings.TrimSpace(rec.Body.String())
 }
 
+// stopTwice ends a worker's turn silently twice, the second after the nudge the
+// first one earned. The queued nudge is taken off so the second Stop sees a
+// worker that had nothing waiting, as it would had the nudge been typed.
+func stopTwice(t *testing.T, d *Daemon, agent string) {
+	t.Helper()
+	stopTurn(t, d, agent)
+	task, err := d.st.GetByWireName(d.st.Qualify(agent))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := d.takeMessages(task.ID, "stop"); err != nil {
+		t.Fatal(err)
+	}
+	d.turnResumed(task.ID)
+	time.Sleep(5 * time.Millisecond)
+	stopTurn(t, d, agent)
+}
+
+// nudgeThenStopAgain nudges a worker whose turn ended silently, as the Stop hook
+// would, then has it run and end a second silent turn. The watchdog tests start
+// from there: the nudge is spent and the next silence belongs to the launcher.
+func nudgeThenStopAgain(t *testing.T, d *Daemon, id string) {
+	t.Helper()
+	d.silentStop(id)
+	if _, err := d.takeMessages(id, "stop"); err != nil {
+		t.Fatal(err)
+	}
+	d.turnResumed(id)
+	time.Sleep(5 * time.Millisecond)
+	d.turnEnded(id)
+}
+
 func pendingFrom(t *testing.T, d *Daemon, id string) []*store.Message {
 	t.Helper()
 	msgs, err := d.st.PendingMessages(id)
@@ -87,11 +119,20 @@ func TestASilentStopTellsTheLauncherAndNeverBlocks(t *testing.T) {
 	if got := stopTurn(t, d, "worker"); got != "{}" {
 		t.Fatalf("the Stop hook answered %s, want nothing: atrium must never force a turn", got)
 	}
+	if n := len(pendingFrom(t, d, launcher.ID)); n != 0 {
+		t.Fatalf("the launcher heard of a first silent stop: %d messages", n)
+	}
+	nudge := pendingFrom(t, d, worker.ID)
+	if len(nudge) != 1 || nudge[0].Text != silentNudgeText {
+		t.Fatalf("the worker has %+v, want the one nudge", nudge)
+	}
+
+	stopTwice(t, d, "worker")
 	msgs := pendingFrom(t, d, launcher.ID)
 	if len(msgs) != 1 {
 		t.Fatalf("the launcher has %d messages, want one silent-stop notice", len(msgs))
 	}
-	if !strings.Contains(msgs[0].Text, "without reporting") || !strings.Contains(msgs[0].Text, worker.ID) {
+	if !strings.Contains(msgs[0].Text, "without reporting, twice, nudged once at") || !strings.Contains(msgs[0].Text, worker.ID) {
 		t.Fatalf("the notice says %q", msgs[0].Text)
 	}
 	if msgs[0].FromPeer != worker.WireName {
@@ -103,7 +144,7 @@ func TestASilentStopTellsTheLauncherAndNeverBlocks(t *testing.T) {
 func TestASecondStopOnOnePromptIsNotASecondNotice(t *testing.T) {
 	d := testDaemon(t)
 	launcher, _ := launchedPair(t, d)
-	stopTurn(t, d, "worker")
+	stopTwice(t, d, "worker")
 	stopTurn(t, d, "worker")
 	if n := len(pendingFrom(t, d, launcher.ID)); n != 1 {
 		t.Fatalf("%d notices for one prompt", n)
@@ -114,10 +155,10 @@ func TestASecondStopOnOnePromptIsNotASecondNotice(t *testing.T) {
 func TestEachPromptGetsItsOwnSilentStop(t *testing.T) {
 	d := testDaemon(t)
 	launcher, worker := launchedPair(t, d)
-	stopTurn(t, d, "worker")
+	stopTwice(t, d, "worker")
 	time.Sleep(5 * time.Millisecond)
 	prompt(t, d, worker.ID)
-	stopTurn(t, d, "worker")
+	stopTwice(t, d, "worker")
 	if n := len(pendingFrom(t, d, launcher.ID)); n != 2 {
 		t.Fatalf("%d notices for two prompts", n)
 	}
@@ -194,7 +235,7 @@ func TestANoticeIsNotRateLimited(t *testing.T) {
 	for i := 0; i < peerSendsPerMinute+1; i++ {
 		d.peerLimit.allow(worker.WireName)
 	}
-	stopTurn(t, d, "worker")
+	stopTwice(t, d, "worker")
 	if n := len(pendingFrom(t, d, launcher.ID)); n != 1 {
 		t.Fatalf("a notice was dropped to the rate limit: %d", n)
 	}
@@ -310,6 +351,7 @@ func TestTheWatchdogCatchesASilentStopAndResetsWhenTheCardMoves(t *testing.T) {
 	d := testDaemon(t)
 	launcher, worker := launchedPair(t, d)
 	d.turnEnded(worker.ID)
+	nudgeThenStopAgain(t, d, worker.ID)
 	got, _ := d.st.Get(worker.ID)
 	stopped := got.WaitingSinceOr(time.Now())
 
@@ -613,7 +655,7 @@ func TestAFirstTurnWithoutAReportIsASilentStop(t *testing.T) {
 	if err := d.st.SetStatus(task.ID, store.StatusRunning); err != nil {
 		t.Fatal(err)
 	}
-	stopTurn(t, d, task.WireName)
+	stopTwice(t, d, task.WireName)
 	msgs := pendingFrom(t, d, parent.ID)
 	if len(msgs) != 1 || !strings.Contains(msgs[0].Text, "without reporting") {
 		t.Fatalf("the launcher has %v, want one silent-stop notice", msgs)

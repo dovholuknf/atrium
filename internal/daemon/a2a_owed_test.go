@@ -61,7 +61,7 @@ func TestAMessageFromTheLauncherOwesAReport(t *testing.T) {
 	}
 	// The first Stop carries the launcher's message in. The turn it starts ends silently.
 	stopTurn(t, d, "worker")
-	stopTurn(t, d, "worker")
+	stopTwice(t, d, "worker")
 	if n := len(pendingFrom(t, d, launcher.ID)); n != 1 {
 		t.Fatalf("the launcher has %d notices, want one", n)
 	}

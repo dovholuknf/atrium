@@ -142,8 +142,16 @@ func TestWorkerSilentStopUnchanged(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	liveRunner(d, worker.ID)
 	prompt(t, d, worker.ID)
+	// The first stop earns the worker its nudge; the second reaches the launcher.
+	// The fake runner comes after the nudge, which would otherwise be typed into it.
+	stopTurn(t, d, "worker")
+	if _, err := d.takeMessages(worker.ID, "stop"); err != nil {
+		t.Fatal(err)
+	}
+	liveRunner(d, worker.ID)
+	d.turnResumed(worker.ID)
+	time.Sleep(5 * time.Millisecond)
 	stopTurn(t, d, "worker")
 	if n := len(pendingFrom(t, d, worker.SpawnedByID)); n != 1 {
 		t.Fatalf("the worker's launcher got %d notices, want one", n)
