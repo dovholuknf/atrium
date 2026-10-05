@@ -166,5 +166,6 @@ Design written 2026-10-04 (828a8cd0).
 - Done: `u-pr-finding-states` claude/u-pr-finding-states@ca90179b. Written on sgg (no Go or node there), moved to sg3
   by bundle, built, tested and shot there. The phone action buttons are not seen in a shot, as the headless phone
   viewport cuts the drawer below the rail.
-- Waiting: `f-pr-review-move`, for `r-hub-forge` to land (it owns `prclaim.go`). sgg can only write code.
+- Running: `f-pr-review-move` on sg3, on claude/main c721241b (r-hub-forge merged). sgg can only write code.
+- The two done items are on claude/main 5d68bfa2, before r-hub-forge. Their changes are outside its files.
 
