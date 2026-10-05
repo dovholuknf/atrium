@@ -4516,9 +4516,34 @@ async function typingSection(browser, base) {
     if (box.missing) fail("the typing readout switch is not on the page.");
     else if (box.drawer !== "t-drawer") fail("the typing readout switch is not in the details drawer.");
 
+    // TYPING_SHOTS=<dir> TYPING_SHOT_PREFIX=before|after writes the readout under a terminal in its three states.
+    if (process.env.TYPING_SHOTS) {
+      const held = on => p.evaluate(on => {
+        peekCard("land-live").activity = on ? { what: "idle", held_peer: "runtime", held_count: 1, held_for: "line" }
+          : { what: "idle" };
+      }, on);
+      const say = (name, ans, on) => (async () => {
+        typingAnswer = ans;
+        await held(on);
+        await p.waitForTimeout(1200);
+        fs.mkdirSync(process.env.TYPING_SHOTS, { recursive: true });
+        await p.locator("#t-typing").evaluate(el => el.parentElement.scrollIntoView());
+        await p.screenshot({ path: path.join(process.env.TYPING_SHOTS,
+          (process.env.TYPING_SHOT_PREFIX || "after") + "-" + name + ".png") });
+      })();
+      await p.evaluate(() => { if (typeof term !== "undefined") term.write("\x1b[32m$\x1b[0m git status\r\n"); });
+      await say("nothing-held", { line: "so it sounds to me like", count: 203, since_ms: 1200, open: false,
+        reason: "203 unsent character(s) on the line" }, false);
+      await say("message-held", { line: "so it sounds to me like", count: 203, since_ms: 1200, open: false,
+        reason: "203 unsent character(s) on the line" }, true);
+      await say("looks-empty", { line: "  \n ", count: 3, since_ms: 9000, open: false,
+        reason: "3 unsent character(s) on the line" }, true);
+      await held(true);
+    }
+
     typingAnswer = { line: "git st\nsecond", count: 13, since_ms: 400, open: false,
       reason: "13 unsent character(s) on the line" };
-    await p.waitForFunction(() => /waits/.test((document.getElementById("t-typing") || {}).textContent || ""),
+    await p.waitForFunction(() => /waits: 13/.test((document.getElementById("t-typing") || {}).textContent || ""),
       null, { timeout: slow(5000) }).catch(() => {});
     const on = await p.evaluate(() => {
       const el = document.getElementById("t-typing");
@@ -4541,10 +4566,47 @@ async function typingSection(browser, base) {
 
     // It follows the endpoint: the gate opening shows on the next poll.
     typingAnswer = { line: "", count: 0, since_ms: 5000, open: true, reason: "line empty and quiet" };
-    await p.waitForFunction(() => document.getElementById("t-typing").hidden, null, { timeout: slow(5000) })
-      .catch(() => {});
-    const opened = await p.evaluate(() => document.getElementById("t-typing").hidden);
-    if (!opened) fail("the readout stayed up after the gate opened: it speaks only when blocking.");
+    await p.waitForFunction(() => document.getElementById("t-typing").textContent === "line empty", null,
+      { timeout: slow(5000) }).catch(() => {});
+    const opened = await p.evaluate(() => {
+      const el = document.getElementById("t-typing");
+      return { hidden: el.hidden, text: el.textContent, calm: el.classList.contains("calm"),
+        shut: el.classList.contains("shut") };
+    });
+    if (opened.hidden || opened.text !== "line empty" || !opened.calm || opened.shut) {
+      fail("an open gate does not read as a dim 'line empty': " + JSON.stringify(opened));
+    }
+
+    // Three states, and the line's text is never repeated. Nothing held says the count, a held message says who
+    // and how many, and a held message behind a line that looks empty quotes what atrium thinks is there.
+    const read = async (ans, held, want) => {
+      typingAnswer = ans;
+      await p.evaluate(h => {
+        peekCard("land-live").activity = h ? { what: "idle", held_peer: "runtime", held_count: 1, held_for: "line" }
+          : { what: "idle" };
+      }, held);
+      await p.waitForFunction(w => document.getElementById("t-typing").textContent === w, want,
+        { timeout: slow(5000) }).catch(() => {});
+      return p.evaluate(() => {
+        const el = document.getElementById("t-typing");
+        return { text: el.textContent, calm: el.classList.contains("calm"), shut: el.classList.contains("shut") };
+      });
+    };
+    const typed = { line: "so it sounds like git st", count: 24, since_ms: 900, open: false, reason: "x" };
+    let r = await read(typed, false, "24 chars on the line");
+    if (r.text !== "24 chars on the line" || !r.calm) fail("nothing held does not read as a dim count: " + JSON.stringify(r));
+    if (/sounds/.test(r.text)) fail("the readout repeats the text of the line: " + JSON.stringify(r.text));
+    r = await read(typed, true, "1 message from @runtime waits: 24 chars on your line");
+    if (r.text !== "1 message from @runtime waits: 24 chars on your line" || !r.shut) {
+      fail("a held message does not say who and how many: " + JSON.stringify(r));
+    }
+    if (/sounds/.test(r.text)) fail("the readout repeats the text of the line: " + JSON.stringify(r.text));
+    const blank = { line: "  \n ", count: 4, since_ms: 9000, open: false, reason: "x" };
+    const lookWant = "1 message from @runtime waits: 4 chars that look empty, atrium thinks “··⏎·”";
+    r = await read(blank, true, lookWant);
+    if (r.text !== lookWant || !r.shut) fail("a held message behind a line that looks empty does not quote it: " + JSON.stringify(r));
+    r = await read({ line: "", count: 0, since_ms: 9000, open: true, reason: "x" }, false, "line empty");
+    if (r.text !== "line empty" || !r.calm) fail("an empty line does not read 'line empty': " + JSON.stringify(r));
 
     // Off again: hidden, and the polling stops.
     await p.evaluate(() => toggleTypingReadout(false));

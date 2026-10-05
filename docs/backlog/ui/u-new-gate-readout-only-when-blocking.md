@@ -1,6 +1,6 @@
 # u-new-gate-readout-only-when-blocking. The typing gate readout speaks when something is held
 
-Status: not started. Owned by @ui. Filed by the orchestrator 2026-10-01, from clint's first use of it.
+Status: done 2026-10-04, see Design note. Owned by @ui. Filed by the orchestrator 2026-10-01, from clint's first use of it.
 
 ## What clint saw
 
@@ -20,3 +20,17 @@ ago`. That line is the target shape. The closed state should read like it, with 
   from @runtime waits: 203 chars on your line". This is the case the readout exists for.
 - Never repeat the line's text. If a held say is waiting on a line that LOOKS empty, which is the case the
   readout was built for, show what atrium thinks is there, quoted and cut short, because only then is it news.
+
+## Design note
+
+- Nothing held (or the gate open): a dim line, never hidden while the readout is on. "line empty" with nothing typed,
+  "203 chars on the line" with some. No stripe, no copy of the text.
+- A message held behind a closed gate: "1 message from @runtime waits: 203 chars on your line", with the amber stripe.
+- Held behind a line that LOOKS empty (the line holds only blanks, so the count means nothing to the eye): the count
+  plus the line quoted with blanks drawn as dots and newlines as marks, cut at 40 characters. Example:
+  `1 message from @runtime waits: 3 chars that look empty, atrium thinks "··⏎·"`. Held with a count of 0, the
+  gate's own reason is said.
+- The text is built by `typingGateText(s, held)` in `js/typing.js`, which returns `{ text, blocking }`, so the
+  details drawer can reuse it.
+- "Looks empty" is judged from atrium's model of the line (blank only), not from the screen. Reading the real
+  screen row would need the prompt's shape and is a separate question for clint if the model's guess is too narrow.

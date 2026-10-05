@@ -732,6 +732,8 @@
   }
   .term-typing.open { border-left: 3px solid var(--teal); }
   .term-typing.shut { border-left: 3px solid var(--warn); }
+  /* Nothing held: a short dim line, no stripe, so it does not ask to be read. */
+  .term-typing.calm { color: var(--dim); }
   /* A request while attached. The runner is blocked and the terminal shows nothing, so the question has to
      appear where you are looking. */
   .term-perm {
