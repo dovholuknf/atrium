@@ -2031,6 +2031,37 @@ var migrations = []struct {
 			`DELETE FROM setting WHERE key LIKE 'forge.%'`,
 		},
 	},
+	{
+		// A CARD MOVED BETWEEN ROOMS. `moved_to` is on the old card, `moved_from` on the new one, each as `room~id`. The
+		// freeze holds a card for the length of a move, and its queue takes everything said to it meanwhile, each with
+		// its id so the other room can drop a repeat. See docs/rnd/room-handoff-design.md, M1.
+		name: "0084_room_move",
+		stmts: []string{
+			`ALTER TABLE task ADD COLUMN moved_to TEXT NOT NULL DEFAULT ''`,
+			`ALTER TABLE task ADD COLUMN moved_from TEXT NOT NULL DEFAULT ''`,
+			`CREATE TABLE IF NOT EXISTS card_freeze (
+				task_id     TEXT PRIMARY KEY,
+				move_id     TEXT NOT NULL,
+				frozen_at   TEXT NOT NULL,
+				lease_until TEXT NOT NULL
+			)`,
+			`CREATE TABLE IF NOT EXISTS freeze_queue (
+				seq        INTEGER PRIMARY KEY AUTOINCREMENT,
+				id         TEXT NOT NULL UNIQUE,
+				task_id    TEXT NOT NULL,
+				text       TEXT NOT NULL,
+				from_peer  TEXT NOT NULL DEFAULT '',
+				wait_turn  INTEGER NOT NULL DEFAULT 0,
+				created_at TEXT NOT NULL
+			)`,
+			`CREATE INDEX IF NOT EXISTS freeze_queue_task ON freeze_queue (task_id, seq)`,
+			`CREATE TABLE IF NOT EXISTS move_seen (
+				msg_id  TEXT PRIMARY KEY,
+				task_id TEXT NOT NULL,
+				seen_at TEXT NOT NULL
+			)`,
+		},
+	},
 }
 
 // migrate applies any migration not already recorded. This runs before the

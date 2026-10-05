@@ -322,6 +322,11 @@ type Task struct {
 	// ParkedAt is when the card was parked: no process, status and resume id
 	// kept. Nil means not parked.
 	ParkedAt *time.Time `json:"parked_at,omitempty"`
+	// MovedTo is `room~id` of the card this one became, when it moved to another
+	// room, and MovedFrom is the card a moved one came from. A card moved twice
+	// is a chain. See docs/rnd/room-handoff-design.md.
+	MovedTo   string `json:"moved_to,omitempty"`
+	MovedFrom string `json:"moved_from,omitempty"`
 	// Theme names the terminal palette this session uses. Held on the card so
 	// it survives a restart and follows the session into another browser,
 	// which is the point of coloring terminals: telling them apart at a
