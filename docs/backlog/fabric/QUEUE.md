@@ -65,7 +65,8 @@ is live.
    - Low 3, fixed: `TestOldPathCannotTakeAnAttachedProvenName` covers `upgradeKind` and `gitKind` too.
    - Low 4, fixed: `TestAKeylessAttachCannotReplaceAKeyedRoom` tests the `Hub.control` keyless-over-keyed refusal by
      itself.
-2. **Small, after the UI-only order lifts.** (a) @review's nit on 7725078d: a test pinning link's `humanLauncher` to
+2. **Small, after the UI-only order lifts.** (a) and (b) BUILT on `claude/f-new-queue2-launcher-pin-and-restartgate-flake`.
+   (a) @review's nit on 7725078d: a test pinning link's `humanLauncher` to
    `store.HumanLauncher`. (b) `TestAPatientAskMadeWhilePausedWaitsForResume` (internal/link/restartgate_test.go:316,
    "after the resume the ask said busy") fails about 1 run in 10 with `-count=10`, at e18b3c04, before 49 landed. A
    flake in the hub's restart gate. (c) The full daemon suite failed once at 345s on the 49 gate and passed on the
