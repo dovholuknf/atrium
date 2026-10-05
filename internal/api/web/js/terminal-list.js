@@ -1173,6 +1173,9 @@ function termRow(t, deep, kid) {
   const secondary = named ? path : "";
   // The hover keeps the whole address and the name whatever the row had room to draw.
   const hover = named ? named + " · " + full + tail : full + tail;
+  // KEPT AGAINST THE FILTER. The open pane is never hidden (see `sessionHiddenBy`), so with hide inactive on, a cold
+  // row still listed is this one. It stays grey, because it has exited, and says why it is still here.
+  const keptOpen = on && termCold(t) && sessionHiddenBy(t, () => false);
   const allKids = termKids.get(t.id) || [];
   const shut = allKids.length > 0 && isFolded(termKidsKey(t));
   const shown = shut ? allKids.filter(termKidWaits) : allKids;
@@ -1186,7 +1189,8 @@ function termRow(t, deep, kid) {
            // the session again where it was.
            termCold(t) ? " cold" : ""}${wear.cls}${newCardClass(t)}"
          data-id="${t.id}"
-         data-tip="${esc(hover + (termCold(t) ? "\nthis one has exited. click to start it again here"
+         data-tip="${esc(hover + (termCold(t) ? "\nthis one has exited. click to start it again here" +
+           (keptOpen ? "\nhide inactive would hide it, but it is open in the pane, so it stays until you switch away" : "")
            : t.starting && !t.supervised ? "\natrium is starting this one. its runner is not up yet"
            : termJoined(t) ? "\njoined from your own terminal. atrium cannot attach to it. click for what you can do" : ""))}"
          style="${style}"

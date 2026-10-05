@@ -33,11 +33,13 @@ function seenChips(t) {
   }
   const qs = s.open_questions || [];
   if (s.answered === false && (qs.length || s.questions_unparsed)) {
+    // An exited session cannot be replied to, so the questions only clear by a click (or once it is started again).
+    const gone = typeof termCold === "function" && termCold(t);
+    const clears = gone ? "it has exited, so nothing can reply to it. click to dismiss them"
+      : "clears when you reply to it, or click to dismiss them without replying";
     const tip = qs.length
-      ? "its last turn asked you:\n" + qs.map((q, i) => (i + 1) + ". " + q).join("\n") +
-        "\n\nclears when you reply to it, or click to dismiss them without replying"
-      : "its last turn asked you questions atrium could not read. clears when you reply to it, " +
-        "or click to dismiss them without replying";
+      ? "its last turn asked you:\n" + qs.map((q, i) => (i + 1) + ". " + q).join("\n") + "\n\n" + clears
+      : "its last turn asked you questions atrium could not read. " + clears;
     // Takes its own click so the row underneath is never selected and the card
     // never opens. The set it was drawn from rides along, so a stale render
     // cannot dismiss newer questions.
