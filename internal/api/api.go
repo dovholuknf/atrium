@@ -1663,6 +1663,14 @@ func (s *Server) patchTask(w http.ResponseWriter, r *http.Request) {
 			}
 			body.Overrides[OverrideContextLimitK] = clean
 		}
+		if v, ok := body.Overrides[OverrideContextCycle]; ok {
+			clean, err := store.CheckContextCycleText(v)
+			if err != nil {
+				writeErr(w, http.StatusBadRequest, err)
+				return
+			}
+			body.Overrides[OverrideContextCycle] = clean
+		}
 		if err := s.st.SetOverrides(id, body.Overrides); err != nil {
 			s.fail(w, err)
 			return

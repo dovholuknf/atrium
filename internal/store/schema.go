@@ -2070,6 +2070,16 @@ var migrations = []struct {
 			`ALTER TABLE harness ADD COLUMN context_limit_k INTEGER NOT NULL DEFAULT 0`,
 		},
 	},
+	{
+		// THE CONTEXT CYCLE replaced the automatic new context and the 150k warn line. Their settings go. The new
+		// ones (context_limits, context_handoff_dir) are plain setting rows and need no DDL. A DELETE is the same
+		// on a re-run. See docs/context-cycle-design.md.
+		name: "0086_context_cycle",
+		stmts: []string{
+			`DELETE FROM setting WHERE key IN ('auto_new_context', 'auto_new_context_k', 'auto_new_context_idle_s',
+				'context_ceiling_k', 'context_threshold_k')`,
+		},
+	},
 }
 
 // migrate applies any migration not already recorded. This runs before the

@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -97,8 +99,8 @@ func mustGet(t *testing.T, st *store.Store, id string) *store.Task {
 	return task
 }
 
-// Card, then runner, then board.
-func TestTheContextLimitResolvesCardThenRunnerThenBoard(t *testing.T) {
+// Card, then the hub's limit for the harness, then the built-in claude 200k. The runner column is not read.
+func TestTheContextLimitResolvesCardThenHubThenDefault(t *testing.T) {
 	_, st, _ := fileServer(t)
 	task, _, err := st.Register(store.Observed{WireName: "c2", Worktree: "/tmp/c2", Runner: "claude"})
 	if err != nil {
@@ -110,11 +112,7 @@ func TestTheContextLimitResolvesCardThenRunnerThenBoard(t *testing.T) {
 			t.Fatalf("limit %d from %s, want %d from %s", k, src, wantK, wantSrc)
 		}
 	}
-	check(150, LimitFromBoard)
-	if err := st.SetSetting(SettingContextThresholdK, "180"); err != nil {
-		t.Fatal(err)
-	}
-	check(180, LimitFromBoard)
+	check(200, LimitFromDefault)
 	h, err := st.Harness("claude")
 	if err != nil {
 		t.Fatal(err)
@@ -123,7 +121,11 @@ func TestTheContextLimitResolvesCardThenRunnerThenBoard(t *testing.T) {
 	if _, err := st.SaveHarness(*h); err != nil {
 		t.Fatal(err)
 	}
-	check(300, LimitFromRunner)
+	check(200, LimitFromDefault)
+	if err := st.SetSetting(store.SettingContextLimits, `{"claude":250}`); err != nil {
+		t.Fatal(err)
+	}
+	check(250, LimitFromHub)
 	if err := st.SetOverrides(task.ID, map[string]string{OverrideContextLimitK: "90"}); err != nil {
 		t.Fatal(err)
 	}
@@ -131,5 +133,69 @@ func TestTheContextLimitResolvesCardThenRunnerThenBoard(t *testing.T) {
 	if err := st.SetOverrides(task.ID, map[string]string{OverrideContextLimitK: ""}); err != nil {
 		t.Fatal(err)
 	}
-	check(300, LimitFromRunner)
+	check(250, LimitFromHub)
+	// A harness with no entry and no claude in it has no limit.
+	other, _, err := st.Register(store.Observed{WireName: "c3", Worktree: "/tmp/c3", Runner: "shell"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if k, _ := ContextLimitFor(st, mustGet(t, st, other.ID)); k != 0 {
+		t.Fatalf("a shell card has a limit of %dk", k)
+	}
+}
+
+// The per-card switch is checked on the patch, and off turns cycling off.
+func TestACardCycleSwitchIsCheckedOnPatch(t *testing.T) {
+	srv, st, _ := fileServer(t)
+	task, _, err := st.Register(store.Observed{WireName: "c4", Worktree: "/tmp/c4", Runner: "claude"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	patch := func(v string) int {
+		rec := httptest.NewRecorder()
+		srv.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodPatch, "/v1/tasks/"+task.ID,
+			strings.NewReader(`{"overrides":{"context_cycle":"`+v+`"}}`)))
+		return rec.Code
+	}
+	if !ContextCycleOn(mustGet(t, st, task.ID)) {
+		t.Fatal("a new card does not cycle")
+	}
+	if c := patch("off"); c != http.StatusOK || ContextCycleOn(mustGet(t, st, task.ID)) {
+		t.Fatalf("off gave %d and the card still cycles", c)
+	}
+	if c := patch("maybe"); c != http.StatusBadRequest {
+		t.Fatalf("junk gave %d", c)
+	}
+	if c := patch(""); c != http.StatusOK || !ContextCycleOn(mustGet(t, st, task.ID)) {
+		t.Fatalf("clearing gave %d and the card does not cycle", c)
+	}
+}
+
+// The per-harness limits and the handoff directory save, read back, and refuse junk.
+func TestTheContextCycleSettingsSaveAndReadBack(t *testing.T) {
+	srv, _, _ := fileServer(t)
+	out := settingsGet(t, srv)
+	if lim, _ := out["context_limits"].(map[string]any); lim["claude"] != float64(200) {
+		t.Fatalf("the default reads %v", out["context_limits"])
+	}
+	if rec := settingsPost(t, srv, `{"context_limits":{"claude":180,"codex":300}}`); rec.Code != http.StatusOK {
+		t.Fatalf("saving answered %d: %s", rec.Code, rec.Body.String())
+	}
+	out = settingsGet(t, srv)
+	if lim, _ := out["context_limits"].(map[string]any); lim["claude"] != float64(180) || lim["codex"] != float64(300) {
+		t.Fatalf("read back %v", out["context_limits"])
+	}
+	if rec := settingsPost(t, srv, `{"context_limits":{"claude":5}}`); rec.Code != http.StatusBadRequest {
+		t.Fatalf("5k answered %d", rec.Code)
+	}
+	if rec := settingsPost(t, srv, `{"context_handoff_dir":"relative"}`); rec.Code != http.StatusBadRequest {
+		t.Fatalf("a relative directory answered %d", rec.Code)
+	}
+	dir := t.TempDir()
+	if rec := settingsPost(t, srv, `{"context_handoff_dir":`+strconv.Quote(dir)+`}`); rec.Code != http.StatusOK {
+		t.Fatalf("a real directory answered %d: %s", rec.Code, rec.Body.String())
+	}
+	if out = settingsGet(t, srv); out["context_handoff_dir"] != filepath.Clean(dir) {
+		t.Fatalf("the directory reads %v", out["context_handoff_dir"])
+	}
 }
