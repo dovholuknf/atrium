@@ -133,3 +133,10 @@ func newVersion() *cobra.Command {
 	c.Flags().BoolVar(&short, "short", false, "just the version, for a script")
 	return c
 }
+
+// runningCommit is the full commit this binary was built from, or "" when the build does not say. It is what a room
+// sends its hub and what the hub reports as its own, so the deploy queue can compare both with the branch.
+func runningCommit() string {
+	_, commit, _ := versionInfo()
+	return commit
+}

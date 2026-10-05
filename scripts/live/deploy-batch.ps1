@@ -25,6 +25,9 @@ if (-not $WhatIf) {
   if (-not (Wait-NewContextsDone)) { Say 'a new context is still under way, nothing changed'; exit 0 }
 } else { Say 'WHATIF: wait for every new context under way to finish' }
 
+# What this deploy puts live, for HANDOFF. Read before anything changes.
+Write-DeployQueue
+
 # 0. Snapshot the outgoing binary under its build id.
 $revert = Save-Revert
 

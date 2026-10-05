@@ -79,6 +79,9 @@ type deployReadyState struct {
 	// clearing is the new contexts under way. Nil means ask the attached rooms.
 	clearing func(ctx context.Context) []newContextRun
 
+	// running is the commit this hub was built from, for the deploy queue. See deployqueue.go.
+	running string
+
 	checker *deployready.Checker
 	last    deployready.Report
 	lastAt  time.Time

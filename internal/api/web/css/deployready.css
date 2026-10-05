@@ -27,5 +27,10 @@
   #deployready .dr-deploy { display: flex; gap: 10px; align-items: baseline; color: var(--dim); font-size: var(--fs-sm); }
   #deployready .dr-dstate { padding: 0 8px; border: 1px solid var(--stroke-dim); border-radius: 10px; font: var(--fs-xs)/1.5 var(--mono); }
   #deployready .dr-deploy[data-state="running"] .dr-dstate { color: var(--blue); border-color: var(--blue); }
+  #deployready .dr-queue { display: flex; flex-direction: column; gap: 4px; }
+  #deployready .dr-qrow { display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; }
+  #deployready .dr-qitem { color: var(--body); font: var(--fs-sm)/1.5 var(--mono); }
+  #deployready .dr-qneeds { color: var(--dim); font: var(--fs-xs)/1.5 var(--mono); }
+  #deployready .dr-qrow[data-needs="both"] .dr-qneeds { color: var(--warn); }
   #deployready .dr-act { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
   #deployready .dr-why-not { color: var(--dim); font-size: var(--fs-sm); overflow-wrap: anywhere; }

@@ -446,6 +446,8 @@ func serveAtrium(f atriumFlags, up atriumUp) error {
 	proxy.SetDeps(store, Commit)
 	// WHETHER THE INSTALLED BUILD CAN BE REPLACED, and the one click that does it. Nothing deploys on its own.
 	proxy.SetDeployReady()
+	// WHAT THIS HUB RUNS, for the deploy queue to compare with the branch and with each room's own commit.
+	proxy.SetRunningCommit(runningCommit())
 	go proxy.RunDeps(ctx)
 
 	go func() {

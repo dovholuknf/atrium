@@ -463,3 +463,48 @@ func TestDeployEnvDropsAtriumVariables(t *testing.T) {
 		t.Fatalf("deployEnv = %v, want %v", got, want)
 	}
 }
+
+func TestDeployQueueEndpointListsWhatTheHubIsMissing(t *testing.T) {
+	r := newReadyRepo(t)
+	base := r.commit("base", map[string]string{"internal/a/a.go": "package a\n"})
+	landed := r.commit("landed", map[string]string{"internal/a/a.go": "package a // 2\n",
+		"changelog/fabric/2026-10-04-f-landed.md": "x\n"})
+	p, _ := readyProxy(t, r, base, scriptFile(t))
+	p.SetRunningCommit(base)
+
+	rec := httptest.NewRecorder()
+	p.ServeHTTP(rec, loopbackReq(http.MethodGet, "/_hub/deploy-queue", ""))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("GET = %d %s", rec.Code, rec.Body)
+	}
+	var q deployready.Queue
+	if err := json.Unmarshal(rec.Body.Bytes(), &q); err != nil {
+		t.Fatalf("decode: %v\n%s", err, rec.Body)
+	}
+	if len(q.Entries) != 1 || q.Entries[0].SHA != landed || q.Entries[0].Item != "f-landed" || q.Entries[0].Needs != "hub" {
+		t.Fatalf("queue = %+v", q)
+	}
+
+	rec = httptest.NewRecorder()
+	p.ServeHTTP(rec, loopbackReq(http.MethodGet, "/_hub/deploy-queue?format=md", ""))
+	if !strings.Contains(rec.Body.String(), "| f-landed | hub |") {
+		t.Fatalf("markdown:\n%s", rec.Body)
+	}
+
+	// With no running commit set, the installed binary's commit stands in for it.
+	p.SetRunningCommit("")
+	rec = httptest.NewRecorder()
+	p.ServeHTTP(rec, loopbackReq(http.MethodGet, "/_hub/deploy-queue", ""))
+	if !strings.Contains(rec.Body.String(), landed) {
+		t.Fatalf("fallback: %s", rec.Body)
+	}
+}
+
+func TestDeployQueueIs404WhenNotWired(t *testing.T) {
+	p := NewProxy(NewHub(Timings{}), nil, "", nil)
+	rec := httptest.NewRecorder()
+	p.ServeHTTP(rec, loopbackReq(http.MethodGet, "/_hub/deploy-queue", ""))
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("GET = %d", rec.Code)
+	}
+}

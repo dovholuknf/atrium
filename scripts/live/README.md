@@ -59,7 +59,7 @@ Both scripts take `-WhatIf`, which says what they would do and does nothing.
 | `start-atrium-control.ps1` | The sg4-control room alone. `-Join '<join string>'` on its first run on a machine. |
 | `build-deploy.ps1` | Build from a clean `claude/main` with the commit stamped in. |
 | `deploy-hub-only.ps1` | Swap the binary and restart the hub. Rooms are not touched. |
-| `deploy-ready.ps1`, `deploy-batch.ps1` | Restart the room on a new build when the board is idle. |
+| `deploy-ready.ps1`, `deploy-batch.ps1` | Restart the room on a new build when the board is idle. Both first print the hub's deploy queue and save it as `DEPLOY-QUEUE.md` for HANDOFF. |
 | `maintenance-window.ps1` | Hold the room restart for a window. |
 | `install-live-scripts.ps1` | Copy this directory over the live copies. |
 | `live-common.ps1` | Shared paths and functions. Dot-sourced by the others, never run alone. |

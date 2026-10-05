@@ -170,6 +170,8 @@ type attached struct {
 	name    string
 	version string
 	host    string
+	// commit is the commit the room said it was built from, in its hello. Observed.
+	commit string
 	// os and arch are what the room said it runs on, in its hello. Observed, and
 	// they ride the `rooms` event so the board can say which build a machine wants.
 	os, arch string
@@ -380,7 +382,7 @@ func (h *Hub) control(ctx context.Context, name string, hi hello, conn net.Conn,
 
 	session := newSession()
 	a := &attached{
-		name: name, version: hi.Version, host: hi.Host, session: session,
+		name: name, version: hi.Version, host: hi.Host, commit: hi.Commit, session: session,
 		os: hi.OS, arch: hi.Arch, git: hi.Git,
 		since: time.Now(), control: conn,
 		unproven: unprovenOver(conn),
@@ -741,14 +743,16 @@ func (h *Hub) dialer(room string) func(context.Context, string, string) (net.Con
 
 // Room reports what is attached under a name.
 type Attached struct {
-	Name    string    `json:"name"`
-	Version string    `json:"version,omitempty"`
-	Host    string    `json:"host,omitempty"`
-	Since   time.Time `json:"since"`
-	Idle    int       `json:"idle"`
-	Beat    time.Time `json:"last_beat"`
-	OS      string    `json:"os,omitempty"`
-	Arch    string    `json:"arch,omitempty"`
+	Name    string `json:"name"`
+	Version string `json:"version,omitempty"`
+	Host    string `json:"host,omitempty"`
+	// Commit is the commit the room said it runs. Empty for a room that does not say.
+	Commit string    `json:"commit,omitempty"`
+	Since  time.Time `json:"since"`
+	Idle   int       `json:"idle"`
+	Beat   time.Time `json:"last_beat"`
+	OS     string    `json:"os,omitempty"`
+	Arch   string    `json:"arch,omitempty"`
 	// Proven is false for a room that attached over an overlay WITHOUT a
 	// certificate, so what it is called is only what it said. That is how an
 	// operator finds who must re-join before the old path is refused.
@@ -821,7 +825,7 @@ func (h *Hub) Rooms() []Attached {
 		}
 		a.mu.Unlock()
 		out = append(out, Attached{
-			Name: a.name, Version: a.version, Host: a.host,
+			Name: a.name, Version: a.version, Host: a.host, Commit: a.commit,
 			Since: a.since, Idle: len(a.idle), Beat: beat,
 			OS: a.os, Arch: a.arch, Proven: a.unproven == "", Git: a.git, IdleCPU: idle,
 		})

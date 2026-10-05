@@ -39,6 +39,9 @@ type hello struct {
 	// What this room is, for the board to show. Observed, never trusted.
 	Version string `json:"version,omitempty"`
 	Host    string `json:"host,omitempty"`
+	// Commit is the git commit this room's binary was built from, so the hub can say which landed commits the room is
+	// still missing. Observed, never trusted: it only decides what the deploy queue lists. Empty from an older room.
+	Commit string `json:"commit,omitempty"`
 	// WHAT IT WOULD RUN, which is the difference between an upgrade offer that
 	// is useful and one that is a broken binary. A Windows hub has nothing a
 	// Linux room can execute, and finding that out after the swap is the worst

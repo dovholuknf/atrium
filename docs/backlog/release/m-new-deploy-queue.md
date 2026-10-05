@@ -1,6 +1,6 @@
 # m-new-deploy-queue. A deploy queue, made visible
 
-Status: HELD (pause). Filed by the orchestrator 2026-10-01, from clint, gap G16 of docs-deps. Owned by release (no
+Status: BUILT 2026-10-04 on claude/m-new-deploy-queue, hold lifted. Filed by the orchestrator 2026-10-01, from clint, gap G16 of docs-deps. Owned by release (no
 running owner, see review-new-orphaned-owners).
 
 ## What is missing

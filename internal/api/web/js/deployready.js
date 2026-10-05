@@ -20,6 +20,39 @@ let drNote = "";         // what the last refusal said
 let drRemote = "";       // set when the hub said a deploy is only started from its own machine
 let drErr = "";          // why the last read failed, "" when it did not. The dialog then has no report to show.
 let drPosting = false;
+let drQueue = null;      // the last deploy queue: landed commits not yet live, and which deploy each needs. null when unread.
+
+// The queue is read when the dialog opens and whenever the report is, never for the pill. A failed read leaves no queue.
+async function loadDeployQueue() {
+  let r;
+  try { r = await plainFetch("/_hub/deploy-queue"); } catch (e) { drQueue = null; return; }
+  if (!r.ok) { drQueue = null; return; }
+  try { drQueue = await r.json(); } catch (e) { drQueue = null; }
+  const dlg = document.getElementById("deployready");
+  if (dlg && dlg.open) paintDeployDialog();
+}
+
+// One row per commit, oldest first: the sha, the item, and which deploy it needs. Every string is somebody's text and is
+// set with textContent.
+function drQueueBox(q) {
+  const box = drEl("div", "dr-queue");
+  box.appendChild(drEl("div", "dr-h", "deploy queue"));
+  box.appendChild(drEl("div", q.error ? "dr-err" : "dr-facts", q.line || q.error || ""));
+  if ((q.unreported || []).length) {
+    box.appendChild(drEl("p", "dr-note", "no commit reported by " + q.unreported.join(", ") + ", so each is taken as behind"));
+  }
+  (q.entries || []).forEach(e => {
+    const row = drEl("div", "dr-qrow");
+    row.dataset.needs = e.needs || "";
+    row.appendChild(drEl("code", "dr-sha", e.short || String(e.sha || "").slice(0, 8)));
+    row.appendChild(drEl("span", "dr-qitem", e.item || ""));
+    const rooms = (e.rooms || []).length ? " (" + e.rooms.join(", ") + ")" : "";
+    row.appendChild(drEl("span", "dr-qneeds", (e.needs || "") + rooms));
+    row.appendChild(drEl("span", "dr-subject", e.subject || ""));
+    box.appendChild(row);
+  });
+  return box;
+}
 
 // A board served from the hub's own machine. The hub checks it again and has the last word.
 function drLoopback() {
@@ -44,6 +77,8 @@ async function loadDeployReady() {
   drReport = v;
   drErr = "";
   paintDeployReady();
+  const dlg = document.getElementById("deployready");
+  if (dlg && dlg.open) loadDeployQueue();
 }
 
 // A read that failed leaves no report: the old one is not kept, since it may no longer be true, and the Deploy button goes
@@ -177,6 +212,7 @@ function paintDeployDialog() {
     });
     box.appendChild(list);
   }
+  if (drQueue) box.appendChild(drQueueBox(drQueue));
   const notes = v.notes || [];
   if (notes.length) {
     const n = drEl("div", "dr-notes");
