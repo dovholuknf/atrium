@@ -18442,6 +18442,66 @@ async function pullsDrawerSection(browser, base) {
     if (await p.evaluate(() => termTask.id) !== "land-pw3") fail("pullsDrawer: a live walker was replaced");
     await p.close();
 
+    // At phone width every state is one tap, and the buttons have to be reachable: the drawer is not cut off
+    // below the rail, the finding pane scrolls, and each button is tapped here, not keyed.
+    // `WALK_SHOTS=dir` shoots the buttons in view at each width and a finding after each state.
+    for (const vp of [{ width: 390, height: 844 }, { width: 360, height: 740 }]) {
+      const tag = "pullsDrawer phone " + vp.width + ": ";
+      st.f.pr_w = fresh();
+      const ph = await ctx.newPage();
+      ph.on("pageerror", e => errors.push(String(e)));
+      await ph.setViewportSize(vp);
+      await ph.goto(base, { waitUntil: "domcontentloaded" });
+      await ph.waitForFunction(() => typeof pulls !== "undefined" && pulls.loaded, null, { timeout: slow(15000) });
+      await ph.evaluate(() => attachTask("land-pw1"));
+      await ph.waitForFunction(() => termSock && termSock.readyState === 1 && termTask && termTask.id === "land-pw1", null, { timeout: slow(10000) });
+      await ph.waitForSelector("#t-walk:not([hidden])", { timeout: slow(10000) });
+      await ph.click("#t-walk");
+      await ph.waitForSelector("#walk-item .wk-actions button[data-act=y]", { state: "attached", timeout: slow(10000) });
+      const shoot = async name => {
+        if (process.env.WALK_SHOTS) await ph.screenshot({ path: path.join(process.env.WALK_SHOTS, vp.width + "-" + name + ".png") });
+      };
+      const btn = act => ph.locator("#walk-item .wk-actions button[data-act=" + act + "]");
+      await shoot("finding");
+      // the finding pane is what scrolls: bring the buttons into view and say where they landed
+      await btn("y").scrollIntoViewIfNeeded();
+      const geo = await ph.evaluate(() => {
+        const b = [...document.querySelectorAll("#walk-item .wk-actions button")].map(x => x.getBoundingClientRect());
+        const d = document.getElementById("walk-drawer").getBoundingClientRect();
+        const t = document.getElementById("t-screen").getBoundingClientRect();
+        return { top: Math.min(...b.map(r => r.top)), bottom: Math.max(...b.map(r => r.bottom)), h: Math.min(...b.map(r => r.height)),
+          dBottom: d.bottom, tTop: t.top, vh: innerHeight, dTop: d.top };
+      });
+      console.log(tag + JSON.stringify(geo));
+      if (geo.top < geo.dTop - 1 || geo.bottom > geo.dBottom + 1) fail(tag + "the action buttons are outside the drawer: " + JSON.stringify(geo));
+      if (geo.bottom > geo.vh + 1) fail(tag + "the action buttons are below the viewport: " + JSON.stringify(geo));
+      if (geo.h < 39) fail(tag + "a button is under 40px tall: " + JSON.stringify(geo));
+      await shoot("buttons");
+      const rowState = () => ph.evaluate(() => document.querySelector("#walk-rail .wk-row.cur").className.replace(/\b(wk-row|cur|brk)\b/g, "").trim());
+      for (const [act, want] of [["y", "accepted"], ["d", "posted"], ["s", "dismissed"], ["f", "deferred"]]) {
+        await btn(act).scrollIntoViewIfNeeded();
+        await btn(act).click();
+        // posted asks for the comment's URL, and is one more tap
+        if (act === "d") await ph.locator("#ask-actions button", { hasText: "mark posted" }).click();
+        await ph.waitForFunction(w => document.querySelector("#walk-rail .wk-row.cur." + w), want, { timeout: slow(5000) })
+          .catch(() => fail(tag + "tapping " + act + " did not mark the finding " + want));
+        const c = await ph.evaluate(() => JSON.stringify(pulls.rows.find(r => r.id === "pr_w").walk));
+        const wantKey = { accepted: "accepted", posted: "done", dismissed: "skipped", deferred: "deferred" }[want];
+        if (JSON.parse(c)[wantKey] !== 1) fail(tag + "the row counts after " + act + ": " + c);
+        if (!(await ph.locator("#walk-item .wk-state." + want).count())) fail(tag + "the finding does not show " + want);
+        await ph.evaluate(() => { document.getElementById("walk-item").scrollTop = 0; });
+        await shoot("state-" + want);
+      }
+      await btn("u").click();
+      await ph.waitForFunction(() => !document.querySelector("#walk-rail .wk-row.cur.accepted, #walk-rail .wk-row.cur.posted, #walk-rail .wk-row.cur.dismissed, #walk-rail .wk-row.cur.deferred"), null, { timeout: slow(5000) })
+        .catch(() => fail(tag + "tapping u did not put the finding back to open"));
+      const open = await ph.evaluate(() => JSON.stringify(pulls.rows.find(r => r.id === "pr_w").walk));
+      if (JSON.parse(open).open !== 2) fail(tag + "the row counts after undo: " + open);
+      await ph.evaluate(() => { document.getElementById("walk-item").scrollTop = 0; });
+      await shoot("state-undo");
+      await ph.close();
+    }
+
     // a walker's card attached before the rows are known is re-probed when they arrive, so its marks go to walk.txt
     let release;
     st.gate = new Promise(r => { release = r; });
