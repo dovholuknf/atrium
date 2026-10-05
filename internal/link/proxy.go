@@ -610,7 +610,7 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// THE DOCUMENT LIST, /m/docs, is the same shell, so a reload on the phone's list is not a 404.
-	if r.URL.Path == "/m/docs" && p.board != nil && (r.Method == http.MethodGet || r.Method == http.MethodHead) {
+	if (r.URL.Path == "/m/docs" || r.URL.Path == "/m/docs/") && p.board != nil && (r.Method == http.MethodGet || r.Method == http.MethodHead) {
 		p.serveAsset(w, r, "m/index.html")
 		return
 	}

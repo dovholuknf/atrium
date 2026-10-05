@@ -26,7 +26,7 @@ is live.
 - **Waiting on @ui:** the `'rooms'` TypeError in groupDrag, growlActions, peekEverywhere, termDebug and the
   context-size page. Then I rerun `node scripts/test-board-sharded.js --save-weights` (runs local, needs NODE_PATH at
   a worktree with node_modules) and send only `scripts/board-suite-weights.json` through @review.
-- **Open nits:** @review's D1 nits (cap the isText back-up loop at 3 steps in hubstore, a docOrigin comment above
+- **Open nits:** @review's D1 nits, all three BUILT on claude/f-new-d1-nits (cap the isText back-up loop at 3 steps in hubstore, a docOrigin comment above
   docBy in internal/link/docs_api.go, `/m/docs/` trailing slash 404), the line over 120 chars in room-defender (0b),
   and board-suite-remote args that cannot hold a space.
 - **Owed by the orchestrator:** a hub deploy for d77d21d0, 0963c4c6 (pulls view) and 370dcb61 (pulls 404 text).

@@ -756,3 +756,16 @@ func TestTheFlagsAreZeroOrOne(t *testing.T) {
 		}
 	}
 }
+
+func TestIsTextCutInsideCharacter(t *testing.T) {
+	// A three-byte character across the 8192 cut is judged whole, not by half of it.
+	b := append(bytes.Repeat([]byte("a"), 8191), []byte("€€")...)
+	if !isText(b) {
+		t.Error("a character across the cut made valid text binary")
+	}
+	// Continuation bytes with no start are walked back over three times only, and stay binary.
+	c := append(bytes.Repeat([]byte("a"), 8188), bytes.Repeat([]byte{0x80}, 10)...)
+	if isText(c) {
+		t.Error("continuation bytes with no start were taken for text")
+	}
+}
