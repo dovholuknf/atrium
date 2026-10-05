@@ -66,6 +66,14 @@ const KA_STOP_WORD = {
 // The daemon's `keepaliveMargin`, used only until it sends `next_refresh_at`.
 const KA_MARGIN_MS = 5 * 60 * 1000;
 
+// The cache lives an hour and the daemon refreshes KA_MARGIN_MS before it ends, so a pie with no refresh to
+// start from began its fill this long before the refresh.
+const KA_CYCLE_MS = 3600000;
+// The pie is drawn in steps of this many degrees, so a repaint changes the chip only when the wedge moves.
+const KA_PIE_STEP = 15;
+// A pie this full says it is about to fire.
+const KA_DUE_AT = 0.92;
+
 // Every card a chip or a line has drawn, by id, so a tick can redraw a chip from
 // what it was drawn from. Cold ones are dropped when the timer is re-armed.
 const KA_SEEN = new Map();
@@ -107,7 +115,7 @@ function kaModel(t, now) {
   const on = k.state === "on";
   const m = {
     bucket: warm ? (on && n > 0 ? "kept" : "warm") : "cold",
-    warm, wu, flip: warm ? wu : 0, cls: "", full: "", short: "", tip: []
+    warm, wu, flip: warm ? wu : 0, cls: "", full: "", short: "", tip: [], pie: -1, due: false
   };
   const rawWhy = why ? "the daemon's last reason: " + why : "";
   if (KA_STOP_WORD[k.state]) {
@@ -176,10 +184,20 @@ function kaModel(t, now) {
   }
   m.cls = n > 0 ? "kept" : "warm";
   m.next = waiting ? next : 0;
+  if (waiting) {
+    // From the last refresh, or from when the cache was written, to the next refresh.
+    let start = kaWhen(k.last_refresh_at) || wu - KA_CYCLE_MS;
+    if (start >= next) start = next - (KA_CYCLE_MS - KA_MARGIN_MS);
+    const f = Math.min(1, Math.max(0, (now - start) / (next - start)));
+    m.pie = Math.floor(f * 360 / KA_PIE_STEP) * KA_PIE_STEP;
+    m.due = f >= KA_DUE_AT;
+    m.cls += m.due ? " pie due" : " pie";
+  }
   m.tip.push(n > 0
     ? `atrium has refreshed this card's cache ${n} time${n === 1 ? "" : "s"} this idle stretch`
     : "its cache is warm, so the next turn reads it instead of rewriting it");
   m.tip.push("warm until " + until);
+  if (m.due) m.tip.push("about to refresh");
   if (waiting) {
     m.tip.push("next refresh " + (exact ? "at " : "about ") + kaClock(next, now) +
       (exact ? "" : ", checked once a minute"));
@@ -199,7 +217,8 @@ function keepaliveChip(t) {
   const m = kaModel(t, kaNow());
   if (!m) return "";
   const tip = m.tip.join(". ");
-  return `<span class="chip keepalive cache ${m.cls}" data-cid="${esc(t.id)}" data-bucket="${m.bucket}"
+  const pie = m.pie >= 0 ? ` style="--pie:${m.pie}deg"` : "";
+  return `<span class="chip keepalive cache ${m.cls}" data-cid="${esc(t.id)}" data-bucket="${m.bucket}"${pie}
     data-state="${esc(t.keepalive.state)}" role="img" aria-label="${esc(m.full + ". " + tip)}"
     data-tip="${esc(m.full + ". " + tip)}"><span class="cfull">${esc(m.full)}</span></span>`;
 }
@@ -242,6 +261,8 @@ function kaArm() {
     }
     soon(m.flip);
     soon(m.next);
+    // A filling pie moves with the clock: one coarse look a minute, never a CSS animation.
+    if (m.pie >= 0 && !m.due) soon(now + 60000);
   }
   if (!soonest) return;
   kaTimer = setTimeout(kaTick, Math.min(Math.max(soonest - now + 50, 250), 2147483000));

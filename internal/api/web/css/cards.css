@@ -370,6 +370,12 @@
   .chip.cache.off { border-color: rgba(150,150,150,.6); }
   .chip.cache.off.cold { opacity: .65; }
   .chip.cache.none { border-color: rgba(150,150,150,.35); opacity: .6; }
+  /* The pie: a warm card with a refresh coming. The wedge fills from the last refresh toward the next one, from
+     --pie set in degrees by kaModel, and is repainted once a minute, with no animation. Near full it takes the
+     warn ring. A stopped card is empty with a strike through it. */
+  .chip.cache.pie { width: 14px; height: 14px; background: conic-gradient(var(--teal) var(--pie, 0deg), transparent 0); }
+  .chip.cache.pie.due { border-color: var(--warn); background: conic-gradient(var(--warn) var(--pie, 0deg), transparent 0); }
+  .chip.cache.stopped { width: 14px; height: 14px; background: linear-gradient(to top right, transparent calc(50% - 1px), var(--warn) calc(50% - 1px), var(--warn) calc(50% + 1px), transparent calc(50% + 1px)); }
   .peek-cache { margin-top: 8px; font-size: var(--fs-sm); color: var(--dim); }
   .peek-cache b { display: block; color: inherit; font-weight: 600; }
   .peek-cache.kept b, .peek-cache.warm b { color: var(--teal); }
