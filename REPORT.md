@@ -1,25 +1,24 @@
 # m-new-release-0-0-1 report
 
-Incomplete: the gate is red on this machine and three answers are still needed from clint.
+READY: prepared by agents, the publish is clint's by hand. The gate is not green on this machine and cannot be here.
 
 ## Done
-- Merged `claude/main` (c9d65765). The plan now reads the deploy queue as met and names `/_hub/deploy-queue` as the check.
-- Docs site: added allowed folders, forge access, change requests and the deploy queue to `website/docs/rooms.md`, a
-  pointer in `board.md`, and the missing CLI verbs in `cli.md` (checked against `atrium help`). Built to
-  `build.claude/docs-site`, success, nothing published.
-- Gate run: `bash scripts/ci.sh` with both env vars unset FAILED. Recorded in the plan under "Gate result". Log at
-  `build.claude/ci.log`.
-- Item file and changelog extended.
+- Rebased onto `claude/main` (bcdbb267).
+- The three questions are written into the item file under "Decided by @fabric, 2026-10-05" and the plan matches:
+  `0.0.1` and `v0.0.1`, unsigned with `checksums.txt` published, GitHub Release plus scoop plus the docs site.
+- Filed `docs/backlog/release/m-new-release-signing.md`.
+- Fixed the gofmt failure in `cmd/ptyhost-spike/pipe_windows.go`.
+- Filed for @ui, not fixed: `docs/backlog/ui/u-new-gate-title-tooltips.md` and `u-new-gate-on-danger.md`.
+- Item status is READY. Changelog extended.
 
-## Left
-- Gate: this machine lacks `~/.ssh/id_ed25519_sign.pub` (commits fail, so `TestPRWorktree*` and all cut-release checks
-  fail with 128), lacks symlink rights, and `internal/daemon`, `gitsync` and `link` hit the 600 s timeout. From
-  `claude/main` and needing an owner: gofmt on `cmd/ptyhost-spike/pipe_windows.go`, `title=` tooltips not in
-  `scripts/title-allowlist.txt` (index.html, changereq.js, hubrepos.js), skins (`--on-danger` set only by
-  daylight, frost, linen, paper).
-- Clint's three questions (version and tag, signing, channels) stay in the item file.
-- OWED.md is not in this checkout. Line: `| R2 | Release 0.0.1 | docs/backlog/release/m-new-release-0-0-1.md |`.
+## Gate parts run here, 2026-10-05
+- Pass: gofmt, go vet, go build, go test of every package except `daemon`, `gitsync` and `link`, bar the failures below.
+- Fail, this machine: no `~/.ssh/id_ed25519_sign.pub` (`TestPRWorktree*` in `internal/api`, and the cut-release checks),
+  no symlink rights (`TestInstallWritesThroughASymlink`). `internal/daemon`, `gitsync`, `link` hit the 600 s timeout
+  and were skipped this time.
+- Fail, @ui's: `check-titles.sh` and `check-skins.sh`.
 
-## Commands left for clint
-Plan section "Commands, in order": deploy-queue check, the gate, `cut-release.sh v0.0.1 --preflight`, the dry run,
-`--execute`, the scoop bucket push, the scoop install check, the docs workflow. None was run.
+## Left, commands for clint
+Plan section "Commands, in order". First, the full gate on a machine with a signing key and no symlink limit, once
+@ui has fixed the two filed items. Then `cut-release.sh v0.0.1 --preflight`, the dry run, `--execute`, the scoop
+bucket push, the scoop install check and the docs workflow. None was run.

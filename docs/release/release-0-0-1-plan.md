@@ -1,17 +1,18 @@
 # Release 0.0.1: the plan
 
-Item `m-new-release-0-0-1`. Nothing here has been run. Every step that leaves the machine is for clint, by hand.
+Item `m-new-release-0-0-1`, status READY. Nothing here has been run. Every step that leaves the machine is for clint, by hand.
 
-## Decisions asked of clint
+## Decisions
 
-These are in the item file too. The commands below assume the first answer in each row.
+Decided by @fabric on 2026-10-05, under clint's standing order that directors answer technical and product questions.
+They are in the item file too.
 
-| Question | Assumed |
+| Question | Decision |
 | --- | --- |
-| Version string and tag | `0.0.1`, tag `v0.0.1`. The site, `website/package.json` and `docusaurus.config.js` already say 0.0.1. `packaging.md` shows `v0.1.0` only as an example. |
-| Signing | None. Windows and macOS installers go out unsigned and the notes say so. A Developer ID cert and a code-signing cert are a later decision. |
-| Channels | GitHub Release (archives, deb, rpm, checksums), the scoop bucket, and the docs site. No brew tap yet, no Chocolatey, no Store. |
-| Who tags | `scripts/cut-release.sh --execute` from this machine for the first release, then the workflow once it has worked. |
+| Version string and tag | `0.0.1`, tag `v0.0.1`, on the claude/main sha the orchestrator names at release time. |
+| Signing | Unsigned for 0.0.1. `checksums.txt` is published with the assets and the notes say the installers are unsigned. Signing is the later item `m-new-release-signing`. |
+| Channels | GitHub Release (archives, deb, rpm, checksums), the scoop bucket, and the docs site. The brew tap and the one-line install stay in the far backlog. |
+| Who tags | `scripts/cut-release.sh --execute` from clint's machine for the first release, then the workflow once it has worked. |
 
 ## What must be live and passing first
 

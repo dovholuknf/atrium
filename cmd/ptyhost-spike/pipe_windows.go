@@ -70,6 +70,7 @@ func (c *pipeConn) Write(b []byte) (int, error) {
 	}
 	return total, nil
 }
+
 // Close is idempotent, and that is not optional. The first version closed twice (the serve loop's defer and the
 // "a new daemon closes the older connection" path), and the second CloseHandle hit a handle value the runtime had
 // already reused: "GetQueuedCompletionStatusEx failed (errno=735)", fatal error: netpoll failed, the whole host
