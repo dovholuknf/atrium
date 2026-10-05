@@ -548,6 +548,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /v1/tasks/{id}/sessions/{session}/export", s.exportSession)
 	mux.HandleFunc("POST /v1/tasks/{id}/files/probe", s.probeFiles)
 	mux.HandleFunc("GET /v1/tasks/{id}/files/text", s.readText)
+	// The same bytes, to be read in a tab. See `fileview.go`.
+	mux.HandleFunc("GET /v1/tasks/{id}/files/view", s.viewFile)
 	mux.HandleFunc("PUT /v1/tasks/{id}/files/text", s.writeText)
 	mux.HandleFunc("GET /v1/sources", s.listSources)
 	mux.HandleFunc("PUT /v1/sources/{id}", s.saveSource)
