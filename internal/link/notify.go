@@ -497,11 +497,23 @@ type NotifyStatus struct {
 	VisibleTabs int  `json:"visible_tabs"`
 }
 
+// extraSink is a sink beside the command, Web Push for one. It has its own on switch and its own count of failures in
+// a row, so three failed commands never switch push off and the other way round. The trigger, the dedupe, the seeding,
+// the desktop-tab quiet and the queue are the command's and are shared.
+type extraSink struct {
+	name     string
+	sink     Sink
+	active   func() bool
+	failures int
+	lastErr  string
+}
+
 // Notifier is the trigger, the queue and the worker.
 type Notifier struct {
-	st   NotifyStore
-	sink Sink
-	pres *presence
+	st     NotifyStore
+	sink   Sink
+	extras []*extraSink
+	pres   *presence
 
 	mu       sync.Mutex
 	enabled  bool
@@ -538,9 +550,59 @@ func NewNotifier(st NotifyStore) *Notifier {
 	return n
 }
 
-// SetSink swaps the sink, which is how a second one will be added. For tests
-// too.
+// SetSink swaps the command sink. For tests.
 func (n *Notifier) SetSink(s Sink) { n.sink = s }
+
+// AddSink adds a sink that runs beside the command, for every notice, while active says so. A sink counts its own
+// failures. See extraSink.
+func (n *Notifier) AddSink(name string, s Sink, active func() bool) {
+	n.mu.Lock()
+	n.extras = append(n.extras, &extraSink{name: name, sink: s, active: active})
+	n.mu.Unlock()
+}
+
+// SinkFailures is a sink's failures in a row, by the name it was added under.
+func (n *Notifier) SinkFailures(name string) int {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	for _, x := range n.extras {
+		if x.name == name {
+			return x.failures
+		}
+	}
+	return 0
+}
+
+// armed reports whether anything is listening, the command or any added sink. n.mu is NOT held: an added sink's
+// active func takes its own lock.
+func (n *Notifier) armed() bool {
+	n.mu.Lock()
+	on, extras := n.enabled, append([]*extraSink(nil), n.extras...)
+	n.mu.Unlock()
+	if on {
+		return true
+	}
+	for _, x := range extras {
+		if x.active() {
+			return true
+		}
+	}
+	return false
+}
+
+// Arm is what turning a sink on does when nothing was listening before: every room starts unseeded and what is
+// waiting now is stored without notifying, so the first buzz is not everything that piled up. A no-op when something
+// already listens, because the trigger has been recording all along.
+func (n *Notifier) Arm() error {
+	if n.armed() {
+		return nil
+	}
+	n.unseedAll()
+	if err := n.seed(); err != nil {
+		return fmt.Errorf("could not seed what is already waiting: %w", err)
+	}
+	return nil
+}
 
 // Start runs the one worker goroutine until ctx ends.
 func (n *Notifier) Start(ctx context.Context) {
@@ -563,13 +625,29 @@ func (n *Notifier) work(ctx context.Context) {
 		}
 		n.mu.Lock()
 		on := n.enabled
+		extras := append([]*extraSink(nil), n.extras...)
 		n.mu.Unlock()
-		if !on {
-			continue
+		if on {
+			n.record(n.sink.Send(ctx, notice))
 		}
-		res := n.sink.Send(ctx, notice)
-		n.record(res)
+		for _, x := range extras {
+			if x.active() {
+				n.recordExtra(x, x.sink.Send(ctx, notice))
+			}
+		}
 	}
+}
+
+// recordExtra counts one run for the sink that made it, and no other.
+func (n *Notifier) recordExtra(x *extraSink, res Result) {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	if res.OK {
+		x.failures, x.lastErr = 0, ""
+		return
+	}
+	x.failures++
+	x.lastErr = res.Err
 }
 
 func (n *Notifier) pop() (Notice, bool) {
@@ -627,10 +705,7 @@ func (n *Notifier) record(res Result) {
 // Announced is called after a room's announcement is safely cached. It costs a
 // few map lookups and one database transaction and never waits on the sink.
 func (n *Notifier) Announced(room string, cards []CardState) {
-	n.mu.Lock()
-	on := n.enabled
-	n.mu.Unlock()
-	if !on {
+	if !n.armed() {
 		return
 	}
 	ids, info, present := notifyPlan(cards)
@@ -819,9 +894,7 @@ func (n *Notifier) Configure(enabled bool, command []string) error {
 	if command == nil {
 		raw = []byte("[]")
 	}
-	n.mu.Lock()
-	was := n.enabled
-	n.mu.Unlock()
+	was := n.armed()
 	if enabled && !was {
 		// EVERY ROOM STARTS UNSEEDED AGAIN. Nothing is recorded while notify is
 		// off, so a room seeded last time would otherwise have everything that

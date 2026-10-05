@@ -1,6 +1,7 @@
 # u-new-web-push-build. Build web push for the phone
 
-Status: board half built 2026-10-04, hub half planned below. Was HELD (pause). Filed by the orchestrator 2026-10-01, from clint, gap G12 of docs-deps. Owned by @ui, with a hub
+Status: board half and hub steps 1 to 6 built 2026-10-04. Step 7 (desktop gear list) not built, then the real phone
+check by clint and the @review pass. Was HELD (pause). Filed by the orchestrator 2026-10-01, from clint, gap G12 of docs-deps. Owned by @ui, with a hub
 endpoint from @runtime.
 
 ## What is missing
@@ -49,7 +50,49 @@ All under `/_hub/push/`, JSON, as the design says.
   opens by id with no alias lookup, which is `/m/` followed by `#term=<room~id>`. The worker holds `path` to `/m`
   whatever it is sent.
 
-## The hub plan (for @runtime, not built)
+## Built 2026-10-04: the hub half
+
+Rebased onto claude/main. Steps 1 to 6 of the plan below, standard library only, no new module.
+
+- Step 1: migration `0011_push_subscription` and `internal/hubstore/push.go` (cap 8 with no eviction, repeat endpoint is
+  one device, per-row failure count). Key, contact and switch are `hub_setting` rows `push.vapid_private`,
+  `push.vapid_sub`, `push.enabled`.
+- Step 2: `internal/link/webpush.go`, RFC 8291 and RFC 8292. `TestRFC8291AppendixA` reproduces the RFC's body byte for
+  byte. `push_test.go` has a fake push service that decrypts with a browser key pair and verifies the JWT.
+- Step 3: the allowlist in `webpush.go`, table test in `webpush_test.go`. Checked at subscribe and on every send.
+- Step 4: `Notifier.AddSink` in `notify.go` with per-sink failure counts (`SinkFailures`) and `Arm` for the shared
+  seeding. `Push`/`pushSink` in `internal/link/push.go`: Topic (card id hashed to 32 chars), TTL 3600, Urgency, padding
+  to 256, burst cap summary, 10 s per send, no redirects, bounded read, endpoint kept out of errors.
+- Step 5: 404 or 410 deletes the row. Three failures in a row switch that subscription off with its reason.
+- Step 6: `internal/link/pushapi.go`, wired in `atrium_run.go` with `SetPush`. Operator only (`edge.LocalOperator`): GET
+  and PUT `/_hub/push`, `POST /_hub/push/test`, `DELETE /_hub/push/subscriptions/<id>`. Open: `GET /key`, and the
+  share's subscribe and endpoint-bodied unsubscribe. The `X-Forwarded-For` 403 test is
+  `TestPushOperatorRoutesAreLocalOnly`. Writes also pass the cross-origin check. A new device is put in the audit feed
+  and raised as a question growler on the first attached room, and ended when removed.
+
+Choices to know. Key rotation removes every subscription, since a push service refuses them under a new key. The
+share's DELETE by endpoint is allowed whether push is on or off. The path in a payload is `/m/#term=<room~id>`. The
+test push after a 201 is sent in the background. A switched-off subscription stays listed until removed or until it
+subscribes again.
+
+Tests: `go test ./internal/link/... ./internal/hubstore/...` pass for everything push. Two failures in `internal/link`
+are not from this work: `TestTheHubRaisesTheForgeAlertOnceAndEndsItOnSuccess` fails the same on claude/main (no `gh`
+login here), and one full run hung 5 minutes in `TestAPrEventArrivesUntouchedFromASingleRoom`, which passed when run
+alone. `scripts/check-web-push.js` was not re-run against the real routes.
+
+Left, in order:
+
+1. Step 7: the desktop gear in `internal/api/web/js/hubnotify.js` and the settings html. A row beside the notify row
+   that reads `GET /_hub/push` (hidden on 404 or 403 or for a guest), the on and off switch (`PUT {enabled}`), the
+   contact field, a list of subscriptions (label, origin, service, created, failures, disabled_reason) with a remove
+   button (`DELETE /_hub/push/subscriptions/<id>`), a test button (`POST /_hub/push/test`) and a rotate button that
+   warns it removes every device. The editable device label on `/m` is also still open. PNGs go in
+   `docs/screens/u-new-web-push-build/`.
+2. Re-run `scripts/check-web-push.js` against the real routes.
+3. The real phone check by clint (Brave on Android, an iOS home screen app).
+4. The @review pass for both halves.
+
+## The hub plan (as accepted, steps 1 to 6 now built)
 
 It stays inside `internal/link` and `internal/hubstore` and needs no new Go module. It was not built tonight because it
 includes VAPID key handling, which the brief named as a reason to stop and plan. In order:

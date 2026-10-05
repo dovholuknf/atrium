@@ -431,6 +431,7 @@ func serveAtrium(f atriumFlags, up atriumUp) error {
 
 	notifier.Start(ctx)
 	proxy.SetNotify(notifier)
+	proxy.SetPush(link.NewPush(store, notifier))
 	proxy.SetGrowler(growler)
 	growler.Start(ctx)
 
