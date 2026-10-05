@@ -1,6 +1,9 @@
 # m-new-release-0-0-1. Release 0.0.1: plan, docs site refresh, publish
 
-Status: HELD (pause). Filed by the orchestrator 2026-10-01, from clint, gap G11 of docs-deps. Owned by release (no
+Status: PLANNED, hold lifted 2026-10-04. Plan: `docs/release/release-0-0-1-plan.md`. Waiting on clint's answers below and on
+m-new-deploy-queue merging.
+
+Was HELD (pause). Filed by the orchestrator 2026-10-01, from clint, gap G11 of docs-deps. Owned by release (no
 running owner, see review-new-orphaned-owners).
 
 ## What is missing
@@ -23,3 +26,9 @@ The release is the goal the rest of the backlog serves, and one row in a notes f
 - The docs site refreshed against main.
 - The first publish done by clint's hand, following `packaging.md`. Agents do not push or publish.
 - OWED.md row R2 points here.
+
+## Open questions for clint
+
+- Version string: is it `0.0.1`, tag `v0.0.1`? (The site already says 0.0.1, `packaging.md` shows `v0.1.0`.)
+- Signing: ship the Windows MSI and macOS pkg unsigned for 0.0.1?
+- Channels: GitHub Release plus scoop plus the docs site only, no brew tap?

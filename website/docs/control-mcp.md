@@ -51,6 +51,8 @@ going to use. Put the entry above in that file.
 | `atrium_launch` | Start a new agent in a directory, on its own card, supervised by atrium. |
 | `atrium_exit` | Ask a session to finish and leave. Asked, not killed. |
 | `atrium_cull` | Retire a worker whose merged work you accepted: it leaves, its worktree and branch are removed. |
+| `atrium_git_url` | Where to fetch code that is not in your directory: the hub's copy of finished work, or a room's work in progress. |
+| `atrium_git_clone` | A clone of a repository on this room, fetched if it is not there yet. Returns the path. |
 | `restart_atrium` | Wind a room down and bring it straight back on the same database. |
 
 ### Talking, not typing
@@ -62,6 +64,14 @@ reads as one agent talking to another.
 Call `atrium_peers` before saying anything. The handle it returns is what `atrium_say` takes. A handle read off a
 card title is usually wrong.
 
+`atrium_say` takes `wake`, which resumes a parked session and delivers, including one on another room
+(`name@room`). It costs a cold start, so leave it off unless the message is worth it. A say to a parked session
+without it is refused and nothing is queued.
+
+`atrium_say` and `atrium_report` take `kind`. `fyi` is news the receiver need not act on, and a launcher that holds its
+notices keeps it on its card instead of being interrupted. `needs` is the default, and `done`, `blocked`, `question`
+and anything carrying an ask are always `needs`.
+
 ### Launching a colleague
 
 `atrium_launch` starts a real session, not a subagent. It has its own conversation, its own permission gate and its
@@ -71,6 +81,7 @@ own card, it outlives the session that started it, and you can watch it, type in
 - **`brief`** is written to `BRIEF.md` in the new session's directory and read first, so it survives compaction.
 - **`theme`** picks its terminal theme. Workers usually wear `active-work`.
 - **Its permission requests go to you**, on your board.
+- **`room`** launches on another room through the hub. `cwd` is then a path on that machine.
 - **At most ten** agent-launched sessions run at once. A launch past the cap is refused and recorded in the audit
   tab.
 
@@ -99,3 +110,10 @@ questions per peer. An agent checks this before assuming you read what it wrote.
 `restart_atrium` is scheduled, not immediate, because it takes down every terminal the room owns, possibly the
 caller's own. The room parks its working agents first, spawns a restarter that outlives it, and comes back as the
 same room. Staged binaries are installed on the way.
+
+### Fetching code you do not have
+
+`atrium_git_url` takes `repo` (`host/owner/repo` or a name), and optionally `branch` and `room`. It answers with the URL
+to `git fetch`, and whether the code is the hub's copy of pushed work or a room's work in progress. A branch that is
+both says which is ahead. A repository the hub does not know answers with the closest names. Use it instead of asking
+for a paste.

@@ -138,3 +138,7 @@ A hub offers a build per platform, named `atrium_<os>_<arch>` in its `--builds` 
 
 The launch dialog asks which room, and offers only the runners that room has. Each room holds its own path to each
 runner's binary, so a runner installed off one machine's PATH still works there.
+
+A pull request under review is placed on the least busy online room, and the hub keeps one claim per pull request
+across rooms, so two rooms never review the same one. A claim whose room is offline is not re-placed: the board warns
+instead, so you choose.
