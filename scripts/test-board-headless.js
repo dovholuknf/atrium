@@ -10411,13 +10411,25 @@ async function questionsClickSection(browser, base) {
         window.__menus = 0; window.__opens = 0;
       });
       await show(name === "terminal row" ? "terms" : "stack");
+      // QC_SHOTS=<dir> keeps a picture of each row with its chip, then without, for the item's screens.
+      const shot = async phase => {
+        if (!process.env.QC_SHOTS) return;
+        fs.mkdirSync(process.env.QC_SHOTS, { recursive: true });
+        if (phase === "after" && name === "board card") {
+          await p.evaluate(() => { document.getElementById("qc-host").innerHTML = cardHTML(lastTasks.find(t => t.id === "qc1")); });
+        }
+        const row = await p.$(sel.replace(/ \.chip\.questions$/, ""));
+        if (row) await row.screenshot({ path: path.join(process.env.QC_SHOTS, phase + "-" + name.replace(/ /g, "-") + ".png") });
+      };
+      await shot("before");
       await p.click(sel);
       // The list in front is the one repainted by the poll.
       await p.waitForSelector(name === "terminal row" ? '#term-list .card.tab[data-id="qc1"] .chip.questions'
         : '#stack-list .stackrow[data-id="qc1"] .chip.questions',
       { state: "detached", timeout: slow(15000) }).catch(() => fail(name + ": the chip stayed after a dismiss and a poll."));
+      await shot("after");
       if (qDismissWrites.length !== 1) fail(name + ": " + qDismissWrites.length + " dismiss posts, not one.");
-      const w = qDismissWrites[0];
+      const w =qDismissWrites[0];
       if (w.url !== "/v1/tasks/qc1/questions/dismiss" || w.body.questions_at !== QC_AT) {
         fail(name + ": the dismiss named " + JSON.stringify(w));
       }
