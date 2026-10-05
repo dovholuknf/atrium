@@ -566,6 +566,10 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("PUT /v1/prs/{id}/findings/{key}", s.putPRFinding)
 	mux.HandleFunc("POST /v1/prs/{id}/findings/{key}/walk", s.walkPRFinding)
 	mux.HandleFunc("POST /v1/prs/{id}/walker", s.walkerPR)
+	// A review moves with its PR: see `prsmove.go`.
+	mux.HandleFunc("GET /v1/prs/export", s.exportPR)
+	mux.HandleFunc("POST /v1/prs/import", s.importPR)
+	mux.HandleFunc("POST /v1/prs/{id}/archive", s.archivePR)
 	// WHERE A REPOSITORY LIVES ON THIS MACHINE, declared rather than guessed.
 	// A provider is a root and a layout, and it holds no credential, makes no
 	// network call and clones nothing. See `docs/runtime/providers-design.md`, and note
