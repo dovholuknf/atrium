@@ -1011,6 +1011,7 @@ function connectTerm(taskID) {
   // afterwards. Writing it would put a runner's output into a terminal that is
   // now showing something else, or into the same one twice.
   termSock.onmessage = e => {
+    if (termSock === sock && termTask) openingEnd(termTask.id);   // ends a resume's "opening"
     // A kept terminal's socket while another one is showing: into its own terminal and nothing else.
     if (termSock !== sock) {
       const slot = keptSlotOf(sock);
@@ -1018,8 +1019,6 @@ function connectTerm(taskID) {
       return;
     }
     if (!term) return;
-    // The first output ends a resume's "opening". See `resumeOpening`.
-    if (typeof openingEnd === "function" && termTask && openingState(termTask.id)) openingEnd(termTask.id);
     // The scroll goes in the WRITE CALLBACK, not after the call. `term.write`
     // is asynchronous: it queues the bytes and parses them later, so scrolling
     // on the next line scrolls a buffer that has not grown yet, which is the

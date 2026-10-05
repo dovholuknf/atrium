@@ -30,3 +30,7 @@ section only takes the "before" pictures (its asserts are for the new code).
 before-1-card, before-2-opening, before-3-pane-opening, before-4-output, before-6-failed (old code, nothing shown),
 after-1-card, after-2-opening (row chip), after-3-pane-opening (pane banner), after-4-output, after-5-slow (the
 reason, bound shortened to 400ms for the test), after-6-failed.
+
+## check-board.sh
+Two FAILs (`follow-scroll ... term.write's callback`, `onData ... isAutoReport`), identical on claude/main 90ba936e,
+so not from this change. The title-allowlist list it prints is also pre-existing (hubrepos, changereq, index).
