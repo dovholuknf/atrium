@@ -268,3 +268,22 @@ pre.screen { margin: 0; font: 12px/1.4 var(--mono); color: var(--head); overflow
 .viewer .v-row, .viewer .v-cut { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; justify-content: center; margin-top: 12px; color: var(--dim); font-size: 13px; }
 .viewer .v-btn { min-height: 44px; padding: 0 16px; border: 1px solid var(--stroke); border-radius: 12px; background: none; color: var(--teal); font-size: 15px; cursor: pointer; }
 .viewer .v-btn:disabled { color: var(--dim); }
+
+/* resume from a long press (js/resume.js). The row is not selectable and has no platform callout, so the press is ours */
+.row { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
+.row .opening { display: inline-flex; align-items: center; gap: 7px; color: var(--blue); }
+.row .opening.slow { color: var(--warn); white-space: normal; }
+.row .opening.nudge { animation: m-nudge .5s ease; }
+.m-spin { flex: none; width: 12px; height: 12px; border-radius: 50%; border: 2px solid currentColor; border-right-color: transparent; animation: m-spin .8s linear infinite; }
+@keyframes m-nudge { 30% { transform: translateX(5px); } 60% { transform: translateX(-4px); } }
+.rmenu { position: fixed; inset: 0; z-index: 40; display: flex; align-items: flex-end; }
+.rmenu[hidden] { display: none; }
+.rmenu-back { position: absolute; inset: 0; background: rgba(0, 0, 0, .45); }
+.rmenu-box { position: relative; width: 100%; display: flex; flex-direction: column; gap: 10px; background: var(--bg-0); border-radius: 18px 18px 0 0;
+  padding: 16px max(16px, env(safe-area-inset-right, 0px)) calc(16px + env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px)); }
+.rmenu-name { margin: 0; color: var(--dim); font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rmenu-go, .rmenu-x { min-height: 48px; border: 0; border-radius: 14px; font-size: 16px; font-weight: 600; background: var(--lift); color: var(--head); }
+.rmenu-go { background: var(--teal-bg); color: var(--teal); }
+.rmenu-go:disabled { opacity: .5; }
+.rmenu-why { margin: 0; color: var(--dim); font-size: 13px; }
+.rmenu-why:empty { display: none; }

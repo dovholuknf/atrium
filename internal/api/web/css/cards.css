@@ -293,6 +293,11 @@
     background: rgba(var(--warn-rgb),.10); border-color: var(--warn-stroke); color: var(--warn);
   }
   .chip.warn { background: var(--warn-bg); color: var(--warn); }
+  /* A resume in flight: see `resumeOpening` in js/card-menu.js. Pulsed once when a second resume points at it. */
+  .chip.opening { display: inline-flex; align-items: center; background: var(--chip-accent); color: var(--chip-accent-text); }
+  .chip.opening.slow { background: var(--warn-bg); color: var(--warn); }
+  .chip.opening.nudge { animation: opening-nudge .6s ease-out; }
+  @keyframes opening-nudge { 30% { transform: scale(1.12); } }
   .chip.bad { background: rgba(var(--danger-rgb),.18); color: var(--danger); }
   /* A turn nobody has seen, and questions nobody has answered. See js/seen.js. The dot is the teal the live
      badge wears, because it is the same kind of fact: about the card, never a column. */

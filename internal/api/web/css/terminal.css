@@ -491,6 +491,7 @@
     color: var(--head);
   }
   .termwait[hidden] { display: none; }
+  .termwait.slow .spin { display: none; }
   .termwait .spin {
     width: 13px; height: 13px; flex: none; border-radius: 50%;
     border: 2px solid var(--term-line);

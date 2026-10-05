@@ -956,7 +956,7 @@ function connectTerm(taskID) {
     // Back after a single-session restart too, for the same reason. The card is
     // up, so the expectation has done its job and a later exit is an exit.
     clearSessionRestart(taskID);
-    termWait("");
+    termWait(typeof openingSay === "function" ? openingSay(taskID) : "");
     // RESET BEFORE THE REPLAY LANDS, on a reconnect only.
     //
     // The daemon replays the whole scrollback on every attach. A session switch
@@ -1011,6 +1011,7 @@ function connectTerm(taskID) {
   // afterwards. Writing it would put a runner's output into a terminal that is
   // now showing something else, or into the same one twice.
   termSock.onmessage = e => {
+    if (termSock === sock && termTask) openingEnd(termTask.id);   // ends a resume's "opening"
     // A kept terminal's socket while another one is showing: into its own terminal and nothing else.
     if (termSock !== sock) {
       const slot = keptSlotOf(sock);

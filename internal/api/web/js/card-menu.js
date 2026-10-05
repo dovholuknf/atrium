@@ -9,13 +9,8 @@ const cardMenuEl = document.getElementById("cardmenu");
 // for its conversation, and `runner` is which harness to start. Neither needs
 // asking the daemon.
 function cannotResume(t) {
-  if (t.supervised) return "it is already running";
-  if (!t.resume_id) {
-    return "atrium never learned this session's resume id, so there is no " +
-      "conversation to pick up. its session hooks were not wired when it ran, " +
-      "or its harness does not report one";
-  }
-  if (!t.runner) return "atrium does not know which runner this was";
+  const basic = cannotResumeCard(t);
+  if (basic) return basic;
   // Resuming is per-runner configuration. Saying which runner and which field
   // turns "it will not resume" into something the operator can fix.
   const h = allHarnesses.find(x => x.id === t.runner);
@@ -278,9 +273,77 @@ async function promoteCardNow(id, t) {
   refresh();
 }
 
+// A RESUME IS NOT OVER WHEN THE LAUNCH ANSWERS.
+//
+// `/v1/launch` returns when the runner is started, and the terminal has nothing
+// to show for several seconds after that on a big conversation. The card said
+// nothing in between, which read as a click that did nothing, and the answer to
+// that is a second click. So a resume is `opening` from the click until the
+// terminal's first output, and the card and the pane both say so.
+//
+// Keyed by bare id, because a room flip respells the id and it is the same card.
+//   opening   launching or waiting for output. A second resume only points here.
+//   slow      nothing after RESUME_BOUND_MS, or the launch failed. Says why, and
+//             a resume is allowed again, since the first one may be dead.
+// The state, the wording and the bound are in js/resume-opening.js, shared with the phone page. This is how the board
+// paints it, on the card, the row and the pane.
+window.addEventListener("resume-opening", e => openingPaint(e.detail.id));
+
+// The chip on the card or row. In the template, so a redraw keeps it.
+function openingChip(t) {
+  const o = openingState(t.id);
+  if (!o) return "";
+  return o.state === "slow"
+    ? `<span class="chip warn opening slow" data-tip="${esc(o.why)}">${esc(o.why)}</span>`
+    : `<span class="chip opening" data-tip="${esc(openingText + ". the terminal appears when the runner prints its first line")}"><span class="busy-spin" aria-hidden="true"></span>${openingText}</span>`;
+}
+
+// Redraws the chip in place and the pane's line, without waiting for a refresh.
+function openingPaint(id) {
+  const key = bareId(id);
+  document.querySelectorAll(".card[data-id], .stackrow[data-id]").forEach(el => {
+    if (bareId(el.dataset.id) !== key) return;
+    const chips = el.querySelector(".chips");
+    if (!chips) return;
+    const old = chips.querySelector(".opening");
+    if (old) old.remove();
+    const t = (typeof lastTasks !== "undefined" ? lastTasks : []).find(x => bareId(x.id) === key) || { id };
+    chips.insertAdjacentHTML("afterbegin", openingChip(t));
+  });
+  if (typeof termTask !== "undefined" && termTask && bareId(termTask.id) === key) {
+    termWait(openingSay(key));
+    const box = document.getElementById("t-wait");
+    if (box) box.classList.toggle("slow", !!(openingState(key) && openingState(key).state === "slow"));
+  }
+}
+
+// The "already opening" toast, kept so the opening ending in a reason, or in output, takes it down rather than leaving
+// it up over the answer. Called from openingSlow and openingEnd in js/resume-opening.js.
+let openingToast = null;
+function openingToastGone() {
+  if (openingToast && openingToast.dismiss) openingToast.dismiss();
+  openingToast = null;
+}
+
+// A second resume while the first is opening. Says so rather than launching.
+function openingPoint(id) {
+  const key = bareId(id);
+  document.querySelectorAll(`.card[data-id], .stackrow[data-id]`).forEach(el => {
+    if (bareId(el.dataset.id) !== key) return;
+    const chip = el.querySelector(".opening");
+    if (!chip) return;
+    chip.classList.remove("nudge");
+    void chip.offsetWidth;
+    chip.classList.add("nudge");
+  });
+  openingToast = toast("already opening", "this conversation is on its way. it appears here when it has output");
+}
+
 // One at a time per card, so a second resume while the first is starting is
 // refused here. See oneAtATime in js/core.js.
 function resumeNow(id, t, where, pick, full) {
+  const o = openingState(id);
+  if (o && o.state === "opening") { openingPoint(id); return undefined; }
   return oneAtATime("launch:" + bareId(id), () => resumeStart(id, t, where, pick, full));
 }
 
@@ -295,22 +358,10 @@ async function resumeStart(id, t, where, pick, full) {
   const resume = pick ? pick : await pickSession(id, t);
   if (resume === null) return;
 
+  openingStart(id);
   const start = (withResume) => api("/v1/launch", {
     method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      harness: t.runner || "claude",
-      cwd: t.worktree || "",
-      resume: withResume,
-      // AS HELD, `room~id` and all: the hub routes by the tag and strips it on
-      // the way into the room. See docs/fabric/card-room-routing.md.
-      task_id: id,
-      // Onto the same card, so the title and everything else on it stay put.
-      // Sending them again would let a stale copy of the row overwrite what
-      // the card says now.
-      title: "", why: "", prompt: "",
-      // Left out, the card decides. False wins over a lean card's tag.
-      ...(full ? { lean: false } : {})
-    })
+    body: JSON.stringify(resumeLaunchBody(id, t, withResume, full))
   });
 
   let task;
@@ -327,6 +378,7 @@ async function resumeStart(id, t, where, pick, full) {
     // nothing happened".
     const busy = e.body && e.body.kind === "resume-busy" ? e.body : null;
     if (!busy) {
+      openingSlow(id, resumeFailText(e));
       tellUser("could not start it", e.message);
       return;
     }
@@ -341,22 +393,25 @@ async function resumeStart(id, t, where, pick, full) {
         { label: "start fresh here", value: "fresh", style: "go" }
       ]
     });
-    if (pick === "attach") { attachTask(busy.holder_id); return; }
-    if (pick !== "fresh") return;
+    if (pick === "attach") { openingEnd(id); attachTask(busy.holder_id); return; }
+    if (pick !== "fresh") { openingEnd(id); return; }
     // The guard allows this explicitly: two runners in one directory with
     // separate transcripts is a real thing to want. So it was already the
     // permitted alternative the prose was describing.
     try {
       task = await start("");
     } catch (e2) {
+      openingSlow(id, resumeFailText(e2));
       tellUser("could not start it", e2.message);
       return;
     }
   }
-  if (!task || !task.supervised) { refresh(); return; }
-  if (where === "window") { popOutTask(task.id); return; }
+  if (!task || !task.supervised) { openingEnd(id); refresh(); return; }
+  if (where === "window") { popOutTask(task.id); openingEnd(id); return; }
   switchView("terms");
   openTerm(task);
+  // openTerm cleared the pane's line, and the chip is already up.
+  openingPaint(id);
 }
 
 // Whether a terminal window can be opened on the desktop, and the command that

@@ -922,7 +922,7 @@ function openTerm(task) {
   // decorations were painted on a buffer that no longer exists.
   const findbar = document.getElementById("t-find");
   if (findbar) findbar.hidden = true;
-  termWait("");
+  termWait(typeof openingSay === "function" ? openingSay(task.id) : "");
   // A different card means the runner again. A shell belongs to the card it
   // was opened in, so carrying the choice across would either attach to the
   // wrong card's shell or, more likely, to nothing at all.
