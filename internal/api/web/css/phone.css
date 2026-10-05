@@ -178,7 +178,27 @@
        the page. Posting from a phone is a real case: copy, then open. The saved width is not applied here
        (`walkApplyWidth`), since a width in a column is the wrong axis. */
     .term-body { flex-direction: column; }
-    .walk { width: auto; min-width: 0; max-height: 80%; border-right: none; border-bottom: 1px solid var(--stroke-dim); }
+    .walk { width: auto; min-width: 0; flex: 1 1 auto; border-right: none; }
+    /* The terminal is a sheet pulled up from the bottom (`walkSheet`). Shut, it is off the bottom edge with only its
+       handle showing, and the finding has the whole pane. Open, it covers the lower 60% and the handle rides on it.
+       It keeps its size either way, so xterm is never asked to fit a pane that has gone. */
+    .term-body:has(.walk:not([hidden])) { overflow: hidden; }
+    .term-body:has(.walk:not([hidden])) #t-screen {
+      position: absolute; left: 0; right: 0; bottom: 0; height: 60%; margin: 0; z-index: 5;
+      transform: translateY(100%); transition: transform .18s ease-out;
+      background: var(--bg-2); border-top: 1px solid var(--stroke-dim);
+    }
+    .term-body.sheet-open:has(.walk:not([hidden])) #t-screen { transform: none; }
+    .term-body:has(.walk:not([hidden])) .walk-sheet {
+      display: block; position: absolute; left: 0; right: 0; bottom: 0; z-index: 6; height: 40px;
+      box-sizing: border-box; text-align: left; padding: 0 var(--sp-4); border-radius: 0;
+      border: none; border-top: 1px solid var(--stroke-dim); background: rgba(var(--shell1-rgb),.97);
+      transition: bottom .18s ease-out;
+    }
+    .term-body.sheet-open:has(.walk:not([hidden])) .walk-sheet { bottom: 60%; }
+    .term-body:has(.walk:not([hidden])) .walk { padding-bottom: 40px; box-sizing: border-box; }
+    .walk-item { min-height: 0; }
+    .walk-rail { flex: 0 0 auto; }
     .walk-body { flex-direction: column; }
     .walk-rail { width: auto; max-width: none; display: flex; overflow-x: auto; overflow-y: hidden; border-right: none; border-bottom: 1px solid var(--stroke-dim); }
     .wk-row { width: auto; flex: 0 0 auto; }
@@ -192,8 +212,6 @@
     #walk-count { white-space: normal; flex: 1 1 100%; order: 5; }
     /* Every state is one tap: accept, posted, dismiss, defer and undo are buttons, so the keys are not needed. */
     .wk-actions button { flex: 1 1 28%; min-height: 40px; }
-    /* The drawer was 62% of a pane that is itself short, so the finding got about 130px. At 80% it gets about 190px
-       and the buttons are a scroll of the finding pane away, with the terminal still a strip below. */
 
     dialog { width: 96vw; }
     .dlg-body { padding: 14px; }
