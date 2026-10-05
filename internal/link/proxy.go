@@ -643,6 +643,8 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// times its own hop whichever view the checkbox was pressed in. See
 	// inputlagsetting.go.
 	lagOn, lagNamed := p.noteInputLag(r)
+	// The context limit per harness, the hub's in every scope. See contextlimits.go.
+	limits, limitsNamed, limitsErr := p.noteContextLimits(r)
 
 	// The strip's order goes to every room, named or not. See pinorder.go.
 	if ids, ok := pinOrderIn(r); ok {
@@ -653,6 +655,14 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	room, named := p.roomFor(r)
 	if room == "" {
 		// NO ROOM NAMED AND MORE THAN ONE ATTACHED: the aggregate view.
+		if limitsNamed {
+			if limitsErr != nil {
+				writeErrBody(w, http.StatusBadRequest, limitsErr.Error())
+				return
+			}
+			p.answerContextLimits(w, r, limits)
+			return
+		}
 		if lagNamed {
 			p.fanInputLag(w, r, lagOn)
 			return
@@ -738,6 +748,10 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	r = r.WithContext(ctx)
 	_ = named
+	// The other rooms get the list from the hub; this one gets the write itself.
+	if limitsNamed && limitsErr == nil {
+		go p.fanContextLimits(context.Background(), limits, room)
+	}
 	p.proxy.ServeHTTP(w, r)
 }
 
