@@ -27,3 +27,7 @@ opencode keeps every session on disk, and `opencode export <session id>` prints 
   and output. Say which and why. A failure falls back to the screen, as today.
 - A test with a recorded export.
 - The reader is per runner, so codex and gemini can follow the same shape later.
+
+## @runtime director, 2026-10-04
+
+Landed already under the id without `new-` (r-exit-guard ca014c1e, r-opencode-bubbles 82a63fd3). Nothing left.
