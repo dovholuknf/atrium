@@ -23,3 +23,12 @@ Pulls P4 and `review/30` both assume a one-shot call that does not exist.
 - Atrium owns the run, so a room restart or a closed session does not lose it. It resumes or reports the loss.
 - The result is stored where the recipe step reads it.
 - A test kills the starting session mid-round and still collects the result.
+
+## @runtime director, 2026-10-04: incomplete, waits for clint
+
+A worker looked (claude/r-new-mercurius-one-shot d3c9e2b7, REPORT.md) and built nothing. Atrium reaches Mercurius
+only as an MCP server handed to an agent session, and no mercurius binary is on m1mini. Questions:
+
+1. Which Mercurius interface may atrium call itself: its CLI, atrium as an MCP client, or the HTTP API?
+2. Where are results stored: the atrium store (a new table), or a file beside the recipe run?
+3. A room restart mid-round: resume the round (needs Mercurius to keep it by id), or report it lost?
