@@ -1,6 +1,7 @@
 package daemon
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -299,6 +300,19 @@ func (d *Daemon) resolvePeerSayWake(w http.ResponseWriter, from, to, verb, text,
 	// The same test the message endpoint uses, so `atrium tell` and `atrium_say`
 	// agree: a done card whose terminal is still live is somebody to talk to.
 	gate := d.sayGate(target)
+	if gate == sayMoved {
+		end, err := d.followMoved(target)
+		switch {
+		case err != nil:
+			writeJSONErr(w, http.StatusConflict, err)
+			return nil
+		case end.Live != nil:
+			target, gate = end.Live, d.sayGate(end.Live)
+		default:
+			d.forwardMoved(context.Background(), w, from, end, text, when, reply, wake)
+			return nil
+		}
+	}
 	if gate == sayGone {
 		writeJSONErr(w, http.StatusConflict, fmt.Errorf(
 			"%s has ended, so nothing would read this", to))

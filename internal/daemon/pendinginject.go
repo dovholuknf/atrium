@@ -101,7 +101,9 @@ func newPendingInjector(d *Daemon) *pendingInjector {
 // on screen. The banner and body are rebuilt the same way tellByTyping does, so
 // a retry types exactly what an immediate injection would have.
 func (d *Daemon) deferPeerInjection(taskID, msgID, from, text string, waitTurn bool) {
-	if d.pending == nil {
+	if d.pending == nil || d.frozenForMove(taskID) {
+		// A frozen card's message is in the freeze queue, not in message. It is
+		// replayed with its id when the move is undone.
 		return
 	}
 	// A card that refuses peer typing is never going to take a PEER'S text on
