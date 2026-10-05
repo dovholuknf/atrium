@@ -17769,6 +17769,85 @@ async function childUnderParentSection(browser, base) {
 
 // A parent row folds its spawned cards. A card that needs the human stays drawn, the fold is remembered per card and
 // followed by a second window, and a bad stored value reads as expanded.
+// u-002: a pinned cold agent hides under `hide inactive agents`, and the one exception, the card open in the pane,
+// stays drawn grey and says why. The `? 2` chip on a cold card says nothing can reply to it.
+// U002_SHOTS=<dir> draws the rows, for the before and after PNGs.
+async function u002Section(browser, base) {
+  const ctx = await browser.newContext({ viewport: { width: 700, height: 420 } });
+  const errors = [];
+  const p = await ctx.newPage();
+  p.on("pageerror", e => errors.push(e.message));
+  try {
+    await p.goto(base + "/", { waitUntil: "domcontentloaded" });
+    await p.waitForFunction(() => typeof setHideAgents === "function" && typeof renderTermList === "function",
+      null, { timeout: slow(15000) });
+    await p.evaluate(() => {
+      const card = (id, title, extra) => ({ id, status: "running", supervised: true, pinned: false, title,
+        display_title: title, tags: [], created_at: "2026-09-29T10:00:00Z", worktree: "/r/" + id, ...extra });
+      const cards = [
+        card("cold1", "zrok2 on OpenZiti 2 (docker cluster)", { status: "dead", supervised: false, pinned: true,
+          seen: { answered: false, open_questions: ["keep the old tunnel?", "which cluster?"] } }),
+        card("live1", "my live terminal", {})];
+      boardCards = async () => cards;
+      localStorage.setItem(termDeviceKey("atrium.hidesubagents"), "none");
+      localStorage.setItem(termDeviceKey("atrium.hideagents"), "none");
+      switchView("terms");
+    });
+    const look = () => p.evaluate(async () => {
+      await renderTermList();
+      const row = document.querySelector('#term-list .card.tab[data-id="cold1"]');
+      const q = row && row.querySelector(".chip.questions");
+      const kc = row && row.querySelector(".chip.kept");
+      return { has: !!row, cold: !!row && row.classList.contains("cold"), tip: row ? row.dataset.tip : "",
+        kept: kc ? kc.textContent.trim() : "", opacity: row ? getComputedStyle(row).opacity : "",
+        qTip: q ? q.dataset.tip : "", q: q ? q.textContent.trim() : "", on: !!row && row.classList.contains("on") };
+    });
+    // Both skins: one dark (the default) and one light, so the mark is read on each.
+    const shot = async name => {
+      if (!process.env.U002_SHOTS) return;
+      for (const skin of ["harbour", "daylight"]) {
+        await p.evaluate(s => applySkin(s), skin);
+        await p.locator("#term-list .termscroll").screenshot({
+          path: process.env.U002_SHOTS + "/" + name + "-" + (skin === "harbour" ? "dark" : "light") + ".png" });
+      }
+      await p.evaluate(() => applySkin(defaultSkin));
+    };
+    let v = await look();
+    if (!v.has || !v.cold || v.kept) {
+      fail("u002: with hide inactive off the pinned cold row is not drawn grey, or wears the kept mark: " + JSON.stringify(v));
+    }
+    if (v.q !== "? 2" || !/exited/.test(v.qTip) || /clears when you reply/.test(v.qTip)) {
+      fail("u002: the `? 2` chip on a cold card does not say it cannot be replied to: " + JSON.stringify(v));
+    }
+    await shot("off");
+    await p.evaluate(() => setHideAgents("on"));
+    v = await look();
+    if (v.has) fail("u002: hide inactive agents left the pinned cold row drawn: " + JSON.stringify(v));
+    await shot("hidden");
+    // The card open in the pane, or being started again by a click on its grey row, is never hidden.
+    await p.evaluate(() => { termTask = { id: "cold1" }; markAttachInFlight("cold1"); });
+    v = await look();
+    if (!v.has || !v.on) fail("u002: the open cold row is not kept and selected: " + JSON.stringify(v));
+    if (v.cold || Number(v.opacity) < 0.9) fail("u002: the kept row is still drawn grey: " + JSON.stringify(v));
+    if (v.kept !== "opening") fail("u002: a kept row being started does not say `opening`: " + JSON.stringify(v));
+    // With no attach in flight a render would tear a cold pane down, so that step is held off to read the other word.
+    await p.evaluate(() => { window.__reconcile = reconcileAttached; reconcileAttached = () => {}; clearAttachInFlight(); });
+    v = await look();
+    await p.evaluate(() => { reconcileAttached = window.__reconcile; });
+    if (v.cold || v.kept !== "attached") fail("u002: the kept open row does not say `attached`: " + JSON.stringify(v));
+    if (!/hide inactive would hide it, but it is open in the pane/.test(v.tip)) {
+      fail("u002: the kept row does not say why it is still listed: " + JSON.stringify(v));
+    }
+    await shot("kept");
+    // Filter off again: the same row is a plain cold row, grey, with no mark.
+    await p.evaluate(() => setHideAgents("none"));
+    v = await look();
+    if (!v.cold || v.kept) fail("u002: with the filter off the open cold row is not plain grey: " + JSON.stringify(v));
+    await p.evaluate(() => { clearAttachInFlight(); termTask = null; setHideAgents("none"); });
+    if (errors.length) fail("u002: page errors: " + errors.join(" | "));
+  } finally { await ctx.close(); }
+}
+
 async function childFoldSection(browser, base) {
   const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 } });
   const errors = [];
@@ -22760,7 +22839,7 @@ async function main() {
       coverPoll: coverPollSection, coverSteps: coverStepsSection, termBox: termBoxSection, termRowBleed: termRowBleedSection,
       termDebug: termDebugSection, termSortStarted: termSortStartedSection,
       noReadyChildren: noReadyChildrenSection, childUnderParent: childUnderParentSection, topNav: topNavSection,
-      childFold: childFoldSection, liveHome: liveHomeSection,
+      u002: u002Section, childFold: childFoldSection, liveHome: liveHomeSection,
       pulls: pullsSection, prMove: prMoveSection, hubRepos: hubReposSection, hubReposShelf: hubReposShelfSection, hubReposLedger: hubReposLedgerSection, hubReposFeed: hubReposFeedSection, changeReq: changeReqSection, mChangeReq: mChangeReqSection, trayHead: trayHeadSection, pullsAbsent: pullsAbsentSection, oneTooltip: oneTooltipSection, burnChart: burnChartSection, burnReadout: burnReadoutSection, switchPrewarm: switchPrewarmSection, attachAtOnce: attachAtOnceSection, keepAlive: keepAliveSection, switchBackCost: switchBackCostSection, keepMemory: keepMemorySection, pullsDrawer: pullsDrawerSection };
     try {
       for (const n of process.env.HEADLESS_ONLY.split(",")) await only[n](browser, base);
