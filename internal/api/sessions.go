@@ -74,6 +74,9 @@ func projectDirFor(cwd string) (string, error) {
 	return filepath.Join(home, ".claude", "projects", encodeProjectDir(cwd)), nil
 }
 
+// ProjectDirFor is projectDirFor for the daemon's move routes, which read and write a card's transcript folder.
+func ProjectDirFor(cwd string) (string, error) { return projectDirFor(cwd) }
+
 // encodeProjectDir is Claude Code's name for a directory's transcript folder.
 func encodeProjectDir(cwd string) string {
 	return strings.Map(func(r rune) rune {

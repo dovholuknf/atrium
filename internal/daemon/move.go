@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/dovholuknf/atrium/internal/store"
 )
@@ -113,4 +114,27 @@ func (d *Daemon) launcherAfterMove(worker, l *store.Task) *store.Task {
 	}
 	worker.SpawnedBy, worker.SpawnedByID = name+"@"+end.Room, end.Room+"~"+end.ID
 	return nil
+}
+
+// sweepFreezes is the self-undo: a card whose freeze lease ran out with no cut-over is resumed, unfrozen and its
+// queue replayed. The store refuses it once `moved_to` is set, so it cannot race the hub's cut-over.
+func (d *Daemon) sweepFreezes(at time.Time) {
+	ids, err := d.st.ExpiredFreezes(at)
+	if err != nil || len(ids) == 0 {
+		return
+	}
+	for _, id := range ids {
+		moved, err := d.st.ExpireFreeze(id, at)
+		if err != nil || !moved {
+			continue
+		}
+		if t, err := d.st.Get(id); err == nil && isParked(t) {
+			if err := d.unpark(id, "move"); err != nil {
+				log.Printf("[atrium] %s undid its own move but could not resume: %v", id, err)
+			}
+		}
+		d.releaseHeld(id)
+		d.publishTask(id)
+		log.Printf("[atrium] %s: the move's lease ran out, the card undid it", id)
+	}
 }

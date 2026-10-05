@@ -158,7 +158,9 @@ type Server struct {
 	// or `name@room` on another, and RoomPeers is who is on the other rooms.
 	// Owned by the daemon, which owns the relay to the hub. See
 	// internal/daemon/relay.go.
-	Say       http.HandlerFunc
+	Say http.HandlerFunc
+	// Move answers /v1/move/, the steps of a move between rooms. See daemon/moveroutes.go.
+	Move      http.Handler
 	RoomPeers http.HandlerFunc
 	// TaskSays lists the says a card sent or received, `GET /v1/tasks/{id}/says`.
 	TaskSays http.HandlerFunc
@@ -691,6 +693,9 @@ func (s *Server) Handler() http.Handler {
 	}
 	if s.Say != nil {
 		mux.HandleFunc("POST /v1/say", s.Say)
+	}
+	if s.Move != nil {
+		mux.Handle("/v1/move/", s.Move)
 	}
 	if s.TaskSays != nil {
 		mux.HandleFunc("GET /v1/tasks/{id}/says", s.TaskSays)

@@ -456,3 +456,12 @@ func (s *Store) SetPinSlot(id string, order int) error {
 		return err
 	})
 }
+
+// ReleaseAlias takes a card's alias off it and notes where it went. The handle stays, and stays reserved while
+// `moved_to` is set.
+func (s *Store) ReleaseAlias(id, note string) error {
+	return s.guard(func() error {
+		_, err := s.db.Exec(`UPDATE task SET alias = '', alias_note = ? WHERE id = ?`, note, id)
+		return err
+	})
+}
