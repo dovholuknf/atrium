@@ -101,6 +101,10 @@ type Proxy struct {
 	// notify.go.
 	notify *Notifier
 
+	// push is Web Push, the notifier's second sink. Nil until SetPush wires it, and a hub without one answers
+	// /_hub/push 404. See push.go and pushapi.go.
+	push *Push
+
 	// growl is the persistent growlers. Nil until SetGrowler wires it, and a hub
 	// without one answers /_hub/growls 404. See growl.go.
 	growl *Growler
@@ -1440,6 +1444,10 @@ func (p *Proxy) serveHubAPI(w http.ResponseWriter, r *http.Request) {
 	}
 	if sub == "docs" || strings.HasPrefix(sub, "docs/") {
 		p.serveDocs(w, r, sub)
+		return
+	}
+	if sub == "push" || strings.HasPrefix(sub, "push/") {
+		p.servePush(w, r, strings.Trim(strings.TrimPrefix(sub, "push"), "/"))
 		return
 	}
 	if strings.HasPrefix(sub, "growls/") {

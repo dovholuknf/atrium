@@ -1,0 +1,13 @@
+/* u-new-web-push-build: the hub's phone alerts row in the settings gear. See js/hubpush.js. */
+  #s-hp-row[hidden] { display: none; }
+  #s-hp-row .hp-contact { display: block; margin: 6px 0; font-size: var(--fs-sm); }
+  #s-hp-row .hp-contact input { display: block; width: 100%; max-width: 64ch; box-sizing: border-box; margin-top: 2px; }
+  #s-hp-row .hp-count { margin: 6px 0; font-size: var(--fs-sm); }
+  #s-hp-row .hp-list { list-style: none; margin: 4px 0; padding: 0; max-width: 64ch; }
+  #s-hp-row .hp-sub {
+    display: flex; gap: 10px; align-items: flex-start; justify-content: space-between;
+    padding: 6px 0; border-top: 1px solid var(--hairline); font-size: var(--fs-sm); line-height: 1.5;
+  }
+  #s-hp-row .hp-more { opacity: .75; }
+  #s-hp-row .hp-off { color: var(--danger, #c0392b); }
+  #s-hp-row .hp-remove { flex: none; }

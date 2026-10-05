@@ -67,6 +67,7 @@
 <link rel="stylesheet" href="/css/expose2.css">
 <link rel="stylesheet" href="/css/expose3.css">
 <link rel="stylesheet" href="/css/hubnotify.css">
+<link rel="stylesheet" href="/css/hubpush.css">
 <link rel="stylesheet" href="/css/deployready.css">
 <link rel="stylesheet" href="/css/topnav.css">
 <link rel="stylesheet" href="/css/hubhosts.css">
@@ -1767,6 +1768,28 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
       <span class="hintline">This runs ON THE HUB MACHINE, as the hub's user, not on this one. One argument per
         line, so a path with a space in it needs no quoting. Atrium keeps no credential: a token the command needs
         lives in that command's own config, never in this field.</span>
+    </div>
+    <!-- u-new-web-push-build: Web Push to phones. Hidden until the hub answers, and for a guest. See js/hubpush.js. -->
+    <div class="field" id="s-hp-row" hidden>
+      <label class="eyebrow" for="s-hp-contact">phone alerts (on the hub)</label>
+      <label class="check">
+        <input type="checkbox" id="s-hp-enabled" onchange="setHubPush(this.checked)">
+        <span>send phone alerts when something needs you</span>
+      </label>
+      <label class="hp-contact">contact the push service can reach
+        <input type="text" id="s-hp-contact" spellcheck="false" placeholder="https://github.com/dovholuknf/atrium">
+      </label>
+      <div class="picker">
+        <button onclick="saveHubPushContact()">save contact</button>
+        <button id="s-hp-test" onclick="testHubPush()">send a test</button>
+        <button onclick="rotateHubPush()">make a new key</button>
+        <span class="hintline" id="s-hp-msg"></span>
+      </div>
+      <div class="hp-count" id="s-hp-count"></div>
+      <ul class="hp-list" id="s-hp-list"></ul>
+      <span class="hintline">A phone turns this on for itself from the board's bell. Each device is listed here, and
+        a new one also shows in the growler. A new key removes every device, and each phone has to subscribe again.
+        Use a web address or a mailto for the contact, since the push service sees it.</span>
     </div>
     <div class="field">
       <label class="check">
@@ -3557,6 +3580,7 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
 <script src="/js/peek.js"></script>
 <script src="/js/settings-spine.js"></script>
 <script src="/js/hubnotify.js"></script>
+<script src="/js/hubpush.js"></script>
 <script src="/js/hubhosts.js"></script>
 <script src="/js/themes.js"></script>
 <script src="/js/terminal.js"></script>

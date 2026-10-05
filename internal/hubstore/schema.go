@@ -428,6 +428,28 @@ var migrations = []struct {
 			`CREATE INDEX IF NOT EXISTS pr_claim_room ON pr_claim (room)`,
 		},
 	},
+	{
+		// WEB PUSH SUBSCRIPTIONS: one row per browser that asked to be told when a card wants it. See push.go and
+		// docs/rnd/web-push-design.md. `endpoint` is the proof of ownership and is unique, so a browser that
+		// subscribes twice is one row. `p256dh` and `auth` are the browser's own keys for encrypting to it. They
+		// are the browser's secrets, handed over for exactly this use, and are never returned by a list.
+		// `failures` counts sends that failed in a row, and `disabled_reason` is set when three did and the
+		// subscription was switched off. The VAPID private key is NOT here: it is a hub_setting.
+		name: "0011_push_subscription",
+		stmts: []string{
+			`CREATE TABLE IF NOT EXISTS push_subscription (
+				id              TEXT PRIMARY KEY,
+				endpoint        TEXT NOT NULL UNIQUE,
+				p256dh          TEXT NOT NULL,
+				auth            TEXT NOT NULL,
+				label           TEXT NOT NULL DEFAULT '',
+				origin          TEXT NOT NULL DEFAULT '',
+				created_at      TEXT NOT NULL,
+				failures        INTEGER NOT NULL DEFAULT 0,
+				disabled_reason TEXT NOT NULL DEFAULT ''
+			)`,
+		},
+	},
 }
 
 func (s *Store) migrate() error {

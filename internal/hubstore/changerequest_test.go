@@ -301,13 +301,13 @@ func TestChangeRequestMigrationToleratesBeingThere(t *testing.T) {
 // table) follows it as the last.
 func TestChangeRequestMigrationIsAtTheEnd(t *testing.T) {
 	n := len(migrations)
-	if got := migrations[n-1].name; got != "0010_pr_claim" {
-		t.Fatalf("the last migration is %q", got)
+	if got := migrations[n-2].name; got != "0010_pr_claim" {
+		t.Fatalf("the migration before the last is %q", got)
 	}
-	if got := migrations[n-2].name; got != "0009_change_request" {
+	if got := migrations[n-3].name; got != "0009_change_request" {
 		t.Fatalf("the one before it is %q", got)
 	}
-	if got := migrations[n-3].name; got != "0008_git_push" {
+	if got := migrations[n-4].name; got != "0008_git_push" {
 		t.Fatalf("the one before that is %q", got)
 	}
 }
