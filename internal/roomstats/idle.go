@@ -5,7 +5,7 @@ import "sync"
 // IdleMeter is the machine's idle CPU as a percent, over the short window between one ask and the next. It is asked
 // once per room heartbeat, so the window is a few seconds, and it needs no timer of its own.
 //
-// Where the platform has no tick counters (darwin without cgo) it falls back to the one minute load average over the
+// Where the platform has no tick counters it falls back to the one minute load average over the
 // CPU count, which is an estimate and is only good for ranking one room against another.
 type IdleMeter struct {
 	read func() (MachineReading, error)

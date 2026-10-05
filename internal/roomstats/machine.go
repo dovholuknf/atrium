@@ -8,7 +8,7 @@ import (
 )
 
 // Machine is the whole machine, not this process. CPU is absent where the
-// platform cannot give it without cgo (darwin), and until the second sample,
+// platform cannot give it, and until the second sample,
 // since a percent needs two readings.
 type Machine struct {
 	CPUPct       *float64   `json:"cpu_pct,omitempty"`
