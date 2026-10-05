@@ -317,6 +317,9 @@ func refuse(err error) error {
 	return refusal{err}
 }
 
+// IsRefusal reports whether an error is the store declining what the caller asked, which is the caller's to fix.
+func IsRefusal(err error) bool { return deliberate(err) }
+
 func deliberate(err error) bool {
 	var r refusal
 	return errors.As(err, &r)
