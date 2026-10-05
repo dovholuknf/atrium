@@ -434,8 +434,7 @@
       linear-gradient(160deg, var(--bg-0) 0%, var(--bg-1) 55%, var(--bg-2) 100%) fixed;
   }
   :root[data-skin="website"] header {
-    background: rgba(var(--bg1-rgb),.78);
-    backdrop-filter: saturate(160%) blur(12px);
+    background: rgb(var(--bg1-rgb));
     border-bottom-color: var(--grid);
   }
   /* The walk drawer's header takes the same frost as the board's. */

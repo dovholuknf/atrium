@@ -6,8 +6,10 @@
   /* ── header ─────────────────────────────────────────── */
   header {
     position: sticky; top: 0; z-index: 20;
-    backdrop-filter: blur(14px);
-    background: linear-gradient(180deg, rgba(var(--bg1-rgb),.94), rgba(var(--bg1-rgb),.72));
+    /* Opaque on purpose. A blurred translucent header is re-blurred every frame anything moves behind it, and
+       the sound button's pulse used to keep that going at 60 fps. Every skin sets --bg1-rgb, so this reads the
+       same on all of them. */
+    background: rgb(var(--bg1-rgb));
     border-bottom: 1px solid var(--stroke-dim);
   }
   /* One line, always. A button that breaks across two lines reads as broken, and the header is the row people
