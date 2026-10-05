@@ -83,6 +83,7 @@ body.m.sheet-open { overscroll-behavior-y: none; }
 .growl .gm-body pre { margin: 0 0 .6em; padding: 6px 8px; overflow-x: auto; border-radius: 8px; background: var(--bg-2); }
 .growl .gm-body pre code { white-space: pre; overflow-wrap: normal; }
 .growl .gm-choices { display: flex; flex-wrap: wrap; gap: 8px; }
+.rq-row { display: flex; flex-wrap: wrap; gap: 8px; }
 .growl .gm-choices button { text-align: left; overflow-wrap: anywhere; height: auto; padding-top: 8px; padding-bottom: 8px; }
 /* The reply box grows with what is typed up to a cap, then scrolls. The bigger box is taller. */
 .growl .gm-replybox { display: flex; gap: 8px; align-items: flex-end; }

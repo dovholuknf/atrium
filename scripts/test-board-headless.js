@@ -17107,18 +17107,18 @@ async function growlChoiceOnceSection(browser, base) {
       const first = root + " [data-choice]";
       await p.evaluate(sel => { const b = document.querySelector(sel); b.click(); b.click(); }, first);
       await p.waitForTimeout(150);
-      if ((await off()).join() !== "true,true") fail(tag + "the buttons were not disabled in flight: " + (await off()));
+      if ((await off()).join() !== "true,true,true") fail(tag + "the buttons were not disabled in flight: " + (await off()));
       await p.waitForTimeout(900);
       if (h.messages.length !== 1) fail(tag + "a double press sent " + h.messages.length + " messages.");
-      if ((await off()).join() !== "false,false") fail(tag + "a failed send did not light the buttons again: " + (await off()));
+      if ((await off()).join() !== "false,false,false") fail(tag + "a failed send did not light the buttons again: " + (await off()));
       h.msgDelay = 0; h.msgFail = false;
       await p.evaluate(sel => { const b = document.querySelector(sel); b.click(); b.click(); }, first);
       await p.waitForTimeout(400);
       if (h.messages.length !== 2) fail(tag + "the retry sent " + (h.messages.length - 1) + " messages.");
-      if ((await off()).join() !== "true,true") fail(tag + "an answered choice left its buttons lit: " + (await off()));
+      if ((await off()).join() !== "true,true,true") fail(tag + "an answered choice left its buttons lit: " + (await off()));
       await h.say([GR("c", "blocked", 1, { body })]);
       await p.waitForTimeout(200);
-      if ((await off()).join() !== "true,true") fail(tag + "a redraw lit an answered choice again.");
+      if ((await off()).join() !== "true,true,true") fail(tag + "a redraw lit an answered choice again.");
       if (h.errors.length) fail(tag + "page errors: " + h.errors.join(" | "));
     } finally { await h.close(); }
   }
@@ -21979,7 +21979,7 @@ async function main() {
       cacheChip: cacheChipSection, cacheLine: cacheLineSection, roomsMachine: roomsMachineSection,
       u001Audit: u001AuditSection,
       pasteStart: pasteStartSection, pasteDone: pasteDoneSection, pasteOldRoom: pasteOldRoomSection, pasteClose: pasteCloseSection,
-      growlQuestionShots: growlQuestionShotsSection, growlQuestionBody: growlQuestionBodySection, growlReplyGrow: growlReplyGrowSection, growlChoices: growlChoicesSection, growlStable: growlStableSection, growlOnIt: growlOnItSection, mGrowlQuestion: mGrowlQuestionSection,
+      growlQuestionShots: growlQuestionShotsSection, growlQuestionBody: growlQuestionBodySection, growlReplyGrow: growlReplyGrowSection, growlChoices: growlChoicesSection, replies: repliesSection, repliesOf: repliesOfSection, repliesShots: repliesShotsSection, growlStable: growlStableSection, growlOnIt: growlOnItSection, mGrowlQuestion: mGrowlQuestionSection,
       bootClean: bootCleanSection, mReload: mReloadSection, mReconnect: mReconnectSection, mActivityRead: mActivityReadSection, mReadRetry: mReadRetrySection, mWorking: mWorkingSection, mOwnMessages: mOwnMessagesSection, mBubbles: mBubblesSection, mRecapSheet: mRecapSheetSection,
       mHomeOrder: mHomeOrderSection, cardUrlWayOut: cardUrlWayOutSection, phoneBoot: phoneBootSection, sayEnter: sayEnterSection, sendArrow: sendArrowSection, mTables: mTablesSection, mMarkdown: mMarkdownSection, mHostile: mHostileSection, mPictures: mPicturesSection, soundPhone: soundPhoneSection, phoneBell: phoneBellSection, mBell: mBellSection,
       mHomeOrder: mHomeOrderSection, cardUrlWayOut: cardUrlWayOutSection, phoneBoot: phoneBootSection, sayEnter: sayEnterSection, sendArrow: sendArrowSection, mTables: mTablesSection, mMarkdown: mMarkdownSection, mHostile: mHostileSection, mPictures: mPicturesSection, phoneRedirect: phoneRedirectSection,
@@ -23991,6 +23991,8 @@ async function main() {
     await unit("growlQuestionBody", () => growlQuestionBodySection(browser, base));
     await unit("growlReplyGrow", () => growlReplyGrowSection(browser, base));
     await unit("growlChoices", () => growlChoicesSection(browser, base));
+    await unit("replies", () => repliesSection(browser, base));
+    await unit("repliesOf", () => repliesOfSection(browser, base));
     await unit("growlStable", () => growlStableSection(browser, base));
     await unit("growlOnIt", () => growlOnItSection(browser, base));
     await unit("mGrowlQuestion", () => mGrowlQuestionSection(browser));
@@ -24359,7 +24361,7 @@ function mServer(state) {
     let file = null;
     if (p === "/m/" || p === "/m" || p === "/m/docs" || /^\/d\/[^/]*$/.test(p)) file = path.join(M_ROOT, "index.html");
     else if (p.startsWith("/m/")) file = path.join(M_ROOT, p.slice(3));
-    else if (p.startsWith("/css/") || /^\/js\/(cardrules|sounds|prefs-live|changereq-core|changereq-mock)\.js$/.test(p)) file = path.join(WEB_ROOT, p);
+    else if (p.startsWith("/css/") || /^\/js\/(cardrules|sounds|prefs-live|replies|changereq-core|changereq-mock)\.js$/.test(p)) file = path.join(WEB_ROOT, p);
     if (file && !path.relative(WEB_ROOT, file).startsWith("..") && fs.existsSync(file) && fs.statSync(file).isFile()) {
       res.writeHead(200, { "Content-Type": M_TYPES[path.extname(file)] || "application/octet-stream" });
       return res.end(fs.readFileSync(file));
@@ -25971,7 +25973,7 @@ async function growlChoicesSection(browser, base) {
     const { p, root } = h;
     try {
       const btns = await p.$$eval(root + " .gr-choices button", b => b.map(x => x.textContent));
-      if (btns.join("|") !== "1. Run it now|2. Run it on a copy|3. Do not run it") fail(tag + "the choices were " + JSON.stringify(btns));
+      if (btns.join("|") !== "1. Run it now|2. Run it on a copy|3. Do not run it|stop") fail(tag + "the choices were " + JSON.stringify(btns));
       if ((await p.textContent(root + " .gr-body")).includes("{choices}")) fail(tag + "the marker stayed in the text.");
       await p.click(root + ' .gr-choices button:has-text("Run it on a copy")');
       await p.waitForTimeout(300);
@@ -25982,6 +25984,166 @@ async function growlChoicesSection(browser, base) {
     } finally { await h.close(); }
   }
   if (!bad) console.log("growlChoices ok");
+}
+
+// ── reply suggestions, RS1 (docs/rnd/reply-suggestions-design.md) ───────────────────────────────────────────────
+// One renderer, js/replies.js, for the board growler, the phone board's growler, /m's growler and /m's compose.
+const RS_LONG = "rebuild everything from scratch and then rerun every single test in the suite";
+const RS_BODY = "What next?\n\n{choices}\nbuild the worktrees\n" + RS_LONG + "\n{/choices}";
+
+// Draws one scenario on the four surfaces and hands each to `use(surface, page, root)`: the board growler at 1400, the
+// phone board's growler at 390, /m's growler at 390 and /m's compose at 390. `card` is the fields the card carries
+// (its `ask` text, `fixed`), `body` is the growler's.
+async function repliesSurfaces(browser, base, sc, use) {
+  for (const phone of [false, true]) {
+    const h = await growlBoard(browser, base, true, null, phone);
+    try {
+      await h.say([]);
+      await h.say([GR("c", "question", 1, { body: sc.body, fixed: !!sc.fixed })]);
+      if (phone) { await h.p.tap("#growl-phone .gp-line"); await h.p.waitForSelector("#growl-phone .gr-full"); }
+      await use(phone ? "board-phone" : "board", h.p, phone ? "#growl-phone" : "#growl", h);
+    } finally { await h.close(); }
+  }
+  const st = mServer({});
+  st.tasks = [mCard("c", Object.assign({ display_title: "card c", status: "needs-input", waiting_since: mIso(M_MIN) }, { ask: sc.body, fixed: !!sc.fixed }))];
+  await st.open();
+  try {
+    const { ctx, p, errors } = await mPage(browser, st, { width: 390, height: 844 }, "");
+    const msgs = [];
+    await ctx.route("**/v1/tasks/*/message", route => { msgs.push(JSON.parse(route.request().postData() || "{}").text); return route.fulfill({ status: 200, contentType: "application/json", body: "{}" }); });
+    await p.waitForSelector("#m-skel[hidden]", { state: "attached", timeout: slow(8000) });
+    st.send("growls", { growls: [GR("c", "question", 1, { body: sc.body, fixed: !!sc.fixed })], perm_after_seconds: 120 });
+    await p.waitForFunction(() => !document.getElementById("m-growl").hidden && !!document.querySelector("#m-growl .gm-full"), null, { timeout: slow(4000) });
+    await use("m-growl", p, "#m-growl", { messages: msgs, errors });
+    // the card, with its compose
+    await p.tap("#m-seg-all");
+    await p.waitForSelector('#m-list .row[data-id="c"]', { timeout: slow(10000) });
+    await p.tap('#m-list .row[data-id="c"]');
+    await p.waitForSelector("#m-compose textarea", { timeout: slow(5000) });
+    await use("m-compose", p, "#m-compose", { messages: msgs, errors });
+    await ctx.close();
+  } finally { await st.close(); }
+}
+
+async function repliesSection(browser, base) {
+  const labelsOf = (p, root) => p.$$eval(root + " .rq-btn", b => b.map(x => ({ t: x.textContent, title: x.title, choice: x.dataset.choice })));
+  const seen = {};
+  await repliesSurfaces(browser, base, { body: RS_BODY }, async (surface, p, root, h) => {
+    const tag = "replies " + surface + ": ";
+    const l = await labelsOf(p, root);
+    seen[surface] = l;
+    if (l.length !== 3 || l[2].choice !== "stop") fail(tag + "expected two options and stop: " + JSON.stringify(l));
+    if (!l.length) return;
+    if (l[0].t !== "build the worktrees") fail(tag + "a short option was cut: " + l[0].t);
+    if (l[1].choice !== RS_LONG || l[1].title !== RS_LONG) fail(tag + "the long option lost its full words: " + JSON.stringify(l[1]));
+    if (RS_LONG.length < 70) fail(tag + "the long option is " + RS_LONG.length + " characters, not 70 or more.");
+    const max = surface === "board" ? 60 : 28;
+    if (l[1].t.length > max || !l[1].t.endsWith("...")) fail(tag + "the long option's label is " + JSON.stringify(l[1].t) + ", past " + max + ".");
+    const visible = await p.evaluate(() => document.body.innerText);
+    if (/\{\/?choices\}/.test(visible)) fail(tag + "a {choices} marker is visible.");
+    const wide = await p.evaluate(root => { const r = document.querySelector(root); return r.scrollWidth > r.clientWidth + 1 || document.documentElement.scrollWidth > innerWidth + 1; }, root);
+    if (wide) fail(tag + "the buttons run past the viewport.");
+    // a press posts the full words
+    const sent = h.messages;
+    const before = sent.length;
+    await p.click(root + " .rq-btn:nth-child(2)");
+    await p.waitForTimeout(400);
+    const got = sent.slice(before).map(m => (m.body ? m.body.text : m));
+    if (got.length !== 1 || got[0] !== RS_LONG) fail(tag + "a press posted " + JSON.stringify(got));
+    if (h.errors && h.errors.length) fail(tag + "page errors: " + h.errors.join(" | "));
+  });
+  // the same labels on both phone surfaces, so a choice looks the same everywhere
+  const phones = ["board-phone", "m-growl", "m-compose"].map(s => (seen[s] || []).map(x => x.t).join("|"));
+  if (new Set(phones).size !== 1) fail("replies: the phone labels differ: " + JSON.stringify(phones));
+  // a draft in the box is left alone by a press
+  if (!bad) console.log("replies ok");
+}
+
+// Pictures, not assertions: `REPLIES_SHOTS=dir REPLIES_TAG=before|after`. It runs on a tree that has no replies.js too.
+async function repliesShotsSection(browser, base) {
+  const dir = process.env.REPLIES_SHOTS, tag = process.env.REPLIES_TAG || "after";
+  if (!dir) { fail("repliesShots: set REPLIES_SHOTS."); return; }
+  fs.mkdirSync(dir, { recursive: true });
+  const scenes = [
+    ["options-stop", { body: "Should I build the worktrees next, or review the diffs first?\n\n{choices}\nbuild the worktrees\nreview the diffs first\n{/choices}" }],
+    ["fixed-four", { body: "Should I build the worktrees next?", fixed: true }],
+    ["open-question", { body: "Which of the three schemas do you want me to keep?", fixed: false }],
+    ["long-option", { body: RS_BODY }]
+  ];
+  for (const [name, sc] of scenes) {
+    await repliesSurfaces(browser, base, sc, async (surface, p) => {
+      await p.waitForTimeout(400);
+      await p.screenshot({ path: path.join(dir, tag + "-" + name + "-" + surface + ".png") });
+    });
+  }
+  if (!bad) console.log("repliesShots ok");
+}
+
+// ── reply suggestions, RS4: `replies.of` reads `replies` and `fixed` off the card view ──────────────────────────────
+// Mocked cards, one per case the room will send once RS3 lands. /m compose draws them, and the growlers read the same
+// two fields off their row.
+async function repliesOfSection(browser, base) {
+  const cases = [
+    ["options", { replies: ["build the worktrees", "review the diffs first"], fixed: false }, ["build the worktrees", "review the diffs first", "stop"], false],
+    ["fixed", { replies: [], fixed: true }, ["yes", "go ahead", "no", "stop"], false],
+    ["open", { replies: [], fixed: false }, [], true],
+    ["silent", {}, [], false],
+    ["beats the ask", { replies: ["parsed one", "parsed two"], fixed: false, ask: "x\n{choices}\nasked one\nasked two\n{/choices}" }, ["parsed one", "parsed two", "stop"], false],
+    ["stop once", { replies: ["go on", "stop"], fixed: false }, ["go on", "stop"], false]
+  ];
+  const st = mServer({});
+  st.tasks = cases.map(([name, f], i) => mCard("r" + i, Object.assign({ display_title: name, status: "needs-input", waiting_since: mIso(M_MIN) }, f)));
+  await st.open();
+  try {
+    const { ctx, p, errors } = await mPage(browser, st, { width: 390, height: 844 }, "");
+    const msgs = [];
+    await ctx.route("**/v1/tasks/*/message", route => { msgs.push(JSON.parse(route.request().postData() || "{}").text); return route.fulfill({ status: 200, contentType: "application/json", body: "{}" }); });
+    await p.waitForSelector("#m-skel[hidden]", { state: "attached", timeout: slow(8000) });
+    await p.tap("#m-seg-all");
+    await p.waitForSelector("#m-list .row", { timeout: slow(10000) });
+    await p.tap('#m-list .row[data-id="r0"]');
+    await p.waitForSelector("#m-compose textarea", { timeout: slow(5000) });
+    for (let i = 0; i < cases.length; i++) {
+      const [name, , want, box] = cases[i], tag = "repliesOf " + name + ": ";
+      await p.evaluate(i => mCompose.mount(document.getElementById("m-compose"), "r" + i), i);
+      await p.waitForTimeout(100);
+      const got = await p.$$eval("#m-compose .rq-btn", b => b.map(x => x.dataset.choice));
+      if (got.join("|") !== want.join("|")) fail(tag + "drew " + JSON.stringify(got) + ", wanted " + JSON.stringify(want));
+      const focus = await p.evaluate(() => document.activeElement === document.querySelector("#m-compose .mc-box"));
+      if (focus !== box) fail(tag + "the box " + (focus ? "took" : "did not take") + " the focus.");
+      if (box && got.length) fail(tag + "an open question drew buttons.");
+    }
+    // a press posts the option's words and leaves what was typed in the box
+    await p.evaluate(() => mCompose.mount(document.getElementById("m-compose"), "r0"));
+    await p.fill("#m-compose .mc-box", "half a thought");
+    await p.tap('#m-compose .rq-btn[data-choice="review the diffs first"]');
+    await p.waitForTimeout(300);
+    if (msgs.join("|") !== "review the diffs first") fail("repliesOf: a press posted " + JSON.stringify(msgs));
+    if ((await p.$eval("#m-compose .mc-box", t => t.value)) !== "half a thought") fail("repliesOf: a press ate the draft.");
+    // the growlers read the same fields off their row
+    st.send("growls", { growls: [GR("c", "question", 1, { body: "Which?", replies: ["one way", "another"], fixed: false })], perm_after_seconds: 120 });
+    await p.waitForSelector("#m-growl .gm-full .rq-btn", { timeout: slow(4000) });
+    const g = await p.$$eval("#m-growl .rq-btn", b => b.map(x => x.dataset.choice));
+    if (g.join("|") !== "one way|another|stop") fail("repliesOf: /m's growler drew " + JSON.stringify(g));
+    st.send("growls", { growls: [GR("c", "question", 1, { body: "Which?", replies: [], fixed: true })], perm_after_seconds: 120 });
+    await p.waitForFunction(() => document.querySelectorAll("#m-growl .rq-btn").length === 4, null, { timeout: slow(4000) })
+      .catch(() => fail("repliesOf: /m's growler did not draw the fixed four."));
+    if (errors.length) fail("repliesOf: page errors: " + errors.join(" | "));
+    await ctx.close();
+  } finally { await st.close(); }
+  for (const phone of [false, true]) {
+    const tag = "repliesOf board " + (phone ? "phone" : "desktop") + ": ";
+    for (const [name, f, want] of [["options", { replies: ["one way", "another"], fixed: false }, "one way|another|stop"],
+      ["fixed", { replies: [], fixed: true }, "yes|go ahead|no|stop"], ["open", { replies: [], fixed: false }, ""]]) {
+      const h = await growlQuestionFace(browser, base, phone, [GR("c", "question", 1, Object.assign({ body: "Which?" }, f))]);
+      try {
+        const got = await h.p.$$eval(h.root + " .rq-btn", b => b.map(x => x.dataset.choice));
+        if (got.join("|") !== want) fail(tag + name + " drew " + JSON.stringify(got));
+        if (h.errors.length) fail(tag + "page errors: " + h.errors.join(" | "));
+      } finally { await h.close(); }
+    }
+  }
+  if (!bad) console.log("repliesOf ok");
 }
 
 // The face is not rebuilt for news that is not about it. A rebuilt node drops its `:hover` and whatever is typed in it,

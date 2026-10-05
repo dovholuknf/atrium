@@ -49,6 +49,7 @@
   }
   :is(#growl, #growl-phone) .gr-body pre code { white-space: pre; overflow-wrap: normal; }
   :is(#growl, #growl-phone) .gr-choices { display: flex; flex-wrap: wrap; gap: var(--sp-2, 6px); }
+  :is(#growl, #growl-phone) .rq-row { display: flex; flex-wrap: wrap; gap: var(--sp-2, 6px); }
   :is(#growl, #growl-phone) .gr-choices button { text-align: left; overflow-wrap: anywhere; }
 
   /* The reply box grows with what is typed up to a cap, then scrolls. The bigger box is taller. */

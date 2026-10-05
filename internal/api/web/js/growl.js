@@ -232,13 +232,14 @@ function growlFull(g) {
   const perm = g.reason === "permission";
   // A question is read whole, in a box that scrolls. Anything else keeps its one line.
   const asks = g.reason === "blocked" || g.reason === "question";
-  const split = asks ? growlSplitChoices(g.body) : { text: g.body, choices: [] };
+  const split = asks ? replies.split(g.body) : { text: g.body, choices: [] };
   const text = perm
     ? `<code class="gr-cmd">${esc(growlFirstLine(g.body))}</code>`
     : asks ? `<div class="gr-body">${growlBodyHTML(split.text)}</div>`
       : `<div class="gr-line">${esc(growlFirstLine(g.body))}</div>`;
-  const choices = split.choices.length
-    ? `<div class="gr-choices">${split.choices.map(c => `<button data-choice="${esc(c)}"${growlChoiceSent.get(g.id) === g.body ? " disabled" : ""}>${esc(c)}</button>`).join("")}</div>` : "";
+  const offered = asks ? replies.of({ replies: g.replies, ask: g.body, fixed: g.fixed }) : [];
+  const choices = offered.length
+    ? replies.buttons(offered, { cls: "gr-choices", disabled: growlChoiceSent.get(g.id) === g.body }).outerHTML : "";
   const big = growlCompose === g.id;
   const dead = perm && !g.subject ? " disabled" : "";
   let acts = "";
@@ -263,15 +264,6 @@ function growlFull(g) {
 // The growlers whose choice is in flight or answered, by the body they answered, so a redraw keeps the
 // buttons disabled and a new question on the same growler gets live ones.
 const growlChoiceSent = new Map();
-
-// A `{choices}...{/choices}` block is the agent offering a small set of answers, one per line. It is taken out of
-// the text and drawn as buttons, and a press sends that line as the reply.
-function growlSplitChoices(body) {
-  const m = /\{choices\}([\s\S]*?)\{\/choices\}/.exec(String(body || ""));
-  if (!m) return { text: String(body || ""), choices: [] };
-  const choices = m[1].split("\n").map(l => l.trim()).filter(Boolean);
-  return { text: (String(body).slice(0, m.index) + String(body).slice(m.index + m[0].length)).trim(), choices };
-}
 
 // The body as paragraphs, lists and code blocks, every character escaped first. No inline markup and no links: a
 // question is model output and some of it echoes what a tool read.

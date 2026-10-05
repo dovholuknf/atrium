@@ -51,13 +51,14 @@
     const dead = perm && !g.subject ? " disabled" : "";
     // A question is read whole, in a box that scrolls. Anything else keeps its one line.
     const asks = g.reason === "blocked" || g.reason === "question";
-    const split = asks ? splitChoices(g.body) : { text: g.body, choices: [] };
+    const split = asks ? replies.split(g.body) : { text: g.body, choices: [] };
     const text = perm
       ? '<code class="gm-cmd">' + U.esc(first(g.body)) + "</code>"
       : asks ? '<div class="gm-body">' + bodyHTML(split.text) + "</div>"
         : '<div class="gm-line">' + U.esc(first(g.body)) + "</div>";
-    const choices = split.choices.length
-      ? '<div class="gm-choices">' + split.choices.map(c => '<button data-choice="' + U.esc(c) + '"' + (choiceSent.get(g.id) === g.body ? " disabled" : "") + ">" + U.esc(c) + "</button>").join("") + "</div>" : "";
+    const offered = asks ? replies.of({ replies: g.replies, ask: g.body, fixed: g.fixed }) : [];
+    const choices = offered.length
+      ? replies.buttons(offered, { cls: "gm-choices", narrow: true, disabled: choiceSent.get(g.id) === g.body }).outerHTML : "";
     const big = compose === g.id;
     let reply = "";
     if (asks) {
@@ -82,15 +83,6 @@
     const off = g.room_offline ? '<span class="gm-off">room offline</span>' : "";
     return '<div class="gm-full" data-id="' + U.esc(g.id) + '"><div class="gm-head"><b>' + U.esc(g.title) + "</b>" + off +
       "</div>" + text + choices + reply + '<div class="gm-acts">' + acts + "</div>" + snooze + block + "</div>";
-  }
-
-  // `{choices}...{/choices}` is the agent offering a small set of answers, one per line. It is taken out of the text
-  // and drawn as buttons, and a press sends that line as the reply.
-  function splitChoices(body) {
-    const m = /\{choices\}([\s\S]*?)\{\/choices\}/.exec(String(body || ""));
-    if (!m) return { text: String(body || ""), choices: [] };
-    const choices = m[1].split("\n").map(l => l.trim()).filter(Boolean);
-    return { text: (String(body).slice(0, m.index) + String(body).slice(m.index + m[0].length)).trim(), choices };
   }
 
   // The body as paragraphs, lists and code blocks, every character escaped first. No inline markup and no links,

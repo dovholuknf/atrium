@@ -206,11 +206,14 @@
       row.classList.add("with-attach");
     }
     row.append(ta, send);
-    root.append(files, note, row);
+    // Quick replies, one row above the box, drawn by js/replies.js from what the card says. Nothing is drawn for a card
+    // that offers none, and an open question (no buttons) puts the caret in the box.
+    const quick = el("div", "mc-quick-host");
+    root.append(quick, files, note, row);
     host.replaceChildren(root);
 
     const state = {
-      el: root, host, id: cardId, offs, sending: 0, pasteOK: null, ta, refresh: () => refresh(),
+      quick, el: root, host, id: cardId, offs, sending: 0, pasteOK: null, ta, refresh: () => refresh(),
       atts: [], uploading: 0, last: "", opts, files, cmts: []
     };
     cur = state;
@@ -403,6 +406,40 @@
         refresh();
       }
     }
+
+    // A press sends the option's full words as one message and leaves the draft where it was. The box is loaned the
+    // words for the length of the synchronous start of `submit`, which takes them and empties the box.
+    quick.addEventListener("click", e => {
+      const b = e.target.closest("[data-choice]");
+      if (!b || b.disabled || !state.el.isConnected) return;
+      const draft = ta.value;
+      ta.value = b.dataset.choice;
+      submit();
+      ta.value = draft;
+      state.last = draft;
+      writeDraft(cardId, draft);
+      refresh();
+    });
+    quick.addEventListener("pointerdown", e => e.preventDefault());
+    const cardNow = () => (opts.card ? guard(opts.card) : cardOf(cardId));
+    let shown = "", focused = false;
+    const drawQuick = () => {
+      const c = cardNow();
+      const list = window.replies ? window.replies.of(c) : [];
+      const key = list.join("\n");
+      if (key !== shown) {
+        shown = key;
+        quick.replaceChildren(...(list.length ? [window.replies.buttons(list, { narrow: true, cls: "mc-quick" })] : []));
+      }
+      // An open question has no buttons, so the box takes the focus, once: the only answer is words.
+      if (!focused && c && c.status === "needs-input" && window.replies && window.replies.wantsBox(c) && !opts.compact) {
+        focused = true;
+        ta.focus({ preventScroll: true });
+      }
+    };
+    drawQuick();
+    if (window.mStore && window.mStore.on && !opts.card) offs.push(window.mStore.on("cards", drawQuick));
+    state.drawQuick = drawQuick;
 
     if (opts.follow !== false) offs.push(followKeyboard(root));
 
