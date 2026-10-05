@@ -1,6 +1,7 @@
 // A new card is in the terminals list when its alert is, in a real browser with every endpoint mocked.
 //
 //   NODE_PATH=<dir with playwright> node scripts/check-new-card-row.js
+//   SHOT=<png> saves the list. NO_STARTING=1 leaves `starting` off the mocked card, the shape of an older room.
 //
 // It serves the concatenated board from board-source.js, the way scripts/check-pr-paste.js does. The mocked room
 // holds one card, the list is read at load, and then a card is launched: /v1/tasks gains it (running, no runner yet,
@@ -85,16 +86,21 @@ const bad = msg => { console.error("FAIL: " + msg); fail = true; };
       };
       watch();
     });
-    list = list.concat(card("new1", "new card"));
+    list = list.concat(card("new1", "new card", process.env.NO_STARTING ? {} : { starting: true }));
     const sent = await page.evaluate(() => performance.now());
     streams.forEach(r => r.write('event: task\ndata: {"id":"new1"}\n\n'));
     await page.waitForFunction(() => window.__t.row && window.__t.alert, null, { timeout: 12000 }).catch(() => {});
     const t = await page.evaluate(() => window.__t);
+    console.log("event to alert " + Math.round(t.alert - sent) + "ms, alert to row " + Math.round(t.row - t.alert) + "ms");
+    if (process.env.SHOT) {
+      await page.waitForTimeout(300);
+      await page.locator("#term-list, body").first().screenshot({ path: process.env.SHOT });
+    }
+    if (!process.env.NO_STARTING && t.row && !/starting/.test(await page.locator('[data-id="new1"]').textContent())) bad("the row does not say starting");
     if (!t.alert) bad("the alert never fired");
     if (!t.row) bad("the row never appeared in the terminals list");
     if (t.alert && t.alert - sent > 2000) bad("the alert came " + Math.round(t.alert - sent) + "ms after the event, want under 2000");
     if (t.alert && t.row && t.row - t.alert > 1000) bad("the row came " + Math.round(t.row - t.alert) + "ms after the alert, want under 1000");
-    if (!fail) console.log("alert " + Math.round(t.alert - sent) + "ms after the event, row " + Math.round(t.row - t.alert) + "ms after the alert");
   } catch (e) { bad(String((e && e.stack) || e)); }
   await browser.close();
   server.close();

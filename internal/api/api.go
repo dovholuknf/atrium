@@ -846,6 +846,9 @@ type view struct {
 	// window mode launch is not supervised, so offering attach on it would be
 	// a button that cannot work.
 	Supervised bool `json:"supervised"`
+	// Starting marks a card atrium is launching whose runner is not up yet. The board draws it as starting, not as
+	// joined from a terminal atrium does not hold.
+	Starting bool `json:"starting,omitempty"`
 	// Shell marks a card that already has a plain shell open beside its runner,
 	// so the board can offer to go to it rather than to open a second one.
 	//
@@ -952,6 +955,9 @@ type view struct {
 // daemon, since the supervisor lives there.
 var IsSupervised func(taskID string) bool
 
+// IsStarting reports whether atrium is still launching this task's runner. Supplied by the daemon.
+var IsStarting func(taskID string) bool
+
 // HasShell reports whether this task has a plain shell open beside its runner.
 // Supplied by the daemon for the same reason.
 var HasShell func(taskID string) bool
@@ -1016,6 +1022,9 @@ func toView(t *store.Task) view {
 	}
 	if IsSupervised != nil {
 		v.Supervised = IsSupervised(t.ID)
+	}
+	if IsStarting != nil && !v.Supervised {
+		v.Starting = IsStarting(t.ID)
 	}
 	if HasShell != nil {
 		v.Shell = HasShell(t.ID)

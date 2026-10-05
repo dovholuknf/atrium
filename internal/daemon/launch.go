@@ -1051,6 +1051,11 @@ func (d *Daemon) launchLocked(req LaunchRequest) (*store.Task, error) {
 		// THE CARD IS ON THE BOARD NOW, NOT AFTER THE SETTLE. The only event for a new card used to be the one at
 		// the end of this launch, after the settle window and every write between, so the board heard of it
 		// seconds after it existed and a read that raced it saw it before any event had said so.
+		d.starting.Store(t.ID, struct{}{})
+		defer func() {
+			d.starting.Delete(t.ID)
+			d.publishTask(t.ID)
+		}()
 		d.publishTask(t.ID)
 	case claimed:
 		// A card offered by a source has never been on the wire, so it has no

@@ -125,6 +125,8 @@ type Daemon struct {
 
 	// sup holds the runners atrium owns, when a harness launches in pty mode.
 	sup *supervisor
+	// starting holds the ids of cards whose launch has not finished, so the board can draw them as starting.
+	starting sync.Map
 
 	// The pty host link. See hostterm.go.
 	ph hostLink
@@ -563,6 +565,7 @@ func New(opts Options) (*Daemon, error) {
 	// The board only offers attach for a runner atrium owns, because a window
 	// mode launch has no terminal here to show.
 	api.IsSupervised = func(taskID string) bool { return d.sup.get(taskID) != nil }
+	api.IsStarting = func(taskID string) bool { _, ok := d.starting.Load(taskID); return ok }
 	// Whether this card has a shell open, so the board can offer `open a shell`
 	// or `go to the shell` rather than guessing. Asked rather than remembered
 	// in the page, because a shell outlives a reload and a board that tracked
