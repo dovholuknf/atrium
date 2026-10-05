@@ -59,6 +59,10 @@ type prRunner struct {
 	run  func(ctx context.Context, c prCmd) ([]byte, error)
 	// forgeOf, when set, picks the forge for a host instead of the providers. A seam for tests.
 	forgeOf func(host string) (forge.Forge, error)
+	// onAccess is told of a forge call's error and says whether it was a missing or logged out forge, and onWorked of a
+	// forge that answered. The daemon fills them to raise and clear the board alert. Nil in a bare runner.
+	onAccess func(kind string, err error) bool
+	onWorked func(kind, host string)
 	now     func() time.Time
 	// baseEnv is the environment every child starts from.
 	baseEnv func() []string
@@ -572,7 +576,13 @@ func (pr *prRun) fetch() error {
 	ref := pr.ref()
 	v, err := f.View(pr.ctx, ref)
 	if err != nil {
+		if pr.r.onAccess != nil {
+			pr.r.onAccess(f.Kind(), err)
+		}
 		return err
+	}
+	if pr.r.onWorked != nil {
+		pr.r.onWorked(f.Kind(), ref.Host)
 	}
 	if !store.ValidPRHead(v.Head) || v.Head == "" {
 		return errors.New(f.Kind() + " gave no usable head")
@@ -592,6 +602,9 @@ func (pr *prRun) fetch() error {
 	pr.files = v.Files
 	diff, err := f.Diff(pr.ctx, ref)
 	if err != nil {
+		if pr.r.onAccess != nil {
+			pr.r.onAccess(f.Kind(), err)
+		}
 		return err
 	}
 	if err := pr.write("pr.diff", diff); err != nil {

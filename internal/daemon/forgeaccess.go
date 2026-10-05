@@ -3,6 +3,7 @@ package daemon
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"regexp"
@@ -10,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/dovholuknf/atrium/internal/forge"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -213,6 +215,44 @@ func (d *Daemon) RaiseForgeAccess(tool, host, detail string) {
 	st := forgeStatus{Tool: tool, Host: host, State: state}
 	st.Message, st.Fix = d.forgeSay(tool, cmd, host, state, nil)
 	d.applyForge(st)
+}
+
+// forgeToolOfKind is the CLI a forge kind runs through.
+var forgeToolOfKind = map[string]string{"github": "gh", "bitbucket": "bb", "gitlab": "glab"}
+
+// ForgeAccessFrom raises the alert when err is, or wraps, a forge AccessError. kind is the forge kind that failed, so a
+// wrapper command named by the provider still raises the alert of its tool. It reports whether err was one.
+func (d *Daemon) ForgeAccessFrom(kind string, err error) bool {
+	var ae *forge.AccessError
+	if !errors.As(err, &ae) {
+		return false
+	}
+	tool := forgeToolOfKind[kind]
+	if tool == "" {
+		tool = ae.Tool
+	}
+	d.RaiseForgeAccess(tool, ae.Host, ae.Detail)
+	return true
+}
+
+// ForgeWorked clears the alert of a forge that just answered. kind is the forge kind, as forge.Forge.Kind says it.
+// Nothing is run, and no alert open means nothing is said.
+func (d *Daemon) ForgeWorked(kind, host string) {
+	tool := forgeToolOfKind[kind]
+	if tool == "" {
+		return
+	}
+	if host == "" {
+		if host, _ = d.st.ForgeConfig(tool); host == "" {
+			host = store.ForgeDefaultHost(tool)
+		}
+	}
+	d.forgeMu.Lock()
+	_, open := d.forgeOpen[tool+"@"+host]
+	d.forgeMu.Unlock()
+	if open {
+		d.applyForge(forgeStatus{Tool: tool, Host: host, State: forgeOK})
+	}
 }
 
 // ForgeAlerts is the open set, for the settings view.

@@ -79,6 +79,10 @@ type Server struct {
 	PRForge func(host string) (forge.Forge, error)
 	// SCMClone is the scm clone path (atrium_git_clone), for a PR on a repo with no checkout.
 	SCMClone func(ctx context.Context, url string) (gitsync.SCMResult, error)
+	// ForgeFailed is told of a forge error so the daemon can raise the board alert, and ForgeWorked of a forge that
+	// answered so it can clear it. Both are nil-safe seams the daemon fills.
+	ForgeFailed func(kind string, err error) bool
+	ForgeWorked func(kind, host string)
 	// PRFetch fetches a PR head into a ref of the checkout. Nil runs git over https. A seam for tests.
 	PRFetch func(ctx context.Context, dir string, spec forge.FetchSpec, dst string) error
 	// PRRunner runs pull request reviews. Nil means the stub that fails every run
