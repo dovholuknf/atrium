@@ -511,6 +511,9 @@ type keepaliveCardView struct {
 	// sent only while decide() says "not due".
 	LastRefreshAt *time.Time `json:"last_refresh_at,omitempty"`
 	NextRefreshAt *time.Time `json:"next_refresh_at,omitempty"`
+	// Suspended is why the whole room is suspended, so a card's badge does not
+	// blame the card.
+	Suspended string `json:"suspended,omitempty"`
 }
 
 // keepalive holds the loop's collaborators, so a test can run a tick with a fake
@@ -877,9 +880,6 @@ func (k *keepalive) forkArgs(sessionID, model string) []string {
 
 // tick looks at every card with keep-alive on, once.
 func (k *keepalive) tick(ctx context.Context) {
-	if k.st.KeepaliveSuspended() != "" {
-		return
-	}
 	cards, err := k.st.KeepaliveCards()
 	if err != nil {
 		return
@@ -894,6 +894,14 @@ func (k *keepalive) tick(ctx context.Context) {
 		}
 		t = k.followSession(t)
 		card = k.clearOnRealTurn(t, card)
+		// A suspended room refreshes nothing, but its cards still clear on a real
+		// turn: otherwise a stopped badge stays stuck while the card works.
+		// The suspension itself is not cleared by a turn. It follows two misses on
+		// two cards, which says the cache is not holding for a reason a turn does
+		// not fix, and a refresh after it spends real money. A person clears it.
+		if k.st.KeepaliveSuspended() != "" {
+			continue
+		}
 		v := k.decide(t, card)
 		k.mu.Lock()
 		if u, held := k.unsaved[t.ID]; held {
@@ -1101,7 +1109,7 @@ func (k *keepalive) view(taskID string) any {
 	if err != nil || card == nil {
 		return nil
 	}
-	out := &keepaliveCardView{State: card.State, StateAt: card.StateAt}
+	out := &keepaliveCardView{State: card.State, StateAt: card.StateAt, Suspended: k.st.KeepaliveSuspended()}
 	k.mu.Lock()
 	out.Why = k.why[taskID]
 	k.mu.Unlock()

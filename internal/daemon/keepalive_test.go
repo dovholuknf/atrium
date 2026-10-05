@@ -621,6 +621,32 @@ func TestKeepaliveRefusedStopsTheCardOnly(t *testing.T) {
 	}
 }
 
+// A suspended room refreshes nothing, but a stopped card still goes back on
+// after a real turn, and the card's view says the room is suspended and why.
+func TestKeepaliveSuspendedRoomStillClearsAStoppedCard(t *testing.T) {
+	f := newKAFix(t)
+	f.reply(f.now.Add(-56*time.Minute), replyOpt{})
+	if _, err := f.st.SetKeepaliveStateAt(f.task.ID, store.KeepaliveMiss, f.now.Add(-50*time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	f.st.SetKeepaliveSuspended("two refreshes in a row on two cards missed the cache")
+	f.reply(f.now.Add(-time.Minute), replyOpt{})
+	f.tick()
+	if f.state() != store.KeepaliveOn {
+		t.Fatalf("state = %s, want on after a newer reply", f.state())
+	}
+	if f.forks() != 0 {
+		t.Fatalf("forks = %d in a suspended room", f.forks())
+	}
+	v, _ := f.k.view(f.task.ID).(*keepaliveCardView)
+	if v == nil || v.Suspended == "" {
+		t.Fatalf("view = %+v, want the suspension", v)
+	}
+	if f.st.KeepaliveSuspended() == "" {
+		t.Fatal("a real turn cleared the room's suspension")
+	}
+}
+
 // Two failures in a row stop the card.
 func TestKeepaliveTwoFailuresStopTheCard(t *testing.T) {
 	f := newKAFix(t)

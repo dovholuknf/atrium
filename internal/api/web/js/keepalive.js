@@ -101,6 +101,12 @@ function kaWhen(v) {
   return isNaN(ms) ? 0 : ms;
 }
 
+// The room's suspension in words. It stays until a person clears it.
+function kaSuspendedTip(reason) {
+  return `keep-alive is suspended for the whole room (${reason}), so no card is refreshed. ` +
+    "clear it with the clear it button under the keep-alive setting";
+}
+
 // What a card's cache is at `now`, or null for a card with no keepalive.
 // `bucket` is what the summary line counts: "kept", "warm" or "cold".
 // `flip` is when its words next change on their own, 0 for never.
@@ -129,6 +135,8 @@ function kaModel(t, now) {
     }
     if (k.missed) m.tip.push("a miss writes the whole context again, about eight times the budget");
     if (wu) m.tip.push((warm ? "cache warm until " : "cache went cold at ") + kaClock(wu, now));
+    // A suspended room refreshes nothing, so say it before the card is blamed.
+    if (k.suspended) m.tip.push(kaSuspendedTip(k.suspended));
     m.tip.push("it starts again on this card's next turn" +
       (k.state === "stopped:acted" ? " only if you turn it back on" : ", or when you turn it on by hand"));
     m.tip.push("state: " + k.state);
@@ -202,6 +210,7 @@ function kaModel(t, now) {
     m.tip.push("next refresh " + (exact ? "at " : "about ") + kaClock(next, now) +
       (exact ? "" : ", checked once a minute"));
   }
+  if (k.suspended) m.tip.push(kaSuspendedTip(k.suspended));
   if (why) m.tip.push(KEEPALIVE_WHY[why] || why);
   if (wont) m.tip.push("it will not refresh while: " + wont);
   if (rawWhy) m.tip.push(rawWhy);

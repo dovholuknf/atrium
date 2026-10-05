@@ -7865,7 +7865,8 @@ const KA_CARDS = [
   // sa55's card: one refresh missed the cache and rewrote the whole context.
   Object.assign({}, T1, { id: "ka-miss", display_title: "missed card", keepalive: {
     state: "stopped:miss", state_at: "2026-09-28T20:13:07Z", refreshes: 0, missed: 1, spent: 1.02,
-    budget: 0.12, warm_until: "2026-09-28T20:17:26Z" } }),
+    budget: 0.12, warm_until: "2026-09-28T20:17:26Z",
+    suspended: "two refreshes in a row on two cards missed the cache" } }),
   Object.assign({}, T1, { id: "ka-off", display_title: "off card", keepalive: {
     state: "off", state_at: "2026-09-27T10:00:00Z", refreshes: 0, spent: 0 } }),
 ];
@@ -7968,6 +7969,11 @@ async function keepaliveSection(browser, base) {
     if (!m.stopped || !/missed the cache/.test(m.tip) || !/0 refreshes, 1 miss/.test(m.tip)) {
       fail("a card stopped on a miss does not show the miss: " + JSON.stringify(m));
     }
+    // A suspended room says so on the card, with the reason and how to clear it.
+    if (!/suspended for the whole room \(two refreshes in a row/.test(m.tip) || !/clear it/.test(m.tip)) {
+      fail("a stopped card in a suspended room does not say the room is suspended: " + JSON.stringify(m.tip));
+    }
+    if (/suspended/.test(by["ka-stop"].tip)) fail("a card in an unsuspended room mentions a suspension.");
     if (!/off . cold/.test(by["ka-off"].text)) fail("a card with its switch off does not say off and cold: " + JSON.stringify(by["ka-off"]));
     if (by["ka-none"].text) fail("a card with no switch drew a keep-alive chip.");
 
