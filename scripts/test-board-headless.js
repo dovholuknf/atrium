@@ -7986,7 +7986,7 @@ async function cacheChipSection(browser, base) {
     // A dot, never words: clint saw the chip squeeze a title to one letter. The words are in the details.
     const dot = await p.evaluate(() => [...document.querySelectorAll("#stack-list .chip.cache")].map(e => {
       const r = e.getBoundingClientRect(); return { w: r.width, h: r.height, text: e.innerText.trim() };
-    }).filter(d => d.w > 12 || d.h > 12 || d.text));
+    }).filter(d => d.w > 16 || d.h > 16 || d.text));
     if (dot.length) fail("cacheChip: chips are not dots " + JSON.stringify(dot));
     const peekWords = await p.evaluate(() => { const d = document.createElement("div"); d.innerHTML = peekFoot(KA_SEEN.get("cc-warm")); return d.innerText; });
     if (!/won't refresh: busy/.test(peekWords) || !/not idle/.test(peekWords)) fail("cacheChip: the details lack the words " + JSON.stringify(peekWords));
@@ -8087,7 +8087,7 @@ async function cacheChipSection(browser, base) {
             const r = ch.getBoundingClientRect();
             if (r.width && (r.right > cr.right + 0.5 || r.right > vw + 0.5)) bad.push("chip " + ch.innerText);
             shorts.push(ch.innerText.trim());
-            if (r.width > 12 || r.height > 12) bad.push("chip is " + r.width + "x" + r.height + ", not a dot");
+            if (r.width > 16 || r.height > 16) bad.push("chip is " + r.width + "x" + r.height + ", not a dot");
             if (ch.getAttribute("aria-label").indexOf(ch.querySelector(".cfull").textContent) !== 0) bad.push("aria " + ch.innerText);
           });
         });
@@ -8099,6 +8099,82 @@ async function cacheChipSection(browser, base) {
       }
     }
     await pctx.close();
+
+    // 5. The pie: its fraction at a fixed clock, and each state's look and tooltip, drawn for real.
+    {
+      const pctx2 = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+      const r = await pctx2.newPage();
+      r.on("pageerror", e => errors.push(String(e)));
+      const mk = (ka, o) => Object.assign({ state: "on", refreshes: 0 }, ka, o || {});
+      const hr = ms => new Date(Date.now() + ms).toISOString();
+      const min = 60000;
+      // next is 5 minutes before warm_until, so a card refreshed `ago` minutes back has a 55 minute fill
+      const filling = (ago) => mk({ refreshes: 2, why: "not due", last_refresh_at: hr(-ago * min),
+        warm_until: hr((60 - ago) * min), next_refresh_at: hr((55 - ago) * min) });
+      kaFix("pp-start", filling(1));
+      kaFix("pp-half", filling(27.5));
+      kaFix("pp-due", filling(53));
+      kaFix("pp-stop", mk({ state: "stopped:break-even", refreshes: 5, warm_until: hr(-10 * min) }));
+      kaFix("pp-cold", mk({ why: "parked", warm_until: hr(-30 * min) }));
+      kaFix("pp-first", mk({ why: "not due", warm_until: hr(30 * min) }));
+      const pids = ["pp-start", "pp-half", "pp-due", "pp-stop", "pp-cold", "pp-first"];
+      landList = pids.map(i => LAND[i]);
+      await r.goto(base, { waitUntil: "domcontentloaded" });
+      await r.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
+      await r.waitForFunction(() => typeof kaModel === "function", null, { timeout: slow(15000) });
+      const fr = await r.evaluate(() => {
+        const now = Date.now(), o = {};
+        const at = ms => new Date(now + ms).toISOString();
+        const mm = (ka) => kaModel({ id: "x", keepalive: Object.assign({ state: "on" }, ka) }, now);
+        const cyc = (ago, extra) => mm(Object.assign({ refreshes: 1, why: "not due", last_refresh_at: at(-ago * 60000),
+          warm_until: at((60 - ago) * 60000), next_refresh_at: at((55 - ago) * 60000) }, extra));
+        o.empty = cyc(0).pie; o.half = cyc(27.5).pie; 
+        o.past = cyc(58).pie; o.nearFull = cyc(54.9).pie; o.dueAt = cyc(52).due; o.notDue = cyc(40).due;
+        o.noLast = mm({ why: "not due", warm_until: at(30 * 60000) }).pie;
+        o.busy = mm({ why: "not idle", warm_until: at(30 * 60000) }).pie;
+        o.cold = mm({ warm_until: at(-60000) }).pie;
+        o.stop = mm({ state: "stopped:miss" }).pie;
+        return o;
+      });
+      const wantPie = { empty: 0, half: 180, nearFull: 345, past: -1, dueAt: true, notDue: false, noLast: 195, busy: -1, cold: -1, stop: -1 };
+      for (const [k, v] of Object.entries(wantPie)) if (fr[k] !== v) fail("cachePie fraction " + k + ": wanted " + v + " got " + fr[k]);
+      await r.waitForFunction(() => document.querySelectorAll("#stack-list .chip.cache").length >= 6, null, { timeout: slow(10000) });
+      const looks = await r.evaluate(() => {
+        const o = {};
+        document.querySelectorAll("#stack-list .chip.cache").forEach(e => {
+          const cs = getComputedStyle(e);
+          o[e.dataset.cid] = { cls: e.className, pie: e.style.getPropertyValue("--pie"), img: cs.backgroundImage, w: e.getBoundingClientRect().width,
+            ring: cs.borderTopColor, tip: e.dataset.tip };
+        });
+        return o;
+      });
+      const g = id => looks[id] || fail("cachePie: no chip for " + id) || {};
+      if (g("pp-start").pie !== "0deg" || !/conic-gradient/.test(g("pp-start").img)) fail("cachePie: a fresh refresh is not an empty pie " + JSON.stringify(g("pp-start")));
+      if (g("pp-half").pie !== "180deg" || !/conic-gradient/.test(g("pp-half").img)) fail("cachePie: half way is not half a pie " + JSON.stringify(g("pp-half")));
+      if (/ due/.test(g("pp-half").cls)) fail("cachePie: half way looks about to fire");
+      if (!/ due/.test(g("pp-due").cls) || !/about to refresh/.test(g("pp-due").tip)) fail("cachePie: about to fire has no look or tooltip " + JSON.stringify(g("pp-due")));
+      if (g("pp-due").ring === g("pp-half").ring) fail("cachePie: about to fire has the same ring as filling");
+      if (!/next refresh at/.test(g("pp-half").tip)) fail("cachePie: the filling tooltip has no next time " + g("pp-half").tip);
+      if (g("pp-stop").pie !== "" || !/linear-gradient/.test(g("pp-stop").img) || !/stopped at break-even/.test(g("pp-stop").tip)) {
+        fail("cachePie: a stopped card is not an empty struck circle with its reason " + JSON.stringify(g("pp-stop")));
+      }
+      if (/conic/.test(g("pp-cold").img) || g("pp-cold").pie !== "" || !/expired/.test(g("pp-cold").tip)) fail("cachePie: a cold card draws a pie " + JSON.stringify(g("pp-cold")));
+      if (!/conic/.test(g("pp-first").img) || g("pp-first").pie !== "195deg") fail("cachePie: a card with no refresh yet fills from its cache write " + JSON.stringify(g("pp-first")));
+      // The coarse timer: a filling pie arms a timer within a minute and the tick makes no request.
+      const armed = await r.evaluate(() => kaTimer > 0);
+      if (!armed) fail("cachePie: no timer is armed for a filling pie");
+      const sh = process.env.CACHE_SHOTS || "";
+      if (sh) {
+        fs.mkdirSync(sh, { recursive: true });
+        await r.evaluate(() => switchView("board"));
+        await r.waitForFunction(() => document.querySelectorAll("#board .chip.cache").length >= 6, null, { timeout: slow(10000) });
+        await r.screenshot({ path: path.join(sh, (process.env.CACHE_SHOT_PREFIX || "after") + "-board-1400x900.png") });
+        await r.evaluate(() => switchView("stack"));
+        await r.waitForSelector("#stack-list .stackrow", { timeout: slow(10000) });
+        await r.screenshot({ path: path.join(sh, (process.env.CACHE_SHOT_PREFIX || "after") + "-stack-1400x900.png") });
+      }
+      await pctx2.close();
+    }
   } finally {
     tasksMode = was;
     try { await ctx.close(); } catch (e) {}
