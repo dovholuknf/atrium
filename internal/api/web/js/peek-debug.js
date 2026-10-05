@@ -18,6 +18,9 @@ function dbgRows(s, held) {
     ["last key", typingAgo(s.since_ms)],
     ["held for this card", held ? held.n + " from @" + held.from : "none"]
   ];
+  // The same sentence the gate line says, so the two cannot drift. Only when something is held and blocked.
+  const g = typingGateText(s, held);
+  if (g.blocking) rows.push(["blocked", g.text]);
   if (s.unsure) rows.splice(1, 0, ["not sure", s.unsure]);
   return rows;
 }

@@ -4684,6 +4684,19 @@ async function termDebugSection(browser, base) {
     }
     if (sec.switches.join() !== "true,true") fail("the two debug switches are not in the debug section: " + sec.switches);
 
+    // For checking by eye: DEBUG_SHOTS=<dir> writes the drawer closed with the countdown, then with the gate open.
+    if (process.env.DEBUG_SHOTS) {
+      const out = require("path").join(process.env.DEBUG_SHOTS, (process.env.DEBUG_SHOTS_TAG || "after") + "-");
+      await p.locator("#t-drawer").screenshot({ path: out + "gate-closed-countdown.png" });
+      typingAnswer = { line: "", count: 0, since_ms: 9000, open: true, reason: "line empty and quiet" };
+      await p.waitForFunction(() => /^gate open/.test(document.getElementById("t-dbg-gate").textContent), null,
+        { timeout: slow(5000) });
+      await p.locator("#t-drawer").screenshot({ path: out + "gate-open.png" });
+      typingAnswer = { line: "", count: 0, since_ms: 500, open: false, reason: "line empty, waiting for 2s of quiet" };
+      await p.waitForFunction(() => /opens in 2s/.test(document.getElementById("t-dbg-gate").textContent), null,
+        { timeout: slow(5000) });
+    }
+
     // Closing the drawer stops the asking.
     await p.evaluate(() => toggleTermDrawer(false));
     await p.waitForTimeout(200);
@@ -4704,16 +4717,18 @@ async function termDebugSection(browser, base) {
         closedNothingHeld: said({ open: false, count: 0, line: "", reason: "line empty, waiting for 2s of quiet" }, 0),
         openHeld: said({ open: true, count: 0, line: "", reason: "line empty and quiet" }, 1),
         typed: said({ open: false, count: 203, line: "so it sounds to me like", reason: "x" }, 1),
-        lookEmpty: said({ open: false, count: 0, line: " \\x1b", reason: "x" }, 2)
+        lookEmpty: said({ open: false, count: 3, line: " \n ", reason: "x" }, 2)
       };
       typingOn = false;
       return out;
     });
-    if (line.closedNothingHeld || line.openHeld) fail("the gate line speaks with nothing blocked: " + JSON.stringify(line));
+    if (line.closedNothingHeld !== "line empty" || line.openHeld !== "line empty") {
+      fail("the gate line is not the short dim line with nothing blocked: " + JSON.stringify(line));
+    }
     if (line.typed !== "1 message from @runtime waits: 203 chars on your line") {
       fail("the blocking line is wrong: " + JSON.stringify(line.typed));
     }
-    if (!/^2 messages from @runtime wait: line looks empty, atrium thinks “/.test(line.lookEmpty)) {
+    if (!/^2 messages from @runtime wait: 3 chars that look empty, atrium thinks “·⏎·”$/.test(line.lookEmpty)) {
       fail("a held say on a looks-empty line does not quote what atrium thinks: " + JSON.stringify(line.lookEmpty));
     }
 
@@ -4725,6 +4740,20 @@ async function termDebugSection(browser, base) {
     await p.mouse.click(300, 300);
     const outside = await p.evaluate(() => termDrawerOpen);
     if (outside) fail("a click outside the drawer left it open.");
+    // A click in the terminal closes it and the terminal takes the focus.
+    await p.evaluate(() => { toggleTermDrawer(true); document.activeElement && document.activeElement.blur(); });
+    await p.click("#t-screen");
+    const inTerm = await p.evaluate(() => ({ open: termDrawerOpen, focus: !!document.activeElement && !!document.activeElement.closest("#t-screen") }));
+    if (inTerm.open) fail("a click in the terminal left the drawer open.");
+    if (!inTerm.focus) fail("a click in the terminal closed the drawer but did not focus the terminal.");
+    // The card's hover and menu details carry no debug section.
+    const popDebug = await p.evaluate(() => {
+      openPeek("land-live", document.querySelector(".stackrow"), "menu");
+      const r = { inPeek: !!peekEl.querySelector("#t-drawer-debug, .peek-debug") };
+      closePeek();
+      return r;
+    });
+    if (popDebug.inPeek) fail("the card popover carries the debug section.");
     // Escape aimed at the terminal closes the drawer and the program never sees it.
     await p.evaluate(() => { toggleTermDrawer(true); window.__sent = []; document.querySelector("#t-screen textarea").focus(); });
     await p.keyboard.press("Escape");
@@ -4740,6 +4769,8 @@ async function termDebugSection(browser, base) {
     // The input lag box takes the machine's answer on every open, and the pinned note shows.
     const lagState = () => p.evaluate(() => ({ box: document.getElementById("s-inputlag").checked, lag: lagOn,
       pinned: !document.getElementById("s-inputlag-pinned").hidden }));
+    // The opens above each asked for the settings and a read still in flight is shared, so let them land first.
+    await p.waitForFunction(() => !settingsInflight.size, null, { timeout: slow(5000) });
     kaSettings = { input_lag_log: true, input_lag_pinned: false };
     await p.evaluate(() => toggleTermDrawer(true));
     await p.waitForFunction(() => document.getElementById("s-inputlag").checked && lagOn, null, { timeout: slow(5000) })

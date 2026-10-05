@@ -1,0 +1,3 @@
+# The terminal's details has a debug section, and closes on a click outside or Escape
+
+Open "details" from a terminal's shortcut strip and a "debug" section sits under the numbers, with the typing gate live: open or closed and why, the characters on the line, the last key, and messages held for the card with who sent them. After you type, a closed gate reads "closed, opens in 2s" and counts down. When a message is held it says it in the same words as the gate line under the terminal. The gate line and the input lag log switches live here too. The card hover and menu details have no debug section. A click anywhere outside the details closes it, a click in the terminal closes it and still focuses the terminal, and Escape closes it.

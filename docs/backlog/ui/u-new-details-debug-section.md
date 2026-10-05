@@ -1,6 +1,6 @@
 # u-new-details-debug-section. The terminal's details drawer gets a debug section
 
-Status: not started. Owned by @ui. Filed by the orchestrator 2026-10-01, from clint.
+Status: done 2026-10-04, see Design note. Owned by @ui. Filed by the orchestrator 2026-10-01, from clint.
 
 ## What clint asked
 
@@ -30,3 +30,16 @@ under every terminal. See `u-new-gate-readout-only-when-blocking.md` for what th
 
 - The gate runs in the daemon whether or not the readout is on (`internal/daemon/supervisor.go`, `gateLocked`).
   The readout only shows it. A section that reads it when opened costs nothing when closed.
+
+## Design note
+
+- The section, the countdown, the outside click and Escape, and the switches' move into the drawer were built on
+  2026-10-01 (`js/peek-debug.js`, commit e310a401). This pass adds the missing pieces: the held row reuses
+  `typingGateText(s, held)`, so a blocked gate reads in the gate line's own words ("blocked: 2 messages from @runtime
+  wait: ..."), and the headless test now also covers a click in the terminal (closes, terminal focused) and the card
+  popover having no debug section.
+- The settings dialog no longer carries the two checkboxes. It points at the drawer. The switches live only there, so
+  there is one place to look, and they read and write the same localStorage keys as before (`atrium.debug.typing`,
+  `atrium.debug.inputlag`), so the cross-window work needs nothing from this.
+- The section reads the gate only while the drawer is open (500ms poll, none in a hidden tab), so closed it costs
+  nothing.
