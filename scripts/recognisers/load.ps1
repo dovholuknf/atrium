@@ -14,8 +14,14 @@
   yours. Open each row afterwards and change the directory template, or pass -Root to rewrite the
   leading `D:/worktrees` and `D:/git` as it loads.
 
+  Recognisers are kept per room. Against a hub, which looks at every room at once, a PUT is refused with a 409
+  until you pick one: pass -Room, or set ATRIUM_ROOM. Against a single room's board it is not needed.
+
 .EXAMPLE
   ./load.ps1 -Path ./github.json
+
+.EXAMPLE
+  ./load.ps1 -Path ./github.json -Room sg4
 
 .EXAMPLE
   ./load.ps1 -Path ./github.json -Root /home/me/worktrees
@@ -27,6 +33,9 @@ param(
 
   # Where your worktrees live. Rewrites the examples' `D:/worktrees` and `D:/git` prefixes.
   [string] $Root,
+
+  # The room to write to, sent as X-Atrium-Room. A hub answers 409 without one.
+  [string] $Room = $env:ATRIUM_ROOM,
 
   # The board. Matches what every other script here defaults to.
   [string] $BoardUrl = $(if ($env:ATRIUM_BOARD_URL) { $env:ATRIUM_BOARD_URL } else { 'http://localhost:7778' })
@@ -44,13 +53,30 @@ foreach ($row in $rows) {
   }
   $body = $row | ConvertTo-Json -Depth 6 -Compress
   $url = "$($BoardUrl.TrimEnd('/'))/v1/recognisers/$([uri]::EscapeDataString($row.id))"
+  $headers = @{}
+  if ($Room) { $headers['X-Atrium-Room'] = $Room }
   try {
-    Invoke-RestMethod -Method Put -Uri $url -ContentType 'application/json' -Body $body | Out-Null
+    Invoke-RestMethod -Method Put -Uri $url -ContentType 'application/json' -Headers $headers -Body $body | Out-Null
     Write-Host "loaded $($row.id)  ->  $($row.cwd)"
   } catch {
-    # A pattern that does not compile comes back as a 400 naming the position in the expression.
-    # That is the whole reason it is checked on save rather than when somebody pastes a url.
-    Write-Error "atrium refused $($row.id): $($_.Exception.Message)"
+    # A 409 is the hub asking for a room, and a 400 is a pattern that does not compile, with the position in
+    # the expression. Both carry their own sentence in the body, which is better than the generic status text.
+    $status = if ($_.Exception.Response) { [int]$_.Exception.Response.StatusCode } else { 0 }
+    $detail = $null
+    if ($_.ErrorDetails -and $_.ErrorDetails.Message) {
+      try { $detail = $_.ErrorDetails.Message | ConvertFrom-Json } catch { $detail = $null }
+    }
+    if ($detail -and $detail.error) {
+      $msg = "$($detail.error)"
+      if ($status -eq 409 -and $detail.rooms) {
+        $msg += "`
+rooms: $($detail.rooms -join ', ')`
+retry with -Room <name> or set ATRIUM_ROOM"
+      }
+      Write-Error "atrium refused $($row.id) ($status): $msg"
+    } else {
+      Write-Error "atrium refused $($row.id): $($_.Exception.Message)"
+    }
   }
 }
 
