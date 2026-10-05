@@ -2326,6 +2326,12 @@ function setTermFont(px) {
   onTermResize();
 }
 
+// Another window of this browser read this card at another size. Only the card this window is attached to follows.
+prefLive("atrium.termfont.*", key => {
+  if (key === null || !termTask || key !== termFontKey(termTask.id)) return;
+  setTermFont(readTermFont(termTask.id));
+});
+
 // SIT THE GRID ON THE FOOTER. xterm draws whole rows, so the grid is
 // `rows * cellHeight` and rarely the exact height of `#t-screen`: the leftover
 // is up to one line, and left to itself it falls below the last row as a band
@@ -2551,6 +2557,12 @@ function phoneSetFont(px) {
   markWide();
   sizeTermHost();
 }
+
+prefLive("atrium.termzoom.*", key => {
+  if (key === null || !termTask || !term || key !== termZoomKey(termTask.id)) return;
+  const z = readPhoneZoom();
+  if (z && termPhone()) phoneSetFont(z);
+});
 
 // The font at which the grid's whole width fits the screen, or 0 if unmeasured.
 function phoneFitFont() {

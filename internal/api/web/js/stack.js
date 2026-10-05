@@ -84,6 +84,8 @@ function stackShow() {
   return new Set(["needs-input"]);
 }
 
+prefLive(STACK_SHOW_KEY, () => { paintStackShow(); paintStack(); });
+
 function setStackShow(next) {
   localStorage.setItem(STACK_SHOW_KEY, JSON.stringify([...next]));
   paintStackShow();

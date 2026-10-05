@@ -1903,6 +1903,8 @@ function boardSortMode() {
   return BOARD_SORTS[v] ? v : "activity";
 }
 
+prefLive(BOARD_SORT_KEY, () => { paintBoardSort(); repaintLists(); });
+
 function setBoardSort(v) {
   if (!BOARD_SORTS[v]) return;
   localStorage.setItem(BOARD_SORT_KEY, v);

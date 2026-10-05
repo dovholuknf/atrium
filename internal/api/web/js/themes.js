@@ -231,6 +231,11 @@ function toggleCardColors(on) {
   try { localStorage.setItem("atrium.cardColors", cardColors ? "1" : "0"); } catch (e) {}
   runRefresh();
 }
+prefLive("atrium.cardColors", () => {
+  toggleCardColors(localStorage.getItem("atrium.cardColors") === "1");
+  const box = document.getElementById("s-cardcolors");
+  if (box) box.checked = cardColors;
+});
 
 // ── rows in the terminals list ──────────────────────────
 //
@@ -258,6 +263,16 @@ function toggleTermWear(which, on) {
   try { localStorage.setItem("atrium.termWear." + which, on ? "1" : "0"); } catch (e) {}
   renderTermList();
 }
+prefLive("atrium.termWear.*", key => {
+  for (const k of Object.keys(termWearOn)) {
+    if (key !== null && key !== "atrium.termWear." + k) continue;
+    const v = termWearStored(k);
+    termWearOn[k] = k === "selected" ? v !== "0" : v === null && k === "idle" ? cardColors : v === "1";
+    const box = document.getElementById("s-termwear-" + k);
+    if (box) box.checked = termWearOn[k];
+  }
+  renderTermList();
+});
 
 // What a row in the terminals list wears: `{cls, style}`, the classes to add
 // and the style to append, both empty for a row drawn in the skin's colours.

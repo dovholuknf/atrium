@@ -563,6 +563,14 @@ const alerting = (() => {
   window.addEventListener("storage", e => {
     if (e.key && e.key.startsWith(SOUND_CARD_KEY)) { paint(); paintAudioState(); }
   });
+  // The board's own sound prefs: mute, volume, the two sounds, expiry, debounce, stuck, quiet doers. `prefs` is read
+  // once at load and by reference, so it is refilled in place rather than replaced.
+  prefLive("atrium.sound", () => {
+    for (const k of Object.keys(prefs)) delete prefs[k];
+    Object.assign(prefs, loadPrefs());
+    paint();
+    if (typeof paintSettingsPrefs === "function") paintSettingsPrefs();
+  });
 
   const save = () => {
     localStorage.setItem("atrium.sound", JSON.stringify(prefs));
