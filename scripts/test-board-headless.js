@@ -10153,6 +10153,84 @@ async function quietDoerSection(browser, base) {
   tasksMode = was;
 }
 
+// ── board-wide auto does not ring for a request it is about to approve ────
+// u-003. The hub approves a pending request a moment after the room holds it, so the board held its alert for
+// the grace. With auto on, a request that is approved inside it raises nothing (no toast, no log line, no
+// notification), and one that outlives it rings. Off, it rings at once. A JSON body reads as a sentence.
+async function autoPermSection(browser, base) {
+  const was = tasksMode;
+  tasksMode = "land";
+  const poke = () => openStreams.forEach(r => { try { r.write("event: permission\ndata: {}\n\n"); } catch (e) {} });
+  const errors = [];
+  landList = [];
+  landPerms = [];
+  gautoOn = true;
+  const ctx = await landContext(browser, false);
+  try {
+    const p = await ctx.newPage();
+    p.on("pageerror", e => errors.push(String(e)));
+    await p.goto(base, { waitUntil: "domcontentloaded" });
+    await p.waitForFunction(() => typeof alerting !== "undefined" && typeof permsToAnnounce === "function", null,
+      { timeout: slow(15000) });
+    await p.evaluate(() => { window.__atriumAutoGraceMs = 1500; globalAuto = true; });
+    await p.waitForTimeout(1500);
+    const said = title => p.evaluate(t => (window.__notes || []).some(n => n.title === t) ||
+      [...document.querySelectorAll("#toasts .toast")].some(e => e.textContent.includes(t)), title);
+    const logged = title => p.evaluate(t => !!toastLog().find(e => e.title === t), title);
+    const ask = (id, agent, command) => {
+      landPerms = landPerms.concat([{ id, task_id: "ap-card", agent, tool: "Bash", command: command || "ls",
+        requested_at: new Date().toISOString().replace("Z", "") }]);
+      poke();
+      return p.evaluate(() => runRefresh());
+    };
+    landList = [landCard("ap-card", { supervised: false })];
+    poke();
+    await p.waitForTimeout(800);
+
+    // Approved inside the grace: the hub answered, so the request is gone before anything rang.
+    await ask("ap-a", "ap one");
+    await p.waitForTimeout(500);
+    landPerms = [];
+    poke();
+    await p.evaluate(() => runRefresh());
+    await p.waitForTimeout(2200);
+    // AUTOPERM_SHOT=<file.png> writes a picture of the board and its toast log after the approved request.
+    if (process.env.AUTOPERM_SHOT) {
+      await p.evaluate(() => openToastLog());
+      await p.waitForTimeout(900);
+      await p.screenshot({ path: process.env.AUTOPERM_SHOT });
+      await p.evaluate(() => document.getElementById("toastlog").close());
+    }
+    if (await said("ap one needs permission") || await logged("ap one needs permission")) {
+      fail("auto on: a request the hub approved inside the grace still rang.");
+    }
+
+    // Not approved: it is still here when the grace ends, so it rings, and promptly.
+    await ask("ap-b", "ap two", '{"message":"{\\"verdict\\":\\"approve\\",\\"why\\":\\"fine\\"}"}');
+    await p.waitForTimeout(400);
+    if (await logged("ap two needs permission")) fail("auto on: a request rang before the grace was up.");
+    await p.waitForFunction(() => toastLog().some(e => e.title === "ap two needs permission"), null,
+      { timeout: slow(6000) }).catch(() => fail("auto on: a request nothing approved never rang."));
+    const row = await p.evaluate(() => toastLog().find(e => e.title === "ap two needs permission"));
+    if (row.body !== "Bash: verdict: approve") fail("a JSON body did not read as a sentence: " + JSON.stringify(row.body));
+    landPerms = [];
+
+    // Off: no grace at all.
+    gautoOn = false;
+    await p.evaluate(() => { globalAuto = false; });
+    await ask("ap-c", "ap three");
+    await p.waitForFunction(() => toastLog().some(e => e.title === "ap three needs permission"), null,
+      { timeout: slow(1200) }).catch(() => fail("auto off: a request was held back."));
+    landPerms = [];
+  } finally {
+    await ctx.close();
+    gautoOn = false;
+  }
+  if (errors.length) fail("the auto perm page threw: " + errors.join(" | "));
+  landList = []; landPerms = [];
+  tasksMode = was;
+}
+
 // ── the notification drawer's off switch ──────────────────────────────────
 // Backlog-2 item 79. Off holds back the toast, the desktop notification and the
 // sound, and RECORDS the alert instead: the drawer lists it and the bell's badge
@@ -22649,7 +22727,7 @@ async function main() {
       stuck: stuckSection, blockerMark: blockerMarkSection, carryLink: carryLinkSection,
       skinScope: skinScopeSection, skinHeal: skinHealSection, toastLives: toastLivesSection,
       history: historySection, contextSize: contextSizeSection, ctxLine: ctxLineSection, ctxLimitLayers: ctxLimitLayersSection, landThePlane: landThePlaneSection, peekEverywhere: peekEverywhereSection, cardRoute: cardRouteSection,
-      quietDoer: quietDoerSection, looksIdle: looksIdleSection, notifyOff: notifyOffSection,
+      quietDoer: quietDoerSection, autoPerm: autoPermSection, looksIdle: looksIdleSection, notifyOff: notifyOffSection,
       questionsClick: questionsClickSection, walk: walkSection, linkReuse: linkReuseSection,
       usageCacheReads: usageCacheReadsSection, roomsDash: roomsDashSection, phoneView: phoneViewSection, heldLine: heldLineSection, u016: u016Section, phoneHeader: phoneHeaderSection, phoneFocus: phoneFocusSection, phoneTermBar: phoneTermBarSection, phoneShare: phoneShareSection, phonePan: phonePanSection, phoneFollow: phoneFollowSection, phoneTap: phoneTapSection, phoneKeyboard: phoneKeyboardSection, phoneCompose: phoneComposeSection, mCompose: mComposeSection, mPerms: mPermsSection, mReview: mReviewSection, usagePolish: usagePolishSection, usageLimits: usageLimitsSection, usageGroups: usageGroupsSection,
       eventDriven: eventDrivenSection, idleBudget: idleBudgetSection, pollsGone: pollsGoneSection,
@@ -24570,6 +24648,7 @@ async function main() {
     // ── a click on an alert lands where the alert is about ─────────────────
     await unit("land", () => landSection(browser, base));
     await unit("quietDoer", () => quietDoerSection(browser, base));
+    await unit("autoPerm", () => autoPermSection(browser, base));
     await unit("notifyOff", () => notifyOffSection(browser, base));
     await unit("questionsClick", () => questionsClickSection(browser, base));
     await unit("walk", () => walkSection(browser, base));

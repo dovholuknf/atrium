@@ -905,7 +905,7 @@ const alerting = (() => {
       nagged[p.id] = slot;
 
       play("permission", soundForAlert(p));
-      const body = `${p.tool}: ${(p.command || "").slice(0, 120)}`;
+      const body = permLine(p);
       const who = p.agent || "an agent";
       // `quiet` when the request's own row is on screen, with its command and
       // its four buttons. A floating copy of the first 120 characters is not
@@ -1238,6 +1238,54 @@ function quietDoer(kind, item) {
   if (alerting.get().quietDoers === false) return false;
   return isSubagent(item) && !(item.sound && item.sound !== "none");
 }
+
+// THE PERMISSIONS THE BOARD MAY SAY SOMETHING ABOUT, while board-wide auto is on.
+//
+// The hub enforces that switch (internal/link/autoapprove.go) by answering a request after it is already pending in
+// the room, so the board sees every request for the moment between the two. Ringing in that moment is a bell for
+// something nobody is waiting on. So while the switch is on a request is held back until it has been pending for a
+// grace, and is let through if it is still there: the hub approves within a moment, and one it did not approve is one
+// a person has to answer. Held ones raise no ring, toast, growl or desktop notification and leave no log line, and
+// the count and the card keep showing them, since they are real.
+//
+// Measured from when THIS board first saw the request, not its `requested_at`, which is the room's clock.
+const permSeen = new Map();
+function autoGraceMs() { return (typeof window !== "undefined" && window.__atriumAutoGraceMs) || 3000; }
+function permsToAnnounce(perms) {
+  const now = Date.now();
+  const live = new Set(perms.map(p => p.id));
+  permSeen.forEach((_, id) => { if (!live.has(id)) permSeen.delete(id); });
+  perms.forEach(p => { if (!permSeen.has(p.id)) permSeen.set(p.id, now); });
+  if (typeof globalAuto === "undefined" || !globalAuto) return perms;
+  const grace = autoGraceMs();
+  const held = perms.filter(p => now - permSeen.get(p.id) < grace);
+  if (held.length) {
+    // Look again when the oldest held one comes due, so one that is still here rings then and not a poll later.
+    const left = Math.min(...held.map(p => grace - (now - permSeen.get(p.id))));
+    setTimeout(() => { if (typeof permsSoon === "function") permsSoon(); }, left + 50);
+  }
+  return perms.filter(p => !held.includes(p));
+}
+
+// What a request says it wants, for a line a person reads. A command that is a JSON payload (a subagent's handback
+// carries `{"message":"{\"verdict\":...`) shows its message, or its first field as `name: value`, and not escaped JSON
+// cut mid-string. Anything else is the command as it came.
+function permSays(command) {
+  let s = String(command || "").trim();
+  for (let depth = 0; depth < 3 && /^[{[]/.test(s); depth++) {
+    let v;
+    try { v = JSON.parse(s); } catch (e) { break; }
+    if (v && typeof v === "object" && !Array.isArray(v)) {
+      if (typeof v.message === "string") { s = v.message.trim(); continue; }
+      const k = Object.keys(v).find(x => v[x] !== null && typeof v[x] !== "object");
+      if (k === undefined) break;
+      s = `${k}: ${v[k]}`;
+    }
+    break;
+  }
+  return s;
+}
+function permLine(p) { return `${p.tool}: ${permSays(p.command).slice(0, 120)}`; }
 
 // A card's own tone, for an alert that is about exactly one card.
 //
