@@ -30,6 +30,8 @@ type claimRoom struct {
 	mu   sync.Mutex
 	rows []string // one entry per row made, the key
 	runs int
+	// worktrees is how many pr-worktree calls reached this room.
+	worktrees int
 }
 
 func (c *claimRoom) made() []string {
@@ -77,6 +79,11 @@ func (c *claimRoom) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		c.mu.Unlock()
 		w.WriteHeader(http.StatusCreated)
 		_, _ = w.Write([]byte(`{"created":true}`))
+	case strings.HasSuffix(r.URL.Path, "/pr-worktree") && r.Method == http.MethodPost:
+		c.mu.Lock()
+		c.worktrees++
+		c.mu.Unlock()
+		_, _ = w.Write([]byte(`{"path":"/wt/` + c.name + `","existed":false}`))
 	default:
 		http.NotFound(w, r)
 	}
