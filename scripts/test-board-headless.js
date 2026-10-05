@@ -1906,13 +1906,22 @@ async function restartGateSection(browser, base) {
     const later = await countdownText();
     if (!/in [34]s/.test(later)) fail("the countdown did not count down: " + first + " then " + later);
 
-    // A click on it pauses, and is not reported as input.
-    const inputBefore = gateCalls.input;
+    // ONLY THE PAUSE BUTTON STOPS IT. Typing, clicking elsewhere, the banner's own
+    // text and scrolling leave it running, and none is reported as input.
     await gp.waitForTimeout(3100);
-    await gp.click(".toast.hubgate");
+    const inputBefore = gateCalls.input;
+    await gp.mouse.click(700, 450);
+    await gp.keyboard.press("a");
+    await gp.mouse.wheel(0, 100);
+    await gp.click(".toast.hubgate .what");
+    await gp.click(".toast.hubgate b");
+    await gp.waitForTimeout(300);
+    if (gateCalls.pause !== 0) fail("a click on the banner's text paused the countdown.");
+    if (gateCalls.input !== inputBefore) fail("input with the countdown up was reported to the hub.");
+    if (!(await gp.$(".toast.hubgate"))) fail("typing or clicking elsewhere took the countdown down.");
+    await gp.click(".toast.hubgate .hubgate-act");
     await gp.waitForTimeout(300);
     if (gateCalls.pause !== 1) fail("clicking the countdown called pause " + gateCalls.pause + " times.");
-    if (gateCalls.input !== inputBefore) fail("clicking the countdown was also reported as input.");
     if (await gp.$(".toast.hubgate")) fail("the countdown toast stayed up after it was clicked.");
 
     // The hub says paused: a sticky toast with a resume button, which survives
@@ -2121,13 +2130,6 @@ async function restartStaysSection(browser, base) {
       .catch(() => fail("restarting drew no cover."));
     if (await gaps()) fail("between the countdown and the cover a frame showed neither: " + (await seen()));
 
-    // The old hub's stream blips and comes back before the old hub goes. Same
-    // hub, so the cover stays.
-    drop();
-    await live().catch(() => fail("the stream did not come back after a blip."));
-    await gp.waitForTimeout(1000);
-    if (!(await coverUp())) fail("the cover came down when the OLD hub's stream reopened.");
-
     // Nothing else on the board takes it down: a view switch, the terminals
     // pane redrawing, a refresh, every dialog being closed.
     await gp.evaluate(async () => {
@@ -2262,16 +2264,13 @@ async function coverPollSection(browser, base) {
     await gp.waitForTimeout(500);
     streamsWere = openStreams.filter(r => !r.destroyed).length;
 
-    // The reopen meets the OLD hub, which has not gone yet. No later stream event comes, and the cover
-    // clears when the new hub shows itself anyway.
+    // The stream drops and a hub answers, the same process or not: that is live data, and the cover
+    // clears with no stream event to ask again.
     await cover();
     gateAsked = 0;
     await blip();
     await asked(1);
-    await gp.waitForTimeout(1200);
-    if (!(await coverUp())) fail("the cover came down when the OLD hub answered the check.");
-    gateBoot = "boot-b";
-    await cleared("the cover stayed up after the new hub named itself, with no stream event to ask again.");
+    await cleared("the cover stayed up after the hub answered following a drop.");
 
     // A check already in flight swallows the new hub's stream open, and its answer is the old hub's.
     gateBoot = "boot-a";
@@ -2311,6 +2310,17 @@ async function coverPollSection(browser, base) {
     await asked(1);
     gateBoot = "boot-e";
     await cleared("the cover stayed up in a browser with no AbortSignal.timeout.");
+    // AN ABANDONED GATE takes its cover down. The hub said restarting and went on answering from the same
+    // process (the script was killed): no "something is wrong" while it answers, and the cover clears.
+    gateBoot = "boot-f";
+    gateRestartMode = "";
+    await cover();
+    await gp.waitForTimeout(12000);
+    if (!(await coverUp())) fail("an abandoned gate's cover came down before the window ran out.");
+    if (await gp.evaluate(() => document.getElementById("hubrestart").classList.contains("stalled"))) {
+      fail("the cover said something was wrong while the hub kept answering.");
+    }
+    await cleared("an abandoned gate left its cover up.", 15000);
     if (errors.length) fail("the cover poll page threw: " + errors.join(" | "));
     if (!bad) console.log("coverPoll ok");
   } finally {

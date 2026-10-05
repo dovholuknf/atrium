@@ -1,0 +1,1 @@
+Only the countdown's pause button stops a hub restart: typing, clicking or switching terminals and clicking the banner's text no longer cancel it. Input still counts before a countdown starts, to pick when it begins. See f-hub-restart-pause-only.

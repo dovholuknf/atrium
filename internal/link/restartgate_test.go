@@ -210,23 +210,20 @@ func TestTypingHoldsTheCountdownBack(t *testing.T) {
 	}
 }
 
-// Typing during the countdown takes it down and waits for quiet again, without
-// pausing anything.
-func TestTypingDuringTheCountdownStartsTheWaitAgain(t *testing.T) {
+// Typing during the countdown does nothing to it: only a pause stops it.
+func TestTypingDuringTheCountdownLeavesItRunning(t *testing.T) {
 	gt := newGateUnderTest(1)
 	// Stopped, so the countdown cannot finish before the keystroke lands.
 	clock := stopClock(gt.g)
 	ch := gt.ask(context.Background(), 400*time.Millisecond, 50*time.Millisecond, time.Minute)
 	gt.waitSaid(t, "countdown")
-	// A keystroke after the countdown started, not at the same instant.
 	clock.advance(time.Millisecond)
 	gt.g.input()
-	gt.waitSaid(t, "cancelled")
 	clock.start()
 	if a := got(t, ch); a.said != "go" {
-		t.Fatalf("after the typing stopped the gate said %q", a.said)
+		t.Fatalf("after the typing the gate said %q", a.said)
 	}
-	if s := strings.Join(gt.said(), ","); s != "countdown,cancelled,countdown,restarting" {
+	if s := strings.Join(gt.said(), ","); s != "countdown,restarting" {
 		t.Errorf("the boards were told %s", s)
 	}
 }

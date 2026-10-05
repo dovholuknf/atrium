@@ -1,0 +1,1 @@
+The restarting cover comes down as soon as the board has live data from a hub, whichever process it is. An abandoned gate's cover clears after 20s, and "something is wrong" shows only when the hub has stopped answering. See u-restart-cover-stuck.

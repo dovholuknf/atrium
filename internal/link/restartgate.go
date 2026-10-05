@@ -405,7 +405,7 @@ func (g *restartGate) ask(ctx context.Context, countdown, idle, wait time.Durati
 		for {
 			g.mu.Lock()
 			left := g.until.Sub(g.now())
-			stop := g.paused || g.until.IsZero() || g.lastInput.After(start)
+			stop := g.paused || g.until.IsZero()
 			g.mu.Unlock()
 			if stop || left <= 0 {
 				break
@@ -423,12 +423,8 @@ func (g *restartGate) ask(ctx context.Context, countdown, idle, wait time.Durati
 			shown = false
 			continue
 		}
-		// SOMEBODY STARTED TYPING DURING THE COUNTDOWN. Back to waiting for
-		// quiet, without a pause: nobody asked for one.
-		if last.After(start) {
-			takeDown()
-			continue
-		}
+		// INPUT DURING THE COUNTDOWN IS NOT A PAUSE AND NOT A CANCEL. Only the
+		// pause button stops it, so typing runs it out to `go`.
 		if ctx.Err() != nil {
 			takeDown()
 			return "", ctx.Err()

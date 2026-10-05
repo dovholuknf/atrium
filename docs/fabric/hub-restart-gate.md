@@ -26,8 +26,9 @@ A window reports at most once every three seconds. The hub treats the latest rep
 input. Idle means no report for the script's idle window, ten seconds by default. The throttle is well under that
 window, so a steady typist never looks idle between two reports.
 
-Clicks on the gate's own toasts and on the restarting cover are not input. A click on the countdown is a pause,
-and reporting it as input as well would take the countdown down under the pointer.
+Input counts only BEFORE a countdown starts: it is how the hub chooses when to begin. Once the countdown shows,
+the board stops reporting, and the hub ignores what arrives anyway. Clicks on the gate's own toasts and on the
+restarting cover are not input.
 
 ## Who holds the countdown
 
@@ -41,9 +42,9 @@ The hub holds it. The script only learns the answer, and a board only shows what
 3. Otherwise the hub waits until the boards have been idle for `idle` seconds.
 4. The hub sends a `hub-restart` event, state `countdown`, to every board stream. A board scoped to one room
    hears it too: hub events skip the room filter.
-5. Input during the countdown takes the countdown down (`cancelled`) and the hub waits for idle again. That is not
-   a pause, because nobody asked for one.
-6. A click on the countdown toast sends `POST /_hub/restart/pause`. The hub sends `paused` to every board. Each
+5. Input during the countdown does nothing to it. Typing, clicking a terminal, switching terminals and scrolling
+   leave it running. `cancelled` is sent only when the ask ends without a restart.
+6. A click on the countdown's pause button (and only the button, not the rest of the banner) sends `POST /_hub/restart/pause`. The hub sends `paused` to every board. Each
    board then shows a "restart on hold" toast with a resume button.
 7. At the end of an unpaused countdown, the hub sends `restarting` to every board and answers the script `go`.
 
@@ -152,8 +153,12 @@ A stop nobody announced is not this cover's. The board covers that with `atrium 
 reload while atrium is down gets the service worker's `down.html`. Neither shows while the countdown or this cover
 is up. See `js/down.js`.
 
-If the stream is still live 90 seconds after `restarting` and the hub still gives the old name, the old hub never
-went. The cover comes down and a toast says the hub did not restart.
+THE COVER COMES DOWN THE MOMENT THE BOARD HAS LIVE DATA FROM A HUB, whichever process it is: once the stream has
+dropped, any hub that answers ends the wait. "Something is wrong" shows only when the hub has said nothing for ten
+seconds, not because the cover is old.
+
+If the hub is still answering 20 seconds after `restarting` and the stream never dropped, the gate was abandoned
+(its script was killed). The cover comes down and a toast says the hub did not restart.
 
 ## Loopback and auth
 

@@ -19,8 +19,9 @@
 // idle window, so a steady typist never looks idle between reports.
 const HUB_INPUT_EVERY = 3000;
 // How long the restarting cover waits for the stream to drop before deciding the
-// old hub never went.
-const HUB_RESTART_GIVEUP = 90000;
+// gate was abandoned: the hub said `restarting` and then kept answering, so no
+// restart is behind it.
+const HUB_RESTART_GIVEUP = 20000;
 
 let hubInputAt = 0;
 let hubCountdown = null;
@@ -37,6 +38,9 @@ let hubDropped = false;
 // The first refresh pass that has to finish before the cover comes down. Zero
 // until the new hub has answered.
 let hubSettleFrom = 0;
+// When the hub last answered while the cover was up. "Something is wrong" is
+// the hub saying nothing for a while, not the cover merely being old.
+let hubHeardAt = 0;
 
 // The gate's own toasts and cover are not input. A click on the countdown is a
 // pause, and reporting it as input as well would take the countdown down under
@@ -49,6 +53,8 @@ function hubInputCounts(e) {
 
 function hubReportInput(e) {
   if (!hubIsHub || !hubInputCounts(e)) return;
+  // Once the countdown shows, input is not news: only its pause button stops it.
+  if (hubCountdown && hubCountdown.isConnected) return;
   const now = Date.now();
   if (now - hubInputAt < HUB_INPUT_EVERY) return;
   hubInputAt = now;
@@ -75,7 +81,8 @@ function hubToast(title, body, button, onButton, held) {
   el.querySelector(".what").textContent = body;
   el.querySelector(".hubgate-act").textContent = button;
   if (held) el.querySelector(".hg-icon > i").textContent = "❚❚";
-  el.addEventListener("click", onButton);
+  // Only the button acts: a click on the text does nothing.
+  el.querySelector(".hubgate-act").addEventListener("click", onButton);
   host.appendChild(el);
   if (typeof raiseToasts === "function") raiseToasts();
   return el;
@@ -110,11 +117,10 @@ function hubShowCountdown(seconds) {
   const end = Date.now() + seconds * 1000;
   const left = () => Math.max(0, Math.ceil((end - Date.now()) / 1000));
   const say = () => "atrium restarts in " + left() + "s";
-  // A click anywhere on it pauses, and so does the button. Typing or clicking
-  // anywhere else takes it down until the board is idle again, which is the
-  // "keep working" half.
+  // Only the pause button stops it. Typing, clicking elsewhere and switching
+  // terminals leave it running.
   hubCountdown = hubToast(say(),
-    "an update is ready. keep working and it waits, or pause it until you are done.",
+    "an update is ready. press pause to hold it until you are done.",
     "pause", hubPause);
   if (!hubCountdown) return;
   const title = hubCountdown.querySelector("b");
@@ -133,7 +139,7 @@ function hubShowPaused() {
   hubDropPaused();
   hubPausedToast = hubToast("restart on hold",
     "atrium keeps running as it is until you press resume.", "resume",
-    e => { if (e.target.classList.contains("hubgate-act")) hubResume(); }, true);
+    hubResume, true);
 }
 
 // BOTH TOASTS STAY UNTIL THE HUB SAYS WHAT COMES NEXT. The countdown is the
@@ -180,6 +186,7 @@ function hubShowRestarting(at, from) {
   hubRestartFrom = at ? (from || "") : hubBoot;
   hubDropped = !!at;
   hubSettleFrom = 0;
+  hubHeardAt = Date.now();
   try {
     sessionStorage.setItem(HUB_RESTART_KEY, JSON.stringify({ at: hubRestarting, from: hubRestartFrom }));
   } catch (e) {}
@@ -188,7 +195,7 @@ function hubShowRestarting(at, from) {
   const reload = document.getElementById("hubrestart-reload");
   const paint = () => {
     const ms = Date.now() - hubRestarting;
-    const stalled = ms >= HUB_RESTART_WRONG;
+    const stalled = Date.now() - hubHeardAt >= HUB_RESTART_WRONG;
     line.textContent = !stalled
       ? "back in a few seconds. your agents keep running, and this page picks up where you left off."
       : "something is wrong. atrium has not come back. your agents keep running, and this page keeps trying.";
@@ -204,22 +211,6 @@ function hubShowRestarting(at, from) {
   clearInterval(hubCoverPoll);
   hubCoverPoll = setInterval(hubCheckBack, HUB_COVER_POLL);
   if (!dlg.open) dlg.showModal();
-  const since = hubRestarting;
-  setTimeout(() => {
-    if (hubRestarting !== since || hubSettleFrom) return;
-    // Still live and still the same hub means the old hub never went.
-    const conn = document.getElementById("conn");
-    if (!conn || !conn.classList.contains("live")) return;
-    plainFetch("/_hub/restart").then(r => r.ok ? r.json() : null).then(st => {
-      if (hubRestarting !== since || hubSettleFrom || !st) return;
-      if (hubRestartFrom && st.boot && st.boot !== hubRestartFrom) { hubSettle(); return; }
-      hubClearRestarting();
-      if (typeof toast === "function") {
-        toast("atrium did not restart",
-          "the update was called for, but atrium never went down. nothing changed.");
-      }
-    }).catch(() => {});
-  }, Math.max(0, since + HUB_RESTART_GIVEUP - Date.now()));
 }
 
 function hubClearRestarting() {
@@ -270,9 +261,24 @@ function hubCheckBack() {
     hubChecking = false;
     if (!hubRestarting || hubSettleFrom || !st) return;
     if (st.boot) hubBoot = st.boot;
-    const back = st.plain || (hubRestartFrom ? !!st.boot && st.boot !== hubRestartFrom : hubDropped);
-    if (back) hubSettle();
+    hubHeardAt = Date.now();
+    // LIVE DATA FROM A HUB IS THE END OF THE WAIT, whichever process it is: the
+    // stream dropped and a hub answers, or the answer names a different one.
+    const back = st.plain || hubDropped || (!!st.boot && !!hubRestartFrom && st.boot !== hubRestartFrom);
+    if (back) { hubSettle(); return; }
+    // Answering, never dropped, and the window is up: nothing is restarting.
+    if (Date.now() - hubRestarting >= HUB_RESTART_GIVEUP) hubAbandoned();
   });
+}
+
+// The hub said `restarting` and never went: the gate's script was killed, or the
+// restart never came. The cover comes down rather than counting up.
+function hubAbandoned() {
+  hubClearRestarting();
+  if (typeof toast === "function") {
+    toast("atrium did not restart",
+      "the update was called for, but atrium never went down. nothing changed.");
+  }
 }
 
 // THE NEW HUB IS UP. The cover stays until the board under it has caught up:
