@@ -234,7 +234,7 @@ function growlFull(g) {
     ? `<code class="gr-cmd">${esc(growlFirstLine(g.body))}</code>`
     : asks ? `<div class="gr-body">${growlBodyHTML(split.text)}</div>`
       : `<div class="gr-line">${esc(growlFirstLine(g.body))}</div>`;
-  const offered = asks ? replies.of({ ask: g.body, fixed: g.fixed }) : [];
+  const offered = asks ? replies.of({ replies: g.replies, ask: g.body, fixed: g.fixed }) : [];
   const choices = offered.length
     ? replies.buttons(offered, { cls: "gr-choices", disabled: growlChoiceSent.get(g.id) === g.body }).outerHTML : "";
   const big = growlCompose === g.id;

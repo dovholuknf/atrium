@@ -56,7 +56,7 @@
       ? '<code class="gm-cmd">' + U.esc(first(g.body)) + "</code>"
       : asks ? '<div class="gm-body">' + bodyHTML(split.text) + "</div>"
         : '<div class="gm-line">' + U.esc(first(g.body)) + "</div>";
-    const offered = asks ? replies.of({ ask: g.body, fixed: g.fixed }) : [];
+    const offered = asks ? replies.of({ replies: g.replies, ask: g.body, fixed: g.fixed }) : [];
     const choices = offered.length
       ? replies.buttons(offered, { cls: "gm-choices", narrow: true, disabled: choiceSent.get(g.id) === g.body }).outerHTML : "";
     const big = compose === g.id;

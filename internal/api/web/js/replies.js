@@ -28,19 +28,24 @@ const replies = (function () {
     return { text: (s.slice(0, m.index) + s.slice(m.index + m[0].length)).trim(), choices };
   }
 
-  // The buttons for a card or a growler row. Its `ask` text may carry a `{choices}` block, which is the agent's own
-  // options, and those win. Else `fixed` says the board should show the fixed four. `stop` ends any list, because
-  // stopping answers every question.
+  // The buttons for a card or a growler row, as the room read them (the card view and the notify payload): `replies`
+  // is the list to offer and `fixed` says to show the fixed four. The room has already chosen between the agent's
+  // `{choices}` and what the hook parsed, and the renderer never chooses again. A row that carries neither but has an
+  // `ask` text still gets that text's own `{choices}` block, so a board talking to a room that predates the fields
+  // keeps what the growler did before. `stop` ends any list, because stopping answers every question.
   function of(card) {
     if (!card) return [];
-    const list = typeof card.ask === "string" ? split(card.ask).choices : [];
+    let list = Array.isArray(card.replies) ? card.replies.filter(r => typeof r === "string" && r.trim()) : [];
+    if (!list.length && typeof card.ask === "string") list = split(card.ask).choices;
     if (list.length) return list.includes(STOP) ? list : list.concat(STOP);
     return card.fixed ? FIXED.slice() : [];
   }
 
-  // What the card is waiting on is an open question: no buttons, and the reply box is the answer.
+  // An open question (R5): the room said `fixed: false` and offered nothing, so there are no buttons and the reply box
+  // is the answer. A card that does not say (a room that predates the fields) is not taken for one, or every ready
+  // card would raise the keyboard when it opened.
   function wantsBox(card) {
-    return !!card && of(card).length === 0;
+    return !!card && card.fixed === false && of(card).length === 0;
   }
 
   // The words that fit. Narrow: the first clause, then a word boundary and `...`. Wide: only the cut.

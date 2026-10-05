@@ -21632,7 +21632,7 @@ async function main() {
       cacheChip: cacheChipSection, cacheLine: cacheLineSection, roomsMachine: roomsMachineSection,
       u001Audit: u001AuditSection,
       pasteStart: pasteStartSection, pasteDone: pasteDoneSection, pasteOldRoom: pasteOldRoomSection, pasteClose: pasteCloseSection,
-      growlQuestionShots: growlQuestionShotsSection, growlQuestionBody: growlQuestionBodySection, growlReplyGrow: growlReplyGrowSection, growlChoices: growlChoicesSection, replies: repliesSection, repliesShots: repliesShotsSection, growlStable: growlStableSection, growlOnIt: growlOnItSection, mGrowlQuestion: mGrowlQuestionSection,
+      growlQuestionShots: growlQuestionShotsSection, growlQuestionBody: growlQuestionBodySection, growlReplyGrow: growlReplyGrowSection, growlChoices: growlChoicesSection, replies: repliesSection, repliesOf: repliesOfSection, repliesShots: repliesShotsSection, growlStable: growlStableSection, growlOnIt: growlOnItSection, mGrowlQuestion: mGrowlQuestionSection,
       bootClean: bootCleanSection, mReload: mReloadSection, mReconnect: mReconnectSection, mActivityRead: mActivityReadSection, mReadRetry: mReadRetrySection, mWorking: mWorkingSection, mOwnMessages: mOwnMessagesSection, mBubbles: mBubblesSection, mRecapSheet: mRecapSheetSection,
       mHomeOrder: mHomeOrderSection, cardUrlWayOut: cardUrlWayOutSection, phoneBoot: phoneBootSection, sayEnter: sayEnterSection, sendArrow: sendArrowSection, mTables: mTablesSection, mMarkdown: mMarkdownSection, mHostile: mHostileSection, mPictures: mPicturesSection, soundPhone: soundPhoneSection, phoneBell: phoneBellSection, mBell: mBellSection,
       mHomeOrder: mHomeOrderSection, cardUrlWayOut: cardUrlWayOutSection, phoneBoot: phoneBootSection, sayEnter: sayEnterSection, sendArrow: sendArrowSection, mTables: mTablesSection, mMarkdown: mMarkdownSection, mHostile: mHostileSection, mPictures: mPicturesSection, phoneRedirect: phoneRedirectSection,
@@ -23641,6 +23641,7 @@ async function main() {
     await unit("growlReplyGrow", () => growlReplyGrowSection(browser, base));
     await unit("growlChoices", () => growlChoicesSection(browser, base));
     await unit("replies", () => repliesSection(browser, base));
+    await unit("repliesOf", () => repliesOfSection(browser, base));
     await unit("growlStable", () => growlStableSection(browser, base));
     await unit("growlOnIt", () => growlOnItSection(browser, base));
     await unit("mGrowlQuestion", () => mGrowlQuestionSection(browser));
@@ -25589,6 +25590,73 @@ async function repliesShotsSection(browser, base) {
     });
   }
   if (!bad) console.log("repliesShots ok");
+}
+
+// ── reply suggestions, RS4: `replies.of` reads `replies` and `fixed` off the card view ──────────────────────────────
+// Mocked cards, one per case the room will send once RS3 lands. /m compose draws them, and the growlers read the same
+// two fields off their row.
+async function repliesOfSection(browser, base) {
+  const cases = [
+    ["options", { replies: ["build the worktrees", "review the diffs first"], fixed: false }, ["build the worktrees", "review the diffs first", "stop"], false],
+    ["fixed", { replies: [], fixed: true }, ["yes", "go ahead", "no", "stop"], false],
+    ["open", { replies: [], fixed: false }, [], true],
+    ["silent", {}, [], false],
+    ["beats the ask", { replies: ["parsed one", "parsed two"], fixed: false, ask: "x\n{choices}\nasked one\nasked two\n{/choices}" }, ["parsed one", "parsed two", "stop"], false],
+    ["stop once", { replies: ["go on", "stop"], fixed: false }, ["go on", "stop"], false]
+  ];
+  const st = mServer({});
+  st.tasks = cases.map(([name, f], i) => mCard("r" + i, Object.assign({ display_title: name, status: "needs-input", waiting_since: mIso(M_MIN) }, f)));
+  await st.open();
+  try {
+    const { ctx, p, errors } = await mPage(browser, st, { width: 390, height: 844 }, "");
+    const msgs = [];
+    await ctx.route("**/v1/tasks/*/message", route => { msgs.push(JSON.parse(route.request().postData() || "{}").text); return route.fulfill({ status: 200, contentType: "application/json", body: "{}" }); });
+    await p.waitForSelector("#m-skel[hidden]", { state: "attached", timeout: slow(8000) });
+    await p.tap("#m-seg-all");
+    await p.waitForSelector("#m-list .row", { timeout: slow(10000) });
+    await p.tap('#m-list .row[data-id="r0"]');
+    await p.waitForSelector("#m-compose textarea", { timeout: slow(5000) });
+    for (let i = 0; i < cases.length; i++) {
+      const [name, , want, box] = cases[i], tag = "repliesOf " + name + ": ";
+      await p.evaluate(i => mCompose.mount(document.getElementById("m-compose"), "r" + i), i);
+      await p.waitForTimeout(100);
+      const got = await p.$$eval("#m-compose .rq-btn", b => b.map(x => x.dataset.choice));
+      if (got.join("|") !== want.join("|")) fail(tag + "drew " + JSON.stringify(got) + ", wanted " + JSON.stringify(want));
+      const focus = await p.evaluate(() => document.activeElement === document.querySelector("#m-compose .mc-box"));
+      if (focus !== box) fail(tag + "the box " + (focus ? "took" : "did not take") + " the focus.");
+      if (box && got.length) fail(tag + "an open question drew buttons.");
+    }
+    // a press posts the option's words and leaves what was typed in the box
+    await p.evaluate(() => mCompose.mount(document.getElementById("m-compose"), "r0"));
+    await p.fill("#m-compose .mc-box", "half a thought");
+    await p.tap('#m-compose .rq-btn[data-choice="review the diffs first"]');
+    await p.waitForTimeout(300);
+    if (msgs.join("|") !== "review the diffs first") fail("repliesOf: a press posted " + JSON.stringify(msgs));
+    if ((await p.$eval("#m-compose .mc-box", t => t.value)) !== "half a thought") fail("repliesOf: a press ate the draft.");
+    // the growlers read the same fields off their row
+    st.send("growls", { growls: [GR("c", "question", 1, { body: "Which?", replies: ["one way", "another"], fixed: false })], perm_after_seconds: 120 });
+    await p.waitForSelector("#m-growl .gm-full .rq-btn", { timeout: slow(4000) });
+    const g = await p.$$eval("#m-growl .rq-btn", b => b.map(x => x.dataset.choice));
+    if (g.join("|") !== "one way|another|stop") fail("repliesOf: /m's growler drew " + JSON.stringify(g));
+    st.send("growls", { growls: [GR("c", "question", 1, { body: "Which?", replies: [], fixed: true })], perm_after_seconds: 120 });
+    await p.waitForFunction(() => document.querySelectorAll("#m-growl .rq-btn").length === 4, null, { timeout: slow(4000) })
+      .catch(() => fail("repliesOf: /m's growler did not draw the fixed four."));
+    if (errors.length) fail("repliesOf: page errors: " + errors.join(" | "));
+    await ctx.close();
+  } finally { await st.close(); }
+  for (const phone of [false, true]) {
+    const tag = "repliesOf board " + (phone ? "phone" : "desktop") + ": ";
+    for (const [name, f, want] of [["options", { replies: ["one way", "another"], fixed: false }, "one way|another|stop"],
+      ["fixed", { replies: [], fixed: true }, "yes|go ahead|no|stop"], ["open", { replies: [], fixed: false }, ""]]) {
+      const h = await growlQuestionFace(browser, base, phone, [GR("c", "question", 1, Object.assign({ body: "Which?" }, f))]);
+      try {
+        const got = await h.p.$$eval(h.root + " .rq-btn", b => b.map(x => x.dataset.choice));
+        if (got.join("|") !== want) fail(tag + name + " drew " + JSON.stringify(got));
+        if (h.errors.length) fail(tag + "page errors: " + h.errors.join(" | "));
+      } finally { await h.close(); }
+    }
+  }
+  if (!bad) console.log("repliesOf ok");
 }
 
 // The face is not rebuilt for news that is not about it. A rebuilt node drops its `:hover` and whatever is typed in it,

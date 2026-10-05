@@ -207,7 +207,7 @@
     }
     row.append(ta, send);
     // Quick replies, one row above the box, drawn by js/replies.js from what the card says. Nothing is drawn for a card
-    // that offers none.
+    // that offers none, and an open question (no buttons) puts the caret in the box.
     const quick = el("div", "mc-quick-host");
     root.append(quick, files, note, row);
     host.replaceChildren(root);
@@ -422,7 +422,7 @@
     });
     quick.addEventListener("pointerdown", e => e.preventDefault());
     const cardNow = () => (opts.card ? guard(opts.card) : cardOf(cardId));
-    let shown = "";
+    let shown = "", focused = false;
     const drawQuick = () => {
       const c = cardNow();
       const list = window.replies ? window.replies.of(c) : [];
@@ -430,6 +430,11 @@
       if (key !== shown) {
         shown = key;
         quick.replaceChildren(...(list.length ? [window.replies.buttons(list, { narrow: true, cls: "mc-quick" })] : []));
+      }
+      // An open question has no buttons, so the box takes the focus, once: the only answer is words.
+      if (!focused && c && c.status === "needs-input" && window.replies && window.replies.wantsBox(c) && !opts.compact) {
+        focused = true;
+        ta.focus({ preventScroll: true });
       }
     };
     drawQuick();
