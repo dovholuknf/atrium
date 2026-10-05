@@ -1,0 +1,5 @@
+# Terminal debug switches are per card, and typing no longer lags with many terminals open
+
+The two switches under DEBUG in a terminal's details ("show the typing gate line" and "log terminal input lag") now apply only to the card they were turned on for. Opening another terminal shows that terminal's own settings. The hub and the room keep logging lag for the whole machine while any card has the switch on. ATRIUM_DEBUG_INPUTLAG is still a note in the drawer, now worded so it reads as covering the whole machine.
+
+Typing in a terminal could stall for 100–150ms every few seconds once more than a few terminals were open ("requestAnimationFrame handler took 147ms" in the console). A terminal kept open in the background that had given its WebGL context back was redrawing every row of its hidden screen for each line its agent printed, and every character of each redraw forced the browser to recalculate styles. Hidden terminals now hold that redraw until they are shown again. With eight terminals open, the worst animation frame went from 22ms to 1ms and the page's CPU from 55% to 10%.

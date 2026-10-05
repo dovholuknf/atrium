@@ -355,6 +355,25 @@ async function mLag() {
   if (argv.includes("--lag-dom")) await ctx.addInitScript(() => { Object.defineProperty(window, "WebglAddon", { get: () => undefined, set() {} }); });
   await openBoard(page, "terms"); await attachN(page, NTERMS);
   await page.waitForTimeout(2000);
+  // xterm's viewport refresh, the frame callback that forces the layout, timed on the shown terminal and on the kept
+  // hidden ones apart. A private method of the vendored xterm 5.5, read here only to measure.
+  await page.evaluate(() => {
+    window.__vp = { shown: { n: 0, ms: 0, max: 0 }, hidden: { n: 0, ms: 0, max: 0 } };
+    const vp = term && term._core && term._core.viewport;
+    if (!vp) return;
+    const P = Object.getPrototypeOf(vp), real = P._innerRefresh;
+    P._innerRefresh = function () {
+      const t0 = performance.now(); const r = real.apply(this, arguments); const d = performance.now() - t0;
+      const k = this._viewportElement && this._viewportElement.offsetParent ? "shown" : "hidden";
+      const o = window.__vp[k]; o.n++; o.ms += d; o.max = Math.max(o.max, d); return r;
+    };
+  });
+  // --lag-probe: who asks the selection to redraw, by stack, since a DOM renderer redraws every row for it even paused.
+  if (argv.includes("--lag-probe")) await page.evaluate(() => {
+    window.__selwho = {}; const ss = term._core._selectionService, P = Object.getPrototypeOf(ss), real = P.refresh;
+    P.refresh = function () { const k = String(new Error().stack).split("\n").slice(2, 6).map(l => l.trim().replace(/https?:\/\/[^/]+/, "")).join(" < ");
+      window.__selwho[k] = (window.__selwho[k] || 0) + 1; return real.apply(this, arguments); };
+  });
   const cs = await page.context().newCDPSession(page);
   const events = [];
   cs.on("Tracing.dataCollected", e => { for (const x of e.value) events.push(x); });
@@ -385,7 +404,7 @@ async function mLag() {
     e.args.beginData.stackTrace && e.args.beginData.stackTrace.length);
   const who = {};
   for (const e of forced) {
-    const f = e.args.beginData.stackTrace.slice(0, 2).map(f => (f.functionName || "(anon)") + "@" + String(f.url || "").split("/").pop() + ":" + f.lineNumber + ":" + f.columnNumber).join(" < ");
+    const f = e.args.beginData.stackTrace.slice(0, +opt("lag-depth", 2)).map(f => (f.functionName || "(anon)") + "@" + String(f.url || "").split("/").pop() + ":" + f.lineNumber + ":" + f.columnNumber).join(" < ");
     const k = (inRaf(e) ? "rAF " : "task ") + e.name + " " + f;
     who[k] = who[k] || { n: 0, ms: 0 }; who[k].n++; who[k].ms += ms(e);
   }
@@ -399,6 +418,11 @@ async function mLag() {
   M["lag.forced_layouts"] = forced.length;
   M["lag.layout_ms_per_s"] = r1(on.filter(e => e.name === "Layout").reduce((t, e) => t + ms(e), 0) / secs);
   M["lag.gpu_cpu_pct"] = r1(cpu.gpu); M["lag.renderer_cpu_pct"] = r1(cpu.renderer);
+  if (argv.includes("--lag-probe")) log("kept", JSON.stringify(await page.evaluate(() => Array.from(keptTerms.values()).map(s => {
+    const rs = s.term._core._renderService; return { gl: !!s.term._atriumGl, paused: rs._isPaused, renderer: rs._renderer && rs._renderer.value && rs._renderer.value.constructor.name }; }))));
+  if (argv.includes("--lag-probe")) log("selection refresh", JSON.stringify(await page.evaluate(() => window.__selwho), null, 1));
+  const vp = await page.evaluate(() => window.__vp);
+  for (const k of ["shown", "hidden"]) { M[`lag.viewport_${k}_calls`] = vp[k].n; M[`lag.viewport_${k}_ms`] = r1(vp[k].ms); M[`lag.viewport_${k}_max_ms`] = r1(vp[k].max); }
   M["lag.webgl_contexts"] = await page.evaluate(() => [...document.querySelectorAll(".xterm canvas")].filter(c => !c.classList.contains("xterm-link-layer")).length);
   await b.close();
 }

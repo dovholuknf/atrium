@@ -2717,7 +2717,34 @@ function useWebgl(t) {
   }
 }
 
-// Gives the GPU context back. The renderer falls to xterm's own, which is paused while the terminal is hidden.
+// A HIDDEN TERMINAL DRAWN BY XTERM'S DOM RENDERER MUST NOT REDRAW ON SCROLL.
+//
+// xterm 5.5 asks its selection to redraw on every line the buffer scrolls, and the render service passes that to
+// the renderer without looking at whether it is paused. The WebGL renderer only notes it. The DOM renderer redraws
+// every row, and under `display: none` each cell measures zero wide, which its width cache will not keep, so every
+// cell of every row forces a style recalc. A kept terminal that gave its WebGL context back, or any terminal in a
+// browser that refused WebGL, streaming one line at a time, was tens of thousands of forced recalcs a second in
+// animation frames, the "requestAnimationFrame handler took 147ms" that made typing lag.
+//
+// So while xterm says it is paused, the redraw is only remembered, and xterm's own full redraw when the terminal
+// shows again draws the selection with it. Private to the vendored xterm 5.5, so a version without these fields
+// gets nothing patched.
+function holdHiddenRedraw(t) {
+  const rs = t && t._core && t._core._renderService;
+  if (!rs || typeof rs.handleSelectionChanged !== "function" || !("_isPaused" in rs) || !rs._selectionState) return;
+  const real = rs.handleSelectionChanged;
+  rs.handleSelectionChanged = function (start, end, columnSelectMode) {
+    if (!this._isPaused) return real.call(this, start, end, columnSelectMode);
+    this._selectionState.start = start;
+    this._selectionState.end = end;
+    this._selectionState.columnSelectMode = columnSelectMode;
+    this._needsSelectionRefresh = true;
+    this._needsFullRefresh = true;
+  };
+}
+
+// Gives the GPU context back. The renderer falls to xterm's own, paused while the terminal is hidden, and kept from
+// redrawing anyway by `holdHiddenRedraw`.
 function dropWebgl(t) {
   const addon = t && t._atriumGl;
   if (!addon) return;

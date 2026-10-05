@@ -5162,6 +5162,92 @@ async function termLagSection(browser, base) {
   if (!bad) console.log("termLag ok");
 }
 
+// ── a hidden terminal drawn by xterm's DOM renderer does not redraw ──────
+// A kept terminal past the WebGL ones falls to xterm's DOM renderer while `display: none`, and xterm 5.5 redraws
+// every row of it for each line it scrolls, measuring each cell at zero width and forcing a style recalc for it. Five
+// hundred lines into such a terminal must measure next to nothing, and showing it again must draw what came. See
+// `holdHiddenRedraw` in js/terminal-list.js.
+async function termHiddenRedrawSection(browser, base) {
+  const was = tasksMode;
+  tasksMode = "land";
+  landCard("hid-a", { supervised: true, created_at: "2026-09-19T12:00:00Z", activity: { what: "working" } });
+  landCard("hid-b", { supervised: true, created_at: "2026-09-19T12:01:00Z", activity: { what: "working" } });
+  landList = [LAND["hid-a"], LAND["hid-b"]];
+  landPerms = [];
+  const errors = [];
+  const ctx = await landContext(browser);
+  await ctx.addInitScript(() => {
+    const Real = window.WebSocket;
+    window.__socks = [];
+    window.WebSocket = function (url, protocols) {
+      if (!/\/attach(\?|$)/.test(url)) return new Real(url, protocols);
+      const s = { url, readyState: 0, binaryType: "arraybuffer", bufferedAmount: 0,
+        onopen: null, onclose: null, onmessage: null, onerror: null,
+        send() {}, close() { this.readyState = 3; } };
+      window.__socks.push(s);
+      setTimeout(() => { s.readyState = 1; if (s.onopen) s.onopen({}); }, 0);
+      return s;
+    };
+    Object.assign(window.WebSocket, { CONNECTING: 0, OPEN: 1, CLOSING: 2, CLOSED: 3 });
+  });
+  try {
+    const p = await ctx.newPage();
+    p.on("pageerror", e => errors.push(String(e)));
+    await p.goto(base, { waitUntil: "domcontentloaded" });
+    await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
+    for (const id of ["hid-a", "hid-b"]) {
+      await p.evaluate(id => attachTask(id), id);
+      await p.waitForFunction(id => termSock && termSock.readyState === 1 && termTask && termTask.id === id, id,
+        { timeout: slow(10000) });
+      await p.waitForTimeout(300);
+    }
+    // hid-a is kept and hidden. Its WebGL context goes, as `keepEnforce` takes it past the first few, and its DOM
+    // renderer starts with an empty width cache, under `display: none`.
+    const r = await p.evaluate(async () => {
+      const slot = keptTerms.get("hid-a");
+      if (!slot) return { err: "hid-a is not kept" };
+      dropWebgl(slot.term);
+      await new Promise(r => setTimeout(r, 200));
+      const rd = slot.term._core._renderService._renderer.value;
+      const wc = rd && rd._widthCache;
+      if (!wc) return { err: "no DOM renderer width cache on the kept terminal" };
+      let n = 0;
+      const P = Object.getPrototypeOf(wc), real = P._measure;
+      P._measure = function () { n++; return real.apply(this, arguments); };
+      const sock = window.__socks.find(s => /hid-a/.test(s.url));
+      const enc = new TextEncoder();
+      for (let i = 0; i < 500; i++) {
+        sock.onmessage({ data: enc.encode("hidden line " + i + " of what the agent said\r\n").buffer });
+        if (i % 25 === 0) await new Promise(r => requestAnimationFrame(r));
+      }
+      await new Promise(r => setTimeout(r, 300));
+      P._measure = real;
+      return { measured: n };
+    });
+    if (r.err) fail("termHiddenRedraw: " + r.err);
+    else if (r.measured > 200) fail("termHiddenRedraw: a hidden DOM-rendered terminal measured " + r.measured +
+      " cells for 500 lines; it redraws while hidden.");
+    await p.evaluate(() => attachTask("hid-a"));
+    await p.waitForFunction(() => termTask && termTask.id === "hid-a", null, { timeout: slow(10000) });
+    await p.waitForTimeout(500);
+    const shown = await p.evaluate(() => {
+      const b = term.buffer.active, out = [];
+      for (let i = 0; i < term.rows; i++) { const l = b.getLine(b.viewportY + i); out.push(l ? l.translateToString(true) : ""); }
+      const rows = document.querySelector("#t-screen .xterm-rows");
+      return { buf: out.join("\n"), dom: rows ? rows.textContent : null, gl: !!term._atriumGl };
+    });
+    if (!/hidden line 499/.test(shown.buf)) fail("termHiddenRedraw: hid-a's buffer lost what came while hidden.");
+    if (!shown.gl && shown.dom !== null && !/hidden line 499/.test(shown.dom))
+      fail("termHiddenRedraw: hid-a shown again without drawing what came while hidden.");
+  } finally {
+    await ctx.close();
+  }
+  if (errors.length) fail("the hidden redraw page threw: " + errors.join(" | "));
+  landList = []; landPerms = [];
+  tasksMode = was;
+  if (!bad) console.log("termHiddenRedraw ok");
+}
+
 // ── the debug switches are per card ──────────────────────────────────────
 // The drawer belongs to one card, so its two switches do too: on for one terminal, the next terminal shows them off
 // and is neither timed nor polled. The hub and the room log for the whole machine, so they are told "on" while any
@@ -23737,7 +23823,7 @@ async function main() {
       mSwitcher: mSwitcherSection,
       mPull: mPullSection, joinedLive: joinedLiveSection, joinedClick: joinedClickSection,
       coverPoll: coverPollSection, coverSteps: coverStepsSection, termBox: termBoxSection, termRowBleed: termRowBleedSection,
-      termDebug: termDebugSection, termDebugPerCard: termDebugPerCardSection, termLag: termLagSection, termSortStarted: termSortStartedSection,
+      termDebug: termDebugSection, termDebugPerCard: termDebugPerCardSection, termLag: termLagSection, termHiddenRedraw: termHiddenRedrawSection, termSortStarted: termSortStartedSection,
       noReadyChildren: noReadyChildrenSection, childUnderParent: childUnderParentSection, topNav: topNavSection,
       u002: u002Section, childFold: childFoldSection, liveHome: liveHomeSection,
       pulls: pullsSection, prMove: prMoveSection, hubRepos: hubReposSection, hubReposShelf: hubReposShelfSection, hubReposLedger: hubReposLedgerSection, hubReposFeed: hubReposFeedSection, changeReq: changeReqSection, mChangeReq: mChangeReqSection, trayHead: trayHeadSection, pullsAbsent: pullsAbsentSection, oneTooltip: oneTooltipSection, burnChart: burnChartSection, burnReadout: burnReadoutSection, switchPrewarm: switchPrewarmSection, attachAtOnce: attachAtOnceSection, fileView: fileViewSection, keepAlive: keepAliveSection, switchBackCost: switchBackCostSection, keepMemory: keepMemorySection, pullsDrawer: pullsDrawerSection };
@@ -25843,6 +25929,7 @@ async function main() {
     await unit("termRowBleed", () => termRowBleedSection(browser, base));
     await unit("termDebug", () => termDebugSection(browser, base));
     await unit("termDebugPerCard", () => termDebugPerCardSection(browser, base));
+    await unit("termHiddenRedraw", () => termHiddenRedrawSection(browser, base));
     await unit("termSortStarted", () => termSortStartedSection(browser, base));
     await unit("topNav", () => topNavSection(browser, base));
     await unit("pulls", () => pullsSection(browser, base));
