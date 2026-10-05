@@ -4496,6 +4496,10 @@ say it again. The card wears no `!` chip.
 in a shell, does not release it.
 ## BZ. A card past the context threshold wears a mark, its launcher hears once, and its details are a hover away
 
+**Superseded by IX (r-context-cycle).** The context nudge, the launcher's context notice, the context tags, the
+auto new context settings and the runner's limit are gone. What follows is kept as history; where it disagrees with
+IX, IX is right.
+
 BZ1 to BZ4 need the room built from this change and a room restart, and on a hub board the hub rebuilt and restarted
 too. Go tests in `internal/daemon/contextsize_test.go` cover the size read from the transcript, the gear threshold,
 one notice per crossing, a new notice after the card falls back under the line and crosses again, none for a card a
@@ -4887,6 +4891,10 @@ that is not lean shows none of this.
 
 ## CG. New context: capture, clear and wake in one action
 
+**Superseded by IX (r-context-cycle).** The context nudge, the launcher's context notice, the context tags, the
+auto new context settings and the runner's limit are gone. What follows is kept as history; where it disagrees with
+IX, IX is right.
+
 The room daemon runs the sequence (`internal/daemon/newcontext.go`), not the agent. Go tests in
 `internal/daemon/newcontext_test.go` run it against a fake terminal with the waits shortened: the whole sequence in
 order (capture prompt, wait for the turn to end, `/clear`, wait for the new session, wake prompt) with each step held
@@ -4983,6 +4991,10 @@ environment has `CLAUDE_CODE_DISABLE_ALTERNATE_SCREEN=1`. The terminal keeps its
 `CLAUDE_CODE_DISABLE_ALTERNATE_SCREEN` or `CLAUDE_CODE_NO_FLICKER` in its env keeps its own value.
 
 ## CI. A worker's silent stop and context notices reach its launcher every time
+
+**Superseded by IX (r-context-cycle).** The context nudge, the launcher's context notice, the context tags, the
+auto new context settings and the runner's limit are gone. What follows is kept as history; where it disagrees with
+IX, IX is right.
 
 Needs the room built from this change and a room restart. Go tests:
 `TestAFirstTurnWithoutAReportIsASilentStop` in `internal/daemon/a2a_test.go` (the opening prompt is recorded, a
@@ -6278,6 +6290,10 @@ On a throwaway room with about 30 Claude cards that have large transcripts:
 
 ## ED. New context, one handoff file per card
 
+**Superseded by IX (r-context-cycle).** The context nudge, the launcher's context notice, the context tags, the
+auto new context settings and the runner's limit are gone. What follows is kept as history; where it disagrees with
+IX, IX is right.
+
 ### ED1. Two cards in one directory
 
 1. Launch two supervised cards in the same directory, one with an alias.
@@ -6730,6 +6746,10 @@ Five-hour readings older than 8 hours and weekly ones older than 7 days are gone
 
 ## EW. A new-context cycle and its failed chip
 
+**Superseded by IX (r-context-cycle).** The context nudge, the launcher's context notice, the context tags, the
+auto new context settings and the runner's limit are gone. What follows is kept as history; where it disagrees with
+IX, IX is right.
+
 ### EW1. A message queued as the capture ends
 
 1. Run new context on a card. While it is capturing, say to it from a peer, then let the capture turn end.
@@ -7101,6 +7121,10 @@ others stay on the board. Archived cards keep their history, and no worktree or 
 **Expected:** the popup's context matches the status line's (the new, small session), not the old conversation's.
 
 ## FN. A new context started on a working card waits
+
+**Superseded by IX (r-context-cycle).** The context nudge, the launcher's context notice, the context tags, the
+auto new context settings and the runner's limit are gone. What follows is kept as history; where it disagrees with
+IX, IX is right.
 
 1. While a card is working on a turn (or has ended a turn on background work that has not reported yet), press
    Ctrl+Alt+N on it, or `POST /v1/tasks/<id>/new-context`.
@@ -7923,6 +7947,10 @@ Needs a hub with one room and two browsers on the board. `curl` stands in for th
 
 ## HF. A new context on a card that never leaves running (r-new-new-context-mid-turn)
 
+**Superseded by IX (r-context-cycle).** The context nudge, the launcher's context notice, the context tags, the
+auto new context settings and the runner's limit are gone. What follows is kept as history; where it disagrees with
+IX, IX is right.
+
 1. Press new context on a director that is in a long turn (workers, watchers, background tasks). About a minute later
    the terminal shows `[atrium] new context: a new context is waiting. Finish the step you are on, commit, and end
    your turn.` typed mid-turn, and the chip's tooltip ends `waiting for the turn to end, asked the card to stop at
@@ -8020,6 +8048,10 @@ the hub routing and the control tool.
    the `before` position, not from the end of the file.
 
 ## HO. A director held to a context ceiling (r-director-ceiling)
+
+**Superseded by IX (r-context-cycle).** The context nudge, the launcher's context notice, the context tags, the
+auto new context settings and the runner's limit are gone. What follows is kept as history; where it disagrees with
+IX, IX is right.
 
 Tagging is the orchestrator's job, never a worker's. There is no `atrium tag` command. Use the board's tag editor, or
 send the whole tag set to the card: `PATCH /v1/tasks/{id}` with `{"tags":[...existing tags..., "atrium:context-ceiling"]}`
@@ -8241,6 +8273,10 @@ build before `atrium_publish path` works, since an older room cannot say what a 
 
 ## HX. A new context finishes or ends with a reason (r-clear-vs-restart)
 
+**Superseded by IX (r-context-cycle).** The context nudge, the launcher's context notice, the context tags, the
+auto new context settings and the runner's limit are gone. What follows is kept as history; where it disagrees with
+IX, IX is right.
+
 1. Leave a claude card idle at its prompt with its Stop hook never fired, then start a new context. The capture begins
    at once. A card busy in a real turn answers 409 "stuck on step N of 3 (step) for D". Covered by
    `newcontext_idle_test.go`.
@@ -8362,12 +8398,15 @@ Covered by headless unit `growlOff`; the existing growler units seed the setting
 
 ## ID. Every claude card starts with --autocompact (r-autocompact)
 
-1. Launch a claude card with the new-context mode off. `ps` shows `--autocompact 330k` in its argv, and the card details foot reads "limit 300k · compacts at 330k".
-2. Set `auto_new_context_k` to 400, close the card and resume it. The resumed process has `--autocompact 440k`.
-3. Launch a card tagged `atrium:context-ceiling` with `context_ceiling_k` at 200: `--autocompact 220k`.
+Updated by r-context-cycle: the limit is the hub's per-harness `context_limits` (claude 200k by default) or the card's
+own `context_limit_k`, and the window is 10% over it.
+
+1. Launch a claude card. `ps` shows `--autocompact 220k` in its argv, and the card details foot reads "limit 200k · compacts at 220k".
+2. Set the gear's `context limit per harness` to `claude=400`, close the card and resume it. The resumed process has `--autocompact 440k`.
+3. Give a card its own limit of 300 in its details, close and resume it: `--autocompact 330k`.
 4. A runner row with empty `autocompact_args` (codex, ollama) launches with nothing added and no refusal. A row whose args lack `{autocompact}` is refused.
 5. With a claude whose `--help` has no `--autocompact`, a launch has no flag and the details foot says "runner does not take autocompact". A card on `claude-opus-5-5` with a 300k limit starts at `--autocompact 200k`, and on a `[1m]` model at 330k.
-Covered by `TestAnOlderClaude*`, `TestTheWindowNeverPassesTheModels`, `TestAutocompactK*`, `TestCardLimitIsWhatAutoThresholdStartsFrom`, `TestTheRunnerRowSaysHowItTakesTheWindow`, `TestAResumeAndAPromptCarryTheWindow`, `TestARunnerWithoutTheFlagIsLeftAlone`, `TestAutocompactArgsMustCarryThePlaceholder`. Items 1 to 3 live: a throwaway card started with `--autocompact 330k` on the live room ran.
+Covered by `TestAnOlderClaude*`, `TestTheWindowNeverPassesTheModels`, `TestAutocompactK*`, `TestCardLimitIsWhatTheCycleIsHeldTo`, `TestTheRunnerRowSaysHowItTakesTheWindow`, `TestAResumeAndAPromptCarryTheWindow`, `TestARunnerWithoutTheFlagIsLeftAlone`, `TestAutocompactArgsMustCarryThePlaceholder`. Items 1 to 3 live: a throwaway card started with `--autocompact 330k` on the live room ran.
 
 ## IE. An opencode card draws bubbles (r-opencode-bubbles, stage 1)
 
@@ -8803,3 +8842,63 @@ board are live checks.
 Covered by `TestAViewIsNeverADocument`, `TestAViewTypesWhatTheLinkResolvesTo`, `TestAViewOutsideTheCardIsRefused`,
 `TestAViewOfNothingOrADirectory` and `TestAViewCannotReachAnotherCardsFile` (api), and `fileOpenOutsideSection` in
 `scripts/test-board-headless.js` (`HEADLESS_ONLY=fileOpenOutside`). Item 2 on a real second room is a live check.
+
+## IX. The context cycle: limit, ack, clear, wake (r-context-cycle)
+
+Needs the room built from this change and a room restart, and on a hub board the hub rebuilt and restarted too. See
+`docs/context-cycle-plan.md` and `docs/context-cycle-design.md`. Go tests in `internal/daemon/contextcycle_test.go`:
+`TestTheLimitMidTurnTypesThePromptOncePerTurn`, `TestNoAckNeverClears`, `TestAckThenClearThenWake` (the handoff
+stored on the card), `TestTheCardSwitchAndOverride`, `TestTheHubLimitStartsTheCycle`,
+`TestACardBackUnderItsLimitDropsTheCycle`, `TestReadyIsRefusedWithNoCycleOrNoHandoff`, `TestOnlySupervisedCardsCycle`,
+`TestTheLimitPromptWording`. Restarts in `internal/daemon/newcontext_journal_test.go`. The hub's fan-out in
+`internal/link/contextlimits_test.go`. `atrium ready` in `internal/cli/ready_test.go`. The board in the headless section
+`contextCycle` (`HEADLESS_ONLY=bootClean,contextCycle`), and the reworked `ctxLimitLayers` and `contextSize`.
+
+### IX1. The limit prompt, mid-turn, once per turn
+
+1. Give a running Claude card its own limit under its context in its details, for example 20. Keep it in a long turn.
+2. Watch its terminal through two turn ends without running `atrium ready`.
+
+**Expected:** within a statusline update the chip reads `context 1/3: waiting for ack` and the terminal gets, mid-turn,
+`[atrium] new context: you are at context limit. wrap what is in flight, write your handoff to <TEMP>/atrium/handoffs/<card id>.md,
+then run <full path of atrium> ready.` Each later turn gets it at most once more. Nothing is cleared, however long
+it waits. The card's history has a `context` line, `past its limit, …`.
+
+### IX2. `atrium ready`, then clear and wake
+
+1. In that card, run the `ready` command the prompt named before writing the file.
+2. Write the handoff to the path, run it again, and let the turn end.
+
+**Expected:** 1 exits non-zero with `atrium refused: write your handoff to <path> first, then run atrium ready again`.
+2 prints `atrium clears your context when this turn ends. End your turn now.` When the turn ends the chip moves to
+`2/3: clearing`, `/clear` is typed, then `3/3: waking` and `[atrium] new context: read <path> and continue.` The
+chip goes. The card's details history has a `handoff` row; opening it shows the whole file. Messages sent to the card
+during the cycle arrive after the wake.
+
+### IX3. The settings
+
+1. In the gear, set `context limit per harness` to `claude=250, codex=300`, on a hub board in the ALL view.
+2. In a room's settings, set the handoff directory to a folder of your choice. Start another cycle on that room.
+3. Restart a room that was asleep during 1, and open its settings.
+
+**Expected:** every room's cards show `limit 250k from hub` in the peek. A card's own limit shows `from card`, and
+a room never set shows `from default`. The prompt in 2 names `<your folder>/<card id>.md`. The room in 3 has the
+hub's list. `claude 200` (no `=`) is refused in the gear before anything is sent. The runners page has no limit
+field.
+
+### IX4. The card's switch
+
+1. Untick `cycle this card's context at its limit` in a card's details, and lower its limit under its context.
+
+**Expected:** no cycle starts. The mark's tooltip says its context cycle is off. Ticking it again starts one on the
+next statusline update. Your own cards cycle the same way as an agent's; only unsupervised, fixture and guest cards
+never do.
+
+### IX5. A restart mid-cycle
+
+1. Restart the room while a card waits for `atrium ready`.
+2. Start another cycle, ack it, and restart the room while `/clear` is waiting for the turn to end.
+
+**Expected:** 1 leaves no chip, and the history says `dropped: the room restarted before atrium ready came`. The cycle
+starts again if the card is still past its limit. 2 leaves a red chip naming step 2 of 3 and the handoff path.
+Running new context on it resumes at the clear without asking for another handoff.
