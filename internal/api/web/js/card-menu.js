@@ -9,13 +9,8 @@ const cardMenuEl = document.getElementById("cardmenu");
 // for its conversation, and `runner` is which harness to start. Neither needs
 // asking the daemon.
 function cannotResume(t) {
-  if (t.supervised) return "it is already running";
-  if (!t.resume_id) {
-    return "atrium never learned this session's resume id, so there is no " +
-      "conversation to pick up. its session hooks were not wired when it ran, " +
-      "or its harness does not report one";
-  }
-  if (!t.runner) return "atrium does not know which runner this was";
+  const basic = cannotResumeCard(t);
+  if (basic) return basic;
   // Resuming is per-runner configuration. Saying which runner and which field
   // turns "it will not resume" into something the operator can fix.
   const h = allHarnesses.find(x => x.id === t.runner);
@@ -290,19 +285,9 @@ async function promoteCardNow(id, t) {
 //   opening   launching or waiting for output. A second resume only points here.
 //   slow      nothing after RESUME_BOUND_MS, or the launch failed. Says why, and
 //             a resume is allowed again, since the first one may be dead.
-let RESUME_BOUND_MS = 30000;   // a `let` so the headless test can shorten it
-const resumeOpening = new Map();
-
-const openingText = "opening the conversation";
-
-function openingState(id) { return resumeOpening.get(bareId(id)) || null; }
-
-// What the pane says for this card, or nothing.
-function openingSay(id) {
-  const o = openingState(id);
-  if (!o) return "";
-  return o.state === "slow" ? o.why : openingText + "…";
-}
+// The state, the wording and the bound are in js/resume-opening.js, shared with the phone page. This is how the board
+// paints it, on the card, the row and the pane.
+window.addEventListener("resume-opening", e => openingPaint(e.detail.id));
 
 // The chip on the card or row. In the template, so a redraw keeps it.
 function openingChip(t) {
@@ -332,33 +317,12 @@ function openingPaint(id) {
   }
 }
 
-function openingStart(id) {
-  openingEnd(id, true);
-  const o = { state: "opening", why: "", timer: 0 };
-  o.timer = setTimeout(() => openingSlow(id,
-    `no output after ${Math.max(1, Math.round(RESUME_BOUND_MS / 1000))} seconds. a large conversation can take this long, ` +
-    `and it may still appear. resume again if it does not`), RESUME_BOUND_MS);
-  resumeOpening.set(bareId(id), o);
-  openingPaint(id);
-}
-
-// The launch failed or the bound passed: the spinner becomes the reason.
-function openingSlow(id, why) {
-  const o = openingState(id);
-  if (!o) return;
-  clearTimeout(o.timer);
-  o.state = "slow";
-  o.why = why;
-  openingPaint(id);
-}
-
-// The terminal printed, the card went away, or a new attempt replaces this one.
-function openingEnd(id, quiet) {
-  const o = openingState(id);
-  if (!o) return;
-  clearTimeout(o.timer);
-  resumeOpening.delete(bareId(id));
-  if (!quiet) openingPaint(id);
+// The "already opening" toast, kept so the opening ending in a reason, or in output, takes it down rather than leaving
+// it up over the answer. Called from openingSlow and openingEnd in js/resume-opening.js.
+let openingToast = null;
+function openingToastGone() {
+  if (openingToast && openingToast.dismiss) openingToast.dismiss();
+  openingToast = null;
 }
 
 // A second resume while the first is opening. Says so rather than launching.
@@ -372,7 +336,7 @@ function openingPoint(id) {
     void chip.offsetWidth;
     chip.classList.add("nudge");
   });
-  toast("already opening", "this conversation is on its way. it appears here when it has output");
+  openingToast = toast("already opening", "this conversation is on its way. it appears here when it has output");
 }
 
 // One at a time per card, so a second resume while the first is starting is
@@ -397,20 +361,7 @@ async function resumeStart(id, t, where, pick, full) {
   openingStart(id);
   const start = (withResume) => api("/v1/launch", {
     method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      harness: t.runner || "claude",
-      cwd: t.worktree || "",
-      resume: withResume,
-      // AS HELD, `room~id` and all: the hub routes by the tag and strips it on
-      // the way into the room. See docs/fabric/card-room-routing.md.
-      task_id: id,
-      // Onto the same card, so the title and everything else on it stay put.
-      // Sending them again would let a stale copy of the row overwrite what
-      // the card says now.
-      title: "", why: "", prompt: "",
-      // Left out, the card decides. False wins over a lean card's tag.
-      ...(full ? { lean: false } : {})
-    })
+    body: JSON.stringify(resumeLaunchBody(id, t, withResume, full))
   });
 
   let task;
@@ -427,7 +378,7 @@ async function resumeStart(id, t, where, pick, full) {
     // nothing happened".
     const busy = e.body && e.body.kind === "resume-busy" ? e.body : null;
     if (!busy) {
-      openingSlow(id, "could not start it: " + e.message);
+      openingSlow(id, resumeFailText(e));
       tellUser("could not start it", e.message);
       return;
     }
@@ -450,7 +401,7 @@ async function resumeStart(id, t, where, pick, full) {
     try {
       task = await start("");
     } catch (e2) {
-      openingSlow(id, "could not start it: " + e2.message);
+      openingSlow(id, resumeFailText(e2));
       tellUser("could not start it", e2.message);
       return;
     }

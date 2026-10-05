@@ -212,9 +212,12 @@
     const nm = U.cardName(t);
     const r = item.reasons[0];
     const kind = r ? r.kind : forAll ? groupOf(t) : "idle";
-    const extra = item.reasons.length > 1 ? '<span class="more">+' + (item.reasons.length - 1) + "</span>" : "";
+    const extra = !openingState(t.id) && item.reasons.length > 1 ? '<span class="more">+' + (item.reasons.length - 1) + "</span>" : "";
     let why;
-    if (r) why = r.text;
+    const op = openingState(t.id);
+    if (op) why = op.state === "slow" ? '<span class="opening slow">' + U.esc(op.why) + "</span>"
+      : '<span class="opening"><span class="m-spin" aria-hidden="true"></span>' + openingText + "…</span>";
+    else if (r) why = r.text;
     else why = U.esc(U.activityText(t) || U.statusLabel(t));
     const at = item.since || (forAll ? U.ts(t.last_activity_at) : 0);
     const room = many ? window.mNet.roomOf(t.id) || t.room || "" : "";

@@ -2,3 +2,8 @@
 - A second resume while it is opening launches nothing and pulses the chip. (u-new-resume-spinner)
 - After 30 seconds without output, or on a failed launch, the spinner turns into the reason and a resume is allowed again. (u-new-resume-spinner)
 - `HEADLESS_ONLY=resumeSpinner` covers the opening, the second resume, first output, the bound and a failed launch. (u-new-resume-spinner)
+- On the phone page, a long press on a card opens a small sheet with "resume the last conversation". It launches the same way the board's menu does and the row says "opening the conversation" until the card's first output, with the same 30 second bound and failure reason. (u-new-resume-spinner)
+- The long press leaves scroll, a tap and text selection alone: movement, a lift or a scroll cancels it, and the row has no platform callout. (u-new-resume-spinner)
+- The "already opening" toast no longer stays up after the opening ends in a reason or in output. (u-new-resume-spinner)
+- The opening state, its wording, the bound and the launch body are one shared file, `js/resume-opening.js`, used by the board and the phone page. (u-new-resume-spinner)
+- `HEADLESS_ONLY=mResume` covers the long press, the sheet, the spinner, the second resume, first output, the bound and a failed launch. (u-new-resume-spinner)

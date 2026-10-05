@@ -318,6 +318,8 @@
     },
     roomOf,
     bareId,
+    // Reads the cards now, for a caller that has just changed one.
+    refresh() { tasksSoon(0); },
     on(kind, fn) { return on(kind, fn); },
     // The board's own room chip is the reference: with several rooms attached and none chosen, tags are shown.
     manyRooms() { return hub && (roomNow() ? false : rooms.length > 1); },

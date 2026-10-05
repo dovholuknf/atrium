@@ -4472,9 +4472,16 @@ async function resumeSpinnerSection(browser, base) {
     const before = launches;
     await p.evaluate(() => { resumeCard("land-res", lastTasks.find(x => x.id === "land-res"), "terms", "sess-1"); });
     await p.waitForTimeout(150);
+    const pointed = () => p.evaluate(() => [...document.querySelectorAll("#toasts .toast:not(.leaving)")].filter(e => /already opening/.test(e.textContent)).length);
+    if (isNew) {
+      await p.evaluate(() => resumeCard("land-res", lastTasks.find(x => x.id === "land-res"), "terms", "sess-1"));
+      await p.waitForTimeout(150);
+      if (await pointed() !== 1) fail("a second resume did not say it is already opening");
+    }
     release();
-    await p.waitForTimeout(400);
+    await p.waitForTimeout(500);
     await shot(p, "6-failed");
+    if (isNew && await pointed()) fail("the already opening toast stayed up after the opening ended in a reason");
     if (isNew) {
       if (launches !== before + 1) fail("the failing resume did not launch once: " + (launches - before));
       const chip = await p.evaluate(() => [...document.querySelectorAll(".stackrow[data-id=\"land-res\"] .chip.opening")].map(e => e.textContent.trim()));
@@ -22170,7 +22177,7 @@ async function main() {
       clock: clockSection,
       composeImages: composeImagesSection, composePaste: composePasteSection, mComposeImages: mComposeImagesSection,
       usageTab: usageTabSection, usageWeekReset: usageWeekResetSection,
-      mAgentIdle: mAgentIdleSection, mHome: mHomeSection, mCard: mCardSection, mServe: mServeSection,
+      mAgentIdle: mAgentIdleSection, mResume: mResumeSection, mHome: mHomeSection, mCard: mCardSection, mServe: mServeSection,
       phoneKeyLabel: phoneKeyLabelSection, phoneKeyLit: phoneKeyLitSection,
       notifyCommand: notifyCommandSection, presence: presenceSection, shiftMenu: shiftMenuSection, tallPty: tallPtySection,
       cacheChip: cacheChipSection, cacheLine: cacheLineSection, roomsMachine: roomsMachineSection,
@@ -24105,6 +24112,7 @@ async function main() {
     await unit("pollsGone", () => pollsGoneSection(browser, base));
     await unit("roomsMachine", () => roomsMachineSection(browser, base));
     await unit("mHome", () => mHomeSection(browser));
+    await unit("mResume", () => mResumeSection(browser));
     await unit("mCard", () => mCardSection(browser));
     await unit("mServe", () => mServeSection(browser));
     await unit("phoneKeyLabel", () => phoneKeyLabelSection(browser, base));
@@ -24468,6 +24476,17 @@ function mServer(state) {
       if (state.permsStatus) return json(state.permsStatus, { error: "no" });
       return json(200, { permissions: state.perms });
     }
+    if (p === "/v1/launch" && req.method === "POST") {
+      const chunks = [];
+      req.on("data", c => chunks.push(c));
+      req.on("end", async () => {
+        (state.launches = state.launches || []).push(JSON.parse(Buffer.concat(chunks).toString() || "{}"));
+        if (state.launchGate) await state.launchGate;
+        if (state.launchFail) return json(500, { error: state.launchFail });
+        return json(200, { id: state.launches[state.launches.length - 1].task_id, supervised: true });
+      });
+      return;
+    }
     if (p === "/v1/health") { state.healthHits = (state.healthHits || 0) + 1; return json(200, { build: state.build || "build-1" }); }
     if (p === "/v1/settings") return json(200, { board_skins: ["default", "daylight"], board_skin: state.skin || "default" });
     if (p === "/_hub/rooms") return json(404, { error: "not a hub" });
@@ -24560,7 +24579,7 @@ function mServer(state) {
     let file = null;
     if (p === "/m/" || p === "/m" || p === "/m/docs" || /^\/d\/[^/]*$/.test(p)) file = path.join(M_ROOT, "index.html");
     else if (p.startsWith("/m/")) file = path.join(M_ROOT, p.slice(3));
-    else if (p.startsWith("/css/") || /^\/js\/(cardrules|sounds|prefs-live|replies|changereq-core|changereq-mock)\.js$/.test(p)) file = path.join(WEB_ROOT, p);
+    else if (p.startsWith("/css/") || /^\/js\/(cardrules|sounds|prefs-live|replies|changereq-core|changereq-mock|resume-opening)\.js$/.test(p)) file = path.join(WEB_ROOT, p);
     if (file && !path.relative(WEB_ROOT, file).startsWith("..") && fs.existsSync(file) && fs.statSync(file).isFile()) {
       res.writeHead(200, { "Content-Type": M_TYPES[path.extname(file)] || "application/octet-stream" });
       return res.end(fs.readFileSync(file));
@@ -24607,6 +24626,116 @@ const M_PERMS = () => [{ id: "p1", task_id: "new-1", tool: "Bash", command: "go 
 
 // A card an agent launched (origin:agent) that ended a turn with no open question is idle: not in the needs list or its count,
 // not belled, and it does not say "waiting for you". A question, a permission ask and an operator-launched card still do.
+// ── resume from a long press on /m (u-new-resume-spinner) ─────────────────
+// A long press on a card opens the sheet, "resume the last conversation" launches once and the row says it is opening
+// until the card's first output, a second resume only points at it, the bound and a failed launch turn it into the
+// reason, and a scroll or a short tap does not open the sheet. `RESUME_SHOTS=<dir>` writes the pictures.
+async function mResumeSection(browser) {
+  const tag = "mResume: ";
+  const shelved = over => mCard("shelf-1", Object.assign({ alias: "big conversation", display_title: "big conversation", status: "done",
+    supervised: false, resume_id: "sess-1", runner: "claude", worktree: "/tmp/res" }, over || {}));
+  const st = mServer({});
+  st.tasks = [shelved(), mCard("live-1", { display_title: "already running", supervised: true })];
+  await st.open();
+  const shots = process.env.RESUME_SHOTS, shotTag = process.env.RESUME_TAG || "after";
+  try {
+    const { ctx, p, errors } = await mPage(browser, st, M_VIEWS[0], "");
+    const shot = async name => { if (shots) { fs.mkdirSync(shots, { recursive: true }); await p.waitForTimeout(250); await p.screenshot({ path: path.join(shots, shotTag + "-" + name + ".png") }); } };
+    await p.tap("#m-seg-all");
+    await p.waitForSelector('#m-list .row[data-id="shelf-1"]', { timeout: slow(10000) });
+    await shot("m1-card");
+    const sel = '#m-list .row[data-id="shelf-1"]';
+    const isNew = await p.evaluate(() => !!window.mResume);
+    if (!isNew) { await ctx.close(); return; }
+    // pointer events, the way a finger sends them
+    const press = async (id, over) => p.evaluate(([id, over]) => {
+      const el = document.querySelector('#m-list .row[data-id="' + id + '"]');
+      const r = el.getBoundingClientRect(), x = r.left + 40, y = r.top + 30;
+      const ev = (type, o) => el.dispatchEvent(new PointerEvent(type, Object.assign({ bubbles: true, pointerType: "touch", clientX: x, clientY: y, isPrimary: true }, o || {})));
+      ev("pointerdown");
+      if (over && over.moveTo) ev("pointermove", { clientY: y + over.moveTo });
+      return new Promise(res => setTimeout(() => { const open = !document.getElementById("m-rmenu") || document.getElementById("m-rmenu").hidden ? false : true; ev("pointerup"); res(open); }, over && over.hold || 800));
+    }, [id, over || null]);
+    const sheetOpen = () => p.evaluate(() => { const e = document.getElementById("m-rmenu"); return !!e && !e.hidden; });
+
+    // 1. A short tap and a press that scrolls do not open the sheet, and the tap still opens the card.
+    if (await press("shelf-1", { hold: 150 })) fail(tag + "a short press opened the sheet");
+    if (await press("shelf-1", { moveTo: 40, hold: 800 })) fail(tag + "a press that moved (a scroll) opened the sheet");
+    if (await sheetOpen()) fail(tag + "the sheet is open after a scroll");
+
+    // 2. A long press opens it, and it does not also open the card.
+    if (!(await press("shelf-1", { hold: 800 }))) fail(tag + "a long press did not open the sheet");
+    await p.evaluate(() => document.querySelector("#m-list .row").dispatchEvent(new MouseEvent("click", { bubbles: true })));
+    if (await p.evaluate(() => document.getElementById("m-card").classList.contains("on"))) fail(tag + "the lift of a long press opened the card");
+    const go = await p.$eval("#m-rmenu .rmenu-go", e => ({ t: e.textContent, d: e.disabled, h: e.getBoundingClientRect().height }));
+    if (go.t !== "resume the last conversation" || go.d || go.h < 44) fail(tag + "the resume button is " + JSON.stringify(go));
+    await shot("m2-menu");
+    await p.tap("#m-rmenu .rmenu-x");
+    if (await sheetOpen()) fail(tag + "cancel did not close the sheet");
+    // a running card cannot be resumed, and says why
+    await p.evaluate(() => window.mResume.open("live-1"));
+    const run = await p.$eval("#m-rmenu", e => ({ d: e.querySelector(".rmenu-go").disabled, why: e.querySelector(".rmenu-why").textContent }));
+    if (!run.d || !/already running/.test(run.why)) fail(tag + "a running card was offered a resume: " + JSON.stringify(run));
+    await p.tap("#m-rmenu .rmenu-x");
+
+    // 3. Resume: one launch with the card's resume id, the row spins and says so, a second resume launches nothing.
+    let open; st.launchGate = new Promise(r => { open = r; });
+    await p.evaluate(() => window.mResume.open("shelf-1"));
+    await p.tap("#m-rmenu .rmenu-go");
+    await p.waitForSelector(sel + " .opening .m-spin", { timeout: slow(5000) });
+    const say = await p.$eval(sel + " .why", e => e.textContent.trim());
+    if (!/opening the conversation/.test(say)) fail(tag + "the row says " + JSON.stringify(say));
+    await shot("m3-opening");
+    await p.evaluate(() => window.mResume.open("shelf-1"));
+    await p.tap("#m-rmenu .rmenu-go");
+    await p.evaluate(() => window.mResume.resume("shelf-1"));
+    await p.waitForTimeout(200);
+    if (st.launches.length !== 1) fail(tag + "a second resume while opening launched again: " + st.launches.length);
+    const b = st.launches[0];
+    if (b.task_id !== "shelf-1" || b.resume !== "sess-1" || b.harness !== "claude" || b.cwd !== "/tmp/res") fail(tag + "the launch was " + JSON.stringify(b));
+    open();
+    await p.waitForTimeout(300);
+    if (!(await p.$(sel + " .opening .m-spin"))) fail(tag + "the spinner ended when the launch answered, before any output");
+
+    // 4. First output (the card runs and moves) ends it.
+    const t2 = shelved({ supervised: true, status: "running", last_activity_at: mIso(0) });
+    st.tasks = [t2, st.tasks[1]];
+    st.send("task", t2);
+    await p.waitForFunction(() => !document.querySelector('#m-list .row[data-id="shelf-1"] .opening'), null, { timeout: slow(5000) })
+      .catch(() => fail(tag + "first output did not end the spinner"));
+    await shot("m4-output");
+
+    // 5. No output inside the bound: the reason, and a resume is allowed again.
+    st.tasks = [shelved(), st.tasks[1]];
+    st.send("task", st.tasks[0]);
+    await p.waitForTimeout(300);
+    st.launchGate = null;
+    await p.evaluate(() => { RESUME_BOUND_MS = 400; window.mResume.resume("shelf-1"); });
+    await p.waitForSelector(sel + " .opening:not(.slow)", { timeout: slow(5000) });
+    await p.waitForSelector(sel + " .opening.slow", { timeout: slow(5000) });
+    const slowSay = await p.$eval(sel + " .why", e => e.textContent.trim());
+    if (!/no output after/.test(slowSay)) fail(tag + "the bound did not give the reason: " + slowSay);
+    await shot("m5-slow");
+    const n0 = st.launches.length;
+    await p.evaluate(() => window.mResume.resume("shelf-1"));
+    await p.waitForTimeout(300);
+    if (st.launches.length !== n0 + 1) fail(tag + "a resume was not allowed again after the bound");
+    await p.evaluate(() => { openingEnd("shelf-1"); RESUME_BOUND_MS = 30000; });
+
+    // 6. A failed launch is the reason.
+    st.launchFail = "no such runner";
+    await p.evaluate(() => window.mResume.resume("shelf-1"));
+    await p.waitForSelector(sel + " .opening.slow", { timeout: slow(5000) });
+    const failSay = await p.$eval(sel + " .why", e => e.textContent.trim());
+    if (!/could not start it: .*no such runner/.test(failSay)) fail(tag + "a failed launch said " + failSay);
+    await shot("m6-failed");
+    if (await mNoSideways(p)) fail(tag + "the list scrolls sideways");
+    if (errors.length) fail(tag + "page errors: " + errors.join(" | "));
+    await ctx.close();
+  } finally { await st.close(); }
+  if (!bad) console.log("mResume ok");
+}
+
 async function mAgentIdleSection(browser) {
   const tag = "mAgentIdle: ";
   const agent = (id, over) => mCard(id, Object.assign({ alias: id, display_title: id, tags: ["origin:agent", "atrium:director"], status: "needs-input",
