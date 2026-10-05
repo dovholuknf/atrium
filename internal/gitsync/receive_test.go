@@ -1064,8 +1064,9 @@ func TestAMirrorIsNotServedOrPushedThroughTheStoreRoute(t *testing.T) {
 	}
 }
 
-// NOBODY PUSHES INTO AN ADOPTED MIRROR, the operator included: the mirror pass force-fetches the checkout over it.
-func TestNobodyPushesIntoAnAdoptedMirrorAndEveryoneCanFetchIt(t *testing.T) {
+// NOBODY PUSHES WHAT AN ADOPTED MIRROR KEEPS IN STEP, the operator included: the mirror pass force-fetches the
+// checkout over it. A card's work branch lands beside it.
+func TestAnAdoptedMirrorTakesWorkBranchesAndNothingThePassOwns(t *testing.T) {
 	x := newRecv(t)
 	ref, _ := ParseName("github/m/mirror")
 	dir := x.h.Store().dir(ref)
@@ -1076,33 +1077,42 @@ func TestNobodyPushesIntoAnAdoptedMirrorAndEveryoneCanFetchIt(t *testing.T) {
 	if err := writeMarker(dir, KindAdopted); err != nil {
 		t.Fatal(err)
 	}
-	x.branch("fix/x", "x.txt")
-	for name, w := range map[string]who{"a card": roomCard("sg4", "C1"), "the operator": operator} {
-		out, err := x.push(w, "github/m/mirror", "fix/x:refs/heads/fix/x")
-		if err == nil || !strings.Contains(out, "a push cannot land there") {
-			t.Fatalf("%s pushed into an adopted mirror: %v\n%s", name, err, out)
-		}
-		if refs, _ := Default.Git(bg, dir, "for-each-ref"); strings.TrimSpace(refs) != "" {
-			t.Fatalf("an adopted mirror got refs from %s: %s", name, refs)
-		}
-		if n := len(x.rows()); n != 0 {
-			t.Fatalf("%s left rows in the log: %+v", name, x.rows())
-		}
-	}
-	// The advertisement for a push says so up front, to the operator as to a card.
-	for name, w := range map[string]who{"a card": roomCard("sg4", "C1"), "the operator": operator} {
-		if code, adv := x.getRefs(w, "github/m/mirror", "git-receive-pack"); code != 200 || !strings.Contains(adv, "ERR atrium: ") {
-			t.Fatalf("the advertisement for %s: %d %q", name, code, adv)
+	sha := x.branch("fix/x", "x.txt")
+	for _, spec := range []string{"fix/x:refs/heads/claude/main", "fix/x:refs/heads/main", "fix/x:refs/tags/v1",
+		"fix/x:refs/rooms/sg4/fix/x"} {
+		for name, w := range map[string]who{"a card": roomCard("sg4", "C1"), "the operator": operator} {
+			out, err := x.push(w, "github/m/mirror", spec)
+			if err == nil || !strings.Contains(out, "is a mirror the hub keeps in step") {
+				t.Fatalf("%s pushed %s into an adopted mirror: %v\n%s", name, spec, err, out)
+			}
+			if refs, _ := Default.Git(bg, dir, "for-each-ref"); strings.TrimSpace(refs) != "" {
+				t.Fatalf("an adopted mirror got refs from %s: %s", name, refs)
+			}
+			if n := len(x.rows()); n != 0 {
+				t.Fatalf("%s left rows in the log: %+v", name, x.rows())
+			}
 		}
 	}
-	// And a push that never asked for the advertisement is refused at the push itself.
+	// The advertisement for a push is offered: what lands is decided ref by ref.
+	if code, adv := x.getRefs(roomCard("sg4", "C1"), "github/m/mirror", "git-receive-pack"); code != 200 || strings.Contains(adv, "ERR atrium: ") {
+		t.Fatalf("the advertisement for a card: %d %q", code, adv)
+	}
+	// A hand-built push of claude/main that never asked for the advertisement is refused at the push itself.
 	zero := strings.Repeat("0", 40)
-	for name, w := range map[string]who{"a card": roomCard("sg4", "C1"), "the operator": operator} {
-		code, out := x.post(w, "github/m/mirror", "git-receive-pack", "application/x-git-receive-pack-request",
-			pushBody(zero+" "+sha1a+" refs/heads/fix/a\x00report-status side-band-64k"))
-		if code != 200 || !strings.Contains(out, "a push cannot land there") {
-			t.Fatalf("a hand-built push by %s: %d %q", name, code, out)
-		}
+	code, out := x.post(operator, "github/m/mirror", "git-receive-pack", "application/x-git-receive-pack-request",
+		pushBody(zero+" "+sha1a+" refs/heads/claude/main\x00report-status side-band-64k"))
+	if code != 200 || !strings.Contains(out, "is a mirror the hub keeps in step") {
+		t.Fatalf("a hand-built claude/main push: %d %q", code, out)
+	}
+	// A card's work branch lands, with its row, and the card owns it.
+	if out, err := x.push(roomCard("sg4", "C1"), "github/m/mirror", "fix/x:refs/heads/fix/x"); err != nil {
+		t.Fatalf("a card's work branch into an adopted mirror: %v\n%s", err, out)
+	}
+	if got, _ := Default.Git(bg, dir, "rev-parse", "refs/heads/fix/x"); strings.TrimSpace(got) != sha {
+		t.Fatalf("fix/x is %q, want %s", got, sha)
+	}
+	if rows := x.rows(); len(rows) != 1 || rows[0].Card != "C1" {
+		t.Fatalf("rows: %+v", rows)
 	}
 	// Fetching it works for a room and for the operator.
 	for _, w := range []who{roomCard("sg4", "C1"), operator} {
@@ -1592,12 +1602,8 @@ func TestHandBuiltPushesAreRefusedBeforeGit(t *testing.T) {
 	if err := writeMarker(dir, KindAdopted); err != nil {
 		t.Fatal(err)
 	}
-	// And the advertisement a card asks for first says so, instead of offering a push that would be refused.
-	if code, adv := x.getRefs(card, "github/m/mirror", "git-receive-pack"); code != 200 || !strings.Contains(adv, "ERR atrium: ") {
-		t.Errorf("the advertisement for an adopted mirror: %d %q", code, adv)
-	}
-	out = post(card, "github/m/mirror", zero+" "+sha1a+" refs/heads/fix/a"+caps)
-	if !strings.Contains(out, "a push cannot land there") {
+	out = post(card, "github/m/mirror", zero+" "+sha1a+" refs/heads/claude/main"+caps)
+	if !strings.Contains(out, "is a mirror the hub keeps in step") {
 		t.Errorf("a card posting into an adopted mirror: %q", out)
 	}
 }

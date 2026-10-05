@@ -281,6 +281,9 @@ func (p *Proxy) serveGitSettings(w http.ResponseWriter, r *http.Request, fail fu
 // an overlay is minutes.
 const gitTimeout = gitsync.CommandBound + 2*time.Minute
 
+// GitWait is gitTimeout for the stdio server's push, which waits on the same git.
+const GitWait = gitTimeout
+
 type gitSyncInput struct {
 	Room string `json:"room" jsonschema:"the room to sync, as named on the hub"`
 	Name string `json:"name,omitempty" jsonschema:"one repository from the hub's git_repos, or empty for all of them"`
@@ -366,31 +369,42 @@ func describeGitPush(_ *mcp.CallToolRequest, in gitPushInput, _ gitPushOutput) (
 }
 
 // gitPushHandler is for the CALLER's own card: the push is run in its directory with its token, so a name is never
-// taken for it. The caller is the `X-Atrium-Agent` claim, as for every tool here.
+// taken for it. The caller is the `X-Atrium-Agent` claim, as for every tool here. The tool itself is GitDoor.Push.
 func (c *controlMCP) gitPushHandler(ctx context.Context, req *mcp.CallToolRequest, in gitPushInput) (
 	*mcp.CallToolResult, gitPushOutput, error) {
+	return c.gitDoor().Push(ctx, req, in)
+}
 
-	var out gitPushOutput
-	room, me := roomOf(req), agentOf(req)
-	if me == "" {
-		return nil, out, fmt.Errorf("this pushes for a card, and nothing says which card is asking")
+// gitDoor is atrium_git_push and atrium_git_url as the hub serves them: the caller's card and room from its headers,
+// the room asked through the hub's board, and the lookup the hub's own.
+func (c *controlMCP) gitDoor() GitDoor {
+	return GitDoor{
+		Card: func(ctx context.Context, req *mcp.CallToolRequest) (string, error) {
+			me := agentOf(req)
+			if me == "" {
+				return "", fmt.Errorf("this pushes for a card, and nothing says which card is asking")
+			}
+			id, _, err := c.resolvePeer(ctx, roomOf(req), me)
+			return id, err
+		},
+		IsCard: func(req *mcp.CallToolRequest) bool { return agentOf(req) != "" },
+		Room: func(ctx context.Context, req *mcp.CallToolRequest, long bool, method, path string, body, out any) error {
+			cl := c
+			if long {
+				cl = c.longClient()
+			}
+			return cl.ask(ctx, method, path, roomOf(req), body, out)
+		},
+		Lookup: func(ctx context.Context, _ *mcp.CallToolRequest, q url.Values) (gitsync.URLAnswer, error) {
+			var ans gitsync.URLAnswer
+			err := c.ask(ctx, http.MethodGet, "/_hub/git/url?"+q.Encode(), "", nil, &ans)
+			return ans, err
+		},
+		Older: func(err error) bool {
+			var be *boardError
+			return errors.As(err, &be) && be.bare && be.code == http.StatusNotFound
+		},
 	}
-	if why := gitsync.CheckPushBranch(strings.TrimSpace(in.Branch)); why != "" {
-		return nil, out, fmt.Errorf("%s", why)
-	}
-	id, _, err := c.resolvePeer(ctx, room, me)
-	if err != nil {
-		return nil, out, err
-	}
-	err = c.longClient().ask(ctx, http.MethodPost, "/v1/tasks/"+url.PathEscape(id)+"/git-push", room,
-		map[string]string{"branch": strings.TrimSpace(in.Branch)}, &out)
-	if err != nil {
-		var be *boardError
-		if errors.As(err, &be) && be.bare && be.code == http.StatusNotFound {
-			return nil, out, fmt.Errorf("this room predates atrium_git_push. update the room")
-		}
-	}
-	return nil, out, err
 }
 
 func (c *controlMCP) longClient() *controlMCP {

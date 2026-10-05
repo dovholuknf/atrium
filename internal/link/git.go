@@ -3,6 +3,7 @@ package link
 import (
 	"bufio"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
@@ -144,6 +145,10 @@ func (h *Hub) serveGit(name, session string, conn net.Conn, br *bufio.Reader) {
 				h.Forge.ServeHTTP(w, r)
 				return
 			}
+			if r.URL.Path == gitsync.LinkLookupPath && h.GitLookup != nil {
+				serveLinkLookup(w, r, h.GitLookup)
+				return
+			}
 			if h.GitStore != nil && strings.HasPrefix(r.URL.Path, gitsync.StorePrefix) {
 				ctx := gitsync.WithCaller(r.Context(), gitsync.Caller{Kind: gitsync.CallerRoom, Room: name})
 				h.GitStore.ServeHTTP(w, r.WithContext(ctx))
@@ -163,6 +168,26 @@ func (h *Hub) serveGit(name, session string, conn net.Conn, br *bufio.Reader) {
 		ErrorLog: log.New(discard{}, "", 0),
 	}
 	_ = srv.Serve(one)
+}
+
+// serveLinkLookup is atrium_git_url for a room's card, asked over the link: the same Lookup /_hub/git/url gives, with
+// its URLs on gitsync.LinkBase for the room to put on its forwarder (URLAnswer.ForCard).
+func serveLinkLookup(w http.ResponseWriter, r *http.Request, lookup func(context.Context, gitsync.URLQuery) gitsync.URLAnswer) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "that has to be a GET", http.StatusMethodNotAllowed)
+		return
+	}
+	q := r.URL.Query()
+	if strings.TrimSpace(q.Get("repo")) == "" {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": "say which repository"})
+		return
+	}
+	ans := lookup(r.Context(), gitsync.URLQuery{Repo: q.Get("repo"), Branch: q.Get("branch"), Room: q.Get("room"),
+		Base: gitsync.LinkBase})
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(ans)
 }
 
 type discard struct{}

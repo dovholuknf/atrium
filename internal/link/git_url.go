@@ -3,7 +3,6 @@ package link
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"net"
 	"net/http"
 	"net/url"
@@ -107,36 +106,5 @@ func forwarderBase(base string) string {
 
 func (c *controlMCP) gitURLHandler(ctx context.Context, req *mcp.CallToolRequest, in gitURLInput) (
 	*mcp.CallToolResult, gitURLOutput, error) {
-
-	var out gitURLOutput
-	if strings.TrimSpace(in.Repo) == "" {
-		return nil, out, fmt.Errorf("say which repository")
-	}
-	v := url.Values{"repo": {in.Repo}}
-	if b := strings.TrimSpace(in.Branch); b != "" {
-		v.Set("branch", b)
-	}
-	if r := strings.TrimSpace(in.Room); r != "" {
-		v.Set("room", r)
-	}
-	if err := c.ask(ctx, http.MethodGet, "/_hub/git/url?"+v.Encode(), "", nil, &out.URLAnswer); err != nil {
-		return nil, out, err
-	}
-	// A CARD FETCHES THROUGH ITS OWN ROOM'S FORWARDER. The URLs above are on the address this tool reached the hub by,
-	// which is the hub's loopback: right for a card on the hub's machine, and no address at all for a card on another
-	// room. So for a card the hub's URLs are rewritten onto its room's forwarder base (the path after /git/ is the
-	// same), the room being the one that knows its agent port. A room that does not say, or says something that is
-	// not a forwarder on its own loopback, leaves the card with no URL and the sentence why, not a wrong one.
-	// A room's work in progress has no forwarder route yet, so a card is given no URL for it (gitsync.ForCard).
-	if agentOf(req) != "" {
-		var fw struct {
-			Base string `json:"base"`
-		}
-		if err := c.ask(ctx, http.MethodGet, "/v1/hub-remote", roomOf(req), nil, &fw); err != nil {
-			fw.Base = ""
-		}
-		out.URLAnswer = out.URLAnswer.ForCard(forwarderBase(fw.Base))
-	}
-	out.Text = out.URLAnswer.Text()
-	return nil, out, nil
+	return c.gitDoor().URL(ctx, req, in)
 }

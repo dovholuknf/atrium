@@ -2,9 +2,11 @@ package gitsync
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"sort"
 	"strings"
 	"sync"
@@ -255,7 +257,6 @@ func (h *Hub) Lookup(ctx context.Context, q URLQuery) URLAnswer {
 	k := known[name]
 
 	// THE HUB'S SIDE, from its own store: no room is asked for it.
-	type onHub struct{ sha, room string }
 	hub := map[string]onHub{}
 	hubOffline := map[string]bool{}
 	var hubDir string
@@ -287,6 +288,39 @@ func (h *Hub) Lookup(ctx context.Context, q URLQuery) URLAnswer {
 			offline[r] = true
 		}
 	}
+	return answer(q, name, hub, served, offline, func(sha string) bool { return h.Store().hasCommit(ctx, hubDir, sha) })
+}
+
+// onHub is one branch of the hub's store: its tip, and the room that pushed it.
+type onHub struct{ sha, room string }
+
+// HubOnlyAnswer is the answer built from the hub's store alone, `branches` being its refs/heads as a fetch is
+// advertised them: what a room answers itself when its hub is older than the lookup over the link. The same answer
+// Lookup gives, with no room asked, so a room's work in progress is not in it and the note says so.
+func HubOnlyAnswer(q URLQuery, name string, branches map[string]string) URLAnswer {
+	hub := map[string]onHub{}
+	for b, sha := range branches {
+		hub[b] = onHub{sha: sha}
+	}
+	q.Branch, q.Room = strings.TrimSpace(q.Branch), ""
+	out := answer(q, name, hub, nil, nil, func(string) bool { return false })
+	if n := strings.TrimSuffix(strings.TrimSpace(out.Note), "."); n != "" {
+		out.Note = n + ". " + HubOnlyNote
+	} else {
+		out.Note = HubOnlyNote
+	}
+	return out
+}
+
+// HubOnlyNote is said of every HubOnlyAnswer.
+const HubOnlyNote = "only the hub's store was read (the hub is older than the lookup a room asks it for), so no " +
+	"room's work in progress is listed"
+
+// answer is the lookup's answer from what was found: the hub's branches, what each room that was asked serves, and
+// the rooms that may have work and are not attached. hasCommit says whether the hub's store holds a commit, for
+// `ahead`.
+func answer(q URLQuery, name string, hub map[string]onHub, served []askedRoom, offline map[string]bool,
+	hasCommit func(sha string) bool) URLAnswer {
 
 	names := map[string]bool{}
 	for b := range hub {
@@ -336,7 +370,7 @@ func (h *Hub) Lookup(ctx context.Context, q URLQuery) URLAnswer {
 				URL: q.Base + PassPrefix + s.room.Name + "/" + name + ".git"}
 			if onHub {
 				// AHEAD is a tip the hub's store does not hold. A room at the hub's tip, or behind it, has none.
-				ahead := sha != on.sha && !h.Store().hasCommit(ctx, hubDir, sha)
+				ahead := sha != on.sha && !hasCommit(sha)
 				src.Ahead = &ahead
 			}
 			ub.Sources = append(ub.Sources, src)
@@ -387,6 +421,85 @@ func (h *Hub) Lookup(ctx context.Context, q URLQuery) URLAnswer {
 		out.Note = strings.TrimSpace(out.Note + " " + strings.Join(down, ", ") + " did not answer")
 	}
 	return out
+}
+
+// LinkLookupPath is the lookup on the link's git kind: GET with the query of /_hub/git/url, asked by a room for its
+// cards (AskHubLookup), and answered by the hub's Lookup with the URLs on `http://hub`.
+const LinkLookupPath = "/_hub/git/url"
+
+// LinkBase is the base the hub builds a room's answer on. ForCard puts a card's URLs on its room's forwarder.
+const LinkBase = "http://hub"
+
+// AskHubLookup is a room asking its hub for a lookup over rt, the link's git kind. A hub older than LinkLookupPath
+// answers a bare 404, and then the room answers from the hub's store alone (HubOnlyAnswer): the refs a fetch of the
+// repository is advertised, which any room on the link may read. That needs a name the room can spell without the
+// hub's list: `<owner>/<repo>`, `<host>/<owner>/<repo>` or a forge URL.
+func AskHubLookup(ctx context.Context, rt http.RoundTripper, q URLQuery) (URLAnswer, error) {
+	v := url.Values{"repo": {q.Repo}}
+	if b := strings.TrimSpace(q.Branch); b != "" {
+		v.Set("branch", b)
+	}
+	if r := strings.TrimSpace(q.Room); r != "" {
+		v.Set("room", r)
+	}
+	var ans URLAnswer
+	code, body, err := hubGet(ctx, rt, LinkLookupPath+"?"+v.Encode(), 1<<20)
+	if err != nil {
+		return ans, err
+	}
+	switch code {
+	case http.StatusOK:
+		if err := json.Unmarshal(body, &ans); err != nil {
+			return ans, fmt.Errorf("the hub's answer could not be read: %v", err)
+		}
+		return ans, nil
+	case http.StatusNotFound:
+	default:
+		return ans, fmt.Errorf("the hub answered %d to a lookup: %s", code, oneLine(string(body)))
+	}
+
+	// THE HUB IS OLDER THAN THE LOOKUP OVER THE LINK: read its store.
+	in := strings.TrimSpace(q.Repo)
+	var ref Ref
+	if strings.Contains(in, "://") || scpRe.MatchString(in) {
+		ref, err = ParseURL(in)
+	} else {
+		ref, err = ParseName(strings.TrimSuffix(strings.TrimRight(in, "/"), ".git"))
+	}
+	if err != nil || in == "" || len(in) > lookupInputMax {
+		return URLAnswer{State: URLNotFound, Note: "this room's hub is older than the lookup, so say the repository " +
+			"as <owner>/<repo> or <host>/<owner>/<repo>, not " + shown(q.Repo)}, nil
+	}
+	name := ref.Name()
+	code, body, err = hubGet(ctx, rt, StorePrefix+name+".git/info/refs?service=git-upload-pack", lookupAdvertMax)
+	if err != nil {
+		return URLAnswer{}, err
+	}
+	branches, ok := readAdvert(body, nil)
+	if code != http.StatusOK || !ok {
+		return URLAnswer{State: URLNotFound, Note: "the hub has no repository called " + shown(name) + ". " + HubOnlyNote}, nil
+	}
+	return HubOnlyAnswer(URLQuery{Repo: name, Branch: q.Branch, Base: LinkBase}, name, branches), nil
+}
+
+// hubGet is one GET of the hub over the link, its status and at most `max` bytes of its body.
+func hubGet(ctx context.Context, rt http.RoundTripper, path string, max int64) (int, []byte, error) {
+	ctx, cancel := context.WithTimeout(ctx, LookupRoomWait+10*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, LinkBase+path, nil)
+	if err != nil {
+		return 0, nil, err
+	}
+	res, err := rt.RoundTrip(req)
+	if err != nil {
+		return 0, nil, fmt.Errorf("the hub could not be asked: %w", err)
+	}
+	defer res.Body.Close()
+	body, err := io.ReadAll(io.LimitReader(res.Body, max))
+	if err != nil {
+		return 0, nil, fmt.Errorf("the hub's answer could not be read: %w", err)
+	}
+	return res.StatusCode, body, nil
 }
 
 // cutText is what the caller typed, cut and on one line, for an answer or a sentence.
@@ -531,7 +644,11 @@ func (h *Hub) askRoom1(ctx context.Context, room RoomInfo, name string) roomServ
 // parseAdvert reads a protocol v0 upload-pack advertisement: the `# service=` line, a flush, then `<sha> <ref>` lines up
 // to a flush. Only refs/heads are taken, and never the names ServedHide never serves, so a room that advertised more
 // than it should (it does not) is still not listed.
-func parseAdvert(body []byte) (map[string]string, bool) {
+func parseAdvert(body []byte) (map[string]string, bool) { return readAdvert(body, neverServed) }
+
+// readAdvert is parseAdvert with the branches it leaves out named: a room's never-served ones, or none for the hub's
+// store, whose main is a branch like any other.
+func readAdvert(body []byte, skip map[string]bool) (map[string]string, bool) {
 	rest := body
 	data, flush, rest, err := readPkt(rest)
 	if err != nil || flush || !strings.HasPrefix(string(data), "# service=git-upload-pack") {
@@ -559,7 +676,7 @@ func parseAdvert(body []byte) (map[string]string, bool) {
 		}
 		sha, ref, ok := strings.Cut(line, " ")
 		b, isHead := strings.CutPrefix(ref, "refs/heads/")
-		if !ok || !isHead || !isHex40(sha) || b == "" || len(b) > 200 || neverServed[b] || strings.ContainsAny(b, "\x00\r\n") {
+		if !ok || !isHead || !isHex40(sha) || b == "" || len(b) > 200 || skip[b] || strings.ContainsAny(b, "\x00\r\n") {
 			continue
 		}
 		if len(out) >= lookupBranchMax {

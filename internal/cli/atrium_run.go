@@ -237,6 +237,8 @@ func serveAtrium(f atriumFlags, up atriumUp) error {
 		return on
 	}
 	h.GitStore = gitHub.StoreHandler()
+	// A room's atrium_git_url, asked over the same kind.
+	h.GitLookup = gitHub.Lookup
 	// A push the hub died in the middle of is settled from the refs before anything is served: the log says
 	// pending, and git says whether the ref moved.
 	if err := gitHub.Reconcile(context.Background()); err != nil {

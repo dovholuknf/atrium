@@ -185,6 +185,10 @@ type Server struct {
 	// HubRemote is where this room's hub forwarder is, `http://127.0.0.1:<agent port>/git/`, for the hub's
 	// atrium_git_url to build a card's URLs on. Empty until the agent listener is bound. Owned by the daemon.
 	HubRemote func() string
+	// HubGitURL is the hub's atrium_git_url answer for a card here, `GET /v1/hub/git/url?repo=&branch=&room=`, asked
+	// of the hub over the link, with the URLs on the link's base for the caller to put on the forwarder. Owned by
+	// the daemon, which holds the link. See internal/daemon/hubremote.go.
+	HubGitURL http.HandlerFunc
 	// Hold reads, sets or lifts the room deploy hold. Owned by the daemon, which
 	// runs the permission chain it acts in. See internal/daemon/roomhold.go.
 	Hold http.HandlerFunc
@@ -693,6 +697,9 @@ func (s *Server) Handler() http.Handler {
 	}
 	if s.HubRemote != nil {
 		mux.HandleFunc("GET /v1/hub-remote", s.hubRemote)
+	}
+	if s.HubGitURL != nil {
+		mux.HandleFunc("GET /v1/hub/git/url", s.HubGitURL)
 	}
 	if s.Say != nil {
 		mux.HandleFunc("POST /v1/say", s.Say)

@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net"
 	"net/http"
@@ -250,7 +251,9 @@ func (d *Daemon) GitPush(taskID, branch string) (any, error) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), gitsync.CommandBound)
 	defer cancel()
-	report, err := gitsync.PushToHub(ctx, gitsync.Default, filepath.FromSlash(t.Worktree), base, tok, strings.TrimSpace(branch))
+	dir := filepath.FromSlash(t.Worktree)
+	report, err := gitsync.PushToHub(ctx, gitsync.Default, dir, base, tok, strings.TrimSpace(branch),
+		gitsync.HubNameOf(ctx, gitsync.Default, dir, d.cloneRoots()...))
 	if err != nil {
 		// git's own words, which carry the hub's `remote: atrium: ...` sentence.
 		if strings.TrimSpace(report) != "" {
@@ -259,4 +262,40 @@ func (d *Daemon) GitPush(taskID, branch string) (any, error) {
 		return nil, err
 	}
 	return map[string]any{"card": t.ID, "branch": strings.TrimSpace(branch), "report": report}, nil
+}
+
+// cloneRoots are the folders a clone made by hand is laid out under as `<host>/<owner>/<repo>`: the scm folder and
+// the git root synced clones go in (~/git when unset). A clone with no hub remote is named by its place under one.
+func (d *Daemon) cloneRoots() []string {
+	var out []string
+	for _, k := range []string{gitsync.SettingSCMRoot, gitsync.SettingGitRoot} {
+		if v, err := d.st.Setting(k); err == nil && strings.TrimSpace(v) != "" {
+			out = append(out, strings.TrimSpace(v))
+		}
+	}
+	return append(out, gitsync.DefaultRoot())
+}
+
+// handleHubGitURL is GET /v1/hub/git/url: the lookup atrium_git_url gives, asked of the hub over the link
+// (gitsync.AskHubLookup, which reads the hub's store alone when the hub is older). The URLs are on the link's base:
+// the tool puts a card's on this room's forwarder.
+func (d *Daemon) handleHubGitURL(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	if strings.TrimSpace(q.Get("repo")) == "" {
+		writeJSONErr(w, http.StatusBadRequest, fmt.Errorf("say which repository"))
+		return
+	}
+	rt, err := d.hubTransport()
+	if err != nil {
+		writeJSONErr(w, http.StatusBadGateway, err)
+		return
+	}
+	ans, err := gitsync.AskHubLookup(r.Context(), rt, gitsync.URLQuery{Repo: q.Get("repo"), Branch: q.Get("branch"),
+		Room: q.Get("room")})
+	if err != nil {
+		writeJSONErr(w, http.StatusBadGateway, err)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(ans)
 }

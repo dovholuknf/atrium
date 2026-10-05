@@ -12,10 +12,26 @@ import (
 
 // The rules of a push, design 3.2. A push is refused whole when any updated ref breaks one.
 
-// adoptedSentence is the refusal of a push to a git_repos mirror the operator took into the store. NOBODY PUSHES
-// THERE, the operator included: the mirror pass force-fetches the checkout over it.
+// adoptedSentence is the refusal of a push to what a git_repos mirror the operator took into the store keeps in step
+// with its checkout: its integration branch, main, a tag or a ref outside refs/heads. NOBODY PUSHES THOSE, the
+// operator included: the mirror pass force-fetches the checkout over them. A work branch lands (mirrorRefuses).
 func adoptedSentence(name string) string {
-	return name + " is a mirror the hub keeps in step with a checkout, so a push cannot land there. fetch it, or push under another repository name"
+	return name + " is a mirror the hub keeps in step with a checkout, so its integration branch, main and tags cannot be pushed. push your work under another branch name"
+}
+
+// mirrorRefuses says why one ref of a push to an adopted mirror cannot land, or "". A CARD'S BRANCH LANDS: the
+// mirror pass force-fetches the integration branch and nothing else, and a room's sync fetches only that branch, so
+// a work branch beside it is never written over and never fetched by accident. What the pass owns (the integration
+// branch, and main and claude/main whatever the entry names), a tag and anything outside refs/heads are refused, the
+// operator included. `branch` is the git_repos entry's branch, "" when the entry is no longer configured.
+func mirrorRefuses(name, ref, branch string) string {
+	if branch == "" {
+		branch = IntegrationBranch
+	}
+	if !strings.HasPrefix(ref, headsPrefix) || isMainRef(ref) || ref == headsPrefix+branch {
+		return adoptedSentence(name)
+	}
+	return ""
 }
 
 func trimHead(ref string) string { return strings.TrimPrefix(ref, headsPrefix) }

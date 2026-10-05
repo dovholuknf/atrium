@@ -16,7 +16,7 @@ func TestPushToHubPushesAPlainBranchThroughTheForwarder(t *testing.T) {
 	sha := f.branch("fix/x", "x.txt")
 	git(t, f.work, "remote", "add", "hub", f.repoURL(hubRepo))
 	tok, _ := f.cards.Mint("C1")
-	out, err := PushToHub(bg, Default, f.work, f.base, tok, "fix/x")
+	out, err := PushToHub(bg, Default, f.work, f.base, tok, "fix/x", "")
 	if err != nil {
 		t.Fatalf("%v\n%s", err, out)
 	}
@@ -28,7 +28,7 @@ func TestPushToHubPushesAPlainBranchThroughTheForwarder(t *testing.T) {
 	}
 	// A refusal by the hub comes back in the error with the hub's words.
 	commit(t, f.work, "m.txt", "m")
-	out, err = PushToHub(bg, Default, f.work, f.base, tok, "main")
+	out, err = PushToHub(bg, Default, f.work, f.base, tok, "main", "")
 	if err == nil || !strings.Contains(out, "atrium:") {
 		t.Fatalf("a card's push of main: %v\n%s", err, out)
 	}
@@ -71,7 +71,7 @@ func TestPushToHubRefusesWhenAGlobalPushInsteadOfSendsTheForwarderElsewhere(t *t
 		t.Fatalf("the test's rewrite did not take: the push url is %q", got)
 	}
 	before := f.rt.count()
-	out, err := PushToHub(bg, Default, f.work, f.base, tok, "fix/x")
+	out, err := PushToHub(bg, Default, f.work, f.base, tok, "fix/x", "")
 	if err == nil {
 		t.Fatalf("the push was not refused:\n%s", out)
 	}
@@ -98,7 +98,7 @@ func TestAHubRemotePointingElsewhereIsLeftAloneAndAtriumHubIsAdded(t *testing.T)
 	git(t, f.work, "remote", "add", "x", clone) // keeps the sha reachable below; the push is from the clone
 	git(t, clone, "fetch", "-q", f.work, "fix/x:fix/x")
 
-	out, err := PushToHub(bg, Default, clone, f.base, tok, "fix/x")
+	out, err := PushToHub(bg, Default, clone, f.base, tok, "fix/x", "")
 	if err == nil || !strings.Contains(err.Error(), "hub pushes to https://example.com/mine/other.git") {
 		t.Fatalf("a hub that points elsewhere was not refused: %v\n%s", err, out)
 	}
@@ -113,7 +113,7 @@ func TestAHubRemotePointingElsewhereIsLeftAloneAndAtriumHubIsAdded(t *testing.T)
 	if got := git(t, clone, "remote", "get-url", "atrium-hub"); got != f.repoURL(hubRepo) {
 		t.Fatalf("atrium-hub is %s", got)
 	}
-	out, err = PushToHub(bg, Default, clone, f.base, tok, "fix/x")
+	out, err = PushToHub(bg, Default, clone, f.base, tok, "fix/x", "")
 	if err != nil {
 		t.Fatalf("%v\n%s", err, out)
 	}
@@ -243,7 +243,7 @@ func TestPushToHubRefusesASecondPushURLOnHub(t *testing.T) {
 	}
 	tok, _ := f.cards.Mint("C1")
 	before := f.rt.count()
-	if out, err := PushToHub(bg, Default, f.work, f.base, tok, "fix/x"); err == nil {
+	if out, err := PushToHub(bg, Default, f.work, f.base, tok, "fix/x", ""); err == nil {
 		t.Fatalf("a second pushurl was not refused:\n%s", out)
 	}
 	mu.Lock()
@@ -274,7 +274,7 @@ func TestPushToHubIgnoresAProxyTheClonesConfigSets(t *testing.T) {
 			k := strings.NewReplacer("<base>", f.base, "<push>", f.repoURL(hubRepo)).Replace(key)
 			git(t, f.work, "config", k, proxy.URL)
 			tok, _ := f.cards.Mint("C1")
-			out, err := PushToHub(bg, Default, f.work, f.base, tok, "fix/x")
+			out, err := PushToHub(bg, Default, f.work, f.base, tok, "fix/x", "")
 			mu.Lock()
 			defer mu.Unlock()
 			if len(seen) != 0 {
@@ -284,5 +284,76 @@ func TestPushToHubIgnoresAProxyTheClonesConfigSets(t *testing.T) {
 				t.Fatalf("the push did not land: %v\n%s", err, out)
 			}
 		})
+	}
+}
+
+// A CLONE MADE BY HAND, with no hub remote and no origin, at <root>/<host>/<owner>/<repo>: pushed from a worktree of
+// it to the forwarder's URL for the repository its place names, and nothing is added to its config.
+func TestAHandMadeCloneWithNoHubRemoteIsPushedByTheURLItsPlaceNames(t *testing.T) {
+	f := newRemote(t)
+	f.seedMain(hubRepo)
+	sha := f.branch("fix/x", "x.txt")
+	root := t.TempDir()
+	clone := filepath.Join(root, "github.com", "o", "r")
+	if err := os.MkdirAll(clone, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	git(t, clone, "init", "-q", "-b", "main")
+	git(t, clone, "fetch", "-q", f.work, "fix/x:fix/x")
+	wt := filepath.Join(t.TempDir(), "wt")
+	git(t, clone, "worktree", "add", "-q", wt, "fix/x")
+	cfgBefore, _ := os.ReadFile(filepath.Join(clone, ".git", "config"))
+	tok, _ := f.cards.Mint("C1")
+
+	// No name: refused, with the sentence saying why.
+	if out, err := PushToHub(bg, Default, wt, f.base, tok, "fix/x", ""); err == nil || !strings.Contains(err.Error(), "no hub remote") {
+		t.Fatalf("a clone with no hub remote and no name: %v\n%s", err, out)
+	}
+	name := HubNameOf(bg, Default, wt, filepath.Join(root, "elsewhere"), root)
+	if name != hubRepo {
+		t.Fatalf("HubNameOf is %q, want %s", name, hubRepo)
+	}
+	out, err := PushToHub(bg, Default, wt, f.base, tok, "fix/x", name)
+	if err != nil {
+		t.Fatalf("%v\n%s", err, out)
+	}
+	if got := f.refOn(hubRepo, "refs/heads/fix/x"); got != sha {
+		t.Fatalf("fix/x on the hub is %q, want %q", got, sha)
+	}
+	if rows := f.pushRows(); rows[len(rows)-1].Card != "C1" {
+		t.Fatalf("the push log: %+v", rows[len(rows)-1])
+	}
+	if cfgAfter, _ := os.ReadFile(filepath.Join(clone, ".git", "config")); string(cfgAfter) != string(cfgBefore) {
+		t.Fatalf("the clone's config was changed:\n%s", cfgAfter)
+	}
+	// A name the hub does not take is refused before git runs.
+	if _, err := PushToHub(bg, Default, wt, f.base, tok, "fix/x", "../x"); err == nil {
+		t.Fatal("a bad name was pushed to")
+	}
+}
+
+func TestHubNameOfReadsOriginFirstAndSaysNothingOutsideARoot(t *testing.T) {
+	root := t.TempDir()
+	clone := filepath.Join(root, "github", "o", "r")
+	if err := os.MkdirAll(clone, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	git(t, clone, "init", "-q", "-b", "main")
+	git(t, clone, "remote", "add", "origin", "https://github.com/other/thing.git")
+	if got := HubNameOf(bg, Default, clone, root); got != "github/other/thing" {
+		t.Fatalf("with an origin: %q", got)
+	}
+	loose := t.TempDir()
+	git(t, loose, "init", "-q", "-b", "main")
+	if got := HubNameOf(bg, Default, loose, root); got != "" {
+		t.Fatalf("a clone outside every root: %q", got)
+	}
+	deep := filepath.Join(root, "github", "o", "r", "sub")
+	if err := os.MkdirAll(deep, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	git(t, deep, "init", "-q", "-b", "main")
+	if got := HubNameOf(bg, Default, deep, root); got != "" {
+		t.Fatalf("a clone four deep: %q", got)
 	}
 }

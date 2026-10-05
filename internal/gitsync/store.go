@@ -362,19 +362,27 @@ func (s *Store) Init(ctx context.Context, rawURL string) (InitResult, error) {
 // mirrorLock is the lock the mirror pass takes on a repository, when `dir` is a configured
 // git_repos mirror, so a store step and a mirror pass never run in one repository at once.
 func (s *Store) mirrorLock(dir string) *sync.Mutex {
+	if r, ok := s.mirrorOf(dir); ok {
+		return s.h.lock("mirror:" + r.Name)
+	}
+	return nil
+}
+
+// mirrorOf is the git_repos entry whose mirror is `dir`, if there is one.
+func (s *Store) mirrorOf(dir string) (Repo, bool) {
 	if s.h.Repos == nil {
-		return nil
+		return Repo{}, false
 	}
 	repos, err := s.h.Repos()
 	if err != nil {
-		return nil
+		return Repo{}, false
 	}
 	for _, r := range repos {
 		if strings.EqualFold(filepath.Clean(s.h.Bare(r.Name)), filepath.Clean(dir)) {
-			return s.h.lock("mirror:" + r.Name)
+			return r, true
 		}
 	}
-	return nil
+	return Repo{}, false
 }
 
 func (s *Store) initRef(ctx context.Context, ref Ref) (InitResult, error) {

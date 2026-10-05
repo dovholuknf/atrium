@@ -343,10 +343,6 @@ func (rc *Receiver) advertisePush(w http.ResponseWriter, r *http.Request, ref Re
 		return
 	}
 	dir, ok := rc.dir(ref)
-	if ok && markerKind(dir) == KindAdopted {
-		adv(adoptedSentence(ref.Name()))
-		return
-	}
 	if !ok {
 		if why := rc.cannotCreate(ref, c.Kind == CallerOperator); why != "" {
 			adv(why)
@@ -533,10 +529,16 @@ func (rc *Receiver) push(w http.ResponseWriter, r *http.Request, ref Ref, exe st
 			ml.Lock()
 			defer ml.Unlock()
 		}
-		// NOBODY PUSHES INTO AN ADOPTED MIRROR, the operator included: the mirror pass force-fetches over it.
+		// NOBODY PUSHES WHAT AN ADOPTED MIRROR KEEPS IN STEP, the operator included: the mirror pass force-fetches
+		// over it. A card's work branch lands beside it (mirrorRefuses).
 		if markerKind(dir) == KindAdopted {
-			refuseAll(adoptedSentence(name))
-			return
+			r, _ := rc.h.Store().mirrorOf(dir)
+			for _, u := range req.Updates {
+				if why := mirrorRefuses(name, u.Ref, r.Branch); why != "" {
+					refuseAll(why)
+					return
+				}
+			}
 		}
 	} else if why := rc.cannotCreate(ref, who.Operator); why != "" {
 		refuseAll(why)

@@ -122,6 +122,7 @@ func controlServer() *mcp.Server {
 	// one, and asking one to leave. See control_peers.go.
 	addPeerTools(s)
 	addGitCloneTool(s)
+	addGitTools(s)
 
 	return s
 }
