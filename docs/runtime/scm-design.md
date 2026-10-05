@@ -138,8 +138,9 @@ Three places, all of which are one function:
 - **No writing back.** Atrium does not comment on issues, move cards on a project board, or close tickets. The
   agent in the terminal can do all of those with the tools it already has, and an atrium that writes to your
   issue tracker is holding a credential.
-- **No repository model.** Atrium does not learn what a repo is, keep a list of them, or clone. A path and a
-  command that produces it.
+- **No repository model.** Atrium does not learn what a repo is or keep a list of them. A path and a command that
+  produces it. Where a room has no checkout, the scm clone path clones from the hub's copy
+  (`docs/rnd/hub-forge-design.md`), and a repo it cannot read fails with a sentence telling the operator to clone it.
 
 ---
 
