@@ -77,12 +77,13 @@ func backlogCmd() *cobra.Command {
 	var board string
 	c := &cobra.Command{
 		Use:   "backlog",
-		Short: "The hub's backlog: list, show, file, status",
+		Short: "The hub's backlog: list, show, file, status, import",
 		Long: "The backlog items every room reads and writes through the hub. Filing and changing a status work only\n" +
 			"from the machine the hub runs on.",
 	}
 	boardFlag(c, &board)
-	c.AddCommand(backlogListCmd(&board), backlogShowCmd(&board), backlogFileCmd(&board), backlogStatusCmd(&board))
+	c.AddCommand(backlogListCmd(&board), backlogShowCmd(&board), backlogFileCmd(&board), backlogStatusCmd(&board),
+		backlogImportCmd(&board))
 	return c
 }
 
@@ -120,7 +121,7 @@ func backlogListCmd(board *string) *cobra.Command {
 		},
 	}
 	c.Flags().StringVar(&dept, "dept", "", "only this department")
-	c.Flags().StringVar(&status, "status", "", "only this status: open, held, in-progress, done or dropped")
+	c.Flags().StringVar(&status, "status", "", "only this status: open, held, in-progress, built, blocked, incomplete, done or dropped")
 	c.Flags().BoolVar(&all, "all", false, "every status, not just the open ones")
 	return c
 }
@@ -150,19 +151,24 @@ func backlogShowCmd(board *string) *cobra.Command {
 func backlogFileCmd(board *string) *cobra.Command {
 	var dept, title, body, priority string
 	c := &cobra.Command{
-		Use:   "file <id>",
-		Short: "File an item under an id you choose",
-		Long:  "An id that is taken is refused. --body - reads the body from stdin.",
-		Args:  cobra.ExactArgs(1),
+		Use:   "file [id]",
+		Short: "File an item, under an id you choose or the next one of its department",
+		Long: "An id that is taken is refused. With no id the hub gives the next <prefix>-<n> of the department\n" +
+			"(f, r, u, m, rnd, t, review). --body - reads the body from stdin.",
+		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			text, err := stdinBody(cmd, body)
 			if err != nil {
 				return err
 			}
 			by, room := backlogFiler()
+			id := ""
+			if len(args) > 0 {
+				id = args[0]
+			}
 			var b hubstore.BacklogItem
 			err = backlogCall(*board, http.MethodPost, "/_hub/backlog", map[string]string{
-				"id": args[0], "dept": dept, "title": title, "body": text, "priority": priority, "by": by, "room": room,
+				"id": id, "dept": dept, "title": title, "body": text, "priority": priority, "by": by, "room": room,
 			}, &b)
 			if err != nil {
 				return err
@@ -182,7 +188,7 @@ func backlogFileCmd(board *string) *cobra.Command {
 
 func backlogStatusCmd(board *string) *cobra.Command {
 	return &cobra.Command{
-		Use:   "status <id> <open|held|in-progress|done|dropped>",
+		Use:   "status <id> <open|held|in-progress|built|blocked|incomplete|done|dropped>",
 		Short: "Change an item's status",
 		Args:  cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {

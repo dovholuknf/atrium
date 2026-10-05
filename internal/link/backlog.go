@@ -16,9 +16,12 @@ import (
 // internal/hubstore/backlog.go for the rows and docs/rnd/reports-channel-design.md for why they are here.
 //
 //	GET  /_hub/backlog?dept=&status=&open=1   the items, filtered, without their bodies
-//	POST /_hub/backlog                        file one {id, dept, title, body?, priority?, by?, room?}
+//	POST /_hub/backlog                        file one {id?, dept, title, body?, priority?, by?, room?}. No id takes
+//	                                          the next `<prefix>-<n>` of the department. {upsert:true, status?} makes
+//	                                          the row for the id match a file (import), changing only what differs
 //	GET  /_hub/backlog/<id>                   one, with its body
-//	POST /_hub/backlog/<id>                   {status, by?}
+//	POST /_hub/backlog/<id>                   {status, by?}, or {card, by?} to link the card launched for it
+//	POST /_hub/backlog/follow                 {card, status, by?}: a card's report moves the item linked to it
 //	GET  /_hub/reports?to=&unread=1&limit=    the reports, newest first
 //	POST /_hub/reports                        leave one {to?, subject, body?, by?, room?}
 //	GET  /_hub/reports/<id>                   one
@@ -95,6 +98,8 @@ func (p *Proxy) serveBacklog(w http.ResponseWriter, r *http.Request, sub string)
 		} else {
 			p.itemList(w, r, st)
 		}
+	case !isReports && write && rest == "follow":
+		p.itemFollow(w, r, st)
 	case !isReports && backlogIDRe.MatchString(rest):
 		if write {
 			p.itemDo(w, r, st, rest)
@@ -128,7 +133,7 @@ func (p *Proxy) itemList(w http.ResponseWriter, r *http.Request, st *hubstore.St
 	f := hubstore.ItemFilter{Dept: q.Get("dept"), Open: q.Get("open") == "1"}
 	if s := q.Get("status"); s != "" {
 		if !hubstore.ValidItemStatus(s) {
-			crFail(w, http.StatusBadRequest, "status is open, held, in-progress, done or dropped")
+			crFail(w, http.StatusBadRequest, "status is open, held, in-progress, built, blocked, incomplete, done or dropped")
 			return
 		}
 		f.Status = s
@@ -153,6 +158,8 @@ type itemFileBody struct {
 	Priority string `json:"priority"`
 	By       string `json:"by"`
 	Room     string `json:"room"`
+	Upsert   bool   `json:"upsert"`
+	Status   string `json:"status"`
 }
 
 func (p *Proxy) itemFile(w http.ResponseWriter, r *http.Request, st *hubstore.Store) {
@@ -165,8 +172,26 @@ func (p *Proxy) itemFile(w http.ResponseWriter, r *http.Request, st *hubstore.St
 		crFail(w, http.StatusBadRequest, "room is not a room name")
 		return
 	}
-	b, err := st.ItemFile(hubstore.ItemNew{ID: in.ID, Dept: in.Dept, Title: in.Title, Body: in.Body,
-		Priority: in.Priority, FiledBy: in.By, FiledRoom: in.Room})
+	n := hubstore.ItemNew{ID: in.ID, Dept: in.Dept, Title: in.Title, Body: in.Body,
+		Priority: in.Priority, FiledBy: in.By, FiledRoom: in.Room}
+	if in.Upsert {
+		b, how, err := st.ItemUpsert(n, in.Status)
+		if err != nil {
+			bfail(w, err)
+			return
+		}
+		if how != "unchanged" {
+			p.RecordAudit(b.FiledRoom, "backlog-import", b.ID+" "+how)
+			p.backlogEvent("backlog", map[string]string{"id": b.ID, "dept": b.Dept, "status": b.Status, "title": b.Title})
+		}
+		crJSON(w, http.StatusOK, map[string]any{"item": b, "result": how})
+		return
+	}
+	if in.Status != "" {
+		crFail(w, http.StatusBadRequest, "a new item is open. status is for an import")
+		return
+	}
+	b, err := st.ItemFile(n)
 	if errors.Is(err, hubstore.ErrItemExists) {
 		crJSON(w, http.StatusConflict, b)
 		return
@@ -183,13 +208,20 @@ func (p *Proxy) itemFile(w http.ResponseWriter, r *http.Request, st *hubstore.St
 func (p *Proxy) itemDo(w http.ResponseWriter, r *http.Request, st *hubstore.Store, id string) {
 	var in struct {
 		Status string `json:"status"`
+		Card   string `json:"card"`
 		By     string `json:"by"`
 	}
 	if err := crDecode(r, &in); err != nil {
 		crFail(w, http.StatusBadRequest, "could not read that: "+err.Error())
 		return
 	}
-	b, err := st.ItemSetStatus(id, in.Status, in.By)
+	var b hubstore.BacklogItem
+	var err error
+	if in.Card != "" {
+		b, err = st.ItemLink(id, in.Card, in.By)
+	} else {
+		b, err = st.ItemSetStatus(id, in.Status, in.By)
+	}
 	if err != nil {
 		bfail(w, err)
 		return
@@ -197,6 +229,30 @@ func (p *Proxy) itemDo(w http.ResponseWriter, r *http.Request, st *hubstore.Stor
 	p.RecordAudit("", "backlog-status", id+" "+b.Status)
 	p.backlogEvent("backlog", map[string]string{"id": b.ID, "dept": b.Dept, "status": b.Status, "title": b.Title})
 	crJSON(w, http.StatusOK, b)
+}
+
+// itemFollow is a card's report arriving: the item linked to that card takes the status the report brings. Most cards
+// have no item, and that is a 200 with followed false and nothing recorded.
+func (p *Proxy) itemFollow(w http.ResponseWriter, r *http.Request, st *hubstore.Store) {
+	var in struct {
+		Card   string `json:"card"`
+		Status string `json:"status"`
+		By     string `json:"by"`
+	}
+	if err := crDecode(r, &in); err != nil {
+		crFail(w, http.StatusBadRequest, "could not read that: "+err.Error())
+		return
+	}
+	b, followed, err := st.ItemFollow(in.Card, in.Status, in.By)
+	if err != nil {
+		bfail(w, err)
+		return
+	}
+	if followed {
+		p.RecordAudit("", "backlog-status", b.ID+" "+b.Status)
+		p.backlogEvent("backlog", map[string]string{"id": b.ID, "dept": b.Dept, "status": b.Status, "title": b.Title})
+	}
+	crJSON(w, http.StatusOK, map[string]any{"followed": followed, "item": b})
 }
 
 func (p *Proxy) reportList(w http.ResponseWriter, r *http.Request, st *hubstore.Store) {

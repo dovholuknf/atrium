@@ -886,6 +886,26 @@ const server = http.createServer((req, res) => {
     sendJSON(res, answer);
     return;
   }
+  // The hub's backlog and director reports, read-only on the board. Open items only when `open=1`, as the hub does.
+  // See js/backlog.js.
+  if (url.startsWith("/_hub/backlog") || url.startsWith("/_hub/reports")) {
+    if (!hubMode) { res.writeHead(404); res.end("not a hub"); return; }
+    const q = new URL(req.url, "http://x").searchParams;
+    if (url.startsWith("/_hub/backlog")) {
+      let items = [
+        { id: "f-003", dept: "fabric", title: "An inventory of resources", status: "built", priority: "LOW" },
+        { id: "f-new-x", dept: "fabric", title: "Open work", status: "open" },
+        { id: "r-037", dept: "runtime", title: "Finished work", status: "done" }
+      ];
+      if (q.get("open") === "1") items = items.filter(b => b.status !== "done" && b.status !== "dropped");
+      if (q.get("dept")) items = items.filter(b => b.dept === q.get("dept"));
+      sendJSON(res, { items });
+      return;
+    }
+    sendJSON(res, { reports: [{ id: "rp_1", to_dept: "", from_by: "fabric", from_room: "sg4", subject: "f-003 built",
+      body: "done and tested", at: "2026-09-30T12:00:00Z", read_at: null, read_by: null }] });
+    return;
+  }
   // The operational audit feed, newest first and filterable by room and kind the
   // same way the hub serves it, so the pane's filters can be driven against a
   // real response. See js/audit.js.
@@ -23637,6 +23657,39 @@ async function main() {
         fail("the hub page threw uncaught errors after the audit pane: " +
           hubErrors.join(" | "));
       }
+
+      // ── the backlog tab is hub-only, read-only and filters by the hub ─────
+      // Shown once the hub probe answers, like the audit tab. Opening it lists the open items (the done one is
+      // left out), the built status is drawn, the report is there, and ticking `open only` off brings the done one
+      // back from the hub. See js/backlog.js.
+      await hub.waitForFunction(() => {
+        const tab = document.querySelector('.tab[data-view="backlog"]');
+        return tab && !tab.hidden;
+      }, null, { timeout: slow(15000) });
+      await hub.evaluate(() => switchView("backlog"));
+      await hub.waitForFunction(() => document.querySelectorAll("#backlog-items .aud-row").length === 2 &&
+        document.querySelectorAll("#backlog-reports .aud-row").length === 1, null, { timeout: slow(15000) });
+      const backlog = await hub.evaluate(() => ({
+        ids: [...document.querySelectorAll("#backlog-items .aud-row")].map(r => r.dataset.id),
+        built: !!document.querySelector('#backlog-items .aud-row[data-id="f-003"] .aud-when') &&
+          document.querySelector('#backlog-items .aud-row[data-id="f-003"] .aud-when').textContent === "built",
+        report: document.querySelector("#backlog-reports .aud-row").textContent.includes("f-003 built"),
+        writes: document.querySelectorAll("#backlog button, #backlog textarea").length
+      }));
+      if (backlog.ids.join() !== "f-003,f-new-x" || !backlog.built || !backlog.report || backlog.writes) {
+        fail("the backlog tab did not draw the open items, the built status and the report read-only: " +
+          JSON.stringify(backlog));
+      }
+      await hub.evaluate(() => { const c = document.getElementById("backlog-open"); c.checked = false; c.dispatchEvent(new Event("change")); });
+      await hub.waitForFunction(() => document.querySelectorAll("#backlog-items .aud-row").length === 3, null,
+        { timeout: slow(15000) });
+      await hub.evaluate(() => { const d = document.getElementById("backlog-dept"); d.value = "runtime"; d.dispatchEvent(new Event("change")); });
+      await hub.waitForFunction(() => [...document.querySelectorAll("#backlog-items .aud-row")].map(r => r.dataset.id).join() === "r-037",
+        null, { timeout: slow(15000) });
+      if (hubErrors.length) {
+        fail("the hub page threw uncaught errors after the backlog tab: " + hubErrors.join(" | "));
+      }
+      await hub.evaluate(() => { document.getElementById("backlog-dept").value = ""; document.getElementById("backlog-open").checked = true; switchView("audit"); });
 
       // ── the audit pane filters by room ────────────────────────────────────
       // Picking a room narrows the feed to that machine. The two sgg lines stay

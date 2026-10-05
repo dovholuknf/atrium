@@ -24,13 +24,13 @@ const backlogToolDesc = "The backlog, kept on the hub, so a director on any room
 	"action is one of:\n" +
 	"- `list {dept?, status?, open?}`: items without their bodies. `open` leaves out done and dropped.\n" +
 	"- `get {id}`: one item with its body.\n" +
-	"- `file {id, dept, title, body?, priority?}`: file one. An id that is taken is refused, and the item that " +
+	"- `file {id?, dept, title, body?, priority?}`: file one. An id that is taken is refused, and the item that " +
 	"holds it is returned.\n" +
 	"- `status {id, status}`: change the status."
 
 type backlogInput struct {
 	Action   string `json:"action" jsonschema:"list, get, file or status"`
-	ID       string `json:"id,omitempty" jsonschema:"the item id, for get, file and status"`
+	ID       string `json:"id,omitempty" jsonschema:"the item id, for get and status, and for file when you choose it"`
 	Dept     string `json:"dept,omitempty" jsonschema:"the department, for file, and to narrow a list"`
 	Title    string `json:"title,omitempty" jsonschema:"for file: one line"`
 	Body     string `json:"body,omitempty" jsonschema:"for file: the item, markdown"`
@@ -116,8 +116,8 @@ func (c *controlMCP) backlogHandler(ctx context.Context, req *mcp.CallToolReques
 		out.Item = &b
 		return nil, out, nil
 	case "file":
-		if id == "" || strings.TrimSpace(in.Dept) == "" || strings.TrimSpace(in.Title) == "" {
-			return nil, out, &refusedError{"file needs id, dept and title"}
+		if strings.TrimSpace(in.Dept) == "" || strings.TrimSpace(in.Title) == "" {
+			return nil, out, &refusedError{"file needs dept and title"}
 		}
 		var b hubstore.BacklogItem
 		err := c.ask(ctx, http.MethodPost, "/_hub/backlog", "", map[string]any{
@@ -192,4 +192,47 @@ func (c *controlMCP) reportsHandler(ctx context.Context, req *mcp.CallToolReques
 		return nil, out, nil
 	}
 	return nil, out, &refusedError{fmt.Sprintf("action %q is not one of add, list, read", in.Action)}
+}
+
+// ItemTagPrefix is what a launch tag starts with to name the backlog item the card works on: `item:f-new-thing`.
+const ItemTagPrefix = "item:"
+
+// itemOfTags is the item id a launch's tags name, or "".
+func itemOfTags(tags []string) string {
+	for _, t := range tags {
+		if id, ok := strings.CutPrefix(strings.TrimSpace(t), ItemTagPrefix); ok && backlogIDRe.MatchString(id) {
+			return id
+		}
+	}
+	return ""
+}
+
+// linkItemToCard puts the item a launch names in progress with the card it started. Best effort: a hub with no
+// backlog, or an id the hub does not hold, is no reason to fail a launch that already happened, so the answer is a
+// sentence for the launch's note and "" when there is nothing to say.
+func (c *controlMCP) linkItemToCard(ctx context.Context, tags []string, room, card, by string) string {
+	id := itemOfTags(tags)
+	if id == "" {
+		return ""
+	}
+	var b hubstore.BacklogItem
+	err := c.ask(ctx, http.MethodPost, "/_hub/backlog/"+url.PathEscape(id), "", map[string]any{
+		"card": tagFor(room, card), "by": by}, &b)
+	if err != nil {
+		return "the item " + id + " was not moved to in-progress: " + err.Error() + ". "
+	}
+	return ""
+}
+
+// followItem is a card's report reaching the item linked to it. The hub answers followed false for a card with no
+// item, which is most of them, and a failure here never fails the report.
+func (c *controlMCP) followItem(ctx context.Context, room, card, status, by string) {
+	if _, ok := hubstore.FollowStatus(status); !ok {
+		return
+	}
+	var out struct {
+		Followed bool `json:"followed"`
+	}
+	_ = c.ask(ctx, http.MethodPost, "/_hub/backlog/follow", "", map[string]any{
+		"card": tagFor(room, card), "status": strings.TrimSpace(status), "by": by}, &out)
 }

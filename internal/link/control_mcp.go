@@ -964,6 +964,9 @@ func (c *controlMCP) reportHandler(ctx context.Context, req *mcp.CallToolRequest
 		return nil, out, err
 	}
 	out.Recorded, out.Status, out.Unverified, out.LauncherTold = res.Recorded, res.Status, res.Unverified, res.LauncherTold
+	if res.Recorded {
+		c.followItem(ctx, room, id, in.Status, me)
+	}
 	switch {
 	case res.Unverified:
 		out.Note = "recorded, but that commit is not in your worktree, so the card is flagged. if it " +
@@ -1562,6 +1565,9 @@ func (c *controlMCP) launchOnRoom(ctx context.Context, in launchInput, harness, 
 	}
 	out.Model, out.Effort = t.Model, t.Effort
 	out.Card, out.Handle, out.Title, out.Status = t.ID, t.Wire, t.Title, t.Status
+	// A tag `item:<id>` links the card to a backlog item, which goes in progress with it. The link is the card as the
+	// hub names it, room~id, the same name a report is followed from.
+	itemNote := c.linkItemToCard(ctx, in.Tags, room, t.ID, spawnedBy)
 	if room != callerRoom && room != "" {
 		// Named the way atrium_say takes it from here.
 		out.Card, out.Handle = tagFor(room, t.ID), t.Wire+"@"+room
@@ -1579,7 +1585,7 @@ func (c *controlMCP) launchOnRoom(ctx context.Context, in launchInput, harness, 
 	missed := LaunchOptionsDropped(in.Model, in.Effort, in.Args, in.Env,
 		t.Model, t.Effort, t.LaunchArgs, t.LaunchEnvKeys)
 	missed = append(missed, LeanAgentsDropped(in.LeanAgents, in.LeanSkills, t.Tags)...)
-	out.Note = LaunchDroppedWarning(missed) + out.Note
+	out.Note = itemNote + LaunchDroppedWarning(missed) + out.Note
 	return out, nil
 }
 

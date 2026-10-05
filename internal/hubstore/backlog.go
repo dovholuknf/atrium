@@ -19,6 +19,9 @@ const (
 	ItemOpen       = "open"
 	ItemHeld       = "held"
 	ItemInProgress = "in-progress"
+	ItemBuilt      = "built"
+	ItemBlocked    = "blocked"
+	ItemIncomplete = "incomplete"
 	ItemDone       = "done"
 	ItemDropped    = "dropped"
 )
@@ -49,7 +52,7 @@ var (
 // ValidItemStatus reports whether s is a status an item can have.
 func ValidItemStatus(s string) bool {
 	switch s {
-	case ItemOpen, ItemHeld, ItemInProgress, ItemDone, ItemDropped:
+	case ItemOpen, ItemHeld, ItemInProgress, ItemBuilt, ItemBlocked, ItemIncomplete, ItemDone, ItemDropped:
 		return true
 	}
 	return false
@@ -63,6 +66,7 @@ type BacklogItem struct {
 	Body      string `json:"body,omitempty"`
 	Priority  string `json:"priority,omitempty"`
 	Status    string `json:"status"`
+	Card      string `json:"card,omitempty"`
 	FiledBy   string `json:"filed_by"`
 	FiledRoom string `json:"filed_room"`
 	CreatedAt string `json:"created_at"`
@@ -79,7 +83,7 @@ type ItemNew struct {
 // Check says why an item cannot be filed, or "".
 func (n ItemNew) Check() string {
 	switch {
-	case !itemIDRe.MatchString(n.ID):
+	case n.ID != "" && !itemIDRe.MatchString(n.ID):
 		return "an item id is lower case letters, digits, dot, dash and underscore, like f-new-thing or r-037"
 	case !deptRe.MatchString(n.Dept):
 		return "a department is lower case letters and dashes, like fabric"
@@ -103,13 +107,13 @@ func (n ItemNew) Check() string {
 	return ""
 }
 
-const itemCols = `id, dept, title, body, priority, status, filed_by, filed_room, created_at, changed_at, changed_by`
+const itemCols = `id, dept, title, body, priority, status, card, filed_by, filed_room, created_at, changed_at, changed_by`
 
 type rowScanner interface{ Scan(dest ...any) error }
 
 func scanItem(sc rowScanner) (BacklogItem, error) {
 	var b BacklogItem
-	err := sc.Scan(&b.ID, &b.Dept, &b.Title, &b.Body, &b.Priority, &b.Status, &b.FiledBy, &b.FiledRoom,
+	err := sc.Scan(&b.ID, &b.Dept, &b.Title, &b.Body, &b.Priority, &b.Status, &b.Card, &b.FiledBy, &b.FiledRoom,
 		&b.CreatedAt, &b.ChangedAt, &b.ChangedBy)
 	return b, err
 }
@@ -123,7 +127,14 @@ func (s *Store) ItemFile(in ItemNew) (BacklogItem, error) {
 	var out BacklogItem
 	err := s.tx(func(t *sql.Tx) error {
 		out = BacklogItem{}
-		prior, err := scanItem(t.QueryRow(`SELECT `+itemCols+` FROM backlog_item WHERE id = ?`, in.ID))
+		id := in.ID
+		if id == "" {
+			var err error
+			if id, err = nextItemID(t, in.Dept); err != nil {
+				return err
+			}
+		}
+		prior, err := scanItem(t.QueryRow(`SELECT `+itemCols+` FROM backlog_item WHERE id = ?`, id))
 		if err == nil {
 			out = prior
 			return refuse(ErrItemExists)
@@ -131,11 +142,11 @@ func (s *Store) ItemFile(in ItemNew) (BacklogItem, error) {
 		if !errors.Is(err, sql.ErrNoRows) {
 			return err
 		}
-		if _, err := t.Exec(`INSERT INTO backlog_item (`+itemCols+`) VALUES (?, ?, ?, ?, ?, 'open', ?, ?, ?, ?, ?)`,
-			in.ID, in.Dept, in.Title, in.Body, in.Priority, in.FiledBy, fold(in.FiledRoom), at, at, in.FiledBy); err != nil {
+		if _, err := t.Exec(`INSERT INTO backlog_item (`+itemCols+`) VALUES (?, ?, ?, ?, ?, 'open', '', ?, ?, ?, ?, ?)`,
+			id, in.Dept, in.Title, in.Body, in.Priority, in.FiledBy, fold(in.FiledRoom), at, at, in.FiledBy); err != nil {
 			return err
 		}
-		out, err = scanItem(t.QueryRow(`SELECT `+itemCols+` FROM backlog_item WHERE id = ?`, in.ID))
+		out, err = scanItem(t.QueryRow(`SELECT `+itemCols+` FROM backlog_item WHERE id = ?`, id))
 		return err
 	})
 	if errors.Is(err, ErrItemExists) {

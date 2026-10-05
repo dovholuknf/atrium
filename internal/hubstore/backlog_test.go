@@ -128,3 +128,81 @@ func TestReportsAreAppendedListedAndReadOnce(t *testing.T) {
 		t.Fatal("empty subject accepted")
 	}
 }
+
+func TestAnItemFiledWithNoIDTakesTheNextNumberOfItsPrefix(t *testing.T) {
+	s := open(t)
+	for _, id := range []string{"f-002", "f-029", "f-new-thing", "r-037", "rnd-new-x", "u-4"} {
+		d := map[string]string{"f": "fabric", "r": "runtime", "u": "ui", "rnd": "rnd"}[strings.SplitN(id, "-", 2)[0]]
+		if _, err := s.ItemFile(newItem(id, d)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, c := range []struct{ dept, want string }{
+		{"fabric", "f-030"}, {"fabric", "f-031"}, {"runtime", "r-038"}, {"ui", "u-005"}, {"rnd", "rnd-001"}, {"release", "m-001"},
+	} {
+		n := newItem("", c.dept)
+		b, err := s.ItemFile(n)
+		if err != nil || b.ID != c.want {
+			t.Errorf("%s: got %q, %v, want %s", c.dept, b.ID, err, c.want)
+		}
+	}
+	if _, err := s.ItemFile(newItem("", "nowhere")); err == nil || !IsRefusal(err) {
+		t.Errorf("a department with no prefix took an id: %v", err)
+	}
+}
+
+func TestItemUpsertIsIdempotentAndKeepsTheCard(t *testing.T) {
+	s := open(t)
+	n := newItem("f-003", "fabric")
+	b, how, err := s.ItemUpsert(n, ItemHeld)
+	if err != nil || how != "added" || b.Status != ItemHeld {
+		t.Fatalf("first: %+v %s %v", b, how, err)
+	}
+	if _, how, _ = s.ItemUpsert(n, ItemHeld); how != "unchanged" {
+		t.Errorf("a second import of the same file was %s", how)
+	}
+	if _, err := s.ItemLink("f-003", "sg4~c1", "orch"); err != nil {
+		t.Fatal(err)
+	}
+	n.Title = "moved"
+	b, how, err = s.ItemUpsert(n, ItemDone)
+	if err != nil || how != "updated" || b.Title != "moved" || b.Status != ItemDone || b.Card != "sg4~c1" {
+		t.Fatalf("changed file: %+v %s %v", b, how, err)
+	}
+	if _, _, err := s.ItemUpsert(n, "wat"); err == nil {
+		t.Error("an unknown status was imported")
+	}
+}
+
+func TestACardsReportMovesTheItemLinkedToIt(t *testing.T) {
+	s := open(t)
+	for _, id := range []string{"f-1", "f-2"} {
+		if _, err := s.ItemFile(newItem(id, "fabric")); err != nil {
+			t.Fatal(err)
+		}
+	}
+	b, err := s.ItemLink("f-1", "sg4~c1", "orch")
+	if err != nil || b.Status != ItemInProgress || b.Card != "sg4~c1" {
+		t.Fatalf("link: %+v %v", b, err)
+	}
+	if _, err := s.ItemLink("nope", "sg4~c9", "orch"); !errors.Is(err, ErrItemNotFound) {
+		t.Errorf("link of an unknown item: %v", err)
+	}
+	for _, c := range []struct{ report, want string }{{"blocked", ItemBlocked}, {"done", ItemBuilt}, {"incomplete", ItemIncomplete}} {
+		b, followed, err := s.ItemFollow("sg4~c1", c.report, "w")
+		if err != nil || !followed || b.Status != c.want {
+			t.Errorf("%s: %+v %v %v", c.report, b, followed, err)
+		}
+	}
+	for _, report := range []string{"question", "progress"} {
+		if _, followed, _ := s.ItemFollow("sg4~c1", report, "w"); followed {
+			t.Errorf("a %s report moved the item", report)
+		}
+	}
+	if _, followed, err := s.ItemFollow("sg4~c2", "done", "w"); followed || err != nil {
+		t.Errorf("a card with no item: %v %v", followed, err)
+	}
+	if g, _ := s.ItemGet("f-2"); g.Status != ItemOpen {
+		t.Errorf("another item moved: %+v", g)
+	}
+}

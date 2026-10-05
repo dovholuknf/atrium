@@ -433,7 +433,8 @@ var migrations = []struct {
 		// docs/rnd/reports-channel-design.md. They replace a file in one room's checkout that no other room could see.
 		//
 		// An item's id is the one the filer gives (`f-new-x`, `r-037`), as the markdown files' ids are, and is never
-		// reused. Status is typed by whoever changes it and is not derived from work yet. A report is append-only: it
+		// reused. Status is typed by whoever changes it, or follows the card linked by `card`: built on a done report, blocked or
+		// incomplete on those. A report is append-only: it
 		// is read once and marked, and nothing edits its words. Rooms and cards are TEXT with no foreign key, for the
 		// reason room_audit has none.
 		name: "0011_backlog_reports",
@@ -444,7 +445,8 @@ var migrations = []struct {
 					title       TEXT NOT NULL,
 					body        TEXT NOT NULL DEFAULT '',
 					priority    TEXT NOT NULL DEFAULT '',
-					status      TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open','held','in-progress','done','dropped')),
+					status      TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open','held','in-progress','built','blocked','incomplete','done','dropped')),
+					card        TEXT NOT NULL DEFAULT '',
 					filed_by    TEXT NOT NULL DEFAULT '',
 					filed_room  TEXT NOT NULL DEFAULT '',
 					created_at  TEXT NOT NULL,

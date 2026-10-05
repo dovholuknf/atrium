@@ -198,3 +198,66 @@ func TestBacklogToolsAreForTheFullClassOnly(t *testing.T) {
 		}
 	}
 }
+
+func TestBacklogIDsImportAndFollowOverHTTP(t *testing.T) {
+	x := newBacklogRig(t)
+	code, body := x.send("POST", "/_hub/backlog", js(map[string]any{"id": "f-007", "dept": "fabric", "title": "file",
+		"status": "held", "upsert": true}), loopAddr)
+	if code != 200 || str(obj(t, body), "result") != "added" {
+		t.Fatalf("import: %d %s", code, body)
+	}
+	_, body = x.send("POST", "/_hub/backlog", js(map[string]any{"id": "f-007", "dept": "fabric", "title": "file",
+		"status": "held", "upsert": true}), loopAddr)
+	if str(obj(t, body), "result") != "unchanged" {
+		t.Fatalf("second import: %s", body)
+	}
+	code, body = x.send("POST", "/_hub/backlog", js(map[string]any{"dept": "fabric", "title": "no id"}), loopAddr)
+	if code != http.StatusCreated || str(obj(t, body), "id") != "f-008" {
+		t.Fatalf("no id: %d %s", code, body)
+	}
+	if code, _ = x.send("POST", "/_hub/backlog", js(map[string]any{"dept": "fabric", "title": "t", "status": "done"}),
+		loopAddr); code != http.StatusBadRequest {
+		t.Errorf("a status on a plain filing: %d", code)
+	}
+	if code, body = x.send("POST", "/_hub/backlog/f-008", js(map[string]any{"card": "sg4~c1"}), loopAddr); code != 200 ||
+		str(obj(t, body), "status") != "in-progress" {
+		t.Fatalf("link: %d %s", code, body)
+	}
+	code, body = x.send("POST", "/_hub/backlog/follow", js(map[string]any{"card": "sg4~c1", "status": "done"}), loopAddr)
+	if code != 200 || !strings.Contains(body, `"followed":true`) || !strings.Contains(body, `"status":"built"`) {
+		t.Fatalf("follow: %d %s", code, body)
+	}
+	if code, _ = x.send("POST", "/_hub/backlog/follow", js(map[string]any{"card": "sg4~c1", "status": "done"}),
+		"203.0.113.9:4000"); code != http.StatusForbidden {
+		t.Errorf("follow from another machine: %d", code)
+	}
+}
+
+func TestALaunchTagLinksTheItemAndTheReportFollowsIt(t *testing.T) {
+	x := newBacklogRig(t)
+	srv := httptest.NewServer(x.p)
+	t.Cleanup(srv.Close)
+	c := &controlMCP{board: srv.URL, client: srv.Client()}
+	ctx := context.Background()
+	if _, _, err := c.backlogHandler(ctx, nil, backlogInput{Action: "file", ID: "f-new-y", Dept: "fabric", Title: "y"}); err != nil {
+		t.Fatal(err)
+	}
+	if note := c.linkItemToCard(ctx, []string{"x", "item:f-new-y"}, "sg4", "c7", "orch"); note != "" {
+		t.Fatal(note)
+	}
+	if note := c.linkItemToCard(ctx, []string{"item:nope"}, "sg4", "c8", "orch"); !strings.Contains(note, "nope") {
+		t.Errorf("an unknown item said nothing: %q", note)
+	}
+	if note := c.linkItemToCard(ctx, []string{"plain"}, "sg4", "c9", "orch"); note != "" {
+		t.Errorf("a launch with no item tag said %q", note)
+	}
+	_, out, _ := c.backlogHandler(ctx, nil, backlogInput{Action: "get", ID: "f-new-y"})
+	if out.Item == nil || out.Item.Status != "in-progress" || out.Item.Card != "sg4~c7" {
+		t.Fatalf("after launch: %+v", out.Item)
+	}
+	c.followItem(ctx, "sg4", "c7", "done", "w")
+	_, out, _ = c.backlogHandler(ctx, nil, backlogInput{Action: "get", ID: "f-new-y"})
+	if out.Item.Status != "built" {
+		t.Errorf("after the done report: %+v", out.Item)
+	}
+}

@@ -33,20 +33,23 @@ with `atrium_backlog file`. Nothing is committed and no file is shared.
 
 ## The interim rule
 
-Until the markdown files are imported and retired, both exist, and the files are NOT the shared copy.
+The files in git stay the source of truth, and the hub's copy is a mirror that `atrium backlog import docs/backlog`
+refreshes, until the orchestrator says otherwise. Both exist, and a file on one room is NOT what the other rooms see.
 
 - A file under `docs/backlog/**` or `notes/director-reports.md` on one room reached no other room. Never assume it did.
 - File a new item with `atrium_backlog file`, and leave a report with `atrium_reports add`. The hub row is what every
-  room sees.
-- An item already filed as a markdown file in a checkout stays there until it is imported, and a director on another
-  room cannot see it. When you rely on one, file a row that names it.
-- `QUEUE.md` order is not in the hub yet. Say what is next in a report.
+  room sees. Leave the id out to take the next one of the department.
+- An item filed as a markdown file reaches the hub when somebody runs the import on the hub's machine. Until then a
+  director on another room cannot see it. An import overwrites the hub row of an id the files hold, so an item that
+  has a file is changed in the file.
+- `QUEUE.md` order is not in the hub yet, and there is no per-director queue. Say what is next in a report.
+- Launch a worker with the tag `item:<id>` and the item follows its card: in-progress at launch, then built, blocked
+  or incomplete as the report says.
 - Designs (`docs/<dept>/*-design.md`) and changelogs stay files, reviewed in git.
 
 ## Not done here
 
-- Importing `docs/backlog/**` and the `QUEUE.md` files into the table, and exporting back to markdown.
-- Status that follows the card, branch, verdict and landing commit, as the spike asks.
-- A queue per director. The tools, the routes, `atrium backlog`, `atrium reports` and the read-only board tab are the
-  interface so far.
-- Ids given by atrium. The filer still makes up the id, as the files do.
+- Exporting the hub back to markdown. The files are the source of truth, so nothing needs it yet.
+- Branch, verdict and landing commit on an item, as the spike asks. Status follows the card, nothing more.
+- A queue per director. Decided not now.
+
