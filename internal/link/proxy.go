@@ -144,6 +144,8 @@ type Proxy struct {
 	prGone map[string]time.Time
 	// fg is the forge the hub runs for its rooms. Nil until SetForge. See forgeroute.go.
 	fg *hubForge
+	// setup is what each attached room's setup was last read as. See setupwatch.go.
+	setup setupWatch
 }
 
 // NewProxy wires a hub, its board and a room chooser into one handler.
@@ -1484,6 +1486,8 @@ func (p *Proxy) serveHubAPI(w http.ResponseWriter, r *http.Request) {
 		// attention. The inventory is a different question and has its own
 		// endpoint.
 		_ = json.NewEncoder(w).Encode(map[string]any{"rooms": p.attachedView()})
+	case "setup-check":
+		p.serveSetupCheck(w, r)
 	case "nudge":
 		p.serveNudge(w, r)
 	case "everywhere":

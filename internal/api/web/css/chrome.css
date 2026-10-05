@@ -127,6 +127,11 @@
   .rooms.cold .dot { background: var(--warn); box-shadow: none; }
   /* The board lost the hub. This chip is the only connection indicator on a hub, so it has to be able to say
      so: a green counter beside a red `reconnecting` was two controls contradicting each other. */
+  /* Attached rooms set up differently (missing hooks, another build). The tooltip names each. */
+  .rooms.warn { color: var(--warn); border-color: var(--warn); }
+  .rooms.warn .dot { background: var(--warn); box-shadow: 0 0 9px var(--warn); }
+  .setupline { display: flex; align-items: center; gap: var(--sp-3); margin-top: 6px; }
+  .setupline .chip.warn { color: var(--warn); border-color: var(--warn); }
   .rooms.down { color: var(--danger-text); border-color: var(--danger); }
   .rooms.down .dot { background: var(--danger); box-shadow: none; }
   /* Fixed and body-level, positioned by script from the chip. See the note on the element itself: the header

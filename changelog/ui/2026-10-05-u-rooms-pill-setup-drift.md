@@ -1,0 +1,3 @@
+# The rooms pill warns when rooms are set up differently
+
+The hub now asks each attached room, when it attaches and every five minutes, whether its atrium claude hooks are in settings.json and whether it runs the same atrium build as the hub. If a room is missing hooks, has stale ones, or runs another build, the "rooms" pill turns amber and its tooltip names each room and what is wrong, one line each. The rooms page shows the same line on that room's row, with a fix button for hooks that writes them (a backup of the settings is kept and named). A build mismatch only says so. A room that does not answer is shown as "not answering", not as a setup problem.

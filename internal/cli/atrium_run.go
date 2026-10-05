@@ -456,6 +456,8 @@ func serveAtrium(f atriumFlags, up atriumUp) error {
 	// WHAT THIS HUB RUNS, for the deploy queue to compare with the branch and with each room's own commit.
 	proxy.SetRunningCommit(runningCommit())
 	go proxy.RunDeps(ctx)
+	// EACH ROOM'S SETUP, read on attach and every few minutes, for the rooms pill. See internal/link/setupwatch.go.
+	go proxy.RunSetupWatch(ctx)
 
 	go func() {
 		if err := h.Serve(ctx, ln); err != nil && ctx.Err() == nil {
