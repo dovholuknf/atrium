@@ -475,6 +475,11 @@ func InferRepo(worktree string) string {
 	// or what was found is the tail of a path rather than the start of a tree.
 	for i, s := range segs {
 		if forgeDir.MatchString(s) && i+2 < len(segs) {
+			// A folder of worktrees is named for its repo, `<repo>-worktrees`, so
+			// every card kept in one is the repo and not a repo called worktrees.
+			if r := strings.TrimSuffix(segs[i+2], "-worktrees"); r != "" {
+				return r
+			}
 			return segs[i+2]
 		}
 	}

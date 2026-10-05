@@ -21,6 +21,9 @@ func TestInferRepoReadsTheRepoOutOfAWorktreePath(t *testing.T) {
 		{"/home/me/src/gitlab.com/acme/widget", "widget"},
 		{"/home/me/src/bitbucket/team/thing/sub/dir", "thing"},
 		{"/srv/codeberg/someone/project", "project"},
+		// A worktrees folder is the repo's, not a repo of its own.
+		{"/Users/claude/git/github/dovholuknf/atrium-worktrees/r-new-move", "atrium"},
+		{"/Users/claude/git/github/dovholuknf/atrium-worktrees", "atrium"},
 		// The org shares its name with the repo, which must not confuse it.
 		{"D:/git/github/openziti/openziti/deep/path", "openziti"},
 	}
