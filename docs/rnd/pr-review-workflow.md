@@ -189,7 +189,9 @@ Design written 2026-10-04 (828a8cd0).
   - Done: `u-walk-phone-shots` claude/u-walk-phone-shots@333c933e (m1mini). The headless walk taps every state at
     390 and 360 wide, with PNGs. The drawer was too short to reach the buttons, so phone.css raises it to 80% and wraps
     the walk head. The finding and the buttons still need one scroll between them on a phone.
-  - Running: `u-pr-move-action` (section 5.1) on m1mini, from c9d65765.
+  - Done: `u-pr-move-action` claude/u-pr-move-action@3cc666aa (m1mini), section 5.1 on the pulls row and the card
+    menu, with a headless test of the pulls row and PNGs. Not done there: no headless test of the card menu entry,
+    and a launch that fails after the hub move leaves the claim moved, with a note and no rollback.
   - The next queue item, `rnd-new-review-quality`, is designed in `docs/rnd/review-quality-design.md` (ee0307bc).
   Not done there: no room handoff in the tree moves a PR card, so nothing passes the new card as walker. The hub move
   takes an optional `walker` for whoever builds that. A claim on a room gone for good cannot be moved (Open 4).
