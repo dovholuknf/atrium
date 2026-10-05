@@ -385,6 +385,7 @@ func (c *controlMCP) server(class ctlClass) *mcp.Server {
 
 	c.registerGit(s, class)
 	c.registerDeps(s, class)
+	c.registerBacklog(s, class)
 	c.registerDocs(s, class)
 	c.registerDeploy(s, class)
 	c.registerResources(s, class)

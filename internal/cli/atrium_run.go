@@ -368,6 +368,8 @@ func serveAtrium(f atriumFlags, up atriumUp) error {
 	proxy.SetDocs(store)
 	// CHANGE REQUESTS BETWEEN ROOMS, rows in the store. See link/changerequest.go.
 	proxy.SetChangeRequests(store)
+	// THE BACKLOG AND DIRECTOR REPORTS EVERY ROOM SHARES, rows in the store. See link/backlog.go.
+	proxy.SetBacklog(store)
 	// WHICH ROOM RUNS A PR, AND ONE ROW PER PR. See link/prclaim.go.
 	proxy.SetPRClaims(store)
 	// THE HUB RUNS THE FORGE FOR ITS ROOMS, which never run gh or bb. See link/forgeroute.go.

@@ -428,6 +428,45 @@ var migrations = []struct {
 			`CREATE INDEX IF NOT EXISTS pr_claim_room ON pr_claim (room)`,
 		},
 	},
+	{
+		// BACKLOG ITEMS AND DIRECTOR REPORTS THAT EVERY ROOM CAN READ AND WRITE. See backlog.go and
+		// docs/rnd/reports-channel-design.md. They replace a file in one room's checkout that no other room could see.
+		//
+		// An item's id is the one the filer gives (`f-new-x`, `r-037`), as the markdown files' ids are, and is never
+		// reused. Status is typed by whoever changes it and is not derived from work yet. A report is append-only: it
+		// is read once and marked, and nothing edits its words. Rooms and cards are TEXT with no foreign key, for the
+		// reason room_audit has none.
+		name: "0011_backlog_reports",
+		stmts: []string{
+			`CREATE TABLE IF NOT EXISTS backlog_item (
+					id          TEXT PRIMARY KEY,
+					dept        TEXT NOT NULL,
+					title       TEXT NOT NULL,
+					body        TEXT NOT NULL DEFAULT '',
+					priority    TEXT NOT NULL DEFAULT '',
+					status      TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open','held','in-progress','done','dropped')),
+					filed_by    TEXT NOT NULL DEFAULT '',
+					filed_room  TEXT NOT NULL DEFAULT '',
+					created_at  TEXT NOT NULL,
+					changed_at  TEXT NOT NULL,
+					changed_by  TEXT NOT NULL DEFAULT ''
+				)`,
+			`CREATE INDEX IF NOT EXISTS backlog_item_dept ON backlog_item (dept, status)`,
+			`CREATE TABLE IF NOT EXISTS director_report (
+					n          INTEGER PRIMARY KEY,
+					id         TEXT NOT NULL UNIQUE,
+					to_dept    TEXT NOT NULL DEFAULT '',
+					from_by    TEXT NOT NULL DEFAULT '',
+					from_room  TEXT NOT NULL DEFAULT '',
+					subject    TEXT NOT NULL,
+					body       TEXT NOT NULL DEFAULT '',
+					at         TEXT NOT NULL,
+					read_at    TEXT NOT NULL DEFAULT '',
+					read_by    TEXT NOT NULL DEFAULT ''
+				)`,
+			`CREATE INDEX IF NOT EXISTS director_report_unread ON director_report (read_at, to_dept)`,
+		},
+	},
 }
 
 func (s *Store) migrate() error {
