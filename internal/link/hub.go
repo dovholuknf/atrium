@@ -110,6 +110,10 @@ type Hub struct {
 	// one the hello named, set on the request by serveGit and never read from the room's own headers. Nil answers 404,
 	// which a room reads as a hub that cannot be asked, so its row is `claim: pending`. See prclaim.go.
 	PRClaim http.Handler
+	// Forge answers a room's forge question (a pull request, an issue, a repository to hold) on the same `git` kind
+	// connection, at ForgePrefix. The room is the one the hello named, set by serveGit. Nil answers 404, which a room
+	// reads as a hub that cannot be asked. See forgeroute.go.
+	Forge http.Handler
 
 	mu    sync.Mutex
 	rooms map[string]*attached

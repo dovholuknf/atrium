@@ -140,28 +140,14 @@ func TestForgeNoScopeLineIsNotAFailure(t *testing.T) {
 	}
 }
 
-// The command is the room's own setting. A body cannot name one, and a setting cannot be a path.
-func TestForgeCommandOverrideIsTheRoomsAndABareName(t *testing.T) {
+// The command is the tool's own name. A body cannot name one.
+func TestForgeCommandIsTheToolsOwnName(t *testing.T) {
 	d := testDaemon(t)
-	if err := d.st.SetForgeConfig("gh", "github.com", "gh-work"); err != nil {
-		t.Fatal(err)
-	}
 	f := &fakeForgeCLI{out: ghOK}
 	f.install(t)
 	forgeCheck(t, d, `{"forges":[{"tool":"gh","host":"github.com","command":"rm"}]}`)
-	if got := f.runs[0][0]; got != "/fake/bin/gh-work" {
-		t.Errorf("ran %q, want the configured name", got)
-	}
-	for _, bad := range []string{"/usr/bin/gh", `..\gh`, "gh --show-token", "-x"} {
-		if err := d.st.SetForgeConfig("gh", "github.com", bad); err == nil {
-			t.Errorf("accepted %q as a command name", bad)
-		}
-	}
-	if err := d.st.SetForgeConfig("gh", "https://github.com/x", ""); err == nil {
-		t.Errorf("accepted a URL as a host")
-	}
-	if err := d.st.SetForgeConfig("rm", "", ""); err == nil {
-		t.Errorf("accepted an unknown forge")
+	if got := f.runs[0][0]; got != "/fake/bin/gh" {
+		t.Errorf("ran %q, want gh", got)
 	}
 }
 

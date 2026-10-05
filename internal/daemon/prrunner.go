@@ -59,11 +59,15 @@ type prRunner struct {
 	run  func(ctx context.Context, c prCmd) ([]byte, error)
 	// forgeOf, when set, picks the forge for a host instead of the providers. A seam for tests.
 	forgeOf func(host string) (forge.Forge, error)
+	// hub is the hub's forge, nil for a room with no hub, and hubSource a loopback to a repository of the hub's store.
+	// A room with a hub asks the hub and fetches from its store, and never runs a forge CLI. See hubforge.go.
+	hub       func() *forge.Remote
+	hubSource func(ctx context.Context, name string) (string, func(), error)
 	// onAccess is told of a forge call's error and says whether it was a missing or logged out forge, and onWorked of a
 	// forge that answered. The daemon fills them to raise and clear the board alert. Nil in a bare runner.
 	onAccess func(kind string, err error) bool
 	onWorked func(kind, host string)
-	now     func() time.Time
+	now      func() time.Time
 	// baseEnv is the environment every child starts from.
 	baseEnv func() []string
 	// agentsDir is where the panel's agent definitions are.
@@ -519,6 +523,11 @@ func (r *prRunner) forgeFor(host string) (forge.Forge, error) {
 	if host == "" {
 		host = "github.com"
 	}
+	if r.hub != nil {
+		if hf := r.hub(); hf != nil {
+			return hf, nil
+		}
+	}
 	var entries []forge.Entry
 	if r.st != nil {
 		rows, err := r.st.Providers()
@@ -673,10 +682,23 @@ func (pr *prRun) fetchSource(spec forge.FetchSpec, head string) error {
 	if err := os.MkdirAll(src, 0o755); err != nil {
 		return err
 	}
+	remote, fetch := spec.Remote, []string{"fetch", "-q", "--depth", "1", "--filter=blob:none", "origin", spec.Refspec}
+	if spec.Hub != "" {
+		// THE HEAD IS IN THE HUB'S STORE, which serves whole fetches only, read through a loopback to the link.
+		if pr.r.hubSource == nil {
+			return errors.New("this room has no way to read the hub's store")
+		}
+		url, done, err := pr.r.hubSource(pr.ctx, spec.Hub)
+		if err != nil {
+			return err
+		}
+		defer done()
+		remote, fetch = url, []string{"fetch", "-q", "--no-tags", "origin", spec.Refspec}
+	}
 	for _, args := range [][]string{
 		{"init", "-q"},
-		{"remote", "add", "origin", spec.Remote},
-		{"fetch", "-q", "--depth", "1", "--filter=blob:none", "origin", spec.Refspec},
+		{"remote", "add", "origin", remote},
+		fetch,
 		{"checkout", "-q", "--detach", "FETCH_HEAD"},
 	} {
 		if _, err := pr.r.run(pr.ctx, prCmd{Name: "git", Args: args, Dir: src, Timeout: prGitTimeout,

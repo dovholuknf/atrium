@@ -99,6 +99,26 @@ func (s *Store) MovePRClaim(key, room string) (PRClaim, error) {
 	return c, err
 }
 
+// ReleasePRClaim deletes the claim on key while room still owns it, so the next paste places the key again. It is for
+// a placement the room refused: nothing was made there. It answers the claim it deleted, and ErrNoPRClaim when the key
+// was not room's, which leaves a claim that moved meanwhile alone.
+func (s *Store) ReleasePRClaim(key, room string) (PRClaim, error) {
+	var c PRClaim
+	err := s.tx(func(t *sql.Tx) error {
+		var err error
+		c, err = scanPRClaim(t.QueryRow(`SELECT `+prClaimCols+` FROM pr_claim WHERE key = ? AND room = ?`, key, room))
+		if err != nil {
+			return err
+		}
+		_, err = t.Exec(`DELETE FROM pr_claim WHERE key = ? AND room = ?`, key, room)
+		return err
+	})
+	if errors.Is(err, sql.ErrNoRows) {
+		return PRClaim{}, ErrNoPRClaim
+	}
+	return c, err
+}
+
 // PRClaims lists every claim, by key.
 func (s *Store) PRClaims() ([]PRClaim, error) {
 	var out []PRClaim

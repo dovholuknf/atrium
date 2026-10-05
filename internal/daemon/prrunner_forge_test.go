@@ -120,3 +120,77 @@ func TestPRRunnerTellsTheDaemonOfAnAccessErrorAndOfASuccess(t *testing.T) {
 		t.Errorf("a forge that answered did not clear: %q", worked)
 	}
 }
+
+// A ROOM WITH A HUB ASKS THE HUB AND READS THE HEAD FROM ITS STORE: no gh, no forge URL, a whole fetch of the
+// hub's ref through the loopback, and the loopback closed after.
+func TestPRRunnerWithAHubAsksTheHubAndFetchesFromItsStore(t *testing.T) {
+	f := newPRFix(t)
+	diff, err := os.ReadFile("../prreview/render/testdata/run/pr.diff")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var asked []forge.HubAsk
+	remote := forge.NewRemote(func(_ context.Context, path string, in, out any) error {
+		a := in.(forge.HubAsk)
+		asked = append(asked, a)
+		ans := out.(*forge.HubPR)
+		*ans = forge.HubPR{Kind: forge.GitHub, PR: &forge.PR{Title: "via the hub", Head: prTestHead, HeadRef: "feat",
+			BaseRef: "main", Files: []forge.File{{Path: "src/tls_engine.c", Additions: 4}}}, Diff: diff,
+			URL: "https://github.com/o/r/pull/1", Store: "github/o/r", Ref: forge.PRRef(a.Number)}
+		return nil
+	})
+	f.r.hub = func() *forge.Remote { return remote }
+	var sources []string
+	closed := 0
+	f.r.hubSource = func(_ context.Context, name string) (string, func(), error) {
+		sources = append(sources, name)
+		return "http://127.0.0.1:1/tok/git/hub/" + name + ".git", func() { closed++ }, nil
+	}
+	p := f.run(t)
+	if p.State != store.PRReady {
+		t.Fatalf("%s %q", p.State, p.RunError)
+	}
+	if len(asked) == 0 || !asked[0].Fetch {
+		t.Fatalf("the hub was not asked to fetch the head: %+v", asked)
+	}
+	if len(sources) != 1 || sources[0] != "github/o/r" || closed != 1 {
+		t.Fatalf("sources %v closed %d", sources, closed)
+	}
+	var added, fetched bool
+	for _, c := range f.calls {
+		if strings.HasPrefix(c, "gh ") || strings.HasPrefix(c, "bb ") {
+			t.Fatalf("a room with a hub ran a forge CLI: %s", c)
+		}
+		if strings.Contains(c, "github.com") && strings.HasPrefix(c, "git ") {
+			t.Fatalf("a room with a hub fetched from the forge: %s", c)
+		}
+		if strings.HasPrefix(c, "git remote add origin http://127.0.0.1:1/tok/git/hub/github/o/r.git") {
+			added = true
+		}
+		if strings.HasPrefix(c, "git fetch") && strings.HasSuffix(c, " origin "+forge.PRRef(p.Number)) {
+			fetched = true
+			if strings.Contains(c, "--depth") || strings.Contains(c, "--filter") {
+				t.Fatalf("the hub's store serves whole fetches only: %s", c)
+			}
+		}
+	}
+	if !added || !fetched {
+		t.Fatalf("the head was not read from the hub: %v", f.calls)
+	}
+}
+
+// A ROOM WITH A HUB PICKS THE HUB'S FORGE for every host, and never a provider of its own.
+func TestPRRunnerForgeForIsTheHubsWhenThereIsOne(t *testing.T) {
+	f := newPRFix(t)
+	remote := forge.NewRemote(nil)
+	f.r.hub = func() *forge.Remote { return remote }
+	for _, host := range []string{"github.com", "bitbucket.org", "unknown.example", ""} {
+		if got, err := f.r.forgeFor(host); err != nil || got != forge.Forge(remote) {
+			t.Fatalf("%q: %v %v", host, got, err)
+		}
+	}
+	f.r.hub = func() *forge.Remote { return nil }
+	if got, err := f.r.forgeFor("github.com"); err != nil || got.Kind() != forge.GitHub {
+		t.Fatalf("a room with no hub: %v %v", got, err)
+	}
+}

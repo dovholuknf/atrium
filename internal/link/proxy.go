@@ -134,6 +134,8 @@ type Proxy struct {
 	prc *hubstore.Store
 	// prGone is when each claim's room was first seen offline, for prWarnSweep.
 	prGone map[string]time.Time
+	// fg is the forge the hub runs for its rooms. Nil until SetForge. See forgeroute.go.
+	fg *hubForge
 }
 
 // NewProxy wires a hub, its board and a room chooser into one handler.
@@ -560,6 +562,7 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if r, placed = p.placePRWorktree(w, r); !placed {
 		return
 	}
+	w = p.releaseOnRefusal(w, r)
 	// AN UNSCOPED LAUNCH GOES TO THE ROOM ON THE CALLER'S MACHINE THAT HAS THE
 	// DIRECTORY. Ahead of startsNothing so that sees the room it lands on. See
 	// launchroute.go.
@@ -1437,6 +1440,10 @@ func (p *Proxy) serveHubAPI(w http.ResponseWriter, r *http.Request) {
 	}
 	if strings.HasPrefix(sub, "growls/") {
 		p.serveGrowls(w, r, sub)
+		return
+	}
+	if sub == "forge" || strings.HasPrefix(sub, "forge/") {
+		p.serveForgeAdmin(w, r, strings.Trim(strings.TrimPrefix(sub, "forge"), "/"))
 		return
 	}
 	if sub == "pr-claims" || strings.HasPrefix(sub, "pr-claims/") {

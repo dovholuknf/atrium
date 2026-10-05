@@ -55,10 +55,12 @@ type PR struct {
 	Files    []File `json:"files"`
 }
 
-// FetchSpec is how git gets the head: fetch Refspec from Remote.
+// FetchSpec is how git gets the head: fetch Refspec from Remote. Hub, when set, is the repository's name in the hub's
+// store (`github/o/r`) and Remote is empty: the head is a ref the hub fetched, and a room reads it over its link.
 type FetchSpec struct {
 	Remote  string
 	Refspec string
+	Hub     string
 }
 
 // Cmd is one named outbound command.

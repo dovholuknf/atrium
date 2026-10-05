@@ -12,15 +12,9 @@
     "branch": "{headRefName}",
     "window": "pull-requests",
     "prompt": "Review the pull request at {url}.\n\nThe worktree is already on its branch. Read the diff against the base branch first, then the description, then the discussion. Report what you would block on and what is only a preference.",
-    "fetch": "gh",
+    "fetch": "forge",
     "fetch_args": [
-      "pr",
-      "view",
-      "{num}",
-      "--repo",
-      "{org}/{repo}",
-      "--json",
-      "title,headRefName,baseRefName,isDraft"
+      "pr"
     ],
     "notes": "A trailing path, query or fragment is allowed on purpose. .../pull/5/files and .../pull/5 are the same pull request. A path in front of /pull, or letters glued to the number, is not a pull request and does not match."
   },
@@ -37,15 +31,9 @@
     "branch": "issue-{num}",
     "window": "active-work",
     "prompt": "Work on {url}.\n\n{body}",
-    "fetch": "gh",
+    "fetch": "forge",
     "fetch_args": [
-      "issue",
-      "view",
-      "{num}",
-      "--repo",
-      "{org}/{repo}",
-      "--json",
-      "title,body"
+      "issue"
     ],
     "notes": "An issue has no branch of its own, so the branch is named for the issue and the worktree is one you make before starting."
   },

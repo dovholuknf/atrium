@@ -83,7 +83,8 @@ type preflightRequest struct {
 	RunnerAuth []string `json:"runner_auth"`
 	Tools      []string `json:"tools"`
 	EnvPresent []string `json:"env_present"`
-	// Forges names the forge CLIs to ask for their login status. The command is the room's own setting, never this body's.
+	// Forges names the forge CLIs to ask for their login status, on a room with no hub. A room with a hub answers that
+	// the hub keeps them.
 	Forges []preflightForge `json:"forges"`
 }
 
@@ -170,6 +171,12 @@ func (d *Daemon) handlePreflight(w http.ResponseWriter, r *http.Request) {
 		ans.RunnerAuth[k] = d.preflightOne(ctx, k, append([]string{exe}, args...), exe)
 	}
 	for _, fg := range req.Forges {
+		if d.HubForge() != nil {
+			// A room with a hub never runs a forge CLI. The logins are the hub's, and so is their check.
+			ans.Forges[fg.Tool+"@"+fg.Host] = forgeStatus{Tool: fg.Tool, Host: fg.Host, State: forgeUnknown,
+				Message: "forge logins are the hub's, nothing was run here. check them on the hub with POST /_hub/forge/check"}
+			continue
+		}
 		if fg.Host != "" && !store.ValidForgeHost(fg.Host) {
 			ans.Forges[fg.Tool+"@"+fg.Host] = forgeStatus{Tool: fg.Tool, Host: fg.Host, State: forgeUnknown, Message: "not a host name, nothing was run"}
 			continue

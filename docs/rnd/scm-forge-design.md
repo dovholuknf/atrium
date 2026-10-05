@@ -14,18 +14,20 @@ Read for this design:
 
 ## 0. The design in one paragraph
 
-A **forge** is a small Go interface in the room daemon. An implementation holds nothing. It builds an argv for a named
-CLI (`gh` for GitHub, `bb` for Bitbucket, `glab` for GitLab), runs it through the bounded runner the PR runner already
-has, and parses what the CLI prints. **The PR's host picks the forge.** `github.com` uses `gh` and `bitbucket.org` uses
-`bb`, with no provider needed. Any other host needs a provider row that names its forge. Every forge call runs **in the
-room**, because the CLI and its login are per machine, and the hub never calls a forge and holds no credential.
+A **forge** is a small Go interface. An implementation holds nothing. It builds an argv for a named CLI (`gh` for
+GitHub, `bb` for Bitbucket, `glab` for GitLab), runs it through a bounded runner, and parses what the CLI prints. **The
+PR's host picks the forge.** `github.com` uses `gh` and `bitbucket.org` uses `bb`, with no entry needed. Any other host
+needs an entry on the hub that names its forge. **Every forge call runs on the hub** (clint, 2026-10-04: "Rooms should
+exclusively use the hub. Only the hub integrates with bitbucket/github"). A room attached to a hub never runs `gh` or
+`bb` and never fetches from a forge host. It asks the hub over its link, and the hub runs the CLI under its own login
+and fetches the PR's head into its store. A room with no link is its own hub and runs the forge itself.
 
 **Atrium never goes looking for PRs.** It does not list them, poll for them or take a webhook. A PR reaches the board
 when the operator puts it there, as a pasted URL through a recogniser or through gwt. Once there, the PR is placed on
-the **least busy room**, kept as **one row per PR across rooms**, and read through the forge on that room. A room with
-no checkout of the repo gets the code from the hub's clone. A PR can be checked out as a worktree at the provider's
-`<worktree_root>/<org>/<repo>/<branch>`. A forge is used only when an action needs it, and when its access is missing
-atrium raises an alert saying what is needed and offers the configuration to fix it.
+the **least busy room**, kept as **one row per PR across rooms**, and read through the hub's forge. A room with no
+checkout of the repo gets the code from the hub's store, and the PR's head from the same store. A PR can be checked out
+as a worktree at the provider's `<worktree_root>/<org>/<repo>/<branch>`. A forge is used only when an action needs it,
+and when its access is missing the hub raises an alert saying what is needed and where to fix it.
 
 ## 1. Which forge: the PR's host
 
@@ -67,8 +69,16 @@ a fine-grained token does not, has nothing that can be said to be missing, so it
 | logged in to host H | `gh auth status --hostname H` | `bb auth status` | `glab auth status --hostname H` |
 | scopes held | the `Token scopes:` line | not applicable | the same line |
 
-**The room's own settings.** A room holds, per CLI, a host and a command name (`forge.<tool>.host` and
-`forge.<tool>.cmd`) and nothing else. The command name comes from this setting, never from a request body.
+**The logins are the hub's.** The `gh` and `bb` logins live on the hub alone. The hub holds its forge per host in one
+setting, `forge.entries`, a list of `{host, forge, cmd}` read and written at `GET` and `PUT /_hub/forge`. The command
+name comes from that list, never from a request body. A room holds no forge setting. Migration 0083 deleted the room's
+old `forge.<tool>.host` and `forge.<tool>.cmd` rows and the board's room settings no longer show a forge block.
+
+**The alert is the hub's.** When a room's question finds the hub's CLI missing or logged out, or the forge refuses the
+hub a credential while fetching a PR's head, the hub raises one growler, `forge|<tool>@<host>|<ts>`, hung on the room
+that asked. Its sentence names the hub and the login command to run there. It is raised once while open, and the next
+forge answer that works ends it. `POST /_hub/forge/check` asks the hub's CLIs for their status. It answers a state per
+CLI and ends an open alert on `ok`. It raises nothing on a failure, since no room is waiting on it.
 
 **The requirement.** `atrium.requirements.yaml` has a `forges:` block keyed by the CLI, with the host it must be logged
 in to and the scopes it must hold:
@@ -79,8 +89,10 @@ forges:
 ```
 
 The key is one of `gh`, `bb` or `glab`, the host must be a host name and each scope a plain scope string. Nothing else
-is accepted, so the file cannot carry a secret and a lint of it can say so. `POST /v1/preflight` accepts a `forges`
-list of `{tool, host, scopes}` and answers a state for each, and the fix text is the CLI's own login or refresh command.
+is accepted, so the file cannot carry a secret and a lint of it can say so. The block names the hub's login and is
+checked on the hub with `POST /_hub/forge/check`, which takes the same `{tool, host, scopes}` list. `POST /v1/preflight`
+on a room with a hub runs no CLI and answers that the logins are the hub's. On a room with no hub it still asks the
+room's own CLI, by its default name against its default host.
 
 ## 3. What the forge answers
 
@@ -143,17 +155,18 @@ turns `feature/x` into `feature-x`, so the directory is predictable.
 
 **The verb.** `POST /v1/providers/{name}/worktrees` accepts `number` beside `org` and `repo` for a PR. The daemon:
 1. finds the provider and refuses with a sentence if worktrees are off.
-2. asks the forge for the PR, so a missing or logged-out forge answers its own sentence first.
-3. when the repo is not a checkout on this room, gets the code through the scm clone path. That path clones from the
-   hub's copy and keeps a guarded `origin`. A private repo the hub cannot read fails with a sentence telling the
-   operator to clone it.
-4. fetches the head from the forge's `FetchSpec` into `refs/atrium/pr/<N>` over https only, then runs `git worktree add`
-   at the destination, creating the branch at the fetched head.
+2. asks the hub's forge for the PR, so a missing or logged-out login on the hub answers its own sentence first.
+3. when the repo is not a checkout on this room, gets the code through the scm clone path. That path asks the hub to
+   hold the repository, clones the hub's copy, and keeps a guarded `origin` set to the forge's https URL. A private
+   repo the hub cannot read fails with a sentence that names the hub's login.
+4. fetches the head the hub fetched into its store, from `refs/atrium/pr/<N>` there into `refs/atrium/pr/<N>` here,
+   then runs `git worktree add` at the destination, creating the branch at the fetched head.
 5. is idempotent. A worktree already on that branch is the answer, with `existed: true`. A branch that exists
    locally is checked out as it is, so a local commit is never overwritten, and a destination that exists and is not
    that worktree is a conflict that is reported and never overwritten.
 
-Nothing here pushes, and it never touches a credential. The fetch uses what git already has.
+Nothing here pushes, and the room never touches a forge credential. A room with no hub fetches the head from the
+forge itself, with its CLI's credential helper.
 
 **The way in.** A "check out" action on a PR, the recogniser's `prepare` for a PR URL, and `atrium open <pr url>`, all
 one function. The launch dialog's directory then points at the path the verb returns. A card started there is an
@@ -161,8 +174,9 @@ ordinary card in a worktree, and `gwt pr` keeps working, since the next discover
 
 ## 6. Which room runs a PR, and one row across rooms
 
-**Where the call runs: the room.** The CLI, its login and the reviews root are per machine. The hub proxies `/v1/prs`
-to a room as it proxies `/v1/tasks`, and it never calls a forge.
+**Where the call runs: the hub runs the forge, the room runs the review.** The reviews root and the run folder are per
+room. The hub proxies `/v1/prs` to a room as it proxies `/v1/tasks`, and the room asks the hub for the PR's metadata,
+diff and head. The CLI and its login are the hub's alone.
 
 **Which room: the least busy.** The hub picks the online room running the fewest sessions. A session is a card that is
 running or waiting on an answer or a permission. Ties are broken by idle CPU. Whether a room has a checkout does not
@@ -190,6 +204,8 @@ The flow:
    the operator to move it by hand. After the room has been offline for two minutes the board raises a warning alert
    saying the PR is on that room and that it is offline, and ends the alert when the room returns or the claim moves.
 7. **Room handoff.** When the operator moves a PR card, the claim's room is updated so the key keeps one owner.
+8. **A refused placement lets go.** When the room a worktree was placed on answers 4xx or 5xx, such as a clone or a
+   head fetch the hub could not do, the claim that placement made is released, so a retry places the key again.
 
 ## 7. Staging
 
@@ -247,9 +263,11 @@ concern (`r-new-scm-recognisers-salvage`):
 | `internal/api/web/index.html` | the paste placeholder and the recogniser example pattern |
 | `internal/api/web/js/terminal-links.js` | the PR link walk keys on `github.com` and `/pull/` |
 
-**Not moved, on purpose.** `internal/daemon/recognise.go` (`fetch`) and `internal/daemon/sources.go` run the
-operator's own argv, which names `gh` in the operator's row. That is a name the operator wrote, and the forge does not
-replace it. `internal/hubstore/docs_secrets.go` has a secret-scan rule for the string `gh`, unrelated.
+**Moved to the hub.** `internal/daemon/recognise.go` has a built-in fetch, `forge` with the argument `pr` or `issue`,
+which reads through the hub's forge and gives facts under gh's names (`title`, `headRefName`, `baseRefName` for a PR,
+`title` and `body` for an issue). On a room with a hub a row whose fetch names `gh`, `bb` or `glab` is refused with a
+sentence saying to use `forge`. The rows in `scripts/recognisers/` use it. `internal/daemon/sources.go` still runs the
+operator's own argv. `internal/hubstore/docs_secrets.go` has a secret-scan rule for the string `gh`, unrelated.
 
 ## 9. How this relates to the hub as a forge
 
@@ -257,25 +275,27 @@ replace it. `internal/hubstore/docs_secrets.go` has a secret-scan rule for the s
 fetch from it, and `atrium_git_url` says where. It answers "where do I get the work a swarm made", and it is also where
 a room without a checkout gets the code of a PR (section 5). It has no PRs, reviewers or CI.
 
-The forge here reads what **GitHub** (or Bitbucket) says about a PR the world made. It has no git store and serves no
-clones.
+The forge here reads what **GitHub** (or Bitbucket) says about a PR the world made. It runs on the hub, and it fills
+the hub's store with what a room needs.
 
 | | hub as a forge | this forge |
 | --- | --- | --- |
-| lives on | the hub | the room, as a CLI call |
-| holds | bare repos, push log | nothing |
+| lives on | the hub | the hub, as a CLI call, or a room with no hub |
+| holds | bare repos, push log | nothing of its own. PR heads go in the hub's store |
 | speaks | smart HTTP git | `gh`, `bb`, `glab` |
-| credential | the machine's hub certificate | the CLI's own, never atrium's |
+| credential | the machine's hub certificate | the hub's CLI login, never atrium's |
 | ends at | a branch the orchestrator merges and pushes on | a PR row in the pulls view |
 
-**Where they meet:** the code of a PR. The forge says where the head is (`FetchSpec`), and a room with no checkout gets
-the repo from the hub's clone through the scm clone path and then fetches the head. The forge never reads the hub's
-store and the hub never calls a forge. The one thing the hub does for PRs is section 6's placement and claim table,
-which are about rooms and not about git.
+**Where they meet:** the code of a PR. A room asks the hub (`POST /_forge/pr` on the link's git kind with `fetch`).
+The hub holds the repository in its store, cloning it from the forge when it does not, and fetches the PR's head into
+`refs/atrium/pr/<N>` there, over https with the forge CLI's own credential helper for that one command. When the
+store's `main` is still empty, as for a private repository the seed could not read, it fetches the base branch into
+`main` in the same command. The room then reads the head from the store through a read-only loopback to its link, like
+any other ref. The hub only ever fetches from a forge and never pushes to one.
 
 **The name.** Docs call the hub's feature "the hub as a forge" and this design says "forge". In code, this is
-`internal/forge`, and the hub's is `internal/gitsync` and `internal/hubstore`. The hub's feature stays "the hub as a
-forge" and never "forge" alone.
+`internal/forge`, and the hub's is `internal/gitsync` and `internal/hubstore`. The hub's forge route is
+`internal/link/forgeroute.go`. The hub's feature stays "the hub as a forge" and never "forge" alone.
 
 ## 10. What is out
 
@@ -288,39 +308,61 @@ forge" and never "forge" alone.
 - **No second intake.** `POST /v1/prs` is the one door for a row.
 - **No write to a forge.** The interface has no write method until posting a review is ordered, and that is its own
   design.
-- **The hub does not call a forge, and a forge is not the hub.**
+- **A room with a hub does not call a forge.** It does not run `gh`, `bb` or `glab`, as a forge call or as a
+  recogniser's fetch, and it does not fetch from a forge host. A room whose hub is down fails with a sentence and never
+  falls back to a forge of its own.
+- **The hub never pushes to a forge.** It views, diffs and fetches.
 - **No automatic re-placement.** A PR on an offline room waits and warns.
 
 ## Built
 
-On claude/main as of d35d9c1e, read from the code.
+On claude/main as of d35d9c1e, plus `r-hub-forge` (2026-10-04), read from the code.
 
 - **`internal/forge`.** The `Forge` interface with `View`, `Diff`, `Head`, `FetchSpec` and `PRURL`, the `PR`, `Ref`
-  and `FetchSpec` types, and a `gh` implementation behind a bounded `Runner`. `Pick` and `For` choose the forge from
-  the host with provider entries first and the built-in table (`github.com`, `bitbucket.org`) second, and a host with
-  neither fails `NoForgeError` (`no_forge`). `AccessError` carries a not-installed or not-logged-in sentence. Only the
-  GitHub kind is built, and `bitbucket` and `gitlab` answer `no_forge` saying the forge is not built. The PR runner
-  (`internal/daemon/prrunner.go`) builds its forge from the enabled providers' `forge` and `forge_cmd` fields.
+  and `FetchSpec` types, and `gh` and `bb` implementations behind a bounded `Runner` (`forge.Exec` on the hub). `Pick`
+  and `For` choose the forge from the host with entries first and the built-in table (`github.com`, `bitbucket.org`)
+  second, and a host with neither fails `NoForgeError` (`no_forge`). `AccessError` carries a not-installed or
+  not-logged-in sentence. `IssueReader` reads an issue (`gh issue view`, `bb api .../issues/N`), as its own interface
+  so a fake that reads only PRs is still a `Forge`. `Remote` is the Forge of a room with a hub: every call is a
+  request to the hub, `FetchSpec` names a ref in the hub's store (`FetchSpec.Hub`), and a refusal is a `HubError`
+  with the hub's sentence.
+- **The hub's forge route, `internal/link/forgeroute.go`.** `POST /_forge/pr`, `/_forge/issue` and `/_forge/repo` on
+  the link's git kind, with the asking room set from the hello. The forge is picked per host from the hub setting
+  `forge.entries`. A PR asked with `fetch` is held in the store and its head fetched into `refs/atrium/pr/<N>`
+  (`Store.Hold` and `Store.FetchPR` in `internal/gitsync/storepr.go`). An `AccessError`, or a head fetch the forge
+  refused a credential for (`FetchError.Auth`), raises the growler of section 2, and a later success ends it.
+  `GET` and `PUT /_hub/forge` hold the entries, and `POST /_hub/forge/check` checks the hub's logins.
+- **The room's side.** `Room.Forge` asks the hub, and `d.SetHubForge` gives a room started with a link the `Remote`.
+  The PR runner (`internal/daemon/prrunner.go`) and the PR worktree verb (`internal/api/prworktree.go`) use it, and
+  read the head and a clone from the hub's store through `gitsync.HubLoopback`, a loopback that serves the fetch of
+  one repository of the store and nothing else. A whole fetch, since the store serves no shallow or filtered one. The
+  PR worktree verb finds its provider by name, else by the body's host. A room with no link builds its forge from its
+  providers' `forge` and `forge_cmd` fields as before.
 - **`internal/api/prworktree.go`.** The PR form of the provider worktree verb, taking `org`, `repo` and `number`. It
   asks the forge for the head ref and fork flag, uses the real branch for a same-repo PR and `pr-<N>` for a fork,
-  clones through the scm clone path when the room has no checkout, fetches the head into `refs/atrium/pr/<N>` over
-  https, makes the worktree, and answers `existed: true` on a repeat.
-- **`internal/daemon/forgeaccess.go`.** The status check per CLI (`gh`, `glab`, `bb`) from the CLI's own status
-  command, the scopes read from the `Token scopes:` line, the one alert for not installed, logged out or missing scope
-  with a message and a fix, `RaiseForgeAccess` for the code that hits missing access, the open alerts for the settings
-  view, and the settings view's "check now". `internal/store/forgecfg.go` holds the per-room host and command name.
+  clones through the scm clone path when the room has no checkout, fetches the head into `refs/atrium/pr/<N>`, makes
+  the worktree, and answers `existed: true` on a repeat.
+- **`internal/daemon/forgeaccess.go`.** On a room with no hub only: the status check per CLI from the CLI's own status
+  command under its default name, the scopes read from the `Token scopes:` line, the one alert for not installed,
+  logged out or missing scope, `RaiseForgeAccess` for the code that hits missing access, and the open alerts in the
+  room settings (`forge_access`). The room's `forge` settings key, `POST /v1/forge/check` and the board's "forge
+  logins" block are gone (migration 0083).
 - **`internal/requirements`.** The `forges:` block, keyed by `gh`, `bb` or `glab`, with a `host` and `scopes`, and
-  validated so nothing else is accepted. `POST /v1/preflight` takes a `forges` list and answers a state per forge.
+  validated so nothing else is accepted. It is the hub's login. `POST /v1/preflight` on a room with a hub runs no CLI
+  and says the logins are the hub's.
 - **PR placement and the fold.** `placePRRoom` in `internal/link/prclaim.go` picks the online room running the
   fewest sessions, breaking a tie by the lower room name. The hub's claim table and the claim call, the forward of a
   paste to the owner, the move of a claim, the offline-room warning alert, the room's `claim: pending` and its
   reconcile (`ReconcilePRClaims` in `internal/api/prclaim.go`), and the fold of rows with one key in the pulls view
-  (`foldPRRows` in `internal/link/pulls.go`).
+  (`foldPRRows` in `internal/link/pulls.go`). A placement the room refuses releases the claim it made
+  (`releaseOnRefusal` in `internal/link/prworktreeroute.go`, `ReleasePRClaim` in `internal/hubstore/prclaim.go`).
+- **Recognisers.** The built-in `forge` fetch of section 8, and the refusal of a `gh`, `bb` or `glab` fetch on a room
+  with a hub.
 - **`scripts/recognisers/`.** Seed rows for GitHub (pull request, issue, branch, repository), Bitbucket (pull request,
-  issue, branch) and support tickets (Zendesk, Discourse), with a `load.ps1` that loads them.
+  issue, branch) and support tickets (Zendesk, Discourse), with a `load.ps1` that loads them. The PR and issue rows
+  fetch through `forge`.
 
 **Not built, and in progress by other workers.**
-- The Bitbucket forge (`bb`), stage 4.
 - The idle-CPU tie-break of section 6. Today a tie goes to the lower room name, since a room reports no CPU figure.
 - The paste-to-card glue, stage 5.
 
@@ -370,3 +412,6 @@ The questions above are kept as asked. These are the answers, and they overrule 
 7. **Answered by 6.** Missing access or a missing scope is the same alert, message and configuration. No separate
    scope policy.
 8. **Dropped.** Review on arrival needs something to arrive on its own, and nothing does.
+9. **(later the same day) Rooms use only the hub.** "Rooms should exclusively use the hub. Only the hub integrates with
+   bitbucket/github. Right now it only pulls and has no push privs anyway." Issue data comes through the hub too, and
+   the `gh` and `bb` logins live on the hub alone. Sections 0, 2, 5, 6, 9 and 10 state this.

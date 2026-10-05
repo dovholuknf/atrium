@@ -304,8 +304,6 @@ func (s *Server) setSettings(w http.ResponseWriter, r *http.Request) {
 		// Nothing rejected it either. The guard above is a rule about one
 		// specific pair of fields and not a check that every key is known.
 		ShellCommand *string `json:"shell_command"`
-		// The forge CLIs this room needs, by key: a host and a command name. See store.SetForgeConfig.
-		Forge map[string]forgeCfg `json:"forge"`
 		// What the board wears. A pointer for the same reason: setting it back
 		// to the one it shipped with is a thing somebody asks for.
 		BoardSkin *string `json:"board_skin"`
@@ -664,13 +662,6 @@ func (s *Server) setSettings(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	for tool, c := range body.Forge {
-		if err := s.st.SetForgeConfig(tool, c.Host, c.Cmd); err != nil {
-			writeErr(w, http.StatusBadRequest, err)
-			return
-		}
-	}
-
 	if body.BoardSkin != nil {
 		// Refused rather than stored, unlike the browse roots above, and the
 		// two differ for a reason. A root that does not exist yet is a list
@@ -956,22 +947,9 @@ func shellIsThere(st *store.Store) bool {
 	return name != "" && LookPath(name) != ""
 }
 
-// forgeCfg is one forge CLI's configuration as the board reads and writes it: the host the room needs it logged in
-// to, and the command NAME. Never a credential. See store.ForgeConfig.
-type forgeCfg struct {
-	Host string `json:"host"`
-	Cmd  string `json:"cmd"`
-}
-
-// forgeSettingsView adds the forge configuration and the alerts open now to a settings answer.
+// forgeSettingsView adds the forge alerts open now to a settings answer. A room keeps no forge configuration: the
+// logins and the forge entries are the hub's (GET /_hub/forge on the hub).
 func (s *Server) forgeSettingsView(out map[string]any) {
-	cfg := map[string]forgeCfg{}
-	for _, t := range store.ForgeTools {
-		h, c := s.st.ForgeConfig(t.Key)
-		cfg[t.Key] = forgeCfg{Host: h, Cmd: c}
-	}
-	out["forge"] = cfg
-	out["forge_default_hosts"] = map[string]string{"gh": "github.com", "bb": "bitbucket.org", "glab": "gitlab.com"}
 	if s.ForgeAccess != nil {
 		out["forge_access"] = s.ForgeAccess()
 	}

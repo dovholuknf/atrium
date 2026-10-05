@@ -98,3 +98,57 @@ func TestAChunkedPostGoesThrough(t *testing.T) {
 }
 
 var _ = httptest.NewServer
+
+// toServer sends every request to srv, whatever host it names, as the link's transport does for "hub".
+type toServer struct{ srv *httptest.Server }
+
+func (s toServer) RoundTrip(r *http.Request) (*http.Response, error) {
+	r = r.Clone(r.Context())
+	r.URL.Host = strings.TrimPrefix(s.srv.URL, "http://")
+	return http.DefaultTransport.RoundTrip(r)
+}
+
+func TestTheHubLoopbackServesAFetchOfOneRepositoryAndNothingElse(t *testing.T) {
+	var seen []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		seen = append(seen, r.Method+" "+r.URL.Path)
+	}))
+	t.Cleanup(srv.Close)
+	url, stop, err := HubLoopback(toServer{srv}, "github/o/r")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(stop)
+	base := strings.TrimSuffix(url, "/git/hub/github/o/r.git")
+	for _, c := range []struct {
+		method, path string
+		want         int
+	}{
+		{"GET", "/git/hub/github/o/r.git/info/refs?service=git-upload-pack", 200},
+		{"POST", "/git/hub/github/o/r.git/git-upload-pack", 200},
+		{"GET", "/git/hub/github/o/r.git/info/refs?service=git-receive-pack", 403},
+		{"POST", "/git/hub/github/o/r.git/git-receive-pack", 403},
+		{"GET", "/git/hub/github/o/r.git/git-upload-pack", 403},
+		{"POST", "/git/hub/github/o/r.git/info/refs?service=git-upload-pack", 403},
+		{"GET", "/git/hub/github/o/other.git/info/refs?service=git-upload-pack", 403},
+		{"GET", "/git/hub/github/o/r.git/HEAD", 403},
+		{"GET", "/_forge/pr", 403},
+	} {
+		req, _ := http.NewRequest(c.method, base+c.path, nil)
+		res, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		res.Body.Close()
+		if res.StatusCode != c.want {
+			t.Errorf("%s %s = %d, want %d", c.method, c.path, res.StatusCode, c.want)
+		}
+	}
+	want := []string{"GET /git/hub/github/o/r.git/info/refs", "POST /git/hub/github/o/r.git/git-upload-pack"}
+	if fmt.Sprint(seen) != fmt.Sprint(want) {
+		t.Fatalf("the hub saw %q, want %q", seen, want)
+	}
+	if _, _, err := HubLoopback(toServer{srv}, "../x"); err == nil {
+		t.Fatal("a bad store name was taken")
+	}
+}

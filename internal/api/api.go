@@ -40,9 +40,7 @@ type Server struct {
 	// Human listener only. See internal/daemon/preflight.go for why a body may
 	// never name a command.
 	Preflight http.HandlerFunc
-	// ForgeCheck asks the forges this room is configured to need, and ForgeAccess lists the alerts open now.
-	// Human listener only. See internal/daemon/forgeaccess.go.
-	ForgeCheck  http.HandlerFunc
+	// ForgeAccess lists the forge alerts open now, on a room with no hub. See internal/daemon/forgeaccess.go.
 	ForgeAccess func() any
 	// Decide resolves a permission. This must go through the daemon rather
 	// than straight to the store, because the agent is blocked on an in-memory
@@ -83,6 +81,9 @@ type Server struct {
 	// answered so it can clear it. Both are nil-safe seams the daemon fills.
 	ForgeFailed func(kind string, err error) bool
 	ForgeWorked func(kind, host string)
+	// HubSource is a loopback to one repository of the hub's store, for a room with a hub, which reads a PR head
+	// from there and never from the forge. An error is a room with no hub, or a hub that cannot be reached.
+	HubSource func(ctx context.Context, name string) (url string, done func(), err error)
 	// PRFetch fetches a PR head into a ref of the checkout. Nil runs git over https. A seam for tests.
 	PRFetch func(ctx context.Context, dir string, spec forge.FetchSpec, dst string) error
 	// PRRunner runs pull request reviews. Nil means the stub that fails every run
@@ -584,9 +585,6 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /v1/browse", s.browse)
 	if s.Preflight != nil {
 		mux.HandleFunc("POST /v1/preflight", s.Preflight)
-	}
-	if s.ForgeCheck != nil {
-		mux.HandleFunc("POST /v1/forge/check", s.ForgeCheck)
 	}
 	if s.Shutdown != nil {
 		mux.HandleFunc("POST /v1/shutdown", s.Shutdown)
