@@ -78,10 +78,9 @@ const docFormOverhead = 1 << 20
 
 var docsCrossOrigin = http.NewCrossOriginProtection()
 
-// docOrigin is what a request is, decided from the request alone.
 // docBy is who a write says it was by. `operator` only for a request the machine's own user made,
 // and `share` for anything that came in another way, so the history never calls a share upload
-// the operator. Show the origin all the same: this is the word beside it.
+// the operator.
 func docBy(r *http.Request) string {
 	if edge.LocalOperator(r) {
 		return "operator"
@@ -89,6 +88,8 @@ func docBy(r *http.Request) string {
 	return "share"
 }
 
+// docOrigin is what a request is, decided from the request alone.
+// Show the origin all the same: this is the word beside it.
 func docOrigin(r *http.Request) string {
 	if edge.LocalOperator(r) {
 		return "local"

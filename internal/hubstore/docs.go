@@ -400,8 +400,9 @@ func isText(b []byte) bool {
 	if len(head) > 8192 {
 		// A cut can land in the middle of a character. Back up to where one starts, so a long
 		// document with a multibyte character at the boundary is not judged by half of it.
+		// A character is four bytes at most, so three steps is the most a cut can need.
 		n := 8192
-		for n > 0 && !utf8.RuneStart(b[n]) {
+		for i := 0; i < 3 && !utf8.RuneStart(b[n]); i++ {
 			n--
 		}
 		head = b[:n]

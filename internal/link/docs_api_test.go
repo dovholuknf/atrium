@@ -674,6 +674,9 @@ func TestDocURLsAnswerWithThePhoneShell(t *testing.T) {
 	if w := get("/m/docs"); w.Code != 200 || !strings.Contains(w.Body.String(), "the phone page") {
 		t.Errorf("/m/docs answered %d %q", w.Code, w.Body.String())
 	}
+	if w := get("/m/docs/"); w.Code != 200 || !strings.Contains(w.Body.String(), "the phone page") {
+		t.Errorf("/m/docs/ answered %d %q", w.Code, w.Body.String())
+	}
 	if w := get("/m/docs/x"); strings.Contains(w.Body.String(), "the phone page") {
 		t.Errorf("/m/docs/x got the shell")
 	}
