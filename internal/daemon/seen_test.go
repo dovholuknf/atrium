@@ -228,11 +228,11 @@ func TestAReportedWorkersTurnIsSeenByItsLauncher(t *testing.T) {
 }
 
 // Stopping without a report is the case the dot exists for, and the launcher is
-// told.
+// told once the nudge for the first silence has gone unanswered.
 func TestASilentWorkersTurnIsUnseenAndNoticed(t *testing.T) {
 	d := testDaemon(t)
 	launcher, worker := launchedPair(t, d)
-	stopTurn(t, d, "worker")
+	stopTwice(t, d, "worker")
 
 	if s, _ := d.st.GetSeen(worker.ID); !s.Unseen() || s.SeenVia != "" {
 		t.Fatalf("a silent stop is not unseen: %+v", s)

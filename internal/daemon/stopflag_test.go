@@ -26,8 +26,9 @@ func flaggedStop(t *testing.T, d *Daemon, agent string) string {
 
 // The card clint saw: a message delivered at turn end sets the card running,
 // the worker acts on it, and its next Stop is flagged. That Stop moves the card
-// to needs-input, notes the turn for seen, tells the launcher about the silent
-// stop, never blocks, and leaves anything queued since then queued.
+// to needs-input, notes the turn for seen, nudges the worker about the silent
+// stop rather than telling the launcher, never blocks, and leaves anything
+// queued since then queued, ahead of the nudge.
 func TestAFlaggedStopEndsTheTurnAndNeverBlocks(t *testing.T) {
 	d := testDaemon(t)
 	launcher, worker := launchedPair(t, d)
@@ -47,8 +48,9 @@ func TestAFlaggedStopEndsTheTurnAndNeverBlocks(t *testing.T) {
 	if got.Status != store.StatusNeedsInput {
 		t.Fatalf("the card is %s after the turn ended, want %s", got.Status, store.StatusNeedsInput)
 	}
-	if msgs := pendingFrom(t, d, worker.ID); len(msgs) != 1 || msgs[0].Text != "land it next" {
-		t.Fatalf("the worker's queue holds %v, want the message still queued", msgs)
+	if msgs := pendingFrom(t, d, worker.ID); len(msgs) != 2 || msgs[0].Text != "land it next" ||
+		msgs[1].Text != silentNudgeText {
+		t.Fatalf("the worker's queue holds %v, want the message still queued, then the nudge", msgs)
 	}
 	seen, err := d.st.GetSeen(worker.ID)
 	if err != nil {
@@ -57,9 +59,8 @@ func TestAFlaggedStopEndsTheTurnAndNeverBlocks(t *testing.T) {
 	if seen == nil || seen.TurnEndedAt == nil || seen.TurnEndedAt.Before(before) {
 		t.Fatalf("the turn was not noted for seen: %+v", seen)
 	}
-	msgs := pendingFrom(t, d, launcher.ID)
-	if len(msgs) != 1 || !strings.Contains(msgs[0].Text, "without reporting") {
-		t.Fatalf("the launcher has %v, want one silent-stop notice", msgs)
+	if msgs := pendingFrom(t, d, launcher.ID); len(msgs) != 0 {
+		t.Fatalf("the launcher has %v, want nothing until the nudge goes unanswered", msgs)
 	}
 }
 
