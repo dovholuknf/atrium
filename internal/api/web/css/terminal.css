@@ -355,14 +355,17 @@
      rows and not over them, so they never sit on a card, and not flush with the list's corner radius. */
   .tlcorner {
     flex: none; display: flex; align-items: flex-end; justify-content: flex-start;
-    padding: 2px 4px 4px;
+    gap: 4px; padding: 4px 6px 6px;
   }
   .tlcorner button.tlcycle {
-    min-width: 24px; height: 22px; padding: 0; border-color: transparent; background: transparent;
-    color: var(--dim);
+    min-width: 30px; height: 28px; padding: 0; margin: 0; display: inline-flex; align-items: center;
+    justify-content: center; cursor: pointer;
+    border: 1px solid var(--stroke); background: var(--chip); color: var(--label);
   }
+  .tlcorner button.tlcycle + button.tlcycle { margin-left: 0; }
   .tlcorner button.tlcycle.tlwider svg { transform: scaleX(-1); }
-  .tlcorner button.tlcycle:hover { border-color: var(--stroke-dim); }
+  .tlcorner button.tlcycle:hover { border-color: var(--teal); background: var(--btn-hover); color: var(--head); }
+  .tlcorner button.tlcycle:focus-visible { outline: 2px solid var(--teal); outline-offset: 1px; }
   .tlcorner button.tlcycle svg { display: block; }
 
   /* The pane behind the terminal, in the terminal's own color once one is attached. The margin around

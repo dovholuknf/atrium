@@ -671,8 +671,8 @@ function showTermList() { setTermListMode("mini"); }
 // is just something else in a header that has three things in it. What is
 // missing IS the answer.
 // Three diagonal ticks hugging the lower left corner, the usual resize grip. The widen button mirrors it.
-const TL_GRIP = `<svg viewBox="0 0 12 12" width="12" height="12" aria-hidden="true"><path
-  d="M1 4L8 11M1 7.5L4.5 11M1 11L1.01 11" fill="none" stroke="currentColor" stroke-width="1.4"
+const TL_GRIP = `<svg viewBox="0 0 12 12" width="18" height="18" aria-hidden="true"><path
+  d="M1 4L8 11M1 7.5L4.5 11M1 11L1.01 11" fill="none" stroke="currentColor" stroke-width="1.6"
   stroke-linecap="round"/></svg>`;
 function termListButtons() {
   const at = TERM_LIST_MODES.indexOf(termListMode);
