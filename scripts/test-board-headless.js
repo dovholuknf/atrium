@@ -10972,10 +10972,10 @@ async function usageTabSection(browser, base) {
       if (!mono(c.ys)) fail("usageTab: the " + k + " line goes down: " + c.ys);
       if (c.total !== (k === "quiet" ? "12k" : "24k")) fail("usageTab: " + k + " ends at " + c.total + " and the range total is 24k");
     }
-    if (cum.pm24.proj !== "at this pace: 126k by midnight" || !cum.pm24.dashed || cum.pm24.n !== 2) fail("usageTab: 24h at 15:30 reads " + JSON.stringify(cum.pm24));
-    if (cum.late24.proj !== "at this pace: 26k by midnight" || !cum.late24.dashed) fail("usageTab: 24h at 23:50 reads " + JSON.stringify(cum.late24));
+    if (!cum.pm24.proj.startsWith("at this pace: 126k by midnight") || !cum.pm24.dashed || cum.pm24.n !== 2) fail("usageTab: 24h at 15:30 reads " + JSON.stringify(cum.pm24));
+    if (!cum.late24.proj.startsWith("at this pace: 26k by midnight") || !cum.late24.dashed) fail("usageTab: 24h at 23:50 reads " + JSON.stringify(cum.late24));
     if (!/^0.*24k$/.test(cum.pm24.axis.replace(/at this pace.*midnight/, ""))) fail("usageTab: the axis reads " + cum.pm24.axis);
-    if (!/^at this pace: \d+k by midnight$/.test(cum.pm7d.proj) || !cum.pm7d.dashed) fail("usageTab: 7d reads " + JSON.stringify(cum.pm7d));
+    if (!/^at this pace: \d+k by midnight, \S+ more by the reset Sun 18:00 E[SD]T$/.test(cum.pm7d.proj) || !cum.pm7d.dashed) fail("usageTab: 7d reads " + JSON.stringify(cum.pm7d));
     for (const k of ["pm1h", "pm6h", "quiet"]) if (cum[k].dashed || cum[k].proj) fail("usageTab: " + k + " has a projection: " + JSON.stringify(cum[k]));
     if (cum.shown.total !== "264k") fail("usageTab: with cache reads shown the line ends at " + cum.shown.total + ", 24k counted plus 240k of reads is 264k");
 
@@ -11014,6 +11014,153 @@ async function usageTabSection(browser, base) {
     await ctx.close();
   }
   if (errors.length) fail("usageTab: the page threw: " + errors.join(" | "));
+}
+
+// The usage tab's weekly reset: a "this week" range from the last reset, the reset marked on the charts it
+// crosses, the pace line naming the next one, and the setting that says when it is. NOTHING HERE READS THE REAL
+// CLOCK: UC.now is set, and the board's time zone does not matter because the reset is worked out in its own zone.
+// USAGE_WEEK_SHOT=<file.png> also writes a screenshot of the tab, for the before and after pictures.
+async function usageWeekResetSection(browser, base) {
+  const ctx = await browser.newContext({ viewport: { width: 1400, height: 1500 } });
+  const sp = await ctx.newPage();
+  const errors = [], reads = [], posts = [];
+  sp.on("pageerror", e => errors.push(String(e)));
+  let stored = { day: "sun", time: "18:00", tz: "America/New_York" };
+  await ctx.route("**/v1/usage?*", route => { reads.push(route.request().url()); route.fulfill({ json: { buckets: [] } }); });
+  await ctx.route("**/v1/settings", async route => {
+    const r = route.request();
+    if (r.method() === "POST") {
+      const body = JSON.parse(r.postData() || "{}");
+      posts.push(body);
+      if (body.usage_week_reset) {
+        if (body.usage_week_reset.tz === "Mars/Olympus") { await route.fulfill({ status: 400, json: { error: "tz is not a time zone name" } }); return; }
+        stored = body.usage_week_reset;
+      }
+    }
+    await route.fulfill({ json: { usage_cache_reads: false, usage_week_reset: stored, board_skin: "harbour", board_skins: SKINS } });
+  });
+  try {
+    await sp.goto(base, { waitUntil: "domcontentloaded" });
+    await sp.waitForSelector("#stack-list .stackrow", { state: "attached", timeout: slow(15000) });
+    await sp.evaluate(() => switchView("usage"));
+    await sp.waitForFunction(() => document.getElementById("uc-body") && typeof ucPaint === "function", null, { timeout: slow(10000) });
+    await sp.waitForTimeout(400);
+
+    // the tab on Monday 12:00 EDT: last week's turns, then this week's. 40k an hour since the reset.
+    const draw = range => sp.evaluate(range => {
+      const now = Date.UTC(2026, 9, 5, 16, 0), reset = Date.UTC(2026, 9, 4, 22, 0);
+      UC.now = now; UC.cacheReads = false; UC.group = "card"; UC.range = range; UC.room = ""; UC.card = null;
+      UC.bw = range === "7d" ? 3600 : 900;
+      const span = { "1h": 3600e3, "6h": 21600e3, "24h": 86400e3, "7d": 604800e3, week: now - reset }[range];
+      UC.since = now - span;
+      const ms = UC.bw * 1000, buckets = new Map();
+      for (let t = Math.floor(UC.since / ms) * ms; t < now; t += ms) {
+        const v = t < reset ? 50000 : 10000 * ms / 900000;
+        const s = ucAdd(ucSums(), { rows: 1, replies: 1, input: v, output: 0, cache_write_5m: 0, cache_write_1h: 0, cache_read: 0, cost: 0 });
+        buckets.set(t, { t, total: s, cards: { "uc-a": ucAdd(ucSums(), s) }, causes: { operator: s }, groups: {} });
+      }
+      UC.rooms = { "": { state: "ok", why: "", buckets, noGroups: false } };
+      ucPaint();
+      const q = sel => [...document.querySelectorAll(sel)];
+      const cum = document.querySelector("#uc-body .ucchart[data-chart=cumulative]");
+      const ys = cum ? [...cum.querySelector("svg path.uck-line:not(.uck-proj)").getAttribute("d").matchAll(/[ML]\S+ (\S+)/g)].map(m => Number(m[1])) : [];
+      return {
+        on: q("#uc-ranges button.on").map(b => b.dataset.range).join(),
+        cumMarks: q(".ucchart[data-chart=cumulative] .ucwkresetln").map(l => Number(l.dataset.at)),
+        burnMarks: q(".ucchart[data-chart=burn] .ucwkresetln").map(l => Number(l.dataset.at)),
+        label: (document.querySelector(".ucchart[data-chart=cumulative] .ucwkresetlab") || {}).textContent || "",
+        total: (cum && cum.querySelector("[data-n=cumtotal]") || {}).textContent || "",
+        proj: (cum && cum.querySelector("[data-n=cumproj]") || {}).textContent || "",
+        firstY: ys[0], floor: ys.length ? Math.max(...ys) : 0,
+      };
+    }, range);
+
+    // USAGE_WEEK_SHOT_ONLY=<file.png> with USAGE_WEEK_RANGE draws the picture and checks nothing, so the "before"
+    // can be taken from a board that has no weekly reset. The old board has no "week" range, so it is asked for 7d.
+    if (process.env.USAGE_WEEK_SHOT_ONLY) {
+      await draw(process.env.USAGE_WEEK_RANGE || "week");
+      await sp.waitForTimeout(800);   // the range button's colour is eased
+      await sp.screenshot({ path: process.env.USAGE_WEEK_SHOT_ONLY, fullPage: true });
+      return;
+    }
+
+    // the reset itself: New York Sunday 18:00, on both sides of the clock change, and a zone that is not New York
+    const r = await sp.evaluate(() => {
+      const o = {};
+      UC.weekReset = { day: "sun", time: "18:00", tz: "America/New_York" };
+      o.edt = ucWeekSince(Date.UTC(2026, 9, 5, 16, 0)) === Date.UTC(2026, 9, 4, 22, 0);          // Mon 12:00 EDT
+      o.sameDay = ucWeekSince(Date.UTC(2026, 9, 4, 21, 59)) === Date.UTC(2026, 9, 4 - 7, 22, 0); // 17:59 on the day: last week's
+      o.atReset = ucWeekSince(Date.UTC(2026, 9, 4, 22, 0)) === Date.UTC(2026, 9, 4, 22, 0);
+      o.est = ucWeekSince(Date.UTC(2026, 10, 2, 17, 0)) === Date.UTC(2026, 10, 1, 23, 0);         // Nov 1 is EST: 23:00 UTC
+      o.next = ucWeekNext(Date.UTC(2026, 9, 5, 16, 0)) === Date.UTC(2026, 9, 11, 22, 0);
+      UC.weekReset = { day: "mon", time: "09:30", tz: "Europe/London" };
+      o.london = ucWeekSince(Date.UTC(2026, 9, 7, 12, 0)) === Date.UTC(2026, 9, 5, 8, 30);         // BST until Oct 25
+      UC.weekReset = { day: "sun", time: "18:00", tz: "Mars/Olympus" };
+      o.bad = ucWeekResets(Date.UTC(2026, 9, 5, 16, 0), 0).length === 0;
+      UC.weekReset = { day: "sun", time: "18:00", tz: "America/New_York" };
+      return o;
+    });
+    for (const [k, v] of Object.entries(r)) if (!v) fail("usageWeekReset: the reset worked out wrong: " + k);
+
+    const reset = Date.UTC(2026, 9, 4, 22, 0);
+    const wk = await draw("week");
+    if (wk.on !== "week") fail("usageWeekReset: the range on is " + wk.on);
+    // 18 hours at 40k an hour: 720k. last week's turns are not in it.
+    if (wk.total !== "720k") fail("usageWeekReset: this week totals " + wk.total + ", want 720k with last week left out");
+    if (wk.firstY !== wk.floor) fail("usageWeekReset: the line does not start at zero: first y " + wk.firstY + ", floor " + wk.floor);
+    if (wk.cumMarks.join() !== String(reset) || wk.burnMarks.join() !== String(reset)) fail("usageWeekReset: this week's marks " + wk.cumMarks + " and " + wk.burnMarks);
+    if (wk.label !== "weekly reset Sun 18:00 EDT") fail("usageWeekReset: the mark reads '" + wk.label + "'");
+    // 720k and 12 hours at 40k to midnight is 1.2M, and the 150 hours to the next reset is 6.7M
+    if (wk.proj !== "at this pace: 1.2M by midnight, 6.7M by the reset Sun 18:00 EDT") fail("usageWeekReset: the pace line reads '" + wk.proj + "'");
+
+    const w7 = await draw("7d");
+    if (!/^at this pace: \S+ by midnight, 6\.0M more by the reset Sun 18:00 EDT$/.test(w7.proj)) fail("usageWeekReset: 7d pace line reads '" + w7.proj + "'");
+    if (w7.cumMarks.join() !== String(reset) || w7.burnMarks.join() !== String(reset)) fail("usageWeekReset: 7d marks " + w7.cumMarks + " and " + w7.burnMarks);
+    const d24 = await draw("24h");
+    if (d24.cumMarks.join() !== String(reset) || d24.burnMarks.join() !== String(reset)) fail("usageWeekReset: 24h crosses the reset and shows " + d24.cumMarks + " and " + d24.burnMarks);
+    const h1 = await draw("1h");
+    if (h1.cumMarks.length || h1.burnMarks.length) fail("usageWeekReset: 1h does not cross the reset and shows a mark");
+
+    // a click on "this week" asks the room for turns since the reset
+    await sp.evaluate(() => { UC.now = Date.UTC(2026, 9, 5, 16, 0); });
+    reads.length = 0;
+    await sp.click("#uc-week");
+    await sp.waitForFunction(() => UC.range === "week" && !UC.inflight, null, { timeout: slow(5000) });
+    const since = reads.map(u => new URL(u).searchParams.get("since")).pop();
+    if (since !== "2026-10-04T22:00:00.000Z") fail("usageWeekReset: this week asked since " + since);
+
+    // the setting: the form reads it, saves it, a bad zone is refused in the form, and a settings event moves it
+    await sp.click("#uc-reset");
+    const f = await sp.evaluate(() => ({ shown: !document.getElementById("uc-reset-form").hidden, day: document.getElementById("uc-reset-day").value,
+      time: document.getElementById("uc-reset-time").value, tz: document.getElementById("uc-reset-tz").value, label: document.getElementById("uc-reset-label").textContent }));
+    if (!f.shown || f.day !== "sun" || f.time !== "18:00" || f.tz !== "America/New_York" || !/^resets Sun 18:00 E[SD]T$/.test(f.label)) fail("usageWeekReset: the form reads " + JSON.stringify(f));
+    await sp.fill("#uc-reset-tz", "Mars/Olympus");
+    await sp.click("#uc-reset-save");
+    await sp.waitForFunction(() => document.getElementById("uc-reset-err").textContent);
+    if (await sp.evaluate(() => document.getElementById("uc-reset-form").hidden)) fail("usageWeekReset: a refused zone closed the form.");
+    await sp.selectOption("#uc-reset-day", "mon");
+    await sp.fill("#uc-reset-time", "09:30");
+    await sp.fill("#uc-reset-tz", "Europe/London");
+    await sp.click("#uc-reset-save");
+    await sp.waitForFunction(() => document.getElementById("uc-reset-form").hidden);
+    const sent = posts.filter(b => b.usage_week_reset).pop().usage_week_reset;
+    if (sent.day !== "mon" || sent.time !== "09:30" || sent.tz !== "Europe/London") fail("usageWeekReset: the board sent " + JSON.stringify(sent));
+    await sp.waitForFunction(() => UC.weekReset.day === "mon" && !UC.inflight, null, { timeout: slow(5000) });
+    const since2 = reads.map(u => new URL(u).searchParams.get("since")).pop();
+    if (since2 !== "2026-10-05T08:30:00.000Z") fail("usageWeekReset: after the change this week asked since " + since2);
+    await sp.evaluate(() => ucHaveSetting({ usage_week_reset: { day: "fri", time: "07:00", tz: "UTC" } }));
+    if (await sp.evaluate(() => UC.weekReset.day + UC.weekReset.tz) !== "friUTC") fail("usageWeekReset: a settings event did not move the reset.");
+
+    if (process.env.USAGE_WEEK_SHOT) {
+      await sp.evaluate(() => { UC.weekReset = { day: "sun", time: "18:00", tz: "America/New_York" }; });
+      await draw(process.env.USAGE_WEEK_RANGE || "week");
+      await sp.waitForTimeout(800);
+      await sp.screenshot({ path: process.env.USAGE_WEEK_SHOT, fullPage: true });
+    }
+  } finally {
+    await ctx.close();
+  }
+  if (errors.length) fail("usageWeekReset: the page threw: " + errors.join(" | "));
 }
 
 // The usage tab grouped by department or director, and tokens per accepted item (u-014).
@@ -21718,7 +21865,7 @@ async function main() {
       cardUrlTable: cardUrlTableSection, cardUrlClash: cardUrlClashSection, cardUrlLinks: cardUrlLinksSection, cardUrlRoom: cardUrlRoomSection, mCardUrl: (b) => mCardUrlSection(b), cardUrlNotify: cardUrlNotifySection,
       clock: clockSection,
       composeImages: composeImagesSection, composePaste: composePasteSection, mComposeImages: mComposeImagesSection,
-      usageTab: usageTabSection,
+      usageTab: usageTabSection, usageWeekReset: usageWeekResetSection,
       mAgentIdle: mAgentIdleSection, mHome: mHomeSection, mCard: mCardSection, mServe: mServeSection,
       phoneKeyLabel: phoneKeyLabelSection, phoneKeyLit: phoneKeyLitSection,
       notifyCommand: notifyCommandSection, presence: presenceSection, shiftMenu: shiftMenuSection, tallPty: tallPtySection,
@@ -23725,6 +23872,7 @@ async function main() {
     await unit("composePaste", () => composePasteSection(browser, base));
     await unit("mComposeImages", () => mComposeImagesSection(browser));
     await unit("usageTab", () => usageTabSection(browser, base));
+    await unit("usageWeekReset", () => usageWeekResetSection(browser, base));
     // ── the paste spinner stops on the room's word ──
     await unit("pasteStart", () => pasteStartSection(browser, base));
     await unit("pasteDone", () => pasteDoneSection(browser, base));

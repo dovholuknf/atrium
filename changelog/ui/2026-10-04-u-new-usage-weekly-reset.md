@@ -1,0 +1,4 @@
+- The usage tab knows when the weekly limit resets. A `this week` range beside 1h/6h/24h/7d starts at the last reset, so the cumulative chart starts at zero there and no longer mixes in the week that just ended.
+- The reset is marked (a dashed vertical line and `weekly reset Sun 18:00 EDT`) on the burn rate and cumulative charts of every range that crosses it.
+- The pace line also says what the pace gives by the next reset: the week's total on `this week`, what the pace adds (`N more`) on the rolling ranges.
+- The reset is one setting per board: `usage_week_reset` `{day, time, tz}` in `GET/POST /v1/settings`, default Sunday 18:00 America/New_York, broadcast on the `settings` event. A `resets Sun 18:00 EDT` button in the usage toolbar opens the form. A bad day, time or zone is refused with a 400.

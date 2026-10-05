@@ -192,6 +192,8 @@ func globalAutoView(s *Server) map[string]any {
 	out["pty_host"] = s.st.PtyHostOn()
 	// Whether the usage tab draws cache reads. Off unless switched on.
 	out["usage_cache_reads"] = s.usageCacheReads()
+	// When the weekly limit resets, for the usage tab's "this week" range. See usageweek.go.
+	out["usage_week_reset"] = s.usageWeekReset()
 	// The cache keep-alive: the default for new Claude cards, whether the room
 	// is suspended, and what refreshes cost this week. See keepalive.go.
 	keepaliveSettingsView(s.st, out)
@@ -336,6 +338,8 @@ func (s *Server) setSettings(w http.ResponseWriter, r *http.Request) {
 		KeepaliveDefault *bool `json:"cache_keepalive_default"`
 		// Whether the usage tab draws cache reads. Broadcast so other tabs follow.
 		UsageCacheReads *bool `json:"usage_cache_reads"`
+		// When the weekly limit resets: weekday, time and time zone. One per board. See usageweek.go.
+		UsageWeekReset *UsageWeekReset `json:"usage_week_reset"`
 		// Clears the room's keep-alive suspension. Only false means anything:
 		// atrium suspends, a person clears.
 		KeepaliveSuspended *bool `json:"cache_keepalive_suspended"`
@@ -886,6 +890,14 @@ func (s *Server) setSettings(w http.ResponseWriter, r *http.Request) {
 		}
 		if err := s.st.SetSetting(SettingUsageCacheReads, v); err != nil {
 			s.fail(w, err)
+			return
+		}
+		s.Broadcast("settings", globalAutoView(s))
+	}
+
+	if body.UsageWeekReset != nil {
+		if err := s.setUsageWeekReset(*body.UsageWeekReset); err != nil {
+			writeErr(w, http.StatusBadRequest, err)
 			return
 		}
 		s.Broadcast("settings", globalAutoView(s))
