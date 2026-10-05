@@ -205,11 +205,117 @@ async function openBoard(origin, goTo, taskFor, key, path) {
   await self.clients.openWindow(origin + "/" + (s ? "?" + s : ""))
 }
 
+// ── web push, for a phone with no atrium page open ───────────────────────────
+//
+// The hub sends one small JSON payload, four plain fields and no more: `title` is the card's name, `body` is one phrase
+// for why it wants you, `tag` is the card id so a newer alert for the same card replaces the older, and `path` is the
+// card's `/m` path. Never the command a permission wants to run, a question or a recap. See docs/rnd/web-push-design.md.
+//
+// EVERY PUSH SHOWS A NOTIFICATION. iOS revokes a subscription that receives a push and shows nothing, so a payload
+// that cannot be read still shows the generic line. The browser has already decrypted the payload by the time this
+// runs, and `userVisibleOnly` is what promised the browser this.
+//
+// NO ACTION BUTTONS. An approval from a lock screen would be given without seeing the command, which the payload does
+// not carry and must not. A tap opens the card on `/m` and the answer is given there.
+const PUSH_ICON = "/m/icons/icon-192.png"
+const PUSH_TITLE_MAX = 60
+
+// A path the worker will open from a push: the phone page and nothing else. A payload is the hub's, but what this
+// opens is a window on this origin, so it is held to the one place a push is for. No scheme, no host, no `//`.
+function pushPath(p) {
+  const s = String(p || "")
+  if (!/^\/m(\/|$)/.test(s) || s.startsWith("//") || s.includes("\\") || /[\u0000-\u001f]/.test(s)) return "/m/"
+  return s
+}
+
+// What the payload says, read defensively: a notification renders no HTML, so everything here is plain text.
+function readPush(event) {
+  let p = {}
+  try { p = event.data ? event.data.json() : {} } catch (e) { p = {} }
+  if (!p || typeof p !== "object") p = {}
+  const text = (v, max) => String(v == null ? "" : v).slice(0, max)
+  return {
+    title: text(p.title, PUSH_TITLE_MAX) || "atrium",
+    body: text(p.body, 200) || "a card wants you",
+    tag: text(p.tag, 128) || "atrium",
+    path: pushPath(p.path)
+  }
+}
+
+self.addEventListener("push", event => {
+  const m = readPush(event)
+  event.waitUntil((async () => {
+    // Tells an open phone page a push arrived, which is how its "did the test push come" check is answered.
+    const all = await self.clients.matchAll({ type: "window", includeUncontrolled: true })
+    for (const c of all) c.postMessage({ type: "push-seen", tag: m.tag })
+    await self.registration.showNotification(m.title, {
+      body: m.body,
+      icon: PUSH_ICON,
+      badge: PUSH_ICON,
+      tag: m.tag,
+      // A newer alert for the same card replaces the older and buzzes again.
+      renotify: true,
+      data: { push: true, path: m.path, origin: self.location.origin }
+    })
+  })())
+})
+
+// The browser rotated or dropped the subscription behind the page's back. Subscribe again with the same key and hand
+// the hub the new one, so a phone does not go quiet without anybody being told. It cannot ask for permission, and a
+// failure here is left for the page to find the next time it opens.
+self.addEventListener("pushsubscriptionchange", event => {
+  event.waitUntil((async () => {
+    const old = event.oldSubscription
+    const key = (old && old.options && old.options.applicationServerKey) ||
+      (event.newSubscription && event.newSubscription.options && event.newSubscription.options.applicationServerKey)
+    const sub = event.newSubscription ||
+      (key && await self.registration.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: key }))
+    if (!sub) return
+    const j = sub.toJSON()
+    await fetch("/_hub/push/subscriptions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ endpoint: j.endpoint, keys: j.keys, label: "this phone, renewed" })
+    })
+    if (old && old.endpoint && old.endpoint !== j.endpoint) {
+      await fetch("/_hub/push/subscriptions", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ endpoint: old.endpoint })
+      })
+    }
+  })().catch(() => {}))
+})
+
+// A tap on a push opens the card on the phone page: the window already on `/m` is taken there, else a new one opens.
+async function openPushPath(origin, path) {
+  const url = origin + pushPath(path)
+  const all = await self.clients.matchAll({ type: "window", includeUncontrolled: true })
+  const mine = all.filter(c => c.url.startsWith(origin + "/m"))
+  const here = mine.find(c => c.focused) || mine[0]
+  if (here) {
+    try {
+      const c = await here.navigate(url)
+      if (c) await c.focus()
+      else await here.focus()
+      return
+    } catch (e) {
+      // An uncontrolled window cannot be navigated. Fall through to a new one.
+    }
+  }
+  await self.clients.openWindow(url)
+}
+
 self.addEventListener("notificationclick", event => {
   const data = event.notification.data || {}
   const origin = data.origin || self.location.origin
   event.notification.close()
   event.waitUntil(sweepExpired())
+
+  if (data.push) {
+    event.waitUntil(openPushPath(origin, data.path))
+    return
+  }
 
   if (event.action && data.permId) {
     const tag = "atrium-conflict-" + data.permId

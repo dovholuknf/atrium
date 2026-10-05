@@ -32,6 +32,7 @@
 <link rel="stylesheet" href="/m/working.css">
 <link rel="stylesheet" href="/m/docs.css">
 <link rel="stylesheet" href="/m/changereq.css">
+<link rel="stylesheet" href="/m/push.css">
 </head>
 <body class="m">
 <div class="app">
@@ -84,6 +85,10 @@
 
   <section class="logsheet" id="m-log" hidden aria-label="notifications">
     <div class="log-top"><h2>Notifications</h2><span class="grow"></span><button type="button" id="m-log-mute">sound on</button><button type="button" id="m-log-close">close</button></div>
+    <div class="pushrow" id="m-push" data-state="off">
+      <div class="push-text"><b>phone alerts</b><span class="push-note" id="m-push-note"></span></div>
+      <button type="button" id="m-push-btn" aria-pressed="false">turn on</button>
+    </div>
     <div class="log-list" id="m-log-list"></div>
   </section>
 
@@ -135,6 +140,7 @@
 <script src="/m/js/home.js"></script>
 <script src="/m/js/bell.js"></script>
 <script src="/js/replies.js"></script>
+<script src="/m/js/push.js"></script>
 <script src="/m/js/growl.js"></script>
 <script src="/m/js/card.js"></script>
 <script src="/m/js/viewer.js"></script>
@@ -159,6 +165,7 @@
   window.mViewer.init();
   window.mChanges.init();
   window.mBell.init();
+  window.mPush.init();
   var live = document.getElementById("m-live"), room = document.getElementById("m-room");
   window.mNet.on("live", function () {
     var on = !!window.mNet.live();
