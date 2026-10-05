@@ -115,34 +115,34 @@ Check 'tag: a full windows tag' (Get-MinGitTag '2.56.1.windows.2') 'v2.56.1.wind
 Check 'tag: nonsense is refused' ([bool] (Throws { Get-MinGitTag 'latest' })) $true
 Check 'tag: a path is refused' ([bool] (Throws { Get-MinGitTag '2.56.0/../x' })) $true
 
-Check 'asset: amd64' (Get-MinGitAssetName '2.56.0' 'AMD64') 'MinGit-2.56.0-64-bit.zip'
-Check 'asset: arm64' (Get-MinGitAssetName '2.56.0' 'ARM64') 'MinGit-2.56.0-arm64.zip'
-Check 'asset: x86' (Get-MinGitAssetName '2.56.0' 'x86') 'MinGit-2.56.0-32-bit.zip'
+Check 'asset: amd64' (Get-MinGitAssetName '2.56.0' 'AMD64') 'PortableGit-2.56.0-64-bit.7z.exe'
+Check 'asset: arm64' (Get-MinGitAssetName '2.56.0' 'ARM64') 'PortableGit-2.56.0-arm64.7z.exe'
+Check 'asset: x86' (Get-MinGitAssetName '2.56.0' 'x86') 'PortableGit-2.56.0-32-bit.7z.exe'
 Check 'asset: unknown arch' (Get-MinGitAssetName '2.56.0' 'riscv') $null
 
 $h64 = '064b440ff870ed5198527e8f3a92cdf5bd2fd0fedf5e718af95e3fdaddeff718'
 $harm = 'cb3b0f2d486ea52673227151a5baf5bc13861ff80e74e94e46d614d1bfcd5c06'
-$body = "### Checksums`n`nFile | SHA-256`n-----|--------`nMinGit-2.56.0-64-bit.zip | $h64`nMinGit-2.56.0-arm64.zip | $harm`nMinGit-2.56.0-busybox-64-bit.zip | $('a' * 64)`n"
-Check 'hash: the 64-bit zip, not the busybox one' (Read-MinGitHash $body 'MinGit-2.56.0-64-bit.zip') $h64
-Check 'hash: arm64' (Read-MinGitHash $body 'MinGit-2.56.0-arm64.zip') $harm
-Check 'hash: not published' (Read-MinGitHash $body 'MinGit-9.9.9-64-bit.zip') $null
-Check 'hash: a table with edge bars' (Read-MinGitHash "| MinGit-2.56.0-64-bit.zip | $($h64.ToUpper()) |" 'MinGit-2.56.0-64-bit.zip') $h64
+$body = "### Checksums`n`nFile | SHA-256`n-----|--------`nPortableGit-2.56.0-64-bit.7z.exe | $h64`nPortableGit-2.56.0-arm64.7z.exe | $harm`nPortableGit-2.56.0-busybox-64-bit.7z.exe | $('a' * 64)`n"
+Check 'hash: the 64-bit zip, not the busybox one' (Read-MinGitHash $body 'PortableGit-2.56.0-64-bit.7z.exe') $h64
+Check 'hash: arm64' (Read-MinGitHash $body 'PortableGit-2.56.0-arm64.7z.exe') $harm
+Check 'hash: not published' (Read-MinGitHash $body 'PortableGit-9.9.9-64-bit.7z.exe') $null
+Check 'hash: a table with edge bars' (Read-MinGitHash "| PortableGit-2.56.0-64-bit.7z.exe | $($h64.ToUpper()) |" 'PortableGit-2.56.0-64-bit.7z.exe') $h64
 
 $script:asked = $null
 $script:fake = $null
 function Get-ReleaseJson { param([string] $path) $script:asked = $path; $script:fake }
 $assets = @(
-    [pscustomobject]@{ name = 'MinGit-2.56.0-64-bit.zip'; browser_download_url = 'https://example.test/MinGit-2.56.0-64-bit.zip'; digest = "sha256:$h64" },
-    [pscustomobject]@{ name = 'MinGit-2.56.0-arm64.zip'; browser_download_url = 'https://example.test/MinGit-2.56.0-arm64.zip'; digest = "sha256:$harm" })
+    [pscustomobject]@{ name = 'PortableGit-2.56.0-64-bit.7z.exe'; browser_download_url = 'https://example.test/PortableGit-2.56.0-64-bit.7z.exe'; digest = "sha256:$h64" },
+    [pscustomobject]@{ name = 'PortableGit-2.56.0-arm64.7z.exe'; browser_download_url = 'https://example.test/PortableGit-2.56.0-arm64.7z.exe'; digest = "sha256:$harm" })
 
 $script:fake = [pscustomobject]@{ tag_name = 'v2.56.0.windows.1'; body = $body; assets = $assets }
 $r = Get-MinGitRelease '' 'AMD64'
 Check 'release: latest asks for latest' $script:asked 'releases/latest'
 Check 'release: version' $r.Version '2.56.0.windows.1'
-Check 'release: asset' $r.Name 'MinGit-2.56.0-64-bit.zip'
+Check 'release: asset' $r.Name 'PortableGit-2.56.0-64-bit.7z.exe'
 Check 'release: hash from the notes' $r.Sha256 $h64
 Check 'release: source' $r.Source 'the release notes'
-Check 'release: url' $r.Url 'https://example.test/MinGit-2.56.0-64-bit.zip'
+Check 'release: url' $r.Url 'https://example.test/PortableGit-2.56.0-64-bit.7z.exe'
 $r = Get-MinGitRelease '2.56.0' 'ARM64'
 Check 'release: a named version asks for its tag' $script:asked 'releases/tags/v2.56.0.windows.1'
 Check 'release: arm64 hash' $r.Sha256 $harm
@@ -152,17 +152,17 @@ $r = Get-MinGitRelease '' 'AMD64'
 Check 'release: falls back to the asset digest' $r.Sha256 $h64
 Check 'release: and says so' $r.Source "the asset's digest"
 
-$noDigest = @([pscustomobject]@{ name = 'MinGit-2.56.0-64-bit.zip'; browser_download_url = 'https://example.test/x.zip'; digest = $null })
+$noDigest = @([pscustomobject]@{ name = 'PortableGit-2.56.0-64-bit.7z.exe'; browser_download_url = 'https://example.test/x.zip'; digest = $null })
 $script:fake = [pscustomobject]@{ tag_name = 'v2.56.0.windows.1'; body = 'no table here'; assets = $noDigest }
 Check 'release: no published hash is refused' (ConvertTo-Bool (Throws { Get-MinGitRelease '' 'AMD64' }) 'publishes no SHA256') $true
 $script:fake = [pscustomobject]@{ tag_name = 'v2.56.0.windows.1'; body = $body; assets = @() }
 Check 'release: no zip is refused' (ConvertTo-Bool (Throws { Get-MinGitRelease '' 'AMD64' }) 'has no asset') $true
 $script:fake = [pscustomobject]@{ tag_name = 'v2.56.0.windows.1'; body = $body; assets = $assets }
-Check 'release: an unknown arch is refused' (ConvertTo-Bool (Throws { Get-MinGitRelease '' 'riscv' }) 'no MinGit zip for architecture') $true
+Check 'release: an unknown arch is refused' (ConvertTo-Bool (Throws { Get-MinGitRelease '' 'riscv' }) 'no PortableGit archive for architecture') $true
 $script:fake = [pscustomobject]@{ tag_name = 'nightly'; body = $body; assets = $assets }
 Check 'release: a tag that is not git for windows is refused' ([bool] (Throws { Get-MinGitRelease '' 'AMD64' })) $true
 
-$inst = Get-MinGitInstallScript '.local\MinGit-2.56.0-64-bit.zip' $h64
+$inst = Get-MinGitInstallScript '.local\PortableGit-2.56.0-64-bit.7z.exe' $h64
 Check 'install: the script parses' (Test-Parses $inst) $true
 Check 'install: it carries the hash it checks' ($inst -match $h64) $true
 Check 'install: it puts cmd on the user Path' ($inst -match "SetEnvironmentVariable\('Path'.*'User'") $true
@@ -183,6 +183,9 @@ Check 'provision: a detach start counts as started now' ($prov -match "needSince
 Check 'provision: passes -GitVersion and -Scp to room-git' (($prov -match "-GitVersion'; \`$GitVersion") -and ($prov -match '-Scp \$Scp')) $true
 Check 'provision: passes -Scp to room-gate, whose scp would otherwise be Git''s' ($prov -match "room-gate\.ps1'\) \`$Name -Target \`$Target -Ssh \`$Ssh -Scp \`$Scp") $true
 Check 'room-git: installs MinGit only for a Windows remote' ($rg -match "remoteOS -ne 'windows'[\s\S]{0,200}Fail 'git' 3") $true
+Check 'room-git: init notices a git with no http-backend and installs PortableGit' ($rg -match 'nobackend' -and $rg -match 'replacing a git with no http-backend') $true
+Check 'room-git: init -Check fails a git with no http-backend, with the fix' ($rg -match 'has no http-backend \(it is MinGit\)[^\n]*without -Check to install PortableGit') $true
+Check 'install: it refuses an archive with no git-http-backend' ((Get-MinGitInstallScript '.local\x.7z.exe' $h64) -match 'no git-http-backend.exe') $true
 Check 'room-git: marks the clone it makes' ($rg -match 'atrium\.clone made') $true
 
 if ($script:failed) { Write-Host "$script:failed of $script:ran checks FAILED"; exit 1 }

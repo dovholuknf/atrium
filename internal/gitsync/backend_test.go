@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -337,5 +338,26 @@ func TestStopCancelsAndWaitsForGitChildren(t *testing.T) {
 	<-done
 	if _, err := r.Git(bg, "", "version"); err != ErrStopped {
 		t.Fatalf("a stopped runner ran a command: %v", err)
+	}
+}
+
+func TestBackendMissingNamesTheCause(t *testing.T) {
+	bin := t.TempDir()
+	exe, script := filepath.Join(bin, "git"), "#!/bin/sh\necho "+bin+"\n"
+	if runtime.GOOS == "windows" {
+		exe, script = filepath.Join(bin, "git.bat"), "@echo off\r\necho "+bin+"\r\n"
+	}
+	if err := os.WriteFile(exe, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	why := backendMissing(exe)
+	if !strings.Contains(why, "no http-backend") {
+		t.Fatalf("a git with no http-backend was not named: %q", why)
+	}
+	if err := os.WriteFile(filepath.Join(bin, "git-http-backend"), []byte("x"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if why := backendMissing(exe); why != "" {
+		t.Fatalf("a git with http-backend was refused: %q", why)
 	}
 }

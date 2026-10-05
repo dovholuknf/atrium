@@ -281,7 +281,7 @@ func (rc *Receiver) serveFetch(w http.ResponseWriter, r *http.Request, ref Ref, 
 		out.Header.Del("Content-Encoding")
 		out.Header.Set("Content-Length", strconv.Itoa(len(body)))
 	}
-	gitCGI(exe, dir, fetchConfig(hooks), cgiEnv()).ServeHTTP(w, out)
+	serveCGI(gitCGI(exe, dir, fetchConfig(hooks), cgiEnv()), w, out)
 }
 
 var errTooBig = errors.New("too big")
@@ -364,7 +364,7 @@ func (rc *Receiver) advertisePush(w http.ResponseWriter, r *http.Request, ref Re
 			return
 		}
 	}
-	gitCGI(exe, dir, pushConfig(hooks), cgiEnv()).ServeHTTP(w, forGit(r, dir, "/info/refs"))
+	serveCGI(gitCGI(exe, dir, pushConfig(hooks), cgiEnv()), w, forGit(r, dir, "/info/refs"))
 }
 
 // cannotCreate says why a push could not make this repository, or "". A repository that is in the store
@@ -651,7 +651,7 @@ func (rc *Receiver) push(w http.ResponseWriter, r *http.Request, ref Ref, exe st
 	out.Header.Del("Content-Encoding")
 	out.Header.Set("Content-Length", strconv.FormatInt(size, 10))
 
-	gitCGI(exe, dir, pushConfig(hooks), cgiEnv()).ServeHTTP(resp, out)
+	serveCGI(gitCGI(exe, dir, pushConfig(hooks), cgiEnv()), resp, out)
 
 	// THE REFS ARE THE RESULT. Whatever git said, a push is settled for exactly the refs that now hold the
 	// sha it asked for.

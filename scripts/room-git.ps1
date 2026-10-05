@@ -263,7 +263,7 @@ function Test-Ssh {
 function Get-GitInstallHint {
     switch ($script:remoteKind) {
         'mac' { 'xcode-select --install' }
-        'windows' { 'rerun init without -Check, which installs MinGit with no admin. or winget install --id Git.Git -e where there is a winget' }
+        'windows' { 'rerun init without -Check, which installs PortableGit with no admin. or winget install --id Git.Git -e where there is a winget' }
         default {
             $r = Invoke-Remote 'if [ -r /etc/os-release ]; then . /etc/os-release; echo "id=$ID $ID_LIKE"; fi'
             $id = (ConvertFrom-KeyValue $r.Out).id
@@ -282,7 +282,7 @@ function Get-GitInstallHint {
 # Test-RemoteGit stops with exit 3 and the install when the remote has no git.
 function Test-RemoteGit {
     $s = if ($script:remoteOS -eq 'windows') {
-        "if (Get-Command git -ErrorAction SilentlyContinue) { `"git=`$(git --version)`" } else { exit 3 }"
+        "if (Get-Command git -ErrorAction SilentlyContinue) { `"git=`$(git --version)`"; `$x = (git --exec-path); if (-not ((Test-Path -LiteralPath (Join-Path `$x 'git-http-backend.exe')) -or (Test-Path -LiteralPath (Join-Path `$x 'git-http-backend')))) { 'nobackend=1' } } else { exit 3 }"
     } else {
         'if git --version >/dev/null 2>&1; then echo "git=$(git --version)"; else exit 3; fi'
     }
@@ -295,7 +295,14 @@ function Test-RemoteGit {
         Step 'git' 'done' "$v on $($script:sshTarget)"
         return
     }
-    $v = (ConvertFrom-KeyValue $r.Out).git
+    $kv = ConvertFrom-KeyValue $r.Out
+    $v = $kv.git
+    if ($kv.nobackend) {
+        # MinGit has no `git http-backend`, which the room's git route runs. Without it the hub's collect answers a bare 500.
+        $v = Install-MinGit
+        Step 'git' 'done' "$v on $($script:sshTarget), replacing a git with no http-backend. restart the room there to pick it up"
+        return
+    }
     Step 'git' 'ok' "$v on $($script:sshTarget)"
 }
 
@@ -411,6 +418,8 @@ $g = (Get-Command git -ErrorAction SilentlyContinue).Source
 if (-not $g) { exit 3 }
 "git=$(git --version)"
 "path=$g"
+$x = (git --exec-path)
+if (-not ((Test-Path -LiteralPath (Join-Path $x 'git-http-backend.exe')) -or (Test-Path -LiteralPath (Join-Path $x 'git-http-backend')))) { 'nobackend=1' }
 '@
     } else {
         'if git --version >/dev/null 2>&1; then echo "git=$(git --version)"; else exit 3; fi'
@@ -425,7 +434,13 @@ if (-not $g) { exit 3 }
         Step 'git' 'fail' "$($gk.git) at $($gk.path) is not Git for Windows, which counts as missing. install it there, then rerun: $(Get-GitInstallHint)"
         Finish 4
     }
-    Step 'git' 'ok' "$($gk.git) on $($script:sshTarget)"
+    if ($gk.nobackend) {
+        # MinGit leaves out `git http-backend`, which the room's git route runs: every git request to the room would answer 500.
+        Step 'git' 'fail' "$($gk.git) at $($gk.path) has no http-backend (it is MinGit), so the room cannot serve git and the hub cannot collect from it. rerun room-git.ps1 init $Room without -Check to install PortableGit, or install Git for Windows there. then restart the room"
+        $fixable++
+    } else {
+        Step 'git' 'ok' "$($gk.git) on $($script:sshTarget)"
+    }
 
     $home_ = Get-RemoteHome
     $clone = if ($Path) { $Path -replace '\\', '/' } elseif ($existing -and $existing.Path) { $existing.Path } else { "$home_/git/github/$owner/$repoName" }
