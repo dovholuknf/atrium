@@ -112,7 +112,9 @@ func TestASessionIsCheckedRatherThanTrusted(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	good := signSession(key, "someone", time.Now().Add(time.Hour))
+	good := signSession(key, session{
+		Subject: "someone", Email: "someone@example.com", Gen: d.sessionGen(),
+	}, time.Now().Add(time.Hour))
 
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	req.AddCookie(&http.Cookie{Name: authCookie, Value: good})
@@ -141,7 +143,7 @@ func TestAnExpiredSessionIsRefused(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, ok := readSession(key, signSession(key, "someone", time.Now().Add(-time.Minute))); ok {
+	if _, ok := readSession(key, signSession(key, session{Subject: "someone"}, time.Now().Add(-time.Minute))); ok {
 		t.Fatal("a session that expired a minute ago was accepted")
 	}
 }

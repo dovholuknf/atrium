@@ -424,6 +424,11 @@ func (d *Daemon) sharing() bool {
 	return false
 }
 
+// publicShareRunning reports whether the board is on a public zrok share now.
+func (d *Daemon) publicShareRunning() bool {
+	return d.nat(OverlayZrok).running() && strings.TrimSpace(d.zrokConfig().Mode) == "public"
+}
+
 // closeOverlays stops serving on every overlay on the way out. A listener
 // outliving the board it answers for would be an address that hangs.
 func (d *Daemon) closeOverlays() {
