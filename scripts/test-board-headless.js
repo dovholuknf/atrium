@@ -21608,7 +21608,7 @@ async function main() {
     const only = { boardDocs: boardDocsSection, phoneBoardCompact: phoneBoardCompactSection, termWear: termWearSection, bridge: bridgeSection, settingsOnce: settingsOnceSection,
       groupRemove: groupRemoveSection, worn: wornSection, restartGate: restartGateSection, restartStays: restartStaysSection, atriumDown: atriumDownSection,
       toastStays: toastStaysSection, groupColor: groupColorSection,
-      groupDrag: groupDragSection, tooltip: tooltipSection, linkTip: linkTipSection,popoutTagFlip: popoutTagFlipSection, idleRate: idleRateSection, foldStill: foldStillSection,
+      groupDrag: groupDragSection, tooltip: tooltipSection, linkTip: linkTipSection,popoutTagFlip: popoutTagFlipSection, prefsEverywhere: prefsEverywhereSection, mPrefsEverywhere: (b) => mPrefsEverywhereSection(b), idleRate: idleRateSection, foldStill: foldStillSection,
       untaggedSort: untaggedSortSection, newCard: newCardSection, themePreview: themePreviewSection, themeLab: themeLabSection, land: landSection, reselect: reselectSection, clearKeepsPage: clearKeepsPageSection,
       toastsTop: toastsTopSection, sayWhen: sayWhenSection, pasteSpinner: pasteSpinnerSection,
       pasteBig: pasteBigSection, pasteBusy: pasteBusySection, typing: typingSection, alias: aliasSection, askAgain: askAgainSection, copySelect: copySelectSection, busyGuard: busyGuardSection, keepalive: keepaliveSection,
@@ -23518,6 +23518,9 @@ async function main() {
     await unit("groupDrag", () => groupDragSection(browser, base));
     // ── a popped-out card stays spoken for across a room-set change ─────────
     await unit("popoutTagFlip", () => popoutTagFlipSection(browser, base));
+    // ── a per-browser setting reaches every open window, popped-out terminals and /m included ─
+    await unit("prefsEverywhere", () => prefsEverywhereSection(browser, base));
+    await unit("mPrefsEverywhere", () => mPrefsEverywhereSection(browser));
     // ── an idle board stays idle, and a silent room cannot fill the fetch cap ─
     await unit("idleRate", () => idleRateSection(browser, base));
     // ── a group opened by hand stays put, and idle windows write nothing ───
@@ -24008,7 +24011,7 @@ function mServer(state) {
     let file = null;
     if (p === "/m/" || p === "/m" || p === "/m/docs" || /^\/d\/[^/]*$/.test(p)) file = path.join(M_ROOT, "index.html");
     else if (p.startsWith("/m/")) file = path.join(M_ROOT, p.slice(3));
-    else if (p.startsWith("/css/") || /^\/js\/(cardrules|sounds|changereq-core|changereq-mock)\.js$/.test(p)) file = path.join(WEB_ROOT, p);
+    else if (p.startsWith("/css/") || /^\/js\/(cardrules|sounds|prefs-live|changereq-core|changereq-mock)\.js$/.test(p)) file = path.join(WEB_ROOT, p);
     if (file && !path.relative(WEB_ROOT, file).startsWith("..") && fs.existsSync(file) && fs.statSync(file).isFile()) {
       res.writeHead(200, { "Content-Type": M_TYPES[path.extname(file)] || "application/octet-stream" });
       return res.end(fs.readFileSync(file));
@@ -24117,6 +24120,111 @@ async function mAgentIdleSection(browser) {
     await ctx.close();
   } finally { await st.close(); }
   if (!bad) console.log("mAgentIdle ok");
+}
+
+// A PER-BROWSER SETTING REACHES EVERY OPEN WINDOW with no reload. Two documents on one context share a localStorage, as
+// two windows of one browser do. The board changes each setting through its own control function and the other
+// document, a popped-out terminal, must show the change. See js/prefs-live.js.
+async function prefsEverywhereSection(browser, base) {
+  soloMode = "ok";
+  const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+  const errors = [];
+  try {
+    const a = await ctx.newPage();
+    const b = await ctx.newPage();
+    for (const pg of [a, b]) pg.on("pageerror", e => errors.push(String(e)));
+    await a.goto(base, { waitUntil: "domcontentloaded" });
+    await b.goto(base + "/#term=s1", { waitUntil: "domcontentloaded" });
+    await b.waitForFunction(() => typeof soloID !== "undefined" && soloID === "s1", null, { timeout: slow(10000) });
+    await a.waitForTimeout(800);
+    // Counts a navigation, which is what "without a reload" must not do.
+    await b.evaluate(() => { window.__noReload = true; });
+    const SPAN = slow(4000);
+    // Each: [name, run in A, wait in B (returns true once B shows the change)]
+    const cases = [
+      ["input lag log", () => toggleInputLag(true), () => lagOn === true],
+      ["input lag log off", () => toggleInputLag(false), () => lagOn === false],
+      ["typing gate readout", () => toggleTypingReadout(true), () => typingOn === true && document.getElementById("s-typing").checked],
+      ["typing gate readout off", () => toggleTypingReadout(false), () => typingOn === false],
+      ["copy on select", () => toggleCopyOnSelect(), () => copyOnSelect === true],
+      ["focus on hover", () => toggleHoverFocus(true), () => hoverFocus === true && document.getElementById("s-hoverfocus").checked],
+      ["card colours", () => toggleCardColors(true), () => cardColors === true && document.getElementById("s-cardcolors").checked],
+      ["terminal row wear: exited", () => toggleTermWear("exited", true), () => termWearOn.exited === true && document.getElementById("s-termwear-exited").checked],
+      ["terminal row wear: selected", () => toggleTermWear("selected", false), () => termWearOn.selected === false],
+      ["text size", () => { const e = document.getElementById("s-cardsize"); e.value = "1.45"; e.dispatchEvent(new Event("change")); },
+        () => getComputedStyle(document.documentElement).getPropertyValue("--uiscale").trim() === "1.45" && document.getElementById("s-cardsize").value === "1.45"],
+      ["whitespace", () => { const e = document.getElementById("s-density"); e.value = "0.72"; e.dispatchEvent(new Event("change")); },
+        () => getComputedStyle(document.documentElement).getPropertyValue("--density").trim() === "0.72" && document.getElementById("s-density").value === "0.72"],
+      ["terminal list sort", () => setTermSortMode("started"), () => termSortStarted === true && sortByActivity === false],
+      ["board sort", () => setBoardSort("name"), () => boardSortMode() === "name"],
+      ["stack filter", () => setStackShow(new Set(["done", "needs-input"])), () => stackShow().has("done") && stackShow().size === 2],
+      ["terminal list mode", () => setTermListMode("mini"), () => termListMode === "mini" && document.getElementById("term-layout").classList.contains("tl-mini")],
+      ["hide subagents", () => setHideSubagents("none"), () => hideSubagentsMode() === "none"],
+      ["terminal tray", () => toggleTermTray(), () => termTrayOpen() === true],
+      ["terminals kept hidden", () => setTermKeep(KEEP_N_KEY, 3), () => document.getElementById("s-termkeep").value === "3"],
+      ["sound mute", () => alerting.set({ muted: true }), () => alerting.get().muted === true],
+      ["sound volume", () => alerting.set({ volume: 0.9 }), () => alerting.get().volume === 0.9 && document.getElementById("s-vol").value === "90"],
+      ["growler", () => setGrowler(true), () => growlOn() === true && document.getElementById("s-growler").checked],
+      ["switcher key", () => localStorage.setItem(SWITCH_KEY_STORE, "alt+KeyJ"), () => /j$/.test(document.getElementById("s-switchkey").textContent)],
+    ];
+    for (const [name, run, seen] of cases) {
+      await a.evaluate(run);
+      try {
+        await b.waitForFunction(seen, null, { timeout: SPAN });
+      } catch (e) {
+        fail("prefsEverywhere: " + name + " changed in the board and the popped-out window did not follow");
+      }
+      // And the other way, board following the popout, for the ones the pop-out itself can flip.
+    }
+    // The other direction: the popped-out window changes one, the board follows.
+    await b.evaluate(() => toggleCopyOnSelect());
+    try { await a.waitForFunction(() => copyOnSelect === false, null, { timeout: SPAN }); }
+    catch (e) { fail("prefsEverywhere: copy on select changed in the popped-out window and the board did not follow"); }
+    // A cleared store puts every setting back to its default in the other window.
+    await a.evaluate(() => localStorage.clear());
+    try { await b.waitForFunction(() => cardColors === false && hoverFocus === false && boardSortMode() === "activity", null, { timeout: SPAN }); }
+    catch (e) { fail("prefsEverywhere: clearing the browser's storage did not put the other window's settings back"); }
+    if (!(await b.evaluate(() => window.__noReload === true))) fail("prefsEverywhere: the popped-out window reloaded");
+    if (errors.length) fail("prefsEverywhere: page errors: " + errors.join(" | "));
+  } finally {
+    await ctx.close();
+  }
+  if (!bad) console.log("prefsEverywhere ok");
+}
+
+// The phone page: another tab's list order, mode and text size.
+async function mPrefsEverywhereSection(browser) {
+  const st = mServer({});
+  await st.open();
+  try {
+    st.tasks = mNeedsCards();
+    st.perms = M_PERMS();
+    const { ctx, p: a, errors } = await mPage(browser, st, { width: 390, height: 844 }, "");
+    const b = await ctx.newPage();
+    b.on("pageerror", e => errors.push(String(e)));
+    await b.goto(st.url + "/m/", { waitUntil: "domcontentloaded" });
+    await a.waitForSelector("#m-list .row", { timeout: slow(10000) });
+    await b.waitForSelector("#m-list .row", { timeout: slow(10000) });
+    await b.evaluate(() => { window.__noReload = true; });
+    const SPAN = slow(4000);
+    await a.tap("#m-seg-all");
+    try { await b.waitForFunction(() => document.getElementById("m-seg-all").getAttribute("aria-selected") === "true", null, { timeout: SPAN }); }
+    catch (e) { fail("mPrefsEverywhere: the needs/all switch did not reach the other tab"); }
+    await a.evaluate(() => { document.querySelector('[data-opt="hideDone"]').click(); });
+    try { await b.waitForFunction(() => document.querySelector('[data-opt="hideDone"]').getAttribute("aria-pressed") === "true", null, { timeout: SPAN }); }
+    catch (e) { fail("mPrefsEverywhere: a list filter did not reach the other tab"); }
+    await a.evaluate(() => localStorage.setItem("atrium.mfs", "19"));
+    try { await b.waitForFunction(() => document.getElementById("m-card").style.getPropertyValue("--m-fs") === "19px", null, { timeout: SPAN }); }
+    catch (e) { fail("mPrefsEverywhere: the text size did not reach the other tab"); }
+    await a.evaluate(() => { const o = JSON.parse(localStorage.getItem("atrium.sound") || "{}"); o.muted = true; localStorage.setItem("atrium.sound", JSON.stringify(o)); });
+    await b.waitForTimeout(300);
+    if (!(await b.evaluate(() => window.__noReload === true))) fail("mPrefsEverywhere: the other tab reloaded");
+    if (errors.length) fail("mPrefsEverywhere: page errors: " + errors.join(" | "));
+    await ctx.close();
+  } finally {
+    await st.close();
+  }
+  if (!bad) console.log("mPrefsEverywhere ok");
 }
 
 async function mHomeSection(browser) {

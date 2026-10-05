@@ -254,6 +254,10 @@ function toggleCopyOnSelect() {
   localStorage.setItem("atrium.copyOnSelect", copyOnSelect ? "1" : "0");
   paintCopyMode();
 }
+prefLive("atrium.copyOnSelect", () => {
+  copyOnSelect = localStorage.getItem("atrium.copyOnSelect") === "1";
+  paintCopyMode();
+});
 
 // Focus on hover is an opt-in browser preference, like copy on select and
 // text scale, so each screen can use its own setting.
@@ -265,6 +269,11 @@ function toggleHoverFocus(on) {
   localStorage.setItem("atrium.hoverFocus", hoverFocus ? "1" : "0");
   if (!hoverFocus) clearTimeout(hoverFocusTimer);
 }
+prefLive("atrium.hoverFocus", () => {
+  toggleHoverFocus(localStorage.getItem("atrium.hoverFocus") === "1");
+  const box = document.getElementById("s-hoverfocus");
+  if (box) box.checked = hoverFocus;
+});
 
 // Do not move focus while a dialog is open or the user is editing a field.
 function hoverFocusBlocked() {
@@ -640,6 +649,7 @@ function setTermKeep(key, n) {
   try { localStorage.setItem(key, String(n)); } catch (e) {}
   keepEnforce();
 }
+prefLive("atrium.termKeep*", () => keepEnforce());
 // Not in a window of its own (that one owns its terminal) and not on the phone layout.
 function keepOn() {
   return !termOnly() && !termNarrow() && !termPhone() && termKeepN() > 0;
@@ -1735,6 +1745,11 @@ function setTermSortMode(mode) {
   if (typeof paintTermGear === "function") paintTermGear();
   renderTermList();
 }
+
+prefLive("atrium.termSort", () => {
+  const v = localStorage.getItem("atrium.termSort");
+  setTermSortMode(v === "started" ? "started" : v === "0" ? "name" : "activity");
+});
 
 function toggleTermSort() {
   setTermSortMode(sortByActivity ? "name" : "activity");

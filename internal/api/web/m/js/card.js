@@ -419,6 +419,17 @@
     q("m-card").style.setProperty("--m-fs", v + "px");
     return v;
   }
+  // Another window of this browser pinched the text to a new size. The docs and change request sheets keep their own
+  // copy of the property, so they follow too.
+  prefLive(FS_KEY, () => {
+    const v = parseFloat(localStorage.getItem(FS_KEY));
+    if (!v) return;
+    setFs(v);
+    for (const id of ["m-docs", "m-requests"]) {
+      const sheet = document.getElementById(id);
+      if (sheet) sheet.style.setProperty("--m-fs", v + "px");
+    }
+  });
   function pinchInit() {
     try { const v = parseFloat(localStorage.getItem(FS_KEY)); if (v) setFs(v); } catch (e) {}
     const dist = t => Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY);

@@ -356,6 +356,16 @@
     render();
   }
 
+  // Another window of this browser changed the list's order, grouping, filters or its needs/all switch.
+  prefLive([OPTS_KEY, MODE_KEY], () => {
+    opts = loadOpts();
+    try { mode = localStorage.getItem(MODE_KEY) === "all" ? "all" : "needs"; } catch (e) {}
+    nodes.forEach(el => el.remove());
+    nodes.clear();
+    paintOpts();
+    render();
+  });
+
   function setMode(m) {
     if (m === mode) return;
     mode = m;

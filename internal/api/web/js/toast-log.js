@@ -137,6 +137,8 @@ async function copyLogRow(btn, text) {
 // The growler whose remind-me options are open in the bell.
 let tlRemindOpen = "";
 
+prefLive(TOASTLOG_KEY + "*", () => paintToastLogBadge());
+
 function openToastLog() {
   const list = toastLog().slice().reverse();
   const host = document.getElementById("toastlog-list");

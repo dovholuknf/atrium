@@ -637,6 +637,18 @@ function setTermListMode(mode) {
   requestAnimationFrame(onTermResize);
 }
 
+// Another window of this browser changed how the list looks: its mode and width, the tray, the two hides, the folded
+// groups. Read again and drawn the way the control in that window drew it.
+prefLive(["atrium.termlist.*", "atrium.termtray*", "atrium.termfolded", HIDE_SUBAGENTS_KEY + "*", HIDE_AGENTS_KEY + "*"], () => {
+  const mode = localStorage.getItem("atrium.termlist.mode") || "full";
+  termListMode = TERM_LIST_MODES.includes(mode) ? mode : "full";
+  termListW = Number(localStorage.getItem("atrium.termlist.w")) || 260;
+  applyTermList();
+  paintTermGear();
+  renderTermList();
+  requestAnimationFrame(onTermResize);
+});
+
 function stepTermList(by) {
   const at = TERM_LIST_MODES.indexOf(termListMode);
   const to = TERM_LIST_MODES[at + by];

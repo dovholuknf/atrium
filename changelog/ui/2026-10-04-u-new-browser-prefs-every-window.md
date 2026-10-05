@@ -1,0 +1,3 @@
+# A browser setting reaches every open window at once
+
+A setting marked "this browser" now applies in every open window of that browser as soon as you change it, with no reload: the main tab, popped-out terminals and the phone page. That covers input lag logging, the typing readout, copy on select, focus on hover, card colours, terminal row colours, text size, whitespace, sound and volume, the growler, the terminal list's sort, mode, tray and hides, the board sort, the stack filter, the switcher key, and on the phone page the list order, filters, needs or all switch and text size. Nothing needed the "reload other windows" fallback, so the settings rows are unchanged.

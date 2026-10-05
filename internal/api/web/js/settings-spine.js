@@ -121,12 +121,9 @@ function buildSettingsNav() {
 }
 function showSettingsPane(name) { showPane(settingsBody(), name, SETTINGS_PANE); }
 
-function paintSettings() {
-  buildSettingsNav();
-  if (typeof paintTermGear === "function") paintTermGear();
-  // Not awaited. The gear opens on what the browser already knows and the
-  // login section fills itself in a moment later, the same way the overlays do.
-  loadAuth();
+// The controls that show a per-browser setting. Painted when the gear opens, and again when another window of this
+// browser changes one of them, so an open dialog never shows what the other window just undid.
+function paintSettingsPrefs() {
   const p = alerting.get();
   document.getElementById("s-vol").value = Math.round(p.volume * 100);
   document.getElementById("s-input").innerHTML = soundOptions(p.input);
@@ -145,6 +142,17 @@ function paintSettings() {
     document.getElementById("s-termwear-" + k).checked = termWearOn[k];
   document.getElementById("s-inputlag").checked = lagOn;
   document.getElementById("s-typing").checked = typingOn;
+}
+prefLive(["atrium.sound", "atrium.termKeep*"], () => paintSettingsPrefs());
+
+function paintSettings() {
+  buildSettingsNav();
+  if (typeof paintTermGear === "function") paintTermGear();
+  // Not awaited. The gear opens on what the browser already knows and the
+  // login section fills itself in a moment later, the same way the overlays do.
+  loadAuth();
+  paintSettingsPrefs();
+
   // The two housekeeping timers. Held by the daemon rather than the browser,
   // because they are about the machine's data and not about this screen, so
   // they are read here rather than assumed.

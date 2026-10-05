@@ -406,6 +406,9 @@ function paintSwitchKey() {
   b.dataset.tip = "click, then press the keys you want";
 }
 
+// The key is read on every keydown, so another window's choice already works here. Only the row's label is stale.
+prefLive(SWITCH_KEY_STORE, () => { swSaidTaken = ""; paintSwitchKey(); });
+
 // Bound by PRESSING it, not by picking it off a list. The question is whether
 // this browser lets that combination through, and the only thing that answers
 // it is the combination, in this browser, now.

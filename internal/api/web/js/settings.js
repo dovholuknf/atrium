@@ -81,6 +81,12 @@ document.getElementById("s-density").addEventListener("change", e => {
   localStorage.setItem(DENSITY_KEY, e.target.value);
   applyDensity();
 });
+prefLive([UI_SCALE_KEY, DENSITY_KEY], () => {
+  applyUiScale();
+  applyDensity();
+  document.getElementById("s-cardsize").value = String(uiScale());
+  document.getElementById("s-density").value = String(density());
+});
 
 // The grouping controls. Blank code means the defaults, so the boxes are
 // seeded with the defaults as a starting point rather than left empty.
