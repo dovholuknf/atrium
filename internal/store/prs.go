@@ -559,7 +559,7 @@ func (st *Store) RunFolderOn(host, org, repo string, n int, head string) (string
 		return "", err
 	}
 	for _, sub := range []string{"steps", "findings"} {
-		if err := os.MkdirAll(filepath.Join(filepath.FromSlash(dir), sub), 0o755); err != nil {
+		if err := os.MkdirAll(filepath.Join(filepath.FromSlash(dir), sub), 0o700); err != nil {
 			return "", err
 		}
 	}

@@ -334,8 +334,14 @@ func New(opts Options) (*Daemon, error) {
 		opts.DBPath = DefaultDBPath()
 	}
 	if dir := filepath.Dir(opts.DBPath); dir != "" && dir != "." {
-		if err := os.MkdirAll(dir, 0o755); err != nil {
+		if err := os.MkdirAll(dir, 0o700); err != nil {
 			return nil, fmt.Errorf("create %s: %w", dir, err)
+		}
+		// MkdirAll leaves an existing directory as it was, so a room made
+		// before this was 0700 is tightened here. The directory holds the
+		// session key, the OIDC secret and every card's launch_env.
+		if err := os.Chmod(dir, 0o700); err != nil {
+			log.Printf("[atrium] chmod %s: %v", dir, err)
 		}
 	}
 	st, err := store.Open(opts.DBPath)

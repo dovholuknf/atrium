@@ -66,7 +66,7 @@ func newFileSink(dir string) (*fileSink, error) {
 // rolling without writing megabytes. maxBytes is set before the writer starts,
 // so the goroutine never races the caller for it.
 func newFileSinkWith(dir string, maxBytes int64) (*fileSink, error) {
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return nil, fmt.Errorf("event file sink %s: %w", dir, err)
 	}
 	fs := &fileSink{
@@ -172,7 +172,7 @@ func (fs *fileSink) roll(at time.Time) error {
 	fs.closeFile()
 	fs.seq++
 	name := fmt.Sprintf("events-%s-%03d.jsonl", at.UTC().Format("20060102-150405"), fs.seq)
-	f, err := os.OpenFile(filepath.Join(fs.dir, name), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+	f, err := os.OpenFile(filepath.Join(fs.dir, name), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
 	if err != nil {
 		return err
 	}

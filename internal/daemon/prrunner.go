@@ -437,7 +437,7 @@ func (pr *prRun) logf(format string, a ...any) {
 		return
 	}
 	line := pr.r.now().Format("15:04:05") + " " + fmt.Sprintf(format, a...) + "\n"
-	f, err := os.OpenFile(filepath.Join(pr.dir, "run.log"), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+	f, err := os.OpenFile(filepath.Join(pr.dir, "run.log"), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
 	if err != nil {
 		return
 	}
@@ -459,7 +459,7 @@ func (pr *prRun) saveReview() {
 	if _, err := os.Stat(pr.dir); err != nil {
 		return
 	}
-	os.WriteFile(filepath.Join(pr.dir, "review.json"), b, 0o644)
+	os.WriteFile(filepath.Join(pr.dir, "review.json"), b, 0o600)
 }
 
 // write puts a file in the run folder, unless the run was stopped, so a late
@@ -469,10 +469,10 @@ func (pr *prRun) write(rel string, data []byte) error {
 		return errStopped
 	}
 	p := filepath.Join(pr.dir, filepath.FromSlash(rel))
-	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(p), 0o700); err != nil {
 		return err
 	}
-	return os.WriteFile(p, data, 0o644)
+	return os.WriteFile(p, data, 0o600)
 }
 
 func (pr *prRun) fail(step string, err error) {
@@ -679,7 +679,7 @@ func (pr *prRun) fetchSource(spec forge.FetchSpec, head string) error {
 	if err := os.RemoveAll(src); err != nil {
 		return err
 	}
-	if err := os.MkdirAll(src, 0o755); err != nil {
+	if err := os.MkdirAll(src, 0o700); err != nil {
 		return err
 	}
 	remote, fetch := spec.Remote, []string{"fetch", "-q", "--depth", "1", "--filter=blob:none", "origin", spec.Refspec}
@@ -819,7 +819,7 @@ func (pr *prRun) forkCommon() error {
 		}
 	}
 	work := filepath.Join(pr.dir, "work")
-	if err := os.MkdirAll(work, 0o755); err != nil {
+	if err := os.MkdirAll(work, 0o700); err != nil {
 		return err
 	}
 	src, err := filepath.Abs(filepath.Join(pr.dir, "src"))
