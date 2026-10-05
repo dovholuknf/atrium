@@ -161,4 +161,5 @@ edits `prrunner.go`, `prworktree.go`, `forgeaccess.go` or `internal/forge`, whic
 
 ## State
 
-Design written 2026-10-04. Items dispatched as in section 7. Results are filled in below as each finishes.
+Design written 2026-10-04 (828a8cd0). Running: `r-pr-paste-review` on sg3, `u-pr-finding-states` on sgg, both on
+claude/main 5d68bfa2. Waiting: `f-pr-review-move`, for a free slot and for `r-hub-forge` to land (it owns `prclaim.go`).
