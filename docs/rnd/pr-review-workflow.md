@@ -185,9 +185,12 @@ Design written 2026-10-04 (828a8cd0).
   by bundle, built, tested and shot there. The phone action buttons are not seen in a shot, as the headless phone
   viewport cuts the drawer below the rail.
 - Done: `f-pr-review-move` claude/f-pr-review-move@5a1f7247 (sg3), on claude/main c721241b (r-hub-forge merged).
-- 2026-10-05, after the merge at c9d65765: `u-walk-phone-shots` running on m1mini (the phone action buttons in
-  shots). `u-pr-move-action` (section 5.1) has its worktree on m1mini from c9d65765 and waits for a slot, since sg3 and
-  m1mini are both at the cap of 5.
+- 2026-10-05, after the merge at c9d65765:
+  - Done: `u-walk-phone-shots` claude/u-walk-phone-shots@333c933e (m1mini). The headless walk taps every state at
+    390 and 360 wide, with PNGs. The drawer was too short to reach the buttons, so phone.css raises it to 80% and wraps
+    the walk head. The finding and the buttons still need one scroll between them on a phone.
+  - Running: `u-pr-move-action` (section 5.1) on m1mini, from c9d65765.
+  - The next queue item, `rnd-new-review-quality`, is designed in `docs/rnd/review-quality-design.md` (ee0307bc).
   Not done there: no room handoff in the tree moves a PR card, so nothing passes the new card as walker. The hub move
   takes an optional `walker` for whoever builds that. A claim on a room gone for good cannot be moved (Open 4).
 - The two done items are on claude/main 5d68bfa2, before r-hub-forge. Their changes are outside its files.
