@@ -54,6 +54,9 @@ func TestOpenQuestionsShapes(t *testing.T) {
 			"Open Questions:\n1. old\n\nquoted above. now:\n\nOpen Questions:\n1. new", []string{"new"}, true},
 		{"a heading with nothing readable", "Open Questions:\n\nnone that I can phrase yet", nil, true},
 		{"crlf line ends", "Open Questions:\r\n\r\n---\r\n\r\n1. one\r\n2. two\r\n", []string{"one", "two"}, true},
+		{"numbered sub-items are not questions",
+			"Open Questions:\n1. one\n   1. detail a\n   2. detail b\n2. two\n  1) more\n3. three",
+			[]string{"one 1. detail a 2. detail b", "two 1) more", "three"}, true},
 		{"the words mid-sentence are not a heading", "I have open questions: see below.\n1. no", nil, false},
 	}
 	for _, c := range cases {
@@ -63,6 +66,17 @@ func TestOpenQuestionsShapes(t *testing.T) {
 				t.Fatalf("got %q block=%v, want %q block=%v", got, block, c.want, c.block)
 			}
 		})
+	}
+}
+
+// Six questions with four numbered sub-items among them is six, and numbers outside the block do not count.
+func TestOpenQuestionsCountSixNotTen(t *testing.T) {
+	text := "Findings:\n1. a finding\n2. another\n\nOpen Questions:\n\n" +
+		"1. first?\n2. second?\n   1. option a\n   2. option b\n3. third?\n4. fourth?\n" +
+		"   1. option c\n   2. option d\n5. fifth?\n6. sixth?\n"
+	got, block := openQuestions(text)
+	if !block || len(got) != 6 {
+		t.Fatalf("got %d %q block=%v, want 6", len(got), got, block)
 	}
 }
 

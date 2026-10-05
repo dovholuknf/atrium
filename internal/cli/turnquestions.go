@@ -136,7 +136,7 @@ func assistantText(line []byte) string {
 // The heading, read leniently: `Open Questions:`, bold, or a markdown heading.
 var (
 	oqHeading = regexp.MustCompile(`(?i)^\s*(#{1,6}\s*)?(\*\*|__)?\s*open questions\s*:?\s*(\*\*|__)?\s*:?\s*$`)
-	oqItem    = regexp.MustCompile(`^\s{0,3}(\d{1,2})[.)]\s+(.*)$`)
+	oqItem    = regexp.MustCompile(`^(\s{0,3})(\d{1,2})[.)]\s+(.*)$`)
 	oqRule    = regexp.MustCompile(`^\s*(-{3,}|\*{3,}|_{3,})\s*$`)
 )
 
@@ -145,7 +145,8 @@ var (
 // The last, because a message that quotes an earlier block and then asks its
 // own means the second. An indented line continues the item above it. The
 // first non-blank line after an item that is neither an item nor indented ends
-// the block.
+// the block. Only top-level numbers count: a numbered line indented deeper than
+// the first item is a sub-item, and reads as part of the item above it.
 func openQuestions(text string) (list []string, block bool) {
 	lines := []string{}
 	sc := bufio.NewScanner(strings.NewReader(text))
@@ -164,6 +165,7 @@ func openQuestions(text string) (list []string, block bool) {
 		return nil, false
 	}
 	var cur *strings.Builder
+	base := -1
 	flush := func() {
 		if cur == nil {
 			return
@@ -185,11 +187,14 @@ func openQuestions(text string) (list []string, block bool) {
 		switch {
 		case strings.TrimSpace(l) == "", oqRule.MatchString(l):
 			continue
-		case oqItem.MatchString(l):
+		case oqItem.MatchString(l) && !(cur != nil && len(oqItem.FindStringSubmatch(l)[1]) > base):
 			flush()
 			m := oqItem.FindStringSubmatch(l)
+			if base < 0 {
+				base = len(m[1])
+			}
 			cur = &strings.Builder{}
-			cur.WriteString(strings.TrimSpace(m[2]))
+			cur.WriteString(strings.TrimSpace(m[3]))
 		case cur != nil && (strings.HasPrefix(l, " ") || strings.HasPrefix(l, "\t")):
 			cur.WriteString(" ")
 			cur.WriteString(strings.TrimSpace(l))

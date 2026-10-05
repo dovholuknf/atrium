@@ -24413,7 +24413,10 @@ async function growlStackSection(browser, base) {
   const drawn = () => p.evaluate(() => ({
     full: [...document.querySelectorAll("#growl .gr-full b")].map(b => b.textContent),
     rows: [...document.querySelectorAll("#growl .gr-row .gr-t")].map(b => b.textContent),
-    strip: (document.querySelector("#growl .gr-strip") || {}).textContent || ""
+    strip: (document.querySelector("#growl .gr-strip[data-do=next]") || {}).textContent || "",
+    all: (document.querySelector("#growl .gr-strip[data-do=expand]") || {}).textContent || "",
+    less: (document.querySelector("#growl .gr-strip[data-do=fold]") || {}).textContent || "",
+    text: document.getElementById("growl") ? document.getElementById("growl").textContent : ""
   }));
   try {
     await h.say([]);
@@ -24424,7 +24427,14 @@ async function growlStackSection(browser, base) {
     await h.say(rows);
     let d = await drawn();
     if (d.full.length !== 1 || d.full[0] !== "permission a") fail("growlStack: the full growler was " + JSON.stringify(d.full));
-    if (d.strip !== "+3 more: 1 permission, 1 question, 1 deploy-hold") fail("growlStack: the strip said " + JSON.stringify(d.strip));
+    if (d.strip !== "next: permission b") fail("growlStack: the strip said " + JSON.stringify(d.strip));
+    if (d.all !== "show all 4: 2 permissions, 1 question, 1 deploy-hold") fail("growlStack: the show-all said " + JSON.stringify(d.all));
+    if (/fold|\+\d+ more/.test(d.text)) fail("growlStack: the growler still says fold or +N more: " + JSON.stringify(d.text));
+    await growlPng(p, "stacked-collapsed");
+    await h.say([GR("q1", "question", 0, { title: "orchestrator asked 6 questions", body: "Should sa21 land before sa25?" }),
+      GR("q2", "question", 1, { title: "builder asked a question" })]);
+    await growlPng(p, "plus-one-row");
+    await h.say(rows);
     // The command's first line, not its second.
     const cmd = await p.textContent("#growl .gr-cmd");
     if (cmd !== "Bash: rm -rf build") fail("growlStack: the command line was " + JSON.stringify(cmd));
@@ -24438,23 +24448,36 @@ async function growlStackSection(browser, base) {
     });
     if (!pin.above) fail("growlStack: the growler is not above the toasts.");
     if (pin.plain !== 3) fail("growlStack: the growler changed the toast cap, " + pin.plain + " shown.");
-    // Expand in place, then fold.
-    await p.click("#growl .gr-strip");
+    // "next" brings the following growler up as the full one, and goes round.
+    await p.click("#growl .gr-strip[data-do=next]");
     d = await drawn();
+    if (d.full[0] !== "permission b" || d.strip !== "next: question c") fail("growlStack: next drew " + JSON.stringify(d));
+    for (let i = 0; i < 3; i++) await p.click("#growl .gr-strip[data-do=next]");
+    d = await drawn();
+    if (d.full[0] !== "permission a" || d.strip !== "next: permission b") fail("growlStack: next did not come round: " + JSON.stringify(d));
+    // Show all in place, then show less with the control that opened it.
+    await p.click("#growl .gr-strip[data-do=expand]");
+    d = await drawn();
+    if (d.less !== "show less" || /fold/.test(d.text)) fail("growlStack: the open stack closes with " + JSON.stringify(d.less));
+    await growlPng(p, "stacked-open");
     if (d.rows.join() !== "permission a,permission b,question c,deploy-hold d") fail("growlStack: expanded rows were " + JSON.stringify(d.rows));
     if (d.full.length) fail("growlStack: expanded still drew a full growler.");
     if (await p.$('#growl .gr-row[data-id*="|z|"]')) fail("growlStack: a snoozed row was drawn.");
-    await p.click("#growl .gr-strip");
+    await p.click("#growl .gr-strip[data-do=fold]");
     d = await drawn();
-    if (d.full.length !== 1 || d.rows.length) fail("growlStack: folding did not return to one growler.");
-    // A late event keeps the stack folded and replaces the set.
+    if (d.full.length !== 1 || d.rows.length) fail("growlStack: showing less did not return to one growler.");
+    // A late event keeps the stack closed and replaces the set.
     await h.say(rows.slice(1));
     d = await drawn();
-    if (d.full[0] !== "permission b" || !/^\+2 more: 1 question, 1 deploy-hold$/.test(d.strip)) fail("growlStack: a replaced set drew " + JSON.stringify(d));
+    if (d.full[0] !== "permission b" || d.strip !== "next: question c" || !/^show all 3: /.test(d.all)) fail("growlStack: a replaced set drew " + JSON.stringify(d));
+    // Two growlers: "next" only, no show-all.
+    await h.say(rows.slice(0, 2));
+    d = await drawn();
+    if (d.strip !== "next: permission b" || d.all) fail("growlStack: two growlers drew " + JSON.stringify(d));
     // The cap: half the window, then it scrolls.
     const many = []; for (let i = 0; i < 40; i++) many.push(GR("m" + i, "question", i));
     await h.say(many);
-    await p.click("#growl .gr-strip");
+    await p.click("#growl .gr-strip[data-do=expand]");
     const box = await p.evaluate(() => { const e = document.getElementById("growl"); return { h: e.getBoundingClientRect().height, s: e.scrollHeight, c: e.clientHeight, win: innerHeight }; });
     if (box.h > box.win / 2 + 1) fail("growlStack: the expanded stack was " + box.h + "px in a " + box.win + "px window.");
     if (box.s <= box.c) fail("growlStack: forty rows did not scroll inside the cap.");
@@ -24974,6 +24997,14 @@ async function growlAttentionSection(browser, base) {
   if (!bad) console.log("growlAttention ok");
 }
 
+// STACKFOLD_SHOTS=dir writes the growler itself as PNG, for the stack-fold change.
+async function growlPng(p, name) {
+  const dir = process.env.STACKFOLD_SHOTS;
+  if (!dir) return;
+  fs.mkdirSync(dir, { recursive: true });
+  await p.locator("#growl").screenshot({ path: path.join(dir, name + ".png") });
+}
+
 // GROWL_SHOTS=dir writes the pictures a change is reviewed from, as JPEG at quality 80.
 async function growlShot(p, name) {
   const dir = process.env.GROWL_SHOTS;
@@ -25099,9 +25130,9 @@ async function growlPopoutSection(browser, base) {
 
     // Drawing: the board draws both, the pop-out only its own card's, and the other pop-out none.
     const both = await text(board, "#growl");
-    if (!/permission land-live/.test(both) || !/\+1 more/.test(both)) fail("growlPopout: the board did not draw both growlers: " + JSON.stringify(both));
+    if (!/permission land-live/.test(both) || !/next: question elsewhere/.test(both)) fail("growlPopout: the board did not draw both growlers: " + JSON.stringify(both));
     const inPop = await text(pop, "#growl");
-    if (!/permission land-live/.test(inPop) || /question elsewhere|more:/.test(inPop)) fail("growlPopout: the pop-out drew " + JSON.stringify(inPop));
+    if (!/permission land-live/.test(inPop) || /question elsewhere|next:/.test(inPop)) fail("growlPopout: the pop-out drew " + JSON.stringify(inPop));
     if (await other.$("#growl")) fail("growlPopout: a pop-out for another card drew a growler.");
 
     // Ringing: a raise is the pop-out's alone. The board and the other pop-out stay quiet for that card.
