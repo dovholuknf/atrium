@@ -22,7 +22,7 @@ import (
 //
 //	POST /_claim/pr (a room, on the git kind)  {key, url, why, head, source}   ask for the key
 //	GET  /_hub/pr-claims                       every claim
-//	POST /_hub/pr-claims/move                  {key, to}   the operator's hand move
+//	POST /_hub/pr-claims/move                  {key, to, walker?}   the operator's hand move, the review with it. See prmove.go
 //
 // ── placement ───────────────────────────────────────────
 //
@@ -327,16 +327,22 @@ func (p *Proxy) servePRClaims(w http.ResponseWriter, r *http.Request, sub string
 		var in struct {
 			Key string `json:"key"`
 			To  string `json:"to"`
+			// Walker is the card that walks the review on the new room, when the caller knows it.
+			Walker string `json:"walker"`
 		}
 		if err := json.NewDecoder(io.LimitReader(r.Body, 1<<16)).Decode(&in); err != nil ||
 			strings.TrimSpace(in.Key) == "" || strings.TrimSpace(in.To) == "" {
 			crFail(w, http.StatusBadRequest, "say the key and the room to move it to")
 			return
 		}
-		c, err := p.MovePRClaim(strings.ToLower(strings.TrimSpace(in.Key)), strings.TrimSpace(in.To))
+		c, err := p.MovePRClaimWith(r.Context(), strings.ToLower(strings.TrimSpace(in.Key)), strings.TrimSpace(in.To),
+			strings.TrimSpace(in.Walker))
+		var me *moveError
 		switch {
 		case errors.Is(err, hubstore.ErrNoPRClaim):
 			crFail(w, http.StatusNotFound, "no room has claimed that pr")
+		case errors.As(err, &me):
+			crFail(w, me.status, me.msg)
 		case err != nil:
 			crFail(w, http.StatusInternalServerError, err.Error())
 		default:
@@ -345,30 +351,6 @@ func (p *Proxy) servePRClaims(w http.ResponseWriter, r *http.Request, sub string
 	default:
 		crFail(w, http.StatusMethodNotAllowed, "that has to be a GET, or a POST to /move")
 	}
-}
-
-// MovePRClaim gives a key to another room and ends its offline warning. The call the room handoff makes when a PR's
-// card moves, so a key keeps one owner.
-func (p *Proxy) MovePRClaim(key, to string) (hubstore.PRClaim, error) {
-	st := p.prClaims()
-	if st == nil {
-		return hubstore.PRClaim{}, hubstore.ErrNoPRClaim
-	}
-	old, err := st.PRClaimOf(key)
-	if err != nil {
-		return hubstore.PRClaim{}, err
-	}
-	c, err := st.MovePRClaim(key, to)
-	if err != nil {
-		return c, err
-	}
-	if old.Warned {
-		if g := p.growler(); g != nil {
-			g.endAbout(prWaitID(key, old.WarnN))
-		}
-	}
-	p.RecordAudit(to, "pr-claim-moved", key+" from "+old.Room)
-	return c, nil
 }
 
 // ── the warning ─────────────────────────────────────────

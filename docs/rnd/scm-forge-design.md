@@ -356,6 +356,13 @@ On claude/main as of d35d9c1e, plus `r-hub-forge` (2026-10-04), read from the co
   reconcile (`ReconcilePRClaims` in `internal/api/prclaim.go`), and the fold of rows with one key in the pulls view
   (`foldPRRows` in `internal/link/pulls.go`). A placement the room refuses releases the claim it made
   (`releaseOnRefusal` in `internal/link/prworktreeroute.go`, `ReleasePRClaim` in `internal/hubstore/prclaim.go`).
+- **The review moves with the PR (2026-10-04, `f-pr-review-move`).** `GET /v1/prs/export?key=`, `POST /v1/prs/import`
+  and `POST /v1/prs/{id}/archive` on a room's human listener (`internal/api/prsmove.go`, store parts in
+  `internal/store/prsmove.go`). The archive is a capped tar.gz (64 MiB) of `row.json` and the run folder minus `src/`,
+  with no link in it. The hub's `MovePRClaimWith` (`internal/link/prmove.go`) needs both rooms online, pipes the old
+  room's export into the new room's import with no copy on the hub, moves the claim, then has the old room archive its
+  row and stops its run. A failed import leaves the claim and the old row. An old room with no row for the key just
+  moves the claim. The walker is set on the new row when the move names the card.
 - **Recognisers.** The built-in `forge` fetch of section 8, and the refusal of a `gh`, `bb` or `glab` fetch on a room
   with a hub.
 - **`scripts/recognisers/`.** Seed rows for GitHub (pull request, issue, branch, repository), Bitbucket (pull request,

@@ -34,6 +34,22 @@ type claimRoom struct {
 	worktrees int
 	// refuseWT makes the pr-worktree call fail, as a refused clone or fetch does.
 	refuseWT bool
+
+	// The review this room holds for the move: the archive it exports and the row id it says. Nil is no review.
+	review   []byte
+	reviewID string
+	// importStatus, when set, is what an import answers, with no row made.
+	importStatus int
+	// What reached it: the archive imported, the rows archived, the walker bodies.
+	imported []byte
+	archived []string
+	walkers  []string
+}
+
+func (c *claimRoom) reviewCalls() (imported []byte, archived, walkers []string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.imported, append([]string(nil), c.archived...), append([]string(nil), c.walkers...)
 }
 
 func (c *claimRoom) made() []string {
@@ -92,6 +108,37 @@ func (c *claimRoom) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		_, _ = w.Write([]byte(`{"path":"/wt/` + c.name + `","existed":false}`))
+	case r.URL.Path == "/v1/prs/export" && r.Method == http.MethodGet:
+		if c.review == nil {
+			w.WriteHeader(http.StatusNotFound)
+			_, _ = w.Write([]byte(`{"error":"no review of that pr here"}`))
+			return
+		}
+		w.Header().Set("X-Atrium-PR-ID", c.reviewID)
+		_, _ = w.Write(c.review)
+	case r.URL.Path == "/v1/prs/import" && r.Method == http.MethodPost:
+		b, _ := io.ReadAll(r.Body)
+		if c.importStatus != 0 {
+			w.WriteHeader(c.importStatus)
+			_, _ = w.Write([]byte(`{"error":"the archive is over the cap"}`))
+			return
+		}
+		c.mu.Lock()
+		c.imported = b
+		c.mu.Unlock()
+		w.WriteHeader(http.StatusCreated)
+		_, _ = w.Write([]byte(`{"pr":{"id":"new-` + c.name + `"},"created":true}`))
+	case strings.HasPrefix(r.URL.Path, "/v1/prs/") && strings.HasSuffix(r.URL.Path, "/archive") && r.Method == http.MethodPost:
+		c.mu.Lock()
+		c.archived = append(c.archived, strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/v1/prs/"), "/archive"))
+		c.mu.Unlock()
+		_, _ = w.Write([]byte(`{}`))
+	case strings.HasPrefix(r.URL.Path, "/v1/prs/") && strings.HasSuffix(r.URL.Path, "/walker") && r.Method == http.MethodPost:
+		b, _ := io.ReadAll(r.Body)
+		c.mu.Lock()
+		c.walkers = append(c.walkers, r.URL.Path+" "+string(b))
+		c.mu.Unlock()
+		_, _ = w.Write([]byte(`{}`))
 	default:
 		http.NotFound(w, r)
 	}
@@ -310,12 +357,31 @@ func TestManualMoveUpdatesTheClaim(t *testing.T) {
 		t.Fatalf("raised = %+v", fg.raised)
 	}
 
+	// The review is on beta and beta is offline, so the move is refused with a sentence and nothing changes.
 	res, err := http.Post(x.front.URL+"/_hub/pr-claims/move", "application/json",
 		strings.NewReader(`{"key":"`+key+`","to":"alpha"}`))
 	if err != nil {
 		t.Fatal(err)
 	}
 	b, _ := io.ReadAll(res.Body)
+	res.Body.Close()
+	if res.StatusCode != http.StatusConflict || !strings.Contains(string(b), "which is offline. bring it back or move it later") {
+		t.Fatalf("offline move = %d %s", res.StatusCode, b)
+	}
+	if c, _ := x.st.PRClaimOf(key); c.Room != "beta" || len(fg.ended) != 0 {
+		t.Fatalf("claim = %+v, ended %v", c, fg.ended)
+	}
+	// Beta comes back and the move goes through.
+	rctx, rstop := context.WithCancel(context.Background())
+	defer rstop()
+	go func() { _ = x.rooms["beta"].room.Run(rctx) }()
+	waitFor(t, 5*time.Second, func() bool { return x.hub.Has("beta") })
+	res, err = http.Post(x.front.URL+"/_hub/pr-claims/move", "application/json",
+		strings.NewReader(`{"key":"`+key+`","to":"alpha"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, _ = io.ReadAll(res.Body)
 	res.Body.Close()
 	if res.StatusCode != 200 || !strings.Contains(string(b), `"room":"alpha"`) {
 		t.Fatalf("move = %d %s", res.StatusCode, b)
