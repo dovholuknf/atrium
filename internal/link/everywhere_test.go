@@ -3,7 +3,17 @@ package link
 import (
 	"encoding/json"
 	"testing"
+
+	"github.com/dovholuknf/atrium/internal/store"
 )
+
+// link keeps its own copy of the board launcher's spawned_by so it need not
+// import the store for one string. This is what stops the two drifting apart.
+func TestHumanLauncherIsTheStoresHumanLauncher(t *testing.T) {
+	if humanLauncher != store.HumanLauncher {
+		t.Fatalf("link's humanLauncher is %q, store.HumanLauncher is %q", humanLauncher, store.HumanLauncher)
+	}
+}
 
 // card is one announced card as a room writes it.
 func everyRow(id, status, wire, alias string, tags ...string) CardState {

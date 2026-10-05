@@ -302,6 +302,11 @@ func TestAPatientPauseOutlastsTheWaitThenGoesOnResume(t *testing.T) {
 // lets it through.
 func TestAPatientAskMadeWhilePausedWaitsForResume(t *testing.T) {
 	gt := newGateUnderTest(1)
+	// A STOPPED CLOCK, because after the resume the ask needs the idle window and
+	// the countdown, 70ms, inside a 100ms wait. On the real clock a loaded
+	// machine eats the 30ms spare and the ask gives up `busy`, which is the wait
+	// doing its job and not a gate fault. Here the test says how much time passes.
+	clock := stopClock(gt.g)
 	gt.g.pause()
 	ch := gt.askPatient(context.Background(), 50*time.Millisecond, 20*time.Millisecond,
 		100*time.Millisecond, true)
@@ -312,6 +317,18 @@ func TestAPatientAskMadeWhilePausedWaitsForResume(t *testing.T) {
 	default:
 	}
 	gt.g.resume()
+	// 10ms at a time, so the wait's 100ms is never overstepped by one jump.
+	for i := 0; i < 9; i++ {
+		select {
+		case a := <-ch:
+			if a.said != "go" {
+				t.Fatalf("after the resume the ask said %q", a.said)
+			}
+			return
+		case <-time.After(20 * time.Millisecond):
+			clock.advance(10 * time.Millisecond)
+		}
+	}
 	if a := got(t, ch); a.said != "go" {
 		t.Fatalf("after the resume the ask said %q", a.said)
 	}
