@@ -49,15 +49,21 @@ you go and make it with whatever makes worktrees here. Atrium does not know git 
 ## `fetch`, and why it holds no credential
 
 The pattern gives you an issue number. Turning that into a title needs an authenticated network call, and atrium
-does not make one. It runs an argv you wrote and reads a JSON object off its stdout:
+does not hold a credential for one. The built-in fetch asks the forge:
 
 ```
-  gh pr view {num} --repo {org}/{repo} --json title,headRefName
+  fetch forge   fetch_args ["pr"]      title, headRefName, baseRefName, headRefOid, author
+  fetch forge   fetch_args ["issue"]   title, body, author, state
 ```
 
-Every key in that object becomes a variable. `gh` already has a token, in the keyring it already uses. There is
-nowhere in a recogniser to put a credential, the same as a source, and that is the design rather than an
-omission.
+It reads `{host}`, `{org}`, `{repo}` and `{num}` from the captures. **A room with a hub never runs gh or bb**: only
+the hub talks to GitHub or Bitbucket, so the room asks the hub and the hub's own CLI login answers. A room with no
+hub is its own hub and asks its local CLI. On a room with a hub, a row whose fetch is `gh`, `bb` or `glab` is
+refused with a sentence that says to use `forge`.
+
+Any other fetch is an argv you wrote, and atrium reads a JSON object off its stdout. Every key in that object
+becomes a variable. There is nowhere in a recogniser to put a credential, the same as a source, and that is the
+design rather than an omission.
 
 **The captures win.** A fetched fact only fills a name the pattern left empty, and never overwrites one it
 filled. A fetch reads whatever an issue tracker holds, and anybody can write into an issue tracker: one that

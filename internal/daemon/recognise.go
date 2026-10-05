@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -14,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/dovholuknf/atrium/internal/forge"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -174,6 +176,14 @@ func (d *Daemon) fetchFacts(ctx context.Context, r *store.Recogniser,
 	vars map[string]string) (map[string]string, error) {
 
 	name, args := store.FillArgv(r.Fetch, r.FetchArgs, vars)
+	if name == forgeFetch {
+		return d.forgeFacts(ctx, args, vars)
+	}
+	// A ROOM WITH A HUB RUNS NO FORGE CLI: only the hub talks to the forge. See hubforge.go.
+	if forgeCLIs[strings.ToLower(filepath.Base(name))] && d.HubForge() != nil {
+		return nil, fmt.Errorf("this room reads the forge only through its hub, so it does not run %s. set the "+
+			"recogniser's fetch to `forge` with the argument pr or issue", name)
+	}
 	runCtx, cancel := context.WithTimeout(ctx, recogniserFetchTimeout)
 	defer cancel()
 
@@ -252,4 +262,61 @@ func flattenFacts(raw map[string]any) map[string]string {
 		}
 	}
 	return out
+}
+
+// forgeFetch is the built-in fetch: `forge pr` or `forge issue` reads the pull request or issue the URL names through
+// the hub's forge, or the room's own when it has no hub. The facts carry gh's names, so templates written for
+// `gh pr view --json title,headRefName,baseRefName` and `gh issue view --json title,body` read the same.
+const forgeFetch = "forge"
+
+// forgeCLIs are the commands a room with a hub does not run as a fetch.
+var forgeCLIs = map[string]bool{"gh": true, "gh.exe": true, "bb": true, "bb.exe": true, "glab": true, "glab.exe": true}
+
+func (d *Daemon) forgeFacts(ctx context.Context, args []string, vars map[string]string) (map[string]string, error) {
+	what := ""
+	if len(args) > 0 {
+		what = strings.TrimSpace(args[0])
+	}
+	if what != "pr" && what != "issue" {
+		return nil, errors.New("the forge fetch takes one argument, pr or issue")
+	}
+	n, err := strconv.Atoi(strings.TrimSpace(vars["num"]))
+	if err != nil || n <= 0 || vars["org"] == "" || vars["repo"] == "" {
+		return nil, errors.New("the forge fetch needs the pattern to capture org, repo and num")
+	}
+	host := strings.ToLower(strings.TrimSpace(vars["host"]))
+	if host == "" {
+		host = "github.com"
+	}
+	ref := forge.Ref{Host: host, Org: vars["org"], Repo: vars["repo"], Number: n}
+	ctx, cancel := context.WithTimeout(ctx, recogniserFetchTimeout)
+	defer cancel()
+	var f forge.Forge
+	if hf := d.HubForge(); hf != nil {
+		f = hf
+	} else if f, err = d.prr.forgeFor(host); err != nil {
+		return nil, err
+	}
+	if what == "issue" {
+		ir, ok := f.(forge.IssueReader)
+		if !ok {
+			return nil, fmt.Errorf("the %s forge does not read issues", f.Kind())
+		}
+		is, err := ir.Issue(ctx, ref)
+		if err != nil {
+			return nil, err
+		}
+		return map[string]string{"title": is.Title, "body": is.Body, "author": is.Author, "state": is.State}, nil
+	}
+	// A paste being recognised asks about the pull request and nothing more, so the hub fetches no head for it.
+	view := f.View
+	if hf, ok := f.(*forge.Remote); ok {
+		view = hf.Peek
+	}
+	pr, err := view(ctx, ref)
+	if err != nil {
+		return nil, err
+	}
+	return map[string]string{"title": pr.Title, "headRefName": pr.HeadRef, "baseRefName": pr.BaseRef,
+		"author": pr.Author, "headRefOid": pr.Head}, nil
 }

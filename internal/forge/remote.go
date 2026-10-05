@@ -146,6 +146,15 @@ func (r *Remote) View(ctx context.Context, ref Ref) (*PR, error) {
 	return out.PR, nil
 }
 
+// Peek asks the hub to read the pull request and fetch nothing, for a question that needs no code.
+func (r *Remote) Peek(ctx context.Context, ref Ref) (*PR, error) {
+	out, err := r.pr(ctx, ref, ask(ref))
+	if err != nil {
+		return nil, err
+	}
+	return out.PR, nil
+}
+
 func (r *Remote) Diff(ctx context.Context, ref Ref) ([]byte, error) {
 	in := ask(ref)
 	in.Diff = true

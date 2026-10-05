@@ -10,8 +10,13 @@
     "tags": "pull-request,{repo}",
     "cwd": "D:/worktrees/bitbucket/{org}/{repo}/pr-{num}",
     "window": "pull-requests",
+    "branch": "{headRefName}",
     "prompt": "Review the pull request at {url}. The worktree is already on its branch.",
-    "notes": "The same thing as a github pull request with a different spelling in the path, which is exactly why the host is a field of its own rather than an assumption. No fetch here: fill one in with whatever reads your bitbucket, and the title and branch templates start working."
+    "fetch": "forge",
+    "fetch_args": [
+      "pr"
+    ],
+    "notes": "The same thing as a github pull request with a different spelling in the path, which is exactly why the host is a field of its own rather than an assumption. The fetch is the built-in forge one, which the hub answers."
   },
   {
     "id": "bitbucket-issue",
@@ -25,8 +30,12 @@
     "cwd": "D:/worktrees/bitbucket/{org}/{repo}/issue-{num}",
     "branch": "issue-{num}",
     "window": "active-work",
-    "prompt": "Work on {url}.",
-    "notes": "The trailing slug bitbucket adds after the number is allowed and ignored. No fetch, so the agent reads the issue itself."
+    "prompt": "Work on {url}.\n\n{body}",
+    "fetch": "forge",
+    "fetch_args": [
+      "issue"
+    ],
+    "notes": "The trailing slug bitbucket adds after the number is allowed and ignored. The fetch is the built-in forge one, which the hub answers."
   },
   {
     "id": "bitbucket-branch",
