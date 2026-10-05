@@ -319,6 +319,7 @@ func TestAStuckCardWakesAnOrchestratorOnlyPastTheSecondStep(t *testing.T) {
 	d := testDaemon(t)
 	launcher, worker := holdingPair(t, d, OrchestratorTag)
 	d.turnEnded(worker.ID)
+	nudgeThenStopAgain(t, d, worker.ID)
 	got, _ := d.st.Get(worker.ID)
 	stopped := got.WaitingSinceOr(time.Now())
 
@@ -352,6 +353,7 @@ func TestAStuckCardDoesNotWakeALauncherThatDoesNotHold(t *testing.T) {
 	d := testDaemon(t)
 	launcher, worker := launchedPair(t, d)
 	d.turnEnded(worker.ID)
+	nudgeThenStopAgain(t, d, worker.ID)
 	got, _ := d.st.Get(worker.ID)
 	stopped := got.WaitingSinceOr(time.Now())
 	if err := d.watchWorkers(stopped.Add(11 * time.Minute)); err != nil {

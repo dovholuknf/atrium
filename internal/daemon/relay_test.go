@@ -333,7 +333,7 @@ func TestASilentStopReachesALauncherOnAnotherRoom(t *testing.T) {
 	remoteWorker(t, d)
 	f.set(func(RelaySay) (RelayResult, error) { return RelayResult{}, ErrRelayDown })
 
-	stopTurn(t, d, "worker")
+	stopTwice(t, d, "worker")
 	settle(d)
 	rows := owed(t, d)
 	if len(rows) != 1 || rows[0].Source != store.RelaySourceNotice || rows[0].ToCard != "L1" ||

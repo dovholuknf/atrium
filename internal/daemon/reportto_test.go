@@ -83,7 +83,7 @@ func TestASilentStopAndOwedReportCountAgainstTheReportToCard(t *testing.T) {
 	if !got.OwesReport() {
 		t.Fatal("a report_to card that was prompted owes @review a report")
 	}
-	stopTurn(t, d, task.WireName)
+	stopTwice(t, d, task.WireName)
 	msgs := pendingFrom(t, d, rev.ID)
 	if len(msgs) != 1 || !strings.Contains(msgs[0].Text, "without reporting") {
 		t.Fatalf("@review has %v, want one silent-stop notice", msgs)
