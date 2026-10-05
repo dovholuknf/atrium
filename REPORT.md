@@ -22,5 +22,5 @@
 
 `go test ./internal/hubstore ./internal/cli` pass. `go test ./internal/link -run 'Backlog|Reports'` passes. The full
 `./internal/link` run on this Windows box has git-dependent failures (`unable to access 'NUL'`, for example
-`TestAHostThatIsNotANameAndAPortIsNotMadeIntoAURL`) that touch no code here. I did not run it on a clean baseline.
+`TestAHostThatIsNotANameAndAPortIsNotMadeIntoAURL`) that touch no code here. The 32 failing tests fail identically on clean claude/main 7a0522cc on sg3.
 `go build -o build.claude/ ./...` is clean.
