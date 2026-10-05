@@ -6,7 +6,19 @@
 - Phone: action buttons are the drawer's own, now `min-height: 40px` in `phone.css`. The pulls tab is reachable behind the header chevron, so nothing changed there.
 - Tests: Go `TestAcceptedIsItsOwnWalkState`, headless pullsDrawer and walk sections updated for the new words and an `y` accept step.
 
+## Verified on sg3
+- `go build -o build.claude/ ./...` and `go vet` on `internal/api` and `internal/store` pass.
+- `go test ./internal/api/... ./internal/store/...`: store passes. api had one real failure from this branch,
+  `TestAcceptedIsItsOwnWalkState`, because `readPRCounts` never counted `accepted` (it fell into open). Fixed in
+  `prsfolder.go`. The eight `TestPRWorktree*` failures are the sg3 git signing key missing, not this branch, and they
+  pass the signing step with `commit.gpgsign=false` only for the rest of the package.
+- `scripts/check-skins.sh` passes. `scripts/check-board.sh` exits 1 on title attributes in `index.html`, `hubrepos.js`
+  and `changereq.js`, and exits 1 the same way at 5d68bfa2, so it is not from this branch.
+- Headless `HEADLESS_ONLY=pullsDrawer,walk` passes.
+- Before and after PNGs in `docs/screens/u-pr-finding-states/` (drawer desktop, drawer phone, pulls row). The phone
+  drawer shot is cut off below the rail in the headless viewport in both, so the phone action buttons are not seen in a
+  shot. The pulls row after reads `1 of 2: 0 accepted, 0 posted, 1 dismissed`.
+
 ## Not done
-- Nothing was built or run. Go and node are not installed on sgg, so `go build`, `go test` and the headless run are all unverified. Please run them.
-- No before and after PNGs under `docs/screens/u-pr-finding-states/` (empty folder), same reason.
+- The phone action buttons were not looked at in a shot, see above.
 - The nav count still follows pulls-api, accepted counted like open, no code change was needed for it.

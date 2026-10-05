@@ -166,6 +166,8 @@ func readPRCounts(dir string) (PRFindingCounts, PRWalkCounts) {
 			fc.Leak++
 		}
 		switch walk[e.Name()].State {
+		case "accepted":
+			wc.Accepted++
 		case "done":
 			wc.Done++
 		case "skipped":
