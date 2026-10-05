@@ -386,9 +386,9 @@ func (s *Server) walkPRFinding(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	switch body.State {
-	case "done", "deferred", "skipped", "open":
+	case "done", "accepted", "deferred", "skipped", "open":
 	default:
-		prError(w, http.StatusBadRequest, "bad_request", "state is done, deferred, skipped or open", nil)
+		prError(w, http.StatusBadRequest, "bad_request", "state is open, accepted, done, skipped or deferred", nil)
 		return
 	}
 	link := strings.TrimSpace(body.URL)

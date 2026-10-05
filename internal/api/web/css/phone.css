@@ -185,6 +185,8 @@
     .wk-row.brk { border-top: none; border-left: 1px solid var(--stroke-dim); }
     .wk-p { display: none; }
     .walk-grip { display: none; }
+    /* Every state is one tap: accept, posted, dismiss, defer and undo are buttons, so the keys are not needed. */
+    .wk-actions button { flex: 1 1 28%; min-height: 40px; }
 
     dialog { width: 96vw; }
     .dlg-body { padding: 14px; }

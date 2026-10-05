@@ -10589,14 +10589,14 @@ async function walkSection(browser, base) {
 
       // s writes Walk: skipped into the copy, u takes it out again.
       await p.keyboard.press("s");
-      await p.waitForFunction(() => document.querySelector("#walk-rail .wk-row.cur.skipped"), null, { timeout: slow(5000) })
-        .catch(() => fail(nm + "s did not mark the row skipped."));
+      await p.waitForFunction(() => document.querySelector("#walk-rail .wk-row.cur.dismissed"), null, { timeout: slow(5000) })
+        .catch(() => fail(nm + "s did not mark the row dismissed."));
       if (!/^Walk: skipped \d{4}-/m.test(read(names[0]))) fail(nm + "s wrote no Walk: skipped line.");
       await p.keyboard.press("g");
       if (await cur() !== 1) fail(nm + "g did not jump to the first unwalked finding.");
       await p.keyboard.press("k");
       await p.keyboard.press("u");
-      await p.waitForFunction(() => !document.querySelector("#walk-rail .wk-row.skipped"), null, { timeout: slow(5000) })
+      await p.waitForFunction(() => !document.querySelector("#walk-rail .wk-row.dismissed"), null, { timeout: slow(5000) })
         .catch(() => fail(nm + "u did not clear the mark."));
       if (/^Walk:/m.test(read(names[0]))) fail(nm + "u left the Walk: line.");
       if (read(names[0]) !== orig0) fail(nm + "s then u changed more than the Walk line.");
@@ -17502,13 +17502,13 @@ async function pullsSection(browser, base) {
     number: 1, title: "title of " + id, why: "", head: "", head7: "abc1234", state: "queued", run_state: "", run_error: "",
     cost_usd: 0, started_at: "", ready_at: "", created_at: "2026-10-01T10:00:00Z", archived_at: "", run_dir: "",
     second: { state: "none", summary: "", error: "" }, author: "ekoby",
-    findings: { high: 0, med: 0, low: 0, nit: 0, leak: 0 }, walk: { done: 0, skipped: 0, deferred: 0, open: 0 }, walker_task: ""
+    findings: { high: 0, med: 0, low: 0, nit: 0, leak: 0 }, walk: { accepted: 0, done: 0, skipped: 0, deferred: 0, open: 0 }, walker_task: ""
   }, extra);
   const st = {
     halted: false,
     rows: [
       row("pr_a", { number: 11, org_repo: "openziti/zrok", state: "ready", created_at: "2026-10-01T09:00:00Z", ready_at: "2026-10-01T09:20:00Z",
-        findings: { high: 0, med: 6, low: 7, nit: 4, leak: 1 }, walk: { done: 0, skipped: 0, deferred: 0, open: 17 },
+        findings: { high: 0, med: 6, low: 7, nit: 4, leak: 1 }, walk: { accepted: 0, done: 0, skipped: 0, deferred: 0, open: 17 },
         second: { state: "done", summary: "codex: 2 disputed, settled", error: "" } }),
       row("pr_b", { number: 12, state: "running", run_state: "verify", cost_usd: 0.71, created_at: "2026-10-01T10:00:00Z", title: "running one" }),
       row("pr_c", { number: 13, state: "failed", run_error: "fetch: gh said no", created_at: "2026-10-01T08:00:00Z" }),
@@ -17575,8 +17575,8 @@ async function pullsSection(browser, base) {
     if (m === "GET" && rest === "") return json(route, 200, { pr: cur, run_log: "14:02:11 fetch start\n14:02:12 fetch FAILED\n" });
     if (m === "POST" && /^\/findings\/[^/]+\/walk$/.test(rest)) {
       const b = JSON.parse(req.postData());
-      if (["done", "skipped", "deferred", "open"].indexOf(b.state) < 0) return json(route, 400, { error: "state is done, deferred, skipped or open", code: "bad_request" });
-      return json(route, 200, { ok: true, walk: { state: b.state, at: "2026-10-01T14:20:00Z", url: "" }, counts: { done: 1, skipped: 0, deferred: 0, open: 16 } });
+      if (["done", "accepted", "skipped", "deferred", "open"].indexOf(b.state) < 0) return json(route, 400, { error: "state is open, accepted, done, skipped or deferred", code: "bad_request" });
+      return json(route, 200, { ok: true, walk: { state: b.state, at: "2026-10-01T14:20:00Z", url: "" }, counts: { accepted: 0, done: 1, skipped: 0, deferred: 0, open: 16 } });
     }
     if (m === "POST" && rest === "/walker") {
       if (cur.state !== "ready") return json(route, 409, { error: "the review is not ready", code: "not_ready", state: cur.state });
@@ -17638,7 +17638,7 @@ async function pullsSection(browser, base) {
     if (!/\$1\.20/.test((await text(p, "pr_b", ".pull-meta")) || "")) fail("pulls: an event did not move the cost");
     if (st.gets !== gets) fail("pulls: an event caused a refetch");
     // the running row turns ready, then a new failed row arrives: the count follows each
-    emit(Object.assign({}, b2, { state: "ready", run_state: "", ready_at: "2026-10-01T10:09:00Z", findings: { high: 0, med: 1, low: 0, nit: 0, leak: 0 }, walk: { done: 0, skipped: 0, deferred: 0, open: 1 } }));
+    emit(Object.assign({}, b2, { state: "ready", run_state: "", ready_at: "2026-10-01T10:09:00Z", findings: { high: 0, med: 1, low: 0, nit: 0, leak: 0 }, walk: { accepted: 0, done: 0, skipped: 0, deferred: 0, open: 1 } }));
     await waitNav(p, "3", "after a row turned ready");
     emit(row("pr_g", { number: 21, state: "failed", run_error: "panel: budget", created_at: "2026-10-01T11:00:00Z" }));
     await waitNav(p, "4", "after a new row arrived failed");
@@ -18237,7 +18237,7 @@ async function pullsDrawerSection(browser, base) {
     id, url: PR, host: "github.com", org: "openziti", repo: "r", org_repo: "openziti/r", number: 1, title: "title of " + id, why: "",
     head: "", head7: "abc1234", state: "ready", run_state: "", run_error: "", cost_usd: 0, started_at: "", ready_at: "2026-10-01T09:20:00Z",
     created_at: "2026-10-01T09:00:00Z", archived_at: "", run_dir: "", second: { state: "none", summary: "", error: "" }, author: "ekoby",
-    findings: { high: 0, med: 1, low: 1, nit: 0, leak: 0 }, walk: { done: 0, skipped: 0, deferred: 0, open: 2 }, walker_task: ""
+    findings: { high: 0, med: 1, low: 1, nit: 0, leak: 0 }, walk: { accepted: 0, done: 0, skipped: 0, deferred: 0, open: 2 }, walker_task: ""
   }, extra);
   const st = {
     rows: [row("pr_w", { walker_task: "land-pw1", number: 1 }), row("pr_l", { number: 2, created_at: "2026-10-01T08:00:00Z" }),
@@ -18253,7 +18253,7 @@ async function pullsDrawerSection(browser, base) {
   st.f.pr_x = fresh();
   st.gate = null;
   const counts = id => {
-    const c = { done: 0, skipped: 0, deferred: 0, open: 0 };
+    const c = { accepted: 0, done: 0, skipped: 0, deferred: 0, open: 0 };
     for (const f of st.f[id]) c[f.walk.state]++;
     return c;
   };
@@ -18310,7 +18310,7 @@ async function pullsDrawerSection(browser, base) {
     }
     if (m === "POST" && fm && fm[2]) {
       const b = JSON.parse(req.postData() || "{}");
-      if (["done", "skipped", "deferred", "open"].indexOf(b.state) < 0) return json(route, 400, { error: "state is done, deferred, skipped or open", code: "bad_request" });
+      if (["done", "accepted", "skipped", "deferred", "open"].indexOf(b.state) < 0) return json(route, 400, { error: "state is open, accepted, done, skipped or deferred", code: "bad_request" });
       f.walk = b.state === "open" ? { state: "open", at: "", url: "" } : { state: b.state, at: "2026-10-01T14:20:00Z", url: b.url || "" };
       return json(route, 200, { ok: true, walk: f.walk, counts: counts(id) });
     }
@@ -18387,22 +18387,30 @@ async function pullsDrawerSection(browser, base) {
     const walkOf = () => p.evaluate(() => JSON.stringify(pulls.rows.find(r => r.id === "pr_w").walk));
     await p.focus("#walk-drawer");
     await p.keyboard.press("s");
-    await p.waitForFunction(() => document.querySelector("#walk-rail .wk-row.cur.skipped"), null, { timeout: slow(5000) })
-      .catch(() => fail("pullsDrawer: s did not mark the row skipped"));
-    if (await walkOf() !== JSON.stringify({ done: 0, skipped: 1, deferred: 0, open: 1 })) fail("pullsDrawer: the row counts after a skip: " + await walkOf());
+    await p.waitForFunction(() => document.querySelector("#walk-rail .wk-row.cur.dismissed"), null, { timeout: slow(5000) })
+      .catch(() => fail("pullsDrawer: s did not mark the row dismissed"));
+    if (await walkOf() !== JSON.stringify({ accepted: 0, done: 0, skipped: 1, deferred: 0, open: 1 })) fail("pullsDrawer: the row counts after a skip: " + await walkOf());
     await p.keyboard.press("j");
-    await p.keyboard.press("d");
+    await p.keyboard.press("y");
+    await p.waitForFunction(() => document.querySelector("#walk-rail .wk-row.cur.accepted"), null, { timeout: slow(5000) })
+      .catch(() => fail("pullsDrawer: y did not accept the finding"));
+    if (await walkOf() !== JSON.stringify({ accepted: 1, done: 0, skipped: 1, deferred: 0, open: 0 })) fail("pullsDrawer: the row counts after an accept: " + await walkOf());
+    const midway = await p.evaluate(() => pullStateWords(pulls.rows.find(r => r.id === "pr_w")));
+    if (midway !== "1 of 2: 1 accepted, 0 posted, 1 dismissed") fail("pullsDrawer: an accepted finding is not reviewed yet: " + JSON.stringify(midway));
+
+    await p.focus("#walk-drawer");
+    await p.keyboard.press("f");
     await p.waitForFunction(() => document.querySelector("#walk-rail .wk-row.cur.deferred"), null, { timeout: slow(5000) })
-      .catch(() => fail("pullsDrawer: d did not defer the finding"));
-    if (await walkOf() !== JSON.stringify({ done: 0, skipped: 1, deferred: 1, open: 0 })) fail("pullsDrawer: the row counts after a defer: " + await walkOf());
+      .catch(() => fail("pullsDrawer: f did not defer the finding"));
+    if (await walkOf() !== JSON.stringify({ accepted: 0, done: 0, skipped: 1, deferred: 1, open: 0 })) fail("pullsDrawer: the row counts after a defer: " + await walkOf());
     if (!st.posts.some(x => x.indexOf("/findings/f-2/walk") >= 0 && x.indexOf('"state":"deferred"') >= 0)) fail("pullsDrawer: the defer did not post");
     await p.keyboard.press("u");
     await p.waitForFunction(() => !document.querySelector("#walk-rail .wk-row.deferred"), null, { timeout: slow(5000) })
       .catch(() => fail("pullsDrawer: u did not put the finding back to open"));
-    if (await walkOf() !== JSON.stringify({ done: 0, skipped: 1, deferred: 0, open: 1 })) fail("pullsDrawer: the row counts after an undo: " + await walkOf());
+    if (await walkOf() !== JSON.stringify({ accepted: 0, done: 0, skipped: 1, deferred: 0, open: 1 })) fail("pullsDrawer: the row counts after an undo: " + await walkOf());
     await p.evaluate(() => switchView("pulls"));
     const said = await p.evaluate(() => document.querySelector('#pulls-list .pull[data-id="pr_w"] .pull-state').textContent);
-    if (said !== "walking 1 of 2") fail("pullsDrawer: the pulls row says " + JSON.stringify(said));
+    if (said !== "1 of 2: 0 accepted, 0 posted, 1 dismissed") fail("pullsDrawer: the pulls row says " + JSON.stringify(said));
 
     // the walk button launches a walker when there is none, attaches it and opens the drawer
     await p.click('#pulls-list .pull[data-id="pr_l"] button[data-act="walk"]');

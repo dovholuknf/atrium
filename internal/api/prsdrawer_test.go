@@ -199,6 +199,27 @@ func TestMarkingTheWalkReplacesOnlyThatLine(t *testing.T) {
 	}
 }
 
+func TestAcceptedIsItsOwnWalkState(t *testing.T) {
+	s, _, id, dir := readyPR(t)
+	w := drawerDo(s, s.walkPRFinding, "POST", `{"state":"accepted","url":"https://x.y/z"}`, id, "f-3a9c01d4e2")
+	var out struct {
+		Walk   PRFindingWalk
+		Counts PRWalkCounts
+	}
+	json.Unmarshal(w.Body.Bytes(), &out)
+	if w.Code != 200 || out.Walk.State != "accepted" || out.Walk.URL != "" || out.Counts.Accepted != 1 ||
+		out.Counts.Done != 0 || out.Counts.Open != 1 {
+		t.Fatalf("%d %s", w.Code, w.Body)
+	}
+	raw, _ := os.ReadFile(filepath.Join(dir, "walk.txt"))
+	if !strings.Contains(string(raw), "01-med-tls.go-L5.txt  accepted  ") {
+		t.Fatalf("walk.txt:\n%s", raw)
+	}
+	if _, wc := readPRCounts(filepath.ToSlash(dir)); wc.Accepted != 1 || wc.Open != 1 {
+		t.Fatalf("counts %+v", wc)
+	}
+}
+
 func TestWalkMarkRefusals(t *testing.T) {
 	s, _, id, _ := readyPR(t)
 	cases := []struct {

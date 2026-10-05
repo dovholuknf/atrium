@@ -36,7 +36,7 @@ One shape, used by the list, the detail, the POST answers and the SSE event.
   "second": {"state": "none", "summary": "", "error": ""},
   "author": "ekoby",
   "findings": {"high": 0, "med": 6, "low": 7, "nit": 4, "leak": 1},
-  "walk": {"done": 0, "skipped": 0, "deferred": 0, "open": 17},
+  "walk": {"accepted": 0, "done": 0, "skipped": 0, "deferred": 0, "open": 17},
   "walker_task": ""
 }
 ```
@@ -64,7 +64,7 @@ One shape, used by the list, the detail, the POST answers and the SSE event.
 | `second` | object | the second opinion. `state` is `none pending done failed`, `summary` and `error` are text |
 | `author` | string | the PR author's login, as `gh` last said. `""` until the fetch step has run. Observed, never typed |
 | `findings` | object | finding counts by severity, and `leak` for findings carrying a `Leak:` line. A leak is also counted under its severity |
-| `walk` | object | the walk states of the findings, from `walk.txt`. `done skipped deferred open` sum to the finding count |
+| `walk` | object | the walk states of the findings, from `walk.txt`. `accepted done skipped deferred open` sum to the finding count. The board says posted for `done` and dismissed for `skipped`, the wire words stay |
 | `walker_task` | string | the card id of the walker, `""` when none was launched or set |
 
 Times are text and unset is `""`, never `null`, so a client does not branch on two kinds of empty.
@@ -82,9 +82,9 @@ Times are text and unset is `""`, never `null`, so a client does not branch on t
 
 `findings` and `walk` are never stored. Every route that returns a row reads the run folder (`findings/` and `walk.txt`)
 at that moment, so they cannot go stale in the index. Both objects are always present with all their keys, and every
-count is `0` while the row is not `ready` or when the folder is gone. The row text `walking N of M` is `walk.done +
-walk.skipped + walk.deferred` of the finding count, and `walked` is `walk.open == 0` and `walk.deferred == 0` with a
-finding count above `0`. The client works those out. The SSE event carries them too, read when the event is sent.
+count is `0` while the row is not `ready` or when the folder is gone. The row text `N of M: a accepted, p posted, d dismissed` has N as `walk.done +
+walk.skipped` of the finding count, and `reviewed` is N equal to M with a finding count above `0`. Accepted and deferred
+are not reviewed, and the nav count treats accepted like open. The client works those out. The SSE event carries them too, read when the event is sent.
 
 Every error body is JSON with two keys: `{"error": "<a sentence>", "code": "<stable word>"}`. A client branches on
 `code` and shows `error`. A halted store answers 503 with the body the rest of the API uses for it:
@@ -236,7 +236,7 @@ Every finding of the run, parsed, in walk order. Answers `200`:
 | `evidence` | each `Key: value` line of Evidence, keys as written, in an object. `{}` when there is no Evidence |
 | `leak` | the `Leak:` value, `""` when none |
 | `hunk` | the lines of `pr.diff` around `line`, `""` when `pr.diff` is missing or has no hunk there |
-| `walk` | `state` is `open done skipped deferred`. `at` is RFC3339 UTC and `url` the comment link, both `""` unless set |
+| `walk` | `state` is `open accepted done skipped deferred`. `at` is RFC3339 UTC and `url` the comment link, both `""` unless set |
 | `text` | the whole file, line ends normalised to `\n` |
 | `hash` | what a write must quote back: the hex SHA-256 of the file's bytes on disk |
 
@@ -274,12 +274,12 @@ client sends no hash and a concurrent mark of another finding is not lost.
 {"state": "done", "url": "https://github.com/openziti/zrok/pull/1277#discussion_r1234"}
 ```
 
-`state` is `done`, `deferred`, `skipped` or `open`. `url` is optional, only meaningful with `done`, and must be an
+`state` is `open`, `accepted`, `done`, `deferred` or `skipped`. `url` is optional, only meaningful with `done`, and must be an
 `http` or `https` URL under 2000 characters. `at` is set by the daemon to now for every state but `open`, which clears
 `at` and `url`. Answers `200`:
 
 ```json
-{"ok": true, "walk": {"state": "done", "at": "2026-10-01T14:20:00Z", "url": "..."}, "counts": {"done": 1, "skipped": 0, "deferred": 0, "open": 16}}
+{"ok": true, "walk": {"state": "done", "at": "2026-10-01T14:20:00Z", "url": "..."}, "counts": {"accepted": 0, "done": 1, "skipped": 0, "deferred": 0, "open": 16}}
 ```
 
 Errors: `400 {"code": "bad_request"}` for an unknown `state`, and `400 {"code": "bad_url"}` for a `url` that is not
