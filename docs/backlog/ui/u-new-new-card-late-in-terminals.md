@@ -19,6 +19,24 @@ terminals list.
   `supervised` until its runner is up, so the strip filters it out until the next re-read after that.
 - Measure on a headless board with a mocked launch: time from the alert to the row.
 
+## Finding
+
+Read from the code, not measured: the worker room had no node or Playwright, so no headless run was possible.
+
+- A new card is created `running` and unsupervised (`store.create`), so `termJoined` already puts it in the strip from
+  the first read that holds it. It is not filtered out for lacking a runner.
+- The daemon sent the first `task` event for a launched card only at the end of `launchLocked`, after the settle
+  window and every write between. Until then the board had no event to read on.
+- When an event was not a whole row (an older room, a hub), the board waited on `tasksSoon`: TASKS_EVERY from the last
+  read, trailing, so up to five seconds on a board that reads often.
+- The alert and the row both draw from the same list in the same pass, so they were late together.
+
+Fixed: `launchLocked` publishes the card as soon as it is registered, and `onTaskEvent` reads the list now for an id
+the map has never held (once per id). Test: `scripts/check-new-card-row.js`, unrun here.
+
+Not done: the row for a card whose runner is not up still wears the "joined" chip (`termRowChips`), which is wrong for a
+card atrium is starting. A "starting" chip needs before and after PNGs of real rows, which need a browser.
+
 ## Wanted
 
 - The row appears in the terminals list at the same moment as the alert, even before its runner is up (drawn as
