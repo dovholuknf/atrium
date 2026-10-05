@@ -58,12 +58,14 @@ type contextSizes struct {
 	// session is the session each card's runner last said it started, which
 	// is newer than its resume id after a `/clear`. See started.
 	session map[string]string
+	// told is what each card was last told mid-turn about its size. See contextnudge.go.
+	told map[string]contextTold
 	// transcript finds a card's transcript. api.TranscriptPath, swapped in tests.
 	transcript func(cwd, sessionID string) string
 }
 
 func newContextSizes() *contextSizes {
-	return &contextSizes{m: map[string]contextSeen{}, judged: map[string]int64{}, session: map[string]string{},
+	return &contextSizes{m: map[string]contextSeen{}, judged: map[string]int64{}, session: map[string]string{}, told: map[string]contextTold{},
 		transcript: api.TranscriptPath}
 }
 
@@ -171,6 +173,7 @@ func (c *contextSizes) forgetExcept(live map[string]bool) []string {
 		if !live[id] {
 			delete(c.m, id)
 			delete(c.judged, id)
+			delete(c.told, id)
 			gone = append(gone, id)
 		}
 	}
