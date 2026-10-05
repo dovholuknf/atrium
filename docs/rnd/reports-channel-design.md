@@ -47,6 +47,6 @@ Until the markdown files are imported and retired, both exist, and the files are
 
 - Importing `docs/backlog/**` and the `QUEUE.md` files into the table, and exporting back to markdown.
 - Status that follows the card, branch, verdict and landing commit, as the spike asks.
-- A queue per director, a board view, and an `atrium backlog` command line. The tools and routes are the whole
+- A queue per director. The tools, the routes, `atrium backlog`, `atrium reports` and the read-only board tab are the
   interface so far.
 - Ids given by atrium. The filer still makes up the id, as the files do.

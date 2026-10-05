@@ -109,7 +109,7 @@ func newRoot() *cobra.Command {
 		newJoin(), newLeave(), newStop(), newLaunch(), newTaskCmd(), newExitCmd(), newNewContextCmd(), newPreview(), newHook(), newSession(), newTurn(),
 		newName(), newFinish(), newPeers(), newTell(), newControl(), newVersion(), newAsk(),
 		newAnswer(), newOpen(), newDispatch(), newReplayCmd(), newRequirements(), newMerged(), newArchiveWorkers(),
-		newPtyHost(), newResources())
+		newPtyHost(), newResources(), backlogCmd(), reportsCmd())
 	// The atrium and its rooms, which were `atrium2` until the two binaries
 	// became one. See docs/fabric/one-atrium-plan.md.
 	backups := hubBackupsCmd("atrium-")

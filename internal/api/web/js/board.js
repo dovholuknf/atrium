@@ -341,7 +341,7 @@ function firstSeen(iso) {
 
 const isWaiting = (t) => (t.status === "needs-input" || t.status === "needs-permission") && !agentIdle(t);
 
-const VIEWS = ["board", "stack", "perms", "runners", "terms", "history", "usage", "audit", "pulls", "hubrepos"];
+const VIEWS = ["board", "stack", "perms", "runners", "terms", "history", "usage", "audit", "pulls", "hubrepos", "backlog"];
 
 // BACK AND FORWARD, over the board's own moves.
 //
@@ -452,6 +452,8 @@ function switchView(name) {
   if (name === "pulls" && typeof loadPulls === "function" && !pulls.loaded) loadPulls();
   // Read when you go there, and on its refresh button. No stream event. See js/hubrepos.js.
   if (name === "hubrepos" && typeof loadHubRepos === "function") loadHubRepos();
+  // Read on the way in, and again on a `backlog` or `report` event. See js/backlog.js.
+  if (name === "backlog" && typeof loadBacklog === "function") loadBacklog();
   // Where you were, so a reload puts you back. A restart of the daemon
   // reloads every board it is serving, and landing on the board every time
   // meant two clicks to get back to the terminal you were reading.

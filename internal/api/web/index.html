@@ -180,6 +180,8 @@
       <div class="tab" data-view="audit" hidden>audit</div>
       <!-- Hub only, revealed with the audit tab. See js/hubrepos.js. -->
       <div class="tab" data-view="hubrepos" hidden>repos</div>
+      <!-- Hub only, revealed with the audit tab. See js/backlog.js. -->
+      <div class="tab" data-view="backlog" hidden>backlog</div>
     </nav>
     <!-- Desktop only (css/topnav.css, js/topnav.js): the tabs that have no room, whole, in a menu. -->
     <button type="button" id="tabmore" class="tabmore" hidden aria-haspopup="true" aria-expanded="false"
@@ -791,6 +793,19 @@ Tokens only: no dollar figure is worked out.">?</span>
       </div>
       <button id="hubrepos-refresh" type="button" aria-label="refresh the repos list">refresh</button></div>
     <div id="hubrepos-list"></div>
+  </div>
+
+  <!-- The hub's backlog and director reports, read-only, drawn by js/backlog.js. Hub only. -->
+  <div id="backlog" hidden>
+    <div class="col-head" style="margin:0 0 10px"><span>backlog</span></div>
+    <div class="filters" style="margin-bottom:12px">
+      <span class="barlabel">department</span>
+      <input id="backlog-dept" type="text" placeholder="all" aria-label="department">
+      <label><input id="backlog-open" type="checkbox" checked> open only</label>
+    </div>
+    <div id="backlog-items"></div>
+    <div class="col-head" style="margin:16px 0 10px"><span>director reports</span></div>
+    <div id="backlog-reports"></div>
   </div>
 
   <div id="audit" hidden>
@@ -3508,6 +3523,7 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
 <script src="/js/rooms-dash.js"></script>
 <script src="/js/audit.js"></script>
 <script src="/js/hubrepos.js"></script>
+<script src="/js/backlog.js"></script>
 <script src="/js/changereq-mock.js"></script>
 <script src="/js/changereq-core.js"></script>
 <script src="/js/changereq.js"></script>

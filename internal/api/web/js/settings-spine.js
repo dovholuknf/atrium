@@ -1225,6 +1225,8 @@ function repaintLists(signal, fromStore) {
     // board event has nothing to repaint there. Without a line it logged "no
     // renderer" on every refresh pass while the pane was open.
     audit: () => Promise.resolve(),
+    // Live by its own `backlog` and `report` events. See js/backlog.js.
+    backlog: () => Promise.resolve(),
     // Live by its own `pr` events, like the audit pane. See js/pulls.js.
     pulls: () => { pullsPaint(); return Promise.resolve(); }
   }[view];
@@ -1819,6 +1821,12 @@ function connect() {
   // A review row changed: the whole row, which replaces the one held. See js/pulls.js.
   es.addEventListener("pr", e => {
     if (typeof onPrEvent === "function") onPrEvent(e);
+  });
+  es.addEventListener("backlog", () => {
+    if (typeof onBacklogEvent === "function") onBacklogEvent();
+  });
+  es.addEventListener("report", () => {
+    if (typeof onBacklogEvent === "function") onBacklogEvent();
   });
   es.addEventListener("audit", () => {
     if (typeof onAuditEvent === "function") onAuditEvent();
