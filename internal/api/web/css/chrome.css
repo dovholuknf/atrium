@@ -269,6 +269,10 @@
   /* u-034: memory's own colour, through a variable a skin can set. A one-point run is a dot, so the cap is round. */
   .rd-spark.mem polyline { stroke: var(--spark-mem, #b48cff); }
   .rd-spark.mem .area { fill: var(--spark-mem, #b48cff); }
+  .rd-spark.lag polyline { stroke: var(--warn); }
+  .rd-spark.lag .area { fill: var(--warn); }
+  .rd-rate.hot .rd-spark.lag polyline { stroke: var(--danger); }
+  .rd-rate.hot .rd-spark.lag .area { fill: var(--danger); }
   .rd-spark polyline { stroke-linecap: round; }
   .rd-note { color: var(--dim); font-size: var(--fs-xs); }
   .rd-stale { opacity: .55; }

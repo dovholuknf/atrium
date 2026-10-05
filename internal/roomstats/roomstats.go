@@ -85,6 +85,7 @@ type Snapshot struct {
 	Process *Process `json:"process,omitempty"`
 	Disk    *Disk    `json:"disk,omitempty"`
 	Machine *Machine `json:"machine,omitempty"`
+	Latency *Latency `json:"latency,omitempty"`
 	Runners []Runner `json:"runners,omitempty"`
 	// RunnersStaleSince is the runners array's stale mark, since an array
 	// carries no field of its own.
@@ -125,6 +126,8 @@ type Sources struct {
 	Runners   func() ([]Runner, error)
 	// Machine reads whole-machine CPU counters and memory.
 	Machine func() (MachineReading, error)
+	// Drift is the timer-lateness probe. Run starts it.
+	Drift *Drift
 	// Publish gets the snapshot's JSON every tick.
 	Publish func(data []byte)
 }
@@ -144,6 +147,7 @@ type Sampler struct {
 	prevIdle, prevTotal uint64
 	havePrevCPU         bool
 	cpuRing, memRing    *minuteAvg
+	driftRing           *minuteAvg
 }
 
 // New builds a sampler. Nothing runs until Run.
@@ -155,7 +159,7 @@ func New(src Sources) *Sampler {
 		src.Started = src.Clock.Now()
 	}
 	return &Sampler{src: src, staleAt: map[string]string{}, lastAt: src.Started,
-		cpuRing: newMinuteAvg(), memRing: newMinuteAvg()}
+		cpuRing: newMinuteAvg(), memRing: newMinuteAvg(), driftRing: newMinuteAvg()}
 }
 
 func rfc(t time.Time) string { return t.UTC().Format(time.RFC3339) }
@@ -175,6 +179,9 @@ func (s *Sampler) Run(stop <-chan struct{}) {
 	defer stopTick()
 	diskTick, stopDisk := s.src.Clock.Ticker(DiskInterval)
 	defer stopDisk()
+	if s.src.Drift != nil {
+		go s.src.Drift.Run(stop)
+	}
 	s.SampleDisk()
 	s.Tick()
 	go func() {
@@ -275,6 +282,9 @@ func (s *Sampler) Tick() {
 	if s.src.Machine != nil {
 		s.sampleMachine(now, mr, machErr)
 	}
+	if s.src.Drift != nil {
+		s.sampleLatency(now)
+	}
 	if s.src.Runners != nil {
 		st := s.mark("runners", runErr, now)
 		if runErr == nil {
@@ -350,6 +360,19 @@ func (s *Sampler) sampleMachine(now time.Time, mr MachineReading, err error) {
 	}
 	m.MemSeriesPct = s.memRing.series(minute)
 	s.snap.Machine = m
+}
+
+// sampleLatency runs with the lock held. A tick with no probe samples (the
+// probe has not run yet) leaves the section as it was.
+func (s *Sampler) sampleLatency(now time.Time) {
+	p99, _, ok := s.src.Drift.Drain()
+	if !ok {
+		return
+	}
+	minute := now.UTC().Truncate(time.Minute)
+	ms := round1(float64(p99) / float64(time.Millisecond))
+	s.driftRing.add(minute, ms)
+	s.snap.Latency = &Latency{DriftP99Ms: ms, DriftSeriesMs: s.driftRing.series(minute)}
 }
 
 // tokens reads two windows, one query each: the last hour by the minute (which
