@@ -120,8 +120,24 @@ runner reviews. It is told nothing about walking until the review is ready, and 
 | room restart, review running | on start, the room moves every `fetching` or `running` row back to `queued` and starts it. The runner's `begin` reuses the steps the earlier run left in `steps/`, so the run picks up where it stopped and the cost already spent is kept |
 | hub restart | nothing. The hub holds the claim only, in its store |
 | room offline | the PR waits for that room and the board warns after two minutes (scm-forge 6.6). The findings cannot be read until it returns, as clint decided for the hub (no copy, hub-forge Q2) |
-| PR moved to another room | the hub copies the run folder from the old room to the new one before it moves the claim. The new room makes the row with the same head, state and walk, and the old room archives its row. The old room has to be online, and a move to an offline room or from one is refused with a sentence saying so. The walker card moves by the room handoff that asked for the move, and the new room records it |
+| PR moved to another room | the hub copies the run folder from the old room to the new one before it moves the claim. The new room makes the row with the same head, state and walk, and the old room archives its row. The old room has to be online, and a move to an offline room or from one is refused with a sentence saying so. The walker is a new card, section 5.1 |
 | PR head moves | out of scope. The review is of the head it was run at, which the run folder's name says. A new paste at the new head is a new row |
+
+### 5.1 Moving a PR, and its card
+
+The room handoff of `docs/rnd/room-handoff-design.md` (`atrium move`, which carries a card's conversation) is not
+built, and nothing else calls the hub's move. The smallest caller this design needs is a **move** action on the
+PR's row in the pulls view, and the same action in the pasted card's menu when the card is a PR row's walker. It
+asks for the room, then:
+
+1. calls the hub's move (`POST /_hub/pr-claims/move {key, to}`), which copies the review and moves the claim.
+2. makes the PR worktree on the new room with the PR form of the provider worktree verb, as a paste does.
+3. launches a new card there, with the paste's tags and a prompt saying the review moved here from the old room.
+4. records it as the walker (`POST /v1/prs/{id}/walker {"action":"set"}` on the new room).
+
+The old card is left where it is and is not stopped, since it may hold work. A toast says so and offers to attach
+it. Its conversation does not move. That waits for `atrium move`, which will pass its successor card as `walker` to
+the hub's move instead of steps 2 to 4.
 
 ## 6. Out of scope
 
@@ -169,6 +185,9 @@ Design written 2026-10-04 (828a8cd0).
   by bundle, built, tested and shot there. The phone action buttons are not seen in a shot, as the headless phone
   viewport cuts the drawer below the rail.
 - Done: `f-pr-review-move` claude/f-pr-review-move@5a1f7247 (sg3), on claude/main c721241b (r-hub-forge merged).
+- 2026-10-05, after the merge at c9d65765: `u-walk-phone-shots` running on m1mini (the phone action buttons in
+  shots). `u-pr-move-action` (section 5.1) has its worktree on m1mini from c9d65765 and waits for a slot, since sg3 and
+  m1mini are both at the cap of 5.
   Not done there: no room handoff in the tree moves a PR card, so nothing passes the new card as walker. The hub move
   takes an optional `walker` for whoever builds that. A claim on a room gone for good cannot be moved (Open 4).
 - The two done items are on claude/main 5d68bfa2, before r-hub-forge. Their changes are outside its files.
