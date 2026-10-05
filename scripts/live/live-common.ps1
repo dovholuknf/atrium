@@ -344,7 +344,8 @@ function Backup([string]$Name) {
 
 # Get-LiveHosts reads ATRIUM_HOSTS for a hub or room the deploy starts: the User value, else the Machine one, never the
 # caller's. It returns the value ($null when unset at both) and the scope it came from. -Read is a seam for the test.
-function Get-LiveHosts([scriptblock]$Read = { param($scope) [Environment]::GetEnvironmentVariable('ATRIUM_HOSTS', $scope) }) {
+function Get-LiveHosts([scriptblock]$Read) {
+  if (-not $Read) { $Read = { param($scope) [Environment]::GetEnvironmentVariable('ATRIUM_HOSTS', $scope) } }
   foreach ($scope in 'User', 'Machine') {
     $v = & $Read $scope
     if ($v) { return [pscustomobject]@{ Value = $v; Scope = $scope } }
@@ -365,10 +366,11 @@ function Set-LiveHosts($h) {
 
 # Start-Hub starts the atrium detached, through cmd so the redirect appends and the caller's output can end.
 #
-# ATRIUM_HOSTS FROM THE USER ENVIRONMENT (Machine when User is unset), never the caller's. It names the extra hosts the board answers to, the zrok
-# share's among them, and a deploy started from a session that lacks it brought the hub up without it (2026-09-30
-# 19:09, the share broke). Unset in the User environment means unset for the hub too. The value used is logged here
-# and in hub.err. @runtime's r-new-hosts-setting, a stored setting, replaces this.
+# ATRIUM_HOSTS FROM THE USER ENVIRONMENT (Machine when User is unset), never the caller's. It names the extra
+# hosts the board answers to, the zrok share's among them, and a deploy started from a session that lacks it
+# brought the hub up without it (2026-09-30 19:09, the share broke). Unset in both environments means unset for the
+# hub too. The value used is logged here and in hub.err. @runtime's r-new-hosts-setting, a stored setting, replaces
+# this.
 function Start-Hub {
   $line = "`"$AtriumBin`" $($HubArgs -join ' ') >> $Base\hub.out 2>> $Base\hub.err"
   $h = Get-LiveHosts

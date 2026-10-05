@@ -4,7 +4,9 @@ $ErrorActionPreference = 'Stop'
 . "$PSScriptRoot\live-common.ps1"
 $fail = 0
 function Check([string]$What, $Got, $Want) {
-  if ($Got -ceq $Want) { Write-Host "PASS  $What" } else { Write-Host "FAIL  $What (want '$Want', got '$Got')"; $script:fail++ }
+  if ($Got -ceq $Want) { Write-Host "PASS  $What"; return }
+  Write-Host "FAIL  $What (want '$Want', got '$Got')"
+  $script:fail++
 }
 
 $h = Get-LiveHosts { param($s) @{ User = 'u.example'; Machine = 'm.example' }[$s] }
@@ -15,7 +17,8 @@ $h = Get-LiveHosts { param($s) @{ User = ''; Machine = 'm.example' }[$s] }
 Check 'Machine used when User is empty' "$($h.Value)/$($h.Scope)" 'm.example/Machine'
 $h = Get-LiveHosts { param($s) $null }
 Check 'unset at both is null' "$($h.Value)|$($h.Scope)" '|'
-Check 'said, set' (Get-LiveHostsSaid ([pscustomobject]@{ Value = 'a'; Scope = 'Machine' })) 'ATRIUM_HOSTS=a, from the Machine environment'
+$said = Get-LiveHostsSaid ([pscustomobject]@{ Value = 'a'; Scope = 'Machine' })
+Check 'said, set' $said 'ATRIUM_HOSTS=a, from the Machine environment'
 
 $old = $env:ATRIUM_HOSTS
 try {
