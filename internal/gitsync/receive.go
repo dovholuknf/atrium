@@ -228,7 +228,7 @@ func pushConfig(hooks string) [][2]string {
 
 // cgiEnv keeps the operator's git configuration out of the CGI.
 func cgiEnv() []string {
-	return []string{"GIT_CONFIG_NOSYSTEM=1", "GIT_CONFIG_GLOBAL=" + os.DevNull, "GIT_ASKPASS="}
+	return []string{"GIT_CONFIG_NOSYSTEM=1", "GIT_CONFIG_GLOBAL=/dev/null", "GIT_ASKPASS="}
 }
 
 // forGit is the request git sees: protocol v0, no atrium header, no credential, and the path of the one

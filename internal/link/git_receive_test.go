@@ -35,7 +35,7 @@ func gitAs(t *testing.T, dir string, headers []string, args ...string) (string, 
 		full = append(full, "-c", "http.extraHeader="+h)
 	}
 	out, err := gitsync.Default.GitEnv(context.Background(), dir,
-		[]string{"GIT_CONFIG_GLOBAL=" + os.DevNull, "GIT_CONFIG_NOSYSTEM=1"}, append(full, args...)...)
+		[]string{"GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_NOSYSTEM=1"}, append(full, args...)...)
 	var ge *gitsync.Error
 	if errors.As(err, &ge) {
 		return out + ge.Stderr, err

@@ -5,6 +5,21 @@ import (
 	"testing"
 )
 
+// Newer git for Windows refuses "NUL" as a config path; "/dev/null" works everywhere.
+func TestGitConfigGlobalIsSlashDevNull(t *testing.T) {
+	for _, env := range [][]string{cgiEnv(), (&Store{}).env()} {
+		found := false
+		for _, kv := range env {
+			if kv == "GIT_CONFIG_GLOBAL=/dev/null" {
+				found = true
+			}
+		}
+		if !found {
+			t.Fatalf("GIT_CONFIG_GLOBAL is not /dev/null in %v", env)
+		}
+	}
+}
+
 func TestGitCGITrustsTheDirectoryItServes(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "repo")
 	h := gitCGI("git", dir, [][2]string{{"http.receivepack", "false"}}, cgiEnv())

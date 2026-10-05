@@ -139,7 +139,7 @@ func (x *recvFix) run(dir string, w who, args ...string) (string, error) {
 	if w.chain != "" {
 		full = append(full, "-c", "http.extraHeader="+HeaderChain+": "+w.chain)
 	}
-	out, err := Default.GitEnv(bg, dir, []string{"GIT_CONFIG_GLOBAL=" + os.DevNull, "GIT_CONFIG_NOSYSTEM=1"},
+	out, err := Default.GitEnv(bg, dir, []string{"GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_NOSYSTEM=1"},
 		append(full, args...)...)
 	var ge *Error
 	if errors.As(err, &ge) {

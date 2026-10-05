@@ -558,7 +558,7 @@ func TestACardOnAnotherRoomIsGivenItsRoomsForwarderAndFetchesThroughIt(t *testin
 	if err != nil {
 		t.Fatal(err)
 	}
-	env := append(gitsync.PushEnv(base, tok, 0), "GIT_CONFIG_GLOBAL="+os.DevNull, "GIT_CONFIG_NOSYSTEM=1")
+	env := append(gitsync.PushEnv(base, tok, 0), "GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_NOSYSTEM=1")
 	dst := t.TempDir()
 	gitRun(t, dst, "init", "-q")
 	if out, err := gitsync.Default.GitEnv(context.Background(), dst, env, "fetch", "-q", hub.URL, "fix/live"); err != nil {
@@ -568,7 +568,7 @@ func TestACardOnAnotherRoomIsGivenItsRoomsForwarderAndFetchesThroughIt(t *testin
 		t.Fatalf("fetched %s, want %s", got, x.liveSHA)
 	}
 	// And with no token the same URL is refused: the forwarder is the card's door and not an open one.
-	noTok := []string{"GIT_CONFIG_GLOBAL=" + os.DevNull, "GIT_CONFIG_NOSYSTEM=1"}
+	noTok := []string{"GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_NOSYSTEM=1"}
 	if _, err := gitsync.Default.GitEnv(context.Background(), dst, noTok, "fetch", "-q", hub.URL, "fix/live"); err == nil {
 		t.Fatal("the forwarder served a fetch with no card token")
 	}
