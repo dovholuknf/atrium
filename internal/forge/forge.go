@@ -130,12 +130,14 @@ func Pick(host string, entries []Entry) (kind, cmd string, err error) {
 	return kind, "", nil
 }
 
-// New builds the forge of a kind. Only GitHub is built.
+// New builds the forge of a kind. GitHub and Bitbucket are built.
 func New(kind, cmd string, run Runner) (Forge, error) {
 	switch kind {
 	case GitHub:
 		return newGitHub(cmd, run), nil
-	case Bitbucket, GitLab:
+	case Bitbucket:
+		return newBitbucket(cmd, run), nil
+	case GitLab:
 		return nil, &NoForgeError{Kind: kind}
 	}
 	return nil, &NoForgeError{Kind: kind}
@@ -177,15 +179,22 @@ type AccessError struct {
 	Detail string
 	// NotInstalled is true when the command is not on the PATH.
 	NotInstalled bool
+	// Login is the command that logs in, when it is not `<tool> auth login --hostname <host>`.
+	Login string
+}
+
+func (e *AccessError) login() string {
+	if e.Login != "" {
+		return e.Login
+	}
+	return fmt.Sprintf("%s auth login --hostname %s", e.Tool, e.Host)
 }
 
 func (e *AccessError) Error() string {
 	if e.NotInstalled {
-		return fmt.Sprintf("%s is not installed here. Install it and run `%s auth login --hostname %s`",
-			e.Tool, e.Tool, e.Host)
+		return fmt.Sprintf("%s is not installed here. Install it and run `%s`", e.Tool, e.login())
 	}
-	return fmt.Sprintf("%s is not logged in for %s. Run `%s auth login --hostname %s`",
-		e.Tool, e.Host, e.Tool, e.Host)
+	return fmt.Sprintf("%s is not logged in for %s. Run `%s`", e.Tool, e.Host, e.login())
 }
 
 // access turns a runner error into an AccessError when it is one, else returns it

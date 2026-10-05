@@ -46,9 +46,9 @@ func TestNoForgeSentence(t *testing.T) {
 }
 
 func TestUnbuiltForgeIsNoForge(t *testing.T) {
-	_, err := For("bitbucket.org", nil, nil)
+	_, err := For("gitlab.example.com", []Entry{{Host: "gitlab.example.com", Forge: GitLab}}, nil)
 	var nf *NoForgeError
-	if !errors.As(err, &nf) || !strings.Contains(err.Error(), "bitbucket") {
+	if !errors.As(err, &nf) || !strings.Contains(err.Error(), "gitlab") {
 		t.Fatalf("%v", err)
 	}
 }
