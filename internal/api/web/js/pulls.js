@@ -200,6 +200,7 @@ function pullRowHTML(r) {
       ? "open the walker's terminal with the findings beside it"
       : "start a walker session and open the findings beside it"));
   }
+  if (prMoveOffered()) acts.push(pullBtn("move", r.id, "move", "move this review and a card for it to another room"));
   return '<div class="pull" data-id="' + esc(r.id) + '" data-state="' + esc(r.state) + '">' +
     '<div class="pull-main">' +
       '<div class="pull-who"><span class="pull-repo">' + esc(r.org_repo) + " #" + esc(r.number) + "</span>" +
@@ -319,6 +320,76 @@ async function pullsWalk(id) {
   if (!dock.open && typeof termTask !== "undefined" && termTask && termTask.id === task) walkProbe(termTask);
 }
 
+// ── moving a review to another room ─────────────────────
+// docs/rnd/pr-review-workflow.md 5.1. The hub moves the claim and the review with it, then this makes the PR's worktree
+// on the new room, launches a new card there and sets it as the walker. The old card is left alone.
+
+// The online rooms. Nothing to move to when there is one, and the action is not drawn.
+function prMoveRooms() {
+  return typeof hubRooms === "undefined" || !hubIsHub ? [] : hubRooms;
+}
+
+const prMoveKey = pr => (pr.host + "/" + pr.org + "/" + pr.repo + "/" + pr.number).toLowerCase();
+
+// The rooms a PR can go to: every online room but the one that owns it. `from` is empty when the owner is unknown.
+function prMoveTargets(from) {
+  return prMoveRooms().map(r => r.name).filter(n => n !== from);
+}
+
+// The room that owns the PR, from the hub's claims.
+async function prMoveOwner(pr) {
+  const out = await api("/_hub/pr-claims");
+  const c = ((out && out.claims) || []).find(x => x.key === prMoveKey(pr));
+  return c ? c.room : "";
+}
+
+// The row, and with it whether to offer the action at all: more than one room attached.
+const prMoveOffered = () => prMoveRooms().length > 1;
+
+// The room picker, then the move. `anchor` is the click that asked, `walker` the card to take the harness from.
+async function prMoveAsk(e, row, walker) {
+  let from = "";
+  try { from = await prMoveOwner(row); } catch (err) { pullsSay(pullsErr(err)); return; }
+  const to = prMoveTargets(from);
+  if (!to.length) { pullsSay("there is no other online room to move it to"); return; }
+  showMenu(e, to.map(name => ({ label: name, act: () => prMove(row, name, from, walker) })));
+}
+
+// The four calls, in order. A refusal at the hub stops everything after it and says the hub's own sentence.
+async function prMove(row, to, from, walker) {
+  const label = row.org + "/" + row.repo + "#" + row.number;
+  const say = (text, warn) => pullsSay(warn ? text : "");
+  try {
+    await api("/_hub/pr-claims/move", {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ key: prMoveKey(row), to })
+    });
+  } catch (e) {
+    pullsSay(pullsErr(e));
+    tellUser("the review was not moved", pullsErr(e));
+    return;
+  }
+  const pr = { host: row.host, org: row.org, repo: row.repo, number: row.number };
+  const at = { room: to, url: row.url, say };
+  try {
+    const wt = await makePastedWorktree(pr, at);
+    if (!wt) throw new Error("no provider makes worktrees for " + (pr.host || "that host"));
+    const review = await startPastedReview(pr, to, at);
+    const task = await api("/v1/launch", {
+      method: "POST", headers: { "Content-Type": "application/json", "X-Atrium-Room": to },
+      body: JSON.stringify({
+        harness: (walker && walker.harness) || "claude", task_id: "", cwd: wt.path,
+        title: label, tags: ["pr", "pr:" + label],
+        repo: row.repo, org: row.org, host: row.host, source_kind: "pull-request", source_url: row.url
+      })
+    });
+    if (review && task && task.id) await setPastedWalker(review.row, task.id, to, at);
+    toast(label, "moved to " + to + ". The old card is still on " + (from || "the old room") + ".");
+    loadPulls();
+  } catch (e) {
+    pullsSay("moved to " + to + ", but the card there was not made: " + pullsErr(e));
+  }
+}
+
 async function pullsLog(id) {
   if (pulls.logs[id] != null) { delete pulls.logs[id]; pullsPaint(); return; }
   try {
@@ -342,6 +413,7 @@ document.addEventListener("DOMContentLoaded", () => {
       case "abort": pullsRowAction(id, "abort"); break;
       case "walk": pullsWalk(id); break;
       case "log": pullsLog(id); break;
+      case "move": prMoveAsk(e, pulls.rows.find(r => r.id === id), null); break;
     }
   });
   const go = document.getElementById("pulls-paste");

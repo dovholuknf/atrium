@@ -1060,6 +1060,8 @@ async function applyHubRooms(rooms, inv) {
   // The audit tab is hub-only too, and this is where "is this a hub" is decided.
   if (typeof paintAuditTab === "function") paintAuditTab();
   if (typeof paintHubReposTab === "function") paintHubReposTab();
+  // The pulls rows offer `move` only while more than one room is attached.
+  if (typeof pullsPaint === "function") pullsPaint();
   // The chip repainted above; the OPEN dropdown has to as well, or a room that
   // just attached keeps reading "disconnected" in a menu the user left open.
   refreshRoomsMenu();

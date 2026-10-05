@@ -17735,6 +17735,95 @@ async function pullsSection(browser, base) {
   if (!bad) console.log("pulls ok");
 }
 
+// ── moving a review to another room ──────────────────────
+// A fake hub in the page: the four calls of the move, in order, and nothing after a hub refusal.
+async function prMoveSection(browser, base) {
+  const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+  const errors = [];
+  const json = (route, status, body) => route.fulfill({ status, contentType: "application/json", body: JSON.stringify(body) });
+  const ready = {
+    id: "pr_m", url: "https://github.com/openziti/zrok/pull/11", host: "github.com", org: "openziti", repo: "zrok", org_repo: "openziti/zrok",
+    number: 11, title: "move me", why: "", head: "", head7: "abc1234", state: "ready", run_state: "", run_error: "", cost_usd: 0,
+    started_at: "", ready_at: "2026-10-01T09:20:00Z", created_at: "2026-10-01T09:00:00Z", archived_at: "", run_dir: "",
+    second: { state: "none", summary: "", error: "" }, author: "ekoby",
+    findings: { high: 0, med: 1, low: 0, nit: 0, leak: 0 }, walk: { accepted: 0, done: 0, skipped: 0, deferred: 0, open: 1 }, walker_task: "t-old"
+  };
+  const st = { calls: [], refuse: "", rooms: ["alpha"] };
+  await ctx.route(/\/_hub\/rooms$/, route => json(route, 200, { rooms: st.rooms.map(n => ({ name: n, host: n })) }));
+  await ctx.route(/\/(v1|_hub)\/(prs|pr-claims|providers|launch)(\/|\?|$)/, async route => {
+    const req = route.request();
+    const p = new URL(req.url()).pathname, m = req.method();
+    if (m === "GET" && p === "/v1/prs") return json(route, 200, { prs: [ready], counts: {}, nav_count: 1 });
+    if (m === "GET" && p === "/_hub/pr-claims") return json(route, 200, { claims: [{ key: "github.com/openziti/zrok/11", room: "alpha" }] });
+    if (m === "GET" && p === "/v1/providers") return json(route, 200, { providers: [{ name: "gh", host: "github.com", worktrees: true }] });
+    st.calls.push(m + " " + p + " " + (req.postData() || ""));
+    if (p === "/_hub/pr-claims/move") {
+      if (st.refuse) return json(route, 409, { error: st.refuse });
+      return json(route, 200, { key: "github.com/openziti/zrok/11", room: "beta", review: "moved" });
+    }
+    if (p === "/v1/providers/gh/pr-worktree") return json(route, 200, { path: "/wt/zrok-11", existed: false });
+    if (p === "/v1/prs") return json(route, 200, { pr: ready, created: false });
+    if (p === "/v1/launch") return json(route, 200, { id: "t-new", supervised: false });
+    if (p === "/v1/prs/pr_m/walker") return json(route, 200, { pr: Object.assign({}, ready, { walker_task: "t-new" }) });
+    return json(route, 404, { error: "no route" });
+  });
+  const open = async rooms => {
+    st.rooms = rooms;
+    const p = await ctx.newPage();
+    p.on("pageerror", e => errors.push(e.message));
+    await p.goto(base + "/", { waitUntil: "domcontentloaded" });
+    await p.waitForFunction(() => typeof pullsPaint === "function" && typeof prMove === "function", null, { timeout: slow(15000) });
+    await p.waitForFunction(() => document.querySelectorAll("#pulls-list .pull").length > 0 || pulls.loaded, null, { timeout: slow(10000) });
+    await p.waitForFunction(n => hubIsHub && hubRooms.length === n, rooms.length, { timeout: slow(10000) });
+    await p.evaluate(() => { switchView("pulls"); pullsPaint(); });
+    return p;
+  };
+  const moves = p => p.evaluate(() => document.querySelectorAll('#pulls-list .pull[data-id="pr_m"] button[data-act="move"]').length);
+  try {
+    // one room: no move action
+    const one = await open(["alpha"]);
+    if (await moves(one) !== 0) fail("prMove: a one-room board shows the move action");
+    if (process.env.PMSHOT) await one.screenshot({ path: process.env.PMSHOT + "/before-one-room.png" });
+    await one.close();
+
+    const p = await open(["alpha", "beta"]);
+    if (await moves(p) !== 1) fail("prMove: the move action is missing with two rooms");
+    // a refusal stops everything after the hub call
+    st.refuse = "beta is offline, so the review cannot go there. bring it back or pick another room";
+    st.calls = [];
+    await p.click('#pulls-list .pull[data-id="pr_m"] button[data-act="move"]');
+    const items = await p.waitForSelector("#cardmenu button, .cardmenu button", { timeout: slow(5000) }).catch(() => null);
+    if (!items) fail("prMove: the room picker did not open");
+    if (process.env.PMSHOT) await p.screenshot({ path: process.env.PMSHOT + "/after-picker.png" });
+    const names = await p.evaluate(() => [...document.querySelectorAll("#cardmenu button")].map(b => b.textContent.trim()).join());
+    if (names.indexOf("beta") < 0 || names.indexOf("alpha") >= 0) fail("prMove: the picker should list beta and not the PR's own room alpha: " + names);
+    await p.evaluate(() => [...document.querySelectorAll("#cardmenu button")].find(b => /beta/.test(b.textContent)).click());
+    await p.waitForFunction(() => /offline/.test(document.body.textContent), null, { timeout: slow(5000) })
+      .catch(() => fail("prMove: the hub's refusal was not shown"));
+    if (st.calls.length !== 1 || st.calls[0].indexOf("POST /_hub/pr-claims/move") !== 0) fail("prMove: a refusal went on: " + st.calls.join(" | "));
+    await p.evaluate(() => { const d = document.querySelector("dialog[open]"); if (d) d.close(); });
+
+    // a success runs the four calls in order
+    st.refuse = "";
+    st.calls = [];
+    await p.click('#pulls-list .pull[data-id="pr_m"] button[data-act="move"]');
+    await p.waitForSelector("#cardmenu button", { timeout: slow(5000) });
+    await p.evaluate(() => [...document.querySelectorAll("#cardmenu button")].find(b => /beta/.test(b.textContent)).click());
+    await p.waitForFunction(() => /moved to beta/.test(document.getElementById("toasts").textContent), null, { timeout: slow(8000) })
+      .catch(() => fail("prMove: no toast after the move: " + st.calls.join(" | ")));
+    if (process.env.PMSHOT) await p.screenshot({ path: process.env.PMSHOT + "/after-toast.png" });
+    const order = st.calls.map(c => c.split(" ")[1]);
+    const want = ["/_hub/pr-claims/move", "/v1/providers/gh/pr-worktree", "/v1/prs", "/v1/launch", "/v1/prs/pr_m/walker"];
+    if (order.join() !== want.join()) fail("prMove: the calls ran as " + order.join() + ", wanted " + want.join());
+    const launch = JSON.parse(st.calls[3].split(" ").slice(2).join(" "));
+    if (launch.cwd !== "/wt/zrok-11" || launch.tags.join() !== "pr,pr:openziti/zrok#11") fail("prMove: the launch was " + JSON.stringify(launch));
+    if (!/The old card is still on alpha/.test(await p.evaluate(() => document.getElementById("toasts").textContent))) fail("prMove: the toast does not name the old room");
+    if (st.calls[4].indexOf('"action":"set"') < 0 || st.calls[4].indexOf("t-new") < 0) fail("prMove: the walker was not set: " + st.calls[4]);
+    if (errors.length) fail("prMove: page errors: " + errors.join(" | "));
+  } finally { await ctx.close(); }
+  if (!bad) console.log("prMove ok");
+}
+
 // The daemon answers /v1/prs with a plain-text 404 (nothing serves it yet): the tab stays hidden and nothing throws.
 async function pullsAbsentSection(browser, base) {
   const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 } });
@@ -22066,7 +22155,7 @@ async function main() {
       termDebug: termDebugSection, termSortStarted: termSortStartedSection,
       noReadyChildren: noReadyChildrenSection, childUnderParent: childUnderParentSection, topNav: topNavSection,
       childFold: childFoldSection, liveHome: liveHomeSection,
-      pulls: pullsSection, hubRepos: hubReposSection, hubReposShelf: hubReposShelfSection, hubReposLedger: hubReposLedgerSection, hubReposFeed: hubReposFeedSection, changeReq: changeReqSection, mChangeReq: mChangeReqSection, trayHead: trayHeadSection, pullsAbsent: pullsAbsentSection, oneTooltip: oneTooltipSection, burnChart: burnChartSection, burnReadout: burnReadoutSection, switchPrewarm: switchPrewarmSection, attachAtOnce: attachAtOnceSection, keepAlive: keepAliveSection, switchBackCost: switchBackCostSection, keepMemory: keepMemorySection, pullsDrawer: pullsDrawerSection };
+      pulls: pullsSection, prMove: prMoveSection, hubRepos: hubReposSection, hubReposShelf: hubReposShelfSection, hubReposLedger: hubReposLedgerSection, hubReposFeed: hubReposFeedSection, changeReq: changeReqSection, mChangeReq: mChangeReqSection, trayHead: trayHeadSection, pullsAbsent: pullsAbsentSection, oneTooltip: oneTooltipSection, burnChart: burnChartSection, burnReadout: burnReadoutSection, switchPrewarm: switchPrewarmSection, attachAtOnce: attachAtOnceSection, keepAlive: keepAliveSection, switchBackCost: switchBackCostSection, keepMemory: keepMemorySection, pullsDrawer: pullsDrawerSection };
     try {
       for (const n of process.env.HEADLESS_ONLY.split(",")) await only[n](browser, base);
     } catch (e) { fail("the headless run threw: " + (e && e.message ? e.message : e) + threwAt(e)); }
@@ -24140,6 +24229,7 @@ async function main() {
     await unit("attachAtOnce", () => attachAtOnceSection(browser, base));
     await unit("keepAlive", () => keepAliveSection(browser, base));
     await unit("pullsDrawer", () => pullsDrawerSection(browser, base));
+    await unit("prMove", () => prMoveSection(browser, base));
   } catch (e) {
     // a listing has no browser, so a bare section call throws here, and the guard below names it
     if (!LIST_MODE) fail("the headless run threw: " + (e && e.message ? e.message : e) + threwAt(e));
