@@ -5010,6 +5010,158 @@ async function termDebugSection(browser, base) {
   if (!bad) console.log("termDebug ok");
 }
 
+// ── typing lag with several terminals streaming ──────────────────────────
+// Four cards attached in turn, so three are kept hidden and one shows, every one of them streaming a TUI's redraw
+// the way a working agent does. Traced with CDP for TERMLAG_SECS (default 20): long tasks per minute, the worst
+// animation frame, and every forced layout with the script that forced it. Prints the numbers and fails on a forced
+// layout from inside an animation frame, which is what turned xterm's render frame into a 147ms one.
+// TERMLAG_TRACE=<file> keeps the raw trace. See REPORT.md on claude/u-term-debug-and-lag.
+async function termLagSection(browser, base) {
+  const was = tasksMode;
+  tasksMode = "land";
+  const ids = ["lag-a", "lag-b", "lag-c", "lag-d"];
+  ids.forEach((id, i) => landCard(id, { supervised: true, created_at: "2026-09-19T12:0" + i + ":00Z", activity: { what: "working" } }));
+  // The rest of a busy board: TERMLAG_CARDS cards in all, some working, their activity moving every refresh.
+  const more = [];
+  for (let i = 0; i < +(process.env.TERMLAG_CARDS || 120) - ids.length; i++) {
+    more.push(landCard("lag-x" + i, { supervised: i % 3 === 0, status: i % 7 === 0 ? "needs-input" : "running",
+      display_title: "busy card " + i, worktree: "/w/github/x/repo" + (i % 9),
+      created_at: "2026-09-19T11:" + String(i % 60).padStart(2, "0") + ":00Z",
+      activity: { what: i % 4 === 0 ? "working" : "idle" } }));
+  }
+  landList = ids.map(id => LAND[id]).concat(more);
+  let tick = 0;
+  const churn = setInterval(() => {
+    tick++;
+    for (const c of landList) {
+      if (c.activity && c.activity.what === "working") {
+        c.activity = Object.assign({}, c.activity, { tool: "Bash", tokens: tick * 97, since_seconds: tick * 2 });
+        c.idle_seconds = 0;
+        c.last_activity_at = new Date().toISOString();
+        c.context_tokens = 20000 + tick * 1000;
+      }
+    }
+  }, 1000);
+  landPerms = [];
+  const errors = [];
+  const ctx = await landContext(browser);
+  await ctx.addInitScript(() => {
+    const Real = window.WebSocket;
+    window.__socks = [];
+    window.WebSocket = function (url, protocols) {
+      if (!/\/attach(\?|$)/.test(url)) return new Real(url, protocols);
+      const s = { url, readyState: 0, binaryType: "arraybuffer", bufferedAmount: 0,
+        onopen: null, onclose: null, onmessage: null, onerror: null,
+        send() {}, close() { this.readyState = 3; } };
+      window.__socks.push(s);
+      setTimeout(() => { s.readyState = 1; if (s.onopen) s.onopen({}); }, 0);
+      return s;
+    };
+    Object.assign(window.WebSocket, { CONNECTING: 0, OPEN: 1, CLOSING: 2, CLOSED: 3 });
+  });
+  const secs = +(process.env.TERMLAG_SECS || 20);
+  try {
+    const p = await ctx.newPage();
+    p.on("pageerror", e => errors.push(String(e)));
+    await p.goto(base, { waitUntil: "domcontentloaded" });
+    await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
+    for (const id of ids) {
+      await p.evaluate(id => attachTask(id), id);
+      await p.waitForFunction(id => termSock && termSock.readyState === 1 && termTask && termTask.id === id, id,
+        { timeout: slow(10000) });
+      await p.waitForTimeout(300);
+    }
+    // A working agent's screen: a block of new text now and then, and a status block under it redrawn ten times a
+    // second, with colour and a spinner, as Claude Code's does.
+    await p.evaluate(() => {
+      const enc = new TextEncoder();
+      const spin = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏";
+      let n = 0;
+      window.__stream = setInterval(() => {
+        n++;
+        for (const s of window.__socks) {
+          if (s.readyState !== 1 || !s.onmessage) continue;
+          let out = "";
+          if (n % 5 === 0) out += "\x1b[4A\x1b[0J\x1b[38;5;250m" + "line " + n + " of the agent's answer, ".repeat(3) + "\x1b[0m\r\n\r\n\r\n\r\n";
+          out += "\x1b[4A\r\x1b[2K\x1b[38;5;174m" + spin[n % spin.length] + " Working… \x1b[38;5;246m(" + (n / 10).toFixed(1) +
+            "s · ↓ " + (n * 13) + " tokens · esc to interrupt)\x1b[0m\r\n\x1b[2K\r\n\x1b[2K\x1b[38;5;244m╭" + "─".repeat(70) +
+            "╮\x1b[0m\r\n\x1b[2K\x1b[38;5;244m│\x1b[0m > \x1b[7m \x1b[0m\r";
+          s.onmessage({ data: enc.encode(out).buffer });
+        }
+      }, 100);
+    });
+    // The SSE stream says something changed every couple of seconds on a busy board, and the board refreshes.
+    if (process.env.TERMLAG_REFRESH !== "0") await p.evaluate(() => { window.__refresh = setInterval(() => refresh(), 2000); });
+    await p.waitForTimeout(1500);
+    if (process.env.TERMLAG_PROBE) {
+      console.log(JSON.stringify(await p.evaluate(() => ({
+        canvases: [...document.querySelectorAll("canvas")].map(c => c.width + "x" + c.height + (c.offsetParent ? "" : " hidden") + " " + (c.className || "")),
+        anims: document.getAnimations().map(a => (a.animationName || a.constructor.name) + " on " +
+          (a.effect && a.effect.target ? a.effect.target.tagName + "." + String(a.effect.target.className).slice(0, 40) + "#" + a.effect.target.id : "?") +
+          " " + a.playState),
+        xterms: document.querySelectorAll(".xterm").length,
+        dpr: devicePixelRatio
+      })), null, 1));
+    }
+    const cdp = await ctx.newCDPSession(p);
+    const events = [];
+    cdp.on("Tracing.dataCollected", e => { for (const x of e.value) events.push(x); });
+    const doneP = new Promise(r => cdp.once("Tracing.tracingComplete", r));
+    await cdp.send("Tracing.start", { transferMode: "ReportEvents", traceConfig: { includedCategories: [
+      "devtools.timeline", "disabled-by-default-devtools.timeline", "disabled-by-default-devtools.timeline.stack",
+      "disabled-by-default-devtools.timeline.frame", "blink.user_timing", "toplevel"] } });
+    // Typing while it streams: a key every 150ms, through xterm, as the operator does.
+    const typer = setInterval(() => { p.keyboard.press("a").catch(() => {}); }, 150);
+    await p.focus("#t-screen textarea").catch(() => {});
+    await p.waitForTimeout(secs * 1000);
+    clearInterval(typer);
+    await cdp.send("Tracing.end");
+    await doneP;
+    await p.evaluate(() => { clearInterval(window.__stream); clearInterval(window.__refresh); });
+    if (process.env.TERMLAG_TRACE) fs.writeFileSync(process.env.TERMLAG_TRACE, JSON.stringify({ traceEvents: events }));
+
+    // The renderer's main thread: the one the CrRendererMain thread name is on.
+    const main = events.find(e => e.name === "thread_name" && e.args && e.args.name === "CrRendererMain" &&
+      events.some(x => x.pid === e.pid && x.name === "FireAnimationFrame"));
+    const onMain = e => main && e.pid === main.pid && e.tid === main.tid;
+    const ms = e => (e.dur || 0) / 1000;
+    const tasks = events.filter(e => onMain(e) && e.name === "RunTask" && e.ph === "X");
+    const long = tasks.filter(e => ms(e) >= 50);
+    const raf = events.filter(e => onMain(e) && e.name === "FireAnimationFrame" && e.ph === "X");
+    const worstRaf = raf.reduce((m, e) => Math.max(m, ms(e)), 0);
+    const inside = (e, outer) => outer.some(o => e.ts >= o.ts && e.ts < o.ts + o.dur);
+    // Forced: a layout or style recalc with a JS stack, meaning script asked for geometry and waited for it.
+    const forced = events.filter(e => onMain(e) && (e.name === "Layout" || e.name === "UpdateLayoutTree") &&
+      e.args && e.args.beginData && e.args.beginData.stackTrace && e.args.beginData.stackTrace.length);
+    const byWho = {};
+    for (const e of forced) {
+      const st = e.args.beginData.stackTrace;
+      const at = st.slice(0, 3).map(f => (f.functionName || "(anon)") + "@" + String(f.url || "").split("/").pop() + ":" + f.lineNumber).join(" < ");
+      const k = (inside(e, raf) ? "rAF  " : "task ") + e.name + " " + at;
+      byWho[k] = byWho[k] || { n: 0, ms: 0 };
+      byWho[k].n++;
+      // The layout's own time comes on its end event when it is a B/E pair.
+      byWho[k].ms += ms(e);
+    }
+    const perMin = long.length * 60 / secs;
+    console.log("termLag: " + secs + "s, " + tasks.length + " tasks, " + long.length + " long (" + perMin.toFixed(1) +
+      "/min), worst task " + tasks.reduce((m, e) => Math.max(m, ms(e)), 0).toFixed(1) + "ms, " + raf.length +
+      " animation frames, worst " + worstRaf.toFixed(1) + "ms, " + forced.length + " forced layouts");
+    for (const [k, v] of Object.entries(byWho).sort((a, b) => b[1].n - a[1].n).slice(0, 15)) {
+      console.log("  " + String(v.n).padStart(5) + "x " + v.ms.toFixed(1).padStart(7) + "ms  " + k);
+    }
+    const inRaf = forced.filter(e => inside(e, raf));
+    if (process.env.TERMLAG_STRICT && inRaf.length) fail("termLag: " + inRaf.length + " forced layouts inside an animation frame.");
+  } finally {
+    await ctx.close();
+  }
+  clearInterval(churn);
+  if (errors.length) fail("the terminal lag page threw: " + errors.join(" | "));
+  landList = []; landPerms = [];
+  tasksMode = was;
+  if (!bad) console.log("termLag ok");
+}
+
 // ── the debug switches are per card ──────────────────────────────────────
 // The drawer belongs to one card, so its two switches do too: on for one terminal, the next terminal shows them off
 // and is neither timed nor polled. The hub and the room log for the whole machine, so they are told "on" while any
@@ -23585,7 +23737,7 @@ async function main() {
       mSwitcher: mSwitcherSection,
       mPull: mPullSection, joinedLive: joinedLiveSection, joinedClick: joinedClickSection,
       coverPoll: coverPollSection, coverSteps: coverStepsSection, termBox: termBoxSection, termRowBleed: termRowBleedSection,
-      termDebug: termDebugSection, termDebugPerCard: termDebugPerCardSection, termSortStarted: termSortStartedSection,
+      termDebug: termDebugSection, termDebugPerCard: termDebugPerCardSection, termLag: termLagSection, termSortStarted: termSortStartedSection,
       noReadyChildren: noReadyChildrenSection, childUnderParent: childUnderParentSection, topNav: topNavSection,
       u002: u002Section, childFold: childFoldSection, liveHome: liveHomeSection,
       pulls: pullsSection, prMove: prMoveSection, hubRepos: hubReposSection, hubReposShelf: hubReposShelfSection, hubReposLedger: hubReposLedgerSection, hubReposFeed: hubReposFeedSection, changeReq: changeReqSection, mChangeReq: mChangeReqSection, trayHead: trayHeadSection, pullsAbsent: pullsAbsentSection, oneTooltip: oneTooltipSection, burnChart: burnChartSection, burnReadout: burnReadoutSection, switchPrewarm: switchPrewarmSection, attachAtOnce: attachAtOnceSection, fileView: fileViewSection, keepAlive: keepAliveSection, switchBackCost: switchBackCostSection, keepMemory: keepMemorySection, pullsDrawer: pullsDrawerSection };
