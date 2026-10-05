@@ -551,8 +551,9 @@ func (p *parser) env(n *yaml.Node, at, name string) EnvEntry {
 	return e
 }
 
-// Forge names a forge CLI the project needs a room to be logged in with. The key is the CLI (gh, bb or glab), never a
-// command line and never a credential. Scopes are the ones the login must hold on Host.
+// Forge names a forge CLI the project needs the hub to be logged in with, since only the hub runs the forge for its
+// rooms. The key is the CLI (gh, bb or glab), never a command line and never a credential. Scopes are the ones the
+// login must hold on Host.
 type Forge struct {
 	Host   string   `json:"host"`
 	Scopes []string `json:"scopes"`
