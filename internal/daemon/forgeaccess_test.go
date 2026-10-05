@@ -12,8 +12,8 @@ import (
 	"testing"
 )
 
-// fakeForge stands in for the forge CLI: what it prints, whether it exits non-zero, and whether it is on PATH.
-type fakeForge struct {
+// fakeForgeCLI stands in for the forge CLI: what it prints, whether it exits non-zero, and whether it is on PATH.
+type fakeForgeCLI struct {
 	mu      sync.Mutex
 	runs    [][]string
 	out     string
@@ -21,7 +21,7 @@ type fakeForge struct {
 	missing bool
 }
 
-func (f *fakeForge) install(t *testing.T) {
+func (f *fakeForgeCLI) install(t *testing.T) {
 	oldLook, oldRun := preflightLook, preflightRun
 	t.Cleanup(func() { preflightLook, preflightRun = oldLook, oldRun })
 	preflightLook = func(name string) (string, error) {
@@ -65,7 +65,7 @@ func forgeCheck(t *testing.T, d *Daemon, body string) forgeStatus {
 
 func TestForgeOKRunsTheStatusCommandAndClearsTheAlert(t *testing.T) {
 	d := testDaemon(t)
-	f := &fakeForge{out: ghOK}
+	f := &fakeForgeCLI{out: ghOK}
 	f.install(t)
 	st := forgeCheck(t, d, `{"forges":[{"tool":"gh","host":"github.com","scopes":["repo","read:org"]}]}`)
 	if st.State != forgeOK {
@@ -82,7 +82,7 @@ func TestForgeOKRunsTheStatusCommandAndClearsTheAlert(t *testing.T) {
 func TestForgeLoggedOutRaisesTheAlertWithTheCommandToRun(t *testing.T) {
 	d := testDaemon(t)
 	d.opts.Room = "sg3"
-	f := &fakeForge{out: "You are not logged into any GitHub hosts.\n", fail: true}
+	f := &fakeForgeCLI{out: "You are not logged into any GitHub hosts.\n", fail: true}
 	f.install(t)
 	st := forgeCheck(t, d, `{"forges":[{"tool":"gh","host":"github.com"}]}`)
 	want := "gh is not logged in on sg3: run `gh auth login --hostname github.com` on sg3"
@@ -104,7 +104,7 @@ func TestForgeLoggedOutRaisesTheAlertWithTheCommandToRun(t *testing.T) {
 func TestForgeNotInstalled(t *testing.T) {
 	d := testDaemon(t)
 	d.opts.Room = "sg3"
-	f := &fakeForge{missing: true}
+	f := &fakeForgeCLI{missing: true}
 	f.install(t)
 	st := forgeCheck(t, d, `{"forges":[{"tool":"gh","host":"github.com"}]}`)
 	if st.State != forgeNotInstalled || !strings.Contains(st.Message, "gh is not installed on sg3") {
@@ -118,7 +118,7 @@ func TestForgeNotInstalled(t *testing.T) {
 func TestForgeMissingScopeNamesTheScope(t *testing.T) {
 	d := testDaemon(t)
 	d.opts.Room = "sg3"
-	f := &fakeForge{out: "  - Token scopes: 'repo'\n"}
+	f := &fakeForgeCLI{out: "  - Token scopes: 'repo'\n"}
 	f.install(t)
 	st := forgeCheck(t, d, `{"forges":[{"tool":"gh","host":"github.com","scopes":["repo","read:org"]}]}`)
 	want := "gh on sg3 is missing the scope read:org for github.com: run `gh auth refresh --hostname github.com --scopes read:org` on sg3"
@@ -130,7 +130,7 @@ func TestForgeMissingScopeNamesTheScope(t *testing.T) {
 // A fine-grained token prints no scope list, so nothing can be said to be missing.
 func TestForgeNoScopeLineIsNotAFailure(t *testing.T) {
 	d := testDaemon(t)
-	f := &fakeForge{out: "  ✓ Logged in to github.com\n"}
+	f := &fakeForgeCLI{out: "  ✓ Logged in to github.com\n"}
 	f.install(t)
 	if st := forgeCheck(t, d, `{"forges":[{"tool":"gh","host":"github.com","scopes":["repo"]}]}`); st.State != forgeOK {
 		t.Fatalf("got %+v", st)
@@ -143,7 +143,7 @@ func TestForgeCommandOverrideIsTheRoomsAndABareName(t *testing.T) {
 	if err := d.st.SetForgeConfig("gh", "github.com", "gh-work"); err != nil {
 		t.Fatal(err)
 	}
-	f := &fakeForge{out: ghOK}
+	f := &fakeForgeCLI{out: ghOK}
 	f.install(t)
 	forgeCheck(t, d, `{"forges":[{"tool":"gh","host":"github.com","command":"rm"}]}`)
 	if got := f.runs[0][0]; got != "/fake/bin/gh-work" {
@@ -164,7 +164,7 @@ func TestForgeCommandOverrideIsTheRoomsAndABareName(t *testing.T) {
 
 func TestForgeUnknownToolAndBadHostRunNothing(t *testing.T) {
 	d := testDaemon(t)
-	f := &fakeForge{out: ghOK}
+	f := &fakeForgeCLI{out: ghOK}
 	f.install(t)
 	forgeCheck(t, d, `{"forges":[{"tool":"rm","host":"x.org"}]}`)
 	forgeCheck(t, d, `{"forges":[{"tool":"gh","host":"--show-token"}]}`)

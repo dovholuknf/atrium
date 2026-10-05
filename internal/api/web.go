@@ -87,6 +87,10 @@ func buildID(fsys fs.FS) string {
 			return err
 		}
 		if e.IsDir() {
+			// go:embed leaves out a dot or underscore directory whole, so a local .claude/ must not count.
+			if base := pathpkg.Base(path); path != "." && (strings.HasPrefix(base, ".") || strings.HasPrefix(base, "_")) {
+				return fs.SkipDir
+			}
 			return nil
 		}
 		// Match go:embed exclusions so disk and embedded copies have the same hash.
