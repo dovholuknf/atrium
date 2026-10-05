@@ -32,7 +32,12 @@ func (d *Daemon) scm(task *store.Task) *gitsync.SCM {
 		}
 	}
 	agent := d.agentAddr()
+	var from func(ctx context.Context, r gitsync.Ref) (string, func(), error)
+	if d.HubForge() != nil {
+		from = d.hubClone
+	}
 	return &gitsync.SCM{
+		From:             from,
 		Runner:           gitsync.Default,
 		Root:             setting(gitsync.SettingSCMRoot),
 		CredentialHelper: setting(gitsync.SettingCredentialHelper),

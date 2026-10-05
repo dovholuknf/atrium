@@ -283,6 +283,8 @@ type Daemon struct {
 
 	// hubGit is the room's stable hub remote. See hubremote.go.
 	hubGit hubGit
+	// hubForge is the hub's forge, for a room with a hub. See hubforge.go.
+	hubForge hubForge
 
 	mu          sync.Mutex
 	agentServer *http.Server
@@ -400,7 +402,14 @@ func New(opts Options) (*Daemon, error) {
 	d.prr = newPRRunner(st, d.ap.PublishPR)
 	d.ap.PRRunner = d.prr
 	d.prr.onAccess, d.prr.onWorked = d.ForgeAccessFrom, d.ForgeWorked
+	d.prr.hub, d.prr.hubSource = d.HubForge, d.hubSource
 	d.ap.PRForge = d.prr.forgeFor
+	d.ap.HubSource = func(ctx context.Context, name string) (string, func(), error) {
+		if d.HubForge() == nil {
+			return "", nil, errNoHub
+		}
+		return d.hubSource(ctx, name)
+	}
 	d.ap.ForgeFailed, d.ap.ForgeWorked = d.ForgeAccessFrom, d.ForgeWorked
 	d.ap.SCMClone = d.prWorktreeClone
 	d.ap.RunAction = d.handleRunAction

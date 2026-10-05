@@ -368,6 +368,8 @@ func serveAtrium(f atriumFlags, up atriumUp) error {
 	proxy.SetChangeRequests(store)
 	// WHICH ROOM RUNS A PR, AND ONE ROW PER PR. See link/prclaim.go.
 	proxy.SetPRClaims(store)
+	// THE HUB RUNS THE FORGE FOR ITS ROOMS, which never run gh or bb. See link/forgeroute.go.
+	proxy.SetForge(store, nil)
 	// THE NAMES THE HUB ANSWERS, beside $ATRIUM_HOSTS, from the same store. Before
 	// any listener is up. See hosts.go.
 	link.LoadExtraHosts(store)

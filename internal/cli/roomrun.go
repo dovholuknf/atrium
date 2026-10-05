@@ -15,6 +15,7 @@ import (
 	"github.com/dovholuknf/atrium/internal/api"
 	"github.com/dovholuknf/atrium/internal/daemon"
 	"github.com/dovholuknf/atrium/internal/edge"
+	"github.com/dovholuknf/atrium/internal/forge"
 	"github.com/dovholuknf/atrium/internal/gitsync"
 	"github.com/dovholuknf/atrium/internal/link"
 	"github.com/dovholuknf/atrium/internal/roomstats"
@@ -413,6 +414,8 @@ func runRoom(keys link.Keys, db, human, agent string, restartAfter time.Duration
 			Forwarded: ans.Forwarded, ForwardStatus: ans.ForwardStatus, Forward: ans.Forward}, nil
 	})
 	d.SetRelay(linkRelay{room: room})
+	// THE HUB RUNS THE FORGE. This room asks it about pull requests and issues and never runs gh or bb itself.
+	d.SetHubForge(forge.NewRemote(room.Forge))
 	// The room's stable hub remote forwards over the same link's git kind.
 	d.SetHubGit(func() (http.RoundTripper, error) {
 		if !room.HubServesGit() {

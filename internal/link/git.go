@@ -135,6 +135,15 @@ func (h *Hub) serveGit(name, session string, conn net.Conn, br *bufio.Reader) {
 				h.PRClaim.ServeHTTP(w, r)
 				return
 			}
+			if strings.HasPrefix(r.URL.Path, ForgePrefix) {
+				if h.Forge == nil {
+					http.NotFound(w, r)
+					return
+				}
+				r.Header.Set(ForgeRoomHeader, name)
+				h.Forge.ServeHTTP(w, r)
+				return
+			}
 			if h.GitStore != nil && strings.HasPrefix(r.URL.Path, gitsync.StorePrefix) {
 				ctx := gitsync.WithCaller(r.Context(), gitsync.Caller{Kind: gitsync.CallerRoom, Room: name})
 				h.GitStore.ServeHTTP(w, r.WithContext(ctx))

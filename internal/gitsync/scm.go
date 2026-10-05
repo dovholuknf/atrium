@@ -91,6 +91,12 @@ type SCM struct {
 	// remote is not added. See hubremote.go.
 	HubURL func(Ref) (string, error)
 
+	// From, when set, is where a room attached to a hub clones from instead of the forge: the hub's copy of the
+	// repository, through a loopback to the link (HubLoopback). done closes it. The clone's origin is then set to the
+	// forge's https URL, so the push guard and the origin check read it as any other clone, and the room never
+	// fetched from the forge. See docs/rnd/scm-forge-design.md, Built.
+	From func(ctx context.Context, r Ref) (src string, done func(), err error)
+
 	// source is the URL git clones from. It is unexported, so only this package's tests set it:
 	// they point it at a local bare repository, and production always clones from the https URL.
 	source func(Ref) string
@@ -225,13 +231,25 @@ func (c *SCM) Clone(ctx context.Context, rawURL string) (SCMResult, error) {
 	}
 
 	src, args, env := httpsURL(ref), []string{}, []string{"GIT_ALLOW_PROTOCOL=https"}
-	if c.source != nil {
+	viaHub := false
+	switch {
+	case c.source != nil:
 		src, env = c.source(ref), nil
-	} else {
+	case c.From != nil:
+		from, done, err := c.From(ctx, ref)
+		if err != nil {
+			return SCMResult{}, err
+		}
+		defer done()
+		src, viaHub, env = from, true, []string{"GIT_ALLOW_PROTOCOL=http"}
+		args = append(args, "-c", "protocol.allow=never", "-c", "protocol.http.allow=always")
+	default:
 		args = append(args, "-c", "protocol.allow=never", "-c", "protocol.https.allow=always")
 	}
 	args = append(args, c.extra...)
-	args = append(args, c.credentialArgs(ref)...)
+	if !viaHub {
+		args = append(args, c.credentialArgs(ref)...)
+	}
 	// An argv slice, never a shell. `--` ends options, though the URL was built from checked
 	// parts and cannot start with a dash. The output is capped, and the runner bounds the time.
 	args = append(args, "clone", "--no-tags", "--", src, dest)
@@ -241,6 +259,13 @@ func (c *SCM) Clone(ctx context.Context, rawURL string) (SCMResult, error) {
 		}
 		_ = os.RemoveAll(dest)
 		return SCMResult{}, errors.New(CloneFailed)
+	}
+	if viaHub {
+		// The loopback is gone once this returns, and origin names the forge as any clone's does.
+		if _, err := g.GitCapped(ctx, dest, nil, 4<<10, "remote", "set-url", "origin", httpsURL(ref)); err != nil {
+			_ = os.RemoveAll(dest)
+			return SCMResult{}, errors.New(CloneFailed)
+		}
 	}
 	if err := c.guard(ctx, dest, true); err != nil {
 		return SCMResult{}, err

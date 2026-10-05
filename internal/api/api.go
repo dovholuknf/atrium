@@ -83,6 +83,9 @@ type Server struct {
 	// answered so it can clear it. Both are nil-safe seams the daemon fills.
 	ForgeFailed func(kind string, err error) bool
 	ForgeWorked func(kind, host string)
+	// HubSource is a loopback to one repository of the hub's store, for a room with a hub, which reads a PR head
+	// from there and never from the forge. An error is a room with no hub, or a hub that cannot be reached.
+	HubSource func(ctx context.Context, name string) (url string, done func(), err error)
 	// PRFetch fetches a PR head into a ref of the checkout. Nil runs git over https. A seam for tests.
 	PRFetch func(ctx context.Context, dir string, spec forge.FetchSpec, dst string) error
 	// PRRunner runs pull request reviews. Nil means the stub that fails every run
