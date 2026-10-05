@@ -10851,6 +10851,8 @@ async function walkContextSection(browser, base) {
     if (dw.bottom < tb.bottom - 2) fail("walkContext: the finding does not have the whole pane: " + JSON.stringify({ dw, tb }));
     await pp.$eval(S + ".walk-item", e => { e.scrollTop = e.scrollHeight; });
     const lastBtn = await pp.$eval(S + ".wk-actions button:last-child", e => e.getBoundingClientRect().bottom);
+    const railBox = await box(S + ".walk-rail");
+    if (railBox.h < 20 || railBox.bottom > handle.top + 1) fail("walkContext: the rail strip is hidden or under the handle: " + JSON.stringify({ railBox, handle }));
     if (lastBtn > handle.top + 1) fail("walkContext: the handle covers the action buttons: " + lastBtn + " vs " + handle.top);
     await pp.$eval(S + ".walk-item", e => { e.scrollTop = 0; });
     await shot(pp, "phone-shut");

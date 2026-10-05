@@ -196,7 +196,9 @@
       transition: bottom .18s ease-out;
     }
     .term-body.sheet-open:has(.walk:not([hidden])) .walk-sheet { bottom: 60%; }
-    .term-body:has(.walk:not([hidden])) .walk-item { padding-bottom: 52px; }
+    .term-body:has(.walk:not([hidden])) .walk { padding-bottom: 40px; box-sizing: border-box; }
+    .walk-item { min-height: 0; }
+    .walk-rail { flex: 0 0 auto; }
     .walk-body { flex-direction: column; }
     .walk-rail { width: auto; max-width: none; display: flex; overflow-x: auto; overflow-y: hidden; border-right: none; border-bottom: 1px solid var(--stroke-dim); }
     .wk-row { width: auto; flex: 0 0 auto; }
