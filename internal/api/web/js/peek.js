@@ -143,9 +143,10 @@ function peekBody(t, v) {
   const tot = (v && v.totals) || {};
   const own = usageOwn(v && v.by_cause);
   // A field the room did not send is a dash, never a 0: a zero is a count the room reported.
-  const NOT_SENT = "not reported by this room";
-  const has = (o, ...ks) => !!o && ks.every(k => typeof o[k] === "number");
-  const byOk = !!(v && v.by_cause && typeof v.by_cause === "object");
+  // No recorded rows is the same: the room counts a turn when it ends, so a card in its first turn has none yet.
+  const NOT_SENT = "not reported by this room, or counted when the turn ends and none has yet";
+  const has = (o, ...ks) => !!o && typeof o.rows === "number" && o.rows > 0 && ks.every(k => typeof o[k] === "number");
+  const byOk = !!(v && v.by_cause && typeof v.by_cause === "object" && Object.keys(v.by_cause).length);
   const cell = (label, value, tip, missing) =>
     `<div class="peek-cell"${missing || tip ? ` data-tip="${esc(missing ? NOT_SENT : tip)}"` : ""}><b>${loading ? "&nbsp;" : missing ? "–" : esc(value)}</b>` +
     `<span>${esc(label)}</span></div>`;

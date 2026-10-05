@@ -17859,14 +17859,15 @@ async function peekDashSection(browser, base) {
       return {
         missing: read({ context_now: 61000 }),
         empty: read({ context_now: 61000, totals: {} }),
-        zero: read({ context_now: 61000, by_cause: {}, totals: { input: 0, output: 0, cache_read: 0, cache_write_5m: 0, cache_write_1h: 0 } }),
+        noRows: read({ context_now: 46146, by_cause: {}, totals: { rows: 0, replies: 0, input: 0, output: 0, cache_read: 0, cache_write_5m: 0, cache_write_1h: 0 } }),
+        zero: read({ context_now: 61000, by_cause: { operator: { rows: 0, replies: 0 } }, totals: { rows: 1, input: 0, output: 0, cache_read: 0, cache_write_5m: 0, cache_write_1h: 0 } }),
         real: read({ context_now: 61000, by_cause: { operator: { rows: 2, replies: 9 } },
-          totals: { input: 5, output: 700, cache_read: 4000, cache_write_5m: 11, cache_write_1h: 0 } }),
+          totals: { rows: 2, input: 5, output: 700, cache_read: 4000, cache_write_5m: 11, cache_write_1h: 0 } }),
       };
     });
-    for (const k of ["missing", "empty"]) {
+    for (const k of ["missing", "empty", "noRows"]) {
       for (const c of r[k]) {
-        if (c.value !== "–" || !/not reported by this room/.test(c.tip)) fail("peekDash " + k + ": " + c.label + " drew " + JSON.stringify(c));
+        if (c.value !== "–" || !/not reported by this room/.test(c.tip) || !/turn ends/.test(c.tip)) fail("peekDash " + k + ": " + c.label + " drew " + JSON.stringify(c));
       }
     }
     for (const c of r.zero) if (c.value !== "0") fail("peekDash zero: " + c.label + " drew " + JSON.stringify(c.value) + ", not 0");
