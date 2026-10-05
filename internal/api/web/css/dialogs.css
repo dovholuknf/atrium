@@ -420,8 +420,9 @@
   }
   @media (hover: hover) { button.icon:hover { border-color: var(--stroke-dim); } }
   button.icon.muted { color: var(--dimmest); }
-  /* Sound is on, but the browser has not let this page make any yet. */
-  button.icon.blocked:not(.muted) { color: var(--warn); animation: nudge 2.4s ease-in-out infinite; }
+  /* Sound is on, but the browser has not let this page make any yet. It pulses three times and then holds still
+     until the first click, because a looping pulse kept the compositor at 60 fps inside the header. */
+  button.icon.blocked:not(.muted) { color: var(--warn); animation: nudge 2.4s ease-in-out 3; }
   @keyframes nudge { 0%, 100% { opacity: 1; } 50% { opacity: .45; } }
   button.newagent { font-size: var(--fs-xl); padding: 10px 20px; white-space: nowrap; }
   /* Narrow: the plus alone. The word is what wraps, and the plus has never
