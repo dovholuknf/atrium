@@ -1,6 +1,9 @@
 # Run the sharded board suite on another room's machine and bring the report back.
 #
-#   pwsh -File scripts\board-suite-remote.ps1 [-Room sg3] [-SuiteArgs "--units mHome,phonePan"]
+#   pwsh -File scripts\board-suite-remote.ps1 [-Room sg3] [suite args...]
+#   pwsh -File scripts\board-suite-remote.ps1 --units mHome,phonePan
+#
+# Every argument after the script's own is one suite argument, kept whole, so one holding a space survives.
 #
 # This is what `node scripts/test-board-sharded.js` hands off to by default (see dispatchRemote() there), because the
 # suite drives 9 to 15 browsers and lags the machine a person is working at. sg4 lagged (50ms timer drift p99 104ms,
@@ -19,11 +22,15 @@
 #   4  ssh to the room failed, or its remote runner could not start
 param(
     [string] $Room = $(if ($env:ATRIUM_SUITE_ROOM) { $env:ATRIUM_SUITE_ROOM } else { 'sg3' }),
-    # Passed to `node scripts/test-board-sharded.js --local` on the room.
-    [string] $SuiteArgs = ''
+    # Passed to `node scripts/test-board-sharded.js --local` on the room, one argument each.
+    [Parameter(ValueFromRemainingArguments)] [string[]] $SuiteArgs = @(),
+    # Print the argument lines the room would get and stop, before anything touches git or ssh.
+    [switch] $DryRun
 )
 
 $ErrorActionPreference = 'Stop'
+$argv = @($SuiteArgs | Where-Object { $_ })
+if ($DryRun) { $argv | ForEach-Object { Write-Host "arg[$_]" }; exit 0 }
 $repo = (git rev-parse --show-toplevel).Trim()
 Set-Location $repo
 
@@ -80,7 +87,6 @@ $clone = ($url -replace '^[^:]+:', '' -replace '^//[^/]+', '')
 # The suite's arguments travel as base64 of one argument per line, and the room passes them to node as an array, so
 # nothing in them is ever read as PowerShell. A leading `A` keeps the value from being empty, which ssh would drop and
 # the remote parameter would then miss.
-$argv = @($SuiteArgs -split '\s+' | Where-Object { $_ })
 $enc = 'A' + [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($argv -join "`n"))
 & $ssh $Room "powershell -NoProfile -ExecutionPolicy Bypass -File board-suite-run.ps1 -Clone `"$clone`" -Id $id -Sha $sha -ArgsB64 $enc"
 exit $LASTEXITCODE
