@@ -33,3 +33,6 @@ room:                        # @rnd's slot, room-autostart-design section 4
 
 env: {}                      # names the runner must see. values only when they are not secrets
 services: []                 # names from the inventory (f-003), never a URL. nothing for atrium
+
+forges:                      # a forge CLI the room must be logged in with, only checked when asked. never a token
+  gh: { host: github.com, scopes: [repo, read:org] }

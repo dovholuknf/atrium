@@ -46,6 +46,7 @@ type File struct {
 	Room      Room                `json:"room"`
 	Env       map[string]EnvEntry `json:"env"`
 	Services  []string            `json:"services"`
+	Forges    map[string]Forge    `json:"forges"`
 }
 
 type Atrium struct {
@@ -340,8 +341,9 @@ func (p *parser) file(root *yaml.Node) *File {
 		Room:      Room{Survives: "none", RunnerAuth: []string{}},
 		Env:       map[string]EnvEntry{},
 		Services:  []string{},
+		Forges:    map[string]Forge{},
 	}
-	top := p.mapping(root, "", "version", "atrium", "git", "toolchain", "runners", "room", "env", "services")
+	top := p.mapping(root, "", "version", "atrium", "git", "toolchain", "runners", "room", "env", "services", "forges")
 
 	v, ok := top["version"]
 	if !ok {
@@ -413,6 +415,11 @@ func (p *parser) file(root *yaml.Node) *File {
 	if n, ok := top["services"]; ok {
 		// Names from the inventory, never an address, so a URL fails as not a name.
 		f.Services = p.names(n, "services", nameRE)
+	}
+	if n, ok := top["forges"]; ok {
+		for name, fn := range p.mapping(n, "forges") {
+			f.Forges[name] = p.forge(fn, join("forges", name), name)
+		}
 	}
 	sort.Strings(f.Services)
 	return f
@@ -542,4 +549,40 @@ func (p *parser) env(n *yaml.Node, at, name string) EnvEntry {
 		e.Value = s
 	}
 	return e
+}
+
+// Forge names a forge CLI the project needs a room to be logged in with. The key is the CLI (gh, bb or glab), never a
+// command line and never a credential. Scopes are the ones the login must hold on Host.
+type Forge struct {
+	Host   string   `json:"host"`
+	Scopes []string `json:"scopes"`
+}
+
+var (
+	forgeRE = regexp.MustCompile(`^(gh|bb|glab)$`)
+	hostRE  = regexp.MustCompile(`^[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?$`)
+	scopeRE = regexp.MustCompile(`^[a-z][a-z0-9:_.-]*$`)
+)
+
+func (p *parser) forge(n *yaml.Node, at, name string) Forge {
+	fg := Forge{Scopes: []string{}}
+	if !forgeRE.MatchString(name) {
+		p.fail(n, at, "%q is not a forge CLI. known: gh, bb, glab", name)
+		return fg
+	}
+	m := p.mapping(n, at, "host", "scopes")
+	hn, ok := m["host"]
+	if !ok {
+		p.fail(n, at, "needs host")
+	} else if s, ok := p.scalar(hn, at+".host"); ok {
+		if !hostRE.MatchString(s) {
+			p.fail(hn, at+".host", "%q is not a host name", s)
+		} else {
+			fg.Host = s
+		}
+	}
+	if sn, ok := m["scopes"]; ok {
+		fg.Scopes = p.names(sn, at+".scopes", scopeRE)
+	}
+	return fg
 }

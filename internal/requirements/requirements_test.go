@@ -25,7 +25,7 @@ func TestTheDesignsOwnFileParsesToTheExpectedJSON(t *testing.T) {
 		`"node":{"min":"24"},"pwsh":{"min":"7","os":["windows"]}},` +
 		`"runners":{"claude":{"hooks":"atrium","gate":"required","mcp":["atrium-control"],"smoke":true},` +
 		`"codex":{"helpers":["codex-code-mode-host"],"smoke":true}},` +
-		`"room":{"survives":"none","runner_auth":["claude","codex"]},"env":{},"services":[]}`
+		`"room":{"survives":"none","runner_auth":["claude","codex"]},"env":{},"services":[],"forges":{}}`
 	if string(got) != want {
 		t.Fatalf("got\n%s\nwant\n%s", got, want)
 	}
@@ -122,5 +122,29 @@ func TestEveryProblemIsReportedInFileOrder(t *testing.T) {
 func TestATooLargeFileIsRefused(t *testing.T) {
 	if _, err := Parse([]byte("version: 1\n# " + strings.Repeat("x", MaxSize))); err == nil {
 		t.Fatal("accepted a file over the limit")
+	}
+}
+
+func TestForgesParseAndRefuse(t *testing.T) {
+	f, err := Parse([]byte("version: 1\nforges:\n  gh: { host: github.com, scopes: [repo, read:org] }\n  bb: { host: bitbucket.org }\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if g := f.Forges["gh"]; g.Host != "github.com" || len(g.Scopes) != 2 || g.Scopes[1] != "read:org" {
+		t.Fatalf("gh: %+v", g)
+	}
+	if g := f.Forges["bb"]; g.Host != "bitbucket.org" || len(g.Scopes) != 0 {
+		t.Fatalf("bb: %+v", g)
+	}
+	for name, in := range map[string]string{
+		"unknown cli":    "forges:\n  svn: { host: x.org }\n",
+		"no host":        "forges:\n  gh: { scopes: [repo] }\n",
+		"path as host":   "forges:\n  gh: { host: x.org/y }\n",
+		"token in scope": "forges:\n  gh: { host: x.org, scopes: [ghp_abcdefghijklmnopqrstuvwxyz0123456789] }\n",
+		"unknown key":    "forges:\n  gh: { host: x.org, token: abc }\n",
+	} {
+		if _, err := Parse([]byte("version: 1\n" + in)); err == nil {
+			t.Errorf("%s: parsed, want a refusal", name)
+		}
 	}
 }

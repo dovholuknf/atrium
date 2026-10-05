@@ -1928,6 +1928,19 @@ function connect() {
     } catch (err) { return; }
     paintGlobalAuto();
   });
+  // A forge CLI this room needs is missing, logged out or short of a scope. The daemon says it once per change and
+  // its message says what to run on which room. Raised through the same path as any alert: a toast, the bell, a
+  // desktop notification. `cleared` ends it quietly.
+  es.addEventListener("forge-access", e => {
+    let d;
+    try { d = JSON.parse(e.data) || {}; } catch (err) { return; }
+    if (d.cleared || !d.message) return;
+    const title = d.tool + " access is missing on " + d.room;
+    const held = notifyHeld("runners");
+    if (!held) alerting.play("permission");
+    alerting.notify(title, d.message, "runners", "", "forge:" + d.key, "", "");
+    if (!held) toast(title, d.message, "runners");
+  });
   // The fixtures that came up with the daemon, said once.
   //
   // Each of them produces a ready card, and a ready card is normally announced,
