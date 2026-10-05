@@ -20835,6 +20835,115 @@ async function attachAtOnceSection(browser, base) {
   } finally { tasksMode = was; await ctx.close(); }
 }
 
+// AN OPEN FILE BELONGS TO ITS CARD. Opened on A, hidden on B (whose terminal shows), back on A with the edited text
+// and scroll, closed on A only. And the editor reaches down to the footer hint line at two window heights.
+// `FILEVIEW_SHOTS=dir` also writes the pictures for the item file.
+async function fileViewSection(browser, base) {
+  const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+  const wp = await ctx.newPage();
+  const errors = [];
+  wp.on("pageerror", e => errors.push(String(e)));
+  const was = tasksMode;
+  const live = (id) => Object.assign({}, T1, { id, display_title: "row " + id, supervised: true, pinned: true,
+    worktree: "/tmp/fv/" + id });
+  const body = Array.from({ length: 200 }, (_, i) => "line " + i).join("\n");
+  const shot = async name => {
+    if (process.env.FILEVIEW_SHOTS) await wp.screenshot({ path: process.env.FILEVIEW_SHOTS + "/" + name + ".png" });
+  };
+  try {
+    wornTasks = [live("fv-a"), live("fv-b")];
+    tasksMode = "worn";
+    await wp.route(/\/v1\/tasks\/fv-[ab]\/files\/text/, route => route.fulfill({ status: 200, contentType: "application/json",
+      body: JSON.stringify({ path: "notes/x.md", text: body, hash: "h1", eol: "\n" }) }));
+    await wp.route(/\/v1\/tasks\/fv-[ab]\/files(\?|$)/, route => route.fulfill({ status: 200, contentType: "application/json",
+      body: JSON.stringify({ path: "notes", entries: [] }) }));
+    await wp.goto(base, { waitUntil: "domcontentloaded" });
+    await wp.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
+    await wp.click('.tab[data-view="terms"]');
+    await wp.evaluate(async () => { await loadCards().catch(() => {}).then(renderTermList); });
+    const idle = ms => wp.waitForTimeout(ms);
+    const st = () => wp.evaluate(() => ({
+      task: termTask && termTask.id,
+      edit: !document.getElementById("t-edit").hidden,
+      drawer: !document.getElementById("t-files-panel").hidden,
+      screen: getComputedStyle(document.getElementById("t-screen")).display !== "none",
+      text: document.getElementById("t-edit-text").value.slice(0, 12),
+      top: document.getElementById("t-edit-text").scrollTop,
+      state: document.getElementById("t-edit-state").textContent }));
+
+    await wp.evaluate(() => attachTask("fv-a"));
+    await idle(300);
+    await wp.evaluate(() => openFromTerminal("fv-a", { rel: "notes/x.md", dir: false }));
+    await idle(300);
+    await wp.evaluate(() => {
+      const b = document.getElementById("t-edit-text");
+      b.value = "EDITED\n" + b.value; b.dispatchEvent(new Event("input")); b.scrollTop = 300;
+    });
+    let s = await st();
+    if (!s.edit || s.task !== "fv-a" || s.state !== "not saved") fail("fileView: the file did not open on A: " + JSON.stringify(s));
+    const top = s.top;
+    if (top < 100) fail("fileView: the editor did not scroll, so the scroll check proves nothing: " + top);
+
+    // Both heights: the editor's bottom edge meets the footer hint line.
+    for (const h of [900, 620]) {
+      await wp.setViewportSize({ width: 1400, height: h });
+      await idle(250);
+      const gap = await wp.evaluate(() => {
+        const e = document.getElementById("t-edit-text").getBoundingClientRect();
+        const f = document.querySelector(".term-help").getBoundingClientRect();
+        const chain = [];
+        for (let n = document.getElementById("t-edit-text"); n && n !== document.body; n = n.parentElement) {
+          chain.push((n.id || n.className || n.tagName) + ":" + Math.round(n.getBoundingClientRect().height) +
+            ":" + getComputedStyle(n).display);
+        }
+        chain.push("siblings of the panel: " + [...document.getElementById("term-pane").children].map(c =>
+          (c.id || c.className) + ":" + Math.round(c.getBoundingClientRect().height) + ":" + getComputedStyle(c).flexGrow).join(" "));
+        return { gap: f.top - e.bottom, h: e.height, scrolls: document.getElementById("t-edit-text").scrollHeight > e.height, chain };
+      });
+      if (gap.gap > 24 || gap.gap < -2) fail("fileView: at " + h + "px the editor ends " + gap.gap + "px from the footer: " + JSON.stringify(gap));
+      if (!gap.scrolls) fail("fileView: at " + h + "px the editor does not scroll inside itself.");
+      await shot("after-" + h);
+    }
+    await wp.setViewportSize({ width: 1400, height: 900 });
+    await idle(250);
+
+    await wp.evaluate(() => attachTask("fv-b"));
+    await idle(300);
+    s = await st();
+    await shot("away-on-b");
+    if (s.task !== "fv-b" || s.edit || s.drawer || !s.screen) fail("fileView: B shows A's file or lost its terminal: " + JSON.stringify(s));
+
+    await wp.evaluate(() => attachTask("fv-a"));
+    await idle(300);
+    s = await st();
+    await shot("back-on-a");
+    if (s.task !== "fv-a" || !s.edit || !s.text.startsWith("EDITED") || s.state !== "not saved" || Math.abs(s.top - top) > 2) {
+      fail("fileView: A did not get its file back as left (scroll " + top + "): " + JSON.stringify(s));
+    }
+
+    // Closed on A is closed for A only: B still has the file it had, which is none.
+    await wp.evaluate(() => closeEditor());
+    await wp.evaluate(() => attachTask("fv-b"));
+    await idle(300);
+    await wp.evaluate(() => attachTask("fv-a"));
+    await idle(300);
+    s = await st();
+    if (s.edit || !s.screen) fail("fileView: a closed file came back on A: " + JSON.stringify(s));
+
+    // A card that goes away drops its file.
+    await wp.evaluate(() => openFromTerminal("fv-a", { rel: "notes/x.md", dir: false }));
+    await idle(300);
+    await wp.evaluate(() => attachTask("fv-b"));
+    await idle(300);
+    const held = await wp.evaluate(() => fileViews.has("fv-a"));
+    if (!held) fail("fileView: the file was not held while away.");
+    await wp.evaluate(() => fileViewPrune([{ id: "fv-b", supervised: true }]));
+    if (await wp.evaluate(() => fileViews.has("fv-a"))) fail("fileView: a card that went away kept its file.");
+    if (errors.length) fail("fileView: page errors " + errors.join("; "));
+    if (!bad) console.log("fileView ok");
+  } finally { tasksMode = was; await ctx.close(); }
+}
+
 // TERMINALS ARE KEPT ALIVE when you switch away. Switching back shows the same terminal with no new socket and no
 // replay; a hidden terminal takes frames into its own screen and touches nothing of the pane showing (title, focus,
 // size, the ready/seen/scroll helpers); a hidden terminal never sends a resize; the least recently used unpinned ones
@@ -22215,7 +22324,7 @@ async function main() {
       termDebug: termDebugSection, termSortStarted: termSortStartedSection,
       noReadyChildren: noReadyChildrenSection, childUnderParent: childUnderParentSection, topNav: topNavSection,
       childFold: childFoldSection, liveHome: liveHomeSection,
-      pulls: pullsSection, prMove: prMoveSection, hubRepos: hubReposSection, hubReposShelf: hubReposShelfSection, hubReposLedger: hubReposLedgerSection, hubReposFeed: hubReposFeedSection, changeReq: changeReqSection, mChangeReq: mChangeReqSection, trayHead: trayHeadSection, pullsAbsent: pullsAbsentSection, oneTooltip: oneTooltipSection, burnChart: burnChartSection, burnReadout: burnReadoutSection, switchPrewarm: switchPrewarmSection, attachAtOnce: attachAtOnceSection, keepAlive: keepAliveSection, switchBackCost: switchBackCostSection, keepMemory: keepMemorySection, pullsDrawer: pullsDrawerSection };
+      pulls: pullsSection, prMove: prMoveSection, hubRepos: hubReposSection, hubReposShelf: hubReposShelfSection, hubReposLedger: hubReposLedgerSection, hubReposFeed: hubReposFeedSection, changeReq: changeReqSection, mChangeReq: mChangeReqSection, trayHead: trayHeadSection, pullsAbsent: pullsAbsentSection, oneTooltip: oneTooltipSection, burnChart: burnChartSection, burnReadout: burnReadoutSection, switchPrewarm: switchPrewarmSection, attachAtOnce: attachAtOnceSection, fileView: fileViewSection, keepAlive: keepAliveSection, switchBackCost: switchBackCostSection, keepMemory: keepMemorySection, pullsDrawer: pullsDrawerSection };
     try {
       for (const n of process.env.HEADLESS_ONLY.split(",")) await only[n](browser, base);
     } catch (e) { fail("the headless run threw: " + (e && e.message ? e.message : e) + threwAt(e)); }
@@ -24287,6 +24396,7 @@ async function main() {
     await unit("burnReadout", () => burnReadoutSection(browser, base));
     await unit("switchPrewarm", () => switchPrewarmSection(browser, base));
     await unit("attachAtOnce", () => attachAtOnceSection(browser, base));
+    await unit("fileView", () => fileViewSection(browser, base));
     await unit("keepAlive", () => keepAliveSection(browser, base));
     await unit("pullsDrawer", () => pullsDrawerSection(browser, base));
     await unit("prMove", () => prMoveSection(browser, base));

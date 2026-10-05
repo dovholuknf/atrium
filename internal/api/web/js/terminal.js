@@ -908,6 +908,7 @@ function openTerm(task) {
   // Switching sessions means tearing the old one down first, or two sockets
   // write into one screen.
   // The terminal being left is kept hidden when it can be (see `keepPark`), torn down otherwise.
+  fileViewLeave();
   if (termSock || term) { keepPark(); closeTerm(true); }
 
   // ONE ENTRY FOR THIS ARRIVAL, not two. This runs before the card is set, so
@@ -934,6 +935,7 @@ function openTerm(task) {
   if (termKindFor !== task.id) termKind = "runner";
   termKindFor = task.id;
   termTask = task;
+  fileViewEnter();
   // The card this window reads changed, and other windows silence its alerts by it.
   sayWhetherFocused();
   // An open details drawer follows the terminal to this card. See js/peek.js.

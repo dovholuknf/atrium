@@ -367,6 +367,9 @@ function clearTermPane(switching) {
   // them is what made the restore useless across exactly the restart it was
   // written for. `closeTerm` forgets, because closing it is something you did.
   if (switching) return;
+  // Closed for good, so its file goes too.
+  if (was) fileViews.delete(bareId(was));
+  closeEditor();
   const pane = document.getElementById("term-pane");
   if (pane) pane.classList.remove("dead");
   // Undo what markTermDead did to the bar, so the next attach gets its own

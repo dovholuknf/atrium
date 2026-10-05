@@ -606,6 +606,61 @@ function editorState(s) {
 // leave the list they asked for.
 let termFilesAuto = false;
 
+// A FILE BELONGS TO THE CARD IT WAS OPENED ON.
+//
+// The editor is one set of elements in the pane, not one per card, so before this
+// it stayed on screen over whichever terminal was attached next, still saving to
+// the card it was read from. Leaving a card now puts its open file in this map,
+// text and scroll and the unsaved mark included, and arriving on one takes it
+// back out. Keyed by bare id like the rest of the list, and memory only: a
+// reload has never kept an open file and this does not start.
+const fileViews = new Map();
+
+function fileViewLeave() {
+  const ed = document.getElementById("t-edit");
+  if (!editing || !ed || ed.hidden || !termTask) return;
+  const box = document.getElementById("t-edit-text");
+  fileViews.set(bareId(termTask.id), {
+    editing, text: box.value, scroll: box.scrollTop,
+    state: document.getElementById("t-edit-state").textContent,
+    auto: termFilesAuto,
+  });
+  ed.hidden = true;
+  editing = null;
+  termFilesAuto = false;
+  setTermFiles(false);
+}
+
+// Called with the new card already attached, since the listing behind the
+// editor is read through it.
+function fileViewEnter() {
+  const v = termTask && fileViews.get(bareId(termTask.id));
+  if (!v) return;
+  fileViews.delete(bareId(termTask.id));
+  editing = v.editing;
+  editing.taskID = termTask.id;
+  document.getElementById("t-edit-where").textContent = editing.path;
+  document.getElementById("t-edit-where").dataset.tip = editing.path;
+  const box = document.getElementById("t-edit-text");
+  box.value = v.text;
+  box.oninput = () => editorState("not saved");
+  editorState(v.state);
+  paintEditorElsewhere();
+  setTermFiles(true);
+  termFilesAuto = v.auto;
+  const cut = editing.path.lastIndexOf("/");
+  loadFiles(cut > 0 ? editing.path.slice(0, cut) : "", termFilesCtx());
+  document.getElementById("t-edit").hidden = false;
+  box.scrollTop = v.scroll;
+}
+
+// A card that is gone takes its file with it.
+function fileViewPrune(tasks) {
+  if (!fileViews.size || !Array.isArray(tasks)) return;
+  const live = new Set(tasks.filter(t => t.supervised).map(t => bareId(t.id)));
+  for (const k of Array.from(fileViews.keys())) if (!live.has(k)) fileViews.delete(k);
+}
+
 function closeEditor() {
   const box = document.getElementById("t-edit");
   if (box) box.hidden = true;
