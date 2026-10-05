@@ -665,15 +665,19 @@ function ctxWarnMark(t) {
 }
 
 // THE CONTEXT LINE ALONG A ROW'S BOTTOM EDGE: the context now against the land-the-plane line, the same drawing as
-// the details' meter (ctxMeter in js/peek.js), no text. Faint and neutral under the warn line so the list is not a rainbow, amber
-// from the warn line up to the land line, danger from there, with a one-off glow as it crosses (never a loop),
+// the details' meter (ctxMeter in js/peek.js), no text. The good colour under 60% of the land line, amber from 60%,
+// danger from 85%, with a one-off glow as it crosses (never a loop),
 // unless the card is cycling its context, which says that itself. Full at the line plus ten percent. Drawn from
 // the row's own context_size, so no read of its own. Same guards as the mark.
+const CTX_LINE_WARM = 0.6;
+const CTX_LINE_HOT = 0.85;
 function ctxLine(t) {
   const c = t.context_size;
   if (!c || over(t) || t.status === "shelved" || typeof ctxMeter !== "function") return "";
   const land = landOver(t);
-  const heat = land ? " hot" : c.warn ? " warm" : "";
+  // Colour by the fraction of the limit: the theme's good colour, yellow from 60%, red from 85%.
+  const frac = Number(c.tokens) / (landThePlaneK(t) * 1000);
+  const heat = land || frac >= CTX_LINE_HOT ? " hot" : frac >= CTX_LINE_WARM ? " warm" : "";
   const once = land && !t.new_context ? " over" : "";
   return ctxMeter(c.tokens, landThePlaneK(t) * 1000, "ctxline" + heat + once, landTip(t));
 }

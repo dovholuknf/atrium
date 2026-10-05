@@ -1,6 +1,6 @@
 # u-new-context-bar-on-rows. A context bar under each terminal row
 
-Status: not started. Owned by @ui. Filed by the orchestrator 2026-10-01, from clint.
+Status: row colours done 2026-10-04 (see Design note), per-runner limit layer not built. Owned by @ui. Filed by the orchestrator 2026-10-01, from clint.
 
 Screenshot of the rows it goes on: `D:\git\github\dovholuknf\atrium\.atrium\incoming\20261001-093851-pasted.png`
 (the terminals list, untagged group).
@@ -51,3 +51,29 @@ Screenshot: `D:\git\github\dovholuknf\atrium\.atrium\incoming\20261001-142616-pa
 - Drop the figure, the CONTEXT label, "past the line" and "warns at 150k" on the row. Those stay in the popover and
   the bar's tooltip.
 - Share the drawing with the popover's meter rather than writing a second one, so the two cannot drift.
+
+## Design note (2026-10-04)
+
+Most of the bar had already landed (u-ctx-bar, then the land-the-plane work, see u-new-ctx-bar-findings.md): the thin
+line on terminals rows and board cards, drawn by the popover's own `ctxMeter`, the tick at the limit, one pulse past
+it, the tooltip "201k of 200k (land the plane), window 1M". The row already carries `context_size.tokens`, so the
+daemon needed no change and nothing polls. What this pass added is the colour ramp by fraction of the limit, in
+`ctxLine` (js/board.js):
+
+- Under 60% of the limit: the theme's good colour (teal, as the popover meter has it). From 60%: yellow. From 85%: red.
+  At or past the limit: red, full, one pulse (never a loop). A card cycling its context does not pulse.
+- The limit is the land-the-plane line (`landThePlaneK`: the per-browser setting, never below the card's own
+  threshold, so a card with `atrium:context-ceiling` shows against its ceiling when that is higher). The amber mark
+  (`ctxwarn`) still follows the daemon's warn flag at the 150k line and is unchanged.
+- No separate "limit" chip. The row's LAND badge was taken off on purpose after the review of ctx-badge (contrast on
+  dark skins), and the full red pulsing line plus the amber mark say it. Say so if the chip is wanted back.
+- Board cards use the same `ctxLine`. The stack list only has the amber mark. /m rows were not touched.
+
+### Not built: the per-runner limit layer
+
+Board default, then runner, then card. The runner layer is store, API and three editors, too big for this pass.
+Plan: @runtime adds `context_limit_k` to the harness row (store and the runners API, validated like the card's
+`threshold_k`) and resolves it in the daemon into `context_size.threshold_k` with a `source` field ("card", "runner",
+"board"), so the row needs no new read and the popover and `peekThresholdK` already show it. @ui then adds the runner
+field on the runners page, the card field in card settings, and the source label in each. The land-the-plane line is
+a browser setting today, so moving it into the daemon store (`land_k` beside `warn`) belongs in the same step.

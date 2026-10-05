@@ -8932,9 +8932,10 @@ async function ctxLineSection(browser, base) {
       const dir = process.env.ROWFLOOD_SHOTS, tag = process.env.ROWFLOOD_TAG || "shot";
       const keep = wornTasks;
       wornTasks = [row("sh-plain", null, { display_title: "runtime", status: "working", worktree: "/tmp/cl/runtime" }),
-        row("sh-10", 20000, { display_title: "review", worktree: "/tmp/cl/review" }),
-        row("sh-80", 160000, { display_title: "r-owed-answers", worktree: "/tmp/cl/r-owed-answers" }),
-        row("sh-130", 260000, { display_title: "fabric", worktree: "/tmp/cl/fabric" }),
+        row("sh-10", 40000, { display_title: "review (green, 20%)", worktree: "/tmp/cl/review" }),
+        row("sh-70", 140000, { display_title: "r-owed-answers (yellow, 70%)", worktree: "/tmp/cl/r-owed-answers" }),
+        row("sh-90", 180000, { display_title: "ui (red, 90%)", worktree: "/tmp/cl/ui" }),
+        row("sh-130", 260000, { display_title: "fabric (at limit, 130%)", worktree: "/tmp/cl/fabric", telemetry: { window: 1000000 } }),
         row("sh-long", 135000, { display_title: "a very long card title that has to wrap onto a second line in a narrow list", worktree: "/tmp/cl/orchestrator-with-a-long-path" })];
       for (const [w, h] of [[2000, 700], [390, 700]]) {
         await wp.setViewportSize({ width: w, height: h });
@@ -9031,7 +9032,7 @@ async function ctxLineSection(browser, base) {
     const r = got.rows;
     if (!(r.plainH > 0)) fail("no plain row to compare the height with.");
     for (const [id, w, cls] of [["cl-40", "27.3%", "peek-bar ctxline"], ["cl-70", "47.7%", "peek-bar ctxline"],
-      ["cl-90", "61.4%", "peek-bar ctxline"], ["cl-warm", "77.3%", "peek-bar ctxline warm"],
+      ["cl-90", "61.4%", "peek-bar ctxline warm"], ["cl-warm", "77.3%", "peek-bar ctxline hot"],
       ["cl-over", "91.4%", "peek-bar ctxline hot over"]]) {
       const b = r[id];
       if (!b) { fail(id + " has no context line."); continue; }
@@ -9053,9 +9054,14 @@ async function ctxLineSection(browser, base) {
     if (r["cl-over"] && r["cl-over"].tip !== "201k of 200k (land the plane), window 1M") fail("the line's tooltip: " + (r["cl-over"] || {}).tip);
     if (r["cl-over"] && r["cl-over"].landchip) fail("past the land line the row draws a LAND badge: " + JSON.stringify(r["cl-over"]));
     if (r["cl-over"] && !r["cl-over"].chip) fail("past the land line the row lost the amber warn mark.");
-    // Heat steps: neutral, amber at warn, danger at land: three different fills.
-    if (r["cl-70"] && r["cl-warm"] && r["cl-over"] && new Set([r["cl-70"].fill, r["cl-warm"].fill, r["cl-over"].fill]).size !== 3) {
-      fail("the context line's heat steps are not three colours: " + [r["cl-70"].fill, r["cl-warm"].fill, r["cl-over"].fill]);
+    // Heat steps by the fraction of the limit: good under 60% (105k of 200k), amber from 60% (135k), danger from 85%
+    // (170k) and past the limit (201k): three different fills, and the tooltip says the figure on every one.
+    if (r["cl-70"] && r["cl-90"] && r["cl-over"] && new Set([r["cl-70"].fill, r["cl-90"].fill, r["cl-over"].fill]).size !== 3) {
+      fail("the context line's heat steps are not three colours: " + [r["cl-70"].fill, r["cl-90"].fill, r["cl-over"].fill]);
+    }
+    if (r["cl-warm"] && r["cl-over"] && r["cl-warm"].fill !== r["cl-over"].fill) fail("85% of the limit is not the danger fill.");
+    for (const [id, tip] of [["cl-70", "105k of 200k"], ["cl-90", "135k of 200k"], ["cl-warm", "170k of 200k"]]) {
+      if (r[id] && r[id].tip !== tip) fail(id + " tooltip is " + r[id].tip + ", want " + tip);
     }
     // A row with a context figure looks as strong as a plain one: same row background and border whatever the context.
     for (const id of ["cl-40", "cl-warm", "cl-over"]) {
@@ -9159,7 +9165,7 @@ async function landThePlaneSection(browser, base) {
     let r = await read();
     // Default 200k: only 201k is past it. 170k is amber with the small mark, 100k is neutral.
     if (!/ hot over/.test(r["lp-201"].cls) || r["lp-201"].badge) fail("201k with the default line is not a danger line without a badge: " + JSON.stringify(r["lp-201"]));
-    if (!/ warm$/.test(r["lp-170"].cls) || r["lp-170"].badge || !r["lp-170"].mark) fail("170k is not amber with the small mark: " + JSON.stringify(r["lp-170"]));
+    if (!/ hot$/.test(r["lp-170"].cls) || r["lp-170"].badge || !r["lp-170"].mark) fail("170k (85% of the line) is not danger with the small mark: " + JSON.stringify(r["lp-170"]));
     if (/ (warm|hot)/.test(r["lp-100"].cls) || r["lp-100"].badge) fail("100k is not neutral: " + JSON.stringify(r["lp-100"]));
     if (r["lp-201"].border !== r["lp-100"].border) fail("a card past the line has a different border from a plain one.");
     // The pref moves the line. 160k: 170k and 201k are past it, 100k still not.
@@ -9195,11 +9201,11 @@ async function landThePlaneSection(browser, base) {
       if (!box) return { missing: true };
       const out = { placeholder: box.placeholder, hint: (document.querySelector("#s-landk-field .hintline") || {}).textContent || "" };
       box.value = "5"; saveLandK(); out.junk = localStorage.getItem("atrium.landThePlaneK");
-      const before = document.querySelector('#term-list [data-id="lp-170"] .ctxline.hot') ? "badge" : "none";
+      const before = document.querySelector('#term-list [data-id="lp-170"] .ctxline.over') ? "badge" : "none";
       box.value = "160"; saveLandK(); out.saved = localStorage.getItem("atrium.landThePlaneK");
       await new Promise(r => setTimeout(r, 400));
       out.rowBefore = before;
-      out.rowAfter = document.querySelector('#term-list [data-id="lp-170"] .ctxline.hot') ? "badge" : "none";
+      out.rowAfter = document.querySelector('#term-list [data-id="lp-170"] .ctxline.over') ? "badge" : "none";
       box.value = ""; saveLandK(); out.cleared = localStorage.getItem("atrium.landThePlaneK");
       return out;
     });
