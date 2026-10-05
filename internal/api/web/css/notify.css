@@ -32,12 +32,15 @@
      for a form with a sentence under it. */
   #toastlog .dlg-head { flex: 0 0 auto; padding: 12px 14px; align-items: center; }
   #toastlog .dlg-head h2 { margin: 0; font-size: var(--fs-md); }
-  /* THE HEAD IS ONE ROW AT EVERY WIDTH. A wrapped button reads as broken, so the buttons keep their size and the
-     title is what gives: `min-width: 0` lets it shrink and the ellipsis says it was cut, so nothing overlaps and
-     nothing drops to a second line. */
-  #toastlog .dlg-head { flex-wrap: nowrap; gap: var(--sp-2); }
-  #toastlog .dlg-head > .grow { flex: 1 1 0; min-width: 0; overflow: hidden; }
-  #toastlog .dlg-head > .grow > * { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  /* THE TITLE IS NEVER SQUEEZED. It keeps the width of its own words (`min-width: max-content`) and a fixed gap
+     separates it from the first button, so the focus ring of "turn off" cannot reach the last letters of
+     "notifications". When the tray is too narrow for the title and the buttons on one line, the buttons wrap
+     under it, and the row gap keeps the lines apart. */
+  #toastlog .dlg-head { flex-wrap: wrap; gap: var(--sp-2) var(--sp-4); }
+  /* `display: block` because the phone rules hide every bare `.grow` at 900px and under, which took the tray's title
+     with it. */
+  #toastlog .dlg-head > .grow { display: block; flex: 1 1 auto; min-width: max-content; }
+  #toastlog .dlg-head > .grow > * { white-space: nowrap; }
   #toastlog .dlg-head > button { flex: none; white-space: nowrap; padding: 5px 8px; font-size: var(--fs-sm); }
   #toastlog .dlg-body { flex: 1; min-height: 0; display: flex; padding: 0; }
   .toastlog { display: flex; flex-direction: column; flex: 1; min-height: 0; overflow: auto; }

@@ -20174,6 +20174,57 @@ async function mChangesRealSection(browser) {
   if (!bad) console.log("mChangesReal ok");
 }
 
+// THE TRAY'S TITLE NEVER TOUCHES ITS FIRST BUTTON. At the narrowest tray the board allows (92vw of a 320px window) the
+// head wraps its buttons rather than squeezing the title: nothing in the head overlaps anything else, the title is whole (not
+// ellipsised) and on one line, and when the first button shares the title's line a gap of at least 8px stays between.
+async function trayHeadSection(browser, base) {
+  const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+  const p = await ctx.newPage();
+  const errors = [];
+  p.on("pageerror", e => errors.push(String(e)));
+  try {
+    await p.goto(base + "/", { waitUntil: "domcontentloaded" });
+    await p.waitForFunction(() => typeof alerting !== "undefined" && !!document.getElementById("toastlog"), null, { timeout: slow(15000) });
+    for (const w of [320, 360, 901, 1400]) {
+      await p.setViewportSize({ width: w, height: 800 });
+      await p.evaluate(() => { const d = document.getElementById("toastlog"); if (!d.open) d.showModal(); });
+      await p.waitForTimeout(250);
+      const v = await p.evaluate(() => {
+        const head = document.querySelector("#toastlog .dlg-head");
+        const r = e => { const b = e.getBoundingClientRect(); return { l: b.left, r: b.right, t: b.top, b: b.bottom }; };
+        const title = document.querySelector("#toastlog .dlg-head h2");
+        const tr = r(title);
+        if (!title.getClientRects().length) return { hidden: true };
+        const kids = [...head.children].filter(e => e.getClientRects().length && !e.classList.contains("grow"));
+        const hr = r(head);
+        const boxes = kids.map(r);
+        let overlap = "";
+        const all = [r(head.querySelector(".grow")), ...boxes];
+        for (let i = 0; i < all.length; i++) for (let j = i + 1; j < all.length; j++) {
+          const a = all[i], b = all[j];
+          if (a.l < b.r - 0.5 && b.l < a.r - 0.5 && a.t < b.b - 0.5 && b.t < a.b - 0.5) overlap += i + "/" + j + " ";
+        }
+        const first = boxes[0];
+        const sameLine = first.t < tr.b;
+        return {
+          overlap, whole: title.scrollWidth <= title.clientWidth, oneLine: tr.b - tr.t < 2 * parseFloat(getComputedStyle(title).lineHeight || 30),
+          gap: sameLine ? first.l - tr.r : null, sameLine, spill: boxes.some(b => b.r > hr.r + 0.5 || b.l < hr.l - 0.5), width: hr.r - hr.l,
+        };
+      });
+      const tag = "trayHead " + w + ": ";
+      if (v.hidden) fail(tag + "the title is not shown");
+      if (v.overlap) fail(tag + "head children overlap (" + v.overlap + "): " + JSON.stringify(v));
+      if (!v.whole) fail(tag + "the title is cut: " + JSON.stringify(v));
+      if (v.sameLine && v.gap < 8) fail(tag + "the first button sits " + v.gap + "px from the title: " + JSON.stringify(v));
+      if (v.spill) fail(tag + "a button spills out of the head: " + JSON.stringify(v));
+    }
+    if (errors.length) fail("trayHead: page errors: " + errors.join(" | "));
+  } finally {
+    await ctx.close();
+  }
+  if (!bad) console.log("trayHead ok");
+}
+
 // ── deploy ready: the pill, the dialog and the Deploy button ─────────────
 // The hub's endpoints are mocked per page: ready, blocked (with a hostile commit subject), refused over a share (403), refused
 // because the tip moved (409), running, finished and a plain daemon (404). The pill is read at load and again on the hub's
@@ -21992,7 +22043,7 @@ async function main() {
       mHomeOrder: mHomeOrderSection, cardUrlWayOut: cardUrlWayOutSection, phoneBoot: phoneBootSection, sayEnter: sayEnterSection, sendArrow: sendArrowSection, mTables: mTablesSection, mMarkdown: mMarkdownSection, mHostile: mHostileSection, mPictures: mPicturesSection, soundPhone: soundPhoneSection, phoneBell: phoneBellSection, mBell: mBellSection,
       mHomeOrder: mHomeOrderSection, cardUrlWayOut: cardUrlWayOutSection, phoneBoot: phoneBootSection, sayEnter: sayEnterSection, sendArrow: sendArrowSection, mTables: mTablesSection, mMarkdown: mMarkdownSection, mHostile: mHostileSection, mPictures: mPicturesSection, phoneRedirect: phoneRedirectSection,
       mHomeOrder: mHomeOrderSection, cardUrlWayOut: cardUrlWayOutSection, phoneBoot: phoneBootSection, sayEnter: sayEnterSection, sendArrow: sendArrowSection, mTables: mTablesSection, mMarkdown: mMarkdownSection, mHostile: mHostileSection, mPictures: mPicturesSection, mHidden: mHiddenSection, soundPhone: soundPhoneSection, phoneBell: phoneBellSection, mBell: mBellSection,
-      mViewer: mViewerSection, mHomeLive: mHomeLiveSection, mChanges: mChangesSection, mChangesReal: mChangesRealSection, deployReady: deployReadySection,
+      mViewer: mViewerSection, mHomeLive: mHomeLiveSection, mChanges: mChangesSection, mChangesReal: mChangesRealSection, deployReady: deployReadySection, trayHead: trayHeadSection,
       gearTermList: gearTermListSection, growlLinks: growlLinksSection, growlChoiceOnce: growlChoiceOnceSection,
       mOutputAt: mOutputAtSection, mStickBottom: mStickBottomSection, mSendFree: mSendFreeSection, mCardUpload: mCardUploadSection, mCompact: mCompactSection, mPinch: mPinchSection, mPrompts: mPromptsSection,
       cardUrlWinName: cardUrlWinNameSection,
@@ -24029,6 +24080,7 @@ async function main() {
     await unit("mViewer", () => mViewerSection(browser));
     await unit("mChanges", () => mChangesSection(browser));
     await unit("mChangesReal", () => mChangesRealSection(browser));
+    await unit("trayHead", () => trayHeadSection(browser, base));
     await unit("deployReady", () => deployReadySection(browser, base));
     await unit("mHomeLive", () => mHomeLiveSection(browser));
     await unit("soundPhone", () => soundPhoneSection(browser, base));

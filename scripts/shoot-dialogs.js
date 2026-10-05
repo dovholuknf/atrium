@@ -181,7 +181,7 @@ const SHOTS = {
   const names = Object.keys(SHOTS).filter(n => !only || only.includes(n));
   for (const skin of skins) {
     for (const name of names) {
-      const ctx = await browser.newContext({ viewport: { width: 1440, height: 1000 } });
+      const ctx = await browser.newContext({ viewport: { width: +process.env.SHOOT_W || 1440, height: +process.env.SHOOT_H || 1000 } });
       const p = await ctx.newPage();
       const errs = [];
       p.on("pageerror", e => errs.push(String(e)));
@@ -193,7 +193,7 @@ const SHOTS = {
       await p.waitForTimeout(600);
       // A dialog focuses its first control, and a focused button shows its tooltip over the shot.
       await p.evaluate(() => { document.activeElement && document.activeElement.blur(); document.getElementById("tip").classList.remove("on"); });
-      await p.mouse.move(2, 998);
+      await p.mouse.move(2, (+process.env.SHOOT_H || 1000) - 2);
       await p.waitForTimeout(200);
       const file = path.join(out, `${skin}-${name}.png`);
       await p.screenshot({ path: file });
