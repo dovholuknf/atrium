@@ -956,7 +956,7 @@ function connectTerm(taskID) {
     // Back after a single-session restart too, for the same reason. The card is
     // up, so the expectation has done its job and a later exit is an exit.
     clearSessionRestart(taskID);
-    termWait("");
+    termWait(typeof openingSay === "function" ? openingSay(taskID) : "");
     // RESET BEFORE THE REPLAY LANDS, on a reconnect only.
     //
     // The daemon replays the whole scrollback on every attach. A session switch
@@ -1018,6 +1018,8 @@ function connectTerm(taskID) {
       return;
     }
     if (!term) return;
+    // The first output ends a resume's "opening". See `resumeOpening`.
+    if (typeof openingEnd === "function" && termTask && openingState(termTask.id)) openingEnd(termTask.id);
     // The scroll goes in the WRITE CALLBACK, not after the call. `term.write`
     // is asynchronous: it queues the bytes and parses them later, so scrolling
     // on the next line scrolls a buffer that has not grown yet, which is the

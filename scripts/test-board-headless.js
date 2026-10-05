@@ -4360,6 +4360,133 @@ async function sayWhenSection(browser, base) {
   if (errors.length) fail("the say-when page threw: " + errors.join(" | "));
 }
 
+// ── resuming a card says it is opening (u-new-resume-spinner) ─────────────
+// From the click until the terminal's first output the card, its row and the pane say "opening the conversation". A
+// second resume only points at it, a failed launch or the bound turns it into the reason. `RESUME_SHOTS=<dir>` writes
+// the pictures, tagged by `RESUME_TAG` (before|after), and runs on the old code too: only the asserts need the new.
+async function resumeSpinnerSection(browser, base) {
+  const was = tasksMode;
+  tasksMode = "land";
+  landCard("land-res", { supervised: false, resume_id: "sess-1", worktree: "/tmp/res", display_title: "big conversation" });
+  landList = [LAND["land-res"]];
+  landPerms = [];
+  const errors = [];
+  const shots = process.env.RESUME_SHOTS, tag = process.env.RESUME_TAG || "after";
+  const ctx = await landContext(browser);
+  let launches = 0, launchAnswer = null, release = null;
+  await ctx.route("**/v1/launch", async route => {
+    launches++;
+    await new Promise(r => { release = r; });
+    if (launchAnswer) { await route.fulfill({ status: 500, contentType: "application/json", body: JSON.stringify({ error: launchAnswer }) }); return; }
+    landCard("land-res", { supervised: true, resume_id: "sess-1", worktree: "/tmp/res", display_title: "big conversation" });
+    landList = [LAND["land-res"]];
+    await route.fulfill({ contentType: "application/json", body: JSON.stringify(LAND["land-res"]) });
+  });
+  await ctx.addInitScript(() => {
+    const Real = window.WebSocket;
+    window.WebSocket = function (url, protocols) {
+      if (!/\/attach(\?|$)/.test(url)) return new Real(url, protocols);
+      const s = { url, readyState: 0, binaryType: "arraybuffer", bufferedAmount: 0,
+        onopen: null, onclose: null, onmessage: null, onerror: null, send() {}, close() { this.readyState = 3; } };
+      window.__sock = s;
+      setTimeout(() => { s.readyState = 1; if (s.onopen) s.onopen({}); }, 0);
+      return s;
+    };
+    Object.assign(window.WebSocket, { CONNECTING: 0, OPEN: 1, CLOSING: 2, CLOSED: 3 });
+  });
+  const shot = async (p, name) => {
+    if (shots) await p.screenshot({ path: path.join(shots, tag + "-" + name + ".png"), clip: { x: 0, y: 0, width: 1400, height: 640 } });
+  };
+  const state = p => p.evaluate(() => {
+    const vis = e => !!e && !e.hidden;
+    const chip = [...document.querySelectorAll('.stackrow[data-id="land-res"] .chip.opening')].map(e => e.textContent.trim());
+    return { chip, pane: vis(document.getElementById("t-wait")) ? document.getElementById("t-wait-say").textContent : "" };
+  });
+  try {
+    const p = await ctx.newPage();
+    p.on("pageerror", e => errors.push(String(e)));
+    await p.goto(base, { waitUntil: "domcontentloaded" });
+    await p.waitForSelector('#stack-list .stackrow[data-id="land-res"]', { timeout: slow(15000) });
+    await p.evaluate(() => { allHarnesses = allHarnesses.map(h => h.id === "claude" ? Object.assign({}, h, { resume_args: ["--resume", "{resume}"] }) : h); });
+    await shot(p, "1-card");
+    const isNew = await p.evaluate(() => typeof openingState === "function");
+
+    // 1. Click: spinner on the row while the launch is out, a second resume does not launch again.
+    await p.evaluate(() => { window.__r1 = resumeCard("land-res", lastTasks.find(x => x.id === "land-res"), "terms", "sess-1"); });
+    await p.waitForFunction(() => document.querySelector('.stackrow[data-id="land-res"]'), null, { timeout: 5000 });
+    await p.waitForTimeout(150);
+    await shot(p, "2-opening");
+    if (isNew) {
+      let st = await state(p);
+      if (st.chip.length !== 1 || !/opening the conversation/.test(st.chip[0])) fail("the row did not say it is opening: " + JSON.stringify(st));
+      await p.evaluate(() => resumeCard("land-res", lastTasks.find(x => x.id === "land-res"), "terms", "sess-1"));
+      await p.evaluate(() => resumeCard("land-res", lastTasks.find(x => x.id === "land-res"), "terms"));
+      await p.waitForTimeout(150);
+      if (launches !== 1) fail("a second resume while opening launched again: " + launches + " launches.");
+      st = await state(p);
+      if (st.chip.length !== 1) fail("a second resume left " + st.chip.length + " chips on the row.");
+    }
+
+    // 2. The launch answers, the pane is up and still says so until output.
+    release();
+    await p.waitForFunction(() => window.__sock && termTask && termTask.id === "land-res", null, { timeout: slow(10000) });
+    await p.waitForTimeout(200);
+    await shot(p, "3-pane-opening");
+    if (isNew) {
+      const st = await state(p);
+      if (!/opening the conversation/.test(st.pane)) fail("the pane did not say it is opening once the socket was up: " + JSON.stringify(st));
+      if (st.chip.length !== 1) fail("the card lost its chip when the pane opened: " + JSON.stringify(st));
+    }
+
+    // 3. Output ends it, on the card and in the pane.
+    await p.evaluate(() => window.__sock.onmessage({ data: "hello\r\n" }));
+    await p.waitForTimeout(200);
+    await shot(p, "4-output");
+    if (isNew) {
+      const st = await state(p);
+      if (st.chip.length || st.pane) fail("first output did not end the spinner: " + JSON.stringify(st));
+    }
+
+    // 4. No output inside the bound: it turns to the reason, and a resume is allowed again.
+    if (isNew) {
+      await p.evaluate(() => { RESUME_BOUND_MS = 400; openingStart("land-res"); });
+      await p.waitForTimeout(250);
+      let st = await state(p);
+      if (!st.chip.length || /no output/.test(st.chip[0])) fail("before the bound it was not still spinning: " + JSON.stringify(st));
+      await p.waitForTimeout(400);
+      await shot(p, "5-slow");
+      st = await p.evaluate(() => ({ chip: [...document.querySelectorAll(".stackrow[data-id=\"land-res\"] .chip.opening")].map(e => e.textContent.trim()),
+        pane: document.getElementById("t-wait-say").textContent, spin: getComputedStyle(document.querySelector("#t-wait .spin")).display }));
+      if (!/no output after/.test(st.chip[0] || "") || !/no output after/.test(st.pane)) fail("the bound did not turn the spinner into the reason: " + JSON.stringify(st));
+      if (st.spin !== "none") fail("the pane kept spinning on the reason.");
+      await p.evaluate(() => { openingEnd("land-res"); RESUME_BOUND_MS = 30000; });
+    }
+
+    // 5. A failed launch is the reason, not a blank row.
+    await p.evaluate(() => { window.__sock = null; closeTerm(true); });
+    landCard("land-res", { supervised: false, resume_id: "sess-1", worktree: "/tmp/res", display_title: "big conversation" });
+    landList = [LAND["land-res"]];
+    await p.evaluate(() => refresh());
+    await p.waitForTimeout(400);
+    launchAnswer = "no such runner";
+    const before = launches;
+    await p.evaluate(() => { resumeCard("land-res", lastTasks.find(x => x.id === "land-res"), "terms", "sess-1"); });
+    await p.waitForTimeout(150);
+    release();
+    await p.waitForTimeout(400);
+    await shot(p, "6-failed");
+    if (isNew) {
+      if (launches !== before + 1) fail("the failing resume did not launch once: " + (launches - before));
+      const chip = await p.evaluate(() => [...document.querySelectorAll(".stackrow[data-id=\"land-res\"] .chip.opening")].map(e => e.textContent.trim()));
+      if (!/could not start it: .*no such runner/.test(chip[0] || "")) fail("a failed launch left no reason on the row: " + JSON.stringify(chip));
+    }
+  } finally {
+    tasksMode = was;
+    await ctx.close();
+  }
+  if (errors.length) fail("the resume page threw: " + errors.join(" | "));
+}
+
 // ── any paste still in flight after 20ms shows the spinner ────────────────
 // Test plan BB. What starts it is a paste gesture, not a size: a one-line paste
 // held on the socket shows it, one that drains and echoes inside 20ms never
@@ -22027,7 +22154,7 @@ async function main() {
       toastStays: toastStaysSection, groupColor: groupColorSection,
       groupDrag: groupDragSection, tooltip: tooltipSection, linkTip: linkTipSection,popoutTagFlip: popoutTagFlipSection, prefsEverywhere: prefsEverywhereSection, mPrefsEverywhere: (b) => mPrefsEverywhereSection(b), idleRate: idleRateSection, foldStill: foldStillSection,
       untaggedSort: untaggedSortSection, newCard: newCardSection, themePreview: themePreviewSection, themeLab: themeLabSection, land: landSection, reselect: reselectSection, clearKeepsPage: clearKeepsPageSection,
-      toastsTop: toastsTopSection, sayWhen: sayWhenSection, pasteSpinner: pasteSpinnerSection,
+      resumeSpinner: resumeSpinnerSection, toastsTop: toastsTopSection, sayWhen: sayWhenSection, pasteSpinner: pasteSpinnerSection,
       pasteBig: pasteBigSection, pasteBusy: pasteBusySection, typing: typingSection, alias: aliasSection, askAgain: askAgainSection, copySelect: copySelectSection, busyGuard: busyGuardSection, keepalive: keepaliveSection,
       stuck: stuckSection, blockerMark: blockerMarkSection, carryLink: carryLinkSection,
       skinScope: skinScopeSection, skinHeal: skinHealSection, toastLives: toastLivesSection,
@@ -23995,6 +24122,7 @@ async function main() {
     // ── say immediately, or when the turn is done ──────────────────────────
     await unit("sayWhen", () => sayWhenSection(browser, base));
     // ── any paste still in flight after 20ms shows the spinner ─────────────
+    await unit("resumeSpinner", () => resumeSpinnerSection(browser, base));
     await unit("pasteSpinner", () => pasteSpinnerSection(browser, base));
     await unit("pasteBig", () => pasteBigSection(browser, base));
     await unit("pasteBusy", () => pasteBusySection(browser, base));

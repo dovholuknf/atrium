@@ -1,0 +1,4 @@
+- Resuming a card now says "opening the conversation" on its card, its stack row and the terminals pane, from the click until the terminal's first output. Both `last conversation` and `choose...` do. (u-new-resume-spinner)
+- A second resume while it is opening launches nothing and pulses the chip. (u-new-resume-spinner)
+- After 30 seconds without output, or on a failed launch, the spinner turns into the reason and a resume is allowed again. (u-new-resume-spinner)
+- `HEADLESS_ONLY=resumeSpinner` covers the opening, the second resume, first output, the bound and a failed launch. (u-new-resume-spinner)

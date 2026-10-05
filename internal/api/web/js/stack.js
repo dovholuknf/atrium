@@ -468,6 +468,7 @@ function stackRow(t) {
     </div>
     <div class="chips">
       ${stuckMark(t)}
+      ${openingChip(t)}
       ${newCardChip(t)}
       ${tagChips(t)}
       ${modelChip(t)}

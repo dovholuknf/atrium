@@ -781,6 +781,7 @@ function cardHTML(t) {
         t.pinned ? '<span class="pin on" data-tip="pinned">&#9733;</span>' : ""}${
         runnerMark(t.runner)}${esc(t.display_title)}</div>
       <div class="chips">
+      ${openingChip(t)}
       ${newCardChip(t)}
       ${typeof aliasChip === "function" ? aliasChip(t) : ""}
       ${modelChip(t)}

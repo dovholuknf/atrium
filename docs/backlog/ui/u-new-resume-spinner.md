@@ -1,6 +1,6 @@
 # u-new-resume-spinner. Resuming a card says it is opening
 
-Status: not started. Owned by @ui. Filed by the orchestrator 2026-10-01, from clint.
+Status: built for the desktop board, /m open (see the question below). Owned by @ui. Filed by the orchestrator 2026-10-01, from clint.
 
 ## What clint asked
 
@@ -24,3 +24,24 @@ did nothing, and the obvious reaction is a second click.
 
 - The bound before "this is taking longer than it should". Start at 30 seconds, since a lean resume of a large
   conversation is the slow case.
+
+## Design note
+
+- A resume is `opening` from the click until the terminal's first output frame, not until `/v1/launch` answers. State is
+  held per card in `resumeOpening` (js/card-menu.js), keyed by bare id.
+- The card and row carry a chip "opening the conversation" with a spinner (in the card and stack templates, so a redraw
+  keeps it). The terminals pane shows the same words in its wait banner, which `openTerm` and the socket open used to
+  clear. Both entries under `resume` (`the last conversation`, `choose...`, and the lean `with my full setup` one) go
+  through `resumeNow`, so all of them are covered.
+- A second resume while `opening` launches nothing and pulses the chip, with a toast saying it is already opening.
+- Bound is 30 seconds (`RESUME_BOUND_MS`). Past it, or on a failed launch, the chip and the pane become the reason
+  (`no output after 30 seconds...` or `could not start it: <error>`), the pane's spinner is hidden, and a resume is
+  allowed again, since the first one may be dead. A late output still clears it.
+- Resume into its own window: the chip clears once the window is opened, because that window is a separate page and
+  has its own wait banner. The opened window does not yet say "opening the conversation" itself.
+
+## Question for clint
+
+/m has no card menu and no resume entry today (m/js has no long press and no `resume`). There is nothing there to
+attach a spinner to, so the /m clause is not built. Either /m gets a resume action first (its own item), or the
+clause drops. Which?
