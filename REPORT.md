@@ -1,28 +1,34 @@
-# Report: u-new-gate-readout-only-when-blocking
+# u-new-details-debug-section
 
 ## What changed
-- `internal/api/web/js/typing.js`: new `typingGateText(s, held)` returns `{ text, blocking }`, the one place the
-  readout's words live (the details drawer item can reuse it). `paintTyping` now always shows a line while the
-  readout is on. Before, it hid itself unless a message was held.
-- `internal/api/web/css/terminal.css`: `.term-typing.calm`, dim, no stripe.
-- `scripts/test-board-headless.js` (`typingSection`): the old "hidden when the gate opens" check is now "reads
-  'line empty', dim". New checks for the three states and that the line's text is never repeated. Optional
-  `TYPING_SHOTS` and `TYPING_SHOT_PREFIX` env vars write the PNGs.
-- Item file gained a Design note. Changelog added.
+
+Most of the item was already on this branch from e310a401 (2026-10-01): the debug section in the terminal drawer,
+the countdown, outside click and Escape, and the switches moved in. This pass finished the rest.
+
+- `js/peek-debug.js`: the debug rows now reuse `typingGateText(s, held)`. When a message is held and blocked, a
+  "blocked" row says it in the gate line's own words.
+- `scripts/test-board-headless.js` (`termDebug`):
+  - new checks: a click in the terminal closes the drawer and focuses the terminal, and the card popover carries no
+    debug section
+  - the gate line expectations were stale against `typingGateText` and now match the design note
+  - the input lag step waits for an in-flight `/v1/settings` read before changing the mock. This failed on the
+    branch before my changes too, because the read is shared while in flight
+  - `DEBUG_SHOTS=<dir>` (and `DEBUG_SHOTS_TAG`) writes the drawer PNGs
+- `changelog/ui/2026-10-04-u-new-details-debug-section.md`, backlog item marked done with its design note.
 
 ## Design notes
-- Nothing held: dim "line empty" or "N chars on the line". Held: "1 message from @runtime waits: N chars on your line".
-- Looks empty (only blanks on the line, count above 0): the count plus the line quoted with blanks as dots, cut at 40.
-- "Looks empty" is judged from atrium's model of the line, not the screen. Open question for clint if that is too
-  narrow, noted in the item.
-- An open gate reads as the dim line even if the card still shows a held message for a moment.
+
+- The settings dialog points at the drawer and no longer has the two checkboxes. One place to look.
+- The switches read and write the same localStorage keys as before, so the cross-window work needs nothing from here.
+- The gate is read only while the drawer is open, and not in a hidden tab.
 
 ## Tests
-`HEADLESS_ONLY=typing node scripts/test-board-headless.js` (playwright-core from D:/tmp/termswitch via a shim on
-NODE_PATH, ATRIUM_LOCATION and ATRIUM_DEBUG_INPUTLAG cleared): "the sections asked for passed: typing". The full
-suite was not run.
 
-## Screens
-`docs/screens/u-new-gate-readout-only-when-blocking/`: `before-` and `after-` each of `nothing-held.png`,
-`message-held.png`, `looks-empty.png`. The before shots show the old code (no line when nothing is held, the same
-"N chars" for the looks-empty case).
+`NODE_PATH=<a sibling worktree's node_modules> HEADLESS_ONLY=termDebug node scripts/test-board-headless.js`
+with `ATRIUM_LOCATION` and `ATRIUM_DEBUG_INPUTLAG` cleared: `termDebug ok`. Only that unit was run, not the full
+suite. This worktree has no node_modules, so playwright came from `u-new-context-bar-on-rows`.
+
+## PNGs
+
+`docs/screens/u-new-details-debug-section/`: `before-` and `after-` each for `gate-closed-countdown.png` and
+`gate-open.png`. Real board code, headless. Before is without the "blocked" row, after has it.
