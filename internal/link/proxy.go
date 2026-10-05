@@ -45,9 +45,11 @@ import (
 
 // Proxy serves the board from a hub.
 type Proxy struct {
-	hub    *Hub
-	board  fs.FS
-	assets *webasset.Server
+	// resourcesDir is the state dir resources.md is read from. See resources_mcp.go.
+	resourcesDir string
+	hub          *Hub
+	board        fs.FS
+	assets       *webasset.Server
 	// boardID is the hash of THIS hub's board tree. See `rewriteHealth` for why
 	// it is here and not taken from the room.
 	boardID string
@@ -1365,6 +1367,8 @@ func (p *Proxy) SetControl(boardAddr string) {
 		return p.capStore
 	}
 	c.docs = p.docStore
+	c.resourcesDir = p.resourcesStateDir
+	c.rooms = p.roomsForResources
 	p.control = c.handler()
 	p.mu.Lock()
 	p.ctl = c

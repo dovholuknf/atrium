@@ -921,6 +921,11 @@ func (d *Daemon) launchLocked(req LaunchRequest) (*store.Task, error) {
 		// instead, on a fresh start only, like the brief.
 		wanted = withGitURLLine(wanted)
 	}
+	// THE RESOURCES LINE rides on every fresh start with a prompt, an outside-code card included: it names a tool
+	// and carries no credential. With a brief it is in BRIEF.md already (writeBriefFile).
+	if strings.TrimSpace(req.Brief) == "" && req.Resume == "" && wanted != "" {
+		wanted = withResourcesLine(wanted)
+	}
 	// THE CARD'S MODEL IS THE FALLBACK, exactly as its prompt is, and for a
 	// different reason: a relaunch or an unshelve of a card that was started
 	// on a model has to come back on that model, or the session changes
@@ -1575,6 +1580,7 @@ func writeBriefFile(cwd, brief string, gitURL bool) (string, error) {
 	if gitURL {
 		body = withGitURLLine(brief)
 	}
+	body = withResourcesLine(body)
 	if !strings.HasSuffix(body, "\n") {
 		body += "\n"
 	}
@@ -1598,6 +1604,19 @@ func withGitURLLine(text string) string {
 		return text
 	}
 	return strings.TrimRight(text, "\n") + "\n\n" + gitURLLine
+}
+
+// resourcesLine is the one framing line every launched card carries, lean or not, so a worker finds the build
+// machines and environments without its prompt naming them. It names the tool and never what the file holds, so
+// the brief stays small and the answer is current when it is asked. See docs/fabric/f-003-resources-design.md.
+const resourcesLine = "`atrium_resources` lists the machines and environments you may use."
+
+// withResourcesLine appends resourcesLine to a brief or prompt, once.
+func withResourcesLine(text string) string {
+	if strings.Contains(text, resourcesLine) {
+		return text
+	}
+	return strings.TrimRight(text, "\n") + "\n\n" + resourcesLine
 }
 
 // briefPrompt puts the instruction to read the briefing ahead of the task.
