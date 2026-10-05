@@ -40,3 +40,14 @@ animation" rule also comes from this.
 Cheapest win: a still sound button (or a few pulse cycles) and an opaque header. Full table, scripts and raw results
 
 are in the @ui atrium_report and the ui-director scratchpad on m1mini.
+
+## Question for clint (@ui director, 2026-10-04)
+
+Skipped tonight: this item builds the row you pick, and no pick is recorded. Which of these?
+
+1. The cheapest win: the sound button stops pulsing (still, or three pulses then still) and the sticky header goes
+   opaque (no backdrop blur). Measured GPU 18.5 to about 6, no visible loss. Recommended.
+2. Option 1 plus working.gif swapped for a still spinner glyph (about +4.8 GPU back, but the card stops moving).
+3. Something else from the table.
+
+Answer here or to @ui and a worker builds it with the same measurement before and after.
