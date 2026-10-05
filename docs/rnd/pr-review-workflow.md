@@ -161,7 +161,7 @@ edits `prrunner.go`, `prworktree.go`, `forgeaccess.go` or `internal/forge`, whic
 
 ## State
 
-Design written 2026-10-04 (828a8cd0). Running: `r-pr-paste-review` on sg3 from claude/main 5d68bfa2. `u-pr-finding-states`
+Design written 2026-10-04 (828a8cd0). Done: `r-pr-paste-review` claude/r-pr-paste-review@5a6935df (sg3). `u-pr-finding-states`
 was written on sgg at c45893bc with nothing run (sgg has no Go or node), so it was moved to sg3 by bundle and a
 verify worker is finishing it there. Waiting: `f-pr-review-move`, for a free slot and for `r-hub-forge` to land
 (it owns `prclaim.go`). sgg has no Go or node, so a worker there can only write code.
