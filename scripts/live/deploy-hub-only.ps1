@@ -3,7 +3,9 @@
 #
 # -WhatIf prints every process it would stop and every file it would copy or rename, and changes nothing. The gate
 # is skipped under -WhatIf, because asking the board is itself a toast on clint's screen.
-param([switch]$WhatIf)
+#
+# -NoGate skips the idle-board gate. clint 2026-10-05: "hub can fucking update whenever".
+param([switch]$WhatIf, [switch]$NoGate)
 
 $ErrorActionPreference = 'Continue'
 $LiveTag = 'HUBONLY'
@@ -20,7 +22,9 @@ if (-not $WhatIf) {
 
 # Gate: wait for an idle board, count down in a toast clint can click to pause (docs/fabric/hub-restart-gate.md).
 # Exit 0 means go (or a hub too old to ask), anything else means leave the hub alone.
-if (-not $WhatIf) {
+if ($NoGate) {
+  Say 'gate skipped (-NoGate)'
+} elseif (-not $WhatIf) {
   & 'D:\git\github\dovholuknf\atrium\scripts\hub-restart-gate.ps1' | ForEach-Object { Say "gate: $_" }
   if ($LASTEXITCODE -ne 0) { Say 'restart held by the board, nothing changed'; exit 0 }
 } else { Say 'WHATIF: run scripts\hub-restart-gate.ps1 and stop here unless it says go' }
