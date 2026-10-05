@@ -2064,10 +2064,10 @@ func (d *Daemon) spawnPTYResume(taskID, cmdName string, args []string, cwd strin
 	// diagnostic.
 	var tap *os.File
 	if dir := strings.TrimSpace(os.Getenv("ATRIUM_TAP_DIR")); dir != "" {
-		if err := os.MkdirAll(dir, 0o755); err != nil {
+		if err := os.MkdirAll(dir, 0o700); err != nil {
 			log.Printf("[atrium] tap dir %s: %v", dir, err)
 		} else if f, err := os.OpenFile(filepath.Join(dir, taskID+".tap"),
-			os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644); err != nil {
+			os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600); err != nil {
 			log.Printf("[atrium] tap for %s: %v", taskID, err)
 		} else {
 			tap = f

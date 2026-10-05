@@ -632,6 +632,13 @@ func Open(path string) (*Store, error) {
 		fresh = true
 	}
 
+	// The file is made owner-only up front, so it is never readable by others
+	// even for an instant. SQLite gives -wal and -shm the main file's mode.
+	if fresh {
+		if f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY, 0o600); err == nil {
+			f.Close()
+		}
+	}
 	db, err := sql.Open("sqlite", path)
 	if err != nil {
 		return nil, fmt.Errorf("open %s: %w", path, err)
@@ -700,6 +707,13 @@ func Open(path string) (*Store, error) {
 	// setting is logged and skipped rather than fatal: a misconfigured cold
 	// trail must never keep the daemon from starting.
 	s.configureSinks(path)
+	// An existing database made before this was 0600 is tightened here, with
+	// its sidecars. It holds the session key, the OIDC secret and launch_env.
+	for _, suffix := range []string{"", "-wal", "-shm"} {
+		if err := os.Chmod(path+suffix, 0o600); err != nil && !os.IsNotExist(err) {
+			log.Printf("store: chmod %s: %v", path+suffix, err)
+		}
+	}
 	return s, nil
 }
 
