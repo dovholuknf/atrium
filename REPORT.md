@@ -82,7 +82,8 @@ mid-run and also goes through the hub. The gh and bb logins live on the hub alon
 `env -u ATRIUM_LOCATION -u ATRIUM_DEBUG_INPUTLAG go test ./...`: everything passes except packages with failures that
 are environmental and not in this branch's code:
 - `internal/daemon` and `internal/ptyhost`: `listen unix ... bind: invalid argument` (the temp socket path is too long
-  on macOS). `TestNoTestHereCanReachALiveRoom` sees a Windows `claude.cmd` path. `TestKeepaliveForkCarriesALeanCards...`.
+  on macOS). `TestNoTestHereCanReachALiveRoom` sees a Windows `claude.cmd` path, and the keepalive system prompt test
+  fails.
 - `internal/api`: `TestTheWalkerLaunchSetAndClear` on the /private/var vs /var symlink.
 
 ## Commits
