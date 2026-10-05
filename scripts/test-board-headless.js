@@ -17841,6 +17841,43 @@ async function mCardUploadSection(browser) {
   if (!bad) console.log("mCardUpload ok");
 }
 
+// The details' counts show a dash for a field the room did not send, and a 0 for a real zero. See js/peek.js.
+async function peekDashSection(browser, base) {
+  const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+  try {
+    const p = await ctx.newPage();
+    await p.goto(base, { waitUntil: "domcontentloaded" });
+    await p.waitForFunction(() => typeof peekBody === "function");
+    const r = await p.evaluate(() => {
+      const t = { id: "x", resume_id: "r" };
+      const read = v => {
+        const d = document.createElement("div");
+        d.innerHTML = peekBody(t, v);
+        return [...d.querySelectorAll(".peek-cell")].map(c => ({
+          label: c.querySelector("span").textContent, value: c.querySelector("b").textContent, tip: c.dataset.tip || "" }));
+      };
+      return {
+        missing: read({ context_now: 61000 }),
+        empty: read({ context_now: 61000, totals: {} }),
+        zero: read({ context_now: 61000, by_cause: {}, totals: { input: 0, output: 0, cache_read: 0, cache_write_5m: 0, cache_write_1h: 0 } }),
+        real: read({ context_now: 61000, by_cause: { operator: { rows: 2, replies: 9 } },
+          totals: { input: 5, output: 700, cache_read: 4000, cache_write_5m: 11, cache_write_1h: 0 } }),
+      };
+    });
+    for (const k of ["missing", "empty"]) {
+      for (const c of r[k]) {
+        if (c.value !== "–" || !/not reported by this room/.test(c.tip)) fail("peekDash " + k + ": " + c.label + " drew " + JSON.stringify(c));
+      }
+    }
+    for (const c of r.zero) if (c.value !== "0") fail("peekDash zero: " + c.label + " drew " + JSON.stringify(c.value) + ", not 0");
+    const out = r.real.find(c => c.label === "out");
+    if (!out || out.value !== "700" || r.real.find(c => c.label === "calls").value !== "9") fail("peekDash real: " + JSON.stringify(r.real));
+  } finally {
+    await ctx.close();
+  }
+  if (!bad) console.log("peekDash ok");
+}
+
 async function bootCleanSection(browser, base) {
   const raw = fs.readFileSync(path.join(WEB_ROOT, "index.html"));
   const views = [{ w: 1400, h: 900 }, { w: 390, h: 844, phone: true }, { w: 412, h: 915, phone: true }];
@@ -23883,7 +23920,7 @@ async function main() {
       u001Audit: u001AuditSection,
       pasteStart: pasteStartSection, pasteDone: pasteDoneSection, pasteOldRoom: pasteOldRoomSection, pasteClose: pasteCloseSection,
       growlQuestionShots: growlQuestionShotsSection, growlQuestionBody: growlQuestionBodySection, growlReplyGrow: growlReplyGrowSection, growlChoices: growlChoicesSection, replies: repliesSection, repliesOf: repliesOfSection, repliesShots: repliesShotsSection, growlStable: growlStableSection, growlOnIt: growlOnItSection, mGrowlQuestion: mGrowlQuestionSection,
-      roomsSetup: roomsSetupSection, bootClean: bootCleanSection, mReload: mReloadSection, mReconnect: mReconnectSection, mActivityRead: mActivityReadSection, mReadRetry: mReadRetrySection, mWorking: mWorkingSection, mOwnMessages: mOwnMessagesSection, mBubbles: mBubblesSection, mRecapSheet: mRecapSheetSection,
+      roomsSetup: roomsSetupSection, bootClean: bootCleanSection, peekDash: peekDashSection, mReload: mReloadSection, mReconnect: mReconnectSection, mActivityRead: mActivityReadSection, mReadRetry: mReadRetrySection, mWorking: mWorkingSection, mOwnMessages: mOwnMessagesSection, mBubbles: mBubblesSection, mRecapSheet: mRecapSheetSection,
       mHomeOrder: mHomeOrderSection, cardUrlWayOut: cardUrlWayOutSection, phoneBoot: phoneBootSection, sayEnter: sayEnterSection, sendArrow: sendArrowSection, mTables: mTablesSection, mMarkdown: mMarkdownSection, mHostile: mHostileSection, mPictures: mPicturesSection, soundPhone: soundPhoneSection, phoneBell: phoneBellSection, mBell: mBellSection,
       mHomeOrder: mHomeOrderSection, cardUrlWayOut: cardUrlWayOutSection, phoneBoot: phoneBootSection, sayEnter: sayEnterSection, sendArrow: sendArrowSection, mTables: mTablesSection, mMarkdown: mMarkdownSection, mHostile: mHostileSection, mPictures: mPicturesSection, phoneRedirect: phoneRedirectSection,
       mHomeOrder: mHomeOrderSection, cardUrlWayOut: cardUrlWayOutSection, phoneBoot: phoneBootSection, sayEnter: sayEnterSection, sendArrow: sendArrowSection, mTables: mTablesSection, mMarkdown: mMarkdownSection, mHostile: mHostileSection, mPictures: mPicturesSection, mHidden: mHiddenSection, soundPhone: soundPhoneSection, phoneBell: phoneBellSection, mBell: mBellSection,
@@ -25897,6 +25934,7 @@ async function main() {
     await unit("phoneNudge", () => phoneNudgeSection(browser, base));
     await unit("cacheChip", () => cacheChipSection(browser, base));
     await unit("cacheLine", () => cacheLineSection(browser, base));
+    await unit("peekDash", () => peekDashSection(browser, base));
     await unit("readyOnce", () => readyOnceSection(browser, base));
     await unit("readyPopout", () => readyPopoutSection(browser, base));
     // ── a pop-out's bell is its own: the card's switch and mute, never the board's ──

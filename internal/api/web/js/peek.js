@@ -142,8 +142,12 @@ function peekBody(t, v) {
   const land = !loading && ctx >= limit;
   const tot = (v && v.totals) || {};
   const own = usageOwn(v && v.by_cause);
-  const cell = (label, value, tip) =>
-    `<div class="peek-cell"${tip ? ` data-tip="${esc(tip)}"` : ""}><b>${loading ? "&nbsp;" : esc(value)}</b>` +
+  // A field the room did not send is a dash, never a 0: a zero is a count the room reported.
+  const NOT_SENT = "not reported by this room";
+  const has = (o, ...ks) => !!o && ks.every(k => typeof o[k] === "number");
+  const byOk = !!(v && v.by_cause && typeof v.by_cause === "object");
+  const cell = (label, value, tip, missing) =>
+    `<div class="peek-cell"${missing || tip ? ` data-tip="${esc(missing ? NOT_SENT : tip)}"` : ""}><b>${loading ? "&nbsp;" : missing ? "–" : esc(value)}</b>` +
     `<span>${esc(label)}</span></div>`;
   return head +
     `<div class="peek-ctx${warn ? " warn" : ""}${land ? " hot" : ""}">
@@ -153,13 +157,15 @@ function peekBody(t, v) {
         `<span>warns at ${limitFrom(t)}, lands at ${landK}k</span></div>
     </div>
     <div class="peek-grid">
-      ${cell("prompts", String(own.prompts), USAGE_TIPS.prompts + ". " + USAGE_TIPS.scope)}
-      ${cell("calls", String(own.calls), USAGE_TIPS.calls)}
-      ${cell("uncached in", usageTokens(tot.input), USAGE_TIPS.input)}
-      ${cell("out", usageTokens(tot.output), USAGE_TIPS.output)}
-      ${cell("cache read", usageTokens(tot.cache_read), USAGE_TIPS.read)}
+      ${cell("prompts", String(own.prompts), USAGE_TIPS.prompts + ". " + USAGE_TIPS.scope, !loading && !byOk)}
+      ${cell("calls", String(own.calls), USAGE_TIPS.calls, !loading && !byOk)}
+      ${cell("uncached in", usageTokens(tot.input), USAGE_TIPS.input, !loading && !has(tot, "input"))}
+      ${cell("out", usageTokens(tot.output), USAGE_TIPS.output, !loading && !has(tot, "output"))}
+      ${cell("cache read", usageTokens(tot.cache_read), USAGE_TIPS.read, !loading && !has(tot, "cache_read"))}
       ${cell("cache write", usageTokens((tot.cache_write_5m || 0) + (tot.cache_write_1h || 0)),
-        "5m and 1h cache writes together. " + USAGE_TIPS.write5m + ". " + USAGE_TIPS.write1h)}    </div>` + peekFoot(t);
+        "5m and 1h cache writes together. " + USAGE_TIPS.write5m + ". " + USAGE_TIPS.write1h,
+        !loading && !has(tot, "cache_write_5m", "cache_write_1h"))}
+    </div>` + peekFoot(t);
 }
 
 function peekFoot(t) {
