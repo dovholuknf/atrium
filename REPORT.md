@@ -13,6 +13,11 @@ Folded parent rows now show a count chip, a running chip (spinner) and a needs-y
 See the item file. Count is now the total under the row (was hidden only). Running and waiting count at any depth.
 Cost: the parent name truncates sooner on a narrow strip when all three chips show.
 
+## Review round
+- Count chip is bold in the head colour, no longer grey. The running chip has a stronger teal fill and border and a
+  12px spinner. Button padding and gaps are tighter, so the parent name shows in full in the shot ("par (par)").
+- Retaken `after-folded.png` (same fixture). childFold, childUnderParent and ctxLine headless sections pass.
+
 ## Tests
 `NODE_PATH=<atrium>/node_modules HEADLESS_ONLY=childFold,childUnderParent,ctxLine node scripts/test-board-headless.js`
 passes. The same childFold test fails on the old code (count, waiting, running), as it should.
