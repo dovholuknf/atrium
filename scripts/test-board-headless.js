@@ -5896,6 +5896,80 @@ async function fileOpenOutsideSection(browser, base) {
   }
 }
 
+// ── the read tab's own text size and scrollbar (u-read-tab-text-size) ────
+// A long document must scroll in the read tab, and A-/A+ must size the document text only, under a key of
+// its own, surviving a reload and never touching the board's origin zoom. RTS_SHOTS=<dir> takes pictures;
+// RTS_BEFORE=1 only takes them (the old page has no controls to check).
+async function readTabSizeSection(browser, base) {
+  const was = tasksMode;
+  tasksMode = "land";
+  landCard("land-live", { supervised: true, room: "sg4", created_at: "2026-09-19T12:00:00Z" });
+  landList = [LAND["land-live"]];
+  landPerms = [];
+  const errors = [];
+  const shots = process.env.RTS_SHOTS || "";
+  const before = !!process.env.RTS_BEFORE;
+  const ctx = await landContext(browser);
+  try {
+    const doc = ["# Long document", ""].concat(Array.from({ length: 120 }, (_, i) =>
+      "Paragraph " + (i + 1) + ": the quick brown fox jumps over the lazy dog, again and again.\n")).join("\n");
+    await ctx.route("**/files/view?*", route => route.fulfill({ status: 200, contentType: "text/plain; charset=utf-8", body: doc }));
+    const p = await ctx.newPage();
+    p.on("pageerror", e => errors.push(String(e)));
+    const open = async () => {
+      await p.goto(base + "/read.html#land-live/docs%2Fplan.md", { waitUntil: "domcontentloaded" });
+      await p.waitForSelector("#md h1", { timeout: slow(8000) });
+      await p.waitForTimeout(200);
+    };
+    await open();
+    if (shots) await p.screenshot({ path: path.join(shots, before ? "before.png" : "after.png") });
+    if (before) return;
+    const m = () => p.evaluate(() => ({ h: document.scrollingElement.scrollHeight, v: innerHeight,
+      y: scrollY, fs: parseFloat(getComputedStyle(document.getElementById("md")).fontSize),
+      key: localStorage.getItem("atrium.readfont"), keys: Object.keys(localStorage) }));
+    let r = await m();
+    if (r.h <= r.v + 50) fail("the long document does not overflow the window: " + JSON.stringify(r));
+    await p.mouse.move(300, 300);
+    await p.mouse.wheel(0, 600);
+    await p.waitForTimeout(250);
+    if ((await m()).y < 100) fail("the wheel did not scroll the read tab");
+    await p.keyboard.press("End");
+    await p.waitForTimeout(250);
+    r = await m();
+    if (r.y + r.v < r.h - 5) fail("End did not reach the bottom: " + JSON.stringify(r));
+    await p.evaluate(() => scrollTo(0, 0));
+    // Headless Chromium draws overlay bars with no gutter, so the rule is checked rather than the pixels.
+    const ov = await p.evaluate(() => getComputedStyle(document.documentElement).overflowY + "/" + getComputedStyle(document.body).overflowY);
+    if (ov !== "scroll/visible") fail("the read page's overflow is " + ov);
+    r = await m();
+    if (r.fs !== 15) fail("default text size is " + r.fs);
+    await p.click("#zoom-up");
+    await p.keyboard.press("Control+=");
+    r = await m();
+    if (r.fs !== 17 || r.key !== "17") fail("A+ and ctrl+= did not reach 17: " + JSON.stringify(r));
+    await p.keyboard.press("Control+-");
+    await p.click("#zoom-down");
+    await p.keyboard.press("Control+-");
+    r = await m();
+    if (r.fs !== 14) fail("shrinking did not reach 14: " + JSON.stringify(r));
+    await p.keyboard.press("Control+=");
+    await p.keyboard.press("Control+=");
+    if (shots) await p.screenshot({ path: path.join(shots, "after-bigger.png") });
+    await p.reload({ waitUntil: "domcontentloaded" });
+    await p.waitForSelector("#md h1");
+    r = await m();
+    if (r.fs !== 16) fail("the size did not survive a reload: " + JSON.stringify(r));
+    await p.keyboard.press("Control+0");
+    r = await m();
+    if (r.fs !== 15) fail("ctrl+0 did not reset: " + JSON.stringify(r));
+    if (r.keys.some(k => /read|zoom|font/i.test(k) && k !== "atrium.readfont")) fail("the read page wrote another storage key: " + JSON.stringify(r.keys));
+    if (errors.length) fail("the read tab threw: " + errors.join(" | "));
+  } finally {
+    tasksMode = was;
+    await ctx.close();
+  }
+}
+
 // ── "messages waiting, clear the line" (u-018) ────────────────────────────
 // The notice shows only while the operator's own line holds queued peer messages, is driven by the card list
 // (no timer, no request), and never takes focus or moves the grid.
@@ -23278,7 +23352,7 @@ async function main() {
     const only = { boardDocs: boardDocsSection, phoneBoardCompact: phoneBoardCompactSection, termWear: termWearSection, bridge: bridgeSection, settingsOnce: settingsOnceSection,
       groupRemove: groupRemoveSection, worn: wornSection, restartGate: restartGateSection, restartStays: restartStaysSection, atriumDown: atriumDownSection,
       toastStays: toastStaysSection, groupColor: groupColorSection,
-      groupDrag: groupDragSection, tooltip: tooltipSection, linkTip: linkTipSection, fileOpenOutside: fileOpenOutsideSection,popoutTagFlip: popoutTagFlipSection, prefsEverywhere: prefsEverywhereSection, mPrefsEverywhere: (b) => mPrefsEverywhereSection(b), idleRate: idleRateSection, foldStill: foldStillSection,
+      groupDrag: groupDragSection, tooltip: tooltipSection, linkTip: linkTipSection, fileOpenOutside: fileOpenOutsideSection, readTabSize: readTabSizeSection,popoutTagFlip: popoutTagFlipSection, prefsEverywhere: prefsEverywhereSection, mPrefsEverywhere: (b) => mPrefsEverywhereSection(b), idleRate: idleRateSection, foldStill: foldStillSection,
       untaggedSort: untaggedSortSection, newCard: newCardSection, themePreview: themePreviewSection, themeLab: themeLabSection, land: landSection, reselect: reselectSection, clearKeepsPage: clearKeepsPageSection,
       resumeSpinner: resumeSpinnerSection, toastsTop: toastsTopSection, sayWhen: sayWhenSection, pasteSpinner: pasteSpinnerSection,
       pasteBig: pasteBigSection, pasteBusy: pasteBusySection, typing: typingSection, alias: aliasSection, askAgain: askAgainSection, copySelect: copySelectSection, busyGuard: busyGuardSection, keepalive: keepaliveSection,
@@ -25366,6 +25440,7 @@ async function main() {
     await unit("mChangeReq", () => mChangeReqSection(browser));
     await unit("trayHead", () => trayHeadSection(browser, base));
     await unit("fileOpenOutside", () => fileOpenOutsideSection(browser, base));
+    await unit("readTabSize", () => readTabSizeSection(browser, base));
     await unit("bootClean", () => bootCleanSection(browser, base));
     await unit("mWorking", () => mWorkingSection(browser));
     await unit("mOwnMessages", () => mOwnMessagesSection(browser));

@@ -146,3 +146,45 @@ if (document.getElementById("md")) {
   readMain();
   addEventListener("hashchange", () => location.reload());
 }
+
+// TEXT SIZE, for the document only. Browser zoom is per origin, so zooming this page zooms the board too. This
+// sets a CSS variable instead and keeps the number under a key of its own, which every read tab shares and the
+// board never reads.
+const READ_FONT_KEY = "atrium.readfont";
+const READ_FONT_DEFAULT = 15;
+const READ_FONT_MIN = 9;
+const READ_FONT_MAX = 36;
+
+function readFontStored() {
+  try {
+    const v = Number(localStorage.getItem(READ_FONT_KEY));
+    if (v >= READ_FONT_MIN && v <= READ_FONT_MAX) return Math.round(v);
+  } catch (e) {}
+  return READ_FONT_DEFAULT;
+}
+
+function setReadFont(px, save) {
+  const size = Math.max(READ_FONT_MIN, Math.min(READ_FONT_MAX, Math.round(px || 0)));
+  document.documentElement.style.setProperty("--read-fs", size + "px");
+  const val = document.getElementById("zoom-val");
+  if (val) val.textContent = size + "px";
+  if (save) { try { localStorage.setItem(READ_FONT_KEY, String(size)); } catch (e) {} }
+  return size;
+}
+
+if (document.getElementById("zoom-up")) {
+  let cur = setReadFont(readFontStored(), false);
+  const step = (d) => { cur = setReadFont(d === 0 ? READ_FONT_DEFAULT : cur + d, true); };
+  document.getElementById("zoom-up").addEventListener("click", () => step(1));
+  document.getElementById("zoom-down").addEventListener("click", () => step(-1));
+  document.getElementById("zoom-val").addEventListener("dblclick", () => step(0));
+  addEventListener("keydown", e => {
+    if (!(e.ctrlKey || e.metaKey) || e.altKey) return;
+    const d = (e.key === "=" || e.key === "+") ? 1 : e.key === "-" ? -1 : e.key === "0" ? 0 : null;
+    if (d === null) return;
+    e.preventDefault();
+    step(d);
+  });
+  // Another read tab changed it.
+  addEventListener("storage", e => { if (e.key === READ_FONT_KEY) cur = setReadFont(readFontStored(), false); });
+}

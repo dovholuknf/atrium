@@ -38,26 +38,43 @@
 <meta http-equiv="Content-Security-Policy"
   content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; base-uri 'none'; form-action 'none'">
 <style>
+  /* THE TEXT SIZE is this page's own, in px, set from read.js off a key of its own. Browser zoom is per origin
+     and would take the board with it. */
+  :root { --read-fs: 15px; }
+  /* tokens.css gives the board a body that never scrolls as a whole, because its views scroll inside themselves.
+     This page IS one document, so the window scrolls and draws its bar. */
+  html, body { height: auto; overflow: visible; }
+  html { overflow-y: scroll; }
   body {
+    display: block; min-height: 100%;
     margin: 0; background: var(--bg-1); color: var(--body);
-    font: var(--fs-base)/1.5 var(--sans);
+    font: var(--read-fs)/1.5 var(--sans);
   }
   header {
     display: flex; align-items: center; gap: 12px;
     padding: 12px 18px; border-bottom: 1px solid var(--stroke-dim);
-    background: var(--shell-0); position: sticky; top: 0;
+    background: var(--shell-0); position: sticky; top: 0; z-index: 1;
   }
+  header .by { margin-left: auto; }
+  .zoom { display: flex; align-items: center; gap: 4px; }
+  .zoom button {
+    display: grid; place-items: center; min-width: 24px; height: 24px; padding: 0 6px;
+    border: 1px solid var(--stroke-dim); background: var(--chip);
+    color: var(--label); border-radius: var(--r-sm); font: var(--fs-base) var(--sans); cursor: pointer;
+  }
+  .zoom button:hover { background: var(--lift); color: var(--head); }
+  .zoom .val { min-width: 34px; text-align: center; color: var(--head); font: var(--fs-base) var(--mono); }
   header code { font: var(--fs-sm)/1.4 var(--mono); color: var(--head); }
-  header .by { color: var(--dim); font-size: var(--fs-sm); margin-left: auto; }
+  header .by { color: var(--dim); font-size: var(--fs-sm); }
   pre {
     margin: 0; padding: 18px; white-space: pre-wrap; word-break: break-word;
-    font: var(--fs-sm)/1.55 var(--mono); color: var(--head); tab-size: 4;
+    font: calc(var(--read-fs) - 1px)/1.55 var(--mono); color: var(--head); tab-size: 4;
   }
   .md { max-width: 52rem; margin: 0 auto; padding: 18px 22px 60px; color: var(--body); }
   .md h1, .md h2, .md h3, .md h4 { color: var(--head); line-height: 1.25; margin: 1.4em 0 .5em; }
   .md h1, .md h2 { border-bottom: 1px solid var(--stroke-dim); padding-bottom: .25em; }
   .md a { color: var(--head); text-decoration: underline; }
-  .md code { font: var(--fs-sm)/1.4 var(--mono); background: var(--shell-0); padding: .1em .35em; border-radius: 4px; }
+  .md code { font: .9em/1.4 var(--mono); background: var(--shell-0); padding: .1em .35em; border-radius: 4px; }
   .md pre { background: var(--shell-0); padding: 12px 14px; border-radius: 6px; overflow: auto; white-space: pre; }
   .md pre code { background: none; padding: 0; }
   .md blockquote { margin: 1em 0; padding: 0 1em; border-left: 3px solid var(--stroke-dim); color: var(--dim); }
@@ -67,7 +84,12 @@
 </style>
 </head>
 <body>
-<header><code id="where">reading…</code><span class="by" id="what"></span></header>
+<header><code id="where">reading…</code><span class="by" id="what"></span>
+  <span class="zoom" title="Text size for every read tab. Ctrl+= bigger, Ctrl+- smaller, Ctrl+0 reset.">
+    <button id="zoom-down" type="button" aria-label="smaller text">A&minus;</button>
+    <span class="val" id="zoom-val"></span>
+    <button id="zoom-up" type="button" aria-label="bigger text">A+</button>
+  </span></header>
 <pre id="text"></pre>
 <article id="md" class="md" hidden></article>
 <script src="/vendor/marked.js"></script>
