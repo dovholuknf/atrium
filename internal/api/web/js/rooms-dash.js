@@ -298,6 +298,16 @@ function machineState(m, s) {
   return "ok";
 }
 
+// latencyRow is how late the room's timers fire, the p99 in ms and its hour.
+// Nothing when the room's build does not report it.
+function latencyRow(key, l) {
+  if (!l || typeof l.drift_p99_ms !== "number") return "";
+  const ms = l.drift_p99_ms;
+  return `<div class="rd-row rd-rate${ms > 50 ? " hot" : ""}" data-tip="how late the room's timers fire, p99 over the last 10 seconds. What a person feels as lag.">
+    <span>lag <b class="rd-big" data-v="${key}.lag">${ms < 10 ? ms.toFixed(1) : Math.round(ms)}ms</b></span>
+    ${sparkSVG(l.drift_series_ms, "lag")}</div>`;
+}
+
 // machineBand is the CPU and its line, memory and its line, disk and worktrees.
 //
 // A failed sample sets `stale_since`: the figures stay, dimmed, with the time.
@@ -339,7 +349,8 @@ function machineBand(key, m, d, s) {
   const wt = d && typeof d.worktrees === "number"
     ? `<div class="rd-row" data-tip="card worktrees atrium knows about"><span><b data-v="${key}.wt">${d.worktrees}</b> worktrees</span></div>`
     : "";
-  return `<div class="rd-band machine"><div class="rd-h">machine</div>${shown}${disk}${wt}</div>`;
+  const lat = latencyRow(key, s && s.latency);
+  return `<div class="rd-band machine"><div class="rd-h">machine</div>${shown}${lat}${disk}${wt}</div>`;
 }
 
 // ── the tiles ───────────────────────────────────────────────────────────────
