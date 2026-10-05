@@ -34,6 +34,8 @@ type Room struct {
 	// Version and Host are shown on the hub. Observed, never authoritative.
 	Version string
 	Host    string
+	// Commit is the commit this room was built from, sent in the hello. Empty says nothing.
+	Commit string
 	// T is the timing set. Zero fields take defaults.
 	T Timings
 	// Upgrades is whether this room will consider a build its hub offers, and
@@ -218,7 +220,7 @@ func (r *Room) attach(ctx context.Context) error {
 
 	br := bufio.NewReader(conn)
 	w, err := sayHello(conn, br, hello{
-		Kind: "control", Room: r.Name, Version: r.Version, Host: r.Host,
+		Kind: "control", Room: r.Name, Version: r.Version, Host: r.Host, Commit: r.Commit,
 		// What this room would run, and whether it is willing to be told about
 		// a newer one. Neither gives the hub any power: a hub cannot install
 		// anything, and this only saves it from offering a Linux room a

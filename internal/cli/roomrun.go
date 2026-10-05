@@ -370,6 +370,7 @@ func runRoom(keys link.Keys, db, human, agent string, restartAfter time.Duration
 		Name:    saved.Room,
 		Dial:    dial,
 		Version: Version,
+		Commit:  runningCommit(),
 		Host:    hostname(),
 		// SAYS GIT in the hello, so the hub will ask this room to sync. See internal/gitsync.
 		Git: true,

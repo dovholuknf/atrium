@@ -17,6 +17,9 @@ $LiveLog = Join-Path $Base 'deploy.log'
 $head = (git -C $Repo rev-parse refs/heads/claude/main 2>$null)
 if ($head -ne $Tip) { Say "FATAL: claude/main is $head, not $Tip. nothing deployed"; exit 1 }
 
+# What this deploy puts live, for HANDOFF. Read before anything changes.
+Write-DeployQueue
+
 $flags = @(); if ($WhatIf) { $flags += '-WhatIf' }
 & pwsh -NoProfile -File "$PSScriptRoot\build-deploy.ps1" @flags
 if ($LASTEXITCODE -ne 0) { Say "build failed ($LASTEXITCODE). nothing deployed"; exit $LASTEXITCODE }

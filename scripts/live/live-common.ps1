@@ -376,3 +376,17 @@ function Start-Room {
   }
   return $true
 }
+
+# Write-DeployQueue prints the hub's deploy queue, the landed commits not yet live and which deploy each needs, and saves
+# it as DEPLOY-QUEUE.md under $Base for HANDOFF to carry. Read BEFORE the deploy, while the hub still reports what is
+# live. Never stops a deploy: a hub that does not answer is said and the deploy goes on.
+$HubDeployQueue = 'http://127.0.0.1:7778/_hub/deploy-queue?format=md'
+function Write-DeployQueue {
+  try { $md = (Invoke-WebRequest -Uri $HubDeployQueue -TimeoutSec 20 -UseBasicParsing).Content }
+  catch { Say "deploy queue not read: $($_.Exception.Message)"; return }
+  if ($md -is [byte[]]) { $md = [Text.Encoding]::UTF8.GetString($md) }
+  $out = Join-Path $Base 'DEPLOY-QUEUE.md'
+  if (-not $WhatIf) { Set-Content -Path $out -Value $md -Encoding utf8 }
+  foreach ($l in ($md -split "`r?`n")) { if ($l.Trim()) { Say "queue: $l" } }
+  Say "deploy queue saved to $out for HANDOFF"
+}
