@@ -11,6 +11,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/dovholuknf/atrium/internal/forge"
 )
 
 // fakeExec replaces the two seams. Every exec is recorded, and nothing real runs.
@@ -229,5 +231,26 @@ func TestPreflightIsOnTheHumanListenerOnly(t *testing.T) {
 	}
 	if f.count() != before {
 		t.Error("the agent listener ran a command")
+	}
+}
+
+// A ROOM WITH A HUB RUNS NO FORGE CLI in a preflight: the logins are the hub's, and the answer says where to check.
+func TestPreflightOnARoomWithAHubRunsNoForge(t *testing.T) {
+	d := testDaemon(t)
+	f := &fakeExec{}
+	f.install(t)
+	d.SetHubForge(forge.NewRemote(nil))
+	code, a := preflight(t, d, `{"forges":[{"tool":"gh","host":"github.com"},{"tool":"bb","host":"bitbucket.org"}]}`)
+	if code != 200 {
+		t.Fatalf("code %d", code)
+	}
+	if f.count() != 0 {
+		t.Fatalf("a room with a hub ran %v", f.runs)
+	}
+	for _, k := range []string{"gh@github.com", "bb@bitbucket.org"} {
+		s := a.Forges[k]
+		if s.State != forgeUnknown || !strings.Contains(s.Message, "hub") {
+			t.Fatalf("%s = %+v", k, s)
+		}
 	}
 }

@@ -1,12 +1,14 @@
 package daemon
 
 import (
+	"context"
 	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/dovholuknf/atrium/internal/forge"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -267,5 +269,92 @@ func TestAFetchThatPrintsNonsenseSaysSo(t *testing.T) {
 	}
 	if !strings.Contains(got.FetchError, "json") {
 		t.Fatalf("the reason is not readable: %q", got.FetchError)
+	}
+}
+
+// THE BUILT-IN FORGE FETCH on a room with a hub asks the hub, under gh's fact names, and fetches no head for a paste.
+func TestTheForgeFetchAsksTheHub(t *testing.T) {
+	d := testDaemon(t)
+	var asked []forge.HubAsk
+	var paths []string
+	d.SetHubForge(forge.NewRemote(func(_ context.Context, path string, in, out any) error {
+		paths = append(paths, path)
+		asked = append(asked, in.(forge.HubAsk))
+		switch o := out.(type) {
+		case *forge.HubPR:
+			*o = forge.HubPR{Kind: forge.GitHub, PR: &forge.PR{Title: "dns drops on resume", HeadRef: "fix/dns", BaseRef: "main"}}
+		case *forge.HubIssue:
+			*o = forge.HubIssue{Kind: forge.GitHub, Issue: &forge.Issue{Title: "it broke", Body: "steps"}}
+		}
+		return nil
+	}))
+	row := prRow(filepath.ToSlash(t.TempDir()))
+	row.Fetch, row.FetchArgs = "forge", []string{"pr"}
+	row.Branch = "{headRefName}"
+	if _, err := d.st.SaveRecogniser(row); err != nil {
+		t.Fatal(err)
+	}
+	got, err := d.Recognise("https://github.com/openziti/ziti/pull/4211")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.FetchError != "" || got.Title != "openziti/ziti#4211 dns drops on resume" || got.Branch != "fix/dns" {
+		t.Fatalf("card = %+v", got)
+	}
+	if len(asked) != 1 || paths[0] != forge.HubPRPath || asked[0].Fetch || asked[0].Number != 4211 ||
+		asked[0].Org != "openziti" || asked[0].Host != "github.com" {
+		t.Fatalf("asked %v %+v", paths, asked)
+	}
+
+	issue := store.Recogniser{ID: "github-issue", Label: "issue", Enabled: true, Rank: 11,
+		Pattern: `^https?://(?P<host>github\.com)/(?P<org>[^/]+)/(?P<repo>[^/]+)/issues/(?P<num>\d+)`,
+		Title:   "{title}", Prompt: "{body}", Fetch: "forge", FetchArgs: []string{"issue"}}
+	if _, err := d.st.SaveRecogniser(issue); err != nil {
+		t.Fatal(err)
+	}
+	got, err = d.Recognise("https://github.com/openziti/ziti/issues/9")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.FetchError != "" || got.Title != "it broke" || paths[len(paths)-1] != forge.HubIssuePath {
+		t.Fatalf("card = %+v, paths %v", got, paths)
+	}
+}
+
+// A ROOM WITH A HUB DOES NOT RUN gh AS A FETCH, and says to use the forge fetch.
+func TestARoomWithAHubRefusesAGhFetch(t *testing.T) {
+	d := testDaemon(t)
+	d.SetHubForge(forge.NewRemote(func(context.Context, string, any, any) error {
+		t.Fatal("the hub was asked for a gh row")
+		return nil
+	}))
+	row := prRow(filepath.ToSlash(t.TempDir()))
+	row.Fetch, row.FetchArgs = "gh", []string{"pr", "view", "{url}", "--json", "title"}
+	if _, err := d.st.SaveRecogniser(row); err != nil {
+		t.Fatal(err)
+	}
+	got, err := d.Recognise("https://github.com/openziti/ziti/pull/4211")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(got.FetchError, "through its hub") || !strings.Contains(got.FetchError, "`forge`") {
+		t.Fatalf("FetchError = %q", got.FetchError)
+	}
+}
+
+func TestTheForgeFetchTakesPrOrIssue(t *testing.T) {
+	d := testDaemon(t)
+	d.SetHubForge(forge.NewRemote(func(context.Context, string, any, any) error { return nil }))
+	row := prRow(filepath.ToSlash(t.TempDir()))
+	row.Fetch, row.FetchArgs = "forge", []string{"commits"}
+	if _, err := d.st.SaveRecogniser(row); err != nil {
+		t.Fatal(err)
+	}
+	got, err := d.Recognise("https://github.com/openziti/ziti/pull/4211")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(got.FetchError, "pr or issue") {
+		t.Fatalf("FetchError = %q", got.FetchError)
 	}
 }

@@ -32,6 +32,8 @@ type claimRoom struct {
 	runs int
 	// worktrees is how many pr-worktree calls reached this room.
 	worktrees int
+	// refuseWT makes the pr-worktree call fail, as a refused clone or fetch does.
+	refuseWT bool
 }
 
 func (c *claimRoom) made() []string {
@@ -82,7 +84,13 @@ func (c *claimRoom) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case strings.HasSuffix(r.URL.Path, "/pr-worktree") && r.Method == http.MethodPost:
 		c.mu.Lock()
 		c.worktrees++
+		refuse := c.refuseWT
 		c.mu.Unlock()
+		if refuse {
+			w.WriteHeader(http.StatusBadGateway)
+			_, _ = w.Write([]byte(`{"error":"the hub could not fetch the head"}`))
+			return
+		}
 		_, _ = w.Write([]byte(`{"path":"/wt/` + c.name + `","existed":false}`))
 	default:
 		http.NotFound(w, r)
