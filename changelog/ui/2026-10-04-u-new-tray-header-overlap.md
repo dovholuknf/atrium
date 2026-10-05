@@ -1,0 +1,1 @@
+- u-new-tray-header-overlap: the notifications tray keeps its title whole with a fixed gap before the first button, and the buttons wrap instead of squeezing it. On a window of 900px or less the title was hidden by a phone rule and is back. A `trayHead` headless section checks it at 320, 360, 901 and 1400px.
