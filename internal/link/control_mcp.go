@@ -101,8 +101,11 @@ type controlMCP struct {
 	settings func() HubSettings
 	// docs is the hub's document store, read at each call so SetDocs may come later. Nil on a
 	// hub without one. See docs_mcp.go.
-	docs     func() *hubstore.Store
-	deployMu sync.Mutex
+	docs func() *hubstore.Store
+	// resourcesDir and rooms feed atrium_resources. Nil in a test that does not read it. See resources_mcp.go.
+	resourcesDir func() string
+	rooms        func() []resourceRoom
+	deployMu     sync.Mutex
 
 	// classMu guards classes, the per-caller class cache. See ctlclass.go.
 	classMu sync.Mutex
@@ -384,6 +387,7 @@ func (c *controlMCP) server(class ctlClass) *mcp.Server {
 	c.registerDeps(s, class)
 	c.registerDocs(s, class)
 	c.registerDeploy(s, class)
+	c.registerResources(s, class)
 
 	return s
 }

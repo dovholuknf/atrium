@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/dovholuknf/atrium/internal/api"
+	"github.com/dovholuknf/atrium/internal/daemon"
 	"github.com/dovholuknf/atrium/internal/edge"
 	"github.com/dovholuknf/atrium/internal/gitsync"
 	"github.com/dovholuknf/atrium/internal/hubstore"
@@ -354,6 +355,7 @@ func serveAtrium(f atriumFlags, up atriumUp) error {
 	// THE CONTROL MCP SERVER, mounted at /_hub/mcp so sessions open a
 	// connection instead of each spawning an atrium-control child. It
 	// reaches this hub's own board over loopback derived from `board`.
+	proxy.SetResourcesDir(daemon.StateDir())
 	proxy.SetControl(board)
 	proxy.SetGit(gitHub)
 	proxy.SetGitSettings(store, keys.Dir)
