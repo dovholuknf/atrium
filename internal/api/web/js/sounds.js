@@ -30,7 +30,7 @@ const DEFAULT_PREFS = {
   // A launched card that is stuck: "alert" rings and marks the card, "mark"
   // only marks it, "off" does neither.
   stuck: "alert",
-  // A card an agent launched (`origin:agent`) raises no toast, desktop
+  // A subagent (`atrium:subagent`) raises no toast, desktop
   // notification or sound. Its marks and its toast log line stay. A permission
   // request from it still notifies. See `quietDoer` in notify.js.
   quietDoers: true

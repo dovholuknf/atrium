@@ -29,6 +29,15 @@ function isDoer(t) {
     t.tags.some(x => String(x).trim().toLowerCase() === DOER_TAG));
 }
 
+// A SUBAGENT IS A WORKER, the card the launch cap counts: tagged `atrium:subagent` (SubagentTag). A resident an agent launched
+// (a director, the orchestrator) has `origin:agent` and not this, so it is a doer and not a subagent. The quiet rule and the
+// terminals "subagents" hide toggle both key on this one tag, so "subagent" means one thing on the board.
+const SUBAGENT_TAG = "atrium:subagent";
+function isSubagent(t) {
+  return !!(t && Array.isArray(t.tags) &&
+    t.tags.some(x => String(x).trim().toLowerCase() === SUBAGENT_TAG));
+}
+
 // AN AGENT-LAUNCHED CARD THAT ENDED A TURN WITH NO OPEN QUESTION IS IDLE, not waiting for the operator: its launcher is who
 // it answers to. This is the one test every surface shares (board, /m, counts, bell). A question, a permission ask (its
 // own status) or an operator-launched card (no origin:agent tag) is still waiting.
