@@ -442,7 +442,6 @@ func New(opts Options) (*Daemon, error) {
 	d.ap.SwitchModel = d.handleModel
 	d.ap.Shutdown = d.handleShutdown
 	d.ap.Preflight = d.handlePreflight
-	d.ap.ForgeCheck = d.handleForgeCheck
 	d.ap.ForgeAccess = d.ForgeAlerts
 	d.ap.Shelve = d.Shelve
 	d.ap.StopRunner = d.StopRunner

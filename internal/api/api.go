@@ -40,9 +40,7 @@ type Server struct {
 	// Human listener only. See internal/daemon/preflight.go for why a body may
 	// never name a command.
 	Preflight http.HandlerFunc
-	// ForgeCheck asks the forges this room is configured to need, and ForgeAccess lists the alerts open now.
-	// Human listener only. See internal/daemon/forgeaccess.go.
-	ForgeCheck  http.HandlerFunc
+	// ForgeAccess lists the forge alerts open now, on a room with no hub. See internal/daemon/forgeaccess.go.
 	ForgeAccess func() any
 	// Decide resolves a permission. This must go through the daemon rather
 	// than straight to the store, because the agent is blocked on an in-memory
@@ -587,9 +585,6 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /v1/browse", s.browse)
 	if s.Preflight != nil {
 		mux.HandleFunc("POST /v1/preflight", s.Preflight)
-	}
-	if s.ForgeCheck != nil {
-		mux.HandleFunc("POST /v1/forge/check", s.ForgeCheck)
 	}
 	if s.Shutdown != nil {
 		mux.HandleFunc("POST /v1/shutdown", s.Shutdown)

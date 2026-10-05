@@ -5,7 +5,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"net/http"
 	"regexp"
 	"sort"
 	"strings"
@@ -21,8 +20,8 @@ import (
 // configuration. Forges are used only on ask, so nothing here runs ahead of a need and nothing polls. Two things ask:
 // a preflight naming a forge, and RaiseForgeAccess, which the code that hits the missing access calls.
 //
-// The check is the CLI's own status command, never a token read. The command name comes from the room's own setting
-// (store.ForgeConfig), never from a request body.
+// The check is the CLI's own status command, never a token read. It runs on a room with no hub only: a room with a hub
+// never runs a forge CLI, and the hub keeps the logins, the check and the alert (internal/link/forgeroute.go).
 
 const (
 	forgeOK           = "ok"
@@ -104,12 +103,10 @@ func (d *Daemon) checkForge(ctx context.Context, tool, host string, scopes []str
 		return st
 	}
 	if host == "" {
-		if host, _ = d.st.ForgeConfig(tool); host == "" {
-			host = store.ForgeDefaultHost(tool)
-		}
+		host = store.ForgeDefaultHost(tool)
 		st.Host = host
 	}
-	_, cmd := d.st.ForgeConfig(tool)
+	cmd := tool
 	path, err := preflightLook(cmd)
 	if err != nil {
 		st.State = forgeNotInstalled
@@ -200,11 +197,9 @@ func (d *Daemon) RaiseForgeAccess(tool, host, detail string) {
 		return
 	}
 	if host == "" {
-		if host, _ = d.st.ForgeConfig(tool); host == "" {
-			host = store.ForgeDefaultHost(tool)
-		}
+		host = store.ForgeDefaultHost(tool)
 	}
-	_, cmd := d.st.ForgeConfig(tool)
+	cmd := tool
 	state := forgeLoggedOut
 	low := strings.ToLower(detail)
 	for _, w := range []string{"not found", "executable file", "not installed", "no such file"} {
@@ -243,9 +238,7 @@ func (d *Daemon) ForgeWorked(kind, host string) {
 		return
 	}
 	if host == "" {
-		if host, _ = d.st.ForgeConfig(tool); host == "" {
-			host = store.ForgeDefaultHost(tool)
-		}
+		host = store.ForgeDefaultHost(tool)
 	}
 	d.forgeMu.Lock()
 	_, open := d.forgeOpen[tool+"@"+host]
@@ -265,21 +258,4 @@ func (d *Daemon) ForgeAlerts() any {
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Key < out[j].Key })
 	return out
-}
-
-// handleForgeCheck is the settings view's "check now": the forges this room is configured to need, asked once.
-func (d *Daemon) handleForgeCheck(w http.ResponseWriter, r *http.Request) {
-	ctx, cancel := context.WithTimeout(r.Context(), preflightTotalFor)
-	defer cancel()
-	out := []forgeStatus{}
-	for _, t := range store.ForgeTools {
-		host, _ := d.st.ForgeConfig(t.Key)
-		if host == "" {
-			continue
-		}
-		st := d.checkForge(ctx, t.Key, host, nil)
-		d.applyForge(st)
-		out = append(out, st)
-	}
-	writeJSONBody(w, map[string]any{"forges": out})
 }

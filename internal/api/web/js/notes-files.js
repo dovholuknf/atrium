@@ -1865,49 +1865,9 @@ async function saveHousekeeping(field, value) {
 }
 
 
-// The forge CLIs this room needs: a host and a command name each, never a credential. Saves all three rows, since
-// the daemon takes the lot and an empty host means the room does not need that CLI.
-async function saveForge() {
-  const forge = {};
-  for (const k of ["gh", "bb", "glab"]) {
-    const h = document.getElementById("s-forge-" + k + "-host"), c = document.getElementById("s-forge-" + k + "-cmd");
-    if (h && c) forge[k] = { host: h.value.trim(), cmd: c.value.trim() };
-  }
-  try {
-    pastePrefs = await api("/v1/settings", { method: "POST", body: JSON.stringify({ forge }) });
-  } catch (e) {
-    toast("that did not save", e.message);
-    throw e;
-  }
-  afterMachineSave();
-}
-
-// Asks the CLIs this room is set to need, once, and says the answer where the button is. A failure also raises the
-// board alert from the daemon.
-async function checkForge() {
-  const out = document.getElementById("s-forge-state");
-  if (out) out.textContent = "checking";
-  try {
-    const r = await api("/v1/forge/check", { method: "POST", body: "{}" });
-    const list = r.forges || [];
-    if (out) out.textContent = list.length
-      ? list.map(f => f.tool + " on " + f.host + ": " + f.state.replace("_", " ")).join(". ")
-      : "no forge is set for this room";
-  } catch (e) {
-    if (out) out.textContent = "";
-    toast("that did not check", e.message);
-  }
-}
-
-// Fills the forge boxes and the line under them from a settings answer.
+// Fills the line under forge logins from a settings answer: the alerts open now on a room with no hub.
 function showForgeSettings(s) {
-  const cfg = s.forge || {};
-  for (const k of ["gh", "bb", "glab"]) {
-    const h = document.getElementById("s-forge-" + k + "-host"), c = document.getElementById("s-forge-" + k + "-cmd");
-    if (h) h.value = (cfg[k] && cfg[k].host) || "";
-    if (c) c.value = (cfg[k] && cfg[k].cmd && cfg[k].cmd !== k) ? cfg[k].cmd : "";
-  }
   const out = document.getElementById("s-forge-state");
   const open = s.forge_access || [];
-  if (out && !out.textContent.startsWith("checking")) out.textContent = open.map(a => a.message).join(". ");
+  if (out) out.textContent = open.map(a => a.message).join(". ");
 }

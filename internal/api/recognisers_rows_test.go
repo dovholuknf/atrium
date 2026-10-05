@@ -116,8 +116,9 @@ func TestTheShippedBitbucketRowResolvesAPullRequest(t *testing.T) {
 		got.Cwd != "D:/worktrees/bitbucket/acme/widgets/pr-77" || got.Window != "pull-requests" {
 		t.Fatalf("resolved to %+v", got)
 	}
-	if len(got.Missing) != 0 {
-		t.Fatalf("a bitbucket row with no fetch should leave no holes: %v", got.Missing)
+	// The branch is the forge fetch's, through the hub, and this test runs no fetch.
+	if strings.Join(got.Missing, ",") != "headRefName" {
+		t.Fatalf("only the branch the forge fetch fills should be a hole: %v", got.Missing)
 	}
 	if _, again := recogniseOver(t, s, st, "https://bitbucket.org/acme/widgets/pull-requests/77/diff"); again.Vars["num"] != "77" {
 		t.Fatalf("a trailing path should still be the same pull request: %+v", again)

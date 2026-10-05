@@ -2057,30 +2057,13 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
         Right now that comes out as <b id="s-shell-now"></b></span>
     </div>
 
-    <!-- The forge CLIs this room needs, only used when something asks. Atrium stores the host and the command
-         NAME, never a login. The CLI keeps its own. -->
+    <!-- A room keeps no forge login. The hub runs gh and bb for every room, so the alert for a missing login is the
+         hub's and the line under this says the open ones. -->
     <div class="field" id="forge-cfg">
       <label class="eyebrow">forge logins</label>
-      <div class="picker" data-forge="gh">
-        <code>gh</code>
-        <input id="s-forge-gh-host" data-saves="saveForge" spellcheck="false" placeholder="host, empty means not needed">
-        <input id="s-forge-gh-cmd" data-saves="saveForge" spellcheck="false" placeholder="command name, empty means gh">
-      </div>
-      <div class="picker" data-forge="bb">
-        <code>bb</code>
-        <input id="s-forge-bb-host" data-saves="saveForge" spellcheck="false" placeholder="host, empty means not needed">
-        <input id="s-forge-bb-cmd" data-saves="saveForge" spellcheck="false" placeholder="command name, empty means bb">
-      </div>
-      <div class="picker" data-forge="glab">
-        <code>glab</code>
-        <input id="s-forge-glab-host" data-saves="saveForge" spellcheck="false" placeholder="host, empty means not needed">
-        <input id="s-forge-glab-cmd" data-saves="saveForge" spellcheck="false" placeholder="command name, empty means glab">
-      </div>
-      <span class="hintline">Name the forge CLI this room needs and the host it must be logged in to, for example
-        <code>github.com</code>. When a pull request action needs one that is missing or logged out, the board
-        raises an alert that says what to run on this room. Nothing is checked until something asks or you press
-        check. Atrium keeps only the host and the command name, never a token.
-        <button type="button" id="s-forge-check" onclick="checkForge()">check now</button>
+      <span class="hintline">Pull requests and issues are read by the hub, with the hub's own <code>gh</code> and
+        <code>bb</code> logins. This room never runs them. When one is missing the hub raises an alert that says what
+        to run on the hub.
         <b id="s-forge-state"></b></span>
     </div>
 

@@ -2023,6 +2023,14 @@ var migrations = []struct {
 			`ALTER TABLE pr_review ADD COLUMN claim TEXT NOT NULL DEFAULT ''`,
 		},
 	},
+	{
+		// A ROOM KEEPS NO FORGE CONFIGURATION. The forge CLIs and their logins are the hub's, so the per-room host and
+		// command name the board used to save are gone. See docs/rnd/scm-forge-design.md, Built.
+		name: "0083_drop_room_forge_config",
+		stmts: []string{
+			`DELETE FROM setting WHERE key LIKE 'forge.%'`,
+		},
+	},
 }
 
 // migrate applies any migration not already recorded. This runs before the
