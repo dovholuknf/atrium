@@ -1219,7 +1219,8 @@ function whoseNames(items) {
 
 // Whether an alert about this card is to be logged and not said.
 //
-// The gear's "don't notify me about cards an agent launched", ticked by default.
+// The gear's "don't notify me about subagents", ticked by default. A subagent is a card tagged `atrium:subagent`, not
+// everything an agent launched, so a director or the orchestrator still notifies.
 // `kind` is the alert's kind, and a permission is never muted: it blocks until a
 // human answers, so silence there is a frozen agent. A card with a tone of its
 // own is the per-card override. The board has no per-card on/off for alerts, and
@@ -1227,7 +1228,7 @@ function whoseNames(items) {
 function quietDoer(kind, item) {
   if (kind === "permission" || kind === "perm" || kind === "blocker") return false;
   if (alerting.get().quietDoers === false) return false;
-  return isDoer(item) && !(item.sound && item.sound !== "none");
+  return isSubagent(item) && !(item.sound && item.sound !== "none");
 }
 
 // A card's own tone, for an alert that is about exactly one card.

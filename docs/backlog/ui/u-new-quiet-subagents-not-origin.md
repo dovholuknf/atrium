@@ -24,3 +24,12 @@ clint: "it should be more like 'atrium:subagent' do not notify."
 
 The orchestrator card (sg4-control 01a0f2da) had `origin:agent` and `atrium:subagent` removed by hand on 2026-10-01
 to get alerts. Put `origin:agent` back once this lands. Leave `atrium:subagent` off, it is not a worker.
+
+## Design note
+
+- New `isSubagent` in `js/cardrules.js` matches `atrium:subagent` (trimmed, case-insensitive). `isDoer` stays as the
+  `origin:agent` test and still drives `agentIdle`, which is about who launched a card.
+- `quietDoer` in `notify.js` uses `isSubagent`. Permission, blocker and own-tone exceptions are unchanged.
+- The terminals "subagents" hide toggle (`sessionHiddenBy` and the counts) and the phone's hide subagents filter also
+  moved to `isSubagent`, so "subagent" means one thing. The phone's director and orchestrator exclusions stay.
+- The setting is still stored as `quietDoers`, so nobody's choice is lost. Only the label and hint text changed.

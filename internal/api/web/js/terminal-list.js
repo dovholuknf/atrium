@@ -115,8 +115,8 @@ document.addEventListener("pointerout", e => {
 // a count in the header says how many.
 //
 // TWO INDEPENDENT TOGGLES, ONE PILL. The strip holds two kinds of session, and
-// each gets its own hide toggle. A SUBAGENT is an agent-launched doer (the
-// `origin:agent` tag, `isDoer`). An AGENT is everything else: a human's own
+// each gets its own hide toggle. A SUBAGENT is a worker (the
+// `atrium:subagent` tag, `isSubagent`), not every agent-launched doer. An AGENT is everything else: a human's own
 // top-level terminal, the sessions clint starts himself. The two toggles are
 // independent, so an operator can hide the subagents, the inactive agents, both,
 // or neither. They read as one segmented control (see `termHideControlsHTML`)
@@ -269,7 +269,7 @@ async function joinedClick(id) {
 
 // Whether this session is hidden by its kind's toggle, honouring what is never
 // hidden (see `renderTermList`): the attached one, and whatever its kind's rule
-// keeps. A subagent (`isDoer`) answers to the subagents toggle, everything else
+// keeps. A subagent (`isSubagent`) answers to the subagents toggle, everything else
 // to the agents toggle. Kept as one predicate so the count in the header and the
 // rows removed from the list are the same answer rather than two that can drift.
 // The two toggles both mean "hide inactive", but read DIFFERENT signals: a
@@ -282,7 +282,7 @@ async function joinedClick(id) {
 // the operator asking for the inactive ones to go, pinned or not.
 function sessionHiddenBy(t, keep) {
   if (keep(t)) return false;
-  if (isDoer(t)) return !workingNow(t) && hideSubagentsMode() !== "none";
+  if (isSubagent(t)) return !workingNow(t) && hideSubagentsMode() !== "none";
   return termCold(t) && hideAgentsMode() !== "none";
 }
 
@@ -318,9 +318,9 @@ function termHideControlsHTML(c) {
   // Subagents: inactive = not working right now. Only the actively-computing ones
   // stay; idle, waiting, or exited subagents hide. The tooltip also names what a
   // subagent IS, since the word is atrium's own: the sessions atrium launched
-  // (the `origin:agent` tag), not any a human started.
+  // (the `atrium:subagent` tag), not any a human started.
   const subNote = "subagents are the sessions atrium launched itself " +
-    "(origin:agent), not ones you started";
+    "(atrium:subagent), not ones you started";
   const subTitle = (sOn
     ? "inactive subagents are hidden (idle, waiting, or exited - not working right " +
       "now). click to show them. only actively-working subagents and the attached " +
@@ -1893,10 +1893,10 @@ async function renderTermList() {
   const inactiveAgent = t => !keep(t) && termCold(t);
   const inactiveSub = t => !keep(t) && !workingNow(t);
   const hideCounts = {
-    agentHideable: tasks.filter(t => !isDoer(t) && inactiveAgent(t)).length,
-    subHideable: tasks.filter(t => isDoer(t) && inactiveSub(t)).length,
-    agentHidden: hideable.filter(t => !isDoer(t)).length,
-    subHidden: hideable.filter(t => isDoer(t)).length
+    agentHideable: tasks.filter(t => !isSubagent(t) && inactiveAgent(t)).length,
+    subHideable: tasks.filter(t => isSubagent(t) && inactiveSub(t)).length,
+    agentHidden: hideable.filter(t => !isSubagent(t)).length,
+    subHidden: hideable.filter(t => isSubagent(t)).length
   };
 
   // The attached session is gone, so the pane showing it is stale.

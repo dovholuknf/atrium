@@ -147,7 +147,7 @@
   // tagged, since they are who the operator talks to.
   const NOT_SUB = ["atrium:director", "atrium:orchestrator", "orchestrators", "atrium:hold-notices", "atrium:context-ceiling"];
   function isSub(t) {
-    if (!isDoer(t)) return false;
+    if (!isSubagent(t)) return false;
     if (t.alias && !isFinished(t)) return false;
     return !(t.tags || []).some(x => NOT_SUB.indexOf(String(x).trim().toLowerCase()) >= 0);
   }

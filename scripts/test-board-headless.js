@@ -229,7 +229,7 @@ const LOOSE = Object.assign({}, T1, { id: "loose1", display_title: "loose card",
 // right now (`workingNow`), so only an actively-computing subagent stays and an
 // idle OR exited one hides.
 //
-// SUBAGENTS carry the `origin:agent` tag the launch cap counts; AGENTS do not (a
+// SUBAGENTS carry the `atrium:subagent` tag the launch cap counts; AGENTS do not (a
 // human's own session). A dead UNPINNED session is not in the strip at all
 // (nothing to switch to), so the dead rows are PINNED, drawn cold, which also
 // proves a pinned session hides like any other once its toggle is on. The
@@ -241,7 +241,7 @@ const SUBLIVE = {
   id: "sublive", status: "running", display_title: "idle subagent", runner: "claude",
   rank: 1, worktree: "/tmp/sublive", why: "", idle_seconds: 0, wait_seconds: 0,
   created_at: "2026-09-19T12:00:00Z", last_activity_at: "2026-09-19T12:00:00Z",
-  tags: ["origin:agent"], supervised: true, offline: false, pinned: false, auto_approve: false
+  tags: ["origin:agent", "atrium:subagent"], supervised: true, offline: false, pinned: false, auto_approve: false
 };
 const SUBWORK = Object.assign({}, SUBLIVE, {
   id: "subwork", display_title: "working subagent", activity: { what: "thinking" }
@@ -9647,7 +9647,7 @@ async function quietDoerSection(browser, base) {
   const errors = [];
   landList = [];
   landPerms = [];
-  const doer = (id, over) => landCard(id, Object.assign({ tags: ["origin:agent"], supervised: false }, over || {}));
+  const doer = (id, over) => landCard(id, Object.assign({ tags: ["origin:agent", "atrium:subagent"], supervised: false }, over || {}));
   for (const focused of [false, true]) {
     const ctx = await landContext(browser, !focused);
     try {
@@ -9672,6 +9672,11 @@ async function quietDoerSection(browser, base) {
       const human = landCard("qd-human", { supervised: false });
       await arrive(human, "qd human is on the board");
       if (!await said("qd human is on the board")) fail(where + ": a human's card raised nothing.");
+
+      // A resident an agent launched (origin:agent, no atrium:subagent) is not a subagent, so it notifies.
+      const res = landCard("qd-resident", { tags: ["origin:agent"], supervised: false });
+      await arrive(res, "qd resident is on the board");
+      if (!await said("qd resident is on the board")) fail(where + ": an agent-launched resident was muted.");
 
       const d1 = doer("qd-doer");
       await arrive(d1, "qd doer is on the board");
@@ -9703,6 +9708,12 @@ async function quietDoerSection(browser, base) {
       await p.waitForFunction(() => typeof paintSettings === "function", null, { timeout: slow(15000) });
       const box = await p.evaluate(() => { paintSettings(); return document.getElementById("s-quietdoers").checked; });
       if (!box) fail(where + ": the gear box is not ticked by default.");
+      // QUIET_SHOT=<file.png> writes a picture of the settings row.
+      if (process.env.QUIET_SHOT && focused) {
+        await p.evaluate(() => { document.getElementById("settings").showModal(); showSettingsPane("notifications"); });
+        await p.locator("#s-quietdoers").locator("xpath=ancestor::div[contains(@class,'field')][1]").screenshot({ path: process.env.QUIET_SHOT });
+        await p.evaluate(() => document.getElementById("settings").close());
+      }
       await p.evaluate(() => {
         const b = document.getElementById("s-quietdoers");
         b.checked = false;
@@ -16232,7 +16243,7 @@ async function mHomeOrderSection(browser) {
   const cards = () => [
     mCard("a-1", { alias: "alpha", worktree: "/g/github/o/one", last_activity_at: mIso(5 * M_MIN) }),
     mCard("b-1", { alias: "bravo", worktree: "/g/github/o/two", status: "done", last_activity_at: mIso(1 * M_MIN) }),
-    mCard("c-1", { display_title: "charlie", worktree: "/g/github/o/one", tags: ["origin:agent"], last_activity_at: mIso(30 * M_MIN) }),
+    mCard("c-1", { display_title: "charlie", worktree: "/g/github/o/one", tags: ["origin:agent", "atrium:subagent"], last_activity_at: mIso(30 * M_MIN) }),
     mCard("d-1", { alias: "delta", worktree: "/g/github/o/two", status: "needs-input", waiting_since: mIso(10 * M_MIN), last_activity_at: mIso(10 * M_MIN) }),
   ];
   const names = p => p.$$eval("#m-list .row .name b", e => e.map(x => x.textContent));
@@ -19165,7 +19176,7 @@ async function mHiddenSection(browser) {
   const st = mServer({});
   st.tasks = [
     mCard("orch-1", { alias: "orchestrator", display_title: "orchestrator", status: "running", room: "sg4-control", tags: ["atrium:hold-notices", "atrium:subagent", "orchestrators", "origin:agent"] }),
-    mCard("help-1", { display_title: "helper", status: "running", room: "sg4-control", tags: ["origin:agent"] }),
+    mCard("help-1", { display_title: "helper", status: "running", room: "sg4-control", tags: ["origin:agent", "atrium:subagent"] }),
     mCard("done-1", { display_title: "finished", status: "done", room: "sg4-control" }),
     mCard("far-1", { alias: "far", display_title: "far", status: "running", room: "other" }),
   ];
@@ -19416,7 +19427,7 @@ async function mHomeLiveSection(browser) {
     return out.length ? Math.min(...out.filter(Boolean).concat(out.some(Boolean) ? [] : [Infinity])) : null;
   };
   const NOT_SUB = ["atrium:director", "atrium:orchestrator", "orchestrators", "atrium:hold-notices", "atrium:context-ceiling"];
-  const isSub = t => t.tags.includes("origin:agent") && !(t.alias && t.status !== "done" && t.status !== "dead") && !t.tags.some(x => NOT_SUB.includes(x));
+  const isSub = t => t.tags.includes("atrium:subagent") && !(t.alias && t.status !== "done" && t.status !== "dead") && !t.tags.some(x => NOT_SUB.includes(x));
   const project = t => {
     const w = (t.worktree || "").replace(/\\/g, "/");
     if (!w) return "";
@@ -21976,9 +21987,9 @@ async function main() {
     }
     // The subagents segment says, in its tooltip, that a subagent is an
     // atrium-launched session, so the word is not left to guess at.
-    if (!/atrium/i.test(hDef.subTitle) || !/origin:agent/.test(hDef.subTitle)) {
+    if (!/atrium/i.test(hDef.subTitle) || !/atrium:subagent/.test(hDef.subTitle)) {
       fail("the subagents segment tooltip does not explain these are atrium " +
-        "(origin:agent) subagents: " + JSON.stringify(hDef.subTitle));
+        "(atrium:subagent) subagents: " + JSON.stringify(hDef.subTitle));
     }
 
     // NEITHER on: every row is drawn, both segments unlit, and it is ONE pill of
