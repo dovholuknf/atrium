@@ -33,6 +33,10 @@ const HoldDeploy = "deploy"
 // card from being woken twice.
 const EventHoldLifted = "deploy-hold-lifted"
 
+// EventResumeContinue is the `by` on the event a startup lift writes on each card
+// it tells to continue. The board shows it as "resumed, told to continue".
+const EventResumeContinue = "resume-continue"
+
 // RoomHold is one hold on this room.
 type RoomHold struct {
 	Kind string `json:"kind"`
@@ -53,6 +57,24 @@ type RoomHold struct {
 	ExpiresAt time.Time `json:"expires_at"`
 	// Cards is every card held at the start, and the list the wake goes to.
 	Cards []string `json:"cards"`
+	// Working is the cards that were mid-turn when the hold was set, or whose
+	// gated call the hold refused, since the hold is what ended their turn. Only
+	// these are told to continue after the restart. The rest were waiting for a
+	// human, and still are.
+	Working []string `json:"working,omitempty"`
+}
+
+// Worked reports whether a card was working when the hold took its turn.
+func (h *RoomHold) Worked(taskID string) bool {
+	if h == nil {
+		return false
+	}
+	for _, id := range h.Working {
+		if id == taskID {
+			return true
+		}
+	}
+	return false
 }
 
 // Holds reports whether h holds a card.
@@ -136,6 +158,32 @@ func (s *Store) SetRoomHold(h RoomHold) error {
 	return err
 }
 
+// MarkHoldWorking records that a card was working under the hold of `kind`. A
+// card already marked, or a hold that is gone, changes nothing. Answers whether
+// it wrote.
+func (s *Store) MarkHoldWorking(kind, taskID string) (bool, error) {
+	wrote := false
+	err := s.inTx(func(tx *Tx) error {
+		wrote = false
+		holds, err := roomHoldsOn(tx)
+		if err != nil {
+			return err
+		}
+		for i := range holds {
+			if holds[i].Kind != kind || holds[i].Worked(taskID) {
+				continue
+			}
+			holds[i].Working = append(holds[i].Working, taskID)
+			wrote = true
+		}
+		if !wrote {
+			return nil
+		}
+		return writeRoomHoldsOn(tx, holds)
+	})
+	return wrote && err == nil, err
+}
+
 // LiftRoomHold ends the hold of `kind` whose id is `id`, and answers whether it
 // was there to lift. `id` empty lifts whatever hold of that kind there is.
 //
@@ -178,6 +226,14 @@ func (s *Store) LiftRoomHold(kind, id, outcome string, wakes map[string]string) 
 		}
 		for card, text := range wakes {
 			if err := s.addRestartWakeOn(tx, card, text, EventHoldLifted); err != nil {
+				return err
+			}
+			if !lifted.Worked(card) {
+				continue
+			}
+			if _, err := s.appendEventOn(tx, card, EventNotified, map[string]any{
+				"by": EventResumeContinue, "hold": lifted.ID,
+			}); err != nil {
 				return err
 			}
 		}

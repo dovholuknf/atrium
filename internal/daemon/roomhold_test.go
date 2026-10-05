@@ -19,6 +19,10 @@ func heldRoom(t *testing.T) (d *Daemon, worker, deployer *store.Task) {
 	d = testDaemon(t)
 	worker = peerCard(t, d, "worker")
 	deployer = peerCard(t, d, "merge")
+	// The worker is mid-turn when the hold is set, so the lift tells it to continue.
+	if err := d.st.SetStatus(worker.ID, store.StatusRunning); err != nil {
+		t.Fatal(err)
+	}
 	h, err := d.startDeployHold(holdStart{By: "merge", ByCard: deployer.ID, Whys: []string{"r-hold-notices"}})
 	if err != nil {
 		t.Fatal(err)
@@ -162,6 +166,114 @@ func TestTheRoomLiftsItsHoldAtStartupOnANewBuild(t *testing.T) {
 	d.liftAtStartup()
 	if w := d.wake.get(worker.ID); w != nil {
 		t.Fatalf("a second startup woke the worker again: %+v", w)
+	}
+}
+
+// resumeEvents counts the resume-continue events on a card.
+func resumeEvents(t *testing.T, d *Daemon, id string) int {
+	t.Helper()
+	evs, err := d.st.Events(id, 100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	n := 0
+	for _, e := range evs {
+		if strings.Contains(string(e.Payload), store.EventResumeContinue) {
+			n++
+		}
+	}
+	return n
+}
+
+func TestOnlyACardWorkingAtTheHoldIsToldToContinue(t *testing.T) {
+	d := testDaemon(t)
+	busy := peerCard(t, d, "busy")
+	idle := peerCard(t, d, "idle")
+	refused := peerCard(t, d, "refused")
+	for id, st := range map[string]string{busy.ID: store.StatusRunning, idle.ID: store.StatusNeedsInput,
+		refused.ID: store.StatusNeedsInput} {
+		if err := d.st.SetStatus(id, st); err != nil {
+			t.Fatal(err)
+		}
+	}
+	h, err := d.startDeployHold(holdStart{By: "merge"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !h.Worked(busy.ID) || h.Worked(idle.ID) {
+		t.Fatalf("working = %v, want the busy card only", h.Working)
+	}
+	// A refused call proves a card was working, whatever its status said.
+	ask(t, d, "refused", "Bash", "ls")
+	if !d.deployHold().Worked(refused.ID) {
+		t.Fatal("a card whose call the hold refused is not counted as working")
+	}
+
+	restartUnder(t, d, busy.ID, idle.ID, refused.ID)
+	d.build = "newbuild"
+	d.liftAtStartup()
+
+	w := d.wake.get(busy.ID)
+	if w == nil || !strings.Contains(w.Text, "check `git status` first") {
+		t.Fatalf("busy card's wake = %+v", w)
+	}
+	if d.wake.get(refused.ID) == nil {
+		t.Fatal("the refused card was not woken")
+	}
+	if d.wake.get(idle.ID) != nil {
+		t.Fatal("the idle card was woken")
+	}
+	if resumeEvents(t, d, busy.ID) != 1 || resumeEvents(t, d, idle.ID) != 0 {
+		t.Fatalf("resume-continue events: busy %d, idle %d", resumeEvents(t, d, busy.ID), resumeEvents(t, d, idle.ID))
+	}
+
+	// A second startup types nothing.
+	for _, id := range []string{busy.ID, refused.ID} {
+		if _, err := d.clearWake(id, "test"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	d.liftAtStartup()
+	if d.wake.get(busy.ID) != nil || resumeEvents(t, d, busy.ID) != 1 {
+		t.Fatal("a second startup woke the busy card again")
+	}
+}
+
+func TestWithUnexpectedExitOffTheLiftWakesNobody(t *testing.T) {
+	d := testDaemon(t)
+	busy := peerCard(t, d, "busy")
+	if err := d.st.SetStatus(busy.ID, store.StatusRunning); err != nil {
+		t.Fatal(err)
+	}
+	if err := d.st.SetSetting(store.SettingUnexpectedExit, "off"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := d.startDeployHold(holdStart{By: "merge"}); err != nil {
+		t.Fatal(err)
+	}
+	restartUnder(t, d, busy.ID)
+	d.build = "newbuild"
+	d.liftAtStartup()
+	if d.deployHold() != nil {
+		t.Fatal("the hold was not lifted")
+	}
+	if d.wake.get(busy.ID) != nil || resumeEvents(t, d, busy.ID) != 0 {
+		t.Fatal("a card was told to continue with the switch off")
+	}
+	if d.deployHeld(busy.ID) {
+		t.Fatal("a card nobody woke is still held for messages")
+	}
+}
+
+func TestEscalationKeepsWaitingWhileAWakeIsToBeTyped(t *testing.T) {
+	d := testDaemon(t)
+	d.holds.await([]string{"c1"}, time.Now())
+	old := time.Now().Add(-time.Hour)
+	if d.heldAged("c1", old) {
+		t.Fatal("an old message may leave the wait ahead of the wake")
+	}
+	if !d.heldAged("other", old) {
+		t.Fatal("an old message on a card with no wake waiting should be aged")
 	}
 }
 

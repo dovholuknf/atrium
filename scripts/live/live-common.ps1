@@ -77,6 +77,39 @@ function Wait-NewContextsDone([int]$MaxSeconds = 1200) {
   }
 }
 
+# Set-DeployHold sets the room's deploy hold, so every card's next gated call is refused with "end your turn and
+# wait", and the room that comes back lifts it and types a continue line into each card that was working. A card idle
+# at the time is left alone. Returns $true when the hold is on (or was already), $false when it could not be set.
+# See docs/rnd/resume-says-continue-design.md.
+$RoomHoldUrl = 'http://127.0.0.1:7781/v1/hold'
+function Set-DeployHold([string]$Why = 'deploy-batch') {
+  $body = @{ action = 'start'; by = 'deploy-batch'; whys = @($Why) } | ConvertTo-Json -Compress
+  try {
+    $null = Invoke-RestMethod -Method Post -Uri $RoomHoldUrl -ContentType 'application/json' -Body $body -TimeoutSec 15
+    return $true
+  } catch {
+    if ($_.Exception.Response -and [int]$_.Exception.Response.StatusCode -eq 409) { Say 'the room is already held for a deploy'; return $true }
+    Say "could not set the deploy hold: $($_.Exception.Message)"
+    return $false
+  }
+}
+
+# Wait-HoldQuiet waits for every held card to end its turn, the way `atrium_deploy wait` does, up to -MaxSeconds.
+# Names the cards still working while it waits. Returns $true when the room is quiet, $false when the bound ran out.
+function Wait-HoldQuiet([int]$MaxSeconds = 300) {
+  $deadline = (Get-Date).AddSeconds($MaxSeconds)
+  $said = ''
+  while ($true) {
+    try { $r = Invoke-RestMethod -Uri $RoomHoldUrl -TimeoutSec 15 } catch { Say "could not read the hold: $($_.Exception.Message)"; return $false }
+    $busy = @($r.busy)
+    if ($busy.Count -eq 0) { return $true }
+    $names = ($busy | ForEach-Object { $_.title }) -join ', '
+    if ($names -ne $said) { Say "waiting for held cards to end their turn: $names"; $said = $names }
+    if ((Get-Date) -gt $deadline) { Say "gave up waiting after $MaxSeconds seconds, still working: $names"; return $false }
+    Start-Sleep -Seconds 5
+  }
+}
+
 # Invoke-Step runs one step that changes something, or under -WhatIf says what it would do and changes nothing.
 function Invoke-Step([string]$What, [scriptblock]$Do) {
   if ($WhatIf) { Say "WHATIF: $What"; return }
