@@ -184,6 +184,25 @@ func NotifyIdentity(id string, payload json.RawMessage) (notifyCard, bool) {
 	return nc, true
 }
 
+// freshCard is how long after it was created a card that has recorded no turn
+// end still reads as just started.
+const freshCard = 5 * time.Minute
+
+// youngAt reports whether a card created at `created` was still fresh when it
+// began waiting at `waited`. Either one missing or unreadable says yes, which is
+// the quiet answer this gate always gave.
+func youngAt(created, waited string) bool {
+	c, err := time.Parse(time.RFC3339, created)
+	if err != nil {
+		return true
+	}
+	w, err := time.Parse(time.RFC3339, waited)
+	if err != nil {
+		return true
+	}
+	return w.Sub(c) < freshCard
+}
+
 // cardReason is NotifyIdentity without the origin:agent skip, which is the
 // caller's to apply. The growler needs the difference: a blocked agent is
 // frozen whoever launched it, so its permission still growls.
@@ -200,6 +219,7 @@ func cardReason(id string, payload json.RawMessage) (notifyCard, bool) {
 		Tags         []string `json:"tags"`
 		WaitingSince string   `json:"waiting_since"`
 		LastActivity string   `json:"last_activity_at"`
+		CreatedAt    string   `json:"created_at"`
 		// WHY IT WAITS, which a report sets to its status: `blocked` or
 		// `question` (internal/daemon/finish.go). The stored card has always
 		// carried it, so the hub reads it with no room change.
@@ -246,8 +266,12 @@ func cardReason(id string, payload json.RawMessage) (notifyCard, bool) {
 	// So is one that ASKED: a permission or elicitation Notification moves
 	// the card with no Stop, so no turn end. The room writes `asked` for
 	// those and not for an idle prompt. Gate only: it is not a report.
+	// NOT A RECORDED TURN END ALONE (f-029). Only the Stop hook writes one, and
+	// the idle-prompt Notification moves a card to needs-input with no Stop, so a
+	// runner without the hook, or a card joined part way, would never notify.
+	// What marks a card as just started is its age at the wait, and `started`.
 	case p.Status == "needs-input" && sent && p.Seen.TurnEndedAt == "" && report == "" &&
-		p.WaitingReason != "asked":
+		p.WaitingReason != "asked" && (p.WaitingReason == "started" || youngAt(p.CreatedAt, waited)):
 		return notifyCard{}, false
 	case p.Status == "needs-input":
 		reason, at = ReasonInput, waited

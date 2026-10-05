@@ -124,3 +124,27 @@ func TestAHungRoomDoesNotStallThePrune(t *testing.T) {
 		t.Errorf("removed = %v, want 1", out["removed"])
 	}
 }
+
+// A BODY OVER 64 KIB IS REFUSED WITH 413 and reaches no room, where it used to be
+// cut and sent on (f-029). One at the limit still goes through.
+func TestAPruneBodyOverTheLimitIsRefusedNotCut(t *testing.T) {
+	a, b := &pruneRoom{removed: 1}, &pruneRoom{removed: 1}
+	front, _, done := two(t, a, b)
+	defer done()
+
+	const head, tail = `{"statuses":["done"],"x":"`, `"}`
+	pad := func(n int) string { return head + strings.Repeat("a", n-len(head)-len(tail)) + tail }
+
+	code, _, _ := postPrune(t, front.URL, pad(pruneMax+1), "")
+	if code != http.StatusRequestEntityTooLarge {
+		t.Errorf("over the limit answered %d, want 413", code)
+	}
+	if len(a.bodies())+len(b.bodies()) != 0 {
+		t.Errorf("a refused body reached a room: %d %d", len(a.bodies()), len(b.bodies()))
+	}
+
+	code, _, _ = postPrune(t, front.URL, pad(pruneMax), "")
+	if code != http.StatusOK {
+		t.Errorf("at the limit answered %d, want 200", code)
+	}
+}

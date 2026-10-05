@@ -229,6 +229,17 @@ func TestNotifyIdentityPerReasonAndPriority(t *testing.T) {
 			"input", "a|input|T2"},
 		// An idle prompt writes no reason, so a fresh card stays quiet (87300).
 		{"idle prompt before any turn", `{"status":"needs-input","waiting_since":"T2","waiting_reason":"","seen":{}}`, "", ""},
+		// f-029: no Stop hook, so no turn end, but the card has been about for
+		// an hour and its idle prompt is news. A card just created stays quiet.
+		{"idle prompt, old card, no turn end",
+			`{"status":"needs-input","created_at":"2026-10-05T09:00:00Z","waiting_since":"2026-10-05T10:00:00Z","seen":{}}`,
+			"input", "a|input|2026-10-05T10:00:00Z"},
+		{"idle prompt, new card, no turn end",
+			`{"status":"needs-input","created_at":"2026-10-05T10:00:00Z","waiting_since":"2026-10-05T10:01:00Z","seen":{}}`,
+			"", ""},
+		{"started stays quiet however old",
+			`{"status":"needs-input","created_at":"2026-10-05T09:00:00Z","waiting_since":"2026-10-05T10:00:00Z",` +
+				`"waiting_reason":"started","seen":{}}`, "", ""},
 		{"started before any turn", `{"status":"needs-input","waiting_since":"T2","waiting_reason":"started","seen":{}}`, "", ""},
 		// Permission is asked whatever the turns say.
 		{"permission before any turn", `{"status":"needs-permission","waiting_since":"T1","seen":{}}`,

@@ -35,7 +35,7 @@ func pruneIn(r *http.Request) ([]byte, bool) {
 	if r.URL.Path != "/v1/tasks/prune" || r.Method != http.MethodPost {
 		return nil, false
 	}
-	payload, err := io.ReadAll(io.LimitReader(r.Body, 1<<16))
+	payload, err := io.ReadAll(io.LimitReader(r.Body, pruneMax+1))
 	r.Body.Close()
 	r.Body = io.NopCloser(bytes.NewReader(payload))
 	if err != nil {
@@ -44,7 +44,15 @@ func pruneIn(r *http.Request) ([]byte, bool) {
 	return payload, true
 }
 
+// pruneMax is the largest prune body taken. One byte more is read, so a body over
+// it is refused with 413 and never sent on cut.
+const pruneMax = 1 << 16
+
 func (p *Proxy) fanPrune(w http.ResponseWriter, r *http.Request, payload []byte) {
+	if len(payload) > pruneMax {
+		writeErrBody(w, http.StatusRequestEntityTooLarge, "prune body is over 64 KiB")
+		return
+	}
 	var (
 		mu        sync.Mutex
 		wg        sync.WaitGroup
