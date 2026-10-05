@@ -1344,6 +1344,7 @@ async function bridgeSection(browser, base) {
     // selected row alone, and with every row worn, which frames the selected one.
     for (const [skin, idle] of [["noir", false], ["noir", true], ["daylight", false], ["daylight", true]]) {
       const got = await bp.evaluate(async ([skin, idle]) => {
+        termBridge = true;
         applySkin(skin);
         toggleTermWear("idle", idle);
         termTask = { id: "filed1" };
@@ -3508,6 +3509,7 @@ async function themePreviewSection(browser, base) {
     // Attach a stand-in terminal on tp-a. The picker and the bridge only ask
     // that there is one with options to set.
     const attach = id => p.evaluate(async id => {
+      termBridge = true;
       termTask = lastTasks.find(t => t.id === id);
       term = { options: {}, dispose() {} };
       await loadCards().catch(() => {}).then(renderTermList);
@@ -18508,6 +18510,78 @@ async function oneTooltipSection(browser, base) {
   if (!bad) console.log("oneTooltip ok");
 }
 
+// The attached row's highlight stays inside the list column at the narrowest list and a wide one, and the width
+// buttons are a grip in the list's lower left corner. ROWBLEED_SHOTS=<dir> writes a screenshot per width.
+async function termRowBleedSection(browser, base) {
+  const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+  const p = await ctx.newPage();
+  const errors = [];
+  p.on("pageerror", e => errors.push(e.message));
+  const was = tasksMode;
+  tasksMode = "filed";
+  try {
+    await p.goto(base + "/", { waitUntil: "domcontentloaded" });
+    await p.waitForTimeout(900);
+    await p.click('.tab[data-view="terms"]');
+    await p.waitForSelector('#term-list .card.tab[data-id="filed1"]', { state: "attached", timeout: slow(15000) });
+    await p.waitForTimeout(1000);
+    for (const w of [150, 520]) {
+      const got = await p.evaluate(async (w) => {
+        termTask = { id: "filed1" };
+        // Stand-in for an attached terminal: the row is only marked attached when there is one.
+        term = term || { stub: true };
+        await loadCards().catch(() => {}).then(renderTermList);
+        setTermW(w);
+        await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+        placeTabBridge();
+        const r = el => el.getBoundingClientRect();
+        const box = r(document.querySelector("#term-list .termscroll"));
+        const on = [...document.querySelectorAll("#term-list .card.on")];
+        const list = r(document.getElementById("term-list"));
+        const btns = [...document.querySelectorAll("#term-list .tlcorner .tlcycle")];
+        const pane = r(document.getElementById("term-pane"));
+        return {
+          on: on.length, wide: Math.round(list.width),
+          overflow: on.filter(c => r(c).right > box.right + 0.5 || r(c).right > list.right + 0.5).length,
+          bridges: [...document.querySelectorAll("#term-layout .tabbridge")].filter(b => !b.hidden &&
+            getComputedStyle(b).display !== "none").length,
+          reachesPane: on.some(c => r(c).right >= pane.left),
+          corner: btns.length && btns.every(b => r(b).left >= list.left && r(b).left < list.left + 60 &&
+            r(b).bottom <= list.bottom + 1 && r(b).top > list.bottom - 40),
+          text: btns.some(b => b.textContent.trim() !== "")
+        };
+      }, w);
+      const tag = "termRowBleed " + w + "px: ";
+      if (!got.on) fail(tag + "no attached row to measure: " + JSON.stringify(got));
+      if (w === 150 && got.wide > 160) fail(tag + "the list is not at its narrowest: " + got.wide);
+      if (w === 520 && got.wide < 500) fail(tag + "the list is not wide: " + got.wide);
+      if (got.overflow) fail(tag + "the attached row draws past the list column: " + JSON.stringify(got));
+      if (got.bridges || got.reachesPane) fail(tag + "the row's highlight still crosses the divider: " + JSON.stringify(got));
+      if (!got.corner) fail(tag + "the width buttons are not in the lower left corner: " + JSON.stringify(got));
+      if (got.text) fail(tag + "a width button is still a text button: " + JSON.stringify(got));
+      if (process.env.ROWBLEED_SHOTS) {
+        await p.screenshot({ path: path.join(process.env.ROWBLEED_SHOTS, "rowbleed-" + w + ".png") });
+      }
+    }
+    // One click each way: narrow to mini, widen back to full, and the divider drag still sets the width.
+    const steps = await p.evaluate(async () => {
+      setTermListMode("full");
+      await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+      document.querySelector("#term-list .tlcorner .tlcycle:not(.tlwider)").click();
+      const mini = termListMode;
+      await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+      document.querySelector("#term-list .tlcorner .tlwider").click();
+      const full = termListMode;
+      setTermW(300);
+      return { mini, full, w: termListW };
+    });
+    if (steps.mini !== "mini" || steps.full !== "full") fail("termRowBleed: the corner buttons do not step: " + JSON.stringify(steps));
+    if (steps.w !== 300) fail("termRowBleed: dragging the divider no longer sets the width: " + JSON.stringify(steps));
+    if (errors.length) fail("termRowBleed: page errors: " + errors.join(" | "));
+  } finally { tasksMode = was; await ctx.close(); }
+  if (!bad) console.log("termRowBleed ok");
+}
+
 async function termBoxSection(browser, base) {
   const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 } });
   const p = await ctx.newPage();
@@ -18545,7 +18619,8 @@ async function termBoxSection(browser, base) {
               const r = el => el.getBoundingClientRect();
               const tb = tray ? r(tray) : null;
               const toggle = tray && tray.querySelector(".traytoggle");
-              const arrows = tray ? [...tray.querySelectorAll(".tlcycle")] : [];
+              const listBox = r(document.getElementById("term-list"));
+              const arrows = [...document.querySelectorAll("#term-list .tlcorner .tlcycle")];
               const btns = tray ? [...tray.querySelectorAll(".trayrows button")] : [];
               res[`${hide}/${group ? "grouped" : "flat"}/${name}`] = tray ? {
                 sum: (tray.querySelector(".traysum") || {}).textContent || "",
@@ -18554,8 +18629,10 @@ async function termBoxSection(browser, base) {
                 group: tray.querySelectorAll("#term-group-tray button").length,
                 arrows: arrows.length,
                 overrun: btns.filter(b => r(b).right > tb.right + 1 || r(b).left < tb.left - 1).length,
-                summaryOverArrow: toggle && arrows.length ? r(toggle).right > r(arrows[0]).left + 1 : false,
-                arrowOut: arrows.some(a => r(a).right > tb.right + 1),
+                summaryOverArrow: false,
+                // The width buttons sit in the list's lower left corner, inside its box, and not on the tray.
+                arrowOut: arrows.some(a => r(a).left < listBox.left || r(a).right > listBox.left + listBox.width / 2 ||
+                  r(a).bottom > listBox.bottom + 1 || r(a).top < listBox.bottom - 40),
                 wide: Math.round(tb.width)
               } : null;
             }
@@ -22062,7 +22139,7 @@ async function main() {
       mTypeSteady: mTypeSteadySection, mOlder: mOlderSection, mFollow: mFollowSection, mDocs: mDocsSection,
       mSwitcher: mSwitcherSection,
       mPull: mPullSection, joinedLive: joinedLiveSection, joinedClick: joinedClickSection,
-      coverPoll: coverPollSection, coverSteps: coverStepsSection, termBox: termBoxSection,
+      coverPoll: coverPollSection, coverSteps: coverStepsSection, termBox: termBoxSection, termRowBleed: termRowBleedSection,
       termDebug: termDebugSection, termSortStarted: termSortStartedSection,
       noReadyChildren: noReadyChildrenSection, childUnderParent: childUnderParentSection, topNav: topNavSection,
       childFold: childFoldSection, liveHome: liveHomeSection,
@@ -22579,7 +22656,7 @@ async function main() {
         trayPos: tray ? getComputedStyle(tray).position : "",
         listOverflow: getComputedStyle(list).overflowY,
         scrollOverflow: scroll ? getComputedStyle(scroll).overflowY : "",
-        widthBtns: tray ? tray.querySelectorAll(".traybar .tlcycle").length : 0,
+        widthBtns: list.querySelectorAll(".tlcorner .tlcycle").length,
         cacheLine: list.querySelectorAll(".cacheline").length,
         folded: !!list.querySelector(".termtray:not(.open)"),
         sum: ((tray && tray.querySelector(".traysum")) || {}).textContent || "",
@@ -22672,7 +22749,7 @@ async function main() {
       const tray = document.querySelector("#term-list .termtray");
       const vis = el => !!el && getComputedStyle(el).display !== "none";
       const out = {
-        widen: [...tray.querySelectorAll(".tlcycle")].some(vis)
+        widen: [...document.querySelectorAll("#term-list .tlcorner .tlcycle")].some(vis)
       };
       setTermListMode("full");
       localStorage.removeItem(termDeviceKey("atrium.termtray"));
@@ -24124,6 +24201,7 @@ async function main() {
     await unit("coverPoll", () => coverPollSection(browser, base));
     await unit("coverSteps", () => coverStepsSection(browser, base));
     await unit("termBox", () => termBoxSection(browser, base));
+    await unit("termRowBleed", () => termRowBleedSection(browser, base));
     await unit("termDebug", () => termDebugSection(browser, base));
     await unit("termSortStarted", () => termSortStartedSection(browser, base));
     await unit("topNav", () => topNavSection(browser, base));
