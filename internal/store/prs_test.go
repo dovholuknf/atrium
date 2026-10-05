@@ -382,3 +382,28 @@ func TestLivePRFindsTheRunningReviewOfAPullRequest(t *testing.T) {
 		t.Fatal("another pull request")
 	}
 }
+
+func TestRequeueInterruptedPRsMovesOnlyTheCutOnes(t *testing.T) {
+	st := openPRStore(t)
+	cut := newTestPR(t, st, "")
+	if _, err := st.MovePR(cut.ID, nil, PRRunning, "panel", ""); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.SetPRWalker(cut.ID, "card1"); err != nil {
+		t.Fatal(err)
+	}
+	ids, err := st.RequeueInterruptedPRs()
+	if err != nil || len(ids) != 1 || ids[0] != cut.ID {
+		t.Fatalf("requeued %v, %v", ids, err)
+	}
+	got, _ := st.PRByID(cut.ID)
+	if got.State != PRQueued || got.RunState != "" || got.RunDir != cut.RunDir || got.WalkerTask != "card1" {
+		t.Fatalf("after: %s %q %q walker %q", got.State, got.RunState, got.RunDir, got.WalkerTask)
+	}
+	if _, err := st.MovePR(cut.ID, nil, PRReady, "", ""); err != nil {
+		t.Fatal(err)
+	}
+	if ids, _ := st.RequeueInterruptedPRs(); len(ids) != 0 {
+		t.Fatalf("a ready row was requeued: %v", ids)
+	}
+}

@@ -1091,6 +1091,7 @@ func (d *Daemon) BoardHandler() http.Handler { return d.ap.Handler() }
 
 func (d *Daemon) Run(ctx context.Context) error {
 	go d.probeAutocompact()
+	d.resumePRReviews()
 	agentMux := http.NewServeMux()
 	agentMux.HandleFunc("/permission", d.handlePermission)
 	agentMux.HandleFunc("/session", d.handleSession)
@@ -1493,3 +1494,19 @@ func (d *Daemon) SetPRClaim(f func(ctx context.Context, ask api.PRClaimAsk) (api
 
 // ReconcilePRClaims asks the hub about the PR rows made while it could not be reached. The room's attach calls it.
 func (d *Daemon) ReconcilePRClaims() { d.ap.ReconcilePRClaims() }
+
+// resumePRReviews hands the runner the reviews the last daemon was cut in the middle of. Nothing runs at start, so a
+// row in fetching or running is one that died with it. Each goes back to queued and is started: the runner reuses the
+// steps its folder holds.
+func (d *Daemon) resumePRReviews() {
+	if d.prr == nil {
+		return
+	}
+	ids, err := d.st.RequeueInterruptedPRs()
+	if err != nil {
+		log.Printf("[atrium] pr reviews: not resumed: %v", err)
+	}
+	for _, id := range ids {
+		d.prr.Start(id)
+	}
+}
