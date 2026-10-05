@@ -1350,8 +1350,19 @@ function onTaskEvent(e) {
   hearActivity(d);
   if (termOnly()) { soloTaskEvent(d); return; }
   if (cardRowComplete(d)) { upsertCard(d); paintSoon(); return; }
+  // A CARD THE BOARD HAS NEVER HEARD OF is read for now, not at the next throttle slot: the alert and the terminals
+  // row both come from the list, so waiting out TASKS_EVERY is the gap between the two and the card. Once per id,
+  // so an id that never lists (another room's) cannot turn every event into a read.
+  if (d && d.id && !cardRows.has(d.id) && !askedFor.has(d.id)) {
+    askedFor.add(d.id);
+    want.tasks = true;
+    passSoon();
+    return;
+  }
   tasksSoon();
 }
+// Ids a task event named before the list held them, so each is read for once. See `onTaskEvent`.
+const askedFor = new Set();
 
 // A card doing something, told to the ready alert so it can wait for quiet.
 // Whole rows count only when the live activity changed (its clocks tick and

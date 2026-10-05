@@ -1187,6 +1187,7 @@ function termRow(t, deep, kid) {
            termCold(t) ? " cold" : ""}${wear.cls}${newCardClass(t)}"
          data-id="${t.id}"
          data-tip="${esc(hover + (termCold(t) ? "\nthis one has exited. click to start it again here"
+           : t.starting && !t.supervised ? "\natrium is starting this one. its runner is not up yet"
            : termJoined(t) ? "\njoined from your own terminal. atrium cannot attach to it. click for what you can do" : ""))}"
          style="${style}"
          onclick="${termCold(t)
@@ -1312,8 +1313,9 @@ function termRowChips(t) {
   const stuck = typeof stuckMark === "function" ? stuckMark(t) : "";
   const ncx = typeof newContextChip === "function" ? newContextChip(t) : "";
   const cache = typeof keepaliveChip === "function" ? keepaliveChip(t) : "";
-  const joined = termJoined(t)
-    ? `<span class="chip">joined</span>` : "";
+  // A card atrium is launching has no runner yet, which is not the same as one joined from another terminal.
+  const joined = t.starting && !t.supervised ? `<span class="chip">starting</span>`
+    : termJoined(t) ? `<span class="chip">joined</span>` : "";
   // The past-the-limit mark, which the strip did not draw. A card cycling its context shows that instead.
   const lim = t.new_context ? "" : ctxWarnMark(t);
   const inner = stuck + newCardChip(t) + lim + ncx + seenChips(t) + cache + held + room + popped + joined;
