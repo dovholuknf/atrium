@@ -46,10 +46,10 @@ is live.
    GOTMPDIR set. Its exclusions need the line in `notes/director-reports.md` (18:53) pasted into an elevated shell on
    sg3. sg4 the same, with the line `room-defender.ps1 local` prints. Close this when `Get-MpPreference` in that shell
    lists the paths.
-0b. **room-defender nit** from @review's pass of 7d1625cc: the header line ending "So GOCACHE=C:\ excludes nothing."
+0b. **BUILT on claude/f-new-review-8df971e4. room-defender nit** from @review's pass of 7d1625cc: the header line ending "So GOCACHE=C:\ excludes nothing."
    runs past 120 characters. Rewrap it with the next room-defender change, through @review. (The low itself, Go paths
    held to AppData\Local and ~\go, landed as 8b6afd3c.)
-0c. **live ATRIUM_HOSTS, @review's two lows on 8df971e4** (`f-new-review-8df971e4.md`). (1) Start-Room still
+0c. **BUILT on claude/f-new-review-8df971e4. live ATRIUM_HOSTS, @review's two lows on 8df971e4** (`f-new-review-8df971e4.md`). (1) Start-Room still
    inherits the caller's ATRIUM_HOSTS, and whether a room gets the User value depends on whether it starts after
    Start-Hub set it in the script's process. Give Start-Room the same read. (2) A value set only at Machine scope is
    now ignored: fall back to Machine when User is unset. Small, through @review. @runtime's r-new-hosts-setting

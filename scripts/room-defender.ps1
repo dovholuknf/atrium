@@ -39,7 +39,8 @@
 # profile read from HKLM ProfileList by the account's SID, which the account cannot change, then the worktree root and
 # the clone's build.claude. A Go path must be strictly inside one of them, never a root itself, so GOCACHE pointed at
 # Downloads or at the profile excludes nothing. A root is refused when it is a drive root, less than two folders
-# deep, or under Windows, Program Files or ProgramData. A refused path is named in a `warn` line and left out. So GOCACHE=C:\ excludes nothing.
+# deep, or under Windows, Program Files or ProgramData. A refused path is named in a `warn` line and left out. So
+# GOCACHE=C:\ excludes nothing.
 #
 # THE CLONE is -Clone, else, for a room, the path in this repository's git remote named for it (room-git.ps1 init),
 # and for `local`, the main checkout this script belongs to. THE WORKTREE ROOT is -WorktreeRoot, else

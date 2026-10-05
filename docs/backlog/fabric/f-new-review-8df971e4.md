@@ -22,3 +22,5 @@ Reviewed by @review, 2026-09-30, from `git show 8df971e4` (`scripts/live/live-co
    comes up with none. sg4 has it at User scope, so this is only a note until r-new-hosts-setting replaces it.
 
 PASS 8df971e4
+
+BUILT on claude/f-new-review-8df971e4: both lows fixed (Get-LiveHosts, User then Machine, used by Start-Hub and Start-Room).

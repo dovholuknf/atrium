@@ -342,20 +342,41 @@ function Backup([string]$Name) {
   }
 }
 
+# Get-LiveHosts reads ATRIUM_HOSTS for a hub or room the deploy starts: the User value, else the Machine one, never the
+# caller's. It returns the value ($null when unset at both) and the scope it came from. -Read is a seam for the test.
+function Get-LiveHosts([scriptblock]$Read = { param($scope) [Environment]::GetEnvironmentVariable('ATRIUM_HOSTS', $scope) }) {
+  foreach ($scope in 'User', 'Machine') {
+    $v = & $Read $scope
+    if ($v) { return [pscustomobject]@{ Value = $v; Scope = $scope } }
+  }
+  return [pscustomobject]@{ Value = $null; Scope = $null }
+}
+
+# Get-LiveHostsSaid is the line the deploy log and hub.err carry for what Get-LiveHosts found.
+function Get-LiveHostsSaid($h) {
+  if ($h.Value) { return "ATRIUM_HOSTS=$($h.Value), from the $($h.Scope) environment" }
+  return 'ATRIUM_HOSTS unset in the User and Machine environments'
+}
+
+# Set-LiveHosts applies Get-LiveHosts to this process, which a child inherits.
+function Set-LiveHosts($h) {
+  if ($h.Value) { $env:ATRIUM_HOSTS = $h.Value } else { Remove-Item Env:ATRIUM_HOSTS -ErrorAction SilentlyContinue }
+}
+
 # Start-Hub starts the atrium detached, through cmd so the redirect appends and the caller's output can end.
 #
-# ATRIUM_HOSTS FROM THE USER ENVIRONMENT, never the caller's. It names the extra hosts the board answers to, the zrok
+# ATRIUM_HOSTS FROM THE USER ENVIRONMENT (Machine when User is unset), never the caller's. It names the extra hosts the board answers to, the zrok
 # share's among them, and a deploy started from a session that lacks it brought the hub up without it (2026-09-30
 # 19:09, the share broke). Unset in the User environment means unset for the hub too. The value used is logged here
 # and in hub.err. @runtime's r-new-hosts-setting, a stored setting, replaces this.
 function Start-Hub {
   $line = "`"$AtriumBin`" $($HubArgs -join ' ') >> $Base\hub.out 2>> $Base\hub.err"
-  $hosts = [Environment]::GetEnvironmentVariable('ATRIUM_HOSTS', 'User')
-  $said = if ($hosts) { "ATRIUM_HOSTS=$hosts, from the User environment" } else { 'ATRIUM_HOSTS unset in the User environment' }
+  $h = Get-LiveHosts
+  $said = Get-LiveHostsSaid $h
   Say $said
   Invoke-Step "start hub: $AtriumBin $($HubArgs -join ' ')" {
     Clear-SessionEnv
-    if ($hosts) { $env:ATRIUM_HOSTS = $hosts } else { Remove-Item Env:ATRIUM_HOSTS -ErrorAction SilentlyContinue }
+    Set-LiveHosts $h
     Add-Content (Join-Path $Base 'hub.err') ("===== hub start {0} ({1}) =====" -f (Get-Date -Format o), $said)
     Start-Process -FilePath 'cmd.exe' -WindowStyle Hidden -ArgumentList '/c', $line
   }
@@ -369,8 +390,11 @@ function Start-Room {
     Say "a room already answers at $RoomHealth. not starting another"
     return $false
   }
+  $h = Get-LiveHosts
+  Say (Get-LiveHostsSaid $h)
   Invoke-Step "start room: $AtriumBin $($RoomArgs -join ' ')" {
     Clear-SessionEnv
+    Set-LiveHosts $h
     Start-Process -FilePath $AtriumBin -ArgumentList $RoomArgs -WindowStyle Hidden `
       -RedirectStandardOutput (Join-Path $Base 'room.out') -RedirectStandardError (Join-Path $Base 'room.err')
   }
