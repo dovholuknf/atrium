@@ -58,6 +58,20 @@
 # machine already provisioned changes. `-Linger` (Linux, with autostart) keeps the
 # room running after logout.
 #
+# NOBODY LOGGED IN AT A WINDOWS MACHINE. The logon task is Interactive, so `schtasks /Run` does nothing until someone is at
+# the machine (last result 267011). Then the room is started with `room --detach`, which outlives the ssh session, and the
+# step is `start warn <reason>`: the task starts it at the next logon. The run goes on to the git step, auth and the smoke.
+# Only a failed `room --detach` too is `start fail` and exit 3. See scripts/room-start.ps1.
+#
+# GIT ON A BARE WINDOWS BOX. The git step is room-git.ps1 init. A Windows remote with no git (no winget, no admin) gets
+# MinGit: the latest release or `-GitVersion 2.56.0`, SHA256 checked against what the release publishes, unpacked to
+# ~\.local\git with its cmd folder on the user Path. macOS and Linux print the install command instead. See
+# scripts/room-git.ps1 and scripts/room-mingit.ps1.
+#
+# A SMOKE THAT DOES NOT REPORT prints the card's own last screen lines under the fail line, and names the fix it knows. The
+# usual one on a machine whose provision stopped early is that claude has no atrium-control tools, because the `mcp` step
+# never ran: rerun without -SmokeOnly.
+#
 # THE ACCOUNT. `-User localai` says the account the room must run as. It is
 # checked over the ssh login and never created: making an account needs admin, and
 # provisioning runs without it. A missing account prints the one command an
@@ -224,6 +238,8 @@ param(
 
     # 'none' skips the git clone that room-git.ps1 makes by push. Anything else makes it.
     [string] $Repo = 'atrium',
+    # A Windows room with no git gets MinGit, with no admin: the latest release, or this one (2.56.0). See "git on a bare Windows box".
+    [string] $GitVersion,
     # Skip the Defender step on a Windows room: no exclusions, and GOTMPDIR left alone. See room-defender.ps1.
     [switch] $NoDefender,
     # The folders atrium may launch in on the room, absolute paths on the remote. Default for a new provision: the clone,
@@ -276,6 +292,7 @@ $Install = Split-List $Install
 $AllowedFolders = Split-List $AllowedFolders
 . (Join-Path $PSScriptRoot 'room-folders.ps1')
 . (Join-Path $PSScriptRoot 'room-account.ps1')
+. (Join-Path $PSScriptRoot 'room-start.ps1')
 $operators = @(Get-OperatorList (Split-List $OperatorAccount))
 foreach ($o in $operators) { $why = Test-OperatorArg $o; if ($why) { Write-Host "provision args fail $why"; exit 1 } }
 foreach ($f in $AllowedFolders) {
@@ -1295,6 +1312,16 @@ function Invoke-SmokeCase {
             } catch { }
         }
         $took = [int]((Get-Date) - $t0).TotalSeconds
+        # WHAT THE CARD SHOWS, read before it is exited, so a smoke that did not report says why instead of only that it
+        # did not. Seen on sgg: claude answered at once that it had no atrium_say or atrium_report, because the mcp step had
+        # not run on a provision that stopped early, and the card then sat done, reporting nothing.
+        $screen = @()
+        if (-not $reported) {
+            try {
+                $txt = Invoke-RestMethod -Uri "http://$HubAddr/v1/tasks/$id/scrollback/text" -Headers $hdr -TimeoutSec 15
+                $screen = @("$txt" -split "`r?`n" | Where-Object { $_.Trim() } | Select-Object -Last 14)
+            } catch { }
+        }
         # EXITED WHATEVER HAPPENED, so a smoke card never lingers on the room.
         try { Invoke-RestMethod -Method Post -Uri "http://$HubAddr/v1/tasks/$id/exit" -Headers $hdr -TimeoutSec 15 | Out-Null } catch { }
         $left = $false
@@ -1313,9 +1340,22 @@ function Invoke-SmokeCase {
             if (-not (Invoke-SmokeOutside $runner $body $hdr $nonce)) { return $false }
         } else {
             $smokeErr = "the smoke card $id did not report $nonce in ${SmokeTimeout}s ($leftWord). look at it on the board, it is on $Name"
+            $screenText = $screen -join ' '
+            $sshT = (@($Ssh) + $SshOption + @('-t', $Target)) -join ' '
+            if ($screenText -match "(?i)(atrium_say|atrium_report|atrium-control)[^.]*(not available|aren.t available|unavailable|not found)|(not available|aren.t available)[^.]*(atrium_say|atrium_report)") {
+                $smokeErr += ". the card's own screen says claude there has no atrium-control tools: rerun without -SmokeOnly, whose mcp step writes ~/.atrium/mcp.json and names it in the claude runner row"
+            } elseif ($screenText -match '(?i)trust this folder|choose the text style|select login method|Welcome to Claude|dark mode|press enter to continue') {
+                $smokeErr += ". the card is at a claude first-run screen nobody answers. run once: $sshT claude, answer its screens, then /exit"
+            }
+            $script:smokeScreen = $screen
         }
     }
-    if ($smokeErr) { Step $step 'fail' $smokeErr; return $false }
+    if ($smokeErr) {
+        Step $step 'fail' $smokeErr
+        foreach ($l in @($script:smokeScreen)) { if ($l) { Write-Host "    card: $l" } }
+        $script:smokeScreen = $null
+        return $false
+    }
     $true
 }
 
@@ -2192,6 +2232,7 @@ if (($pathChanged -or ($useAutostart -and -not $hadAutostartBefore)) -and -not $
 # ── 8. run it: in the background, or through autostart ───────────────────────
 
 $startedAt = Get-Date
+$startedNow = $false
 if (-not $useAutostart) {
     # THROUGH A LOGIN SHELL ON UNIX, so the room gets the PATH a person's
     # terminal has rather than the bare one a non-interactive ssh command gets,
@@ -2233,29 +2274,7 @@ if (-not $useAutostart) {
     }
 
     if ($os -eq 'windows') {
-        $as = @'
-$svc = Get-AT
-if ($svc -and $svc -like "*$Bin*room --*") { "autostart=ok" }
-else {
-    $o = & (Join-Path $P 'scripts\atrium-service.ps1') install -Verb room -Exe $Bin *>&1
-    if (-not (Get-AT)) { $o; exit 1 }
-    "autostart=done"
-}
-$up = $false
-try { $null = Invoke-RestMethod http://127.0.0.1:7781/v1/health -TimeoutSec 3; $up = $true } catch {}
-if ($up) { "start=ok" } else {
-    $null = Sch /Run /TN atrium
-    $deadline = (Get-Date).AddSeconds(30)
-    while (-not $up -and (Get-Date) -lt $deadline) {
-        Start-Sleep -Seconds 1
-        try { $null = Invoke-RestMethod http://127.0.0.1:7781/v1/health -TimeoutSec 2; $up = $true } catch {}
-    }
-    if ($up) { "start=done" } else {
-        $lr = (Sch /Query /TN atrium /V /FO LIST | Where-Object { "$_" -match '^Last Result:\s*(.+)$' } | ForEach-Object { $Matches[1].Trim() } | Select-Object -First 1)
-        "start=fail the task did not bring the room up, last result $lr. an Interactive task needs the user logged in at the machine"
-    }
-}
-'@
+        $as = Get-WindowsAutostartScript
     } else {
         $as = "LINGER=$(if ($Linger) { '1' } else { '' })`n" + @'
 S="$P/scripts/atrium-service.sh"
@@ -2290,6 +2309,9 @@ fi
     Step 'autostart' $kv.autostart $(if ($os -eq 'windows') { 'logon task atrium, RunLevel Limited' } elseif ($os -eq 'linux') { 'systemd user unit atrium.service' } else { 'LaunchAgent io.github.dovholuknf.atrium' })
     $startStatus = ($kv.start -split ' ', 2)
     $startWord = $startStatus[0]
+    # A start the logon task could not make and `room --detach` did (a warn) is still a room started NOW, so the attach
+    # wait wants a connection made after it.
+    if ($kv.started -eq '1') { $startedNow = $true }
     Step 'start' $startWord $(if ($startStatus.Count -gt 1) { $startStatus[1] } else { '' })
     if ($startWord -eq 'fail') { Finish 3 }
 }
@@ -2301,7 +2323,7 @@ fi
 # stopped for a new binary. A room started by this run has to show a
 # connection made after it started, and still be there a few seconds later,
 # which is what catches a room that died with the ssh session that started it.
-$needSince = if ($startWord -eq 'done') { $startedAt } else { [datetime]::MinValue }
+$needSince = if ($startWord -eq 'done' -or $startedNow) { $startedAt } else { [datetime]::MinValue }
 function Get-Live {
     try {
         $live = Invoke-RestMethod -Uri "http://$HubAddr/_hub/rooms" -TimeoutSec 5
@@ -2591,10 +2613,10 @@ fi
 # The clone, made by room-git.ps1 init. Its `room-git cwd ok <path>` line is
 # where the smoke card below runs, when init succeeded.
 $clonePath = $null
-if ($Repo -ne 'none') { & pwsh -NoProfile -File (Join-Path $PSScriptRoot 'room-git.ps1') init $Name -Target $Target -Ssh $Ssh @(if ($SshOption) { '-SshOption'; $SshOption -join ',' }) *>&1 | ForEach-Object { Write-Host $_; if ("$_" -match '^room-git cwd ok (.+)$') { $clonePath = $Matches[1].Trim() } }; if ($LASTEXITCODE -ne 0) { $clonePath = $null; Step 'git' 'warn' "room-git init exited $LASTEXITCODE. rerun: room-git.ps1 init $Name -Target $Target" } }
+if ($Repo -ne 'none') { & pwsh -NoProfile -File (Join-Path $PSScriptRoot 'room-git.ps1') init $Name -Target $Target -Ssh $Ssh -Scp $Scp @(if ($GitVersion) { '-GitVersion'; $GitVersion }) @(if ($SshOption) { '-SshOption'; $SshOption -join ',' }) *>&1 | ForEach-Object { Write-Host $_; if ("$_" -match '^room-git cwd ok (.+)$') { $clonePath = $Matches[1].Trim() } }; if ($LASTEXITCODE -ne 0) { $clonePath = $null; Step 'git' 'warn' "room-git init exited $LASTEXITCODE. rerun: room-git.ps1 init $Name -Target $Target" } }
 
 # The permission gate, after the hooks: room-gate.ps1 copies the one dotfiles script and registers it first.
-& pwsh -NoProfile -File (Join-Path $PSScriptRoot 'room-gate.ps1') $Name -Target $Target -Ssh $Ssh @(if ($SshOption) { '-SshOption'; $SshOption -join ',' }) *>&1 | ForEach-Object { Write-Host $_ }; if ($LASTEXITCODE -ne 0) { Step 'gate' 'warn' "room-gate exited $LASTEXITCODE. rerun: room-gate.ps1 $Name -Target $Target" }
+& pwsh -NoProfile -File (Join-Path $PSScriptRoot 'room-gate.ps1') $Name -Target $Target -Ssh $Ssh -Scp $Scp @(if ($SshOption) { '-SshOption'; $SshOption -join ',' }) *>&1 | ForEach-Object { Write-Host $_ }; if ($LASTEXITCODE -ne 0) { Step 'gate' 'warn' "room-gate exited $LASTEXITCODE. rerun: room-gate.ps1 $Name -Target $Target" }
 
 # DEFENDER, on a Windows room, after the clone so its build folder and worktrees are known. room-defender.ps1 reads the
 # paths as the ssh login, which is the account the room runs as, sets GOTMPDIR, and excludes them when that login is
