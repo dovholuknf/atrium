@@ -742,12 +742,21 @@ Tokens only: no dollar figure is worked out.">?</span>
     </div>
     <div class="toolbar" style="margin-bottom:12px">
       <span class="ucranges" id="uc-ranges">
-        <button data-range="1h">1h</button><button data-range="6h">6h</button><button data-range="24h">24h</button><button data-range="7d">7d</button>
+        <button data-range="1h">1h</button><button data-range="6h">6h</button><button data-range="24h">24h</button><button data-range="7d">7d</button><button data-range="week" id="uc-week" data-tip="From the last weekly reset to now. The weekly limit resets at a fixed time, not seven days after it did">this week</button>
       </span>
       <select id="uc-room" hidden></select>
       <span class="ucfilter" id="uc-card" hidden></span>
       <span class="grow"></span>
+      <span class="ucranges"><button id="uc-reset" aria-label="When the weekly limit resets" data-tip="When the weekly limit resets. One setting for the whole board, used by the this week range and the reset marks"><span id="uc-reset-label">resets Sun 18:00 ET</span></button></span>
       <span class="ucranges"><button id="uc-cache" aria-pressed="false" data-tip="Draw cache reads in the charts. Off, they are counted apart, since they are most of the input and swamp the rest"><i class="uck-read"></i><span id="uc-cache-label">cache reads hidden</span></button></span>
+    </div>
+    <div class="toolbar ucresetform" id="uc-reset-form" hidden>
+      <label>weekly limit resets <select id="uc-reset-day"><option value="sun">Sunday</option><option value="mon">Monday</option><option value="tue">Tuesday</option><option value="wed">Wednesday</option><option value="thu">Thursday</option><option value="fri">Friday</option><option value="sat">Saturday</option></select></label>
+      <label>at <input id="uc-reset-time" type="time" step="60"></label>
+      <label>in <input id="uc-reset-tz" list="uc-tzs" size="22" spellcheck="false" placeholder="America/New_York"></label>
+      <datalist id="uc-tzs"><option value="America/New_York"><option value="America/Chicago"><option value="America/Denver"><option value="America/Los_Angeles"><option value="UTC"><option value="Europe/London"><option value="Europe/Berlin"><option value="Asia/Tokyo"><option value="Australia/Sydney"></datalist>
+      <button id="uc-reset-save">save</button>
+      <span class="ucreseterr" id="uc-reset-err"></span>
     </div>
     <div id="uc-body"></div>
   </div>

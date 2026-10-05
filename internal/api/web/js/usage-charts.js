@@ -13,7 +13,8 @@
 // Colours are skin variables, in the stylesheet (.uck-*), so a skin change
 // recolours a chart already drawn.
 
-const UC_RANGES = { "1h": [3600, 60], "6h": [21600, 300], "24h": [86400, 900], "7d": [604800, 3600] };
+// "week" is not a length: it runs from the last weekly reset (see ucWeekSince), so its span here is the most it can be.
+const UC_RANGES = { "1h": [3600, 60], "6h": [21600, 300], "24h": [86400, 900], "7d": [604800, 3600], "week": [604800, 3600] };
 const UC_KINDS = [
   ["input", "uncached in", "input", "uck-in"],
   ["output", "out", "output", "uck-out"],
@@ -37,6 +38,7 @@ const UC = {
   paintTimer: 0,
   cacheReads: false, // the daemon setting usage_cache_reads: cache reads drawn in the charts
   cacheKnown: false, // whether the daemon has been asked once
+  weekReset: { day: "sun", time: "18:00", tz: "America/New_York" }, // the daemon setting usage_week_reset
   live: false,       // the paint now is from a live usage event, so changes are animated
   seen: new Map(),   // number key -> text as last painted, to find what changed
   bars: new Set(),   // burn bars already drawn, so only a new one grows
@@ -121,9 +123,14 @@ function ucIngest(series, bw) {
 }
 
 async function loadUsageTab() {
-  const [span, bw] = UC_RANGES[UC.range];
+  let [span, bw] = UC_RANGES[UC.range];
+  if (UC.range === "week") {
+    // From the last reset to now. A short stretch early in the week gets finer buckets.
+    span = Math.max(ucNow() - ucWeekSince(ucNow()), 0) / 1000;
+    bw = span <= 21600 ? 300 : span <= 86400 ? 900 : 3600;
+  }
   UC.bw = bw;
-  UC.since = Math.floor((Date.now() - span * 1000) / 1000) * 1000;
+  UC.since = UC.range === "week" ? ucWeekSince(ucNow()) : Math.floor((Date.now() - span * 1000) / 1000) * 1000;
   const { ask, absent } = ucTargets();
   ucAskSetting();
   const seq = ++UC.loading;
@@ -297,12 +304,96 @@ function ucLegend() {
 function ucFmtWhen(ms) {
   const d = new Date(ms);
   const hm = d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-  return UC.range === "7d" ? d.toLocaleDateString([], { month: "short", day: "numeric" }) + " " + hm : hm;
+  return ucWide() ? d.toLocaleDateString([], { month: "short", day: "numeric" }) + " " + hm : hm;
 }
 
 // The whole range on one axis, so a quiet stretch reads as a gap.
 // The clock. A test sets UC.now so a fixture never depends on the real time of day.
 function ucNow() { return UC.now || Date.now(); }
+
+// Whether the range is days long, so a time wants its date and the axis wants midnights.
+function ucWide() { return UC.range === "7d" || UC.range === "week"; }
+
+// ---- the weekly reset: a weekday and wall time in a named zone, the daemon's setting usage_week_reset ----
+
+const UC_DAYS = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"];
+
+// The calendar date and wall clock `t` has in `tz`.
+function ucZoned(t, tz) {
+  const p = {};
+  for (const x of new Intl.DateTimeFormat("en-US", { timeZone: tz, hourCycle: "h23", year: "numeric", month: "numeric",
+    day: "numeric", hour: "numeric", minute: "numeric", second: "numeric" }).formatToParts(new Date(t))) p[x.type] = Number(x.value);
+  return { y: p.year, m: p.month - 1, d: p.day, h: p.hour, i: p.minute, s: p.second };
+}
+
+// The instant a wall clock reads on a date in `tz`. Two passes, so a date across a clock change lands right.
+function ucWallToInstant(y, m, d, h, i, tz) {
+  const wall = Date.UTC(y, m, d, h, i);
+  let t = wall;
+  for (let k = 0; k < 2; k++) {
+    const z = ucZoned(t, tz);
+    t += wall - Date.UTC(z.y, z.m, z.d, z.h, z.i, z.s);
+  }
+  return t;
+}
+
+// Every weekly reset from the last one before `from` (so the one that opened the range is there) up to the next
+// one after `now`, oldest first. Empty when the zone is one this browser does not know.
+function ucWeekResets(now, from) {
+  const c = UC.weekReset, [h, i] = String(c.time).split(":").map(Number), want = UC_DAYS.indexOf(c.day);
+  try {
+    const z = ucZoned(now, c.tz);
+    const at = day => { const x = new Date(day); return ucWallToInstant(x.getUTCFullYear(), x.getUTCMonth(), x.getUTCDate(), h, i, c.tz); };
+    const WEEK = 7 * 86400000;
+    let day = Date.UTC(z.y, z.m, z.d);
+    while (new Date(day).getUTCDay() !== want) day -= 86400000;
+    while (at(day) > now) day -= WEEK;
+    const out = [at(day + WEEK)];
+    for (let k = 0; k < 60; k++, day -= WEEK) {
+      const t = at(day);
+      out.unshift(t);
+      if (t <= from) break;
+    }
+    return out;
+  } catch (e) { return []; }
+}
+
+// The last reset at or before `now`: where "this week" begins. A week back when the setting cannot be read.
+function ucWeekSince(now) {
+  const rs = ucWeekResets(now, now).filter(t => t <= now);
+  return rs.length ? rs[rs.length - 1] : now - 7 * 86400000;
+}
+
+// The next reset after `now`, or 0.
+function ucWeekNext(now) {
+  const n = ucWeekResets(now, now).find(t => t > now);
+  return n || 0;
+}
+
+// "Sun 18:00 ET" for the setting, as the mark and the pace line name it.
+function ucWeekName(t) {
+  const c = UC.weekReset;
+  const d = c.day[0].toUpperCase() + c.day.slice(1);
+  let zone = c.tz;
+  try { zone = new Intl.DateTimeFormat("en-US", { timeZone: c.tz, timeZoneName: "short" }).formatToParts(new Date(t)).find(x => x.type === "timeZoneName").value; } catch (e) { /* the name stays */ }
+  return `${d} ${c.time} ${zone}`;
+}
+
+// The resets inside [x0, end], as marks: svg lines through a chart `W` wide and `H` tall, `X` mapping time to x, and
+// the labels over it. The first label only, since a label a week is not a comb but two would be.
+function ucWeekMarks(x0, end, now, W, H, X) {
+  let svg = "", over = "";
+  let named = false;
+  for (const t of ucWeekResets(now, x0)) {
+    if (t < x0 || t > end) continue;
+    const x = X(t);
+    svg += `<line class="ucwkresetln" data-at="${t}" x1="${x.toFixed(2)}" x2="${x.toFixed(2)}" y1="0" y2="${H}"></line>`;
+    if (named) continue;
+    named = true;
+    over += `<span class="ucwkresetlab${x > W * .8 ? " ucend" : ""}" data-at="${t}" style="left:${(x / W * 100).toFixed(2)}%">weekly reset ${esc(ucWeekName(t))}</span>`;
+  }
+  return { svg, over };
+}
 
 function ucAxis(series, now) {
   const ms = UC.bw * 1000;
@@ -333,8 +424,9 @@ function ucBurn(series) {
     bars += `<g data-t="${s.t}">${segs}</g>`;
   }
   const band = ulBand(ax, W, H);
-  return `<div class="ucchart" data-chart="burn">${band.label}<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img" ` +
-    `aria-label="tokens per minute over time">${band.svg}${bars}</svg>` +
+  const wk = ucWeekMarks(ax.first, ax.first + ax.n * ax.ms, ucNow(), W, H, t => (t - ax.first) / (ax.n * ax.ms) * W);
+  return `<div class="ucchart" data-chart="burn">${band.label}${wk.over}<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img" ` +
+    `aria-label="tokens per minute over time">${band.svg}${bars}${wk.svg}</svg>` +
     `<div class="ucaxis"><span>${ucFmtWhen(ax.first)}</span><span data-n="peak" data-tip="${esc(USAGE_TIPS.peak)}">peak ${usageTokens(Math.round(peak))}/min</span>` +
     `<span>${ucFmtWhen(ax.first + (ax.n - 1) * ax.ms)}</span></div>` +
     `<div class="ucread" aria-live="off">hover a bar</div></div>`;
@@ -354,7 +446,7 @@ function ucMidnight(now) {
 const UC_LIMIT_NAME = { five_hour: "5h", weekly: "weekly" };
 function ucLimitFor(series, now) {
   if (typeof ulGroups !== "function" || UC.cacheReads) return null;
-  const kind = UC.range === "7d" ? "weekly" : "five_hour";
+  const kind = ucWide() ? "weekly" : "five_hour";
   const gs = ulGroups(kind, now).filter(g => g.reset > now && g.best.pct > 0);
   if (!gs.length) return null;
   const g = gs.reduce((a, b) => b.best.pct > a.best.pct ? b : a);
@@ -372,7 +464,7 @@ function ucLimitFor(series, now) {
 // zoomed chart, which holds one 5h window and so wants a label an hour.
 function ucTicks(first, end, hourly) {
   const out = [], d = new Date(first);
-  if (UC.range === "7d" && !hourly) {
+  if (ucWide() && !hourly && end - first >= 2 * 86400000) {
     d.setHours(0, 0, 0, 0);
     while (d.getTime() < first) d.setDate(d.getDate() + 1);
     for (; d.getTime() <= end; d.setDate(d.getDate() + 1)) out.push([d.getTime(), d.toLocaleDateString([], { weekday: "short", day: "numeric" })]);
@@ -421,10 +513,10 @@ function ucCumulative(series, now) {
   for (const s of series) if (s.t >= from) hour += ucShown(s.total);
   const rate = hour / Math.max(now - from, 1);
   const lim = ucLimitFor(series, now);
-  const zoom = !!lim && UC.range !== "7d";
+  const zoom = !!lim && !ucWide();
   const x0 = zoom ? Math.max(ax.first, lim.start - 1800000) : ax.first;
   const midnight = ucMidnight(now);
-  const project = lim ? hour > 0 && lim.reset > now : (UC.range === "24h" || UC.range === "7d") && hour > 0 && midnight > now;
+  const project = lim ? hour > 0 && lim.reset > now : (UC.range === "24h" || ucWide()) && hour > 0 && midnight > now;
   const end = project ? (lim ? lim.reset : midnight) : (lim ? Math.max(nowMs, lim.reset) : nowMs);
   const span = Math.max(end - x0, 1);
   const W = 600, H = 100;
@@ -463,7 +555,7 @@ function ucCumulative(series, now) {
     over += `<span class="ucpacelab" style="left:${left(lim.reset)};top:${(Y(base + 100 * lim.perPct) / H * 100).toFixed(2)}%">even pace</span>`;
     // The resets of both windows: the coming one is named, the ones behind it are the same mark unnamed.
     for (const kind of Object.keys(UL_WINDOW)) {
-      if (kind === "five_hour" && UC.range === "7d") continue;   // a mark every 5 hours across a week is a comb
+      if (kind === "five_hour" && ucWide()) continue;   // a mark every 5 hours across a week is a comb
       for (const g of ulGroups(kind, now)) {
         if (!g.reset) continue;
         for (let t = g.reset, k = 0; t >= x0; t -= UL_WINDOW[kind], k++) {
@@ -480,6 +572,13 @@ function ucCumulative(series, now) {
       svg += `<line class="ulgrid" x1="0" x2="${W}" y1="${y.toFixed(2)}" y2="${y.toFixed(2)}"></line>`;
       yax += `<span class="ucy ucyk" data-tok="${Math.round(v)}" style="top:${(y / H * 100).toFixed(2)}%">${usageTokens(Math.round(v))}</span>`;
     }
+  }
+  // The weekly reset from the setting. With a card's own report of the weekly window the marks above are the
+  // reading and these would sit on top of them, so they are left to those.
+  if (!(lim && lim.kind === "weekly")) {
+    const wk = ucWeekMarks(x0, end, now, W, H, X);
+    svg += wk.svg;
+    over += wk.over;
   }
   svg += `<path class="ucarea" d="${d} L${last[0].toFixed(2)} ${floor.toFixed(2)} L${xy[0][0].toFixed(2)} ${floor.toFixed(2)} Z"></path>`;
   svg += `<path class="uck-line" d="${d}"></path>`;
@@ -498,7 +597,14 @@ function ucCumulative(series, now) {
         phrase = `<span data-n="cumproj" data-tip="${esc(USAGE_TIPS.cumProj)}">at this pace: ${Math.round(atReset)}% of the ${lim.name} limit at reset</span>`;
       }
     } else {
-      phrase = `<span data-n="cumproj" data-tip="${esc(USAGE_TIPS.cumProj)}">at this pace: ${usageTokens(Math.round(proj))} by midnight</span>`;
+      // And by the next weekly reset, at the same pace. On "this week" the line is the week's own total, so it is
+      // the total the week ends on. On the rolling ranges it is not, so it is what the pace adds.
+      const next = ucWeekNext(now);
+      const more = rate * (next - now);
+      const byReset = !next ? "" : UC.range === "week"
+        ? `, ${usageTokens(Math.round(run + more))} by the reset ${ucWeekName(next)}`
+        : `, ${usageTokens(Math.round(more))} more by the reset ${ucWeekName(next)}`;
+      phrase = `<span data-n="cumproj" data-tip="${esc(USAGE_TIPS.cumProj)}">at this pace: ${usageTokens(Math.round(proj))} by midnight${esc(byReset)}</span>`;
     }
   }
   svg += `<line class="ucnowln" x1="${X(nowMs).toFixed(2)}" x2="${X(nowMs).toFixed(2)}" y1="0" y2="${H}"></line>`;
@@ -722,6 +828,16 @@ async function paintCardUsageChart(t) {
 // ---- the cache reads toggle: a daemon setting, asked for once and told by the settings event ----
 
 function ucHaveSetting(s) {
+  if (s && s.usage_week_reset && s.usage_week_reset.tz) {
+    const w = s.usage_week_reset;
+    if (w.day !== UC.weekReset.day || w.time !== UC.weekReset.time || w.tz !== UC.weekReset.tz) {
+      UC.weekReset = { day: w.day, time: w.time, tz: w.tz };
+      if (typeof isViewing === "function" && isViewing("usage")) {
+        if (UC.range === "week") loadUsageTab(); else ucPaint();
+      }
+    }
+    ucPaintReset();
+  }
   if (!s || typeof s.usage_cache_reads !== "boolean") return;
   UC.cacheKnown = true;
   if (s.usage_cache_reads === UC.cacheReads) return;
@@ -746,12 +862,40 @@ async function ucSetCacheReads(on) {
   } catch (e) { /* shown here anyway, and the daemon is asked again on the next open */ UC.cacheKnown = false; }
 }
 
+// The weekly reset control: a button that names the setting and opens a small form to change it.
+function ucPaintReset() {
+  const b = document.getElementById("uc-reset");
+  if (!b) return;
+  const lab = document.getElementById("uc-reset-label");
+  if (lab) lab.textContent = "resets " + ucWeekName(ucNow());
+  const c = UC.weekReset;
+  const f = id => document.getElementById(id);
+  if (f("uc-reset-day") && !f("uc-reset-form").contains(document.activeElement)) {
+    f("uc-reset-day").value = c.day;
+    f("uc-reset-time").value = c.time;
+    f("uc-reset-tz").value = c.tz;
+  }
+}
+
+async function ucSaveReset() {
+  const f = id => document.getElementById(id);
+  const err = f("uc-reset-err");
+  err.textContent = "";
+  const body = { usage_week_reset: { day: f("uc-reset-day").value, time: f("uc-reset-time").value, tz: f("uc-reset-tz").value } };
+  try {
+    ucHaveSetting(await api("/v1/settings", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }));
+    f("uc-reset-form").hidden = true;
+  } catch (e) { err.textContent = e.message; }
+}
+
 // ---- wiring, by delegation ----
 
 document.addEventListener("click", ev => {
   const rb = ev.target.closest && ev.target.closest("#uc-ranges button");
   const cb = ev.target.closest && ev.target.closest("#uc-cache");
   if (cb) { ucSetCacheReads(!UC.cacheReads); return; }
+  if (ev.target.closest && ev.target.closest("#uc-reset")) { const f = document.getElementById("uc-reset-form"); f.hidden = !f.hidden; ucPaintReset(); return; }
+  if (ev.target.closest && ev.target.closest("#uc-reset-save")) { ucSaveReset(); return; }
   if (rb) { UC.range = rb.dataset.range; loadUsageTab(); return; }
   if (ev.target.closest && ev.target.closest("#uc-card [data-clear]")) { UC.card = null; loadUsageTab(); return; }
   const mini = ev.target.closest && ev.target.closest(".ucmini[data-id]");

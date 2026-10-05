@@ -216,6 +216,14 @@
   .ucranges button.on { color: var(--head); border-color: rgb(var(--teal-rgb)); }
   .ucranges button.on i, #uc-cache i { display: inline-block; width: 10px; height: 10px; margin-right: 5px; border-radius: 2px; }
   .uccacheline { margin-top: 4px; }
+  /* The weekly reset: a mark on the charts and the form that sets it. See ucWeekMarks in js/usage-charts.js. */
+  .ucwkresetln { stroke: var(--head); opacity: .9; stroke-width: 1.5; stroke-dasharray: 6 3; vector-effect: non-scaling-stroke; }
+  .ucchart .ucwkresetlab { position: absolute; top: 2px; transform: translateX(4px); font: var(--fs-xs) var(--mono); pointer-events: none; white-space: nowrap; color: var(--head); background: rgba(0, 0, 0, .55); padding: 0 4px; border-radius: 3px; }
+  .ucchart .ucwkresetlab.ucend { transform: translateX(calc(-100% - 8px)); }
+  .ucresetform { gap: 10px; margin-bottom: 12px; flex-wrap: wrap; align-items: center; }
+  .ucresetform[hidden] { display: none; }
+  .ucresetform label { display: inline-flex; gap: 6px; align-items: center; color: var(--label); }
+  .ucreseterr { color: var(--danger-text); }
   /* A live change: the number fades in from dim over 300ms, a new burn bar grows from the axis over 200ms. */
   @keyframes ucfade { from { opacity: .25; } to { opacity: 1; } }
   @keyframes ucgrow { from { transform: scaleY(0); } to { transform: scaleY(1); } }
