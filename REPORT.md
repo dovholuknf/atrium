@@ -66,3 +66,60 @@ refs the pass owns are still refused, so a push can never fight the pass.
     hostterm socket tests, ptyhost TestIdleExit and TestProbeNeverEvicts.
   - The daemon tests that failed only in the full run here (TestIdleParkWorkersFirst and others) pass when run
     alone.
+
+## Proof on m1mini
+
+The build of 4ab3c171 was stamped and installed at ~/.local/bin/atrium. The old binary is kept at
+~/.local/bin/atrium.pre-f-control-git-push.
+
+### The room restart
+
+- Only the m1mini room was restarted, not the hub.
+- I asked u-term-debug-and-lag, which was working, to reach a stopping point first.
+- I restarted the room the same way the hub-asked restarter does: a detached
+  `atrium room --restart-after 4s --dir ~/.atrium/room --http 127.0.0.1:7781 --agent 127.0.0.1:7777 --db ~/.atrium/atrium.db`,
+  then an interrupt to the old room.
+- The room came back as pid 59360, running the new binary (lsof shows the same inode as the installed file).
+- Atrium resumed the supervised runners that were mid-turn.
+- Afterwards I messaged each supervised worker again: u-term-debug-and-lag, f-new-openwiki-zrok and u-pin-tests.
+
+### Ziti: a clone made by hand, with no remotes at all
+
+- A proof card, p-ziti-push, was launched with cwd
+  /Users/claude/git/github/openziti/ziti-worktrees/embedded-controller-spike-2, a prompt and no brief.
+- The worktree's own untracked BRIEF.md is unchanged (same sha1 before and after).
+- The card's atrium_git_push came from the room's stdio control:
+
+```
+{"branch":"claude/embedded-controller-spike-2","card":"01a10ceb-7e40-793b-abe9-7e69cbf73111","report":"To http://127.0.0.1:7777/git/hub/github/openziti/ziti.git\n*\trefs/heads/claude/embedded-controller-spike-2:refs/heads/claude/embedded-controller-spike-2\t[new branch]\nDone"}
+```
+
+- The name github/openziti/ziti came from where the clone sits under ~/git, because it has no origin.
+- Afterwards the ziti clone still has no remotes and no hub or extraHeader config.
+- atrium_git_url, from this card on the room's stdio control, against the old hub, which answers 404 to
+  /_hub/git/url, so this is the store-advert fallback:
+
+```
+{"branch":"claude/embedded-controller-spike-2","branches":[{"name":"claude/embedded-controller-spike-2","sources":[{"sha":"bd983a42c67f28d0d5b2d15de4e6d7665bffebe2","source":"hub","url":"http://127.0.0.1:7777/git/hub/github/openziti/ziti.git"}]}],"note":"only the hub's store was read (the hub is older than the lookup a room asks it for), so no room's work in progress is listed","repo":"github/openziti/ziti","state":"found","text":"fetch it with: git fetch http://127.0.0.1:7777/git/hub/github/openziti/ziti.git claude/embedded-controller-spike-2 (finished, on the hub)"}
+```
+
+This is bd983a42c, on the room's forwarder. Before the push, the same lookup answered `not found`.
+
+### Atrium: waits for the hub deploy
+
+atrium_git_push claude/r-context-cycle from this worktree reaches the hub, which is still the old build, and gets its
+old refusal:
+
+```
+the push did not land:
+fatal: remote error: atrium: github/dovholuknf/atrium is a mirror the hub keeps in step with a checkout, so a push cannot land there. fetch it, or push under another repository name
+```
+
+atrium_git_url for it answers `not found` from the fallback.
+
+Once the hub runs this branch:
+- push claude/r-context-cycle (fb62c770) and claude/r-context-nudge-handoff (7b3ba864) with atrium_git_push from a
+  card in this clone;
+- look both up with atrium_git_url, which will then come from the hub's own /_hub/git/url, with room sources too.
+
+Nothing on m1mini needs to change for that.
