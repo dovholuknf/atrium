@@ -158,6 +158,8 @@ edits `prrunner.go`, `prworktree.go`, `forgeaccess.go` or `internal/forge`, whic
    directory or tick throwaway. The alternative is a `review` tick in the dialog, on by default.
 3. **`accepted` holds the PR open.** Default, built: a PR is reviewed only when every finding is posted or dismissed.
    The alternative counts accepted as reviewed, for a reviewer who posts in one batch later.
+4. **A PR on a room gone for good.** Default, built: a move needs both rooms online, so its review is never lost by a
+   move. The alternative is a forced move of the claim alone, dropping the review, for a room that will not return.
 
 ## State
 
@@ -166,6 +168,8 @@ Design written 2026-10-04 (828a8cd0).
 - Done: `u-pr-finding-states` claude/u-pr-finding-states@ca90179b. Written on sgg (no Go or node there), moved to sg3
   by bundle, built, tested and shot there. The phone action buttons are not seen in a shot, as the headless phone
   viewport cuts the drawer below the rail.
-- Running: `f-pr-review-move` on sg3, on claude/main c721241b (r-hub-forge merged). sgg can only write code.
+- Done: `f-pr-review-move` claude/f-pr-review-move@5a1f7247 (sg3), on claude/main c721241b (r-hub-forge merged).
+  Not done there: no room handoff in the tree moves a PR card, so nothing passes the new card as walker. The hub move
+  takes an optional `walker` for whoever builds that. A claim on a room gone for good cannot be moved (Open 4).
 - The two done items are on claude/main 5d68bfa2, before r-hub-forge. Their changes are outside its files.
 
