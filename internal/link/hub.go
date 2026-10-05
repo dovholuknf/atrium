@@ -765,6 +765,9 @@ type Attached struct {
 	Git bool `json:"git,omitempty"`
 	// IdleCPU is the idle percent the room last reported on a beat. Nil for a room that does not send one.
 	IdleCPU *float64 `json:"idle_cpu,omitempty"`
+	// Setup is what the hub last read of this room's setup, nil before the first read. Filled by the proxy, never by
+	// the room. See setupwatch.go.
+	Setup *RoomSetup `json:"setup,omitempty"`
 }
 
 // unprovenOver names the overlay a connection took the old path on, or "".

@@ -35,6 +35,9 @@ import (
 func (p *Proxy) attachedView() []Attached {
 	rooms := p.hub.Rooms()
 	sort.Slice(rooms, func(i, j int) bool { return rooms[i].Name < rooms[j].Name })
+	for i := range rooms {
+		rooms[i].Setup = p.setupFor(rooms[i].Name)
+	}
 	return rooms
 }
 
@@ -73,6 +76,11 @@ func (p *Proxy) roomsPayload() (payload []byte, fingerprint string) {
 	for i, r := range attached {
 		r.Idle = 0
 		r.Beat = time.Time{}
+		if r.Setup != nil {
+			s := *r.Setup
+			s.Checked = time.Time{}
+			r.Setup = &s
+		}
 		steady[i] = r
 	}
 	calmed := map[string]any{"rooms": names, "only": body["only"], "attached": steady}

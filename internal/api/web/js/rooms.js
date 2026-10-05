@@ -182,6 +182,68 @@ function paintRooms() {
   el.classList.remove("down");
   el.classList.toggle("cold", here === 0);
   el.classList.toggle("scoped", !!room);
+
+  // ROOMS SET UP DIFFERENTLY, said here because this chip is the one thing on the board that is always in view.
+  // Missing hooks leave activity and the message channel inert on that machine with no sign anywhere, and it
+  // went unseen for hours. Every attached room counts, scoped or not: the problem is on a machine you may not
+  // be looking at. One line each, in the tooltip.
+  const drift = roomsWithSetupIssues();
+  el.classList.toggle("warn", drift.length > 0);
+  if (drift.length) {
+    el.dataset.tip += "\n\nset up inconsistently:\n" + drift.map(d =>
+      `${d.name}: ${d.issues.map(i => i.text).join("; ")}`).join("\n");
+  }
+}
+
+// roomSetup is the hub's last read of one attached room's setup, or null before it has read it.
+function roomSetup(name) {
+  const r = hubRooms.find(x => x.name === name);
+  return r && r.setup ? r.setup : null;
+}
+
+// roomsWithSetupIssues is the attached rooms that answered and are set up wrongly. A room that did not answer is
+// "not answering", which is its own chip on its row and not a setup problem.
+function roomsWithSetupIssues() {
+  const out = [];
+  for (const r of hubRooms) {
+    const s = r.setup;
+    if (s && s.answering && Array.isArray(s.issues) && s.issues.length) out.push({ name: r.name, issues: s.issues });
+  }
+  return out;
+}
+
+// roomSetupNote is what a room's row says about its setup: the problems, one line each, a fix button for the hooks,
+// and nothing for a build mismatch, which only an upgrade fixes.
+function roomSetupNote(name) {
+  const s = roomSetup(name);
+  if (!s || !s.answering || !s.issues || !s.issues.length) return "";
+  const q = esc(name).replace(/'/g, "&#39;");
+  return s.issues.map(i => `<div class="setupline" data-kind="${esc(i.kind)}">
+    <span class="chip warn">${esc(i.text)}</span>${i.kind === "hooks" && !s.hooks_unreadable
+      ? `<button class="ghost setupfix" data-room="${esc(name)}"
+        data-tip="write atrium's hooks into ${esc(name)}'s claude settings. A backup is kept first."
+        onclick="busyWhile(this, () => fixRoomHooks('${q}'), 'fixing…')">fix</button>` : ""}
+  </div>`).join("");
+}
+
+// fixRoomHooks is the row's fix: `POST /v1/hooks/install` for that room, the same call the hooks dialog makes, and its
+// answer names the backup.
+async function fixRoomHooks(name) {
+  try {
+    const res = await api("/v1/hooks/install", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Atrium-Room": name },
+      body: "{}",
+    });
+    toast("hooks wired on " + name, res.backup
+      ? "the old settings were copied to " + res.backup : "the file was created");
+  } catch (e) {
+    toast("nothing was changed on " + name, e.message);
+  }
+  // The hub reads the room again now rather than in five minutes, so the pill clears with the row.
+  try { await plainFetch("/_hub/setup-check?room=" + encodeURIComponent(name), { method: "POST" }); } catch (e) {}
+  if (typeof loadHubRooms === "function") { hubRead = 0; await loadHubRooms(); }
+  if (typeof renderRooms === "function") renderRooms();
 }
 
 // roomPickerRows builds the menu's rows from what is attached and known now.
@@ -384,11 +446,14 @@ function roomRow(r) {
       ${r.marked || r.state === "marked-for-deletion"
         ? `<span class="chip no">marked for deletion</span>` : ""}
       ${here ? `<span class="chip">showing this one</span>` : ""}
+      ${r.attached && roomSetup(r.name) && !roomSetup(r.name).answering
+        ? `<span class="chip no" data-tip="the hub asked this room about its setup and got no answer">not answering</span>` : ""}
       <span class="grow"></span>
       <button class="ghost roomcog" data-room="${esc(r.name)}"
         aria-label="settings for this room" data-tip="settings for this room">&#9881;</button>
     </div>
     ${line ? `<div class="hintline">${line}</div>` : ""}
+    ${r.attached ? roomSetupNote(r.name) : ""}
   </div>`;
 }
 

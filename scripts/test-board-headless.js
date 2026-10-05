@@ -321,6 +321,7 @@ let soloMode = "ok";       // ok | noroom | gone
 // it on and loads a fresh page. `sggAttached` is the one room that flips from
 // disconnected to live under the open dropdown.
 let hubMode = false;
+const setupFixed = [];
 let sggAttached = false;
 // Whether the hub has a room to borrow `/v1/settings` from. False is the window
 // right after a hub restart: no room has re-attached, so the ALL-view read is
@@ -754,6 +755,14 @@ const server = http.createServer((req, res) => {
     switchPut(req, res, [FON, FOFF]); return;
   }
   if (url === "/v1/hooks") { sendJSON(res, { missing: 0, hooks: [] }); return; }
+  // The rooms pill's fix: the room it wrote to, and the setup the hub then reads clean.
+  if (url === "/v1/hooks/install" && req.method === "POST") {
+    setupFixed.push(req.headers["x-atrium-room"] || "");
+    delete SGG.setup;
+    sendJSON(res, { report: { missing: 0, hooks: [] }, backup: "C:/Users/x/.claude/settings.json.atrium-1.bak", changed: true });
+    return;
+  }
+  if (url.startsWith("/_hub/setup-check") && req.method === "POST") { sendJSON(res, { room: "sgg", setup: null }); return; }
   if (url === "/v1/sources") { sendJSON(res, { sources: [] }); return; }
   if (url === "/v1/recognisers") { sendJSON(res, { recognisers: [] }); return; }
   if (url === "/v1/actions") { sendJSON(res, { actions: [] }); return; }
@@ -14018,6 +14027,79 @@ async function tallPtySection(browser, base) {
   if (errors.length) fail("tallPty: the page threw: " + errors.join(" | "));
 }
 
+// u-rooms-pill-setup-drift: the rooms pill warns when an attached room is set up wrongly, its tooltip names each room
+// in one line, the rooms row says the same with a fix button for hooks and none for a build, and a room that did not
+// answer is "not answering" and no warning. ROOMS_SETUP_SHOTS=<dir> saves the pill and the row.
+async function roomsSetupSection(browser, base) {
+  const shots = process.env.ROOMS_SETUP_SHOTS || "";
+  const wasHub = hubMode, wasSgg = sggAttached;
+  hubMode = true;
+  sggAttached = true;
+  const hooksIssue = { answering: true, hooks_missing: 3, hooks_stale: 1, issues: [{ kind: "hooks", text: "atrium claude hooks: 3 missing, 1 stale" }] };
+  ALPHA.setup = { answering: true, hooks_missing: 0, issues: [{ kind: "build", text: "runs a different atrium build than the hub (bbbbbbbb, hub aaaaaaaa)" }] };
+  SGG.setup = hooksIssue;
+  const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+  const p = await ctx.newPage();
+  const errors = [];
+  p.on("pageerror", e => errors.push(String(e)));
+  const has = (label, ok, extra) => { if (!ok) fail("roomsSetup: " + label + (extra ? ": " + JSON.stringify(extra) : "")); };
+  try {
+    await p.goto(base, { waitUntil: "domcontentloaded" });
+    await p.waitForFunction(() => typeof hubRooms !== "undefined" && hubRooms.length === 2 &&
+      !document.getElementById("rooms").hidden, null, { timeout: slow(15000) });
+    const pill = () => p.evaluate(() => { const e = document.getElementById("rooms");
+      return { warn: e.classList.contains("warn"), tip: e.dataset.tip }; });
+    let s = await pill();
+    has("the pill is not warning", s.warn, s);
+    has("the tip does not name sgg's hooks", /sgg: atrium claude hooks: 3 missing, 1 stale/.test(s.tip), s);
+    has("the tip does not name alpha's build", /alpha: runs a different atrium build/.test(s.tip), s);
+    if (shots) {
+      fs.mkdirSync(shots, { recursive: true });
+      await p.screenshot({ path: path.join(shots, "pill-after.png"), clip: { x: 900, y: 0, width: 500, height: 60 } });
+    }
+    await p.click('.tab[data-view="runners"]');
+    await p.waitForSelector("#room-list .roomrow", { timeout: slow(10000) });
+    const rows = () => p.evaluate(() => [...document.querySelectorAll("#room-list .roomrow")].map(r => ({
+      name: r.querySelector(".roomname").textContent,
+      lines: [...r.querySelectorAll(".setupline")].map(l => ({ kind: l.dataset.kind, text: l.textContent.replace(/\s+/g, " ").trim(),
+        fix: !!l.querySelector("button.setupfix") })),
+      text: r.textContent })));
+    let r = await rows();
+    const sgg = r.find(x => x.name === "sgg"), alpha = r.find(x => x.name === "alpha");
+    has("sgg's row does not show the hooks problem with a fix", sgg && sgg.lines.length === 1 && sgg.lines[0].kind === "hooks" && sgg.lines[0].fix, sgg);
+    has("alpha's row does not say the build differs, or it has a button", alpha && alpha.lines.length === 1 &&
+      alpha.lines[0].kind === "build" && !alpha.lines[0].fix, alpha);
+    if (shots) await (await p.$("#room-list")).screenshot({ path: path.join(shots, "row-after.png") });
+
+    // The fix names the room and the pill clears with the row.
+    setupFixed.length = 0;
+    await p.click('#room-list .setupfix[data-room="sgg"]');
+    await p.waitForFunction(() => !document.querySelector('#room-list .setupfix'), null, { timeout: slow(10000) })
+      .catch(() => fail("roomsSetup: the fix button stayed after the fix"));
+    has("the fix did not post for sgg", setupFixed.length === 1 && setupFixed[0] === "sgg", setupFixed);
+    s = await pill();
+    has("the tip still names sgg after the fix", !/sgg:/.test(s.tip), s);
+    has("the pill stopped warning while alpha still has a build issue", s.warn, s);
+
+    // A room that does not answer is not a setup problem.
+    await p.evaluate(() => applyHubRooms([{ name: "alpha", setup: { answering: false, issues: [] } },
+      { name: "sgg" }], null));
+    await p.waitForTimeout(300);
+    s = await pill();
+    has("a room that did not answer made the pill warn", !s.warn && !/alpha:/.test(s.tip), s);
+    await p.evaluate(() => renderRooms());
+    await p.waitForFunction(() => /not answering/.test(document.getElementById("room-list").textContent), null, { timeout: slow(5000) })
+      .catch(() => fail("roomsSetup: the row did not say not answering"));
+  } finally {
+    await ctx.close();
+    delete ALPHA.setup;
+    delete SGG.setup;
+    hubMode = wasHub;
+    sggAttached = wasSgg;
+  }
+  if (errors.length) fail("roomsSetup: the page threw: " + errors.join(" | "));
+}
+
 // u-034: the rooms dashboard's machine band and the all-rooms tile. Snapshots go through
 // onRoomStats in the wire shape. Checks the two sparklines and the figures, a gap for a null
 // sample, words and never a dash for a room with no machine or an empty one, cpu unavailable
@@ -23303,7 +23385,7 @@ async function main() {
       u001Audit: u001AuditSection,
       pasteStart: pasteStartSection, pasteDone: pasteDoneSection, pasteOldRoom: pasteOldRoomSection, pasteClose: pasteCloseSection,
       growlQuestionShots: growlQuestionShotsSection, growlQuestionBody: growlQuestionBodySection, growlReplyGrow: growlReplyGrowSection, growlChoices: growlChoicesSection, replies: repliesSection, repliesOf: repliesOfSection, repliesShots: repliesShotsSection, growlStable: growlStableSection, growlOnIt: growlOnItSection, mGrowlQuestion: mGrowlQuestionSection,
-      bootClean: bootCleanSection, mReload: mReloadSection, mReconnect: mReconnectSection, mActivityRead: mActivityReadSection, mReadRetry: mReadRetrySection, mWorking: mWorkingSection, mOwnMessages: mOwnMessagesSection, mBubbles: mBubblesSection, mRecapSheet: mRecapSheetSection,
+      roomsSetup: roomsSetupSection, bootClean: bootCleanSection, mReload: mReloadSection, mReconnect: mReconnectSection, mActivityRead: mActivityReadSection, mReadRetry: mReadRetrySection, mWorking: mWorkingSection, mOwnMessages: mOwnMessagesSection, mBubbles: mBubblesSection, mRecapSheet: mRecapSheetSection,
       mHomeOrder: mHomeOrderSection, cardUrlWayOut: cardUrlWayOutSection, phoneBoot: phoneBootSection, sayEnter: sayEnterSection, sendArrow: sendArrowSection, mTables: mTablesSection, mMarkdown: mMarkdownSection, mHostile: mHostileSection, mPictures: mPicturesSection, soundPhone: soundPhoneSection, phoneBell: phoneBellSection, mBell: mBellSection,
       mHomeOrder: mHomeOrderSection, cardUrlWayOut: cardUrlWayOutSection, phoneBoot: phoneBootSection, sayEnter: sayEnterSection, sendArrow: sendArrowSection, mTables: mTablesSection, mMarkdown: mMarkdownSection, mHostile: mHostileSection, mPictures: mPicturesSection, phoneRedirect: phoneRedirectSection,
       mHomeOrder: mHomeOrderSection, cardUrlWayOut: cardUrlWayOutSection, phoneBoot: phoneBootSection, sayEnter: sayEnterSection, sendArrow: sendArrowSection, mTables: mTablesSection, mMarkdown: mMarkdownSection, mHostile: mHostileSection, mPictures: mPicturesSection, mHidden: mHiddenSection, soundPhone: soundPhoneSection, phoneBell: phoneBellSection, mBell: mBellSection,
@@ -25366,6 +25448,7 @@ async function main() {
     await unit("mChangeReq", () => mChangeReqSection(browser));
     await unit("trayHead", () => trayHeadSection(browser, base));
     await unit("fileOpenOutside", () => fileOpenOutsideSection(browser, base));
+    await unit("roomsSetup", () => roomsSetupSection(browser, base));
     await unit("bootClean", () => bootCleanSection(browser, base));
     await unit("mWorking", () => mWorkingSection(browser));
     await unit("mOwnMessages", () => mOwnMessagesSection(browser));
