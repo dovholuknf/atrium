@@ -33,20 +33,10 @@
 }
 .mc.lifted { padding-bottom: 10px; }
 
-.mc-chips {
-  display: flex;
-  gap: 8px;
-  overflow-x: auto;
-  scrollbar-width: none;
-  padding: 0 2px;
-  max-height: 0;
-  opacity: 0;
-  transition: max-height .22s ease, opacity .18s ease, padding .22s ease;
-}
-.mc-chips::-webkit-scrollbar { display: none; }
-.mc-chips.on { max-height: 52px; opacity: 1; padding: 2px 2px 8px; }
-.mc-chip {
-  flex: none;
+/* Quick replies (js/replies.js): one wrapping row above the box. Long options are already cut to a label. */
+.mc-quick { gap: 8px; padding: 2px 2px 8px; }
+.mc-quick:empty { display: none; }
+.mc-quick .rq-btn {
   min-height: 44px;
   padding: 0 18px;
   border: 0;
@@ -57,7 +47,8 @@
   box-shadow: 0 1px 2px var(--c-shadow);
   -webkit-tap-highlight-color: transparent;
 }
-.mc-chip:active { transform: scale(.96); }
+.mc-quick .rq-btn:active { transform: scale(.96); }
+.mc-quick .rq-btn:disabled { opacity: .45; }
 
 /* ---- attached files (u-028): one chip per file, one row that scrolls sideways */
 .mc-files {
@@ -269,7 +260,7 @@
 .mp-err:not(:empty) { margin-top: 8px; }
 
 @media (prefers-reduced-motion: reduce) {
-  .mc-chips, .mc-note, .mc-send, .mp-row, .mp-btn, .mp-reason { transition: none; animation: none; }
+  .mc-quick .rq-btn, .mc-note, .mc-send, .mp-row, .mp-btn, .mp-reason { transition: none; animation: none; }
   .mc.sending .mc-send { animation: none; }
 }
 
