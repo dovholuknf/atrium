@@ -11,6 +11,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/dovholuknf/atrium/internal/hubstore"
 )
 
 // THE PULLS VIEW THROUGH THE HUB. Design: docs/rnd/pulls-view-design.md section 9. Contract: docs/rnd/pulls-api.md.
@@ -330,6 +332,7 @@ func (p *Proxy) pullsList(w http.ResponseWriter, r *http.Request) bool {
 		n, _ := a.body["nav_count"].(float64)
 		nav += n
 	}
+	all = p.foldPRRows(all, counts)
 	// NO ROOM ANSWERED 200, so there is no pulls view to show. The board opens the pulls tab on any 200 with a `prs`
 	// array, and a hub over rooms without the store would otherwise show an empty tab. 404 in the contract's error
 	// shape, with the rooms that were asked and why each did not answer.
@@ -397,4 +400,80 @@ func (p *Proxy) askPulls(r *http.Request, room string) (body map[string]any, wit
 		return nil, false, err
 	}
 	return body, false, nil
+}
+
+// foldPRRows is the safety net for one row per PR across rooms: two rows with one key on different rooms show as the
+// one the claim names (the earliest, when nothing claimed it), and the others are listed on it as `folded`, with their
+// room, id and state. Nothing is deleted on a room, since a finished review is worth more shown twice than lost.
+// `counts` loses the folded rows' states, so the tabs add up to the rows drawn. Rows of one room are never folded,
+// a re-review at another head being its own run.
+func (p *Proxy) foldPRRows(all []map[string]any, counts map[string]float64) []map[string]any {
+	rowKey := func(row map[string]any) string {
+		host, _ := row["host"].(string)
+		org, _ := row["org"].(string)
+		repo, _ := row["repo"].(string)
+		n, _ := row["number"].(float64)
+		if host == "" || org == "" || repo == "" || n <= 0 {
+			return ""
+		}
+		return hubstore.PRKey(host, org, repo, int(n))
+	}
+	rooms := map[string]map[string]bool{}
+	for _, row := range all {
+		k := rowKey(row)
+		if k == "" {
+			continue
+		}
+		if rooms[k] == nil {
+			rooms[k] = map[string]bool{}
+		}
+		room, _ := row["room"].(string)
+		rooms[k][room] = true
+	}
+	owner := map[string]string{}
+	st := p.prClaims()
+	for k, rs := range rooms {
+		if len(rs) < 2 {
+			continue
+		}
+		if st != nil {
+			if c, err := st.PRClaimOf(k); err == nil && rs[c.Room] {
+				owner[k] = c.Room
+				continue
+			}
+		}
+		// Rows are newest first, so the last one seen for a key is the earliest made.
+		for _, row := range all {
+			if rowKey(row) == k {
+				owner[k], _ = row["room"].(string)
+			}
+		}
+	}
+	if len(owner) == 0 {
+		return all
+	}
+	home := map[string]map[string]any{}
+	for _, row := range all {
+		k := rowKey(row)
+		if room, _ := row["room"].(string); owner[k] != "" && room == owner[k] && home[k] == nil {
+			home[k] = row
+		}
+	}
+	out := all[:0:0]
+	for _, row := range all {
+		k := rowKey(row)
+		room, _ := row["room"].(string)
+		if owner[k] == "" || room == owner[k] {
+			out = append(out, row)
+			continue
+		}
+		folded, _ := home[k]["folded"].([]map[string]any)
+		id, _ := row["id"].(string)
+		state, _ := row["state"].(string)
+		home[k]["folded"] = append(folded, map[string]any{"room": room, "id": id, "state": state})
+		if _, ok := counts[state]; ok && counts[state] > 0 {
+			counts[state]--
+		}
+	}
+	return out
 }

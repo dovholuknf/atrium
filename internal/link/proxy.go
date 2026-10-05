@@ -130,6 +130,10 @@ type Proxy struct {
 	docs *hubstore.Store
 	// cr is the change requests between rooms. See changerequest.go.
 	cr *changeRequests
+	// prc is the PR claim table. See prclaim.go.
+	prc *hubstore.Store
+	// prGone is when each claim's room was first seen offline, for prWarnSweep.
+	prGone map[string]time.Time
 }
 
 // NewProxy wires a hub, its board and a room chooser into one handler.
@@ -546,6 +550,10 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	// A REQUEST THAT NAMES A PULL REVIEW GOES WHERE THE REVIEW IS. See pulls.go.
 	if r, placed = p.placePR(w, r); !placed {
+		return
+	}
+	// A NEW PULL REVIEW WITH NO ROOM NAMED GOES TO THE LEAST BUSY ROOM. See prclaim.go.
+	if r, placed = p.placeNewPR(w, r); !placed {
 		return
 	}
 	// AN UNSCOPED LAUNCH GOES TO THE ROOM ON THE CALLER'S MACHINE THAT HAS THE
@@ -1425,6 +1433,10 @@ func (p *Proxy) serveHubAPI(w http.ResponseWriter, r *http.Request) {
 	}
 	if strings.HasPrefix(sub, "growls/") {
 		p.serveGrowls(w, r, sub)
+		return
+	}
+	if sub == "pr-claims" || strings.HasPrefix(sub, "pr-claims/") {
+		p.servePRClaims(w, r, sub)
 		return
 	}
 	if sub == "change-requests" || strings.HasPrefix(sub, "change-requests/") {

@@ -590,22 +590,19 @@ func TestAnEmptyAllViewPullsListIsNotNull(t *testing.T) {
 	}
 }
 
-// A new review with no room named is the room question, as a new card is. Never fanned out, never guessed.
-func TestANewReviewInTheAllViewAsksWhichRoom(t *testing.T) {
+// A new review with no room named is PLACED by the hub on the least busy room (here a tie, so the lower name), where it
+// used to be the room question. Never fanned out: exactly one room gets it. See prclaim.go.
+func TestANewReviewInTheAllViewIsPlacedOnOneRoom(t *testing.T) {
 	a, b := allPulls()
 	front, _, done := two(t, a, b)
 	defer done()
 	code, body, _ := pullsDo(t, http.MethodPost, front.URL+"/v1/prs", `{"url":"https://github.com/openziti/tlsuv/pull/378"}`, nil)
-	obj := jsonOf(t, body)
-	if code != http.StatusConflict || obj["rooms"] == nil || !strings.Contains(body, "pick a room first") {
-		t.Fatalf("post = %d %s", code, body)
-	}
-	if a.count(http.MethodPost, "/v1/prs")+b.count(http.MethodPost, "/v1/prs") != 0 {
-		t.Fatal("a review with no room named reached a room")
+	if code != http.StatusCreated || a.count(http.MethodPost, "/v1/prs") != 1 || b.count(http.MethodPost, "/v1/prs") != 0 {
+		t.Fatalf("post = %d %s, alpha %d beta %d", code, body, a.count(http.MethodPost, "/v1/prs"), b.count(http.MethodPost, "/v1/prs"))
 	}
 	// Named, it lands on that room alone.
 	code, _, _ = pullsDo(t, http.MethodPost, front.URL+"/v1/prs", `{"url":"u"}`, map[string]string{RoomHeader: "beta"})
-	if code != http.StatusCreated || b.count(http.MethodPost, "/v1/prs") != 1 || a.count(http.MethodPost, "/v1/prs") != 0 {
+	if code != http.StatusCreated || b.count(http.MethodPost, "/v1/prs") != 1 || a.count(http.MethodPost, "/v1/prs") != 1 {
 		t.Fatalf("a named room did not get it alone: %d", code)
 	}
 }

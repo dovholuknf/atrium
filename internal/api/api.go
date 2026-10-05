@@ -80,6 +80,10 @@ type Server struct {
 	// PRRunner runs pull request reviews. Nil means the stub that fails every run
 	// as `runner not built`. See prs.go.
 	PRRunner PRRunner
+	// ClaimPR asks the hub to claim a PR key before this room makes a row. Nil is a room with no hub, which makes the
+	// row with no claim. An error is a hub that could not be asked: the row is made and marked `claim: pending`. See
+	// prclaim.go.
+	ClaimPR func(ctx context.Context, ask PRClaimAsk) (PRClaimReply, error)
 	// Settling reports whether the daemon is still bringing back the sessions
 	// it had before it restarted. Supplied by the daemon, which is the only
 	// thing that knows it is mid-boot. Nil in a build without it, which reads

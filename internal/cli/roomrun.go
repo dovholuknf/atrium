@@ -12,6 +12,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/dovholuknf/atrium/internal/api"
 	"github.com/dovholuknf/atrium/internal/daemon"
 	"github.com/dovholuknf/atrium/internal/edge"
 	"github.com/dovholuknf/atrium/internal/gitsync"
@@ -395,7 +396,19 @@ func runRoom(keys link.Keys, db, human, agent string, restartAfter time.Duration
 	// moment it reattaches. See internal/daemon/relay.go.
 	// MARKED AS THE LINK, so a terminal attach knows the hub's edge checked it. See internal/edge.
 	room.Handler = edge.MarkLink(roomHandler(d, room))
-	room.OnAttach = d.RelayAttached
+	room.OnAttach = func() {
+		d.RelayAttached()
+		// PR rows made while the hub could not be reached ask for their claim now. Event driven, no timer.
+		d.ReconcilePRClaims()
+	}
+	d.SetPRClaim(func(ctx context.Context, ask api.PRClaimAsk) (api.PRClaimReply, error) {
+		ans, err := room.ClaimPR(ctx, ask)
+		if err != nil {
+			return api.PRClaimReply{}, err
+		}
+		return api.PRClaimReply{Owner: ans.Owner, Mine: strings.EqualFold(ans.Owner, room.Name),
+			Forwarded: ans.Forwarded, ForwardStatus: ans.ForwardStatus, Forward: ans.Forward}, nil
+	})
 	d.SetRelay(linkRelay{room: room})
 	// The room's stable hub remote forwards over the same link's git kind.
 	d.SetHubGit(func() (http.RoundTripper, error) {
