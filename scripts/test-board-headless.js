@@ -17435,15 +17435,25 @@ async function u002Section(browser, base) {
       await renderTermList();
       const row = document.querySelector('#term-list .card.tab[data-id="cold1"]');
       const q = row && row.querySelector(".chip.questions");
+      const kc = row && row.querySelector(".chip.kept");
       return { has: !!row, cold: !!row && row.classList.contains("cold"), tip: row ? row.dataset.tip : "",
+        kept: kc ? kc.textContent.trim() : "", opacity: row ? getComputedStyle(row).opacity : "",
         qTip: q ? q.dataset.tip : "", q: q ? q.textContent.trim() : "", on: !!row && row.classList.contains("on") };
     });
+    // Both skins: one dark (the default) and one light, so the mark is read on each.
     const shot = async name => {
       if (!process.env.U002_SHOTS) return;
-      await p.locator("#term-list .termscroll").screenshot({ path: process.env.U002_SHOTS + "/" + name + ".png" });
+      for (const skin of ["harbour", "daylight"]) {
+        await p.evaluate(s => applySkin(s), skin);
+        await p.locator("#term-list .termscroll").screenshot({
+          path: process.env.U002_SHOTS + "/" + name + "-" + (skin === "harbour" ? "dark" : "light") + ".png" });
+      }
+      await p.evaluate(() => applySkin(defaultSkin));
     };
     let v = await look();
-    if (!v.has || !v.cold) fail("u002: with hide inactive off the pinned cold row is not drawn grey: " + JSON.stringify(v));
+    if (!v.has || !v.cold || v.kept) {
+      fail("u002: with hide inactive off the pinned cold row is not drawn grey, or wears the kept mark: " + JSON.stringify(v));
+    }
     if (v.q !== "? 2" || !/exited/.test(v.qTip) || /clears when you reply/.test(v.qTip)) {
       fail("u002: the `? 2` chip on a cold card does not say it cannot be replied to: " + JSON.stringify(v));
     }
@@ -17455,11 +17465,22 @@ async function u002Section(browser, base) {
     // The card open in the pane, or being started again by a click on its grey row, is never hidden.
     await p.evaluate(() => { termTask = { id: "cold1" }; markAttachInFlight("cold1"); });
     v = await look();
-    if (!v.has || !v.cold || !v.on) fail("u002: the open cold row is not kept, grey and selected: " + JSON.stringify(v));
+    if (!v.has || !v.on) fail("u002: the open cold row is not kept and selected: " + JSON.stringify(v));
+    if (v.cold || Number(v.opacity) < 0.9) fail("u002: the kept row is still drawn grey: " + JSON.stringify(v));
+    if (v.kept !== "opening") fail("u002: a kept row being started does not say `opening`: " + JSON.stringify(v));
+    // With no attach in flight a render would tear a cold pane down, so that step is held off to read the other word.
+    await p.evaluate(() => { window.__reconcile = reconcileAttached; reconcileAttached = () => {}; clearAttachInFlight(); });
+    v = await look();
+    await p.evaluate(() => { reconcileAttached = window.__reconcile; });
+    if (v.cold || v.kept !== "attached") fail("u002: the kept open row does not say `attached`: " + JSON.stringify(v));
     if (!/hide inactive would hide it, but it is open in the pane/.test(v.tip)) {
-      fail("u002: the kept cold row does not say why it is still listed: " + JSON.stringify(v));
+      fail("u002: the kept row does not say why it is still listed: " + JSON.stringify(v));
     }
     await shot("kept");
+    // Filter off again: the same row is a plain cold row, grey, with no mark.
+    await p.evaluate(() => setHideAgents("none"));
+    v = await look();
+    if (!v.cold || v.kept) fail("u002: with the filter off the open cold row is not plain grey: " + JSON.stringify(v));
     await p.evaluate(() => { clearAttachInFlight(); termTask = null; setHideAgents("none"); });
     if (errors.length) fail("u002: page errors: " + errors.join(" | "));
   } finally { await ctx.close(); }

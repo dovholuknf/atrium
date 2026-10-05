@@ -1174,8 +1174,14 @@ function termRow(t, deep, kid) {
   // The hover keeps the whole address and the name whatever the row had room to draw.
   const hover = named ? named + " · " + full + tail : full + tail;
   // KEPT AGAINST THE FILTER. The open pane is never hidden (see `sessionHiddenBy`), so with hide inactive on, a cold
-  // row still listed is this one. It stays grey, because it has exited, and says why it is still here.
+  // row still listed is this one. Grey means the filter would take the row out, and this one is not going anywhere,
+  // so it is NOT drawn grey. It wears a chip that says it is kept and why.
   const keptOpen = on && termCold(t) && sessionHiddenBy(t, () => false);
+  const keptWord = attachIsInFlight(t.id) ? "opening" : "attached";
+  const keptChip = keptOpen
+    ? `<span class="chip accent kept" aria-label="${keptWord}. hide inactive would hide it" data-tip="${
+      keptWord === "opening" ? "being started again here, so hide inactive keeps it listed"
+        : "open in the pane, so hide inactive keeps it listed"}">${keptWord}</span>` : "";
   const allKids = termKids.get(t.id) || [];
   const shut = allKids.length > 0 && isFolded(termKidsKey(t));
   const shown = shut ? allKids.filter(termKidWaits) : allKids;
@@ -1187,7 +1193,7 @@ function termRow(t, deep, kid) {
            // so the bucket keeps the shape you gave it, and it still answers
            // a click: there is nothing to attach to, so it offers to start
            // the session again where it was.
-           termCold(t) ? " cold" : ""}${wear.cls}${newCardClass(t)}"
+           termCold(t) && !keptOpen ? " cold" : keptOpen ? " kept" : ""}${wear.cls}${newCardClass(t)}"
          data-id="${t.id}"
          data-tip="${esc(hover + (termCold(t) ? "\nthis one has exited. click to start it again here" +
            (keptOpen ? "\nhide inactive would hide it, but it is open in the pane, so it stays until you switch away" : "")
@@ -1217,7 +1223,7 @@ function termRow(t, deep, kid) {
                 : ""
             }</span>
         </div>
-        ${termRowChips(t)}${termKidsToggle(t, allKids.length, allKids.length - shown.length, shut)}
+        ${termRowChips(t, keptChip)}${termKidsToggle(t, allKids.length, allKids.length - shown.length, shut)}
       </div>
     </div>${kids ?`<div class="tkids">${kids}</div>` : ""}`;
 }
@@ -1302,7 +1308,7 @@ function termNest(list) {
 
 // The chips on the right of a terminal row: a held peer message, and the
 // popped-out marker. Drawn in one .chips box so a row can carry both.
-function termRowChips(t) {
+function termRowChips(t, lead) {
   const held = termHeldChip(t);
   const room = termRoomChip(t);
   const popped = poppedOut(t.id)
@@ -1322,7 +1328,7 @@ function termRowChips(t) {
     : termJoined(t) ? `<span class="chip">joined</span>` : "";
   // The past-the-limit mark, which the strip did not draw. A card cycling its context shows that instead.
   const lim = t.new_context ? "" : ctxWarnMark(t);
-  const inner = stuck + newCardChip(t) + lim + ncx + seenChips(t) + cache + held + room + popped + joined;
+  const inner = (lead || "") + stuck + newCardChip(t) + lim + ncx + seenChips(t) + cache + held + room + popped + joined;
   return inner ? `<div class="chips">${inner}</div>` : "";
 }
 
