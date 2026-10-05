@@ -277,7 +277,9 @@ function Invoke-Remote {
         $enc = New-EncodedCommand $script
         if ($enc.Length -gt $script:EncodedLimit) { throw "remote script too long for cmd.exe ($($enc.Length))" }
         if ($isLocal) {
-            $out = & powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -EncodedCommand $enc 2>&1
+            # By its full path: a session's PATH need not hold System32's WindowsPowerShell (sg4's agents do not).
+            $ps = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
+            $out = & $ps -NoProfile -NonInteractive -ExecutionPolicy Bypass -EncodedCommand $enc 2>&1
         } else {
             $out = & $Ssh @sshBase $Target "powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -EncodedCommand $enc" 2>&1
         }

@@ -186,8 +186,7 @@ function dispatchRemote(opt) {
   if (!opt.retry) args.push("--no-retry");
   if (opt.list) args.push("--list");
   console.log("board suite: running on " + room + " (--local runs it here)");
-  const r = spawnSync("pwsh", ["-NoProfile", "-File", path.join(HERE, "board-suite-remote.ps1"), "-Room", room,
-    "-SuiteArgs", args.join(" ")], { stdio: "inherit" });
+  const r = spawnSync("pwsh", ["-NoProfile", "-File", path.join(HERE, "board-suite-remote.ps1"), "-Room", room, ...args], { stdio: "inherit" });
   if (r.error) { console.error("board suite: could not start pwsh for the remote run: " + r.error.message + ". --local runs it here"); return 4; }
   return r.status === null ? 1 : r.status;
 }

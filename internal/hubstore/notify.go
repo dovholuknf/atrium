@@ -2,6 +2,7 @@ package hubstore
 
 import (
 	"database/sql"
+	"sort"
 	"time"
 )
 
@@ -76,7 +77,14 @@ func (s *Store) NotifyRecord(roomID string, ids map[string]string, present []str
 		}
 		rows.Close()
 
-		for id, ident := range ids {
+		// In id order, so what is returned is the same on every call. Map order is random.
+		sorted := make([]string, 0, len(ids))
+		for id := range ids {
+			sorted = append(sorted, id)
+		}
+		sort.Strings(sorted)
+		for _, id := range sorted {
+			ident := ids[id]
 			if old, ok := had[id]; ok && old.identity == ident {
 				continue
 			}

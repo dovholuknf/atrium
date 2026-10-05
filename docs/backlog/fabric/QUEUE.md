@@ -28,7 +28,7 @@ is live.
   a worktree with node_modules) and send only `scripts/board-suite-weights.json` through @review.
 - **Open nits:** @review's D1 nits (cap the isText back-up loop at 3 steps in hubstore, a docOrigin comment above
   docBy in internal/link/docs_api.go, `/m/docs/` trailing slash 404), the line over 120 chars in room-defender (0b),
-  and board-suite-remote args that cannot hold a space.
+  and ~~board-suite-remote args that cannot hold a space~~ (BUILT on claude/f-025).
 - **Owed by the orchestrator:** a hub deploy for d77d21d0, 0963c4c6 (pulls view) and 370dcb61 (pulls 404 text).
 - **Reports** go to the orchestrator as an atrium say (card 01a0f2da on sg4-control). `notes\director-reports.md` on
   sg4 is not reachable from m1mini.
@@ -75,9 +75,9 @@ is live.
 4. **The Linux autostart proof on cdzrok.** Check that the machine is up first.
 5. **f-004 stage 1.** The narrow hub op that carries a `claude/<branch>` from room to room, plus
    `scripts/move-card.ps1`. Prove it on sg3 and m1mini.
-6. **Later:** 46 stage 2 (the add-a-machine dialog), the f-025 hubstore notify test gaps, and 75's shared folder.
-   Also small: `room-toolchain.ps1 local` calls a bare `powershell.exe`, which is not on the PATH of sg4's agents.
-   `room-defender.ps1` uses the System32 path for the same call.
+6. **Later:** 46 stage 2 (the add-a-machine dialog) and 75's shared folder.
+   BUILT on claude/f-025: the f-025 hubstore notify test gaps, and `room-toolchain.ps1 local` calling a bare
+   `powershell.exe` (it now uses the System32 path, as `room-defender.ps1` does).
 
 ## Done
 
