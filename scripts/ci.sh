@@ -58,6 +58,13 @@ check "go build" go build -o build.claude/ ./...
 step "go test"
 check "go test" go test ./...
 
+step "govulncheck"
+# A vulnerability in the standard library or a dependency is found by this and
+# not by an audit. Pinned so a new govulncheck cannot redden a build by itself,
+# and the database it reads is always the current one, which is the point: a
+# vulnerability published tomorrow fails the next run. Needs the network.
+check "govulncheck" go run golang.org/x/vuln/cmd/govulncheck@v1.8.0 ./...
+
 step "the board"
 check "board" bash scripts/check-board.sh
 
