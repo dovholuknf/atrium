@@ -18,45 +18,47 @@ import (
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
-// New context: one action that cycles a card's context. Capture what the
-// session knows, clear it, and wake it to read that back.
+// New context: one action that cycles a card's context. The same sequence runs
+// when someone presses New context and when the card passes its limit
+// (autocontext.go). See docs/context-cycle-design.md.
 //
 // THE DAEMON RUNS THE SEQUENCE, NOT THE AGENT. A message the agent queues for
-// itself can land before the clear and be wiped with it, and a `/clear` typed
-// mid-turn can cut the capture short. So the room holds each step until the one
-// before it is over, and types nothing further when a step fails.
+// itself can land before the clear and be wiped with it, so the room holds each
+// step until the one before it is over, and types nothing further when a step fails.
 //
-//  1. Type the capture prompt: commit or stash, write everything relevant to
-//     the card's own handoff file in the cwd (`HandoffName`), and stop.
-//  2. Wait for that turn to end.
-//  3. Type `/clear` and wait for the new session's SessionStart.
-//  4. Type the wake prompt, which reads that file back.
+//  1. limit: type the limit prompt, which names the handoff file and `atrium ready`.
+//     Typed as soon as the input line is free, mid-turn included, and again at most
+//     once per turn until the ack comes. Never cleared without it.
+//  2. clear: after `atrium ready` (ready.go), type `/clear` between turns and wait
+//     for the new session's SessionStart.
+//  3. wake: type `read <path> and continue.`
 //
-// THE FILE NAME IS PER CARD, chosen once when the cycle begins. Two cards can share a
-// directory (the main checkout has two), and one fixed name let one card's capture
-// overwrite the other's, and one card's write satisfy the other's check. Item 91.
+// THE HANDOFF FILE IS OUTSIDE THE CARD'S DIRECTORY, in `<dir>/<card-id>.md` (dir is
+// the room's context_handoff_dir, else the system temp dir). It is fixed when the
+// cycle is claimed. `atrium ready` copies it onto the card.
+//
+// The idle parking and the room move keep a capture of their own (ncCapture), which
+// writes `HandoffName` in the cwd and clears nothing. It is not a context cycle.
 //
 // EVERY WRITE GOES THROUGH THE SAME GATE as a message, a note and an action
-// (`typeLabelledThroughGate`): an empty line, a quiet keyboard, no dialog on
-// screen. A closed gate is waited out, not skipped.
+// (`typeLabelledGuarded`): an empty line, a quiet keyboard, no dialog on screen.
 //
 // ONLY WHERE ATRIUM OWNS THE TERMINAL. There is nothing to type into otherwise.
 //
-// THE STEP IS IN MEMORY, THE FACT OF A RUN IS NOT. Like the activity it watches, a
-// step describes a process that is running now, and a restart ends the terminal it
-// was typing into. A failed chip does not survive one either: it described a
-// sequence nobody is running. But a run the restart cut off must not vanish without
-// a word, so the runs in flight are journalled (newcontext_journal.go) and the next
-// start ends each with a failed chip saying where it was cut off.
+// THE STEP IS IN MEMORY, THE FACT OF A RUN IS NOT. A restart ends the terminal the
+// run was typing into, so the runs in flight are journalled (newcontext_journal.go)
+// and the next start ends each one past the ack with a failed chip saying where it
+// was cut off.
 //
 // A FAILED STEP STAYS ON THE CARD with its reason until the clear is PROVEN (a
 // SessionStart naming a conversation other than the run's), the action is run
-// again, or it is dismissed. Never on a turn start: a turn says nothing about
-// whether the context went. So a sequence that stopped is never mistaken for one
-// that finished. The reason stays in the card's history as an event.
+// again, or it is dismissed. Never on a turn start.
 
 // The steps a chip can be on.
 const (
+	// NewContextLimit is the cycle's first step: the limit prompt typed, the ack awaited.
+	NewContextLimit = "limit"
+	// NewContextCapture is the idle parking's and the move's capture, which clears nothing.
 	NewContextCapture = "capture"
 	NewContextClear   = "clear"
 	NewContextWake    = "wake"
@@ -66,7 +68,7 @@ const (
 // newContextBy is the `from` on the prompted events the sequence writes.
 const newContextBy = "new-context"
 
-// newContextLabel goes ahead of the capture and wake prompts, so nobody reads
+// newContextLabel goes ahead of the limit, capture and wake prompts, so nobody reads
 // them as the operator's own words. `/clear` goes with none, because a label in
 // front of it is no longer a slash command. See atriumLabel.
 var newContextLabel = atriumLabel("new context:")
@@ -135,23 +137,45 @@ func HandoffName(t *store.Task) string {
 // newContextClear clears the session.
 const newContextClear = "/clear"
 
-// newContextWake is what the new session is told, and reads the capture back.
-func newContextWake(file string) string { return "Read " + file + " and continue from it." }
-
-// newContextWakeCeiling is the wake for a card cycled at its ceiling. It starts with
-// newContextWake, and says why the context went.
-func newContextWakeCeiling(file string) string {
-	return newContextWake(file) + " Your context was cycled at the context ceiling."
+// newContextLimitPrompt is the limit prompt: where the handoff goes and how to say
+// it is written. The binary is named in full, since the CLI is not on PATH in every room.
+func newContextLimitPrompt(path, bin string) string {
+	return "you are at context limit. wrap what is in flight, write your handoff to " + path +
+		", then run " + bin + " ready."
 }
 
-// newContextStop is the line typed MID-TURN when a step has waited `nudgeAfter`
-// for a turn to end. A card driving workers and watchers can stay running for
-// hours, and the capture is never typed into a turn (r-022), so without this the
-// cycle waits out captureEnd and fails having done nothing. The runner reads the
-// line at its next step. It is the cycle's own typing, so `holdingMessages`
-// does not hold it, and the message a sender would write to say the same thing
-// is held by the very cycle it is trying to unblock.
-const newContextStop = "a new context is waiting. Finish the step you are on, commit, and end your turn."
+// newContextWake is what the new session is told, and reads the handoff back.
+func newContextWake(path string) string { return "read " + path + " and continue." }
+
+// atriumBinary is the full path of this atrium, for the limit prompt. A variable for a test.
+var atriumBinary = func() string {
+	if p, err := os.Executable(); err == nil {
+		if r, err := filepath.EvalSymlinks(p); err == nil {
+			return r
+		}
+		return p
+	}
+	return "atrium"
+}
+
+// handoffPath is where a card's cycle writes its handoff: the room's
+// context_handoff_dir, else <temp>/atrium/handoffs, then <card-id>.md.
+func (d *Daemon) handoffPath(t *store.Task) string {
+	dir := d.st.ContextHandoffDir()
+	if dir == "" {
+		dir = filepath.Join(os.TempDir(), "atrium", "handoffs")
+	}
+	return filepath.Join(dir, t.ID+".md")
+}
+
+// prepareHandoff is handoffPath with its directory made, so the agent can write there.
+func (d *Daemon) prepareHandoff(t *store.Task) (string, error) {
+	path := d.handoffPath(t)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return "", fmt.Errorf("could not make the handoff directory %s: %w", filepath.Dir(path), err)
+	}
+	return path, nil
+}
 
 // ncTiming is how long each step waits, and how often it looks. Variables so a
 // test can run the whole sequence in milliseconds rather than name the thing that
@@ -160,9 +184,8 @@ var ncTiming = struct {
 	// poll is how often a wait looks at the card.
 	poll time.Duration
 	// typeWait is how long a step waits for the gate to open and the runner to be
-	// between turns before it gives up typing. The capture prompt waits for
-	// captureEnd instead: the operator may press the button in the middle of a
-	// long turn, and the capture then belongs after it.
+	// between turns before it gives up typing. `/clear`, the wake and the capture
+	// wait for captureEnd instead: the turn they follow may be long.
 	typeWait time.Duration
 	// captureBegin is how long the capture prompt has to start a turn.
 	captureBegin time.Duration
@@ -177,9 +200,12 @@ var ncTiming = struct {
 	// waits. The hook fires a moment before the input box is drawn, and bytes
 	// typed before then are lost. See wakeSettle.
 	sessionSettle time.Duration
-	// nudgeAfter is how long a step waits on a running card before it types
-	// `newContextStop`. The second is typed at half the step's limit.
-	nudgeAfter time.Duration
+	// promptGap is the least time between two limit prompts, for a runner whose
+	// turns are not counted.
+	promptGap time.Duration
+	// promptLost is how long a limit prompt typed between turns may go without
+	// starting the turn it was typed for before it is taken as lost and typed again.
+	promptLost time.Duration
 }{
 	poll:          250 * time.Millisecond,
 	typeWait:      2 * time.Minute,
@@ -188,7 +214,8 @@ var ncTiming = struct {
 	turnSettle:    2 * time.Second,
 	clearWait:     time.Minute,
 	sessionSettle: wakeSettle,
-	nudgeAfter:    time.Minute,
+	promptGap:     30 * time.Second,
+	promptLost:    2 * time.Minute,
 }
 
 // newContext is one card's sequence as the board draws it.
@@ -200,19 +227,23 @@ type newContext struct {
 	// conv is the conversation the run started in. A failed chip clears when a
 	// SessionStart names a different one, which is the proof the clear happened.
 	conv string
-	// asked is when this step typed `newContextStop`, at most twice.
-	asked []time.Time
 	// gen tells a run whether it is still the card's. A dismiss or a fresh run
 	// bumps it, and the goroutine it replaced stops without saying anything.
 	gen uint64
-	// auto marks a run the daemon started at the context threshold, and tokens and
-	// threshold are what it started on. human is a card no agent launched, and
-	// wakeOnly a retry of the wake alone. See autocontext.go.
-	auto              bool
-	human, wakeOnly   bool
-	tokens, threshold int64
-	// ceiling marks a run on a card wearing ContextCeilingTag, which the wake says.
-	ceiling bool
+	// auto marks a run the daemon started at the card's limit, and tokens and limit
+	// are what it started on. See autocontext.go.
+	auto          bool
+	tokens, limit int64
+	// acked is set when `atrium ready` came, and cleared when `/clear` was typed. A
+	// rerun of a failed chip resumes after what they say happened.
+	acked, cleared bool
+	// prompted is how many times the limit prompt was typed, the last at lastPrompt,
+	// in the turn promptTurn (see cyclePromptDue).
+	prompted   int
+	promptTurn int
+	lastPrompt time.Time
+	// kick wakes the run's wait at once: an ack, a statusline update, a tick.
+	kick chan struct{}
 	// capOnly marks the idle parking's capture, which clears nothing and is not
 	// journalled: a restart that cuts it off has nothing to report.
 	capOnly bool
@@ -241,22 +272,6 @@ func newNewContexts() *newContexts {
 
 func (n *newContexts) stopAll() { n.stopOnce.Do(func() { close(n.stop) }) }
 
-// begin claims a card for a run and returns its generation, or false when one is
-// already going. A failed chip is not going: running the action again replaces it.
-func (n *newContexts) begin(taskID, file, conv string) (uint64, bool) {
-	return n.claim(taskID, &newContext{step: NewContextCapture, file: file, conv: conv})
-}
-
-// beginAuto is begin for a run the daemon starts. A wake-only run starts on the wake step.
-func (n *newContexts) beginAuto(taskID, file, conv string, tokens, threshold int64, human, wakeOnly, ceiling bool) (uint64, bool) {
-	c := &newContext{step: NewContextCapture, file: file, conv: conv, auto: true, human: human, wakeOnly: wakeOnly,
-		ceiling: ceiling, tokens: tokens, threshold: threshold}
-	if wakeOnly {
-		c.step = NewContextWake
-	}
-	return n.claim(taskID, c)
-}
-
 func (n *newContexts) claim(taskID string, c *newContext) (uint64, bool) {
 	n.mu.Lock()
 	if cur := n.by[taskID]; cur != nil && cur.step != NewContextFailed {
@@ -264,7 +279,7 @@ func (n *newContexts) claim(taskID string, c *newContext) (uint64, bool) {
 		return 0, false
 	}
 	n.gens++
-	c.since, c.gen = time.Now(), n.gens
+	c.since, c.gen, c.kick = time.Now(), n.gens, make(chan struct{}, 1)
 	n.by[taskID] = c
 	gen := n.gens
 	n.mu.Unlock()
@@ -322,37 +337,73 @@ func (n *newContexts) advance(taskID string, gen uint64, step string) bool {
 		n.mu.Unlock()
 		return false
 	}
-	cur.step, cur.since, cur.asked = step, time.Now(), nil
+	cur.step, cur.since = step, time.Now()
 	n.mu.Unlock()
 	n.save()
 	return true
 }
 
-// nudged records a stop request typed on the run's current step. A zero time
-// forgets them: what they asked for happened.
-func (n *newContexts) nudged(taskID string, gen uint64, at time.Time) bool {
+// kick wakes the card's run, if it is waiting, without blocking.
+func (n *newContexts) kick(taskID string) {
+	if n == nil {
+		return
+	}
+	n.mu.Lock()
+	cur := n.by[taskID]
+	n.mu.Unlock()
+	if cur == nil || cur.kick == nil {
+		return
+	}
+	select {
+	case cur.kick <- struct{}{}:
+	default:
+	}
+}
+
+// ack marks the card's run acked, when it is waiting on the limit step. It reports
+// whether there was one.
+func (n *newContexts) ack(taskID string) bool {
+	n.mu.Lock()
+	cur := n.by[taskID]
+	ok := cur != nil && cur.step == NewContextLimit && !cur.acked
+	if ok {
+		cur.acked = true
+	}
+	n.mu.Unlock()
+	if ok {
+		n.kick(taskID)
+	}
+	return ok
+}
+
+// waitingForAck is whether the card's run is on the limit step with no ack yet.
+func (n *newContexts) waitingForAck(taskID string) bool {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	cur := n.by[taskID]
+	return cur != nil && cur.step == NewContextLimit && !cur.acked
+}
+
+// notePrompt records a limit prompt typed in turn.
+func (n *newContexts) notePrompt(taskID string, gen uint64, turn int, at time.Time) bool {
 	n.mu.Lock()
 	defer n.mu.Unlock()
 	cur := n.by[taskID]
 	if cur == nil || cur.gen != gen {
 		return false
 	}
-	if at.IsZero() {
-		cur.asked = nil
-	} else {
-		cur.asked = append(cur.asked, at)
-	}
+	cur.prompted++
+	cur.promptTurn, cur.lastPrompt = turn, at
 	return true
 }
 
-// askedAt is the clock times a step typed `newContextStop`, for the chip and a
-// failure's reason.
-func askedAt(asked []time.Time) string {
-	s := make([]string, len(asked))
-	for i, at := range asked {
-		s[i] = at.Format("15:04")
+// noteCleared records that `/clear` was typed.
+func (n *newContexts) noteCleared(taskID string, gen uint64) {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	if cur := n.by[taskID]; cur != nil && cur.gen == gen {
+		cur.cleared = true
 	}
-	return strings.Join(s, " and ")
 }
 
 // fail leaves the chip on the step that stopped, saying why.
@@ -431,6 +482,13 @@ func (d *Daemon) newContextFor(taskID string) any {
 func newContextView(c *newContext) map[string]any {
 	n, label := 0, ""
 	switch c.step {
+	case NewContextLimit:
+		n, label = 1, "waiting for atrium ready"
+		if c.acked {
+			label = "atrium ready came, clearing when the turn ends"
+		} else if c.prompted > 1 {
+			label += fmt.Sprintf(" (asked %d times)", c.prompted)
+		}
 	case NewContextCapture:
 		n, label = 1, "capturing state to "+c.file
 	case NewContextClear:
@@ -440,18 +498,15 @@ func newContextView(c *newContext) map[string]any {
 	case NewContextFailed:
 		label = "new context failed"
 	}
-	if len(c.asked) > 0 && c.step != NewContextFailed {
-		label += ", waiting for the turn to end, asked the card to stop at " + askedAt(c.asked)
-	}
 	out := map[string]any{"step": c.step, "n": n, "of": 3, "label": label, "file": c.file, "since": c.since}
 	if c.auto {
-		out["auto"], out["tokens"], out["threshold"] = true, c.tokens, c.threshold
+		out["auto"], out["tokens"], out["limit"] = true, c.tokens, c.limit
+	}
+	if c.prompted > 0 {
+		out["prompted"] = c.prompted
 	}
 	if c.reason != "" {
 		out["reason"] = c.reason
-	}
-	if len(c.asked) > 0 {
-		out["asked"] = c.asked
 	}
 	return out
 }
@@ -460,8 +515,7 @@ var errNewContextGone = errors.New("superseded")
 
 // holdingMessages is the question every delivery path asks for a card: is it in
 // a new-context cycle. While it is, no message is typed and no hook carries one,
-// because capture would put it in the context about to be cleared and clear
-// would lose it. The cycle's own typing (`ncType`) does not ask.
+// because it would land in the context about to be cleared, or be lost with it. The cycle's own typing (`ncType`) does not ask.
 func (d *Daemon) holdingMessages(taskID string) bool {
 	return d.nctx.holding(taskID) || d.frozenForMove(taskID)
 }
@@ -489,7 +543,9 @@ func (d *Daemon) releaseHeld(taskID string) {
 }
 
 // StartNewContext begins the sequence on a card and returns at once. The steps
-// run in the background and the card's chip says where they are.
+// run in the background and the card's chip says where they are. A failed chip
+// past the ack resumes where it stopped, so a session that already wrote its
+// handoff, or was already cleared, is not asked to write another.
 func (d *Daemon) StartNewContext(taskID string) error {
 	task, err := d.st.Get(taskID)
 	if err != nil {
@@ -498,16 +554,25 @@ func (d *Daemon) StartNewContext(taskID string) error {
 	if d.sup.get(taskID) == nil {
 		return errNoTerminal
 	}
-	// Two cards in one directory are fine, each with its own file. Two cycles at once
-	// in one directory are refused: the typing of both would interleave.
+	// Two cycles at once in one directory are refused: the typing of both would interleave.
 	if other := d.nctx.sameDirBusy(d, task); other != "" {
 		return &newContextSharedError{other: other}
 	}
-	gen, ok := d.nctx.begin(taskID, HandoffName(task), d.conversationOf(task))
+	c := &newContext{step: NewContextLimit, conv: d.conversationOf(task)}
+	if cur := d.nctx.get(taskID); cur != nil && cur.step == NewContextFailed && cur.acked && cur.file != "" {
+		c.file, c.acked, c.cleared, c.conv = cur.file, true, cur.cleared, cur.conv
+		c.step = NewContextClear
+		if cur.cleared {
+			c.step = NewContextWake
+		}
+	} else if c.file, err = d.prepareHandoff(task); err != nil {
+		return err
+	}
+	gen, ok := d.nctx.claim(taskID, c)
 	if !ok {
 		if cur := d.nctx.get(taskID); cur != nil {
 			v := newContextView(cur)
-			return fmt.Errorf("%w, stuck on step %v of 3 (%s) for %s", errNewContextBusy, v["n"], cur.step,
+			return fmt.Errorf("%w, on step %v of 3 (%s) for %s", errNewContextBusy, v["n"], cur.step,
 				time.Since(cur.since).Round(time.Second))
 		}
 		return errNewContextBusy
@@ -558,99 +623,73 @@ var (
 	errNewContextBusy = errors.New("a new context is already under way on this card")
 )
 
+// errCycleUnder ends an automatic cycle whose card fell back under its limit
+// before the ack: the runner compacted, and there is nothing left to cycle.
+var errCycleUnder = errors.New("the card fell back under its limit")
+
 // runNewContext is the sequence. Each step ends only when the one before it has
 // really finished, and a step that cannot leaves the chip failed with a reason
 // and types nothing further.
 func (d *Daemon) runNewContext(taskID string, gen uint64) {
-	// Recorded at begin, so an alias change mid-cycle cannot split the three uses.
-	file, auto, wakeOnly, ceiling := "", false, false, false
-	if cur := d.nctx.get(taskID); cur != nil {
-		file, auto, wakeOnly, ceiling = cur.file, cur.auto, cur.wakeOnly, cur.ceiling
+	cur := d.nctx.get(taskID)
+	if cur == nil || cur.gen != gen {
+		return
 	}
-	wake := newContextWake(file)
-	if ceiling {
-		wake = newContextWakeCeiling(file)
+	// Recorded at the claim, so a setting changed mid-cycle cannot split the three uses.
+	file, start, by := cur.file, cur.step, newContextBy
+	if cur.auto {
+		by = cycleBy
+	}
+	end := func(ev map[string]any) {
+		ev["by"] = by
+		if err := d.st.AppendEvent(taskID, store.EventNotified, ev); err != nil {
+			log.Printf("[atrium] could not record the new context on %s: %v", taskID, err)
+		}
+		d.publishTask(taskID)
+		d.releaseHeld(taskID)
 	}
 	fail := func(step string, err error) {
 		if errors.Is(err, errNewContextGone) {
 			return
 		}
 		reason := step + ": " + err.Error()
-		by, extra, giveUp := newContextBy, map[string]any(nil), false
-		if auto {
-			// What an automatic failure leads to is decided before the chip is written,
-			// since the chip says whether it will be tried again.
-			// One read, not mine then get: a dismissal between the two left cur nil.
-			cur := d.nctx.get(taskID)
-			if cur == nil || cur.gen != gen {
-				return
-			}
-			var attempt int
-			reason, attempt, giveUp = d.autoFailing(taskID, gen, cur.step, step, reason)
-			by, extra = autoContextBy, map[string]any{"attempt": attempt}
-		}
 		if d.nctx.fail(taskID, gen, reason) {
 			log.Printf("[atrium] new context on %s stopped, %s", taskID, reason)
 			// The chip goes when the clear is proven, and the reason stays in the card's
 			// history after it.
-			ev := map[string]any{"by": by, "failed": reason}
-			for k, v := range extra {
-				ev[k] = v
-			}
-			if err := d.st.AppendEvent(taskID, store.EventNotified, ev); err != nil {
-				log.Printf("[atrium] could not record the new context failure on %s: %v", taskID, err)
-			}
-			if auto {
-				d.autoIdleRelease(taskID, false)
-				if giveUp {
-					d.autoGaveUpNotice(taskID, reason)
+			end(map[string]any{"failed": reason})
+		}
+	}
+
+	// 1. The limit prompt, again at most once per turn, until `atrium ready`.
+	if start == NewContextLimit {
+		if err := d.cycleAwaitAck(taskID, gen); err != nil {
+			if errors.Is(err, errCycleUnder) {
+				if d.nctx.finish(taskID, gen) {
+					log.Printf("[atrium] context cycle on %s dropped: %v", taskID, err)
+					end(map[string]any{"dropped": err.Error()})
 				}
+				return
 			}
-			d.publishTask(taskID)
-			d.releaseHeld(taskID)
-		}
-	}
-
-	// Before anything is typed or the launcher told: a ceiling card with no readable
-	// directory is refused here, and the chip says why.
-	if ceiling && !wakeOnly {
-		if dir, err := d.handoffDir(taskID); err == nil && dir == "" {
-			fail("not cycled", errNoHandoffDir)
+			fail("waiting for atrium ready", err)
 			return
 		}
-	}
-
-	// An automatic run types nothing until the line is empty and the launcher has been
-	// told. A card that never opens is left alone, with no chip.
-	if auto && !wakeOnly {
-		if err := d.autoPrepare(taskID, gen); err != nil {
-			if !errors.Is(err, errNewContextGone) {
-				d.autoDeferred(taskID, gen)
-			}
-			return
-		}
-	}
-
-	if !wakeOnly {
-		// 1 and 2. The capture prompt, the turn it starts, and the file it wrote. Not
-		// cleared over a handoff that was never written: the clear cannot be taken
-		// back, and the capture is the only thing that makes it safe.
-		if step, err := d.ncCapture(taskID, gen, file); err != nil {
-			fail(step, err)
-			return
-		}
-
-		// 3. `/clear`, then the new session's SessionStart.
 		if !d.nctx.advance(taskID, gen, NewContextClear) {
 			return
 		}
 		d.publishTask(taskID)
+	}
+
+	// 2. `/clear`, between turns, then the new session's SessionStart. The agent ran
+	// `ready` inside a turn, and a `/clear` typed mid-turn is not a slash command.
+	if start != NewContextWake {
 		before, _ := d.wake.sessionStarted(taskID)
 		typedAt := time.Now()
-		if err := d.ncType(taskID, gen, "", newContextClear, ncTiming.typeWait); err != nil {
+		if err := d.ncType(taskID, gen, "", newContextClear, ncTiming.captureEnd); err != nil {
 			fail("could not type /clear", err)
 			return
 		}
+		d.nctx.noteCleared(taskID, gen)
 		err := d.ncWait(taskID, gen, ncTiming.clearWait, "a new session to start after /clear (is the session hook installed?)",
 			func() (bool, error) {
 				at, ok := d.wake.sessionStarted(taskID)
@@ -660,13 +699,13 @@ func (d *Daemon) runNewContext(taskID string, gen uint64) {
 			fail("the context did not clear", err)
 			return
 		}
-
-		// 4. The wake, once the new session has drawn its input box.
 		if !d.nctx.advance(taskID, gen, NewContextWake) {
 			return
 		}
 		d.publishTask(taskID)
 	}
+
+	// 3. The wake, once the new session has drawn its input box.
 	err := d.ncWait(taskID, gen, ncTiming.sessionSettle+ncTiming.clearWait, "the new session to settle", func() (bool, error) {
 		at, _ := d.wake.sessionStarted(taskID)
 		return time.Since(at) >= ncTiming.sessionSettle, nil
@@ -675,34 +714,137 @@ func (d *Daemon) runNewContext(taskID string, gen uint64) {
 		fail("the new session did not settle", err)
 		return
 	}
-	// Only this card's own file will do. A plain HANDOFF.md written meanwhile is
-	// some other card's, which is the bug the per-card name exists to prevent.
-	if err := d.handoffExists(taskID, file); err != nil {
-		fail("the wake was not typed", err)
+	if _, err := os.Stat(file); err != nil {
+		fail("the wake was not typed", fmt.Errorf("the handoff %s is gone", file))
 		return
 	}
-	// A turn in progress is waited out like the capture's, not for typeWait: the new
-	// session may already be taking a turn on something else (r-016, @ui), and the
-	// cycle fails only if no gap opens in captureEnd.
-	if err := d.ncType(taskID, gen, newContextLabel, wake, ncTiming.captureEnd); err != nil {
+	// A turn in progress is waited out: the new session may already be taking a turn
+	// on something else (r-016, @ui).
+	if err := d.ncType(taskID, gen, newContextLabel, newContextWake(file), ncTiming.captureEnd); err != nil {
 		fail("could not type the wake prompt", err)
 		return
 	}
-	// Marked finished before the chip goes, so a tick between the two cannot read the
-	// run as dismissed and lose its result.
-	if auto {
-		d.autoFinished(taskID, gen, true)
-	}
 	if d.nctx.finish(taskID, gen) {
 		log.Printf("[atrium] new context on %s done", taskID)
-		if auto {
-			d.autoIdleRelease(taskID, true)
-		}
-		d.publishTask(taskID)
-		d.releaseHeld(taskID)
-	} else if auto {
-		d.autoFinished(taskID, gen, false)
+		end(map[string]any{"done": true, "path": file})
 	}
+}
+
+// cycleAwaitAck types the limit prompt and waits for `atrium ready`, for as long as
+// it takes. Woken by a poll, an ack, a statusline update or the tick.
+func (d *Daemon) cycleAwaitAck(taskID string, gen uint64) error {
+	t := time.NewTicker(ncTiming.poll)
+	defer t.Stop()
+	for {
+		cur := d.nctx.get(taskID)
+		if cur == nil || cur.gen != gen {
+			return errNewContextGone
+		}
+		if d.sup.get(taskID) == nil {
+			return errors.New("the terminal closed")
+		}
+		if cur.acked {
+			return nil
+		}
+		if cur.auto {
+			if task, err := d.st.Get(taskID); err == nil && task != nil {
+				if tokens, _ := d.ctx.read(task); tokens > 0 && tokens < d.cycleLimit(task) {
+					return errCycleUnder
+				}
+			}
+		}
+		if d.cyclePromptDue(taskID, cur) {
+			if err := d.cyclePrompt(taskID, gen, cur.file); err != nil {
+				return err
+			}
+		}
+		select {
+		case <-d.nctx.stop:
+			return errNewContextGone
+		case <-cur.kick:
+		case <-t.C:
+		}
+	}
+}
+
+// cyclePromptDue is whether the limit prompt goes now. AT MOST ONCE PER TURN:
+//
+//   - the first goes as soon as the line is free, mid-turn included, unless the
+//     runner loses input typed mid-turn, when it waits for the turn to end,
+//   - one typed mid-turn in turn N is due again once turn N is over, or once a
+//     later turn has begun,
+//   - one typed between turns starts turn N+1, and is due again when that turn is
+//     over, or a later one begins. Should it never start a turn, it is taken as lost
+//     after promptLost.
+//
+// Never closer than promptGap, for a runner whose turns are not counted. Never with
+// a dialog on screen, whose Enter it would answer.
+func (d *Daemon) cyclePromptDue(taskID string, c *newContext) bool {
+	if d.act.dialogOpen(taskID) {
+		return false
+	}
+	busy := d.ncBusy(taskID)
+	if c.prompted == 0 {
+		return !busy || d.midTurnInputFor(taskID)
+	}
+	since := cycleTimeNow().Sub(c.lastPrompt)
+	if since < ncTiming.promptGap {
+		return false
+	}
+	switch turns := d.act.turnsBegun(taskID); {
+	case turns > c.promptTurn:
+		return !busy || d.midTurnInputFor(taskID)
+	case turns == c.promptTurn:
+		return !busy
+	default:
+		return !busy && since >= ncTiming.promptLost
+	}
+}
+
+// cyclePrompt types the limit prompt through the gate, with no turn check for a
+// runner that takes input mid-turn. A closed gate writes nothing, and the next
+// poll tries again.
+func (d *Daemon) cyclePrompt(taskID string, gen uint64, path string) error {
+	run := d.sup.get(taskID)
+	if run == nil {
+		return nil
+	}
+	mid := d.midTurnInputFor(taskID)
+	gone, turn := false, 0
+	ok := func() bool {
+		if !d.nctx.mine(taskID, gen) {
+			gone = true
+			return false
+		}
+		if d.act.dialogOpen(taskID) {
+			return false
+		}
+		// Read before the write: the prompt can start its turn before the Enter
+		// that follows it returns. Mid-turn, the prompt belongs to the turn going;
+		// between turns, to the one it starts.
+		busy := d.ncBusy(taskID)
+		turn = d.act.turnsBegun(taskID)
+		if !busy {
+			turn++
+		}
+		return mid || !busy
+	}
+	text := newContextLimitPrompt(path, atriumBinary())
+	wrote, err := d.typeLabelledGuarded(run, taskID, newContextLabel, text, ok)
+	if gone {
+		return errNewContextGone
+	}
+	if err != nil || !wrote {
+		return err
+	}
+	d.nctx.notePrompt(taskID, gen, turn, cycleTimeNow())
+	if err := d.st.AppendEvent(taskID, store.EventPrompted, map[string]any{
+		"text": text, "via": "terminal", "from": newContextBy,
+	}); err != nil {
+		log.Printf("[atrium] could not record the limit prompt on %s: %v", taskID, err)
+	}
+	d.publishTask(taskID)
+	return nil
 }
 
 // ncCapture is the capture half of the sequence: the prompt typed between turns,
@@ -837,37 +979,14 @@ func (d *Daemon) ncWait(taskID string, gen uint64, limit time.Duration, what str
 // cheap look before it only spares taking the lock every poll.
 //
 // THE HOLD IS NOT ADDED HERE. r-007 stage 1b already holds the card's peer
-// injector and every delivery path (`holdingMessages`) from the capture to the
+// injector and every delivery path (`holdingMessages`) from the claim to the
 // wake, so nothing else types into the card during a run. What that could not
 // give was atomicity: a message already past its own check when the run began.
 // The lock gives it.
-//
-// A TURN THAT DOES NOT END IS ASKED TO. After `nudgeAfter` on a running card the
-// step types `newContextStop` mid-turn, and once more at half its limit, never a
-// third time. The step itself still waits for the turn to end. A failure names
-// both, so the chip says the card was asked and did not stop.
 func (d *Daemon) ncType(taskID string, gen uint64, label, text string, limit time.Duration) error {
-	began, asked := time.Now(), 0
-	ceiling := d.ceilingRun(taskID)
-	err := d.ncWait(taskID, gen, limit, "an empty line and no turn in progress", func() (bool, error) {
+	return d.ncWait(taskID, gen, limit, "an empty line and no turn in progress", func() (bool, error) {
 		run := d.sup.get(taskID)
-		if run == nil || d.act.dialogOpen(taskID) {
-			return false, nil
-		}
-		if d.ncBusy(taskID) {
-			waited := time.Since(began)
-			// A runner that does not take input mid-turn would lose the line, so it
-			// is not nudged and the cycle waits for its turn as it always did.
-			if d.midTurnInputFor(taskID) && (asked == 0 && waited >= ncTiming.nudgeAfter ||
-				asked == 1 && waited >= limit/2 && limit/2 > ncTiming.nudgeAfter) {
-				wrote, err := d.ncNudge(run, taskID, gen)
-				if errors.Is(err, errNewContextGone) {
-					return false, err
-				}
-				if wrote {
-					asked++
-				}
-			}
+		if run == nil || d.act.dialogOpen(taskID) || d.ncBusy(taskID) {
 			return false, nil
 		}
 		gone := false
@@ -876,13 +995,6 @@ func (d *Daemon) ncType(taskID string, gen uint64, label, text string, limit tim
 			// write must not be typed after.
 			if !d.nctx.mine(taskID, gen) {
 				gone = true
-				return false
-			}
-			// A ceiling cycle also yields to a person who typed in the last
-			// ceilingTypedQuiet, for every step it types: the gate's own quiet is
-			// seconds, and someone who sent a prompt and is reading the answer
-			// has not stopped using the card.
-			if ceiling && run.typedWithin(autoTiming.ceilingTypedQuiet) {
 				return false
 			}
 			return !d.act.dialogOpen(taskID) && !d.ncBusy(taskID) &&
@@ -900,58 +1012,12 @@ func (d *Daemon) ncType(taskID string, gen uint64, label, text string, limit tim
 		}); err != nil {
 			log.Printf("[atrium] could not record the new context prompt on %s: %v", taskID, err)
 		}
-		// The step is past the wait the stop requests were about.
-		d.nctx.nudged(taskID, gen, time.Time{})
 		return true, nil
 	})
-	if err != nil && !errors.Is(err, errNewContextGone) {
-		if cur := d.nctx.get(taskID); cur != nil && cur.gen == gen && len(cur.asked) > 0 {
-			err = fmt.Errorf("%w, and the card was asked to end its turn at %s and did not", err, askedAt(cur.asked))
-		}
-	}
-	return err
-}
-
-// ncNudge types `newContextStop` into a running card: through the operator's
-// gate like an immediate message, but not held, and with no turn check, since a
-// turn is why it is typed. It reports whether it wrote. A closed gate writes
-// nothing and the next poll tries again.
-func (d *Daemon) ncNudge(run *runner, taskID string, gen uint64) (bool, error) {
-	gone := false
-	ok := func() bool {
-		if !d.nctx.mine(taskID, gen) {
-			gone = true
-			return false
-		}
-		if d.act.dialogOpen(taskID) {
-			return false
-		}
-		if t, err := d.st.Get(taskID); d.ceilingRun(taskID) && err == nil && d.ceilingHeld(t, run, time.Now()) {
-			return false
-		}
-		return true
-	}
-	wrote, err := d.typeLabelledGuarded(run, taskID, newContextLabel, newContextStop, ok)
-	if gone {
-		return false, errNewContextGone
-	}
-	if err != nil || !wrote {
-		return false, err
-	}
-	at := time.Now()
-	d.nctx.nudged(taskID, gen, at)
-	log.Printf("[atrium] new context on %s is waiting on a turn, asked the card to end it", taskID)
-	if err := d.st.AppendEvent(taskID, store.EventPrompted, map[string]any{
-		"text": newContextStop, "via": "terminal", "from": newContextBy,
-	}); err != nil {
-		log.Printf("[atrium] could not record the new context stop request on %s: %v", taskID, err)
-	}
-	d.publishTask(taskID)
-	return true, nil
 }
 
 // handoffDir is the card's directory, or "" when it cannot be read from here,
-// which is a card whose files this daemon has no way to look at. The sequence
+// which is a card whose files this daemon has no way to look at. The capture
 // then trusts the turn ending as its only signal.
 func (d *Daemon) handoffDir(taskID string) (string, error) {
 	task, err := d.st.Get(taskID)
@@ -968,31 +1034,6 @@ func (d *Daemon) handoffDir(taskID string) (string, error) {
 	return dir, nil
 }
 
-// errNoHandoffDir refuses a ceiling cycle on a card whose directory cannot be looked at.
-// A ceiling cycle also starts mid-turn, where the turn ending is a weak signal, so the
-// file is the only proof the capture worked and the clear is not taken without it.
-var errNoHandoffDir = errors.New("this card has no directory the room can read, so a handoff cannot be checked " +
-	"and the context is not cleared")
-
-// ceilingRun is whether the card's run in flight is a ceiling cycle.
-func (d *Daemon) ceilingRun(taskID string) bool {
-	cur := d.nctx.get(taskID)
-	return cur != nil && cur.ceiling
-}
-
-// handoffExists checks the card's own file is there for the wake to read. A plain
-// HANDOFF.md is never accepted in its place: it is some other card's.
-func (d *Daemon) handoffExists(taskID, file string) error {
-	dir, err := d.handoffDir(taskID)
-	if err != nil || dir == "" {
-		return err
-	}
-	if _, err := os.Stat(filepath.Join(dir, file)); err != nil {
-		return fmt.Errorf("expected %s in %s and it is not there", file, dir)
-	}
-	return nil
-}
-
 // handoffWritten checks the capture left this card's file. Two ways through: the
 // file carries this run's `atrium-capture: <token>` line in its first 4 KB, which
 // a card that wrote its notes a minute ago can add, or it was written during the
@@ -1000,9 +1041,6 @@ func (d *Daemon) handoffExists(taskID, file string) error {
 // card should have done, in one sentence, because the chip shows it.
 func (d *Daemon) handoffWritten(taskID, file string, since time.Time, token string) error {
 	dir, err := d.handoffDir(taskID)
-	if err == nil && dir == "" && d.ceilingRun(taskID) {
-		return errNoHandoffDir
-	}
 	if err != nil || dir == "" {
 		return err
 	}

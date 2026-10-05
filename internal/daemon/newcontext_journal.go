@@ -107,9 +107,18 @@ func (d *Daemon) endAbandonedNewContexts() {
 		if _, err := d.st.Get(id); err != nil {
 			continue
 		}
-		n := map[string]int{NewContextCapture: 1, NewContextClear: 2, NewContextWake: 3}[row.Step]
+		// Cut off before the ack: nothing was cleared and nothing was promised, so no
+		// chip. The card is still past its limit, and the trigger starts it again.
+		if row.Step == NewContextLimit || row.Step == NewContextCapture {
+			if err := d.st.AppendEvent(id, store.EventNotified, map[string]any{"by": newContextBy,
+				"dropped": "the room restarted before atrium ready came"}); err != nil {
+				log.Printf("[atrium] could not record the abandoned new context on %s: %v", id, err)
+			}
+			continue
+		}
+		n := map[string]int{NewContextClear: 2, NewContextWake: 3}[row.Step]
 		reason := fmt.Sprintf("the room restarted during step %d of 3 (%s), after %s, so the new context was "+
-			"abandoned. Check whether %s was written, and start it again if the context did not clear",
+			"abandoned. Its handoff is %s, and running it again resumes from the clear",
 			n, row.Step, time.Since(row.Since).Round(time.Second), row.File)
 		d.nctx.seedFailed(id, row, reason)
 		if err := d.st.AppendEvent(id, store.EventNotified, map[string]any{"by": newContextBy, "failed": reason}); err != nil {
@@ -129,6 +138,7 @@ func (n *newContexts) seedFailed(taskID string, row ncJournalRow, reason string)
 	// abandoned: the run began in row.Conv, and after a /clear the card resumes on
 	// another, so its SessionStart would otherwise read as proof the clear happened
 	// and delete this chip seconds after startup. See sessionStarted.
+	// Past the ack, so a rerun resumes from the clear, or the wake once it was typed.
 	n.by[taskID] = &newContext{step: NewContextFailed, file: row.File, conv: row.Conv, reason: reason,
-		since: time.Now(), gen: n.gens, abandoned: true}
+		since: time.Now(), gen: n.gens, abandoned: true, acked: true, cleared: row.Step == NewContextWake}
 }

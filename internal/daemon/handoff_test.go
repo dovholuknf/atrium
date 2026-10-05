@@ -51,33 +51,32 @@ func ncSibling(t *testing.T, d *Daemon, dir, alias string) *store.Task {
 	return task
 }
 
-// The name is recorded at begin, and the capture prompt, the wake and the check
-// all use it, even if the alias changes mid-cycle.
-func TestNewContextUsesOneNameThroughTheCycle(t *testing.T) {
+// The handoff path is fixed when the cycle is claimed, and the prompt and the wake
+// both use it, even if the room's handoff directory changes mid-cycle.
+func TestNewContextUsesOnePathThroughTheCycle(t *testing.T) {
 	fastNewContext(t)
 	d := testDaemon(t)
 	task, f, dir := ncCard(t, d)
-	if err := d.st.SetAlias(task.ID, "first"); err != nil {
-		t.Fatal(err)
-	}
+	first := filepath.Join(dir, task.ID+".md")
 	if err := d.StartNewContext(task.ID); err != nil {
 		t.Fatal(err)
 	}
-	if err := d.st.SetAlias(task.ID, "second"); err != nil {
+	other := t.TempDir()
+	if err := d.st.SetSetting(store.SettingContextHandoffDir, other); err != nil {
 		t.Fatal(err)
 	}
-	until(t, "the capture prompt", func() bool { return strings.Contains(f.written(), "HANDOFF.first.md") })
-	d.act.set(task.ID, ActivityThinking, "")
-	if err := os.WriteFile(filepath.Join(dir, "HANDOFF.first.md"), handoffBody, 0o644); err != nil {
+	until(t, "the limit prompt", func() bool { return strings.Contains(f.written(), first) })
+	if err := os.WriteFile(first, handoffBody, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	time.Sleep(20 * time.Millisecond)
-	ncTurnEnds(d, task.ID)
+	if _, _, err := d.ready(task); err != nil {
+		t.Fatalf("ready refused the path the prompt named: %v", err)
+	}
 	until(t, "/clear", func() bool { return strings.Contains(f.written(), "/clear") })
 	d.wake.sawSession(task.ID, time.Now())
-	until(t, "the wake", func() bool { return strings.Contains(f.written(), "Read HANDOFF.first.md and continue") })
-	if strings.Contains(f.written(), "HANDOFF.second.md") {
-		t.Fatalf("the name changed mid-cycle: %q", f.written())
+	until(t, "the wake", func() bool { return strings.Contains(f.written(), newContextWake(first)) })
+	if strings.Contains(f.written(), other) {
+		t.Fatalf("the path changed mid-cycle: %q", f.written())
 	}
 }
 
@@ -100,9 +99,6 @@ func TestHandoffWrittenIsPerCard(t *testing.T) {
 	}
 	if err := d.handoffWritten(a.ID, HandoffName(a), since, "tok"); err == nil {
 		t.Fatal("a plain HANDOFF.md satisfied card A")
-	}
-	if err := d.handoffExists(a.ID, HandoffName(a)); err == nil || !strings.Contains(err.Error(), HandoffName(a)) {
-		t.Fatalf("the wake check did not fail naming the expected file: %v", err)
 	}
 	if err := os.WriteFile(filepath.Join(dir, HandoffName(a)), handoffBody, 0o644); err != nil {
 		t.Fatal(err)

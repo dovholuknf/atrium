@@ -220,6 +220,9 @@ func (d *Daemon) onTelemetry(in TelemetryEvent) string {
 	// is to find the session that stopped.
 	d.act.setTelemetry(taskID, t)
 	d.keepLimitReadings(taskID, t)
+	// But every update re-checks the card against its limit, which is how a limit
+	// prompt that went unanswered is typed again. See autocontext.go.
+	d.cycleOnStatusline(taskID)
 	return taskID
 }
 

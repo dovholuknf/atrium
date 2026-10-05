@@ -222,10 +222,6 @@ type Daemon struct {
 	// has dismissed. In memory. See newcontext.go.
 	nctx *newContexts
 
-	// auto is each card's arm state for the automatic new context, in memory. See
-	// autocontext.go.
-	auto *autoContexts
-
 	// ka keeps idle Claude cards' prompt caches warm. See keepalive.go.
 	ka *keepalive
 
@@ -628,7 +624,6 @@ func New(opts Options) (*Daemon, error) {
 	d.ka.holding = d.nctx.holding
 	d.ka.deployHeld = d.deployHeld
 	d.ka.session = d.ctx.sessionOf
-	d.auto = newAutoContexts()
 	d.acProbe = newAutocompactProbe()
 	api.ContextSizeOf = d.contextSizeFor
 	api.AutocompactOf = d.autocompactFor
@@ -647,7 +642,6 @@ func New(opts Options) (*Daemon, error) {
 	}
 	d.ap.UsageOf = d.usageFor
 	d.ap.Replies = func(id string, n int, before time.Time) (any, error) {
-		d.auto.noteRead(id)
 		return d.repliesPage(id, n, before)
 	}
 	d.ap.Changes = d.changesFor
@@ -926,13 +920,8 @@ func (d *Daemon) onPermRequest(req PermissionRequest) (string, *AutoDecision, er
 	// to carry the text, and the banner says so, or the model reads a delivery
 	// as a judgement on its command.
 	msgs, merr := d.takeMessages(task.ID, "permission")
-	line := d.contextLine(task)
-	if (merr == nil && len(msgs) > 0) || line != "" {
-		reason := ""
-		if merr == nil && len(msgs) > 0 {
-			reason = messageBanner(msgs, true)
-		}
-		reason = withContextLine(line, reason)
+	if merr == nil && len(msgs) > 0 {
+		reason := messageBanner(msgs, true)
 		if _, err := d.st.DecidePermissionBy(p.ID, "block", reason, store.DecidedByMessage); err != nil {
 			return "", nil, err
 		}
@@ -1123,6 +1112,7 @@ func (d *Daemon) Run(ctx context.Context) error {
 	agentMux.HandleFunc("/telemetry", d.handleTelemetry)
 	// A session declaring its work over, which nothing could say before.
 	agentMux.HandleFunc("/finish", d.handleFinish)
+	agentMux.HandleFunc("/ready", d.handleReady)
 	// The other half of finish: a session saying it is stuck and what it needs,
 	// on its card for a human or routed to a named peer.
 	agentMux.HandleFunc("/help", d.handleHelp)

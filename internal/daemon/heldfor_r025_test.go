@@ -18,7 +18,7 @@ func TestHeldDuringCaptureReportsNewContext(t *testing.T) {
 	if err := d.StartNewContext(id); err != nil {
 		t.Fatal(err)
 	}
-	until(t, "the capture prompt", func() bool { return strings.Contains(f.written(), "HANDOFF.") })
+	until(t, "the limit prompt", func() bool { return strings.Contains(f.written(), limitPrompt) })
 	sayViaMessage(t, d, "alice", id, heldSay)
 	sayViaMessage(t, d, "alice", id, heldSay)
 	a := d.act.get(id)
