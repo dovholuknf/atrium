@@ -1,9 +1,10 @@
 # MinGit for a Windows room that has no git, dot-sourced by room-git.ps1 and scripts/test-room-mingit.ps1. It holds
 # functions and runs nothing when it is dot-sourced.
 #
-# WHY MINGIT. A bare Windows room has no winget and no admin over ssh, so `winget install Git.Git` cannot run. MinGit is
-# the zip Git for Windows publishes for exactly this: unzip it into the user's home and put its cmd folder on the USER
-# Path. Nothing is pinned silently: the latest release is asked for, or the one `-GitVersion` names, and the zip is
+# WHY PORTABLEGIT, NOT MINGIT. A bare Windows room has no winget and no admin over ssh, so `winget install Git.Git`
+# cannot run. Git for Windows publishes PortableGit for this: a self-extracting archive that unpacks into the user's home,
+# and its cmd folder goes on the USER Path. MinGit is smaller but leaves out `git http-backend`, which the room's git route
+# runs, so a room on MinGit cannot serve a collect. (The functions below keep their MinGit names.) Nothing is pinned silently: the latest release is asked for, or the one `-GitVersion` names, and the zip is
 # checked against the SHA256 the release itself publishes (the table in its body, else the asset's own digest). A zip
 # that does not match is never unpacked. macOS and Linux are not here: they need sudo or xcode-select, so room-git.ps1
 # prints the command for those.
@@ -29,7 +30,7 @@ function Get-MinGitTag {
     throw "-GitVersion '$version' is not a Git for Windows version. use 2.56.0 or 2.56.1.windows.2"
 }
 
-# Get-MinGitAssetName is the zip for the remote's architecture.
+# Get-MinGitAssetName is the PortableGit archive for the remote's architecture.
 function Get-MinGitAssetName {
     param([string] $version, [string] $arch)
     $suffix = switch -Regex ($arch) {
@@ -39,7 +40,7 @@ function Get-MinGitAssetName {
         default { $null }
     }
     if (-not $suffix) { return $null }
-    "MinGit-$version-$suffix.zip"
+    "PortableGit-$version-$suffix.7z.exe"
 }
 
 # Read-MinGitHash is the SHA256 the release body publishes for one asset, a line `<name> | <hash>`. $null when the body
@@ -61,10 +62,10 @@ function Get-MinGitRelease {
     if (-not $rel.tag_name) { throw 'the release answer has no tag_name' }
     if ($rel.tag_name -notmatch '^v(\d+\.\d+\.\d+)\.windows\.\d+$') { throw "the release tag $($rel.tag_name) is not a Git for Windows tag" }
     $ver = $Matches[1]
-    # MinGit names the zip by the version without the .windows.N, except for a .windows.2 and later, which keep it.
+    # PortableGit names the archive by the version without the .windows.N, except for a .windows.2 and later, which keep it.
     $full = $rel.tag_name -replace '^v', ''
     $name = Get-MinGitAssetName $ver $arch
-    if (-not $name) { throw "no MinGit zip for architecture $arch" }
+    if (-not $name) { throw "no PortableGit archive for architecture $arch" }
     $asset = @($rel.assets) | Where-Object { $_.name -eq $name } | Select-Object -First 1
     if (-not $asset -and $full -ne "$ver.windows.1") {
         $name = Get-MinGitAssetName $full $arch
@@ -78,8 +79,8 @@ function Get-MinGitRelease {
     [pscustomobject]@{ Tag = $rel.tag_name; Version = $full; Name = $asset.name; Url = $asset.browser_download_url; Sha256 = $sha; Source = $source }
 }
 
-# Get-MinGitInstallScript is the Windows PowerShell that runs ON THE REMOTE once the zip is there. It checks the zip's
-# SHA256 again (so a zip damaged in the copy is caught), unpacks it beside the final folder and moves it into place, and
+# Get-MinGitInstallScript is the Windows PowerShell that runs ON THE REMOTE once the zip is there. It checks the archive's
+# SHA256 again (so one damaged in the copy is caught), unpacks it beside the final folder and moves it into place, and
 # puts its cmd folder first on the USER Path. Ends with `git=<git --version>`, or `err=<why>` and a nonzero exit. A rerun
 # with the folder already there unpacks nothing and only makes sure the Path is right.
 function Get-MinGitInstallScript {
@@ -89,13 +90,17 @@ function Get-MinGitInstallScript {
 $ErrorActionPreference = 'Stop'
 $exe = Join-Path $Dest 'cmd\git.exe'
 if (-not (Test-Path -LiteralPath $exe)) {
-    if (-not (Test-Path -LiteralPath $Zip)) { 'err=the MinGit zip did not arrive'; exit 4 }
+    if (-not (Test-Path -LiteralPath $Zip)) { 'err=the PortableGit archive did not arrive'; exit 4 }
     $got = (Get-FileHash -LiteralPath $Zip -Algorithm SHA256).Hash.ToLower()
-    if ($got -ne $Want) { "err=SHA256 of the zip on the remote is $got, not the published $Want"; exit 4 }
+    if ($got -ne $Want) { "err=SHA256 of the archive on the remote is $got, not the published $Want"; exit 4 }
     $tmp = "$Dest.new"
     if (Test-Path -LiteralPath $tmp) { Remove-Item -LiteralPath $tmp -Recurse -Force }
-    Expand-Archive -LiteralPath $Zip -DestinationPath $tmp -Force
-    if (-not (Test-Path -LiteralPath (Join-Path $tmp 'cmd\git.exe'))) { 'err=the zip has no cmd\git.exe'; exit 4 }
+    # PortableGit is a 7z self-extractor: -y answers yes and -o is the folder, with no space after it.
+    $p = Start-Process -FilePath $Zip -ArgumentList '-y', "-o`"$tmp`"" -Wait -PassThru -WindowStyle Hidden
+    if ($p.ExitCode -ne 0) { "err=the PortableGit extractor exited $($p.ExitCode)"; exit 4 }
+    if (-not (Test-Path -LiteralPath (Join-Path $tmp 'cmd\git.exe'))) { 'err=the archive has no cmd\git.exe'; exit 4 }
+    $hb = Get-ChildItem -LiteralPath $tmp -Recurse -Filter 'git-http-backend.exe' -ErrorAction SilentlyContinue | Select-Object -First 1
+    if (-not $hb) { 'err=the archive has no git-http-backend.exe, which the room needs'; exit 4 }
     if (Test-Path -LiteralPath $Dest) { Remove-Item -LiteralPath $Dest -Recurse -Force }
     Move-Item -LiteralPath $tmp -Destination $Dest
     Remove-Item -LiteralPath $Zip -Force -ErrorAction SilentlyContinue

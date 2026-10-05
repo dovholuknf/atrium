@@ -435,6 +435,33 @@ func lineOf(s string) string {
 	return s
 }
 
+// whyRoomRefused is what the room itself says when a collect fetch failed on a 500, as ": <its sentence>". git shows
+// only `HTTP 500`, which hides a room whose git has no http-backend. It asks the same route once and reads the body.
+func whyRoomRefused(ctx context.Context, rt http.RoundTripper, room, repo string, ferr error) string {
+	if !strings.Contains(ferr.Error(), "500") {
+		return ""
+	}
+	ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://"+strings.ToLower(room)+".room.atrium.internal/v1/git/"+repo+".git/info/refs?service=git-upload-pack", nil)
+	if err != nil {
+		return ""
+	}
+	resp, err := (&http.Client{Transport: rt}).Do(req)
+	if err != nil {
+		return ""
+	}
+	defer resp.Body.Close()
+	raw, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+	if resp.StatusCode != http.StatusInternalServerError {
+		return ""
+	}
+	if l := lineOf(string(raw)); l != "" {
+		return ": the room says: " + l
+	}
+	return ""
+}
+
 func closeIdle(rt http.RoundTripper) {
 	if c, ok := rt.(interface{ CloseIdleConnections() }); ok {
 		c.CloseIdleConnections()

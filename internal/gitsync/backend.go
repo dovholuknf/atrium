@@ -5,6 +5,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/cgi"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"strconv"
@@ -190,7 +191,7 @@ func (b *Backend) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		out.Header.Set("Content-Length", strconv.Itoa(len(raw)))
 	}
 
-	gitCGI(exe, dir, cfg, cgiEnv()).ServeHTTP(w, out)
+	serveCGI(gitCGI(exe, dir, cfg, cgiEnv()), w, out)
 }
 
 // gitCGI is `git http-backend` for one repository directory. The request it is given has its path
@@ -217,4 +218,30 @@ func gitCGI(exe, dir string, cfg [][2]string, more []string) *cgi.Handler {
 		Env:        env,
 		InheritEnv: inherited,
 	}
+}
+
+// backendMissing says why git has no `http-backend`, or "" when it has one. MinGit leaves it out, and without it every
+// route here would answer a bare 500 (`cgi: no headers`). The sentence names the cause and the fix, and it is what the
+// hub shows for a collect.
+func backendMissing(exe string) string {
+	out, err := exec.Command(exe, "--exec-path").Output()
+	if err != nil {
+		return ""
+	}
+	dir := strings.TrimSpace(string(out))
+	for _, name := range []string{"git-http-backend", "git-http-backend.exe"} {
+		if _, err := os.Stat(filepath.Join(dir, name)); err == nil {
+			return ""
+		}
+	}
+	return "this room's git has no http-backend (" + exe + " is probably MinGit), so it cannot serve git. install Git for Windows or PortableGit in its place, then restart the room"
+}
+
+// serveCGI runs the handler, or answers 500 with the cause when git cannot serve at all.
+func serveCGI(h *cgi.Handler, w http.ResponseWriter, r *http.Request) {
+	if why := backendMissing(h.Path); why != "" {
+		http.Error(w, why, http.StatusInternalServerError)
+		return
+	}
+	h.ServeHTTP(w, r)
 }
