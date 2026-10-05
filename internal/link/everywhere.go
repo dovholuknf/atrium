@@ -52,6 +52,9 @@ func (c everyCard) spelled() string {
 type everywhere struct {
 	mu     sync.Mutex
 	byRoom map[string][]everyCard
+	// named is every live card on each room, tagged or not, for resolving a bare
+	// name only. It is never listed or streamed, and carries no payload.
+	named map[string][]everyCard
 	// names keeps each room's spelling, since the map is keyed folded.
 	names map[string]string
 	// live is the rooms the hub still holds a record of, folded. Nil means all
@@ -63,7 +66,7 @@ type everywhere struct {
 }
 
 func newEverywhere() *everywhere {
-	return &everywhere{byRoom: map[string][]everyCard{}, names: map[string]string{}}
+	return &everywhere{byRoom: map[string][]everyCard{}, named: map[string][]everyCard{}, names: map[string]string{}}
 }
 
 // humanLauncher is the `spawned_by` the board's launch dialog records, the same
@@ -119,6 +122,32 @@ func indexed(room string, cards []CardState) []everyCard {
 	return out
 }
 
+// liveNamed reads every live card of one announcement, tagged or not, as a
+// name that can be routed to. The payload is left behind.
+func liveNamed(room string, cards []CardState) []everyCard {
+	var out []everyCard
+	for _, c := range cards {
+		if !cardLive(c.Status) {
+			continue
+		}
+		var row struct {
+			Wire  string `json:"wire_name"`
+			Alias string `json:"alias"`
+			Title string `json:"title"`
+		}
+		if err := json.Unmarshal(c.Payload, &row); err != nil {
+			continue
+		}
+		if row.Wire == "" && strings.TrimSpace(row.Alias) == "" {
+			continue
+		}
+		out = append(out, everyCard{Room: room, ID: c.ID, Wire: row.Wire,
+			Alias: lowerASCII(strings.TrimPrefix(strings.TrimSpace(row.Alias), "@")),
+			Title: row.Title, Status: c.Status})
+	}
+	return out
+}
+
 // replace swaps one room's cards for what it just announced, and says whether
 // that changed the index.
 func (e *everywhere) replace(room string, cards []CardState) bool {
@@ -132,8 +161,14 @@ func (e *everywhere) replace(room string, cards []CardState) bool {
 func (e *everywhere) swap(room string, cards []CardState) bool {
 	next := indexed(room, cards)
 	key := keyOf(room)
+	every := liveNamed(room, cards)
 	e.mu.Lock()
 	defer e.mu.Unlock()
+	if len(every) == 0 {
+		delete(e.named, key)
+	} else {
+		e.named[key] = every
+	}
 	prev := e.byRoom[key]
 	if len(next) == 0 {
 		delete(e.byRoom, key)
@@ -227,6 +262,7 @@ func (e *everywhere) drop(room string) bool {
 	key := keyOf(room)
 	_, had := e.byRoom[key]
 	delete(e.byRoom, key)
+	delete(e.named, key)
 	delete(e.names, key)
 	e.mu.Unlock()
 	if had {
@@ -250,6 +286,54 @@ func (e *everywhere) find(besides, who string) []everyCard {
 			out = append(out, c)
 		}
 	}
+	return out
+}
+
+// findAny is find over every live card on other rooms, tagged or not. Only
+// asked when nothing tagged answered, so the tag still decides between two.
+func (e *everywhere) findAny(besides, who string) []everyCard {
+	bare := strings.TrimPrefix(strings.TrimSpace(who), "@")
+	if bare == "" {
+		return nil
+	}
+	return filterCards(e.allNamed(besides), func(c everyCard) bool { return c.answersTo(bare) })
+}
+
+func filterCards(in []everyCard, keep func(everyCard) bool) []everyCard {
+	var out []everyCard
+	for _, c := range in {
+		if keep(c) {
+			out = append(out, c)
+		}
+	}
+	return out
+}
+
+// allNamed is every live card on the rooms the hub still holds except
+// `besides`, in room then id order.
+func (e *everywhere) allNamed(besides string) []everyCard {
+	e.mu.Lock()
+	live := e.live
+	e.mu.Unlock()
+	var held map[string]bool
+	if live != nil {
+		held = live()
+	}
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	var out []everyCard
+	for key, cards := range e.named {
+		if key == keyOf(besides) || (held != nil && !held[key]) {
+			continue
+		}
+		out = append(out, cards...)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Room != out[j].Room {
+			return keyOf(out[i].Room) < keyOf(out[j].Room)
+		}
+		return out[i].ID < out[j].ID
+	})
 	return out
 }
 
@@ -282,17 +366,21 @@ func (h *Hub) lookupEverywhere(besides, who string) (card everyCard, code int, e
 	if h == nil {
 		return everyCard{}, http.StatusNotFound, fmt.Errorf("no card called %q on another room", who)
 	}
-	switch found := h.every.find(besides, who); len(found) {
+	found := h.every.find(besides, who)
+	if len(found) == 0 {
+		found = h.every.findAny(besides, who)
+	}
+	switch len(found) {
 	case 1:
 		return found[0], 0, nil
 	case 0:
 		msg := fmt.Sprintf("no card called %q on another room", who)
 		var list []string
-		for _, c := range h.every.all(besides) {
+		for _, c := range h.every.allNamed(besides) {
 			list = append(list, c.spelled())
 		}
 		if len(list) > 0 {
-			msg += ". cards on every room: " + strings.Join(list, ", ")
+			msg += ". cards on other rooms: " + strings.Join(list, ", ")
 		}
 		return everyCard{}, http.StatusNotFound, fmt.Errorf("%s", msg)
 	default:
@@ -333,7 +421,7 @@ func (c *controlMCP) everywhereFallthrough(room, who string, miss error) (everyC
 		return everyCard{}, err
 	}
 	var list []string
-	for _, e := range c.hub.every.all(room) {
+	for _, e := range c.hub.every.allNamed(room) {
 		list = append(list, e.spelled())
 	}
 	if len(list) == 0 {
