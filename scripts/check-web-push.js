@@ -103,7 +103,7 @@ function fakePush() {
     mock.options = { userVisibleOnly: opts.userVisibleOnly, keyLength: opts.applicationServerKey.length, keyFirst: opts.applicationServerKey[0] };
     const sub = mock.sub = {
       endpoint: "https://fcm.googleapis.com/fcm/send/fake-endpoint-1",
-      toJSON() { return { endpoint: this.endpoint, keys: { p256dh: b64("fake-p256dh-key"), auth: b64("fake-auth") } }; },
+      toJSON() { return { endpoint: this.endpoint, keys: { p256dh: "BCVxsr7N_eNgVRqvHtD0zTZsEc6-VV-JvLexhqUzORcxaOzi6-AYWXvTBHm4bjyPjs7Vd8pZGH6SRpkNtoIAiw4", auth: "BTBZMqHH6r4Tts7J_aSIgg" } }; },
       async unsubscribe() { mock.unsubscribed++; mock.sub = null; return true; },
     };
     return sub;
@@ -196,6 +196,104 @@ async function swChecks() {
   eq(opened, [{ openWindow: origin + "/m/" }], "a tap never opens an address off /m");
 }
 
+// Against a REAL hub, with HUB=http://127.0.0.1:<port> (a throwaway `atrium run --no-room --board internal/api/web`).
+// The browser's push service is still the fake, so the hub's test push goes to a made-up fcm.googleapis.com address and
+// the row is dropped if the service answers 404 or 410. What is checked is the hub's routes as the pages speak them:
+// the phone's switch and name, and the desktop gear's list, remove, switch, contact and key.
+async function realChecks(browser, view, shot) {
+  const hubURL = process.env.HUB.replace(/\/$/, "");
+  const api = async (method, p, body) => {
+    const r = await fetch(hubURL + "/_hub/push" + p, { method, headers: { "Content-Type": "application/json", Origin: hubURL },
+      body: body === undefined ? undefined : JSON.stringify(body) });
+    let j = null;
+    try { j = await r.json(); } catch (e) {}
+    return { status: r.status, body: j };
+  };
+  const listed = async () => ((await api("GET", "")).body || {}).subscriptions || [];
+  // A clean start, so a rerun is the same run.
+  for (const s of await listed()) await api("DELETE", "/subscriptions/" + s.id);
+  eq((await api("PUT", "", { enabled: true })).status, 200, "the operator turns push on");
+  const key = (await api("GET", "/key")).body;
+  eq(Buffer.from(((key || {}).key || "").replace(/-/g, "+").replace(/_/g, "/"), "base64").length, 65, "the hub's key is a 65 byte point");
+
+  // The phone: switch on against the real routes, name it, switch off.
+  const ctx = await browser.newContext({ viewport: view, hasTouch: true, isMobile: true });
+  await ctx.addInitScript(fakePush);
+  const page = await ctx.newPage();
+  page.on("pageerror", e => bad("real hub, page error: " + e.message));
+  await page.goto(hubURL + "/m/");
+  await page.waitForFunction(() => window.mBell && window.mPush && document.getElementById("m-push"));
+  await page.click("#m-bell");
+  const stateIs = s => page.waitForFunction(x => document.getElementById("m-push").dataset.state === x, s, { timeout: 8000 })
+    .catch(async () => bad("real hub: the row never reached " + s + ": " + await page.textContent("#m-push-note")));
+  await stateIs("off");
+  await page.tap("#m-push-btn");
+  await stateIs("on");
+  let subs = await listed();
+  eq(subs.length, 1, "real hub: one device listed after the phone turns on");
+  eq(subs[0] && subs[0].service, "fcm.googleapis.com", "real hub: the list says the push service and not the endpoint");
+  if (JSON.stringify(subs).includes("fake-endpoint")) bad("real hub: the list leaks the endpoint");
+  await page.fill("#m-push-name", "Clint's Pixel");
+  await page.dispatchEvent("#m-push-name", "change");
+  await page.waitForFunction(() => /named/.test(document.getElementById("m-push-note").textContent), null, { timeout: 8000 })
+    .catch(async () => bad("real hub: the rename was not taken: " + await page.textContent("#m-push-note")));
+  subs = await listed();
+  eq([subs.length, subs[0] && subs[0].label], [1, "Clint's Pixel"], "real hub: a rename is the same device with a new label");
+  await shot(page, "real-named");
+
+  // The desktop gear.
+  const desk = await browser.newContext({ viewport: { width: 1100, height: 900 } });
+  const dp = await desk.newPage();
+  dp.on("pageerror", e => bad("real hub, gear, page error: " + e.message));
+  await dp.goto(hubURL + "/");
+  await dp.waitForSelector("#gear");
+  await dp.click("#gear");
+  await dp.click("#settings .pane-nav button:text-is('notifications')");
+  await dp.waitForFunction(() => !document.getElementById("s-hp-row").hidden, null, { timeout: 8000 })
+    .catch(() => bad("real hub: the phone alerts row is not drawn in the gear"));
+  const items = () => dp.$$eval("#s-hp-list li", l => l.map(x => x.textContent));
+  eq((await items()).length, 1, "gear: one device in the list");
+  if (!/Clint's Pixel/.test((await items())[0] || "")) bad("gear: the device label is not in the list: " + JSON.stringify(await items()));
+  eq(await dp.isChecked("#s-hp-enabled"), true, "gear: the switch reads on");
+  await dp.locator("#s-hp-row").scrollIntoViewIfNeeded();
+  await shot(dp, "real-gear");
+
+  await dp.fill("#s-hp-contact", "mailto:ops@example.org");
+  await dp.click("text=save contact");
+  await dp.waitForFunction(() => /contact saved/.test(document.getElementById("s-hp-msg").textContent), null, { timeout: 8000 })
+    .catch(async () => bad("gear: the contact was not saved: " + await dp.textContent("#s-hp-msg")));
+  eq(((await api("GET", "")).body || {}).contact, "mailto:ops@example.org", "gear: the contact reached the hub");
+
+  await dp.click("#s-hp-row .hp-remove");
+  await dp.waitForFunction(() => document.querySelectorAll("#s-hp-list li").length === 0, null, { timeout: 8000 })
+    .catch(() => bad("gear: remove did not clear the row"));
+  eq((await listed()).length, 0, "gear: remove reached the hub");
+  await shot(dp, "real-gear-empty");
+
+  await dp.uncheck("#s-hp-enabled");
+  await dp.waitForFunction(() => document.getElementById("s-hp-msg").textContent === "off", null, { timeout: 8000 })
+    .catch(async () => bad("gear: the switch did not say off: " + await dp.textContent("#s-hp-msg")));
+  eq(((await api("GET", "")).body || {}).enabled, false, "gear: the switch reached the hub");
+  eq((await api("GET", "/key")).status, 404, "the key is withheld while push is off");
+  await dp.check("#s-hp-enabled");
+  await dp.waitForFunction(() => document.getElementById("s-hp-msg").textContent === "on", null, { timeout: 8000 })
+    .catch(() => bad("gear: the switch did not say on"));
+
+  dp.once("dialog", d => d.accept());
+  await dp.click("text=make a new key");
+  await dp.waitForFunction(() => /new key made/.test(document.getElementById("s-hp-msg").textContent), null, { timeout: 8000 })
+    .catch(async () => bad("gear: rotate failed: " + await dp.textContent("#s-hp-msg")));
+  const k2 = (await api("GET", "/key")).body;
+  if (!k2 || k2.key === key.key) bad("gear: the key did not change");
+
+  // Operator only: a forwarded request is refused.
+  const fwd = await fetch(hubURL + "/_hub/push", { headers: { "X-Forwarded-For": "203.0.113.9" } });
+  eq(fwd.status, 403, "a forwarded request cannot read the list");
+  await api("PUT", "", { enabled: false });
+  await desk.close();
+  await ctx.close();
+}
+
 (async () => {
   await new Promise(r => server.listen(0, "127.0.0.1", r));
   const base = "http://127.0.0.1:" + server.address().port;
@@ -270,6 +368,17 @@ async function swChecks() {
       if (!sent.label) bad("no device label posted");
       eq((await row(page)).button, "turn off", "the switch while on");
       await shot(page, "on");
+
+      // ── the phone's own name: shown while on, sent as a second subscribe of the same endpoint, kept across a load ─
+      eq(await page.evaluate(() => document.getElementById("m-push-name-row").hidden), false, "the name field while on");
+      await page.fill("#m-push-name", "Clint's Pixel");
+      await page.dispatchEvent("#m-push-name", "change");
+      await page.waitForFunction(() => /named/.test(document.getElementById("m-push-note").textContent), null, { timeout: 5000 })
+        .catch(() => bad("the rename was never confirmed"));
+      eq(hub.posts.length, 2, "a rename is a second subscribe");
+      eq([(hub.posts[1] || {}).label, (hub.posts[1] || {}).endpoint], ["Clint's Pixel", sent.endpoint], "the rename names the same device");
+      eq(await page.evaluate(() => localStorage.getItem("atrium.push.label")), "Clint's Pixel", "the name is kept in this browser");
+      await shot(page, "named");
 
       // ── off again: the hub is told with the endpoint as proof, and the browser unsubscribes ──────────────────
       await page.tap("#m-push-btn");
@@ -361,6 +470,7 @@ async function swChecks() {
     //    opens the card's /m path. Headless Chromium denies notification permission to a worker whatever the
     //    context grants, so the file is run against a fake `self` and the notifications it raises are read back.
     await swChecks();
+    if (process.env.HUB) await realChecks(browser, view, shot);
   } catch (e) {
     bad("the run threw: " + (e && e.stack || e));
   }

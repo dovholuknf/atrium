@@ -3,6 +3,10 @@
 .pushrow .push-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 .pushrow .push-text b { color: var(--head); font-weight: 600; }
 .pushrow .push-note { color: var(--label); font-size: 14px; overflow-wrap: anywhere; }
+.pushrow { flex-wrap: wrap; }
+.pushrow .push-name { flex: 1 1 100%; display: flex; flex-direction: column; gap: 4px; color: var(--label); font-size: 14px; }
+.pushrow .push-name[hidden] { display: none; }
+.pushrow .push-name input { min-height: 44px; padding: 0 10px; border: 1px solid var(--stroke); border-radius: 10px; background: none; color: var(--body); font-size: 16px; box-sizing: border-box; width: 100%; }
 .pushrow .push-note.bad { color: var(--warn); }
 .pushrow button { flex: none; min-height: 44px; min-width: 88px; padding: 0 14px; border: 1px solid var(--stroke); border-radius: 10px; background: none; color: var(--body); font-size: 14px; cursor: pointer; }
 .pushrow[data-state="on"] button { border-color: var(--teal); color: var(--head); box-shadow: inset 0 0 0 1px var(--teal); }

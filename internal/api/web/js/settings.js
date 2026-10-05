@@ -7,6 +7,7 @@ document.getElementById("gear").onclick = () => {
   // The hub's notify command, read once per open and not per repaint, so an unsaved edit survives a toggle.
   if (typeof loadHubNotify === "function") loadHubNotify();
   if (typeof loadGrowlLadder === "function") loadGrowlLadder();
+  if (typeof loadHubPush === "function") loadHubPush();
   if (typeof loadHubHosts === "function") loadHubHosts();
   // Every field that saves itself, wired once. Here rather than at load
   // because the panes are cut up at runtime and this is the moment they are

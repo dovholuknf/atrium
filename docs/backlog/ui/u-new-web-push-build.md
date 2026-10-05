@@ -1,7 +1,7 @@
 # u-new-web-push-build. Build web push for the phone
 
-Status: board half and hub steps 1 to 6 built 2026-10-04. Step 7 (desktop gear list) not built, then the real phone
-check by clint and the @review pass. Was HELD (pause). Filed by the orchestrator 2026-10-01, from clint, gap G12 of docs-deps. Owned by @ui, with a hub
+Status: all seven steps built by 2026-10-05, checked against a real hub. Left: the real phone check by clint and the
+@review pass. Was HELD (pause). Filed by the orchestrator 2026-10-01, from clint, gap G12 of docs-deps. Owned by @ui, with a hub
 endpoint from @runtime.
 
 ## What is missing
@@ -80,17 +80,31 @@ are not from this work: `TestTheHubRaisesTheForgeAlertOnceAndEndsItOnSuccess` fa
 login here), and one full run hung 5 minutes in `TestAPrEventArrivesUntouchedFromASingleRoom`, which passed when run
 alone. `scripts/check-web-push.js` was not re-run against the real routes.
 
-Left, in order:
+## Built 2026-10-05: step 7, the phone name, the real-route check
 
-1. Step 7: the desktop gear in `internal/api/web/js/hubnotify.js` and the settings html. A row beside the notify row
-   that reads `GET /_hub/push` (hidden on 404 or 403 or for a guest), the on and off switch (`PUT {enabled}`), the
-   contact field, a list of subscriptions (label, origin, service, created, failures, disabled_reason) with a remove
-   button (`DELETE /_hub/push/subscriptions/<id>`), a test button (`POST /_hub/push/test`) and a rotate button that
-   warns it removes every device. The editable device label on `/m` is also still open. PNGs go in
-   `docs/screens/u-new-web-push-build/`.
-2. Re-run `scripts/check-web-push.js` against the real routes.
-3. The real phone check by clint (Brave on Android, an iOS home screen app).
-4. The @review pass for both halves.
+- The gear row is `js/hubpush.js` and `css/hubpush.css`, markup in `index.html` in the notifications pane under the
+  notify row, loaded from `settings.js` on open. It reads `GET /_hub/push` and is hidden on any non-2xx or for a guest.
+  Switch, contact, list with remove by id, test to all, and a new key behind a confirm.
+- The phone name is an input on `/m` shown while subscribed, kept in localStorage `atrium.push.label`, and sent as a
+  second `POST` of the same endpoint, which the store already treats as one device. The hub now sends the test push only
+  when the subscribe added a device, so a rename does not buzz (`pushapi.go`).
+- `scripts/check-web-push.js` with `HUB=http://127.0.0.1:<port>` also runs against a real hub, started as
+  `HTTPS_PROXY=http://127.0.0.1:9 atrium run --no-room --addr .. --link .. --atrium-dir <scratch> --board
+  internal/api/web`. The dead proxy matters. Without it the hub's test push reaches Google with the made-up endpoint, the
+  answer is 404 or 410 and the row is dropped, as designed. It passes: phone on, name, off, the gear list, contact,
+  remove, switch, key rotation, the 403 with `X-Forwarded-For`. The fake keys are now the RFC 8291 test pair, since the
+  real hub rejects a key that is not a 65 byte point. Nothing here found a hub bug.
+- Shots in `docs/screens/u-new-web-push-build/`: `before-real-gear.png` and `after-real-gear.png` (also
+  `-gear-empty`), `before-off.png`, `after-on.png`, `after-named.png` and `after-real-named.png` for the phone.
+- Push tests by name pass (`go test ./internal/link/ ./internal/hubstore/ -run 'Push|RFC8291|Webpush|Allowlist'`).
+  The full package was not run.
+- Seen and not mine: the notify status in the gear prints "true held back because a board was open", a
+  `hnPaint` bug in `hubnotify.js` (`suppressed` is a bool).
+
+Left:
+
+1. The real phone check by clint (Brave on Android, an iOS home screen app).
+2. The @review pass for both halves.
 
 ## The hub plan (as accepted, steps 1 to 6 now built)
 

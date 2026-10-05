@@ -283,7 +283,7 @@ func (p *Proxy) pushSubscribe(w http.ResponseWriter, r *http.Request, x *Push, f
 		fail(http.StatusBadRequest, "could not read that: "+err.Error())
 		return
 	}
-	id, _, err := x.Subscribe(hubstore.PushSub{Endpoint: body.Endpoint, P256dh: body.Keys.P256dh, Auth: body.Keys.Auth,
+	id, added, err := x.Subscribe(hubstore.PushSub{Endpoint: body.Endpoint, P256dh: body.Keys.P256dh, Auth: body.Keys.Auth,
 		Label: body.Label, Origin: body.Origin})
 	switch {
 	case errors.Is(err, hubstore.ErrPushFull):
@@ -295,11 +295,14 @@ func (p *Proxy) pushSubscribe(w http.ResponseWriter, r *http.Request, x *Push, f
 	}
 	// THE ONE TEST PUSH, after the 201 is decided and not before it is answered: a slow push service must not hold the
 	// phone's switch.
-	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 2*pushSendTimeout)
-		defer cancel()
-		x.Test(ctx, id)
-	}()
+	// A repeat of a known endpoint is the phone renaming itself, which must not buzz it.
+	if added {
+		go func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 2*pushSendTimeout)
+			defer cancel()
+			x.Test(ctx, id)
+		}()
+	}
 	w.WriteHeader(http.StatusCreated)
 	_ = json.NewEncoder(w).Encode(map[string]string{"id": id})
 }

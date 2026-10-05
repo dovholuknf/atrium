@@ -15,3 +15,11 @@ stores the phones that subscribe (at most 8, never evicting one), and sends each
 same four fields and the same rules as the board's other alerts. A burst of more than 5 in 2 minutes becomes one
 summary. A phone the push service says is gone is dropped, and three failures in a row switch one phone off. A new
 device shows in the desktop growler. The desktop gear list is still to come.
+
+## The desktop gear and the phone name
+
+The notifications pane of the gear has a "phone alerts (on the hub)" row. It has the on and off switch, the contact the
+push service can reach, a list of the subscribed phones (name, page, push service, age, failures, and why one was
+switched off) with a remove button each, a test to every phone and a new key, which asks first because it removes every
+phone. It shows only on the hub machine itself and is hidden for a guest. The phone can now name itself in the
+notifications sheet. A rename does not buzz the phone with a second test push.

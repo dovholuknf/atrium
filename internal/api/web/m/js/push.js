@@ -44,7 +44,15 @@
   const standalone = () => !!(navigator.standalone || (window.matchMedia && window.matchMedia("(display-mode: standalone)").matches));
 
   // A name for this device, which the hub shows in the desktop gear and in the growler line for a new subscriber.
+  // The owner's own name for it wins, kept in this browser and sent with every subscribe.
+  const NAME_KEY = "atrium.push.label";
+  function savedName() {
+    try { return (localStorage.getItem(NAME_KEY) || "").trim(); } catch (e) { return ""; }
+  }
   function deviceLabel() {
+    return savedName() || guessLabel();
+  }
+  function guessLabel() {
     const ua = navigator.userAgent;
     const os = /iPhone/.test(ua) ? "iPhone" : /iPad/.test(ua) ? "iPad" : /Android/.test(ua) ? "Android phone"
       : /Windows/.test(ua) ? "Windows" : /Mac/.test(ua) ? "Mac" : /Linux/.test(ua) ? "Linux" : "phone";
@@ -86,6 +94,32 @@
     }[state];
     els.note.textContent = note || line || "";
     els.note.classList.toggle("bad", state === "refused" || state === "unavailable");
+    // The name is only worth editing while this phone is subscribed, since that is when the hub shows it.
+    els.nameRow.hidden = !on;
+    if (on && document.activeElement !== els.name) els.name.value = deviceLabel();
+  }
+
+  // The hub's subscribe is also a rename: the same endpoint is the same device, and it sends no second test push.
+  async function rename() {
+    const v = els.name.value.trim().slice(0, 60);
+    try {
+      if (v && v !== guessLabel()) localStorage.setItem(NAME_KEY, v);
+      else localStorage.removeItem(NAME_KEY);
+    } catch (e) {}
+    els.name.value = deviceLabel();
+    if (state !== "on") return;
+    let sub = null;
+    try { sub = await current(); } catch (e) {}
+    if (!sub) return;
+    const j = sub.toJSON();
+    try {
+      await window.mNet.api(SUBS_URL, { method: "POST", body: JSON.stringify({
+        endpoint: j.endpoint, keys: j.keys, label: deviceLabel(), origin: location.origin }) });
+      note = "named " + deviceLabel();
+    } catch (e) {
+      note = "the hub did not take the name: " + ((e && e.message) || e);
+    }
+    paint();
   }
 
   function set(s, n) { state = s; note = n || ""; paint(); }
@@ -216,7 +250,9 @@
   function init() {
     const row = q("m-push");
     if (!row) return;
-    els = { row, btn: q("m-push-btn"), note: q("m-push-note") };
+    els = { row, btn: q("m-push-btn"), note: q("m-push-note"), nameRow: q("m-push-name-row"), name: q("m-push-name") };
+    els.name.addEventListener("change", rename);
+    els.name.addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); els.name.blur(); } });
     els.btn.addEventListener("click", () => { if (state === "on") unsubscribe(); else subscribe(); });
     const bell = q("m-bell");
     if (bell) bell.addEventListener("click", refresh);
