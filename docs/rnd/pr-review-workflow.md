@@ -161,7 +161,10 @@ edits `prrunner.go`, `prworktree.go`, `forgeaccess.go` or `internal/forge`, whic
 
 ## State
 
-Design written 2026-10-04 (828a8cd0). Done: `r-pr-paste-review` claude/r-pr-paste-review@5a6935df (sg3). `u-pr-finding-states`
-was written on sgg at c45893bc with nothing run (sgg has no Go or node), so it was moved to sg3 by bundle and a
-verify worker is finishing it there. Waiting: `f-pr-review-move`, for a free slot and for `r-hub-forge` to land
-(it owns `prclaim.go`). sgg has no Go or node, so a worker there can only write code.
+Design written 2026-10-04 (828a8cd0).
+- Done: `r-pr-paste-review` claude/r-pr-paste-review@5a6935df (sg3).
+- Done: `u-pr-finding-states` claude/u-pr-finding-states@ca90179b. Written on sgg (no Go or node there), moved to sg3
+  by bundle, built, tested and shot there. The phone action buttons are not seen in a shot, as the headless phone
+  viewport cuts the drawer below the rail.
+- Waiting: `f-pr-review-move`, for `r-hub-forge` to land (it owns `prclaim.go`). sgg can only write code.
+
