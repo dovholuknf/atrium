@@ -17,6 +17,9 @@ let growlSet = [];
 let growlHeard = false;
 let growlOpen = false;
 let growlSnoozing = "";
+// The growler "next" brought up, by id. The open set is turned until it is first, so a later event that replaces the
+// set keeps it in front while it lasts. Empty is the hub's own order.
+let growlFront = "";
 let growlPermAfter = 120;
 // What was typed into each reply field, so a redraw from an event does not eat it.
 const growlDrafts = new Map();
@@ -394,6 +397,7 @@ function growlDraw() {
   const host = document.getElementById("toasts");
   if (!host) return;
   let el = desk;
+  if (rows.length < 2) growlFront = "";
   if (!rows.length) {
     if (el) el.remove();
     growlOpen = false;
@@ -411,12 +415,19 @@ function growlDraw() {
   let parts;
   if (growlOpen && rows.length > 1) {
     parts = [`<div class="gr-list">${rows.map(growlRow).join("")}</div>`,
-      `<button class="gr-strip" data-do="fold">fold</button>`];
+      `<button class="gr-strip" data-do="fold">show less</button>`];
   } else {
     growlOpen = false;
-    const rest = rows.slice(1);
-    parts = [growlFull(rows[0])];
-    if (rest.length) parts.push(`<button class="gr-strip" data-do="expand">+${rest.length} more: ${growlCounts(rest)}</button>`);
+    // THE STRIP SAYS WHAT IT DOES. "next" brings the following growler up as the full one, and the first goes to the
+    // back of the line. "show all" is the stacked list, offered only when there is more than one other to see.
+    const turn = Math.max(0, rows.findIndex(g => g.id === growlFront));
+    const line = rows.slice(turn).concat(rows.slice(0, turn));
+    const rest = line.slice(1);
+    parts = [growlFull(line[0])];
+    if (rest.length) {
+      parts.push(`<button class="gr-strip" data-do="next" data-tip="${esc(growlCounts(rest))} waiting">next: ${esc(rest[0].title)}</button>`);
+      if (rest.length > 1) parts.push(`<button class="gr-strip" data-do="expand">show all ${rows.length}: ${growlCounts(rows)}</button>`);
+    }
   }
   growlRestore(growlReconcile(el, parts), focused);
   // The cap is half the window, and the list scrolls inside it.
@@ -439,7 +450,7 @@ function growlDrawPhone(rows, el) {
   const parts = [];
   if (undo) parts.push(`<div class="gp-undo"><span>dismissed: ${esc(undo.title)}</span><button data-do="undo">undo</button></div>`);
   if (rows.length && growlOpen) {
-    parts.push(`<button class="gp-line" data-do="fold"><b>fold</b></button>`);
+    parts.push(`<button class="gp-line" data-do="fold"><b>show less</b></button>`);
     rows.forEach(g => parts.push(growlFull(g)));
   } else if (rows.length) {
     const top = rows[0];
@@ -468,6 +479,13 @@ function growlClick(e) {
     const u = growlPhoneUndo;
     growlPhoneUndo = null;
     if (u) growlUndismiss(u.g);
+    growlDraw();
+    return;
+  }
+  if (what === "next") {
+    const rows = growlDrawn(), at = Math.max(0, rows.findIndex(g => g.id === growlFront));
+    if (rows.length > 1) growlFront = rows[(at + 1) % rows.length].id;
+    growlSnoozing = "";
     growlDraw();
     return;
   }
