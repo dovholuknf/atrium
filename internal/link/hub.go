@@ -206,6 +206,9 @@ type attached struct {
 	want int
 
 	lastBeat time.Time
+	// idleCPU is the idle percent the room last said on a beat, valid when haveIdle.
+	idleCPU  float64
+	haveIdle bool
 	mu       sync.Mutex
 	closed   bool
 	done     chan struct{}
@@ -492,6 +495,9 @@ func (h *Hub) control(ctx context.Context, name string, hi hello, conn net.Conn,
 		if n.Beat > 0 {
 			a.mu.Lock()
 			a.lastBeat = time.Now()
+			if n.IdleCPU != nil && *n.IdleCPU >= 0 && *n.IdleCPU <= 100 {
+				a.idleCPU, a.haveIdle = *n.IdleCPU, true
+			}
 			a.mu.Unlock()
 			// Echoed, so the room can tell a live socket from a half-open one.
 			// A write that succeeds into a dead connection is the failure mode
@@ -749,6 +755,8 @@ type Attached struct {
 	Proven bool `json:"proven"`
 	// Git is whether the room said it takes git syncs.
 	Git bool `json:"git,omitempty"`
+	// IdleCPU is the idle percent the room last reported on a beat. Nil for a room that does not send one.
+	IdleCPU *float64 `json:"idle_cpu,omitempty"`
 }
 
 // unprovenOver names the overlay a connection took the old path on, or "".
@@ -806,11 +814,16 @@ func (h *Hub) Rooms() []Attached {
 	for _, a := range h.rooms {
 		a.mu.Lock()
 		beat := a.lastBeat
+		var idle *float64
+		if a.haveIdle {
+			v := a.idleCPU
+			idle = &v
+		}
 		a.mu.Unlock()
 		out = append(out, Attached{
 			Name: a.name, Version: a.version, Host: a.host,
 			Since: a.since, Idle: len(a.idle), Beat: beat,
-			OS: a.os, Arch: a.arch, Proven: a.unproven == "", Git: a.git,
+			OS: a.os, Arch: a.arch, Proven: a.unproven == "", Git: a.git, IdleCPU: idle,
 		})
 	}
 	return out

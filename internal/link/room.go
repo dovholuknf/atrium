@@ -53,6 +53,9 @@ type Room struct {
 	// Git says this room takes git syncs, so it tells its hub in the hello. Set only when
 	// the room's handler serves /v1/git/sync. See git.go.
 	Git bool
+	// IdleCPU reads this machine's idle CPU percent for the beat to carry to the hub. Nil, or ok false, says
+	// nothing and the hub counts the room as unknown.
+	IdleCPU func() (float64, bool)
 
 	// conns carries dialled connections to the listener's Accept. Buffered by
 	// one so a dial that wins a race is not thrown away.
@@ -320,7 +323,13 @@ func (r *Room) beat(ctx context.Context, conn net.Conn) {
 		case <-ctx.Done():
 			return
 		case <-t.C:
-			if err := writeJSON(conn, note{Beat: time.Now().UnixMilli()}); err != nil {
+			n := note{Beat: time.Now().UnixMilli()}
+			if r.IdleCPU != nil {
+				if v, ok := r.IdleCPU(); ok {
+					n.IdleCPU = &v
+				}
+			}
+			if err := writeJSON(conn, n); err != nil {
 				// Closing is how the reader above finds out. Returning quietly
 				// would leave it blocked on a socket nothing will ever write
 				// to, which is the half-open case the beat exists to catch.
