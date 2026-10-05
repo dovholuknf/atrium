@@ -821,11 +821,11 @@ async function termMenu(e, id) {
     } : null,
     { label: "rename…", act: () => renameTask(id, t.display_title) },
     typeof aliasMenuItem === "function" ? aliasMenuItem(t) : null,
-    // The card layer of the context limit: board default, then the runner, then this. Only Claude cards carry one.
+    // The card layer of the context limit: the hub's for its harness, then this. Only Claude cards carry one.
     t.context_size
       ? { label: "context limit…", note: limitFrom(t),
-          help: "The size at which this card's context is marked. It overrides its runner's limit and the " +
-            "board default. Empty goes back to them.",
+          help: "The size at which atrium cycles this card's context. It overrides the hub's limit for its " +
+            "harness. Empty goes back to it.",
           act: () => setTaskContextLimit(id, t) }
       : null,
     // Beside rename because they are the same kind of act: both write an
@@ -952,12 +952,13 @@ async function renameTask(id, currentName) {
 }
 
 // THE CARD LAYER OF THE CONTEXT LIMIT, an override on the card (`context_limit_k`, in thousands of tokens). Empty
-// clears it, and the runner's limit or the board default applies again. The daemon checks the range.
+// clears it, and the hub's limit for its harness applies again. The daemon checks the range.
 async function setTaskContextLimit(id, t) {
   const own = t.overrides && t.overrides.context_limit_k || "";
   const v = await askText("context limit for this card",
-    `In thousands of tokens, from 10 to 2000. Now ${limitFrom(t)}. This is the card's own setting and wins over ` +
-    "its runner's limit (runners page) and the board default (settings). Leave it empty to go back to them.", own);
+    `In thousands of tokens, from 10 to 2000. Now ${limitFrom(t)}. Past it atrium cycles the card's context. ` +
+    "This is the card's own setting and wins over the hub's limit for its harness (settings). Leave it empty " +
+    "to go back to that.", own);
   if (v === null) return;
   await patchTask(id, { overrides: { context_limit_k: v.trim() } });
   refresh();

@@ -925,7 +925,7 @@ async function loadHousekeeping() {
   fillShareAuth(s);
   syncInputLag(s);
   fillMinCols(s);
-  fillContextK(s);
+  fillContextLimits(s);
   if (typeof fillLandK === "function") fillLandK();
   if (typeof paintKeepaliveSettings === "function") paintKeepaliveSettings(s);
 }
@@ -1045,6 +1045,8 @@ function fillMachineFields(s) {
   if (roots) roots.value = s.browse_roots || "";
   const shared = document.getElementById("s-shared-loc");
   if (shared) shared.value = s.shared_location || "";
+  const handoff = document.getElementById("s-handoffdir");
+  if (handoff) handoff.value = s.context_handoff_dir || "";
   const shell = document.getElementById("s-shell");
   if (shell) shell.value = s.shell_command || "";
   showForgeSettings(s);
@@ -1697,45 +1699,85 @@ async function saveMinCols(value) {
 
 function resetMinCols() { saveMinCols(""); }
 
-// The context threshold's box, the same shape as the width floor's.
-function fillContextK(s) {
-  const box = document.getElementById("s-ctxk");
-  const reset = document.getElementById("s-ctxk-reset");
+// The context limit per harness, the hub's list, typed as `claude=200, codex=300`.
+function contextLimitsText(m) {
+  return Object.keys(m || {}).sort().map(k => `${k}=${m[k]}`).join(", ");
+}
+
+function fillContextLimits(s) {
+  const box = document.getElementById("s-ctxlimits");
+  const reset = document.getElementById("s-ctxlimits-reset");
   if (!box || !s) return;
-  const def = Number(s.context_threshold_k_default) || 150;
-  box.value = s.context_threshold_k || "";
+  const def = contextLimitsText(s.context_limits_default || { claude: 200 });
+  const now = contextLimitsText(s.context_limits || {});
+  box.value = now === def ? "" : now;
   box.placeholder = def;
-  if (s.context_threshold_k_min) box.min = s.context_threshold_k_min;
-  if (s.context_threshold_k_max) box.max = s.context_threshold_k_max;
   if (reset) {
     reset.textContent = `reset to default (${def})`;
-    reset.hidden = (Number(s.context_threshold_k_now) || def) === def;
+    reset.hidden = !now || now === def;
   }
 }
 
-async function saveContextK(value) {
-  const box = document.getElementById("s-ctxk");
+// parseContextLimits reads the box, or throws saying which entry is wrong.
+function parseContextLimits(text) {
+  const out = {};
+  for (const part of String(text || "").split(/[,\n]/)) {
+    const entry = part.trim();
+    if (!entry) continue;
+    const m = /^([^=\s]+)\s*=\s*(\d+)\s*k?$/i.exec(entry);
+    if (!m) throw new Error(`"${entry}" is not harness=k, like claude=200`);
+    out[m[1]] = Number(m[2]);
+  }
+  return out;
+}
+
+async function saveContextLimits(value) {
+  const box = document.getElementById("s-ctxlimits");
   if (!box) return;
-  const want = value !== undefined ? value : String(box.value || "").trim();
+  let limits;
+  try { limits = parseContextLimits(value !== undefined ? value : box.value); } catch (e) {
+    toast("that did not save", e.message);
+    return;
+  }
+  // The hub's list: the write carries no room, so the hub reads it and hands it to every room.
   try { if (typeof roomNow === "function" && !roomNow()) writeRoom = ""; } catch (e) {}
   try {
-    pastePrefs = await api("/v1/settings", {
+    const r = await api("/v1/settings", {
       method: "POST",
-      body: JSON.stringify({ context_threshold_k: want })
+      body: JSON.stringify({ context_limits: limits })
+    });
+    if (r && r.context_limits) pastePrefs = Object.assign({}, pastePrefs, { context_limits: r.context_limits });
+  } catch (e) {
+    toast("that did not save", e.message);
+    fillContextLimits(pastePrefs || {});
+    return;
+  }
+  fillContextLimits(pastePrefs);
+  flashSaved(box);
+  refresh();
+  toast("context limits saved",
+    `atrium cycles a card past ${contextLimitsText(pastePrefs.context_limits) || "its default"}`);
+}
+
+function resetContextLimits() { saveContextLimits(""); }
+
+async function saveHandoffDir() {
+  const el = document.getElementById("s-handoffdir");
+  if (!el) return;
+  try {
+    await api("/v1/settings", {
+      method: "POST",
+      body: JSON.stringify({ context_handoff_dir: el.value.trim() })
     });
   } catch (e) {
     toast("that did not save", e.message);
-    fillContextK(pastePrefs || {});
     return;
   }
-  fillContextK(pastePrefs);
-  flashSaved(box);
-  refresh();
-  toast("context threshold saved",
-    `a card is marked from ${pastePrefs.context_threshold_k_now}k tokens of context`);
+  afterMachineSave();
+  toast("saved", el.value.trim()
+    ? "the next context cycle writes its handoff there"
+    : "handoffs go to $TEMP/atrium/handoffs");
 }
-
-function resetContextK() { saveContextK(""); }
 
 // The land-the-plane line's box. A per-browser pref (landThePlaneK, js/peek.js), so no daemon call: write it,
 // redraw, say what is in force. A box left empty is the default.

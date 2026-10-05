@@ -878,10 +878,6 @@ async function editHarness(id, room, seed) {
   document.getElementById("h-prepare").value = h.prepare || "";
   document.getElementById("h-bracket").checked = !!h.bracketed_paste;
   document.getElementById("h-midturn").checked = !!h.mid_turn_input;
-  document.getElementById("h-ctxlimit").value = h.context_limit_k || "";
-  document.getElementById("h-ctxlimit-from").textContent =
-    `now: ${h.context_limit_k ? h.context_limit_k + "k from this runner" : "board default, " +
-      ((typeof pastePrefs !== "undefined" && pastePrefs && pastePrefs.context_threshold_k_now) || 150) + "k"}.`;
   document.getElementById("h-cwd").value = h.cwd || "";
   document.getElementById("h-env").value =
     Object.entries(h.env || {}).map(([k, v]) => `${k}=${v}`).join("\n");
@@ -927,8 +923,6 @@ function harnessFromForm() {
     bracketed_paste: document.getElementById("h-bracket").checked,
     // The same: whether a message is typed in mid-turn. See saywhen.go.
     mid_turn_input: document.getElementById("h-midturn").checked,
-    // Sent on every save: the PUT replaces the row. Zero is "use the board default".
-    context_limit_k: Number(document.getElementById("h-ctxlimit").value) || 0,
     cwd: document.getElementById("h-cwd").value.trim(),
     env,
     launch_mode: document.querySelector("#h-mode button.on").dataset.v,

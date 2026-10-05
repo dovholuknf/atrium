@@ -706,6 +706,10 @@
   .c-tool { color: var(--head); font-weight: 600; font-size: var(--fs-xs); }
   .c-cmd { font-family: var(--mono); font-size: var(--fs-xs); color: var(--dim); }
   .c-by { color: var(--dimmest); font-size: var(--fs-xs); text-align: right; }
+  /* A stored handoff opens in place, its whole text wrapped rather than cut to the row. */
+  .evr > span.c-cmd:has(details[open]) { white-space: normal; }
+  .c-cmd details.handoff summary { cursor: pointer; }
+  .c-cmd details.handoff pre { white-space: pre-wrap; max-height: 360px; overflow: auto; margin: 6px 0 0; }
   /* Narrow: the command is what matters, so the columns either side of it go
      first and it keeps the width. */
   @media (max-width: 900px) {

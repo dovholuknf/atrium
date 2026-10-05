@@ -1350,21 +1350,21 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
         old copy, so a narrow terminal leaves a narrow copy in the scrollback for good. A shell is not held
         to this. From 40 to 400.</span>
     </div>
-    <!-- The context threshold. A room setting: the room reads every card's
-         transcript and tells a launcher, so it lives on the daemon. -->
-    <div class="field" id="s-ctxk-field">
-      <label class="eyebrow" for="s-ctxk">context size to warn at, in thousands of tokens (board default)</label>
+    <!-- The context limit per harness. The hub owns it and hands it to every room, so a write here reaches
+         every machine. See docs/context-cycle-design.md. -->
+    <div class="field" id="s-ctxlimits-field">
+      <label class="eyebrow" for="s-ctxlimits">context limit per harness, in thousands of tokens</label>
       <div class="picker">
-        <input id="s-ctxk" type="number" min="10" max="2000" placeholder="150"
-          onchange="saveContextK()" style="max-width:110px">
-        <span class="unit">k tokens</span>
-        <a href="#" id="s-ctxk-reset" hidden onclick="resetContextK(); return false"
-          >reset to default (150)</a>
+        <input id="s-ctxlimits" spellcheck="false" placeholder="claude=200"
+          onchange="saveContextLimits()" style="max-width:260px">
+        <a href="#" id="s-ctxlimits-reset" hidden onclick="resetContextLimits(); return false"
+          >reset to default (claude=200)</a>
       </div>
-      <span class="hintline">Every Claude card shows its context size. Past this it turns the warn colour, and a
-        card an agent launched tells its launcher once, so the launcher can have it report and stop. Every turn
-        re-reads the whole context, so a big one costs on every turn. From 10 to 2000. This is the board default:
-        a runner can set its own on the runners page, and a card its own from its menu, and each wins over this.</span>
+      <span class="hintline">Past its limit atrium cycles a card's context: it asks the agent to write a handoff and
+        run <code>atrium ready</code>, then clears it and has it read the handoff back. One <code>harness=k</code>
+        per entry, separated by commas: <code>claude=200, codex=300</code>. A harness with no entry that runs claude
+        takes the <code>claude</code> one. Every room gets this list. A card can set its own limit, or turn its
+        cycle off, in its details. From 10 to 2000.</span>
     </div>
     <!-- The land-the-plane line. This browser's own setting (atrium.landThePlaneK), not the room's: the status
          line's zone is typed once here, and the board cannot read a shell script. -->
@@ -2094,6 +2094,17 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
         loopback address, a pid and two paths, and nothing secret.<br>
         Written on start, so this takes effect at the next restart.
         <b id="s-shared-loc-now"></b></span>
+    </div>
+    <!-- Where a card's handoff goes in a context cycle. A room setting: the file is on this machine. -->
+    <div class="field">
+      <label class="eyebrow" for="s-handoffdir">handoff directory</label>
+      <div class="picker">
+        <input id="s-handoffdir" spellcheck="false" data-saves="saveHandoffDir"
+          placeholder="empty means $TEMP/atrium/handoffs">
+      </div>
+      <span class="hintline">Where a card writes its handoff when atrium cycles its context, as
+        <code>&lt;card id&gt;.md</code>. The limit prompt names the full path. A copy of each handoff is kept on
+        its card, so this can be a temporary directory.</span>
     </div>
 
     </section>
@@ -2926,17 +2937,6 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
           than as a line per newline, however long the session has been going. leave it off for a
           shell, and for anything that would print <code>200~</code> on screen instead.</span>
       </div>
-      <!-- The runner layer of the context limit: board default, then this, then the card's own. -->
-      <div class="field">
-        <label class="eyebrow" for="h-ctxlimit">context limit for this runner's cards, in thousands of tokens</label>
-        <div class="picker">
-          <input id="h-ctxlimit" type="number" min="10" max="2000" placeholder="board default" style="max-width:130px">
-          <span class="unit">k tokens</span>
-        </div>
-        <span class="hintline">the size at which a card this runner started is marked. empty uses the board default
-          from settings. a card's own limit, set from its menu, wins over this. from 10 to 2000.
-          <span id="h-ctxlimit-from"></span></span>
-      </div>
       <!-- Whether a message may be typed in while the runner is working. Seeded
            from the runner profile. Off means every message waits for the turn. -->
       <div class="field">
@@ -3480,6 +3480,24 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
       <label class="eyebrow">runner</label>
       <div class="toolbar" id="d-runner"></div>
       <span class="hintline" id="d-auto-note"></span>
+    </div>
+    </section>
+    <!-- The context cycle, this card's switch and its own limit. Both are overrides on the card. See
+         docs/context-cycle-design.md. -->
+    <section class="dlg-sec" id="d-ctx-sec">
+    <div class="field">
+      <label class="eyebrow">context cycle</label>
+      <label class="check"><input type="checkbox" id="d-ctx-cycle" onchange="saveCardCycle()">
+        cycle this card's context at its limit</label>
+      <div class="picker">
+        <input id="d-ctx-limit" type="number" min="10" max="2000" placeholder="hub's limit"
+          onchange="saveCardCycle()" style="max-width:110px">
+        <span class="unit">k tokens</span>
+      </div>
+      <span class="hintline" id="d-ctx-now"></span>
+      <span class="hintline">Past the limit atrium asks the agent to write a handoff and run
+        <code>atrium ready</code>, then clears it and has it read the handoff back. Empty uses the hub's limit
+        for its harness, from settings.</span>
     </div>
     </section>
     <!-- What you call this, as opposed to what atrium worked out from the
