@@ -1,6 +1,6 @@
 # u-new-terminals-css-row-bleed-resize. Terminals tab: the selected row bleeds, and the resize button moves
 
-Status: done on branch claude/u-new-terminals-css-row-bleed-resize, awaiting review (see the question below). Owned by @ui. CSS only. Filed by the orchestrator 2026-10-01, from clint.
+Status: done on branch claude/u-new-terminals-css-row-bleed-resize. Owned by @ui. CSS only. Filed by the orchestrator 2026-10-01, from clint.
 
 Screenshot: `D:\git\github\dovholuknf\atrium\.atrium\incoming\20261001-100246-pasted.png`.
 
@@ -30,5 +30,10 @@ the old headless bridge sections turn it on, so it can be restored by flipping o
 The width control is two small icon buttons (a corner grip, the second mirrored) in a `.tlcorner` row under the
 rows, bottom left. Same one-click steps (full, mini, off), tooltips say which way. Hidden on a phone as before.
 
-Question for clint: is dropping the tab look what you want, or do you want the row to still read as joined to the
-pane some other way (for example only the pane's frame taking the row's colour)?
+Decision (@ui director, 2026-10-04): the bridge stays OFF by default (`termBridge = false`), as built. The item asks
+for the selected row to stay inside the list column at every width, and the bridge is exactly what crosses the gutter,
+so keeping it on contradicts the item. The machinery stays, so one variable restores it if that is ever wanted.
+
+Tests after the rebase onto claude/main: `HEADLESS_ONLY=termBox,termRowBleed,termWear,bridge,termListLastRow,trayHead,
+gearTermList,phoneTermBar` passes. The rebase changed nothing the after PNGs show, so they are not retaken. The earlier
+`phoneListFit` failure (cards differ in width) is on the parent commit too and is not from this change.
