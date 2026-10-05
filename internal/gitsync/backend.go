@@ -202,6 +202,10 @@ func gitCGI(exe, dir string, cfg [][2]string, more []string) *cgi.Handler {
 		"GIT_HTTP_EXPORT_ALL=1",
 	}
 	env = append(env, more...)
+	// The global config is hidden, and with it the operator's safe.directory, so a clone owned by another
+	// account is refused as dubious before a CGI header is written. The directory was resolved by the
+	// caller from its own list, so it is trusted here and nowhere else.
+	cfg = append(cfg[:len(cfg):len(cfg)], [2]string{"safe.directory", filepath.ToSlash(dir)})
 	env = append(env, "GIT_CONFIG_COUNT="+strconv.Itoa(len(cfg)))
 	for i, kv := range cfg {
 		env = append(env, "GIT_CONFIG_KEY_"+strconv.Itoa(i)+"="+kv[0], "GIT_CONFIG_VALUE_"+strconv.Itoa(i)+"="+kv[1])
