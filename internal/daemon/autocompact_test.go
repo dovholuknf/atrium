@@ -25,48 +25,50 @@ func setK(t *testing.T, d *Daemon, key string, k string) {
 	}
 }
 
-// With the setting off, and untouched, the default limit still gives a window.
-func TestAutocompactKDefaultsWhenTheSettingIsOff(t *testing.T) {
+func setLimits(t *testing.T, d *Daemon, v string) {
+	t.Helper()
+	setK(t, d, store.SettingContextLimits, v)
+}
+
+// Untouched, the default claude limit gives a window.
+func TestAutocompactKDefaultsToTheClaudeLimit(t *testing.T) {
 	d := testDaemon(t)
-	if got := d.autocompactK(&store.Task{}); got != 330 {
-		t.Fatalf("default window = %dk, want 330k (300k + 10%%)", got)
+	if got := d.autocompactK(&store.Task{Runner: "claude"}); got != 220 {
+		t.Fatalf("default window = %dk, want 220k (200k + 10%%)", got)
 	}
 }
 
 func TestAutocompactKFollowsTheLimitAndClamps(t *testing.T) {
 	d := testDaemon(t)
-	setK(t, d, store.SettingAutoNewContextK, "400")
-	if got := d.autocompactK(&store.Task{}); got != 440 {
+	setLimits(t, d, `{"claude":400}`)
+	if got := d.autocompactK(&store.Task{Runner: "claude"}); got != 440 {
 		t.Fatalf("400k limit gave %dk, want 440k", got)
 	}
-	setK(t, d, store.SettingAutoNewContextK, "50")
-	// The effective limit is never under context_threshold_k (150k), so 165k is the least the
-	// settings can give. The 100k floor is claude's own range and is held anyway.
-	if got := d.autocompactK(&store.Task{}); got != 165 {
-		t.Fatalf("a 50k limit gave %dk, want 165k (the 150k threshold floor)", got)
+	setLimits(t, d, `{"claude":50}`)
+	if got := d.autocompactK(&store.Task{Runner: "claude"}); got != 100 {
+		t.Fatalf("a 50k limit gave %dk, want the 100k floor", got)
 	}
-	setK(t, d, store.SettingAutoNewContextK, "1500")
-	if got := d.autocompactK(&store.Task{}); got != 1000 {
+	setLimits(t, d, `{"claude":1500}`)
+	if got := d.autocompactK(&store.Task{Runner: "claude"}); got != 1000 {
 		t.Fatalf("a 1500k limit gave %dk, want the 1000k ceiling", got)
 	}
 }
 
-// A ceiling card (a director) is held to the lower ceiling, and so compacts at its plus 10 percent.
-func TestAutocompactKForACeilingCard(t *testing.T) {
+// A card's own limit moves its window.
+func TestAutocompactKForACardOverride(t *testing.T) {
 	d := testDaemon(t)
-	setK(t, d, store.SettingContextCeilingK, "200")
-	got := d.autocompactK(&store.Task{Tags: []string{ContextCeilingTag}})
-	if got != 220 {
-		t.Fatalf("a 200k ceiling gave %dk, want 220k", got)
+	got := d.autocompactK(&store.Task{Runner: "claude", Overrides: map[string]string{"context_limit_k": "300"}})
+	if got != 330 {
+		t.Fatalf("a 300k card limit gave %dk, want 330k", got)
 	}
 }
 
-// The limit is one function: what the cycle is held to is the same number, before the statusline.
-func TestCardLimitIsWhatAutoThresholdStartsFrom(t *testing.T) {
+// The limit is one function: what the cycle is held to is the same number.
+func TestCardLimitIsWhatTheCycleIsHeldTo(t *testing.T) {
 	d := testDaemon(t)
-	task := &store.Task{ID: "x", Tags: []string{ContextCeilingTag}}
-	if d.cardLimit(task) != d.autoThreshold(task) {
-		t.Fatalf("limit %d, threshold %d", d.cardLimit(task), d.autoThreshold(task))
+	task := &store.Task{ID: "x", Runner: "claude", Overrides: map[string]string{"context_limit_k": "120"}}
+	if d.cardLimit(task) != d.cycleLimit(task) || d.cycleLimit(task) != 120000 {
+		t.Fatalf("limit %d, cycle %d", d.cardLimit(task), d.cycleLimit(task))
 	}
 }
 
@@ -184,14 +186,14 @@ func TestAClaudeThatCannotBeAskedIsAssumedToTakeIt(t *testing.T) {
 // A window past the model's is clamped to it, and an unnamed model is left to the 100k-1M range.
 func TestTheWindowNeverPassesTheModels(t *testing.T) {
 	d := testDaemon(t)
-	setK(t, d, store.SettingAutoNewContextK, "300")
+	setLimits(t, d, `{"claude":300}`)
 	for model, want := range map[string]int{
 		"":                      330,
 		"claude-opus-5-5":       200,
 		"claude-sonnet-5-5[1m]": 330,
 		"CLAUDE-OPUS-5-5[1M]":   330,
 	} {
-		if got := d.autocompactK(&store.Task{Model: model}); got != want {
+		if got := d.autocompactK(&store.Task{Runner: "claude", Model: model}); got != want {
 			t.Errorf("model %q: %dk, want %dk", model, got, want)
 		}
 	}

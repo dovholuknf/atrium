@@ -25,7 +25,7 @@ func staleRunningCard(t *testing.T, d *Daemon, frame string) (*store.Task, *fake
 	return task, f
 }
 
-func TestNewContextTypesTheCaptureAtOnceOnAnIdleCardWithALostStop(t *testing.T) {
+func TestNewContextClearsAtOnceOnAnIdleCardWithALostStop(t *testing.T) {
 	fastNewContext(t)
 	d := testDaemon(t)
 	task, f := staleRunningCard(t, d, idleFrame)
@@ -33,10 +33,13 @@ func TestNewContextTypesTheCaptureAtOnceOnAnIdleCardWithALostStop(t *testing.T) 
 	if err := d.StartNewContext(task.ID); err != nil {
 		t.Fatal(err)
 	}
-	until(t, "the capture prompt", func() bool { return strings.Contains(f.written(), "HANDOFF.") })
+	until(t, "the limit prompt", func() bool { return strings.Contains(f.written(), limitPrompt) })
+	ncAck(t, d, task)
+	until(t, "/clear", func() bool { return strings.Contains(f.written(), "/clear") })
 }
 
-func TestNewContextStillWaitsOnAScreenThatIsWorking(t *testing.T) {
+// Plan 5: the limit prompt goes mid-turn, the way an immediate say does. /clear does not.
+func TestNewContextAsksMidTurnButClearsOnlyBetweenTurns(t *testing.T) {
 	fastNewContext(t)
 	d := testDaemon(t)
 	task, f := staleRunningCard(t, d, workingFrame)
@@ -44,9 +47,11 @@ func TestNewContextStillWaitsOnAScreenThatIsWorking(t *testing.T) {
 	if err := d.StartNewContext(task.ID); err != nil {
 		t.Fatal(err)
 	}
+	until(t, "the limit prompt mid-turn", func() bool { return strings.Contains(f.written(), limitPrompt) })
+	ncAck(t, d, task)
 	time.Sleep(150 * time.Millisecond)
-	if got := f.written(); got != "" {
-		t.Fatalf("typed into a card whose screen shows a turn: %q", got)
+	if got := f.written(); strings.Contains(got, "/clear") {
+		t.Fatalf("typed /clear into a card whose screen shows a turn: %q", got)
 	}
 }
 
@@ -62,7 +67,7 @@ func TestNewContextBusyNamesTheStepAndHowLong(t *testing.T) {
 	if !errors.Is(err, errNewContextBusy) {
 		t.Fatalf("wanted busy, got %v", err)
 	}
-	if msg := err.Error(); !strings.Contains(msg, "step 1 of 3 (capture) for ") {
+	if msg := err.Error(); !strings.Contains(msg, "step 1 of 3 (limit) for ") {
 		t.Fatalf("the refusal does not name the step and how long: %q", msg)
 	}
 }

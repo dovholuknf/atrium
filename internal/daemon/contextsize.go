@@ -1,8 +1,6 @@
 package daemon
 
 import (
-	"fmt"
-	"log"
 	"os"
 	"strings"
 	"sync"
@@ -20,25 +18,23 @@ import (
 // cache reads, read by the same `readLastReply`.
 //
 // NEVER STORED, like activity (docs/runtime/activity-design.md). It lives in a map
-// here and dies with the process; the next tick reads it again. What IS stored
-// is the notice claim, so a restart does not tell a launcher twice.
-
-// NoticeContext is the notice a launcher gets when its worker first passes the
-// context threshold.
-const NoticeContext = "context-size"
+// here and dies with the process; the next tick reads it again.
+//
+// NOBODY IS TOLD. The size marks the card, and past its limit the context cycle
+// starts (autocontext.go). There is no notice to a launcher and no line on tool calls.
 
 // ContextSize is a card's context as the board reads it.
 type ContextSize struct {
 	Tokens int64 `json:"tokens"`
-	// Warn is whether it is at or past the threshold, worked out here so the
-	// board and the notice cannot disagree about the line.
-	Warn       bool `json:"warn"`
-	ThresholdK int  `json:"threshold_k"`
-	// Source is the layer ThresholdK came from: "card", "runner" or "board".
+	// Warn is whether it is at or past the card's limit, worked out here so the
+	// board and the trigger cannot disagree about the line.
+	Warn bool `json:"warn"`
+	// ThresholdK is the card's limit in thousands, 0 for none.
+	ThresholdK int `json:"threshold_k"`
+	// Source is the layer ThresholdK came from: "card", "hub" or "default".
 	Source string `json:"source"`
-	// AutoK is the size, in thousands, at which atrium cycles the card's context, for
-	// the tooltip. Absent on a card the setting does not reach.
-	AutoK int `json:"auto_k,omitempty"`
+	// Cycle is whether atrium cycles this card's context at the limit.
+	Cycle bool `json:"cycle"`
 }
 
 // contextSeen is one card's last read, and what the file looked like then, so
@@ -60,14 +56,12 @@ type contextSizes struct {
 	// session is the session each card's runner last said it started, which
 	// is newer than its resume id after a `/clear`. See started.
 	session map[string]string
-	// told is what each card was last told mid-turn about its size. See contextnudge.go.
-	told map[string]contextTold
 	// transcript finds a card's transcript. api.TranscriptPath, swapped in tests.
 	transcript func(cwd, sessionID string) string
 }
 
 func newContextSizes() *contextSizes {
-	return &contextSizes{m: map[string]contextSeen{}, judged: map[string]int64{}, session: map[string]string{}, told: map[string]contextTold{},
+	return &contextSizes{m: map[string]contextSeen{}, judged: map[string]int64{}, session: map[string]string{},
 		transcript: api.TranscriptPath}
 }
 
@@ -77,8 +71,7 @@ func newContextSizes() *contextSizes {
 // the resume id does not follow it until the new one has something written:
 // the session hook keeps the old id, rightly, and only the next Stop moves it.
 // Read by the resume id, the card sat on its old transcript's last size for
-// that whole first turn, and the notice, claimed for the old id, did not come
-// again for the new one (item 62, sa58: 151k, cleared, 336k with no word).
+// that whole first turn (item 62, sa58: 151k, cleared, 336k with no word).
 func (c *contextSizes) started(id, sessionID string) {
 	sessionID = strings.TrimSpace(sessionID)
 	if sessionID == "" {
@@ -126,11 +119,8 @@ func (d *Daemon) contextSizeFor(taskID string) any {
 	}
 	k, source := api.ContextLimitFor(d.st, t)
 	limit := int64(k) * 1000
-	out := &ContextSize{Tokens: s.tokens, Warn: s.tokens >= limit, ThresholdK: k, Source: source}
-	if t != nil && d.autoContextSubject(t, d.st.AutoNewContextMode()) {
-		out.AutoK = int(d.autoThreshold(t) / 1000)
-	}
-	return out
+	return &ContextSize{Tokens: s.tokens, Warn: limit > 0 && s.tokens >= limit, ThresholdK: k, Source: source,
+		Cycle: limit > 0 && d.cycleSubject(t)}
 }
 
 // read is a card's context now, and whether it changed since the last read. A
@@ -180,28 +170,20 @@ func (c *contextSizes) forgetExcept(live map[string]bool) []string {
 		if !live[id] {
 			delete(c.m, id)
 			delete(c.judged, id)
-			delete(c.told, id)
 			gone = append(gone, id)
 		}
 	}
 	return gone
 }
 
-// watchContext reads every live Claude card's context size and tells an
-// agent-launched card's launcher once when it passes the threshold.
-//
-// ONE NOTICE PER CROSSING. The claim is stored, so a restart that finds the
-// card still past the line sends nothing. A card seen back under the line has
-// its claim dropped, so a card that compacts and grows past it again is a new
-// crossing. The claim is keyed on the session, so a card cleared onto a new
-// one is a new crossing too. A human-started card is never noticed, only
-// marked.
+// watchContext reads every live Claude card's context size, marks the card, and
+// holds it to its limit: past it, the context cycle starts, and a cycle already on
+// the card is poked so a prompt that is due goes now. See autocontext.go.
 func (d *Daemon) watchContext() error {
 	tasks, err := d.st.List(store.StatusRunning, store.StatusNeedsInput, store.StatusNeedsPermission)
 	if err != nil {
 		return err
 	}
-	now := time.Now()
 	live, open := map[string]bool{}, map[string]bool{}
 	for _, t := range tasks {
 		open[t.ID] = true
@@ -218,47 +200,21 @@ func (d *Daemon) watchContext() error {
 		}
 		tokens, changed := d.ctx.read(t)
 		if tokens == 0 {
-			// A card just cleared reads as nothing until its new conversation has a reply,
-			// and the wake retry is what gets it one.
-			d.autoRetryUnread(t, now)
+			// A card just cleared reads as nothing until its new conversation has a reply.
 			continue
 		}
 		live[t.ID] = true
+		// Every tick and not only when the size changed: a cycle in flight waits on
+		// turns, which move by themselves.
+		d.cycleCheck(t, tokens)
 		limitK, _ := api.ContextLimitFor(d.st, t)
-		limit := int64(limitK) * 1000
-		// Every tick and not only when the size changed: the gates it waits on move
-		// by themselves. See autocontext.go.
-		d.watchAutoContext(t, tokens, now)
-		moved := d.ctx.judge(t.ID, limit)
-		if !changed && !moved {
-			continue
+		if moved := d.ctx.judge(t.ID, int64(limitK)*1000); changed || moved {
+			d.publishTask(t.ID)
 		}
-		d.publishTask(t.ID)
-		if !d.reportsToLauncher(t) {
-			continue
-		}
-		if tokens < limit {
-			if err := d.st.ForgetNotices(t.ID, NoticeContext); err != nil {
-				log.Printf("[atrium] could not re-arm the context notice for %s: %v", t.DisplayTitle(), err)
-			}
-			continue
-		}
-		body := fmt.Sprintf("%s is at %dk context. Tell it to report what it has and stop, or hand off.",
-			t.WireName, tokens/1000)
-		// A card atrium will cycle needs nothing from its launcher, and a launcher that
-		// acted on this would race the automatic one.
-		if d.autoContextSubject(t, d.st.AutoNewContextMode()) {
-			body = fmt.Sprintf("%s is at %dk context and atrium will cycle its context at %dk, so it needs no action.",
-				t.WireName, tokens/1000, d.autoThreshold(t)/1000)
-		}
-		d.notifyLauncher(t, NoticeContext, session, body)
 	}
 	for _, id := range d.ctx.forgetExcept(live) {
 		d.publishTask(id)
 	}
-	// By the open cards and not the live ones: a card just cleared reads as nothing
-	// until its new conversation has a reply, and its arm state must outlast that.
-	d.auto.forgetExcept(open)
 	d.ctx.forgetSessions(open)
 	d.forgetOutput(open)
 	return nil

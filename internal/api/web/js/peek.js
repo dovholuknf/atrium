@@ -31,13 +31,14 @@ function peekCard(id) {
     (typeof termTask !== "undefined" && termTask && termTask.id === id ? termTask : null);
 }
 
-// WHICH LAYER THE WARN LIMIT CAME FROM, as the daemon resolved it onto the row: the card's own setting, its runner's,
-// or the board default. Empty for a row from a daemon that does not say.
+
+// WHICH LAYER THE CONTEXT LIMIT CAME FROM, as the daemon resolved it onto the row: the card's own setting, the
+// hub's limit for its harness, or the built-in default. Empty for a row from a daemon that does not say.
 function limitSource(t) {
   const s = t && t.context_size && t.context_size.source;
-  return s === "card" || s === "runner" || s === "board" ? s : "";
+  return s === "card" || s === "hub" || s === "default" ? s : "";
 }
-// "150k from runner", or just "150k" when the source is not known.
+// "200k from hub", or just "200k" when the source is not known.
 function limitFrom(t) {
   const s = limitSource(t);
   return `${peekThresholdK(t)}k${s ? " from " + s : ""}`;
@@ -45,10 +46,11 @@ function limitFrom(t) {
 
 function peekThresholdK(t) {
   if (t && t.context_size && t.context_size.threshold_k) return t.context_size.threshold_k;
-  if (typeof pastePrefs !== "undefined" && pastePrefs && pastePrefs.context_threshold_k_now) {
-    return pastePrefs.context_threshold_k_now;
+  if (typeof pastePrefs !== "undefined" && pastePrefs && pastePrefs.context_limits &&
+      pastePrefs.context_limits.claude) {
+    return pastePrefs.context_limits.claude;
   }
-  return 150;
+  return 200;
 }
 
 // THE LAND-THE-PLANE LINE, a per-browser preference like the growler switch (js/growl.js): `atrium.landThePlaneK`, in

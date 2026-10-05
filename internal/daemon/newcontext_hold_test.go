@@ -4,8 +4,6 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -55,17 +53,14 @@ func finishCycle(t *testing.T, d *Daemon, id, dir string, f *fakePTY) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// The card's own file (item 91): a plain HANDOFF.md no longer counts.
-	if err := os.WriteFile(filepath.Join(dir, HandoffName(task)), handoffBody, 0o644); err != nil {
-		t.Fatal(err)
-	}
+	ncAck(t, d, task)
 	time.Sleep(60 * time.Millisecond)
 	ncTurnEnds(d, id)
 	until(t, "/clear", func() bool { return strings.Contains(f.written(), "/clear") })
 }
 
-// ncWakeMark is the part of the wake prompt that does not depend on the card's handoff file name (item 91).
-const ncWakeMark = "and continue from it."
+// ncWakeMark is the part of the wake prompt that does not depend on the card's handoff path.
+const ncWakeMark = "and continue."
 
 func TestSayDuringCaptureIsHeldAndDeliveredAfterTheWake(t *testing.T) {
 	fastNewContext(t)
@@ -77,9 +72,9 @@ func TestSayDuringCaptureIsHeldAndDeliveredAfterTheWake(t *testing.T) {
 	if err := d.StartNewContext(id); err != nil {
 		t.Fatal(err)
 	}
-	until(t, "the capture prompt", func() bool { return strings.Contains(f.written(), "HANDOFF.") })
+	until(t, "the limit prompt", func() bool { return strings.Contains(f.written(), limitPrompt) })
 	if !d.holdingMessages(id) {
-		t.Fatal("not holding during capture")
+		t.Fatal("not holding while waiting for atrium ready")
 	}
 	out := sayViaMessage(t, d, "alice", id, heldSay)
 	if out["delivered"] != "queued" || out["warning"] != newContextHoldNote {
@@ -110,7 +105,7 @@ func TestSayDuringClearIsHeldAndTellIsQueued(t *testing.T) {
 	if err := d.StartNewContext(id); err != nil {
 		t.Fatal(err)
 	}
-	until(t, "the capture prompt", func() bool { return strings.Contains(f.written(), "HANDOFF.") })
+	until(t, "the limit prompt", func() bool { return strings.Contains(f.written(), limitPrompt) })
 	finishCycle(t, d, id, dir, f)
 
 	out, code := tell(t, d, "alice", "cycler", heldSay)
@@ -130,19 +125,20 @@ func TestSayDuringClearIsHeldAndTellIsQueued(t *testing.T) {
 func TestAFailedCycleReleasesWhatWasHeld(t *testing.T) {
 	fastNewContext(t)
 	d := testDaemon(t)
-	task, f, _ := ncCard(t, d)
+	task, f, dir := ncCard(t, d)
 	id := task.ID
 	peerCard(t, d, "alice")
 
 	if err := d.StartNewContext(id); err != nil {
 		t.Fatal(err)
 	}
-	until(t, "the capture prompt", func() bool { return strings.Contains(f.written(), "HANDOFF.") })
+	until(t, "the limit prompt", func() bool { return strings.Contains(f.written(), limitPrompt) })
 	sayViaMessage(t, d, "alice", id, heldSay)
 	if strings.Contains(f.written(), heldSay) {
-		t.Fatal("typed during capture")
+		t.Fatal("typed while waiting for atrium ready")
 	}
-	// The capture prompt starts no turn, so the cycle fails.
+	// No new session starts after /clear, so the cycle fails.
+	finishCycle(t, d, id, dir, f)
 	until(t, "the chip to fail", func() bool { return failedWith(d, id) != "" })
 	if d.holdingMessages(id) {
 		t.Fatal("a failed cycle is still holding")
@@ -159,7 +155,7 @@ func TestDismissingACycleReleases(t *testing.T) {
 	if err := d.StartNewContext(id); err != nil {
 		t.Fatal(err)
 	}
-	until(t, "the capture prompt", func() bool { return strings.Contains(f.written(), "HANDOFF.") })
+	until(t, "the limit prompt", func() bool { return strings.Contains(f.written(), limitPrompt) })
 	d.act.set(id, ActivityThinking, "")
 	sayViaMessage(t, d, "alice", id, heldSay)
 	r := httptest.NewRequest(http.MethodDelete, "/v1/tasks/"+id+"/new-context", nil)
@@ -182,7 +178,7 @@ func TestHoldDoesNotStopTheCyclesOwnTyping(t *testing.T) {
 	if err := d.StartNewContext(id); err != nil {
 		t.Fatal(err)
 	}
-	until(t, "the capture prompt", func() bool { return strings.Contains(f.written(), "HANDOFF.") })
+	until(t, "the limit prompt", func() bool { return strings.Contains(f.written(), limitPrompt) })
 	finishCycle(t, d, id, dir, f)
 	d.wake.sawSession(id, time.Now())
 	until(t, "the wake prompt", func() bool { return strings.Contains(f.written(), ncWakeMark) })

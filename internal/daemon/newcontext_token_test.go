@@ -120,17 +120,22 @@ func TestHandoffWrittenDoesNotFindATokenBeyond4KB(t *testing.T) {
 	}
 }
 
-// The capture prompt carries the token, and a file already written with it goes
-// through to the clear.
+// The capture prompt carries the token, and a file already written with it passes.
+// The idle parking's and the move's capture, which is not a context cycle.
 func TestNewContextCapturePromptCarriesTheToken(t *testing.T) {
 	fastNewContext(t)
 	d := testDaemon(t)
 	task, f, dir := ncCard(t, d)
 	writeAged(t, filepath.Join(dir, HandoffName(task)), handoffBody, time.Minute)
-
-	if err := d.StartNewContext(task.ID); err != nil {
-		t.Fatal(err)
+	gen, ok := d.nctx.beginCaptureOnly(task.ID, HandoffName(task), "")
+	if !ok {
+		t.Fatal("could not begin")
 	}
+	done := make(chan error, 1)
+	go func() {
+		_, err := d.ncCapture(task.ID, gen, HandoffName(task))
+		done <- err
+	}()
 	until(t, "the capture prompt", func() bool { return strings.Contains(f.written(), "atrium-capture: ") })
 	m := regexp.MustCompile(`atrium-capture: (\S+?)\.? `).FindStringSubmatch(f.written())
 	if m == nil {
@@ -140,5 +145,7 @@ func TestNewContextCapturePromptCarriesTheToken(t *testing.T) {
 	writeAged(t, filepath.Join(dir, HandoffName(task)), withLine(m[1], handoffBody), time.Minute)
 	time.Sleep(20 * time.Millisecond)
 	ncTurnEnds(d, task.ID)
-	until(t, "/clear", func() bool { return strings.Contains(f.written(), "/clear") })
+	if err := <-done; err != nil {
+		t.Fatalf("the capture was refused: %v", err)
+	}
 }

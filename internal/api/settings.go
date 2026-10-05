@@ -107,8 +107,7 @@ func globalAutoView(s *Server) map[string]any {
 		// unreachable by anybody hitting the problem.
 		SettingShellCommand: "shell_command",
 		// The narrowest a runner's terminal goes. Empty means the default.
-		SettingTerminalMinCols:   "terminal_min_cols",
-		SettingContextThresholdK: "context_threshold_k",
+		SettingTerminalMinCols: "terminal_min_cols",
 	} {
 		v, err := s.st.Setting(key)
 		if err != nil {
@@ -137,11 +136,6 @@ func globalAutoView(s *Server) map[string]any {
 	out["terminal_min_cols_default"] = defaultTerminalMinCols
 	out["terminal_min_cols_min"] = minTerminalMinCols
 	out["terminal_min_cols_max"] = maxTerminalMinCols
-	// The context threshold in force, in thousands of tokens, and its bounds.
-	out["context_threshold_k_now"] = contextThresholdK(s.st)
-	out["context_threshold_k_default"] = defaultContextThresholdK
-	out["context_threshold_k_min"] = minContextThresholdK
-	out["context_threshold_k_max"] = maxContextThresholdK
 	// Report total scrollback capacity across live runners and shells.
 	// This is the upper bound if every ring fills, not current memory usage.
 	// Send separate values so the board can format the explanation.
@@ -208,7 +202,7 @@ func globalAutoView(s *Server) map[string]any {
 	}
 	out["idle_park_after_default"] = int64(store.DefaultIdleParkAfter / time.Second)
 	out["idle_park_after_min"] = int64(store.MinIdleParkAfter / time.Second)
-	autoNewContextView(s.st, out)
+	contextCycleView(s.st, out)
 	inputLagView(out)
 	// Reported even when unset, so the setting can be read back as `above_normal`.
 	out["lean_worker_gateway"] = s.st.LeanWorkerGateway()
@@ -327,8 +321,11 @@ func (s *Server) setSettings(w http.ResponseWriter, r *http.Request) {
 		InputLag *bool `json:"input_lag_log"`
 		// The narrowest a runner's terminal goes, in columns. A string like the
 		// scrollback boxes, because empty is a value and means the default.
-		TerminalMinCols   *string `json:"terminal_min_cols"`
-		ContextThresholdK *string `json:"context_threshold_k"`
+		TerminalMinCols *string `json:"terminal_min_cols"`
+		// The context limit per harness, which the hub owns and hands to every room, and where a cycling card
+		// writes its handoff. See contextsize.go.
+		ContextLimits     *map[string]int `json:"context_limits"`
+		ContextHandoffDir *string         `json:"context_handoff_dir"`
 		// Whether this room types the unexpected-exit notice. Stored as `on` or
 		// `off`, and read at the next stop, start or delivery.
 		UnexpectedExit *bool `json:"unexpected_exit_wake"`
@@ -345,11 +342,6 @@ func (s *Server) setSettings(w http.ResponseWriter, r *http.Request) {
 		KeepaliveSuspended *bool `json:"cache_keepalive_suspended"`
 		// How long a card sits idle before it is parked: seconds, or off.
 		IdleParkAfter *string `json:"idle_park_after"`
-		// The automatic new context: which cards, at what size, after how long idle.
-		AutoNewContext      *string `json:"auto_new_context"`
-		AutoNewContextK     *string `json:"auto_new_context_k"`
-		AutoNewContextIdleS *string `json:"auto_new_context_idle_s"`
-		ContextCeilingK     *string `json:"context_ceiling_k"`
 	}
 	// Read once and decoded twice: into the struct, which is what the handler
 	// works from, and into a map, which is the only way to notice a field that
@@ -771,13 +763,25 @@ func (s *Server) setSettings(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	if body.ContextThresholdK != nil {
-		v, err := checkContextThresholdK(*body.ContextThresholdK)
+	if body.ContextLimits != nil {
+		v, err := store.CheckContextLimits(*body.ContextLimits)
 		if err != nil {
 			writeErr(w, http.StatusBadRequest, err)
 			return
 		}
-		if err := s.st.SetSetting(SettingContextThresholdK, v); err != nil {
+		if err := s.st.SetSetting(store.SettingContextLimits, v); err != nil {
+			s.fail(w, err)
+			return
+		}
+	}
+
+	if body.ContextHandoffDir != nil {
+		v, err := store.CheckContextHandoffDir(*body.ContextHandoffDir)
+		if err != nil {
+			writeErr(w, http.StatusBadRequest, err)
+			return
+		}
+		if err := s.st.SetSetting(store.SettingContextHandoffDir, v); err != nil {
 			s.fail(w, err)
 			return
 		}
@@ -790,54 +794,6 @@ func (s *Server) setSettings(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if err := s.st.SetSetting(store.SettingIdleParkAfter, v); err != nil {
-			s.fail(w, err)
-			return
-		}
-	}
-
-	if body.AutoNewContext != nil {
-		v, err := store.CheckAutoNewContext(*body.AutoNewContext)
-		if err != nil {
-			writeErr(w, http.StatusBadRequest, err)
-			return
-		}
-		if err := s.st.SetSetting(store.SettingAutoNewContext, v); err != nil {
-			s.fail(w, err)
-			return
-		}
-	}
-
-	if body.AutoNewContextK != nil {
-		v, err := checkAutoNewContextK(s.st, *body.AutoNewContextK, body.ContextThresholdK)
-		if err != nil {
-			writeErr(w, http.StatusBadRequest, err)
-			return
-		}
-		if err := s.st.SetSetting(store.SettingAutoNewContextK, v); err != nil {
-			s.fail(w, err)
-			return
-		}
-	}
-
-	if body.ContextCeilingK != nil {
-		v, err := checkContextCeilingK(s.st, *body.ContextCeilingK, body.ContextThresholdK)
-		if err != nil {
-			writeErr(w, http.StatusBadRequest, err)
-			return
-		}
-		if err := s.st.SetSetting(store.SettingContextCeilingK, v); err != nil {
-			s.fail(w, err)
-			return
-		}
-	}
-
-	if body.AutoNewContextIdleS != nil {
-		v, err := store.CheckAutoNewContextIdleS(*body.AutoNewContextIdleS)
-		if err != nil {
-			writeErr(w, http.StatusBadRequest, err)
-			return
-		}
-		if err := s.st.SetSetting(store.SettingAutoNewContextIdleS, v); err != nil {
 			s.fail(w, err)
 			return
 		}

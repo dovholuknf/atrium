@@ -387,6 +387,7 @@ func serveAtrium(f atriumFlags, up atriumUp) error {
 		// Off the attach path, because it is a request to the room that
 		// just arrived and the attach should not wait on it.
 		go proxy.PushInputLag(name)
+		go proxy.PushContextLimits(name)
 	}
 	// A ROOM ON THE OLD PATH, said once per attach. This is how the operator
 	// finds who must re-join before flipping the switch: the audit line names

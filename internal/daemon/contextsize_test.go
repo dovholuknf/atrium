@@ -62,7 +62,7 @@ func contextNotices(t *testing.T, d *Daemon, launcherID string) []*store.Message
 	return out
 }
 
-// Every Claude card carries its size, marked past the threshold.
+// Every Claude card carries its size, marked past its limit.
 func TestACardShowsItsContextSize(t *testing.T) {
 	d := testDaemon(t)
 	card := peerCard(t, d, "mine")
@@ -71,8 +71,8 @@ func TestACardShowsItsContextSize(t *testing.T) {
 	reply(90_000)
 	watch(t, d)
 	got, _ := d.contextSizeFor(card.ID).(*ContextSize)
-	if got == nil || got.Tokens != 90_000 || got.Warn || got.ThresholdK != 150 {
-		t.Fatalf("context %+v, want 90k under a 150k line", got)
+	if got == nil || got.Tokens != 90_000 || got.Warn || got.ThresholdK != 200 || got.Source != "default" {
+		t.Fatalf("context %+v, want 90k under the default 200k", got)
 	}
 	reply(212_000)
 	watch(t, d)
@@ -81,118 +81,32 @@ func TestACardShowsItsContextSize(t *testing.T) {
 	}
 }
 
-// The gear setting moves the line.
-func TestTheThresholdIsASetting(t *testing.T) {
+// The hub's per-harness setting moves the line.
+func TestTheLimitIsAHubSetting(t *testing.T) {
 	d := testDaemon(t)
-	launcher, worker := launchedPair(t, d)
+	_, worker := launchedPair(t, d)
 	reply := withTranscript(t, d, worker)
-	if err := d.st.SetSetting(api.SettingContextThresholdK, "50"); err != nil {
+	if err := d.st.SetSetting(store.SettingContextLimits, `{"claude":50}`); err != nil {
 		t.Fatal(err)
 	}
 	reply(60_000)
 	watch(t, d)
-	if got, _ := d.contextSizeFor(worker.ID).(*ContextSize); got == nil || !got.Warn || got.ThresholdK != 50 {
-		t.Fatalf("context %+v, want marked past 50k", got)
-	}
-	if n := len(contextNotices(t, d, launcher.ID)); n != 1 {
-		t.Fatalf("launcher has %d context notices, want 1", n)
+	if got, _ := d.contextSizeFor(worker.ID).(*ContextSize); got == nil || !got.Warn || got.ThresholdK != 50 || got.Source != "hub" {
+		t.Fatalf("context %+v, want marked past 50k from the hub", got)
 	}
 }
 
-// One notice as a worker passes the line, however many turns it takes past it,
-// and in the words the launcher acts on.
-func TestTheLauncherHearsOncePerCrossing(t *testing.T) {
+// Plan 1: nobody hears about a card's size. Not its launcher, not anyone.
+func TestNobodyIsToldAboutASize(t *testing.T) {
 	d := testDaemon(t)
 	launcher, worker := launchedPair(t, d)
 	reply := withTranscript(t, d, worker)
-	reply(100_000)
-	watch(t, d)
-	if n := len(contextNotices(t, d, launcher.ID)); n != 0 {
-		t.Fatalf("launcher has %d context notices under the line", n)
-	}
-	for _, k := range []int64{160_000, 180_000, 240_000} {
+	for _, k := range []int64{100_000, 160_000, 240_000, 400_000} {
 		reply(k)
 		watch(t, d)
-		watch(t, d)
 	}
-	msgs := contextNotices(t, d, launcher.ID)
-	want := "worker is at 160k context. Tell it to report what it has and stop, or hand off."
-	if len(msgs) != 1 || msgs[0].Text != want {
-		t.Fatalf("launcher has %v, want one %q", msgs, want)
-	}
-
-	// It compacts under the line and grows past it again: a new crossing.
-	reply(40_000)
-	watch(t, d)
-	reply(155_000)
-	watch(t, d)
-	if n := len(contextNotices(t, d, launcher.ID)); n != 2 {
-		t.Fatalf("launcher has %d context notices after a second crossing, want 2", n)
-	}
-}
-
-// A raised threshold re-arms a card now under it, so a worker that jumps past
-// the new line in one turn is a new crossing.
-func TestARaisedThresholdReArmsTheNotice(t *testing.T) {
-	d := testDaemon(t)
-	launcher, worker := launchedPair(t, d)
-	reply := withTranscript(t, d, worker)
-	reply(160_000)
-	watch(t, d)
-	if err := d.st.SetSetting(api.SettingContextThresholdK, "200"); err != nil {
-		t.Fatal(err)
-	}
-	watch(t, d)
-	reply(210_000)
-	watch(t, d)
-	if n := len(contextNotices(t, d, launcher.ID)); n != 2 {
-		t.Fatalf("launcher has %d context notices after crossing a raised line, want 2", n)
-	}
-}
-
-// A card a human started is marked and nobody is told.
-func TestAHumanCardGetsTheMarkAndNoNotice(t *testing.T) {
-	d := testDaemon(t)
-	other := peerCard(t, d, "orchestrator")
-	mine := peerCard(t, d, "mine")
-	prompt(t, d, mine.ID)
-	reply := withTranscript(t, d, mine)
-	reply(300_000)
-	watch(t, d)
-	if got, _ := d.contextSizeFor(mine.ID).(*ContextSize); got == nil || !got.Warn {
-		t.Fatalf("context %+v, want marked", got)
-	}
-	if n := len(contextNotices(t, d, other.ID)); n != 0 {
-		t.Fatalf("a human card sent %d context notices", n)
-	}
-	if claimed, _ := d.st.RecordNotice(mine.ID, NoticeContext, "sess-mine"); !claimed {
-		t.Fatal("a human card claimed a context notice")
-	}
-}
-
-// A restart forgets every size and still does not tell the launcher again
-// about a worker it already heard about.
-func TestARestartDoesNotNoticeTwice(t *testing.T) {
-	d := testDaemon(t)
-	launcher, worker := launchedPair(t, d)
-	reply := withTranscript(t, d, worker)
-	reply(200_000)
-	watch(t, d)
-
-	// What a restart leaves: the store, and nothing in memory.
-	path := d.ctx.transcript
-	d.ctx = newContextSizes()
-	d.ctx.transcript = path
-	if d.contextSizeFor(worker.ID) != nil {
-		t.Fatal("a size survived the restart")
-	}
-	reply(210_000)
-	watch(t, d)
-	if got, _ := d.contextSizeFor(worker.ID).(*ContextSize); got == nil || got.Tokens != 210_000 {
-		t.Fatalf("context %+v after the restart, want it read again", got)
-	}
-	if n := len(contextNotices(t, d, launcher.ID)); n != 1 {
-		t.Fatalf("launcher has %d context notices across a restart, want 1", n)
+	if n := len(contextNotices(t, d, launcher.ID)); n != 0 {
+		t.Fatalf("launcher has %d context notices, want none", n)
 	}
 }
 
@@ -212,23 +126,16 @@ func TestANonClaudeCardHasNoSize(t *testing.T) {
 	}
 }
 
-// Item 62, sa58: a worker told at 151k was cleared onto a new session on the
-// same card and grew to 336k with no second notice, because the resume id
-// does not follow a `/clear` until the new transcript has something in it.
-// The new session starting re-arms the notice, and the new transcript is the
-// one read, before its first turn has ended.
-func TestAClearedCardIsANewCrossing(t *testing.T) {
+// Item 62, sa58: a card cleared onto a new session keeps its old resume id until the
+// new transcript has something in it. The new session's transcript is the one read,
+// before its first turn has ended.
+func TestAClearedCardReadsItsNewSession(t *testing.T) {
 	d := testDaemon(t)
-	launcher, worker := launchedPair(t, d)
+	_, worker := launchedPair(t, d)
 	reply := withTranscript(t, d, worker)
 	reply(151_000)
 	watch(t, d)
-	if n := len(contextNotices(t, d, launcher.ID)); n != 1 {
-		t.Fatalf("launcher has %d context notices, want 1", n)
-	}
 
-	// `/clear`: the session hook says a new session started, with nothing
-	// written behind it yet, so the card keeps its old resume id.
 	cleared := filepath.Join(t.TempDir(), "cleared.jsonl")
 	old := d.ctx.transcript
 	d.ctx.transcript = func(cwd, id string) string {
@@ -245,8 +152,6 @@ func TestAClearedCardIsANewCrossing(t *testing.T) {
 	if got, _ := d.st.Get(worker.ID); got.ResumeID != "sess-"+worker.WireName {
 		t.Fatalf("resume id %q, want the old one kept until the new session writes", got.ResumeID)
 	}
-	watch(t, d)
-
 	line := fmt.Sprintf(`{"type":"assistant","timestamp":%q,"message":{"model":"claude-opus-5-5",`+
 		`"usage":{"input_tokens":1,"cache_creation_input_tokens":0,"cache_read_input_tokens":%d}}}`+"\n",
 		time.Now().UTC().Format(time.RFC3339Nano), 335_999)
@@ -257,14 +162,6 @@ func TestAClearedCardIsANewCrossing(t *testing.T) {
 	if got, _ := d.contextSizeFor(worker.ID).(*ContextSize); got == nil || got.Tokens != 336_000 {
 		t.Fatalf("context %+v, want the cleared session's 336k", got)
 	}
-	msgs := contextNotices(t, d, launcher.ID)
-	if len(msgs) != 2 || !strings.Contains(msgs[1].Text, "336k") {
-		t.Fatalf("launcher has %v, want a second notice at 336k", msgs)
-	}
-	watch(t, d)
-	if n := len(contextNotices(t, d, launcher.ID)); n != 2 {
-		t.Fatalf("launcher has %d context notices, want still 2", n)
-	}
 }
 
 // The row carries the limit in force and the layer it came from, and the mark follows that limit.
@@ -273,7 +170,7 @@ func TestTheRowNamesTheLayerTheLimitCameFrom(t *testing.T) {
 	card := peerCard(t, d, "layered")
 	prompt(t, d, card.ID)
 	reply := withTranscript(t, d, card)
-	reply(200_000)
+	reply(250_000)
 	watch(t, d)
 	read := func() *ContextSize {
 		t.Helper()
@@ -283,19 +180,14 @@ func TestTheRowNamesTheLayerTheLimitCameFrom(t *testing.T) {
 		}
 		return got
 	}
-	if got := read(); got.ThresholdK != 150 || got.Source != "board" || !got.Warn {
-		t.Fatalf("%+v, want 150k from board, warned", got)
+	if got := read(); got.ThresholdK != 200 || got.Source != "default" || !got.Warn {
+		t.Fatalf("%+v, want 200k from default, warned", got)
 	}
-	h, err := d.st.Harness("claude")
-	if err != nil {
+	if err := d.st.SetSetting(store.SettingContextLimits, `{"claude":300}`); err != nil {
 		t.Fatal(err)
 	}
-	h.ContextLimitK = 300
-	if _, err := d.st.SaveHarness(*h); err != nil {
-		t.Fatal(err)
-	}
-	if got := read(); got.ThresholdK != 300 || got.Source != "runner" || got.Warn {
-		t.Fatalf("%+v, want 300k from runner, not warned", got)
+	if got := read(); got.ThresholdK != 300 || got.Source != "hub" || got.Warn {
+		t.Fatalf("%+v, want 300k from hub, not warned", got)
 	}
 	if err := d.st.SetOverrides(card.ID, map[string]string{api.OverrideContextLimitK: "190"}); err != nil {
 		t.Fatal(err)

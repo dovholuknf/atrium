@@ -525,6 +525,8 @@ async function openTask(id) {
       "and never rules and shelving still block."
     : "";
 
+  paintCardCycle(current);
+
   // "the board's tone" rather than an empty row, because empty reads as
   // broken where the default is a real choice.
   document.getElementById("d-sound").innerHTML =
@@ -690,6 +692,10 @@ function timelineHTML(events) {
       rows.push(permRow(e, p, decisions[p.id]));
       return;
     }
+    if (e.kind === "notified" && (p.by === "context-cycle" || p.by === "new-context")) {
+      rows.push(cycleRow(e, p));
+      return;
+    }
     const detail = p.text || p.content || p.command
       || (p.from ? `${p.from} to ${p.to}` : "")
       || (p.decision ? `${p.decision}: ${p.reason || ""}` : "");
@@ -700,6 +706,31 @@ function timelineHTML(events) {
     }));
   });
   return `<div class="evtable">${rows.join("")}</div>`;
+}
+
+// A context cycle's line. The handoff `atrium ready` stored is a `handoff` row with its full text behind a
+// disclosure, so it can be read after the temporary directory it was written to is cleaned.
+function cycleRow(e, p) {
+  const at = evTime(e);
+  const by = p.by === "context-cycle" ? "context cycle" : "new context";
+  if (p.handoff !== undefined) {
+    const head = `${p.bytes || String(p.handoff).length} bytes from ${p.path || "the handoff file"}` +
+      (p.cut ? `, ${p.cut}` : "");
+    return evRow({
+      cls: "key", verdict: "handoff", at, by: esc(by), title: esc(p.path || ""),
+      text: `<details class="handoff"><summary>${esc(head)}</summary><pre>${esc(p.handoff)}</pre></details>`
+    });
+  }
+  const k = n => Math.round(Number(n) / 1000) + "k";
+  const text = p.started ? `past its limit, ${k(p.tokens)} of ${k(p.limit)}. asked for a handoff at ${p.path || ""}`
+    : p.done ? `cleared and woken on ${p.path || "its handoff"}`
+    : p.dropped ? `dropped: ${p.dropped}`
+    : p.failed ? `failed: ${p.failed}`
+    : "";
+  return evRow({
+    cls: "key", verdict: p.failed ? "cycle failed" : "context", vcls: p.failed ? "no" : "",
+    at, by: esc(by), text: esc(text.slice(0, 400)), title: esc(text)
+  });
 }
 
 // One event, one row, five columns. Anything with nothing to put in a column
@@ -1037,6 +1068,40 @@ document.getElementById("d-sound").addEventListener("change", e => {
 function previewCardSound() {
   const name = document.getElementById("d-sound").value;
   alerting.preview(name || alerting.get().input);
+}
+
+// THE CONTEXT CYCLE, this card's switch and its own limit, both overrides. The line under them says the limit in
+// force and which layer it came from: the card's own, the hub's for its harness, or the built-in default.
+function paintCardCycle(t) {
+  const sw = document.getElementById("d-ctx-cycle");
+  const box = document.getElementById("d-ctx-limit");
+  const now = document.getElementById("d-ctx-now");
+  if (!sw || !box || !now || !t) return;
+  const o = t.overrides || {};
+  sw.checked = String(o.context_cycle || "").toLowerCase() !== "off";
+  box.value = o.context_limit_k || "";
+  const src = typeof limitSource === "function" ? limitSource(t) : "";
+  now.textContent = !t.context_size
+    ? "this card has no context size yet, so nothing cycles it."
+    : !sw.checked
+      ? `its cycle is off. its limit would be ${limitFrom(t)}.`
+      : `cycles at ${limitFrom(t)}${src === "card" ? ", its own" : ""}.`;
+}
+
+async function saveCardCycle() {
+  if (!current) return;
+  const sw = document.getElementById("d-ctx-cycle");
+  const box = document.getElementById("d-ctx-limit");
+  const overrides = {
+    context_cycle: sw.checked ? "" : "off",
+    context_limit_k: String(box.value || "").trim()
+  };
+  // patchTask says why itself when the room refuses, and answers nothing.
+  const res = await patchTask(current.id, { overrides });
+  if (!res) { paintCardCycle(current); return; }
+  current.overrides = Object.assign({}, current.overrides, overrides);
+  flashSaved(box);
+  refresh();
 }
 
 // Saved on the way out of the field, not on every keystroke. An emoji arrives

@@ -651,14 +651,15 @@ function contextChip(t) {
   return `<span class="chip ctx${heat}" data-tip="${esc(contextTitle(c))}">ctx ${c.pct}%</span>` + limits;
 }
 
-// Past the warn line (the daemon's `warn`, the gear's context threshold, 150k) a card gets the small amber mark.
-// There is no badge for the land-the-plane line: atrium clears an agent card at that line on its own, and the
-// row's context line (ctxLine) turns danger there. Never stored. The number is also in the card's details.
+// Past its context limit (the daemon's `warn`: the card's own limit, else the hub's for its harness, 200k for
+// claude by default) a card gets the small amber mark, and atrium cycles its context. The row's context line
+// (ctxLine) turns danger at the land-the-plane line. Never stored. The number is also in the card's details.
 function ctxWarnMark(t) {
   const c = t.context_size;
   if (!c || over(t) || t.status === "shelved") return "";
   if (!c.warn) return "";
-  const tip = `past ${limitFrom(t)} tokens of context, and every turn re-reads all of it. ` +
+  const tip = `past its context limit, ${limitFrom(t)} tokens. ` +
+    (c.cycle ? `atrium is cycling its context. ` : `its context cycle is off. `) +
     `hover the card for its details`;
   return `<span class="chip warn icon ctxwarn" aria-label="${esc(tip)}" data-tip="${esc(tip)}"
     ><svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true" fill="none" stroke="currentColor"
@@ -957,8 +958,9 @@ async function paintMoreAsks(id, open) {
 // The count comes back rather than being assumed, because the card may have
 // been asked something else between the menu being drawn and the click.
 // ── new context ─────────────────────────────────────────
-// Capture, clear and wake, run by the room. The card's `new_context` says which
-// step it is on, or why it stopped. See internal/daemon/newcontext.go.
+// The context cycle: the limit prompt and its ack, then clear and wake, run by the
+// room. The card's `new_context` says which step it is on, or why it stopped. See
+// internal/daemon/newcontext.go and docs/context-cycle-design.md.
 
 // One chip while a step runs, gone when the wake prompt lands. A step that
 // stopped leaves a red one with the reason, and clicking it takes it off.
@@ -971,9 +973,11 @@ function newContextChip(t) {
       onclick="event.stopPropagation();dismissNewContext('${t.id}')"
       >new context failed</span>`;
   }
-  return `<span class="chip" data-tip="${esc("new context, step " + n.n + " of " + n.of + ": " + n.label)}"
-    >context ${n.n}/${n.of}: ${esc(n.step)}</span>`;
+  const word = NEW_CONTEXT_WORDS[n.step] || n.step;
+  return `<span class="chip" data-tip="${esc("context cycle, step " + n.n + " of " + n.of + ": " + n.label)}"
+    >context ${n.n}/${n.of}: ${esc(word)}</span>`;
 }
+const NEW_CONTEXT_WORDS = { limit: "waiting for ack", clear: "clearing", wake: "waking", capture: "handoff" };
 
 // A parked card: idle, no process, waking on the first key or a say with wake.
 function parkedChip(t) {
@@ -1010,7 +1014,7 @@ async function newContext(id) {
     const r = await api(`/v1/tasks/${encodeURIComponent(id)}/new-context`, { method: "POST" });
     const file = (r && r.new_context && r.new_context.file) || "its handoff file";
     toast("new context started",
-      `it is asked to write ${file}, then cleared, then told to read it back`);
+      `it is asked to write ${file} and run atrium ready, then cleared, then told to read it back`);
   } catch (e) {
     toast("could not start a new context", e.message);
     return;

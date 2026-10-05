@@ -557,9 +557,6 @@ async function renderRunners() {
       ${h.mid_turn_input
         ? `<span class="by midturn" data-tip="a message sent immediately is typed in mid-turn, as soon as the input line is empty">mid-turn</span>`
         : `<span class="by midturn off" data-tip="every message waits for this runner's turn to end. edit to change">turn end</span>`}
-      ${h.context_limit_k
-        ? `<span class="by" data-tip="the context limit for cards this runner starts. edit to change">limit ${h.context_limit_k}k</span>`
-        : ""}
       <span class="hookcell">${hooksChip(h)}</span>
       ${h.setup ? `<span class="setupcell">${setupChip(h)}</span>` : ""}
       <button onclick="editHarness('${esc(h.id)}','${esc(h.room || "")}')">edit</button>

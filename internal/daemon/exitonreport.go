@@ -50,12 +50,15 @@ func (d *Daemon) exitsOnReport(task *store.Task, in FinishRequest) bool {
 	return true
 }
 
+// reportTypedQuiet is how long since a person last typed into the card for it to be left to exit.
+var reportTypedQuiet = 2 * time.Minute
+
 // exitAfterReport waits out the delay, then asks the runner to leave. Best effort like every hook: a failure is
 // logged and the report has already landed. An operator who typed into the terminal lately is left alone, by the
-// same quiet period a ceiling card waits for.
+// quiet period, reportTypedQuiet.
 func (d *Daemon) exitAfterReport(taskID string) {
 	time.Sleep(exitOnReportDelay)
-	if run := d.sup.get(taskID); run != nil && run.typedWithin(autoTiming.ceilingTypedQuiet) {
+	if run := d.sup.get(taskID); run != nil && run.typedWithin(reportTypedQuiet) {
 		log.Printf("[atrium] %s reported done and was typed in lately, so it keeps running", taskID)
 		return
 	}

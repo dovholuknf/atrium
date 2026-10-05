@@ -1,0 +1,1 @@
+A card in a new-context cycle is no longer told to wrap up and write its handoff. The capture prompt starts a turn, and the nudge blocked its first tool call, the write of the handoff, so the clear never happened.

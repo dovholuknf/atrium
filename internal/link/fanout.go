@@ -808,6 +808,8 @@ func (p *Proxy) hubSettingsBody(r *http.Request, stock Inventory) (map[string]an
 	// rather than the borrowed room's. See inputlagsetting.go.
 	body["input_lag_log"] = inputlag.On()
 	body["input_lag_pinned"] = inputlag.Pinned()
+	// And the context limit per harness, which the hub owns. See contextlimits.go.
+	p.applyContextLimits(body)
 	return body, true
 }
 

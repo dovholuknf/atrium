@@ -76,9 +76,8 @@ type Harness struct {
 	// means this runner has no such flag, and nothing is passed: unlike a model, this is
 	// never asked for by a person, so a runner without it is not refused.
 	AutocompactArgs []string `json:"autocompact_args"`
-	// ContextLimitK is the context limit, in thousands of tokens, for every card this runner starts.
-	// It sits between the board default (context_threshold_k) and a card's own limit. Zero means
-	// none: the board default applies. Range as CheckContextLimitK.
+	// ContextLimitK was this runner's context limit, in thousands of tokens. No longer read: the hub's
+	// context_limits, keyed by harness, took its place. Kept so an old row still loads.
 	ContextLimitK int `json:"context_limit_k"`
 	// ModelEnv and EffortEnv name an environment variable that carries the
 	// value, for a runner that takes it that way rather than as a flag. Empty

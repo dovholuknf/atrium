@@ -9632,7 +9632,7 @@ async function ctxLimitLayersSection(browser, base) {
     context_size: { tokens: 160000, warn: 160000 >= k * 1000, threshold_k: k, source }
   }, extra || {});
   try {
-    wornTasks = [row("ll-board", "board", 150), row("ll-runner", "runner", 300), row("ll-card", "card", 120)];
+    wornTasks = [row("ll-default", "default", 200), row("ll-hub", "hub", 300), row("ll-card", "card", 120)];
     tasksMode = "worn";
     await wp.goto(base, { waitUntil: "domcontentloaded" });
     await wp.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
@@ -9646,74 +9646,146 @@ async function ctxLimitLayersSection(browser, base) {
       }
       return out;
     });
-    for (const [id, want] of [["ll-board", "limit 150k from board"], ["ll-runner", "limit 300k from runner"],
+    for (const [id, want] of [["ll-default", "limit 200k from default"], ["ll-hub", "limit 300k from hub"],
         ["ll-card", "limit 120k from card"]]) {
       if (!got[id] || !got[id].includes(want)) fail(id + " tooltip does not say '" + want + "': " + got[id]);
     }
-    // LIMIT_SHOTS=<dir> LIMIT_TAG=after writes the rows, the three editors and the row tooltip, for checking by eye.
-    if (process.env.LIMIT_SHOTS) {
-      const dir = process.env.LIMIT_SHOTS, tag = process.env.LIMIT_TAG || "after", path = require("path");
-      await wp.evaluate(() => { applySkin("graphite"); });
-      await wp.screenshot({ path: path.join(dir, `${tag}-rows.png`), clip: { x: 0, y: 0, width: 700, height: 420 } });
-      const tipRow = await wp.$('#term-list .card.tab[data-id="ll-runner"] .peek-bar.ctxline');
-      if (tipRow) {
-        const bb = await tipRow.boundingBox();
-        await wp.mouse.move(bb.x + 5, bb.y - 20);
-        await wp.mouse.move(bb.x + 20, bb.y + bb.height / 2, { steps: 8 });
-        await wp.waitForTimeout(1500);
-      }
-      await wp.screenshot({ path: path.join(dir, `${tag}-row-tooltip.png`), clip: { x: 0, y: 0, width: 900, height: 520 } });
-      await wp.mouse.move(1300, 800);
-      await wp.evaluate(() => { document.getElementById("settings").showModal(); showSettingsPane("board"); });
-      await wp.evaluate(() => { const f = document.getElementById("s-ctxk-field"); if (f) f.scrollIntoView({ block: "center" }); });
-      await wp.waitForTimeout(500);
-      await wp.screenshot({ path: path.join(dir, `${tag}-editor-board-default.png`) });
-      await wp.evaluate(() => document.getElementById("settings").close());
-      await wp.evaluate(() => goRunners("runners"));
-      await wp.waitForSelector('#harness-list .chip.toggle[data-id="hon"]', { timeout: slow(15000) });
-      await wp.evaluate(() => editHarness("hon", ""));
-      await wp.waitForSelector("#harness[open] #h-ctxlimit", { timeout: slow(15000) });
-      await wp.evaluate(() => { document.getElementById("h-ctxlimit").value = 300; document.getElementById("h-ctxlimit").scrollIntoView({ block: "center" }); });
-      await wp.waitForTimeout(500);
-      await wp.screenshot({ path: path.join(dir, `${tag}-editor-runner.png`) });
-      await wp.evaluate(() => document.getElementById("harness").close());
-      await wp.evaluate(() => { document.querySelector('.tab[data-view="terms"]').click(); });
-      await wp.waitForTimeout(500);
-      const rowEl = await wp.$('#term-list .card.tab[data-id="ll-runner"]');
-      if (rowEl) {
-        await rowEl.click({ button: "right" });
-        await wp.waitForTimeout(700);
-        const items = await wp.evaluate(() => cardMenuEl.textContent);
-        if (!/context limit/.test(items)) fail("the card menu has no context limit entry: " + items.slice(0, 200));
-        await wp.screenshot({ path: path.join(dir, `${tag}-editor-card.png`), clip: { x: 0, y: 0, width: 900, height: 700 } });
-        await wp.keyboard.press("Escape");
-      }
-      await wp.evaluate(() => goRunners("runners"));
-      await wp.waitForSelector('#harness-list .chip.toggle[data-id="hon"]', { timeout: slow(15000) });
-    }
-    // The runner field on the runners page saves with the rest of the row, and an empty one saves as none.
+    // The runner layer is gone: the runners page has no limit field, and a save sends none.
     await wp.evaluate(() => goRunners("runners"));
     await wp.waitForSelector('#harness-list .chip.toggle[data-id="hon"]', { timeout: slow(15000) });
     await wp.evaluate(() => editHarness("hon", ""));
-    await wp.waitForSelector("#harness[open] #h-ctxlimit", { timeout: slow(15000) });
-    const saveWith = async (v) => {
-      await wp.fill("#h-ctxlimit", v);
-      const put = wp.waitForResponse(r => r.url().split("?")[0].endsWith("/v1/harnesses/hon") &&
-        r.request().method() === "PUT", { timeout: slow(15000) });
-      await wp.evaluate(() => saveHarness());
-      return JSON.parse((await put).request().postData() || "{}");
-    };
-    let sent = await saveWith("250");
-    if (sent.context_limit_k !== 250) fail("the runner field saved " + JSON.stringify(sent.context_limit_k) + ", want 250.");
-    await wp.evaluate(() => editHarness("hon", ""));
-    await wp.waitForSelector("#harness[open] #h-ctxlimit", { timeout: slow(15000) });
-    sent = await saveWith("");
-    if (sent.context_limit_k !== 0) fail("an empty runner field saved " + JSON.stringify(sent.context_limit_k) + ", want 0.");
+    await wp.waitForSelector("#harness[open]", { timeout: slow(15000) });
+    if (await wp.$("#h-ctxlimit")) fail("the runner editor still has a context limit field");
+    const put = wp.waitForResponse(r => r.url().split("?")[0].endsWith("/v1/harnesses/hon") &&
+      r.request().method() === "PUT", { timeout: slow(15000) });
+    await wp.evaluate(() => saveHarness());
+    const sent = JSON.parse((await put).request().postData() || "{}");
+    if ("context_limit_k" in sent) fail("a runner save still sends context_limit_k: " + sent.context_limit_k);
     if (errors.length) fail("page errors: " + errors.join("; "));
   } finally {
     tasksMode = was;
     await ctx.close();
   }
+}
+
+// THE CONTEXT CYCLE ON THE BOARD (docs/context-cycle-design.md): the details dialog's switch and limit write the
+// card's overrides, the settings save one per-harness list through the hub, the stored handoff is a row in the
+// card's history with its text behind a disclosure, and the chip names the step.
+async function contextCycleSection(browser, base) {
+  const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+  const wp = await ctx.newPage();
+  const errors = [];
+  wp.on("pageerror", e => errors.push(String(e)));
+  await wp.addInitScript(() => {
+    let all = {};
+    try { all = JSON.parse(localStorage.getItem("atrium.skipconfirm") || "{}"); } catch (e) {}
+    all["width-floor"] = true;
+    localStorage.setItem("atrium.skipconfirm", JSON.stringify(all));
+  });
+  const handoff = "## done\nthe daemon half.\n## left\nthe board half. <b>not markup</b>";
+  const card = Object.assign({}, T1, {
+    id: "ll-cycle", display_title: "cycling card", supervised: true, pinned: true, worktree: "/tmp/cll/cycle",
+    context_size: { tokens: 210000, warn: true, threshold_k: 200, source: "hub", cycle: true },
+    new_context: { step: "limit", n: 1, of: 3, label: "waiting for atrium ready (asked 1 times)", auto: true },
+    overrides: {}
+  });
+  const patches = [], posts = [];
+  await ctx.route("**/v1/tasks/ll-cycle", async route => {
+    const r = route.request();
+    if (r.method() !== "PATCH") return route.fallback();
+    const body = JSON.parse(r.postData() || "{}");
+    patches.push(body);
+    card.overrides = Object.assign({}, card.overrides, body.overrides || {});
+    await route.fulfill({ json: card });
+  });
+  await ctx.route("**/v1/tasks/ll-cycle/events*", route => route.fulfill({ json: { events: [
+    { kind: "notified", at: "2026-10-05T12:00:00Z", payload: { by: "context-cycle", started: true,
+      tokens: 210000, limit: 200000, path: "/tmp/atrium/handoffs/ll-cycle.md" } },
+    { kind: "notified", at: "2026-10-05T12:01:00Z", payload: { by: "context-cycle", handoff,
+      path: "/tmp/atrium/handoffs/ll-cycle.md", bytes: handoff.length } }
+  ] } }));
+  await ctx.route("**/v1/settings", async route => {
+    const r = route.request();
+    if (r.method() === "POST") {
+      const body = JSON.parse(r.postData() || "{}");
+      posts.push(body);
+      const limits = body.context_limits && Object.keys(body.context_limits).length ? body.context_limits : { claude: 200 };
+      return route.fulfill({ json: { context_limits: limits } });
+    }
+    return route.fulfill({ json: { context_limits: { claude: 200 }, context_limits_default: { claude: 200 },
+      context_limit_k_min: 10, context_limit_k_max: 2000, context_handoff_dir: "" } });
+  });
+  const was = tasksMode;
+  try {
+    wornTasks = [card];
+    tasksMode = "worn";
+    await wp.goto(base, { waitUntil: "domcontentloaded" });
+    await wp.waitForSelector('#stack-list .stackrow[data-id="ll-cycle"]', { state: "attached", timeout: slow(15000) });
+
+    // The chip names the step in words.
+    const chip = await wp.evaluate(() => newContextChip(lastTasks.find(t => t.id === "ll-cycle")));
+    if (!/context 1\/3: waiting for ack/.test(chip)) fail("the cycle chip does not say 'context 1/3: waiting for ack': " + chip);
+    const words = await wp.evaluate(() => ["clear", "wake"].map(step => newContextChip({ id: "x",
+      new_context: { step, n: step === "clear" ? 2 : 3, of: 3, label: "" } })));
+    if (!/2\/3: clearing/.test(words[0]) || !/3\/3: waking/.test(words[1])) fail("the clear and wake chips read " + words.join(" | "));
+
+    // The details: the switch on, no own limit, and a line naming the limit in force and where from.
+    await wp.evaluate(() => openTask("ll-cycle"));
+    await wp.waitForSelector("#detail[open] #d-ctx-cycle", { timeout: slow(15000) });
+    const shown = await wp.evaluate(() => ({ on: document.getElementById("d-ctx-cycle").checked,
+      limit: document.getElementById("d-ctx-limit").value, now: document.getElementById("d-ctx-now").textContent }));
+    if (!shown.on || shown.limit !== "" || !/200k from hub/.test(shown.now)) fail("the details' cycle section shows " + JSON.stringify(shown));
+
+    // An own limit and the switch off are written as the card's overrides.
+    await wp.fill("#d-ctx-limit", "300");
+    await wp.dispatchEvent("#d-ctx-limit", "change");
+    await new Promise(r => setTimeout(r, 300));
+    await wp.click("#d-ctx-cycle");
+    await new Promise(r => setTimeout(r, 300));
+    const o = patches.map(p => p.overrides || {});
+    if (!o.some(x => x.context_limit_k === "300" && x.context_cycle === "")) fail("the limit box did not save as an override: " + JSON.stringify(patches));
+    if (!o.some(x => x.context_cycle === "off" && x.context_limit_k === "300")) fail("the switch did not save off: " + JSON.stringify(patches));
+
+    // The history: the start as a line, the handoff as a row with its text behind a disclosure, escaped.
+    await wp.waitForSelector("#d-events details.handoff", { timeout: slow(5000) })
+      .catch(() => fail("the stored handoff is not a row in the card's history."));
+    const hist = await wp.evaluate(() => {
+      const d = document.querySelector("#d-events details.handoff");
+      const row = d && d.closest(".evr");
+      const out = { verdict: row && row.querySelector(".c-verdict").textContent, open: d && d.open,
+        summary: d && d.querySelector("summary").textContent, markup: !!(d && d.querySelector("pre b")) };
+      if (d) d.open = true;
+      out.text = d ? d.querySelector("pre").textContent : "";
+      out.started = document.getElementById("d-events").textContent.includes("past its limit, 210k of 200k");
+      return out;
+    });
+    if (hist.verdict !== "handoff" || hist.open || !/bytes from \/tmp\/atrium\/handoffs\/ll-cycle\.md/.test(hist.summary)) {
+      fail("the handoff row reads " + JSON.stringify(hist));
+    }
+    if (hist.text !== handoff || hist.markup) fail("the handoff text is not shown whole and escaped: " + JSON.stringify(hist.text));
+    if (!hist.started) fail("the cycle's start is not a line in the history.");
+    await wp.evaluate(() => document.getElementById("detail").close());
+
+    // The settings: one harness=k list, saved through the hub, and a bad entry refused before it is sent.
+    const before = posts.length;
+    await wp.evaluate(async () => {
+      await loadHousekeeping();
+      const box = document.getElementById("s-ctxlimits");
+      box.value = "claude=220, codex=300";
+      box.dispatchEvent(new Event("change"));
+    });
+    await new Promise(r => setTimeout(r, 300));
+    const sent = posts.slice(before).find(p => p.context_limits);
+    if (!sent || sent.context_limits.claude !== 220 || sent.context_limits.codex !== 300) fail("the per-harness list saved " + JSON.stringify(posts));
+    const n = posts.length;
+    await wp.evaluate(() => saveContextLimits("claude 200"));
+    if (posts.length !== n) fail("a list that is not harness=k was sent: " + JSON.stringify(posts.slice(n)));
+    if (errors.length) fail("page errors: " + errors.join("; "));
+  } finally {
+    tasksMode = was;
+    await ctx.close();
+  }
+  if (!bad) console.log("contextCycle ok");
 }
 
 // The thin context line along the bottom edge of a terminals row (ctxLine in js/board.js), drawn with the
@@ -10191,13 +10263,12 @@ async function contextSizeSection(browser, base) {
     if (r.method() === "POST") {
       const body = JSON.parse(r.postData() || "{}");
       posts.push(body);
-      await route.fulfill({ json: { context_threshold_k: body.context_threshold_k,
-        context_threshold_k_now: Number(body.context_threshold_k) || 150, context_threshold_k_default: 150,
-        context_threshold_k_min: 10, context_threshold_k_max: 2000 } });
+      const limits = body.context_limits && Object.keys(body.context_limits).length ? body.context_limits : { claude: 200 };
+      await route.fulfill({ json: { context_limits: limits } });
       return;
     }
-    await route.fulfill({ json: { context_threshold_k: "", context_threshold_k_now: 150,
-      context_threshold_k_default: 150, context_threshold_k_min: 10, context_threshold_k_max: 2000 } });
+    await route.fulfill({ json: { context_limits: { claude: 200 }, context_limits_default: { claude: 200 },
+      context_limit_k_min: 10, context_limit_k_max: 2000 } });
   });
   const was = tasksMode;
   tasksMode = "ctxsize";
@@ -10324,19 +10395,21 @@ async function contextSizeSection(browser, base) {
     const shut = await sp.evaluate(() => document.getElementById("t-drawer").classList.contains("open"));
     if (shut) fail("clicking the strip did not close the drawer.");
 
-    // The gear: 150k by default, and a typed value is saved to the room.
+    // The gear: claude=200 by default, and a typed list is saved through the hub.
     const gear = await sp.evaluate(async () => {
       await loadHousekeeping();
-      const box = document.getElementById("s-ctxk");
+      const box = document.getElementById("s-ctxlimits");
       const before = { placeholder: box.placeholder, value: box.value };
-      box.value = "200";
+      box.value = "claude=250, codex=300";
       box.dispatchEvent(new Event("change"));
       return before;
     });
-    if (gear.placeholder !== "150" || gear.value !== "") fail("the context threshold does not default to 150k: " + JSON.stringify(gear));
-    await sp.waitForFunction(() => !document.getElementById("s-ctxk-reset").hidden, null, { timeout: slow(5000) })
-      .catch(() => fail("a saved threshold did not offer a reset to the default."));
-    if (!posts.some(p => p.context_threshold_k === "200")) fail("the context threshold was not saved: " + JSON.stringify(posts));
+    if (gear.placeholder !== "claude=200" || gear.value !== "") fail("the context limit does not default to claude=200: " + JSON.stringify(gear));
+    await sp.waitForFunction(() => !document.getElementById("s-ctxlimits-reset").hidden, null, { timeout: slow(5000) })
+      .catch(() => fail("a saved limit list did not offer a reset to the default."));
+    if (!posts.some(p => p.context_limits && p.context_limits.claude === 250 && p.context_limits.codex === 300)) {
+      fail("the context limits were not saved: " + JSON.stringify(posts));
+    }
   } finally {
     await ctx.close();
     tasksMode = was;
@@ -23791,7 +23864,7 @@ async function main() {
       pasteBig: pasteBigSection, pasteBusy: pasteBusySection, typing: typingSection, alias: aliasSection, askAgain: askAgainSection, copySelect: copySelectSection, busyGuard: busyGuardSection, keepalive: keepaliveSection,
       stuck: stuckSection, blockerMark: blockerMarkSection, carryLink: carryLinkSection,
       skinScope: skinScopeSection, skinHeal: skinHealSection, toastLives: toastLivesSection,
-      history: historySection, contextSize: contextSizeSection, ctxLine: ctxLineSection, ctxLimitLayers: ctxLimitLayersSection, landThePlane: landThePlaneSection, peekEverywhere: peekEverywhereSection, cardRoute: cardRouteSection,
+      history: historySection, contextSize: contextSizeSection, ctxLine: ctxLineSection, ctxLimitLayers: ctxLimitLayersSection, contextCycle: contextCycleSection, landThePlane: landThePlaneSection, peekEverywhere: peekEverywhereSection, cardRoute: cardRouteSection,
       quietDoer: quietDoerSection, autoPerm: autoPermSection, looksIdle: looksIdleSection, notifyOff: notifyOffSection,
       questionsClick: questionsClickSection, walk: walkSection, walkContext: walkContextSection, linkReuse: linkReuseSection,
       usageCacheReads: usageCacheReadsSection, roomsDash: roomsDashSection, phoneView: phoneViewSection, heldLine: heldLineSection, u016: u016Section, phoneHeader: phoneHeaderSection, phoneFocus: phoneFocusSection, phoneTermBar: phoneTermBarSection, phoneShare: phoneShareSection, phonePan: phonePanSection, phoneFollow: phoneFollowSection, phoneTap: phoneTapSection, phoneKeyboard: phoneKeyboardSection, phoneCompose: phoneComposeSection, mCompose: mComposeSection, mPerms: mPermsSection, mReview: mReviewSection, usagePolish: usagePolishSection, usageLimits: usageLimitsSection, usageGroups: usageGroupsSection,
@@ -25816,6 +25889,7 @@ async function main() {
     await unit("contextSize", () => contextSizeSection(browser, base));
     await unit("ctxLine", () => ctxLineSection(browser, base));
     await unit("ctxLimitLayers", () => ctxLimitLayersSection(browser, base));
+    await unit("contextCycle", () => contextCycleSection(browser, base));
     await unit("landThePlane", () => landThePlaneSection(browser, base));
     await unit("peekEverywhere", () => peekEverywhereSection(browser, base));
     await unit("phoneListFit", () => phoneListFitSection(browser, base));

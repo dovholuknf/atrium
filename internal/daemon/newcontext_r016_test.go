@@ -16,13 +16,17 @@ import (
 // chip clears only on proof. See newcontext.go.
 
 // failedCycle runs a cycle on a card that started in conversation "conv-A" and
-// waits for it to fail (the capture prompt starts no turn).
+// waits for it to fail (no new session starts after /clear).
 func failedCycle(t *testing.T, d *Daemon, id string) {
 	t.Helper()
 	d.wakeSawSession(id, "conv-A")
-	if err := d.StartNewContext(id); err != nil {
+	task, err := d.st.Get(id)
+	if err != nil {
 		t.Fatal(err)
 	}
+	run := d.sup.get(id)
+	f, _ := run.pty.(*fakePTY)
+	ncToClear(t, d, task, f)
 	until(t, "the chip to fail", func() bool { return failedWith(d, id) != "" })
 }
 
@@ -72,15 +76,21 @@ func TestFailedChipIsClearedByRerunAndByDismissal(t *testing.T) {
 	id := task.ID
 	failedCycle(t, d, id)
 
-	before := strings.Count(f.written(), "HANDOFF.")
 	if err := d.StartNewContext(id); err != nil {
 		t.Fatalf("could not rerun over a failed chip: %v", err)
 	}
 	if failedWith(d, id) != "" {
 		t.Fatal("the rerun did not replace the failed chip")
 	}
-	until(t, "the second capture prompt", func() bool { return strings.Count(f.written(), "HANDOFF.") > before })
-	until(t, "the second failure", func() bool { return failedWith(d, id) != "" })
+	// It failed after /clear, so the rerun is the wake alone.
+	until(t, "the wake", func() bool { return strings.Contains(f.written(), ncWakeMark) })
+	until(t, "the chip to go", func() bool { return d.newContextFor(id) == nil })
+
+	before := strings.Count(f.written(), limitPrompt)
+	if err := d.StartNewContext(id); err != nil {
+		t.Fatal(err)
+	}
+	until(t, "a fresh limit prompt", func() bool { return strings.Count(f.written(), limitPrompt) > before })
 
 	req := httptest.NewRequest(http.MethodDelete, "/v1/tasks/"+id+"/new-context", nil)
 	req.SetPathValue("id", id)
@@ -120,7 +130,7 @@ func TestWakeWaitsOutATurnInProgress(t *testing.T) {
 	if err := d.StartNewContext(id); err != nil {
 		t.Fatal(err)
 	}
-	until(t, "the capture prompt", func() bool { return strings.Contains(f.written(), "HANDOFF.") })
+	until(t, "the limit prompt", func() bool { return strings.Contains(f.written(), limitPrompt) })
 	finishCycle(t, d, id, dir, f)
 	d.act.set(id, ActivityThinking, "")
 	d.wakeSawSession(id, "conv-B")
@@ -147,7 +157,7 @@ func TestWakeFailsWhenNoGapOpensInCaptureEnd(t *testing.T) {
 	if err := d.StartNewContext(id); err != nil {
 		t.Fatal(err)
 	}
-	until(t, "the capture prompt", func() bool { return strings.Contains(f.written(), "HANDOFF.") })
+	until(t, "the limit prompt", func() bool { return strings.Contains(f.written(), limitPrompt) })
 	finishCycle(t, d, id, dir, f)
 	ncTiming.captureEnd = 500 * time.Millisecond
 	d.act.set(id, ActivityThinking, "")
@@ -162,13 +172,17 @@ func TestWakeFailsWhenNoGapOpensInCaptureEnd(t *testing.T) {
 	}
 }
 
-// os_WriteHandoff writes the card's own handoff file, as the capture turn does.
+// os_WriteHandoff writes the card's handoff and runs `atrium ready`, as the agent does.
 func os_WriteHandoff(d *Daemon, id, dir string) error {
 	task, err := d.st.Get(id)
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(filepath.Join(dir, HandoffName(task)), handoffBody, 0o644)
+	if err := os.WriteFile(filepath.Join(dir, id+".md"), handoffBody, 0o644); err != nil {
+		return err
+	}
+	_, _, err = d.ready(task)
+	return err
 }
 
 // A prompt event a moment ago means the runner is taking input: wait it out.
@@ -210,7 +224,7 @@ func TestInjectorDuringTurnSettleTypesClearFirst(t *testing.T) {
 	if err := d.StartNewContext(id); err != nil {
 		t.Fatal(err)
 	}
-	until(t, "the capture prompt", func() bool { return strings.Contains(f.written(), "HANDOFF.") })
+	until(t, "the limit prompt", func() bool { return strings.Contains(f.written(), limitPrompt) })
 	d.act.set(id, ActivityThinking, "")
 	d.act.promptSeen(id)
 	if err := os_WriteHandoff(d, id, dir); err != nil {
@@ -250,7 +264,7 @@ func TestQueuedMessageAndCaptureEndTogetherTypeClearAlone(t *testing.T) {
 	if err := d.StartNewContext(id); err != nil {
 		t.Fatal(err)
 	}
-	until(t, "the capture prompt", func() bool { return strings.Contains(f.written(), "HANDOFF.") })
+	until(t, "the limit prompt", func() bool { return strings.Contains(f.written(), limitPrompt) })
 	d.act.set(id, ActivityThinking, "")
 	if err := os_WriteHandoff(d, id, dir); err != nil {
 		t.Fatal(err)
