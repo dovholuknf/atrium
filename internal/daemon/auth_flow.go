@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"context"
+	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
@@ -11,6 +12,7 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -208,6 +210,17 @@ func backTo(v string) string {
 	return v
 }
 
+// authOutCookie marks a browser that signed out of a password login.
+const authOutCookie = "atrium_signed_out"
+
+// outMark is what the sign-out cookie holds: a MAC of the Authorization header
+// the browser signed out with.
+func outMark(key []byte, header string) string {
+	mac := hmac.New(sha256.New, key)
+	mac.Write([]byte("signed-out|" + header))
+	return base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
+}
+
 // authGuard wraps a handler so it asks who you are.
 //
 // ONLY EVER WRAPS THE PUBLISHED HANDLER. See the header in `auth.go`: the
@@ -233,9 +246,28 @@ func (d *Daemon) authGuard(next http.Handler) http.Handler {
 			return
 		}
 		if c, err := r.Cookie(authCookie); err == nil {
-			if _, ok := readSession(key, c.Value); ok {
+			// RE-CHECKED, not just verified. See sessionStillGood.
+			if s, ok := readSession(key, c.Value); ok && d.sessionStillGood(cfg, s) {
 				next.ServeHTTP(w, r)
 				return
+			}
+		}
+		// A BROWSER THAT SIGNED OUT STILL HOLDS ITS BASIC CREDENTIALS AND SENDS
+		// THEM STRAIGHT BACK. Logout leaves a mark tied to the header it was sent
+		// with. The first request that presents that same header is answered with
+		// a fresh challenge instead of being let in, and the mark is cleared, so
+		// typing the password again works.
+		if cfg.Basic {
+			if out, err := r.Cookie(authOutCookie); err == nil && r.Header.Get("Authorization") != "" {
+				if hmac.Equal([]byte(out.Value), []byte(outMark(key, r.Header.Get("Authorization")))) {
+					http.SetCookie(w, &http.Cookie{
+						Name: authOutCookie, Value: "", Path: "/", MaxAge: -1,
+						HttpOnly: true, Secure: true, SameSite: http.SameSiteLaxMode,
+					})
+					w.Header().Set("WWW-Authenticate", `Basic realm="atrium", charset="UTF-8"`)
+					http.Error(w, "signed out", http.StatusUnauthorized)
+					return
+				}
 			}
 		}
 		// A NAME AND A PASSWORD, CHECKED BEFORE THE PROVIDER.
@@ -249,13 +281,36 @@ func (d *Daemon) authGuard(next http.Handler) http.Handler {
 		// users out, and somebody with a valid provider session is not made to
 		// know a password as well.
 		if cfg.Basic {
-			if user, pass, ok := r.BasicAuth(); ok && cfg.checks(user, pass) {
-				// A session cookie, so the browser is not asked again on every
-				// image and poll, and so signing out means the same thing
-				// whichever way somebody got in.
-				setSession(w, r, key, "basic:"+cfg.User)
-				next.ServeHTTP(w, r)
-				return
+			if user, pass, ok := r.BasicAuth(); ok {
+				src := authSource(r)
+				// BEFORE ANY SCRYPT. A source that has been guessing wrong is made
+				// to wait, and a refused request costs nothing.
+				if wait := d.authLim.blocked(src); wait > 0 {
+					w.Header().Set("Retry-After", strconv.Itoa(int(wait.Seconds())+1))
+					http.Error(w, "too many wrong passwords. wait and try again",
+						http.StatusTooManyRequests)
+					return
+				}
+				// AND THE CHECKS THEMSELVES ARE BOUNDED, since each holds about
+				// 32 MiB while it runs.
+				if !d.authLim.acquire() {
+					w.Header().Set("Retry-After", "1")
+					http.Error(w, "this board is busy checking passwords. try again",
+						http.StatusServiceUnavailable)
+					return
+				}
+				good := cfg.checks(user, pass)
+				d.authLim.release()
+				if good {
+					d.authLim.succeed(src)
+					// A session cookie, so the browser is not asked again on every
+					// image and poll, and so signing out means the same thing
+					// whichever way somebody got in.
+					d.setSession(w, key, "basic:"+cfg.User, "")
+					next.ServeHTTP(w, r)
+					return
+				}
+				d.authLim.fail(src)
 			}
 			// NOTHING ELSE CONFIGURED MEANS ASK FOR IT. With a provider as
 			// well, the redirect below is the better prompt and this stays out
@@ -293,11 +348,28 @@ func (d *Daemon) serveAuth(w http.ResponseWriter, r *http.Request, cfg AuthConfi
 	case "callback":
 		d.authCallback(w, r, cfg)
 	case "logout":
+		// A POST, so a link, an image or a prefetch cannot sign somebody out.
+		if r.Method != http.MethodPost {
+			w.Header().Set("Allow", http.MethodPost)
+			http.Error(w, "sign out with a POST", http.StatusMethodNotAllowed)
+			return
+		}
 		http.SetCookie(w, &http.Cookie{
 			Name: authCookie, Value: "", Path: "/", MaxAge: -1,
 			HttpOnly: true, Secure: true, SameSite: http.SameSiteLaxMode,
 		})
-		http.Redirect(w, r, "/", http.StatusFound)
+		// With a password login the browser would sign straight back in with
+		// the credentials it cached. Mark that header as signed out.
+		if h := r.Header.Get("Authorization"); cfg.Basic && h != "" {
+			if key, err := d.cookieKey(); err == nil {
+				http.SetCookie(w, &http.Cookie{
+					Name: authOutCookie, Value: outMark(key, h), Path: "/",
+					MaxAge: int(authStateFor.Seconds()) * 12, HttpOnly: true,
+					Secure: true, SameSite: http.SameSiteLaxMode,
+				})
+			}
+		}
+		http.Redirect(w, r, "/", http.StatusSeeOther)
 	default:
 		http.NotFound(w, r)
 	}
@@ -432,11 +504,7 @@ func (d *Daemon) authCallback(w http.ResponseWriter, r *http.Request, cfg AuthCo
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	until := time.Now().Add(authSessionFor)
-	http.SetCookie(w, &http.Cookie{
-		Name: authCookie, Value: signSession(key, subject, until), Path: "/",
-		Expires: until, HttpOnly: true, Secure: true, SameSite: http.SameSiteLaxMode,
-	})
+	d.setSession(w, key, subject, email)
 	if !l.silent {
 		// A renewal is not worth a line. It happens on a timer nobody set and
 		// logging it turns the daemon's log into a heartbeat.

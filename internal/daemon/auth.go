@@ -292,16 +292,33 @@ func (c AuthConfig) allows(subject, email string) bool {
 }
 
 // SaveAuth stores the configuration, refusing one that cannot work.
+//
+// REFUSED WHILE A PUBLIC SHARE RUNS, if it would leave that share with no
+// working login. The check at share start only covers the start: without this,
+// turning the login off afterwards leaves the board open on a public address.
+// The share is not stopped on the operator's behalf. It is named, and stopping
+// it first is theirs to do.
 func (d *Daemon) SaveAuth(c AuthConfig) error {
 	if err := c.ready(); err != nil {
 		return err
 	}
+	if d.publicShareRunning() && !(c.Enabled && c.ready() == nil) {
+		return fmt.Errorf("the board is on a public zrok share right now, and turning its " +
+			"login off would leave it open to anyone with the link. stop the share first, " +
+			"then change the login")
+	}
+	old := d.authConfig()
 	raw, err := json.Marshal(c)
 	if err != nil {
 		return err
 	}
 	if err := d.st.SetSetting(SettingAuth, string(raw)); err != nil {
 		return err
+	}
+	if sessionsOutdatedBy(old, c) {
+		if err := d.bumpSessionGen(); err != nil {
+			return err
+		}
 	}
 	if c.Enabled {
 		log.Printf("[atrium] the published board now asks who you are, via %s", c.Issuer)
@@ -341,51 +358,136 @@ func (d *Daemon) cookieKey() ([]byte, error) {
 // drift apart on the attributes that matter: `HttpOnly` keeps it away from
 // script, `Secure` keeps it off plain http, and `SameSite` is what stops
 // another site spending it.
-func setSession(w http.ResponseWriter, r *http.Request, key []byte, subject string) {
+func (d *Daemon) setSession(w http.ResponseWriter, key []byte, subject, email string) {
 	until := time.Now().Add(authSessionFor)
 	http.SetCookie(w, &http.Cookie{
-		Name: authCookie, Value: signSession(key, subject, until), Path: "/",
+		Name: authCookie, Value: signSession(key, session{
+			Subject: subject, Email: email, Gen: d.sessionGen(),
+		}, until), Path: "/",
 		Expires: until, HttpOnly: true, Secure: true, SameSite: http.SameSiteLaxMode,
 	})
 }
 
-func signSession(key []byte, subject string, until time.Time) string {
+// session is what a cookie says.
+//
+// THE GENERATION IS WHAT MAKES A COOKIE REVOCABLE. The cookie is a stateless
+// MAC, so on its own nothing short of its expiry could end it. It carries the
+// generation current when it was issued, and a password or allowlist change bumps
+// the stored one, so every cookie issued before the change stops matching.
+type session struct {
+	Subject string
+	Email   string
+	Gen     int64
+}
+
+func signSession(key []byte, s session, until time.Time) string {
 	body := base64.RawURLEncoding.EncodeToString(
-		[]byte(fmt.Sprintf("%s|%d", subject, until.Unix())))
+		[]byte(fmt.Sprintf("%d|%d|%s|%s", until.Unix(), s.Gen, s.Subject, s.Email)))
 	mac := hmac.New(sha256.New, key)
 	mac.Write([]byte(body))
 	return body + "." + base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
 }
 
-// readSession checks one, returning the subject and whether it is good.
+// readSession checks one, returning what it says and whether it is good.
 //
 // `hmac.Equal` rather than `==`, because comparing MACs with a string compare
 // leaks where they first differ, which is enough to forge one a byte at a time.
-func readSession(key []byte, v string) (string, bool) {
+func readSession(key []byte, v string) (session, bool) {
 	body, sig, ok := strings.Cut(v, ".")
 	if !ok {
-		return "", false
+		return session{}, false
 	}
 	want := hmac.New(sha256.New, key)
 	want.Write([]byte(body))
 	got, err := base64.RawURLEncoding.DecodeString(sig)
 	if err != nil || !hmac.Equal(got, want.Sum(nil)) {
-		return "", false
+		return session{}, false
 	}
 	raw, err := base64.RawURLEncoding.DecodeString(body)
 	if err != nil {
-		return "", false
+		return session{}, false
 	}
-	subject, until, ok := strings.Cut(string(raw), "|")
-	if !ok {
-		return "", false
+	parts := strings.SplitN(string(raw), "|", 4)
+	if len(parts) != 4 {
+		return session{}, false
 	}
 	var unix int64
-	if _, err := fmt.Sscanf(until, "%d", &unix); err != nil {
-		return "", false
+	var s session
+	if _, err := fmt.Sscanf(parts[0], "%d", &unix); err != nil {
+		return session{}, false
 	}
+	if _, err := fmt.Sscanf(parts[1], "%d", &s.Gen); err != nil {
+		return session{}, false
+	}
+	s.Subject, s.Email = parts[2], parts[3]
 	if time.Now().After(time.Unix(unix, 0)) {
-		return "", false
+		return session{}, false
 	}
-	return subject, true
+	return s, true
+}
+
+// SettingAuthGen is the session generation. See `session`.
+const SettingAuthGen = "auth_session_gen"
+
+// sessionGen reads the current generation. Unset is zero.
+func (d *Daemon) sessionGen() int64 {
+	raw, err := d.st.Setting(SettingAuthGen)
+	if err != nil {
+		return 0
+	}
+	var g int64
+	_, _ = fmt.Sscanf(strings.TrimSpace(raw), "%d", &g)
+	return g
+}
+
+// bumpSessionGen ends every session issued so far.
+func (d *Daemon) bumpSessionGen() error {
+	return d.st.SetSetting(SettingAuthGen, fmt.Sprintf("%d", d.sessionGen()+1))
+}
+
+// sessionStillGood is the re-check the guard makes on every request: the
+// generation has not moved, and the subject is still somebody the current
+// configuration lets in. A valid MAC only proves this board issued it once.
+func (d *Daemon) sessionStillGood(cfg AuthConfig, s session) bool {
+	if s.Gen != d.sessionGen() {
+		return false
+	}
+	if strings.HasPrefix(s.Subject, "basic:") {
+		return cfg.Basic && cfg.HasPassword() && s.Subject == "basic:"+cfg.User
+	}
+	return cfg.allows(s.Subject, s.Email)
+}
+
+// sessionsOutdatedBy reports whether moving from one configuration to another
+// should end the sessions issued under the first: a different password, name,
+// allowlist or provider, or the login being turned off.
+func sessionsOutdatedBy(old, next AuthConfig) bool {
+	if old.Enabled && !next.Enabled {
+		return true
+	}
+	if old.PassHash != next.PassHash || old.PassSalt != next.PassSalt ||
+		old.User != next.User || old.Basic != next.Basic ||
+		old.Issuer != next.Issuer || old.ClientID != next.ClientID ||
+		old.ClientSecret != next.ClientSecret {
+		return true
+	}
+	norm := func(in []string) map[string]bool {
+		m := map[string]bool{}
+		for _, a := range in {
+			if a = strings.ToLower(strings.TrimSpace(a)); a != "" {
+				m[a] = true
+			}
+		}
+		return m
+	}
+	a, b := norm(old.Allow), norm(next.Allow)
+	if len(a) != len(b) {
+		return true
+	}
+	for k := range a {
+		if !b[k] {
+			return true
+		}
+	}
+	return false
 }

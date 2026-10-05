@@ -230,8 +230,8 @@ func TestASignInSpendsItsCodeWithTheVerifier(t *testing.T) {
 	if cookie == "" {
 		t.Fatal("a completed sign-in set no session cookie")
 	}
-	if sub, ok := readSession(key, cookie); !ok || sub != idp.sub {
-		t.Fatalf("the session says %q, ok=%v", sub, ok)
+	if sub, ok := readSession(key, cookie); !ok || sub.Subject != idp.sub {
+		t.Fatalf("the session says %q, ok=%v", sub.Subject, ok)
 	}
 	// And it puts somebody back where they were rather than on the front page.
 	if got := rec.Header().Get("Location"); got != "/?card=7" {

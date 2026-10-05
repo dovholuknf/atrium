@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+
+	"github.com/dovholuknf/atrium/internal/edge"
 )
 
 // Configuring the login that sits in front of the published board.
@@ -32,6 +34,14 @@ func (s *Server) getAuth(w http.ResponseWriter, r *http.Request) {
 func (s *Server) putAuth(w http.ResponseWriter, r *http.Request) {
 	if s.SaveAuth == nil {
 		writeErr(w, http.StatusNotImplemented, overlayErr("this daemon has no login support"))
+		return
+	}
+	// LOOPBACK OPERATOR ONLY. This route is reachable by anybody signed in to a
+	// published board, and with it they could turn the login off or rewrite who
+	// may open it. Same rule as the hub's control routes.
+	if !edge.LocalOperator(r) {
+		writeErr(w, http.StatusForbidden, overlayErr("the login is changed from the machine "+
+			"the board runs on"+edge.ProxyNote(r)))
 		return
 	}
 	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, authLimit))
