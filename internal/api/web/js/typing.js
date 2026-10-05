@@ -88,34 +88,46 @@ function typingHeld(id) {
   return { n: Math.max(1, Number(a.held_count) || 1), from: String(a.held_peer).replace(/^@/, "") };
 }
 
-// The line under the terminal speaks only when a message is held behind the gate. It never copies the line
-// being typed. A held message on a line that looks empty is the case the readout was built for, and only then
-// does it quote what atrium thinks is there, cut short.
-function typingBlockText(s, held) {
-  let why;
-  if (s.count > 0) why = s.count + " char" + (s.count === 1 ? "" : "s") + " on your line";
-  else {
-    const line = typingLineText(s.line).trim();
-    why = line ? "line looks empty, atrium thinks “" + (line.length > 40 ? line.slice(0, 40) + "…" : line) + "”"
-      : (s.reason || "line looks empty");
+// The line atrium thinks is typed, drawn so blanks show, and cut short.
+function typingQuote(line) {
+  const t = typingLineText(line).replace(/ /g, "·");
+  return "“" + (t.length > 40 ? t.slice(0, 40) + "…" : t) + "”";
+}
+
+// What the line under the terminal says, one short sentence, in one place so the details drawer can reuse it. It
+// never copies the text being typed, which is on screen right above it. Nothing held: the count, or "line empty".
+// A message held: who it is from and the count. A message held behind a line that LOOKS empty (only blanks, so
+// the count means nothing to the eye) is the case the readout was built for, and only then is what atrium thinks
+// is there quoted, because only then is it news.
+// Returns { text, blocking }.
+function typingGateText(s, held) {
+  const n = s.count || 0;
+  const chars = n + " char" + (n === 1 ? "" : "s");
+  // An open gate holds nothing back, whatever the card's activity still says for the moment before delivery.
+  if (!held || s.open) return { text: n > 0 ? chars + " on the line" : "line empty", blocking: false };
+  const from = held.n + (held.n === 1 ? " message" : " messages") + " from @" + held.from +
+    (held.n === 1 ? " waits: " : " wait: ");
+  if (n > 0 && String(s.line || "").trim() === "") {
+    return { text: from + chars + " that look empty, atrium thinks " + typingQuote(s.line), blocking: true };
   }
-  return held.n + (held.n === 1 ? " message" : " messages") + " from @" + held.from +
-    (held.n === 1 ? " waits: " : " wait: ") + why;
+  if (n > 0) return { text: from + chars + " on your line", blocking: true };
+  return { text: from + (s.reason || "line looks empty"), blocking: true };
 }
 
 function paintTyping(s, err) {
   const el = document.getElementById("t-typing");
   if (!el) return;
-  el.classList.remove("open", "shut");
-  const held = s && !err && termTask ? typingHeld(termTask.id) : null;
-  if (!typingOn || (!err && !(held && !s.open))) { el.hidden = true; return; }
+  el.classList.remove("open", "shut", "calm");
+  if (!typingOn || (!err && !s)) { el.hidden = true; return; }
   el.hidden = false;
   if (err) {
     el.textContent = "typing gate: " + err;
     return;
   }
-  el.classList.add("shut");
-  el.textContent = typingBlockText(s, held);
+  const held = termTask ? typingHeld(termTask.id) : null;
+  const g = typingGateText(s, held);
+  el.classList.add(!g.blocking ? "calm" : s.open ? "open" : "shut");
+  el.textContent = g.text;
 }
 
 // Another window of this browser switched it. The storage event reaches every other open window at once.
