@@ -86,7 +86,8 @@
 # opt-out for a new machine that runs under its own login. Then `shared-folder` makes C:\Users\Public\atrium,
 # /Users/Shared/atrium or /srv/atrium, or when the login may not (usually /srv) fails with exit 12 and the one command an
 # administrator runs, having changed nothing. Clones go under it (room-git.ps1 init -GitRoot). `-NoSharedFolder` keeps
-# them in ~/git. The room's `git_root` setting is NOT set: nothing sets it yet, so the `git-root` line is a `warn`.
+# them in ~/git. After the join, before any start, `atrium room set git_root` on the remote
+# points the room at it (`git-root`, a `warn` with the command when the room is already running).
 # `-Check` runs the steps up to here read only and ends, so it changes nothing and needs no admin. A rerun skips both.
 #
 # THE ACCOUNT'S RIGHTS. The ssh login IS the account the room runs as, since everything here runs as that login. Right
@@ -877,11 +878,8 @@ if (-not ($Remove -or $Restart -or $SmokeOnly)) {
     $newMachine = Invoke-LocalAiCheck
     $acctName = if ($User) { $User } else { 'localai' }
     $sharedDir = Invoke-SharedFolder $newMachine $acctName
-    if ($sharedDir) {
-        # THE ROOM'S git_root SETTING IS NOT SET HERE: nothing in atrium sets it yet (no verb and no settings field), see
-        # backlog 75. The clone goes under the shared folder by room-git.ps1 -GitRoot, and the line says what is left.
-        Step 'git-root' 'warn' "clones go under $sharedDir, but the room's git_root setting stays at its default (~/git) until atrium has a way to set it. see docs/backlog/fabric/75.md"
-    }
+    # THE ROOM'S git_root SETTING is written after the join, by `room set git_root` on the remote, while no room runs.
+    if ($sharedDir -and $Check) { Step 'git-root' 'ok' "a run without -Check sets the room's git_root to $sharedDir (atrium room set git_root)" }
     if ($Check) { Step 'check' 'ok' 'read only: nothing was changed'; Finish 0 }
 }
 
@@ -2093,6 +2091,23 @@ if ($state.joinedroom -eq $Name -and $joinedId -eq $hubId) {
 }
 # WHERE THE JOIN WROTE room.json, kept for -Restart (see Get-StateDirs).
 Set-ManifestStateDir
+
+# THE ROOM'S git_root, so its clones are looked for under the shared folder. Before any start: `room set` refuses a database
+# a running room holds, and makes the database when the room has never run. A refusal is a warn with the command to run,
+# since the clones still work from the shared folder through room-git.ps1 -GitRoot.
+if ($sharedDir) {
+    $gr = if ($os -eq 'windows') {
+        "& `$Bin room set git_root $(Quote-Ps $sharedDir) 2>&1 | ForEach-Object { `"`$_`" }`nexit `$LASTEXITCODE"
+    } else {
+        "`"`$Bin`" room set git_root $(Quote-Sh $sharedDir) 2>&1`nexit `$?"
+    }
+    $g = Invoke-Remote $gr
+    if ($g.Code -eq 0) { Step 'git-root' 'done' "the room's git_root is $sharedDir" }
+    else {
+        $sshCmd = (@($Ssh) + $SshOption + @($Target)) -join ' '
+        Step 'git-root' 'warn' "could not set the room's git_root to $sharedDir ($(($g.Out | Select-Object -Last 1))). stop the room and run: $sshCmd $(if ($os -eq 'windows') { '.\.atrium\bin\atrium.exe' } else { '~/.local/bin/atrium' }) room set git_root $sharedDir"
+    }
+}
 
 # ── 7. install the runners asked for ────────────────────────────────────────
 

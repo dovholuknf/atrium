@@ -129,8 +129,9 @@ A machine that already is a room is left alone, whatever account it runs under, 
 The `shared-folder` step then makes `C:\Users\Public\atrium`, `/Users/Shared/atrium` or `/srv/atrium` for the repository
 clones, which `room-git.ps1 init -GitRoot` places under it. When the login may not make it (usually `/srv`) the line
 prints the command an administrator runs and the run stops with exit 12. `-NoSharedFolder` keeps clones in `~/git`.
-`provision-room.ps1 -Check` runs these steps read only and changes nothing. The room's `git_root` setting is not set
-yet, see docs/backlog/fabric/75.md.
+`provision-room.ps1 -Check` runs these steps read only and changes nothing. After the join and before the room
+starts, provisioning runs `atrium room set git_root <folder>` on the remote, so the room looks for its clones there. By
+hand, with the room stopped: `atrium room set git_root /srv/atrium`, and `atrium room get git_root` to read it.
 
 ## Set one up
 
