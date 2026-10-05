@@ -4,7 +4,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
-	"os"
 	"strings"
 	"sync"
 	"testing"
@@ -69,7 +68,7 @@ func (f *remoteFix) cardEnv(card string) []string {
 	if err != nil {
 		f.t.Fatal(err)
 	}
-	return append(PushEnv(f.base, tok, 0), "GIT_CONFIG_GLOBAL="+os.DevNull, "GIT_CONFIG_NOSYSTEM=1")
+	return append(PushEnv(f.base, tok, 0), "GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_NOSYSTEM=1")
 }
 
 func (f *remoteFix) git(env []string, dir string, args ...string) (string, error) {
@@ -113,7 +112,7 @@ func TestAProcessWithNoCardTokenIsRefusedByTheForwarderBeforeTheHub(t *testing.T
 	f.branch("fix/x", "x.txt")
 	git(t, f.work, "remote", "add", "hub", f.repoURL(hubRepo))
 	base := f.rt.count()
-	out, err := f.git([]string{"GIT_CONFIG_GLOBAL=" + os.DevNull, "GIT_CONFIG_NOSYSTEM=1"}, f.work, "push", "hub", "fix/x")
+	out, err := f.git([]string{"GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_NOSYSTEM=1"}, f.work, "push", "hub", "fix/x")
 	if err == nil {
 		t.Fatalf("a push with no token worked:\n%s", out)
 	}
@@ -127,7 +126,7 @@ func TestAProcessWithNoCardTokenIsRefusedByTheForwarderBeforeTheHub(t *testing.T
 		t.Fatal("the branch landed")
 	}
 	// A fetch with no token is refused the same way.
-	if out, err := f.git([]string{"GIT_CONFIG_GLOBAL=" + os.DevNull}, f.work, "ls-remote", "hub"); err == nil ||
+	if out, err := f.git([]string{"GIT_CONFIG_GLOBAL=/dev/null"}, f.work, "ls-remote", "hub"); err == nil ||
 		!strings.Contains(out, "atrium token") {
 		t.Fatalf("ls-remote: %v\n%s", err, out)
 	}
@@ -152,7 +151,7 @@ func TestAWrongRevokedOrOtherCardsTokenIsRefused(t *testing.T) {
 		"garbage", "C1.", ".", "C1.zz",
 	}
 	for _, b := range bad {
-		env := append(PushEnv(f.base, b, 0), "GIT_CONFIG_GLOBAL="+os.DevNull)
+		env := append(PushEnv(f.base, b, 0), "GIT_CONFIG_GLOBAL=/dev/null")
 		if out, err := f.git(env, f.work, "ls-remote", "hub"); err == nil || !strings.Contains(out, "atrium token") {
 			t.Errorf("token %q was accepted: %v\n%s", b, err, out)
 		}

@@ -262,7 +262,7 @@ func (s *Store) env() []string {
 	// credential helper in it could hand a credential to the forge. GIT_TERMINAL_PROMPT=0 comes
 	// from the Runner's CleanEnv, and every GIT_* variable of the hub's own is stripped there.
 	return []string{
-		"GIT_CONFIG_NOSYSTEM=1", "GIT_CONFIG_GLOBAL=" + os.DevNull, "GIT_ASKPASS=", "GIT_ALLOW_PROTOCOL=" + proto,
+		"GIT_CONFIG_NOSYSTEM=1", "GIT_CONFIG_GLOBAL=/dev/null", "GIT_ASKPASS=", "GIT_ALLOW_PROTOCOL=" + proto,
 	}
 }
 

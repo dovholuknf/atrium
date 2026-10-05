@@ -427,7 +427,7 @@ func TestTheSeedIgnoresTheOperatorsGlobalGitConfig(t *testing.T) {
 		t.Fatalf("a global insteadOf was obeyed: %+v, %v", res, err)
 	}
 	env := strings.Join(x.s.env(), "\n")
-	for _, must := range []string{"GIT_CONFIG_NOSYSTEM=1", "GIT_CONFIG_GLOBAL=" + os.DevNull, "GIT_ALLOW_PROTOCOL="} {
+	for _, must := range []string{"GIT_CONFIG_NOSYSTEM=1", "GIT_CONFIG_GLOBAL=/dev/null", "GIT_ALLOW_PROTOCOL="} {
 		if !strings.Contains(env, must) {
 			t.Errorf("env lacks %s", must)
 		}
