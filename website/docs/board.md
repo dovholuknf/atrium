@@ -20,9 +20,24 @@ The header holds the views. The number on a tab counts what is waiting there.
 | **history** | Every card ever created, searchable, exportable as JSON or CSV. |
 | **rooms** | Rooms, runners, fixtures, sources, providers and actions: how atrium is set up. |
 | **perms** | Pending requests, standing rules, and the decision log. |
+| **pulls** | The pull requests atrium is reviewing, live, with retry, abort, the findings and a paste box. |
 
 The **stack** and the **board** are where atrium started. When your sessions run in your own terminals, they are
 where you live. When atrium holds the terminals, **terminals** is. See [Two ways to run it](./modes.md).
+
+## Growlers
+
+A waiting permission, question, halt or deploy hold stays on the board as a pinned growler until it is handled,
+dismissed or ends. Extra ones fold into a strip you can expand. Approve, block, reply, open, dismiss (with undo) and
+**remind me** work from it, even over an open dialog. Remind me offers 15 minutes, 1 hour or tomorrow at 9am, and the
+growler comes back then. The bell offers the same control and shows "reminding in X" once it is set.
+
+## The deploy-ready line
+
+On a hub the header shows whether the hub's tip is ready to deploy. A click lists what is holding it up and offers a
+Deploy button, enabled only when the board is on the hub's own machine. When the report cannot be read the pill says
+"no report" and Deploy stays off. The dialog also shows the deploy queue, the landed commits not yet live. See
+[the deploy queue](./rooms.md#the-deploy-queue).
 
 ## Columns
 

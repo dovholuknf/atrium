@@ -34,6 +34,12 @@ passive: it does not start fixtures or open shares, so it is a place to look, ne
 | `atrium hook install` / `atrium hook status` | Write atrium's hooks into your Claude Code settings, or say which are there. |
 | `atrium hook`, `atrium session`, `atrium turn` | The hook entry points. Wired for you. |
 | `atrium replay [file]` | Render a captured terminal stream the way an attach would. |
+| `atrium task <who>` | One card, named by handle, alias, `name@room` or id. |
+| `atrium exit <who>` | Ask a card's runner to leave, as `atrium_exit` does. `--force` for a card that is not yours. |
+| `atrium new-context <who>` | Cycle a card onto a fresh context, as the board's new-context does. |
+| `atrium archive-workers` | Archive done worker cards that piled up. Never a director. `--dry-run` lists them. |
+| `atrium merged` | Tell the room a merge happened, so the covered workers are marked finished. Run by git's post-merge hook. |
+| `atrium control` | The stdio MCP server with `atrium_status` and `restart_atrium`. |
 
 `atrium launch` takes `--cwd`, `--title`, `--tags`, `--prompt`, `--model`, and where the work came from: `--source`,
 `--external` and `--item-url`.
@@ -65,6 +71,9 @@ passive: it does not start fixtures or open shares, so it is a place to look, ne
 | `atrium room` | Start a room that has already joined. |
 | `atrium db compact` | Write a compacted copy of a database, offline. |
 | `atrium ledger` | The work ledger, read straight from a room's database. |
+| `atrium dispatch to <room>` / `list` / `cancel` | Queue a launch for a room, see what is queued, or withdraw an item no room has taken. |
+| `atrium usage backfill` | Write usage rows for turns the room did not record, from transcripts. |
+| `atrium requirements` | Parse an `atrium.requirements.yaml` and print it normalized, or refuse it with the key and line. |
 
 `atrium run` flags include `--addr` for the board (loopback, default `127.0.0.1:7778`), `--link` for the room link
 (default `127.0.0.1:7779`), and `--link-advertise` for the address written into join strings. The hub's own
