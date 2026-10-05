@@ -1916,3 +1916,38 @@ func TestTheAnswerIsWrittenAfterTheRepositoryLockIsReleased(t *testing.T) {
 		t.Fatalf("the answer: %q", rec.Body.String())
 	}
 }
+
+func TestGitsProbeBeforeALargePushIsAnsweredAndDoesNothing(t *testing.T) {
+	x := newRecv(t)
+	card := roomCard("sg4", "C1")
+	x.create.Store(true)
+
+	code, body := x.post(card, "github/new/thing", "git-receive-pack", "application/x-git-receive-pack-request", []byte("0000"))
+	if code != http.StatusOK || body != "" {
+		t.Fatalf("the probe: %d %q", code, body)
+	}
+	if len(x.rows()) != 0 || x.h.Store().Exists("github/new/thing") {
+		t.Fatalf("the probe wrote a log row or made a repository: %+v", x.rows())
+	}
+	// A real push with no updates is still refused.
+	code, _ = x.post(card, "github/new/thing", "git-receive-pack", "application/x-git-receive-pack-request", []byte("00000000"))
+	if code != http.StatusBadRequest {
+		t.Fatalf("an empty push: %d", code)
+	}
+	// And the probe is held to the same caller check.
+	code, _ = x.post(who{}, "github/new/thing", "git-receive-pack", "application/x-git-receive-pack-request", []byte("0000"))
+	if code == http.StatusOK {
+		t.Fatal("a probe with no identity was answered")
+	}
+}
+
+func TestAPushThatMakesGitProbeLandsThroughTheReceiver(t *testing.T) {
+	x := newRecv(t)
+	x.seedMain(hubRepo)
+	sha := x.branch("fix/x", "x.txt")
+	out, err := x.run(x.work, roomCard("sg4", "C1"), "-c", "http.postBuffer=1", "push", x.url(hubRepo), "fix/x:refs/heads/fix/x")
+	x.must(out, err)
+	if got := x.refOn(hubRepo, "refs/heads/fix/x"); got != sha {
+		t.Fatalf("fix/x is %q on the hub, want %q", got, sha)
+	}
+}

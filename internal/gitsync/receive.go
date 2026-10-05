@@ -470,6 +470,13 @@ func (rc *Receiver) push(w http.ResponseWriter, r *http.Request, ref Ref, exe st
 		http.Error(w, "that push could not be read", http.StatusBadRequest)
 		return
 	}
+	// git's probe, sent before a request body over http.postBuffer: one flush packet, answered 200 with nothing.
+	if bytes.Equal(head, flushPkt) {
+		w.Header().Set("Content-Type", "application/x-git-receive-pack-result")
+		w.Header().Set("Cache-Control", "no-cache")
+		w.WriteHeader(http.StatusOK)
+		return
+	}
 	req, err := parsePush(head)
 	if err != nil {
 		http.Error(w, "that is not a git push", http.StatusBadRequest)
