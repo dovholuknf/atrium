@@ -6,10 +6,9 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-// ReadMachine is memory only. Per-CPU tick counters come from host_statistics,
-// which is cgo, and macOS has no kern.cp_time, so HasCPU stays false and the
-// board shows no CPU there. Load average is not a percent and is not passed off
-// as one.
+// ReadMachine is memory from sysctl and CPU from a streaming top (see
+// cpu_darwin.go). HasCPU is false until top has given its first interval, and
+// when top is not there.
 //
 // Used is total minus available, where available is free pages plus the
 // file-backed (external) and purgeable pages the kernel gives back on demand.
@@ -35,5 +34,9 @@ func ReadMachine() (MachineReading, error) {
 	if avail > total {
 		avail = total
 	}
-	return MachineReading{MemUsed: total - avail, MemTotal: total}, nil
+	mr := MachineReading{MemUsed: total - avail, MemTotal: total}
+	if idle, tot, ok := topSampler.read(); ok {
+		mr.HasCPU, mr.CPUIdle, mr.CPUTotal = true, idle, tot
+	}
+	return mr, nil
 }
