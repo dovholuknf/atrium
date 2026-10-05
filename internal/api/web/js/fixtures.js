@@ -1540,16 +1540,25 @@ function pastedPR() {
   return { host: r.host || v.host || "", org: v.org, repo: v.repo, number: Number(v.num) };
 }
 
-async function makePastedWorktree(pr) {
+// `at` is for a caller with no launch dialog (the move of a review to another room): {room, say(text, warn)}. The
+// worktree is then made on that room and the dialog's fields are left alone.
+function pastedSay(at, text, warn) {
+  if (at && at.say) { at.say(text, warn); return; }
   const note = document.getElementById("l-link-note");
+  note.classList.toggle("warn", !!warn);
+  note.textContent = text;
+}
+
+async function makePastedWorktree(pr, at) {
   const providers = (await api("/v1/providers")).providers || [];
   const p = providers.find(x => x.worktrees && (x.host || "github.com") === pr.host);
   if (!p) return null;
-  note.classList.remove("warn");
-  note.textContent = "making the worktree for " + pr.org + "/" + pr.repo + "#" + pr.number + "...";
+  pastedSay(at, "making the worktree for " + pr.org + "/" + pr.repo + "#" + pr.number + "...");
   const headers = { "Content-Type": "application/json" };
   const chosen = document.getElementById("l-room-field");
-  if (chosen && !chosen.hidden && document.getElementById("l-room").value) {
+  if (at && at.room) {
+    headers["X-Atrium-Room"] = at.room;
+  } else if (chosen && !chosen.hidden && document.getElementById("l-room").value) {
     headers["X-Atrium-Room"] = document.getElementById("l-room").value;
   }
   let room = "";
@@ -1560,28 +1569,25 @@ async function makePastedWorktree(pr) {
     }, async res => { room = res.headers.get("X-Atrium-Placed-Room") || ""; return apiFinish(res); });
   } catch (e) {
     // The forge's own sentence, as it came, beside the link it is about.
-    note.classList.add("warn");
-    note.textContent = e.message;
+    pastedSay(at, e.message, true);
     throw e;
   }
-  document.getElementById("l-cwd").value = made.path;
-  note.textContent = (made.existed ? "the worktree was already there: " : "made the worktree: ") + made.path;
+  if (!at) document.getElementById("l-cwd").value = made.path;
+  pastedSay(at, (made.existed ? "the worktree was already there: " : "made the worktree: ") + made.path);
   return { path: made.path, room };
 }
 
 // The review of a pasted pull request, started on the room the launch goes to. An error is the dialog's note and the
 // card still launches. Answers the row, and whether this paste made it, or null when there is no row.
-async function startPastedReview(pr, room) {
-  const note = document.getElementById("l-link-note");
+async function startPastedReview(pr, room, at) {
   const headers = { "Content-Type": "application/json" };
   if (room) headers["X-Atrium-Room"] = room;
   try {
-    const out = await api("/v1/prs", { method: "POST", headers, body: JSON.stringify({ url: launchResolved.url || "" }) });
+    const out = await api("/v1/prs", { method: "POST", headers, body: JSON.stringify({ url: at ? at.url : launchResolved.url || "" }) });
     if (!out || !out.pr) return null;
     return { row: out.pr, created: out.created !== false };
   } catch (e) {
-    note.classList.add("warn");
-    note.textContent = "the review did not start: " + e.message;
+    pastedSay(at, "the review did not start: " + e.message, true);
     return null;
   }
 }
@@ -1599,7 +1605,7 @@ async function liveWalkerOf(row, room) {
 }
 
 // The launched card is the row's walker, so the walk drawer finds the row by it.
-async function setPastedWalker(row, task, room) {
+async function setPastedWalker(row, task, room, at) {
   const headers = { "Content-Type": "application/json" };
   if (room) headers["X-Atrium-Room"] = room;
   try {
@@ -1608,9 +1614,7 @@ async function setPastedWalker(row, task, room) {
     });
     if (out && out.pr && typeof pullsApplyRow === "function") pullsApplyRow(out.pr);
   } catch (e) {
-    const note = document.getElementById("l-link-note");
-    note.classList.add("warn");
-    note.textContent = "the card is not tied to the review: " + e.message;
+    pastedSay(at, "the card is not tied to the review: " + e.message, true);
   }
 }
 

@@ -860,6 +860,13 @@ async function cardMenu(e, id) {
     // The cache keep-alive for this card. Only on a Claude card, which is the
     // only kind with a switch. See js/keepalive.js.
     typeof keepaliveMenuItem === "function" ? keepaliveMenuItem(t, refresh) : null,
+    // A PR's walker can be moved, with the review, to another room. See prMove in js/pulls.js.
+    typeof walkPrOf === "function" && walkPrOf(id) && prMoveOffered() ? {
+      label: "move to another room", note: "the review and a new card",
+      help: "Moves this PR's review to another room and starts a new card there on the PR's worktree, set as " +
+        "its walker. This card is left where it is.",
+      act: () => prMoveAsk(e, walkPrOf(id), t)
+    } : null,
     // The name to mention this card by. See js/alias.js.
     typeof aliasMenuItem === "function" ? aliasMenuItem(t) : null,
     // ANSWERED IN THE TERMINAL, which atrium cannot see.
