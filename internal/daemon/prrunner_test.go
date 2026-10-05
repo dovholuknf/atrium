@@ -642,3 +642,53 @@ func TestPRRunnerReplaysTheResentListAfterARetry(t *testing.T) {
 		t.Fatalf("findings.json is the list the renderer refused:\n%s", b)
 	}
 }
+
+// A review cut by a restart is queued again and runs on the folder it left: the steps that finished are read back and
+// not asked of the model or the forge again, and the write step is done afresh.
+func TestPRRunnerResumesAReviewTheRestartCut(t *testing.T) {
+	f := newPRFix(t)
+	p := f.run(t)
+	if p.State != store.PRReady {
+		t.Fatalf("%s %q", p.State, p.RunError)
+	}
+	dir := filepath.FromSlash(p.RunDir)
+	forks, merges := len(f.forks), f.merges
+	views := 0
+	for _, c := range f.calls {
+		if strings.HasPrefix(c, "gh pr view") {
+			views++
+		}
+	}
+	// The daemon died while writing: the findings are not out and the row says it was running.
+	os.RemoveAll(filepath.Join(dir, "findings"))
+	os.Remove(filepath.Join(dir, "walk.txt"))
+	if _, err := f.st.MovePR(f.id, nil, store.PRRunning, "write", ""); err != nil {
+		t.Fatal(err)
+	}
+	ids, err := f.st.RequeueInterruptedPRs()
+	if err != nil || len(ids) != 1 || ids[0] != f.id {
+		t.Fatalf("requeued %v, %v", ids, err)
+	}
+	if q, _ := f.st.PRByID(f.id); q.State != store.PRQueued {
+		t.Fatalf("the row is %s, want queued", q.State)
+	}
+	p = f.run(t)
+	if p.State != store.PRReady {
+		t.Fatalf("%s %q", p.State, p.RunError)
+	}
+	if len(f.forks) != forks || f.merges != merges {
+		t.Fatalf("the resume ran %d more forks and %d more merges", len(f.forks)-forks, f.merges-merges)
+	}
+	after := 0
+	for _, c := range f.calls {
+		if strings.HasPrefix(c, "gh pr view") {
+			after++
+		}
+	}
+	if after != views {
+		t.Fatalf("the resume asked the forge for the PR again")
+	}
+	if files, _ := filepath.Glob(filepath.Join(dir, "findings", "*.txt")); len(files) != 3 {
+		t.Fatalf("the resume wrote %d findings, want 3", len(files))
+	}
+}

@@ -491,6 +491,44 @@ func (st *Store) SetPRWalker(id, task string) (*PRReview, error) {
 	return st.PRByID(id)
 }
 
+// RequeueInterruptedPRs puts rows a restart cut back to queued and answers their ids. Nothing is running when the
+// daemon starts, so a row in fetching or running is one whose run died with the last daemon. Only the state moves: the
+// folder, the cost and the started time stay, and the runner reads the steps the folder holds.
+func (st *Store) RequeueInterruptedPRs() ([]string, error) {
+	var ids []string
+	err := st.guard(func() error {
+		rows, err := st.db.Query(`SELECT id FROM pr_review WHERE state IN ('fetching', 'running') ORDER BY created_at, id`)
+		if err != nil {
+			return err
+		}
+		defer rows.Close()
+		for rows.Next() {
+			var id string
+			if err := rows.Scan(&id); err != nil {
+				return err
+			}
+			ids = append(ids, id)
+		}
+		return rows.Err()
+	})
+	if err != nil {
+		return nil, err
+	}
+	var out []string
+	for _, id := range ids {
+		err := st.guard(func() error {
+			_, err := st.db.Exec(`UPDATE pr_review SET state = 'queued', run_state = '', run_error = ''
+				WHERE id = ? AND state IN ('fetching', 'running')`, id)
+			return err
+		})
+		if err != nil {
+			return out, err
+		}
+		out = append(out, id)
+	}
+	return out, nil
+}
+
 // ---- the reviews root and the run folder ----
 
 // ReviewsRoot is where run folders are made: the setting, else the default under

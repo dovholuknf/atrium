@@ -1569,6 +1569,51 @@ async function makePastedWorktree(pr) {
   return { path: made.path, room };
 }
 
+// The review of a pasted pull request, started on the room the launch goes to. An error is the dialog's note and the
+// card still launches. Answers the row, and whether this paste made it, or null when there is no row.
+async function startPastedReview(pr, room) {
+  const note = document.getElementById("l-link-note");
+  const headers = { "Content-Type": "application/json" };
+  if (room) headers["X-Atrium-Room"] = room;
+  try {
+    const out = await api("/v1/prs", { method: "POST", headers, body: JSON.stringify({ url: launchResolved.url || "" }) });
+    if (!out || !out.pr) return null;
+    return { row: out.pr, created: out.created !== false };
+  } catch (e) {
+    note.classList.add("warn");
+    note.textContent = "the review did not start: " + e.message;
+    return null;
+  }
+}
+
+// The card of a row that is already under review, when it is still there to attach.
+async function liveWalkerOf(row, room) {
+  if (!row || !row.walker_task) return null;
+  const headers = room ? { "X-Atrium-Room": room } : {};
+  try {
+    const t = await api("/v1/tasks/" + encodeURIComponent(row.walker_task), { headers });
+    return t && t.id && t.status !== "done" && t.status !== "dead" ? t : null;
+  } catch (e) {
+    return null;
+  }
+}
+
+// The launched card is the row's walker, so the walk drawer finds the row by it.
+async function setPastedWalker(row, task, room) {
+  const headers = { "Content-Type": "application/json" };
+  if (room) headers["X-Atrium-Room"] = room;
+  try {
+    const out = await api("/v1/prs/" + encodeURIComponent(row.id) + "/walker", {
+      method: "POST", headers, body: JSON.stringify({ action: "set", task })
+    });
+    if (out && out.pr && typeof pullsApplyRow === "function") pullsApplyRow(out.pr);
+  } catch (e) {
+    const note = document.getElementById("l-link-note");
+    note.classList.add("warn");
+    note.textContent = "the card is not tied to the review: " + e.message;
+  }
+}
+
 // Through `busyWhile`, so the press shows and a second one, by click or by
 // Enter, is refused while the first is starting. See js/core.js.
 function doLaunch() {
@@ -1586,6 +1631,26 @@ async function launchNow() {
     document.getElementById("l-throwaway-on").checked;
   const pr = throwaway ? null : pastedPR();
   const wt = pr ? await makePastedWorktree(pr) : null;
+  // WHICH MACHINE IT STARTS ON, decided before the launch so the review starts on the same one.
+  const headers = { "Content-Type": "application/json" };
+  const roomField = document.getElementById("l-room-field");
+  if (roomField && !roomField.hidden) {
+    const want = document.getElementById("l-room").value;
+    if (want) headers["X-Atrium-Room"] = want;
+  }
+  // The room the hub put the pull request on wins over an unset field, since the worktree is only there.
+  if (wt && wt.room && !headers["X-Atrium-Room"]) headers["X-Atrium-Room"] = wt.room;
+  const review = wt ? await startPastedReview(pr, headers["X-Atrium-Room"] || "") : null;
+  if (review && !review.created) {
+    const live = await liveWalkerOf(review.row, headers["X-Atrium-Room"] || "");
+    if (live) {
+      document.getElementById("launch").close();
+      toast(pr.org + "/" + pr.repo + "#" + pr.number, "already under review, attached its card");
+      switchView("terms");
+      openTerm(live);
+      return;
+    }
+  }
   const body = Object.assign({}, launchTarget, {
     harness: document.getElementById("l-pick-field").hidden ? launchTarget.harness : picker.value,
     // AS HELD, `room~id` and all. The room's store keys by the plain id, and
@@ -1602,7 +1667,8 @@ async function launchNow() {
     // Split on commas and never on spaces, the same rule everywhere else: a
     // tag with a space in it is one tag.
     tags: document.getElementById("l-tags").value
-      .split(",").map(x => x.trim()).filter(Boolean),
+      .split(",").map(x => x.trim()).filter(Boolean)
+      .concat(review ? ["pr", "pr:" + pr.org + "/" + pr.repo + "#" + pr.number] : []),
     // Empty while resuming, since the field is hidden and the daemon refuses
     // a prompt and a resume together.
     prompt: resumeOff || !launchTarget.resume
@@ -1629,23 +1695,12 @@ async function launchNow() {
       source_url: launchResolved.url || ""
     });
   }
-  // WHICH MACHINE IT STARTS ON. Only ever set when the field was shown, which
-  // is when there was a choice to make. Sent as the room header on this one
-  // request rather than by scoping the board: you can start a card somewhere
-  // while looking at everywhere. See `js/rooms.js`.
-  const headers = { "Content-Type": "application/json" };
-  const roomField = document.getElementById("l-room-field");
-  if (roomField && !roomField.hidden) {
-    const want = document.getElementById("l-room").value;
-    if (want) headers["X-Atrium-Room"] = want;
-  }
-  // The room the hub put the pull request on wins over an unset field, since the worktree is only there.
-  if (wt && wt.room && !headers["X-Atrium-Room"]) headers["X-Atrium-Room"] = wt.room;
   // A refusal throws, and `busyWhile` puts the reason in this dialog with the
   // form still filled in, rather than closing it and stacking a modal.
   const task = await api("/v1/launch", {
     method: "POST", headers, body: JSON.stringify(body)
   });
+  if (review && task && task.id) await setPastedWalker(review.row, task.id, headers["X-Atrium-Room"] || "");
   document.getElementById("launch").close();
 
   // Straight to the terminal you just started. Landing on the board instead
