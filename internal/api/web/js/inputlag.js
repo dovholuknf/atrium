@@ -1,9 +1,12 @@
 // ── opt-in: how long a keystroke takes to come back ─────
 //
 // OFF UNLESS ASKED FOR, and when off every hook below is one boolean test.
-// Switched on from the terminal's details, under "debug" (see js/peek-debug.js), or in the console:
+// Switched on PER CARD from the terminal's details, under "debug" (see js/peek-debug.js), or in the console:
 //
-//     localStorage.setItem("atrium.debug.inputlag", "1")
+//     localStorage.setItem("atrium.debug.inputlag." + termTask.id, "1")
+//
+// The browser times only while the terminal shows a card that is switched on. The hub and the room log for the whole
+// machine, so they are on while any card in this browser is.
 //
 // What it prints, all under `[atrium inputlag]`, is enough to tell the three causes
 // apart without anybody describing the lag:
@@ -17,7 +20,8 @@
 // and room use, so the three logs describe the same wait. Keys typed while one
 // is pending are counted, not timed. See docs/terminal/input-lag-logging.md.
 
-const LAG_KEY = "atrium.debug.inputlag";
+// One key per card id, so switching one terminal on leaves the others alone.
+const LAG_KEY = "atrium.debug.inputlag.";
 // A keystroke slower than this is logged as a warning with the fetch counts,
 // rather than as a debug line.
 const LAG_SLOW_MS = 100;
@@ -30,8 +34,24 @@ const LAG_WINDOW = 300;
 // Past this with no output at all, a keystroke is dropped from timing.
 const LAG_NO_ECHO_MS = 5000;
 
+// True while the terminal on screen shows a card that is switched on. See `lagFollow`.
 let lagOn = false;
-try { lagOn = localStorage.getItem(LAG_KEY) === "1"; } catch (e) {}
+
+function lagCardOn(id) {
+  if (!id) return false;
+  try { return localStorage.getItem(LAG_KEY + id) === "1"; } catch (e) { return false; }
+}
+
+// Any card in this browser switched on. What the hub and the room are told.
+function lagAnyOn() {
+  try {
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (k && k.startsWith(LAG_KEY) && localStorage.getItem(k) === "1") return true;
+    }
+  } catch (e) {}
+  return false;
+}
 
 let lagPending = null;
 let lagSamples = [];
@@ -75,6 +95,7 @@ function lagKeySent(t0, bytes) {
   if (!t0) return;
   lagPending = {
     t0, sent: performance.now(), bytes, coalesced: 0,
+    task: termTask ? termTask.id : "",
     buffered: lagBacklog,
     fetches: lagFetches(),
   };
@@ -85,6 +106,8 @@ function lagKeySent(t0, bytes) {
 // stamp the parse and the paint. Otherwise it is returned untouched.
 function lagOnOutput(done) {
   if (!lagOn || !lagPending || lagPending.echo) return done;
+  // A kept terminal's output, handled in the background with its card in `termTask`, is not this key's echo.
+  if (!termTask || termTask.id !== lagPending.task) return done;
   const s = lagPending;
   s.echo = performance.now();
   return function () {
@@ -201,7 +224,7 @@ function lagWatchStalls() {
 function lagStart() {
   lagWatchStalls();
   lagTimer = setInterval(lagSummary, LAG_SUMMARY_EVERY);
-  console.info(`[atrium inputlag] ${lagClock()} on. keystrokes, stalls and a summary every ` +
+  console.info(`[atrium inputlag] ${lagClock()} on for this terminal. keystrokes, stalls and a summary every ` +
     `${LAG_SUMMARY_EVERY / 1000}s print here. switch off in the terminal's details, under debug.`);
 }
 
@@ -216,61 +239,69 @@ function lagStop() {
   lagStalls = [];
 }
 
-// Switches this browser's timing only. `saveInputLag` is the checkbox, which
-// also switches the hub and the room.
-function toggleInputLag(on) {
-  if (!!on === lagOn) return;
-  lagOn = !!on;
-  try { localStorage.setItem(LAG_KEY, lagOn ? "1" : "0"); } catch (e) {}
-  if (lagOn) lagStart(); else { lagStop(); console.info("[atrium inputlag] off"); }
+// Starts or stops this browser's timing to match the card on screen. Called when the terminal moves to another card
+// or closes, and when a switch changes here or in another window.
+function lagFollow() {
+  const on = lagCardOn(termTask && termTask.id);
   const box = document.getElementById("s-inputlag");
-  if (box) box.checked = lagOn;
+  if (box) box.checked = on;
+  if (on === lagOn) return;
+  lagOn = on;
+  if (lagOn) lagStart(); else { lagStop(); console.info("[atrium inputlag] off for this terminal"); }
 }
 
-// Another window of this browser switched it. The storage event reaches every other open window at once, so a
-// popped-out terminal stops timing when the box is unticked anywhere.
+// Switches the card on screen only. `saveInputLag` is the checkbox, which also tells the hub and the room.
+function toggleInputLag(on, id) {
+  id = id || (termTask && termTask.id);
+  if (!id) return;
+  try {
+    if (on) localStorage.setItem(LAG_KEY + id, "1");
+    else localStorage.removeItem(LAG_KEY + id);
+  } catch (e) {}
+  lagFollow();
+}
+
+// Another window of this browser switched a card. The storage event reaches every other open window at once, so a
+// popped-out terminal stops timing when its card's box is unticked anywhere.
 addEventListener("storage", e => {
-  if (e.key !== null && e.key !== LAG_KEY) return;
-  let on = false;
-  try { on = localStorage.getItem(LAG_KEY) === "1"; } catch (err) {}
-  toggleInputLag(on);
+  if (e.key !== null && !e.key.startsWith(LAG_KEY)) return;
+  lagFollow();
 });
 
-// ONE CHECKBOX, EVERY HOP. The browser switches here, and the hub and the room
-// switch from the setting with no restart. In the ALL view the hub passes the
-// write to every room. Scoped to a room, `writeRoom` sends it to that room and
+// ONE CHECKBOX, EVERY HOP. The browser switches here for the card on screen, and the hub and the room switch from
+// the setting with no restart. Theirs is one switch for the whole machine, so it is on while any card in this browser
+// is. In the ALL view the hub passes the write to every room. Scoped to a room, `writeRoom` sends it to that room and
 // the hub reads it on the way past.
 async function saveInputLag(on) {
   toggleInputLag(on);
+  const any = lagAnyOn();
   try {
     const s = await api("/v1/settings", {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ input_lag_log: !!on })
+      body: JSON.stringify({ input_lag_log: any })
     });
     paintInputLagPinned(s);
   } catch (e) {
-    toast("the hub and room did not take it", e.message + ". this browser is still " +
-      (on ? "timing" : "not timing"));
+    toast("the hub and room did not take it", e.message + ". this terminal is still " +
+      (lagOn ? "timing" : "not timing"));
   }
 }
 
-// When the gear opens, the machine's answer wins over this browser's, so a
-// checkbox pressed in another tab or on another machine shows here as pressed
-// and times here too. Only when the answer is a real one: an old room that has
-// never heard of the setting sends nothing, and that is not an "off".
+// When the drawer or the gear opens, the box shows this card's switch, and the machine's answer only paints the
+// notes: a box on one card says nothing about another card, so the machine being on does not switch this one.
+// An old room that has never heard of the setting sends nothing, and that is not an "off".
 function syncInputLag(s) {
+  lagFollow();
   if (!s || typeof s.input_lag_log !== "boolean") return;
-  if (!s.input_lag_pinned) toggleInputLag(s.input_lag_log);
-  const box = document.getElementById("s-inputlag");
-  if (box) box.checked = lagOn;
   paintInputLagPinned(s);
 }
 
-// Says so beside the checkbox when ATRIUM_DEBUG_INPUTLAG decides on the machine,
-// because then the checkbox only reaches this browser.
+// Says so under the checkbox when ATRIUM_DEBUG_INPUTLAG decides for the whole machine, because then the checkbox only
+// reaches this browser.
 function paintInputLagPinned(s) {
   const el = document.getElementById("s-inputlag-pinned");
   if (el) el.hidden = !(s && s.input_lag_pinned);
 }
 
-if (lagOn) lagStart();
+// The switch was once one for the whole browser. It is per card now, and the old key means nothing.
+try { localStorage.removeItem("atrium.debug.inputlag"); } catch (e) {}

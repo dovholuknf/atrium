@@ -940,6 +940,8 @@ function openTerm(task) {
   sayWhetherFocused();
   // An open details drawer follows the terminal to this card. See js/peek.js.
   if (typeof termDrawerFollow === "function") termDrawerFollow(task);
+  // The debug switches are per card. See js/peek-debug.js.
+  if (typeof dbgFollow === "function") dbgFollow();
   // Picking a session closes the phone switcher, so the terminal you just chose
   // is what you land on rather than the list you chose it from. No-op on a
   // desktop, where the list is not a dropdown. See `setTermListOpen`.

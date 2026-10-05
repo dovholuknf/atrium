@@ -9,34 +9,50 @@
 // the operator and an agent debugging the gate together.
 //
 // OFF UNLESS ASKED FOR, and when off it costs nothing: no poll, no element.
-// Switched on from the terminal's details, under "debug" (see js/peek-debug.js), or in the console:
+// Switched on PER CARD from the terminal's details, under "debug" (see js/peek-debug.js), or in the console:
 //
-//     localStorage.setItem("atrium.debug.typing", "1")
+//     localStorage.setItem("atrium.debug.typing." + termTask.id, "1")
+//
+// Shown only while the terminal shows a card that is switched on.
 //
 // Polled while on, from `GET /v1/tasks/{id}/typing`, rather than pushed on the
 // attach socket. The keystroke path is hot and the readout is a debug aid, so
 // the daemon does nothing extra per key for it. See internal/daemon/typedline.go.
 
-const TYPING_KEY = "atrium.debug.typing";
+// One key per card id, so switching one terminal on leaves the others alone.
+const TYPING_KEY = "atrium.debug.typing.";
 const TYPING_POLL_MS = 500;
 
+// True while the terminal on screen shows a card that is switched on. See `typingFollow`.
 let typingOn = false;
-try { typingOn = localStorage.getItem(TYPING_KEY) === "1"; } catch (e) {}
 let typingTimer = 0;
 
-// The checkbox and the console both land here. Remembered per browser.
-function toggleTypingReadout(on) {
-  typingOn = !!on;
-  try {
-    if (typingOn) localStorage.setItem(TYPING_KEY, "1");
-    else localStorage.removeItem(TYPING_KEY);
-  } catch (e) {}
+function typingCardOn(id) {
+  if (!id) return false;
+  try { return localStorage.getItem(TYPING_KEY + id) === "1"; } catch (e) { return false; }
+}
+
+// Shows or hides the line to match the card on screen. Called when the terminal moves to another card or closes,
+// and when a switch changes here or in another window.
+function typingFollow() {
+  typingOn = typingCardOn(termTask && termTask.id);
   const box = document.getElementById("s-typing");
   if (box) box.checked = typingOn;
   clearTimeout(typingTimer);
   typingTimer = 0;
   paintTyping(null, "");
   if (typingOn) pollTyping();
+}
+
+// The checkbox and the console both land here. Remembered per card, in this browser.
+function toggleTypingReadout(on, id) {
+  id = id || (termTask && termTask.id);
+  if (!id) return;
+  try {
+    if (on) localStorage.setItem(TYPING_KEY + id, "1");
+    else localStorage.removeItem(TYPING_KEY + id);
+  } catch (e) {}
+  typingFollow();
 }
 
 // One read of the gate for the attached card. The gate line and the details drawer's debug section both ask, so a
@@ -132,10 +148,9 @@ function paintTyping(s, err) {
 
 // Another window of this browser switched it. The storage event reaches every other open window at once.
 addEventListener("storage", e => {
-  if (e.key !== null && e.key !== TYPING_KEY) return;
-  let on = false;
-  try { on = localStorage.getItem(TYPING_KEY) === "1"; } catch (err) {}
-  if (on !== typingOn) toggleTypingReadout(on);
+  if (e.key !== null && !e.key.startsWith(TYPING_KEY)) return;
+  if (typingCardOn(termTask && termTask.id) !== typingOn) typingFollow();
 });
 
-if (typingOn) pollTyping();
+// The switch was once one for the whole browser. It is per card now, and the old key means nothing.
+try { localStorage.removeItem("atrium.debug.typing"); } catch (e) {}

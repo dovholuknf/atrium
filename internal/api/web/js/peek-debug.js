@@ -73,6 +73,13 @@ async function dbgSyncLag(seq) {
   if (seq === dbgSeq) syncInputLag(s);
 }
 
+// The terminal moved to another card or closed: both switches are per card, so they follow it whether or not the
+// drawer is open.
+function dbgFollow() {
+  if (typeof lagFollow === "function") lagFollow();
+  if (typeof typingFollow === "function") typingFollow();
+}
+
 // The drawer opened or closed, or followed the terminal to another card.
 function dbgDrawer(open) {
   const seq = ++dbgSeq;
@@ -81,10 +88,7 @@ function dbgDrawer(open) {
   const box = document.getElementById("t-drawer-debug");
   if (box) box.hidden = !open;
   if (!open) return;
-  const lag = document.getElementById("s-inputlag");
-  if (lag) lag.checked = lagOn;
-  const typ = document.getElementById("s-typing");
-  if (typ) typ.checked = typingOn;
+  dbgFollow();
   dbgSyncLag(seq);
   dbgPoll(seq);
 }

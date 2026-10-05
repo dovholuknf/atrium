@@ -4729,11 +4729,11 @@ async function typingSection(browser, base) {
       const help = document.querySelector(".term-help");
       return { hidden: el.hidden, text: el.textContent, shut: el.classList.contains("shut"),
         aboveHelp: el.nextElementSibling === help,
-        stored: localStorage.getItem("atrium.debug.typing") };
+        stored: localStorage.getItem("atrium.debug.typing.land-live") };
     });
     if (on.hidden) fail("the typing readout stayed hidden after it was switched on.");
     if (!on.aboveHelp) fail("the typing readout is not the line directly above the shortcut strip.");
-    if (on.stored !== "1") fail("switching the readout on was not remembered in this browser.");
+    if (on.stored !== "1") fail("switching the readout on was not remembered for this card.");
     if (!/^1 message from @runtime waits: 13 chars on your line$/.test(on.text)) {
       fail("the blocking line does not say who waits and how many chars: " + JSON.stringify(on.text));
     }
@@ -4835,7 +4835,7 @@ async function termDebugSection(browser, base) {
     p.on("pageerror", e => errors.push(String(e)));
     await p.goto(base, { waitUntil: "domcontentloaded" });
     await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
-    await p.evaluate(() => { localStorage.removeItem("atrium.debug.typing"); localStorage.removeItem("atrium.debug.inputlag"); });
+    await p.evaluate(() => { localStorage.removeItem("atrium.debug.typing.land-live"); localStorage.removeItem("atrium.debug.inputlag.land-live"); });
     await p.evaluate(() => attachTask("land-live"));
     await p.waitForFunction(() => termSock && termSock.readyState === 1 && termTask && termTask.id === "land-live",
       { timeout: slow(10000) });
@@ -4945,19 +4945,20 @@ async function termDebugSection(browser, base) {
     if (!(await p.evaluate(() => termDrawerOpen))) fail("Escape aimed outside the terminal and the drawer closed it.");
     await p.evaluate(() => toggleTermDrawer(false));
 
-    // The input lag box takes the machine's answer on every open, and the pinned note shows.
+    // The input lag box shows this card's switch, not the machine's answer: the machine logging says nothing about
+    // which card is timed. The pinned note shows when ATRIUM_DEBUG_INPUTLAG decides.
     const lagState = () => p.evaluate(() => ({ box: document.getElementById("s-inputlag").checked, lag: lagOn,
       pinned: !document.getElementById("s-inputlag-pinned").hidden }));
     // The opens above each asked for the settings and a read still in flight is shared, so let them land first.
     await p.waitForFunction(() => !settingsInflight.size, null, { timeout: slow(5000) });
     kaSettings = { input_lag_log: true, input_lag_pinned: false };
     await p.evaluate(() => toggleTermDrawer(true));
-    await p.waitForFunction(() => document.getElementById("s-inputlag").checked && lagOn, null, { timeout: slow(5000) })
-      .catch(() => {});
+    await p.waitForFunction(() => !settingsInflight.size, null, { timeout: slow(5000) });
+    await p.waitForTimeout(200);
     const lagOnState = await lagState();
     await p.evaluate(() => { toggleTermDrawer(false); toggleInputLag(false); });
-    if (!lagOnState.box || !lagOnState.lag || lagOnState.pinned) {
-      fail("the drawer did not take the machine's input lag answer: " + JSON.stringify(lagOnState));
+    if (lagOnState.box || lagOnState.lag || lagOnState.pinned) {
+      fail("the machine logging switched this card's input lag box on: " + JSON.stringify(lagOnState));
     }
     // Pinned by ATRIUM_DEBUG_INPUTLAG: the note shows and this browser is left as it was.
     kaSettings = { input_lag_log: true, input_lag_pinned: true };
@@ -4988,6 +4989,9 @@ async function termDebugSection(browser, base) {
     await q.goto(base, { waitUntil: "domcontentloaded" });
     await q.waitForFunction(() => typeof toggleInputLag === "function" && typeof toggleTypingReadout === "function",
       null, { timeout: slow(15000) });
+    await q.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
+    await q.evaluate(() => attachTask("land-live"));
+    await q.waitForFunction(() => termTask && termTask.id === "land-live", null, { timeout: slow(10000) });
     await p.evaluate(() => { toggleInputLag(true); toggleTypingReadout(true); });
     await q.waitForFunction(() => lagOn && typingOn, null, { timeout: slow(5000) }).catch(() => {});
     const on = await q.evaluate(() => ({ lag: lagOn, typing: typingOn,
@@ -5004,6 +5008,115 @@ async function termDebugSection(browser, base) {
   landList = []; landPerms = [];
   tasksMode = was;
   if (!bad) console.log("termDebug ok");
+}
+
+// ── the debug switches are per card ──────────────────────────────────────
+// The drawer belongs to one card, so its two switches do too: on for one terminal, the next terminal shows them off
+// and is neither timed nor polled. The hub and the room log for the whole machine, so they are told "on" while any
+// card is. See js/peek-debug.js, js/inputlag.js and js/typing.js.
+async function termDebugPerCardSection(browser, base) {
+  const was = tasksMode;
+  tasksMode = "land";
+  landCard("land-live", { supervised: true, created_at: "2026-09-19T12:00:00Z", activity: { what: "idle" } });
+  landCard("land-b", { supervised: true, created_at: "2026-09-19T12:01:00Z", activity: { what: "idle" } });
+  landList = [LAND["land-live"], LAND["land-b"]];
+  landPerms = [];
+  typingPolls = [];
+  typingAnswer = { line: "", count: 0, since_ms: 9000, open: true, reason: "line empty and quiet" };
+  const errors = [];
+  const posted = [];
+  const ctx = await landContext(browser);
+  await ctx.addInitScript(() => {
+    const Real = window.WebSocket;
+    window.WebSocket = function (url, protocols) {
+      if (!/\/attach(\?|$)/.test(url)) return new Real(url, protocols);
+      const s = { url, readyState: 0, binaryType: "arraybuffer", bufferedAmount: 0,
+        onopen: null, onclose: null, onmessage: null, onerror: null,
+        send() {}, close() { this.readyState = 3; } };
+      setTimeout(() => { s.readyState = 1; if (s.onopen) s.onopen({}); }, 0);
+      return s;
+    };
+    Object.assign(window.WebSocket, { CONNECTING: 0, OPEN: 1, CLOSING: 2, CLOSED: 3 });
+  });
+  try {
+    const p = await ctx.newPage();
+    p.on("pageerror", e => errors.push(String(e)));
+    p.on("request", r => {
+      if (r.method() !== "POST" || !/\/v1\/settings$/.test(r.url())) return;
+      try { const b = JSON.parse(r.postData() || "{}"); if ("input_lag_log" in b) posted.push(b.input_lag_log); } catch (e) {}
+    });
+    await p.goto(base, { waitUntil: "domcontentloaded" });
+    await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
+    // A browser that had the old browser-wide switch on drops it.
+    await p.evaluate(() => { localStorage.setItem("atrium.debug.inputlag", "1"); localStorage.setItem("atrium.debug.typing", "1"); });
+    await p.reload({ waitUntil: "domcontentloaded" });
+    await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
+    const legacy = await p.evaluate(() => [localStorage.getItem("atrium.debug.inputlag"), localStorage.getItem("atrium.debug.typing")]);
+    if (legacy[0] !== null || legacy[1] !== null) fail("the old browser-wide debug keys were left behind: " + JSON.stringify(legacy));
+
+    const attach = id => p.evaluate(id => attachTask(id), id)
+      .then(() => p.waitForFunction(id => termSock && termSock.readyState === 1 && termTask && termTask.id === id,
+        id, { timeout: slow(10000) }));
+    const state = () => p.evaluate(() => ({ card: termTask && termTask.id, lag: lagOn, typing: typingOn,
+      lagBox: document.getElementById("s-inputlag").checked, typingBox: document.getElementById("s-typing").checked,
+      line: !document.getElementById("t-typing").hidden }));
+    const click = id => p.evaluate(id => {
+      const el = document.getElementById(id);
+      el.checked = !el.checked;
+      el.dispatchEvent(new Event("change"));
+    }, id);
+
+    await attach("land-live");
+    await p.evaluate(() => toggleTermDrawer(true));
+    await click("s-typing");
+    await click("s-inputlag");
+    await p.waitForFunction(() => !document.getElementById("t-typing").hidden, null, { timeout: slow(5000) }).catch(() => {});
+    const a = await state();
+    if (!a.lag || !a.typing || !a.lagBox || !a.typingBox || !a.line) fail("switching both on for one card did not take: " + JSON.stringify(a));
+    if (posted[posted.length - 1] !== true) fail("the hub and room were not told to log: " + JSON.stringify(posted));
+
+    // The other card: both off, the line hidden, its gate never asked for by the line.
+    await attach("land-b");
+    await p.evaluate(() => toggleTermDrawer(false));
+    await p.waitForTimeout(300);
+    const n = typingPolls.filter(u => u.includes("/land-b/")).length;
+    await p.waitForTimeout(1300);
+    const b = await state();
+    const bPolls = typingPolls.filter(u => u.includes("/land-b/")).length - n;
+    if (b.lag || b.typing || b.lagBox || b.typingBox || b.line) fail("a card switched on carried over to another card: " + JSON.stringify(b));
+    if (bPolls) fail("the gate line polled a card it is not switched on for: " + bPolls + "x");
+    const stored = await p.evaluate(() => ({ lagB: localStorage.getItem("atrium.debug.inputlag.land-b"),
+      typB: localStorage.getItem("atrium.debug.typing.land-b") }));
+    if (stored.lagB !== null || stored.typB !== null) fail("the other card was stored as switched: " + JSON.stringify(stored));
+
+    // Switching the other card off-then-on and off keeps the machine on while the first card still is.
+    await p.evaluate(() => toggleTermDrawer(true));
+    await click("s-inputlag");
+    await click("s-inputlag");
+    await p.waitForTimeout(300);
+    if (posted[posted.length - 1] !== true) fail("unticking one card told the hub to stop while another card is on: " + JSON.stringify(posted));
+    await p.evaluate(() => toggleTermDrawer(false));
+
+    // Back to the first: both on again, with no click.
+    await attach("land-live");
+    await p.waitForFunction(() => !document.getElementById("t-typing").hidden, null, { timeout: slow(5000) }).catch(() => {});
+    const c = await state();
+    if (!c.lag || !c.typing || !c.lagBox || !c.typingBox || !c.line) fail("the first card lost its switches across a switch away and back: " + JSON.stringify(c));
+
+    // Its last card off: the hub and room are told to stop.
+    await p.evaluate(() => toggleTermDrawer(true));
+    await click("s-inputlag");
+    await click("s-typing");
+    await p.waitForTimeout(300);
+    if (posted[posted.length - 1] !== false) fail("the last card switched off did not tell the hub to stop: " + JSON.stringify(posted));
+    await p.evaluate(() => toggleTermDrawer(false));
+  } finally {
+    await ctx.close();
+  }
+  if (errors.length) fail("the per-card debug page threw: " + errors.join(" | "));
+  landList = []; landPerms = [];
+  tasksMode = was;
+  if (!bad) console.log("termDebugPerCard ok");
 }
 
 // ── a card's alias ────────────────────────────────────────────────────────
@@ -23472,7 +23585,7 @@ async function main() {
       mSwitcher: mSwitcherSection,
       mPull: mPullSection, joinedLive: joinedLiveSection, joinedClick: joinedClickSection,
       coverPoll: coverPollSection, coverSteps: coverStepsSection, termBox: termBoxSection, termRowBleed: termRowBleedSection,
-      termDebug: termDebugSection, termSortStarted: termSortStartedSection,
+      termDebug: termDebugSection, termDebugPerCard: termDebugPerCardSection, termSortStarted: termSortStartedSection,
       noReadyChildren: noReadyChildrenSection, childUnderParent: childUnderParentSection, topNav: topNavSection,
       u002: u002Section, childFold: childFoldSection, liveHome: liveHomeSection,
       pulls: pullsSection, prMove: prMoveSection, hubRepos: hubReposSection, hubReposShelf: hubReposShelfSection, hubReposLedger: hubReposLedgerSection, hubReposFeed: hubReposFeedSection, changeReq: changeReqSection, mChangeReq: mChangeReqSection, trayHead: trayHeadSection, pullsAbsent: pullsAbsentSection, oneTooltip: oneTooltipSection, burnChart: burnChartSection, burnReadout: burnReadoutSection, switchPrewarm: switchPrewarmSection, attachAtOnce: attachAtOnceSection, fileView: fileViewSection, keepAlive: keepAliveSection, switchBackCost: switchBackCostSection, keepMemory: keepMemorySection, pullsDrawer: pullsDrawerSection };
@@ -25577,6 +25690,7 @@ async function main() {
     await unit("termBox", () => termBoxSection(browser, base));
     await unit("termRowBleed", () => termRowBleedSection(browser, base));
     await unit("termDebug", () => termDebugSection(browser, base));
+    await unit("termDebugPerCard", () => termDebugPerCardSection(browser, base));
     await unit("termSortStarted", () => termSortStartedSection(browser, base));
     await unit("topNav", () => topNavSection(browser, base));
     await unit("pulls", () => pullsSection(browser, base));
@@ -26148,10 +26262,11 @@ async function prefsEverywhereSection(browser, base) {
     const SPAN = slow(4000);
     // Each: [name, run in A, wait in B (returns true once B shows the change)]
     const cases = [
-      ["input lag log", () => toggleInputLag(true), () => lagOn === true],
-      ["input lag log off", () => toggleInputLag(false), () => lagOn === false],
-      ["typing gate readout", () => toggleTypingReadout(true), () => typingOn === true && document.getElementById("s-typing").checked],
-      ["typing gate readout off", () => toggleTypingReadout(false), () => typingOn === false],
+      // Per card: switched in A for the card B shows.
+      ["input lag log", () => toggleInputLag(true, "s1"), () => lagOn === true],
+      ["input lag log off", () => toggleInputLag(false, "s1"), () => lagOn === false],
+      ["typing gate readout", () => toggleTypingReadout(true, "s1"), () => typingOn === true && document.getElementById("s-typing").checked],
+      ["typing gate readout off", () => toggleTypingReadout(false, "s1"), () => typingOn === false],
       ["copy on select", () => toggleCopyOnSelect(), () => copyOnSelect === true],
       ["focus on hover", () => toggleHoverFocus(true), () => hoverFocus === true && document.getElementById("s-hoverfocus").checked],
       ["card colours", () => toggleCardColors(true), () => cardColors === true && document.getElementById("s-cardcolors").checked],

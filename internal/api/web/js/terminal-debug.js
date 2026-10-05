@@ -355,6 +355,7 @@ function clearTermPane(switching) {
   termFit = null;
   termTask = null;
   sayWhetherFocused();
+  if (typeof dbgFollow === "function") dbgFollow();
   if (typeof tcomposeSync === "function") tcomposeSync();
   if (typeof phoneManualReset === "function") phoneManualReset();
   if (typeof walkReset === "function") walkReset();
