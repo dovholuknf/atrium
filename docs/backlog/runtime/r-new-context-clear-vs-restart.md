@@ -37,3 +37,9 @@ case may also explain the first one, since the restart and the clear overlapped 
 
 - Is a clear stored anywhere, or only held in memory by the process that started it? If only in memory, (2) is
   the whole fix and (1) is the wording the board shows when it finds a half-done one.
+
+## @runtime director, 2026-10-04
+
+Landed already as r-clear-vs-restart (7323b17f, re-read c685f9b6), all four wanted points. The rest was folded into
+`docs/rnd/context-limit-ownership-design.md` section 7 and lives in its stage L3 (a journal step for an exited
+runner) and the "compacted during capture" chip note. Nothing left under this id.

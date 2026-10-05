@@ -24,3 +24,14 @@ Nothing else picks it up.
 - The two open points settled with clint first: processes on window-mode and joined cards, and whether the gate is
   Bash or a tool of its own.
 - Stages and tests set when the item is picked up, after One atrium.
+
+## @runtime director, 2026-10-04: incomplete, waits for clint
+
+Not dispatched. The item says the two open points are settled with clint first (runtime/2.md line 11). Questions:
+
+1. Processes started on window-mode and joined cards: allowed while the reaper watches the pid (the default), or
+   refused?
+2. The `proc-exec` gate: a Bash command pattern (the default), or an MCP tool of its own?
+
+Also: the design file `docs/process-registry-design.md` named above is not on claude/main 7a0522cc. Say where the
+accepted design lives now, and whether "after One atrium" is met.

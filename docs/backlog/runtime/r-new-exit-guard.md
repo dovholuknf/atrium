@@ -18,3 +18,7 @@ but the director stayed down until the orchestrator woke it.
 - A director (a card tagged as one, or with a context-ceiling tag) cannot be exited by an agent at all, only by the
   operator.
 - A test for each.
+
+## @runtime director, 2026-10-04
+
+Landed already under the id without `new-` (r-exit-guard ca014c1e, r-opencode-bubbles 82a63fd3). Nothing left.
