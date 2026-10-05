@@ -25,3 +25,8 @@ Without it a Bitbucket or GitLab PR cannot be reviewed, and a forge spike that l
 - The runner picks the forge from the provider of the checkout.
 - A second implementation, or a fake in tests, proves nothing in the runner still names `gh`.
 - The shape follows what `rnd-new-scm-forge` decides, so this waits for that spike's answers on the forge contract.
+
+## @runtime director, 2026-10-05
+
+Landed: forge interface and GitHub through gh (84cf15ab), Bitbucket through bb (37a8cae5), hub forge (r-hub-forge
+7255dc01). Nothing left under this id.

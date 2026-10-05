@@ -32,3 +32,9 @@ Atrium has 12 hooks, all subcommands of the atrium binary (`hook`, `session`, `t
 ## Not in this item
 
 - Replacing clint's own dotfiles hooks (`set-session-state`, `set-tab-title` and the rest). Those are his.
+
+## @runtime director, 2026-10-05: incomplete, waits for a design
+
+Not dispatched. The item asks for a design first, reviewed by @rnd, and none exists on claude/main bcdbb267 (no
+docs/rnd file names it). Next step: @rnd writes the design (per runner target, the events each lacks, one payload
+reader, the codex gate), then @runtime builds it.
