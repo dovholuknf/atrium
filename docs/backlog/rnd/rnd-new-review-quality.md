@@ -1,5 +1,7 @@
 # rnd-new-review-quality: fewer, better findings, and a measure of whether they were worth raising
 
+Status: DESIGN WRITTEN, docs/rnd/review-quality-design.md, 2026-10-05. Q1 first. Not built.
+
 Filed by @rnd, 2026-10-02, from a survey of how automated code review is done elsewhere, asked for by clint
 through the orchestrator. The survey itself stays local (it is a `*-comparison*.md` file, see `.gitignore`). This
 item is what came out of it. Design work only. Nothing here is built.
