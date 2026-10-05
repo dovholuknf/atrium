@@ -1,7 +1,11 @@
 package cli
 
 import (
+	"bytes"
+	"log"
+	"os"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/dovholuknf/atrium/internal/daemon"
@@ -42,6 +46,31 @@ func TestDaemonDefaultsAreLoopback(t *testing.T) {
 		v := c.Flags().Lookup(f).DefValue
 		if len(v) < 10 || v[:10] != "127.0.0.1:" {
 			t.Errorf("--%s defaults to %q, want a 127.0.0.1 address", f, v)
+		}
+	}
+}
+
+// A room restarts as a room, with its own flag names and its recorded bind.
+func TestRestartKeepsARoomAsARoom(t *testing.T) {
+	loc := daemon.Location{Room: "r1", RoomDir: "/r/dir", DB: "r.db", AgentListen: "127.0.0.1:7777", BoardListen: "127.0.0.1:7778"}
+	want := []string{"room", "--dir", "/r/dir", "--db", "r.db", "--agent", "127.0.0.1:7777", "--http", "127.0.0.1:7778"}
+	if got := restartDaemonArgs("x.db", loc, true); !reflect.DeepEqual(got, want) {
+		t.Errorf("got %v want %v", got, want)
+	}
+}
+
+func TestWarnWideBoard(t *testing.T) {
+	var buf bytes.Buffer
+	log.SetOutput(&buf)
+	defer log.SetOutput(os.Stderr)
+	for addr, wide := range map[string]bool{
+		"127.0.0.1:7778": false, "localhost:7778": false, "[::1]:7778": false, "-": false,
+		":7778": true, "0.0.0.0:7778": true, "192.168.1.5:7778": true,
+	} {
+		buf.Reset()
+		warnWideBoard(addr)
+		if got := strings.Contains(buf.String(), "WARNING"); got != wide {
+			t.Errorf("%q: warned=%v want %v", addr, got, wide)
 		}
 	}
 }

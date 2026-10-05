@@ -216,3 +216,22 @@ func TestTheLocationPathAgreesWithTheHookResolver(t *testing.T) {
 			"duplicated on purpose and have drifted", mine, theirs)
 	}
 }
+
+// A room's --dir is written down, so a restart can pass it back.
+func TestLocationRecordsTheRoomDir(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "daemon.json")
+	d := &Daemon{opts: Options{Room: "r1", RoomDir: "/r/dir", LocationFile: path}}
+	d.writeLocation()
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var loc Location
+	if err := json.Unmarshal(raw, &loc); err != nil {
+		t.Fatal(err)
+	}
+	if loc.RoomDir != "/r/dir" {
+		t.Errorf("room_dir = %q", loc.RoomDir)
+	}
+}
