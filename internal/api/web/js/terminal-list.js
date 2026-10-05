@@ -417,7 +417,6 @@ function termTrayHTML(c) {
           data-tip="${open ? "fold the controls away" : "show the sort, hide inactive and group controls"}"
           ><span class="traychev">&#9656;</span
           ><span class="traysum">${esc(termTraySummary(c))}</span></button>
-        ${termListButtons()}
       </div>
       <div class="traybody"${open ? "" : " inert"}><div class="trayinner"><div class="trayrows">
         <div class="trayrow"><span class="barlabel">sort</span><div class="seg trayseg sortseg">${termSortHTML()}</div></div>
@@ -553,8 +552,15 @@ function placeTabBridge() {
   });
 }
 
+// The tab-into-the-terminal look is OFF. The selected row's colour crossing the divider read as a highlight
+// that bled out of the list, so by default the row stays inside its column and the rest of the code here
+// sits idle. Set true to get the bridge and the squared-off row back (the headless bridge section does).
+let termBridge = false;
+
 function placeOneBridge(bridge, card) {
   const lay = document.getElementById("term-layout");
+  if (lay) lay.classList.toggle("bridged", termBridge);
+  if (!termBridge) { bridge.hidden = true; return; }
   // Nothing attached, or the list is not beside the terminal to begin with.
   // In `off` the list floats OVER the pane, so there is no gutter to cross.
   if (!lay || !card || termListMode === "off" || !term) { bridge.hidden = true; return; }
@@ -664,6 +670,10 @@ function showTermList() { setTermListMode("mini"); }
 // needed: at full width there is obviously no wider, and the greyed control
 // is just something else in a header that has three things in it. What is
 // missing IS the answer.
+// Three diagonal ticks hugging the lower left corner, the usual resize grip. The widen button mirrors it.
+const TL_GRIP = `<svg viewBox="0 0 12 12" width="18" height="18" aria-hidden="true"><path
+  d="M1 4L8 11M1 7.5L4.5 11M1 11L1.01 11" fill="none" stroke="currentColor" stroke-width="1.6"
+  stroke-linecap="round"/></svg>`;
 function termListButtons() {
   const at = TERM_LIST_MODES.indexOf(termListMode);
   let out = "";
@@ -671,13 +681,13 @@ function termListButtons() {
     out += `<button class="termsort tlcycle" onclick="stepTermList(-1)"
       data-tip="${termListMode === "full"
         ? "shrink it to just the names"
-        : "hide it, and hover the edge to peek"}">&laquo;</button>`;
+        : "hide it, and hover the edge to peek"}" aria-label="narrow the list">${TL_GRIP}</button>`;
   }
   if (at < TERM_LIST_MODES.length - 1) {
-    out += `<button class="termsort tlcycle" onclick="stepTermList(1)"
+    out += `<button class="termsort tlcycle tlwider" onclick="stepTermList(1)"
       data-tip="${termListMode === "off"
         ? "put the list back"
-        : "show the whole name"}">&raquo;</button>`;
+        : "show the whole name"}" aria-label="widen the list">${TL_GRIP}</button>`;
   }
   return out;
 }
@@ -1992,7 +2002,8 @@ async function renderTermList() {
       `<div class="termscroll">` +
       termBucketHTML(pinnedTasks, tasks.filter(t => t.pinned).length,
         termFolded().has(PINNED_FOLD)) +
-      termGroupsHTML(top.filter(t => !t.pinned || termFiled(t))) + `</div></div>`
+      termGroupsHTML(top.filter(t => !t.pinned || termFiled(t))) +
+      `</div><div class="tlcorner">${termListButtons()}</div></div>`
     : `<div class="panel"><div class="empty">
          no terminals. start one from the board, or attach to a running session.
        </div></div>`);

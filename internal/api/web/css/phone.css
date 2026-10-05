@@ -100,7 +100,7 @@
     .term-rail, .term-grip { display: none; }
     /* The width buttons on the tray's bar reach `mini` and `off` too, which a
        phone ignores, so they would be buttons that do nothing. */
-    .traybar .tlcycle { display: none; }
+    .tlcorner { display: none; }
 
     /* ATTACHED: THE TERMINAL IS ITS OWN SURFACE, NOT TIED TO THE LIST.
        The list collapses to the trigger bar and the terminal takes the rest, at
