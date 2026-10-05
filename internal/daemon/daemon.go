@@ -913,8 +913,14 @@ func (d *Daemon) onPermRequest(req PermissionRequest) (string, *AutoDecision, er
 	// message reaches a session that is working. The call is refused in order
 	// to carry the text, and the banner says so, or the model reads a delivery
 	// as a judgement on its command.
-	if msgs, err := d.takeMessages(task.ID, "permission"); err == nil && len(msgs) > 0 {
-		reason := messageBanner(msgs, true)
+	msgs, merr := d.takeMessages(task.ID, "permission")
+	line := d.contextLine(task)
+	if (merr == nil && len(msgs) > 0) || line != "" {
+		reason := ""
+		if merr == nil && len(msgs) > 0 {
+			reason = messageBanner(msgs, true)
+		}
+		reason = withContextLine(line, reason)
 		if _, err := d.st.DecidePermissionBy(p.ID, "block", reason, store.DecidedByMessage); err != nil {
 			return "", nil, err
 		}
