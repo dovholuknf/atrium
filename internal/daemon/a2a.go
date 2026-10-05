@@ -252,11 +252,11 @@ func (d *Daemon) launcherOf(worker *store.Task) *store.Task {
 	}
 	if worker.SpawnedByID != "" {
 		if t, err := d.st.Get(worker.SpawnedByID); err == nil {
-			return t
+			return d.launcherAfterMove(worker, t)
 		}
 	}
 	if t, err := d.st.GetByWireName(d.st.Qualify(worker.SpawnedBy)); err == nil && t.ID != worker.ID {
-		return t
+		return d.launcherAfterMove(worker, t)
 	}
 	return nil
 }

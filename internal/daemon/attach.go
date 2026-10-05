@@ -357,6 +357,17 @@ func (d *Daemon) attach(w http.ResponseWriter, r *http.Request, taskID string, s
 				// A new context is typing into this terminal itself. Bytes from a
 				// board or phone would land between its steps, so they are dropped.
 				// The ack still goes out so a paste does not hang.
+				if !shell && d.frozenForMove(taskID) {
+					if in.ID != "" {
+						if msg, err := json.Marshal(attachInDone{T: "in-done", ID: in.ID}); err == nil {
+							_ = c.Write(ctx, websocket.MessageText, msg)
+						}
+					}
+					if msg, err := json.Marshal(attachInRefused{T: "in-refused", Why: "input is refused while the card is moving"}); err == nil {
+						_ = c.Write(ctx, websocket.MessageText, msg)
+					}
+					continue
+				}
 				if !shell && d.nctx.typingHeld(taskID) {
 					if in.ID != "" {
 						if msg, err := json.Marshal(attachInDone{T: "in-done", ID: in.ID}); err == nil {

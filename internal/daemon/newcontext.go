@@ -462,7 +462,16 @@ var errNewContextGone = errors.New("superseded")
 // a new-context cycle. While it is, no message is typed and no hook carries one,
 // because capture would put it in the context about to be cleared and clear
 // would lose it. The cycle's own typing (`ncType`) does not ask.
-func (d *Daemon) holdingMessages(taskID string) bool { return d.nctx.holding(taskID) }
+func (d *Daemon) holdingMessages(taskID string) bool {
+	return d.nctx.holding(taskID) || d.frozenForMove(taskID)
+}
+
+// frozenForMove reports whether the card is frozen for a move between rooms. It
+// takes no turn and types nothing until the move ends or is undone.
+func (d *Daemon) frozenForMove(taskID string) bool {
+	f, err := d.st.Frozen(taskID)
+	return err == nil && f != nil
+}
 
 // newContextHoldNote is what a sender is told while a card is held.
 const newContextHoldNote = "queued: this card is starting a new context, and everything for it is held " +

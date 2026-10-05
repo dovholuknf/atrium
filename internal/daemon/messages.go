@@ -571,6 +571,21 @@ func (d *Daemon) handleMessage(w http.ResponseWriter, r *http.Request) {
 		gated = t
 		gate = d.sayGate(t)
 	}
+	// A CARD THAT MOVED: the words go on to where it went. See followMoved.
+	if gate == sayMoved && gated != nil {
+		end, err := d.followMoved(gated)
+		switch {
+		case err != nil:
+			writeJSONErr(w, http.StatusConflict, err)
+			return
+		case end.Live != nil:
+			taskID, gated = end.Live.ID, end.Live
+			gate = d.sayGate(gated)
+		default:
+			d.forwardMoved(r.Context(), w, from, end, body.Text, body.When, body.Reply, body.Wake)
+			return
+		}
+	}
 	if gate == sayParked && (from == "" || body.Wake || d.fromFamily(from, gated)) {
 		if err := d.unpark(taskID, wakeVia(from)); err != nil {
 			writeJSONErr(w, http.StatusInternalServerError, err)

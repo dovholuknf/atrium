@@ -73,6 +73,15 @@ func (d *Daemon) currentLauncher(worker *store.Task) *store.Task {
 	if t == nil || t.ID == worker.ID {
 		return nil
 	}
+	if t.MovedTo != "" {
+		// The name is an old handle. Follow it to the card it became. One that
+		// went to another room is for launcherOf's fallback to re-point.
+		end, err := d.followMoved(t)
+		if err != nil || end.Live == nil || end.Live.ID == worker.ID {
+			return nil
+		}
+		t = end.Live
+	}
 	if worker.SpawnedByID != t.ID || worker.SpawnedBy != t.WireName {
 		if err := d.st.SetLauncher(worker.ID, t.WireName, t.ID); err != nil {
 			log.Printf("[atrium] could not point %s at its launcher %s: %v", worker.DisplayTitle(), name, err)

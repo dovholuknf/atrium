@@ -83,6 +83,11 @@ func (s *Store) queueMessage(taskID, text, fromPeer string, waitTurn bool) (*Mes
 		wait = 1
 	}
 	err := s.guard(func() error {
+		// A card held for a move keeps what is said to it in the freeze queue, with this id, to forward or to
+		// replay. Says, reports, notices, nags and wakes all queue here, so this is the one place to hold them.
+		if held, err := enqueueFrozenOn(s.db, m); err != nil || held {
+			return err
+		}
 		if _, err := s.db.Exec(
 			`INSERT INTO message (id, task_id, text, created_at, from_peer, wait_turn) VALUES (?,?,?,?,?,?)`,
 			m.ID, m.TaskID, m.Text, ts(m.CreatedAt), m.FromPeer, wait); err != nil {

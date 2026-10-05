@@ -31,6 +31,12 @@ type LaunchRequest struct {
 	// one. Unshelving uses it: the card, its history and its resume id are the
 	// reason to pick the work back up, so a second card would defeat the point.
 	TaskID string `json:"task_id,omitempty"`
+	// MovedFrom is `room~id` of the card this one is the successor of, on a move
+	// between rooms. It is the key that makes a repeat launch for one move return
+	// the same card. Pinned and PinOrder put it in the old card's pinned slot.
+	MovedFrom string `json:"moved_from,omitempty"`
+	Pinned    bool   `json:"pinned,omitempty"`
+	PinOrder  int    `json:"pin_order,omitempty"`
 	// Tags are what the operator calls this work. A script that starts a
 	// session from a ticket knows things the path does not.
 	Tags []string `json:"tags,omitempty"`
@@ -714,8 +720,18 @@ func (d *Daemon) Launch(req LaunchRequest) (*store.Task, error) {
 	if i := strings.IndexByte(req.TaskID, '~'); i > 0 {
 		req.TaskID = req.TaskID[i+1:]
 	}
-	unlock := d.launching.lock(launchKeys(req.TaskID, req.Resume)...)
+	keys := launchKeys(req.TaskID, req.Resume)
+	if req.MovedFrom != "" {
+		keys = append(keys, "move:"+req.MovedFrom)
+	}
+	unlock := d.launching.lock(keys...)
 	defer unlock()
+	// A REPEAT FOR ONE MOVE returns the card the first made.
+	if req.MovedFrom != "" {
+		if t, err := d.st.GetByMovedFrom(req.MovedFrom); err == nil {
+			return t, nil
+		}
+	}
 	if t := d.repeatLaunch(req.TaskID); t != nil {
 		return t, nil
 	}
@@ -1273,6 +1289,16 @@ func (d *Daemon) launchLocked(req LaunchRequest) (*store.Task, error) {
 		Branch: req.Branch, Window: req.Window, Theme: req.Theme,
 	}); err != nil {
 		return nil, err
+	}
+	if req.MovedFrom != "" {
+		if err := d.st.SetMovedFrom(created.ID, req.MovedFrom); err != nil {
+			return nil, err
+		}
+		if req.Pinned {
+			if err := d.st.SetPinSlot(created.ID, req.PinOrder); err != nil {
+				return nil, err
+			}
+		}
 	}
 	// WHO LAUNCHED IT, so a worker's report and a silent stop have somewhere to
 	// go. Written once: `SetLineage` leaves a card that already has a parent

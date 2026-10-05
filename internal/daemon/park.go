@@ -175,6 +175,13 @@ const (
 // card would otherwise read as ended, and the two answers differ in their last
 // step: gone needs the sender's own hands, parked can be woken by asking.
 func (d *Daemon) sayGate(t *store.Task) string {
+	if t.MovedTo != "" {
+		return sayMoved
+	}
+	// A frozen card is not woken: its says wait in the freeze queue.
+	if d.frozenForMove(t.ID) {
+		return sayOK
+	}
 	if isParked(t) {
 		return sayParked
 	}

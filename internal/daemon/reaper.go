@@ -186,6 +186,7 @@ func (d *Daemon) reap(ctx context.Context, every time.Duration) {
 		// is the same job: deciding what is still there. Its own error is
 		// logged rather than skipping the liveness check, since the two are
 		// independent and one failing is no reason to stop the other.
+		d.sweepFreezes(time.Now())
 		if err := d.reapOrphans(); err != nil {
 			log.Printf("[atrium] orphan check: %v", err)
 		}
