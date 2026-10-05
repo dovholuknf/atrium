@@ -368,6 +368,9 @@ func restartDaemonArgs(db string, loc daemon.Location, haveLoc bool) []string {
 	// the file names one.
 	if haveLoc && strings.TrimSpace(loc.Room) != "" {
 		args = []string{"room"}
+		if strings.TrimSpace(loc.RoomDir) != "" {
+			args = append(args, "--dir", loc.RoomDir)
+		}
 		if strings.TrimSpace(loc.DB) != "" {
 			args = append(args, "--db", loc.DB)
 		}

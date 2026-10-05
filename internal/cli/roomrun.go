@@ -334,10 +334,13 @@ func runRoom(keys link.Keys, db, human, agent string, restartAfter time.Duration
 		}
 	}
 
+	warnWideBoard(human)
+
 	d, err := daemon.New(daemon.Options{
 		HumanAddr: human,
 		AgentAddr: agent,
 		DBPath:    db,
+		RoomDir:   keys.Dir,
 		// THE HUB-DECIDED NAME, the same one the link attaches under below, so
 		// every session this room launches carries ATRIUM_ROOM and its HTTP
 		// control MCP registration can name this room to the hub.

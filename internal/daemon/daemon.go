@@ -82,6 +82,9 @@ type Options struct {
 	// that every supervised terminal on the machine pays for. Empty is the
 	// default and is the embed. See api.Server.BoardDir.
 	BoardDir string
+	// RoomDir is where a room keeps its certificate (`atrium room --dir`).
+	// It is only recorded in the location file, so a restart can pass it back.
+	RoomDir string
 	// StartedBy is the `--started-by <kind>:<nonce>` a supervisor gave this
 	// process. KEPT IN MEMORY ONLY: never exported to the environment and never
 	// passed to anything this process spawns, so no child of a supervised room

@@ -52,8 +52,8 @@ func TestDaemonDefaultsAreLoopback(t *testing.T) {
 
 // A room restarts as a room, with its own flag names and its recorded bind.
 func TestRestartKeepsARoomAsARoom(t *testing.T) {
-	loc := daemon.Location{Room: "r1", DB: "r.db", AgentListen: "127.0.0.1:7777", BoardListen: "127.0.0.1:7778"}
-	want := []string{"room", "--db", "r.db", "--agent", "127.0.0.1:7777", "--http", "127.0.0.1:7778"}
+	loc := daemon.Location{Room: "r1", RoomDir: "/r/dir", DB: "r.db", AgentListen: "127.0.0.1:7777", BoardListen: "127.0.0.1:7778"}
+	want := []string{"room", "--dir", "/r/dir", "--db", "r.db", "--agent", "127.0.0.1:7777", "--http", "127.0.0.1:7778"}
 	if got := restartDaemonArgs("x.db", loc, true); !reflect.DeepEqual(got, want) {
 		t.Errorf("got %v want %v", got, want)
 	}
