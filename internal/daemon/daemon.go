@@ -954,6 +954,7 @@ func (d *Daemon) onPermRequest(req PermissionRequest) (string, *AutoDecision, er
 	// no is more specific, and before rules and auto mode, which it overrides. See
 	// roomhold.go.
 	if h := d.deployHold(); h.Holds(task.ID) {
+		d.noteHoldWorking(h, task.ID)
 		reason := d.deployRefusal(h)
 		if _, err := d.st.DecidePermissionBy(p.ID, "block", reason, DecidedByDeployHold); err != nil {
 			return "", nil, err

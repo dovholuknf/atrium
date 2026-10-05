@@ -286,6 +286,11 @@ func (d *Daemon) startDeployHold(in holdStart) (*store.RoomHold, error) {
 		}
 	}
 	h.Cards = d.holdableCards()
+	for _, id := range h.Cards {
+		if t, err := d.st.Get(id); err == nil && wasMidTurn(t) {
+			h.Working = append(h.Working, id)
+		}
+	}
 	if err := d.st.SetRoomHold(h); err != nil {
 		return nil, err
 	}
@@ -293,6 +298,19 @@ func (d *Daemon) startDeployHold(in holdStart) (*store.RoomHold, error) {
 	log.Printf("[atrium] deploy hold %s set by %s on %d card(s)", h.ID, orWord(h.By, "an unnamed caller"), len(h.Cards))
 	d.holdChanged(&h)
 	return &h, nil
+}
+
+// noteHoldWorking records that a held card made a gated call the hold refused.
+// That call is the proof it was working, and the hold is what ended its turn.
+func (d *Daemon) noteHoldWorking(h *store.RoomHold, taskID string) {
+	if h.Worked(taskID) {
+		return
+	}
+	if wrote, err := d.st.MarkHoldWorking(h.Kind, taskID); err != nil {
+		log.Printf("[atrium] could not record %s as working under the deploy hold: %v", taskID, err)
+	} else if wrote {
+		d.loadHolds()
+	}
 }
 
 // holdableCards is every card with a session that could make a gated call: the
@@ -392,15 +410,21 @@ func (d *Daemon) liftAtStartup() {
 	if h.FromBuild == d.build {
 		outcome = HoldOutcomeSameBuild
 	}
-	line := d.wakeLine(h, outcome, "", "")
+	line := d.wakeLine(h, outcome, "", "") + " check `git status` first."
+	tell := d.st.UnexpectedExitOn()
 	reopened := map[string]bool{}
 	for _, id := range d.readReopen() {
 		reopened[id] = true
 	}
 	wakes := map[string]string{}
-	var others []string
+	var others, idle []string
 	for _, id := range h.Cards {
 		if !h.Holds(id) {
+			continue
+		}
+		// A card that was waiting for a human still is. Nothing to hand back.
+		if !tell || !h.Worked(id) {
+			idle = append(idle, id)
 			continue
 		}
 		if reopened[id] {
@@ -423,6 +447,9 @@ func (d *Daemon) liftAtStartup() {
 		ids = append(ids, id)
 	}
 	d.holds.await(ids, time.Now())
+	for _, id := range idle {
+		d.releaseHeld(id)
+	}
 	for _, id := range others {
 		if t, err := d.st.Get(id); err == nil {
 			if _, err := d.deliverPeer(t, "atrium", line); err != nil {
@@ -430,8 +457,8 @@ func (d *Daemon) liftAtStartup() {
 			}
 		}
 	}
-	log.Printf("[atrium] deploy hold %s lifted at startup (%s): %d wake(s), %d message(s)",
-		h.ID, outcome, len(wakes), len(others))
+	log.Printf("[atrium] deploy hold %s lifted at startup (%s): %d wake(s), %d message(s), %d left idle",
+		h.ID, outcome, len(wakes), len(others), len(idle))
 }
 
 // launchHeld refuses a launch onto a held room, which would start a runner the

@@ -9,7 +9,11 @@
 #
 # The room is restarted by this script, not by restart_atrium, so it does not depend on the restarter inside the
 # room that is being replaced. Input-lag logging is on for both unless -NoLagLog is passed.
-param([switch]$NoLagLog, [switch]$WhatIf)
+#
+# A deploy hold is set on the room first and waited out, so the room that comes back wakes every card that was
+# working. -NoHold skips it. Do not send the "commit and wait" say as well: a card told to wait by a say is idle at
+# the hold and is correctly not woken.
+param([switch]$NoLagLog, [switch]$WhatIf, [switch]$NoHold)
 
 $ErrorActionPreference = 'Continue'
 $LiveTag = 'BATCH'
@@ -24,6 +28,19 @@ if (-not $NoLagLog) { $env:ATRIUM_DEBUG_INPUTLAG = '1' }
 if (-not $WhatIf) {
   if (-not (Wait-NewContextsDone)) { Say 'a new context is still under way, nothing changed'; exit 0 }
 } else { Say 'WHATIF: wait for every new context under way to finish' }
+
+# Hold the room, so a card working now is told to continue after the restart and one waiting for a human is left
+# alone. The hold's own wake replaces the "commit and wait" say. -NoHold skips it. The restart then wakes only a card
+# that is mid-turn at the wind-down, and a card that ended its turn on a say is not woken.
+if ($NoHold) {
+  Say 'WARNING: -NoHold, no deploy hold set. nothing will be woken but a card mid-turn at the wind-down'
+} elseif ($WhatIf) {
+  Say 'WHATIF: set a deploy hold on the room and wait for it to go quiet'
+} elseif (Set-DeployHold) {
+  if (-not (Wait-HoldQuiet)) { Say 'the room is not quiet, restarting anyway. a card still working is told to continue' }
+} else {
+  Say 'WARNING: no deploy hold, going on without it. nothing will be woken but a card mid-turn at the wind-down'
+}
 
 # What this deploy puts live, for HANDOFF. Read before anything changes.
 Write-DeployQueue
