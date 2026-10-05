@@ -281,6 +281,9 @@
   .filelist .frow { grid-template-columns: auto 1fr auto auto auto; }
   /* The drawer takes the pane, so the terminal has to give it up rather than both claiming the same room. */
   .term-pane:has(.term-files:not([hidden])) #t-screen { display: none; }
+  /* And so does the box it lives in. Emptied, `.term-body` still carries `flex: 1 1 auto`, so it kept a share of the
+     pane and the drawer got only the rest: the editor filled about half the height with the pane's color under it. */
+  .term-pane:has(.term-files:not([hidden])) .term-body { display: none; }
 
   /* A fixture whose last start failed, and the reason under it. Two rows, because the reason is a command
      line or a path and truncating it into the row would hide the half that identifies it. The pair shares one

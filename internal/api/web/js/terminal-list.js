@@ -2514,6 +2514,7 @@ function attachIsInFlight(card) {
 // the real code. Returns whether it tore the pane down.
 function reconcileAttached(tasks) {
   keepReconcile(tasks);
+  fileViewPrune(tasks);
   if (!termTask) return false;
   const live = tasks.find(t => t.supervised && bareId(t.id) === bareId(termTask.id));
   if (live && live.id !== termTask.id) {
