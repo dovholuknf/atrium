@@ -588,6 +588,11 @@ const server = http.createServer((req, res) => {
     return;
   }
 
+  if (url === "/working.gif") {
+    res.writeHead(200, { "Content-Type": "image/gif" });
+    res.end(fs.readFileSync(path.join(WEB_ROOT, "working.gif")));
+    return;
+  }
   if (serveSW && (url === "/sw.js" || url === "/down.html")) {
     fs.readFile(path.join(WEB_ROOT, url), (err, body) => {
       if (err) { res.writeHead(404); res.end(""); return; }
@@ -17104,6 +17109,9 @@ async function childFoldSection(browser, base) {
       kids: [...document.querySelectorAll("#term-list .tkids .card.tab")].map(c => c.dataset.id).sort().join(),
       expanded: btn ? btn.getAttribute("aria-expanded") : "none",
       count: btn ? (btn.querySelector(".tkidn") || {}).textContent || "" : "",
+      run: btn ? (btn.querySelector(".tkidrun") || {}).textContent || "" : "",
+      wait: btn ? (btn.querySelector(".tkidwait") || {}).textContent || "" : "",
+      runCls: btn ? btn.classList.contains("running") : false,
       loneBtn: !!(row("lone") && row("lone").querySelector("button.tkidfold")),
       tag: btn ? btn.tagName : ""
     };
@@ -17119,7 +17127,30 @@ async function childFoldSection(browser, base) {
     await p.keyboard.press("Enter");
     v = await look(p);
     if (v.expanded !== "false" || v.kids !== "kid-p") fail("childFold: fold did not hide the running kids: " + JSON.stringify(v));
-    if (v.count !== "2") fail("childFold: folded count is " + JSON.stringify(v.count));
+    if (v.count !== "3") fail("childFold: folded count is " + JSON.stringify(v.count));
+    // Nothing under it is working in this fixture, so the folded row says the count and the one that needs you.
+    if (v.run !== "" || v.runCls) fail("childFold: a running chip with nothing running: " + JSON.stringify(v));
+    if (!/^1/.test(v.wait)) fail("childFold: folded row does not count the waiting child: " + JSON.stringify(v.wait));
+    // A working child, deep or not, shows on the folded parent.
+    await p.evaluate(async () => {
+      const all = await boardCards();
+      all.find(c => c.id === "kid-a").activity = { what: "thinking" };
+      await renderTermList();
+    });
+    v = await look(p);
+    if (!/^1$/.test(v.run) || !v.runCls) fail("childFold: a working child does not show on the folded parent: " + JSON.stringify(v));
+    // CHILDFOLD_SHOTS=<dir> draws the folded parent with two kids working, for the before and after PNGs.
+    if (process.env.CHILDFOLD_SHOTS) {
+      await p.evaluate(async () => {
+        for (const c of await boardCards()) if (c.id === "kid-a" || c.id === "kid-b") c.activity = { what: "thinking" };
+        await renderTermList();
+      });
+      await p.waitForTimeout(700);
+      fs.mkdirSync(process.env.CHILDFOLD_SHOTS, { recursive: true });
+      await p.locator("#term-list").screenshot({ path: path.join(process.env.CHILDFOLD_SHOTS,
+        process.env.CHILDFOLD_NAME || "after-folded.png") });
+    }
+    await p.evaluate(async () => { for (const c of await boardCards()) c.activity = null; });
     // A second window sees it through the storage event.
     const q = await open();
     v = await look(q);
