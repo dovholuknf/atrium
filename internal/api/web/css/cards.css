@@ -705,7 +705,7 @@
      The popover a two-second hover or the menu's "details" opens, and the drawer on the terminal's shortcut
      strip. One body, js/peek.js. Only palette variables, so every skin draws it in its own colours. */
   .peek {
-    position: fixed; z-index: 80; width: 300px; left: 0; top: 0;
+    position: fixed; z-index: 80; width: 380px; left: 0; top: 0;
     opacity: 0; visibility: hidden; transform: translateY(6px) scale(.985); transform-origin: top left;
     transition: opacity .16s ease, transform .2s cubic-bezier(.2,.8,.2,1), visibility 0s linear .2s;
     pointer-events: none;
@@ -722,17 +722,25 @@
     box-shadow: var(--shadow-pop), inset 0 1px 0 rgba(255,255,255,.04);
     color: var(--body); font: var(--fs-sm)/1.4 var(--sans); cursor: default; text-align: left;
   }
+  /* Inside the viewport however much state there is: the popover scrolls rather than leaving the screen. */
+  .peek .peek-body { max-height: calc(100vh - 16px); overflow-y: auto; box-sizing: border-box; }
   .peek-head { display: flex; flex-direction: column; gap: 2px; margin-bottom: 12px; min-width: 0; }
   .peek-title {
     font: 600 var(--fs-md)/1.25 var(--sans); color: var(--head);
     overflow-wrap: anywhere;
   }
   .peek-path { font: var(--fs-xs)/1.3 var(--mono); color: var(--dim); overflow-wrap: anywhere; }
-  /* What the chip under the pointer would have said in its own tooltip. */
-  .peek-hint {
-    margin-top: 4px; font-size: var(--fs-sm); line-height: 1.35; color: var(--body);
-    white-space: pre-line; overflow-wrap: anywhere;
+  /* All of the card's state, grouped, urgent first. The same rows whatever badge was hovered. */
+  .peek-sec { margin: 0 0 10px; padding-top: 8px; border-top: 1px solid rgba(var(--stroke-rgb),.35); }
+  .peek-sec:first-of-type { border-top: 0; padding-top: 0; }
+  .peek-sech {
+    font: var(--fs-xxs) var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--dim); margin-bottom: 3px;
   }
+  .peek-sec.need .peek-sech { color: var(--warn); }
+  .peek-row { display: flex; gap: 8px; font-size: var(--fs-sm); line-height: 1.3; }
+  .peek-row b { flex: 0 0 7.6em; font-weight: 600; color: var(--head); overflow-wrap: anywhere; }
+  .peek-row span { min-width: 0; color: var(--body); white-space: pre-line; overflow-wrap: anywhere; }
+  .peek-sec.need .peek-row b { color: var(--warn); }
   .peek-sub, .peek-scale, .peek-cell span, .peek-num span, .peek-foot {
     font-family: var(--mono); letter-spacing: .08em;
   }

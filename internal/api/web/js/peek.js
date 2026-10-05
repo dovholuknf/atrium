@@ -109,6 +109,110 @@ function peekReadable(t) {
   return !!(t && t.resume_id && !t.offline);
 }
 
+
+// ALL OF A CARD'S STATE, as rows, the same whichever part of it was hovered. Every badge a row draws says one fact
+// about the card; this says them all, each only when it applies, urgent first: what needs you, what is in progress,
+// what is held, then what the card is. Read from the card as the board last drew it, so it needs no request and
+// cannot differ between the board, the stack and the terminals list.
+function peekRows(t) {
+  const sec = (cls, label, rows) => {
+    rows = rows.filter(Boolean);
+    return rows.length ? `<div class="peek-sec ${cls}"><div class="peek-sech">${esc(label)}</div>${rows.join("")}</div>` : "";
+  };
+  const row = (k, v) => v ? `<div class="peek-row"><b>${esc(k)}</b><span>${esc(v)}</span></div>` : "";
+  const fn = (name, ...a) => typeof window[name] === "function" ? window[name](...a) : undefined;
+  const clock = iso => { const d = new Date(iso); return isNaN(d) ? "" : d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }); };
+  const since = iso => { const ms = Date.parse(iso); return isNaN(ms) ? "" : fn("ago", Math.max(0, Math.floor((Date.now() - ms) / 1000))) || ""; };
+  const a = t.activity || {};
+  const n = t.new_context;
+  const s = t.seen || {};
+  const qs = s.open_questions || [];
+  const need = [], doing = [], held = [], about = [];
+
+  // NEEDS YOU
+  if (fn("isBlocker", t)) need.push(row("blocked", fn("blockerReason", t)));
+  else if (fn("isStuck", t)) need.push(row("stuck", t.escalation.text + (t.escalation.since ? ", since " + clock(t.escalation.since) : "")));
+  if (t.offline) need.push(row("offline", "room " + (fn("roomOf", t.id) || t.room || "") + " is offline. cannot restore terminal"));
+  if (fn("isOutOfContact", t)) need.push(row("no contact", "nothing heard from the session, and no process to ask. it may be working or may have ended"));
+  if (fn("isWaiting", t)) {
+    need.push(row(fn("statusLabel", t.status), (t.status === "needs-permission" ? "frozen waiting to be answered for " : "asked for you ") +
+      fn("ago", fn("cardSecs", fn("cardWaitSeconds", t)))));
+  }
+  if (t.ask) {
+    const more = (t.asks_open || 0) - 1;
+    need.push(row(t.ask_peer ? "asked " + t.ask_peer : "question", t.ask + (more > 0 ? ` (+${more} more)` : "")));
+  }
+  if (s.answered === false && (qs.length || s.questions_unparsed)) {
+    need.push(row("open questions", qs.length ? qs.map((q, i) => (i + 1) + ". " + q).join("\n") : "its last turn asked questions atrium could not read"));
+  }
+  if (s.unseen) need.push(row("unseen turn", "its last turn ended and nobody has looked at it since"));
+  if (n && n.step === "failed") need.push(row("new context failed", (n.reason || "") + ". nothing further was typed"));
+  if (t.report_unverified) need.push(row("sha unverified", "it reported done at " + (t.report_sha || "") + ", and that commit is not in its worktree"));
+  if (t.held_notices) need.push(row("held notices", t.held_notices + " held notice" + (t.held_notices === 1 ? "" : "s") + " unread" + (t.oldest_held_at ? ", the oldest " + since(t.oldest_held_at) : "")));
+  if (t.owed) {
+    need.push(row("owed to its launcher", t.owed + " owed" + (t.owed_since ? " for " + since(t.owed_since) : "") +
+      (t.owed_no_launcher ? ", and it has no launcher to keep it" : "")));
+  }
+  if (t.replies_owed) need.push(row("replies owed", t.replies_owed + " asked for a reply that has not come"));
+
+  // IN PROGRESS
+  if (n && n.step !== "failed") {
+    const word = (typeof NEW_CONTEXT_WORDS !== "undefined" && NEW_CONTEXT_WORDS[n.step]) || n.step;
+    doing.push(row("context cycle", `context ${n.n}/${n.of}: ${word}. waiting for: ${n.label}`));
+  }
+  if (a.looks_idle) doing.push(row("looks idle", "no turn-end from the agent. its screen has been idle for " + fn("ago", a.idle_seconds || 0)));
+  else if (a.what) {
+    const what = a.what === "tool" ? (a.tool ? "running " + a.tool : "running a tool") : a.what;
+    doing.push(row("activity", what + (a.seconds > 5 ? " " + fn("ago", a.seconds) : "") +
+      (a.what === "compacting" ? ". it is about to forget most of its context" : "")));
+  }
+  const subs = Math.max(a.subagents || 0, (a.running || []).length);
+  if (subs) doing.push(row("subagents", fn("subagentTitle", a.subagents ? a : { subagents: subs, running: a.running }).replace(/\. click to expand\.$/, "")));
+  if (t.restart_wake) doing.push(row("wake queued", "typed in once after the next restart brings it back: " + t.restart_wake.text));
+  if (t.parked_at) doing.push(row("parked", "idle with no process since " + clock(t.parked_at) + ". a key in its terminal, or resume, wakes it"));
+  if (t.starting && !t.supervised) doing.push(row("starting", "atrium is starting this one, its runner is not up yet"));
+  if (t.held) doing.push(row("deploy hold", [t.held.kind, t.held.by && "by " + t.held.by, t.held.since && "since " + clock(t.held.since)].filter(Boolean).join(" ")));
+
+  // HELD MESSAGES: how many, how long, and what holds them.
+  if (a.held_peer) {
+    const count = Number(a.held_count) || 1, secs = Number(a.held_seconds) || 0;
+    held.push(row(a.held_quiet ? "queued" : "held", a.held_quiet ? fn("termQueuedTip", count, secs, a.held_turn) : fn("termHeldTip", count, secs, a.held_for, a.held_turn)));
+  }
+
+  // WHAT IT IS
+  if (t.status === "shelved") about.push(row("shelved", fn("cannotResume", t) ? "comes off the shelf, but nothing starts: " + fn("cannotResume", t) : "start it again from where the conversation left off"));
+  const room = fn("roomOf", t.id);
+  if (room) about.push(row("room", room));
+  if (t.runner) about.push(row("runner", t.runner));
+  if (t.model || t.effort || (t.launch_args || []).length || (t.launch_env_keys || []).length) {
+    about.push(row("launch", [t.model && "model " + t.model, t.effort && "effort " + t.effort,
+      (t.launch_args || []).length && "args " + t.launch_args.join(" "),
+      (t.launch_env_keys || []).length && "env " + t.launch_env_keys.join(", ")].filter(Boolean).join(", ")));
+  }
+  if (t.auto_approve) about.push(row("auto mode", "requests are approved without asking, and recorded" +
+    (t.auto_until ? ". ends in " + fn("ago", Math.max(0, Math.floor((Date.parse(t.auto_until) - Date.now()) / 1000))) + ", at " + clock(t.auto_until) : "")));
+  if (t.spawned_by || t.launcher_id) about.push(row("launched by", t.spawned_by || t.launcher_id));
+  if (t.alias) about.push(row("alias", "@" + t.alias + (t.alias_note ? ". " + t.alias_note : "")));
+  if ((t.tags || []).length) about.push(row("tags", t.tags.join(", ")));
+  if (t.pinned) about.push(row("pinned", "always listed"));
+  const origin = [t.source, t.external_id, t.url].filter(Boolean).join(" ");
+  if (origin) about.push(row("origin", origin));
+  if (typeof sharedCards !== "undefined" && sharedCards.has(t.id)) {
+    about.push(row("shared", "published at " + (sharedCards.get(t.id).address || "") + ". anyone with that address types into it as you would"));
+  }
+  if ((t.note || "").trim()) about.push(row("note", "held, not sent: " + t.note.trim()));
+  if (t.recap) about.push(row("recap", t.recap));
+  else if (t.status === "done") about.push(row("recap", "finished without saying what it did"));
+  if (t.telemetry) {
+    const c = t.telemetry;
+    const lim = [["5h limit", c.five_hour], ["weekly limit", c.weekly]].filter(x => x[1])
+      .map(([l, v]) => `${l} ${v.pct}%${v.resets_at ? ", resets " + fn("resetsIn", v.resets_at) : ""}`);
+    if (c.pct) about.push(row("statusline", [`${c.pct}% of the context window`, ...lim].join(" · ")));
+    else if (lim.length) about.push(row("account", lim.join(" · ")));
+  }
+  return sec("need", "needs you", need) + sec("doing", "in progress", doing) + sec("held", "messages", held) + sec("about", "card", about);
+}
+
 // The body. `v` is the usage read, or null while it is under way, or an
 // Error when it failed.
 function peekBody(t, v) {
@@ -125,13 +229,14 @@ function peekBody(t, v) {
     (where && where !== title ? `<span class="peek-path">${esc(where)}</span>` : "") +
     (sub ? `<span class="peek-sub">${esc(sub)}</span>` : "") +
     (cold ? `<span class="peek-path">${esc(cold)}</span>` : "") + `</div>`;
+  const rows = t ? peekRows(t) : "";
   if (!peekReadable(t)) {
-    return head + `<div class="peek-none">${t && t.offline
+    return head + rows + `<div class="peek-none">${t && t.offline
       ? "that machine is not answering, so nothing here can be read."
       : "no token use on record. only a Claude conversation keeps it."}</div>` + peekFoot(t);
   }
   if (v instanceof Error) {
-    return head + `<div class="peek-none">could not read it: ${esc(v.message)}</div>` + peekFoot(t);
+    return head + rows + `<div class="peek-none">could not read it: ${esc(v.message)}</div>` + peekFoot(t);
   }
   const loading = !v;
   const ctx = loading ? 0 : Number(v.context_now) || 0;
@@ -150,7 +255,7 @@ function peekBody(t, v) {
   const cell = (label, value, tip, missing) =>
     `<div class="peek-cell"${missing || tip ? ` data-tip="${esc(missing ? NOT_SENT : tip)}"` : ""}><b>${loading ? "&nbsp;" : missing ? "–" : esc(value)}</b>` +
     `<span>${esc(label)}</span></div>`;
-  return head +
+  return head + rows +
     `<div class="peek-ctx${warn ? " warn" : ""}${land ? " hot" : ""}">
       <div class="peek-num"><b>${loading ? "&nbsp;" : usageTokens(ctx)}</b><span>context</span></div>
       ${ctxMeter(ctx, limit, "", loading ? "" : landTip({ context_size: { tokens: ctx, threshold_k: k, source: limitSource(t) }, telemetry: t && t.telemetry }))}
@@ -272,12 +377,10 @@ function openPeek(id, anchor, mode) {
   // Measured where the pointer was when it opened, and again from the same
   // point when the numbers land and it grows.
   const at = peekPointer;
-  const replace = peekReplace = () => {
+  const replace = () => {
     if (seq !== peekSeq) return;
-    peekPaintHint();
     if (anchor) peekPlace(anchor, at);
   };
-  peekHint = peekMode === "hover" ? peekTipUnder(id) : "";
   peekFill(box, id, () => seq === peekSeq && peekFor === id).then(replace);
   replace();
   el.classList.add("on");
@@ -318,50 +421,15 @@ function peekHoverCard(target) {
 }
 
 // ONE HOVER PER CARD. Under a mouse pointer nothing on a card shows its own
-// tooltip: the popover is the card's one hover, and it carries what they said.
-// A terminals row's tooltip on its name and address is the head's full name and
-// address line. A chip or control's tooltip is the head's last line, read from
-// whatever is under the pointer when it opens and as the pointer moves over the
-// card. A tooltip at half a second that a different box replaces at one, in a
-// different place, was the two boxes this is here to stop, so before the second
-// nothing shows. Asked by the tooltip's pointerover in js/tooltips.js. Keyboard
-// focus and a long press are not asked, and show the tooltip as ever.
+// tooltip: the popover is the card's one hover, and it says ALL of the card's
+// state (`peekRows`), the same whichever badge the pointer is on. A chip's
+// tooltip text is not shown anywhere else on the card, so nothing competes with
+// the popover and nothing differs by badge. Before the second nothing shows.
+// Asked by the tooltip's pointerover in js/tooltips.js. Keyboard focus and a
+// long press are not asked, and show the tooltip as ever.
 function peekOwnsTip(a, e) {
   if (e && e.pointerType && e.pointerType !== "mouse") return false;
   return !!peekHoverCard(a);
-}
-
-// A card's own tooltip, which the head already says in full.
-function peekCardTip(a, card) {
-  return a === card || !!(a.matches && a.matches(".tname, .tpath"));
-}
-
-// What the chip or control under the pointer would have said, when it is on
-// card `id`.
-function peekTipUnder(id) {
-  if (!peekPointer || typeof tipAnchor !== "function") return "";
-  const a = tipAnchor(document.elementFromPoint(peekPointer.x, peekPointer.y));
-  const card = a && peekHoverCard(a);
-  if (!card || card.dataset.id !== id || peekCardTip(a, card)) return "";
-  return a.dataset.tip;
-}
-
-// Kept on the head across the body's redraws, which rebuild it.
-let peekHint = "";
-// Paints the hint and measures the popover again from where it opened, since a
-// hint line can make it taller. Set by openPeek.
-let peekReplace = () => {};
-function peekPaintHint() {
-  const head = peekEl && peekEl.querySelector(".peek-head");
-  if (!head) return;
-  let s = head.querySelector(".peek-hint");
-  if (!peekHint) { if (s) s.remove(); return; }
-  if (!s) {
-    s = document.createElement("span");
-    s.className = "peek-hint";
-    head.appendChild(s);
-  }
-  s.textContent = peekHint;
 }
 
 document.addEventListener("pointerover", e => {
@@ -375,10 +443,6 @@ document.addEventListener("pointerover", e => {
     peekHoverEl = card;
     if (peekFor === id) {
       clearTimeout(peekCloseTimer);
-      if (peekMode === "hover") {
-        const hint = peekTipUnder(id);
-        if (hint !== peekHint) { peekHint = hint; peekReplace(); }
-      }
     }
     return;
   }

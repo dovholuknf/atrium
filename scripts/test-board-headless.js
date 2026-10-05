@@ -565,6 +565,7 @@ function mockTasks(reading) {
   if (tasksMode === "stuck") { return stuckCards(); }
   if (tasksMode === "blocker") { return blockerCards(); }
   if (tasksMode === "ctxsize") { return CTX_CARDS; }
+  if (tasksMode === "onehover") { return [ONE_HOVER_CARD]; }
   if (tasksMode === "peek") {
     // Idle a second longer on every read, so a refresh redraws the entries.
     if (reading) peekReads++;
@@ -9734,7 +9735,7 @@ async function contextCycleSection(browser, base) {
 
     // The chip names the step in words.
     const chip = await wp.evaluate(() => newContextChip(lastTasks.find(t => t.id === "ll-cycle")));
-    if (!/context 1\/3: waiting for ack/.test(chip)) fail("the cycle chip does not say 'context 1/3: waiting for ack': " + chip);
+    if (!/context 1\/3: waiting for ack\. waiting for: limit prompt typed/.test(chip)) fail("the cycle chip does not say 'context 1/3: waiting for ack': " + chip);
     const words = await wp.evaluate(() => ["clear", "wake"].map(step => newContextChip({ id: "x",
       new_context: { step, n: step === "clear" ? 2 : 3, of: 3, label: "" } })));
     if (!/2\/3: clearing/.test(words[0]) || !/3\/3: waking/.test(words[1])) fail("the clear and wake chips read " + words.join(" | "));
@@ -10600,9 +10601,8 @@ async function peekEverywhereSection(browser, base) {
       if (!where || !head.includes(where)) {
         fail("on the " + view + " tab the details' head does not carry the address " + where + ": " + head);
       }
-      if (!own && !head.includes(said)) fail("on the " + view + " tab the details do not say what " + sel + " said: " + head);
-      if (own && (await p.evaluate(() => !!document.querySelector(".peek.on .peek-hint")))) {
-        fail("on the terminals tab the row's name tooltip was said twice in the details: " + head);
+      if (await p.evaluate(() => !!document.querySelector(".peek.on .peek-hint"))) {
+        fail("on the " + view + " tab the details carry a per-part hint line: " + head);
       }
       const title = await p.evaluate(() => {
         const el = document.querySelector(".peek.on .peek-title");
@@ -10618,8 +10618,8 @@ async function peekEverywhereSection(browser, base) {
         const s = await shown();
         if (s.tip) fail("on the " + view + " tab a tooltip showed after crossing the card to " + next);
         if (!s.peek) fail("on the " + view + " tab the details closed crossing their own card to " + next);
-        else if (!(await headText()).includes(nsaid)) {
-          fail("on the " + view + " tab the details did not follow the pointer to what " + next + " says: " + (await headText()));
+        else if (await p.evaluate(() => !!document.querySelector(".peek.on .peek-hint"))) {
+          fail("on the " + view + " tab the details grew a hint crossing the card to " + next + ": " + (await headText()));
         }
       }
       // A tooltip that was up, from the keyboard, goes when the details open.
@@ -10667,6 +10667,96 @@ async function peekEverywhereSection(browser, base) {
     tasksMode = was;
   }
   if (errors.length) fail("the peek page threw: " + errors.join(" | "));
+}
+
+// ONE HOVER, ALL STATE: every part of a card's row opens the same details, whatever it is. A card with a context
+// cycle in progress, two held messages, a warm cache, a question, an unseen turn, auto mode and a launcher wears most
+// of what a row can. Hovering each of its badges (and the name, and the bare row) opens the same popover with the
+// same text, and that text says every one of those states. ONEHOVER_SHOTS=<dir> writes the picture.
+const ONE_HOVER_CARD = Object.assign({}, T1, {
+  id: "sg4-control~oh1", status: "running", display_title: "orchestrator", resume_id: "sess-oh1", runner: "claude",
+  supervised: true, pinned: true, worktree: "/src/atrium/oh", repo: "atrium", branch: "claude/oh", model: "claude-opus-5-5",
+  tags: ["sg4"], auto_approve: true, auto_until: new Date(Date.now() + 40 * 60000).toISOString(),
+  spawned_by: "boss@sg4", launcher_id: "boss", owed: 2, owed_since: new Date(Date.now() - 600000).toISOString(),
+  held_notices: 3, replies_owed: 1,
+  context_size: { tokens: 172000, warn: true, cycle: true, threshold_k: 160, source: "hub" },
+  autocompact: { limit_k: 160, window_k: 176 },
+  new_context: { step: "limit", n: 1, of: 3, label: "limit prompt typed, waiting for the agent to ack" },
+  activity: { what: "thinking", seconds: 12, held_peer: "boss", held_count: 2, held_for: "new-context", held_seconds: 15 },
+  ask: "land sa21 first?", asks_open: 2,
+  seen: { unseen: true, turn_ended_at: "2026-09-23T12:00:00.000Z", answered: false, open_questions: ["land sa21 first?", "build the tray?"] },
+  keepalive: { state: "on", state_at: "2026-09-27T10:00:00Z", refreshes: 3, spent: 0.18, budget: 0.3,
+    warm_until: new Date(Date.now() + 30 * 60000).toISOString() },
+});
+async function peekOneHoverSection(browser, base) {
+  const W = 1400, H = 1000;
+  const ctx = await browser.newContext({ viewport: { width: W, height: H } });
+  const p = await ctx.newPage();
+  const errors = [];
+  p.on("pageerror", e => errors.push(String(e)));
+  await ctx.route("**/v1/tasks/*/usage*", route => route.fulfill({ json: CTX_USAGE["cx-big"] }));
+  // A list wide enough to carry every badge, as a real board's is.
+  await ctx.addInitScript(() => { try { localStorage.setItem("atrium.termlist.w", "640"); } catch (e) {} });
+  const shots = process.env.ONEHOVER_SHOTS || "";
+  const norm = s => String(s || "").replace(/\s+/g, " ").trim();
+  const open = () => p.evaluate(() => {
+    const el = document.querySelector(".peek.on");
+    if (!el) return null;
+    const r = el.getBoundingClientRect();
+    return { text: norm(el.textContent), b: r.bottom, y: r.top, vh: innerHeight };
+    function norm(s) { return String(s || "").replace(/\s+/g, " ").trim(); }
+  });
+  const was = tasksMode;
+  tasksMode = "onehover";
+  try {
+    await p.goto(base, { waitUntil: "domcontentloaded" });
+    await p.evaluate(() => document.querySelector('.tab[data-view="terms"]').click());
+    const row = '#term-list .card.tab[data-id="sg4-control~oh1"]';
+    await p.waitForSelector(row, { state: "visible", timeout: slow(15000) });
+    await new Promise(r => setTimeout(r, 1500));
+    // The row's badges, by what they are. Every one must be on the row for the test to mean anything.
+    const badges = ["chip.held", "chip.questions", "chip.unseen", "chip.cache", "chip.room"]
+      .map(c => row + " ." + c.split(".").join("."));
+    const hovered = [];
+    for (const sel of badges.concat([row + " .chip:not(.held):not(.questions):not(.unseen):not(.cache):not(.room)", row + " .tname", row])) {
+      const loc = p.locator(sel).first();
+      if (!(await loc.count())) { if (sel.endsWith(".tname") || sel === row) fail("onehover: no " + sel); else fail("onehover: the row draws no " + sel); continue; }
+      await p.mouse.move(W / 2, 3);
+      await p.evaluate(() => closePeek());
+      await new Promise(r => setTimeout(r, 300));
+      const b = await loc.boundingBox();
+      await p.mouse.move(Math.round(b.x + b.width / 2), Math.round(b.y + b.height / 2));
+      await p.waitForFunction(() => /212k/.test((document.querySelector(".peek.on") || {}).textContent || ""),
+        null, { timeout: slow(4000) }).catch(() => fail("onehover: a second on " + sel + " did not open the details."));
+      await new Promise(r => setTimeout(r, 400));
+      if (await p.evaluate(() => document.getElementById("tip").classList.contains("on"))) fail("onehover: a tooltip showed over " + sel);
+      const pk = await open();
+      if (!pk) { fail("onehover: no details on " + sel); continue; }
+      hovered.push([sel, pk.text]);
+      if (pk.y < 7 || pk.b > pk.vh - 7) fail("onehover: the details leave the viewport over " + sel + ": " + JSON.stringify(pk));
+      if (shots && sel === badges[0]) await p.screenshot({ path: shots + "/" + (process.env.ONEHOVER_NAME || "peek") + ".png" });
+    }
+    const [firstSel, first] = hovered[0] || ["", ""];
+    for (const [sel, text] of hovered) {
+      if (text !== first) fail("onehover: the details over " + sel + " differ from those over " + firstSel + ":\n  " + text + "\n  " + first);
+    }
+    const want = [
+      /running/, /claude-opus-5-5/, /sg4-control/, /2 messages have been waiting to be delivered to this agent for 15s and are held while a new-context cycle/,
+      /context 1\/3: waiting for ack\. waiting for: limit prompt typed/, /212k/, /warns at 160k from hub/, /cache: .*warm/, /limit 160k . compacts at 176k/,
+      /auto mode/, /ends in 40m|until \d/, /land sa21 first\?/, /build the tray\?/, /unseen|nobody has looked/, /boss/, /sg4/,
+      /3 held notices/, /2 owed/, /thinking/,
+    ];
+    for (const re of want) if (!re.test(first)) fail("onehover: the details do not say " + re + ": " + first);
+    // Off the card, a tooltip is as it was.
+    const gear = await p.locator("#gear").boundingBox();
+    await p.mouse.move(Math.round(gear.x + gear.width / 2), Math.round(gear.y + gear.height / 2));
+    await p.waitForFunction(() => document.getElementById("tip").classList.contains("on"), null, { timeout: slow(2000) })
+      .catch(() => fail("onehover: the gear's tooltip no longer shows."));
+  } finally {
+    await ctx.close();
+    tasksMode = was;
+  }
+  if (errors.length) fail("the one hover page threw: " + errors.join(" | "));
 }
 
 // A running card the room says looks idle (no turn-end arrived). The chip replaces
@@ -23912,7 +24002,7 @@ async function main() {
       pasteBig: pasteBigSection, pasteBusy: pasteBusySection, typing: typingSection, alias: aliasSection, askAgain: askAgainSection, copySelect: copySelectSection, busyGuard: busyGuardSection, keepalive: keepaliveSection,
       stuck: stuckSection, blockerMark: blockerMarkSection, carryLink: carryLinkSection,
       skinScope: skinScopeSection, skinHeal: skinHealSection, toastLives: toastLivesSection,
-      history: historySection, contextSize: contextSizeSection, ctxLine: ctxLineSection, ctxLimitLayers: ctxLimitLayersSection, contextCycle: contextCycleSection, landThePlane: landThePlaneSection, peekEverywhere: peekEverywhereSection, cardRoute: cardRouteSection,
+      history: historySection, contextSize: contextSizeSection, ctxLine: ctxLineSection, ctxLimitLayers: ctxLimitLayersSection, contextCycle: contextCycleSection, landThePlane: landThePlaneSection, peekEverywhere: peekEverywhereSection, peekOneHover: peekOneHoverSection, cardRoute: cardRouteSection,
       quietDoer: quietDoerSection, autoPerm: autoPermSection, looksIdle: looksIdleSection, notifyOff: notifyOffSection,
       questionsClick: questionsClickSection, walk: walkSection, walkContext: walkContextSection, linkReuse: linkReuseSection,
       usageCacheReads: usageCacheReadsSection, roomsDash: roomsDashSection, phoneView: phoneViewSection, heldLine: heldLineSection, u016: u016Section, phoneHeader: phoneHeaderSection, phoneFocus: phoneFocusSection, phoneTermBar: phoneTermBarSection, phoneShare: phoneShareSection, phonePan: phonePanSection, phoneFollow: phoneFollowSection, phoneTap: phoneTapSection, phoneKeyboard: phoneKeyboardSection, phoneCompose: phoneComposeSection, mCompose: mComposeSection, mPerms: mPermsSection, mReview: mReviewSection, usagePolish: usagePolishSection, usageLimits: usageLimitsSection, usageGroups: usageGroupsSection,
@@ -25940,6 +26030,7 @@ async function main() {
     await unit("contextCycle", () => contextCycleSection(browser, base));
     await unit("landThePlane", () => landThePlaneSection(browser, base));
     await unit("peekEverywhere", () => peekEverywhereSection(browser, base));
+    await unit("peekOneHover", () => peekOneHoverSection(browser, base));
     await unit("phoneListFit", () => phoneListFitSection(browser, base));
     await unit("termListLastRow", () => termListLastRowSection(browser, base));
     await unit("phoneNudge", () => phoneNudgeSection(browser, base));

@@ -1,0 +1,5 @@
+# One hover per card, and it says everything about the card
+
+Resting the pointer on a card now opens the same details whichever part of the row it is on: the held-messages badge, the question and unseen marks, the cache dot, the room chip, the name or the bare row. Before, the details began with a line that depended on the badge under the pointer, so hovering `! 2` and hovering the cache dot showed different things.
+
+The details now list all of the card's state in one place, only the parts that apply, with what needs you first, then what is in progress, then held or queued messages, then what the card is. That covers open questions and unseen turns, held notices, what is owed to the launcher, a failed or running context cycle and the step it is waiting on, activity and subagents, the held-message count with its age and reason, the room, runner, model, auto mode and its deadline, who launched it, tags, parked or shelved, the cache and keep-alive, context size and limit, and usage. A long list scrolls inside the window rather than running off the screen.
