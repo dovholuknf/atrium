@@ -1,7 +1,11 @@
 # Reply suggestions (rd-new-reply-suggestions)
 
-Status: designed by @rnd 2026-09-30, for @ui (the renderer, both surfaces) and @runtime (the hook parse and one
-column). Nothing here is built. Backlog item `docs/backlog/rnd/rd-new-reply-suggestions.md`.
+Status: designed by @rnd 2026-09-30. RS1 and RS4 (@ui) are built on `claude/u-new-reply-suggestions-build`: `js/replies.js`
+is the one renderer for both growlers and `/m` compose, and `replies.of` reads `replies` and `fixed` off the card view,
+tested against mocked cards. RS2 (`atrium ask --choice`) and RS3 (`closingOptions`, the `options` column, and
+`replies` and `fixed` on the card view and the notify payload) are @runtime's and not built. Until RS3 lands a card
+carries neither field, so only an ask's own `{choices}` block draws buttons. For R5 the room must send `fixed: false`
+and an empty `replies`, or the box is not focused. Backlog item `docs/backlog/rnd/rd-new-reply-suggestions.md`.
 
 ## The answer
 

@@ -25580,7 +25580,7 @@ async function repliesShotsSection(browser, base) {
   const scenes = [
     ["options-stop", { body: "Should I build the worktrees next, or review the diffs first?\n\n{choices}\nbuild the worktrees\nreview the diffs first\n{/choices}" }],
     ["fixed-four", { body: "Should I build the worktrees next?", fixed: true }],
-    ["open-question", { body: "Which of the three schemas do you want me to keep?" }],
+    ["open-question", { body: "Which of the three schemas do you want me to keep?", fixed: false }],
     ["long-option", { body: RS_BODY }]
   ];
   for (const [name, sc] of scenes) {
