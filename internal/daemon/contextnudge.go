@@ -42,6 +42,12 @@ func (d *Daemon) contextLine(t *store.Task) string {
 	if t.Status != store.StatusRunning {
 		return ""
 	}
+	// A card in a new-context cycle is never nudged: the capture prompt starts a turn of
+	// its own, and a block on its first tool call would stop the handoff being written.
+	// The cycle begins (and so holds) before autoPrepare types anything.
+	if d.holdingMessages(t.ID) {
+		return ""
+	}
 	d.ctx.mu.Lock()
 	seen, ok := d.ctx.m[t.ID]
 	d.ctx.mu.Unlock()

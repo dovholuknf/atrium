@@ -55,3 +55,30 @@ func TestAnOverContextCardIsToldOnceMidTurn(t *testing.T) {
 		t.Fatalf("a new turn was not told: %q", l)
 	}
 }
+
+// The capture prompt starts a turn. A card in a new-context cycle is not told to wrap up
+// in it, or its first tool call, the write of the handoff, is blocked.
+func TestACardInANewContextCycleIsNotToldItsContext(t *testing.T) {
+	d := testDaemon(t)
+	_, worker := launchedPair(t, d)
+	d.act.now = func() time.Time { return time.Now().Add(-time.Hour) }
+	d.act.set(worker.ID, ActivityThinking, "")
+	worker, _ = d.st.Get(worker.ID)
+	setContext(d, worker.ID, 253_000)
+
+	gen, ok := d.nctx.begin(worker.ID, HandoffName(worker), "")
+	if !ok {
+		t.Fatal("no cycle began")
+	}
+	if l := d.contextLine(worker); l != "" {
+		t.Fatalf("a card in a cycle was told %q", l)
+	}
+	// The claim was not taken: with the cycle over, the same turn is still told once.
+	d.nctx.finish(worker.ID, gen)
+	if l := d.contextLine(worker); !strings.Contains(l, "253k") {
+		t.Fatalf("no cycle, no line: %q", l)
+	}
+	if l := d.contextLine(worker); l != "" {
+		t.Fatalf("told twice in one turn: %q", l)
+	}
+}
