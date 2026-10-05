@@ -12258,7 +12258,7 @@ async function mHarness(browser, view, opts) {
   opts = opts || {};
   const ctx = await browser.newContext(Object.assign({ viewport: view, reducedMotion: opts.reduced ? "reduce" : "no-preference" },
     opts.desktop ? {} : { hasTouch: true, isMobile: true }));
-  const calls = { message: [], decide: [], harnesses: 0 };
+  const calls = { message: [], decide: [], harnesses: 0, harnessRooms: [] };
   const mode = { message: "terminal", decide: "ok" };
   await ctx.route(M_ORIGIN + "/**", async route => {
     const u = new URL(route.request().url());
@@ -12272,6 +12272,12 @@ async function mHarness(browser, view, opts) {
         "on:(k,f)=>{L[k].push(f);window.__subs=(window.__subs||0)+1;return()=>{L[k]=L[k].filter(x=>x!==f);window.__subs--}}};" +
         "window.__cards=[{id:'c1',runner:'claude',status:'working',title:'Card one'},{id:'c2',runner:'gemini',status:'working',title:'Card two'}];" +
         "window.__perms=[];window.__emit=k=>L[k].slice().forEach(f=>f());" +
+        // The part of the phone page's mNet that perms.js and compose.js use: the tag split, and an api that sends
+        // the headers it is given and refuses with the daemon's own words.
+        "window.mNet={roomOf:id=>{const s=String(id),i=s.indexOf('~');return i>0?s.slice(0,i):''},bareId:id=>{const s=String(id),i=s.indexOf('~');return i>0?s.slice(i+1):s}," +
+        "api:async(path,o)=>{o=Object.assign({},o);if(o.body&&!(o.headers||{})['Content-Type'])o.headers=Object.assign({'Content-Type':'application/json'},o.headers);" +
+        "const r=await fetch(path,o);if(!r.ok&&r.status!==204){let m=await r.text();try{m=JSON.parse(m).error||m}catch(e){}throw new Error(String(m).trim()||r.statusText)}" +
+        "return r.status===204?null:r.json()}};" +
         "</script><script src=/m/js/compose.js></script><script src=/m/js/perms.js></script>", "text/html");
     }
     if (u.pathname.startsWith("/m/")) {
@@ -12281,7 +12287,10 @@ async function mHarness(browser, view, opts) {
     }
     if (u.pathname === "/v1/harnesses") {
       calls.harnesses++;
-      return send(200, JSON.stringify({ harnesses: [{ id: "claude", bracketed_paste: true }, { id: "gemini", bracketed_paste: false }] }));
+      const hr = route.request().headers()["x-atrium-room"] || "";
+      calls.harnessRooms.push(hr);
+      // The room "plain" has a claude that cannot take a bracketed paste, every other room one that can.
+      return send(200, JSON.stringify({ harnesses: [{ id: "claude", bracketed_paste: hr !== "plain" }, { id: "gemini", bracketed_paste: false }] }));
     }
     let m = u.pathname.match(/^\/v1\/tasks\/([^/]+)\/message$/);
     if (m) {
@@ -12295,7 +12304,7 @@ async function mHarness(browser, view, opts) {
     m = u.pathname.match(/^(?:\/v1\/rooms\/([^/]+))?\/(?:v1\/)?permissions\/([^/]+)\/decide$/) ||
       u.pathname.match(/^\/v1\/rooms\/([^/]+)\/permissions\/([^/]+)\/decide$/);
     if (m || /\/decide$/.test(u.pathname)) {
-      calls.decide.push({ url: u.pathname, body: JSON.parse(route.request().postData() || "{}") });
+      calls.decide.push({ url: u.pathname, room: route.request().headers()["x-atrium-room"] || "", body: JSON.parse(route.request().postData() || "{}") });
       if (mode.decide === "refuse") return send(409, JSON.stringify({ error: "already answered" }));
       return send(204, "", "text/plain");
     }
@@ -12402,6 +12411,20 @@ async function mComposeSection(browser) {
     await p.reload();
     await mount("c1");
 
+    // TWO ROOMS (review finding 2): two `claude` runners, one per room, one that cannot take a bracketed paste. Each
+    // card reads its own room's list, so the room that cannot gets the joined-lines note and the other does not.
+    await p.evaluate(() => { window.__cards.push({ id: "plain~c3", runner: "claude", status: "working", title: "plain" }, { id: "paste~c4", runner: "claude", status: "working", title: "paste" }); });
+    await mount("plain~c3");
+    await type("line a\nline b");
+    await p.waitForTimeout(150);
+    if (!/joined with spaces/.test(await noteText())) fail(tag + "the room that cannot paste got no join hint: " + await noteText());
+    await mount("paste~c4");
+    await type("line a\nline b");
+    await p.waitForTimeout(150);
+    if (/joined with spaces/.test(await noteText())) fail(tag + "one room's claude took the other room's capability");
+    if (calls.harnessRooms.indexOf("plain") < 0 || calls.harnessRooms.indexOf("paste") < 0) fail(tag + "harnesses were not read per room: " + calls.harnessRooms);
+    await mount("c1");
+
     // The fixed quick replies are gone, for a working card and for one that is asking.
     await p.evaluate(() => { __cards[0].status = "needs-input"; __emit("cards"); });
     await p.waitForTimeout(150);
@@ -12480,7 +12503,7 @@ async function mPermsSection(browser) {
       // Answered elsewhere: the store drops it and the row leaves.
       await setPerms([perm("p3", "c1", { room: "lab", perm_id: "r9", tool: "Edit", command: "x" })]);
       await p.waitForFunction(() => !document.querySelector('.mp-row[data-id="p1"]'), null, { timeout: 2000 });
-      // Room request: room url, the daemon's own id, and a reason with the block.
+      // Room request: the daemon's own id in the plain path, the room in its header, and a reason with the block.
       await p.tap('.mp-row[data-id="p3"] .mp-btn.why');
       await p.fill('.mp-row[data-id="p3"] .mp-reason-box', "use pnpm instead");
       await setPerms([perm("p3", "c1", { room: "lab", perm_id: "r9", tool: "Edit", command: "x" }), perm("p4", "c1")]);
@@ -12488,13 +12511,25 @@ async function mPermsSection(browser) {
       await p.tap('.mp-row[data-id="p3"] .mp-reason .go');
       await p.waitForTimeout(150);
       const d = calls.decide[1];
-      if (!d || d.url !== "/v1/rooms/lab/permissions/r9/decide" || d.body.decision !== "block" || d.body.reason !== "use pnpm instead") fail(tag + "reason: " + JSON.stringify(d));
+      if (!d || d.url !== "/v1/permissions/r9/decide" || d.room !== "lab" || d.body.decision !== "block" || d.body.reason !== "use pnpm instead") fail(tag + "reason: " + JSON.stringify(d));
       // Plain deny has no reason. A refused answer unlocks the row and says why.
       mode.decide = "refuse";
       await p.tap('.mp-row[data-id="p4"] .mp-btn.deny:not(.go)');
       await p.waitForFunction(() => /already answered/.test(document.querySelector('.mp-row[data-id="p4"] .mp-err').textContent));
       if (calls.decide[2].body.decision !== "block" || calls.decide[2].body.reason !== "") fail(tag + "deny: " + JSON.stringify(calls.decide[2]));
       if (await p.$eval('.mp-row[data-id="p4"] .mp-btn.approve', b => b.disabled)) fail(tag + "a refused answer left the row locked");
+      // TWO ROOMS ATTACHED (review finding 1): the all-rooms view tags the id `room~id` and carries no perm_id. The
+      // answer goes to the plain path with the bare id, and the room in the header, which is all the hub routes by.
+      await setPerms([perm("alpha~p1", "alpha~c1", { room: "alpha" }), perm("beta~p1", "beta~c2", { room: "beta" })]);
+      await p.evaluate(() => mPerms.mount(document.getElementById("m-perms"), null));
+      await p.waitForSelector('.mp-row[data-id="beta~p1"]');
+      const before = calls.decide.length;
+      await p.tap('.mp-row[data-id="beta~p1"] .mp-btn.approve');
+      await p.waitForTimeout(100);
+      await p.tap('.mp-row[data-id="alpha~p1"] .mp-btn.deny:not(.go)');
+      await p.waitForTimeout(150);
+      const two = calls.decide.slice(before).map(c => c.room + " " + c.url + " " + c.body.decision).join(" | ");
+      if (two !== "beta /v1/permissions/p1/decide approve | alpha /v1/permissions/p1/decide block") fail(tag + "two rooms: " + two);
       // All-cards view and its empty state.
       await p.evaluate(() => mPerms.mount(document.getElementById("m-perms"), null));
       if ((await p.$$(".mp-row")).length !== 2) fail(tag + "all view shows " + (await p.$$(".mp-row")).length);
@@ -19340,6 +19375,115 @@ async function mActivityReadSection(browser) {
 }
 
 // ── Failed reads back off on their own and stop on a refusal ────────────
+// ── review 3c1e46d6: the phone's list read, the phone's reopen, the board's all-rooms approve ─────────────────
+// Finding 3: a `task` row or a `task-removed` that lands while `/v1/tasks` is in flight is not undone by that read's
+// older answer. Finding 4: a tap on a card while the sheet slides out opens it. And the review's open question: an
+// approve on the desktop board in the all-rooms view names its room in the header on a hub, and on no hub keeps the
+// `/v1/rooms/` path.
+async function mReviewSection(browser, base) {
+  const tag = "mReview: ";
+  const st = mServer({});
+  st.tasks = [mCard("a-1", { alias: "alpha", display_title: "alpha", status: "running" }), mCard("b-1", { alias: "beta", display_title: "beta" })];
+  await st.open();
+  try {
+    const { ctx, p, errors } = await mPage(browser, st, M_VIEWS[0], "");
+    await p.waitForFunction(() => window.mNet.loaded(), null, { timeout: slow(10000) });
+    await p.waitForSelector("#m-seg-all", { timeout: slow(10000) });
+    await p.tap("#m-seg-all");
+    await p.waitForSelector("#m-list .row", { timeout: slow(10000) });
+    // 3. The read starts on a bare `task` event, and is answered 900ms later with what the list was when it began.
+    st.tasksSlow = 900;
+    st.send("task", {});
+    await p.waitForTimeout(450);
+    st.send("task", Object.assign({}, st.tasks[0], { row: 1, status: "done" }));
+    st.send("task-removed", { id: "b-1" });
+    await p.waitForTimeout(1300);
+    const got = await p.evaluate(() => ({ a: (window.mStore.card("a-1") || {}).status, b: !!window.mStore.card("b-1") }));
+    if (got.a !== "done") fail(tag + "an older read put the card back to " + got.a);
+    if (got.b) fail(tag + "an older read brought a removed card back");
+    st.tasksSlow = 0;
+    // 4. Close, and open the card again inside the slide-out, for the same card and for another one.
+    for (const [first, second] of [["a-1", "a-1"], ["a-1", "z-1"]]) {
+      st.tasks = [mCard("a-1", { alias: "alpha", display_title: "alpha" }), mCard("z-1", { alias: "zulu", display_title: "zulu" })];
+      st.send("task", {});
+      await p.waitForSelector('#m-list .row[data-id="z-1"]', { timeout: slow(5000) });
+      await p.tap('#m-list .row[data-id="' + first + '"]');
+      await p.waitForSelector("#m-card.on", { timeout: slow(5000) });
+      await p.waitForTimeout(500);
+      // Right after the back button's popstate, which starts the slide-out, and before it can have finished.
+      await p.evaluate(([id, again]) => new Promise(done => {
+        addEventListener("popstate", () => { window.mCard.open(again); done(); }, { once: true });
+        window.mCard.close();
+      }), [first, second]);
+      await p.waitForTimeout(700);
+      const now = await p.evaluate(() => ({ cur: window.mCard.current(), on: document.getElementById("m-card").classList.contains("on"), hidden: document.getElementById("m-card").hidden }));
+      if (now.cur !== second || !now.on || now.hidden) fail(tag + "a tap on " + second + " just after closing " + first + " did nothing: " + JSON.stringify(now));
+      await p.evaluate(() => window.mCard.close());
+      await p.waitForFunction(() => !document.getElementById("m-card").classList.contains("on"), null, { timeout: slow(2000) });
+      await p.waitForTimeout(600);
+      if (await p.evaluate(() => !document.getElementById("m-card").hidden)) fail(tag + "the sheet stayed up after a close");
+    }
+    if (errors.length) fail(tag + "the page threw: " + errors.join(" | "));
+    await ctx.close();
+  } finally { await st.close(); }
+
+  // The board. `decide` reads its room off the card's own `data-room` and `data-perm`.
+  const ctx = await browser.newContext();
+  const seen = [];
+  await ctx.addInitScript(() => localStorage.setItem("atrium.skipconfirm", JSON.stringify({ "width-floor": true })));
+  await ctx.route("**/v1/permissions/*/decide", route => { const r = route.request(); seen.push(new URL(r.url()).pathname + " " + (r.headers()["x-atrium-room"] || "")); return route.fulfill({ status: 200, contentType: "application/json", body: "{}" }); });
+  await ctx.route("**/v1/rooms/*/permissions/*/decide", route => { const r = route.request(); seen.push(new URL(r.url()).pathname + " " + (r.headers()["x-atrium-room"] || "")); return route.fulfill({ status: 200, contentType: "application/json", body: "{}" }); });
+  try {
+    const p = await ctx.newPage();
+    const errs = [];
+    p.on("pageerror", e => errs.push(String(e)));
+    await p.goto(base, { waitUntil: "domcontentloaded" });
+    await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
+    for (const hub of [true, false]) {
+      await p.evaluate(h => {
+        hubIsHub = h;
+        let list = document.getElementById("perms-list");
+        if (!list) { list = document.createElement("div"); list.id = "perms-list"; document.body.appendChild(list); }
+        list.innerHTML = '<div class="perm" data-id="alpha~p1" data-room="alpha" data-perm="p1"></div>';
+      }, hub);
+      await p.evaluate(() => decide("alpha~p1", "approve", false));
+    }
+    const want = ["/v1/permissions/p1/decide alpha", "/v1/rooms/alpha/permissions/p1/decide "];
+    if (JSON.stringify(seen) !== JSON.stringify(want)) fail(tag + "desktop all-rooms approve sent " + JSON.stringify(seen) + ", want " + JSON.stringify(want));
+    if (errs.length) fail(tag + "the board threw: " + errs.join(" | "));
+  } finally { await ctx.close(); }
+  // The pictures for the item: two rooms attached, the phone's permission rows, and an approve tapped on each.
+  // `REVIEW_SHOTS=<dir>` and `REVIEW_SHOT_NAME=before|after`. Not a check.
+  if (process.env.REVIEW_SHOTS) {
+    const hub = mServer({});
+    hub.hubRooms = ["alpha", "beta"];
+    hub.tasks = [mCard("alpha~a-1", { room: "alpha", alias: "builder", display_title: "the builder", status: "needs-permission", waiting_since: mIso(2 * M_MIN) }),
+      mCard("beta~b-1", { room: "beta", alias: "tester", display_title: "the tester", status: "needs-permission", waiting_since: mIso(3 * M_MIN) })];
+    hub.perms = [
+      { id: "alpha~p1", room: "alpha", task_id: "alpha~a-1", tool: "Bash", command: "go test ./internal/...", agent: "builder", requested_at: mIso(2 * M_MIN) },
+      { id: "beta~p7", room: "beta", task_id: "beta~b-1", tool: "Edit", command: "internal/api/web/m/js/perms.js", agent: "tester", requested_at: mIso(3 * M_MIN) }];
+    await hub.open();
+    try {
+      const { ctx, p } = await mPage(browser, hub, { width: 390, height: 844 }, "");
+      await p.waitForSelector("#m-seg-all", { timeout: slow(10000) });
+      await p.tap("#m-seg-all");
+      await p.waitForSelector('#m-list .row[data-id="alpha~a-1"]', { timeout: slow(10000) });
+      await p.tap('#m-list .row[data-id="alpha~a-1"]');
+      await p.waitForSelector("#m-card.on .mp-row", { timeout: slow(10000) });
+      await p.waitForTimeout(700);
+      fs.mkdirSync(process.env.REVIEW_SHOTS, { recursive: true });
+      const nm = process.env.REVIEW_SHOT_NAME || "shot";
+      await p.screenshot({ path: path.join(process.env.REVIEW_SHOTS, nm + "-rows-390.png") });
+      await p.tap('.mp-row[data-id="alpha~p1"] .mp-btn.approve');
+      await p.waitForTimeout(900);
+      await p.screenshot({ path: path.join(process.env.REVIEW_SHOTS, nm + "-approve-390.png") });
+      console.log("review shots " + nm + ": decides " + JSON.stringify(hub.decides));
+      await ctx.close();
+    } finally { await hub.close(); }
+  }
+  if (!bad) console.log("mReview ok");
+}
+
 async function mReadRetrySection(browser) {
   const tag = "mReadRetry: ";
   for (const status of [0, 401, 403]) {
@@ -22183,7 +22327,7 @@ async function main() {
       history: historySection, contextSize: contextSizeSection, ctxLine: ctxLineSection, landThePlane: landThePlaneSection, peekEverywhere: peekEverywhereSection, cardRoute: cardRouteSection,
       quietDoer: quietDoerSection, looksIdle: looksIdleSection, notifyOff: notifyOffSection,
       questionsClick: questionsClickSection, walk: walkSection, linkReuse: linkReuseSection,
-      usageCacheReads: usageCacheReadsSection, roomsDash: roomsDashSection, phoneView: phoneViewSection, heldLine: heldLineSection, u016: u016Section, phoneHeader: phoneHeaderSection, phoneFocus: phoneFocusSection, phoneTermBar: phoneTermBarSection, phoneShare: phoneShareSection, phonePan: phonePanSection, phoneFollow: phoneFollowSection, phoneTap: phoneTapSection, phoneKeyboard: phoneKeyboardSection, phoneCompose: phoneComposeSection, mCompose: mComposeSection, mPerms: mPermsSection, usagePolish: usagePolishSection, usageLimits: usageLimitsSection, usageGroups: usageGroupsSection,
+      usageCacheReads: usageCacheReadsSection, roomsDash: roomsDashSection, phoneView: phoneViewSection, heldLine: heldLineSection, u016: u016Section, phoneHeader: phoneHeaderSection, phoneFocus: phoneFocusSection, phoneTermBar: phoneTermBarSection, phoneShare: phoneShareSection, phonePan: phonePanSection, phoneFollow: phoneFollowSection, phoneTap: phoneTapSection, phoneKeyboard: phoneKeyboardSection, phoneCompose: phoneComposeSection, mCompose: mComposeSection, mPerms: mPermsSection, mReview: mReviewSection, usagePolish: usagePolishSection, usageLimits: usageLimitsSection, usageGroups: usageGroupsSection,
       eventDriven: eventDrivenSection, idleBudget: idleBudgetSection, pollsGone: pollsGoneSection,
       phoneListFit: phoneListFitSection, termListLastRow: termListLastRowSection, phoneNudge: phoneNudgeSection,
       growlStack: growlStackSection, growlActions: growlActionsSection, growlModal: growlModalSection, growlQuiet: growlQuietSection, growlAttention: growlAttentionSection, growlPhone: growlPhoneSection, mGrowl: mGrowlSection, growlPopout: growlPopoutSection, growlOff: growlOffSection, growlRemind: growlRemindSection,
@@ -24122,6 +24266,7 @@ async function main() {
     await unit("phoneCompose", () => phoneComposeSection(browser, base));
     await unit("mCompose", () => mComposeSection(browser));
     await unit("mPerms", () => mPermsSection(browser));
+    await unit("mReview", () => mReviewSection(browser, base));
     await unit("eventDriven", () => eventDrivenSection(browser, base));
     await unit("idleBudget", () => idleBudgetSection(browser, base));
     await unit("pollsGone", () => pollsGoneSection(browser, base));
@@ -24483,7 +24628,10 @@ function mServer(state) {
       // A page scoped to a room asks with that room in a header, and the hub answers with that room's cards.
       const rm = req.headers["x-atrium-room"];
       if (state.tasksFail > 0) { state.tasksFail--; return json(503, { error: "the room is not up yet" }); }
-      return json(200, { tasks: rm ? state.tasks.filter(t => !t.room || t.room === rm) : state.tasks });
+      const snap = { tasks: rm ? state.tasks.filter(t => !t.room || t.room === rm) : state.tasks };
+      // The answer is what the list was when asked, delivered late, so an event can land in between.
+      if (state.tasksSlow) { const body = JSON.stringify(snap); return setTimeout(() => { res.writeHead(200, { "Content-Type": "application/json" }); res.end(body); }, state.tasksSlow); }
+      return json(200, snap);
     }
     if (p === "/v1/permissions") {
       state.permsHits = (state.permsHits || 0) + 1;
@@ -24492,8 +24640,15 @@ function mServer(state) {
     }
     if (p === "/v1/health") { state.healthHits = (state.healthHits || 0) + 1; return json(200, { build: state.build || "build-1" }); }
     if (p === "/v1/settings") return json(200, { board_skins: ["default", "daylight"], board_skin: state.skin || "default" });
-    if (p === "/_hub/rooms") return json(404, { error: "not a hub" });
-    if (p === "/v1/events") {
+    if (p === "/_hub/rooms") return state.hubRooms ? json(200, { rooms: state.hubRooms.map(name => ({ name })) }) : json(404, { error: "not a hub" });
+    // A hub with rooms answers a permission path only for a request that names its room in the header.
+    if (/^\/v1\/permissions\/[^/]+\/decide$/.test(p) && req.method === "POST") {
+      (state.decides = state.decides || []).push({ path: p, room: req.headers["x-atrium-room"] || "" });
+      req.resume();
+      if (state.hubRooms && !req.headers["x-atrium-room"]) return json(409, { error: "that belongs to one machine, and you are looking at all of them. pick a room first: " + state.hubRooms.join(", ") });
+      return json(200, {});
+    }
+    if (p === "/v1/events" || (state.hubRooms && p === "/v1/events/hub")) {
       state.eventHits = (state.eventHits || 0) + 1;
       if (state.eventsFail > 0) { state.eventsFail--; res.writeHead(503); return res.end(); }
       res.writeHead(200, { "Content-Type": "text/event-stream", "Cache-Control": "no-cache" });

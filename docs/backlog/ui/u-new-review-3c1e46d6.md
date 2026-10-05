@@ -1,8 +1,10 @@
 # u-new-review-3c1e46d6. Review findings on the ui batch 3c1e46d6 (bug)
 
-Status: not started. Owned by @ui. Filed by @review 2026-09-30 after a correctness read of claude/ui at 3c1e46d6
-(the /m phone page, u-030, u-031, u-033, u-034), before @ui lands it. The brief also named u-028 and u-039: no commit
-between claude/main and 3c1e46d6 carries either id, so they were not reviewed.
+Status: done on branch claude/u-new-review-3c1e46d6, not merged. All four findings were still open on claude/main
+(the review is from 2026-09-30 and none of the four files had changed) and all four are fixed. The open question about
+the desktop board was answered with a test and fixed. Owned by @ui. Filed by @review 2026-09-30 after a correctness
+read of claude/ui at 3c1e46d6 (the /m phone page, u-030, u-031, u-033, u-034), before @ui lands it. The brief also
+named u-028 and u-039: no commit between claude/main and 3c1e46d6 carries either id, so they were not reviewed.
 
 Scope was event handling and what reaches the network, not style. One scratch test was run to prove finding 1
 (`go test -run TestScratchPhoneDecide ./internal/link/`). Nothing else was run.
@@ -71,3 +73,43 @@ read stale, so its answer is taken again?
 The u-030 gear row makes `PUT /_hub/notify`, which sets a command the hub runs, one click away for anybody who can
 open the board. Whether that endpoint needs a loopback gate is @fabric's open question f-024 from cr48. The board half
 does not change the answer, but it makes the question more urgent.
+
+## Outcome (2026-10-05)
+
+Pictures: `docs/screens/u-new-review-3c1e46d6/`. `before-*` is perms.js from claude/main and `after-*` is this branch,
+both at 390px on the real /m page with a mock two-room hub. In `before-approve-390.png` the approve is refused and the
+row says "Not sent" (the mock's 404 text stands in for the hub's 409). In `after-approve-390.png` the row is answered
+and the mock saw `POST /v1/permissions/p1/decide` with `X-Atrium-Room: alpha`.
+
+1. FIXED. `perms.js` `decide` goes through `mNet.api`, takes the room from `p.room` or the tag on the id, the id from
+   `perm_id` or the bare part of the id, and posts `/v1/permissions/<bare>/decide` with `X-Atrium-Room`. It no longer
+   builds the `/v1/rooms/<room>/...` path at all. That path is the daemon's `RoomDecide`, which the hub does not route
+   either (checked, a 409 with no header and a 200 with it), so the plain path with the header is the one call that
+   works on a hub and on a single daemon. Tests: headless `mPerms` has a two-room case (tagged ids, no `perm_id`, both
+   rooms answered with the right header and bare id), and the old room case now expects the plain path with the
+   header. Go: `TestAPermissionDecideNeedsTheRoomHeader` in `internal/link` pins that the hub 409s a decide with no
+   header on either path and serves it from the named room with one. No hub code changed.
+2. FIXED. `compose.js` `pasteMap` is a map per room, read through `mNet.api` with the card's room in
+   `X-Atrium-Room`, so each room's own list answers and no runner id can overwrite another room's. That is keyed by
+   room and runner as the review asked, with the read itself scoped so the hub returns one room's list rather than
+   the merged one. Test: headless `mCompose`, two `claude` cards in two rooms where one room cannot paste.
+3. FIXED, differently from the suggestion. The review suggested marking a read stale when an event lands during it and
+   reading again. `store.js` instead keeps the rows and removals the stream delivered while a read was in flight and
+   lays them over the answer. It needs no second read, and a busy stream cannot keep a stale read looping. Test:
+   headless `mReview`, a read answered 900ms late with a row and a removal landing in between.
+4. FIXED. `card.js` `closeNow` clears `openId` at once and `finishClose` takes the id it was closing, checking the
+   sheet and the close token only. Test: headless `mReview`, a reopen right after the popstate of a close, of the same
+   card and of another.
+
+Desktop all-rooms approve: it did not work. A Go test through `two(t, ...)` showed
+`POST /v1/rooms/alpha/permissions/p1/decide` with no header is a 409 "pick a room first" on a hub, and the board's
+fetch wrapper sets the header only when `roomNow()` or `writeRoom` is set, which the all-rooms view has neither of.
+Fixed with a small change: `settings-spine.js` `decide` on a hub posts the plain path with `X-Atrium-Room` from the
+card's `data-room` and keeps the `/v1/rooms/` path only off a hub. Test: headless `mReview`, both cases.
+
+Left: the "also seen" note on `PUT /_hub/notify` stays with @fabric's f-024.
+
+How the tests were run: `HEADLESS_ONLY=mPerms,mCompose,mReview node scripts/test-board-headless.js` with playwright
+from a scratch install (it is not in this repo's node_modules), plus the other `m*` sections and `eventDriven`. All
+pass. Each new case was also run against claude/main's files and fails there. The pictures come from
+`REVIEW_SHOTS=<dir> REVIEW_SHOT_NAME=before|after HEADLESS_ONLY=mReview`.

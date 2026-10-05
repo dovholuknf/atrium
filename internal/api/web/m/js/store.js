@@ -94,6 +94,9 @@
   const retryMs = n => Math.min(1000 * Math.pow(2, Math.max(0, n - 1)), 15000);
   const refused = e => !!e && (e.status === 401 || e.status === 403);
   let tasksTimer = 0, tasksBusy = false, tasksAgain = false;
+  // Rows and removals the stream delivered while a list read was in flight, id to the row or null. The read's answer
+  // may be older than they are, so they are laid over it.
+  let during = null;
   function tasksSoon(ms) {
     clearTimeout(tasksTimer);
     tasksTimer = setTimeout(loadTasks, ms == null ? 150 : ms);
@@ -101,10 +104,12 @@
   async function loadTasks() {
     if (tasksBusy) { tasksAgain = true; return; }
     tasksBusy = true;
+    during = new Map();
     try {
       const r = await api("/v1/tasks");
       const next = new Map();
       ((r && r.tasks) || []).forEach(t => { if (t && t.id) next.set(t.id, t); });
+      during.forEach((row, id) => { if (row) next.set(id, row); else next.delete(id); });
       cards.clear();
       next.forEach((v, k) => cards.set(k, v));
       loaded = true;
@@ -115,6 +120,7 @@
       if (!refused(e) && document.visibilityState === "visible") tasksSoon(retryMs(++tasksFails));
     }
     tasksBusy = false;
+    during = null;
     if (tasksAgain) { tasksAgain = false; tasksSoon(); }
   }
 
@@ -192,6 +198,7 @@
     // partial row over a whole one would strip the asks and the seen state from a card.
     if (d && d.row === 1 && d.id) {
       cards.set(d.id, d);
+      if (during) during.set(d.id, d);
       mark("cards");
       return;
     }
@@ -201,6 +208,7 @@
     let d = {};
     try { d = JSON.parse(e.data) || {}; } catch (err) {}
     if (d.id) {
+      if (during) during.set(d.id, null);
       if (cards.delete(d.id)) mark("cards");
       return;
     }

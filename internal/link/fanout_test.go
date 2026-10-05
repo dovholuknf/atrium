@@ -610,3 +610,38 @@ func TestOneRoomIsNeverAskedAbout(t *testing.T) {
 		t.Fatal("a single room was asked which room to use")
 	}
 }
+
+// A DECIDE ROUTES BY THE ROOM HEADER ALONE. A permission path names no card, so under two rooms the hub has only
+// `X-Atrium-Room` to go on. Without it the answer is the needsARoom 409, whether the path is the bare one or the
+// legacy `/v1/rooms/<room>/...` one, and the phone and the board both send the header.
+func TestAPermissionDecideNeedsTheRoomHeader(t *testing.T) {
+	front, _, done := two(t, cards("alpha", "c1"), cards("beta", "c2"))
+	defer done()
+
+	post := func(path, room string) (int, string) {
+		req, _ := http.NewRequest("POST", front.URL+path, strings.NewReader(`{"decision":"approve"}`))
+		if room != "" {
+			req.Header.Set("X-Atrium-Room", room)
+		}
+		res, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer res.Body.Close()
+		b, _ := io.ReadAll(res.Body)
+		return res.StatusCode, string(b)
+	}
+	for _, p := range []string{"/v1/permissions/p1/decide", "/v1/rooms/alpha/permissions/p1/decide"} {
+		if code, _ := post(p, ""); code != http.StatusConflict {
+			t.Fatalf("%s with no room was %d, want the 409", p, code)
+		}
+	}
+	code, body := post("/v1/permissions/p1/decide", "alpha")
+	if code != http.StatusOK || !strings.Contains(body, `"served_by":"alpha"`) {
+		t.Fatalf("with the header: %d %s", code, body)
+	}
+	code, body = post("/v1/permissions/p1/decide", "beta")
+	if code != http.StatusOK || !strings.Contains(body, `"served_by":"beta"`) {
+		t.Fatalf("with the other room's header: %d %s", code, body)
+	}
+}

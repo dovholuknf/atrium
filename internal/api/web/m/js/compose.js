@@ -41,7 +41,7 @@
   const MAX_LINES = 6;
 
   let cur = null; // the one mounted composer
-  let harnesses = null; // a Promise of { runner id: bracketed_paste }
+  const harnesses = new Map(); // room name ("" for one room) to a Promise of { runner id: bracketed_paste }
 
   function guard(fn) { try { return fn(); } catch (e) { return null; } }
   function readDraft(id) { return guard(() => localStorage.getItem(DRAFT + id)) || ""; }
@@ -49,20 +49,26 @@
     guard(() => text ? localStorage.setItem(DRAFT + id, text) : localStorage.removeItem(DRAFT + id));
   }
 
-  // Which runners take a bracketed paste, read once. A failed read answers an empty map, so every runner is
-  // treated as one that cannot, which is the safe reading. It is retried on the next mount.
-  function pasteMap() {
-    if (!harnesses) {
-      harnesses = fetch("/v1/harnesses")
-        .then(r => r.ok ? r.json() : Promise.reject(new Error(r.status)))
+  // Which runners take a bracketed paste, read once per room. On a hub with two rooms the plain list is the merged
+  // one and a runner id alone names whichever room answered last, so the read goes to the card's own room. A failed
+  // read answers an empty map, so every runner is treated as one that cannot, which is the safe reading. It is
+  // retried on the next mount.
+  function pasteMap(room) {
+    room = room || "";
+    if (!harnesses.has(room)) {
+      const net = window.mNet;
+      const read = net && net.api
+        ? net.api("/v1/harnesses", room ? { headers: { "X-Atrium-Room": room } } : {})
+        : fetch("/v1/harnesses").then(r => r.ok ? r.json() : Promise.reject(new Error(r.status)));
+      harnesses.set(room, read
         .then(j => {
           const m = {};
-          for (const h of j.harnesses || []) m[h.id] = !!h.bracketed_paste;
+          for (const h of (j && j.harnesses) || []) m[h.id] = !!h.bracketed_paste;
           return m;
         })
-        .catch(() => { harnesses = null; return {}; });
+        .catch(() => { harnesses.delete(room); return {}; }));
     }
-    return harnesses;
+    return harnesses.get(room);
   }
 
   function cardOf(id) {
@@ -248,7 +254,9 @@
     const capability = async () => {
       if (opts.canPaste) { state.pasteOK = !!opts.canPaste(); return state.pasteOK; }
       const card = cardOf(cardId);
-      const map = await pasteMap();
+      const net = window.mNet;
+      const room = card && net ? net.roomOf(card.id) || card.room || "" : "";
+      const map = await pasteMap(room);
       state.pasteOK = !!(card && map[card.runner]);
       return state.pasteOK;
     };

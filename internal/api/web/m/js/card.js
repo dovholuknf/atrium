@@ -771,7 +771,9 @@
     paintDocs();
   }
 
-  function finishClose() {
+  // `id` is the card that was open. closeNow clears `openId` at once so a tap in the slide-out opens, and this runs
+  // later for the sheet only.
+  function finishClose(id) {
     if (window.mViewer) window.mViewer.reset();
     if (window.mChanges) window.mChanges.reset();
     if (MD.release) MD.release();
@@ -781,7 +783,7 @@
     els.working.hidden = true;
     els.recap.hidden = true;
     if (q("m-card-docs")) q("m-card-docs").hidden = true;
-    olderOf.delete(window.mNet.bareId(openId));
+    olderOf.delete(window.mNet.bareId(id || openId));
     openId = "";
   }
 
@@ -797,8 +799,10 @@
     els.sheet.classList.remove("on");
     const id = openId, tok = ++closeTok;
     if (reduced()) { finishClose(); return; }
-    // A close that was overtaken by a reopen of the same card (a quick tap on a slow machine) must not close the new one.
-    const done = () => { if (tok === closeTok && openId === id && !els.sheet.classList.contains("on")) finishClose(); };
+    // Free at once, so a tap on any card while the sheet slides out opens it. A close that a reopen overtook (the
+    // token moved) must not close the new one.
+    openId = "";
+    const done = () => { if (tok === closeTok && !els.sheet.classList.contains("on")) finishClose(id); };
     els.sheet.addEventListener("transitionend", done, { once: true });
     setTimeout(done, 400);
   }

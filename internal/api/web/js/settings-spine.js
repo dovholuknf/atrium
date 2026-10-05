@@ -401,12 +401,19 @@ async function decide(id, decision, forever) {
   // A request from a room goes to the room, and the daemon here only queues it.
   // It cannot answer on that machine's behalf: the channel the agent is blocked
   // on is held in that machine's process and does not move.
-  const where = room
+  //
+  // On a hub the room goes in `X-Atrium-Room` and the path is the plain one: a permission path names no card, so the
+  // header is all the hub has to route by, and in the all-rooms view the board's own fetch wrapper sets none. The
+  // `/v1/rooms/` path is for a daemon that holds the room itself.
+  const onHub = typeof hubIsHub !== "undefined" && hubIsHub;
+  const where = room && !onHub
     ? `/v1/rooms/${encodeURIComponent(room)}/permissions/${encodeURIComponent(perm)}/decide`
-    : `/v1/permissions/${perm}/decide`;
+    : `/v1/permissions/${encodeURIComponent(perm)}/decide`;
+  const headers = { "Content-Type": "application/json" };
+  if (room && onHub) headers["X-Atrium-Room"] = room;
   try {
     await api(where, {
-      method: "POST", headers: { "Content-Type": "application/json" },
+      method: "POST", headers,
       body: JSON.stringify({ decision, reason, forever: !!forever, prefix, kind, command })
     });
   } catch (e) {

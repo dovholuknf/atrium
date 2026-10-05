@@ -4,11 +4,10 @@
 // actions with 44px targets. approve, deny, and deny with a reason. The reason is how a block says "do X
 // instead", so it opens a field in place and goes with the block.
 //
-// THE SAME CALL AS THE BOARD (`decide` in js/settings-spine.js): `POST /v1/permissions/{id}/decide`, or for a
-// request that came from a room `POST /v1/rooms/{room}/permissions/{id}/decide`, with
-// `{decision: "approve" | "block", reason, forever, prefix, kind, command}`. A room's request is answered by
-// that room's own daemon, so the room and that daemon's own id for it are read off the request (`room`,
-// `perm_id`), never worked out again.
+// THE SAME CALL AS THE BOARD (`decide` in js/settings-spine.js): `POST /v1/permissions/{id}/decide` with
+// `{decision: "approve" | "block", reason, forever, prefix, kind, command}`. A request that came from a room is
+// answered by that room's own daemon, so the room (`room`, or the tag on the id) goes in `X-Atrium-Room` and the
+// daemon's own id for it (`perm_id`, or the id without its tag) in the path.
 //
 // NOT HERE, ON PURPOSE: "always" and "never", and editing the command before approving. Both need the scope
 // picker the board draws under its row, and a rule made by a thumb on a small screen without that scope in
@@ -55,20 +54,17 @@
     return pre;
   }
 
+  // Through `mNet.api`, which adds the room the page is scoped to. A request seen in the all-rooms view has a tagged
+  // id (`room~id`) and a `room`, and the hub routes a permission path only by the `X-Atrium-Room` header, so the
+  // room and the bare id are split off the tag and the room goes in that header.
   async function decide(p, decision, reason) {
-    const room = p.room || "";
-    const perm = p.perm_id || p.id;
-    const where = room
-      ? "/v1/rooms/" + encodeURIComponent(room) + "/permissions/" + encodeURIComponent(perm) + "/decide"
-      : "/v1/permissions/" + encodeURIComponent(perm) + "/decide";
-    const r = await fetch(where, {
-      method: "POST", headers: { "Content-Type": "application/json" },
+    const net = window.mNet;
+    const room = p.room || net.roomOf(p.id) || "";
+    const perm = p.perm_id || net.bareId(p.id);
+    await net.api("/v1/permissions/" + encodeURIComponent(perm) + "/decide", {
+      method: "POST", headers: room ? { "X-Atrium-Room": room } : {},
       body: JSON.stringify({ decision, reason: reason || "", forever: false, prefix: "", kind: "command", command: "" })
     });
-    if (r.ok || r.status === 204) return;
-    let msg = "";
-    try { msg = await r.text(); const j = JSON.parse(msg); msg = j.error || msg; } catch (e) {}
-    throw new Error(String(msg).trim() || r.statusText || "failed");
   }
 
   function build(p, showCard) {
