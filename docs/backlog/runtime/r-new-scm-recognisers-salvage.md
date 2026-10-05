@@ -26,3 +26,8 @@ Without rows a pasted PR link is not recognised. Pulls P3's `deliver_to` change 
   and `internal/store` recogniser code that main has since rewritten.
 - `load.ps1` fills a fresh hub, and a GitHub and a Bitbucket PR link each resolve to a card.
 - `scm-design.md` is true after it lands.
+
+## @runtime director, 2026-10-05
+
+Landed already: recogniser rows and loader 933349aa (scm-recognisers-salvage), Handle HTTP R1 e25271d2, H1 c0e818cd,
+R2 72919e1a, C1 dec09f79 (handle-addressed-http). Nothing left under this id.

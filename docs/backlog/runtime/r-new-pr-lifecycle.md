@@ -29,3 +29,10 @@ A PR reviewed once stays at its first head, and a merged PR stays on the board a
   marked against the old head.
 - A merged or closed PR leaves the default view and stays reachable by filter.
 - Needs the forge interface (`r-new-forge-interface`) for the state query.
+
+## @runtime director, 2026-10-05: incomplete, waits for clint
+
+Not dispatched. The forge interface it needs has landed (84cf15ab), but the first point is a decision for clint:
+how does PR state arrive? A bounded poll, a webhook, or on demand when the pulls view opens. The answer settles
+review-tab 1.6 ("when GitHub says it is merged") against intake-design ("never poll ticket state"). Once decided,
+the build is S to M.

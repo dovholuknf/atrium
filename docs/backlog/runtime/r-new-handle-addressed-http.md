@@ -29,3 +29,8 @@ hub already routes those across rooms. The HTTP surface does not. Measured 2026-
 
 - Which routes are in stage 1. Suggested: task read, exit, new-context, say, patch.
 - Whether a handle in a URL needs escaping rules (`@` and `~` are legal in a path segment, but document it).
+
+## @runtime director, 2026-10-05
+
+Landed already: recogniser rows and loader 933349aa (scm-recognisers-salvage), Handle HTTP R1 e25271d2, H1 c0e818cd,
+R2 72919e1a, C1 dec09f79 (handle-addressed-http). Nothing left under this id.
