@@ -5,6 +5,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
+	"net"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -192,6 +194,25 @@ func newDaemon() *cobra.Command {
 	return c
 }
 
+// warnWideBoard says so when the board is bound beyond loopback. The board has
+// no login, so that bind gives anyone who can reach it the whole API. It is a
+// warning and not a refusal because a restart keeps a bind the operator chose,
+// and refusing there would leave no daemon at all. An empty host binds every
+// interface and counts as wide.
+func warnWideBoard(addr string) {
+	addr = strings.TrimSpace(addr)
+	if addr == "" || addr == "-" {
+		return
+	}
+	host, _, err := net.SplitHostPort(addr)
+	if err != nil || (host != "" && isLoopbackHost(host)) {
+		return
+	}
+	log.Printf("[atrium] WARNING: the board is bound to %q, which is not loopback. "+
+		"The board has no login, so anything that can reach it can launch commands as you. "+
+		"Bind 127.0.0.1 and reach it through an overlay instead.", addr)
+}
+
 func runDaemon(ctx context.Context, opts daemon.Options) error {
 	if ctx == nil {
 		ctx = context.Background()
@@ -213,6 +234,8 @@ func runDaemon(ctx context.Context, opts daemon.Options) error {
 		opts.BoardDir = abs
 		fmt.Printf("board served from %s\n", filepath.ToSlash(abs))
 	}
+
+	warnWideBoard(opts.HumanAddr)
 
 	d, err := daemon.New(opts)
 	if err != nil {

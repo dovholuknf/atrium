@@ -362,11 +362,22 @@ func runRestart(db, delay string) error {
 // to loopback on the old port and never to a wider one.
 func restartDaemonArgs(db string, loc daemon.Location, haveLoc bool) []string {
 	args := []string{"daemon", "--db", db}
+	agentFlag := "--addr"
+	// A room comes back as a room: `atrium daemon` would drop the hub link.
+	// Its agent flag is --agent, and its database is its own default unless
+	// the file names one.
+	if haveLoc && strings.TrimSpace(loc.Room) != "" {
+		args = []string{"room"}
+		if strings.TrimSpace(loc.DB) != "" {
+			args = append(args, "--db", loc.DB)
+		}
+		agentFlag = "--agent"
+	}
 	if !haveLoc {
 		return args
 	}
 	if a := keepBind(loc.AgentListen, loc.Agent); a != "" {
-		args = append(args, "--addr", a)
+		args = append(args, agentFlag, a)
 	}
 	if h := keepBind(loc.BoardListen, loc.Board); h != "" {
 		args = append(args, "--http", h)
