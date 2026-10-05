@@ -121,3 +121,25 @@ func checkInt(name, unit, v string, lo, hi int) (string, error) {
 	}
 	return strconv.Itoa(n), nil
 }
+
+// The range a context limit takes, the board default's own: context_threshold_k.
+const (
+	MinContextLimitK = 10
+	MaxContextLimitK = 2000
+)
+
+// CheckContextLimitK validates a runner's context limit. Zero means none and is the
+// "use the board default" answer. Out of range is refused rather than clamped.
+func CheckContextLimitK(k int) error {
+	if k == 0 || (k >= MinContextLimitK && k <= MaxContextLimitK) {
+		return nil
+	}
+	return fmt.Errorf("context_limit_k takes a whole number of thousands of tokens from %d to %d, or none, not %d",
+		MinContextLimitK, MaxContextLimitK, k)
+}
+
+// CheckContextLimitText validates a typed card limit, the text form of CheckContextLimitK. Empty
+// means none and is returned as empty, which removes the override.
+func CheckContextLimitText(v string) (string, error) {
+	return checkInt("context_limit_k", "thousands of tokens", v, MinContextLimitK, MaxContextLimitK)
+}

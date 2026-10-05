@@ -31,6 +31,18 @@ function peekCard(id) {
     (typeof termTask !== "undefined" && termTask && termTask.id === id ? termTask : null);
 }
 
+// WHICH LAYER THE WARN LIMIT CAME FROM, as the daemon resolved it onto the row: the card's own setting, its runner's,
+// or the board default. Empty for a row from a daemon that does not say.
+function limitSource(t) {
+  const s = t && t.context_size && t.context_size.source;
+  return s === "card" || s === "runner" || s === "board" ? s : "";
+}
+// "150k from runner", or just "150k" when the source is not known.
+function limitFrom(t) {
+  const s = limitSource(t);
+  return `${peekThresholdK(t)}k${s ? " from " + s : ""}`;
+}
+
 function peekThresholdK(t) {
   if (t && t.context_size && t.context_size.threshold_k) return t.context_size.threshold_k;
   if (typeof pastePrefs !== "undefined" && pastePrefs && pastePrefs.context_threshold_k_now) {
@@ -75,7 +87,7 @@ function landTip(t) {
   const c = t.context_size || {};
   const over = landOver(t);
   const win = t.telemetry && t.telemetry.window ? `, window ${usageTokens(t.telemetry.window).replace(/\.0M$/, "M")}` : "";
-  return `${usageTokens(c.tokens)} of ${usageTokens(landThePlaneK(t) * 1000)}${over ? " (land the plane)" : ""}${win}`;
+  return `${usageTokens(c.tokens)} of ${usageTokens(landThePlaneK(t) * 1000)}${over ? " (land the plane)" : ""}${limitSource(t) ? `, limit ${limitFrom(t)}` : ""}${win}`;
 }
 
 // THE ONE DRAWING OF THE CONTEXT METER, for the details popover and for the flood on a row, so the two cannot
@@ -134,9 +146,9 @@ function peekBody(t, v) {
   return head +
     `<div class="peek-ctx${warn ? " warn" : ""}${land ? " hot" : ""}">
       <div class="peek-num"><b>${loading ? "&nbsp;" : usageTokens(ctx)}</b><span>context</span></div>
-      ${ctxMeter(ctx, limit, "", loading ? "" : landTip({ context_size: { tokens: ctx, threshold_k: k }, telemetry: t && t.telemetry }))}
+      ${ctxMeter(ctx, limit, "", loading ? "" : landTip({ context_size: { tokens: ctx, threshold_k: k, source: limitSource(t) }, telemetry: t && t.telemetry }))}
       <div class="peek-scale"><span>${land ? "land the plane" : warn ? "past the line" : ""}</span>` +
-        `<span>warns at ${k}k, lands at ${landK}k</span></div>
+        `<span>warns at ${limitFrom(t)}, lands at ${landK}k</span></div>
     </div>
     <div class="peek-grid">
       ${cell("prompts", String(own.prompts), USAGE_TIPS.prompts + ". " + USAGE_TIPS.scope)}

@@ -1335,7 +1335,7 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
     <!-- The context threshold. A room setting: the room reads every card's
          transcript and tells a launcher, so it lives on the daemon. -->
     <div class="field" id="s-ctxk-field">
-      <label class="eyebrow" for="s-ctxk">context size to warn at, in thousands of tokens</label>
+      <label class="eyebrow" for="s-ctxk">context size to warn at, in thousands of tokens (board default)</label>
       <div class="picker">
         <input id="s-ctxk" type="number" min="10" max="2000" placeholder="150"
           onchange="saveContextK()" style="max-width:110px">
@@ -1345,7 +1345,8 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
       </div>
       <span class="hintline">Every Claude card shows its context size. Past this it turns the warn colour, and a
         card an agent launched tells its launcher once, so the launcher can have it report and stop. Every turn
-        re-reads the whole context, so a big one costs on every turn. From 10 to 2000.</span>
+        re-reads the whole context, so a big one costs on every turn. From 10 to 2000. This is the board default:
+        a runner can set its own on the runners page, and a card its own from its menu, and each wins over this.</span>
     </div>
     <!-- The land-the-plane line. This browser's own setting (atrium.landThePlaneK), not the room's: the status
          line's zone is typed once here, and the board cannot read a shell script. -->
@@ -2884,6 +2885,17 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
           its whole run, which claude and codex both do. a paste is then delivered as one paste rather
           than as a line per newline, however long the session has been going. leave it off for a
           shell, and for anything that would print <code>200~</code> on screen instead.</span>
+      </div>
+      <!-- The runner layer of the context limit: board default, then this, then the card's own. -->
+      <div class="field">
+        <label class="eyebrow" for="h-ctxlimit">context limit for this runner's cards, in thousands of tokens</label>
+        <div class="picker">
+          <input id="h-ctxlimit" type="number" min="10" max="2000" placeholder="board default" style="max-width:130px">
+          <span class="unit">k tokens</span>
+        </div>
+        <span class="hintline">the size at which a card this runner started is marked. empty uses the board default
+          from settings. a card's own limit, set from its menu, wins over this. from 10 to 2000.
+          <span id="h-ctxlimit-from"></span></span>
       </div>
       <!-- Whether a message may be typed in while the runner is working. Seeded
            from the runner profile. Off means every message waits for the turn. -->

@@ -703,6 +703,10 @@ const server = http.createServer((req, res) => {
     // Ahead of the solo modes, which an earlier section can leave set: the
     // group sections read this card's tags for its menu.
     if (id === "filed1") { sendJSON(res, FILED); return; }
+    if (id.startsWith("ll-") && tasksMode === "worn") {
+      const one = wornTasks.find(t => t.id === id);
+      if (one) { sendJSON(res, one); return; }
+    }
     if ((id.startsWith("land-") || id.startsWith("cc-")) && !id.includes("/")) {
       if (LAND[id]) { sendJSON(res, LAND[id]); return; }
       res.writeHead(404, { "Content-Type": "application/json" });
@@ -8848,6 +8852,109 @@ async function blockerMarkSection(browser, base) {
     blockerEsc = null;
   }
   if (errors.length) fail("the blocker page threw: " + errors.join(" | "));
+}
+
+// The per-runner layer of the context limit: a row says which layer its limit came from, a card with no limit of
+// its own shows its runner's, and the runner field saves. See docs/backlog/ui/u-new-context-bar-on-rows.md.
+async function ctxLimitLayersSection(browser, base) {
+  const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+  const wp = await ctx.newPage();
+  const errors = [];
+  wp.on("pageerror", e => errors.push(String(e)));
+  await wp.addInitScript(() => {
+    let all = {};
+    try { all = JSON.parse(localStorage.getItem("atrium.skipconfirm") || "{}"); } catch (e) {}
+    all["width-floor"] = true;
+    localStorage.setItem("atrium.skipconfirm", JSON.stringify(all));
+  });
+  const was = tasksMode;
+  const row = (id, source, k, extra) => Object.assign({}, T1, {
+    id, display_title: "row " + id, supervised: true, pinned: true, worktree: "/tmp/cll/" + id,
+    context_size: { tokens: 160000, warn: 160000 >= k * 1000, threshold_k: k, source }
+  }, extra || {});
+  try {
+    wornTasks = [row("ll-board", "board", 150), row("ll-runner", "runner", 300), row("ll-card", "card", 120)];
+    tasksMode = "worn";
+    await wp.goto(base, { waitUntil: "domcontentloaded" });
+    await wp.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
+    await wp.click('.tab[data-view="terms"]');
+    const got = await wp.evaluate(async () => {
+      await loadCards().catch(() => {}).then(renderTermList);
+      const out = {};
+      for (const el of document.querySelectorAll('#term-list .card.tab[data-id^="ll-"]')) {
+        const b = el.querySelector(".peek-bar.ctxline");
+        out[el.dataset.id] = b ? b.getAttribute("data-tip") : null;
+      }
+      return out;
+    });
+    for (const [id, want] of [["ll-board", "limit 150k from board"], ["ll-runner", "limit 300k from runner"],
+        ["ll-card", "limit 120k from card"]]) {
+      if (!got[id] || !got[id].includes(want)) fail(id + " tooltip does not say '" + want + "': " + got[id]);
+    }
+    // LIMIT_SHOTS=<dir> LIMIT_TAG=after writes the rows, the three editors and the row tooltip, for checking by eye.
+    if (process.env.LIMIT_SHOTS) {
+      const dir = process.env.LIMIT_SHOTS, tag = process.env.LIMIT_TAG || "after", path = require("path");
+      await wp.evaluate(() => { applySkin("graphite"); });
+      await wp.screenshot({ path: path.join(dir, `${tag}-rows.png`), clip: { x: 0, y: 0, width: 700, height: 420 } });
+      const tipRow = await wp.$('#term-list .card.tab[data-id="ll-runner"] .peek-bar.ctxline');
+      if (tipRow) {
+        const bb = await tipRow.boundingBox();
+        await wp.mouse.move(bb.x + 5, bb.y - 20);
+        await wp.mouse.move(bb.x + 20, bb.y + bb.height / 2, { steps: 8 });
+        await wp.waitForTimeout(1500);
+      }
+      await wp.screenshot({ path: path.join(dir, `${tag}-row-tooltip.png`), clip: { x: 0, y: 0, width: 900, height: 520 } });
+      await wp.mouse.move(1300, 800);
+      await wp.evaluate(() => { document.getElementById("settings").showModal(); showSettingsPane("board"); });
+      await wp.evaluate(() => { const f = document.getElementById("s-ctxk-field"); if (f) f.scrollIntoView({ block: "center" }); });
+      await wp.waitForTimeout(500);
+      await wp.screenshot({ path: path.join(dir, `${tag}-editor-board-default.png`) });
+      await wp.evaluate(() => document.getElementById("settings").close());
+      await wp.evaluate(() => goRunners("runners"));
+      await wp.waitForSelector('#harness-list .chip.toggle[data-id="hon"]', { timeout: slow(15000) });
+      await wp.evaluate(() => editHarness("hon", ""));
+      await wp.waitForSelector("#harness[open] #h-ctxlimit", { timeout: slow(15000) });
+      await wp.evaluate(() => { document.getElementById("h-ctxlimit").value = 300; document.getElementById("h-ctxlimit").scrollIntoView({ block: "center" }); });
+      await wp.waitForTimeout(500);
+      await wp.screenshot({ path: path.join(dir, `${tag}-editor-runner.png`) });
+      await wp.evaluate(() => document.getElementById("harness").close());
+      await wp.evaluate(() => { document.querySelector('.tab[data-view="terms"]').click(); });
+      await wp.waitForTimeout(500);
+      const rowEl = await wp.$('#term-list .card.tab[data-id="ll-runner"]');
+      if (rowEl) {
+        await rowEl.click({ button: "right" });
+        await wp.waitForTimeout(700);
+        const items = await wp.evaluate(() => cardMenuEl.textContent);
+        if (!/context limit/.test(items)) fail("the card menu has no context limit entry: " + items.slice(0, 200));
+        await wp.screenshot({ path: path.join(dir, `${tag}-editor-card.png`), clip: { x: 0, y: 0, width: 900, height: 700 } });
+        await wp.keyboard.press("Escape");
+      }
+      await wp.evaluate(() => goRunners("runners"));
+      await wp.waitForSelector('#harness-list .chip.toggle[data-id="hon"]', { timeout: slow(15000) });
+    }
+    // The runner field on the runners page saves with the rest of the row, and an empty one saves as none.
+    await wp.evaluate(() => goRunners("runners"));
+    await wp.waitForSelector('#harness-list .chip.toggle[data-id="hon"]', { timeout: slow(15000) });
+    await wp.evaluate(() => editHarness("hon", ""));
+    await wp.waitForSelector("#harness[open] #h-ctxlimit", { timeout: slow(15000) });
+    const saveWith = async (v) => {
+      await wp.fill("#h-ctxlimit", v);
+      const put = wp.waitForResponse(r => r.url().split("?")[0].endsWith("/v1/harnesses/hon") &&
+        r.request().method() === "PUT", { timeout: slow(15000) });
+      await wp.evaluate(() => saveHarness());
+      return JSON.parse((await put).request().postData() || "{}");
+    };
+    let sent = await saveWith("250");
+    if (sent.context_limit_k !== 250) fail("the runner field saved " + JSON.stringify(sent.context_limit_k) + ", want 250.");
+    await wp.evaluate(() => editHarness("hon", ""));
+    await wp.waitForSelector("#harness[open] #h-ctxlimit", { timeout: slow(15000) });
+    sent = await saveWith("");
+    if (sent.context_limit_k !== 0) fail("an empty runner field saved " + JSON.stringify(sent.context_limit_k) + ", want 0.");
+    if (errors.length) fail("page errors: " + errors.join("; "));
+  } finally {
+    tasksMode = was;
+    await ctx.close();
+  }
 }
 
 // The thin context line along the bottom edge of a terminals row (ctxLine in js/board.js), drawn with the
@@ -22037,7 +22144,7 @@ async function main() {
       pasteBig: pasteBigSection, pasteBusy: pasteBusySection, typing: typingSection, alias: aliasSection, askAgain: askAgainSection, copySelect: copySelectSection, busyGuard: busyGuardSection, keepalive: keepaliveSection,
       stuck: stuckSection, blockerMark: blockerMarkSection, carryLink: carryLinkSection,
       skinScope: skinScopeSection, skinHeal: skinHealSection, toastLives: toastLivesSection,
-      history: historySection, contextSize: contextSizeSection, ctxLine: ctxLineSection, landThePlane: landThePlaneSection, peekEverywhere: peekEverywhereSection, cardRoute: cardRouteSection,
+      history: historySection, contextSize: contextSizeSection, ctxLine: ctxLineSection, ctxLimitLayers: ctxLimitLayersSection, landThePlane: landThePlaneSection, peekEverywhere: peekEverywhereSection, cardRoute: cardRouteSection,
       quietDoer: quietDoerSection, looksIdle: looksIdleSection, notifyOff: notifyOffSection,
       questionsClick: questionsClickSection, walk: walkSection, linkReuse: linkReuseSection,
       usageCacheReads: usageCacheReadsSection, roomsDash: roomsDashSection, phoneView: phoneViewSection, heldLine: heldLineSection, u016: u016Section, phoneHeader: phoneHeaderSection, phoneFocus: phoneFocusSection, phoneTermBar: phoneTermBarSection, phoneShare: phoneShareSection, phonePan: phonePanSection, phoneFollow: phoneFollowSection, phoneTap: phoneTapSection, phoneKeyboard: phoneKeyboardSection, phoneCompose: phoneComposeSection, mCompose: mComposeSection, mPerms: mPermsSection, usagePolish: usagePolishSection, usageLimits: usageLimitsSection, usageGroups: usageGroupsSection,
@@ -24023,6 +24130,7 @@ async function main() {
     // ── every card shows its context size, warned past the gear's line ────
     await unit("contextSize", () => contextSizeSection(browser, base));
     await unit("ctxLine", () => ctxLineSection(browser, base));
+    await unit("ctxLimitLayers", () => ctxLimitLayersSection(browser, base));
     await unit("landThePlane", () => landThePlaneSection(browser, base));
     await unit("peekEverywhere", () => peekEverywhereSection(browser, base));
     await unit("phoneListFit", () => phoneListFitSection(browser, base));

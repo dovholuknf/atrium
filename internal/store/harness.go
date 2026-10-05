@@ -76,6 +76,10 @@ type Harness struct {
 	// means this runner has no such flag, and nothing is passed: unlike a model, this is
 	// never asked for by a person, so a runner without it is not refused.
 	AutocompactArgs []string `json:"autocompact_args"`
+	// ContextLimitK is the context limit, in thousands of tokens, for every card this runner starts.
+	// It sits between the board default (context_threshold_k) and a card's own limit. Zero means
+	// none: the board default applies. Range as CheckContextLimitK.
+	ContextLimitK int `json:"context_limit_k"`
 	// ModelEnv and EffortEnv name an environment variable that carries the
 	// value, for a runner that takes it that way rather than as a flag. Empty
 	// on every seeded row. A runner may map a field by args, by env or both.
@@ -231,7 +235,7 @@ func (s *Store) scanHarness(sc interface{ Scan(...any) error }) (*Harness, error
 	if err := sc.Scan(&h.ID, &h.Label, &enabled, &h.Cmd, &args, &h.Cwd, &env,
 		&h.LaunchMode, &resume, &exit, &h.Prepare, &h.RulesSource, &h.Notes,
 		&h.Sort, &created, &prompt, &model, &bracketed, &h.Package, &h.BinPath, &midTurn,
-		&effort, &h.ModelEnv, &h.EffortEnv, &autocompact); err != nil {
+		&effort, &h.ModelEnv, &h.EffortEnv, &autocompact, &h.ContextLimitK); err != nil {
 		return nil, err
 	}
 	h.Enabled = enabled != 0
@@ -278,7 +282,7 @@ func orDefault(s, def string) string {
 const harnessColumns = `id, label, enabled, cmd, args, cwd, env, launch_mode,
 	resume_args, exit_keys, prepare, rules_source, notes, sort, created_at, prompt_args,
 	model_args, bracketed_paste, package, bin_path, mid_turn_input,
-	effort_args, model_env, effort_env, autocompact_args`
+	effort_args, model_env, effort_env, autocompact_args, context_limit_k`
 
 // Harnesses lists every configured runner.
 func (s *Store) Harnesses() ([]*Harness, error) {
@@ -340,6 +344,9 @@ func (s *Store) SaveHarness(h Harness) (*Harness, error) {
 	if err != nil {
 		return nil, err
 	}
+	if err := CheckContextLimitK(h.ContextLimitK); err != nil {
+		return nil, err
+	}
 	exit, err := json.Marshal(orEmptySlice(h.ExitKeys))
 	if err != nil {
 		return nil, err
@@ -395,7 +402,7 @@ func (s *Store) SaveHarness(h Harness) (*Harness, error) {
 			midTurn = 1
 		}
 		_, err = s.db.Exec(`INSERT INTO harness (`+harnessColumns+`)
-			VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+			VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
 			ON CONFLICT(id) DO UPDATE SET
 				label = excluded.label, enabled = excluded.enabled, cmd = excluded.cmd,
 				args = excluded.args, cwd = excluded.cwd, env = excluded.env,
@@ -409,12 +416,14 @@ func (s *Store) SaveHarness(h Harness) (*Harness, error) {
 				mid_turn_input = excluded.mid_turn_input,
 				effort_args = excluded.effort_args, model_env = excluded.model_env,
 				effort_env = excluded.effort_env,
-				autocompact_args = excluded.autocompact_args`,
+				autocompact_args = excluded.autocompact_args,
+				context_limit_k = excluded.context_limit_k`,
 			h.ID, h.Label, enabled, h.Cmd, string(args), h.Cwd, string(env),
 			h.LaunchMode, string(resume), string(exit), h.Prepare,
 			h.RulesSource, h.Notes, h.Sort, created, string(prompt), string(model),
 			bracketed, strings.TrimSpace(h.Package), strings.TrimSpace(h.BinPath), midTurn,
-			string(effort), strings.TrimSpace(h.ModelEnv), strings.TrimSpace(h.EffortEnv), string(autocompact))
+			string(effort), strings.TrimSpace(h.ModelEnv), strings.TrimSpace(h.EffortEnv), string(autocompact),
+			h.ContextLimitK)
 		return err
 	})
 	if err != nil {

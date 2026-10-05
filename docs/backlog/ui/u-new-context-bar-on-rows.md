@@ -1,6 +1,6 @@
 # u-new-context-bar-on-rows. A context bar under each terminal row
 
-Status: row colours done 2026-10-04 (see Design note), per-runner limit layer not built. Owned by @ui. Filed by the orchestrator 2026-10-01, from clint.
+Status: done 2026-10-04. Row colours, and the per-runner limit layer with its three editors (see Built). Owned by @ui. Filed by the orchestrator 2026-10-01, from clint.
 
 Screenshot of the rows it goes on: `D:\git\github\dovholuknf\atrium\.atrium\incoming\20261001-093851-pasted.png`
 (the terminals list, untagged group).
@@ -77,3 +77,33 @@ Plan: @runtime adds `context_limit_k` to the harness row (store and the runners 
 "board"), so the row needs no new read and the popover and `peekThresholdK` already show it. @ui then adds the runner
 field on the runners page, the card field in card settings, and the source label in each. The land-the-plane line is
 a browser setting today, so moving it into the daemon store (`land_k` beside `warn`) belongs in the same step.
+
+## Decision (@ui director, 2026-10-04)
+
+- No "limit" chip on the row. The full red line with its one pulse and the amber mark say it.
+- The land-the-plane line stays a browser setting in this pass. Moving it into the daemon store (`land_k` beside
+  `warn`) is a follow-up. Until then the line a row is drawn against is the land-the-plane setting, never below the
+  resolved limit.
+
+## Built (round 2, the per-runner limit layer)
+
+- Store: `harness.context_limit_k` (migration 0084), `Harness.ContextLimitK`, zero meaning none. `CheckContextLimitK`
+  refuses anything outside 10 to 2000, the range of the board default. The runners API (`PUT /v1/harnesses/{id}`) saves
+  and returns it, and a bad value is a 400.
+- Card layer: the card's `overrides.context_limit_k`, written by the existing `PATCH /v1/tasks/{id}` and validated
+  there (400 out of range, empty clears it). No new column.
+- Daemon: `api.ContextLimitFor` resolves card, then runner, then the board default (`context_threshold_k`). The row's
+  `context_size.threshold_k` is that limit and `context_size.source` is "card", "runner" or "board". The warn flag and
+  the launcher's notice follow the resolved limit. Nothing polls: the row already carried the context.
+- Board: the settings field is labelled "(board default)" and says it is the lowest layer. The runner editor has the
+  field "context limit for this runner's cards" and says what is in force. The card menu has "context limit..." with
+  the current value and layer. The bar tooltip and the popover meter say "limit 150k from runner", and the amber mark's
+  tooltip too.
+- Tests: `internal/store/contextlimit_test.go`, `internal/api/contextlimit_test.go` (API validation and resolution
+  order), `TestTheRowNamesTheLayerTheLimitCameFrom` in the daemon, and the headless section `ctxLimitLayers` (a row with
+  no limit of its own shows its runner's, and the runner field saves 250 and clears to 0).
+- Screens: `docs/screens/u-new-context-bar-on-rows/` (`before-*` and `after-*` rows from the colour pass, and
+  `after-rows`, `after-row-tooltip`, `after-editor-board-default`, `after-editor-runner`, `after-editor-card`).
+
+Not done: the `atrium:context-ceiling` tag still only drives the automatic new context, it is not a limit layer. /m rows
+were not touched.

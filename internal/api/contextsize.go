@@ -13,6 +13,33 @@ import (
 // launcher is told once. Every turn past it re-reads all of it.
 const SettingContextThresholdK = "context_threshold_k"
 
+// OverrideContextLimitK is the key of a card's own context limit in its overrides, in thousands of tokens.
+// Empty means none: the runner's limit applies, then the board default.
+const OverrideContextLimitK = "context_limit_k"
+
+// The layers a context limit can come from, named on the row so the board can say which.
+const (
+	LimitFromCard   = "card"
+	LimitFromRunner = "runner"
+	LimitFromBoard  = "board"
+)
+
+// ContextLimitFor is the context limit in force for a card, in thousands of tokens, and which layer it came from:
+// the card's own, else its runner's, else the board default. An unusable value in a layer is skipped.
+func ContextLimitFor(st *store.Store, t *store.Task) (int, string) {
+	if t != nil {
+		if k, err := strconv.Atoi(strings.TrimSpace(t.Overrides[OverrideContextLimitK])); err == nil &&
+			store.CheckContextLimitK(k) == nil && k > 0 {
+			return k, LimitFromCard
+		}
+		if h, err := st.Harness(t.Runner); err == nil && h != nil && h.ContextLimitK > 0 &&
+			store.CheckContextLimitK(h.ContextLimitK) == nil {
+			return h.ContextLimitK, LimitFromRunner
+		}
+	}
+	return contextThresholdK(st), LimitFromBoard
+}
+
 const (
 	defaultContextThresholdK = 150
 	minContextThresholdK     = 10

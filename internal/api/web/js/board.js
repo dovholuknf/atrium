@@ -656,7 +656,7 @@ function ctxWarnMark(t) {
   const c = t.context_size;
   if (!c || over(t) || t.status === "shelved") return "";
   if (!c.warn) return "";
-  const tip = `past ${c.threshold_k}k tokens of context, and every turn re-reads all of it. ` +
+  const tip = `past ${limitFrom(t)} tokens of context, and every turn re-reads all of it. ` +
     `hover the card for its details`;
   return `<span class="chip warn icon ctxwarn" aria-label="${esc(tip)}" data-tip="${esc(tip)}"
     ><svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true" fill="none" stroke="currentColor"

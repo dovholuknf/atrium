@@ -266,3 +266,41 @@ func TestAClearedCardIsANewCrossing(t *testing.T) {
 		t.Fatalf("launcher has %d context notices, want still 2", n)
 	}
 }
+
+// The row carries the limit in force and the layer it came from, and the mark follows that limit.
+func TestTheRowNamesTheLayerTheLimitCameFrom(t *testing.T) {
+	d := testDaemon(t)
+	card := peerCard(t, d, "layered")
+	prompt(t, d, card.ID)
+	reply := withTranscript(t, d, card)
+	reply(200_000)
+	watch(t, d)
+	read := func() *ContextSize {
+		t.Helper()
+		got, _ := d.contextSizeFor(card.ID).(*ContextSize)
+		if got == nil {
+			t.Fatal("no context size")
+		}
+		return got
+	}
+	if got := read(); got.ThresholdK != 150 || got.Source != "board" || !got.Warn {
+		t.Fatalf("%+v, want 150k from board, warned", got)
+	}
+	h, err := d.st.Harness("claude")
+	if err != nil {
+		t.Fatal(err)
+	}
+	h.ContextLimitK = 300
+	if _, err := d.st.SaveHarness(*h); err != nil {
+		t.Fatal(err)
+	}
+	if got := read(); got.ThresholdK != 300 || got.Source != "runner" || got.Warn {
+		t.Fatalf("%+v, want 300k from runner, not warned", got)
+	}
+	if err := d.st.SetOverrides(card.ID, map[string]string{api.OverrideContextLimitK: "190"}); err != nil {
+		t.Fatal(err)
+	}
+	if got := read(); got.ThresholdK != 190 || got.Source != "card" || !got.Warn {
+		t.Fatalf("%+v, want 190k from card, warned", got)
+	}
+}

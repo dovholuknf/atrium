@@ -34,6 +34,8 @@ type ContextSize struct {
 	// board and the notice cannot disagree about the line.
 	Warn       bool `json:"warn"`
 	ThresholdK int  `json:"threshold_k"`
+	// Source is the layer ThresholdK came from: "card", "runner" or "board".
+	Source string `json:"source"`
 	// AutoK is the size, in thousands, at which atrium cycles the card's context, for
 	// the tooltip. Absent on a card the setting does not reach.
 	AutoK int `json:"auto_k,omitempty"`
@@ -116,9 +118,14 @@ func (d *Daemon) contextSizeFor(taskID string) any {
 	if !ok {
 		return nil
 	}
-	limit := api.ContextThreshold(d.st)
-	out := &ContextSize{Tokens: s.tokens, Warn: s.tokens >= limit, ThresholdK: int(limit / 1000)}
-	if t, err := d.st.Get(taskID); err == nil && d.autoContextSubject(t, d.st.AutoNewContextMode()) {
+	t, terr := d.st.Get(taskID)
+	if terr != nil {
+		t = nil
+	}
+	k, source := api.ContextLimitFor(d.st, t)
+	limit := int64(k) * 1000
+	out := &ContextSize{Tokens: s.tokens, Warn: s.tokens >= limit, ThresholdK: k, Source: source}
+	if t != nil && d.autoContextSubject(t, d.st.AutoNewContextMode()) {
 		out.AutoK = int(d.autoThreshold(t) / 1000)
 	}
 	return out
@@ -191,7 +198,6 @@ func (d *Daemon) watchContext() error {
 	if err != nil {
 		return err
 	}
-	limit := api.ContextThreshold(d.st)
 	now := time.Now()
 	live, open := map[string]bool{}, map[string]bool{}
 	for _, t := range tasks {
@@ -215,6 +221,8 @@ func (d *Daemon) watchContext() error {
 			continue
 		}
 		live[t.ID] = true
+		limitK, _ := api.ContextLimitFor(d.st, t)
+		limit := int64(limitK) * 1000
 		// Every tick and not only when the size changed: the gates it waits on move
 		// by themselves. See autocontext.go.
 		d.watchAutoContext(t, tokens, now)
