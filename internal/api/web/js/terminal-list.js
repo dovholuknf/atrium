@@ -1218,15 +1218,27 @@ function termKidWaits(k) {
   return isWaiting(k) || (termKids.get(k.id) || []).some(termKidWaits);
 }
 
-// The chevron on a parent row. A real button so it takes focus and Enter/Space. Folded, it says how many children
-// are hidden, and a waiting child stays drawn under the row rather than being counted away.
+// How many cards under this one, at any depth, satisfy `pred`.
+function termKidsCount(id, pred) {
+  return (termKids.get(id) || []).reduce((n, k) => n + (pred(k) ? 1 : 0) + termKidsCount(k.id, pred), 0);
+}
+
+// The chevron on a parent row. A real button so it takes focus and Enter/Space. Folded, it is a count of what is
+// under the row (the direct cards), then how many cards at any depth are running and how many need the human, drawn
+// as chips like the row's other badges. A waiting child is also kept drawn under the row, and still counted here.
 function termKidsToggle(t, total, hidden, shut) {
   if (!total) return "";
-  const tip = shut ? "show the cards this one launched" : "hide the cards this one launched";
-  return `<button type="button" class="tkidfold${shut ? " shut" : ""}" aria-expanded="${shut ? "false" : "true"}"
+  const run = shut ? termKidsCount(t.id, workingNow) : 0;
+  const wait = shut ? termKidsCount(t.id, isWaiting) : 0;
+  const base = shut ? "show the cards this one launched" : "hide the cards this one launched";
+  const say = [run && run + " running", wait && wait + " need" + (wait === 1 ? "s" : "") + " you"].filter(Boolean);
+  const tip = shut ? `${total} under this one${say.length ? ": " + say.join(", ") : ""}. click to show them` : base;
+  return `<button type="button" class="tkidfold${shut ? " shut" : ""}${run ? " running" : ""}" aria-expanded="${shut ? "false" : "true"}"
     aria-label="${tip}" data-tip="${tip}"
     onclick="event.stopPropagation();toggleKids('${t.id}')"
-    ><span class="tcaret">${shut ? "&#9656;" : "&#9662;"}</span>${shut && hidden ? `<span class="tkidn">${hidden}</span>` : ""}</button>`;
+    ><span class="tcaret">${shut ? "&#9656;" : "&#9662;"}</span>${shut ? `<span class="chip tkidn">${total}</span>${
+      run ? `<span class="chip tkidrun"><i class="tkidspin"></i>${run}</span>` : ""}${
+      wait ? `<span class="chip warn tkidwait">${wait}&#8239;!</span>` : ""}` : ""}</button>`;
 }
 
 function toggleKids(id) {
