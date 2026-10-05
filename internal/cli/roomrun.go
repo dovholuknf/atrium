@@ -265,6 +265,7 @@ func roomCmd() *cobra.Command {
 	// `atrium room join <string>`, the first time. `atrium join` is the
 	// session command the /atrium-join skill runs, so a room's join lives here.
 	c.AddCommand(joinCmd())
+	c.AddCommand(roomSettingCmds()...)
 	return c
 }
 

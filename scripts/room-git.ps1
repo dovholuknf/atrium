@@ -85,6 +85,8 @@ param(
     [string] $Repo,
     # init: the clone's place on the remote. Default ~/git/github/<owner>/<repo>. A leading ~ is the remote home.
     [string] $Path,
+    # init: the folder clones go under, <GitRoot>/github/<owner>/<repo>, for a room whose git_root is not ~/git. -Path wins.
+    [string] $GitRoot,
     # push-base: what hub-main is made to mirror.
     [string] $From = 'claude/main',
     # worktree: the branch the new one starts from.
@@ -443,7 +445,7 @@ if (-not ((Test-Path -LiteralPath (Join-Path $x 'git-http-backend.exe')) -or (Te
     }
 
     $home_ = Get-RemoteHome
-    $clone = if ($Path) { $Path -replace '\\', '/' } elseif ($existing -and $existing.Path) { $existing.Path } else { "$home_/git/github/$owner/$repoName" }
+    $clone = if ($Path) { $Path -replace '\\', '/' } elseif ($existing -and $existing.Path) { $existing.Path } else { "$(if ($GitRoot) { ($GitRoot -replace '\\', '/').TrimEnd('/') } else { "$home_/git" })/github/$owner/$repoName" }
     if ($clone -eq '~') { $clone = $home_ } elseif ($clone.StartsWith('~/')) { $clone = $home_ + $clone.Substring(1) }
     if ($clone -notmatch '^(/|[A-Za-z]:/)') { Fail 'repo' 1 "the remote path must be absolute: $clone" }
 
@@ -520,7 +522,7 @@ function Invoke-Init {
     Test-RemoteGit
     $home_ = Get-RemoteHome
 
-    $clone = if ($Path) { $Path -replace '\\', '/' } elseif ($existing -and $existing.Path) { $existing.Path } else { "$home_/git/github/$owner/$repoName" }
+    $clone = if ($Path) { $Path -replace '\\', '/' } elseif ($existing -and $existing.Path) { $existing.Path } else { "$(if ($GitRoot) { ($GitRoot -replace '\\', '/').TrimEnd('/') } else { "$home_/git" })/github/$owner/$repoName" }
     if ($clone -eq '~') { $clone = $home_ } elseif ($clone.StartsWith('~/')) { $clone = $home_ + $clone.Substring(1) }
     if ($existing -and $existing.Path -and -not $Path) { $clone = $existing.Path }
     if ($clone -notmatch '^(/|[A-Za-z]:/)') { Fail 'repo' 1 "the remote path must be absolute: $clone" }
