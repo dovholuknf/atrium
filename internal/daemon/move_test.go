@@ -120,3 +120,28 @@ func mustGet(t *testing.T, d *Daemon, id string) *store.Task {
 	}
 	return x
 }
+
+// A launch for one move is made once: a repeat answers the same card, which is
+// moved_from the old one and sits in its pinned slot.
+func TestARepeatLaunchForOneMoveAnswersTheSameCard(t *testing.T) {
+	d, _, cancel, errCh := startDaemon(t)
+	defer func() {
+		cancel()
+		<-errCh
+	}()
+	h := slowHarness(t, d)
+	req := LaunchRequest{Harness: h, Cwd: t.TempDir(), Title: "moved", MovedFrom: "sg3~OLD1", Pinned: true, PinOrder: 3}
+	a, err := d.Launch(req)
+	if err != nil {
+		t.Skipf("could not spawn a slow test runner on this machine: %v", err)
+	}
+	defer func() { _ = d.StopRunner(a.ID) }()
+	b, err := d.Launch(req)
+	if err != nil || b.ID != a.ID {
+		t.Fatalf("repeat: %v %v", b, err)
+	}
+	got := mustGet(t, d, a.ID)
+	if got.MovedFrom != "sg3~OLD1" || !got.Pinned || got.PinOrder != 3 {
+		t.Fatalf("%+v", got)
+	}
+}

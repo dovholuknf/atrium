@@ -435,3 +435,24 @@ func (s *Store) ForgetMove(msgID string) error {
 		return err
 	})
 }
+
+// GetByMovedFrom is the card another room's card moved into, or sql.ErrNoRows. It is what makes a repeat
+// launch for one move return the same card.
+func (s *Store) GetByMovedFrom(from string) (*Task, error) {
+	var t *Task
+	err := s.guard(func() error {
+		got, err := s.getBy(`moved_from = ? AND moved_from != ''`, strings.TrimSpace(from))
+		t = got
+		return err
+	})
+	return t, err
+}
+
+// SetPinSlot pins a card at a place in the pinned order, writing rank as SetPinOrder does. The cards after it
+// keep their numbers, so a successor lands in the slot its old card held.
+func (s *Store) SetPinSlot(id string, order int) error {
+	return s.guard(func() error {
+		_, err := s.db.Exec(`UPDATE task SET pinned = 1, pin_order = ?, rank = ? WHERE id = ?`, order, float64(order), id)
+		return err
+	})
+}
