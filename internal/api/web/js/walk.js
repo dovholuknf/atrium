@@ -63,6 +63,7 @@ function dockReset() {
   dock.tenant = null;
   dock.editing = null;
   dock.conflict = null;
+  walkSheet(false);
   const drawer = document.getElementById("walk-drawer");
   if (drawer) drawer.hidden = true;
   const btn = document.getElementById("t-walk");
@@ -98,6 +99,7 @@ function dockClose() {
   dock.open = false;
   clearTimeout(dock.timer);
   dock.timer = 0;
+  walkSheet(false);
   if (drawer) drawer.hidden = true;
   const btn = document.getElementById("t-walk");
   if (btn) btn.classList.remove("go");
@@ -296,8 +298,9 @@ function walkRebuild(text, comment) {
   return out.join("\n");
 }
 
-// pr.diff into `path -> hunks`, each hunk a run of NEW-side lines. Removed lines are dropped: the drawer shows the
-// code at the head, and a number that only the old side has is no use to a comment.
+// pr.diff into `path -> hunks`, each hunk a run of lines in diff order. A removed line is kept as `t: "-"` with no
+// number: it is drawn so the change reads, and a number only the old side has is no use to a comment, so nothing
+// anchors to one.
 function walkParseDiff(text) {
   const files = new Map();
   const src = text.split("\n");
@@ -326,7 +329,8 @@ function walkParseDiff(text) {
     const c = l[0];
     if (c === "+") hunk.lines.push({ t: "+", n: n++, text: l.slice(1) });
     else if (c === " " || l === "") hunk.lines.push({ t: " ", n: n++, text: l.slice(1) });
-    // "-" and "\ No newline at end of file" carry no new-side line.
+    else if (c === "-") hunk.lines.push({ t: "-", n: null, text: l.slice(1) });
+    // "\ No newline at end of file" carries no line.
   }
   return files;
 }
@@ -354,7 +358,7 @@ function walkLocate(it, files) {
     const a = walkNorm(l.text), b = walkNorm(it.code);
     if (b && a !== b && !a.includes(b) && !b.includes(a)) warns.push("line text differs from the diff");
     if (l.t !== "+") warns.push("unchanged line, GitHub will not take a comment here");
-    return { warns, hunk: h, idx };
+    return { warns, hunk: h, idx, path: f.path };
   }
   return { warns: ["unchanged line, GitHub will not take a comment here"], hunk: null };
 }
@@ -395,12 +399,13 @@ const walkTenant = {
   diffNote: "",        // why there is none
   cache: new Map(),    // file name -> item, so an unchanged mtime costs nothing
   ctx: { key: "", above: 3, below: 3 },
+  head: new Map(),     // diff path -> { lines } once `src/<path>` is read, null while it is not there
   evOpen: new Set(),   // keys whose Evidence is unfolded
   prId: "",            // the pulls row this card walks, "" for a bare findings folder
 
   reset() {
     this.prId = "";
-    this.diff = null; this.diffNote = ""; this.cache = new Map();
+    this.diff = null; this.diffNote = ""; this.cache = new Map(); this.head = new Map();
     this.ctx = { key: "", above: 3, below: 3 };
   },
 
@@ -570,21 +575,59 @@ const walkTenant = {
       </div>`;
   },
 
+  // The head tree's copy of a file as lines, or null while it is unread or the run folder has no `src/` for it. The
+  // read starts the first time a file is drawn and repaints when it lands. The head does not move, so it is kept.
+  headOf(path) {
+    if (!path || !dock.taskId) return null;
+    const have = this.head.get(path);
+    if (have !== undefined) return have && have.lines;
+    this.head.set(path, null);
+    const gen = dock.gen;
+    api(`/v1/tasks/${dock.taskId}/files/text?path=${encodeURIComponent("src/" + path)}`).then(r => {
+      if (gen !== dock.gen) return;
+      const lines = String(r.text || "").replace(/\r\n/g, "\n").split("\n");
+      if (lines.length && lines[lines.length - 1] === "") lines.pop();
+      this.head.set(path, { lines });
+      if (dock.open) dockPaint();
+    }).catch(() => {});
+    return null;
+  },
+
   codeHtml(it, loc) {
     if (!loc.hunk) {
       return `<div class="wk-code"><div class="wk-l at"><span class="wk-ln">${it.line}</span><span class="wk-mk">▸</span><span class="wk-tx">${
         esc(it.code)}</span></div></div>`;
     }
     const ctx = this.ctx.key === it.key ? this.ctx : { above: 3, below: 3 };
-    const ls = loc.hunk.lines;
-    const from = Math.max(0, loc.idx - ctx.above), to = Math.min(ls.length - 1, loc.idx + ctx.below);
+    // Past the hunk the lines come from the head tree, when the run folder has it. Only the lines the view can reach
+    // are built, since a file can be thousands of lines.
+    let ls = loc.hunk.lines, idx = loc.idx;
+    const head = this.headOf(loc.path);
+    if (head) {
+      const nums = ls.filter(l => l.n !== null).map(l => l.n);
+      const first = Math.min(...nums), last = Math.max(...nums);
+      const pre = [], post = [];
+      for (let n = Math.max(1, first - ctx.above); n < first; n++) pre.push({ t: " ", n, text: head[n - 1] });
+      for (let n = last + 1; n <= Math.min(head.length, last + ctx.below); n++) post.push({ t: " ", n, text: head[n - 1] });
+      ls = pre.concat(ls, post);
+      idx += pre.length;
+    }
+    const from = Math.max(0, idx - ctx.above), to = Math.min(ls.length - 1, idx + ctx.below);
     const rows = [];
     for (let i = from; i <= to; i++) {
       const l = ls[i];
-      rows.push(`<div class="wk-l${l.t === "+" ? " add" : ""}${i === loc.idx ? " at" : ""}"><span class="wk-ln">${l.n}</span><span class="wk-mk">${
-        l.t === "+" ? "+" : " "}${i === loc.idx ? "▸" : ""}</span><span class="wk-tx">${esc(l.text) || "&nbsp;"}</span></div>`);
+      const mk = l.t === "+" ? "+" : l.t === "-" ? "-" : " ";
+      rows.push(`<div class="wk-l${l.t === "+" ? " add" : l.t === "-" ? " del" : ""}${i === idx ? " at" : ""}"><span class="wk-ln">${
+        l.n === null ? "" : l.n}</span><span class="wk-mk">${mk}${i === idx ? "▸" : ""}</span><span class="wk-tx">${
+        esc(l.text) || "&nbsp;"}</span></div>`);
     }
-    const above = from, below = ls.length - 1 - to;
+    let above = from, below = ls.length - 1 - to;
+    if (head) {
+      // What is left of the file past the window is not in `ls`, so count it from the numbers.
+      const firstN = ls.find(l => l.n !== null), lastN = [...ls].reverse().find(l => l.n !== null);
+      if (firstN) above += firstN.n - 1;
+      if (lastN) below += Math.max(0, head.length - lastN.n);
+    }
     return `<div class="wk-code">${
       above > 0 ? `<button type="button" class="wk-more" data-more="above">⋯ ${above} more above</button>` : ""}${
       rows.join("")}${
@@ -687,7 +730,20 @@ function walkAsk(text, submit) {
   }
   sendInput(text);
   if (submit) setTimeout(() => sendInput("\r"), 60);
+  walkSheet(true);
   if (term) term.focus();
+}
+
+// The phone's terminal sheet (phone.css). `open` forces a side, no argument flips it. On a wide screen there is no
+// sheet and this only keeps the class, which nothing there reads.
+function walkSheet(open) {
+  const body = document.querySelector(".term-body");
+  const btn = document.getElementById("walk-sheet");
+  if (!body) return;
+  const on = open === undefined ? !body.classList.contains("sheet-open") : !!open;
+  body.classList.toggle("sheet-open", on);
+  if (btn) { btn.setAttribute("aria-expanded", String(on)); btn.textContent = on ? "▾ terminal" : "▴ terminal"; }
+  if (on && open === undefined && term) term.focus();
 }
 
 async function walkCopy(text, said) {

@@ -109,9 +109,13 @@
   }
   .wk-l { display: flex; gap: var(--sp-3); padding: 0 var(--sp-3); white-space: pre; }
   .wk-l.add { background: var(--teal-bg); }
+  .wk-l.del { background: rgba(var(--danger-rgb),.14); }
+  .wk-l.del .wk-mk { color: var(--danger); }
   .wk-l.at { outline: 1px solid var(--teal); outline-offset: -1px; }
   .wk-ln { color: var(--dimmest); min-width: 4ch; text-align: right; }
   .wk-mk { color: var(--teal); min-width: 2ch; }
+  /* The phone's handle for the terminal sheet. Only phone.css shows it. */
+  .walk-sheet { display: none; }
   .wk-more {
     all: unset; display: block; width: 100%; box-sizing: border-box; cursor: pointer; text-align: center;
     color: var(--dim); font-size: var(--fs-xs); padding: 2px 0;

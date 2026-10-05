@@ -10723,6 +10723,173 @@ async function walkSection(browser, base) {
   if (errors.length) fail("walk: the page threw: " + errors.join(" | "));
 }
 
+// ── the walk drawer's code block (u-008) ─────────────────────────────────────
+//
+// Removed lines drawn, context past the hunk from the head tree in the run folder, and the phone's terminal sheet.
+// A made-up run folder, so it needs nothing on this machine: card A has `src/pkg/a.go` (40 lines, "line N") and card
+// B has the same diff and no `src/`. WALK_SHOTS=<dir> WALK_SHOT=before|after writes PNGs of each state there.
+async function walkContextSection(browser, base) {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "atrium-walkctx-"));
+  const ids = { a: "land-wctxa", b: "land-wctxb" };
+  const finding = "MED pkg/a.go line 12: line 12\n\nhttps://github.com/x/y/pull/9/files#diff-1R12\n\n" +
+    "Use the other name here.\n\nEvidence\nCause: a mix-up.\n";
+  const diff = "diff --git a/pkg/a.go b/pkg/a.go\n--- a/pkg/a.go\n+++ b/pkg/a.go\n@@ -10,5 +10,5 @@ func f() {\n line 10\n" +
+    "-old a\n-old b\n+line 11\n+line 12\n line 13\n line 14\n";
+  const head = Array.from({ length: 40 }, (_, i) => "line " + (i + 1)).join("\n") + "\n";
+  for (const k of ["a", "b"]) {
+    const d = path.join(tmp, ids[k]);
+    fs.mkdirSync(path.join(d, "findings"), { recursive: true });
+    fs.writeFileSync(path.join(d, "findings", "01-med-a.go-L12.txt"), finding);
+    fs.writeFileSync(path.join(d, "pr.diff"), diff);
+    if (k === "a") {
+      fs.mkdirSync(path.join(d, "src", "pkg"), { recursive: true });
+      fs.writeFileSync(path.join(d, "src", "pkg", "a.go"), head);
+    }
+    walkDirs[ids[k]] = d;
+  }
+  const was = tasksMode;
+  tasksMode = "land";
+  landList = [landCard(ids.a, { supervised: true, worktree: "/walk/a" }), landCard(ids.b, { supervised: true, worktree: "/walk/b" })];
+  landPerms = [];
+  const errors = [];
+  const shotDir = process.env.WALK_SHOTS || "";
+  const shotTag = process.env.WALK_SHOT || "after";
+  const ctx = await landContext(browser);
+  await ctx.addInitScript(() => {
+    window.__sent = [];
+    const Real = window.WebSocket;
+    window.WebSocket = function (url, protocols) {
+      if (!/\/attach(\?|$)/.test(url)) return new Real(url, protocols);
+      const s = { url, readyState: 0, binaryType: "arraybuffer", onopen: null, onclose: null, onmessage: null,
+        onerror: null, send(d) { window.__sent.push(d); }, close() { this.readyState = 3; } };
+      setTimeout(() => { s.readyState = 1; if (s.onopen) s.onopen({}); }, 0);
+      return s;
+    };
+    Object.assign(window.WebSocket, { CONNECTING: 0, OPEN: 1, CLOSING: 2, CLOSED: 3 });
+  });
+  const S = "#walk-drawer ";
+  const open = async (p, id) => {
+    await p.goto(base, { waitUntil: "domcontentloaded" });
+    await p.waitForSelector('#stack-list .stackrow[data-id="' + id + '"]', { state: "attached", timeout: slow(15000) });
+    await p.evaluate(x => attachTask(x), id);
+    await p.waitForFunction(x => termSock && termSock.readyState === 1 && termTask && termTask.id === x, id, { timeout: slow(10000) });
+    await p.waitForSelector("#t-walk:not([hidden])", { timeout: slow(10000) });
+    await p.click("#t-walk");
+    await p.waitForSelector(S + ".wk-row", { timeout: slow(10000) });
+  };
+  const shot = async (p, name) => {
+    if (!shotDir) return;
+    fs.mkdirSync(shotDir, { recursive: true });
+    await p.waitForTimeout(350);
+    await p.screenshot({ path: path.join(shotDir, shotTag + "-" + name + ".png") });
+  };
+  const rows = p => p.$$eval(S + ".wk-code .wk-l", els => els.map(e => ({
+    ln: e.querySelector(".wk-ln").textContent, mk: e.querySelector(".wk-mk").textContent.trim(),
+    tx: e.querySelector(".wk-tx").textContent, cls: e.className })));
+  const more = (p, side) => p.$eval(S + '.wk-more[data-more="' + side + '"]', e => e.textContent).catch(() => "");
+  try {
+    // Desktop, card A: the head tree is there.
+    const p = await ctx.newPage();
+    p.on("pageerror", e => errors.push(String(e)));
+    await open(p, ids.a);
+    await p.waitForFunction(() => /more above/.test((document.querySelector("#walk-drawer .wk-more[data-more=above]") || {}).textContent || "") &&
+      /1[0-9] more above/.test(document.querySelector("#walk-drawer .wk-more[data-more=above]").textContent), null, { timeout: slow(5000) })
+      .catch(() => {});
+    await shot(p, "desktop");
+    let r = await rows(p);
+    const dels = r.filter(x => /\bdel\b/.test(x.cls));
+    if (dels.length !== 2 || dels.some(x => x.mk !== "-" || x.ln !== "") || dels.map(x => x.tx).join() !== "old a,old b") {
+      fail("walkContext: removed lines are not drawn as - lines with no number: " + JSON.stringify(r));
+    }
+    const at = r.filter(x => /\bat\b/.test(x.cls));
+    if (at.length !== 1 || at[0].ln !== "12" || at[0].tx !== "line 12") fail("walkContext: the anchor moved: " + JSON.stringify(at));
+    if (r.some(x => /\badd\b/.test(x.cls) && !x.mk.startsWith("+"))) fail("walkContext: an added line lost its +");
+    // Past the hunk: 10 lines are above the window and 25 below, the head's own count.
+    if (!/^⋯ 10 more above$/.test(await more(p, "above"))) fail("walkContext: above says " + await more(p, "above") + " with the head tree present");
+    if (!/^⋯ 25 more below$/.test(await more(p, "below"))) fail("walkContext: below says " + await more(p, "below") + " with the head tree present");
+    await p.click(S + '.wk-more[data-more="above"]');
+    r = await rows(p);
+    if (r[0].ln !== "6" || r[0].mk !== "" || /\b(add|del)\b/.test(r[0].cls)) fail("walkContext: context above the hunk is wrong: " + JSON.stringify(r[0]));
+    await p.click(S + '.wk-more[data-more="above"]');
+    r = await rows(p);
+    if (r[0].ln !== "1" || await more(p, "above")) fail("walkContext: the top of the file did not end the above button");
+    for (let i = 0; i < 6 && await more(p, "below"); i++) await p.click(S + '.wk-more[data-more="below"]');
+    r = await rows(p);
+    const lastRow = r[r.length - 1];
+    if (lastRow.ln !== "40" || lastRow.tx !== "line 40" || await more(p, "below")) fail("walkContext: the bottom of the file is wrong: " + JSON.stringify(lastRow));
+    if (r.filter(x => /\bdel\b/.test(x.cls)).length !== 2) fail("walkContext: the removed lines were lost when the context grew");
+    await shot(p, "desktop-grown");
+    if (await p.$eval("#walk-sheet", e => getComputedStyle(e).display) !== "none") fail("walkContext: the terminal sheet handle shows on a wide screen");
+    await p.close();
+
+    // Desktop, card B: no src/, so context stops at the hunk and removed lines still draw.
+    const pb = await ctx.newPage();
+    pb.on("pageerror", e => errors.push(String(e)));
+    await open(pb, ids.b);
+    await pb.waitForTimeout(400);
+    r = await rows(pb);
+    if (r.filter(x => /\bdel\b/.test(x.cls)).length !== 1 && r.filter(x => /\bdel\b/.test(x.cls)).length !== 2) fail("walkContext: no removed lines without src/");
+    if (!/^⋯ 1 more above$/.test(await more(pb, "above"))) fail("walkContext: without src/ above says " + await more(pb, "above"));
+    await pb.click(S + '.wk-more[data-more="above"]');
+    r = await rows(pb);
+    if (r[0].ln !== "10" || await more(pb, "above")) fail("walkContext: without src/ context grew past the hunk: " + JSON.stringify(r[0]));
+    await pb.close();
+
+    // Phone, card A: the terminal is a sheet.
+    const pp = await ctx.newPage();
+    pp.on("pageerror", e => errors.push(String(e)));
+    await pp.setViewportSize({ width: 390, height: 800 });
+    await open(pp, ids.a);
+    await pp.waitForTimeout(500);
+    const box = sel => pp.$eval(sel, e => { const b = e.getBoundingClientRect(); return { top: b.top, bottom: b.bottom, h: b.height }; });
+    const tb = await box(".term-body");
+    let sc = await box("#t-screen");
+    const handle = await box("#walk-sheet");
+    if (handle.h < 36 || handle.bottom > tb.bottom + 1 || handle.top < tb.bottom - 60) fail("walkContext: the sheet handle is not at the bottom: " + JSON.stringify({ handle, tb }));
+    if (sc.top < tb.bottom - 1) fail("walkContext: the terminal shows with the sheet shut: " + JSON.stringify({ sc, tb }));
+    const dw = await box("#walk-drawer");
+    if (dw.bottom < tb.bottom - 2) fail("walkContext: the finding does not have the whole pane: " + JSON.stringify({ dw, tb }));
+    await pp.$eval(S + ".walk-item", e => { e.scrollTop = e.scrollHeight; });
+    const lastBtn = await pp.$eval(S + ".wk-actions button:last-child", e => e.getBoundingClientRect().bottom);
+    if (lastBtn > handle.top + 1) fail("walkContext: the handle covers the action buttons: " + lastBtn + " vs " + handle.top);
+    await pp.$eval(S + ".walk-item", e => { e.scrollTop = 0; });
+    await shot(pp, "phone-shut");
+    await pp.click("#walk-sheet");
+    await pp.waitForTimeout(400);
+    sc = await box("#t-screen");
+    if (sc.bottom > tb.bottom + 1 || sc.top > tb.bottom - 100) fail("walkContext: the sheet did not come up: " + JSON.stringify({ sc, tb }));
+    if (await pp.getAttribute("#walk-sheet", "aria-expanded") !== "true") fail("walkContext: the handle does not say it is open");
+    await shot(pp, "phone-open");
+    await pp.click("#walk-sheet");
+    await pp.waitForTimeout(400);
+    sc = await box("#t-screen");
+    if (sc.top < tb.bottom - 1) fail("walkContext: the sheet did not go back down");
+    // a talks to the walker, so it brings the sheet up and types into the one terminal.
+    await pp.evaluate(() => { window.__sent = []; });
+    await pp.focus("#walk-drawer");
+    await pp.keyboard.press("a");
+    await pp.waitForTimeout(400);
+    sc = await box("#t-screen");
+    if (sc.top > tb.bottom - 100) fail("walkContext: ask left the sheet shut");
+    const sent = (await pp.evaluate(() => window.__sent)).map(x => JSON.parse(x)).filter(x => x.t === "in");
+    if (sent.length !== 1 || !/^about 01 a\.go:12, $/.test(sent[0].d)) fail("walkContext: ask typed " + JSON.stringify(sent));
+    await pp.click(S + ".walk-head .icon");
+    await pp.waitForTimeout(300);
+    if (await pp.evaluate(() => document.querySelector(".term-body").classList.contains("sheet-open"))) fail("walkContext: closing the drawer left the sheet up");
+    sc = await box("#t-screen");
+    if (sc.top > tb.top + 40 || sc.bottom < tb.bottom - 40) fail("walkContext: the terminal did not return to the pane: " + JSON.stringify({ sc, tb }));
+    await pp.close();
+  } finally {
+    await ctx.close();
+    tasksMode = was;
+    landList = [];
+    for (const k of Object.values(ids)) delete walkDirs[k];
+    try { fs.rmSync(tmp, { recursive: true, force: true }); } catch (e) {}
+  }
+  if (errors.length) fail("walkContext: the page threw: " + errors.join(" | "));
+  console.log("walkContext: ok");
+}
+
 // u-006: a URL clicked in a terminal opens into a NAMED window, one per pull
 // request, so a review walk keeps one tab. window.open is stubbed to record the
 // name, since a real popup is awkward headless.
@@ -22182,7 +22349,7 @@ async function main() {
       skinScope: skinScopeSection, skinHeal: skinHealSection, toastLives: toastLivesSection,
       history: historySection, contextSize: contextSizeSection, ctxLine: ctxLineSection, landThePlane: landThePlaneSection, peekEverywhere: peekEverywhereSection, cardRoute: cardRouteSection,
       quietDoer: quietDoerSection, looksIdle: looksIdleSection, notifyOff: notifyOffSection,
-      questionsClick: questionsClickSection, walk: walkSection, linkReuse: linkReuseSection,
+      questionsClick: questionsClickSection, walk: walkSection, walkContext: walkContextSection, linkReuse: linkReuseSection,
       usageCacheReads: usageCacheReadsSection, roomsDash: roomsDashSection, phoneView: phoneViewSection, heldLine: heldLineSection, u016: u016Section, phoneHeader: phoneHeaderSection, phoneFocus: phoneFocusSection, phoneTermBar: phoneTermBarSection, phoneShare: phoneShareSection, phonePan: phonePanSection, phoneFollow: phoneFollowSection, phoneTap: phoneTapSection, phoneKeyboard: phoneKeyboardSection, phoneCompose: phoneComposeSection, mCompose: mComposeSection, mPerms: mPermsSection, usagePolish: usagePolishSection, usageLimits: usageLimitsSection, usageGroups: usageGroupsSection,
       eventDriven: eventDrivenSection, idleBudget: idleBudgetSection, pollsGone: pollsGoneSection,
       phoneListFit: phoneListFitSection, termListLastRow: termListLastRowSection, phoneNudge: phoneNudgeSection,
@@ -24105,6 +24272,7 @@ async function main() {
     await unit("notifyOff", () => notifyOffSection(browser, base));
     await unit("questionsClick", () => questionsClickSection(browser, base));
     await unit("walk", () => walkSection(browser, base));
+    await unit("walkContext", () => walkContextSection(browser, base));
     await unit("linkReuse", () => linkReuseSection(browser, base));
     await unit("usageCacheReads", () => usageCacheReadsSection(browser, base));
     await unit("roomsDash", () => roomsDashSection(browser, base));

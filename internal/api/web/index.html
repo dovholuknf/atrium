@@ -624,6 +624,8 @@ Exports honor whatever filter is applied.">?</span>
               data-tip="drag to resize" onpointerdown="walkGripDown(event)"></button>
           </aside>
           <div id="t-screen"></div>
+          <button type="button" id="walk-sheet" class="walk-sheet" aria-expanded="false" onclick="walkSheet()"
+            data-tip="pull the terminal up to talk to the walker">▴ terminal</button>
           <!-- "Messages waiting, clear the line". Absolute, never focused. See js/heldline.js. -->
           <div class="heldline" id="t-heldline" role="status" aria-live="polite" hidden></div>
         </div>
