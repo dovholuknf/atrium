@@ -1,7 +1,7 @@
 # m-new-release-0-0-1. Release 0.0.1: plan, docs site refresh, publish
 
 Status: PLANNED, hold lifted 2026-10-04. Plan: `docs/release/release-0-0-1-plan.md`. Waiting on clint's answers below and on
-m-new-deploy-queue merging.
+a green gate. The deploy queue is merged and deployed.
 
 Was HELD (pause). Filed by the orchestrator 2026-10-01, from clint, gap G11 of docs-deps. Owned by release (no
 running owner, see review-new-orphaned-owners).

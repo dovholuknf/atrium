@@ -36,7 +36,8 @@ growler comes back then. The bell offers the same control and shows "reminding i
 
 On a hub the header shows whether the hub's tip is ready to deploy. A click lists what is holding it up and offers a
 Deploy button, enabled only when the board is on the hub's own machine. When the report cannot be read the pill says
-"no report" and Deploy stays off.
+"no report" and Deploy stays off. The dialog also shows the deploy queue, the landed commits not yet live. See
+[the deploy queue](./rooms.md#the-deploy-queue).
 
 ## Columns
 

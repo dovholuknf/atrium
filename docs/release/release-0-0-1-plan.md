@@ -15,8 +15,9 @@ These are in the item file too. The commands below assume the first answer in ea
 
 ## What must be live and passing first
 
-1. The deploy queue, item `m-new-deploy-queue`, branch `claude/m-new-deploy-queue`. It is not merged. Merge it into
-   `claude/main`, then deploy the hub and each room so the queue shows nothing owed.
+1. The deploy queue, item `m-new-deploy-queue`. Met: it is merged into `claude/main` and deployed. Before tagging, open
+   `/_hub/deploy-queue` on the hub (or `?format=md`) and expect it to list nothing. A commit listed there is landed and
+   not yet live.
 2. A clean gate: `bash scripts/ci.sh` passes on the commit to be tagged, with `ATRIUM_LOCATION` and
    `ATRIUM_DEBUG_INPUTLAG` unset.
 3. The release commit is on `main` on the remote, and the tree is clean. `cut-release.sh` refuses a dirty tree.
@@ -26,7 +27,7 @@ These are in the item file too. The commands below assume the first answer in ea
 
 | Step | Who |
 | --- | --- |
-| Merge the deploy queue, deploy hub and rooms | clint, with the director |
+| Deploy hub and rooms, confirm `/_hub/deploy-queue` is empty | clint, with the director |
 | Gate | clint |
 | Dry run of the release script | clint |
 | Tag, push, release upload | clint |
@@ -42,6 +43,7 @@ Run from a clean checkout of the commit to release.
 
 ```bash
 # 0. Be on the release commit and make sure the deploy queue is empty and the gate is green.
+curl -s http://localhost:7778/_hub/deploy-queue      # on the hub, nothing listed
 git fetch origin
 git switch main && git pull --ff-only origin main
 git status --short                      # must print nothing
@@ -75,9 +77,10 @@ If step 3 fails after the tag is pushed, do not move the tag. Fix forward with `
 
 ## The docs site
 
-Refreshed on this branch against the changelog since the last refresh (2026-09-28). Added: growlers and remind me,
+Refreshed on this branch against the changelog up to 2026-10-04. Added over two passes: growlers and remind me,
 the deploy-ready line, the pulls tab, `atrium_git_url`, `atrium_git_clone`, `wake`, `kind`, launching on another room,
-and PR placement across rooms. It builds locally with no broken links and the gate-hook script passes. The build is at
+PR placement across rooms, allowed folders, forge access, change requests, the deploy queue and the CLI verbs that were
+missing. It builds locally with no broken links and the gate-hook script passes. The build is at
 `build.claude/docs-site` and was not published. To look at it before release:
 
 ```bash
@@ -85,5 +88,20 @@ cd website && ATRIUM_DOCS_BASE_URL=/atrium/ npx docusaurus build --out-dir ../bu
 npx docusaurus serve --dir ../build.claude/docs-site --port 3031   # http://localhost:3031/atrium/
 ```
 
-Not covered and left for a later refresh: change requests between rooms, allowed folders at provisioning, and the
-forge access work, which are operator and fabric surfaces still moving.
+## Gate result on this machine
+
+`bash scripts/ci.sh` was run on 2026-10-04 at the merge of `claude/main` (c9d65765) with both variables unset. It
+FAILED, so the gate is not green here and this machine cannot vouch for a tag. What failed:
+
+- This machine's setup: git signs commits with `~/.ssh/id_ed25519_sign.pub`, which is not here, so every test that makes
+  a commit fails (`TestPRWorktree*` in `internal/api`, and every `cut-release` check in "what the release refuses",
+  exit 128). `TestInstallWritesThroughASymlink` needs symlink rights Windows denies here. `internal/daemon`,
+  `internal/gitsync` and `internal/link` hit the 600 s package timeout.
+- Not this machine: `gofmt` flags `cmd/ptyhost-spike/pipe_windows.go`. The board step finds `title=` tooltips in
+  `index.html`, `changereq.js`, `hubrepos.js` and others that `scripts/title-allowlist.txt` does not cover. The skins
+  step finds `--on-danger` set only by daylight, frost, linen and paper. These come from `claude/main` and need an
+  owner before a tag.
+- Passed: go vet, go build, the contrast check, the opencode plugin, shell and PowerShell parse.
+
+Run the gate again on a machine with a signing key and Linux or macOS, where the first group does not apply.
+The full log is `build.claude/ci.log`.

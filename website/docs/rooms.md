@@ -142,3 +142,59 @@ runner's binary, so a runner installed off one machine's PATH still works there.
 A pull request under review is placed on the least busy online room, and the hub keeps one claim per pull request
 across rooms, so two rooms never review the same one. A claim whose room is offline is not re-placed: the board warns
 instead, so you choose.
+
+## Allowed folders
+
+A room launches only in folders it was told about, and claude's folder trust is accepted for them ahead of time, so a
+launch never sits at a trust dialog. Provisioning sets them:
+
+```powershell
+provision-room.ps1 -AllowedFolders /srv/work,C:/work
+```
+
+A new room defaults to its clone, its worktrees folder and `WORKTREE_ROOT`. Running provision again changes nothing
+unless `-AllowedFolders` is given, and removing a room leaves the list alone. The provision smoke launches a card
+outside the list and expects the room to refuse. `room-check.ps1` has an `allowed-folders` row that warns for a room
+with none, and `-Fix -Yes` sets the clone and its worktrees.
+
+## Forge access
+
+A room can say which forge CLI it needs (`gh`, `bb` or `glab`), the host it must be logged in to and the command name.
+Set it in the room settings under **forge logins**, or in `atrium.requirements.yaml` under `forges`:
+
+```yaml
+forges:
+  gh: { host: github.com, scopes: [repo, read:org] }
+```
+
+Nothing is checked until something asks, and nothing polls. A preflight runs the CLI's own status command and never
+reads a token. Each forge comes back as ok, not installed, logged out or missing scope, with the scope named. A failure
+raises a forge-access alert on the board that says what to run on which room, for example "gh is not logged in on sg3:
+run `gh auth login --hostname github.com` on sg3". Atrium stores only the host and a bare command name.
+
+## Change requests
+
+A room that has work another room, or you, should take can ask for it on the hub. The **Requests** view of the repos
+area lists them, open and closed, with the source and target branch, the hub's own read of whether the branch was
+pushed, the reason and the request's history. A request has a state of open, merged, closed or withdrawn, and it ends
+once.
+
+- You can open, close, withdraw and mark one merged. Marking merged is yours alone, and the hub checks the commit
+  against its own store first.
+- A card can open a request for a branch of its own room or one pushed to the hub, and withdraw or close its own. The
+  owner of the source branch can close one against it, with a note.
+- The owner is told, and the text of a request is quoted to them as data and not as instructions. A request into `main`
+  is yours to decide, so it raises a question growler instead.
+- Every board is told on every accepted change.
+
+There is no merge button and no queue. Merging stays manual. The routes are under `/_hub/change-requests` and
+`/_hub/git/pushed`.
+
+## The deploy queue
+
+The landed commits that still need a deploy are one generated list. `GET /_hub/deploy-queue` shows each commit not yet
+live, oldest first, with its subject, its item, whether it needs a `hub` deploy, a `room` deploy or `both`, and the
+rooms that are behind. Add `?format=md` for a table. Live is what each process reports as its running commit, and a
+room built before this reported none is listed as exactly as far behind as the hub, so the list over-reports and never
+hides a commit. Docs, tests and review commits are not listed. The deploy-ready dialog shows the queue under its report,
+and `deploy-ready.ps1` and `deploy-batch.ps1` print it before they change anything. Reading it deploys nothing.
