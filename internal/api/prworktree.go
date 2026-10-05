@@ -73,8 +73,14 @@ func (s *Server) makePRWorktree(w http.ResponseWriter, r *http.Request) {
 	pr, err := f.View(ctx, ref)
 	if err != nil {
 		// An AccessError and a no_forge carry their own sentence, unchanged.
+		if s.ForgeFailed != nil {
+			s.ForgeFailed(f.Kind(), err)
+		}
 		writeErr(w, http.StatusBadRequest, err)
 		return
+	}
+	if s.ForgeWorked != nil {
+		s.ForgeWorked(f.Kind(), host)
 	}
 	branch := pr.HeadRef
 	if pr.FromFork || strings.TrimSpace(branch) == "" {
@@ -114,7 +120,10 @@ func (s *Server) makePRWorktree(w http.ResponseWriter, r *http.Request) {
 
 	fetch := s.PRFetch
 	if fetch == nil {
-		fetch = fetchPRHead
+		helper := credentialHelper(f.Kind(), p.ForgeCmd)
+		fetch = func(ctx context.Context, dir string, spec forge.FetchSpec, dst string) error {
+			return fetchPRHead(ctx, dir, spec, dst, helper)
+		}
 	}
 	if err := fetch(ctx, filepath.FromSlash(repoPath), f.FetchSpec(ref), prWorktreeRef(req.Number)); err != nil {
 		writeErr(w, http.StatusBadRequest, errors.New("could not fetch the head of pull request "+strconv.Itoa(req.Number)+
@@ -144,10 +153,36 @@ func (s *Server) makePRWorktree(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// fetchPRHead fetches the head into dst over https only, so the URL the forge gave cannot be another scheme.
-func fetchPRHead(ctx context.Context, dir string, spec forge.FetchSpec, dst string) error {
-	cmd := exec.CommandContext(ctx, "git", "-c", "protocol.allow=never", "-c", "protocol.https.allow=always",
-		"fetch", "--no-tags", "--", spec.Remote, "+"+spec.Refspec+":"+dst)
+// credentialHelper is the git helper line of a forge's own CLI, or "" for a forge with none. The command name is the
+// provider's forge_cmd, else the kind's default.
+func credentialHelper(kind, cmd string) string {
+	cmd = strings.TrimSpace(cmd)
+	if cmd == "" {
+		switch kind {
+		case forge.GitHub:
+			cmd = "gh"
+		default:
+			return ""
+		}
+	}
+	return "!" + cmd + " auth git-credential"
+}
+
+// fetchArgs is the git argv for one PR head fetch. A helper is set for this one command only: the configured ones
+// are reset, then the forge CLI's own is the only one asked. It answers from the CLI's login, so no token is read,
+// stored or put in the argv.
+func fetchArgs(spec forge.FetchSpec, dst, helper string) []string {
+	args := []string{"-c", "protocol.allow=never", "-c", "protocol.https.allow=always"}
+	if helper != "" {
+		args = append(args, "-c", "credential.helper=", "-c", "credential.helper="+helper)
+	}
+	return append(args, "fetch", "--no-tags", "--", spec.Remote, "+"+spec.Refspec+":"+dst)
+}
+
+// fetchPRHead fetches the head into dst over https only, so the URL the forge gave cannot be another scheme. A
+// private repo is read through helper, see fetchArgs. What is logged is git's own output, which holds no token.
+func fetchPRHead(ctx context.Context, dir string, spec forge.FetchSpec, dst, helper string) error {
+	cmd := exec.CommandContext(ctx, "git", fetchArgs(spec, dst, helper)...)
 	cmd.Dir = dir
 	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0", "GIT_ALLOW_PROTOCOL=https")
 	if out, err := cmd.CombinedOutput(); err != nil {

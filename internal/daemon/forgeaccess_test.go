@@ -4,12 +4,15 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"sync"
 	"testing"
+
+	"github.com/dovholuknf/atrium/internal/forge"
 )
 
 // fakeForgeCLI stands in for the forge CLI: what it prints, whether it exits non-zero, and whether it is on PATH.
@@ -201,5 +204,33 @@ func TestForgeScopesIn(t *testing.T) {
 	}
 	if _, ok := forgeScopesIn("Logged in\n"); ok {
 		t.Fatalf("read scopes from nothing")
+	}
+}
+
+func TestForgeAccessFromRaisesAndForgeWorkedClears(t *testing.T) {
+	d := testDaemon(t)
+	d.opts.Room = "sg3"
+	if d.prr.onAccess == nil || d.prr.onWorked == nil || d.ap.ForgeFailed == nil || d.ap.ForgeWorked == nil {
+		t.Fatal("the daemon did not fill the forge seams")
+	}
+	if d.ForgeAccessFrom("github", errors.New("boom")) || len(d.ForgeAlerts().([]ForgeAlert)) != 0 {
+		t.Fatal("a plain error raised an alert")
+	}
+	// A wrapper command still raises the alert of its tool, and a wrapped error is found.
+	err := fmt.Errorf("fetch: %w", &forge.AccessError{Tool: "ghw", Host: "ghe.example", Detail: "gh auth login"})
+	if !d.ForgeAccessFrom("github", err) {
+		t.Fatal("not recognised")
+	}
+	al := d.ForgeAlerts().([]ForgeAlert)
+	if len(al) != 1 || al[0].Key != "gh@ghe.example" {
+		t.Fatalf("alerts %+v", al)
+	}
+	d.ForgeWorked("github", "other.example")
+	if len(d.ForgeAlerts().([]ForgeAlert)) != 1 {
+		t.Fatal("another host cleared it")
+	}
+	d.ForgeWorked("github", "ghe.example")
+	if len(d.ForgeAlerts().([]ForgeAlert)) != 0 {
+		t.Fatal("not cleared")
 	}
 }

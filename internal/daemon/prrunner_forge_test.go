@@ -99,3 +99,24 @@ func TestPRRunnerPicksForgeFromProviderHost(t *testing.T) {
 		t.Fatalf("%v", err)
 	}
 }
+
+func TestPRRunnerTellsTheDaemonOfAnAccessErrorAndOfASuccess(t *testing.T) {
+	f := newPRFix(t)
+	ae := &forge.AccessError{Tool: "gh", Host: "github.com", Detail: "x"}
+	f.r.forgeOf = func(string) (forge.Forge, error) { return &fakeForge{err: ae}, nil }
+	var got error
+	f.r.onAccess = func(kind string, err error) bool { got = err; return true }
+	f.r.onWorked = func(string, string) { t.Errorf("a failed fetch cleared the alert") }
+	f.run(t)
+	if got != ae {
+		t.Fatalf("onAccess got %v", got)
+	}
+	g := newPRFix(t)
+	g.r.forgeOf = func(string) (forge.Forge, error) { return &fakeForge{}, nil }
+	var worked string
+	g.r.onWorked = func(kind, host string) { worked = kind }
+	g.run(t)
+	if worked != "fake" {
+		t.Errorf("a forge that answered did not clear: %q", worked)
+	}
+}

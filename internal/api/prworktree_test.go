@@ -220,3 +220,59 @@ func real(v any) string {
 	}
 	return p
 }
+
+func TestPRWorktreeRaisesAndClearsTheForgeAlert(t *testing.T) {
+	ae := &forge.AccessError{Tool: "gh", Host: "github.com"}
+	hn := newPRHarness(t, &fakeForge{err: ae})
+	var raised error
+	hn.srv.ForgeFailed = func(kind string, err error) bool { raised = err; return true }
+	hn.srv.ForgeWorked = func(string, string) { t.Errorf("cleared on a failure") }
+	hn.ask(t)
+	if raised != ae {
+		t.Fatalf("raised %v", raised)
+	}
+
+	hn = newPRHarness(t, &fakeForge{pr: forge.PR{HeadRef: "feat"}})
+	hn.checkout(t, "o", "r")
+	var kind, host string
+	hn.srv.ForgeWorked = func(k, h string) { kind, host = k, h }
+	hn.ask(t)
+	if kind != forge.GitHub || host != "github.com" {
+		t.Fatalf("worked %q %q", kind, host)
+	}
+}
+
+func TestCredentialHelperIsTheForgeCLIsOwn(t *testing.T) {
+	if got := credentialHelper(forge.GitHub, ""); got != "!gh auth git-credential" {
+		t.Errorf("%q", got)
+	}
+	if got := credentialHelper(forge.GitHub, "ghw"); got != "!ghw auth git-credential" {
+		t.Errorf("%q", got)
+	}
+	if got := credentialHelper(forge.Bitbucket, ""); got != "" {
+		t.Errorf("%q", got)
+	}
+	spec := forge.FetchSpec{Remote: "https://github.com/o/r.git", Refspec: "pull/7/head"}
+	args := strings.Join(fetchArgs(spec, "refs/atrium/pr/7", "!gh auth git-credential"), " ")
+	want := "-c credential.helper= -c credential.helper=!gh auth git-credential fetch --no-tags -- " +
+		"https://github.com/o/r.git +pull/7/head:refs/atrium/pr/7"
+	if !strings.Contains(args, want) || !strings.Contains(args, "protocol.https.allow=always") {
+		t.Errorf("%s", args)
+	}
+	if strings.Contains(strings.Join(fetchArgs(spec, "x", ""), " "), "credential") {
+		t.Errorf("a forge with no helper changed the credentials")
+	}
+}
+
+// A failed fetch still answers the one sentence, and the helper reaches the default fetch from the provider.
+func TestPRWorktreeFetchFailureSentence(t *testing.T) {
+	hn := newPRHarness(t, &fakeForge{pr: forge.PR{HeadRef: "feat"}})
+	hn.checkout(t, "o", "r")
+	hn.srv.PRFetch = func(context.Context, string, forge.FetchSpec, string) error {
+		return errors.New("fatal: could not read Username")
+	}
+	code, out := hn.ask(t)
+	if code != http.StatusBadRequest || out["error"] != "could not fetch the head of pull request 7: fatal: could not read Username" {
+		t.Fatalf("%d %v", code, out)
+	}
+}
