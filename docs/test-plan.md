@@ -8983,3 +8983,8 @@ name on another provider does not. `remove` returns it to the default.
 3. The deleted entry stays gone.
 4. `github/me/x` appears in the list beside the daemon's entries and the browser key is gone.
 5. A repo with the same last segment as a listed one (`github/someone/ziti`) wears the default, not teal-dusk.
+
+## Theme debug (u-theme-debug)
+
+- Attach a card, open the details drawer, open "colours" under debug. It lists the card theme, repo key, themeFor, both wears, the row and bridge styles, the xterm theme and the skin. Copy puts the block on the clipboard.
+- `localStorage["atrium.debug.theme"]="1"` and reload: attach, select and detach cards, and one `[theme]` line per attach, detach and row repaint shows in the console. Off, nothing logs.

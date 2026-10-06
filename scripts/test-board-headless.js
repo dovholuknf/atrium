@@ -4888,6 +4888,19 @@ async function termDebugSection(browser, base) {
     }
     if (sec.switches.join() !== "true,true") fail("the two debug switches are not in the debug section: " + sec.switches);
 
+    // The colours block: the card's theme chain, both wears, the row, the xterm theme, and a copy button.
+    await p.evaluate(() => { document.getElementById("t-dbg-det").open = true; });
+    const col = await p.evaluate(() => ({ text: (document.getElementById("t-dbg-colours") || {}).textContent || "",
+      copy: !!document.querySelector("#t-drawer-debug #t-dbg-colours-copy svg") }));
+    for (const want of [/repo key/, /themeFor\s/, /wear unselected/, /wear selected/, /xterm theme\s+bg #/, /skin\s/]) {
+      if (!want.test(col.text)) fail("the colours block lacks " + want + ": " + JSON.stringify(col.text));
+    }
+    if (!col.copy) fail("the colours block has no copy icon.");
+    if (process.env.DEBUG_SHOTS && !process.env.DEBUG_SHOTS_NO_COLOURS) {
+      await p.locator("#t-drawer").screenshot({ path: require("path").join(process.env.DEBUG_SHOTS, "colours.png") });
+    }
+    await p.evaluate(() => { document.getElementById("t-dbg-det").open = false; });
+
     // For checking by eye: DEBUG_SHOTS=<dir> writes the drawer closed with the countdown, then with the gate open.
     if (process.env.DEBUG_SHOTS) {
       const out = require("path").join(process.env.DEBUG_SHOTS, (process.env.DEBUG_SHOTS_TAG || "after") + "-");

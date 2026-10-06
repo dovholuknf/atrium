@@ -351,6 +351,7 @@ function closeThisWindow(btn) {
 }
 
 function closeTerm(switching) {
+  themeTrace("detach", termTask);
   clearTermPane(switching);
   if (!switching) refresh();
 }

@@ -935,6 +935,7 @@ function openTerm(task) {
   if (termKindFor !== task.id) termKind = "runner";
   termKindFor = task.id;
   termTask = task;
+  themeTrace("attach", task);
   fileViewEnter();
   // The card this window reads changed, and other windows silence its alerts by it.
   sayWhetherFocused();

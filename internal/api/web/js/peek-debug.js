@@ -61,6 +61,7 @@ async function dbgPoll(seq) {
     const { s, err } = await typingRead(t);
     if (seq !== dbgSeq || termTask !== t) return;
     paintDebug(s, err);
+    themeDbgPaint();
   }
   dbgTimer = setTimeout(() => dbgPoll(seq), DBG_POLL_MS);
 }
@@ -89,6 +90,7 @@ function dbgDrawer(open) {
   if (box) box.hidden = !open;
   if (!open) return;
   dbgFollow();
+  themeDbgPaint();
   dbgSyncLag(seq);
   dbgPoll(seq);
 }

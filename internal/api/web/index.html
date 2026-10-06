@@ -656,6 +656,12 @@ Exports honor whatever filter is applied.">?</span>
             <span class="hintline">Times every keystroke on this card to its echo and prints it to this
               browser's console. The hub and the room log their hops for the whole machine, with no
               restart, while any card here has this on.</span>
+            <details class="peek-debug-det" id="t-dbg-det">
+              <summary class="peek-debug-head">colours</summary>
+              <button type="button" class="peek-debug-copy" id="t-dbg-colours-copy" aria-label="copy the colours block" data-tip="copy the colours block" onclick="themeDbgCopy(this)"></button>
+              <pre class="peek-debug-colours" id="t-dbg-colours"></pre>
+            </details>
+            <span class="hintline">Console trace: localStorage["atrium.debug.theme"]="1", then reload.</span>
             <span class="hintline" id="s-inputlag-pinned" hidden>ATRIUM_DEBUG_INPUTLAG is set on this
               machine, so the hub and the room log for every card as that says, and this box only
               switches this browser's timing.</span>
@@ -3676,6 +3682,7 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
 <script src="/js/inputlag.js"></script>
 <script src="/js/typing.js"></script>
 <script src="/js/peek-debug.js"></script>
+<script src="/js/theme-debug.js"></script>
 <script src="/js/termtrace.js"></script>
 <script src="/js/runners.js"></script>
 <script src="/js/fixtures.js"></script>
