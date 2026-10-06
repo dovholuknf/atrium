@@ -2,30 +2,6 @@ package api
 
 import "testing"
 
-func TestValidCardColors(t *testing.T) {
-	ok := CardColors{Default: "nord", Repos: map[string]string{"github/openziti/ziti": "teal-dusk"}}
-	if err := validCardColors(ok); err != nil {
-		t.Fatal(err)
-	}
-	for _, k := range []string{"ziti", "github/OpenZiti/ziti", "github/openziti", "a/b/c/d"} {
-		if validCardColors(CardColors{Repos: map[string]string{k: "x"}}) == nil {
-			t.Errorf("%q accepted", k)
-		}
-	}
-	if validCardColors(CardColors{Repos: map[string]string{"github/a/b": ""}}) == nil {
-		t.Error("empty name accepted")
-	}
-}
-
-func TestSeededCardColorsValid(t *testing.T) {
-	if len(seededCardColors) != 17 {
-		t.Fatalf("seed has %d entries", len(seededCardColors))
-	}
-	if err := validCardColors(CardColors{Repos: seededCardColors}); err != nil {
-		t.Fatal(err)
-	}
-}
-
 func cardColorsOf(t *testing.T, srv *Server) map[string]any {
 	t.Helper()
 	cc, _ := settingsGet(t, srv)["card_colors"].(map[string]any)

@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/dovholuknf/atrium/internal/cardcolors"
 	"github.com/dovholuknf/atrium/internal/gitsync"
 )
 
@@ -369,4 +370,29 @@ func (s *Store) SetGitCreateOnPush(on bool) error {
 		return s.SetHubSetting(SettingGitCreateOnPush, "on")
 	}
 	return s.SetHubSetting(SettingGitCreateOnPush, "off")
+}
+
+// HubCardColors is the board's card colours, which the hub owns like the skin: colours belong to the
+// board, not to whichever room sorts first. A row never set is seeded once; one set to nothing stays so.
+func (s *Store) HubCardColors() (cardcolors.Colors, error) {
+	raw, err := s.HubSetting(cardcolors.Setting)
+	if err != nil {
+		return cardcolors.Colors{Repos: map[string]string{}}, err
+	}
+	c, seed := cardcolors.Load(raw)
+	if seed {
+		if v, err := cardcolors.Encode(c); err == nil {
+			_ = s.SetHubSetting(cardcolors.Setting, v)
+		}
+	}
+	return c, nil
+}
+
+// SetHubCardColors validates and stores the board's card colours.
+func (s *Store) SetHubCardColors(c cardcolors.Colors) error {
+	v, err := cardcolors.Encode(c)
+	if err != nil {
+		return err
+	}
+	return s.SetHubSetting(cardcolors.Setting, v)
 }

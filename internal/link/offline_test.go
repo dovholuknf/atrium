@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/dovholuknf/atrium/internal/cardcolors"
 )
 
 // What the board sees when a room is not answering.
@@ -22,6 +24,8 @@ type remembering struct {
 	cards     map[string][]CardState
 	asked     map[string]int
 	skin      string
+	colors    cardcolors.Colors
+	colorsSet bool
 	boardAuto bool
 	shareAuth ShareAuth
 	forgot    []string
@@ -63,6 +67,21 @@ func (r *remembering) Holding() ([]string, error) {
 func (r *remembering) HubSkin() (string, error) { return r.skin, nil }
 
 func (r *remembering) SetHubSkin(name string) error { r.skin = name; return nil }
+
+func (r *remembering) HubCardColors() (cardcolors.Colors, error) {
+	if !r.colorsSet {
+		r.colorsSet, r.colors = true, cardcolors.Seed()
+	}
+	return r.colors, nil
+}
+
+func (r *remembering) SetHubCardColors(c cardcolors.Colors) error {
+	if err := cardcolors.Valid(c); err != nil {
+		return err
+	}
+	r.colorsSet, r.colors = true, c
+	return nil
+}
 
 func (r *remembering) BoardAuto() (bool, *time.Time, error) { return r.boardAuto, nil, nil }
 

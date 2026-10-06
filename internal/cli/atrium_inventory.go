@@ -3,6 +3,7 @@ package cli
 import (
 	"time"
 
+	"github.com/dovholuknf/atrium/internal/cardcolors"
 	"github.com/dovholuknf/atrium/internal/hubstore"
 	"github.com/dovholuknf/atrium/internal/link"
 )
@@ -151,6 +152,10 @@ func (i inventory) Holding() ([]string, error) { return i.store.Holding() }
 // hub's own rather than a room's. See `internal/link` and `internal/hubstore`.
 func (i inventory) HubSkin() (string, error)     { return i.store.HubSkin() }
 func (i inventory) SetHubSkin(name string) error { return i.store.SetHubSkin(name) }
+
+// HubCardColors and SetHubCardColors are the board's card colours, the hub's own like the skin.
+func (i inventory) HubCardColors() (cardcolors.Colors, error)  { return i.store.HubCardColors() }
+func (i inventory) SetHubCardColors(c cardcolors.Colors) error { return i.store.SetHubCardColors(c) }
 
 // BoardAuto and SetBoardAuto are the board-wide auto-approve flag, held by the
 // hub and enforced hub-side on the permission relay. Board policy, so the hub's
