@@ -8988,3 +8988,9 @@ name on another provider does not. `remove` returns it to the default.
 
 - Attach a card, open the details drawer, open "colours" under debug. It lists the card theme, repo key, themeFor, both wears, the row and bridge styles, the xterm theme and the skin. Copy puts the block on the clipboard.
 - `localStorage["atrium.debug.theme"]="1"` and reload: attach, select and detach cards, and one `[theme]` line per attach, detach and row repaint shows in the console. Off, nothing logs.
+
+## Peek launch line (u-peek-launch-short)
+
+- Hover a lean worker's card. "launched with" is one short line: `--settings {…}`, `--mcp-config {…}`, `--model sonnet`, no prompt text, env names after it.
+- Open the card details. Under runner, a collapsed "launched with" block. Open it and the whole command is there. The copy icon puts the whole command on the clipboard without toggling the fold. A card atrium did not start has no block.
+- Headless: `peekLaunch` and `bootClean`.

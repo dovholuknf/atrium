@@ -1,0 +1,1 @@
+The card peek's "launched with" row is one short line: every flag name, and a value only when it is under 40 characters and one line (`--model sonnet`, `--resume abcdef12-3456`). A long or JSON value shows as `{…}` or `"…"`, and the prompt is left out. Env names stay. The card details drawer now holds the full command in a collapsed "launched with" block with a copy icon.

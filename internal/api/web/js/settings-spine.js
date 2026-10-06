@@ -522,6 +522,12 @@ async function openTask(id) {
     // do it: `clear` takes a whole column. It asks first.
     `<button class="no" onclick="forgetCurrent()">forget this card</button>`
   ].join("");
+  const full = launchFull(current);
+  document.getElementById("d-launch-sec").hidden = !full;
+  document.getElementById("d-launch").textContent = full;
+  const lc = document.getElementById("d-launch-copy");
+  lc.innerHTML = copyIcon();
+  lc.onclick = e => { e.preventDefault(); e.stopPropagation(); copyLogRow(lc, launchFull(current)); };
   document.getElementById("d-auto-note").textContent = current.auto_approve
     ? "requests from this session are approved without asking. everything is still recorded, " +
       "and never rules and shelving still block."

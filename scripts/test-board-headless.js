@@ -18006,6 +18006,40 @@ async function peekDashSection(browser, base) {
   if (!bad) console.log("peekDash ok");
 }
 
+// PEEK LAUNCH LINE. A lean worker's launch command carries KB of JSON. The peek shows every flag name and only short values on one
+// line; the card details hold the whole command behind a fold.
+async function peekLaunchSection(browser, base) {
+  const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+  try {
+    const p = await ctx.newPage();
+    await p.goto(base, { waitUntil: "domcontentloaded" });
+    await p.waitForFunction(() => typeof peekBody === "function" && typeof openTask === "function");
+    const big = JSON.stringify({ hooks: { Stop: Array.from({ length: 60 }, (_, i) => ({ command: "atrium hook stop " + i })) } });
+    const cmd = { exe: "claude", env_keys: ["ATRIUM_TOKEN"], args: ["--settings", big, "--mcp-config", big, "--model", "sonnet", "--effort", "medium",
+      "--resume", "abcdef12-3456", "--disallowedTools", "Bash(rm:*),Bash(git push:*)," + "x".repeat(300),
+      "--append-system-prompt", "line one\nline two", "do the thing in BRIEF.md"] };
+    await p.route("**/v1/tasks/x", route => route.fulfill({ contentType: "application/json",
+      body: JSON.stringify({ id: "x", display_title: "t", tags: [], events: [], status: "working", launch_cmd: cmd }) }));
+    const r = await p.evaluate(async cmd => {
+      const t = { id: "x", launch_cmd: cmd, status: "working" };
+      const d = document.createElement("div");
+      d.innerHTML = peekBody(t, null);
+      const row = [...d.querySelectorAll(".peek-row")].find(x => x.querySelector("b").textContent === "launched with");
+      const line = row ? row.querySelector("span").textContent : "";
+      let err = ""; try { await openTask("x"); } catch (e) { err = String(e && e.stack || e).slice(0, 300); }
+      return { err, line, full: document.getElementById("d-launch").textContent, hidden: document.getElementById("d-launch-sec").hidden,
+        open: document.getElementById("d-launch-fold").open, want: launchFull(t) };
+    }, cmd);
+    if (r.line.length >= 200) fail("peekLaunch: the peek line is " + r.line.length + " characters: " + r.line);
+    if (!r.line.includes("--settings {…}") || !r.line.includes("--model sonnet") || !r.line.includes("--resume") || r.line.includes("BRIEF.md") || !r.line.includes("ATRIUM_TOKEN"))
+      fail("peekLaunch: the peek line is " + r.line);
+    if (r.hidden || r.open || !r.full || r.full !== r.want || !r.full.includes("do the thing")) fail("peekLaunch: details block " + JSON.stringify({ hidden: r.hidden, open: r.open, len: r.full.length, err: r.err }));
+  } finally {
+    await ctx.close();
+  }
+  if (!bad) console.log("peekLaunch ok");
+}
+
 // DISCRETE GROUP AND SORT CHOICES. The settings dialog picks a grouping rule and a group order by name, the code boxes show only
 // for "your own code", and nothing typed is stored for a named pick. The repos tab sorts by name, last push or date added and
 // remembers it across a reload.
@@ -24332,7 +24366,7 @@ async function main() {
       u001Audit: u001AuditSection,
       pasteStart: pasteStartSection, pasteDone: pasteDoneSection, pasteOldRoom: pasteOldRoomSection, pasteClose: pasteCloseSection,
       growlQuestionShots: growlQuestionShotsSection, growlQuestionBody: growlQuestionBodySection, growlReplyGrow: growlReplyGrowSection, growlChoices: growlChoicesSection, replies: repliesSection, repliesOf: repliesOfSection, repliesShots: repliesShotsSection, growlStable: growlStableSection, growlOnIt: growlOnItSection, mGrowlQuestion: mGrowlQuestionSection,
-      roomsSetup: roomsSetupSection, discreteGroup: discreteGroupSection, groupingPerView: groupingPerViewSection, repoColors: repoColorsSection, bootClean: bootCleanSection, peekDash: peekDashSection, mReload: mReloadSection, mReconnect: mReconnectSection, mActivityRead: mActivityReadSection, mReadRetry: mReadRetrySection, mWorking: mWorkingSection, mOwnMessages: mOwnMessagesSection, mBubbles: mBubblesSection, mRecapSheet: mRecapSheetSection,
+      roomsSetup: roomsSetupSection, discreteGroup: discreteGroupSection, groupingPerView: groupingPerViewSection, repoColors: repoColorsSection, bootClean: bootCleanSection, peekDash: peekDashSection, peekLaunch: peekLaunchSection, mReload: mReloadSection, mReconnect: mReconnectSection, mActivityRead: mActivityReadSection, mReadRetry: mReadRetrySection, mWorking: mWorkingSection, mOwnMessages: mOwnMessagesSection, mBubbles: mBubblesSection, mRecapSheet: mRecapSheetSection,
       mHomeOrder: mHomeOrderSection, cardUrlWayOut: cardUrlWayOutSection, phoneBoot: phoneBootSection, sayEnter: sayEnterSection, sendArrow: sendArrowSection, mTables: mTablesSection, mMarkdown: mMarkdownSection, mHostile: mHostileSection, mPictures: mPicturesSection, soundPhone: soundPhoneSection, phoneBell: phoneBellSection, mBell: mBellSection,
       mHomeOrder: mHomeOrderSection, cardUrlWayOut: cardUrlWayOutSection, phoneBoot: phoneBootSection, sayEnter: sayEnterSection, sendArrow: sendArrowSection, mTables: mTablesSection, mMarkdown: mMarkdownSection, mHostile: mHostileSection, mPictures: mPicturesSection, phoneRedirect: phoneRedirectSection,
       mHomeOrder: mHomeOrderSection, cardUrlWayOut: cardUrlWayOutSection, phoneBoot: phoneBootSection, sayEnter: sayEnterSection, sendArrow: sendArrowSection, mTables: mTablesSection, mMarkdown: mMarkdownSection, mHostile: mHostileSection, mPictures: mPicturesSection, mHidden: mHiddenSection, soundPhone: soundPhoneSection, phoneBell: phoneBellSection, mBell: mBellSection,
@@ -26348,6 +26382,7 @@ async function main() {
     await unit("cacheChip", () => cacheChipSection(browser, base));
     await unit("cacheLine", () => cacheLineSection(browser, base));
     await unit("peekDash", () => peekDashSection(browser, base));
+    await unit("peekLaunch", () => peekLaunchSection(browser, base));
     await unit("readyOnce", () => readyOnceSection(browser, base));
     await unit("readyPopout", () => readyPopoutSection(browser, base));
     // ── a pop-out's bell is its own: the card's switch and mute, never the board's ──
