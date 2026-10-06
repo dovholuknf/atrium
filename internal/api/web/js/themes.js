@@ -198,15 +198,71 @@ async function loadThemes() {
 // `themePreview` is the theme picker's, below.
 let themePreview = null;
 function themeFor(t) {
-  if (!t) return TERM_THEMES.atrium;
-  const named = themeNamed(themePreview && t.id === themePreview.id ? themePreview.name : t.theme);
-  if (named) return named;
-
-  const project = String(t.repo || "").trim() || defaultProjectOf(t);
-  return themeNamed(REPO_THEMES[repoLeaf(project)]) || TERM_THEMES.atrium;
+  return themeSource(t) || TERM_THEMES.atrium;
 }
 
-// The last path segment of a project name, which is what the repo map is
+// The theme a card was GIVEN, by the card, its repo or the user's default, or null for a card nobody coloured.
+// A terminal still needs a palette and takes `themeFor`'s. A board card or row with null here wears the skin's own
+// plain look, so green never reads as a choice somebody made.
+function themeSource(t) {
+  if (!t) return null;
+  const named = themeNamed(themePreview && t.id === themePreview.id ? themePreview.name : t.theme);
+  if (named) return named;
+  return themeNamed(repoColorName(t));
+}
+
+// The name a repo colour resolves to for a card, or "". Order: the user's entry for the full `provider/org/repo`,
+// then a shipped leaf entry (`ziti`) only when no full key matched, then the user's default.
+function repoColorName(t) {
+  const key = repoKeyOf(t);
+  const mine = repoColors.get();
+  if (key && mine.repos[key]) return mine.repos[key];
+  const project = String(t.repo || "").trim() || defaultProjectOf(t);
+  return REPO_THEMES[repoLeaf(key || project)] || mine.default;
+}
+
+// `provider/org/repo`, lowercase, or "" when the card has no repo to speak of. From the worktree path
+// `.../github/openziti/ziti-worktrees/branch` or, failing that, the card's own `repo`. NEVER the branch, worktree
+// folder or title, and a `-worktrees` folder is its repo.
+function repoKeyOf(t) {
+  if (!t) return "";
+  const clean = (host, org, repo) => [host.replace(/\.(com|org)$/i, ""), org, repo.replace(/-worktrees$/i, "").replace(/\.git$/i, "")]
+    .join("/").toLowerCase();
+  const path = String(t.worktree || "").replace(/\\/g, "/");
+  const m = path.match(/\/((?:github|gitlab|bitbucket)[^/]*)\/([^/]+)\/([^/]+)/i);
+  if (m) return clean(m[1], m[2], m[3]);
+  const parts = String(t.repo || "").trim().replace(/^[a-z+]+:\/\//i, "").split("/").filter(Boolean);
+  if (parts.length >= 3) return clean(parts[0], parts[1], parts[2]);
+  if (parts.length === 2) return clean("github", parts[0], parts[1]);
+  return "";
+}
+
+// The user's colours, kept in this browser like the rest of how the board reads: `default` is a theme name or "" for
+// the plain card, `repos` maps `provider/org/repo` to a theme name. Read each time, so a change in another window of
+// the browser is seen without a reload.
+const REPO_COLORS_KEY = "atrium.repoColors";
+const repoColors = {
+  get() {
+    let o = null;
+    try { o = JSON.parse(localStorage.getItem(REPO_COLORS_KEY) || "null"); } catch (e) {}
+    const repos = Object.create(null);
+    if (o && o.repos && typeof o.repos === "object") {
+      for (const k of Object.keys(o.repos)) if (typeof o.repos[k] === "string" && o.repos[k]) repos[k] = o.repos[k];
+    }
+    return { default: o && typeof o.default === "string" ? o.default : "", repos };
+  },
+  set(v) {
+    try { localStorage.setItem(REPO_COLORS_KEY, JSON.stringify({ default: v.default || "", repos: Object.assign({}, v.repos) })); } catch (e) {}
+    cardWearCache = new WeakMap();
+  }
+};
+prefLive(REPO_COLORS_KEY, () => {
+  cardWearCache = new WeakMap();
+  if (typeof paintRepoColors === "function") paintRepoColors(true);
+  runRefresh();
+});
+
+// The last path segment of a project name, which is what the shipped repo map is
 // keyed by. `dovholuknf/dotfiles` is `dotfiles`.
 function repoLeaf(name) {
   const parts = String(name || "").split("/").filter(Boolean);
@@ -317,7 +373,8 @@ function cardWear(t) {
 // Cached per theme object, so a list of a hundred rows in five themes works
 // out five palettes.
 function wearFor(t) {
-  const th = themeFor(t);
+  const th = themeSource(t);
+  if (!th) return null;
   if (!cardWearCache.has(th)) cardWearCache.set(th, wearOf(th));
   return cardWearCache.get(th);
 }
@@ -1000,3 +1057,84 @@ async function bringThemes() {
   });
 })();
 
+
+// ── settings: default colour and colours by repo ────────
+//
+// One draft, so the preview card wears a choice before it is saved. Nothing reaches the board until `save`.
+let rcDraft = null;
+let rcFocus = "default";
+
+function rcOptions(now, plain) {
+  return themeOptionsHTML(now).replace(/<option value=""[^>]*>[^<]*<\/option>/,
+    `<option value=""${now ? "" : " selected"}>${plain}</option>`);
+}
+
+// Every repo the board's cards are in, less those already listed.
+function rcKnownRepos() {
+  const seen = new Set();
+  for (const t of (typeof lastTasks !== "undefined" ? lastTasks : [])) { const k = repoKeyOf(t); if (k) seen.add(k); }
+  return Array.from(seen).filter(k => !(k in rcDraft.repos)).sort();
+}
+
+function paintRepoColors(fromOther) {
+  const pane = document.getElementById("rc-rows");
+  if (!pane) return;
+  if (!rcDraft || fromOther) rcDraft = repoColors.get();
+  document.getElementById("rc-default").innerHTML = rcOptions(rcDraft.default, "plain card");
+  pane.innerHTML = Object.keys(rcDraft.repos).sort().map(k =>
+    `<div class="picker" data-repo="${esc(k)}"><span class="mono">${esc(k)}</span>` +
+    `<select onfocus="rcFocus=this.parentNode.dataset.repo;paintRepoPreview()" ` +
+    `onchange="repoColorsPick(this.parentNode.dataset.repo, this.value)">${themeOptionsHTML(rcDraft.repos[k])}</select>` +
+    `<button onclick="repoColorsDrop(this.parentNode.dataset.repo)">remove</button></div>`).join("");
+  const known = rcKnownRepos();
+  const add = document.getElementById("rc-add");
+  add.innerHTML = known.length
+    ? known.map(k => `<option value="${esc(k)}">${esc(k)}</option>`).join("")
+    : `<option value="">no other repos on the board</option>`;
+  add.disabled = !known.length;
+  paintRepoPreview();
+}
+
+function rcDirty() {
+  const flat = v => JSON.stringify([v.default, Object.keys(v.repos).sort().map(k => [k, v.repos[k]])]);
+  return flat(repoColors.get()) !== flat(rcDraft);
+}
+
+function paintRepoPreview() {
+  const name = rcFocus === "default" ? rcDraft.default : rcDraft.repos[rcFocus];
+  const th = themeNamed(name);
+  const wear = th ? wearOf(th) : null;
+  document.getElementById("rc-for").textContent = rcFocus === "default" ? "default" : rcFocus;
+  document.getElementById("rc-preview").innerHTML =
+    `<div class="card${wear ? wear.cls : ""}"${wear ? ` style="${wear.style}"` : ""}>` +
+    `<div class="card-line"><div class="title">${esc(rcFocus === "default" ? "a card with no colour" : rcFocus)}</div>` +
+    `<div class="chips"><span class="chip">${esc(name || "plain card")}</span></div></div></div>`;
+  const dirty = rcDirty();
+  document.getElementById("rc-save").disabled = !dirty;
+  document.getElementById("rc-revert").disabled = !dirty;
+}
+
+function repoColorsPick(which, name) {
+  rcFocus = which;
+  if (which === "default") rcDraft.default = name;
+  else if (name) rcDraft.repos[which] = name;
+  paintRepoColors();
+}
+function repoColorsAdd() {
+  const k = document.getElementById("rc-add").value;
+  if (!k) return;
+  rcDraft.repos[k] = rcDraft.default || "dracula";
+  rcFocus = k;
+  paintRepoColors();
+}
+function repoColorsDrop(k) {
+  delete rcDraft.repos[k];
+  if (rcFocus === k) rcFocus = "default";
+  paintRepoColors();
+}
+function repoColorsSave() {
+  repoColors.set(rcDraft);
+  paintRepoColors();
+  runRefresh();
+}
+function repoColorsRevert() { rcDraft = null; rcFocus = "default"; paintRepoColors(); }

@@ -138,6 +138,7 @@ function paintSettingsPrefs() {
   document.getElementById("s-termkeep").value = String(termKeepN());
   document.getElementById("s-termkeeplines").value = String(termKeepLines());
   document.getElementById("s-cardcolors").checked = cardColors;
+  paintRepoColors(true);
   for (const k of ["selected", "idle", "exited"])
     document.getElementById("s-termwear-" + k).checked = termWearOn[k];
   document.getElementById("s-inputlag").checked = lagOn;

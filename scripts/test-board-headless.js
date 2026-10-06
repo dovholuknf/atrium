@@ -18174,6 +18174,76 @@ async function groupingPerViewSection(browser, base) {
   if (!bad) console.log("groupingPerView ok");
 }
 
+async function repoColorsSection(browser, base) {
+  const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+  const errors = [];
+  const tag = "repoColors: ";
+  try {
+    const p = await ctx.newPage();
+    p.on("pageerror", e => errors.push(String(e)));
+    await p.addInitScript(() => localStorage.setItem("atrium.cardColors", "1"));
+    await p.goto(base + "/", { waitUntil: "domcontentloaded" });
+    await p.waitForFunction(() => typeof lastTasks !== "undefined" && lastTasks.length >= 1, null, { timeout: slow(15000) });
+    // REPO_COLORS_BOARD_SHOT=<png> is the board with cards nobody coloured. Taken first, so it runs on an older board too.
+    if (process.env.REPO_COLORS_BOARD_SHOT) {
+      await p.waitForTimeout(800);
+      await p.screenshot({ path: process.env.REPO_COLORS_BOARD_SHOT });
+      if (typeof await p.evaluate(() => typeof repoKeyOf) !== "string" || await p.evaluate(() => typeof repoKeyOf) !== "function") return;
+    }
+
+    const keys = await p.evaluate(() => [
+      "/Users/me/git/github/openziti/ziti/main",
+      "/Users/me/git/github/openziti/ziti-worktrees/fix-x",
+      "/Users/me/git/gitlab.com/Foo/Bar/wt"
+    ].map(w => repoKeyOf({ worktree: w })).concat(repoKeyOf({ repo: "github.com/a/b.git" }), repoKeyOf({ worktree: "/tmp/one" })));
+    const want = ["github/openziti/ziti", "github/openziti/ziti", "gitlab/foo/bar", "github/a/b", ""];
+    if (JSON.stringify(keys) !== JSON.stringify(want)) fail(tag + "repo keys " + JSON.stringify(keys));
+
+    const r = await p.evaluate(() => {
+      localStorage.removeItem(REPO_COLORS_KEY);
+      const plain = { id: "x", worktree: "/Users/me/git/github/temp/clintify/b1" };
+      const out = { plain: wearFor(plain) };
+      repoColors.set({ default: "", repos: { "github/temp/clintify": "dracula" } });
+      out.keyed = themeSource(plain) === themeNamed("dracula");
+      out.otherProvider = themeSource({ id: "y", worktree: "/Users/me/git/gitlab/temp/clintify/b1" });
+      out.leaf = themeSource({ id: "z", worktree: "/Users/me/git/github/someone/ziti/b" }) === themeNamed("teal-dusk");
+      out.keyWinsOverLeaf = (repoColors.set({ default: "", repos: { "github/someone/ziti": "nord" } }),
+        themeSource({ id: "z", worktree: "/Users/me/git/github/someone/ziti/b" }) === themeNamed("nord"));
+      repoColors.set({ default: "pumpkin", repos: {} });
+      out.def = themeSource({ id: "q", worktree: "/tmp/q" }) === themeNamed("pumpkin");
+      localStorage.removeItem(REPO_COLORS_KEY);
+      return out;
+    });
+    if (r.plain !== null) fail(tag + "an uncoloured card wears " + JSON.stringify(r.plain));
+    if (!r.keyed) fail(tag + "a full key did not colour its card");
+    if (r.otherProvider) fail(tag + "the same org/repo on another provider took the colour");
+    if (!r.leaf) fail(tag + "a leaf entry no longer matches when no full key does");
+    if (!r.keyWinsOverLeaf) fail(tag + "a full key did not beat the leaf entry");
+    if (!r.def) fail(tag + "the default colour was not used");
+
+    // The settings section: the preview wears the pick before it is saved.
+    await p.evaluate(() => { document.getElementById("settings").showModal(); showSettingsPane("card colours"); paintRepoColors(true); });
+    await p.selectOption("#rc-default", "dracula");
+    const before = await p.evaluate(() => ({ cls: document.querySelector("#rc-preview .card").className, saved: localStorage.getItem(REPO_COLORS_KEY), dis: document.getElementById("rc-save").disabled }));
+    if (!/worn/.test(before.cls)) fail(tag + "the preview does not wear the pick");
+    if (before.saved) fail(tag + "the pick was saved before save");
+    if (before.dis) fail(tag + "save is disabled with a change pending");
+    await p.click("#rc-save");
+    if (!(await p.evaluate(() => repoColors.get().default)) === "dracula") fail(tag + "save did not keep the default");
+    const opts = await p.evaluate(() => Array.from(document.querySelectorAll("#rc-add option")).map(o => o.value));
+    if (!opts.length) fail(tag + "no known repo to add");
+    if (opts[0]) {
+      await p.click("#rc-add + button");
+      if (!(await p.evaluate(k => k in repoColors.get().repos || document.querySelector('#rc-rows [data-repo="' + k + '"]') !== null, opts[0]))) fail(tag + "add did not list the repo");
+    }
+    if (process.env.REPO_COLORS_SHOT) await p.locator("#settings").screenshot({ path: process.env.REPO_COLORS_SHOT });
+  } finally {
+    await ctx.close();
+  }
+  if (errors.length) fail(tag + "threw: " + errors.join(" | "));
+  if (!bad) console.log("repoColors ok");
+}
+
 async function bootCleanSection(browser, base) {
   const raw = fs.readFileSync(path.join(WEB_ROOT, "index.html"));
   const views = [{ w: 1400, h: 900 }, { w: 390, h: 844, phone: true }, { w: 412, h: 915, phone: true }];
@@ -24216,7 +24286,7 @@ async function main() {
       u001Audit: u001AuditSection,
       pasteStart: pasteStartSection, pasteDone: pasteDoneSection, pasteOldRoom: pasteOldRoomSection, pasteClose: pasteCloseSection,
       growlQuestionShots: growlQuestionShotsSection, growlQuestionBody: growlQuestionBodySection, growlReplyGrow: growlReplyGrowSection, growlChoices: growlChoicesSection, replies: repliesSection, repliesOf: repliesOfSection, repliesShots: repliesShotsSection, growlStable: growlStableSection, growlOnIt: growlOnItSection, mGrowlQuestion: mGrowlQuestionSection,
-      roomsSetup: roomsSetupSection, discreteGroup: discreteGroupSection, groupingPerView: groupingPerViewSection, bootClean: bootCleanSection, peekDash: peekDashSection, mReload: mReloadSection, mReconnect: mReconnectSection, mActivityRead: mActivityReadSection, mReadRetry: mReadRetrySection, mWorking: mWorkingSection, mOwnMessages: mOwnMessagesSection, mBubbles: mBubblesSection, mRecapSheet: mRecapSheetSection,
+      roomsSetup: roomsSetupSection, discreteGroup: discreteGroupSection, groupingPerView: groupingPerViewSection, repoColors: repoColorsSection, bootClean: bootCleanSection, peekDash: peekDashSection, mReload: mReloadSection, mReconnect: mReconnectSection, mActivityRead: mActivityReadSection, mReadRetry: mReadRetrySection, mWorking: mWorkingSection, mOwnMessages: mOwnMessagesSection, mBubbles: mBubblesSection, mRecapSheet: mRecapSheetSection,
       mHomeOrder: mHomeOrderSection, cardUrlWayOut: cardUrlWayOutSection, phoneBoot: phoneBootSection, sayEnter: sayEnterSection, sendArrow: sendArrowSection, mTables: mTablesSection, mMarkdown: mMarkdownSection, mHostile: mHostileSection, mPictures: mPicturesSection, soundPhone: soundPhoneSection, phoneBell: phoneBellSection, mBell: mBellSection,
       mHomeOrder: mHomeOrderSection, cardUrlWayOut: cardUrlWayOutSection, phoneBoot: phoneBootSection, sayEnter: sayEnterSection, sendArrow: sendArrowSection, mTables: mTablesSection, mMarkdown: mMarkdownSection, mHostile: mHostileSection, mPictures: mPicturesSection, phoneRedirect: phoneRedirectSection,
       mHomeOrder: mHomeOrderSection, cardUrlWayOut: cardUrlWayOutSection, phoneBoot: phoneBootSection, sayEnter: sayEnterSection, sendArrow: sendArrowSection, mTables: mTablesSection, mMarkdown: mMarkdownSection, mHostile: mHostileSection, mPictures: mPicturesSection, mHidden: mHiddenSection, soundPhone: soundPhoneSection, phoneBell: phoneBellSection, mBell: mBellSection,
@@ -26286,6 +26356,7 @@ async function main() {
     await unit("readTabSize", () => readTabSizeSection(browser, base));
     await unit("discreteGroup", () => discreteGroupSection(browser, base));
     await unit("groupingPerView", () => groupingPerViewSection(browser, base));
+    await unit("repoColors", () => repoColorsSection(browser, base));
     await unit("bootClean", () => bootCleanSection(browser, base));
     await unit("mWorking", () => mWorkingSection(browser));
     await unit("mOwnMessages", () => mOwnMessagesSection(browser));

@@ -8943,3 +8943,27 @@ still running and its terminal is still open. Nothing was killed.
 1. Right-click a card whose session was joined by hand, or runs in a window.
 
 **Expected:** `restart` is dimmed with `atrium does not own this process`, and its details have no restart button.
+
+## IZ. Card colours: a plain default, keyed by provider/org/repo (u-card-color-default)
+
+Headless section `repoColors` in `scripts/test-board-headless.js`.
+
+### IZ1. Uncoloured cards are plain
+
+1. Turn on `board cards wear their terminal colours`. Open a card whose repo has no colour set.
+
+**Expected:** the card has the skin's own look, not the atrium green.
+
+### IZ2. Default colour and preview
+
+1. Open settings, `card colours`. Pick a theme under `default colour`.
+
+**Expected:** the preview card wears it at once and `save` enables. Nothing on the board changes until `save`.
+`revert` drops the pick. After `save`, an uncoloured card wears the default.
+
+### IZ3. A colour for one repo
+
+1. Under `by repo` choose a repo from the list and press `add`. Pick a theme for it and save.
+
+**Expected:** every card in that `provider/org/repo` wears it, whatever its worktree or branch. The same org and repo
+name on another provider does not. `remove` returns it to the default.

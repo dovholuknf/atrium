@@ -1544,6 +1544,30 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
       <span class="hintline">The body of a comparator over two group names. Broken code falls back
         to the default and says so rather than blanking the board.</span>
     </div>
+    <h3 class="s-section">card colours</h3>
+    <div class="field">
+      <label class="eyebrow" for="rc-default">default colour
+        <span class="help" tabindex="0" data-tip="What a card wears when nobody coloured it: not its own, not its repo's. Plain card is the skin's look. Cards only wear colour when board cards wear their terminal colours is on in the board section. Kept in this browser.">?</span></label>
+      <div class="picker">
+        <select id="rc-default" onchange="repoColorsPick('default', this.value)"></select>
+      </div>
+    </div>
+    <div class="field">
+      <label class="eyebrow">by repo</label>
+      <div id="rc-rows"></div>
+      <div class="picker">
+        <select id="rc-add"></select>
+        <button onclick="repoColorsAdd()">add</button>
+      </div>
+    </div>
+    <div class="field">
+      <label class="eyebrow">preview <span id="rc-for"></span></label>
+      <div id="rc-preview"></div>
+      <div class="picker">
+        <button class="go" id="rc-save" onclick="repoColorsSave()">save</button>
+        <button id="rc-revert" onclick="repoColorsRevert()">revert</button>
+      </div>
+    </div>
     <h3 class="s-section">expose the board</h3>
     <div class="field">
       <div id="overlays"></div>
