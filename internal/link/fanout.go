@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/dovholuknf/atrium/internal/cardcolors"
 	"github.com/dovholuknf/atrium/internal/inputlag"
 )
 
@@ -698,6 +699,10 @@ func (p *Proxy) hubSettings(w http.ResponseWriter, r *http.Request) bool {
 				return p.saveShareAuth(w, r, payload, stock)
 			}
 		}
+		// The card colours are the board's, so the hub holds them like the skin.
+		if _, ok := keys["card_colors"]; ok {
+			return p.saveHubCardColors(w, r, payload, stock)
+		}
 		return p.saveHubSkin(w, r, payload, stock)
 	}
 	return false
@@ -781,6 +786,42 @@ func (p *Proxy) saveBoardAuto(w http.ResponseWriter, payload []byte, stock Inven
 	return true
 }
 
+// applyCardColors writes the hub's card colours into a settings payload, replacing whatever the borrowed
+// room had (an older room has none at all).
+func (p *Proxy) applyCardColors(body map[string]any, stock Inventory) {
+	if c, err := stock.HubCardColors(); err == nil {
+		body["card_colors"] = c
+	}
+}
+
+// saveHubCardColors lands a card colours save on the HUB, validated, and answers with the settings body.
+// Other open boards are told through a `settings` event so they repaint; it carries the switch state too,
+// because the board reads that event as the whole of the switch.
+func (p *Proxy) saveHubCardColors(w http.ResponseWriter, r *http.Request, payload []byte, stock Inventory) bool {
+	var in struct {
+		CardColors *cardcolors.Colors `json:"card_colors"`
+	}
+	if err := json.Unmarshal(payload, &in); err != nil || in.CardColors == nil {
+		writeErrBody(w, http.StatusBadRequest, "card_colors must be {default, repos}")
+		return true
+	}
+	if err := stock.SetHubCardColors(*in.CardColors); err != nil {
+		writeErrBody(w, http.StatusBadRequest, err.Error())
+		return true
+	}
+	ev := p.boardAutoView(stock)
+	p.applyCardColors(ev, stock)
+	if data, err := json.Marshal(ev); err == nil {
+		p.feeds.broadcast(Event{Kind: "settings", Data: data})
+	}
+	if body, ok := p.hubSettingsBody(r, stock); ok {
+		writeJSONBody(w, http.StatusOK, body)
+		return true
+	}
+	writeJSONBody(w, http.StatusOK, map[string]any{"card_colors": ev["card_colors"]})
+	return true
+}
+
 // hubSettingsBody borrows one room's whole settings answer and swaps in the
 // hub's skin. False when there is no room to borrow from, which leaves the
 // caller to fall through: a hub with no room attached has no borrowed payload to
@@ -804,6 +845,8 @@ func (p *Proxy) hubSettingsBody(r *http.Request, stock Inventory) (map[string]an
 	// And the public-share login, which is the hub's the same way. See
 	// applyShareAuth.
 	p.applyShareAuth(body, stock)
+	// And the card colours, which belong to the board and not to the room borrowed. See applyCardColors.
+	p.applyCardColors(body, stock)
 	// And the input-lag switch, which in the ALL view is the hub's own answer
 	// rather than the borrowed room's. See inputlagsetting.go.
 	body["input_lag_log"] = inputlag.On()

@@ -18,6 +18,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/dovholuknf/atrium/internal/cardcolors"
 	"github.com/dovholuknf/atrium/internal/cardurl"
 	"github.com/dovholuknf/atrium/internal/edge"
 	"github.com/dovholuknf/atrium/internal/gitsync"
@@ -1128,6 +1129,9 @@ type Inventory interface {
 	// while looking at all rooms lands somewhere instead of being refused for
 	// want of a room.
 	SetHubSkin(name string) error
+	// HubCardColors and SetHubCardColors are the board's card colours, the hub's own like the skin.
+	HubCardColors() (cardcolors.Colors, error)
+	SetHubCardColors(c cardcolors.Colors) error
 	// BoardAuto reports the hub-wide auto-approve flag: whether it is on, and
 	// when it stops (nil for no deadline). Board policy, held by the hub and
 	// enforced hub-side on the permission relay, so it reaches every session the

@@ -1,6 +1,10 @@
 package hubstore
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/dovholuknf/atrium/internal/cardcolors"
+)
 
 // A FRESH HUB HAS NO SHARE LOGIN, which reads as an empty scheme rather than an
 // error. The share-creation side turns an empty scheme into a refusal for a
@@ -136,5 +140,22 @@ func TestHubSkinSurvivesReopen(t *testing.T) {
 	defer again.Close()
 	if got, _ := again.HubSkin(); got != "ember" {
 		t.Fatalf("after a reopen the hub skin was %q, wanted ember", got)
+	}
+}
+
+func TestHubCardColorsSeededOnceAndEmptyStaysEmpty(t *testing.T) {
+	s := open(t)
+	c, err := s.HubCardColors()
+	if err != nil || len(c.Repos) != 17 {
+		t.Fatalf("seed: %d entries, %v", len(c.Repos), err)
+	}
+	if err := s.SetHubCardColors(cardcolors.Colors{}); err != nil {
+		t.Fatal(err)
+	}
+	if c, _ := s.HubCardColors(); len(c.Repos) != 0 {
+		t.Fatalf("an emptied table came back with %d", len(c.Repos))
+	}
+	if s.SetHubCardColors(cardcolors.Colors{Repos: map[string]string{"Bad": "x"}}) == nil {
+		t.Fatal("a bad key was stored")
 	}
 }
