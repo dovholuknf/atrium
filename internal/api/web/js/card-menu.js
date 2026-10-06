@@ -897,6 +897,20 @@ async function cardMenu(e, id) {
         "is probably cold, so the first turn runs on a full context.",
       act: () => resumeParked(id)
     } : null,
+    // The same conversation, a fresh process. Only where atrium owns the terminal, since it types the exit
+    // keys. Shown and dimmed elsewhere, with the reason, like shelve.
+    !over ? (t.supervised ? {
+      label: "restart", note: isLeanCard(t) ? "comes back lean" : "same conversation",
+      help: "Types the runner's exit keys (claude: ctrl-d twice), waits for it to leave, then starts it again " +
+        "on this card, resuming the same conversation with the same model, effort, arguments and settings. " +
+        "A runner that will not leave is left running and the card says so. For a fresh conversation use " +
+        "new context.",
+      act: () => restartCard(id)
+    } : {
+      label: "restart", note: "atrium does not own this process", limited: true,
+      tip: "Restarting types the exit keys into a terminal atrium owns. This session is running somewhere else.",
+      act: () => restartCard(id)
+    }) : null,
     // Cycle the context: the room has it write HANDOFF.<name>.md, clears it, and tells
     // it to read the file back. Ctrl+Alt+N in an attached terminal does the same,
     // and this is the one that always works, because some layouts send Ctrl+Alt

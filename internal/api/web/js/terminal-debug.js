@@ -206,10 +206,24 @@ function restartTerm(full) {
   return oneAtATime("launch:" + bareId(termTask.id), () => restartTermNow(termTask, full));
 }
 
+// The same restart from a card: its menu and its details. The card is read as the board last drew it, and a
+// card atrium does not supervise has nothing to restart, so it says why rather than asking.
+function restartCard(id, full) {
+  const t = typeof peekCard === "function" ? peekCard(id) : null;
+  if (!t) return;
+  if (!t.supervised) {
+    toast("cannot restart", "atrium does not own this session's terminal, so it cannot type its exit keys");
+    return;
+  }
+  return oneAtATime("launch:" + bareId(t.id), () => restartTermNow(t, full));
+}
+
 async function restartTermNow(t, full) {
   if (!await confirmUser(`restart ${t.display_title}${full ? " with your full setup" : ""}?`,
-    "Exits this session and immediately resumes the same conversation on the " +
-    "same card. The terminal drops for a few seconds while it comes back." +
+    "Types its exit keys, waits for it to leave, then resumes the same " +
+    "conversation on the same card with the same model, effort and settings. " +
+    "If it will not leave it is left running and you are told. The terminal " +
+    "drops for a few seconds while it comes back." +
     "<br><br>Nothing is lost: it picks up where it left off.",
     "restart it", "restart-session")) return;
   if (full) {

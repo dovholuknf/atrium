@@ -12,6 +12,13 @@ import (
 // slowHarness registers a runner whose command is a real shell that comes up and
 // stays alive, so a launch actually spawns a supervised process rather than
 // failing at the spawn. windDown's fallback exit keys (`exit\r\n`) stop it.
+func slowCmd() string {
+	if runtime.GOOS == "windows" {
+		return "cmd.exe"
+	}
+	return "sh"
+}
+
 func slowHarness(t *testing.T, d *Daemon) string {
 	t.Helper()
 	cmd := "sh"

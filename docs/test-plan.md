@@ -8916,3 +8916,30 @@ Running new context on it resumes at the clear without asking for another handof
 
 Covered by `TestACardKeepsTheCommandItWasLaunchedWith`, `TestTheCaptionIsWhereTheSessionReallyCompacts` and the
 headless peek unit.
+
+## IY. Restart an agent from its card (r-card-restart)
+
+Go tests in `internal/daemon/restart_session_test.go` (`TestRestartRunnerLeavesAStubbornRunnerUp`) and
+`restart_concurrency_test.go` (`TestRestartRunnerLandsOnTheSameCard`).
+
+### IY1. Restart keeps the conversation
+
+1. Have a running Claude card with an alias, a tag and a model set. Note what it last said.
+2. Right-click the card and choose `restart`, confirm. Do the same from the `restart` button in its details.
+
+**Expected:** the terminal drops for a few seconds, then comes back on the same card with the same id, alias, tags
+and history. The conversation resumes (`--resume`) with the same model and effort, and a lean card comes back lean.
+No second card appears.
+
+### IY2. A runner that will not leave
+
+1. Restart a card whose runner is in the middle of a long turn or sitting on a prompt that swallows ctrl-d.
+
+**Expected:** after about ten seconds a toast says it did not exit when asked and was not restarted. The process is
+still running and its terminal is still open. Nothing was killed.
+
+### IY3. A session atrium does not own
+
+1. Right-click a card whose session was joined by hand, or runs in a window.
+
+**Expected:** `restart` is dimmed with `atrium does not own this process`, and its details have no restart button.

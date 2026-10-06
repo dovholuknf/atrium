@@ -25,6 +25,44 @@ import (
 // the process, which windDown already saw out.
 const restartGoneWait = 8 * time.Second
 
+// restartAskGrace bounds how long a runner gets to leave after its exit keys have
+// all been sent. A variable only so tests can shorten it.
+var restartAskGrace = 8 * time.Second
+
+// askExit types a card's exit keys into its terminal and waits, bounded, for the
+// process to end. Unlike windDown it never closes the terminal and never kills:
+// when the runner ignores the keys it stays up, marked as no longer leaving, and
+// the error names the card and how long it was given.
+func (d *Daemon) askExit(taskID string, grace time.Duration) error {
+	r := d.sup.get(taskID)
+	if r == nil || r.tm() == nil {
+		return fmt.Errorf("atrium does not own a terminal for %s, so there is nothing here to exit",
+			d.taskTitle(taskID))
+	}
+	// ATRIUM TYPED THIS EXIT, so the hook's /exit rule skips it. See windDown.
+	r.leaving.Store(true)
+	for _, k := range d.exitKeysFor(taskID) {
+		_ = r.Write(k)
+		select {
+		case <-r.done:
+			log.Printf("[atrium] runner for %s exited when asked", taskID)
+			return nil
+		case <-time.After(windDownKeyGap):
+		}
+	}
+	select {
+	case <-r.done:
+		log.Printf("[atrium] runner for %s exited cleanly", taskID)
+		return nil
+	case <-time.After(grace):
+	}
+	r.leaving.Store(false)
+	log.Printf("[atrium] runner for %s ignored its exit keys for %s, leaving it running", taskID, grace)
+	return fmt.Errorf("%s did not exit when asked, even after %s. it is still running and was not "+
+		"restarted. it may be mid-turn or waiting on a prompt. finish or answer that and try again, "+
+		"or terminate it from the card", d.taskTitle(taskID), grace)
+}
+
 // RestartRunner asks a card's runner to exit, waits for it to be gone, and
 // starts the same conversation again on the SAME card.
 func (d *Daemon) RestartRunner(taskID string) (*store.Task, error) {
@@ -70,7 +108,9 @@ func (d *Daemon) RestartRunner(taskID string) (*store.Task, error) {
 	}
 
 	// Ask it to exit the way its harness says to, and wait for the slot to clear.
-	if err := d.StopRunner(taskID); err != nil {
+	// Nothing is closed or killed on the way: a runner that will not leave is left
+	// running and the refusal says so, because a restart is not a terminate.
+	if err := d.askExit(taskID, restartAskGrace); err != nil {
 		return nil, err
 	}
 	if !d.waitRunnerGone(taskID, restartGoneWait) {

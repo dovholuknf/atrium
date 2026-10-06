@@ -312,12 +312,27 @@ function peekDocs(box, id) {
   window.mDocs.paintCard(b, id);
 }
 
+// The restart action, under the details. Only on a card atrium supervises: a joined session has no terminal here
+// to type exit keys into. See restartCard in js/terminal-debug.js.
+function peekRestart(box, id) {
+  const t = peekCard(id);
+  if (!t || !t.supervised || t.status === "done") return;
+  const b = document.createElement("button");
+  b.type = "button";
+  b.className = "peek-restart";
+  b.textContent = "restart";
+  b.dataset.tip = "exit it with its own keys and resume the same conversation on this card";
+  b.onclick = () => { closePeek(); restartCard(id); };
+  box.appendChild(b);
+}
+
 // Fills `box` with card `id`'s details: the card at once, the numbers when
 // the read answers. `still` says whether the answer is still wanted.
 async function peekFill(box, id, still) {
   const t = peekCard(id);
   box.innerHTML = peekBody(t, null);
   peekDocs(box, id);
+  peekRestart(box, id);
   box.classList.toggle("loading", peekReadable(t));
   if (!peekReadable(t)) return;
   let v;
@@ -330,6 +345,7 @@ async function peekFill(box, id, still) {
   box.classList.remove("loading");
   box.innerHTML = peekBody(peekCard(id) || t, v);
   peekDocs(box, id);
+  peekRestart(box, id);
 }
 
 // ── the popover ─────────────────────────────────────────────────────────────
