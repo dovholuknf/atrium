@@ -245,6 +245,10 @@
     padding-bottom: max(var(--row-y-xs), 5px);
   }
   .term-list .card:hover { transform: none; box-shadow: var(--shadow-card); }
+  /* No fade on the frame. `placeTabBridge` hands the row's computed border to the bridge and the pane, and a row
+     fading from its old colour to its theme's gave them a colour from partway through the fade: the default on the
+     first frame, the theme a beat later. The row, the bridge and the pane are one outline and change at once. */
+  .term-list .card { transition: transform .16s ease; }
 
   /* A tab, in its own terminal's colours. `--tabc` and `--tabbg` come off the session's theme, set inline
      where the entry is rendered, so the green session has a green edge and the one you are attached to is
