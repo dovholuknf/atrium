@@ -9019,3 +9019,9 @@ stored default colour is used for the terminal when one is set.
 
 **Expected:** both show a card row and a larger terminal sample that follow the colours as they change. The editor has no
 line of explanation under the preview.
+
+## Peek launch line (u-peek-launch-short)
+
+- Hover a lean worker's card. "launched with" is one short line: `--settings {…}`, `--mcp-config {…}`, `--model sonnet`, no prompt text, env names after it.
+- Open the card details. Under runner, a collapsed "launched with" block. Open it and the whole command is there. The copy icon puts the whole command on the clipboard without toggling the fold. A card atrium did not start has no block.
+- Headless: `peekLaunch` and `bootClean`.

@@ -276,11 +276,31 @@ function peekBody(t, v) {
 }
 
 // The command line atrium started the runner with, or the plain fact that it did not start this one.
+// Flag names all show. A value shows only when short and one line; a long or JSON one collapses, and the prompt is left out.
+// The whole command is in the card details, see launchFull.
 function launchedWith(t) {
   const c = t.launch_cmd;
   if (!c) return "not started by atrium (joined), or started before the command was kept";
-  const argv = [c.exe].concat(c.args || []).join(" ");
-  return argv + ((c.env_keys || []).length ? "  env: " + c.env_keys.join(", ") : "");
+  const out = [];
+  const args = c.args || [];
+  for (let i = 0; i < args.length; i++) {
+    const a = String(args[i]);
+    if (!a.startsWith("-")) continue;
+    out.push(a.length > 40 || /\s/.test(a) ? a.split(/[=\s]/)[0] : a);
+    const v = args[i + 1];
+    if (v === undefined || String(v).startsWith("-") || a.includes("=")) continue;
+    i++;
+    const sv = String(v);
+    out.push(sv.length < 40 && !/\n/.test(sv) ? sv : /^\s*[{[]/.test(sv) ? "{…}" : "\"…\"");
+  }
+  return [c.exe].concat(out).join(" ") + ((c.env_keys || []).length ? "  env: " + c.env_keys.join(", ") : "");
+}
+
+// The whole command, for the card details to hold behind a fold.
+function launchFull(t) {
+  const c = t && t.launch_cmd;
+  if (!c) return "";
+  return [c.exe].concat(c.args || []).join(" ") + ((c.env_keys || []).length ? "\nenv: " + c.env_keys.join(", ") : "");
 }
 
 function peekFoot(t) {
