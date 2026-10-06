@@ -1,0 +1,1 @@
+Attaching a coloured card no longer flashes the wrong colour. The attached row's border, the bridge into the terminal and the terminal pane's border are the card's theme colour on the first frame, where before they showed a washed-out default and switched after a fraction of a second.

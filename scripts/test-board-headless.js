@@ -18461,6 +18461,71 @@ async function themePickerSection(browser, base) {
   if (!bad) console.log("themePicker ok");
 }
 
+// Attaching a coloured card: the row, the bridge and the pane frame are the theme's colour on the first frame, not the
+// colour the row had before, faded across. `placeTabBridge` copies the row's computed border, so a row that fades its
+// border hands the bridge and the pane a colour from halfway through the fade.
+async function borderColourLagSection(browser, base) {
+  const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+  const p = await ctx.newPage();
+  const errors = [];
+  p.on("pageerror", e => errors.push(String(e)));
+  await p.addInitScript(() => localStorage.setItem("atrium.skipconfirm", JSON.stringify({ "width-floor": true })));
+  const tag = "borderColourLag: ";
+  const was = tasksMode;
+  const live = (id, extra) => Object.assign({}, T1, {
+    id, display_title: "row " + id, theme: "", supervised: true, pinned: true, worktree: "/tmp/bcl/" + id
+  }, extra);
+  try {
+    wornTasks = [live("bc-a", { theme: "nord" }), live("bc-b", { theme: "dracula" })];
+    tasksMode = "worn";
+    await p.goto(base, { waitUntil: "domcontentloaded" });
+    await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
+    await p.click('.tab[data-view="terms"]');
+    await p.waitForSelector('#term-list .card.tab[data-id="bc-b"]', { state: "attached", timeout: slow(15000) });
+    const attach = id => p.evaluate(async id => {
+      termTask = lastTasks.find(t => t.id === id);
+      term = { options: {}, dispose() {} };
+      await loadCards().catch(() => {}).then(renderTermList);
+      paintPaneBg(themeFor(termTask));
+      placeTabBridge();
+      const read = () => {
+        const row = document.querySelector('#term-list .card.on');
+        const bridge = document.getElementById("tab-bridge");
+        const pane = document.getElementById("term-pane");
+        return {
+          row: row ? getComputedStyle(row).borderTopColor : "",
+          bridge: bridge.style.getPropertyValue("--tabc"),
+          pane: getComputedStyle(pane).borderTopColor
+        };
+      };
+      const first = read();
+      await new Promise(r => setTimeout(r, 700));
+      const row = document.querySelector('#term-list .card.on');
+      return { first, settled: { row: first.row, bridge: document.getElementById("tab-bridge").style.getPropertyValue("--tabc"), pane: getComputedStyle(document.getElementById("term-pane")).borderTopColor }, stroke: getComputedStyle(document.body).getPropertyValue("--stroke").trim(), still: !!row };
+    }, id);
+    if (process.env.BORDER_SHOTS) {
+      await attach("bc-b");
+      await p.waitForTimeout(500);
+      await p.evaluate(() => { termTask = lastTasks.find(t => t.id === "bc-a"); renderTermList(); paintPaneBg(themeFor(termTask)); placeTabBridge(); });
+      await p.screenshot({ path: require("path").join(process.env.BORDER_SHOTS, (process.env.BORDER_PREFIX || "after") + ".png") });
+    }
+    for (const id of ["bc-a", "bc-b", "bc-a"]) {
+      const r = await attach(id);
+      for (const k of ["row", "bridge", "pane"]) {
+        if (!r.first[k] || r.first.row !== r.first[k] || r.first[k] !== r.settled[k]) {
+          console.error(tag + id + " " + k + " first frame " + r.first[k] + " but settles at " + r.settled[k] + " " + JSON.stringify(r));
+          process.exit(1);
+        }
+      }
+    }
+    if (errors.length) { console.error(tag + errors.join("; ")); process.exit(1); }
+    console.log("borderColourLag ok");
+  } finally {
+    tasksMode = was;
+    await ctx.close();
+  }
+}
+
 // NOT IN THE DEFAULT RUN: `THEMEPICKER_SHOTS=/dir HEADLESS_ONLY=themePickerShots`. Writes the three pictures the change is
 // judged by, and uses only what both sides of the change have, so it runs before and after.
 async function themePickerShotsSection(browser, base) {
@@ -24546,7 +24611,7 @@ async function main() {
       u001Audit: u001AuditSection,
       pasteStart: pasteStartSection, pasteDone: pasteDoneSection, pasteOldRoom: pasteOldRoomSection, pasteClose: pasteCloseSection,
       growlQuestionShots: growlQuestionShotsSection, growlQuestionBody: growlQuestionBodySection, growlReplyGrow: growlReplyGrowSection, growlChoices: growlChoicesSection, replies: repliesSection, repliesOf: repliesOfSection, repliesShots: repliesShotsSection, growlStable: growlStableSection, growlOnIt: growlOnItSection, mGrowlQuestion: mGrowlQuestionSection,
-      roomsSetup: roomsSetupSection, discreteGroup: discreteGroupSection, groupingPerView: groupingPerViewSection, repoColors: repoColorsSection, themePicker: themePickerSection, themePickerShots: themePickerShotsSection, bootClean: bootCleanSection, peekDash: peekDashSection, peekLaunch: peekLaunchSection, mReload: mReloadSection, mReconnect: mReconnectSection, mActivityRead: mActivityReadSection, mReadRetry: mReadRetrySection, mWorking: mWorkingSection, mOwnMessages: mOwnMessagesSection, mBubbles: mBubblesSection, mRecapSheet: mRecapSheetSection,
+      roomsSetup: roomsSetupSection, discreteGroup: discreteGroupSection, groupingPerView: groupingPerViewSection, repoColors: repoColorsSection, themePicker: themePickerSection, themePickerShots: themePickerShotsSection, borderColourLag: borderColourLagSection, bootClean: bootCleanSection, peekDash: peekDashSection, peekLaunch: peekLaunchSection, mReload: mReloadSection, mReconnect: mReconnectSection, mActivityRead: mActivityReadSection, mReadRetry: mReadRetrySection, mWorking: mWorkingSection, mOwnMessages: mOwnMessagesSection, mBubbles: mBubblesSection, mRecapSheet: mRecapSheetSection,
       mHomeOrder: mHomeOrderSection, cardUrlWayOut: cardUrlWayOutSection, phoneBoot: phoneBootSection, sayEnter: sayEnterSection, sendArrow: sendArrowSection, mTables: mTablesSection, mMarkdown: mMarkdownSection, mHostile: mHostileSection, mPictures: mPicturesSection, soundPhone: soundPhoneSection, phoneBell: phoneBellSection, mBell: mBellSection,
       mHomeOrder: mHomeOrderSection, cardUrlWayOut: cardUrlWayOutSection, phoneBoot: phoneBootSection, sayEnter: sayEnterSection, sendArrow: sendArrowSection, mTables: mTablesSection, mMarkdown: mMarkdownSection, mHostile: mHostileSection, mPictures: mPicturesSection, phoneRedirect: phoneRedirectSection,
       mHomeOrder: mHomeOrderSection, cardUrlWayOut: cardUrlWayOutSection, phoneBoot: phoneBootSection, sayEnter: sayEnterSection, sendArrow: sendArrowSection, mTables: mTablesSection, mMarkdown: mMarkdownSection, mHostile: mHostileSection, mPictures: mPicturesSection, mHidden: mHiddenSection, soundPhone: soundPhoneSection, phoneBell: phoneBellSection, mBell: mBellSection,
@@ -26619,6 +26684,7 @@ async function main() {
     await unit("groupingPerView", () => groupingPerViewSection(browser, base));
     await unit("repoColors", () => repoColorsSection(browser, base));
     await unit("themePicker", () => themePickerSection(browser, base));
+    await unit("borderColourLag", () => borderColourLagSection(browser, base));
     await unit("bootClean", () => bootCleanSection(browser, base));
     await unit("mWorking", () => mWorkingSection(browser));
     await unit("mOwnMessages", () => mOwnMessagesSection(browser));
