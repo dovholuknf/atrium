@@ -8967,3 +8967,19 @@ Headless section `repoColors` in `scripts/test-board-headless.js`.
 
 **Expected:** every card in that `provider/org/repo` wears it, whatever its worktree or branch. The same org and repo
 name on another provider does not. `remove` returns it to the default.
+
+### IZ4. Colours live on the daemon (u-card-colors-on-daemon)
+
+1. On a daemon that has never had card colours set, open settings, `card colours`.
+2. Open the board in a second browser. Change one repo's theme in the first and `save`.
+3. Delete a seeded entry, save, restart the daemon and look again.
+4. In a browser's dev tools set `localStorage["atrium.repoColors"]` to
+   `{"default":"","repos":{"github/me/x":"nord"}}` and reload.
+
+**Expected:**
+
+1. The 17 seeded entries are listed, and a fork such as `github/dovholuknf/ziti-sdk-csharp` is not.
+2. The second browser repaints its cards without a reload.
+3. The deleted entry stays gone.
+4. `github/me/x` appears in the list beside the daemon's entries and the browser key is gone.
+5. A repo with the same last segment as a listed one (`github/someone/ziti`) wears the default, not teal-dusk.

@@ -1520,6 +1520,7 @@ let skinSettled = false;
 function skinHasSettled() { return skinSettled; }
 function applyResolvedSkin(s) {
   if (!s) return;
+  if (typeof repoColorsHave === "function") repoColorsHave(s);
   if (labIs("skin")) return;
   if (skinSaving) return;
   const names = s.board_skins || [];

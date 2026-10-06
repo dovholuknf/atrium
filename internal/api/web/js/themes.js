@@ -69,29 +69,6 @@ const TERM_THEMES = {
   "wrought-iron": {background: "#1a0e08", foreground: "#f0d5b8", cursor: "#c06040", selectionBackground: "#341c10", selectionForeground: "#ffe8d0", black: "#100804", red: "#e84838", green: "#7cc070", yellow: "#e8a830", blue: "#6490c8", magenta: "#ba76ba", cyan: "#6ebcac", white: "#f0d5b8", brightBlack: null, brightRed: "#f07060", brightGreen: "#94d088", brightYellow: "#f0c050", brightBlue: "#84ace0", brightMagenta: "#d092d2", brightCyan: "#8cccc0", brightWhite: null}
 };
 
-// The operator's own repo to theme map, carried over so a session in a repo
-// gets the color they already associate with it. A starting point, not a
-// rule: choosing a theme on a card overrides this and is remembered.
-const REPO_THEMES = {
-  "appetizer": "active-work",
-  "atrium": "active-light",
-  "desktop-edge-win": "dracula",
-  "docusaurus-shared": "matrix",
-  "dotfiles": "tangent",
-  "sdk-golang": "terracotta",
-  "sterling": "orange-coral",
-  "ziti": "teal-dusk",
-  "ziti-console": "deep-amethyst",
-  "ziti-doc": "imperial-purple",
-  "ziti-openwrt": "ocean-deep",
-  "ziti-sdk-c": "neon-grape",
-  "ziti-sdk-csharp": "nord",
-  "ziti-sdk-py": "deep-ocean",
-  "ziti-tunnel-sdk-c": "gruvbox-dark",
-  "ziti-tv": "mauve-purple",
-  "zrok": "electric-purple"
-};
-
 // ── themes somebody brought ─────────────────────────────
 //
 // The table above is what atrium ships. This is what the operator added, and
@@ -211,14 +188,12 @@ function themeSource(t) {
   return themeNamed(repoColorName(t));
 }
 
-// The name a repo colour resolves to for a card, or "". Order: the user's entry for the full `provider/org/repo`,
-// then a shipped leaf entry (`ziti`) only when no full key matched, then the user's default.
+// The name a repo colour resolves to for a card, or "". Order: the user's entry for the full `provider/org/repo`, then
+// the user's default.
 function repoColorName(t) {
   const key = repoKeyOf(t);
   const mine = repoColors.get();
-  if (key && mine.repos[key]) return mine.repos[key];
-  const project = String(t.repo || "").trim() || defaultProjectOf(t);
-  return REPO_THEMES[repoLeaf(key || project)] || mine.default;
+  return (key && mine.repos[key]) || mine.default;
 }
 
 // `provider/org/repo`, lowercase, or "" when the card has no repo to speak of. From the worktree path
@@ -237,33 +212,62 @@ function repoKeyOf(t) {
   return "";
 }
 
-// The user's colours, kept in this browser like the rest of how the board reads: `default` is a theme name or "" for
-// the plain card, `repos` maps `provider/org/repo` to a theme name. Read each time, so a change in another window of
-// the browser is seen without a reload.
+// The card colours, kept on the daemon like the skin so a phone and a second browser see the same ones: `default` is a
+// theme name or "" for the plain card, `repos` maps `provider/org/repo` to a theme name. The daemon answers with them
+// in the settings read and in the settings event, and `repoColorsHave` takes them from either.
 const REPO_COLORS_KEY = "atrium.repoColors";
+let repoColorsNow = { default: "", repos: Object.create(null) };
 const repoColors = {
   get() {
-    let o = null;
-    try { o = JSON.parse(localStorage.getItem(REPO_COLORS_KEY) || "null"); } catch (e) {}
-    const repos = Object.create(null);
-    if (o && o.repos && typeof o.repos === "object") {
-      for (const k of Object.keys(o.repos)) if (typeof o.repos[k] === "string" && o.repos[k]) repos[k] = o.repos[k];
-    }
-    return { default: o && typeof o.default === "string" ? o.default : "", repos };
+    return { default: repoColorsNow.default, repos: Object.assign(Object.create(null), repoColorsNow.repos) };
   },
-  set(v) {
-    try { localStorage.setItem(REPO_COLORS_KEY, JSON.stringify({ default: v.default || "", repos: Object.assign({}, v.repos) })); } catch (e) {}
-    cardWearCache = new WeakMap();
+  async set(v) {
+    const body = { default: v.default || "", repos: Object.assign({}, v.repos) };
+    const s = await api("/v1/settings", { method: "POST", body: JSON.stringify({ card_colors: body }) });
+    repoColorsHave(s);
   }
 };
-prefLive(REPO_COLORS_KEY, () => {
+
+function repoColorsHave(s) {
+  const c = s && s.card_colors;
+  if (!c || typeof c !== "object") return;
+  const repos = Object.create(null);
+  if (c.repos && typeof c.repos === "object") {
+    for (const k of Object.keys(c.repos)) if (typeof c.repos[k] === "string" && c.repos[k]) repos[k] = c.repos[k];
+  }
+  repoColorsNow = { default: typeof c.default === "string" ? c.default : "", repos };
   cardWearCache = new WeakMap();
   if (typeof paintRepoColors === "function") paintRepoColors(true);
-  runRefresh();
-});
+  if (typeof runRefresh === "function") runRefresh();
+  repoColorsMoveBrowser();
+}
 
-// The last path segment of a project name, which is what the shipped repo map is
-// keyed by. `dovholuknf/dotfiles` is `dotfiles`.
+// Entries this browser kept before the daemon did: merged into the daemon's, this browser's winning for the same key,
+// saved, and then the browser's copy is removed. Left in place when the save fails, so the next load tries again.
+let rcMoving = false;
+async function repoColorsMoveBrowser() {
+  if (rcMoving) return;
+  let old = null;
+  try { old = JSON.parse(localStorage.getItem(REPO_COLORS_KEY) || "null"); } catch (e) {}
+  const mine = old && old.repos && typeof old.repos === "object" ? old.repos : {};
+  const keys = Object.keys(mine).filter(k => typeof mine[k] === "string" && mine[k]);
+  if (!keys.length && !(old && old.default)) {
+    try { localStorage.removeItem(REPO_COLORS_KEY); } catch (e) {}
+    return;
+  }
+  rcMoving = true;
+  try {
+    const merged = repoColors.get();
+    for (const k of keys) merged.repos[k.toLowerCase()] = mine[k];
+    if (!merged.default && typeof old.default === "string") merged.default = old.default;
+    await repoColors.set(merged);
+    try { localStorage.removeItem(REPO_COLORS_KEY); } catch (e) {}
+  } catch (e) {
+    console.error("[atrium] card colours did not move to the daemon: " + e);
+  } finally { rcMoving = false; }
+}
+
+// The last path segment of a project name. `dovholuknf/dotfiles` is `dotfiles`. A label, not a colour rule.
 function repoLeaf(name) {
   const parts = String(name || "").split("/").filter(Boolean);
   return parts.length ? parts[parts.length - 1] : "";
@@ -1132,9 +1136,9 @@ function repoColorsDrop(k) {
   if (rcFocus === k) rcFocus = "default";
   paintRepoColors();
 }
-function repoColorsSave() {
-  repoColors.set(rcDraft);
+async function repoColorsSave() {
+  try { await repoColors.set(rcDraft); } catch (e) { toast("that did not save", e.message); return; }
+  rcDraft = null;
   paintRepoColors();
-  runRefresh();
 }
 function repoColorsRevert() { rcDraft = null; rcFocus = "default"; paintRepoColors(); }

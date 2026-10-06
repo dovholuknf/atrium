@@ -396,9 +396,20 @@ let skinFor = { "": "noir", alpha: "moss", sgg: "ember" };
 function resetSkins() { skinFor = { "": "noir", alpha: "moss", sgg: "ember" }; }
 function settingsBody(room) {
   const skin = skinFor[room] != null ? skinFor[room] : skinFor[""];
-  return Object.assign({ global_auto: gautoOn, global_auto_seconds: 0, board_skin: skin, board_skins: SKINS },
-    kaSettings);
+  return Object.assign({ global_auto: gautoOn, global_auto_seconds: 0, board_skin: skin, board_skins: SKINS,
+    card_colors: cardColorsMock }, kaSettings);
 }
+// The card colours the mocked daemon holds: the seed a fresh daemon writes, then whatever the board saved.
+let cardColorsMock = { default: "", repos: {
+  "github/openziti-test-kitchen/appetizer": "active-work", "github/dovholuknf/atrium": "active-light",
+  "github/openziti/desktop-edge-win": "dracula", "github/netfoundry/docusaurus-shared": "matrix",
+  "github/dovholuknf/dotfiles": "tangent", "github/openziti/sdk-golang": "terracotta",
+  "github/netfoundry/sterling": "orange-coral", "github/openziti/ziti": "teal-dusk",
+  "github/openziti/ziti-console": "deep-amethyst", "github/openziti/ziti-doc": "imperial-purple",
+  "github/openziti/ziti-openwrt": "ocean-deep", "github/openziti/ziti-sdk-c": "neon-grape",
+  "github/openziti/ziti-sdk-csharp": "nord", "github/openziti/ziti-sdk-py": "deep-ocean",
+  "github/openziti/ziti-tunnel-sdk-c": "gruvbox-dark", "github/openziti-test-kitchen/ziti-tv": "mauve-purple",
+  "github/openziti/zrok": "electric-purple" } };
 // The cache keep-alive's room settings, and every write the board made to it or
 // to a card's switch. See keepaliveSection.
 let kaSettings = {};
@@ -810,6 +821,11 @@ const server = http.createServer((req, res) => {
         // A skin-only save lands on the current scope: the hub for ALL, the room
         // when scoped. Anything else in the ALL view still needs a room (409),
         // which is the refusal the scoped skin does NOT get any more.
+        if (keys.length === 1 && keys[0] === "card_colors") {
+          cardColorsMock = body.card_colors;
+          sendJSON(res, settingsBody(room));
+          return;
+        }
         if (keys.length === 1 && keys[0] === "board_skin") {
           skinFor[room] = body.board_skin;
           sendJSON(res, settingsBody(room));
@@ -18200,42 +18216,59 @@ async function repoColorsSection(browser, base) {
     if (JSON.stringify(keys) !== JSON.stringify(want)) fail(tag + "repo keys " + JSON.stringify(keys));
 
     const r = await p.evaluate(() => {
-      localStorage.removeItem(REPO_COLORS_KEY);
+      const put = (d, repos) => repoColorsHave({ card_colors: { default: d, repos } });
       const plain = { id: "x", worktree: "/Users/me/git/github/temp/clintify/b1" };
+      const ziti = { id: "z", worktree: "/Users/me/git/github/someone/ziti/b" };
+      put("", {});
       const out = { plain: wearFor(plain) };
-      repoColors.set({ default: "", repos: { "github/temp/clintify": "dracula" } });
+      put("", { "github/temp/clintify": "dracula" });
       out.keyed = themeSource(plain) === themeNamed("dracula");
       out.otherProvider = themeSource({ id: "y", worktree: "/Users/me/git/gitlab/temp/clintify/b1" });
-      out.leaf = themeSource({ id: "z", worktree: "/Users/me/git/github/someone/ziti/b" }) === themeNamed("teal-dusk");
-      out.keyWinsOverLeaf = (repoColors.set({ default: "", repos: { "github/someone/ziti": "nord" } }),
-        themeSource({ id: "z", worktree: "/Users/me/git/github/someone/ziti/b" }) === themeNamed("nord"));
-      repoColors.set({ default: "pumpkin", repos: {} });
+      out.noLeaf = themeSource(ziti) === null;
+      put("pumpkin", {});
       out.def = themeSource({ id: "q", worktree: "/tmp/q" }) === themeNamed("pumpkin");
-      localStorage.removeItem(REPO_COLORS_KEY);
+      out.noTable = typeof REPO_THEMES === "undefined";
       return out;
     });
     if (r.plain !== null) fail(tag + "an uncoloured card wears " + JSON.stringify(r.plain));
     if (!r.keyed) fail(tag + "a full key did not colour its card");
     if (r.otherProvider) fail(tag + "the same org/repo on another provider took the colour");
-    if (!r.leaf) fail(tag + "a leaf entry no longer matches when no full key does");
-    if (!r.keyWinsOverLeaf) fail(tag + "a full key did not beat the leaf entry");
+    if (!r.noLeaf) fail(tag + "a repo with the same last segment as a listed one was coloured");
     if (!r.def) fail(tag + "the default colour was not used");
+    if (!r.noTable) fail(tag + "the hidden REPO_THEMES table is still there");
+
+    // The daemon holds the setting: seeded, and a browser's old entries move there and the browser key goes.
+    const seeded = await p.evaluate(async () => (await api("/v1/settings")).card_colors);
+    if (!seeded || !seeded.repos) fail(tag + "the daemon sent no card colours");
+    const moved = await p.evaluate(async seed => {
+      repoColorsHave({ card_colors: seed });
+      localStorage.setItem(REPO_COLORS_KEY, JSON.stringify({ default: "", repos: { "github/moved/one": "nord" } }));
+      await repoColorsMoveBrowser();
+      const s = (await api("/v1/settings")).card_colors;
+      const out = { has: s.repos["github/moved/one"], key: localStorage.getItem(REPO_COLORS_KEY), kept: Object.keys(s.repos).length };
+      await repoColors.set(seed);
+      return out;
+    }, seeded);
+    if (moved.kept !== Object.keys(seeded.repos).length + 1) fail(tag + "the move lost the daemon's own entries");
+    if (moved.has !== "nord") fail(tag + "browser entries did not reach the daemon");
+    if (moved.key !== null) fail(tag + "the browser key was not removed");
 
     // The settings section: the preview wears the pick before it is saved.
     await p.evaluate(() => { document.getElementById("settings").showModal(); showSettingsPane("card colours"); paintRepoColors(true); });
     await p.selectOption("#rc-default", "dracula");
-    const before = await p.evaluate(() => ({ cls: document.querySelector("#rc-preview .card").className, saved: localStorage.getItem(REPO_COLORS_KEY), dis: document.getElementById("rc-save").disabled }));
+    const before = await p.evaluate(() => ({ cls: document.querySelector("#rc-preview .card").className, saved: repoColors.get().default === "dracula", dis: document.getElementById("rc-save").disabled }));
     if (!/worn/.test(before.cls)) fail(tag + "the preview does not wear the pick");
     if (before.saved) fail(tag + "the pick was saved before save");
     if (before.dis) fail(tag + "save is disabled with a change pending");
     await p.click("#rc-save");
-    if (!(await p.evaluate(() => repoColors.get().default)) === "dracula") fail(tag + "save did not keep the default");
+    await p.waitForFunction(() => repoColors.get().default === "dracula", null, { timeout: slow(5000) }).catch(() => fail(tag + "save did not keep the default"));
     const opts = await p.evaluate(() => Array.from(document.querySelectorAll("#rc-add option")).map(o => o.value));
     if (!opts.length) fail(tag + "no known repo to add");
     if (opts[0]) {
       await p.click("#rc-add + button");
       if (!(await p.evaluate(k => k in repoColors.get().repos || document.querySelector('#rc-rows [data-repo="' + k + '"]') !== null, opts[0]))) fail(tag + "add did not list the repo");
     }
+    if (process.env.REPO_COLORS_SHOT) await p.evaluate(() => document.getElementById("rc-default").scrollIntoView({ block: "start" }));
     if (process.env.REPO_COLORS_SHOT) await p.locator("#settings").screenshot({ path: process.env.REPO_COLORS_SHOT });
   } finally {
     await ctx.close();

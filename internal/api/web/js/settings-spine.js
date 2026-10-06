@@ -2027,6 +2027,7 @@ function connect() {
       globalAutoRead = true;
       globalAutoStale = false;
       if (typeof ucHaveSetting === "function") ucHaveSetting(s);
+      if (typeof repoColorsHave === "function") repoColorsHave(s);
     } catch (err) { return; }
     paintGlobalAuto();
   });

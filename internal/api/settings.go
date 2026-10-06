@@ -168,6 +168,7 @@ func globalAutoView(s *Server) map[string]any {
 	// cannot disagree: there is one list and the daemon holds it.
 	out["board_skin"] = s.SkinOrDefault()
 	out["board_skins"] = Skins
+	out["card_colors"] = s.CardColors()
 	// How history is replayed, and what the other answers are. Reported even
 	// when unset, because a setting that can be written and not read back is
 	// one nobody can confirm took: the only evidence was a line in the pane
@@ -303,6 +304,8 @@ func (s *Server) setSettings(w http.ResponseWriter, r *http.Request) {
 		// What the board wears. A pointer for the same reason: setting it back
 		// to the one it shipped with is a thing somebody asks for.
 		BoardSkin *string `json:"board_skin"`
+		// The card colours: a default theme and a theme per provider/org/repo. See cardcolors.go.
+		CardColors *CardColors `json:"card_colors"`
 		// How a card's history is turned back into a terminal: `raw`, `screen`
 		// or `flat`. See `store.SettingReplayMode`. Read on every attach, so
 		// changing it here takes effect on the next attach rather than on a
@@ -675,6 +678,13 @@ func (s *Server) setSettings(w http.ResponseWriter, r *http.Request) {
 			s.fail(w, err)
 			return
 		}
+	}
+	if body.CardColors != nil {
+		if err := s.setCardColors(*body.CardColors); err != nil {
+			writeErr(w, http.StatusBadRequest, err)
+			return
+		}
+		s.Broadcast("settings", globalAutoView(s))
 	}
 	if body.ReplayMode != nil {
 		// Refused rather than stored, for the same reason as the skin: a mode
