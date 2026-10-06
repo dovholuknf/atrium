@@ -1240,18 +1240,22 @@ function setHookNag(on) {
   renderRunners();
 }
 
-function setGroupMode(mode) {
-  const p = groupingPrefs();
+// `view` is the tab a strip of pills belongs to. The settings dialog passes the tab it is set to, and anything else falls
+// back to the tab on screen.
+function setGroupMode(mode, view) {
+  view = view || settingsGroupView();
+  const p = groupingPrefs(view);
   const now = p.on ? (usesCode(p) ? "code" : (p.mode || "project")) : "off";
   if (now === mode) return;
-  setGrouping(mode === "off" ? { on: false } : { on: true, mode, picked: true });
+  setGrouping(mode === "off" ? { on: false } : { on: true, mode, picked: true }, view);
   paintGrouping();
   paintGroupSegs();
 }
 
 function resetGrouping() {
-  const wasOff = !groupingPrefs().on;
-  setGrouping({ by: "", order: "", orderBy: "", picked: false, mode: "project" });
+  const view = settingsGroupView();
+  const wasOff = !groupingPrefs(view).on;
+  setGrouping({ by: "", order: "", orderBy: "", picked: false, mode: "project" }, view);
   paintGrouping();
   // Said differently when grouping is switched off, because otherwise this
   // button reports success for something with no visible effect and reads as
@@ -1266,13 +1270,13 @@ function resetGrouping() {
 // not compiled and reported as broken while it is being written.
 document.getElementById("s-group-mode").addEventListener("change", e => setGroupMode(e.target.value));
 document.getElementById("s-group-orderby").addEventListener("change", e => {
-  setGrouping({ orderBy: e.target.value });
+  setGrouping({ orderBy: e.target.value }, settingsGroupView());
   paintGrouping();
 });
 document.getElementById("s-group-by").addEventListener("change", e => {
-  setGrouping({ by: e.target.value === DEFAULT_GROUP_BY ? "" : e.target.value });
+  setGrouping({ by: e.target.value === DEFAULT_GROUP_BY ? "" : e.target.value }, settingsGroupView());
 });
 document.getElementById("s-group-order").addEventListener("change", e => {
-  setGrouping({ order: e.target.value === DEFAULT_GROUP_ORDER ? "" : e.target.value });
+  setGrouping({ order: e.target.value === DEFAULT_GROUP_ORDER ? "" : e.target.value }, settingsGroupView());
 });
 

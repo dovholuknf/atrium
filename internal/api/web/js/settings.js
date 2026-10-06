@@ -92,8 +92,28 @@ prefLive([UI_SCALE_KEY, DENSITY_KEY], () => {
 
 // The grouping controls. Blank code means the defaults, so the boxes are
 // seeded with the defaults as a starting point rather than left empty.
+//
+// WHICH TAB THESE SET. Every tab keeps its own grouping, so the pickers carry a tab selector at the top of the section.
+// It opens on the tab the dialog was opened from (see `paintSettings`) and stays where it was put until the dialog opens
+// again.
+let groupViewPick = "";
+function settingsGroupView() { return GROUP_VIEWS.includes(groupViewPick) ? groupViewPick : groupView(); }
+
+function pickGroupView(view) {
+  groupViewPick = view;
+  paintGrouping();
+}
+
 function paintGrouping() {
-  const g = groupingPrefs();
+  const view = settingsGroupView();
+  const g = groupingPrefs(view);
+  const pick = document.getElementById("s-group-view");
+  if (pick) {
+    pick.innerHTML = GROUP_VIEWS.map(v =>
+      `<button class="${v === view ? "on" : ""}" data-view="${v}" onclick="pickGroupView('${v}')"
+         data-tip="set the grouping of the ${esc(GROUP_VIEW_NAMES[v])} tab. each tab keeps its own"
+         >${esc(GROUP_VIEW_NAMES[v])}</button>`).join("");
+  }
   // The button says what grouping IS, and pressing it flips that. A button
   // reading "on" is ambiguous about whether that is the state or the action.
   const btn = document.getElementById("s-group-toggle");
@@ -117,8 +137,9 @@ function paintGrouping() {
 }
 
 function toggleGrouping() {
-  const g = groupingPrefs();
-  setGrouping({ on: !g.on });
+  const view = settingsGroupView();
+  const g = groupingPrefs(view);
+  setGrouping({ on: !g.on }, view);
   paintGrouping();
   paintGroupSegs();
 }
@@ -197,8 +218,6 @@ function flashSaved(el) {
 }
 
 function paintGroupSegs() {
-  const p = groupingPrefs();
-  const mode = p.on ? (usesCode(p) ? "code" : (p.mode || "project")) : "off";
   const opts = [
     ["project", "by project", "cut the cards into projects, read from the worktree path"],
     ["window", "by pile",
@@ -217,22 +236,26 @@ function paintGroupSegs() {
       "today, yesterday, this week, this month, and everything older, which is dormant"],
     ["off", "off", "one flat list, in the order the sort above put them"]
   ];
-  const html = opts.map(([v, label, title]) =>
-    `<button class="${v === mode ? "on" : ""}" data-group="${v}" onclick="setGroupMode('${v}')"
+  const htmlFor = (mode, view) => opts.map(([v, label, title]) =>
+    `<button class="${v === mode ? "on" : ""}" data-group="${v}" onclick="setGroupMode('${v}', '${view}')"
        data-tip="${esc(title)}">${esc(label)}</button>`).join("");
   // A `+ new group` button rides beside the picker when `custom` is on.
   // Drawn in the same host as the picker so it sits alongside the mode
   // buttons and disappears the moment another mode is chosen: an add
   // button for a mode that is off does nothing anybody expects.
-  const plus = mode === "custom"
+  const plusFor = mode => mode === "custom"
     ? `<button class="groupplus" onclick="addCustomGroup()"
          data-tip="add a group. it is a tag under the hood: files a card into this bucket by tagging it">+ new group</button>`
     : "";
   // The strip is the third. It is rebuilt wholesale on every render, so it
   // calls this afterwards rather than relying on having been painted once.
-  ["stack-group", "board-group", "term-group", "term-group-tray"].forEach(id => {
+  // EACH STRIP SHOWS ITS OWN TAB'S SETTING.
+  [["stack-group", "stack"], ["board-group", "board"], ["term-group", "terms"], ["term-group-tray", "terms"]].forEach(([id, view]) => {
     const el = document.getElementById(id);
-    if (el) setHTML(el, html + plus);
+    if (!el) return;
+    const p = groupingPrefs(view);
+    const mode = p.on ? (usesCode(p) ? "code" : (p.mode || "project")) : "off";
+    setHTML(el, htmlFor(mode, view) + plusFor(mode));
   });
 }
 

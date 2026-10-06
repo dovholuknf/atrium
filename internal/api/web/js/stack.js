@@ -133,13 +133,24 @@ function paintStackShow() {
 
 // Activity by default. This is the "what has been going on" view, and the
 // board is where you go to see what is where.
-let stackSort = "activity";
-let stackDesc = false;
+//
+// KEPT PER TAB, like the board's and the terminals' sorts, so it survives a reload and a change on one tab never moves
+// another. Saved as the key, with `:desc` after it when reversed.
+const STACK_SORT_KEY = "atrium.stack.sort";
+function readStackSort() {
+  let v = "";
+  try { v = localStorage.getItem(STACK_SORT_KEY) || ""; } catch (e) {}
+  const [key, dir] = v.split(":");
+  return STACK_SORTS[key] ? { key, desc: dir === "desc" } : { key: "activity", desc: false };
+}
+let stackSort = readStackSort().key;
+let stackDesc = readStackSort().desc;
 let allStack = [];
 
 function setStackSort(key) {
   if (stackSort === key) stackDesc = !stackDesc;
   else { stackSort = key; stackDesc = false; }
+  try { localStorage.setItem(STACK_SORT_KEY, stackSort + (stackDesc ? ":desc" : "")); } catch (e) {}
   paintStackSort();
   paintStack();
 }
@@ -151,6 +162,15 @@ function setStackSort(key) {
 // Each sort also says which end it is showing, because the quantity alone does
 // not. "last active" reads as most recent first, and reversed it is the exact
 // opposite while the label is unchanged.
+window.addEventListener("storage", e => {
+  if (e.key !== STACK_SORT_KEY) return;
+  const v = readStackSort();
+  stackSort = v.key;
+  stackDesc = v.desc;
+  paintStackSort();
+  paintStack();
+});
+
 function paintStackSort() {
   document.getElementById("stack-sort").innerHTML =
     Object.entries(STACK_SORTS).map(([k, s]) => {
@@ -282,7 +302,7 @@ function paintStack() {
   // WORK ON A MACHINE THAT IS NOT ANSWERING GOES LAST AND COMES SHUT, the same
   // as on the board and for the same reason. It is not in `list`, because it
   // was taken out before anything counted or filtered: see `renderStack`.
-  const g = grouper();
+  const g = grouper("stack");
   const live = list.length
     ? (g ? stackGroupsHTML(list, g) : `<div class="panel">` + stackRows(list) + `</div>`)
     : "";

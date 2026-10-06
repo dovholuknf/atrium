@@ -381,7 +381,7 @@ function termSortHTML() {
 // in the words the controls use.
 const TRAY_GROUP_WORDS = { project: "project", window: "pile", tag: "tag", custom: "group", recency: "age", repo: "repo", room: "room", status: "status", runner: "runner", prefix: "tag prefix", code: "code" };
 function termTraySummary(c) {
-  const p = typeof groupingPrefs === "function" ? groupingPrefs() : { on: false };
+  const p = typeof groupingPrefs === "function" ? groupingPrefs("terms") : { on: false };
   const mode = p.on ? (p.mode || "project") : "off";
   const hid = [];
   if (hideAgentsMode() !== "none") hid.push("agents");
@@ -1512,8 +1512,8 @@ function termGroupsHTML(list) {
   // complaint `termTree` exists to answer, and it answers it by lifting the
   // shared prefix into nested headings. Same grouping, drawn for the space it
   // is in. Every other mode has no path to nest, so it draws flat.
-  const p = typeof groupingPrefs === "function" ? groupingPrefs() : null;
-  const g = typeof grouper === "function" ? grouper() : null;
+  const p = typeof groupingPrefs === "function" ? groupingPrefs("terms") : null;
+  const g = typeof grouper === "function" ? grouper("terms") : null;
   // OFF MEANS OFF, and it did not.
   //
   // `grouper()` answers null for two different reasons: grouping is switched
@@ -1602,7 +1602,7 @@ function termFlatGroupsHTML(list, g, folded) {
 // pinned card in none of your groups stays out of `untagged`, which is the
 // board's heap and not somewhere you put it.
 function termFiled(t) {
-  const g = typeof grouper === "function" ? grouper() : null;
+  const g = typeof grouper === "function" ? grouper("terms") : null;
   if (!g || !g.handOrdered) return false;
   try { return g.of(t).some(n => n && n !== UNTAGGED); } catch (e) { return false; }
 }
@@ -1700,8 +1700,8 @@ let termTotals = new Map();
 // for a flat grouping, the slash path for the tree, and `uncategorized`.
 function termCountTotals(list) {
   const out = new Map();
-  const p = typeof groupingPrefs === "function" ? groupingPrefs() : null;
-  const g = typeof grouper === "function" ? grouper() : null;
+  const p = typeof groupingPrefs === "function" ? groupingPrefs("terms") : null;
+  const g = typeof grouper === "function" ? grouper("terms") : null;
   if (p && !p.on) return out;
   if (!g || !p || (p.mode === "project" && !String(p.by || "").trim())) {
     const walk = (node, path) => {

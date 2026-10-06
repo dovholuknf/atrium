@@ -157,6 +157,7 @@ function paintSettings() {
   // because they are about the machine's data and not about this screen, so
   // they are read here rather than assumed.
   loadHousekeeping();
+  groupViewPick = "";
   paintGrouping();
   paintSwitchKey();
   paintSkipped();

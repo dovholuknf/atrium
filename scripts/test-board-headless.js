@@ -18030,7 +18030,7 @@ async function discreteGroupSection(browser, base) {
 
     await pick("s-group-mode", "repo");
     if ((await groups()) !== "atrium,filed,one,ziti,ziti-sdk-csharp") fail("discreteGroup: repo grouping gave " + await groups());
-    let saved = await p.evaluate(() => localStorage.getItem("atrium.grouping"));
+    let saved = await p.evaluate(() => localStorage.getItem("atrium.grouping." + groupView()));
     if (/return|=>/.test(saved)) fail("discreteGroup: a named pick stored code: " + saved);
     if (JSON.parse(saved).mode !== "repo") fail("discreteGroup: the pick was not saved: " + saved);
 
@@ -18081,6 +18081,97 @@ async function discreteGroupSection(browser, base) {
     await ctx.close();
   }
   if (!bad) console.log("discreteGroup ok");
+}
+
+// EVERY TAB KEEPS ITS OWN VIEW. Grouping (on, mode, order, typed code) and sort are saved per tab: choosing `by pile` on the
+// stack leaves the terminals on `by project`, and the other way round, across a switch of tabs and across a reload. A browser
+// that only has the old shared `atrium.grouping` starts every tab from it. The named groups and colours stay shared.
+async function groupingPerViewSection(browser, base) {
+  const was = tasksMode;
+  tasksMode = "untagged";
+  const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+  const errors = [];
+  const tag = "groupingPerView: ";
+  try {
+    const p = await ctx.newPage();
+    p.on("pageerror", e => errors.push(String(e)));
+    await p.addInitScript(() => {
+      if (!sessionStorage.getItem("primed")) {
+        sessionStorage.setItem("primed", "1");
+        localStorage.setItem("atrium.skipconfirm", JSON.stringify({ "width-floor": true }));
+        // Only the old shared key, as a browser from before the split has it.
+        localStorage.setItem("atrium.grouping", JSON.stringify({ on: true, mode: "tag", orderBy: "count", groups: ["g1"], hues: { x: 40 } }));
+      }
+    });
+    const boot = async () => {
+      await p.goto(base + "/", { waitUntil: "domcontentloaded" });
+      await p.waitForFunction(() => typeof lastTasks !== "undefined" && lastTasks.length >= 1 && typeof groupingPrefs === "function", null, { timeout: slow(15000) });
+    };
+    await boot();
+    const view = v => p.evaluate(v => { switchView(v); }, v);
+    const mode = v => p.evaluate(v => { const g = groupingPrefs(v); return g.on ? g.mode : "off"; }, v);
+    const pill = id => p.evaluate(id => { const b = document.querySelector("#" + id + " button.on"); return b ? b.dataset.group : ""; }, id);
+
+    // Migration: nothing of their own yet, so every tab reads what the shared key held, and that key is left alone.
+    for (const v of ["board", "stack", "terms"]) {
+      if ((await mode(v)) !== "tag") fail(tag + v + " did not start from the old shared key: " + await mode(v));
+      if ((await p.evaluate(v => groupingPrefs(v).orderBy, v)) !== "count") fail(tag + v + " lost the old group order");
+    }
+    if (!(await p.evaluate(() => localStorage.getItem("atrium.grouping")))) fail(tag + "the old shared key was deleted");
+
+    // Stack to pile, terminals to project, board left alone.
+    await view("stack");
+    await p.evaluate(() => { setGroupMode("window", "stack"); });
+    await view("terms");
+    await p.evaluate(() => { setGroupMode("project", "terms"); });
+    const want = { board: "tag", stack: "window", terms: "project" };
+    const check = async (why) => {
+      for (const v of Object.keys(want)) if ((await mode(v)) !== want[v]) fail(tag + why + ": " + v + " is " + await mode(v) + ", wanted " + want[v]);
+    };
+    await check("after setting");
+    await view("stack");
+    await check("on the stack");
+    if ((await pill("stack-group")) !== "window") fail(tag + "the stack pills show " + await pill("stack-group"));
+    if ((await pill("term-group-tray")) !== "project") fail(tag + "the terminal pills show " + await pill("term-group-tray"));
+    if ((await pill("board-group")) !== "tag") fail(tag + "the board pills show " + await pill("board-group"));
+    await view("terms");
+    await check("back on terminals");
+    const sum = await p.evaluate(() => document.querySelector(".traysum") ? document.querySelector(".traysum").textContent : "");
+    if (sum && !/by project/.test(sum)) fail(tag + "the folded tray summary is not the terminals' own: " + sum);
+
+    // The settings dialog names the tab and sets only it.
+    await p.evaluate(() => { groupViewPick = "stack"; paintGrouping(); });
+    const picked = await p.evaluate(() => (document.querySelector("#s-group-view button.on") || {}).dataset.view);
+    if (picked !== "stack") fail(tag + "the dialog does not show which tab it sets: " + picked);
+    await p.evaluate(() => { const el = document.getElementById("s-group-orderby"); el.value = "recent"; el.dispatchEvent(new Event("change", { bubbles: true })); });
+    if ((await p.evaluate(() => groupingPrefs("stack").orderBy)) !== "recent") fail(tag + "the dialog did not set the stack order");
+    if ((await p.evaluate(() => groupingPrefs("terms").orderBy)) !== "count") fail(tag + "the dialog moved the terminals' order");
+    await p.evaluate(() => { groupViewPick = ""; });
+
+    // Shared: named groups and colours.
+    await p.evaluate(() => { setGrouping({ groups: ["g1", "g2"] }, "stack"); });
+    for (const v of ["board", "terms"]) {
+      if ((await p.evaluate(v => groupingPrefs(v).groups.join(","), v)) !== "g1,g2") fail(tag + "named groups are not shared with " + v);
+    }
+    if ((await p.evaluate(() => groupingPrefs("terms").hues.x)) !== 40) fail(tag + "colours are not shared");
+
+    // Sort: stack, board and terminals each keep their own, through a reload.
+    await p.evaluate(() => { setStackSort("waited"); setBoardSort("name"); setTermSortMode("started"); });
+    await boot();
+    await check("after a reload");
+    const sorts = await p.evaluate(() => ({ stack: stackSort, board: boardSortMode(), term: termSortStarted ? "started" : sortByActivity ? "activity" : "name" }));
+    if (sorts.stack !== "waited" || sorts.board !== "name" || sorts.term !== "started") fail(tag + "sorts after a reload: " + JSON.stringify(sorts));
+    await p.evaluate(() => { setStackSort("activity"); });
+    const after = await p.evaluate(() => ({ board: boardSortMode(), term: termSortStarted }));
+    if (after.board !== "name" || !after.term) fail(tag + "a stack sort change moved another tab: " + JSON.stringify(after));
+    await p.evaluate(() => { setTermSortMode("name"); });
+    if ((await p.evaluate(() => stackSort)) !== "activity" || (await p.evaluate(() => boardSortMode())) !== "name") fail(tag + "a terminals sort change moved another tab");
+    if (errors.length) fail(tag + "page errors: " + errors.join(" | "));
+  } finally {
+    tasksMode = was;
+    await ctx.close();
+  }
+  if (!bad) console.log("groupingPerView ok");
 }
 
 async function bootCleanSection(browser, base) {
@@ -24125,7 +24216,7 @@ async function main() {
       u001Audit: u001AuditSection,
       pasteStart: pasteStartSection, pasteDone: pasteDoneSection, pasteOldRoom: pasteOldRoomSection, pasteClose: pasteCloseSection,
       growlQuestionShots: growlQuestionShotsSection, growlQuestionBody: growlQuestionBodySection, growlReplyGrow: growlReplyGrowSection, growlChoices: growlChoicesSection, replies: repliesSection, repliesOf: repliesOfSection, repliesShots: repliesShotsSection, growlStable: growlStableSection, growlOnIt: growlOnItSection, mGrowlQuestion: mGrowlQuestionSection,
-      roomsSetup: roomsSetupSection, discreteGroup: discreteGroupSection, bootClean: bootCleanSection, peekDash: peekDashSection, mReload: mReloadSection, mReconnect: mReconnectSection, mActivityRead: mActivityReadSection, mReadRetry: mReadRetrySection, mWorking: mWorkingSection, mOwnMessages: mOwnMessagesSection, mBubbles: mBubblesSection, mRecapSheet: mRecapSheetSection,
+      roomsSetup: roomsSetupSection, discreteGroup: discreteGroupSection, groupingPerView: groupingPerViewSection, bootClean: bootCleanSection, peekDash: peekDashSection, mReload: mReloadSection, mReconnect: mReconnectSection, mActivityRead: mActivityReadSection, mReadRetry: mReadRetrySection, mWorking: mWorkingSection, mOwnMessages: mOwnMessagesSection, mBubbles: mBubblesSection, mRecapSheet: mRecapSheetSection,
       mHomeOrder: mHomeOrderSection, cardUrlWayOut: cardUrlWayOutSection, phoneBoot: phoneBootSection, sayEnter: sayEnterSection, sendArrow: sendArrowSection, mTables: mTablesSection, mMarkdown: mMarkdownSection, mHostile: mHostileSection, mPictures: mPicturesSection, soundPhone: soundPhoneSection, phoneBell: phoneBellSection, mBell: mBellSection,
       mHomeOrder: mHomeOrderSection, cardUrlWayOut: cardUrlWayOutSection, phoneBoot: phoneBootSection, sayEnter: sayEnterSection, sendArrow: sendArrowSection, mTables: mTablesSection, mMarkdown: mMarkdownSection, mHostile: mHostileSection, mPictures: mPicturesSection, phoneRedirect: phoneRedirectSection,
       mHomeOrder: mHomeOrderSection, cardUrlWayOut: cardUrlWayOutSection, phoneBoot: phoneBootSection, sayEnter: sayEnterSection, sendArrow: sendArrowSection, mTables: mTablesSection, mMarkdown: mMarkdownSection, mHostile: mHostileSection, mPictures: mPicturesSection, mHidden: mHiddenSection, soundPhone: soundPhoneSection, phoneBell: phoneBellSection, mBell: mBellSection,
@@ -26194,6 +26285,7 @@ async function main() {
     await unit("roomsSetup", () => roomsSetupSection(browser, base));
     await unit("readTabSize", () => readTabSizeSection(browser, base));
     await unit("discreteGroup", () => discreteGroupSection(browser, base));
+    await unit("groupingPerView", () => groupingPerViewSection(browser, base));
     await unit("bootClean", () => bootCleanSection(browser, base));
     await unit("mWorking", () => mWorkingSection(browser));
     await unit("mOwnMessages", () => mOwnMessagesSection(browser));

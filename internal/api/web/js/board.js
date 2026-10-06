@@ -1075,16 +1075,52 @@ const GROUPING_DEFAULTS = { on: true, mode: "project", by: "", order: "", orderB
 // "" would sort it in with a group whose name is empty.
 const UNTAGGED = "untagged";
 
-function groupingPrefs() {
-  try {
-    return Object.assign({}, GROUPING_DEFAULTS,
-      JSON.parse(localStorage.getItem(GROUPING_KEY) || "{}"));
-  } catch (e) { return Object.assign({}, GROUPING_DEFAULTS); }
+// EVERY TAB KEEPS ITS OWN VIEW. On or off, the group mode, the group order and the typed code are saved per tab, in
+// `atrium.grouping.<tab>`, so choosing `by pile` on the stack leaves the terminals as they were. What stays in the shared
+// `atrium.grouping` is what describes the cards and not a view: the operator's named groups and every group's colour.
+//
+// MIGRATION IS A FALLBACK, NOT A COPY. A tab with nothing of its own yet reads the view fields the shared key held before
+// the split, so nobody loses a setting, and the old key is never cleared. The first change on a tab writes its own copy.
+const GROUP_VIEWS = ["board", "stack", "terms"];
+const GROUP_VIEW_FIELDS = ["on", "mode", "by", "order", "orderBy", "picked"];
+const GROUP_VIEW_NAMES = { board: "board", stack: "stack", terms: "terminals" };
+
+function groupViewKey(view) { return GROUPING_KEY + "." + view; }
+
+// The tab you are looking at, for the callers that are not drawing a particular one. The board is the fallback because
+// it is the page that is always there.
+function groupView() {
+  if (typeof isViewing !== "function") return "board";
+  return GROUP_VIEWS.find(isViewing) || "board";
 }
 
-function setGrouping(patch) {
-  const next = Object.assign(groupingPrefs(), patch);
-  localStorage.setItem(GROUPING_KEY, JSON.stringify(next));
+function readJSONKey(key) {
+  try { return JSON.parse(localStorage.getItem(key) || "{}") || {}; } catch (e) { return {}; }
+}
+
+function groupingPrefs(view) {
+  view = GROUP_VIEWS.includes(view) ? view : groupView();
+  const shared = readJSONKey(GROUPING_KEY);
+  const own = readJSONKey(groupViewKey(view));
+  const mine = {};
+  GROUP_VIEW_FIELDS.forEach(f => { if (own[f] !== undefined) mine[f] = own[f]; });
+  return Object.assign({}, GROUPING_DEFAULTS, shared, mine);
+}
+
+function setGrouping(patch, view) {
+  view = GROUP_VIEWS.includes(view) ? view : groupView();
+  const sharedPatch = {};
+  const viewPatch = {};
+  Object.keys(patch).forEach(k => (GROUP_VIEW_FIELDS.includes(k) ? viewPatch : sharedPatch)[k] = patch[k]);
+  if (Object.keys(sharedPatch).length) {
+    localStorage.setItem(GROUPING_KEY, JSON.stringify(Object.assign(readJSONKey(GROUPING_KEY), sharedPatch)));
+  }
+  if (Object.keys(viewPatch).length) {
+    const now = groupingPrefs(view);
+    const next = {};
+    GROUP_VIEW_FIELDS.forEach(f => { next[f] = now[f]; });
+    localStorage.setItem(groupViewKey(view), JSON.stringify(Object.assign(next, viewPatch)));
+  }
   repaintLists();
 }
 
@@ -1093,9 +1129,9 @@ function setGrouping(patch) {
 // window that wrote the change repainted. The others kept the old colour and
 // the old order until their next poll, up to `POLL_MS` later, so a recolour
 // looked like it had not stuck. The browser tells every OTHER window when a
-// key changes, and that is the cue.
+// key changes, and that is the cue. Each tab's key is its own, so all of them are watched.
 window.addEventListener("storage", e => {
-  if (e.key === GROUPING_KEY) refresh();
+  if (e.key === GROUPING_KEY || GROUP_VIEWS.some(v => e.key === groupViewKey(v))) refresh();
 });
 
 // Compiles a function body once per render.
@@ -1227,12 +1263,15 @@ function withGroupOrder(g, p) {
   return Object.assign({}, g, { cmp: groupOrderCmp(o, cardsOf) });
 }
 
-function grouper() {
-  return withGroupOrder(grouperByMode(), groupingPrefs());
+function grouper(view) {
+  view = GROUP_VIEWS.includes(view) ? view : groupView();
+  const g = withGroupOrder(grouperByMode(view), groupingPrefs(view));
+  // Says which tab it was made for, so what draws the groups reads that tab's setting and not whichever is on screen.
+  return g ? Object.assign(g, { view }) : g;
 }
 
-function grouperByMode() {
-  const p = groupingPrefs();
+function grouperByMode(view) {
+  const p = groupingPrefs(view);
   if (!p.on) return null;
   groupingFault = "";
 
@@ -1583,7 +1622,7 @@ function cardsHTML(cards, g, keyPrefix) {
     // of every card that lands in none of them. The fold list records what
     // was CHANGED from the default, so an entry there re-opens it and the
     // shape reads the same as every other fold.
-    const shutByDefault = name === UNTAGGED && groupingPrefs().mode === "custom";
+    const shutByDefault = name === UNTAGGED && groupingPrefs(g.view).mode === "custom";
     const shut = (isFolded(fold) === shutByDefault) ? " open" : "";
     // Work you started and left. Drawn back rather than hidden: the point of
     // the bucket is that it is findable, and the point of greying it is that
@@ -1777,7 +1816,7 @@ async function renderBoard(signal) {
   if (typeof ulOnCards === "function") ulOnCards();
   newCardNote(everything);
   paintWorking(all);
-  const g = grouper();
+  const g = grouper("board");
 
   const html = COLUMNS.filter(col => {
     // The inbox is the one column that should not be there when it is empty.
