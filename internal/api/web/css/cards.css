@@ -807,6 +807,11 @@
     font-size: var(--fs-xxs); color: var(--dimmest); letter-spacing: .04em;
   }
   .peek-foot span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .peek-restart {
+    margin-top: 10px; padding: 3px 10px; font: inherit; font-size: var(--fs-xs); color: var(--dim);
+    background: none; border: 1px solid var(--line, currentColor); border-radius: 4px; cursor: pointer;
+  }
+  .peek-restart:hover { color: var(--head); }
   .peek-none { color: var(--dim); font-size: var(--fs-sm); }
   /* While the read is under way the numbers are bars that shimmer, the size the numbers will be. */
   .peek-body.loading .peek-num b, .peek-body.loading .peek-cell b {
