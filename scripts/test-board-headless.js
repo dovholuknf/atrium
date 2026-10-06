@@ -1383,7 +1383,6 @@ async function bridgeSection(browser, base) {
     // selected row alone, and with every row worn, which frames the selected one.
     for (const [skin, idle] of [["noir", false], ["noir", true], ["daylight", false], ["daylight", true]]) {
       const got = await bp.evaluate(async ([skin, idle]) => {
-        termBridge = true;
         applySkin(skin);
         toggleTermWear("idle", idle);
         termTask = { id: "filed1" };
@@ -3558,7 +3557,6 @@ async function themePreviewSection(browser, base) {
     // Attach a stand-in terminal on tp-a. The picker and the bridge only ask
     // that there is one with options to set.
     const attach = id => p.evaluate(async id => {
-      termBridge = true;
       termTask = lastTasks.find(t => t.id === id);
       term = { options: {}, dispose() {} };
       await loadCards().catch(() => {}).then(renderTermList);
@@ -20381,7 +20379,7 @@ async function oneTooltipSection(browser, base) {
   if (!bad) console.log("oneTooltip ok");
 }
 
-// The attached row's highlight stays inside the list column at the narrowest list and a wide one, and the width
+// The attached row stays inside the list column and bridges into the pane by default, at the narrowest list and a wide one, and the width
 // buttons are a grip in the list's lower left corner. ROWBLEED_SHOTS=<dir> writes a screenshot per width.
 async function termRowBleedSection(browser, base) {
   const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
@@ -20416,7 +20414,9 @@ async function termRowBleedSection(browser, base) {
           overflow: on.filter(c => r(c).right > box.right + 0.5 || r(c).right > list.right + 0.5).length,
           bridges: [...document.querySelectorAll("#term-layout .tabbridge")].filter(b => !b.hidden &&
             getComputedStyle(b).display !== "none").length,
-          reachesPane: on.some(c => r(c).right >= pane.left),
+          reachesPane: [...document.querySelectorAll("#term-layout .tabbridge")].some(b => !b.hidden &&
+            r(b).width > 0 && r(b).right >= pane.left),
+          squared: on.every(c => getComputedStyle(c).borderTopRightRadius === "0px"),
           corner: btns.length && btns.every(b => r(b).left >= list.left && r(b).left < list.left + 60 &&
             r(b).bottom <= list.bottom + 1 && r(b).top > list.bottom - 40),
           text: btns.some(b => b.textContent.trim() !== "")
@@ -20427,7 +20427,7 @@ async function termRowBleedSection(browser, base) {
       if (w === 150 && got.wide > 160) fail(tag + "the list is not at its narrowest: " + got.wide);
       if (w === 520 && got.wide < 500) fail(tag + "the list is not wide: " + got.wide);
       if (got.overflow) fail(tag + "the attached row draws past the list column: " + JSON.stringify(got));
-      if (got.bridges || got.reachesPane) fail(tag + "the row's highlight still crosses the divider: " + JSON.stringify(got));
+      if (!got.bridges || !got.reachesPane || !got.squared) fail(tag + "the attached row has no visible bridge into the pane by default: " + JSON.stringify(got));
       if (!got.corner) fail(tag + "the width buttons are not in the lower left corner: " + JSON.stringify(got));
       if (got.text) fail(tag + "a width button is still a text button: " + JSON.stringify(got));
       if (process.env.ROWBLEED_SHOTS) {

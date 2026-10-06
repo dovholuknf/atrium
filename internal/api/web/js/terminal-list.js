@@ -552,15 +552,9 @@ function placeTabBridge() {
   });
 }
 
-// The tab-into-the-terminal look is OFF. The selected row's colour crossing the divider read as a highlight
-// that bled out of the list, so by default the row stays inside its column and the rest of the code here
-// sits idle. Set true to get the bridge and the squared-off row back (the headless bridge section does).
-let termBridge = false;
-
 function placeOneBridge(bridge, card) {
   const lay = document.getElementById("term-layout");
-  if (lay) lay.classList.toggle("bridged", termBridge);
-  if (!termBridge) { bridge.hidden = true; return; }
+  if (lay) lay.classList.add("bridged");
   // Nothing attached, or the list is not beside the terminal to begin with.
   // In `off` the list floats OVER the pane, so there is no gutter to cross.
   if (!lay || !card || termListMode === "off" || !term) { bridge.hidden = true; return; }
