@@ -1370,6 +1370,31 @@ func (d *Daemon) launchLocked(req LaunchRequest) (*store.Task, error) {
 	if err := d.st.SetLaunchOptions(created.ID, effort, extraArgs, extraEnv); err != nil {
 		return nil, err
 	}
+	// THE COMMAND LINE, for the card details: the argv this launch started, less the opening prompt, and the
+	// names of the environment it was started with.
+	shown := args
+	if prompt != "" {
+		if base, _, err := runnerArgsWith(h, req.Resume, "", opts); err == nil {
+			if a, err := finishArgs(base); err == nil {
+				shown = a
+			}
+		}
+	}
+	keys := map[string]bool{}
+	for k := range launchEnv {
+		keys[k] = true
+	}
+	for k := range atrium {
+		keys[k] = true
+	}
+	envKeys := make([]string, 0, len(keys))
+	for k := range keys {
+		envKeys = append(envKeys, k)
+	}
+	sort.Strings(envKeys)
+	if err := d.st.SetLaunchCommand(created.ID, store.LaunchCmd{Exe: h.Exe(), Args: shown, EnvKeys: envKeys}); err != nil {
+		return nil, err
+	}
 	source, url := req.Source, req.URL
 	if req.SourceKind != "" {
 		source = req.SourceKind

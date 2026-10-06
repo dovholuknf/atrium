@@ -10680,7 +10680,7 @@ const ONE_HOVER_CARD = Object.assign({}, T1, {
   spawned_by: "boss@sg4", launcher_id: "boss", owed: 2, owed_since: new Date(Date.now() - 600000).toISOString(),
   held_notices: 3, replies_owed: 1,
   context_size: { tokens: 172000, warn: true, cycle: true, threshold_k: 160, source: "hub" },
-  autocompact: { limit_k: 160, window_k: 176 },
+  autocompact: { limit_k: 160, window_k: 209, compacts_k: 176 },
   new_context: { step: "limit", n: 1, of: 3, label: "limit prompt typed, waiting for the agent to ack" },
   activity: { what: "thinking", seconds: 12, held_peer: "boss", held_count: 2, held_for: "new-context", held_seconds: 15 },
   ask: "land sa21 first?", asks_open: 2,

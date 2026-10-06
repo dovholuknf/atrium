@@ -184,6 +184,7 @@ function peekRows(t) {
   const room = fn("roomOf", t.id);
   if (room) about.push(row("room", room));
   if (t.runner) about.push(row("runner", t.runner));
+  about.push(row("launched with", launchedWith(t)));
   if (t.model || t.effort || (t.launch_args || []).length || (t.launch_env_keys || []).length) {
     about.push(row("launch", [t.model && "model " + t.model, t.effort && "effort " + t.effort,
       (t.launch_args || []).length && "args " + t.launch_args.join(" "),
@@ -274,13 +275,21 @@ function peekBody(t, v) {
     </div>` + peekFoot(t);
 }
 
+// The command line atrium started the runner with, or the plain fact that it did not start this one.
+function launchedWith(t) {
+  const c = t.launch_cmd;
+  if (!c) return "not started by atrium (joined), or started before the command was kept";
+  const argv = [c.exe].concat(c.args || []).join(" ");
+  return argv + ((c.env_keys || []).length ? "  env: " + c.env_keys.join(", ") : "");
+}
+
 function peekFoot(t) {
   if (!t) return "";
   const parts = [];
   if (t.runner) parts.push(t.runner);
   // The line atrium holds the card to, and the size its runner compacts itself at.
   if (t.autocompact && t.autocompact.note) parts.push(t.autocompact.note);
-  else if (t.autocompact) parts.push(`limit ${t.autocompact.limit_k}k · compacts at ${t.autocompact.window_k}k`);
+  else if (t.autocompact) parts.push(`limit ${t.autocompact.limit_k}k · compacts at ${t.autocompact.compacts_k}k`);
   // Only for a card that says when it last did anything, by either field. The same number the sorts place it by.
   if (isFinite(cardIdleSeconds(t))) {
     const idle = cardIdleAge(t);

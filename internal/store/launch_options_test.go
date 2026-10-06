@@ -93,3 +93,25 @@ func TestLaunchOptionsMigrationBackfillsOnlyEmptyRows(t *testing.T) {
 		t.Fatalf("the operator's codex mapping was overwritten: %q", codex.EffortArgs)
 	}
 }
+
+// The command a launch recorded comes back with the card, and a card nothing launched has none.
+func TestACardKeepsTheCommandItWasLaunchedWith(t *testing.T) {
+	s := openTestStore(t)
+	task, _, err := s.Register(Observed{WireName: "one", Worktree: "/tmp/one"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := s.Get(task.ID); got.LaunchCmd != nil {
+		t.Fatalf("a joined card has a launch command: %+v", got.LaunchCmd)
+	}
+	want := LaunchCmd{Exe: "claude", Args: []string{"--resume", "x", "--autocompact", "253k"}, EnvKeys: []string{"ATRIUM_TASK_ID"}}
+	if err := s.SetLaunchCommand(task.ID, want); err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.Get(task.ID)
+	if err != nil || got.LaunchCmd == nil || got.LaunchCmd.Exe != "claude" ||
+		strings.Join(got.LaunchCmd.Args, " ") != "--resume x --autocompact 253k" ||
+		strings.Join(got.LaunchCmd.EnvKeys, ",") != "ATRIUM_TASK_ID" {
+		t.Fatalf("got %+v, %v", got.LaunchCmd, err)
+	}
+}

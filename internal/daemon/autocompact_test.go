@@ -33,16 +33,16 @@ func setLimits(t *testing.T, d *Daemon, v string) {
 // Untouched, the default claude limit gives a window.
 func TestAutocompactKDefaultsToTheClaudeLimit(t *testing.T) {
 	d := testDaemon(t)
-	if got := d.autocompactK(&store.Task{Runner: "claude"}); got != 220 {
-		t.Fatalf("default window = %dk, want 220k (200k + 10%%)", got)
+	if got := d.autocompactK(&store.Task{Runner: "claude"}); got != 253 {
+		t.Fatalf("default window = %dk, want 253k (200k + 10%% + the 33k claude keeps back)", got)
 	}
 }
 
 func TestAutocompactKFollowsTheLimitAndClamps(t *testing.T) {
 	d := testDaemon(t)
 	setLimits(t, d, `{"claude":400}`)
-	if got := d.autocompactK(&store.Task{Runner: "claude"}); got != 440 {
-		t.Fatalf("400k limit gave %dk, want 440k", got)
+	if got := d.autocompactK(&store.Task{Runner: "claude"}); got != 473 {
+		t.Fatalf("400k limit gave %dk, want 473k", got)
 	}
 	setLimits(t, d, `{"claude":50}`)
 	if got := d.autocompactK(&store.Task{Runner: "claude"}); got != 100 {
@@ -58,8 +58,8 @@ func TestAutocompactKFollowsTheLimitAndClamps(t *testing.T) {
 func TestAutocompactKForACardOverride(t *testing.T) {
 	d := testDaemon(t)
 	got := d.autocompactK(&store.Task{Runner: "claude", Overrides: map[string]string{"context_limit_k": "300"}})
-	if got != 330 {
-		t.Fatalf("a 300k card limit gave %dk, want 330k", got)
+	if got != 363 {
+		t.Fatalf("a 300k card limit gave %dk, want 363k", got)
 	}
 }
 
@@ -188,13 +188,27 @@ func TestTheWindowNeverPassesTheModels(t *testing.T) {
 	d := testDaemon(t)
 	setLimits(t, d, `{"claude":300}`)
 	for model, want := range map[string]int{
-		"":                      330,
+		"":                      363,
 		"claude-opus-5-5":       200,
-		"claude-sonnet-5-5[1m]": 330,
-		"CLAUDE-OPUS-5-5[1M]":   330,
+		"claude-sonnet-5-5[1m]": 363,
+		"CLAUDE-OPUS-5-5[1M]":   363,
 	} {
 		if got := d.autocompactK(&store.Task{Runner: "claude", Model: model}); got != want {
 			t.Errorf("model %q: %dk, want %dk", model, got, want)
 		}
+	}
+}
+
+// The peek's caption is the launch value less claude's reserve, from the same function, and it is never before the
+// card's limit when the model's window leaves room.
+func TestTheCaptionIsWhereTheSessionReallyCompacts(t *testing.T) {
+	d := testDaemon(t)
+	task := &store.Task{Runner: "claude", Model: "claude-opus-5-5[1m]"}
+	if w, c := d.autocompactK(task), d.compactsAtK(task); w != 253 || c != 220 {
+		t.Fatalf("window %dk, compacts at %dk, want 253k and 220k", w, c)
+	}
+	got, _ := d.autocompactFor(task).(*Autocompact)
+	if got == nil || got.CompactsK != 220 || got.WindowK != 253 || got.LimitK != 200 {
+		t.Fatalf("card details = %+v", got)
 	}
 }

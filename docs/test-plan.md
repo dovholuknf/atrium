@@ -8401,9 +8401,10 @@ Covered by headless unit `growlOff`; the existing growler units seed the setting
 Updated by r-context-cycle: the limit is the hub's per-harness `context_limits` (claude 200k by default) or the card's
 own `context_limit_k`, and the window is 10% over it.
 
-1. Launch a claude card. `ps` shows `--autocompact 220k` in its argv, and the card details foot reads "limit 200k · compacts at 220k".
-2. Set the gear's `context limit per harness` to `claude=400`, close the card and resume it. The resumed process has `--autocompact 440k`.
-3. Give a card its own limit of 300 in its details, close and resume it: `--autocompact 330k`.
+1. Launch a claude card. `ps` shows `--autocompact 253k` in its argv (limit 200k plus 10 percent plus the 33k claude keeps back), and the
+   card details foot reads "limit 200k · compacts at 220k", the point the session really compacts at.
+2. Set the gear's `context limit per harness` to `claude=400`, close the card and resume it. The resumed process has `--autocompact 473k`.
+3. Give a card its own limit of 300 in its details, close and resume it: `--autocompact 363k`.
 4. A runner row with empty `autocompact_args` (codex, ollama) launches with nothing added and no refusal. A row whose args lack `{autocompact}` is refused.
 5. With a claude whose `--help` has no `--autocompact`, a launch has no flag and the details foot says "runner does not take autocompact". A card on `claude-opus-5-5` with a 300k limit starts at `--autocompact 200k`, and on a `[1m]` model at 330k.
 Covered by `TestAnOlderClaude*`, `TestTheWindowNeverPassesTheModels`, `TestAutocompactK*`, `TestCardLimitIsWhatTheCycleIsHeldTo`, `TestTheRunnerRowSaysHowItTakesTheWindow`, `TestAResumeAndAPromptCarryTheWindow`, `TestARunnerWithoutTheFlagIsLeftAlone`, `TestAutocompactArgsMustCarryThePlaceholder`. Items 1 to 3 live: a throwaway card started with `--autocompact 330k` on the live room ran.
@@ -8902,3 +8903,16 @@ never do.
 **Expected:** 1 leaves no chip, and the history says `dropped: the room restarted before atrium ready came`. The cycle
 starts again if the card is still past its limit. 2 leaves a red chip naming step 2 of 3 and the handoff path.
 Running new context on it resumes at the clear without asking for another handoff.
+
+## IF. Card details show the launch command (r-context-limit-one-source)
+
+1. Launch a claude card from the board. Open its details (the peek). A row "launched with" shows the program and every
+   argument atrium added, in order: `--resume`, `--mcp-config`, `--model`, `--effort`, `--autocompact`, lean flags
+   and extra args. The opening prompt is not in it. Env follows as names only, for example `env: ATRIUM_TASK_ID`.
+   No value appears anywhere.
+2. Reload the board. The row is still there. Restart the card from its details: the row shows the new command.
+3. Join a session that atrium did not launch. Its row says it was not started by atrium.
+4. The caption in the foot ("limit 200k · compacts at 220k") matches the `--autocompact` value in the row less 33k.
+
+Covered by `TestACardKeepsTheCommandItWasLaunchedWith`, `TestTheCaptionIsWhereTheSessionReallyCompacts` and the
+headless peek unit.

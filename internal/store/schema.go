@@ -2080,6 +2080,14 @@ var migrations = []struct {
 				'context_ceiling_k', 'context_threshold_k')`,
 		},
 	},
+	{
+		// THE COMMAND LINE a launched card's runner was started with, as JSON, for the card details. Empty for a
+		// card atrium did not launch.
+		name: "0087_launch_cmd",
+		stmts: []string{
+			`ALTER TABLE task ADD COLUMN launch_cmd TEXT NOT NULL DEFAULT ''`,
+		},
+	},
 }
 
 // migrate applies any migration not already recorded. This runs before the

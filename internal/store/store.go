@@ -198,6 +198,9 @@ type Task struct {
 	LaunchArgs    []string          `json:"launch_args,omitempty"`
 	LaunchEnv     map[string]string `json:"-"`
 	LaunchEnvKeys []string          `json:"launch_env_keys,omitempty"`
+	// LaunchCmd is the exact command line atrium started the runner with, the last time it did. Nil for a card
+	// atrium did not launch.
+	LaunchCmd *LaunchCmd `json:"launch_cmd,omitempty"`
 	// LastCols is how wide this card's terminal was when it was last stopped.
 	//
 	// Written at the wind-down, never on the resize itself. A browser sends a
@@ -899,4 +902,12 @@ func constraint(err error) bool {
 		return se.Code()&0xff == sqlite3.SQLITE_CONSTRAINT
 	}
 	return false
+}
+
+// LaunchCmd is what atrium ran to start a card's runner: the program, every argument in order, and the NAMES of the
+// environment variables it set. Values are never kept, and neither is the opening prompt.
+type LaunchCmd struct {
+	Exe     string   `json:"exe"`
+	Args    []string `json:"args"`
+	EnvKeys []string `json:"env_keys,omitempty"`
 }

@@ -114,13 +114,21 @@ const (
 	maxAutocompactK = 1000
 )
 
+// compactReserveK is how far below its --autocompact value claude really compacts, in thousands of tokens: it
+// keeps room for the summary it writes. Measured on claude 2.1.288: a flag of 330k compacted at about 297k and a
+// flag of 165k at about 133k, so 33k, which is the 20k summary reserve and 13k buffer claude takes off the window.
+const compactReserveK = 33
+
 // autocompactK is the compaction window a card's runner is started with, in thousands of
-// tokens: the card's limit plus 10 percent, clamped to what claude accepts. Atrium cycles
-// the context at the limit and the runner compacts ten percent later, as the backstop, so
-// no card runs past its window. A limit under 91k is raised to the floor, which is late
-// rather than early. One function, for the launch and for the card details.
+// tokens. Claude compacts compactReserveK below the value it is given, so the value is the
+// card's limit plus 10 percent plus that reserve: the runner then compacts 10 percent AFTER
+// atrium's cycle point, as the backstop, and never before it. Clamped to what claude
+// accepts, and to the model's own window when it is known, where the real compaction
+// comes out lower than asked. A limit under 58k is raised to the floor, which is late
+// rather than early. One function, for the launch, the card details and the peek, whose
+// caption is compactsAtK.
 func (d *Daemon) autocompactK(t *store.Task) int {
-	k := int(d.cardLimit(t) * 11 / 10 / 1000)
+	k := int(d.cardLimit(t)*11/10/1000) + compactReserveK
 	// Never past the model's own window, when it is known: a window above it is accepted
 	// but not known to compact in time. An unnamed model is left to the range alone.
 	if w := modelWindowK(t.Model); w > 0 && k > w {
@@ -135,10 +143,19 @@ func (d *Daemon) autocompactK(t *store.Task) int {
 	return k
 }
 
-// Autocompact is the card details' two numbers: the limit and the runner's window.
+// compactsAtK is where the session will really compact, in thousands of tokens: the launch value less
+// claude's reserve. Derived from autocompactK, so the peek and the launch cannot disagree.
+func (d *Daemon) compactsAtK(t *store.Task) int {
+	return d.autocompactK(t) - compactReserveK
+}
+
+// Autocompact is the card details' numbers: the limit, the value the runner is started with
+// and where it really compacts.
 type Autocompact struct {
 	LimitK  int `json:"limit_k"`
 	WindowK int `json:"window_k,omitempty"`
+	// CompactsK is where the session really compacts, which is what the peek shows.
+	CompactsK int `json:"compacts_k,omitempty"`
 	// Note is set when the runner does not take the flag.
 	Note string `json:"note,omitempty"`
 }
@@ -153,7 +170,7 @@ func (d *Daemon) autocompactFor(t *store.Task) any {
 	if d.autocompactArgsFor(h) == nil {
 		return &Autocompact{LimitK: int(d.cardLimit(t) / 1000), Note: NoAutocompactNote}
 	}
-	return &Autocompact{LimitK: int(d.cardLimit(t) / 1000), WindowK: d.autocompactK(t)}
+	return &Autocompact{LimitK: int(d.cardLimit(t) / 1000), WindowK: d.autocompactK(t), CompactsK: d.compactsAtK(t)}
 }
 
 // cycleTimeNow is the clock the cycle reads. A variable for a test.

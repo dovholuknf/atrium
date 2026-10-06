@@ -19,7 +19,7 @@ const taskColumns = `id, title, why, repo, worktree, runner, hostname, pid, stat
 	model, throwaway, promote_to, pin_order, spawned_by, spawned_by_id, reported_at, report_sha,
 	report_unverified, tool_hook_seen_at, stop_hook_seen_at, prompted_at, alias,
 	effort, launch_args, launch_env, alias_note, owed_at,
-	human_at, human_via, parked_at, moved_to, moved_from`
+	human_at, human_via, parked_at, moved_to, moved_from, launch_cmd`
 
 func scanTask(sc interface{ Scan(...any) error }) (*Task, error) {
 	var (
@@ -45,6 +45,7 @@ func scanTask(sc interface{ Scan(...any) error }) (*Task, error) {
 		promptedAt   string
 		launchArgs   string
 		launchEnv    string
+		launchCmd    string
 		owedAt       string
 		humanAt      string
 		parkedAt     string
@@ -59,8 +60,15 @@ func scanTask(sc interface{ Scan(...any) error }) (*Task, error) {
 		&throwaway, &t.PromoteTo, &t.PinOrder, &t.SpawnedBy, &t.SpawnedByID,
 		&reportedAt, &t.ReportSHA, &unverified, &toolSeen, &stopSeen, &promptedAt, &t.Alias,
 		&t.Effort, &launchArgs, &launchEnv, &t.AliasNote, &owedAt,
-		&humanAt, &t.HumanVia, &parkedAt, &t.MovedTo, &t.MovedFrom); err != nil {
+		&humanAt, &t.HumanVia, &parkedAt, &t.MovedTo, &t.MovedFrom, &launchCmd); err != nil {
 		return nil, err
+	}
+	if launchCmd != "" {
+		var c LaunchCmd
+		if err := json.Unmarshal([]byte(launchCmd), &c); err != nil {
+			return nil, fmt.Errorf("task %s launch_cmd: %w", t.ID, err)
+		}
+		t.LaunchCmd = &c
 	}
 	if err := t.setLaunchExtras(launchArgs, launchEnv); err != nil {
 		return nil, err
@@ -472,7 +480,7 @@ func (s *Store) insertTask(t *Task) error {
 	// it has run, and neither has an opinion at the moment one is created.
 	_, err := s.db.Exec(`INSERT INTO task (`+taskColumns+`)
 		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,
-			?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+			?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 		t.ID, t.Title, t.Why, t.Repo, t.Worktree, t.Runner, t.Hostname, t.PID, t.Status,
 		ts(t.CreatedAt), ts(t.LastActivityAt), nil, nullable(t.WireName), overrides, t.Rank,
 		t.ExternalID, t.ResumeID, t.Branch, t.WindowName, 0, 0, tags, 0, t.Theme, "", "",
@@ -511,7 +519,9 @@ func (s *Store) insertTask(t *Task) error {
 		// No human has touched it and it is not parked.
 		"", "", "",
 		// And it has not moved, here or from anywhere. `SetMovedFrom` writes the second.
-		"", "")
+		"", "",
+		// And no launch command until a launch records it.
+		"")
 	return err
 }
 
@@ -1070,6 +1080,19 @@ func (s *Store) SetLaunchOptions(id, effort string, args []string, env map[strin
 	return s.guard(func() error {
 		_, err := s.db.Exec(`UPDATE task SET effort = ?, launch_args = ?, launch_env = ? WHERE id = ?`,
 			strings.TrimSpace(effort), string(a), string(e), id)
+		return err
+	})
+}
+
+// SetLaunchCommand records the command line atrium started this card's runner with, for the card details.
+// Written at every spawn, so it is the latest one. Names of env only, never values.
+func (s *Store) SetLaunchCommand(id string, c LaunchCmd) error {
+	raw, err := json.Marshal(c)
+	if err != nil {
+		return err
+	}
+	return s.guard(func() error {
+		_, err := s.db.Exec(`UPDATE task SET launch_cmd = ? WHERE id = ?`, string(raw), id)
 		return err
 	})
 }
