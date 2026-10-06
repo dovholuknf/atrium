@@ -22,6 +22,60 @@ if (!a) return 1;
 if (!b) return -1;
 return a.localeCompare(b);`;
 
+// THE NAMED RULES, one per entry in the settings dialog's "group by" picker. Plain code, never a stored expression: the board
+// stores only the NAME the operator picked. Each takes a task and returns the group name, "" for no group. `project` is the
+// default rule above and `repo` is the repo alone, without the org.
+const GROUP_RULES = {
+  repo: t => {
+    const parts = String(t.worktree || "").replace(/\\/g, "/").split("/").filter(Boolean);
+    const at = parts.findIndex(x => /^(github|gitlab|bitbucket)/i.test(x));
+    return at >= 0 && parts[at + 2] ? parts[at + 2] : (parts[parts.length - 1] || "");
+  },
+  room: t => String(t.room || ""),
+  status: t => String(t.status || ""),
+  runner: t => String(t.runner || ""),
+  // The part of a tag before its first colon (`origin:agent` is `origin`). A card lands under each prefix it carries.
+  prefix: t => [...new Set((t.tags || []).filter(x => String(x).includes(":")).map(x => String(x).split(":")[0]))]
+};
+
+// The labels the picker shows, in order. `code` is the operator's own expression.
+const GROUP_CHOICES = [
+  ["project", "project", "org/repo read from the worktree path"],
+  ["repo", "repo", "the repo name alone, without the org"],
+  ["room", "room", "the room the card runs on"],
+  ["status", "status", "working, waiting, and so on"],
+  ["runner", "runner", "which agent runs the card"],
+  ["prefix", "tag prefix", "the part of a tag before its colon, so origin:agent files under origin"],
+  ["window", "pile", "the pile the launcher put the card in, else its project"],
+  ["tag", "tag", "every tag on the card, a card with several appears under each"],
+  ["custom", "your groups", "the named buckets you made with the + button"],
+  ["recency", "age", "today, yesterday, this week, this month, dormant"],
+  ["code", "your own code", "a JavaScript rule you type"]
+];
+
+// The ways to order the groups, `code` being the comparator you type.
+const GROUP_ORDERS = [
+  ["name", "name", "alphabetical, anything ungrouped last"],
+  ["recent", "most recent activity", "the group holding the card that did something most recently first"],
+  ["count", "card count", "the biggest group first"],
+  ["code", "your own code", "a JavaScript comparator you type"]
+];
+
+// A comparator over group names for a named order, given each group's cards. Ties and ungrouped fall back to the name.
+function groupOrderCmp(order, cardsOf) {
+  const byName = (a, b) => !a ? 1 : !b ? -1 : a.localeCompare(b);
+  if (order === "count") return (a, b) => (cardsOf(b).length - cardsOf(a).length) || byName(a, b);
+  if (order === "recent") {
+    const now = Date.now();
+    const age = n => Math.min(Infinity, ...cardsOf(n).map(t => cardIdleSeconds(t, now)));
+    return (a, b) => {
+      const x = age(a), y = age(b);
+      return x === y ? byName(a, b) : x - y;
+    };
+  }
+  return byName;
+}
+
 // A DOER IS AN AGENT-LAUNCHED SESSION, see the note in js/terminal-list.js. Matched exactly as the daemon's `hasOriginTag` does.
 const DOER_TAG = "origin:agent";
 function isDoer(t) {

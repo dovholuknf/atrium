@@ -17979,6 +17979,110 @@ async function peekDashSection(browser, base) {
   if (!bad) console.log("peekDash ok");
 }
 
+// DISCRETE GROUP AND SORT CHOICES. The settings dialog picks a grouping rule and a group order by name, the code boxes show only
+// for "your own code", and nothing typed is stored for a named pick. The repos tab sorts by name, last push or date added and
+// remembers it across a reload.
+async function discreteGroupSection(browser, base) {
+  const was = tasksMode, wasHub = hubMode;
+  tasksMode = "untagged";
+  hubMode = true;
+  const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+  const errors = [];
+  try {
+    const p = await ctx.newPage();
+    p.on("pageerror", e => errors.push(String(e)));
+    await p.addInitScript(() => {
+      if (!sessionStorage.getItem("primed")) {
+        sessionStorage.setItem("primed", "1");
+        localStorage.setItem("atrium.skipconfirm", JSON.stringify({ "width-floor": true }));
+      }
+    });
+    const day = n => new Date(Date.now() - n * 864e5).toISOString();
+    const mk = (owner, repo, pushed, created) => ({ host: "github", owner, repo, url: "git@hub.atrium:" + owner + "/" + repo + ".git",
+      path: "/git/hub/github/" + owner + "/" + repo + ".git", created: day(created), main: { sha: "abcdef0123456789", at: day(pushed) }, branches: [] });
+    const repos = [mk("o", "alpha", 5, 10), mk("o", "bravo", 1, 30), mk("o", "charlie", 3, 20)];
+    await p.route(/\/_hub\/git\/repos$/, r => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ repos }) }));
+    await p.goto(base + "/", { waitUntil: "domcontentloaded" });
+    await p.waitForFunction(() => typeof lastTasks !== "undefined" && lastTasks.length >= 4, null, { timeout: slow(15000) });
+
+    // `shape` rewrites the cards inside the same call, so a poll cannot put the mock's own cards back in between.
+    const groups = shape => p.evaluate(shape => {
+      if (shape) lastTasks = lastTasks.map(new Function("t", "i", "return Object.assign({}, t, (" + shape + ")(t, i))"));
+      const g = grouper();
+      const names = [...new Set(lastTasks.flatMap(t => g.of(t)))];
+      return names.sort(g.cmp).join(",");
+    }, shape);
+    const prefs = patch => p.evaluate(patch => { setGrouping(patch); paintGrouping(); }, patch);
+    const pick = (id, v) => p.evaluate(([id, v]) => {
+      const el = document.getElementById(id);
+      el.value = v;
+      el.dispatchEvent(new Event("change", { bubbles: true }));
+    }, [id, v]);
+
+    // The picker offers every named rule and the code choice.
+    await p.evaluate(() => paintGrouping());
+    const opts = await p.evaluate(() => [...document.querySelectorAll("#s-group-mode option")].map(o => o.value).join(","));
+    for (const v of ["project", "repo", "room", "status", "runner", "prefix", "code"]) {
+      if (!opts.split(",").includes(v)) fail("discreteGroup: the group by picker has no " + v + ": " + opts);
+    }
+    const hidden = id => p.evaluate(id => document.getElementById(id).hidden, id);
+    if (!(await hidden("s-group-code")) || !(await hidden("s-order-code"))) fail("discreteGroup: the code boxes show with a named rule");
+
+    await pick("s-group-mode", "repo");
+    if ((await groups()) !== "atrium,filed,one,ziti,ziti-sdk-csharp") fail("discreteGroup: repo grouping gave " + await groups());
+    let saved = await p.evaluate(() => localStorage.getItem("atrium.grouping"));
+    if (/return|=>/.test(saved)) fail("discreteGroup: a named pick stored code: " + saved);
+    if (JSON.parse(saved).mode !== "repo") fail("discreteGroup: the pick was not saved: " + saved);
+
+    await pick("s-group-mode", "status");
+    if ((await groups()) !== "needs-input,running") fail("discreteGroup: status grouping gave " + await groups());
+
+    // Group order by card count and by most recent activity, over repo groups with two cards in one.
+    await pick("s-group-mode", "repo");
+    await pick("s-group-orderby", "count");
+    const two = "(t, i) => ({ worktree: i < 2 ? '/w/github/o/big' : '/w/github/o/solo' + i })";
+    if ((await groups(two)).split(",")[0] !== "big") fail("discreteGroup: count order did not put the biggest first: " + await groups(two));
+    const aged = "(t, i) => ({ worktree: '/w/github/o/r' + i, last_activity_at: new Date(Date.now() - (i === 2 ? 1 : 100 + i) * 1000).toISOString() })";
+    await pick("s-group-orderby", "recent");
+    if ((await groups(aged)).split(",")[0] !== "r2") fail("discreteGroup: recent order did not put the newest first: " + await groups(aged));
+    await pick("s-group-orderby", "name");
+    if ((await groups(aged)) !== "r0,r1,r2,r3,r4") fail("discreteGroup: name order gave " + await groups(aged));
+
+    // Your own code shows both boxes, and the old expressions run.
+    await pick("s-group-mode", "code");
+    await pick("s-group-orderby", "code");
+    if ((await hidden("s-group-code")) || (await hidden("s-order-code"))) fail("discreteGroup: your own code did not show the boxes");
+    await prefs({ by: "return 'x'" });
+    if ((await groups()) !== "x") fail("discreteGroup: typed code did not run: " + await groups());
+
+    // The phone page shares cardrules.js: it still loads it and the default project rule still answers.
+    if (!/js\/cardrules\.js/.test(fs.readFileSync(path.join(WEB_ROOT, "m", "index.html"), "utf8"))) fail("discreteGroup: the phone page no longer loads cardrules.js");
+    if ((await p.evaluate(() => cardProjectOf({ worktree: "/w/github/o/r" }))) !== "o/r") fail("discreteGroup: the default project rule broke");
+
+    // The repos tab.
+    await p.evaluate(() => switchView("hubrepos"));
+    await p.waitForFunction(() => hubRepos.loaded, null, { timeout: slow(10000) });
+    const order = () => p.evaluate(() => hubReposSorted(hubRepos.repos, hubReposSort()).map(r => r.repo).join(","));
+    const shown = () => p.evaluate(() => [...document.querySelectorAll("#hubrepos-list .hr-repo")].map(e => e.dataset.repo).join(","));
+    await p.waitForTimeout(200);
+    if ((await order()) !== "alpha,bravo,charlie") fail("discreteGroup: repos by name gave " + await order());
+    await pick("hubrepos-sort", "pushed");
+    if ((await order()) !== "bravo,charlie,alpha") fail("discreteGroup: repos by last push gave " + await order());
+    if ((await shown()).replace(/o\//g, "") !== "bravo,charlie,alpha") fail("discreteGroup: the repos tab did not redraw in push order: " + await shown());
+    await pick("hubrepos-sort", "added");
+    if ((await order()) !== "alpha,charlie,bravo") fail("discreteGroup: repos by date added gave " + await order());
+    await p.reload({ waitUntil: "domcontentloaded" });
+    await p.waitForFunction(() => typeof hubReposSort === "function", null, { timeout: slow(10000) });
+    if ((await p.evaluate(() => hubReposSort())) !== "added") fail("discreteGroup: the repos sort was not remembered across a reload");
+    if (errors.length) fail("discreteGroup: page errors: " + errors.join(" | "));
+  } finally {
+    tasksMode = was;
+    hubMode = wasHub;
+    await ctx.close();
+  }
+  if (!bad) console.log("discreteGroup ok");
+}
+
 async function bootCleanSection(browser, base) {
   const raw = fs.readFileSync(path.join(WEB_ROOT, "index.html"));
   const views = [{ w: 1400, h: 900 }, { w: 390, h: 844, phone: true }, { w: 412, h: 915, phone: true }];
@@ -24021,7 +24125,7 @@ async function main() {
       u001Audit: u001AuditSection,
       pasteStart: pasteStartSection, pasteDone: pasteDoneSection, pasteOldRoom: pasteOldRoomSection, pasteClose: pasteCloseSection,
       growlQuestionShots: growlQuestionShotsSection, growlQuestionBody: growlQuestionBodySection, growlReplyGrow: growlReplyGrowSection, growlChoices: growlChoicesSection, replies: repliesSection, repliesOf: repliesOfSection, repliesShots: repliesShotsSection, growlStable: growlStableSection, growlOnIt: growlOnItSection, mGrowlQuestion: mGrowlQuestionSection,
-      roomsSetup: roomsSetupSection, bootClean: bootCleanSection, peekDash: peekDashSection, mReload: mReloadSection, mReconnect: mReconnectSection, mActivityRead: mActivityReadSection, mReadRetry: mReadRetrySection, mWorking: mWorkingSection, mOwnMessages: mOwnMessagesSection, mBubbles: mBubblesSection, mRecapSheet: mRecapSheetSection,
+      roomsSetup: roomsSetupSection, discreteGroup: discreteGroupSection, bootClean: bootCleanSection, peekDash: peekDashSection, mReload: mReloadSection, mReconnect: mReconnectSection, mActivityRead: mActivityReadSection, mReadRetry: mReadRetrySection, mWorking: mWorkingSection, mOwnMessages: mOwnMessagesSection, mBubbles: mBubblesSection, mRecapSheet: mRecapSheetSection,
       mHomeOrder: mHomeOrderSection, cardUrlWayOut: cardUrlWayOutSection, phoneBoot: phoneBootSection, sayEnter: sayEnterSection, sendArrow: sendArrowSection, mTables: mTablesSection, mMarkdown: mMarkdownSection, mHostile: mHostileSection, mPictures: mPicturesSection, soundPhone: soundPhoneSection, phoneBell: phoneBellSection, mBell: mBellSection,
       mHomeOrder: mHomeOrderSection, cardUrlWayOut: cardUrlWayOutSection, phoneBoot: phoneBootSection, sayEnter: sayEnterSection, sendArrow: sendArrowSection, mTables: mTablesSection, mMarkdown: mMarkdownSection, mHostile: mHostileSection, mPictures: mPicturesSection, phoneRedirect: phoneRedirectSection,
       mHomeOrder: mHomeOrderSection, cardUrlWayOut: cardUrlWayOutSection, phoneBoot: phoneBootSection, sayEnter: sayEnterSection, sendArrow: sendArrowSection, mTables: mTablesSection, mMarkdown: mMarkdownSection, mHostile: mHostileSection, mPictures: mPicturesSection, mHidden: mHiddenSection, soundPhone: soundPhoneSection, phoneBell: phoneBellSection, mBell: mBellSection,
@@ -26089,6 +26193,7 @@ async function main() {
     await unit("fileOpenOutside", () => fileOpenOutsideSection(browser, base));
     await unit("roomsSetup", () => roomsSetupSection(browser, base));
     await unit("readTabSize", () => readTabSizeSection(browser, base));
+    await unit("discreteGroup", () => discreteGroupSection(browser, base));
     await unit("bootClean", () => bootCleanSection(browser, base));
     await unit("mWorking", () => mWorkingSection(browser));
     await unit("mOwnMessages", () => mOwnMessagesSection(browser));

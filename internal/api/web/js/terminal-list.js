@@ -379,7 +379,7 @@ function termSortHTML() {
 
 // What the folded tray says: the sort, the grouping, and what is being hidden,
 // in the words the controls use.
-const TRAY_GROUP_WORDS = { project: "project", window: "pile", tag: "tag", custom: "group", recency: "age" };
+const TRAY_GROUP_WORDS = { project: "project", window: "pile", tag: "tag", custom: "group", recency: "age", repo: "repo", room: "room", status: "status", runner: "runner", prefix: "tag prefix", code: "code" };
 function termTraySummary(c) {
   const p = typeof groupingPrefs === "function" ? groupingPrefs() : { on: false };
   const mode = p.on ? (p.mode || "project") : "off";

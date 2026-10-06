@@ -1069,7 +1069,7 @@ const GROUPING_KEY = "atrium.grouping";
 // `mode` is what a group IS: a project read out of the path, or a tag you
 // applied. `by` and `order` stay the escape hatch for anyone who wants
 // something neither of those describes.
-const GROUPING_DEFAULTS = { on: true, mode: "project", by: "", order: "", hues: {}, groups: [] };
+const GROUPING_DEFAULTS = { on: true, mode: "project", by: "", order: "", orderBy: "", picked: false, hues: {}, groups: [] };
 
 // A card with no tags still has to land somewhere when grouping by tag, and
 // "" would sort it in with a group whose name is empty.
@@ -1194,10 +1194,54 @@ function recencyBucket(t) {
   return "dormant";
 }
 
+// The group order the operator picked by name. Code when they typed a comparator or picked it, else a named order.
+function groupOrderChoice(p) {
+  return p.orderBy || (String(p.order || "").trim() ? "code" : "name");
+}
+
+// Whether the operator's own group-by expression is in charge. Picking `your own code` says so, and a board that saved
+// code before the picker existed (no `picked`, code written) keeps running it.
+function usesCode(p) {
+  return p.mode === "code" || (!p.picked && !!String(p.by || "").trim());
+}
+
+// Wraps a grouper so its groups are ordered by the named order, from the cards on the board now. The hand-ordered and age
+// groupers keep their own order, which is the point of them.
+function withGroupOrder(g, p) {
+  const o = groupOrderChoice(p);
+  if (!g || g.handOrdered || o === "name" || p.mode === "recency") return g;
+  if (o === "code") {
+    if (usesCode(p)) return g;
+    const order = compiled(p.order, DEFAULT_GROUP_ORDER, "a", "b");
+    if (!order) return g;
+    return Object.assign({}, g, { cmp: (a, b) => { try { return Number(order(a, b)) || 0; } catch (e) { return a.localeCompare(b); } } });
+  }
+  const cache = new Map();
+  const cardsOf = n => {
+    if (!cache.size) (lastTasks || []).forEach(t => (g.of(t) || []).forEach(k => {
+      if (!cache.has(k)) cache.set(k, []);
+      cache.get(k).push(t);
+    }));
+    return cache.get(n) || [];
+  };
+  return Object.assign({}, g, { cmp: groupOrderCmp(o, cardsOf) });
+}
+
 function grouper() {
+  return withGroupOrder(grouperByMode(), groupingPrefs());
+}
+
+function grouperByMode() {
   const p = groupingPrefs();
   if (!p.on) return null;
   groupingFault = "";
+
+  // A named rule from js/cardrules.js. A rule may answer a list (a card under several prefixes).
+  if (GROUP_RULES[p.mode] && !usesCode(p)) {
+    const rule = GROUP_RULES[p.mode];
+    return { many: p.mode === "prefix", of: t => { const r = rule(t); return Array.isArray(r) ? (r.length ? r : [""]) : [r]; },
+      cmp: groupOrderCmp("name") };
+  }
 
   // When you last touched it, in buckets rather than as a duration.
   //
@@ -1210,7 +1254,7 @@ function grouper() {
   // Everything past a month is dormant and drawn greyed. That bucket is the
   // point of the whole grouping: work you started and left, which is invisible
   // in a list ordered by anything else.
-  if (p.mode === "recency" && !String(p.by || "").trim()) {
+  if (p.mode === "recency" && !usesCode(p)) {
     return {
       // A LIST of one. Every caller iterates this, because grouping by tag
       // puts a card under several names, and a bare string iterates as its
@@ -1230,7 +1274,7 @@ function grouper() {
   // called "none". Most cards on any board were never launched with a window,
   // and a mode that put all of them together would be unusable on the day it
   // was turned on.
-  if (p.mode === "window" && !String(p.by || "").trim()) {
+  if (p.mode === "window" && !usesCode(p)) {
     const of = t => {
       const w = String(t.window_name || "").trim();
       return [w || defaultProjectOf(t)];
@@ -1245,7 +1289,7 @@ function grouper() {
   // Grouping by tag needs no compiled function. A card can carry several, so
   // this is the one grouper that puts a card in more than one place, and the
   // callers have to handle a list rather than a name.
-  if (p.mode === "tag" && !String(p.by || "").trim()) {
+  if (p.mode === "tag" && !usesCode(p)) {
     return {
       many: true,
       of: t => (t.tags && t.tags.length ? t.tags : [UNTAGGED]),
@@ -1267,7 +1311,7 @@ function grouper() {
   // them appears in each, the same as `tag` mode. `UNTAGGED` catches cards
   // with none of the named tags: the list is a curated view, so a tag that
   // is not on the list draws no bucket of its own.
-  if (p.mode === "custom" && !String(p.by || "").trim()) {
+  if (p.mode === "custom" && !usesCode(p)) {
     const groups = Array.isArray(p.groups) ? p.groups : [];
     const set = new Set(groups);
     const at = new Map(groups.map((n, i) => [n, i]));
@@ -1294,8 +1338,9 @@ function grouper() {
     };
   }
 
-  const by = compiled(p.by, DEFAULT_GROUP_BY, "task");
-  const order = compiled(p.order, DEFAULT_GROUP_ORDER, "a", "b");
+  const by = compiled(usesCode(p) ? p.by : "", DEFAULT_GROUP_BY, "task");
+  // The typed comparator only when it was picked. A named order is applied by withGroupOrder.
+  const order = groupOrderChoice(p) === "code" ? compiled(p.order, DEFAULT_GROUP_ORDER, "a", "b") : null;
   if (!by) return null;
 
   const safeBy = t => {
@@ -1306,7 +1351,7 @@ function grouper() {
     }
   };
   const safeOrder = (a, b) => {
-    if (!order) return a.localeCompare(b);
+    if (!order) return groupOrderCmp("name")(a, b);
     try { return Number(order(a, b)) || 0; }
     catch (e) {
       groupingFault = groupingFault || "your ordering code threw: " + e.message;

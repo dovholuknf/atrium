@@ -43,6 +43,38 @@ function setHubReposView(v) {
   hubReposPaint();
 }
 
+// THE SORT IS A PER-BROWSER PREFERENCE TOO, `atrium.reposSort`. name is the hub's own order, a to z, pushed is the newest push of main or any branch
+// first (a repo nothing was pushed to last), added is the newest repo the hub took in first. An unknown value is name.
+const HR_SORT_KEY = "atrium.reposSort";
+const HR_SORTS = ["name", "pushed", "added"];
+
+function hubReposSort() {
+  let v = "";
+  try { v = localStorage.getItem(HR_SORT_KEY) || ""; } catch (e) {}
+  return HR_SORTS.includes(v) ? v : "name";
+}
+
+function setHubReposSort(v) {
+  if (!HR_SORTS.includes(v)) v = "name";
+  try { localStorage.setItem(HR_SORT_KEY, v); } catch (e) {}
+  hubReposPaint();
+}
+
+// A copy in the chosen order. Ties and missing times fall back to the name, so the order is the same on every poll.
+function hubReposSorted(repos, sort) {
+  const id = r => (r.host || "") + "/" + r.owner + "/" + r.repo;
+  const name = (a, b) => id(a).localeCompare(id(b));
+  // The hub already answers by name, so that choice leaves its order alone.
+  if (sort === "name") return repos.slice();
+  const at = iso => { const t = iso ? Date.parse(iso) : NaN; return isNaN(t) ? -Infinity : t; };
+  const pushed = r => { const l = hubReposStats(r).last; return l == null ? -Infinity : -l; };
+  const key = sort === "pushed" ? pushed : sort === "added" ? r => at(r.created) : null;
+  return repos.slice().sort((a, b) => {
+    const x = key(a), y = key(b);
+    return x === y ? name(a, b) : y > x ? 1 : -1;
+  });
+}
+
 function paintHubReposTab() {
   const tab = document.querySelector('.tab[data-view="hubrepos"]');
   if (!tab) return;
@@ -429,6 +461,11 @@ function hubReposPaint() {
   const list = document.getElementById("hubrepos-list");
   if (!list) return;
   hubReposSyncSwitch();
+  const sortBox = document.getElementById("hubrepos-sort");
+  if (sortBox) {
+    sortBox.value = hubReposSort();
+    sortBox.hidden = hubReposView() === "requests";
+  }
   const count = document.getElementById("hubrepos-count");
   const view = hubReposView();
   if (count) count.textContent = view === "requests" ? (cr.loaded ? String(crOpen().length) : "") : hubRepos.note || !hubRepos.loaded ? "" : String(hubRepos.repos.length);
@@ -436,7 +473,10 @@ function hubReposPaint() {
   if (view === "requests") html = crView();
   else if (hubRepos.note) html = '<p class="pane-lead hr-note" role="alert">' + esc(hubRepos.note) + "</p>";
   else if (!hubRepos.repos.length) html = hubReposHero(null);
-  else html = view === "ledger" ? hubReposLedger(hubRepos.repos) : view === "feed" ? hubReposFeed(hubRepos.repos) : hubReposShelf(hubRepos.repos);
+  else {
+    const sorted = hubReposSorted(hubRepos.repos, hubReposSort());
+    html = view === "ledger" ? hubReposLedger(sorted) : view === "feed" ? hubReposFeed(sorted) : hubReposShelf(sorted);
+  }
   // A control the keyboard is on survives the repaint, so toggling ssh | http or opening a repo does not drop focus.
   const a = document.activeElement;
   const keep = a && list.contains(a) && a.dataset.act ? { act: a.dataset.act, repo: a.dataset.repo, mode: a.dataset.mode } : null;
@@ -512,7 +552,7 @@ function hubReposSwitchKey(e) {
   if (b) b.focus();
 }
 
-addEventListener("storage", e => { if (e.key === HR_VIEW_KEY || e.key === null) hubReposPaint(); });
+addEventListener("storage", e => { if (e.key === HR_VIEW_KEY || e.key === HR_SORT_KEY || e.key === null) hubReposPaint(); });
 
 document.addEventListener("DOMContentLoaded", () => {
   const list = document.getElementById("hubrepos-list");
@@ -528,6 +568,8 @@ document.addEventListener("DOMContentLoaded", () => {
     sw.addEventListener("keydown", hubReposSwitchKey);
   }
   hubReposSyncSwitch();
+  const sortBox = document.getElementById("hubrepos-sort");
+  if (sortBox) sortBox.addEventListener("change", () => setHubReposSort(sortBox.value));
   const refresh = document.getElementById("hubrepos-refresh");
   if (refresh) refresh.addEventListener("click", loadHubRepos);
 });

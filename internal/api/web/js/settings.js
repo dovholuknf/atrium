@@ -100,8 +100,18 @@ function paintGrouping() {
   btn.textContent = g.on ? "enabled" : "disabled";
   btn.dataset.tip = g.on ? "click to disable grouping" : "click to enable grouping";
   btn.className = g.on ? "go" : "";
-  document.getElementById("s-group-code").hidden = !g.on;
-  document.getElementById("s-order-code").hidden = !g.on;
+  const mode = document.getElementById("s-group-mode");
+  mode.innerHTML = GROUP_CHOICES.map(([v, label, tip]) =>
+    `<option value="${v}" title="${esc(tip)}">${esc(label)}</option>`).join("");
+  mode.value = usesCode(g) ? "code" : (g.mode || "project");
+  mode.disabled = !g.on;
+  const ord = document.getElementById("s-group-orderby");
+  ord.innerHTML = GROUP_ORDERS.map(([v, label, tip]) =>
+    `<option value="${v}" title="${esc(tip)}">${esc(label)}</option>`).join("");
+  ord.value = groupOrderChoice(g);
+  ord.disabled = !g.on;
+  document.getElementById("s-group-code").hidden = !g.on || !usesCode(g);
+  document.getElementById("s-order-code").hidden = !g.on || groupOrderChoice(g) !== "code";
   document.getElementById("s-group-by").value = g.by || DEFAULT_GROUP_BY;
   document.getElementById("s-group-order").value = g.order || DEFAULT_GROUP_ORDER;
 }
@@ -188,7 +198,7 @@ function flashSaved(el) {
 
 function paintGroupSegs() {
   const p = groupingPrefs();
-  const mode = p.on ? (p.mode || "project") : "off";
+  const mode = p.on ? (usesCode(p) ? "code" : (p.mode || "project")) : "off";
   const opts = [
     ["project", "by project", "cut the cards into projects, read from the worktree path"],
     ["window", "by pile",

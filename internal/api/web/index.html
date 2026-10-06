@@ -795,6 +795,11 @@ Tokens only: no dollar figure is worked out.">?</span>
         <button type="button" role="radio" data-hrview="feed" aria-checked="false" aria-label="Feed: every push, newest first" title="Feed"><svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><circle cx="3.5" cy="4" r="1" fill="currentColor"/><circle cx="3.5" cy="8" r="1" fill="currentColor"/><circle cx="3.5" cy="12" r="1" fill="currentColor"/><path d="M7 4h7M7 8h7M7 12h5"/></svg><span>Feed</span></button>
         <button type="button" role="radio" data-hrview="requests" aria-checked="false" aria-label="Requests: change requests between rooms" title="Requests"><svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="4" cy="3.5" r="1.6"/><circle cx="4" cy="12.5" r="1.6"/><circle cx="12" cy="8" r="1.6"/><path d="M4 5.1v5.8M5.6 3.8C9 3.8 12 5 12 6.4"/></svg><span>Requests</span></button>
       </div>
+      <select id="hubrepos-sort" aria-label="sort the repos">
+        <option value="name">sort: name</option>
+        <option value="pushed">sort: last push</option>
+        <option value="added">sort: date added</option>
+      </select>
       <button id="hubrepos-refresh" type="button" aria-label="refresh the repos list">refresh</button></div>
     <div id="hubrepos-list"></div>
   </div>
@@ -1513,7 +1518,14 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
         <button onclick="resetGrouping()">reset the grouping rule</button>
       </div>
       <span class="hintline">Groups cards inside every column. The default reads a project out of
-        the worktree path.</span>
+        the worktree path. The pickers below choose a named rule.</span>
+    </div>
+    <div class="field">
+      <label class="eyebrow" for="s-group-mode">group by</label>
+      <select id="s-group-mode"></select>
+      <label class="eyebrow" for="s-group-orderby">order the groups by</label>
+      <select id="s-group-orderby"></select>
+      <span class="hintline">Pick a rule by name. <b>your own code</b> shows the two boxes below.</span>
     </div>
     <div class="field" id="s-group-code" hidden>
       <label class="eyebrow" for="s-group-by">group a card &mdash; <code>(task) =&gt; string</code></label>

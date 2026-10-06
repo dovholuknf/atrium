@@ -617,11 +617,13 @@ type BranchView struct {
 // RepoView is one repository as GET /_hub/git/repos answers it. NEVER A PATH ON THE HUB'S DISK:
 // `path` is the URL path the next item serves it at.
 type RepoView struct {
-	Host     string       `json:"host"`
-	Owner    string       `json:"owner"`
-	Repo     string       `json:"repo"`
-	URL      string       `json:"url"`
-	Path     string       `json:"path"`
+	Host  string `json:"host"`
+	Owner string `json:"owner"`
+	Repo  string `json:"repo"`
+	URL   string `json:"url"`
+	Path  string `json:"path"`
+	// Created is when the store took the repository in, the marker file's time. Empty when it cannot be read.
+	Created  string       `json:"created,omitempty"`
 	Main     MainView     `json:"main"`
 	Branches []BranchView `json:"branches"`
 }
@@ -664,6 +666,9 @@ func (s *Store) viewEntry(ctx context.Context, e Entry) RepoView {
 	v := RepoView{
 		Host: e.Ref.Host, Owner: e.Ref.Owner, Repo: e.Ref.Repo, URL: CloneURL(e.Ref),
 		Path: "/git/hub/" + e.Ref.Name() + ".git", Branches: []BranchView{},
+	}
+	if fi, err := os.Stat(filepath.Join(e.Dir, Marker)); err == nil {
+		v.Created = fi.ModTime().UTC().Format(time.RFC3339)
 	}
 	heads, _ := s.heads(ctx, e.Dir)
 	// THE PUSH LOG says who owns each branch and when it was last pushed. A row whose ref is gone is

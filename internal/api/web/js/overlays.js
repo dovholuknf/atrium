@@ -1242,16 +1242,16 @@ function setHookNag(on) {
 
 function setGroupMode(mode) {
   const p = groupingPrefs();
-  const now = p.on ? (p.mode || "project") : "off";
+  const now = p.on ? (usesCode(p) ? "code" : (p.mode || "project")) : "off";
   if (now === mode) return;
-  setGrouping(mode === "off" ? { on: false } : { on: true, mode });
+  setGrouping(mode === "off" ? { on: false } : { on: true, mode, picked: true });
   paintGrouping();
   paintGroupSegs();
 }
 
 function resetGrouping() {
   const wasOff = !groupingPrefs().on;
-  setGrouping({ by: "", order: "" });
+  setGrouping({ by: "", order: "", orderBy: "", picked: false, mode: "project" });
   paintGrouping();
   // Said differently when grouping is switched off, because otherwise this
   // button reports success for something with no visible effect and reads as
@@ -1264,6 +1264,11 @@ function resetGrouping() {
 
 // Saved on blur rather than on every keystroke, so a half-typed function is
 // not compiled and reported as broken while it is being written.
+document.getElementById("s-group-mode").addEventListener("change", e => setGroupMode(e.target.value));
+document.getElementById("s-group-orderby").addEventListener("change", e => {
+  setGrouping({ orderBy: e.target.value });
+  paintGrouping();
+});
 document.getElementById("s-group-by").addEventListener("change", e => {
   setGrouping({ by: e.target.value === DEFAULT_GROUP_BY ? "" : e.target.value });
 });

@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -746,7 +747,15 @@ func TestViewIsTheExactShapeTheBoardReads(t *testing.T) {
 	git(t, dir, "fetch", "-q", "--no-tags", x.forge.dir, "+refs/heads/fix/a:refs/heads/fix/a", "+refs/heads/fix/b:refs/heads/fix/b")
 	git(t, dir, "update-ref", "refs/heads/claude/main", sha)
 
-	raw, _ := json.Marshal(map[string]any{"repos": mustView(t, x.s)})
+	views := mustView(t, x.s)
+	for _, v := range views {
+		if _, err := time.Parse(time.RFC3339, v.Created); err != nil {
+			t.Fatalf("%s created = %q", v.Repo, v.Created)
+		}
+	}
+	raw, _ := json.Marshal(map[string]any{"repos": views})
+	// created is the moment the test ran, so the shape is compared without it.
+	raw = regexp.MustCompile(`"created":"[^"]*",`).ReplaceAll(raw, nil)
 	want := `{"repos":[` +
 		`{"host":"github","owner":"openziti","repo":"zrok","url":"git@hub.atrium:openziti/zrok.git",` +
 		`"path":"/git/hub/github/openziti/zrok.git",` +
