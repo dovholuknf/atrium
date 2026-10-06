@@ -1258,7 +1258,9 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
       <select id="skinlab-pick" onchange="previewLab(this.value)"></select>
       <button class="lab-step" onclick="stepLab(1)" aria-label="the next one" data-tip="the next one">&#8250;</button>
     </div>
-    <div class="lab-row lab-answers">
+    <div class="tshow" id="skinlab-show" hidden></div>
+    <div class="lab-row lab-answers wrap" id="skinlab-mine" hidden></div>
+    <div class="lab-row lab-answers" id="skinlab-std">
       <button class="go" onclick="busyWhile(this, keepLab, 'saving…')" data-tip="keep this one">use it</button>
       <button id="skinlab-default" onclick="busyWhile(this, defaultLab, 'saving…')"></button>
       <button onclick="cancelLab()" data-tip="put back what was there">cancel</button>
@@ -1266,7 +1268,7 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
     <div class="lab-row lab-answers" id="skinlab-more" hidden>
       <button id="skinlab-extra" onclick="extraLab()"></button>
     </div>
-    <span class="lab-hint">Arrow keys walk the list. Nothing is saved until you press
+    <span class="lab-hint" id="skinlab-hint">Arrow keys walk the list. Nothing is saved until you press
       <b>use it</b>.</span>
   </div>
 </div>
@@ -1568,7 +1570,7 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
     </div>
     <div class="field">
       <label class="eyebrow">preview <span id="rc-for"></span></label>
-      <div id="rc-preview"></div>
+      <div class="tshow" id="rc-preview"></div>
       <div class="picker">
         <button class="go" id="rc-save" onclick="repoColorsSave()">save</button>
         <button id="rc-revert" onclick="repoColorsRevert()">revert</button>
@@ -2855,9 +2857,7 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
     </div>
     <div class="thgrid" id="th-colours"></div>
     <div class="field" style="margin-top:var(--vs-4)">
-      <div class="thsample" id="th-sample"></div>
-      <span class="hintline">The attached terminal follows this as you type, so a real session is
-        the preview whenever there is one. This block is what there is when there is not.</span>
+      <div class="tshow" id="th-sample"></div>
     </div>
     </section>
   </div>

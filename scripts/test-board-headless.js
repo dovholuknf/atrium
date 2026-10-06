@@ -1235,6 +1235,8 @@ async function termWearSection(browser, base) {
     try { all = JSON.parse(localStorage.getItem("atrium.skipconfirm") || "{}"); } catch (e) {}
     all["width-floor"] = true;
     localStorage.setItem("atrium.skipconfirm", JSON.stringify(all));
+    // This section is about the switches one at a time, from the old starting point. The default is `themePicker`'s.
+    if (localStorage.getItem("atrium.termWear.idle") === null) localStorage.setItem("atrium.termWear.idle", "0");
   });
   const was = tasksMode;
   const live = (id, theme) => Object.assign({}, T1, {
@@ -1460,7 +1462,10 @@ async function bridgeSection(browser, base) {
           fail("copy " + (i + 1) + "'s bridge does not carry the row's border " + where + ": " + br.bw + " " +
             br.bc + ", the row's is " + c.bc + ".");
         }
-        if (br.bg !== c.bg) fail("copy " + (i + 1) + "'s bridge is not the row's background " + where + ".");
+        // A card nobody coloured is the skin's gradient, which has no colour to copy: its bridge is the terminal's.
+        if (/\bplain\b/.test(c.cls)) {
+          if (/rgba\(0, 0, 0, 0\)/.test(br.bg)) fail("copy " + (i + 1) + "'s bridge is see-through " + where + ".");
+        } else if (br.bg !== c.bg) fail("copy " + (i + 1) + "'s bridge is not the row's background " + where + ".");
         // The terminal's frame is as thick as the bridge running into it, and the
         // bridge covers the pane's left edge, or a line crosses where they meet.
         if (got.pane.bw !== br.bw || got.pane.bl !== br.bw.split("/")[0]) {
@@ -3452,8 +3457,7 @@ async function themeLabSection(browser, base) {
     let r = await state();
     if (!r.open || r.title !== "how this terminal looks") fail("try a theme opened '" + r.title + "' (open " + r.open + ").");
     if (r.value !== "nord") fail("the panel opened on '" + r.value + "', not the card's nord.");
-    if (r.fallback !== "use the project") fail("the default answer reads '" + r.fallback + "'.");
-    if (!r.extra || !/^edit/.test(r.extra)) fail("the panel has no edit button for a terminal: " + r.extra);
+    if (r.extra) fail("the theme panel grew an extra button: " + r.extra);
     if (r.old) fail("the inline header picker is still in the page.");
 
     // The arrows walk the list and repaint the terminal as they go.
@@ -3483,7 +3487,8 @@ async function themeLabSection(browser, base) {
 
     // The project answer saves an empty theme, once.
     await p.evaluate(() => pickTheme());
-    await p.click("#skinlab-default");
+    await p.selectOption("#skinlab-pick", "");
+    await p.click("#skinlab-mine button >> text=this card");
     await p.waitForFunction(() => !document.getElementById("skinlab") || document.getElementById("skinlab").hidden);
     await p.waitForFunction(() => termTask.theme === "", null, { timeout: slow(5000) });
     if (patches.length !== 1 || !/tl-a .*"theme":""/.test(patches[0])) fail("use the project did not save an empty theme once: " + patches.join(" | "));
@@ -3492,18 +3497,11 @@ async function themeLabSection(browser, base) {
     patches.length = 0;
     await p.evaluate(() => pickTheme());
     await p.selectOption("#skinlab-pick", "dracula");
-    await p.click("#skinlab .lab-answers button.go");
+    await p.click("#skinlab-mine button.go");
     await p.waitForFunction(() => termTask.theme === "dracula", null, { timeout: slow(5000) });
     r = await state();
     if (r.open) fail("use it left the panel open.");
     if (patches.length !== 1 || !/tl-a .*"theme":"dracula"/.test(patches[0])) fail("use it did not save dracula once: " + patches.join(" | "));
-
-    // Edit opens the theme editor on what is selected.
-    await p.evaluate(() => pickTheme());
-    await p.selectOption("#skinlab-pick", "nord");
-    await p.click("#skinlab-extra");
-    if (!await p.evaluate(() => document.getElementById("theme").open)) fail("edit did not open the theme editor.");
-    await p.evaluate(() => { document.getElementById("theme").close(); cancelLab(); });
 
     // The same panel, for the board's skin.
     await p.evaluate(() => { pastePrefs = pastePrefs || {}; if (!(pastePrefs.board_skins || []).length) pastePrefs.board_skins = ["dark", "light"]; });
@@ -3657,7 +3655,7 @@ async function themePreviewSection(browser, base) {
       pickTheme();
       document.getElementById("skinlab-pick").value = "dracula";
       previewTheme("dracula");
-      await keepLab();
+      await answerLab(0);
     });
     r = await read();
     if (r.a !== bg.dracula) fail("after use it the row is " + r.a + ", not dracula.");
@@ -18288,6 +18286,188 @@ async function repoColorsSection(browser, base) {
   if (!bad) console.log("repoColors ok");
 }
 
+// THE THEME PICKER AND ITS PREVIEW, four things: the picker keeps a theme for one card or for the whole repo; attaching
+// never recolours a card; the panel holds only what is acted on; and one card-and-terminal preview serves the themes
+// editor, the card colours pane and the panel.
+async function themePickerSection(browser, base) {
+  const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+  const p = await ctx.newPage();
+  const errors = [];
+  p.on("pageerror", e => errors.push(String(e)));
+  await p.addInitScript(() => {
+    localStorage.setItem("atrium.skipconfirm", JSON.stringify({ "width-floor": true }));
+  });
+  const tag = "themePicker: ";
+  const was = tasksMode;
+  const live = (id, extra) => Object.assign({}, T1, {
+    id, display_title: "row " + id, theme: "", supervised: true, pinned: true, worktree: "/tmp/tpk/" + id
+  }, extra);
+  try {
+    wornTasks = [live("pk-a", { worktree: "/Users/me/git/github/acme/widgets/main" }), live("pk-b"), live("pk-c", { theme: "nord" })];
+    tasksMode = "worn";
+    await p.goto(base, { waitUntil: "domcontentloaded" });
+    await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
+    await p.click('.tab[data-view="terms"]');
+    await p.waitForSelector('#term-list .card.tab[data-id="pk-a"]', { state: "attached", timeout: slow(15000) });
+    await p.waitForTimeout(1000);
+    await p.evaluate(() => repoColorsHave({ card_colors: { default: "", repos: {} } }));
+    const attach = id => p.evaluate(async id => {
+      termTask = lastTasks.find(t => t.id === id);
+      term = { options: {}, dispose() {} };
+      await loadCards().catch(() => {}).then(renderTermList);
+      await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+      placeTabBridge();
+    }, id);
+    const panel = () => p.evaluate(() => {
+      const lab = document.getElementById("skinlab");
+      const vis = e => !!e && !e.hidden && !!e.offsetParent;
+      const first = document.querySelector("#skinlab-pick option");
+      return {
+        open: !lab.hidden,
+        buttons: [...document.querySelectorAll("#skinlab-mine button")].map(b => b.textContent),
+        tips: [...lab.querySelectorAll("#skinlab-mine [data-tip], #skinlab-mine [title]")].length,
+        first: first && first.textContent,
+        hint: vis(document.getElementById("skinlab-hint")), std: vis(document.getElementById("skinlab-std")),
+        extra: vis(document.getElementById("skinlab-extra")),
+        card: !!document.querySelector("#skinlab-show .tshow-card .card"),
+        stamped: !!document.querySelector("#skinlab-show [data-id], #skinlab-show [onclick]"),
+        termH: (document.querySelector("#skinlab-show .tshow-term") || { offsetHeight: 0 }).offsetHeight
+      };
+    });
+
+    // 1 and 3: the panel for a card in a repo.
+    await attach("pk-a");
+    await p.evaluate(() => pickTheme());
+    let r = await panel();
+    if (JSON.stringify(r.buttons) !== JSON.stringify(["this card", "every card in github/acme/widgets", "cancel"])) fail(tag + "the panel's buttons are " + JSON.stringify(r.buttons));
+    if (r.first !== "plain") fail(tag + "the first option reads '" + r.first + "', not plain.");
+    if (r.hint || r.std || r.extra || r.tips) fail(tag + "the panel still has sub-text, tooltips or the old buttons: " + JSON.stringify(r));
+    if (!r.card || r.stamped) fail(tag + "the panel has no card, or a card that answers clicks: " + JSON.stringify(r));
+    if (r.termH < 200) fail(tag + "the terminal sample is only " + r.termH + "px high.");
+    // The card in the panel follows the selection.
+    await p.selectOption("#skinlab-pick", "dracula");
+    const wore = await p.evaluate(() => document.querySelector("#skinlab-show .tshow-card .card").getAttribute("style") || "");
+    if (!/#282a36/i.test(wore) && !wore.includes("--card-0")) fail(tag + "the panel's card did not take dracula: " + wore);
+    const termBg = await p.evaluate(() => getComputedStyle(document.querySelector("#skinlab-show .tshow-term")).backgroundColor);
+    if (termBg !== "rgb(40, 42, 54)") fail(tag + "the panel's terminal sample is " + termBg + ", not dracula's.");
+    // Every card in the repo: written to the card colours, this card left to follow it.
+    await p.click("#skinlab-mine button >> text=every card in");
+    await p.waitForFunction(() => repoColors.get().repos["github/acme/widgets"] === "dracula", null, { timeout: slow(5000) })
+      .catch(() => fail(tag + "every card in the repo did not write card_colors.repos"));
+    if (await p.evaluate(() => !!document.querySelector("#skinlab") && !document.getElementById("skinlab").hidden)) fail(tag + "the panel stayed open.");
+    const stored = await p.evaluate(async () => (await api("/v1/settings")).card_colors.repos["github/acme/widgets"]);
+    if (stored !== "dracula") fail(tag + "the daemon holds '" + stored + "' for the repo.");
+    // A card without a repo is offered only itself.
+    await attach("pk-b");
+    await p.evaluate(() => pickTheme());
+    r = await panel();
+    if (JSON.stringify(r.buttons) !== JSON.stringify(["this card", "cancel"])) fail(tag + "a card with no repo is offered " + JSON.stringify(r.buttons));
+    await p.evaluate(() => cancelLab());
+    // And the first option names what it falls back to.
+    await attach("pk-a");
+    await p.evaluate(() => pickTheme());
+    r = await panel();
+    if (r.first !== "repo colour: dracula") fail(tag + "with a repo colour the first option reads '" + r.first + "'.");
+    await p.evaluate(() => cancelLab());
+
+    // 2: attaching never changes a card. Uncoloured and coloured, in the default settings.
+    await p.evaluate(() => repoColorsHave({ card_colors: { default: "", repos: {} } }));
+    const look = id => p.evaluate(id => {
+      const el = document.querySelector('#term-list .card.tab[data-id="' + id + '"]');
+      const s = getComputedStyle(el);
+      return { bg: s.backgroundColor, img: s.backgroundImage, edge: s.borderTopColor, title: getComputedStyle(el.querySelector(".title")).color,
+        tabc: el.style.getPropertyValue("--tabc") };
+    }, id);
+    await p.evaluate(() => { termTask = null; term = null; });
+    await p.evaluate(async () => { await loadCards().catch(() => {}).then(renderTermList); });
+    for (const id of ["pk-b", "pk-c"]) {
+      const off = await look(id);
+      await attach(id);
+      const on = await look(id);
+      // A worn row's frame says which one is attached, so its edge may thicken; what the card is painted in may not move.
+      for (const k of id === "pk-b" ? ["bg", "img", "edge", "title"] : ["bg", "img", "title"]) {
+        if (off[k] !== on[k]) fail(tag + id + " changed " + k + " on attach: " + off[k] + " -> " + on[k]);
+      }
+      await p.evaluate(() => { termTask = null; term = null; });
+      await p.evaluate(async () => { await loadCards().catch(() => {}).then(renderTermList); });
+    }
+    await attach("pk-b");
+    const plainRow = await look("pk-b");
+    if (plainRow.tabc) fail(tag + "an uncoloured row carries a tab colour: " + plainRow.tabc);
+    const palette = await p.evaluate(() => themeFor(lastTasks.find(t => t.id === "pk-b")));
+    if (/^#040b14$/i.test(palette.background) || /^#00e3b0$/i.test(palette.cursor)) fail(tag + "an uncoloured card's terminal is still atrium green: " + JSON.stringify(palette));
+    const setDefault = await p.evaluate(() => { repoColorsHave({ card_colors: { default: "nord", repos: {} } }); return themeFor(lastTasks.find(t => t.id === "pk-b")).background; });
+    if (setDefault.toLowerCase() !== "#2e3440") fail(tag + "a stored default is not used for an uncoloured card: " + setDefault);
+    await p.evaluate(() => repoColorsHave({ card_colors: { default: "", repos: {} } }));
+
+    // 4: one preview, three places.
+    await p.evaluate(() => paintSettings());
+    await p.evaluate(() => { rcDraft = null; paintRepoColors(true); });
+    const rc = await p.evaluate(() => ({ card: !!document.querySelector("#rc-preview .tshow-card .card"), term: !!document.querySelector("#rc-preview .tshow-term"),
+      stamped: !!document.querySelector("#rc-preview [data-id], #rc-preview [onclick]") }));
+    if (!rc.card || !rc.term || rc.stamped) fail(tag + "the card colours pane's preview is " + JSON.stringify(rc));
+    await p.evaluate(() => { rcFocus = "default"; repoColorsPick("default", "dracula"); });
+    const rcBg = await p.evaluate(() => getComputedStyle(document.querySelector("#rc-preview .tshow-term")).backgroundColor);
+    if (rcBg !== "rgb(40, 42, 54)") fail(tag + "the card colours preview terminal is " + rcBg + ".");
+    await p.evaluate(() => { openThemeEditor("nord"); });
+    const ed = await p.evaluate(() => ({ card: !!document.querySelector("#th-sample .tshow-card .card"), h: document.querySelector("#th-sample .tshow-term").offsetHeight,
+      sub: /attached terminal follows/.test(document.getElementById("theme").textContent) }));
+    if (!ed.card || ed.h < 200) fail(tag + "the editor preview is " + JSON.stringify(ed));
+    if (ed.sub) fail(tag + "the editor still explains the preview under it.");
+    await p.evaluate(() => { const b = document.getElementById("th-c-background"); b.value = "#102030"; b.dispatchEvent(new Event("input")); });
+    const live1 = await p.evaluate(() => ({ term: getComputedStyle(document.querySelector("#th-sample .tshow-term")).backgroundColor,
+      card: document.querySelector("#th-sample .tshow-card .card").getAttribute("style") }));
+    if (live1.term !== "rgb(16, 32, 48)" || !/16,\s*32,\s*48|#102030|rgb\(16, 32, 48\)/i.test(live1.card || "")) fail(tag + "the editor preview did not follow the colours: " + JSON.stringify(live1));
+    await p.evaluate(() => document.getElementById("theme").close());
+    if (errors.length) fail(tag + "the page threw: " + errors.join(" | "));
+  } finally {
+    tasksMode = was;
+    await ctx.close();
+  }
+  if (!bad) console.log("themePicker ok");
+}
+
+// NOT IN THE DEFAULT RUN: `THEMEPICKER_SHOTS=/dir HEADLESS_ONLY=themePickerShots`. Writes the three pictures the change is
+// judged by, and uses only what both sides of the change have, so it runs before and after.
+async function themePickerShotsSection(browser, base) {
+  const dir = process.env.THEMEPICKER_SHOTS;
+  if (!dir) return;
+  const prefix = process.env.THEMEPICKER_PREFIX || "after";
+  const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+  const p = await ctx.newPage();
+  await p.addInitScript(() => localStorage.setItem("atrium.skipconfirm", JSON.stringify({ "width-floor": true })));
+  const was = tasksMode;
+  const live = (id, extra) => Object.assign({}, T1, { id, display_title: "row " + id, theme: "", supervised: true, pinned: true, worktree: "/tmp/shot/" + id }, extra);
+  try {
+    wornTasks = [live("sh-a", { display_title: "fix the flaky retry test", worktree: "/Users/me/git/github/acme/widgets/main" }),
+      live("sh-b", { display_title: "second session" })];
+    tasksMode = "worn";
+    await p.goto(base, { waitUntil: "domcontentloaded" });
+    await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
+    await p.click('.tab[data-view="terms"]');
+    await p.waitForSelector('#term-list .card.tab[data-id="sh-a"]', { state: "attached", timeout: slow(15000) });
+    await p.waitForTimeout(1000);
+    await p.evaluate(async () => {
+      termTask = lastTasks.find(t => t.id === "sh-a");
+      term = { options: {}, dispose() {} };
+      await loadCards().catch(() => {}).then(renderTermList);
+      paintPaneBg(themeFor(termTask));
+      await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+      placeTabBridge();
+    });
+    await p.screenshot({ path: require("path").join(dir, prefix + "-attached-uncoloured.png") });
+    await p.evaluate(() => { pickTheme(); const s = document.getElementById("skinlab-pick"); s.value = "nord"; previewLab(s.value); });
+    await p.waitForTimeout(300);
+    await p.screenshot({ path: require("path").join(dir, prefix + "-picker.png") });
+    await p.evaluate(() => { cancelLab(); openThemeEditor("nord"); document.getElementById("th-sample").scrollIntoView({ block: "end" }); });
+    await p.waitForTimeout(300);
+    await p.screenshot({ path: require("path").join(dir, prefix + "-themes-editor.png") });
+  } finally {
+    tasksMode = was;
+    await ctx.close();
+  }
+}
+
 async function bootCleanSection(browser, base) {
   const raw = fs.readFileSync(path.join(WEB_ROOT, "index.html"));
   const views = [{ w: 1400, h: 900 }, { w: 390, h: 844, phone: true }, { w: 412, h: 915, phone: true }];
@@ -24332,7 +24512,7 @@ async function main() {
       u001Audit: u001AuditSection,
       pasteStart: pasteStartSection, pasteDone: pasteDoneSection, pasteOldRoom: pasteOldRoomSection, pasteClose: pasteCloseSection,
       growlQuestionShots: growlQuestionShotsSection, growlQuestionBody: growlQuestionBodySection, growlReplyGrow: growlReplyGrowSection, growlChoices: growlChoicesSection, replies: repliesSection, repliesOf: repliesOfSection, repliesShots: repliesShotsSection, growlStable: growlStableSection, growlOnIt: growlOnItSection, mGrowlQuestion: mGrowlQuestionSection,
-      roomsSetup: roomsSetupSection, discreteGroup: discreteGroupSection, groupingPerView: groupingPerViewSection, repoColors: repoColorsSection, bootClean: bootCleanSection, peekDash: peekDashSection, mReload: mReloadSection, mReconnect: mReconnectSection, mActivityRead: mActivityReadSection, mReadRetry: mReadRetrySection, mWorking: mWorkingSection, mOwnMessages: mOwnMessagesSection, mBubbles: mBubblesSection, mRecapSheet: mRecapSheetSection,
+      roomsSetup: roomsSetupSection, discreteGroup: discreteGroupSection, groupingPerView: groupingPerViewSection, repoColors: repoColorsSection, themePicker: themePickerSection, themePickerShots: themePickerShotsSection, bootClean: bootCleanSection, peekDash: peekDashSection, mReload: mReloadSection, mReconnect: mReconnectSection, mActivityRead: mActivityReadSection, mReadRetry: mReadRetrySection, mWorking: mWorkingSection, mOwnMessages: mOwnMessagesSection, mBubbles: mBubblesSection, mRecapSheet: mRecapSheetSection,
       mHomeOrder: mHomeOrderSection, cardUrlWayOut: cardUrlWayOutSection, phoneBoot: phoneBootSection, sayEnter: sayEnterSection, sendArrow: sendArrowSection, mTables: mTablesSection, mMarkdown: mMarkdownSection, mHostile: mHostileSection, mPictures: mPicturesSection, soundPhone: soundPhoneSection, phoneBell: phoneBellSection, mBell: mBellSection,
       mHomeOrder: mHomeOrderSection, cardUrlWayOut: cardUrlWayOutSection, phoneBoot: phoneBootSection, sayEnter: sayEnterSection, sendArrow: sendArrowSection, mTables: mTablesSection, mMarkdown: mMarkdownSection, mHostile: mHostileSection, mPictures: mPicturesSection, phoneRedirect: phoneRedirectSection,
       mHomeOrder: mHomeOrderSection, cardUrlWayOut: cardUrlWayOutSection, phoneBoot: phoneBootSection, sayEnter: sayEnterSection, sendArrow: sendArrowSection, mTables: mTablesSection, mMarkdown: mMarkdownSection, mHostile: mHostileSection, mPictures: mPicturesSection, mHidden: mHiddenSection, soundPhone: soundPhoneSection, phoneBell: phoneBellSection, mBell: mBellSection,
@@ -26403,6 +26583,7 @@ async function main() {
     await unit("discreteGroup", () => discreteGroupSection(browser, base));
     await unit("groupingPerView", () => groupingPerViewSection(browser, base));
     await unit("repoColors", () => repoColorsSection(browser, base));
+    await unit("themePicker", () => themePickerSection(browser, base));
     await unit("bootClean", () => bootCleanSection(browser, base));
     await unit("mWorking", () => mWorkingSection(browser));
     await unit("mOwnMessages", () => mOwnMessagesSection(browser));

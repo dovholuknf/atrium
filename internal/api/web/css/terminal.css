@@ -822,6 +822,13 @@
   }
   .term-list .card.on.bare .title, .term-list .card.on.bare .title .tname { color: var(--head); }
   .term-list .card.on.bare .title .tpath { color: var(--dim); opacity: 1; }
+  /* A card nobody coloured, attached: it reads as it does unattached, so attaching never recolours it. */
+  .term-list .card.on.plain, .term-list .card.on.plain:hover {
+    background: linear-gradient(180deg, var(--card-0), var(--card-1)); border-color: var(--stroke);
+  }
+  .bridged .term-list .card.on.plain { border-right-color: transparent; }
+  .term-list .card.on.plain .title, .term-list .card.on.plain .title .tname { color: var(--head); }
+  .term-list .card.on.plain .title .tpath { color: var(--dim); opacity: 1; }
   /* An exited row that keeps its theme needs no rule of its own: `.cold`'s fade in notify.css, over the worn
      row, is the pale, still-tinted look. A wash of `--shell-0` laid over it instead darkened it on a light skin. */
 

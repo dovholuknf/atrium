@@ -765,10 +765,11 @@ const isOutOfContact = (t) =>
 // ends the string, and the page then fails to parse with an error pointing at
 // whatever word came next rather than at the quote. Prose comments about this
 // markup belong out here, where they can use whatever punctuation they like.
-function cardHTML(t) {
+function cardHTML(t, wearAs) {
   const w = isWaiting(t);
   const dark = isOutOfContact(t);
-  const wear = cardWear(t);
+  // `wearAs` is the theme preview's: a palette from `wearOf`, or null for the skin's own look, whatever the setting says.
+  const wear = wearAs === undefined ? cardWear(t) : wearAs;
   // Clickable for the actions done most, because the alternative was opening
   // the detail dialog for every shelve and every attach.
   //

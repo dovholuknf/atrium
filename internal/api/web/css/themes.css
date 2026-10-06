@@ -48,6 +48,12 @@
     border: 1px solid var(--stroke-dim); overflow-x: auto; white-space: pre;
   }
   .thsample .sw { display: inline-block; width: 1.6em; text-align: center; }
+  /* The shared preview: a card row over a terminal sample. The card is the board's own and does nothing when pressed. */
+  .tshow { display: flex; flex-direction: column; gap: var(--vs-2); min-width: 0; }
+  .tshow[hidden] { display: none; }
+  .tshow-card { pointer-events: none; }
+  .tshow-card .card { margin-bottom: 0; }
+  .tshow-term { font-size: var(--fs-sm); line-height: 1.5; min-height: 17em; }
 
   /* ── skins ─────────────────────────────────────────────
      The board's own colours, not the terminal's. There are two theme systems

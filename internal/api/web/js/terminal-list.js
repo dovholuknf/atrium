@@ -599,7 +599,9 @@ function placeOneBridge(bridge, card) {
   bridge.style.height = (Math.min(c.bottom, lr.bottom) - Math.max(c.top, lr.top)) + "px";
   // The colours are the card's, whatever theme it is wearing.
   const cs = getComputedStyle(card);
-  bridge.style.setProperty("--tabbg", cs.backgroundColor);
+  // A skin's card is a gradient, which has no background colour to copy. Its row says what to use.
+  const flat = /rgba\(.*,\s*0\)$|transparent/.test(cs.backgroundColor);
+  bridge.style.setProperty("--tabbg", flat ? cs.getPropertyValue("--tabbg").trim() || cs.backgroundColor : cs.backgroundColor);
   bridge.style.setProperty("--tabc", cs.borderTopColor);
   // A worn row's frame is its border plus an inset line, and it says how
   // thick in `--framew`. The bridge's edge is that thick too, or the frame
@@ -1179,10 +1181,14 @@ function termRow(t, deep, kid) {
   // tabs onto the panes behind it rather than as a list of names. Amber for
   // waiting said something the board already says better and cost the one
   // signal that is actually per session.
-  const th = themeFor(t);
-  const on = termTask && t.id === termTask.id;  const wear = termWear(t, on, termCold(t));
+  // A card nobody coloured has no theme of its own here: it wears the skin's card whether it is attached or not, and its
+  // terminal's neutral palette only reaches the bridge, through `--tabbg`.
+  const given = themeSource(t);
+  const th = given || themeFor(t);
+  const on = termTask && t.id === termTask.id;
+  const wear = given ? termWear(t, on, termCold(t)) : on ? { cls: " plain", style: "" } : NO_WEAR;
   if (on) themeTrace("row", t);
-  const style = `--tabc:${th.cursor || th.foreground};--tabbg:${th.background}` +
+  const style = (given ? `--tabc:${th.cursor || th.foreground};` : "") + `--tabbg:${th.background}` +
     (wear.style ? ";" + wear.style : "");
   const full = terminalLabel(t) || t.display_title;
   const leaf = termPathOf(t).leaf;

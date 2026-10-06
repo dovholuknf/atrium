@@ -1172,10 +1172,22 @@ function openLab(spec) {
   document.getElementById("skinlab-title").textContent = spec.title;
   sel.innerHTML = spec.options;
   sel.value = spec.value;
-  const fb = document.getElementById("skinlab-default");
-  fb.textContent = spec.fallback.label;
-  fb.dataset.tip = spec.fallback.tip;
-  document.getElementById("skinlab-more").hidden = !spec.extra;
+  const own = !!spec.answers;
+  document.getElementById("skinlab").classList.toggle("showing", !!spec.show);
+  document.getElementById("skinlab-std").hidden = own;
+  document.getElementById("skinlab-hint").hidden = own;
+  document.getElementById("skinlab-mine").hidden = !own;
+  if (own) {
+    document.getElementById("skinlab-mine").innerHTML = spec.answers.map((a, i) =>
+      `<button${a.go ? ' class="go"' : ""} onclick="busyWhile(this, () => answerLab(${i}), 'saving…')">${esc(a.label)}</button>`).join("") +
+      `<button onclick="cancelLab()">cancel</button>`;
+  } else {
+    const fb = document.getElementById("skinlab-default");
+    fb.textContent = spec.fallback.label;
+    fb.dataset.tip = spec.fallback.tip;
+  }
+  document.getElementById("skinlab-more").hidden = own || !spec.extra;
+  paintLabShow(spec.value);
   if (spec.extra) {
     const more = document.getElementById("skinlab-extra");
     more.textContent = spec.extra.label;
@@ -1203,10 +1215,34 @@ function closeLab(id) {
 function labKey(e) {
   if (!labNow) return;
   if (e.key === "Escape") { e.preventDefault(); cancelLab(); }
-  else if (e.key === "Enter" && e.target.id === "skinlab-pick") { e.preventDefault(); keepLab(); }
+  else if (e.key === "Enter" && e.target.id === "skinlab-pick") { e.preventDefault(); if (labNow.answers) answerLab(0); else keepLab(); }
 }
 
-function previewLab(value) { if (labNow) labNow.preview(value); }
+function previewLab(value) {
+  if (!labNow) return;
+  labNow.preview(value);
+  paintLabShow(value);
+}
+
+// The panel's card and terminal sample, for owners that have one to show.
+function paintLabShow(value) {
+  const el = document.getElementById("skinlab-show");
+  if (!el) return;
+  el.hidden = !(labNow && labNow.show);
+  if (el.hidden) return;
+  const s = labNow.show(value);
+  paintShowcase(el, s.palette, s.task);
+}
+
+// One of an owner's own answers: the panel closes first, then the answer runs with what was selected.
+async function answerLab(i) {
+  const spec = labNow;
+  if (!spec || !spec.answers[i]) return;
+  const name = document.getElementById("skinlab-pick").value;
+  document.getElementById("skinlab").hidden = true;
+  labNow = null;
+  await spec.answers[i].act(name);
+}
 
 // The board's: from the settings dialog and the header.
 function openSkinLab() {

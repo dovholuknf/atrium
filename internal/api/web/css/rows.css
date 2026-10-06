@@ -165,6 +165,10 @@
     box-shadow: var(--shadow-dialog);
   }
   #skinlab[hidden] { display: none; }
+  #skinlab.showing { width: 380px; }
+  .lab-answers.wrap { flex-direction: column; align-items: stretch; }
+  .lab-answers.wrap button { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #skinlab-mine[hidden], #skinlab-std[hidden], #skinlab-hint[hidden] { display: none; }
   /* The handle is the whole strip. A small target on a small panel is a panel people give up on moving. */
   .lab-grip {
     display: flex; align-items: baseline; gap: var(--sp-3);

@@ -130,10 +130,15 @@ function themeNamed(name) {
 // one that would be used. Showing it twice would be a list where two identical
 // entries do different things, which is worse than either.
 function themeOptionsHTML(now) {
+  return themeOptionsWith(now, "use the project default");
+}
+
+// The same list with the first entry, the one that is no theme at all, named for what it means where it is shown.
+function themeOptionsWith(now, none) {
   const opt = n => `<option value="${esc(n)}"${n === now ? " selected" : ""}>${esc(n)}</option>`;
   const brought = Object.keys(BROUGHT_THEMES).sort();
   const shipped = Object.keys(TERM_THEMES).sort().filter(n => brought.indexOf(n) < 0);
-  return `<option value=""${now ? "" : " selected"}>use the project default</option>` +
+  return `<option value=""${now ? "" : " selected"}>${esc(none)}</option>` +
     (brought.length ? `<optgroup label="yours">${brought.map(opt).join("")}</optgroup>` : "") +
     `<optgroup label="atrium ships these">${shipped.map(opt).join("")}</optgroup>`;
 }
@@ -175,7 +180,35 @@ async function loadThemes() {
 // `themePreview` is the theme picker's, below.
 let themePreview = null;
 function themeFor(t) {
-  return themeSource(t) || TERM_THEMES.atrium;
+  return themeSource(t) || plainTheme();
+}
+
+// The palette a card nobody coloured gets in its terminal: the atrium table with the skin's own surface, text and accent
+// over it, so attaching changes nothing about how the card reads and the pane matches the board it sits in.
+let plainCache = null;
+function plainTheme() {
+  const skin = document.documentElement.getAttribute("data-skin") || "";
+  if (plainCache && plainCache.skin === skin) return plainCache.theme;
+  const probe = document.createElement("span");
+  document.body.appendChild(probe);
+  const hex = (v, fb) => {
+    probe.style.color = "";
+    probe.style.color = v;
+    const m = getComputedStyle(probe).color.match(/\d+/g);
+    return m && m.length >= 3 ? "#" + m.slice(0, 3).map(n => ("0" + (+n).toString(16)).slice(-2)).join("") : fb;
+  };
+  const root = getComputedStyle(document.documentElement);
+  const get = n => root.getPropertyValue(n).trim();
+  const base = TERM_THEMES.atrium;
+  const theme = Object.assign({}, base, {
+    background: hex(get("--card-1") || "", base.background),
+    foreground: hex(get("--head") || "", base.foreground),
+    cursor: hex(get("--blue") || "", base.cursor),
+    selectionBackground: hex(get("--stroke") || "", base.selectionBackground)
+  });
+  probe.remove();
+  plainCache = { skin, theme };
+  return theme;
 }
 
 // The theme a card was GIVEN, by the card, its repo or the user's default, or null for a card nobody coloured.
@@ -302,9 +335,10 @@ prefLive("atrium.cardColors", () => {
 // Three switches, each on its own, because the list is read three ways:
 //   selected  the row you are attached to, in its terminal's background, as
 //             a tab onto the pane. On by default, which is how it always was.
-//   idle      every other row in its theme too. Off by default. It started
-//             life as part of `cardColors`, so a browser that had that on
-//             starts with this on.
+//   idle      every other row in its theme too. On by default, so a coloured
+//             row looks the same attached or not: with it off, attaching
+//             fills the row with the terminal's colours and that reads as the
+//             card changing colour.
 //   exited    a row whose session has exited keeps its theme under the fade
 //             every exited row gets, so it reads as that session's colour,
 //             pale. Off, it is the skin's card, faded, whatever `idle` says:
@@ -314,7 +348,7 @@ prefLive("atrium.cardColors", () => {
 const termWearStored = k => localStorage.getItem("atrium.termWear." + k);
 const termWearOn = {
   selected: termWearStored("selected") !== "0",
-  idle: termWearStored("idle") === null ? cardColors : termWearStored("idle") === "1",
+  idle: termWearStored("idle") !== "0",
   exited: termWearStored("exited") === "1"
 };
 
@@ -327,7 +361,7 @@ prefLive("atrium.termWear.*", key => {
   for (const k of Object.keys(termWearOn)) {
     if (key !== null && key !== "atrium.termWear." + k) continue;
     const v = termWearStored(k);
-    termWearOn[k] = k === "selected" ? v !== "0" : v === null && k === "idle" ? cardColors : v === "1";
+    termWearOn[k] = k === "selected" || k === "idle" ? v !== "0" : v === "1";
     const box = document.getElementById("s-termwear-" + k);
     if (box) box.checked = termWearOn[k];
   }
@@ -585,21 +619,51 @@ async function pickIcon(id, current) {
 
 function pickTheme() {
   if (!termTask) return;
-  const before = termTask.theme || "";
+  const t = termTask;
+  const before = t.theme || "";
+  const key = repoKeyOf(t);
+  const mine = repoColors.get();
+  const falls = key && mine.repos[key] ? "repo colour: " + mine.repos[key]
+    : mine.default ? "default colour: " + mine.default : "plain";
+  const answers = [{ label: "this card", go: true, act: name => keepTheme(name) }];
+  if (key) answers.push({ label: "every card in " + key, act: name => keepRepoTheme(name, key) });
   openLab({
     id: "theme", title: "how this terminal looks", value: before,
     // Rebuilt each time. Both tables are already in memory, so this costs
     // nothing, and it keeps the list honest after a theme was brought, edited or
     // deleted from somewhere else.
-    options: themeOptionsHTML(before),
-    preview: previewTheme, keep: keepTheme, cancel: () => previewTheme(before),
-    fallback: { label: "use the project", tip: "no theme of its own: the project's", value: "" },
-    // The colours of whatever is selected, opened where you are already looking
-    // at them. Nothing about the terminal changes until the editor is saved, so
-    // this is not a second way to set a card's theme.
-    extra: { label: "edit \u270e", tip: "change these colours, or bring a scheme of your own",
-      act: openThemeEditor }
+    options: themeOptionsWith(before, falls),
+    preview: previewTheme, cancel: () => previewTheme(before),
+    answers,
+    // The card as the board draws it and a terminal sample, in whatever is selected.
+    show: name => ({ palette: themeNamed(name) || themeNamed(repoColorName(t)), task: t })
   });
+}
+
+// Every card in a repo: the repo's entry in the card colours, and this card's own choice dropped if it has one, since
+// that would still win over what was just picked for the whole repo.
+async function keepRepoTheme(name, key) {
+  if (!termTask) return;
+  const t = termTask;
+  const was = t.theme || "";
+  const next = repoColors.get();
+  if (name) next.repos[key] = name; else delete next.repos[key];
+  try {
+    await repoColors.set(next);
+    if (was) await patchTask(t.id, { theme: "" });
+  } catch (e) {
+    toast("that did not stick", e.message);
+    previewTheme(was);
+    return;
+  }
+  if (was) {
+    t.theme = "";
+    const card = cardRows.get(t.id);
+    if (card) card.theme = "";
+  }
+  themePreview = null;
+  repaintWearers();
+  toast("theme set", key + (name ? ": " + name : ": back to the default"));
 }
 
 // Applied to the running terminal live. xterm takes a new theme on a live
@@ -910,29 +974,63 @@ function okColour(v, fallback) {
   return /^#[0-9a-f]{6}$/.test(String(v || "").toLowerCase()) ? String(v).toLowerCase() : fallback;
 }
 
-// What it looks like, without needing a session attached. See `.thsample`.
-function paintThemeSample() {
-  const el = document.getElementById("th-sample");
-  if (!el) return;
-  const p = readThemeSlots();
+// ONE PREVIEW, THREE PLACES: the terminal themes editor, the card colours settings and the picker panel.
+//
+// A card row drawn by the board's own `cardHTML`, wearing the palette, over a terminal sample close to a real pane. The
+// card is a real one when there is one to show and a stand-in otherwise, and it carries no handlers, so pressing it does
+// nothing. `palette` is a theme or null for the skin's own look; the terminal then takes the plain palette.
+const SHOWCASE_TASK = { id: "preview", display_title: "fix the flaky retry test", rank: 0, state: "running", status: "running" };
+
+function themeShowcaseHTML(palette, task) {
+  const wear = palette ? wearOf(palette) : null;
+  let card = "";
+  try { card = cardHTML(task || SHOWCASE_TASK, wear); } catch (e) { card = ""; }
+  card = card.replace(/\s(?:onclick|oncontextmenu|data-id|data-rank)="[^"]*"/g, "");
+  const term = palette || plainTheme();
+  return `<div class="tshow-card">${card}</div>` +
+    `<div class="thsample tshow-term" style="background:${okColour(term.background, "#000000")};` +
+    `color:${okColour(term.foreground, "#cccccc")}">${themeSampleHTML(term)}</div>`;
+}
+
+function paintShowcase(el, palette, task) {
+  if (el) el.innerHTML = themeShowcaseHTML(palette, task);
+}
+
+// The sample's lines, from whatever colours the palette has. A colour that is missing or not six hex digits falls back to
+// the foreground, which is what a terminal does for one it was not given.
+function themeSampleHTML(p) {
   const bg = okColour(p.background, "#000000"), fg = okColour(p.foreground, "#cccccc");
-  el.style.background = bg;
-  el.style.color = fg;
   const at = (n, fb) => okColour(p[n], fb);
   const block = n => `<span class="sw" style="color:${at(n, fg)}">&#9608;</span>`;
   const row = names => names.map(block).join("");
   const say = (n, s) => `<span style="color:${at(n, fg)}">${esc(s)}</span>`;
-  el.innerHTML =
-    say("green", "you@atrium") + ":" + say("blue", "~/src/atrium") +
-    say("magenta", " (main)") + "$ go test ./...\n" +
+  return say("green", "you@atrium") + ":" + say("blue", "~/src/atrium") +
+    say("magenta", " (main)") + "$ git status -sb\n" +
+    "## fix/retry-test\n" +
+    say("green", " M internal/store/retry.go") + "\n" +
+    say("red", "?? internal/store/retry_test.go") + "\n" +
+    say("green", "you@atrium") + ":" + say("blue", "~/src/atrium") + "$ go test\n" +
     "ok  " + say("cyan", "internal/store") + "\t" + say("yellow", "0.41s") + "\n" +
     say("red", "FAIL") + "  internal/api\tsee " + say("brightBlue", "the log") + "\n" +
+    say("yellow", "warning:") + " 2 tests skipped\n" +
     row(["black", "red", "green", "yellow", "blue", "magenta", "cyan", "white"]) + "\n" +
     row(["brightBlack", "brightRed", "brightGreen", "brightYellow",
-         "brightBlue", "brightMagenta", "brightCyan", "brightWhite"]) +
-    `\n<span style="background:${at("selectionBackground", fg)};` +
-    `color:${at("selectionForeground", bg)}">selected text</span>` +
-    ` <span style="background:${at("cursor", fg)};color:${bg}">&nbsp;</span> cursor`;
+         "brightBlue", "brightMagenta", "brightCyan", "brightWhite"]) + "\n" +
+    `<span style="background:${at("selectionBackground", fg)};` +
+    `color:${at("selectionForeground", bg)}">selected text</span>\n` +
+    say("green", "you@atrium") + ":" + say("blue", "~/src/atrium") + "$ " +
+    `<span style="background:${at("cursor", fg)};color:${bg}">&nbsp;</span>`;
+}
+
+// The editor's: painted from the boxes as they change.
+function paintThemeSample() {
+  const el = document.getElementById("th-sample");
+  if (!el) return;
+  const p = readThemeSlots(), good = {};
+  for (const k in p) { const c = okColour(p[k], ""); if (c) good[k] = c; }
+  const task = typeof termTask !== "undefined" && termTask ? termTask
+    : (typeof lastTasks !== "undefined" && lastTasks[0]) || null;
+  paintShowcase(el, good.background && good.foreground ? good : null, task);
 }
 
 async function saveTheme() {
@@ -1068,10 +1166,7 @@ async function bringThemes() {
 let rcDraft = null;
 let rcFocus = "default";
 
-function rcOptions(now, plain) {
-  return themeOptionsHTML(now).replace(/<option value=""[^>]*>[^<]*<\/option>/,
-    `<option value=""${now ? "" : " selected"}>${plain}</option>`);
-}
+function rcOptions(now, plain) { return themeOptionsWith(now, plain); }
 
 // Every repo the board's cards are in, less those already listed.
 function rcKnownRepos() {
@@ -1106,13 +1201,12 @@ function rcDirty() {
 
 function paintRepoPreview() {
   const name = rcFocus === "default" ? rcDraft.default : rcDraft.repos[rcFocus];
-  const th = themeNamed(name);
-  const wear = th ? wearOf(th) : null;
   document.getElementById("rc-for").textContent = rcFocus === "default" ? "default" : rcFocus;
-  document.getElementById("rc-preview").innerHTML =
-    `<div class="card${wear ? wear.cls : ""}"${wear ? ` style="${wear.style}"` : ""}>` +
-    `<div class="card-line"><div class="title">${esc(rcFocus === "default" ? "a card with no colour" : rcFocus)}</div>` +
-    `<div class="chips"><span class="chip">${esc(name || "plain card")}</span></div></div></div>`;
+  const mine = rcFocus === "default" ? null
+    : (typeof lastTasks !== "undefined" ? lastTasks : []).find(t => repoKeyOf(t) === rcFocus);
+  const task = Object.assign({}, mine || SHOWCASE_TASK,
+    mine ? {} : { display_title: rcFocus === "default" ? "a card with no colour" : rcFocus });
+  paintShowcase(document.getElementById("rc-preview"), themeNamed(name), task);
   const dirty = rcDirty();
   document.getElementById("rc-save").disabled = !dirty;
   document.getElementById("rc-revert").disabled = !dirty;
