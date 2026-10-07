@@ -3,12 +3,12 @@ package cli
 import (
 	"encoding/json"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"strings"
 	"testing"
-	"net"
 	"time"
 )
 
