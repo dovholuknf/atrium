@@ -368,13 +368,28 @@ clint, 2026-10-07: "default it to ziti and only activate this when i paste and d
   repos listed, and "no repo" (a scratch folder of the card's own).
 - Section 5's "ask" is replaced by this. Nothing is inferred from the ticket's text.
 
+### Q7. Idle cards, and a PR that merged
+
+clint, 2026-10-07: "it'd be nice to have a daily "hey you need to clean some shit" sort of alert that is not mushed
+into all the other alerts. a more specital report sort of thing with all the recommendatoins. mismatched rooms, rooms
+offline, cards that are idle doing nothing usage wwarnings all that sorta shit"
+
+- **No per-card reminder and no automatic finish.** Idle cards are not alerts.
+- **A daily housekeeping report**, its own surface and not a growler: one report a day on the board (and the phone),
+  listing recommendations with a button beside each where one exists. For link cards: idle cards with their age and
+  disk, PRs that merged or closed (one forge ask per open PR card, made when the report is built), unfinished
+  inventories, leftovers from the sweep, and kept stashes. Beyond link cards it covers the whole board: rooms on
+  mismatched builds, rooms offline, usage warnings, and whatever else is worth a daily look.
+- "Idle" in the report starts at 3 days without a turn. The report is its own item, `r-daily-housekeeping-report`,
+  since it is wider than this design. This design feeds it.
+
 ## Open for clint
 
 1. Answered (Interview, Q1).
 2. Answered (Interview, Q3).
 3. Answered (Interview, Q4).
 4. Answered (Interview, Q6).
-5. An idle card: how many days before the reminder, and is a merged PR an offer to finish?
+5. Answered (Interview, Q7).
 6. A card's overlay: started when the agent asks, or at paste for some kinds?
 7. "From wherever I am": does `atrium open <url>` in a terminal cover it, or is an OS-level hotkey wanted?
 8. A cost budget per card: a warning only, or a stop?
