@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+
+	"github.com/dovholuknf/atrium/internal/nowindow"
 )
 
 // Backend serves git-upload-pack, and only that, out of repositories it is told about.
@@ -224,7 +226,9 @@ func gitCGI(exe, dir string, cfg [][2]string, more []string) *cgi.Handler {
 // route here would answer a bare 500 (`cgi: no headers`). The sentence names the cause and the fix, and it is what the
 // hub shows for a collect.
 func backendMissing(exe string) string {
-	out, err := exec.Command(exe, "--exec-path").Output()
+	cmd := exec.Command(exe, "--exec-path")
+	nowindow.Hide(cmd)
+	out, err := cmd.Output()
 	if err != nil {
 		return ""
 	}

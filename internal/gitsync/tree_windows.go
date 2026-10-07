@@ -7,6 +7,8 @@ import (
 	"unsafe"
 
 	"golang.org/x/sys/windows"
+
+	"github.com/dovholuknf/atrium/internal/nowindow"
 )
 
 // procTree is a job object holding one git child and everything it starts.
@@ -56,5 +58,7 @@ func (t *procTree) kill() error { return windows.TerminateJobObject(t.job, 1) }
 // close ends whatever is left and releases the job.
 func (t *procTree) close() { windows.CloseHandle(t.job) }
 
-// prepareTree is nothing on Windows: the job is made after Start.
-func prepareTree(*exec.Cmd) {}
+// prepareTree starts the child without a console window. The hub and the rooms have no
+// console, so without this every git child opens one on the operator's desktop. The job
+// is made after Start.
+func prepareTree(cmd *exec.Cmd) { nowindow.Hide(cmd) }

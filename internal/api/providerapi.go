@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/dovholuknf/atrium/internal/nowindow"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -389,6 +390,7 @@ func (s *Server) makeProviderWorktree(w http.ResponseWriter, r *http.Request) {
 	}
 	cmd := exec.CommandContext(ctx, "git", args...)
 	cmd.Dir = filepath.FromSlash(repoPath)
+	nowindow.Hide(cmd)
 	// Nothing on stdin, so a command that decides to ask a question fails
 	// rather than waiting out the deadline in silence.
 	cmd.Stdin = nil
@@ -434,6 +436,7 @@ func branchExists(ctx context.Context, repo, branch string) bool {
 	cmd := exec.CommandContext(ctx, "git", "rev-parse", "--verify", "--quiet",
 		"refs/heads/"+branch)
 	cmd.Dir = filepath.FromSlash(repo)
+	nowindow.Hide(cmd)
 	return cmd.Run() == nil
 }
 

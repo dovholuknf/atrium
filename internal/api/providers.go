@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/dovholuknf/atrium/internal/nowindow"
 	"github.com/dovholuknf/atrium/internal/safepath"
 	"github.com/dovholuknf/atrium/internal/store"
 )
@@ -607,6 +608,7 @@ func worktreesOf(repo string) []projectWorktree {
 	defer cancel()
 	cmd := exec.CommandContext(ctx, "git", "worktree", "list", "--porcelain")
 	cmd.Dir = filepath.FromSlash(repo)
+	nowindow.Hide(cmd)
 	out, err := cmd.Output()
 	if err != nil {
 		// A repository git will not talk about contributes no worktrees. It is

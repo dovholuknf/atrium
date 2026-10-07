@@ -187,10 +187,7 @@ func (r *Runner) gitWith(ctx context.Context, dir string, extraEnv []string, std
 	stop := context.AfterFunc(r.root, cancel)
 	defer stop()
 
-	full := append(append([]string{}, hardening...), args...)
-	cmd := exec.CommandContext(ctx, "git", full...)
-	cmd.Dir = dir
-	cmd.Env = CleanEnv(extraEnv...)
+	cmd := gitCommand(ctx, dir, extraEnv, args)
 	var stdout, stderr bytes.Buffer
 	capped := &capWriter{buf: &stdout, max: maxOut, stop: cancel}
 	cmd.Stdout, cmd.Stderr = capped, &stderr
@@ -200,7 +197,6 @@ func (r *Runner) gitWith(ctx context.Context, dir string, extraEnv []string, std
 	cmd.WaitDelay = 5 * time.Second
 	// A cancel ends the child's whole tree, not the child alone. See tree_windows.go.
 	var tree atomic.Pointer[procTree]
-	prepareTree(cmd)
 	cmd.Cancel = func() error {
 		if t := tree.Load(); t != nil {
 			return t.kill()
@@ -231,4 +227,16 @@ func (r *Runner) gitWith(ctx context.Context, dir string, extraEnv []string, std
 		return stdout.String(), &Error{Args: args, Stderr: stderr.String(), Err: err}
 	}
 	return stdout.String(), nil
+}
+
+// gitCommand is the git child gitWith runs, before its streams and its cancel are set: the
+// hardening flags, the clean environment, and prepareTree, which on Windows also keeps it
+// from opening a console window.
+func gitCommand(ctx context.Context, dir string, extraEnv, args []string) *exec.Cmd {
+	full := append(append([]string{}, hardening...), args...)
+	cmd := exec.CommandContext(ctx, "git", full...)
+	cmd.Dir = dir
+	cmd.Env = CleanEnv(extraEnv...)
+	prepareTree(cmd)
+	return cmd
 }

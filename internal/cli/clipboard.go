@@ -7,6 +7,8 @@ import (
 	"runtime"
 	"strings"
 	"time"
+
+	"github.com/dovholuknf/atrium/internal/nowindow"
 )
 
 // readClipboard is the text on the system clipboard, read with the platform's own tool: PowerShell on Windows,
@@ -28,7 +30,9 @@ func readClipboard() (string, error) {
 		if _, err := exec.LookPath(t[0]); err != nil {
 			continue
 		}
-		out, err := exec.CommandContext(ctx, t[0], t[1:]...).Output()
+		cmd := exec.CommandContext(ctx, t[0], t[1:]...)
+		nowindow.Hide(cmd)
+		out, err := cmd.Output()
 		if err != nil {
 			continue
 		}

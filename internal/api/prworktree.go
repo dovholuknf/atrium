@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/dovholuknf/atrium/internal/forge"
+	"github.com/dovholuknf/atrium/internal/nowindow"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -176,6 +177,7 @@ func (s *Server) prWorktree(ctx context.Context, p *store.Provider, req prWorktr
 	}
 	cmd := exec.CommandContext(ctx, "git", args...)
 	cmd.Dir = filepath.FromSlash(repoPath)
+	nowindow.Hide(cmd)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		return res, http.StatusBadRequest, errors.New(
@@ -221,6 +223,7 @@ func undoPRWorktree(res prWorktreeResult) {
 	run := func(args ...string) {
 		cmd := exec.CommandContext(ctx, "git", args...)
 		cmd.Dir = filepath.FromSlash(res.Repo)
+		nowindow.Hide(cmd)
 		if out, err := cmd.CombinedOutput(); err != nil {
 			log.Printf("[atrium api] undo worktree %s: git %s: %v %s", res.Path, args[0], err, strings.TrimSpace(string(out)))
 		}
@@ -266,6 +269,7 @@ func fetchArgs(spec forge.FetchSpec, dst, helper string) []string {
 func fetchPRHead(ctx context.Context, dir string, spec forge.FetchSpec, dst, helper string) error {
 	cmd := exec.CommandContext(ctx, "git", fetchArgs(spec, dst, helper)...)
 	cmd.Dir = dir
+	nowindow.Hide(cmd)
 	allow := "https"
 	if spec.Hub != "" {
 		allow = "http"

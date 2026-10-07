@@ -94,6 +94,7 @@ var opencodeExec = func(ctx context.Context, bin string, args []string, max int6
 	cmd.Stdout = w
 	cmd.WaitDelay = opencodeWaitDelay
 	prepareTree(cmd)
+	hideWindow(cmd)
 	err := cmd.Run()
 	reapTree(cmd)
 	w.mu.Lock()

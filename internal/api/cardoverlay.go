@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"github.com/dovholuknf/atrium/internal/cardproc"
+	"github.com/dovholuknf/atrium/internal/nowindow"
 	"github.com/dovholuknf/atrium/internal/safepath"
 	"github.com/dovholuknf/atrium/internal/store"
 )
@@ -237,6 +238,7 @@ func (s *Server) startOwned(card, dir, logFile, bin string, args ...string) (pid
 	}
 	cmd := exec.Command(bin, args...)
 	cmd.Dir, cmd.Stdout, cmd.Stderr = dir, lf, lf
+	nowindow.Hide(cmd)
 	cardproc.OwnGroup(cmd)
 	if err := cmd.Start(); err != nil {
 		_ = lf.Close()
@@ -409,8 +411,10 @@ func makeIdentity(ctx context.Context, bin, home, ctrl, dir, name string, roles 
 	defer os.Remove(jwt)
 	ectx, cancel := context.WithTimeout(ctx, time.Minute)
 	defer cancel()
-	out, err := exec.CommandContext(ectx, bin, "edge", "enroll", "--jwt", jwt,
-		"--out", filepath.Join(dir, name+".json")).CombinedOutput()
+	enroll := exec.CommandContext(ectx, bin, "edge", "enroll", "--jwt", jwt,
+		"--out", filepath.Join(dir, name+".json"))
+	nowindow.Hide(enroll)
+	out, err := enroll.CombinedOutput()
 	if err != nil {
 		return "", fmt.Errorf("the enrolment failed: %s", strings.TrimSpace(tailLines(string(out))))
 	}

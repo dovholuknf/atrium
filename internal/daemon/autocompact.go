@@ -37,7 +37,9 @@ func newAutocompactProbe() *autocompactProbe {
 func runHelp(exe string) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
-	out, err := exec.CommandContext(ctx, exe, "--help").CombinedOutput()
+	cmd := exec.CommandContext(ctx, exe, "--help")
+	hideWindow(cmd)
+	out, err := cmd.CombinedOutput()
 	return string(out), err
 }
 
