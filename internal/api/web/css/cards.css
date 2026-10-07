@@ -44,6 +44,9 @@
        differently from the rest, and made each card narrower the more work it held. Every lane takes an equal
        share of the width above, so a card is as wide as its lane and they all match. */
     display: grid; gap: 0; align-content: start; grid-template-columns: 1fr;
+    /* Rows are as tall as their card. A card clips its own overflow, so its minimum height is zero, and with the
+       default auto rows a lane of forty cards squeezed every one of them to a strip to fit the lane. */
+    grid-auto-rows: max-content;
   }
   .board .col > .cards > .cardgroup { grid-column: 1 / -1; }
   /* A folded column shrinks to its header so the rest get the room. */
@@ -52,7 +55,7 @@
      shrinks to content rather than to nothing. The transition is here because a column emptying should read as
      the others growing rather than as the board jumping. */
   .board .col { transition: flex-grow .18s ease, flex-basis .18s ease; }
-  .board .col.vacant { flex: 0 1 auto; min-width: 0; }
+  .board .col.vacant { flex: 0 1 auto; min-width: 150px; }
   .board .col.vacant > .cards { min-width: 0; }
   /* The word `empty` is the whole content of a narrow column, so it must not
      force the column back open. */
@@ -77,6 +80,8 @@
     display: flex; justify-content: space-between; align-items: center;
     font: 600 var(--fs-sm)/1 var(--sans); letter-spacing: .16em; text-transform: uppercase;
     color: var(--label); margin-bottom: 12px; padding: 0 3px;
+    /* The label and its count were touching when a narrow lane left no room between them. */
+    gap: 8px;
   }
   /* Only inside the board does it follow the board's size. The same class is used for the perms and rules
      headings, which have no board to scale with. */
