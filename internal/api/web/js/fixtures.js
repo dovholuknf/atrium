@@ -1041,6 +1041,7 @@ let launchResolved = null;
 
 function clearResolved(url) {
   launchResolved = null;
+  fillLaunchRepo();
   const box = document.getElementById("l-url");
   if (box) box.value = url || "";
   const note = document.getElementById("l-link-note");
@@ -1089,16 +1090,23 @@ async function recogniseLink() {
   put("l-title", got.title);
   put("l-prompt", got.prompt);
   put("l-tags", (got.tags || []).join(", "));
+  // What the directory box said after the recognise, so a launch can tell a directory typed over from one left alone.
+  got.shownCwd = document.getElementById("l-cwd").value.trim();
 
   const bits = [got.label || got.recogniser];
   if (got.fetch_error) bits.push("the fetch failed, so anything it would have added " +
     "is missing: " + got.fetch_error);
-  if (got.problem) bits.push(got.problem);
+  // A link the open verb takes makes its own worktree, so the directory not being there yet is not a problem.
+  const opens = !!pastedOpenKind();
+  const problem = opens ? "" : got.problem;
+  if (problem) bits.push(problem);
+  if (opens) bits.push("launch makes its worktree");
   note.textContent = bits.join(". ");
   // A missing worktree, a hole in a template or a broken fetch all read the
   // same way here: something to go and do before pressing launch.
-  note.classList.toggle("warn", !!(got.problem || got.fetch_error));
-  if (pastedPR()) leastBusyRoom();
+  note.classList.toggle("warn", !!(problem || got.fetch_error));
+  fillLaunchRepo();
+  if (opens) leastBusyRoom();
   // The recogniser just filled fields that live behind the fold, and the fold
   // is where the operator is standing. Without this the title and the prompt it
   // wrote would be out of sight at the moment they most want reading.
@@ -1540,6 +1548,73 @@ function pastedPR() {
   return { host: r.host || v.host || "", org: v.org, repo: v.repo, number: Number(v.num) };
 }
 
+// What the open verb would make of the recognised link: "pr", "issue", "branch", "support", or "" for a link it takes
+// no card for. The board's copy of `classify` in internal/api/openkinds.go, read off the captures and never the text.
+// The server decides in the end: a link this calls openable and it does not is a not_openable refusal, and the launch
+// goes the old way.
+function pastedOpenKind() {
+  const r = launchResolved;
+  if (!r) return "";
+  const v = r.vars || {};
+  const host = String(v.host || r.host || "").trim();
+  const named = !!(host && String(v.org || "").trim() && String(v.repo || "").trim());
+  const num = Number(v.num) || 0;
+  const branch = String(r.branch || "").trim();
+  const fills = branch !== "" && !branch.includes("{");
+  if ((r.tags || []).includes("pull-request")) return named && num > 0 ? "pr" : "";
+  if (named && num > 0 && fills) return "issue";
+  if (named && num <= 0 && fills) return "branch";
+  if (!named && host && num > 0 && fills) return "support";
+  return "";
+}
+
+// The repos the board's cards are in, "host/org/repo", newest card first, a handful. The repo field's other choices
+// besides the row's default.
+function recentRepos(max) {
+  const seen = new Set();
+  const out = [];
+  const cards = (lastTasks || []).slice().sort((a, b) =>
+    String(b.created_at || "").localeCompare(String(a.created_at || "")));
+  for (const t of cards) {
+    if (!t.host || !t.org || !t.repo) continue;
+    const slug = String(t.host).toLowerCase() + "/" + t.org + "/" + t.repo;
+    if (seen.has(slug.toLowerCase())) continue;
+    seen.add(slug.toLowerCase());
+    out.push(slug);
+    if (out.length >= (max || 6)) break;
+  }
+  return out;
+}
+
+// The repo field, shown only for a link that names no repo (Interview Q6). The row's default selected, then the
+// recent repos, then "no repo", which the open takes as `none`: a scratch folder of the card's own.
+function fillLaunchRepo() {
+  const field = document.getElementById("l-repo-field");
+  const sel = document.getElementById("l-repo");
+  if (!field || !sel) return;
+  if (pastedOpenKind() !== "support") {
+    field.hidden = true;
+    sel.innerHTML = "";
+    return;
+  }
+  const def = String(launchResolved.default_repo || "").trim();
+  const repos = (def ? [def] : []).concat(recentRepos(6).filter(x => x.toLowerCase() !== def.toLowerCase()));
+  sel.innerHTML = repos.map(x =>
+    `<option value="${esc(x)}">${esc(x)}${x === def ? " (default)" : ""}</option>`).join("") +
+    '<option value="none">no repo</option>';
+  sel.value = def || "none";
+  field.hidden = false;
+}
+
+// The `repo` the open is sent: "" leaves the row's default to the server, which is what Enter sends.
+function launchRepoNow() {
+  const field = document.getElementById("l-repo-field");
+  if (!field || field.hidden) return "";
+  const v = document.getElementById("l-repo").value;
+  const def = String((launchResolved && launchResolved.default_repo) || "").trim();
+  return v === def ? "" : v;
+}
+
 // `at` is for a caller with no launch dialog (the move of a review to another room): {room, say(text, warn)}. The
 // worktree is then made on that room and the dialog's fields are left alone.
 function pastedSay(at, text, warn) {
@@ -1633,7 +1708,9 @@ async function launchNow() {
   // a directory is supplied, so a previous field value must not carry through.
   const throwaway = !document.getElementById("l-throwaway-field").hidden &&
     document.getElementById("l-throwaway-on").checked;
-  const pr = throwaway ? null : pastedPR();
+  // Every recognised link goes to the open verb unless the directory was typed over, which names a place to start in.
+  const opening = !throwaway && launchResolved &&
+    document.getElementById("l-cwd").value.trim() === (launchResolved.shownCwd || "");
   // WHICH MACHINE IT STARTS ON. Unset, the hub picks: the room that holds the link, else the least busy one.
   const headers = { "Content-Type": "application/json" };
   const roomField = document.getElementById("l-room-field");
@@ -1641,23 +1718,37 @@ async function launchNow() {
     const want = document.getElementById("l-room").value;
     if (want) headers["X-Atrium-Room"] = want;
   }
-  // A PASTED PULL REQUEST IS ONE CALL: the worktree, the review row, the card and the walker, made on the room and
-  // undone there if a step fails. What the dialog let somebody change first goes with it. See internal/api/open.go.
-  if (pr) {
-    const out = await api("/v1/open", {
-      method: "POST", headers, body: JSON.stringify({
-        url: launchResolved.url || document.getElementById("l-url").value.trim(),
-        why: document.getElementById("l-why").value.trim(),
-        harness: document.getElementById("l-pick-field").hidden ? launchTarget.harness : picker.value,
-        title: document.getElementById("l-title").value.trim(),
-        prompt: document.getElementById("l-prompt").value.trim(),
-        model: document.getElementById("l-model").value.trim(),
-        effort: document.getElementById("l-effort").value.trim()
-      })
-    });
+  // A PASTED LINK IS ONE CALL: the worktree (or a scratch folder), the card, and for a pull request the review row and
+  // the walker, made on the room and undone there if a step fails. What the dialog let somebody change first goes with
+  // it. A link that names no piece of work is refused as not_openable and launches the old way below. See
+  // internal/api/open.go and openkinds.go.
+  let out = null;
+  if (opening) {
+    try {
+      out = await api("/v1/open", {
+        method: "POST", headers, body: JSON.stringify({
+          url: launchResolved.url || document.getElementById("l-url").value.trim(),
+          why: document.getElementById("l-why").value.trim(),
+          harness: document.getElementById("l-pick-field").hidden ? launchTarget.harness : picker.value,
+          title: document.getElementById("l-title").value.trim(),
+          prompt: document.getElementById("l-prompt").value.trim(),
+          model: document.getElementById("l-model").value.trim(),
+          effort: document.getElementById("l-effort").value.trim(),
+          repo: launchRepoNow()
+        })
+      });
+    } catch (e) {
+      if (!(e.body && e.body.code === "not_openable")) throw e;
+    }
+  }
+  if (out) {
     document.getElementById("launch").close();
-    if (out && out.created === false) toast(pr.org + "/" + pr.repo + "#" + pr.number, "already under review, attached its card");
-    const card = out && out.card ? await api("/v1/tasks/" + encodeURIComponent(out.card)) : null;
+    if (out.created === false) {
+      const pr = pastedPR();
+      toast(pr ? pr.org + "/" + pr.repo + "#" + pr.number : out.title || out.key || "that link",
+        out.pr ? "already under review, attached its card" : "already open, attached its card");
+    }
+    const card = out.card ? await api("/v1/tasks/" + encodeURIComponent(out.card)) : null;
     if (!card) { switchView("board"); return; }
     if (launchWhere === "window") { popOutTask(card.id); return; }
     switchView("terms");

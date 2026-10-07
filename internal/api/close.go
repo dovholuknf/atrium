@@ -17,6 +17,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/dovholuknf/atrium/internal/cardproc"
 	"github.com/dovholuknf/atrium/internal/safepath"
 	"github.com/dovholuknf/atrium/internal/store"
 )
@@ -246,7 +247,19 @@ func (s *Server) closePreview(ctx context.Context, t *store.Task) (*closePreview
 		case store.ResStash:
 			it.Action, it.Note = "keep", "on the hub. nothing here frees it"
 		case store.ResDir:
-			it.Action, it.Note = "keep", "a directory is not freed by a close yet. the sweep lists it"
+			if s.inScratch(r.Ref) == "" {
+				it.Action, it.Note = "keep", "a folder outside the scratch folder is not freed by a close. the sweep lists it"
+				break
+			}
+			it.Note = "the card's scratch folder, deleted with what is in it"
+		case store.ResProc:
+			if !procStillIt(r) {
+				it.Note = "already exited"
+				break
+			}
+			it.Note = "stopped, with every process it started"
+		case store.ResPort:
+			it.Note = "released"
 		}
 		pv.Items = append(pv.Items, it)
 	}
@@ -373,6 +386,22 @@ func (s *Server) closeCard(t *store.Task, pv *closePreview, answers map[string]s
 		asked[a.Seq] = a
 	}
 
+	// 1b. its processes, so nothing holds the worktree, then its ports
+	for _, r := range of(store.ResProc) {
+		if procStillIt(r) {
+			pid, _ := strconv.Atoi(r.Ref)
+			if err := cardproc.StopTree(pid); err != nil {
+				failed(r, err)
+				warn("process %s did not stop: %v", r.Ref, err)
+				continue
+			}
+		}
+		freed(r)
+	}
+	for _, r := range of(store.ResPort) {
+		freed(r)
+	}
+
 	// 2. the review
 	for _, p := range s.walkedOutside(t.ID, rows) {
 		if err := s.closeReview(p.ID); err != nil {
@@ -445,6 +474,20 @@ func (s *Server) closeCard(t *store.Task, pv *closePreview, answers map[string]s
 		freed(r)
 	}
 
+	// 5b. scratch folders, only under the scratch root
+	for _, r := range of(store.ResDir) {
+		dir := s.inScratch(r.Ref)
+		if dir == "" {
+			continue
+		}
+		if err := os.RemoveAll(dir); err != nil {
+			failed(r, err)
+			warn("%s did not remove: %v", r.Ref, err)
+			continue
+		}
+		freed(r)
+	}
+
 	// 6. the card
 	after, _ := s.st.Resources(t.ID)
 	res.Items = []closeItem{}
@@ -478,6 +521,16 @@ func (s *Server) closeCard(t *store.Task, pv *closePreview, answers map[string]s
 }
 
 // branchStillThere says whether a branch is in a repo, so deleting one already gone is not a failure.
+// procStillIt is whether a proc row's pid is still the process recorded: running, with the same start time.
+func procStillIt(r *store.CardResource) bool {
+	pid, err := strconv.Atoi(r.Ref)
+	if err != nil {
+		return false
+	}
+	at, err := cardproc.StartTime(pid)
+	return err == nil && at == r.Detail
+}
+
 func branchStillThere(repo, branch string) bool {
 	ctx, cancel := context.WithTimeout(context.Background(), closeGitWait)
 	defer cancel()

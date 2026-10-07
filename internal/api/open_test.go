@@ -25,6 +25,8 @@ type openHarness struct {
 	launched [][]byte
 	refuse   error
 	killed   []string
+	// defaultRepo is the zendesk row's default repo.
+	defaultRepo string
 }
 
 func newOpenHarness(t *testing.T, f *fakeForge) *openHarness {
@@ -40,8 +42,21 @@ func newOpenHarness(t *testing.T, f *fakeForge) *openHarness {
 				Prompt: "review it", Tags: []string{"pull-request"},
 				Vars: map[string]string{"host": "github.com", "org": "o", "repo": "r", "num": "7"}}, nil
 		case strings.Contains(url, "/issues/"):
-			return &store.Resolved{Recogniser: "github-issue", URL: url,
-				Vars: map[string]string{"host": "github.com", "org": "o", "repo": "r"}}, nil
+			return &store.Resolved{Recogniser: "github-issue", URL: url, Kind: "github", Host: "github.com",
+				Title: "o/r#3", Prompt: "work on it", Tags: []string{"issue"}, Branch: "issue-3",
+				Vars: map[string]string{"host": "github.com", "org": "o", "repo": "r", "num": "3"}}, nil
+		case strings.Contains(url, "/tree/"):
+			return &store.Resolved{Recogniser: "github-branch", URL: url, Kind: "github", Host: "github.com",
+				Tags: []string{"branch"}, Branch: "feat/y",
+				Vars: map[string]string{"host": "github.com", "org": "o", "repo": "r", "ref": "feat/y"}}, nil
+		case strings.Contains(url, "zendesk"):
+			return &store.Resolved{Recogniser: "zendesk-ticket", URL: url, Kind: "zendesk", Host: "acme.zendesk.com",
+				Title: "zendesk-9", Prompt: "read the ticket", Tags: []string{"zendesk"}, Branch: "zendesk-9",
+				DefaultRepo: oh.defaultRepo,
+				Vars:        map[string]string{"host": "acme.zendesk.com", "num": "9"}}, nil
+		case strings.HasSuffix(url, "/o/r"):
+			return &store.Resolved{Recogniser: "github-repo", URL: url, Kind: "github", Host: "github.com",
+				Tags: []string{"r"}, Vars: map[string]string{"host": "github.com", "org": "o", "repo": "r"}}, nil
 		}
 		return nil, store.ErrNoRecogniser
 	}
@@ -51,10 +66,16 @@ func newOpenHarness(t *testing.T, f *fakeForge) *openHarness {
 		}
 		oh.launched = append(oh.launched, body)
 		var in struct {
-			Cwd string `json:"cwd"`
+			Cwd  string   `json:"cwd"`
+			Tags []string `json:"tags"`
 		}
 		_ = json.Unmarshal(body, &in)
-		return cardIn(t, srv.st, in.Cwd), nil
+		task := cardIn(t, srv.st, in.Cwd)
+		if err := srv.st.SetTags(task.ID, in.Tags); err != nil {
+			t.Fatal(err)
+		}
+		task.Tags = in.Tags
+		return task, nil
 	}
 	srv.Kill = func(id string) error { oh.killed = append(oh.killed, id); return nil }
 	return oh
@@ -171,13 +192,13 @@ func TestOpenUndoesTheWorktreeAndTheRowWhenTheCardDoesNotStart(t *testing.T) {
 	}
 }
 
-func TestOpenRefusesALinkNothingKnowsAndOneThatIsNotAPR(t *testing.T) {
+func TestOpenRefusesALinkNothingKnowsAndOneThatNamesNoWork(t *testing.T) {
 	oh := newOpenHarness(t, &fakeForge{pr: forge.PR{HeadRef: "feat/x"}})
 	if code, out := oh.open(t, "https://nowhere.example/x"); code != 422 || out["code"] != "no_recogniser" {
 		t.Errorf("unknown: %d %v", code, out)
 	}
-	if code, out := oh.open(t, "https://github.com/o/r/issues/3"); code != 422 || out["code"] != "not_a_pr" {
-		t.Errorf("issue: %d %v", code, out)
+	if code, out := oh.open(t, "https://github.com/o/r"); code != 422 || out["code"] != "not_openable" {
+		t.Errorf("repo page: %d %v", code, out)
 	}
 	if len(oh.launched) != 0 {
 		t.Errorf("a refusal launched")

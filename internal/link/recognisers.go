@@ -36,6 +36,8 @@ import (
 const (
 	SettingRecognisers       = "recognisers.rows"
 	SettingRecognisersSeeded = "recognisers.seeded"
+	// SettingRecognisersBackfill is set once the seeded rows got the default repo field. See backfillDefaultRepo.
+	SettingRecognisersBackfill = "recognisers.backfilled"
 )
 
 // HubRecognisers is the answer to a room's question, and the board's list.
@@ -81,7 +83,7 @@ func hubRecogniserRowsLocked(st ForgeSettings) ([]*store.Recogniser, error) {
 	for _, r := range rows {
 		held[r.ID] = true
 	}
-	changed := false
+	changed := backfillDefaultRepo(st, rows, seed)
 	for _, s := range seed {
 		if seeded[s.ID] {
 			continue
@@ -111,6 +113,28 @@ func hubRecogniserRowsLocked(st ForgeSettings) ([]*store.Recogniser, error) {
 		return nil, err
 	}
 	return rows, nil
+}
+
+// backfillDefaultRepo gives a seeded row held from before the field existed the seed's default repo, once per hub, so
+// an operator who later empties it on purpose keeps it empty. True when a row changed.
+func backfillDefaultRepo(st ForgeSettings, rows []*store.Recogniser, seed []store.Recogniser) bool {
+	if raw, err := st.HubSetting(SettingRecognisersBackfill); err == nil && strings.TrimSpace(raw) != "" {
+		return false
+	}
+	byID := map[string]string{}
+	for _, s := range seed {
+		byID[s.ID] = s.DefaultRepo
+	}
+	changed := false
+	for _, r := range rows {
+		if def := byID[r.ID]; def != "" && r.DefaultRepo == "" {
+			r.DefaultRepo, changed = def, true
+		}
+	}
+	if err := st.SetHubSetting(SettingRecognisersBackfill, "default_repo"); err != nil {
+		log.Printf("[hub] %s did not save: %v", SettingRecognisersBackfill, err)
+	}
+	return changed
 }
 
 func readRecogniserRows(st ForgeSettings) ([]*store.Recogniser, error) {

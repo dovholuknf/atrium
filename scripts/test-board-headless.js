@@ -19690,6 +19690,8 @@ async function pullsSection(browser, base) {
     if (st.halted) return json(route, 503, HALTED);
     if (b.url.indexOf("nowhere") >= 0) return json(route, 422, { error: "no recogniser matches this", code: "no_recogniser", step: "recognise" });
     if (b.url.indexOf("dup") >= 0) return json(route, 200, { key: "k", card: "t-walker", pr: st.rows[0].id, created: false });
+    if (b.url.indexOf("issues") >= 0) return json(route, 201, { key: "github.com/openziti/r/i7", kind: "issue", card: "t-walker",
+      worktree: "/wt/issue-7", repo: "github.com/openziti/r", created: true, title: "issue-7" });
     put(row("pr_new", { number: 99, title: "", state: "queued", created_at: "2026-10-01T12:00:00Z", why: b.why, url: b.url }));
     return json(route, 201, { key: "k", card: "t-walker", pr: "pr_new", created: true });
   });
@@ -19845,6 +19847,13 @@ async function pullsSection(browser, base) {
     await p.click("#pulls-paste");
     await p.waitForFunction(() => /no recogniser matches this/.test(document.getElementById("pulls-note").textContent), null, { timeout: slow(5000) })
       .catch(() => fail("pulls: the 422 word was not shown"));
+    // an issue opens a card and no row: the note says so and the card is attached
+    await p.evaluate(() => { window.__attached = []; const was = attachTask; attachTask = id => { window.__attached.push(id); return was(id); }; });
+    await p.fill("#pulls-url", "https://github.com/openziti/r/issues/7");
+    await p.click("#pulls-paste");
+    await p.waitForFunction(() => /issue-7 as a card.*not a pull request/.test(document.getElementById("pulls-note").textContent),
+      null, { timeout: slow(5000) }).catch(() => fail("pulls: a pasted issue was not said as a card with no row"));
+    if ((await p.evaluate(() => window.__attached)).join() !== "t-walker") fail("pulls: a pasted issue's card was not attached");
     // halted
     st.halted = true;
     await p.fill("#pulls-url", "https://github.com/openziti/r/pull/5");
@@ -20024,10 +20033,31 @@ async function quickPasteSection(browser, base) {
     if (m === "GET" && p === "/v1/providers") return json(route, 200, { providers: [{ name: "gh", host: "github.com", worktrees: true }] });
     if (m === "GET" && p === "/v1/tasks/t-q") return json(route, 200, { id: "t-q", status: "running", title: "review zrok#12" });
     st.calls.push(m + " " + p + " " + (req.postData() || ""));
-    if (p === "/v1/open") return json(route, 201, { key: "github.com/openziti/zrok/12", kind: "github-pr", card: "t-q",
-      pr: "pr_q", worktree: "/wt/zrok-12", created: true });
+    if (p === "/v1/open") {
+      const url = JSON.parse(req.postData() || "{}").url || "";
+      if (/issues\/6$/.test(url)) return json(route, 422, { error: "that link names no piece of work", code: "not_openable", step: "recognise" });
+      if (/zendesk/.test(url)) return json(route, 201, { key: "zendesk:netfoundry.zendesk.com/77", kind: "support", card: "t-q",
+        worktree: "/wt/zendesk-77", repo: "github.com/openziti/ziti", created: true, title: "zendesk-77" });
+      if (/issues\/5$/.test(url)) return json(route, 201, { key: "github.com/openziti/zrok/i5", kind: "issue", card: "t-q",
+        worktree: "/wt/issue-5", repo: "github.com/openziti/zrok", created: true, title: "issue-5" });
+      return json(route, 201, { key: "github.com/openziti/zrok/12", kind: "pr", card: "t-q",
+        pr: "pr_q", worktree: "/wt/zrok-12", created: true });
+    }
     if (p === "/v1/recognise") {
       const url = JSON.parse(req.postData() || "{}").url || "";
+      // a ticket names no repo: no org, no repo, the row's default, and a directory that is not there yet
+      if (/zendesk\.com/.test(url)) return json(route, 200, { recogniser: "zendesk-ticket", label: "zendesk ticket", url,
+        host: "netfoundry.zendesk.com", kind: "zendesk", cwd: "/wt/zendesk-77", title: "zendesk-77", prompt: "read the ticket",
+        tags: ["zendesk"], branch: "zendesk-77", default_repo: "github.com/openziti/ziti",
+        problem: "/wt/zendesk-77 is not here yet. make the worktree, then start it",
+        vars: { host: "netfoundry.zendesk.com", num: "77" } });
+      if (/\/issues\//.test(url)) {
+        const n = url.split("/").pop();
+        return json(route, 200, { recogniser: "github-issue", label: "github issue", url, host: "github.com",
+          cwd: "/wt/issue-" + n, title: "issue " + n, prompt: "investigate the issue", tags: ["issue"], branch: "issue-" + n,
+          org: "openziti", repo: "zrok", problem: "/wt/issue-" + n + " is not here yet. make the worktree, then start it",
+          vars: { org: "openziti", repo: "zrok", num: n, host: "github.com" } });
+      }
       if (!/github\.com/.test(url)) return json(route, 404, { error: "no recogniser matches " + url });
       return json(route, 200, { recogniser: "github-pr", label: "github pull request", url, host: "github.com",
         cwd: "/wt/zrok-12", title: "review zrok#12", prompt: "review the pull request", tags: ["pull-request"],
@@ -20113,9 +20143,108 @@ async function quickPasteSection(browser, base) {
         opened.title !== "review zrok#12") fail("quickPaste: the open was " + JSON.stringify(opened));
     await p.waitForFunction(() => typeof termTask !== "undefined" && termTask && termTask.id === "t-q", null, { timeout: slow(5000) })
       .catch(() => fail("quickPaste: the opened card was not attached"));
+
+    // One link through the box with Enter: answers what /v1/open was sent, and every call made, in order.
+    const enter = async (url, edit) => {
+      st.calls = [];
+      // the attached terminal's one-time notice about its width is a dialog the box will not stack on
+      await p.evaluate(() => document.querySelectorAll("dialog[open]").forEach(d => d.close()));
+      await p.evaluate(u => { window.__clip = u; }, url);
+      await p.keyboard.press("Control+Alt+KeyR");
+      await p.waitForFunction(u => document.getElementById("qp-url").value === u, url, { timeout: slow(5000) })
+        .catch(() => fail("quickPaste: the box did not open on " + url));
+      await p.press("#qp-url", edit ? "Shift+Enter" : "Enter");
+      if (edit) {
+        await p.waitForFunction(() => document.getElementById("launch").open && launchResolved, null, { timeout: slow(5000) })
+          .catch(() => fail("quickPaste: shift-enter did not stop at the launch dialog for " + url));
+        return null;
+      }
+      await p.waitForFunction(() => !document.getElementById("launch").open && !document.getElementById("quickpaste").open,
+        null, { timeout: slow(8000) }).catch(() => fail("quickPaste: enter did not start " + url));
+      await p.waitForTimeout(200);
+      const c = st.calls.find(x => x.indexOf("POST /v1/open") === 0);
+      return { order: st.calls.map(x => x.split(" ")[1]), open: c ? JSON.parse(c.split(" ").slice(2).join(" ")) : null };
+    };
+
+    // a ticket starts at once on Enter, its missing directory no bar, with the row's default repo left to the server
+    const zd = "https://netfoundry.zendesk.com/agent/tickets/77";
+    let r = await enter(zd);
+    if (r.order.join() !== "/v1/recognise,/v1/open") fail("quickPaste: a ticket on enter ran " + r.order.join());
+    if (!r.open || r.open.url !== zd || r.open.repo !== "") fail("quickPaste: a ticket opened as " + JSON.stringify(r.open));
+
+    // an issue goes through the open verb too, with no repo field
+    r = await enter("https://github.com/openziti/zrok/issues/5");
+    if (r.order.join() !== "/v1/recognise,/v1/open") fail("quickPaste: an issue on enter ran " + r.order.join());
+    if (!r.open || r.open.prompt !== "investigate the issue") fail("quickPaste: the issue opened as " + JSON.stringify(r.open));
+
+    // a link the open verb refuses as not_openable launches the old way
+    r = await enter("https://github.com/openziti/zrok/issues/6");
+    if (r.order.join() !== "/v1/recognise,/v1/open,/v1/launch") fail("quickPaste: not_openable ran " + r.order.join());
+    const launched = st.calls.find(x => x.indexOf("POST /v1/launch") === 0);
+    if (!launched || JSON.parse(launched.split(" ").slice(2).join(" ")).branch !== "issue-6")
+      fail("quickPaste: the fallback launch lost the recogniser's fields: " + launched);
+
+    // shift-enter on a ticket stops at the dialog with the repo field: the default selected, the recent repos, no repo
+    await p.evaluate(() => { lastTasks = (lastTasks || []).concat([{ id: "t-recent", host: "github.com", org: "openziti",
+      repo: "zrok", created_at: "2099-01-01T00:00:00Z", status: "running" }]); });
+    await enter(zd, true);
+    const repo = await p.evaluate(() => ({ hidden: document.getElementById("l-repo-field").hidden,
+      value: document.getElementById("l-repo").value,
+      options: [...document.querySelectorAll("#l-repo option")].map(o => o.value) }));
+    if (repo.hidden) fail("quickPaste: shift-enter on a ticket did not show the repo field");
+    if (repo.value !== "github.com/openziti/ziti") fail("quickPaste: the repo field did not start on the default: " + repo.value);
+    if (repo.options[0] !== "github.com/openziti/ziti" || repo.options[repo.options.length - 1] !== "none" ||
+        repo.options.indexOf("github.com/openziti/zrok") < 0) fail("quickPaste: the repo choices were " + repo.options.join());
+    if (st.calls.some(c => c.indexOf("/v1/open") >= 0)) fail("quickPaste: shift-enter on a ticket opened it");
+    await shot(p, "ticket-repo");
+    st.calls = [];
+    await p.selectOption("#l-repo", "none");
+    await p.evaluate(() => doLaunch());
+    await p.waitForFunction(() => !document.getElementById("launch").open, null, { timeout: slow(5000) })
+      .catch(() => fail("quickPaste: launch from the ticket's dialog did not close it"));
+    const sent = st.calls.find(x => x.indexOf("POST /v1/open") === 0);
+    if (!sent || JSON.parse(sent.split(" ").slice(2).join(" ")).repo !== "none") fail("quickPaste: no repo sent " + sent);
+
+    // shift-enter on a pull request shows no repo field, since the link names its repo
+    await enter("https://github.com/openziti/zrok/pull/12", true);
+    if (!await p.evaluate(() => document.getElementById("l-repo-field").hidden)) fail("quickPaste: a pull request showed the repo field");
+    await p.evaluate(() => document.getElementById("launch").close());
     if (errors.length) fail("quickPaste: page errors: " + errors.join(" | "));
   } finally { await ctx.close(); }
   if (!bad) console.log("quickPaste ok");
+}
+
+// The recogniser editor's default repo: read into the box from the row, and saved back with what was typed.
+async function recogniserRepoSection(browser, base) {
+  const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+  const errors = [];
+  const json = (route, status, body) => route.fulfill({ status, contentType: "application/json", body: JSON.stringify(body) });
+  const zd = { id: "zd", label: "zendesk ticket", pattern: "^https://z/(?P<num>\\d+)$", rank: 50, enabled: true, room: "sgg",
+    kind: "zendesk", title: "zendesk-{num}", tags: "zendesk", cwd: "", prompt: "read it", branch: "zendesk-{num}",
+    window: "", theme: "", fetch: "", fetch_args: [], fetch_cwd: "", default_repo: "github.com/openziti/ziti" };
+  const puts = [];
+  await ctx.route(/\/v1\/recognisers(\/|\?|$)/, async route => {
+    const req = route.request();
+    if (req.method() === "PUT") { puts.push(JSON.parse(req.postData() || "{}")); return json(route, 200, puts[puts.length - 1]); }
+    return json(route, 200, { recognisers: [zd] });
+  });
+  try {
+    const p = await ctx.newPage();
+    p.on("pageerror", e => errors.push(e.message));
+    await p.goto(base + "/", { waitUntil: "domcontentloaded" });
+    await p.waitForFunction(() => typeof editRecogniser === "function" && typeof renderRecognisers === "function", null, { timeout: slow(15000) });
+    await p.evaluate(async () => { await renderRecognisers(); editRecogniser("zd", "sgg"); });
+    await p.waitForFunction(() => document.getElementById("recogniser").open, null, { timeout: slow(5000) })
+      .catch(() => fail("recogniserRepo: the editor did not open"));
+    if (await p.inputValue("#r-default-repo") !== "github.com/openziti/ziti") fail("recogniserRepo: the default repo was not read in");
+    await p.fill("#r-default-repo", "github.com/openziti/zrok");
+    await p.evaluate(() => saveRecogniser());
+    await p.waitForFunction(() => !document.getElementById("recogniser").open, null, { timeout: slow(5000) })
+      .catch(() => fail("recogniserRepo: the save did not close the editor"));
+    if (!puts.length || puts[0].default_repo !== "github.com/openziti/zrok") fail("recogniserRepo: saved " + JSON.stringify(puts[0]));
+    if (errors.length) fail("recogniserRepo: page errors: " + errors.join(" | "));
+  } finally { await ctx.close(); }
+  if (!bad) console.log("recogniserRepo ok");
 }
 
 // The daemon answers /v1/prs with a plain-text 404 (nothing serves it yet): the tab stays hidden and nothing throws.
@@ -24804,7 +24933,7 @@ async function main() {
       termDebug: termDebugSection, termDebugPerCard: termDebugPerCardSection, termLag: termLagSection, termHiddenRedraw: termHiddenRedrawSection, termSortStarted: termSortStartedSection,
       noReadyChildren: noReadyChildrenSection, childUnderParent: childUnderParentSection, topNav: topNavSection,
       u002: u002Section, childFold: childFoldSection, liveHome: liveHomeSection,
-      pulls: pullsSection, prMove: prMoveSection, quickPaste: quickPasteSection, hubRepos: hubReposSection, hubReposShelf: hubReposShelfSection, hubReposLedger: hubReposLedgerSection, hubReposFeed: hubReposFeedSection, changeReq: changeReqSection, mChangeReq: mChangeReqSection, trayHead: trayHeadSection, pullsAbsent: pullsAbsentSection, oneTooltip: oneTooltipSection, burnChart: burnChartSection, burnReadout: burnReadoutSection, switchPrewarm: switchPrewarmSection, attachAtOnce: attachAtOnceSection, fileView: fileViewSection, keepAlive: keepAliveSection, switchBackCost: switchBackCostSection, keepMemory: keepMemorySection, pullsDrawer: pullsDrawerSection };
+      pulls: pullsSection, prMove: prMoveSection, quickPaste: quickPasteSection, recogniserRepo: recogniserRepoSection, hubRepos: hubReposSection, hubReposShelf: hubReposShelfSection, hubReposLedger: hubReposLedgerSection, hubReposFeed: hubReposFeedSection, changeReq: changeReqSection, mChangeReq: mChangeReqSection, trayHead: trayHeadSection, pullsAbsent: pullsAbsentSection, oneTooltip: oneTooltipSection, burnChart: burnChartSection, burnReadout: burnReadoutSection, switchPrewarm: switchPrewarmSection, attachAtOnce: attachAtOnceSection, fileView: fileViewSection, keepAlive: keepAliveSection, switchBackCost: switchBackCostSection, keepMemory: keepMemorySection, pullsDrawer: pullsDrawerSection };
     try {
       for (const n of process.env.HEADLESS_ONLY.split(",")) await only[n](browser, base);
     } catch (e) { fail("the headless run threw: " + (e && e.message ? e.message : e) + threwAt(e)); }
@@ -26935,6 +27064,7 @@ async function main() {
     await unit("pullsDrawer", () => pullsDrawerSection(browser, base));
     await unit("prMove", () => prMoveSection(browser, base));
     await unit("quickPaste", () => quickPasteSection(browser, base));
+    await unit("recogniserRepo", () => recogniserRepoSection(browser, base));
   } catch (e) {
     // a listing has no browser, so a bare section call throws here, and the guard below names it
     if (!LIST_MODE) fail("the headless run threw: " + (e && e.message ? e.message : e) + threwAt(e));

@@ -59,6 +59,35 @@ func TestTheHubSeedsItsRecognisersOncePerRow(t *testing.T) {
 	}
 }
 
+// A SEEDED ROW HELD FROM BEFORE THE DEFAULT REPO gets the seed's once. One emptied after that stays empty.
+func TestTheHubBackfillsTheDefaultRepoOnce(t *testing.T) {
+	st := &memSettings{m: map[string]string{}}
+	withSeed(t, seedRow("zendesk", 30, `/tickets/\d+`))
+	if _, err := hubRecogniserRows(st); err != nil {
+		t.Fatal(err)
+	}
+	delete(st.m, SettingRecognisersBackfill)
+	zd := seedRow("zendesk", 30, `/tickets/\d+`)
+	zd.DefaultRepo = "github.com/openziti/ziti"
+	withSeed(t, zd)
+	rows, err := hubRecogniserRows(st)
+	if err != nil || len(rows) != 1 || rows[0].DefaultRepo != "github.com/openziti/ziti" {
+		t.Fatalf("the backfill = %v %+v", err, rows)
+	}
+	again, _ := hubRecogniserRows(st)
+	if again[0].DefaultRepo != "github.com/openziti/ziti" {
+		t.Fatalf("the backfill was not written: %+v", again[0])
+	}
+	emptied := *again[0]
+	emptied.DefaultRepo = ""
+	if _, err := saveHubRecogniser(st, emptied); err != nil {
+		t.Fatal(err)
+	}
+	if rows, _ := hubRecogniserRows(st); rows[0].DefaultRepo != "" {
+		t.Errorf("an emptied default repo came back: %+v", rows[0])
+	}
+}
+
 // A ROW THAT DOES NOT COMPILE IS REFUSED at save, on the hub as on a room.
 func TestTheHubRefusesARecogniserThatDoesNotCompile(t *testing.T) {
 	withSeed(t)

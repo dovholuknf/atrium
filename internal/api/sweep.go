@@ -12,10 +12,12 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/dovholuknf/atrium/internal/cardproc"
 	"github.com/dovholuknf/atrium/internal/gitsync"
 	"github.com/dovholuknf/atrium/internal/store"
 )
@@ -28,7 +30,7 @@ import (
 //	POST /v1/sweep/close {owner, confirm, answers}   close what an owner with no card holds, as a card's close does
 //
 // It runs once when the room starts and when the board asks. It walks every row not freed yet:
-//   - a row of a live card (running, waiting, backlog, shelved) is left alone.
+//   - a row of a live card (running, waiting, backlog, shelved) is left alone, except a process that exited.
 //   - a row whose thing is gone (its path, its branch, its ref, its review row) is marked freed, with why.
 //   - a stash is left alone: it is on the hub, and nothing on a room frees it.
 //   - the rest are LEFTOVERS, grouped by owner, of a card that is done or dead and was never closed, or of an owner
@@ -186,7 +188,8 @@ func (s *Server) Sweep(ctx context.Context) *sweepReport {
 				continue
 			}
 		}
-		if t != nil && sweepLive(t) {
+		// A live card's rows are its own, except a process that exited: that one is freed whoever holds it.
+		if t != nil && sweepLive(t) && r.Kind != store.ResProc {
 			continue
 		}
 		if t == nil && strings.HasPrefix(r.Card, "pending:") && sweepYoung(r.MadeAt) {
@@ -199,6 +202,9 @@ func (s *Server) Sweep(ctx context.Context) *sweepReport {
 				rep.Freed = append(rep.Freed, sweepFreed{Owner: r.Card, Seq: r.Seq, Kind: r.Kind, Ref: r.Ref, Why: why})
 				continue
 			}
+		}
+		if t != nil && sweepLive(t) {
+			continue
 		}
 		g := byOwner[r.Card]
 		if g == nil {
@@ -270,6 +276,18 @@ func (s *Server) sweepGone(ctx context.Context, r *store.CardResource) string {
 			if err != nil {
 				return "the ref is gone, found by the sweep"
 			}
+		}
+	case store.ResProc:
+		pid, err := strconv.Atoi(r.Ref)
+		if err != nil {
+			return "not a pid, found by the sweep"
+		}
+		at, err := cardproc.StartTime(pid)
+		if errors.Is(err, cardproc.ErrGone) {
+			return "the process exited, found by the sweep"
+		}
+		if err == nil && at != r.Detail {
+			return "the pid is another process now, found by the sweep"
 		}
 	case store.ResReview:
 		p, err := s.st.PRByID(r.Ref)

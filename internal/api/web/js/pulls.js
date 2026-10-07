@@ -303,7 +303,11 @@ async function pullsPaste() {
     pullsSay(pullsErr(e));
     return;
   }
-  pullsSay(out && out.created === false ? "that PR already has its card, so that one is attached" : "");
+  // A link that is not a pull request opens a card and no row, so the board would show nothing changed here.
+  const pr = !out || !!out.pr;
+  pullsSay(out && out.created === false
+    ? "that " + (pr ? "PR" : "link") + " already has its card, so that one is attached"
+    : pr ? "" :"opened " + (out.title || out.key) + " as a card. it is not a pull request, so it has no row here");
   if (url) url.value = "";
   if (why) why.value = "";
   loadPulls();

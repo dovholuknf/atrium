@@ -120,24 +120,9 @@ func (s *Server) prWorktree(ctx context.Context, p *store.Provider, req prWorktr
 		branch = "pr-" + strconv.Itoa(req.Number)
 	}
 
-	repoPath, wtRoot := "", ""
-	if p != nil {
-		repoPath, wtRoot = store.ProviderPath(p.Root, req.Org, req.Repo), p.WorktreeRoot
-	}
-	if repoPath == "" || !isCheckout(filepath.FromSlash(repoPath)) {
-		if s.SCMClone == nil {
-			return res, http.StatusServiceUnavailable, errors.New("this room cannot clone")
-		}
-		cl, err := s.SCMClone(ctx, "https://"+host+"/"+req.Org+"/"+req.Repo)
-		if err != nil {
-			return res, http.StatusBadRequest, err
-		}
-		repoPath = filepath.ToSlash(cl.Path)
-	}
-	if wtRoot == "" {
-		// The clone is <scm>/<host>/<org>/<repo>.
-		scm := filepath.Dir(filepath.Dir(filepath.Dir(filepath.FromSlash(repoPath))))
-		wtRoot = filepath.ToSlash(filepath.Join(scm, "worktrees", host))
+	repoPath, wtRoot, status, err := s.repoCheckout(ctx, p, host, req.Org, req.Repo)
+	if err != nil {
+		return res, status, err
 	}
 	res.Repo = repoPath
 
@@ -198,6 +183,31 @@ func (s *Server) prWorktree(ctx context.Context, p *store.Provider, req prWorktr
 	}
 	res.Path, res.Branch, res.CreatedBranch = dest, branch, made
 	return res, http.StatusOK, nil
+}
+
+// repoCheckout is the checkout of host/org/repo a worktree hangs off, and the folder its worktrees go under: the
+// provider's when it has one, else the scm clone, cloned when it is not there, with its worktrees under the scm
+// folder's `worktrees/<host>`.
+func (s *Server) repoCheckout(ctx context.Context, p *store.Provider, host, org, repo string) (repoPath, wtRoot string, status int, err error) {
+	if p != nil {
+		repoPath, wtRoot = store.ProviderPath(p.Root, org, repo), p.WorktreeRoot
+	}
+	if repoPath == "" || !isCheckout(filepath.FromSlash(repoPath)) {
+		if s.SCMClone == nil {
+			return "", "", http.StatusServiceUnavailable, errors.New("this room cannot clone")
+		}
+		cl, err := s.SCMClone(ctx, "https://"+host+"/"+org+"/"+repo)
+		if err != nil {
+			return "", "", http.StatusBadRequest, err
+		}
+		repoPath = filepath.ToSlash(cl.Path)
+	}
+	if wtRoot == "" {
+		// The clone is <scm>/<host>/<org>/<repo>.
+		scm := filepath.Dir(filepath.Dir(filepath.Dir(filepath.FromSlash(repoPath))))
+		wtRoot = filepath.ToSlash(filepath.Join(scm, "worktrees", host))
+	}
+	return repoPath, wtRoot, http.StatusOK, nil
 }
 
 // undoPRWorktree removes a worktree prWorktree made, and the branch when it made that too. A found worktree is

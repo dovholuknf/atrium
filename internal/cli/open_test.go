@@ -27,8 +27,8 @@ func stdoutOf(t *testing.T, f func() error) (string, error) {
 	return <-done, ferr
 }
 
-// openBoard answers POST /v1/open as the open verb does: opened for a pull request, not_a_pr for an issue, a step
-// refusal for a refused link. POST /v1/recognise answers the issue's resolution.
+// openBoard answers POST /v1/open as the open verb does: opened for a pull request and a ticket, not_openable for a
+// repo page, a step refusal for a refused link. POST /v1/recognise answers the repo page's resolution.
 func openBoard(t *testing.T, seen *[]string) *httptest.Server {
 	t.Helper()
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -44,14 +44,18 @@ func openBoard(t *testing.T, seen *[]string) *httptest.Server {
 			w.WriteHeader(http.StatusCreated)
 			_, _ = w.Write([]byte(`{"key":"github.com/o/r/7","card":"beta~c1","pr":"beta~pr_1","worktree":"/wt/o/r/pr-7",` +
 				`"created":true,"room":"beta","title":"review o/r#7"}`))
-		case r.URL.Path == "/v1/open" && strings.Contains(in.URL, "/issues/"):
+		case r.URL.Path == "/v1/open" && strings.Contains(in.URL, "/tickets/"):
+			w.WriteHeader(http.StatusCreated)
+			_, _ = w.Write([]byte(`{"key":"zendesk:acme.zendesk.com/9","kind":"support","card":"c2","repo":"github.com/o/z",` +
+				`"worktree":"/wt/o/z/zendesk-9","created":true}`))
+		case r.URL.Path == "/v1/open" && strings.HasSuffix(in.URL, "/o/r"):
 			w.WriteHeader(http.StatusUnprocessableEntity)
-			_, _ = w.Write([]byte(`{"code":"not_a_pr","error":"only a pull request","step":"recognise"}`))
+			_, _ = w.Write([]byte(`{"code":"not_openable","error":"names no piece of work","step":"recognise"}`))
 		case r.URL.Path == "/v1/open":
 			w.WriteHeader(http.StatusBadRequest)
 			_, _ = w.Write([]byte(`{"code":"worktree_failed","error":"gh is not logged in","step":"worktree"}`))
 		case r.URL.Path == "/v1/recognise":
-			_, _ = w.Write([]byte(`{"recogniser":"github-issue","label":"github issue","title":"o/r issue 3"}`))
+			_, _ = w.Write([]byte(`{"recogniser":"github-repo","label":"a repository on github","title":"o/r repo"}`))
 		default:
 			http.NotFound(w, r)
 		}
@@ -78,15 +82,30 @@ func TestOpenPrintsTheCardAndWhereItIsOnTheBoard(t *testing.T) {
 	}
 }
 
-func TestOpenShowsALinkThatIsNotAPRAndSaysWhyARefusalStopped(t *testing.T) {
+func TestOpenATicketSendsTheRepoAndPrintsWhereItOpened(t *testing.T) {
 	var seen []string
 	srv := openBoard(t, &seen)
 	defer srv.Close()
 	out, err := stdoutOf(t, func() error {
-		return openLink("https://github.com/o/r/issues/3", openOpts{boardURL: srv.URL})
+		return openLink("https://acme.zendesk.com/agent/tickets/9", openOpts{boardURL: srv.URL, repo: "github.com/o/z"})
 	})
-	if err != nil || !strings.Contains(out, "only a pull request opens as a card") || !strings.Contains(out, "o/r issue 3") {
-		t.Errorf("an issue: %v\n%s", err, out)
+	if err != nil || !strings.Contains(out, "support") || !strings.Contains(out, "github.com/o/z") {
+		t.Errorf("a ticket: %v\n%s", err, out)
+	}
+	if len(seen) != 1 || !strings.Contains(seen[0], `"repo":"github.com/o/z"`) {
+		t.Errorf("the board saw %v", seen)
+	}
+}
+
+func TestOpenShowsALinkThatNamesNoWorkAndSaysWhyARefusalStopped(t *testing.T) {
+	var seen []string
+	srv := openBoard(t, &seen)
+	defer srv.Close()
+	out, err := stdoutOf(t, func() error {
+		return openLink("https://github.com/o/r", openOpts{boardURL: srv.URL})
+	})
+	if err != nil || !strings.Contains(out, "names no piece of work") || !strings.Contains(out, "o/r repo") {
+		t.Errorf("a repo page: %v\n%s", err, out)
 	}
 	_, err = stdoutOf(t, func() error {
 		return openLink("https://bitbucket.org/o/r/x", openOpts{boardURL: srv.URL})

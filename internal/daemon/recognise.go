@@ -64,6 +64,11 @@ func (d *Daemon) Recognise(url string) (*store.Resolved, error) {
 		return nil, err
 	}
 
+	captures := make(map[string]string, len(vars))
+	for k, v := range vars {
+		captures[k] = v
+	}
+	fetched := map[string]bool{}
 	fetchErr := error(nil)
 	if strings.TrimSpace(r.Fetch) != "" {
 		facts, err := d.fetchFacts(context.Background(), r, vars)
@@ -80,6 +85,7 @@ func (d *Daemon) Recognise(url string) (*store.Resolved, error) {
 			for k, v := range facts {
 				if _, taken := vars[k]; !taken {
 					vars[k] = v
+					fetched[k] = true
 				}
 			}
 		}
@@ -92,6 +98,8 @@ func (d *Daemon) Recognise(url string) (*store.Resolved, error) {
 	}
 
 	out := r.Fill(vars)
+	// The title and the rest may use the facts. The prompt is the runner's orders, so only the URL fills it.
+	out.Prompt = r.FillPrompt(captures, fetched)
 	if fetchErr != nil {
 		out.FetchError = firstLine(fetchErr.Error())
 	}

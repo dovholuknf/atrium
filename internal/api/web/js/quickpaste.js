@@ -6,10 +6,11 @@
 // starts the card, pull request chain and all (`launchNow` in js/fixtures.js).
 // Nothing here knows what a link is.
 //
-// ENTER STARTS AT ONCE, SHIFT-ENTER STOPS FOR EDITING. Enter is "review this",
-// which is what the key is for nine times in ten. Shift-Enter opens the launch
-// dialog filled in and leaves it there, for the prompt or the room somebody
-// wants to change first. A link that leaves something to fix (a hole in a
+// ENTER STARTS AT ONCE, SHIFT-ENTER STOPS FOR EDITING. Enter is "open this", a
+// pull request, an issue, a branch or a ticket in its own worktree, which is
+// what the key is for nine times in ten. Shift-Enter opens the launch dialog
+// filled in and leaves it there, for the prompt, the room, or a ticket's repo
+// somebody wants to change first. A link that leaves something to fix (a hole in a
 // template, a fetch that failed, a room with no runner) stops at the dialog
 // either way, because starting a card that is already wrong is not quicker.
 //
@@ -90,8 +91,8 @@ async function quickPasteGo(edit) {
     return;
   }
   if (edit || !got) return;
-  // A pull request's missing worktree is a problem the launch itself solves.
-  if ((got.problem || got.fetch_error) && !pastedPR()) return;
+  // A missing worktree is a problem the launch itself solves for every kind the open verb takes.
+  if ((got.problem || got.fetch_error) && !pastedOpenKind()) return;
   const go = document.getElementById("l-go");
   if (go && go.disabled) return;
   doLaunch();

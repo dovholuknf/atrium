@@ -85,6 +85,10 @@ delivers it.
   one. Queued, never typed into its terminal.
 - An MCP server (`atrium control`, registered at user scope for claude) exposes `atrium_status`, `atrium_peers`,
   `atrium_say`, `atrium_launch` and similar. A runner that can register an MCP server could use these directly.
+- What a card starts belongs to the card. `atrium_port {count}` hands out free ports from the room's range and records
+  them on the card. `atrium_own {kind: proc|dir|port, ref}` records a long-running process (its pid) or a folder the
+  agent made. Closing the card stops those processes with their children and frees the rest. Builds and tests are not
+  recorded: they finish on their own.
 
 ## What to produce
 

@@ -37,6 +37,29 @@ func TestSaveRecogniserRefusesAPatternThatDoesNotCompile(t *testing.T) {
 	}
 }
 
+// THE DEFAULT REPO is saved, read back and filled through unchanged, and only a host/org/repo is taken.
+func TestTheDefaultRepoIsSavedAndCheckedAndFilled(t *testing.T) {
+	s := open(t)
+	r := pullRequestRow()
+	r.DefaultRepo = " github.com/openziti/ziti/ "
+	got, err := s.SaveRecogniser(r)
+	if err != nil || got.DefaultRepo != "github.com/openziti/ziti" {
+		t.Fatalf("%v %+v", err, got)
+	}
+	if res := got.Fill(map[string]string{"url": "u"}); res.DefaultRepo != "github.com/openziti/ziti" {
+		t.Errorf("filled %q", res.DefaultRepo)
+	}
+	for _, bad := range []string{"openziti/ziti", "github.com/../ziti", "github.com/o/r/x", "github.com/{org}/r"} {
+		r.DefaultRepo = bad
+		if _, err := s.SaveRecogniser(r); err == nil {
+			t.Errorf("%q was saved", bad)
+		}
+	}
+	if !IsPRRow("pull-request,{repo}") || IsPRRow("issue,{repo}") || IsPRRow("pull-requests") {
+		t.Error("IsPRRow reads the tags wrong")
+	}
+}
+
 func TestSaveRecogniserNeedsAPattern(t *testing.T) {
 	s := open(t)
 	r := pullRequestRow()
@@ -203,6 +226,15 @@ func TestFetchedTextDoesNotBreakOutOfItsField(t *testing.T) {
 	// flattening it would be atrium mangling somebody else's words in transit.
 	if !strings.Contains(got.Prompt, "\n") {
 		t.Fatalf("the prompt was flattened, so an issue body would arrive as one line: %q", got.Prompt)
+	}
+}
+
+// FillPrompt takes the captures only: a fetched fact's placeholder is blank, an unknown one stays.
+func TestFillPromptTakesOnlyTheCaptures(t *testing.T) {
+	r := &Recogniser{ID: "x", Prompt: "Work on {url} in {repo}.\n\n{body}{other}"}
+	got := r.FillPrompt(map[string]string{"url": "https://h/o/r/issues/1", "repo": "r"}, map[string]bool{"body": true})
+	if got != "Work on https://h/o/r/issues/1 in r.\n\n{other}" {
+		t.Fatalf("prompt: %q", got)
 	}
 }
 
