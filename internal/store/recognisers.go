@@ -3,6 +3,9 @@ package store
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
+	"io/fs"
+	"path/filepath"
 	"regexp"
 	"sort"
 	"strings"
@@ -126,8 +129,8 @@ type Resolved struct {
 	// placeholder is still there in the text, so the dialog shows a hole rather
 	// than a plausible wrong value.
 	Missing []string `json:"missing,omitempty"`
-	// CwdExists is whether the directory is there. Filled in by whoever can
-	// look at the filesystem, which is not this package.
+	// CwdExists is whether the directory is there. Filled in by DescribeCwd,
+	// with the stat of whoever can look at the filesystem.
 	CwdExists bool `json:"cwd_exists"`
 	// Problem is the one sentence a human has to read. Empty when there is
 	// nothing to say.
@@ -529,6 +532,69 @@ func (r *Recogniser) FillPrompt(captures map[string]string, fetched map[string]b
 		}
 		return m
 	})
+}
+
+// Resolve is the whole resolution once a fetch has run: the facts merged under the captures, the templates filled,
+// the prompt from the captures alone. The room and the hub both resolve through here, so a link reads the same
+// whichever of them answered.
+//
+// THE CAPTURES WIN. Fetched facts come off the network, from a tracker anybody may have written into. The captures
+// came off the URL the operator pasted. A fetch that could redefine `repo` could move `cwd`, so a fact only fills a
+// name the pattern did not capture, and never overwrites one it did.
+func (r *Recogniser) Resolve(vars, facts map[string]string, fetchErr error) *Resolved {
+	captures := make(map[string]string, len(vars))
+	all := make(map[string]string, len(vars)+len(facts))
+	for k, v := range vars {
+		captures[k], all[k] = v, v
+	}
+	fetched := map[string]bool{}
+	for k, v := range facts {
+		if _, taken := vars[k]; !taken {
+			all[k] = v
+			fetched[k] = true
+		}
+	}
+	out := r.Fill(all)
+	// The title and the rest may use the facts. The prompt is the runner's orders, so only the URL fills it.
+	out.Prompt = r.FillPrompt(captures, fetched)
+	if fetchErr != nil {
+		out.FetchError = firstLineOf(fetchErr.Error())
+	}
+	return out
+}
+
+// DescribeCwd says what stat found at the directory the templates named: CwdExists, or the one sentence in Problem.
+// This package looks at no disk, so the caller hands it the stat of whichever machine it is answering for. The room
+// and the hub share it, so the sentence is the same wherever the link was recognised.
+//
+// ATRIUM DOES NOT CREATE THE DIRECTORY. Making a worktree is `gwt`'s job, so a missing one is a sentence naming the
+// path, beside a field the operator can point somewhere else.
+func DescribeCwd(out *Resolved, stat func(string) (fs.FileInfo, error)) {
+	// A HOLE IN THE PATH IS ANSWERED BEFORE THE FILESYSTEM IS. A directory still called `.../{branch}` does not exist
+	// for an uninteresting reason, and saying "no such directory" about it sends somebody off to make one with a
+	// brace in its name. Only a hole in the PATH: a `{title}` nothing filled in is named in Missing and stops nothing.
+	if holes := placeholder.FindAllString(out.Cwd, -1); len(holes) > 0 {
+		out.Problem = fmt.Sprintf(
+			"the directory still says %s, because nothing filled it in. "+
+				"type over it, or add a fetch to the recogniser that knows",
+			strings.Join(holes, " and "))
+		return
+	}
+	if strings.TrimSpace(out.Cwd) == "" {
+		out.Problem = "this recogniser does not say where the work happens. pick a directory"
+		return
+	}
+	fi, err := stat(filepath.FromSlash(out.Cwd))
+	if err == nil && fi.IsDir() {
+		out.CwdExists = true
+		return
+	}
+	if err == nil {
+		out.Problem = out.Cwd + " is a file, not a directory"
+		return
+	}
+	// Not an error and not a refusal. The URL resolved, and the checkout for it is not on this machine yet.
+	out.Problem = out.Cwd + " is not here yet. make the worktree, then start it"
 }
 
 // FillArgv substitutes into a command and its arguments.

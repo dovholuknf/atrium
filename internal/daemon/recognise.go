@@ -4,18 +4,17 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"regexp"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/dovholuknf/atrium/internal/forge"
+	"github.com/dovholuknf/atrium/internal/linkfetch"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -64,31 +63,10 @@ func (d *Daemon) Recognise(url string) (*store.Resolved, error) {
 		return nil, err
 	}
 
-	captures := make(map[string]string, len(vars))
-	for k, v := range vars {
-		captures[k] = v
-	}
-	fetched := map[string]bool{}
+	var facts map[string]string
 	fetchErr := error(nil)
 	if strings.TrimSpace(r.Fetch) != "" {
-		facts, err := d.fetchFacts(context.Background(), r, vars)
-		fetchErr = err
-		if err == nil {
-			// THE CAPTURES WIN.
-			//
-			// Fetched facts come off the network, from an issue tracker anybody
-			// may have written into. The captures came off the URL the operator
-			// pasted. A fetch that could redefine `repo` could move `cwd`,
-			// which means the contents of an issue would choose the directory a
-			// runner starts in. So a fact only fills a name the pattern left
-			// empty, and never overwrites one it filled.
-			for k, v := range facts {
-				if _, taken := vars[k]; !taken {
-					vars[k] = v
-					fetched[k] = true
-				}
-			}
-		}
+		facts, fetchErr = d.fetchFacts(context.Background(), r, vars)
 		// A hub's row is not in this room's table, so there is nothing here to record it on.
 		if !fromHub {
 			if err := d.st.RecogniserFetched(r.ID, fetchErr); err != nil {
@@ -96,14 +74,16 @@ func (d *Daemon) Recognise(url string) (*store.Resolved, error) {
 			}
 		}
 	}
-
-	out := r.Fill(vars)
-	// The title and the rest may use the facts. The prompt is the runner's orders, so only the URL fills it.
-	out.Prompt = r.FillPrompt(captures, fetched)
+	// The captures win over the facts, and a failed fetch adds none. See store.Recogniser.Resolve.
+	if fetchErr != nil {
+		facts = nil
+	}
+	out := r.Resolve(vars, facts, nil)
 	if fetchErr != nil {
 		out.FetchError = firstLine(fetchErr.Error())
 	}
-	d.describeCwd(out)
+	// ATRIUM DOES NOT CREATE THE DIRECTORY. See store.DescribeCwd.
+	store.DescribeCwd(out, os.Stat)
 	return out, nil
 }
 
@@ -131,71 +111,6 @@ func (d *Daemon) matchRecogniser(url string) (r *store.Recogniser, vars map[stri
 	return r, vars, false, err
 }
 
-// describeCwd looks at the directory the templates named and says what it
-// found.
-//
-// ATRIUM DOES NOT CREATE IT. This is the point in the flow where a tool that
-// knew git would run a clone, and the reason this one does not is that it would
-// be a second, worse implementation of something already on the PATH and
-// already better at it. What atrium contributes is knowing which card the
-// directory belongs to.
-//
-// So the answer to a missing directory is a sentence naming the path, which the
-// dialog shows beside a field the operator can point somewhere else. Make it
-// with whatever makes worktrees here, then press start.
-func (d *Daemon) describeCwd(out *store.Resolved) {
-	// A HOLE IN THE PATH IS ANSWERED BEFORE THE FILESYSTEM IS. A directory
-	// still called `.../{branch}` does not exist for an uninteresting reason,
-	// and saying "no such directory" about it sends somebody off to create one
-	// with a brace in its name.
-	//
-	// Only a hole in the PATH. A `{title}` nothing filled in leaves a thin card
-	// and is named in `Missing` for the dialog to show, but it has no bearing
-	// on whether the work can start.
-	if holes := placeholdersIn(out.Cwd); len(holes) > 0 {
-		out.Problem = fmt.Sprintf(
-			"the directory still says %s, because nothing filled it in. "+
-				"type over it, or add a fetch to the recogniser that knows",
-			strings.Join(holes, " and "))
-		return
-	}
-	if strings.TrimSpace(out.Cwd) == "" {
-		out.Problem = "this recogniser does not say where the work happens. pick a directory"
-		return
-	}
-	path := filepath.FromSlash(out.Cwd)
-	fi, err := os.Stat(path)
-	if err == nil && fi.IsDir() {
-		out.CwdExists = true
-		return
-	}
-	if err == nil {
-		out.Problem = out.Cwd + " is a file, not a directory"
-		return
-	}
-	// Not an error and not a refusal. The URL resolved, and the checkout for it
-	// is not on this machine yet, which is a thing to go and do.
-	out.Problem = out.Cwd + " is not here yet. make the worktree, then start it"
-}
-
-// placeholdersIn finds the `{name}` holes still standing in a filled-in value.
-//
-// Read out of the RESULT rather than out of the row's Missing list, because the
-// question here is about one field. A recogniser can leave a hole in its title
-// and none in its path, and only one of those stops the work starting.
-func placeholdersIn(s string) []string {
-	var out []string
-	for _, m := range placeholder.FindAllString(s, -1) {
-		out = append(out, m)
-	}
-	return out
-}
-
-// placeholder is the same `{name}` the store's templates use. Duplicated as one
-// expression rather than exported, because what this package needs is to spot a
-// hole and what that one needs is to fill one.
-var placeholder = regexp.MustCompile(`\{[a-zA-Z_][a-zA-Z0-9_]*\}`)
-
 // fetchFacts runs the row's fetch command and reads what it printed.
 //
 // The argv is templated first, so `gh issue view {num} --repo {org}/{repo}` is
@@ -213,6 +128,10 @@ func (d *Daemon) fetchFacts(ctx context.Context, r *store.Recogniser,
 	name, args := store.FillArgv(r.Fetch, r.FetchArgs, vars)
 	if name == forgeFetch {
 		return d.forgeFacts(ctx, args, vars)
+	}
+	// A slug-only link names no number, and following it to where it lands does. See linkfetch.
+	if name == linkfetch.Redirect {
+		return linkfetch.Follow(ctx, vars["url"], args)
 	}
 	// A ROOM WITH A HUB RUNS NO FORGE CLI: only the hub talks to the forge. See hubforge.go.
 	if forgeCLIs[strings.ToLower(filepath.Base(name))] && d.HubForge() != nil {
@@ -302,56 +221,18 @@ func flattenFacts(raw map[string]any) map[string]string {
 // forgeFetch is the built-in fetch: `forge pr` or `forge issue` reads the pull request or issue the URL names through
 // the hub's forge, or the room's own when it has no hub. The facts carry gh's names, so templates written for
 // `gh pr view --json title,headRefName,baseRefName` and `gh issue view --json title,body` read the same.
-const forgeFetch = "forge"
+const forgeFetch = forge.FactsFetch
 
 // forgeCLIs are the commands a room with a hub does not run as a fetch.
 var forgeCLIs = map[string]bool{"gh": true, "gh.exe": true, "bb": true, "bb.exe": true, "glab": true, "glab.exe": true}
 
 func (d *Daemon) forgeFacts(ctx context.Context, args []string, vars map[string]string) (map[string]string, error) {
-	what := ""
-	if len(args) > 0 {
-		what = strings.TrimSpace(args[0])
-	}
-	if what != "pr" && what != "issue" {
-		return nil, errors.New("the forge fetch takes one argument, pr or issue")
-	}
-	n, err := strconv.Atoi(strings.TrimSpace(vars["num"]))
-	if err != nil || n <= 0 || vars["org"] == "" || vars["repo"] == "" {
-		return nil, errors.New("the forge fetch needs the pattern to capture org, repo and num")
-	}
-	host := strings.ToLower(strings.TrimSpace(vars["host"]))
-	if host == "" {
-		host = "github.com"
-	}
-	ref := forge.Ref{Host: host, Org: vars["org"], Repo: vars["repo"], Number: n}
 	ctx, cancel := context.WithTimeout(ctx, recogniserFetchTimeout)
 	defer cancel()
-	var f forge.Forge
-	if hf := d.HubForge(); hf != nil {
-		f = hf
-	} else if f, err = d.prr.forgeFor(host); err != nil {
-		return nil, err
-	}
-	if what == "issue" {
-		ir, ok := f.(forge.IssueReader)
-		if !ok {
-			return nil, fmt.Errorf("the %s forge does not read issues", f.Kind())
+	return forge.Facts(ctx, args, vars, func(host string) (forge.Forge, error) {
+		if hf := d.HubForge(); hf != nil {
+			return hf, nil
 		}
-		is, err := ir.Issue(ctx, ref)
-		if err != nil {
-			return nil, err
-		}
-		return map[string]string{"title": is.Title, "body": is.Body, "author": is.Author, "state": is.State}, nil
-	}
-	// A paste being recognised asks about the pull request and nothing more, so the hub fetches no head for it.
-	view := f.View
-	if hf, ok := f.(*forge.Remote); ok {
-		view = hf.Peek
-	}
-	pr, err := view(ctx, ref)
-	if err != nil {
-		return nil, err
-	}
-	return map[string]string{"title": pr.Title, "headRefName": pr.HeadRef, "baseRefName": pr.BaseRef,
-		"author": pr.Author, "headRefOid": pr.Head}, nil
+		return d.prr.forgeFor(host)
+	})
 }

@@ -64,8 +64,8 @@ func recogniseOver(t *testing.T, s *Server, st *store.Store, url string) (int, s
 
 func TestTheShippedGitHubRowsResolvePullRequestsAndIssues(t *testing.T) {
 	s, st := recogniserServer(t)
-	if n := loadShippedRows(t, s, "github.json"); n != 4 {
-		t.Fatalf("github.json holds %d rows, wanted 4", n)
+	if n := loadShippedRows(t, s, "github.json"); n != 7 {
+		t.Fatalf("github.json holds %d rows, wanted 7", n)
 	}
 
 	cases := []struct {
@@ -104,8 +104,8 @@ func TestTheShippedGitHubRowsResolvePullRequestsAndIssues(t *testing.T) {
 
 func TestTheShippedBitbucketRowResolvesAPullRequest(t *testing.T) {
 	s, st := recogniserServer(t)
-	if n := loadShippedRows(t, s, "bitbucket.json"); n != 3 {
-		t.Fatalf("bitbucket.json holds %d rows, wanted 3", n)
+	if n := loadShippedRows(t, s, "bitbucket.json"); n != 4 {
+		t.Fatalf("bitbucket.json holds %d rows, wanted 4", n)
 	}
 	code, got := recogniseOver(t, s, st, "https://bitbucket.org/acme/widgets/pull-requests/77")
 	if code != http.StatusOK {
@@ -125,14 +125,14 @@ func TestTheShippedBitbucketRowResolvesAPullRequest(t *testing.T) {
 	}
 }
 
-func TestTheShippedSupportRowsDefaultToZiti(t *testing.T) {
+func TestTheShippedSupportRowsDefaultLikeGwt(t *testing.T) {
 	s, st := recogniserServer(t)
-	if n := loadShippedRows(t, s, "support.json"); n != 2 {
-		t.Fatalf("support.json holds %d rows, wanted 2", n)
+	if n := loadShippedRows(t, s, "support.json"); n != 3 {
+		t.Fatalf("support.json holds %d rows, wanted 3", n)
 	}
 	cases := []struct{ url, row, num, cwd string }{
 		{"https://netfoundry.zendesk.com/agent/tickets/15925", "zendesk-ticket", "15925",
-			"D:/worktrees/github/openziti/ziti/zendesk-15925"},
+			"D:/worktrees/github/openziti/ziti-tunnel-sdk-c/zendesk-15925"},
 		{"https://openziti.discourse.group/t/one-client-with-wrong-clock-caused-whole-network-down/6158/6",
 			"discourse-topic", "6158", "D:/worktrees/github/openziti/ziti/discourse-6158"},
 		{"https://openziti.discourse.group/t/6158", "discourse-topic", "6158",
@@ -148,7 +148,6 @@ func TestTheShippedSupportRowsDefaultToZiti(t *testing.T) {
 	}
 	for _, url := range []string{
 		"https://netfoundry.zendesk.com/agent/tickets/15925x",
-		"https://other.zendesk.com/agent/tickets/15925",
 		"https://openziti.discourse.group/t/../6158",
 		"https://openziti.discourse.group/c/general/5",
 	} {

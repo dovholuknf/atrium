@@ -1,5 +1,50 @@
 [
   {
+    "id": "github-advisory-fork-pr",
+    "label": "github security advisory fix, a pull request on its temporary fork",
+    "enabled": true,
+    "rank": 5,
+    "pattern": "^https?://(?P<host>github\\.com)/(?P<org>[A-Za-z0-9_-][A-Za-z0-9_.-]*)/(?P<repo>[A-Za-z0-9_-][A-Za-z0-9_.-]*?)-ghsa-(?P<ghsa>[0-9a-z]{4}-[0-9a-z]{4}-[0-9a-z]{4})/pull/(?P<pr>\\d+)(?:[/?#].*)?$",
+    "kind": "github",
+    "title": "{org}/{repo} GHSA-{ghsa} PR {pr}",
+    "tags": "advisory,security,{repo}",
+    "cwd": "D:/worktrees/github/{org}/{repo}/advisory-{ghsa}-pr{pr}",
+    "branch": "advisory-{ghsa}-pr{pr}",
+    "window": "active-work",
+    "prompt": "Review security advisory GHSA-{ghsa} in {org}/{repo}. The proposed fix is pull request {pr} on the advisory's temporary private fork ({url}). Read the change locally: a fine-grained token cannot resolve a <repo>-ghsa-* fork and the API will 404. Assess whether the fix fully closes the vulnerability and whether any code path it should cover is missed. Propose findings before changing anything.",
+    "notes": "Asked before the pull request row, which would take <repo>-ghsa-<id> for a repo of its own. The fork is the base repo plus a fix, so the worktree is the base repo's, named advisory-<id>-pr<num> as gwt names it. Not tagged pull-request, and the number is captured as pr rather than num: the pull request is on the fork, so a key naming the base repo would name somebody else's pull request or issue."
+  },
+  {
+    "id": "github-advisory-fork-branch",
+    "label": "github security advisory fix, a branch on its temporary fork",
+    "enabled": true,
+    "rank": 6,
+    "pattern": "^https?://(?P<host>github\\.com)/(?P<org>[A-Za-z0-9_-][A-Za-z0-9_.-]*)/(?P<repo>[A-Za-z0-9_-][A-Za-z0-9_.-]*?)-ghsa-(?P<ghsa>[0-9a-z]{4}-[0-9a-z]{4}-[0-9a-z]{4})/tree/(?P<ref>[A-Za-z0-9_-][A-Za-z0-9_.-]*(?:/[A-Za-z0-9_-][A-Za-z0-9_.-]*)*)/?(?:[?#].*)?$",
+    "kind": "github",
+    "title": "{org}/{repo} GHSA-{ghsa} {ref}",
+    "tags": "advisory,security,{repo}",
+    "cwd": "D:/worktrees/github/{org}/{repo}/advisory-{ghsa}",
+    "branch": "{ref}",
+    "window": "active-work",
+    "prompt": "Review security advisory GHSA-{ghsa} in {org}/{repo}. The proposed fix is branch {ref} on the advisory's temporary private fork ({url}), and its tip commit is the fix. Read the change locally: a fine-grained token cannot resolve a <repo>-ghsa-* fork and the API will 404. Assess whether the fix fully closes the vulnerability and whether any code path it should cover is missed. Propose findings before changing anything.",
+    "notes": "Asked before the branch row, which would take <repo>-ghsa-<id> for a repo of its own. The worktree is the base repo's, advisory-<id>, on the fork's fix branch, as gwt lays it."
+  },
+  {
+    "id": "github-advisory",
+    "label": "github security advisory",
+    "enabled": true,
+    "rank": 15,
+    "pattern": "^https?://(?P<host>github\\.com)/(?P<org>[A-Za-z0-9_-][A-Za-z0-9_.-]*)/(?P<repo>[A-Za-z0-9_-][A-Za-z0-9_.-]*)/security/advisories/(?P<ghsa>GHSA-[0-9A-Za-z]{4}-[0-9A-Za-z]{4}-[0-9A-Za-z]{4})(?:[/?#].*)?$",
+    "kind": "github",
+    "title": "{org}/{repo} {ghsa}",
+    "tags": "advisory,security,{repo}",
+    "cwd": "D:/worktrees/github/{org}/{repo}/advisory-{ghsa}",
+    "branch": "advisory-{ghsa}",
+    "window": "active-work",
+    "prompt": "Investigate security advisory {ghsa} in {org}/{repo} ({url}). Try to read it with gh api repos/{org}/{repo}/security-advisories/{ghsa}. If the token cannot (a draft needs a classic token with repo admin), ask me to paste it. Propose a fix plan before changing anything.",
+    "notes": "The advisory page. The worktree is advisory-<GHSA id> off the default branch, as gwt names it: the local fix branch you would open a pull request from."
+  },
+  {
     "id": "github-pull-request",
     "label": "github pull request",
     "enabled": true,
@@ -57,12 +102,12 @@
     "label": "a repository on github",
     "enabled": true,
     "rank": 900,
-    "pattern": "^https?://(?P<host>github\\.com)/(?P<org>[A-Za-z0-9_-][A-Za-z0-9_.-]*)/(?P<repo>[A-Za-z0-9_-][A-Za-z0-9_.-]*)/?$",
+    "pattern": "^https?://(?P<host>github\\.com)/(?P<org>[A-Za-z0-9_-][A-Za-z0-9_.-]*)/(?P<repo>[A-Za-z0-9_-][A-Za-z0-9_.-]*?)(?:\\.git)?/?(?:[?#].*)?$",
     "kind": "github",
     "title": "{org}/{repo}",
     "tags": "{repo}",
     "cwd": "D:/git/github/{org}/{repo}",
     "window": "active-work",
-    "notes": "THE SHRUG, and it belongs at the bottom. A url on a host we know that matches nothing more specific still gets a dialog, pointed at the clone. Refusing would be correct and useless."
+    "notes": "THE SHRUG, and it belongs at the bottom. A url on a host we know that matches nothing more specific still gets a dialog, pointed at the clone. Refusing would be correct and useless. A clone url's .git is not part of the repo's name, as gwt reads it."
   }
 ]

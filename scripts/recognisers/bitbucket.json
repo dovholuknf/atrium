@@ -51,5 +51,18 @@
     "window": "active-work",
     "prompt": "Continue the work on branch {ref} of {org}/{repo} ({url}).\n\nRead the log against the default branch first, then say what the branch is doing and what looks unfinished.",
     "notes": "The branch page, /branch/<name>. A /src/<name>/<path> url mixes the branch and a file path, so it is not matched."
+  },
+  {
+    "id": "bitbucket-repo",
+    "label": "a repository on bitbucket",
+    "enabled": true,
+    "rank": 905,
+    "pattern": "^https?://(?P<host>bitbucket\\.org)/(?P<org>[A-Za-z0-9_-][A-Za-z0-9_.-]*)/(?P<repo>[A-Za-z0-9_-][A-Za-z0-9_.-]*?)(?:\\.git)?/?(?:[?#].*)?$",
+    "kind": "bitbucket",
+    "title": "{org}/{repo}",
+    "tags": "{repo}",
+    "cwd": "D:/git/bitbucket/{org}/{repo}",
+    "window": "active-work",
+    "notes": "The shrug for bitbucket, at the bottom like github's: a repository page opens on its clone, where gwt clones it."
   }
 ]

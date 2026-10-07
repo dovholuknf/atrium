@@ -1,0 +1,30 @@
+[
+  {
+    "id": "gitlab-issue",
+    "label": "gitlab issue",
+    "enabled": true,
+    "rank": 42,
+    "pattern": "^https?://(?P<host>gitlab\\.com)/(?P<org>[A-Za-z0-9_-][A-Za-z0-9_.-]*)/(?P<repo>[A-Za-z0-9_-][A-Za-z0-9_.-]*)/(?:-/)?issues/(?P<num>\\d+)(?:[/?#].*)?$",
+    "kind": "gitlab",
+    "title": "{org}/{repo} issue {num}",
+    "tags": "issue,{repo}",
+    "cwd": "D:/worktrees/gitlab/{org}/{repo}/issue-{num}",
+    "branch": "issue-{num}",
+    "window": "active-work",
+    "prompt": "Work on {url}.",
+    "notes": "gwt takes <host>/<org>/<repo>/issues/<num> on any host, and gitlab writes the same thing with a /-/ in front of issues, so both are taken. No fetch: the forge has no gitlab issue reader yet."
+  },
+  {
+    "id": "gitlab-repo",
+    "label": "a repository on gitlab",
+    "enabled": true,
+    "rank": 910,
+    "pattern": "^https?://(?P<host>gitlab\\.com)/(?P<org>[A-Za-z0-9_-][A-Za-z0-9_.-]*)/(?P<repo>[A-Za-z0-9_-][A-Za-z0-9_.-]*?)(?:\\.git)?/?(?:[?#].*)?$",
+    "kind": "gitlab",
+    "title": "{org}/{repo}",
+    "tags": "{repo}",
+    "cwd": "D:/git/gitlab/{org}/{repo}",
+    "window": "active-work",
+    "notes": "The shrug for gitlab, at the bottom like github's: a repository page opens on its clone, where gwt clones it."
+  }
+]

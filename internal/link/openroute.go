@@ -37,21 +37,20 @@ func (p *Proxy) placeOpen(w http.ResponseWriter, r *http.Request) (*http.Request
 	if room, named := p.roomFor(r); named || room != "" {
 		return r.WithContext(context.WithValue(r.Context(), openRoomKey{}, room)), true
 	}
-	room := ""
 	if key := p.openKey(r); key != "" {
 		if st := p.prClaims(); st != nil {
 			if c, err := st.PRClaimOf(key); err == nil {
-				room = c.Room
+				r = p.placedOn(w, r, c.Room)
+				return r.WithContext(context.WithValue(r.Context(), openRoomKey{}, c.Room)), true
 			}
 		}
 	}
-	if room == "" {
-		room = p.placePRRoom(r.Context(), "")
-	}
+	// The least busy room. One too old to read the hub's rows hands it on to the next. See retryDeaf.
+	room := p.placePRRoom(r.Context(), "")
 	if room == "" {
 		return r, true
 	}
-	r = p.placedOn(w, r, room)
+	r = p.placePaste(r, room)
 	return r.WithContext(context.WithValue(r.Context(), openRoomKey{}, room)), true
 }
 
@@ -91,11 +90,10 @@ func (p *Proxy) openKey(r *http.Request) string {
 
 // retagOpen puts the room on an open's answer, and on its card and review ids, in the merged view. A scoped board
 // asked one room and wants that room's own ids.
-func (p *Proxy) retagOpen(res *http.Response) error {
+func (p *Proxy) retagOpen(res *http.Response, room string) error {
 	if res.Request == nil || res.StatusCode >= 300 {
 		return nil
 	}
-	room, _ := res.Request.Context().Value(openRoomKey{}).(string)
 	if room == "" {
 		return nil
 	}

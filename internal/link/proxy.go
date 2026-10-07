@@ -64,6 +64,9 @@ type Proxy struct {
 	// single transport.
 	mu      sync.Mutex
 	clients map[string]*http.Client
+	// deaf is the rooms whose build does not read the hub's recognisers, by room key, with the commit they ran when
+	// one said so. Placement passes them over. See recogniseroute.go.
+	deaf map[string]string
 	// stock is every room this hub knows about, attached or not.
 	stock Inventory
 
@@ -203,8 +206,9 @@ func NewProxy(hub *Hub, board fs.FS, boardID string, room func() string) *Proxy 
 			if t, _ := r.Out.Context().Value(taggedKey{}).(string); t != "" && prIDIn(r.Out.URL.Path) != "" {
 				r.Out.Header.Del("Accept-Encoding")
 			}
-			// So is an open's. See retagOpen.
-			if r.Out.URL.Path == "/v1/open" {
+			// So is an open's, and a placed paste's, which a room too old to read the hub's rows may refuse. See
+			// retagOpen and retryDeaf.
+			if pp, _ := r.Out.Context().Value(placedKey{}).(*placedPaste); r.Out.URL.Path == "/v1/open" || pp != nil {
 				r.Out.Header.Del("Accept-Encoding")
 			}
 			// The browser's Host is forwarded, so anything building a link
@@ -573,6 +577,10 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if p.hubRecognisersRoute(w, r) {
 		return
 	}
+	// AND A PASTE WITH NO ROOM NAMED IS RECOGNISED BY THE HUB, whatever build a room runs. See recogniseroute.go.
+	if p.hubRecognise(w, r) {
+		return
+	}
 	// A REQUEST THAT NAMES A CARD GOES WHERE THE CARD IS, whatever the header
 	// says. Ahead of startsNothing so that sees the room the work would land on.
 	// See cardroute.go.
@@ -888,8 +896,20 @@ func (p *Proxy) rewrite(res *http.Response) error {
 	if res.Request != nil && prIDIn(res.Request.URL.Path) != "" {
 		return p.retagPR(res)
 	}
+	// A placed paste a room too old to read the hub's rows refused goes on to the next room. See recogniseroute.go.
+	placed, err := p.retryDeaf(res)
+	if err != nil {
+		return err
+	}
+	if placed != "" {
+		res.Header.Set(PlacedRoomHeader, placed)
+	}
 	if res.Request != nil && res.Request.URL.Path == "/v1/open" {
-		return p.retagOpen(res)
+		room, _ := res.Request.Context().Value(openRoomKey{}).(string)
+		if placed != "" {
+			room = placed
+		}
+		return p.retagOpen(res, room)
 	}
 	return p.retagCard(res)
 }

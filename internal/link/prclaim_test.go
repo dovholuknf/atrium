@@ -57,12 +57,28 @@ type claimRoom struct {
 	walkers  []string
 	// opens is the urls a POST /v1/open brought here.
 	opens []string
+	// deaf is a room on a build older than the hub's recognisers: an open or a paste finds no recogniser. deafHits
+	// counts what it refused.
+	deaf     bool
+	deafHits int
 }
 
 func (c *claimRoom) reviewCalls() (imported []byte, archived, walkers []string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return c.imported, append([]string(nil), c.archived...), append([]string(nil), c.walkers...)
+}
+
+func (c *claimRoom) isDeaf() bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.deaf
+}
+
+func (c *claimRoom) refused() int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.deafHits
 }
 
 func (c *claimRoom) made() []string {
@@ -74,6 +90,12 @@ func (c *claimRoom) made() []string {
 func (c *claimRoom) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	switch {
+	case c.isDeaf() && r.Method == http.MethodPost && (r.URL.Path == "/v1/open" || r.URL.Path == "/v1/prs"):
+		c.mu.Lock()
+		c.deafHits++
+		c.mu.Unlock()
+		w.WriteHeader(http.StatusUnprocessableEntity)
+		_, _ = w.Write([]byte(`{"error":"no recogniser matches this","code":"no_recogniser","step":"recognise"}`))
 	case r.URL.Path == "/v1/tasks":
 		tasks := []map[string]string{}
 		for i := 0; i < c.running; i++ {

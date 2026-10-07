@@ -4,23 +4,23 @@
     "label": "zendesk ticket",
     "enabled": true,
     "rank": 50,
-    "pattern": "^https?://(?P<host>netfoundry\\.zendesk\\.com)/agent/tickets/(?P<num>\\d+)(?:[/?#].*)?$",
+    "pattern": "^https?://(?P<host>[A-Za-z0-9-]+\\.zendesk\\.com)/(?:[A-Za-z0-9_.-]+/)*tickets/(?P<num>\\d+)(?:[/?#].*)?$",
     "kind": "zendesk",
     "title": "zendesk-{num}",
     "tags": "zendesk,support,zendesk-{num}",
-    "cwd": "D:/worktrees/github/openziti/ziti/zendesk-{num}",
+    "cwd": "D:/worktrees/github/openziti/ziti-tunnel-sdk-c/zendesk-{num}",
     "branch": "zendesk-{num}",
-    "default_repo": "github.com/openziti/ziti",
+    "default_repo": "github.com/openziti/ziti-tunnel-sdk-c",
     "window": "active-work",
     "prompt": "Read this zendesk ticket ({url}), summarize it here and in a ZENDESK-{num}.md file. List any attachments on the ticket and tell me whether there are any, then ask me which to download. Then let's figure out how you and I can make a plan to answer the customer.",
-    "notes": "The url names no repository, so a pasted ticket opens in a zendesk-{num} worktree of the default repo, openziti/ziti, where most tickets land. Shift+Enter picks another repo, or none for a scratch folder. No fetch: the agent reads the ticket through the zendesk tools it already has, and atrium holds no zendesk credential."
+    "notes": "Any <sub>.zendesk.com and any path in front of /tickets/<num>, as gwt takes them. The url names no repository, so a pasted ticket opens in a zendesk-{num} worktree of the default repo, openziti/ziti-tunnel-sdk-c, which is gwt's default: tickets are usually tunneler issues. Shift+Enter picks another repo, or none for a scratch folder. No fetch: the agent reads the ticket through the zendesk tools it already has, and atrium holds no zendesk credential."
   },
   {
     "id": "discourse-topic",
     "label": "discourse topic",
     "enabled": true,
     "rank": 55,
-    "pattern": "^https?://(?P<host>openziti\\.discourse\\.group)/t/(?:(?P<slug>[A-Za-z0-9_-]*[A-Za-z_-][A-Za-z0-9_-]*)/)?(?P<num>\\d+)(?:[/?#].*)?$",
+    "pattern": "^https?://(?P<host>[A-Za-z0-9-]+\\.discourse\\.group)/t/(?:(?P<slug>[A-Za-z0-9_-]*[A-Za-z_-][A-Za-z0-9_-]*)/)?(?P<num>\\d+)(?:[/?#].*)?$",
     "kind": "discourse",
     "title": "discourse-{num}",
     "tags": "discourse,support,discourse-{num}",
@@ -29,6 +29,26 @@
     "default_repo": "github.com/openziti/ziti",
     "window": "active-work",
     "prompt": "Read this discourse topic ({url}), summarize the question and what has been tried so far. Then let's figure out how you and I can make a plan to answer it.",
-    "notes": "/t/<slug>/<id>, /t/<id> and a trailing post number all resolve to the topic id. It opens in the default repo, openziti/ziti, like a zendesk ticket. Shift+Enter picks another repo, or none."
+    "notes": "/t/<slug>/<id>, /t/<id> and a trailing post number all resolve to the topic id. Any <forum>.discourse.group. It opens in the default repo, openziti/ziti, like gwt does. Shift+Enter picks another repo, or none. A link with no number is the next row's."
+  },
+  {
+    "id": "discourse-topic-slug",
+    "label": "discourse topic, linked without its number",
+    "enabled": true,
+    "rank": 56,
+    "pattern": "^https?://(?P<host>[A-Za-z0-9-]+\\.discourse\\.group)/t/(?P<slug>[A-Za-z0-9_-]*[A-Za-z_-][A-Za-z0-9_-]*)/?(?:[?#].*)?$",
+    "kind": "discourse",
+    "title": "discourse-{num}",
+    "tags": "discourse,support,discourse-{num}",
+    "cwd": "D:/worktrees/github/openziti/ziti/discourse-{num}",
+    "branch": "discourse-{num}",
+    "default_repo": "github.com/openziti/ziti",
+    "window": "active-work",
+    "fetch": "redirect",
+    "fetch_args": [
+      "^https?://[^/]+/t/[^/?#]+/(?P<num>\\d+)"
+    ],
+    "prompt": "Read this discourse topic ({url}), summarize the question and what has been tried so far. Then let's figure out how you and I can make a plan to answer it.",
+    "notes": "/t/<slug> alone. Discourse redirects it to /t/<slug>/<id>, so the redirect fetch follows the link, as gwt does, and reads the topic id off the address it lands on. When it cannot, the directory says {num} and the dialog says why."
   }
 ]

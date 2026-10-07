@@ -8828,6 +8828,20 @@ Covered by `TestTheShippedGitHubRowsResolvePullRequestsAndIssues`, `TestTheShipp
 `TestTheShippedRowsDoNotAnswerNearMisses` (api), which PUT each shipped row through the real route. The `fetch` step (`gh`) and item 5 on a real
 board are live checks.
 
+### IV1. Every link gwt opens, the hub recognises to the same place (r-recognisers-gwt)
+
+Needs the hub built from this change and the new and changed rows on it, and two rooms, one on an older build.
+
+1. Ctrl+Alt+R on the hub board, paste `https://openziti.discourse.group/t/<a slug-only topic>`. It resolves to
+   `discourse-topic-slug` and a `discourse-<N>` cwd of openziti/ziti, whichever room is least busy. The same for a
+   GitHub advisory, a GitLab issue, a Bitbucket repo and a Zendesk ticket (cwd under `ziti-tunnel-sdk-c`).
+2. `atrium open` and a paste on the pulls tab, with the older room least busy: the card lands on the other room.
+
+Covered by `TestEveryLinkGwtOpensIsRecognisedToTheSamePlace`, `TestASlugOnlyTopicThatDoesNotRedirectSaysWhy`,
+`TestRecogniseWithNoRoomIsAnsweredWhenTheLeastBusyRoomIsOld`, `TestAnOpenPlacedOnAnOldRoomGoesToTheNext` and
+`TestAPastePlacedOnAnOldRoomGoesToTheNext` (link), and `TestFollowReadsTheNumberOffTheRedirect` (linkfetch). Item 1
+against real Discourse is a live check.
+
 ## IW. A file link asks where to open, and a .md renders in a tab (u-file-open-outside)
 
 1. On a throwaway board with a card whose directory holds `docs/plan.md`, `page.html`, `pic.svg` and `shot.png`, have the terminal print
