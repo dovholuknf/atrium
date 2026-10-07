@@ -8,6 +8,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"net"
 	"time"
 )
 
@@ -346,5 +347,27 @@ func TestPermissionHookFindsThePidOnlyWhenPosting(t *testing.T) {
 	}
 	if got := h.posts[len(h.posts)-1]["pid"]; got != float64(4242) {
 		t.Fatalf("pid posted %v", got)
+	}
+}
+
+// A whereami left pointing at a dead room must not hold a hook: the probe is
+// refused or times out and the hook prints nothing.
+func TestPermissionHookFailsOpenOnADeadAddress(t *testing.T) {
+	l, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	addr := l.Addr().String()
+	l.Close()
+	t.Setenv("ATRIUM_PERM_GATE", "on")
+	t.Setenv("ATRIUM_PERM_PROBE_TIMEOUT", "1")
+
+	start := time.Now()
+	out := runPermissionHook("http://"+addr, []byte(`{"tool_name":"Bash","tool_input":{"command":"ls"}}`), 1)
+	if out != nil {
+		t.Fatalf("expected no output, got %s", out)
+	}
+	if time.Since(start) > 4*time.Second {
+		t.Fatalf("the hook waited %s on a dead address", time.Since(start))
 	}
 }
