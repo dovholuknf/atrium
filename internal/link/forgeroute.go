@@ -115,6 +115,29 @@ func (f *hubForge) toolOf(kind, host string) (tool, cmd string) {
 	return tool, cmd
 }
 
+// helperOf is the git credential helper line of a forge kind's CLI on this hub, or "" when the kind has none.
+func (f *hubForge) helperOf(kind, host string) string {
+	if kind != forge.GitHub {
+		return ""
+	}
+	_, cmd := f.toolOf(kind, host)
+	return "!" + cmd + " auth git-credential"
+}
+
+// ForgeHelper is the credential helper for a forge host's git fetches, for the store's forge branch fetches
+// (gitsync.Hub.ForgeHelper): the same helper a PR head fetch uses, and "" when the hub has no forge, or none for the host.
+func (p *Proxy) ForgeHelper(host string) string {
+	f := p.forgeSide()
+	if f == nil {
+		return ""
+	}
+	kind, _, err := forge.Pick(host, f.entries())
+	if err != nil {
+		return ""
+	}
+	return f.helperOf(kind, host)
+}
+
 // ── a room's question ───────────────────────────────────
 
 func forgeFail(w http.ResponseWriter, code int, e *forge.HubError) {
@@ -239,13 +262,8 @@ func (p *Proxy) forgePR(ctx context.Context, f *hubForge, ask forge.HubAsk) (for
 		}
 		g := p.git()
 		spec := fg.FetchSpec(ref)
-		_, cmd := f.toolOf(ans.Kind, ask.Host)
-		helper := ""
-		if ans.Kind == forge.GitHub {
-			helper = "!" + cmd + " auth git-credential"
-		}
 		if _, err := g.Store().FetchPR(ctx, name, spec.Remote, spec.Refspec, forge.PRRef(ask.Number), ans.PR.BaseRef,
-			helper); err != nil {
+			f.helperOf(ans.Kind, ask.Host)); err != nil {
 			return ans, wrap(err)
 		}
 		ans.Store, ans.Ref = name, forge.PRRef(ask.Number)

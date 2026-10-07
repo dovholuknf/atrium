@@ -8666,6 +8666,16 @@ passes, and `env -u ATRIUM_LOCATION go test -timeout 120m ./internal/link ./inte
 `TestACardOnAnotherRoomIsGivenItsRoomsForwarderAndFetchesThroughIt` runs a real forwarder in front of the hub's board and
 a real `git fetch` of the URL it was given, with the card's token.
 
+### IS10. A branch only the forge has is fetched into the hub (f-hub-fetch-forge-branch)
+
+From a card, call `atrium_git_url` with `repo` = `openziti/ziti-tunnel-sdk-c` and `branch` = `mfa-posture-tests`, a
+branch no room pushed. The answer is `found`, one `hub` source with `forge: true`, and the note names
+`git fetch hub mfa-posture-tests` and `git fetch hub forge/mfa-posture-tests`. Run the first in the card's clone: it
+fetches the forge's tip, and the hub's store has it under `refs/forge/mfa-posture-tests` and not under `refs/heads`.
+Ask again after a new commit on GitHub: the sha moves. Ask for a branch that is not on GitHub: `not found`, saying the
+forge has none either. Ask for a branch of a private repo the hub's `gh` is not logged in for: `no credential`, "the hub
+has no credential for <repo>". Automated: `go test -run 'ABranchOnlyTheForgeHas|AFirstAskMakes|APushedBranchOfTheSameName|AMissingBranchIsStill|ABranchTheForgeDropped|APrivateRepositoryWithNoCredential|OneFetchPerBranch|ForgeAdvert' ./internal/gitsync`.
+
 ## IT. Change requests between rooms, hub half (f-new-change-requests)
 
 Needs the hub built from this change and restarted (the migration runs on start). A hub with a repository in its store

@@ -3,10 +3,12 @@ package gitsync
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
+	"os"
 	"sort"
 	"strings"
 	"sync"
@@ -56,6 +58,8 @@ const (
 	URLFound    = "found"
 	URLNotFound = "not found"
 	URLOffline  = "offline"
+	// URLNoCredential is a branch the forge may have, of a repository the hub cannot read: private, and no login.
+	URLNoCredential = "no credential"
 )
 
 // URLQuery is one lookup. Base is `scheme://host` the caller reached the hub by, which the URLs are built on and
@@ -83,6 +87,9 @@ type URLSource struct {
 	Ahead *bool `json:"ahead,omitempty"`
 	// Note is said of a source a card cannot fetch from, which has no URL (ForCard).
 	Note string `json:"note,omitempty"`
+	// Forge is on a hub source no room pushed: the hub fetched it from the repository's forge into refs/forge/ for
+	// this ask. A room older than this reads it as a plain hub source, whose URL fetches it all the same.
+	Forge bool `json:"forge,omitempty"`
 }
 
 // URLBranch is a branch and where it can be fetched from.
@@ -240,6 +247,30 @@ func (h *Hub) Lookup(ctx context.Context, q URLQuery) URLAnswer {
 
 	known := h.known(ctx)
 	name, cands := resolveRepo(q.Repo, known)
+	var forgeNote string
+	if name == "" && len(cands) == 0 && q.Branch != "" && q.Room == "" {
+		// A REPOSITORY THE HUB DOES NOT HAVE YET, asked for with a branch: made from its forge, as `atrium hub git init`
+		// makes it, when the forge has that branch. A typo makes nothing.
+		if ref, ok := forgeRef(q.Repo); ok {
+			has, err := h.Store().HasForgeBranch(ctx, ref, q.Branch)
+			var fe *FetchError
+			switch {
+			case errors.As(err, &fe) && fe.Auth:
+				return URLAnswer{State: URLNoCredential, Repo: ref.Name(), Branch: cutText(q.Branch), Note: fe.Msg}
+			case err != nil:
+				forgeNote = err.Error()
+			case has:
+				if _, err := h.Store().Init(ctx, "https://"+forgeHost(ref)+"/"+ref.Owner+"/"+ref.Repo); err != nil {
+					forgeNote = "the hub could not make " + ref.Name() + " to fetch it into: " + err.Error()
+				} else {
+					known = h.known(ctx)
+					name = ref.Name()
+				}
+			default:
+				forgeNote = "the forge has no branch " + shown(q.Branch) + " of " + ref.Name() + " either"
+			}
+		}
+	}
 	if name == "" {
 		all := make([]string, 0, len(known))
 		for n := range known {
@@ -251,6 +282,9 @@ func (h *Hub) Lookup(ctx context.Context, q URLQuery) URLAnswer {
 			note = shown(q.Repo) + " is more than one repository here, say which"
 		} else {
 			closest = closestNames(q.Repo, all, LookupClosestMax)
+		}
+		if forgeNote != "" {
+			note += ". " + forgeNote
 		}
 		return URLAnswer{State: URLNotFound, Closest: &URLClosest{Repos: closest}, Note: note}
 	}
@@ -288,11 +322,114 @@ func (h *Hub) Lookup(ctx context.Context, q URLQuery) URLAnswer {
 			offline[r] = true
 		}
 	}
-	return answer(q, name, hub, served, offline, func(sha string) bool { return h.Store().hasCommit(ctx, hubDir, sha) })
+
+	// NEITHER THE STORE NOR A ROOM HAS IT: the forge is asked, and a branch it has is fetched into refs/forge/. A branch
+	// held from an earlier ask is fetched again, so a colleague's new commits arrive. See storeforge.go.
+	if q.Branch != "" && q.Room == "" && !hasBranch(q.Branch, hub, served) {
+		sha, err := h.forgeFill(ctx, name, k.inStore, q.Branch)
+		var fe *FetchError
+		switch {
+		case err == nil && sha != "":
+			hub[q.Branch] = onHub{sha: sha, forge: true}
+			hubDir, _ = h.Store().Path(name)
+			forgeNote = forgeFetched(q.Branch)
+		case errors.As(err, &fe) && fe.Auth:
+			return URLAnswer{State: URLNoCredential, Repo: name, Branch: cutText(q.Branch), Note: fe.Msg}
+		case errors.Is(err, ErrNoForgeBranch):
+			forgeNote = "the forge has no branch " + shown(q.Branch) + " either"
+		case err != nil:
+			forgeNote = err.Error()
+		}
+	}
+	out := answer(q, name, hub, served, offline, func(sha string) bool { return h.Store().hasCommit(ctx, hubDir, sha) })
+	if forgeNote != "" {
+		if n := strings.TrimSuffix(strings.TrimSpace(out.Note), "."); n != "" {
+			out.Note = n + ". " + forgeNote
+		} else {
+			out.Note = forgeNote
+		}
+	}
+	return out
 }
 
-// onHub is one branch of the hub's store: its tip, and the room that pushed it.
-type onHub struct{ sha, room string }
+// forgeFetched is the note of a branch the hub fetched from the forge for an ask.
+func forgeFetched(b string) string {
+	return "the hub fetched " + b + " from the forge into " + ForgeRefPrefix + b + ", and fetches it again on each ask. " +
+		"`git fetch hub " + b + "` gets it while nobody has pushed a branch of that name to the hub, and " +
+		"`git fetch hub forge/" + b + "` always does"
+}
+
+// hasBranch says whether the store's heads or a room that answered has a branch.
+func hasBranch(b string, hub map[string]onHub, served []askedRoom) bool {
+	if _, ok := hub[b]; ok {
+		return true
+	}
+	for _, s := range served {
+		if _, ok := s.ans.Branches[b]; ok {
+			return true
+		}
+	}
+	return false
+}
+
+// forgeRef is the repository a lookup named, when it names one fully enough to ask a forge: a forge URL,
+// `<owner>/<repo>` (on github) or `<host>/<owner>/<repo>`. A bare repository name does not.
+func forgeRef(in string) (Ref, bool) {
+	in = strings.TrimSpace(in)
+	if in == "" || len(in) > lookupInputMax {
+		return Ref{}, false
+	}
+	if strings.Contains(in, "://") || scpRe.MatchString(in) {
+		ref, err := ParseURL(in)
+		return ref, err == nil
+	}
+	in = strings.TrimSuffix(strings.TrimRight(in, "/"), ".git")
+	if !strings.Contains(in, "/") {
+		return Ref{}, false
+	}
+	ref, err := ParseName(in)
+	return ref, err == nil
+}
+
+// forgeFill fetches a branch of a known repository from its forge into the store. A repository the store does not
+// hold yet is made, as `atrium hub git init` makes it, when the forge has the branch and nothing is on the disk where
+// it would go: a git_repos mirror there is the operator's, and is never taken by a lookup. "" and no error is a
+// repository the hub does not fetch into.
+func (h *Hub) forgeFill(ctx context.Context, name string, inStore bool, branch string) (string, error) {
+	s := h.Store()
+	if !inStore {
+		ref, err := ParseName(name)
+		if err != nil {
+			return "", err
+		}
+		if dir, err := s.Path(name); err != nil {
+			return "", nil
+		} else if _, err := os.Stat(dir); err == nil {
+			return "", nil
+		}
+		has, err := s.HasForgeBranch(ctx, ref, branch)
+		if err != nil {
+			return "", err
+		}
+		if !has {
+			return "", ErrNoForgeBranch
+		}
+		if _, err := s.Init(ctx, "https://"+forgeHost(ref)+"/"+ref.Owner+"/"+ref.Repo); err != nil {
+			return "", err
+		}
+	}
+	if s.Adopted(name) {
+		return "", nil
+	}
+	return s.FetchForgeBranch(ctx, name, branch)
+}
+
+// onHub is one branch of the hub's store: its tip, and the room that pushed it. forge is a branch no room pushed, which
+// the hub fetched from the forge into refs/forge/ for this ask.
+type onHub struct {
+	sha, room string
+	forge     bool
+}
 
 // HubOnlyAnswer is the answer built from the hub's store alone, `branches` being its refs/heads as a fetch is
 // advertised them: what a room answers itself when its hub is older than the lookup over the link. The same answer
@@ -359,7 +496,8 @@ func answer(q URLQuery, name string, hub map[string]onHub, served []askedRoom, o
 		ub := URLBranch{Name: b}
 		on, onHub := hub[b]
 		if onHub {
-			ub.Sources = append(ub.Sources, URLSource{Source: "hub", URL: q.Base + StorePrefix + name + ".git", SHA: on.sha})
+			ub.Sources = append(ub.Sources, URLSource{Source: "hub", URL: q.Base + StorePrefix + name + ".git", SHA: on.sha,
+				Forge: on.forge})
 		}
 		for _, s := range served {
 			sha, ok := s.ans.Branches[b]
@@ -843,6 +981,9 @@ func (b URLBranch) pick() (URLSource, string) {
 	}
 	if hub != nil {
 		why := "finished, on the hub"
+		if hub.Forge {
+			why = "fetched from the forge by the hub, as nobody has pushed it"
+		}
 		if cut != nil && cut.Source == "room" {
 			why += ". " + cut.Room + " has work in progress that a card cannot fetch: ask the card on it to " +
 				"atrium_git_push it, then ask again"

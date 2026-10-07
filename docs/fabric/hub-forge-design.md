@@ -62,7 +62,7 @@ Read for this design, 2026-10-02:
 | revision 1 | revision 2 |
 | --- | --- |
 | every repo mirrored on the hub, automatically | **no mirror.** The hub stores only `main` and branches rooms pushed |
-| forge branches fetched into `refs/forge/` | **none.** The hub never fetches a forge's branches. A new hub repo's `main` is seeded once (3.1) |
+| forge branches fetched into `refs/forge/` | **only the branch a card asks for** (3.5, changed 2026-10-07). A branch neither the store nor a room has is fetched from the forge into `refs/forge/<branch>` when a card asks for it, and refreshed on each ask. Nothing is mirrored. A new hub repo's `main` is still seeded once (3.1) |
 | fetch-through into a hub copy, with the copy as fallback | **pass-through to the room, no copy.** Offline fails |
 | rooms' branches served under `rooms/<room>/` | **normal names.** In-progress branches are read at the room's own name (`sg4.atrium`), and pushed branches at the hub's |
 | push in a later stage | **push is stage 1** |
@@ -73,7 +73,8 @@ Read for this design, 2026-10-02:
 Revision 1's @review findings still apply where their parts remain:
 - M2's served set now governs the pass-through (3.3);
 - L2's `followRedirects=initial`, L3's dirty rule and L4's PR text as data are all kept;
-- M1 (forge refs shadowing rooms' work) no longer arises, because the hub fetches no forge branches.
+- M1 (forge refs shadowing rooms' work) is answered by the namespace: a forge branch lives only under `refs/forge/`,
+  never `refs/heads/`, and a branch a room pushed under the same name always wins (3.5).
 
 ## 2. The URLs
 
@@ -98,10 +99,12 @@ Revision 1's @review findings still apply where their parts remain:
   `git.store`.
 - **A repo is made in one of two ways:**
   - by the operator: `atrium hub git init <url>`;
-  - or on a room's first push of a repo the hub does not have, when the push setting allows it (question 3).
+  - or on a room's first push of a repo the hub does not have, when the push setting allows it (question 3);
+  - or on a card's first ask for a branch of a repo the hub does not have, when the forge has that branch (3.5).
 - **Its `main` is seeded once.** At creation, the hub fetches the forge's default branch into `main`, for a public
-  repo. A private repo is created empty, and the operator pushes `main`. This is the one fetch from a forge the hub
-  ever makes, and it is not repeated: after it, `main` moves only by an operator push (3.2).
+  repo. A private repo is created empty, and the operator pushes `main`. The seed is not repeated: after it, `main`
+  moves only by an operator push (3.2). The only other fetches from a forge are a PR's head (`refs/atrium/pr/`) and
+  the branches cards ask for (`refs/forge/`, 3.5). The second never writes `main` or anything under `refs/heads`.
 - For atrium, the existing `git_repos` entry and its `claude/main` mirror stay as they are (git-sync stage 1).
 
 ### 3.2 Receiving a push
@@ -184,6 +187,48 @@ the token from the environment and push as that card.
 So no account and no new credential: rooms are their certificates, cards are their atrium tokens, and the operator
 is whoever can reach the board as the operator.
 
+### 3.5 A forge's branch, fetched when a card asks for it
+
+Added 2026-10-07. A card was asked to work on `openziti/ziti-tunnel-sdk-c`'s `mfa-posture-tests`, a branch of a
+public repo. The hub answered "not found" because the store held only `main`, and the card fell back to the GitHub API.
+clint: "this is a fucking public repo. the hub can just pull it." So this section replaces "the hub never fetches a
+forge's branches". It is still not a mirror: only a branch a card asked for is fetched.
+
+- **When.** A lookup with a branch (`atrium_git_url`, `GET /_hub/git/url`) that neither the hub's `refs/heads` nor
+  an attached room has. The hub asks the repo's forge (`https://<host>/<owner>/<repo>.git`, the URL the `main` seed
+  reads) with one `ls-remote`, and fetches the branch if it is there. An ask with `room=` asks only that room and never
+  the forge.
+- **Where it lives.** `refs/forge/<branch>`, a namespace of its own. Never `refs/heads`, so `main` and a room's pushed
+  work are never written over. A room may still push a branch of the same name, and the push takes `refs/heads/<branch>`
+  as a create, under 3.2's rules.
+- **How a card fetches it.** The store's fetch route advertises each `refs/forge/<b>` a second time as
+  `refs/heads/<b>`, unless a pushed branch has that name (without regard to case). So `git fetch hub <branch>` just
+  works, and `git fetch hub forge/<branch>` always names the forge's copy. git's own upload-pack serves the want,
+  because the sha is the tip of `refs/forge/<b>`, which it advertised. No allow-sha setting changes.
+- **The answer** is a `hub` source with `forge: true`, on the same store URL, and the note says both fetch commands.
+  A room older than this reads it as a plain `hub` source, and its URL fetches the branch all the same.
+- **Refreshed on each ask.** Every lookup fetches it again when the forge's tip moved. The fetch route also refreshes
+  the forge branches the store holds before it advertises them, at most once every 10 seconds per repo and within
+  20 seconds, so a colleague's new commits arrive. A forge that cannot be asked leaves the copy the store has. A
+  branch the forge deleted is removed from `refs/forge/`. The forge may force-push its branch, and the copy follows,
+  because `refs/forge/` is nobody's work but the forge's.
+- **The fetch route cannot make the first fetch.** A protocol v0 fetch names no branch before the hub has advertised
+  its refs, and v2 is not spoken (3.3). Fetching every forge branch there would be the mirror clint refused (Q1). So
+  the first fetch of a branch is the lookup's, which every card brief already says to call.
+- **A repo the hub does not hold yet** is made, as `atrium hub git init <url>` makes it with `main` seeded, when the
+  ask names it fully (`<owner>/<repo>`, `<host>/<owner>/<repo>` or a URL) and the forge has that branch. A typo makes
+  nothing. A `git_repos` mirror on the disk where it would go is the operator's, and a lookup never takes it.
+- **Credentials.** None for a public repo. A private one uses the login the PR head fetch uses: the forge CLI's
+  credential helper, for that one command only (`Hub.ForgeHelper`). When there is none, the answer is
+  `no credential` with "the hub has no credential for <repo>". It is never `not found`. A forge that has the repo and
+  not the branch answers `not found`, and says the forge has no such branch either.
+- **Bounded.** One fetch per branch at a time: a second ask waits for the first and takes its answer. The seed's
+  2-minute timeout applies to each fetch. The `ls-remote` runs with no lock held, and only a fetch that moves a ref
+  takes the repo's lock, so a push waits only for a real fetch. At most 100 forge branches are held per repo. A forge
+  branch that differs from a held one only in case is refused (NTFS).
+- **Read-only.** Every transfer is a fetch from the forge with `transfer.fsckObjects`, and nothing is ever pushed to
+  one.
+
 ## 4. The lookup: `atrium_git_url`
 
 Revision 1's section 3.1, kept with three changes:
@@ -195,7 +240,8 @@ Revision 1's section 3.1, kept with three changes:
 
 Every card brief keeps the line: "to read code that is not in your cwd, call `atrium_git_url`, then fetch it from the
 URL it gives. Never ask for a paste." A miss answers `not found`, with the closest repos and branches, and an offline
-room answers `offline`.
+room answers `offline`. A branch only the forge has is fetched into the hub and answered as a `hub` source with
+`forge: true` (3.5), and a private repo the hub has no login for answers `no credential`.
 
 ## 5. A room
 

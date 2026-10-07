@@ -63,6 +63,10 @@ type Hub struct {
 	// CreateOnPush says whether a card's first push of a repository the hub lacks may make it: the
 	// `git.create_on_push` setting. Nil is off. Read on every push.
 	CreateOnPush func() bool
+	// ForgeHelper is the git credential helper line of the forge CLI for a forge host (`github.com`), or "" for none.
+	// A forge branch fetch sets it for that one command, as a PR head fetch does. Nil is none, and then only public
+	// repositories can be read. See storeforge.go.
+	ForgeHelper func(host string) string
 	// LookupTTL and LookupWait override how long a room's answer to the lookup is held, and how long a room has
 	// to give it, when above zero. A test sets them. See lookup.go.
 	LookupTTL, LookupWait time.Duration

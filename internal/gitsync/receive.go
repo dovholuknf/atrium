@@ -280,6 +280,20 @@ func (rc *Receiver) serveFetch(w http.ResponseWriter, r *http.Request, ref Ref, 
 		out.Header.Del("Transfer-Encoding")
 		out.Header.Del("Content-Encoding")
 		out.Header.Set("Content-Length", strconv.Itoa(len(body)))
+	} else {
+		// THE FORGE BRANCHES THE STORE HOLDS are refreshed, then advertised under their plain names too, so
+		// `git fetch hub <branch>` finds one no room pushed. See storeforge.go.
+		rc.h.Store().refreshForge(r.Context(), ref, dir)
+		bw := &bufWriter{h: http.Header{}}
+		serveCGI(gitCGI(exe, dir, fetchConfig(hooks), cgiEnv()), bw, out)
+		if bw.code == 0 || bw.code == http.StatusOK {
+			adv := forgeAdvert(bw.buf.Bytes())
+			bw.buf.Reset()
+			bw.buf.Write(adv)
+			bw.h.Del("Content-Length")
+		}
+		bw.copyTo(w)
+		return
 	}
 	serveCGI(gitCGI(exe, dir, fetchConfig(hooks), cgiEnv()), w, out)
 }

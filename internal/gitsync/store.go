@@ -69,6 +69,8 @@ type Store struct {
 
 	// afterCollision is a test hook, called under the store-wide lock after the case check passed.
 	afterCollision func(name string)
+	// forge is the forge branch fetches in flight, and when each repository's were last refreshed. See storeforge.go.
+	forge forgeState
 }
 
 // Tip is a ref's tip: the sha and the commit time.

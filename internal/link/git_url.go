@@ -69,7 +69,12 @@ const gitURLToolDesc = "Get the URL to fetch code that is not in your cwd. Call 
 	"progress on an attached room, passed through to you, with the room's `online`). A branch that is both " +
 	"answers both, with each sha, and `ahead` says the room has commits the hub does not. The `state` is " +
 	"`found`, `not found` (with the closest repositories and branches) or `offline` (the room that has it " +
-	"is not connected, so say so and do not retry).\n\n" +
+	"is not connected, so say so and do not retry) or `no credential` (a private repository the hub has no login " +
+	"for).\n\n" +
+	"A branch that neither the hub nor a room has is fetched from the repository's forge (GitHub) into the hub, " +
+	"and answered as a `hub` source with `forge` true. Then `git fetch hub <branch>` gets it, and so does " +
+	"`git fetch hub forge/<branch>`. Each ask fetches it again. A repository the hub does not hold yet is made " +
+	"for it, when the forge has that branch.\n\n" +
 	"The URL is on your own room's forwarder, which carries your card's token, so `git fetch` it from your " +
 	"checkout as it stands. A room's work in progress (`room`) has no URL for a card yet: the answer says so, " +
 	"and the way to it is to ask the card on that room to `atrium_git_push` the branch, then ask again. " +
