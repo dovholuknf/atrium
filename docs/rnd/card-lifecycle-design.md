@@ -162,6 +162,12 @@ swept.
 | `identity` | an identity file and its overlay | deleted with its overlay |
 | `review` | the PR row id | archived, its run folder minus `src/` kept as history |
 
+**Child sessions.** A card's children (a review panel's reviewers, helpers it launches) start in a directory under the
+card's own worktree or env dir, never in a free path such as `C:/temp/pr967-review/<role>` (seen 2026-10-07 on the
+ziti-console 967 review, u-child-cards-inherit-colour). Each child is a `child` inventory row of its parent with its
+directory as a `dir` row, so finish stops the children and removes their directories. A child is on its parent's
+room and takes its parent's colour, whatever its directory.
+
 **What is kept** on finish: the card row and its transcript, the review's run folder minus `src/` (findings,
 `walk.txt`, `bundle.md`), a recap when the card wrote one, and the inventory rows themselves with `freed_at`, so the
 history says what the card held and what removing it said.
