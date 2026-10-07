@@ -10,9 +10,10 @@
     "tags": "zendesk,support,zendesk-{num}",
     "cwd": "D:/worktrees/github/openziti/ziti/zendesk-{num}",
     "branch": "zendesk-{num}",
+    "default_repo": "github.com/openziti/ziti",
     "window": "active-work",
     "prompt": "Read this zendesk ticket ({url}), summarize it here and in a ZENDESK-{num}.md file. List any attachments on the ticket and tell me whether there are any, then ask me which to download. Then let's figure out how you and I can make a plan to answer the customer.",
-    "notes": "The url names no repository, so the directory defaults to openziti/ziti, where most tickets land. Change it in the dialog when the ticket belongs to another repo. No fetch: the agent reads the ticket through the zendesk tools it already has, and atrium holds no zendesk credential."
+    "notes": "The url names no repository, so a pasted ticket opens in a zendesk-{num} worktree of the default repo, openziti/ziti, where most tickets land. Shift+Enter picks another repo, or none for a scratch folder. No fetch: the agent reads the ticket through the zendesk tools it already has, and atrium holds no zendesk credential."
   },
   {
     "id": "discourse-topic",
@@ -25,8 +26,9 @@
     "tags": "discourse,support,discourse-{num}",
     "cwd": "D:/worktrees/github/openziti/ziti/discourse-{num}",
     "branch": "discourse-{num}",
+    "default_repo": "github.com/openziti/ziti",
     "window": "active-work",
     "prompt": "Read this discourse topic ({url}), summarize the question and what has been tried so far. Then let's figure out how you and I can make a plan to answer it.",
-    "notes": "/t/<slug>/<id>, /t/<id> and a trailing post number all resolve to the topic id. The directory defaults to openziti/ziti, like a zendesk ticket. Change it in the dialog when the topic is about another repo."
+    "notes": "/t/<slug>/<id>, /t/<id> and a trailing post number all resolve to the topic id. It opens in the default repo, openziti/ziti, like a zendesk ticket. Shift+Enter picks another repo, or none."
   }
 ]

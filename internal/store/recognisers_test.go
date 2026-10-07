@@ -37,6 +37,29 @@ func TestSaveRecogniserRefusesAPatternThatDoesNotCompile(t *testing.T) {
 	}
 }
 
+// THE DEFAULT REPO is saved, read back and filled through unchanged, and only a host/org/repo is taken.
+func TestTheDefaultRepoIsSavedAndCheckedAndFilled(t *testing.T) {
+	s := open(t)
+	r := pullRequestRow()
+	r.DefaultRepo = " github.com/openziti/ziti/ "
+	got, err := s.SaveRecogniser(r)
+	if err != nil || got.DefaultRepo != "github.com/openziti/ziti" {
+		t.Fatalf("%v %+v", err, got)
+	}
+	if res := got.Fill(map[string]string{"url": "u"}); res.DefaultRepo != "github.com/openziti/ziti" {
+		t.Errorf("filled %q", res.DefaultRepo)
+	}
+	for _, bad := range []string{"openziti/ziti", "github.com/../ziti", "github.com/o/r/x", "github.com/{org}/r"} {
+		r.DefaultRepo = bad
+		if _, err := s.SaveRecogniser(r); err == nil {
+			t.Errorf("%q was saved", bad)
+		}
+	}
+	if !IsPRRow("pull-request,{repo}") || IsPRRow("issue,{repo}") || IsPRRow("pull-requests") {
+		t.Error("IsPRRow reads the tags wrong")
+	}
+}
+
 func TestSaveRecogniserNeedsAPattern(t *testing.T) {
 	s := open(t)
 	r := pullRequestRow()

@@ -29,15 +29,16 @@ import (
 //
 // `--show` is the old print and starts nothing. Writing a recogniser is a loop
 // of paste, look, adjust the template, and a verb that opened a card every time
-// round that loop would be unusable. A link the verb does not open yet (an issue,
-// a support ticket) is shown the same way, and `--start` launches it from what it
-// resolved to, as before.
+// round that loop would be unusable. A link the verb does not open (a bare repo
+// page) is shown the same way, and `--start` launches it from what it resolved
+// to, as before.
 
 type openOpts struct {
 	boardURL string
 	runner   string
 	why      string
 	room     string
+	repo     string
 	show     bool
 	start    bool
 	attach   bool
@@ -49,13 +50,16 @@ func newOpen() *cobra.Command {
 	c := &cobra.Command{
 		Use:   "open [url]",
 		Short: "Open a link as a card: its worktree, its review and a session, or the card it already has.",
-		Long: "Opens a pull request link the way a paste on the board does: the worktree, the review and a " +
-			"card started in the worktree, on the room the hub picks. A link that already has a live card " +
-			"answers that card. Prints the card's address on the board. With no url the clipboard is read.\n\n" +
+		Long: "Opens a link the way a paste on the board does, on the room the hub picks. A pull request gets " +
+			"its worktree, its review and a card in the worktree. An issue or a branch gets a worktree on its " +
+			"branch and a card. A support ticket or forum topic names no repo, so it opens in the recogniser's " +
+			"default repo, or the one --repo names, or with --repo none in a scratch folder of the card's own. " +
+			"A link that already has a live card answers that card. Prints the card's address on the board. " +
+			"With no url the clipboard is read.\n\n" +
 			"--attach attaches this terminal to the card. Ctrl+] leaves it, and the card keeps running.\n\n" +
 			"--show only prints what the recogniser table made of the url and starts nothing, which is the " +
-			"loop for writing a recogniser. A link that is not a pull request is shown the same way for now, " +
-			"and --start launches it from what it resolved to. No directory is ever created for one of those.",
+			"loop for writing a recogniser. A link that names no piece of work (a repo page) is shown the same " +
+			"way, and --start launches it from what it resolved to. No directory is created for one of those.",
 		Args: cobra.MaximumNArgs(1),
 		// The flag list is not the answer to "nothing recognises this url".
 		//
@@ -95,6 +99,8 @@ func newOpen() *cobra.Command {
 	c.Flags().BoolVar(&o.attach, "attach", false, "attach this terminal to the card. ctrl+] leaves it")
 	c.Flags().StringVar(&o.why, "why", "", "why it is being opened, kept on the review and the card")
 	c.Flags().StringVar(&o.room, "room", "", "the room to open it on, instead of the one the hub picks")
+	c.Flags().StringVar(&o.repo, "repo", "",
+		"for a link that names no repo: host/org/repo to open it in, or none for a scratch folder (default: the recogniser's)")
 	c.Flags().StringVar(&o.runner, "runner", "", "which configured runner starts the card (default: the review recipe's, or claude for --start)")
 	c.Flags().BoolVar(&o.asJSON, "json", false, "print the answer as json")
 	c.Flags().StringVar(&o.boardURL, "url", "",
@@ -132,6 +138,7 @@ type opened struct {
 	Card     string `json:"card"`
 	PR       string `json:"pr"`
 	Worktree string `json:"worktree"`
+	Repo     string `json:"repo"`
 	Created  bool   `json:"created"`
 	Room     string `json:"room"`
 	Title    string `json:"title"`
@@ -140,7 +147,8 @@ type opened struct {
 // openLink sends the link to the open verb and prints the card, or attaches to it.
 func openLink(link string, o openOpts) error {
 	board := boardAddress(o.boardURL)
-	body, err := json.Marshal(map[string]string{"url": strings.TrimSpace(link), "why": o.why, "harness": o.runner})
+	body, err := json.Marshal(map[string]string{"url": strings.TrimSpace(link), "why": o.why, "harness": o.runner,
+		"repo": strings.TrimSpace(o.repo)})
 	if err != nil {
 		return err
 	}
@@ -167,9 +175,10 @@ func openLink(link string, o openOpts) error {
 		}
 		_ = json.Unmarshal(raw, &e)
 		switch {
-		case e.Code == "not_a_pr":
-			// Not opened as a card yet: shown as before, and --start launches it from the resolution.
-			fmt.Println("only a pull request opens as a card so far. this is what the url resolves to:")
+		case e.Code == "not_openable" || e.Code == "not_a_pr":
+			// Not opened as a card: shown as before, and --start launches it from the resolution. not_a_pr is an
+			// older room's.
+			fmt.Println("that link names no piece of work to open as a card. this is what the url resolves to:")
 			fmt.Println()
 			return showURL(link, o)
 		case resp.StatusCode == http.StatusNotFound && e.Error == "":
@@ -216,6 +225,8 @@ func printOpened(board string, o opened) {
 	}
 	row("card", o.Card)
 	row("title", o.Title)
+	row("kind", o.Kind)
+	row("repo", o.Repo)
 	row("worktree", o.Worktree)
 	row("review", o.PR)
 	row("board", strings.TrimRight(board, "/")+"/#term="+url.QueryEscape(o.Card))

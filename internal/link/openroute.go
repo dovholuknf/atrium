@@ -77,8 +77,9 @@ func (p *Proxy) openKey(r *http.Request) string {
 	if err != nil {
 		return ""
 	}
-	_, vars, err := store.MatchRecogniserIn(rows, in.URL)
-	if err != nil {
+	row, vars, err := store.MatchRecogniserIn(rows, in.URL)
+	if err != nil || !store.IsPRRow(row.Tags) {
+		// An issue, a branch or a support link is not claimed by key yet: it goes to the least busy room.
 		return ""
 	}
 	num, _ := strconv.Atoi(strings.TrimSpace(vars["num"]))

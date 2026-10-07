@@ -193,6 +193,9 @@ func (c *SCM) ClonePath(r Ref) (root, dest string, err error) {
 	return root, dest, nil
 }
 
+// ExpandHome is a git.scm_root value with a leading ~ made the home folder.
+func ExpandHome(p string) string { return expandHome(p) }
+
 func expandHome(p string) string {
 	if p == "~" || strings.HasPrefix(p, "~/") || strings.HasPrefix(p, `~\`) {
 		if h, err := os.UserHomeDir(); err == nil && h != "" {

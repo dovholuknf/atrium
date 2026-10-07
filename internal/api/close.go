@@ -246,7 +246,11 @@ func (s *Server) closePreview(ctx context.Context, t *store.Task) (*closePreview
 		case store.ResStash:
 			it.Action, it.Note = "keep", "on the hub. nothing here frees it"
 		case store.ResDir:
-			it.Action, it.Note = "keep", "a directory is not freed by a close yet. the sweep lists it"
+			if s.inScratch(r.Ref) == "" {
+				it.Action, it.Note = "keep", "a folder outside the scratch folder is not freed by a close. the sweep lists it"
+				break
+			}
+			it.Note = "the card's scratch folder, deleted with what is in it"
 		}
 		pv.Items = append(pv.Items, it)
 	}
@@ -440,6 +444,20 @@ func (s *Server) closeCard(t *store.Task, pv *closePreview, answers map[string]s
 		cancel()
 		if err != nil {
 			failed(r, err)
+			continue
+		}
+		freed(r)
+	}
+
+	// 5b. scratch folders, only under the scratch root
+	for _, r := range of(store.ResDir) {
+		dir := s.inScratch(r.Ref)
+		if dir == "" {
+			continue
+		}
+		if err := os.RemoveAll(dir); err != nil {
+			failed(r, err)
+			warn("%s did not remove: %v", r.Ref, err)
 			continue
 		}
 		freed(r)

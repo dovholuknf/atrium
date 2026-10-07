@@ -35,7 +35,8 @@ import (
 // A STEP THAT FAILS UNDOES THE STEPS BEFORE IT, newest first, and answers the failing step's sentence. A worktree it
 // found and a row that was already there are not touched, only what this call made.
 //
-// Only pull requests so far. Issues and support links are r-open-support-kinds.
+// That is a pull request. An issue, a branch and a support link take openOther (openkinds.go): a worktree or a
+// scratch folder and a card, with no review row.
 
 // openHeldKey marks the review row's claim as asked by the open verb. See postPR.
 type openHeldKey struct{}
@@ -50,17 +51,23 @@ type openRequest struct {
 	Prompt  string `json:"prompt"`
 	Model   string `json:"model"`
 	Effort  string `json:"effort"`
+	// Repo is where a link that names no repo opens: "host/org/repo", "none" for a scratch folder, or empty for the
+	// recogniser's default repo. Ignored for a link that names its own.
+	Repo string `json:"repo"`
 }
 
-// openAnswer is the card a link opened. On a hub `room` is filled and `card` and `pr` carry the room's tag.
+// openAnswer is the card a link opened. On a hub `room` is filled and `card` and `pr` carry the room's tag. Kind is
+// pr, issue, branch or support. Repo is "host/org/repo" of the worktree, "" for a scratch folder.
 type openAnswer struct {
-	Key      string `json:"key"`
-	Kind     string `json:"kind"`
-	Card     string `json:"card"`
-	PR       string `json:"pr,omitempty"`
-	Worktree string `json:"worktree,omitempty"`
-	Created  bool   `json:"created"`
-	Title    string `json:"title,omitempty"`
+	Key        string `json:"key"`
+	Kind       string `json:"kind"`
+	Recogniser string `json:"recogniser"`
+	Card       string `json:"card"`
+	PR         string `json:"pr,omitempty"`
+	Worktree   string `json:"worktree,omitempty"`
+	Repo       string `json:"repo"`
+	Created    bool   `json:"created"`
+	Title      string `json:"title,omitempty"`
 }
 
 // openFail is a refusal with the step it came from, so the board can say which part did not happen.
@@ -100,20 +107,21 @@ func (s *Server) open(w http.ResponseWriter, r *http.Request) {
 		openFail(w, http.StatusBadRequest, "recognise", "bad_request", err.Error())
 		return
 	}
-	host := strings.ToLower(strings.TrimSpace(got.Vars["host"]))
-	if host == "" {
-		host = strings.ToLower(strings.TrimSpace(got.Host))
-	}
-	org, repo := strings.TrimSpace(got.Vars["org"]), strings.TrimSpace(got.Vars["repo"])
-	num, _ := strconv.Atoi(strings.TrimSpace(got.Vars["num"]))
-	if host == "" || org == "" || repo == "" || num <= 0 {
-		openFail(w, http.StatusUnprocessableEntity, "recognise", "not_a_pr",
-			"only a pull request link opens a card this way so far. "+
+	k := classify(got)
+	switch k.kind {
+	case linkPR:
+	case linkIssue, linkBranch, linkSupport:
+		s.openOther(w, r, in, got, k)
+		return
+	default:
+		openFail(w, http.StatusUnprocessableEntity, "recognise", "not_openable",
+			"that link names no pull request, issue, branch or ticket, so there is no piece of work to open. "+
 				"use the launch dialog for this one: it fills in what the recogniser knew.")
 		return
 	}
+	host, org, repo, num := k.host, k.org, k.repo, k.num
 	key := store.PRKey(host, org, repo, num)
-	ans := openAnswer{Key: key, Kind: got.Recogniser, Title: got.Title}
+	ans := openAnswer{Key: key, Kind: linkPR, Recogniser: got.Recogniser, Title: got.Title, Repo: host + "/" + org + "/" + repo}
 
 	// 2. a live card for the link already
 	if live, err := s.st.LivePR(host, org, repo, num); err == nil && live != nil {

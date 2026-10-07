@@ -37,8 +37,10 @@ func (x *claimHub) openVia(t *testing.T, room, url string) (int, string, map[str
 // AN OPEN GOES TO THE ROOM THAT HOLDS THE LINK, whatever its load, else to the least busy room, and a named room
 // wins over both. The answer carries the room, and the card and row ids tagged with it.
 func TestOpenOnTheHubGoesToTheHolderElseTheLeastBusyRoom(t *testing.T) {
-	withSeed(t, seedRow("github-pull-request", 10,
-		`^https?://(?P<host>github\.com)/(?P<org>[A-Za-z0-9_.-]+)/(?P<repo>[A-Za-z0-9_.-]+)/pull/(?P<num>\d+)(?:[/?#].*)?$`))
+	pr := seedRow("github-pull-request", 10,
+		`^https?://(?P<host>github\.com)/(?P<org>[A-Za-z0-9_.-]+)/(?P<repo>[A-Za-z0-9_.-]+)/pull/(?P<num>\d+)(?:[/?#].*)?$`)
+	pr.Tags = "pull-request,{repo}"
+	withSeed(t, pr)
 	x := newClaimHub(t, map[string]int{"alpha": 3, "beta": 0})
 	defer x.done()
 	x.proxy.SetForge(&memSettings{m: map[string]string{}}, nil)

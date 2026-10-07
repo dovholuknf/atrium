@@ -66,6 +66,10 @@ type Recogniser struct {
 	Window string `json:"window"`
 	Theme  string `json:"theme"`
 
+	// DefaultRepo is where a link that names no repository opens, "host/org/repo", for a support ticket or a forum
+	// topic. Empty is a scratch folder of the card's own. Not a template: the link's text never chooses a repo.
+	DefaultRepo string `json:"default_repo"`
+
 	// Fetch is an OPTIONAL argv that prints more facts as JSON on stdout.
 	//
 	// THIS IS THE WHOLE EXTENSIBILITY STORY AND IT HOLDS NO CREDENTIAL. The
@@ -115,6 +119,8 @@ type Resolved struct {
 	Branch string   `json:"branch"`
 	Window string   `json:"window"`
 	Theme  string   `json:"theme"`
+	// DefaultRepo is the row's, unchanged.
+	DefaultRepo string `json:"default_repo"`
 
 	// Missing names every `{placeholder}` no variable answered, sorted. The
 	// placeholder is still there in the text, so the dialog shows a hole rather
@@ -140,7 +146,7 @@ var ErrNoRecogniser = errors.New("no recogniser matches this")
 
 const recogniserColumns = `id, label, enabled, rank, pattern, kind, title, tags, cwd,
 	prompt, branch, window_name, theme, fetch_cmd, fetch_args, fetch_cwd, notes,
-	last_error, failures, last_used_at, created_at`
+	last_error, failures, last_used_at, created_at, default_repo`
 
 func scanRecogniser(sc interface{ Scan(...any) error }) (*Recogniser, error) {
 	var (
@@ -151,7 +157,7 @@ func scanRecogniser(sc interface{ Scan(...any) error }) (*Recogniser, error) {
 	)
 	if err := sc.Scan(&r.ID, &r.Label, &enabled, &r.Rank, &r.Pattern, &r.Kind, &r.Title,
 		&r.Tags, &r.Cwd, &r.Prompt, &r.Branch, &r.Window, &r.Theme, &r.Fetch, &args,
-		&r.FetchCwd, &r.Notes, &r.LastError, &r.Failures, &lastUsed, &created); err != nil {
+		&r.FetchCwd, &r.Notes, &r.LastError, &r.Failures, &lastUsed, &created, &r.DefaultRepo); err != nil {
 		return nil, err
 	}
 	r.Enabled = enabled != 0
@@ -250,8 +256,8 @@ func (st *Store) SaveRecogniser(r Recogniser) (*Recogniser, error) {
 		clear := r.Enabled && !wasEnabled
 		_, err := st.db.Exec(`INSERT INTO recogniser
 			(id, label, enabled, rank, pattern, kind, title, tags, cwd, prompt, branch,
-			 window_name, theme, fetch_cmd, fetch_args, fetch_cwd, notes, created_at)
-			VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+			 window_name, theme, fetch_cmd, fetch_args, fetch_cwd, notes, created_at, default_repo)
+			VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
 			ON CONFLICT(id) DO UPDATE SET
 				label = excluded.label, enabled = excluded.enabled, rank = excluded.rank,
 				pattern = excluded.pattern, kind = excluded.kind, title = excluded.title,
@@ -259,12 +265,12 @@ func (st *Store) SaveRecogniser(r Recogniser) (*Recogniser, error) {
 				branch = excluded.branch, window_name = excluded.window_name,
 				theme = excluded.theme, fetch_cmd = excluded.fetch_cmd,
 				fetch_args = excluded.fetch_args, fetch_cwd = excluded.fetch_cwd,
-				notes = excluded.notes,
+				notes = excluded.notes, default_repo = excluded.default_repo,
 				failures   = CASE WHEN ? THEN 0  ELSE recogniser.failures   END,
 				last_error = CASE WHEN ? THEN '' ELSE recogniser.last_error END`,
 			r.ID, r.Label, enabled, r.Rank, r.Pattern, r.Kind, r.Title, r.Tags, r.Cwd,
 			r.Prompt, r.Branch, r.Window, r.Theme, r.Fetch, string(args), r.FetchCwd,
-			r.Notes, created, clear, clear)
+			r.Notes, created, r.DefaultRepo, clear, clear)
 		return err
 	})
 	if err != nil {
@@ -291,10 +297,44 @@ func CheckRecogniser(r Recogniser) (Recogniser, error) {
 	if r.Label == "" {
 		r.Label = r.ID
 	}
+	r.DefaultRepo = strings.Trim(strings.TrimSpace(r.DefaultRepo), "/")
+	if r.DefaultRepo != "" && !RepoSlug(r.DefaultRepo) {
+		return r, errors.New("the default repo is host/org/repo, like github.com/openziti/ziti, or empty for none")
+	}
 	if r.FetchArgs == nil {
 		r.FetchArgs = []string{}
 	}
 	return r, nil
+}
+
+// PRTag is the tag that makes a recogniser's link a pull request, which the open verb reviews.
+const PRTag = "pull-request"
+
+// IsPRRow is whether a row's tags template names PRTag.
+func IsPRRow(tags string) bool {
+	for _, t := range strings.Split(tags, ",") {
+		if strings.TrimSpace(t) == PRTag {
+			return true
+		}
+	}
+	return false
+}
+
+// repoSegment is one part of a "host/org/repo": no part is . or .., so a path made from it cannot climb out.
+var repoSegment = regexp.MustCompile(`^[A-Za-z0-9_-][A-Za-z0-9_.-]*$`)
+
+// RepoSlug is whether s is "host/org/repo" and nothing else.
+func RepoSlug(s string) bool {
+	parts := strings.Split(s, "/")
+	if len(parts) != 3 {
+		return false
+	}
+	for _, p := range parts {
+		if !repoSegment.MatchString(p) {
+			return false
+		}
+	}
+	return true
 }
 
 // DeleteRecogniser removes a row. The cards it filled in stay: they are work,
@@ -455,6 +495,8 @@ func (r *Recogniser) Fill(vars map[string]string) *Resolved {
 		Repo:   strings.TrimSpace(vars["repo"]),
 		Org:    strings.TrimSpace(vars["org"]),
 		Host:   strings.TrimSpace(vars["host"]),
+
+		DefaultRepo: r.DefaultRepo,
 	}
 	// Split on commas and never on spaces, the same rule the tag field on a
 	// card follows. A tag with a space in it is one tag.

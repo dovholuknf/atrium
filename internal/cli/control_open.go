@@ -17,25 +17,30 @@ import (
 const openWait = 5 * time.Minute
 
 type OpenInput struct {
-	URL string `json:"url" jsonschema:"the link: a GitHub or Bitbucket pull request URL"`
-	Why string `json:"why,omitempty" jsonschema:"why it is being opened, kept on the review and the card"`
+	URL  string `json:"url" jsonschema:"the link: a pull request, issue or branch URL, or a support ticket or forum topic"`
+	Why  string `json:"why,omitempty" jsonschema:"why it is being opened, kept on the review and the card"`
+	Repo string `json:"repo,omitempty" jsonschema:"for a link that names no repo: host/org/repo, or none for a scratch folder. empty takes the recogniser's default"`
 }
 
 type OpenOutput struct {
 	Key      string `json:"key"`
+	Kind     string `json:"kind,omitempty"`
 	Card     string `json:"card"`
 	PR       string `json:"pr,omitempty"`
 	Worktree string `json:"worktree,omitempty"`
+	Repo     string `json:"repo,omitempty"`
 	Created  bool   `json:"created"`
 	Room     string `json:"room,omitempty"`
 }
 
-const openToolDesc = "Open a pull request link as a card: its worktree, its review and a session started in the " +
-	"worktree, on this room. The same as the operator pasting the link on the board.\n\n" +
-	"A link that already has a live card answers that card with `created: false` and starts nothing. A link " +
-	"another room holds is refused with that room's name.\n\n" +
-	"Only pull requests so far. Any other link is refused with `not_a_pr`. A step that fails undoes what " +
-	"the earlier steps made, and the answer says which step and why. Do not retry a refusal: tell whoever " +
+const openToolDesc = "Open a link as a card, on this room. The same as the operator pasting the link on the board. " +
+	"A pull request gets its worktree, its review and a session in the worktree. An issue or a branch gets a " +
+	"worktree on its branch and a session. A support ticket or forum topic names no repo: it opens in `repo`, " +
+	"else the recogniser's default repo, and `repo: none` is a scratch folder of the card's own.\n\n" +
+	"A link that already has a live card answers that card with `created: false` and starts nothing. A pull " +
+	"request another room holds is refused with that room's name.\n\n" +
+	"A link that names no piece of work (a repo page) is refused with `not_openable`. A step that fails undoes " +
+	"what the earlier steps made, and the answer says which step and why. Do not retry a refusal: tell whoever " +
 	"you work for what it said."
 
 func addOpenTool(s *mcp.Server) {
@@ -48,7 +53,7 @@ func openHandler(ctx context.Context, _ *mcp.CallToolRequest, in OpenInput) (*mc
 		return nil, out, fmt.Errorf("say which link to open")
 	}
 	if err := askFor(ctx, openWait, http.MethodPost, "/v1/open",
-		map[string]string{"url": strings.TrimSpace(in.URL), "why": in.Why}, &out); err != nil {
+		map[string]string{"url": strings.TrimSpace(in.URL), "why": in.Why, "repo": strings.TrimSpace(in.Repo)}, &out); err != nil {
 		return nil, out, err
 	}
 	return nil, out, nil

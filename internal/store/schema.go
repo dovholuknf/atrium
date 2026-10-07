@@ -2110,6 +2110,14 @@ var migrations = []struct {
 			)`,
 		},
 	},
+	{
+		// THE REPO A LINK THAT NAMES NONE OPENS IN, "host/org/repo", for a Zendesk ticket or a Discourse topic.
+		// Empty is a scratch folder of the card's own. See docs/rnd/card-lifecycle-design.md, Interview Q6.
+		name: "0089_recogniser_default_repo",
+		stmts: []string{
+			`ALTER TABLE recogniser ADD COLUMN default_repo TEXT NOT NULL DEFAULT ''`,
+		},
+	},
 }
 
 // migrate applies any migration not already recorded. This runs before the
