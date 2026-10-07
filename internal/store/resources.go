@@ -98,6 +98,31 @@ func (st *Store) Resources(card string) ([]*CardResource, error) {
 	return out, err
 }
 
+// LiveResources is every row not freed yet, of every owner, by owner and then in the order it was made. The sweep
+// reads it.
+func (st *Store) LiveResources() ([]*CardResource, error) {
+	var out []*CardResource
+	err := st.guard(func() error {
+		out = nil
+		rows, err := st.db.Query(`SELECT card, seq, kind, ref, detail, made_at, freed_at, freed_err, bytes, measured_at
+			FROM card_resources WHERE freed_at = '' ORDER BY card, seq`)
+		if err != nil {
+			return err
+		}
+		defer rows.Close()
+		for rows.Next() {
+			r := &CardResource{}
+			if err := rows.Scan(&r.Card, &r.Seq, &r.Kind, &r.Ref, &r.Detail, &r.MadeAt, &r.FreedAt, &r.FreedErr,
+				&r.Bytes, &r.MeasuredAt); err != nil {
+				return err
+			}
+			out = append(out, r)
+		}
+		return rows.Err()
+	})
+	return out, err
+}
+
 // FreeResource marks a row freed, with what removing it said ("" when it went cleanly). A freed row stays, so the
 // history says what the card held.
 func (st *Store) FreeResource(card string, seq int, freedErr string) error {

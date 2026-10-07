@@ -747,11 +747,20 @@ async function killNow(id) {
 // answer, and a last press closes it.
 function isLinkCard(t) { return !!t && (t.tags || []).some(g => String(g).startsWith("link:")); }
 
-function closeCardAsk(id, t) { return oneAtATime("close:" + id, () => closeCardNow(id, t)); }
+// via {owner, room} closes what an owner with no card holds, through the sweep (internal/api/sweep.go).
+function closeCardAsk(id, t, via) { return oneAtATime("close:" + id, () => closeCardNow(id, t, via)); }
 
-async function closeCardNow(id, t) {
+async function closeCardNow(id, t, via) {
+  const post = body => via
+    ? api("/v1/sweep/close", {
+      method: "POST", headers: Object.assign({ "Content-Type": "application/json" }, via.room ? { "X-Atrium-Room": via.room } : {}),
+      body: JSON.stringify(Object.assign({ owner: via.owner }, body))
+    })
+    : api(`/v1/tasks/${encodeURIComponent(id)}/close`, {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body)
+    });
   let pv;
-  try { pv = await api(`/v1/tasks/${encodeURIComponent(id)}/close`); }
+  try { pv = via ? await post({}) : await api(`/v1/tasks/${encodeURIComponent(id)}/close`); }
   catch (e) { toast("could not read what closing it frees", e.message); return; }
   const title = (t && t.display_title) || id;
   const answers = {};
@@ -779,13 +788,11 @@ async function closeCardNow(id, t) {
   if (!await confirmUser(`close ${title}?`,
     (going ? `Frees${disk}:<ul>${going}</ul>` : "Nothing on disk to free.<br>") +
     (warns ? `<ul>${warns}</ul>` : "") +
-    `Kept:<ul>${kept}</ul>The card goes to <b>done</b>. A re-paste of the link starts a fresh card.`,
+    `Kept:<ul>${kept}</ul>` +
+    (via ? "No card holds these." : "The card goes to <b>done</b>. A re-paste of the link starts a fresh card."),
     "close it")) return;
   try {
-    const out = await api(`/v1/tasks/${encodeURIComponent(id)}/close`, {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ confirm: true, answers })
-    });
+    const out = await post({ confirm: true, answers });
     const said = [];
     (out.stashes || []).forEach(s => said.push("stashed " + s.branch));
     if (out.left) said.push(out.left + " left on the card");

@@ -334,6 +334,81 @@ async function pullsWalk(id) {
   if (!dock.open && typeof termTask !== "undefined" && termTask && termTask.id === task) walkProbe(termTask);
 }
 
+// ── leftovers: what no live card holds ──────────────────
+// internal/api/sweep.go. One sweep per room (each named on a hub), drawn grouped by owner with one close per group.
+// Nothing is removed until that close is pressed, and it is the card's own close (closeCardAsk in js/sharing.js).
+
+const pullsLeft = { groups: [], notOwned: [] };
+
+async function pullsSweep() {
+  const box = document.getElementById("pulls-left");
+  if (!box) return;
+  if (pulls.leftOpen) { pulls.leftOpen = false; box.hidden = true; return; }
+  pulls.leftOpen = true;
+  box.hidden = false;
+  box.innerHTML = '<p class="pane-lead">Sweeping.</p>';
+  const rooms = typeof hubIsHub !== "undefined" && hubIsHub && typeof hubRooms !== "undefined" && hubRooms.length
+    ? hubRooms.map(r => r.name) : [""];
+  const groups = [], notOwned = [], quiet = [];
+  await Promise.all(rooms.map(async room => {
+    try {
+      const out = await api("/v1/sweep", {
+        method: "POST", headers: room ? { "X-Atrium-Room": room } : {}
+      });
+      (out.leftovers || []).forEach(g => groups.push(Object.assign({ room }, g)));
+      (out.not_owned || []).forEach(n => notOwned.push(Object.assign({ room }, n)));
+    } catch (e) {
+      quiet.push((room || "this room") + ": " + pullsErr(e));
+    }
+  }));
+  pullsLeft.groups = groups;
+  pullsLeft.notOwned = notOwned;
+  pullsLeftPaint(quiet);
+}
+
+// What a group is, in a word: why nothing live holds it.
+function pullsLeftWhy(g) {
+  if (g.no_card) return "no card";
+  if (g.closed) return "kept when it was closed";
+  return g.status || "";
+}
+
+function pullsLeftPaint(quiet) {
+  const box = document.getElementById("pulls-left");
+  if (!box) return;
+  const at = r => (r ? " on " + r : "");
+  const html = pullsLeft.groups.map((g, i) =>
+    '<div class="pull">' +
+      '<div class="pull-main">' +
+        '<div class="left-head"><span class="pull-repo">' + esc(g.title || g.owner) + "</span>" +
+          "<span>" + esc(pullsLeftWhy(g) + at(g.room)) + "</span>" +
+          "<span>" + esc(diskLabel(g.disk_bytes)) + "</span>" +
+          pullBtn("left-close", String(i), "close these", "the card's close: shows what goes, asks, then frees it") + "</div>" +
+        '<ul class="left-rows">' + (g.rows || []).map(r => "<li>" + esc(r.kind + " " + r.ref) + "</li>").join("") + "</ul>" +
+      "</div>" +
+    "</div>").join("") +
+    (pullsLeft.notOwned.length
+      ? '<div class="pull"><div class="pull-main"><div class="left-head"><span class="pull-repo">not owned</span>' +
+        "<span>worktrees under atrium's own folder that no card names. listed only</span></div>" +
+        '<ul class="left-rows">' + pullsLeft.notOwned.map(n => "<li>" + esc(n.path + at(n.room)) + "</li>").join("") +
+        "</ul></div></div>"
+      : "") +
+    (quiet || []).map(q => '<p class="pane-lead">' + esc(q) + "</p>").join("");
+  box.innerHTML = html || '<p class="pane-lead">Nothing left over. Every card that is done gave back what it held.</p>';
+}
+
+async function pullsLeftClose(i) {
+  const g = pullsLeft.groups[i];
+  if (!g) return;
+  const title = { display_title: g.title || g.owner };
+  // A card is closed as itself, by its tagged id on a hub. An owner with no card is closed through the sweep.
+  if (g.no_card) await closeCardAsk(g.owner, title, { owner: g.owner, room: g.room });
+  else await closeCardAsk(g.room ? g.room + "~" + g.owner : g.owner, title);
+  pulls.leftOpen = false;
+  await pullsSweep();
+  loadPulls();
+}
+
 // ── moving a review to another room ─────────────────────
 // docs/rnd/pr-review-workflow.md 5.1. The hub moves the claim and the review with it, then this makes the PR's worktree
 // on the new room, launches a new card there and sets it as the walker. The old card is left alone.
@@ -431,6 +506,13 @@ document.addEventListener("DOMContentLoaded", () => {
       case "close": pullsClose(id); break;
     }
   });
+  const left = document.getElementById("pulls-left");
+  if (left) left.addEventListener("click", e => {
+    const b = e.target.closest("button[data-act='left-close']");
+    if (b) pullsLeftClose(Number(b.dataset.id));
+  });
+  const sweep = document.getElementById("pulls-sweep");
+  if (sweep) sweep.addEventListener("click", pullsSweep);
   const go = document.getElementById("pulls-paste");
   if (go) go.addEventListener("click", pullsPaste);
   const url = document.getElementById("pulls-url");
