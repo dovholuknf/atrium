@@ -108,7 +108,7 @@ func echoLoop(out func(string)) {
 
 func testHost(t *testing.T, o Options) (*Host, string) {
 	t.Helper()
-	dir := t.TempDir()
+	dir := shortDir(t)
 	addr := Address(dir)
 	ln, err := listenChannel(addr)
 	if err != nil {
@@ -121,6 +121,18 @@ func testHost(t *testing.T, o Options) (*Host, string) {
 	go h.Serve(ln)
 	t.Cleanup(h.Close)
 	return h, addr
+}
+
+// shortDir is a state directory whose name does not carry the test's. On Linux the channel is a unix socket inside
+// it, and a socket path over 108 bytes does not bind: t.TempDir() under a long subtest name is past that.
+func shortDir(t *testing.T) string {
+	t.Helper()
+	dir, err := os.MkdirTemp("", "ph")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	return dir
 }
 
 func dialT(t *testing.T, addr string) *Client {
