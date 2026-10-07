@@ -36,6 +36,8 @@ type RelayRow struct {
 	Text   string
 	When   string
 	Source string
+	// Kind is `fyi` or empty, the say's kind, sent on when it drains.
+	Kind string
 
 	CreatedAt time.Time
 	Attempts  int
@@ -65,9 +67,9 @@ func (s *Store) HoldRelay(r RelayRow) (*RelayRow, error) {
 
 func insertRelay(q querier, r *RelayRow) error {
 	_, err := q.Exec(`INSERT INTO relay_outbox (id, from_task, from_wire, to_room, to_name, to_card, text,
-			when_word, source, created_at, attempts, last_error)
-		VALUES (?,?,?,?,?,?,?,?,?,?,0,'')`,
-		r.ID, r.FromTask, r.FromWire, r.ToRoom, r.ToName, r.ToCard, r.Text, r.When, r.Source, ts(r.CreatedAt))
+			when_word, source, kind, created_at, attempts, last_error)
+		VALUES (?,?,?,?,?,?,?,?,?,?,?,0,'')`,
+		r.ID, r.FromTask, r.FromWire, r.ToRoom, r.ToName, r.ToCard, r.Text, r.When, r.Source, r.Kind, ts(r.CreatedAt))
 	return err
 }
 
@@ -90,7 +92,7 @@ func (s *Store) OwedRelays(limit int) ([]RelayRow, error) {
 	err := s.guard(func() error {
 		out = nil
 		rows, err := s.db.Query(`SELECT id, from_task, from_wire, to_room, to_name, to_card, text, when_word,
-				source, created_at, attempts, last_error
+				source, kind, created_at, attempts, last_error
 			FROM relay_outbox ORDER BY created_at, id LIMIT ?`, limit)
 		if err != nil {
 			return err
@@ -100,7 +102,7 @@ func (s *Store) OwedRelays(limit int) ([]RelayRow, error) {
 			var r RelayRow
 			var at string
 			if err := rows.Scan(&r.ID, &r.FromTask, &r.FromWire, &r.ToRoom, &r.ToName, &r.ToCard, &r.Text,
-				&r.When, &r.Source, &at, &r.Attempts, &r.LastError); err != nil {
+				&r.When, &r.Source, &r.Kind, &at, &r.Attempts, &r.LastError); err != nil {
 				return err
 			}
 			r.CreatedAt, _ = parseTS(at)

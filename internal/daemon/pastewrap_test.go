@@ -74,7 +74,7 @@ func TestAPeerMessageCannotEndItsOwnPaste(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if typed, _ := d.tellByTyping(fresh, "sg4/builder", hostile, false); !typed {
+	if typed, _ := d.tellByTyping(fresh, "sg4/builder", hostile, "", false); !typed {
 		t.Fatal("the message was not typed")
 	}
 	got := f.written()
@@ -89,7 +89,7 @@ func TestAHeldMessageCannotEndItsOwnPaste(t *testing.T) {
 	typedRunner(t, d, target.ID)
 	t.Cleanup(func() { d.pending.drop(target.ID) })
 
-	d.deferPeerInjection(target.ID, "m1", "", hostile, false)
+	d.deferPeerInjection(target.ID, "m1", "", hostile, "", false)
 
 	d.pending.mu.Lock()
 	ht := d.pending.by[target.ID]

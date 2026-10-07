@@ -216,15 +216,18 @@ func (c *controlMCP) server(class ctlClass) *mcp.Server {
 			"`kind` is `fyi` for news the receiver need not act on, or `needs` (the default) for " +
 			"anything that wants an answer or an action. A receiver that holds its notices keeps an " +
 			"`fyi` on its card and is not interrupted, so say `needs` for anything you want read now. " +
-			"On the same room only.",
+			"A launcher's fyi, such as 'stop, nothing else to do', asks for no reply and the worker owes none.\n\n" +
+			"IF ANOTHER SESSION LAUNCHED YOU, END EVERY TURN BY TELLING IT WITH THIS: `done <sha>` when " +
+			"the work is finished, `blocked: <one line>` when something stops you. A turn that ends " +
+			"without it is a silent stop: you are nudged once, then your launcher is told you went quiet.",
 	}, audited(c, "ctl-wake-say", describeSay, c.sayHandler))
 
 	addTool(s, class, &mcp.Tool{
 		Name: "atrium_report",
 		Description: "Report on your work to the session that launched you.\n\n" +
-			"IF ANOTHER SESSION LAUNCHED YOU, END EVERY TURN WITH THIS, or with an `atrium_say` " +
-			"to your launcher. A turn that ends with neither is a silent stop: your launcher is " +
-			"told you went quiet, and the human's board is told after that.\n\n" +
+			"A launched session tells its launcher with `atrium_say` (`done <sha>`, `blocked: <one " +
+			"line>`), and that is what its launch prompt asks for. Use this only when your launcher " +
+			"asks for a report by this tool. Either one counts as telling your launcher.\n\n" +
 			"status is one of:\n" +
 			"- `done`: the work is finished. Give `sha`, the commit it landed as, or `no_commit` " +
 			"saying why there is none.\n" +
@@ -1182,9 +1185,11 @@ func lastN[T any](s []T, n int) []T {
 // lowercase and free of commas and spaces survives NormalizeTags unchanged.
 const OriginTag = "origin:agent"
 
-// reportLine is appended to every agent launch's prompt. See launchHandler.
-const reportLine = "When you finish, get blocked, or need an answer, call atrium_report " +
-	"(or atrium_say your launcher) before you end your turn."
+// reportLine is appended to every agent launch's prompt. See launchHandler. ONE INSTRUCTION, the
+// same the room's nudge gives (daemon.silentNudgeText): atrium_say the launcher. It never names
+// atrium_report, which a launcher's brief may forbid because a done report closes the card.
+const reportLine = "Before you end your turn, tell your launcher with atrium_say: done <sha> when the work is " +
+	"finished, blocked: <one line> when something stops you, or the question when you need an answer."
 
 // AgentLaunchTags is what an agent launch's tags become: the caller's own, the origin marker,
 // and a WORKER marker unless the caller says it is a director or already a subagent. The

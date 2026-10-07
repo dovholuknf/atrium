@@ -91,7 +91,7 @@ func (d *Daemon) runAction(taskID, actionID string) (*ActionResult, error) {
 		if err != nil {
 			return nil, err
 		}
-		d.deferPeerInjection(taskID, m.ID, "", action.Prompt, false)
+		d.deferPeerInjection(taskID, m.ID, "", action.Prompt, "", false)
 		out.Delivered = "queued"
 	}
 

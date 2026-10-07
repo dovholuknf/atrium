@@ -67,6 +67,9 @@ type Relay interface {
 // with no room: the hub adds this room's name from its certificate.
 type RelaySay struct {
 	From, Room, To, Text, When string
+	// Kind is `fyi` or empty, the say's kind, so a launcher's fyi on another room
+	// makes no report owed there either. See fyi.go. An older hub drops it.
+	Kind string
 	// Wake resumes a parked target so the message can be delivered. A held row carries no wake,
 	// so a say that asks for one is refused, not held, when the hub cannot be reached.
 	Wake bool
@@ -192,7 +195,7 @@ type sayIn struct {
 	Reply bool `json:"reply"`
 	// Wake resumes a parked card so the message can be delivered, here or on the room it is for.
 	Wake bool `json:"wake"`
-	// Kind is `fyi` or `needs`. See fyi.go. Local targets only.
+	// Kind is `fyi` or `needs`. See fyi.go. Carried to another room too.
 	Kind string `json:"kind"`
 }
 
@@ -215,14 +218,14 @@ func (d *Daemon) handleSay(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if other := d.otherRoom(room); other != "" {
-		code, body := d.sayAcross(r.Context(), strings.TrimSpace(in.From), name, other, in.Text, in.When, in.Reply, in.Wake)
+		code, body := d.sayAcross(r.Context(), strings.TrimSpace(in.From), name, other, in.Text, in.When, in.Kind, in.Reply, in.Wake)
 		writeJSONCode(w, code, body)
 		return
 	}
 	target, via := d.localTargetVia(name)
 	if target == nil {
 		from := strings.TrimSpace(in.From)
-		done, note := d.sayEverywhere(w, r.Context(), from, name, in.Text, in.When, in.Reply, in.Wake, nil)
+		done, note := d.sayEverywhere(w, r.Context(), from, name, in.Text, in.When, in.Kind, in.Reply, in.Wake, nil)
 		if !done {
 			d.writeMissNote(w, from, name, "say", in.Text, in.When, in.Reply, note)
 		}
@@ -273,8 +276,10 @@ func (d *Daemon) localTargetVia(name string) (*store.Task, string) {
 }
 
 // sayAcross relays one message to `name` on `room`, and answers the sender.
-func (d *Daemon) sayAcross(ctx context.Context, from, name, room, text, when string, reply, wake bool) (int, map[string]any) {
+func (d *Daemon) sayAcross(ctx context.Context, from, name, room, text, when, kind string, reply, wake bool) (int, map[string]any) {
 	text = strings.TrimSpace(text)
+	// The relay carries no reply flag, so an fyi that asks for one goes as the ordinary say.
+	kind = promptKind(kind, reply)
 	to := name + "@" + room
 	switch {
 	case from == "":
@@ -313,7 +318,7 @@ func (d *Daemon) sayAcross(ctx context.Context, from, name, room, text, when str
 	// when it lands. See docs/runtime/say-lifecycle-design.md.
 	rec := store.Say{FromWire: wire, FromTask: d.senderTask(from), ToInput: to, ToWire: to, Via: "remote",
 		Room: room, Door: "say", When: whenWord(when == WhenDone), ReplyWant: reply}
-	res, err := rl.Say(cctx, RelaySay{From: wire, Room: room, To: name, Text: text, When: when, Wake: wake})
+	res, err := rl.Say(cctx, RelaySay{From: wire, Room: room, To: name, Text: text, When: when, Kind: kind, Wake: wake})
 	switch {
 	case errors.Is(err, ErrRelayOld):
 		return http.StatusBadGateway, errBody(err.Error())
@@ -333,7 +338,7 @@ func (d *Daemon) sayAcross(ctx context.Context, from, name, room, text, when str
 				"). nothing was sent or held, since a held message cannot wake a card. send it again with wake=true " +
 				"when the room is back")
 		}
-		held, herr := d.holdRelay(sender, wire, name, room, "", text, when, store.RelaySourceSay)
+		held, herr := d.holdRelay(sender, wire, name, room, "", text, when, kind, store.RelaySourceSay)
 		if herr != nil {
 			return http.StatusInternalServerError, errBody("could not reach " + room + " (" + why +
 				") and could not hold the message either: " + herr.Error())
@@ -486,9 +491,9 @@ func (d *Daemon) launcherRelay(worker *store.Task, text string) *store.RelaySpec
 // ── the outbox ──────────────────────────────────────────────────────────────
 
 // holdRelay keeps one message for later and starts a drain.
-func (d *Daemon) holdRelay(sender *store.Task, wire, name, room, card, text, when, source string) (*store.RelayRow, error) {
+func (d *Daemon) holdRelay(sender *store.Task, wire, name, room, card, text, when, kind, source string) (*store.RelayRow, error) {
 	row := store.RelayRow{FromWire: wire, ToRoom: room, ToName: name, ToCard: card, Text: text,
-		When: when, Source: source}
+		When: when, Kind: kind, Source: source}
 	if sender != nil {
 		row.FromTask = sender.ID
 	}
@@ -542,7 +547,7 @@ func (d *Daemon) drainOnce() {
 			to = r.ToCard
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), relayWait)
-		res, err := rl.Say(ctx, RelaySay{From: r.FromWire, Room: r.ToRoom, To: to, Text: r.Text, When: r.When})
+		res, err := rl.Say(ctx, RelaySay{From: r.FromWire, Room: r.ToRoom, To: to, Text: r.Text, When: r.When, Kind: r.Kind})
 		cancel()
 		switch {
 		case err == nil && res.OK:
@@ -688,7 +693,7 @@ func (d *Daemon) findEverywhere(ctx context.Context, name string) (room, handle 
 // holding, `unconfirmed` and the outbox are what they are for a typed
 // `name@room`. Two or more is a 409. It reports whether it answered, and
 // otherwise leaves the miss to the caller, with the note to put on it.
-func (d *Daemon) sayEverywhere(w http.ResponseWriter, ctx context.Context, from, name, text, when string,
+func (d *Daemon) sayEverywhere(w http.ResponseWriter, ctx context.Context, from, name, text, when, kind string,
 	reply, wake bool, after func(int, map[string]any)) (bool, string) {
 
 	// A say with no sender or no words is refused by sayAcross as it would be
@@ -699,7 +704,7 @@ func (d *Daemon) sayEverywhere(w http.ResponseWriter, ctx context.Context, from,
 	room, handle, code, note := d.findEverywhere(ctx, name)
 	switch {
 	case room != "":
-		c, body := d.sayAcross(ctx, from, handle, room, text, when, reply, wake)
+		c, body := d.sayAcross(ctx, from, handle, room, text, when, kind, reply, wake)
 		if c < 400 {
 			// SAID, because the sender typed a bare name and should learn where it went.
 			routed := fmt.Sprintf("%q is not on this room. it went to %s on room %s, the one card that answers to it.",

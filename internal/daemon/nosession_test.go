@@ -140,7 +140,7 @@ func TestAHeldMessageOnAnEndedSessionIsDropped(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	d.deferPeerInjection(target.ID, m.ID, "orchestrator", "still there?", false)
+	d.deferPeerInjection(target.ID, m.ID, "orchestrator", "still there?", "", false)
 	if a := d.act.get(target.ID); a == nil || a.HeldFor != HeldForLine {
 		t.Fatalf("the message was not held for the line to begin with: %+v", a)
 	}

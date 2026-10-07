@@ -34,7 +34,7 @@ func TestEscEscClearsTheLineAndReleasesAHeldMessage(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	d.deferPeerInjection(target.ID, m.ID, "ci", "the build is green", false)
+	d.deferPeerInjection(target.ID, m.ID, "ci", "the build is green", "", false)
 
 	r.noteOperatorTyped([]byte("\x1b"))
 	r.noteOperatorTyped([]byte("\x1b"))

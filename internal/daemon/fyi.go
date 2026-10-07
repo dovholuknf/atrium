@@ -35,6 +35,17 @@ func owedKind(kind string, reply bool) string {
 	return parseKind(kind)
 }
 
+// promptKind is the kind a say writes on the prompt it records: store.PromptFYI for an fyi
+// that asks for no reply, which makes no report owed, and empty for anything else. A
+// launcher's "stop, nothing else to do" sent as an fyi leaves its worker owing nothing, so
+// no nudge and no silent-stop notice follow. See store.promptOwes.
+func promptKind(kind string, reply bool) string {
+	if !reply && parseKind(kind) == KindFYI {
+		return store.PromptFYI
+	}
+	return ""
+}
+
 // parseKind is the kind a sender asked for. Never an error.
 func parseKind(s string) string {
 	if strings.EqualFold(strings.TrimSpace(s), KindFYI) {

@@ -2118,6 +2118,14 @@ var migrations = []struct {
 			`ALTER TABLE recogniser ADD COLUMN default_repo TEXT NOT NULL DEFAULT ''`,
 		},
 	},
+	{
+		// A HELD SAY KEEPS ITS KIND, `fyi` or empty, so a launcher's fyi held for a room that was not answering
+		// still makes no report owed when it lands. See promptOwes.
+		name: "0090_relay_kind",
+		stmts: []string{
+			`ALTER TABLE relay_outbox ADD COLUMN kind TEXT NOT NULL DEFAULT ''`,
+		},
+	},
 }
 
 // migrate applies any migration not already recorded. This runs before the

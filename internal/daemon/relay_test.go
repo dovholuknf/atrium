@@ -429,10 +429,10 @@ func TestTheDrainDropsAnUnconfirmedSayAndKeepsANotice(t *testing.T) {
 	d, f := roomDaemon(t)
 	sender := peerCard(t, d, "sa1")
 	f.set(func(RelaySay) (RelayResult, error) { return RelayResult{}, ErrRelayDown })
-	if _, err := d.holdRelay(sender, "sa1", "orch", "claude-sg4", "", "a say", "", store.RelaySourceSay); err != nil {
+	if _, err := d.holdRelay(sender, "sa1", "orch", "claude-sg4", "", "a say", "", "", store.RelaySourceSay); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := d.holdRelay(sender, "sa1", "orch", "claude-sg4", "L1", "a notice", "", store.RelaySourceNotice); err != nil {
+	if _, err := d.holdRelay(sender, "sa1", "orch", "claude-sg4", "L1", "a notice", "", "", store.RelaySourceNotice); err != nil {
 		t.Fatal(err)
 	}
 	settle(d)
@@ -462,7 +462,7 @@ func TestAHeldMessageExpires(t *testing.T) {
 	d, f := roomDaemon(t)
 	sender := peerCard(t, d, "sa1")
 	f.set(func(RelaySay) (RelayResult, error) { return RelayResult{}, ErrRelayDown })
-	if _, err := d.holdRelay(sender, "sa1", "orch", "claude-sg4", "", "old", "", store.RelaySourceSay); err != nil {
+	if _, err := d.holdRelay(sender, "sa1", "orch", "claude-sg4", "", "old", "", "", store.RelaySourceSay); err != nil {
 		t.Fatal(err)
 	}
 	settle(d)

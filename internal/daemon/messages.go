@@ -582,7 +582,7 @@ func (d *Daemon) handleMessage(w http.ResponseWriter, r *http.Request) {
 			taskID, gated = end.Live.ID, end.Live
 			gate = d.sayGate(gated)
 		default:
-			d.forwardMoved(r.Context(), w, from, end, body.Text, body.When, body.Reply, body.Wake)
+			d.forwardMoved(r.Context(), w, from, end, body.Text, body.When, body.Kind, body.Reply, body.Wake)
 			return
 		}
 	}
@@ -677,6 +677,9 @@ func (d *Daemon) handleMessage(w http.ResponseWriter, r *http.Request) {
 			if from != "" {
 				ev["from_peer"] = from
 			}
+			if k := promptKind(body.Kind, body.Reply); k != "" {
+				ev["kind"] = k
+			}
 			if err := d.st.AppendEvent(taskID, store.EventPrompted, ev); err != nil {
 				writeJSONErr(w, http.StatusInternalServerError, err)
 				return
@@ -713,11 +716,10 @@ func (d *Daemon) handleMessage(w http.ResponseWriter, r *http.Request) {
 	// it is the one mistake the envelope exists to prevent. Empty from stays the
 	// operator's own channel.
 	var m *store.Message
+	kind := promptKind(body.Kind, body.Reply)
 	switch {
-	case waitTurn:
-		m, err = d.st.QueueAfterTurn(taskID, body.Text, from)
-	case from != "":
-		m, err = d.st.QueueFromPeer(taskID, body.Text, from)
+	case waitTurn, from != "":
+		m, err = d.st.QueuePeerKind(taskID, body.Text, from, kind, waitTurn)
 	default:
 		m, err = d.st.QueueMessage(taskID, body.Text)
 	}
@@ -745,7 +747,7 @@ func (d *Daemon) handleMessage(w http.ResponseWriter, r *http.Request) {
 	// A queued message keeps trying to type in on the same backoff as the bus,
 	// whoever sent it, so it lands the moment the line clears. See
 	// pendinginject.go.
-	d.deferPeerInjection(taskID, m.ID, from, body.Text, waitTurn)
+	d.deferPeerInjection(taskID, m.ID, from, body.Text, kind, waitTurn)
 
 	// SAY WHETHER IT WILL EVER ARRIVE. A queued message is only as good as the
 	// hook that drains it, and a card whose runner has none (a gemini session
@@ -857,7 +859,7 @@ func (d *Daemon) handleSendNote(w http.ResponseWriter, r *http.Request) {
 			writeJSONErr(w, http.StatusInternalServerError, err)
 			return
 		}
-		d.deferPeerInjection(taskID, m.ID, "", note, waitTurn)
+		d.deferPeerInjection(taskID, m.ID, "", note, "", waitTurn)
 	}
 
 	// The note reached the session, so a question it had outstanding has been

@@ -98,10 +98,14 @@ func TestLeanArgsBuildsTheLeanFlagsAndKeepsThePromptLast(t *testing.T) {
 		}
 	}
 	sys := flagValue(t, got, "--append-system-prompt")
-	for _, rule := range []string{"atrium_report", "claude/main", "restart atrium", "build.claude/", "trailer"} {
+	for _, rule := range []string{"atrium_say", "done <sha>", "claude/main", "restart atrium", "build.claude/", "trailer"} {
 		if !strings.Contains(sys, rule) {
 			t.Fatalf("worker prompt misses %q", rule)
 		}
+	}
+	// One instruction: the launch line and the nudge say atrium_say, so this must not say atrium_report.
+	if strings.Contains(sys, "atrium_report") {
+		t.Fatalf("worker prompt names atrium_report: %q", sys)
 	}
 }
 

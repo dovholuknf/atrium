@@ -52,13 +52,13 @@ func (m *Message) FromHuman() bool { return m.FromPeer == "" }
 // QueueMessage stores something to say to a session the next time it is
 // reachable. From the operator.
 func (s *Store) QueueMessage(taskID, text string) (*Message, error) {
-	return s.queueMessage(taskID, text, "", false)
+	return s.queueMessage(taskID, text, "", "", false)
 }
 
 // QueueAfterTurn stores a message that waits for the session's turn to end.
 // fromPeer is empty for the operator. See Message.WaitTurn.
 func (s *Store) QueueAfterTurn(taskID, text, fromPeer string) (*Message, error) {
-	return s.queueMessage(taskID, text, strings.TrimSpace(fromPeer), true)
+	return s.queueMessage(taskID, text, strings.TrimSpace(fromPeer), "", true)
 }
 
 // QueueFromPeer stores something one session said to another.
@@ -70,10 +70,21 @@ func (s *Store) QueueFromPeer(taskID, text, fromPeer string) (*Message, error) {
 	if strings.TrimSpace(fromPeer) == "" {
 		return nil, errors.New("a peer message has to say which session sent it")
 	}
-	return s.queueMessage(taskID, text, fromPeer, false)
+	return s.queueMessage(taskID, text, fromPeer, "", false)
 }
 
-func (s *Store) queueMessage(taskID, text, fromPeer string, waitTurn bool) (*Message, error) {
+// QueuePeerKind is QueueFromPeer, or QueueAfterTurn when waitTurn, for a
+// message whose sender gave it a kind. PromptFYI is recorded on the prompt, so
+// a launcher's fyi does not make the card owe a report. See promptOwes.
+func (s *Store) QueuePeerKind(taskID, text, fromPeer, kind string, waitTurn bool) (*Message, error) {
+	fromPeer = strings.TrimSpace(fromPeer)
+	if fromPeer == "" && !waitTurn {
+		return nil, errors.New("a peer message has to say which session sent it")
+	}
+	return s.queueMessage(taskID, text, fromPeer, kind, waitTurn)
+}
+
+func (s *Store) queueMessage(taskID, text, fromPeer, kind string, waitTurn bool) (*Message, error) {
 	m := &Message{
 		ID: newID(), TaskID: taskID, Text: text,
 		CreatedAt: now(), FromPeer: fromPeer, WaitTurn: waitTurn,
@@ -96,6 +107,9 @@ func (s *Store) queueMessage(taskID, text, fromPeer string, waitTurn bool) (*Mes
 		ev := map[string]any{"queued": true, "text": text, "from_peer": fromPeer}
 		if waitTurn {
 			ev["when"] = "done"
+		}
+		if kind == PromptFYI {
+			ev["kind"] = PromptFYI
 		}
 		return s.appendEvent(taskID, EventPrompted, ev)
 	})
