@@ -318,8 +318,12 @@ What it changes:
 
 ### Q2. One action matches: start at once, or show the prompt first?
 
-clint, 2026-10-07: "a". The card starts at once with the action's filled prompt. There is no prompt box at paste time.
-Different words are said in the card afterwards, and the lasting change is made to the action's template in settings.
+clint, 2026-10-07: "a", then revised the same day: "oh actually i like the shift enter idea". So (c):
+- **Enter** starts the card at once with the action's filled prompt.
+- **Shift+Enter** opens the filled prompt in a box first. Editing it changes this card's seed only. Enter in the box
+  starts the card, and Esc goes back to the link.
+- The lasting change is made to the action's template in settings.
+- Where more than one action matches, the same keys apply to the chosen action.
 
 ## Open for clint
 
