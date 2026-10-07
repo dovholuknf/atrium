@@ -2,305 +2,224 @@
 
 _The single open hall every agent passes through._
 
+> **If you are an agent, read [`docs/agents.md`](docs/agents.md) first.** It says what atrium is today, what runs
+> where, how to build and test, and which docs to trust.
+
 <p align="center">
   <img src="docs/atrium.svg" alt="A central open hall. Rooms around it hold agents, each with a door onto the
   hall. A person stands in the hall and can see into every room at once." width="900">
 </p>
 
+Six coding agents are running. One has been waiting on a yes for twenty minutes. One finished an hour ago and said
+nothing. One is about to `rm -rf` something, and one is on your laptop in the other room. You are alt-tabbing
+between terminals asking the same four questions: which one needs me, how long has it been waiting, what was I doing
+in that one, and is it even alive.
+
+Atrium answers all four on one board. Every agent session is a card. The card that needs you is at the top, says what
+it needs, and takes one click to answer. Every tool call an agent makes passes your gate first, and the rules you
+already trust answer most of them before you see them. The agents run in real terminals atrium owns, so you can open
+any of them in the browser, type into it, or pop it out into its own window. They can talk to each other, across
+machines, without typing into a terminal you are using. And it all survives a restart.
+
+It is agnostic about the agent. Claude Code, codex, gemini, opencode, ollama or a plain shell are rows in a runner
+table, and adding one is configuration, not code. It runs on your machines, binds loopback, and has no cloud and no
+account.
+
 ## Why it is called that
 
-A Roman house was built around one open room. Every other room had a door onto it, the roof was open above it so
-it was the only part of the house with its own light, and anyone crossing from one room to another crossed it.
-You stood in the atrium and saw the whole household at once.
+A Roman house was built around one open room. Every other room had a door onto it, the roof was open above it so it
+was the only part of the house with its own light, and anyone crossing from one room to another crossed it. You stood
+in the atrium and saw the whole household at once.
 
-That is the shape of the problem. Half a dozen coding agents are running, each in its own directory, each with
-its own conversation, none of them aware of the others. Without somewhere to stand you are alt-tabbing between
-terminals asking the same four questions over and over: which one needs me, how long has it been sitting there,
-what was I even doing in that one, and is it still alive.
+That is the shape of the problem, and three things follow from taking the metaphor seriously:
 
-Atrium is the room you stand in. The agents keep their own rooms. Nothing moves between them except through
-here.
-
-Three things follow from taking the metaphor seriously, and they are the design:
-
-- **You are in the hall, not in a room.** The board is not a terminal multiplexer. It answers what needs you,
-  and gets out of the way when nothing does.
+- **You are in the hall, not in a room.** The board is not a terminal multiplexer. It answers what needs you, and
+  gets out of the way when nothing does.
 - **A room outlives whoever is in it.** A card is not an agent. It is a place work happens, and it survives the
-  process, the restart and the conversation. `wire_name` is an attribute of a card; a pid is a reconnect hint.
-- **Rooms do not connect to each other.** One session reaching another goes through the hall and is queued, not
-  typed. Atrium owns a terminal a person may be mid-command in, and a peer is not that person.
+  process, the restart and the conversation. A pid is a reconnect hint.
+- **Rooms do not connect to each other.** One session reaching another goes through the hall, and arrives as a
+  message from a peer, never as keystrokes in a terminal a person may be typing in.
 
-It runs on one machine, for one person. No multi-tenancy, no accounts, no cloud.
-
-```powershell
-go build -o build.claude\ .\...
-.\build.claude\atrium.exe install     # copy it somewhere it can stay
-& "$env:USERPROFILE\.atrium\bin\atrium.exe" daemon
-# agents -> http://localhost:7777
-# board  -> http://localhost:7778
-```
-
-Running the daemon from the installed copy rather than from `build.claude\` matters more than it looks. Hooks
-name a path, the logon task names a path, and the self-restart swaps a binary at a fixed name. A path under
-`build.claude\` moves with the checkout and is rewritten by every build, so anything pointing at it goes stale
-the next time you rebuild.
-
-## What it gives you
-
-**A board.** Every agent is a card in a kanban column: needs permission, ready, running, finished, shelved. The
-columns are buckets of your attention, so a card sits in one because you have to act or because you decided
-something. A column folds away when it gets tall, an empty one gives its width back to the ones you are reading,
-and a column that cannot fill hides itself entirely.
-
-**The difference between a question and a finish.** `ready` covers two things that want very different amounts
-of hurry: an agent that ran out of work and will sit there forever costing nothing, and an agent that asked you
-something and cannot continue. Atrium tells them apart, because Claude Code's `Notification` hook fires only for
-the second and asking is itself a tool call. A card that asked says so, and sorts above one that merely stopped.
-
-**What each one is doing right now.** A live badge per card: thinking, running `Bash`, three subagents, and how
-long it has been at it. This is the difference between "leave it alone" and "go look at it", and "running Bash
-for 40 minutes" is not something a status column can tell you. Never stored, because a stored activity is a lie
-the moment the daemon restarts.
-
-**A permission gate.** A PreToolUse hook sends every tool call an agent wants to make to atrium, which blocks
-until you answer. Approving is one click. Blocking hands your reason back to the agent, so a refusal is "no, do
-this instead" rather than a wall. Every request says which agent is asking, because with several running the
-same command means different things from different sessions.
-
-**Standing rules, so you stop clicking.** Answer once with **always** or **never** and every matching request
-after that is answered instantly and never shown. A rule covers either a command shape or a folder:
-
-- A **command shape** is a prefix by default, or a glob when it contains `*` or `?`. `go build` covers every
-  later build and leaves `go install` to ask on its own.
-- A **folder** covers work inside a directory. Two ways in: the command names an absolute path inside it, or
-  the session is working inside it and the command does not reach out. The second is what makes it useful,
-  since commands are written relative to where the session is and `go test ./...` names no path at all. A
-  command mentioning any absolute path outside the folder, or climbing out with `..`, still asks. It does not
-  follow a `cd`: a rule answers a request, it does not simulate a shell.
-
-  Folders exist because writing the same thing as a glob means accounting for the quoting yourself, and
-  `rm -f "C:/x/*"` fails against `rm -f "C:/x/y.db"` over the closing quote alone. Silently.
-
-The most specific match wins, so a narrow rule overrides a broad one. Atrium can import the allow and deny lists
-Claude Code already has, which on a working setup means starting with a hundred or more rules rather than none.
-
-**Auto mode, when you do not want to be asked at all.** Turn it on for one session, or for the whole board, and
-requests are approved without stopping while everything is still recorded. It does not override a **never** rule
-or a shelved card: auto mode means stop asking me new questions, not forget the answers I already gave.
-Afterwards, **what did it do?** reads the record back, grouped by tool, with identical calls folded into one line
-and the decisions nobody saw put first. That last part is the whole trade: interruption for review.
-
-**The change, not just the target.** A pending edit shows a real diff, with unchanged context dimmed and the
-changed words picked out. "Approve this edit" is not a question you can answer from a file path.
-
-**Notifications that reach you.** A desktop notification has approve and block buttons and works with no atrium
-tab open. It carries the card's own mark, so which agent it came from is a picture rather than a sentence. An
-in-page toast covers the case where the tab is already in front. Sounds are per card, because knowing which
-session wants you without looking is the thing you cannot get any other way.
-
-**Terminals atrium owns.** claude, codex, ollama, a bare shell, or anything else you add. A runner is a command,
-arguments, a working directory, an environment, and a way to resume. Adding one is configuration, not a code
-change. Anything atrium launches runs under a pseudo terminal it owns, so you can attach in the browser, type
-into it, and stop it.
-
-**A terminal in its own window.** Alt-tab beats a click into an app and then a click onto a tab, and nothing
-could beat it while a session was a pane inside a page. A popped-out window is the same page in terminal-only
-mode, titled with the session's whole address, marked in the title bar when that session wants you, and closing
-itself when its runner exits.
-
-**A switcher, on a keystroke.** `ctrl-shift-k` over anything on screen, a few letters against the title, the
-directory or the tags, and Enter. The last few you went to come first, so moving between two sessions is one
-key and one more. It works inside a popped-out window too, which moves that window to another card rather than
-opening a second one. The key is a setting because browsers keep different keys for themselves and refuse to
-hand one over without saying so: `docs/ui/switcher-design.md` is the whole argument, and settings names the
-browser that takes the default.
-
-**Files, in both directions.** Drop or paste into a session to send a file in. Browse the session's directory to
-get one back out, a file at a time or the whole tree as a zip. Everything resolves through one containment check
-against that card's own directory, and anything outside answers `403` whether or not it exists. It works over an
-overlay for free, because it is the board's own HTTP.
-
-**Something to say to a running session.** Queue a message and it is delivered the next time that session can
-hear one: typed into its terminal when atrium owns it, carried back through a hook when it does not. It arrives
-framed as a message from you rather than as a policy refusal. Named prompts you write once are offered on every
-card, including one that tells a session to write up what it did and finish.
-
-**An inbox.** A command on a timer finds work and posts it, and atrium raises a card with no runner behind it. A
-source that fails is reported on its own row and switched off after three consecutive failures with the reason
-attached. Atrium never learns what a source means: `github`, `zendesk` and `ci` are words on a badge.
-
-**A history.** Every card has an append-only event log, and every permission decision records which agent asked
-and who answered: you, the rule that matched, or auto mode. Every card ever created stays searchable whether or
-not it is still on the board. Filterable, exportable as JSON or CSV.
-
-**Liveness for free.** A card stores its runner's process id, and whether that process still exists is a question
-the operating system answers. No turn, no token, no contact with the agent.
-
-**Reachable from elsewhere, without becoming a proxy.** Atrium can serve the board on a zrok share or an
-OpenZiti service. Both SDKs hand back a `net.Listener` and the board is one `http.Handler`, so atrium answers on
-the overlay itself: no child process to supervise, no output to scrape, and nothing proxied anywhere. It never
-holds an identity or decides who may connect. Loopback and no login stays true.
-
-**Or lend one session to one person.** Publishing the board hands over every card. `share this session` on a
-card serves a restricted handler on its own address that answers for that terminal and 403s everything else,
-with an allowlist rather than a filter, so an endpoint added later is invisible to a guest until somebody adds
-it deliberately. Read-only is enforced on the socket, because a guest owns their copy of the page.
-
-**Agents under their own account, still on one board.** Running an agent as its own operating system user is the
-ordinary way to bound what it can reach, and the cost is that it disappears: its terminal is not yours to attach
-to, its `~/.claude` is its own, its transcripts are its own, and nothing on your desktop says it is there. The
-answer is a daemon per account, each dialing one hub as a room. That is the same mechanism as many machines,
-because an account already has most of what a second machine has: its own home directory, its own `~/.atrium` and
-database, and its own address file, which is why two daemons here cannot take each other's hooks. Ports are the
-one thing an account does not bring, so the second daemon is given its own `--addr` and `--http`. What travels is
-every session on every account, with what it is doing and what it is waiting for, listed in the rooms pane, and a
-permission request from another account, which you answer in your own perms tab and which releases the agent
-there. Attaching does not travel, because a pseudo terminal cannot leave the process that made it, so a remote
-row links to that account's own board and you type into the session there. A daemon launches runners under its
-own token and not under another account's, so the isolation is the account boundary itself rather than something
-atrium asserts on top of it. `shared_location` is there for the seam: it names a directory both accounts can
-read, so a script running as you can find a daemon whose per-user address file it is not allowed to open.
-
-**A way to stop that is not a kill.** `atrium stop` winds the daemon down the way ctrl-c does: event streams
-released, supervised runners given ten seconds, listeners closed in order. Killing the process closes every
-pseudo terminal at once and takes the runners with it.
+The hall is literal now. `atrium run` is the hub that serves the board. Each machine, or each account, runs a room
+that holds its agents and dials the hub. One board shows every room.
 
 ## Quick start
 
-### 1. Build
+You need Go at the version `go.mod` names.
 
-```powershell
-go build -o build.claude\ .\...
+```bash
+git clone https://github.com/dovholuknf/atrium && cd atrium
+go build -o build.claude/ ./cmd/atrium
+mkdir -p ~/.atrium/bin && cp build.claude/atrium ~/.atrium/bin/   # atrium.exe on Windows
+~/.atrium/bin/atrium run
 ```
 
-### 2. Run the daemon
+Open <http://localhost:7778>. `atrium run` serves the board and, the first time, makes this machine's room and starts
+it in the background. Stopping `atrium run` never stops the room or its agents.
 
-```powershell
-.\build.claude\atrium.exe daemon
+Run it from the installed copy, not from `build.claude/`. Hooks, the logon task and the self-restart all name the
+binary's path, and a path under `build.claude/` is rewritten by every build.
+
+Then wire your agents in. On the board, **runners** then **hooks** writes the missing hook entries into Claude Code's
+`settings.json` (or run `atrium hook install`). From then on every Claude Code session on this machine reports to the
+board, and every tool call it makes asks the gate. **perms** then **import rules from claude** turns the allow and
+deny lists you already have into standing rules, so the gate starts out knowing what you trust.
+
+To start an agent under atrium instead, use the board's launch dialog or `atrium launch`.
+
+### Another machine
+
+On the hub's machine, name the room and get its join string:
+
+```bash
+atrium rooms add laptop          # prints atr1_..., good once and for an hour
 ```
 
-Two listeners, on purpose. Agents talk to `:7777`. You talk to `:7778`. If storage ever fails, the agent listener
-closes and stays closed, so runners park on connection-refused and burn nothing, while the board stays up to say
-what broke. Running without durable state is worse than not running.
+On the other machine, with atrium installed the same way:
 
-Open <http://localhost:7778>.
-
-### 3. Gate a session through it
-
-Atrium sees an agent when that agent's hook reports in. From the board, **runners** then **hooks** writes the
-missing ones into your Claude Code settings. The hooks post to `/permission` before every gated tool call and to
-`/session` when a session starts or ends.
-
-A minimal hook posts JSON like this and blocks on the response:
-
-```json
-{ "agent": "my-session", "tool": "Bash", "command": "go build ./...", "pid": 4242, "cwd": "/path/to/repo" }
+```bash
+atrium room join atr1_...        # the first time
+atrium room                      # every time after
 ```
 
-```json
-{ "decision": "approve", "reason": "", "command": "optional rewrite" }
-```
+The room dials the hub over mutual TLS, so the hub's link port (7779) has to be reachable from it, or the two use a
+zrok share or OpenZiti instead. Its cards appear on the same board. `docs/fabric/hub-and-rooms.md` has the details.
 
-A hook must never fail a session. Everything a hook posts is best effort, and the permission hook fails open when
-atrium is unreachable. See `docs/user-guide.md` for a working PowerShell hook, and "Permissions-only mode" for
-gating every session on a machine without wiring anything into the agent itself.
+## What it gives you
 
-### 4. Import the rules you already trust
+**A board.** Every agent is a card in a column: needs permission, ready, running, finished, shelved. The columns are
+buckets of your attention, so a card sits in one because you have to act or because you decided something.
 
-On the board, **perms** then **import rules from claude**. It previews what it would add before adding anything,
-translating `Bash(go build:*)` into a prefix and `//c/temp/**` into a real path, and reporting anything it cannot
-map rather than dropping it silently.
+**The difference between a question and a finish.** An agent that ran out of work and an agent that asked you
+something both stop, and they want very different amounts of hurry. Atrium tells them apart, and the one that asked
+sorts first and says what it asked.
+
+**What each one is doing right now.** A live badge per card: thinking, running `Bash`, three subagents, and for how
+long. "Running Bash for 40 minutes" is not something a status column can tell you.
+
+**A permission gate.** Every tool call an agent wants to make blocks until it is answered. Approving is one click.
+Blocking hands your reason back to the agent, so a refusal is "no, do this instead" rather than a wall. A pending edit
+shows a real diff.
+
+**Standing rules, so you stop clicking.** Answer once with **always** or **never** and every matching request after
+that is answered instantly. A rule is a command prefix, a glob, or a folder, and the most specific match wins.
+
+**Auto mode, when you do not want to be asked at all.** For one session or the whole board. Everything is still
+recorded, and **what did it do?** reads the record back afterwards, grouped by tool, the decisions nobody saw first.
+It never overrides a **never** rule or a shelved card.
+
+**Terminals atrium owns.** Anything atrium launches runs in a pseudo terminal it owns: attach in the browser, type,
+pop it out into its own window, or stop it. With the `pty_host` setting on, the terminals outlive a room restart.
+
+**Agents that talk to each other.** `atrium_say` reaches another session on the board, `name@room` one on another
+machine. A message is typed when the other session's input line is clear, or carried on its next hook, and always
+framed as a peer speaking.
+
+**One board over many machines and accounts.** A room per machine, or per operating system account so an agent can
+run as its own user, all on one board. A permission request from any of them is answered in your own perms tab.
+
+**Notifications that reach you.** Desktop notifications with approve and block buttons, Web Push to a phone, and a
+sound per card, so you know which session wants you without looking.
+
+**A switcher, on a keystroke.** `ctrl-shift-k`, a few letters, Enter. The last few you went to come first.
+
+**Files, both ways.** Drop or paste into a session, or browse its directory and take a file or the whole tree back
+out, all inside one containment check against that card's own directory.
+
+**Work that finds you.** Sources on a timer raise cards from issues, tickets or CI. A pasted pull request link opens a
+card with its worktree and its review.
+
+**A history.** Every card has an append-only event log, and every permission decision records who asked and who
+answered: you, a rule, or auto mode. Every card ever created stays searchable.
+
+**Reachable from elsewhere, without becoming a proxy.** The board can be served on a zrok share or an OpenZiti
+service, answered in-process on the overlay's own listener. Atrium never holds an identity or decides who connects.
+
+`FEATURES.md` lists everything, one entry per capability.
 
 ## Configuration
 
 | Var | Default | Meaning |
 | --- | --- | --- |
-| `WORKTREE_ROOT` | unset | Root of a worktree tree. The daemon keeps its database in `hub/` under it. Unset means `~/.atrium`. |
-| `ATRIUM_HUB_URL` | `http://localhost:7777` | Where the hooks post. |
-| `ATRIUM_PERM_GATE` | unset | `on` gates every session. `off` disables. Unset gates sessions that joined or were launched by atrium, and sessions under a directory whose `.mcp.json` mentions `atrium-agent`. |
+| `WORKTREE_ROOT` | unset | When set, atrium keeps its state in `hub/` under it. Unset means `~/.atrium`. |
+| `ATRIUM_HUB_URL` | the running room | Where `atrium join` and the hooks post, overriding the room's location file. |
+| `ATRIUM_LOCATION` | the machine's location file | The file a room writes its address to and hooks read it from. Set for a second room's sessions. |
+| `ATRIUM_PERM_GATE` | unset | `on` gates every session. `off` disables. Unset gates sessions that joined or were launched by atrium. |
 | `ATRIUM_AGENT_NAME` | directory name | What a session calls itself. Set automatically for runners atrium launches. |
-| `ATRIUM_TASK_ID` | unset | Binds a launched runner to the card that launched it. Set automatically. |
+| `ATRIUM_TASK_ID` | unset | Binds a launched runner to its card. Set automatically. |
+| `ATRIUM_ROOM` | unset | The room a launched session is on, so its control calls are scoped there. Set automatically. |
 
-Flags: `--addr` for the agent listener, `--http` for the board, `--db` for the database, `--shutdown-token` to
-allow a remote shutdown carrying that token instead of refusing everything but loopback.
+| Port | What | Flag |
+| --- | --- | --- |
+| 127.0.0.1:7778 | the hub's board | `atrium run --addr` |
+| 127.0.0.1:7779 | where rooms dial in. May bind wide, with `--link-advertise` naming the address for join strings | `atrium run --link` |
+| 127.0.0.1:7777 | the room's agent listener, where hooks post | `atrium room --agent` |
+| 127.0.0.1:7781 | the room's own board, for when the hub is down | `atrium room --http` |
 
-**Pass `--db` if you run the daemon from more than one shell.** Which database it opens otherwise depends on
-`WORKTREE_ROOT` in the environment it started from, and opening a different populated one looks exactly like your
-board having lost everything. The daemon says so loudly when the database is not the one it opened last time.
+The board always binds loopback and has no login. A wide `--addr` is refused.
 
 ## Subcommands
 
 | Command | Purpose |
 | --- | --- |
-| `atrium run [--no-room]` | The atrium, which serves the board, plus this machine's room, started detached when none is running. The first run makes the room. |
-| `atrium room` | Run this machine's room from its saved keys: the database, the terminals and the agents. |
-| `atrium room join <string>` | Join a room to an atrium elsewhere, the first time, with the string `atrium rooms add` printed. |
-| `atrium rooms add/ls/token/mark/rm/log` | The rooms an atrium knows about, managed from the atrium's side. |
-| `atrium backups [restore <snapshot>]` | The atrium's snapshots of its own store, and putting one back. |
-| `atrium db compact` / `atrium ledger` | Offline tools for a room's database: a packed copy, and the work ledger read straight from it. |
-| `atrium daemon` | The board, the API, and the agent listener in one process with no atrium. Packaging runs it until `atrium run` replaces it. |
-| `atrium stop` | Ask a running daemon to wind down. Not the same as killing it. |
-| `atrium control` | MCP server with `atrium_status` and `restart_atrium`, for restarting the daemon from a session it is running. |
+| `atrium run [--no-room]` | The hub, which serves the board, plus this machine's room, started detached when none is running. |
+| `atrium room` | Run this machine's room: the database, the terminals and the agents. `--detach` runs it in the background. |
+| `atrium room join <string>` | Join a room to a hub, the first time, with the string `atrium rooms add` printed. |
+| `atrium rooms add/ls/token/mark/rm/log/legacy/git` | The rooms a hub knows about, managed on the hub's machine. |
+| `atrium backups [restore <snapshot>]` | The hub's snapshots of its own store, and putting one back. |
+| `atrium daemon` | The older single process: board :7778, agents :7777, no hub. The service installers still default to it. |
+| `atrium stop` | Ask a running room to wind down. Not the same as killing it. |
+| `atrium launch` | Put a directory on the board and start a runner in it. |
+| `atrium open [url]` | Open a link as a card: a pull request gets its worktree, its review and a session. |
 | `atrium join` / `leave` | Put the session you are in on the board, or take it off, without a restart. |
-| `atrium launch` | Put a directory on the board and start a runner in it, for scripts that make worktrees. |
-| `atrium preview` | A throwaway second board, on a copy of your cards, for looking at a change before installing it. |
-| `atrium hook` / `session` / `turn` | The hook entry points. Wired for you from the runners tab. |
+| `atrium hook` / `session` / `turn` | The hook entry points. `atrium hook install` writes them into Claude Code's settings. |
+| `atrium task` / `exit` / `new-context <who>` | Show a card, ask its runner to leave, or cycle it onto a fresh context. |
 | `atrium finish [recap]` | An agent saying its work is over, and what it did. |
-| `atrium ask [--continue] [--peer <handle>]` | A session saying it is stuck and what would unstick it, on its card or routed to another session. |
-| `atrium answer <handle>` | The reply to one of those, which also takes the question off that card. |
-| `atrium peers` / `tell` | The other sessions this one can address, and saying something to one. Queued, never typed. |
+| `atrium ask [--continue] [--peer <handle>]` | A session saying it is stuck and what would unstick it. |
+| `atrium answer <handle>` | The reply to one of those. |
+| `atrium ready` | A session saying its handoff is written, so atrium can clear its context. |
+| `atrium peers` / `tell` | The other sessions this one can address, and saying something to one. |
+| `atrium backlog` / `reports` | The hub's backlog and director reports, from any room. |
+| `atrium resources` | The machines and environments agents may use. |
+| `atrium preview` | A throwaway second board, on a copy of your cards, for looking at a change before installing it. |
+| `atrium control` | A stdio MCP server with `atrium_status` and `restart_atrium`. |
+| `atrium db compact` / `ledger` / `usage` | Offline tools for a room's database: a packed copy, the work ledger, token use. |
 | `atrium name [<name>]` | Name this atrium once, so two machines cannot claim each other's cards. |
+| `atrium version` | The build, its commit, and whether the tree was clean. |
 
-Not a subcommand, but the same kind of reference: `POST /v1/tasks/{id}/model` with `{"model":"sonnet|opus|haiku|fable|claude-..."}`
-switches a live Claude card's model. Atrium types `/model <id>` into the terminal it owns, with no new context and no
-relaunch, and records the model on the card so a resume keeps it. A card with no atrium terminal, or that is not Claude,
-answers 409. The control tool `atrium_model` makes the same call.
+Sessions get the same verbs and more as MCP tools from the hub's control server at `/_hub/mcp`: `atrium_peers`,
+`atrium_say`, `atrium_launch`, `atrium_report`, `atrium_backlog` and the rest. `website/docs/control-mcp.md` lists
+them.
 
-`GET /v1/tasks/{id}/changes` answers what a card's worktree has changed: `?against=head` (default, uncommitted and
-untracked files) or `?against=base` (everything since the merge base with `claude/main`, else `main`). Each file has its
-status, counts and unified hunks, bounded at 400 files, 256 KB a file and 2 MB in all, and the answer says what it cut.
-`?turn=<at>`, with `at` from `/replies`, answers the same shape for the files one reply's turn edited, marked `partial`
-because a shell command's changes are not seen. It takes no path, and a card whose directory is not a git worktree
-answers 404. `/replies` carries `edited: N` per reply for the chip, from the transcript with no git.
+Two room endpoints are worth knowing by hand. `POST /v1/tasks/{id}/model` with `{"model":"sonnet|opus|..."}` switches
+a live Claude card's model by typing `/model` into the terminal atrium owns, and records it so a resume keeps it.
+`GET /v1/tasks/{id}/changes` answers what a card's worktree has changed, `?against=head` (the default) or
+`?against=base`, bounded at 400 files, 256 KB a file and 2 MB in all.
 
-## Scope, and what is not built
+## Scope
 
-This is a personal tool. The parts that are missing are missing on purpose, or are simply next.
+This is a personal tool. The parts that are missing are missing on purpose.
 
-- **Single machine, no auth.** Loopback only. Reaching it from elsewhere is an overlay's job, not an auth layer
-  invented here. Shutdown is the one endpoint with a guard, and only because a reachable-from-anywhere kill
-  switch is the kind of accident worth ruling out.
-- **A supervised runner dies with the daemon.** The daemon owns each pseudo terminal, and on Windows closing one
-  takes the attached process with it. There is no reattach, so the answer is resume ids rather than orphan
-  survival, which ConPTY does not offer.
-- **Atrium never becomes an overlay.** It starts a share and reports what it said. Holding an identity, proxying
-  traffic or deciding who may connect are all on the other side of a line it does not cross.
-- **No prompt injection from outside.** There is no IPC channel into a running claude process. A message to a
-  session is queued and delivered by a hook, even where atrium owns a terminal and could type.
-- **The board is a plain page**, not the React app the design calls for. It speaks the same JSON and SSE API, so
-  replacing it is a client-side job.
-- **Windows first.** It builds and the tests pass elsewhere, but the hooks shipped alongside it are PowerShell.
+- **No accounts, no login, no cloud.** The board binds loopback. Reaching it from elsewhere is an overlay's job, and
+  rooms on other machines reach the hub over mutual TLS with a certificate the hub signed.
+- **Atrium never becomes an overlay.** It starts a share and serves on it. Holding an identity, proxying traffic or
+  deciding who may connect are on the other side of a line it does not cross.
+- **No prompt injection from outside.** A message to a session arrives as a peer speaking, typed only when the line is
+  clear or carried by a hook.
+- **The board is a plain page.** It speaks the same JSON and SSE API anything else could.
+- **Windows first.** It builds and the tests pass on Linux and macOS, and the scripts shipped alongside it are mostly
+  PowerShell.
 
 ## Documentation
 
-- `docs/archive/architecture-v2.md` -- the design, the decisions, what is built and what was abandoned.
-- `docs/user-guide.md` -- walkthroughs, including the hooks.
-- `docs/room-accounts.md`: why a room should not run as an administrator or as you, what atrium warns about, and how to
-  set up a standard account on each OS.
-- `docs/backlog.md` -- what is outstanding, why it matters, and what is out of scope.
-- `docs/runtime/activity-design.md` -- the live badge on a card, and why it is never written down.
-- `docs/runtime/statusline-telemetry.md` -- how much context a session has burned, posted by its statusline. The
-  contract for the other half, which lives in a different repository.
-- `docs/runtime/auto-mode.md` -- approving without being asked, and reading the record afterwards.
-- `docs/terminal/supervision-design.md` -- pseudo terminals, attaching from the browser, and how a runner is stopped.
-- `docs/fabric/overlays.md` -- reaching the board from another machine, and the line atrium will not cross to do it.
-- `docs/ui/preview-design.md` -- a second board on a copy of the cards, and why two ACTIVE atriums cannot share one
-  database.
-- `docs/runtime/intake-design.md` -- starting a card from an issue or a ticket, in layers.
-- `docs/runtime/file-transfer-design.md` -- moving files in and out of a session, and what containment means here.
-- `docs/archive/federation-design-v2.md` -- one board over many machines. Leaves dial out, the forum holds nothing.
-- `docs/test-plan.md` -- manual scenarios that should pass before tagging a build.
-- `CHANGELOG.md` -- what landed, and when.
+- The manual: `website/docs/`, published at <https://dovholuknf.github.io/atrium/>.
+- `docs/how-atrium-works.md`: the whole system on one page.
+- `docs/fabric/hub-and-rooms.md`: the hub, rooms, joining and ports.
+- `docs/agents.md`: the bring-up for an agent working on atrium.
+- `docs/README.md`: the map of everything else in `docs/`.
+- `FEATURES.md`: every capability, one entry each.
+- `docs/room-accounts.md`: why a room should not run as an administrator or as you, and how to set up an account.
+- `changelog/`: what landed, one file per change. `CHANGELOG.md` holds everything before 2026-09-29.
 
 ## License
 
