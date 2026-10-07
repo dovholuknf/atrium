@@ -45,6 +45,9 @@ $CtlShutdown  = 'http://127.0.0.1:7791/v1/shutdown'
 # The exact command lines. The hub's directory flag is --atrium-dir, because `run` also takes the room's --dir.
 $HubArgs = @('run', '--no-room', '--addr', '127.0.0.1:7778', '--link', '0.0.0.0:7779',
   '--link-advertise', '192.168.1.68:7779', '--atrium-dir', $HubDir)
+# The hub serves the board from the main checkout, so a board change merged to claude/main is live on a browser
+# refresh with no build. clint 2026-10-07: "i'd like this hub to be switched over to allowing live edits".
+$HubArgs += @('--board', (Join-Path $Repo 'internal\api\web'))
 $RoomArgs = @('room', '--dir', $RoomDir, '--db', $RoomDb, '--http', '127.0.0.1:7781', '--agent', '127.0.0.1:7777')
 
 # $WhatIf is set by the script that dot-sources this, from its own -WhatIf switch.
