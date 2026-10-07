@@ -84,6 +84,18 @@ func (s *Store) QueuePeerKind(taskID, text, fromPeer, kind string, waitTurn bool
 	return s.queueMessage(taskID, text, fromPeer, kind, waitTurn)
 }
 
+// QueueCaused is QueuePeerKind for a message whose sender knows what kind of delivery it is, one of the Delivery
+// kinds, which the turn cost report files its turn under. See delivery.go.
+func (s *Store) QueueCaused(taskID, text, fromPeer, kind, cause string, waitTurn bool) (*Message, error) {
+	m, err := s.QueuePeerKind(taskID, text, fromPeer, kind, waitTurn)
+	if err != nil {
+		return nil, err
+	}
+	// Best effort: a message that cannot be tagged is still queued, and files under what its sender says it is.
+	_ = s.SetMessageCause(m.ID, cause)
+	return m, nil
+}
+
 func (s *Store) queueMessage(taskID, text, fromPeer, kind string, waitTurn bool) (*Message, error) {
 	m := &Message{
 		ID: newID(), TaskID: taskID, Text: text,
@@ -178,6 +190,9 @@ func (s *Store) MarkDelivered(taskID, via string, ids []string) error {
 		if err := markSaysDelivered(s.db, via, ids); err != nil {
 			return err
 		}
+		// And a delivery, which the turn that follows is costed against. Best effort: the cost report is not
+		// worth a message that stays queued.
+		_ = recordMessageDeliveries(s.db, taskID, via, ids)
 		return s.appendEvent(taskID, EventPrompted, map[string]any{
 			"delivered": len(ids), "via": via,
 		})

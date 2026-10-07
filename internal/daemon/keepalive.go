@@ -160,10 +160,40 @@ type mainReply struct {
 	// Sidechain is a subagent's reply written inline, as older Claude Code
 	// did. Only scanReplies offers these.
 	Sidechain bool
+	// Text is what the reply said, joined, and ToolUse is whether it called a tool. A reply written in several
+	// lines carries what all of them did once it has been through replySet.take. The turn cost report reads them.
+	Text    string
+	ToolUse bool
 }
 
 // Context is the whole prompt the reply was answered on.
 func (r *mainReply) Context() int64 { return r.Input + r.CacheWrite + r.CacheRead }
+
+// replyContent is the words and whether there was a tool call in an assistant reply's content blocks. Best effort:
+// content that is not a list of blocks says nothing.
+func replyContent(raw json.RawMessage) (string, bool) {
+	if len(raw) == 0 || raw[0] != '[' {
+		return "", false
+	}
+	var blocks []struct {
+		Type string `json:"type"`
+		Text string `json:"text"`
+	}
+	if json.Unmarshal(raw, &blocks) != nil {
+		return "", false
+	}
+	var text strings.Builder
+	tool := false
+	for _, b := range blocks {
+		switch b.Type {
+		case "text":
+			text.WriteString(b.Text)
+		case "tool_use", "server_tool_use":
+			tool = true
+		}
+	}
+	return text.String(), tool
+}
 
 // scanMainReplies calls fn for every main-thread assistant reply with usage in
 // a transcript, in file order. Subagent replies (`isSidechain`) are not the
@@ -210,6 +240,8 @@ func scanReplies(r io.Reader, fn func(*mainReply)) (int64, error) {
 				ID    string `json:"id"`
 				Model string `json:"model"`
 				Usage *usage `json:"usage"`
+				// Content is a list of blocks for an assistant reply. Read loosely: a shape that is not one is no text.
+				Content json.RawMessage `json:"content"`
 			} `json:"message"`
 		}
 		if json.Unmarshal(line, &e) != nil || e.Type != "assistant" || e.Message.Usage == nil {
@@ -220,7 +252,9 @@ func scanReplies(r io.Reader, fn func(*mainReply)) (int64, error) {
 			return
 		}
 		u := e.Message.Usage
+		text, tool := replyContent(e.Message.Content)
 		fn(&mainReply{
+			Text: text, ToolUse: tool,
 			MessageID: e.Message.ID, Model: e.Message.Model, At: at, Speed: u.Speed,
 			Input: u.Input, CacheWrite: u.CacheWrite, CacheRead: u.CacheRead,
 			Write5m: u.CacheCreation.FiveMins, Write1h: u.CacheCreation.OneHour, Output: u.Output,

@@ -845,6 +845,7 @@ func (d *Daemon) onActivity(in ActivityEvent) string {
 		cause := d.promptCause(taskID)
 		d.usage.prompted(taskID, cause)
 		if cause == store.UsageOperator {
+			d.noteDelivery(taskID, "", store.DeliveryOperator)
 			d.humanTouch(taskID, ViaPrompt)
 		}
 		// And it saw the turn and answered its questions, unless the prompt

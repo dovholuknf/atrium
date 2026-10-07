@@ -421,6 +421,7 @@ func (u *usageTracker) record(t *store.Task, seg usageSegment) (*store.SessionUs
 		}
 		main.advance()
 		u.emitRow(row)
+		u.costDeliveries(t, seg.stop, main)
 	}
 	// A reply is the card's or a subagent's, never both.
 	side.drop(main)
@@ -555,7 +556,10 @@ func (s *replySet) take(r *mainReply, cur *usageCursor) {
 	if r.MessageID == "" {
 		r.MessageID = r.At.Format(time.RFC3339Nano)
 	}
-	_, seen := s.byID[r.MessageID]
+	prev, seen := s.byID[r.MessageID]
+	if seen {
+		r.Text, r.ToolUse = prev.Text+r.Text, prev.ToolUse || r.ToolUse
+	}
 	if !seen && (r.MessageID == cur.lastMsg || !r.At.After(cur.lastAt)) {
 		return
 	}

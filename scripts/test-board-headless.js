@@ -12161,6 +12161,61 @@ async function linkReuseSection(browser, base) {
   if (errors.length) fail("linkReuse: the page threw: " + errors.join(" | "));
 }
 
+// The usage tab's turns atrium caused: tokens and an estimated dollar figure by kind, per card and per day, the
+// costliest turns, and the noise line. TURNCOST_SHOT=<file.png> also writes a screenshot of the section.
+async function usageTurnsSection(browser, base) {
+  const errors = [];
+  const at = new Date(Math.floor(Date.now() / 900000) * 900000 - 900000).toISOString();
+  const mk = n => ({ rows: 1, replies: 1, input: n, output: 0, cache_write_5m: 0, cache_write_1h: 0, cache_read: n * 10, cost: 0 });
+  const row = (day, id, name, kind, turns, input, output, cw, cr, cost, noise, none, ack) => ({ day, task_id: id, name, kind, turns,
+    input, output, cache_write: cw, cache_read: cr, cost, noise_turns: noise, noise_tokens: noise ? input + output + cw : 0,
+    noise_cost: noise ? cost : 0, none_turns: none, ack_turns: ack, deliveries: turns });
+  const turns = { since: at, until: at, pending: 2, rows: [
+    row("2026-10-07", "tc-a", "orchestrator", "say", 14, 300, 9000, 210000, 3200000, 3.41, 3, 1, 2),
+    row("2026-10-07", "tc-a", "orchestrator", "notice", 9, 120, 2100, 90000, 1500000, 1.12, 8, 5, 3),
+    row("2026-10-07", "tc-b", "worker-r1", "nudge", 4, 40, 600, 30000, 400000, 0.31, 4, 4, 0),
+    row("2026-10-07", "tc-b", "worker-r1", "operator", 6, 80, 7000, 150000, 2100000, 2.2, 0, 0, 0),
+    row("2026-10-06", "tc-a", "orchestrator", "report", 5, 90, 4000, 120000, 1900000, 1.8, 0, 0, 0),
+    row("2026-10-06", "tc-b", "worker-r1", "restart-wake", 1, 10, 300, 60000, 100000, 0.4, 1, 0, 1)],
+    top: [
+    { id: "d1", task_id: "tc-a", name: "orchestrator", from: "worker-r1", kind: "report", reply: "work", input: 40, output: 3000, cache_write_5m: 90000, cache_write_1h: 0, cache_read: 900000, cost: 1.1 },
+    { id: "d2", task_id: "tc-a", name: "orchestrator", from: "atrium", kind: "notice", reply: "ack", input: 3, output: 40, cache_write_5m: 70000, cache_write_1h: 0, cache_read: 200000, cost: 0.4 }] };
+  const ctx = await browser.newContext({ viewport: { width: 1400, height: 1100 } });
+  const sp = await ctx.newPage();
+  sp.on("pageerror", e => errors.push(String(e)));
+  await ctx.route(/\/v1\/usage\?/, route => route.fulfill({ json: { buckets: [
+    { t: at, total: mk(3000), cards: { "tc-a": mk(2000), "tc-b": mk(1000) }, causes: { operator: mk(3000) } }] } }));
+  await ctx.route(/\/v1\/usage\/items/, route => route.fulfill({ json: { items: [], unlinked: 0 } }));
+  let asked = "";
+  await ctx.route(/\/v1\/usage\/turns/, route => { asked = route.request().url(); route.fulfill({ json: turns }); });
+  await ctx.route("**/v1/settings", route => route.fulfill({ json: { usage_cache_reads: false, board_skin: "harbour", board_skins: SKINS } }));
+  try {
+    await sp.goto(base, { waitUntil: "domcontentloaded" });
+    await sp.waitForSelector("#stack-list .stackrow", { state: "attached", timeout: slow(15000) });
+    await sp.evaluate(() => switchView("usage"));
+    await sp.waitForSelector("#uc-body [data-role=turns-kind]", { timeout: slow(10000) });
+    if (!/since=/.test(asked)) fail("usageTurns: the read named no range: " + asked);
+    const t = await sp.evaluate(() => ({
+      kinds: [...document.querySelectorAll("#uc-body [data-role=turns-kind] > span")].map(x => x.textContent),
+      top: document.querySelector("#uc-body [data-role=turns-top]").textContent,
+      noise: document.querySelector("#uc-body [data-role=turns-noise]").textContent,
+      text: document.getElementById("uc-body").textContent }));
+    if (t.kinds[5] !== "say") fail("usageTurns: the biggest kind is not first: " + t.kinds.slice(5, 10));
+    if (!t.kinds.includes("$3.41") || !t.kinds.includes("$2.20")) fail("usageTurns: a kind has no dollar estimate: " + t.kinds);
+    if (!/orchestrator/.test(t.text) || !/2026-10-07/.test(t.text) || !/worker-r1/.test(t.text)) fail("usageTurns: per card or per day is missing.");
+    if (/operator/.test(t.top)) fail("usageTurns: the operator's turn is among the costliest atrium caused: " + t.top);
+    if (!/report/.test(t.top) || !/from worker-r1/.test(t.top)) fail("usageTurns: the costliest turn does not say what caused it: " + t.top);
+    // the operator's is not atrium's: 3+8+4+1 turns of noise, 10 none and 6 ack
+    if (!/noise: 16 turns/.test(t.noise) || !/10 no reply, 6 ack/.test(t.noise) || !/2 delivered, turn not ended yet/.test(t.noise)) fail("usageTurns: the noise line reads " + t.noise);
+    if (process.env.TURNCOST_SHOT) {
+      await sp.evaluate(() => { const b = document.querySelector("#uc-body [data-role=turns-kind]"); const hd = b && b.previousElementSibling; if (hd) hd.scrollIntoView(); });
+      await sp.waitForTimeout(300);
+      await sp.screenshot({ path: process.env.TURNCOST_SHOT });
+    }
+  } finally { await ctx.close(); }
+  if (errors.length) fail("usageTurns: the page threw: " + errors.join(" | "));
+}
+
 // The usage tab and its cache reads toggle. Off by default: four counted kinds
 // stacked, the cache reads named on one line under the split, five kinds still on
 // the hover. On is the tab as it always was. The choice is the daemon's.
@@ -24902,7 +24957,7 @@ async function main() {
       history: historySection, contextSize: contextSizeSection, ctxLine: ctxLineSection, ctxLimitLayers: ctxLimitLayersSection, contextCycle: contextCycleSection, landThePlane: landThePlaneSection, peekEverywhere: peekEverywhereSection, peekOneHover: peekOneHoverSection, cardRoute: cardRouteSection,
       quietDoer: quietDoerSection, autoPerm: autoPermSection, looksIdle: looksIdleSection, notifyOff: notifyOffSection,
       questionsClick: questionsClickSection, walk: walkSection, walkContext: walkContextSection, linkReuse: linkReuseSection,
-      usageCacheReads: usageCacheReadsSection, roomsDash: roomsDashSection, phoneView: phoneViewSection, heldLine: heldLineSection, u016: u016Section, phoneHeader: phoneHeaderSection, phoneFocus: phoneFocusSection, phoneTermBar: phoneTermBarSection, phoneShare: phoneShareSection, phonePan: phonePanSection, phoneFollow: phoneFollowSection, phoneTap: phoneTapSection, phoneKeyboard: phoneKeyboardSection, phoneCompose: phoneComposeSection, mCompose: mComposeSection, mPerms: mPermsSection, mReview: mReviewSection, usagePolish: usagePolishSection, usageLimits: usageLimitsSection, usageGroups: usageGroupsSection,
+      usageCacheReads: usageCacheReadsSection, usageTurns: usageTurnsSection, roomsDash: roomsDashSection, phoneView: phoneViewSection, heldLine: heldLineSection, u016: u016Section, phoneHeader: phoneHeaderSection, phoneFocus: phoneFocusSection, phoneTermBar: phoneTermBarSection, phoneShare: phoneShareSection, phonePan: phonePanSection, phoneFollow: phoneFollowSection, phoneTap: phoneTapSection, phoneKeyboard: phoneKeyboardSection, phoneCompose: phoneComposeSection, mCompose: mComposeSection, mPerms: mPermsSection, mReview: mReviewSection, usagePolish: usagePolishSection, usageLimits: usageLimitsSection, usageGroups: usageGroupsSection,
       eventDriven: eventDrivenSection, idleBudget: idleBudgetSection, pollsGone: pollsGoneSection,
       phoneListFit: phoneListFitSection, termListLastRow: termListLastRowSection, phoneNudge: phoneNudgeSection,
       growlStack: growlStackSection, growlActions: growlActionsSection, growlModal: growlModalSection, growlQuiet: growlQuietSection, growlAttention: growlAttentionSection, growlPhone: growlPhoneSection, mGrowl: mGrowlSection, growlPopout: growlPopoutSection, growlOff: growlOffSection, growlRemind: growlRemindSection,
@@ -26867,6 +26922,7 @@ async function main() {
     await unit("walkContext", () => walkContextSection(browser, base));
     await unit("linkReuse", () => linkReuseSection(browser, base));
     await unit("usageCacheReads", () => usageCacheReadsSection(browser, base));
+    await unit("usageTurns", () => usageTurnsSection(browser, base));
     await unit("roomsDash", () => roomsDashSection(browser, base));
     await unit("phoneView", () => phoneViewSection(browser, base));
     await unit("heldLine", () => heldLineSection(browser, base));

@@ -2134,6 +2134,38 @@ var migrations = []struct {
 			`ALTER TABLE task ADD COLUMN answer_drafts TEXT NOT NULL DEFAULT ''`,
 		},
 	},
+	{
+		// WHAT ATRIUM TYPED OR QUEUED INTO A SESSION, AND WHAT THE TURN AFTER IT COST. One row per delivery with its
+		// cause kind, the card it came from and the card it went to. The next Stop of the target reads the turn's
+		// usage off the transcript and lands it here: tokens, an estimated dollar figure, and what the reply was
+		// (work, text, ack or none). Several deliveries inside one turn share its cost, on the first. `message.cause`
+		// is the kind a queued message was queued with, empty when nobody said. See delivery.go.
+		name: "0092_delivery_cost",
+		stmts: []string{
+			`CREATE TABLE IF NOT EXISTS delivery (
+				id             TEXT PRIMARY KEY,
+				task_id        TEXT NOT NULL,
+				from_name      TEXT NOT NULL DEFAULT '',
+				kind           TEXT NOT NULL,
+				at             TEXT NOT NULL,
+				message_id     TEXT NOT NULL DEFAULT '',
+				costed_at      TEXT NOT NULL DEFAULT '',
+				group_id       TEXT NOT NULL DEFAULT '',
+				model          TEXT NOT NULL DEFAULT '',
+				replies        INTEGER NOT NULL DEFAULT 0,
+				input          INTEGER NOT NULL DEFAULT 0,
+				output         INTEGER NOT NULL DEFAULT 0,
+				cache_write_5m INTEGER NOT NULL DEFAULT 0,
+				cache_write_1h INTEGER NOT NULL DEFAULT 0,
+				cache_read     INTEGER NOT NULL DEFAULT 0,
+				cost           REAL NOT NULL DEFAULT 0,
+				reply          TEXT NOT NULL DEFAULT ''
+			)`,
+			`CREATE INDEX IF NOT EXISTS delivery_task_costed ON delivery (task_id, costed_at, at)`,
+			`CREATE INDEX IF NOT EXISTS delivery_at ON delivery (at)`,
+			`ALTER TABLE message ADD COLUMN cause TEXT NOT NULL DEFAULT ''`,
+		},
+	},
 }
 
 // migrate applies any migration not already recorded. This runs before the

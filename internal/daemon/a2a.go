@@ -295,7 +295,7 @@ func (d *Daemon) notifyLauncher(worker *store.Task, source, key, body string) bo
 		d.holdNotice(launcher, worker, source, text)
 		return true
 	}
-	typed, err := d.deliverPeer(launcher, worker.WireName, text)
+	typed, err := d.deliverPeerAs(store.DeliveryReport, launcher, worker.WireName, text)
 	if err != nil {
 		log.Printf("[atrium] could not tell %s about %s: %v", launcher.DisplayTitle(), worker.DisplayTitle(), err)
 		return false
@@ -451,7 +451,7 @@ func (d *Daemon) silentStop(taskID string) bool {
 		if err != nil {
 			log.Printf("[atrium] could not record a nudge for %s: %v", t.DisplayTitle(), err)
 		} else if fresh {
-			if _, err := d.deliverPeer(t, "atrium", silentNudgeText); err != nil {
+			if _, err := d.deliverPeerAs(store.DeliveryNudge, t, "atrium", silentNudgeText); err != nil {
 				log.Printf("[atrium] could not nudge %s: %v", t.DisplayTitle(), err)
 			} else {
 				log.Printf("[atrium] nudged %s: its turn ended without a report", t.DisplayTitle())
@@ -757,7 +757,7 @@ func (d *Daemon) wakeLauncher(t *store.Task, x *Escalation) {
 	}
 	text := truncatePeer(fmt.Sprintf("%s has been stuck for %d minutes (%s). card %s", t.WireName, x.Minutes,
 		x.Source, t.ID))
-	if _, err := d.deliverPeer(launcher, t.WireName, text); err != nil {
+	if _, err := d.deliverPeerAs(store.DeliveryNotice, launcher, t.WireName, text); err != nil {
 		log.Printf("[atrium] could not wake %s for stuck %s: %v", launcher.DisplayTitle(), t.DisplayTitle(), err)
 	}
 }

@@ -568,16 +568,30 @@ func (d *Daemon) deliverPeerWhen(target *store.Task, from, text string, waitTurn
 // deliverPeerWhenID is deliverPeerWhen that also says which queue row carries
 // the words when they were not typed, so a say can be recorded against it.
 func (d *Daemon) deliverPeerWhenID(target *store.Task, from, text, kind string, waitTurn bool) (bool, string, error) {
+	return d.deliverPeerCaused(target, from, text, kind, "", waitTurn)
+}
+
+// deliverPeerAs is deliverPeer for words that are a kind of delivery of their own, one of the store's Delivery
+// kinds, which the turn cost report files the turn under.
+func (d *Daemon) deliverPeerAs(cause string, target *store.Task, from, text string) (bool, error) {
+	typed, _, err := d.deliverPeerCaused(target, from, text, "", cause, d.waitsForTurn(target.ID, WhenImmediate))
+	return typed, err
+}
+
+// deliverPeerCaused is deliverPeerWhenID with the delivery's kind, empty when the sender says nothing more than who
+// it is. See store.DeliveryKind.
+func (d *Daemon) deliverPeerCaused(target *store.Task, from, text, kind, cause string, waitTurn bool) (bool, string, error) {
 	// A target still marked parked here was woken by this very say: it is queued
 	// and carried by the ordinary path, never typed into a session that has only
 	// just started.
 	if isParked(target) {
 		// fall through to the queue
 	} else if typed, _ := d.tellByTyping(target, from, text, kind, waitTurn); typed {
+		d.noteDelivery(target.ID, from, store.DeliveryKind(from, cause))
 		d.publishTask(target.ID)
 		return true, "", nil
 	}
-	m, err := d.st.QueuePeerKind(target.ID, text, from, kind, waitTurn)
+	m, err := d.st.QueueCaused(target.ID, text, from, kind, cause, waitTurn)
 	if err != nil {
 		return false, "", err
 	}
