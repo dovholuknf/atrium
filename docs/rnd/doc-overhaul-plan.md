@@ -295,7 +295,7 @@ What exists after, and who it is for.
 | Doc | For | What it answers |
 | --- | --- | --- |
 | `README.md` | a human arriving at the repo | what atrium is, the hall metaphor, a ten-line start with `atrium run`, what it gives you in short, where to read next |
-| `website/docs/*` | a human using atrium | the manual: install, quick start, rooms, the board, the CLI, hooks, permissions |
+| `website/docs/*`, published at `dovholuknf.github.io/atrium` | a human using atrium | the manual and the place a new user reads: install, quick start, the hub and rooms, how it works, the board, the CLI, hooks, permissions |
 | `FEATURES.md` | anyone | one entry per capability, current |
 | `docs/README.md` | anyone inside `docs/` | the map below, where a new doc goes, and the status-line rule |
 | `docs/how-atrium-works.md` | a contributor or an agent | the one architecture page: processes, ports, cards, hooks, the permission chain, messaging, state |
@@ -307,8 +307,8 @@ What exists after, and who it is for.
 | `docs/test-plan.md`, `docs/changes/`, `changelog/` | the merger | unchanged process |
 | `CHANGELOG.md` | anyone | frozen history, with a header that says where newer entries are |
 
-Reading order for a new human: `README.md`, `website/docs/intro.md`, `install.md`, `quick-start.md`, `rooms.md`, then
-`FEATURES.md` for what else is there.
+Reading order for a new human: `README.md`, then the site: intro, install, quick start, the hub and rooms, how it
+works. `FEATURES.md` for what else is there.
 
 Reading order for a new agent: the root `AGENTS.md`, `docs/how-atrium-works.md`, `docs/fabric/hub-and-rooms.md`,
 `docs/runtime/agent-messaging.md`, `docs/README.md` for where things go, then the `AGENTS.md` of the package being
@@ -341,8 +341,21 @@ was rewritten rather than patched. A doc named from code stays at its path, beca
 5. **The architecture.** Write `docs/fabric/hub-and-rooms.md`, rewrite `docs/how-atrium-works.md`, rewrite
    `docs/README.md` as the map.
 6. **The front door.** Rewrite `README.md`, `docs/atrium-for-agents.md`, `docs/user-guide.md`.
-7. **The website.** `install.md`, `quick-start.md`, `cli.md`, `rooms.md`, `modes.md`, and every CHECK page read
-   against the code.
+7. **The website, stale pages.** `install.md`, `quick-start.md`, `cli.md`, `control-mcp.md`, `rooms.md`, `modes.md`,
+   and every CHECK page read against the code. `website/docs/hooks.md` holds the starter gate script that
+   `website/scripts/test-gate-hook.js` runs, so its script block changes only with that test passing.
+8. **The website, carried pages.** What batches 5 and 6 wrote for a user (the hub and rooms, how atrium works, the
+   patterns in `docs/user-guide.md`) carried into `website/docs` and its sidebar, so a new user reads the site and
+   never needs `docs/`.
+9. **The site deploys itself.** `.github/workflows/docs.yml` runs on push to `main` when `website/**`, `docs/**`, the
+   workflow or `scripts/build-docs.ps1` change, and on `workflow_dispatch`. The release trigger goes. The workflow
+   stays logic-free: checkout, node, `configure-pages`, `scripts/build-docs.ps1`, upload, deploy. `website/DECISIONS.md`
+   "Refreshed at release" and "Hosting" and the script's own header say the same. Every website batch is proved with
+   `pwsh scripts/build-docs.ps1` before it is committed.
+
+The site at `https://dovholuknf.github.io/atrium/` answers 404 today because nothing has deployed it. After batch 9
+lands on `main`, clint sets the repository's Pages source to **GitHub Actions** (Settings, Pages, Build and
+deployment, Source), once. Nothing in the repository can do that step.
 
 ## NOTES: changes the agent files need
 
@@ -401,3 +414,6 @@ The `AGENTS.md` files are not in this repository. They live in the dotagents rep
 ## Interview
 
 Answers recorded here as they come.
+
+- **Scope, from clint by way of the orchestrator, 2026-10-07.** The website is in scope as the published docs and
+  the place a new user reads. It deploys on push to `main`. Batches 7 to 9.
