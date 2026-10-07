@@ -197,6 +197,16 @@ no remote and not on the hub, findings still open or accepted, a running review.
 A `lifetime: link` card never closes on its own `atrium_report status=done` (r-done-report-closes-card). Only finish
 or clint ends it.
 
+**As built (r-finish-pr-review).** These overrule the paragraphs above.
+- The human verb is **close**, not finish, because `atrium finish` is already the agent's report. It is
+  `GET`/`POST /v1/tasks/{id}/close {confirm, answers}`, `atrium close <card>`, the MCP tool `atrium_close`, "close…" on
+  the card menu and a "close" button on a pulls row with a walker. Read "finish" elsewhere in this doc as close.
+- The order is the runner, then reviews (the inventory's and any the card walks outside it), then worktrees, then
+  branches, then refs. Worktrees go before branches because git will not delete a branch a worktree has checked out.
+  A row that fails stays live with `freed_err`.
+- The reopen is the review's run folder set aside: it is renamed `<dir>-closed-<ts>` without `src/`, so a re-paste at
+  the same head gets a fresh review. The hub claim is not changed.
+
 ## 8. The sweep
 
 On room start, and on ask from the board, the room walks every unfreed inventory row and checks it against the world:
