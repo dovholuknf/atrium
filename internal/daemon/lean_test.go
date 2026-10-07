@@ -190,6 +190,9 @@ func TestLeanSettingsAddsTheStopHookWhenAsked(t *testing.T) {
 	if !strings.Contains(raw, `"Stop"`) || !strings.Contains(raw, "turn --event end") {
 		t.Fatalf("stop hook missing: %s", raw)
 	}
+	was := noPollHookCommand
+	noPollHookCommand = func() string { return "" }
+	defer func() { noPollHookCommand = was }()
 	raw, err = leanSettings(nil, "")
 	if err != nil || !strings.Contains(raw, `"hooks":{}`) {
 		t.Fatalf("no user settings should still build, got %s %v", raw, err)
@@ -226,5 +229,20 @@ func TestWithoutLeanTagsKeepsTheRest(t *testing.T) {
 	}
 	if _, cut = withoutLeanTags([]string{"docs"}); cut {
 		t.Fatal("a card that was never lean has nothing to take out")
+	}
+}
+
+func TestLeanSettingsAddsTheNoPollHook(t *testing.T) {
+	was := noPollHookCommand
+	noPollHookCommand = func() string { return "C:/a/atrium.exe hook --event no-poll" }
+	defer func() { noPollHookCommand = was }()
+	raw, err := leanSettings([]byte(leanTestSettings), "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{`"matcher":"Bash|PowerShell"`, "hook --event no-poll", "hook --event tool-start"} {
+		if !strings.Contains(raw, want) {
+			t.Fatalf("%s missing from %s", want, raw)
+		}
 	}
 }
