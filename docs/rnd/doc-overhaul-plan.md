@@ -327,33 +327,41 @@ knows in five seconds whether to trust the body:
 
 ## Batches, smallest risk first
 
-Each batch is one commit, pushed to `hub claude/m-doc-overhaul`, with the doc-humanizer agent run over any prose that
-was rewritten rather than patched. A doc named from code stays at its path, because moving it is a code change.
+Each batch is one commit on `claude/m-doc-overhaul`, reported to the orchestrator by sha (the orchestrator merges
+from the shared repository, so nothing is pushed). The doc-humanizer agent runs over any prose that was rewritten
+rather than patched. A doc named from code moves only with those comment paths fixed in the same commit.
 
 1. **Status lines.** One `Status:` line on every doc marked STATUS, each checked against the code first. No body
-   edits. About 100 files, one line each.
+   edits.
 2. **Small fixes.** Every FIX in the table: `atrium2 ledger` to `atrium ledger`, the reload restarter, the launchd
    line, `FEATURES.md`'s rooms section, the `CHANGELOG.md` and `docs/backlog/README.md` headers, the test plan's
-   removed sections, `website/DECISIONS.md`, `control-mcp.md`'s port.
-3. **Merges and moves.** The MERGE rows (context cycle, keep-alive specs, work ledger plan, hub forge answers), and
-   MOVE rows only where no code names the path. Every reference fixed with `git grep`.
-4. **Deletions**, as the interview decides.
+   removed sections (marked removed, letters kept), `website/DECISIONS.md`, `control-mcp.md`'s port.
+3. **Deletions** (Q2): the orchestrator snapshots, the one-off reviews and briefs, the mercurius synopsis.
+4. **Archive and merges** (Q5): superseded designs to `docs/archive/` with a status line, the MERGE rows folded,
+   comment paths in code fixed, every doc reference fixed with `git grep`.
 5. **The architecture.** Write `docs/fabric/hub-and-rooms.md`, rewrite `docs/how-atrium-works.md`, rewrite
    `docs/README.md` as the map.
-6. **The front door.** Rewrite `README.md`, `docs/atrium-for-agents.md`, `docs/user-guide.md`.
-7. **The website, stale pages.** `install.md`, `quick-start.md`, `cli.md`, `control-mcp.md`, `rooms.md`, `modes.md`,
+6. **For agents** (Q2). Write `docs/agents.md`, the curated bring-up. Move `docs/atrium-for-agents.md` to
+   `docs/runtime/wiring-a-runner.md` and fix its paths. Then send the NOTES below to @dotfiles.
+7. **The front door** (Q1). Rewrite `README.md`: a pitch that makes a stranger want to try it, "if you are an agent,
+   read `docs/agents.md` first" at the top, then the working reference for `atrium run` and `atrium room`.
+8. **The story** (Q5). Write `docs/story.md`, how atrium went from the v1 broker to the daemon to the hub and rooms,
+   each step with what broke and its archived doc. File one hub backlog item per blog stub that tells part of it.
+9. **The website, stale pages.** `install.md`, `quick-start.md`, `cli.md`, `control-mcp.md`, `rooms.md`, `modes.md`,
    and every CHECK page read against the code. `website/docs/hooks.md` holds the starter gate script that
    `website/scripts/test-gate-hook.js` runs, so its script block changes only with that test passing.
-8. **The website, carried pages.** What batches 5 and 6 wrote for a user (the hub and rooms, how atrium works, the
-   patterns in `docs/user-guide.md`) carried into `website/docs` and its sidebar, so a new user reads the site and
-   never needs `docs/`.
-9. **The site deploys itself.** `.github/workflows/docs.yml` runs on push to `main` when `website/**`, `docs/**`, the
-   workflow or `scripts/build-docs.ps1` change, and on `workflow_dispatch`. The release trigger goes. The workflow
-   stays logic-free: checkout, node, `configure-pages`, `scripts/build-docs.ps1`, upload, deploy. `website/DECISIONS.md`
-   "Refreshed at release" and "Hosting" and the script's own header say the same. Every website batch is proved with
-   `pwsh scripts/build-docs.ps1` before it is committed.
+10. **The website, new pages.** How atrium works and the hub and rooms, carried from batch 5. The user guide's
+    patterns, after which `docs/user-guide.md` is a pointer. The agent-focused page (Q3), "an agnostic harness for
+    the agents you already run". The comparison (Q4), named and complimentary. The story, carried from batch 8.
+11. **The comparison's tone** (Q4). Drop the `*-comparison*.md` rule from `.gitignore`, and reword anything in the
+    rnd reads of other tools that runs a tool down.
+12. **The site deploys itself.** `.github/workflows/docs.yml` runs on push to `main` when `website/**`, `docs/**`, the
+    workflow or `scripts/build-docs.ps1` change, and on `workflow_dispatch`. The release trigger goes. The workflow
+    stays logic-free: checkout, node, `configure-pages`, `scripts/build-docs.ps1`, upload, deploy. `website/DECISIONS.md`
+    "Refreshed at release" and "Hosting" and the script's own header say the same. Every website batch is proved with
+    `pwsh scripts/build-docs.ps1` before it is committed.
 
-The site at `https://dovholuknf.github.io/atrium/` answers 404 today because nothing has deployed it. After batch 9
+The site at `https://dovholuknf.github.io/atrium/` answers 404 today because nothing has deployed it. After batch 12
 lands on `main`, clint sets the repository's Pages source to **GitHub Actions** (Settings, Pages, Build and
 deployment, Source), once. Nothing in the repository can do that step.
 
@@ -416,4 +424,40 @@ The `AGENTS.md` files are not in this repository. They live in the dotagents rep
 Answers recorded here as they come.
 
 - **Scope, from clint by way of the orchestrator, 2026-10-07.** The website is in scope as the published docs and
-  the place a new user reads. It deploys on push to `main`. Batches 7 to 9.
+  the place a new user reads. It deploys on push to `main`. Batches 9, 10 and 12.
+- **Q1, README.md's reader.** (b): the front door AND a working reference for clint and his agents. The pitch comes
+  first and has to make a stranger want to try it ("people excited to use it"), then the CLI table, config and
+  endpoint notes, rewritten for `atrium run` and `atrium room`.
+- **Q2, dead operational docs.** (a), delete: `docs/orchestrator/dispatch-queue.md`, `status.md`,
+  `overnight-brief.md`, `docs/review/cr2-*`, `cr48-*`, `item16-notes.md`, `peer-review-brief.md`, the mercurius
+  synopsis. Git keeps them. AND a new curated bring-up doc for agents, `docs/agents.md`, with "if you are an agent,
+  read this first" at the top of `README.md` and `docs/README.md` pointing at it. It is the in-repo half of what the
+  root `AGENTS.md` should be: what atrium is now, the processes and ports, where things are, how to build and test,
+  the house rules, and which docs to trust. The runner-wiring brief that holds a similar name today,
+  `docs/atrium-for-agents.md`, becomes `docs/runtime/wiring-a-runner.md` so the two cannot be confused.
+  Also asked for: an agent-focused marketing doc. Its reader is settled in Q3.
+- **Q3, the agent-focused marketing doc.** Its reader is (a), a person who runs coding agents, and it lives on the
+  site. An agent reading it must come away knowing atrium is an agnostic agent harness: claude, codex, gemini,
+  opencode, ollama or a shell are rows in a runner table, not built-in assumptions. It links the competitive
+  differences page, settled in Q4.
+- **Q4, the comparison.** (a), open and named. A site page, "how atrium differs", compares atrium with the tools
+  clint has named before (the ones in `docs/rnd/competitors.md`, `competitor-features.md`, `bb.md`, `charon.md`,
+  `orca.md`, `factory-landscape.md`, `gateway-fit.md`, `spike-mcp-gateway.md`, `langchain-openwiki-spike.md`,
+  `state-of-the-art.md`). It is complimentary to every one of them and never negative: each is a good tool and a real
+  alternative, and the page says what each is best at and where atrium takes a different path. The `*-comparison*.md`
+  rule in `.gitignore` and its comment go. The rnd reads stay in the repo, and since they are public they get the
+  same tone pass: anything that runs another tool down is reworded to what it does well and how atrium differs.
+- **Q5, superseded designs.** Kept, in `docs/archive/`, each with a `Status: superseded by <doc>` line. That covers
+  the eight hub-history docs and every other design a later doc replaced. Beside them, a maintained story of how
+  atrium changed, `docs/story.md`: it started as X, went to Y, then Z, each step with what broke and the archived
+  doc that holds the detail. The site's `story.md` carries the published version. The blog stubs in `docs/blog/`
+  that tell parts of that story become hub backlog items to write them, one item per post, filed with
+  `atrium backlog file`. Moving a doc that Go comments name means updating those comment paths, which is the only
+  edit this overhaul makes to a `.go` file, comments only. clint does not mind either way, so the paths are fixed
+  in the same batch as the move, including the ones already dead.
+- **Q6, the AGENTS.md files in dotagents.** Not edited here. Once `docs/agents.md` exists, the NOTES section goes to
+  the @dotfiles card, which owns that repository, and it decides what to do with it.
+
+Interview complete, 2026-10-07. The rest of the open choices (how the test plan marks its removed sections, where
+the user guide's patterns land) follow from these answers and do not change what a reader is told, so they were not
+asked.
