@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/dovholuknf/atrium/internal/claudeconf"
+	"github.com/dovholuknf/atrium/internal/guard"
 	"github.com/spf13/cobra"
 )
 
@@ -163,6 +164,12 @@ func newHook() *cobra.Command {
 				}
 				return nil
 			}
+			if strings.EqualFold(strings.TrimSpace(event), preToolUseEvent) {
+				if out := guardHook(readStdin(), guard.OSEnv{AgentFunc: recordedAgentAddr}); out != nil {
+					fmt.Fprintln(cmd.OutOrStdout(), string(out))
+				}
+				return nil
+			}
 			reportActivity(hubURL, event, name)
 			// Run at a prompt, silence is indistinguishable from a hang. Only
 			// when a human typed it: under Claude Code stdin is always a pipe,
@@ -183,7 +190,7 @@ func newHook() *cobra.Command {
 			return nil
 		},
 	}
-	c.Flags().StringVar(&event, "event", "", "tool-start, tool-end, prompt, subagent-start, subagent-end or permission")
+	c.Flags().StringVar(&event, "event", "", "tool-start, tool-end, prompt, subagent-start, subagent-end, permission or pre-tool-use")
 	c.Flags().StringVar(&name, "name", "", "what this session calls itself (default: the directory name)")
 	c.Flags().StringVar(&hubURL, "url", "", "atrium agent address (default: $ATRIUM_HUB_URL or localhost:7777)")
 	// Every command a Named target writes carries this. Without it here,
