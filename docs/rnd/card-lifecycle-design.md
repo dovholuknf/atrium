@@ -445,6 +445,16 @@ clint, 2026-10-07: "gwt is in the midst of being retired but gwt needs to be ada
   Its `prune -Recapped` defers to atrium's finish for any worktree a card owns. New item: `r-gwt-calls-atrium-open`
   (the change is in the dotfiles repo).
 
+### Q11. Cost
+
+clint, 2026-10-07: "c but 'no budget' is the default and only applied if the user goes out of their way to set one"
+
+- Every card shows its tokens and dollars spent.
+- **No budget by default.** An action, or one card, may be given a budget only when clint sets one in settings or on
+  the card. Nothing is seeded with one.
+- **Crossing a set budget pauses the card** until clint says continue, with one notice saying what it spent and what
+  the budget was. The review runner's own recipe budget is unchanged.
+
 ## Open for clint
 
 1. Answered (Interview, Q1).
@@ -454,4 +464,4 @@ clint, 2026-10-07: "gwt is in the midst of being retired but gwt needs to be ada
 5. Answered (Interview, Q7).
 6. Answered (Interview, Q8). Elevation for tunnelers is Q9.
 7. Answered (Interview, Q10).
-8. A cost budget per card: a warning only, or a stop?
+8. Answered (Interview, Q11). The interview is complete.
