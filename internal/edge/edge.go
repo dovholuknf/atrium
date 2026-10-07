@@ -237,9 +237,13 @@ func hostOf(s string) string {
 }
 
 // LoopbackHost reports whether a Host header names this machine's loopback.
+//
+// `<name>.localhost` counts. RFC 6761 makes every name under `localhost` loopback
+// and browsers resolve them so without asking DNS, which is how a hub's board
+// views are addressed. See docs/rnd/board-views-design.md.
 func LoopbackHost(hostport string) bool {
 	host := hostOf(hostport)
-	if host == "localhost" {
+	if host == "localhost" || (strings.HasSuffix(host, ".localhost") && len(host) > len(".localhost")) {
 		return true
 	}
 	ip := net.ParseIP(host)

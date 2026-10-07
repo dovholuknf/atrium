@@ -48,6 +48,9 @@ $HubArgs = @('run', '--no-room', '--addr', '127.0.0.1:7778', '--link', '0.0.0.0:
 # The hub serves the board from the main checkout, so a board change merged to claude/main is live on a browser
 # refresh with no build. clint 2026-10-07: "i'd like this hub to be switched over to allowing live edits".
 $HubArgs += @('--board', (Join-Path $Repo 'internal\api\web'))
+# One board view per worker worktree under D:\worktrees, at http://<worktree-folder>.localhost:7778/, so several UI changes
+# are live side by side. See docs/rnd/board-views-design.md.
+$HubArgs += @('--board-views', 'D:\worktrees')
 $RoomArgs = @('room', '--dir', $RoomDir, '--db', $RoomDb, '--http', '127.0.0.1:7781', '--agent', '127.0.0.1:7777')
 
 # $WhatIf is set by the script that dot-sources this, from its own -WhatIf switch.

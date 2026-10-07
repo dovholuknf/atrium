@@ -54,8 +54,10 @@ type Proxy struct {
 	// boardID is the hash of THIS hub's board tree. See `rewriteHealth` for why
 	// it is here and not taken from the room.
 	boardID string
-	room    func() string
-	proxy   *httputil.ReverseProxy
+	// views are the board views, one per worker worktree. Nil leaves them off. See views.go.
+	views *views
+	room  func() string
+	proxy *httputil.ReverseProxy
 
 	// clients are per-room, for the aggregate fan-out and the event streams.
 	// The scoped proxy path does not use them: it goes through `proxy` and its
@@ -509,6 +511,15 @@ func (p *Proxy) rememberCardRoom(bare, room string) {
 
 // ServeHTTP is the rule.
 func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	// A BOARD VIEW IS NAMED BY THE HOST, `<name>.localhost`, and carried on the
+	// context so the files and every `build` answer come from that view. The rest
+	// of the hub is the same for every view. See views.go.
+	if v, ok := p.viewOf(r); !ok {
+		p.noView(w, r)
+		return
+	} else if v != nil {
+		r = r.WithContext(context.WithValue(r.Context(), viewKey{}, v))
+	}
 	// THE CONTROL MCP SERVER, ahead of the rest of the hub API because it sets
 	// its own content type and streams: serveHubAPI marks everything JSON, which
 	// is wrong for this. Loopback only, and refused otherwise. See serveControl.
@@ -639,7 +650,7 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	if name, ok := p.asset(r.URL.Path); ok {
+	if name, ok := p.asset(r.Context(), r.URL.Path); ok {
 		p.serveAsset(w, r, name)
 		return
 	}
@@ -789,8 +800,9 @@ func (p *Proxy) readWait() time.Duration {
 }
 
 // asset decides whether the hub has this file.
-func (p *Proxy) asset(urlPath string) (string, bool) {
-	if p.board == nil {
+func (p *Proxy) asset(ctx context.Context, urlPath string) (string, bool) {
+	board, _ := p.boardFor(ctx)
+	if board == nil {
 		return "", false
 	}
 	clean := path.Clean("/" + strings.TrimPrefix(urlPath, "/"))
@@ -803,7 +815,7 @@ func (p *Proxy) asset(urlPath string) (string, bool) {
 	}
 	// `..` cannot survive path.Clean on an absolute path, so what is left is a
 	// name under the board directory or nothing.
-	f, err := p.board.Open(name)
+	f, err := board.Open(name)
 	if err != nil {
 		return "", false
 	}
@@ -815,7 +827,7 @@ func (p *Proxy) asset(urlPath string) (string, bool) {
 	if st.IsDir() {
 		// A directory answers with its index page, as the room's file server does (/m/ is the phone page).
 		idx := name + "/index.html"
-		if g, err := p.board.Open(idx); err == nil {
+		if g, err := board.Open(idx); err == nil {
 			g.Close()
 			return idx, true
 		}
@@ -827,7 +839,8 @@ func (p *Proxy) asset(urlPath string) (string, bool) {
 func (p *Proxy) serveAsset(w http.ResponseWriter, r *http.Request, name string) {
 	// The same server the room's own board uses: gzip, ETags, and the same
 	// caching rules. See internal/webasset.
-	if !p.assets.Serve(w, r, name) {
+	_, assets := p.boardFor(r.Context())
+	if !assets.Serve(w, r, name) {
 		http.NotFound(w, r)
 	}
 }
@@ -959,7 +972,7 @@ func (p *Proxy) rewriteHealth(res *http.Response) error {
 	if was, ok := body["build"]; ok {
 		body["room_build"] = was
 	}
-	body["build"] = p.boardID
+	body["build"] = p.buildFor(res.Request.Context())
 	out, err := json.Marshal(body)
 	if err != nil {
 		res.Body = io.NopCloser(bytes.NewReader(raw))
@@ -1548,10 +1561,13 @@ func (p *Proxy) serveHubAPI(w http.ResponseWriter, r *http.Request) {
 		// THE OPERATIONAL FEED, newest first, filterable. Read-only: the board
 		// shows what happened and never writes here. See audit.go.
 		p.serveAudit(w, r)
+	case "views":
+		// THE BOARD VIEWS, one per worker worktree. Read-only. See views.go.
+		p.serveViews(w, r)
 	case "health":
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"ok": true, "rooms": len(p.hub.Rooms()),
-			"only": p.hub.Only(), "build": p.boardID,
+			"only": p.hub.Only(), "build": p.buildFor(r.Context()),
 		})
 	default:
 		http.NotFound(w, r)

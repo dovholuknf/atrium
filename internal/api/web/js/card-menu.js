@@ -434,6 +434,25 @@ async function machineTerminal() {
   }
 }
 
+// The board view the hub serves for this card's worktree, or null.
+//
+// A worker editing the board gets its own copy of it at `<name>.localhost`, with
+// the same API and data, so its change can be tried without touching the board
+// everybody else is on. See docs/rnd/board-views-design.md. Read when the menu
+// opens, and empty on a room's own board, which has no `/_hub/views`.
+async function cardBoardView(t) {
+  if (!t.worktree) return null;
+  const norm = p => String(p || "").replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
+  try {
+    const res = await fetch("/_hub/views", { cache: "no-store" });
+    if (!res.ok) return null;
+    const views = (await res.json()).views || [];
+    return views.find(v => norm(v.dir) === norm(t.worktree)) || null;
+  } catch (e) {
+    return null;
+  }
+}
+
 // Opens this card's directory in a terminal window, ON THE MACHINE THE SESSION
 // RUNS ON.
 //
@@ -653,6 +672,7 @@ async function cardMenu(e, id) {
     api(`/v1/tasks/${id}`),
     machineTerminal()
   ]);
+  const view = await cardBoardView(t);
   // Once, and then held. The menu is drawn on a click and a round trip here
   // would open it a beat late every time. The runners are the same bargain:
   // "new agent here" lists them, and a menu that opened without them would
@@ -811,6 +831,15 @@ async function cardMenu(e, id) {
         "on the machine atrium is on, which is the machine holding these files, " +
         "not the one showing this board. atrium does not watch it.",
       act: () => openDesktopTerminal(id)
+    } : null,
+    // This worktree's own copy of the board, in a new tab, when the hub serves one.
+    view ? {
+      label: "open its board view",
+      note: view.name,
+      help: "The board as this card's worktree has it, at " + view.url + ". Same " +
+        "cards and data as this board; only the page differs, and it reloads when " +
+        "a file in that worktree changes.",
+      act: () => window.open(view.url, "_blank", "noopener")
     } : null,
     { sep: true },
     actionItems(t),

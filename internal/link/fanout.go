@@ -499,7 +499,7 @@ func (p *Proxy) health(w http.ResponseWriter, r *http.Request) {
 		// THE HUB'S OWN BOARD HASH, for the same reason `rewriteHealth` swaps
 		// it on the scoped path: the browser is running the hub's copy of the
 		// board, so a room's hash here would reload every tab forever.
-		"ok": true, "build": p.boardID, "rooms": len(rooms),
+		"ok": true, "build": p.buildFor(r.Context()), "rooms": len(rooms),
 	}
 	type answer struct {
 		room string
