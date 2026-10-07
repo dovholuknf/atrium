@@ -1,7 +1,9 @@
 # Run a room as its own account
 
 Atrium does not recommend running a room as an administrator, or as your own everyday account. Give the room an account
-of its own that is a standard user, and let a separate administrator run the few commands that need rights.
+of its own that is a standard user, called `localai`, and let a separate administrator run the few commands that need
+rights. You drive the agents from your own account through the board, which carries their terminals, files and
+permission requests to your browser.
 
 That is the whole advice. The rest of this page is why, what it costs, what atrium says when you do not follow it, and
 the commands to set it up on Windows, macOS and Linux.
@@ -146,10 +148,10 @@ folders. Run it in an elevated PowerShell on the room.
 
 ```powershell
 $pw = Read-Host -AsSecureString 'password for the new account'
-New-LocalUser -Name claude -Password $pw -FullName 'atrium room' -Description 'runs the atrium room, not an admin' -PasswordNeverExpires
-if (-not (Get-LocalGroupMember -SID S-1-5-32-545 | Where-Object Name -like '*\claude')) { Add-LocalGroupMember -SID S-1-5-32-545 -Member claude }
-icacls D:\worktrees /grant 'SG3\claude:(OI)(CI)M'
-icacls V:\work /grant 'SG3\claude:(OI)(CI)M'
+New-LocalUser -Name localai -Password $pw -FullName 'atrium room' -Description 'runs the atrium room, not an admin' -PasswordNeverExpires
+if (-not (Get-LocalGroupMember -SID S-1-5-32-545 | Where-Object Name -like '*\localai')) { Add-LocalGroupMember -SID S-1-5-32-545 -Member localai }
+icacls D:\worktrees /grant 'SG3\localai:(OI)(CI)M'
+icacls V:\work /grant 'SG3\localai:(OI)(CI)M'
 ```
 
 Now ssh. Windows OpenSSH reads a standard user's keys from that user's own `.ssh`. The profile folder does not exist
@@ -160,13 +162,13 @@ down using SIDs, not names. Add the server first if the machine has none.
 Add-WindowsCapability -Online -Name OpenSSH.Server~~~~0.0.1.0
 Set-Service sshd -StartupType Automatic
 Start-Service sshd
-runas /user:SG3\claude "cmd /c exit"
-New-Item -ItemType Directory -Force C:\Users\claude\.ssh | Out-Null
-Set-Content C:\Users\claude\.ssh\authorized_keys 'ssh-ed25519 AAAA...the-hubs-public-key hub'
-icacls C:\Users\claude\.ssh\authorized_keys /inheritance:r /grant 'SG3\claude:F' /grant '*S-1-5-18:F' /grant '*S-1-5-32-544:F'
+runas /user:SG3\localai "cmd /c exit"
+New-Item -ItemType Directory -Force C:\Users\localai\.ssh | Out-Null
+Set-Content C:\Users\localai\.ssh\authorized_keys 'ssh-ed25519 AAAA...the-hubs-public-key hub'
+icacls C:\Users\localai\.ssh\authorized_keys /inheritance:r /grant 'SG3\localai:F' /grant '*S-1-5-18:F' /grant '*S-1-5-32-544:F'
 ```
 
-If a folder called `C:\Users\claude` already existed, Windows made the profile as `C:\Users\claude.SG3` instead. Use
+If a folder called `C:\Users\localai` already existed, Windows made the profile as `C:\Users\localai.SG3` instead. Use
 whatever path the profile landed at in the two lines that name it.
 
 This is where being a standard user saves trouble. For a member of Administrators, `sshd` ignores that file
@@ -180,8 +182,8 @@ costs section says, so settle how the room restarts first.
 Then the Defender line from `room-defender.ps1`, pasted by the administrator, and from the hub:
 
 ```powershell
-pwsh -File scripts\provision-room.ps1 claude@sg3 -Name sg3
-pwsh -File scripts\room-toolchain.ps1 claude@sg3
+pwsh -File scripts\provision-room.ps1 localai@sg3 -Name sg3
+pwsh -File scripts\room-toolchain.ps1 localai@sg3
 ```
 
 ### macOS
@@ -190,12 +192,12 @@ This makes a standard user (no `-admin`), lets only chosen users in over ssh, an
 for the password so it stays out of your history.
 
 ```sh
-sudo sysadminctl -addUser claude -fullName 'atrium room' -password -
+sudo sysadminctl -addUser localai -fullName 'atrium room' -password -
 sudo dseditgroup -o create -q com.apple.access_ssh
-sudo dseditgroup -o edit -a claude -t user com.apple.access_ssh
+sudo dseditgroup -o edit -a localai -t user com.apple.access_ssh
 sudo dseditgroup -o edit -a "$(id -un)" -t user com.apple.access_ssh
 sudo systemsetup -setremotelogin on
-sudo -u claude sh -c 'umask 077 && mkdir -p /Users/claude/.ssh && echo "ssh-ed25519 AAAA...the-hubs-public-key hub" >> /Users/claude/.ssh/authorized_keys'
+sudo -u localai sh -c 'umask 077 && mkdir -p /Users/localai/.ssh && echo "ssh-ed25519 AAAA...the-hubs-public-key hub" >> /Users/localai/.ssh/authorized_keys'
 ```
 
 The third `dseditgroup` line adds you. Once `com.apple.access_ssh` exists only its members can log in over ssh, you
@@ -205,12 +207,12 @@ with your own account gets a group:
 
 ```sh
 sudo dseditgroup -o create work
-sudo dseditgroup -o edit -a claude -t user work
+sudo dseditgroup -o edit -a localai -t user work
 sudo chgrp -R work /Users/Shared/work && sudo chmod -R g+rwX /Users/Shared/work
 ```
 
-Then `pwsh -File scripts/provision-room.ps1 claude@m1mini -Name m1mini` from the hub. The room is a launchd user agent,
-and it loads into the account's desktop session, so `claude` needs one desktop login before it does. Until then the
+Then `pwsh -File scripts/provision-room.ps1 localai@m1mini -Name m1mini` from the hub. The room is a launchd user agent,
+and it loads into the account's desktop session, so `localai` needs one desktop login before it does. Until then the
 script leaves the agent written and says so.
 
 One caveat. macOS keeps `~/Desktop`, `~/Documents`, `~/Downloads` and external volumes behind privacy prompts that an
@@ -224,21 +226,21 @@ This makes a normal user with no sudo group and no password, keeps its user serv
 key in.
 
 ```sh
-sudo useradd -m -s /bin/bash claude
-id claude
-sudo loginctl enable-linger claude
-sudo install -d -m 700 -o claude -g claude /home/claude/.ssh
-echo 'ssh-ed25519 AAAA...the-hubs-public-key hub' | sudo -u claude tee -a /home/claude/.ssh/authorized_keys
-sudo chmod 600 /home/claude/.ssh/authorized_keys
+sudo useradd -m -s /bin/bash localai
+id localai
+sudo loginctl enable-linger localai
+sudo install -d -m 700 -o localai -g localai /home/localai/.ssh
+echo 'ssh-ed25519 AAAA...the-hubs-public-key hub' | sudo -u localai tee -a /home/localai/.ssh/authorized_keys
+sudo chmod 600 /home/localai/.ssh/authorized_keys
 ```
 
-`id claude` should show no `sudo`, `wheel` or `admin`. If a distribution refuses key logins for an account with no
-password, that is `sshd` treating the account as locked, and `sudo usermod -p '*' claude` fixes it. Shared folders get a
-group:
+`id localai` should show no `sudo`, `wheel` or `admin`. If a distribution refuses key logins for an account with no
+password, that is `sshd` treating the account as locked, and `sudo usermod -p '*' localai` fixes it. Shared folders get
+a group:
 
 ```sh
 sudo groupadd work
-sudo usermod -aG work claude
+sudo usermod -aG work localai
 sudo chgrp -R work /srv/work && sudo chmod -R g+rwX /srv/work
 sudo find /srv/work -type d -exec chmod g+s {} +
 ```
@@ -246,8 +248,8 @@ sudo find /srv/work -type d -exec chmod g+s {} +
 The setgid bit goes on the directories only, so new files inherit the group. `chmod -R g+s` would put it on every file,
 and an executable that is setgid `work` runs as that group.
 
-Then `pwsh -File scripts/provision-room.ps1 claude@lab1 -Name lab1` from the hub installs the room as a systemd user
-unit for `claude`. `-Linger` on that command does the `enable-linger` step if you skipped it.
+Then `pwsh -File scripts/provision-room.ps1 localai@lab1 -Name lab1` from the hub installs the room as a systemd user
+unit for `localai`. `-Linger` on that command does the `enable-linger` step if you skipped it.
 
 ## If you really must run as yourself
 

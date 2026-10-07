@@ -5,7 +5,9 @@ description: From an installed atrium to a card on the board, then to your first
 
 # Quick start
 
-This page assumes atrium is [installed](./install.md) and running. If you started it by hand, it is `atrium run`.
+This page assumes atrium is [installed](./install.md) and running. If you started it by hand, it is `atrium run`,
+or `atrium run --no-room` with the room running as `localai`, [the setup atrium recommends](./accounts.md). In that
+setup, "your Claude Code settings" and "your own terminal" below mean `localai`'s.
 
 The first three steps put sessions on the board. Steps 4 and 5 add the permission gate, which is optional.
 

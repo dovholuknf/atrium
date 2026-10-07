@@ -20,8 +20,9 @@ groups.
 ## Starting at login
 
 The [install](./install.md) sets this up: a systemd user unit on Linux, a LaunchAgent on macOS, and a logon task on
-Windows. All three run atrium as you, in your session, because that is the only way the agents it starts can use
-your environment.
+Windows. All three run the room as the account that installed it, in that account's session, because that is the
+only way the agents it starts get that account's environment. Atrium recommends that account be `localai`, not
+you. [Run the agents as their own user](./accounts.md).
 
 ## Restarting
 

@@ -10,12 +10,15 @@ import TabItem from '@theme/TabItem';
 
 Atrium is one binary, `atrium`. There is no published release yet, so you build it from source. It takes a minute.
 
-:::info Atrium runs as you
-On every platform atrium runs **as you, in your session**. It starts claude and other agents, and those need your
-PATH, your shell configuration, your ssh agent and your Claude Code settings. A system service has none of those,
-so every agent it started would be useless. This is why atrium starts from a user unit, a LaunchAgent or a logon
-task, never a system-wide service.
+:::tip Run the agents as their own user
+Atrium recommends that the agents never run as you. Make a standard account called `localai` for the room and its
+agents, and drive them from your own account through the board. [Run the agents as their own user](./accounts.md)
+says why and how. Running everything as yourself works, and it is not the recommendation.
 :::
+
+Whichever account runs the room, it runs as that user, in that user's session, never as a system service. The
+agents it starts need that account's PATH, shell configuration and runner settings, and a system service has none
+of them. This is why atrium starts from a user unit, a LaunchAgent or a logon task.
 
 ## Build it
 
@@ -42,16 +45,20 @@ somewhere it can stay, and run it from there.
 atrium run
 ```
 
-That starts the hub, which serves the board on `http://localhost:7778`, and this machine's room, which runs the
-agents. The first time, it makes the room and names it after the machine, so one machine needs no setup beyond
-this. [Rooms and the hub](./rooms.md) explains the two, and how to add another machine.
+That starts the hub, which serves the board on `http://localhost:7778`, and a room under your account, which runs
+the agents as you. The first time, it makes the room and names it after the machine. [Rooms and the
+hub](./rooms.md) explains the two, and how to add another machine.
+
+For the recommended setup, start the hub alone with `atrium run --no-room` and run the room as `localai`.
+[Set it up on one machine](./accounts.md#set-it-up-on-one-machine) has the steps.
 
 `atrium daemon` still starts the older single process, with the board and the agents together and no hub.
 
 ## Start at login
 
-The service scripts in `scripts/` register this machine's **room** to start when you log in. Pass the installed path
-to the binary. Run them as yourself, never elevated.
+The service scripts in `scripts/` register this machine's **room** to start when its account logs in. Run them as
+the account that runs the room, `localai` in the recommended setup, never elevated. Pass the installed path to the
+binary.
 
 <Tabs groupId="os">
 <TabItem value="linux" label="Linux">
@@ -61,7 +68,8 @@ ATRIUM_SERVICE_VERB=room ATRIUM_EXE=$HOME/.local/bin/atrium scripts/atrium-servi
 systemctl --user status atrium
 ```
 
-This writes a systemd **user** unit. `ATRIUM_LINGER=1` keeps it running after you log out.
+This writes a systemd **user** unit. `ATRIUM_LINGER=1` keeps it running after the account logs out, so a
+`localai` room needs nobody logged in as `localai`.
 
 </TabItem>
 <TabItem value="mac" label="macOS">
@@ -70,7 +78,7 @@ This writes a systemd **user** unit. `ATRIUM_LINGER=1` keeps it running after yo
 ATRIUM_SERVICE_VERB=room ATRIUM_EXE=$HOME/.local/bin/atrium scripts/atrium-service.sh install
 ```
 
-This writes a LaunchAgent, never a LaunchDaemon, so the room starts when you log in to the desktop. Over a
+This writes a LaunchAgent, never a LaunchDaemon, so the room starts when its account logs in to the desktop. Over a
 headless ssh session it cannot load yet, and the script says so and exits cleanly.
 
 </TabItem>
@@ -81,9 +89,10 @@ headless ssh session it cannot load yet, and the script says so and exits cleanl
 .\scripts\atrium-service.ps1 status
 ```
 
-Atrium starts from a **logon task**. It runs as you, in your session, with no stored password and no elevation. It
-restarts on failure and survives a reboot. It stops when you log out, because Windows has no equivalent of
-lingering. A Windows service would run in session 0, where it cannot open a terminal you can attach to.
+Atrium starts from a **logon task**. It runs as the account that installed it, in that account's session, with no
+stored password and no elevation. It restarts on failure and survives a reboot. It stops when that account logs
+out, because Windows has no equivalent of lingering. A Windows service would run in session 0, where it cannot
+open a terminal you can attach to.
 
 </TabItem>
 </Tabs>
@@ -93,8 +102,9 @@ as well. Their `stop` calls
 `atrium stop` first, so your agents wind down instead of dying at once. Without the room verb they register
 `atrium daemon`, the single process.
 
-The scripts start the room, not the hub. Start the hub with `atrium run` when you want the board. It finds the room
-already running and leaves it alone. The hub holds no work, so starting and stopping it costs your agents nothing.
+The scripts start the room, not the hub. Start the hub as yourself when you want the board, with
+`atrium run --no-room` when the room runs as `localai`. A plain `atrium run` finds a room of yours already running
+and leaves it alone. The hub holds no work, so starting and stopping it costs your agents nothing.
 
 ## Packages
 

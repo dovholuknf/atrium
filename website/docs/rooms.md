@@ -95,6 +95,9 @@ that last report, and nothing on it can be opened or started until it returns.
 
 ## Agents under their own account
 
+This is the setup atrium recommends, with a standard account called `localai`. [Run the agents as their own
+user](./accounts.md) has the why and the steps.
+
 Running an agent as its own operating system user bounds what it can reach. The cost used to be that it
 disappeared: its terminal, its `~/.claude` and its transcripts are its own, and nothing on your desktop says it is
 there.
