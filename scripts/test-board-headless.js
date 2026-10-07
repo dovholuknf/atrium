@@ -19635,7 +19635,7 @@ async function pullsSection(browser, base) {
   const st = {
     halted: false,
     rows: [
-      row("pr_a", { number: 11, org_repo: "openziti/zrok", state: "ready", created_at: "2026-10-01T09:00:00Z", ready_at: "2026-10-01T09:20:00Z",
+      row("pr_a", { number: 11, org_repo: "openziti/zrok", state: "ready", created_at: "2026-10-01T09:00:00Z", ready_at: "2026-10-01T09:20:00Z", disk_bytes: 734003200,
         findings: { high: 0, med: 6, low: 7, nit: 4, leak: 1 }, walk: { accepted: 0, done: 0, skipped: 0, deferred: 0, open: 17 },
         second: { state: "done", summary: "codex: 2 disputed, settled", error: "" } }),
       row("pr_b", { number: 12, state: "running", run_state: "verify", cost_usd: 0.71, created_at: "2026-10-01T10:00:00Z", title: "running one" }),
@@ -19775,6 +19775,7 @@ async function pullsSection(browser, base) {
     await p.waitForFunction(() => /critics/.test(document.querySelector('#pulls-list .pull[data-id="pr_b"] .pull-state').textContent), null, { timeout: slow(5000) })
       .catch(() => fail("pulls: an event did not move the step"));
     if (!/\$1\.20/.test((await text(p, "pr_b", ".pull-meta")) || "")) fail("pulls: an event did not move the cost");
+    if (!/700 MB/.test((await text(p, "pr_a", ".pull-meta")) || "")) fail("pulls: the walker card's disk is not on the row: " + await text(p, "pr_a", ".pull-meta"));
     if (st.gets !== gets) fail("pulls: an event caused a refetch");
     // the running row turns ready, then a new failed row arrives: the count follows each
     emit(Object.assign({}, b2, { state: "ready", run_state: "", ready_at: "2026-10-01T10:09:00Z", findings: { high: 0, med: 1, low: 0, nit: 0, leak: 0 }, walk: { accepted: 0, done: 0, skipped: 0, deferred: 0, open: 1 } }));

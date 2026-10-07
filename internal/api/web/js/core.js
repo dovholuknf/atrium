@@ -393,6 +393,15 @@ async function cappedFetch(fetchFn, path, opts, read) {
 const esc = (s) => (s == null ? "" : String(s)).replace(/[&<>"]/g,
   c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 
+// A card's disk, as the inventory measured it: "" for nothing measured, then KB, MB or GB.
+function diskLabel(n) {
+  n = Number(n) || 0;
+  if (n <= 0) return "";
+  if (n < 1048576) return Math.max(1, Math.round(n / 1024)) + " KB";
+  if (n < 1073741824) return (n / 1048576).toFixed(n < 10485760 ? 1 : 0) + " MB";
+  return (n / 1073741824).toFixed(1) + " GB";
+}
+
 // ── holding a reader's place across a redraw ────────────────────────────────
 //
 // A newest-first list that redraws on a live event gets its new rows on top, and

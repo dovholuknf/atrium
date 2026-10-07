@@ -213,7 +213,7 @@ function pullRowHTML(r) {
     "</div>" +
     '<div class="pull-side">' +
       '<span class="pull-state">' + esc(pullStateWords(r)) + "</span>" +
-      '<span class="pull-meta">' + esc([cost, when].filter(Boolean).join(" · ")) + "</span>" +
+      '<span class="pull-meta">' + esc([cost, diskLabel(r.disk_bytes), when].filter(Boolean).join(" · ")) + "</span>" +
       '<span class="pull-acts">' + acts.join("") + "</span>" +
     "</div>" +
     (pulls.logs[r.id] != null && r.state === "failed" ? '<pre class="pull-log">' + esc(pulls.logs[r.id]) + "</pre>" : "") +

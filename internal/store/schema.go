@@ -2088,6 +2088,28 @@ var migrations = []struct {
 			`ALTER TABLE task ADD COLUMN launch_cmd TEXT NOT NULL DEFAULT ''`,
 		},
 	},
+	{
+		// A CARD'S INVENTORY: everything the room made for the card, so finish removes exactly that and a sweep
+		// can find what a crash left. `seq` counts per card. `freed_at` is set when the thing is gone, with what
+		// removing it said in `freed_err`. `bytes` is the size last measured, -1 before any measure. See
+		// docs/rnd/card-lifecycle-design.md section 6.
+		name: "0088_card_resources",
+		stmts: []string{
+			`CREATE TABLE IF NOT EXISTS card_resources (
+				card        TEXT NOT NULL,
+				seq         INTEGER NOT NULL,
+				kind        TEXT NOT NULL,
+				ref         TEXT NOT NULL,
+				detail      TEXT NOT NULL DEFAULT '',
+				made_at     TEXT NOT NULL,
+				freed_at    TEXT NOT NULL DEFAULT '',
+				freed_err   TEXT NOT NULL DEFAULT '',
+				bytes       INTEGER NOT NULL DEFAULT -1,
+				measured_at TEXT NOT NULL DEFAULT '',
+				PRIMARY KEY (card, seq)
+			)`,
+		},
+	},
 }
 
 // migrate applies any migration not already recorded. This runs before the

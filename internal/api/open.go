@@ -12,6 +12,7 @@ import (
 	"net/http/httptest"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/dovholuknf/atrium/internal/store"
 )
@@ -133,10 +134,33 @@ func (s *Server) open(w http.ResponseWriter, r *http.Request) {
 	}
 	ans.Worktree = wt.Path
 
+	// THE INVENTORY, held under a pending owner until the card exists, then handed to it. A worktree that was already
+	// there is somebody else's and is not recorded. See resources.go.
+	pending := "pending:" + key + ":" + strconv.FormatInt(time.Now().UnixNano(), 36)
+	own := func(kind, ref, detail string) {
+		if _, err := s.st.AddResource(pending, kind, ref, detail); err != nil {
+			log.Printf("[atrium api] open %s: the inventory did not take %s %s: %v", key, kind, ref, err)
+		}
+	}
+	disown := func() {
+		rows, _ := s.st.Resources(pending)
+		for _, r := range rows {
+			_ = s.st.FreeResource(pending, r.Seq, "")
+		}
+	}
+	if !wt.Existed {
+		own(store.ResWorktree, wt.Path, wt.Repo)
+		own(store.ResRef, prWorktreeRef(num), wt.Repo)
+		if wt.CreatedBranch {
+			own(store.ResBranch, wt.Branch, wt.Repo)
+		}
+	}
+
 	// 4. the review row, claimed for this room
 	row, created, failStatus, failBody := s.openRow(r, in)
 	if row == nil {
 		undoPRWorktree(wt)
+		disown()
 		if failBody == nil {
 			failBody = map[string]any{"error": "the review row was not made", "code": "row_failed"}
 		}
@@ -145,6 +169,9 @@ func (s *Server) open(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ans.PR = row.ID
+	if created {
+		own(store.ResReview, row.ID, "")
+	}
 	undoRow := func() {
 		if !created {
 			return
@@ -166,6 +193,9 @@ func (s *Server) open(w http.ResponseWriter, r *http.Request) {
 	// A row already there may have a live walker by now, made by a paste that raced this one.
 	if !created {
 		if t := s.liveWalker(row); t != nil {
+			// A worktree this call made beside the live card's is not wanted.
+			undoPRWorktree(wt)
+			disown()
 			ans.Card, ans.Worktree = t.ID, t.Worktree
 			writeJSON(w, http.StatusOK, ans)
 			return
@@ -177,6 +207,7 @@ func (s *Server) open(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		undoRow()
 		undoPRWorktree(wt)
+		disown()
 		openFail(w, http.StatusBadRequest, "card", "launch_failed", "the card did not start: "+err.Error())
 		return
 	}
@@ -190,12 +221,25 @@ func (s *Server) open(w http.ResponseWriter, r *http.Request) {
 		}
 		undoRow()
 		undoPRWorktree(wt)
+		disown()
 		openFail(w, http.StatusInternalServerError, "walker", "walker_failed", "the card is not tied to the review: "+err.Error())
 		return
 	}
 	s.PublishPR(row.ID)
+	if err := s.st.MoveResources(pending, task.ID); err != nil {
+		log.Printf("[atrium api] open %s: the inventory was not handed to %s: %v", key, task.ID, err)
+	}
+	// The disk it holds, once, briefly: a tree too big for the budget is counted as far as the walk got, and the
+	// card's measure button counts the rest.
+	mctx, mcancel := context.WithTimeout(context.Background(), openMeasureWait)
+	s.measureResources(mctx, task.ID)
+	mcancel()
+	s.PublishTask(task)
 	writeJSON(w, http.StatusCreated, ans)
 }
+
+// openMeasureWait is how long an open spends measuring what it made.
+const openMeasureWait = 5 * time.Second
 
 // liveWalker is a row's walker card when it is still running or waiting, or nil.
 func (s *Server) liveWalker(p *store.PRReview) *store.Task {

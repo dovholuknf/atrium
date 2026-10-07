@@ -66,6 +66,17 @@ type prView struct {
 	*store.PRReview
 	Findings PRFindingCounts `json:"findings"`
 	Walk     PRWalkCounts    `json:"walk"`
+	// DiskBytes is the walker card's measured inventory: the worktree and the run folder. See resources.go.
+	DiskBytes int64 `json:"disk_bytes,omitempty"`
+}
+
+// viewPRDisk is viewPR with the walker card's disk.
+func (s *Server) viewPRDisk(p *store.PRReview) prView {
+	v := viewPR(p)
+	if p.WalkerTask != "" {
+		v.DiskBytes = s.cardDisk(p.WalkerTask)
+	}
+	return v
 }
 
 // viewPR reads the run folder as it is now. The counts are zero until the row is
@@ -85,7 +96,7 @@ func (s *Server) PublishPR(id string) {
 	if err != nil {
 		return
 	}
-	s.Broadcast("pr", map[string]any{"pr": viewPR(p)})
+	s.Broadcast("pr", map[string]any{"pr": s.viewPRDisk(p)})
 }
 
 func prError(w http.ResponseWriter, status int, code, msg string, extra map[string]any) {
@@ -113,8 +124,8 @@ func (s *Server) prAnswer(w http.ResponseWriter, status int, id string, extra ma
 		s.prFail(w, err)
 		return
 	}
-	s.Broadcast("pr", map[string]any{"pr": viewPR(p)})
-	body := map[string]any{"pr": viewPR(p)}
+	s.Broadcast("pr", map[string]any{"pr": s.viewPRDisk(p)})
+	body := map[string]any{"pr": s.viewPRDisk(p)}
 	for k, v := range extra {
 		body[k] = v
 	}
@@ -276,7 +287,7 @@ func (s *Server) listPRs(w http.ResponseWriter, r *http.Request) {
 	}
 	views := make([]prView, 0, len(rows))
 	for _, p := range rows {
-		views = append(views, viewPR(p))
+		views = append(views, s.viewPRDisk(p))
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"prs": views, "counts": counts, "nav_count": counts[store.PRReady] + counts[store.PRFailed],
@@ -290,7 +301,7 @@ func (s *Server) getPR(w http.ResponseWriter, r *http.Request) {
 		s.prFail(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"pr": viewPR(p), "run_log": tailLog(s.st.ReviewsRoot(), p.RunDir, 8<<10)})
+	writeJSON(w, http.StatusOK, map[string]any{"pr": s.viewPRDisk(p), "run_log": tailLog(s.st.ReviewsRoot(), p.RunDir, 8<<10)})
 }
 
 // POST /v1/prs/{id}/retry
