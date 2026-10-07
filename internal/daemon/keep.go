@@ -85,7 +85,11 @@ func (d *Daemon) wakeGone(taskID, via string) error {
 	if !resumable(t) {
 		return fmt.Errorf("%s cannot be resumed: nothing records its conversation", t.DisplayTitle())
 	}
-	if _, err := d.launchLocked(d.reopenRequest(t)); err != nil {
+	launch := d.launchLocked
+	if d.wakeLaunch != nil {
+		launch = d.wakeLaunch
+	}
+	if _, err := launch(d.reopenRequest(t)); err != nil {
 		return fmt.Errorf("could not resume %s: %w", t.DisplayTitle(), err)
 	}
 	d.startedAt.Store(taskID, time.Now())

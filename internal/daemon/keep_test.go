@@ -1,7 +1,9 @@
 package daemon
 
 import (
+	"encoding/json"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
@@ -61,5 +63,62 @@ func TestAGivenUpRelayComesBackAsAMessage(t *testing.T) {
 	msgs, err := d.st.PendingMessages(target.ID)
 	if err != nil || len(msgs) != 1 || !strings.Contains(msgs[0].Text, "important words") {
 		t.Fatalf("pending %v %v", msgs, err)
+	}
+}
+
+// THE WHOLE PROMISE, with a fake runner in place of the launch. A say to a done card is kept, a wake say resumes the
+// card, and the text kept earlier is typed into the new session, with the wake text queued behind it, not typed.
+func TestASayToADoneCardIsKeptThenTypedInWhenWakeResumesIt(t *testing.T) {
+	d := testDaemon(t)
+	target := cardFor(t, d, "finished")
+	peerCard(t, d, "alice")
+	t.Cleanup(func() { d.pending.stopAll() })
+	if err := d.st.SetResumeID(target.ID, "conv-1"); err != nil {
+		t.Fatal(err)
+	}
+	if err := d.st.SetStatus(target.ID, store.StatusDone); err != nil {
+		t.Fatal(err)
+	}
+	d.sup.remove(target.ID)
+
+	// 1. Kept, with no session and no wake.
+	out, code := tell(t, d, "alice", "finished", "KEPTEARLIER")
+	if code != http.StatusOK || out["reachable"] != "kept" {
+		t.Fatalf("first say: %d %v", code, out)
+	}
+	if n, _ := d.st.UndeliveredCount(target.ID); n != 1 {
+		t.Fatalf("undelivered %d, want 1", n)
+	}
+
+	// 2. A wake resumes it. The fake launch stands up a runner as the real one would.
+	var f *fakePTY
+	launched := 0
+	d.wakeLaunch = func(req LaunchRequest) (*store.Task, error) {
+		launched++
+		if req.TaskID != target.ID {
+			t.Errorf("launched %q, want the done card", req.TaskID)
+		}
+		_, f = typedRunner(t, d, target.ID)
+		return d.st.Get(target.ID)
+	}
+	raw, _ := json.Marshal(map[string]any{"from": "alice", "to": "finished", "text": "WAKETEXT", "wake": true})
+	w := httptest.NewRecorder()
+	d.handleTell(w, httptest.NewRequest("POST", "/tell", strings.NewReader(string(raw))))
+	if w.Code != http.StatusOK {
+		t.Fatalf("wake say answered %d: %s", w.Code, w.Body.String())
+	}
+	if launched != 1 {
+		t.Fatalf("launched %d times, want 1", launched)
+	}
+
+	// 3. Not typed by the say itself, but by the retry once the line is free, the kept text first and the wake text after.
+	if strings.Contains(f.written(), "WAKETEXT") || strings.Contains(f.written(), "KEPTEARLIER") {
+		t.Fatalf("typed straight into a session that had only just started: %q", f.written())
+	}
+	d.pending.attempt(target.ID)
+	got := f.written()
+	i, j := strings.Index(got, "KEPTEARLIER"), strings.Index(got, "WAKETEXT")
+	if i < 0 || j < 0 || i > j {
+		t.Fatalf("want the kept text typed in, then the wake text: %q", got)
 	}
 }
