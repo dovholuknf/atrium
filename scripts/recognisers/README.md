@@ -6,7 +6,7 @@ instruction.
 
 **Atrium learns nothing about GitHub, Bitbucket, Jira or any ticketing system.** A recogniser is a pattern and a
 mapping, and whoever wrote the row did the understanding. That is the rule that lets this serve a system nobody
-has thought of yet, and it is why the table ships empty. These files are how you fill it. See `docs/runtime/scm-design.md`.
+has thought of yet. These files are the rows a hub starts with, and they are rows like any you write. See `docs/runtime/scm-design.md`.
 
 ## The shape
 
@@ -90,9 +90,12 @@ number with more than that is reporting a repository.
 Every example points at this operator's worktree layout, which is not yours. Pass `-Root` or edit the `cwd` of
 each row afterwards.
 
-Recognisers are stored per room. Against a hub, which sees every room at once, a write is refused with a 409 and the
-list of rooms until you pick one. `-Room <name>` sends `X-Atrium-Room`, and defaults to `$env:ATRIUM_ROOM`. A 409 or
-a 400 (a pattern that does not compile) prints the hub's own sentence.
+**The hub owns the table.** A hub seeds its table once from these files, which are built into the binary
+(`seed.go`), so a hub and every room it has recognise a pasted link with nothing loaded. A row you edit is never
+overwritten, and a row you delete does not come back. A room with a hub reads the hub's rows. A room with no hub,
+or one whose hub cannot be asked, keeps its own table. Against a hub, `load.ps1` writes the hub's table and `-Room`
+is not needed. Against a single room with no hub it writes that room's. A 400 (a pattern that does not compile)
+prints the hub's own sentence. See `docs/rnd/card-lifecycle-design.md`, section 2.
 
 ```powershell
 ./load.ps1 -Path ./github.json -Root D:/worktrees/github

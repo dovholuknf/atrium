@@ -148,6 +148,11 @@ func (p *Proxy) serveForge(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
+	// The recogniser rows ask nothing of a forge, so they come before the shape check of a forge question.
+	if r.URL.Path == forge.HubRecognisersPath {
+		p.serveForgeRecognisers(w, f)
+		return
+	}
 	room := strings.TrimSpace(r.Header.Get(ForgeRoomHeader))
 	var ask forge.HubAsk
 	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<16)).Decode(&ask); err != nil {

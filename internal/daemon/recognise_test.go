@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -278,6 +279,9 @@ func TestTheForgeFetchAsksTheHub(t *testing.T) {
 	var asked []forge.HubAsk
 	var paths []string
 	d.SetHubForge(forge.NewRemote(func(_ context.Context, path string, in, out any) error {
+		if path == forge.HubRecognisersPath {
+			return errOlderHub
+		}
 		paths = append(paths, path)
 		asked = append(asked, in.(forge.HubAsk))
 		switch o := out.(type) {
@@ -324,7 +328,10 @@ func TestTheForgeFetchAsksTheHub(t *testing.T) {
 // A ROOM WITH A HUB DOES NOT RUN gh AS A FETCH, and says to use the forge fetch.
 func TestARoomWithAHubRefusesAGhFetch(t *testing.T) {
 	d := testDaemon(t)
-	d.SetHubForge(forge.NewRemote(func(context.Context, string, any, any) error {
+	d.SetHubForge(forge.NewRemote(func(_ context.Context, path string, _, _ any) error {
+		if path == forge.HubRecognisersPath {
+			return errOlderHub
+		}
 		t.Fatal("the hub was asked for a gh row")
 		return nil
 	}))
@@ -344,7 +351,12 @@ func TestARoomWithAHubRefusesAGhFetch(t *testing.T) {
 
 func TestTheForgeFetchTakesPrOrIssue(t *testing.T) {
 	d := testDaemon(t)
-	d.SetHubForge(forge.NewRemote(func(context.Context, string, any, any) error { return nil }))
+	d.SetHubForge(forge.NewRemote(func(_ context.Context, path string, _, _ any) error {
+		if path == forge.HubRecognisersPath {
+			return errOlderHub
+		}
+		return nil
+	}))
 	row := prRow(filepath.ToSlash(t.TempDir()))
 	row.Fetch, row.FetchArgs = "forge", []string{"commits"}
 	if _, err := d.st.SaveRecogniser(row); err != nil {
@@ -356,5 +368,51 @@ func TestTheForgeFetchTakesPrOrIssue(t *testing.T) {
 	}
 	if !strings.Contains(got.FetchError, "pr or issue") {
 		t.Fatalf("FetchError = %q", got.FetchError)
+	}
+}
+
+// errOlderHub is a hub that does not serve the recogniser rows, so the room's own table answers.
+var errOlderHub = errors.New("the hub does not run a forge for its rooms. update the hub")
+
+// A ROOM WITH A HUB RECOGNISES FROM THE HUB'S ROWS, with none of its own (u-pulls-no-recogniser-on-hub), and its own
+// table is not asked while the hub answers.
+func TestARoomRecognisesFromTheHubsRows(t *testing.T) {
+	d := testDaemon(t)
+	local := prRow(filepath.ToSlash(t.TempDir()))
+	local.ID, local.Title = "local", "local {num}"
+	if _, err := d.st.SaveRecogniser(local); err != nil {
+		t.Fatal(err)
+	}
+	hubRow := prRow(filepath.ToSlash(t.TempDir()))
+	hubRow.ID, hubRow.Title = "hub", "hub {num}"
+	d.SetHubForge(forge.NewRemote(func(_ context.Context, path string, _, out any) error {
+		if path != forge.HubRecognisersPath {
+			t.Fatalf("asked %s", path)
+		}
+		raw, _ := json.Marshal(map[string]any{"recognisers": []store.Recogniser{hubRow}})
+		return json.Unmarshal(raw, out)
+	}))
+	got, err := d.Recognise("https://github.com/openziti/ziti-console/pull/967/changes")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Recogniser != "hub" || got.Title != "hub 967" || got.Org != "openziti" || got.Repo != "ziti-console" {
+		t.Fatalf("resolved = %+v", got)
+	}
+	if _, err := d.Recognise("https://example.com/x"); !errors.Is(err, store.ErrNoRecogniser) {
+		t.Fatalf("a link the hub's rows do not match = %v", err)
+	}
+}
+
+// A HUB THAT CANNOT BE ASKED leaves the room on its own table, so a room cut off from its hub still recognises.
+func TestARoomWhoseHubCannotBeAskedUsesItsOwnRecognisers(t *testing.T) {
+	d := testDaemon(t)
+	if _, err := d.st.SaveRecogniser(prRow(filepath.ToSlash(t.TempDir()))); err != nil {
+		t.Fatal(err)
+	}
+	d.SetHubForge(forge.NewRemote(func(context.Context, string, any, any) error { return errOlderHub }))
+	got, err := d.Recognise("https://github.com/openziti/ziti/pull/4211")
+	if err != nil || got.Recogniser != "github-pr" {
+		t.Fatalf("resolved = %+v, %v", got, err)
 	}
 }

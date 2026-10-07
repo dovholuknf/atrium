@@ -171,8 +171,11 @@ func (p *Proxy) placePRRoom(ctx context.Context, fallback string) string {
 // placeNewPR sends `POST /v1/prs` with two or more rooms and none named to the least busy one. With one room, or a
 // room named by header, query or tag, nothing here runs. That room then asks for the claim itself and may be told the
 // key is someone else's, so this chooses only where the paste is recognised.
+//
+// `POST /v1/recognise` with no room goes the same way. The rows are the hub's, so any room answers the same, and the
+// room it went to is in X-Atrium-Placed-Room for the launch to follow.
 func (p *Proxy) placeNewPR(w http.ResponseWriter, r *http.Request) (*http.Request, bool) {
-	if r.Method != http.MethodPost || r.URL.Path != "/v1/prs" {
+	if r.Method != http.MethodPost || (r.URL.Path != "/v1/prs" && r.URL.Path != "/v1/recognise") {
 		return r, true
 	}
 	if room, named := p.roomFor(r); named || room != "" {
@@ -185,6 +188,7 @@ func (p *Proxy) placeNewPR(w http.ResponseWriter, r *http.Request) (*http.Reques
 	if room == "" {
 		return r, true
 	}
+	w.Header().Set(PlacedRoomHeader, room)
 	return r.WithContext(context.WithValue(r.Context(), cardRoomKey{}, room)), true
 }
 

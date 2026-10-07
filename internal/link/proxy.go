@@ -554,6 +554,10 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprint(w, `{"error":"git on a room is reached by the hub's own sync and collect, never through the board"}`)
 		return
 	}
+	// THE RECOGNISER TABLE IS THE HUB'S, in every view. See recognisers.go.
+	if p.hubRecognisersRoute(w, r) {
+		return
+	}
 	// A REQUEST THAT NAMES A CARD GOES WHERE THE CARD IS, whatever the header
 	// says. Ahead of startsNothing so that sees the room the work would land on.
 	// See cardroute.go.

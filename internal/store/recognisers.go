@@ -225,19 +225,9 @@ func (st *Store) RecogniserByID(id string) (*Recogniser, error) {
 // The failure bookkeeping is not writable, the same as a source: it is what
 // atrium observed, and the operator does not get to type it.
 func (st *Store) SaveRecogniser(r Recogniser) (*Recogniser, error) {
-	r.ID = strings.TrimSpace(r.ID)
-	if r.ID == "" {
-		return nil, errors.New("a recogniser needs an id")
-	}
-	r.Pattern = strings.TrimSpace(r.Pattern)
-	if r.Pattern == "" {
-		return nil, errors.New("a recogniser needs a pattern to match urls against")
-	}
-	if _, err := regexp.Compile(r.Pattern); err != nil {
-		return nil, errors.New("that pattern is not a valid regular expression: " + err.Error())
-	}
-	if r.Label == "" {
-		r.Label = r.ID
+	r, err := CheckRecogniser(r)
+	if err != nil {
+		return nil, err
 	}
 	args, err := json.Marshal(orEmptySlice(r.FetchArgs))
 	if err != nil {
@@ -281,6 +271,30 @@ func (st *Store) SaveRecogniser(r Recogniser) (*Recogniser, error) {
 		return nil, err
 	}
 	return st.RecogniserByID(r.ID)
+}
+
+// CheckRecogniser is the save rule without a store: an id, a pattern that compiles, a label. The hub's table holds
+// its rows to it as well. The bookkeeping a save never takes from a request is left as it came, for the caller to
+// keep or drop.
+func CheckRecogniser(r Recogniser) (Recogniser, error) {
+	r.ID = strings.TrimSpace(r.ID)
+	if r.ID == "" {
+		return r, errors.New("a recogniser needs an id")
+	}
+	r.Pattern = strings.TrimSpace(r.Pattern)
+	if r.Pattern == "" {
+		return r, errors.New("a recogniser needs a pattern to match urls against")
+	}
+	if _, err := regexp.Compile(r.Pattern); err != nil {
+		return r, errors.New("that pattern is not a valid regular expression: " + err.Error())
+	}
+	if r.Label == "" {
+		r.Label = r.ID
+	}
+	if r.FetchArgs == nil {
+		r.FetchArgs = []string{}
+	}
+	return r, nil
 }
 
 // DeleteRecogniser removes a row. The cards it filled in stay: they are work,
@@ -337,14 +351,30 @@ func (st *Store) RecogniserFetched(id string, fetchErr error) error {
 // what a URL means, which is the one thing it must not do: a pattern author who
 // wants to accept a bare host writes `(?:https?://)?` and has said so.
 func (st *Store) MatchRecogniser(url string) (*Recogniser, map[string]string, error) {
-	url = strings.TrimSpace(url)
-	if url == "" {
+	if strings.TrimSpace(url) == "" {
 		return nil, nil, errors.New("no url to recognise")
 	}
 	rows, err := st.Recognisers()
 	if err != nil {
 		return nil, nil, err
 	}
+	return MatchRecogniserIn(rows, url)
+}
+
+// MatchRecogniserIn is MatchRecogniser over rows held somewhere other than this store, which is the hub's table.
+// The rows are asked in rank order whatever order they came in.
+func MatchRecogniserIn(rows []*Recogniser, url string) (*Recogniser, map[string]string, error) {
+	url = strings.TrimSpace(url)
+	if url == "" {
+		return nil, nil, errors.New("no url to recognise")
+	}
+	rows = append([]*Recogniser(nil), rows...)
+	sort.SliceStable(rows, func(i, j int) bool {
+		if rows[i].Rank != rows[j].Rank {
+			return rows[i].Rank < rows[j].Rank
+		}
+		return rows[i].ID < rows[j].ID
+	})
 	for _, r := range rows {
 		if !r.Enabled {
 			continue

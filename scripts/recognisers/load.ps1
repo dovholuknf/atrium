@@ -14,8 +14,9 @@
   yours. Open each row afterwards and change the directory template, or pass -Root to rewrite the
   leading `D:/worktrees` and `D:/git` as it loads.
 
-  Recognisers are kept per room. Against a hub, which looks at every room at once, a PUT is refused with a 409
-  until you pick one: pass -Room, or set ATRIUM_ROOM. Against a single room's board it is not needed.
+  The hub owns the recogniser table and seeds it from these files, so loading them is only for rows of your own.
+  Against a hub a PUT writes the hub's table and -Room is not needed. Against a single room with no hub it writes
+  that room's.
 
 .EXAMPLE
   ./load.ps1 -Path ./github.json
@@ -34,7 +35,7 @@ param(
   # Where your worktrees live. Rewrites the examples' `D:/worktrees` and `D:/git` prefixes.
   [string] $Root,
 
-  # The room to write to, sent as X-Atrium-Room. A hub answers 409 without one.
+  # The room to write to, sent as X-Atrium-Room. A hub writes its own table whatever this says.
   [string] $Room = $env:ATRIUM_ROOM,
 
   # The board. Matches what every other script here defaults to.

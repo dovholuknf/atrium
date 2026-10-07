@@ -8,13 +8,21 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/dovholuknf/atrium/internal/forge"
 	"github.com/dovholuknf/atrium/internal/hubstore"
+	"github.com/dovholuknf/atrium/internal/store"
 )
+
+func atoiOr0(s string) int {
+	n, _ := strconv.Atoi(s)
+	return n
+}
 
 // Two fake rooms over a real hub and a real link: which room runs a PR, one row per PR across rooms, the warning for
 // an owner that is offline, and the operator's move. The rooms are fakes that behave as api.postPR does: ask the hub
@@ -34,6 +42,9 @@ type claimRoom struct {
 	worktrees int
 	// refuseWT makes the pr-worktree call fail, as a refused clone or fetch does.
 	refuseWT bool
+	// recognise makes a paste match the hub's recogniser rows first, as a room with a hub does, and keys the claim on
+	// the captures. This room has no rows of its own.
+	recognise bool
 
 	// The review this room holds for the move: the archive it exports and the row id it says. Nil is no review.
 	review   []byte
@@ -74,6 +85,20 @@ func (c *claimRoom) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		_ = json.NewDecoder(r.Body).Decode(&in)
 		key := strings.ToLower(strings.TrimPrefix(in.URL, "https://"))
+		if c.recognise {
+			var got HubRecognisers
+			if err := c.room.Forge(r.Context(), forge.HubRecognisersPath, struct{}{}, &got); err != nil {
+				http.Error(w, err.Error(), 500)
+				return
+			}
+			_, vars, err := store.MatchRecogniserIn(got.Recognisers, in.URL)
+			if err != nil {
+				w.WriteHeader(http.StatusUnprocessableEntity)
+				_, _ = w.Write([]byte(`{"error":"no recogniser matches this"}`))
+				return
+			}
+			key = store.PRKey(vars["host"], vars["org"], vars["repo"], atoiOr0(vars["num"]))
+		}
 		ans, err := c.room.ClaimPR(r.Context(), map[string]any{"key": key, "url": in.URL})
 		if err != nil {
 			http.Error(w, err.Error(), 500)

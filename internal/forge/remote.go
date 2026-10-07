@@ -16,6 +16,9 @@ const (
 	HubPRPath    = "/_forge/pr"
 	HubIssuePath = "/_forge/issue"
 	HubRepoPath  = "/_forge/repo"
+	// HubRecognisersPath answers the hub's recogniser rows. Not a forge call: it rides the same route because a room
+	// asks the hub through it. See link/recognisers.go.
+	HubRecognisersPath = "/_forge/recognisers"
 )
 
 // HubAsk names one pull request, issue or repository. Diff asks for the diff too, and Fetch asks the hub to fetch the

@@ -59,7 +59,7 @@ const (
 // things a human reads and acts on, and none of them is a reason to withhold
 // the four fields that did resolve.
 func (d *Daemon) Recognise(url string) (*store.Resolved, error) {
-	r, vars, err := d.st.MatchRecogniser(url)
+	r, vars, fromHub, err := d.matchRecogniser(url)
 	if err != nil {
 		return nil, err
 	}
@@ -83,8 +83,11 @@ func (d *Daemon) Recognise(url string) (*store.Resolved, error) {
 				}
 			}
 		}
-		if err := d.st.RecogniserFetched(r.ID, fetchErr); err != nil {
-			log.Printf("[atrium] recording the fetch for recogniser %s: %v", r.ID, err)
+		// A hub's row is not in this room's table, so there is nothing here to record it on.
+		if !fromHub {
+			if err := d.st.RecogniserFetched(r.ID, fetchErr); err != nil {
+				log.Printf("[atrium] recording the fetch for recogniser %s: %v", r.ID, err)
+			}
 		}
 	}
 
@@ -94,6 +97,30 @@ func (d *Daemon) Recognise(url string) (*store.Resolved, error) {
 	}
 	d.describeCwd(out)
 	return out, nil
+}
+
+// matchRecogniser matches url against the HUB'S rows when this room has a hub, and against its own table otherwise.
+//
+// The table is the hub's (link/recognisers.go), so a paste the hub places on any room is recognised the same way.
+// A hub that cannot be asked right now, or one older than the route, leaves the room on its own table, with a log
+// line: recognising a link runs nothing and reads no forge, so the rule that a room never falls back to a forge of its
+// own does not reach it. fromHub says which table answered.
+func (d *Daemon) matchRecogniser(url string) (r *store.Recogniser, vars map[string]string, fromHub bool, err error) {
+	if hf := d.HubForge(); hf != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), recogniserFetchTimeout)
+		var got struct {
+			Recognisers []*store.Recogniser `json:"recognisers"`
+		}
+		err := hf.Call(ctx, forge.HubRecognisersPath, struct{}{}, &got)
+		cancel()
+		if err == nil {
+			r, vars, err := store.MatchRecogniserIn(got.Recognisers, url)
+			return r, vars, true, err
+		}
+		log.Printf("[atrium] the hub's recognisers could not be read (%v), so this room's own are used", err)
+	}
+	r, vars, err = d.st.MatchRecogniser(url)
+	return r, vars, false, err
 }
 
 // describeCwd looks at the directory the templates named and says what it
