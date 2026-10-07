@@ -187,6 +187,10 @@ var ncTiming = struct {
 	// between turns before it gives up typing. `/clear`, the wake and the capture
 	// wait for captureEnd instead: the turn they follow may be long.
 	typeWait time.Duration
+	// ackWait is how long the limit step waits for `atrium ready` in all. Past it
+	// the cycle fails and the card's held input is released, since an agent that
+	// never acks (died, wedged, ignored the prompt) must not hold its card for ever.
+	ackWait time.Duration
 	// captureBegin is how long the capture prompt has to start a turn.
 	captureBegin time.Duration
 	// captureEnd is how long the capture turn has to finish.
@@ -208,6 +212,7 @@ var ncTiming = struct {
 	promptLost time.Duration
 }{
 	poll:          250 * time.Millisecond,
+	ackWait:       30 * time.Minute,
 	typeWait:      2 * time.Minute,
 	captureBegin:  time.Minute,
 	captureEnd:    15 * time.Minute,
@@ -745,6 +750,12 @@ func (d *Daemon) cycleAwaitAck(taskID string, gen uint64) error {
 		}
 		if cur.acked {
 			return nil
+		}
+		// A turn in progress is never typed into because the bound passed: the
+		// cycle just ends and the held input goes at the next clear line.
+		if since := time.Since(cur.since); since > ncTiming.ackWait {
+			return fmt.Errorf("input was held for %s waiting for atrium ready, released",
+				since.Round(time.Minute))
 		}
 		if cur.auto {
 			if task, err := d.st.Get(taskID); err == nil && task != nil {
