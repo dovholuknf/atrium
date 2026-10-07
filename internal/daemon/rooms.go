@@ -17,7 +17,7 @@ import (
 
 // One board, many machines. The hub's side.
 //
-// `docs/rnd/federation-design-v2.md` settled the shape and this is stage one of it:
+// `docs/archive/federation-design-v2.md` settled the shape and this is stage one of it:
 // LEAVES DIAL OUT AND THE FORUM HOLDS NOTHING DURABLE. A room connects to the
 // hub, says what it is called and what is on it, and keeps saying so. The hub
 // keeps that in memory and nowhere else.

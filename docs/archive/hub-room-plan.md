@@ -14,7 +14,7 @@ with agents attached to it.
 > my goal is to be able to change the UI without fucking up running claude instances. i'm trying to decouple
 > my "atrium improvements" from my "running llms"
 
-That sentence decides the whole design, and it decides it differently from `docs/rnd/federation-design-v2.md`.
+That sentence decides the whole design, and it decides it differently from `docs/archive/federation-design-v2.md`.
 
 Atrium today is one process holding three things that have wildly different lifetimes:
 
@@ -234,7 +234,7 @@ threshold, measured in time attached rather than in the absence of an error.
 
 - **Two rooms.** The hub proxies to `Only()`, the single attached room, and answers empty when there are two.
   The board grows a room picker when there is something to pick and not before. Everything under
-  `docs/rnd/transparent-rooms.md` question 2, card identity across two stores, is that item and not this one.
+  `docs/archive/transparent-rooms.md` question 2, card identity across two stores, is that item and not this one.
 - **Authentication in front of the hub.** Loopback, no login, anonymous, exactly as atrium is today. The
   guard lives in the daemon and wraps only published listeners, so moving it is its own piece of work.
 - **`/auth/*`.** It exists only inside that guard, so nothing serves it and nothing asks for it while there is

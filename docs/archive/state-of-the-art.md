@@ -5,10 +5,10 @@ Status: superseded. It describes v1, Mode A and Mode B, all removed. Read `docs/
 > **This describes v1 only, and v1 is no longer where the action is.**
 >
 > `atrium daemon` is the surface that gets used: durable state, a permission gate, a web board, supervised
-> terminals. For that, read `README.md`, `CLAUDE.md`, `docs/architecture-v2.md` and `docs/backlog.md`.
+> terminals. For that, read `README.md`, `CLAUDE.md`, `docs/archive/architecture-v2.md` and `docs/backlog.md`.
 >
 > What follows describes the v1 hub and agent loop and the Mode B aggregator, which are REMOVED
-> (`docs/fabric/one-atrium-plan.md` stages 1 and 2). `internal/hub`, `internal/agent`, `internal/tui`, `internal/server`
+> (`docs/archive/one-atrium-plan.md` stages 1 and 2). `internal/hub`, `internal/agent`, `internal/tui`, `internal/server`
 > and `internal/state` no longer exist. The `/permission` contract described
 > below still holds, served by `internal/daemon/permwait.go`. Keep the rest as history only.
 
@@ -187,7 +187,7 @@ Read in this order:
 
 1. `README.md` -- 5 minute orientation.
 2. `CLAUDE.md` -- architecture + conventions.
-3. This file (`docs/rnd/state-of-the-art.md`) -- where we are.
+3. This file (`docs/archive/state-of-the-art.md`) -- where we are.
 4. `CHANGELOG.md` -- how we got here.
 5. `docs/test-plan.md` -- what must keep working.
 

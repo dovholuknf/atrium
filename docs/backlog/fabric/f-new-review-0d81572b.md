@@ -3,7 +3,7 @@
 Range a3fc844f..0d81572b, four commits on claude/f-pulls-hub. The hub carries a room's `/v1/prs` and the `pr` event:
 internal/link/pulls.go (the ALL view's merged list, per-row routing by tag or a bounded probe, a raw-JSON retag),
 `tagEvent` for `pr`, and `startsNothing` refusing `POST /v1/prs` on a marked room. Read against
-docs/rnd/pulls-view-design.md section 9 and docs/rnd/pulls-api.md.
+docs/rnd/pulls-view-design.md section 9 and docs/review/pulls-api.md.
 
 Tests, in a detached worktree at 0d81572b with ATRIUM_LOCATION and ATRIUM_DEBUG_INPUTLAG cleared: `go vet
 ./internal/link/...` is clean, and `go test ./internal/link/...` passes (157s).

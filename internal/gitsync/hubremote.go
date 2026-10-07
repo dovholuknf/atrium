@@ -16,7 +16,7 @@ import (
 // its store at, so the room rewrites nothing.
 const HubRemotePrefix = StorePrefix
 
-// HubForwarder is the room's stable forwarder to the hub's store, docs/rnd/hub-forge-design.md 5.1. Unlike Forwarder
+// HubForwarder is the room's stable forwarder to the hub's store, docs/fabric/hub-forge-design.md 5.1. Unlike Forwarder
 // it lives as long as the room, because a clone's remote needs a URL that does not change.
 //
 //   - It takes the card from the card's own token and refuses a request without one, with its own sentence, before
@@ -146,7 +146,7 @@ func (h *HubForwarder) refuse(w http.ResponseWriter, tail, service, why string) 
 	_, _ = w.Write(pktLine("ERR atrium: " + oneLine(why) + "\n"))
 }
 
-// The `hub` remote of a clone in the scm folder. See docs/rnd/hub-forge-design.md section 5.2.
+// The `hub` remote of a clone in the scm folder. See docs/fabric/hub-forge-design.md section 5.2.
 //
 // One file for the hub remote: the forwarder above, StableHubURL for the URL a clone's remote has, and
 // ensureHubRemote, the one place `hub` (or `atrium-hub`) is added to a clone. Both the scm clone (SCM.hub) and

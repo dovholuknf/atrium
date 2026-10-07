@@ -20,7 +20,7 @@ looking at. When the hub is gone, the room is still reachable on its own address
 
 ## What this contradicts
 
-`docs/rnd/federation-design-v2.md` and the rooms code say the opposite, in several places and on purpose:
+`docs/archive/federation-design-v2.md` and the rooms code say the opposite, in several places and on purpose:
 
 - **The hub holds nothing durable.** A room's cards belong to that room's database, and a copy on the hub would
   be a second source of truth that is wrong whenever the room is unreachable. `internal/daemon/rooms.go` says
@@ -61,7 +61,7 @@ bytes.
    thing, or does it say "this session is on cdaws, open its board" and hand over?
 4. **Latency and the twenty second heartbeat.** The check-in cadence is fine for cards and unusable for
    keystrokes. A relayed terminal needs a connection the room holds open, which is a second thing for a room to
-   maintain and a second thing to back off on. `docs/architecture-v2.md` already rejected a websocket for the
+   maintain and a second thing to back off on. `docs/archive/architecture-v2.md` already rejected a websocket for the
    agent listener; this is that argument again with a stronger case.
 5. **Who may attach.** A guest holding a lent session's link reaches one terminal. An operator on the hub
    reaching every room's terminals is a different amount of trust, and it is trust the ROOM is granting to the

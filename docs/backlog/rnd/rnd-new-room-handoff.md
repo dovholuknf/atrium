@@ -34,7 +34,7 @@ Other things the hand move lost or got wrong:
   to the new one so history stays connected.
 - The conversation: carried (copy the transcript and resume) or cold start from a handoff. Say which, and when.
 - Anything addressed to the old card (says, reports, worker parents) follows to the new one.
-- How it relates to stage 3 of `docs/rnd/git-sync-design.md` (the hub merge queue). A move that needs stage 3 to be
+- How it relates to stage 3 of `docs/fabric/git-sync-design.md` (the hub merge queue). A move that needs stage 3 to be
   useful says so.
 - Fold in `docs/backlog/runtime/r-new-move-card-between-rooms.md` (same machine, written 2026-09-30) or say why
   they stay apart.

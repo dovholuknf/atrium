@@ -29,7 +29,7 @@ public. Every file was captured on a throwaway room from scripted work on atrium
 | File | Prompt |
 | --- | --- |
 | `session-tools.scrollback` | Read two source files, run `go vet ./internal/daemon/`, read two docs, `Start-Sleep 25`, then explain the screen model in 40 lines. Tool calls, hooks, a long spinner. |
-| `session-reply.scrollback` | Read `docs/architecture-v2.md`, no tools, then write a review of at least 120 lines with headings, bullets and a table. A reply longer than one screen. |
+| `session-reply.scrollback` | Read `docs/archive/architecture-v2.md`, no tools, then write a review of at least 120 lines with headings, bullets and a table. A reply longer than one screen. |
 | `lostlines.scrollback` | Attach over the websocket, ask for `LOSTLINES-BEGIN`, then `L0001 lostlines-tail` to `L0300 lostlines-tail`, while sending 16 resizes between 206x50 and 206x40. Then two more, then ask for `LOSTLINES-AFTER-REPAINT`. |
 
 The pseudo terminal is 206x50, and the tests replay at 120 columns, the width the board uses most.

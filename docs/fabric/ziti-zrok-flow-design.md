@@ -6,7 +6,7 @@ Status: built. The room link transports are `atrium room join --mtls`, `--zrok-p
 Designed with clint on 2026-09-19 by interview. This is the design, not the build. Where it changes a rule written
 in `docs/fabric/overlays.md`, it says so and the change is deliberate.
 
-Read `docs/fabric/overlays.md` (atrium drives an overlay, it does not become one) and `docs/fabric/hub-room-requirements.md` (the
+Read `docs/fabric/overlays.md` (atrium drives an overlay, it does not become one) and `docs/archive/hub-room-requirements.md` (the
 hub is a multi-tenant view of rooms, and the room link is a separate surface from the board) first. This document
 sits on top of both and resolves the questions they left open about which overlay is used where.
 
@@ -140,7 +140,7 @@ Rules that fall out and must be enforced:
 - **An open board share widens "loopback" for the shutdown endpoint.** Any exposure means `atrium stop` can no
   longer trust a loopback source address, because a request from another continent presents as `127.0.0.1`. The
   daemon must count board exposure as sharing and require `--shutdown-token`, exactly as `docs/fabric/overlays.md` and
-  `docs/rnd/federation-design-v2.md` already require for a share and a forum link.
+  `docs/archive/federation-design-v2.md` already require for a share and a forum link.
 - **Exposure survives a restart.** A zrok public share reserves an `atrium-` name so its URL is stable across the
   hub restarts that UI changes require. A ziti service is re-bound on start. The address handed out does not rot.
 

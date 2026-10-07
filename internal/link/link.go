@@ -55,7 +55,7 @@
 //
 // `direct.go` is mutual TLS over TCP and is what ships first. OpenZiti and zrok
 // both hand back precisely those two types, so each is a file in this package
-// rather than a change to anything above it. See `docs/fabric/hub-room-plan.md`.
+// rather than a change to anything above it. See `docs/archive/hub-room-plan.md`.
 package link
 
 import (

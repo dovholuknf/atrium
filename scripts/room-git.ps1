@@ -1,7 +1,7 @@
 # Git for a room, run from THIS side: the clone is made by PUSH, and its work comes back by FETCH.
 #
 # SUPERSEDED for init, push-base and fetch by `atrium rooms git sync <room> --init` and `atrium rooms git collect
-# <room>`, and by the hub doing both on its own timers. See docs/rnd/git-sync-design.md (f-019). worktree and remove
+# <room>`, and by the hub doing both on its own timers. See docs/fabric/git-sync-design.md (f-019). worktree and remove
 # stay here until stage 2.
 #
 #   pwsh -File scripts\room-git.ps1 init      m1mini [-Target user@host] [-Repo <path>] [-Path <remote path>]

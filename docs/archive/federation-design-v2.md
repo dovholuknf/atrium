@@ -1,14 +1,14 @@
 # Federation v2: a forum, and the atria that report to it
 
 > **Out of date on one point: the forum holding nothing.** The hub has its own store, `internal/hubstore`, since
-> decision 11 in `docs/decisions.md` (2026-09-17): rooms, names, transports, secrets, deletion state, a cache of
+> decision 11 in `docs/fabric/hub-decisions.md` (2026-09-17): rooms, names, transports, secrets, deletion state, a cache of
 > each room's cards, an audit log and tiered backups. It halts on a failed store like a room does. Decision 19
 > (2026-09-29) goes further and makes the hub the owner of the integration branches, which moves code between
 > rooms. Sections 1, 6(c) and 10 are corrected below. What still holds from them is that **stopping the hub costs
 > nobody a session**, because sessions, terminals and agents stay on the rooms, and that the card cache is never
 > authoritative.
 
-This supersedes `docs/rnd/federation-design.md` in its recommendation and keeps most of its analysis. That document is
+This supersedes `docs/archive/federation-design.md` in its recommendation and keeps most of its analysis. That document is
 left in place because its inventory of what breaks is still the best list of the hard parts, and because being able
 to read the earlier reasoning next to the correction is worth more than a clean file. Where the two disagree, this
 one is current.
@@ -136,7 +136,7 @@ configuration difference, not a code difference. Write the base URL indirection 
 
 ## 4. Does Agora dissolve the authentication objection
 
-The previous objection, quoted from `docs/rnd/federation-design.md`: "A peer accepting writes from the central daemon is
+The previous objection, quoted from `docs/archive/federation-design.md`: "A peer accepting writes from the central daemon is
 a trust decision between two processes, which is authentication, ruled out in `CLAUDE.md`."
 
 Re-tested, the objection **splits into two questions and only one of them was ever real.**
@@ -198,7 +198,7 @@ Four caveats, all load-bearing.
 - **The SDK path breaks the "atrium never handles an identity" rule in `docs/fabric/overlays.md`.** That rule holds today
   because atrium shells out to a tunneler and the tunneler owns the key file. The SDK path opens the identity
   in-process: `ziti.NewConfigFromFile(identityPath)` at `overlay.go:28`. That is a genuine change of posture and has
-  to be written down rather than slipped in. Note that `docs/architecture-v2.md:518` already contemplates it: "Bind
+  to be written down rather than slipped in. Note that `docs/archive/architecture-v2.md:518` already contemplates it: "Bind
   the daemon to an OpenZiti service instead of, or alongside, loopback."
 - **Agora's managed tunnel path does the opposite.** `agora tunnel serve` forwards to a `BackendTarget`, described
   as "the local target the runtime forwards to" (`sdk/agent/tunnel/types.go:69`), so a backend behind the managed
@@ -230,7 +230,7 @@ organisation, and the ziti identity it gets is literally named `<orgId>-<account
 (`internal/controller/enableEnvironment.go:102`). Its authorisation primitive for a tunnel is a list of granted
 account emails (`sdk/agent/tunnel/types.go:72-74`).
 
-So adopting agora means adopting the noun `account`, which `docs/architecture-v2.md:37` rules out as a non-goal, and
+So adopting agora means adopting the noun `account`, which `docs/archive/architecture-v2.md:37` rules out as a non-goal, and
 it means standing up a database and a fabric to let two of one person's machines share a list. Agora is also pre-1.0
 at v0.1.5 and says so (`README.md:11-12`), with Layer 1 described as "minimum-working" (`README.md:50`). That said,
 the specific parts this design would use are the finished ones: `docs/current/layer-1/status.md:13` reads "Minimum
@@ -413,7 +413,7 @@ it is not a new class of failure, and the answer is the same: reopen the surface
 
 ### Pty attach
 
-`docs/terminal/supervision-design.md` and the ConPTY section of `docs/architecture-v2.md:430` establish that the daemon owns
+`docs/terminal/supervision-design.md` and the ConPTY section of `docs/archive/architecture-v2.md:430` establish that the daemon owns
 each pseudo terminal, that closing one takes the attached process with it, and that ConPTY offers no reattach. None
 of that changes and none of it can. A pty stays on the machine that created it, which is the strongest argument for
 a whole daemon per environment and it is unaffected by which way the connection goes.

@@ -34,7 +34,7 @@ on `claude/main` and is not yet on `main`. Whether a build is deployed on a give
 - **You see every agent session as a card on one web board.**
   The board answers what is running, which session needs you most, and what you were doing in each one. It is a
   plain page served by atrium and speaks the same JSON and SSE API as any other client. It is not a terminal
-  multiplexer. Docs: `README.md`, `docs/how-atrium-works.md`, `docs/architecture-v2.md`. Landed 2026-09-01
+  multiplexer. Docs: `README.md`, `docs/how-atrium-works.md`, `docs/archive/architecture-v2.md`. Landed 2026-09-01
   (`fdc5c8e`).
 
 - **You group, sort and filter cards by tags you choose.**
@@ -156,7 +156,7 @@ on `claude/main` and is not yet on `main`. Whether a build is deployed on a give
 - **A machine that is not answering still shows its cards, and nothing on it opens.**
   Cards from an offline room are drawn from what it last said, in one folded group at the bottom of every column.
   Attach, resume and start are not drawn, and the hub refuses every request for that room by name. Nothing is
-  queued for its return. Docs: `CHANGELOG.md`, `docs/fabric/hub-room-requirements.md`. Landed 2026-09-17 (`a59d4d2`).
+  queued for its return. Docs: `CHANGELOG.md`, `docs/archive/hub-room-requirements.md`. Landed 2026-09-17 (`a59d4d2`).
 
 - **A card says whether you have seen its last turn, and whether you answered its Open Questions.**
   An unread turn wears a teal dot, and a turn that ended on unanswered Open Questions wears `? N` with the
@@ -373,21 +373,21 @@ on `claude/main` and is not yet on `main`. Whether a build is deployed on a give
   `atrium room` detached when no room answers, making and enrolling the room over its own link the first time. A
   room runs the binary the hooks run, so the board's install-hooks button writes lines that run. The second binary,
   `atrium2`, is gone. Docs:
-  `docs/fabric/one-atrium-plan.md` stage 3, `docs/fabric/one-atrium-cutover.md`, `docs/test-plan.md` section AW.
+  `docs/archive/one-atrium-plan.md` stage 3, `docs/archive/one-atrium-cutover.md`, `docs/test-plan.md` section AW.
 
 - **A hub serves the board and rooms run the agents.**
   `atrium run` serves the board and proxies to rooms, and holds no card state, so it restarts without costing a
   session. `atrium room` owns the database, the ptys and the agents. A room dials the hub over mutual TLS after a
-  one-string join. Docs: `docs/fabric/hub-room-plan.md`, `docs/how-atrium-works.md`. Landed 2026-09-17 (`7dde248`).
+  one-string join. Docs: `docs/archive/hub-room-plan.md`, `docs/how-atrium-works.md`. Landed 2026-09-17 (`7dde248`).
 
 - **One board shows every room, and a room picker scopes it.**
   Lists, the event stream and history merge across rooms. The picker shows one line a room with a state dot,
   updates live, and lists disconnected rooms dimmed. Each room has a settings cog. Docs:
-  `docs/fabric/hub-room-requirements.md`. Landed 2026-09-17 (`44f65ff`, `7c175ab`), picker on 2026-09-19 (`53fc643`).
+  `docs/archive/hub-room-requirements.md`. Landed 2026-09-17 (`44f65ff`, `7c175ab`), picker on 2026-09-19 (`53fc643`).
 
 - **The hub names its rooms, and adding a room writes it down.**
   `atrium rooms add|ls|token|mark|rm|log`. The join string is bound to one name, and the room reads its name
-  from the certificate the hub signed. A room the hub has no record of cannot attach. Docs: `docs/decisions.md` 18.
+  from the certificate the hub signed. A room the hub has no record of cannot attach. Docs: `docs/fabric/hub-decisions.md` 18.
   Landed 2026-09-17 (`d49d69d`, `153078c`).
 
 - **The rooms tab lists every room, connected or not.**
@@ -410,7 +410,7 @@ on `claude/main` and is not yet on `main`. Whether a build is deployed on a give
 
 - **The board and the room link bind separately.**
   The board (`--addr`) is loopback only. The room link (`--link`) may bind wide, with `--link-advertise` naming the
-  address in join tokens. Docs: `docs/fabric/hub-room-plan.md`. Landed 2026-09-18 (`48313e7`).
+  address in join tokens. Docs: `docs/archive/hub-room-plan.md`. Landed 2026-09-18 (`48313e7`).
 
 - **A room joins over direct mTLS, a private zrok share, or OpenZiti.**
   `atrium room join` takes a transport flag and its material. Docs: `docs/fabric/ziti-zrok-flow-design.md`. Landed
@@ -442,7 +442,7 @@ on `claude/main` and is not yet on `main`. Whether a build is deployed on a give
   string authorised a join as any name.
 - **The `settings -> this machine` pane.** Its nine settings moved behind each room's cog on 2026-09-17 (`3a7d1d8`).
 - **Heartbeat federation.** `atrium room` reporting to `/v1/rooms` every twenty seconds (2026-09-06, `c78ff42`) is
-  the older mechanism. The hub and room link supersedes it. Docs: `docs/rnd/federation-design-v2.md`.
+  the older mechanism. The hub and room link supersedes it. Docs: `docs/archive/federation-design-v2.md`.
 
 ## Overlays and sharing
 
@@ -702,11 +702,11 @@ on `claude/main` and is not yet on `main`. Whether a build is deployed on a give
 - **A terminal hub and an MCP agent loop: removed.**
   `atrium hub`, `atrium agent`, `atrium daemon --tui`, `/submit` and `POST /v1/tasks/{id}/prompt` are gone. The
   board does everything the terminal UI did, and a supervised session takes a message without a loop. The
-  `/permission` long-poll the daemon shared with it stays, unchanged. Plan: `docs/fabric/one-atrium-plan.md` stage 1.
+  `/permission` long-poll the daemon shared with it stays, unchanged. Plan: `docs/archive/one-atrium-plan.md` stage 1.
 
 - **A read-only state aggregator: removed.**
   `atrium serve`, `status` and `watch` are gone, with `internal/server` and `internal/state`. Nothing called them,
-  and `gwt watch` already tails the same ledger. Plan: `docs/fabric/one-atrium-plan.md` stage 2.
+  and `gwt watch` already tails the same ledger. Plan: `docs/archive/one-atrium-plan.md` stage 2.
 
 ### The older v1 modes: removed, and why
 

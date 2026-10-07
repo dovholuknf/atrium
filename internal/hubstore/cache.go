@@ -71,7 +71,7 @@ type Changes struct {
 // DISCARDED ENTIRELY, because it is no longer there. No merging, no row by row
 // reconciliation, and nothing kept on the chance it still exists.
 //
-// The audit entry is not optional decoration. See docs/decisions.md, 13.
+// The audit entry is not optional decoration. See docs/fabric/hub-decisions.md, 13.
 func (s *Store) Announce(roomID string, cards []Card) (Changes, error) {
 	var ch Changes
 	r, err := s.Get(roomID)

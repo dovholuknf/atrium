@@ -23,7 +23,7 @@ Series: The hub forge and the change lifecycle. Status: idea. Audience: self-hos
 
 ## Sources
 
-- docs/rnd/hub-forge-design.md
+- docs/fabric/hub-forge-design.md
 - docs/backlog/fabric/f-new-hub-receive.md
 - docs/backlog/runtime/r-new-hub-remote.md
 

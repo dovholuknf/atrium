@@ -1,6 +1,6 @@
 // The pulls view: the PRs atrium is reviewing, one row each, newest first.
 //
-// docs/rnd/pulls-view-design.md section 4, over the API in docs/rnd/pulls-api.md (/v1/prs). A row is a fact about a
+// docs/rnd/pulls-view-design.md section 4, over the API in docs/review/pulls-api.md (/v1/prs). A row is a fact about a
 // run, written by the daemon. This file holds the rows it was told about and draws them, and decides nothing.
 //
 // LIVE THE WAY THE REST OF THE BOARD IS: the rows are read once at load and again when the event stream reopens,

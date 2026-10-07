@@ -126,7 +126,7 @@ It would be a lie, because the isolation would end at the row. Two things reach 
 ### Terminals
 
 Not isolatable at all without changing what a terminal is. A supervised runner is a `pty.Pty` and a ring buffer
-held in one process's memory. Attach is a websocket into that process. `docs/architecture-v2.md` records that
+held in one process's memory. Attach is a websocket into that process. `docs/archive/architecture-v2.md` records that
 closing one terminates the attached process and that ConPTY offers no reattach, so there is no orphan-survival
 path to build. `rooms.go` draws the conclusion from it: a pseudo terminal cannot leave the machine that made it.
 
@@ -337,7 +337,7 @@ system, which is the only enforcement in this document that does not have to be 
 What that leaves undone is genuinely a subset of multi-tenancy and it is what backlog 1 already lists: permission
 requests from a room, so a blocked card on somebody else's machine is visible on yours, and attach by redirect,
 so clicking a remote terminal opens that room's board with the right card open. Both are designed in
-`docs/rnd/federation-design-v2.md`. Both are days rather than weeks. Neither requires a principal, a schema change or
+`docs/archive/federation-design-v2.md`. Both are days rather than weeks. Neither requires a principal, a schema change or
 a container.
 
 The one thing rooms will not give you is somebody running their agent on YOUR hardware. That is hosting, and

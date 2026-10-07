@@ -10,7 +10,7 @@ import (
 )
 
 // `atrium rooms git init|store|settings`: the hub's own git store, where finished work lives and
-// `main` is held. See docs/rnd/hub-forge-design.md section 3.1. The design calls these `atrium hub
+// `main` is held. See docs/fabric/hub-forge-design.md section 3.1. The design calls these `atrium hub
 // git ...`, and there is no `atrium hub`: the plan removed it (TestTheCollidingNamesLandWhereThePlanSays),
 // and the hub's verbs are under `rooms`, beside `rooms git sync` and `repos`.
 //

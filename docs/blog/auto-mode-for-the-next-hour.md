@@ -26,7 +26,7 @@ Series: The permission chain and auto mode. Status: idea. Audience: people who r
 - docs/runtime/auto-mode.md
 - changelog/fabric/2026-09-29-f-008.md
 - changelog/runtime/2026-09-30-r-034.md
-- docs/architecture-v2.md
+- docs/archive/architecture-v2.md
 
 ## Notes for the writer
 

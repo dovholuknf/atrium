@@ -23,7 +23,7 @@ import (
 //
 // Everything on a row but `why` is OBSERVED: the runner and the fetch step write
 // it and a person never types it. See docs/rnd/pulls-view-design.md and
-// docs/rnd/pulls-api.md.
+// docs/review/pulls-api.md.
 
 // SettingReviewsRoot is where run folders are made. Empty means the default
 // under the daemon's data directory.

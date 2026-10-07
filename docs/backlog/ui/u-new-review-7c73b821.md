@@ -1,7 +1,7 @@
 # Review: pulls view P2 7c73b821 (@ui)
 
 Range dafd4a5c..7c73b821, one commit on sg3/claude/pulls-p2. The desktop board's `pulls` tab over the API in
-docs/rnd/pulls-api.md (3ecee7c8): rows, the `pr` event, start, abort, retry, log, the paste box, the findings list
+docs/review/pulls-api.md (3ecee7c8): rows, the `pr` event, start, abort, retry, log, the paste box, the findings list
 with walk marks, the walker launch, and the nav count on the alerting path. Not built, as stated: `PUT
 findings/{key}` and the walk.js re-point.
 

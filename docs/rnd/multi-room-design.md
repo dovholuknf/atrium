@@ -41,7 +41,7 @@ More of it than the item assumes.
 
 - **`--isolated`** (`internal/cli/roomrun.go`, `isolatedFlag`). A second room keeps its address file beside its own
   `--dir` instead of the machine's shared one. Without it the second room overwrites the file every hook reads, and
-  the first room's hooks start arriving at the second (`docs/fabric/hub-room-requirements.md`, "A second room on ONE
+  the first room's hooks start arriving at the second (`docs/archive/hub-room-requirements.md`, "A second room on ONE
   machine needs --isolated").
 - **`ATRIUM_LOCATION` is inherited.** A room sets it before it opens anything and spawns runners with its own
   environment, so a runner's hooks, its `atrium` CLI calls and its stdio control MCP all find the room that started
@@ -163,7 +163,7 @@ A room can be marked **not accepting**. Nothing else about it changes.
   migration. The room announces it to the hub with the rest of what it announces (`internal/link/announce.go`),
   and the hub's `room_card` cache in `internal/hubstore` keeps the last answer for a room that is offline. Not a
   column on the hub's `room` table: whether a machine takes work is a fact about the machine
-  (`docs/fabric/hub-room-requirements.md`: "Anything about A MACHINE belongs to a room"), and a flag the hub held would
+  (`docs/archive/hub-room-requirements.md`: "Anything about A MACHINE belongs to a room"), and a flag the hub held would
   go on saying so about a room that was reinstalled under the same name.
 - **Who sets it.** The board's room page, `atrium room accept off|on` on the machine, and a hub endpoint for scripts.
 - **What it refuses.** A new launch placed on it: from the board's launch dialog, from `atrium_launch` with that
@@ -189,7 +189,7 @@ without anybody having to watch for the moment they all stop.
 
 ### The objection it has to answer
 
-`docs/architecture-v2.md` ("Open risks") and `docs/rnd/process-registry-design.md` both say ConPTY offers no reattach, so
+`docs/archive/architecture-v2.md` ("Open risks") and `docs/rnd/process-registry-design.md` both say ConPTY offers no reattach, so
 a runner cannot outlive the room on Windows. `docs/rnd/charon.md` section 3 adopts Charon's holder for POSIX only, for the
 same reason.
 

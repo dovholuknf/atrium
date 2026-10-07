@@ -44,7 +44,7 @@ import (
 
 // KEYED BY CARD, not by pid and not by wire name.
 //
-// A card outlives the process it describes (`docs/architecture-v2.md`) and a
+// A card outlives the process it describes (`docs/archive/architecture-v2.md`) and a
 // pid is only a reconnect hint. A resumed fixture is a new process on the same
 // card, which is exactly the case being fixed, so the pid changes across every
 // restart and the card id does not. A wire name is an attribute a human may

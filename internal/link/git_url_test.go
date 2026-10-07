@@ -19,7 +19,7 @@ import (
 
 // The lookup a card calls for the URL to fetch code it does not have, over a real link: the pass-through rig (a hub, a
 // room "SG3" that serves git from a real clone) with a hub STORE beside it that holds finished work. See
-// docs/rnd/hub-forge-design.md section 4.
+// docs/fabric/hub-forge-design.md section 4.
 
 // urlRig is the pass-through rig with a hub store for github/o/r, seeded with a main.
 type urlRig struct {

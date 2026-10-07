@@ -14,7 +14,7 @@ import (
 )
 
 // What the hub knows of a branch, for the change record's "Pushed" line and for change requests. See
-// docs/rnd/hub-forge-design.md section 6. Every read here is a git command in the hub's own bare repository, run
+// docs/fabric/hub-forge-design.md section 6. Every read here is a git command in the hub's own bare repository, run
 // with no shell and a bound, on a name and a sha that were checked first.
 
 // The states of Pushed, as the API spells them.

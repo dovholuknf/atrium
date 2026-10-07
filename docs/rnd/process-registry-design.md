@@ -79,7 +79,7 @@ fine stopgap for one server and the wrong shape for the pattern.
 
 ## Where it lives: the room
 
-The room owns the pseudo terminals (`docs/fabric/hub-room-plan.md`), so the room owns processes. The hub owns none and
+The room owns the pseudo terminals (`docs/archive/hub-room-plan.md`), so the room owns processes. The hub owns none and
 restarts all evening. A process started from a hub would die with every CSS change.
 
 - **ROOM-SIDE:** the `procs` map, the store table, the spawn and stop paths, the port checks, the loopback recipes
@@ -135,7 +135,7 @@ healthy, and that is not this.
 forgot. A dev server with nobody attached is the normal case, and the runner exit bounds its life anyway.
 
 **Why not survive a room restart.** A process in a pty dies with the room, like every runner. ConPTY offers no
-reattach (`docs/architecture-v2.md`, "Open risks"). A detached process (no pty, output to a file, a recorded pid)
+reattach (`docs/archive/architecture-v2.md`, "Open risks"). A detached process (no pty, output to a file, a recorded pid)
 could survive, and it would have no attach, a stop keyed on a recycled pid, and no job object to make the stop safe.
 It would also break the one rule, since the runner does not survive the restart either.
 
@@ -332,7 +332,7 @@ Discovered ports count as held for check 1. The same read gives the **bound addr
 warning needs, so that part lands in stage 2 and the port reconciliation in stage 3.
 
 This reads the operating system, never the output. Parsing "Local: http://localhost:3310" out of a log is the
-output-interpretation `docs/architecture-v2.md` rules out.
+output-interpretation `docs/archive/architecture-v2.md` rules out.
 
 ## Firewall prompts: why clint asked
 
@@ -553,7 +553,7 @@ description says not to pass secrets in it. The row is visible on the board.
 
 **Registering a process goes through the permission chain.** Without that, the proc tool is a way around it.
 
-The PreToolUse hook does not gate `mcp__*` tools (`docs/architecture-v2.md`, "What carries over from v1", item 6),
+The PreToolUse hook does not gate `mcp__*` tools (`docs/archive/architecture-v2.md`, "What carries over from v1", item 6),
 because gating the agent's own control tools is circular. So a session told "never `npx`" by a standing rule could
 run `npx` anyway by asking atrium to.
 
@@ -639,7 +639,7 @@ last ended.
 
 ## Build plan
 
-**Stage 1 waits for the one-atrium consolidation** (sa57, `docs/fabric/one-atrium-plan.md`, on its own branch today). Both
+**Stage 1 waits for the one-atrium consolidation** (sa57, `docs/archive/one-atrium-plan.md`, on its own branch today). Both
 change the CLI and the board, and the plan decides which binary and which command tree `atrium proc` lives in. Stage
 1 starts after that plan's CLI and board changes land, and is rebased onto them rather than built beside them.
 Atrium's own listener defaults (item (a) above) are independent and may land any time.

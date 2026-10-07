@@ -21,7 +21,7 @@ the launcher asked for a wrap-up, so nothing in it has been reviewed. Treat the 
   `keepaliveAtLaunch` runs (section 2). Both are marked for a rig check in the build.
 - **Open questions for clint so far:** the five at the end of this file.
 
-This replaces `docs/rnd/restart-idle-spec.md` (item 38) and `docs/rnd/keepalive-marked-spec.md` (item 39). Those two specs
+This replaces `docs/rnd/keepalive-policy-design.md` (item 38) and `docs/rnd/keepalive-policy-design.md` (item 39). Those two specs
 measured what a resume and a refresh cost, and their numbers still stand. What changed is the question. They asked
 whether the saving was worth building. clint's answer on 2026-09-29 is that the point is tokens, and that tokens are
 wasted whenever a cache is kept warm for nobody. So the policy below is built on one fact, when a human last used the
@@ -704,3 +704,138 @@ clint: 7, and whether to build. 10 is open.
     Recommend only while outstanding (live or parked workers). Skipping it always removes the orchestrator's only
     signal that a director finished a batch and said nothing. This part does not need idle parking, and it can be
     built on its own first, since it is the noise reaching the orchestrator today.
+
+## Appendix: Keep-alive warms the cards you mark, not every idle card (backlog-2 item 39): spec, not built
+
+Merged from `docs/rnd/keepalive-policy-design.md` on 2026-10-07.
+
+Written 2026-09-29 by @runtime from item 37's `session_usage` rows, read off a COPY of the live database. Nothing here
+is built. The Open Questions at the end are for clint.
+
+### What already exists
+
+Item 23's keep-alive is on by default for new Claude cards (the gear), and every card has its own switch in its menu.
+`decide` in `internal/daemon/keepalive.go` already skips a card that is not `needs-input`, is lean, is under 50k of
+context, is not on the 1h cache, or has local hooks, and it stops a card by itself once its refreshes since it went
+idle cost an eighth of one full 1h rewrite. So "the cards you mark" is already possible. Item 39 is really about the
+DEFAULT: on for every card, or on only for the cards someone picks.
+
+### What the numbers say
+
+Over about 8.6 hours (2026-09-28 19:56Z to 2026-09-29 04:35Z):
+
+- Keep-alive made 42 refreshes on 13 of 57 cards, for $4.27, about 2% of the $207 spent. About $0.10 a refresh.
+- 8 of those 13 cards had no turn of their own after any refresh, so what was spent on them bought nothing yet. Some
+  of them may still be returned to.
+- Where a card did come back inside the hour it paid off: a 310k context wrote 12k on its first turn after a refresh
+  46 minutes before, and a 432k one wrote 36k after 13 minutes. A full rewrite at those sizes costs $2 to $4, so one
+  saved rewrite pays for 20 to 40 refreshes.
+- Two refreshes were full writes themselves: 128k written for $1.02 on `01a0e960`, and 94k for $0.76 on `01a0e8f0`,
+  each the only refresh on its card. $1.78 of the $4.27. Filed and diagnosed as item 87: both are lean cards, whose
+  fork cannot rebuild their prompt, and item 70 (fa2b2cc) already skips lean cards. So the largest keep-alive waste in
+  this window is already gone, and what is left to save is smaller still.
+
+So the money item 39 could save today is at most a few dollars a day, and less than the two cold refreshes above cost.
+It grows with the number of idle cards, and the break-even stop already bounds it per card.
+
+### A shape, if it is still wanted
+
+- Keep the per-card switch. Change the default for new cards from on to a rule: on for a card that is pinned, or in a
+  column the operator chose in the gear, and off otherwise. The gear keeps "on for every card" as one choice.
+- A card turned on by hand stays on. A card turned off by hand stays off. The rule only decides for cards nobody has
+  touched, so no one's choice is undone by a move between columns.
+- The card's details already say why keep-alive skipped it. A card off by the default rule says so there, with the
+  rule's name, so "why is this one cold" has an answer.
+
+### Open Questions for clint
+
+1. Is it worth building now? At about 2% of spend, and with the break-even stop, the saving is small, and the two
+   cold refreshes that were the bigger waste are already fixed (item 87, by item 70). The suggestion is to leave item
+   39 until there are more cards.
+2. If it is built, what should decide the default: pinned cards, a column, a tag, or only the switch? The shape above
+   says pinned or a chosen column.
+3. Should a card that has been idle past some age (a day, say) stop being warmed whatever its switch says? The
+   break-even stop already ends each idle stretch, so this would only matter for a card that is woken and left again
+   and again.
+
+### clint's answers, 2026-09-29
+
+1. **Not as written.** A keep-alive should last 2 to 4 hours at most, only on cards the human has actively used, and
+   never on an `atrium:subagent` card. See `docs/rnd/keepalive-policy-design.md`, which replaces this spec.
+2. **Opt-in.** The human enables keep-alive on the cards they want, and even then only while they have been
+   interacting with the card. "Has the human interacted with this card" is a signal worth building on its own, since it
+   may help with subagents too.
+3. **No** separate age cap beyond the 2 to 4 hour limit in answer 1.
+
+## Appendix: A restart resumes only the cards that were working (backlog-2 item 38): spec, not built
+
+Merged from `docs/rnd/keepalive-policy-design.md` on 2026-10-07.
+
+Written 2026-09-29 by @runtime from item 37's `session_usage` rows, read off a COPY of the live database. Nothing here
+is built. The Open Questions at the end are for clint.
+
+### What the numbers say
+
+The table held 526 rows over about 8.6 hours (2026-09-28 19:56Z to 2026-09-29 04:35Z), $207 in all, and two room
+restarts, about 20:00Z and 00:25Z.
+
+The question item 38 was waiting on is "what does a resume cost". The answer is that a resume costs nothing by
+itself. A resumed Claude Code process spends nothing until its next turn, and that turn reads the same cached prefix
+the old process wrote. The first turn after a resume is flagged `after_resume`, and those rows split cleanly on the
+gap since the card's last spend (including a keep-alive refresh):
+
+| Gap before the first turn after a resume | Cache written | Context | Reads as |
+| --- | --- | --- | --- |
+| 1 minute (a restart wake) | 6k to 15k | 145k to 250k | a hit |
+| 13 to 46 minutes (a keep-alive refresh inside the hour) | 12k to 36k | 310k to 432k | a hit |
+| 1h17m to 4h19m | 150k to 270k, most of the context | 65k to 290k | a full rewrite |
+
+So the misses are the 1h TTL running out, not the resume. A first turn after a resume that finds a cold cache costs
+about $0.40 to $2.30 at these context sizes, which is the price of the gap, and the same card would pay it if it had
+never been restarted.
+
+### What that means for item 38
+
+Parking idle cards at a restart would save no tokens. An idle card that is resumed and never typed into spends
+nothing, and one that is typed into pays the same first turn either way. What resuming every card does cost is:
+
+- a process per card (about 21 of them), and their memory,
+- the length of the restart's settle window, since `settling.go` holds until every expected card is back,
+- the chance of a resume failing and filing a card as `dead` that nobody was using.
+
+Keep-alive does not need a running process, because it forks from the transcript. So parking a card does not stop it
+being kept warm, and warming does not argue for resuming.
+
+### A shape, if it is still wanted
+
+- At a restart, a card resumes if it was working, has a queued message, a pending restart wake, or an open
+  permission. Everything else is recorded as `parked`: its resume id kept, no process, still in its column. Not a new
+  status. A flag on the card or a line in its history.
+- A parked card resumes on the first thing that needs it: an attach, a typed line, a say, a restart wake, an action.
+  A say to a parked card resumes it and is then delivered, instead of answering `undeliverable` (item 83's refusal is
+  for a card with no runner, and a parked card is exactly that, on purpose).
+- The board shows a parked card as it shows an idle one, with a small mark, so the operator is not surprised by a
+  resume that takes a few seconds on attach.
+
+### Open Questions for clint
+
+1. **This finding decides whether 38 is worth building.** Parking idle cards saves processes, memory and restart
+   time, and NO tokens. Is item 38 about tokens? If yes, it can be closed with this note. If it is about process
+   count, memory or how long a restart takes, say which, and it is worth building on the shape above.
+2. Should a say to a parked card resume it without asking? The peer bus never types into a terminal, and resuming is
+   stronger than typing. The alternative is a queued say that is delivered when the operator next resumes it.
+3. Which cards count as "working" for the rule: only `running`, or also `needs-permission` and cards with a queued
+   message? The shape above says all three.
+4. Two rows priced at $0.00 (cards `01a0c906` and `01a0771d`, 290k and 150k written) mean a model the price table
+   does not know. Worth a look under item 37, whatever is decided here.
+
+### clint's answers, 2026-09-29
+
+1. **It is about tokens**: keep-alive refreshes that keep a cache warm while nobody is at the terminal. A card clint
+   has not looked at all day should sit idle and cold. Item 38 folds into the keep-alive policy spike with item 39
+   (`docs/rnd/keepalive-policy-design.md`, reviewed with Mercurius), which decides what stays warm and what parks.
+2. **A say may wake a parked card.** One design worth weighing: the say answers "parked" first, and the sender
+   confirms to resume it.
+3. **Yes**: `running`, `needs-permission`, and cards with a queued message or a pending restart wake count as working.
+4. **Drop cost.** Stop calculating and showing dollar figures for now. It may come back one day, and probably will
+   not. The price table's unknown models are moot.

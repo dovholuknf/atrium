@@ -107,7 +107,7 @@ and taking that away would be worse than not integrating.
 
 So `/permission` acquires a caller class whose failure posture is inverted. Atrium's side of that is nothing at all
 (a closed listener already yields connection refused). Sterling's side is a two-line decision. But the invariant
-list in `CLAUDE.md` and `docs/architecture-v2.md` says "the permission hook fails open" without qualification, and
+list in `CLAUDE.md` and `docs/archive/architecture-v2.md` says "the permission hook fails open" without qualification, and
 after this it must say "the Claude Code hook fails open, a governed caller fails closed, and here is why they
 differ".
 
@@ -218,7 +218,7 @@ is not on the table.
 
 ### Verdict
 
-No fit, and the reason is already in `docs/architecture-v2.md`: "claude-code is the agent... It also holds the
+No fit, and the reason is already in `docs/archive/architecture-v2.md`: "claude-code is the agent... It also holds the
 subscription credentials, so bypassing it in favor of direct API calls would mean paying per token as well as
 rebuilding everything it does." llm-gateway is an OpenAI-compatible proxy with four routes, and claude-code does
 not talk to one. Everything atrium supervises either holds its own credentials or is a bare shell. Beyond that,
@@ -292,7 +292,7 @@ question. A block returns atrium's `reason` as the error text, which is what put
 front of the model instead of a bare refusal.
 
 **Unreachable atrium is a denial, not an approval.** This is the inverted posture, and it is the one line of this
-stage that matters most. Write it into `docs/architecture-v2.md` under "Resilience guarantees (daemon)" in the same
+stage that matters most. Write it into `docs/archive/architecture-v2.md` under "Resilience guarantees (daemon)" in the same
 commit, or the invariant list becomes a lie.
 
 **How you know it works.** Run the `code-reviewer` example with `write_file` left at `prompt`. The harness stalls,

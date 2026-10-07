@@ -23,8 +23,8 @@ Series: The hub forge and the change lifecycle. Status: idea. Audience: people m
 
 ## Sources
 
-- docs/rnd/git-sync-design.md
-- docs/decisions.md 19
+- docs/fabric/git-sync-design.md
+- docs/fabric/hub-decisions.md 19
 - changelog/runtime/2026-10-01-r-deploy-ready.md
 - changelog/runtime/2026-10-01-r-deploy-ready-bound.md
 

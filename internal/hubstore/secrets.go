@@ -22,7 +22,7 @@ import (
 //
 // Binding the secret to a room closes that by construction. A secret
 // authorises exactly one name, so there is nothing for a room to claim and no
-// check to write. See docs/decisions.md, 7 and 8.
+// check to write. See docs/fabric/hub-decisions.md, 7 and 8.
 
 // secretLife bounds a join string: long enough to walk to another machine,
 // short enough that one left in a chat log has stopped being a key.

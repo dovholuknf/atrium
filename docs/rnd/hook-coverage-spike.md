@@ -425,7 +425,7 @@ Wiring seven more hooks therefore adds zero lanes. It makes three existing ones 
 `subagents` lane. It does not. A subagent is not a card. It has no independent life the operator can act on, it
 cannot be shelved, messaged or attached to, and it belongs to a session that already has a card. Giving it a lane
 would fill the board with rows nobody can do anything about, which is exactly what adopting the worktree ledger
-did before it was removed. See the abandoned section in `docs/architecture-v2.md`.
+did before it was removed. See the abandoned section in `docs/archive/architecture-v2.md`.
 
 ## PreCompact
 

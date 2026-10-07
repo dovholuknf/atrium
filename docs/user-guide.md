@@ -4,7 +4,7 @@ Real-world walkthroughs for the patterns this thing supports. If you want a feat
 [README](../README.md).
 
 Patterns 1 to 6 walked the v1 hub and agent loop (`atrium hub`, `atrium agent`, the terminal UI, the choices
-picker). Mode A is removed, so they are gone and the numbering below keeps its gaps. `docs/fabric/one-atrium-plan.md`
+picker). Mode A is removed, so they are gone and the numbering below keeps its gaps. `docs/archive/one-atrium-plan.md`
 says why. The board does what the terminal UI did. Mode B (`atrium serve`, `status` and `watch`) is removed too.
 
 ## Pattern 0: having the daemon there in the morning

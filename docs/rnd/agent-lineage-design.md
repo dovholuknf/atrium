@@ -35,7 +35,7 @@ reference has to travel: header at the hub, field on the request, column on the 
 of it already carries other launch-time facts the same way, `why`, `tags`, `theme`, `brief`, so lineage is one
 more field beside them and not a new mechanism.
 
-The launch returns a new card id. Cards are the durable unit, per `docs/architecture-v2.md`: a card outlives its
+The launch returns a new card id. Cards are the durable unit, per `docs/archive/architecture-v2.md`: a card outlives its
 process, so lineage belongs on the card and never on a pid. The parent is named by its HANDLE, which is
 `wire_name`, the same qualified name `atrium_peers` lists and `atrium_say` resolves through `GetByWireName`. That
 is deliberate: lineage reuses the identity the peer bus already trades in rather than inventing a second one.

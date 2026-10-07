@@ -12,7 +12,7 @@ import (
 )
 
 // The pulls API through the hub. The room side is another branch, so the rooms here are fakes that
-// answer what docs/rnd/pulls-api.md says a room answers.
+// answer what docs/review/pulls-api.md says a room answers.
 
 // seenReq is one request a fake room received, as it arrived.
 type seenReq struct {

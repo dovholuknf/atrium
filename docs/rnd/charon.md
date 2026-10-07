@@ -410,7 +410,7 @@ silent non-answer, which for a model waiting on a delegated task is the harder o
 
 The mechanism is `pty.fork()`, Unix domain sockets, `start_new_session=True` and hangup teardown. There is no
 Windows analog: ConPTY has no reattach primitive and no way to hand a pseudo console to a new parent, which
-atrium already records as an open risk (`docs/architecture-v2.md:633-636`).
+atrium already records as an open risk (`docs/archive/architecture-v2.md:633-636`).
 
 The real fragility is the reattach budget. `attach()` allows 2 seconds to connect and 5 for the hello line
 (`shell.py:150-154`, `:235-255`). On failure the boot scan `unlink()`s the socket (`server.py:2386-2389`) and
@@ -504,7 +504,7 @@ How it maps, concretely:
   permission chain already refuses on a shelved card (`internal/daemon/daemon.go:376-378`). "Can this session
   receive a peer message right now" is a query over that column plus the pending message count
   (`UndeliveredCounts`, `internal/store/messages.go:103`). Charon's in-memory gate plus a JSON snapshot would be
-  a regression against the halt (`docs/architecture-v2.md:382`), and the leak described in section 4 is what
+  a regression against the halt (`docs/archive/architecture-v2.md:382`), and the leak described in section 4 is what
   that shape costs: a reservation held in a dict with four scattered release paths, one of which declines to
   fire when the target is dead, wedges the session it leaked on and then survives a restart. A status column
   and a query cannot leak, because there is no second place for the truth to live.
@@ -566,7 +566,7 @@ pty is owned by a small process the daemon spawned detached, and the daemon reat
 when it comes back" (`holder.py:14-19`, `:59-60`, `:222-241`).
 
 **What has to change.** Everything about it is POSIX. Atrium's supervision runs on Windows first and
-`docs/architecture-v2.md:633-636` already states there is no ConPTY reattach and that the answer there is
+`docs/archive/architecture-v2.md:633-636` already states there is no ConPTY reattach and that the answer there is
 resume ids. So this is worth building for a Linux-hosted daemon and worth an explicit sentence in
 `docs/terminal/supervision-design.md` saying the Windows gap stays where it is. Note also that Charon does the same
 resume-id thing atrium plans, at the provider level, by passing `resume=self.claude_session_id` into the SDK
@@ -661,23 +661,23 @@ is the posture to copy.
 
 Refusal is a legitimate conclusion, and most of these are refusals against a decision atrium already wrote down.
 
-**Approval timeouts.** `docs/architecture-v2.md:102-129` is the argument, and it is stronger than the feature.
+**Approval timeouts.** `docs/archive/architecture-v2.md:102-129` is the argument, and it is stronger than the feature.
 No timeout on the agent side, by design, because a timeout either wakes the model or guesses at an answer, and a
 stale auto-deny is materially different from a human's deliberate no. Charon accepts that cost knowingly for a
 machine left unattended. Atrium's three lifecycle rules exist precisely so a waiting card cannot be put down
 without answering, and a timeout would reintroduce the stranding those rules close off. Refuse.
 
-**Hub dials out to each machine as the federation transport.** `docs/rnd/federation-design-v2.md:107-119` already
+**Hub dials out to each machine as the federation transport.** `docs/archive/federation-design-v2.md:107-119` already
 has the table. Charon's direction requires the control plane to have a route to every managed machine, which is
 true of a rented VPS running sshd and false of every case atrium's forum design targets: a laptop behind NAT, a
 container on a bridge network, a pod. This is not "SSH is worse", it is two projects solving different
 reachability shapes. Refuse the shape.
 
 Keep one idea from it. SSH's `ControlMaster` is exactly the connection-pool problem
-`docs/rnd/forum-implementation.md:133` solves by hand, and SSH carries per-connection authentication in the
-transport, which is the whole difficulty `docs/rnd/federation-design-v2.md:141-209` works through for the forum
+`docs/archive/forum-implementation.md:133` solves by hand, and SSH carries per-connection authentication in the
+transport, which is the whole difficulty `docs/archive/federation-design-v2.md:141-209` works through for the forum
 side. That makes "leaf dials out over SSH" a real alternative to name in stage 7's transport options
-(`docs/rnd/federation-design-v2.md:587`), with its own cost written down: it trades "atrium never handles an
+(`docs/archive/federation-design-v2.md:587`), with its own cost written down: it trades "atrium never handles an
 identity" (`docs/fabric/overlays.md:13-16`) for "the forum now runs an SSH server and manages `authorized_keys`". A
 different set of operational costs, not a smaller one. It answers nothing for the pod with no sshd.
 
@@ -738,7 +738,7 @@ got wrong, and what settles each one.
 | "A small IDE", and "the obvious candidate is the Monaco editor" | CodeMirror 6, lazy per-file language modes, a remote LSP client behind it. Not transferable: it ships ES modules with bare specifiers and no bundle, which Charon can use because it is a Next.js app and atrium cannot because its board is one file | `app/CodeEditor.tsx:2-16`, `lsp.py` |
 | "Sessions talk to each other over MCP" | True, and not the mechanism the phrase suggests. The MCP server holds no state and no routing, it is a thin argv-identified adapter over a Unix socket. The reply is not fetched by a tool: the daemon captures the target's turn text and injects it into the sender | `peer_mcp.py:97-116`, `server.py:503-544` |
 | "Charon is session-shaped. Atrium's cards carry history across restarts" | Charon's sessions are durable too: `claude_sessions` rows, an event log with a `seq` resume cursor, SDK resume ids. The difference is not durability, it is that Charon has no unit above a session and no status a human curates | `lib/db/schema.ts:143-160`, `event_log.py`, `session.py:2012` |
-| "No exposed ports on the remote side" | True of *new* ports. It requires an inbound `sshd` the operator already runs, so the far side is by definition already accepting connections. That is why the shape does not reach a laptop or a pod | `sshShared.js:115-121`, `docs/rnd/federation-design-v2.md:75-97` |
+| "No exposed ports on the remote side" | True of *new* ports. It requires an inbound `sshd` the operator already runs, so the far side is by definition already accepting connections. That is why the shape does not reach a laptop or a pod | `sshShared.js:115-121`, `docs/archive/federation-design-v2.md:75-97` |
 | A Telegram bot is the whole of its out-of-band reach | Also Web Push with stored subscriptions, so an alert reaches a closed tab. Atrium's side needs correcting too: it registers a service worker but never calls `pushManager.subscribe`, so it needs the board open | `lib/db/schema.ts:531-539`, `internal/api/web/index.html:4484-4512` |
 | Implied: that atrium's overlay claim needed rechecking | Holds up, and is stronger than the section says. The board answers on the overlay's own `net.Listener`, no child process and no proxy hop | `internal/daemon/overlay_native.go:19-33` |
 

@@ -12,7 +12,7 @@ import (
 )
 
 // The hub's git store on the board: `/git/hub/<host>/<owner>/<repo>.git/...`, for the operator. See
-// docs/rnd/hub-forge-design.md 3.4. A room reaches the same store on the link's git kind (git.go), as a room.
+// docs/fabric/hub-forge-design.md 3.4. A room reaches the same store on the link's git kind (git.go), as a room.
 //
 // WHO IS THE OPERATOR HERE:
 //

@@ -20,7 +20,7 @@ import (
 
 // New context: one action that cycles a card's context. The same sequence runs
 // when someone presses New context and when the card passes its limit
-// (autocontext.go). See docs/context-cycle-design.md.
+// (autocontext.go). See docs/runtime/context-cycle-design.md.
 //
 // THE DAEMON RUNS THE SEQUENCE, NOT THE AGENT. A message the agent queues for
 // itself can land before the clear and be wiped with it, so the room holds each

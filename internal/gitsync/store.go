@@ -15,7 +15,7 @@ import (
 )
 
 // The hub's own git store: bare repositories at `<git.store>/<host>/<owner>/<repo>.git`, one per
-// repository the operator made with `atrium rooms git init`. See docs/rnd/hub-forge-design.md 3.1.
+// repository the operator made with `atrium rooms git init`. See docs/fabric/hub-forge-design.md 3.1.
 //
 // IT SITS BESIDE THE git_repos MIRRORS AND SHARES THEIR PARTS. The Runner runs every git command,
 // ValidName (through ParseName) checks every name, the Hub's locks serialise every repository, and

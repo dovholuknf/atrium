@@ -11,7 +11,7 @@ import (
 //
 // A MARK IS SET BY THE LISTENER'S OWN HANDLER, never read from the request, so nothing a caller sends can
 // change it. The hub's git store uses it to refuse a zrok public share and to take the overlay's reaches as
-// the operator's. See docs/rnd/hub-forge-design.md 3.4.
+// the operator's. See docs/fabric/hub-forge-design.md 3.4.
 type Reach string
 
 const (

@@ -9,7 +9,7 @@ import (
 )
 
 // THE CONTEXT LIMIT, the one line a card's context is held to. Past it atrium cycles the card's context. See
-// docs/context-cycle-design.md.
+// docs/runtime/context-cycle-design.md.
 
 // OverrideContextLimitK is the key of a card's own context limit in its overrides, in thousands of tokens.
 // Empty means none: the hub's limit for its harness applies.

@@ -1,6 +1,6 @@
 # The forum: implementation plan
 
-`docs/rnd/federation-design-v2.md` is the accepted design and nothing here re-opens it. The forum holds nothing, leaves
+`docs/archive/federation-design-v2.md` is the accepted design and nothing here re-opens it. The forum holds nothing, leaves
 dial out to it, every leaf keeps owning every card, the command is `atrium forum` and a leaf is an atrium. This
 document turns that verdict into stages someone can build, in order, each one shippable on its own.
 
@@ -806,7 +806,7 @@ names and one it does not.
 - Kill the forum with an attach open. The runner keeps running. `attach.go:64` only calls `run.unsubscribe(updates)`
   on the way out and never touches the pty, so the supervisor still owns it. Verify at the leaf's own board by
   attaching again there.
-- ConPTY offers no reattach (`docs/architecture-v2.md:634`), so a runner whose pty is torn down is gone. Confirm
+- ConPTY offers no reattach (`docs/archive/architecture-v2.md:634`), so a runner whose pty is torn down is gone. Confirm
   that nothing in the forum path can tear one down: the forum closing a proxied socket must not reach `supervisor`.
   This is the one place where a proxy bug could destroy work rather than inconvenience someone.
 
@@ -974,7 +974,7 @@ peer's endpoint instead of applying a payload.
 
 **What the terminal attach does.** It gets one hop longer and nothing else. `internal/daemon/attach.go` needs no
 change: it already accepts without an origin check and says why (`attach.go:47-51`). The pty stays on the machine
-that created it and always will, because ConPTY offers no reattach (`docs/architecture-v2.md:634`). The socket URL
+that created it and always will, because ConPTY offers no reattach (`docs/archive/architecture-v2.md:634`). The socket URL
 gains the same prefix `api()` gained. The board must not offer attach for an atrium it cannot reach, because a
 socket that never opens looks identical to a runner with nothing to say.
 

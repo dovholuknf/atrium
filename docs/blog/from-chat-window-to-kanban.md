@@ -24,8 +24,8 @@ Series: The daemon and the halt. Status: idea. Audience: people building agent t
 ## Sources
 
 - website/docs/story.md
-- docs/architecture-v2.md (staged migration, Abandoned)
-- docs/fabric/one-atrium-plan.md
+- docs/archive/architecture-v2.md (staged migration, Abandoned)
+- docs/archive/one-atrium-plan.md
 - commits fc4ccd0a, fdc5c8e6, c739bdc7, a8afe39b
 
 ## Notes for the writer

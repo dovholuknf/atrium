@@ -569,7 +569,7 @@ func (s *Server) Handler() http.Handler {
 	// A card's inventory, and its disk. See resources.go.
 	mux.HandleFunc("GET /v1/tasks/{id}/resources", s.getResources)
 	mux.HandleFunc("POST /v1/tasks/{id}/resources/measure", s.measureResourcesNow)
-	// Pull request reviews. docs/rnd/pulls-api.md is the contract.
+	// Pull request reviews. docs/review/pulls-api.md is the contract.
 	mux.HandleFunc("POST /v1/prs", s.postPR)
 	mux.HandleFunc("GET /v1/prs", s.listPRs)
 	mux.HandleFunc("GET /v1/prs/{id}", s.getPR)

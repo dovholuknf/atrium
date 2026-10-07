@@ -1138,7 +1138,7 @@ type Inventory interface {
 	Holding() ([]string, error)
 	// HubSkin is the skin the ALL view wears, which is the hub's own and not a
 	// room's. Empty means unset, read by the serving side as the default. See
-	// `hubSettings` in fanout.go and `docs/fabric/hub-room-requirements.md`.
+	// `hubSettings` in fanout.go and `docs/archive/hub-room-requirements.md`.
 	HubSkin() (string, error)
 	// SetHubSkin records the skin the ALL view wears, which is how a skin saved
 	// while looking at all rooms lands somewhere instead of being refused for

@@ -43,7 +43,7 @@ func flag(t *testing.T, cmd *cobra.Command, name string) string {
 	return f.Value.String()
 }
 
-// The one binary's names for the same things, as docs/fabric/one-atrium-cutover.md
+// The one binary's names for the same things, as docs/archive/one-atrium-cutover.md
 // has the new scripts run them.
 func TestTheOneBinaryAnswersTheNewNames(t *testing.T) {
 	root := newRoot()

@@ -10,7 +10,7 @@ import (
 )
 
 // The names of the hub's own store: `<host>/<owner>/<repo>`, which is also the directory
-// `<git.store>/<host>/<owner>/<repo>.git`. See docs/rnd/hub-forge-design.md section 3.1.
+// `<git.store>/<host>/<owner>/<repo>.git`. See docs/fabric/hub-forge-design.md section 3.1.
 
 // DefaultHost is the host a short name has: `openziti/zrok` means `github/openziti/zrok`.
 const DefaultHost = "github"

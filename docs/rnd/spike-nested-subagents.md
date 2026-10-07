@@ -113,7 +113,7 @@ defeats the point.
 the two cards are related, so when the parent dies the child keeps drawing under a heading for something that is
 gone, and cleaning it up means parsing names in the sweep.
 
-**A rename severs it silently.** Renaming is offered (`terminal-list.js:254`). Per `docs/architecture-v2.md` a
+**A rename severs it silently.** Renaming is offered (`terminal-list.js:254`). Per `docs/archive/architecture-v2.md` a
 human override is never overwritten by an observed value, which is right and is exactly what breaks a convention:
 rename the parent and every child is stale, with no way to notice.
 

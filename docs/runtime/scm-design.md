@@ -143,7 +143,7 @@ Three places, all of which are one function:
   issue tracker is holding a credential.
 - **No repository model.** Atrium does not learn what a repo is or keep a list of them. A path and a command that
   produces it. Where a room has no checkout, the scm clone path clones from the hub's copy
-  (`docs/rnd/hub-forge-design.md`), and a repo it cannot read fails with a sentence telling the operator to clone it.
+  (`docs/fabric/hub-forge-design.md`), and a repo it cannot read fails with a sentence telling the operator to clone it.
 
 ---
 

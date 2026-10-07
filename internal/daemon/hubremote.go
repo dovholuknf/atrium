@@ -16,7 +16,7 @@ import (
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
-// The room's stable hub remote, docs/rnd/hub-forge-design.md 5.1 and 5.3. The forwarder itself is
+// The room's stable hub remote, docs/fabric/hub-forge-design.md 5.1 and 5.3. The forwarder itself is
 // gitsync.HubRemote; this file is the room's side of it: which cards hold a token, the environment that carries
 // it into a card's git, and the link it forwards over.
 

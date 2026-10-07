@@ -11,8 +11,8 @@ Read for this design:
 - the six items: `r-new-forge-interface`, `r-new-pr-lifecycle`, `r-new-scm-recognisers-salvage`,
   `f-new-pr-room-and-dedupe`, `f-new-gh-login-requirement`, `u-new-review-tab-read-back-comments`.
 - `docs/runtime/providers-design.md`, `docs/runtime/scm-design.md`, `docs/runtime/intake-design.md`,
-  `docs/rnd/pulls-view-design.md`, `docs/rnd/pulls-api.md`, `docs/rnd/pr-ci-state-design.md`,
-  `docs/rnd/hub-forge-design.md`, `docs/fabric/room-requirements-design.md`, `atrium.requirements.yaml`.
+  `docs/rnd/pulls-view-design.md`, `docs/review/pulls-api.md`, `docs/rnd/pr-ci-state-design.md`,
+  `docs/fabric/hub-forge-design.md`, `docs/fabric/room-requirements-design.md`, `atrium.requirements.yaml`.
 
 ## 0. The design in one paragraph
 
@@ -273,7 +273,7 @@ operator's own argv. `internal/hubstore/docs_secrets.go` has a secret-scan rule 
 
 ## 9. How this relates to the hub as a forge
 
-`docs/rnd/hub-forge-design.md` makes the **hub** a git server for rooms: rooms push finished work to it, other rooms
+`docs/fabric/hub-forge-design.md` makes the **hub** a git server for rooms: rooms push finished work to it, other rooms
 fetch from it, and `atrium_git_url` says where. It answers "where do I get the work a swarm made", and it is also where
 a room without a checkout gets the code of a PR (section 5). It has no PRs, reviewers or CI.
 
@@ -406,7 +406,7 @@ The questions above are kept as asked. These are the answers, and they overrule 
 2. **Yes.** A same-repo PR checks out on its real branch, a fork PR on `pr-<N>`.
 3. **A PR goes to the least busy room.** Fewest running sessions, ties broken by idle CPU. Whether the room has a
    checkout does not rank it. A room without one gets the code **from the hub**, which clones and fetches. This was
-   already decided on 2026-10-02 in `docs/rnd/hub-forge-answers.md` and this design missed it: section 9's "the hub
+   already decided on 2026-10-02 in `docs/fabric/hub-forge-design.md` and this design missed it: section 9's "the hub
    never serves PR code" and section 10's "atrium does not clone" are both overruled. A private repo the hub cannot
    read fails with a sentence telling the operator to clone it.
 4. **Never re-placed automatically.** A PR on an offline room waits for that room or for the operator, and the board

@@ -13,7 +13,7 @@ import (
 	"time"
 )
 
-// A fetch passed through the hub to the room that has the work. See docs/rnd/hub-forge-design.md 3.3.
+// A fetch passed through the hub to the room that has the work. See docs/fabric/hub-forge-design.md 3.3.
 //
 //	GET  /git/room/<room>/<repo>.git/info/refs?service=git-upload-pack
 //	POST /git/room/<room>/<repo>.git/git-upload-pack

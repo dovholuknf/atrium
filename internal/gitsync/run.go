@@ -1,5 +1,5 @@
 // Package gitsync moves code between a hub and its rooms by FETCH, and by nothing else.
-// See docs/rnd/git-sync-design.md. Nobody here ever receives a push: no receive-pack runs
+// See docs/fabric/git-sync-design.md. Nobody here ever receives a push: no receive-pack runs
 // on either side, so no ref can be moved by what the other end sends.
 //
 // This package is git plumbing. It knows nothing about the link, which carries its bytes.

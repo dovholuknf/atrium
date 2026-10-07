@@ -430,7 +430,7 @@ What is gained:
 A reviewer on m1mini could not read a change that lived only in a worktree on sg4 (no route), and asked for a
 paste. Three ways to close that:
 - (a) the hub mirrors every repo a card works in and serves its `claude/*` branches, plus outside PR heads, to every
-  room (`docs/rnd/hub-forge-design.md`, git-sync stage 4);
+  room (`docs/fabric/hub-forge-design.md`, git-sync stage 4);
 - (b) a room reads another room's files (room-to-room read, decisions 34 to 37);
 - (c) the persona always runs on the room that has the code.
 

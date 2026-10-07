@@ -48,7 +48,7 @@ everything else, the hub op keeps the key on the hub.
   asks a room that did not say so" (`internal/link/protocol.go:26-55`). Per-room hub settings exist too:
   `launch_caps` holds `{"default", "rooms": {...}}` (`internal/link/launchcaps.go`).
 - **The remote-git refusal is dotfiles' hook, and rooms do not have it.** It matches
-  `\bgit\s+(?:-\S+\s+)*(push|pull|fetch)\b` in `claude/hooks/pre-tool-use-hook.ps1` (`docs/rnd/git-sync-design.md:15-21`).
+  `\bgit\s+(?:-\S+\s+)*(push|pull|fetch)\b` in `claude/hooks/pre-tool-use-hook.ps1` (`docs/fabric/git-sync-design.md:15-21`).
   `scripts/room-gate.ps1:13` copies nothing else from dotfiles to a room, "least of all the footgun guard".
 - **No deny rule ships either.** `Bash(git push*)` appears only in `internal/claudeconf/claudeconf_test.go:75,99`.
   On m1mini `~/.claude/settings.json` has no `permissions`, and the room's rules are `{"rules":null}`. What stops a

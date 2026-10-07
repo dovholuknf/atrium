@@ -24,8 +24,8 @@ import (
 // Scoped is a byte pipe and needs none of this. Aggregate cannot be a pipe,
 // because you cannot forward one request to four rooms and concatenate the
 // answers. So the hub parses, merges, and hands back one payload, which is the
-// thing `docs/rnd/federation-design-v2.md` ruled out and the operator overrode
-// knowingly. See `docs/fabric/hub-room-requirements.md`.
+// thing `docs/archive/federation-design-v2.md` ruled out and the operator overrode
+// knowingly. See `docs/archive/hub-room-requirements.md`.
 //
 // ── what is merged, and what is deliberately not ─────────
 //
@@ -105,7 +105,7 @@ var borrowed = map[string]bool{
 	// things to add somewhere unspecified.
 	"/v1/harnesses/discover": true,
 	// WHO MAY OPEN THE BOARD, AND WHERE IT IS PUBLISHED, which
-	// `docs/fabric/hub-room-requirements.md` says belong to the hub: there is one
+	// `docs/archive/hub-room-requirements.md` says belong to the hub: there is one
 	// board and publishing it is the hub's job. Until they move, one room's
 	// answer is what the board draws, and drawing nothing was worse.
 	"/v1/auth":     true,
@@ -338,7 +338,7 @@ func (p *Proxy) remembered(spec string, live []Attached) []any {
 // from the cache instead.
 //
 // ONLY THE ONES THAT ARE A FUNCTION OF STORED FIELDS. An override wins over the
-// observed value, which is the rule in `docs/architecture-v2.md` and the whole
+// observed value, which is the rule in `docs/archive/architecture-v2.md` and the whole
 // of what these two are. Nothing here reaches for anything the room declined to
 // write down: there is no activity, no telemetry and no idle time, because
 // those are true only while a room is running and this room is not.
@@ -377,7 +377,7 @@ func derive(obj map[string]any) {
 //
 // ── and this one IS sorted ───────────────────────────────
 //
-// `docs/fabric/hub-room-requirements.md` says cross-room order is not a guarantee,
+// `docs/archive/hub-room-requirements.md` says cross-room order is not a guarantee,
 // and that stands for the live lists: they carry no shared clock and sorting
 // them would claim one. History is different. Every row has a creation time,
 // the whole point of the list is chronology, and "newest first" is what it

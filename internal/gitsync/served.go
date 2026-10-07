@@ -7,7 +7,7 @@ import (
 	"time"
 )
 
-// What a room offers to a reader the hub passes through. See docs/rnd/hub-forge-design.md 3.3.
+// What a room offers to a reader the hub passes through. See docs/fabric/hub-forge-design.md 3.3.
 //
 // THE SERVED SET IS THE ROOM'S OWN CONFIGURATION, NOT THE HUB'S MANNERS. A want outside it is refused by the
 // room's git, so a reader cannot ask for refs/stash, refs/notes/* or a private branch by going through the hub:

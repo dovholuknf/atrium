@@ -15,7 +15,7 @@ import (
 )
 
 // `atrium rooms git ...`: asking the hub to move code, and saying which repositories it
-// moves. See docs/rnd/git-sync-design.md.
+// moves. See docs/fabric/git-sync-design.md.
 //
 // `sync` and `collect` are requests to the RUNNING hub over its loopback board, because the
 // hub is the thing that holds the links to the rooms. `repos` writes the hub's own store,

@@ -1,6 +1,6 @@
 # Review: context-limit ownership design e3922a57
 
-`docs/rnd/context-limit-ownership-design.md`, the only file in its commit, on `30cd5837`. It lands by cherry-pick.
+`docs/archive/context-limit-ownership-design.md`, the only file in its commit, on `30cd5837`. It lands by cherry-pick.
 
 Verdict: **doc-ok.** The section 3 finding is right, and L0 is the right fix. Two Mediums should go into L0 before it
 is built. They are design points and do not hold the doc.

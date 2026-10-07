@@ -4,7 +4,7 @@ Status: built. Git sync over the hub and rooms (`internal/gitsync`, `atrium room
 
 Origin: design, reviewed (Mercurius round 1 ready to build, then @fabric's nine changes, all taken). Owned by @rnd
 (design) and @fabric (the hub side). Item: `docs/backlog/fabric/f-019.md`.
-Direction settled by decision 19 in `docs/decisions.md`. First live proof: sg3. Second: m1mini.
+Direction settled by decision 19 in `docs/fabric/hub-decisions.md`. First live proof: sg3. Second: m1mini.
 
 ## 1. The problem, in one paragraph
 

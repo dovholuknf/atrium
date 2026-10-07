@@ -33,7 +33,7 @@ them. It runs for days and is never restarted to change the board.
 **The hub** (`cmd/atrium2`, `internal/link`) serves the board's HTML, CSS, and JS itself and proxies every other
 request to a room. It holds no card state, so it restarts freely while board work is in progress. The split
 follows lifetimes: board code changes every few minutes, and agents must not die for it. See
-`docs/fabric/hub-room-plan.md`.
+`docs/archive/hub-room-plan.md`.
 
 The room dials the hub, never the other way. A hub restart is the room noticing a closed socket and redialling.
 Joining is one pasted string, which pins the hub's certificate authority, and every link after that is mutual
@@ -164,12 +164,12 @@ and `watch`), went next: `gwt watch` tails the same ledger.
 
 | Question | Document |
 | --- | --- |
-| Why v2 is shaped this way | `docs/architecture-v2.md` |
-| Hub and room split | `docs/fabric/hub-room-plan.md` |
+| Why v2 is shaped this way | `docs/archive/architecture-v2.md` |
+| Hub and room split | `docs/archive/hub-room-plan.md` |
 | Messaging between sessions | `docs/runtime/agent-messaging.md` |
 | Terminals and attach | `docs/terminal/supervision-design.md` |
 | The live badge | `docs/runtime/activity-design.md` |
 | Auto mode and its review | `docs/runtime/auto-mode.md` |
 | Hooks | `docs/runtime/hooks.md`, `docs/user-guide.md` |
-| Many machines, one board | `docs/rnd/federation-design-v2.md` |
+| Many machines, one board | `docs/archive/federation-design-v2.md` |
 | Installing | `docs/release/packaging.md` |

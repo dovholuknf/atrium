@@ -11,7 +11,7 @@ import (
 	"time"
 )
 
-// The sync states, exactly as docs/rnd/git-sync-design.md section 6.2 has them.
+// The sync states, exactly as docs/fabric/git-sync-design.md section 6.2 has them.
 const (
 	StateOK     = "ok"     // fetched, and both branches are at the hub's sha
 	StateAbsent = "absent" // no clone and init was false. Nothing was run

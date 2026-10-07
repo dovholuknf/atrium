@@ -1,6 +1,6 @@
 // Change requests on the phone (/m): a sheet with two screens, the list and one request's page, like the desktop board's
 // Requests view (js/changereq.js) and the same data, through js/changereq-core.js (which answers from js/changereq-mock.js only
-// when asked). docs/rnd/hub-forge-design.md section 6. Stage 5 is MANUAL: a request into `main` waits for the orchestrator or
+// when asked). docs/fabric/hub-forge-design.md section 6. Stage 5 is MANUAL: a request into `main` waits for the orchestrator or
 // clint to merge on the hub's side, and this sheet only RECORDS that it happened. It has no merge button and no word that says
 // it merges.
 //

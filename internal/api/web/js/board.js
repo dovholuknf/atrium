@@ -961,7 +961,7 @@ async function paintMoreAsks(id, open) {
 // ── new context ─────────────────────────────────────────
 // The context cycle: the limit prompt and its ack, then clear and wake, run by the
 // room. The card's `new_context` says which step it is on, or why it stopped. See
-// internal/daemon/newcontext.go and docs/context-cycle-design.md.
+// internal/daemon/newcontext.go and docs/runtime/context-cycle-design.md.
 
 // One chip while a step runs, gone when the wake prompt lands. A step that
 // stopped leaves a red one with the reason, and clicking it takes it off.
@@ -1158,7 +1158,7 @@ window.addEventListener("storage", e => {
 //     Wanted, reasonably: grouping is board-wide and today it is lost when you
 //     open a different browser. `internal/api/settings.go` refuses the field
 //     rather than leaving that to be discovered.
-//   - Federation. `docs/rnd/federation-design-v2.md` puts many machines behind one
+//   - Federation. `docs/archive/federation-design-v2.md` puts many machines behind one
 //     board, and a grouping function shipped from a leaf and run in the
 //     forum's browser crosses a boundary that does not exist today.
 //   - What the function can already reach. These run with full page scope, so

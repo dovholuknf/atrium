@@ -3121,7 +3121,7 @@ stream of them.
 
 ## AW. One atrium binary, and the atrium2 shim
 
-Stage 3 of `docs/fabric/one-atrium-plan.md`. `atrium` now carries the hub and the room, and `cmd/atrium2` is a shim that
+Stage 3 of `docs/archive/one-atrium-plan.md`. `atrium` now carries the hub and the room, and `cmd/atrium2` is a shim that
 answers the live scripts' lines until the cutover. This covers the parsing, the collisions, the hook lines, the
 defaults and the one-machine key minting:
 
@@ -3173,7 +3173,7 @@ pid does not change, and the room reattaches.
 
 **Expected:** the cutover names exactly the running `atrium2.exe` hub and room pids, the database copies, the
 stage-then-two-renames of `.atrium\bin\atrium.exe`, the scripts swap, and the two start lines in
-`docs/fabric/one-atrium-cutover.md`. Nothing on the machine changes. The deploy scripts find no process to stop until the
+`docs/archive/one-atrium-cutover.md`. Nothing on the machine changes. The deploy scripts find no process to stop until the
 cutover has run, because they match `atrium*.exe` in `.atrium\bin` by subcommand.
 
 ## AX. Untagged follows the sort pill
@@ -7418,7 +7418,7 @@ with `updatedInput` holding the edited command.
 
 The automated coverage is `internal/gitsync`, `internal/link/git*_test.go` and `internal/cli/atrium_rooms_git_test.go`,
 which run real git in temporary directories. These are the parts a person checks on a live hub and room. The design is
-`docs/rnd/git-sync-design.md`.
+`docs/fabric/git-sync-design.md`.
 
 ### GX1. The hub mirrors and a room follows
 
@@ -8848,7 +8848,7 @@ Covered by `TestAViewIsNeverADocument`, `TestAViewTypesWhatTheLinkResolvesTo`, `
 ## IX. The context cycle: limit, ack, clear, wake (r-context-cycle)
 
 Needs the room built from this change and a room restart, and on a hub board the hub rebuilt and restarted too. See
-`docs/context-cycle-plan.md` and `docs/context-cycle-design.md`. Go tests in `internal/daemon/contextcycle_test.go`:
+`docs/runtime/context-cycle-design.md` and `docs/runtime/context-cycle-design.md`. Go tests in `internal/daemon/contextcycle_test.go`:
 `TestTheLimitMidTurnTypesThePromptOncePerTurn`, `TestNoAckNeverClears`, `TestAckThenClearThenWake` (the handoff
 stored on the card), `TestTheCardSwitchAndOverride`, `TestTheHubLimitStartsTheCycle`,
 `TestACardBackUnderItsLimitDropsTheCycle`, `TestReadyIsRefusedWithNoCycleOrNoHandoff`, `TestOnlySupervisedCardsCycle`,

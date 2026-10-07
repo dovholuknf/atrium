@@ -7,7 +7,7 @@ or 'via zrok private share' or 'via openziti'."
 
 ## Why
 
-Code moves between rooms through the hub (`docs/rnd/git-sync-design.md`) and needs no keys. Changing ANOTHER machine
+Code moves between rooms through the hub (`docs/fabric/git-sync-design.md`) and needs no keys. Changing ANOTHER machine
 does: a director on m1mini that has to fix sg3's toolchain, or provision a room on sg4. Today only sg4 holds ssh
 access to the other machines, so that work always goes back to sg4. That is one reason the directors could not all
 move to m1mini on 2026-10-01.

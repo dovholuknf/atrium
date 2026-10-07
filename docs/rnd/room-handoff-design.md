@@ -48,7 +48,7 @@ the home folder are the same.
 - **The hand move** (r-new-move-card, `move.sh`) works between two rooms on one machine: read the card, exit it, launch on B with
   `resume`, then PATCH the fields. It loses `pin_order` (only `POST /v1/tasks/pin-order` sets it, `api/api.go:490`),
   the history, and any link.
-- **`docs/fabric/f-004-two-rooms-design.md` section 3** is a cross-machine move script, accepted and not built:
+- **`docs/archive/f-004-two-rooms-design.md` section 3** is a cross-machine move script, accepted and not built:
   check idle and clean, carry the branch through a narrow hub op, exit, copy the jsonl over ssh, launch with
   `resume`, mark the old card `moved to B~<id>` in its recap, tell the launcher. This design takes its steps and
   makes them one hub operation with no ssh. Its note that the session id is the one from the card's LAST

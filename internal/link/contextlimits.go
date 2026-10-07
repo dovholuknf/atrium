@@ -13,7 +13,7 @@ import (
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
-// The context limit per harness, on the hub's side. See docs/context-cycle-design.md,
+// The context limit per harness, on the hub's side. See docs/runtime/context-cycle-design.md,
 // "How the hub hands the limit to rooms", and internal/api/contextsize.go for the room's.
 //
 // THE HUB OWNS IT. One `claude=200, codex=300` list covers every room, so a write in

@@ -50,7 +50,7 @@ type Room struct {
 	// SelfName is what the room calls itself. Observed, shown beside Name, and
 	// never used for anything.
 	SelfName string `json:"self_name,omitempty"`
-	// Transport is a badge. See docs/fabric/hub-room-requirements.md: ancillary noise
+	// Transport is a badge. See docs/archive/hub-room-requirements.md: ancillary noise
 	// that is worth seeing at a glance and never worth a column.
 	Transport string     `json:"transport"`
 	State     string     `json:"state"`

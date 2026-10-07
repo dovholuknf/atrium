@@ -283,7 +283,7 @@ This is a personal tool. The parts that are missing are missing on purpose, or a
 
 ## Documentation
 
-- `docs/architecture-v2.md` -- the design, the decisions, what is built and what was abandoned.
+- `docs/archive/architecture-v2.md` -- the design, the decisions, what is built and what was abandoned.
 - `docs/user-guide.md` -- walkthroughs, including the hooks.
 - `docs/room-accounts.md`: why a room should not run as an administrator or as you, what atrium warns about, and how to
   set up a standard account on each OS.
@@ -298,7 +298,7 @@ This is a personal tool. The parts that are missing are missing on purpose, or a
   database.
 - `docs/runtime/intake-design.md` -- starting a card from an issue or a ticket, in layers.
 - `docs/runtime/file-transfer-design.md` -- moving files in and out of a session, and what containment means here.
-- `docs/rnd/federation-design-v2.md` -- one board over many machines. Leaves dial out, the forum holds nothing.
+- `docs/archive/federation-design-v2.md` -- one board over many machines. Leaves dial out, the forum holds nothing.
 - `docs/test-plan.md` -- manual scenarios that should pass before tagging a build.
 - `CHANGELOG.md` -- what landed, and when.
 

@@ -4,7 +4,7 @@ Status: built. The direct transport's mutual TLS runs inside every overlay (`int
 without it is allowed or refused with `atrium rooms legacy`.
 
 Origin: research and a recommendation, 2026-09-30, by @rnd. Nothing is built. Answers the open question in decision
-18 of `docs/decisions.md`. Owned by @fabric when it is built.
+18 of `docs/fabric/hub-decisions.md`. Owned by @fabric when it is built.
 
 ## The answer, in one paragraph
 

@@ -1,6 +1,6 @@
 # r-new-hub-remote: the room's stable `hub` remote, and cards pushing to it only
 
-Status: HELD (the pause). Filed by @rnd 2026-10-02 from `docs/rnd/hub-forge-design.md` revision 2, stage 1 (sections
+Status: HELD (the pause). Filed by @rnd 2026-10-02 from `docs/fabric/hub-forge-design.md` revision 2, stage 1 (sections
 5.1 and 5.3). Owner @runtime. Size about 1.5 days. Needs @fabric's `f-new-hub-receive`.
 
 - A stable forwarder on the agent listener: `/git/hub/<host>/<owner>/<repo>.git` (and, in stage 3,

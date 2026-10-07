@@ -282,7 +282,7 @@ delivers a launch, a prompt or a peer message, it runs the gates that match the 
 on stdin (card, tags, initiator, sender handle, queued rows, requested runner) and reads `{"decision":"proceed"|
 "wait"|"reject","reason":"...","until":"..."}` from stdout. Output is bounded while being read, as sources already
 do. A gate that fails, times out or prints nonsense is a **wait with the failure as its reason** and never a
-proceed, and never a crash, which is bb's fail-closed rule and `docs/architecture-v2.md`'s no-degraded-mode rule
+proceed, and never a crash, which is bb's fail-closed rule and `docs/archive/architecture-v2.md`'s no-degraded-mode rule
 saying the same thing. Three failures switch the gate off with the reason on its row, exactly as sources do
 (`CLAUDE.md`, resilience 6). The human's "send now" bypasses it and says so.
 

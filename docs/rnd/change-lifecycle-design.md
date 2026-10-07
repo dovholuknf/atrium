@@ -11,7 +11,7 @@ changes.
 Builds on:
 - `docs/rnd/change-record-design.md`, one record per branch or PR, with facts pinned to a sha;
 - `docs/rnd/review-on-atrium-design.md`, the standing reviewers;
-- `docs/rnd/hub-forge-design.md` revision 2, where finished means pushed to the hub;
+- `docs/fabric/hub-forge-design.md` revision 2, where finished means pushed to the hub;
 - `docs/rnd/operator-focus.md` 2.9, the one-step-at-a-time screen;
 - `docs/rnd/pr-review-story.md` section 4, the walk format and `walk.txt`.
 

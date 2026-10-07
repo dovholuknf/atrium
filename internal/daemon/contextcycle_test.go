@@ -14,7 +14,7 @@ import (
 )
 
 // The context cycle: the card passes its limit, atrium asks for a handoff once per
-// turn until `atrium ready`, then clears and wakes it. See docs/context-cycle-design.md.
+// turn until `atrium ready`, then clears and wakes it. See docs/runtime/context-cycle-design.md.
 
 // cycleCard is a card atrium supervises, a person's own (no launcher), with a
 // transcript at the given size.

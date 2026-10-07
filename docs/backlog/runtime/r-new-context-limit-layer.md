@@ -25,7 +25,7 @@ The context figure on the row needs a limit to measure against, and the limit di
 
 ## @runtime director, 2026-10-04: incomplete, not dispatched
 
-This item is stage LL of `docs/rnd/context-limit-ownership-design.md` (folded in by fbab22f6). LL is layer 2 of the
+This item is stage LL of `docs/archive/context-limit-ownership-design.md` (folded in by fbab22f6). LL is layer 2 of the
 one threshold function, and the row bar reads `threshold_k`, both of which stage L0 creates. L0 is not built on
 claude/main 7a0522cc (no `threshold_k` in the card details, the 70% and 10% factors still in place). So LL cannot be
 built on its own. Question for clint and the orchestrator: queue L0 first (S, needs a room deploy and a real-card

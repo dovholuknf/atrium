@@ -23,7 +23,7 @@ import (
 )
 
 // The drawer routes: reading a review's findings, editing one, marking the walk,
-// and launching the walker. docs/rnd/pulls-api.md is the contract.
+// and launching the walker. docs/review/pulls-api.md is the contract.
 //
 // Every file is reached through internal/safepath against the row's run folder,
 // and the run folder itself has to be inside the reviews root. No request carries

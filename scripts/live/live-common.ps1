@@ -3,7 +3,7 @@
 #   . "$PSScriptRoot\live-common.ps1"
 #
 # These are this machine's deploy scripts, kept in the repo so they are reviewed and versioned. They are deployed by
-# copying them over C:\Users\claude\.atrium2\scripts\. See docs/fabric/one-atrium-cutover.md.
+# copying them over C:\Users\claude\.atrium2\scripts\. See docs/archive/one-atrium-cutover.md.
 #
 # THE ONE BINARY IS ALSO THE HOOK BINARY. C:\Users\claude\.atrium\bin\atrium.exe is what every hook line in
 # settings.json runs, several times a second, as well as the atrium (`run --no-room`) and the room (`room`). Two rules

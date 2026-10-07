@@ -220,7 +220,7 @@ func serveAtrium(f atriumFlags, up atriumUp) error {
 	}
 	// THE HUB'S REPOSITORIES, mirrored from the operator's checkouts into bare copies under
 	// the hub's directory and served to rooms on the `git` link kind and nowhere else. Set
-	// here so the welcome says Git. See internal/gitsync and docs/rnd/git-sync-design.md.
+	// here so the welcome says Git. See internal/gitsync and docs/fabric/git-sync-design.md.
 	gitHub := &gitsync.Hub{Dir: keys.Dir, Repos: store.GitRepos, Rooms: h.GitRooms(), SelfHost: hostname()}
 	// The hub's own store (git.store), read on every use, so a change needs no restart.
 	gitHub.StoreRoot = func() string {

@@ -8,10 +8,10 @@ and builds the missing parts.
 
 Read for this design:
 - `docs/rnd/scm-forge-design.md` (the forge, placement, the claim, and clint's answers of 2026-10-04)
-- `docs/rnd/pulls-view-design.md` and `docs/rnd/pulls-api.md` (the PR row, the runner, the routes)
+- `docs/rnd/pulls-view-design.md` and `docs/review/pulls-api.md` (the PR row, the runner, the routes)
 - `docs/rnd/review-tab-design.md` (the walk, the walk shape, `walk.txt`, posting option A)
 - `docs/review/review-memory-design.md` (clint's standing rules for a walk)
-- `docs/rnd/hub-forge-answers.md` (the hub is a router, not a store)
+- `docs/fabric/hub-forge-design.md` (the hub is a router, not a store)
 - the brief of `r-hub-forge` on m1mini (rooms never call a forge, the hub does)
 - the code: `internal/daemon/prrunner.go`, `internal/api/prs.go`, `internal/api/prsdrawer.go`, `internal/link/prclaim.go`,
   `internal/link/prworktreeroute.go`, `internal/api/web/js/fixtures.js`, `walk.js`, `pulls.js`

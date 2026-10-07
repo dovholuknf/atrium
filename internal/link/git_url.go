@@ -16,7 +16,7 @@ import (
 
 // The lookup a card calls for the URL to fetch code that is not in its cwd, as the board API and as a control tool.
 // The answer is built in internal/gitsync/lookup.go, and both doors here call it. See
-// docs/rnd/hub-forge-design.md section 4.
+// docs/fabric/hub-forge-design.md section 4.
 //
 //	GET /_hub/git/url?repo=<host/owner/repo | owner/repo | name>[&branch=<b>][&room=<r>]
 //

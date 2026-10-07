@@ -161,7 +161,7 @@ Not a plan. A list of what the question costs, so nobody starts it by pointing t
 4. **An answer for the pty.** There is no answer that keeps today's behaviour. A terminal belongs to the logon
    session of the process that opened it, so a daemon elsewhere can show you a card and never its terminal.
 
-Read `docs/rnd/federation-design-v2.md` before starting any of it. One board over many machines was asked and
+Read `docs/archive/federation-design-v2.md` before starting any of it. One board over many machines was asked and
 answered, and the answer was that the machines do NOT share a database: leaves dial out and the forum holds
 nothing. If the requirement is "one board, several machines", that document is the design. If it is "look at the
 board without disturbing the one I work in", it is this one, and it is already built.
