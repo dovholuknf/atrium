@@ -1000,7 +1000,7 @@ async function editRecogniser(id, room) {
     // urls a more specific one was answering.
     rank: 100,
     kind: "", title: "", tags: "", cwd: "", prompt: "", branch: "", window: "", theme: "",
-    fetch: "", fetch_args: [], fetch_cwd: ""
+    fetch: "", fetch_args: [], fetch_cwd: "", default_repo: ""
   };
   const dlg = document.getElementById("recogniser");
   dlg.dataset.editing = r.id;
@@ -1023,6 +1023,7 @@ async function editRecogniser(id, room) {
   document.getElementById("r-window").value = r.window || "";
   document.getElementById("r-theme").value = r.theme || "";
   document.getElementById("r-kind").value = r.kind || "";
+  document.getElementById("r-default-repo").value = r.default_repo || "";
   document.getElementById("r-fetch").value = r.fetch || "";
   document.getElementById("r-fetch-args").value = (r.fetch_args || []).join("\n");
   document.getElementById("r-fetch-cwd").value = r.fetch_cwd || "";
@@ -1062,7 +1063,8 @@ async function saveRecogniser() {
     window: document.getElementById("r-window").value.trim(),
     theme: document.getElementById("r-theme").value.trim(),
     kind: document.getElementById("r-kind").value.trim(),
-    fetch: document.getElementById("r-fetch").value.trim(),
+    default_repo: document.getElementById("r-default-repo").value.trim(),
+    fetch:document.getElementById("r-fetch").value.trim(),
     // Split on lines and never on spaces, the same rule a source's arguments
     // follow. A path with a space in it is one line and stays one argument.
     fetch_args: document.getElementById("r-fetch-args").value

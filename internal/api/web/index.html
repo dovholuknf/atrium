@@ -2528,6 +2528,12 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
         <span class="hintline">Recorded as where the work came from and drawn as a badge. Atrium
           never interprets it.</span>
       </div>
+      <div class="field">
+        <label class="eyebrow" for="r-default-repo">default repo</label>
+        <input type="text" id="r-default-repo" spellcheck="false" placeholder="github.com/openziti/ziti">
+        <span class="hintline">host/org/repo, empty for a scratch folder. Where a link that names no
+          repo (a ticket, a topic) opens its worktree.</span>
+      </div>
       <div class="field span">
         <label class="eyebrow" for="r-prompt">first instruction</label>
         <textarea id="r-prompt" rows="3" spellcheck="false"
@@ -3110,6 +3116,15 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
         <button class="go" onclick="openPickRepo('l-cwd')">repo</button>
         <button onclick="openBrowse()">browse</button>
       </div>
+    </div>
+    <!-- Only for a link that names no repo, a ticket or a topic. The open makes a worktree of the repo picked here, or
+         a scratch folder of the card's own for "no repo". Nothing is read off the ticket to choose it. Filled by
+         fillLaunchRepo in js/fixtures.js. -->
+    <div class="field" id="l-repo-field" hidden>
+      <label class="eyebrow" for="l-repo">repo</label>
+      <select id="l-repo"></select>
+      <span class="hintline">The worktree opens in this repo. No repo starts the card in an empty
+        folder of its own.</span>
     </div>
     <!-- WITH THE DIRECTORY, because it is an answer to the directory question
          rather than an option about something else: ticking it says "I am not
