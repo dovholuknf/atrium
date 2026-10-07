@@ -158,21 +158,27 @@ func (c *controlMCP) publishHandler(ctx context.Context, req *mcp.CallToolReques
 		if set.Caps.Other > limit {
 			limit = set.Caps.Other
 		}
+		refuseName := func(msg string) error {
+			return &docsRefusal{Status: http.StatusUnprocessableEntity, Rule: hubstore.RuleFileName,
+				Msg: msg + ". a document is readable by everyone past the board's password. this check is a " +
+					"speed bump and not a guarantee"}
+		}
+		// The name that was asked for is refused before the room is asked, so the answer does not hang on whether
+		// the file is there: `.Env` is `.env` on Windows and no file at all on Linux, and both are refused.
+		if hubstore.SecretFileName(in.Path) {
+			return nil, out, refuseName("that file is refused by name (" + path.Base(strings.ReplaceAll(in.Path, `\`, "/")) + ")")
+		}
 		var rel string
 		if data, rel, err = c.readCardFile(ctx, room, card, strings.TrimSpace(in.Path), limit); err != nil {
 			return nil, out, err
 		}
-		// THE NAME CHECK, on what the path resolved to AND on what was asked, case-insensitively.
-		for _, n := range []string{rel, in.Path} {
-			if hubstore.SecretFileName(n) {
-				msg := "that file is refused by name (" + path.Base(rel) + ")"
-				if !strings.EqualFold(path.Base(rel), path.Base(strings.ReplaceAll(in.Path, `\`, "/"))) {
-					msg = fmt.Sprintf("%s is a link to %s, which is refused by name", in.Path, rel)
-				}
-				return nil, out, &docsRefusal{Status: http.StatusUnprocessableEntity, Rule: hubstore.RuleFileName,
-					Msg: msg + ". a document is readable by everyone past the board's password. this check is a " +
-						"speed bump and not a guarantee"}
+		// THE NAME CHECK on what the path resolved to, case-insensitively: a link defeats the one above.
+		if hubstore.SecretFileName(rel) {
+			msg := "that file is refused by name (" + path.Base(rel) + ")"
+			if !strings.EqualFold(path.Base(rel), path.Base(strings.ReplaceAll(in.Path, `\`, "/"))) {
+				msg = fmt.Sprintf("%s is a link to %s, which is refused by name", in.Path, rel)
 			}
+			return nil, out, refuseName(msg)
 		}
 		name = path.Base(rel)
 	}

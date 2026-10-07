@@ -57,7 +57,8 @@ func TestPushToHubRefusesWhenAGlobalPushInsteadOfSendsTheForwarderElsewhere(t *t
 	tok, _ := f.cards.Mint("C1")
 
 	// Another server that would take the push, if it were sent there.
-	elsewhere := t.TempDir()
+	// Forward slashes: a backslash in a .gitconfig section name is an escape, so a Windows path loses all of them.
+	elsewhere := filepath.ToSlash(t.TempDir())
 	git(t, elsewhere, "init", "-q", "--bare", "-b", "main")
 	home := t.TempDir()
 	t.Setenv("HOME", home)

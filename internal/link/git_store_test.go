@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 	"testing"
@@ -204,6 +205,9 @@ func TestInitAnswersTheExactJSONAndRefusesTheHostile(t *testing.T) {
 	}
 }
 
+// createdField is a repo's created time in GET /_hub/git/repos, with the comma after it.
+var createdField = regexp.MustCompile(`"created":"\d{4}-\d\d-\d\dT[^"]*",`)
+
 func TestReposIsOpenLikeGrowlsAndExactlyShaped(t *testing.T) {
 	x := newStoreProxy(t)
 	// Empty: exactly this, from anywhere.
@@ -220,6 +224,11 @@ func TestReposIsOpenLikeGrowlsAndExactlyShaped(t *testing.T) {
 		t.Fatal(code)
 	}
 	code, out := x.call("GET", "/_hub/git/repos", "", offLoopback)
+	// created is the store's marker file time, which the test did not pin either, so it is checked apart too.
+	if !createdField.MatchString(out) {
+		t.Fatalf("no created time: %s", out)
+	}
+	out = createdField.ReplaceAllString(out, "")
 	// main.at is the time of the forge's commit, which the test did not pin, so it is checked apart.
 	if code != http.StatusOK || !strings.HasPrefix(out, `{"repos":[{"host":"github","owner":"o","repo":"r",`+
 		`"url":"git@hub.atrium:o/r.git","path":"/git/hub/github/o/r.git","main":{"sha":"`+x.sha+`","at":"`) ||
@@ -235,6 +244,7 @@ func TestReposIsOpenLikeGrowlsAndExactlyShaped(t *testing.T) {
 		t.Fatal(code)
 	}
 	_, out = x.call("GET", "/_hub/git/repos", "", "")
+	out = createdField.ReplaceAllString(out, "")
 	if !strings.Contains(out, `{"host":"gitlab.com","owner":"g","repo":"p","url":"git@hub.atrium:gitlab.com/g/p.git",`+
 		`"path":"/git/hub/gitlab.com/g/p.git","main":{"sha":"","at":null},"branches":[]}`) {
 		t.Fatalf("empty repo = %s", out)
