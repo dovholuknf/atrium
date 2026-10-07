@@ -383,6 +383,17 @@ offline, cards that are idle doing nothing usage wwarnings all that sorta shit"
 - "Idle" in the report starts at 3 days without a turn. The report is its own item, `r-daily-housekeeping-report`,
   since it is wider than this design. This design feeds it.
 
+### Q8. A card's own overlay
+
+clint, 2026-10-07: "i sorta feel like we should have a bunchof instances just ready to go whenever. turn them on, use
+them, abuse them, turn them off again. i feel like 'a' covers that? it can do anything it wants. the challenge will be
+ziti-edge-tunnel/tunnelers that need sudo/admin privs those will constantly demand admin intervention"
+
+- **(a): on demand.** A card brings up an overlay when it wants one, as many as it wants, uses and abuses them, and
+  turns them off. Each is in the card's inventory and finish removes any left. No action starts one at paste.
+- **The hard part is elevation.** A tunneler in tun mode needs admin or root, and asking clint each time is not
+  acceptable. How that is solved is Q9.
+
 ## Open for clint
 
 1. Answered (Interview, Q1).
@@ -390,6 +401,6 @@ offline, cards that are idle doing nothing usage wwarnings all that sorta shit"
 3. Answered (Interview, Q4).
 4. Answered (Interview, Q6).
 5. Answered (Interview, Q7).
-6. A card's overlay: started when the agent asks, or at paste for some kinds?
+6. Answered (Interview, Q8). Elevation for tunnelers is Q9.
 7. "From wherever I am": does `atrium open <url>` in a terminal cover it, or is an OS-level hotkey wanted?
 8. A cost budget per card: a warning only, or a stop?
