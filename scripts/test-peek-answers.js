@@ -143,6 +143,21 @@ const server = http.createServer((req, res) => {
     const clock = new Date(QAT1).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false });
     if (m2 !== `re ${clock} Q2 (Keep the old flag): keep it\nQ1 (Which branch): main`) fail("the second message was: " + JSON.stringify(m2));
     await shoot("peek-answers-after");
+
+    // THE TERMINALS TAB, where the work is done: its row wears the chip, and the chip opens the same peek and flyout.
+    card.seen = { unseen: false, answered: false, questions_at: QAT2, open_questions: ["Which branch?"] };
+    card.answer_drafts = JSON.stringify([{ at: QAT2, qs: ["Which branch?"], a: ["main"] }]);
+    await p.click('.tab[data-view="terms"]');
+    await refresh();
+    const row = '#term-list .card.tab[data-id="t~q1"]';
+    await p.waitForSelector(row, { state: "attached", timeout: 10000 });
+    if (!await p.locator(row + " .chip.mail").count()) fail("the Terminals tab row should wear the mail chip");
+    await shoot("peek-answers-terminals");
+    await p.evaluate(sel => document.querySelector(sel + " .chip.mail").click(), row);
+    await p.waitForSelector(".peek.on .peek-qa .qa-q");
+    await p.click(".peek-qa .qa-q");
+    await p.waitForSelector(".qa-fly.on textarea");
+    if (await p.inputValue(".qa-fly textarea") !== "main") fail("the flyout opened from the Terminals tab lost the draft");
   } catch (e) {
     fail(String(e && e.stack || e));
   }
