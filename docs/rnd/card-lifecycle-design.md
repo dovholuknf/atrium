@@ -357,12 +357,23 @@ A stash is atrium's word, not `git stash`. It holds work off every workspace: pu
 fetched back from any room. The card's history names it, and a re-paste of the same link offers to start the new card
 from the stash instead of the PR or default branch.
 
+### Q6. A link that names no repo (Zendesk, Discourse)
+
+clint, 2026-10-07: "default it to ziti and only activate this when i paste and do the shift-enter thing?"
+
+- **Enter** starts the card at once in a `zendesk-<N>` (or `discourse-<N>`) worktree of the action's default repo.
+  The seeded Zendesk and Discourse actions default to `github.com/openziti/ziti`. The default is a field on the
+  action, edited in settings.
+- **Shift+Enter** opens the same box as Q2, which for these actions also shows the repo: the default selected, recent
+  repos listed, and "no repo" (a scratch folder of the card's own).
+- Section 5's "ask" is replaced by this. Nothing is inferred from the ticket's text.
+
 ## Open for clint
 
 1. Answered (Interview, Q1).
 2. Answered (Interview, Q3).
 3. Answered (Interview, Q4).
-4. A Zendesk or Discourse link: ask for a repo, or start with none?
+4. Answered (Interview, Q6).
 5. An idle card: how many days before the reminder, and is a merged PR an offer to finish?
 6. A card's overlay: started when the agent asks, or at paste for some kinds?
 7. "From wherever I am": does `atrium open <url>` in a terminal cover it, or is an OS-level hotkey wanted?
