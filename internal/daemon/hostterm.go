@@ -403,6 +403,12 @@ func (d *Daemon) reattachRuns() {
 		}
 		buf := ringFromAttach(att, api.ScrollbackBytes(d.st))
 		if att.Info.Exited {
+			// Nothing follows an exited run, and its events must still be read: the attachment's pump blocks on
+			// every one it holds and only ends on a close it cannot reach while it is stuck sending.
+			go func() {
+				for range att.Events {
+				}
+			}()
 			exited = append(exited, gone{row, att.Info, att, buf})
 			continue
 		}

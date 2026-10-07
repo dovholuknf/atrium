@@ -56,7 +56,10 @@ step "go build"
 check "go build" go build -o build.claude/ ./...
 
 step "go test"
-check "go test" go test ./...
+# 20 minutes, not go test's 10. internal/daemon is about 1600 tests and takes
+# 550 to 600 s on a windows-latest runner, so the default killed it mid-run and
+# the dump read like a hang when nothing was stuck. A real hang still ends here.
+check "go test" go test -timeout 20m ./...
 
 step "govulncheck"
 # A vulnerability in the standard library or a dependency is found by this and

@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 
@@ -97,8 +98,10 @@ func spawnDirect(t *testing.T, d *Daemon, taskID, kind, script string) string {
 		t.Fatal(err)
 	}
 	sh, argv := scriptArgv(t, script)
+	// The environment the daemon's own launch gives a runner. Without TERM a shell like pwsh writes a different
+	// prologue, and a test comparing this run with a live one compares two terminals.
 	sp, err := cl.Spawn(ptyhost.SpawnArgs{
-		ID: taskID, Kind: kind, Argv: append([]string{sh}, argv...), Cwd: t.TempDir(),
+		ID: taskID, Kind: kind, Argv: append([]string{sh}, argv...), Env: declareATerminal(os.Environ()), Cwd: t.TempDir(),
 		Cols: 100, Rows: 30, Ring: 1 << 20,
 	})
 	if err != nil {
@@ -349,6 +352,12 @@ func TestACrashBetweenFilingAndCollectingFilesNothingTwice(t *testing.T) {
 	if n := deadChanges(t, d2, task.ID); n != 1 {
 		t.Fatalf("the card went dead %d times", n)
 	}
+	// The exited run's attachment ends with the link. It used to wait forever on an event nobody read.
+	_ = d2.Close()
+	hostWait(t, 5*time.Second, "every attachment's pump to end", func() bool {
+		buf := make([]byte, 1<<20)
+		return !bytes.Contains(buf[:runtime.Stack(buf, true)], []byte("ptyhost.(*evq).pump"))
+	})
 }
 
 // A runner that dies inside the startup window while no daemon is connected must leave the card as the live path
