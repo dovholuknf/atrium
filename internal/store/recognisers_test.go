@@ -229,6 +229,15 @@ func TestFetchedTextDoesNotBreakOutOfItsField(t *testing.T) {
 	}
 }
 
+// FillPrompt takes the captures only: a fetched fact's placeholder is blank, an unknown one stays.
+func TestFillPromptTakesOnlyTheCaptures(t *testing.T) {
+	r := &Recogniser{ID: "x", Prompt: "Work on {url} in {repo}.\n\n{body}{other}"}
+	got := r.FillPrompt(map[string]string{"url": "https://h/o/r/issues/1", "repo": "r"}, map[string]bool{"body": true})
+	if got != "Work on https://h/o/r/issues/1 in r.\n\n{other}" {
+		t.Fatalf("prompt: %q", got)
+	}
+}
+
 // A capture group called `url` does not get to redefine what {url} means, or
 // every prompt built on it would point somewhere the operator did not paste.
 func TestURLAlwaysMeansTheURL(t *testing.T) {

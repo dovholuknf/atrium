@@ -30,7 +30,7 @@
     "cwd": "D:/worktrees/github/{org}/{repo}/issue-{num}",
     "branch": "issue-{num}",
     "window": "active-work",
-    "prompt": "Work on {url}.\n\n{body}",
+    "prompt": "Work on {url}.",
     "fetch": "forge",
     "fetch_args": [
       "issue"

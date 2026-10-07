@@ -515,6 +515,22 @@ func (r *Recogniser) Fill(vars map[string]string) *Resolved {
 	return out
 }
 
+// FillPrompt fills the prompt from the URL's captures only. LINKED TEXT NEVER REACHES A PROMPT (design
+// docs/rnd/card-lifecycle-design.md section 11): an issue body is written by anybody, and a prompt is what the runner
+// obeys. A placeholder naming a fetched fact becomes "", and anything else stays `{name}`, as Fill leaves it.
+func (r *Recogniser) FillPrompt(captures map[string]string, fetched map[string]bool) string {
+	return placeholder.ReplaceAllStringFunc(r.Prompt, func(m string) string {
+		key := m[1 : len(m)-1]
+		if v := captures[key]; v != "" {
+			return v
+		}
+		if fetched[key] {
+			return ""
+		}
+		return m
+	})
+}
+
 // FillArgv substitutes into a command and its arguments.
 //
 // Separate from `Fill` because an argv is not a card field: nothing is
