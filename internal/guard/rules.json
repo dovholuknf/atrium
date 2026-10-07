@@ -1,0 +1,189 @@
+{
+  "rules": [
+    {
+      "id": "drive-root",
+      "check": "drive-root",
+      "tools": ["shell", "Write", "Edit", "NotebookEdit"],
+      "reason": "Do not create folders at the root of a drive. Put it under D:\\tmp instead - that directory exists and is the place for scratch, demo and test output that does not belong in the project tree (build.claude/ or similar). This applies to a script's default output path too: running the script is the same act as writing the files directly, so change the default rather than passing an override. The path '{name}' does not exist, so this would create it."
+    },
+    {
+      "id": "only-atrium-subagents",
+      "check": "subagent",
+      "tools": ["Task", "Agent"],
+      "params": {"env": "ATRIUM_ONLY_SUBAGENTS", "allow": ["explore", "plan"]},
+      "reason": "Plain Claude subagents are off here (ATRIUM_ONLY_SUBAGENTS). Run substantive agent work as a REAL atrium session instead, so it is watchable on the board and kept in history. HARD RULE, check FIRST: call the atrium-control MCP tool atrium_peers and count the running sessions YOU launched (sessions the user started do not count); if you launched 10 or more (the concurrency cap), do NOT launch another -- wait for one to finish or ask clint, do not spawn past the cap. Otherwise: (1) make/prepare the working directory first -- it must already exist; (2) call atrium_launch with cwd, a short title, a one-line why, and a FULL prompt containing the ENTIRE task (the new session inherits NONE of this conversation's context, so spell it all out); (3) use the returned card id with atrium_task / atrium_say to follow up. If a normal one-shot subagent is genuinely wanted this session, the user can set ATRIUM_ONLY_SUBAGENTS=0 and retry."
+    },
+    {
+      "id": "no-coauthor",
+      "check": "phrase",
+      "tools": ["shell"],
+      "params": {
+        "phrase": "co-authored-by",
+        "except": ["grep", "egrep", "fgrep", "rg", "ag", "ack", "select-string", "sls", "findstr", "git grep", "git log"]
+      },
+      "reason": "Never add a Co-Authored-By trailer to a commit message or PR description, and never suggest one. No attribution or co-author line of any kind, ever. This is absolute."
+    },
+    {
+      "id": "go-build-output",
+      "check": "go-build",
+      "tools": ["shell"],
+      "params": {"dir": "build.claude"},
+      "reason": "go build must write to build.claude. Add -o build.claude/ (directory form works for ./... too)."
+    },
+    {
+      "id": "git-alias-config",
+      "check": "git-alias-config",
+      "tools": ["shell"],
+      "reason": "claude may not create or unset git aliases (an alias can hide a blocked verb or run a shell command). Hand it to the user."
+    },
+    {
+      "id": "git-global-option",
+      "check": "git-global-option",
+      "tools": ["shell"],
+      "params": {"options": ["-c", "--config-env", "--exec-path"]},
+      "reason": "'git {name}' sets git configuration for one command, and configuration can run a program (core.pager, core.sshCommand, http.extraHeader...). Run the git command without it, or hand it to the user."
+    },
+    {
+      "id": "git-alias",
+      "check": "git-alias",
+      "tools": ["shell"],
+      "reason": "git alias '{name}' is a shell alias ('!...') or a chain of aliases that does not end -- claude may not run it. Run the real git verb instead, or hand it to the user."
+    },
+    {
+      "id": "git-unknown-subcommand",
+      "check": "git-unknown-subcommand",
+      "tools": ["shell"],
+      "params": {"verbs": ["push", "pull", "fetch", "clone", "post-checkout", "pre-push"]},
+      "reason": "'git {name}' is not a git command, or is an alias claude cannot resolve here, or an external git program, or a git lfs verb that reaches a remote. Any of those could reach a remote unseen, so it is blocked. Use the real git verb, or hand it to the user."
+    },
+    {
+      "id": "git-remote",
+      "check": "git-remote",
+      "tools": ["shell"],
+      "params": {"verbs": ["push", "pull", "fetch"], "remotes": ["hub", "atrium-hub"]},
+      "reason": "claude never pushes, pulls, or fetches -- no git command may reach a remote. Hand it to the user. The one exception is atrium's hub remote: exactly 'git push hub <branch>', 'git push -u hub <branch>' or 'git fetch hub', optionally after one 'cd <dir>' (newline or &&), and only when that remote points at this room's atrium forwarder."
+    },
+    {
+      "id": "git-plain-checkout",
+      "check": "git-plain-checkout",
+      "tools": ["shell"],
+      "reason": "Use 'git switch claude/<branch>' to move branches. Plain 'git checkout' is blocked here (ambiguous with file restore, and claude stays on claude/* branches)."
+    },
+    {
+      "id": "git-branch-name",
+      "check": "git-branch-name",
+      "tools": ["shell"],
+      "params": {"prefix": "claude/"},
+      "reason": "claude may only create, switch to, delete or rename claude/* branches. '{name}' is not one."
+    },
+    {
+      "id": "git-current-branch",
+      "check": "git-current-branch",
+      "tools": ["shell"],
+      "params": {"prefix": "claude/", "verbs": ["commit", "add", "rebase", "reset", "restore", "clean"]},
+      "reason": "claude may only run that git verb on a claude/* branch ({name}). Switch to a claude/* branch, or hand the command to the user."
+    },
+    {
+      "id": "compound-cd",
+      "check": "compound-cd",
+      "tools": ["shell"],
+      "reason": "Do not use compound 'cd /path && command' patterns. Run 'cd /path' as a standalone command first, then run subsequent commands without cd prefixes."
+    },
+    {
+      "id": "no-find",
+      "check": "command",
+      "tools": ["shell"],
+      "params": {"names": ["find"]},
+      "reason": "Do not use 'find' in bash. Use glob patterns instead."
+    },
+    {
+      "id": "no-perl",
+      "check": "command",
+      "tools": ["shell"],
+      "params": {"names": ["perl"]},
+      "reason": "Do not use perl. Use bash (or the dedicated file/search/edit tools) instead."
+    },
+    {
+      "id": "no-python",
+      "check": "command",
+      "tools": ["shell"],
+      "params": {"names": ["python", "python3"]},
+      "reason": "Do not use python unless bash or PowerShell genuinely cannot solve the problem. Prefer bash, pwsh, or the dedicated file/search/edit tools. If python is actually required for this, say why and ask the user first."
+    },
+    {
+      "id": "docker-env-prefix",
+      "check": "env-prefix",
+      "tools": ["shell"],
+      "params": {"names": ["docker"]},
+      "reason": "Do not prefix inline env vars before docker (e.g. 'FOO=bar docker ...'). Pass env explicitly: 'docker run -e VAR=val', a compose block, or '--env-file'."
+    },
+    {
+      "id": "bash-semicolon",
+      "check": "semicolon",
+      "tools": ["Bash"],
+      "reason": "Do not chain multiple commands with ';'. Run one command at a time."
+    },
+    {
+      "id": "bash-redirect",
+      "check": "redirect-to-file",
+      "tools": ["Bash"],
+      "reason": "Use tee instead of > or >> for output redirection."
+    },
+    {
+      "id": "cmake-preset",
+      "check": "cmake-preset",
+      "tools": ["shell"],
+      "reason": "This repo uses CMake presets -- run cmake THROUGH the preset so its environment (VCPKG_BINARY_SOURCES, the shared vcpkg installed dir) applies. A bare cmake reconfigures with the shell env, misses the vcpkg binary cache, and rebuilds every port from source. Configure: cmake --preset <name> (e.g. cwdming). Build: cmake --build --preset <name> (or cmake --build <preset-build-dir> only if you are certain no reconfigure will trigger)."
+    },
+    {
+      "id": "gh-pr-comments",
+      "check": "gh-api",
+      "tools": ["shell"],
+      "decision": "allow",
+      "params": {"patterns": ["^repos/[^/\\s]+/[^/\\s]+/pulls/\\d+/comments\\b"]},
+      "reason": "gh api .../pulls/<n>/comments is the correct endpoint for inline review comments."
+    },
+    {
+      "id": "gh-api-get",
+      "check": "gh-api",
+      "tools": ["shell"],
+      "reason": "gh api calls must start with: gh api -X GET"
+    },
+    {
+      "id": "vcpkg-files",
+      "check": "path",
+      "tools": ["Write", "Edit"],
+      "params": {"patterns": ["/(CMakeUserPresets|CMakePresets|vcpkg)\\.json$", "/triplets/[^/]+\\.cmake$", "/ports/.*/(portfile\\.cmake|vcpkg\\.json)$"]},
+      "reason": "Do not modify CMake presets, vcpkg.json, triplet files, or overlay ports without asking first. These can trigger expensive vcpkg rebuilds. Ask the user before editing."
+    },
+    {
+      "id": "no-em-dash",
+      "check": "content",
+      "tools": ["Write", "Edit"],
+      "params": {"contains": "\u2014"},
+      "reason": "Never use the em-dash character (U+2014). Rewrite the sentence: split it, or use a comma, parentheses, or a colon."
+    },
+    {
+      "id": "no-css-important",
+      "check": "content",
+      "tools": ["Write", "Edit"],
+      "params": {"contains": "!important", "patterns": ["\\.(css|scss|sass|less)$"]},
+      "reason": "Never add !important to CSS rules. Rework the selector specificity instead."
+    },
+    {
+      "id": "default-env",
+      "check": "file-name",
+      "tools": ["Write", "Edit"],
+      "decision": "allow",
+      "params": {"names": ["default.env"]},
+      "reason": "default.env is a non-secret template, so writing it is allowed."
+    },
+    {
+      "id": "no-env-files",
+      "check": "file-name",
+      "tools": ["Write", "Edit"],
+      "params": {"names": [".env", ".env.*", "*.env"]},
+      "reason": "Do not write .env files (they hold secrets). Only default.env may be written."
+    }
+  ]
+}
