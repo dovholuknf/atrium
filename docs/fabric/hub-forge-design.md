@@ -102,9 +102,13 @@ Revision 1's @review findings still apply where their parts remain:
   - or on a room's first push of a repo the hub does not have, when the push setting allows it (question 3);
   - or on a card's first ask for a branch of a repo the hub does not have, when the forge has that branch (3.5).
 - **Its `main` is seeded once.** At creation, the hub fetches the forge's default branch into `main`, for a public
-  repo. A private repo is created empty, and the operator pushes `main`. The seed is not repeated: after it, `main`
-  moves only by an operator push (3.2). The only other fetches from a forge are a PR's head (`refs/atrium/pr/`) and
-  the branches cards ask for (`refs/forge/`, 3.5). The second never writes `main` or anything under `refs/heads`.
+  repo. A private repo is created empty, and the operator pushes `main`. The seed is not repeated, and `main` went
+  stale behind its forge, so since 2026-10-07 (f-hub-mirror-main-goes-stale) it follows the forge on the same refresh
+  as 3.5's branches: the forge's default branch is fetched into `refs/forge/<default>`, and `main` fast-forwards to it.
+  It follows a forge's rewrite only while the push log has no operator push of `main` (a room can never push `main`).
+  An operator's `main` the forge does not have stays, and `forge/<default>` serves the forge's. The other fetches from
+  a forge are a PR's head (`refs/atrium/pr/`) and the branches cards ask for (`refs/forge/`, 3.5), and neither writes
+  anything under `refs/heads`.
 - For atrium, the existing `git_repos` entry and its `claude/main` mirror stay as they are (git-sync stage 1).
 
 ### 3.2 Receiving a push

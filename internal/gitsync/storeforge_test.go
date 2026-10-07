@@ -19,6 +19,8 @@ type forgeFix struct {
 	*recvFix
 	forge *forge
 	main  string
+	// down makes the forge one that cannot be reached.
+	down *atomic.Bool
 }
 
 const forgeRepo = "github/o/r"
@@ -28,13 +30,13 @@ const forgeRepo = "github/o/r"
 func newForgeFix(t *testing.T) *forgeFix {
 	t.Helper()
 	f := newForge(t, "main")
-	x := &forgeFix{forge: f}
+	x := &forgeFix{forge: f, down: &atomic.Bool{}}
 	x.main = f.push(t, "main", "a.txt", "one", 1000)
 	x.recvFix = newRecv(t, func(h *Hub) {
 		s := h.Store()
 		s.Protocols = "file"
 		s.Forge = func(ref Ref) string {
-			if ref.Name() == forgeRepo {
+			if ref.Name() == forgeRepo && !x.down.Load() {
 				return f.dir
 			}
 			return filepath.Join(filepath.Dir(f.dir), "no-such.git")
@@ -194,7 +196,7 @@ func TestAMissingBranchIsStillNotFound(t *testing.T) {
 	if a.State != URLNotFound || !strings.Contains(a.Note, "the forge has no branch `nope` either") {
 		t.Fatalf("answer = %+v", a)
 	}
-	if refs := x.refsOn(forgeRepo); strings.Contains(refs, ForgeRefPrefix) {
+	if refs := x.refsOn(forgeRepo); strings.Contains(refs, ForgeRefPrefix+"nope") {
 		t.Fatalf("refs = %s", refs)
 	}
 	// A branch name that is no ref is never given to git as one.
@@ -257,6 +259,152 @@ func TestAPrivateRepositoryWithNoCredentialSaysSo(t *testing.T) {
 	}
 	if a := x.lookup("mfa"); a.State != URLNoCredential || !strings.Contains(a.Note, "login cannot read") {
 		t.Fatalf("with a helper: %+v", a)
+	}
+}
+
+// forgeMain moves the forge's main by one commit and answers its tip.
+func (x *forgeFix) forgeMain(t *testing.T, file string, at int64) string {
+	t.Helper()
+	return x.forge.push(t, "main", file, file, at)
+}
+
+func (x *forgeFix) lookupMain(t *testing.T) string {
+	t.Helper()
+	a := x.lookup("main")
+	if a.State != URLFound || len(a.Branches) != 1 || len(a.Branches[0].Sources) == 0 {
+		t.Fatalf("answer = %+v", a)
+	}
+	return a.Branches[0].Sources[0].SHA
+}
+
+func TestASeededMainFollowsItsForge(t *testing.T) {
+	x := newForgeFix(t)
+	if _, err := x.h.Store().Init(bg, repoURL); err != nil {
+		t.Fatal(err)
+	}
+
+	// THE FORGE MOVED: the next fetch through the route serves its tip as main, and keeps a copy in refs/forge/main.
+	next := x.forgeMain(t, "b.txt", 2000)
+	x.stale()
+	if got, err := x.fetchHead(t, "main"); err != nil || got != next {
+		t.Fatalf("fetch main = %q, %v, want the forge's %s", got, err, next)
+	}
+	if got := x.refOn(forgeRepo, MainRef); got != next {
+		t.Fatalf("main = %s, want %s", got, next)
+	}
+	if got := x.refOn(forgeRepo, ForgeRefPrefix+"main"); got != next {
+		t.Fatalf("refs/forge/main = %q, want %s", got, next)
+	}
+
+	// THE LOOKUP refreshes too, so the URL a card asks for names a current main.
+	again := x.forgeMain(t, "c.txt", 3000)
+	x.stale()
+	if got := x.lookupMain(t); got != again {
+		t.Fatalf("lookup main = %s, want %s", got, again)
+	}
+
+	// THE FORGE REWROTE main and nobody pushed it, so main is the forge's and follows.
+	git(t, x.forge.work, "reset", "-q", "--hard", x.main)
+	commitAt(t, x.forge.work, "r.txt", "rewritten", 4000)
+	git(t, x.forge.work, "push", "-q", x.forge.dir, "+HEAD:refs/heads/main")
+	rewritten := git(t, x.forge.work, "rev-parse", "HEAD")
+	x.stale()
+	if got, err := x.fetchHead(t, "main"); err != nil || got != rewritten {
+		t.Fatalf("fetch main after a rewrite = %q, %v, want %s", got, err, rewritten)
+	}
+}
+
+func TestAForgeThatCannotBeReachedLeavesMainAndTheFetchGoesOn(t *testing.T) {
+	x := newForgeFix(t)
+	if _, err := x.h.Store().Init(bg, repoURL); err != nil {
+		t.Fatal(err)
+	}
+	x.forgeMain(t, "b.txt", 2000)
+	x.down.Store(true)
+	x.stale()
+	if got, err := x.fetchHead(t, "main"); err != nil || got != x.main {
+		t.Fatalf("fetch main = %q, %v, want what the store has, %s", got, err, x.main)
+	}
+	x.stale()
+	if got := x.lookupMain(t); got != x.main {
+		t.Fatalf("lookup main = %s, want %s", got, x.main)
+	}
+	if got := x.refOn(forgeRepo, ForgeRefPrefix+"main"); got != "" {
+		t.Fatalf("refs/forge/main = %s from a forge that was down", got)
+	}
+}
+
+func TestAnOperatorsPushedMainIsNeverOverwrittenByTheForge(t *testing.T) {
+	x := newForgeFix(t)
+	if _, err := x.h.Store().Init(bg, repoURL); err != nil {
+		t.Fatal(err)
+	}
+	// The operator pushes a commit on main that the forge does not have.
+	git(t, x.work, "fetch", "-q", x.forge.dir, "main")
+	git(t, x.work, "switch", "-q", "-C", "op", "FETCH_HEAD")
+	pushed := commit(t, x.work, "op.txt", "operator")
+	git(t, x.work, "switch", "-q", "main")
+	x.must(x.push(operator, forgeRepo, "op:refs/heads/main"))
+	if got := x.refOn(forgeRepo, MainRef); got != pushed {
+		t.Fatalf("main = %s, want the push %s", got, pushed)
+	}
+	// A room's own branch is there too.
+	room := x.branch("fix/y", "y.txt")
+	x.must(x.push(roomCard("sg4", "c1"), forgeRepo, "fix/y:refs/heads/fix/y"))
+
+	// The forge moves main its own way: main is pushed work and stays, and the forge's tip is served as forge/main.
+	forgeTip := x.forgeMain(t, "b.txt", 2000)
+	x.stale()
+	if got, err := x.fetchHead(t, "main"); err != nil || got != pushed {
+		t.Fatalf("fetch main = %q, %v, want the operator's %s", got, err, pushed)
+	}
+	if got, err := x.fetchHead(t, "forge/main"); err != nil || got != forgeTip {
+		t.Fatalf("fetch forge/main = %q, %v, want %s", got, err, forgeTip)
+	}
+	if got := x.refOn(forgeRepo, headsPrefix+"fix/y"); got != room {
+		t.Fatalf("fix/y = %s, want the room's %s", got, room)
+	}
+
+	// The forge takes the operator's commit and goes on: a fast-forward loses nothing, so main follows.
+	git(t, x.forge.work, "fetch", "-q", x.work, "op")
+	git(t, x.forge.work, "reset", "-q", "--hard", "FETCH_HEAD")
+	git(t, x.forge.work, "push", "-q", x.forge.dir, "+HEAD:refs/heads/main")
+	merged := x.forgeMain(t, "c.txt", 3000)
+	x.stale()
+	if got := x.lookupMain(t); got != merged {
+		t.Fatalf("lookup main = %s, want the forge's fast-forward %s", got, merged)
+	}
+	if out, err := Default.Git(bg, x.forge.work, "merge-base", "--is-ancestor", pushed, merged); err != nil {
+		t.Fatalf("the operator's commit was lost: %v %s", err, out)
+	}
+}
+
+func TestMainIsRefreshedAtMostOncePerFreshFor(t *testing.T) {
+	x := newForgeFix(t)
+	if _, err := x.h.Store().Init(bg, repoURL); err != nil {
+		t.Fatal(err)
+	}
+	next := x.forgeMain(t, "b.txt", 2000)
+	x.stale()
+	if got, err := x.fetchHead(t, "main"); err != nil || got != next {
+		t.Fatalf("fetch main = %q, %v, want %s", got, err, next)
+	}
+	// Inside forgeFreshFor the forge is not asked again, by the route or by the lookup.
+	x.forgeMain(t, "c.txt", 3000)
+	if got, err := x.fetchHead(t, "main"); err != nil || got != next {
+		t.Fatalf("a second fetch inside forgeFreshFor = %q, %v, want %s", got, err, next)
+	}
+	if got := x.lookupMain(t); got != next {
+		t.Fatalf("a lookup inside forgeFreshFor = %s, want %s", got, next)
+	}
+	// An adopted mirror is never refreshed.
+	dir, _ := x.h.Store().Path(forgeRepo)
+	if err := writeMarker(dir, KindAdopted); err != nil {
+		t.Fatal(err)
+	}
+	x.stale()
+	if got, err := x.fetchHead(t, "main"); err != nil || got != next {
+		t.Fatalf("an adopted mirror's main = %q, %v, want %s", got, err, next)
 	}
 }
 

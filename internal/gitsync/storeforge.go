@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -19,9 +20,25 @@ import (
 // copy under `refs/heads/<branch>` as well, when no pushed branch of that name is there (forgeAdvert), so
 // `git fetch hub <branch>` just works, and `git fetch hub forge/<branch>` always names the forge's copy.
 //
+// MAIN FOLLOWS ITS FORGE. The seed (store.go) fetches the forge's default branch into main once, and main went stale
+// behind it: a card fetched tlsuv's main 18 commits behind GitHub's. So on the same refresh the forge's default branch
+// (its HEAD, whatever the seed took) is fetched into refs/forge/<default>, where no push can reach, and main is moved
+// to it when main is the forge's. TELLING A SEEDED MAIN FROM PUSHED WORK: a room's card can never push main (3.2's
+// rules, isMainRef), so pushed work on main is only ever the operator's, and the push log records every operator
+// push. An adopted mirror (KindAdopted) is the operator's and is never touched. For a made repository:
+//   - the forge's tip descends from main: main fast-forwards to it. Nothing anyone pushed is lost, whoever pushed it;
+//   - it does not (the forge rewrote its history, or the operator pushed commits the forge lacks): main follows only
+//     when the push log has no operator push of main, so main has only ever been the seed's (or a PR base's, which is
+//     the forge's too). With an operator push, or no push log to ask, main is ambiguous and stays as pushed. The
+//     forge's tip is then still served, as `git fetch hub forge/<default>`, from refs/forge/<default>;
+//   - main is empty (a private repository the seed could not read): nothing, the operator pushes it.
+// The move is update-ref with main's old value, under the repository's lock, so an operator push in flight wins. The
+// default's copy is kept whatever ForgeBranchMax says, because main is read from it.
+//
 // WHAT TRIGGERS IT. The lookup (atrium_git_url with a branch) fetches a branch the first time. The fetch route cannot:
 // a protocol v0 fetch names no branch before the hub has advertised its refs, and v2 is not spoken. So the route only
-// refreshes the forge branches the store already holds, before it advertises them, so a colleague's new commits arrive.
+// refreshes the forge branches the store already holds and main, before it advertises them, so a colleague's new
+// commits arrive. The lookup does the same refresh before it reads the store, so the main it answers is current.
 //
 // BOUNDED: one fetch per branch at a time (a second ask waits for the first and takes its answer), the seed's timeout
 // on every fetch, forgeRefreshWait on the route's refresh, at most ForgeBranchMax branches per repository, and a refresh
@@ -272,15 +289,20 @@ func (s *Store) forgeUpdate(ctx context.Context, ref Ref, dir, helper string, fe
 	return nil
 }
 
-// refreshForge brings the forge branches the store holds for a repository up to the forge's tips, before the route
-// advertises them. A branch a room pushed under the same name is served instead, so its copy is not refreshed. It is
-// best effort: a forge that cannot be asked leaves what the store has, and the fetch goes on.
+// refreshForge brings what the store holds from the forge up to the forge's tips, before the route advertises it and
+// before the lookup answers: the forge branches under refs/forge/, and main (see MAIN FOLLOWS ITS FORGE above). A
+// branch a room pushed under the same name is served instead, so its copy is not refreshed. It is best effort: a forge
+// that cannot be asked leaves what the store has, and the fetch goes on.
 func (s *Store) refreshForge(ctx context.Context, ref Ref, dir string) {
 	if markerKind(dir) == KindAdopted {
 		return
 	}
 	held, err := listRefs(ctx, s.h.runner(), dir, ForgeRefPrefix)
-	if err != nil || len(held) == 0 {
+	if err != nil {
+		return
+	}
+	main := s.tip(ctx, dir)
+	if len(held) == 0 && main == "" {
 		return
 	}
 	key := strings.ToLower(ref.Name()) + "\x00*"
@@ -295,7 +317,7 @@ func (s *Store) refreshForge(ctx context.Context, ref Ref, dir string) {
 			branches = append(branches, b)
 		}
 	}
-	if len(branches) == 0 {
+	if len(branches) == 0 && main == "" {
 		return
 	}
 	sort.Strings(branches)
@@ -303,7 +325,7 @@ func (s *Store) refreshForge(ctx context.Context, ref Ref, dir string) {
 	defer cancel()
 	_, _ = s.forge.once(ctx, key, func() (string, error) {
 		helper := s.helper(ref)
-		got, err := s.forgeHeads(run, ref, helper, branches)
+		got, def, err := s.forgeTips(run, ref, helper, main != "", branches)
 		if err != nil {
 			return "", err
 		}
@@ -316,11 +338,117 @@ func (s *Store) refreshForge(ctx context.Context, ref Ref, dir string) {
 				fetch = append(fetch, b)
 			}
 		}
-		if len(fetch) == 0 && len(gone) == 0 {
-			return "", nil
+		// THE DEFAULT BRANCH is copied to refs/forge/<default> whatever a room pushed, because main is read from there.
+		if def.branch != "" && !forgeClash(held, def.branch) {
+			if held[ForgeRefPrefix+def.branch] != def.sha && !slices.Contains(fetch, def.branch) {
+				fetch = append(fetch, def.branch)
+			}
+		} else {
+			def = forgeDefault{}
 		}
-		return "", s.forgeUpdate(run, ref, dir, helper, fetch, gone)
+		if len(fetch) > 0 || len(gone) > 0 {
+			if err := s.forgeUpdate(run, ref, dir, helper, fetch, gone); err != nil {
+				return "", err
+			}
+		}
+		if def.branch != "" {
+			s.followMain(run, ref, dir, def.branch)
+		}
+		return "", nil
 	})
+}
+
+// forgeDefault is the forge's default branch and its tip, from the forge's HEAD.
+type forgeDefault struct{ branch, sha string }
+
+// forgeTips is forgeHeads, and with withHead the forge's default branch as well, in the same one ls-remote. A default
+// branch with a name a forge branch may not have is answered as none.
+func (s *Store) forgeTips(ctx context.Context, ref Ref, helper string, withHead bool,
+	branches []string) (map[string]string, forgeDefault, error) {
+	if !withHead {
+		got, err := s.forgeHeads(ctx, ref, helper, branches)
+		return got, forgeDefault{}, err
+	}
+	args := append(credArgs(helper), "ls-remote", "--symref", "--", s.forgeURL(ref), "HEAD")
+	for _, b := range branches {
+		args = append(args, headsPrefix+b)
+	}
+	out, err := s.git(ctx, "", args...)
+	if err != nil {
+		return nil, forgeDefault{}, err
+	}
+	got := map[string]string{}
+	var def forgeDefault
+	for _, l := range strings.Split(out, "\n") {
+		l = strings.TrimSpace(l)
+		if m := defaultRe.FindStringSubmatch(l); m != nil {
+			def.branch = strings.TrimPrefix(m[1], headsPrefix)
+			continue
+		}
+		sha, name, ok := strings.Cut(l, "\t")
+		if !ok || !isHex40(sha) {
+			continue
+		}
+		// ls-remote's patterns match on a tail, so only the exact names asked for are taken.
+		if name == "HEAD" {
+			def.sha = sha
+		} else if b, isHead := strings.CutPrefix(name, headsPrefix); isHead && slices.Contains(branches, b) {
+			got[b] = sha
+		}
+	}
+	if def.branch == "" || def.sha == "" || !s.forgeBranchOK(ctx, def.branch) {
+		def = forgeDefault{}
+	}
+	return got, def, nil
+}
+
+// forgeClash says whether refs/forge/<b> and a held forge ref of another case would be one ref on NTFS.
+func forgeClash(held map[string]string, b string) bool {
+	dst := ForgeRefPrefix + b
+	for r := range held {
+		if r != dst && strings.EqualFold(r, dst) {
+			return true
+		}
+	}
+	return false
+}
+
+// followMain moves main to refs/forge/<def>, the forge's copy of its default branch, when main is the forge's: by a
+// fast-forward always, and past a forge's rewrite only while the push log has no operator push of main. Otherwise main
+// is pushed work and stays where it is, and the forge's copy is served as forge/<def>. The move is a compare-and-swap
+// under the repository's lock, so a push that moved main in the meantime wins.
+func (s *Store) followMain(ctx context.Context, ref Ref, dir, def string) {
+	cur := s.tip(ctx, dir)
+	out, err := s.git(ctx, dir, "rev-parse", "--verify", "-q", ForgeRefPrefix+def+"^{commit}")
+	next := strings.TrimSpace(out)
+	if cur == "" || err != nil || next == "" || next == cur {
+		return
+	}
+	how := "fast-forward"
+	if _, err := s.git(ctx, dir, "merge-base", "--is-ancestor", cur, next); err != nil {
+		if !s.mainIsSeed(ctx, ref) {
+			s.h.audit("", "git-store-forge-main-kept", fmt.Sprintf("%s main %s, forge %s", ref.Name(), short(cur), short(next)))
+			return
+		}
+		how = "the forge rewrote it, and nobody pushed main"
+	}
+	l := s.h.lock("store:" + strings.ToLower(ref.Name()))
+	l.Lock()
+	defer l.Unlock()
+	if _, err := s.git(ctx, dir, "update-ref", "-m", "atrium: main follows the forge", MainRef, next, cur); err != nil {
+		return
+	}
+	s.h.audit("", "git-store-forge-main", fmt.Sprintf("%s main %s..%s (%s)", ref.Name(), short(cur), short(next), how))
+}
+
+// mainIsSeed says whether main has only ever been the forge's: the push log has no operator push of it. With no push
+// log it cannot be told, and main is taken as pushed work.
+func (s *Store) mainIsSeed(ctx context.Context, ref Ref) bool {
+	if s.h.PushLog == nil {
+		return false
+	}
+	_, pushed, err := s.h.PushLog.LastOperatorPush(ctx, ref.Name(), MainRef)
+	return err == nil && !pushed
 }
 
 // forgeFailed says what went wrong with the forge in a sentence that names the hub. A credential the forge wanted is

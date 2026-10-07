@@ -295,6 +295,12 @@ func (h *Hub) Lookup(ctx context.Context, q URLQuery) URLAnswer {
 	hubOffline := map[string]bool{}
 	var hubDir string
 	if k.inStore {
+		// MAIN AND THE FORGE BRANCHES ARE BROUGHT UP TO THE FORGE first, as the fetch route does. See storeforge.go.
+		if ref, err := ParseName(name); err == nil && q.Room == "" {
+			if dir, ok := (&Receiver{h: h}).dir(ref); ok {
+				h.Store().refreshForge(ctx, ref, dir)
+			}
+		}
 		if v, ok := h.Store().ViewOne(ctx, name); ok {
 			hubDir, _ = h.Store().Path(name)
 			if v.Main.SHA != "" {
