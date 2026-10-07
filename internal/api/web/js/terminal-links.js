@@ -566,8 +566,8 @@ const termLinkHandler = {
       return;
     }
     if (!/^https?:/i.test(uri)) return;
-    // xterm's own answer for a link a program printed, kept as it was.
-    if (!confirm(`Do you want to navigate to ${uri}?\n\nWARNING: This link could potentially be dangerous`)) return;
+    // No confirm: it opened on every PR link an agent printed, and the tab opens with no opener, so the page it
+    // loads cannot reach the board. clint 2026-10-07: "how do i prevent this popup?"
     const w = open();
     if (!w) return;
     try { w.opener = null; } catch (e) {}
