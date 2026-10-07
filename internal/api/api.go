@@ -564,6 +564,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("PUT /v1/recognisers/{id}", s.saveRecogniser)
 	mux.HandleFunc("DELETE /v1/recognisers/{id}", s.deleteRecogniser)
 	mux.HandleFunc("POST /v1/recognise", s.recognise)
+	// A pasted link to a live card in its own worktree, in one call. See open.go.
+	mux.HandleFunc("POST /v1/open", s.open)
 	// Pull request reviews. docs/rnd/pulls-api.md is the contract.
 	mux.HandleFunc("POST /v1/prs", s.postPR)
 	mux.HandleFunc("GET /v1/prs", s.listPRs)
