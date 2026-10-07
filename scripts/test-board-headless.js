@@ -19941,6 +19941,118 @@ async function prMoveSection(browser, base) {
   if (!bad) console.log("prMove ok");
 }
 
+// ── ctrl-alt-r: paste a link, start its card ──────────────────────
+// The box opens on the key with the clipboard's link in it. Enter runs the pull request chain to a launched card,
+// shift-enter stops at the filled launch dialog, a link nothing knows comes back to the box with the reason, and text
+// that is not a link is refused in the box. QPSHOT=/dir writes the pictures.
+async function quickPasteSection(browser, base) {
+  const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+  const errors = [];
+  const json = (route, status, body) => route.fulfill({ status, contentType: "application/json", body: JSON.stringify(body) });
+  const row = { id: "pr_q", url: "https://github.com/openziti/zrok/pull/12", org: "openziti", repo: "zrok", number: 12, state: "queued" };
+  const st = { calls: [] };
+  await ctx.addInitScript(() => {
+    window.__clip = "";
+    Object.defineProperty(navigator, "clipboard", { configurable: true, value: {
+      readText: async () => window.__clip, read: async () => [], writeText: async () => {} } });
+  });
+  await ctx.route(/\/v1\/(recognise|prs|providers|launch)(\/|\?|$)/, async route => {
+    const req = route.request();
+    const p = new URL(req.url()).pathname, m = req.method();
+    if (m === "GET" && p === "/v1/prs") return json(route, 200, { prs: [], counts: {}, nav_count: 0 });
+    if (m === "GET" && p === "/v1/providers") return json(route, 200, { providers: [{ name: "gh", host: "github.com", worktrees: true }] });
+    st.calls.push(m + " " + p + " " + (req.postData() || ""));
+    if (p === "/v1/recognise") {
+      const url = JSON.parse(req.postData() || "{}").url || "";
+      if (!/github\.com/.test(url)) return json(route, 404, { error: "no recogniser matches " + url });
+      return json(route, 200, { recogniser: "github-pr", label: "github pull request", url, host: "github.com",
+        cwd: "/wt/zrok-12", title: "review zrok#12", prompt: "review the pull request", tags: ["pull-request"],
+        vars: { org: "openziti", repo: "zrok", num: "12", host: "github.com" } });
+    }
+    if (p === "/v1/providers/gh/pr-worktree") return json(route, 200, { path: "/wt/zrok-12", existed: false });
+    if (p === "/v1/prs") return json(route, 200, { pr: row, created: true });
+    if (p === "/v1/launch") return json(route, 200, { id: "t-q", supervised: false });
+    if (p === "/v1/prs/pr_q/walker") return json(route, 200, { pr: Object.assign({}, row, { walker_task: "t-q" }) });
+    return json(route, 404, { error: "no route" });
+  });
+  const shot = async (p, name) => { if (process.env.QPSHOT) await p.screenshot({ path: process.env.QPSHOT + "/" + name + ".png" }); };
+  const open = id => `document.getElementById("${id}").open`;
+  try {
+    const p = await ctx.newPage();
+    p.on("pageerror", e => errors.push(e.message));
+    await p.goto(base + "/", { waitUntil: "domcontentloaded" });
+    await p.waitForFunction(() => typeof openQuickPaste === "function" && typeof openLaunch === "function", null, { timeout: slow(15000) });
+    await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) }).catch(() => {});
+
+    // the key opens the box with the clipboard's link, selected
+    await p.evaluate(() => { window.__clip = "https://github.com/openziti/zrok/pull/12"; });
+    await p.keyboard.press("Control+Alt+KeyR");
+    await p.waitForFunction(() => document.getElementById("quickpaste").open &&
+      document.getElementById("qp-url").value === "https://github.com/openziti/zrok/pull/12", null, { timeout: slow(5000) })
+      .catch(() => fail("quickPaste: ctrl-alt-r did not open the box with the clipboard's link"));
+    await shot(p, "box");
+    // the key again closes it
+    await p.keyboard.press("Control+Alt+KeyR");
+    if (await p.evaluate(open("quickpaste"))) fail("quickPaste: ctrl-alt-r did not close an open box");
+
+    // text that is not a link is refused in the box, and nothing is asked
+    await p.evaluate(() => { window.__clip = "just words"; });
+    await p.click("#quickpaste-open");
+    await p.waitForFunction(() => document.getElementById("quickpaste").open, null, { timeout: slow(5000) });
+    await p.waitForTimeout(100);
+    if (await p.inputValue("#qp-url") !== "") fail("quickPaste: text that is not a link was put in the box");
+    await p.fill("#qp-url", "not a link");
+    await p.press("#qp-url", "Enter");
+    if (!/not a link/.test(await p.textContent("#qp-note"))) fail("quickPaste: text that is not a link was not refused");
+    if (st.calls.length) fail("quickPaste: a refused box still called: " + st.calls.join(" | "));
+
+    // a link nothing knows comes back to the box with the reason
+    await p.fill("#qp-url", "https://nowhere.example/x");
+    await p.press("#qp-url", "Enter");
+    await p.waitForFunction(() => document.getElementById("quickpaste").open &&
+      /nothing here knows/.test(document.getElementById("qp-note").textContent), null, { timeout: slow(5000) })
+      .catch(() => fail("quickPaste: an unknown link did not come back to the box with the reason"));
+    if (await p.evaluate(open("launch"))) fail("quickPaste: an unknown link left the launch dialog open");
+    await shot(p, "unknown");
+
+    // shift-enter stops at the launch dialog, filled in, with nothing started
+    st.calls = [];
+    await p.fill("#qp-url", "https://github.com/openziti/zrok/pull/12");
+    await p.press("#qp-url", "Shift+Enter");
+    await p.waitForFunction(() => document.getElementById("launch").open &&
+      document.getElementById("l-prompt").value === "review the pull request", null, { timeout: slow(5000) })
+      .catch(() => fail("quickPaste: shift-enter did not leave the launch dialog filled in"));
+    await p.waitForTimeout(200);
+    if (st.calls.some(c => c.indexOf("/v1/launch") >= 0)) fail("quickPaste: shift-enter launched: " + st.calls.join(" | "));
+    if (await p.inputValue("#l-url") !== "https://github.com/openziti/zrok/pull/12") fail("quickPaste: shift-enter lost the link");
+    await shot(p, "edit-first");
+    // the key does not stack the box on an open dialog
+    await p.keyboard.press("Control+Alt+KeyR");
+    if (await p.evaluate(open("quickpaste"))) fail("quickPaste: the box opened over the launch dialog");
+    await p.evaluate(() => document.getElementById("launch").close());
+
+    // enter runs the pull request chain to a launched card
+    st.calls = [];
+    await p.evaluate(() => { window.__clip = "https://github.com/openziti/zrok/pull/12"; });
+    await p.keyboard.press("Control+Alt+KeyR");
+    await p.waitForFunction(() => document.getElementById("qp-url").value !== "", null, { timeout: slow(5000) });
+    await p.press("#qp-url", "Enter");
+    await p.waitForFunction(() => !document.getElementById("launch").open && !document.getElementById("quickpaste").open,
+      null, { timeout: slow(8000) }).catch(() => {});
+    await p.waitForTimeout(200);
+    const order = st.calls.map(c => c.split(" ")[1]);
+    const want = ["/v1/recognise", "/v1/providers/gh/pr-worktree", "/v1/prs", "/v1/launch", "/v1/prs/pr_q/walker"];
+    if (order.join() !== want.join()) fail("quickPaste: enter ran " + order.join() + ", wanted " + want.join());
+    const l = st.calls.find(c => c.indexOf("POST /v1/launch") === 0);
+    const launch = l ? JSON.parse(l.split(" ").slice(2).join(" ")) : {};
+    if (launch.cwd !== "/wt/zrok-12" || launch.prompt !== "review the pull request" ||
+        (launch.tags || []).join() !== "pull-request,pr,pr:openziti/zrok#12" ||
+        launch.source_url !== "https://github.com/openziti/zrok/pull/12") fail("quickPaste: the launch was " + JSON.stringify(launch));
+    if (errors.length) fail("quickPaste: page errors: " + errors.join(" | "));
+  } finally { await ctx.close(); }
+  if (!bad) console.log("quickPaste ok");
+}
+
 // The daemon answers /v1/prs with a plain-text 404 (nothing serves it yet): the tab stays hidden and nothing throws.
 async function pullsAbsentSection(browser, base) {
   const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 } });
@@ -24627,7 +24739,7 @@ async function main() {
       termDebug: termDebugSection, termDebugPerCard: termDebugPerCardSection, termLag: termLagSection, termHiddenRedraw: termHiddenRedrawSection, termSortStarted: termSortStartedSection,
       noReadyChildren: noReadyChildrenSection, childUnderParent: childUnderParentSection, topNav: topNavSection,
       u002: u002Section, childFold: childFoldSection, liveHome: liveHomeSection,
-      pulls: pullsSection, prMove: prMoveSection, hubRepos: hubReposSection, hubReposShelf: hubReposShelfSection, hubReposLedger: hubReposLedgerSection, hubReposFeed: hubReposFeedSection, changeReq: changeReqSection, mChangeReq: mChangeReqSection, trayHead: trayHeadSection, pullsAbsent: pullsAbsentSection, oneTooltip: oneTooltipSection, burnChart: burnChartSection, burnReadout: burnReadoutSection, switchPrewarm: switchPrewarmSection, attachAtOnce: attachAtOnceSection, fileView: fileViewSection, keepAlive: keepAliveSection, switchBackCost: switchBackCostSection, keepMemory: keepMemorySection, pullsDrawer: pullsDrawerSection };
+      pulls: pullsSection, prMove: prMoveSection, quickPaste: quickPasteSection, hubRepos: hubReposSection, hubReposShelf: hubReposShelfSection, hubReposLedger: hubReposLedgerSection, hubReposFeed: hubReposFeedSection, changeReq: changeReqSection, mChangeReq: mChangeReqSection, trayHead: trayHeadSection, pullsAbsent: pullsAbsentSection, oneTooltip: oneTooltipSection, burnChart: burnChartSection, burnReadout: burnReadoutSection, switchPrewarm: switchPrewarmSection, attachAtOnce: attachAtOnceSection, fileView: fileViewSection, keepAlive: keepAliveSection, switchBackCost: switchBackCostSection, keepMemory: keepMemorySection, pullsDrawer: pullsDrawerSection };
     try {
       for (const n of process.env.HEADLESS_ONLY.split(",")) await only[n](browser, base);
     } catch (e) { fail("the headless run threw: " + (e && e.message ? e.message : e) + threwAt(e)); }
@@ -26757,6 +26869,7 @@ async function main() {
     await unit("keepAlive", () => keepAliveSection(browser, base));
     await unit("pullsDrawer", () => pullsDrawerSection(browser, base));
     await unit("prMove", () => prMoveSection(browser, base));
+    await unit("quickPaste", () => quickPasteSection(browser, base));
   } catch (e) {
     // a listing has no browser, so a bare section call throws here, and the guard below names it
     if (!LIST_MODE) fail("the headless run threw: " + (e && e.message ? e.message : e) + threwAt(e));

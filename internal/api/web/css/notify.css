@@ -270,6 +270,26 @@
     padding: 0 5px; color: var(--body); font-family: inherit;
   }
   #switcher .empty { padding: 18px 12px; text-align: center; }
+  /* Paste a link (js/quickpaste.js): the switcher's field and footer, with a line for what the box will do or why
+     it did not. */
+  #quickpaste { width: min(560px, 92vw); padding: 0; border-radius: 12px; }
+  #quickpaste .swq {
+    width: 100%; box-sizing: border-box; font-size: var(--fs-lg);
+    padding: 12px 14px; background: var(--bg-2); color: var(--head);
+    border: 0; border-bottom: 1px solid var(--stroke-dim); border-radius: 0;
+    outline: none;
+  }
+  #quickpaste .qpnote { padding: 10px 14px; color: var(--dim); font-size: var(--fs-sm); }
+  #quickpaste .qpnote.warn { color: var(--warn); }
+  #quickpaste .swfoot {
+    display: flex; gap: 10px; align-items: center; flex-wrap: wrap;
+    padding: 8px 12px; border-top: 1px solid var(--stroke-dim);
+    color: var(--dimmest); font-size: var(--fs-xs);
+  }
+  #quickpaste .swfoot kbd {
+    background: var(--chip); border: 1px solid var(--stroke-dim); border-radius: 4px;
+    padding: 0 5px; color: var(--body); font-family: inherit;
+  }
   /* One terminal in its own window: the same page with everything that is not the terminal hidden.
 
      Hidden rather than removed, so every code path keeps working. The session list, the card dialog and the

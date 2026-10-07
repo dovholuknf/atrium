@@ -221,6 +221,8 @@
          The badge counts what has arrived since this was last opened. -->
     <button id="toastlog-open" class="icon" onclick="openToastLog()"
       aria-label="what the board has told you" data-tip="what the board has told you"><span class="glyph">&#128276;</span><span class="count"></span><span class="hmsg" hidden>&#9993;&#xFE0E;<span class="pb-n"></span></span></button>
+    <button id="quickpaste-open" class="icon" onclick="openQuickPaste()"
+      aria-label="paste a link and start a card for it (ctrl-alt-r)" data-tip="paste a link and start a card for it (ctrl-alt-r)">&#128279;&#xFE0E;</button>
     <button id="sound" class="icon" aria-label="sound on. click to mute" data-tip="sound on. click to mute">&#9835;</button>
     <button id="gear" class="icon" aria-label="sound settings" data-tip="sound settings">&#9881;</button>
     <!-- WHICH ROOM, and it is a selector as much as a counter.
@@ -1176,6 +1178,21 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
   </div>
   <div class="dlg-body">
     <div id="toastlog-list" class="toastlog"></div>
+  </div>
+</dialog>
+
+<!-- Paste a link, start its card: ctrl-alt-r or the link button in the header. js/quickpaste.js. `type="search"`
+     for the switcher's reason below: a lone text field gets an autofill bubble. -->
+<dialog id="quickpaste">
+  <input type="search" id="qp-url" class="swq" spellcheck="false" autocomplete="off"
+    placeholder="paste a link: a pull request, an issue, a support thread">
+  <div id="qp-note" class="qpnote"></div>
+  <div class="swfoot">
+    <span><kbd>enter</kbd> start</span>
+    <span><kbd>shift</kbd><kbd>enter</kbd> edit first</span>
+    <span><kbd>esc</kbd> close</span>
+    <span class="grow"></span>
+    <span>ctrl-alt-r</span>
   </div>
 </dialog>
 
@@ -3700,6 +3717,7 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
 <script src="/js/tooltips.js"></script>
 <script src="/js/solo.js"></script>
 <script src="/js/switcher.js"></script>
+<script src="/js/quickpaste.js"></script>
 <script src="/js/hubrestart.js"></script>
 <script src="/js/deployready.js"></script>
 <script src="/js/topnav.js"></script>
