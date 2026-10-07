@@ -325,10 +325,18 @@ clint, 2026-10-07: "a", then revised the same day: "oh actually i like the shift
 - The lasting change is made to the action's template in settings.
 - Where more than one action matches, the same keys apply to the chosen action.
 
+### Q3. A re-paste of a finished link
+
+clint, 2026-10-07: "b". A re-paste of a finished link makes a fresh card and a fresh review of the current head. The
+earlier review's findings are shown beside the new ones in the walk drawer, marked "from the earlier review" with
+their head and their state (posted, dismissed, accepted, deferred, open). They are read from the earlier run folder,
+which finish keeps, and are not copied into the new one. They are not folded with new findings. The claim keeps the
+list of earlier runs for the key so the drawer can find them.
+
 ## Open for clint
 
 1. Answered (Interview, Q1).
-2. A re-paste of a finished link: a new card with the old findings shown, or a fresh start?
+2. Answered (Interview, Q3).
 3. Finish with uncommitted work or unpushed commits: refuse, warn, or push to the hub first?
 4. A Zendesk or Discourse link: ask for a repo, or start with none?
 5. An idle card: how many days before the reminder, and is a merged PR an offer to finish?
