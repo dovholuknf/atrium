@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/dovholuknf/atrium/internal/gitsync"
+	"github.com/dovholuknf/atrium/internal/nowindow"
 	"github.com/dovholuknf/atrium/internal/safepath"
 	"github.com/dovholuknf/atrium/internal/store"
 )
@@ -338,6 +339,7 @@ func (s *Server) branchWorktree(ctx context.Context, p *store.Provider, host, or
 	}
 	cmd := exec.CommandContext(ctx, "git", args...)
 	cmd.Dir = filepath.FromSlash(repoPath)
+	nowindow.Hide(cmd)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return prWorktreeResult{}, http.StatusBadRequest, errors.New(
 			"git could not make that worktree: " + strings.TrimSpace(tailLines(string(out))))
@@ -352,7 +354,9 @@ func checkBranchName(ctx context.Context, name string) error {
 	if strings.TrimSpace(name) == "" || strings.HasPrefix(name, "-") || strings.Contains(name, "..") {
 		return fmt.Errorf("%q is not a branch name", name)
 	}
-	if err := exec.CommandContext(ctx, "git", "check-ref-format", "--branch", name).Run(); err != nil {
+	check := exec.CommandContext(ctx, "git", "check-ref-format", "--branch", name)
+	nowindow.Hide(check)
+	if err := check.Run(); err != nil {
 		return fmt.Errorf("%q is not a branch name git takes", name)
 	}
 	return nil

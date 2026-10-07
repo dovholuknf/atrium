@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/dovholuknf/atrium/internal/cardproc"
+	"github.com/dovholuknf/atrium/internal/nowindow"
 	"github.com/dovholuknf/atrium/internal/safepath"
 	"github.com/dovholuknf/atrium/internal/store"
 )
@@ -342,6 +343,7 @@ func worktreeWork(ctx context.Context, dir string) (dirty, unpushed int, branch 
 func gitIn(ctx context.Context, dir string, args ...string) (string, error) {
 	cmd := exec.CommandContext(ctx, "git", args...)
 	cmd.Dir = filepath.FromSlash(dir)
+	nowindow.Hide(cmd)
 	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0")
 	out, err := cmd.CombinedOutput()
 	if err != nil {

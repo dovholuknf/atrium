@@ -39,6 +39,7 @@ func runSetup(name string, args []string) (string, error) {
 	cmd := exec.CommandContext(ctx, name, args...)
 	var buf bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &buf, &buf
+	hideWindow(cmd)
 	err := cmd.Run()
 	out := strings.TrimSpace(buf.String())
 

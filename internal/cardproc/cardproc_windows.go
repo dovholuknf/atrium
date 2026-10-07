@@ -11,6 +11,8 @@ import (
 	"time"
 
 	"golang.org/x/sys/windows"
+
+	"github.com/dovholuknf/atrium/internal/nowindow"
 )
 
 // StartTime is when pid started, as text that only compares equal for the same process.
@@ -48,7 +50,7 @@ func StopTree(pid int) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, "taskkill", "/T", "/F", "/PID", strconv.Itoa(pid))
-	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true, CreationFlags: 0x08000000} // CREATE_NO_WINDOW
+	nowindow.Hide(cmd)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		if _, serr := StartTime(pid); errors.Is(serr, ErrGone) {
@@ -65,7 +67,7 @@ func Excluded() []Range {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, "netsh", "int", "ipv4", "show", "excludedportrange", "protocol=tcp")
-	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true, CreationFlags: 0x08000000}
+	nowindow.Hide(cmd)
 	out, err := cmd.Output()
 	if err != nil {
 		return nil

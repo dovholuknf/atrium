@@ -11,6 +11,8 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
+
+	"github.com/dovholuknf/atrium/internal/nowindow"
 )
 
 // A merge happened. Run by git's `post-merge` hook, so it follows the hook
@@ -51,7 +53,9 @@ func newMerged() *cobra.Command {
 func reportMerged(out io.Writer, boardURL, into string) error {
 	into = strings.TrimSpace(into)
 	if into == "" {
-		b, err := exec.Command("git", "symbolic-ref", "--short", "-q", "HEAD").Output()
+		git := exec.Command("git", "symbolic-ref", "--short", "-q", "HEAD")
+		nowindow.Hide(git)
+		b, err := git.Output()
 		if err != nil || strings.TrimSpace(string(b)) == "" {
 			return fmt.Errorf("no branch given and HEAD is not on one")
 		}

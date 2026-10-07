@@ -43,6 +43,7 @@ func runHelp(exe string) (string, error) {
 	cmd := exec.CommandContext(ctx, exe, "--help")
 	// A .cmd shim's child keeps the output pipe after the shim is killed, and without this the read waits for it.
 	cmd.WaitDelay = 2 * time.Second
+	hideWindow(cmd)
 	out, err := cmd.CombinedOutput()
 	return string(out), err
 }

@@ -163,6 +163,7 @@ func moveGit(dir string, args ...string) (string, error) {
 	cmd := exec.Command("git", append([]string{"-C", dir}, args...)...)
 	var out, errb bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &out, &errb
+	hideWindow(cmd)
 	if err := cmd.Run(); err != nil {
 		return out.String(), fmt.Errorf("git %s: %s", strings.Join(args, " "), strings.TrimSpace(errb.String()))
 	}
