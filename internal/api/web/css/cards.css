@@ -812,6 +812,80 @@
     background: none; border: 1px solid var(--line, currentColor); border-radius: 4px; cursor: pointer;
   }
   .peek-restart:hover { color: var(--head); }
+  /* ── answering a card's questions from its peek ───────────────────────────
+     js/peek-answers.js. The questions are buttons in the peek, and each opens a flyout beside it. */
+  .chip.mail { font-weight: 600; }
+  .peek-qrow { display: block; }
+  .peek-qrow > b { display: block; margin-bottom: 4px; }
+  .peek-qa { display: flex; flex-direction: column; gap: 4px; }
+  .qa-q {
+    display: flex; gap: 9px; align-items: flex-start; text-align: left; width: 100%;
+    padding: 6px 9px; border-radius: var(--r-md, 8px); font: inherit; color: var(--body); cursor: pointer;
+    background: rgba(var(--stroke-rgb),.10); border: 1px solid rgba(var(--stroke-rgb),.35);
+    transition: background .14s, border-color .14s, transform .14s;
+  }
+  .qa-q:hover { background: rgba(var(--warn-rgb),.10); border-color: rgba(var(--warn-rgb),.55); transform: translateX(2px); }
+  .qa-q.has { border-color: rgba(var(--teal-rgb),.5); }
+  .qa-n {
+    flex: 0 0 auto; width: 19px; height: 19px; border-radius: 50%; display: grid; place-items: center;
+    font: 600 var(--fs-xs)/1 var(--sans); font-style: normal; color: var(--warn); border: 1px solid currentColor;
+  }
+  .qa-q.has .qa-n { color: var(--bg1); background: var(--teal); border-color: var(--teal); }
+  .qa-t { min-width: 0; overflow-wrap: anywhere; }
+  .qa-t em { display: block; margin-top: 2px; font-style: normal; color: var(--teal); opacity: .9; white-space: pre-line;
+    overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+  .qa-old { margin-top: 4px; font-size: var(--fs-xxs); color: var(--dim); text-transform: uppercase; letter-spacing: .06em; }
+  .qa-bar { display: flex; gap: 8px; align-items: center; margin-top: 6px; }
+  .qa-send, .qa-b {
+    font: 600 var(--fs-sm)/1 var(--sans); padding: 7px 12px; border-radius: 999px; cursor: pointer;
+    color: var(--head); background: rgba(var(--stroke-rgb),.16); border: 1px solid rgba(var(--stroke-rgb),.5);
+    transition: background .14s, box-shadow .14s, transform .14s;
+  }
+  .qa-send:hover, .qa-b:hover { background: rgba(var(--teal-rgb),.18); transform: translateY(-1px); }
+  .qa-send.ready, .qa-b.send {
+    color: var(--bg1); background: linear-gradient(135deg, var(--teal), rgba(var(--teal-rgb),.7)); border-color: var(--teal);
+    box-shadow: 0 2px 14px rgba(var(--teal-rgb),.4);
+  }
+  .qa-b.send[hidden] { display: none; }
+  .qa-b.quiet { opacity: .6; }
+  .qa-drop { background: none; border: 0; color: var(--dim); cursor: pointer; font: inherit; font-size: var(--fs-xs); }
+  .qa-drop:hover { color: var(--danger); }
+  .qa-fly {
+    position: fixed; z-index: 90; padding: 16px 18px 12px; box-sizing: border-box; border-radius: var(--r-lg);
+    background: linear-gradient(180deg, rgba(var(--bg1-rgb),.97), rgba(var(--bg1-rgb),.92));
+    -webkit-backdrop-filter: blur(18px) saturate(1.3); backdrop-filter: blur(18px) saturate(1.3);
+    border: 1px solid rgba(var(--warn-rgb),.55);
+    box-shadow: var(--shadow-pop), 0 0 0 1px rgba(var(--warn-rgb),.12), 0 0 28px rgba(var(--warn-rgb),.16);
+    color: var(--body); font: var(--fs-sm)/1.4 var(--sans);
+    opacity: 0; visibility: hidden; transform: translateX(-10px) scale(.98);
+    transition: opacity .16s ease, transform .22s cubic-bezier(.2,.8,.2,1), visibility 0s linear .22s;
+  }
+  .qa-fly.on { opacity: 1; visibility: visible; transform: none; transition: opacity .16s ease, transform .22s cubic-bezier(.2,.8,.2,1), visibility 0s; }
+  .qa-fh { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+  .qa-fk { font-size: var(--fs-xxs); text-transform: uppercase; letter-spacing: .08em; color: var(--warn); }
+  .qa-fk b { font-size: var(--fs-sm); }
+  .qa-dots { display: flex; gap: 6px; flex: 1; justify-content: flex-end; }
+  .qa-dot { width: 9px; height: 9px; padding: 0; border-radius: 50%; cursor: pointer; background: none; border: 1.5px solid var(--dim); transition: transform .14s, background .14s; }
+  .qa-dot.has { background: var(--teal); border-color: var(--teal); }
+  .qa-dot.on { transform: scale(1.35); border-color: var(--warn); box-shadow: 0 0 8px rgba(var(--warn-rgb),.7); }
+  .qa-x { background: none; border: 0; color: var(--dim); font-size: 20px; line-height: 1; cursor: pointer; padding: 0 2px; }
+  .qa-x:hover { color: var(--head); }
+  .qa-fq { font-size: var(--fs-md, 15px); font-weight: 600; color: var(--head); line-height: 1.35; margin-bottom: 10px; overflow-wrap: anywhere; }
+  .qa-box {
+    width: 100%; box-sizing: border-box; resize: vertical; min-height: 96px; max-height: 40vh; padding: 10px 12px;
+    font: var(--fs-sm)/1.45 var(--sans); color: var(--head); border-radius: var(--r-md, 8px);
+    background: rgba(var(--bg0-rgb, var(--bg1-rgb)),.55); border: 1px solid rgba(var(--stroke-rgb),.55); outline: 0;
+    transition: border-color .14s, box-shadow .14s;
+  }
+  .qa-box:focus { border-color: var(--teal); box-shadow: 0 0 0 3px rgba(var(--teal-rgb),.18); }
+  .qa-ff { display: flex; align-items: center; gap: 8px; margin-top: 10px; }
+  .qa-grow { flex: 1; }
+  .qa-prog { font-size: var(--fs-xs); color: var(--dim); }
+  .qa-hint { margin-top: 8px; font-size: var(--fs-xxs); color: var(--dim); text-align: right; }
+  @media (max-width: 700px) {
+    .qa-fly { left: 8px !important; right: 8px; top: auto !important; bottom: 8px; width: auto !important; }
+  }
+
   .peek-none { color: var(--dim); font-size: var(--fs-sm); }
   /* While the read is under way the numbers are bars that shimmer, the size the numbers will be. */
   .peek-body.loading .peek-num b, .peek-body.loading .peek-cell b {

@@ -24,8 +24,8 @@ const SEEN_TICK_MS = 500;
 // terminal strip row.
 function seenChips(t) {
   const s = t && t.seen;
-  if (!s) return "";
-  let out = "";
+  let out = typeof answerChip === "function" ? answerChip(t) : "";
+  if (!s) return out;
   if (s.unseen) {
     out += `<span class="chip unseen"
       data-tip="this session's last turn ended and nobody has looked at it since. attach and read it, or type to it, and this clears"
