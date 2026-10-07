@@ -393,6 +393,20 @@ ziti-edge-tunnel/tunnelers that need sudo/admin privs those will constantly dema
   turns them off. Each is in the card's inventory and finish removes any left. No action starts one at paste.
 - **The hard part is elevation.** A tunneler in tun mode needs admin or root, and asking clint each time is not
   acceptable. How that is solved is Q9.
+- clint, adding the same day: "don't forget those resoruces need cleanup and need to be part of that backlog audit."
+  Every overlay, identity and tunneler is an inventory row, freed by finish, swept after a crash (section 8), and
+  listed in the daily housekeeping report (`r-daily-housekeeping-report`) while it is running on an idle or finished
+  card.
+
+### Q9. A tunneler that needs admin or root
+
+clint, 2026-10-07: "the agent should ask for help, provie the ccommand and askthe user to run"
+
+Atrium does not elevate and installs no privileged service. When a card needs a tunneler in tun mode (or anything
+else that needs admin or root), the agent stops and asks clint, through the card's normal question path, with the
+exact command to run in an elevated shell on that machine and what it is for. The command it gives is recorded on the
+card's inventory as `elevated`, with the matching command that undoes it, so finish and the housekeeping report can
+show clint the undo command to run too. Atrium never runs an elevated command itself.
 
 ## Open for clint
 
