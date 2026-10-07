@@ -333,11 +333,25 @@ their head and their state (posted, dismissed, accepted, deferred, open). They a
 which finish keeps, and are not copied into the new one. They are not folded with new findings. The claim keeps the
 list of earlier runs for the key so the drawer can find them.
 
+### Q4. Finish with unpushed commits and a dirty worktree
+
+clint, 2026-10-07: "b i want t be asked. i'll watnt to keep/stash/delete i'm sure at different tiems"
+
+Finish never refuses and never decides alone. When the worktree has uncommitted changes or the branch has commits on
+no remote and not on the hub, the finish preview lists them and asks, per worktree, with three answers:
+- **keep**: the worktree and branch stay on disk, are left out of the finish, and stay listed on the card as kept. The
+  rest of the inventory is freed.
+- **stash**: the dirty files are committed as one WIP commit, the branch is pushed to the hub under
+  `stash/<card short id>/<branch>`, and then the worktree and local branch are removed. The card's history names the
+  hub ref so it can be fetched back.
+- **delete**: removed as they are. The commits and changes are gone.
+A clean, pushed worktree is not asked about. There is no default answer: the finish waits until one is picked.
+
 ## Open for clint
 
 1. Answered (Interview, Q1).
 2. Answered (Interview, Q3).
-3. Finish with uncommitted work or unpushed commits: refuse, warn, or push to the hub first?
+3. Answered (Interview, Q4).
 4. A Zendesk or Discourse link: ask for a repo, or start with none?
 5. An idle card: how many days before the reminder, and is a merged PR an offer to finish?
 6. A card's overlay: started when the agent asks, or at paste for some kinds?
