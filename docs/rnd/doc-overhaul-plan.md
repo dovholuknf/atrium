@@ -427,6 +427,12 @@ Checked at batch 2. Each names a doc by its path before the 09-29 reorg:
 - The service installers still default to the old single process: `packaging/atrium.service`,
   `packaging/postinstall.sh` and `scripts/atrium-service.sh` run `atrium daemon` unless told `room`
   (`ATRIUM_SERVICE_VERB=room`, `atrium-service.ps1 -Verb room`). `docs/release/packaging.md` says so correctly.
+- `internal/api/web/js/runners.js:423` still tells the user to run `atrium2 join atr1_...`. It is
+  `atrium room join` now.
+- The service scripts register `atrium daemon` or `atrium room`, never the hub. On a machine that runs the hub, the
+  hub has no autostart outside `scripts/live`, which is sg4's.
+- `atrium stop` defaults to `localhost:7778`, which is the hub's board, and the hub refuses `/v1/shutdown`. A room
+  needs `--url http://127.0.0.1:7781`, as the service scripts already pass.
 - `internal/cli/backlog_import.go` says the files in `docs/backlog/` are the source of truth and the hub's backlog a
   mirror, "until the orchestrator says otherwise". The brief says the live backlog is the hub's. One of the two
   needs updating.

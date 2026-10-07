@@ -22,8 +22,8 @@ A share that fails never takes the local board down.
 
 ## zrok
 
-Atrium needs a zrok environment first. Paste your account token and press **enable**. The token never leaves the
-daemon.
+Atrium needs a zrok environment first. Paste your account token and press **enable**. The token never leaves
+atrium.
 
 - **Private** is the default. The other end runs `zrok access private <token>`, and the board shows that command.
 - **Public** gives a URL on a zrok frontend. Turning it on asks first and says plainly that whoever opens the link

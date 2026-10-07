@@ -1,6 +1,6 @@
 ---
 title: Install
-description: Install atrium from a package, a per-user archive, or source, and have it start at login.
+description: Build atrium from source, start it, and have this machine's room start at login.
 ---
 
 import Tabs from '@theme/Tabs';
@@ -8,155 +8,98 @@ import TabItem from '@theme/TabItem';
 
 # Install
 
-Each release carries packages for Linux, macOS and Windows, plus a plain archive for each platform that installs
-without `sudo` or administrator rights. Download them from the
-[0.0.1 release page](https://github.com/dovholuknf/atrium/releases/tag/v0.0.1). Its `checksums.txt` lists the
-SHA-256 of every file.
-
-:::note Two binaries
-The packages and archives carry `atrium`: the board, the gate and supervised terminals in one process. That is all
-most people need. [One board over many machines or accounts](./rooms.md) uses a second binary, `atrium2`, which
-you [build from source](#from-source) for 0.0.1.
-:::
+Atrium is one binary, `atrium`. There is no published release yet, so you build it from source. It takes a minute.
 
 :::info Atrium runs as you
 On every platform atrium runs **as you, in your session**. It starts claude and other agents, and those need your
 PATH, your shell configuration, your ssh agent and your Claude Code settings. A system service has none of those,
-so every agent it started would be useless. This is why atrium uses a user unit, a LaunchAgent and a logon task,
-never a system-wide service.
+so every agent it started would be useless. This is why atrium starts from a user unit, a LaunchAgent or a logon
+task, never a system-wide service.
 :::
 
-## From a package
-
-<Tabs groupId="os">
-<TabItem value="linux" label="Linux">
-
-```bash
-curl -LO https://github.com/dovholuknf/atrium/releases/download/v0.0.1/atrium_0.0.1_amd64.deb
-sudo dpkg -i atrium_0.0.1_amd64.deb
-# or
-sudo dnf install ./atrium-0.0.1-1.x86_64.rpm
-
-systemctl --user status atrium
-```
-
-The package installs a systemd **user** unit and enables it for the person who ran the install. It also turns on
-lingering, so atrium keeps running after you log out.
-
-- `ATRIUM_NO_ENABLE=1` installs the files and enables nothing.
-- `ATRIUM_NO_LINGER=1` enables atrium but lets it stop at logout.
-
-An upgrade keeps atrium enabled. Removing the package leaves lingering as it found it.
-
-</TabItem>
-<TabItem value="mac" label="macOS">
-
-```bash
-curl -LO https://github.com/dovholuknf/atrium/releases/download/v0.0.1/atrium_v0.0.1_darwin_arm64.pkg
-sudo installer -pkg atrium_v0.0.1_darwin_arm64.pkg -target /
-```
-
-The package installs a LaunchAgent, never a LaunchDaemon, so atrium starts when you log in to the desktop.
-
-</TabItem>
-<TabItem value="win" label="Windows">
-
-```powershell
-Invoke-WebRequest https://github.com/dovholuknf/atrium/releases/download/v0.0.1/atrium_0.0.1_windows_amd64.msi `
-  -OutFile atrium_0.0.1_windows_amd64.msi
-Start-Process msiexec "/i atrium_0.0.1_windows_amd64.msi /qn /norestart" -Wait
-& "$env:ProgramFiles\atrium\scripts\atrium-service.ps1" install
-& "$env:ProgramFiles\atrium\scripts\atrium-service.ps1" status
-```
-
-The MSI puts the binary in Program Files, adds it to the PATH, and ships the service scripts beside it. It does
-not register autostart, because it runs elevated and may not run as the person who will use atrium. You run the
-service script yourself, as yourself.
-
-Atrium starts from a **logon task**. It runs as you, in your session, with no stored password and no elevation. It
-restarts on failure and survives a reboot. It stops when you log out, because Windows has no equivalent of
-lingering.
-
-`atrium-service.ps1` takes `install`, `uninstall`, `start`, `stop`, `restart`, `status` and `selftest`. Its `stop`
-calls `atrium stop` first, so your agents wind down instead of dying at once.
-
-</TabItem>
-</Tabs>
-
-## Without sudo or admin
-
-Unpack the archive, put the binary in your home, and run the service script. It registers autostart as you and
-touches no system location.
-
-<Tabs groupId="os">
-<TabItem value="linux" label="Linux">
-
-```bash
-curl -LO https://github.com/dovholuknf/atrium/releases/download/v0.0.1/atrium_v0.0.1_linux_amd64.tar.gz
-tar -xzf atrium_v0.0.1_linux_amd64.tar.gz
-mkdir -p ~/.local/bin
-cp atrium_v0.0.1_linux_amd64/atrium ~/.local/bin/atrium
-cd atrium_v0.0.1_linux_amd64
-ATRIUM_EXE=$HOME/.local/bin/atrium scripts/atrium-service.sh install
-```
-
-</TabItem>
-<TabItem value="mac" label="macOS">
-
-```bash
-curl -LO https://github.com/dovholuknf/atrium/releases/download/v0.0.1/atrium_v0.0.1_darwin_arm64.tar.gz
-tar -xzf atrium_v0.0.1_darwin_arm64.tar.gz
-mkdir -p ~/.local/bin
-cp atrium_v0.0.1_darwin_arm64/atrium ~/.local/bin/atrium
-cd atrium_v0.0.1_darwin_arm64
-ATRIUM_EXE=$HOME/.local/bin/atrium scripts/atrium-service.sh install
-```
-
-The LaunchAgent loads at your next desktop login. Over a headless ssh session it cannot load yet, and the script
-says so and exits cleanly.
-
-</TabItem>
-<TabItem value="win" label="Windows">
-
-```powershell
-$rel = 'https://github.com/dovholuknf/atrium/releases/download/v0.0.1'
-Invoke-WebRequest "$rel/atrium_v0.0.1_windows_amd64.zip" -OutFile atrium_v0.0.1_windows_amd64.zip
-Expand-Archive atrium_v0.0.1_windows_amd64.zip -DestinationPath $HOME\atrium
-$dir = "$HOME\atrium\atrium_v0.0.1_windows_amd64"
-& "$dir\scripts\atrium-service.ps1" install -Exe "$dir\atrium.exe"
-```
-
-The task runs at `RunLevel Limited`, a standard-user task. Nothing is written to Program Files or the system PATH.
-To run `atrium` by name in a shell, add `$dir` to your user PATH.
-
-</TabItem>
-</Tabs>
-
-On Linux and macOS, `~/.local/bin` must be on your PATH to run `atrium` by name. If `atrium version` is not found,
-add `export PATH="$HOME/.local/bin:$PATH"` to your shell profile and open a new shell. The service does not need it:
-it runs the binary by its full path.
-
-## From source
+## Build it
 
 You need [Go](https://go.dev/dl/) at the version `go.mod` names, and git.
 
 ```bash
 git clone https://github.com/dovholuknf/atrium
 cd atrium
-git checkout v0.0.1
-go build -o build.claude/ ./...
+go build -o build.claude/ ./cmd/atrium
 ```
 
-This builds `atrium`, the single-process daemon, and `atrium2`, which runs the [hub and rooms](./rooms.md). Copy
-the one you want somewhere it can stay, such as `~/.local/bin`, then start it: `atrium daemon`, or see
-[Rooms](./rooms.md#start-a-hub) for `atrium2`. The service scripts in `scripts/` take the installed path with
-`ATRIUM_EXE=... scripts/atrium-service.sh install` or `scripts\atrium-service.ps1 install -Exe ...`.
+Copy `build.claude/atrium` (`atrium.exe` on Windows) somewhere it can stay, such as `~/.local/bin`, and put that
+folder on your PATH.
 
 :::warning Run the installed copy
 Hooks, the logon task and the self-restart all name a path to the binary. A path inside your build folder is
 rewritten by every build, so anything that points there goes stale the next time you build. Install the binary
 somewhere it can stay, and run it from there.
 :::
+
+## Start it
+
+```bash
+atrium run
+```
+
+That starts the hub, which serves the board on `http://localhost:7778`, and this machine's room, which runs the
+agents. The first time, it makes the room and names it after the machine, so one machine needs no setup beyond
+this. [Rooms and the hub](./rooms.md) explains the two, and how to add another machine.
+
+`atrium daemon` still starts the older single process, with the board and the agents together and no hub.
+
+## Start at login
+
+The service scripts in `scripts/` register this machine's **room** to start when you log in. Pass the installed path
+to the binary. Run them as yourself, never elevated.
+
+<Tabs groupId="os">
+<TabItem value="linux" label="Linux">
+
+```bash
+ATRIUM_SERVICE_VERB=room ATRIUM_EXE=$HOME/.local/bin/atrium scripts/atrium-service.sh install
+systemctl --user status atrium
+```
+
+This writes a systemd **user** unit. `ATRIUM_LINGER=1` keeps it running after you log out.
+
+</TabItem>
+<TabItem value="mac" label="macOS">
+
+```bash
+ATRIUM_SERVICE_VERB=room ATRIUM_EXE=$HOME/.local/bin/atrium scripts/atrium-service.sh install
+```
+
+This writes a LaunchAgent, never a LaunchDaemon, so the room starts when you log in to the desktop. Over a
+headless ssh session it cannot load yet, and the script says so and exits cleanly.
+
+</TabItem>
+<TabItem value="win" label="Windows">
+
+```powershell
+.\scripts\atrium-service.ps1 install -Verb room -Exe "$HOME\.local\bin\atrium.exe"
+.\scripts\atrium-service.ps1 status
+```
+
+Atrium starts from a **logon task**. It runs as you, in your session, with no stored password and no elevation. It
+restarts on failure and survives a reboot. It stops when you log out, because Windows has no equivalent of
+lingering. A Windows service would run in session 0, where it cannot open a terminal you can attach to.
+
+</TabItem>
+</Tabs>
+
+The scripts take `install`, `uninstall`, `start`, `stop`, `restart` and `status`, and the Windows one `selftest`
+as well. Their `stop` calls
+`atrium stop` first, so your agents wind down instead of dying at once. Without the room verb they register
+`atrium daemon`, the single process.
+
+The scripts start the room, not the hub. Start the hub with `atrium run` when you want the board. It finds the room
+already running and leaves it alone. The hub holds no work, so starting and stopping it costs your agents nothing.
+
+## Packages
+
+The repository can build a deb, an rpm, a macOS pkg, a Windows MSI and a plain archive per platform, and a release
+will carry them. None is published yet. `docs/release/packaging.md` covers what each one installs.
 
 ## Check it
 
@@ -168,6 +111,6 @@ Then open `http://localhost:7778`. The next step is the [Quick start](./quick-st
 
 ## One database
 
-Pass `--db` if you ever start the daemon by hand from more than one shell. Without it, which database atrium opens
+Pass `--db` if you ever start a room by hand from more than one shell. Without it, which database atrium opens
 depends on `WORKTREE_ROOT` in the shell it started from, and opening a different one looks exactly like your board
 losing everything. Atrium warns loudly when the database is not the one it opened last time.

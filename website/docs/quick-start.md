@@ -5,7 +5,7 @@ description: From an installed atrium to a card on the board, then to your first
 
 # Quick start
 
-This page assumes atrium is [installed](./install.md) and running. If you started it by hand, it is `atrium daemon`.
+This page assumes atrium is [installed](./install.md) and running. If you started it by hand, it is `atrium run`.
 
 The first three steps put sessions on the board. Steps 4 and 5 add the permission gate, which is optional.
 
@@ -13,10 +13,11 @@ The first three steps put sessions on the board. Steps 4 and 5 add the permissio
 
 Open `http://localhost:7778`.
 
-Atrium listens on two ports on purpose. Agents and their hooks talk to `:7777`. You talk to `:7778`. If storage
-ever fails, atrium closes `:7777` and leaves it closed, while the board stays up to tell you what broke. Hooks
-treat a closed port as "atrium is not there": sessions keep working, and a gated tool call falls back to Claude
-Code's own permission prompt.
+The board you are looking at is the hub's, on `:7778`. The agents and their hooks talk to the room, on `:7777`.
+They are separate on purpose. If the room's storage ever fails, it closes `:7777` and leaves it closed, while the
+board stays up to tell you what broke. Hooks treat a closed port as "atrium is not there": sessions keep working,
+and a gated tool call falls back to Claude Code's own permission prompt. If the hub is down, the room still serves
+its own board on `:7781`.
 
 ## 2. Wire the reporting hooks
 

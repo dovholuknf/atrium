@@ -12,14 +12,17 @@ the commands sessions and hooks use.
 
 | Command | Purpose |
 | --- | --- |
-| `atrium daemon` | The board, the API and the agent listener in one process. |
-| `atrium stop` | Ask a running daemon to wind down. Not the same as killing it. |
+| `atrium run` | The hub: the board on `127.0.0.1:7778` and the room link on `127.0.0.1:7779`. Starts this machine's room when none answers. |
+| `atrium room` | A room: the database, the terminals and the agents, on `127.0.0.1:7777`, with its own board on `127.0.0.1:7781`. |
+| `atrium stop` | Ask a running room or daemon to wind down. Not the same as killing it. The hub refuses it, so name a room by its board: `--url http://127.0.0.1:7781`. |
 | `atrium version` | The version this binary was built as, its commit, and the board it carries. `--short` for a script. |
 | `atrium preview` | A throwaway second board on a copy of your cards, for looking at a change before installing it. |
 | `atrium name [<name>]` | Name this atrium once, so two machines cannot claim each other's cards. |
+| `atrium daemon` | The older single process: board on `:7778`, agents on `:7777`, no hub. Still runs. |
 
-`atrium daemon` flags: `--addr` for the agent listener, `--http` for the board, `--db` for the database,
-`--shutdown-token` to allow a remote shutdown that carries the token.
+[Rooms and the hub](./rooms.md) covers `atrium run` and `atrium room`. `atrium daemon` takes `--addr` for the agent
+listener, `--http` for the board, `--db` for the database, and `--shutdown-token` to allow a remote shutdown that
+carries the token.
 
 `atrium preview --from live` copies the cards the running daemon has. A preview takes no hooks and starts
 passive: it does not start fixtures or open shares, so it is a place to look, never a second place to work.
@@ -39,7 +42,7 @@ passive: it does not start fixtures or open shares, so it is a place to look, ne
 | `atrium new-context <who>` | Cycle a card onto a fresh context, as the board's new-context does. |
 | `atrium archive-workers` | Archive done worker cards that piled up. Never a director. `--dry-run` lists them. |
 | `atrium merged` | Tell the room a merge happened, so the covered workers are marked finished. Run by git's post-merge hook. |
-| `atrium control` | The stdio MCP server with `atrium_status` and `restart_atrium`. |
+| `atrium control` | A stdio MCP server for sessions that do not reach the hub: `atrium_status`, `restart_atrium`, the peer tools (`atrium_peers`, `atrium_say`, `atrium_report`, `atrium_launch`, `atrium_task`, `atrium_exit`), `atrium_git_clone`, `atrium_git_push`, `atrium_git_url` and `atrium_open`. |
 
 `atrium launch` takes `--cwd`, `--title`, `--tags`, `--prompt`, `--model`, and where the work came from: `--source`,
 `--external` and `--item-url`.
@@ -53,6 +56,7 @@ passive: it does not start fixtures or open shares, so it is a place to look, ne
 | `atrium answer <handle> <answer>` | Reply to a peer's question, which also takes it off that card. |
 | `atrium peers` | The other sessions this one can address. |
 | `atrium tell <handle> <message>` | Say something to another session. Queued, never typed into a busy line. |
+| `atrium ready` | The handoff is written, so atrium can clear this session's context. Asked for by the limit prompt. |
 
 ## atrium: hub and rooms
 
@@ -74,6 +78,12 @@ passive: it does not start fixtures or open shares, so it is a place to look, ne
 | `atrium dispatch to <room>` / `list` / `cancel` | Queue a launch for a room, see what is queued, or withdraw an item no room has taken. |
 | `atrium usage backfill` | Write usage rows for turns the room did not record, from transcripts. |
 | `atrium requirements` | Parse an `atrium.requirements.yaml` and print it normalized, or refuse it with the key and line. |
+| `atrium rooms git` | Move code between the hub and its rooms: sync, collect, and which repositories. |
+| `atrium rooms legacy` | Whether a ziti or zrok room without a certificate may still attach. |
+| `atrium room get` / `set` | Read or set a room setting, such as `git_root`, in a stopped room's database. |
+| `atrium backlog` | The hub's backlog: `list`, `show`, `file`, `status`. |
+| `atrium reports` | Reports directors leave for each other on the hub: `list`, `read`, `add`. |
+| `atrium resources init` | Write a starter `resources.md`, the inventory of machines agents may use. |
 
 `atrium run` flags include `--addr` for the board (loopback, default `127.0.0.1:7778`), `--link` for the room link
 (default `127.0.0.1:7779`), and `--link-advertise` for the address written into join strings. The hub's own
@@ -86,7 +96,6 @@ The first `atrium run` on a machine with no room makes one: it names it after th
 and enrols it over its own link, so one machine needs no join string at all. Stopping `atrium run` never stops the
 room.
 
-`atrium2` is a temporary shim for one machine's deploy scripts, with the old names, and goes at the cutover.
 
 ## Environment
 

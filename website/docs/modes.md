@@ -61,8 +61,10 @@ Owning the terminal lets atrium do things it cannot do for a session in your ter
 - **Open a shell** beside a wedged agent on the same card.
 - **Stop it** by walking ctrl-c, then `exit`, then closing the terminal, then a kill, and saying which step worked.
 
-The cost is the terminal's lifetime. A supervised runner lives in atrium's process, so a room restart ends it.
-Atrium records each session's resume id and brings it back on a new terminal with its conversation intact.
+The cost is the terminal's lifetime. By default a supervised runner lives in the room's process, so a room restart
+ends it. Atrium records each session's resume id and brings it back on a new terminal with its conversation intact.
+With the `pty_host` setting on, the terminals live in a separate pty host instead, and the runners keep running
+through a room restart.
 
 ## Mixing them
 

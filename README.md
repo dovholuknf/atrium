@@ -182,7 +182,7 @@ The board always binds loopback and has no login. A wide `--addr` is refused.
 | `atrium backlog` / `reports` | The hub's backlog and director reports, from any room. |
 | `atrium resources` | The machines and environments agents may use. |
 | `atrium preview` | A throwaway second board, on a copy of your cards, for looking at a change before installing it. |
-| `atrium control` | A stdio MCP server with `atrium_status` and `restart_atrium`. |
+| `atrium control` | A stdio MCP server for sessions that do not reach the hub: status, restart, the peer tools, git and open. |
 | `atrium db compact` / `ledger` / `usage` | Offline tools for a room's database: a packed copy, the work ledger, token use. |
 | `atrium name [<name>]` | Name this atrium once, so two machines cannot claim each other's cards. |
 | `atrium version` | The build, its commit, and whether the tree was clean. |
