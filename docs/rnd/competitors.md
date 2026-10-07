@@ -150,7 +150,7 @@ that says it is deliberately not the guide: the version-matched guide is printed
 **Overlap with atrium.** Worktree per agent, hooks for state, a peer and mail path, a CLI an agent calls, a phone
 view, SSH. Orca's is a desktop IDE and atrium is a daemon and a board.
 
-**Ideas to steal.**
+**Ideas to borrow.**
 1. *Dependencies between work items, and a gate a director cannot resolve.* Sketch: `work_item` (`internal/store/
    ledger.go`) gets a `blocked_by` list of item ids. A launch onto an item whose blockers are not `accepted` is held
    in the same held state a capped launch would be (idea 5 in section 4), and a `decision_gate` is a report kind whose
@@ -162,7 +162,7 @@ view, SSH. Orca's is a desktop IDE and atrium is a daemon and a board.
 3. *A guide served by the binary.* Sketch: the agent-facing skill or brief is a stub that says "run `atrium help
    agent`". Whether `internal/daemon/help.go` already serves a whole guide and not per verb text was not traced.
 
-**Where atrium is ahead.** A durable, matchable permission gate that can refuse before a tool runs. Orca observes
+**Where atrium differs.** A durable, matchable permission gate that can refuse before a tool runs. Orca observes
 `PermissionRequest` and answers `204`. Also: one Go binary and Windows first. Orca lists Windows as a platform in its README badge and
 carries WSL specific relay files (`wsl-agent-hook-relay.ts`). How well that works was not tested. Standing rules with an audit trail, auto mode with a review, the halt.
 
@@ -208,7 +208,7 @@ versions and exact default-branch commits" (`CHANGELOG.md`), and `[[startup]]` h
 drive, hooks written into the agent's settings, resume, notifications. Low on the model: herdr has panes, tabs and
 workspaces and no cards, no durable rules, no review, no gate.
 
-**Ideas to steal.**
+**Ideas to borrow.**
 1. *Screen detection as data.* Atrium's version is Go code for one runner: `internal/daemon/idleframe.go` matches the
    Claude prompt between two rules and the "esc to interrupt" footer, and `looksidle.go` turns that into an activity
    badge after 25 seconds of silence. A card on any other harness has no such badge unless hooks exist. Sketch: a
@@ -224,7 +224,7 @@ workspaces and no cards, no durable rules, no review, no gate.
 3. *Plugins as a pane, installed by git and commit.* Same shape as the pack in section 3.4. Read as confirmation
    that an out of process, commit pinned plugin story works, not as new work.
 
-**Where atrium is ahead.** A gate: herdr reports `blocked` and does not decide. Durable state (herdr restores layout
+**Where atrium differs.** A gate: herdr reports `blocked` and does not decide. Durable state (herdr restores layout
 and can resume supported sessions, but says "the original processes do not survive"). A board with columns for human
 attention, the work ledger, review, shelving, overlays. On Windows atrium's supervision works today and herdr's live
 handoff does not exist.
@@ -245,19 +245,19 @@ mailbox and a monitor (`src/team/`, about sixty files: `dispatch-queue.ts`, `mai
 `idle-nudge.ts`, `merge-coordinator.ts`, `recovery-saga.ts`, `governance.ts`). Only the headers of `permissions.ts`,
 `governance.ts`, `sentinel-gate.ts` and the factcheck hook were read.
 
-**What is honest in it.** `src/team/permissions.ts` opens with: "This is an advisory layer only. MCP workers run in
+**What its own code states.** `src/team/permissions.ts` opens with: "This is an advisory layer only. MCP workers run in
 full-auto mode and cannot be mechanically restricted. Permissions are injected into prompts as instructions for the
 LLM to follow." Its glob matcher is written character by character "to avoid ReDoS risk". `governance.ts` sets a
 default worker cap of twenty with a hard ceiling that a lower configured value wins over (`resolveMaxWorkers`).
 
 **Overlap with atrium.** A director and workers, a mailbox, a cap, a merge step. Nothing on a permission gate.
 
-**Ideas to steal.** One, and it is already in atrium: `src/hooks/factcheck` validates a worker's claims payload, but
+**Ideas to borrow.** One, and it is already in atrium: `src/hooks/factcheck` validates a worker's claims payload, but
 the read found only shape checks and path existence, with no `git` call anywhere in the directory. Atrium already does
 the stronger thing: `SetReportSHA` (`internal/store/a2a.go`) records the commit a `done` report names and whether it
 was found in the card's worktree, and `report_unverified` is stored. Nothing to take.
 
-**Where atrium is ahead.** A real gate where OMC says its own permissions are advice. A real terminal a human owns.
+**Where atrium differs.** A real gate where OMC says its own permissions are advice. A real terminal a human owns.
 Durable state.
 
 **Not traced.** Almost all of `src/team`, the `dist/` bundle, and the fifty other directories under `src/`.
@@ -289,15 +289,15 @@ and relationships as tools. That is the agent facing surface, and it is broad on
 
 **Overlap with atrium.** A board of cards over worktrees, MCP tools for agents, an approval surface, diffs and PRs.
 
-**Ideas to steal.**
+**Ideas to borrow.**
 1. *Offer the rule the agent's own CLI would offer.* Sketch: when the board asks a human about a `Bash` request,
    the Approve control has a second button "Approve and always allow `<prefix>`" that writes a standing rule
    (`internal/store/rules.go`, prefix, glob or folder) for exactly that prefix. Whether Claude's `PreToolUse` hook
    input carries suggestions was not traced. If not, the daemon proposes a prefix from the command itself. Small.
    Check the board first, it may already do this (`docs/runtime/auto-mode.md`).
-2. *A question form of approval.* Not new for atrium (`internal/store/ask.go` is a question table). Not a steal.
+2. *A question form of approval.* Not new for atrium (`internal/store/ask.go` is a question table). Nothing to borrow.
 
-**Where atrium is ahead.** Durable approvals and rules, and a gate that survives a restart. A real terminal. The
+**Where atrium differs.** Durable approvals and rules, and a gate that survives a restart. A real terminal. The
 product is also alive.
 
 **Not traced.** The remote and relay crates (about ten of the twenty-nine), the Tauri app, review and the PR monitor.
@@ -324,7 +324,7 @@ indefinitely", with a documented choice among satisfy, surface, auto-resolve or 
 **Overlap with atrium.** Sources (poll a tracker), workspaces and hooks, a concurrency cap, retry with backoff, a
 run reconciliation loop. Atrium's sources and recognisers cover the intake half in a different way.
 
-**Ideas to steal.**
+**Ideas to borrow.**
 1. *A repository-held contract with last known good reload.* Sketch: this is where a role file (`docs/backlog-2.md`
    r-003) lives and how it behaves. A `.atrium/roles/*.md` (front matter plus brief) read when a card launches into
    that directory, cached with its content hash, and re-read on the next launch. An unparsable edit keeps the previous
@@ -333,7 +333,7 @@ run reconciliation loop. Atrium's sources and recognisers cover the intake half 
    that its harness row still resolves and its directory exists before spawning, and a failure is a row error and not a
    spawn. Small, and part of what `runnersetup` already does.
 
-**Where atrium is ahead.** An operator in the loop. Symphony's own example sets `approval_policy: never` and the
+**Where atrium differs.** An operator in the loop. Symphony's own example sets `approval_policy: never` and the
 sandbox to workspace write, on purpose, because "engineers do not need to supervise Codex". Atrium is the tool for the
 case where they do.
 
@@ -383,7 +383,7 @@ traced beyond that.
 **Overlap with atrium.** Director and workers (Mayor and polecats), a mailbox, escalation, a merge step, a cap,
 worktrees. This is the closest orchestration model to `runtime/DIRECTOR.md`.
 
-**Ideas to steal.**
+**Ideas to borrow.**
 1. *A board wide freeze.* Sketch: a setting `board_frozen` holding the reason and who set it. It is a new step in the
    permission chain, after a queued message and after a shelved card and **before** standing rules, because a
    freeze that a rule can override is not one. It answers `block` with "atrium is paused: `<reason>`, nothing can run
@@ -398,7 +398,7 @@ worktrees. This is the closest orchestration model to `runtime/DIRECTOR.md`.
 3. *Hold a launch instead of refusing it.* Atrium's cap refuses (section 3.1). Gas Town holds and dispatches under the
    cap. Sketch in section 4, rank 5.
 
-**Where atrium is ahead.** A real board and a real permission gate. Gas Town's model is "agent decides, Go transports"
+**Where atrium differs.** A real board and a real permission gate. Gas Town's model is "agent decides, Go transports"
 (`plugin-system.md`, "ZFC"), so a great deal of policy lives in prompts. Atrium enforces what it can in code.
 Standing rules, auto mode with review, durable state in one SQLite file (Gas Town's is git and a Dolt server).
 
@@ -421,14 +421,14 @@ runner's tool use id. Last commit 2026-06-18.
 **Overlap with atrium.** Nearly total on the daemon idea: a local daemon, a store, approvals, SSE. It is the project
 atrium would have become had it stayed with headless sessions.
 
-**Ideas to steal.**
+**Ideas to borrow.**
 1. *A time boxed skip-permissions.* Already in atrium: `AutoUntil` and `AutoExpired` (`internal/daemon/daemon.go:748`),
    cleared lazily at the one moment it matters. hld does it with a 30 second monitor and an event. Atrium's is the
    better shape. Nothing to take.
 2. *File snapshots.* hld keeps `file_snapshots` rows, which would let the board show a diff of what a session changed
    between two tool calls without git. Only the table's existence was read, not what fills it. Not proposed.
 
-**Where atrium is ahead.** Alive, and a terminal a human types into. hld's permission path needs the MCP tool, so a
+**Where atrium differs.** Alive, and a terminal a human types into. hld's permission path needs the MCP tool, so a
 runner that does not use it is not gated. Atrium's is a hook on every tool call.
 
 **Not traced.** The whole session manager, the sqlite migrations, and the WUI.
@@ -449,11 +449,11 @@ configurable sandbox profiles"). Only that file's header and imports were read, 
 
 **Overlap with atrium.** Very little. Ruflo runs work for you. Atrium shows you work and gates it.
 
-**Ideas to steal.** A global budget for spend across background jobs. Atrium has usage data
+**Ideas to borrow.** A global budget for spend across background jobs. Atrium has usage data
 (`internal/store/usage.go`, `session_usage`) and a cache keepalive with its own suspension rule, but nothing that stops
 launches when spend crosses a line. That is the automatic trigger for the freeze in 2.7, not a separate feature.
 
-**Where atrium is ahead.** Everything a supervisor does. Ruflo is a different category, and its rank on this list is
+**Where atrium differs.** Everything a supervisor does. Ruflo is a different category, and its rank on this list is
 the strongest evidence in this file that adoption follows "make the agent smarter" and not "watch the agent".
 
 **Not traced.** Nearly everything. This is a README plus one file.
@@ -473,9 +473,9 @@ or a deadline before pressing Enter.
 
 **Overlap with atrium.** Worktree per session, a list of sessions, attach. Almost nothing on permissions.
 
-**Ideas to steal.** None. It is the baseline atrium's gate is measured against.
+**Ideas to borrow.** None for the gate. claude-squad keeps permissions deliberately simple, which makes it a useful reference point.
 
-**Where atrium is ahead.** Auto approval that is recorded, reviewable, bounded by a deadline and beaten by a standing
+**Where atrium differs.** Auto approval that is recorded, reviewable, bounded by a deadline and beaten by a standing
 never rule, against a daemon that presses Enter. A screen string is the whole decision and it is per program, so a
 prompt that changed wording is a hang, and one that matched too much is an approval nobody chose.
 
@@ -663,7 +663,7 @@ Cost is a guess from the shape of the code, and is smaller than the first estima
 machinery exist: the pack manifest and subset import about a week, the gate about the same again. Not an estimate from
 tracing the work.
 
-## 4. Ideas worth stealing, ranked
+## 4. Ideas worth borrowing, ranked
 
 Across everything read: bb, Charon (its list in `docs/rnd/charon.md` section 5 is not repeated), and the tools in
 section 2. One list. Cost is a guess from the shape of the code and is labelled as one. Items removed from the earlier
@@ -702,7 +702,7 @@ atrium would not call out on start). Auto approval by pressing Enter on a screen
 decides, Go transports" as a design rule (Gas Town), since atrium enforces in code what it can. A live server handoff
 by passing file descriptors (herdr), which is Unix only and would not exist on the platform atrium leads on.
 
-## 5. Where atrium is ahead
+## 5. Where atrium differs
 
 Against bb, in `docs/rnd/bb.md` section 4. Against Charon, in `docs/rnd/charon.md` section 6. Against the tools in section 2,
 each has its own paragraph. Across all of them, the same three points hold:

@@ -2,7 +2,7 @@
 
 Status: research, 2026-09-29. A source read of Orca, with what atrium could borrow from it ranked in section 5.
 
-Standing reference. Written by reading the source, not the pitch. The survey of the wider field is
+Standing reference. Written from the source code, not from the README. The survey of the wider field is
 `docs/rnd/competitors.md`, where a shorter entry (section 2.2) points here.
 
 Source read: `github.com/stablyai/orca`, MIT (Lovecast Inc.), cloned shallow to `D:/tmp/orca-2026-09-29` on 2026-09-29
@@ -69,7 +69,7 @@ inside the desktop app), and a relay in `cloud/` that pairs phone and desktop by
 (`cloud/README.md:3-7`), with a director that assigns hosts to cells. A task page with GitHub, GitLab, Linear and Jira
 intake, a pull request page, a workspace cleanup scanner, and desktop and phone notifications.
 
-## 2. The good
+## 2. Strengths
 
 ### The coordinator is small, and the rules are in the comments
 
@@ -228,7 +228,7 @@ tray dot before its cooldown and focus gates (`notification-delivery-service.ts:
 covering the phone (`:90`), and skips the OS call when macOS permission is denied so the renderer can show a fallback
 (`:156`).
 
-## 3. The bad
+## 3. Trade-offs
 
 - **The hook token is a bearer string, checked with `!==`.** `server-lifecycle.ts:64`. Any local process that can read
   the environment of a pty or the endpoint file can post hooks, and the compare is not constant time (the dispatch
@@ -258,7 +258,7 @@ covering the phone (`:90`), and skips the OS call when macOS permission is denie
   19334) show a code base being repaired at pace. Several comments describe a bug found in the field and not a
   design.
 
-## 4. Where atrium is ahead
+## 4. Where atrium differs
 
 - **A gate that can refuse before the tool runs.** The six step permission chain in `internal/daemon/daemon.go`,
   standing rules in `internal/store/rules.go`, and a decision log naming who decided. Orca's terminal path observes.
@@ -272,7 +272,7 @@ covering the phone (`:90`), and skips the OS call when macOS permission is denie
 - **A ledger of work with `open`, `reported`, `accepted`** (`internal/store/ledger.go`), where Orca's DAG has
   `completed` and `failed`.
 
-## 5. Worth stealing, ranked
+## 5. Worth borrowing, ranked
 
 Credit the Orca path in each commit message. Atrium files were checked on 2026-09-29.
 
@@ -344,7 +344,7 @@ From `desktop-away-state.ts`. Atrium's board has a service worker (`internal/api
 `internal/api/web/js/logs-rules.js:627-653`. The idea is to add an idle signal, and unknown means notify. Size: small,
 and only useful once the board is used from a phone.
 
-## 6. Not worth stealing
+## 6. Not a fit for atrium
 
 - **The Electron shell, mobile app and relay in `cloud/`.** Atrium reaches other machines through an overlay
   (`docs/fabric/overlays.md`), and a relay that pairs phones and desktops is what `CLAUDE.md` rules out.
@@ -363,7 +363,7 @@ and only useful once the board is used from a phone.
 
 Orca treats a terminal as something to be coordinated from outside, with an idle edge and a pointer. Atrium treats it
 as something a human owns, with a gate in front. Both read hook events for state. The hook server, the fence and the
-mailbox are the same problems atrium has solved a different way, and section 5 lists where the answer is better here.
+mailbox are the same problems atrium has solved a different way, and section 5 lists where atrium could borrow.
 
 ## 8. What remains unverified, and what is not done
 

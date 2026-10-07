@@ -2,7 +2,7 @@
 
 Status: research, 2026-09-03. A source read of Charon, with what atrium could borrow from it ranked in section 5.
 
-Standing reference. Written by reading the source, not the pitch.
+Standing reference. Written from the source code, not from the README.
 
 Source read: `github.com/Lomchat/charon`, Apache 2.0, cloned shallow to `D:/tmp/charon` on 2026-09-03 and not
 committed here. Every Charon path below is relative to that clone. Every atrium path is relative to this repo.
@@ -29,7 +29,7 @@ months and is direct about the rough edges.
 Assumption, stated inline: the "six months" figure comes from the project's own `CHANGELOG.md` header and its
 public post, not from anything verifiable in the tree.
 
-## 2. The good
+## 2. Strengths
 
 ### The peer bus: sessions that can address each other
 
@@ -190,7 +190,7 @@ fire-and-forget resumes died with a hub restart and left sessions asleep forever
 (`agentUpdate.ts:56-62`). There is also an `'ahead'` branch that hands off when a machine's agent is newer than
 the hub, added after a two-hub rollback fight (`lib/version.ts:58-61`).
 
-## 3. The bad
+## 3. Trade-offs
 
 Judged against what Charon is trying to be: one operator's board over a handful of machines they own.
 
@@ -250,7 +250,7 @@ For Codex, "always" is handed to Codex itself as `acceptForSession` or `scope: "
 (`session.py:1230-1238`). There is no middle ground between "ask me about this tool forever" and "stop asking
 about anything".
 
-Worse, the model can put itself there. `ExitPlanMode` is auto-allowed (`session.py:92-93`) and its handler
+The model can also reach that mode. `ExitPlanMode` is auto-allowed (`session.py:92-93`) and its handler
 schedules `_switch_to_auto_after_exit_plan()`, which sets `self.permission_mode = "auto"`
 (`session.py:1177-1183`, `:1356-1372`). Approving a plan therefore hands the rest of the session an unguarded
 tool surface, and the gate that would have asked is the same gate that was just switched off. Plan mode also
@@ -288,7 +288,7 @@ boundary, it is there so that a `..` in a path can't quietly turn a file browser
 any absolute or `~`-prefixed path and is not contained (`fsnav.py:50-60`). Consistent with the stated posture,
 and still a thing a reader should know before assuming the file surface is scoped.
 
-## 4. The ugly
+## 4. Limits of the single-user design
 
 The parts that are load-bearing and would not survive a second user.
 
@@ -357,7 +357,7 @@ tighten. They would each have to grow one.
 
 ### The peer reservation leaks, and the leak wedges the session it leaked on
 
-This is the most concrete defect found. `peer_target_active` is set in `peer_send` (`server.py:1091`) and
+Read from the code, not observed. `peer_target_active` is set in `peer_send` (`server.py:1091`) and
 cleared in four places: normal completion (`:450-451`), a delivery exception (`:1101`), timeout expiry
 (`:391-393`) and a late target status event (`:415-416`).
 
@@ -437,7 +437,7 @@ the daemon keeps serving with a state file that is silently frozen and nothing t
 correct (see section 2), and the parent directory is not fsynced, so a host power loss can lose the rename even
 though a `SIGKILL` cannot.
 
-A `SIGKILL` mid-turn also leaves a specific mess. `to_persist` rewrites `starting` and `thinking` to `active`
+A `SIGKILL` mid-turn has a specific effect. `to_persist` rewrites `starting` and `thinking` to `active`
 (`session.py:1047-1048`) and `_restore_existing` relaunches those (`server.py:795-839`), but the prompt that was
 in flight is not re-sent. The result is a live, resumed session whose last user message may have produced
 nothing at all, with no marker saying so. `sleeping` and `killed` are correctly not resurrected (`:816-821`).
@@ -473,7 +473,7 @@ hub covering the parts that bit before (`replayExactness`, `messageOrderEpoch`, 
 the peer reservation lifecycle, the `_inject_peer_reply` deadline, and holder attach failure unlinking a live
 socket. Those are the three places where a failure costs someone's work rather than a repaint.
 
-## 5. Worth stealing, ranked
+## 5. Worth borrowing, ranked
 
 ### 1. The peer bus: handles, discovery, and a message that carries its provenance
 
@@ -516,11 +516,11 @@ How it maps, concretely:
   next tool call, and the Stop hook reaches an idle session (`internal/daemon/messages.go:14-28`). A peer
   message becomes a queued message with a sender, delivered by machinery that already exists and already sits
   second in the permission chain.
-- **Steal the envelope wording, because atrium already agrees with it.** `messageBanner`
+- **Borrow the envelope wording, because atrium already agrees with it.** `messageBanner`
   (`internal/daemon/messages.go:35-51`) exists for exactly Charon's reason: a model reads a blocked tool call as
   a policy refusal unless told otherwise. A peer variant needs one more thing Charon's has and atrium's does not
   yet need: who sent it, and that it was not the human (`server.py:1065-1078`).
-- **Steal every guardrail.** The rate limit, the size cap, the self-send refusal and the do-not-reply-by-sending
+- **Borrow every guardrail.** The rate limit, the size cap, the self-send refusal and the do-not-reply-by-sending
   rule (`server.py:1023-1054`) are the difference between a peer bus and two agents talking to each other until
   the budget runs out. They are ten lines each and they are the reason Charon's works.
 - **Leave the reply capture alone for now.** Charon buffers `assistant_text` because it holds the SDK's event
@@ -640,7 +640,7 @@ site, that a daemon which crashed between recording a decision and answering wou
 (`internal/api/api.go:516-533`), so a human who retried after a lost response sends the prompt twice. Same
 argument, different write path.
 
-**Adapt on one point, which Charon gets wrong.** Its accepted-id set is in memory and is dropped by a
+**Adapt on one point, where atrium's needs differ.** Its accepted-id set is in memory and is dropped by a
 `SIGKILL` along with the rest of the runtime state (`recent_input_ids` is cleared at `server.py:2066-2086` and
 is not persisted), so the retry that survives a crash is exactly the one the key cannot catch. Atrium's
 `dedup_key` is a `UNIQUE` column in the store for that reason. Put the prompt key in the same place, not in a
@@ -657,7 +657,7 @@ an unattended process fails fast instead of blocking on a prompt nobody will see
 that is an allow-list with no force push (`:16-19`). If atrium ever shells anything on a runner's behalf, this
 is the posture to copy.
 
-## 6. Not worth stealing, and why
+## 6. Not a fit for atrium, and why
 
 Refusal is a legitimate conclusion, and most of these are refusals against a decision atrium already wrote down.
 
@@ -693,7 +693,7 @@ or folder matching with most-specific-wins (`CLAUDE.md`, "The permission chain",
 `internal/store/schema.go:64`, rebuilt at `:293`), a durable decision log with what answered each one
 (`permission.decision`, `permission.reason`, plus `by` on the event, `internal/daemon/daemon.go:351-356`), and
 an import and export path (`internal/api/api.go:154-156`). Charon has one JSON array of bare tool names per
-session (`lib/db/schema.ts:244`). Atrium is ahead here and should stay.
+session (`lib/db/schema.ts:244`). Atrium keeps its finer-grained rules.
 
 Worth reading their comment anyway, because it is a validation and not a competition: they moved that set from
 memory onto disk after finding the hub restarts far more often than a session lives, so "the answer was re-asked
@@ -703,7 +703,7 @@ observation `perm_rule` was built from.
 **A total-bypass permission mode.** Charon's `auto` skips the hook entirely (`session.py:1234`). Atrium's auto
 mode is the opposite trade: approve without asking, record everything, sit last in the chain so replays,
 messages, shelving and rules all still win, and pay for it with a review (`docs/runtime/auto-mode.md`,
-`internal/daemon/daemon.go` step 5). Atrium already answers this better.
+`internal/daemon/daemon.go` step 5). Atrium's auto mode makes a different trade.
 
 **Holding provider credentials, and signing in through the board.** Charon has in-hub OAuth for Claude and a
 device-code flow for Codex (`CHANGELOG.md`, "In-hub sign-in for both backends"), and an encrypted Anthropic key

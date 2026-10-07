@@ -43,13 +43,6 @@ Thumbs.db
 # Only the old dated local backlog files. docs/backlog/<dept>/<id>.md is tracked.
 /docs/backlog/backlog-*.md
 
-# Notes comparing atrium to another tool. Local only, on purpose: they name a
-# third party, quote its documentation, and say where it is ahead of us. That is
-# a reasonable thing to write for yourself and not a thing to publish from this
-# repository. What comes OUT of one is a backlog item that stands on its own and
-# names nobody.
-*-comparison*.md
-
 # Playwright, which is not a dependency of atrium and is installed only when
 # somebody wants to watch a recorded walkthrough. The specs under
 # scripts/walkthrough ARE checked in. What it downloads and what it produces

@@ -2,7 +2,7 @@
 
 Status: research, 2026-09-29. A source read of bb, with what atrium could borrow from it ranked in section 5.
 
-Standing reference. Written by reading the source, not the pitch. The survey of the wider field is
+Standing reference. Written from the source code, not from the README. The survey of the wider field is
 `docs/rnd/competitors.md`, which is where the extensibility question lives. This file is the depth on the one tool that
 turned out to be large enough to need its own.
 
@@ -43,7 +43,7 @@ providers, each a plugin with a bridge speaking a line-JSON protocol
 (`plugins/provider-claude-code/src/bridge/bridge.ts:1984-2081` handles `thread/start`, `thread/resume`, `thread/fork`,
 `turn/start`, `turn/steer`, `thread/stop`).
 
-## 2. The good
+## 2. Strengths
 
 ### Almost everything is a plugin, including the providers
 
@@ -188,7 +188,7 @@ machine page. It is a clamp on the host and not a rule about the agent, which is
 - **A code review guide with simplicity red flags** (`docs/CODE_REVIEW.md:34-45`): new registries, coordinators,
   managers and abstractions with one real caller are findings. Worth reading against the SDK's own size.
 
-## 3. The bad
+## 3. Trade-offs
 
 ### The unauthenticated API is stated, not fixed
 
@@ -245,7 +245,7 @@ experimental, and the SDK has scheduled removals (`provider-bridge-scheduled-rem
 pre-1.0 composer API that "has been removed" (`packages/plugin-sdk/README.md:80-82`). A plugin written today will be
 rewritten. The stability of the surface is not yet the strength its breadth suggests.
 
-## 4. Where atrium is ahead
+## 4. Where atrium differs
 
 - **Supervising the real terminal.** A human types into the same `claude` the daemon supervises, and the permission
   chain, activity badge and message queue work around that human rather than instead of them. bb has no equivalent
@@ -261,7 +261,7 @@ rewritten. The stability of the surface is not yet the strength its breadth sugg
 - **Extensions that cannot become the daemon.** See `docs/rnd/competitors.md`: atrium's extension points run commands with
   bounded output, out of process. Nothing a user writes shares the address space of the permission gate.
 
-## 5. Worth stealing, ranked
+## 5. Worth borrowing, ranked
 
 The ranked list across every tool is at the end of `docs/rnd/competitors.md`. The bb entries, with the sketch that fits
 atrium's design:
@@ -331,7 +331,7 @@ instructions, and `orchestration.md` is good source material for them. Embedding
 to run them would add a second language to a project that chose one binary on purpose. Cost of the patterns: none,
 they are text.
 
-## 6. Not worth stealing
+## 6. Not a fit for atrium
 
 - **The in-process plugin runtime.** Third party code sharing an address space with the permission gate is the one
   thing atrium's design rules out. Section 4.

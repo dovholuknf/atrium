@@ -308,7 +308,7 @@ operator has a machine that sleeps.
   one useful idea, an approval tied to what was shown, is a small check to make in the permission view.
 - **Native editors and notebooks** (Orca, Atlas). The board is not an IDE, and "open in your editor" is enough.
 
-## 6. Where atrium is ahead
+## 6. Where atrium differs
 
 Short, because competitors.md section 5 has it. None of the eighteen tools here gates every tool call with durable
 rules while owning the terminal a human types into. The newer control planes (Mission Control, Omnigent,
