@@ -70,7 +70,7 @@ the room writes a readable snapshot file beside its database so the list survive
   closed in the last seven days, in the shape of `AGENTS-UNFINISHED.md`. Any agent or person can `cat` it with the
   daemon down. It is a projection of the database, never read back, and a failure to write it is logged and
   ignored, the posture of a cold event sink.
-- `atrium2 ledger` prints the same list from the database opened read-only, with `--json` for scripts, for the
+- `atrium ledger` prints the same list from the database opened read-only, with `--json` for scripts, for the
   case where the snapshot is stale because the daemon died between a write and its rename.
 
 Rejected: files as the source of truth. A file per worker in its worktree pollutes a git tree the worker commits
@@ -477,7 +477,7 @@ Each stage lands on its own and is labelled by where it deploys.
 1. **The ledger records (ROOM-SIDE).** The transaction helper and the transaction-aware db sink, migration,
    backfill, items created at launch, generations, reports, says and instructions logged, `done` report to
    `reported`, the move on `exited` and the liveness sweep, the durable `ended` notice, the snapshot file,
-   `atrium2 ledger`.
+   `atrium ledger`.
 2. **The arbiter rules (HUB-SIDE and ROOM-SIDE).** `atrium_verdict` with revisions, the verdict endpoint and its
    rules, the reject reaching the worker, `atrium_peers` `work` and `mine`, `atrium_task` `work`.
 3. **Structured outputs (HUB-SIDE and ROOM-SIDE).** `outputs` on `atrium_report` and `atrium finish`, the branch and
@@ -522,7 +522,7 @@ stage ships.
 - **A continuation needs the arbiter.** A third session launches with `continues` on somebody else's worker.
   Expect: refused. Two continuations of one item at once. Expect: one wins, the other is refused.
 - **The snapshot survives the daemon.** Stop the room. Expect: `work-ledger.md` lists the open items, and
-  `atrium2 ledger` prints the same from the database.
+  `atrium ledger` prints the same from the database.
 - **Outputs are checked, not refused.** Report `done` with a commit from another repo and a missing path. Expect:
   accepted as `reported`, marked `unverified` naming both, and the notice says so.
 - **A pruned card keeps its item.** Prune a card with an `accepted` item. Expect: the item and its log still read.

@@ -22,7 +22,7 @@ Add it to a session's MCP configuration as an HTTP server:
   "mcpServers": {
     "atrium-control": {
       "type": "http",
-      "url": "http://localhost:7800/_hub/mcp",
+      "url": "http://localhost:7778/_hub/mcp",
       "headers": {
         "X-Atrium-Agent": "${ATRIUM_AGENT_NAME}",
         "X-Atrium-Room": "${ATRIUM_ROOM}"
@@ -32,7 +32,7 @@ Add it to a session's MCP configuration as an HTTP server:
 }
 ```
 
-Use your hub's board address. `7800` is the default. Atrium sets `ATRIUM_AGENT_NAME` and `ATRIUM_ROOM` in the
+Use your hub's board address. `7778` is the default. Atrium sets `ATRIUM_AGENT_NAME` and `ATRIUM_ROOM` in the
 environment of every session it launches.
 
 The seeded claude runner starts sessions with `--strict-mcp-config --mcp-config ~/.atrium/mcp.json`, so a

@@ -144,7 +144,8 @@ one: a margin is legible and a mis-wrapped screen is not.
 2. **What happens to a supervised runner when the daemon dies unexpectedly.** Its pty closes, so the runner
    probably dies with it, and work in flight is lost. Window mode has the opposite property: the runner survives
    atrium entirely. That is a real argument for keeping window mode rather than treating pty mode as its
-   replacement, and it should be stated in the harness configuration rather than discovered.
+   replacement, and it should be stated in the harness configuration rather than discovered. Answered since: with
+   the `pty_host` setting on, the terminals live in the pty host and outlive the room (`internal/daemon/hostterm.go`).
 
 3. **Whether attach should be able to send a signal**, such as an interrupt, distinctly from typing a control
    character into the stream. A browser cannot press ctrl-c the way a terminal does.

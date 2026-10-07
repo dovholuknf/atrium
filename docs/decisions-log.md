@@ -7,9 +7,10 @@ each section.
 Rules for adding:
 - One entry per decision: the DECISION, the WHY, and where it is implemented (commit / file / doer) if known.
 - If a later decision reverses an earlier one, keep the old line and mark it `(SUPERSEDED YYYY-MM-DD)`.
-- Design-interview Q&A that only needs dedup lives in `docs/interview-log.md`; behavior changes to the orchestrator
-  itself are also logged one line each in `dotfiles/claude/tuning-changelog.md`. This file is the human-facing
-  index of the substantive product/architecture decisions.
+- Design-interview Q&A that only needs dedup lives in `docs/interview-log.md`, which is gitignored and kept on the
+  machine that wrote it. Behavior changes to the orchestrator itself are also logged one line each in
+  `dotfiles/claude/tuning-changelog.md`. This file is the human-facing index of the substantive product/architecture
+  decisions.
 
 ## 2026-09-21
 

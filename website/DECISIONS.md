@@ -74,9 +74,9 @@ passes them to the script, and uploads and deploys the output. It runs on a publ
 A codex session reviewed the site read-only. What changed because of it:
 
 - **The gate is not promised by default.** The hero, the features and the intro say atrium gates tool calls, and
-  the intro now carries a table of what works out of the box and what you add: the gate hook, and `atrium2` for
-  rooms. The quick start puts sessions on the board first and adds the gate as an optional step that ends in a
-  request you can see and block.
+  the intro now carries a table of what works out of the box and what you add: the gate hook, and `atrium room`
+  (then `atrium2`) for rooms. The quick start puts sessions on the board first and adds the gate as an optional step
+  that ends in a request you can see and block.
 - **An edited approval never runs the original.** The starter gate script refuses and hands the edited command
   to the agent. `website/scripts/test-gate-hook.js` runs that exact script, extracted from `docs/hooks.md`, against
   a mock of atrium's agent port on every docs build.

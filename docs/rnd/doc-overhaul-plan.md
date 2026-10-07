@@ -409,7 +409,13 @@ The `AGENTS.md` files are not in this repository. They live in the dotagents rep
 
 ### `internal/store`, `internal/api`, `internal/claudeconf`, `internal/safepath`
 
-- Checked at batch 2 for paths that predate the reorg. Listed here when found.
+Checked at batch 2. Each names a doc by its path before the 09-29 reorg:
+
+- `internal/api/AGENTS.md` and `internal/safepath/AGENTS.md`: `docs/file-transfer-design.md` is
+  `docs/runtime/file-transfer-design.md`.
+- `internal/store/AGENTS.md`: `docs/activity-design.md` is `docs/runtime/activity-design.md`, and
+  `docs/intake-design.md` is `docs/runtime/intake-design.md`.
+- `internal/claudeconf/AGENTS.md`: nothing stale found.
 
 ## Gaps found, not fixed here
 
@@ -418,6 +424,12 @@ The `AGENTS.md` files are not in this repository. They live in the dotagents rep
 - 76 files wait in `docs/changes/` for `fold-changes.ps1`.
 - The code comments in the dead-link table above.
 - `docs/backlog.md` links 16 gitignored files.
+- The service installers still default to the old single process: `packaging/atrium.service`,
+  `packaging/postinstall.sh` and `scripts/atrium-service.sh` run `atrium daemon` unless told `room`
+  (`ATRIUM_SERVICE_VERB=room`, `atrium-service.ps1 -Verb room`). `docs/release/packaging.md` says so correctly.
+- `internal/cli/backlog_import.go` says the files in `docs/backlog/` are the source of truth and the hub's backlog a
+  mirror, "until the orchestrator says otherwise". The brief says the live backlog is the hub's. One of the two
+  needs updating.
 
 ## Interview
 

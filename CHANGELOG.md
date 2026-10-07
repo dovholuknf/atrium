@@ -1,7 +1,8 @@
 # Changelog
 
 **Frozen 2026-09-29.** New entries go in `changelog/<dept>/<yyyy-mm-dd>-<item>.md`, one file each.
-See `changelog/README.md`.
+See `changelog/README.md`. Nothing folds those files back in here, so this file stops at 2026-09-29. For anything
+newer, read `changelog/`.
 
 A running log of what's been built. Newest first. No formal version cuts yet (everything is `v0.0.0-dev`); each
 section heading is just "what landed in this iteration."

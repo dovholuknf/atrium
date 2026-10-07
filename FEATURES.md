@@ -369,10 +369,10 @@ on `claude/main` and is not yet on `main`. Whether a build is deployed on a give
 ## Rooms and the hub
 
 - **One binary: `atrium run` starts the hub and this machine's room.**
-  `cmd/atrium2` moved into `internal/cli`, so the hub, the room and the hooks are one `atrium` binary. `atrium run`
-  serves the hub in the foreground and starts `atrium room` detached when no room answers, making and enrolling the
-  room over its own link the first time. A room runs the binary the hooks run, so the board's install-hooks button
-  writes lines that run. `cmd/atrium2` is a temporary shim for this machine's live scripts until the cutover. Docs:
+  The hub, the room and the hooks are one `atrium` binary. `atrium run` serves the hub in the foreground and starts
+  `atrium room` detached when no room answers, making and enrolling the room over its own link the first time. A
+  room runs the binary the hooks run, so the board's install-hooks button writes lines that run. The second binary,
+  `atrium2`, is gone. Docs:
   `docs/fabric/one-atrium-plan.md` stage 3, `docs/fabric/one-atrium-cutover.md`, `docs/test-plan.md` section AW.
 
 - **A hub serves the board and rooms run the agents.**

@@ -23,8 +23,8 @@ pwsh -NoProfile -File scripts/check-powershell.ps1
 Hard stop if any of them fails. Unlike v1, most of the daemon has real tests, so a red suite means stop rather
 than "check by hand".
 
-`check-board.sh` parses the board's JavaScript. It is here because the board is one embedded HTML file with no
-build step, so a syntax error in it compiles, ships, and shows up as a blank page. It has caught a real one.
+`check-board.sh` parses the board's JavaScript. It is here because the board's HTML, CSS and JavaScript are embedded
+with no build step, so a syntax error in them compiles, ships, and shows up as a blank page. It has caught a real one.
 
 **Do not run `go test ./...` and then wonder why a hook stopped working.** It used to overwrite and then delete
 the running daemon's address file. That is fixed, and the fix is a test option that is easy to forget when

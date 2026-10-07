@@ -80,8 +80,8 @@ $WORKTREE_ROOT\watch\state.log                   every hook transition, appended
 
 The ledger entry is written by `claude-shell.ps1` before the tab spawns, and carries `Id`, `Pid`, `WorktreePath`,
 `Branch`, `Repo`, `WindowName`, `PromptText`, `ClaudeSessionName`, and later `ClaudeSessionId`, `State`,
-`LastStateChange`, `Saved`, `Label`, `RecapPath`. Mode B reads this. The daemon deliberately does not, and
-`docs/architecture-v2.md` records why under "Abandoned".
+`LastStateChange`, `Saved`, `Label`, `RecapPath`. Mode B read this, and Mode B is gone. The daemon deliberately does
+not, and `docs/architecture-v2.md` records why under "Abandoned".
 
 **gwt has no atrium integration at all.** Zero occurrences of the word in the script, the registry, or the state
 docs. The two systems track the same claude sessions through separate mechanisms that never meet: gwt through the
