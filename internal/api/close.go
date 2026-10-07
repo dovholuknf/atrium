@@ -54,6 +54,9 @@ const (
 	CloseDelete = "delete"
 )
 
+// closedBy is the `by` of the notified event a close writes on its card. The sweep reads it (sweep.go).
+const closedBy = "card-closed"
+
 // closeGitWait bounds one git command of a close.
 const closeGitWait = time.Minute
 
@@ -141,6 +144,12 @@ func (s *Server) postClose(w http.ResponseWriter, r *http.Request) {
 		prError(w, http.StatusBadRequest, "bad_request", "the body is not json: "+err.Error(), nil)
 		return
 	}
+	s.closeFlow(w, r, t, false, in)
+}
+
+// closeFlow is a close after the card is found: the preview without confirm, else the asks checked and the close.
+// orphan is an owner with no card (a forgotten card, an open that died half way), which has only its inventory.
+func (s *Server) closeFlow(w http.ResponseWriter, r *http.Request, t *store.Task, orphan bool, in closeRequest) {
 	for k, v := range in.Answers {
 		switch strings.ToLower(strings.TrimSpace(v)) {
 		case CloseKeep, CloseStash, CloseDelete:
@@ -183,7 +192,7 @@ func (s *Server) postClose(w http.ResponseWriter, r *http.Request) {
 			"preview": pv})
 		return
 	}
-	writeJSON(w, http.StatusOK, s.closeCard(t, pv, in.Answers))
+	writeJSON(w, http.StatusOK, s.closeCard(t, pv, in.Answers, orphan))
 }
 
 // cardRunning is whether a card's session may still be going.
@@ -323,8 +332,8 @@ func gitIn(ctx context.Context, dir string, args ...string) (string, error) {
 	return string(out), nil
 }
 
-// closeCard frees the inventory in the close's order and moves the card to done.
-func (s *Server) closeCard(t *store.Task, pv *closePreview, answers map[string]string) *closeResult {
+// closeCard frees the inventory in the close's order and moves the card to done. An orphan has no card to move.
+func (s *Server) closeCard(t *store.Task, pv *closePreview, answers map[string]string, orphan bool) *closeResult {
 	res := &closeResult{Card: t.ID, Stashes: []closeStash{}, Warnings: []string{}}
 	warn := func(format string, a ...any) { res.Warnings = append(res.Warnings, fmt.Sprintf(format, a...)) }
 
@@ -448,16 +457,20 @@ func (s *Server) closeCard(t *store.Task, pv *closePreview, answers map[string]s
 		}
 		res.Items = append(res.Items, it)
 	}
+	res.Closed = true
+	if orphan {
+		return res
+	}
 	if t.Status != store.StatusShelved {
 		if err := s.st.SetStatusBecause(t.ID, store.StatusDone, "closed"); err != nil {
 			warn("the card did not move to done: %v", err)
 		}
 	}
-	if err := s.st.AppendEvent(t.ID, "closed", map[string]any{"by": "operator", "left": res.Left,
+	// A notified event with its own by, as a deploy hold's lift is: the event table takes a fixed set of kinds.
+	if err := s.st.AppendEvent(t.ID, store.EventNotified, map[string]any{"by": closedBy, "left": res.Left,
 		"stashes": res.Stashes, "warnings": res.Warnings}); err != nil {
 		log.Printf("[atrium api] close %s: the event: %v", t.ID, err)
 	}
-	res.Closed = true
 	if nt, err := s.st.Get(t.ID); err == nil {
 		s.PublishTask(nt)
 	}

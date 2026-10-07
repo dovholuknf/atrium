@@ -34,6 +34,8 @@ type Server struct {
 	bus *bus
 	// pend coalesces PublishTask per card.
 	pend taskPending
+	// sweep holds the last sweep of the inventory. See sweep.go.
+	sweep sweepState
 	// Room is the name this daemon is known by on a hub, or empty. It only
 	// words a not-found. See NotOnRoom.
 	Room string
@@ -576,6 +578,10 @@ func (s *Server) Handler() http.Handler {
 	// Closing a card frees its inventory. See close.go.
 	mux.HandleFunc("GET /v1/tasks/{id}/close", s.getClose)
 	mux.HandleFunc("POST /v1/tasks/{id}/close", s.postClose)
+	// What no live card holds any more. See sweep.go.
+	mux.HandleFunc("GET /v1/sweep", s.getSweep)
+	mux.HandleFunc("POST /v1/sweep", s.postSweep)
+	mux.HandleFunc("POST /v1/sweep/close", s.postSweepClose)
 	// Pull request reviews. docs/rnd/pulls-api.md is the contract.
 	mux.HandleFunc("POST /v1/prs", s.postPR)
 	mux.HandleFunc("GET /v1/prs", s.listPRs)

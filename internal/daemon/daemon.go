@@ -1275,6 +1275,9 @@ func (d *Daemon) Run(ctx context.Context) error {
 			// which cards have a runner and the two calls above are what
 			// decide that. See throwaway.go.
 			d.sweepThrowaways()
+			// What the inventory lists that no live card holds, once the cards above are back. It marks what is
+			// gone and lists the rest for the board. Nothing is removed. See api/sweep.go.
+			d.ap.Sweep(ctx)
 		}()
 		// Sessions that were lent out when the last daemon went down. A
 		// restart is not the operator withdrawing a link, so the address comes

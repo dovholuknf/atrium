@@ -19668,6 +19668,20 @@ async function pullsSection(browser, base) {
     st.posts.push("POST /v1/tasks/t-walker/close " + (req.postData() || ""));
     return json(route, 200, { card: "t-walker", closed: true, items: [], stashes: [], left: 2, warnings: [] });
   });
+  // the sweep: a done card and an owner with no card left things behind, and one worktree nobody owns
+  await ctx.route(/\/v1\/sweep$/, route => json(route, 200, { swept_at: "2026-10-01T12:00:00Z", freed: [], warnings: [],
+    leftovers: [
+      { owner: "t-done", title: "o/r #3", status: "done", rows: [{ seq: 1, kind: "worktree", ref: "/wt/o/r/three" }], disk_bytes: 2097152 },
+      { owner: "pending:x", no_card: true, rows: [{ seq: 1, kind: "ref", ref: "refs/atrium/pr/9" }], disk_bytes: 0 }
+    ],
+    not_owned: [{ path: "/scm/worktrees/github.com/o/r/stray" }] }));
+  await ctx.route(/\/v1\/sweep\/close$/, async route => {
+    const body = route.request().postData() || "";
+    st.posts.push("POST /v1/sweep/close " + body);
+    if (!JSON.parse(body).confirm) return json(route, 200, { card: "pending:x", disk_bytes: 0, can_stash: false,
+      items: [{ seq: 1, kind: "ref", ref: "refs/atrium/pr/9", action: "free" }], asks: [], warnings: [], kept: ["this list"] });
+    return json(route, 200, { card: "pending:x", closed: true, items: [], stashes: [], left: 0, warnings: [] });
+  });
   // the paste field opens the link: one call, answered as the room's open verb does
   await ctx.route(/\/v1\/open$/, async route => {
     const req = route.request();
@@ -19858,6 +19872,18 @@ async function pullsSection(browser, base) {
     await p.click('#ask-actions button:has-text("close it")');
     for (let i = 0; i < 50 && !st.posts.some(x => x.startsWith("POST /v1/tasks/t-walker/close ")); i++) await p.waitForTimeout(100);
     if (!st.posts.some(x => x === 'POST /v1/tasks/t-walker/close {"confirm":true,"answers":{"1":"keep"}}')) fail("pulls: the close did not post the answer: " + st.posts.filter(x => x.indexOf("close") >= 0).join(" | "));
+    // leftovers: grouped by owner with one close each, and a worktree nobody owns listed with none
+    await p.click("#pulls-sweep");
+    await p.waitForFunction(() => document.querySelectorAll('#pulls-left button[data-act="left-close"]').length === 2, null, { timeout: slow(5000) })
+      .catch(() => fail("pulls: the leftovers did not draw two groups with a close each"));
+    const leftText = await p.evaluate(() => document.getElementById("pulls-left").textContent);
+    if (!/o\/r #3/.test(leftText) || !/no card/.test(leftText) || !/not owned/.test(leftText) || !/stray/.test(leftText)) fail("pulls: the leftovers say " + leftText);
+    await p.click('#pulls-left button[data-act="left-close"][data-id="1"]');
+    await p.waitForFunction(() => document.getElementById("ask").open && /^close /.test(document.getElementById("ask-title").textContent), null, { timeout: slow(5000) })
+      .catch(() => fail("pulls: closing an owner with no card did not confirm"));
+    await p.click('#ask-actions button:has-text("close it")');
+    for (let i = 0; i < 50 && !st.posts.some(x => x.indexOf('"confirm":true') >= 0 && x.startsWith("POST /v1/sweep/close ")); i++) await p.waitForTimeout(100);
+    if (!st.posts.some(x => x === 'POST /v1/sweep/close {"owner":"pending:x","confirm":true,"answers":{}}')) fail("pulls: the owner's close did not post: " + st.posts.filter(x => x.indexOf("sweep") >= 0).join(" | "));
     // the log of a failed row
     await p.click('#pulls-list .pull[data-id="pr_c"] button[data-act="log"]');
     await p.waitForFunction(() => /fetch FAILED/.test((document.querySelector('#pulls-list .pull[data-id="pr_c"] .pull-log') || {}).textContent || ""), null, { timeout: slow(5000) })
