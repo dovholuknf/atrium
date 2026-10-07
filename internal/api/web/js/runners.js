@@ -1064,7 +1064,7 @@ async function saveRecogniser() {
     theme: document.getElementById("r-theme").value.trim(),
     kind: document.getElementById("r-kind").value.trim(),
     default_repo: document.getElementById("r-default-repo").value.trim(),
-    fetch:document.getElementById("r-fetch").value.trim(),
+    fetch: document.getElementById("r-fetch").value.trim(),
     // Split on lines and never on spaces, the same rule a source's arguments
     // follow. A path with a space in it is one line and stays one argument.
     fetch_args: document.getElementById("r-fetch-args").value

@@ -307,7 +307,7 @@ async function pullsPaste() {
   const pr = !out || !!out.pr;
   pullsSay(out && out.created === false
     ? "that " + (pr ? "PR" : "link") + " already has its card, so that one is attached"
-    : pr ?"" : "opened " + (out.title || out.key) + " as a card. it is not a pull request, so it has no row here");
+    : pr ? "" :"opened " + (out.title || out.key) + " as a card. it is not a pull request, so it has no row here");
   if (url) url.value = "";
   if (why) why.value = "";
   loadPulls();
