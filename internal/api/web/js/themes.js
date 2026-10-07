@@ -716,10 +716,27 @@ function dropThemePreview() {
 // Set as a variable on the pane rather than as a style on one element, so the
 // screen, the bar and the pane's own rounded corner all agree without three
 // places knowing the color.
+// A LIGHT THEME GETS A CONTRAST FLOOR. Claude Code draws diff context and dim
+// text in greys tuned for a dark background, which on a cream one are close to
+// invisible. xterm's `minimumContrastRatio` pushes any foreground too near its
+// background to a readable one. Dark themes keep 1 (off), so their palettes are
+// drawn exactly as authored. Every place that sets a terminal theme calls
+// `paintPaneBg` with it, so this is the one place that has to know.
+function bgIsLight(bg) {
+  const m = /^#([0-9a-f]{6})$/i.exec(bg || "");
+  if (!m) return false;
+  const c = [0, 2, 4].map(i => {
+    const v = parseInt(m[1].substr(i, 2), 16) / 255;
+    return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4);
+  });
+  return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2] > 0.4;
+}
+
 function paintPaneBg(theme) {
   const pane = document.getElementById("term-pane");
   if (!pane) return;
   const bg = (theme && theme.background) || "";
+  if (term) term.options.minimumContrastRatio = bgIsLight(bg) ? 4.5 : 1;
   // A THEME GOES ON AND COMES OFF AS ONE THING.
   //
   // `--term-fg` and `--term-line` were left behind here while `--term-bg` and
