@@ -293,9 +293,32 @@ GitHub PR paste on the hub's pulls tab work end to end.
 
 Asked one at a time, on this card. Each answer is recorded here and overrules the body.
 
+### Q1. A pulls-tab paste: a row only, or the worktree and a live card at once?
+
+clint, 2026-10-07: "when i paste a link i want it to be recognized by a recognizer. i want to be able to test the url
+and the recogniztion. i wnat to know if more than one recoginzer recognize the url. i want to be able to define a
+hierarcy of actoins and order them in priority. i want to be presented those options if there are more than one that
+match. i want a card to come up immediately with a seed prompt and i want to be able to customize the prompt that is
+given"
+
+What it changes:
+- **A card comes up at once**, with a seed prompt. Section 3 holds: the paste makes the worktree, the row and the card
+  in one press.
+- **All matches, not the first.** Today `MatchRecogniser` stops at the first enabled row in rank order. The hub's
+  `POST /_hub/recognise` answers every matching row, in rank order, each with its captures and filled prompt.
+- **A recogniser is an action.** One URL can match several rows (review this PR, work on this PR as its author, a
+  plain card in the PR's worktree). The rank is the priority, and the settings list can be reordered by drag.
+- **One match starts it. More than one asks.** The door shows the matches in rank order with the first selected, and
+  Enter takes it.
+- **Test a URL.** The settings view's "try it" exists today for one row. It becomes a test of the whole table: paste a
+  URL, see every row that matched, in order, with its captures, filled fields and filled prompt, and the rows that did
+  not match.
+- **The prompt is customisable.** Each row's prompt template is edited in settings (exists). Whether it can also be
+  edited at paste time is Q2.
+
 ## Open for clint
 
-1. A pulls-tab paste: a row only, or the worktree and a live card at once?
+1. Answered (Interview, Q1).
 2. A re-paste of a finished link: a new card with the old findings shown, or a fresh start?
 3. Finish with uncommitted work or unpushed commits: refuse, warn, or push to the hub first?
 4. A Zendesk or Discourse link: ask for a repo, or start with none?
