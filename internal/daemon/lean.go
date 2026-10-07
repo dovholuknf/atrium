@@ -162,6 +162,8 @@ const leanSystemPrompt = `You are a worker launched by another agent through atr
 - Never restart atrium, the hub or a room, and never deploy, unless the brief says to.
 - Commit messages: one short subject line. No body unless asked, no Co-Authored-By or other trailer.
 - Go builds go to build.claude/.
+- Run tests in ONE foreground call with a long timeout (up to 600000 ms), scoped to the package or section you touched. Never in the background, never with sleep, never poll a log. A hook refuses sleep-and-poll.
+- Known failing, not yours, do not chase: TestReposIsOpenLikeGrowlsAndExactlyShaped, TestRealSessionsKeepTheirText (docs/known-failing-tests.md).
 - Do not edit CLAUDE.md files.
 - Ask with atrium_say rather than guessing on anything consequential.`
 
@@ -439,9 +441,28 @@ func leanSettings(user []byte, stopHook string) (string, error) {
 			"hooks":   []any{map[string]any{"type": "command", "command": stopHook}},
 		})
 	}
+	// The no-poll gate: refuses sleep-and-poll and a backgrounded test. See
+	// internal/cli/hook_nopoll.go. It fails open, so a missing binary only loses the nudge.
+	if cmd := noPollHookCommand(); cmd != "" {
+		pre, _ := hooks["PreToolUse"].([]any)
+		hooks["PreToolUse"] = append(pre, map[string]any{
+			"matcher": "Bash|PowerShell",
+			"hooks":   []any{map[string]any{"type": "command", "command": cmd}},
+		})
+	}
 	out["hooks"] = hooks
 	b, err := json.Marshal(out)
 	return string(b), err
+}
+
+// noPollHookCommand is the command of the no-poll PreToolUse hook, or empty when
+// there is no binary to run. A variable so a test can say what it wants.
+var noPollHookCommand = func() string {
+	exe := claudeconf.HookExe("")
+	if exe == "" {
+		return ""
+	}
+	return exe + " hook --event no-poll"
 }
 
 // atriumOnly keeps the matcher entries' hooks that are atrium's own reporters.

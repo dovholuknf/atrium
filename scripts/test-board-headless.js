@@ -24887,9 +24887,10 @@ async function main() {
   const base = LIST_MODE ? "" : "http://127.0.0.1:" + server.address().port;
 
   const browser = LIST_MODE ? null : withClock(await chromium.launch());
-  // HEADLESS_ONLY=termWear,bridge runs just those sections, for working on one.
-  if (process.env.HEADLESS_ONLY) {
-    const only = { boardDocs: boardDocsSection, phoneBoardCompact: phoneBoardCompactSection, termWear: termWearSection, bridge: bridgeSection, settingsOnce: settingsOnceSection,
+  // HEADLESS_ONLY=termWear,bridge, or `node scripts/test-board-headless.js termWear bridge`, runs just those sections, for working on one.
+  // An unknown name exits 2 and runs nothing.
+  const ONLY = process.env.HEADLESS_ONLY || process.argv.slice(2).join(",");
+  if (ONLY) {    const only = { boardDocs: boardDocsSection, phoneBoardCompact: phoneBoardCompactSection, termWear: termWearSection, bridge: bridgeSection, settingsOnce: settingsOnceSection,
       groupRemove: groupRemoveSection, worn: wornSection, restartGate: restartGateSection, restartStays: restartStaysSection, atriumDown: atriumDownSection,
       toastStays: toastStaysSection, groupColor: groupColorSection,
       groupDrag: groupDragSection, tooltip: tooltipSection, linkTip: linkTipSection, fileOpenOutside: fileOpenOutsideSection, readTabSize: readTabSizeSection,popoutTagFlip: popoutTagFlipSection, prefsEverywhere: prefsEverywhereSection, mPrefsEverywhere: (b) => mPrefsEverywhereSection(b), idleRate: idleRateSection, foldStill: foldStillSection,
@@ -24935,13 +24936,19 @@ async function main() {
       u002: u002Section, childFold: childFoldSection, liveHome: liveHomeSection,
       pulls: pullsSection, prMove: prMoveSection, quickPaste: quickPasteSection, recogniserRepo: recogniserRepoSection, hubRepos: hubReposSection, hubReposShelf: hubReposShelfSection, hubReposLedger: hubReposLedgerSection, hubReposFeed: hubReposFeedSection, changeReq: changeReqSection, mChangeReq: mChangeReqSection, trayHead: trayHeadSection, pullsAbsent: pullsAbsentSection, oneTooltip: oneTooltipSection, burnChart: burnChartSection, burnReadout: burnReadoutSection, switchPrewarm: switchPrewarmSection, attachAtOnce: attachAtOnceSection, fileView: fileViewSection, keepAlive: keepAliveSection, switchBackCost: switchBackCostSection, keepMemory: keepMemorySection, pullsDrawer: pullsDrawerSection };
     try {
-      for (const n of process.env.HEADLESS_ONLY.split(",")) await only[n](browser, base);
+      const unknown = ONLY.split(",").filter(n => typeof only[n] !== "function");
+      if (unknown.length) {
+        console.error("no such section: " + unknown.join(", ") + ". the sections are: " + Object.keys(only).join(" "));
+        await browser.close();
+        process.exit(2);
+      }
+      for (const n of ONLY.split(",")) await only[n](browser, base);
     } catch (e) { fail("the headless run threw: " + (e && e.message ? e.message : e) + threwAt(e)); }
     await browser.close();
     openStreams.forEach(r => { try { r.destroy(); } catch (e) {} });
     await new Promise(r => server.close(r));
     if (bad) process.exit(1);
-    console.log("the sections asked for passed: " + process.env.HEADLESS_ONLY);
+    console.log("the sections asked for passed: " + ONLY);
     return;
   }
   // The shared page is made when the first unit that drives it asks, so a shard without core never opens it.

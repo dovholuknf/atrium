@@ -157,6 +157,12 @@ func newHook() *cobra.Command {
 				}
 				return nil
 			}
+			if strings.EqualFold(strings.TrimSpace(event), noPollEvent) {
+				if out := noPollHook(readStdin()); out != nil {
+					fmt.Fprintln(cmd.OutOrStdout(), string(out))
+				}
+				return nil
+			}
 			reportActivity(hubURL, event, name)
 			// Run at a prompt, silence is indistinguishable from a hang. Only
 			// when a human typed it: under Claude Code stdin is always a pipe,
