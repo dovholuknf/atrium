@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"io"
 	"net/http"
-	"net/http/cgi"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -16,7 +15,7 @@ import (
 
 // Backend serves git-upload-pack, and only that, out of repositories it is told about.
 //
-// It is `git http-backend` behind net/http/cgi, and nearly everything in this file is a
+// It is `git http-backend` behind a CGI runner (cgi.go), and nearly everything in this file is a
 // refusal, because http-backend on its own will do far more than fetch:
 //
 //   - RECEIVE-PACK is off (http.receivepack=false), and refused here as well.
@@ -46,7 +45,7 @@ type Backend struct {
 	Git string
 }
 
-// inherited is what the CGI child is given from this process. net/http/cgi passes a short
+// inherited is what the CGI child is given from this process. The CGI passes a short
 // platform list and NOT PATH, and git-http-backend has to find git-upload-pack. No GIT_*
 // variable is ever on this list.
 var inherited = []string{
@@ -177,7 +176,7 @@ func (b *Backend) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	out.URL.Path = "/" + filepath.Base(dir) + svc
 	out.URL.RawPath = ""
 	// A CHUNKED BODY IS MADE INTO ONE WITH A LENGTH. A client whose want list is past its
-	// post buffer sends chunked, and net/http/cgi sets no CONTENT_LENGTH for that, which
+	// post buffer sends chunked, and a CGI sets no CONTENT_LENGTH for that, which
 	// http-backend reads as a truncated request and answers 400. The body is a want list,
 	// bounded here, and never a pack.
 	if out.ContentLength < 0 || len(out.TransferEncoding) > 0 {
@@ -199,7 +198,7 @@ func (b *Backend) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 // gitCGI is `git http-backend` for one repository directory. The request it is given has its path
 // rewritten to `/<dir name>/<service>`. Every config value rides the environment, and nothing is written to
 // a repository. `more` is further environment, such as GIT_CONFIG_GLOBAL.
-func gitCGI(exe, dir string, cfg [][2]string, more []string) *cgi.Handler {
+func gitCGI(exe, dir string, cfg [][2]string, more []string) *cgiHandler {
 	env := []string{
 		"GIT_PROJECT_ROOT=" + filepath.Dir(dir),
 		"GIT_HTTP_EXPORT_ALL=1",
@@ -213,10 +212,9 @@ func gitCGI(exe, dir string, cfg [][2]string, more []string) *cgi.Handler {
 	for i, kv := range cfg {
 		env = append(env, "GIT_CONFIG_KEY_"+strconv.Itoa(i)+"="+kv[0], "GIT_CONFIG_VALUE_"+strconv.Itoa(i)+"="+kv[1])
 	}
-	return &cgi.Handler{
+	return &cgiHandler{
 		Path:       exe,
 		Args:       []string{"http-backend"},
-		Root:       "",
 		Env:        env,
 		InheritEnv: inherited,
 	}
@@ -242,7 +240,7 @@ func backendMissing(exe string) string {
 }
 
 // serveCGI runs the handler, or answers 500 with the cause when git cannot serve at all.
-func serveCGI(h *cgi.Handler, w http.ResponseWriter, r *http.Request) {
+func serveCGI(h *cgiHandler, w http.ResponseWriter, r *http.Request) {
 	if why := backendMissing(h.Path); why != "" {
 		http.Error(w, why, http.StatusInternalServerError)
 		return

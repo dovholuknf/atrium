@@ -4,11 +4,13 @@
 
 ### @LETTER@1. gitsync's git runs hidden
 
-1. Start the hub and a room on Windows the usual way, without a console of their own.
+1. Deploy, then restart sg4-control the way it restarts itself, so it runs with no console at all.
 2. Launch a card, let it commit, and let the room sync with the hub for a few minutes.
+3. Fetch from the hub's store and from a room through the hub.
 
-**Expected:** no console window appears on the desktop while git runs. `go test -run TestGitCommandHasNoWindow
-./internal/gitsync` passes.
+**Expected:** no console window appears on the desktop while git runs or while a fetch is served.
+`go test -run NoWindow ./internal/gitsync` passes. It serves a real `ls-remote` and `clone` through the CGI and
+checks every `git http-backend` it started.
 
 ### @LETTER@2. Card and PR routes run git hidden
 
