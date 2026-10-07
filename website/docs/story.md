@@ -94,8 +94,10 @@ it owns, and the browser attaches over a websocket. ConPTY on Windows passed a s
 afternoon: after tearing a pty down, returning normally from `main` exits with status 127.
 
 Owning the terminal has a cost that shaped a lot later. On Windows, closing a pty takes the process with it, so
-**a supervised runner dies with the daemon that owns it**. There is no reattach, so the answer is resume ids: a
-restart costs a session its terminal but not its conversation. It also means **stopping is not killing**.
+**a supervised runner died with the daemon that owned it**. The first answer was resume ids: a restart costs a
+session its terminal but not its conversation. "ConPTY has no reattach" was written into four docs as fact, until a
+spike showed otherwise. With the `pty_host` setting on, the terminals now live in a separate process and outlive a
+room restart. It also means **stopping is not killing**.
 `atrium stop` winds down in order and gives runners ten seconds.
 
 Sharing a terminal between a person and atrium raised its own questions. A narrow window shrank the session for
@@ -155,7 +157,11 @@ pkg, a Windows MSI, and a no-admin path on every platform.
 On Windows the obvious answer, a service, runs in session 0 and cannot open a terminal you can attach to. It would
 install, report `Running`, and supervise nothing anybody can use. Atrium starts from a logon task instead.
 
-## Where it stands at 0.0.1
+## Where it stands
+
+Atrium is one binary today. `atrium run` is the hub, and `atrium room` runs the agents on each machine. The hub and
+rooms were first built as a second binary, `atrium2`, and folded into one at the end of September, when the v1 broker
+and its read-only mode were removed for good.
 
 The **stack** and the **board**, where atrium started, see less use now that most work happens in supervised
 terminals. They are still there, and they are the right tool when you do not want atrium as your terminal: a
