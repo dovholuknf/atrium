@@ -378,6 +378,8 @@ func New(opts Options) (*Daemon, error) {
 	// this setting is that the pictures are gone, not that they were deleted
 	// tidily.
 	api.ScrapDir = filepath.Join(filepath.Dir(opts.DBPath), "scrap")
+	// A card's own state, its overlays first. Closing the card deletes its part (api/cardoverlay.go).
+	api.CardsDir = filepath.Join(filepath.Dir(opts.DBPath), "cards")
 	// Where the lean plugin directories go, in atrium's own state and not a worktree.
 	leanPluginRoot = filepath.Join(filepath.Dir(opts.DBPath), "lean-plugins")
 	if err := os.RemoveAll(api.ScrapDir); err != nil {

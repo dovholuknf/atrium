@@ -24,6 +24,8 @@ const (
 	ResReview   = "review"   // ref: the review row id. freed by archiving it
 	ResProc     = "proc"     // ref: the pid. detail: its start time, so a recycled pid is not it. freed by stopping its tree
 	ResPort     = "port"     // ref: the port number. handed out by the room, freed by forgetting it
+	ResOverlay  = "overlay"  // ref: its home folder. detail: its controller's address. freed by removing the folder
+	ResIdentity = "identity" // ref: its enrolled file. detail: the overlay's home. freed with the overlay's folder
 	// ResStash is work a close pushed to the hub instead of deleting. ref: the hub branch. detail: the hub repository.
 	// It is held off every room, so nothing frees it here: it stays live and listed until somebody fetches it back.
 	ResStash = "stash"

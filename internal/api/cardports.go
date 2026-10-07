@@ -122,34 +122,62 @@ func (s *Server) postCardPorts(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, fmt.Errorf("ask for 1 to %d ports", maxPortsAsked))
 		return
 	}
+	got, rng, err := s.takePorts(t.ID, in.Count)
+	var short *shortOfPorts
+	switch {
+	case errors.As(err, &short):
+		writeJSON(w, http.StatusConflict, map[string]any{"code": "no_ports", "ports": orInts(got), "range": rng.String(),
+			"error": err.Error()})
+		s.publishTaskID(t.ID)
+		return
+	case errors.Is(err, errPortRange):
+		writeErr(w, http.StatusBadRequest, err)
+		return
+	case err != nil:
+		s.fail(w, err)
+		return
+	}
+	s.publishTaskID(t.ID)
+	writeJSON(w, http.StatusOK, map[string]any{"ports": got, "range": rng.String()})
+}
+
+// errPortRange is a ports.card_range setting that does not parse.
+var errPortRange = errors.New(SettingCardPorts)
+
+// shortOfPorts is a range with fewer free ports than were asked for. The ones found are still recorded.
+type shortOfPorts struct {
+	got int
+	rng cardproc.Range
+}
+
+func (e *shortOfPorts) Error() string {
+	return fmt.Sprintf("only %d free ports are left in %s. close cards that hold some, or widen %s",
+		e.got, e.rng, SettingCardPorts)
+}
+
+// takePorts hands out n free ports to a card and records each on it.
+func (s *Server) takePorts(card string, n int) ([]int, cardproc.Range, error) {
 	rng, err := s.cardPortRange()
 	if err != nil {
-		writeErr(w, http.StatusBadRequest, fmt.Errorf("%s: %w", SettingCardPorts, err))
-		return
+		return nil, rng, fmt.Errorf("%w: %v", errPortRange, err)
 	}
 	portMu.Lock()
 	defer portMu.Unlock()
 	held, reserved := s.heldPorts(), excludedPorts()
 	var got []int
-	for p := rng.Lo; p <= rng.Hi && len(got) < in.Count; p++ {
+	for p := rng.Lo; p <= rng.Hi && len(got) < n; p++ {
 		if held[p] || inRanges(reserved, p) || !bindsFree(p) {
 			continue
 		}
-		if _, err := s.st.AddResource(t.ID, store.ResPort, strconv.Itoa(p), ""); err != nil {
-			s.fail(w, err)
-			return
+		if _, err := s.st.AddResource(card, store.ResPort, strconv.Itoa(p), ""); err != nil {
+			return got, rng, err
 		}
 		got = append(got, p)
 	}
-	if len(got) < in.Count {
-		writeJSON(w, http.StatusConflict, map[string]any{"code": "no_ports", "ports": orInts(got), "range": rng.String(),
-			"error": fmt.Sprintf("only %d free ports are left in %s. close cards that hold some, or widen %s",
-				len(got), rng, SettingCardPorts)})
-		s.publishTaskID(t.ID)
-		return
+	if len(got) < n {
+		return got, rng, &shortOfPorts{got: len(got), rng: rng}
 	}
-	s.publishTaskID(t.ID)
-	writeJSON(w, http.StatusOK, map[string]any{"ports": got, "range": rng.String()})
+	return got, rng, nil
 }
 
 func inRanges(rs []cardproc.Range, p int) bool {

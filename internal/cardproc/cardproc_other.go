@@ -67,5 +67,10 @@ func StopTree(pid int) error {
 	return nil
 }
 
+// OwnGroup makes cmd lead a process group of its own, so StopTree ends what it starts too.
+func OwnGroup(cmd *exec.Cmd) {
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+}
+
 // Excluded is the reserved port ranges, which only Windows has.
 func Excluded() []Range { return nil }

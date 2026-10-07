@@ -43,9 +43,47 @@ type OwnInput struct {
 	Ref  string `json:"ref" jsonschema:"the pid, the absolute folder path, or the port number"`
 }
 
+const overlayToolDesc = "Run a throwaway ziti overlay of your own for a test, held on your card: closing the card " +
+	"stops it and deletes it, PKI and identities with it. Never the operator's network, never the board's share. " +
+	"Have as many as you need.\n\n" +
+	"- `up` {name}: a `ziti edge quickstart` (controller and router) on two of your card's ports. Answers the " +
+	"controller URL, the admin password file and the log. Waits up to two minutes for the controller.\n" +
+	"- `identity` {overlay, name, roles}: a Device identity, created and enrolled. Answers its .json file. Make " +
+	"services and policies yourself with the admin login, as `ziti edge login <controller> -u admin -p <password> " +
+	"--cli-identity <name>` keeps the operator's default login untouched.\n" +
+	"- `tunnel` {overlay, identity, mode, services}: `ziti tunnel host`, or `proxy` with a port per service from your " +
+	"card. `tun` needs admin or root and atrium never elevates: you get the command back, so stop and ask clint to " +
+	"run it in an elevated shell, saying what it is for and how to stop it.\n" +
+	"- `down` {overlay}: stop its tunnelers and controller and delete its folder.\n\n" +
+	"`overlay` may be left out when the card has one."
+
+type OverlayInput struct {
+	Action   string   `json:"action" jsonschema:"up, identity, tunnel or down"`
+	Name     string   `json:"name,omitempty" jsonschema:"up: the overlay's name (default o1, o2...). identity: the identity's name"`
+	Overlay  string   `json:"overlay,omitempty" jsonschema:"which overlay, when the card has more than one"`
+	Identity string   `json:"identity,omitempty" jsonschema:"tunnel: the identity that runs it"`
+	Roles    []string `json:"roles,omitempty" jsonschema:"identity: role attributes for policies"`
+	Mode     string   `json:"mode,omitempty" jsonschema:"tunnel: host (default), proxy or tun"`
+	Services []string `json:"services,omitempty" jsonschema:"tunnel proxy: the services to listen for, one port each"`
+}
+
 func addOwnTools(s *mcp.Server) {
 	mcp.AddTool(s, &mcp.Tool{Name: "atrium_port", Description: portToolDesc}, portHandler)
 	mcp.AddTool(s, &mcp.Tool{Name: "atrium_own", Description: ownToolDesc}, ownHandler)
+	mcp.AddTool(s, &mcp.Tool{Name: "atrium_overlay", Description: overlayToolDesc}, overlayHandler)
+}
+
+func overlayHandler(ctx context.Context, _ *mcp.CallToolRequest, in OverlayInput) (*mcp.CallToolResult, map[string]any, error) {
+	out := map[string]any{}
+	if strings.TrimSpace(in.Action) == "" {
+		return nil, out, fmt.Errorf("say the action: up, identity, tunnel or down")
+	}
+	path, err := myCardPath("/overlay")
+	if err != nil {
+		return nil, out, err
+	}
+	err = askFor(ctx, 3*time.Minute, http.MethodPost, path, in, &out)
+	return nil, out, err
 }
 
 // myCardPath is a path under the calling session's own card, or an error for a session with no card.
