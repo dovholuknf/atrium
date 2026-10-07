@@ -990,6 +990,15 @@ async function cardMenu(e, id) {
     // actions and this opens a room.
     { label: "settings…", act: () => openTask(id) },
     { sep: true },
+    // The work on its link is over: frees the worktree, branch, refs and review it holds. See closeCardAsk in
+    // js/sharing.js.
+    typeof isLinkCard === "function" && (isLinkCard(t) || t.disk_bytes) ? {
+      label: "close…", note: "frees its worktree and review",
+      help: "Stops the session, archives the review (its findings and walk stay) and removes the worktree, its " +
+        "branch and the fetched PR ref. A worktree with work nowhere else is asked about first: keep, stash or " +
+        "delete. The card goes to done.",
+      act: () => closeCardAsk(id, t)
+    } : null,
     t.pid > 0 && !over
       ? { label: "terminate", danger: true, act: () => killById(id) } : null,
     // Deleting the CARD. The endpoint has been there since the beginning and

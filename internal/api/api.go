@@ -85,6 +85,10 @@ type Server struct {
 	// HubSource is a loopback to one repository of the hub's store, for a room with a hub, which reads a PR head
 	// from there and never from the forge. An error is a room with no hub, or a hub that cannot be reached.
 	HubSource func(ctx context.Context, name string) (url string, done func(), err error)
+	// Stash pushes a worktree's work to the hub as stash/<card short id>/<branch>, dirty files in one WIP commit on
+	// top, and answers the hub branch and repository. A close calls it for a worktree it was told to stash. Nil is
+	// a room that cannot stash. See close.go.
+	Stash func(ctx context.Context, card, dir, branch string) (hubBranch, hubRepo string, err error)
 	// PRFetch fetches a PR head into a ref of the checkout. Nil runs git over https. A seam for tests.
 	PRFetch func(ctx context.Context, dir string, spec forge.FetchSpec, dst string) error
 	// PRRunner runs pull request reviews. Nil means the stub that fails every run
@@ -569,6 +573,9 @@ func (s *Server) Handler() http.Handler {
 	// A card's inventory, and its disk. See resources.go.
 	mux.HandleFunc("GET /v1/tasks/{id}/resources", s.getResources)
 	mux.HandleFunc("POST /v1/tasks/{id}/resources/measure", s.measureResourcesNow)
+	// Closing a card frees its inventory. See close.go.
+	mux.HandleFunc("GET /v1/tasks/{id}/close", s.getClose)
+	mux.HandleFunc("POST /v1/tasks/{id}/close", s.postClose)
 	// Pull request reviews. docs/rnd/pulls-api.md is the contract.
 	mux.HandleFunc("POST /v1/prs", s.postPR)
 	mux.HandleFunc("GET /v1/prs", s.listPRs)

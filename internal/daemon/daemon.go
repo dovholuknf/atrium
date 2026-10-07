@@ -421,6 +421,7 @@ func New(opts Options) (*Daemon, error) {
 	}
 	d.ap.ForgeFailed, d.ap.ForgeWorked = d.ForgeAccessFrom, d.ForgeWorked
 	d.ap.SCMClone = d.prWorktreeClone
+	d.ap.Stash = d.StashTo
 	d.ap.RunAction = d.handleRunAction
 	d.ap.CancelPending = d.CancelPending
 	d.ap.Settling = d.Settling

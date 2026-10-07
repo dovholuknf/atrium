@@ -19659,6 +19659,15 @@ async function pullsSection(browser, base) {
   const put = (r) => { const i = st.rows.findIndex(x => x.id === r.id); if (i >= 0) st.rows[i] = r; else st.rows.push(r); };
   // the walker card does not exist in this mock, so the attach after a launch fails and the board stays on the pulls view
   await ctx.route(/\/v1\/tasks\/t-walker$/, route => json(route, 404, { error: "no such task" }));
+  // closing the walker card: the preview asks about one dirty worktree, and the close is recorded
+  await ctx.route(/\/v1\/tasks\/t-walker\/close$/, async route => {
+    const req = route.request();
+    if (req.method() === "GET") return json(route, 200, { card: "t-walker", disk_bytes: 1048576, can_stash: true,
+      items: [{ seq: 1, kind: "worktree", ref: "/wt/r/feat", action: "ask" }, { seq: 4, kind: "review", ref: "pr_b", action: "free" }],
+      asks: [{ seq: 1, path: "/wt/r/feat", branch: "feat", dirty: 2, unpushed: 0 }], warnings: [], kept: ["the card and its transcript"] });
+    st.posts.push("POST /v1/tasks/t-walker/close " + (req.postData() || ""));
+    return json(route, 200, { card: "t-walker", closed: true, items: [], stashes: [], left: 2, warnings: [] });
+  });
   // the paste field opens the link: one call, answered as the room's open verb does
   await ctx.route(/\/v1\/open$/, async route => {
     const req = route.request();
@@ -19835,6 +19844,20 @@ async function pullsSection(browser, base) {
       .catch(() => fail("pulls: the walker launch did not land"));
     if (!st.posts.some(x => x === 'POST /v1/prs/pr_b/walker {"action":"launch"}')) fail("pulls: the walk button did not post a launch");
     if (await p.evaluate(() => document.querySelector("#pulls-list .pull-finding"))) fail("pulls: findings are still drawn inline");
+    // close on a row with a walker: the dirty worktree is asked about with no default, then the close is confirmed
+    await p.waitForSelector('#pulls-list .pull[data-id="pr_b"] button[data-act="close"]', { timeout: slow(5000) })
+      .catch(() => fail("pulls: a row with a walker has no close button"));
+    await p.click('#pulls-list .pull[data-id="pr_b"] button[data-act="close"]');
+    await p.waitForFunction(() => document.getElementById("ask").open && /work only this worktree has/.test(document.getElementById("ask-title").textContent), null, { timeout: slow(5000) })
+      .catch(() => fail("pulls: close did not ask about the dirty worktree"));
+    const asked = await p.evaluate(() => [...document.querySelectorAll("#ask-actions button")].map(b => b.textContent).join());
+    if (asked !== "cancel,keep,stash to the hub,delete") fail("pulls: the worktree ask offers " + asked);
+    await p.click('#ask-actions button:has-text("keep")');
+    await p.waitForFunction(() => document.getElementById("ask").open && /^close /.test(document.getElementById("ask-title").textContent), null, { timeout: slow(5000) })
+      .catch(() => fail("pulls: close did not confirm"));
+    await p.click('#ask-actions button:has-text("close it")');
+    for (let i = 0; i < 50 && !st.posts.some(x => x.startsWith("POST /v1/tasks/t-walker/close ")); i++) await p.waitForTimeout(100);
+    if (!st.posts.some(x => x === 'POST /v1/tasks/t-walker/close {"confirm":true,"answers":{"1":"keep"}}')) fail("pulls: the close did not post the answer: " + st.posts.filter(x => x.indexOf("close") >= 0).join(" | "));
     // the log of a failed row
     await p.click('#pulls-list .pull[data-id="pr_c"] button[data-act="log"]');
     await p.waitForFunction(() => /fetch FAILED/.test((document.querySelector('#pulls-list .pull[data-id="pr_c"] .pull-log') || {}).textContent || ""), null, { timeout: slow(5000) })

@@ -10,7 +10,7 @@ import (
 //
 // One row per thing the room made for a card: a worktree, a branch, a fetched ref, a review row. A row is written
 // BEFORE the thing is made when its name can be chosen up front, so a crash between the two leaves a row a sweep can
-// check, never a thing nobody owns. Finish frees the rows in reverse (r-finish-pr-review).
+// check, never a thing nobody owns. Closing the card frees them (api/close.go).
 //
 // Rows made before the card exists (the open verb makes the worktree first) are held under a pending owner and handed
 // to the card once it starts. See MoveResources.
@@ -18,10 +18,13 @@ import (
 // The kinds of resource. Each names how it is freed.
 const (
 	ResWorktree = "worktree" // ref: the path. freed by git worktree remove, then the directory
-	ResBranch   = "branch"   // ref: the branch. detail: the repo path. freed by git branch -D, when finish is told to
+	ResBranch   = "branch"   // ref: the branch. detail: the repo path. freed with its worktree
 	ResRef      = "ref"      // ref: the ref name. detail: the repo path. freed by git update-ref -d
 	ResDir      = "dir"      // ref: a path under a root atrium owns
 	ResReview   = "review"   // ref: the review row id. freed by archiving it
+	// ResStash is work a close pushed to the hub instead of deleting. ref: the hub branch. detail: the hub repository.
+	// It is held off every room, so nothing frees it here: it stays live and listed until somebody fetches it back.
+	ResStash = "stash"
 )
 
 // CardResource is one row of a card's inventory.
@@ -108,6 +111,16 @@ func (st *Store) FreeResource(card string, seq int, freedErr string) error {
 			return sql.ErrNoRows
 		}
 		return nil
+	})
+}
+
+// ResourceFailed records what freeing a row said when it did not go. The row stays live, so the card still lists it
+// and the next close tries it again.
+func (st *Store) ResourceFailed(card string, seq int, why string) error {
+	return st.guard(func() error {
+		_, err := st.db.Exec(`UPDATE card_resources SET freed_err = ? WHERE card = ? AND seq = ? AND freed_at = ''`,
+			why, card, seq)
+		return err
 	})
 }
 

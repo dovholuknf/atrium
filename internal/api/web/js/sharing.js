@@ -742,6 +742,61 @@ async function killNow(id) {
   refresh();
 }
 
+// CLOSING A CARD: the work on its link is over, and what its inventory lists is freed. See internal/api/close.go.
+// One press shows what goes and what is kept, a worktree holding work nowhere else is asked about with no default
+// answer, and a last press closes it.
+function isLinkCard(t) { return !!t && (t.tags || []).some(g => String(g).startsWith("link:")); }
+
+function closeCardAsk(id, t) { return oneAtATime("close:" + id, () => closeCardNow(id, t)); }
+
+async function closeCardNow(id, t) {
+  let pv;
+  try { pv = await api(`/v1/tasks/${encodeURIComponent(id)}/close`); }
+  catch (e) { toast("could not read what closing it frees", e.message); return; }
+  const title = (t && t.display_title) || id;
+  const answers = {};
+  for (const a of pv.asks || []) {
+    const buttons = [{ label: "cancel", value: null }, { label: "keep", value: "keep" }];
+    if (pv.can_stash) buttons.push({ label: "stash to the hub", value: "stash" });
+    buttons.push({ label: "delete", value: "delete", style: "no" });
+    const ans = await askUser({
+      title: "work only this worktree has",
+      body: `<b>${esc(a.path)}</b> on <b>${esc(a.branch || "no branch")}</b>: ` +
+        `${a.dirty} changed files, ${a.unpushed} commits on no remote and not on the hub.<br><br>` +
+        `<b>keep</b> leaves it on disk and on the card. ` +
+        (pv.can_stash ? `<b>stash</b> pushes it to the hub as stash/&lt;card&gt;/&lt;branch&gt;, then removes it. ` : "") +
+        `<b>delete</b> removes it, and the work is gone.`,
+      buttons
+    });
+    if (ans === null) return;
+    answers[String(a.seq)] = ans;
+  }
+  const going = (pv.items || []).filter(it => it.action === "free")
+    .map(it => `<li>${esc(it.kind)} ${esc(it.ref)}</li>`).join("");
+  const kept = (pv.kept || []).map(k => `<li>${esc(k)}</li>`).join("");
+  const warns = (pv.warnings || []).map(w => `<li>${esc(w)}</li>`).join("");
+  const disk = typeof diskLabel === "function" && pv.disk_bytes ? ` (${esc(diskLabel(pv.disk_bytes))})` : "";
+  if (!await confirmUser(`close ${title}?`,
+    (going ? `Frees${disk}:<ul>${going}</ul>` : "Nothing on disk to free.<br>") +
+    (warns ? `<ul>${warns}</ul>` : "") +
+    `Kept:<ul>${kept}</ul>The card goes to <b>done</b>. A re-paste of the link starts a fresh card.`,
+    "close it")) return;
+  try {
+    const out = await api(`/v1/tasks/${encodeURIComponent(id)}/close`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ confirm: true, answers })
+    });
+    const said = [];
+    (out.stashes || []).forEach(s => said.push("stashed " + s.branch));
+    if (out.left) said.push(out.left + " left on the card");
+    (out.warnings || []).forEach(w => said.push(w));
+    toast("closed " + title, said.join(". "));
+  } catch (e) {
+    toast("could not close it", e.message);
+  }
+  refresh();
+}
+
 // The open card, forgotten. Closes the dialog first: leaving it up over a card
 // that no longer exists means every control in it now edits nothing.
 async function forgetCurrent() {

@@ -416,6 +416,21 @@ func (st *Store) SetPRFetched(id, head, title, author, runDir string) (*PRReview
 	return st.PRByID(id)
 }
 
+// SetPRRunDir records that a row's run folder moved. A closed review's folder is renamed aside, so a later review of
+// the same head gets the head's own name.
+func (st *Store) SetPRRunDir(id, runDir string) error {
+	return st.guard(func() error {
+		res, err := st.db.Exec(`UPDATE pr_review SET run_dir = ? WHERE id = ?`, runDir, id)
+		if err != nil {
+			return err
+		}
+		if k, _ := res.RowsAffected(); k == 0 {
+			return sql.ErrNoRows
+		}
+		return nil
+	})
+}
+
 // ResetPR puts a row back to the start for a rerun in runDir: queued, nothing
 // observed about the old run left on it. The head, title and author stay, since
 // they say what the review is of.
@@ -471,6 +486,29 @@ func (st *Store) SetPRSecond(id, state, summary, errText string) (*PRReview, err
 		return nil, err
 	}
 	return st.PRByID(id)
+}
+
+// PRsWalkedBy is every review a card walks that is not archived. A close archives them with the card.
+func (st *Store) PRsWalkedBy(task string) ([]*PRReview, error) {
+	var out []*PRReview
+	err := st.guard(func() error {
+		out = nil
+		rows, err := st.db.Query(`SELECT `+prColumns+` FROM pr_review WHERE walker_task = ? AND archived_at = ''
+			ORDER BY created_at, id`, task)
+		if err != nil {
+			return err
+		}
+		defer rows.Close()
+		for rows.Next() {
+			p, err := scanPR(rows)
+			if err != nil {
+				return err
+			}
+			out = append(out, p)
+		}
+		return rows.Err()
+	})
+	return out, err
 }
 
 // SetPRWalker records the card walking a review, or clears it with "".

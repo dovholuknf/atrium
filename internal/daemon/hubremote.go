@@ -39,6 +39,9 @@ type hubGit struct {
 	transport func() (http.RoundTripper, error)
 	// agent is `127.0.0.1:<port>` of the agent listener, set when it is bound.
 	agent string
+	// stashing holds the cards a close is pushing a stash for, which may push though their session ended. See
+	// closestash.go.
+	stashing sync.Map
 }
 
 // issuedToken is a card's token and when it was minted. A runner's exit revokes only a token minted no later than the
@@ -82,6 +85,9 @@ const errNoHub = hubErr("this room is not attached to a hub")
 // cardLive says whether a card may still use its git token: it exists and has not ended. A card that finished,
 // was shelved or died loses the token even before anything revokes it.
 func (d *Daemon) cardLive(id string) bool {
+	if _, ok := d.hubGit.stashing.Load(id); ok {
+		return true
+	}
 	t, err := d.st.Get(id)
 	if err != nil || t == nil {
 		return false

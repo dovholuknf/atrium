@@ -201,6 +201,8 @@ function pullRowHTML(r) {
       : "start a walker session and open the findings beside it"));
   }
   if (prMoveOffered()) acts.push(pullBtn("move", r.id, "move", "move this review and a card for it to another room"));
+  // The review is over: its card is closed and what it holds on disk is freed. See closeCardAsk in js/sharing.js.
+  if (r.walker_task) acts.push(pullBtn("close", r.id, "close", "close its card: free the worktree, branch and review"));
   return '<div class="pull" data-id="' + esc(r.id) + '" data-state="' + esc(r.state) + '">' +
     '<div class="pull-main">' +
       '<div class="pull-who"><span class="pull-repo">' + esc(r.org_repo) + " #" + esc(r.number) + "</span>" +
@@ -277,6 +279,14 @@ async function pullsRowAction(id, verb) {
     pullsSay(pullsErr(e));
     loadPulls();
   }
+}
+
+// Closing the row's card, which archives the row with it.
+async function pullsClose(id) {
+  const r = pulls.rows.find(x => x.id === id);
+  if (!r || !r.walker_task) return;
+  await closeCardAsk(r.walker_task, { display_title: r.org_repo + " #" + r.number });
+  loadPulls();
 }
 
 async function pullsPaste() {
@@ -418,6 +428,7 @@ document.addEventListener("DOMContentLoaded", () => {
       case "walk": pullsWalk(id); break;
       case "log": pullsLog(id); break;
       case "move": prMoveAsk(e, pulls.rows.find(r => r.id === id), null); break;
+      case "close": pullsClose(id); break;
     }
   });
   const go = document.getElementById("pulls-paste");
