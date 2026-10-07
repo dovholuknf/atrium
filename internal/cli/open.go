@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"strings"
 	"text/tabwriter"
@@ -21,31 +22,41 @@ import (
 // work out what it is", and the working out is a row in a table somebody wrote
 // rather than anything in this binary.
 //
-// It PRINTS by default and starts nothing. That is not timidity: writing a
-// recogniser is a loop of paste, look, adjust the template, and a verb that
-// launched a runner every time round that loop would be unusable. `--start` is
-// the second half, for when the row is right.
+// IT OPENS THE LINK. `POST /v1/open` makes the worktree, the review and the card
+// in one call, or answers the card the link already has, and this prints where
+// the card is. The same verb the board's paste and ctrl-alt-r call. See
+// internal/api/open.go and docs/rnd/card-lifecycle-design.md section 3.
+//
+// `--show` is the old print and starts nothing. Writing a recogniser is a loop
+// of paste, look, adjust the template, and a verb that opened a card every time
+// round that loop would be unusable. A link the verb does not open yet (an issue,
+// a support ticket) is shown the same way, and `--start` launches it from what it
+// resolved to, as before.
 
 type openOpts struct {
 	boardURL string
 	runner   string
+	why      string
+	room     string
+	show     bool
 	start    bool
+	attach   bool
 	asJSON   bool
 }
 
 func newOpen() *cobra.Command {
 	var o openOpts
 	c := &cobra.Command{
-		Use:   "open <url>",
-		Short: "Work out what a url is, and show the card it would start.",
-		Long: "Matches the url against the recogniser table and prints what it resolved to: the " +
-			"directory, the title, the tags and the first instruction.\n\n" +
-			"Atrium learns nothing about GitHub, Jira or anything else doing this. A recogniser " +
-			"is a pattern and a set of templates, written by whoever understood the system.\n\n" +
-			"Nothing is started without --start, and no directory is ever created: where the " +
-			"worktree is missing this says so, and making one is the job of whatever already " +
-			"makes worktrees here.",
-		Args: cobra.ExactArgs(1),
+		Use:   "open [url]",
+		Short: "Open a link as a card: its worktree, its review and a session, or the card it already has.",
+		Long: "Opens a pull request link the way a paste on the board does: the worktree, the review and a " +
+			"card started in the worktree, on the room the hub picks. A link that already has a live card " +
+			"answers that card. Prints the card's address on the board. With no url the clipboard is read.\n\n" +
+			"--attach attaches this terminal to the card. Ctrl+] leaves it, and the card keeps running.\n\n" +
+			"--show only prints what the recogniser table made of the url and starts nothing, which is the " +
+			"loop for writing a recogniser. A link that is not a pull request is shown the same way for now, " +
+			"and --start launches it from what it resolved to. No directory is ever created for one of those.",
+		Args: cobra.MaximumNArgs(1),
 		// The flag list is not the answer to "nothing recognises this url".
 		//
 		// Cobra prints usage on any error a RunE returns, which is right when
@@ -59,13 +70,33 @@ func newOpen() *cobra.Command {
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return openURL(args[0], o)
+			link := ""
+			if len(args) == 1 {
+				link = args[0]
+			} else {
+				got, err := readClipboard()
+				if err != nil {
+					return err
+				}
+				if !strings.HasPrefix(got, "http://") && !strings.HasPrefix(got, "https://") || strings.ContainsAny(got, " \t\r\n") {
+					return fmt.Errorf("the clipboard does not hold a link. pass the url instead")
+				}
+				link = got
+			}
+			if o.show {
+				return showURL(link, o)
+			}
+			return openLink(link, o)
 		},
 	}
+	c.Flags().BoolVar(&o.show, "show", false, "only print what the url resolves to, and start nothing")
 	c.Flags().BoolVar(&o.start, "start", false,
-		"start a runner on what it resolved to, instead of only printing it")
-	c.Flags().StringVar(&o.runner, "runner", "claude", "which configured runner --start uses")
-	c.Flags().BoolVar(&o.asJSON, "json", false, "print the resolution as json")
+		"for a link that is not opened as a card yet, start a runner on what it resolved to")
+	c.Flags().BoolVar(&o.attach, "attach", false, "attach this terminal to the card. ctrl+] leaves it")
+	c.Flags().StringVar(&o.why, "why", "", "why it is being opened, kept on the review and the card")
+	c.Flags().StringVar(&o.room, "room", "", "the room to open it on, instead of the one the hub picks")
+	c.Flags().StringVar(&o.runner, "runner", "", "which configured runner starts the card (default: the review recipe's, or claude for --start)")
+	c.Flags().BoolVar(&o.asJSON, "json", false, "print the answer as json")
 	c.Flags().StringVar(&o.boardURL, "url", "",
 		"atrium board address (default: $ATRIUM_BOARD_URL or localhost:7778)")
 	return c
@@ -94,7 +125,105 @@ type resolution struct {
 	FetchError string   `json:"fetch_error"`
 }
 
-func openURL(url string, o openOpts) error {
+// opened is the open verb's answer.
+type opened struct {
+	Key      string `json:"key"`
+	Kind     string `json:"kind"`
+	Card     string `json:"card"`
+	PR       string `json:"pr"`
+	Worktree string `json:"worktree"`
+	Created  bool   `json:"created"`
+	Room     string `json:"room"`
+	Title    string `json:"title"`
+}
+
+// openLink sends the link to the open verb and prints the card, or attaches to it.
+func openLink(link string, o openOpts) error {
+	board := boardAddress(o.boardURL)
+	body, err := json.Marshal(map[string]string{"url": strings.TrimSpace(link), "why": o.why, "harness": o.runner})
+	if err != nil {
+		return err
+	}
+	req, err := http.NewRequest(http.MethodPost, board+"/v1/open", bytes.NewReader(body))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	if strings.TrimSpace(o.room) != "" {
+		req.Header.Set("X-Atrium-Room", strings.TrimSpace(o.room))
+	}
+	// A clone and a fetch can take minutes on a slow link. The room bounds the git, and this bounds the wait.
+	resp, err := (&http.Client{Timeout: 5 * time.Minute}).Do(req)
+	if err != nil {
+		return fmt.Errorf("no daemon answered at %s: %w", board, err)
+	}
+	defer resp.Body.Close()
+	raw, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	if resp.StatusCode >= 300 {
+		var e struct {
+			Error string `json:"error"`
+			Code  string `json:"code"`
+			Step  string `json:"step"`
+		}
+		_ = json.Unmarshal(raw, &e)
+		switch {
+		case e.Code == "not_a_pr":
+			// Not opened as a card yet: shown as before, and --start launches it from the resolution.
+			fmt.Println("only a pull request opens as a card so far. this is what the url resolves to:")
+			fmt.Println()
+			return showURL(link, o)
+		case resp.StatusCode == http.StatusNotFound && e.Error == "":
+			return fmt.Errorf("the board at %s cannot open links yet. it needs a newer build", board)
+		case e.Error != "" && e.Step != "":
+			return fmt.Errorf("atrium refused at the %s step: %s", e.Step, e.Error)
+		case e.Error != "":
+			return fmt.Errorf("atrium refused: %s", e.Error)
+		}
+		return fmt.Errorf("atrium refused: %s", resp.Status)
+	}
+	var got opened
+	if err := json.Unmarshal(raw, &got); err != nil {
+		return fmt.Errorf("could not read the response: %w", err)
+	}
+	if o.asJSON {
+		os.Stdout.Write(raw)
+		fmt.Println()
+	} else {
+		printOpened(board, got)
+	}
+	if o.attach && got.Card != "" {
+		return attachTerminal(board, got.Card)
+	}
+	return nil
+}
+
+// printOpened says what was opened and where the card is on the board.
+func printOpened(board string, o opened) {
+	verb := "opened"
+	if !o.Created {
+		verb = "already open"
+	}
+	where := ""
+	if o.Room != "" {
+		where = " on " + o.Room
+	}
+	fmt.Printf("%s: %s%s\n", verb, o.Key, where)
+	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+	row := func(k, v string) {
+		if strings.TrimSpace(v) != "" {
+			fmt.Fprintf(w, "  %s\t%s\n", k, v)
+		}
+	}
+	row("card", o.Card)
+	row("title", o.Title)
+	row("worktree", o.Worktree)
+	row("review", o.PR)
+	row("board", strings.TrimRight(board, "/")+"/#term="+url.QueryEscape(o.Card))
+	w.Flush()
+}
+
+// showURL prints what the recogniser table made of a url, and launches it with --start.
+func showURL(url string, o openOpts) error {
 	board := boardAddress(o.boardURL)
 	body, err := json.Marshal(map[string]string{"url": strings.TrimSpace(url)})
 	if err != nil {
@@ -142,8 +271,12 @@ func openURL(url string, o openOpts) error {
 	if !got.CwdExists {
 		return fmt.Errorf("not starting: %s", got.Problem)
 	}
+	runner := o.runner
+	if runner == "" {
+		runner = "claude"
+	}
 	return launchAgent(launchOpts{
-		boardURL: o.boardURL, harness: o.runner, cwd: got.Cwd,
+		boardURL: o.boardURL, harness: runner, cwd: got.Cwd,
 		title: got.Title, prompt: got.Prompt, tags: got.Tags,
 		source: got.Kind, itemURL: got.URL,
 		repo: got.Repo, org: got.Org, host: got.Host, branch: got.Branch,
