@@ -27,7 +27,7 @@ missing. Atrium writes the entries into your own settings file, `~/.claude/setti
 | `Stop` | A queued message reaches a session sitting idle. Offered by name, never installed by default. |
 
 Each entry is a subcommand of atrium itself, such as `atrium hook --event tool-start`, with the absolute path of
-the binary the daemon runs from.
+the binary the room runs from.
 
 The installer keeps any key it does not know, keeps your matchers and timeouts, and replaces an entry that
 reports the same event instead of adding a second one. Running it twice adds nothing. It refuses to touch a file

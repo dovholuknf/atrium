@@ -1,6 +1,6 @@
 # f-new-hub-receive: rooms and the operator push to the hub, with plain git rules
 
-Status: HELD (the pause). Filed by @rnd 2026-10-02 from `docs/rnd/hub-forge-design.md` revision 2, stage 1 (sections
+Status: HELD (the pause). Filed by @rnd 2026-10-02 from `docs/fabric/hub-forge-design.md` revision 2, stage 1 (sections
 3.2 and 3.4). Owner @fabric. Size about 2 days. Needs `f-new-hub-git-store`. Works with @runtime's `r-new-hub-remote`.
 
 - `git receive-pack` through `http-backend`, enabled for this route only, on the link's `git` kind (rooms) and on

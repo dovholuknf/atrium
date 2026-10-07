@@ -1,6 +1,6 @@
 // The hub's repos: what rooms have pushed to the hub, and the clone URL of each.
 //
-// docs/rnd/hub-forge-design.md sections 2, 3.2 and 7 (u-new-hub-repos-list). A list, not a code browser: each repo
+// docs/fabric/hub-forge-design.md sections 2, 3.2 and 7 (u-new-hub-repos-list). A list, not a code browser: each repo
 // shows its `main`, the branches rooms pushed (room, card, when) and a clone URL to copy.
 //
 // THREE VIEWS OF ONE SET OF DATA, chosen with the switcher in the tab head and remembered per browser (a fourth, `requests`,

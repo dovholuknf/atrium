@@ -14,7 +14,7 @@ import (
 )
 
 // The lookup a card calls for the URL to fetch code it does not have: `atrium_git_url`, and GET /_hub/git/url.
-// See docs/rnd/hub-forge-design.md section 4.
+// See docs/fabric/hub-forge-design.md section 4.
 //
 // EVERY BRANCH ANSWERS ONE OR TWO SOURCES, and nothing is copied to say so:
 //

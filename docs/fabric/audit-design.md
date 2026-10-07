@@ -1,5 +1,7 @@
 # An audit log for the hub and the rooms
 
+Status: built. The hub's audit log and its board tab (`internal/cli/atrium_audit.go`, `internal/api/web/js/audit.js`).
+
 A place on the board to SEE important operational events, instead of digging them out of logs and the per-card
 event stream. A room attaching or detaching, the hub starting, a launch refused by the cap, the board being put on
 a share, a room winding down. Today each of those is scattered: some are a log line on the hub, some are a delta on

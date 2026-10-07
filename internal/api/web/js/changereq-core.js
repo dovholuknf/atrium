@@ -1,5 +1,5 @@
 // Change requests between rooms: the one place the board talks to the hub about them, and the words both the desktop
-// board and the phone use for what comes back. Stage 5 of docs/rnd/hub-forge-design.md section 6.
+// board and the phone use for what comes back. Stage 5 of docs/fabric/hub-forge-design.md section 6.
 //
 // THE HUB'S SIDE IS A DRAFT (@fabric's stage 5 shape) and live data only exists after a hub deploy. Every call here goes
 // through `call`, which answers from `window.crMock` (js/changereq-mock.js) when the mock is on and from the hub when it is

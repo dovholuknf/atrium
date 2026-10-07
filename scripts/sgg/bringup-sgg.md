@@ -1,5 +1,8 @@
 # Bringing a second room up on sgg
 
+Status: historical, 2026-09-26. The first bring-up of a second room with `atrium2`. Today a room joins with
+`atrium room join` and the hub manages it with `atrium rooms`.
+
 Runbook for Goal B. It attaches a second room, on the machine clint calls sgg, to this hub, so the board shows two
 rooms. sgg comes up empty because it has no claude, codex or other harness yet. That is expected. The point is a
 second attached room.

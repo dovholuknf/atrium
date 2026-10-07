@@ -1,5 +1,8 @@
 # Agent lineage: who spawned whom, and showing it
 
+Status: built. A card records who launched it in `spawned_by` and `launcher_id`, and the card's details show "launched
+by" (`internal/api/web/js/peek.js`).
+
 Design for recording that one session started another, and drawing that relation on the board. When the
 orchestrator launches a session through `atrium_launch`, the board should be able to say YOU started this one, and
 group or filter by it.
@@ -32,7 +35,7 @@ reference has to travel: header at the hub, field on the request, column on the 
 of it already carries other launch-time facts the same way, `why`, `tags`, `theme`, `brief`, so lineage is one
 more field beside them and not a new mechanism.
 
-The launch returns a new card id. Cards are the durable unit, per `docs/architecture-v2.md`: a card outlives its
+The launch returns a new card id. Cards are the durable unit, per `docs/archive/architecture-v2.md`: a card outlives its
 process, so lineage belongs on the card and never on a pid. The parent is named by its HANDLE, which is
 `wire_name`, the same qualified name `atrium_peers` lists and `atrium_say` resolves through `GetByWireName`. That
 is deliberate: lineage reuses the identity the peer bus already trades in rather than inventing a second one.

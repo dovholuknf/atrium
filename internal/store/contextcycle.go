@@ -9,7 +9,7 @@ import (
 	"strings"
 )
 
-// The settings behind the context cycle. See docs/context-cycle-design.md.
+// The settings behind the context cycle. See docs/runtime/context-cycle-design.md.
 
 const (
 	// SettingContextLimits is the context limit per harness, a JSON object of harness id to thousands of

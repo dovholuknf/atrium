@@ -1,5 +1,7 @@
 # Web Push for the phone
 
+Status: built. Web Push from the hub (`internal/link/push.go`).
+
 Written by @rnd on 2026-09-30, at clint's request through the orchestrator. Design only. Nothing here is built.
 
 ## The answer

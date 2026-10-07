@@ -1,5 +1,8 @@
 # Federation: one board, many machines
 
+Status: superseded by `docs/fabric/hub-and-rooms.md`. Kept as the record of the first federation design, which became
+the forum and then the hub.
+
 Design note. Nothing here is built. Read `docs/fabric/overlays.md` first, because the transport question is already
 answered and this document only argues about what sits on top of it.
 
@@ -92,9 +95,9 @@ push a rule set to peers, rather than pretending there is one central set.
 
 ### The pty cannot leave the machine
 
-`docs/terminal/supervision-design.md` and the ConPTY section of `docs/architecture-v2.md` establish that the daemon owns
-each pseudo terminal, that closing one takes the attached process with it, and that ConPTY offers no reattach.
-`docs/backlog.md` records the matching rule that atrium cannot attach to a session it did not start, because a
+`docs/terminal/supervision-design.md` and the ConPTY section of `docs/archive/architecture-v2.md` establish that the
+daemon owns each pseudo terminal, that closing one takes the attached process with it, and that ConPTY offers no
+reattach. `docs/backlog.md` records the matching rule that atrium cannot attach to a session it did not start, because a
 console cannot be handed to another process after the fact.
 
 None of that is negotiable across a machine boundary, and it is the strongest argument that a daemon belongs in
@@ -249,7 +252,7 @@ produces.
 **Works.** Almost free. It is a dropdown and a stored list of base URLs. Everything on screen is exactly the board
 that ships today, pointed somewhere else, so no invariant is touched at all.
 
-**Breaks.** It does not answer "which one needs me most", which is goal 2 of `docs/architecture-v2.md` and the
+**Breaks.** It does not answer "which one needs me most", which is goal 2 of `docs/archive/architecture-v2.md` and the
 reason v2 exists. Waiting counts, the nag and the notifications only cover the peer currently selected, so a
 permission request on an unselected peer is silent and an agent sits frozen. That is a real regression against the
 one failure the project cares about.

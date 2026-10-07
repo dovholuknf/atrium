@@ -1,7 +1,7 @@
 # Review: f-hub-receive 0fef152b
 
 Range `607bb026..0fef152b`, 4 commits, 27 files. The hub's own store now takes pushes: from a room's card on the link
-`git` kind, and from the operator on the board. Design: docs/rnd/hub-forge-design.md rev 2, 3.2 and 3.4. Change doc:
+`git` kind, and from the operator on the board. Design: docs/fabric/hub-forge-design.md rev 2, 3.2 and 3.4. Change doc:
 docs/changes/f-hub-receive.md.
 
 Verdict: **HOLD** on M1. The push log orders its rows by an id taken from the clock, and nothing carries that id across

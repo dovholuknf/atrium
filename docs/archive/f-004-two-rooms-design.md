@@ -1,6 +1,9 @@
 # Two rooms on one machine, and moving a card to another machine (f-004)
 
-Status: design, ACCEPTED by @rnd on 2026-09-30 with one required change (folded in). Written by @fabric. Not built.
+Status: superseded by `docs/rnd/room-handoff-design.md` (`atrium move`), whose room side is built in
+`internal/daemon/move.go`. Kept as the record of why a machine never runs a second room to upgrade.
+
+Origin: design, ACCEPTED by @rnd on 2026-09-30 with one required change (folded in). Written by @fabric. Not built.
 Stage 1 waits for f-019. The item is `docs/backlog/fabric/f-004.md`.
 
 ## 0. The answer, in one paragraph

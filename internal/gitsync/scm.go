@@ -12,7 +12,7 @@ import (
 )
 
 // Clones in the operator's scm folder: `<git.scm_root>/<host>/<owner>/<repo>`, made by
-// `atrium_git_clone {url}`. See docs/rnd/hub-forge-design.md section 5.2 and wall 2 of 5.3.
+// `atrium_git_clone {url}`. See docs/fabric/hub-forge-design.md section 5.2 and wall 2 of 5.3.
 //
 // WHAT IS NOT HERE. The `hub` remote's URL is the room's stable forwarder, which another item
 // builds. This file reaches it through SCM.HubURL, and hubremote.go holds the one function that

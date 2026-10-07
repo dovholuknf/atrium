@@ -27,8 +27,8 @@ The jump came once the director agents started, on 09-28 at 22:00.
 
 ### Daemon and halt
 
-- One `atrium` binary — `atrium run` serves the hub and starts this machine's room detached — `docs/fabric/one-atrium-plan.md`, FEATURES "Rooms and the hub" — atrium2 shim retired 2026-09-26 (`ce1a458f`)
-- Durable SQLite state — every card has an append-only event log, pure-Go `modernc.org/sqlite` — `docs/architecture-v2.md` — 2026-09-01 (`fdc5c8e6`)
+- One `atrium` binary — `atrium run` serves the hub and starts this machine's room detached — `docs/archive/one-atrium-plan.md`, FEATURES "Rooms and the hub" — atrium2 shim retired 2026-09-26 (`ce1a458f`)
+- Durable SQLite state — every card has an append-only event log, pure-Go `modernc.org/sqlite` — `docs/archive/architecture-v2.md` — 2026-09-01 (`fdc5c8e6`)
 - Storage failure halts — agent listener closes and stays closed, board stays up to say what broke — `docs/how-atrium-works.md`, README — 2026-09-01 (`fdc5c8e6`)
 - Constraint errors never halt — a SQLite constraint refusal is returned to the caller, only real storage failure halts — `changelog/runtime/2026-09-30-r-test-isolation.md` — 2026-09-30 (`8da27125`)
 - Health event — room pushes `health` (halted, cause, settling) instead of being polled — `changelog/runtime/2026-09-29-r-017.md` — 2026-09-29
@@ -53,7 +53,7 @@ The jump came once the director agents started, on 09-28 at 22:00.
 - Real diffs in a pending edit — dimmed context, changed words highlighted — README — 2026-09-01 (`c51ae309`)
 - Standing rules — always/never as prefix, glob, or folder; most specific wins; a tie now goes to block — README, `changelog/runtime/2026-09-30-r-034.md` — 2026-09-01, folders 09-02, tie rule 09-30
 - MCP tool rules — rules can name `mcp__server__tool`, a glob or a whole server — `docs/runtime/mcp-rules-design.md` — 2026-09-30
-- Import Claude Code's allow/deny lists — preview first, reports unmappable entries (134 rules on first run) — README, `docs/architecture-v2.md` — 2026-09-01
+- Import Claude Code's allow/deny lists — preview first, reports unmappable entries (134 rules on first run) — README, `docs/archive/architecture-v2.md` — 2026-09-01
 - Auto mode — per card, board-wide, or for the next hour; never overrides a never rule or a shelved card; `what did it do?` review — `docs/runtime/auto-mode.md` — 2026-09-02 (`a85e2a3b`), hour 09-03 (`e11e950d`)
 - Hub-held board-wide auto — approves from the request's own event, recorded as `global-auto` not `you` — `changelog/fabric/2026-09-29-f-008.md`, `r-020.md` — 2026-09-19, attribution fix 09-29
 - Shelving is a standing no — and answers what it had pending — `docs/how-atrium-works.md` — 2026-09-01
@@ -67,7 +67,7 @@ The jump came once the director agents started, on 09-28 at 22:00.
 
 ### Cards (sessions) and the board
 
-- One web board, every session a card — plain page over JSON+SSE (not the planned React SPA) — README, `docs/architecture-v2.md` — 2026-09-01
+- One web board, every session a card — plain page over JSON+SSE (not the planned React SPA) — README, `docs/archive/architecture-v2.md` — 2026-09-01
 - Attention columns — needs permission, ready, running, finished, shelved, plus inbox; empty columns compress — README — 2026-09-01, compress 09-03
 - Question vs finished turn — Notification hook distinguishes an ask from running out of work — `docs/runtime/hooks.md` — 2026-09-04 (`304fbe08`)
 - Live activity badge — thinking / named tool / N subagents, never stored — `docs/runtime/activity-design.md` — 2026-09-02
@@ -117,7 +117,7 @@ The jump came once the director agents started, on 09-28 at 22:00.
 - In-done acks for pastes — room answers `in-done` per paste frame — `changelog/runtime/2026-09-30-r-paste-done.md` — 2026-09-30
 - Shell beside a wedged agent — FEATURES — 2026-09-05
 - Restart onto the same card — from the terminal cog — FEATURES — 2026-09-18
-- New context cycle — capture a `HANDOFF.<alias>.md`, `/clear`, wake; manual, automatic at `auto_new_context_k`, and enforced `context_ceiling_k` for tagged cards — `docs/runtime/auto-new-context-design.md`, `changelog/runtime/2026-09-29-91.md`, `2026-09-30-r-029.md`, `2026-09-30-r-director-ceiling.md` — 2026-09-28 (`3d0edb0c`) onward
+- New context cycle — capture a `HANDOFF.<alias>.md`, `/clear`, wake; manual, automatic at `auto_new_context_k`, and enforced `context_ceiling_k` for tagged cards — `docs/archive/auto-new-context-design.md`, `changelog/runtime/2026-09-29-91.md`, `2026-09-30-r-029.md`, `2026-09-30-r-director-ceiling.md` — 2026-09-28 (`3d0edb0c`) onward
 - Idle parking — a card idle 2h is parked (no process, resume id kept), woken by key/say/report — `changelog/runtime/2026-09-29-r-007-*.md` — 2026-09-29
 - Cache keep-alive — refreshes idle Claude cards' prompt caches with a guarded forked resume, stops at break-even — `docs/runtime/cache-keepalive-design.md`, `changelog/ui/2026-09-30-u-032.md` — 2026-09-27 (`81492df1`)
 - `--autocompact` at the atrium limit plus 10% — commit `16488230` — 2026-10-02
@@ -130,7 +130,7 @@ The jump came once the director agents started, on 09-28 at 22:00.
 
 ### Runners (claude, codex, opencode, others)
 
-- Runners are configuration — command, args, dir, env, resume args, exit keys — `docs/runtime/other-runners.md`, `docs/atrium-for-agents.md` — 2026-09-01, non-claude 09-07 (`6634742b`)
+- Runners are configuration — command, args, dir, env, resume args, exit keys — `docs/runtime/other-runners.md`, `docs/runtime/wiring-a-runner.md` — 2026-09-01, non-claude 09-07 (`6634742b`)
 - Codex — hooks as a second target, smoke per runner, full `codex-package` install — `docs/runtime/other-runners.md`, `changelog/fabric/2026-09-29-f-007.md` — 2026-09-03 onward
 - Gemini setup checks — folder trust and sign-in, a fix button — `docs/runtime/runner-setup-design.md` — 2026-09-23
 - OpenCode — atrium plugin for opencode, counts as a runner when a hook finds its pid, edited approvals apply whole or refuse — commits `4ea3dc66`, `6bce194f` — 2026-10-01
@@ -146,11 +146,11 @@ The jump came once the director agents started, on 09-28 at 22:00.
 
 ### Rooms, hub, federation, link
 
-- Hub/room split — hub serves board and holds no card state, room owns DB/ptys/agents, room dials hub over mTLS after a one-string join — `docs/fabric/hub-room-plan.md` — 2026-09-17 (`7dde248e`)
-- One board over every room — merged lists, room picker with state dots — `docs/fabric/hub-room-requirements.md` — 2026-09-17, picker 09-19
-- Hub names its rooms — `atrium rooms add|ls|token|mark|rm|log`, name from hub-signed cert — `docs/decisions.md` 7 and 18 — 2026-09-17 (`d49d69d`, `153078c`)
-- Offline-room cache — cards from an unanswering room drawn from last report, nothing opens — `docs/decisions.md` 12-16 — 2026-09-17 (`a59d4d2`)
-- Delete a room: mark, clear, confirm, stop, remove — `docs/decisions.md` 9 — 2026-09-17
+- Hub/room split — hub serves board and holds no card state, room owns DB/ptys/agents, room dials hub over mTLS after a one-string join — `docs/archive/hub-room-plan.md` — 2026-09-17 (`7dde248e`)
+- One board over every room — merged lists, room picker with state dots — `docs/archive/hub-room-requirements.md` — 2026-09-17, picker 09-19
+- Hub names its rooms — `atrium rooms add|ls|token|mark|rm|log`, name from hub-signed cert — `docs/fabric/hub-decisions.md` 7 and 18 — 2026-09-17 (`d49d69d`, `153078c`)
+- Offline-room cache — cards from an unanswering room drawn from last report, nothing opens — `docs/fabric/hub-decisions.md` 12-16 — 2026-09-17 (`a59d4d2`)
+- Delete a room: mark, clear, confirm, stop, remove — `docs/fabric/hub-decisions.md` 9 — 2026-09-17
 - Transports: direct mTLS, private zrok, OpenZiti — `docs/fabric/ziti-zrok-flow-design.md` — 2026-09-17 (`97d41101`)
 - Overlay rooms proven by hub-signed cert inside the overlay; legacy rooms marked unproven, `atrium rooms legacy refuse` — `changelog/fabric/2026-09-30-f-022.md`, `f-026.md`, `docs/rnd/overlay-room-identity.md` — 2026-09-30
 - Hub offers builds, room opts in with `--accept-upgrades` — FEATURES — 2026-09-17
@@ -160,7 +160,7 @@ The jump came once the director agents started, on 09-28 at 22:00.
 - Hub events instead of polls — rooms attach/leave/mark pushed — `changelog/fabric/2026-09-29-f-008.md` — 2026-09-29
 - `atrium dispatch to <room>` — queue work a room claims on check-in — `docs/fabric/remote-launch.md` — 2026-09-07
 - Per-room launch caps — `PUT /_hub/launch-caps` — `changelog/fabric/2026-09-30-room-launch-cap.md` — 2026-09-30
-- Hub git sync — hub mirrors `claude/main` into a bare repo, serves it upload-pack only over a `git` link kind, collects rooms' `claude/*` into `refs/remotes/<room>/`, never pushes — `changelog/fabric/2026-09-30-f-019b.md`, `docs/rnd/git-sync-design.md`, `docs/decisions.md` 19 — 2026-09-30, live on sg3 and m1mini
+- Hub git sync — hub mirrors `claude/main` into a bare repo, serves it upload-pack only over a `git` link kind, collects rooms' `claude/*` into `refs/remotes/<room>/`, never pushes — `changelog/fabric/2026-09-30-f-019b.md`, `docs/fabric/git-sync-design.md`, `docs/fabric/hub-decisions.md` 19 — 2026-09-30, live on sg3 and m1mini
 - Hub git store / repos view — `git.store`, `rooms git init`, board repos view with clone URLs — commits `06ea9026`, `d3004c30` — 2026-10-02
 - Unscoped launch routing — goes to the room on the caller's machine that has the directory — commit `0ce86ade` — 2026-10-02
 - Room provisioning over ssh — `scripts/provision-room.ps1` (install, join, hooks, gate, statusline, Defender, autostart, smoke per runner, `-Remove`) — `changelog/fabric/*`, `docs/rnd/room-autostart-design.md` — 2026-09-28 (`c5054059`) onward
@@ -185,7 +185,7 @@ The jump came once the director agents started, on 09-28 at 22:00.
 - Recognisers / `atrium open <url>` — a URL fills the launch dialog — `docs/runtime/scm-design.md` — 2026-09-07
 - Providers — name + root + layout adopts every checkout, `git worktree add` with no shell — `docs/runtime/providers-design.md` — 2026-09-17, projects dropped 09-22
 - Named actions — stored prompts on any card (`write it up and finish`) — `docs/user-guide.md` pattern 9 — 2026-09-03
-- Pulls tab and PR review runner — `POST /v1/prs`, run folder per PR head, `claude -p` primed once then reviewer/verifier/critic forks, renderer writes `findings/` and `walk.txt`, budget checks, never posts to GitHub — `changelog/runtime/2026-10-01-r-pr-*.md`, `changelog/ui/2026-10-01-pulls-p2.md`, `docs/rnd/pulls-view-design.md`, `docs/rnd/pulls-api.md` — 2026-10-01
+- Pulls tab and PR review runner — `POST /v1/prs`, run folder per PR head, `claude -p` primed once then reviewer/verifier/critic forks, renderer writes `findings/` and `walk.txt`, budget checks, never posts to GitHub — `changelog/runtime/2026-10-01-r-pr-*.md`, `changelog/ui/2026-10-01-pulls-p2.md`, `docs/rnd/pulls-view-design.md`, `docs/review/pulls-api.md` — 2026-10-01
 - Walk drawer — walk a review's findings beside the terminal, mark posted/skipped, edits refused on a changed file — `changelog/ui/2026-09-29-u-005.md` — 2026-09-29
 - Pulls through the hub — merged `/v1/prs` in the ALL view — `changelog/fabric/2026-10-01-f-pulls-hub.md` — 2026-10-01
 
@@ -238,13 +238,13 @@ here name a design that was later built, and the line says so: the design doc is
 
 ### Rooms, hub, federation, hub forge
 
-- Hub as a forge, rev 2 — the hub keeps its own `main` and takes finished work by push with plain git rules; work in progress stays on its room and is passed through live, with no copy — `docs/rnd/hub-forge-design.md` — partly built: stage 1's hub git store (decd2a7b) and the board's repos tab (333533e7) landed; `f-new-hub-receive` and `r-new-hub-remote` held; stages 2 to 5 (scm-folder clones, pass-through, `atrium_git_url`, change requests between rooms) designed
-- Git sync stages 2 to 4 — a worktree per card made by the room, a hub merge queue, then the forge (stage 4 is the hub-forge doc) — `docs/rnd/git-sync-design.md` — stage 1 built (bare repos, rooms fetching `claude/main`, hub collecting `claude/*`); stages 2 and 3 designed
+- Hub as a forge, rev 2 — the hub keeps its own `main` and takes finished work by push with plain git rules; work in progress stays on its room and is passed through live, with no copy — `docs/fabric/hub-forge-design.md` — partly built: stage 1's hub git store (decd2a7b) and the board's repos tab (333533e7) landed; `f-new-hub-receive` and `r-new-hub-remote` held; stages 2 to 5 (scm-folder clones, pass-through, `atrium_git_url`, change requests between rooms) designed
+- Git sync stages 2 to 4 — a worktree per card made by the room, a hub merge queue, then the forge (stage 4 is the hub-forge doc) — `docs/fabric/git-sync-design.md` — stage 1 built (bare repos, rooms fetching `claude/main`, hub collecting `claude/*`); stages 2 and 3 designed
 - Room handoff, `atrium move` — move a card and the work it holds to another room: check, freeze, capture, park, launch, cut over, a `moved_to` chain that follows messages — `docs/rnd/room-handoff-design.md` — designed, @review OK b56ca32f; stage M1 queued to @runtime, nothing in code (`moved_to` absent on claude/main)
 - Room-to-room access — let a director on one room fix another machine through typed ops the hub runs with its own ssh, and only second a per-pair reach grant — `docs/rnd/room-to-room-access-spike.md` — spike, 4 questions held
-- Rolling room restart (f-011) — upgrade atrium without stopping agents, by moving ptys into a separate pty host that outlives the room — `docs/rnd/rolling-restart-design.md`, `docs/rnd/f-011-stage0-spike.md`, `docs/terminal/ptyhost-protocol.md` — partly built: stage 0 spike and f-011b to d (the host, reattach, tests) landed behind a setting; the backlog still says waiting on clint's approval (`docs/backlog/fabric/f-011.md`)
+- Rolling room restart (f-011) — upgrade atrium without stopping agents, by moving ptys into a separate pty host that outlives the room — `docs/rnd/rolling-restart-design.md`, `docs/terminal/ptyhost-protocol.md` — partly built: stage 0 spike and f-011b to d (the host, reattach, tests) landed behind a setting; the backlog still says waiting on clint's approval (`docs/backlog/fabric/f-011.md`)
 - Room deploy hold — one call asks for a room deploy, every agent holds, the room redeploys, every agent resumes — `docs/rnd/room-deploy-hold-design.md` — built (r-deploy-hold, `docs/changes/r-deploy-hold.md`); follow-ons R5 and R6 of resume-says-continue parked
-- Two rooms on one machine (f-004) — bring a second room up beside the first to migrate, and move a card's branch room to room — `docs/fabric/f-004-two-rooms-design.md` — designed, accepted by @rnd; stage 1 waits on f-019; in @fabric's queue
+- Two rooms on one machine (f-004) — bring a second room up beside the first to migrate, and move a card's branch room to room — `docs/archive/f-004-two-rooms-design.md` — designed, accepted by @rnd; stage 1 waits on f-019; in @fabric's queue
 - More than one room per machine, and a room that drains — `docs/rnd/multi-room-design.md` — designed only; backlog item 59 parked as deep backlog by clint
 - Resource inventory (f-003) — a per-room list of what an agent may use (`atrium_resources`, `resources.md`) — `docs/fabric/f-003-resources-design.md` — designed, accepted, low; stage 1 queued at @fabric
 - Room requirements file — `atrium.requirements.yaml` per project, and a command that checks a room, fixes what it can and lists what needs a human — `docs/fabric/room-requirements-design.md` — partly built: the yaml, `room-git init -Check` and `scripts/room-check.ps1` (f-013, f-014) landed; the full design (f-005) not
@@ -253,7 +253,7 @@ here name a design that was later built, and the line says so: the design doc is
 - Pinned strip across rooms (item 52) — a drag in a pinned strip holding two rooms' cards saves the order on both — `docs/fabric/pin-order-rooms-design.md` — built (5263f9a9)
 - A card on every room (item 49) — the orchestrator appears on every room's board through a hub index — `docs/rnd/everywhere-card-design.md` — built ("everywhere" commits, 1a98cf34)
 - Remote launch — hand a backlog item to another machine and keep orchestrating from here — `docs/fabric/remote-launch.md` — mostly built (launch on `room=`, routing, launch caps); permission forwarding and the four "send work" answers listed as not built
-- Federation v2, the forum — one board over many machines, a forum that holds nothing and leaves that dial in — `docs/rnd/federation-design-v2.md`, `docs/rnd/forum-implementation.md` — superseded in part (see section 3); its shape lives on as the hub and rooms (`docs/fabric/hub-room-plan.md`, built)
+- Federation v2, the forum — one board over many machines, a forum that holds nothing and leaves that dial in — `docs/archive/federation-design-v2.md`, `docs/archive/forum-implementation.md` — superseded in part (see section 3); its shape lives on as the hub and rooms (`docs/archive/hub-room-plan.md`, built)
 - Room machine for $2,500 — buy one Linux desktop (16-core Ryzen, 64 GB) as the new heavy room, keep the Mac mini, retire the laptop as a work host — `docs/rnd/room-machine-2500-design.md` — research, nothing bought, 3 questions held
 - Handle-addressed HTTP — a script names a card by `@handle` the way an agent does and the hub routes it — `docs/rnd/handle-addressed-http-design.md` — built (`changelog/runtime/2026-09-30-r-handle-http-*`)
 - Card URLs — a card has a readable address made of names, and every share keeps it — `docs/rnd/card-urls-design.md` — built (`docs/changes/u-card-urls.md`)
@@ -265,13 +265,13 @@ here name a design that was later built, and the line says so: the design doc is
 - Change record — one record per branch or PR with every fact pinned to the commit it was about, so "where are we" is a read (`atrium change`, `atrium_change`, `atrium_record`) and a new PR's session is handed related records — `docs/rnd/change-record-design.md` — designed, held; 3 questions
 - Change lifecycle — eight stages computed from evidence (work, tested, reviewed, walked through, signed, finished, PR open, merged), with walls against an early push and clint as the only signer — `docs/rnd/change-lifecycle-design.md` — designed, @review OK after HOLD 44dd83df; stages L1 to L7 held; 4 questions
 - Review on atrium — one call (`atrium_review`) runs the reviewer panel as quiet child cards and wakes the caller once with one merged report; amended to standing personas with stable handles and a per-repo knowledge base — `docs/rnd/review-on-atrium-design.md` — designed, held; 7 questions
-- Pulls view — PR review that atrium runs itself: one checkout, one prime session that every reviewer forks, JSON findings merged by code, a walk on the board; target under 10 minutes and under $2 (PR 378 took about 1h49m and $7) — `docs/rnd/pulls-view-design.md`, `docs/rnd/pulls-api.md` — partly built: P1a to P1c and P2 landed; P3 (doors, second opinion) parked on HOLD c0bccc01; the end-to-end acceptance not run
+- Pulls view — PR review that atrium runs itself: one checkout, one prime session that every reviewer forks, JSON findings merged by code, a walk on the board; target under 10 minutes and under $2 (PR 378 took about 1h49m and $7) — `docs/rnd/pulls-view-design.md`, `docs/review/pulls-api.md` — partly built: P1a to P1c and P2 landed; P3 (doors, second opinion) parked on HOLD c0bccc01; the end-to-end acceptance not run
 - Review tab, the walk — walk a PR review on the board hunk by hunk, as clint did by hand on one PR and liked — `docs/rnd/review-tab-design.md` — stage 1 (the walk drawer, u-005) built; stages 2 and 3 folded into the pulls view
 - Reviews that remember (item 16) — a review panel keeps what it learned per repo instead of re-reading everything per reviewer per PR — `docs/review/review-memory-design.md` — designed; stage 1 waits on clint's yes, stage 2 on 3 questions; partly overtaken by review-on-atrium's knowledge base and `REVIEWER-NOTES.md`
 - A PR card that registers itself with @review — `docs/review/review-pr-start-design.md` — proposed by @review, accepted with changes by @rnd; status unclear, folded into the pulls flow
 - PR and CI state on the card — PR state, checks and review decision on the card that owns the branch, and CI failures fed back to it — `docs/rnd/pr-ci-state-design.md` — designed, clint ranks; 3 questions
 - Changes view — every card shows what it changed, per turn — `docs/rnd/changes-view-design.md` — partly built (the room's `/changes` endpoint, `changelog/runtime/2026-10-01-r-changes.md`, and code review on the phone, `docs/changes/u-m-changes.md`); the desktop view as designed not confirmed
-- Peer review on the mercurius protocol inside an atrium session (item 30) — `docs/review/peer-review-brief.md` — not started, 2 questions
+- Peer review on the mercurius protocol inside an atrium session (item 30) — `docs/review/peer-review-brief.md` at 3be95cab — not started, 2 questions
 
 ### Operator focus and decisions
 
@@ -297,7 +297,7 @@ here name a design that was later built, and the line says so: the design doc is
 - Keeping codex up to date (item 12) — sections 3 and 4 (update policy) — `docs/runtime/codex-update-design.md` — sections 1 and 2 built; 3 and 4 designed, waiting on clint
 - Child runners spawned by an agent, grouped under it — `docs/rnd/spike-nested-subagents.md` — spike; the folding under a parent was later built (`docs/changes/child-fold.md`)
 - `dcode` (Deep Agents Code) as a runner row — `docs/rnd/langchain-openwiki-spike.md` — held, low
-- Lean context cycle — a cheaper, less stale new-context cycle that waits for the turn instead of a capture prompt — `docs/rnd/lean-context-cycle-design.md` — parked by clint 2026-09-30 (but lever 1 of operator focus leans on it for @review)
+- Lean context cycle — a cheaper, less stale new-context cycle that waits for the turn instead of a capture prompt — `docs/archive/lean-context-cycle-design.md` — parked by clint 2026-09-30 (but lever 1 of operator focus leans on it for @review)
 
 ### Intake and PR review
 
@@ -313,7 +313,7 @@ here name a design that was later built, and the line says so: the design doc is
 - Process registry — a long-running background process an agent starts, owned by its card, its lifetime tied to the runner — `docs/rnd/process-registry-design.md` — designed, revised to clint's answers; stage 1 waited on one-atrium; nothing in code
 - Background hold — a worker that ends its turn with background shells still running is not marked stuck — `docs/rnd/background-hold-design.md` — built in r-007 stage 5 ("background work blocks parking")
 - Resume says continue — a card a restart interrupted is told to carry on, an idle one is left alone — `docs/rnd/resume-says-continue-design.md` — partly built; R5 and R6 parked
-- Restart and keep-alive only for what a human uses (items 38, 39) — `docs/rnd/keepalive-policy-design.md`, `docs/rnd/restart-idle-spec.md`, `docs/rnd/keepalive-marked-spec.md` — the policy draft replaced the two specs and its parking half shipped as r-007; marked keep-alive and resume-only-working wait on item 37
+- Restart and keep-alive only for what a human uses (items 38, 39) — `docs/rnd/keepalive-policy-design.md` — the policy draft replaced the two specs and its parking half shipped as r-007; marked keep-alive and resume-only-working wait on item 37
 - Keep-alive fork carries the card's launch args (item 73) — `docs/runtime/keepalive-fork-args-design.md` — built (folded as DO)
 - Terminal resize decoupling — a viewer's size no longer resizes the shared pty, and no preamble on attach — `docs/terminal/terminal-resize-decoupling-design.md` — design revised after t-003b; partly built
 - Shared multi-pane input — keystroke fan-out to several panes — `docs/terminal/multi-pane-input-design.md` — display-only half built, room side parked
@@ -341,7 +341,7 @@ here name a design that was later built, and the line says so: the design doc is
 - Remove the orchestrator from between clint and the directors, in five steps — `docs/rnd/factory-refactor.md` (held on claude/rnd) section 2 — designed, held
 - The factory feeds itself — the factory log gathered from the hub's own records instead of written by hand — `docs/backlog/rnd/rnd-new-factory-feed.md` — held
 - Roles — a director anyone can define, share and launch — `docs/backlog/runtime/r-003.md` — wanted, design first
-- Work ledger stages 2+ — who did what, where it is, and who said it was done; `done` checked against the worktree — `docs/runtime/work-ledger-design.md`, `docs/runtime/work-ledger-plan.md` — stage 1 built (70ed833b); later stages designed
+- Work ledger stages 2+ — who did what, where it is, and who said it was done; `done` checked against the worktree — `docs/runtime/work-ledger-design.md` — stage 1 built (70ed833b); later stages designed
 - Agent-to-agent reliability stages 2+ — no silent stall, no silent loss — `docs/runtime/a2a-reliability-design.md`, `docs/rnd/turn-end-spike.md` — stage 1 built; the spike asks clint to reverse one decision
 - Worker gateway (r-035) and lean workers — a worker boots with only what it needs — `docs/runtime/worker-gateway-design.md`, `docs/runtime/lean-workers-design.md` — built
 - Software factory landscape — 23 factories surveyed; none combines atrium's four traits; borrow status-from-facts, landing rules as policy, evidence per run, a plan gate — `docs/rnd/factory-landscape.md` — spike, 4 questions
@@ -396,22 +396,22 @@ here name a design that was later built, and the line says so: the design doc is
 - sg4 re-evaluation of relay cost (the orchestrator's half of the token study) — `docs/rnd/operator-focus.md` 4.5 (T1, after the pause)
 - The OpenWiki trial on one repo — `docs/rnd/langchain-openwiki-spike.md` section 5 (held until the pause ends)
 - Two smaller spikes: ACP as a harness protocol, and a sandboxed room type — `docs/rnd/factory-landscape.md` section 0
-- Older, from the orchestrator's dispatch queue (around 2026-09-06 to 09-20): publishing atrium, many boards on one machine, watching the fleet, context and rate limits on a card, handing somebody a session — `docs/orchestrator/dispatch-queue.md` sections A to S
+- Older, from the orchestrator's dispatch queue (around 2026-09-06 to 09-20): publishing atrium, many boards on one machine, watching the fleet, context and rate limits on a card, handing somebody a session — `docs/orchestrator/dispatch-queue.md` at 3be95cab sections A to S
 
 ## 4. Abandoned or replaced
 
 ### What shipped, then went
 
-- **v1 chat-window broker (Mode A) replaced by the v2 task board.** June's atrium was a TUI where each claude session loaded an MCP tool `submit` that long-polled the hub; the hub was amnesiac by rule. v2 (09-01, `fdc5c8e6`) reframed it as a task tracker with live agents and reversed "restart equals reset" with SQLite. The TUI rewrite against HTTP (stage 5) was **abandoned**; the TUI, `atrium agent`, `internal/tui`, `internal/agent` were deleted instead. Evidence: `docs/architecture-v2.md` "Staged migration", `website/docs/story.md`, `docs/fabric/one-atrium-plan.md`, `c739bdc7` (09-24).
+- **v1 chat-window broker (Mode A) replaced by the v2 task board.** June's atrium was a TUI where each claude session loaded an MCP tool `submit` that long-polled the hub; the hub was amnesiac by rule. v2 (09-01, `fdc5c8e6`) reframed it as a task tracker with live agents and reversed "restart equals reset" with SQLite. The TUI rewrite against HTTP (stage 5) was **abandoned**; the TUI, `atrium agent`, `internal/tui`, `internal/agent` were deleted instead. Evidence: `docs/archive/architecture-v2.md` "Staged migration", `website/docs/story.md`, `docs/archive/one-atrium-plan.md`, `c739bdc7` (09-24).
 - **Mode B read-only aggregator.** `atrium serve|status|watch`, `internal/server`, `internal/state` (the June scaffold's own files, `fc4ccd0a`) removed: nothing called them and `gwt watch` tails the same ledger. `a8afe39b` (09-25).
 - **The `{choices}` picker.** A convention taught by the v1 `atrium-agent` tool and rendered by the TUI, retired with Mode A (`docs/test-plan.md` section D). Quietly reborn on 09-30: a `{choices}` block in a question growler becomes reply buttons (`changelog/ui/2026-09-30-u-growl-reply.md`).
-- **Adopting sessions from the gwt ledger.** Implemented then removed: it turned every session the ledger ever saw into a card nobody could talk to, hundreds of ghost "waiting on a human" cards. Replaced by SessionStart/SessionEnd hooks. `docs/architecture-v2.md` "Abandoned".
-- **React SPA.** The decisions table chose React+Vite; the board shipped as a plain page on the same JSON+SSE contract and stayed that way. `docs/architecture-v2.md` stage 6.
-- **Heartbeat federation.** `atrium room` posting to `/v1/rooms` every 20s (`c78ff42c`, 09-06). Superseded by the hub/room mTLS link (09-17). Notably the first federation design (`docs/rnd/federation-design.md`) argued against a central aggregating atrium ("federate in the client"); the hub got built anyway, with no card state.
-- **"The hub holds nothing" / "the forum holds nothing."** Eroded in steps: hub store (decision 11), then decision 19 (09-29) made the hub own the integration branches, explicitly reversing one sentence of decision 11 and retiring the federation-v2 rule. Then hub documents (09-30) and a hub git store (10-02). `docs/decisions.md` 19.
+- **Adopting sessions from the gwt ledger.** Implemented then removed: it turned every session the ledger ever saw into a card nobody could talk to, hundreds of ghost "waiting on a human" cards. Replaced by SessionStart/SessionEnd hooks. `docs/archive/architecture-v2.md` "Abandoned".
+- **React SPA.** The decisions table chose React+Vite; the board shipped as a plain page on the same JSON+SSE contract and stayed that way. `docs/archive/architecture-v2.md` stage 6.
+- **Heartbeat federation.** `atrium room` posting to `/v1/rooms` every 20s (`c78ff42c`, 09-06). Superseded by the hub/room mTLS link (09-17). Notably the first federation design (`docs/archive/federation-design.md`) argued against a central aggregating atrium ("federate in the client"); the hub got built anyway, with no card state.
+- **"The hub holds nothing" / "the forum holds nothing."** Eroded in steps: hub store (decision 11), then decision 19 (09-29) made the hub own the integration branches, explicitly reversing one sentence of decision 11 and retiring the federation-v2 rule. Then hub documents (09-30) and a hub git store (10-02). `docs/fabric/hub-decisions.md` 19.
 - **The hub as its own room.** Dropped 09-18 (`c4248d71`); old hubs drop the defunct row at startup (`b5c2cf4d`).
 - **Anonymous joins.** `atrium2 hub token` and `--name` on the room removed 09-17 (`153078c`) because a join string authorised any name. Overlay joins kept the gap (decision 18, "NOT SETTLED") until f-022 put mTLS inside the overlay on 09-30, with legacy rooms marked unproven.
-- **atrium2 as a second binary.** `cmd/atrium2` shim and cutover/rollback scripts removed 09-26 (`ce1a458f`, `3bb76c0b`). The plan's third step, renaming "the hub" to "the atrium", is in the plan (`docs/fabric/one-atrium-plan.md` decision 3) but the vocabulary on routes (`/_hub/...`) and in changelogs is still "hub".
+- **atrium2 as a second binary.** `cmd/atrium2` shim and cutover/rollback scripts removed 09-26 (`ce1a458f`, `3bb76c0b`). The plan's third step, renaming "the hub" to "the atrium", is in the plan (`docs/archive/one-atrium-plan.md` decision 3) but the vocabulary on routes (`/_hub/...`) and in changelogs is still "hub".
 - **Per-session stdio control MCP.** Each session spawned its own ~24MB `atrium-control`; replaced by one HTTP MCP on the hub, 09-18 (`d192062`).
 - **`atrium install`.** Written and removed before shipping: copying a file is the shallow half of installing. Replaced by real packages. `website/docs/story.md`.
 - **A Windows service for autostart.** A service runs in session 0 and cannot open a pty you can attach to; it would report Running and supervise nothing useful. Logon task instead. `website/docs/story.md`.
@@ -422,7 +422,7 @@ here name a design that was later built, and the line says so: the design doc is
 - **The flattener for scrollback.** Replaced by a screen-model replay 09-14 (`53b728cb`). The changelog admits the rendering was twice declared fixed on tests written beside it and twice reverted; `replay_flat = on` remains as the escape hatch. Commit subjects on 09-14 (`93f6e59f`, `38572ba0`, `c6b9eda7`, `53b728cb`) read like a diary of the hunt, ending in a hopeful "finally".
 - **Width change replaces transcript in scrollback.** Landed and reverted the same day, 09-22 (`0d99f059` then `069850cf`).
 - **Collapsing tree renderer, attach preamble, width-mismatch note, model tickbox.** Removed 09-11, 09-19 (`3a6abd86`), 09-20 (`cfb383a8`), 09-14. FEATURES "Terminals: removed".
-- **Peer messages always queued, never typed.** Original rule (README "Scope", backlog "Out of scope, deliberately"): no prompt injection, even where atrium owns the pty. Overruled by clint: the pty is shared, so peers type when the line is free. The README and backlog still carry the old rule. `docs/architecture-v2.md` "A message back channel".
+- **Peer messages always queued, never typed.** Original rule (README "Scope", backlog "Out of scope, deliberately"): no prompt injection, even where atrium owns the pty. Overruled by clint: the pty is shared, so peers type when the line is free. The README and backlog still carry the old rule. `docs/archive/architecture-v2.md` "A message back channel".
 - **"A supervised runner can never outlive the daemon."** Stated as a fact (ConPTY has no reattach) in README, architecture-v2 open risks and backlog out-of-scope. f-011 stage 0 (`555b85d5`, 09-29) showed a detached process owning a ConPTY can be reattached with no byte lost; `atrium ptyhost` shipped behind an off setting (09-30/10-01).
 - **Echo plus smallest-viewer terminal sizing.** Being replaced by single-owner input/viewport ("take control"), decided in design 09-21 (decisions-log); width now follows widest viewer.
 - **Persona pack.** Specialist agents with memory in `dotagents/personas/`, built through six stages on 09-23 (catalog, review-with, lessons view, pack nag), then reverted the same day (`367a38da`). Per decisions-log, clint stopped the design after round 3 and later said it was far more than the few files he expected; direction kept as one agent CLAUDE.md per repo. Personas resurface on 10-02 as standing reviewers in the review-on-atrium design.
@@ -447,11 +447,11 @@ here name a design that was later built, and the line says so: the design doc is
 
 ### Designs dropped or revised away
 
-- **Hub forge rev 1: mirror everything.** Rev 1 (d32a34fd to 1c965657, @review doc-ok 8eaa86b1) mirrored every repo on the hub automatically, fetched forge branches into `refs/forge/`, served rooms' branches under `rooms/<room>/`, kept a fetch-through copy as an offline fallback and put push in a later stage. clint's interview said no to the mirror and no to the fallback: the hub owns `main`, takes pushes first, and passes everything else through live to the room that has it, failing when that room is off. Evidence: `docs/rnd/hub-forge-design.md` section 1 table; commits 1460c81a and 1c30e5f7 (rev 1) and 018c141e (rev 2). The interviewer brief says the core picture was wrong and the interview found out only at question 4 (`docs/rnd/interviewer-brief.md` section 1).
-- **The forum that holds nothing.** Federation v2 said the forum (the hub) stores nothing and is a pure pane of glass. Decision 11 gave the hub its own store (`internal/hubstore`), and clint's 2026-09-17 requirements overrode v2 on the aggregate question; the "forum" name was then dropped for "hub" when Mode A was removed. Evidence: banner at the top of `docs/rnd/federation-design-v2.md`, its section marked Superseded, `docs/fabric/hub-room-requirements.md`, `docs/fabric/one-atrium-plan.md` around line 373. No commit mentions "forum" on claude/main; `docs/rnd/forum-implementation.md` was never built as written.
-- **Federation v1, a separate aggregator.** `docs/rnd/federation-design.md` argued about what sits on top of overlays; rejected mirror cards and a mirroring aggregator, replaced by v2 and then the hub/room plan.
-- **Mode A and the TUI.** The plan to rewrite the TUI against the HTTP API was abandoned; the TUI was deleted with Mode A. Evidence: `docs/architecture-v2.md` migration step 5 marked Abandoned; `docs/fabric/one-atrium-plan.md` stage 1.
-- **Adopting sessions from the gwt ledger.** Built, then removed: the board filled with hundreds of sessions it could see but not talk to. Hooks bring a session in when it acts. Evidence: `docs/architecture-v2.md` "Abandoned". (A new, narrow `atrium adopt` is now wanted again: `docs/backlog/rnd/rnd-new-adopt-session.md`.)
+- **Hub forge rev 1: mirror everything.** Rev 1 (d32a34fd to 1c965657, @review doc-ok 8eaa86b1) mirrored every repo on the hub automatically, fetched forge branches into `refs/forge/`, served rooms' branches under `rooms/<room>/`, kept a fetch-through copy as an offline fallback and put push in a later stage. clint's interview said no to the mirror and no to the fallback: the hub owns `main`, takes pushes first, and passes everything else through live to the room that has it, failing when that room is off. Evidence: `docs/fabric/hub-forge-design.md` section 1 table; commits 1460c81a and 1c30e5f7 (rev 1) and 018c141e (rev 2). The interviewer brief says the core picture was wrong and the interview found out only at question 4 (`docs/rnd/interviewer-brief.md` section 1).
+- **The forum that holds nothing.** Federation v2 said the forum (the hub) stores nothing and is a pure pane of glass. Decision 11 gave the hub its own store (`internal/hubstore`), and clint's 2026-09-17 requirements overrode v2 on the aggregate question; the "forum" name was then dropped for "hub" when Mode A was removed. Evidence: banner at the top of `docs/archive/federation-design-v2.md`, its section marked Superseded, `docs/archive/hub-room-requirements.md`, `docs/archive/one-atrium-plan.md` around line 373. No commit mentions "forum" on claude/main; `docs/archive/forum-implementation.md` was never built as written.
+- **Federation v1, a separate aggregator.** `docs/archive/federation-design.md` argued about what sits on top of overlays; rejected mirror cards and a mirroring aggregator, replaced by v2 and then the hub/room plan.
+- **Mode A and the TUI.** The plan to rewrite the TUI against the HTTP API was abandoned; the TUI was deleted with Mode A. Evidence: `docs/archive/architecture-v2.md` migration step 5 marked Abandoned; `docs/archive/one-atrium-plan.md` stage 1.
+- **Adopting sessions from the gwt ledger.** Built, then removed: the board filled with hundreds of sessions it could see but not talk to. Hooks bring a session in when it acts. Evidence: `docs/archive/architecture-v2.md` "Abandoned". (A new, narrow `atrium adopt` is now wanted again: `docs/backlog/rnd/rnd-new-adopt-session.md`.)
 - **Room-owned git (f-002).** One integration checkout per repo on each room and a room merge queue; superseded by f-019 (decision 19), which puts integration branches on the hub. Evidence: `docs/backlog/fabric/f-002.md`.
 - **A shipped permission-gate script (f-006).** Replaced by the Go subcommand `atrium hook --event permission` (r-023). Evidence: `docs/backlog/fabric/f-006.md`, `changelog/fabric/2026-09-30-f-006-replace.md`.
 - **"You, now" (what am I working on).** Option B, a section of the cards clint last touched, was rejected by clint; only his own ask, sort by started, was built. Evidence: `docs/rnd/what-am-i-working-on-design.md` status, `docs/changes/term-sort-started.md`.

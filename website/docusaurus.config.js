@@ -1,6 +1,6 @@
 // @ts-check
-// The site describes atrium as of one release. It is rebuilt at release time, not per feature, so the version
-// below moves with the tag and nothing else here should need to.
+// The site is rebuilt on every push to main that touches the docs. The release number below moves when a release
+// is cut, and nothing else here should need to.
 
 import {themes as prismThemes} from 'prism-react-renderer';
 

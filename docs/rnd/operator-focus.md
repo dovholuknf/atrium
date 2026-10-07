@@ -1,6 +1,8 @@
 # Operator focus: one numbered list of decisions, shorter reports, and what the tokens buy
 
-Status: design by @rnd, 2026-10-02. Nothing built. Asked by clint through the orchestrator, 2026-10-02. In short: he
+Status: proposed, not built. Its interview mode is a brief, `docs/rnd/interviewer-brief.md`, and needs no code.
+
+Origin: design by @rnd, 2026-10-02. Nothing built. Asked by clint through the orchestrator, 2026-10-02. In short: he
 keeps losing track of things, about 50 of his decisions were skipped or forgotten, the directors' reports to him are
 too long, and he wants one list answered by number. clint is not quoted here because this repo is public. His words
 are in the factory log, which is held until he decides where it lives.
@@ -10,7 +12,7 @@ Inputs, all read 2026-10-02:
 - `docs/backlog/rnd/rnd-new-clint-inbox.md` (held);
 - `docs/rnd/held-message-escalation-design.md`;
 - `docs/rnd/usage-tab-design.md` section 1 (the counting rule);
-- `docs/rnd/lean-context-cycle-design.md`;
+- `docs/archive/lean-context-cycle-design.md`;
 - the factory log's second entry (held), used for counts only;
 - m1mini's `~/.atrium/atrium.db`, tables `say`, `session_usage` and `task`, opened read-only;
 - the price table at `internal/daemon/keepalive.go:109` and `internal/daemon/usage.go:70`.
@@ -353,7 +355,7 @@ cost.
 
 | # | Lever | Saved in this window, estimated | Build |
 | --- | --- | --- | --- |
-| 1 | **@review cycles its context when idle or after a batch**, not after every verdict. A cold start re-reads 40k to 80k, and a cycle loses what one review teaches the next. So each cycle starts by reading the standing `docs/backlog/review/REVIEWER-NOTES.md` (started by @review, 86b95a63). At about 100k instead of 336k, a turn costs well under half | somewhat under $25 of $41, less the cold starts | none: one line in @review's queue, under `docs/rnd/lean-context-cycle-design.md` |
+| 1 | **@review cycles its context when idle or after a batch**, not after every verdict. A cold start re-reads 40k to 80k, and a cycle loses what one review teaches the next. So each cycle starts by reading the standing `docs/backlog/review/REVIEWER-NOTES.md` (started by @review, 86b95a63). At about 100k instead of 336k, a turn costs well under half | somewhat under $25 of $41, less the cold starts | none: one line in @review's queue, under `docs/archive/lean-context-cycle-design.md` |
 | 2 | **Batch what goes to @review.** One message per ready range, not one per commit plus a nudge. 39 wakes to about 15 | about $18, before lever 1 | none: a habit for every director |
 | 3 | **Workers end or cycle at 150k context** | about $15 on u-m-card alone | the lean cycle's existing stage |
 | 4 | **News is sent as `fyi`, which a receiver that holds its notices keeps instead of waking** | a few dollars here, more on sg4 | none: a habit, already in the `atrium_say` description |

@@ -1,7 +1,10 @@
 # Architecture v2: the daemon, the API, and the clients
 
-Status: design, not yet built. Supersedes the Mode A / Mode B framing in `CLAUDE.md` once implementation starts.
-Read `docs/rnd/state-of-the-art.md` first for where v1 actually sits.
+Status: superseded by `docs/how-atrium-works.md`. Kept as the record of the v2 daemon design of 2026-09-01, which was
+built and later split into the hub and the rooms.
+
+Origin: design, not yet built. Supersedes the Mode A / Mode B framing in `CLAUDE.md` once implementation starts.
+Read `docs/archive/state-of-the-art.md` first for where v1 actually sits.
 
 ## Why v2 exists
 
@@ -71,7 +74,7 @@ the TUI talks to the daemon over loopback HTTP like everything else. If the TUI 
 exposes, the web UI can never be second class.
 
 `atrium hub` was to survive as a convenience that attached the TUI over loopback. It did not: Mode A, TUI
-included, was removed in `docs/fabric/one-atrium-plan.md` stage 1, and the board is the one client of the API.
+included, was removed in `docs/archive/one-atrium-plan.md` stage 1, and the board is the one client of the API.
 
 ## Domain model
 
@@ -528,7 +531,7 @@ These v1 invariants are hook side and survive the split untouched. Do not regres
 
 The v1 list had four more, about the `atrium agent` submit loop: the LLM never sees a disconnect, never sees an
 empty prompt, burns no tokens while idle, and activates only on request. They went with Mode A, which
-`docs/fabric/one-atrium-plan.md` stage 1 removed. A supervised session gets the same quiet idle by owning the terminal,
+`docs/archive/one-atrium-plan.md` stage 1 removed. A supervised session gets the same quiet idle by owning the terminal,
 not by parking a tool call.
 
 ## What v1 rules get retired
@@ -556,7 +559,7 @@ Each stage left `atrium hub` working, until Mode A was removed.
    first commit that touches storage. **Done.**
 4. **Human facing API.** Add the `/v1` endpoints and the SSE stream on top of the task model. **Done.**
 5. **Cut the pointer.** Rewrite the TUI against the HTTP API. Delete the privileged path. **Abandoned.** The TUI
-   was deleted instead, with the rest of Mode A, in `docs/fabric/one-atrium-plan.md` stage 1. Everything since stage 4
+   was deleted instead, with the rest of Mode A, in `docs/archive/one-atrium-plan.md` stage 1. Everything since stage 4
    went into the board, which is the one client of the API.
 6. **Board.** Kanban, stack, permissions and runners against the same API. **Done**, as a plain page rather than
    the React SPA the decisions table names. The JSON plus SSE contract is unchanged, so swapping it is a client

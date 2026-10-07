@@ -161,9 +161,12 @@ Notes on the table:
   handle that does not resolve answers `404` with the list of handles that would have worked. A handle naming a
   `done` or `dead` card answers `409`. Messaging yourself is refused.
 - `atrium_say` is served by the hub (`internal/link/control_mcp.go`). It resolves the handle against the
-  caller's room, then posts to the room's board API. `handleMessage` applies the same size cap and rate limit to
-  any message that carries a `from`, so this door is bounded like the others. The limiter is shared, so one
-  sender's `tell` and `atrium_say` calls count against the same 20.
+  caller's room, then posts to the room's board API. `name@room` or `alias@room` names a card on another room, and
+  the hub posts there instead, with the sender shown as `you@yourroom`. When the hub or that room is not answering,
+  the sender's room holds the message and sends it when they are, for up to a day
+  (`docs/fabric/cross-room-say-design.md`). `handleMessage` applies the same size cap and rate limit to any message
+  that carries a `from`, so this door is bounded like the others. The limiter is shared, so one sender's `tell` and
+  `atrium_say` calls count against the same 20.
 - `ask --peer` truncates the question it stores on the asker's card to 500 characters. The envelope queued for
   the peer carries the full text and has no cap.
 - `tell`, `ask --peer`, and `answer` all deliver through `deliverPeer` in `peers.go`, so the three cannot drift

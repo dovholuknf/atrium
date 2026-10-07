@@ -1,5 +1,8 @@
 # Source control and ticketing: work that arrives from somewhere else
 
+Status: partly built. Part one, a URL to a card through recognisers and `atrium open`, is built. Part two, settings that
+live in a repository, is not. The last section says where the build differs.
+
 Two things, related only by the word "integration", and separating them is the first decision in this document.
 
 **Inbound.** You are looking at a pull request, an issue, a ticket. You want a card, in the right directory,
@@ -140,7 +143,7 @@ Three places, all of which are one function:
   issue tracker is holding a credential.
 - **No repository model.** Atrium does not learn what a repo is or keep a list of them. A path and a command that
   produces it. Where a room has no checkout, the scm clone path clones from the hub's copy
-  (`docs/rnd/hub-forge-design.md`), and a repo it cannot read fails with a sentence telling the operator to clone it.
+  (`docs/fabric/hub-forge-design.md`), and a repo it cannot read fails with a sentence telling the operator to clone it.
 
 ---
 

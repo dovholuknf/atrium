@@ -1,5 +1,8 @@
 # Decisions
 
+Status: built. Decisions 1 to 19 are the hub and room split as it shipped. Read the body's `atrium2 hub` as
+`atrium run`, `atrium2 room` as `atrium room`, and `atrium2` as the one `atrium` binary.
+
 One question at a time. Each entry is the question as asked, the design agreed, and the outcome once it is
 built. Nothing is implemented until its entry says the design is settled.
 
@@ -249,7 +252,7 @@ to claim. `--name` on the room stops being a flag.
 
 A room still says what it is, and the two are shown side by side.
 
-**This is `docs/architecture-v2.md`'s observed-versus-overrides rule, not a new one.** What a machine reports
+**This is `docs/archive/architecture-v2.md`'s observed-versus-overrides rule, not a new one.** What a machine reports
 never overwrites what a human typed. The hub's name is the override and is the name; the room's own hostname is
 observed and sits beside it.
 
@@ -706,7 +709,7 @@ it turned out to mean.
 The room list says `sparta attached 1h30m` and not how it got here. It gets a small mark for the transport:
 zrok, OpenZiti, or mTLS.
 
-**A badge and nothing more**, which is what `docs/fabric/hub-room-requirements.md` already says: transport is
+**A badge and nothing more**, which is what `docs/archive/hub-room-requirements.md` already says: transport is
 ancillary noise and must never become a concept in the UI. Worth seeing at a glance, never worth a column.
 
 ### The outcome
@@ -801,8 +804,8 @@ What survives of that sentence is the property it was protecting: **stopping the
 Sessions, terminals and agent processes stay on the rooms. A hub that is down means nothing lands and no new
 base is handed out until it is back, and every running card carries on.
 
-**It also retires "the forum holds nothing" in `docs/rnd/federation-design-v2.md`.** That rule was already false once
-decision 11 built `internal/hubstore`, and this makes the hub's store hold more than configuration.
+**It also retires "the forum holds nothing" in `docs/archive/federation-design-v2.md`.** That rule was already false
+once decision 11 built `internal/hubstore`, and this makes the hub's store hold more than configuration.
 
 ### What decision 17 still demands of it
 

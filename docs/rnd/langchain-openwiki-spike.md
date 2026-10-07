@@ -1,6 +1,9 @@
 # LangChain and OpenWiki: does either fit atrium today? (SPIKE)
 
-Status: spike by @rnd, 2026-10-02, revised for @review's HOLD (854c4ba1, `docs/backlog/rnd/rd-new-review-131bf5b1.md`).
+Status: research, spike, 2026-10-02. Its conclusion: OpenWiki fits as a tool a card runs, and a zrok option for its
+Slack tunnel is about a day of work.
+
+Origin: spike by @rnd, 2026-10-02, revised for @review's HOLD (854c4ba1, `docs/backlog/rnd/rd-new-review-131bf5b1.md`).
 Design only: no code, no upstream PR, nothing posted anywhere. Asked by clint after
 geowa4 sent "You should fix this https://github.com/langchain-ai/openwiki/blob/main/src/cli/commands.ts#L181" and
 "openwiki needs to be zitified". clint: "it points to ngrok but adding zrok would be easy."

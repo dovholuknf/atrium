@@ -1,8 +1,11 @@
 # The hub is a multi-tenant view of rooms
 
+Status: superseded by `docs/fabric/hub-and-rooms.md`. Kept as the record of what the hub and rooms were asked to do,
+written for `atrium2` on :7800 and :7801.
+
 Requirements, given by clint on 2026-09-17 after looking at the first build and finding it did not match what
-he wanted. **These override `docs/fabric/hub-room-plan.md` where they disagree**, and they override
-`docs/rnd/federation-design-v2.md` outright on the aggregate question.
+he wanted. **These override `docs/archive/hub-room-plan.md` where they disagree**, and they override
+`docs/archive/federation-design-v2.md` outright on the aggregate question.
 
 Written down verbatim in substance because the next session needs them before it needs anything else.
 

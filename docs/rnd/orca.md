@@ -1,6 +1,8 @@
 # Orca: what it is, and what atrium should do about it
 
-Standing reference. Written by reading the source, not the pitch. The survey of the wider field is
+Status: research, 2026-09-29. A source read of Orca, with what atrium could borrow from it ranked in section 5.
+
+Standing reference. Written from the source code, not from the README. The survey of the wider field is
 `docs/rnd/competitors.md`, where a shorter entry (section 2.2) points here.
 
 Source read: `github.com/stablyai/orca`, MIT (Lovecast Inc.), cloned shallow to `D:/tmp/orca-2026-09-29` on 2026-09-29
@@ -67,7 +69,7 @@ inside the desktop app), and a relay in `cloud/` that pairs phone and desktop by
 (`cloud/README.md:3-7`), with a director that assigns hosts to cells. A task page with GitHub, GitLab, Linear and Jira
 intake, a pull request page, a workspace cleanup scanner, and desktop and phone notifications.
 
-## 2. The good
+## 2. Strengths
 
 ### The coordinator is small, and the rules are in the comments
 
@@ -226,7 +228,7 @@ tray dot before its cooldown and focus gates (`notification-delivery-service.ts:
 covering the phone (`:90`), and skips the OS call when macOS permission is denied so the renderer can show a fallback
 (`:156`).
 
-## 3. The bad
+## 3. Trade-offs
 
 - **The hook token is a bearer string, checked with `!==`.** `server-lifecycle.ts:64`. Any local process that can read
   the environment of a pty or the endpoint file can post hooks, and the compare is not constant time (the dispatch
@@ -244,19 +246,19 @@ covering the phone (`:90`), and skips the OS call when macOS permission is denie
 - **Windows is native but layered.** The README lists a Windows installer, and `AGENTS.md:75-76` shows how much
   Windows specific behaviour is carried (shell selection, `.cmd` setup runners, MSYS rewriting `/c`). Alongside, a WSL
   hook relay (`src/relay/wsl-agent-hook-relay.ts`) binds a loopback receiver inside the guest on the port the host
-  issued, takes the same token from its environment (`:35-36`), and dies when stdin closes. That is a great deal of
-  machinery for one platform, and none of it was run.
-- **Weight.** 960 MB repository, 30,676 files in the checkout, Electron 43, four codebases (desktop, mobile, relay
+  issued, takes the same token from its environment (`:35-36`), and dies when stdin closes. That is thorough
+  support for one platform. None of it was run for this read.
+- **Footprint.** 960 MB repository, 30,676 files in the checkout, Electron 43, four codebases (desktop, mobile, relay
   cloud, native helpers). 192 orchestration source files for a 289 line loop. Telemetry is on and documented
   (`README.md:251`, opt out through settings, not traced).
 - **Orchestration is a skill contract.** A worker behaves correctly only if it reads `orca skills get orchestration`
-  and follows a preamble (`skill-guides/orchestration.md:73-87`). The fences protect the database from a wrong worker
-  and do not make the worker right.
+  and follows a preamble (`skill-guides/orchestration.md:73-87`). The fences protect the database from a worker that
+  skips it, and the worker's behaviour rests on the skill.
 - **Speed of change.** Nearly a thousand releases in six months and issue references in comments (16095, 16441,
-  19334) show a code base being repaired at pace. Several comments describe a bug found in the field and not a
+  19334) show a code base that changes fast. Several comments describe a bug found in the field and not a
   design.
 
-## 4. Where atrium is ahead
+## 4. Where atrium differs
 
 - **A gate that can refuse before the tool runs.** The six step permission chain in `internal/daemon/daemon.go`,
   standing rules in `internal/store/rules.go`, and a decision log naming who decided. Orca's terminal path observes.
@@ -270,7 +272,7 @@ covering the phone (`:90`), and skips the OS call when macOS permission is denie
 - **A ledger of work with `open`, `reported`, `accepted`** (`internal/store/ledger.go`), where Orca's DAG has
   `completed` and `failed`.
 
-## 5. Worth stealing, ranked
+## 5. Worth borrowing, ranked
 
 Credit the Orca path in each commit message. Atrium files were checked on 2026-09-29.
 
@@ -342,12 +344,12 @@ From `desktop-away-state.ts`. Atrium's board has a service worker (`internal/api
 `internal/api/web/js/logs-rules.js:627-653`. The idea is to add an idle signal, and unknown means notify. Size: small,
 and only useful once the board is used from a phone.
 
-## 6. Not worth stealing
+## 6. Not a fit for atrium
 
 - **The Electron shell, mobile app and relay in `cloud/`.** Atrium reaches other machines through an overlay
   (`docs/fabric/overlays.md`), and a relay that pairs phones and desktops is what `CLAUDE.md` rules out.
 - **Nineteen hook installers.** Atrium's runners are fewer and `internal/claudeconf` is enough. Add one when a
-  runner is added, not a registry with refreshers and a coverage test.
+  runner is added. A registry with refreshers and a coverage test pays off at Orca's runner count.
 - **Typing pointers into a pane.** See section 4.
 - **A structured session path as a second architecture.** `docs/rnd/charon.md` and `docs/rnd/bb.md` reached the same answer.
 - **Pre-warmed worktree pool.** Three prepared checkouts saves seconds on a large repository, and costs a lock
@@ -361,7 +363,7 @@ and only useful once the board is used from a phone.
 
 Orca treats a terminal as something to be coordinated from outside, with an idle edge and a pointer. Atrium treats it
 as something a human owns, with a gate in front. Both read hook events for state. The hook server, the fence and the
-mailbox are the same problems atrium has solved a different way, and section 5 lists where the answer is better here.
+mailbox are the same problems atrium has solved a different way, and section 5 lists where atrium could borrow.
 
 ## 8. What remains unverified, and what is not done
 

@@ -1,6 +1,6 @@
 # f-new-hub-git-store: the hub's own git store, with `main` seeded once
 
-Status: HELD (the pause). Filed by @rnd 2026-10-02 from `docs/rnd/hub-forge-design.md` revision 2, stage 1 (section
+Status: HELD (the pause). Filed by @rnd 2026-10-02 from `docs/fabric/hub-forge-design.md` revision 2, stage 1 (section
 3.1). Asked by clint (interview, 2026-10-02): the hub holds its own `main`, and a feature is finished only when it is
 pushed there. Owner @fabric. Size about 1 day. Goes with `f-new-hub-receive`.
 

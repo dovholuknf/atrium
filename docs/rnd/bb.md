@@ -1,6 +1,8 @@
 # bb: what it is, and what atrium should do about it
 
-Standing reference. Written by reading the source, not the pitch. The survey of the wider field is
+Status: research, 2026-09-29. A source read of bb, with what atrium could borrow from it ranked in section 5.
+
+Standing reference. Written from the source code, not from the README. The survey of the wider field is
 `docs/rnd/competitors.md`, which is where the extensibility question lives. This file is the depth on the one tool that
 turned out to be large enough to need its own.
 
@@ -41,7 +43,7 @@ providers, each a plugin with a bridge speaking a line-JSON protocol
 (`plugins/provider-claude-code/src/bridge/bridge.ts:1984-2081` handles `thread/start`, `thread/resume`, `thread/fork`,
 `turn/start`, `turn/steer`, `thread/stop`).
 
-## 2. The good
+## 2. Strengths
 
 ### Almost everything is a plugin, including the providers
 
@@ -186,9 +188,9 @@ machine page. It is a clamp on the host and not a rule about the agent, which is
 - **A code review guide with simplicity red flags** (`docs/CODE_REVIEW.md:34-45`): new registries, coordinators,
   managers and abstractions with one real caller are findings. Worth reading against the SDK's own size.
 
-## 3. The bad
+## 3. Trade-offs
 
-### The unauthenticated API is stated, not fixed
+### The API is unauthenticated, and documented as such
 
 The README says of the remote modes: "The server API is unauthenticated and permits command execution and file reads,
 so use this only behind a trusted network boundary" (`README.md:153-155`, repeated at `:165-168`). Direct mode on the
@@ -206,10 +208,10 @@ that they "are trusted same-origin page code, not a sandbox" (`packages/plugin-s
 therefore has the server's own authority, including the `sdk` handle that can spawn and message any thread. The
 mitigations that exist are review at listing time, a safe mode (`getPluginSafeMode` is imported at
 `plugin-runtime.ts:43`, its behaviour not read), and fail-closed containment of individual registrations. That is the npm trust model and the
-plan says so (`plugin-marketplace-plan.md:387-390`). It is a reasonable choice for an IDE and a poor fit for anything
-that holds a permission gate.
+plan says so (`plugin-marketplace-plan.md:387-390`). It is a reasonable choice for an IDE. A tool that holds a
+permission gate needs plugins with less authority than the gate.
 
-### Permission control is coarse and, as read, per session
+### Permission control is by mode and, as read, per session
 
 Three modes, `accept-edits`, `auto`, `full` (`PluginProviderPermissionMode`, `backend-contract.ts:1230`). The Claude
 bridge's `canUseTool` (`bridge.ts:1870-1981`) checks an in-memory `sessionPermissionGrants` array on the thread
@@ -219,16 +221,16 @@ a restart was not traced. What was not found anywhere in the Claude plugin is a 
 `perm_rule` kind: prefix, glob or folder, most specific wins, exportable. If one exists it is not in the provider
 bridge. Compare `docs/rnd/charon.md` section 3, which found the same shape one layer up.
 
-`approvalEnforcedBy: "provider"` is declared at initialize (`bridge.ts:1995`), which is honest: the enforcement is the
-SDK's, and bb is a front for it.
+`approvalEnforcedBy: "provider"` is declared at initialize (`bridge.ts:1995`), which states plainly that the
+enforcement is the SDK's and bb presents it.
 
-### Windows is WSL2 or nothing
+### Windows runs through WSL2
 
 "Native Windows PowerShell and CMD are not supported" (`README.md:40-42`), and native Windows checkouts are "outside
 the support contract" (`docs/platform-support.md:184-187`). Setup hooks are POSIX shell only. Atrium's first platform
 is Windows. This is not a defect in bb, it is a reason the two do not compete for the same person today.
 
-### Weight
+### Footprint
 
 About forty packages, `apps/server/src/services/threads/` alone holds more than seventy files, and the system
 overview cites migration `0121`. The native add-ons (`better-sqlite3`, `node-pty`, `@parcel/watcher`) break on npm 12
@@ -236,14 +238,14 @@ by default and get a dedicated troubleshooting section (`README.md:243-297`). Te
 production runs (`README.md:83-93`, opt out with `BB_TELEMETRY=false`), though it is anonymous and documented.
 Atrium is one static Go binary and a store. That difference is real for the people atrium is for.
 
-### It is a very young API
+### The API is still settling
 
 `experimental_` prefixes are all over the contract, `docs/api_to_audit.md` exists to track why each one is still
 experimental, and the SDK has scheduled removals (`provider-bridge-scheduled-removals.test.ts`) and a deprecated
-pre-1.0 composer API that "has been removed" (`packages/plugin-sdk/README.md:80-82`). A plugin written today will be
-rewritten. The stability of the surface is not yet the strength its breadth suggests.
+pre-1.0 composer API that "has been removed" (`packages/plugin-sdk/README.md:80-82`). A plugin written today will
+likely need changes as the surface settles.
 
-## 4. Where atrium is ahead
+## 4. Where atrium differs
 
 - **Supervising the real terminal.** A human types into the same `claude` the daemon supervises, and the permission
   chain, activity badge and message queue work around that human rather than instead of them. bb has no equivalent
@@ -259,7 +261,7 @@ rewritten. The stability of the surface is not yet the strength its breadth sugg
 - **Extensions that cannot become the daemon.** See `docs/rnd/competitors.md`: atrium's extension points run commands with
   bounded output, out of process. Nothing a user writes shares the address space of the permission gate.
 
-## 5. Worth stealing, ranked
+## 5. Worth borrowing, ranked
 
 The ranked list across every tool is at the end of `docs/rnd/competitors.md`. The bb entries, with the sketch that fits
 atrium's design:
@@ -270,8 +272,9 @@ atrium's design:
 
 What transfers is the contract in section 2: one checkpoint, one context, a three way answer (proceed, wait with a
 reason and an optional time, reject), fail closed on timeout, a chain in install order, and an explicit human bypass.
-Atrium already has a checkpoint in the right place. `docs/orchestrator/dispatch-queue.md` and the message queue
-(`internal/store/messages.go`, `internal/daemon/messages.go`) hold a prompt for a card until the runner can take it.
+Atrium already has a checkpoint in the right place. `docs/orchestrator/dispatch-queue.md` at 3be95cab and the message
+queue (`internal/store/messages.go`, `internal/daemon/messages.go`) hold a prompt for a card until the runner can take
+it.
 
 The sketch: a **gate** row, shaped like a `source` (`internal/store/sources.go`), which is "a command on a timer,
 shaped like harness because it is the same idea". A gate is a command plus a bound. Before the daemon queues or
@@ -279,7 +282,7 @@ delivers a launch, a prompt or a peer message, it runs the gates that match the 
 on stdin (card, tags, initiator, sender handle, queued rows, requested runner) and reads `{"decision":"proceed"|
 "wait"|"reject","reason":"...","until":"..."}` from stdout. Output is bounded while being read, as sources already
 do. A gate that fails, times out or prints nonsense is a **wait with the failure as its reason** and never a
-proceed, and never a crash, which is bb's fail-closed rule and `docs/architecture-v2.md`'s no-degraded-mode rule
+proceed, and never a crash, which is bb's fail-closed rule and `docs/archive/architecture-v2.md`'s no-degraded-mode rule
 saying the same thing. Three failures switch the gate off with the reason on its row, exactly as sources do
 (`CLAUDE.md`, resilience 6). The human's "send now" bypasses it and says so.
 
@@ -328,7 +331,7 @@ instructions, and `orchestration.md` is good source material for them. Embedding
 to run them would add a second language to a project that chose one binary on purpose. Cost of the patterns: none,
 they are text.
 
-## 6. Not worth stealing
+## 6. Not a fit for atrium
 
 - **The in-process plugin runtime.** Third party code sharing an address space with the permission gate is the one
   thing atrium's design rules out. Section 4.

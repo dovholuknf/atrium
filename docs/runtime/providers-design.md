@@ -1,5 +1,7 @@
 # Providers: where a repository lives on this machine
 
+Status: built. Providers (`internal/api/providers.go`, `providerapi.go`).
+
 A provider is the operator saying "under `D:/git/github`, directories are `org/repo`". Atrium reads that
 instead of walking the disk guessing at a convention.
 

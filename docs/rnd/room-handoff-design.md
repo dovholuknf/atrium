@@ -1,6 +1,9 @@
 # Room handoff: `atrium move`, a card and its work from one room to another
 
-Status: design by @rnd, 2026-10-01. @review OK at b56ca32f (docs/backlog/rnd/rd-new-review-4ea18bd7.md), with its M3 conditions and lows folded in. Nothing built. Backlog:
+Status: partly built. M1, the room side of `atrium move`, is built (`internal/daemon/move.go`, `moveroutes.go`). M2, the
+hub verb, and M3 are not.
+
+Origin: design by @rnd, 2026-10-01. @review OK at b56ca32f (docs/backlog/rnd/rd-new-review-4ea18bd7.md), with its M3 conditions and lows folded in. Nothing built. Backlog:
 `docs/backlog/rnd/rnd-new-room-handoff.md` (HIGH, from the 2026-10-01 director move), with
 `docs/backlog/runtime/r-new-move-card-between-rooms.md` (same machine, 2026-09-30) folded in.
 
@@ -45,7 +48,7 @@ the home folder are the same.
 - **The hand move** (r-new-move-card, `move.sh`) works between two rooms on one machine: read the card, exit it, launch on B with
   `resume`, then PATCH the fields. It loses `pin_order` (only `POST /v1/tasks/pin-order` sets it, `api/api.go:490`),
   the history, and any link.
-- **`docs/fabric/f-004-two-rooms-design.md` section 3** is a cross-machine move script, accepted and not built:
+- **`docs/archive/f-004-two-rooms-design.md` section 3** is a cross-machine move script, accepted and not built:
   check idle and clean, carry the branch through a narrow hub op, exit, copy the jsonl over ssh, launch with
   `resume`, mark the old card `moved to B~<id>` in its recap, tell the launcher. This design takes its steps and
   makes them one hub operation with no ssh. Its note that the session id is the one from the card's LAST
@@ -257,11 +260,11 @@ better than the halfway state of 2026-10-01.
 
 ## 7. Same machine, and the rolling restart
 
-r-new-move-card's case, two rooms on one machine, is section 3 without 3.2 steps 5 and 6. The branch, the transcript
-and the memory are already where B can read them. f-011's rolling restart (`docs/rnd/rolling-restart-design.md`) is this case done at
-each card's quiet moment, so it calls the same move, and its hazard of a second room taking the hooks is answered
-there, not here. The two items stay one design with one primitive. f-004 section 3's script is replaced by the hub
-op.
+r-new-move-card's case, two rooms on one machine, is section 3 without 3.2 steps 5 and 6. The branch, the transcript and
+the memory are already where B can read them. f-011's rolling restart (`docs/rnd/rolling-restart-design.md`) is this
+case done at each card's quiet moment, so it calls the same move, and its hazard of a second room taking the hooks is
+answered there, not here. The two items stay one design with one primitive. f-004 section 3's script is replaced by the
+hub op.
 
 ## 8. Stages
 

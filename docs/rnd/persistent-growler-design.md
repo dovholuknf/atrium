@@ -1,6 +1,8 @@
 # The persistent growler: an alert that stays until you act on it or dismiss it
 
-Status: design, 2026-09-30, @rnd. Item `docs/backlog/ui/u-new-persistent-growler.md`, clint's priority. Built by @ui
+Status: built. Growlers on the board and the phone (`internal/api/web/js/growl.js`, `internal/api/web/m/js/growl.js`).
+
+Origin: design, 2026-09-30, @rnd. Item `docs/backlog/ui/u-new-persistent-growler.md`, clint's priority. Built by @ui
 (the board and the phone) and @runtime (the hub's state). Nothing here is built.
 
 ## 1. The answer in eight lines

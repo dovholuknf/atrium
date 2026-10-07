@@ -7,13 +7,13 @@ const sidebars = {
       type: 'category',
       label: 'Start here',
       collapsed: false,
-      items: ['intro', 'install', 'quick-start', 'modes', 'story'],
+      items: ['intro', 'install', 'quick-start', 'how-it-works', 'modes', 'agents', 'differs', 'story'],
     },
     {
       type: 'category',
       label: 'Using atrium',
       collapsed: false,
-      items: ['board', 'cards', 'permissions', 'terminals', 'messages', 'files', 'history'],
+      items: ['board', 'cards', 'permissions', 'terminals', 'messages', 'files', 'history', 'patterns'],
     },
     {
       type: 'category',

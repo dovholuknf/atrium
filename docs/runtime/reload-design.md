@@ -86,7 +86,9 @@ with it, which leaves the daemon stopped and nothing to start it again. See `det
   request is accepted, and the wind down after that gives supervised runners ten seconds. Starting during that
   window produces a second daemon that cannot bind and exits, which looks exactly like the restart doing nothing.
 - `swapStaged()`. This is the only moment the binary can be replaced.
-- Starts `atrium daemon --db <path>`, detached.
+- Starts it again, detached, with the bind it had (`restartDaemonArgs` in `internal/cli/control.go`). A room comes
+  back as `atrium room` with its own directory and database, and an old single-process daemon comes back as
+  `atrium daemon --db <path>`.
 
 ### 4. The swap
 

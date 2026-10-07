@@ -2,7 +2,7 @@
 
 Status: BUILT on claude/f-hub-fetch-pass (hub half held by @review on M1, a stalled pass-through with no deadline, and fixed in the next commit), with @review's OK on the room half (453e754a, landed as 3212e158) and the hub
 half and the lows' decisions waiting for @review. Not landed. Owner @fabric, with @runtime reading the room's served set.
-Design: `docs/rnd/hub-forge-design.md` 3.3, 3.4 and the stage 3 row of 7.
+Design: `docs/fabric/hub-forge-design.md` 3.3, 3.4 and the stage 3 row of 7.
 
 Done:
 - the room's served set as a pure function (`ServedHide`), written per request, with `allowFilter` and every

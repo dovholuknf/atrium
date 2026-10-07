@@ -1,5 +1,8 @@
 # Postgres: what actually broke
 
+Status: research, 2026-09-06. Its conclusion: the schema applies to PostgreSQL unmodified, and what breaks is the
+migration runner, error handling and single-writer assumptions around it. Atrium speaks SQLite only.
+
 The schema has carried a claim since `0001`: written to stay Postgres portable, text ULID-ish keys, RFC3339
 text timestamps, `CHECK` instead of enums, TEXT instead of JSONB, `?` placeholders. Nothing had ever run it
 there. This is the result of running it there.

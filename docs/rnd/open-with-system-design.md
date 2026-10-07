@@ -1,6 +1,8 @@
 # Open with the system (u-new-open-with-system)
 
-Status: designed by @rnd 2026-09-30, for @runtime (tickets and the helper) and @ui (the menu). Nothing here is built.
+Status: proposed, not built. Parked by @ui on 2026-09-30.
+
+Origin: designed by @rnd 2026-09-30, for @runtime (tickets and the helper) and @ui (the menu). Nothing here is built.
 Backlog item `docs/backlog/ui/u-new-open-with-system.md`.
 
 ## The answer

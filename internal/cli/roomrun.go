@@ -105,7 +105,7 @@ func joinCmd() *cobra.Command {
 
 			// WHAT THIS MACHINE CALLS ITSELF, WHICH IS NOT WHAT IT IS CALLED.
 			// Sent so the hub can show the two side by side, and it decides
-			// nothing: this is `docs/architecture-v2.md`'s observed-versus-
+			// nothing: this is `docs/archive/architecture-v2.md`'s observed-versus-
 			// overrides rule, where the hub's name is the override.
 			self := defaultRoomName()
 			name := j.Name

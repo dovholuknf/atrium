@@ -1,5 +1,7 @@
 # A runner whose worktree is gone is asked to leave
 
+Status: built. The reaper asks a runner to leave when its worktree is gone (`internal/daemon/worktreegone.go`).
+
 Item 89. Five finished workers had their worktrees removed by hand (`git worktree remove --force`) while their
 runners were still supervised at a prompt, on cards in `done`. Git unregistered the worktree, deleted what it could,
 and failed on the directory the runner's process was sitting in. The runner is the holder, not a leftover child.

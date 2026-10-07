@@ -1,6 +1,9 @@
 # A card on every room (backlog-2 item 49)
 
-Status: designed, not built. Written by @fabric.
+Status: built. A card tagged `atrium:everywhere` is shown on and reachable from every room (`internal/daemon/peers.go`,
+`internal/cli/control_peers.go`).
+
+Origin: designed, not built. Written by @fabric.
 
 clint wants to put the orchestrator on every room: seen in each room's view, and addressable from each. A card runs
 in one place and that does not change. What changes is what the OTHER rooms' views show, and how a bare name
@@ -10,7 +13,7 @@ resolves from them.
 
 - A card belongs to one room's store. The hub's aggregate view (no room picked) already shows every card on every
   room, tagged `room~id` with `room` on the row (`internal/link/fanout.go`). A scoped view is a byte pipe to one
-  room (`docs/fabric/hub-room-requirements.md`, "scoped: a dumb pipe").
+  room (`docs/archive/hub-room-requirements.md`, "scoped: a dumb pipe").
 - Item 58 gives `name@room`, the `relay` link kind, the room-side outbox, and hub-side resolution on the target
   room (`docs/fabric/cross-room-say-design.md`). So the orchestrator IS reachable from sg3 today, as
   `atrium-87300@claude-sg4` or `orchestrator@claude-sg4`. A bare `orchestrator` from sg3 is a 404, because a bare
@@ -31,7 +34,7 @@ Why a tag and not a hub-side list: whether a card is on every room is a fact abo
 card is edited, and it survives the hub being replaced. A hub-side list of card ids would be a second source of
 truth about a card that federation-design-v2 rules out, and it would go on naming a card after its room deleted it.
 
-Rejected: a mirror card in each room's store. Two rows for one card is the shape `docs/rnd/federation-design-v2.md`
+Rejected: a mirror card in each room's store. Two rows for one card is the shape `docs/archive/federation-design-v2.md`
 exists to rule out, and each copy would drift the moment the real one moved column.
 
 ## The hub's index

@@ -5,8 +5,9 @@ description: One board over many machines or many accounts. The hub holds nothin
 
 # Rooms and the hub
 
-`atrium daemon` is one process: the board, the database and the agents together. `atrium run` splits that along
-lifetimes, so one board can show many machines, or many accounts on one machine.
+Atrium runs as two processes, split along lifetimes. Board code changes often and agents must not die for it, so the
+process that serves the board is not the process that holds the terminals. The same split lets one board show many
+machines, or many accounts on one machine.
 
 - **The hub** (`atrium run`) serves the board and passes every other request to the right room. It holds no card
   state, so it restarts freely, and restarting it costs no session anything.
@@ -24,9 +25,12 @@ lifetimes, so one board can show many machines, or many accounts on one machine.
 **The room dials the hub, never the reverse.** A hub restart is a room noticing a closed socket and dialing again.
 A room also serves its own board on loopback, `:7781` by default, so it stays usable while the hub is down.
 
+`atrium daemon`, the older single process with the board and the agents together and no hub, still runs. Nothing
+on this page applies to it.
+
 ## Start the hub and this machine's room {#start-a-hub}
 
-[Build atrium from source](./install.md#from-source), copy it somewhere it can stay, and run it on the machine you
+[Build atrium from source](./install.md#build-it), copy it somewhere it can stay, and run it on the machine you
 will open the board from:
 
 ```bash
@@ -53,7 +57,7 @@ If the string goes missing, `atrium rooms token laptop` mints another and retire
 On the machine that runs the agents, paste it:
 
 ```bash
-atrium room join atr1_eyJhIjoiMTI3LjAuMC4xOjc4MDEi...
+atrium room join atr1_eyJhIjoiMTI3LjAuMC4xOjc3Nzki...
 ```
 
 The join string carries the hub's address, a fingerprint of its certificate authority, and a one-time secret.

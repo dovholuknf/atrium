@@ -1,6 +1,8 @@
 # Automatic new context at a context threshold (r-029)
 
-Status: designed. @rnd accepted it with four changes (2026-09-29), all folded in below. Nothing here is built except
+Status: superseded by `docs/runtime/context-cycle-design.md`. Kept as the record of the first threshold design (r-029).
+
+Origin: designed. @rnd accepted it with four changes (2026-09-29), all folded in below. Nothing here is built except
 the capture guard, which is split out as r-030 and lands first. Owned by @runtime. clint approved the idea: when a
 card's context passes a threshold, atrium runs the new-context cycle on it, rather than waiting for a person or the
 launcher to press the button.

@@ -7,7 +7,7 @@
   .github/workflows/docs.yml. The workflow only checks out, calls this, and hands the output folder to the Pages
   actions. Nothing here publishes anything: it builds, checks, and stops.
 
-  The site is refreshed at release time, not per feature, so the workflow runs on a published release and by hand.
+  The workflow runs on a push to main that touches website/, docs/, the workflow or this script, and by hand.
 
   Checks, each fatal:
     - npm ci, from the committed lockfile, so a build is the same build everywhere

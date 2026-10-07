@@ -1,5 +1,8 @@
 # Does atrium fit the rest of the stack
 
+Status: research, 2026-09-02. Its conclusion: sterling fits and is worth building against, mcp-gateway is worth a spike,
+agora and llm-gateway do not fit.
+
 Four projects were named: `llm-gateway`, `mcp-gateway`, `agora`, and `sterling`. This is an assessment of whether
 atrium belongs next to any of them, where it would touch, and which one is worth building.
 
@@ -102,11 +105,10 @@ operator's own machine must not break when the board is down. A governed run mus
 approver means nobody approved, and the call must fail closed. Sterling already fails closed in exactly this case,
 and taking that away would be worse than not integrating.
 
-So `/permission` acquires a caller class whose failure posture is inverted. Atrium's side of that is nothing at all
-(a closed listener already yields connection refused). Sterling's side is a two-line decision. But the invariant
-list in `CLAUDE.md` and `docs/architecture-v2.md` says "the permission hook fails open" without qualification, and
-after this it must say "the Claude Code hook fails open, a governed caller fails closed, and here is why they
-differ".
+So `/permission` acquires a caller class whose failure posture is inverted. Atrium's side of that is nothing at all (a
+closed listener already yields connection refused). Sterling's side is a two-line decision. But the invariant list in
+`CLAUDE.md` and `docs/archive/architecture-v2.md` says "the permission hook fails open" without qualification, and after
+this it must say "the Claude Code hook fails open, a governed caller fails closed, and here is why they differ".
 
 Nothing else is given up. No auth is invented, because sterling reaches loopback or comes over the overlay atrium
 already drives (`docs/fabric/overlays.md`). No multi-tenancy, no accounts, no schema change beyond what already exists.
@@ -215,7 +217,7 @@ is not on the table.
 
 ### Verdict
 
-No fit, and the reason is already in `docs/architecture-v2.md`: "claude-code is the agent... It also holds the
+No fit, and the reason is already in `docs/archive/architecture-v2.md`: "claude-code is the agent... It also holds the
 subscription credentials, so bypassing it in favor of direct API calls would mean paying per token as well as
 rebuilding everything it does." llm-gateway is an OpenAI-compatible proxy with four routes, and claude-code does
 not talk to one. Everything atrium supervises either holds its own credentials or is a bare shell. Beyond that,
@@ -288,8 +290,8 @@ A new `Approver` that POSTs to atrium and blocks. `tool.Name` to `tool`, the met
 question. A block returns atrium's `reason` as the error text, which is what puts the operator's actual guidance in
 front of the model instead of a bare refusal.
 
-**Unreachable atrium is a denial, not an approval.** This is the inverted posture, and it is the one line of this
-stage that matters most. Write it into `docs/architecture-v2.md` under "Resilience guarantees (daemon)" in the same
+**Unreachable atrium is a denial, not an approval.** This is the inverted posture, and it is the one line of this stage
+that matters most. Write it into `docs/archive/architecture-v2.md` under "Resilience guarantees (daemon)" in the same
 commit, or the invariant list becomes a lie.
 
 **How you know it works.** Run the `code-reviewer` example with `write_file` left at `prompt`. The harness stalls,

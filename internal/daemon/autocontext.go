@@ -9,7 +9,7 @@ import (
 )
 
 // THE ONE TRIGGER: a card past its context limit starts the context cycle, exactly as if someone pressed
-// New context on it. See docs/context-cycle-design.md and newcontext.go for the sequence.
+// New context on it. See docs/runtime/context-cycle-design.md and newcontext.go for the sequence.
 //
 // The limit is the card's own, else the hub's for its harness, else claude at 200k (api.ContextLimitFor).
 // Every supervised card is covered, a person's own included, unless its details switch it off. Nothing else

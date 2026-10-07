@@ -1,5 +1,7 @@
 # Review quality: fewer, better findings, and a measure of whether they were worth raising
 
+Status: proposed, not built.
+
 Written by @rnd on 2026-10-05, for `docs/backlog/rnd/rnd-new-review-quality.md`. Design only. Nothing here is built.
 It builds on the PR review workflow in `docs/rnd/pr-review-workflow.md`, which is built and on claude/main c9d65765.
 

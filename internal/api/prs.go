@@ -20,7 +20,7 @@ import (
 
 // The pulls routes: starting a review of a pull request and reading the index.
 //
-// The contract is docs/rnd/pulls-api.md and it does not change incompatibly,
+// The contract is docs/review/pulls-api.md and it does not change incompatibly,
 // because the pulls view is built against it. None of this makes a card, and a
 // board pause does not apply: a review somebody asked for is not a director's
 // work.

@@ -22,7 +22,7 @@ Add it to a session's MCP configuration as an HTTP server:
   "mcpServers": {
     "atrium-control": {
       "type": "http",
-      "url": "http://localhost:7800/_hub/mcp",
+      "url": "http://localhost:7778/_hub/mcp",
       "headers": {
         "X-Atrium-Agent": "${ATRIUM_AGENT_NAME}",
         "X-Atrium-Room": "${ATRIUM_ROOM}"
@@ -32,7 +32,7 @@ Add it to a session's MCP configuration as an HTTP server:
 }
 ```
 
-Use your hub's board address. `7800` is the default. Atrium sets `ATRIUM_AGENT_NAME` and `ATRIUM_ROOM` in the
+Use your hub's board address. `7778` is the default. Atrium sets `ATRIUM_AGENT_NAME` and `ATRIUM_ROOM` in the
 environment of every session it launches.
 
 The seeded claude runner starts sessions with `--strict-mcp-config --mcp-config ~/.atrium/mcp.json`, so a
@@ -52,8 +52,27 @@ going to use. Put the entry above in that file.
 | `atrium_exit` | Ask a session to finish and leave. Asked, not killed. |
 | `atrium_cull` | Retire a worker whose merged work you accepted: it leaves, its worktree and branch are removed. |
 | `atrium_git_url` | Where to fetch code that is not in your directory: the hub's copy of finished work, or a room's work in progress. |
-| `atrium_git_clone` | A clone of a repository on this room, fetched if it is not there yet. Returns the path. |
+| `atrium_git_push` | Push your branch to the hub, the same push `git push hub <branch>` makes, with no shell. Plain branch pushes only. |
+| `atrium_git_sync` | Bring a room's clone up to date with `claude/main` now, instead of on the hub's own schedule. |
+| `atrium_git_collect` | Fetch a room's `claude/*` branches to the hub now, so they can be merged. |
+| `atrium_alias` | Read or set a card's alias, the short `@name` that `atrium_say` and `atrium_peers` take. |
+| `atrium_model` | Switch a live session's model now, by typing `/model` when its line is clear. |
+| `atrium_publish` | Publish a document on the hub, with a stable `/d/<slug>` link that outlives the card. |
+| `atrium_backlog` | The backlog, kept on the hub, so an item filed on one room is seen on every room. |
+| `atrium_reports` | Director reports, kept on the hub, append-only and marked read once read. |
+| `atrium_deps` | Work items that wait on other work: other items, a room attached, a commit landed. |
+| `atrium_resources` | The machines and environments you may use. Call it before looking for a machine. |
+| `atrium_deploy` | Ask for a room deploy, or, as the deploy owner, run one that holds every agent first. |
+| `atrium_wake_after_restart` | Queue one prompt for your own card, typed in once a restart brings your session back. |
 | `restart_atrium` | Wind a room down and bring it straight back on the same database. |
+
+A worker, a card tagged `atrium:subagent` and not a director, gets only the tools it needs to talk, report and
+push: `atrium_status`, `atrium_peers`, `atrium_say`, `atrium_report`, `atrium_task`, `atrium_alias`,
+`atrium_publish`, `atrium_git_push`, `atrium_git_url` and `atrium_resources`. Everyone else gets them all.
+
+`atrium control`, the stdio server for a session that does not reach the hub, carries `atrium_status`,
+`restart_atrium`, the peer tools, `atrium_git_push`, `atrium_git_url`, and two of its own: `atrium_git_clone`, which
+returns a clone of a repository on this room and makes it if it is missing, and `atrium_open`.
 
 ### Talking, not typing
 

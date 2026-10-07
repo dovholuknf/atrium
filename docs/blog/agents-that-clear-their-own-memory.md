@@ -23,7 +23,7 @@ Series: Supervision and terminals. Status: idea. Audience: people running long-l
 
 ## Sources
 
-- docs/runtime/auto-new-context-design.md
+- docs/archive/auto-new-context-design.md
 - changelog/runtime/2026-09-30-r-029.md
 - changelog/runtime/2026-09-30-r-director-ceiling.md
 - commit 16488230

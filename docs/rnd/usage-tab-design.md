@@ -1,5 +1,7 @@
 # The usage tab: cache reads out of the way, and what else it should tell clint
 
+Status: built. The usage tab hides cache reads and knows the weekly reset (`internal/api/web/js/usage-charts.js`).
+
 clint, 2026-09-29, through @orchestrator: hide cache reads on the usage tab, because they swamp every graph. Then:
 what else should the tab do? **Constraint from clint: keep the current look.** He likes it. Nothing here changes it
 dramatically. Anything larger is optional or added alongside (a new section, a toggle, a view), and never replaces

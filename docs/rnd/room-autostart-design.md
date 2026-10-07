@@ -1,5 +1,8 @@
 # A room that starts again by itself: after a logoff, and after a reboot
 
+Status: shelved by clint, 2026-09-29. Rooms are started by hand. `scripts/atrium-autostart.ps1` is the one piece that
+exists.
+
 clint, 2026-09-29, through @orchestrator: rooms on sg3, sgg (Windows) and m1mini (macOS) should come back by
 themselves after a reboot or a logoff. Linux is covered in `docs/release/packaging.md`. This should be one decision
 across the three, and it should fit @fabric's `atrium.requirements` (f-005), which does not exist yet and will be

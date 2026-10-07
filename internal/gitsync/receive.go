@@ -17,7 +17,7 @@ import (
 )
 
 // The hub's store over smart HTTP: fetch and push, at `/git/hub/<host>/<owner>/<repo>.git/...`.
-// See docs/rnd/hub-forge-design.md 3.2 and 3.4.
+// See docs/fabric/hub-forge-design.md 3.2 and 3.4.
 //
 // ── what runs before git does ───────────────────────────
 //

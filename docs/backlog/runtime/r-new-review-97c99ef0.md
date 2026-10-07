@@ -2,7 +2,7 @@
 
 Range e502b215..97c99ef0, eight commits on claude/r-pr-store: the pulls-api.md contract (3341e351, 1b552fef),
 migrations 0078_pr_review and 0079_pr_recipe, store/prs.go and its tests, the reviews_root setting, the /v1/prs routes
-with the stub runner, and the drawer routes (0a71c77a). Read against docs/rnd/pulls-api.md as committed in the range,
+with the stub runner, and the drawer routes (0a71c77a). Read against docs/review/pulls-api.md as committed in the range,
 and docs/rnd/pulls-view-design.md.
 
 The branch is NOT on claude/main a3fc844f, as the note said. Its base is e502b215, the r-pr-render-2 landing. Nothing

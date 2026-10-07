@@ -58,11 +58,12 @@ held write is queued and retried. Atrium also refuses to type into a permission 
 - **stop** walks ctrl-c, then `exit`, then closing the terminal, then a kill, and says which step worked.
 - **open a shell here** opens a shell on the card, beside an agent that is stuck.
 
-:::warning A supervised runner lives in atrium's process
+:::warning By default a supervised runner lives in the room's process
 On Windows, closing a pseudo terminal ends the process attached to it, so a room restart ends every supervised
-session at once. Atrium records each session's resume id, and a restart reopens what was open, resuming each
-conversation on a new terminal. Alerts stay quiet until every card named has come back, and permission requests
-still ring.
+session at once, unless the `pty_host` setting is on. Then the terminals live in a separate pty host and the
+runners keep running through the restart. Without it, atrium records each session's resume id, and a restart
+reopens what was open, resuming each conversation on a new terminal. Alerts stay quiet until every card named has
+come back, and permission requests still ring.
 
 This is also why `atrium stop` exists. It winds down in order and gives runners ten seconds. Killing the process
 ends every agent at once.

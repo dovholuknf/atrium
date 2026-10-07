@@ -1,5 +1,7 @@
 # A keep-alive fork carries the card's launch args
 
+Status: built. The keep-alive fork carries the card's launch args (`internal/daemon/keepalive.go`).
+
 Backlog-2 item 73. `docs/runtime/cache-keepalive-design.md` is the argument for the fork and this is one gap in it.
 
 ## The problem

@@ -1,4 +1,4 @@
-// Change requests, as the "Requests" view of the repos area (next to Shelf, Ledger and Feed). docs/rnd/hub-forge-design.md
+// Change requests, as the "Requests" view of the repos area (next to Shelf, Ledger and Feed). docs/fabric/hub-forge-design.md
 // section 6. A request asks for a branch the hub holds to go into a target; atrium's stage 5 is MANUAL, so a request into
 // `main` waits for the orchestrator or clint to merge on the hub's side, and the board only ever RECORDS that it happened.
 //

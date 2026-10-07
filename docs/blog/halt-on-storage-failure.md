@@ -24,7 +24,7 @@ Series: The daemon and the halt. Status: idea. Audience: people building daemons
 ## Sources
 
 - docs/how-atrium-works.md
-- docs/review/cr48-2d0ac78-ada747b.md
+- docs/review/cr48-2d0ac78-ada747b.md at 3be95cab
 - changelog/runtime/2026-09-30-r-test-isolation.md
 - changelog/runtime/2026-09-29-r-017.md
 - the orchestrator's factory evaluations of 2026-09-29 and 2026-09-30 (off-repo, on the hub machine; paraphrase only)

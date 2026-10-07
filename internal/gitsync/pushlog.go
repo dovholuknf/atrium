@@ -10,7 +10,7 @@ import (
 )
 
 // The push log: one row per ref a push updated, and a marker row when a branch is released. See
-// docs/rnd/hub-forge-design.md 3.2. The hub's store (internal/hubstore) keeps it in a table, and
+// docs/fabric/hub-forge-design.md 3.2. The hub's store (internal/hubstore) keeps it in a table, and
 // MemPushLog is the same rules in memory, for the tests of everything above it.
 
 // PushRow is one row of the log.

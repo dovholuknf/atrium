@@ -23,7 +23,7 @@ Series: Cards, not agents. Status: outline. Audience: people building dashboards
 
 ## Sources
 
-- docs/architecture-v2.md (Abandoned)
+- docs/archive/architecture-v2.md (Abandoned)
 - website/docs/story.md
 - docs/backlog/rnd/rnd-new-adopt-session.md
 - the factory log of 2026-10-01 and 10-02 (held, off-repo for now; paraphrase only)

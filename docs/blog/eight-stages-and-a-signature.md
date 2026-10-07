@@ -25,7 +25,7 @@ Series: The hub forge and the change lifecycle. Status: idea. Audience: people l
 
 - docs/rnd/change-lifecycle-design.md
 - docs/backlog/rnd/rd-new-review-45687063.md
-- docs/rnd/hub-forge-design.md
+- docs/fabric/hub-forge-design.md
 
 ## Notes for the writer
 

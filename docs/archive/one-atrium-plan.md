@@ -1,7 +1,9 @@
 # One atrium: one binary, no Mode A, and the hub renamed
 
+Status: built. One `atrium` binary shipped and Mode A was removed. Kept as the record of the plan.
+
 Stages 1 to 3 are built. Stage 4, the cutover on this machine, is written out step by step in
-`docs/fabric/one-atrium-cutover.md`, which also moves the deploy scripts in the same window rather than a day later.
+`docs/archive/one-atrium-cutover.md`, which also moves the deploy scripts in the same window rather than a day later.
 
 The plan for three decisions clint made on 2026-09-24. Written against `claude/main` at
 `fd95da4`. There is no release, so no user needs a compatibility shim. The one thing that must keep working through
@@ -166,7 +168,7 @@ Mode B is `atrium serve` (an MCP server over the gwt ledger), `atrium status` an
 - **Nobody has touched it.** The last commit to `internal/server` or `internal/state` is 2026-09-02.
 - **What still names it.** `Makefile` (`run-status`, `run-watch`, `run-serve`), `README.md`, `FEATURES.md`,
   `website/docs/cli.md`, `docs/user-guide.md`, `docs/test-plan.md` section E, `docs/how-atrium-works.md`,
-  `docs/rnd/state-of-the-art.md`, and a comment in `internal/cli/control.go`.
+  `docs/archive/state-of-the-art.md`, and a comment in `internal/cli/control.go`.
 
 Recommendation: remove it in the same stage as Mode A. The board shows everything Mode B shows and more, and the gwt
 ledger it reads keeps working without it. Open Question 1.
@@ -368,11 +370,11 @@ cutover nothing needs it. It stays readable, and the room stops setting it, in s
 
 ### The federation doc disagrees
 
-`docs/rnd/federation-design-v2.md` section 8 picked a vocabulary where each machine is "an atrium", plural "atria", and
-the aggregator is "the forum". Decision 3 inverts that: the central process is the atrium and each machine is a room.
-The section also rejected the word `hub` on the grounds that `atrium hub` was taken by Mode A, which stage 1 removes.
-The doc needs a note at section 8 saying the naming was superseded, and by what. The forum design itself was never
-built. The hub and rooms are what shipped.
+`docs/archive/federation-design-v2.md` section 8 picked a vocabulary where each machine is "an atrium", plural "atria",
+and the aggregator is "the forum". Decision 3 inverts that: the central process is the atrium and each machine is a
+room. The section also rejected the word `hub` on the grounds that `atrium hub` was taken by Mode A, which stage 1
+removes. The doc needs a note at section 8 saying the naming was superseded, and by what. The forum design itself was
+never built. The hub and rooms are what shipped.
 
 ## The stages
 
@@ -559,8 +561,8 @@ Mode A, Mode B, `atrium daemon`, `hub` or `atrium2`.
    `internal/tui`, `internal/server` and `internal/state` lines. Add `internal/link` (the atrium's proxy and the
    room link), `internal/hubstore` (the atrium's own small store), and `internal/daemon/permwait.go`. The
    `internal/cli` line lists the new commands.
-5. Documentation: `docs/test-plan.md` letters lose A and E. Add `docs/fabric/one-atrium-plan.md` until it is done, and the
-   hub-room docs.
+5. Documentation: `docs/test-plan.md` letters lose A and E. Add `docs/archive/one-atrium-plan.md` until it is done, and
+   the hub-room docs.
 6. Subcommands table: remove `hub`, `agent`, `serve`, `status`, `watch`. Add `run`, `room`, `room join`, `rooms`,
    `backups`, `db`, `ledger`. Mark `daemon` for removal. Rework `control` per Open Question 8.
 7. "The wire protocol (Mode A)": delete `/submit` and the `kind` list. Keep `/permission` under a new heading, "The
@@ -581,13 +583,13 @@ line that a room is a daemon for `HookExe`'s purposes.
 
 | File | What changes | Stage |
 | --- | --- | --- |
-| `docs/architecture-v2.md` | "What carries over from v1" points 1 to 3 cite `internal/agent`. Staged migration step 5 (cut the TUI pointer) is abandoned, not pending | 1 |
+| `docs/archive/architecture-v2.md` | "What carries over from v1" points 1 to 3 cite `internal/agent`. Staged migration step 5 (cut the TUI pointer) is abandoned, not pending | 1 |
 | `docs/test-plan.md` | retire A, D, E, F1 | 1, 2 |
-| `docs/user-guide.md`, `docs/how-atrium-works.md`, `docs/rnd/state-of-the-art.md` | Mode A and Mode B passages, `atrium2`, "the hub" | 1, 2, 5 |
+| `docs/user-guide.md`, `docs/how-atrium-works.md`, `docs/archive/state-of-the-art.md` | Mode A and Mode B passages, `atrium2`, "the hub" | 1, 2, 5 |
 | `docs/runtime/reload-design.md` | the whole restarter describes `atrium control --restart-now` starting `atrium daemon`. Rewrite against the room's restart and the rename pair, or mark historical | 4, 6 |
 | `docs/release/packaging.md` | every `atrium daemon` line, the database section, and a note that there is one binary | 6 |
-| `docs/rnd/federation-design-v2.md` | a superseded note at section 8 | 5 |
-| `docs/fabric/hub-room-plan.md`, `docs/fabric/hub-room-requirements.md`, `docs/fabric/hub-restart-gate.md`, `docs/runtime/restart-wake.md` | `atrium2` commands and "hub" in prose. File names stay | 5 |
+| `docs/archive/federation-design-v2.md` | a superseded note at section 8 | 5 |
+| `docs/archive/hub-room-plan.md`, `docs/archive/hub-room-requirements.md`, `docs/fabric/hub-restart-gate.md`, `docs/runtime/restart-wake.md` | `atrium2` commands and "hub" in prose. File names stay | 5 |
 | `docs/orchestrator/cold-start.md`, `docs/orchestrator/wrapup.md` | orchestrator boot and wrap-up paths name `atrium2.exe` and `.atrium2\scripts` | 4 |
 | `README.md`, `FEATURES.md` | commands and vocabulary | 2, 5 |
 | `website/docs/{cli,control-mcp,hooks,install,intro,rooms,settings,story,terminals,history}.md`, `website/src/pages/index.js`, `website/DECISIONS.md` | commands and vocabulary. `website/scripts/test-gate-hook.js` names the hub URL | 5 |

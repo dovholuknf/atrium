@@ -25,7 +25,7 @@ import (
 
 // A fetch passed through the hub to a room, over a real link: a hub, a room that says Git with a real clone
 // behind its git route, the board's own proxy in front, and git itself as the reader. See
-// docs/rnd/hub-forge-design.md 3.3 and the stage 3 row of 7.
+// docs/fabric/hub-forge-design.md 3.3 and the stage 3 row of 7.
 
 type passRig struct {
 	hub    *Hub

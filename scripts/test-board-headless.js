@@ -9704,7 +9704,7 @@ async function ctxLimitLayersSection(browser, base) {
   }
 }
 
-// THE CONTEXT CYCLE ON THE BOARD (docs/context-cycle-design.md): the details dialog's switch and limit write the
+// THE CONTEXT CYCLE ON THE BOARD (docs/runtime/context-cycle-design.md): the details dialog's switch and limit write the
 // card's overrides, the settings save one per-harness list through the hub, the stored handoff is a row in the
 // card's history with its text behind a disclosure, and the chip names the step.
 async function contextCycleSection(browser, base) {

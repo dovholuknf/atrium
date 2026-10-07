@@ -1,6 +1,8 @@
 # Change lifecycle: the stages a change goes through, each with its gate and its evidence, shown on the card
 
-Status: design by @rnd, 2026-10-02. Nothing built. Asked by clint through the orchestrator, for the software
+Status: proposed, not built.
+
+Origin: design by @rnd, 2026-10-02. Nothing built. Asked by clint through the orchestrator, for the software
 factory. A session on ziti-sdk-c (the legacy-auth expired-token loop) finished with every test passing on the
 CI-equivalent build (161 of 161) and a red/green proof for each new test. It then printed the `git add`, commit and
 push commands and the PR body. clint answered that before anything is pushed, he also wants to be walked through the
@@ -9,7 +11,7 @@ changes.
 Builds on:
 - `docs/rnd/change-record-design.md`, one record per branch or PR, with facts pinned to a sha;
 - `docs/rnd/review-on-atrium-design.md`, the standing reviewers;
-- `docs/rnd/hub-forge-design.md` revision 2, where finished means pushed to the hub;
+- `docs/fabric/hub-forge-design.md` revision 2, where finished means pushed to the hub;
 - `docs/rnd/operator-focus.md` 2.9, the one-step-at-a-time screen;
 - `docs/rnd/pr-review-story.md` section 4, the walk format and `walk.txt`.
 

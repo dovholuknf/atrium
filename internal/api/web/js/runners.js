@@ -124,7 +124,7 @@ function remoteView(room, q) {
 // A remote card's terminal, as a link to the board that owns it.
 //
 // THIS IS WHAT ATTACH ACROSS MACHINES IS. A pseudo terminal cannot leave the
-// machine that made it, and `docs/rnd/federation-design-v2.md` records that this is
+// machine that made it, and `docs/archive/federation-design-v2.md` records that this is
 // a fact about ConPTY rather than a policy, so the closest thing available is
 // sending you to that machine's own board with the right terminal already open.
 // The room already reports where its board is, so what was missing was only the

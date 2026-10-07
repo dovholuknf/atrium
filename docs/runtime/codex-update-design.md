@@ -1,5 +1,9 @@
 # Keeping codex up to date (backlog-2 item 12)
 
+Status: partly built. Sections 1 and 2, withdrawing a satisfied update card and re-offering, are built
+(`internal/daemon/runnerupdate.go`). Sections 3 and 4, suppressing codex's own updater and an auto-update setting, are
+not.
+
 Written 2026-09-29 by @runtime. Sections 1 and 2 are built (sa12). Sections 3 and 4 are design only.
 
 **What is decided and what waits.** Sections 1 and 2 fix bugs and are decided: they can be built now. Sections 3

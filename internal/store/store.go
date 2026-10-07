@@ -1,7 +1,7 @@
 // Package store is atrium's durable state: tasks, their event history, and
 // pending permission requests.
 //
-// The failure posture documented in docs/architecture-v2.md lives here. There
+// The failure posture documented in docs/archive/architecture-v2.md lives here. There
 // is no degraded mode. Failures sort into three tiers:
 //
 //  1. Open or migration failure. Open returns an error and the daemon refuses
@@ -440,7 +440,7 @@ func (t *Task) DisplayTitle() string { return t.Display("title", t.Title) }
 // THE GUESS IS NOT STORED AND NOT OBSERVED DATA. It is computed on the way out
 // and nothing writes it back, so a launcher that starts sending the real answer
 // tomorrow wins immediately and a wrong guess costs one override to correct.
-// `docs/architecture-v2.md` says atrium is not learning git, and this does not:
+// `docs/archive/architecture-v2.md` says atrium is not learning git, and this does not:
 // it reads a directory name out of a string it already has, the same way the
 // board's own default grouping rule has always done.
 func (t *Task) DisplayRepo() string {

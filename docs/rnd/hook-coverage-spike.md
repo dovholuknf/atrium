@@ -1,5 +1,8 @@
 # Hook coverage
 
+Status: research, spike, 2026-09-02. Its recommendation, moving the gate to `PermissionRequest`, was not taken: the gate
+is still on `PreToolUse` (`internal/claudeconf/hooks.go`).
+
 Atrium learns everything about a session from Claude Code hooks. It consumes five events today and there are
 twelve. This works out what the other seven would buy, whether the permission gate is sitting on the wrong event,
 and whether the board's columns should change shape depending on what is wired.
@@ -422,7 +425,7 @@ Wiring seven more hooks therefore adds zero lanes. It makes three existing ones 
 `subagents` lane. It does not. A subagent is not a card. It has no independent life the operator can act on, it
 cannot be shelved, messaged or attached to, and it belongs to a session that already has a card. Giving it a lane
 would fill the board with rows nobody can do anything about, which is exactly what adopting the worktree ledger
-did before it was removed. See the abandoned section in `docs/architecture-v2.md`.
+did before it was removed. See the abandoned section in `docs/archive/architecture-v2.md`.
 
 ## PreCompact
 

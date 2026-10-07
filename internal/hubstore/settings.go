@@ -19,7 +19,7 @@ import (
 //
 // ── why the hub owns a board skin at all ─────────────────
 //
-// A skin is about the BOARD's appearance, and `docs/fabric/hub-room-requirements.md`
+// A skin is about the BOARD's appearance, and `docs/archive/hub-room-requirements.md`
 // gives anything about the board to the hub. The ALL view is the hub's view, so
 // the skin it wears is the hub's own, not one borrowed from whichever room
 // sorts first. That borrow is the bug: with a second room mid-attach the ALL
@@ -75,7 +75,7 @@ func (s *Store) OverlayLegacyRefused() (bool, error) {
 // ── why the hub owns this, and the room keeps its own ────
 //
 // Board-wide "approve everything" is BOARD POLICY: one answer for every session
-// on every room, including ones that have not started. `docs/fabric/hub-room-requirements.md`
+// on every room, including ones that have not started. `docs/archive/hub-room-requirements.md`
 // gives anything about the board to the hub, so this is the hub's to hold, the
 // same as the skin above. It used to live in the room as `global_auto`, which
 // only ever covered sessions THAT room's gate had seen and, in the ALL view, had
@@ -221,7 +221,7 @@ func (s *Store) SetHubSetting(name, value string) error {
 
 // SettingGitRepos names the repositories this hub mirrors and serves to its rooms, a JSON
 // list of {name, checkout, branch}. Key-value like every other hub setting, so it needs no
-// migration. See internal/gitsync and docs/rnd/git-sync-design.md.
+// migration. See internal/gitsync and docs/fabric/git-sync-design.md.
 const SettingGitRepos = "git_repos"
 
 // GitRepos reads the list, refusing an entry that is not allowed, with why. A refusal here
@@ -311,7 +311,7 @@ func (s *Store) SetBoardAuto(on bool, until *time.Time) error {
 	return s.SetHubSetting(SettingBoardAuto, boardAutoUntil+ts(*until))
 }
 
-// The hub's own git store (docs/rnd/hub-forge-design.md 3.1). Two settings in the same key-value
+// The hub's own git store (docs/fabric/hub-forge-design.md 3.1). Two settings in the same key-value
 // table as every other, so there is NO MIGRATION: a name never written reads as its default.
 const (
 	// SettingGitStore is where the hub keeps its bare repositories, `<store>/<host>/<owner>/<repo>.git`.

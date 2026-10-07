@@ -1,5 +1,8 @@
 # The factory: how it is shaped, what it costs, and whether to change it
 
+Status: research, 2026-09-30. Its conclusion: keep directors but make them cheaper, keep @review on Opus, move coding
+directors to Sonnet.
+
 Written by @rnd on 2026-09-30, at clint's request through the orchestrator. Design only. Nothing here is built.
 
 ## The answer
@@ -165,7 +168,7 @@ all the briefing in the orchestrator, so most of the flatten costs remain.
 - Move @ui, @runtime and @fabric to Sonnet 5.5. This saves about $140 over two days. Try it on @fabric first, and
   compare landed items per dollar after one day.
 - Let atrium enforce a context ceiling of 150k on directors, including mid-turn. This saves about $145. The lean
-  cycle design (`docs/rnd/lean-context-cycle-design.md`) is the mechanism.
+  cycle design (`docs/archive/lean-context-cycle-design.md`) is the mechanism.
 - Keep @review on Opus. It cost $95 for two days, and it found the only critical issues.
 - Make @rnd on demand: launch it for a design and exit it after. @rnd paid $3.50 to $3.70 for each of three cold
   wakes on 09-30, for $125 over the two days.

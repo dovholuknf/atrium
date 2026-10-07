@@ -3,12 +3,12 @@
 Thirteen runners saturate one desktop. There are four other machines sitting idle: a laptop, an M1 mini, and two
 cloud boxes. The operator wants to hand a backlog item to one of them and keep orchestrating from here.
 
-`docs/rnd/federation-design-v2.md` settled the shape of one board over many machines and stage one of it shipped:
+`docs/archive/federation-design-v2.md` settled the shape of one board over many machines and stage one of it shipped:
 `atrium room` dials a hub every twenty seconds, says what is on that machine, and the hub holds the answer in
 memory and nowhere else. Cards travel INWARD. This document is the other direction, and it is the smaller half:
 there was no way to say "start this there".
 
-Read `docs/fabric/overlays.md` and `docs/rnd/federation-design-v2.md` first. Neither is contradicted here.
+Read `docs/fabric/overlays.md` and `docs/archive/federation-design-v2.md` first. Neither is contradicted here.
 
 ## 1. The connection does not change
 

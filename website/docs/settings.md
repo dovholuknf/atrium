@@ -33,7 +33,7 @@ A hub restart costs no session anything, because the hub holds nothing.
 
 ## Stopping
 
-`atrium stop` winds the daemon down the way ctrl-c does: event streams released, supervised runners given ten
+`atrium stop` winds a room down the way ctrl-c does: event streams released, supervised runners given ten
 seconds, listeners closed in order. Killing the process closes every pseudo terminal at once and takes the runners
 with it.
 
@@ -49,7 +49,7 @@ Atrium warns when it opens a different database than last time. Which database i
 `WORKTREE_ROOT` in the shell it started from. The autostart pins one command line, so it opens the same one every
 time.
 
-## Finding the daemon
+## Finding the room
 
-Hooks and scripts find the running daemon through an address file. `shared_location` names a directory both
-accounts can read, so a script running as you can find a daemon running under another account.
+Hooks and scripts find the running room through an address file. `shared_location` names a directory both
+accounts can read, so a script running as you can find a room running under another account.

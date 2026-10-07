@@ -1,5 +1,8 @@
 # Shared multi-pane input: keystroke fan-out
 
+Status: built. Keystrokes fan out to the other panes behind a mode that is off by default (`echoToPeers` in
+`internal/daemon/attach.go`).
+
 ## What already works
 
 One runner, one pty. Every attach subscribes to the runner's output over its own websocket

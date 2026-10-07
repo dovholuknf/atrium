@@ -1,6 +1,8 @@
 # Config alignment: one config for every session atrium starts, owned by the hub, rolled out to every room
 
-Status: design by @rnd, 2026-10-02. Nothing built. Asked by clint through the orchestrator, 2026-10-02 late. His
+Status: proposed, not built.
+
+Origin: design by @rnd, 2026-10-02. Nothing built. Asked by clint through the orchestrator, 2026-10-02 late. His
 question: could atrium own and start sessions with their own config, control them in one way, and roll that out
 across rooms?
 

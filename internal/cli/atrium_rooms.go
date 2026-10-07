@@ -27,7 +27,7 @@ import (
 //
 // ── and why they exist at all when the board is coming ───
 //
-// The board grows this list next (item 3 in docs/decisions.md). These come
+// The board grows this list next (item 3 in docs/fabric/hub-decisions.md). These come
 // first because every later piece needs a room to exist before it can be shown,
 // and because a hub that can only be set up through its own web page is a hub
 // nobody can script.

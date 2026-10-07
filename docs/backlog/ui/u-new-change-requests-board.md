@@ -1,7 +1,7 @@
 # u-new-change-requests-board: change requests and the Pushed line on the board
 
 Status: built, in review. Owner @ui. This is the board half of scm stage 5
-(`docs/rnd/hub-forge-design.md` section 6). Sits on top of `u-new-hub-repos-list`.
+(`docs/fabric/hub-forge-design.md` section 6). Sits on top of `u-new-hub-repos-list`.
 
 ## What is there
 

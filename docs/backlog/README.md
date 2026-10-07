@@ -3,6 +3,11 @@
 Every item is its own file, `docs/backlog/<dept>/<id>.md`, so two branches never write the same file and a new item
 never conflicts with another. Each director's folder is that director's backlog.
 
+The hub keeps a copy, and that copy is what an agent reads and writes day to day: `atrium backlog list|show|file|status`
+on the command line and the `atrium_backlog` tool. `atrium backlog import docs/backlog` refreshes the hub's copy from
+these files, and an item is upserted by its id. The code still reads these files too: item gates
+(`internal/link/deps.go`) and review verdicts (`internal/deployready`).
+
 | Folder | Owner | Id prefix |
 |---|---|---|
 | `ui/` | @ui | `u-` |

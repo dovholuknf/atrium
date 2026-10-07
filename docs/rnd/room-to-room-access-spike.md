@@ -1,6 +1,9 @@
 # Room-to-room access: a room reaching another room's machine (SPIKE)
 
-Status: spike by @rnd, 2026-10-01. Nothing built. Backlog: `docs/backlog/rnd/rnd-new-room-to-room-access.md`. It puts
+Status: research, spike, 2026-10-01. Its conclusion: make the ops the hub runs over ssh callable from any room first,
+and raw room-to-room ssh second, off by default.
+
+Origin: spike by @rnd, 2026-10-01. Nothing built. Backlog: `docs/backlog/rnd/rnd-new-room-to-room-access.md`. It puts
 reach between machines, so @review reads it for security before anything is built. Revised for @review's HOLD
 (8f790b14, `docs/backlog/rnd/rd-new-review-7bf10158.md`).
 
@@ -45,8 +48,9 @@ everything else, the hub op keeps the key on the hub.
   asks a room that did not say so" (`internal/link/protocol.go:26-55`). Per-room hub settings exist too:
   `launch_caps` holds `{"default", "rooms": {...}}` (`internal/link/launchcaps.go`).
 - **The remote-git refusal is dotfiles' hook, and rooms do not have it.** It matches
-  `\bgit\s+(?:-\S+\s+)*(push|pull|fetch)\b` in `claude/hooks/pre-tool-use-hook.ps1` (`docs/rnd/git-sync-design.md:15-21`).
-  `scripts/room-gate.ps1:13` copies nothing else from dotfiles to a room, "least of all the footgun guard".
+  `\bgit\s+(?:-\S+\s+)*(push|pull|fetch)\b` in `claude/hooks/pre-tool-use-hook.ps1`
+  (`docs/fabric/git-sync-design.md:15-21`). `scripts/room-gate.ps1:13` copies nothing else from dotfiles to a room,
+  "least of all the footgun guard".
 - **No deny rule ships either.** `Bash(git push*)` appears only in `internal/claudeconf/claudeconf_test.go:75,99`.
   On m1mini `~/.claude/settings.json` has no `permissions`, and the room's rules are `{"rules":null}`. What stops a
   push from m1mini today is that its clone's remote is `https://github.com/...` and the machine holds no ssh key and

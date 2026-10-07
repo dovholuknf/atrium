@@ -1,5 +1,7 @@
 # Reports and backlog that every room can reach
 
+Status: built. `atrium reports` and `atrium backlog` reach the hub's tables from every room (`internal/cli/backlog.go`).
+
 Item `f-new-reports-channel-any-room`, owned by @fabric. Builds on the hub store and on the
 `rnd-new-backlog-in-atrium` note, which stays a spike for the full design.
 

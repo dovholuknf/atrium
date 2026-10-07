@@ -1,6 +1,8 @@
 # Lean context cycle (r-new-lean-context-cycle)
 
-Status: designed by @rnd 2026-09-30, for @runtime. Nothing here is built. Backlog item
+Status: superseded by `docs/runtime/context-cycle-design.md`. Kept as the record of the lean cycle proposal.
+
+Origin: designed by @rnd 2026-09-30, for @runtime. Nothing here is built. Backlog item
 `docs/backlog/runtime/r-new-lean-context-cycle.md`.
 
 ## The answer

@@ -1,7 +1,7 @@
 # The work ledger: who did what, where it is, and who said it was done
 
 Design only. Nothing here is built. Written by sa42 for the orchestrator (`atrium-87300`) and clint on 2026-09-24.
-`docs/runtime/work-ledger-plan.md` is the short version for reading.
+The plan, appended at the end, is the short version for reading.
 
 Read `docs/runtime/a2a-reliability-design.md` first. This design sits on its lineage columns, its report verb and its notice
 path, and it absorbs that design's stage 2 item F9 ("a worker that dies is reported").
@@ -70,7 +70,7 @@ the room writes a readable snapshot file beside its database so the list survive
   closed in the last seven days, in the shape of `AGENTS-UNFINISHED.md`. Any agent or person can `cat` it with the
   daemon down. It is a projection of the database, never read back, and a failure to write it is logged and
   ignored, the posture of a cold event sink.
-- `atrium2 ledger` prints the same list from the database opened read-only, with `--json` for scripts, for the
+- `atrium ledger` prints the same list from the database opened read-only, with `--json` for scripts, for the
   case where the snapshot is stale because the daemon died between a write and its rename.
 
 Rejected: files as the source of truth. A file per worker in its worktree pollutes a git tree the worker commits
@@ -477,7 +477,7 @@ Each stage lands on its own and is labelled by where it deploys.
 1. **The ledger records (ROOM-SIDE).** The transaction helper and the transaction-aware db sink, migration,
    backfill, items created at launch, generations, reports, says and instructions logged, `done` report to
    `reported`, the move on `exited` and the liveness sweep, the durable `ended` notice, the snapshot file,
-   `atrium2 ledger`.
+   `atrium ledger`.
 2. **The arbiter rules (HUB-SIDE and ROOM-SIDE).** `atrium_verdict` with revisions, the verdict endpoint and its
    rules, the reject reaching the worker, `atrium_peers` `work` and `mine`, `atrium_task` `work`.
 3. **Structured outputs (HUB-SIDE and ROOM-SIDE).** `outputs` on `atrium_report` and `atrium finish`, the branch and
@@ -522,7 +522,7 @@ stage ships.
 - **A continuation needs the arbiter.** A third session launches with `continues` on somebody else's worker.
   Expect: refused. Two continuations of one item at once. Expect: one wins, the other is refused.
 - **The snapshot survives the daemon.** Stop the room. Expect: `work-ledger.md` lists the open items, and
-  `atrium2 ledger` prints the same from the database.
+  `atrium ledger` prints the same from the database.
 - **Outputs are checked, not refused.** Report `done` with a commit from another repo and a missing path. Expect:
   accepted as `reported`, marked `unverified` naming both, and the notice says so.
 - **A pruned card keeps its item.** Prune a card with an `accepted` item. Expect: the item and its log still read.
@@ -556,3 +556,76 @@ C1 to C4 before implementation.
 | A1 | The log kept verdict and atrium rows forever, so it was not bounded. | yes | A hard cap per item with a trim order, verdicts copy the report they ruled on, one atrium row per generation, byte bounds on outputs and on tool answers. |
 | A2 | Reassigning the arbiter left notices going to the launcher. | yes | Launcher is provenance, arbiter is who hears. Reassign is logged and the new arbiter gets a digest. |
 | A3 | Pruned and superseded items had undefined reopen behaviour. | partly | Ledger operations work without the card row, and a pruned reopen points at relaunch with `continues`. Refused: reopening a superseded item. It would fork the work or undo the link, and the successor is where to reopen. |
+
+## Appendix: The work ledger, the plan
+
+Merged from `docs/runtime/work-ledger-plan.md` on 2026-10-07.
+
+The full design is the body of this file, above.
+
+### What goes wrong today
+
+- A card reaches `done` when a worker says so, when its session exits, or when somebody drags it. So `done` says a
+  session stopped, not that the work is finished.
+- A worker's report goes into the launcher's terminal and nowhere a reader can find it later. After a crash or a
+  `/clear` it is gone.
+- Where the work lives (branch, commits, files) is prose inside that report.
+- So when sa19 and sa20 died in a crash, their cards still read `done`, and the orchestrator rebuilt the truth by
+  hand a day later.
+
+### What changes
+
+- Every card another session launches gets a work item in atrium's store. It holds the brief, who launched it, a
+  work state, where the output is, and a log of every report, every message between worker and launcher, and
+  every verdict.
+- The work state sits beside the card's column and does not replace it. The column says what the session is
+  doing. The work state says where the work is.
+- A worker's `done` report moves the work to `reported`, waiting on the launcher. Nothing closes until the launcher
+  accepts it, rejects it back to the worker with a reason, or abandons it with a reason. The human can overrule
+  any of these.
+- A verdict names the version of the work the launcher looked at. If the worker reported again in the meantime,
+  the verdict is refused, so nothing gets accepted unread.
+- A session that ends before a `done` report, by crash, kill or exit, moves its work to `ended-without-report`. This
+  happens in the same database transaction that records the exit, so no exit path can miss it, and one death counts
+  once however many parts of atrium notice it.
+- When atrium cannot tell whether a session is alive, it says "unknown" and leaves the work where it is. It never
+  invents an exit to tidy the list.
+- After a crash, atrium flags those items and shows them red on the board. It queues one notice to each launcher
+  in the same transaction, so the notice cannot be lost, and a launcher that died too reads it when it comes back.
+  Atrium never resumes or relaunches anything. The launcher or the human decides.
+- A final report names its outputs in a fixed shape: repo, branch, commits, files. Atrium checks that each one
+  exists and marks what it could not find. It still accepts the report, and the launcher judges it.
+- Work that moves to a new card, as sa19 and sa20 did, links the old item to the new one, so the list shows one
+  open piece of work, not two. Only the launcher or the human can do that.
+- The log is capped per item. It trims chatter first and always keeps the report that was accepted. Items outlive
+  their cards.
+- A one-time backfill puts the last 14 days of launched cards on the list, marked as inferred, because the old
+  records are thin.
+- The room also rewrites a `work-ledger.md` file beside its database on every change, so the list can be read with
+  the daemon down.
+
+### What you see
+
+- A Work view on the board: every launched card, its launcher, its state and for how long, its last report, its
+  outputs with a mark per check. Ended-without-report rows first and red, then work waiting on a launcher.
+- Opening a row shows the whole history, which is what used to scroll away in the orchestrator's terminal.
+- The main board gets a small work chip on each launched card, and the columns stay as they are.
+- `atrium_peers mine` gives a launcher its open work, including workers whose sessions are gone. That replaces
+  building `AGENTS-UNFINISHED.md` by hand. `atrium_task` shows one item's state, outputs and recent log.
+- A new `atrium_verdict` tool is the launcher's one verb: accept, reject, abandon or reopen. Only the launcher or
+  the human can use it on an item.
+
+### Open for you
+
+- A worker's `done` report still moves its card to the `done` column, with the work chip saying `reported`.
+  Recommended, so the board does not ring you for the launcher's decision.
+- Cards you launch from the board get no work item unless you ask for one with "track this work". Recommended.
+- Work waiting on a launcher does not nag anybody. The board shows how long it has waited. Recommended.
+
+### Build stages
+
+1. The ledger records: transactions, reports, messages, the ended-without-report flag, the crash notice, the file.
+2. The launcher rules: `atrium_verdict`, and the work state in `atrium_peers` and `atrium_task`.
+3. Structured outputs: branch, commits and files on the report, each one checked.
+4. The Work view on the board, with verdict buttons for you.
+5. Continuing work on a new card, tracking any card by hand, and handing an item to a new arbiter.

@@ -1,6 +1,8 @@
 # Processes: a long-running background process an agent starts, owned by its card
 
-**Status: design, nothing built.** Written 2026-09-24, revised the same day with clint's answers to the first round
+Status: proposed, not built.
+
+**Origin: design, nothing built.** Written 2026-09-24, revised the same day with clint's answers to the first round
 of Open Questions. What is still open is at the end.
 
 ## Scope, said first
@@ -17,7 +19,7 @@ An agent learns that in two places:
 
 - **The tool description** of `atrium_proc_start` opens with that sentence, names the examples above, and says what
   it is not for ("not for builds, tests or one-shot commands: those finish, run them with Bash").
-- **`docs/atrium-for-agents.md`**, the doc agents are pointed at, gets a short section "Background processes" with
+- **`docs/agents.md`**, the doc agents are pointed at, gets a short section "Background processes" with
   the same rule, the lifetime in one paragraph (below), and how to find and ask the owner of a process.
 
 Nothing in atrium enforces the line. A registered `go test` that finishes in four seconds is harmless: it shows on
@@ -77,7 +79,7 @@ fine stopgap for one server and the wrong shape for the pattern.
 
 ## Where it lives: the room
 
-The room owns the pseudo terminals (`docs/fabric/hub-room-plan.md`), so the room owns processes. The hub owns none and
+The room owns the pseudo terminals (`docs/archive/hub-room-plan.md`), so the room owns processes. The hub owns none and
 restarts all evening. A process started from a hub would die with every CSS change.
 
 - **ROOM-SIDE:** the `procs` map, the store table, the spawn and stop paths, the port checks, the loopback recipes
@@ -132,10 +134,10 @@ healthy, and that is not this.
 **Idle timeout: none.** The shell closes after 30 minutes unattached because an idle prompt is something the operator
 forgot. A dev server with nobody attached is the normal case, and the runner exit bounds its life anyway.
 
-**Why not survive a room restart.** A process in a pty dies with the room, like every runner. ConPTY offers no
-reattach (`docs/architecture-v2.md`, "Open risks"). A detached process (no pty, output to a file, a recorded pid)
-could survive, and it would have no attach, a stop keyed on a recycled pid, and no job object to make the stop safe.
-It would also break the one rule, since the runner does not survive the restart either.
+**Why not survive a room restart.** A process in a pty dies with the room, like every runner. ConPTY offers no reattach
+(`docs/archive/architecture-v2.md`, "Open risks"). A detached process (no pty, output to a file, a recorded pid) could
+survive, and it would have no attach, a stop keyed on a recycled pid, and no job object to make the stop safe. It would
+also break the one rule, since the runner does not survive the restart either.
 
 ## Who may stop a process
 
@@ -330,7 +332,7 @@ Discovered ports count as held for check 1. The same read gives the **bound addr
 warning needs, so that part lands in stage 2 and the port reconciliation in stage 3.
 
 This reads the operating system, never the output. Parsing "Local: http://localhost:3310" out of a log is the
-output-interpretation `docs/architecture-v2.md` rules out.
+output-interpretation `docs/archive/architecture-v2.md` rules out.
 
 ## Firewall prompts: why clint asked
 
@@ -551,8 +553,8 @@ description says not to pass secrets in it. The row is visible on the board.
 
 **Registering a process goes through the permission chain.** Without that, the proc tool is a way around it.
 
-The PreToolUse hook does not gate `mcp__*` tools (`docs/architecture-v2.md`, "What carries over from v1", item 6),
-because gating the agent's own control tools is circular. So a session told "never `npx`" by a standing rule could
+The PreToolUse hook does not gate `mcp__*` tools (`docs/archive/architecture-v2.md`, "What carries over from v1", item
+6), because gating the agent's own control tools is circular. So a session told "never `npx`" by a standing rule could
 run `npx` anyway by asking atrium to.
 
 So the room gates the start itself. It builds the request the hook would have sent, **tool `Bash` and the full
@@ -637,9 +639,9 @@ last ended.
 
 ## Build plan
 
-**Stage 1 waits for the one-atrium consolidation** (sa57, `docs/fabric/one-atrium-plan.md`, on its own branch today). Both
-change the CLI and the board, and the plan decides which binary and which command tree `atrium proc` lives in. Stage
-1 starts after that plan's CLI and board changes land, and is rebased onto them rather than built beside them.
+**Stage 1 waits for the one-atrium consolidation** (sa57, `docs/archive/one-atrium-plan.md`, on its own branch today).
+Both change the CLI and the board, and the plan decides which binary and which command tree `atrium proc` lives in.
+Stage 1 starts after that plan's CLI and board changes land, and is rebased onto them rather than built beside them.
 Atrium's own listener defaults (item (a) above) are independent and may land any time.
 
 Each stage lands on its own and is useful on its own.
@@ -661,7 +663,7 @@ Each stage lands on its own and is useful on its own.
 - The restart wake line naming processes the restart stopped.
 - Board: the chip strip on the card, with attach.
 - Guest allowlist tests.
-- The "Background processes" section in `docs/atrium-for-agents.md`.
+- The "Background processes" section in `docs/agents.md`.
 
 What stage 1 fixes, against the five problems: all five, with 3 and 4 answered through `atrium_procs`.
 

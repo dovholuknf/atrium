@@ -24,7 +24,7 @@
 // THE CACHE IS NEVER AUTHORITATIVE. `room_card` is what a room last said,
 // nothing more. While a room is connected the cache is written and never read,
 // and the room's own answer is the answer. Nothing read from it is ever
-// written back as fact. See docs/decisions.md, 11 through 15.
+// written back as fact. See docs/fabric/hub-decisions.md, 11 through 15.
 //
 // ── when it fails ───────────────────────────────────────
 //

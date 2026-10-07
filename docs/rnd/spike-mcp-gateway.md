@@ -1,6 +1,9 @@
 # Atrium and mcp-gateway: absorb, supervise, separate, or rooms
 
-**Status: a spike. Nothing here is built and nothing else in this repo was changed to write it.** Written
+Status: research, spike, 2026-09-15. Its conclusion: leave clint's mcp-gateway separate, and supervise a gateway only
+inside a room.
+
+**Origin: a spike. Nothing here is built and nothing else in this repo was changed to write it.** Written
 2026-09-15 to answer one question the operator asked and one he described while asking it.
 
 Read `docs/rnd/ai-platform-fit.md` first. It already assessed mcp-gateway as an integration target and parked it
@@ -188,10 +191,10 @@ a question asked once per room instead of once per machine.
 
 ### The word is already taken, and that is convenient rather than a problem
 
-`internal/daemon/rooms.go` is built and shipped. A room there is a remote atrium that dials the operator's
-daemon every twenty seconds, reports its cards, and is cached in memory and nowhere else.
-`docs/rnd/federation-design-v2.md` calls the two sides leaf and forum. `docs/rnd/transparent-rooms.md` records the open
-decision about how invisible a room should be.
+`internal/daemon/rooms.go` is built and shipped. A room there is a remote atrium that dials the operator's daemon every
+twenty seconds, reports its cards, and is cached in memory and nowhere else. `docs/archive/federation-design-v2.md`
+calls the two sides leaf and forum. `docs/archive/transparent-rooms.md` records the open decision about how invisible a
+room should be.
 
 **A room on the same machine under a different operating system user is the same object with a shorter network
 path.** Keep the word. Where the distinction matters, say local room. Almost everything already written about
@@ -252,7 +255,7 @@ Four channels, and their difficulty is already known from federation:
 | Attach to the terminal | **Redirect** to the room's own board | Built as a concept, trivial locally |
 
 **Attach is where the local room beats the remote room, and it is worth being explicit because it is the one
-place this topology is strictly better.** `docs/rnd/transparent-rooms.md` treats relayed attach as the hard open
+place this topology is strictly better.** `docs/archive/transparent-rooms.md` treats relayed attach as the hard open
 question: a pty cannot leave the machine that made it, so transparency there means the forum proxies a websocket,
 which breaks the `docs/fabric/overlays.md` rule that nothing is proxied. **On one machine that problem evaporates.** The
 room's board is at `http://127.0.0.1:<roomport>` and the operator's browser can simply open it. The redirect is
@@ -420,7 +423,7 @@ radius. Cheap and negative.
 - *New and operational rather than engineering:* provisioning an account per room, a gateway config per room, a
   narrow push credential per room, and a git handback habit. This is the real cost, it is recurring, and it is
   the thing that decides whether rooms get used or quietly abandoned after two.
-- *Per-room Claude Code cost:* `docs/architecture-v2.md:447` notes claude-code "holds the subscription
+- *Per-room Claude Code cost:* `docs/archive/architecture-v2.md:447` notes claude-code "holds the subscription
   credentials". Every room account needs its own Claude Code login. Whether that is permitted and what it costs
   is not an engineering question and is listed below as undetermined.
 

@@ -1,8 +1,11 @@
 # The one-atrium cutover on this machine
 
-Stage 4 of `docs/fabric/one-atrium-plan.md`, written out for SG4 (clint's desktop, room `claude-sg4`). The hub, the room and
-the hooks move from two binaries to one, `C:\Users\claude\.atrium\bin\atrium.exe`, in one window. The window ran on
-2026-09-25.
+Status: done. `scripts/live` runs `atrium run --no-room` and `atrium room` from one binary. Kept as the record of the
+cutover on sg4.
+
+Stage 4 of `docs/archive/one-atrium-plan.md`, written out for SG4 (clint's desktop, room `claude-sg4`). The hub, the
+room and the hooks move from two binaries to one, `C:\Users\claude\.atrium\bin\atrium.exe`, in one window. The window
+ran on 2026-09-25.
 
 **2026-09-26: the rollback is gone.** Every `atrium2*.exe` on the machine was deleted, including
 `.atrium2\bin\atrium2.exe`, and `scripts/live/cutover.ps1` was deleted with it. This file is kept as the record of the
@@ -84,7 +87,7 @@ unchanged link.
    WHATIF: start hub: C:\Users\claude\.atrium\bin\atrium.exe run --no-room --addr 127.0.0.1:7778 --link 0.0.0.0:7779 --link-advertise 192.168.1.68:7779 --atrium-dir C:\Users\claude\.atrium2\hub
    WHATIF: keep C:\Users\claude\.atrium2\room.err as room.err.<timestamp>
    WHATIF: start room: C:\Users\claude\.atrium\bin\atrium.exe room --dir C:\Users\claude\.atrium2\room --db C:\Users\claude\.atrium\atrium.db --http 127.0.0.1:7781 --agent 127.0.0.1:7777
-   cutover window done. now the checks in docs/fabric/one-atrium-cutover.md, steps 12 to 15.
+   cutover window done. now the checks in docs/archive/one-atrium-cutover.md, steps 12 to 15.
    ```
 
    The pids are the ones running when this was written. A build with a tag says its version instead of `dev`.

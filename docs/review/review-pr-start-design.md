@@ -1,6 +1,8 @@
 # A PR card that registers itself with @review
 
-Status: proposed by @review, 2026-09-29. @rnd accepted it with changes the same day, applied here. Part of item 16
+Status: proposed, not built.
+
+Origin: proposed by @review, 2026-09-29. @rnd accepted it with changes the same day, applied here. Part of item 16
 (`docs/review/review-memory-design.md`), which says how a review is run once @review has it. This says how it reaches
 @review when clint starts the card himself.
 

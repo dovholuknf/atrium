@@ -1,6 +1,6 @@
 # Review: hub as a forge, git-sync stage 4 (d32a34fd + e34e461a, m1mini, 2026-10-02): HOLD
 
-`docs/rnd/hub-forge-design.md`, the only two commits touching it. Questions are held in the doc.
+`docs/fabric/hub-forge-design.md`, the only two commits touching it. Questions are held in the doc.
 
 This is the right answer to "never a paste":
 - every repo a card works in is mirrored automatically;

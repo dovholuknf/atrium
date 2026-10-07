@@ -15,7 +15,7 @@ to `atrium-87300`. Workers you launch stay on m1mini (sg3 fallback), never claud
 **Landing from m1mini (orchestrator, 2026-10-01, HOLD lifted):** all m1mini worktrees share one clone, so worker branches read locally. To land, merge onto `claude/landing` in the m1mini clone, branched from `claude/main` and NEVER onto `claude/main` there. The hub collects it into sg4, and the orchestrator fast-forwards sg4's claude/main. Tell the orchestrator the claude/landing tip and the @review verdict. @rnd is card 01a0f8bd-af15 on m1mini, and @ui is local too (alias `ui`). pulls-p3 (sg3) is PARKED on HOLD c0bccc01 until the pause ends.
 
 **In flight: the pulls view.** clint: "pull request review flow sucks ... not token efficient nor fast." Design
-`docs/rnd/pulls-view-design.md`, API contract `docs/rnd/pulls-api.md`. clint ordered all of it built and tested, and
+`docs/rnd/pulls-view-design.md`, API contract `docs/review/pulls-api.md`. clint ordered all of it built and tested, and
 @rnd OWNS DELIVERY: send each stage to its owner in order, track it, one fyi line to the orchestrator per stage
 landed. Done only when the E2E in design section 9 passes: a real PR (not a 378 replay) comes in through a door,
 runs the recipe, and is walked in the pulls view on the LIVE board. Record in `review.json` and the row: open to

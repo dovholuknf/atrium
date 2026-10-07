@@ -1,6 +1,8 @@
 # OpenCode token routing: using clint's Kimi and OpenCode Go models where they pay off
 
-Status: design by @rnd, 2026-10-02. Nothing built. Asked by clint: "i want rnd to figure out how we can token min using
+Status: proposed, not built. OpenCode itself is a runner atrium launches today.
+
+Origin: design by @rnd, 2026-10-02. Nothing built. Asked by clint: "i want rnd to figure out how we can token min using
 opencode. i have kimi and various 'opencode go' llms from them. which are different than claude/codex... i want to
 leverage it efficiently".
 

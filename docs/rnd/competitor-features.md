@@ -1,9 +1,12 @@
 # Competitor features: what atrium should build next
 
+Status: research, 2026-09-30. Its conclusion: five features to build first, led by a board freeze with a budget and a
+card that carries its PR and CI state.
+
 Written 2026-09-30 for rd-002 by worker rd-002, for @rnd and clint. Research only, nothing was run and no code was
 changed. It builds on `docs/rnd/competitors.md`, `docs/rnd/orca.md` and `docs/rnd/bb.md` and does not redo them.
 
-**Status: done, 2026-09-30.** The worker wrapped up at its context limit, and @rnd then checked the atrium side in
+**Origin: done, 2026-09-30.** The worker wrapped up at its context limit, and @rnd then checked the atrium side in
 code for every ranked item and the matrix rows that decide them (section 7 says what was checked). The other HAVE,
 PARTIAL and MISSING marks rest on README.md, CHANGELOG.md and `docs/rnd/competitors.md`, which traced code on
 2026-09-29.
@@ -295,7 +298,7 @@ operator has a machine that sleeps.
 - **Cloud sandboxes** (Omnigent lists a dozen providers). The overlay answer in `docs/fabric/overlays.md` already covers
   "another machine", and a sandbox provider list is an integration surface atrium would carry forever.
 - **A model picked agent router and swarm memory** (ruflo `v3.43.0` to `v3.44.0`). Its own release notes say none of the
-  options met the bar, which is a cost with no measured benefit.
+  options met the bar, so the benefit is not yet measured.
 - **A login and accounts** (Mission Control, Superset, Omnigent organisations). Loopback and an overlay stays the rule
   (`CLAUDE.md`, "Authentication").
 - **Nineteen or thirty two hook installers** (Orca, Agent Orchestrator). Add an adapter when a runner is added, as
@@ -305,7 +308,7 @@ operator has a machine that sleeps.
   one useful idea, an approval tied to what was shown, is a small check to make in the permission view.
 - **Native editors and notebooks** (Orca, Atlas). The board is not an IDE, and "open in your editor" is enough.
 
-## 6. Where atrium is ahead
+## 6. Where atrium differs
 
 Short, because competitors.md section 5 has it. None of the eighteen tools here gates every tool call with durable
 rules while owning the terminal a human types into. The newer control planes (Mission Control, Omnigent,

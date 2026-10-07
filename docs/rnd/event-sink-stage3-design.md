@@ -1,5 +1,7 @@
 # Event sink, stage 3: the permission table
 
+Status: proposed, not built. Stages 1 and 2, the event sink itself, are built in `internal/store/eventsink.go`.
+
 Item 15 in `docs/backlog-2.md`. Design only. Nothing here is built.
 
 Mercurius session `s_Y271hycEv2HC`: round 1 `needs_changes` (the review could not tell trimmed from never there,

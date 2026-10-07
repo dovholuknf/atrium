@@ -15,7 +15,7 @@ import (
 	"github.com/dovholuknf/atrium/internal/hubstore"
 )
 
-// THE PULLS VIEW THROUGH THE HUB. Design: docs/rnd/pulls-view-design.md section 9. Contract: docs/rnd/pulls-api.md.
+// THE PULLS VIEW THROUGH THE HUB. Design: docs/rnd/pulls-view-design.md section 9. Contract: docs/review/pulls-api.md.
 //
 // Every room serves `/v1/prs...` on its human listener, and the hub's job is small because most of it is the byte pipe
 // it already is. With one room addressed (a header, a scoped board, a single attached room) nothing here runs: the

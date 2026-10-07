@@ -23,8 +23,8 @@ pwsh -NoProfile -File scripts/check-powershell.ps1
 Hard stop if any of them fails. Unlike v1, most of the daemon has real tests, so a red suite means stop rather
 than "check by hand".
 
-`check-board.sh` parses the board's JavaScript. It is here because the board is one embedded HTML file with no
-build step, so a syntax error in it compiles, ships, and shows up as a blank page. It has caught a real one.
+`check-board.sh` parses the board's JavaScript. It is here because the board's HTML, CSS and JavaScript are embedded
+with no build step, so a syntax error in them compiles, ships, and shows up as a blank page. It has caught a real one.
 
 **Do not run `go test ./...` and then wonder why a hook stopped working.** It used to overwrite and then delete
 the running daemon's address file. That is fixed, and the fix is a test option that is easy to forget when
@@ -1586,8 +1586,9 @@ started.
 
 ## V. What the round 1 to 8 review turned up, fixed
 
-Every scenario here is a defect the operator found by using the board, written up in `docs/orchestrator/dispatch-queue.md`
-and then fixed. They are the ones a Go test cannot answer: two browser windows, a restart, a light skin.
+Every scenario here is a defect the operator found by using the board, written up in
+`docs/orchestrator/dispatch-queue.md` at 3be95cab and then fixed. They are the ones a Go test cannot answer: two browser
+windows, a restart, a light skin.
 
 ### V1. Two windows on one terminal are refused
 
@@ -1812,7 +1813,7 @@ that history exists.
 
 **Why it is in the plan:** two restarts in a row went this way because `POST /v1/shutdown` refuses while a
 share is running, so the wind-down never ran and the carryover was never written. The scrollback fix looked
-broken when it was working. See `docs/orchestrator/dispatch-queue.md` group T.
+broken when it was working. See `docs/orchestrator/dispatch-queue.md` at 3be95cab group T.
 
 ### W6. A restart reopens the terminals that were open
 
@@ -3120,8 +3121,8 @@ stream of them.
 
 ## AW. One atrium binary, and the atrium2 shim
 
-Stage 3 of `docs/fabric/one-atrium-plan.md`. `atrium` now carries the hub and the room, and `cmd/atrium2` is a shim that
-answers the live scripts' lines until the cutover. This covers the parsing, the collisions, the hook lines, the
+Stage 3 of `docs/archive/one-atrium-plan.md`. `atrium` now carries the hub and the room, and `cmd/atrium2` is a shim
+that answers the live scripts' lines until the cutover. This covers the parsing, the collisions, the hook lines, the
 defaults and the one-machine key minting:
 
 ```powershell
@@ -3172,8 +3173,8 @@ pid does not change, and the room reattaches.
 
 **Expected:** the cutover names exactly the running `atrium2.exe` hub and room pids, the database copies, the
 stage-then-two-renames of `.atrium\bin\atrium.exe`, the scripts swap, and the two start lines in
-`docs/fabric/one-atrium-cutover.md`. Nothing on the machine changes. The deploy scripts find no process to stop until the
-cutover has run, because they match `atrium*.exe` in `.atrium\bin` by subcommand.
+`docs/archive/one-atrium-cutover.md`. Nothing on the machine changes. The deploy scripts find no process to stop until
+the cutover has run, because they match `atrium*.exe` in `.atrium\bin` by subcommand.
 
 ## AX. Untagged follows the sort pill
 
@@ -7417,7 +7418,7 @@ with `updatedInput` holding the edited command.
 
 The automated coverage is `internal/gitsync`, `internal/link/git*_test.go` and `internal/cli/atrium_rooms_git_test.go`,
 which run real git in temporary directories. These are the parts a person checks on a live hub and room. The design is
-`docs/rnd/git-sync-design.md`.
+`docs/fabric/git-sync-design.md`.
 
 ### GX1. The hub mirrors and a room follows
 
@@ -8847,13 +8848,14 @@ Covered by `TestAViewIsNeverADocument`, `TestAViewTypesWhatTheLinkResolvesTo`, `
 ## IX. The context cycle: limit, ack, clear, wake (r-context-cycle)
 
 Needs the room built from this change and a room restart, and on a hub board the hub rebuilt and restarted too. See
-`docs/context-cycle-plan.md` and `docs/context-cycle-design.md`. Go tests in `internal/daemon/contextcycle_test.go`:
-`TestTheLimitMidTurnTypesThePromptOncePerTurn`, `TestNoAckNeverClears`, `TestAckThenClearThenWake` (the handoff
-stored on the card), `TestTheCardSwitchAndOverride`, `TestTheHubLimitStartsTheCycle`,
-`TestACardBackUnderItsLimitDropsTheCycle`, `TestReadyIsRefusedWithNoCycleOrNoHandoff`, `TestOnlySupervisedCardsCycle`,
-`TestTheLimitPromptWording`. Restarts in `internal/daemon/newcontext_journal_test.go`. The hub's fan-out in
-`internal/link/contextlimits_test.go`. `atrium ready` in `internal/cli/ready_test.go`. The board in the headless section
-`contextCycle` (`HEADLESS_ONLY=bootClean,contextCycle`), and the reworked `ctxLimitLayers` and `contextSize`.
+`docs/runtime/context-cycle-design.md` and the plan in its appendix. Go tests in
+`internal/daemon/contextcycle_test.go`: `TestTheLimitMidTurnTypesThePromptOncePerTurn`, `TestNoAckNeverClears`,
+`TestAckThenClearThenWake` (the handoff stored on the card), `TestTheCardSwitchAndOverride`,
+`TestTheHubLimitStartsTheCycle`, `TestACardBackUnderItsLimitDropsTheCycle`, `TestReadyIsRefusedWithNoCycleOrNoHandoff`,
+`TestOnlySupervisedCardsCycle`, `TestTheLimitPromptWording`. Restarts in `internal/daemon/newcontext_journal_test.go`.
+The hub's fan-out in `internal/link/contextlimits_test.go`. `atrium ready` in `internal/cli/ready_test.go`. The board in
+the headless section `contextCycle` (`HEADLESS_ONLY=bootClean,contextCycle`), and the reworked `ctxLimitLayers` and
+`contextSize`.
 
 ### IX1. The limit prompt, mid-turn, once per turn
 

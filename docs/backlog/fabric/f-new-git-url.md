@@ -3,7 +3,7 @@
 Status: BUILT on claude/f-git-url (from claude/landing e9be3fc3), held by @review on M1 (a card was handed the hub's loopback address),
 fixed in the next commits, waiting for @review via @fabric. Not landed. Owner @fabric,
 with @runtime for the card-brief line.
-Design: `docs/rnd/hub-forge-design.md` section 4 and the stage 4 row of 7.
+Design: `docs/fabric/hub-forge-design.md` section 4 and the stage 4 row of 7.
 
 Done:
 - `GET /_hub/git/url?repo=&branch=` on the hub: per branch, source `hub` (finished) or `room` (in progress, passed

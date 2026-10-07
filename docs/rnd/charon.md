@@ -1,6 +1,8 @@
 # Charon: what it is, and what atrium should do about it
 
-Standing reference. Written by reading the source, not the pitch.
+Status: research, 2026-09-03. A source read of Charon, with what atrium could borrow from it ranked in section 5.
+
+Standing reference. Written from the source code, not from the README.
 
 Source read: `github.com/Lomchat/charon`, Apache 2.0, cloned shallow to `D:/tmp/charon` on 2026-09-03 and not
 committed here. Every Charon path below is relative to that clone. Every atrium path is relative to this repo.
@@ -27,7 +29,7 @@ months and is direct about the rough edges.
 Assumption, stated inline: the "six months" figure comes from the project's own `CHANGELOG.md` header and its
 public post, not from anything verifiable in the tree.
 
-## 2. The good
+## 2. Strengths
 
 ### The peer bus: sessions that can address each other
 
@@ -188,7 +190,7 @@ fire-and-forget resumes died with a hub restart and left sessions asleep forever
 (`agentUpdate.ts:56-62`). There is also an `'ahead'` branch that hands off when a machine's agent is newer than
 the hub, added after a two-hub rollback fight (`lib/version.ts:58-61`).
 
-## 3. The bad
+## 3. Trade-offs
 
 Judged against what Charon is trying to be: one operator's board over a handful of machines they own.
 
@@ -208,8 +210,8 @@ with reason `"timeout/cancellation"` (`session.py:1249-1253`). An `interaction_r
 `outcome: "expired"` is emitted so the UI can distinguish it (`session.py:1288-1294`). The model cannot. It
 receives a deny that is indistinguishable from a human's no, and continues its turn from there. Each site also
 emits `expires_at = now + timeout + 1` so the hub can count down and stay strictly behind the provider
-(`session.py:1284`, `codex_session.py:1889`), which is careful work in service of a decision that costs
-correctness.
+(`session.py:1284`, `codex_session.py:1889`), which is careful work. The trade-off is that the model
+cannot tell a timeout from a refusal.
 
 For Codex `requestUserInput` the timeout is whatever Codex sends as `autoResolutionMs`, clamped to a 1 second
 floor, and only when it arrives as a JSON integer (`codex_session.py:1856-1857`). A float falls through to 1800
@@ -218,7 +220,7 @@ seconds. Charon never sets the field itself.
 The consequence is not theoretical. A machine left running unattended for eleven minutes produces a silent,
 unrecorded-as-such refusal that the model may then route around by trying a different tool.
 
-### "Always" is coarser than it looks
+### "Always" applies to the whole tool
 
 The Telegram and browser "Always" button does persist something, and it is the one rule-shaped thing in the
 tree. `respondPermission(permId, allow=true, always=true)` (`telegram.ts:323`) reaches
@@ -240,7 +242,7 @@ session driven by anything other than this hub has no memory at all.
 For Codex, "always" is handed to Codex itself as `acceptForSession` or `scope: "session"`
 (`codex_session.py:1895`, `:1899`). Charon stores nothing and the memory dies with the provider session.
 
-### Permission modes are the real escape hatch, and one of them is a total bypass
+### Permission modes are the main control, and `auto` allows everything
 
 `normal | acceptEdits | auto | plan` for Claude, and Codex sandbox modes
 `read-only | workspace-write | full-access | accept-all`, in one column
@@ -248,34 +250,34 @@ For Codex, "always" is handed to Codex itself as `acceptForSession` or `scope: "
 (`session.py:1230-1238`). There is no middle ground between "ask me about this tool forever" and "stop asking
 about anything".
 
-Worse, the model can put itself there. `ExitPlanMode` is auto-allowed (`session.py:92-93`) and its handler
+The model can also reach that mode. `ExitPlanMode` is auto-allowed (`session.py:92-93`) and its handler
 schedules `_switch_to_auto_after_exit_plan()`, which sets `self.permission_mode = "auto"`
-(`session.py:1177-1183`, `:1356-1372`). Approving a plan therefore hands the rest of the session an unguarded
-tool surface, and the gate that would have asked is the same gate that was just switched off. Plan mode also
+(`session.py:1177-1183`, `:1356-1372`). Approving a plan therefore puts the rest of the session in `auto`, and
+no tool call after that is asked about. Plan mode also
 auto-allows `Bash` when `_is_safe_bash(cmd)` says so (`session.py:1195`), which puts a string heuristic on the
 boundary. That function was not read, so no claim is made about how well it holds.
 
-### The event log degrades exactly when it is needed
+### The event log falls back to memory when a write fails
 
 `append` swallows `OSError` and prints a warning, on the reasoning that the in-memory ring is still there so
 "live subscribers don't notice" (`event_log.py:161-168`). But the ring is the thing the log exists to survive.
 A full disk therefore turns durable-with-resume back into lossy-2000-events silently, and the failure surfaces
 later as a gap banner rather than at the moment durability was lost.
 
-The stated reason for the append being safe is also not the real one: "'a' is atomic at the syscall level on
+The comment gives a different reason for the append being safe: "'a' is atomic at the syscall level on
 POSIX for writes <= PIPE_BUF" (`event_log.py:158`, and `:31-34`). `PIPE_BUF` governs pipes, not regular files.
 What actually makes it safe is that there is one writer per file, which the same docstring says two lines
-earlier. Harmless in practice, and the kind of comment that misleads the next person to touch it. Each append
+earlier. Harmless in practice, though the comment points at the wrong cause. Each append
 opens and closes the file, so it is flushed but never `fsync`ed, and a host power loss can lose the tail. The
 read path skips corrupt lines with a warning (`:37-40`), which is the right recovery either way.
 
-### The provider split is duplicated, not abstracted
+### Each provider has its own implementation
 
 `server.py` is 2709 lines, `session.py` 2209, `codex_session.py` 3150. The Claude and Codex paths reimplement
 the same lifecycle, the same approval future pattern and the same event vocabulary side by side rather than
 behind one interface, and the asymmetries that follow are the ones documented above: `always` persists for one
 provider and not the other, timeouts differ by provider, the hub's replay fallback branches on `kind` in several
-places (`sessionOps.ts:1053-1055`). Every future provider pays that cost again.
+places (`sessionOps.ts:1053-1055`). A new provider would add a third copy.
 
 ### `list_dir` is not contained, by design
 
@@ -286,9 +288,9 @@ boundary, it is there so that a `..` in a path can't quietly turn a file browser
 any absolute or `~`-prefixed path and is not contained (`fsnav.py:50-60`). Consistent with the stated posture,
 and still a thing a reader should know before assuming the file surface is scoped.
 
-## 4. The ugly
+## 4. Limits of the single-user design
 
-The parts that are load-bearing and would not survive a second user.
+Charon is built for one user. These are the parts that would need to change for a second.
 
 ### One password guards the entire fleet
 
@@ -301,8 +303,8 @@ full access.
 
 The `users` table exists (`lib/db/schema.ts:4-10`) but `ensureUser()` takes `LIMIT 1` and inserts a sentinel row
 with `passwordHash: 'env'` (`auth.ts:67-81`). The columns are vestigial. There is no registration route, no
-role, no ACL, and every session belongs to that one row. Multi-user is not partially built, it is a shape the
-schema gestures at and the code does not implement.
+role, no ACL, and every session belongs to that one row. The schema leaves room for multi-user, and the code does
+not implement it.
 
 The password is also triple-purposed. It is the dashboard login and the scrypt seed for the at-rest key, so
 rotating it destroys every encrypted setting. `.env.example:11-19` says so plainly, which is the right thing to
@@ -327,7 +329,7 @@ A compromised hub is not limited to the agent protocol either. It spawns `ssh` w
 its database. The bootstrap path already does exactly that, writing a systemd unit, calling
 `loginctl enable-linger`, and trying `sudo -n` opportunistically (`bootstrap.ts:203-209`, `:271-292`).
 
-### The socket authorizes nothing, and the file root arrives off the wire
+### The socket relies on file permissions, and the file root comes from the caller
 
 Two facts that compound.
 
@@ -338,7 +340,7 @@ First, the daemon does no authorization on JSON-RPC at all. `dispatch` routes on
 whatever was passed on its command line (`server.py:687-692`, `peer_mcp.py:190`,
 `agent/charon_agent/__main__.py:121-123`). Anything that can open the socket can send a peer message as any
 session, read any conversation, call `shell_start` to get a detached `bash -l` (`server.py:2100`,
-`holder.py:147`), and write or delete files. Socket access equals arbitrary code execution as that user, and on
+`holder.py:147`), and write or delete files. Socket access lets a caller run any command as that user, and on
 a default install that user is root.
 
 Second, `_contained()` realpaths both sides and is correct as written (`fsnav.py:86-99`), but the `root` it
@@ -353,9 +355,9 @@ there is exactly one security boundary in the whole system and no depth behind i
 people, or an untrusted agent on the same box, the peer bus and the file surface have no authorization layer to
 tighten. They would each have to grow one.
 
-### The peer reservation leaks, and the leak wedges the session it leaked on
+### A peer reservation can outlive its target and block that session's replies
 
-This is the most concrete defect found. `peer_target_active` is set in `peer_send` (`server.py:1091`) and
+Read from the code, not observed. `peer_target_active` is set in `peer_send` (`server.py:1091`) and
 cleared in four places: normal completion (`:450-451`), a delivery exception (`:1101`), timeout expiry
 (`:391-393`) and a late target status event (`:415-416`).
 
@@ -381,7 +383,7 @@ The consequences chain:
 The only test-suite reference to `peer_target_active` is one line of setup (`agent/tests/test_peer_mcp.py:214`).
 Nothing covers the timeout, the leak, or the injection deadline.
 
-### A peer message can go missing, quietly
+### A peer message can go undelivered without an error
 
 Each of these ends in a bare return with no event, no error and no retry:
 
@@ -404,11 +406,11 @@ Each of these ends in a bare return with no event, no error and no retry:
 Nobody hangs, because `peer_send` returns `accepted` immediately (`server.py:1124-1131`). The failure mode is a
 silent non-answer, which for a model waiting on a delegated task is the harder one to notice.
 
-### The holder is POSIX-only, and a slow box can orphan one permanently
+### The holder is POSIX-only, and a slow attach can leave one unreachable
 
 The mechanism is `pty.fork()`, Unix domain sockets, `start_new_session=True` and hangup teardown. There is no
 Windows analog: ConPTY has no reattach primitive and no way to hand a pseudo console to a new parent, which
-atrium already records as an open risk (`docs/architecture-v2.md:633-636`).
+atrium already records as an open risk (`docs/archive/architecture-v2.md:633-636`).
 
 The real fragility is the reattach budget. `attach()` allows 2 seconds to connect and 5 for the hello line
 (`shell.py:150-154`, `:235-255`). On failure the boot scan `unlink()`s the socket (`server.py:2386-2389`) and
@@ -419,8 +421,8 @@ agent, with nothing that will ever reap it. Only the holder's own signal handler
 periodic sweep to catch it later. `KillMode=process` is what stops systemd from cleaning up, and that is the
 same setting the survival property depends on.
 
-`holder.py:81` defines a `PROTO_VERSION` and sends it in the hello. `shell.py:256-272` never reads it. The
-version field that would have made that failure diagnosable is present and unused.
+`holder.py:81` defines a `PROTO_VERSION` and sends it in the hello. `shell.py:256-272` never reads it. Reading
+that version field would make the failure easier to diagnose.
 
 Two smaller notes, one correcting an easy assumption. The reboot case is handled correctly: holders die with the
 box and the next agent boot cleans the files. And the spool cap is lossy but **not** silent, since overflow
@@ -428,14 +430,14 @@ reopens the file and writes a visible marker into the terminal stream (`holder.p
 truncation drops everything accumulated rather than the excess, so a marker can stand in for up to 8 MiB, and a
 spool write failure loses output with only a line on stderr (`:211-212`).
 
-### Errors on the state write are swallowed
+### Errors on the state write are logged, not raised
 
 `_save_state_now` catches everything and prints a traceback (`server.py:229-230`). A full or read-only disk means
 the daemon keeps serving with a state file that is silently frozen and nothing tells the hub. The write itself is
 correct (see section 2), and the parent directory is not fsynced, so a host power loss can lose the rename even
 though a `SIGKILL` cannot.
 
-A `SIGKILL` mid-turn also leaves a specific mess. `to_persist` rewrites `starting` and `thinking` to `active`
+A `SIGKILL` mid-turn has a specific effect. `to_persist` rewrites `starting` and `thinking` to `active`
 (`session.py:1047-1048`) and `_restore_existing` relaunches those (`server.py:795-839`), but the prompt that was
 in flight is not re-sent. The result is a live, resumed session whose last user message may have produced
 nothing at all, with no marker saying so. `sleeping` and `killed` are correctly not resurrected (`:816-821`).
@@ -452,7 +454,7 @@ one wrapped call at a time, anything unwrapped surfaces as a raw error, and **ch
 method are invisible**, because the name is the only contract. The mitigation is a documented rule enforced by
 lint, "bump `__version__` on ANY agent change, it is the ONLY propagation signal" (`lib/version.ts:62-66`), plus
 a build-time check that keeps the method list and the types aligned (`scripts/check-protocol-sync.mjs`). That is
-a real mitigation resting on every future contributor reading a comment. Note also that `compareVersions` is not
+a real mitigation, and it depends on each contributor following the rule. Note also that `compareVersions` is not
 semver: there is no prerelease ordering and `"1rc1"` falls back to a string compare (`lib/version.ts:22-29`).
 
 Deployment has the matching gap. The pyz is piped over ssh and `mv`'d atomically, but nothing verifies what
@@ -464,14 +466,14 @@ live in holders and `KillMode=process` leaves them alone, which is the property 
 
 ### Where the tests are, and are not
 
-Coverage is better than the shape of the project suggests: 39 Python test files including
+Coverage is broad: 39 Python test files including
 `test_single_instance.py`, `test_state.py` and `test_integration_daemon.py`, plus around 63 vitest files on the
 hub covering the parts that bit before (`replayExactness`, `messageOrderEpoch`, `sessionPermissionScope`,
 `secretsAtRest`, `agentVersionStaleness`). The gaps are specific and they line up exactly with the defects above:
 the peer reservation lifecycle, the `_inject_peer_reply` deadline, and holder attach failure unlinking a live
 socket. Those are the three places where a failure costs someone's work rather than a repaint.
 
-## 5. Worth stealing, ranked
+## 5. Worth borrowing, ranked
 
 ### 1. The peer bus: handles, discovery, and a message that carries its provenance
 
@@ -502,7 +504,7 @@ How it maps, concretely:
   permission chain already refuses on a shelved card (`internal/daemon/daemon.go:376-378`). "Can this session
   receive a peer message right now" is a query over that column plus the pending message count
   (`UndeliveredCounts`, `internal/store/messages.go:103`). Charon's in-memory gate plus a JSON snapshot would be
-  a regression against the halt (`docs/architecture-v2.md:382`), and the leak described in section 4 is what
+  a regression against the halt (`docs/archive/architecture-v2.md:382`), and the leak described in section 4 is what
   that shape costs: a reservation held in a dict with four scattered release paths, one of which declines to
   fire when the target is dead, wedges the session it leaked on and then survives a restart. A status column
   and a query cannot leak, because there is no second place for the truth to live.
@@ -514,11 +516,11 @@ How it maps, concretely:
   next tool call, and the Stop hook reaches an idle session (`internal/daemon/messages.go:14-28`). A peer
   message becomes a queued message with a sender, delivered by machinery that already exists and already sits
   second in the permission chain.
-- **Steal the envelope wording, because atrium already agrees with it.** `messageBanner`
+- **Borrow the envelope wording, because atrium already agrees with it.** `messageBanner`
   (`internal/daemon/messages.go:35-51`) exists for exactly Charon's reason: a model reads a blocked tool call as
   a policy refusal unless told otherwise. A peer variant needs one more thing Charon's has and atrium's does not
   yet need: who sent it, and that it was not the human (`server.py:1065-1078`).
-- **Steal every guardrail.** The rate limit, the size cap, the self-send refusal and the do-not-reply-by-sending
+- **Borrow every guardrail.** The rate limit, the size cap, the self-send refusal and the do-not-reply-by-sending
   rule (`server.py:1023-1054`) are the difference between a peer bus and two agents talking to each other until
   the budget runs out. They are ten lines each and they are the reason Charon's works.
 - **Leave the reply capture alone for now.** Charon buffers `assistant_text` because it holds the SDK's event
@@ -564,7 +566,7 @@ pty is owned by a small process the daemon spawned detached, and the daemon reat
 when it comes back" (`holder.py:14-19`, `:59-60`, `:222-241`).
 
 **What has to change.** Everything about it is POSIX. Atrium's supervision runs on Windows first and
-`docs/architecture-v2.md:633-636` already states there is no ConPTY reattach and that the answer there is
+`docs/archive/architecture-v2.md:633-636` already states there is no ConPTY reattach and that the answer there is
 resume ids. So this is worth building for a Linux-hosted daemon and worth an explicit sentence in
 `docs/terminal/supervision-design.md` saying the Windows gap stays where it is. Note also that Charon does the same
 resume-id thing atrium plans, at the provider level, by passing `resume=self.claude_session_id` into the SDK
@@ -638,7 +640,7 @@ site, that a daemon which crashed between recording a decision and answering wou
 (`internal/api/api.go:516-533`), so a human who retried after a lost response sends the prompt twice. Same
 argument, different write path.
 
-**Adapt on one point, which Charon gets wrong.** Its accepted-id set is in memory and is dropped by a
+**Adapt on one point, where atrium's needs differ.** Its accepted-id set is in memory and is dropped by a
 `SIGKILL` along with the rest of the runtime state (`recent_input_ids` is cleared at `server.py:2066-2086` and
 is not persisted), so the retry that survives a crash is exactly the one the key cannot catch. Atrium's
 `dedup_key` is a `UNIQUE` column in the store for that reason. Put the prompt key in the same place, not in a
@@ -655,27 +657,27 @@ an unattended process fails fast instead of blocking on a prompt nobody will see
 that is an allow-list with no force push (`:16-19`). If atrium ever shells anything on a runner's behalf, this
 is the posture to copy.
 
-## 6. Not worth stealing, and why
+## 6. Not a fit for atrium, and why
 
 Refusal is a legitimate conclusion, and most of these are refusals against a decision atrium already wrote down.
 
-**Approval timeouts.** `docs/architecture-v2.md:102-129` is the argument, and it is stronger than the feature.
+**Approval timeouts.** `docs/archive/architecture-v2.md:102-129` is the argument, and it is stronger than the feature.
 No timeout on the agent side, by design, because a timeout either wakes the model or guesses at an answer, and a
 stale auto-deny is materially different from a human's deliberate no. Charon accepts that cost knowingly for a
 machine left unattended. Atrium's three lifecycle rules exist precisely so a waiting card cannot be put down
 without answering, and a timeout would reintroduce the stranding those rules close off. Refuse.
 
-**Hub dials out to each machine as the federation transport.** `docs/rnd/federation-design-v2.md:107-119` already
+**Hub dials out to each machine as the federation transport.** `docs/archive/federation-design-v2.md:107-119` already
 has the table. Charon's direction requires the control plane to have a route to every managed machine, which is
 true of a rented VPS running sshd and false of every case atrium's forum design targets: a laptop behind NAT, a
 container on a bridge network, a pod. This is not "SSH is worse", it is two projects solving different
 reachability shapes. Refuse the shape.
 
 Keep one idea from it. SSH's `ControlMaster` is exactly the connection-pool problem
-`docs/rnd/forum-implementation.md:133` solves by hand, and SSH carries per-connection authentication in the
-transport, which is the whole difficulty `docs/rnd/federation-design-v2.md:141-209` works through for the forum
+`docs/archive/forum-implementation.md:133` solves by hand, and SSH carries per-connection authentication in the
+transport, which is the whole difficulty `docs/archive/federation-design-v2.md:141-209` works through for the forum
 side. That makes "leaf dials out over SSH" a real alternative to name in stage 7's transport options
-(`docs/rnd/federation-design-v2.md:587`), with its own cost written down: it trades "atrium never handles an
+(`docs/archive/federation-design-v2.md:587`), with its own cost written down: it trades "atrium never handles an
 identity" (`docs/fabric/overlays.md:13-16`) for "the forum now runs an SSH server and manages `authorized_keys`". A
 different set of operational costs, not a smaller one. It answers nothing for the pod with no sshd.
 
@@ -691,7 +693,7 @@ or folder matching with most-specific-wins (`CLAUDE.md`, "The permission chain",
 `internal/store/schema.go:64`, rebuilt at `:293`), a durable decision log with what answered each one
 (`permission.decision`, `permission.reason`, plus `by` on the event, `internal/daemon/daemon.go:351-356`), and
 an import and export path (`internal/api/api.go:154-156`). Charon has one JSON array of bare tool names per
-session (`lib/db/schema.ts:244`). Atrium is ahead here and should stay.
+session (`lib/db/schema.ts:244`). Atrium keeps its finer-grained rules.
 
 Worth reading their comment anyway, because it is a validation and not a competition: they moved that set from
 memory onto disk after finding the hub restarts far more often than a session lives, so "the answer was re-asked
@@ -701,7 +703,7 @@ observation `perm_rule` was built from.
 **A total-bypass permission mode.** Charon's `auto` skips the hook entirely (`session.py:1234`). Atrium's auto
 mode is the opposite trade: approve without asking, record everything, sit last in the chain so replays,
 messages, shelving and rules all still win, and pay for it with a review (`docs/runtime/auto-mode.md`,
-`internal/daemon/daemon.go` step 5). Atrium already answers this better.
+`internal/daemon/daemon.go` step 5). Atrium's auto mode makes a different trade.
 
 **Holding provider credentials, and signing in through the board.** Charon has in-hub OAuth for Claude and a
 device-code flow for Codex (`CHANGELOG.md`, "In-hub sign-in for both backends"), and an encrypted Anthropic key
@@ -712,7 +714,7 @@ and does not hold the subscription (`CLAUDE.md`, "Out of scope"). Adopting this 
 vestigial `users` table (`:67-81`), and a Telegram allow-list of one chat id (`telegram.ts:300`). `CLAUDE.md`
 rules authentication out of scope and `docs/fabric/overlays.md:3-5` says why: an auth layer invented here would be
 worse than the overlays that exist. Atrium's answer, driving zrok or OpenZiti and answering on the overlay's own
-listener with no proxy hop (`internal/daemon/overlay_native.go:19-33`), is a better answer to the same want and
+listener with no proxy hop (`internal/daemon/overlay_native.go:19-33`), meets the same need and
 is already built.
 
 **Injecting text into a session as though it were typed.** `send_input` works for Charon because its sessions
@@ -736,7 +738,7 @@ got wrong, and what settles each one.
 | "A small IDE", and "the obvious candidate is the Monaco editor" | CodeMirror 6, lazy per-file language modes, a remote LSP client behind it. Not transferable: it ships ES modules with bare specifiers and no bundle, which Charon can use because it is a Next.js app and atrium cannot because its board is one file | `app/CodeEditor.tsx:2-16`, `lsp.py` |
 | "Sessions talk to each other over MCP" | True, and not the mechanism the phrase suggests. The MCP server holds no state and no routing, it is a thin argv-identified adapter over a Unix socket. The reply is not fetched by a tool: the daemon captures the target's turn text and injects it into the sender | `peer_mcp.py:97-116`, `server.py:503-544` |
 | "Charon is session-shaped. Atrium's cards carry history across restarts" | Charon's sessions are durable too: `claude_sessions` rows, an event log with a `seq` resume cursor, SDK resume ids. The difference is not durability, it is that Charon has no unit above a session and no status a human curates | `lib/db/schema.ts:143-160`, `event_log.py`, `session.py:2012` |
-| "No exposed ports on the remote side" | True of *new* ports. It requires an inbound `sshd` the operator already runs, so the far side is by definition already accepting connections. That is why the shape does not reach a laptop or a pod | `sshShared.js:115-121`, `docs/rnd/federation-design-v2.md:75-97` |
+| "No exposed ports on the remote side" | True of *new* ports. It requires an inbound `sshd` the operator already runs, so the far side is by definition already accepting connections. That is why the shape does not reach a laptop or a pod | `sshShared.js:115-121`, `docs/archive/federation-design-v2.md:75-97` |
 | A Telegram bot is the whole of its out-of-band reach | Also Web Push with stored subscriptions, so an alert reaches a closed tab. Atrium's side needs correcting too: it registers a service worker but never calls `pushManager.subscribe`, so it needs the board open | `lib/db/schema.ts:531-539`, `internal/api/web/index.html:4484-4512` |
 | Implied: that atrium's overlay claim needed rechecking | Holds up, and is stronger than the section says. The board answers on the overlay's own `net.Listener`, no child process and no proxy hop | `internal/daemon/overlay_native.go:19-33` |
 

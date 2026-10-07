@@ -1,6 +1,8 @@
 # Who owns the context limit: atrium's new context or the runner's compaction
 
-Status: study by @rnd, 2026-10-02 late, asked by the orchestrator. Design only, nothing built. For @runtime.
+Status: superseded by `docs/runtime/context-cycle-design.md`. Kept as the record of the study of who owns the limit.
+
+Origin: study by @rnd, 2026-10-02 late, asked by the orchestrator. Design only, nothing built. For @runtime.
 
 ## The ask
 

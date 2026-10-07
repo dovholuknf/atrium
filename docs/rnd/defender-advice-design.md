@@ -1,6 +1,9 @@
 # Defender advice (r-new-defender-advice)
 
-Status: designed by @rnd 2026-09-30, for @runtime (detector) and @ui (notice). Nothing here is built. Backlog item
+Status: built as a script. `scripts/room-defender.ps1` checks and advises on Defender for a room, called from
+`scripts/provision-room.ps1`. The board notice is not built.
+
+Origin: designed by @rnd 2026-09-30, for @runtime (detector) and @ui (notice). Nothing here is built. Backlog item
 `docs/backlog/runtime/r-new-defender-advice.md`.
 
 ## The answer

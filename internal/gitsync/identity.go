@@ -6,7 +6,7 @@ import (
 	"strings"
 )
 
-// Who is on the other end of a request to the hub's store. See docs/rnd/hub-forge-design.md 3.4.
+// Who is on the other end of a request to the hub's store. See docs/fabric/hub-forge-design.md 3.4.
 //
 // THE CALLER IS SET BY THE LISTENER THE REQUEST CAME IN ON, never by anything the request says.
 // internal/link puts a Caller on the context: the link's `git` kind says Room (from the room's

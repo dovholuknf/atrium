@@ -24,7 +24,7 @@ Series: Intake and PR review. Status: idea. Audience: people using agents for co
 ## Sources
 
 - docs/rnd/pulls-view-design.md
-- docs/rnd/pulls-api.md
+- docs/review/pulls-api.md
 - changelog/runtime/2026-10-01-r-pr-run.md
 - changelog/ui/2026-09-29-u-005.md
 

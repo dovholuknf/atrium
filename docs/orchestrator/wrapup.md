@@ -1,5 +1,8 @@
 # wrapup.md -- orchestrator wave-boundary checklist
 
+Status: historical, 2026-09-06. The wave checklist of an orchestrator from before the hub and rooms. Mode A, which it
+names, is gone.
+
 Run this when a wave of doers is done and the queue is empty, right before a `/clear`. The point is to move every
 piece of live scheduler state onto disk so a fresh session comes back at full capability with no warm context. Do the
 steps in order. Do not `/clear` until step 7 says the boundary is clean.

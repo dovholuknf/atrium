@@ -1,6 +1,6 @@
 # r-new-lean-context-cycle: a cheaper, less stale new-context cycle
 
-Status: parked (clint, 2026-09-30). Not assigned. Designed by @rnd: `docs/rnd/lean-context-cycle-design.md`.
+Status: parked (clint, 2026-09-30). Not assigned. Designed by @rnd: `docs/archive/lean-context-cycle-design.md`.
 
 ## Why
 

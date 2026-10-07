@@ -37,7 +37,7 @@ import (
 // WHAT THESE TOOLS ARE NOT. They are not a way to type into somebody else's
 // terminal on a whim. `atrium_say` goes through the message endpoint, which
 // types only where atrium owns the terminal and queues everywhere else, and
-// `docs/architecture-v2.md` records at length why a peer never gets to type.
+// `docs/archive/architecture-v2.md` records at length why a peer never gets to type.
 // The tool inherits that and must keep inheriting it.
 
 // peerTimeout bounds every call these tools make to the board.

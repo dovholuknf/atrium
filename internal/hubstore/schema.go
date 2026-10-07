@@ -51,7 +51,7 @@ var migrations = []struct {
 				-- typing Sparta and sparta mean one room.
 				name_key      TEXT NOT NULL,
 				-- WHAT THE ROOM CALLS ITSELF, observed and never authoritative.
-				-- This is docs/architecture-v2.md's observed-versus-overrides
+				-- This is docs/archive/architecture-v2.md's observed-versus-overrides
 				-- rule, not a new one: what a machine reports never overwrites
 				-- what a human typed. Shown beside the name, never instead of
 				-- it.
@@ -365,7 +365,7 @@ var migrations = []struct {
 	},
 	{
 		// CHANGE REQUESTS BETWEEN ROOMS: one row per request, kept for good. See changerequest.go and
-		// docs/rnd/hub-forge-design.md section 6. Nothing is deleted: a request ends by changing `state`, once.
+		// docs/fabric/hub-forge-design.md section 6. Nothing is deleted: a request ends by changing `state`, once.
 		//
 		// `id` is `cr_<n>` and `n` is its own column, taken inside the transaction as the table's highest n plus
 		// one (the rule 0008 gives its ids), so an id is never reused and the order of ids is the order of

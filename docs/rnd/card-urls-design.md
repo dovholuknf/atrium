@@ -1,6 +1,8 @@
 # Card URLs: a card has an address made of names, and every share keeps it
 
-Status: design, 2026-09-30, @rnd. Item `docs/backlog/ui/u-new-card-urls.md`. Built by @ui (the page) and @runtime (the
+Status: built. A card's address is made of names (`/alias/`, `internal/cardurl`, `internal/api/web/js/cardurl.js`).
+
+Origin: design, 2026-09-30, @rnd. Item `docs/backlog/ui/u-new-card-urls.md`. Built by @ui (the page) and @runtime (the
 routes and the guest allowlist). Designed with `docs/rnd/handle-addressed-http-design.md`, which provides the one
 resolver from a name to a card. This doc builds on that one and does not repeat it. Nothing here is built.
 

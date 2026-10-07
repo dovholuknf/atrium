@@ -17,7 +17,7 @@ import (
 )
 
 // The hub's store taken pushes: the operator through the board, a room over the link, and the reaches that
-// are refused. See docs/rnd/hub-forge-design.md 3.2 and 3.4.
+// are refused. See docs/fabric/hub-forge-design.md 3.2 and 3.4.
 
 type pushFix struct {
 	g    *gitsync.Hub

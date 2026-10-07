@@ -80,8 +80,8 @@ $WORKTREE_ROOT\watch\state.log                   every hook transition, appended
 
 The ledger entry is written by `claude-shell.ps1` before the tab spawns, and carries `Id`, `Pid`, `WorktreePath`,
 `Branch`, `Repo`, `WindowName`, `PromptText`, `ClaudeSessionName`, and later `ClaudeSessionId`, `State`,
-`LastStateChange`, `Saved`, `Label`, `RecapPath`. Mode B reads this. The daemon deliberately does not, and
-`docs/architecture-v2.md` records why under "Abandoned".
+`LastStateChange`, `Saved`, `Label`, `RecapPath`. Mode B read this, and Mode B is gone. The daemon deliberately does
+not, and `docs/archive/architecture-v2.md` records why under "Abandoned".
 
 **gwt has no atrium integration at all.** Zero occurrences of the word in the script, the registry, or the state
 docs. The two systems track the same claude sessions through separate mechanisms that never meet: gwt through the
@@ -543,7 +543,7 @@ Layer 1 makes every one of them a script rather than a feature. Listed with what
   account raise the same card twice, because `source` is per machine. That is correct today: two machines with
   two inboxes SHOULD each see it, since neither knows about the other. When the forum exists it needs a
   cross-machine identity, and `atrium name`'s wire-name qualification is the shape, but that is a decision for
-  `docs/rnd/federation-design-v2.md` rather than a hole here.
+  `docs/archive/federation-design-v2.md` rather than a hole here.
 - **Whether the seed prompt belongs on the card.** gwt stores `PromptText` in the ledger entry and passes it as a
   single argv element, deliberately never interpolated into a command line. If atrium takes a `prompt`, it
   inherits that requirement exactly, and `expandTemplate` in `launch.go` already has a comment about what goes

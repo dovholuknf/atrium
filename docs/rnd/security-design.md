@@ -1,6 +1,9 @@
 # Security design: close the browser edge first, then tell the board apart from curl
 
-Status: design, 2026-09-30, @rnd, revised the same day for codex's review (mercurius `s_dprc3T42546v` round 1, C1 to
+Status: partly built. Stage 0, the browser edge (`internal/edge`), and stage 1, a refused hook is an unreachable hook,
+are built. Stages 2 to 7 are not.
+
+Origin: design, 2026-09-30, @rnd, revised the same day for codex's review (mercurius `s_dprc3T42546v` round 1, C1 to
 C4 and A1, A2). Item `docs/backlog/rnd/rd-new-security-review.md`, PRIORITY. Built from @review's audit,
 `docs/review/security-audit-2026-09-30.md` (16058425). Finding ids (C1, H2, M3 ...) are the audit's. Review ids are
 written `codex C1` to keep the two apart. Built by @runtime, with @ui for the board's sign-in page and the phone.

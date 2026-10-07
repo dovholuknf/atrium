@@ -1,5 +1,7 @@
 # Hub documents: a place to share what agents and clint write
 
+Status: built. Hub documents (`internal/link/docs_api.go`, `internal/api/web/m/js/docs.js`).
+
 Written by @rnd on 2026-09-30, at clint's request through the orchestrator. Design only. Nothing here is built.
 
 ## The answer

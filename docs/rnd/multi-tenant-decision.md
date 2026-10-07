@@ -126,7 +126,7 @@ It would be a lie, because the isolation would end at the row. Two things reach 
 ### Terminals
 
 Not isolatable at all without changing what a terminal is. A supervised runner is a `pty.Pty` and a ring buffer
-held in one process's memory. Attach is a websocket into that process. `docs/architecture-v2.md` records that
+held in one process's memory. Attach is a websocket into that process. `docs/archive/architecture-v2.md` records that
 closing one terminates the attached process and that ConPTY offers no reattach, so there is no orphan-survival
 path to build. `rooms.go` draws the conclusion from it: a pseudo terminal cannot leave the machine that made it.
 
@@ -252,8 +252,8 @@ database reachable from more than one machine. Real types and real constraints, 
 text ULID-ish keys, RFC3339 text timestamps, `CHECK` instead of enums and TEXT instead of JSONB to stay portable
 to it.
 
-**It buys nothing about tenancy, and nothing about two active daemons, because everything they fight over is
-outside the database.** `docs/orchestrator/dispatch-queue.md` group D says two atriums on one database is not blocked by
+**It buys nothing about tenancy, and nothing about two active daemons, because everything they fight over is outside the
+database.** `docs/orchestrator/dispatch-queue.md` at 3be95cab group D says two atriums on one database is not blocked by
 sqlite, it is blocked by both of them ACTING. The specific list, with what each one is:
 
 - **Fixtures.** Both daemons start every fixture on boot (`internal/daemon/fixtures.go`). Two runners in one
@@ -335,10 +335,10 @@ Rooms aggregate them onto one board. The tenant boundary is the operating system
 system, which is the only enforcement in this document that does not have to be written.
 
 What that leaves undone is genuinely a subset of multi-tenancy and it is what backlog 1 already lists: permission
-requests from a room, so a blocked card on somebody else's machine is visible on yours, and attach by redirect,
-so clicking a remote terminal opens that room's board with the right card open. Both are designed in
-`docs/rnd/federation-design-v2.md`. Both are days rather than weeks. Neither requires a principal, a schema change or
-a container.
+requests from a room, so a blocked card on somebody else's machine is visible on yours, and attach by redirect, so
+clicking a remote terminal opens that room's board with the right card open. Both are designed in
+`docs/archive/federation-design-v2.md`. Both are days rather than weeks. Neither requires a principal, a schema change
+or a container.
 
 The one thing rooms will not give you is somebody running their agent on YOUR hardware. That is hosting, and
 hosting is the fork. It is worth having decided that deliberately, which was the ask, rather than drifting into a

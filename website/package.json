@@ -2,7 +2,7 @@
   "name": "atrium-website",
   "version": "0.0.1",
   "private": true,
-  "description": "The atrium docs site and landing page. Refreshed at release time, not per feature.",
+  "description": "The atrium docs site and landing page. Rebuilt on push to main.",
   "scripts": {
     "docusaurus": "docusaurus",
     "start": "docusaurus start",

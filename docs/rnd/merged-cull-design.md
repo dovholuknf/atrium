@@ -1,5 +1,7 @@
 # A merged worker is culled without anybody remembering to
 
+Status: built. `atrium merged` culls a merged worker (`internal/cli/merged.go`).
+
 clint, 2026-09-29, through @orchestrator: finished worker cards pile up on the board because directors forget to
 cull them. The fix must be mechanical and never depend on memory. For @runtime to build.
 

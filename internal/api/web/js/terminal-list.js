@@ -1496,7 +1496,7 @@ function termHeldAge(secs) {
 // carrying the whole signal.
 //
 // A HEADING IS NOT A CONTROL HERE. It labels and nothing else: no click
-// target, no accordion. `docs/orchestrator/dispatch-queue.md` group F has an open complaint
+// target, no accordion. `docs/orchestrator/dispatch-queue.md` at 3be95cab group F has an open complaint
 // that a group heading on the BOARD toggles when you click the white space
 // around it, and three levels of heading in a narrow strip would multiply
 // whatever is decided there. A label cannot have that problem.
@@ -1645,7 +1645,7 @@ function toggleTermGroup(path) {
 
 // A group heading, which IS a control now.
 //
-// THE ROW IS NOT THE TARGET, and that is deliberate. `docs/orchestrator/dispatch-queue.md`
+// THE ROW IS NOT THE TARGET, and that is deliberate. `docs/orchestrator/dispatch-queue.md` at 3be95cab
 // group F carries a complaint about the board's group headings: the whole
 // width toggles the accordion and nothing says so, so clicking what looks like
 // empty space next to a name collapses the thing you were reading. The button

@@ -1,6 +1,9 @@
 # Room deploy hold: one call asks for a deploy, every agent holds, the room redeploys, every agent resumes
 
-Status: design, 2026-09-30, @rnd. Item `docs/backlog/rnd/rd-new-room-deploy-hold.md`. Built by @runtime (room and
+Status: built. One call holds every agent in a room for a deploy and resumes the working ones after (`/v1/hold`,
+`internal/daemon/roomhold.go`).
+
+Origin: design, 2026-09-30, @rnd. Item `docs/backlog/rnd/rd-new-room-deploy-hold.md`. Built by @runtime (room and
 hub), @ui draws the banner. Shares the hold step with r-037 (`docs/rnd/freeze-budget-design.md` section 1), and is
 built on it: whichever is built first builds the step, and the second adds its kind. Replaces "wait until the room is
 idle for 10 seconds", which almost never fires with ten agents.

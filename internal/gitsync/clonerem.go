@@ -5,7 +5,7 @@ import (
 	"strings"
 )
 
-// What the room does to a clone's remotes when it syncs it. docs/rnd/hub-forge-design.md 5.1 and 5.2.
+// What the room does to a clone's remotes when it syncs it. docs/fabric/hub-forge-design.md 5.1 and 5.2.
 //
 //   - `hub` is added, pointing at the room's stable forwarder. A `hub` the operator made that points ELSEWHERE is
 //     left alone and reported, and `atrium-hub` is added in its place.

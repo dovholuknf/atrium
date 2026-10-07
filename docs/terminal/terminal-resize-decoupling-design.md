@@ -1,5 +1,8 @@
 # Decoupling viewer size from the shared PTY
 
+Status: built. The smallest attached viewer sizes the pty, and the attach preamble is gone
+(`internal/daemon/attach.go`).
+
 ## The two complaints
 
 clint is unhappy with two things about attaching a terminal.

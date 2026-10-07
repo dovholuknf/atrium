@@ -1,5 +1,8 @@
 # What a room needs to take a project's work: `atrium.requirements.yaml`
 
+Status: built. `atrium requirements` reads `atrium.requirements.yaml` (`internal/requirements`,
+`internal/cli/requirements.go`).
+
 clint, 2026-09-29: a declarative per-project file naming what a room needs to take that project's work, and a command
 that reads it, checks a room, fixes what it can, and lists what needs a human. Atrium is the first file.
 

@@ -7,9 +7,10 @@ each section.
 Rules for adding:
 - One entry per decision: the DECISION, the WHY, and where it is implemented (commit / file / doer) if known.
 - If a later decision reverses an earlier one, keep the old line and mark it `(SUPERSEDED YYYY-MM-DD)`.
-- Design-interview Q&A that only needs dedup lives in `docs/interview-log.md`; behavior changes to the orchestrator
-  itself are also logged one line each in `dotfiles/claude/tuning-changelog.md`. This file is the human-facing
-  index of the substantive product/architecture decisions.
+- Design-interview Q&A that only needs dedup lives in `docs/interview-log.md`, which is gitignored and kept on the
+  machine that wrote it. Behavior changes to the orchestrator itself are also logged one line each in
+  `dotfiles/claude/tuning-changelog.md`. This file is the human-facing index of the substantive product/architecture
+  decisions.
 
 ## 2026-09-21
 
@@ -78,8 +79,8 @@ Rules for adding:
   - Landing is `scripts/land-claude-main.ps1` (untracked, excluded): one-line subjects, no co-author, authored and
     signed by him, then push. Only his signed commits reach `origin/main`.
   - The orchestrator decides when work is done. A worker's `done` or exit never completes it. Designed as the work
-    ledger (`docs/runtime/work-ledger-plan.md`), with his four yeses: done column plus a `reported` chip, board-launched cards
-    tracked only on request, no nag, build stage 1.
+    ledger (`docs/runtime/work-ledger-design.md`), with his four yeses: done column plus a `reported` chip,
+    board-launched cards tracked only on request, no nag, build stage 1.
   - A peer message is typed only when the input line is empty AND the turn has ended, re-checking, never queued.
   - Workers wear theme `active-work` and tag `atrium:subagent`. The 10-session cap counts only the orchestrator's
     own workers.

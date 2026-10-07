@@ -16,7 +16,7 @@ import (
 	"github.com/dovholuknf/atrium/internal/gitsync"
 )
 
-// The git kind: a room fetching a repository from its hub. See docs/rnd/git-sync-design.md.
+// The git kind: a room fetching a repository from its hub. See docs/fabric/git-sync-design.md.
 //
 // ── dialled by the room, like everything else ───────────
 //

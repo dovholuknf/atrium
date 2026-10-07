@@ -11,6 +11,11 @@ in front of the published board", before assuming the paragraph above still desc
 version: loopback still has no login, atrium still owns no credentials, and what changed is that a board on a
 public address can require an OIDC sign-in.
 
+Today the hub (`atrium run`) owns the board and shares it with `--board-share`: private by default, and a
+public share is refused without a login. A room reaches the hub over its own link, by direct mutual TLS, a private
+zrok share or OpenZiti (`atrium room join`). The rest of this page was written for the single daemon, so read
+"the daemon" as the hub where it talks about the board.
+
 ## What atrium does, and what it does not
 
 Atrium keeps the configuration, opens the listener, and shows what came back. That is all.
@@ -179,8 +184,9 @@ Two things this does not cover, and both are yours to get right:
 
 - **Never publish the agent listener.** `:7777` carries the permission gate. Anything that can reach it can
   answer a request on an agent's behalf. The default backend is the board on `:7778` for that reason.
-- **A public zrok share has no login in front of it.** Whoever has the link can read every command and answer
-  permission requests. Private is the default, and turning public on says so before it does it.
+- **A public zrok share needs a login.** Whoever reaches it could read every command and answer permission
+  requests, so the hub refuses a public share that has neither a zrok username and password nor OIDC set
+  (`openBoardShare` in `internal/cli/atrium_share.go`). Private is the default.
 
 ## What it shows
 

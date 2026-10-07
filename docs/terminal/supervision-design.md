@@ -1,7 +1,7 @@
 # Supervision: owning the runner
 
 Design for the piece that lets atrium spawn a runner under a pseudo terminal, watch it, stop it, and let a human
-attach to it from a browser. Stage 7 of `docs/architecture-v2.md`.
+attach to it from a browser. Stage 7 of `docs/archive/architecture-v2.md`.
 
 Written before the code, so the decisions can be argued with rather than reverse engineered.
 
@@ -55,7 +55,7 @@ is singular.
 ### Capture is not interpretation
 
 Output is captured for a human to read. It is not parsed to infer status for any runner that reports its own,
-which is the rule already established in `docs/architecture-v2.md`. A cooperative runner announces `needs-input`
+which is the rule already established in `docs/archive/architecture-v2.md`. A cooperative runner announces `needs-input`
 through the permission hook and the session hook. Guessing at its output would add a second, worse signal for the
 same fact, and the two would disagree.
 
@@ -114,7 +114,7 @@ daemon says what it is waiting for while it waits, the same way the existing shu
 ### Exiting explicitly
 
 Any build that owns a pty calls `os.Exit` rather than returning from `main`. See the ConPTY section of
-`docs/architecture-v2.md`: returning normally after a pty teardown leaves the process with status 127, which
+`docs/archive/architecture-v2.md`: returning normally after a pty teardown leaves the process with status 127, which
 would make every clean shutdown look like a failure to a service manager.
 
 ### One terminal, several windows, one size
@@ -144,7 +144,8 @@ one: a margin is legible and a mis-wrapped screen is not.
 2. **What happens to a supervised runner when the daemon dies unexpectedly.** Its pty closes, so the runner
    probably dies with it, and work in flight is lost. Window mode has the opposite property: the runner survives
    atrium entirely. That is a real argument for keeping window mode rather than treating pty mode as its
-   replacement, and it should be stated in the harness configuration rather than discovered.
+   replacement, and it should be stated in the harness configuration rather than discovered. Answered since: with
+   the `pty_host` setting on, the terminals live in the pty host and outlive the room (`internal/daemon/hostterm.go`).
 
 3. **Whether attach should be able to send a signal**, such as an interrupt, distinctly from typing a control
    character into the stream. A browser cannot press ctrl-c the way a terminal does.

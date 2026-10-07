@@ -24,7 +24,7 @@ Series: Supervision and terminals. Status: idea. Audience: maintainers of fast-m
 
 - README.md (Scope)
 - docs/backlog.md (out of scope)
-- docs/architecture-v2.md
+- docs/archive/architecture-v2.md
 - docs/runtime/agent-messaging.md
 
 ## Notes for the writer

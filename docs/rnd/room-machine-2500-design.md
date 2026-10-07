@@ -1,5 +1,7 @@
 # The best atrium room machine for $2,500
 
+Status: research, 2026-10-01. Its conclusion: one Linux desktop on a Ryzen 9 9950X with 64 GB, about $2,150, plus a UPS.
+
 Prices seen 2026-10-01 unless noted. "Est" means my estimate, not a measurement or a quoted price. Nothing was bought,
 ordered or signed up for.
 
