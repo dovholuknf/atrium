@@ -347,6 +347,16 @@ no remote and not on the hub, the finish preview lists them and asks, per worktr
 - **delete**: removed as they are. The commits and changes are gone.
 A clean, pushed worktree is not asked about. There is no default answer: the finish waits until one is picked.
 
+### Q5. Where a stash lives
+
+clint, 2026-10-07: "probably onthe hub pushed. stash is "clint/atrium" stash not git stash so it's a way of holding
+work withotu cluttering woorkspace"
+
+A stash is atrium's word, not `git stash`. It holds work off every workspace: pushed to the hub as
+`stash/<card short id>/<branch>`, with dirty files in one WIP commit on top, and nothing left on the room. It is
+fetched back from any room. The card's history names it, and a re-paste of the same link offers to start the new card
+from the stash instead of the PR or default branch.
+
 ## Open for clint
 
 1. Answered (Interview, Q1).
