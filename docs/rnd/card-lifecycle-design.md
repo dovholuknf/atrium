@@ -408,6 +408,37 @@ exact command to run in an elevated shell on that machine and what it is for. Th
 card's inventory as `elevated`, with the matching command that undoes it, so finish and the housekeeping report can
 show clint the undo command to run too. Atrium never runs an elevated command itself.
 
+Refinement, clint the same day: "--if-- a claudevm exists or 'a machine the user has said you can run on as admin'
+then that changes things thoguh if that's the case atrium should have some record of this for agents so they can use
+that one and 'check out' the resoruce or leave notes for other agents and the like. like ziti-edge-tunnel can be run
+with mulitple tuns if you ru it carefully. as long as other agents know what's out there and dont fuck with one
+another that'd be fine"
+
+- **Admin machines are named by clint.** `resources.md` (read through `atrium_resources`) already lists machines by
+  hand. An entry may say an agent may act as admin there. Only clint writes it.
+- **Ask first, then go there.** A card that needs elevation looks for such a machine. If one is free, it uses it
+  instead of asking clint. If none is, it asks with the command, as above.
+- **Checkout.** Shared things on such a machine (the machine itself, a tunneler, a tun device, a port range) are
+  checked out on the hub: a lease row `{resource, machine, card, since, note}`, one holder per resource, visible on the
+  board and to every agent. A card leaves notes on what it set up (which tun, which identities). The lease is an
+  inventory row of the card, so finish returns it and undoes what the card set up there, and the sweep and the
+  housekeeping report show a lease whose card is gone.
+- **Several tunnelers on one machine** are fine when each card holds a lease on its own tun name and identity set, so
+  no two cards touch the same one.
+- New item: `f-admin-machine-leases`.
+
+### Q10. Opening a link from any terminal
+
+clint, 2026-10-07: "gwt is in the midst of being retired but gwt needs to be adaptd to atrium now"
+
+- `atrium open <url>` (and `atrium open` with the clipboard) calls the open verb, prints the card's board address,
+  and attaches with `--attach`. No OS-wide hotkey or tray app.
+- **gwt is adapted now, not later.** While it is retired, `gwt <url>`, `gwt pr`, `gwt zendesk` and `gwt discourse`
+  call `atrium open` when an atrium hub is reachable, so a link opened from gwt makes the same card, worktree, claim
+  and inventory as one pasted on the board. gwt's own worktree path stays as the fallback when no hub answers.
+  Its `prune -Recapped` defers to atrium's finish for any worktree a card owns. New item: `r-gwt-calls-atrium-open`
+  (the change is in the dotfiles repo).
+
 ## Open for clint
 
 1. Answered (Interview, Q1).
@@ -416,5 +447,5 @@ show clint the undo command to run too. Atrium never runs an elevated command it
 4. Answered (Interview, Q6).
 5. Answered (Interview, Q7).
 6. Answered (Interview, Q8). Elevation for tunnelers is Q9.
-7. "From wherever I am": does `atrium open <url>` in a terminal cover it, or is an OS-level hotkey wanted?
+7. Answered (Interview, Q10).
 8. A cost budget per card: a warning only, or a stop?
