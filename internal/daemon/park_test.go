@@ -285,11 +285,11 @@ func TestParkedPrecedesGone(t *testing.T) {
 		t.Fatal(err)
 	}
 	peerCard(t, d, "alice")
-	if out := sayViaMessage(t, d, "alice", card.ID, "hello"); out["delivered"] != "parked" {
+	if out := sayViaMessage(t, d, "alice", card.ID, "hello"); out["reachable"] != "kept" {
 		t.Fatalf("message answered %v", out)
 	}
 	out, _ := tell(t, d, "alice", "both", "hello")
-	if out["delivered"] != "parked" {
+	if out["reachable"] != "kept" {
 		t.Fatalf("tell answered %v", out)
 	}
 }
@@ -467,16 +467,16 @@ func TestAttachAloneDoesNotUnparkButAKeyDoes(t *testing.T) {
 
 // ---- say ----
 
-func TestSayToParkedAnswersParkedAndQueuesNothing(t *testing.T) {
+func TestSayToParkedIsKeptAndDoesNotWake(t *testing.T) {
 	d := testDaemon(t)
 	card := parkedCard(t, d, "asleep", store.StatusRunning)
 	peerCard(t, d, "alice")
 	out := sayViaMessage(t, d, "alice", card.ID, "hi")
-	if out["delivered"] != "parked" || out["reachable"] != "parked" {
+	if out["delivered"] != "queued" || out["reachable"] != "kept" {
 		t.Fatalf("answer %v", out)
 	}
-	if n := len(pendingFrom(t, d, card.ID)); n != 0 {
-		t.Fatalf("%d messages queued for a parked card", n)
+	if n := len(pendingFrom(t, d, card.ID)); n != 1 {
+		t.Fatalf("%d messages kept for a parked card, want 1", n)
 	}
 	got, _ := d.st.Get(card.ID)
 	if !isParked(got) {
@@ -560,11 +560,11 @@ func TestTellToParked(t *testing.T) {
 	card := parkedCard(t, d, "tellee", store.StatusRunning)
 	peerCard(t, d, "alice")
 	out, code := tell(t, d, "alice", "tellee", "hello")
-	if code != http.StatusOK || out["queued"] == true || out["delivered"] != "parked" {
+	if code != http.StatusOK || out["queued"] != true || out["reachable"] != "kept" {
 		t.Fatalf("tell to a parked card: %d %v", code, out)
 	}
-	if n := len(pendingFrom(t, d, card.ID)); n != 0 {
-		t.Fatalf("%d queued", n)
+	if n := len(pendingFrom(t, d, card.ID)); n != 1 {
+		t.Fatalf("%d kept, want 1", n)
 	}
 }
 

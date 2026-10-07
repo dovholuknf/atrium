@@ -155,6 +155,8 @@ func (d *Daemon) unpark(taskID, via string) error {
 	if _, err := d.st.Unpark(taskID, via); err != nil {
 		return err
 	}
+	// What was kept for it while it slept. See keep.go.
+	d.injectKept(taskID)
 	if via == ViaResume || via == ViaMessage || via == ViaAction || via == ViaTyped {
 		d.humanTouch(taskID, ViaResume)
 	}

@@ -593,36 +593,47 @@ func (d *Daemon) handleMessage(w http.ResponseWriter, r *http.Request) {
 		}
 		woke, gate = true, sayOK
 	}
-	if gate == sayParked {
-		out := map[string]any{
-			"delivered": "parked", "reachable": "parked", "warning": parkedNote(gated),
-			"when": whenWord(waitTurn),
+	// A DONE OR DEAD CARD WITH A CONVERSATION IS WOKEN BY WAKE, AND THE OPERATOR'S OWN WORDS WAKE IT TOO.
+	if gate == sayGone && gated != nil && resumable(gated) && (from == "" || body.Wake) {
+		if err := d.wakeGone(taskID, wakeVia(from)); err != nil {
+			writeJSONErr(w, http.StatusInternalServerError, err)
+			return
 		}
-		if from != "" {
-			rec.State, rec.Note, rec.ReplyWant = store.SayRefused, "parked", false
-			if id := d.recordSay(rec, body.Text); id != "" {
-				out["say"] = id
-			}
-			out["via"] = rec.Via
-		}
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(out)
-		return
+		woke, gate = true, sayOK
 	}
-
-	// Nobody there to read it. See sessionGone.
-	if t, err := d.st.Get(taskID); err == nil && gate == sayGone {
+	// NOBODY TO READ IT NOW: KEPT ON THE CARD. Stored before the sender is answered, delivered the next time it runs.
+	if gate == sayParked || gate == sayGone {
+		why := "it is parked"
+		if gate == sayGone {
+			why = "it has no running session"
+			if body.Wake {
+				why = "it has no conversation to resume"
+			}
+		}
+		var km *store.Message
+		var kerr error
+		if from != "" {
+			km, kerr = d.st.QueuePeerKind(taskID, body.Text, from, promptKind(body.Kind, body.Reply), false)
+		} else {
+			km, kerr = d.st.QueueMessage(taskID, body.Text)
+		}
+		if kerr != nil {
+			writeJSONErr(w, http.StatusInternalServerError, kerr)
+			return
+		}
 		out := map[string]any{
-			"delivered": "undeliverable", "reachable": ReachNo, "warning": goneNote(t),
+			"delivered": "queued", "reachable": "kept", "id": km.ID, "warning": keptNote(gated, why),
 			"when": whenWord(waitTurn),
 		}
 		if from != "" {
-			rec.State, rec.Note, rec.ReplyWant = store.SayRefused, "the session is gone: "+goneNote(t), false
+			rec.State, rec.MessageID = store.SayQueued, km.ID
 			if id := d.recordSay(rec, body.Text); id != "" {
 				out["say"] = id
 			}
 			out["via"] = rec.Via
+			d.peerSaid(from, gated, body.Text, owedKind(body.Kind, body.Reply))
 		}
+		d.publishTask(taskID)
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(out)
 		return

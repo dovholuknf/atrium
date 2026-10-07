@@ -11,9 +11,9 @@ import (
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
-// A say to a card that finished with no process left is undeliverable and says
-// to resume it first. It is not queued, and nothing is held for its line.
-func TestASayToAGoneSessionIsUndeliverable(t *testing.T) {
+// A say to a card that finished with no process left is KEPT on the card, stored before the sender is answered, and
+// nothing is held for its line. See keep.go.
+func TestASayToAGoneSessionIsKept(t *testing.T) {
 	d := testDaemon(t)
 	target, _, _ := peerPair(t, d)
 	t.Cleanup(func() { d.pending.stopAll() })
@@ -33,14 +33,17 @@ func TestASayToAGoneSessionIsUndeliverable(t *testing.T) {
 	}
 	var out map[string]any
 	_ = json.Unmarshal(rec.Body.Bytes(), &out)
-	if out["delivered"] != "undeliverable" {
-		t.Fatalf("delivered %v, want undeliverable for a card with no session", out["delivered"])
+	if out["delivered"] != "queued" || out["reachable"] != "kept" {
+		t.Fatalf("answer %v, want the say kept for a card with no session", out)
 	}
-	if w, _ := out["warning"].(string); !strings.Contains(w, "resume it first") {
-		t.Fatalf("the warning does not say to resume it: %q", w)
+	if w, _ := out["warning"].(string); !strings.Contains(w, "next time it runs") {
+		t.Fatalf("the warning does not say when it arrives: %q", w)
 	}
-	if n := len(pendingFrom(t, d, target.ID)); n != 0 {
-		t.Fatalf("%d queued for a card nobody can read", n)
+	if n := len(pendingFrom(t, d, target.ID)); n != 1 {
+		t.Fatalf("%d kept, want the say stored on the card", n)
+	}
+	if n, _ := d.st.UndeliveredCount(target.ID); n != 1 {
+		t.Fatalf("undelivered count %d, want 1 for the board", n)
 	}
 	if a := d.act.get(target.ID); a != nil && a.HeldCount > 0 {
 		t.Fatalf("a message was held for the line of a card with no session: %+v", a)
@@ -121,8 +124,9 @@ func TestTellAgreesWithSayAboutADoneCard(t *testing.T) {
 	if err := d.st.AppendEvent(bob.ID, store.EventExited, map[string]any{"by": "session hook"}); err != nil {
 		t.Fatal(err)
 	}
-	if _, code := tell(t, d, "alice", "bob", "again"); code != http.StatusConflict {
-		t.Fatalf("telling a card whose session ended answered %d", code)
+	// Kept on the card for when it next runs, not refused.
+	if out, code := tell(t, d, "alice", "bob", "again"); code != http.StatusOK || out["reachable"] != "kept" {
+		t.Fatalf("telling a card whose session ended answered %d %v", code, out)
 	}
 }
 

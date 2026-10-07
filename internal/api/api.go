@@ -968,6 +968,9 @@ type view struct {
 	// `UndeliveredCounts` already does for messages. Absent when it is one or
 	// zero, because the row says that much by drawing the ask or not.
 	AsksOpen int `json:"asks_open,omitempty"`
+	// MessagesUndelivered is how many says to this card have been accepted and not yet read by it. They are kept on
+	// the card until it next runs. Absent at zero. See docs/changes/r-nothing-gets-lost.md.
+	MessagesUndelivered int `json:"messages_undelivered,omitempty"`
 	// DiskBytes is what the card's live inventory measured last: its worktree, its directories and its review's run
 	// folder. Absent until something was measured. See resources.go.
 	DiskBytes int64 `json:"disk_bytes,omitempty"`
@@ -1146,6 +1149,13 @@ func (s *Server) withAskCounts(vs []view) []view {
 			}
 		}
 	}
+	if und, err := s.st.UndeliveredCounts(); err == nil {
+		for i := range vs {
+			if vs[i].Task != nil {
+				vs[i].MessagesUndelivered = und[vs[i].Task.ID]
+			}
+		}
+	}
 	counts, err := s.st.OpenAskCounts()
 	if err != nil {
 		return s.withSeen(vs)
@@ -1170,6 +1180,9 @@ func (s *Server) taskEvent(t *store.Task) view {
 	}
 	if n, err := s.st.OpenAskCount(t.ID); err == nil {
 		v.AsksOpen = n
+	}
+	if n, err := s.st.UndeliveredCount(t.ID); err == nil {
+		v.MessagesUndelivered = n
 	}
 	if sn, err := s.st.GetSeen(t.ID); err == nil {
 		v.Seen = sn.View()

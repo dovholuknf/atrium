@@ -313,20 +313,29 @@ func (d *Daemon) resolvePeerSayWake(w http.ResponseWriter, from, to, verb, text,
 			return nil
 		}
 	}
-	if gate == sayGone {
-		writeJSONErr(w, http.StatusConflict, fmt.Errorf(
-			"%s has ended, so nothing would read this", to))
+	// A DONE OR DEAD CARD WITH A CONVERSATION CAN BE WOKEN. Without wake, or with nothing to resume, the words are
+	// kept on the card for when it next runs, and only a verb with no words is refused.
+	wakeGone := gate == sayGone && wake && resumable(target)
+	if gate == sayGone && !wakeGone {
+		if text == "" {
+			writeJSONErr(w, http.StatusConflict, fmt.Errorf(
+				"%s has ended, so nothing would read this", to))
+			return nil
+		}
+		why := "it has no running session"
+		if wake {
+			why = "it has no conversation to resume"
+		}
+		d.keepOnCard(w, from, target, verb, text, when, kind, reply, why)
 		return nil
 	}
 	if gate == sayParked && !wake && d.fromFamily(from, target) {
 		wake = true
 	}
 	if gate == sayParked && !wake {
-		// Nothing queued: waking is a cold turn and the sender should choose it.
 		if text != "" {
-			rec := sayRecordFor(from, target, sayTrace{}, false, verb, when, reply)
-			rec.State, rec.Note, rec.ReplyWant = store.SayRefused, "parked", false
-			d.recordSay(rec, text)
+			d.keepOnCard(w, from, target, verb, text, when, kind, reply, "it is parked")
+			return nil
 		}
 		writeJSONCode(w, http.StatusOK, map[string]any{
 			"queued": false, "typed": false, "delivered": "parked", "reachable": "parked",
@@ -346,6 +355,18 @@ func (d *Daemon) resolvePeerSayWake(w http.ResponseWriter, from, to, verb, text,
 			writeJSONErr(w, http.StatusInternalServerError, err)
 			return nil
 		}
+	}
+	if wakeGone {
+		if err := d.wakeGone(target.ID, wakeVia(from)); err != nil {
+			writeJSONErr(w, http.StatusInternalServerError, err)
+			return nil
+		}
+		// Handed back as found, marked like a card this say woke, so the caller queues and does not type into a
+		// session that has only just started.
+		woken := *target
+		at := time.Now()
+		woken.ParkedAt = &at
+		return &woken
 	}
 	return target
 }

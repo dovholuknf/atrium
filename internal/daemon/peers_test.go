@@ -148,9 +148,8 @@ func TestAnUnknownHandleAnswersWithTheList(t *testing.T) {
 	}
 }
 
-// A session that has ended cannot read anything, and saying so beats queueing
-// a message nobody will see.
-func TestTellingAnEndedSessionIsRefused(t *testing.T) {
+// A session that has ended cannot read anything now, so the words are kept on its card for when it next runs.
+func TestTellingAnEndedSessionIsKept(t *testing.T) {
 	d := testDaemon(t)
 	peerCard(t, d, "alice")
 	bob := peerCard(t, d, "bob")
@@ -158,8 +157,11 @@ func TestTellingAnEndedSessionIsRefused(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if _, code := tell(t, d, "alice", "bob", "hello"); code != http.StatusConflict {
-		t.Fatalf("telling a dead session answered %d", code)
+	if out, code := tell(t, d, "alice", "bob", "hello"); code != http.StatusOK || out["reachable"] != "kept" {
+		t.Fatalf("telling a dead session answered %d %v", code, out)
+	}
+	if n, _ := d.st.UndeliveredCount(bob.ID); n != 1 {
+		t.Fatalf("%d kept for a dead session, want 1", n)
 	}
 }
 
