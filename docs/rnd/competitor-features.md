@@ -298,7 +298,7 @@ operator has a machine that sleeps.
 - **Cloud sandboxes** (Omnigent lists a dozen providers). The overlay answer in `docs/fabric/overlays.md` already covers
   "another machine", and a sandbox provider list is an integration surface atrium would carry forever.
 - **A model picked agent router and swarm memory** (ruflo `v3.43.0` to `v3.44.0`). Its own release notes say none of the
-  options met the bar, which is a cost with no measured benefit.
+  options met the bar, so the benefit is not yet measured.
 - **A login and accounts** (Mission Control, Superset, Omnigent organisations). Loopback and an overlay stays the rule
   (`CLAUDE.md`, "Authentication").
 - **Nineteen or thirty two hook installers** (Orca, Agent Orchestrator). Add an adapter when a runner is added, as

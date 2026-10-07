@@ -257,8 +257,8 @@ the read found only shape checks and path existence, with no `git` call anywhere
 the stronger thing: `SetReportSHA` (`internal/store/a2a.go`) records the commit a `done` report names and whether it
 was found in the card's worktree, and `report_unverified` is stored. Nothing to take.
 
-**Where atrium differs.** A real gate where OMC says its own permissions are advice. A real terminal a human owns.
-Durable state.
+**Where atrium differs.** OMC describes its own permissions as advice. Atrium enforces a gate in a hook, runs the agent
+in a terminal a human can type into, and keeps durable state.
 
 **Not traced.** Almost all of `src/team`, the `dist/` bundle, and the fifty other directories under `src/`.
 
@@ -267,8 +267,8 @@ Durable state.
 **What it is.** A kanban board, a Rust server (`crates/`: `server`, `services`, `executors`, `db`, `mcp`, `git`,
 `workspace-manager`, twenty-nine crates in all) and a web and Tauri front end. An issue becomes a workspace (a branch, a
 terminal, a dev server), an agent runs in it, you review the diff and open a PR. **The README's first heading is
-"Vibe Kanban is sunsetting"** with a link to an announcement. Last push 2026-09-19. It is a finished lesson, not a
-growing competitor.
+"Vibe Kanban is sunsetting"** with a link to an announcement. Last push 2026-09-19. It is read here for its design,
+not as an active project.
 
 **Architecture.** Headless process with stdio control, not an SDK library and not a pty. Claude is started as `claude
 -p` with `--output-format=stream-json`, `--input-format=stream-json` and `--permission-prompt-tool=stdio`
@@ -297,8 +297,8 @@ and relationships as tools. That is the agent facing surface, and it is broad on
    Check the board first, it may already do this (`docs/runtime/auto-mode.md`).
 2. *A question form of approval.* Not new for atrium (`internal/store/ask.go` is a question table). Nothing to borrow.
 
-**Where atrium differs.** Durable approvals and rules, and a gate that survives a restart. A real terminal. The
-product is also alive.
+**Where atrium differs.** Durable approvals and rules, and a gate that survives a restart. A terminal a human
+can type into.
 
 **Not traced.** The remote and relay crates (about ten of the twenty-nine), the Tauri app, review and the PR monitor.
 
@@ -398,7 +398,7 @@ worktrees. This is the closest orchestration model to `runtime/DIRECTOR.md`.
 3. *Hold a launch instead of refusing it.* Atrium's cap refuses (section 3.1). Gas Town holds and dispatches under the
    cap. Sketch in section 4, rank 5.
 
-**Where atrium differs.** A real board and a real permission gate. Gas Town's model is "agent decides, Go transports"
+**Where atrium differs.** A board and a permission gate enforced in code. Gas Town's model is "agent decides, Go transports"
 (`plugin-system.md`, "ZFC"), so a great deal of policy lives in prompts. Atrium enforces what it can in code.
 Standing rules, auto mode with review, durable state in one SQLite file (Gas Town's is git and a Dolt server).
 
@@ -423,12 +423,12 @@ atrium would have become had it stayed with headless sessions.
 
 **Ideas to borrow.**
 1. *A time boxed skip-permissions.* Already in atrium: `AutoUntil` and `AutoExpired` (`internal/daemon/daemon.go:748`),
-   cleared lazily at the one moment it matters. hld does it with a 30 second monitor and an event. Atrium's is the
-   better shape. Nothing to take.
+   cleared lazily at the one moment it matters. hld does it with a 30 second monitor and an event. Both work, so
+   there is nothing to change.
 2. *File snapshots.* hld keeps `file_snapshots` rows, which would let the board show a diff of what a session changed
    between two tool calls without git. Only the table's existence was read, not what fills it. Not proposed.
 
-**Where atrium differs.** Alive, and a terminal a human types into. hld's permission path needs the MCP tool, so a
+**Where atrium differs.** Active development, and a terminal a human types into. hld's permission path needs the MCP tool, so a
 runner that does not use it is not gated. Atrium's is a hook on every tool call.
 
 **Not traced.** The whole session manager, the sqlite migrations, and the WUI.
@@ -453,8 +453,8 @@ configurable sandbox profiles"). Only that file's header and imports were read, 
 (`internal/store/usage.go`, `session_usage`) and a cache keepalive with its own suspension rule, but nothing that stops
 launches when spend crosses a line. That is the automatic trigger for the freeze in 2.7, not a separate feature.
 
-**Where atrium differs.** Everything a supervisor does. Ruflo is a different category, and its rank on this list is
-the strongest evidence in this file that adoption follows "make the agent smarter" and not "watch the agent".
+**Where atrium differs.** Everything a supervisor does. Ruflo is a different category, and its rank on this list suggests
+that many users want tools that extend the agent more than tools that supervise it.
 
 **Not traced.** Nearly everything. This is a README plus one file.
 
@@ -476,8 +476,8 @@ or a deadline before pressing Enter.
 **Ideas to borrow.** None for the gate. claude-squad keeps permissions deliberately simple, which makes it a useful reference point.
 
 **Where atrium differs.** Auto approval that is recorded, reviewable, bounded by a deadline and beaten by a standing
-never rule, against a daemon that presses Enter. A screen string is the whole decision and it is per program, so a
-prompt that changed wording is a hang, and one that matched too much is an approval nobody chose.
+never rule. claude-squad decides on a screen string per program, which keeps it simple. The cost is that a prompt
+that changes wording is not matched, and a string that matches too much approves more than intended.
 
 **Not traced.** The UI, the web directory, storage.
 
@@ -723,7 +723,7 @@ terminal, was read in the first version of this file as evidence that atrium's s
 
 **Revised.** The adoption ranking in section 1 says the opposite for the top of the field. Orca (81,433) and herdr
 (41,412) both own ptys, and they are the two most adopted tools that meet the criterion. The SDK-client tools read
-(bb 3,990, Charon, vibe-kanban 28,216 as headless stdio, humanlayer 11,622) are smaller or shut down or deprecated. So
+(bb 3,990, Charon, vibe-kanban 28,216 as headless stdio, humanlayer 11,622) have fewer stars or are no longer developed. So
 the honest reading is that owning the terminal is a common shape at the top and is not the rare one. **What is rare is
 gating every tool call while owning it.** The question for clint is no longer "is anybody else supervising a
 terminal" but "is the gate the thing we sell".

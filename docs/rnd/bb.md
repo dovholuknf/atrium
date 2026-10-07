@@ -190,7 +190,7 @@ machine page. It is a clamp on the host and not a rule about the agent, which is
 
 ## 3. Trade-offs
 
-### The unauthenticated API is stated, not fixed
+### The API is unauthenticated, and documented as such
 
 The README says of the remote modes: "The server API is unauthenticated and permits command execution and file reads,
 so use this only behind a trusted network boundary" (`README.md:153-155`, repeated at `:165-168`). Direct mode on the
@@ -208,10 +208,10 @@ that they "are trusted same-origin page code, not a sandbox" (`packages/plugin-s
 therefore has the server's own authority, including the `sdk` handle that can spawn and message any thread. The
 mitigations that exist are review at listing time, a safe mode (`getPluginSafeMode` is imported at
 `plugin-runtime.ts:43`, its behaviour not read), and fail-closed containment of individual registrations. That is the npm trust model and the
-plan says so (`plugin-marketplace-plan.md:387-390`). It is a reasonable choice for an IDE and a poor fit for anything
-that holds a permission gate.
+plan says so (`plugin-marketplace-plan.md:387-390`). It is a reasonable choice for an IDE. A tool that holds a
+permission gate needs plugins with less authority than the gate.
 
-### Permission control is coarse and, as read, per session
+### Permission control is by mode and, as read, per session
 
 Three modes, `accept-edits`, `auto`, `full` (`PluginProviderPermissionMode`, `backend-contract.ts:1230`). The Claude
 bridge's `canUseTool` (`bridge.ts:1870-1981`) checks an in-memory `sessionPermissionGrants` array on the thread
@@ -221,16 +221,16 @@ a restart was not traced. What was not found anywhere in the Claude plugin is a 
 `perm_rule` kind: prefix, glob or folder, most specific wins, exportable. If one exists it is not in the provider
 bridge. Compare `docs/rnd/charon.md` section 3, which found the same shape one layer up.
 
-`approvalEnforcedBy: "provider"` is declared at initialize (`bridge.ts:1995`), which is honest: the enforcement is the
-SDK's, and bb is a front for it.
+`approvalEnforcedBy: "provider"` is declared at initialize (`bridge.ts:1995`), which states plainly that the
+enforcement is the SDK's and bb presents it.
 
-### Windows is WSL2 or nothing
+### Windows runs through WSL2
 
 "Native Windows PowerShell and CMD are not supported" (`README.md:40-42`), and native Windows checkouts are "outside
 the support contract" (`docs/platform-support.md:184-187`). Setup hooks are POSIX shell only. Atrium's first platform
 is Windows. This is not a defect in bb, it is a reason the two do not compete for the same person today.
 
-### Weight
+### Footprint
 
 About forty packages, `apps/server/src/services/threads/` alone holds more than seventy files, and the system
 overview cites migration `0121`. The native add-ons (`better-sqlite3`, `node-pty`, `@parcel/watcher`) break on npm 12
@@ -238,12 +238,12 @@ by default and get a dedicated troubleshooting section (`README.md:243-297`). Te
 production runs (`README.md:83-93`, opt out with `BB_TELEMETRY=false`), though it is anonymous and documented.
 Atrium is one static Go binary and a store. That difference is real for the people atrium is for.
 
-### It is a very young API
+### The API is still settling
 
 `experimental_` prefixes are all over the contract, `docs/api_to_audit.md` exists to track why each one is still
 experimental, and the SDK has scheduled removals (`provider-bridge-scheduled-removals.test.ts`) and a deprecated
-pre-1.0 composer API that "has been removed" (`packages/plugin-sdk/README.md:80-82`). A plugin written today will be
-rewritten. The stability of the surface is not yet the strength its breadth suggests.
+pre-1.0 composer API that "has been removed" (`packages/plugin-sdk/README.md:80-82`). A plugin written today will
+likely need changes as the surface settles.
 
 ## 4. Where atrium differs
 

@@ -138,8 +138,8 @@ resumable run (Open Agents) is the PR runner's run folder.
 - **A sandboxed room, later.** ESF's CubeSandbox and Open Agents' "the agent is not the sandbox" point to a room type
   whose cards run inside a microVM or container, reached by atrium from outside. That is the answer to Conductor's
   "not a security boundary", and it is large.
-- **Lessons, not products.** Vibe Kanban's company shut down and its cloud sync went with it. Its local parts survive.
-  Aperant went quiet in public while 3.0 is built in private. Both argue for atrium's local-first, self-hosted line.
+- **Hosted parts carry risk.** Vibe Kanban is sunsetting and its cloud sync goes with it. Its local parts remain.
+  Aperant's public repository is quiet while 3.0 is built in private. Both argue for atrium's local-first, self-hosted line.
 
 ## 6. Questions for clint
 
