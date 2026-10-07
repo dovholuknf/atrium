@@ -19,7 +19,7 @@ An agent learns that in two places:
 
 - **The tool description** of `atrium_proc_start` opens with that sentence, names the examples above, and says what
   it is not for ("not for builds, tests or one-shot commands: those finish, run them with Bash").
-- **`docs/atrium-for-agents.md`**, the doc agents are pointed at, gets a short section "Background processes" with
+- **`docs/agents.md`**, the doc agents are pointed at, gets a short section "Background processes" with
   the same rule, the lifetime in one paragraph (below), and how to find and ask the owner of a process.
 
 Nothing in atrium enforces the line. A registered `go test` that finishes in four seconds is harmless: it shows on
@@ -663,7 +663,7 @@ Each stage lands on its own and is useful on its own.
 - The restart wake line naming processes the restart stopped.
 - Board: the chip strip on the card, with attach.
 - Guest allowlist tests.
-- The "Background processes" section in `docs/atrium-for-agents.md`.
+- The "Background processes" section in `docs/agents.md`.
 
 What stage 1 fixes, against the five problems: all five, with 3 and 4 answered through `atrium_procs`.
 

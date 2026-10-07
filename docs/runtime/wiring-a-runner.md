@@ -1,7 +1,8 @@
-# What atrium is, for an agent about to be wired into it
+# Wiring a runner: what atrium is, for an agent about to be wired into it
 
 Hand this to an agent running a CLI that atrium does not yet wire up, together with a prompt such as "read
-docs/atrium-for-agents.md and produce the report it describes for your CLI".
+docs/runtime/wiring-a-runner.md and produce the report it describes for your CLI". An agent working on atrium itself
+reads `docs/agents.md` instead.
 
 Atrium is a local supervisor for coding-agent sessions on this machine. You are running inside it right now. It
 owns the pseudo terminal your CLI draws in, it shows your session as a **card** on a web board a human watches,
@@ -12,14 +13,13 @@ already do. Report what you MEASURE by running things, not what docs claim.
 
 ## The pieces
 
-- **The hub and the room** (`C:\Users\claude\.atrium2\bin\atrium2.exe`). The hub serves the board and holds
-  nothing. The room holds the database and the running agents, and it dials the hub. The room's **agent
-  listener** is what hooks post to.
-- **The hook binary** is a different executable: `C:\Users\claude\.atrium\bin\atrium.exe`. Every hook command
-  below runs it, for example `C:/Users/claude/.atrium/bin/atrium.exe hook --event tool-start`. Read the real
-  entries in `C:\Users\claude\.claude\settings.json` and copy their exact form.
-  A hook finds the daemon's port through a location file (`daemon.json` under `%LOCALAPPDATA%\atrium`, or the
-  path in `ATRIUM_LOCATION` when that is set). Never hardcode a port.
+- **One binary**, `C:\Users\claude\.atrium\bin\atrium.exe` on this machine. `atrium run` is the hub: it serves the
+  board and holds no work. `atrium room` is the room: it holds the database and the running agents, and it dials
+  the hub. The room's **agent listener** is what hooks post to. `docs/fabric/hub-and-rooms.md` has the whole shape.
+- **Hooks run the same binary**, for example `C:/Users/claude/.atrium/bin/atrium.exe hook --event tool-start`. Read
+  the real entries in `C:\Users\claude\.claude\settings.json` and copy their exact form. A hook finds the room's
+  port through a location file (`daemon.json` under `%LOCALAPPDATA%\atrium`, or the path in `ATRIUM_LOCATION` when
+  that is set). Never hardcode a port.
 - **A card** is the durable record of one piece of work. It outlives the process. A session id and a pid are
   attributes of it, not its identity.
 - **A column** (running, needs-input, needs-permission, done...) is a bucket of human attention. **Activity**
@@ -83,8 +83,9 @@ delivers it.
 - `atrium finish [recap]`: a session declaring its work over, with a short account of what it did.
 - `atrium peers`: the other sessions this one can address. `atrium tell <handle> <msg>`: say something to
   one. Queued, never typed into its terminal.
-- An MCP server (`atrium control`, registered at user scope for claude) exposes `atrium_status`, `atrium_peers`,
+- The hub's control MCP server, at `/_hub/mcp` on the board port, exposes `atrium_status`, `atrium_peers`,
   `atrium_say`, `atrium_launch` and similar. A runner that can register an MCP server could use these directly.
+  `atrium control` is a separate stdio server with two tools, `atrium_status` and `restart_atrium`.
 
 ## What to produce
 

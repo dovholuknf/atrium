@@ -130,7 +130,7 @@ The jump came once the director agents started, on 09-28 at 22:00.
 
 ### Runners (claude, codex, opencode, others)
 
-- Runners are configuration — command, args, dir, env, resume args, exit keys — `docs/runtime/other-runners.md`, `docs/atrium-for-agents.md` — 2026-09-01, non-claude 09-07 (`6634742b`)
+- Runners are configuration — command, args, dir, env, resume args, exit keys — `docs/runtime/other-runners.md`, `docs/runtime/wiring-a-runner.md` — 2026-09-01, non-claude 09-07 (`6634742b`)
 - Codex — hooks as a second target, smoke per runner, full `codex-package` install — `docs/runtime/other-runners.md`, `changelog/fabric/2026-09-29-f-007.md` — 2026-09-03 onward
 - Gemini setup checks — folder trust and sign-in, a fix button — `docs/runtime/runner-setup-design.md` — 2026-09-23
 - OpenCode — atrium plugin for opencode, counts as a runner when a hook finds its pid, edited approvals apply whole or refuse — commits `4ea3dc66`, `6bce194f` — 2026-10-01

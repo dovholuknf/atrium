@@ -486,8 +486,8 @@ on `claude/main` and is not yet on `main`. Whether a build is deployed on a give
 - **A runner is configuration, not code.**
   claude, codex, ollama, a shell or anything you add: a command, arguments, a directory, an environment, resume
   arguments and exit keys. Runners whose command is not on the machine are left out of launch menus. Docs:
-  `README.md`, `docs/runtime/other-runners.md`, `docs/atrium-for-agents.md`. Landed 2026-09-01 (`c51ae30`), non-claude
-  runners on 2026-09-07 (`6634742`).
+  `README.md`, `docs/runtime/other-runners.md`, `docs/runtime/wiring-a-runner.md`. Landed 2026-09-01 (`c51ae30`),
+  non-claude runners on 2026-09-07 (`6634742`).
 
 - **You start an agent from the launch dialog, a card's menu, a URL or the CLI.**
   `new agent here` on a card starts a runner in that card's directory with nothing asked. `atrium launch` takes
