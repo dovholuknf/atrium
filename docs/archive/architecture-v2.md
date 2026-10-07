@@ -1,6 +1,9 @@
 # Architecture v2: the daemon, the API, and the clients
 
-Status: design, not yet built. Supersedes the Mode A / Mode B framing in `CLAUDE.md` once implementation starts.
+Status: superseded by `docs/how-atrium-works.md`. Kept as the record of the v2 daemon design of 2026-09-01, which was
+built and later split into the hub and the rooms.
+
+Origin: design, not yet built. Supersedes the Mode A / Mode B framing in `CLAUDE.md` once implementation starts.
 Read `docs/archive/state-of-the-art.md` first for where v1 actually sits.
 
 ## Why v2 exists

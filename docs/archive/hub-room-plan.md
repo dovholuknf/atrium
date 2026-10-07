@@ -1,6 +1,9 @@
 # A hub that serves the board, and rooms that run the agents
 
-**Status: the direct transport is BUILT and works end to end.** Hub, room, join, mutual TLS, and the proxy.
+Status: superseded by `docs/fabric/hub-and-rooms.md`. Kept as the record of how the hub and rooms were first built, as
+`atrium2` on :7800 and :7801. Today it is one `atrium` binary, `atrium run` and `atrium room`.
+
+**Origin: the direct transport is BUILT and works end to end.** Hub, room, join, mutual TLS, and the proxy.
 OpenZiti and zrok are designed for and not written. Tested by `internal/link/link_test.go` and by
 `scripts/walkthrough/hubroom.spec.js`.
 

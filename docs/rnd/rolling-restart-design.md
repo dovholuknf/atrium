@@ -369,7 +369,7 @@ leaves the runners up, and `--runners` stops everything. (2) B over A. (3) The g
 restart, then fails open. (4) The host is opt-in, on one room first, before it becomes a default. These are
 acceptance lines of stage 2 (1 and 3) and stage 3 (4). Stages 0 and 1 are handed to @terminal.
 
-**Stage 0 gaps, answered by @rnd, 2026-09-30.** The spike is `docs/rnd/rolling-restart-design.md` (@terminal, f-011a
+**Stage 0 gaps, answered by @rnd, 2026-09-30.** The spike is the appendix below (@terminal, f-011a
 c5b87a18). Its verdict holds: B stands. Checks 1 to 5 and 7 passed with a real claude on sg4. These answers are
 acceptance lines of stage 1, and stage 1 may be briefed with them.
 
@@ -414,9 +414,9 @@ The questions as they were asked:
 
 ## Appendix: f-011 stage 0: the pty host spike
 
-Merged from `docs/rnd/rolling-restart-design.md` on 2026-10-07.
+Merged from `docs/rnd/f-011-stage0-spike.md` on 2026-10-07.
 
-Run by @terminal's worker `f-011a` on sg4 (Windows 11), 2026-09-29. Tests `docs/rnd/rolling-restart-design.md` section 3.
+Run by @terminal's worker `f-011a` on sg4 (Windows 11), 2026-09-29. Tests section 3 of this design.
 This is a throwaway. The code is `cmd/ptyhost-spike/`, a standalone command (not a subcommand of `atrium`, and nothing
 in the supervisor or the cobra root knows it exists). It builds and vets on `windows` and on `linux`. It is a reference,
 not a start on stage 1.

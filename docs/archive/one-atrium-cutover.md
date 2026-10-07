@@ -1,8 +1,11 @@
 # The one-atrium cutover on this machine
 
-Stage 4 of `docs/archive/one-atrium-plan.md`, written out for SG4 (clint's desktop, room `claude-sg4`). The hub, the room and
-the hooks move from two binaries to one, `C:\Users\claude\.atrium\bin\atrium.exe`, in one window. The window ran on
-2026-09-25.
+Status: done. `scripts/live` runs `atrium run --no-room` and `atrium room` from one binary. Kept as the record of the
+cutover on sg4.
+
+Stage 4 of `docs/archive/one-atrium-plan.md`, written out for SG4 (clint's desktop, room `claude-sg4`). The hub, the
+room and the hooks move from two binaries to one, `C:\Users\claude\.atrium\bin\atrium.exe`, in one window. The window
+ran on 2026-09-25.
 
 **2026-09-26: the rollback is gone.** Every `atrium2*.exe` on the machine was deleted, including
 `.atrium2\bin\atrium2.exe`, and `scripts/live/cutover.ps1` was deleted with it. This file is kept as the record of the

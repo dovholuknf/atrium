@@ -804,8 +804,8 @@ What survives of that sentence is the property it was protecting: **stopping the
 Sessions, terminals and agent processes stay on the rooms. A hub that is down means nothing lands and no new
 base is handed out until it is back, and every running card carries on.
 
-**It also retires "the forum holds nothing" in `docs/archive/federation-design-v2.md`.** That rule was already false once
-decision 11 built `internal/hubstore`, and this makes the hub's store hold more than configuration.
+**It also retires "the forum holds nothing" in `docs/archive/federation-design-v2.md`.** That rule was already false
+once decision 11 built `internal/hubstore`, and this makes the hub's store hold more than configuration.
 
 ### What decision 17 still demands of it
 

@@ -1,7 +1,10 @@
 # The forum: implementation plan
 
-`docs/archive/federation-design-v2.md` is the accepted design and nothing here re-opens it. The forum holds nothing, leaves
-dial out to it, every leaf keeps owning every card, the command is `atrium forum` and a leaf is an atrium. This
+Status: superseded by `docs/fabric/hub-and-rooms.md`. Kept as the record of how the forum was built before it became the
+hub.
+
+`docs/archive/federation-design-v2.md` is the accepted design and nothing here re-opens it. The forum holds nothing,
+leaves dial out to it, every leaf keeps owning every card, the command is `atrium forum` and a leaf is an atrium. This
 document turns that verdict into stages someone can build, in order, each one shippable on its own.
 
 Every claim about existing code below was read at the current working tree. The tree has uncommitted changes in
@@ -972,11 +975,11 @@ at six atria. The page's existing handling barely changes, because it already tr
 (`index.html:5615`). The three delta-carrying events become nudges naming their peer, and the page refetches that
 peer's endpoint instead of applying a payload.
 
-**What the terminal attach does.** It gets one hop longer and nothing else. `internal/daemon/attach.go` needs no
-change: it already accepts without an origin check and says why (`attach.go:47-51`). The pty stays on the machine
-that created it and always will, because ConPTY offers no reattach (`docs/archive/architecture-v2.md:634`). The socket URL
-gains the same prefix `api()` gained. The board must not offer attach for an atrium it cannot reach, because a
-socket that never opens looks identical to a runner with nothing to say.
+**What the terminal attach does.** It gets one hop longer and nothing else. `internal/daemon/attach.go` needs no change:
+it already accepts without an origin check and says why (`attach.go:47-51`). The pty stays on the machine that created
+it and always will, because ConPTY offers no reattach (`docs/archive/architecture-v2.md:634`). The socket URL gains the
+same prefix `api()` gained. The board must not offer attach for an atrium it cannot reach, because a socket that never
+opens looks identical to a runner with nothing to say.
 
 ## Migration and compatibility
 

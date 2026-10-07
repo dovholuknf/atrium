@@ -21,7 +21,7 @@ the launcher asked for a wrap-up, so nothing in it has been reviewed. Treat the 
   `keepaliveAtLaunch` runs (section 2). Both are marked for a rig check in the build.
 - **Open questions for clint so far:** the five at the end of this file.
 
-This replaces `docs/rnd/keepalive-policy-design.md` (item 38) and `docs/rnd/keepalive-policy-design.md` (item 39). Those two specs
+This replaces the specs for item 38 and item 39, kept as the two appendices at the end of this file. Those two specs
 measured what a resume and a refresh cost, and their numbers still stand. What changed is the question. They asked
 whether the saving was worth building. clint's answer on 2026-09-29 is that the point is tokens, and that tokens are
 wasted whenever a cache is kept warm for nobody. So the policy below is built on one fact, when a human last used the
@@ -707,7 +707,7 @@ clint: 7, and whether to build. 10 is open.
 
 ## Appendix: Keep-alive warms the cards you mark, not every idle card (backlog-2 item 39): spec, not built
 
-Merged from `docs/rnd/keepalive-policy-design.md` on 2026-10-07.
+Merged from `docs/rnd/keepalive-marked-spec.md` on 2026-10-07.
 
 Written 2026-09-29 by @runtime from item 37's `session_usage` rows, read off a COPY of the live database. Nothing here
 is built. The Open Questions at the end are for clint.
@@ -761,7 +761,7 @@ It grows with the number of idle cards, and the break-even stop already bounds i
 ### clint's answers, 2026-09-29
 
 1. **Not as written.** A keep-alive should last 2 to 4 hours at most, only on cards the human has actively used, and
-   never on an `atrium:subagent` card. See `docs/rnd/keepalive-policy-design.md`, which replaces this spec.
+   never on an `atrium:subagent` card. The policy at the top of this file replaces this spec.
 2. **Opt-in.** The human enables keep-alive on the cards they want, and even then only while they have been
    interacting with the card. "Has the human interacted with this card" is a signal worth building on its own, since it
    may help with subagents too.
@@ -769,7 +769,7 @@ It grows with the number of idle cards, and the break-even stop already bounds i
 
 ## Appendix: A restart resumes only the cards that were working (backlog-2 item 38): spec, not built
 
-Merged from `docs/rnd/keepalive-policy-design.md` on 2026-10-07.
+Merged from `docs/rnd/restart-idle-spec.md` on 2026-10-07.
 
 Written 2026-09-29 by @runtime from item 37's `session_usage` rows, read off a COPY of the live database. Nothing here
 is built. The Open Questions at the end are for clint.
@@ -833,7 +833,7 @@ being kept warm, and warming does not argue for resuming.
 
 1. **It is about tokens**: keep-alive refreshes that keep a cache warm while nobody is at the terminal. A card clint
    has not looked at all day should sit idle and cold. Item 38 folds into the keep-alive policy spike with item 39
-   (`docs/rnd/keepalive-policy-design.md`, reviewed with Mercurius), which decides what stays warm and what parks.
+   (the policy at the top of this file, reviewed with Mercurius), which decides what stays warm and what parks.
 2. **A say may wake a parked card.** One design worth weighing: the say answers "parked" first, and the sender
    confirms to resume it.
 3. **Yes**: `running`, `needs-permission`, and cards with a queued message or a pending restart wake count as working.

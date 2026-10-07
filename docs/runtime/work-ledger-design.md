@@ -1,7 +1,7 @@
 # The work ledger: who did what, where it is, and who said it was done
 
 Design only. Nothing here is built. Written by sa42 for the orchestrator (`atrium-87300`) and clint on 2026-09-24.
-`docs/runtime/work-ledger-design.md` is the short version for reading.
+The plan, appended at the end, is the short version for reading.
 
 Read `docs/runtime/a2a-reliability-design.md` first. This design sits on its lineage columns, its report verb and its notice
 path, and it absorbs that design's stage 2 item F9 ("a worker that dies is reported").
@@ -559,9 +559,9 @@ C1 to C4 before implementation.
 
 ## Appendix: The work ledger, the plan
 
-Merged from `docs/runtime/work-ledger-design.md` on 2026-10-07.
+Merged from `docs/runtime/work-ledger-plan.md` on 2026-10-07.
 
-The full design is `docs/runtime/work-ledger-design.md`.
+The full design is the body of this file, above.
 
 ### What goes wrong today
 

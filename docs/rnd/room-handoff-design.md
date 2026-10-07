@@ -260,11 +260,11 @@ better than the halfway state of 2026-10-01.
 
 ## 7. Same machine, and the rolling restart
 
-r-new-move-card's case, two rooms on one machine, is section 3 without 3.2 steps 5 and 6. The branch, the transcript
-and the memory are already where B can read them. f-011's rolling restart (`docs/rnd/rolling-restart-design.md`) is this case done at
-each card's quiet moment, so it calls the same move, and its hazard of a second room taking the hooks is answered
-there, not here. The two items stay one design with one primitive. f-004 section 3's script is replaced by the hub
-op.
+r-new-move-card's case, two rooms on one machine, is section 3 without 3.2 steps 5 and 6. The branch, the transcript and
+the memory are already where B can read them. f-011's rolling restart (`docs/rnd/rolling-restart-design.md`) is this
+case done at each card's quiet moment, so it calls the same move, and its hazard of a second room taking the hooks is
+answered there, not here. The two items stay one design with one primitive. f-004 section 3's script is replaced by the
+hub op.
 
 ## 8. Stages
 

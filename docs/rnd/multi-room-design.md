@@ -189,9 +189,9 @@ without anybody having to watch for the moment they all stop.
 
 ### The objection it has to answer
 
-`docs/archive/architecture-v2.md` ("Open risks") and `docs/rnd/process-registry-design.md` both say ConPTY offers no reattach, so
-a runner cannot outlive the room on Windows. `docs/rnd/charon.md` section 3 adopts Charon's holder for POSIX only, for the
-same reason.
+`docs/archive/architecture-v2.md` ("Open risks") and `docs/rnd/process-registry-design.md` both say ConPTY offers no
+reattach, so a runner cannot outlive the room on Windows. `docs/rnd/charon.md` section 3 adopts Charon's holder for
+POSIX only, for the same reason.
 
 That is true of handing a pseudo console from one process to another, and C never does that. The holder CREATES the
 pseudo console and keeps its handle for the runner's whole life. The room never owned it, so there is nothing to hand

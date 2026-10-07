@@ -191,10 +191,10 @@ a question asked once per room instead of once per machine.
 
 ### The word is already taken, and that is convenient rather than a problem
 
-`internal/daemon/rooms.go` is built and shipped. A room there is a remote atrium that dials the operator's
-daemon every twenty seconds, reports its cards, and is cached in memory and nowhere else.
-`docs/archive/federation-design-v2.md` calls the two sides leaf and forum. `docs/archive/transparent-rooms.md` records the open
-decision about how invisible a room should be.
+`internal/daemon/rooms.go` is built and shipped. A room there is a remote atrium that dials the operator's daemon every
+twenty seconds, reports its cards, and is cached in memory and nowhere else. `docs/archive/federation-design-v2.md`
+calls the two sides leaf and forum. `docs/archive/transparent-rooms.md` records the open decision about how invisible a
+room should be.
 
 **A room on the same machine under a different operating system user is the same object with a shorter network
 path.** Keep the word. Where the distinction matters, say local room. Almost everything already written about

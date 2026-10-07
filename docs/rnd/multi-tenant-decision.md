@@ -335,10 +335,10 @@ Rooms aggregate them onto one board. The tenant boundary is the operating system
 system, which is the only enforcement in this document that does not have to be written.
 
 What that leaves undone is genuinely a subset of multi-tenancy and it is what backlog 1 already lists: permission
-requests from a room, so a blocked card on somebody else's machine is visible on yours, and attach by redirect,
-so clicking a remote terminal opens that room's board with the right card open. Both are designed in
-`docs/archive/federation-design-v2.md`. Both are days rather than weeks. Neither requires a principal, a schema change or
-a container.
+requests from a room, so a blocked card on somebody else's machine is visible on yours, and attach by redirect, so
+clicking a remote terminal opens that room's board with the right card open. Both are designed in
+`docs/archive/federation-design-v2.md`. Both are days rather than weeks. Neither requires a principal, a schema change
+or a container.
 
 The one thing rooms will not give you is somebody running their agent on YOUR hardware. That is hosting, and
 hosting is the fork. It is worth having decided that deliberately, which was the ask, rather than drifting into a

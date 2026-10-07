@@ -387,8 +387,8 @@ on `claude/main` and is not yet on `main`. Whether a build is deployed on a give
 
 - **The hub names its rooms, and adding a room writes it down.**
   `atrium rooms add|ls|token|mark|rm|log`. The join string is bound to one name, and the room reads its name
-  from the certificate the hub signed. A room the hub has no record of cannot attach. Docs: `docs/fabric/hub-decisions.md` 18.
-  Landed 2026-09-17 (`d49d69d`, `153078c`).
+  from the certificate the hub signed. A room the hub has no record of cannot attach. Docs:
+  `docs/fabric/hub-decisions.md` 18. Landed 2026-09-17 (`d49d69d`, `153078c`).
 
 - **The rooms tab lists every room, connected or not.**
   Rooms are grouped as here now, not answering, and never connected, each with a transport badge. The header counts

@@ -134,10 +134,10 @@ healthy, and that is not this.
 **Idle timeout: none.** The shell closes after 30 minutes unattached because an idle prompt is something the operator
 forgot. A dev server with nobody attached is the normal case, and the runner exit bounds its life anyway.
 
-**Why not survive a room restart.** A process in a pty dies with the room, like every runner. ConPTY offers no
-reattach (`docs/archive/architecture-v2.md`, "Open risks"). A detached process (no pty, output to a file, a recorded pid)
-could survive, and it would have no attach, a stop keyed on a recycled pid, and no job object to make the stop safe.
-It would also break the one rule, since the runner does not survive the restart either.
+**Why not survive a room restart.** A process in a pty dies with the room, like every runner. ConPTY offers no reattach
+(`docs/archive/architecture-v2.md`, "Open risks"). A detached process (no pty, output to a file, a recorded pid) could
+survive, and it would have no attach, a stop keyed on a recycled pid, and no job object to make the stop safe. It would
+also break the one rule, since the runner does not survive the restart either.
 
 ## Who may stop a process
 
@@ -553,8 +553,8 @@ description says not to pass secrets in it. The row is visible on the board.
 
 **Registering a process goes through the permission chain.** Without that, the proc tool is a way around it.
 
-The PreToolUse hook does not gate `mcp__*` tools (`docs/archive/architecture-v2.md`, "What carries over from v1", item 6),
-because gating the agent's own control tools is circular. So a session told "never `npx`" by a standing rule could
+The PreToolUse hook does not gate `mcp__*` tools (`docs/archive/architecture-v2.md`, "What carries over from v1", item
+6), because gating the agent's own control tools is circular. So a session told "never `npx`" by a standing rule could
 run `npx` anyway by asking atrium to.
 
 So the room gates the start itself. It builds the request the hook would have sent, **tool `Bash` and the full
@@ -639,9 +639,9 @@ last ended.
 
 ## Build plan
 
-**Stage 1 waits for the one-atrium consolidation** (sa57, `docs/archive/one-atrium-plan.md`, on its own branch today). Both
-change the CLI and the board, and the plan decides which binary and which command tree `atrium proc` lives in. Stage
-1 starts after that plan's CLI and board changes land, and is rebased onto them rather than built beside them.
+**Stage 1 waits for the one-atrium consolidation** (sa57, `docs/archive/one-atrium-plan.md`, on its own branch today).
+Both change the CLI and the board, and the plan decides which binary and which command tree `atrium proc` lives in.
+Stage 1 starts after that plan's CLI and board changes land, and is rebased onto them rather than built beside them.
 Atrium's own listener defaults (item (a) above) are independent and may land any time.
 
 Each stage lands on its own and is useful on its own.

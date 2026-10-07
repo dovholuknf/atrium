@@ -79,8 +79,8 @@ Rules for adding:
   - Landing is `scripts/land-claude-main.ps1` (untracked, excluded): one-line subjects, no co-author, authored and
     signed by him, then push. Only his signed commits reach `origin/main`.
   - The orchestrator decides when work is done. A worker's `done` or exit never completes it. Designed as the work
-    ledger (`docs/runtime/work-ledger-design.md`), with his four yeses: done column plus a `reported` chip, board-launched cards
-    tracked only on request, no nag, build stage 1.
+    ledger (`docs/runtime/work-ledger-design.md`), with his four yeses: done column plus a `reported` chip,
+    board-launched cards tracked only on request, no nag, build stage 1.
   - A peer message is typed only when the input line is empty AND the turn has ended, re-checking, never queued.
   - Workers wear theme `active-work` and tag `atrium:subagent`. The 10-session cap counts only the orchestrator's
     own workers.

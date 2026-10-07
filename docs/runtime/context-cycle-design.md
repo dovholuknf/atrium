@@ -1,7 +1,10 @@
 # Context cycle, design
 
-Built from docs/runtime/context-cycle-design.md (clint's interview, 2026-10-05). The plan's numbered items are his and are
-not argued with here. This says where each one lands in the code, what goes, and what moves.
+Status: built. The limit is `api.ContextLimitFor` (`internal/api/contextsize.go`), the cycle is
+`internal/daemon/newcontext.go`.
+
+Built from clint's interview of 2026-10-05, kept below as the appendix. The plan's numbered items are his and are not
+argued with here. This says where each one lands in the code, what goes, and what moves.
 
 ## The one trigger, and where it is checked
 
@@ -168,7 +171,7 @@ hub setting.
 
 ## Appendix: Context cycling plan, interview with clint, 2026-10-05
 
-Merged from `docs/runtime/context-cycle-design.md` on 2026-10-07.
+Merged from `docs/context-cycle-plan.md` on 2026-10-07.
 
 Why: the 150k nudge made workers stop mid-task, the nudge blocked the handoff write so the clear never ran, and
 the launcher notice pulled the orchestrator in, which stopped a card instead of letting it cycle. Churn.

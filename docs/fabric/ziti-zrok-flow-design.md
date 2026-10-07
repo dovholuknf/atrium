@@ -6,9 +6,10 @@ Status: built. The room link transports are `atrium room join --mtls`, `--zrok-p
 Designed with clint on 2026-09-19 by interview. This is the design, not the build. Where it changes a rule written
 in `docs/fabric/overlays.md`, it says so and the change is deliberate.
 
-Read `docs/fabric/overlays.md` (atrium drives an overlay, it does not become one) and `docs/archive/hub-room-requirements.md` (the
-hub is a multi-tenant view of rooms, and the room link is a separate surface from the board) first. This document
-sits on top of both and resolves the questions they left open about which overlay is used where.
+Read `docs/fabric/overlays.md` (atrium drives an overlay, it does not become one) and
+`docs/archive/hub-room-requirements.md` (the hub is a multi-tenant view of rooms, and the room link is a separate
+surface from the board) first. This document sits on top of both and resolves the questions they left open about which
+overlay is used where.
 
 ## The one distinction everything else hangs on
 

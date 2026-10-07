@@ -6,8 +6,8 @@ requests between rooms.
 > "any room pull from any room, and any room can inform any room of where their repo is, to fork and
 > mediate/pr/push amongst the swarm" (clint, 2026-10-02)
 
-Origin: design by @rnd, 2026-10-02, **revision 2 after clint's interview** (his answers are on sg4,
-`docs/fabric/hub-forge-design.md`, and the orchestrator relayed them in full). This is git-sync stage 4. Revision 1
+Origin: design by @rnd, 2026-10-02, **revision 2 after clint's interview** (his answers are on sg4, in the
+appendix below, and the orchestrator relayed them in full). This is git-sync stage 4. Revision 1
 (d32a34fd to 1c965657, @review doc-ok 8eaa86b1) mirrored every repo on the hub automatically and kept a fallback
 copy. clint answered no to both, so this revision replaces it. Stage 1 is cut into build items in section 7.
 
@@ -319,7 +319,7 @@ From the interview's open items, each with the default this design takes:
 
 ## Appendix: Hub forge interview answers (clint)
 
-Merged from `docs/fabric/hub-forge-design.md` on 2026-10-07.
+Merged from `docs/rnd/hub-forge-answers.md` on 2026-10-07.
 
 ### Q1. Mirror every repo any card works in automatically?
 Answer (2026-10-02): No, wasteful. Not auto, and not a copy made when someone asks either. Clint's model: m1mini is

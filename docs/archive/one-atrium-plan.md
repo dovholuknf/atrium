@@ -1,5 +1,7 @@
 # One atrium: one binary, no Mode A, and the hub renamed
 
+Status: built. One `atrium` binary shipped and Mode A was removed. Kept as the record of the plan.
+
 Stages 1 to 3 are built. Stage 4, the cutover on this machine, is written out step by step in
 `docs/archive/one-atrium-cutover.md`, which also moves the deploy scripts in the same window rather than a day later.
 
@@ -368,11 +370,11 @@ cutover nothing needs it. It stays readable, and the room stops setting it, in s
 
 ### The federation doc disagrees
 
-`docs/archive/federation-design-v2.md` section 8 picked a vocabulary where each machine is "an atrium", plural "atria", and
-the aggregator is "the forum". Decision 3 inverts that: the central process is the atrium and each machine is a room.
-The section also rejected the word `hub` on the grounds that `atrium hub` was taken by Mode A, which stage 1 removes.
-The doc needs a note at section 8 saying the naming was superseded, and by what. The forum design itself was never
-built. The hub and rooms are what shipped.
+`docs/archive/federation-design-v2.md` section 8 picked a vocabulary where each machine is "an atrium", plural "atria",
+and the aggregator is "the forum". Decision 3 inverts that: the central process is the atrium and each machine is a
+room. The section also rejected the word `hub` on the grounds that `atrium hub` was taken by Mode A, which stage 1
+removes. The doc needs a note at section 8 saying the naming was superseded, and by what. The forum design itself was
+never built. The hub and rooms are what shipped.
 
 ## The stages
 
@@ -559,8 +561,8 @@ Mode A, Mode B, `atrium daemon`, `hub` or `atrium2`.
    `internal/tui`, `internal/server` and `internal/state` lines. Add `internal/link` (the atrium's proxy and the
    room link), `internal/hubstore` (the atrium's own small store), and `internal/daemon/permwait.go`. The
    `internal/cli` line lists the new commands.
-5. Documentation: `docs/test-plan.md` letters lose A and E. Add `docs/archive/one-atrium-plan.md` until it is done, and the
-   hub-room docs.
+5. Documentation: `docs/test-plan.md` letters lose A and E. Add `docs/archive/one-atrium-plan.md` until it is done, and
+   the hub-room docs.
 6. Subcommands table: remove `hub`, `agent`, `serve`, `status`, `watch`. Add `run`, `room`, `room join`, `rooms`,
    `backups`, `db`, `ledger`. Mark `daemon` for removal. Rework `control` per Open Question 8.
 7. "The wire protocol (Mode A)": delete `/submit` and the `kind` list. Keep `/permission` under a new heading, "The
