@@ -315,7 +315,7 @@ func TestReadyIsRefusedWithNoCycleOrNoHandoff(t *testing.T) {
 	}
 }
 
-// A card atrium does not supervise, or a fixture, is never cycled.
+// A card atrium does not supervise is never cycled.
 func TestOnlySupervisedCardsCycle(t *testing.T) {
 	fastNewContext(t)
 	d := testDaemon(t)
@@ -343,4 +343,50 @@ func TestTheLimitPromptWording(t *testing.T) {
 	if got != want {
 		t.Fatalf("got %q", got)
 	}
+}
+
+// r-context-always-cycles: a resumed card has no resume id on the card or none on disk yet, so its reading
+// falls to the newest transcript in its directory, and it cycles at the limit.
+func TestAResumedCardGetsAReadingAndCycles(t *testing.T) {
+	fastNewContext(t)
+	ncTiming.promptLost = time.Hour
+	d := testDaemon(t)
+	task, f, _ := ncCard(t, d)
+	reply := withTranscript(t, d, task)
+	reply(250_000)
+	// The transcript is the newest in the directory, and the card's own ids point at nothing.
+	path := d.ctx.transcript(task.Worktree, "sess-"+task.WireName)
+	d.ctx.transcript = func(cwd, id string) string {
+		if id == "newest" {
+			return path
+		}
+		return ""
+	}
+	d.ctx.latest = func(string) string { return "newest" }
+	task, _ = d.st.Get(task.ID)
+	if tokens, _ := d.ctx.read(task); tokens != 250_000 {
+		t.Fatalf("a resumed card reads %d, want 250000", tokens)
+	}
+	watch(t, d)
+	until(t, "the limit prompt on a resumed card", func() bool { return prompts(f) == 1 })
+}
+
+// A fixture's card is cycled like any other.
+func TestAFixtureCardCycles(t *testing.T) {
+	fastNewContext(t)
+	ncTiming.promptLost = time.Hour
+	d := testDaemon(t)
+	task, f, _ := cycleCard(t, d, 250_000)
+	fx, err := d.st.SaveFixture(&store.Fixture{Harness: "claude", Cwd: task.Worktree, Enabled: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := d.st.NoteFixtureTask(fx.ID, task.ID); err != nil {
+		t.Fatal(err)
+	}
+	if !d.fixtureCards()[task.ID] || !d.cycleSubject(task) {
+		t.Fatal("a fixture's card is not a cycle subject")
+	}
+	watch(t, d)
+	until(t, "the limit prompt on a fixture card", func() bool { return prompts(f) == 1 })
 }

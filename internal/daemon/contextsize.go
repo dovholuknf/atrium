@@ -58,11 +58,13 @@ type contextSizes struct {
 	session map[string]string
 	// transcript finds a card's transcript. api.TranscriptPath, swapped in tests.
 	transcript func(cwd, sessionID string) string
+	// latest finds the newest session in a directory. api.LatestSession, swapped in tests.
+	latest func(cwd string) string
 }
 
 func newContextSizes() *contextSizes {
 	return &contextSizes{m: map[string]contextSeen{}, judged: map[string]int64{}, session: map[string]string{},
-		transcript: api.TranscriptPath}
+		transcript: api.TranscriptPath, latest: api.LatestSession}
 }
 
 // started records the session a card's runner says it has just started.
@@ -123,10 +125,29 @@ func (d *Daemon) contextSizeFor(taskID string) any {
 		Cycle: limit > 0 && d.cycleSubject(t)}
 }
 
+// transcriptOf finds the transcript to read a card's context from, however the card started.
+//
+// The session its runner last said it started comes first, then its resume id. A resumed card or a fixture
+// can have neither on disk yet (the runner's hook has not said, or the id is the one the resume replaced),
+// so the newest transcript in its directory is the last resort, which is the one the runner is writing.
+func (c *contextSizes) transcriptOf(t *store.Task) string {
+	cwd := t.Worktree
+	if p := c.transcript(cwd, c.sessionOf(t)); p != "" {
+		return p
+	}
+	if p := c.transcript(cwd, t.ResumeID); p != "" {
+		return p
+	}
+	if strings.TrimSpace(cwd) == "" {
+		return ""
+	}
+	return c.transcript(cwd, c.latest(cwd))
+}
+
 // read is a card's context now, and whether it changed since the last read. A
 // card with no transcript reads as zero.
 func (c *contextSizes) read(t *store.Task) (int64, bool) {
-	path := c.transcript(t.Worktree, c.sessionOf(t))
+	path := c.transcriptOf(t)
 	if path == "" {
 		return 0, false
 	}
@@ -187,8 +208,7 @@ func (d *Daemon) watchContext() error {
 	live, open := map[string]bool{}, map[string]bool{}
 	for _, t := range tasks {
 		open[t.ID] = true
-		session := d.ctx.sessionOf(t)
-		if session == "" || strings.TrimSpace(t.Worktree) == "" {
+		if strings.TrimSpace(t.Worktree) == "" {
 			continue
 		}
 		if h, err := d.st.Harness(t.Runner); err != nil || !isClaude(h) {
