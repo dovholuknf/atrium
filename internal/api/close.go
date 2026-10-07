@@ -41,7 +41,8 @@ import (
 // A clean, pushed worktree is not asked about. Open findings and a running review are warnings, not blocks: the
 // review is stopped and its findings stay in its history.
 //
-// THE ORDER is the runner, then the review, then worktrees, then their branches, then refs. A branch cannot be
+// THE ORDER is the runner, then its processes (newest first, so a tunneler goes before its controller), its ports and
+// its overlays' folders, then the review, then worktrees, then their branches, then refs. A branch cannot be
 // deleted while a worktree has it checked out, so worktrees go before branches. A row that does not free is left live
 // with what git said, and the rest carry on. The card then goes to done, with an event saying what went.
 //
@@ -260,6 +261,14 @@ func (s *Server) closePreview(ctx context.Context, t *store.Task) (*closePreview
 			it.Note = "stopped, with every process it started"
 		case store.ResPort:
 			it.Note = "released"
+		case store.ResOverlay:
+			if inCards(r.Ref) == "" {
+				it.Action, it.Note = "keep", "outside the cards folder, so a close does not delete it. the sweep lists it"
+				break
+			}
+			it.Note = "its tunnelers and controller stopped, then its folder deleted, PKI and identities with it"
+		case store.ResIdentity:
+			it.Note = "deleted with its overlay's folder"
 		}
 		pv.Items = append(pv.Items, it)
 	}
@@ -402,6 +411,21 @@ func (s *Server) closeCard(t *store.Task, pv *closePreview, answers map[string]s
 		freed(r)
 	}
 
+	// 1c. overlays, once their tunnelers and quickstart are stopped above: the folder, its PKI and its identities
+	for _, r := range of(store.ResOverlay) {
+		home := inCards(r.Ref)
+		if home == "" {
+			continue
+		}
+		if err := removeAllSoon(home); err != nil {
+			failed(r, err)
+			warn("%s did not delete: %v", r.Ref, err)
+			continue
+		}
+		freed(r)
+		s.freeIdentitiesOf(t.ID, rows, home)
+	}
+
 	// 2. the review
 	for _, p := range s.walkedOutside(t.ID, rows) {
 		if err := s.closeReview(p.ID); err != nil {
@@ -520,7 +544,6 @@ func (s *Server) closeCard(t *store.Task, pv *closePreview, answers map[string]s
 	return res
 }
 
-// branchStillThere says whether a branch is in a repo, so deleting one already gone is not a failure.
 // procStillIt is whether a proc row's pid is still the process recorded: running, with the same start time.
 func procStillIt(r *store.CardResource) bool {
 	pid, err := strconv.Atoi(r.Ref)
@@ -531,6 +554,7 @@ func procStillIt(r *store.CardResource) bool {
 	return err == nil && at == r.Detail
 }
 
+// branchStillThere says whether a branch is in a repo, so deleting one already gone is not a failure.
 func branchStillThere(repo, branch string) bool {
 	ctx, cancel := context.WithTimeout(context.Background(), closeGitWait)
 	defer cancel()

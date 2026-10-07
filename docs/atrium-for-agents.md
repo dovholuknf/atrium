@@ -89,6 +89,11 @@ delivers it.
   them on the card. `atrium_own {kind: proc|dir|port, ref}` records a long-running process (its pid) or a folder the
   agent made. Closing the card stops those processes with their children and frees the rest. Builds and tests are not
   recorded: they finish on their own.
+- A card can run throwaway ziti overlays of its own for a test. `atrium_overlay {action: up}` starts a quickstart on
+  two of the card's ports, in the room's `cards/<id>/overlay/<name>` folder. `identity` creates and enrols one there,
+  `tunnel` starts a host or proxy tunneler, and `down` stops it and deletes the folder. Closing the card does the
+  same for every overlay left. A tun mode tunneler needs admin or root, and atrium never elevates: the agent gets the
+  command back and asks clint to run it. An overlay never carries the board.
 
 ## What to produce
 

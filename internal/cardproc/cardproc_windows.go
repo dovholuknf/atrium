@@ -37,6 +37,12 @@ func StartTime(pid int) (string, error) {
 	return strconv.FormatInt(c.Nanoseconds(), 10), nil
 }
 
+// OwnGroup starts cmd in a process group of its own, so a Ctrl+C to atrium's console does not reach it. StopTree
+// walks the tree by parent, so nothing more is needed for that.
+func OwnGroup(cmd *exec.Cmd) {
+	cmd.SysProcAttr = &syscall.SysProcAttr{CreationFlags: windows.CREATE_NEW_PROCESS_GROUP}
+}
+
 // StopTree ends pid and every process it started, through taskkill /T, which walks the tree by parent.
 func StopTree(pid int) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
