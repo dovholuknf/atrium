@@ -22,6 +22,8 @@ const (
 	ResRef      = "ref"      // ref: the ref name. detail: the repo path. freed by git update-ref -d
 	ResDir      = "dir"      // ref: a path under a root atrium owns
 	ResReview   = "review"   // ref: the review row id. freed by archiving it
+	ResProc     = "proc"     // ref: the pid. detail: its start time, so a recycled pid is not it. freed by stopping its tree
+	ResPort     = "port"     // ref: the port number. handed out by the room, freed by forgetting it
 	// ResStash is work a close pushed to the hub instead of deleting. ref: the hub branch. detail: the hub repository.
 	// It is held off every room, so nothing frees it here: it stays live and listed until somebody fetches it back.
 	ResStash = "stash"
