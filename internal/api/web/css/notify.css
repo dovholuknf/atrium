@@ -271,8 +271,8 @@
   }
   #switcher .empty { padding: 18px 12px; text-align: center; }
   /* Paste a link (js/quickpaste.js): the switcher's field and footer, with a line for what the box will do or why
-     it did not. */
-  #quickpaste { width: min(560px, 92vw); padding: 0; border-radius: 12px; }
+     it did not. Wider than the switcher, so a long support or pull request link reads whole. */
+  #quickpaste { width: min(960px, 92vw); padding: 0; border-radius: 12px; }
   #quickpaste .swq {
     width: 100%; box-sizing: border-box; font-size: var(--fs-lg);
     padding: 12px 14px; background: var(--bg-2); color: var(--head);
