@@ -201,6 +201,10 @@ func NewProxy(hub *Hub, board fs.FS, boardID string, room func() string) *Proxy 
 			if t, _ := r.Out.Context().Value(taggedKey{}).(string); t != "" && prIDIn(r.Out.URL.Path) != "" {
 				r.Out.Header.Del("Accept-Encoding")
 			}
+			// So is an open's. See retagOpen.
+			if r.Out.URL.Path == "/v1/open" {
+				r.Out.Header.Del("Accept-Encoding")
+			}
 			// The browser's Host is forwarded, so anything building a link
 			// builds one pointing at the hub, which is the address a browser
 			// can reach. Nothing in the room reads it today, which is what
@@ -573,6 +577,10 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if r, placed = p.placeNewPR(w, r); !placed {
 		return
 	}
+	// A PASTED LINK TO OPEN GOES TO THE ROOM THAT HOLDS IT, OR THE LEAST BUSY ONE. See openroute.go.
+	if r, placed = p.placeOpen(w, r); !placed {
+		return
+	}
 	// A PASTED PR'S WORKTREE GOES TO THE ROOM THAT HOLDS THE PR, OR THE LEAST BUSY ONE. See prworktreeroute.go.
 	if r, placed = p.placePRWorktree(w, r); !placed {
 		return
@@ -866,6 +874,9 @@ func (p *Proxy) rewrite(res *http.Response) error {
 	// A pull row's answer has its own `pr` object to tag and a findings list that must not be re-marshalled.
 	if res.Request != nil && prIDIn(res.Request.URL.Path) != "" {
 		return p.retagPR(res)
+	}
+	if res.Request != nil && res.Request.URL.Path == "/v1/open" {
+		return p.retagOpen(res)
 	}
 	return p.retagCard(res)
 }
@@ -1225,7 +1236,9 @@ func (p *Proxy) startsNothing(w http.ResponseWriter, r *http.Request) bool {
 		// walk mark, and a walker `set` or `clear` belong to a row already on that machine, which is
 		// work in flight and is worked out normally, the same as a card's restart or exit.
 		// See pulls.go.
-		"/v1/prs":
+		"/v1/prs",
+		// Opening a link makes a worktree, a row and a card. See openroute.go.
+		"/v1/open":
 	default:
 		if !walkerLaunch(r) {
 			return false

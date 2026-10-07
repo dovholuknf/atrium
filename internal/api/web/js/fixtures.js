@@ -1634,26 +1634,35 @@ async function launchNow() {
   const throwaway = !document.getElementById("l-throwaway-field").hidden &&
     document.getElementById("l-throwaway-on").checked;
   const pr = throwaway ? null : pastedPR();
-  const wt = pr ? await makePastedWorktree(pr) : null;
-  // WHICH MACHINE IT STARTS ON, decided before the launch so the review starts on the same one.
+  // WHICH MACHINE IT STARTS ON. Unset, the hub picks: the room that holds the link, else the least busy one.
   const headers = { "Content-Type": "application/json" };
   const roomField = document.getElementById("l-room-field");
   if (roomField && !roomField.hidden) {
     const want = document.getElementById("l-room").value;
     if (want) headers["X-Atrium-Room"] = want;
   }
-  // The room the hub put the pull request on wins over an unset field, since the worktree is only there.
-  if (wt && wt.room && !headers["X-Atrium-Room"]) headers["X-Atrium-Room"] = wt.room;
-  const review = wt ? await startPastedReview(pr, headers["X-Atrium-Room"] || "") : null;
-  if (review && !review.created) {
-    const live = await liveWalkerOf(review.row, headers["X-Atrium-Room"] || "");
-    if (live) {
-      document.getElementById("launch").close();
-      toast(pr.org + "/" + pr.repo + "#" + pr.number, "already under review, attached its card");
-      switchView("terms");
-      openTerm(live);
-      return;
-    }
+  // A PASTED PULL REQUEST IS ONE CALL: the worktree, the review row, the card and the walker, made on the room and
+  // undone there if a step fails. What the dialog let somebody change first goes with it. See internal/api/open.go.
+  if (pr) {
+    const out = await api("/v1/open", {
+      method: "POST", headers, body: JSON.stringify({
+        url: launchResolved.url || document.getElementById("l-url").value.trim(),
+        why: document.getElementById("l-why").value.trim(),
+        harness: document.getElementById("l-pick-field").hidden ? launchTarget.harness : picker.value,
+        title: document.getElementById("l-title").value.trim(),
+        prompt: document.getElementById("l-prompt").value.trim(),
+        model: document.getElementById("l-model").value.trim(),
+        effort: document.getElementById("l-effort").value.trim()
+      })
+    });
+    document.getElementById("launch").close();
+    if (out && out.created === false) toast(pr.org + "/" + pr.repo + "#" + pr.number, "already under review, attached its card");
+    const card = out && out.card ? await api("/v1/tasks/" + encodeURIComponent(out.card)) : null;
+    if (!card) { switchView("board"); return; }
+    if (launchWhere === "window") { popOutTask(card.id); return; }
+    switchView("terms");
+    openTerm(card);
+    return;
   }
   const body = Object.assign({}, launchTarget, {
     harness: document.getElementById("l-pick-field").hidden ? launchTarget.harness : picker.value,
@@ -1671,8 +1680,7 @@ async function launchNow() {
     // Split on commas and never on spaces, the same rule everywhere else: a
     // tag with a space in it is one tag.
     tags: document.getElementById("l-tags").value
-      .split(",").map(x => x.trim()).filter(Boolean)
-      .concat(review ? ["pr", "pr:" + pr.org + "/" + pr.repo + "#" + pr.number] : []),
+      .split(",").map(x => x.trim()).filter(Boolean),
     // Empty while resuming, since the field is hidden and the daemon refuses
     // a prompt and a resume together.
     prompt: resumeOff || !launchTarget.resume
@@ -1704,7 +1712,6 @@ async function launchNow() {
   const task = await api("/v1/launch", {
     method: "POST", headers, body: JSON.stringify(body)
   });
-  if (review && task && task.id) await setPastedWalker(review.row, task.id, headers["X-Atrium-Room"] || "");
   document.getElementById("launch").close();
 
   // Straight to the terminal you just started. Landing on the board instead

@@ -175,8 +175,9 @@ func (s *Server) postPR(w http.ResponseWriter, r *http.Request) {
 	// already has a live row for the PR says so, and is recorded as its owner. See prclaim.go.
 	claim := ""
 	if s.ClaimPR != nil {
-		held := false
-		if body.Head == "" {
+		// The open verb was placed here by the hub already, so this room is the owner unless another holds the key.
+		held := r.Context().Value(openHeldKey{}) != nil
+		if !held && body.Head == "" {
 			if live, err := s.st.LivePR(host, org, repo, num); err == nil && live != nil {
 				held = true
 			}

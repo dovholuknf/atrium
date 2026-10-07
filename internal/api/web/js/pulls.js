@@ -284,16 +284,20 @@ async function pullsPaste() {
   const why = document.getElementById("pulls-why");
   const u = url ? url.value.trim() : "";
   if (!u) { pullsSay("paste the URL of a pull request"); return; }
+  // ONE CALL: the worktree, the review row and its card, on whichever room the hub picks (js/fixtures.js has the
+  // launch dialog's door to the same verb). The row arrives on the event stream, and the card is attached.
+  let out;
   try {
-    const out = await pullsPost("/v1/prs", { url: u, why: why ? why.value.trim() : "" });
-    if (out && out.pr) pullsApplyRow(out.pr);
-    pullsSay(out && out.created === false ? "that PR already has a review at that head" : "");
-    if (url) url.value = "";
-    if (why) why.value = "";
-    pullsChanged();
+    out = await pullsPost("/v1/open", { url: u, why: why ? why.value.trim() : "" });
   } catch (e) {
     pullsSay(pullsErr(e));
+    return;
   }
+  pullsSay(out && out.created === false ? "that PR already has its card, so that one is attached" : "");
+  if (url) url.value = "";
+  if (why) why.value = "";
+  loadPulls();
+  if (out && out.card) await attachTask(out.card);
 }
 
 // The walk button: the findings are read and walked in the walk drawer beside the walker's terminal (js/walk.js),

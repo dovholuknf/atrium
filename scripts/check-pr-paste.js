@@ -1,13 +1,13 @@
-// A pasted pull request makes its worktree when launch is pressed, in a real browser with every endpoint mocked.
+// A pasted pull request opens in one call when launch is pressed, in a real browser with every endpoint mocked.
 //
 //   NODE_PATH=<dir with playwright> node scripts/check-pr-paste.js [shots-dir]
 //
 // It serves the concatenated board from board-source.js, the way scripts/audit-phone-u001.js does. No atrium process
-// is involved. It checks that launch asks the provider for the PR's worktree first, with the host, org, repo and
-// number the recogniser captured, that the launch goes to the returned path on the room the hub placed it on, that a
-// refusal reads as the daemon's own sentence with nothing launched, and that a directory typed over is left alone.
-// With a shots dir it writes before-paste.png, after-worktree.png and after-refused.png, which is how the dialog is
-// shown.
+// is involved. It checks that launch sends the link to POST /v1/open with what the dialog says (so an edited prompt is
+// the one used), that the browser makes no worktree, row, launch or walker call of its own, that the opened card is
+// attached, that a second paste with a live card attaches that card and says so, that a refusal reads as the room's
+// own sentence in the dialog with nothing started, and that a directory typed over is an ordinary launch.
+// With a shots dir it writes before-paste.png and after-refused.png, which is how the dialog is shown.
 
 const http = require("http");
 const fs = require("fs");
@@ -37,14 +37,10 @@ const RESOLVED = {
 };
 const WORKTREE = "D:/worktrees/github/openziti/tlsuv/fix-handshake";
 
-const ROW = { id: "pr1", org_repo: "openziti/tlsuv", number: 378, state: "ready", title: "fix the handshake",
-  url: PR, created_at: "2026-10-04T10:00:00Z", ready_at: "2026-10-04T10:05:00Z", walker_task: "", cost_usd: 1.2,
-  counts: {} };
-
-let seen, refuse, created, prErr, walkerCard, cardStatus;
+let seen, refuse, created;
 const reset = () => {
-  seen = { worktree: [], launch: [], prs: [], walker: [] };
-  refuse = ""; created = true; prErr = ""; walkerCard = ""; cardStatus = "working";
+  seen = { open: [], launch: [], chain: [], tasks: [] };
+  refuse = ""; created = true;
 };
 reset();
 
@@ -71,26 +67,24 @@ const server = http.createServer(async (req, res) => {
   let body = "";
   for await (const c of req) body += c;
   if (req.method === "POST" && p === "/v1/recognise") return json(RESOLVED);
-  if (req.method === "POST" && p === "/v1/providers/gh/pr-worktree") {
-    seen.worktree.push(JSON.parse(body));
-    if (refuse) return json({ error: refuse }, 400);
-    return json({ path: WORKTREE, existed: false, branch: "fix-handshake" }, 200, { "X-Atrium-Placed-Room": "beta" });
+  if (req.method === "POST" && p === "/v1/open") {
+    seen.open.push({ body: JSON.parse(body), room: req.headers["x-atrium-room"] || "" });
+    if (refuse) return json({ error: refuse, code: "worktree_failed", step: "worktree" }, 400);
+    if (!created) return json({ key: "github.com/openziti/tlsuv/378", card: "old1", pr: "pr1", worktree: WORKTREE, created: false });
+    return json({ key: "github.com/openziti/tlsuv/378", card: "t1", pr: "pr1", worktree: WORKTREE, created: true }, 201);
   }
   if (req.method === "POST" && p === "/v1/launch") {
     seen.launch.push({ body: JSON.parse(body), room: req.headers["x-atrium-room"] || "" });
-    return json({ id: "t1", status: "running", supervised: false });
+    return json({ id: "t2", status: "running", supervised: false });
   }
-  if (req.method === "POST" && p === "/v1/prs") {
-    seen.prs.push({ body: JSON.parse(body), room: req.headers["x-atrium-room"] || "", at: seen.launch.length });
-    if (prErr) return json({ error: prErr }, 400);
-    return json({ pr: Object.assign({}, ROW, { state: "queued", walker_task: walkerCard }), created }, created ? 201 : 200);
+  // The chain the browser used to run. The open verb does it on the room now, so none of these may come from here.
+  if (req.method === "POST" && (p.endsWith("/pr-worktree") || p === "/v1/prs" || /^\/v1\/prs\/[^/]+\/walker$/.test(p))) {
+    seen.chain.push(p);
+    return json({ error: "the browser should not call this" }, 500);
   }
-  if (req.method === "POST" && p === "/v1/prs/pr1/walker") {
-    seen.walker.push({ body: JSON.parse(body), room: req.headers["x-atrium-room"] || "" });
-    return json({ pr: Object.assign({}, ROW, { walker_task: JSON.parse(body).task }) });
-  }
-  if (req.method === "GET" && p === "/v1/tasks/old1") {
-    return json({ id: "old1", status: cardStatus, supervised: true, title: "the first walker" });
+  if (req.method === "GET" && (p === "/v1/tasks/t1" || p === "/v1/tasks/old1")) {
+    seen.tasks.push(p);
+    return json({ id: p.split("/").pop(), status: "running", supervised: false, title: "the walker" });
   }
   if (req.method !== "GET") return json({ ok: true });
   if (p === "/v1/harnesses") {
@@ -135,111 +129,55 @@ const bad = msg => { console.error("FAIL: " + msg); fail = true; };
     await page.goto("http://127.0.0.1:" + server.address().port + "/");
     await page.waitForFunction(() => typeof openLaunch === "function");
 
-    // The paste itself: the dialog is filled in and says the directory is not there yet.
+    // The paste itself: the dialog is filled in, and nothing is opened until launch.
     await open();
     await shot("before-paste.png");
-    if (seen.worktree.length) bad("recognising a url made a worktree. only launch should");
+    if (seen.open.length) bad("recognising a url opened it. only launch should");
 
-    // Launch: the worktree first, then the card on its path and on the room the hub placed it on.
+    // Launch: one call with the link and what the dialog says, an edited prompt included, and the card attached.
+    await page.fill("#l-prompt", "only look at the handshake");
     await press();
     await page.waitForFunction(() => !document.getElementById("launch").open);
-    const w = seen.worktree[0];
-    if (!w || w.host !== "github.com" || w.org !== "openziti" || w.repo !== "tlsuv" || w.number !== 378) {
-      bad("pr-worktree asked for " + JSON.stringify(w));
-    }
-    const l = seen.launch[0];
-    if (!l || l.body.cwd !== WORKTREE) bad("launch cwd was " + (l && l.body.cwd) + ", want " + WORKTREE);
-    if (!l || l.room !== "beta") bad("launch went to room '" + (l && l.room) + "', want the placed room beta");
+    const o = seen.open[0];
+    if (!o || o.body.url !== PR || o.body.prompt !== "only look at the handshake" ||
+        o.body.title !== RESOLVED.title || o.body.harness !== "claude") bad("the open was " + JSON.stringify(o));
+    if (seen.open.length !== 1) bad("launch opened " + seen.open.length + " times");
+    if (seen.chain.length || seen.launch.length) bad("the browser ran its own chain: " + seen.chain.concat(seen.launch.map(() => "/v1/launch")));
+    if (seen.tasks[0] !== "/v1/tasks/t1") bad("the opened card was not read to attach: " + seen.tasks);
+    await page.waitForFunction(() => typeof termTask !== "undefined" && termTask && termTask.id === "t1", null, { timeout: 5000 })
+      .catch(() => bad("the opened card was not attached"));
 
-    // The paste starts the review: POST /v1/prs on the placed room, before the card, and the card is tagged and set
-    // as the row's walker.
-    const rv = seen.prs[0];
-    if (!rv || rv.body.url !== PR) bad("the review was asked for " + JSON.stringify(rv));
-    if (!rv || rv.room !== "beta") bad("the review went to room '" + (rv && rv.room) + "', want beta");
-    if (!rv || rv.at !== 0) bad("the review did not start before the card");
-    const tags = (l && l.body.tags) || [];
-    if (!tags.includes("pr") || !tags.includes("pr:openziti/tlsuv#378")) bad("the card's tags were " + tags);
-    const wk = seen.walker[0];
-    if (!wk || wk.body.action !== "set" || wk.body.task !== "t1" || wk.room !== "beta") {
-      bad("the walker was set with " + JSON.stringify(wk));
-    }
-    // The walk drawer finds the row by the card.
-    const found = await page.evaluate(() => { const r = walkPrOf("t1"); return r && r.id; });
-    if (found !== "pr1") bad("walkPrOf(t1) found " + found + ", want pr1");
-    // Without a row the pulls view is shown as it is, which is the before picture.
-    if (found !== "pr1") await page.evaluate(() => { pulls.rows = []; });
-    else await page.evaluate(() => pullsApplyRow({ id: "pr1", org_repo: "openziti/tlsuv", number: 378, state: "ready",
-      title: "fix the handshake", url: "x", created_at: "2026-10-04T10:00:00Z", ready_at: "2026-10-04T10:05:00Z",
-      walker_task: "t1", cost_usd: 1.2, counts: {} }));
-    await page.evaluate(() => { pulls.loaded = true; switchView("pulls"); pullsPaint(); });
-    await page.waitForSelector(".pull button, .pull .pull-btn", { timeout: 3000 }).catch(() => {});
-    if (SHOTS) {
-      fs.mkdirSync(SHOTS, { recursive: true });
-      await page.screenshot({ path: path.join(SHOTS, found === "pr1" ? "card-with-walk.png" : "pulls-no-row.png") });
-    }
-    await page.evaluate(() => switchView("board"));
-
-    // A review that will not start is the dialog's note, and the card still launches.
+    // A second paste of a PR with a live card attaches that card and says so.
     reset();
-    prErr = "no forge for that host";
+    created = false;
     await open();
     await press();
     await page.waitForFunction(() => !document.getElementById("launch").open);
-    if (!seen.launch[0]) bad("a refused review stopped the card");
-    if (seen.walker.length) bad("a walker was set with no row");
-    if ((seen.launch[0].body.tags || []).includes("pr")) bad("a card with no row was tagged pr");
-
-    // A second paste of a PR with a live card attaches that card and starts no second one.
-    reset();
-    created = false; walkerCard = "old1";
-    await open();
-    await press();
-    await page.waitForFunction(() => !document.getElementById("launch").open);
-    if (seen.launch.length) bad("a second paste launched a second card");
+    if (seen.launch.length) bad("a second paste launched a card of its own");
+    if (seen.tasks[0] !== "/v1/tasks/old1") bad("the live card was not attached: " + seen.tasks);
     if (!(await page.evaluate(() => /already under review/.test(document.body.innerText)))) bad("no toast said so");
 
-    // The same, but the old card is done: a new one is launched and becomes the walker.
-    reset();
-    created = false; walkerCard = "old1"; cardStatus = "done";
-    await open();
-    await press();
-    await page.waitForFunction(() => !document.getElementById("launch").open);
-    if (!seen.launch.length || !seen.walker.length) bad("a dead walker was not replaced");
-
-    // A refusal is the daemon's sentence, in the dialog, and nothing starts.
+    // A refusal is the room's sentence, in the dialog, and nothing starts.
     reset();
     refuse = "gh is not logged in. run gh auth login on this machine";
+    await page.evaluate(() => switchView("board"));
     await open();
     await press();
     await page.waitForFunction(() => /gh auth login/.test(document.getElementById("launch").innerText));
-    if (seen.launch.length) bad("a refused worktree still launched");
+    if (seen.launch.length || seen.tasks.length) bad("a refused open still started or attached something");
     await shot("after-refused.png");
 
-    // A directory typed over is the operator's, and no worktree is made for it.
+    // A directory typed over is the operator's: an ordinary launch there, and the link is not opened.
     reset();
     await open();
     await page.fill("#l-cwd", "D:/somewhere/else");
     await press();
     await page.waitForFunction(() => !document.getElementById("launch").open);
-    if (seen.worktree.length) bad("a directory typed over still made a worktree");
-    if (seen.prs.length) bad("a directory typed over still started a review");
+    if (seen.open.length) bad("a directory typed over still opened the link");
     if (!seen.launch[0] || seen.launch[0].body.cwd !== "D:/somewhere/else") bad("the typed directory was not launched");
-
-    // The dialog with the worktree made, before the card starts.
-    reset();
-    await open();
-    await page.evaluate(() => { window.__made = makePastedWorktree(pastedPR()); });
-    await page.waitForFunction(() => /made the worktree/.test(document.getElementById("l-link-note").textContent));
-    await shot("after-worktree.png");
-
-    // The dialog after the paste, with the review started and the card not yet launched.
-    reset();
-    await open();
-    await page.evaluate(async () => { window.__made = await makePastedWorktree(pastedPR()); await startPastedReview(pastedPR(), "beta"); });
-    await shot("after-paste.png");
   } catch (e) { bad(String((e && e.stack) || e)); }
   await browser.close();
   server.close();
   if (fail) process.exit(1);
-  console.log("pr paste: launch makes the worktree and starts the review on the placed room, the card walks it, a second paste attaches, and refusals stay in the dialog.");
+  console.log("pr paste: launch opens the link in one call with the dialog's prompt, attaches its card, a second paste attaches the live card, and refusals stay in the dialog.");
 })();

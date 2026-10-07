@@ -55,6 +55,8 @@ type claimRoom struct {
 	imported []byte
 	archived []string
 	walkers  []string
+	// opens is the urls a POST /v1/open brought here.
+	opens []string
 }
 
 func (c *claimRoom) reviewCalls() (imported []byte, archived, walkers []string) {
@@ -164,6 +166,16 @@ func (c *claimRoom) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		c.walkers = append(c.walkers, r.URL.Path+" "+string(b))
 		c.mu.Unlock()
 		_, _ = w.Write([]byte(`{}`))
+	case r.URL.Path == "/v1/open" && r.Method == http.MethodPost:
+		var in struct {
+			URL string `json:"url"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&in)
+		c.mu.Lock()
+		c.opens = append(c.opens, in.URL)
+		c.mu.Unlock()
+		w.WriteHeader(http.StatusCreated)
+		_ = json.NewEncoder(w).Encode(map[string]any{"key": "k", "card": "c1", "pr": "pr_1", "created": true})
 	default:
 		http.NotFound(w, r)
 	}

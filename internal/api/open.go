@@ -1,0 +1,271 @@
+package api
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"log"
+	"net/http"
+	"net/http/httptest"
+	"strconv"
+	"strings"
+
+	"github.com/dovholuknf/atrium/internal/store"
+)
+
+// OPEN A LINK: one call from a pasted link to a live card in its own worktree. Design:
+// docs/rnd/card-lifecycle-design.md, section 3. Item r-open-verb-pr.
+//
+//	POST /v1/open {url, why?, harness?}
+//
+// On a hub the same path is placed first: on the room that already holds the link, or the least busy one (see
+// internal/link/openroute.go). Here, on the room, it is the whole chain the launch dialog used to run in the browser:
+//
+//  1. recognise the link. Nothing matching is 422 no_recogniser.
+//  2. a pull request already under review whose walker card is live answers that card, created false.
+//  3. the worktree, made or found (prWorktree). No provider row is needed.
+//  4. the review row (POST /v1/prs, claimed for this room).
+//  5. the card, launched in the worktree with the recogniser's title, prompt and tags.
+//  6. the card set as the row's walker.
+//
+// A STEP THAT FAILS UNDOES THE STEPS BEFORE IT, newest first, and answers the failing step's sentence. A worktree it
+// found and a row that was already there are not touched, only what this call made.
+//
+// Only pull requests so far. Issues and support links are r-open-support-kinds.
+
+// openHeldKey marks the review row's claim as asked by the open verb. See postPR.
+type openHeldKey struct{}
+
+// openRequest is the link, and what the launch dialog let somebody change first (shift-enter): an empty field takes
+// the recogniser's.
+type openRequest struct {
+	URL     string `json:"url"`
+	Why     string `json:"why"`
+	Harness string `json:"harness"`
+	Title   string `json:"title"`
+	Prompt  string `json:"prompt"`
+	Model   string `json:"model"`
+	Effort  string `json:"effort"`
+}
+
+// openAnswer is the card a link opened. On a hub `room` is filled and `card` and `pr` carry the room's tag.
+type openAnswer struct {
+	Key      string `json:"key"`
+	Kind     string `json:"kind"`
+	Card     string `json:"card"`
+	PR       string `json:"pr,omitempty"`
+	Worktree string `json:"worktree,omitempty"`
+	Created  bool   `json:"created"`
+	Title    string `json:"title,omitempty"`
+}
+
+// openFail is a refusal with the step it came from, so the board can say which part did not happen.
+func openFail(w http.ResponseWriter, status int, step, code, msg string) {
+	prError(w, status, code, msg, map[string]any{"step": step})
+}
+
+// POST /v1/open
+func (s *Server) open(w http.ResponseWriter, r *http.Request) {
+	if s.Recognise == nil || s.Launch == nil {
+		openFail(w, http.StatusNotImplemented, "recognise", "not_wired", "no daemon wired")
+		return
+	}
+	var in openRequest
+	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<16)).Decode(&in); err != nil {
+		openFail(w, http.StatusBadRequest, "recognise", "bad_request", "the body is not json: "+err.Error())
+		return
+	}
+	in.URL = strings.TrimSpace(in.URL)
+	if in.URL == "" {
+		openFail(w, http.StatusBadRequest, "recognise", "bad_request", "url is required")
+		return
+	}
+	if len(in.Why) > store.MaxPRWhy {
+		openFail(w, http.StatusBadRequest, "recognise", "bad_request", fmt.Sprintf("why is over %d characters", store.MaxPRWhy))
+		return
+	}
+
+	// 1. recognise
+	got, err := s.Recognise(in.URL)
+	if errors.Is(err, store.ErrNoRecogniser) {
+		openFail(w, http.StatusUnprocessableEntity, "recognise", "no_recogniser",
+			"nothing here knows what that is yet. add a row for it under runners, recognisers.")
+		return
+	}
+	if err != nil {
+		openFail(w, http.StatusBadRequest, "recognise", "bad_request", err.Error())
+		return
+	}
+	host := strings.ToLower(strings.TrimSpace(got.Vars["host"]))
+	if host == "" {
+		host = strings.ToLower(strings.TrimSpace(got.Host))
+	}
+	org, repo := strings.TrimSpace(got.Vars["org"]), strings.TrimSpace(got.Vars["repo"])
+	num, _ := strconv.Atoi(strings.TrimSpace(got.Vars["num"]))
+	if host == "" || org == "" || repo == "" || num <= 0 {
+		openFail(w, http.StatusUnprocessableEntity, "recognise", "not_a_pr",
+			"only a pull request link opens a card this way so far. "+
+				"use the launch dialog for this one: it fills in what the recogniser knew.")
+		return
+	}
+	key := store.PRKey(host, org, repo, num)
+	ans := openAnswer{Key: key, Kind: got.Recogniser, Title: got.Title}
+
+	// 2. a live card for the link already
+	if live, err := s.st.LivePR(host, org, repo, num); err == nil && live != nil {
+		if t := s.liveWalker(live); t != nil {
+			ans.Card, ans.PR, ans.Worktree = t.ID, live.ID, t.Worktree
+			writeJSON(w, http.StatusOK, ans)
+			return
+		}
+	}
+
+	// 3. the worktree
+	ctx, cancel := context.WithTimeout(r.Context(), makeWorktreeDeadline)
+	defer cancel()
+	wt, status, err := s.prWorktree(ctx, s.providerByHost(host), prWorktreeRequest{Host: host, Org: org, Repo: repo, Number: num})
+	if err != nil {
+		openFail(w, status, "worktree", "worktree_failed", err.Error())
+		return
+	}
+	ans.Worktree = wt.Path
+
+	// 4. the review row, claimed for this room
+	row, created, failStatus, failBody := s.openRow(r, in)
+	if row == nil {
+		undoPRWorktree(wt)
+		if failBody == nil {
+			failBody = map[string]any{"error": "the review row was not made", "code": "row_failed"}
+		}
+		failBody["step"] = "review"
+		writeJSON(w, failStatus, failBody)
+		return
+	}
+	ans.PR = row.ID
+	undoRow := func() {
+		if !created {
+			return
+		}
+		prOpMu.Lock()
+		if _, err := s.st.MovePR(row.ID, []string{store.PRQueued, store.PRFetching, store.PRRunning},
+			store.PRAborted, "", "the card for it did not start"); err == nil {
+			s.prRunner().Abort(row.ID)
+		}
+		prOpMu.Unlock()
+		if p, err := s.st.PRByID(row.ID); err == nil {
+			s.removeRunFolder(p)
+		}
+		if _, err := s.st.ArchivePR(row.ID); err != nil {
+			log.Printf("[atrium api] open %s: the row %s did not archive: %v", key, row.ID, err)
+		}
+		s.PublishPR(row.ID)
+	}
+	// A row already there may have a live walker by now, made by a paste that raced this one.
+	if !created {
+		if t := s.liveWalker(row); t != nil {
+			ans.Card, ans.Worktree = t.ID, t.Worktree
+			writeJSON(w, http.StatusOK, ans)
+			return
+		}
+	}
+
+	// 5. the card
+	task, err := s.Launch(s.openLaunchBody(in, got, wt, key, org, repo, num))
+	if err != nil {
+		undoRow()
+		undoPRWorktree(wt)
+		openFail(w, http.StatusBadRequest, "card", "launch_failed", "the card did not start: "+err.Error())
+		return
+	}
+	s.PublishTask(task)
+	ans.Card, ans.Created = task.ID, true
+
+	// 6. the walker
+	if _, err := s.st.SetPRWalker(row.ID, task.ID); err != nil {
+		if s.Kill != nil {
+			_ = s.Kill(task.ID)
+		}
+		undoRow()
+		undoPRWorktree(wt)
+		openFail(w, http.StatusInternalServerError, "walker", "walker_failed", "the card is not tied to the review: "+err.Error())
+		return
+	}
+	s.PublishPR(row.ID)
+	writeJSON(w, http.StatusCreated, ans)
+}
+
+// liveWalker is a row's walker card when it is still running or waiting, or nil.
+func (s *Server) liveWalker(p *store.PRReview) *store.Task {
+	if p == nil || p.WalkerTask == "" {
+		return nil
+	}
+	t, err := s.st.Get(p.WalkerTask)
+	if err != nil || t.Status == store.StatusDone || t.Status == store.StatusDead {
+		return nil
+	}
+	return t
+}
+
+// openRow makes or finds the review row through postPR, so the claim, the run folder and the runner start exactly as
+// a paste on the pulls tab does. A nil row is a refusal, with the status and body to answer.
+func (s *Server) openRow(r *http.Request, in openRequest) (row *store.PRReview, created bool, status int, body map[string]any) {
+	raw, _ := json.Marshal(map[string]string{"url": in.URL, "why": in.Why})
+	req := httptest.NewRequest(http.MethodPost, "/v1/prs", bytes.NewReader(raw)).
+		WithContext(context.WithValue(r.Context(), openHeldKey{}, true))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	s.postPR(rec, req)
+	var out struct {
+		PR      *store.PRReview `json:"pr"`
+		Created bool            `json:"created"`
+		HeldBy  string          `json:"held_by"`
+	}
+	_ = json.Unmarshal(rec.Body.Bytes(), &out)
+	_ = json.Unmarshal(rec.Body.Bytes(), &body)
+	switch {
+	case out.HeldBy != "":
+		// Another room claimed the link between the hub's placement and here. Its card is there.
+		return nil, false, http.StatusConflict, map[string]any{"code": "held", "held_by": out.HeldBy,
+			"error": "that pull request is held by " + out.HeldBy + ". open it there"}
+	case rec.Code >= 300 || out.PR == nil:
+		code := rec.Code
+		if code < 300 {
+			code = http.StatusInternalServerError
+		}
+		return nil, false, code, body
+	}
+	return out.PR, out.Created, rec.Code, nil
+}
+
+// openLaunchBody is the card's launch: the worktree, what the recogniser filled in, and the tags that tie it to the
+// link. The harness is the caller's, else the review recipe's for the repo.
+func (s *Server) openLaunchBody(in openRequest, got *store.Resolved, wt prWorktreeResult, key, org, repo string, num int) []byte {
+	harness := strings.TrimSpace(in.Harness)
+	if harness == "" {
+		if rec, err := s.st.RecipeFor(org + "/" + repo); err == nil && rec != nil {
+			harness = rec.Harness
+		}
+	}
+	tags := append([]string{}, got.Tags...)
+	tags = append(tags, "pr", fmt.Sprintf("pr:%s/%s#%d", org, repo, num), "link:"+key)
+	or := func(mine, theirs string) string {
+		if strings.TrimSpace(mine) != "" {
+			return strings.TrimSpace(mine)
+		}
+		return theirs
+	}
+	title := or(in.Title, got.Title)
+	if strings.TrimSpace(title) == "" {
+		title = fmt.Sprintf("%s/%s#%d", org, repo, num)
+	}
+	body, _ := json.Marshal(map[string]any{
+		"harness": harness, "cwd": wt.Path, "title": title, "why": in.Why, "prompt": or(in.Prompt, got.Prompt),
+		"tags": tags, "model": strings.TrimSpace(in.Model), "effort": strings.TrimSpace(in.Effort),
+		"repo": repo, "org": org, "host": got.Host, "branch": wt.Branch, "window": got.Window, "theme": got.Theme,
+		"source_kind": got.Kind, "source_url": in.URL,
+	})
+	return body
+}

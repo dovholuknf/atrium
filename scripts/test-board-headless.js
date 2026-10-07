@@ -19659,6 +19659,17 @@ async function pullsSection(browser, base) {
   const put = (r) => { const i = st.rows.findIndex(x => x.id === r.id); if (i >= 0) st.rows[i] = r; else st.rows.push(r); };
   // the walker card does not exist in this mock, so the attach after a launch fails and the board stays on the pulls view
   await ctx.route(/\/v1\/tasks\/t-walker$/, route => json(route, 404, { error: "no such task" }));
+  // the paste field opens the link: one call, answered as the room's open verb does
+  await ctx.route(/\/v1\/open$/, async route => {
+    const req = route.request();
+    st.posts.push("POST /v1/open " + (req.postData() || ""));
+    const b = JSON.parse(req.postData() || "{}");
+    if (st.halted) return json(route, 503, HALTED);
+    if (b.url.indexOf("nowhere") >= 0) return json(route, 422, { error: "no recogniser matches this", code: "no_recogniser", step: "recognise" });
+    if (b.url.indexOf("dup") >= 0) return json(route, 200, { key: "k", card: "t-walker", pr: st.rows[0].id, created: false });
+    put(row("pr_new", { number: 99, title: "", state: "queued", created_at: "2026-10-01T12:00:00Z", why: b.why, url: b.url }));
+    return json(route, 201, { key: "k", card: "t-walker", pr: "pr_new", created: true });
+  });
   await ctx.route(/\/v1\/prs(\/|\?|$)/, async route => {
     const req = route.request();
     const u = new URL(req.url());
@@ -19800,7 +19811,7 @@ async function pullsSection(browser, base) {
     await p.click("#pulls-paste");
     await p.waitForFunction(() => !!document.querySelector('#pulls-list .pull[data-id="pr_new"]'), null, { timeout: slow(5000) })
       .catch(() => fail("pulls: a pasted PR did not appear"));
-    if (!st.posts.some(x => x.startsWith("POST /v1/prs ") && x.indexOf("security look") >= 0)) fail("pulls: the paste did not post url and why");
+    if (!st.posts.some(x => x.startsWith("POST /v1/open ") && x.indexOf("security look") >= 0)) fail("pulls: the paste did not open the url with its why");
     if (await p.inputValue("#pulls-url") !== "") fail("pulls: the box was not cleared");
     await p.fill("#pulls-url", "https://github.com/dup/r/pull/1");
     await p.click("#pulls-paste");
@@ -19956,12 +19967,15 @@ async function quickPasteSection(browser, base) {
     Object.defineProperty(navigator, "clipboard", { configurable: true, value: {
       readText: async () => window.__clip, read: async () => [], writeText: async () => {} } });
   });
-  await ctx.route(/\/v1\/(recognise|prs|providers|launch)(\/|\?|$)/, async route => {
+  await ctx.route(/\/v1\/(recognise|prs|providers|launch|open|tasks\/t-q)(\/|\?|$)/, async route => {
     const req = route.request();
     const p = new URL(req.url()).pathname, m = req.method();
     if (m === "GET" && p === "/v1/prs") return json(route, 200, { prs: [], counts: {}, nav_count: 0 });
     if (m === "GET" && p === "/v1/providers") return json(route, 200, { providers: [{ name: "gh", host: "github.com", worktrees: true }] });
+    if (m === "GET" && p === "/v1/tasks/t-q") return json(route, 200, { id: "t-q", status: "running", title: "review zrok#12" });
     st.calls.push(m + " " + p + " " + (req.postData() || ""));
+    if (p === "/v1/open") return json(route, 201, { key: "github.com/openziti/zrok/12", kind: "github-pr", card: "t-q",
+      pr: "pr_q", worktree: "/wt/zrok-12", created: true });
     if (p === "/v1/recognise") {
       const url = JSON.parse(req.postData() || "{}").url || "";
       if (!/github\.com/.test(url)) return json(route, 404, { error: "no recogniser matches " + url });
@@ -20031,7 +20045,7 @@ async function quickPasteSection(browser, base) {
     if (await p.evaluate(open("quickpaste"))) fail("quickPaste: the box opened over the launch dialog");
     await p.evaluate(() => document.getElementById("launch").close());
 
-    // enter runs the pull request chain to a launched card
+    // enter opens the link in one call and attaches its card
     st.calls = [];
     await p.evaluate(() => { window.__clip = "https://github.com/openziti/zrok/pull/12"; });
     await p.keyboard.press("Control+Alt+KeyR");
@@ -20041,13 +20055,14 @@ async function quickPasteSection(browser, base) {
       null, { timeout: slow(8000) }).catch(() => {});
     await p.waitForTimeout(200);
     const order = st.calls.map(c => c.split(" ")[1]);
-    const want = ["/v1/recognise", "/v1/providers/gh/pr-worktree", "/v1/prs", "/v1/launch", "/v1/prs/pr_q/walker"];
+    const want = ["/v1/recognise", "/v1/open"];
     if (order.join() !== want.join()) fail("quickPaste: enter ran " + order.join() + ", wanted " + want.join());
-    const l = st.calls.find(c => c.indexOf("POST /v1/launch") === 0);
-    const launch = l ? JSON.parse(l.split(" ").slice(2).join(" ")) : {};
-    if (launch.cwd !== "/wt/zrok-12" || launch.prompt !== "review the pull request" ||
-        (launch.tags || []).join() !== "pull-request,pr,pr:openziti/zrok#12" ||
-        launch.source_url !== "https://github.com/openziti/zrok/pull/12") fail("quickPaste: the launch was " + JSON.stringify(launch));
+    const o = st.calls.find(c => c.indexOf("POST /v1/open") === 0);
+    const opened = o ? JSON.parse(o.split(" ").slice(2).join(" ")) : {};
+    if (opened.url !== "https://github.com/openziti/zrok/pull/12" || opened.prompt !== "review the pull request" ||
+        opened.title !== "review zrok#12") fail("quickPaste: the open was " + JSON.stringify(opened));
+    await p.waitForFunction(() => typeof termTask !== "undefined" && termTask && termTask.id === "t-q", null, { timeout: slow(5000) })
+      .catch(() => fail("quickPaste: the opened card was not attached"));
     if (errors.length) fail("quickPaste: page errors: " + errors.join(" | "));
   } finally { await ctx.close(); }
   if (!bad) console.log("quickPaste ok");
