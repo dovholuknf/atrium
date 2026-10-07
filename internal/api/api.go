@@ -566,6 +566,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /v1/recognise", s.recognise)
 	// A pasted link to a live card in its own worktree, in one call. See open.go.
 	mux.HandleFunc("POST /v1/open", s.open)
+	// A card's inventory, and its disk. See resources.go.
+	mux.HandleFunc("GET /v1/tasks/{id}/resources", s.getResources)
+	mux.HandleFunc("POST /v1/tasks/{id}/resources/measure", s.measureResourcesNow)
 	// Pull request reviews. docs/rnd/pulls-api.md is the contract.
 	mux.HandleFunc("POST /v1/prs", s.postPR)
 	mux.HandleFunc("GET /v1/prs", s.listPRs)
@@ -948,6 +951,9 @@ type view struct {
 	// `UndeliveredCounts` already does for messages. Absent when it is one or
 	// zero, because the row says that much by drawing the ask or not.
 	AsksOpen int `json:"asks_open,omitempty"`
+	// DiskBytes is what the card's live inventory measured last: its worktree, its directories and its review's run
+	// folder. Absent until something was measured. See resources.go.
+	DiskBytes int64 `json:"disk_bytes,omitempty"`
 	// RepliesOwed is how many says to this card asked for a reply that has not
 	// come. Absent at zero. Task JSON only, no chip. See docs/runtime/say-lifecycle-design.md.
 	RepliesOwed int `json:"replies_owed,omitempty"`
@@ -1109,6 +1115,13 @@ func toViews(ts []*store.Task) []view {
 // "and two more" is worth serving; a board that answers 500 because a count
 // query failed is not.
 func (s *Server) withAskCounts(vs []view) []view {
+	if disk, err := s.st.CardDisk(); err == nil && len(disk) > 0 {
+		for i := range vs {
+			if vs[i].Task != nil {
+				vs[i].DiskBytes = disk[vs[i].Task.ID]
+			}
+		}
+	}
 	if owed, err := s.st.RepliesOwed(); err == nil {
 		for i := range vs {
 			if vs[i].Task != nil {
@@ -1147,6 +1160,7 @@ func (s *Server) taskEvent(t *store.Task) view {
 	if mv, err := s.st.MergedViewFor(t.ID); err == nil {
 		v.MergedView = mv
 	}
+	v.DiskBytes = s.cardDisk(t.ID)
 	return v
 }
 
@@ -1408,6 +1422,7 @@ func (s *Server) getTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	v := s.withSeen([]view{toView(t)})[0]
+	v.DiskBytes = s.cardDisk(t.ID)
 	writeJSON(w, http.StatusOK, v)
 }
 

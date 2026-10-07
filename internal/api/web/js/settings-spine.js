@@ -449,6 +449,21 @@ function forgetEdits(id) {
   card.remove();
 }
 
+// Measure the open card's inventory again and redraw its disk chip.
+async function measureCardDisk() {
+  if (!current) return;
+  const chip = document.getElementById("d-disk");
+  if (chip) chip.textContent = "measuring…";
+  try {
+    const out = await api(`/v1/tasks/${encodeURIComponent(current.id)}/resources/measure`, { method: "POST" });
+    current.disk_bytes = out.disk_bytes || 0;
+    if (chip) chip.textContent = (diskLabel(current.disk_bytes) || "nothing") + " on disk";
+  } catch (e) {
+    if (chip) chip.textContent = "could not measure";
+    toast("could not measure the card", e.message);
+  }
+}
+
 async function openTask(id) {
   current = await api(`/v1/tasks/${id}`);
   document.getElementById("d-title").textContent = current.display_title;
@@ -457,6 +472,10 @@ async function openTask(id) {
     `<span class="chip" data-tip="${esc(current.status)}">${esc(statusLabel(current.status))}</span>`,
     current.pid ? `<span class="chip">pid ${current.pid}</span>` : "",
     current.worktree ? `<span class="chip">${esc(current.worktree)}</span>` : "",
+    // What the card owns on disk, measured on ask. A click measures it again. See internal/api/resources.go.
+    current.disk_bytes ? `<button type="button" class="chip" id="d-disk" onclick="measureCardDisk()" ` +
+      `data-tip="its worktree and review folder, as last measured. click to measure again">` +
+      `${esc(diskLabel(current.disk_bytes))} on disk</button>` : "",
     `<span class="chip">idle ${ago(cardIdleAge(current))}</span>`,
     current.created_at
       ? `<span class="chip" data-tip="${esc(current.created_at)}">first seen ${

@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -98,6 +100,32 @@ func TestOpenMakesTheWorktreeTheRowAndTheCardAndTiesThem(t *testing.T) {
 	if err != nil || row.WalkerTask != out["card"] {
 		t.Fatalf("the row's walker is not the card: %v %+v", err, row)
 	}
+	// The card owns what the open made, and its disk was measured.
+	rec := httpDo(t, oh.h, "GET", "/v1/tasks/"+out["card"].(string)+"/resources")
+	var inv struct {
+		Resources []store.CardResource `json:"resources"`
+		Disk      int64                `json:"disk_bytes"`
+	}
+	_ = json.Unmarshal(rec.Body.Bytes(), &inv)
+	kinds := []string{}
+	for _, r := range inv.Resources {
+		kinds = append(kinds, r.Kind+" "+r.Ref)
+	}
+	want := "worktree " + path + ",ref refs/atrium/pr/7,branch feat/x,review " + row.ID
+	if rec.Code != 200 || strings.Join(kinds, ",") != want {
+		t.Errorf("the inventory is %d %v, want %s", rec.Code, kinds, want)
+	}
+	if inv.Disk <= 0 {
+		t.Errorf("the disk was not measured: %d", inv.Disk)
+	}
+}
+
+// httpDo is a request with no body through the handler.
+func httpDo(t *testing.T, h http.Handler, method, path string) *httptest.ResponseRecorder {
+	t.Helper()
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest(method, path, nil))
+	return rec
 }
 
 func TestOpenTwiceAnswersTheLiveCard(t *testing.T) {
@@ -131,6 +159,10 @@ func TestOpenUndoesTheWorktreeAndTheRowWhenTheCardDoesNotStart(t *testing.T) {
 	rows, _ := oh.srv.st.PRs(store.PRFilter{})
 	if len(rows) != 0 {
 		t.Errorf("the row is still in the index: %+v", rows[0])
+	}
+	// What it made is in no card's live inventory.
+	if disk, _ := oh.srv.st.CardDisk(); len(disk) != 0 {
+		t.Errorf("a rolled back open left live inventory: %v", disk)
 	}
 	// Nothing half made is in the way of the next try.
 	oh.refuse = nil
