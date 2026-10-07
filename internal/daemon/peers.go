@@ -258,13 +258,13 @@ func (d *Daemon) resolvePeer(w http.ResponseWriter, from, to, verb string) *stor
 // resolvePeerSay is resolvePeer for a caller with words to record. A miss on a
 // tell is written to the say record; the other verbs write no row (text is "").
 func (d *Daemon) resolvePeerSay(w http.ResponseWriter, from, to, verb, text, when string, reply bool) *store.Task {
-	return d.resolvePeerSayWake(w, from, to, verb, text, when, reply, false)
+	return d.resolvePeerSayWake(w, from, to, verb, text, when, "", reply, false)
 }
 
 // resolvePeerSayWake is resolvePeerSay for a sender that may ask a parked card to
 // be resumed. The target returned is the row AS FOUND, still marked parked when
 // this woke it, which is how the caller knows not to type.
-func (d *Daemon) resolvePeerSayWake(w http.ResponseWriter, from, to, verb, text, when string, reply, wake bool) *store.Task {
+func (d *Daemon) resolvePeerSayWake(w http.ResponseWriter, from, to, verb, text, when, kind string, reply, wake bool) *store.Task {
 	switch {
 	case from == "":
 		writeJSONErr(w, http.StatusBadRequest, errString("say which session is sending"))
@@ -309,7 +309,7 @@ func (d *Daemon) resolvePeerSayWake(w http.ResponseWriter, from, to, verb, text,
 		case end.Live != nil:
 			target, gate = end.Live, d.sayGate(end.Live)
 		default:
-			d.forwardMoved(context.Background(), w, from, end, text, when, reply, wake)
+			d.forwardMoved(context.Background(), w, from, end, text, when, kind, reply, wake)
 			return nil
 		}
 	}
@@ -383,7 +383,7 @@ func (d *Daemon) handleTell(w http.ResponseWriter, r *http.Request) {
 	// ANOTHER ROOM, `name@room`, relayed through the hub. See relay.go.
 	if name, room, err := SplitAddress(in.To); err == nil {
 		if other := d.otherRoom(room); other != "" {
-			code, body := d.sayAcross(r.Context(), strings.TrimSpace(in.From), name, other, in.Text, in.When, in.Reply, in.Wake)
+			code, body := d.sayAcross(r.Context(), strings.TrimSpace(in.From), name, other, in.Text, in.When, in.Kind, in.Reply, in.Wake)
 			if code < 400 {
 				// The two words `atrium tell` reads, beside the rest.
 				body["typed"] = body["delivered"] == "terminal"
@@ -406,7 +406,7 @@ func (d *Daemon) handleTell(w http.ResponseWriter, r *http.Request) {
 	// atrium:everywhere on the others. Only a name that is nobody here.
 	if d.localTarget(in.To) == nil && from != to {
 		raw := strings.TrimSpace(in.From)
-		done, note := d.sayEverywhere(w, r.Context(), raw, strings.TrimSpace(in.To), text, in.When, in.Reply, in.Wake,
+		done, note := d.sayEverywhere(w, r.Context(), raw, strings.TrimSpace(in.To), text, in.When, in.Kind, in.Reply, in.Wake,
 			func(code int, body map[string]any) {
 				if code < 400 {
 					body["typed"] = body["delivered"] == "terminal"
@@ -440,7 +440,7 @@ func (d *Daemon) handleTell(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
-	target := d.resolvePeerSayWake(w, from, to, "tell", text, in.When, in.Reply, in.Wake)
+	target := d.resolvePeerSayWake(w, from, to, "tell", text, in.When, in.Kind, in.Reply, in.Wake)
 	if target == nil {
 		return
 	}
@@ -471,7 +471,7 @@ func (d *Daemon) handleTell(w http.ResponseWriter, r *http.Request) {
 	// message that is typed is written to the timeline instead so the traffic
 	// is still auditable. Both, and the agent would receive it twice.
 	waitTurn := d.waitsForTurn(target.ID, when)
-	typed, msgID, err := d.deliverPeerWhenID(target, from, text, waitTurn)
+	typed, msgID, err := d.deliverPeerWhenID(target, from, text, promptKind(in.Kind, in.Reply), waitTurn)
 	if err != nil {
 		writeJSONErr(w, http.StatusInternalServerError, err)
 		return
@@ -540,36 +540,28 @@ func (d *Daemon) deliverPeer(target *store.Task, from, text string) (bool, error
 
 // deliverPeerWhen is deliverPeer with the turn rule already resolved.
 func (d *Daemon) deliverPeerWhen(target *store.Task, from, text string, waitTurn bool) (bool, error) {
-	typed, _, err := d.deliverPeerWhenID(target, from, text, waitTurn)
+	typed, _, err := d.deliverPeerWhenID(target, from, text, "", waitTurn)
 	return typed, err
 }
 
 // deliverPeerWhenID is deliverPeerWhen that also says which queue row carries
 // the words when they were not typed, so a say can be recorded against it.
-func (d *Daemon) deliverPeerWhenID(target *store.Task, from, text string, waitTurn bool) (bool, string, error) {
+func (d *Daemon) deliverPeerWhenID(target *store.Task, from, text, kind string, waitTurn bool) (bool, string, error) {
 	// A target still marked parked here was woken by this very say: it is queued
 	// and carried by the ordinary path, never typed into a session that has only
 	// just started.
 	if isParked(target) {
 		// fall through to the queue
-	} else if typed, _ := d.tellByTyping(target, from, text, waitTurn); typed {
+	} else if typed, _ := d.tellByTyping(target, from, text, kind, waitTurn); typed {
 		d.publishTask(target.ID)
 		return true, "", nil
 	}
-	var (
-		m   *store.Message
-		err error
-	)
-	if waitTurn {
-		m, err = d.st.QueueAfterTurn(target.ID, text, from)
-	} else {
-		m, err = d.st.QueueFromPeer(target.ID, text, from)
-	}
+	m, err := d.st.QueuePeerKind(target.ID, text, from, kind, waitTurn)
 	if err != nil {
 		return false, "", err
 	}
 	d.publishTask(target.ID)
-	d.deferPeerInjection(target.ID, m.ID, from, text, waitTurn)
+	d.deferPeerInjection(target.ID, m.ID, from, text, kind, waitTurn)
 	return false, m.ID, nil
 }
 
@@ -613,7 +605,7 @@ func atriumLabel(what string) string {
 //   - A part written line. Never typed. This is what the old refusal was
 //     protecting and it stays protected, because there is no way to insert
 //     into a line somebody is halfway through without wrecking it.
-func (d *Daemon) tellByTyping(target *store.Task, from, text string, waitTurn bool) (bool, string) {
+func (d *Daemon) tellByTyping(target *store.Task, from, text, kind string, waitTurn bool) (bool, string) {
 	// A card can refuse on its own account. A lent card is the case this was
 	// built for: the guest holds that terminal and was handed exactly one
 	// session, so another session's words have no business appearing in it.
@@ -660,7 +652,7 @@ func (d *Daemon) tellByTyping(target *store.Task, from, text string, waitTurn bo
 	if err != nil || !wrote {
 		return false, ""
 	}
-	d.notePeerTyped(target.ID, from, text, "typed and sent")
+	d.notePeerTyped(target.ID, from, text, kind, "typed and sent")
 	return true, typedNote
 }
 
@@ -669,10 +661,13 @@ func (d *Daemon) tellByTyping(target *store.Task, from, text string, waitTurn bo
 // The queue is what makes peer traffic auditable and a typed message never
 // reaches it, so this is the record instead. Written after the bytes are in
 // the terminal, because a message that failed to type is not one that happened.
-func (d *Daemon) notePeerTyped(taskID, from, text, how string) {
-	if err := d.st.AppendEvent(taskID, store.EventPrompted, map[string]any{
-		"text": text, "via": "terminal", "from_peer": from, "how": how,
-	}); err != nil {
+// kind is store.PromptFYI for a launcher's fyi, which makes no report owed.
+func (d *Daemon) notePeerTyped(taskID, from, text, kind, how string) {
+	ev := map[string]any{"text": text, "via": "terminal", "from_peer": from, "how": how}
+	if kind == store.PromptFYI {
+		ev["kind"] = kind
+	}
+	if err := d.st.AppendEvent(taskID, store.EventPrompted, ev); err != nil {
 		log.Printf("[atrium] typed a peer message into %s but could not record it: %v", taskID, err)
 	}
 }

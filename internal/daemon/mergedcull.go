@@ -233,7 +233,7 @@ func (d *Daemon) tellLauncherMerged(t *store.Task, w *store.WorkItem, into, sha 
 	text := fmt.Sprintf("%s's branch merged into %s at %s. It will be culled at %s. "+
 		"To keep it, atrium_cull card=%s hold=true.",
 		who, into, shortRef(sha), at.Local().Format("15:04"), t.ID)
-	if _, _, err := d.deliverPeerWhenID(l, "atrium", text, true); err != nil {
+	if _, _, err := d.deliverPeerWhenID(l, "atrium", text, "", true); err != nil {
 		log.Printf("[atrium] could not tell %s that %s merged: %v", l.DisplayTitle(), who, err)
 	}
 }

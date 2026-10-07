@@ -68,6 +68,9 @@ type RelayRequest struct {
 	To   string `json:"to,omitempty"`
 	Text string `json:"text,omitempty"`
 	When string `json:"when,omitempty"`
+	// Kind is `fyi` or empty, for `say`: a launcher's fyi makes no report owed on
+	// the target room. An older hub ignores it and the say goes as `needs`.
+	Kind string `json:"kind,omitempty"`
 	// Wake resumes a parked target before the message is delivered, for `say`. An older hub
 	// ignores it, and the target answers `parked` as it always did.
 	Wake bool `json:"wake,omitempty"`

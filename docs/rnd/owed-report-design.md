@@ -22,6 +22,10 @@ A card owes its launcher a report only for a prompt the LAUNCHER sent:
 - its opening prompt, given at launch, and
 - a message from the launcher (`atrium_say`, `atrium tell`), typed, queued, or carried in by a hook.
 
+A launcher's message sent as `kind: fyi` (and not asking for a reply) does not count either: "stop, nothing else to
+do" asks for no reply, so the worker owes none. The door records `kind: fyi` on the `prompted` event and `promptOwes`
+skips it (r-comms-one-instruction).
+
 Nothing else creates a debt: not a message from a third session, not the operator's prompt or note or action, not
 atrium's own restart wake or exit notice, and not a turn the session's own background task or monitor woke.
 

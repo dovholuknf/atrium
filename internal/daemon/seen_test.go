@@ -146,7 +146,7 @@ func TestAPeerTypedPromptIsNotTheOperator(t *testing.T) {
 	if err := d.st.NoteTurnEnded(target.ID, store.TurnQuestions{Known: true, Block: true, List: []string{"q"}}); err != nil {
 		t.Fatal(err)
 	}
-	if typed, _ := d.tellByTyping(target, "sg4/sa21", "report: done", false); !typed {
+	if typed, _ := d.tellByTyping(target, "sg4/sa21", "report: done", "", false); !typed {
 		t.Fatal("the peer message was not typed")
 	}
 	if !r.promptWasPeer(time.Now()) {

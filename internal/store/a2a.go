@@ -191,6 +191,10 @@ func (s *Store) ForgetNotices(workerID, source string) error {
 	})
 }
 
+// PromptFYI is the `kind` a `prompted` event carries for a message its sender
+// marked fyi. Such a prompt never makes a card owe a report. See promptOwes.
+const PromptFYI = "fyi"
+
 // OwesReport reports whether the card's launcher has given it something to do
 // since it last told the launcher anything. A card its launcher never prompted
 // owes nothing, whoever else has.
@@ -207,15 +211,20 @@ func (t *Task) OwesReport() bool {
 // a reopen by the operator is not counted. The operator, a note, an action, atrium's own wake and a message
 // from any other session do not. Decided here, where the stamp is, so a door
 // written later cannot forget it. See docs/rnd/owed-report-design.md.
+//
+// A launcher's fyi does not count either: it asks for no reply ("stop, nothing
+// else to do"), so the worker owes none, and no nudge or silent-stop notice
+// follows. The door that records the prompt writes `kind: fyi` on it.
 func promptOwes(q querier, s *Store, taskID string, payload []byte) (bool, error) {
 	var p struct {
 		FromPeer string `json:"from_peer"`
+		Kind     string `json:"kind"`
 	}
 	if err := json.Unmarshal(payload, &p); err != nil {
 		return false, nil
 	}
 	from := strings.TrimSpace(p.FromPeer)
-	if from == "" {
+	if from == "" || strings.EqualFold(strings.TrimSpace(p.Kind), PromptFYI) {
 		return false, nil
 	}
 	var by, byID string

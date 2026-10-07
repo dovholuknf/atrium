@@ -82,15 +82,18 @@ func addPeerTools(s *mcp.Server) {
 			"`kind` is `fyi` for news the receiver need not act on, or `needs` (the default) for " +
 			"anything that wants an answer or an action. A receiver that holds its notices keeps an " +
 			"`fyi` on its card and is not interrupted, so say `needs` for anything you want read now. " +
-			"On the same room only.",
+			"A launcher's fyi, such as 'stop, nothing else to do', asks for no reply and the worker owes none.\n\n" +
+			"IF ANOTHER SESSION LAUNCHED YOU, END EVERY TURN BY TELLING IT WITH THIS: `done <sha>` when " +
+			"the work is finished, `blocked: <one line>` when something stops you. A turn that ends " +
+			"without it is a silent stop: you are nudged once, then your launcher is told you went quiet.",
 	}, sayHandler)
 
 	mcp.AddTool(s, &mcp.Tool{
 		Name: "atrium_report",
 		Description: "Report on your work to the session that launched you, on this room or another.\n\n" +
-			"IF ANOTHER SESSION LAUNCHED YOU, END EVERY TURN WITH THIS, or with an `atrium_say` " +
-			"to your launcher. A turn that ends with neither is a silent stop: your launcher is " +
-			"told you went quiet, and the human's board is told after that.\n\n" +
+			"A launched session tells its launcher with `atrium_say` (`done <sha>`, `blocked: <one " +
+			"line>`), and that is what its launch prompt asks for. Use this only when your launcher " +
+			"asks for a report by this tool. Either one counts as telling your launcher.\n\n" +
 			"status is one of:\n" +
 			"- `done`: the work is finished. Give `sha`, the commit it landed as, or `no_commit` " +
 			"saying why there is none.\n" +

@@ -276,7 +276,7 @@ func (d *Daemon) pushRemoteOrchestrator(worker *store.Task, text string) {
 	if name == "" {
 		return
 	}
-	if _, err := d.holdRelay(worker, worker.WireName, name, room, "", text, "", store.RelaySourceNotice); err != nil {
+	if _, err := d.holdRelay(worker, worker.WireName, name, room, "", text, "", "", store.RelaySourceNotice); err != nil {
 		log.Printf("[atrium] could not hold an owed notice to %s@%s: %v", name, room, err)
 	}
 }

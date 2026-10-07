@@ -103,7 +103,7 @@ func (d *Daemon) ledgerNotice(n store.LedgerNotice) {
 		d.ringHeld(n.ArbiterID, n.TaskID, n.Source, n.Text)
 	} else {
 		d.publishTask(n.ArbiterID)
-		d.deferPeerInjection(n.ArbiterID, n.MessageID, n.From, n.Text, d.waitsForTurn(n.ArbiterID, WhenImmediate))
+		d.deferPeerInjection(n.ArbiterID, n.MessageID, n.From, n.Text, "", d.waitsForTurn(n.ArbiterID, WhenImmediate))
 	}
 	if n.Source == store.NoticeEnded {
 		d.emitLifecycle("work-ended", n.Text)

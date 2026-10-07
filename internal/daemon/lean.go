@@ -157,7 +157,7 @@ var leanDisallowed = []string{
 // leanSystemPrompt is what a lean worker is told in place of the CLAUDE.md files
 // it no longer loads. Only rules a worker breaks without being told.
 const leanSystemPrompt = `You are a worker launched by another agent through atrium. Your BRIEF.md is your whole task.
-- Report with atrium_report when you finish, get blocked, or need an answer. atrium_say your launcher for a question. A plain reply in the terminal reaches nobody.
+- Tell your launcher with atrium_say: done <sha> when you finish, blocked: <one line> when something stops you, or your question. A plain reply in the terminal reaches nobody.
 - Never commit on claude/main or main. Commit on your own branch.
 - Never restart atrium, the hub or a room, and never deploy, unless the brief says to.
 - Commit messages: one short subject line. No body unless asked, no Co-Authored-By or other trailer.

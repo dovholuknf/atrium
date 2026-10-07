@@ -62,9 +62,12 @@ var backoffSteps = []time.Duration{
 // pendingMsg is one deferred peer message: the store row that is the source of
 // truth, who sent it, and the bytes to type.
 type pendingMsg struct {
-	msgID  string
-	from   string
-	text   string // the clean text, for the timeline record
+	msgID string
+	from  string
+	text  string // the clean text, for the timeline record
+	// kind is store.PromptFYI for a launcher's fyi, so typing it late makes no
+	// report owed either. See promptKind.
+	kind   string
 	banner string
 	body   string // text plus any bracketed-paste markers, what actually types
 	// waitTurn holds it while the runner is mid-turn. See saywhen.go.
@@ -100,7 +103,7 @@ func newPendingInjector(d *Daemon) *pendingInjector {
 // deferPeerInjection hands a just-queued peer message to the injector to retry
 // on screen. The banner and body are rebuilt the same way tellByTyping does, so
 // a retry types exactly what an immediate injection would have.
-func (d *Daemon) deferPeerInjection(taskID, msgID, from, text string, waitTurn bool) {
+func (d *Daemon) deferPeerInjection(taskID, msgID, from, text, kind string, waitTurn bool) {
 	if d.pending == nil || d.frozenForMove(taskID) {
 		// A frozen card's message is in the freeze queue, not in message. It is
 		// replayed with its id when the move is undone.
@@ -127,6 +130,7 @@ func (d *Daemon) deferPeerInjection(taskID, msgID, from, text string, waitTurn b
 		msgID:    msgID,
 		from:     from,
 		text:     text,
+		kind:     kind,
 		banner:   banner,
 		body:     body,
 		waitTurn: waitTurn,
@@ -374,7 +378,7 @@ func (pi *pendingInjector) attempt(taskID string) {
 		if err := pi.d.st.MarkDelivered(taskID, "terminal", []string{e.msgID}); err != nil {
 			log.Printf("[atrium] typed a held message into %s but could not mark it delivered: %v", taskID, err)
 		}
-		pi.d.notePeerTyped(taskID, e.from, e.text, "typed and sent after waiting for your line to clear")
+		pi.d.notePeerTyped(taskID, e.from, e.text, e.kind, "typed and sent after waiting for your line to clear")
 		if escalated {
 			pi.d.noteEscalated(taskID, e.msgID, e.from, time.Since(e.at))
 		}
