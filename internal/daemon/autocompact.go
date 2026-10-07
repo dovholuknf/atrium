@@ -31,13 +31,19 @@ type autocompactProbe struct {
 }
 
 func newAutocompactProbe() *autocompactProbe {
-	return &autocompactProbe{seen: map[string]bool{}, help: runHelp}
+	return &autocompactProbe{seen: map[string]bool{}, help: helpRunner}
 }
+
+// helpRunner is what a new probe asks with. A seam, so no test runs a real runner's `--help`.
+var helpRunner = runHelp
 
 func runHelp(exe string) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
-	out, err := exec.CommandContext(ctx, exe, "--help").CombinedOutput()
+	cmd := exec.CommandContext(ctx, exe, "--help")
+	// A .cmd shim's child keeps the output pipe after the shim is killed, and without this the read waits for it.
+	cmd.WaitDelay = 2 * time.Second
+	out, err := cmd.CombinedOutput()
 	return string(out), err
 }
 

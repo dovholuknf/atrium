@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -38,6 +39,14 @@ func TestMain(m *testing.M) {
 			return "cmd.exe", []string{"/d", "/c", "exit", "1"}
 		}
 		return "sh", []string{"-c", "exit 1"}
+	}
+	// Every daemon a test runs probes its runners' --help at start. A bare agent name is the machine's own install,
+	// so it is not asked, which reads as a runner that takes the flag. A test's fake runner is a path and still runs.
+	helpRunner = func(exe string) (string, error) {
+		if testguard.IsAgent(exe) && !strings.ContainsAny(exe, `/\`) {
+			return "", os.ErrNotExist
+		}
+		return runHelp(exe)
 	}
 	// A launched runner has 2 s to fall over; a test runner that will survive
 	// shows it in a fraction of that, and one that falls over does at once.
