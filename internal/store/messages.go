@@ -209,3 +209,13 @@ func (s *Store) UndeliveredCounts() (map[string]int, error) {
 	})
 	return out, err
 }
+
+// UndeliveredCount is UndeliveredCounts for one card.
+func (s *Store) UndeliveredCount(taskID string) (int, error) {
+	n := 0
+	err := s.guard(func() error {
+		return s.db.QueryRow(
+			`SELECT COUNT(*) FROM message WHERE task_id = ? AND delivered_at IS NULL`, taskID).Scan(&n)
+	})
+	return n, err
+}

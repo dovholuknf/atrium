@@ -73,7 +73,7 @@ func TestFamilySayWakesParked(t *testing.T) {
 			t.Fatal("the launcher's tell left the worker parked")
 		}
 	})
-	t.Run("any other peer still gets parked, told how to wake it", func(t *testing.T) {
+	t.Run("any other peer is kept on the parked card, which stays asleep", func(t *testing.T) {
 		d := testDaemon(t)
 		_, worker := launchedPair(t, d)
 		peerCard(t, d, "stranger")
@@ -82,15 +82,14 @@ func TestFamilySayWakesParked(t *testing.T) {
 			t.Fatal(err)
 		}
 		out := say(t, d, "stranger", worker.ID)
-		if out["delivered"] != "parked" {
+		if out["delivered"] != "queued" || out["reachable"] != "kept" {
 			t.Fatalf("answer %v", out)
 		}
 		if got, _ := d.st.Get(worker.ID); !isParked(got) {
 			t.Fatal("a stranger's say woke it")
 		}
-		note, _ := out["warning"].(string)
-		if !strings.Contains(note, "this card is parked, send again with wake=true to resume it") {
-			t.Fatalf("the parked answer does not say how: %q", note)
+		if n := len(pendingFrom(t, d, worker.ID)); n != 1 {
+			t.Fatalf("%d kept, want the say stored on the card", n)
 		}
 	})
 }

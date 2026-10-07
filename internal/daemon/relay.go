@@ -599,6 +599,12 @@ func (d *Daemon) giveUpRelay(r store.RelayRow, why string) {
 		log.Printf("[atrium] could not record the dropped message on %s: %v", r.FromTask, err)
 		return
 	}
+	// The words go back to the sender as a message on its card, so they are kept and counted as undelivered until it
+	// has read them, not only written in a timeline event.
+	note := fmt.Sprintf("your message to %s@%s was not delivered (%s). what you said: %s", r.ToName, r.ToRoom, why, r.Text)
+	if _, err := d.st.QueuePeerKind(r.FromTask, note, "atrium", store.PromptFYI, true); err != nil {
+		log.Printf("[atrium] could not hand the dropped message back to %s: %v", r.FromTask, err)
+	}
 	d.publishTask(r.FromTask)
 }
 

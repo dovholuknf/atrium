@@ -95,6 +95,8 @@ type Options struct {
 
 // Daemon owns the store and both listeners.
 type Daemon struct {
+	// wakeLaunch replaces the real launch when a done card is woken. Tests only. See keep.go.
+	wakeLaunch func(LaunchRequest) (*store.Task, error)
 	// authLim bounds password guessing on the published board. See auth_limit.go.
 	authLim authLimiter
 	// forgeOpen is the forge access alerts open now, by tool@host. See forgeaccess.go.
