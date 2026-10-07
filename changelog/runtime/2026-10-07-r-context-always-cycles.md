@@ -1,0 +1,1 @@
+Resumed cards and pinned fixture cards now get a context reading and the same context cycle at the limit as any other card. A resumed card reads the newest transcript in its directory when its own session is not on disk yet, and a fixture is no longer excluded from the cycle. (r-resumed-card-no-context-reading, r-fixtures-never-cycle-context)

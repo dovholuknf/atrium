@@ -13,8 +13,8 @@ import (
 //
 // The limit is the card's own, else the hub's for its harness, else claude at 200k (api.ContextLimitFor).
 // Every supervised card is covered, a person's own included, unless its details switch it off. Nothing else
-// excludes a card: no tag, no mode, no human or agent split. A fixture and a lent session stay out, since
-// neither is work this room owns.
+// excludes a card: no tag, no mode, no human or agent split. A lent session stays out, since it is not work
+// this room owns. A fixture is cycled like any card: it runs as long as the daemon does.
 //
 // Checked on the reaper's tick and on every statusline update (onTelemetry). A cycle already on the card is
 // poked instead, so a prompt that is due goes at once.
@@ -32,7 +32,7 @@ func (d *Daemon) cycleSubject(t *store.Task) bool {
 	default:
 		return false
 	}
-	if d.fixtureCards()[t.ID] || d.guests.get(t.ID) != nil || d.frozenForMove(t.ID) {
+	if d.guests.get(t.ID) != nil || d.frozenForMove(t.ID) {
 		return false
 	}
 	return true
