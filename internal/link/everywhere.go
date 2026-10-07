@@ -33,6 +33,10 @@ type everyCard struct {
 	Title   string
 	Status  string
 	Payload json.RawMessage
+	// Worktree and Host are the card's directory and the machine it is on, kept
+	// for the board views only. See views.go.
+	Worktree string
+	Host     string
 }
 
 // spelled is the card as a caller should retype it, `handle@room (@alias)`.
@@ -55,6 +59,9 @@ type everywhere struct {
 	// named is every live card on each room, tagged or not, for resolving a bare
 	// name only. It is never listed or streamed, and carries no payload.
 	named map[string][]everyCard
+	// trees is every live card on each room that has a worktree, for the board
+	// views only. See views.go.
+	trees map[string][]everyCard
 	// names keeps each room's spelling, since the map is keyed folded.
 	names map[string]string
 	// live is the rooms the hub still holds a record of, folded. Nil means all
@@ -66,7 +73,8 @@ type everywhere struct {
 }
 
 func newEverywhere() *everywhere {
-	return &everywhere{byRoom: map[string][]everyCard{}, named: map[string][]everyCard{}, names: map[string]string{}}
+	return &everywhere{byRoom: map[string][]everyCard{}, named: map[string][]everyCard{},
+		trees: map[string][]everyCard{}, names: map[string]string{}}
 }
 
 // humanLauncher is the `spawned_by` the board's launch dialog records, the same
@@ -148,6 +156,31 @@ func liveNamed(room string, cards []CardState) []everyCard {
 	return out
 }
 
+// liveTrees reads every live card of one announcement that has a worktree, named
+// or not, for the board views. See views.go.
+func liveTrees(room string, cards []CardState) []everyCard {
+	var out []everyCard
+	for _, c := range cards {
+		if !cardLive(c.Status) {
+			continue
+		}
+		var row struct {
+			Wire     string `json:"wire_name"`
+			Alias    string `json:"alias"`
+			Worktree string `json:"worktree"`
+			Host     string `json:"hostname"`
+		}
+		if err := json.Unmarshal(c.Payload, &row); err != nil || strings.TrimSpace(row.Worktree) == "" {
+			continue
+		}
+		out = append(out, everyCard{Room: room, ID: c.ID, Wire: row.Wire,
+			Alias:    lowerASCII(strings.TrimPrefix(strings.TrimSpace(row.Alias), "@")),
+			Status:   c.Status,
+			Worktree: row.Worktree, Host: row.Host})
+	}
+	return out
+}
+
 // replace swaps one room's cards for what it just announced, and says whether
 // that changed the index.
 func (e *everywhere) replace(room string, cards []CardState) bool {
@@ -162,12 +195,18 @@ func (e *everywhere) swap(room string, cards []CardState) bool {
 	next := indexed(room, cards)
 	key := keyOf(room)
 	every := liveNamed(room, cards)
+	trees := liveTrees(room, cards)
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	if len(every) == 0 {
 		delete(e.named, key)
 	} else {
 		e.named[key] = every
+	}
+	if len(trees) == 0 {
+		delete(e.trees, key)
+	} else {
+		e.trees[key] = trees
 	}
 	prev := e.byRoom[key]
 	if len(next) == 0 {
@@ -263,6 +302,7 @@ func (e *everywhere) drop(room string) bool {
 	_, had := e.byRoom[key]
 	delete(e.byRoom, key)
 	delete(e.named, key)
+	delete(e.trees, key)
 	delete(e.names, key)
 	e.mu.Unlock()
 	if had {
@@ -334,6 +374,27 @@ func (e *everywhere) allNamed(besides string) []everyCard {
 		}
 		return out[i].ID < out[j].ID
 	})
+	return out
+}
+
+// allTrees is every live card with a worktree on the rooms the hub still holds.
+func (e *everywhere) allTrees() []everyCard {
+	e.mu.Lock()
+	live := e.live
+	e.mu.Unlock()
+	var held map[string]bool
+	if live != nil {
+		held = live()
+	}
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	var out []everyCard
+	for key, cards := range e.trees {
+		if held != nil && !held[key] {
+			continue
+		}
+		out = append(out, cards...)
+	}
 	return out
 }
 

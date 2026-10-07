@@ -40,6 +40,8 @@ type atriumFlags struct {
 	identity  string
 	files     string
 	open      bool
+	// views are the roots board views are served from. See link/views.go.
+	views []string
 
 	// Reaching the board from off this machine. Empty binds loopback only,
 	// which is the default and the safe one. "zrok" serves the same board
@@ -74,6 +76,8 @@ func (f *atriumFlags) bind(c *cobra.Command, prefix string) {
 	c.Flags().StringVar(&f.identity, prefix+"identity", "", "the ziti identity file, with --transport ziti")
 	c.Flags().StringVar(&f.files, "board", "",
 		"serve the board from this directory instead of the built-in copy")
+	c.Flags().StringSliceVar(&f.views, "board-views", nil,
+		"serve a board view at <name>.localhost for each live card whose worktree is under this directory and holds a board (repeatable)")
 	c.Flags().BoolVar(&f.open, "open", false, "print the address and nothing else")
 	c.Flags().StringVar(&f.buildDir, "builds", "",
 		"a directory of atrium_<os>_<arch> binaries to offer rooms that asked for upgrades")
@@ -344,6 +348,13 @@ func serveAtrium(f atriumFlags, up atriumUp) error {
 		return err
 	}
 	proxy = link.NewProxy(h, assets, id, nil)
+	// ONE BOARD VIEW PER WORKER WORKTREE, at <name>.localhost. See link/views.go.
+	if len(f.views) > 0 {
+		for _, bad := range proxy.SetBoardViews(f.views, api.BoardID) {
+			log.Printf("[hub] --board-views %s is not a directory, so no views are served from it", bad)
+		}
+		log.Printf("[hub] serving board views for worktrees under %s", strings.Join(f.views, ", "))
+	}
 	// THE DURABLE LIST, which is a different question from what is
 	// attached and gets a different endpoint for exactly that reason.
 	proxy.SetInventory(inventory{store: store, hub: h})
