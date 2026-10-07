@@ -1503,6 +1503,8 @@ type patchBody struct {
 	// Note is the card's scratch pad. A pointer, because clearing it is a
 	// decision and it is also what sending does.
 	Note *string `json:"note"`
+	// AnswerDrafts is the unsent answers to the card's open questions. A pointer so "" clears them.
+	AnswerDrafts *string `json:"answer_drafts"`
 }
 
 func (s *Server) patchTask(w http.ResponseWriter, r *http.Request) {
@@ -1654,6 +1656,12 @@ func (s *Server) patchTask(w http.ResponseWriter, r *http.Request) {
 	if body.Note != nil {
 		if err := s.st.SetNote(id, *body.Note); err != nil {
 			s.fail(w, err)
+			return
+		}
+	}
+	if body.AnswerDrafts != nil {
+		if err := s.st.SetAnswerDrafts(id, *body.AnswerDrafts); err != nil {
+			writeErr(w, http.StatusBadRequest, err)
 			return
 		}
 	}

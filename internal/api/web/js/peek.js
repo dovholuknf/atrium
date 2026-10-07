@@ -142,7 +142,9 @@ function peekRows(t) {
     const more = (t.asks_open || 0) - 1;
     need.push(row(t.ask_peer ? "asked " + t.ask_peer : "question", t.ask + (more > 0 ? ` (+${more} more)` : "")));
   }
-  if (s.answered === false && (qs.length || s.questions_unparsed)) {
+  if (s.answered === false && qs.length && typeof peekQuestionsHtml === "function") {
+    need.push(peekQuestionsHtml(t));
+  } else if (s.answered === false && (qs.length || s.questions_unparsed)) {
     need.push(row("open questions", qs.length ? qs.map((q, i) => (i + 1) + ". " + q).join("\n") : "its last turn asked questions atrium could not read"));
   }
   if (s.unseen) need.push(row("unseen turn", "its last turn ended and nobody has looked at it since"));
@@ -437,6 +439,7 @@ function closePeek() {
   peekFor = null;
   peekMode = "";
   if (peekEl) peekEl.classList.remove("on");
+  if (typeof qaPeekClosed === "function") qaPeekClosed();
 }
 
 function peekCloseSoon() {
@@ -481,7 +484,7 @@ document.addEventListener("pointerover", e => {
   if (e.pointerType && e.pointerType !== "mouse") return;
   // Over comes before move, so the pointer is taken here too.
   peekPointer = { x: e.clientX, y: e.clientY };
-  if (peekEl && peekEl.contains(e.target)) { clearTimeout(peekCloseTimer); return; }
+  if ((peekEl && peekEl.contains(e.target)) || (e.target.closest && e.target.closest(".qa-fly"))) { clearTimeout(peekCloseTimer); return; }
   const card = peekHoverCard(e.target);
   const id = card ? card.dataset.id : null;
   if (id && id === peekHoverId) {
@@ -508,7 +511,7 @@ document.addEventListener("pointerover", e => {
 document.addEventListener("pointerdown", e => {
   clearTimeout(peekHoverTimer);
   peekHoverId = null;
-  if (peekEl && peekEl.classList.contains("on") && !peekEl.contains(e.target)) closePeek();
+  if (peekEl && peekEl.classList.contains("on") && !peekEl.contains(e.target) && !e.target.closest(".qa-fly")) closePeek();
 }, true);
 
 document.addEventListener("keydown", e => {

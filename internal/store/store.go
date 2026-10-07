@@ -389,6 +389,9 @@ type Task struct {
 	// anything in it. What this buys is ordering: three things thought of
 	// during a long turn, sent as one instruction at the end.
 	Note string `json:"note,omitempty"`
+	// AnswerDrafts is the operator's unsent answers to the card's open questions, as JSON the board reads and
+	// writes (js/peek.js). Opaque here. Empty when nothing is drafted. See SetAnswerDrafts.
+	AnswerDrafts string `json:"answer_drafts,omitempty"`
 	// Priority is how much this matters, and it is the ONE judgement on this
 	// board. Everything else is a fact: what a runner is doing, how long it has
 	// waited, what repository it is in.

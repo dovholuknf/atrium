@@ -19,7 +19,7 @@ const taskColumns = `id, title, why, repo, worktree, runner, hostname, pid, stat
 	model, throwaway, promote_to, pin_order, spawned_by, spawned_by_id, reported_at, report_sha,
 	report_unverified, tool_hook_seen_at, stop_hook_seen_at, prompted_at, alias,
 	effort, launch_args, launch_env, alias_note, owed_at,
-	human_at, human_via, parked_at, moved_to, moved_from, launch_cmd`
+	human_at, human_via, parked_at, moved_to, moved_from, launch_cmd, answer_drafts`
 
 func scanTask(sc interface{ Scan(...any) error }) (*Task, error) {
 	var (
@@ -60,7 +60,7 @@ func scanTask(sc interface{ Scan(...any) error }) (*Task, error) {
 		&throwaway, &t.PromoteTo, &t.PinOrder, &t.SpawnedBy, &t.SpawnedByID,
 		&reportedAt, &t.ReportSHA, &unverified, &toolSeen, &stopSeen, &promptedAt, &t.Alias,
 		&t.Effort, &launchArgs, &launchEnv, &t.AliasNote, &owedAt,
-		&humanAt, &t.HumanVia, &parkedAt, &t.MovedTo, &t.MovedFrom, &launchCmd); err != nil {
+		&humanAt, &t.HumanVia, &parkedAt, &t.MovedTo, &t.MovedFrom, &launchCmd, &t.AnswerDrafts); err != nil {
 		return nil, err
 	}
 	if launchCmd != "" {
@@ -480,7 +480,7 @@ func (s *Store) insertTask(t *Task) error {
 	// it has run, and neither has an opinion at the moment one is created.
 	_, err := s.db.Exec(`INSERT INTO task (`+taskColumns+`)
 		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,
-			?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+			?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 		t.ID, t.Title, t.Why, t.Repo, t.Worktree, t.Runner, t.Hostname, t.PID, t.Status,
 		ts(t.CreatedAt), ts(t.LastActivityAt), nil, nullable(t.WireName), overrides, t.Rank,
 		t.ExternalID, t.ResumeID, t.Branch, t.WindowName, 0, 0, tags, 0, t.Theme, "", "",
@@ -521,6 +521,8 @@ func (s *Store) insertTask(t *Task) error {
 		// And it has not moved, here or from anywhere. `SetMovedFrom` writes the second.
 		"", "",
 		// And no launch command until a launch records it.
+		"",
+		// And no drafted answers.
 		"")
 	return err
 }

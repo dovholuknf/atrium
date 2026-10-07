@@ -2126,6 +2126,14 @@ var migrations = []struct {
 			`ALTER TABLE relay_outbox ADD COLUMN kind TEXT NOT NULL DEFAULT ''`,
 		},
 	},
+	{
+		// ANSWERS TO A CARD'S OPEN QUESTIONS, drafted from the peek and not yet sent. On the card, not in a browser,
+		// so the phone and a second window see the same drafts. One JSON text: the board owns its shape.
+		name: "0091_task_answer_drafts",
+		stmts: []string{
+			`ALTER TABLE task ADD COLUMN answer_drafts TEXT NOT NULL DEFAULT ''`,
+		},
+	},
 }
 
 // migrate applies any migration not already recorded. This runs before the
