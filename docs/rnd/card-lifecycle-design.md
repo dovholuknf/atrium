@@ -316,6 +316,11 @@ What it changes:
 - **The prompt is customisable.** Each row's prompt template is edited in settings (exists). Whether it can also be
   edited at paste time is Q2.
 
+### Q2. One action matches: start at once, or show the prompt first?
+
+clint, 2026-10-07: "a". The card starts at once with the action's filled prompt. There is no prompt box at paste time.
+Different words are said in the card afterwards, and the lasting change is made to the action's template in settings.
+
 ## Open for clint
 
 1. Answered (Interview, Q1).
