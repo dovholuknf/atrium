@@ -288,7 +288,10 @@ func TestReadyIsRefusedWithNoCycleOrNoHandoff(t *testing.T) {
 	}
 	until(t, "the limit prompt", func() bool { return prompts(f) == 1 })
 	rec := post()
-	if rec.Code != http.StatusConflict || !strings.Contains(rec.Body.String(), d.handoffPath(task)) {
+	// Decoded, since a Windows path's backslashes are escaped in the JSON.
+	var refusal struct{ Error string }
+	_ = json.Unmarshal(rec.Body.Bytes(), &refusal)
+	if rec.Code != http.StatusConflict || !strings.Contains(refusal.Error, d.handoffPath(task)) {
 		t.Fatalf("ready with no file answered %d %s", rec.Code, rec.Body)
 	}
 	if err := os.WriteFile(d.handoffPath(task), []byte("  \n"), 0o644); err != nil {

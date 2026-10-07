@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"testing"
+	"time"
 
 	"github.com/dovholuknf/atrium/internal/store"
 )
@@ -123,15 +124,28 @@ func TestGlobalAutoOffAsksAgain(t *testing.T) {
 // asking again, and it is not consent to keep approving either: it is whatever
 // it was when you left.
 func TestGlobalAutoSurvivesAReopen(t *testing.T) {
-	d, _, cancel, _ := startDaemon(t)
+	d, _, cancel, errCh := startDaemon(t)
 	path := d.opts.DBPath
 	if err := d.st.SetGlobalAuto(true); err != nil {
 		t.Fatal(err)
 	}
 	cancel()
+	select {
+	case <-errCh:
+	case <-time.After(30 * time.Second):
+		t.Fatal("the daemon did not stop")
+	}
 	d.Close()
 
-	st, err := store.Open(path)
+	// A connection a goroutine was still using when the store closed is let go when that query ends, and until then
+	// the reopen is refused as busy. A restart is a new process, which never sees that.
+	var st *store.Store
+	var err error
+	for end := time.Now().Add(5 * time.Second); ; time.Sleep(50 * time.Millisecond) {
+		if st, err = store.Open(path); err == nil || time.Now().After(end) {
+			break
+		}
+	}
 	if err != nil {
 		t.Fatal(err)
 	}

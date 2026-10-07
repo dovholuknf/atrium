@@ -68,7 +68,7 @@ func TestCloneMakesTheCloneAtHostOwnerRepo(t *testing.T) {
 	want := filepath.ToSlash(filepath.Join(root, "github", "acme", "widget"))
 	got, _ := filepath.EvalSymlinks(res.Path)
 	wantR, _ := filepath.EvalSymlinks(want)
-	if got != filepath.ToSlash(wantR) || res.State != "cloned" {
+	if filepath.ToSlash(got) != filepath.ToSlash(wantR) || res.State != "cloned" {
 		t.Fatalf("path %q state %q, want %q cloned", res.Path, res.State, want)
 	}
 	if _, err := os.Stat(filepath.Join(res.Path, "f")); err != nil {

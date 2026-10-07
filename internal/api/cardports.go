@@ -272,7 +272,12 @@ func (s *Server) ownableDir(t *store.Task, want string) (string, error) {
 			continue
 		}
 		real, err := safepath.Contained(filepath.FromSlash(root), filepath.FromSlash(want))
-		if err != nil || eqPath(real, filepath.FromSlash(root)) {
+		if err != nil {
+			continue
+		}
+		// The root resolved the same way: a short 8.3 or linked root never equals the long path real is.
+		top, err := safepath.Contained(filepath.FromSlash(root), filepath.FromSlash(root))
+		if err != nil || eqPath(real, top) {
 			continue
 		}
 		if fi, err := os.Stat(real); err != nil || !fi.IsDir() {

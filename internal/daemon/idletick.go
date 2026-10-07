@@ -205,11 +205,16 @@ func (d *Daemon) parkIdle(now time.Time) {
 	}
 	d.sup.mu.Unlock()
 
+	// Every card is judged before any is parked. A worker's wind-down can finish while the loop is still going, and a
+	// launcher judged after that would park in the same tick as its worker instead of the one after.
+	var eligible []*store.Task
 	for _, id := range ids {
-		t, err := d.st.Get(id)
-		if err != nil || !d.idleParkEligible(t, wakes) {
-			continue
+		if t, err := d.st.Get(id); err == nil && d.idleParkEligible(t, wakes) {
+			eligible = append(eligible, t)
 		}
+	}
+	for _, t := range eligible {
+		id := t.ID
 		if m := d.idle.get(id); m != nil && m.capturing {
 			continue
 		}

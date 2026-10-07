@@ -35,6 +35,15 @@ func readyPR(t *testing.T) (*Server, *store.Store, string, string) {
 	return s, st, id, dir
 }
 
+// realSlash is p resolved and in slashes: a temp dir can be a short 8.3 name (C:\Users\RUNNER~1) that the server
+// hands back as the long one.
+func realSlash(p string) string {
+	if r, err := filepath.EvalSymlinks(filepath.FromSlash(p)); err == nil {
+		p = r
+	}
+	return filepath.ToSlash(p)
+}
+
 func drawerDo(s *Server, h http.HandlerFunc, method, body string, vals ...string) *httptest.ResponseRecorder {
 	r := httptest.NewRequest(method, "/x", strings.NewReader(body))
 	r.SetPathValue("id", vals[0])
@@ -256,7 +265,7 @@ func TestTheWalkerLaunchSetAndClear(t *testing.T) {
 	if w.Code != 201 || b.PR["walker_task"] == "" {
 		t.Fatalf("%d %s", w.Code, w.Body)
 	}
-	if sent["cwd"] != filepath.ToSlash(dir) || sent["harness"] != "claude" || !strings.Contains(sent["prompt"].(string), "walk.txt") {
+	if cwd, _ := sent["cwd"].(string); realSlash(cwd) != realSlash(dir) || sent["harness"] != "claude" || !strings.Contains(sent["prompt"].(string), "walk.txt") {
 		t.Fatalf("launch body %v", sent)
 	}
 	tags := strings.Join(toStrings(sent["tags"]), ",")

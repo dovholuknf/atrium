@@ -136,8 +136,11 @@ func CleanEnv(extra ...string) []string {
 	return append(out, extra...)
 }
 
-// hardening is on every command. No credential helper and no proxy variable can interfere.
-var hardening = []string{"-c", "credential.helper=", "-c", "http.proxy="}
+// hardening is on every command. No credential helper and no proxy variable can interfere, and the maintenance a
+// fetch or a commit starts on its own runs inside that command rather than detached, so no git outlives the one the
+// runner waits for.
+var hardening = []string{"-c", "credential.helper=", "-c", "http.proxy=",
+	"-c", "maintenance.autoDetach=false", "-c", "gc.autoDetach=false"}
 
 // Git runs one git command in `dir` (or in no directory when empty) and answers its stdout.
 // A failure is an *Error carrying git's stderr.

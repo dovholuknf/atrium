@@ -11,6 +11,7 @@ package testguard
 
 import (
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 )
@@ -75,9 +76,10 @@ var Agents = map[string]bool{
 	"aider": true, "node": true,
 }
 
-// IsAgent reports whether a command is one of Agents, by its base name.
+// IsAgent reports whether a command is one of Agents, by its base name. A
+// backslash is a separator on every OS, so a Windows path is caught on Linux too.
 func IsAgent(exe string) bool {
-	base := strings.ToLower(filepath.Base(exe))
+	base := strings.ToLower(path.Base(strings.ReplaceAll(exe, `\`, "/")))
 	for _, ext := range []string{".exe", ".cmd", ".bat", ".ps1"} {
 		base = strings.TrimSuffix(base, ext)
 	}

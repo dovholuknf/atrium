@@ -37,8 +37,12 @@ import (
 )
 
 // The phone page's manifest has no type on a machine whose registry does not name one, and a browser ignores a
-// manifest served as text.
-func init() { _ = mime.AddExtensionType(".webmanifest", "application/manifest+json") }
+// manifest served as text. A script's type is pinned too: a Windows registry can say application/javascript over
+// Go's own table.
+func init() {
+	_ = mime.AddExtensionType(".webmanifest", "application/manifest+json")
+	_ = mime.AddExtensionType(".js", "text/javascript; charset=utf-8")
+}
 
 // Server serves the files of one board tree.
 type Server struct {

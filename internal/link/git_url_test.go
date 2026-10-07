@@ -269,10 +269,18 @@ func TestABranchTheRoomWouldNotServeIsNeverListed(t *testing.T) {
 	if m := branchOf(a, "main"); m == nil || sourceOf(m, "room") != nil || sourceOf(m, "hub") == nil {
 		t.Fatalf("main: %+v", m)
 	}
-	for _, name := range []string{"secret/x", "master", "hub-main", "claude/main"} {
+	for _, name := range []string{"secret/x", "hub-main", "claude/main"} {
 		if got := x.ask(t, "repo=o/r&branch="+name); got.State != gitsync.URLNotFound {
 			t.Errorf("%s: %+v", name, got)
 		}
+	}
+	// master is on the rig's forge, so the hub fetches it from there: the room's live-card master is still not served.
+	if got := x.ask(t, "repo=o/r&branch=master"); got.State == gitsync.URLFound {
+		if m := branchOf(got, "master"); m == nil || sourceOf(m, "room") != nil {
+			t.Errorf("master: %+v", got)
+		}
+	} else if got.State != gitsync.URLNotFound {
+		t.Errorf("master: %+v", got)
 	}
 }
 

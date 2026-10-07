@@ -19,8 +19,16 @@ import (
 
 func hostFixture(t *testing.T) (dir string, h *ptyhost.Host) {
 	t.Helper()
-	dir = t.TempDir()
-	h, err := ptyhost.Listen(dir, ptyhost.Options{Logf: func(f string, a ...any) { t.Logf("host: "+f, a...) }})
+	// The test's temp root is made first, so its removal runs after h.Close has ended the runners whose cwd is in it.
+	_ = t.TempDir()
+	// Not t.TempDir(): on Linux the host's channel is a unix socket in dir, and a long test name puts its path
+	// past the 108 bytes a socket path can bind.
+	dir, err := os.MkdirTemp("", "ht")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	h, err = ptyhost.Listen(dir, ptyhost.Options{Logf: func(f string, a ...any) { t.Logf("host: "+f, a...) }})
 	if err != nil {
 		t.Fatal(err)
 	}

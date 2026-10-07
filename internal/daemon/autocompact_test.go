@@ -3,6 +3,7 @@ package daemon
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -130,10 +131,23 @@ func TestTheSeededClaudeRowTakesAutocompact(t *testing.T) {
 	t.Fatal("no claude row")
 }
 
-// A fake claude, a script that prints its --help. The probe asks it once.
+// A fake claude, a script that prints its --help. The probe asks it once. On Windows a sh script does not run, and a
+// runner that cannot be asked is assumed to take the flag, so there it is a .cmd that types the help out of a file.
 func fakeClaude(t *testing.T, help string) string {
 	t.Helper()
-	p := filepath.Join(t.TempDir(), "claude")
+	dir := t.TempDir()
+	if runtime.GOOS == "windows" {
+		txt := filepath.Join(dir, "help.txt")
+		if err := os.WriteFile(txt, []byte(help+"\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		p := filepath.Join(dir, "claude.cmd")
+		if err := os.WriteFile(p, []byte("@type \""+txt+"\"\r\n"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		return p
+	}
+	p := filepath.Join(dir, "claude")
 	if err := os.WriteFile(p, []byte("#!/bin/sh\ncat <<'EOF'\n"+help+"\nEOF\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}

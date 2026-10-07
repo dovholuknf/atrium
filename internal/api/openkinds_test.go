@@ -2,7 +2,6 @@ package api
 
 import (
 	"encoding/json"
-	"path/filepath"
 	"strings"
 	"testing"
 
@@ -124,7 +123,7 @@ func TestOpenATicketUsesTheDefaultRepoOrTheOneAsked(t *testing.T) {
 // NO REPO IS A SCRATCH FOLDER of the card's own under the scm root, which a close deletes.
 func TestOpenATicketWithNoRepoMakesAScratchFolderThatCloseRemoves(t *testing.T) {
 	oh := newOpenHarness(t, &fakeForge{})
-	scm := filepath.ToSlash(t.TempDir())
+	scm := realSlash(t.TempDir())
 	if err := oh.srv.st.SetSetting(gitsync.SettingSCMRoot, scm); err != nil {
 		t.Fatal(err)
 	}
