@@ -119,6 +119,27 @@ func TestAResidentTagExemptsACardFromExitOnReport(t *testing.T) {
 	expectNoExit(t, got)
 }
 
+// A card a link opened lives as long as the link: only a close ends it, so an agent that opened it and reports done
+// leaves it running.
+func TestALinkCardIsNotExitedByItsReport(t *testing.T) {
+	d := testDaemon(t)
+	launcher, worker := launchedPair(t, d)
+	got := watchExits(t, d, launcher.ID, nil)
+	if err := d.st.SetTags(worker.ID, []string{OriginAgentTag, "pr", "link:github.com/o/r/7"}); err != nil {
+		t.Fatal(err)
+	}
+	finishWith(t, d, FinishRequest{Agent: "worker", Status: ReportDone, NoCommit: "x"})
+	expectNoExit(t, got)
+}
+
+func TestACardShortIDDropsTheRoomTag(t *testing.T) {
+	for in, want := range map[string]string{"sg4~01a115fe-47b9": "01a115fe", "01a115fe-47b9": "01a115fe", "abc": "abc"} {
+		if got := cardShortID(in); got != want {
+			t.Errorf("%s: %s, want %s", in, got, want)
+		}
+	}
+}
+
 // A failed exit is logged and the report still landed.
 func TestAFailedExitAfterAReportLeavesTheReportLanded(t *testing.T) {
 	d := testDaemon(t)

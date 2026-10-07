@@ -47,7 +47,23 @@ func (d *Daemon) exitsOnReport(task *store.Task, in FinishRequest) bool {
 			return false
 		}
 	}
+	if isLinkCard(task) {
+		return false
+	}
 	return true
+}
+
+// LinkTagPrefix marks a card a link opened (`link:<key>`, internal/api/open.go). Its lifetime is the link's: a done
+// report does not end it, and only a close or the operator does. See docs/rnd/card-lifecycle-design.md section 7.
+const LinkTagPrefix = "link:"
+
+func isLinkCard(t *store.Task) bool {
+	for _, tag := range t.Tags {
+		if strings.HasPrefix(tag, LinkTagPrefix) {
+			return true
+		}
+	}
+	return false
 }
 
 // reportTypedQuiet is how long since a person last typed into the card for it to be left to exit.

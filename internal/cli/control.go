@@ -124,6 +124,7 @@ func controlServer() *mcp.Server {
 	addGitCloneTool(s)
 	addGitTools(s)
 	addOpenTool(s)
+	addCloseTool(s)
 
 	return s
 }
