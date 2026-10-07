@@ -1,6 +1,8 @@
 # Change record: atrium keeps "where are we" for every branch and PR, so no session starts from scratch
 
-Status: design by @rnd, 2026-10-02. Nothing built. Asked by clint through the orchestrator, 2026-10-02 afternoon.
+Status: proposed, not built.
+
+Origin: design by @rnd, 2026-10-02. Nothing built. Asked by clint through the orchestrator, 2026-10-02 afternoon.
 He had asked a session whether a change was tested, ready to push and reviewed, and the session had to rebuild the
 answer from its history. His idea:
 - atrium holds and tracks each PR's result, with the files that go with it;

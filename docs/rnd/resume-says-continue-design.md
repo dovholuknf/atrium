@@ -1,6 +1,9 @@
 # Resume says continue: a card the restart interrupted is told to carry on, and an idle card is left alone
 
-Status: design, 2026-09-30, @rnd. Item `docs/backlog/runtime/r-new-resume-says-continue.md`. Built by @runtime with
+Status: built. A card the restart interrupted is told to carry on, and the card shows it is opening
+(`internal/api/web/js/resume-opening.js`).
+
+Origin: design, 2026-09-30, @rnd. Item `docs/backlog/runtime/r-new-resume-says-continue.md`. Built by @runtime with
 the escalation stages (`docs/rnd/held-message-escalation-design.md`). Nothing here is built.
 
 ## 1. Most of this is built, and the 13:22 deploy used none of it

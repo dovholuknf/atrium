@@ -1,6 +1,8 @@
 # The wtf-o-meter: atrium asks a long turn what it is doing, and its director decides
 
-Status: design by @rnd, 2026-10-02. Nothing built. Asked by clint through the orchestrator. In short: a turn of two
+Status: built. Atrium asks a long turn what it is doing and tells its director (`internal/daemon/a2a.go`).
+
+Origin: design by @rnd, 2026-10-02. Nothing built. Asked by clint through the orchestrator. In short: a turn of two
 hours is too long, and after about 30 minutes atrium itself should ask the card what it is doing, so that whoever
 launched it can stop it if it has gone off the rails. Builds on `docs/rnd/held-message-escalation-design.md` (stage
 R3, built) and the queued-message step of the permission chain (built).

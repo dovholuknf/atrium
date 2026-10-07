@@ -1,5 +1,7 @@
 # A card id carries its room end to end
 
+Status: built. A card id outside its room is `room~id`, and the hub routes on it (`internal/link/cardroute.go`).
+
 Backlog-2 item 63, stage 2. Stage 1 (commit e7d15a1, HUB-SIDE) made the hub route every request that names a card to
 the room holding it. This note lists every place that still strips or ignores a card's room, and proposes the rule
 that keeps it: outside a room, a card id is `room~id`, and nothing that names a card is routed by anything else.

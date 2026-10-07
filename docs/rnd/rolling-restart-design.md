@@ -1,6 +1,9 @@
 # Upgrading atrium without stopping your agents (f-011)
 
-Status: design, for clint's approval. Written by @rnd on 2026-09-29. Not built. The build is split between @terminal,
+Status: built, opt-in. The pty host keeps runners alive while the room restarts, behind the `pty_host` setting
+(`internal/ptyhost`, `internal/daemon/hostterm.go`).
+
+Origin: design, for clint's approval. Written by @rnd on 2026-09-29. Not built. The build is split between @terminal,
 @runtime and @fabric (section 9). The item is `docs/backlog/fabric/f-011.md`, which holds the six hazards this answers.
 
 ## 0. The answer, in one paragraph

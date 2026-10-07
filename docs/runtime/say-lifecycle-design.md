@@ -1,5 +1,8 @@
 # A say leaves a record, and a reply asked for stays owed
 
+Status: built. A say leaves a record and a reply asked for stays owed (`internal/store/say.go`,
+`internal/daemon/saylog.go`).
+
 Backlog item 32 (`docs/backlog-2.md`). Design first, as that item asks.
 
 ## The incident

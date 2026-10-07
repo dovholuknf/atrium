@@ -1,5 +1,8 @@
 # Spike: a launched agent never ends a turn with nobody told
 
+Status: built. A launched worker whose turn ends without a report is told to report (`silentNudgeText` in
+`internal/daemon/a2a.go`).
+
 Spike only. Nothing here is built. Written by sa45 for the orchestrator (`atrium-87300`) and clint on 2026-09-24.
 It sits on `docs/runtime/a2a-reliability-design.md` and fits `docs/runtime/work-ledger-design.md`, and it asks clint to reverse one
 decision in the first of those (see "The decision this needs").

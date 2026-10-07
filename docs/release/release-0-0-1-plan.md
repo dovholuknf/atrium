@@ -1,5 +1,7 @@
 # Release 0.0.1: the plan
 
+Status: planned, not run. The repository has no release tag as of 2026-10-07.
+
 Item `m-new-release-0-0-1`, status READY. Nothing here has been run. Every step that leaves the machine is for clint, by hand.
 
 ## Decisions

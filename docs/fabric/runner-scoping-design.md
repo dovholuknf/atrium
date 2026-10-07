@@ -1,5 +1,8 @@
 # Room-scoped runners
 
+Status: built. The launch dialog offers only the runners the chosen room has turned on and installed
+(`refreshLaunchRunners` in `internal/api/web/js/fixtures.js`), and a runner row carries `bin_path`.
+
 The new-agent dialog offers the same runners on every room. Selecting room `claude-sgg`, picking `claude code`,
 and launching failed with `claude is not on PATH` because sgg has no claude. Offering a runner a room cannot
 start, then failing at exec, is the bug. A runner is not a universal preset. It is configured per machine, and the

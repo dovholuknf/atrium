@@ -1,6 +1,8 @@
 # PR and CI state on the card, and feedback back to the card that owns it (design)
 
-Status: design only, clint ranks. Written 2026-09-30 by @rnd from item 2 of `docs/rnd/competitor-features.md`.
+Status: proposed, not built.
+
+Origin: design only, clint ranks. Written 2026-09-30 by @rnd from item 2 of `docs/rnd/competitor-features.md`.
 Nothing is built. Owned by @review with @runtime. The board half is @ui's.
 
 ## The ask, in one paragraph

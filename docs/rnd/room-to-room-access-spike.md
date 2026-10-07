@@ -1,6 +1,9 @@
 # Room-to-room access: a room reaching another room's machine (SPIKE)
 
-Status: spike by @rnd, 2026-10-01. Nothing built. Backlog: `docs/backlog/rnd/rnd-new-room-to-room-access.md`. It puts
+Status: research, spike, 2026-10-01. Its conclusion: make the ops the hub runs over ssh callable from any room first,
+and raw room-to-room ssh second, off by default.
+
+Origin: spike by @rnd, 2026-10-01. Nothing built. Backlog: `docs/backlog/rnd/rnd-new-room-to-room-access.md`. It puts
 reach between machines, so @review reads it for security before anything is built. Revised for @review's HOLD
 (8f790b14, `docs/backlog/rnd/rd-new-review-7bf10158.md`).
 

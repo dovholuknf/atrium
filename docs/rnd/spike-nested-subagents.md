@@ -1,5 +1,8 @@
 # Spike: child runners, spawned by an agent, grouped under it
 
+Status: research, spike, 2026-09-15. Its recommendation, a parent on the card, landed as `spawned_by` and `launcher_id`.
+Children are not drawn as indented rows.
+
 A spike, not an implementation. Nothing here is built and no other file in the repository was touched.
 
 ## What is being asked for

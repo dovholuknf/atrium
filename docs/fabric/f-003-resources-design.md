@@ -1,6 +1,9 @@
 # An inventory of what an agent may use (f-003)
 
-Status: design, ACCEPTED by @rnd on 2026-09-30 (section 4). Written by @fabric. Not built. LOW. The item is
+Status: built. Stage 1 is `atrium resources` and the `atrium_resources` tool (`internal/cli/resources.go`,
+`internal/link/resources_mcp.go`).
+
+Origin: design, ACCEPTED by @rnd on 2026-09-30 (section 4). Written by @fabric. Not built. LOW. The item is
 `docs/backlog/fabric/f-003.md`.
 
 ## 0. The answer, in one paragraph

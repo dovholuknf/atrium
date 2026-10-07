@@ -1,5 +1,7 @@
 # State of the art (atrium)
 
+Status: superseded. It describes v1, Mode A and Mode B, all removed. Read `docs/how-atrium-works.md` for atrium today.
+
 > **This describes v1 only, and v1 is no longer where the action is.**
 >
 > `atrium daemon` is the surface that gets used: durable state, a permission gate, a web board, supervised

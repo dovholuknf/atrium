@@ -1,6 +1,8 @@
 # Change lifecycle: the stages a change goes through, each with its gate and its evidence, shown on the card
 
-Status: design by @rnd, 2026-10-02. Nothing built. Asked by clint through the orchestrator, for the software
+Status: proposed, not built.
+
+Origin: design by @rnd, 2026-10-02. Nothing built. Asked by clint through the orchestrator, for the software
 factory. A session on ziti-sdk-c (the legacy-auth expired-token loop) finished with every test passing on the
 CI-equivalent build (161 of 161) and a red/green proof for each new test. It then printed the `git add`, commit and
 push commands and the PR body. clint answered that before anything is pushed, he also wants to be walked through the

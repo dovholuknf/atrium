@@ -1,6 +1,9 @@
 # Atrium and mcp-gateway: absorb, supervise, separate, or rooms
 
-**Status: a spike. Nothing here is built and nothing else in this repo was changed to write it.** Written
+Status: research, spike, 2026-09-15. Its conclusion: leave clint's mcp-gateway separate, and supervise a gateway only
+inside a room.
+
+**Origin: a spike. Nothing here is built and nothing else in this repo was changed to write it.** Written
 2026-09-15 to answer one question the operator asked and one he described while asking it.
 
 Read `docs/rnd/ai-platform-fit.md` first. It already assessed mcp-gateway as an integration target and parked it

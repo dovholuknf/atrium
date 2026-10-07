@@ -1,5 +1,7 @@
 # Charon: what it is, and what atrium should do about it
 
+Status: research, 2026-09-03. A source read of Charon, with what atrium could borrow from it ranked in section 5.
+
 Standing reference. Written by reading the source, not the pitch.
 
 Source read: `github.com/Lomchat/charon`, Apache 2.0, cloned shallow to `D:/tmp/charon` on 2026-09-03 and not

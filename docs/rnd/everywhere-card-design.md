@@ -1,6 +1,9 @@
 # A card on every room (backlog-2 item 49)
 
-Status: designed, not built. Written by @fabric.
+Status: built. A card tagged `atrium:everywhere` is shown on and reachable from every room (`internal/daemon/peers.go`,
+`internal/cli/control_peers.go`).
+
+Origin: designed, not built. Written by @fabric.
 
 clint wants to put the orchestrator on every room: seen in each room's view, and addressable from each. A card runs
 in one place and that does not change. What changes is what the OTHER rooms' views show, and how a bare name

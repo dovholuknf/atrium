@@ -1,5 +1,7 @@
 # Orca: what it is, and what atrium should do about it
 
+Status: research, 2026-09-29. A source read of Orca, with what atrium could borrow from it ranked in section 5.
+
 Standing reference. Written by reading the source, not the pitch. The survey of the wider field is
 `docs/rnd/competitors.md`, where a shorter entry (section 2.2) points here.
 

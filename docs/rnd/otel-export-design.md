@@ -1,6 +1,8 @@
 # OpenTelemetry export: atrium sends traces, metrics and logs to a collector the operator runs
 
-Status: design by @rnd, 2026-10-02, revised for @review's HOLD (0d5d2db5, `docs/backlog/rnd/rd-new-review-b1ca8e47.md`).
+Status: proposed, not built.
+
+Origin: design by @rnd, 2026-10-02, revised for @review's HOLD (0d5d2db5, `docs/backlog/rnd/rd-new-review-b1ca8e47.md`).
 Nothing built. Asked by clint, from question 4 of
 `docs/rnd/langchain-openwiki-spike.md` ("rnd task").
 

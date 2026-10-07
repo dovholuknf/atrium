@@ -1,9 +1,12 @@
 # The hub as a forge: rooms push finished work to the hub, and the hub routes everything else to the room that has it
 
+Status: built. The hub holds `main` and rooms push finished work to it. Stage 4 is `atrium_git_url`, stage 5 is change
+requests between rooms.
+
 > "any room pull from any room, and any room can inform any room of where their repo is, to fork and
 > mediate/pr/push amongst the swarm" (clint, 2026-10-02)
 
-Status: design by @rnd, 2026-10-02, **revision 2 after clint's interview** (his answers are on sg4,
+Origin: design by @rnd, 2026-10-02, **revision 2 after clint's interview** (his answers are on sg4,
 `docs/rnd/hub-forge-answers.md`, and the orchestrator relayed them in full). This is git-sync stage 4. Revision 1
 (d32a34fd to 1c965657, @review doc-ok 8eaa86b1) mirrored every repo on the hub automatically and kept a fallback
 copy. clint answered no to both, so this revision replaces it. Stage 1 is cut into build items in section 7.

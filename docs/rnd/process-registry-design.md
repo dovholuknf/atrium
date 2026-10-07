@@ -1,6 +1,8 @@
 # Processes: a long-running background process an agent starts, owned by its card
 
-**Status: design, nothing built.** Written 2026-09-24, revised the same day with clint's answers to the first round
+Status: proposed, not built.
+
+**Origin: design, nothing built.** Written 2026-09-24, revised the same day with clint's answers to the first round
 of Open Questions. What is still open is at the end.
 
 ## Scope, said first

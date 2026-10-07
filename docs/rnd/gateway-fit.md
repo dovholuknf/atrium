@@ -1,6 +1,9 @@
 # mcp-gateway, llm-gateway and sterling: what atrium should take, lean on, or leave
 
-**Status: done, 2026-09-30.** Written by worker rd-001 and finished by @rnd from its handoff. Nothing was run from
+Status: research, 2026-09-30. Its conclusion: keep atrium's control MCP, lean on mcp-gateway for everything third party,
+and build no aggregator.
+
+**Origin: done, 2026-09-30.** Written by worker rd-001 and finished by @rnd from its handoff. Nothing was run from
 the projects read, and nothing in atrium was changed.
 
 Read `docs/rnd/ai-platform-fit.md` and `docs/rnd/spike-mcp-gateway.md` first. This document does not redo them.

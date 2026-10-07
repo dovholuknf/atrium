@@ -1,6 +1,8 @@
 # The forge: a provider that knows its forge, so a pasted PR is read through the CLI (rnd-new-scm-forge)
 
-Status: design by @rnd, 2026-10-04, ordered by clint ("keep going with scm, move it along"). clint's answers of the same
+Status: partly built. The section "Built" says which parts are on `claude/main`.
+
+Origin: design by @rnd, 2026-10-04, ordered by clint ("keep going with scm, move it along"). clint's answers of the same
 day are recorded at the end and this body states the design they decided. Part of it is built on claude/main, and
 "Built" says which.
 

@@ -1,6 +1,9 @@
 # Keep-alive and restart policy: only what a human is using (backlog-2 items 38 and 39)
 
-Status: DESIGN ONLY, nothing here is built. Written 2026-09-29 by sa39 for @runtime.
+Status: partly built. Parking is built (`internal/daemon/park.go`) and keep-alive skips a parked card. The rule that
+warms only cards a human used in the last 3 hours is not.
+
+Origin: DESIGN ONLY, nothing here is built. Written 2026-09-29 by sa39 for @runtime.
 
 Mercurius session: `s_qO84hqX9gsqk`. Verdict: NONE YET. Round 1 was started on this draft and had not finished when
 the launcher asked for a wrap-up, so nothing in it has been reviewed. Treat the design as an unreviewed first draft.

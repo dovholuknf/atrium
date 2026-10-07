@@ -1,5 +1,8 @@
 # The factory: how it is shaped, what it costs, and whether to change it
 
+Status: research, 2026-09-30. Its conclusion: keep directors but make them cheaper, keep @review on Opus, move coding
+directors to Sonnet.
+
 Written by @rnd on 2026-09-30, at clint's request through the orchestrator. Design only. Nothing here is built.
 
 ## The answer

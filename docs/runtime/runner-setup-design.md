@@ -1,5 +1,7 @@
 # Runner setup: making a runner work where atrium launches it
 
+Status: built. Per-runner setup adapters (`internal/runnersetup`, `internal/api/runnersetup.go`).
+
 A runner is a harness row: a command, arguments, an environment. That is enough to start a process. It is not
 enough to make the process useful. Every agent CLI keeps its own state about the machine it runs on, and atrium
 launches it in places that state has never heard of.

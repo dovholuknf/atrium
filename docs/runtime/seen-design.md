@@ -1,5 +1,7 @@
 # Seen tracking
 
+Status: built. Seen tracking on cards and for agents (`internal/daemon/seen.go`).
+
 Whether the human has seen a session's latest turn, and whether that turn asked them questions they have not answered.
 Atrium records both on the card, the board draws them, and an agent can ask for them.
 

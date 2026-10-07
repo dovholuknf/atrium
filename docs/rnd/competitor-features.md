@@ -1,9 +1,12 @@
 # Competitor features: what atrium should build next
 
+Status: research, 2026-09-30. Its conclusion: five features to build first, led by a board freeze with a budget and a
+card that carries its PR and CI state.
+
 Written 2026-09-30 for rd-002 by worker rd-002, for @rnd and clint. Research only, nothing was run and no code was
 changed. It builds on `docs/rnd/competitors.md`, `docs/rnd/orca.md` and `docs/rnd/bb.md` and does not redo them.
 
-**Status: done, 2026-09-30.** The worker wrapped up at its context limit, and @rnd then checked the atrium side in
+**Origin: done, 2026-09-30.** The worker wrapped up at its context limit, and @rnd then checked the atrium side in
 code for every ranked item and the matrix rows that decide them (section 7 says what was checked). The other HAVE,
 PARTIAL and MISSING marks rest on README.md, CHANGELOG.md and `docs/rnd/competitors.md`, which traced code on
 2026-09-29.

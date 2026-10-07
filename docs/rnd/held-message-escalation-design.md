@@ -1,6 +1,9 @@
 # Held-message escalation: what has waited too long says so once, and the card face shows it
 
-Status: design, 2026-09-30, @rnd. Item `docs/backlog/runtime/r-new-held-message-escalation.md`. Built by @runtime
+Status: built. A held message that waits too long escalates once, and the card face shows it
+(`internal/api/web/js/heldline.js`).
+
+Origin: design, 2026-09-30, @rnd. Item `docs/backlog/runtime/r-new-held-message-escalation.md`. Built by @runtime
 (three small room stages) and @ui (one board stage), after card URLs. Nothing here is built.
 
 ## 1. The answer in six lines

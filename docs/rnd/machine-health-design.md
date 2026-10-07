@@ -1,6 +1,8 @@
 # Machine health in the gear, and "profile this machine" (u-new-machine-health-gear)
 
-Status: designed by @rnd 2026-09-30, for @runtime (room half) and @ui (gear). Nothing here is built. Backlog item
+Status: proposed, not built.
+
+Origin: designed by @rnd 2026-09-30, for @runtime (room half) and @ui (gear). Nothing here is built. Backlog item
 `docs/backlog/ui/u-new-machine-health-gear.md`. Builds on `docs/rnd/defender-advice-design.md`, whose advisory
 shape this reuses.
 

@@ -1,6 +1,8 @@
 # Cross-room `atrium_say` (backlog-2 item 58)
 
-Status: reviewed (mercurius `s_H1ILoNvxloBH`, ready_to_build) and built. Written by sa58.
+Status: built. `atrium_say` to `name@room` goes through the hub's control MCP (`internal/link/control_mcp.go`).
+
+Origin: reviewed (mercurius `s_H1ILoNvxloBH`, ready_to_build) and built. Written by sa58.
 
 ## What is true today
 

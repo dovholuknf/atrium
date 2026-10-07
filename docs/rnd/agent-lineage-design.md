@@ -1,5 +1,8 @@
 # Agent lineage: who spawned whom, and showing it
 
+Status: built. A card records who launched it in `spawned_by` and `launcher_id`, and the card's details show "launched
+by" (`internal/api/web/js/peek.js`).
+
 Design for recording that one session started another, and drawing that relation on the board. When the
 orchestrator launches a session through `atrium_launch`, the board should be able to say YOU started this one, and
 group or filter by it.

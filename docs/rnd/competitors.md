@@ -1,5 +1,7 @@
 # Competitors: the field around atrium, and whether atrium can be extended
 
+Status: research, 2026-09-29. Its conclusion: no plugin API. Build a role, and let a pack be a role plus its neighbours.
+
 Standing reference. Written 2026-09-29 by reading source where it says so and a README where it says that instead.
 Nothing was executed. Eight tools were read at source depth, of which bb (`docs/rnd/bb.md`) and Charon (`docs/rnd/charon.md`)
 have their own files. The rest are in section 2. Section 3 (extensibility) was re-traced through atrium's own code

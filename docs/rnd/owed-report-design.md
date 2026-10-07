@@ -1,5 +1,7 @@
 # A card owes its launcher a report only for a prompt its launcher sent
 
+Status: built. A card owes its launcher a report only for a prompt the launcher sent (`internal/daemon/owed.go`).
+
 Backlog item 41 (`docs/backlog-2.md`). Design first, as that item asks.
 
 ## The problem

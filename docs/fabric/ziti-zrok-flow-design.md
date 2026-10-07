@@ -1,5 +1,8 @@
 # The OpenZiti and zrok flow for atrium
 
+Status: built. The room link transports are `atrium room join --mtls`, `--zrok-private` and `--openziti`
+(`internal/cli/roomjoinflags.go`), and the board share is `atrium share`. Read `atrium2` in the body as `atrium`.
+
 Designed with clint on 2026-09-19 by interview. This is the design, not the build. Where it changes a rule written
 in `docs/fabric/overlays.md`, it says so and the change is deliberate.
 

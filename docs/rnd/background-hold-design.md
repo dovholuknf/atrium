@@ -1,5 +1,8 @@
 # 31 design: hold STUCK while background work runs
 
+Status: built. A worker whose turn ended with background work running is not marked STUCK, and background work blocks
+parking.
+
 Scope: only this bug. Not a v2 rewrite. A worker ends its turn with background shells or headless runs still going
 and the board marks it STUCK ("stopped without reporting") three minutes later. It was waiting.
 

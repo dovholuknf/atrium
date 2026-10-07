@@ -1,5 +1,8 @@
 # The pulls view: pull request review that atrium runs itself (rnd-new-pulls-view)
 
+Status: built. The pulls view (`internal/api/prs.go`, `internal/api/web/js/pulls.js`). `docs/rnd/pr-review-workflow.md`
+describes how it is used now.
+
 clint, 2026-10-01: "pull request review flow sucks at this time. this software factory should prolly have a
 dedicated pulls type of view or scm or something and atrium should facilitate pr's. right now it's janky and clunky
 and not working and not token efficient nor fast."

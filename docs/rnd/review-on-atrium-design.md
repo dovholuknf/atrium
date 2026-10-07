@@ -1,6 +1,8 @@
 # Review on atrium: one call runs the reviewer panel as quiet child cards and returns one merged report
 
-Status: design by @rnd, 2026-10-02. Nothing built. Asked through the orchestrator: make review through atrium the
+Status: proposed, not built. There is no `atrium_review` tool.
+
+Origin: design by @rnd, 2026-10-02. Nothing built. Asked through the orchestrator: make review through atrium the
 easiest path. One call should launch the specialist reviewers (c-systems-reviewer, functional-tester,
 codebase-steward and the others) as atrium cards that are children of the caller, quiet, watchable and with their
 history kept. It should collect their findings and return one merged report, in the shape the review-panel skill

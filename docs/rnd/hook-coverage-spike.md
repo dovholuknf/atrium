@@ -1,5 +1,8 @@
 # Hook coverage
 
+Status: research, spike, 2026-09-02. Its recommendation, moving the gate to `PermissionRequest`, was not taken: the gate
+is still on `PreToolUse` (`internal/claudeconf/hooks.go`).
+
 Atrium learns everything about a session from Claude Code hooks. It consumes five events today and there are
 twelve. This works out what the other seven would buy, whether the permission gate is sitting on the wrong event,
 and whether the board's columns should change shape depending on what is wired.

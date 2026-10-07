@@ -1,5 +1,8 @@
 # CSS nits
 
+Status: a nit list, last changed before 2026-09-29. Check a nit against the board before fixing it, since some may be
+fixed.
+
 Small visual defects, each naming the skin it was seen in. Kept apart from `docs/backlog.md` because none of
 these is a decision: they are things that are wrong and have not been fixed yet.
 

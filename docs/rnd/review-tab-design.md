@@ -1,5 +1,7 @@
 # The review tab: walking a pull request review on the board (u-005, with u-004)
 
+Status: built. The review walk in the pulls view (`internal/api/web/js/walk.js`).
+
 clint, 2026-09-29: "walking through the review with the apple-secure-transport-engine was __exceptionally__ useful.
 how can i do that as part of my standing workflow? how can we incorporate this into a fucking sexy fucking tab in
 atrium?"

@@ -1,6 +1,8 @@
 # Runner switch: moving a card to another runner, for example when a Claude account runs out
 
-Status: design by @rnd, 2026-10-02. Nothing built. Asked through the orchestrator: when a Claude account hits its
+Status: proposed, not built.
+
+Origin: design by @rnd, 2026-10-02. Nothing built. Asked through the orchestrator: when a Claude account hits its
 limit, move a card's work to codex, opencode or gemini and carry on, then come back.
 
 It builds on `docs/rnd/room-handoff-design.md` (`atrium move`, @review OK b56ca32f; stage M1 is at @runtime) and

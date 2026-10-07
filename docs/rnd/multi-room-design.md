@@ -1,5 +1,7 @@
 # More than one room per machine, and a room that drains
 
+Status: proposed, not built. A machine runs one room. A room can run as its own account (`docs/room-accounts.md`).
+
 Backlog-2 item 59, raised by clint on 2026-09-28 and parked as "seems dumb. deep backlog". This is the design only.
 Nothing here was run, and no room was started or stopped to write it.
 

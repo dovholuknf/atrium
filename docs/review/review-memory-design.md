@@ -1,5 +1,8 @@
 # Reviews that remember (backlog-2 item 16)
 
+Status: partly built, outside this repository. Stage 1 is the review-panel skill in the dotfiles repository. Stage 2 is
+not built.
+
 A review panel reads the same files once per reviewer, and forgets all of it before the next PR in the same repo.
 This is the design for both halves. The facts it rests on are in `docs/review/item16-notes.md` (fb05), cited here
 as "notes (a)" to "notes (e)".

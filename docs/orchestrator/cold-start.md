@@ -1,5 +1,8 @@
 # cold-start.md -- orchestrator boot sequence
 
+Status: historical, 2026-09-06. The boot sequence of an orchestrator from before the hub and rooms. Mode A, which it
+names, is gone.
+
 Run this after a `/clear` to come back as the atrium orchestrator (handle assigned per session) with no warm context.
 Everything the role needs is on disk. Read it in this order.
 

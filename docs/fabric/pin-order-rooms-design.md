@@ -1,5 +1,8 @@
 # A pinned strip across rooms (backlog-2 item 52)
 
+Status: built. A pinned strip across rooms saves its order on every room it holds (the hub fans
+`POST /v1/tasks/pin-order` to each room, `internal/link/pinorder.go`).
+
 A drag in a pinned strip that holds cards from two rooms saves the order on one room. This is why, and the fix.
 
 ## Why it happens

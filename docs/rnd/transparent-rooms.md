@@ -1,6 +1,8 @@
 # Rooms you cannot see
 
-**Status: a decision being made, not a design. Nothing here is built.** Written 2026-09-08 in the middle of the
+Status: superseded. The hub shows every room's cards on one board. Kept as the record of why rooms are visible.
+
+**Origin: a decision being made, not a design. Nothing here is built.** Written 2026-09-08 in the middle of the
 conversation that produced it, so that the reasoning survives.
 
 ## What the operator asked for

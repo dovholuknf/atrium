@@ -1,6 +1,9 @@
 # Room handoff: `atrium move`, a card and its work from one room to another
 
-Status: design by @rnd, 2026-10-01. @review OK at b56ca32f (docs/backlog/rnd/rd-new-review-4ea18bd7.md), with its M3 conditions and lows folded in. Nothing built. Backlog:
+Status: partly built. M1, the room side of `atrium move`, is built (`internal/daemon/move.go`, `moveroutes.go`). M2, the
+hub verb, and M3 are not.
+
+Origin: design by @rnd, 2026-10-01. @review OK at b56ca32f (docs/backlog/rnd/rd-new-review-4ea18bd7.md), with its M3 conditions and lows folded in. Nothing built. Backlog:
 `docs/backlog/rnd/rnd-new-room-handoff.md` (HIGH, from the 2026-10-01 director move), with
 `docs/backlog/runtime/r-new-move-card-between-rooms.md` (same machine, 2026-09-30) folded in.
 

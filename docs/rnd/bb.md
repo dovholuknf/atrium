@@ -1,5 +1,7 @@
 # bb: what it is, and what atrium should do about it
 
+Status: research, 2026-09-29. A source read of bb, with what atrium could borrow from it ranked in section 5.
+
 Standing reference. Written by reading the source, not the pitch. The survey of the wider field is
 `docs/rnd/competitors.md`, which is where the extensibility question lives. This file is the depth on the one tool that
 turned out to be large enough to need its own.

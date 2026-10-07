@@ -1,5 +1,8 @@
 # Decisions
 
+Status: built. Decisions 1 to 19 are the hub and room split as it shipped. Read the body's `atrium2 hub` as
+`atrium run`, `atrium2 room` as `atrium room`, and `atrium2` as the one `atrium` binary.
+
 One question at a time. Each entry is the question as asked, the design agreed, and the outcome once it is
 built. Nothing is implemented until its entry says the design is settled.
 

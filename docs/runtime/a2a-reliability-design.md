@@ -1,5 +1,8 @@
 # Agent-to-agent reliability: no silent stall, no silent loss
 
+Status: partly built. Stage 1, the report, the launcher notice and the watchdog, is built in `internal/daemon/a2a.go`.
+Stages 2 and 3, dead letters and redelivery, are not.
+
 Design for how atrium guarantees that work handed from one session to another never stalls without somebody
 hearing about it, and that a message between sessions is never lost without somebody hearing about that either.
 Clint approved stage 1 with changes on 2026-09-23 (see "Decisions"), and stage 1 is built. Stages 2 and 3 are

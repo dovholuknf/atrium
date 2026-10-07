@@ -1,6 +1,8 @@
 # Loopback is not the operator behind a local proxy
 
-Status: designed by @rnd 2026-09-30, for @runtime. Nothing here is built. Asked for by @runtime, flagged by the
+Status: built. Every "is the caller loopback" gate is `edge.LocalOperator` (`internal/edge/local.go`).
+
+Origin: designed by @rnd 2026-09-30, for @runtime. Nothing here is built. Asked for by @runtime, flagged by the
 orchestrator for clint.
 
 ## The answer

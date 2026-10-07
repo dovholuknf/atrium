@@ -1,6 +1,8 @@
 # Atrium on a phone: research for the mobile workshop
 
-Status: research, @rnd, 2026-09-29. Input to the mobile design workshop @ui leads, whose output is one design doc
+Status: research, 2026-09-29. Its conclusion: a dedicated phone page at `/m`, which is built (`internal/api/web/m/`).
+
+Origin: research, @rnd, 2026-09-29. Input to the mobile design workshop @ui leads, whose output is one design doc
 (@ui's draft is `docs/backlog/ui/mobile-design.md` on claude/ui). This is not that design. It is what other tools
 do, what a phone is for, and the constraints and recommendations the design should start from.
 

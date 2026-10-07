@@ -1,5 +1,7 @@
 # A Telegram bot for notifications
 
+Status: built as an example, with no atrium code: `scripts/notify/telegram.ps1` is a notify command.
+
 Written by @rnd on 2026-10-01, from `docs/backlog/rnd/rnd-new-telegram-notify.md`. Design only. Nothing here is
 built, and the recommended shape needs no atrium code at all.
 

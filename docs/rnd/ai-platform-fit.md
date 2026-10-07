@@ -1,5 +1,8 @@
 # Does atrium fit the rest of the stack
 
+Status: research, 2026-09-02. Its conclusion: sterling fits and is worth building against, mcp-gateway is worth a spike,
+agora and llm-gateway do not fit.
+
 Four projects were named: `llm-gateway`, `mcp-gateway`, `agora`, and `sterling`. This is an assessment of whether
 atrium belongs next to any of them, where it would touch, and which one is worth building.
 

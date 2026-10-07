@@ -1,5 +1,8 @@
 # Source control and ticketing: work that arrives from somewhere else
 
+Status: partly built. Part one, a URL to a card through recognisers and `atrium open`, is built. Part two, settings that
+live in a repository, is not. The last section says where the build differs.
+
 Two things, related only by the word "integration", and separating them is the first decision in this document.
 
 **Inbound.** You are looking at a pull request, an issue, a ticket. You want a card, in the right directory,

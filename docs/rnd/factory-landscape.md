@@ -1,6 +1,9 @@
 # Software factories: the landscape, and what atrium takes from it (SPIKE)
 
-Status: spike by @rnd, 2026-10-01, revised for @review's HOLD (`docs/backlog/rnd/rd-new-review-8b9ede4f.md`). Nothing
+Status: research, 2026-10-01. Its conclusion: none of the 23 tools surveyed combines atrium's four traits, and what the
+factories have that atrium lacks is work that enters from a tracker.
+
+Origin: spike by @rnd, 2026-10-01, revised for @review's HOLD (`docs/backlog/rnd/rd-new-review-8b9ede4f.md`). Nothing
 built. Backlog: `docs/backlog/rnd/rnd-new-factory-landscape.md`. Clint:
 atrium is "moving past being an agent harness aggregator/orchestrator" toward a software factory. Open source first.
 

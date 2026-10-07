@@ -1,6 +1,9 @@
 # Reply suggestions (rd-new-reply-suggestions)
 
-Status: designed by @rnd 2026-09-30. RS1 and RS4 (@ui) are built on `claude/u-new-reply-suggestions-build`: `js/replies.js`
+Status: partly built. RS1 and RS4, the renderer for growlers and `/m` compose, are built
+(`internal/api/web/js/replies.js`). RS2 (`atrium ask --choice`) and RS3 (`closingOptions`) are not.
+
+Origin: designed by @rnd 2026-09-30. RS1 and RS4 (@ui) are built on `claude/u-new-reply-suggestions-build`: `js/replies.js`
 is the one renderer for both growlers and `/m` compose, and `replies.of` reads `replies` and `fixed` off the card view,
 tested against mocked cards. RS2 (`atrium ask --choice`) and RS3 (`closingOptions`, the `options` column, and
 `replies` and `fixed` on the card view and the notify payload) are @runtime's and not built. Until RS3 lands a card

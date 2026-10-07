@@ -1,6 +1,9 @@
 # Handle-addressed HTTP: a script names a card the way an agent does, and the hub routes it
 
-Status: design, 2026-09-30, @rnd. Item `docs/backlog/runtime/r-new-handle-addressed-http.md`. Built by @runtime. Nothing
+Status: built. A room resolves a card's name on `/v1/tasks/<name>` (`internal/api/cardnames.go`), the hub routes it
+(`internal/link/cardroute.go`), and `atrium task`, `exit` and `new-context` take a name.
+
+Origin: design, 2026-09-30, @rnd. Item `docs/backlog/runtime/r-new-handle-addressed-http.md`. Built by @runtime. Nothing
 here is built.
 
 ## 1. The answer in seven lines

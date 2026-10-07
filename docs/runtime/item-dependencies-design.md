@@ -1,6 +1,8 @@
 # Item dependencies: work that waits on other work, with a gate only the board resolves
 
-Status: design, 2026-09-30, @rnd. Built by @runtime (hub side and MCP), drawn by @ui. Item
+Status: built. Item gates on the hub (`internal/itemgate`, `internal/link/deps.go`, `internal/hubstore/deps.go`).
+
+Origin: design, 2026-09-30, @rnd. Built by @runtime (hub side and MCP), drawn by @ui. Item
 `docs/backlog/runtime/r-new-item-dependencies.md`. Stage 1 is sized for one worker day and deploys HUB ONLY, so it
 needs no room restart.
 

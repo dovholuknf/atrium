@@ -1,6 +1,8 @@
 # Operator focus: one numbered list of decisions, shorter reports, and what the tokens buy
 
-Status: design by @rnd, 2026-10-02. Nothing built. Asked by clint through the orchestrator, 2026-10-02. In short: he
+Status: proposed, not built. Its interview mode is a brief, `docs/rnd/interviewer-brief.md`, and needs no code.
+
+Origin: design by @rnd, 2026-10-02. Nothing built. Asked by clint through the orchestrator, 2026-10-02. In short: he
 keeps losing track of things, about 50 of his decisions were skipped or forgotten, the directors' reports to him are
 too long, and he wants one list answered by number. clint is not quoted here because this repo is public. His words
 are in the factory log, which is held until he decides where it lives.
