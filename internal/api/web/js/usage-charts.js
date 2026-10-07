@@ -151,6 +151,7 @@ async function loadUsageTab() {
   const held = UC.pending.splice(0);
   for (const e of held) ucApply(e);
   ucLoadItems(asked, UC.since);
+  ucLoadTurns(asked, UC.since);
   ucPaint();
 }
 
@@ -271,7 +272,7 @@ function ucPaint() {
     ucCardsHead() + ucGroups(series) + ucCards(ucGroupFilter(cardRows), series) +
     `<h4 class="uch">tokens by kind</h4>` + ucSplit(total, causes, cardRows) +
     (UC.cumSeries = series, ucCumulative(series)) +
-    `<h4 class="uch">tokens by cause</h4>` + ucCauseTable(causes) + ulSection() + ucItems();
+    `<h4 class="uch">tokens by cause</h4>` + ucCauseTable(causes) + ulSection() + ucItems() + ucTurns();
   body.innerHTML = html;
   ucAfterPaint(body);
 }

@@ -384,7 +384,7 @@ func (d *Daemon) liftDeployHold(outcome, who, why string) (*store.RoomHold, erro
 			continue
 		}
 		if t, err := d.st.Get(id); err == nil {
-			if _, err := d.deliverPeer(t, "atrium", line); err != nil {
+			if _, err := d.deliverPeerAs(store.DeliveryDeploy, t, "atrium", line); err != nil {
 				log.Printf("[atrium] could not wake %s after the deploy hold: %v", t.DisplayTitle(), err)
 			}
 		}
@@ -452,7 +452,7 @@ func (d *Daemon) liftAtStartup() {
 	}
 	for _, id := range others {
 		if t, err := d.st.Get(id); err == nil {
-			if _, err := d.deliverPeer(t, "atrium", line); err != nil {
+			if _, err := d.deliverPeerAs(store.DeliveryDeploy, t, "atrium", line); err != nil {
 				log.Printf("[atrium] could not wake %s after the deploy: %v", t.DisplayTitle(), err)
 			}
 		}

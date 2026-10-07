@@ -128,7 +128,7 @@ func (d *Daemon) openOwed(t *store.Task, reason, text string, since time.Time) {
 		// THE TYPED NUDGE for a launcher that does not hold its notices. Only a permission wait has
 		// no notice of its own: a report, an ask, a silent stop and an ending each already say it.
 		if launcher != nil && reason == owedPermission && !holdsNotices(launcher) {
-			if _, err := d.deliverPeer(launcher, t.WireName, truncatePeer(t.WireName+" is "+line)); err != nil {
+			if _, err := d.deliverPeerAs(store.DeliveryNotice, launcher, t.WireName, truncatePeer(t.WireName+" is "+line)); err != nil {
 				log.Printf("[atrium] could not nudge %s about %s: %v", launcher.DisplayTitle(), t.DisplayTitle(), err)
 			}
 		}

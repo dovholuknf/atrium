@@ -904,7 +904,12 @@ func (d *Daemon) typeThroughGate(run *runner, taskID, from, text string) (bool, 
 	if from != "" {
 		banner = peerBanner(from)
 	}
-	return d.typeLabelledThroughGate(run, taskID, banner, text)
+	wrote, err := d.typeLabelledGuardedAs(run, taskID, banner, text, nil, "")
+	// The operator's own is seen as a prompt, where it is recorded. A peer's is recorded here.
+	if wrote && err == nil && from != "" {
+		d.noteDelivery(taskID, from, store.DeliveryKind(from, ""))
+	}
+	return wrote, err
 }
 
 // typeLabelledThroughGate is typeThroughGate with the label given whole, for
@@ -916,6 +921,20 @@ func (d *Daemon) typeLabelledThroughGate(run *runner, taskID, banner, text strin
 // typeLabelledGuarded is typeLabelledThroughGate with one more check, run under
 // the input lock at the moment of writing. See `runner.injectPeerIf`.
 func (d *Daemon) typeLabelledGuarded(run *runner, taskID, banner, text string, ok func() bool) (bool, error) {
+	return d.typeLabelledGuardedAs(run, taskID, banner, text, ok, bannerKind(banner))
+}
+
+// typeLabelledGuardedAs is typeLabelledGuarded that records the delivery under kind when it wrote, and records
+// nothing for an empty one. See turncost.go.
+func (d *Daemon) typeLabelledGuardedAs(run *runner, taskID, banner, text string, ok func() bool, kind string) (bool, error) {
+	wrote, err := d.typePayload(run, taskID, banner, text, ok)
+	if wrote && err == nil && kind != "" && kind != store.DeliveryOperator {
+		d.noteDelivery(taskID, "atrium", kind)
+	}
+	return wrote, err
+}
+
+func (d *Daemon) typePayload(run *runner, taskID, banner, text string, ok func() bool) (bool, error) {
 	payload := text
 	if d.bracketedPasteFor(taskID, false) {
 		payload = bracketedPaste(text)

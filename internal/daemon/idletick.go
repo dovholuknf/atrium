@@ -340,7 +340,10 @@ func (d *Daemon) queueHandoffWake(taskID string) {
 		idle = " after " + (time.Duration(n) * time.Second).Round(time.Minute).String() + " idle"
 	}
 	text := fmt.Sprintf("You were parked%s. Read %s in the current directory, then act on what follows.", idle, file)
-	if _, err := d.st.QueueMessage(taskID, text); err != nil {
+	if m, err := d.st.QueueMessage(taskID, text); err == nil {
+		// Atrium's words, not the operator's, for the turn cost report.
+		_ = d.st.SetMessageCause(m.ID, store.DeliveryNotice)
+	} else {
 		log.Printf("[atrium] could not queue the handoff wake for %s: %v", taskID, err)
 		return
 	}

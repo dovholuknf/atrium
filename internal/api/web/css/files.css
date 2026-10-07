@@ -258,6 +258,8 @@
   .ucitems { display: grid; grid-template-columns: minmax(0, 1fr) repeat(3, auto); gap: 0 var(--sp-3); font: var(--fs-xs) var(--mono); color: var(--dim); }
   .ucitems > span:nth-child(4n+2), .ucitems > span:nth-child(4n+3), .ucitems > span:nth-child(4n) { text-align: right; }
   .ucitems > span:nth-child(4n+1) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .ucturns { display: grid; grid-template-columns: repeat(5, max-content); justify-content: start; gap: 1px var(--sp-4); font: var(--fs-xs) var(--mono); color: var(--dim); margin-bottom: 8px; }
+  .ucturns > span:nth-child(5n+2), .ucturns > span:nth-child(5n+3), .ucturns > span:nth-child(5n+4) { text-align: right; }
   .ucmini:hover:not(.other) { background: var(--lift); }
   .ucmini svg { display: block; width: 100%; height: 40px; }
   .ucminit { display: flex; justify-content: space-between; gap: var(--sp-2); font: var(--fs-xs) var(--mono); color: var(--dim); }
