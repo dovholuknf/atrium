@@ -1,0 +1,1 @@
+A context cycle that never gets `atrium ready` no longer holds its card's typing and messages for ever: after 30 minutes the cycle fails, the card says "input was held for 30m waiting for atrium ready, released", and what was held is delivered at the next clear line. r-card-never-blocked-forever.
