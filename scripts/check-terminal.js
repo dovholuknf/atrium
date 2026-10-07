@@ -93,7 +93,7 @@ if (!/followScroll/.test(html)) {
     "with the view short by however many lines it was.");
 } else {
   const onmsgAt = html.indexOf("termSock.onmessage");
-  const onmsg = html.slice(onmsgAt, onmsgAt + 800);
+  const onmsg = html.slice(onmsgAt, onmsgAt + 2500);
   // `lagOnOutput(followScroll)` is the same callback, wrapped only while
   // input-lag logging times a keystroke. See js/inputlag.js.
   if (!/term\.write\([^)]*,\s*(lagOnOutput\()?followScroll\)/.test(onmsg)) {
@@ -258,7 +258,7 @@ if (!/function isAutoReport\(/.test(html)) {
     "`onData`, so a click becomes input, and input scrolls to the bottom.");
 } else {
   const at = html.indexOf("term.onData(");
-  const body = at < 0 ? "" : html.slice(at, at + 300);
+  const body = at < 0 ? "" : html.slice(at, at + 1500);
   if (!/isAutoReport\(d\)/.test(body)) {
     fail("the onData handler does not check `isAutoReport`. A mouse or focus report reaching " +
       "sendInput as ordinary input is what makes a click jump to the bottom.");

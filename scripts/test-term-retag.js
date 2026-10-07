@@ -65,6 +65,8 @@ const harness = new Function(`
   let termTask = null;
   let termKindFor = "";
   function termOnly() { return false; }
+  function keepReconcile() {}
+  function fileViewPrune() {}
   function rlog() {}
   function clearTermPane() { tornDown++; termTask = null; }
   // The real one reconnects the socket a frame later so the daemon replays with

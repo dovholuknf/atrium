@@ -115,7 +115,9 @@ fail=0
 for skin in $skins; do
   grep "^$skin " "$work/pairs" | cut -d' ' -f2 | sort > "$work/this"
   missing=$(comm -23 "$work/reference" "$work/this")
-  extra=$(comm -13 "$work/reference" "$work/this")
+  # --on-danger is the one variable a skin may set or leave: tokens.css gives it
+  # a default for dark skins and the light skins override it to white.
+  extra=$(comm -13 "$work/reference" "$work/this" | grep -vx -e '--on-danger' || true)
   if [ -n "$missing" ]; then
     echo "  $skin is MISSING: $(echo "$missing" | tr '\n' ' ')" >&2
     fail=1

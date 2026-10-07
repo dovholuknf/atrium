@@ -74,9 +74,9 @@ const crWho = x => x ? (x.card === "operator" ? "the operator" : ((x.room || "")
 function crLane(r) {
   const room = crCore.sourceRoom(r);
   return '<div class="cr-lane ' + hubReposAccent("room" + room) + '"><div class="cr-end"><small>from</small><span class="cr-who">' + hubReposAvatar(room, 38) +
-    '<span class="cr-br" title="' + esc(r.source.branch) + '">' + esc(r.source.branch) + "</span></span></div>" +
+    '<span class="cr-br" data-tip="' + esc(r.source.branch) + '">' + esc(r.source.branch) + "</span></span></div>" +
     '<span class="cr-arr" aria-hidden="true"><svg viewBox="0 0 120 12" preserveAspectRatio="none" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M2 6h112M108 1l6 5-6 5"/></svg></span>' +
-    '<div class="cr-end"><small>into</small><span class="cr-br" title="' + esc(r.target.branch) + '">' + esc(r.target.branch) + "</span></div></div>";
+    '<div class="cr-end"><small>into</small><span class="cr-br" data-tip="' + esc(r.target.branch) + '">' + esc(r.target.branch) + "</span></div></div>";
 }
 
 function crSteps() {

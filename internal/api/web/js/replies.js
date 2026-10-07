@@ -85,7 +85,7 @@ const replies = (function () {
       b.type = "button";
       b.className = "rq-btn";
       b.dataset.choice = o;
-      b.title = o;
+      b.setAttribute("data-tip", o);
       b.textContent = label(o, narrow);
       if (opts.disabled) b.disabled = true;
       row.appendChild(b);

@@ -122,6 +122,7 @@ const wide = new Function(`
   let termFitCols = 0, termPtyCols = 0, resizeSettleTimer = 0;
   let termFitRows = 0, termPtyRows = 0;
   let floor = 0, noted = 0;
+  let termBgRun = false;
   function sizeTermHost() {}
   function termPhone() { return false; }
   function phoneZoomFit() {}
@@ -141,7 +142,7 @@ const wide = new Function(`
   let proposed = { cols: 80, rows: 24 };
   const termFit = { proposeDimensions: () => proposed };
   const term = {
-    cols: 80, rows: 24, buffer: { active: { viewportY: 0, baseY: 1 } },
+    cols: 80, rows: 24, element: xtermEl, buffer: { active: { viewportY: 0, baseY: 1 } },
     resize(c, r) { this.cols = c; this.rows = r; },
     _core: { _renderService: { clear() {}, dimensions: { css: { cell: { width: 8 } } } } },
   };

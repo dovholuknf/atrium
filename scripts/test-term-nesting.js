@@ -133,12 +133,12 @@ const terminalParts = (t) => {
 // same reason: an unread mark is not a heading.
 const built = new Function("localStorage", "esc", "terminalLabel", "terminalParts",
   "themeFor", "themeSource", "NO_WEAR", "termWear", "runnerMark", "poppedOut", "termTask", "isWaiting", "over", "seenChips",
-  "newCardClass", "newCardChip", "isFolded",
+  "newCardClass", "newCardChip", "isFolded", "attachIsInFlight", "ctxLine", "ctxWarnMark",
   src + "\nreturn { termGroupsHTML, termPathOf, termRoomChip, roomOf };")(
   localStorage, esc, terminalLabel, terminalParts,
   () => ({ cursor: "#fff", background: "#000" }), () => ({ cursor: "#fff", background: "#000" }), { cls: "", style: "" },
   () => ({ cls: "", style: "" }), () => "", () => false, null,
-  () => false, () => false, () => "", () => "", () => "", () => false);
+  () => false, () => false, () => "", () => "", () => "", () => false, () => false, () => "", () => "");
 const { termGroupsHTML, termPathOf, termRoomChip, roomOf } = built;
 
 // ── enough html parsing to see the nesting ──────────────
@@ -215,8 +215,7 @@ function drawn(html) {
           id: kid.attrs["data-id"],
           under: under.slice(),
           shown: deepText(kid, "tname"),
-          full: (kid.attrs && deepText(kid, "tname") !== null)
-            ? findTitle(kid) : "",
+          full: String(kid.attrs["data-tip"] || "").split("\n")[0],
         });
         continue;
       }

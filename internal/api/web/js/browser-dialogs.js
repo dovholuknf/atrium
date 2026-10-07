@@ -265,7 +265,7 @@ function askUser(opts) {
       el.textContent = b.label;
       if (b.style) el.className = b.style;
       // Drawn but off, with the reason on hover, for an action that exists and cannot be done from here.
-      if (b.disabled) { el.disabled = true; el.title = b.disabled; }
+      if (b.disabled) { el.disabled = true; el.setAttribute("data-tip", b.disabled); }
       el.onclick = () => {
         if (opts.rememberKey && rememberOn.checked && b.value !== null) {
           skipConfirm(opts.rememberKey, true);

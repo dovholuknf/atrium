@@ -122,7 +122,7 @@ function hubReposExact(iso) {
 }
 function hubReposAge(iso, cls) {
   const w = hubReposWhen(iso);
-  return w ? '<time class="' + cls + '" datetime="' + esc(iso) + '" title="' + esc(hubReposExact(iso)) + '">' + esc(w) + "</time>" : "";
+  return w ? '<time class="' + cls + '" datetime="' + esc(iso) + '" data-tip="' + esc(hubReposExact(iso)) + '">' + esc(w) + "</time>" : "";
 }
 
 const HR_STATES = { active: "Active", quiet: "Quiet", stale: "Stale", empty: "Empty" };
@@ -176,7 +176,7 @@ function hubReposIdenticon(seed) {
   return '<svg viewBox="-1 -1 7 7" aria-hidden="true" fill="currentColor">' + cells + "</svg>";
 }
 const hubReposTile = (r, px) => '<span class="hr-tile ' + hubReposAccent(hubReposFull(r)) + '" style="--s:' + px + 'px">' + hubReposIdenticon(hubReposFull(r)) + "</span>";
-const hubReposAvatar = (room, px) => '<span class="hr-av ' + hubReposAccent("room" + room) + '" style="--s:' + px + 'px" title="' + esc(room) + '">' + esc(String(room || "?").slice(0, 2)) + "</span>";
+const hubReposAvatar = (room, px) => '<span class="hr-av ' + hubReposAccent("room" + room) + '" style="--s:' + px + 'px" data-tip="' + esc(room) + '">' + esc(String(room || "?").slice(0, 2)) + "</span>";
 
 // Pushes per day, oldest on the left, as bars: a repo with a dozen branches this week looks busy and a stale pile looks dead.
 function hubReposSpark(isos, days) {
@@ -208,7 +208,7 @@ function hubReposSeg(r) {
 function hubReposCloneBar(r) {
   const full = hubReposFull(r), mode = hubReposMode(r), url = hubReposUrl(r, mode);
   if (!url) return "";
-  return '<div class="hr-clone">' + hubReposSeg(r) + '<code class="hr-urlval" title="' + esc(url) + '">' + esc(url) + "</code>" +
+  return '<div class="hr-clone">' + hubReposSeg(r) + '<code class="hr-urlval" data-tip="' + esc(url) + '">' + esc(url) + "</code>" +
     hubReposCopyBtn(url, full + "#" + mode, "copy the " + mode + " clone URL for " + full) + "</div>";
 }
 
@@ -256,9 +256,9 @@ function hubReposHero(r) {
 
 function hubReposBranchRow(b) {
   return '<div class="hr-branch' + (b.released ? " released" : "") + '">' + hubReposAvatar(b.room, 28) +
-    '<span class="hr-bmain"><span class="hr-name" title="' + esc(b.name) + '">' + esc(b.name) + "</span>" +
+    '<span class="hr-bmain"><span class="hr-name" data-tip="' + esc(b.name) + '">' + esc(b.name) + "</span>" +
     '<span class="hr-who">' + hubReposWhoLine(b) + "</span></span>" +
-    (b.released ? '<span class="hr-released" title="released">' + HR_SVG.lock + "released</span>" : "") +
+    (b.released ? '<span class="hr-released" data-tip="released">' + HR_SVG.lock + "released</span>" : "") +
     hubReposAge(b.at, "hr-when") + "</div>";
 }
 
@@ -351,7 +351,7 @@ function hubReposRailEvent(e) {
       '<div class="hr-evwhen">' + hubReposAge(e.r.main.at, "hr-when") + "</div></div>";
   }
   return '<div class="hr-ev' + (b.released ? " released" : "") + (fresh ? " fresh" : "") + " " + hubReposAccent("room" + b.room) + '">' + hubReposAvatar(b.room, 38) +
-    '<div class="hr-evbody"><span class="hr-name" title="' + esc(b.name) + '">' + esc(b.name) + '</span><div class="hr-evsub"><span class="hr-chip">' +
+    '<div class="hr-evbody"><span class="hr-name" data-tip="' + esc(b.name) + '">' + esc(b.name) + '</span><div class="hr-evsub"><span class="hr-chip">' +
     esc((b.room + (b.card ? " " + b.card : "")).trim()) + "</span>" + (hubReposWho(b).title ? '<span class="hr-title">' + esc(hubReposWho(b).title) + "</span>" : "") + "</div></div>" +
     '<div class="hr-evwhen">' + hubReposAge(b.at, "hr-when") + (b.released ? '<span class="hr-released">' + HR_SVG.lock + "released</span>" : '<code class="hr-sha">' + esc(hubReposSha(b.sha)) + "</code>") + "</div>" +
     (typeof crBranchBit === "function" ? crBranchBit(e.r, b) : "") + "</div>";
@@ -407,7 +407,7 @@ function hubReposFeedItem(e) {
   }
   const w = hubReposWho(b);
   return '<div class="hr-it ' + hubReposAccent("room" + b.room) + (b.released ? " released" : "") + (hot ? " hot" : "") + '">' + hubReposAvatar(b.room, 46) +
-    '<div class="hr-itmain"><div class="hr-l1"><b>' + esc(b.room) + "</b> pushed to " + hubReposRepoPill(r) + '</div><span class="hr-bn" title="' + esc(b.name) + '">' + esc(b.name) + "</span>" +
+    '<div class="hr-itmain"><div class="hr-l1"><b>' + esc(b.room) + "</b> pushed to " + hubReposRepoPill(r) + '</div><span class="hr-bn" data-tip="' + esc(b.name) + '">' + esc(b.name) + "</span>" +
     '<div class="hr-title">' + esc(w.card) + (w.title ? " · " + esc(w.title) : "") + '</div></div><div class="hr-rt' + (old ? " old" : "") + '">' + hubReposAge(b.at, "hr-when") +
     (b.released ? '<span class="hr-released">' + HR_SVG.lock + "released</span>" : '<code class="hr-sha">' + esc(hubReposSha(b.sha)) + "</code>") + "</div></div>";
 }
@@ -437,7 +437,7 @@ function hubReposFeed(repos) {
   const by = hubReposRoomTally(shown);
   const clones = '<div class="hr-panel hr-clones"><h3 class="hr-h">Clone</h3>' + repos.map(r => {
     const full = hubReposFull(r), mode = hubReposMode(r), url = hubReposUrl(r, mode);
-    return '<div class="hr-cr ' + hubReposAccent(full) + '">' + hubReposTile(r, 36) + '<div class="hr-crt"><span class="hr-crn">' + esc(full) + '</span><code class="hr-cru" title="' + esc(url) + '">' + esc(url) + "</code></div>" +
+    return '<div class="hr-cr ' + hubReposAccent(full) + '">' + hubReposTile(r, 36) + '<div class="hr-crt"><span class="hr-crn">' + esc(full) + '</span><code class="hr-cru" data-tip="' + esc(url) + '">' + esc(url) + "</code></div>" +
       hubReposCopyBtn(url, full + "#" + mode, "copy the " + mode + " clone URL for " + full) + "</div>";
   }).join("") + "</div>";
   const rooms = Object.keys(by).length ? '<div class="hr-panel"><h3 class="hr-h">Rooms</h3>' + Object.entries(by).map(([rm, n]) =>
