@@ -36,20 +36,17 @@ Dark is the default, and the site follows the system preference when it has one.
 
 The board on the landing page is drawn in HTML (`src/components/BoardMockup.js`, `Mockups.js`). It stays sharp at
 any width, follows the light/dark switch, reflows on a phone, and never shows a real path, repository or session.
-A screenshot would go stale with the next board change, and this site is refreshed only at release time.
+A screenshot would go stale with the next board change, and the site is rebuilt on every docs change.
 
-## Refreshed at release, not per feature
+## Refreshed on push to main
 
-The site describes atrium as of one release, `0.0.1` first. It is rebuilt when a release is cut, so it does not
-chase every feature. The release number is `release` at the top of `docusaurus.config.js`.
+The site is rebuilt and deployed whenever a push to `main` touches `website/`, `docs/`, the workflow or
+`scripts/build-docs.ps1`. No release tag exists yet, so waiting for a release would leave the site unpublished.
+A docs change ships with the code it describes, and the site follows `main`.
 
-At release time:
-
-1. Bump `release` in `docusaurus.config.js` and `version` in `package.json`.
-2. Read the CHANGELOG since the last release and update the pages it touches. Describe only what is on the
-   release's commit.
-3. `pwsh ./scripts/build-docs.ps1`, then look at it (below).
-4. Publish the GitHub release. `.github/workflows/docs.yml` runs on `release: published` and deploys.
+The release number shown on the site is `release` at the top of `docusaurus.config.js`. When a release is cut, bump
+it and `version` in `package.json`. Before pushing a docs change, run `pwsh -NoProfile -File scripts/build-docs.ps1`
+and look at the result (below).
 
 When a second release needs the first one's docs kept, `npx docusaurus docs:version 0.0.1` snapshots them.
 
@@ -60,8 +57,8 @@ must carry it. `scripts/build-docs.ps1` checks the built HTML for any root-relat
 Docusaurus's own broken-link check.
 
 The workflow holds no logic: it checks out, installs node, asks `configure-pages` for the origin and base path,
-passes them to the script, and uploads and deploys the output. It runs on a published release and on
-`workflow_dispatch`, never on push. The Pages source in the repository settings must be set to GitHub Actions.
+passes them to the script, and uploads and deploys the output. It runs on a push to `main` that touches the
+docs, and on `workflow_dispatch`. The Pages source in the repository settings must be set to GitHub Actions.
 
 ## Kept out of the site
 
