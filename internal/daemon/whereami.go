@@ -242,6 +242,9 @@ func (d *Daemon) locationPath() (string, error) {
 	return LocationPath()
 }
 
+// pidAlive is processAlive, replaceable so a test can arrange a live room.
+var pidAlive = processAlive
+
 // writeLocation records where this daemon is listening.
 //
 // Failure is logged and otherwise ignored. Callers fall back to the default
@@ -264,15 +267,23 @@ func (d *Daemon) writeLocation() {
 		DB:          d.opts.DBPath,
 		Exe:         daemonBinary(),
 	}
-	// Taking the file off another daemon is allowed and is said out loud. Two
-	// daemons on one machine is a mistake worth being able to see, and the
-	// symptom without this line is every hook in every session quietly
-	// arriving at the wrong one.
+	// A LIVE ROOM'S FILE IS NOT TAKEN. A throwaway room or a second daemon that
+	// writes the machine's file aims every session's hook at itself, and the
+	// permission hook then waits on a process nobody is watching. So a daemon
+	// that would write the machine's own place, and finds another live process
+	// already recorded there, leaves it alone and says so. A daemon that names
+	// its own `LocationFile` (a test, a preview) is not asking for the machine's
+	// place and may take its own file over, which is only announced.
 	if raw, err := os.ReadFile(path); err == nil {
-		if prev, taking := takingOver(raw, os.Getpid(), processAlive); taking {
+		if prev, taking := takingOver(raw, os.Getpid(), pidAlive); taking {
+			if d.opts.LocationFile == "" {
+				log.Printf("[atrium] NOT recording my address: pid %d is already listening on %s "+
+					"and every hook is aimed at it. start a second or throwaway room with "+
+					"--isolated to keep them apart.", prev.PID, prev.Agent)
+				return
+			}
 			log.Printf("[atrium] WARNING: pid %d is already listening on %s and every hook "+
-				"was aimed at it. they will now arrive here instead. start a second or "+
-				"throwaway room with --isolated to keep them apart.", prev.PID, prev.Agent)
+				"was aimed at it. they will now arrive here instead.", prev.PID, prev.Agent)
 		}
 	}
 

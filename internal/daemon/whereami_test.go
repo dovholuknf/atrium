@@ -235,3 +235,39 @@ func TestLocationRecordsTheRoomDir(t *testing.T) {
 		t.Errorf("room_dir = %q", loc.RoomDir)
 	}
 }
+
+// A throwaway that would write the machine's own file leaves a live room's
+// address alone, and takes it over once that room is gone.
+func TestAThrowawayDoesNotOverwriteALiveRoomsAddress(t *testing.T) {
+	dir := t.TempDir()
+	shared := filepath.Join(dir, "daemon.json")
+	t.Setenv("ATRIUM_LOCATION", shared)
+	t.Setenv("ATRIUM_SHARED_LOCATION", "-")
+
+	real, err := json.Marshal(Location{Agent: "http://localhost:7777", PID: os.Getpid() + 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(shared, real, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	was := pidAlive
+	defer func() { pidAlive = was }()
+
+	d := &Daemon{opts: Options{AgentAddr: "127.0.0.1:9", HumanAddr: "127.0.0.1:10"}}
+
+	pidAlive = func(int) bool { return true }
+	d.writeLocation()
+	back, _ := os.ReadFile(shared)
+	if string(back) != string(real) {
+		t.Fatalf("a live room's address was overwritten: %s", back)
+	}
+
+	pidAlive = func(int) bool { return false }
+	d.writeLocation()
+	var loc Location
+	back, _ = os.ReadFile(shared)
+	if err := json.Unmarshal(back, &loc); err != nil || loc.PID != os.Getpid() {
+		t.Fatalf("a stale address was not replaced: %s", back)
+	}
+}
