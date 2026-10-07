@@ -15,7 +15,7 @@ reviews, and the panel fans out to them.
 Read for this design, 2026-10-02:
 - `docs/rnd/pr-review-story.md` (on `claude/pr-review-story`; @rnd's review 4ad931af on `claude/rnd-pr-review-story`,
   not landed);
-- `docs/review/item16-notes.md` (the review-panel skill and the personas, read on sg4 on 2026-09-29);
+- `docs/review/item16-notes.md` at 3be95cab (the review-panel skill and the personas, read on sg4 on 2026-09-29);
 - `docs/review/review-memory-design.md`;
 - `docs/backlog/runtime/17.md` (a panel's false "waiting on you" alerts);
 - `internal/link/control_mcp.go:1183` and `:1295` to `:1352` (the launch cap, `launchInput`, `leanLaunch`);
@@ -23,7 +23,7 @@ Read for this design, 2026-10-02:
 - `~/.claude/hooks/atrium-perm-hook.ps1:101` on m1mini.
 
 The dotfiles repo, the `review-panel` skill and the persona files are on sg4, not on m1mini. They are cited here from
-`docs/review/item16-notes.md`, not read again.
+`docs/review/item16-notes.md` at 3be95cab, not read again.
 
 ## 0. The answer
 

@@ -3,8 +3,8 @@
 Status: partly built, outside this repository. Stage 1 is the review-panel skill in the dotfiles repository. Stage 2 is
 not built.
 
-A review panel reads the same files once per reviewer, and forgets all of it before the next PR in the same repo.
-This is the design for both halves. The facts it rests on are in `docs/review/item16-notes.md` (fb05), cited here
+A review panel reads the same files once per reviewer, and forgets all of it before the next PR in the same repo. This
+is the design for both halves. The facts it rests on are in `docs/review/item16-notes.md` at 3be95cab (fb05), cited here
 as "notes (a)" to "notes (e)".
 
 Revised 2026-09-29 around the director of software review (@review), from clint's answers of the same day, which

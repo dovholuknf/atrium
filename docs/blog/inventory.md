@@ -271,7 +271,7 @@ here name a design that was later built, and the line says so: the design doc is
 - A PR card that registers itself with @review — `docs/review/review-pr-start-design.md` — proposed by @review, accepted with changes by @rnd; status unclear, folded into the pulls flow
 - PR and CI state on the card — PR state, checks and review decision on the card that owns the branch, and CI failures fed back to it — `docs/rnd/pr-ci-state-design.md` — designed, clint ranks; 3 questions
 - Changes view — every card shows what it changed, per turn — `docs/rnd/changes-view-design.md` — partly built (the room's `/changes` endpoint, `changelog/runtime/2026-10-01-r-changes.md`, and code review on the phone, `docs/changes/u-m-changes.md`); the desktop view as designed not confirmed
-- Peer review on the mercurius protocol inside an atrium session (item 30) — `docs/review/peer-review-brief.md` — not started, 2 questions
+- Peer review on the mercurius protocol inside an atrium session (item 30) — `docs/review/peer-review-brief.md` at 3be95cab — not started, 2 questions
 
 ### Operator focus and decisions
 
@@ -396,7 +396,7 @@ here name a design that was later built, and the line says so: the design doc is
 - sg4 re-evaluation of relay cost (the orchestrator's half of the token study) — `docs/rnd/operator-focus.md` 4.5 (T1, after the pause)
 - The OpenWiki trial on one repo — `docs/rnd/langchain-openwiki-spike.md` section 5 (held until the pause ends)
 - Two smaller spikes: ACP as a harness protocol, and a sandboxed room type — `docs/rnd/factory-landscape.md` section 0
-- Older, from the orchestrator's dispatch queue (around 2026-09-06 to 09-20): publishing atrium, many boards on one machine, watching the fleet, context and rate limits on a card, handing somebody a session — `docs/orchestrator/dispatch-queue.md` sections A to S
+- Older, from the orchestrator's dispatch queue (around 2026-09-06 to 09-20): publishing atrium, many boards on one machine, watching the fleet, context and rate limits on a card, handing somebody a session — `docs/orchestrator/dispatch-queue.md` at 3be95cab sections A to S
 
 ## 4. Abandoned or replaced
 

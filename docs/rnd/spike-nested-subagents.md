@@ -158,13 +158,13 @@ graph laid over that path tree, and two things follow:
   this", and the row already knows how to draw its full label when it is not under a matching heading
   (`termRow(t, deep)`, `terminal-list.js:429`).
 
-**Folding a parent.** `termCount` already counts rows at any depth, so a folded parent can say what is inside it.
-But the fold set is keyed by path (`at`, built in `termNodeHTML`), and a parent is a ROW, not a heading. Either
-rows become foldable, which makes a row a control and adds a second kind of disclosure next to the heading's, or
-children fold with the heading above them, which is not folding the parent. `terminal-list.js:492` states that a
-strip heading is deliberately NOT a control, pointing at an open complaint in `docs/orchestrator/dispatch-queue.md` group F
-about clicking the white space of a board heading. A disclosure triangle on the row, distinct from the row's own
-click target, is the shape that does not walk into that complaint. It needs deciding before it is built.
+**Folding a parent.** `termCount` already counts rows at any depth, so a folded parent can say what is inside it. But
+the fold set is keyed by path (`at`, built in `termNodeHTML`), and a parent is a ROW, not a heading. Either rows become
+foldable, which makes a row a control and adds a second kind of disclosure next to the heading's, or children fold with
+the heading above them, which is not folding the parent. `terminal-list.js:492` states that a strip heading is
+deliberately NOT a control, pointing at an open complaint in `docs/orchestrator/dispatch-queue.md` at 3be95cab group F
+about clicking the white space of a board heading. A disclosure triangle on the row, distinct from the row's own click
+target, is the shape that does not walk into that complaint. It needs deciding before it is built.
 
 **The rest.** `termOrder` sorts a flat list and has to sort within parents or children scatter. The pinned
 grouping, the `uncategorized` bucket and the group headings are all written against a flat list. The board's own

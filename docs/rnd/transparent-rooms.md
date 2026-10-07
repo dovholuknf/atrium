@@ -26,7 +26,7 @@ looking at. When the hub is gone, the room is still reachable on its own address
   be a second source of truth that is wrong whenever the room is unreachable. `internal/daemon/rooms.go` says
   so where it declines to store them.
 - **Terminals stay where they are.** A pty cannot leave the machine that made it, so attaching to a remote card
-  was to be a REDIRECT to that room's own board. `docs/orchestrator/dispatch-queue.md` NEXT item 2.
+  was to be a REDIRECT to that room's own board. `docs/orchestrator/dispatch-queue.md` at 3be95cab NEXT item 2.
 - **Nothing is proxied.** `docs/fabric/overlays.md` draws that line hard: both SDKs hand back a `net.Listener` and the
   board is one handler, so no traffic passes through atrium that was not already destined for it.
 

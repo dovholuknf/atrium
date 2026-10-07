@@ -1586,8 +1586,9 @@ started.
 
 ## V. What the round 1 to 8 review turned up, fixed
 
-Every scenario here is a defect the operator found by using the board, written up in `docs/orchestrator/dispatch-queue.md`
-and then fixed. They are the ones a Go test cannot answer: two browser windows, a restart, a light skin.
+Every scenario here is a defect the operator found by using the board, written up in
+`docs/orchestrator/dispatch-queue.md` at 3be95cab and then fixed. They are the ones a Go test cannot answer: two browser
+windows, a restart, a light skin.
 
 ### V1. Two windows on one terminal are refused
 
@@ -1812,7 +1813,7 @@ that history exists.
 
 **Why it is in the plan:** two restarts in a row went this way because `POST /v1/shutdown` refuses while a
 share is running, so the wind-down never ran and the carryover was never written. The scrollback fix looked
-broken when it was working. See `docs/orchestrator/dispatch-queue.md` group T.
+broken when it was working. See `docs/orchestrator/dispatch-queue.md` at 3be95cab group T.
 
 ### W6. A restart reopens the terminals that were open
 

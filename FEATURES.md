@@ -586,7 +586,8 @@ on `claude/main` and is not yet on `main`. Whether a build is deployed on a give
   (`c248274`), terminal window 2026-09-11 (`f690f32`).
 
 - **The directory picker is bounded to configured roots and completes paths with Tab.**
-  Docs: `docs/orchestrator/status.md`. Landed 2026-09-05 (`99e2d8e`), Tab completion on 2026-09-06 (`c78ff42`).
+  Docs: `docs/orchestrator/status.md` at 3be95cab. Landed 2026-09-05 (`99e2d8e`), Tab completion on 2026-09-06
+  (`c78ff42`).
 
 ### Files: removed, and why
 
@@ -633,7 +634,7 @@ on `claude/main` and is not yet on `main`. Whether a build is deployed on a give
 
 - **You back up and restore atrium's configuration.**
   `GET /v1/config/export` and `POST /v1/config/import`, dry run by default, and `back it up` in the settings cog.
-  Docs: `docs/orchestrator/status.md`. Landed 2026-09-06 (`c78ff42`).
+  Docs: `docs/orchestrator/status.md` at 3be95cab. Landed 2026-09-06 (`c78ff42`).
 
 - **A shared address file lets hooks and scripts find the daemon.**
   `shared_location` names a directory both accounts can read. Docs: `README.md`. Landed 2026-09-06 (`c78ff42`).
@@ -675,7 +676,7 @@ on `claude/main` and is not yet on `main`. Whether a build is deployed on a give
 ### Packaging, install and operations: removed, and why
 
 - **`atrium install`.** Removed before shipping, because copying a file is the shallow half of installing. The
-  packages replace it. Docs: `docs/orchestrator/status.md`, `docs/release/packaging.md`.
+  packages replace it. Docs: `docs/orchestrator/status.md` at 3be95cab, `docs/release/packaging.md`.
 - **The v1 `start-atrium.ps1`.** Retired to a stub on 2026-09-19 (`ee7a589`).
 
 ## Diagnostics

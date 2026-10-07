@@ -272,8 +272,9 @@ atrium's design:
 
 What transfers is the contract in section 2: one checkpoint, one context, a three way answer (proceed, wait with a
 reason and an optional time, reject), fail closed on timeout, a chain in install order, and an explicit human bypass.
-Atrium already has a checkpoint in the right place. `docs/orchestrator/dispatch-queue.md` and the message queue
-(`internal/store/messages.go`, `internal/daemon/messages.go`) hold a prompt for a card until the runner can take it.
+Atrium already has a checkpoint in the right place. `docs/orchestrator/dispatch-queue.md` at 3be95cab and the message
+queue (`internal/store/messages.go`, `internal/daemon/messages.go`) hold a prompt for a card until the runner can take
+it.
 
 The sketch: a **gate** row, shaped like a `source` (`internal/store/sources.go`), which is "a command on a timer,
 shaped like harness because it is the same idea". A gate is a command plus a bound. Before the daemon queues or

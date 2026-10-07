@@ -252,8 +252,8 @@ database reachable from more than one machine. Real types and real constraints, 
 text ULID-ish keys, RFC3339 text timestamps, `CHECK` instead of enums and TEXT instead of JSONB to stay portable
 to it.
 
-**It buys nothing about tenancy, and nothing about two active daemons, because everything they fight over is
-outside the database.** `docs/orchestrator/dispatch-queue.md` group D says two atriums on one database is not blocked by
+**It buys nothing about tenancy, and nothing about two active daemons, because everything they fight over is outside the
+database.** `docs/orchestrator/dispatch-queue.md` at 3be95cab group D says two atriums on one database is not blocked by
 sqlite, it is blocked by both of them ACTING. The specific list, with what each one is:
 
 - **Fixtures.** Both daemons start every fixture on boot (`internal/daemon/fixtures.go`). Two runners in one
