@@ -312,3 +312,22 @@ func TestARoomWhoseHubRunsNoForgeIsToldSo(t *testing.T) {
 		t.Fatalf("err = %v", err)
 	}
 }
+
+// A PASTE'S RECOGNISE AND ITS OPEN ASK THE FORGE ONCE, not twice: the open takes the recognise's read, once.
+func TestAPeekIsTakenOnceByTheFetchThatFollowsIt(t *testing.T) {
+	x := newForgeHub(t)
+	if code, body := x.ask(forge.HubPRPath, prAsk); code != 200 {
+		t.Fatalf("peek = %d %s", code, body)
+	}
+	a := prAsk
+	a.Fetch = true
+	// no head in the forge's remote, so the fetch itself fails, but the read must not have been asked for again
+	x.ask(forge.HubPRPath, a)
+	if x.ff.views != 1 {
+		t.Fatalf("the forge was read %d times for a peek and the open after it", x.ff.views)
+	}
+	x.ask(forge.HubPRPath, a)
+	if x.ff.views != 2 {
+		t.Fatalf("a second open reused a read it should not have: %d", x.ff.views)
+	}
+}

@@ -226,3 +226,31 @@ func TestOpenNeedsNoProviderRow(t *testing.T) {
 		t.Fatalf("worktree %v, want %s", out["worktree"], want)
 	}
 }
+
+// A PASTED LINK IS RECOGNISED ONCE. Recognising reads the forge, and the open used to do it again for the review row.
+func TestOpenRecognisesTheLinkOnce(t *testing.T) {
+	oh := newOpenHarness(t, &fakeForge{pr: forge.PR{HeadRef: "feat/x"}})
+	oh.checkout(t, "o", "r")
+	asked, inner := 0, oh.srv.Recognise
+	oh.srv.Recognise = func(url string) (*store.Resolved, error) { asked++; return inner(url) }
+	if code, out := oh.open(t, openURL); code != 201 {
+		t.Fatalf("%d %v", code, out)
+	}
+	if asked != 1 {
+		t.Errorf("the link was recognised %d times", asked)
+	}
+}
+
+func TestScmHasSaysWhetherTheRoomHoldsTheRepo(t *testing.T) {
+	oh := newOpenHarness(t, &fakeForge{pr: forge.PR{HeadRef: "feat/x"}})
+	oh.srv.SCMHas = func(url string) bool { return url == "https://github.com/o/r" }
+	for repo, want := range map[string]string{"github.com/o/r": `"has":true`, "github.com/o/other": `"has":false`} {
+		rec := httpDo(t, oh.h, "GET", "/v1/scm/has?repo="+repo)
+		if rec.Code != 200 || !strings.Contains(rec.Body.String(), want) {
+			t.Errorf("%s = %d %s", repo, rec.Code, rec.Body)
+		}
+	}
+	if rec := httpDo(t, oh.h, "GET", "/v1/scm/has?repo=nope"); rec.Code != 400 {
+		t.Errorf("a bad repo answered %d", rec.Code)
+	}
+}

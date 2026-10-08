@@ -73,3 +73,33 @@ func TestOpenOnTheHubGoesToTheHolderElseTheLeastBusyRoom(t *testing.T) {
 		t.Fatalf("alpha opened %v", got)
 	}
 }
+
+// A PASTE GOES TO A ROOM THAT ALREADY HOLDS THE REPO, busy as it is, so the repo is not cloned on another room. A room
+// that holds it and is not asked (an older build, which answers 404) counts as one that does not.
+func TestOpenOnTheHubPrefersARoomThatHoldsTheRepo(t *testing.T) {
+	pr := seedRow("github-pull-request", 10,
+		`^https?://(?P<host>github\.com)/(?P<org>[A-Za-z0-9_.-]+)/(?P<repo>[A-Za-z0-9_.-]+)/pull/(?P<num>\d+)(?:[/?#].*)?$`)
+	pr.Tags = "pull-request,{repo}"
+	withSeed(t, pr)
+	x := newClaimHub(t, map[string]int{"alpha": 3, "beta": 0})
+	defer x.done()
+	x.proxy.SetForge(&memSettings{m: map[string]string{}}, nil)
+	x.rooms["alpha"].holds = map[string]bool{"github.com/openziti/ziti-console": true}
+	x.rooms["beta"].holds = map[string]bool{}
+
+	_, placed, _ := x.openVia(t, "", "https://github.com/openziti/ziti-console/pull/960/changes")
+	if placed != "alpha" {
+		t.Fatalf("a repo alpha holds went to %q", placed)
+	}
+	// a repo nobody holds: the least busy room, as before
+	_, placed, _ = x.openVia(t, "", "https://github.com/openziti/zrok/pull/5")
+	if placed != "beta" {
+		t.Fatalf("a repo nobody holds went to %q", placed)
+	}
+	// rooms that cannot say are placed by load alone
+	x.rooms["alpha"].holds, x.rooms["beta"].holds = nil, nil
+	_, placed, _ = x.openVia(t, "", "https://github.com/openziti/ziti-console/pull/961")
+	if placed != "beta" {
+		t.Fatalf("rooms that cannot say went to %q", placed)
+	}
+}

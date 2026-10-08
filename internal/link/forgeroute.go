@@ -62,6 +62,46 @@ type hubForge struct {
 	mu sync.Mutex
 	// open is the growler id of each raised alert, by `tool@host`.
 	open map[string]string
+	// peeks is the last read of each pull request that fetched nothing, for the open that follows it. See takePeek.
+	peeks map[forge.Ref]peekedPR
+}
+
+// peekWindow is how long a read that fetched nothing is kept for the open that follows it.
+const peekWindow = 10 * time.Second
+
+type peekedPR struct {
+	pr *forge.PR
+	at time.Time
+}
+
+func (f *hubForge) keepPeek(ref forge.Ref, pr *forge.PR) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.peeks == nil {
+		f.peeks = map[forge.Ref]peekedPR{}
+	}
+	for k, v := range f.peeks {
+		if time.Since(v.at) > peekWindow {
+			delete(f.peeks, k)
+		}
+	}
+	f.peeks[ref] = peekedPR{pr: pr, at: time.Now()}
+}
+
+// takePeek is the read a moment ago for a request that fetches the head, or nil. It is taken once.
+func (f *hubForge) takePeek(ref forge.Ref, fetching bool) *forge.PR {
+	if !fetching {
+		return nil
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	v, ok := f.peeks[ref]
+	delete(f.peeks, ref)
+	if !ok || time.Since(v.at) > peekWindow || v.pr == nil {
+		return nil
+	}
+	cp := *v.pr
+	return &cp
 }
 
 // SetForge wires the hub's forge. run runs the forge CLIs and nil is forge.Exec. Without it the forge route answers
@@ -246,8 +286,17 @@ func (p *Proxy) forgePR(ctx context.Context, f *hubForge, ask forge.HubAsk) (for
 		ans.PR = &forge.PR{Head: head}
 		return ans, nil
 	}
-	if ans.PR, err = fg.View(ctx, ref); err != nil {
-		return ans, wrap(err)
+	// A paste is read twice in a row: recognised (a peek, no head fetched) and then opened (a view with the fetch). The
+	// second takes the first's answer when it is a few seconds old, and so does not ask the forge again. It is used
+	// once: anything later reads the forge fresh. The repository is still held only after the read succeeds, so a
+	// forge that is missing or logged out clones nothing.
+	if ans.PR = f.takePeek(ref, ask.Fetch); ans.PR == nil {
+		if ans.PR, err = fg.View(ctx, ref); err != nil {
+			return ans, wrap(err)
+		}
+		if !ask.Fetch && !ask.Diff {
+			f.keepPeek(ref, ans.PR)
+		}
 	}
 	ans.URL = fg.PRURL(ref)
 	if ask.Diff {

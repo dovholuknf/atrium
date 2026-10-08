@@ -8,6 +8,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"net/url"
 	"sort"
 	"strconv"
 	"strings"
@@ -112,6 +113,8 @@ type roomLoad struct {
 	room string
 	n    int
 	ok   bool
+	// has is whether the room already holds the checkout the paste lands in. Only asked of a paste that names a repo.
+	has  bool
 	idle *float64
 }
 
@@ -139,6 +142,23 @@ func (p *Proxy) placePRRoom(ctx context.Context, fallback string) string {
 
 // placePRRoomExcept is placePRRoom with rooms passed over: the ones that already refused this paste, by key.
 func (p *Proxy) placePRRoomExcept(ctx context.Context, fallback string, skip map[string]string) string {
+	return p.placeRoomHolding(ctx, fallback, skip, "")
+}
+
+// roomHolds is whether a room already has a checkout of repo ("host/org/repo"). A room that does not answer, or is on
+// a build with no such question, reads as false: it is no worse than before.
+func (p *Proxy) roomHolds(ctx context.Context, room, repo string) bool {
+	var body struct {
+		Has bool `json:"has"`
+	}
+	return p.roomGet(ctx, room, "/v1/scm/has?repo="+url.QueryEscape(repo), &body) && body.Has
+}
+
+// placeRoomHolding is placePRRoomExcept that prefers, among the rooms it would take, one that already holds a checkout
+// of repo. A room with the clone opens the link in seconds, and any other clones the repo first, which is the slow part
+// of a pasted link. repo "" asks nothing and places by load alone. The holders are asked beside the session counts, so
+// placement waits no longer than it did.
+func (p *Proxy) placeRoomHolding(ctx context.Context, fallback string, skip map[string]string, repo string) string {
 	rooms := p.hub.Rooms()
 	marked := p.markedRooms()
 	got := make([]roomLoad, len(rooms))
@@ -160,6 +180,13 @@ func (p *Proxy) placePRRoomExcept(ctx context.Context, fallback string, skip map
 			defer wg.Done()
 			got[i].n, got[i].ok = p.roomSessions(ctx, name)
 		}(i, a.Name)
+		if repo != "" {
+			wg.Add(1)
+			go func(i int, name string) {
+				defer wg.Done()
+				got[i].has = p.roomHolds(ctx, name, repo)
+			}(i, a.Name)
+		}
 	}
 	wg.Wait()
 	var best *roomLoad
@@ -167,6 +194,12 @@ func (p *Proxy) placePRRoomExcept(ctx context.Context, fallback string, skip map
 		for i := range got {
 			l := &got[i]
 			if l.n < 0 || (pass == 0 && !l.ok) {
+				continue
+			}
+			if best != nil && l.has != best.has {
+				if l.has {
+					best = l
+				}
 				continue
 			}
 			if best == nil || l.lessLoaded(*best) {
