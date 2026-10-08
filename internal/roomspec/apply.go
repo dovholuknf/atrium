@@ -242,7 +242,7 @@ func checkMovedPackDir(goos, dir string, h Home, workRoot string, others []strin
 		return root != "" && strings.HasPrefix(fold(p)+"/", root+"/") && fold(p) != root
 	}
 	for _, o := range others {
-		o = slash(o)
+		o = path.Clean(slash(o))
 		if fold(d) == fold(o) || under(d, o) || under(o, d) {
 			return "it is the folder of another runner's pack, or inside or around it: " + o
 		}

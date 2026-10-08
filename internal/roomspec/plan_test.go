@@ -453,6 +453,24 @@ func TestPackFollowsTheVariablesThatMoveARunnersFolder(t *testing.T) {
 	wantStatus(t, pl, "agent-pack-codex", StatusOK)
 }
 
+// The other runner's own variable can be the unclean one: // and /./ in it name the same folder as the clean form.
+func TestMovedPackFolderMeetsAnUncleanFolderOfAnotherRunner(t *testing.T) {
+	for _, other := range []string{"/home/localai//.claude", "/home/localai/./.claude", "/home/localai/.claude/"} {
+		spec := mustSpec(t, Linux, linHead+"packs:\n  - runner: codex\n    repo: o/a\n")
+		m := NewMemFS(linHome, "localai")
+		m.Dir("/srv/localai")
+		m.Env = map[string]string{"CLAUDE_CONFIG_DIR": other, "CODEX_HOME": "/home/localai/.claude"}
+		ff := &fakeFetcher{src: packFiles(), latest: "abcdef1234567890"}
+		lk := Apply(spec, adapterFor(t, Linux), Host{FS: m, Env: m, Settings: &fakeSettings{vals: map[string]string{}}, Fetch: ff})
+		if s := step(lk, "agent-pack-codex"); s.Status != StatusFail {
+			t.Errorf("CLAUDE_CONFIG_DIR=%s: %+v", other, s)
+		}
+		if m.Has("/home/localai/.claude/skills/s1/SKILL.md") {
+			t.Errorf("CLAUDE_CONFIG_DIR=%s: the pack was installed", other)
+		}
+	}
+}
+
 // A variable that moves a runner's folder is followed only to an absolute place under the account's home or the work root, with
 // a %NAME% of the Windows registry expanded first. Anything else is a fail row naming the variable, and nothing is installed.
 func TestMovedPackFolderIsCheckedBeforeAnythingIsWritten(t *testing.T) {
