@@ -20117,6 +20117,9 @@ async function quickPasteSection(browser, base) {
     st.calls.push(m + " " + p + " " + (req.postData() || ""));
     if (p === "/v1/open") {
       const url = JSON.parse(req.postData() || "{}").url || "";
+      if (st.hold && /pull\/14$/.test(url)) await st.hold;
+      if (/pull\/13$/.test(url)) return json(route, 400, { error: "could not fetch the head of pull request 13: boom",
+        code: "worktree_failed", step: "worktree" });
       if (/issues\/6$/.test(url)) return json(route, 422, { error: "that link names no piece of work", code: "not_openable", step: "recognise" });
       if (/zendesk/.test(url)) return json(route, 201, { key: "zendesk:netfoundry.zendesk.com/77", kind: "support", card: "t-q",
         worktree: "/wt/zendesk-77", repo: "github.com/openziti/ziti", created: true, title: "zendesk-77" });
@@ -20230,12 +20233,20 @@ async function quickPasteSection(browser, base) {
     await p.waitForFunction(() => document.getElementById("qp-url").value !== "", null, { timeout: slow(5000) });
     await p.waitForFunction(() => document.getElementById("qp-note").classList.contains("seen"), null, { timeout: slow(5000) });
     st.calls = [];
+    // THE LAUNCH DIALOG IS NEVER SHOWN on Enter, not even for a moment: watched from before the press.
+    await p.evaluate(() => {
+      window.__sawLaunch = false;
+      new MutationObserver(() => { if (document.getElementById("launch").open) window.__sawLaunch = true; })
+        .observe(document.getElementById("launch"), { attributes: true, attributeFilter: ["open"] });
+    });
     await p.press("#qp-url", "Enter");
     await p.waitForFunction(() => !document.getElementById("launch").open && !document.getElementById("quickpaste").open,
       null, { timeout: slow(8000) }).catch(() => {});
     await p.waitForTimeout(200);
+    if (await p.evaluate(() => window.__sawLaunch)) fail("quickPaste: enter showed the launch dialog");
+    // the box had already read the link, so Enter does not ask the recogniser again
     const order = st.calls.map(c => c.split(" ")[1]);
-    const want = ["/v1/recognise", "/v1/open"];
+    const want = ["/v1/open"];
     if (order.join() !== want.join()) fail("quickPaste: enter ran " + order.join() + ", wanted " + want.join());
     const o = st.calls.find(c => c.indexOf("POST /v1/open") === 0);
     const opened = o ? JSON.parse(o.split(" ").slice(2).join(" ")) : {};
@@ -20271,17 +20282,17 @@ async function quickPasteSection(browser, base) {
     // a ticket starts at once on Enter, its missing directory no bar, with the row's default repo left to the server
     const zd = "https://netfoundry.zendesk.com/agent/tickets/77";
     let r = await enter(zd);
-    if (r.order.join() !== "/v1/recognise,/v1/open") fail("quickPaste: a ticket on enter ran " + r.order.join());
+    if (r.order.join() !== "/v1/open") fail("quickPaste: a ticket on enter ran " + r.order.join());
     if (!r.open || r.open.url !== zd || r.open.repo !== "") fail("quickPaste: a ticket opened as " + JSON.stringify(r.open));
 
     // an issue goes through the open verb too, with no repo field
     r = await enter("https://github.com/openziti/zrok/issues/5");
-    if (r.order.join() !== "/v1/recognise,/v1/open") fail("quickPaste: an issue on enter ran " + r.order.join());
+    if (r.order.join() !== "/v1/open") fail("quickPaste: an issue on enter ran " + r.order.join());
     if (!r.open || r.open.prompt !== "investigate the issue") fail("quickPaste: the issue opened as " + JSON.stringify(r.open));
 
     // a link the open verb refuses as not_openable launches the old way
     r = await enter("https://github.com/openziti/zrok/issues/6");
-    if (r.order.join() !== "/v1/recognise,/v1/open,/v1/launch") fail("quickPaste: not_openable ran " + r.order.join());
+    if (r.order.join() !== "/v1/open,/v1/launch") fail("quickPaste: not_openable ran " + r.order.join());
     const launched = st.calls.find(x => x.indexOf("POST /v1/launch") === 0);
     if (!launched || JSON.parse(launched.split(" ").slice(2).join(" ")).branch !== "issue-6")
       fail("quickPaste: the fallback launch lost the recogniser's fields: " + launched);
@@ -20311,6 +20322,49 @@ async function quickPasteSection(browser, base) {
     await enter("https://github.com/openziti/zrok/pull/12", true);
     if (!await p.evaluate(() => document.getElementById("l-repo-field").hidden)) fail("quickPaste: a pull request showed the repo field");
     await p.evaluate(() => document.getElementById("launch").close());
+
+    // a slow open names its step in the strip, with the launch dialog never shown, and the strip goes when it ends
+    let release;
+    st.hold = new Promise(res => { release = res; });
+    st.calls = [];
+    await p.evaluate(() => document.querySelectorAll("dialog[open]").forEach(d => d.close()));
+    await p.evaluate(() => { window.__clip = "https://github.com/openziti/zrok/pull/14"; });
+    await p.keyboard.press("Control+Alt+KeyR");
+    await p.waitForFunction(() => document.getElementById("qp-url").value.endsWith("/pull/14") &&
+      document.getElementById("qp-note").classList.contains("seen"), null, { timeout: slow(5000) });
+    await p.press("#qp-url", "Enter");
+    await p.waitForFunction(() => false, null, { timeout: 300 }).catch(() => {});
+    const held = st.calls.find(x => x.indexOf("POST /v1/open") === 0);
+    const heldBody = held ? JSON.parse(held.split(" ").slice(2).join(" ")) : {};
+    if (!heldBody.progress) fail("quickPaste: the open sent no progress id: " + held);
+    await p.evaluate(id => onOpenProgress({ data: JSON.stringify({ id, step: "fetching the head" }) }), heldBody.progress);
+    const strip = await p.evaluate(() => { const e = document.getElementById("open-progress");
+      return e && !e.hidden ? e.textContent : ""; });
+    if (!/fetching the head/.test(strip)) fail("quickPaste: the strip said " + JSON.stringify(strip));
+    if (await p.evaluate(open("launch"))) fail("quickPaste: a slow open showed the launch dialog");
+    release();
+    await p.waitForFunction(() => { const e = document.getElementById("open-progress"); return !e || e.hidden; },
+      null, { timeout: slow(5000) }).catch(() => fail("quickPaste: the strip stayed after the open ended"));
+    st.hold = null;
+
+    // an open that fails reopens the launch dialog with the reason, not a dialog shown first
+    await enter("https://github.com/openziti/zrok/pull/13");
+    await p.waitForFunction(() => document.getElementById("launch").open &&
+      /boom/.test(document.getElementById("l-link-note").textContent), null, { timeout: slow(5000) })
+      .catch(() => fail("quickPaste: a failed open did not reopen the dialog with the reason"));
+    await p.evaluate(() => document.getElementById("launch").close());
+
+    // a plain paste of a link opens the box with it and not the launch dialog
+    await p.evaluate(() => document.querySelectorAll("dialog[open]").forEach(d => d.close()));
+    await p.evaluate(() => {
+      const dt = new DataTransfer();
+      dt.setData("text/plain", "https://github.com/openziti/zrok/pull/12");
+      document.body.dispatchEvent(new ClipboardEvent("paste", { clipboardData: dt, bubbles: true, cancelable: true }));
+    });
+    await p.waitForFunction(() => document.getElementById("quickpaste").open &&
+      document.getElementById("qp-url").value === "https://github.com/openziti/zrok/pull/12", null, { timeout: slow(5000) })
+      .catch(() => fail("quickPaste: a pasted link did not open the box with it"));
+    if (await p.evaluate(open("launch"))) fail("quickPaste: a pasted link opened the launch dialog");
     if (errors.length) fail("quickPaste: page errors: " + errors.join(" | "));
   } finally { await ctx.close(); }
   if (!bad) console.log("quickPaste ok");

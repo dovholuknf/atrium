@@ -6,6 +6,8 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/dovholuknf/atrium/internal/gitsync"
@@ -115,6 +117,20 @@ func (d *Daemon) handleGitClone(w http.ResponseWriter, r *http.Request) {
 var errPRCloneAdopt = errors.New("the clone of this repo in the scm folder was made by the operator and atrium has " +
 	"not been given a yes to add its remotes to it. Run atrium_git_clone for it from a card, answer the question " +
 	"on the board, and ask again")
+
+// prWorktreeHas is whether the scm folder already holds the clone a PR worktree would hang off. It makes nothing.
+func (d *Daemon) prWorktreeHas(url string) bool {
+	ref, err := gitsync.ParseURL(url)
+	if err != nil {
+		return false
+	}
+	_, dest, err := d.scm(nil).ClonePath(ref)
+	if err != nil {
+		return false
+	}
+	_, err = os.Stat(filepath.Join(dest, ".git"))
+	return err == nil
+}
 
 // prWorktreeClone is the scm clone path for a pull request's worktree: the clone with its `hub` remote and `origin`
 // push guarded, the same as atrium_git_clone. A clone the operator made is not touched without the yes.

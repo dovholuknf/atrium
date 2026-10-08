@@ -1,21 +1,43 @@
-# r-graceful-room-restart report
+# f-pr-launch-fast
 
-A room restart now asks its working cards to wrap up first. Design and test plan: docs/changes/r-graceful-room-restart.md.
+Pasting a PR link and pressing Enter was slow and showed a dialog first. This is the timeline and what changed.
 
-- `internal/daemon/restartwrap.go`: the wrap-up. Working cards get a labelled prompt through the cycle's typing gate,
-  are waited on for `atrium ready` or idle, get a restart wake (own wake kept), and the unanswered are named in the log
-  and on the card's history. `POST /v1/restart-wrap` runs it alone.
-- `internal/daemon/shutdown.go`: `/v1/shutdown` wraps up first by default, `?now=1` skips it and ends one waiting.
-  `ready.go` accepts the ack with no handoff file. `internal/store/restartwrap.go`: setting `restart_wrap_wait_s`
-  (300 default, 10 to 3600), also in the settings API.
-- `internal/cli`: `atrium stop --now`, and the hub-forwarded restart wraps up before it spawns the restarter, falling
-  back to the old park-and-refuse when `immediate` is set or the call fails. `restart_atrium` takes `immediate`.
-- `scripts/live`: `Stop-Room` waits wrap setting + 45 s before forcing, `-Immediate` on deploy-batch and stop-atrium.
-  Not run here (no pwsh on this machine).
+## What was measured here
 
-Decisions: idle, dialog and finished cards are not prompted or woken. A card in a context cycle is skipped. The
-standalone `atrium control` restart tool uses `now`. `atrium_deploy` itself is unchanged, its restart is the script.
+| Step | Seconds |
+|---|---|
+| POST /v1/recognise | 0.92 |
+| `gh pr view` | 0.59 |
+| `git worktree add` | 0.35 |
+| 4 cheap git calls | 0.34 |
+| full local clone of ziti-console | 12.7 |
 
-Tests: new `restartwrap_test.go` (ready, idle, timeout, idle card left alone, own wake kept, shutdown graceful, `now`,
-`now` ending a wait, setting). daemon wrap/shutdown/cycle/hold tests, store, cli, api run 3 times with -count=1, all
-pass. Full daemon run fails only TestKeepaliveForkCarriesALeanCardsPromptToolsAndMCP, which fails the same on main.
+I could NOT time the network fetch of `pull/960/head`. A hook here forbids any git fetch to a remote. The live logs
+(`hub.err`, `room.err`) hold no open timings. The new `[atrium open] <url>: <step> took Ns` lines will give them on the
+next live open.
+
+## Where the time went, and what changed
+
+| Step | Why it was slow | Before | After |
+|---|---|---|---|
+| Placement | the hub polled every room's /v1/tasks with a 10s timeout, so one slow room held the paste | up to 10s | bounded at 1.5s (`placeLoadWait`) |
+| Resource measuring | the answer waited on measureResources | up to 5s | runs in the background after the answer |
+| Finding the checkout | ran after the forge read | serial | parallel with the forge View |
+| Recognise | the board recognised twice, in the box then in the dialog | 2 x 0.9s | once, the box's result is reused |
+| Launch dialog | shown on Enter before the open | a dialog | never shown on Enter, a strip names the step |
+| Fetch of the head | goes through the hub store | not measured | unchanged, now logged |
+| Clone of a repo no room holds | full clone | 12s or more | unchanged |
+
+## Not done
+
+- Placement does not prefer a room that already holds the repo, so the least busy room may have to clone. Follow-up.
+- No filtered or shallow clone. The hub store would need `uploadpack.allowFilter`, and a worktree review needs history.
+- The room still never fetches from the forge itself, so the fetch stays through the hub store.
+
+## Tests
+
+- Go: `internal/api` scoped to PRWorktree, Open, Quick and Progress, 3 runs ok. `internal/daemon` ok. `internal/link`
+  scoped to Placement, PRWorktree, OpenOn and Paste, 3 runs ok. New: `prworktree_reuse_test.go` and
+  `TestPlacementDoesNotWaitForASlowRoom`.
+- Board: `quickPasteSection` was extended (progress strip, failed open reopens the dialog, plain paste). Playwright is
+  not installed on this machine, so it was only syntax-checked with `node --check`. It has NOT been run.

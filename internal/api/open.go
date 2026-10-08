@@ -54,6 +54,9 @@ type openRequest struct {
 	// Repo is where a link that names no repo opens: "host/org/repo", "none" for a scratch folder, or empty for the
 	// recogniser's default repo. Ignored for a link that names its own.
 	Repo string `json:"repo"`
+	// Progress is an id the board made up. Each step of the open is broadcast as an `open-progress` event carrying it,
+	// so the board can name the step that is running. Empty says nothing.
+	Progress string `json:"progress"`
 }
 
 // openAnswer is the card a link opened. On a hub `room` is filled and `card` and `pr` carry the room's tag. Kind is
@@ -96,7 +99,11 @@ func (s *Server) open(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	steps := s.newOpSteps(strings.TrimSpace(in.Progress), in.URL)
+	defer steps.end()
+
 	// 1. recognise
+	steps.begin("recognise", "recognising the link")
 	got, err := s.Recognise(in.URL)
 	if errors.Is(err, store.ErrNoRecogniser) {
 		openFail(w, http.StatusUnprocessableEntity, "recognise", "no_recogniser",
@@ -111,7 +118,7 @@ func (s *Server) open(w http.ResponseWriter, r *http.Request) {
 	switch k.kind {
 	case linkPR:
 	case linkIssue, linkBranch, linkSupport:
-		s.openOther(w, r, in, got, k)
+		s.openOther(w, r, in, got, k, steps)
 		return
 	default:
 		openFail(w, http.StatusUnprocessableEntity, "recognise", "not_openable",
@@ -135,7 +142,7 @@ func (s *Server) open(w http.ResponseWriter, r *http.Request) {
 	// 3. the worktree
 	ctx, cancel := context.WithTimeout(r.Context(), makeWorktreeDeadline)
 	defer cancel()
-	wt, status, err := s.prWorktree(ctx, s.providerByHost(host), prWorktreeRequest{Host: host, Org: org, Repo: repo, Number: num})
+	wt, status, err := s.prWorktree(withOpSteps(ctx, steps), s.providerByHost(host), prWorktreeRequest{Host: host, Org: org, Repo: repo, Number: num})
 	if err != nil {
 		openFail(w, status, "worktree", "worktree_failed", err.Error())
 		return
@@ -165,6 +172,7 @@ func (s *Server) open(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 4. the review row, claimed for this room
+	steps.begin("review", "starting the review")
 	row, created, failStatus, failBody := s.openRow(r, in)
 	if row == nil {
 		undoPRWorktree(wt)
@@ -211,6 +219,7 @@ func (s *Server) open(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 5. the card
+	steps.begin("card", "starting the card")
 	task, err := s.Launch(s.openLaunchBody(in, got, wt, key, org, repo, num))
 	if err != nil {
 		undoRow()
@@ -237,17 +246,24 @@ func (s *Server) open(w http.ResponseWriter, r *http.Request) {
 	if err := s.st.MoveResources(pending, task.ID); err != nil {
 		log.Printf("[atrium api] open %s: the inventory was not handed to %s: %v", key, task.ID, err)
 	}
-	// The disk it holds, once, briefly: a tree too big for the budget is counted as far as the walk got, and the
-	// card's measure button counts the rest.
-	mctx, mcancel := context.WithTimeout(context.Background(), openMeasureWait)
-	s.measureResources(mctx, task.ID)
-	mcancel()
-	s.PublishTask(task)
+	s.measureAfterOpen(task)
 	writeJSON(w, http.StatusCreated, ans)
 }
 
-// openMeasureWait is how long an open spends measuring what it made.
+// openMeasureWait is how long the measure after an open may take.
 const openMeasureWait = 5 * time.Second
+
+// measureAfterOpen counts the disk the open made once the answer has gone, so the card starts without waiting for a
+// walk of the tree. A tree too big for the budget is counted as far as the walk got, and the card's measure button
+// counts the rest. The card is published again when the count is in.
+func (s *Server) measureAfterOpen(task *store.Task) {
+	go func() {
+		mctx, mcancel := context.WithTimeout(context.Background(), openMeasureWait)
+		defer mcancel()
+		s.measureResources(mctx, task.ID)
+		s.PublishTask(task)
+	}()
+}
 
 // liveWalker is a row's walker card when it is still running or waiting, or nil.
 func (s *Server) liveWalker(p *store.PRReview) *store.Task {

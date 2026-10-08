@@ -61,6 +61,8 @@ type claimRoom struct {
 	// counts what it refused.
 	deaf     bool
 	deafHits int
+	// tasksDelay holds back the answer to the task list, as a slow or remote room does.
+	tasksDelay time.Duration
 }
 
 func (c *claimRoom) reviewCalls() (imported []byte, archived, walkers []string) {
@@ -97,6 +99,13 @@ func (c *claimRoom) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusUnprocessableEntity)
 		_, _ = w.Write([]byte(`{"error":"no recogniser matches this","code":"no_recogniser","step":"recognise"}`))
 	case r.URL.Path == "/v1/tasks":
+		if c.tasksDelay > 0 {
+			select {
+			case <-time.After(c.tasksDelay):
+			case <-r.Context().Done():
+				return
+			}
+		}
 		tasks := []map[string]string{}
 		for i := 0; i < c.running; i++ {
 			tasks = append(tasks, map[string]string{"id": "t", "status": "running"})
@@ -317,6 +326,27 @@ func TestPlacementPicksTheLeastBusyRoom(t *testing.T) {
 	x.rooms["gamma"].running = 5
 	if got := x.proxy.placePRRoom(context.Background(), ""); got != "alpha" {
 		t.Fatalf("placed on %q, want alpha", got)
+	}
+}
+
+// A ROOM THAT IS SLOW TO COUNT ITS SESSIONS IS NOT WAITED FOR. A paste was held for the full ten seconds of one slow
+// room before it was placed, in silence. The room that answered is taken, and the slow one is passed over.
+func TestPlacementDoesNotWaitForASlowRoom(t *testing.T) {
+	x := newClaimHub(t, map[string]int{"alpha": 4, "beta": 0})
+	defer x.done()
+	x.rooms["beta"].tasksDelay = 8 * time.Second
+	start := time.Now()
+	got := x.proxy.placePRRoom(context.Background(), "")
+	if took := time.Since(start); took > placeLoadWait+2*time.Second {
+		t.Fatalf("placement waited %v for a slow room", took)
+	}
+	if got != "alpha" {
+		t.Fatalf("placed on %q, want alpha, the room that answered", got)
+	}
+	// With nobody answering in time the second pass still places it, on the lower name.
+	x.rooms["alpha"].tasksDelay = 8 * time.Second
+	if got := x.proxy.placePRRoom(context.Background(), ""); got != "alpha" {
+		t.Fatalf("placed on %q with no room answering, want alpha", got)
 	}
 }
 

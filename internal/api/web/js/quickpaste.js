@@ -1,9 +1,11 @@
 // ── paste a link: ctrl-alt-r ────────────────────────────────────────────────
 //
 // One key from anywhere on the board, a box with the link already in it, and
-// Enter starts the card. It is the same road a link pasted on the board takes:
-// the recogniser fills the launch dialog, and the dialog's own launch is what
+// Enter starts the card. A link pasted on the board comes up in this same box.
+// The recogniser fills the launch dialog, and the dialog's own launch is what
 // starts the card, pull request chain and all (`launchNow` in js/fixtures.js).
+// On Enter the dialog is filled in out of sight and never shown, so the screen
+// stays the board and a line over it names the step that is running.
 // Nothing here knows what a link is.
 //
 // ENTER STARTS AT ONCE, SHIFT-ENTER STOPS FOR EDITING. Enter is "open this", a
@@ -100,8 +102,14 @@ async function quickPasteRecognise() {
       ? "nothing here knows what that is yet. add a row for it under runners, recognisers." : e.message, true);
     return;
   }
-  if (seq === quickPasteSeq) quickPasteSeen(got);
+  if (seq === quickPasteSeq) {
+    quickPasteKnown = { url, got };
+    quickPasteSeen(got);
+  }
 }
+
+// What the box last read, for the link it read it of. Enter uses it rather than asking the same question again.
+let quickPasteKnown = null;
 
 // `now` for a link that arrived whole (the clipboard), a short wait for one being typed.
 function quickPasteWatch(now) {
@@ -122,9 +130,18 @@ async function openQuickPaste(url, say) {
   clearTimeout(quickPasteTimer);
   quickPasteSeq++;
   quickPasteSay(say || QUICKPASTE_HELP, !!say);
+  quickPasteKnown = null;
   dlg.showModal();
   box.focus();
-  if (url) return;
+  if (url) {
+    // A link that came whole, from a paste on the board: read now, so Enter has the answer already. A link sent back
+    // with a reason (`say`) keeps the reason.
+    if (!say && QUICKPASTE_URL.test(url)) {
+      box.select();
+      quickPasteWatch(true);
+    }
+    return;
+  }
   // THE CLIPBOARD, WHEN IT ANSWERS IN TIME. Raced against the same wait as a
   // terminal paste, because an unanswered permission prompt never settles. A
   // link goes in and is selected, so typing over it is one keystroke. Anything
@@ -153,22 +170,41 @@ async function quickPasteGo(edit) {
     return;
   }
   document.getElementById("quickpaste").close();
-  await openLaunch(null, "", "", null, { url });
-  const launch = document.getElementById("launch");
+  // ENTER NEVER SHOWS THE LAUNCH DIALOG. It is filled in out of sight with the defaults it would have had, and the
+  // link is opened: clone if needed, worktree, card. Only Shift-Enter shows it, and an error brings it up, filled in,
+  // so it can be fixed.
+  const known = quickPasteKnown && quickPasteKnown.url === url ? quickPasteKnown.got : null;
   // No runner enabled: openLaunch said so and went to the runners pane.
-  if (!launch.open) return;
-  const got = await recogniseLink();
+  if (!await openLaunch(null, "", "", null, { url, quiet: !edit })) return;
+  const launch = document.getElementById("launch");
+  if (!edit && !known) openProgressSay("recognising the link");
+  const got = await recogniseLink(known || undefined);
+  if (!edit) openProgressEnd();
   if (got === "none") {
-    launch.close();
+    if (launch.open) launch.close();
     openQuickPaste(url, document.getElementById("l-link-note").textContent);
     return;
   }
-  if (edit || !got) return;
+  if (edit) return;
+  // Not read, or a link with something left to fix: the dialog, with the reason in it.
   // A missing worktree is a problem the launch itself solves for every kind the open verb takes.
-  if ((got.problem || got.fetch_error) && !pastedOpenKind()) return;
   const go = document.getElementById("l-go");
-  if (go && go.disabled) return;
-  doLaunch();
+  if (!got || ((got.problem || got.fetch_error) && !pastedOpenKind()) || (go && go.disabled)) {
+    if (!launch.open) launch.showModal();
+    return;
+  }
+  await oneAtATime("quickpaste-open", async () => {
+    try {
+      await launchNow();
+    } catch (e) {
+      // THE DIALOG COMES UP FILLED IN, with what went wrong beside the link, so it can be fixed and pressed again.
+      openProgressEnd();
+      if (!launch.open) launch.showModal();
+      const note = document.getElementById("l-link-note");
+      note.classList.add("warn");
+      note.textContent = (e && e.message) || String(e);
+    }
+  });
 }
 
 (function () {

@@ -783,3 +783,12 @@
   /* What a number is counted in, said beside the box at the size of a hint. */
   dialog .picker > .unit { font-size: var(--fs-sm); color: var(--dim); white-space: nowrap; }
 
+  /* The step a pasted link is on, over the board while it opens. A line and not a dialog: the screen stays where it was. */
+  #open-progress {
+    position: fixed; left: 50%; bottom: 22px; transform: translateX(-50%); z-index: 60;
+    max-width: min(80vw, 640px); padding: 8px 14px; border: 1px solid var(--stroke-dim); border-radius: 8px;
+    background: var(--lift); color: var(--head); font: 500 var(--fs-sm)/1.3 var(--sans);
+    box-shadow: 0 6px 20px rgba(0,0,0,.28); pointer-events: none;
+  }
+  #open-progress[hidden] { display: none; }
+
