@@ -305,11 +305,15 @@ function Test-AceBelowModify {
 # The arguments to icacls.exe for one change. Never Everyone or Users: that is refused here, not left to the caller. A right that is
 # not an ACE is refused too.
 function New-IcaclsArgs {
-    param([string] $Dir, [string] $Account, [ValidateSet('grant', 'remove', 'restore')] [string] $Mode, [string[]] $Rights = @('RX'))
+    param([string] $Dir, [string] $Account, [ValidateSet('grant', 'remove', 'restore', 'attrs')] [string] $Mode, [string[]] $Rights = @('RX'))
     if ($Account -match '^(Everyone|BUILTIN\\Users|Users|Authenticated Users|NT AUTHORITY\\Authenticated Users)$') { throw "a grant to '$Account' is not allowed" }
     if ($Mode -eq 'grant' -and "$($Rights[0])" -cnotmatch '^(F|M|RX|R|W|D)\z') { throw "'$($Rights[0])' is not a right to grant" }
     if ($Mode -eq 'restore') { foreach ($r in @($Rights)) { if (-not (Test-AceRaw $r)) { throw "'$r' is not an ACE" } } }
     switch ($Mode) {
+        # THE ATTRIBUTES OF A FOLDER AND NOTHING ELSE, for a drive root or a parent of the work folder: Claude Code examines every
+        # folder on the way to a path it writes, and the account must be able to, without being able to list the folder or create
+        # in it. Not inherited, so nothing below the folder is touched.
+        'attrs'   { [string[]]@($Dir, '/grant', "${Account}:(RA,REA)") }
         'grant'   { [string[]]@($Dir, '/grant', "${Account}:(OI)(CI)$($Rights[0])") }
         # /grant:r replaces what the account has, so the FIRST of the ACEs it had is put back with it and the rest are added
         # with /grant, all in one icacls call.
@@ -410,7 +414,7 @@ function Test-Msys2Target {
         return (& $bad "the drive $root for $Dir does not exist for $User on the room (a mapped drive belongs to one logon session and is not there over ssh). pick a -Msys2Dir on a drive this list shows" @(, @('Get-PSDrive', '-PSProvider', 'FileSystem')))
     }
     if ($Kv['drive.readable'] -ne 'True') {
-        return (& $bad "$User cannot read $root, the drive of $Dir. if it is a permission, an admin runs this (a drive that is not ready or locked is not fixed by it)" @(, (@('icacls') + (New-IcaclsArgs $root $User 'grant' 'RX'))))
+        return (& $bad "$User cannot read $root, the drive of $Dir. if it is a permission, an admin runs this, which gives it the drive's attributes and nothing else, no listing and nothing inherited (a drive that is not ready or locked is not fixed by it)" @(, (@('icacls') + (New-IcaclsArgs $root $User 'attrs'))))
     }
     if ($Kv['anc.writable'] -ne 'True') {
         return (& $bad "$User cannot write $anc, the nearest folder of $Dir that exists, so MSYS2 cannot be unpacked there. an admin, or the owner of $anc, runs this" @(, (@('icacls') + (New-IcaclsArgs $anc $User 'grant' 'M'))))
@@ -502,7 +506,7 @@ $script:CActs['cdisk'] = @{ Vars = @('Msys2Dir'); Uses = @(); Body = @'
 $d = try { $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($Msys2Dir) } catch { $Msys2Dir }
 $root = [IO.Path]::GetPathRoot($d); "drive.root=$root"
 $ex = $false; $rd = $false
-try { $ex = Test-Path -LiteralPath $root; if ($ex) { $null = @(Get-ChildItem -LiteralPath $root -Force -ErrorAction Stop | Select-Object -First 1); $rd = $true } } catch {}
+try { $ex = Test-Path -LiteralPath $root; if ($ex) { $null = Get-Item -LiteralPath $root -Force -ErrorAction Stop; $rd = $true } } catch {}
 "drive.exists=$ex"; "drive.readable=$rd"
 $a = $d; while ($a -and -not (Test-Path -LiteralPath $a)) { $a = Split-Path -Parent $a }
 "anc=$a"; $w = $false

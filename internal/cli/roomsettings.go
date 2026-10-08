@@ -12,12 +12,17 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// roomSettingKeys are the settings `room set` and `room get` will touch: git_root and scm_root, which provisioning
-// needs before the room first runs, and nothing else wants a verb.
+// roomSettingKeys are the settings `room set` and `room get` will touch: the folders provisioning needs before the room
+// first runs (git_root, scm_root, and the work-root pair reviews_root and context_handoff_dir), and nothing else wants
+// a verb.
 var roomSettingKeys = map[string]string{
-	"git_root": gitsync.SettingGitRoot,
-	"scm_root": gitsync.SettingSCMRoot,
+	"git_root":            gitsync.SettingGitRoot,
+	"scm_root":            gitsync.SettingSCMRoot,
+	"reviews_root":        store.SettingReviewsRoot,
+	"context_handoff_dir": store.SettingContextHandoffDir,
 }
+
+const roomSettingNames = "git_root, scm_root, reviews_root, context_handoff_dir"
 
 // roomSettingCmds returns `room set` and `room get`. They work on a STOPPED room's database
 // and refuse a running one, which holds the store. Run them before the first start or after
@@ -26,7 +31,7 @@ func roomSettingCmds() []*cobra.Command {
 	var db string
 	set := &cobra.Command{
 		Use:   "set <key> <value>",
-		Short: "Set a room setting (git_root, scm_root) in a stopped room's database",
+		Short: "Set a room setting (" + roomSettingNames + ") in a stopped room's database",
 		Args:  cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runRoomSet(cmd, orDefault(db, defaultRoomDB()), args[0], args[1])
@@ -34,7 +39,7 @@ func roomSettingCmds() []*cobra.Command {
 	}
 	get := &cobra.Command{
 		Use:   "get <key>",
-		Short: "Print a room setting (git_root, scm_root) from a stopped room's database",
+		Short: "Print a room setting (" + roomSettingNames + ") from a stopped room's database",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runRoomGet(cmd, orDefault(db, defaultRoomDB()), args[0])
@@ -50,7 +55,7 @@ func roomSettingKey(name string) (string, error) {
 	if k, ok := roomSettingKeys[name]; ok {
 		return k, nil
 	}
-	return "", fmt.Errorf("unknown room setting %q, known: git_root, scm_root", name)
+	return "", fmt.Errorf("unknown room setting %q, known: %s", name, roomSettingNames)
 }
 
 func roomSettingErr(db string, err error) error {
@@ -74,6 +79,20 @@ func runRoomSet(cmd *cobra.Command, db, name, value string) error {
 	}
 	if key == gitsync.SettingSCMRoot && value != "" && !filepath.IsAbs(gitsync.ExpandHome(value)) {
 		return fmt.Errorf("scm_root must be an absolute path or start with ~/, got %q", value)
+	}
+	if key == store.SettingContextHandoffDir {
+		// The same check the settings API makes: trimmed, absolute, cleaned.
+		v, err := store.CheckContextHandoffDir(value)
+		if err != nil {
+			return err
+		}
+		value = v
+	}
+	if key == store.SettingReviewsRoot && value != "" {
+		if !filepath.IsAbs(value) {
+			return fmt.Errorf("reviews_root must be an absolute path, got %q", value)
+		}
+		value = filepath.Clean(value)
 	}
 	if err := store.SetSettingOfFile(db, key, value); err != nil {
 		return roomSettingErr(db, err)

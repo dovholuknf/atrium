@@ -260,7 +260,8 @@ Check 'readable: a deny is not a grant' (Test-AclReadable $aces 'denied') $false
 Check 'readable: inherit-only does not count' (Test-AclReadable @($aces[4]) 'someone') $false
 Check 'icacls args: grant' (New-IcaclsArgs $dirW 'SG3\localai' 'grant' 'RX') @($dirW, '/grant', 'SG3\localai:(OI)(CI)RX')
 Check 'icacls args: modify' (New-IcaclsArgs $dirW 'claude' 'grant' 'M') @($dirW, '/grant', 'claude:(OI)(CI)M')
-Check 'icacls args: remove' (New-IcaclsArgs $dirW 'claude' 'remove') @($dirW, '/remove:g', 'claude')
+Check 'icacls args: attrs is the attributes only, not inherited' (New-IcaclsArgs 'V:\' 'SG3\localai' 'attrs') @('V:\', '/grant', 'SG3\localai:(RA,REA)')
+Check 'icacls args: remove'(New-IcaclsArgs $dirW 'claude' 'remove') @($dirW, '/remove:g', 'claude')
 Check 'icacls args: restore' (New-IcaclsArgs $dirW 'claude' 'restore' '(OI)(CI)(RX)') @($dirW, '/grant:r', 'claude:(OI)(CI)(RX)')
 foreach ($bad in 'Everyone', 'BUILTIN\Users', 'Users', 'Authenticated Users', 'NT AUTHORITY\Authenticated Users') {
     $threw = $false; try { New-IcaclsArgs $dirW $bad 'grant' 'RX' | Out-Null } catch { $threw = $true }
@@ -1090,7 +1091,8 @@ Check 'target: a readable drive, a writable folder and room is ok' @($v.Ok, $v.C
 $v = Test-Msys2Target (With-Kv @{ 'drive.exists' = 'False'; 'drive.readable' = 'False' }) $tdir $tuser
 Check 'target: a drive that is not there is not ok, and the command lists the drives' @($v.Ok, (Format-AdminCommand $v.Cmds[0]), [bool]($v.Why -like 'the drive V:\ for *does not exist*')) @($false, 'Get-PSDrive -PSProvider FileSystem', $true)
 $v = Test-Msys2Target (With-Kv @{ 'drive.readable' = 'False' }) $tdir $tuser
-Check 'target: an unreadable drive is not ok, and the exact icacls line grants RX' @($v.Ok, (Format-AdminCommand $v.Cmds[0])) @($false, "icacls V:\ /grant 'SG3\claude:(OI)(CI)RX'")
+Check 'target: an unreadable drive is not ok, and the exact icacls line grants the attributes only, not inherited' @($v.Ok, (Format-AdminCommand $v.Cmds[0])) @($false, "icacls V:\ /grant 'SG3\claude:(RA,REA)'")
+Check 'target: the drive line never lists, creates or inherits' ([bool](($v.Cmds[0] -join ' ') -match '\((OI|CI)\)|RX|:\(F\)|:\(M\)')) $false
 $v = Test-Msys2Target (With-Kv @{ 'anc.writable' = 'False' }) $tdir $tuser
 Check 'target: a read-only ancestor is not ok, and the exact icacls line grants Modify on it' @($v.Ok, (Format-AdminCommand $v.Cmds[0])) @($false, "icacls V:\work /grant 'SG3\claude:(OI)(CI)M'")
 $v = Test-Msys2Target (With-Kv @{ free = "$(1GB)" }) $tdir $tuser
@@ -1112,7 +1114,7 @@ foreach ($chk in $false, $true) {
     Invoke-CMsys2 6>$null | Out-Null
     $tag = "stage blocked (check=$chk)"
     Check "$tag`: only the probes ran, nothing was installed" (Seq) 'cmsys,cdisk'
-    Check "$tag`: one needs-human step with the icacls line, no would-install" @(($script:steps -like 'msys2 needs-human *').Count, ($script:steps -like '*would install*').Count, ($script:steps -like 'msys2 warn*').Count, ($script:needs -join '|')) @(1, 0, 0, "icacls V:\ /grant 'SG3\claude:(OI)(CI)RX'")
+    Check "$tag`: one needs-human step with the icacls line, no would-install" @(($script:steps -like 'msys2 needs-human *').Count, ($script:steps -like '*would install*').Count, ($script:steps -like 'msys2 warn*').Count, ($script:needs -join '|')) @(1, 0, 0, "icacls V:\ /grant 'SG3\claude:(RA,REA)'")
     Check "$tag`: exit code 6 path, not a failure" @($script:rc, (Get-CExitCode $script:rc $script:needs.Count)) @(0, 6)
 }
 # not blocked: the install goes on exactly as before

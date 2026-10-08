@@ -33,6 +33,13 @@
 #                       enforced, warn "no allowed folders set" when it is empty, skip when that atrium has no such verb.
 #                       With -Fix -Yes, `folders allow <clone> <clone>-worktrees`: a room's own setting, but it turns the
 #                       launch bound on, so it needs -Yes like the hooks do
+#   work-root           the work root the room's manifest records (provision-room.ps1 -WorkRoot), read only (scripts/room-work.ps1):
+#                       the root, then `work-dirs` and `work-cache`. `human`, with the lines an administrator runs, when the
+#                       account cannot examine a parent folder of the root or cannot write it. A warn when a folder or a cache
+#                       is not yet where it should be, `skip` when the manifest records no work root
+#   agent-pack          the agents and skills installed from the hub's mirror of the dotfiles repository: warn when the pack
+#                       is not installed, is older than the mirror's commit, or lacks an agent the review panel names. Never
+#                       fixed here: a provision run installs it
 #
 # WITHOUT -Fix IT WRITES NOTHING, on the room or here. (The smoke card is the one thing that runs.) With -Fix it does
 # every `apply` fix whose scope is machine or room. A fix at ACCOUNT scope (the hooks, which change every project and
@@ -91,6 +98,7 @@ $OutputEncoding = [Text.UTF8Encoding]::new($false)
 function Split-List { param($v) @($v | ForEach-Object { "$_" -split ',' } | ForEach-Object { $_.Trim() } | Where-Object { $_ }) }
 $SshOption = Split-List $SshOption
 . (Join-Path $PSScriptRoot 'room-account.ps1')
+. (Join-Path $PSScriptRoot 'room-work.ps1')
 $operators = @(Get-OperatorList (Split-List $OperatorAccount))
 foreach ($o in $operators) { $why = Test-OperatorArg $o; if ($why) { Write-Host "room-check args fail $why"; exit 1 } }
 
@@ -767,6 +775,30 @@ if (-not $info) {
         Row 'allowed-folders' 'warn' "no allowed folders set, so $Room launches anywhere and a card can sit at a trust dialog. -Fix -Yes runs: $fixCmd"
     }
 }
+
+# ── 6c. the work root and the agent pack ────────────────────────────────────
+
+# THE WORK ROOT the manifest records (provision-room.ps1 -WorkRoot), read only: every parent examinable by the account, the
+# root writable, and each cache pointed at it. A room with none recorded is a skip. An account that cannot examine a parent is
+# `human` with the lines an administrator runs, since Claude Code then raises a prompt nothing can answer. Anything else is a
+# warn, and a fix is a provision run.
+$mfs = if ($kind -eq 'windows') { "`$m = Join-Path `$HOME '.atrium\provision\manifest.json'; if (Test-Path -LiteralPath `$m) { 'manifest=' + ((Get-Content -LiteralPath `$m -Raw) -replace '\r?\n', ' ') }" }
+       else { 'm="$HOME/.atrium/provision/manifest.json"; if [ -f "$m" ]; then echo "manifest=$(tr ''\n'' '' '' < "$m")"; fi' }
+$mfl = ConvertFrom-KeyValue (Invoke-Remote $mfs).Out
+$mf = if ($mfl.manifest) { try { $mfl.manifest | ConvertFrom-Json } catch { $null } } else { $null }
+if (-not $mf -or -not $mf.workroot) {
+    Row 'work-root' 'skip' 'the manifest on the room records no work root (provision-room.ps1 -WorkRoot)'
+} else {
+    $wr = Invoke-WorkRoot { param($s) Invoke-Remote $s } $kind "$($mf.workroot)" $false $Target
+    foreach ($s in $wr.Steps) {
+        if ($s.Status -eq 'fail') { Row $s.Step 'human' $s.Detail; Unmet 'human' } else { Row $s.Step $s.Status $s.Detail }
+    }
+    foreach ($l in $wr.AdminLines) { Note $l }
+}
+# THE AGENT PACK, read only: the record's commit against the hub's own mirror, and the agents the review panel names.
+$aps = Invoke-Remote (Get-AgentPackStateScript $kind)
+$apv = Get-AgentPackVerdict $aps.Out (Get-HubMirrorCommit $HubAddr $(if ($mf -and $mf.agentpack.repo) { "$($mf.agentpack.repo)" } else { 'dovholuknf/dotfiles' }) $(if ($mf -and $mf.agentpack.branch) { "$($mf.agentpack.branch)" } else { 'main' }))
+Row 'agent-pack' $apv.Status $apv.Detail
 
 # ── 7. rows waiting on what is not built ────────────────────────────────────
 

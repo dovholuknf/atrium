@@ -195,9 +195,12 @@ costs section says, so settle how the room restarts first.
 Then the Defender line from `room-defender.ps1`, pasted by the administrator, and from the hub:
 
 ```powershell
-pwsh -File scripts\provision-room.ps1 localai@sg3 -Name sg3
+pwsh -File scripts\provision-room.ps1 localai@sg3 -Name sg3 -WorkRoot V:\localai
 pwsh -File scripts\room-toolchain.ps1 localai@sg3
 ```
+
+Drop `-WorkRoot` on a machine with one disk. With it, exit 13 prints the administrator's lines if the grants above were
+not made.
 
 ### macOS
 
@@ -289,12 +292,43 @@ is the `(RA,REA)` grant in the Windows block above. It gives the account the att
 listing, no creating, and nothing inherited. Check it as the room's account. Creating `V:\probe` must be refused,
 creating a folder under `V:\localai` must work, and a Claude Code session must write there with no prompt.
 
-### Point the settings at the agent folder
+### Let provisioning do it: `-WorkRoot`
 
-Set each one straight at the agent folder, as the room's account, with the room stopped for the first:
+`provision-room.ps1 localai@sg3 -Name sg3 -WorkRoot V:\localai` sets up everything below as the room's own account, with
+no admin. It takes the place of the shared folder, and it lays out one folder:
+
+| Folder | What goes there | How it is set |
+| --- | --- | --- |
+| `V:\localai\git` | the clones, and their `<clone>-worktrees` folders | `atrium room set git_root` and `scm_root`, and `room-git.ps1 init -GitRoot` |
+| `V:\localai\reviews` | review run folders | `atrium room set reviews_root` |
+| `V:\localai\handoff` | context hand-off files | `atrium room set context_handoff_dir` |
+| `V:\localai\cache\npm` | npm's cache | `cache=` in the account's `~/.npmrc` |
+| `V:\localai\cache\go-mod`, `go-build` | `GOMODCACHE` and `GOCACHE` | the file `go env -w` writes, under `%APPDATA%\go\env` |
+| `V:\localai\cache\pip` | pip's cache | `cache-dir` under `[global]` in `%APPDATA%\pip\pip.ini` |
+| `V:\localai\cache\cargo` | `CARGO_HOME` | a user environment variable, or a profile line on Unix |
+
+The caches are written as each tool's own file, so they work before the tool is installed, and a rerun edits the file in
+place and writes nothing when it is already right. When the tool is there it is asked afterwards, and an answer that
+differs (`GOENV`, a project `.npmrc`) is a `warn`. A running room cannot be set, so a rerun reads the settings it serves
+from `GET /v1/settings` and says `ok` when they match. The root is recorded as `workroot` in the manifest, so a rerun
+needs no flag. `-Remove` leaves the folder and the cache settings alone and says so.
+
+The `work-root` step reads every parent of the root as the room's account first. When one cannot be examined, or the root
+cannot be made or written, the step fails with exit 13, nothing else has changed, and the lines for an administrator are
+printed under it. For a root of `V:\localai` they are `icacls V:\ /grant 'SG3\localai:(RA,REA)'` and the two lines that
+make the folder and give the account full control of it, and never anything that lets the account list the drive or
+create at its root. The drive line is the attributes only and is not inherited: do not widen it to `(OI)(CI)RX`, which
+would let the account list the drive and read all of it. A mapped drive belongs to one logon session and is not there over
+ssh, so name a drive letter that is a real disk. On a Windows machine with a second fixed drive and no `-WorkRoot`,
+`provision-room.ps1` and `-Check` say so as a `warn` naming the roomiest drive.
+
+`room-check.ps1` has the same read as two rows, `work-root` (with `work-dirs` and `work-cache`) and `agent-pack`. An
+account that cannot examine a parent is `human` there, and anything else is a `warn`.
+
+By hand, as the room's account, with the room stopped for the first:
 
 - `git.scm_root`: `atrium room set scm_root V:/localai/git`, and `atrium room get scm_root` to read it back.
-- The npm cache: `npm config set cache V:\localai\npm-cache`.
+- The npm cache: `npm config set cache V:\localai\cache\npm`.
 - The other tool caches the same way: Go's `GOMODCACHE` and `GOCACHE`, pip's cache folder, and cargo's `CARGO_HOME`.
 
 Do not use a symlink or a junction to make a short path lead to the work drive, or to get past the prompt above. A link
@@ -308,8 +342,28 @@ failed with `ENOTEMPTY`.
 ### macOS and Linux
 
 The same idea applies and the commands are the ones above. Every parent folder of the work folder must be readable and
-searchable by the room's user (`chmod o+x` on a parent, or the `work` group from the blocks above), and the caches and
+searchable by the room's user. Provision prints the line for each parent that is not: `setfacl -m u:<account>:x <parent>`
+(`chmod +a` on a Mac), which opens it to that account alone and never to every user, after `install -d` for one that is
+missing. The filesystem root is never touched. A check (`-Check`, room-check) writes nothing on the room, and the caches and
 `scm_root` belong on the work volume, not in the home folder on the boot disk.
+
+## The agent pack
+
+A room is only as useful as the agents it can name. A new provision installs the operator's agents and skills, the
+`claude/agents/*.md` files and every `claude/skills/<name>/` folder that has a `SKILL.md` in the `dovholuknf/dotfiles`
+repository (`-AgentPackRepo` and `-AgentPackBranch` change it, `-NoAgentPack` skips it), into the account's `~/.claude`
+as real files. The commit they came from is recorded in `~/.claude/atrium-agent-pack.json` beside a SHA-256 for each file.
+A rerun at the same commit changes nothing, a file edited on the room is put back, and an agent that is not in the repo is
+left alone. A skill that is a link into another repository (two on sg3, `debug-ziti-desktop-edge-win` and
+`debug-ziti-edge-tunnel-log`) is not fetched and is named in a `skip` line.
+
+The source is the hub's own git mirror of the repository, never the checkout on the operator's machine. The room does not
+fetch it itself: the room's `/git/hub` forwarder is tokenized per card and no card exists when a room is provisioned. So
+the hub machine fetches the mirror, whole, since the hub serves whole fetches only, packs a tarball, and sends it over
+scp. A mirror that cannot be fetched is a `warn`, not a failure, and the run goes on. `room-check.ps1` and
+`provision-room.ps1 -Check` read the record and `warn` when the pack is missing, older than the mirror's commit, or lacks an
+agent the review panel names by default (`c-systems-reviewer`, `go-security-reviewer`, `functional-tester` and
+`nonfunctional-tester`).
 
 ## If you really must run as yourself
 
