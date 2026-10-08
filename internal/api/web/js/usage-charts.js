@@ -284,7 +284,13 @@ function ucPaintChips() {
     sel.hidden = !show;
     if (show) {
       const opts = [""].concat(hubRooms.map(r => r.name));
-      sel.innerHTML = opts.map(n => `<option value="${esc(n)}"${n === UC.room ? " selected" : ""}>${n ? esc(n) : "all rooms"}</option>`).join("");
+      const html = opts.map(n => `<option value="${esc(n)}">${n ? esc(n) : "all rooms"}</option>`).join("");
+      // Only when the set changes, so an open select is not rebuilt under the operator by every refresh.
+      if (sel.dataset.opts !== html && document.activeElement !== sel) {
+        sel.dataset.opts = html;
+        sel.innerHTML = html;
+      }
+      sel.value = UC.room;
     }
   }
   const chip = document.getElementById("uc-card");

@@ -18120,6 +18120,60 @@ async function peekLaunchSection(browser, base) {
   if (!bad) console.log("peekLaunch ok");
 }
 
+// u-dropdowns-instant: the launch dialog opens WITH its room and runner options in place, whatever the network is doing.
+// Every API answer is held for 500ms. The board has read the runners and rooms at start, so the open is one frame: the
+// dialog is showing, both selects hold their options, and nothing is rebuilt in the next half second.
+// DROPDOWNS_SHOTS=<dir> writes the dialog with the room select focused.
+async function dropdownsInstantSection(browser, base) {
+  const wasHub = hubMode, wasSgg = sggAttached;
+  hubMode = true;
+  sggAttached = true;
+  const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+  try {
+    const p = await ctx.newPage();
+    const rows = [Object.assign({}, HON, { room: "alpha" }), Object.assign({}, HON, { id: "hon2", label: "gemini", room: "alpha" }),
+      Object.assign({}, HON, { room: "sgg" })];
+    await p.route(/\/v1\//, async r => {
+      await new Promise(x => setTimeout(x, 500));
+      if (new URL(r.request().url()).pathname === "/v1/harnesses") {
+        await r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ harnesses: rows }) });
+      } else await r.continue().catch(() => {});
+    });
+    await p.goto(base + "/", { waitUntil: "domcontentloaded" });
+    await p.waitForFunction(() => typeof hubRooms !== "undefined" && hubRooms.length >= 2, null, { timeout: slow(15000) });
+    // Long enough for the 500ms answers to land if the board asks for them at start.
+    await p.waitForTimeout(1500);
+    const got = await p.evaluate(() => new Promise(done => {
+      const t0 = performance.now();
+      openLaunch(null, "", "", null, null);
+      requestAnimationFrame(() => {
+        const opts = id => [...document.querySelectorAll("#" + id + " option")].map(o => o.textContent);
+        done({ open: document.getElementById("launch").open, ms: performance.now() - t0,
+          room: opts("l-room"), runner: opts("l-harness"), roomShown: !document.getElementById("l-room-field").hidden });
+      });
+    }));
+    if (!got.open) fail("dropdownsInstant: the launch dialog was not open the frame after the click (" + Math.round(got.ms) + "ms)");
+    if (!got.roomShown || got.room.length < 2) fail("dropdownsInstant: the room select had " + JSON.stringify(got.room) + " when the dialog showed");
+    if (!got.runner.length) fail("dropdownsInstant: the runner select was empty when the dialog showed");
+    // Nothing is rebuilt while it is open: a node that was in the DOM at the first frame is still there afterwards.
+    const mark = await p.evaluate(() => { const o = document.querySelector("#l-room option"); if (o) o.dataset.mark = "1"; return document.getElementById("l-room").innerHTML; });
+    await p.waitForTimeout(1200);
+    const after = await p.evaluate(() => ({ marked: !!document.querySelector("#l-room option[data-mark]"), html: document.getElementById("l-room").innerHTML,
+      runner: document.getElementById("l-harness").innerHTML }));
+    if (!after.marked || after.html !== mark) fail("dropdownsInstant: the room options were rebuilt after the dialog opened");
+    if (process.env.DROPDOWNS_SHOTS) {
+      await p.waitForFunction(() => document.getElementById("launch").open, null, { timeout: slow(5000) });
+      await p.focus("#l-room");
+      await p.screenshot({ path: path.join(process.env.DROPDOWNS_SHOTS, "launch-room.png") });
+    }
+  } finally {
+    hubMode = wasHub;
+    sggAttached = wasSgg;
+    await ctx.close();
+  }
+  if (!bad) console.log("dropdownsInstant ok");
+}
+
 // DISCRETE GROUP AND SORT CHOICES. The settings dialog picks a grouping rule and a group order by name, the code boxes show only
 // for "your own code", and nothing typed is stored for a named pick. The repos tab sorts by name, last push or date added and
 // remembers it across a reload.
@@ -25020,7 +25074,7 @@ async function main() {
       u001Audit: u001AuditSection,
       pasteStart: pasteStartSection, pasteDone: pasteDoneSection, pasteOldRoom: pasteOldRoomSection, pasteClose: pasteCloseSection,
       growlQuestionShots: growlQuestionShotsSection, growlQuestionBody: growlQuestionBodySection, growlReplyGrow: growlReplyGrowSection, growlChoices: growlChoicesSection, replies: repliesSection, repliesOf: repliesOfSection, repliesShots: repliesShotsSection, growlStable: growlStableSection, growlOnIt: growlOnItSection, mGrowlQuestion: mGrowlQuestionSection,
-      roomsSetup: roomsSetupSection, discreteGroup: discreteGroupSection, groupingPerView: groupingPerViewSection, repoColors: repoColorsSection, themePicker: themePickerSection, themePickerShots: themePickerShotsSection, borderColourLag: borderColourLagSection, bootClean: bootCleanSection, peekDash: peekDashSection, peekLaunch: peekLaunchSection, mReload: mReloadSection, mReconnect: mReconnectSection, mActivityRead: mActivityReadSection, mReadRetry: mReadRetrySection, mWorking: mWorkingSection, mOwnMessages: mOwnMessagesSection, mBubbles: mBubblesSection, mRecapSheet: mRecapSheetSection,
+      roomsSetup: roomsSetupSection, discreteGroup: discreteGroupSection, groupingPerView: groupingPerViewSection, repoColors: repoColorsSection, themePicker: themePickerSection, themePickerShots: themePickerShotsSection, borderColourLag: borderColourLagSection, bootClean: bootCleanSection, dropdownsInstant: dropdownsInstantSection, peekDash: peekDashSection, peekLaunch: peekLaunchSection, mReload: mReloadSection, mReconnect: mReconnectSection, mActivityRead: mActivityReadSection, mReadRetry: mReadRetrySection, mWorking: mWorkingSection, mOwnMessages: mOwnMessagesSection, mBubbles: mBubblesSection, mRecapSheet: mRecapSheetSection,
       mHomeOrder: mHomeOrderSection, cardUrlWayOut: cardUrlWayOutSection, phoneBoot: phoneBootSection, sayEnter: sayEnterSection, sendArrow: sendArrowSection, mTables: mTablesSection, mMarkdown: mMarkdownSection, mHostile: mHostileSection, mPictures: mPicturesSection, soundPhone: soundPhoneSection, phoneBell: phoneBellSection, mBell: mBellSection,
       mHomeOrder: mHomeOrderSection, cardUrlWayOut: cardUrlWayOutSection, phoneBoot: phoneBootSection, sayEnter: sayEnterSection, sendArrow: sendArrowSection, mTables: mTablesSection, mMarkdown: mMarkdownSection, mHostile: mHostileSection, mPictures: mPicturesSection, phoneRedirect: phoneRedirectSection,
       mHomeOrder: mHomeOrderSection, cardUrlWayOut: cardUrlWayOutSection, phoneBoot: phoneBootSection, sayEnter: sayEnterSection, sendArrow: sendArrowSection, mTables: mTablesSection, mMarkdown: mMarkdownSection, mHostile: mHostileSection, mPictures: mPicturesSection, mHidden: mHiddenSection, soundPhone: soundPhoneSection, phoneBell: phoneBellSection, mBell: mBellSection,
@@ -27102,6 +27156,7 @@ async function main() {
     await unit("themePicker", () => themePickerSection(browser, base));
     await unit("borderColourLag", () => borderColourLagSection(browser, base));
     await unit("bootClean", () => bootCleanSection(browser, base));
+    await unit("dropdownsInstant", () => dropdownsInstantSection(browser, base));
     await unit("mWorking", () => mWorkingSection(browser));
     await unit("mOwnMessages", () => mOwnMessagesSection(browser));
     await unit("mBubbles", () => mBubblesSection(browser));

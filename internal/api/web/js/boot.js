@@ -95,6 +95,10 @@ startRooms().then(() => {
 async function bootBoard() {
   if (await guestKnown) { showGuestPage(); return; }
   connect();
+  // The runner list and the providers, read once now so the launch dialog and the repo picker open with their options
+  // already in place. Not awaited: nothing here needs them, and both are re-read in the background when opened.
+  loadHarnesses();
+  if (typeof loadProviders === "function") loadProviders();
   // THE ROLL CALL GOES FIRST, AND THE BOARD WAITS FOR THE ANSWERS.
   //
   // A board that starts after a window was already popped out has missed the
