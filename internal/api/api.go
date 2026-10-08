@@ -80,6 +80,9 @@ type Server struct {
 	PRForge func(host string) (forge.Forge, error)
 	// SCMClone is the scm clone path (atrium_git_clone), for a PR on a repo with no checkout.
 	SCMClone func(ctx context.Context, url string) (gitsync.SCMResult, error)
+	// SCMHas is whether the scm folder already holds a clone of the repo at a url. Nil reads as no. It lets a PR
+	// worktree find the clone while the forge is read. See prWorktree.
+	SCMHas func(url string) bool
 	// ForgeFailed is told of a forge error so the daemon can raise the board alert, and ForgeWorked of a forge that
 	// answered so it can clear it. Both are nil-safe seams the daemon fills.
 	ForgeFailed func(kind string, err error) bool

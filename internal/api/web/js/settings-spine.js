@@ -1935,6 +1935,10 @@ function connect() {
   es.addEventListener("pr", e => {
     if (typeof onPrEvent === "function") onPrEvent(e);
   });
+  // A step of a pasted link being opened: a line over the board, not a dialog. See js/fixtures.js.
+  es.addEventListener("open-progress", e => {
+    if (typeof onOpenProgress === "function") onOpenProgress(e);
+  });
   es.addEventListener("backlog", () => {
     if (typeof onBacklogEvent === "function") onBacklogEvent();
   });

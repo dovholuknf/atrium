@@ -103,6 +103,9 @@ func (p *Proxy) markedRooms() map[string]bool {
 	return out
 }
 
+// placeLoadWait is how long placement waits for the rooms' session counts.
+const placeLoadWait = 1500 * time.Millisecond
+
 // roomLoad is what placement knows of one room. n is running sessions, negative for a room not to be used, ok whether
 // it answered, idle the idle CPU percent it last reported and nil when it never has.
 type roomLoad struct {
@@ -139,6 +142,12 @@ func (p *Proxy) placePRRoomExcept(ctx context.Context, fallback string, skip map
 	rooms := p.hub.Rooms()
 	marked := p.markedRooms()
 	got := make([]roomLoad, len(rooms))
+	// A ROOM THAT DOES NOT ANSWER IN TIME IS NOT WAITED FOR. The count is read from every room at once, and one that
+	// is slow or gone held the whole placement for roomGet's ten seconds, which a pasted link then spent in silence.
+	// A room that missed the wait reads as one that did not answer, and the second pass below still takes it when no
+	// other room can be had.
+	ctx, cancel := context.WithTimeout(ctx, placeLoadWait)
+	defer cancel()
 	var wg sync.WaitGroup
 	for i, a := range rooms {
 		got[i].room, got[i].idle = a.Name, a.IdleCPU

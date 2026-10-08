@@ -111,7 +111,7 @@ func (k linkKind) key(rowKind string) string {
 }
 
 // openOther is the open verb for an issue, a branch or a support link. See the top of this file.
-func (s *Server) openOther(w http.ResponseWriter, r *http.Request, in openRequest, got *store.Resolved, k linkKind) {
+func (s *Server) openOther(w http.ResponseWriter, r *http.Request, in openRequest, got *store.Resolved, k linkKind, steps *opSteps) {
 	key := k.key(got.Kind)
 	ans := openAnswer{Key: key, Kind: k.kind, Recogniser: got.Recogniser, Title: got.Title}
 
@@ -150,6 +150,7 @@ func (s *Server) openOther(w http.ResponseWriter, r *http.Request, in openReques
 		status  int
 		err     error
 	)
+	steps.begin("worktree", "making the worktree")
 	if repo != "" {
 		wt, status, err = s.branchWorktree(ctx, s.providerByHost(host), host, org, repo, k.branch, k.kind != linkBranch)
 		if err != nil {
@@ -195,6 +196,7 @@ func (s *Server) openOther(w http.ResponseWriter, r *http.Request, in openReques
 	}
 
 	// 4. the card
+	steps.begin("card", "starting the card")
 	task, err := s.Launch(s.openOtherLaunchBody(in, got, ans.Worktree, key, host, org, repo, k.branch))
 	if err != nil {
 		undo()
@@ -206,10 +208,7 @@ func (s *Server) openOther(w http.ResponseWriter, r *http.Request, in openReques
 	if err := s.st.MoveResources(pending, task.ID); err != nil {
 		log.Printf("[atrium api] open %s: the inventory was not handed to %s: %v", key, task.ID, err)
 	}
-	mctx, mcancel := context.WithTimeout(context.Background(), openMeasureWait)
-	s.measureResources(mctx, task.ID)
-	mcancel()
-	s.PublishTask(task)
+	s.measureAfterOpen(task)
 	writeJSON(w, http.StatusCreated, ans)
 }
 

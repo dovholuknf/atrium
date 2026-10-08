@@ -110,8 +110,32 @@ func (s *Server) prWorktree(ctx context.Context, p *store.Provider, req prWorktr
 		return res, http.StatusBadRequest, err
 	}
 	ref := forge.Ref{Host: host, Org: req.Org, Repo: req.Repo, Number: req.Number}
+	steps := stepsOf(ctx)
+
+	// A CHECKOUT THE ROOM ALREADY HAS IS FOUND WHILE THE FORGE IS READ, so the two cost the longer of them and not the
+	// sum. A repo the room has to clone waits for the read, as it always did: a forge that is missing or logged out
+	// answers its own sentence before anything is cloned.
+	type found struct {
+		repoPath, wtRoot string
+		status           int
+		err              error
+	}
+	var early chan found
+	if s.haveCheckout(p, host, req.Org, req.Repo) {
+		early = make(chan found, 1)
+		go func() {
+			var o found
+			o.repoPath, o.wtRoot, o.status, o.err = s.repoCheckout(ctx, p, host, req.Org, req.Repo)
+			early <- o
+		}()
+	}
+	steps.begin("read", "reading pull request "+strconv.Itoa(req.Number)+" from the forge")
 	pr, err := f.View(ctx, ref)
 	if err != nil {
+		if early != nil {
+			<-early
+		}
+		steps.end()
 		// An AccessError and a no_forge carry their own sentence, unchanged.
 		if s.ForgeFailed != nil {
 			s.ForgeFailed(f.Kind(), err)
@@ -126,23 +150,35 @@ func (s *Server) prWorktree(ctx context.Context, p *store.Provider, req prWorktr
 		branch = "pr-" + strconv.Itoa(req.Number)
 	}
 
-	repoPath, wtRoot, status, err := s.repoCheckout(ctx, p, host, req.Org, req.Repo)
+	var co found
+	if early != nil {
+		steps.begin("checkout", "finding the clone of "+req.Org+"/"+req.Repo)
+		co = <-early
+	} else {
+		steps.begin("checkout", "cloning "+req.Org+"/"+req.Repo+" (the first time only)")
+		co.repoPath, co.wtRoot, co.status, co.err = s.repoCheckout(ctx, p, host, req.Org, req.Repo)
+	}
+	repoPath, wtRoot, status, err := co.repoPath, co.wtRoot, co.status, co.err
 	if err != nil {
+		steps.end()
 		return res, status, err
 	}
 	res.Repo = repoPath
 
 	for _, wt := range worktreesOf(repoPath) {
 		if strings.EqualFold(wt.Branch, branch) {
+			steps.end()
 			res.Path, res.Existed, res.Branch = wt.Path, true, wt.Branch
 			return res, http.StatusOK, nil
 		}
 	}
 	dest := worktreeDest(wtRoot, req.Org, req.Repo, branch)
 	if dest == "" {
+		steps.end()
 		return res, http.StatusBadRequest, errors.New("which repository")
 	}
 	if _, err := os.Stat(filepath.FromSlash(dest)); err == nil {
+		steps.end()
 		return res, http.StatusConflict, errors.New(
 			dest + " already exists but is not a worktree of that branch. move it aside, or use a different branch name")
 	}
@@ -167,11 +203,16 @@ func (s *Server) prWorktree(ctx context.Context, p *store.Provider, req prWorktr
 			return fetchPRHead(ctx, dir, spec, dst, "")
 		}
 	}
+	// THE ONE REF, and nothing else of the repo: a fetch of the head into its own ref.
+	steps.begin("fetch", "fetching the head of pull request "+strconv.Itoa(req.Number))
 	if err := fetch(ctx, filepath.FromSlash(repoPath), f.FetchSpec(ref), prWorktreeRef(req.Number)); err != nil {
+		steps.end()
 		return res, http.StatusBadRequest, errors.New("could not fetch the head of pull request " +
 			strconv.Itoa(req.Number) + ": " + err.Error())
 	}
+	steps.begin("worktree", "making the worktree")
 	if err := os.MkdirAll(filepath.Dir(filepath.FromSlash(dest)), 0o755); err != nil {
+		steps.end()
 		return res, http.StatusInternalServerError, err
 	}
 	// An existing local branch is checked out as it is, so a local commit is not overwritten by a fetch.
@@ -184,12 +225,24 @@ func (s *Server) prWorktree(ctx context.Context, p *store.Provider, req prWorktr
 	cmd.Dir = filepath.FromSlash(repoPath)
 	nowindow.Hide(cmd)
 	out, err := cmd.CombinedOutput()
+	steps.end()
 	if err != nil {
 		return res, http.StatusBadRequest, errors.New(
 			"git could not make that worktree: " + strings.TrimSpace(tailLines(string(out))))
 	}
 	res.Path, res.Branch, res.CreatedBranch = dest, branch, made
 	return res, http.StatusOK, nil
+}
+
+// haveCheckout is whether the checkout of host/org/repo is already on this room, so finding it can run beside the
+// forge read. A room that cannot say answers false, and the repo is found after the read as it always was.
+func (s *Server) haveCheckout(p *store.Provider, host, org, repo string) bool {
+	if p != nil {
+		if path := store.ProviderPath(p.Root, org, repo); path != "" && isCheckout(filepath.FromSlash(path)) {
+			return true
+		}
+	}
+	return s.SCMHas != nil && s.SCMHas("https://"+host+"/"+org+"/"+repo)
 }
 
 // repoCheckout is the checkout of host/org/repo a worktree hangs off, and the folder its worktrees go under: the

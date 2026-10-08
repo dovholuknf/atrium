@@ -1057,7 +1057,10 @@ function clearResolved(url) {
 // IT STARTS NOTHING. What comes back is text in boxes, which is the whole
 // separation the design rests on: recognising is not deciding, and the button
 // that decides is the one that was already there.
-async function recogniseLink() {
+//
+// `known` is what the paste box already read the same link as, so Enter does not ask again: the answer is a second
+// of the critical path and it was asked a moment before.
+async function recogniseLink(known) {
   const url = document.getElementById("l-url").value.trim();
   const note = document.getElementById("l-link-note");
   if (!url) return;
@@ -1065,7 +1068,7 @@ async function recogniseLink() {
   note.textContent = "recognising...";
   let got;
   try {
-    got = await api("/v1/recognise", {
+    got = known || await api("/v1/recognise", {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ url })
     });
@@ -1124,8 +1127,9 @@ function leastBusyRoom() {
   sel.value = "";
 }
 
-// A link pasted on the board, outside any box, is a link to recognise: the launch dialog opens on it and fills in.
-// A link nothing recognises is left alone, so pasting an ordinary url on the board does nothing. Pasting into a box,
+// A link pasted on the board, outside any box, is a link to open: the paste box comes up on it, and Enter opens it at
+// once (clone if needed, worktree, card) while Shift-Enter stops at the launch dialog filled in. The launch dialog is
+// never the first thing seen. A link nothing recognises comes back to the box with the reason. Pasting into a box,
 // a terminal or while a dialog is open is the page's own business.
 document.addEventListener("paste", async e => {
   const t = e.target;
@@ -1134,9 +1138,45 @@ document.addEventListener("paste", async e => {
   const text = ((e.clipboardData && e.clipboardData.getData("text")) || "").trim();
   if (!/^https?:\/\/\S+$/.test(text)) return;
   e.preventDefault();
-  await openLaunch(null, "", "", null, { url: text });
-  if (await recogniseLink() === "none") document.getElementById("launch").close();
+  await openQuickPaste(text);
 });
+
+// WHAT AN OPEN IS DOING, in a line over the board and never in a dialog. The server says each step of a pasted link
+// (reading the pull request, finding the clone, fetching the head, making the worktree) as an `open-progress` event
+// carrying the id this open sent, so a slow step is named while it runs. When the launch dialog is open, as it is after
+// Shift-Enter, the same line goes in its note.
+let openProgressId = "";
+
+function openProgressSay(text) {
+  let el = document.getElementById("open-progress");
+  if (!el) {
+    el = document.createElement("div");
+    el.id = "open-progress";
+    el.setAttribute("role", "status");
+    document.body.appendChild(el);
+  }
+  el.textContent = text;
+  el.hidden = false;
+  const dlg = document.getElementById("launch");
+  const note = document.getElementById("l-link-note");
+  if (dlg && dlg.open && note) {
+    note.classList.remove("warn");
+    note.textContent = text + "...";
+  }
+}
+
+function openProgressEnd() {
+  openProgressId = "";
+  const el = document.getElementById("open-progress");
+  if (el) el.hidden = true;
+}
+
+function onOpenProgress(e) {
+  let d;
+  try { d = JSON.parse(e.data); } catch (err) { return; }
+  if (!d || !openProgressId || d.id !== openProgressId || !d.step) return;
+  openProgressSay(d.step);
+}
 
 // setLaunchModel clears the field when the dialog opens or the runner changes.
 // The card remembers the model for restarts, but each launch starts with an
@@ -1466,8 +1506,13 @@ async function openLaunch(id, resume, cwd, ontoTask, prefill, where) {
   }
 
   syncMore();
-  document.getElementById("launch").showModal();
-  document.getElementById("l-cwd").focus();
+  // `quiet` fills the dialog in and does not show it: Enter in the paste box opens the link with the defaults the
+  // dialog would have had, and the dialog only appears if something needs fixing. See quickPasteGo.
+  if (!pre.quiet) {
+    document.getElementById("launch").showModal();
+    document.getElementById("l-cwd").focus();
+  }
+  return true;
 }
 
 // Which machine this card starts on, asked only when it is a question.
@@ -1726,9 +1771,13 @@ async function launchNow() {
   // internal/api/open.go and openkinds.go.
   let out = null;
   if (opening) {
+    // The id the server's steps are said under, so the line over the board names the one that is running.
+    openProgressId = "op-" + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+    openProgressSay("opening the link");
     try {
       out = await api("/v1/open", {
         method: "POST", headers, body: JSON.stringify({
+          progress: openProgressId,
           url: launchResolved.url || document.getElementById("l-url").value.trim(),
           why: document.getElementById("l-why").value.trim(),
           harness: document.getElementById("l-pick-field").hidden ? launchTarget.harness : picker.value,
@@ -1741,6 +1790,8 @@ async function launchNow() {
       });
     } catch (e) {
       if (!(e.body && e.body.code === "not_openable")) throw e;
+    } finally {
+      openProgressEnd();
     }
   }
   if (out) {
