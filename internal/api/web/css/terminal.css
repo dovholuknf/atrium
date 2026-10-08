@@ -575,7 +575,7 @@
     background: rgba(var(--shadow-rgb),.25);
     border: 1px solid var(--term-line, var(--stroke-dim));
     color: var(--term-fg, var(--head)); border-radius: var(--r-sm);
-    padding: 6px 8px; min-height: 96px; resize: vertical;
+    padding: 6px 8px; min-height: 96px; resize: vertical; width: 100%; box-sizing: border-box;
     font: var(--fs-sm)/1.35 var(--mono);
   }
   .pastebox textarea:focus { outline: none; border-color: var(--term-thumb-hi, var(--blue)); }

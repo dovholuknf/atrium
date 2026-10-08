@@ -495,6 +495,9 @@ func (d *Daemon) newContextFor(taskID string) any {
 	v := newContextView(cur)
 	if cur.step != NewContextFailed {
 		v["typing"] = cur.typing && !cur.capOnly
+		if cur.typing {
+			v["label"] = "atrium is typing into the terminal"
+		}
 		// What the operator composed while a write was under way waits as an ordinary
 		// held message, and the card says how many.
 		if msgs, err := d.st.PendingMessages(taskID); err == nil {

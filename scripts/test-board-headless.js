@@ -9800,7 +9800,8 @@ async function contextCycleSection(browser, base) {
           e.hidden = false;
           if (getComputedStyle(e).display === "none") e.style.display = "block";
         }
-        document.getElementById("t-ncbar").hidden = false;
+        // The box is only ever up while atrium itself is typing, so that is the state the bar shows.
+        composeBar({ new_context: { step: "limit", n: 1, of: 3, label: "atrium is typing into the terminal", typing: true, queued: 1 } });
         const ta = document.getElementById("t-compose-in");
         ta.value = "also fix the failing test";
       });
@@ -9825,6 +9826,14 @@ async function contextCycleSection(browser, base) {
     await wp.evaluate(() => document.getElementById("t-compose-free").click());
     await wp.waitForFunction(() => !composeOpen(), null, { timeout: slow(5000) });
     if (freed.length !== 1) fail("'let me type' did not dismiss the cycle.");
+    // WEDGED: the card still says the cycle is on its limit step (the mock never ends it), and the bar's own
+    // "let me type" must still cancel it and put the bar away. No cycle step has to finish first.
+    await wp.evaluate(() => {
+      composeBar({ new_context: { step: "limit", n: 1, of: 3, label: "waiting for atrium ready" } });
+      document.querySelector("#t-ncbar button").click();
+    });
+    await wp.waitForFunction(() => document.getElementById("t-ncbar").hidden, null, { timeout: slow(5000) });
+    if (freed.length !== 2) fail("the bar's 'let me type' did not cancel a cycle that never ends: " + freed.length);
     await wp.evaluate(() => { termTask = null; });
 
     // The details: the switch on, no own limit, and a line naming the limit in force and where from.
