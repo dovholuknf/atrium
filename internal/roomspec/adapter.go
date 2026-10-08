@@ -31,7 +31,7 @@ type Adapter interface {
 	// CacheFile is the config file a cache row writes on this OS, forward-slash, or "" when the row is not a file.
 	CacheFile(row CacheRow, h Home) string
 	// PackDir is the folder a runner keeps its agents and skills in, or "" when this runner has no pack adapter.
-	PackDir(runner string, h Home) string
+	PackDir(runner string, h Home, env func(string) string) string
 	// InstallPack puts the pack's files in dir (see InstallPack).
 	InstallPack(fs FS, dir string, src *PackSource, prev *PackRecord, apply bool) (PackResult, error)
 }
@@ -160,8 +160,10 @@ func (a windowsAdapter) GrantExamine(g Grant) []string {
 	return l
 }
 
-func (windowsAdapter) CacheFile(r CacheRow, h Home) string  { return r.File(Windows, h) }
-func (windowsAdapter) PackDir(runner string, h Home) string { return packDir(runner, h) }
+func (windowsAdapter) CacheFile(r CacheRow, h Home) string { return r.File(Windows, h) }
+func (windowsAdapter) PackDir(runner string, h Home, env func(string) string) string {
+	return packDir(runner, h, env)
+}
 
 // ── Linux ────────────────────────────────────────────────────────────────────
 
@@ -180,8 +182,10 @@ func (a linuxAdapter) GrantExamine(g Grant) []string {
 	})
 }
 
-func (linuxAdapter) CacheFile(r CacheRow, h Home) string  { return r.File(Linux, h) }
-func (linuxAdapter) PackDir(runner string, h Home) string { return packDir(runner, h) }
+func (linuxAdapter) CacheFile(r CacheRow, h Home) string { return r.File(Linux, h) }
+func (linuxAdapter) PackDir(runner string, h Home, env func(string) string) string {
+	return packDir(runner, h, env)
+}
 
 // ── macOS ────────────────────────────────────────────────────────────────────
 
@@ -199,8 +203,10 @@ func (a darwinAdapter) GrantExamine(g Grant) []string {
 	})
 }
 
-func (darwinAdapter) CacheFile(r CacheRow, h Home) string  { return r.File(Darwin, h) }
-func (darwinAdapter) PackDir(runner string, h Home) string { return packDir(runner, h) }
+func (darwinAdapter) CacheFile(r CacheRow, h Home) string { return r.File(Darwin, h) }
+func (darwinAdapter) PackDir(runner string, h Home, env func(string) string) string {
+	return packDir(runner, h, env)
+}
 
 func unixGrant(g Grant, acl func(account, parent string) string) []string {
 	var l []string
@@ -226,16 +232,21 @@ func unixGrant(g Grant, acl func(account, parent string) string) []string {
 	return l
 }
 
-// packLayout is where a runner keeps agents and skills (internal/runnersetup knows each runner's folders), as the account's
-// defaults: a variable that moves a runner's folder (GEMINI_CLI_HOME, CODEX_HOME) is not followed, the pack goes where the
-// runner looks with none set. ok is false for a runner with no pack adapter.
-func packLayout(runner string, h Home) (runnersetup.PackLayout, bool) {
-	return runnersetup.PackLayoutFor(runner, runnersetup.Env{Home: h.Dir, Getenv: func(string) string { return "" }})
+// packLayout is where a runner keeps agents and skills (internal/runnersetup knows each runner's folders and the variables that
+// move them: CLAUDE_CONFIG_DIR, CODEX_HOME, GEMINI_CLI_HOME). env reads a variable of the account's environment, nil for none.
+// ok is false for a runner with no pack adapter. The folder is spelled with forward slashes.
+func packLayout(runner string, h Home, env func(string) string) (runnersetup.PackLayout, bool) {
+	if env == nil {
+		env = func(string) string { return "" }
+	}
+	l, ok := runnersetup.PackLayoutFor(runner, runnersetup.Env{Home: h.Dir, Getenv: env})
+	l.Dir = slash(l.Dir)
+	return l, ok
 }
 
 // packDir is where a runner's pack goes, or "" when it has no pack adapter.
-func packDir(runner string, h Home) string {
-	l, ok := packLayout(runner, h)
+func packDir(runner string, h Home, env func(string) string) string {
+	l, ok := packLayout(runner, h, env)
 	if !ok {
 		return ""
 	}

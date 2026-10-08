@@ -803,7 +803,7 @@ if (-not $mf) {
     # records one (`none`), so a missing pack is read against the default repository and shows as a row.
     $packRepo = if ($mf.agentpack.repo) { "$($mf.agentpack.repo)" } else { 'dovholuknf/dotfiles' }
     $packBranch = if ($mf.agentpack.branch) { "$($mf.agentpack.branch)" } else { 'main' }
-    try { $yaml = New-RoomSpecYaml -Name $(if ($mf.name) { "$($mf.name)" } else { $Room }) -Os $kind -WorkRoot $(if ($mf.workroot) { "$($mf.workroot)" } else { '' }) -PackRepo $(if ($noPack) { '' } else { $packRepo }) -PackBranch $packBranch }
+    try { $yaml = New-RoomSpecYaml -Name $(if ($mf.name) { "$($mf.name)" } else { $Room }) -Os $kind -WorkRoot $(if ($mf.workroot) { "$($mf.workroot)" } else { '' }) -PackRepo $(if ($noPack) { '' } else { $packRepo }) -PackBranch $packBranch -PackRunners $(if ($mf.agentpack.runners) { @($mf.agentpack.runners) } else { @('claude') }) }
     catch { $yaml = $null; Row 'work-root' 'fail' "the manifest's work root cannot be written into a room.yaml: $_"; Unmet 'human' }
     if ($yaml) {
         $sr = Invoke-Remote (Get-RoomSetupScript -Os $kind -Yaml $yaml -Mode plan)

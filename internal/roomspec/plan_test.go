@@ -432,6 +432,27 @@ func TestEachRunnersPackGoesWhereItReadsIt(t *testing.T) {
 	}
 }
 
+// CODEX_HOME and GEMINI_CLI_HOME in the account's environment move where the pack goes, as they move where the runner looks.
+func TestPackFollowsTheVariablesThatMoveARunnersFolder(t *testing.T) {
+	spec := mustSpec(t, Linux, linHead+"packs:\n  - runner: gemini\n    repo: o/a\n  - runner: codex\n    repo: o/a\n")
+	m := NewMemFS(linHome, "localai")
+	m.Dir("/srv/localai")
+	m.Env = map[string]string{"GEMINI_CLI_HOME": "/data/g", "CODEX_HOME": `/data/c`}
+	ff := &fakeFetcher{src: packFiles(), latest: "abcdef1234567890"}
+	Apply(spec, adapterFor(t, Linux), Host{FS: m, Env: m, Settings: &fakeSettings{vals: map[string]string{}}, Fetch: ff})
+	for _, f := range []string{"/data/g/.gemini/agents/c-systems-reviewer.md", "/data/g/.gemini/atrium-agent-pack.json", "/data/c/skills/s1/SKILL.md"} {
+		if !m.Has(f) {
+			t.Errorf("%s is missing", f)
+		}
+	}
+	if m.Has("/home/localai/.gemini/agents/c-systems-reviewer.md") || m.Has("/home/localai/.codex/skills/s1/SKILL.md") {
+		t.Error("the default folders were used")
+	}
+	pl := Plan(spec, adapterFor(t, Linux), View{FS: m, Env: m, Settings: &fakeSettings{vals: map[string]string{}}, Latest: ff.Latest})
+	wantStatus(t, pl, "agent-pack-gemini", StatusOK)
+	wantStatus(t, pl, "agent-pack-codex", StatusOK)
+}
+
 func TestPackWithoutASourceIsAWarn(t *testing.T) {
 	spec := mustSpec(t, Windows, winSpec+"packs:\n  - runner: claude\n    repo: o/a\n  - runner: codex\n    repo: o/a\n")
 	m := NewMemFS(winHome, `SG3\localai`)

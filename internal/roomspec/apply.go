@@ -3,6 +3,7 @@ package roomspec
 import (
 	"errors"
 	"fmt"
+	"os"
 	"path"
 	"strings"
 	"time"
@@ -118,13 +119,28 @@ func applyCache(host *Host, a Adapter, e cacheEdit) error {
 	return host.FS.WriteFile(e.file, txt.Bytes(), 0o644) // its own line ending and BOM, the OS's only for a new file
 }
 
+// accountEnv reads a variable of the account's environment: its user environment where the OS keeps one (the Windows registry),
+// else the environment this process was started with. A variable set only in a login profile is not seen by an ssh command, so
+// a room that keeps CODEX_HOME there is not followed: set it where the account's processes get it.
+func accountEnv(e ReadEnv) func(string) string {
+	return func(k string) string {
+		if e != nil {
+			if s, ok := e.UserEnv(k); ok && s != "" {
+				return s
+			}
+		}
+		return os.Getenv(k)
+	}
+}
+
 func packStep(spec *Spec, a Adapter, v View, host *Host, pk Pack, lk *Lock, add func(step, status, detail string)) {
 	name := "agent-pack"
 	if pk.Runner != "claude" {
 		name += "-" + pk.Runner
 	}
-	layout, ok := packLayout(pk.Runner, v.FS.Home())
-	dir := a.PackDir(pk.Runner, v.FS.Home())
+	env := accountEnv(v.Env)
+	layout, ok := packLayout(pk.Runner, v.FS.Home(), env)
+	dir := a.PackDir(pk.Runner, v.FS.Home(), env)
 	if !ok || dir == "" {
 		add(name, StatusWarn, fmt.Sprintf("no pack adapter for %s", pk.Runner))
 		return

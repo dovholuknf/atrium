@@ -51,7 +51,7 @@ function ConvertTo-YamlText {
 # New-RoomSpecYaml is the room.yaml (version 1) for a room: the layout and caches are the binary's defaults, and the pack is the
 # claude one unless $PackRepo is empty. Field names are the contract of internal/roomspec/spec.go.
 function New-RoomSpecYaml {
-    param([string] $Name, [string] $Os, [string] $WorkRoot, [string] $Account = '@@ACCOUNT@@', [string] $PackRepo, [string] $PackBranch = 'main')
+    param([string] $Name, [string] $Os, [string] $WorkRoot, [string] $Account = '@@ACCOUNT@@', [string] $PackRepo, [string] $PackBranch = 'main', [string[]] $PackRunners = @('claude'))
     $y = @(
         'version: 1'
         "name: $(ConvertTo-YamlText $Name)"
@@ -62,9 +62,12 @@ function New-RoomSpecYaml {
     if ($WorkRoot) { $y += "work_root: $(ConvertTo-YamlText $WorkRoot)" }
     if ($PackRepo) {
         $y += 'packs:'
-        $y += '  - runner: claude'
-        $y += "    repo: $(ConvertTo-YamlText $PackRepo)"
-        $y += "    branch: $(ConvertTo-YamlText $PackBranch)"
+        foreach ($r in @($PackRunners | Where-Object { $_ } | Select-Object -Unique)) {
+            if ($r -notmatch '^(claude|codex|gemini)$') { throw "'$r' is not a runner with an agent pack (claude, codex, gemini)" }
+            $y += "  - runner: $r"
+            $y += "    repo: $(ConvertTo-YamlText $PackRepo)"
+            $y += "    branch: $(ConvertTo-YamlText $PackBranch)"
+        }
     }
     ($y -join "`n") + "`n"
 }
@@ -161,7 +164,7 @@ function Test-WorkRootLocal {
 function Set-PackRowLatest {
     param($Rows, [string] $Latest)
     foreach ($r in @($Rows)) {
-        if ($r.Step -ne 'agent-pack' -or $r.Status -ne 'ok' -or -not $Latest) { continue }
+        if ($r.Step -notlike 'agent-pack*' -or $r.Status -ne 'ok' -or -not $Latest) { continue }
         if ($r.Detail -notmatch '^the agent pack at ([0-9a-f]{4,40})[ ,]') { continue }
         $short = $Matches[1]
         if ($Latest.StartsWith($short)) { $r.Detail = $r.Detail -replace ' \(the hub mirror could not be asked[^)]*\)$', '' }
@@ -224,7 +227,12 @@ function New-PackSource {
     if (Test-Path -LiteralPath $tgz) { Remove-Item -LiteralPath $tgz -Force }
     $t = & (Get-PackTar) -czf $tgz -C $src . 2>&1
     if ($LASTEXITCODE -ne 0) { return (& $fail "tar could not pack the checkout: $((@($t) | Select-Object -First 1))") }
-    [pscustomobject]@{ Ok = $true; Why = $null; Commit = $commit; Tgz = $tgz }
+    # claude always; codex and gemini only when the repository has a folder of theirs with agents or skills in it
+    $runners = @('claude')
+    foreach ($rn in 'codex', 'gemini') {
+        if ((Test-Path -LiteralPath (Join-Path $src "$rn/agents")) -or (Test-Path -LiteralPath (Join-Path $src "$rn/skills"))) { $runners += $rn }
+    }
+    [pscustomobject]@{ Ok = $true; Why = $null; Commit = $commit; Tgz = $tgz; Runners = $runners }
 }
 
 # Get-PackUnpackScript unpacks the tarball Copy-ToRemote put at ~/.atrium/provision/pack-src.tgz into ~/.atrium/provision/pack-src,
