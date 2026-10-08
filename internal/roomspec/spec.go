@@ -10,6 +10,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"path"
 	"regexp"
 	"runtime"
 	"strings"
@@ -63,7 +64,7 @@ type Pack struct {
 var KnownRunners = []string{"claude", "codex", "gemini"}
 
 // secretKey is a key a spec may not carry, at any depth. Atrium holds the name of a command that has a credential, never one.
-var secretKey = regexp.MustCompile(`(?i)token|password|passwd|secret`)
+var secretKey = regexp.MustCompile(`(?i)token|pass|secret|key|cred|auth|bearer`)
 
 var (
 	nameRE   = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.-]{0,62}$`)
@@ -159,6 +160,14 @@ func (s *Spec) Validate(goos string) error {
 	for name, v := range map[string]string{"layout.git": s.Layout.Git, "layout.reviews": s.Layout.Reviews, "layout.handoff": s.Layout.Handoff, "layout.cache": s.Layout.Cache} {
 		if why := checkLayoutName(s.OS, v); why != "" {
 			return bad(name, "%q %s", v, why)
+		}
+	}
+	// Whatever the layout says, every folder this makes or sets resolves to a place under the work root.
+	rp := s.Resolve()
+	root := strings.ToLower(path.Clean(rp.Root))
+	for name, v := range map[string]string{"layout.git": rp.Git, "layout.reviews": rp.Reviews, "layout.handoff": rp.Handoff, "layout.cache": rp.Cache} {
+		if !strings.HasPrefix(strings.ToLower(path.Clean(v)), root+"/") {
+			return bad(name, "resolves to %s, which is not under the work root %s", v, rp.Root)
 		}
 	}
 	seen := map[string]bool{}
@@ -274,7 +283,35 @@ func CheckWorkRoot(goos, dir string) string {
 			return "holds .., so the folder it means is not the one it says"
 		}
 	}
+	// The root is made and handed to the account, so it must be a folder of its own: not a top-level one on Unix (/srv), and
+	// not inside the operating system's.
+	segs := splitSegs(trim)
+	if isDrive {
+		segs = segs[1:] // the drive itself
+	}
+	if goos != Windows && len(segs) < 2 {
+		return "is a top-level folder. name one inside it, like /srv/localai, so the account is never given a folder others use"
+	}
+	if len(segs) > 0 && systemFolder(goos, strings.ToLower(segs[0])) {
+		return "is inside " + segs[0] + ", a system folder. name a folder of its own, like /srv/localai or V:/localai"
+	}
 	return ""
+}
+
+func systemFolder(goos, first string) bool {
+	var l []string
+	if goos == Windows {
+		l = []string{"windows", "program files", "program files (x86)", "programdata", "system volume information", "$recycle.bin", "recovery"}
+	} else {
+		l = []string{"bin", "boot", "dev", "etc", "lib", "lib32", "lib64", "proc", "root", "run", "sbin", "sys", "usr", "system", "library", "applications", "cores"}
+	}
+	return contains(l, first)
+}
+
+// ContainsHome is whether the work root is the account's home or holds it, which would make the whole home the work root's.
+func ContainsHome(root, home string) bool {
+	r, h := strings.ToLower(path.Clean(slash(root))), strings.ToLower(path.Clean(slash(home)))
+	return h == r || strings.HasPrefix(h, r+"/")
 }
 
 func checkLayoutName(goos, v string) string {
@@ -284,9 +321,9 @@ func checkLayoutName(goos, v string) string {
 	if strings.ContainsAny(v, ";\r\n\x00") {
 		return "holds a semicolon or a newline"
 	}
-	if strings.HasPrefix(v, "/") || driveRE.MatchString(v) {
-		// absolute: held to the work root's rules
-		return CheckWorkRoot(goos, v)
+	if strings.HasPrefix(v, "/") || strings.HasPrefix(v, `\`) || driveRE.MatchString(v) {
+		// Everything a spec makes or sets is under the work root, so a folder is named relative to it.
+		return "is an absolute path. name a folder under the work root, like cache"
 	}
 	for _, seg := range strings.FieldsFunc(v, func(r rune) bool { return r == '/' || r == '\\' }) {
 		if seg == ".." {

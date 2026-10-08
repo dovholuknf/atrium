@@ -136,6 +136,10 @@ func (base) InstallPack(f FS, dir string, src *PackSource, prev *PackRecord, app
 	sort.Strings(rels)
 	for _, rel := range rels {
 		res.Files++
+		if unsafeRel(rel) {
+			res.Refused = append(res.Refused, fmt.Sprintf("%s (a path that is not inside the pack)", rel))
+			continue
+		}
 		if lp := linkedParent(f, dir, rel); lp != "" {
 			res.Refused = append(res.Refused, fmt.Sprintf("%s (%s is a link)", rel, lp))
 			continue
@@ -197,6 +201,19 @@ func (base) InstallPack(f FS, dir string, src *PackSource, prev *PackRecord, app
 		res.RecordWritten = true
 	}
 	return res, nil
+}
+
+// unsafeRel is a pack path that is absolute, has a drive or a backslash, or climbs: a fetcher is not trusted to have cleaned it.
+func unsafeRel(rel string) bool {
+	if rel == "" || strings.HasPrefix(rel, "/") || strings.ContainsAny(rel, "\\:\x00") {
+		return true
+	}
+	for _, seg := range strings.Split(rel, "/") {
+		if seg == ".." || seg == "." || seg == "" {
+			return true
+		}
+	}
+	return false
 }
 
 // linkedParent is the first folder between dir (exclusive) and rel's file that is a link, or "".

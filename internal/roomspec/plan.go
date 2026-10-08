@@ -82,6 +82,11 @@ func run(spec *Spec, a Adapter, lk *Lock, v View, host *Host) {
 		return
 	}
 
+	if h := v.FS.Home().Dir; h != "" && ContainsHome(p.Root, h) {
+		add("work-root", StatusFail, fmt.Sprintf("the work root %s is or holds the account's home folder %s. a work root is a folder of its own", p.Root, h))
+		return
+	}
+
 	// ── the work root ──
 	st := examineRoot(spec, a, v)
 	if host != nil && st.rootMissing && len(st.bad) == 0 && !st.driveMissing {
@@ -131,17 +136,24 @@ func run(spec *Spec, a Adapter, lk *Lock, v View, host *Host) {
 	}
 }
 
+// sameAccount compares logins as the OS spells them. A bare name matches the same name in any domain; when both name a domain
+// (DOMAIN\name) it must be the same one.
 func sameAccount(want, got string) bool {
-	bare := func(s string) string {
+	split := func(s string) (domain, name string) {
 		if i := strings.LastIndex(s, `\`); i >= 0 {
-			s = s[i+1:]
+			domain, s = s[:i], s[i+1:]
 		}
 		if i := strings.Index(s, "@"); i >= 0 {
 			s = s[:i]
 		}
-		return strings.ToLower(s)
+		return strings.ToLower(domain), strings.ToLower(s)
 	}
-	return bare(want) == bare(got)
+	wd, wn := split(want)
+	gd, gn := split(got)
+	if wn != gn {
+		return false
+	}
+	return wd == "" || gd == "" || wd == gd
 }
 
 // ── the work root ────────────────────────────────────────────────────────────
@@ -266,6 +278,7 @@ type cacheEdit struct {
 	old, new []string
 	value    string
 	same     bool
+	utf16    bool // the file is UTF-16, and is left alone
 }
 
 func cacheEdits(spec *Spec, a Adapter, v View) []cacheEdit {
@@ -282,7 +295,13 @@ func cacheEdits(spec *Spec, a Adapter, v View) []cacheEdit {
 		}
 		e.file = a.CacheFile(row, h)
 		if b, err := v.FS.ReadFile(e.file); err == nil {
-			e.old = SplitLines(b)
+			t, u16 := ParseText(b, a.Newline())
+			if u16 {
+				e.utf16, e.same = true, true // never edited: it is not UTF-8
+				out = append(out, e)
+				continue
+			}
+			e.old = t.Lines
 		}
 		switch e.format {
 		case FormatKV:
@@ -301,11 +320,16 @@ func cacheEdits(spec *Spec, a Adapter, v View) []cacheEdit {
 func cacheStep(spec *Spec, a Adapter, v View, host *Host, add func(step, status, detail string)) {
 	edits := cacheEdits(spec, a, v)
 	p := spec.Resolve()
-	var todo []string
+	var todo, u16 []string
 	for _, e := range edits {
-		if !e.same {
+		if e.utf16 {
+			u16 = append(u16, a.Native(e.file))
+		} else if !e.same {
 			todo = append(todo, e.row.Tool)
 		}
+	}
+	if len(u16) > 0 {
+		defer add("work-cache-encoding", StatusWarn, fmt.Sprintf("%s is UTF-16, which PowerShell 5.1's Out-File writes, and is left alone because editing it as UTF-8 would corrupt it. re-save it as UTF-8 and run again", strings.Join(u16, ", ")))
 	}
 	set := fmt.Sprintf("caches under %s", p.Cache)
 	switch {

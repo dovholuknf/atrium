@@ -56,6 +56,18 @@ func WriteLock(f FS, a Adapter, lk Lock) error {
 		return err
 	}
 	p := LockPath(f.Home())
+	// A rerun that found everything as it was says the same thing again. The time alone is not a change worth a write.
+	if old, err := f.ReadFile(p); err == nil {
+		if prev, perr := ParseLock(old); perr == nil {
+			a, b := prev, lk
+			a.AppliedAt, b.AppliedAt = "", ""
+			if ab, _ := MarshalLock(a); string(ab) != "" {
+				if bb, _ := MarshalLock(b); string(ab) == string(bb) {
+					return nil
+				}
+			}
+		}
+	}
 	if err := f.MkdirAll(path.Dir(p), 0o755); err != nil {
 		return fmt.Errorf("make %s: %w", a.Native(path.Dir(p)), err)
 	}
@@ -74,26 +86,33 @@ func applyCache(host *Host, a Adapter, e cacheEdit) error {
 	if e.format == FormatUserEnv {
 		return host.Env.SetUserEnv(e.row.Key, e.value)
 	}
-	var old []string
+	if e.utf16 {
+		return nil
+	}
+	txt := Text{NL: a.Newline()}
 	if b, err := host.FS.ReadFile(e.file); err == nil {
-		old = SplitLines(b)
+		var u16 bool
+		if txt, u16 = ParseText(b, a.Newline()); u16 {
+			return nil
+		}
 	}
 	var nw []string
 	switch e.format {
 	case FormatKV:
-		nw = EditKV(old, e.row.Key, e.value)
+		nw = EditKV(txt.Lines, e.row.Key, e.value)
 	case FormatINI:
-		nw = EditINI(old, e.row.Section, e.row.Key, e.value)
+		nw = EditINI(txt.Lines, e.row.Section, e.row.Key, e.value)
 	case FormatProfile:
-		nw = EditProfile(old, e.row.Key, e.value)
+		nw = EditProfile(txt.Lines, e.row.Key, e.value)
 	}
-	if EqualLines(old, nw) {
+	if EqualLines(txt.Lines, nw) {
 		return nil
 	}
 	if err := host.FS.MkdirAll(path.Dir(e.file), 0o755); err != nil {
 		return err
 	}
-	return host.FS.WriteFile(e.file, []byte(JoinLines(nw, a.Newline())), 0o644)
+	txt.Lines = nw
+	return host.FS.WriteFile(e.file, txt.Bytes(), 0o644) // its own line ending and BOM, the OS's only for a new file
 }
 
 func packStep(spec *Spec, a Adapter, v View, host *Host, pk Pack, lk *Lock, add func(step, status, detail string)) {

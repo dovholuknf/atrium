@@ -11,6 +11,39 @@ import (
 // bom is the UTF-8 byte order mark, which Windows editors put at the start of a file.
 const bom = "\xef\xbb\xbf"
 
+// Text is a config file as it was written: its lines, the line ending it used, and whether it began with a BOM. An edit changes
+// the lines and writes the file back the way it came, so the diff of an edit is the line that changed.
+type Text struct {
+	Lines []string
+	NL    string
+	BOM   bool
+}
+
+// ParseText reads a file. defNL is the line ending of a file with none yet (the OS's). utf16 is true for a file that is UTF-16,
+// which PowerShell 5.1's Out-File makes: it is neither read nor written as UTF-8, because that would corrupt it.
+func ParseText(data []byte, defNL string) (t Text, utf16 bool) {
+	if len(data) >= 2 && ((data[0] == 0xff && data[1] == 0xfe) || (data[0] == 0xfe && data[1] == 0xff)) {
+		return Text{NL: defNL}, true
+	}
+	t = Text{NL: defNL, BOM: strings.HasPrefix(string(data), bom), Lines: SplitLines(data)}
+	if i := strings.Index(string(data), "\n"); i >= 0 {
+		t.NL = "\n"
+		if i > 0 && data[i-1] == '\r' {
+			t.NL = "\r\n"
+		}
+	}
+	return t, false
+}
+
+// Bytes is the file to write.
+func (t Text) Bytes() []byte {
+	b := JoinLines(t.Lines, t.NL)
+	if t.BOM && b != nil {
+		b = append([]byte(bom), b...)
+	}
+	return b
+}
+
 // SplitLines reads a file's text as lines: a BOM, a CRLF and a final newline do not count.
 func SplitLines(data []byte) []string {
 	s := strings.TrimPrefix(string(data), bom)
@@ -55,7 +88,7 @@ func EditKV(old []string, key, val string) []string {
 // missing section is appended with it.
 func EditINI(old []string, sec, key, val string) []string {
 	anySec := regexp.MustCompile(`^\s*\[.*\]`)
-	thisSec := regexp.MustCompile(`^\s*\[` + regexp.QuoteMeta(sec) + `\]\s*$`)
+	thisSec := regexp.MustCompile(`^\s*\[` + regexp.QuoteMeta(sec) + `\]\s*([;#].*)?$`)
 	keyRe := regexp.MustCompile(`^\s*` + regexp.QuoteMeta(key) + `\s*[=:]`)
 	line := key + " = " + val
 	var out []string

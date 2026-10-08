@@ -142,7 +142,7 @@ func (a windowsAdapter) GrantExamine(g Grant) []string {
 	var l []string
 	for _, p := range g.Bad {
 		if contains(g.Missing, p) {
-			l = append(l, "New-Item -ItemType Directory "+psWord(a.Native(p)))
+			l = append(l, "New-Item -ItemType Directory -Force "+psWord(a.Native(p)))
 		}
 	}
 	for _, p := range g.Bad {
@@ -150,10 +150,11 @@ func (a windowsAdapter) GrantExamine(g Grant) []string {
 	}
 	root := a.Native(slash(g.Root))
 	if g.RootMissing {
-		l = append(l, "New-Item -ItemType Directory "+psWord(root))
+		l = append(l, "New-Item -ItemType Directory -Force "+psWord(root))
 	}
 	if g.RootMissing || g.RootNotWritable {
-		l = append(l, "icacls "+psWord(root)+" /grant "+psWord(g.Account+":(OI)(CI)F"))
+		// Modify, not full control: the account needs to make and change files in its own folder, not to take it over.
+		l = append(l, "icacls "+psWord(root)+" /grant "+psWord(g.Account+":(OI)(CI)M"))
 	}
 	return l
 }
@@ -218,7 +219,8 @@ func unixGrant(g Grant, acl func(account, parent string) string) []string {
 	case g.RootMissing:
 		l = append(l, "sudo install -d -o "+shWord(g.Account)+" -m 755 "+shWord(root))
 	case g.RootNotWritable:
-		l = append(l, "sudo chown -R "+shWord(g.Account)+": "+shWord(root))
+		// the folder alone, never -R: what is inside it is not this command's to hand over
+		l = append(l, "sudo chown "+shWord(g.Account)+": "+shWord(root))
 	}
 	return l
 }

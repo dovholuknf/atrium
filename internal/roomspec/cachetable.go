@@ -61,6 +61,9 @@ var CacheRows = []CacheRow{
 			if os == Windows {
 				return "" // the user's environment (the registry), not a file
 			}
+			if os == Darwin {
+				return home(os, h, ".zprofile") // zsh is a Mac's login shell, and it does not read ~/.profile
+			}
 			return home(os, h, ".profile")
 		}},
 }

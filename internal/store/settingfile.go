@@ -3,8 +3,39 @@ package store
 import (
 	"database/sql"
 	"fmt"
+	"net/url"
 	"os"
+	"path/filepath"
+	"strings"
 )
+
+// SettingOfFileReadOnly reads one setting without writing anything: no migration, no WAL, no -shm, no lock. The database is
+// opened immutable, which is only honest when nobody is writing it, so a database with a -wal file beside it (a room that is
+// running, or stopped without a clean close) is refused with ErrDatabaseInUse instead of read. A database that has not been
+// migrated far enough to have settings, or has no such key, reads as empty.
+func SettingOfFileReadOnly(path, key string) (string, error) {
+	if _, err := os.Stat(path); err != nil {
+		return "", err
+	}
+	if fi, err := os.Stat(path + "-wal"); err == nil && fi.Size() > 0 {
+		return "", fmt.Errorf("%w (%s has a write-ahead log: a room has it open)", ErrDatabaseInUse, path)
+	}
+	u := url.URL{Scheme: "file", Path: "/" + strings.TrimPrefix(filepath.ToSlash(path), "/"), RawQuery: "mode=ro&immutable=1"}
+	db, err := sql.Open("sqlite", u.String())
+	if err != nil {
+		return "", fmt.Errorf("open %s: %w", path, err)
+	}
+	defer db.Close()
+	var v string
+	err = db.QueryRow(`SELECT value FROM setting WHERE key = ?`, key).Scan(&v)
+	switch {
+	case err == sql.ErrNoRows:
+		return "", nil
+	case err != nil && strings.Contains(err.Error(), "no such table"):
+		return "", nil
+	}
+	return v, err
+}
 
 // claimFile proves nobody else has the database at path open, the way Compact does,
 // and lets go again. A running room holds its store, so this fails with ErrDatabaseInUse.

@@ -58,12 +58,21 @@ func roomSettingKey(name string) (string, error) {
 	return "", fmt.Errorf("unknown room setting %q, known: %s", name, roomSettingNames)
 }
 
+// worded is the verb's own sentence, which still unwraps to the store's error so a caller can tell what it was.
+type worded struct {
+	msg string
+	err error
+}
+
+func (w worded) Error() string { return w.msg }
+func (w worded) Unwrap() error { return w.err }
+
 func roomSettingErr(db string, err error) error {
 	switch {
 	case errors.Is(err, store.ErrDatabaseInUse):
-		return fmt.Errorf("the room is running on %s: stop it first, then set the value", db)
+		return worded{fmt.Sprintf("the room is running on %s: stop it first, then set the value", db), err}
 	case errors.Is(err, os.ErrNotExist):
-		return fmt.Errorf("no room database at %s: the room has not run here yet (or pass --db)", db)
+		return worded{fmt.Sprintf("no room database at %s: the room has not run here yet (or pass --db)", db), err}
 	}
 	return err
 }
@@ -71,6 +80,11 @@ func roomSettingErr(db string, err error) error {
 func runRoomSet(cmd *cobra.Command, db, name, value string) error {
 	value, err := storeRoomSetting(db, name, value)
 	if err != nil {
+		// the verb words it itself and does not hand on the store's error (setup does, to tell a running room apart)
+		var w worded
+		if errors.As(err, &w) {
+			return errors.New(w.msg)
+		}
 		return err
 	}
 	fmt.Fprintf(cmd.OutOrStdout(), "%s = %s\n", name, value)

@@ -74,7 +74,9 @@ Exit codes: 0 everything is as the spec says, 13 an administrator must run the l
 
 			var lk roomspec.Lock
 			if plan {
-				v := roomspec.View{FS: roomspec.OSFS{}, Env: roomspec.OSEnv{}, Tools: execTools{}, Settings: roomSettings{db: db}, Need: panelAgents()}
+				// The plan is handed the read-only faces only, so nothing it is given can write even by a type assertion.
+				v := roomspec.View{FS: readOnlyFS{roomspec.OSFS{}}, Env: readOnlyEnv{roomspec.OSEnv{}}, Tools: execTools{},
+					Settings: roomSettings{db: db, readOnly: true}, Need: panelAgents()}
 				if fetch != nil {
 					v.Latest = fetch.Latest
 				}
@@ -144,10 +146,19 @@ func panelAgents() []string {
 
 // ── settings, through the store the way `room set` does ──────────────────────
 
-type roomSettings struct{ db string }
+// roomSettings reads and sets the room's settings. readOnly is a plan's: it reads without opening the store, so a plan does not
+// migrate or otherwise touch the room's database.
+type roomSettings struct {
+	db       string
+	readOnly bool
+}
 
 func (r roomSettings) Get(key string) (string, error) {
-	v, err := store.SettingOfFile(r.db, key)
+	read := store.SettingOfFile
+	if r.readOnly {
+		read = store.SettingOfFileReadOnly
+	}
+	v, err := read(r.db, key)
 	switch {
 	case errors.Is(err, store.ErrDatabaseInUse):
 		return "", roomspec.ErrRoomRunning
@@ -165,17 +176,31 @@ func (r roomSettings) Set(key, value string) error {
 	return err
 }
 
+// readOnlyFS and readOnlyEnv hide everything but the read methods, so a plan holds no value it could type-assert into a writer.
+type readOnlyFS struct{ roomspec.ReadFS }
+type readOnlyEnv struct{ roomspec.ReadEnv }
+
 // ── tools ────────────────────────────────────────────────────────────────────
 
 type execTools struct{}
 
+// Query asks a tool its own answer. It runs in an empty temp folder, so a go.mod or .npmrc of the folder it was typed in cannot
+// change the answer, and with GOTOOLCHAIN=local, so asking `go env` can never download a toolchain.
 func (execTools) Query(argv []string) (string, bool) {
 	if len(argv) == 0 {
 		return "", false
 	}
+	dir, err := os.MkdirTemp("", "atrium-ask-")
+	if err != nil {
+		return "", false
+	}
+	defer os.RemoveAll(dir)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	out, err := exec.CommandContext(ctx, argv[0], argv[1:]...).Output()
+	cmd := exec.CommandContext(ctx, argv[0], argv[1:]...)
+	cmd.Dir = dir
+	cmd.Env = append(os.Environ(), "GOTOOLCHAIN=local")
+	out, err := cmd.Output()
 	if err != nil {
 		return "", false
 	}
@@ -204,6 +229,9 @@ func (f packFetcher) url(repo string) string {
 func gitCmd(ctx context.Context, dir string, args ...string) ([]byte, error) {
 	cmd := exec.CommandContext(ctx, "git", args...)
 	cmd.Dir = dir
+	if dir == "" {
+		cmd.Dir = os.TempDir() // never the folder the command was typed in: a repo there would be read as config
+	}
 	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0")
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
@@ -263,6 +291,11 @@ func (f packFetcher) Fetch(repo, branch, from string) (*roomspec.PackSource, err
 // walkPack reads <base>/agents/*.md and <base>/skills/<n>/** (n holding a SKILL.md). A link is never followed: it is named in
 // Skipped, because a skill that is a link into another repository is not this pack's to give.
 func walkPack(base string, src *roomspec.PackSource) error {
+	if fi, err := os.Lstat(base); err != nil {
+		return err
+	} else if fi.Mode()&fs.ModeSymlink != 0 {
+		return fmt.Errorf("%s is a link, and a pack is not followed out of its repo", base)
+	}
 	agents, _ := os.ReadDir(filepath.Join(base, "agents"))
 	for _, e := range agents {
 		if e.IsDir() || !strings.HasSuffix(e.Name(), ".md") {
