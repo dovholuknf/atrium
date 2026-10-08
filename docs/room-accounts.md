@@ -377,6 +377,19 @@ A rerun at the same commit changes nothing, a file edited on the room is put bac
 left alone. A skill that is a link into another repository (two on sg3, `debug-ziti-desktop-edge-win` and
 `debug-ziti-edge-tunnel-log`) is not fetched and is named in a `skip` line.
 
+A `room.yaml` may also list a `codex` and a `gemini` pack, each taken from its own folder of the repository (`codex/`,
+`gemini/`, or `from:`) and put where that runner reads it: gemini's `agents/*.md` and `skills/` in `~/.gemini`, and codex's
+`skills/` alone in `~/.codex`, since codex reads no markdown agents. Each has its own `atrium-agent-pack.json` and its own
+`agent-pack-<runner>` row. A variable that moves a runner's folder (`GEMINI_CLI_HOME`, `CODEX_HOME`) is followed, read from
+the account's user environment where the OS keeps one (the Windows registry) and else from the environment the process was
+started with, not from a login profile, which an ssh command does not read. A `%NAME%` in a registry value is expanded first. The moved
+folder is used only when it is absolute for the OS, has no `..` and no `%` or `$` left, is not the folder of another runner's
+pack (or inside or around it), and lies under the account's home or the work root; otherwise the row is a `fail` naming the
+variable and its value, and nothing is installed. The provision script needs no `room.yaml` for
+this: it installs the claude pack always, and the codex and gemini packs when the repository has a `codex/` or `gemini/`
+folder with `agents` or `skills` in it. The runners are recorded in the manifest, so `room-check.ps1` shows an
+`agent-pack-codex` or `agent-pack-gemini` row for each. `-NoAgentPack` still means none at all.
+
 The source is the hub's own git mirror of the repository, never the checkout on the operator's machine. The room does not
 fetch it itself: the room's `/git/hub` forwarder is tokenized per card and no card exists when a room is provisioned. So
 the hub machine clones the mirror, whole, since the hub serves whole fetches only, tars the checkout with its `.git`, and

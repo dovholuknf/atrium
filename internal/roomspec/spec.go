@@ -60,7 +60,7 @@ type Pack struct {
 	From   string `yaml:"from"`
 }
 
-// KnownRunners are the runner names a spec may list. Only claude has a pack adapter today.
+// KnownRunners are the runner names a spec may list. Each has a pack adapter (internal/runnersetup.PackLayoutFor).
 var KnownRunners = []string{"claude", "codex", "gemini"}
 
 // secretKey is a key a spec may not carry, at any depth. Atrium holds the name of a command that has a credential, never one.

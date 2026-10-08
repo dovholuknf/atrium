@@ -925,7 +925,9 @@ if [ -d "$d" ]; then if [ -w "$d" ]; then echo writable=True; else echo writable
 function Get-SetupYaml {
     $n = if ($Name) { $Name } elseif ($manifest) { "$($manifest.name)" } else { ($remoteHost.ToLower() -replace '[^a-z0-9._-]', '-') -replace '^[^a-z0-9]+', '' }
     if (-not $n) { $n = 'room' }
-    try { New-RoomSpecYaml -Name $n -Os $os -WorkRoot $workRoot -PackRepo $(if ($NoAgentPack) { '' } else { $AgentPackRepo }) -PackBranch $AgentPackBranch }
+    # every runner the room has a pack for: what this run found in the repository, else what the manifest recorded, else claude
+    $runners = if ($script:packRunners) { @($script:packRunners) } elseif ($manifest -and $manifest.agentpack -and $manifest.agentpack.runners) { @($manifest.agentpack.runners) } else { @('claude') }
+    try { New-RoomSpecYaml -Name $n -Os $os -WorkRoot $workRoot -PackRepo $(if ($NoAgentPack) { '' } else { $AgentPackRepo }) -PackBranch $AgentPackBranch -PackRunners $runners }
     catch { Fail 'work-root' 1 "$_" }
 }
 function Invoke-RoomSetup {
@@ -1140,7 +1142,7 @@ if [ "$pre_bindir" = False ]; then rmdir "$(dirname "$Bin")" 2>/dev/null || true
         if ($LASTEXITCODE -ne 0) { Step 'git' 'warn' "room-git remove exited $LASTEXITCODE. rerun: room-git.ps1 remove $room -Target $Target" }
     }
     if ($manifest.workroot) { Step 'work-root' 'skip' "left alone: $($manifest.workroot) and the cache settings (.npmrc, go env, pip, CARGO_HOME) stay, they hold the account's work" }
-    if ($manifest.agentpack) { Step 'agent-pack' 'skip' 'left alone: the agents and skills stay in ~/.claude, where the account may have added to them' }
+    if ($manifest.agentpack) { Step 'agent-pack' 'skip' 'left alone: the agents and skills stay in each runner folder (~/.claude, ~/.codex, ~/.gemini), where the account may have added to them' }
 
     # A ROOM HEARD FROM IN THE LAST TWENTY SECONDS IS NOT REMOVED, even forced,
     # so wait for the hub to stop hearing from it.
@@ -2226,7 +2228,7 @@ $have = $null; $setNow = @()
 # root and its folders, points the tool caches at it, sets the four settings above (a running room cannot be set, and that
 # is a warn row carrying the command), and installs the agent pack. The pack's source is THIS machine's clone of the hub's
 # mirror, sent as a tarball, because the room's /git/hub forwarder is tokenized per card and no card exists yet.
-$packSent = $false; $packCommit = $null
+$packSent = $false; $packCommit = $null; $script:packRunners = $null
 if ($workRoot -or -not $NoAgentPack) {
     if (-not $NoAgentPack) {
         $pk = New-PackSource -HubAddr $HubAddr -Repo $AgentPackRepo -Branch $AgentPackBranch -OutDir $work
@@ -2237,7 +2239,7 @@ if ($workRoot -or -not $NoAgentPack) {
             else {
                 $u = Invoke-Remote (Get-PackUnpackScript $os)
                 if ($u.Code -ne 0) { Step 'agent-pack' 'warn' "$remoteHost could not unpack the pack ($(($u.Out | Select-Object -Last 1)))" }
-                else { $packSent = $true; $packCommit = $pk.Commit }
+                else { $packSent = $true; $packCommit = $pk.Commit; $script:packRunners = @($pk.Runners) }
             }
         }
     }
@@ -2252,7 +2254,7 @@ if ($workRoot -or -not $NoAgentPack) {
     }
     foreach ($k in $want.Keys) { if (@($ap.Rows | Where-Object { $_.Step -eq $stepOf[$k] -and $_.Status -eq 'done' }).Count) { $setNow += $k } }
     # recorded once the pack is really there, and a run that was told -NoAgentPack records that as its own choice
-    if ($packCommit -and @($ap.Rows | Where-Object { $_.Step -eq 'agent-pack' -and $_.Status -in 'ok', 'done' }).Count) { $manifest | Add-Member -NotePropertyName agentpack -NotePropertyValue ([pscustomobject]@{ repo = $AgentPackRepo; branch = $AgentPackBranch; commit = $packCommit }) -Force }
+    if ($packCommit -and @($ap.Rows | Where-Object { $_.Step -eq 'agent-pack' -and $_.Status -in 'ok', 'done' }).Count) { $manifest | Add-Member -NotePropertyName agentpack -NotePropertyValue ([pscustomobject]@{ repo = $AgentPackRepo; branch = $AgentPackBranch; commit = $packCommit; runners = @($script:packRunners) }) -Force }
     if ($ap.Kind -eq 'ok' -and $ap.Code -ne 0) {
         # an administrator's lines were printed. The root is recorded so the rerun after they ran is the same run
         if ($workRoot) { $manifest | Add-Member -NotePropertyName workroot -NotePropertyValue $workRoot -Force }

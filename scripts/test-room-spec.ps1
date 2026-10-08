@@ -37,6 +37,9 @@ $y = New-RoomSpecYaml -Name 'sg3' -Os 'windows' -WorkRoot 'V:\localai' -PackRepo
 Check 'yaml: the fields, in the contract names' ($y -split "`n" | Where-Object { $_ }) @(
     'version: 1', "name: 'sg3'", "os: 'windows'", "account: '@@ACCOUNT@@'", "work_root: 'V:\localai'",
     'packs:', '  - runner: claude', "    repo: 'dovholuknf/dotfiles'", "    branch: 'main'")
+$ym = New-RoomSpecYaml -Name 'r' -Os 'linux' -PackRepo 'o/r' -PackRunners 'claude', 'codex', 'gemini', 'codex'
+Check 'yaml: one pack entry for each runner, none twice' @(($ym -split "`n") | Where-Object { $_ -like '  - runner: *' }) @('  - runner: claude', '  - runner: codex', '  - runner: gemini')
+Check 'yaml: a runner with no pack is refused' ($(try { $null = New-RoomSpecYaml -Name 'r' -Os 'linux' -PackRepo 'o/r' -PackRunners 'x: y'; $false } catch { $true })) $true
 Check 'yaml: ends with one newline' ($y.EndsWith("`n") -and -not $y.EndsWith("`n`n")) $true
 Check 'yaml: a branch is written' ((New-RoomSpecYaml -Name 'r' -Os 'linux' -WorkRoot '/srv/w' -PackRepo 'o/r' -PackBranch 'feature/x') -like "*branch: 'feature/x'*") $true
 Check 'yaml: no pack repo, no packs' ((New-RoomSpecYaml -Name 'r' -Os 'linux' -WorkRoot '/srv/w') -like '*packs*') $false
@@ -94,6 +97,9 @@ $rows = @(Set-PackRowLatest @(New-PackRow 'the agent pack is not installed.' 'to
 Check 'pack row: a row that is not ok is left alone' $rows[0].Status 'todo'
 $other = [pscustomobject]@{ Step = 'work-root'; Status = 'ok'; Detail = 'the agent pack at 1234, x' }
 Check 'pack row: only the agent-pack step' @((Set-PackRowLatest @($other) $latest)[0].Status) @('ok')
+$cx = [pscustomobject]@{ Step = 'agent-pack-codex'; Status = 'ok'; Detail = 'the agent pack at 111111111, 2 skills (the hub mirror could not be asked, so whether it is current is not known)' }
+$rows = @(Set-PackRowLatest @($cx) $latest)
+Check 'pack row: a codex row is judged like the claude one' @($rows[0].Status, [bool]($rows[0].Detail -like 'the agent pack is stale: 111111111*')) @('warn', $true)
 
 # ── the second drive hint ───────────────────────────────────────────────────
 
@@ -129,6 +135,10 @@ if ($git) {
     & git -C $work init -q -b main 2>&1 | Out-Null
     New-Item -ItemType Directory -Force -Path (Join-Path $work 'claude/agents') | Out-Null
     Set-Content -LiteralPath (Join-Path $work 'claude/agents/a.md') -Value 'agent a'
+    New-Item -ItemType Directory -Force -Path (Join-Path $work 'gemini/skills/s') | Out-Null
+    Set-Content -LiteralPath (Join-Path $work 'gemini/skills/s/SKILL.md') -Value 'skill s'
+    New-Item -ItemType Directory -Force -Path (Join-Path $work 'codex') | Out-Null
+    Set-Content -LiteralPath (Join-Path $work 'codex/README.md') -Value 'no agents or skills in here'
     & git -C $work add -A 2>&1 | Out-Null
     & git -C $work -c user.name=t -c user.email=t@t commit -q -m one 2>&1 | Out-Null
     $head = (& git -C $work rev-parse HEAD).Trim()
@@ -137,6 +147,7 @@ if ($git) {
     try {
         $ps = New-PackSource -HubAddr 'h:1' -Repo 'o/r' -Branch 'main' -OutDir (Join-Path $tmp 'ps')
         Check 'pack source: a clone of the mirror, with its commit' @($ps.Ok, $ps.Commit) @($true, $head)
+        Check 'pack source: claude always, gemini for its skills folder, codex not for a folder with neither' @($ps.Runners) @('claude', 'gemini')
         $x = Join-Path $tmp 'unpacked'; New-Item -ItemType Directory -Force -Path $x | Out-Null
         & (Get-PackTar) -xzf $ps.Tgz -C $x
         Check 'pack source: the tarball holds the agents and the .git the room asks for its commit' @((Test-Path -LiteralPath (Join-Path $x 'claude/agents/a.md')), (Test-Path -LiteralPath (Join-Path $x '.git'))) @($true, $true)
