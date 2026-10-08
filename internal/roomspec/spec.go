@@ -294,8 +294,8 @@ func CheckWorkRoot(goos, dir string) string {
 }
 
 // ValidateWorkRoot is the work root checks that need no machine: the rules of CheckWorkRoot and of another user's home, for goos
-// and the account the room runs as (empty when it is not known yet). It reads nothing but the process's own login, so the hub's
-// machine can ask it about a room on another operating system (`atrium room setup --validate`) before anything on the room
+// and the account the room runs as (empty when it is not known yet). It reads nothing of this machine (the home folder is never
+// the room's), so the hub's machine can ask it about a room on another operating system (`atrium room setup --validate`) before anything on the room
 // changes. What needs the room's disk (links, short names, the real home folder) is judged there, by Plan and Apply.
 func ValidateWorkRoot(goos, dir, account string) error {
 	if goos != Windows && goos != Linux && goos != Darwin {
@@ -305,7 +305,7 @@ func ValidateWorkRoot(goos, dir, account string) error {
 		return fmt.Errorf("work_root %q %s", dir, why)
 	}
 	if account != "" {
-		if why := checkAnotherHome(goos, dir, account, ownHome(goos, account)); why != "" {
+		if why := checkAnotherHome(goos, dir, account, ""); why != "" {
 			return fmt.Errorf("work_root %q %s", dir, why)
 		}
 	}
@@ -344,8 +344,8 @@ func within(goos, p, dir string) bool {
 
 // checkAnotherHome is why a work root lies inside a home that is not the account's own, or "". Under /home, /Users or C:/Users
 // the folder after it is a person's, and only the account's own may hold the root: the one named like the account (a Windows
-// profile may carry a suffix, al.SG3) or, when the account is the one running this, its real home folder (ownHome, "" when not
-// known). root's own home (/var/root, /private/var/root) is never a work root's place, and /Users/Shared and C:/Users/Public
+// profile of a domain login carries the domain, al.SG3 for SG3\al) or, when the account is the one running this, its real home
+// folder (ownHome, "" when not known). root's own home (/var/root, /private/var/root) is never a work root's place, and /Users/Shared and C:/Users/Public
 // are folders everyone uses, not a home.
 func checkAnotherHome(goos, dir, account, ownHome string) string {
 	if ownHome != "" && within(goos, dir, ownHome) {
@@ -370,14 +370,14 @@ func checkAnotherHome(goos, dir, account, ownHome string) string {
 	if goos == Windows && strings.Contains(segs[1], "~") {
 		return "" // an 8.3 short name says nothing here: the room writes it out (checkRootHere) and judges the real one
 	}
-	name := account
+	name, domain := account, ""
 	if i := strings.LastIndex(name, `\`); i >= 0 {
-		name = name[i+1:]
+		name, domain = name[i+1:], name[:i]
 	}
 	if i := strings.Index(name, "@"); i >= 0 {
 		name = name[:i]
 	}
-	if sameFolderName(goos, segs[1], name) || (goos == Windows && len(segs[1]) > len(name) && strings.EqualFold(segs[1][:len(name)+1], name+".")) {
+	if sameFolderName(goos, segs[1], name) || (goos == Windows && domain != "" && strings.EqualFold(segs[1], name+"."+domain)) {
 		return ""
 	}
 	return fmt.Sprintf("is inside %s's home, and the account is %s. a work root is not inside another user's folder", segs[1], account)

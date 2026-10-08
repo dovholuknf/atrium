@@ -954,6 +954,8 @@ if (-not ($Remove -or $Restart -or $SmokeOnly)) {
         # is relative, a drive root, a network path, the wrong kind for the OS or another user's home is refused here, before
         # anything on the room is changed. The room's own atrium judges what only its disk can tell (links, short names).
         $vAcct = if ($User) { $User } elseif ($Target -match '^([^@]+)@') { $Matches[1] } else { '' }
+        # a Windows profile of a local account carries the machine's name (al.SG3), so the login is given with it
+        if ($os -eq 'windows' -and $vAcct -and $vAcct -notmatch '\\') { $vAcct = "$remoteHost\$vAcct" }
         $why = Test-WorkRootLocal $HubExe $os $workRoot $vAcct
         if ($why) { Fail 'work-root' 1 "$workRoot is refused: $why" }
         Step 'shared-folder' 'skip' "the work root $workRoot holds the clones, so there is no shared folder"
@@ -2253,7 +2255,7 @@ if ($workRoot -or -not $NoAgentPack) {
     if ($packCommit -and @($ap.Rows | Where-Object { $_.Step -eq 'agent-pack' -and $_.Status -in 'ok', 'done' }).Count) { $manifest | Add-Member -NotePropertyName agentpack -NotePropertyValue ([pscustomobject]@{ repo = $AgentPackRepo; branch = $AgentPackBranch; commit = $packCommit }) -Force }
     if ($ap.Kind -eq 'ok' -and $ap.Code -ne 0) {
         # an administrator's lines were printed. The root is recorded so the rerun after they ran is the same run
-        $manifest | Add-Member -NotePropertyName workroot -NotePropertyValue $workRoot -Force
+        if ($workRoot) { $manifest | Add-Member -NotePropertyName workroot -NotePropertyValue $workRoot -Force }
         Save-Manifest
         Finish $ap.Code
     }
