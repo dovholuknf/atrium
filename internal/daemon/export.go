@@ -139,6 +139,7 @@ var exportedSettings = []string{
 	api.SettingScrollbackLines,
 	api.SettingTerminalMinCols,
 	store.SettingContextLimits,
+	store.SettingWorkerPolicy,
 	api.SettingEditor,
 	api.SettingTerminal,
 	api.SettingPasteKeep,

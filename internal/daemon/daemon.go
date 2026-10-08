@@ -162,6 +162,8 @@ type Daemon struct {
 	// many times it has. In memory, like the activity it is derived from: a
 	// restart recomputes it on the next tick. See a2a.go.
 	esc escalations
+	// Which agent-launched cards have crossed the worker budget. See workerpolicy.go.
+	budgets budgetMarks
 	// scans is the last screen read of each quiet card. See launchstuck.go.
 	scans termScans
 	// looksIdleFired counts every looks-idle firing since start. See looksidle.go.
@@ -639,6 +641,9 @@ func New(opts Options) (*Daemon, error) {
 	// Token use on record, read only by a card's details. See usage.go.
 	d.usage = newUsageTracker(st)
 	d.usage.broadcast = d.ap.Broadcast
+	// The worker budget is checked as each row lands. See workerpolicy.go.
+	d.usage.afterRow = d.checkBudget
+	api.BudgetOf = d.budgetFor
 	// A keep-alive refresh's row is announced the same way as a turn's.
 	d.ka.spent = func(u *store.SessionUsage) error {
 		d.usage.stamp(u)

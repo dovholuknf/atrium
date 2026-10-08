@@ -1405,6 +1405,28 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
         takes the <code>claude</code> one. Every room gets this list. A card can set its own limit, or turn its
         cycle off, in its details. From 10 to 2000.</span>
     </div>
+    <!-- What an agent-launched card is held to. The hub owns it and hands it to every room, like the context
+         limit. Both are off until typed. See docs/changes/r-worker-budget.md. -->
+    <div class="field" id="s-workermodel-field">
+      <label class="eyebrow" for="s-workermodel">default worker model</label>
+      <div class="picker">
+        <input id="s-workermodel" spellcheck="false" placeholder="off, the runner's own default"
+          onchange="saveWorkerPolicy()" style="max-width:260px">
+      </div>
+      <span class="hintline">The model a worker gets when the agent that launched it named none, such as
+        <code>sonnet</code> or <code>claude-sonnet-5-5</code>. Empty is off. A launch that names a model wins, and a
+        card you start yourself is never changed.</span>
+    </div>
+    <div class="field" id="s-workerbudget-field">
+      <label class="eyebrow" for="s-workerbudget">worker budget, in dollars</label>
+      <div class="picker">
+        <input id="s-workerbudget" type="number" min="0" step="0.5" placeholder="off"
+          onchange="saveWorkerPolicy()" style="max-width:110px">
+        <span class="unit">USD</span>
+      </div>
+      <span class="hintline">When a worker has spent this much, at list price, the agent that launched it is told once
+        and the card shows it. Nothing is stopped. Empty or 0 is off.</span>
+    </div>
     <!-- The land-the-plane line. This browser's own setting (atrium.landThePlaneK), not the room's: the status
          line's zone is typed once here, and the board cannot read a shell script. -->
     <div class="field" id="s-landk-field">

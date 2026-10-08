@@ -918,6 +918,10 @@ type view struct {
 	// operator's backoff and the board rings each time it does. Absent when
 	// the card is fine. See docs/runtime/a2a-reliability-design.md.
 	Escalation any `json:"escalation,omitempty"`
+	// Budget is an agent-launched card that has spent past the worker budget: what it has spent and the line it
+	// crossed, in dollars at list price. Absent when the budget is off or the card is under it. A report, never an
+	// action. See internal/daemon/workerpolicy.go.
+	Budget any `json:"budget,omitempty"`
 	// RestartWake is the prompt waiting to be typed in once this card's runner
 	// is back after a restart. Absent when there is none. See
 	// docs/runtime/restart-wake.md.
@@ -1031,6 +1035,9 @@ var TelemetryOf func(taskID string) any
 // memory. See internal/daemon/a2a.go.
 var EscalationOf func(taskID string) any
 
+// BudgetOf returns a card's crossed worker budget, or nil. Supplied by the daemon, which holds it in memory.
+var BudgetOf func(taskID string) any
+
 // RestartWakeOf returns a card's after-restart wake, or nil. Supplied by the
 // daemon, which mirrors the store's rows in memory so this is no query per card.
 var RestartWakeOf func(taskID string) any
@@ -1085,6 +1092,9 @@ func toView(t *store.Task) view {
 	}
 	if EscalationOf != nil {
 		v.Escalation = EscalationOf(t.ID)
+	}
+	if BudgetOf != nil {
+		v.Budget = BudgetOf(t.ID)
 	}
 	if RestartWakeOf != nil {
 		v.RestartWake = RestartWakeOf(t.ID)

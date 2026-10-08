@@ -129,6 +129,9 @@ type usageTracker struct {
 	// broadcast tells the board a row was written. Nil in tests and until the
 	// daemon wires it. See emitRow.
 	broadcast func(kind string, v any)
+	// afterRow looks at a card once a row of its spend is written: the worker budget. Nil in tests and until the
+	// daemon wires it.
+	afterRow func(t *store.Task)
 }
 
 // usageEvent is one written row as the `usage` event carries it: the figures
@@ -435,6 +438,9 @@ func (u *usageTracker) record(t *store.Task, seg usageSegment) (*store.SessionUs
 		}
 		side.advance()
 		u.emitRow(sub)
+	}
+	if u.afterRow != nil && (row != nil || len(side.order) > 0) {
+		u.afterRow(t)
 	}
 	return row, nil
 }

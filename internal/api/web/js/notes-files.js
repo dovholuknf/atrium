@@ -926,6 +926,7 @@ async function loadHousekeeping() {
   syncInputLag(s);
   fillMinCols(s);
   fillContextLimits(s);
+  fillWorkerPolicy(s);
   if (typeof fillLandK === "function") fillLandK();
   if (typeof paintKeepaliveSettings === "function") paintKeepaliveSettings(s);
 }
@@ -1797,6 +1798,46 @@ async function saveContextLimits(value) {
 }
 
 function resetContextLimits() { saveContextLimits(""); }
+
+// The default worker model and the worker budget, the hub's. Both empty is off.
+function fillWorkerPolicy(s) {
+  const model = document.getElementById("s-workermodel");
+  const budget = document.getElementById("s-workerbudget");
+  const p = (s && s.worker_policy) || {};
+  if (model) model.value = p.model || "";
+  if (budget) budget.value = p.budget_usd > 0 ? String(p.budget_usd) : "";
+}
+
+async function saveWorkerPolicy() {
+  const model = document.getElementById("s-workermodel");
+  const budget = document.getElementById("s-workerbudget");
+  if (!model || !budget) return;
+  const usd = budget.value.trim() === "" ? 0 : Number(budget.value);
+  if (!(usd >= 0)) {
+    toast("that did not save", "the budget is dollars, 0 or more");
+    fillWorkerPolicy(pastePrefs || {});
+    return;
+  }
+  // The hub's policy: the write carries no room, so the hub reads it and hands it to every room.
+  try { if (typeof roomNow === "function" && !roomNow()) writeRoom = ""; } catch (e) {}
+  try {
+    const r = await api("/v1/settings", {
+      method: "POST",
+      body: JSON.stringify({ worker_policy: { model: model.value.trim(), budget_usd: usd } })
+    });
+    if (r && r.worker_policy) pastePrefs = Object.assign({}, pastePrefs, { worker_policy: r.worker_policy });
+  } catch (e) {
+    toast("that did not save", e.message);
+    fillWorkerPolicy(pastePrefs || {});
+    return;
+  }
+  fillWorkerPolicy(pastePrefs);
+  flashSaved(budget);
+  refresh();
+  const p = (pastePrefs && pastePrefs.worker_policy) || {};
+  toast("worker settings saved",
+    `${p.model ? "workers default to " + p.model : "no default model"}, ${p.budget_usd > 0 ? "budget $" + p.budget_usd : "no budget"}`);
+}
 
 async function saveHandoffDir() {
   const el = document.getElementById("s-handoffdir");
