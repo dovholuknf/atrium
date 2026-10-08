@@ -87,9 +87,13 @@ func TestRealFSApplyConverges(t *testing.T) {
 			t.Errorf("CARGO_HOME %q", env["CARGO_HOME"])
 		}
 	} else {
-		prof, _ := os.ReadFile(filepath.FromSlash(h.Dir + "/.profile"))
+		profName := "/.profile"
+		if runtime.GOOS == Darwin {
+			profName = "/.zprofile" // zsh is a Mac's login shell
+		}
+		prof, _ := os.ReadFile(filepath.FromSlash(h.Dir + profName))
 		if !strings.Contains(string(prof), "export CARGO_HOME='"+root+"/cache/cargo'") {
-			t.Errorf(".profile %q", prof)
+			t.Errorf("%s %q", profName, prof)
 		}
 		if strings.Contains(string(npmrc), "\r") {
 			t.Error("CR in a Unix file")
