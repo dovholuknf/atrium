@@ -103,6 +103,8 @@ func (p *Proxy) forgeCI(ctx context.Context, f *hubForge, ask forge.HubCIAsk) (f
 	case forge.CIArtifact:
 		ans.Download, err = rd.Download(ctx, ref, ask.RunID, strings.TrimSpace(ask.Name), p.ciRoot(), forge.ArtifactBytes)
 		if err == nil {
+			// The folder is in use until this answer is made, so no prune takes it from under the read.
+			defer ans.Download.Release()
 			if ask.File != "" {
 				err = forge.ReadFile(ans.Download, ask.File, ask.Tail)
 			}

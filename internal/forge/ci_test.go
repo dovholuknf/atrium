@@ -362,3 +362,77 @@ func TestCIConcurrentDownloadsOfOneArtifactDoNotRace(t *testing.T) {
 		}
 	}
 }
+
+// A DOWNLOAD IN USE IS NEVER PRUNED: another download's prune, with a cap that would take it, leaves it alone, and takes
+// it once it is released.
+func TestPruneNeverTakesADownloadInUse(t *testing.T) {
+	old := pruneBytes
+	pruneBytes = 1
+	t.Cleanup(func() { pruneBytes = old })
+	f := &fakeGH{dl: map[string]string{"summary.txt": "some bytes\n"}}
+	g := newGitHub("", f.run)
+	dest := t.TempDir()
+	a, err := g.Download(context.Background(), ciRef, 1, "ci", dest, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// B's prune would hit A: the cap is one byte and A is the older.
+	b, err := g.Download(context.Background(), ciRef, 2, "ci", dest, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(a.Dir, "summary.txt")); err != nil {
+		t.Fatalf("a download in use was pruned: %v", err)
+	}
+	if err := ReadFile(a, "summary.txt", 5); err != nil || !strings.Contains(a.Text, "some bytes") {
+		t.Errorf("%v %q", err, a.Text)
+	}
+	a.Release()
+	b.Release()
+	if _, err := g.Download(context.Background(), ciRef, 3, "ci", dest, 0); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(a.Dir); err == nil {
+		t.Error("a released download was kept past the cap")
+	}
+}
+
+func TestACacheHitKeepsTheFolderFromAgingOut(t *testing.T) {
+	f := &fakeGH{dl: map[string]string{"summary.txt": "x\n"}}
+	g := newGitHub("", f.run)
+	dest := t.TempDir()
+	d, err := g.Download(context.Background(), ciRef, 1, "ci", dest, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	d.Release()
+	old := time.Now().Add(-23 * time.Hour)
+	_ = os.Chtimes(d.Dir, old, old)
+	d, err = g.Download(context.Background(), ciRef, 1, "ci", dest, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	d.Release()
+	if st, _ := os.Stat(d.Dir); time.Since(st.ModTime()) > time.Minute || f.zips != 1 {
+		t.Errorf("mtime age %v, downloads %d", time.Since(st.ModTime()), f.zips)
+	}
+}
+
+// Entry names are judged the same on every OS, so this holds on macOS for the hub that runs on Windows.
+func TestEntryNamesAreJudgedLikeWindowsOnEveryOS(t *testing.T) {
+	for _, bad := range []string{"", "/a", "../a", "a/../b", "a//b", "./a", "C:/x", "C:x", "a:b", "a\\b", "..\\a", "CON", "con.txt",
+		"a/NUL", "a/nul.tar.gz", "COM1", "lpt9.log", "AUX.", "a.", "a /b", "b ", "x/y.", "a\x00b", "a\x1fb"} {
+		if safeEntryName(bad) {
+			t.Errorf("%q was accepted", bad)
+		}
+	}
+	for _, good := range []string{"a", "a/b.txt", "dir/", "build.claude/ci/summary.json", "console.log", "com10", "lpt", ".hidden", "a b/c"} {
+		if !safeEntryName(good) {
+			t.Errorf("%q was refused", good)
+		}
+	}
+	f := &fakeGH{dl: map[string]string{"C:evil.txt": "x"}}
+	if _, err := newGitHub("", f.run).Download(context.Background(), ciRef, 9, "ci", t.TempDir(), 0); err == nil {
+		t.Error("a drive name unpacked")
+	}
+}

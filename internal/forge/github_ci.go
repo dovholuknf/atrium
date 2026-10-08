@@ -209,9 +209,22 @@ func (g *github) Download(ctx context.Context, ref Ref, runID int64, name, dest 
 	mu := dirLock(dir)
 	mu.Lock()
 	defer mu.Unlock()
-	PruneDownloads(dest, ArtifactMaxAge, ArtifactStoreBytes)
+	// IN USE FROM HERE UNTIL THE CALLER RELEASES IT, so no prune, this one's or another download's, takes the folder
+	// while it is scanned or read.
+	release := acquire(dir)
+	kept := false
+	defer func() {
+		if !kept {
+			release()
+		}
+	}()
+	PruneDownloads(dest, pruneAge, pruneBytes)
 	if d, err := scanDir(dir, maxBytes); err == nil && len(d.Files) > 0 {
+		// A hit is a use: it keeps the folder from aging out.
+		now := time.Now()
+		_ = os.Chtimes(dir, now, now)
 		d.Name = name
+		d.release, kept = release, true
 		return d, nil
 	}
 	if err := os.MkdirAll(filepath.Dir(dir), 0o755); err != nil {
@@ -256,6 +269,7 @@ func (g *github) Download(ctx context.Context, ref Ref, runID int64, name, dest 
 		return nil, err
 	}
 	d.Name = name
+	d.release, kept = release, true
 	return d, nil
 }
 
@@ -335,6 +349,45 @@ const (
 	tmpMark       = ".dl-"
 )
 
+// pruneAge and pruneBytes are the bounds a download prunes by. Variables so a test can make them small.
+var (
+	pruneAge   = ArtifactMaxAge
+	pruneBytes = int64(ArtifactStoreBytes)
+)
+
+var (
+	useMu sync.Mutex
+	inUse = map[string]int{}
+)
+
+// acquire marks a download folder in use and answers the release. PruneDownloads never removes a folder in use.
+func acquire(dir string) (release func()) {
+	useMu.Lock()
+	inUse[dir]++
+	useMu.Unlock()
+	var once sync.Once
+	return func() {
+		once.Do(func() {
+			useMu.Lock()
+			if inUse[dir]--; inUse[dir] <= 0 {
+				delete(inUse, dir)
+			}
+			useMu.Unlock()
+		})
+	}
+}
+
+// removeUnused removes a download folder unless it is in use. The check and the removal are one step, so a use cannot
+// begin between them.
+func removeUnused(dir string) bool {
+	useMu.Lock()
+	defer useMu.Unlock()
+	if inUse[dir] > 0 {
+		return false
+	}
+	return os.RemoveAll(dir) == nil
+}
+
 var dirLocks sync.Map
 
 // dirLock is the lock of one download folder.
@@ -357,10 +410,10 @@ func unzipBounded(zipPath, dir string, maxBytes int64) error {
 	}
 	var total int64
 	for _, e := range zr.File {
-		name := filepath.FromSlash(strings.ReplaceAll(e.Name, "\\", "/"))
-		if !filepath.IsLocal(name) {
+		if !safeEntryName(e.Name) {
 			return fmt.Errorf("the artifact has an entry named %q, outside its own folder, so it was refused", e.Name)
 		}
+		name := filepath.FromSlash(e.Name)
 		target := filepath.Join(dir, name)
 		switch {
 		case e.FileInfo().IsDir():
@@ -413,8 +466,7 @@ func PruneDownloads(dest string, maxAge time.Duration, maxBytes int64) {
 		if err != nil || !info.IsDir() {
 			continue
 		}
-		if maxAge > 0 && now.Sub(info.ModTime()) > maxAge {
-			_ = os.RemoveAll(d)
+		if maxAge > 0 && now.Sub(info.ModTime()) > maxAge && removeUnused(d) {
 			continue
 		}
 		if strings.Contains(filepath.Base(d), tmpMark) {
@@ -437,7 +489,7 @@ func PruneDownloads(dest string, maxAge time.Duration, maxBytes int64) {
 		if total <= maxBytes {
 			break
 		}
-		if os.RemoveAll(d.path) == nil {
+		if removeUnused(d.path) {
 			total -= d.size
 		}
 	}
@@ -462,4 +514,31 @@ func globDepth(root string, depth int) []string {
 		level = next
 	}
 	return level
+}
+
+var reservedName = regexp.MustCompile(`(?i)^(con|prn|aux|nul|com[1-9]|lpt[1-9])$`)
+
+// safeEntryName says whether a zip entry's name is a plain relative path, JUDGED THE SAME ON EVERY OS, since the hub
+// may run on Windows and a zip made anywhere unpacks there. No colon (a drive or a stream), no backslash, no control
+// character, no empty, `.` or `..` part, no part ending in a dot or a space, and no Windows reserved device name with
+// or without an extension.
+func safeEntryName(name string) bool {
+	if name == "" || strings.HasPrefix(name, "/") || strings.ContainsAny(name, ":\\") {
+		return false
+	}
+	parts := strings.Split(strings.TrimSuffix(name, "/"), "/")
+	for _, p := range parts {
+		if p == "" || p == "." || p == ".." || strings.HasSuffix(p, ".") || strings.HasSuffix(p, " ") {
+			return false
+		}
+		for _, r := range p {
+			if r < 0x20 || r == 0x7f {
+				return false
+			}
+		}
+		if reservedName.MatchString(strings.SplitN(p, ".", 2)[0]) {
+			return false
+		}
+	}
+	return true
 }

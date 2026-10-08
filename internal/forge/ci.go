@@ -118,6 +118,15 @@ type CIDownload struct {
 	Text      string   `json:"text,omitempty"`
 	Truncated bool     `json:"truncated,omitempty"`
 	Note      string   `json:"note"`
+
+	release func()
+}
+
+// Release says the caller is done with the folder, so it may be pruned. Safe to call more than once, and on nil.
+func (d *CIDownload) Release() {
+	if d != nil && d.release != nil {
+		d.release()
+	}
 }
 
 // RunQuery filters a list of runs.
