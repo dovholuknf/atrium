@@ -267,6 +267,7 @@ func roomCmd() *cobra.Command {
 	c.AddCommand(joinCmd())
 	c.AddCommand(roomSettingCmds()...)
 	c.AddCommand(roomSpecPullCmd())
+	c.AddCommand(roomSetupCmd())
 	return c
 }
 

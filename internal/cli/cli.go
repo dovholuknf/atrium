@@ -83,6 +83,11 @@ func runRoot(root *cobra.Command, args []string) int {
 	if isRunnerHook(cmd) {
 		return 0
 	}
+	// A command that ends with a code of its own (room setup's 13 and 3) has said why already.
+	var ec exitCodeError
+	if errors.As(err, &ec) {
+		return ec.Code
+	}
 	// Still a failure, still exit 1. The command said why already.
 	if !errors.Is(err, errAlreadySaid) {
 		fmt.Fprintln(os.Stderr, root.Name()+":", err)

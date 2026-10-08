@@ -58,47 +58,70 @@ func roomSettingKey(name string) (string, error) {
 	return "", fmt.Errorf("unknown room setting %q, known: %s", name, roomSettingNames)
 }
 
+// worded is the verb's own sentence, which still unwraps to the store's error so a caller can tell what it was.
+type worded struct {
+	msg string
+	err error
+}
+
+func (w worded) Error() string { return w.msg }
+func (w worded) Unwrap() error { return w.err }
+
 func roomSettingErr(db string, err error) error {
 	switch {
 	case errors.Is(err, store.ErrDatabaseInUse):
-		return fmt.Errorf("the room is running on %s: stop it first, then set the value", db)
+		return worded{fmt.Sprintf("the room is running on %s: stop it first, then set the value", db), err}
 	case errors.Is(err, os.ErrNotExist):
-		return fmt.Errorf("no room database at %s: the room has not run here yet (or pass --db)", db)
+		return worded{fmt.Sprintf("no room database at %s: the room has not run here yet (or pass --db)", db), err}
 	}
 	return err
 }
 
 func runRoomSet(cmd *cobra.Command, db, name, value string) error {
+	value, err := storeRoomSetting(db, name, value)
+	if err != nil {
+		// the verb words it itself and does not hand on the store's error (setup does, to tell a running room apart)
+		var w worded
+		if errors.As(err, &w) {
+			return errors.New(w.msg)
+		}
+		return err
+	}
+	fmt.Fprintf(cmd.OutOrStdout(), "%s = %s\n", name, value)
+	return nil
+}
+
+// storeRoomSetting is `room set` without the printing: it checks the value as `room set` does, stores it, and returns what was stored.
+func storeRoomSetting(db, name, value string) (string, error) {
 	key, err := roomSettingKey(name)
 	if err != nil {
-		return err
+		return "", err
 	}
 	value = strings.TrimSpace(value)
 	if key == gitsync.SettingGitRoot && value != "" && !filepath.IsAbs(value) {
-		return fmt.Errorf("git_root must be an absolute path, got %q", value)
+		return "", fmt.Errorf("git_root must be an absolute path, got %q", value)
 	}
 	if key == gitsync.SettingSCMRoot && value != "" && !filepath.IsAbs(gitsync.ExpandHome(value)) {
-		return fmt.Errorf("scm_root must be an absolute path or start with ~/, got %q", value)
+		return "", fmt.Errorf("scm_root must be an absolute path or start with ~/, got %q", value)
 	}
 	if key == store.SettingContextHandoffDir {
 		// The same check the settings API makes: trimmed, absolute, cleaned.
 		v, err := store.CheckContextHandoffDir(value)
 		if err != nil {
-			return err
+			return "", err
 		}
 		value = v
 	}
 	if key == store.SettingReviewsRoot && value != "" {
 		if !filepath.IsAbs(value) {
-			return fmt.Errorf("reviews_root must be an absolute path, got %q", value)
+			return "", fmt.Errorf("reviews_root must be an absolute path, got %q", value)
 		}
 		value = filepath.Clean(value)
 	}
 	if err := store.SetSettingOfFile(db, key, value); err != nil {
-		return roomSettingErr(db, err)
+		return "", roomSettingErr(db, err)
 	}
-	fmt.Fprintf(cmd.OutOrStdout(), "%s = %s\n", name, value)
-	return nil
+	return value, nil
 }
 
 func runRoomGet(cmd *cobra.Command, db, name string) error {
