@@ -38,9 +38,11 @@ func (n *newContexts) beginCaptureOnly(taskID, file, conv string) (uint64, bool)
 	return n.claim(taskID, &newContext{step: NewContextCapture, file: file, conv: conv, capOnly: true})
 }
 
-// typingHeld reports whether board typing is refused: a new context is typing into
-// the terminal itself. The idle parking's capture is not one, so a person can still
-// type while it waits.
+// typingHeld reports whether board typing is refused: atrium itself is typing into
+// the terminal right now (the limit prompt, `/clear`, the wake). Waiting on the
+// agent holds nothing, so a person can type while the cycle waits, and the way out
+// never depends on a step finishing. The flag is set around the write alone and
+// goes with the run when it ends or is dismissed.
 func (n *newContexts) typingHeld(taskID string) bool {
 	if n == nil {
 		return false
@@ -48,7 +50,20 @@ func (n *newContexts) typingHeld(taskID string) bool {
 	n.mu.Lock()
 	defer n.mu.Unlock()
 	cur := n.by[taskID]
-	return cur != nil && cur.step != NewContextFailed && !cur.capOnly
+	return cur != nil && cur.typing && cur.step != NewContextFailed && !cur.capOnly
+}
+
+// setTyping marks atrium's own write to the terminal as under way or over, for
+// gen's run only. It reports whether the run is still the card's.
+func (n *newContexts) setTyping(taskID string, gen uint64, on bool) bool {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	cur := n.by[taskID]
+	if cur == nil || cur.gen != gen {
+		return false
+	}
+	cur.typing = on
+	return true
 }
 
 // save hands persist the runs now in flight. A failed chip is not in flight.

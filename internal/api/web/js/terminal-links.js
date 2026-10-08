@@ -1731,6 +1731,7 @@ function sendInput(text, quiet, pasted) {
   if (pasted && !quiet) { sendPaste(d); return; }
   send({ t: "in", d });
   if (quiet) return;
+  if (!pasted && typeof composeNoteTyped === "function") composeNoteTyped(d);
   phoneFollow();
   if (term) term.scrollToBottom();
   followScrollUntil = Date.now() + followScrollFor;
@@ -1929,7 +1930,8 @@ function takeInRefused(data) {
   let msg;
   try { msg = JSON.parse(data); } catch (e) { return false; }
   if (!msg || msg.t !== "in-refused") return false;
-  toast("Typing dropped", msg.why || "input is refused during a new context", null, "in-refused");
+  // The compose box keeps what was typed. A socket with no card to compose for falls back to the toast.
+  if (!composeRefused()) toast("Typing dropped", msg.why || "input is refused during a new context", null, "in-refused");
   return true;
 }
 
