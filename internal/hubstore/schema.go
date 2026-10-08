@@ -491,6 +491,26 @@ var migrations = []struct {
 			`CREATE INDEX IF NOT EXISTS director_report_unread ON director_report (read_at, to_dept)`,
 		},
 	},
+	{
+		// WHAT A ROOM IS, AS DATA. room_spec is the desired room.yaml the hub keeps, verbatim, with its hash and who set
+		// it. room_lock is the observed room.lock the room last posted, verbatim, with when it arrived. They are two
+		// tables so observed can never overwrite desired. See roomspec.go.
+		name: "0013_room_spec",
+		stmts: []string{
+			`CREATE TABLE IF NOT EXISTS room_spec (
+					room_id  TEXT PRIMARY KEY REFERENCES room(id) ON DELETE CASCADE,
+					yaml     TEXT NOT NULL,
+					sha256   TEXT NOT NULL,
+					set_by   TEXT NOT NULL DEFAULT '',
+					set_at   TEXT NOT NULL
+				)`,
+			`CREATE TABLE IF NOT EXISTS room_lock (
+					room_id      TEXT PRIMARY KEY REFERENCES room(id) ON DELETE CASCADE,
+					lock_json    TEXT NOT NULL,
+					received_at  TEXT NOT NULL
+				)`,
+		},
+	},
 }
 
 func (s *Store) migrate() error {

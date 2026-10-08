@@ -385,6 +385,8 @@ func serveAtrium(f atriumFlags, up atriumUp) error {
 	proxy.SetBacklog(store)
 	// WHICH ROOM RUNS A PR, AND ONE ROW PER PR. See link/prclaim.go.
 	proxy.SetPRClaims(store)
+	// EACH ROOM'S DESIRED SPEC AND OBSERVED LOCK, served to the room itself. See link/roomspec.go.
+	proxy.SetRoomSpecs(store)
 	// THE HUB RUNS THE FORGE FOR ITS ROOMS, which never run gh or bb. See link/forgeroute.go.
 	proxy.SetForge(store, nil)
 	// A forge branch a card asks for is fetched into the store with the same login a PR head fetch uses.

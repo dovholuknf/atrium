@@ -144,6 +144,8 @@ type Proxy struct {
 	cr *changeRequests
 	// backlog is the hub-wide backlog and director reports. Nil answers 404. See backlog.go.
 	backlog *hubstore.Store
+	// specs is the store of room specs and locks. See roomspec.go.
+	specs *hubstore.Store
 	// prc is the PR claim table. See prclaim.go.
 	prc *hubstore.Store
 	// prGone is when each claim's room was first seen offline, for prWarnSweep.
@@ -1553,6 +1555,10 @@ func (p *Proxy) serveHubAPI(w http.ResponseWriter, r *http.Request) {
 	}
 	if sub == "backlog" || strings.HasPrefix(sub, "backlog/") || sub == "reports" || strings.HasPrefix(sub, "reports/") {
 		p.serveBacklog(w, r, sub)
+		return
+	}
+	if strings.HasPrefix(sub, "rooms/") {
+		p.serveRoomSpecBoard(w, r, sub)
 		return
 	}
 	switch sub {

@@ -115,6 +115,9 @@ type Hub struct {
 	// one the hello named, set on the request by serveGit and never read from the room's own headers. Nil answers 404,
 	// which a room reads as a hub that cannot be asked, so its row is `claim: pending`. See prclaim.go.
 	PRClaim http.Handler
+	// RoomSpec answers a room's read of its own spec and post of its lock, on the `roomspec` kind, as the room the
+	// certificate named, which serveRoomSpec sets in RoomSpecRoomHeader. Nil refuses the kind. See roomspec.go.
+	RoomSpec http.Handler
 	// Forge answers a room's forge question (a pull request, an issue, a repository to hold) on the same `git` kind
 	// connection, at ForgePrefix. The room is the one the hello named, set by serveGit. Nil answers 404, which a room
 	// reads as a hub that cannot be asked. See forgeroute.go.
@@ -372,6 +375,21 @@ func (h *Hub) take(ctx context.Context, conn net.Conn) {
 		// after the hub said Git. See `git.go`.
 		defer conn.Close()
 		h.serveGit(name, hi.Session, conn, br)
+	case roomSpecKind:
+		// CERTIFICATE ONLY. Every other kind falls back to the name in the hello for a connection that has no
+		// certificate to read, which is right for them and wrong for a spec: a peer the overlay admits could name a
+		// room that never enrolled and read or write its spec and lock. A connection with nothing for `identify` to
+		// read is turned away here, whether it is the old overlay path or anything else that is not a certificate.
+		// With h.Authenticated nil (no mutual TLS) the hub trusts every hello for every kind, this one included.
+		if h.Authenticated != nil && identify(conn) == "" {
+			_ = writeJSON(conn, welcome{OK: false, Error: "a room's spec is served only to a room that proves its name " +
+				"with a certificate. " + RejoinSentence(name)})
+			conn.Close()
+			return
+		}
+		// A ROOM ASKING FOR ITS OWN SPEC, or leaving its lock, as HTTP on this connection. See roomspec.go.
+		defer conn.Close()
+		h.serveRoomSpec(name, conn, br)
 	}
 }
 

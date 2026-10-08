@@ -151,3 +151,28 @@ keeps what it has. A hub can never make a room upgrade.
 daemon code as a room with the board served in-process. The service installers still default to it
 (`docs/release/packaging.md`). Mode A (`atrium hub`, `atrium agent`) and Mode B (`atrium serve`, `status`, `watch`) are
 gone.
+
+## Room spec and lock
+
+What a room is lives as data. The hub keeps, for each room, a desired `room.yaml` (verbatim, with its sha256 and who set
+it when) and the latest observed `room.lock` the room posted (verbatim, with when it arrived). They are separate tables,
+so posting a lock never touches the spec. The hub checks only that `version` is 1, that the spec's `name` is the room's,
+that the size is within bounds (64 KiB for a spec, 256 KiB for a lock) and that no key is named like a token, password,
+secret, key, auth, authorization, bearer, cookie or session. That last check is a tripwire for the names people give a
+secret, not a guarantee: it cannot see a secret under an innocent name or inside a value, so put none in either file.
+
+- On the hub: `atrium rooms add <name> --spec <file>`, `atrium rooms spec get|set <name>`,
+  `atrium rooms lock get <name>`.
+- On the board, read only: `GET /_hub/rooms/<name>/spec` and `GET /_hub/rooms/<name>/lock`.
+- On the room: `atrium room spec pull [--out file]`. Phase A's `atrium room setup` posts its lock with
+  `cli.PostRoomLock(ctx, dir, lock)`, where `dir` is the room's key directory (empty for the default) and `lock` is the
+  JSON bytes. Underneath are `link.FetchRoomSpec` and `link.PostRoomLock`, which take the room's `link.Dialer`.
+
+The room link carries these on the `roomspec` connection kind: one HTTP request on a connection the room dialled, as the
+room its certificate names. The path names no room, so a room can only read and write its own.
+
+Who can see them. The board's read is board-visible by design: the board is on loopback with no login, as the backlog's
+reads are, so anybody who can reach it can read every room's spec and lock. An unknown room and a room with nothing set
+answer with the same 404 words. On the room link the certificate decides. A connection with no certificate, which is the
+old overlay path, is refused the `roomspec` kind outright, so a name claimed in its hello is never believed, whether or
+not that room ever enrolled.
