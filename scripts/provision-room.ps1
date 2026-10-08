@@ -2109,6 +2109,19 @@ if ($sharedDir) {
     }
 }
 
+# THE ROOM'S scm_root, so a pasted link has somewhere to clone to and the hub's placement never finds a room that
+# cannot. The shared folder when there is one, else ~/git. Set always: a room with none answers no_scm_root and is passed
+# over. The room also falls back to ~/git by itself when that folder exists, so this is the record of the choice.
+$scm = if ($sharedDir) { $sharedDir } else { '~/git' }
+$sr = if ($os -eq 'windows') {
+    "& `$Bin room set scm_root $(Quote-Ps $scm) 2>&1 | ForEach-Object { `"`$_`" }`nexit `$LASTEXITCODE"
+} else {
+    "`"`$Bin`" room set scm_root $(Quote-Sh $scm) 2>&1`nexit `$?"
+}
+$s2 = Invoke-Remote $sr
+if ($s2.Code -eq 0) { Step 'scm-root' 'done' "the room's scm_root is $scm" }
+else { Step 'scm-root' 'warn' "could not set the room's scm_root to $scm ($(($s2.Out | Select-Object -Last 1))). stop the room and run: atrium room set scm_root $scm" }
+
 # ── 7. install the runners asked for ────────────────────────────────────────
 
 # Where each runner comes from: its vendor's own published installer or

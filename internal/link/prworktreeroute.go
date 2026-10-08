@@ -56,14 +56,17 @@ func (p *Proxy) placePRWorktree(w http.ResponseWriter, r *http.Request) (*http.R
 		if c, made, err := st.ClaimPR(key, room, "paste"); err == nil {
 			room = c.Room
 			if made {
-				r = r.WithContext(context.WithValue(r.Context(), prMadeKey{}, prMade{key: key, room: room}))
+				r = r.WithContext(context.WithValue(r.Context(), prMadeKey{}, &prMade{key: key, room: room}))
 			}
 		}
 	}
-	return p.placedOn(w, r, room), true
+	// A PLACED PASTE, so a room with no scm folder hands it on to the next. See retryDeaf. The placed room header is
+	// set on the answer by rewrite, since the room it ends on may not be this one.
+	return p.placePaste(r, room), true
 }
 
-// prMade is a claim this request made, so a refusal by the room it was placed on can let it go.
+// prMade is a claim this request made, so a refusal by the room it was placed on can let it go. A pointer, since a
+// paste handed to another room moves the claim and the room with it. See retryDeaf.
 type prMadeKey struct{}
 
 type prMade struct{ key, room string }
@@ -72,7 +75,7 @@ type prMade struct{ key, room string }
 // not reach it), nothing was made there, so the claim is released and a retry places the key again. Without that a
 // refused clone or fetch would leave the key owned by a room that has no worktree for it.
 func (p *Proxy) releaseOnRefusal(w http.ResponseWriter, r *http.Request) http.ResponseWriter {
-	m, ok := r.Context().Value(prMadeKey{}).(prMade)
+	m, ok := r.Context().Value(prMadeKey{}).(*prMade)
 	if !ok {
 		return w
 	}

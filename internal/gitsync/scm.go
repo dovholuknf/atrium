@@ -3,6 +3,7 @@ package gitsync
 import (
 	"context"
 	"errors"
+	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -51,9 +52,40 @@ const (
 	cfgAdopted = "atrium.adopted" // "yes": the operator said yes to atrium's remotes on it
 )
 
-// ErrNoSCMRoot is what a room with no git.scm_root answers.
+// NoSCMRootCode is the code a room answers with when it has no scm folder, so the hub can hand the paste to a room that
+// has one. See internal/link/recogniseroute.go.
+const NoSCMRootCode = "no_scm_root"
+
+// DefaultSCMDir is the folder under the home folder an unset git.scm_root falls back to, when it exists.
+const DefaultSCMDir = "git"
+
+var scmDefaultLogged sync.Once
+
+// EffectiveSCMRoot is the scm folder a room uses: the git.scm_root setting when it is set, else `<home>/git` when that
+// folder exists, else "". It is derived on every read and never written back as the setting, so the setting still says
+// what the operator chose, a folder made later is picked up without a restart, and a room's setting is never changed
+// behind its operator. The first time the default is used it is logged.
+func EffectiveSCMRoot(set string) string {
+	if v := strings.TrimSpace(set); v != "" {
+		return v
+	}
+	h, err := os.UserHomeDir()
+	if err != nil || h == "" {
+		return ""
+	}
+	dir := filepath.Join(h, DefaultSCMDir)
+	if st, err := os.Stat(dir); err != nil || !st.IsDir() {
+		return ""
+	}
+	scmDefaultLogged.Do(func() {
+		log.Printf("[atrium gitsync] git.scm_root is not set, so the scm folder is %s, the folder that is there", filepath.ToSlash(dir))
+	})
+	return dir
+}
+
+// ErrNoSCMRoot is what a room with no git.scm_root, and no `~/git` to fall back to, answers.
 var ErrNoSCMRoot = errors.New("this room has no scm folder, so atrium has nowhere to clone to. " +
-	"Set git.scm_root on the room (for example `atrium settings set git.scm_root ~/git`) and ask again")
+	"Set git.scm_root on the room (for example `atrium settings set git.scm_root ~/git`), or make ~/git, and ask again")
 
 // ErrAsked is what a clone the operator made answers until the operator says yes: atrium asked
 // on the board and has changed nothing in the clone.

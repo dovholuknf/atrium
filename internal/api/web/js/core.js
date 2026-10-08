@@ -528,8 +528,10 @@ async function busyNow(btn, work, label) {
     ? [...scope.querySelectorAll("button")].filter(b =>
       b !== btn && !b.disabled && !b.closest(".dlg-head"))
     : [];
-  const why = scope && scope.querySelector(".busy-why");
-  if (why) why.remove();
+  // The reason is put before the footer, outside `scope`, so the last press's line is looked for in the whole dialog.
+  // Left there, a second press stacked a second copy of the same sentence.
+  const dlgNow = btn.closest("dialog");
+  (dlgNow || scope || btn.parentElement).querySelectorAll(".busy-why").forEach(x => x.remove());
   const was = { html: btn.innerHTML, disabled: btn.disabled, width: btn.style.minWidth };
   btn.style.minWidth = btn.offsetWidth ? btn.offsetWidth + "px" : was.width;
   btn.dataset.busy = "1";

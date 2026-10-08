@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/dovholuknf/atrium/internal/forge"
+	"github.com/dovholuknf/atrium/internal/gitsync"
 	"github.com/dovholuknf/atrium/internal/linkfetch"
 	"github.com/dovholuknf/atrium/internal/store"
 )
@@ -126,6 +127,8 @@ type placedKey struct{}
 type placedPaste struct {
 	room string
 	body []byte
+	// passed is the rooms that refused this paste, by key, and the sentence each gave. Placement skips them.
+	passed map[string]string
 }
 
 // placePaste sends r to room as a placed paste. The placed room header is set on the answer, by rewrite, so a retry
@@ -185,8 +188,29 @@ func (p *Proxy) deafAnswer(status int, body, paste []byte) bool {
 	return err == nil
 }
 
-// retryDeaf takes a placed paste a room could not recognise to the next least busy room, until one recognises it or
-// none is left. It answers the room that has the answer now, "" for a request the hub did not place.
+// noSCMAnswer is whether a room's answer is "no scm folder": it can neither hold the repo nor clone it. The sentence is
+// the room's own, and the hub passes it on in the one answer it makes when no room can.
+func noSCMAnswer(status int, body []byte) (string, bool) {
+	if status != http.StatusUnprocessableEntity {
+		return "", false
+	}
+	var ans struct {
+		Code  string `json:"code"`
+		Error string `json:"error"`
+	}
+	if json.Unmarshal(body, &ans) != nil || ans.Code != gitsync.NoSCMRootCode {
+		return "", false
+	}
+	return strings.TrimSpace(ans.Error), true
+}
+
+// retryDeaf takes a placed paste a room could not take to the next least busy room, until one takes it or none is
+// left. A room could not take it when it cannot read the hub's rows (no_recogniser) or has no scm folder to clone to
+// (no_scm_root), and either way nothing was made on it. It answers the room that has the answer now, "" for a request
+// the hub did not place.
+//
+// WHEN NO ROOM CAN, the answer is one 422 no_scm_root that names every room and why, once, in place of the last
+// room's own sentence. A claim the request made moves with the paste.
 func (p *Proxy) retryDeaf(res *http.Response) (string, error) {
 	if res.Request == nil {
 		return "", nil
@@ -200,23 +224,85 @@ func (p *Proxy) retryDeaf(res *http.Response) (string, error) {
 		raw, err := io.ReadAll(io.LimitReader(res.Body, 1<<20))
 		res.Body.Close()
 		res.Body = io.NopCloser(bytes.NewReader(raw))
-		if err != nil || !p.deafAnswer(res.StatusCode, raw, pp.body) {
+		if err != nil {
 			return room, nil
 		}
-		p.markDeaf(room)
-		next := p.placePRRoom(res.Request.Context(), "")
+		if why, ok := noSCMAnswer(res.StatusCode, raw); ok {
+			if pp.passed == nil {
+				pp.passed = map[string]string{}
+			}
+			pp.passed[keyOf(room)] = why
+		} else if p.deafAnswer(res.StatusCode, raw, pp.body) {
+			p.markDeaf(room)
+		} else {
+			return room, nil
+		}
+		next := p.placePRRoomExcept(res.Request.Context(), "", pp.passed)
 		if next == "" || p.isDeafName(next) {
+			p.noRoomCan(res, pp, room)
 			return room, nil
 		}
-		log.Printf("[hub] %s could not recognise a paste the hub's rows match, so it went to %s", room, next)
+		log.Printf("[hub] %s could not take a paste, so it went to %s", room, next)
 		if err := p.answerFrom(res, next, pp.body); err != nil {
 			log.Printf("[hub] %s did not take the paste either: %v", next, err)
 			res.Body = io.NopCloser(bytes.NewReader(raw))
 			return room, nil
 		}
+		if m, ok := res.Request.Context().Value(prMadeKey{}).(*prMade); ok && keyOf(m.room) == keyOf(room) {
+			if st := p.prClaims(); st != nil {
+				if c, err := st.MovePRClaim(m.key, next); err == nil {
+					m.room = c.Room
+				}
+			}
+		}
 		room = next
 	}
+	if _, ok := noSCMAnswer(res.StatusCode, peekResponse(res)); ok {
+		p.noRoomCan(res, pp, room)
+	}
 	return room, nil
+}
+
+// peekResponse reads a response's body and puts it back.
+func peekResponse(res *http.Response) []byte {
+	raw, _ := io.ReadAll(io.LimitReader(res.Body, 1<<20))
+	res.Body.Close()
+	res.Body = io.NopCloser(bytes.NewReader(raw))
+	return raw
+}
+
+// noRoomCan replaces res with the one answer for a paste no room could take, when a room refused it for want of an scm
+// folder. A paste only old rooms refused keeps the room's own no_recogniser.
+func (p *Proxy) noRoomCan(res *http.Response, pp *placedPaste, last string) {
+	if len(pp.passed) == 0 {
+		return
+	}
+	if _, ok := noSCMAnswer(res.StatusCode, peekResponse(res)); !ok && !p.isDeafName(last) {
+		return
+	}
+	marked := p.markedRooms()
+	var parts []string
+	for _, a := range p.hub.Rooms() {
+		k := keyOf(a.Name)
+		switch why, passed := pp.passed[k]; {
+		case passed:
+			parts = append(parts, a.Name+": "+why)
+		case p.isDeaf(a):
+			parts = append(parts, a.Name+": it runs a build that cannot read the hub's recognisers")
+		case marked[k]:
+			parts = append(parts, a.Name+": it is not taking new work")
+		default:
+			parts = append(parts, a.Name+": it was not asked")
+		}
+	}
+	msg := "no room can open that, since none has an scm folder to clone it to. " + strings.Join(parts, ". ")
+	out, _ := json.Marshal(map[string]any{"error": msg, "code": gitsync.NoSCMRootCode, "step": "worktree"})
+	res.StatusCode, res.Status = http.StatusUnprocessableEntity, "422 Unprocessable Entity"
+	res.Header.Set("Content-Type", "application/json")
+	res.Header.Del("Content-Encoding")
+	res.Body = io.NopCloser(bytes.NewReader(out))
+	res.ContentLength = int64(len(out))
+	res.Header.Set("Content-Length", fmt.Sprint(len(out)))
 }
 
 func (p *Proxy) isDeafName(room string) bool {
