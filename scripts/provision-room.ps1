@@ -1142,7 +1142,7 @@ if [ "$pre_bindir" = False ]; then rmdir "$(dirname "$Bin")" 2>/dev/null || true
         if ($LASTEXITCODE -ne 0) { Step 'git' 'warn' "room-git remove exited $LASTEXITCODE. rerun: room-git.ps1 remove $room -Target $Target" }
     }
     if ($manifest.workroot) { Step 'work-root' 'skip' "left alone: $($manifest.workroot) and the cache settings (.npmrc, go env, pip, CARGO_HOME) stay, they hold the account's work" }
-    if ($manifest.agentpack) { Step 'agent-pack' 'skip' 'left alone: the agents and skills stay in ~/.claude, where the account may have added to them' }
+    if ($manifest.agentpack) { Step 'agent-pack' 'skip' 'left alone: the agents and skills stay in each runner folder (~/.claude, ~/.codex, ~/.gemini), where the account may have added to them' }
 
     # A ROOM HEARD FROM IN THE LAST TWENTY SECONDS IS NOT REMOVED, even forced,
     # so wait for the hub to stop hearing from it.

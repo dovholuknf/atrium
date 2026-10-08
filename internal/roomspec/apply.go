@@ -133,17 +133,135 @@ func accountEnv(e ReadEnv) func(string) string {
 	}
 }
 
+// packMoveVar is the variable that moves each runner's pack folder.
+var packMoveVar = map[string]string{"claude": "CLAUDE_CONFIG_DIR", "codex": "CODEX_HOME", "gemini": "GEMINI_CLI_HOME"}
+
+// expandedEnv is env with %NAME% expanded in the values of packMoveVar on Windows, where HKCU\Environment keeps a REG_EXPAND_SZ
+// value as written. USERPROFILE and HOME are the account's home as the room reads it, any other name comes from env. A name
+// that is not known stays as written, and checkMovedPackDir refuses the % left over.
+func expandedEnv(goos string, h Home, env func(string) string) func(string) string {
+	if goos != Windows {
+		return env
+	}
+	moves := map[string]bool{}
+	for _, k := range packMoveVar {
+		moves[k] = true
+	}
+	return func(k string) string {
+		v := env(k)
+		if !moves[k] || !strings.Contains(v, "%") {
+			return v
+		}
+		var b strings.Builder
+		for i := 0; i < len(v); {
+			if v[i] == '%' {
+				if j := strings.IndexByte(v[i+1:], '%'); j > 0 {
+					name := v[i+1 : i+1+j]
+					val := ""
+					switch strings.ToUpper(name) {
+					case "USERPROFILE", "HOME":
+						val = h.Dir
+					default:
+						val = env(name)
+					}
+					if val != "" {
+						b.WriteString(val)
+						i += j + 2
+						continue
+					}
+				}
+			}
+			b.WriteByte(v[i])
+			i++
+		}
+		return b.String()
+	}
+}
+
+// printable drops a control character from a value a row quotes.
+func printable(r rune) rune {
+	if r < 0x20 || r == 0x7f {
+		return -1
+	}
+	return r
+}
+
+// otherPackDirs are the folders the other runners keep their packs in.
+func otherPackDirs(runner string, h Home, env func(string) string) []string {
+	var out []string
+	for r := range packMoveVar {
+		if r == runner {
+			continue
+		}
+		if l, ok := packLayout(r, h, env); ok {
+			out = append(out, l.Dir)
+		}
+	}
+	return out
+}
+
+// checkMovedPackDir is why a folder a variable moved a runner's pack to cannot be used, or "". It must be absolute for the OS,
+// hold no .. and no % or $ left unexpanded, be neither inside nor around another runner's folder, and lie under the account's
+// home or the work root.
+func checkMovedPackDir(goos, dir string, h Home, workRoot string, others []string) string {
+	d := slash(dir)
+	fold := func(s string) string {
+		if goos == Windows {
+			return strings.ToLower(s)
+		}
+		return s
+	}
+	abs := strings.HasPrefix(d, "/")
+	if goos == Windows {
+		abs = len(d) >= 3 && d[1] == ':' && d[2] == '/' && (d[0]|0x20 >= 'a' && d[0]|0x20 <= 'z')
+	}
+	if !abs {
+		return "it is not an absolute path on " + goos
+	}
+	if strings.ContainsAny(d, "%$") {
+		return "it holds a % or $ that was not expanded"
+	}
+	for _, seg := range strings.Split(d, "/") {
+		if seg == ".." {
+			return "it holds .."
+		}
+	}
+	under := func(p, root string) bool {
+		root = fold(slash(root))
+		return root != "" && strings.HasPrefix(fold(p)+"/", root+"/") && fold(p) != root
+	}
+	for _, o := range others {
+		o = slash(o)
+		if fold(d) == fold(o) || under(d, o) || under(o, d) {
+			return "it is the folder of another runner's pack, or inside or around it: " + o
+		}
+	}
+	if !under(d, h.Dir) && !under(d, workRoot) {
+		return "it is not under the account's home or the work root"
+	}
+	return ""
+}
+
 func packStep(spec *Spec, a Adapter, v View, host *Host, pk Pack, lk *Lock, add func(step, status, detail string)) {
 	name := "agent-pack"
 	if pk.Runner != "claude" {
 		name += "-" + pk.Runner
 	}
-	env := accountEnv(v.Env)
-	layout, ok := packLayout(pk.Runner, v.FS.Home(), env)
-	dir := a.PackDir(pk.Runner, v.FS.Home(), env)
+	home := v.FS.Home()
+	raw := accountEnv(v.Env)
+	env := expandedEnv(spec.OS, home, raw)
+	layout, ok := packLayout(pk.Runner, home, env)
+	dir := a.PackDir(pk.Runner, home, env)
 	if !ok || dir == "" {
 		add(name, StatusWarn, fmt.Sprintf("no pack adapter for %s", pk.Runner))
 		return
+	}
+	// a variable that moves the folder is followed only to a place this account owns
+	if k := packMoveVar[pk.Runner]; k != "" && env(k) != "" {
+		if why := checkMovedPackDir(spec.OS, layout.Dir, home, spec.WorkRoot, otherPackDirs(pk.Runner, home, env)); why != "" {
+			add(name, StatusFail, fmt.Sprintf("%s=\"%s\" is not used, nothing was installed: %s", k, strings.Map(printable, raw(k)), why))
+			return
+		}
 	}
 	full, _ := spec.PackFor(pk.Runner)
 	rec := ReadRecord(v.FS, dir)

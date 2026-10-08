@@ -382,7 +382,10 @@ A `room.yaml` may also list a `codex` and a `gemini` pack, each taken from its o
 `skills/` alone in `~/.codex`, since codex reads no markdown agents. Each has its own `atrium-agent-pack.json` and its own
 `agent-pack-<runner>` row. A variable that moves a runner's folder (`GEMINI_CLI_HOME`, `CODEX_HOME`) is followed, read from
 the account's user environment where the OS keeps one (the Windows registry) and else from the environment the process was
-started with, not from a login profile, which an ssh command does not read. The provision script needs no `room.yaml` for
+started with, not from a login profile, which an ssh command does not read. A `%NAME%` in a registry value is expanded first. The moved
+folder is used only when it is absolute for the OS, has no `..` and no `%` or `$` left, is not the folder of another runner's
+pack (or inside or around it), and lies under the account's home or the work root; otherwise the row is a `fail` naming the
+variable and its value, and nothing is installed. The provision script needs no `room.yaml` for
 this: it installs the claude pack always, and the codex and gemini packs when the repository has a `codex/` or `gemini/`
 folder with `agents` or `skills` in it. The runners are recorded in the manifest, so `room-check.ps1` shows an
 `agent-pack-codex` or `agent-pack-gemini` row for each. `-NoAgentPack` still means none at all.
