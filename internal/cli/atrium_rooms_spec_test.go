@@ -3,6 +3,7 @@ package cli
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -111,8 +112,12 @@ func TestWriteFileAtomicIsPrivateAndReplaces(t *testing.T) {
 	}
 	b, _ := os.ReadFile(path)
 	fi, _ := os.Stat(path)
-	if string(b) != "new" || fi.Mode().Perm() != 0o600 {
-		t.Fatalf("%q %v", b, fi.Mode())
+	if string(b) != "new" {
+		t.Fatalf("not replaced: %q", b)
+	}
+	// Windows has no unix mode bits to check.
+	if runtime.GOOS != "windows" && fi.Mode().Perm() != 0o600 {
+		t.Fatalf("mode %v", fi.Mode())
 	}
 	if es, _ := os.ReadDir(filepath.Dir(path)); len(es) != 1 {
 		t.Fatalf("a temp file was left: %v", es)
