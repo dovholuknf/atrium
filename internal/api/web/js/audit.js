@@ -103,7 +103,12 @@ function drawAuditFilters() {
     const opts = ['<option value="">all rooms</option>']
       .concat(rooms.map(n => '<option value="' + esc(n) + '"' +
         (n === auditRoomFilter ? " selected" : "") + ">" + esc(n) + "</option>"));
-    roomSel.innerHTML = opts.join("");
+    // Only when the set changes, so an open select is not rebuilt under the operator by every event.
+    const key = opts.join("");
+    if (roomSel.dataset.opts !== key && document.activeElement !== roomSel) {
+      roomSel.dataset.opts = key;
+      roomSel.innerHTML = key;
+    }
   }
   if (kindSel && !kindSel.dataset.built) {
     const opts = ['<option value="">all kinds</option>']

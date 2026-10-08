@@ -1341,7 +1341,9 @@ function refreshLaunchRunners(preferId) {
 
 async function openLaunch(id, resume, cwd, ontoTask, prefill, where) {
   launchWhere = where === "window" ? "window" : "here";
-  await loadHarnesses();
+  // Held already, from the read bootBoard starts. Awaiting it anyway would put a round trip between the click and the
+  // dialog, and the dialog would show before or after its options depending on the network.
+  if (!allHarnesses.length) await loadHarnesses();
   if (!allHarnesses.some(h => h.enabled)) {
     tellUser("atrium", "no runner is enabled yet. turn one on under " +
       paneLink("runners", "rooms &rsaquo; runners") + " first.");

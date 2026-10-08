@@ -330,10 +330,34 @@ document.addEventListener("keydown", e => {
   dlg.close();
 }, true);
 
+// loadProviders reads the provider list into `allProviders` and says whether it changed. Started at board start so
+// openPickRepo has the list in hand.
+async function loadProviders() {
+  let got;
+  try { got = (await api("/v1/providers")).providers || []; } catch (e) { return false; }
+  const changed = JSON.stringify(got) !== JSON.stringify(allProviders);
+  allProviders = got;
+  return changed;
+}
+
+function pickProviderOptions() {
+  return allProviders.filter(p => p.enabled).map(p =>
+    `<option value="${esc(p.name)}">${esc(p.name)}</option>`).join("");
+}
+
 async function openPickRepo(fieldID) {
   pickInto = fieldID || "l-cwd";
   const sel = document.getElementById("pk-provider");
-  try { allProviders = (await api("/v1/providers")).providers || []; } catch (e) {}
+  // Held providers fill the box now. Only a board that has none yet waits for the read, and a dialog that is already
+  // open is refreshed behind the operator only when the list changed and the box does not have focus.
+  if (!allProviders.length) await loadProviders();
+  else loadProviders().then(changed => {
+    if (changed && pickDlg.open && document.activeElement !== sel) {
+      const was = sel.value;
+      sel.innerHTML = pickProviderOptions();
+      if ([...sel.options].some(o => o.value === was)) sel.value = was;
+    }
+  });
   const usable = allProviders.filter(p => p.enabled);
   if (!usable.length) {
     tellUser("no providers yet",
@@ -341,8 +365,7 @@ async function openPickRepo(fieldID) {
       "Until then, browse still points a card at any directory.");
     return;
   }
-  sel.innerHTML = usable.map(p =>
-    `<option value="${esc(p.name)}">${esc(p.name)}</option>`).join("");
+  sel.innerHTML = pickProviderOptions();
   document.getElementById("pk-filter").value = "";
   pickDlg.showModal();
   await loadPickRepos();
