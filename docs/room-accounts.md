@@ -377,6 +377,12 @@ A rerun at the same commit changes nothing, a file edited on the room is put bac
 left alone. A skill that is a link into another repository (two on sg3, `debug-ziti-desktop-edge-win` and
 `debug-ziti-edge-tunnel-log`) is not fetched and is named in a `skip` line.
 
+A `room.yaml` may also list a `codex` and a `gemini` pack, each taken from its own folder of the repository (`codex/`,
+`gemini/`, or `from:`) and put where that runner reads it: gemini's `agents/*.md` and `skills/` in `~/.gemini`, and codex's
+`skills/` alone in `~/.codex`, since codex reads no markdown agents. Each has its own `atrium-agent-pack.json` and its own
+`agent-pack-<runner>` row. A variable that moves a runner's folder (`GEMINI_CLI_HOME`, `CODEX_HOME`) is not followed. The
+provision script writes only the claude pack today.
+
 The source is the hub's own git mirror of the repository, never the checkout on the operator's machine. The room does not
 fetch it itself: the room's `/git/hub` forwarder is tokenized per card and no card exists when a room is provisioned. So
 the hub machine clones the mirror, whole, since the hub serves whole fetches only, tars the checkout with its `.git`, and

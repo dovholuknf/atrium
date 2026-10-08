@@ -391,7 +391,48 @@ func TestPackRules(t *testing.T) {
 	}
 }
 
-func TestPackWithoutASourceOrAnAdapter(t *testing.T) {
+const linHead = "version: 1\nname: pi\nos: linux\naccount: localai\nwork_root: /srv/localai\ncaches: [npm, go]\n"
+
+// Each runner's pack goes where that runner reads it, and only the kinds it reads: codex has skills and no markdown agents.
+func TestEachRunnersPackGoesWhereItReadsIt(t *testing.T) {
+	spec := mustSpec(t, Linux, linHead+"packs:\n  - runner: claude\n    repo: o/a\n  - runner: gemini\n    repo: o/a\n  - runner: codex\n    repo: o/a\n")
+	m := NewMemFS(linHome, "localai")
+	m.Dir("/srv/localai")
+	ff := &fakeFetcher{src: packFiles(), latest: "abcdef1234567890"}
+	need := []string{"c-systems-reviewer"}
+	lk := Apply(spec, adapterFor(t, Linux), Host{FS: m, Env: m, Settings: &fakeSettings{vals: map[string]string{}}, Fetch: ff, Need: need})
+	for _, n := range []string{"agent-pack", "agent-pack-gemini", "agent-pack-codex"} {
+		wantStatus(t, lk, n, StatusDone)
+	}
+	for _, f := range []string{"/.claude/agents/c-systems-reviewer.md", "/.claude/skills/s1/SKILL.md", "/.gemini/agents/c-systems-reviewer.md",
+		"/.gemini/skills/s1/tool.sh", "/.codex/skills/s1/SKILL.md", "/.codex/atrium-agent-pack.json"} {
+		if !m.Has("/home/localai" + f) {
+			t.Errorf("%s is missing", f)
+		}
+	}
+	if m.Has("/home/localai/.codex/agents/c-systems-reviewer.md") {
+		t.Error("codex reads no markdown agents")
+	}
+	if len(lk.Packs) != 3 {
+		t.Errorf("packs %+v", lk.Packs)
+	}
+	// a plan: codex is not missing the panel's agents, and every pack is current
+	pl := Plan(spec, adapterFor(t, Linux), View{FS: m, Env: m, Settings: &fakeSettings{vals: map[string]string{}}, Latest: ff.Latest, Need: need})
+	for _, n := range []string{"agent-pack", "agent-pack-gemini", "agent-pack-codex"} {
+		wantStatus(t, pl, n, StatusOK)
+	}
+	// a repository with nothing a runner reads is said, not installed as nothing
+	only := &fakeFetcher{src: &PackSource{Commit: "abc", Files: map[string][]byte{"agents/x.md": []byte("a")}}}
+	cs := mustSpec(t, Linux, linHead+"packs:\n  - runner: codex\n    repo: o/a\n")
+	m2 := NewMemFS(linHome, "localai")
+	m2.Dir("/srv/localai")
+	l2 := Apply(cs, adapterFor(t, Linux), Host{FS: m2, Env: m2, Settings: &fakeSettings{vals: map[string]string{}}, Fetch: only})
+	if s := step(l2, "agent-pack-codex"); s.Status != StatusFail || !strings.Contains(s.Detail, "nothing for codex") {
+		t.Errorf("%+v", s)
+	}
+}
+
+func TestPackWithoutASourceIsAWarn(t *testing.T) {
 	spec := mustSpec(t, Windows, winSpec+"packs:\n  - runner: claude\n    repo: o/a\n  - runner: codex\n    repo: o/a\n")
 	m := NewMemFS(winHome, `SG3\localai`)
 	m.Dir("V:/")
@@ -400,7 +441,7 @@ func TestPackWithoutASourceOrAnAdapter(t *testing.T) {
 	if s := step(lk, "agent-pack"); s.Status != StatusWarn || !strings.Contains(s.Detail, "no pack source") {
 		t.Errorf("%+v", s)
 	}
-	if s := step(lk, "agent-pack-codex"); s.Status != StatusWarn || !strings.Contains(s.Detail, "no pack adapter for codex yet") {
+	if s := step(lk, "agent-pack-codex"); s.Status != StatusWarn || !strings.Contains(s.Detail, "no pack source") {
 		t.Errorf("%+v", s)
 	}
 }

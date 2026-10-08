@@ -2,6 +2,7 @@ package roomspec
 
 import (
 	"fmt"
+	"github.com/dovholuknf/atrium/internal/runnersetup"
 	"regexp"
 	"strings"
 )
@@ -225,11 +226,18 @@ func unixGrant(g Grant, acl func(account, parent string) string) []string {
 	return l
 }
 
-// packDir is where a runner's pack goes. Only claude has an adapter so far: codex and gemini keep agents and skills
-// elsewhere (internal/runnersetup), which is a later phase.
+// packLayout is where a runner keeps agents and skills (internal/runnersetup knows each runner's folders), as the account's
+// defaults: a variable that moves a runner's folder (GEMINI_CLI_HOME, CODEX_HOME) is not followed, the pack goes where the
+// runner looks with none set. ok is false for a runner with no pack adapter.
+func packLayout(runner string, h Home) (runnersetup.PackLayout, bool) {
+	return runnersetup.PackLayoutFor(runner, runnersetup.Env{Home: h.Dir, Getenv: func(string) string { return "" }})
+}
+
+// packDir is where a runner's pack goes, or "" when it has no pack adapter.
 func packDir(runner string, h Home) string {
-	if runner == "claude" {
-		return h.Dir + "/.claude"
+	l, ok := packLayout(runner, h)
+	if !ok {
+		return ""
 	}
-	return ""
+	return l.Dir
 }

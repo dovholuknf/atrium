@@ -1,10 +1,13 @@
 package roomspec
 
 import (
+	"errors"
 	"fmt"
 	"path"
 	"strings"
 	"time"
+
+	"github.com/dovholuknf/atrium/internal/runnersetup"
 )
 
 // Host is a machine an apply may change: the plan's View, and the means to write.
@@ -120,9 +123,10 @@ func packStep(spec *Spec, a Adapter, v View, host *Host, pk Pack, lk *Lock, add 
 	if pk.Runner != "claude" {
 		name += "-" + pk.Runner
 	}
+	layout, ok := packLayout(pk.Runner, v.FS.Home())
 	dir := a.PackDir(pk.Runner, v.FS.Home())
-	if dir == "" {
-		add(name, StatusWarn, fmt.Sprintf("no pack adapter for %s yet", pk.Runner))
+	if !ok || dir == "" {
+		add(name, StatusWarn, fmt.Sprintf("no pack adapter for %s", pk.Runner))
 		return
 	}
 	full, _ := spec.PackFor(pk.Runner)
@@ -134,12 +138,16 @@ func packStep(spec *Spec, a Adapter, v View, host *Host, pk Pack, lk *Lock, add 
 			latest, _ = v.Latest(full.Repo, full.Branch)
 		}
 		var have []string
-		for _, n := range v.Need {
+		need := v.Need
+		if !layout.Agents {
+			need = nil // a runner that reads no agents is not missing the panel's
+		}
+		for _, n := range need {
 			if fi, err := v.FS.Lstat(dir + "/agents/" + n + ".md"); err == nil && !fi.IsDir() {
 				have = append(have, n)
 			}
 		}
-		st, d := PackVerdict(rec, have, latest, v.Need)
+		st, d := PackVerdict(rec, have, latest, need)
 		add(name, st, d)
 		return
 	}
@@ -151,6 +159,10 @@ func packStep(spec *Spec, a Adapter, v View, host *Host, pk Pack, lk *Lock, add 
 	src, err := host.Fetch.Fetch(full.Repo, full.Branch, full.From)
 	if err != nil {
 		add(name, StatusFail, fmt.Sprintf("could not get the pack %s: %v", full.Repo, err))
+		return
+	}
+	if src, err = forRunner(src, layout); err != nil {
+		add(name, StatusFail, fmt.Sprintf("the pack %s has nothing for %s: %v", full.Repo, pk.Runner, err))
 		return
 	}
 	res, err := a.InstallPack(host.FS, dir, src, rec, true)
@@ -184,4 +196,21 @@ func packStep(spec *Spec, a Adapter, v View, host *Host, pk Pack, lk *Lock, add 
 	if len(res.Refused) == 0 {
 		lk.Packs = append(lk.Packs, PackLock{Runner: pk.Runner, Repo: full.Repo, Commit: src.Commit, Files: res.Files})
 	}
+}
+
+// forRunner is the part of a pack a runner reads: agents only where it has them, skills only where it has them. A pack with
+// none of what the runner reads is an error, so a repository with no folder for it is said and not installed as nothing.
+func forRunner(src *PackSource, l runnersetup.PackLayout) (*PackSource, error) {
+	out := *src
+	out.Files = map[string][]byte{}
+	for rel, b := range src.Files {
+		switch {
+		case strings.HasPrefix(rel, "agents/") && l.Agents, strings.HasPrefix(rel, "skills/") && l.Skills:
+			out.Files[rel] = b
+		}
+	}
+	if len(out.Files) == 0 {
+		return nil, errors.New("no agents or skills it reads")
+	}
+	return &out, nil
 }
