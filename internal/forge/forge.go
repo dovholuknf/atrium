@@ -14,6 +14,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os/exec"
 	"strings"
 	"time"
@@ -70,6 +71,13 @@ type Cmd struct {
 	Dir     string
 	Timeout time.Duration
 	Limit   int
+	// Tail, when above zero, keeps only the last Tail lines of the output within Limit bytes, bounded while the
+	// command is read, and a command that prints more is not an error. A Runner that ignores it is bounded again by
+	// the caller (Tail).
+	Tail int
+	// Sink, when set, takes the output as it is read, up to Limit bytes, and the command is stopped past that. Nothing
+	// is held in memory, so a download goes to a file without being read whole.
+	Sink io.Writer
 }
 
 // Runner runs a Cmd with a time bound and a read bound and returns what it printed.

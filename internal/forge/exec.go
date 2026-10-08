@@ -31,7 +31,17 @@ func Exec(prepare func(*exec.Cmd)) Runner {
 		}
 		cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0")
 		var out, errOut bytes.Buffer
-		cmd.Stdout = &capped{w: &out, left: c.Limit + 1}
+		var tail *TailWriter
+		var sink *sinkWriter
+		if c.Sink != nil {
+			sink = &sinkWriter{w: c.Sink, left: c.Limit}
+			cmd.Stdout = sink
+		} else if c.Tail > 0 {
+			tail = &TailWriter{Lines: c.Tail, Bytes: c.Limit}
+			cmd.Stdout = tail
+		} else {
+			cmd.Stdout = &capped{w: &out, left: c.Limit + 1}
+		}
 		cmd.Stderr = &capped{w: &errOut, left: 8 << 10}
 		err := cmd.Run()
 		label := c.Name
@@ -43,6 +53,8 @@ func Exec(prepare func(*exec.Cmd)) Runner {
 			return nil, ctx.Err()
 		case runCtx.Err() == context.DeadlineExceeded:
 			return nil, fmt.Errorf("%s took longer than %s and was stopped", label, c.Timeout)
+		case sink != nil && sink.over:
+			return nil, fmt.Errorf("%s printed more than %d bytes and was stopped", label, c.Limit)
 		case out.Len() > c.Limit:
 			return nil, fmt.Errorf("%s printed more than %d bytes and was stopped", label, c.Limit)
 		case err != nil:
@@ -53,6 +65,10 @@ func Exec(prepare func(*exec.Cmd)) Runner {
 				return nil, fmt.Errorf("%s: %s", label, s)
 			}
 			return nil, fmt.Errorf("%s: %w", label, err)
+		}
+		if tail != nil {
+			text, _, _ := tail.Result()
+			return []byte(text), nil
 		}
 		return out.Bytes(), nil
 	}
@@ -74,4 +90,20 @@ func (c *capped) Write(p []byte) (int, error) {
 		c.left -= n
 	}
 	return len(p), nil
+}
+
+// sinkWriter passes on at most left bytes, and fails the write past that so the command is stopped.
+type sinkWriter struct {
+	w    io.Writer
+	left int
+	over bool
+}
+
+func (s *sinkWriter) Write(p []byte) (int, error) {
+	if len(p) > s.left {
+		s.over = true
+		return 0, io.ErrShortWrite
+	}
+	s.left -= len(p)
+	return s.w.Write(p)
 }

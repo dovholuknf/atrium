@@ -198,6 +198,9 @@ type Server struct {
 	// of the hub over the link, with the URLs on the link's base for the caller to put on the forwarder. Owned by
 	// the daemon, which holds the link. See internal/daemon/hubremote.go.
 	HubGitURL http.HandlerFunc
+	// HubCI is atrium_ci for a session here, `POST /v1/hub/ci`, asked of the hub over the link, which runs the forge CLI
+	// and answers the runs, logs and artifacts. Owned by the daemon. See internal/daemon/hubci.go.
+	HubCI http.HandlerFunc
 	// Hold reads, sets or lifts the room deploy hold. Owned by the daemon, which
 	// runs the permission chain it acts in. See internal/daemon/roomhold.go.
 	Hold http.HandlerFunc
@@ -733,6 +736,9 @@ func (s *Server) Handler() http.Handler {
 	}
 	if s.HubGitURL != nil {
 		mux.HandleFunc("GET /v1/hub/git/url", s.HubGitURL)
+	}
+	if s.HubCI != nil {
+		mux.HandleFunc("POST /v1/hub/ci", s.HubCI)
 	}
 	if s.Say != nil {
 		mux.HandleFunc("POST /v1/say", s.Say)

@@ -152,6 +152,8 @@ type Proxy struct {
 	prGone map[string]time.Time
 	// fg is the forge the hub runs for its rooms. Nil until SetForge. See forgeroute.go.
 	fg *hubForge
+	// ciDir is the folder a CI artifact is downloaded under. See forgeci.go.
+	ciDir string
 	// setup is what each attached room's setup was last read as. See setupwatch.go.
 	setup setupWatch
 }

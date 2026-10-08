@@ -23,6 +23,8 @@ type gitBoard struct {
 	pushed []string
 	looked []string
 	answer map[string]any
+	ci     []map[string]any
+	ciErr  string
 }
 
 func (b *gitBoard) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -46,6 +48,16 @@ func (b *gitBoard) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case r.URL.Path == "/v1/hub/git/url" && !b.old:
 		b.looked = append(b.looked, r.URL.RawQuery)
 		_ = json.NewEncoder(w).Encode(b.answer)
+	case r.URL.Path == "/v1/hub/ci" && !b.old:
+		var body map[string]any
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		b.ci = append(b.ci, body)
+		if b.ciErr != "" {
+			w.WriteHeader(http.StatusBadGateway)
+			_ = json.NewEncoder(w).Encode(map[string]string{"error": b.ciErr})
+			return
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"kind": "github", "runs": []map[string]any{{"id": 7, "workflow": "ci"}}})
 	case r.URL.Path == "/v1/hub-remote":
 		_ = json.NewEncoder(w).Encode(map[string]string{"base": "http://127.0.0.1:7777/git/"})
 	default:
@@ -113,7 +125,7 @@ func TestStdioControlHasBothGitTools(t *testing.T) {
 	for _, tl := range res.Tools {
 		have[tl.Name] = true
 	}
-	for _, n := range []string{"atrium_git_push", "atrium_git_url", "atrium_git_clone"} {
+	for _, n := range []string{"atrium_git_push", "atrium_git_url", "atrium_git_clone", "atrium_ci"} {
 		if !have[n] {
 			t.Errorf("the stdio control has no %s", n)
 		}

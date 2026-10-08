@@ -55,6 +55,8 @@ var workerTools = map[string]bool{
 	"atrium_git_push": true,
 	// And the ones that read code that is not in their cwd. See git_url.go.
 	"atrium_git_url": true,
+	// And the ones that read the CI of a repository, which the hub reads for them. See ci_door.go.
+	"atrium_ci": true,
 	// And the ones that need a build machine. See resources_mcp.go.
 	"atrium_resources": true,
 }

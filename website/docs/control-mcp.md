@@ -52,6 +52,7 @@ going to use. Put the entry above in that file.
 | `atrium_exit` | Ask a session to finish and leave. Asked, not killed. |
 | `atrium_cull` | Retire a worker whose merged work you accepted: it leaves, its worktree and branch are removed. |
 | `atrium_git_url` | Where to fetch code that is not in your directory: the hub's copy of finished work, or a room's work in progress. |
+| `atrium_ci` | A repository's CI, read by the hub: runs, a run's jobs and steps, a failed job's log, artifacts. |
 | `atrium_git_push` | Push your branch to the hub, the same push `git push hub <branch>` makes, with no shell. Plain branch pushes only. |
 | `atrium_git_sync` | Bring a room's clone up to date with `claude/main` now, instead of on the hub's own schedule. |
 | `atrium_git_collect` | Fetch a room's `claude/*` branches to the hub now, so they can be merged. |
@@ -68,10 +69,10 @@ going to use. Put the entry above in that file.
 
 A worker, a card tagged `atrium:subagent` and not a director, gets only the tools it needs to talk, report and
 push: `atrium_status`, `atrium_peers`, `atrium_say`, `atrium_report`, `atrium_task`, `atrium_alias`,
-`atrium_publish`, `atrium_git_push`, `atrium_git_url` and `atrium_resources`. Everyone else gets them all.
+`atrium_publish`, `atrium_git_push`, `atrium_git_url`, `atrium_ci` and `atrium_resources`. Everyone else gets them all.
 
 `atrium control`, the stdio server for a session that does not reach the hub, carries `atrium_status`,
-`restart_atrium`, the peer tools, `atrium_git_push`, `atrium_git_url`, and two of its own: `atrium_git_clone`, which
+`restart_atrium`, the peer tools, `atrium_git_push`, `atrium_git_url`, `atrium_ci`, and two of its own: `atrium_git_clone`, which
 returns a clone of a repository on this room and makes it if it is missing, and `atrium_open`.
 
 ### Talking, not typing
@@ -136,3 +137,28 @@ same room. Staged binaries are installed on the way.
 to `git fetch`, and whether the code is the hub's copy of pushed work or a room's work in progress. A branch that is
 both says which is ahead. A repository the hub does not know answers with the closest names. Use it instead of asking
 for a paste.
+
+### Reading CI
+
+`atrium_ci` answers what a repository's CI did. It is read only, and the HUB answers it, because only the hub runs
+`gh`. A room's session never runs `gh` and should not ask a person to. The tool takes `repo` (`owner/repo` or
+`host/owner/repo`) and an `action`:
+
+| Action | Takes | Answers |
+| --- | --- | --- |
+| `runs` | `branch`, `sha`, `limit` (10, max 50) | Runs, newest first: id, workflow, status, conclusion, sha, url. |
+| `run` | `run_id` | The run's jobs, and each job's steps with their conclusions. |
+| `log` | `job_id` or `run_id`, `failed_only`, `tail` | The END of a log. A run's is the failed steps only. |
+| `artifacts` | `run_id` | The run's artifacts: name, size, expired. `ci.sh` uploads `build.claude/ci`. |
+| `artifact` | `run_id`, `name`, `file` | Downloads it on the hub (max 200 MiB), answers its folder and files. |
+
+A log is bounded while it is read, never read whole and cut after. It keeps the last `tail` lines (400 by default,
+at most 5000) within 64 KiB, and `truncated` says earlier lines were left out. An artifact lives on the hub's disk, which
+a room cannot read, so pass `file` to read the last lines of one file in it.
+The hub downloads the zip itself and unpacks it with the cap counted as it writes, so a zip bomb stops at
+200 MiB. Downloads are kept 24 hours and at most 1 GiB in all, oldest first.
+
+A GitHub login the hub lacks, or a `gh` it does not have, answers the command to run ON THE HUB, for example
+``gh auth login --hostname github.com``, and raises the hub's forge alert. Bitbucket answers `not supported on
+bitbucket`. A room reaches the hub through its link (`POST /v1/hub/ci` on its daemon, then `/_forge/ci` on the git
+kind), and the hub's own control MCP asks its board (`POST /_hub/forge/ci`).
