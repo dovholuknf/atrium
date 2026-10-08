@@ -31,7 +31,13 @@ func Exec(prepare func(*exec.Cmd)) Runner {
 		}
 		cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0")
 		var out, errOut bytes.Buffer
-		cmd.Stdout = &capped{w: &out, left: c.Limit + 1}
+		var tail *TailWriter
+		if c.Tail > 0 {
+			tail = &TailWriter{Lines: c.Tail, Bytes: c.Limit}
+			cmd.Stdout = tail
+		} else {
+			cmd.Stdout = &capped{w: &out, left: c.Limit + 1}
+		}
 		cmd.Stderr = &capped{w: &errOut, left: 8 << 10}
 		err := cmd.Run()
 		label := c.Name
@@ -53,6 +59,10 @@ func Exec(prepare func(*exec.Cmd)) Runner {
 				return nil, fmt.Errorf("%s: %s", label, s)
 			}
 			return nil, fmt.Errorf("%s: %w", label, err)
+		}
+		if tail != nil {
+			text, _, _ := tail.Result()
+			return []byte(text), nil
 		}
 		return out.Bytes(), nil
 	}

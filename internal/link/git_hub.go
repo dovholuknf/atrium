@@ -328,6 +328,8 @@ func (c *controlMCP) registerGit(s *mcp.Server, class ctlClass) {
 		audited(c, "ctl-git-push", describeGitPush, c.gitPushHandler))
 	// And the cards that read code they do not have. A read, so no audit line. See git_url.go.
 	addTool(s, class, &mcp.Tool{Name: "atrium_git_url", Description: gitURLToolDesc}, c.gitURLHandler)
+	// And the cards that read a repository's CI, which the hub reads for them. A read, so no audit line. See ci_door.go.
+	addTool(s, class, &mcp.Tool{Name: "atrium_ci", Description: ciToolDesc}, c.ciHandler)
 }
 
 // describeGitSync names the room and repository, and whether it may have made a clone.

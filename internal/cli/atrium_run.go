@@ -389,6 +389,7 @@ func serveAtrium(f atriumFlags, up atriumUp) error {
 	proxy.SetRoomSpecs(store)
 	// THE HUB RUNS THE FORGE FOR ITS ROOMS, which never run gh or bb. See link/forgeroute.go.
 	proxy.SetForge(store, nil)
+	proxy.SetCIDir(filepath.Join(keys.Dir, "ci-artifacts"))
 	// A forge branch a card asks for is fetched into the store with the same login a PR head fetch uses.
 	gitHub.ForgeHelper = proxy.ForgeHelper
 	// THE NAMES THE HUB ANSWERS, beside $ATRIUM_HOSTS, from the same store. Before

@@ -123,6 +123,7 @@ func controlServer() *mcp.Server {
 	addPeerTools(s)
 	addGitCloneTool(s)
 	addGitTools(s)
+	addCITool(s)
 	addOpenTool(s)
 	addCloseTool(s)
 	addOwnTools(s)

@@ -25,6 +25,7 @@ import (
 //	POST /_forge/pr     (a room, on the git kind)  forge.HubAsk   a pull request: view, diff, head, and its head fetched
 //	POST /_forge/issue  (a room, on the git kind)  forge.HubAsk   an issue
 //	POST /_forge/repo   (a room, on the git kind)  forge.HubAsk   a repository the store is to hold
+//	POST /_forge/ci     (a room, on the git kind)  forge.HubCIAsk CI runs, jobs, logs and artifacts. See forgeci.go
 //	GET  /_hub/forge                               the hub's forge entries per host
 //	PUT  /_hub/forge                               {entries: [{host, forge, cmd}]}
 //	POST /_hub/forge/check                         {forges: [{tool, host, scopes}]}   the hub's CLI logins
@@ -177,6 +178,10 @@ func (p *Proxy) serveForge(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	room := strings.TrimSpace(r.Header.Get(ForgeRoomHeader))
+	if r.URL.Path == forge.HubCIPath {
+		p.serveCI(w, r, f, room)
+		return
+	}
 	var ask forge.HubAsk
 	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<16)).Decode(&ask); err != nil {
 		forgeFail(w, http.StatusBadRequest, &forge.HubError{Code: forge.CodeOther, Message: "that is not a forge question"})
@@ -311,7 +316,10 @@ func (p *Proxy) forgeRefusal(f *hubForge, room string, ask forge.HubAsk, err err
 	if errors.As(err, &fa) {
 		kind = fa.kind
 	}
+	var ns *forge.NotSupportedError
 	switch {
+	case errors.As(err, &ns):
+		return http.StatusUnprocessableEntity, &forge.HubError{Code: "not_supported", Message: ns.Error(), Host: ask.Host}
 	case errors.As(err, &nf):
 		return http.StatusUnprocessableEntity, &forge.HubError{Code: forge.CodeNoForge, Message: nf.Error(),
 			Host: ask.Host}
@@ -601,6 +609,9 @@ func (p *Proxy) serveForgeAdmin(w http.ResponseWriter, r *http.Request, rest str
 		}
 		p.RecordAudit("", "forge-entries", string(raw))
 		crJSON(w, http.StatusOK, map[string]any{"entries": in.Entries})
+	case rest == "ci" && r.Method == http.MethodPost:
+		// The hub's own control MCP, for `atrium_ci` called on the hub. The room is the caller's, from its header.
+		p.serveCI(w, r, f, strings.TrimSpace(r.Header.Get(RoomHeader)))
 	case rest == "check" && r.Method == http.MethodPost:
 		if err := docsCrossOrigin.Check(r); err != nil {
 			crFail(w, http.StatusForbidden, "a page on another origin cannot run the hub's forge check")

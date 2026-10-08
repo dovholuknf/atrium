@@ -70,6 +70,10 @@ type Cmd struct {
 	Dir     string
 	Timeout time.Duration
 	Limit   int
+	// Tail, when above zero, keeps only the last Tail lines of the output within Limit bytes, bounded while the
+	// command is read, and a command that prints more is not an error. A Runner that ignores it is bounded again by
+	// the caller (Tail).
+	Tail int
 }
 
 // Runner runs a Cmd with a time bound and a read bound and returns what it printed.
