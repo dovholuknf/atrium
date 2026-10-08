@@ -128,7 +128,7 @@ function Get-WorkProbeScript {
         $wr = (Format-WorkPath $root) -replace '/', '\'
         $ps = ($parents | ForEach-Object { ConvertTo-PsLiteral $_ }) -join ', '
         return "`$root = $(ConvertTo-PsLiteral $wr); `$mk = `$$make`n`$parents = @($ps)`n" + @'
-"login=$env:USERDOMAIN\$env:USERNAME"
+"login=$([Security.Principal.WindowsIdentity]::GetCurrent().Name)"
 "drive=$([bool]([IO.DriveInfo]::GetDrives() | Where-Object { $_.Name -eq $parents[0] }))"
 "parents=$($parents.Count)"
 for ($i = 0; $i -lt $parents.Count; $i++) {
