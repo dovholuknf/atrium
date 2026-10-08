@@ -78,6 +78,10 @@ func cullCard(t *testing.T, d *Daemon, dir string, tags ...string) *store.Task {
 	if err := d.st.SetStatus(task.ID, store.StatusDone); err != nil {
 		t.Fatal(err)
 	}
+	// The automatic cull is off unless the operator sets a grace. These tests are about what it does when it is on.
+	if err := d.st.SetSetting(SettingMergedCullGrace, "1800"); err != nil {
+		t.Fatal(err)
+	}
 	return task
 }
 
@@ -144,7 +148,7 @@ func TestCullArchivesTheCardWithoutKillingIt(t *testing.T) {
 func TestCullRefusesAnUnmergedBranch(t *testing.T) {
 	d := testDaemon(t)
 	r := newCullRepo(t, false)
-	task := cullCard(t, d, r.wt, SubagentTag)
+	task := cullCard(t, d, r.wt, OriginAgentTag, SubagentTag)
 
 	_, err := d.Cull(task.ID, "")
 	if err == nil || !strings.Contains(err.Error(), "not merged") {
@@ -165,7 +169,7 @@ func TestCullKeepsADirtyWorktree(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(r.wt, "notes.txt"), []byte("unsaved\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	task := cullCard(t, d, r.wt, SubagentTag)
+	task := cullCard(t, d, r.wt, OriginAgentTag, SubagentTag)
 
 	res, err := d.Cull(task.ID, "")
 	if err != nil {
@@ -201,19 +205,19 @@ func TestCullRefusesTheMainCheckout(t *testing.T) {
 	d := testDaemon(t)
 	r := newCullRepo(t, true)
 	cullGit(t, r.main, "checkout", "-q", "-b", "feature")
-	task := cullCard(t, d, r.main, SubagentTag)
+	task := cullCard(t, d, r.main, OriginAgentTag, SubagentTag)
 
 	if _, err := d.Cull(task.ID, ""); err == nil || !strings.Contains(err.Error(), "main checkout") {
 		t.Fatalf("err = %v, want a refusal for the main checkout", err)
 	}
 }
 
-// A live session atrium does not own cannot be asked to leave, so nothing is
-// removed from under it.
+// A card whose work is not done is not reclaimed, and a live session atrium does not own could not be asked to
+// leave anyway, so nothing is removed from under it. H4: it stays where the operator can see it.
 func TestCullRefusesALiveSessionItDoesNotOwn(t *testing.T) {
 	d := testDaemon(t)
 	r := newCullRepo(t, true)
-	task := cullCard(t, d, r.wt, SubagentTag)
+	task := cullCard(t, d, r.wt, OriginAgentTag, SubagentTag)
 	if err := d.st.SetStatus(task.ID, store.StatusNeedsInput); err != nil {
 		t.Fatal(err)
 	}
@@ -223,8 +227,8 @@ func TestCullRefusesALiveSessionItDoesNotOwn(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if _, err := d.Cull(task.ID, ""); err == nil || !strings.Contains(err.Error(), "does not own") {
-		t.Fatalf("err = %v, want a refusal for a session atrium does not own", err)
+	if _, err := d.Cull(task.ID, ""); err == nil || !strings.Contains(err.Error(), "its work is not done") {
+		t.Fatalf("err = %v, want a refusal for work that is not done", err)
 	}
 	if _, err := os.Stat(r.wt); err != nil {
 		t.Errorf("the worktree was removed from under a live session: %v", err)
@@ -247,6 +251,13 @@ func TestCullExitsASupervisedWorkerFirst(t *testing.T) {
 	}
 	if d.sup.get(task.ID) == nil {
 		t.Skip("the slow test runner did not stay up long enough to supervise")
+	}
+	// It reported done and its launcher accepted, which is what a cull is for.
+	if err := d.st.SetTags(task.ID, []string{OriginAgentTag, SubagentTag}); err != nil {
+		t.Fatal(err)
+	}
+	if err := d.st.SetStatus(task.ID, store.StatusDone); err != nil {
+		t.Fatal(err)
 	}
 
 	res, err := d.Cull(task.ID, "")

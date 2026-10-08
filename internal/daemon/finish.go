@@ -71,6 +71,9 @@ type FinishRequest struct {
 	Ask string `json:"ask,omitempty"`
 	// Kind is `fyi` or `needs`. See fyi.go. Anything but fyi is needs.
 	Kind string `json:"kind,omitempty"`
+	// viaSay is a done that was read out of a worker's own atrium_say to its launcher. The launcher has the words
+	// already, so no second notice is queued to it. Never on the wire. See doneBySay.
+	viaSay bool
 }
 
 // handleFinish answers a session declaring its work over.
@@ -264,6 +267,9 @@ func (d *Daemon) finish(task *store.Task, in FinishRequest) (map[string]any, int
 	// crash cannot record the report and lose the notice. Keyed on the moment,
 	// so every report is sent once. A card nobody launched has nobody to tell.
 	launcher := d.launcherOf(task)
+	if in.viaSay {
+		launcher = nil
+	}
 	// AN FYI THAT THE LAUNCHER HOLDS is held like any notice. Only a progress report is
 	// news, whatever the rest were labelled: a blocked or a question report wants an
 	// answer, one carrying an ask wants one too, and a done report waits on acceptance and
@@ -280,7 +286,7 @@ func (d *Daemon) finish(task *store.Task, in FinishRequest) (map[string]any, int
 			Key:  time.Now().UTC().Format(time.RFC3339Nano),
 			Text: truncatePeer(reportBody(task, in.Status, sha, unverified, recap)),
 		}
-	} else {
+	} else if !in.viaSay {
 		// A launcher on another room hears it the same way, held in the relay
 		// outbox inside the same transaction. See relay.go.
 		write.Relay = d.launcherRelay(task, reportBody(task, in.Status, sha, unverified, recap))
@@ -315,7 +321,7 @@ func (d *Daemon) finish(task *store.Task, in FinishRequest) (map[string]any, int
 	}
 	// A REPORT THAT REACHED NOBODY is made visible, to the orchestrator, held. Before, it stamped
 	// reported_at and left the board saying a report was waiting.
-	if res.Notice == nil && !res.Relayed && in.Status != ReportProgress && agentLaunched(task) {
+	if res.Notice == nil && !res.Relayed && in.Status != ReportProgress && agentLaunched(task) && !in.viaSay {
 		d.orphanReport(task, reportBody(task, in.Status, sha, unverified, recap))
 	}
 	if status == store.StatusDone || in.Status == store.StatusNeedsInput {

@@ -414,6 +414,7 @@ func (d *Daemon) peerSaid(from string, target *store.Task, text, kind string) {
 	if err := d.st.MarkReported(sender.ID); err != nil {
 		log.Printf("[atrium] could not record that %s reported: %v", sender.DisplayTitle(), err)
 	}
+	d.doneBySay(sender, text)
 }
 
 // ── silent stops ────────────────────────────────────────────────────────────────
