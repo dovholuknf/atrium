@@ -55,6 +55,25 @@ function Test-WorkRootArg {
     $null
 }
 
+# Test-WorkRootOs is why a -WorkRoot that Test-WorkRootArg let through cannot be used on a room of this OS, or $null. The
+# argument checks run before the OS is known, so a drive path on a Unix room (which would be made under $HOME) and a Unix path
+# on a Windows room (which has no drive) are caught here, once the room says what it is.
+function Test-WorkRootOs {
+    param([string] $os, [string] $dir)
+    $isDrive = $dir -match '^[A-Za-z]:[\\/]'
+    if ($os -eq 'windows' -and -not $isDrive) { return 'is a Unix path and the room is a Windows machine. name a folder on a drive, like V:\localai' }
+    if ($os -ne 'windows' -and $isDrive) { return "is a drive path and the room is a $os machine. name an absolute folder, like /srv/localai" }
+    $null
+}
+
+# Test-AgentPackArg is why -AgentPackRepo or -AgentPackBranch cannot be used, or $null. Both end up as git arguments.
+function Test-AgentPackArg {
+    param([string] $repo, [string] $branch)
+    if ($repo -notmatch '^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$') { return "-AgentPackRepo '$repo' is not owner/name" }
+    if ($branch -notmatch '^[A-Za-z0-9_][A-Za-z0-9_./-]*$' -or $branch -match '\.\.') { return "-AgentPackBranch '$branch' is not a branch name (it may not start with - or hold ..)" }
+    $null
+}
+
 # Get-WorkLayout is every folder the work root holds, as the settings spell them.
 function Get-WorkLayout {
     param([string] $root)
@@ -94,23 +113,34 @@ function Get-WorkParents {
 # ── what an administrator is told to run ────────────────────────────────────
 
 function Format-WorkWord { param([string] $s) if ($s -cmatch '^[A-Za-z0-9_.:\\/-]+$') { $s } else { "'" + ($s -replace "'", "''") + "'" } }
+function Format-WorkWordSh { param([string] $s) if ($s -cmatch '^[A-Za-z0-9_.:/=+-]+$') { $s } else { ConvertTo-ShLiteral $s } }
 
 # Get-WorkAdminLines is the commands for an administrator, each one line, for the parents the account cannot examine and a work
 # root it cannot make or write. Windows is PowerShell, Unix is sh. The grant on a parent is the attributes alone and is NOT
 # inherited, so the account can neither list the drive nor create at its root. The work root gets full control, inherited.
+#
+# A parent that is not there ($missingParents, a subset of $badParents) is MADE first, top down, and only then are the grants
+# given, so the lines work as printed. On Unix a parent is opened to the account alone, by an ACL entry (`setfacl -m
+# u:<acct>:x`, `chmod +a` on a Mac), never `chmod o+x`, which would open it to every user. The root of the filesystem is never
+# touched: there is no line for `/`.
 function Get-WorkAdminLines {
-    param([string] $os, [string] $account, [string] $root, [string[]] $badParents = @(), [bool] $rootMissing = $false, [bool] $rootNotWritable = $false)
+    param([string] $os, [string] $account, [string] $root, [string[]] $badParents = @(), [bool] $rootMissing = $false, [bool] $rootNotWritable = $false, [string[]] $missingParents = @())
     $lines = @()
     if ($os -eq 'windows') {
         $wr = (Format-WorkPath $root) -replace '/', '\'
+        foreach ($p in $badParents) { if ($missingParents -contains $p) { $lines += "New-Item -ItemType Directory $(Format-WorkWord $p)" } }
         foreach ($p in $badParents) { $lines += "icacls $(Format-WorkWord $p) /grant $(Format-WorkWord "${account}:(RA,REA)")" }
         if ($rootMissing) { $lines += "New-Item -ItemType Directory $(Format-WorkWord $wr)" }
         if ($rootMissing -or $rootNotWritable) { $lines += "icacls $(Format-WorkWord $wr) /grant $(Format-WorkWord "${account}:(OI)(CI)F")" }
     } else {
         $wr = Format-WorkPath $root
-        foreach ($p in $badParents) { $lines += "sudo chmod o+x $(Format-WorkWord $p)" }
-        if ($rootMissing) { $lines += "sudo install -d -o $account -m 755 $(Format-WorkWord $wr)" }
-        elseif ($rootNotWritable) { $lines += "sudo chown -R ${account}: $(Format-WorkWord $wr)" }
+        foreach ($p in $badParents) { if ($p -ne '/' -and $missingParents -contains $p) { $lines += "sudo install -d -m 755 $(Format-WorkWordSh $p)" } }
+        foreach ($p in $badParents) {
+            if ($p -eq '/') { continue }
+            $lines += if ($os -eq 'darwin') { "sudo chmod +a $(Format-WorkWordSh "user:$account allow search") $(Format-WorkWordSh $p)" } else { "sudo setfacl -m $(Format-WorkWordSh "u:${account}:x") $(Format-WorkWordSh $p)" }
+        }
+        if ($rootMissing) { $lines += "sudo install -d -o $account -m 755 $(Format-WorkWordSh $wr)" }
+        elseif ($rootNotWritable) { $lines += "sudo chown -R ${account}: $(Format-WorkWordSh $wr)" }
     }
     $lines
 }
@@ -118,8 +148,9 @@ function Get-WorkAdminLines {
 # ── the work root on the remote ─────────────────────────────────────────────
 
 # Get-WorkProbeScript is the script that reads, and with $make makes, the work root, as the ssh login. Windows is PowerShell,
-# Unix is sh. It prints key=value lines: login, drive (False when the drive is not there), parents and parentN (ok or fail:
-# can its attributes be read), exists, made, writable. Examining a parent is Get-Item on Windows and a search permission test on
+# Unix is sh. It prints key=value lines: login, drive (False when the drive is not there), parents and parentN (ok, missing or
+# fail: can its attributes be read), exists, made, writable. It writes nothing but the root itself, and only when $make: a
+# read only check reads the Windows folder's ACL rather than writing a probe file, and the Unix one asks `test -w`. Examining a parent is Get-Item on Windows and a search permission test on
 # Unix, which is what Claude Code asks of each one. It never lists or creates at a parent.
 function Get-WorkProbeScript {
     param([string] $os, [string] $root, [bool] $make)
@@ -132,7 +163,8 @@ function Get-WorkProbeScript {
 "drive=$([bool]([IO.DriveInfo]::GetDrives() | Where-Object { $_.Name -eq $parents[0] }))"
 "parents=$($parents.Count)"
 for ($i = 0; $i -lt $parents.Count; $i++) {
-    try { $null = Get-Item -LiteralPath $parents[$i] -Force -ErrorAction Stop; "parent$i=ok" } catch { "parent$i=fail" }
+    try { $null = Get-Item -LiteralPath $parents[$i] -Force -ErrorAction Stop; "parent$i=ok" }
+    catch { if ($_.Exception -is [System.Management.Automation.ItemNotFoundException]) { "parent$i=missing" } else { "parent$i=fail" } }
 }
 if (Test-Path -LiteralPath $root -PathType Container) { 'exists=True' }
 else {
@@ -140,14 +172,30 @@ else {
     if ($mk) { try { New-Item -ItemType Directory -Force -Path $root -ErrorAction Stop | Out-Null; 'made=True' } catch { 'made=False' } }
 }
 if (Test-Path -LiteralPath $root -PathType Container) {
-    $t = Join-Path $root ".atrium-probe-$PID"
-    try { [IO.File]::WriteAllText($t, 'x'); Remove-Item -LiteralPath $t -Force; 'writable=True' } catch { 'writable=False' }
+    if ($mk) {
+        $t = Join-Path $root ".atrium-probe-$PID"
+        try { [IO.File]::WriteAllText($t, 'x'); Remove-Item -LiteralPath $t -Force; 'writable=True' } catch { 'writable=False' }
+    } else {
+        # -Check writes nothing, so the answer is the folder's ACL read against this login's SIDs: a folder is writable when
+        # an Allow entry that applies to the folder itself gives CreateFiles and AppendData and no Deny entry takes either.
+        try {
+            $sids = @([Security.Principal.WindowsIdentity]::GetCurrent().User.Value) + @([Security.Principal.WindowsIdentity]::GetCurrent().Groups | ForEach-Object { $_.Value })
+            $need = 6; $allow = 0; $deny = 0
+            foreach ($r in (Get-Acl -LiteralPath $root -ErrorAction Stop).Access) {
+                if ($r.PropagationFlags -band [Security.AccessControl.PropagationFlags]::InheritOnly) { continue }
+                try { $sid = $r.IdentityReference.Translate([Security.Principal.SecurityIdentifier]).Value } catch { continue }
+                if ($sids -notcontains $sid) { continue }
+                if ($r.AccessControlType -eq 'Deny') { $deny = $deny -bor [int]$r.FileSystemRights } else { $allow = $allow -bor [int]$r.FileSystemRights }
+            }
+            if ((($allow -band $need) -eq $need) -and (($deny -band $need) -eq 0)) { 'writable=True' } else { 'writable=False' }
+        } catch { 'writable=False' }
+    }
 }
 '@
     }
     $wr = Format-WorkPath $root
     $ps = ($parents | ForEach-Object { ConvertTo-ShLiteral $_ }) -join ' '
-    "root=$(ConvertTo-ShLiteral $wr); mk=$(if ($make) { 1 } else { 0 })`nn=0; for p in $ps; do if [ -x `"`$p`" ]; then echo `"parent`$n=ok`"; else echo `"parent`$n=fail`"; fi; n=`$((n+1)); done`n" + @'
+    "root=$(ConvertTo-ShLiteral $wr); mk=$(if ($make) { 1 } else { 0 })`nn=0; for p in $ps; do if [ -x `"`$p`" ]; then echo `"parent`$n=ok`"; elif [ ! -e `"`$p`" ]; then echo `"parent`$n=missing`"; else echo `"parent`$n=fail`"; fi; n=`$((n+1)); done`n" + @'
 echo "login=$(id -un)"
 echo drive=True
 echo "parents=$n"
@@ -165,13 +213,13 @@ function ConvertFrom-WorkProbe {
     param($lines, [int] $parentCount)
     $kv = @{}
     foreach ($l in @($lines)) { $s = "$l"; $i = $s.IndexOf('='); if ($i -gt 0) { $kv[$s.Substring(0, $i).Trim()] = $s.Substring($i + 1).TrimEnd() } }
-    $bad = @(); $seen = 0
+    $bad = @(); $gone = @(); $seen = 0
     for ($i = 0; $i -lt $parentCount; $i++) {
-        if ($kv.ContainsKey("parent$i")) { $seen++; if ($kv["parent$i"] -ne 'ok') { $bad += $i } }
+        if ($kv.ContainsKey("parent$i")) { $seen++; if ($kv["parent$i"] -ne 'ok') { $bad += $i }; if ($kv["parent$i"] -eq 'missing') { $gone += $i } }
     }
     [pscustomobject]@{
         Ok = ($kv.ContainsKey('parents') -and $seen -eq $parentCount)
-        Login = $kv.login; DriveMissing = ($kv.drive -eq 'False'); BadIndexes = $bad
+        Login = $kv.login; DriveMissing = ($kv.drive -eq 'False'); BadIndexes = $bad; MissingIndexes = $gone
         Exists = ($kv.exists -eq 'True'); Made = ($kv.made -eq 'True'); MadeFailed = ($kv.made -eq 'False'); Writable = ($kv.writable -eq 'True')
     }
 }
@@ -190,12 +238,16 @@ function Get-WorkRootVerdict {
         return (& $mk 'fail' "the drive $d is not there for $acct on $remoteHost (a mapped drive belongs to one logon session and is not there over ssh). pick a -WorkRoot on a drive that is" 13 @())
     }
     $bad = @($probe.BadIndexes | ForEach-Object { $parents[$_] })
+    $gone = @($probe.MissingIndexes | ForEach-Object { $parents[$_] })
+    $closed = @($bad | Where-Object { $gone -notcontains $_ })
     $missing = (-not $probe.Exists) -and (-not $probe.Made)
     $noWrite = $probe.Exists -and (-not $probe.Writable) -and (-not $probe.Made)
     if ($bad.Count -or ($make -and ($probe.MadeFailed -or $noWrite))) {
-        $admin = @(Get-WorkAdminLines $os $acct $root $bad $missing $noWrite)
+        $admin = @(Get-WorkAdminLines $os $acct $root $bad $missing $noWrite $gone)
         $why = @()
-        if ($bad.Count) { $why += "$acct cannot examine $($bad -join ', '). Claude Code examines every folder on the way to a path it writes and raises its own unanswerable prompt when it cannot" }
+        if ($gone.Count) { $why += "$($gone -join ', ') $(if ($gone.Count -eq 1) { 'is' } else { 'are' }) not there, and $acct may not make $(if ($gone.Count -eq 1) { 'it' } else { 'them' })" }
+        if ($closed.Count) { $why += "$acct cannot examine $($closed -join ', '). Claude Code examines every folder on the way to a path it writes and raises its own unanswerable prompt when it cannot" }
+        elseif ($gone.Count) { $why += "once made, each is given to $acct as an examine-only entry, because Claude Code examines every folder on the way to a path it writes and raises its own unanswerable prompt when it cannot" }
         if ($missing -and $make) { $why += "$root is missing and $acct may not make it" }
         if ($noWrite) { $why += "$root exists and $acct cannot write to it" }
         return (& $mk 'fail' ("$($why -join '. '). this never needs admin itself. an administrator runs the lines below, which give the attributes of the parent folders and nothing else (no listing, no creating, not inherited)") 13 $admin)
@@ -224,20 +276,24 @@ function Get-WorkCacheScript {
             "`$gocache = $(ConvertTo-PsLiteral $layout.GoBuild); `$pip = $(ConvertTo-PsLiteral $layout.Pip); `$cargo = $(ConvertTo-PsLiteral $layout.Cargo)`n" + $script:WorkCacheWin
     }
     $d = ($dirs | ForEach-Object { ConvertTo-ShLiteral $_ }) -join ' '
-    "mk=$(if ($make) { 1 } else { 0 }); dirs=($d)`nnpm=$(ConvertTo-ShLiteral $layout.Npm); gomod=$(ConvertTo-ShLiteral $layout.GoMod); " +
+    # POSIX sh, not bash: Invoke-Remote pipes this to `sh -s`, which is dash on Debian and Ubuntu. The folders ride in the
+    # positional parameters (`set --`), not an array.
+    "mk=$(if ($make) { 1 } else { 0 }); set -- $d`nnpm=$(ConvertTo-ShLiteral $layout.Npm); gomod=$(ConvertTo-ShLiteral $layout.GoMod); " +
         "gocache=$(ConvertTo-ShLiteral $layout.GoBuild); pip=$(ConvertTo-ShLiteral $layout.Pip); cargo=$(ConvertTo-ShLiteral $layout.Cargo)`n" + $script:WorkCacheSh
 }
 
 # The Windows body. Set-KeyLine is a key=value file (.npmrc, go's env file), Set-IniKey is the pip.ini one. Both return ok,
 # done or todo.
 $script:WorkCacheWin = @'
+# Windows PowerShell 5.1 reads a file with no BOM as ANSI, and these files are rewritten as UTF-8, so every read says UTF-8.
+function Read-Lines { param($file) [IO.File]::ReadAllLines($file, (New-Object Text.UTF8Encoding $false)) }
 function Write-Lines { param($file, $lines)
     New-Item -ItemType Directory -Force -Path (Split-Path -Parent $file) | Out-Null
     [IO.File]::WriteAllText($file, (($lines -join "`r`n") + "`r`n"), (New-Object Text.UTF8Encoding $false))
 }
 function Set-KeyLine { param($file, $key, $val)
     $line = "$key=$val"
-    $old = if (Test-Path -LiteralPath $file) { @(Get-Content -LiteralPath $file) } else { @() }
+    $old = if (Test-Path -LiteralPath $file) { @(Read-Lines $file) } else { @() }
     $new = @(); $placed = $false
     foreach ($l in $old) {
         if ($l -match ('^\s*' + [regex]::Escape($key) + '\s*=')) { if (-not $placed) { $new += $line; $placed = $true } }
@@ -250,7 +306,7 @@ function Set-KeyLine { param($file, $key, $val)
 }
 function Set-IniKey { param($file, $sec, $key, $val)
     $line = "$key = $val"
-    $old = if (Test-Path -LiteralPath $file) { @(Get-Content -LiteralPath $file) } else { @() }
+    $old = if (Test-Path -LiteralPath $file) { @(Read-Lines $file) } else { @() }
     $new = @(); $in = $false; $seen = $false
     foreach ($l in $old) {
         if ($l -match '^\s*\[.*\]') {
@@ -287,19 +343,19 @@ if (Get-Command pip -ErrorAction SilentlyContinue) { "piptool=$((& pip config ge
 $script:WorkCacheSh = @'
 apply() { f=$1; t=$2; if cmp -s "$t" "$f" 2>/dev/null; then rm -f "$t"; echo ok; return; fi
   if [ "$mk" = 1 ]; then mkdir -p "$(dirname "$f")"; cat "$t" > "$f"; rm -f "$t"; echo done; else rm -f "$t"; echo todo; fi; }
-setkv() { f=$1; k=$2; v=$3; t="$f.atrium-tmp.$$"; mkdir -p "$(dirname "$f")" 2>/dev/null || t="${TMPDIR:-/tmp}/atrium-kv.$$"
-  [ -f "$f" ] || : > "$t.empty"; src="$f"; [ -f "$f" ] || src="$t.empty"
-  awk -v k="$k" -v l="$k=$v" 'BEGIN { p=0 } $0 ~ "^[ \t]*" k "[ \t]*=" { if (!p) { print l; p=1 }; next } { print } END { if (!p) print l }' "$src" > "$t"
+setkv() { f=$1; k=$2; v=$3; t="${TMPDIR:-/tmp}/atrium-kv.$$"; src="$f"; if [ ! -f "$f" ]; then : > "$t.empty"; src="$t.empty"; fi
+  K="$k" L="$k=$v" awk 'BEGIN { k=ENVIRON["K"]; l=ENVIRON["L"]; p=0 } $0 ~ "^[ \t]*" k "[ \t]*=" { if (!p) { print l; p=1 }; next } { print } END { if (!p) print l }' "$src" > "$t"
   rm -f "$t.empty"; apply "$f" "$t"; }
 setini() { f=$1; s=$2; k=$3; v=$4; t="${TMPDIR:-/tmp}/atrium-ini.$$"; src="$f"; if [ ! -f "$f" ]; then : > "$t.empty"; src="$t.empty"; fi
-  awk -v sec="$s" -v k="$k" -v l="$k = $v" 'BEGIN { inn=0; seen=0 }
+  S="$s" K="$k" L="$k = $v" awk 'BEGIN { sec=ENVIRON["S"]; k=ENVIRON["K"]; l=ENVIRON["L"]; inn=0; seen=0 }
     /^[ \t]*\[.*\]/ { inn = ($0 ~ "^[ \t]*\\[" sec "\\][ \t]*$"); print; if (inn && !seen) { print l; seen=1 }; next }
     inn && $0 ~ "^[ \t]*" k "[ \t]*[=:]" { next }
     { print }
     END { if (!seen) { print "[" sec "]"; print l } }' "$src" > "$t"
   rm -f "$t.empty"; apply "$f" "$t"; }
+shq() { printf "'%s'" "$(printf %s "$1" | sed "s/'/'\\\\''/g")"; }
 made=0
-for d in "${dirs[@]}"; do if [ ! -d "$d" ]; then if [ "$mk" = 1 ]; then mkdir -p "$d" && made=$((made+1)); else made=$((made+1)); fi; fi; done
+for d in "$@"; do if [ ! -d "$d" ]; then if [ "$mk" = 1 ]; then mkdir -p "$d" && made=$((made+1)); else made=$((made+1)); fi; fi; done
 if [ "$made" = 0 ]; then echo dirs=ok; elif [ "$mk" = 1 ]; then echo "dirs=made $made"; else echo "dirs=todo $made"; fi
 echo "npm=$(setkv "$HOME/.npmrc" cache "$npm")"
 gcfg="${XDG_CONFIG_HOME:-$HOME/.config}"; if [ "$(uname -s)" = Darwin ]; then gcfg="$HOME/Library/Application Support"; fi
@@ -307,11 +363,11 @@ echo "gomod=$(setkv "$gcfg/go/env" GOMODCACHE "$gomod")"
 echo "gocache=$(setkv "$gcfg/go/env" GOCACHE "$gocache")"
 echo "pip=$(setini "${XDG_CONFIG_HOME:-$HOME/.config}/pip/pip.conf" global cache-dir "$pip")"
 pf="$HOME/.profile"; t="${TMPDIR:-/tmp}/atrium-prof.$$"
-{ if [ -f "$pf" ]; then grep -v '# atrium work root$' "$pf"; fi; echo "export CARGO_HOME='$cargo'  # atrium work root"; } > "$t"
+{ if [ -f "$pf" ]; then grep -v '# atrium work root$' "$pf"; fi; echo "export CARGO_HOME=$(shq "$cargo")  # atrium work root"; } > "$t"
 echo "cargo=$(apply "$pf" "$t")"
-if command -v npm >/dev/null 2>&1; then echo "npmtool=$(npm config get cache 2>/dev/null | head -1)"; fi
-if command -v go >/dev/null 2>&1; then echo "gotool=$(go env GOMODCACHE 2>/dev/null | head -1)"; echo "gocachetool=$(go env GOCACHE 2>/dev/null | head -1)"; fi
-if command -v pip >/dev/null 2>&1; then echo "piptool=$(pip config get global.cache-dir 2>/dev/null | head -1)"; fi
+if command -v npm >/dev/null 2>&1; then echo "npmtool=$(npm config get cache 2>/dev/null </dev/null | head -1)"; fi
+if command -v go >/dev/null 2>&1; then echo "gotool=$(go env GOMODCACHE 2>/dev/null </dev/null | head -1)"; echo "gocachetool=$(go env GOCACHE 2>/dev/null </dev/null | head -1)"; fi
+if command -v pip >/dev/null 2>&1; then echo "piptool=$(pip config get global.cache-dir 2>/dev/null </dev/null | head -1)"; fi
 '@
 
 # Get-WorkCacheVerdict turns what the cache script printed into step lines: one for the folders, one for the caches. A tool's own
@@ -350,8 +406,12 @@ function Get-WorkCacheVerdict {
 function Invoke-WorkRoot {
     param([scriptblock] $Remote, [string] $Os, [string] $Root, [bool] $Make, [string] $RemoteHost)
     $layout = Get-WorkLayout $Root
+    $osWhy = Test-WorkRootOs $Os $Root
+    if ($osWhy) {
+        return [pscustomobject]@{ Steps = @([pscustomobject]@{ Step = 'work-root'; Status = 'fail'; Detail = "-WorkRoot $Root $osWhy" }); AdminLines = @(); Code = 1; Layout = $layout }
+    }
     $parents = @(Get-WorkParents $Root $Os)
-    $pr = & $Remote (Get-WorkProbeScript $Os $Root $Make)
+    $pr =& $Remote (Get-WorkProbeScript $Os $Root $Make)
     $probe = ConvertFrom-WorkProbe $pr.Out $parents.Count
     $v = Get-WorkRootVerdict $Os $Root $probe $Make $RemoteHost
     $steps = @([pscustomobject]@{ Step = 'work-root'; Status = $v.Status; Detail = $v.Detail })
@@ -434,8 +494,10 @@ function Get-HubMirrorUrl { param([string] $hubAddr, [string] $repo) "http://$hu
 # Get-HubMirrorCommit is the commit the hub's mirror has for a branch, or $null when it cannot be asked. Reads refs only.
 function Get-HubMirrorCommit {
     param([string] $hubAddr, [string] $repo, [string] $branch)
-    $env:GIT_TERMINAL_PROMPT = '0'
-    $o = & git ls-remote (Get-HubMirrorUrl $hubAddr $repo) "refs/heads/$branch" 2>$null
+    if (Test-AgentPackArg $repo $branch) { return $null }
+    $was = $env:GIT_TERMINAL_PROMPT; $env:GIT_TERMINAL_PROMPT = '0'
+    try { $o = & git ls-remote (Get-HubMirrorUrl $hubAddr $repo) "refs/heads/$branch" 2>$null }
+    finally { if ($null -eq $was) { Remove-Item Env:GIT_TERMINAL_PROMPT -ErrorAction SilentlyContinue } else { $env:GIT_TERMINAL_PROMPT = $was } }
     if ($LASTEXITCODE -ne 0) { return $null }
     $l = @($o | ForEach-Object { "$_" } | Where-Object { $_ -match "^[0-9a-f]{40}\s+refs/heads/$([regex]::Escape($branch))$" } | Select-Object -First 1)
     if ($l.Count) { ($l[0] -split '\s+')[0] } else { $null }
@@ -450,12 +512,15 @@ function Get-PackTar { $w = Join-Path $env:SystemRoot 'System32\tar.exe'; if ($I
 function New-AgentPack {
     param([string] $HubAddr, [string] $Repo, [string] $Branch, [string] $OutDir)
     $fail = { param($why) [pscustomobject]@{ Ok = $false; Why = $why; Commit = $null; Tgz = $null; Meta = $null; Skipped = @() } }
+    $bad = Test-AgentPackArg $Repo $Branch
+    if ($bad) { return (& $fail $bad) }
     $url = Get-HubMirrorUrl $HubAddr $Repo
     $src = Join-Path $OutDir 'agent-pack-src'; $stage = Join-Path $OutDir 'agent-pack-stage'
     foreach ($d in $src, $stage) { if (Test-Path -LiteralPath $d) { Remove-Item -LiteralPath $d -Recurse -Force } }
     New-Item -ItemType Directory -Force -Path $OutDir | Out-Null
-    $env:GIT_TERMINAL_PROMPT = '0'
-    $o = & git clone -q -b $Branch $url $src 2>&1
+    $was = $env:GIT_TERMINAL_PROMPT; $env:GIT_TERMINAL_PROMPT = '0'
+    try { $o = & git clone -q -b $Branch -- $url $src 2>&1 }
+    finally { if ($null -eq $was) { Remove-Item Env:GIT_TERMINAL_PROMPT -ErrorAction SilentlyContinue } else { $env:GIT_TERMINAL_PROMPT = $was } }
     if ($LASTEXITCODE -ne 0) { return (& $fail "could not fetch $Branch of $url from the hub's mirror: $((@($o) | Select-Object -First 1))") }
     $commit = (& git -C $src rev-parse HEAD 2>$null | Select-Object -First 1)
     $claude = Join-Path $src 'claude'
@@ -492,12 +557,31 @@ $tarx = Join-Path $env:SystemRoot 'System32\tar.exe'; if (-not (Test-Path -Liter
 if ($LASTEXITCODE -ne 0) { 'unpack=fail'; exit 1 }
 $ErrorActionPreference = 'Stop'
 $meta = Get-Content -LiteralPath (Join-Path $tmp '.atrium-pack.json') -Raw | ConvertFrom-Json
-$dst = Join-Path $env:USERPROFILE '.claude'; $changed = 0; $n = 0
+$dst = Join-Path $env:USERPROFILE '.claude'; $changed = 0; $n = 0; $refused = @(); $edited = @()
+$rec = Join-Path $dst 'atrium-agent-pack.json'
+$prev = if (Test-Path -LiteralPath $rec) { try { Get-Content -LiteralPath $rec -Raw -Encoding UTF8 | ConvertFrom-Json } catch { $null } } else { $null }
+$old = if ($prev) { "$($prev.commit)" } else { '' }
+# A folder BELOW ~/.claude that is a link or a junction would send the write to wherever it points, which may be outside the
+# account's own folder: that file is refused, and named. ~/.claude itself may be one (a dotfiles layout), it is the account's.
+function Get-LinkedParent { param($rel)
+    $d = $dst
+    foreach ($c in @((Split-Path -Parent $rel) -split '[\\/]' | Where-Object { $_ })) {
+        $d = Join-Path $d $c
+        $i = Get-Item -LiteralPath $d -Force -ErrorAction SilentlyContinue
+        if ($i -and $i.LinkType) { return $d }
+    }
+    $null
+}
 foreach ($f in $meta.files.PSObject.Properties) {
     $n++
     $to = Join-Path $dst $f.Name; $src = Join-Path $tmp $f.Name
+    $lp = Get-LinkedParent $f.Name
+    if ($lp) { $refused += "$($f.Name) ($lp is a link)"; continue }
     $it = Get-Item -LiteralPath $to -Force -ErrorAction SilentlyContinue
-    if ($it -and -not $it.LinkType -and -not $it.PSIsContainer -and (Get-FileHash -LiteralPath $to -Algorithm SHA256).Hash.ToLower() -eq $f.Value) { continue }
+    $have = if ($it -and -not $it.LinkType -and -not $it.PSIsContainer) { (Get-FileHash -LiteralPath $to -Algorithm SHA256).Hash.ToLower() } else { $null }
+    if ($have -eq $f.Value) { continue }
+    # a file that is there, is not a link, and is not what the last pack wrote has been edited here: it is replaced, and said
+    if ($have) { $was = if ($prev -and $prev.files) { $prev.files.($f.Name) } else { $null }; if ($have -ne $was) { $edited += $f.Name } }
     $changed++
     if ($mk) {
         if ($it -and ($it.LinkType -or $it.PSIsContainer)) { Remove-Item -LiteralPath $to -Recurse -Force }
@@ -505,10 +589,10 @@ foreach ($f in $meta.files.PSObject.Properties) {
         Copy-Item -LiteralPath $src -Destination $to -Force
     }
 }
-$rec = Join-Path $dst 'atrium-agent-pack.json'
-$old = if (Test-Path -LiteralPath $rec) { (Get-Content -LiteralPath $rec -Raw | ConvertFrom-Json).commit } else { '' }
 "commit=$($meta.commit)"; "files=$n"; "changed=$changed"; "was=$old"
-if ($mk -and ($changed -gt 0 -or $old -ne $meta.commit)) {
+"refused=$($refused.Count)"; if ($refused) { "refused_files=$($refused -join ', ')" }
+"edited=$($edited.Count)"; if ($edited) { "edited_files=$($edited -join ', ')" }
+if ($mk -and -not $refused.Count -and ($changed -gt 0 -or $old -ne $meta.commit)) {
     $stamp = (Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')
     $meta | Add-Member -NotePropertyName installed_at -NotePropertyValue $stamp -Force
     [IO.File]::WriteAllText($rec, ($meta | ConvertTo-Json -Depth 5), (New-Object Text.UTF8Encoding $false))
@@ -525,16 +609,25 @@ dst="$HOME/.claude"; changed=0; n=0
 if command -v sha256sum >/dev/null 2>&1; then sha() { sha256sum "$1" | cut -d' ' -f1; }; else sha() { shasum -a 256 "$1" | cut -d' ' -f1; }; fi
 commit=$(sed -n 's/.*"commit": *"\([^"]*\)".*/\1/p' "$tmp/.atrium-pack.json" | head -1)
 sed -n -E 's/^ *"((agents|skills)\/[^"]*)": *"([0-9a-f]{64})".*/\1 \3/p' "$tmp/.atrium-pack.json" > "$tmp/.list"
+rec="$dst/atrium-agent-pack.json"
+: > "$tmp/.prev"; if [ -f "$rec" ]; then sed -n -E 's/^ *"((agents|skills)\/[^"]*)": *"([0-9a-f]{64})".*/\1 \3/p' "$rec" > "$tmp/.prev"; fi
+refused=0; refusedf=""; edited=0; editedf=""
+# a folder BELOW ~/.claude that is a link would send the write to where it points: that file is refused, and named
+linked() { d="$dst"; oi=$IFS; IFS=/; set -f; for c in $(dirname "$1"); do d="$d/$c"; if [ -L "$d" ]; then IFS=$oi; set +f; lp=$d; return 0; fi; done; IFS=$oi; set +f; return 1; }
 while read -r rel h; do
   n=$((n+1)); to="$dst/$rel"
-  if [ -f "$to" ] && [ ! -L "$to" ] && [ "$(sha "$to")" = "$h" ]; then continue; fi
+  if linked "$rel"; then refused=$((refused+1)); refusedf="$refusedf${refusedf:+, }$rel ($lp is a link)"; continue; fi
+  have=""; if [ -f "$to" ] && [ ! -L "$to" ]; then have=$(sha "$to"); fi
+  if [ "$have" = "$h" ]; then continue; fi
+  if [ -n "$have" ]; then prevh=$(REL="$rel" awk '$1 == ENVIRON["REL"] { print $2; exit }' "$tmp/.prev"); if [ "$have" != "$prevh" ]; then edited=$((edited+1)); editedf="$editedf${editedf:+, }$rel"; fi; fi
   changed=$((changed+1))
   if [ "$mk" = 1 ]; then rm -rf "$to"; mkdir -p "$(dirname "$to")"; cp "$tmp/$rel" "$to"; fi
 done < "$tmp/.list"
-rec="$dst/atrium-agent-pack.json"
 was=$(sed -n 's/.*"commit": *"\([^"]*\)".*/\1/p' "$rec" 2>/dev/null | head -1)
 echo "commit=$commit"; echo "files=$n"; echo "changed=$changed"; echo "was=$was"
-if [ "$mk" = 1 ] && { [ "$changed" -gt 0 ] || [ "$was" != "$commit" ]; }; then cp "$tmp/.atrium-pack.json" "$rec"; echo record=written; fi
+echo "refused=$refused"; if [ "$refused" -gt 0 ]; then echo "refused_files=$refusedf"; fi
+echo "edited=$edited"; if [ "$edited" -gt 0 ]; then echo "edited_files=$editedf"; fi
+if [ "$mk" = 1 ] && [ "$refused" = 0 ] && { [ "$changed" -gt 0 ] || [ "$was" != "$commit" ]; }; then cp "$tmp/.atrium-pack.json" "$rec"; echo record=written; fi
 rm -rf "$tmp" "$tgz"
 '@
 }

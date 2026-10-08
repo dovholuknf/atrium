@@ -342,7 +342,9 @@ failed with `ENOTEMPTY`.
 ### macOS and Linux
 
 The same idea applies and the commands are the ones above. Every parent folder of the work folder must be readable and
-searchable by the room's user (`chmod o+x` on a parent, or the `work` group from the blocks above), and the caches and
+searchable by the room's user. Provision prints the line for each parent that is not: `setfacl -m u:<account>:x <parent>`
+(`chmod +a` on a Mac), which opens it to that account alone and never to every user, after `install -d` for one that is
+missing. The filesystem root is never touched. A check (`-Check`, room-check) writes nothing on the room, and the caches and
 `scm_root` belong on the work volume, not in the home folder on the boot disk.
 
 ## The agent pack

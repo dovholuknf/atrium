@@ -77,6 +77,21 @@ func TestRoomSetReviewsRootAndHandoffDir(t *testing.T) {
 	}
 }
 
+// Both values are stored the way the settings API stores them: trimmed and cleaned, so a ".." or a trailing slash is not kept.
+func TestRoomSetCleansTheWorkRootPair(t *testing.T) {
+	db := filepath.Join(t.TempDir(), "atrium.db")
+	want := filepath.Join(absRoot(), "x")
+	typed := " " + absRoot() + string(filepath.Separator) + "y" + string(filepath.Separator) + ".." + string(filepath.Separator) + "x" + string(filepath.Separator) + " "
+	for _, key := range []string{"reviews_root", "context_handoff_dir"} {
+		if _, err := roomSettingRun(t, "set", key, typed, "--db", db); err != nil {
+			t.Fatalf("set %s: %v", key, err)
+		}
+		if out, err := roomSettingRun(t, "get", key, "--db", db); err != nil || strings.TrimSpace(out) != want {
+			t.Fatalf("get %s = %q, %v, want %q", key, out, err, want)
+		}
+	}
+}
+
 func TestRoomSetRefusals(t *testing.T) {
 	dir := t.TempDir()
 	db := filepath.Join(dir, "room.db")

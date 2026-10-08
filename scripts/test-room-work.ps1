@@ -65,8 +65,30 @@ $a = Get-WorkAdminLines 'windows' 'SG3\localai' 'V:\work\localai' @('V:\', 'V:\w
 Check 'admin: every parent that failed, each its own line' @($a.Count, $a[0], $a[1], $a[2]) @(3, "icacls V:\ /grant 'SG3\localai:(RA,REA)'", "icacls V:\work /grant 'SG3\localai:(RA,REA)'", "icacls V:\work\localai /grant 'SG3\localai:(OI)(CI)F'")
 Check 'admin: no line ever grants a parent more than the attributes, or inherits it' (@(Get-WorkAdminLines 'windows' 'SG3\localai' 'V:\w\localai' @('V:\', 'V:\w') $true $true | Where-Object { $_ -like 'icacls *' -and $_ -notlike '*localai /grant*' -and $_ -match '\((OI|CI)\)|:\(F\)|:\(M\)|RX' }).Count) 0
 Check 'admin: a name with a space is quoted' (Get-WorkAdminLines 'windows' 'PC\my user' 'V:\a b' @('V:\') $false $true) @("icacls V:\ /grant 'PC\my user:(RA,REA)'", "icacls 'V:\a b' /grant 'PC\my user:(OI)(CI)F'")
-Check 'admin: unix gets chmod o+x on each parent and a chown' (Get-WorkAdminLines 'linux' 'localai' '/srv/work/localai' @('/srv', '/srv/work') $false $true) @('sudo chmod o+x /srv', 'sudo chmod o+x /srv/work', 'sudo chown -R localai: /srv/work/localai')
+Check 'admin: unix opens each parent to the account alone, by ACL, and chowns the root' (Get-WorkAdminLines 'linux' 'localai' '/srv/work/localai' @('/srv', '/srv/work') $false $true) @('sudo setfacl -m u:localai:x /srv', 'sudo setfacl -m u:localai:x /srv/work', 'sudo chown -R localai: /srv/work/localai')
+Check 'admin: unix never says chmod o+x' (@(Get-WorkAdminLines 'linux' 'localai' '/srv/a/localai' @('/', '/srv', '/srv/a') $true $false @('/srv', '/srv/a') | Where-Object { $_ -match 'chmod o' }).Count) 0
+Check 'admin: unix has no line for the filesystem root' (@(Get-WorkAdminLines 'linux' 'localai' '/work/localai' @('/') $true $false | Where-Object { $_ -match ' /$' -or $_ -match ' / ' }).Count) 0
+Check 'admin: a mac gets chmod +a, not setfacl' (Get-WorkAdminLines 'darwin' 'localai' '/Volumes/w/localai' @('/Volumes/w') $false $false) @("sudo chmod +a 'user:localai allow search' /Volumes/w")
 Check 'admin: unix makes a missing root' (Get-WorkAdminLines 'linux' 'localai' '/srv/localai' @() $true $false) @('sudo install -d -o localai -m 755 /srv/localai')
+Check 'admin: unix quotes for sh, a quote in a name included' (Get-WorkAdminLines 'linux' 'localai' "/srv/it's/localai" @("/srv/it's") $false $false) @("sudo setfacl -m u:localai:x '/srv/it'\''s'")
+$a = Get-WorkAdminLines 'windows' 'SG3\localai' 'V:\a\localai' @('V:\', 'V:\a') $true $false @('V:\a')
+Check 'admin: a missing parent is made BEFORE it is granted, and the root after both' $a @('New-Item -ItemType Directory V:\a', "icacls V:\ /grant 'SG3\localai:(RA,REA)'", "icacls V:\a /grant 'SG3\localai:(RA,REA)'", 'New-Item -ItemType Directory V:\a\localai', "icacls V:\a\localai /grant 'SG3\localai:(OI)(CI)F'")
+$a = Get-WorkAdminLines 'linux' 'localai' '/srv/a/b/localai' @('/srv/a', '/srv/a/b') $true $false @('/srv/a', '/srv/a/b')
+Check 'admin: unix makes missing parents top down before it opens them' $a @('sudo install -d -m 755 /srv/a', 'sudo install -d -m 755 /srv/a/b', 'sudo setfacl -m u:localai:x /srv/a', 'sudo setfacl -m u:localai:x /srv/a/b', 'sudo install -d -o localai -m 755 /srv/a/b/localai')
+
+# ── the argument against the room's OS, and the pack's arguments ────────────
+
+Check 'os: a drive path on a windows room' (Test-WorkRootOs 'windows' 'V:\localai') $null
+Check 'os: a unix path on a unix room' (Test-WorkRootOs 'linux' '/srv/localai') $null
+Check 'os: a drive path on a unix room is refused, not made under $HOME' ([bool](Test-WorkRootOs 'linux' 'V:\x' | Where-Object { $_ -like '*drive path*linux*' })) $true
+Check 'os: a unix path on a windows room is refused, naming a drive' ([bool](Test-WorkRootOs 'windows' '/srv/x' | Where-Object { $_ -like '*Unix path*Windows*V:\localai*' })) $true
+$r = Invoke-WorkRoot { param($s) throw 'the remote must not be asked' } 'windows' '/srv/x' $true 'h'
+Check 'os: Invoke-WorkRoot stops before asking the remote' @($r.Code, $r.Steps[0].Status, [bool]($r.Steps[0].Detail -like '*Unix path*')) @(1, 'fail', $true)
+Check 'pack args: the default repo and branch' (Test-AgentPackArg 'dovholuknf/dotfiles' 'main') $null
+Check 'pack args: a branch with a slash' (Test-AgentPackArg 'o/r' 'feature/x-1') $null
+Check 'pack args: a branch that starts with - is refused (it would be a git option)' ([bool](Test-AgentPackArg 'o/r' '--upload-pack=x')) $true
+Check 'pack args: a branch with .. is refused' ([bool](Test-AgentPackArg 'o/r' 'a..b')) $true
+Check 'pack args: a repo that is not owner/name is refused' @([bool](Test-AgentPackArg 'o' 'main'), [bool](Test-AgentPackArg '-o/r' 'main'), [bool](Test-AgentPackArg 'o/r;x' 'main')) @($true, $false, $true)
 
 # ── the verdict on a probe ──────────────────────────────────────────────────
 
@@ -95,16 +117,23 @@ Check 'verdict: -Check with a missing root and good parents is a warn, code 0' @
 Check 'verdict: a probe that said nothing is a fail, not a pass' (Get-WorkRootVerdict 'windows' 'V:\localai' (New-Probe @() 1) $true 'sg3').Status 'fail'
 Check 'verdict: a root directly below the unix root has one parent' @((Get-WorkParents '/work' 'linux').Count, (New-Probe @('login=u', 'drive=True', 'parents=1', 'parent0=ok', 'exists=True', 'writable=True') 1).Ok) @(1, $true)
 
+$goneP = New-Probe @('login=SG3\localai', 'drive=True', 'parents=2', 'parent0=ok', 'parent1=missing', 'exists=False', 'made=False') 2
+Check 'probe: a parent that is missing is bad, and missing' @($goneP.BadIndexes, $goneP.MissingIndexes) @(1, 1)
+$v = Get-WorkRootVerdict 'windows' 'V:\a\localai' $goneP $true 'sg3'
+Check 'verdict: a missing parent is 13, the lines make it before they grant it, and it is called missing not unexaminable' @($v.Code, $v.AdminLines[0], [bool]($v.Detail -like '*V:\a is not there*'), [bool]($v.Detail -notlike '*cannot examine*')) @(13, 'New-Item -ItemType Directory V:\a', $true, $true)
+$v = Get-WorkRootVerdict 'linux' '/srv/a/localai' (New-Probe @('login=localai', 'drive=True', 'parents=3', 'parent0=ok', 'parent1=ok', 'parent2=missing', 'exists=False', 'made=False') 3) $true 'h'
+Check 'verdict: unix, a missing parent is made and opened to the account only' $v.AdminLines @('sudo install -d -m 755 /srv/a', 'sudo setfacl -m u:localai:x /srv/a', 'sudo install -d -o localai -m 755 /srv/a/localai')
+
 # ── the probe, run for real ─────────────────────────────────────────────────
 
 if ($isWin) {
     $pr = Join-Path $tmp 'a\localai'
     $parents = @(Get-WorkParents $pr 'windows')
-    function Run-Ps { param([string] $script, [hashtable] $env)
+    function Run-Ps { param([string] $script, [hashtable] $env, [string] $exe = 'pwsh')
         $f = Join-Path $tmp "run-$([guid]::NewGuid().ToString('N').Substring(0, 6)).ps1"
         Set-Content -LiteralPath $f -Value $script -Encoding UTF8
         $envs = foreach ($k in $env.Keys) { "`$env:$k = '$($env[$k])'" }
-        $o = & pwsh -NoProfile -Command ((@($envs) -join '; ') + "; & '$f'") 2>&1
+        $o = & $exe -NoProfile -Command ((@($envs) -join '; ') + "; & '$f'") 2>&1
         @($o | ForEach-Object { "$_" })
     }
     New-Item -ItemType Directory -Force -Path (Join-Path $tmp 'a') | Out-Null
@@ -121,6 +150,22 @@ if ($isWin) {
     $o = Run-Ps (Get-WorkProbeScript 'windows' $none $true) @{}
     $p = ConvertFrom-WorkProbe $o 2
     Check 'probe: a parent that is not there cannot be examined, and no root is made' @($p.Ok, @($p.BadIndexes), $p.Exists) @($true, 1, $false)
+    Check 'probe: and it is called missing, so the lines make it' @($p.MissingIndexes) @(1)
+    # -Check writes NOTHING, not even a probe file: the answer comes from the ACL
+    $wt = (Get-Item -LiteralPath $pr).LastWriteTimeUtc.Ticks
+    $o = Run-Ps (Get-WorkProbeScript 'windows' $pr $false) @{}
+    $p = ConvertFrom-WorkProbe $o $parents.Count
+    Check 'probe -Check on a root: writable is read from the ACL, and the folder is untouched' @($p.Exists, $p.Writable, @(Get-ChildItem -LiteralPath $pr -Force).Count, ((Get-Item -LiteralPath $pr).LastWriteTimeUtc.Ticks -eq $wt)) @($true, $true, 0, $true)
+    $me = [Security.Principal.WindowsIdentity]::GetCurrent().User
+    $deny = New-Object Security.AccessControl.FileSystemAccessRule($me, 'CreateFiles,AppendData', 'Deny')
+    $acl = Get-Acl -LiteralPath $pr; $acl.AddAccessRule($deny); Set-Acl -LiteralPath $pr -AclObject $acl
+    try {
+        $o = Run-Ps (Get-WorkProbeScript 'windows' $pr $false) @{}
+        $p = ConvertFrom-WorkProbe $o $parents.Count
+        Check 'probe -Check: a Deny entry for the login on the root makes it not writable' @($p.Exists, $p.Writable) @($true, $false)
+    } finally {
+        $acl = Get-Acl -LiteralPath $pr; [void]$acl.RemoveAccessRule($deny); Set-Acl -LiteralPath $pr -AclObject $acl
+    }
     $q = $null; foreach ($c in 'Q', 'R', 'S', 'T', 'U', 'W', 'X', 'Y', 'Z') { if (-not (Test-Path "${c}:\")) { $q = $c; break } }
     if ($q) {
         $o = Run-Ps (Get-WorkProbeScript 'windows' "${q}:\localai" $true) @{}
@@ -165,6 +210,22 @@ if ($isWin) {
     Check 'rerun: no file was written' ($after -join "`n") ($before -join "`n")
     $vs = @(Get-WorkCacheVerdict @($o | Where-Object { $_ -notmatch 'tool=' }) $lay $true)
     Check 'rerun verdict: the folders and the caches are ok' @(@($vs | ForEach-Object { $_.Step }), @($vs | ForEach-Object { $_.Status })) @(@('work-dirs', 'work-cache'), @('ok', 'ok'))
+
+    # NON-ASCII in the user's own files survives, under Windows PowerShell 5.1 (what the remote runs), which reads a BOM-less file as ANSI
+    $ps51 = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
+    if (-not (Test-Path -LiteralPath $ps51)) { $ps51 = $null }
+    if ($ps51) {
+        $home2 = Join-Path $tmp 'home51'; $app2 = Join-Path $home2 'AppData'
+        New-Item -ItemType Directory -Force -Path $home2, (Join-Path $app2 'pip') | Out-Null
+        $u8 = New-Object Text.UTF8Encoding $false
+        $caf = "caf$([char]0xE9) $([char]0x4E2D)$([char]0x6587)"
+        [IO.File]::WriteAllText((Join-Path $home2 '.npmrc'), "; $caf`r`nregistry=https://r.example/`r`n", $u8)
+        [IO.File]::WriteAllText((Join-Path $app2 'pip\pip.ini'), "[global]`r`n; $caf`r`n", $u8)
+        $e5 = @{ HOME = $home2; USERPROFILE = $home2; APPDATA = $app2; TEST_CARGO = '' }
+        [void](Run-Ps (Cache-Script $true) $e5 $ps51)
+        $np = [IO.File]::ReadAllText((Join-Path $home2 '.npmrc'), $u8); $pp = [IO.File]::ReadAllText((Join-Path $app2 'pip\pip.ini'), $u8)
+        Check 'ps 5.1: non-ASCII in .npmrc and pip.ini is kept as it was, and the key is added' @(($np -like "*; $caf*"), ($np -like "*cache=$($lay.Npm)*"), ($pp -like "*; $caf*"), ($pp -like "*cache-dir = $($lay.Pip)*")) @($true, $true, $true, $true)
+    } else { Write-Host 'skip ps 5.1 non-ASCII: no powershell.exe on this machine' }
 }
 
 # ── the unix cache script, run for real when there is an sh ─────────────────
@@ -176,10 +237,11 @@ if ($sh) {
     if ($uw -match '^([A-Za-z]):(.*)$') { $uw = "/$($Matches[1].ToLower())$($Matches[2])" }
     $ulay = Get-WorkLayout $uw
     $uhs = ($uh -replace '\\', '/'); if ($uhs -match '^([A-Za-z]):(.*)$') { $uhs = "/$($Matches[1].ToLower())$($Matches[2])" }
-    function Run-Sh { param([string] $script)
+    function ConvertTo-MsysPath { param([string] $p) $p = $p -replace '\\', '/'; if ($p -match '^([A-Za-z]):(.*)$') { "/$($Matches[1].ToLower())$($Matches[2])" } else { $p } }
+    function Run-Sh { param([string] $script, [string] $h = $uhs)
         $f = Join-Path $tmp "run-$([guid]::NewGuid().ToString('N').Substring(0, 6)).sh"
         [IO.File]::WriteAllText($f, ($script -replace "`r", ''), [Text.UTF8Encoding]::new($false))
-        $env:HOME = $uhs; $env:XDG_CONFIG_HOME = ''
+        $env:HOME = $h; $env:XDG_CONFIG_HOME = ''
         $o = & $sh $f 2>&1
         @($o | ForEach-Object { "$_" })
     }
@@ -203,8 +265,80 @@ if ($sh) {
         $o = Run-Sh (Get-WorkProbeScript 'linux' "$uw/sub" $true)
         $p = ConvertFrom-WorkProbe $o @(Get-WorkParents "$uw/sub" 'linux').Count
         Check 'unix probe: the root is made, writable, every parent examinable' @($p.Ok, $p.BadIndexes.Count, $p.Made, $p.Writable) @($true, 0, $true, $true)
-    } finally { $env:HOME = $realHome }
+        # -Check on a bare account writes NOTHING: no ~/.config, no temp file left, in the home or in TMPDIR
+        $uh2 = Join-Path $tmp 'uhome2'; $ut = Join-Path $tmp 'utmp'
+        New-Item -ItemType Directory -Force -Path $uh2, $ut | Out-Null
+        $env:TMPDIR = ConvertTo-MsysPath $ut
+        $o = Run-Sh (Get-WorkCacheScript 'linux' $ulay $false) (ConvertTo-MsysPath $uh2)
+        Check 'unix -Check on a bare home: the home is still empty and TMPDIR holds nothing' @(@(Get-ChildItem -LiteralPath $uh2 -Recurse -Force).Count, @(Get-ChildItem -LiteralPath $ut -Force).Count) @(0, 0)
+        $o = Run-Sh (Get-WorkCacheScript 'linux' $ulay $true) (ConvertTo-MsysPath $uh2)
+        Check 'unix run on a bare home: the config folders are made by the run, and TMPDIR is left clean' @((Test-Path (Join-Path $uh2 '.config/go/env')), (Test-Path (Join-Path $uh2 '.config/pip/pip.conf')), @(Get-ChildItem -LiteralPath $ut -Force).Count) @($true, $true, 0)
+        # a quote in the work root cannot break out of the profile line
+        $qlay = Get-WorkLayout "/tmp/it's/work"
+        $uh3 = Join-Path $tmp 'uhome3'; New-Item -ItemType Directory -Force -Path $uh3 | Out-Null
+        $o = Run-Sh (Get-WorkCacheScript 'linux' $qlay $true) (ConvertTo-MsysPath $uh3)
+        $got = & $sh -c ". '$(ConvertTo-MsysPath $uh3)/.profile'; printf %s ""`$CARGO_HOME""" 2>&1
+        Check 'unix: a work root with a quote in it is exported intact by the profile line' @($got) @("/tmp/it's/work/cache/cargo")
+        $env:TMPDIR = $null
+    } finally { $env:HOME = $realHome; $env:TMPDIR = $null }
 } else { Write-Host 'skip unix cache and probe scripts: no sh on this machine' }
+
+# ── the unix scripts are POSIX sh, not bash ─────────────────────────────────
+
+# Invoke-Remote pipes them to `sh -s`, which is dash on Debian and Ubuntu. A bash array, [[, local or <<< is a syntax error there.
+$bashisms = '(?m)(\w+=\(|\[@\]|\[\*\]|\$\{[A-Za-z_]+\[|\[\[ |\blocal\s+\w|<<<|^\s*function\s+\w+|\bsource\s)'
+$ulay2 = Get-WorkLayout '/srv/localai'
+$shScripts = [ordered]@{
+    'probe -Check' = (Get-WorkProbeScript 'linux' '/srv/localai' $false); 'probe' = (Get-WorkProbeScript 'linux' '/srv/localai' $true)
+    'cache -Check' = (Get-WorkCacheScript 'linux' $ulay2 $false); 'cache' = (Get-WorkCacheScript 'linux' $ulay2 $true)
+    'pack install' = (Get-AgentPackInstallScript 'linux' $true); 'pack state' = (Get-AgentPackStateScript 'linux')
+}
+foreach ($k in $shScripts.Keys) { Check "posix: the unix $k script has no bashism" @([regex]::Matches($shScripts[$k], $bashisms) | ForEach-Object { $_.Value }) @() }
+# A real Linux dash first: a container of ubuntu:24.04, whose /bin/sh is dash. Else any dash on the PATH (an msys dash makes
+# `ln -s` a copy, so the linked-folder checks are skipped there).
+$docker = $null
+if (Get-Command docker -CommandType Application -ErrorAction SilentlyContinue) {
+    & docker image inspect ubuntu:24.04 *> $null
+    if ($LASTEXITCODE -eq 0) { $docker = 'ubuntu:24.04' }
+}
+$dash = if ($docker) { $null } else { (Get-Command dash -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1).Source }
+# Run-Dash runs a script as `sh -s` on dash. In the container the script rides in an environment variable and the output is read
+# back with `docker logs`: a foreground `docker run` of some hosts loses stdout when it is not a terminal. No folder is mounted.
+function Run-Dash { param([string] $script)
+    $s = $script -replace "`r", ''
+    if ($dash) { return @(($s | & $dash -s 2>&1) | ForEach-Object { "$_" }) }
+    $b = [Convert]::ToBase64String([Text.UTF8Encoding]::new($false).GetBytes($s))
+    $id = (& docker run -d -e "ATRIUM_TEST_SCRIPT=$b" $docker sh -c 'printf %s "$ATRIUM_TEST_SCRIPT" | base64 -d | sh -s 2>&1' | Select-Object -First 1)
+    [void](& docker wait $id)
+    $o = & docker logs $id 2>&1
+    [void](& docker rm -f $id)
+    @($o | ForEach-Object { "$_".TrimEnd("`r") })
+}
+if ($dash -or $docker) {
+    $via = if ($docker) { 'dash in docker' } else { 'dash' }
+    $kvOf = { param($lines) $h = @{}; foreach ($l in $lines) { $i = $l.IndexOf('='); if ($i -gt 0) { $h[$l.Substring(0, $i)] = $l.Substring($i + 1) } }; $h }
+    $dl = Get-WorkLayout '/tmp/dashwork'
+    $setup = "rm -rf /tmp/dashwork /tmp/dashhome; mkdir -p /tmp/dashhome; export HOME=/tmp/dashhome XDG_CONFIG_HOME=`n"
+    $all = $setup + (Get-WorkProbeScript 'linux' '/tmp/dashwork' $false) + "`necho ===PROBE-CHECK-DONE`n" +
+        (Get-WorkCacheScript 'linux' $dl $false) + "`necho ===CACHE-CHECK-DONE`nfind /tmp/dashhome -mindepth 1 | wc -l; ls /tmp/dashwork 2>&1 | head -1`necho ===NOTHING-WRITTEN`n" +
+        (Get-WorkProbeScript 'linux' '/tmp/dashwork' $true) + "`necho ===PROBE-DONE`n" +
+        (Get-WorkCacheScript 'linux' $dl $true) + "`necho ===CACHE-DONE`n" + (Get-WorkCacheScript 'linux' $dl $true) + "`necho ===CACHE-AGAIN-DONE`n"
+    $o = Run-Dash $all
+    $text = $o -join "`n"
+    $seg = { param($from, $to) $a = $text.IndexOf($from); $b = $text.IndexOf($to); if ($a -lt 0 -or $b -lt 0) { @() } else { @($text.Substring($a + $from.Length, $b - $a - $from.Length) -split "`n" | Where-Object { $_ }) } }
+    $pc = & $seg '' '===PROBE-CHECK-DONE'
+    $cc = & $seg '===PROBE-CHECK-DONE' '===CACHE-CHECK-DONE'
+    $nw = & $seg '===CACHE-CHECK-DONE' '===NOTHING-WRITTEN'
+    $c1 = & $kvOf (& $seg '===PROBE-DONE' '===CACHE-DONE')
+    $c2 = & $kvOf (& $seg '===CACHE-DONE' '===CACHE-AGAIN-DONE')
+    $pk = & $kvOf $pc
+    Check "$via -Check probe: runs, every parent examinable, nothing made" @($pk.parents, $pk.parent0, $pk.parent1, $pk.exists) @('2', 'ok', 'ok', 'False')
+    $ck = & $kvOf $cc
+    Check "$via -Check cache: todo for each, no syntax error" @($ck.dirs, $ck.npm, $ck.gomod, $ck.pip, $ck.cargo, [bool]($text -match 'Syntax error|not found')) @('todo 10', 'todo', 'todo', 'todo', 'todo', $false)
+    Check "$via -Check wrote nothing: the home has no files and the work root was not made" @($nw[0], [bool]($nw[1] -like '*No such file*')) @('0', $true)
+    Check "$via run: every cache done" @($c1.dirs, $c1.npm, $c1.gomod, $c1.gocache, $c1.pip, $c1.cargo) @('made 9', 'done', 'done', 'done', 'done', 'done')
+    Check "$via rerun: everything ok" @($c2.dirs, $c2.npm, $c2.gomod, $c2.gocache, $c2.pip, $c2.cargo) @('ok', 'ok', 'ok', 'ok', 'ok', 'ok')
+} else { Write-Host 'skip dash: neither dash nor a docker image ubuntu:24.04 is on this machine' }
 
 # ── the verdict on what the caches printed ──────────────────────────────────
 
@@ -313,6 +447,43 @@ if ($isWin -and (Get-Command tar -ErrorAction SilentlyContinue)) {
     Check 'state: read back, the pack is current and the panel agents are there' @($vd.Status, [bool]($vd.Detail -like 'the agent pack at aaaaaaaaa, 6 agents and 2 skills*')) @('ok', $true)
 }
 
+if ($dash -or $docker) {
+    # the agent pack, installed on dash: pack files in, a linked parent refused, an edited agent said and replaced
+    $pstage = Join-Path $tmp 'dstage'
+    foreach ($rel in $pf.Files) { $to = Join-Path $pstage $rel; New-Item -ItemType Directory -Force -Path (Split-Path -Parent $to) | Out-Null; Copy-Item -LiteralPath (Join-Path $claude $rel) -Destination $to }
+    $pmeta = New-AgentPackMeta $claude $pf.Files 'dovholuknf/dotfiles' 'main' ('d' * 40)
+    [IO.File]::WriteAllText((Join-Path $pstage '.atrium-pack.json'), ($pmeta | ConvertTo-Json -Depth 5), [Text.UTF8Encoding]::new($false))
+    $ptgz = Join-Path $tmp 'dpack.tgz'
+    & (Get-PackTar) -czf $ptgz -C $pstage . | Out-Null
+    $b64 = [Convert]::ToBase64String([IO.File]::ReadAllBytes($ptgz))
+    $inst = { param($make, $pre)
+        "export HOME=/tmp/phome P=/tmp/pwork; $pre`nmkdir -p `"`$P`"; printf %s '$b64' | base64 -d > `"`$P/agent-pack.tgz`"`n" + (Get-AgentPackInstallScript 'linux' $make) }
+    $reset = 'rm -rf /tmp/phome /tmp/pwork /tmp/outside; mkdir -p /tmp/phome/.claude/agents'
+    $o = Run-Dash (& $inst $false "$reset; echo 'an older persona' > /tmp/phome/.claude/agents/persona.md")
+    $k = & $kvOf $o
+    Check "$via pack -Check: 8 files, 8 would change, the older persona is named as edited, nothing refused" @($k.files, $k.changed, $k.edited, $k.edited_files, $k.refused, $k.record) @('8', '8', '1', 'agents/persona.md', '0', $null)
+    $o = Run-Dash (& $inst $true "$reset; echo 'an older persona' > /tmp/phome/.claude/agents/persona.md")
+    $k = & $kvOf $o
+    Check "$via pack: written, the record is there, and the edited file is the pack's now" @($k.changed, $k.record, $k.edited, [bool]($o -match 'Syntax error')) @('8', 'written', '1', $false)
+    $o = Run-Dash ((& $inst $true "$reset") + "`ncat /tmp/phome/.claude/agents/persona.md; ls /tmp/phome/.claude/skills/afk/scripts")
+    Check "$via pack: the files are real and have the pack's content" @(($o -contains 'agent persona'), ($o -contains 'snap.sh')) @($true, $true)
+    # a second install over the first: a file the LAST PACK wrote and nobody touched is an update, not an edit
+    $two = (& $inst $true $reset) + "`necho ===SECOND`n" + (& $inst $true 'true')
+    $o = Run-Dash $two
+    $k2 = & $kvOf @($o | Select-Object -Skip ([array]::IndexOf($o, '===SECOND') + 1))
+    Check "$via pack again: nothing changed, nothing edited, no record rewritten" @($k2.changed, $k2.edited, $k2.refused, $k2.record) @('0', '0', '0', $null)
+    $edit = (& $inst $true $reset) + "`necho 'mine' > /tmp/phome/.claude/agents/functional-tester.md`necho ===SECOND`n" + (& $inst $true 'true')
+    $o = Run-Dash $edit
+    $k3 = & $kvOf @($o | Select-Object -Skip ([array]::IndexOf($o, '===SECOND') + 1))
+    Check "$via pack: an agent edited since the last pack is named, and put back" @($k3.changed, $k3.edited, $k3.edited_files) @('1', '1', 'agents/functional-tester.md')
+    if ($docker) {
+    $link = "$reset; mkdir -p /tmp/outside; ln -s /tmp/outside /tmp/phome/.claude/skills"
+    $o = Run-Dash ((& $inst $true $link) + "`nls /tmp/outside | wc -l; ls /tmp/phome/.claude/agents | wc -l; ls /tmp/phome/.claude/atrium-agent-pack.json 2>&1 | head -1")
+    $k4 = & $kvOf $o
+    Check "$via pack: a linked skills folder is refused, nothing goes through it, the agents still install, and no record claims the pack current" @($k4.refused, [bool]($k4.refused_files -like '*skills/afk/SKILL.md (/tmp/phome/.claude/skills is a link)*'), $k4.record, $o[-3], [bool]($o[-1] -like '*No such file*')) @('3', $true, $null, '0', $true)
+    } else { Write-Host 'skip the linked-folder check on dash: ln -s needs a real linux (docker)' }
+}
+
 # ── the verdict on the pack ─────────────────────────────────────────────────
 
 $cur = @(('commit=' + ('b' * 40)), 'installed_at=2026-10-08T00:00:00Z', 'agents=c-systems-reviewer,go-security-reviewer,functional-tester,nonfunctional-tester,persona', 'skills=afk,recap')
@@ -339,6 +510,15 @@ if (Test-Path -LiteralPath $prs) {
 # ── the hub mirror ──────────────────────────────────────────────────────────
 
 Check 'mirror url: the host is github, as in the hub''s own git urls' (Get-HubMirrorUrl '127.0.0.1:7778' 'dovholuknf/dotfiles') 'http://127.0.0.1:7778/git/hub/github/dovholuknf/dotfiles.git'
+$env:GIT_TERMINAL_PROMPT = $null
+$null = Get-HubMirrorCommit '127.0.0.1:1' 'o/r' 'main'
+Check 'git env: the operator''s session has no GIT_TERMINAL_PROMPT left behind' ([bool]$env:GIT_TERMINAL_PROMPT) $false
+$env:GIT_TERMINAL_PROMPT = '1'
+$null = Get-HubMirrorCommit '127.0.0.1:1' 'o/r' 'main'
+Check 'git env: and one the operator set is put back as it was' $env:GIT_TERMINAL_PROMPT '1'
+$env:GIT_TERMINAL_PROMPT = $null
+$np = New-AgentPack -HubAddr '127.0.0.1:1' -Repo 'o/r' -Branch '--upload-pack=x' -OutDir (Join-Path $tmp 'np')
+Check 'pack: a branch that looks like an option is refused before git is run' @($np.Ok, [bool]($np.Why -like '*AgentPackBranch*'), (Test-Path (Join-Path $tmp 'np'))) @($false, $true, $false)
 Check 'mirror url: slashes around the repo are dropped' (Get-HubMirrorUrl 'h:1' '/o/r/') 'http://h:1/git/hub/github/o/r.git'
 
 # ── the wiring: provision-room.ps1 and room-check.ps1 ───────────────────────

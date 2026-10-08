@@ -80,8 +80,19 @@ func runRoomSet(cmd *cobra.Command, db, name, value string) error {
 	if key == gitsync.SettingSCMRoot && value != "" && !filepath.IsAbs(gitsync.ExpandHome(value)) {
 		return fmt.Errorf("scm_root must be an absolute path or start with ~/, got %q", value)
 	}
-	if (key == store.SettingReviewsRoot || key == store.SettingContextHandoffDir) && value != "" && !filepath.IsAbs(value) {
-		return fmt.Errorf("%s must be an absolute path, got %q", name, value)
+	if key == store.SettingContextHandoffDir {
+		// The same check the settings API makes: trimmed, absolute, cleaned.
+		v, err := store.CheckContextHandoffDir(value)
+		if err != nil {
+			return err
+		}
+		value = v
+	}
+	if key == store.SettingReviewsRoot && value != "" {
+		if !filepath.IsAbs(value) {
+			return fmt.Errorf("reviews_root must be an absolute path, got %q", value)
+		}
+		value = filepath.Clean(value)
 	}
 	if err := store.SetSettingOfFile(db, key, value); err != nil {
 		return roomSettingErr(db, err)

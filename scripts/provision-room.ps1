@@ -351,6 +351,10 @@ if ($PSBoundParameters.ContainsKey('WorkRoot')) {
     $why = Test-WorkRootArg $WorkRoot
     if ($why) { Write-Host "provision args fail -WorkRoot '$WorkRoot' $why"; exit 1 }
 }
+if (-not $NoAgentPack) {
+    $why = Test-AgentPackArg $AgentPackRepo $AgentPackBranch
+    if ($why) { Write-Host "provision args fail $why"; exit 1 }
+}
 $operators = @(Get-OperatorList (Split-List $OperatorAccount))
 foreach ($o in $operators) { $why = Test-OperatorArg $o; if ($why) { Write-Host "provision args fail $why"; exit 1 } }
 foreach ($f in $AllowedFolders) {
@@ -2869,8 +2873,10 @@ function Invoke-AgentPack {
     $short = "$($pk.Commit)".Substring(0, 9)
     if ($r.Code -ne 0 -or -not $kv.commit) { Step 'agent-pack' 'warn' "the remote could not unpack the pack: $(($r.Out | Select-Object -Last 2) -join ' ')"; return }
     $n = @($pk.Meta.agents).Count; $s = @($pk.Meta.skills).Count
-    if ([int]$kv.changed -eq 0 -and $kv.was -eq $kv.commit) { Step 'agent-pack' 'ok' "already at $short, nothing changed ($n agents, $s skills)" }
+    if ([int]$kv.changed -eq 0 -and $kv.was -eq $kv.commit -and [int]$kv.refused -eq 0) { Step 'agent-pack' 'ok' "already at $short, nothing changed ($n agents, $s skills)" }
+    elseif ([int]$kv.refused -gt 0) { Step 'agent-pack' 'warn' "$($kv.refused) of $($kv.files) files were not written, because a folder on their way is a link and the write would leave ~/.claude: $($kv.refused_files). the record was not updated, so a rerun tries again. replace the link with a folder, or leave those files to whatever owns it" }
     else { Step 'agent-pack' 'done' "$n agents and $s skills from $AgentPackRepo at $short, $($kv.changed) of $($kv.files) files written to ~/.claude" }
+    if ([int]$kv.edited -gt 0) { Step 'agent-pack' 'warn' "$($kv.edited) file(s) had been edited on the room and were replaced by the pack's: $($kv.edited_files)" }
     foreach ($sk in @($pk.Skipped)) { Step 'agent-pack' 'skip' "$sk is not in $AgentPackRepo, so it is not in the pack" }
     $manifest | Add-Member -NotePropertyName agentpack -NotePropertyValue ([pscustomobject]@{ repo = $AgentPackRepo; branch = $AgentPackBranch; commit = $pk.Commit }) -Force
     Save-Manifest
