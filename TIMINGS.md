@@ -31,10 +31,10 @@ already one `/v1/open` call (the f-pr-launch-fast work), so it adds a round trip
 | clone on the placed room | full clone through the hub whenever the least busy room lacked the repo | only if no room holds it |
 | fetch head, worktree add, launch | as measured above | unchanged |
 
-Forge reads (each ~0.92s) per Enter on a PR, with the paste box's read counted: **before 4, after 1**. Estimated saving
-about 2.8s on a repo the room already has. The big one is placement: a PR or a Zendesk/Discourse ticket (which opens a
+Forge reads (each ~0.92s) per Enter on a PR, with the paste box's read counted: **before 4, after 2**. Estimated saving
+about 1.8s on a repo the room already has. The big one is placement: a PR or a Zendesk/Discourse ticket (which opens a
 worktree in the row's default repo) landing on a room that does not hold the repo paid a clone of it. That is the
-"forever", and the sessions it saved by waiting for gwt are the ones it would not have waited for.
+likely "forever", and it is the step gwt skips by using the clone it has.
 
 ## Zendesk and Discourse
 
