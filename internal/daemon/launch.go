@@ -954,6 +954,11 @@ func (d *Daemon) launchLocked(req LaunchRequest) (*store.Task, error) {
 	if model == "" && task != nil {
 		model = task.Model
 	}
+	// THE WORKER DEFAULT, last: a launch that named a model, and a card that already has one, both win. See
+	// workerpolicy.go.
+	if model == "" {
+		model = d.workerDefaultModel(h, req, task, reportTo)
+	}
 	// The effort and the extras fall back to the card the same way, each on
 	// its own, so a relaunch naming only a model keeps the card's effort.
 	effort, extraArgs, extraEnv := strings.TrimSpace(req.Effort), req.Args, req.Env

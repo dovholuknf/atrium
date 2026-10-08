@@ -401,6 +401,7 @@ func serveAtrium(f atriumFlags, up atriumUp) error {
 		// just arrived and the attach should not wait on it.
 		go proxy.PushInputLag(name)
 		go proxy.PushContextLimits(name)
+		go proxy.PushWorkerPolicy(name)
 	}
 	// A ROOM ON THE OLD PATH, said once per attach. This is how the operator
 	// finds who must re-join before flipping the switch: the audit line names

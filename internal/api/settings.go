@@ -204,6 +204,7 @@ func globalAutoView(s *Server) map[string]any {
 	out["idle_park_after_default"] = int64(store.DefaultIdleParkAfter / time.Second)
 	out["idle_park_after_min"] = int64(store.MinIdleParkAfter / time.Second)
 	contextCycleView(s.st, out)
+	out["worker_policy"] = s.st.WorkerPolicy()
 	inputLagView(out)
 	// Reported even when unset, so the setting can be read back as `above_normal`.
 	out["lean_worker_gateway"] = s.st.LeanWorkerGateway()
@@ -329,6 +330,9 @@ func (s *Server) setSettings(w http.ResponseWriter, r *http.Request) {
 		// writes its handoff. See contextsize.go.
 		ContextLimits     *map[string]int `json:"context_limits"`
 		ContextHandoffDir *string         `json:"context_handoff_dir"`
+		// The default model and the dollar budget for an agent-launched card. The hub owns it, like
+		// context_limits. See store/workerpolicy.go.
+		WorkerPolicy *store.WorkerPolicy `json:"worker_policy"`
 		// Whether this room types the unexpected-exit notice. Stored as `on` or
 		// `off`, and read at the next stop, start or delivery.
 		UnexpectedExit *bool `json:"unexpected_exit_wake"`
@@ -780,6 +784,18 @@ func (s *Server) setSettings(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if err := s.st.SetSetting(store.SettingContextLimits, v); err != nil {
+			s.fail(w, err)
+			return
+		}
+	}
+
+	if body.WorkerPolicy != nil {
+		v, err := store.CheckWorkerPolicy(*body.WorkerPolicy)
+		if err != nil {
+			writeErr(w, http.StatusBadRequest, err)
+			return
+		}
+		if err := s.st.SetSetting(store.SettingWorkerPolicy, v); err != nil {
 			s.fail(w, err)
 			return
 		}

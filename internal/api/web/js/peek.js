@@ -132,6 +132,7 @@ function peekRows(t) {
   // NEEDS YOU
   if (fn("isBlocker", t)) need.push(row("blocked", fn("blockerReason", t)));
   else if (fn("isStuck", t)) need.push(row("stuck", t.escalation.text + (t.escalation.since ? ", since " + clock(t.escalation.since) : "")));
+  if (t.budget) about.push(row("budget", t.budget.text));
   if (t.offline) need.push(row("offline", "room " + (fn("roomOf", t.id) || t.room || "") + " is offline. cannot restore terminal"));
   if (fn("isOutOfContact", t)) need.push(row("no contact", "nothing heard from the session, and no process to ask. it may be working or may have ended"));
   if (fn("isWaiting", t)) {

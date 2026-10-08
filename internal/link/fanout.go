@@ -853,6 +853,8 @@ func (p *Proxy) hubSettingsBody(r *http.Request, stock Inventory) (map[string]an
 	body["input_lag_pinned"] = inputlag.Pinned()
 	// And the context limit per harness, which the hub owns. See contextlimits.go.
 	p.applyContextLimits(body)
+	// And the default worker model and budget, the hub's the same way. See workerpolicy.go.
+	p.applyWorkerPolicy(body)
 	return body, true
 }
 

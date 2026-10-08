@@ -677,6 +677,8 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	lagOn, lagNamed := p.noteInputLag(r)
 	// The context limit per harness, the hub's in every scope. See contextlimits.go.
 	limits, limitsNamed, limitsErr := p.noteContextLimits(r)
+	// The default worker model and budget, the hub's too. See workerpolicy.go.
+	policy, policyNamed, policyErr := p.noteWorkerPolicy(r)
 
 	// The strip's order goes to every room, named or not. See pinorder.go.
 	if ids, ok := pinOrderIn(r); ok {
@@ -693,6 +695,14 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			p.answerContextLimits(w, r, limits)
+			return
+		}
+		if policyNamed {
+			if policyErr != nil {
+				writeErrBody(w, http.StatusBadRequest, policyErr.Error())
+				return
+			}
+			p.answerWorkerPolicy(w, r, policy)
 			return
 		}
 		if lagNamed {
@@ -783,6 +793,9 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// The other rooms get the list from the hub; this one gets the write itself.
 	if limitsNamed && limitsErr == nil {
 		go p.fanContextLimits(context.Background(), limits, room)
+	}
+	if policyNamed && policyErr == nil {
+		go p.fanWorkerPolicy(context.Background(), policy, room)
 	}
 	p.proxy.ServeHTTP(w, r)
 }
