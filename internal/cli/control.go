@@ -328,7 +328,7 @@ func runRestart(db, delay string) error {
 	}
 	// Best effort. A daemon that is already gone is not a failure: the point is
 	// to end with one running, not to have stopped one.
-	_ = stopDaemon(board, "")
+	_ = stopDaemon(board, "", true)
 
 	// Wait for it to actually be gone rather than sleeping a guessed amount.
 	// The wind-down gives supervised runners ten seconds, and starting during

@@ -325,17 +325,26 @@ function Install-Atrium([string]$From = $AtriumNew) {
   return $true
 }
 
-# Stop-Room asks the room to wind down so it parks its runners and saves what to reopen, and forces only after 45s.
+# Stop-Room asks the room to wind down so it parks its runners and saves what to reopen, and forces only after the wait.
+# The room first asks each working card to wrap up and queues a wake on it (r-graceful-room-restart), bounded by its
+# restart_wrap_wait_s setting, so the force waits that long plus 45s. -Immediate on the calling script ($Immediate)
+# posts ?now=1 and skips the wrap-up.
+function Get-WrapWait {
+  try { return [int](Invoke-RestMethod $RoomServes -TimeoutSec 5).restart_wrap_wait_s } catch { return 300 }
+}
 function Stop-Room {
   $room = Find-Atrium room
   if (-not $room) { Say 'no running room found'; return }
+  $post = $RoomShutdown
+  $wait = 45
+  if ($Immediate) { $post = "$RoomShutdown`?now=1" } else { $wait = 45 + (Get-WrapWait) }
   foreach ($p in $room) {
-    Invoke-Step "stop room pid $($p.ProcessId): POST $RoomShutdown, wait up to 45s, then force" {
-      try { Invoke-RestMethod $RoomShutdown -Method Post -TimeoutSec 8 | Out-Null }
+    Invoke-Step "stop room pid $($p.ProcessId): POST $post, wait up to ${wait}s, then force" {
+      try { Invoke-RestMethod $post -Method Post -TimeoutSec 8 | Out-Null }
       catch { Say "room shutdown post: $($_.Exception.Message)" }
-      try { Wait-Process -Id $p.ProcessId -Timeout 45 -ErrorAction Stop } catch {}
+      try { Wait-Process -Id $p.ProcessId -Timeout $wait -ErrorAction Stop } catch {}
       if (Get-Process -Id $p.ProcessId -ErrorAction SilentlyContinue) {
-        Say 'room still up after 45s, force stop'
+        Say "room still up after ${wait}s, force stop"
         Stop-Process -Id $p.ProcessId -Force
       }
     }

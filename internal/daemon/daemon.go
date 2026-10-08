@@ -226,6 +226,9 @@ type Daemon struct {
 	// has dismissed. In memory. See newcontext.go.
 	nctx *newContexts
 
+	// wrap is the restart wrap-up under way. See restartwrap.go.
+	wrap *restartWrap
+
 	// ka keeps idle Claude cards' prompt caches warm. See keepalive.go.
 	ka *keepalive
 
@@ -369,6 +372,7 @@ func New(opts Options) (*Daemon, error) {
 	d.holds = newHoldState()
 	d.build = buildIdentity()
 	d.nctx = newNewContexts()
+	d.wrap = newRestartWrap()
 	d.nctx.persist = d.saveNewContextJournal
 	// Input-lag logging as the gear last left it, so a room that restarts keeps
 	// timing if it was timing. The variable still wins. See internal/inputlag.
@@ -459,6 +463,7 @@ func New(opts Options) (*Daemon, error) {
 	d.ap.SendNote = d.handleSendNote
 	d.ap.SwitchModel = d.handleModel
 	d.ap.Shutdown = d.handleShutdown
+	d.ap.RestartWrap = d.handleRestartWrap
 	d.ap.Preflight = d.handlePreflight
 	d.ap.ForgeAccess = d.ForgeAlerts
 	d.ap.Shelve = d.Shelve

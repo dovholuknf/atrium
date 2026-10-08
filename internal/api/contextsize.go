@@ -4,6 +4,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/dovholuknf/atrium/internal/store"
 )
@@ -135,6 +136,7 @@ func contextCycleView(st *store.Store, out map[string]any) {
 	out["context_limit_k_min"] = store.MinContextLimitK
 	out["context_limit_k_max"] = store.MaxContextLimitK
 	out["context_handoff_dir"] = st.ContextHandoffDir()
+	out["restart_wrap_wait_s"] = int(st.RestartWrapWait() / time.Second)
 }
 
 // ContextSizeOf returns a card's context size as the board draws it, or nil.

@@ -21,20 +21,25 @@ import (
 
 func newStop() *cobra.Command {
 	var boardURL, token string
+	var now bool
 	c := &cobra.Command{
 		Use:   "stop",
 		Short: "Ask a running daemon to wind down.",
 		Long: "Asks the daemon to shut down the way ctrl-c does: event streams released, supervised " +
 			"runners given time to finish, listeners closed in order. Killing the process instead " +
 			"ends every runner immediately.\n\n" +
+			"First each working session is asked to wrap up and gets a restart wake, for at most " +
+			"the room's restart_wrap_wait_s. --now skips that.\n\n" +
 			"Refused unless the request comes from this machine, or carries the token the daemon " +
 			"was started with.",
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			return stopDaemon(boardURL, token)
+			return stopDaemon(boardURL, token, now)
 		},
 	}
 	c.Flags().StringVar(&boardURL, "url", "",
 		"atrium board address (default: $ATRIUM_BOARD_URL or localhost:7778)")
+	c.Flags().BoolVar(&now, "now", false,
+		"stop at once: do not ask working sessions to wrap up first, and end a wrap-up already waiting")
 	c.Flags().StringVar(&token, "token", "",
 		"shutdown token, when the daemon was started with one (default: $ATRIUM_SHUTDOWN_TOKEN)")
 	return c
@@ -61,11 +66,14 @@ func boardAddress(override string) string {
 	return "http://localhost:7778"
 }
 
-func stopDaemon(boardURL, token string) error {
+func stopDaemon(boardURL, token string, now bool) error {
 	if token == "" {
 		token = os.Getenv("ATRIUM_SHUTDOWN_TOKEN")
 	}
 	url := boardAddress(boardURL) + "/v1/shutdown"
+	if now {
+		url += "?now=1"
+	}
 
 	req, err := http.NewRequest(http.MethodPost, url, nil)
 	if err != nil {
@@ -93,6 +101,11 @@ func stopDaemon(boardURL, token string) error {
 		return fmt.Errorf("the daemon refused: %s", msg)
 	}
 
-	fmt.Println("the daemon is winding down. supervised runners get ten seconds to finish.")
+	if now {
+		fmt.Println("the daemon is winding down now. supervised runners get ten seconds to finish.")
+		return nil
+	}
+	fmt.Println("the daemon is asking its working sessions to wrap up, then winds down. " +
+		"supervised runners get ten seconds to finish. pass --now to skip the wrap-up.")
 	return nil
 }

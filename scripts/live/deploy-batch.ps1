@@ -10,10 +10,12 @@
 # The room is restarted by this script, not by restart_atrium, so it does not depend on the restarter inside the
 # room that is being replaced. Input-lag logging is on for both unless -NoLagLog is passed.
 #
+# The room is stopped gracefully: each working card is asked to wrap up and is woken after. -Immediate skips that.
+#
 # A deploy hold is set on the room first and waited out, so the room that comes back wakes every card that was
 # working. -NoHold skips it. Do not send the "commit and wait" say as well: a card told to wait by a say is idle at
 # the hold and is correctly not woken.
-param([switch]$NoLagLog, [switch]$WhatIf, [switch]$NoHold)
+param([switch]$NoLagLog, [switch]$WhatIf, [switch]$NoHold, [switch]$Immediate)
 
 $ErrorActionPreference = 'Continue'
 $LiveTag = 'BATCH'

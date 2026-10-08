@@ -126,6 +126,9 @@ type RestartAsk struct {
 	// WaitSeconds bounds how long to wait for busy agents. Zero takes the room's
 	// default.
 	WaitSeconds int `json:"wait_seconds,omitempty"`
+	// Immediate keeps the old restart: no wrap-up of the working sessions, only the park-and-refuse
+	// before. Off by default, so a restart asks its working cards to wrap up, wakes them and then goes.
+	Immediate bool `json:"immediate,omitempty"`
 }
 
 // Offer is a binary a hub has, described well enough for a room to decide

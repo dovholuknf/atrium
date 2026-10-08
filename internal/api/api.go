@@ -219,6 +219,9 @@ type Server struct {
 	// Shutdown winds the daemon down. Supplied by the daemon, which is the only
 	// thing that can stop itself and owns the access rules for doing so.
 	Shutdown http.HandlerFunc
+	// RestartWrap asks the working sessions to wrap up before a restart, and answers when they have or the wait
+	// is out. Supplied by the daemon, with Shutdown's access rules.
+	RestartWrap http.HandlerFunc
 	// Shelve stops the runner behind a card being put down. The card and its
 	// resume id stay, so the work is paused rather than ended.
 	Shelve func(taskID string) error
@@ -625,6 +628,9 @@ func (s *Server) Handler() http.Handler {
 	}
 	if s.Shutdown != nil {
 		mux.HandleFunc("POST /v1/shutdown", s.Shutdown)
+	}
+	if s.RestartWrap != nil {
+		mux.HandleFunc("POST /v1/restart-wrap", s.RestartWrap)
 	}
 	mux.HandleFunc("GET /v1/tasks/{id}/events", s.taskEvents)
 	mux.HandleFunc("POST /v1/tasks/{id}/notices-read", s.noticesRead)

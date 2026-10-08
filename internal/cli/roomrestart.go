@@ -7,9 +7,11 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -116,11 +118,29 @@ func onHubRestart(boardURL string, l roomLaunch, stop func()) func(link.RestartA
 		if ask.WaitSeconds > 0 {
 			wait = time.Duration(ask.WaitSeconds) * time.Second
 		}
-		busy := parkRoomAgents(boardURL, why, wait)
-		if len(busy) > 0 && !ask.Force {
-			restartLog(l.dir, "NOT restarting: still working: %s. pass force to interrupt them",
-				strings.Join(busy, ", "))
-			return
+		// GRACEFUL BY DEFAULT: the working cards are asked to wrap up and each gets a restart wake, then the
+		// restart goes ahead whoever never answered, named in the log. Immediate keeps the old park and refuse.
+		wrapped := false
+		if !ask.Immediate {
+			rep, err := wrapRoomAgents(boardURL, why, time.Duration(ask.WaitSeconds)*time.Second, l.dir)
+			wrapped = err == nil
+			if err != nil {
+				restartLog(l.dir, "the wrap-up did not run (%v), parking the working cards instead", err)
+			} else {
+				restartLog(l.dir, "wrap-up done: %d asked, %d ready, %d idle, %d never answered %s, %d woken",
+					len(rep.Asked), len(rep.Ready), len(rep.Idle), len(rep.Unanswered),
+					strings.Join(rep.Unanswered, ", "), len(rep.Woken))
+			}
+		} else {
+			restartLog(l.dir, "immediate restart asked, no wrap-up")
+		}
+		if !wrapped {
+			busy := parkRoomAgents(boardURL, why, wait)
+			if len(busy) > 0 && !ask.Force {
+				restartLog(l.dir, "NOT restarting: still working: %s. pass force to interrupt them",
+					strings.Join(busy, ", "))
+				return
+			}
 		}
 
 		if err := spawnRoomRestart(l); err != nil {
@@ -293,4 +313,27 @@ func tellRoomToPark(boardURL, id, why string) error {
 	}
 	res.Body.Close()
 	return nil
+}
+
+// wrapRoomAgents asks this room to wrap its working cards up and waits for the answer. A zero wait takes the
+// room's own setting. The call is bounded by that wait, which the room keeps, plus a margin.
+func wrapRoomAgents(boardURL, why string, wait time.Duration, dir string) (daemon.WrapReport, error) {
+	var rep daemon.WrapReport
+	q := url.Values{"why": {why}}
+	limit := time.Hour
+	if wait > 0 {
+		q.Set("wait", strconv.Itoa(int(wait/time.Second)))
+		limit = wait + time.Minute
+	}
+	restartLog(dir, "asking the working cards to wrap up before the restart")
+	client := &http.Client{Timeout: limit}
+	res, err := client.Post(boardURL+"/v1/restart-wrap?"+q.Encode(), "application/json", nil)
+	if err != nil {
+		return rep, err
+	}
+	defer res.Body.Close()
+	if res.StatusCode >= 300 {
+		return rep, fmt.Errorf("the room answered %s", res.Status)
+	}
+	return rep, json.NewDecoder(res.Body).Decode(&rep)
 }

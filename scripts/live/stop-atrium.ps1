@@ -9,8 +9,9 @@
 #
 #     pwsh -File C:\Users\claude\.atrium2\scripts\stop-atrium.ps1
 #
-# -WhatIf says what it would stop and stops nothing. -KeepControl leaves sg4-control running.
-param([switch]$KeepControl, [switch]$Force, [switch]$WhatIf)
+# -WhatIf says what it would stop and stops nothing. -KeepControl leaves sg4-control running. The claude-sg4 room first
+# asks its working cards to wrap up (up to its restart_wrap_wait_s). -Immediate skips that.
+param([switch]$KeepControl, [switch]$Force, [switch]$WhatIf, [switch]$Immediate)
 
 $ErrorActionPreference = 'Continue'
 $LiveTag = 'STOP'
