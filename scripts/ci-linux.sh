@@ -6,9 +6,10 @@
 #   scripts/ci-linux.sh -- go test -count=20 -run TestX ./internal/daemon/
 #                                  anything else, in the same container, once
 #
-# THE UBUNTU JOB, AS CLOSE AS A CONTAINER GETS. The same Go as go.mod, node 22
-# and pwsh like the runner, a user that is not root (the runner is uid 1001, and
-# a test of a permission refusal passes as root), four CPUs like the runner, and
+# THE UBUNTU JOB, AS CLOSE AS A CONTAINER GETS. The same Go as go.mod, node 22,
+# a user that is not root (the runner is uid 1001, and a test of a permission
+# refusal passes as root), four CPUs like the runner, no pwsh (nothing on Linux
+# runs PowerShell, so a step that wants it is the bug), and
 # a fresh copy of the tree rather than a mount of it: what a checkout would
 # hold, plus whatever is uncommitted here, and nothing .gitignore leaves out. A
 # mount would hand the container this machine's build.claude/ and a .git file
@@ -48,11 +49,9 @@ if ! docker image inspect "$image" >/dev/null 2>&1; then
   docker build -t "$image" --build-arg GO="$gover" - <<'EOF' || exit 2
 ARG GO
 FROM golang:${GO}
-RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl git xz-utils libicu76 less \
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl git xz-utils less \
  && rm -rf /var/lib/apt/lists/*
 RUN curl -fsSL https://nodejs.org/dist/v22.20.0/node-v22.20.0-linux-x64.tar.xz | tar -xJ -C /usr/local --strip-components=1
-RUN mkdir -p /opt/pwsh && curl -fsSL https://github.com/PowerShell/PowerShell/releases/download/v7.5.3/powershell-7.5.3-linux-x64.tar.gz | tar -xz -C /opt/pwsh \
- && chmod +x /opt/pwsh/pwsh && ln -s /opt/pwsh/pwsh /usr/local/bin/pwsh
 RUN useradd -m -u 1001 runner \
  && mkdir -p /src /home/runner/work /home/runner/go/pkg/mod /home/runner/.cache/go-build \
  && chown -R runner:runner /src /home/runner

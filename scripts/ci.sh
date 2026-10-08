@@ -66,7 +66,10 @@ echo "temp:        TMPDIR=${TMPDIR:-} TEMP=${TEMP:-} TMP=${TMP:-}"
 echo "free disk:   $(df -h "${TMPDIR:-${TEMP:-/tmp}}" 2>/dev/null | awk 'NR==2 {print $4 " in temp"}')"
 echo "git:         $(git --version 2>/dev/null || echo none)"
 echo "node:        $(node --version 2>/dev/null || echo none)"
-echo "pwsh:        $(pwsh -NoProfile -Command '$PSVersionTable.PSVersion.ToString()' 2>/dev/null || echo none)"
+case "$(uname -s)" in
+  MINGW*|MSYS*|CYGWIN*)
+    echo "pwsh:        $(pwsh -NoProfile -Command '$PSVersionTable.PSVersion.ToString()' 2>/dev/null || echo none)" ;;
+esac
 echo "shells:      sh=$(command -v sh || echo none) bash=$BASH_VERSION"
 echo "cleared:     ${leaked:-no ATRIUM_* variables were set}"
 echo "artefacts:   $here/$artefacts"
@@ -184,10 +187,16 @@ for f in packaging/postinstall.sh packaging/preremove.sh \
 done
 echo "ok: shell scripts parse"
 
-if command -v pwsh >/dev/null 2>&1; then
+# The PowerShell parse check runs in the Windows job only. pwsh is never started off Windows, even where one is
+# installed (the GitHub ubuntu runner has it), so a Linux or macOS run skips this.
+case "$(uname -s)" in
+  MINGW*|MSYS*|CYGWIN*) on_windows=1 ;;
+  *) on_windows=0 ;;
+esac
+if [ "$on_windows" = 1 ] && command -v pwsh >/dev/null 2>&1; then
   check "powershell" pwsh -NoProfile -File scripts/check-powershell.ps1
 else
-  echo "skipped: no pwsh on PATH, so the PowerShell scripts were not parsed."
+  echo "skipped: not the Windows job, or no pwsh on PATH, so the PowerShell scripts were not parsed."
 fi
 
 echo
