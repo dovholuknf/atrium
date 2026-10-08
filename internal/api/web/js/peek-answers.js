@@ -157,7 +157,7 @@ function qaFlyEl() {
   });
   qaFly.addEventListener("keydown", e => {
     if (e.key === "Escape") { e.stopPropagation(); qaCloseFly(); return; }
-    if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); qaFlyStep(1, true); }
+    if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); qaFlyEnter(); }
   });
   qaFly.addEventListener("click", e => {
     const b = e.target.closest("button");
@@ -195,7 +195,7 @@ function qaFlyDraw() {
     (at > 0 ? `<button type="button" class="qa-b" data-step="-1">back</button>` : "") +
     (at < flat.length - 1 ? `<button type="button" class="qa-b go" data-step="1">next</button>` : "") +
     `<button type="button" class="qa-b send" data-qa-send hidden>send to agent now</button></div>` +
-    `<div class="qa-hint">${/Mac|iPhone|iPad/.test(navigator.platform || "") ? "&#8984;" : "ctrl"} + enter for the next one</div>`;
+    `<div class="qa-hint">${/Mac|iPhone|iPad/.test(navigator.platform || "") ? "&#8984;" : "ctrl"} + enter <span>for the next one</span></div>`;
   const box = el.querySelector("textarea");
   box.value = g.a[qaOn.qi] || "";
   qaFlyProgress();
@@ -206,13 +206,17 @@ function qaFlyDraw() {
 }
 
 // "2 of 3 answered", and the send button once every question has one.
+function qaReady() { const t = qaTotal(qaOn.groups); return t > 0 && qaAnswered(qaOn.groups) >= t; }
+
 function qaFlyProgress() {
   if (!qaFly || !qaOn) return;
   const done = qaAnswered(qaOn.groups), total = qaTotal(qaOn.groups);
   const p = qaFly.querySelector(".qa-prog");
   if (p) p.textContent = `${done} of ${total} answered`;
   const s = qaFly.querySelector(".qa-b.send");
-  if (s) s.hidden = !(total > 0 && done >= total);
+  if (s) s.hidden = !qaReady();
+  const h = qaFly.querySelector(".qa-hint span");
+  if (h) h.textContent = s.hidden ? "for the next one" : "to send to the agent";
   const n = qaFly.querySelector(".qa-b.go");
   if (n && s) n.classList.toggle("quiet", !s.hidden);
   const dot = qaFly.querySelectorAll(".qa-dot");
@@ -253,6 +257,18 @@ function qaFlyStep(d, wrap) {
   let n = at + d;
   if (n >= flat.length) { if (!wrap) return; qaFlush(); qaCloseFly(); return; }
   qaFlyGo(Math.max(0, n));
+}
+
+// Ctrl/cmd+enter: send once every question has an answer, else on to the next one. On the last it goes to the first
+// question still unanswered, never out of the flyout.
+function qaFlyEnter() {
+  if (!qaOn) return;
+  if (qaReady()) { qaSend(); return; }
+  const flat = qaFlat();
+  const at = flat.findIndex(([gi, qi]) => gi === qaOn.gi && qi === qaOn.qi);
+  if (at < flat.length - 1) { qaFlyGo(at + 1); return; }
+  const first = flat.findIndex(([gi, qi]) => !String(qaOn.groups[gi].a[qi] || "").trim());
+  if (first >= 0 && first !== at) qaFlyGo(first);
 }
 
 function qaOpenFly(id, gi, qi) {
