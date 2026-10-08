@@ -12,10 +12,11 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// roomSettingKeys are the settings `room set` and `room get` will touch. Only git_root so far:
-// provisioning needs it before the room first runs, and nothing else wants a verb.
+// roomSettingKeys are the settings `room set` and `room get` will touch: git_root and scm_root, which provisioning
+// needs before the room first runs, and nothing else wants a verb.
 var roomSettingKeys = map[string]string{
 	"git_root": gitsync.SettingGitRoot,
+	"scm_root": gitsync.SettingSCMRoot,
 }
 
 // roomSettingCmds returns `room set` and `room get`. They work on a STOPPED room's database
@@ -25,7 +26,7 @@ func roomSettingCmds() []*cobra.Command {
 	var db string
 	set := &cobra.Command{
 		Use:   "set <key> <value>",
-		Short: "Set a room setting (git_root) in a stopped room's database",
+		Short: "Set a room setting (git_root, scm_root) in a stopped room's database",
 		Args:  cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runRoomSet(cmd, orDefault(db, defaultRoomDB()), args[0], args[1])
@@ -33,7 +34,7 @@ func roomSettingCmds() []*cobra.Command {
 	}
 	get := &cobra.Command{
 		Use:   "get <key>",
-		Short: "Print a room setting (git_root) from a stopped room's database",
+		Short: "Print a room setting (git_root, scm_root) from a stopped room's database",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runRoomGet(cmd, orDefault(db, defaultRoomDB()), args[0])
@@ -49,7 +50,7 @@ func roomSettingKey(name string) (string, error) {
 	if k, ok := roomSettingKeys[name]; ok {
 		return k, nil
 	}
-	return "", fmt.Errorf("unknown room setting %q, known: git_root", name)
+	return "", fmt.Errorf("unknown room setting %q, known: git_root, scm_root", name)
 }
 
 func roomSettingErr(db string, err error) error {
@@ -70,6 +71,9 @@ func runRoomSet(cmd *cobra.Command, db, name, value string) error {
 	value = strings.TrimSpace(value)
 	if key == gitsync.SettingGitRoot && value != "" && !filepath.IsAbs(value) {
 		return fmt.Errorf("git_root must be an absolute path, got %q", value)
+	}
+	if key == gitsync.SettingSCMRoot && value != "" && !filepath.IsAbs(gitsync.ExpandHome(value)) {
+		return fmt.Errorf("scm_root must be an absolute path or start with ~/, got %q", value)
 	}
 	if err := store.SetSettingOfFile(db, key, value); err != nil {
 		return roomSettingErr(db, err)

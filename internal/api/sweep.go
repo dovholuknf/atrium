@@ -233,7 +233,8 @@ func (s *Server) Sweep(ctx context.Context) *sweepReport {
 		}
 	}
 	root := ""
-	if scm, _ := s.st.Setting(gitsync.SettingSCMRoot); strings.TrimSpace(scm) != "" {
+	set, _ := s.st.Setting(gitsync.SettingSCMRoot)
+	if scm := gitsync.EffectiveSCMRoot(set); strings.TrimSpace(scm) != "" {
 		root = filepath.ToSlash(filepath.Join(filepath.FromSlash(strings.TrimSpace(scm)), "worktrees"))
 	}
 	rep.Root = root

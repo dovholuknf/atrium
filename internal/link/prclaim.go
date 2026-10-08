@@ -131,13 +131,18 @@ func (l roomLoad) lessLoaded(o roomLoad) bool {
 // lower name.
 // `fallback` is the answer when no room could be asked, which is the asker for a claim and nothing for a paste.
 func (p *Proxy) placePRRoom(ctx context.Context, fallback string) string {
+	return p.placePRRoomExcept(ctx, fallback, nil)
+}
+
+// placePRRoomExcept is placePRRoom with rooms passed over: the ones that already refused this paste, by key.
+func (p *Proxy) placePRRoomExcept(ctx context.Context, fallback string, skip map[string]string) string {
 	rooms := p.hub.Rooms()
 	marked := p.markedRooms()
 	got := make([]roomLoad, len(rooms))
 	var wg sync.WaitGroup
 	for i, a := range rooms {
 		got[i].room, got[i].idle = a.Name, a.IdleCPU
-		if marked[keyOf(a.Name)] || p.isDeaf(a) {
+		if _, passed := skip[keyOf(a.Name)]; passed || marked[keyOf(a.Name)] || p.isDeaf(a) {
 			got[i].n = -1
 			continue
 		}

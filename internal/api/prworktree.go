@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/dovholuknf/atrium/internal/forge"
+	"github.com/dovholuknf/atrium/internal/gitsync"
 	"github.com/dovholuknf/atrium/internal/nowindow"
 	"github.com/dovholuknf/atrium/internal/store"
 )
@@ -59,6 +60,10 @@ func (s *Server) makePRWorktree(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 	res, status, err := s.prWorktree(ctx, p, req)
 	if err != nil {
+		if noSCMRoot(err) {
+			writeJSON(w, http.StatusUnprocessableEntity, map[string]string{"error": err.Error(), "code": gitsync.NoSCMRootCode})
+			return
+		}
 		if status >= 500 {
 			s.fail(w, err)
 			return

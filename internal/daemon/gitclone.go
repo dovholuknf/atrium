@@ -37,9 +37,12 @@ func (d *Daemon) scm(task *store.Task) *gitsync.SCM {
 		from = d.hubClone
 	}
 	return &gitsync.SCM{
-		From:             from,
-		Runner:           gitsync.Default,
-		Root:             setting(gitsync.SettingSCMRoot),
+		From:   from,
+		Runner: gitsync.Default,
+		Root: func() string {
+			v, _ := d.st.Setting(gitsync.SettingSCMRoot)
+			return gitsync.EffectiveSCMRoot(v)
+		},
 		CredentialHelper: setting(gitsync.SettingCredentialHelper),
 		CredentialHosts:  setting(gitsync.SettingCredentialHosts),
 		Yes:              func(ctx context.Context, clone string) error { return d.askToAdopt(task, clone) },

@@ -137,7 +137,7 @@ func (s *Server) open(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 	wt, status, err := s.prWorktree(ctx, s.providerByHost(host), prWorktreeRequest{Host: host, Org: org, Repo: repo, Number: num})
 	if err != nil {
-		openFail(w, status, "worktree", "worktree_failed", err.Error())
+		worktreeFail(w, status, err)
 		return
 	}
 	ans.Worktree = wt.Path

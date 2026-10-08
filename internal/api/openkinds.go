@@ -153,13 +153,13 @@ func (s *Server) openOther(w http.ResponseWriter, r *http.Request, in openReques
 	if repo != "" {
 		wt, status, err = s.branchWorktree(ctx, s.providerByHost(host), host, org, repo, k.branch, k.kind != linkBranch)
 		if err != nil {
-			openFail(w, status, "worktree", "worktree_failed", err.Error())
+			worktreeFail(w, status, err)
 			return
 		}
 		ans.Worktree, ans.Repo = wt.Path, host+"/"+org+"/"+repo
 	} else {
 		if scratch, err = s.scratchDir(k.host, k.branch); err != nil {
-			openFail(w, http.StatusBadRequest, "worktree", "worktree_failed", err.Error())
+			worktreeFail(w, http.StatusBadRequest, err)
 			return
 		}
 		ans.Worktree = scratch
@@ -386,11 +386,30 @@ func remoteBranch(ctx context.Context, repo, branch string) string {
 // scratchRoot is the folder scratch cards live under, `<git.scm_root>/scratch`, or "" when the root is not set.
 func (s *Server) scratchRoot() string {
 	scm, _ := s.st.Setting(gitsync.SettingSCMRoot)
-	scm = gitsync.ExpandHome(strings.TrimSpace(scm))
+	scm = gitsync.ExpandHome(strings.TrimSpace(gitsync.EffectiveSCMRoot(scm)))
 	if scm == "" || !filepath.IsAbs(scm) {
 		return ""
 	}
 	return filepath.Join(scm, "scratch")
+}
+
+// errNoScratchRoot is what a scratch folder answers on a room with no scm folder. It is answered with the same code as
+// gitsync.ErrNoSCMRoot, so the hub passes the room over.
+var errNoScratchRoot = errors.New("a scratch folder goes under git.scm_root, which is not set. " +
+	"set it in settings, or pick a repo")
+
+// noSCMRoot is whether err is a room's lack of an scm folder.
+func noSCMRoot(err error) bool {
+	return errors.Is(err, gitsync.ErrNoSCMRoot) || errors.Is(err, errNoScratchRoot)
+}
+
+// worktreeFail answers a worktree step that failed. A room with no scm folder says so with its own code and status.
+func worktreeFail(w http.ResponseWriter, status int, err error) {
+	if noSCMRoot(err) {
+		openFail(w, http.StatusUnprocessableEntity, "worktree", gitsync.NoSCMRootCode, err.Error())
+		return
+	}
+	openFail(w, status, "worktree", "worktree_failed", err.Error())
 }
 
 // scratchDir makes a card's own folder for a link that opens in no repo, `<git.scm_root>/scratch/<host>/<name>`.
@@ -398,7 +417,7 @@ func (s *Server) scratchRoot() string {
 func (s *Server) scratchDir(host, name string) (string, error) {
 	root := s.scratchRoot()
 	if root == "" {
-		return "", errors.New("a scratch folder goes under git.scm_root, which is not set. set it in settings, or pick a repo")
+		return "", errNoScratchRoot
 	}
 	if !store.RepoSlug(host+"/x/"+flattenBranch(name)) || flattenBranch(name) == "" {
 		return "", fmt.Errorf("%s/%s is not a folder name", host, name)

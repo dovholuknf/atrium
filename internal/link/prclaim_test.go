@@ -61,6 +61,8 @@ type claimRoom struct {
 	// counts what it refused.
 	deaf     bool
 	deafHits int
+	// noSCM is a room with no scm folder: an open, a paste or a worktree answers no_scm_root, and makes nothing.
+	noSCM bool
 }
 
 func (c *claimRoom) reviewCalls() (imported []byte, archived, walkers []string) {
@@ -89,7 +91,14 @@ func (c *claimRoom) made() []string {
 
 func (c *claimRoom) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
+	c.mu.Lock()
+	noSCM := c.noSCM
+	c.mu.Unlock()
 	switch {
+	case noSCM && r.Method == http.MethodPost && (r.URL.Path == "/v1/open" || r.URL.Path == "/v1/prs" ||
+		strings.HasSuffix(r.URL.Path, "/pr-worktree")):
+		w.WriteHeader(http.StatusUnprocessableEntity)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": c.name + " has no scm folder", "code": "no_scm_root"})
 	case c.isDeaf() && r.Method == http.MethodPost && (r.URL.Path == "/v1/open" || r.URL.Path == "/v1/prs"):
 		c.mu.Lock()
 		c.deafHits++

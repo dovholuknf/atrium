@@ -150,9 +150,13 @@ func TestOpenATicketWithNoRepoMakesAScratchFolderThatCloseRemoves(t *testing.T) 
 
 // A scratch folder needs the scm root, and says so.
 func TestOpenATicketWithNoRepoAndNoSCMRootSaysWhy(t *testing.T) {
+	// A home with no ~/git, or the room would use the one the machine has. See gitsync.EffectiveSCMRoot.
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
 	oh := newOpenHarness(t, &fakeForge{})
 	code, out := oh.open(t, "https://acme.zendesk.com/agent/tickets/9")
-	if code != 400 || out["step"] != "worktree" || !strings.Contains(out["error"].(string), "git.scm_root") {
+	if code != 422 || out["code"] != "no_scm_root" || out["step"] != "worktree" || !strings.Contains(out["error"].(string), "git.scm_root") {
 		t.Errorf("%d %v", code, out)
 	}
 }
