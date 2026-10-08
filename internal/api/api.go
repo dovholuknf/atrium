@@ -225,6 +225,8 @@ type Server struct {
 	// StopRunner asks a runner to exit the way its harness says to, rather
 	// than killing it. Supplied by the daemon, which owns the terminal.
 	StopRunner func(taskID string) error
+	// StopRunnerBy is StopRunner naming who asked, so the exit is recorded as asked for. Preferred when set.
+	StopRunnerBy func(taskID, by string) error
 	// Cull asks a merged worker to leave and removes its worktree and branch.
 	// Supplied by the daemon, which owns the terminal and makes every check.
 	// See internal/daemon/cull.go.
@@ -2472,7 +2474,11 @@ func (s *Server) exitRunner(w http.ResponseWriter, r *http.Request) {
 				"by": strings.TrimSpace(in.From), "forced_exit": true})
 		}
 	}
-	if err := s.StopRunner(r.PathValue("id")); err != nil {
+	stop := func() error { return s.StopRunner(r.PathValue("id")) }
+	if s.StopRunnerBy != nil {
+		stop = func() error { return s.StopRunnerBy(r.PathValue("id"), strings.TrimSpace(in.From)) }
+	}
+	if err := stop(); err != nil {
 		writeErr(w, http.StatusBadRequest, err)
 		return
 	}

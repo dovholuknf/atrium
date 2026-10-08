@@ -102,6 +102,13 @@ func exit(t *testing.T, s *Store, taskID string, extra map[string]any) {
 	}
 }
 
+func launchedWith(t *testing.T, s *Store, taskID string, payload map[string]any) {
+	t.Helper()
+	if err := s.AppendEvent(taskID, EventLaunched, payload); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func launched(t *testing.T, s *Store, taskID string) {
 	t.Helper()
 	if err := s.AppendEvent(taskID, EventLaunched, map[string]any{"by": "session hook"}); err != nil {
@@ -243,14 +250,21 @@ func TestRunningAgainReopensAndALateExitIsIgnored(t *testing.T) {
 		t.Fatalf("a repeat start moved the generation to %d", w.Generation)
 	}
 	exit(t, s, worker.ID, nil)
+	// A bare restart is not new work: the item stays ended. Only a prompted launch reopens it.
 	launched(t, s, worker.ID)
 	w := mustItem(t, s, worker.ID)
-	if w.State != WorkOpen || w.Generation != 2 || w.EndedGeneration != 1 {
+	if w.State != WorkEnded || w.Generation != 2 || w.EndedGeneration != 1 {
 		t.Fatalf("running again left %+v", w)
+	}
+	exit(t, s, worker.ID, map[string]any{"generation": 2})
+	launchedWith(t, s, worker.ID, map[string]any{"by": "launch", "prompted": true})
+	w = mustItem(t, s, worker.ID)
+	if w.State != WorkOpen || w.Generation != 3 || w.EndedGeneration != 2 {
+		t.Fatalf("a prompted launch left %+v", w)
 	}
 	exit(t, s, worker.ID, map[string]any{"generation": 1})
 	w = mustItem(t, s, worker.ID)
-	if w.State != WorkOpen || w.EndedGeneration != 1 {
+	if w.State != WorkOpen || w.EndedGeneration != 2 {
 		t.Fatalf("a late exit from generation 1 moved the item: %+v", w)
 	}
 	last := logOf(t, s, worker.ID)
@@ -258,8 +272,8 @@ func TestRunningAgainReopensAndALateExitIsIgnored(t *testing.T) {
 		t.Fatalf("the late exit was not logged: %+v", last[len(last)-1])
 	}
 	// The current run ending does move it.
-	exit(t, s, worker.ID, map[string]any{"generation": 2})
-	if w := mustItem(t, s, worker.ID); w.State != WorkEnded || w.EndedGeneration != 2 {
+	exit(t, s, worker.ID, map[string]any{"generation": 3})
+	if w := mustItem(t, s, worker.ID); w.State != WorkEnded || w.EndedGeneration != 3 {
 		t.Fatalf("the current run ending left %+v", w)
 	}
 }
@@ -701,5 +715,150 @@ func TestTheBackfillIsInferredBoundedAndRunsOnce(t *testing.T) {
 	again, err := s.BackfillWorkLedger(liveness)
 	if err != nil || !again.Skipped {
 		t.Fatalf("second backfill = %+v err=%v", again, err)
+	}
+}
+
+// say is a worker's message to its launcher, or the launcher's to the worker, the way the doors log it.
+func say(t *testing.T, s *Store, from, to *Task, text string) {
+	t.Helper()
+	if _, err := s.LogWorkMessage(from.ID, to.ID, from.WireName, text); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func queued(t *testing.T, s *Store, id string) int {
+	t.Helper()
+	msgs, err := s.PendingMessages(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return len(msgs)
+}
+
+// A done or blocked say to the launcher is the report, and an end after it sends no notice.
+func TestADoneOrBlockedSayIsTheReport(t *testing.T) {
+	cases := []struct {
+		name, text, state string
+	}{
+		{"done with a sha", "done abc1234", WorkReported},
+		{"blocked", "blocked: no network", WorkReported},
+		{"capitalised", "Done 9f3c", WorkReported},
+		{"not at the start", "I am done with the first half", WorkOpen},
+		{"a word that starts with done", "doneness check", WorkOpen},
+		{"chatter", "working on it", WorkOpen},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			s := openTestStore(t)
+			launcher, worker, _ := ledgerPair(t, s)
+			say(t, s, worker, launcher, c.text)
+			if w := mustItem(t, s, worker.ID); w.State != c.state {
+				t.Fatalf("after %q the item is %q, want %q", c.text, w.State, c.state)
+			}
+			exit(t, s, worker.ID, map[string]any{"cause": CauseAsked, "cause_by": launcher.WireName})
+			n := queued(t, s, launcher.ID)
+			if c.state == WorkReported && n != 0 {
+				t.Fatalf("a reported worker's end queued %d notices", n)
+			}
+			if c.state == WorkReported {
+				last, err := lastReportOn(s.db, worker.ID)
+				if err != nil || last == nil || last.Text != c.text {
+					t.Fatalf("the say is not the report: %+v %v", last, err)
+				}
+			}
+		})
+	}
+}
+
+// An end atrium caused is logged and queues nothing; the work stays open.
+func TestAnEndAtriumCausedSendsNoNotice(t *testing.T) {
+	cases := []struct {
+		name    string
+		payload map[string]any
+		want    string
+	}{
+		{"asked by the launcher", map[string]any{"cause": CauseAsked, "cause_by": "orchestrator"}, "asked to exit by orchestrator"},
+		{"asked by the operator", map[string]any{"cause": CauseAsked}, "asked to exit by the operator"},
+		{"room shutdown", map[string]any{"cause": CauseShutdown}, "the room shut down"},
+		{"idle park", map[string]any{"cause": CauseIdlePark}, "parked after sitting idle"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			s := openTestStore(t)
+			launcher, worker, _ := ledgerPair(t, s)
+			exit(t, s, worker.ID, c.payload)
+			if n := queued(t, s, launcher.ID); n != 0 {
+				t.Fatalf("an expected end queued %d notices", n)
+			}
+			if w := mustItem(t, s, worker.ID); w.State != WorkOpen || w.EndedGeneration != 1 {
+				t.Fatalf("an expected end left %+v", w)
+			}
+			log := logOf(t, s, worker.ID)
+			if got := log[len(log)-1].Text; !strings.Contains(got, "the session ended ("+c.want+")") {
+				t.Fatalf("log line %q does not say %q", got, c.want)
+			}
+		})
+	}
+}
+
+// The room reopening a card leaves the item as it was, whether reported or ended.
+func TestAReopenDoesNotResetTheItem(t *testing.T) {
+	cases := []struct {
+		name  string
+		setup func(t *testing.T, s *Store, launcher, worker *Task)
+		want  string
+	}{
+		{"reported", func(t *testing.T, s *Store, l, w *Task) { report(t, s, w.ID, "done", "shipped") }, WorkReported},
+		{"ended", func(t *testing.T, s *Store, l, w *Task) {
+			exit(t, s, w.ID, nil)
+		}, WorkEnded},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			s := openTestStore(t)
+			launcher, worker, _ := ledgerPair(t, s)
+			c.setup(t, s, launcher, worker)
+			before := queued(t, s, launcher.ID)
+			if c.want == WorkReported {
+				exit(t, s, worker.ID, map[string]any{"cause": CauseShutdown})
+			}
+			launchedWith(t, s, worker.ID, map[string]any{"by": "supervisor", "via": "reopen"})
+			if w := mustItem(t, s, worker.ID); w.State != c.want {
+				t.Fatalf("a reopen turned %s into %s", c.want, w.State)
+			}
+			exit(t, s, worker.ID, map[string]any{"cause": CauseIdlePark})
+			if n := queued(t, s, launcher.ID); n != before {
+				t.Fatalf("the park after a reopen queued %d notices", n-before)
+			}
+		})
+	}
+}
+
+// A launcher's say with new work reopens an item that ended without a report.
+func TestALauncherSayReopensAnEndedItem(t *testing.T) {
+	s := openTestStore(t)
+	launcher, worker, _ := ledgerPair(t, s)
+	exit(t, s, worker.ID, nil)
+	say(t, s, launcher, worker, "one more thing: also fix the docs")
+	if w := mustItem(t, s, worker.ID); w.State != WorkOpen {
+		t.Fatalf("new work left the item %s", w.State)
+	}
+}
+
+// A session that dies or quits with no report and nobody asking is still worth a turn.
+func TestAnUnexpectedEndStillSendsANotice(t *testing.T) {
+	s := openTestStore(t)
+	launcher, worker, _ := ledgerPair(t, s)
+	say(t, s, worker, launcher, "still working on the parser")
+	exit(t, s, worker.ID, nil)
+	msgs, err := s.PendingMessages(launcher.ID)
+	if err != nil || len(msgs) != 1 {
+		t.Fatalf("queued %d notices, err %v", len(msgs), err)
+	}
+	if !strings.Contains(msgs[0].Text, "unexpected") {
+		t.Fatalf("the notice does not say why it is unexpected: %q", msgs[0].Text)
+	}
+	if w := mustItem(t, s, worker.ID); w.State != WorkEnded {
+		t.Fatalf("item is %s", w.State)
 	}
 }

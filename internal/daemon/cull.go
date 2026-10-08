@@ -137,7 +137,7 @@ func (d *Daemon) CullProved(taskID, into, tip string) (*CullResult, error) {
 	// Ask it to leave first. Its process holds the worktree as its directory, and
 	// on Windows a directory in use cannot be removed.
 	if d.sup.get(taskID) != nil {
-		if err := d.StopRunner(taskID); err != nil {
+		if err := d.StopRunnerBy(taskID, "atrium (cull)"); err != nil {
 			return nil, err
 		}
 		if !d.waitRunnerGone(taskID, restartGoneWait) {

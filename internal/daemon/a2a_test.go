@@ -661,3 +661,49 @@ func TestAFirstTurnWithoutAReportIsASilentStop(t *testing.T) {
 		t.Fatalf("the launcher has %v, want one silent-stop notice", msgs)
 	}
 }
+
+// A card with an unanswered question for the operator is waiting on them, not stalled: no nudge, no notice.
+func TestASilentStopWithAnOpenQuestionIsNotNudged(t *testing.T) {
+	d := testDaemon(t)
+	launcher, worker := launchedPair(t, d)
+	if err := d.st.NoteTurnEnded(worker.ID, store.TurnQuestions{Known: true, Block: true,
+		List: []string{"which database should this use?"}}); err != nil {
+		t.Fatal(err)
+	}
+	stopTwice(t, d, "worker")
+	if n := len(pendingFrom(t, d, worker.ID)); n != 0 {
+		t.Fatalf("a card waiting on the operator was nudged: %d messages", n)
+	}
+	if n := len(pendingFrom(t, d, launcher.ID)); n != 0 {
+		t.Fatalf("the launcher heard %d notices about a card waiting on the operator", n)
+	}
+}
+
+// A card that already said done to its launcher since its prompt gets no nudge and no notice.
+func TestASilentStopAfterADoneSayIsNotNudged(t *testing.T) {
+	d := testDaemon(t)
+	launcher, worker := launchedPair(t, d)
+	if _, err := d.st.CreateWorkItem(mustTask(t, d, worker.ID), store.NewWorkItem{Brief: "do the thing"}); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(5 * time.Millisecond)
+	if _, err := d.st.LogWorkMessage(worker.ID, launcher.ID, worker.WireName, "done abc1234"); err != nil {
+		t.Fatal(err)
+	}
+	stopTwice(t, d, "worker")
+	if n := len(pendingFrom(t, d, worker.ID)); n != 0 {
+		t.Fatalf("a card that said done was nudged: %d messages", n)
+	}
+	if n := len(pendingFrom(t, d, launcher.ID)); n != 0 {
+		t.Fatalf("the launcher heard %d notices about a card that said done", n)
+	}
+}
+
+func mustTask(t *testing.T, d *Daemon, id string) *store.Task {
+	t.Helper()
+	task, err := d.st.Get(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return task
+}

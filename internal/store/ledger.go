@@ -710,14 +710,16 @@ func (s *Store) ledgerRunning(tx *Tx, w *WorkItem, payload map[string]any) error
 	}
 	gen := w.Generation + 1
 	by := payloadWord(payload, "by", "a launch")
-	if w.State == WorkEnded {
+	// A RESTART OR A RESUME IS NOT NEW WORK. Only a launch that carried a prompt reopens an item that ended
+	// without a report; the room reopening a card after a deploy, or an idle card waking, leaves it as it was.
+	if prompted, _ := payload["prompted"].(bool); w.State == WorkEnded && prompted {
 		if _, err := tx.Exec(`UPDATE work_item SET generation = ?, state = ?, state_at = ?, state_by = ?,
 				revision = revision + 1 WHERE task_id = ?`,
 			gen, WorkOpen, ts(now()), ByAtrium, w.TaskID); err != nil {
 			return err
 		}
 		if _, err := s.insertLog(tx, w.TaskID, logRow{kind: LogAtrium, by: ByAtrium,
-			text: fmt.Sprintf("running again (generation %d, started by %s), back to open", gen, by)}); err != nil {
+			text: fmt.Sprintf("running again (generation %d, started by %s with a new prompt), back to open", gen, by)}); err != nil {
 			return err
 		}
 	} else {
@@ -753,7 +755,11 @@ func (s *Store) ledgerEnded(tx *Tx, w *WorkItem, payload map[string]any, at time
 		return nil // this death is already recorded
 	}
 	how := exitHow(payload)
-	moved := w.State == WorkOpen || w.State == WorkReopened
+	// AN END ATRIUM CAUSED IS NOT A SURPRISE. An exit the launcher or operator asked for, a room shutdown and an
+	// idle park are logged and move nothing: the work is exactly as unreported as it was, and it stays open so
+	// a later death of the resumed session is still noticed.
+	_, expected := expectedEnd(payload)
+	moved := (w.State == WorkOpen || w.State == WorkReopened) && !expected
 	if moved {
 		if _, err := tx.Exec(`UPDATE work_item SET ended_generation = generation, state = ?, state_at = ?,
 				state_by = ?, revision = revision + 1 WHERE task_id = ?`,
@@ -791,8 +797,38 @@ func (s *Store) ledgerEnded(tx *Tx, w *WorkItem, payload map[string]any, at time
 	return nil
 }
 
+// Why atrium ended a session, in an exit payload's `cause`.
+const (
+	CauseAsked    = "asked"
+	CauseShutdown = "shutdown"
+	CauseIdlePark = "idle-park"
+	CauseShelved  = "shelved"
+	CauseKilled   = "terminated"
+)
+
+// expectedEnd says whether an exit's payload names a cause atrium itself brought about, and the words for it.
+func expectedEnd(payload map[string]any) (string, bool) {
+	by := payloadWord(payload, "cause_by", "")
+	switch payloadWord(payload, "cause", "") {
+	case CauseAsked:
+		return "asked to exit by " + orKeep(by, "the operator"), true
+	case CauseShutdown:
+		return "the room shut down", true
+	case CauseIdlePark:
+		return "parked after sitting idle", true
+	case CauseShelved:
+		return "shelved by " + orKeep(by, "the operator"), true
+	case CauseKilled:
+		return "terminated by " + orKeep(by, "the operator"), true
+	}
+	return "", false
+}
+
 // exitHow is how a session ended, in the words its exit path used.
 func exitHow(payload map[string]any) string {
+	if how, ok := expectedEnd(payload); ok {
+		return how
+	}
 	if d := payloadWord(payload, "detected", ""); d != "" {
 		return d
 	}
@@ -811,7 +847,8 @@ func payloadWord(payload map[string]any, key, def string) string {
 
 // endedNotice is what the arbiter reads when work ends without a report.
 func endedNotice(w *WorkItem, how string, at time.Time, last *WorkLogEntry) string {
-	body := fmt.Sprintf("%s ended without a final report (%s at %s). last report: ",
+	body := fmt.Sprintf("%s ended without a final report (%s at %s). nobody asked it to exit and it never said "+
+		"done or blocked, so this end is unexpected. last report: ",
 		orKeep(w.Handle, w.TaskID), how, at.Local().Format("15:04"))
 	if last == nil {
 		body += "none"
@@ -980,6 +1017,8 @@ type ReportWrite struct {
 	// question, or needs-input.
 	ReportStatus string
 	Outputs      *WorkOutputs
+	// SayReport is a `done` or `blocked` say to the launcher standing as the report. Both move the item.
+	SayReport bool
 	// Notice goes to the launcher inside the same transaction, once per
 	// (Source, Key). Nil for a card nobody launched.
 	Notice *NoticeSpec
@@ -1102,7 +1141,7 @@ func (s *Store) ledgerReport(tx *Tx, r ReportWrite, summary string, out *ReportR
 	if status == "" {
 		status = "done"
 	}
-	done := status == "done"
+	done := status == "done" || (r.SayReport && status == "blocked")
 	note, next := "", w.State
 	if done {
 		switch w.State {
@@ -1226,12 +1265,49 @@ func (s *Store) LogWorkMessage(fromID, toID, byHandle, text string) (bool, error
 			}
 			if id != "" {
 				logged = true
+				if p.kind == LogSay {
+					if status := sayReportStatus(text); status != "" {
+						if err := s.ledgerReport(tx, ReportWrite{TaskID: p.item, ReportStatus: status,
+							Recap: text, SayReport: true}, text, &ReportResult{}); err != nil {
+							return err
+						}
+					}
+				} else if w.State == WorkEnded {
+					// New work from the launcher reopens an item that ended without a report.
+					if _, err := tx.Exec(`UPDATE work_item SET state = ?, state_at = ?, state_by = ?,
+							revision = revision + 1 WHERE task_id = ?`,
+						WorkOpen, ts(now()), ByAtrium, p.item); err != nil {
+						return err
+					}
+				}
 				s.ledgerChanged(tx, p.item)
 			}
 		}
 		return nil
 	})
 	return logged, err
+}
+
+// sayReportStatus is `done` or `blocked` when a say is the worker's final word to its launcher: the first
+// word of the text, at its start. Anything else is free text and reports nothing.
+func sayReportStatus(text string) string {
+	t := strings.ToLower(strings.TrimSpace(text))
+	for _, status := range []string{"done", "blocked"} {
+		if !strings.HasPrefix(t, status) {
+			continue
+		}
+		rest := t[len(status):]
+		if rest == "" || strings.ContainsAny(rest[:1], " \t\n:,.;-") {
+			return status
+		}
+	}
+	return ""
+}
+
+// ReportedSince says whether the card has a report on its item at or after `since`.
+func (s *Store) ReportedSince(taskID string, since time.Time) bool {
+	e, err := lastReportOn(s.db, taskID)
+	return err == nil && e != nil && !e.At.Before(since)
 }
 
 // LogWorkAtrium puts one of atrium's own lines on a card's work item, and does

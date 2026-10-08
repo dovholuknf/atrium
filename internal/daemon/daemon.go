@@ -461,6 +461,7 @@ func New(opts Options) (*Daemon, error) {
 	d.ap.ForgeAccess = d.ForgeAlerts
 	d.ap.Shelve = d.Shelve
 	d.ap.StopRunner = d.StopRunner
+	d.ap.StopRunnerBy = d.StopRunnerBy
 	d.ap.Cull = func(id, into, tip string) (any, error) { return d.CullProved(id, into, tip) }
 	d.ap.HoldCull = d.HoldCull
 	d.ap.GitPush = d.GitPush

@@ -121,7 +121,7 @@ func (d *Daemon) runAction(taskID, actionID string) (*ActionResult, error) {
 			// on it. See exitPause.
 			go func() {
 				time.Sleep(exitPause)
-				if err := d.StopRunner(taskID); err != nil {
+				if err := d.StopRunnerBy(taskID, "an action"); err != nil {
 					log.Printf("[atrium] asking %s to exit after an action: %v", taskID, err)
 				}
 			}()
