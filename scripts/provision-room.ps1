@@ -101,8 +101,9 @@
 # with the lines an administrator runs (the drive gets attributes only, `icacls V:\ /grant <acct>:(RA,REA)`, no listing and
 # no creating) and the exit is 13. A rerun keeps the recorded root and says `ok`, and settings of a running room are read
 # from it. -Check reports the same read only, and on a Windows box with a second fixed drive and no -WorkRoot it advises one.
-# A machine with no atrium yet is checked by the first run. With no work root there is no room.yaml, so the old shared
-# folder behaviour stays and the agent pack is not installed (it is installed together with a work root).
+# THIS machine's atrium refuses a bad root for the room's OS first (`room setup --validate`, no ssh), so that refusal changes
+# nothing. A machine with no atrium yet is checked by the first run. With no work root the room.yaml is the agent pack alone:
+# the old shared folder behaviour stays and the pack is installed. A failed pack is a warn and never an exit code.
 #
 # THE AGENT PACK. Unless -NoAgentPack, the agents and skills of -AgentPackRepo (dovholuknf/dotfiles, branch
 # -AgentPackBranch main), claude/agents/*.md and claude/skills/<name>/, are installed as real files in the account's
@@ -930,7 +931,7 @@ function Get-SetupYaml {
 function Invoke-RoomSetup {
     param([string] $Mode, [switch] $UsePackDir)
     $r = Invoke-Remote (Get-RoomSetupScript -Os $os -Yaml (Get-SetupYaml) -Mode $Mode -UsePackDir:$UsePackDir)
-    ConvertFrom-RoomSetup $r.Out $r.Code
+    Limit-PackFailures (ConvertFrom-RoomSetup $r.Out $r.Code)
 }
 function Show-SetupRows {
     param($res)
@@ -949,6 +950,12 @@ if (-not ($Remove -or $Restart -or $SmokeOnly)) {
     # clones, reviews, hand-offs and caches all go under it, so there is no shared folder to make.
     $workRoot = if ($WorkRoot) { $WorkRoot } elseif ($manifest -and $manifest.workroot) { "$($manifest.workroot)" } else { $null }
     if ($workRoot) {
+        # THIS machine's atrium judges the root for the room's operating system first, with no ssh and no disk, so a root that
+        # is relative, a drive root, a network path, the wrong kind for the OS or another user's home is refused here, before
+        # anything on the room is changed. The room's own atrium judges what only its disk can tell (links, short names).
+        $vAcct = if ($User) { $User } elseif ($Target -match '^([^@]+)@') { $Matches[1] } else { '' }
+        $why = Test-WorkRootLocal $HubExe $os $workRoot $vAcct
+        if ($why) { Fail 'work-root' 1 "$workRoot is refused: $why" }
         Step 'shared-folder' 'skip' "the work root $workRoot holds the clones, so there is no shared folder"
         # THE ROOM'S OWN atrium judges the work root, so a machine that has one is asked first, with --plan, which cannot write:
         # a parent folder the account cannot examine, or a root it cannot make, ends the run here with the lines an
@@ -967,7 +974,12 @@ if (-not ($Remove -or $Restart -or $SmokeOnly)) {
         $sharedDir = (Format-WorkPath $workRoot) + '/git'
         if ($Check) { Step 'git-root' 'ok' "a run without -Check sets git_root and scm_root to $sharedDir, reviews_root and context_handoff_dir under $workRoot (atrium room setup)" }
     } else {
-        if (-not $NoAgentPack) { Step 'agent-pack' 'skip' 'the agent pack is installed together with a work root, and this run has none (-WorkRoot)' }
+        # no work root: the agent pack is still installed and read, by a spec of the pack alone
+        if (-not $NoAgentPack -and $Check) {
+            $pl = if ($state.binsha) { Invoke-RoomSetup 'plan' } else { $null }
+            if ($pl -and $pl.Kind -eq 'ok') { Show-SetupRows $pl }
+            else { Step 'agent-pack' 'warn' "$remoteHost has no atrium that runs 'room setup' yet, so the agent pack is installed by the first run" }
+        }
         $sharedDir = Invoke-SharedFolder $newMachine $acctName
         # THE ROOM'S git_root SETTING is written after the join, by `room set git_root` on the remote, while no room runs.
         if ($sharedDir -and $Check) { Step 'git-root' 'ok' "a run without -Check sets the room's git_root to $sharedDir (atrium room set git_root)" }
@@ -2213,7 +2225,7 @@ $have = $null; $setNow = @()
 # is a warn row carrying the command), and installs the agent pack. The pack's source is THIS machine's clone of the hub's
 # mirror, sent as a tarball, because the room's /git/hub forwarder is tokenized per card and no card exists yet.
 $packSent = $false; $packCommit = $null
-if ($workRoot) {
+if ($workRoot -or -not $NoAgentPack) {
     if (-not $NoAgentPack) {
         $pk = New-PackSource -HubAddr $HubAddr -Repo $AgentPackRepo -Branch $AgentPackBranch -OutDir $work
         if (-not $pk.Ok) { Step 'agent-pack' 'warn' "$($pk.Why). the hub mirrors $AgentPackRepo only when it is watched there. rerun when it is" }
@@ -2230,11 +2242,16 @@ if ($workRoot) {
     $ap = Invoke-RoomSetup 'apply' -UsePackDir:$packSent
     switch ($ap.Kind) {
         'ok' { Show-SetupRows $ap }
-        default { Step 'work-root' 'fail' "atrium room setup did not answer on ${remoteHost}: $(($ap.Other | Select-Object -First 3) -join ' | ')"; Finish 3 }
+        default {
+            if ($packSent) { Invoke-Remote $(if ($os -eq 'windows') { 'Remove-Item -LiteralPath (Join-Path $HOME ''.atrium\provision\pack-src''), (Join-Path $HOME ''.atrium\provision\pack-src.tgz'') -Recurse -Force -ErrorAction SilentlyContinue' } else { 'rm -rf "$HOME/.atrium/provision/pack-src" "$HOME/.atrium/provision/pack-src.tgz"' }) | Out-Null }
+            if ($workRoot) { Step 'work-root' 'fail' "atrium room setup did not answer on ${remoteHost}: $(($ap.Other | Select-Object -First 3) -join ' | ')"; Finish 3 }
+            Step 'agent-pack' 'warn' "atrium room setup did not answer on ${remoteHost}, so the agent pack was not installed: $(($ap.Other | Select-Object -First 3) -join ' | ')"
+        }
     }
     foreach ($k in $want.Keys) { if (@($ap.Rows | Where-Object { $_.Step -eq $stepOf[$k] -and $_.Status -eq 'done' }).Count) { $setNow += $k } }
-    if ($packCommit) { $manifest | Add-Member -NotePropertyName agentpack -NotePropertyValue ([pscustomobject]@{ repo = $AgentPackRepo; branch = $AgentPackBranch; commit = $packCommit }) -Force }
-    if ($ap.Code -ne 0) {
+    # recorded once the pack is really there, and a run that was told -NoAgentPack records that as its own choice
+    if ($packCommit -and @($ap.Rows | Where-Object { $_.Step -eq 'agent-pack' -and $_.Status -in 'ok', 'done' }).Count) { $manifest | Add-Member -NotePropertyName agentpack -NotePropertyValue ([pscustomobject]@{ repo = $AgentPackRepo; branch = $AgentPackBranch; commit = $packCommit }) -Force }
+    if ($ap.Kind -eq 'ok' -and $ap.Code -ne 0) {
         # an administrator's lines were printed. The root is recorded so the rerun after they ran is the same run
         $manifest | Add-Member -NotePropertyName workroot -NotePropertyValue $workRoot -Force
         Save-Manifest
@@ -2282,12 +2299,13 @@ foreach ($k in @(if (-not $workRoot) { $want.Keys })) {
     if ($sx.Code -eq 0) { $setNow += $k; Step $stepOf[$k] 'done' "the room's $k is $v" }
     else { Step $stepOf[$k] 'warn' "could not set the room's $k to $v ($(($sx.Out | Select-Object -Last 1))). $stop" }
 }
-if ($workRoot -or $sharedDir) {
+if ($workRoot -or $sharedDir -or $packCommit -or $NoAgentPack) {
     $rec = [ordered]@{}
     if ($manifest.settings) { foreach ($p in $manifest.settings.PSObject.Properties) { $rec[$p.Name] = $p.Value } }
     foreach ($k in $setNow) { $rec[$k] = $want[$k] }
     $manifest | Add-Member -NotePropertyName settings -NotePropertyValue ([pscustomobject]$rec) -Force
     if ($workRoot) { $manifest | Add-Member -NotePropertyName workroot -NotePropertyValue $workRoot -Force }
+    if ($NoAgentPack) { $manifest | Add-Member -NotePropertyName agentpack -NotePropertyValue ([pscustomobject]@{ none = $true }) -Force }
     Save-Manifest
 }
 

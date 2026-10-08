@@ -24,6 +24,9 @@ type ReadFS interface {
 	Examine(path string) Examine
 	// Writable says whether a file could be made in dir, by reading the permission and not by making one.
 	Writable(dir string) bool
+	// Resolve is path with the links, junctions and 8.3 short names of its deepest existing ancestor followed, spelled with
+	// forward slashes. A path with no existing ancestor is returned as it is.
+	Resolve(path string) string
 	// Home is the account's files: profile, config, and the Mac's Application Support.
 	Home() Home
 	// Login is who this process runs as, as the OS spells it (SG3\localai, localai).

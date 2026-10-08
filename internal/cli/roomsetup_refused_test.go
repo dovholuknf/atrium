@@ -21,6 +21,9 @@ func TestRoomSetupSaysWhyASpecIsRefused(t *testing.T) {
 		{"not yaml of ours", []string{"--spec", "-", "--plan"}, "version: 1\nsurprise: yes\n", "room spec"},
 		{"neither plan nor apply", []string{"--spec", "-"}, "", "exactly one of --plan or --apply"},
 		{"no spec", []string{"--plan"}, "", "--spec"},
+		{"validate a relative root", []string{"--validate", "--os", "linux", "--work-root", "rel/x"}, "", "not an absolute path"},
+		{"validate another user's home", []string{"--validate", "--os", "darwin", "--work-root", "/Users/bob/x", "--account", "al"}, "", "bob's home"},
+		{"validate with a spec", []string{"--validate", "--spec", "-"}, "", "no --spec"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

@@ -62,6 +62,38 @@ func Plan(spec *Spec, a Adapter, v View) Lock {
 	return lk
 }
 
+// checkRootHere judges the work root against this machine's disk, which a spec alone cannot: the root as the machine really
+// reaches it (a link or junction followed, a short name written out) must not be, hold or lie in the account's home folder or
+// another user's, and the account's own home is the real one, whatever the profile folder is called. It returns why not, or "".
+func checkRootHere(spec *Spec, r ReadFS, root string) string {
+	home := r.Home().Dir
+	homeReal := home
+	if home != "" {
+		homeReal = r.Resolve(home)
+	}
+	real := r.Resolve(root)
+	for _, c := range []string{root, real} {
+		if home != "" && (ContainsHome(c, home) || ContainsHome(c, homeReal)) {
+			return fmt.Sprintf("the work root %s is or holds the account's home folder %s. a work root is a folder of its own", c, home)
+		}
+	}
+	if real == root {
+		return ""
+	}
+	if why := CheckWorkRoot(spec.OS, real); why != "" {
+		return fmt.Sprintf("the work root %s is reached through a link, and the folder it means is %s, which %s", root, real, why)
+	}
+	for _, own := range []string{home, homeReal} {
+		if own != "" && within(spec.OS, real, own) {
+			return ""
+		}
+	}
+	if why := checkAnotherHome(spec.OS, real, spec.Account, ""); why != "" {
+		return fmt.Sprintf("the work root %s is reached through a link, and the folder it means is %s, which %s", root, real, why)
+	}
+	return ""
+}
+
 func newLock(spec *Spec, r ReadFS) Lock {
 	return Lock{Version: Version, SpecHash: spec.Hash, OS: spec.OS, Account: r.Login(), WorkRoot: spec.Resolve().Root,
 		Steps: []Step{}, AdminLines: []string{}, Packs: []PackLock{}}
@@ -82,8 +114,16 @@ func run(spec *Spec, a Adapter, lk *Lock, v View, host *Host) {
 		return
 	}
 
-	if h := v.FS.Home().Dir; h != "" && ContainsHome(p.Root, h) {
-		add("work-root", StatusFail, fmt.Sprintf("the work root %s is or holds the account's home folder %s. a work root is a folder of its own", p.Root, h))
+	if spec.WorkRoot == "" {
+		// a spec of packs alone: no work root, no folders, caches or settings
+		for _, pk := range spec.Packs {
+			packStep(spec, a, v, host, pk, lk, add)
+		}
+		return
+	}
+
+	if why := checkRootHere(spec, v.FS, p.Root); why != "" {
+		add("work-root", StatusFail, why)
 		return
 	}
 

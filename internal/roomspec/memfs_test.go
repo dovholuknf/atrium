@@ -12,8 +12,9 @@ import (
 // can say a plan made none.
 type MemFS struct {
 	nodes    map[string]*memNode
-	Denied   map[string]bool // parents the account cannot examine
-	ReadOnly map[string]bool // folders the account cannot write in
+	Denied   map[string]bool   // parents the account cannot examine
+	ReadOnly map[string]bool   // folders the account cannot write in
+	Aliases  map[string]string // a folder that is really another
 	H        Home
 	User     string
 	Writes   int
@@ -140,7 +141,17 @@ func (m *MemFS) Examine(p string) Examine {
 
 func (m *MemFS) Writable(dir string) bool { return !m.ReadOnly[key(dir)] }
 func (m *MemFS) Home() Home               { return m.H }
-func (m *MemFS) Login() string            { return m.User }
+
+// Resolve follows Aliases, a folder that is really somewhere else (a link, a junction, a short name).
+func (m *MemFS) Resolve(p string) string {
+	for from, to := range m.Aliases {
+		if p == from || strings.HasPrefix(p, from+"/") {
+			return to + strings.TrimPrefix(p, from)
+		}
+	}
+	return p
+}
+func (m *MemFS) Login() string { return m.User }
 
 func (m *MemFS) WriteFile(p string, d []byte, mode fs.FileMode) error {
 	if _, ok := m.nodes[path.Dir(p)]; !ok {

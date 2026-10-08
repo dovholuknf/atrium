@@ -57,8 +57,9 @@ function New-RoomSpecYaml {
         "name: $(ConvertTo-YamlText $Name)"
         "os: $(ConvertTo-YamlText $Os)"
         "account: $(ConvertTo-YamlText $Account)"
-        "work_root: $(ConvertTo-YamlText $WorkRoot)"
     )
+    # No work root is a spec of the pack alone (a room provisioned without -WorkRoot still gets its agents and skills)
+    if ($WorkRoot) { $y += "work_root: $(ConvertTo-YamlText $WorkRoot)" }
     if ($PackRepo) {
         $y += 'packs:'
         $y += '  - runner: claude'
@@ -124,6 +125,35 @@ function ConvertFrom-RoomSetup {
 # ConvertTo-StepStatus is a setup status in the vocabulary provision-room.ps1 prints: todo (a run would change it) is a warn,
 # and human (an administrator must) is a fail. room-check keeps human, which is its own status.
 function ConvertTo-StepStatus { param([string] $s) switch ($s) { 'todo' { 'warn' } 'human' { 'fail' } default { $s } } }
+
+# Limit-PackFailures keeps the agent pack from stopping a run. The pack is the operator's extras, so a pack that cannot be
+# fetched or installed is a warn here and never an exit code (docs/room-accounts.md). `atrium room setup` exits 3 on any fail
+# row, so the code is worked out again without the pack's: 13 if an administrator is needed, 3 if another step failed, else 0.
+function Limit-PackFailures {
+    param($Res)
+    if ($Res.Kind -ne 'ok') { return $Res }
+    foreach ($r in @($Res.Rows)) { if ($r.Step -like 'agent-pack*' -and $r.Status -eq 'fail') { $r.Status = 'warn' } }
+    if ($Res.Code -eq 3) {
+        $Res.Code = if (@($Res.Rows | Where-Object { $_.Status -eq 'human' }).Count) { 13 } elseif (@($Res.Rows | Where-Object { $_.Status -eq 'fail' }).Count) { 3 } else { 0 }
+    }
+    $Res
+}
+
+# Test-WorkRootLocal asks THIS machine's atrium whether a -WorkRoot is one the room's operating system accepts
+# (`atrium room setup --validate`: strings only, no disk, no ssh), so a bad one is refused before anything on the room changes.
+# Returns $null when it is fine, or when this atrium has no --validate (an older build: the room's own atrium judges it later,
+# at the plan or apply), else the reason. $Account is the login the room runs as, or '' when it is not known yet.
+function Test-WorkRootLocal {
+    param([string] $Exe, [string] $Os, [string] $Root, [string] $Account)
+    if (-not $Exe) { return $null }
+    $a = @('room', 'setup', '--validate', '--os', $Os, '--work-root', $Root)
+    if ($Account) { $a += @('--account', $Account) }
+    $o = @(& $Exe @a 2>&1 | ForEach-Object { "$_" })
+    if ($LASTEXITCODE -eq 0) { return $null }
+    $m = @($o | Where-Object { $_ -match '^atrium room setup: (.+)$' } | ForEach-Object { $Matches[1] })
+    if ($LASTEXITCODE -eq 1 -and $m.Count) { return $m[0] }
+    $null
+}
 
 # Set-PackRowLatest settles the agent-pack row against the commit THIS machine read from the hub's mirror. The room cannot be
 # told the hub's address (it is the address as this machine sees it), so the room's row says "could not be asked", and here is

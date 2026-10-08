@@ -240,6 +240,30 @@ if ($bin) {
     Write-Host 'skip binary runs: set ATRIUM_TEST_BIN to a built atrium (go build -o build.claude/atrium-roomspec.exe ./cmd/atrium)'
 }
 
+# ── a failed pack does not stop a run, and a bad root is refused before ssh ──
+
+$packFail = [pscustomobject]@{ Kind = 'ok'; Code = 3; AdminLines = @(); Other = @(); Rows = @(
+        [pscustomobject]@{ Step = 'work-root'; Status = 'ok'; Detail = 'x' }, [pscustomobject]@{ Step = 'agent-pack'; Status = 'fail'; Detail = 'bad tarball' }) }
+$lim = Limit-PackFailures $packFail
+Check 'pack failure: the row is a warn and the exit code is 0' @($lim.Rows[1].Status, $lim.Code) @('warn', 0)
+$both = [pscustomobject]@{ Kind = 'ok'; Code = 3; AdminLines = @(); Other = @(); Rows = @(
+        [pscustomobject]@{ Step = 'work-dirs'; Status = 'fail'; Detail = 'x' }, [pscustomobject]@{ Step = 'agent-pack-claude'; Status = 'fail'; Detail = 'y' }) }
+$lim = Limit-PackFailures $both
+Check 'pack failure: another failing step still fails the run' @($lim.Rows[0].Status, $lim.Rows[1].Status, $lim.Code) @('fail', 'warn', 3)
+$human = [pscustomobject]@{ Kind = 'ok'; Code = 13; AdminLines = @('x'); Other = @(); Rows = @([pscustomobject]@{ Step = 'work-root'; Status = 'human'; Detail = 'x' }, [pscustomobject]@{ Step = 'agent-pack'; Status = 'fail'; Detail = 'y' }) }
+Check 'pack failure: an administrator is still 13' (Limit-PackFailures $human).Code 13
+Check 'pack failure: no binary is left alone' (Limit-PackFailures ([pscustomobject]@{ Kind = 'nobinary'; Code = 127; Rows = @() })).Code 127
+Check 'yaml: no work root is a spec of the pack alone' ((New-RoomSpecYaml -Name 'r' -Os 'linux' -PackRepo 'o/r') -like '*work_root*') $false
+Check 'local check: no atrium to ask is not a refusal' (Test-WorkRootLocal '' 'linux' 'x' 'al') $null
+if ($bin) {
+    foreach ($c in @(@('linux', 'relative/dir', 'al', 'not an absolute path'), @('windows', '/srv/localai', 'al', 'not a drive path'), @('linux', '/home/bob/x', 'al', "bob's home"),
+            @('darwin', '/private/var/root/x', 'al', "root's home"), @('windows', 'V:\', 'al', 'filesystem root'), @('linux', '//host/share', 'al', 'network path'))) {
+        $why = Test-WorkRootLocal $bin $c[0] $c[1] $c[2]
+        Check "local check: $($c[0]) $($c[1]) is refused before ssh" ([bool]($why -and $why -like "*$($c[3])*")) $true
+    }
+    Check 'local check: a good root passes' @((Test-WorkRootLocal $bin 'linux' '/srv/localai' 'al'), (Test-WorkRootLocal $bin 'windows' 'V:/localai' ''), (Test-WorkRootLocal $bin 'darwin' '/Users/al/w' 'al')) @($null, $null, $null)
+}
+
 # ── the scripts that use it ─────────────────────────────────────────────────
 
 foreach ($n in 'room-spec.ps1', 'provision-room.ps1', 'room-check.ps1') {

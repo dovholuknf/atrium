@@ -154,24 +154,13 @@ func (s *Spec) Validate(goos string) error {
 	if !acctRE.MatchString(s.Account) {
 		return bad("account", "%q is not a login name", s.Account)
 	}
-	if why := CheckWorkRoot(s.OS, s.WorkRoot); why != "" {
-		return bad("work_root", "%q %s", s.WorkRoot, why)
-	}
-	if why := checkAnotherHome(s.WorkRoot, s.Account); why != "" {
-		return bad("work_root", "%q %s", s.WorkRoot, why)
-	}
-	for name, v := range map[string]string{"layout.git": s.Layout.Git, "layout.reviews": s.Layout.Reviews, "layout.handoff": s.Layout.Handoff, "layout.cache": s.Layout.Cache} {
-		if why := checkLayoutName(s.OS, v); why != "" {
-			return bad(name, "%q %s", v, why)
+	if s.WorkRoot == "" {
+		// a spec that is only packs: the agents and skills go in, and no work root is made or judged
+		if len(s.Packs) == 0 || s.Layout != (Layout{}) || len(s.Caches) != 0 {
+			return bad("work_root", "is empty. only a spec of packs alone (no layout, no caches) may leave it out")
 		}
-	}
-	// Whatever the layout says, every folder this makes or sets resolves to a place under the work root.
-	rp := s.Resolve()
-	root := strings.ToLower(path.Clean(rp.Root))
-	for name, v := range map[string]string{"layout.git": rp.Git, "layout.reviews": rp.Reviews, "layout.handoff": rp.Handoff, "layout.cache": rp.Cache} {
-		if !strings.HasPrefix(strings.ToLower(path.Clean(v)), root+"/") {
-			return bad(name, "resolves to %s, which is not under the work root %s", v, rp.Root)
-		}
+	} else if err := s.validateRoot(bad); err != nil {
+		return err
 	}
 	seen := map[string]bool{}
 	for _, c := range s.Caches {
@@ -304,16 +293,82 @@ func CheckWorkRoot(goos, dir string) string {
 	return ""
 }
 
+// ValidateWorkRoot is the work root checks that need no machine: the rules of CheckWorkRoot and of another user's home, for goos
+// and the account the room runs as (empty when it is not known yet). It reads nothing but the process's own login, so the hub's
+// machine can ask it about a room on another operating system (`atrium room setup --validate`) before anything on the room
+// changes. What needs the room's disk (links, short names, the real home folder) is judged there, by Plan and Apply.
+func ValidateWorkRoot(goos, dir, account string) error {
+	if goos != Windows && goos != Linux && goos != Darwin {
+		return fmt.Errorf("os %q is not windows, linux or darwin", goos)
+	}
+	if why := CheckWorkRoot(goos, dir); why != "" {
+		return fmt.Errorf("work_root %q %s", dir, why)
+	}
+	if account != "" {
+		if why := checkAnotherHome(goos, dir, account, ownHome(goos, account)); why != "" {
+			return fmt.Errorf("work_root %q %s", dir, why)
+		}
+	}
+	return nil
+}
+
+// ownHome is this process's home folder when account is the one it runs as, else "": the folder of a profile that is not named
+// like its login (al.SG3 for a domain account, a renamed profile) is still the account's own.
+func ownHome(goos, account string) string {
+	if goos != runtime.GOOS {
+		return ""
+	}
+	if !sameAccount(account, OSFS{}.Login()) {
+		return ""
+	}
+	return OSFS{}.Home().Dir
+}
+
+// sameFolderName compares two folder names the way the machine does: exactly on Linux, which tells /home/al from /home/AL, and
+// without case on Windows and macOS, whose usual volumes ignore it.
+func sameFolderName(goos, a, b string) bool {
+	if goos == Linux {
+		return a == b
+	}
+	return strings.EqualFold(a, b)
+}
+
+// within is whether p is dir or lies under it, spelled with forward slashes.
+func within(goos, p, dir string) bool {
+	p, dir = path.Clean(slash(p)), path.Clean(slash(dir))
+	if goos != Linux {
+		p, dir = strings.ToLower(p), strings.ToLower(dir)
+	}
+	return p == dir || strings.HasPrefix(p, strings.TrimRight(dir, "/")+"/")
+}
+
 // checkAnotherHome is why a work root lies inside a home that is not the account's own, or "". Under /home, /Users or C:/Users
-// the folder after it is a person's, and only the account's own may hold the root.
-func checkAnotherHome(dir, account string) string {
-	trim := strings.Trim(slash(dir), "/")
-	segs := splitSegs(trim)
+// the folder after it is a person's, and only the account's own may hold the root: the one named like the account (a Windows
+// profile may carry a suffix, al.SG3) or, when the account is the one running this, its real home folder (ownHome, "" when not
+// known). root's own home (/var/root, /private/var/root) is never a work root's place, and /Users/Shared and C:/Users/Public
+// are folders everyone uses, not a home.
+func checkAnotherHome(goos, dir, account, ownHome string) string {
+	if ownHome != "" && within(goos, dir, ownHome) {
+		return ""
+	}
+	segs := splitSegs(slash(dir))
 	if driveRE.MatchString(dir) && len(segs) > 0 {
 		segs = segs[1:]
 	}
-	if len(segs) < 2 || !(strings.EqualFold(segs[0], "home") || strings.EqualFold(segs[0], "users")) {
+	if goos != Windows && len(segs) >= 2 {
+		if strings.EqualFold(segs[0], "var") && strings.EqualFold(segs[1], "root") ||
+			len(segs) >= 3 && strings.EqualFold(segs[0], "private") && strings.EqualFold(segs[1], "var") && strings.EqualFold(segs[2], "root") {
+			return "is inside root's home. name a folder of its own, like /srv/localai"
+		}
+	}
+	if len(segs) < 2 || !(sameFolderName(goos, segs[0], "home") || (goos != Linux && strings.EqualFold(segs[0], "users"))) {
 		return ""
+	}
+	if goos != Linux && (strings.EqualFold(segs[1], "shared") || strings.EqualFold(segs[1], "public")) {
+		return fmt.Sprintf("is inside %s, a folder every user shares and not a home. name a folder of its own, like /srv/localai or V:/localai", segs[1])
+	}
+	if goos == Windows && strings.Contains(segs[1], "~") {
+		return "" // an 8.3 short name says nothing here: the room writes it out (checkRootHere) and judges the real one
 	}
 	name := account
 	if i := strings.LastIndex(name, `\`); i >= 0 {
@@ -322,10 +377,10 @@ func checkAnotherHome(dir, account string) string {
 	if i := strings.Index(name, "@"); i >= 0 {
 		name = name[:i]
 	}
-	if !strings.EqualFold(segs[1], name) {
-		return fmt.Sprintf("is inside %s's home, and the account is %s. a work root is not inside another user's folder", segs[1], account)
+	if sameFolderName(goos, segs[1], name) || (goos == Windows && len(segs[1]) > len(name) && strings.EqualFold(segs[1][:len(name)+1], name+".")) {
+		return ""
 	}
-	return ""
+	return fmt.Sprintf("is inside %s's home, and the account is %s. a work root is not inside another user's folder", segs[1], account)
 }
 
 func systemFolder(goos, first string) bool {
@@ -414,3 +469,27 @@ func (s *Spec) PackFor(runner string) (Pack, bool) {
 }
 
 func slash(p string) string { return strings.TrimRight(strings.ReplaceAll(p, `\`, "/"), "/") }
+
+// validateRoot is the checks on a work root and the folders under it.
+func (s *Spec) validateRoot(bad func(field, format string, a ...any) error) error {
+	if why := CheckWorkRoot(s.OS, s.WorkRoot); why != "" {
+		return bad("work_root", "%q %s", s.WorkRoot, why)
+	}
+	if why := checkAnotherHome(s.OS, s.WorkRoot, s.Account, ownHome(s.OS, s.Account)); why != "" {
+		return bad("work_root", "%q %s", s.WorkRoot, why)
+	}
+	for name, v := range map[string]string{"layout.git": s.Layout.Git, "layout.reviews": s.Layout.Reviews, "layout.handoff": s.Layout.Handoff, "layout.cache": s.Layout.Cache} {
+		if why := checkLayoutName(s.OS, v); why != "" {
+			return bad(name, "%q %s", v, why)
+		}
+	}
+	// Whatever the layout says, every folder this makes or sets resolves to a place under the work root.
+	rp := s.Resolve()
+	root := strings.ToLower(path.Clean(rp.Root))
+	for name, v := range map[string]string{"layout.git": rp.Git, "layout.reviews": rp.Reviews, "layout.handoff": rp.Handoff, "layout.cache": rp.Cache} {
+		if !strings.HasPrefix(strings.ToLower(path.Clean(v)), root+"/") {
+			return bad(name, "resolves to %s, which is not under the work root %s", v, rp.Root)
+		}
+	}
+	return nil
+}

@@ -788,21 +788,28 @@ $mfs = if ($kind -eq 'windows') { "`$m = Join-Path `$HOME '.atrium\provision\man
        else { 'm="$HOME/.atrium/provision/manifest.json"; if [ -f "$m" ]; then echo "manifest=$(tr ''\n'' '' '' < "$m")"; fi' }
 $mfl = ConvertFrom-KeyValue (Invoke-Remote $mfs).Out
 $mf = if ($mfl.manifest) { try { $mfl.manifest | ConvertFrom-Json } catch { $null } } else { $null }
-if (-not $mf -or -not $mf.workroot) {
+$noPack = [bool]($mf -and $mf.agentpack -and $mf.agentpack.none)
+if (-not $mf) {
+    Row 'work-root' 'skip' 'the room has no manifest (provision-room.ps1)'
+    Row 'agent-pack' 'skip' 'the room has no manifest (provision-room.ps1)'
+} elseif (-not $mf.workroot -and $noPack) {
     Row 'work-root' 'skip' 'the manifest on the room records no work root (provision-room.ps1 -WorkRoot)'
-    Row 'agent-pack' 'skip' 'the agent pack is installed together with a work root, and the manifest on the room records none'
+    Row 'agent-pack' 'skip' 'the manifest on the room records -NoAgentPack'
 } else {
+    if (-not $mf.workroot) { Row 'work-root' 'skip' 'the manifest on the room records no work root (provision-room.ps1 -WorkRoot)' }
     # The rows are the room's own: `atrium room setup --plan` on the room, from a room.yaml rebuilt from the manifest. The agent
     # pack row is judged here against the commit the hub's mirror has, since the room is not told the hub's address.
+    # No `agentpack` record is not a choice of none: a run whose mirror could not be fetched leaves none. Only -NoAgentPack
+    # records one (`none`), so a missing pack is read against the default repository and shows as a row.
     $packRepo = if ($mf.agentpack.repo) { "$($mf.agentpack.repo)" } else { 'dovholuknf/dotfiles' }
     $packBranch = if ($mf.agentpack.branch) { "$($mf.agentpack.branch)" } else { 'main' }
-    try { $yaml = New-RoomSpecYaml -Name $(if ($mf.name) { "$($mf.name)" } else { $Room }) -Os $kind -WorkRoot "$($mf.workroot)" -PackRepo $(if ($mf.agentpack) { $packRepo } else { '' }) -PackBranch $packBranch }
+    try { $yaml = New-RoomSpecYaml -Name $(if ($mf.name) { "$($mf.name)" } else { $Room }) -Os $kind -WorkRoot $(if ($mf.workroot) { "$($mf.workroot)" } else { '' }) -PackRepo $(if ($noPack) { '' } else { $packRepo }) -PackBranch $packBranch }
     catch { $yaml = $null; Row 'work-root' 'fail' "the manifest's work root cannot be written into a room.yaml: $_"; Unmet 'human' }
     if ($yaml) {
         $sr = Invoke-Remote (Get-RoomSetupScript -Os $kind -Yaml $yaml -Mode plan)
         $sp = ConvertFrom-RoomSetup $sr.Out $sr.Code
         if ($sp.Kind -eq 'ok') {
-            $rows = if ($mf.agentpack) { @(Set-PackRowLatest $sp.Rows (Get-HubMirrorCommit $HubAddr $packRepo $packBranch)) } else { @($sp.Rows) }
+            $rows = if (-not $noPack) { @(Set-PackRowLatest $sp.Rows (Get-HubMirrorCommit $HubAddr $packRepo $packBranch)) } else { @($sp.Rows) }
             foreach ($s in $rows) {
                 if ($s.Status -eq 'human' -or $s.Status -eq 'fail') { Row $s.Step $(if ($s.Status -eq 'human') { 'human' } else { 'fail' }) $s.Detail; Unmet 'human' }
                 else { Row $s.Step (ConvertTo-StepStatus $s.Status) $s.Detail }
