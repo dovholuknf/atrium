@@ -1107,12 +1107,24 @@ function paintCardCycle(t) {
   const o = t.overrides || {};
   sw.checked = String(o.context_cycle || "").toLowerCase() !== "off";
   box.value = o.context_limit_k || "";
-  const src = typeof limitSource === "function" ? limitSource(t) : "";
+  const c = t.context_size || {};
+  box.max = c.ceiling_k || 2000;
+  const clr = document.getElementById("d-ctx-clear");
+  if (clr) clr.hidden = !o.context_limit_k;
+  const ceil = c.ceiling_k ? ` its runner compacts on its own soon after ${c.ceiling_k}k, so that is the most it takes.` : "";
   now.textContent = !t.context_size
     ? "this card has no context size yet, so nothing cycles it."
     : !sw.checked
-      ? `its cycle is off. its limit would be ${limitFrom(t)}.`
-      : `cycles at ${limitFrom(t)}${src === "card" ? ", its own" : ""}.`;
+      ? `its cycle is off. its limit would be ${limitFrom(t)}.${ceil}`
+      : `cycles at ${limitFrom(t)}${c.source === "card" ? ", its own" : ""}.${ceil}`;
+}
+
+// Clears the card's own limit, so the hub's applies again.
+function clearCardLimit() {
+  const box = document.getElementById("d-ctx-limit");
+  if (!box) return;
+  box.value = "";
+  saveCardCycle();
 }
 
 async function saveCardCycle() {
@@ -1128,6 +1140,7 @@ async function saveCardCycle() {
   if (!res) { paintCardCycle(current); return; }
   current.overrides = Object.assign({}, current.overrides, overrides);
   flashSaved(box);
+  paintCardCycle(current);
   refresh();
 }
 

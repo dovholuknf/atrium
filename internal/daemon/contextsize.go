@@ -35,6 +35,14 @@ type ContextSize struct {
 	Source string `json:"source"`
 	// Cycle is whether atrium cycles this card's context at the limit.
 	Cycle bool `json:"cycle"`
+	// OwnK is the card's own limit as stored, 0 when it has none, so the board can show and clear it.
+	OwnK int `json:"own_k,omitempty"`
+	// CeilingK is the most the card's runner leaves room for, 0 when atrium cannot tell.
+	CeilingK int `json:"ceiling_k,omitempty"`
+	// WantedK and WantedFrom are the limit the card would have had without the ceiling, set only when the
+	// ceiling cut it (Source is then "runner").
+	WantedK    int    `json:"wanted_k,omitempty"`
+	WantedFrom string `json:"wanted_from,omitempty"`
 }
 
 // contextSeen is one card's last read, and what the file looked like then, so
@@ -119,10 +127,11 @@ func (d *Daemon) contextSizeFor(taskID string) any {
 	if terr != nil {
 		t = nil
 	}
-	k, source := api.ContextLimitFor(d.st, t)
-	limit := int64(k) * 1000
-	return &ContextSize{Tokens: s.tokens, Warn: limit > 0 && s.tokens >= limit, ThresholdK: k, Source: source,
-		Cycle: limit > 0 && d.cycleSubject(t)}
+	l := api.ContextLimitOf(d.st, t)
+	limit := int64(l.K) * 1000
+	return &ContextSize{Tokens: s.tokens, Warn: limit > 0 && s.tokens >= limit, ThresholdK: l.K, Source: l.From,
+		Cycle: limit > 0 && d.cycleSubject(t), OwnK: l.OwnK, CeilingK: l.CeilingK, WantedK: l.WantedK,
+		WantedFrom: l.WantedFrom}
 }
 
 // transcriptOf finds the transcript to read a card's context from, however the card started.

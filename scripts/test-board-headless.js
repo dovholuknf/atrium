@@ -9772,6 +9772,32 @@ async function contextCycleSection(browser, base) {
       limit: document.getElementById("d-ctx-limit").value, now: document.getElementById("d-ctx-now").textContent }));
     if (!shown.on || shown.limit !== "" || !/200k from hub/.test(shown.now)) fail("the details' cycle section shows " + JSON.stringify(shown));
 
+    // A limit its runner's compaction point cut says so, and the card's own limit has a clear button.
+    const capped = await wp.evaluate(() => {
+      const t = { overrides: { context_limit_k: "900" }, context_size: { tokens: 1, threshold_k: 200, source: "runner",
+        own_k: 900, ceiling_k: 200, wanted_k: 900, wanted_from: "card" } };
+      return { from: limitFrom(t), own: typeof ownLimitNote === "function" ? ownLimitNote(t) : "", clearHidden: (() => {
+        const c = document.getElementById("d-ctx-clear"); return c ? c.hidden : "missing"; })() };
+    });
+    if (!/200k, capped by its runner from 900k \(card\)/.test(capped.from) || !/above its runner's ceiling of 200k/.test(capped.own))
+      fail("a capped limit reads " + JSON.stringify(capped));
+    if (capped.clearHidden !== true) fail("the clear button should be hidden while the card has no own limit: " + JSON.stringify(capped));
+
+    // CAP_SHOTS=<dir> CAP_STATE=before|after writes the details and the hover text of a card with its own 900k limit.
+    if (process.env.CAP_SHOTS) {
+      const after = process.env.CAP_STATE === "after";
+      await wp.evaluate(after => {
+        current.overrides = { context_limit_k: "900" };
+        current.context_size = after
+          ? { tokens: 210000, warn: true, threshold_k: 200, source: "runner", cycle: true, own_k: 900, ceiling_k: 200, wanted_k: 900, wanted_from: "card" }
+          : { tokens: 210000, warn: true, threshold_k: 900, source: "card", cycle: true };
+        paintCardCycle(current);
+        document.getElementById("d-ctx-sec").insertAdjacentHTML("beforeend",
+          `<div id="cap-hover" style="padding:6px;border:1px solid #888;margin-top:8px">hover: ${landTip(current)}</div>`);
+      }, after);
+      await wp.locator("#d-ctx-sec").screenshot({ path: path.join(process.env.CAP_SHOTS, `card-limit-${process.env.CAP_STATE}.png`) });
+      process.exit(0);
+    }
     // An own limit and the switch off are written as the card's overrides.
     await wp.fill("#d-ctx-limit", "300");
     await wp.dispatchEvent("#d-ctx-limit", "change");
@@ -9781,6 +9807,7 @@ async function contextCycleSection(browser, base) {
     const o = patches.map(p => p.overrides || {});
     if (!o.some(x => x.context_limit_k === "300" && x.context_cycle === "")) fail("the limit box did not save as an override: " + JSON.stringify(patches));
     if (!o.some(x => x.context_cycle === "off" && x.context_limit_k === "300")) fail("the switch did not save off: " + JSON.stringify(patches));
+    if (await wp.evaluate(() => document.getElementById("d-ctx-clear").hidden)) fail("the clear button is hidden although the card has its own limit.");
 
     // The history: the start as a line, the handoff as a row with its text behind a disclosure, escaped.
     await wp.waitForSelector("#d-events details.handoff", { timeout: slow(5000) })

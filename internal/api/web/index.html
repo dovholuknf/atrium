@@ -3582,6 +3582,8 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
         <input id="d-ctx-limit" type="number" min="10" max="2000" placeholder="hub's limit"
           onchange="saveCardCycle()" style="max-width:110px">
         <span class="unit">k tokens</span>
+        <button type="button" id="d-ctx-clear" hidden onclick="clearCardLimit()"
+          data-tip="remove this card's own limit, so the hub's applies again">clear</button>
       </div>
       <span class="hintline" id="d-ctx-now"></span>
       <span class="hintline">Past the limit atrium asks the agent to write a handoff and run

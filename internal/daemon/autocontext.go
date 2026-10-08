@@ -5,13 +5,16 @@ import (
 	"time"
 
 	"github.com/dovholuknf/atrium/internal/api"
+	"github.com/dovholuknf/atrium/internal/claudeconf"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
 // THE ONE TRIGGER: a card past its context limit starts the context cycle, exactly as if someone pressed
 // New context on it. See docs/runtime/context-cycle-design.md and newcontext.go for the sequence.
 //
-// The limit is the card's own, else the hub's for its harness, else claude at 200k (api.ContextLimitFor).
+// The limit is the card's own, else the hub's for its harness, else claude at 200k, and never above the
+// runner's ceiling (api.ContextLimitFor, runnerCompactAtK). Atrium is the one to cycle a card: a runner that
+// compacts first, as claude does at its own settings.json autoCompactWindow, has already lost the handoff.
 // Every supervised card is covered, a person's own included, unless its details switch it off. Nothing else
 // excludes a card: no tag, no mode, no human or agent split. A lent session stays out, since it is not work
 // this room owns. A fixture is cycled like any card: it runs as long as the daemon does.
@@ -141,6 +144,27 @@ func (d *Daemon) autocompactK(t *store.Task) int {
 		return maxAutocompactK
 	}
 	return k
+}
+
+// runnerCompactAtK is where the card's runner compacts on its own, in thousands of tokens, or 0 for unknown or
+// never. The honest source is Claude Code's own settings files (claudeconf.AutoCompact), read for the card's
+// directory: `autoCompactWindow` less compactReserveK is where claude really compacts, and it wins over the
+// --autocompact value atrium starts it with, which is how a card with a 900k limit was compacted at 220k with
+// atrium waiting. Only a claude runner is read. Settings that turn compaction off give 0. A runner with no
+// such file is left to autocompactK, which already places the backstop above the limit. Anything that cannot be
+// read is no ceiling, never a guess.
+func (d *Daemon) runnerCompactAtK(t *store.Task) int {
+	if t == nil {
+		return 0
+	}
+	if h, err := d.st.Harness(t.Runner); err != nil || !api.IsClaudeHarness(h) {
+		return 0
+	}
+	c := claudeconf.AutoCompact(t.Worktree)
+	if c.Off || c.WindowK <= compactReserveK {
+		return 0
+	}
+	return c.WindowK - compactReserveK
 }
 
 // compactsAtK is where the session will really compact, in thousands of tokens: the launch value less
