@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"os/exec"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -53,16 +54,24 @@ func deadChanges(t *testing.T, d *Daemon, id string) int {
 	return n
 }
 
+// someShell is the shell a test runs a script in. PowerShell is for Windows only: off Windows it is sh, so a Linux run
+// never starts pwsh, which writes terminal control sequences of its own (ESC [?1h ESC =) into the output.
 func someShell(t *testing.T) (string, []string) {
 	t.Helper()
-	for _, c := range []struct {
+	candidates := []struct {
 		name string
 		args []string
-	}{
-		{"pwsh", []string{"-NoProfile", "-NoLogo", "-Command"}},
-		{"powershell.exe", []string{"-NoProfile", "-NoLogo", "-Command"}},
-		{"sh", []string{"-c"}},
-	} {
+	}{{"sh", []string{"-c"}}}
+	if runtime.GOOS == "windows" {
+		candidates = []struct {
+			name string
+			args []string
+		}{
+			{"pwsh", []string{"-NoProfile", "-NoLogo", "-Command"}},
+			{"powershell.exe", []string{"-NoProfile", "-NoLogo", "-Command"}},
+		}
+	}
+	for _, c := range candidates {
 		if _, err := exec.LookPath(c.name); err == nil {
 			return c.name, c.args
 		}
