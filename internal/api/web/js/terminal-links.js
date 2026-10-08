@@ -1015,6 +1015,7 @@ function connectTerm(taskID) {
       // "everything above is history … live from here" boundary already marks
       // the seam. On the first open below there is nothing to reset, so the
       // line still earns its place after a wait.
+      lrLeave("reset");
       term.reset();
       term._atriumPushed = "";
     } else if (attachSaidGone && term) {
@@ -1029,6 +1030,8 @@ function connectTerm(taskID) {
     resetReattach();
     sendResize();
     focusTerm();
+    // The replay is landing: back to where it was left once it has gone quiet. See js/lastread.js.
+    if (term) lrAfterOpen(term);
     // THE BRIDGE, once there is a terminal for it to reach.
     //
     // It had three callers, the strip render, a resize and the pane teardown,

@@ -847,3 +847,20 @@
     background: linear-gradient(var(--warn-bg), var(--warn-bg)), var(--bg-1); color: var(--head);
     font: var(--fs-xs)/1.3 var(--mono);
   }
+
+/* A terminal remembers where you left it. See js/lastread.js. The line is drawn over the first row written after you
+   left, and the pill sits over the bottom of the pane and takes you to the latest. */
+.xterm .atrium-newdiv { pointer-events: none; border-top: 2px solid var(--teal); }
+.xterm .atrium-newdiv::after {
+  content: "new since you were here"; position: absolute; right: 12px; top: -1px;
+  padding: 0 8px; border-radius: 0 0 var(--r-md) var(--r-md);
+  font: 600 10px/16px var(--mono); letter-spacing: .04em; color: var(--bg-2); background: var(--teal);
+}
+#t-newpill {
+  position: absolute; bottom: 44px; left: 50%; transform: translateX(-50%); z-index: 30;
+  padding: 4px 14px; border-radius: 999px; border: 1px solid var(--teal);
+  font: 600 var(--fs-sm) var(--mono); color: var(--bg-2); background: var(--teal);
+  box-shadow: var(--shadow-pop); cursor: pointer;
+}
+#t-newpill[hidden] { display: none; }
+#t-newpill:hover { filter: brightness(1.1); }

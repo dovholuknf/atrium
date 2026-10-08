@@ -416,6 +416,7 @@ function switchView(name) {
   // the window you alt-tabbed to into a second board, which is the one thing
   // it must never be. Locking it here catches the paths nobody has found yet.
   if (termOnly() && name !== "terms") return;
+  if (name !== "terms" && typeof lrLeave === "function") lrLeave("tab");
   document.querySelectorAll(".tab").forEach(t => t.classList.toggle("on", t.dataset.view === name));
   VIEWS.forEach(v => document.getElementById(v).hidden = v !== name);
   // The board's toolbar is a sibling of the board rather than a child, so that
@@ -441,6 +442,7 @@ function switchView(name) {
   // a size. Cheap enough to sit on every scroll of the list, so it is cheap
   // enough to sit here.
   if (name === "terms") requestAnimationFrame(placeTabBridge);
+  if (name === "terms" && typeof lrReturn === "function") requestAnimationFrame(() => lrReturn("tab"));
   placeToasts();
   // Which card this window is reading just changed if the terminals view came or went.
   sayWhetherFocused();
