@@ -16,6 +16,12 @@ func TestSpecRefusesWhatLeavesTheWorkRoot(t *testing.T) {
 		{"etc", Linux, strings.Replace(linSpec, "/srv/localai", "/etc/localai", 1), "system folder"},
 		{"windows folder", Windows, strings.Replace(winSpec, "V:/localai", "C:/Windows/localai", 1), "system folder"},
 		{"program files", Windows, strings.Replace(winSpec, "V:/localai", "C:/Program Files/x", 1), "system folder"},
+		{"home parent linux", Linux, strings.Replace(linSpec, "/srv/localai", "/home", 1), "top-level"},
+		{"Users mac", Darwin, strings.Replace(strings.Replace(linSpec, "os: linux", "os: darwin", 1), "/srv/localai", "/Users", 1), "top-level"},
+		{"c users", Windows, strings.Replace(winSpec, "V:/localai", "C:/Users", 1), "every user's home"},
+		{"v users", Windows, strings.Replace(winSpec, "V:/localai", "V:/users", 1), "every user's home"},
+		{"another home linux", Linux, strings.Replace(linSpec, "/srv/localai", "/home/bob/work", 1), "another user's"},
+		{"another home windows", Windows, strings.Replace(winSpec, "V:/localai", "C:/Users/bob/work", 1), "another user's"},
 		{"api_key", Linux, linSpec + "api_key: x\n", "credential"},
 		{"credentials", Linux, linSpec + "credentials: x\n", "credential"},
 		{"auth", Linux, linSpec + "auth: x\n", "credential"},
@@ -28,6 +34,14 @@ func TestSpecRefusesWhatLeavesTheWorkRoot(t *testing.T) {
 				t.Fatalf("%v, want %q", err, c.want)
 			}
 		})
+	}
+	for _, ok := range []string{strings.Replace(linSpec, "/srv/localai", "/home/localai/work", 1), strings.Replace(linSpec, "/srv/localai", "/HOME/LocalAI/work", 1)} {
+		if _, err := ParseFor([]byte(ok), Linux); err != nil {
+			t.Errorf("the account's own home is fine: %v", err)
+		}
+	}
+	if _, err := ParseFor([]byte(strings.Replace(winSpec, "V:/localai", "C:/Users/localai/work", 1)), Windows); err != nil {
+		t.Errorf("the account's own home on Windows: %v", err)
 	}
 	if _, err := ParseFor([]byte(linSpec+"layout:\n  git: repos/all\n"), Linux); err != nil {
 		t.Errorf("a nested relative folder is fine: %v", err)

@@ -157,6 +157,9 @@ func (s *Spec) Validate(goos string) error {
 	if why := CheckWorkRoot(s.OS, s.WorkRoot); why != "" {
 		return bad("work_root", "%q %s", s.WorkRoot, why)
 	}
+	if why := checkAnotherHome(s.WorkRoot, s.Account); why != "" {
+		return bad("work_root", "%q %s", s.WorkRoot, why)
+	}
 	for name, v := range map[string]string{"layout.git": s.Layout.Git, "layout.reviews": s.Layout.Reviews, "layout.handoff": s.Layout.Handoff, "layout.cache": s.Layout.Cache} {
 		if why := checkLayoutName(s.OS, v); why != "" {
 			return bad(name, "%q %s", v, why)
@@ -292,8 +295,35 @@ func CheckWorkRoot(goos, dir string) string {
 	if goos != Windows && len(segs) < 2 {
 		return "is a top-level folder. name one inside it, like /srv/localai, so the account is never given a folder others use"
 	}
+	if len(segs) == 1 && (strings.EqualFold(segs[0], "home") || strings.EqualFold(segs[0], "users")) {
+		return "is the folder every user's home is in. name a folder of its own"
+	}
 	if len(segs) > 0 && systemFolder(goos, strings.ToLower(segs[0])) {
 		return "is inside " + segs[0] + ", a system folder. name a folder of its own, like /srv/localai or V:/localai"
+	}
+	return ""
+}
+
+// checkAnotherHome is why a work root lies inside a home that is not the account's own, or "". Under /home, /Users or C:/Users
+// the folder after it is a person's, and only the account's own may hold the root.
+func checkAnotherHome(dir, account string) string {
+	trim := strings.Trim(slash(dir), "/")
+	segs := splitSegs(trim)
+	if driveRE.MatchString(dir) && len(segs) > 0 {
+		segs = segs[1:]
+	}
+	if len(segs) < 2 || !(strings.EqualFold(segs[0], "home") || strings.EqualFold(segs[0], "users")) {
+		return ""
+	}
+	name := account
+	if i := strings.LastIndex(name, `\`); i >= 0 {
+		name = name[i+1:]
+	}
+	if i := strings.Index(name, "@"); i >= 0 {
+		name = name[:i]
+	}
+	if !strings.EqualFold(segs[1], name) {
+		return fmt.Sprintf("is inside %s's home, and the account is %s. a work root is not inside another user's folder", segs[1], account)
 	}
 	return ""
 }
