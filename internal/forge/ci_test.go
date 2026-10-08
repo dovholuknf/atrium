@@ -17,6 +17,7 @@ import (
 
 // fakeGH answers the gh commands of the CI reads, no network. It records each command.
 type fakeGH struct {
+	mu   sync.Mutex
 	got  []Cmd
 	logs string
 	err  error
@@ -40,7 +41,9 @@ func zipOf(files map[string]string) []byte {
 }
 
 func (f *fakeGH) run(_ context.Context, c Cmd) ([]byte, error) {
+	f.mu.Lock()
 	f.got = append(f.got, c)
+	f.mu.Unlock()
 	if f.err != nil {
 		return nil, f.err
 	}
@@ -63,7 +66,9 @@ func (f *fakeGH) run(_ context.Context, c Cmd) ([]byte, error) {
 		}
 		return []byte(f.logs), nil
 	case strings.HasPrefix(a, "api") && strings.HasSuffix(a, "/zip"):
+		f.mu.Lock()
 		f.zips++
+		f.mu.Unlock()
 		if f.zipBytes != nil {
 			_, err := c.Sink.Write(f.zipBytes)
 			return nil, err
