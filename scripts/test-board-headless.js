@@ -20220,8 +20220,8 @@ async function quickPasteSection(browser, base) {
     // the key opens the box with the clipboard's link, selected
     await p.evaluate(() => { window.__clip = "https://github.com/openziti/zrok/pull/12"; });
     await p.keyboard.press("Control+Alt+KeyR");
-    await p.waitForFunction(() => document.getElementById("quickpaste").open &&
-      document.getElementById("qp-url").value === "https://github.com/openziti/zrok/pull/12", null, { timeout: slow(5000) })
+    await p.waitForFunction(() => document.getElementById("switcher").open &&
+      document.getElementById("sw-q").value === "https://github.com/openziti/zrok/pull/12", null, { timeout: slow(5000) })
       .catch(() => fail("quickPaste: ctrl-alt-r did not open the box with the clipboard's link"));
     await shot(p, "box");
     // QPSHOT only: the box in a dark skin and a light one, with the link already recognised
@@ -20235,39 +20235,47 @@ async function quickPasteSection(browser, base) {
     }
     // the key again closes it
     await p.keyboard.press("Control+Alt+KeyR");
-    if (await p.evaluate(open("quickpaste"))) fail("quickPaste: ctrl-alt-r did not close an open box");
+    if (await p.evaluate(open("switcher"))) fail("quickPaste: ctrl-alt-r did not close an open box");
 
     // the box reads the link as it is pasted and says what it was read as: a PR, with its label and title
-    await p.waitForFunction(() => document.getElementById("qp-note").dataset.kind === "pr", null, { timeout: slow(5000) })
+    await p.waitForFunction(() => document.getElementById("sw-open").dataset.kind === "pr", null, { timeout: slow(5000) })
       .catch(() => fail("quickPaste: the box did not say it read a pull request"));
-    if (!/PR.*github pull request.*review zrok#12/.test(await p.textContent("#qp-note")))
-      fail("quickPaste: the line read " + await p.textContent("#qp-note"));
+    if (!/open PR.*review zrok#12.*github pull request/.test(await p.textContent("#sw-open")))
+      fail("quickPaste: the line read " + await p.textContent("#sw-open"));
     st.calls = [];
 
-    // text that is not a link is refused in the box, and nothing is asked
+    // the header button opens the same bar, and the bar has a button for people who click
     await p.evaluate(() => { window.__clip = "just words"; });
     await p.click("#quickpaste-open");
-    await p.waitForFunction(() => document.getElementById("quickpaste").open, null, { timeout: slow(5000) });
+    await p.waitForFunction(() => document.getElementById("switcher").open, null, { timeout: slow(5000) });
     await p.waitForTimeout(100);
-    if (await p.inputValue("#qp-url") !== "") fail("quickPaste: text that is not a link was put in the box");
-    await p.fill("#qp-url", "not a link");
-    await p.press("#qp-url", "Enter");
-    if (!/not a link/.test(await p.textContent("#qp-note"))) fail("quickPaste: text that is not a link was not refused");
-    if (st.calls.length) fail("quickPaste: a refused box still called: " + st.calls.join(" | "));
+    if (await p.inputValue("#sw-q") !== "") fail("quickPaste: text that is not a link was put in the box");
+    // text that is not a link is not an open row, and nothing is asked
+    await p.fill("#sw-q", "not a link");
+    await p.press("#sw-q", "Enter");
+    if (await p.evaluate(() => !!document.querySelector("#sw-list #sw-open"))) fail("quickPaste: text that is not a link got an open row");
+    if (st.calls.length) fail("quickPaste: text that is not a link still called: " + st.calls.join(" | "));
+    // the paste button puts the clipboard's link in the bar, and reads it
+    await p.evaluate(() => { window.__clip = "https://github.com/openziti/zrok/pull/12"; });
+    await p.click("#sw-paste");
+    await p.waitForFunction(() => document.getElementById("sw-q").value === "https://github.com/openziti/zrok/pull/12" &&
+      document.getElementById("sw-open") && document.getElementById("sw-open").dataset.kind === "pr", null, { timeout: slow(5000) })
+      .catch(() => fail("quickPaste: the paste button did not put the link in the bar"));
+    await shot(p, "bar-link");
 
     // a link nothing knows comes back to the box with the reason
-    await p.fill("#qp-url", "https://nowhere.example/x");
-    await p.press("#qp-url", "Enter");
-    await p.waitForFunction(() => document.getElementById("quickpaste").open &&
-      /nothing here knows/.test(document.getElementById("qp-note").textContent), null, { timeout: slow(5000) })
+    await p.fill("#sw-q", "https://nowhere.example/x");
+    await p.press("#sw-q", "Enter");
+    await p.waitForFunction(() => document.getElementById("switcher").open &&
+      /nothing here knows/.test(document.getElementById("sw-open").textContent), null, { timeout: slow(5000) })
       .catch(() => fail("quickPaste: an unknown link did not come back to the box with the reason"));
     if (await p.evaluate(open("launch"))) fail("quickPaste: an unknown link left the launch dialog open");
     await shot(p, "unknown");
 
     // shift-enter stops at the launch dialog, filled in, with nothing started
     st.calls = [];
-    await p.fill("#qp-url", "https://github.com/openziti/zrok/pull/12");
-    await p.press("#qp-url", "Shift+Enter");
+    await p.fill("#sw-q", "https://github.com/openziti/zrok/pull/12");
+    await p.press("#sw-q", "Shift+Enter");
     await p.waitForFunction(() => document.getElementById("launch").open &&
       document.getElementById("l-prompt").value === "review the pull request", null, { timeout: slow(5000) })
       .catch(() => fail("quickPaste: shift-enter did not leave the launch dialog filled in"));
@@ -20275,17 +20283,36 @@ async function quickPasteSection(browser, base) {
     if (st.calls.some(c => c.indexOf("/v1/launch") >= 0)) fail("quickPaste: shift-enter launched: " + st.calls.join(" | "));
     if (await p.inputValue("#l-url") !== "https://github.com/openziti/zrok/pull/12") fail("quickPaste: shift-enter lost the link");
     await shot(p, "edit-first");
+    // "more" is shut however much a recogniser filled in, and says what is in it
+    if (await p.evaluate(() => document.getElementById("l-more").open)) fail("quickPaste: more was open by default");
+    if (!/filled in/.test(await p.textContent("#l-more-note"))) fail("quickPaste: more did not say what it held");
+    // a link has the clean up tick (off) and the choice to stop being asked (on)
+    if (await p.evaluate(() => document.getElementById("l-cleanup-field").hidden || document.getElementById("l-cleanup-on").checked))
+      fail("quickPaste: the clean up tick was missing or on");
+    if (await p.evaluate(() => document.getElementById("l-direct-field").hidden || !document.getElementById("l-direct").checked))
+      fail("quickPaste: the don't ask again tick was missing or off");
+    // hover never changes layout in the dialog: the same box before and over
+    for (const sel of ["#l-go", "#l-more > summary", "#l-cwd", "#l-harness"]) {
+      const box = async () => JSON.stringify(await p.evaluate(s => { const r = document.querySelector(s).getBoundingClientRect();
+        return [r.x, r.y, r.width, r.height]; }, sel));
+      await p.mouse.move(2, 2);
+      const was = await box();
+      await p.hover(sel);
+      await p.waitForTimeout(250);
+      if (await box() !== was) fail("quickPaste: hovering " + sel + " moved or resized it");
+    }
+    await p.mouse.move(2, 2);
     // the key does not stack the box on an open dialog
     await p.keyboard.press("Control+Alt+KeyR");
-    if (await p.evaluate(open("quickpaste"))) fail("quickPaste: the box opened over the launch dialog");
+    if (await p.evaluate(open("switcher"))) fail("quickPaste: the box opened over the launch dialog");
     await p.evaluate(() => document.getElementById("launch").close());
 
     // enter opens the link in one call and attaches its card
     st.calls = [];
     await p.evaluate(() => { window.__clip = "https://github.com/openziti/zrok/pull/12"; });
     await p.keyboard.press("Control+Alt+KeyR");
-    await p.waitForFunction(() => document.getElementById("qp-url").value !== "", null, { timeout: slow(5000) });
-    await p.waitForFunction(() => document.getElementById("qp-note").classList.contains("seen"), null, { timeout: slow(5000) });
+    await p.waitForFunction(() => document.getElementById("sw-q").value !== "", null, { timeout: slow(5000) });
+    await p.waitForFunction(() => document.getElementById("sw-open").classList.contains("seen"), null, { timeout: slow(5000) });
     st.calls = [];
     // THE LAUNCH DIALOG IS NEVER SHOWN on Enter, not even for a moment: watched from before the press.
     await p.evaluate(() => {
@@ -20293,8 +20320,8 @@ async function quickPasteSection(browser, base) {
       new MutationObserver(() => { if (document.getElementById("launch").open) window.__sawLaunch = true; })
         .observe(document.getElementById("launch"), { attributes: true, attributeFilter: ["open"] });
     });
-    await p.press("#qp-url", "Enter");
-    await p.waitForFunction(() => !document.getElementById("launch").open && !document.getElementById("quickpaste").open,
+    await p.press("#sw-q", "Enter");
+    await p.waitForFunction(() => !document.getElementById("launch").open && !document.getElementById("switcher").open,
       null, { timeout: slow(8000) }).catch(() => {});
     await p.waitForTimeout(200);
     if (await p.evaluate(() => window.__sawLaunch)) fail("quickPaste: enter showed the launch dialog");
@@ -20316,17 +20343,17 @@ async function quickPasteSection(browser, base) {
       await p.evaluate(() => document.querySelectorAll("dialog[open]").forEach(d => d.close()));
       await p.evaluate(u => { window.__clip = u; }, url);
       await p.keyboard.press("Control+Alt+KeyR");
-      await p.waitForFunction(u => document.getElementById("qp-url").value === u, url, { timeout: slow(5000) })
+      await p.waitForFunction(u => document.getElementById("sw-q").value === u, url, { timeout: slow(5000) })
         .catch(() => fail("quickPaste: the box did not open on " + url));
-      await p.waitForFunction(() => document.getElementById("qp-note").classList.contains("seen"), null, { timeout: slow(5000) });
+      await p.waitForFunction(() => document.getElementById("sw-open").classList.contains("seen"), null, { timeout: slow(5000) });
       st.calls = [];
-      await p.press("#qp-url", edit ? "Shift+Enter" : "Enter");
+      await p.press("#sw-q", edit ? "Shift+Enter" : "Enter");
       if (edit) {
         await p.waitForFunction(() => document.getElementById("launch").open && launchResolved, null, { timeout: slow(5000) })
           .catch(() => fail("quickPaste: shift-enter did not stop at the launch dialog for " + url));
         return null;
       }
-      await p.waitForFunction(() => !document.getElementById("launch").open && !document.getElementById("quickpaste").open,
+      await p.waitForFunction(() => !document.getElementById("launch").open && !document.getElementById("switcher").open,
         null, { timeout: slow(8000) }).catch(() => fail("quickPaste: enter did not start " + url));
       await p.waitForTimeout(200);
       const c = st.calls.find(x => x.indexOf("POST /v1/open") === 0);
@@ -20384,9 +20411,9 @@ async function quickPasteSection(browser, base) {
     await p.evaluate(() => document.querySelectorAll("dialog[open]").forEach(d => d.close()));
     await p.evaluate(() => { window.__clip = "https://github.com/openziti/zrok/pull/14"; });
     await p.keyboard.press("Control+Alt+KeyR");
-    await p.waitForFunction(() => document.getElementById("qp-url").value.endsWith("/pull/14") &&
-      document.getElementById("qp-note").classList.contains("seen"), null, { timeout: slow(5000) });
-    await p.press("#qp-url", "Enter");
+    await p.waitForFunction(() => document.getElementById("sw-q").value.endsWith("/pull/14") &&
+      document.getElementById("sw-open").classList.contains("seen"), null, { timeout: slow(5000) });
+    await p.press("#sw-q", "Enter");
     await p.waitForFunction(() => false, null, { timeout: 300 }).catch(() => {});
     const held = st.calls.find(x => x.indexOf("POST /v1/open") === 0);
     const heldBody = held ? JSON.parse(held.split(" ").slice(2).join(" ")) : {};
@@ -20415,10 +20442,27 @@ async function quickPasteSection(browser, base) {
       dt.setData("text/plain", "https://github.com/openziti/zrok/pull/12");
       document.body.dispatchEvent(new ClipboardEvent("paste", { clipboardData: dt, bubbles: true, cancelable: true }));
     });
-    await p.waitForFunction(() => document.getElementById("quickpaste").open &&
-      document.getElementById("qp-url").value === "https://github.com/openziti/zrok/pull/12", null, { timeout: slow(5000) })
+    await p.waitForFunction(() => document.getElementById("switcher").open &&
+      document.getElementById("sw-q").value === "https://github.com/openziti/zrok/pull/12", null, { timeout: slow(5000) })
       .catch(() => fail("quickPaste: a pasted link did not open the box with it"));
     if (await p.evaluate(open("launch"))) fail("quickPaste: a pasted link opened the launch dialog");
+    // clean up when done: a marked card reaching done is offered the card's own close, once, with the mark taken off
+    const cleaned = await p.evaluate(async () => {
+      const asked = [], patched = [];
+      const was = [window.closeCardAsk, window.patchTask];
+      closeCardAsk = id => asked.push(id);
+      patchTask = async (id, body) => { patched.push(body.tags.join()); };
+      const row = s => ({ id: "c1", status: s, tags: ["link:x", CLEANUP_TAG] });
+      cleanupWhenDone(row("running"), row("done"));
+      cleanupWhenDone(row("done"), row("done"));
+      cleanupWhenDone(row("running"), { id: "c2", status: "done", tags: [] });
+      cleanupWhenDone(undefined, row("done"));
+      await Promise.resolve();
+      await Promise.resolve();
+      [closeCardAsk, patchTask] = was;
+      return { asked, patched };
+    });
+    if (cleaned.asked.join() !== "c1" || cleaned.patched.join("|") !== "link:x") fail("quickPaste: clean up when done was " + JSON.stringify(cleaned));
     if (errors.length) fail("quickPaste: page errors: " + errors.join(" | "));
   } finally { await ctx.close(); }
   if (!bad) console.log("quickPaste ok");

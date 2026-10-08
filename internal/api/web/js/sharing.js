@@ -747,6 +747,20 @@ async function killNow(id) {
 // answer, and a last press closes it.
 function isLinkCard(t) { return !!t && (t.tags || []).some(g => String(g).startsWith("link:")); }
 
+// "CLEAN UP WHEN DONE", chosen when a link is opened (the launch dialog's tick). The card carries this tag, and when a
+// board sees it reach done the close above is offered: the same one the card's menu has, so the worktree, the clone
+// and the claude/* branches here and on the hub are freed by what already frees them, and a worktree holding work
+// nowhere else is asked about. The tag is taken off first, so declining asks once and not on every refresh.
+const CLEANUP_TAG = "cleanup:when-done";
+
+function cleanupWhenDone(prev, row) {
+  if (!prev || !row || row.status !== "done" || prev.status === "done") return;
+  const tags = row.tags || [];
+  if (!tags.includes(CLEANUP_TAG)) return;
+  patchTask(row.id, { tags: tags.filter(g => g !== CLEANUP_TAG) })
+    .then(() => closeCardAsk(row.id, row));
+}
+
 // via {owner, room} closes what an owner with no card holds, through the sweep (internal/api/sweep.go).
 function closeCardAsk(id, t, via) { return oneAtATime("close:" + id, () => closeCardNow(id, t, via)); }
 

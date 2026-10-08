@@ -222,7 +222,7 @@
     <button id="toastlog-open" class="icon" onclick="openToastLog()"
       aria-label="what the board has told you" data-tip="what the board has told you"><span class="glyph">&#128276;</span><span class="count"></span><span class="hmsg" hidden>&#9993;&#xFE0E;<span class="pb-n"></span></span></button>
     <button id="quickpaste-open" class="icon" onclick="openQuickPaste()"
-      aria-label="paste a link and start a card for it (ctrl-alt-r)" data-tip="paste a link and start a card for it (ctrl-alt-r)">&#128279;&#xFE0E;</button>
+      aria-label="open a link: a pull request, issue, branch or ticket (ctrl-alt-r)" data-tip="open a link: a pull request, issue, branch or ticket (ctrl-alt-r)">&#128279;&#xFE0E;</button>
     <button id="sound" class="icon" aria-label="sound on. click to mute" data-tip="sound on. click to mute">&#9835;</button>
     <button id="gear" class="icon" aria-label="sound settings" data-tip="sound settings">&#9881;</button>
     <!-- WHICH ROOM, and it is a selector as much as a counter.
@@ -1183,27 +1183,6 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
   </div>
 </dialog>
 
-<!-- Paste a link, start its card: ctrl-alt-r or the link button in the header. js/quickpaste.js. `type="search"`
-     for the switcher's reason below: a lone text field gets an autofill bubble. -->
-<dialog id="quickpaste">
-  <label class="qpfield" for="qp-url">
-    <svg class="qpicon" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"
-      stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-      <path d="M10 13a5 5 0 0 0 7.07 0l3-3a5 5 0 0 0-7.07-7.07l-1.7 1.7"/>
-      <path d="M14 11a5 5 0 0 0-7.07 0l-3 3a5 5 0 0 0 7.07 7.07l1.7-1.7"/>
-    </svg>
-    <input type="search" id="qp-url" class="swq" spellcheck="false" autocomplete="off" placeholder="paste a link">
-  </label>
-  <div id="qp-note" class="qpnote" aria-live="polite"></div>
-  <div class="swfoot">
-    <span><kbd>enter</kbd> start</span>
-    <span><kbd>shift</kbd><kbd>enter</kbd> edit first</span>
-    <span><kbd>esc</kbd> close</span>
-    <span class="grow"></span>
-    <span class="qpkeys"><kbd>ctrl</kbd><kbd>alt</kbd><kbd>r</kbd></span>
-  </div>
-</dialog>
-
 <dialog id="switcher">
   <!-- `type="search"`, like every other filter field on this board, and for one
        more reason here. Chromium's autofill classifies a lone `type="text"`
@@ -1212,13 +1191,17 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
        `autocomplete="off"` does not stop it: Chromium has ignored that for its
        own autofill since 2015. A search field is skipped outright. -->
   <input type="search" id="sw-q" class="swq" spellcheck="false" autocomplete="off"
-    placeholder="go to a session: name, directory or tag">
+    placeholder="go to a session, or paste a link: name, directory, tag or url">
   <div id="sw-list" class="swlist"></div>
   <div class="swfoot">
     <span><kbd>&uarr;</kbd><kbd>&darr;</kbd> pick</span>
     <span><kbd>enter</kbd> go</span>
+    <span><kbd>shift</kbd><kbd>enter</kbd> edit first</span>
     <span><kbd>esc</kbd> close</span>
     <span class="grow"></span>
+    <!-- For people who click: puts the clipboard's link in the bar. A click is the gesture the browser wants before
+         it lets a page read the clipboard. -->
+    <button id="sw-paste" class="swpaste" onclick="quickPasteFromClipboard(true)">paste a link</button>
     <span id="sw-key"></span>
   </div>
 </dialog>
@@ -3168,6 +3151,18 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
         session ends the directory, the card and the conversation are all deleted. If it turns
         out to matter, promote it from the card's menu and it moves somewhere you choose.</span>
     </div>
+    <!-- A LINK'S WORK IS MADE ON DISK (a worktree, maybe a clone, claude/* branches), and this is the way to have it
+         taken away again. Shown for a link only. Wired to the card's own close (js/sharing.js, cleanupWhenDone), which
+         is what frees an inventory today: nothing here deletes anything itself. -->
+    <div class="field" id="l-cleanup-field" hidden>
+      <label class="check">
+        <input type="checkbox" id="l-cleanup-on">
+        <span>clean up when the work is done</span>
+      </label>
+      <span class="hintline">When the card is done, atrium offers to close it, and closing deletes what it made:
+        the worktree, a clone it had to make and its claude/* branches here and on the hub, and the space comes
+        back. You are shown what goes first, and a worktree with work nowhere else is asked about.</span>
+    </div>
     <!-- Only shown when there is a conversation to pick up. Checked by
          default: if you had one, continuing it is almost always the intent.
          NOT folded, unlike everything below it. It appears only when it
@@ -3197,7 +3192,7 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
          that remembers being open is a form that is open.
          See docs/backlog/backlog-2026-09-14-004.md. -->
     <details id="l-more" class="dlg-sec">
-      <summary>more</summary>
+      <summary>more<span class="more-note" id="l-more-note"></span></summary>
     <div class="dlg-grid">
     <!-- Paste a pull request, an issue or a ticket and the rest of this form
          fills itself in. Atrium learns nothing about the system it came from:
@@ -3302,6 +3297,12 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
     <button class="no" id="l-terminate" hidden>terminate</button>
     <button class="no" id="l-forget" hidden>remove</button>
     <span class="grow"></span>
+    <!-- Only for a link. Ticked is the default: Enter in the switcher opens a link at once and never shows this
+         dialog. Unticking it is "ask me every time". See js/quickpaste.js. -->
+    <label class="check" id="l-direct-field" hidden>
+      <input type="checkbox" id="l-direct" onchange="try { localStorage.setItem(QUICKPASTE_DIRECT_STORE, this.checked ? '1' : '0'); } catch (e) {}">
+      <span>don't ask again: enter opens a link at once</span>
+    </label>
     <button class="go big" id="l-go" onclick="doLaunch()">launch</button>
   </div>
 </dialog>

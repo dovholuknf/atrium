@@ -1242,6 +1242,8 @@ function setThrowaway(on) {
 
 document.getElementById("l-throwaway-on").addEventListener("change", e => {
   setThrowaway(e.target.checked);
+  // A throwaway has nothing of a link's to clean up.
+  syncMore();
 });
 
 // Typing an id by hand lights the matching button, and typing something else
@@ -1470,6 +1472,8 @@ async function openLaunch(id, resume, cwd, ontoTask, prefill, where) {
   ta.hidden = !!resume || !!ontoTask;
   document.getElementById("l-throwaway-on").checked = false;
   setThrowaway(false);
+  // Off every time, like the model: deleting what a link made is asked for each time it is wanted.
+  document.getElementById("l-cleanup-on").checked = false;
 
   // THE MODEL CONTROL RESETS EVERY TIME, and that is the whole of "one time
   // only". Unticked, the box emptied and hidden, whatever was chosen last.
@@ -1553,15 +1557,29 @@ function fillLaunchRoom(ontoTask) {
 function syncMore() {
   const more = document.getElementById("l-more");
   if (!more) return;
-  const filled = ["l-url", "l-model", "l-effort", "l-title", "l-tags", "l-why", "l-prompt"]
-    .some(id => {
+  // SHUT ON EVERY OPEN, whatever a recogniser filled in. It fills the title, the prompt and the tags of every link,
+  // so opening on those meant it was never shut. What is in it is counted on the heading instead, so a launch is
+  // not made over fields nobody was told about. The throwaway tick is not in here any more, it is above.
+  const filled = [["l-model", "model"], ["l-effort", "effort"], ["l-title", "title"], ["l-tags", "tags"],
+    ["l-why", "why"], ["l-prompt", "first instruction"]]
+    .filter(([id]) => {
       const el = document.getElementById(id);
-      return el && String(el.value || "").trim() !== "";
-    });
-  // The throwaway tick is a decision too, and an unticked box reads as empty
-  // while a ticked one is the only control here that deletes a directory.
+      return el && !el.closest("[hidden]") && String(el.value || "").trim() !== "";
+    }).map(([, name]) => name);
+  // Shut when the dialog is coming up, and left as the operator has it once it is there (a recognise calls this too).
+  if (!document.getElementById("launch").open) more.open = false;
+  const note = document.getElementById("l-more-note");
+  if (note) note.textContent = filled.length ? " (" + filled.join(", ") + " filled in)" : "";
+  // What only a link has: the clean up tick, and the choice to stop being asked.
+  const link = String((document.getElementById("l-url") || {}).value || "").trim() !== "";
   const away = document.getElementById("l-throwaway-on");
-  more.open = filled || !!(away && away.checked);
+  const cleanup = document.getElementById("l-cleanup-field");
+  if (cleanup) cleanup.hidden = !link || !!(away && away.checked);
+  const direct = document.getElementById("l-direct-field");
+  if (direct) {
+    direct.hidden = !link;
+    document.getElementById("l-direct").checked = quickPasteDirect();
+  }
 }
 
 // `renderRecentDirs` stood here and drew six buttons under the directory field,
@@ -1755,6 +1773,8 @@ async function launchNow() {
   // a directory is supplied, so a previous field value must not carry through.
   const throwaway = !document.getElementById("l-throwaway-field").hidden &&
     document.getElementById("l-throwaway-on").checked;
+  const cleanup = !document.getElementById("l-cleanup-field").hidden &&
+    document.getElementById("l-cleanup-on").checked;
   // Every recognised link goes to the open verb unless the directory was typed over, which names a place to start in.
   const opening = !throwaway && launchResolved &&
     document.getElementById("l-cwd").value.trim() === (launchResolved.shownCwd || "");
@@ -1802,6 +1822,11 @@ async function launchNow() {
         out.pr ? "already under review, attached its card" : "already open, attached its card");
     }
     const card = out.card ? await api("/v1/tasks/" + encodeURIComponent(out.card)) : null;
+    // Clean up when the work is done: the card is marked, and its close does the rest. See cleanupWhenDone.
+    if (card && cleanup && !(card.tags || []).includes(CLEANUP_TAG)) {
+      try { await patchTask(card.id, { tags: (card.tags || []).concat(CLEANUP_TAG) }); }
+      catch (e) { toast("clean up was not set", e.message); }
+    }
     if (!card) { switchView("board"); return; }
     if (launchWhere === "window") { popOutTask(card.id); return; }
     switchView("terms");
@@ -1824,7 +1849,7 @@ async function launchNow() {
     // Split on commas and never on spaces, the same rule everywhere else: a
     // tag with a space in it is one tag.
     tags: document.getElementById("l-tags").value
-      .split(",").map(x => x.trim()).filter(Boolean),
+      .split(",").map(x => x.trim()).filter(Boolean).concat(cleanup ? [CLEANUP_TAG] : []),
     // Empty while resuming, since the field is hidden and the daemon refuses
     // a prompt and a resume together.
     prompt: resumeOff || !launchTarget.resume

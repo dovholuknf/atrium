@@ -370,6 +370,12 @@
     content: "\25B8"; display: inline-block; transition: transform .12s; color: var(--dimmest);
   }
   #l-more[open] > summary::before { transform: rotate(90deg); }
+  #l-more > summary .more-note { text-transform: none; letter-spacing: 0; font-weight: 500; color: var(--dimmest); }
+  /* HOVER NEVER CHANGES LAYOUT HERE. A button's lift (`transform` above) moved the control under the pointer by a pixel,
+     which at the edge of a button flips the hover off and on, and a field that shifted as the mouse crossed it read as
+     the form jumping. Hover is colour only in this dialog: no size, border width, padding, margin or offset. */
+  #launch button:hover, #launch button:active { transform: none; }
+  #launch .dlg-foot .check { font-size: var(--fs-sm); color: var(--label); }
   details > summary.col-head {
     justify-content: flex-start; gap: var(--sp-3); cursor: pointer;
     padding: 4px 3px; border-radius: var(--r-sm); user-select: none;
