@@ -35,6 +35,9 @@ type ReadyRequest struct {
 // ReadyLine is what the CLI prints when the ack lands.
 const ReadyLine = "atrium clears your context when this turn ends. End your turn now."
 
+// WrapReadyLine is what the CLI prints when the ack of a restart wrap-up lands.
+const WrapReadyLine = "atrium restarts the room when everyone is ready, and wakes you after. End your turn now."
+
 // handoffKeep is the most of a handoff kept on the card.
 const handoffKeep = 256 << 10
 
@@ -68,6 +71,11 @@ func (d *Daemon) handleReady(w http.ResponseWriter, r *http.Request) {
 // ready stores the card's handoff and acks its cycle.
 func (d *Daemon) ready(task *store.Task) (map[string]any, int, error) {
 	cur := d.nctx.get(task.ID)
+	// A restart wrap-up waiting on this card takes the ack, with no file asked for: the conversation is kept.
+	if (cur == nil || cur.step != NewContextLimit) && d.wrap.ack(task.ID) {
+		log.Printf("[atrium] atrium ready from %s for the restart wrap-up", task.DisplayTitle())
+		return map[string]any{"ok": true, "task_id": task.ID, "message": WrapReadyLine}, 0, nil
+	}
 	if cur == nil || cur.step != NewContextLimit || cur.acked {
 		return nil, http.StatusConflict, errString("no context cycle is waiting for atrium ready on this card")
 	}

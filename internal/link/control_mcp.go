@@ -1878,6 +1878,7 @@ type restartInput struct {
 	Why         string `json:"why,omitempty" jsonschema:"what this restart is for"`
 	Force       bool   `json:"force,omitempty" jsonschema:"restart even if other agents are still working"`
 	WaitSeconds int    `json:"wait_seconds,omitempty" jsonschema:"how long to wait for other agents, in seconds"`
+	Immediate   bool   `json:"immediate,omitempty" jsonschema:"skip the wrap-up: do not ask working sessions to finish their step and be woken after"`
 }
 
 type restartOutput struct {
@@ -1906,12 +1907,12 @@ func (c *controlMCP) restartHandler(_ context.Context, req *mcp.CallToolRequest,
 		return nil, out, fmt.Errorf("this hub cannot forward a restart")
 	}
 	if err := c.hub.AskRestart(room, RestartAsk{
-		Why: strings.TrimSpace(in.Why), Force: in.Force, WaitSeconds: in.WaitSeconds,
+		Why: strings.TrimSpace(in.Why), Force: in.Force, WaitSeconds: in.WaitSeconds, Immediate: in.Immediate,
 	}); err != nil {
 		return nil, out, fmt.Errorf("could not ask %s to restart: %w", room, err)
 	}
 	out.Scheduled = true
-	out.Note = "asked " + room + " to restart. it parks its other agents, then winds down and " +
+	out.Note = "asked " + room + " to restart. it asks its working agents to wrap up and queues a wake on each, then winds down and " +
 		"comes back on the same database. if this session is on that room it goes down too: say " +
 		"nothing further this turn and expect to be resumed."
 	return nil, out, nil

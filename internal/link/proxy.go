@@ -556,7 +556,7 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// anybody who could reach the hub. The rule the daemon already states for
 	// shares applies here word for word: once something else can reach it,
 	// loopback stops meaning "this machine".
-	if r.URL.Path == "/v1/shutdown" {
+	if r.URL.Path == "/v1/shutdown" || r.URL.Path == "/v1/restart-wrap" {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusForbidden)
 		fmt.Fprint(w, `{"error":"a hub cannot stop a room. `+
