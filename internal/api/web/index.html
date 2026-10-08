@@ -1533,6 +1533,20 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
         while you are typing into a box. Leaving the pane leaves the focus in the session.</span>
     </div>
 
+    <!-- Where a terminal opens when you come back to it. -->
+    <div class="field">
+      <label for="s-termreturn">coming back to a terminal</label>
+      <select id="s-termreturn" onchange="setTermReturn(this.value)">
+        <option value="left">where I left off</option>
+        <option value="bottom">the bottom</option>
+      </select>
+      <span class="hintline">Leaving a terminal, by another card, another tab or the window losing focus for a few
+        seconds, remembers where you were. <b>Where I left off</b> brings you back there, draws a line at the first
+        thing written after you left and shows how many lines are below. <b>The bottom</b> always opens at the
+        latest, and keeps the line in the scrollback. Stored in this browser. A line that cannot be found again, after
+        a restart or a new context, is not drawn.</span>
+    </div>
+
     <!-- Terminals kept alive when you switch away. -->
     <div class="field">
       <label for="s-termkeep">terminals kept alive</label>
@@ -3746,6 +3760,7 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
 <script src="/js/seen.js"></script>
 <script src="/js/newcard.js"></script>
 <script src="/js/terminal-links.js"></script>
+<script src="/js/lastread.js"></script>
 <script src="/m/js/compose.js"></script>
 <script src="/m/js/util.js"></script>
 <script src="/m/js/md.js"></script>

@@ -793,6 +793,9 @@ function keepShow(slot, task) {
   if (slot.sizeUnsent) { slot.sizeUnsent = false; sendResize(); }
   markWide();
   sizeTermHost();
+  // Shown again: back where it was left, or the bottom. A hidden element lost its scroll position on the way, which
+  // is why a kept terminal used to open part way up.
+  lrReturn("show");
   swMark("keep-fit");
   // A runner that holds the cursor hidden between frames was left with it hidden.
   if (cursorSettleMs() && cursorWanted) term.write("\x1b[?25h");
@@ -909,6 +912,8 @@ function openTerm(task) {
   // write into one screen.
   // The terminal being left is kept hidden when it can be (see `keepPark`), torn down otherwise.
   fileViewLeave();
+  // Where it was left is written down first. See js/lastread.js.
+  if (typeof lrLeave === "function") lrLeave("switch");
   if (termSock || term) { keepPark(); closeTerm(true); }
 
   // ONE ENTRY FOR THIS ARRIVAL, not two. This runs before the card is set, so
@@ -1070,6 +1075,7 @@ function openTerm(task) {
   syncPhoneView();
   term.onWriteParsed(() => { phoneSyncTextarea(); phoneKeepSoon(); tallFollow(); });
   term.onScroll(() => tallFollow());
+  lrInit(term);
   // Erase-display 2 keeps the page first. 3 only clears the scrollback, which
   // is the history this is here to keep, so it is swallowed without touching
   // the rows: a lone 3 (`tput E3`, some tools on resize) must not blank the

@@ -5231,6 +5231,8 @@ async function termHiddenRedrawSection(browser, base) {
     p.on("pageerror", e => errors.push(String(e)));
     await p.goto(base, { waitUntil: "domcontentloaded" });
     await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
+    // This is about what is drawn after a hide, read at the bottom. Coming back to where you left off is termLastRead.
+    await p.evaluate(() => localStorage.setItem("atrium.termReturn", "bottom"));
     for (const id of ["hid-a", "hid-b"]) {
       await p.evaluate(id => attachTask(id), id);
       await p.waitForFunction(id => termSock && termSock.readyState === 1 && termTask && termTask.id === id, id,
@@ -5282,6 +5284,201 @@ async function termHiddenRedrawSection(browser, base) {
   landList = []; landPerms = [];
   tasksMode = was;
   if (!bad) console.log("termHiddenRedraw ok");
+}
+
+// ── a terminal remembers where you left it ───────────────────────────────
+// Coming back to a card lands where you were and marks what is new since: a divider at the first line written after
+// you left, and a pill counting the lines below. `atrium.termReturn=bottom` goes to the bottom instead and keeps the
+// divider. An in-place repaint (a spinner) is not new output, and a divider that cannot be found again after a replay
+// is dropped. See js/lastread.js. LASTREAD_SHOTS=/dir with LASTREAD_SHOT=before|after saves the picture.
+async function termLastReadSection(browser, base) {
+  const was = tasksMode;
+  tasksMode = "land";
+  landCard("lr-a", { supervised: true, created_at: "2026-09-19T12:00:00Z", activity: { what: "working" } });
+  landCard("lr-b", { supervised: true, created_at: "2026-09-19T12:01:00Z", activity: { what: "working" } });
+  landList = [LAND["lr-a"], LAND["lr-b"]];
+  landPerms = [];
+  const errors = [];
+  const ctx = await landContext(browser);
+  await ctx.addInitScript(() => {
+    const Real = window.WebSocket;
+    window.__socks = [];
+    window.WebSocket = function (url, protocols) {
+      if (!/\/attach(\?|$)/.test(url)) return new Real(url, protocols);
+      const s = { url, readyState: 0, binaryType: "arraybuffer", bufferedAmount: 0,
+        onopen: null, onclose: null, onmessage: null, onerror: null,
+        send() {}, close() { this.readyState = 3; } };
+      window.__socks.push(s);
+      setTimeout(() => { s.readyState = 1; if (s.onopen) s.onopen({}); }, 0);
+      return s;
+    };
+    Object.assign(window.WebSocket, { CONNECTING: 0, OPEN: 1, CLOSING: 2, CLOSED: 3 });
+    window.__say = (id, text) => {
+      const sock = window.__socks.filter(s => s.url.includes("/" + id + "/") && s.readyState === 1).pop();
+      sock.onmessage({ data: new TextEncoder().encode(text).buffer });
+    };
+    window.__lines = (from, n, tag) => { let s = ""; for (let i = from; i < from + n; i++) s += tag + " " + i + " words that make a line\r\n"; return s; };
+    window.__idle = ms => new Promise(r => setTimeout(r, ms || 250));
+    window.__goto = async id => { attachTask(id); await new Promise(r => setTimeout(r, 700)); };
+    window.__state = () => {
+      const b = term.buffer.active, d = document.querySelector("#t-screen .atrium-newdiv"), has = !!(term._lr && term._lr.div && term._lr.div.marker.line >= 0), pill = document.getElementById("t-newpill");
+      const vp = document.querySelector("#t-screen .xterm-screen").getBoundingClientRect();
+      const dr = d ? d.getBoundingClientRect() : null;
+      return { top: b.viewportY, base: b.baseY, div: has, divVisible: !!dr && dr.top >= vp.top - 1 && dr.bottom <= vp.bottom + 1,
+        pill: !!pill && !pill.hidden, pillText: pill && !pill.hidden ? pill.textContent : "" };
+    };
+    // The text of the row the divider sits on, so "at the first new line" is checked rather than assumed.
+    window.__divRow = () => {
+      const L = term._lr, b = term.buffer.active;
+      if (!L || !L.div || !L.div.marker || L.div.marker.line < 0) return null;
+      const l = b.getLine(L.div.marker.line);
+      return l ? l.translateToString(true) : "";
+    };
+  });
+  const shot = async (p, name) => {
+    if (!process.env.LASTREAD_SHOTS) return;
+    fs.mkdirSync(process.env.LASTREAD_SHOTS, { recursive: true });
+    await p.screenshot({ path: path.join(process.env.LASTREAD_SHOTS, name + ".png") });
+  };
+  try {
+    const p = await ctx.newPage();
+    p.on("pageerror", e => errors.push(String(e)));
+    await p.goto(base, { waitUntil: "domcontentloaded" });
+    await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
+    await p.evaluate(() => { try { localStorage.removeItem("atrium.termReturn"); } catch (e) {} });
+
+    // 1. Scrolled up in A, away, 30 lines arrive, back: the view is where it was, the divider is at the first new
+    // line, and the pill says how many.
+    await p.evaluate(async () => {
+      await __goto("lr-a");
+      __say("lr-a", __lines(0, 150, "first"));
+      await __idle(500);
+      term.scrollToLine(40);
+      await __idle();
+      await __goto("lr-b");
+      __say("lr-a", __lines(0, 30, "later"));
+      await __idle();
+      await __goto("lr-a");
+      await __idle(900);
+    });
+    let s = await p.evaluate(() => __state());
+    const row = await p.evaluate(() => __divRow());
+    await shot(p, process.env.LASTREAD_SHOT || "after");
+    if (s.top !== 40) fail("termLastRead: coming back landed at line " + s.top + ", not where it was left (40).");
+    if (!s.div || !/^later 0 /.test(row || "")) fail("termLastRead: no divider at the first new line (row: " + JSON.stringify(row) + ").");
+    if (!s.pill || !/30/.test(s.pillText)) fail("termLastRead: the pill does not count 30 new lines: " + JSON.stringify(s.pillText));
+    // Reaching the bottom retires the pill and keeps the divider.
+    await p.evaluate(async () => { term.scrollToBottom(); await __idle(); });
+    s = await p.evaluate(() => __state());
+    if (s.pill || !s.div) fail("termLastRead: at the bottom the pill should go and the divider stay: " + JSON.stringify(s));
+
+    // 2. At the bottom when leaving: back with new lines puts the divider in view, not the bottom of 30 lines.
+    await p.evaluate(async () => {
+      await __goto("lr-b");
+      __say("lr-a", __lines(30, 60, "more"));
+      await __idle();
+      await __goto("lr-a");
+      await __idle(900);
+    });
+    s = await p.evaluate(() => __state());
+    await shot(p, (process.env.LASTREAD_SHOT || "after") + "-divider");
+    if (!s.div || !s.divVisible) fail("termLastRead: the divider is not in view after coming back from the bottom: " + JSON.stringify(s));
+    if (s.top >= s.base) fail("termLastRead: landed at the bottom with 60 new lines instead of at the divider.");
+
+    // 3. The setting: bottom goes to the bottom and keeps the divider in the scrollback.
+    await p.evaluate(async () => {
+      localStorage.setItem("atrium.termReturn", "bottom");
+      term.scrollToLine(10);
+      await __idle();
+      await __goto("lr-b");
+      __say("lr-a", __lines(0, 25, "bottomed"));
+      await __idle();
+      await __goto("lr-a");
+      await __idle(900);
+    });
+    s = await p.evaluate(() => __state());
+    if (s.top !== s.base) fail("termLastRead: with the setting on bottom the terminal opened at " + s.top + " of " + s.base + ".");
+    if (!s.div) fail("termLastRead: with the setting on bottom the divider should still be in the scrollback.");
+    await p.evaluate(() => localStorage.removeItem("atrium.termReturn"));
+
+    // 4. A repaint in place is not new output: a spinner redrawn 300 times draws no divider and no pill.
+    await p.evaluate(async () => {
+      __say("lr-a", "spinner 0\r\n");
+      await __idle();
+      term.scrollToLine(20);
+      await __goto("lr-b");
+      for (let i = 1; i <= 300; i++) __say("lr-a", "\x1b[1A\x1b[2Kspinner " + i + "\r\n");
+      await __idle();
+      await __goto("lr-a");
+      await __idle(900);
+    });
+    s = await p.evaluate(() => __state());
+    if (s.div || s.pill) fail("termLastRead: a spinner repainted in place was counted as new output: " + JSON.stringify(s));
+
+    // 5. A resize while away moves rows around, and the divider follows its line.
+    await p.evaluate(async () => {
+      lrBlurMin = 0;
+      __say("lr-a", __lines(0, 5, "tail"));
+      await __idle();
+      window.dispatchEvent(new Event("blur"));
+      __say("lr-a", __lines(0, 12, "resized"));
+      term.resize(term.cols - 25, term.rows);
+      await __idle();
+      window.dispatchEvent(new Event("focus"));
+      await __idle(900);
+    });
+    s = await p.evaluate(() => __state());
+    const rrow = await p.evaluate(() => __divRow());
+    if (!s.div || !/^resized 0 /.test(rrow || "")) fail("termLastRead: after a resize the divider is not on the first new line (row: " + JSON.stringify(rrow) + ").");
+
+    // 6. A reattach replays the scrollback into a reset terminal: the same content with new lines is found again; a
+    // different history (a context cycle, a restart) draws nothing rather than guess.
+    await p.evaluate(async () => {
+      window.dispatchEvent(new Event("blur"));
+      await __idle(100);
+      __say("lr-a", __lines(0, 7, "replayed"));
+      await __idle();
+    });
+    const kept = await p.evaluate(() => ({ cursor: term.buffer.active.baseY + term.buffer.active.cursorY }));
+    const full = await p.evaluate(() => {
+      const b = term.buffer.active, out = [];
+      for (let i = 0; i <= b.baseY + b.cursorY; i++) out.push(b.getLine(i).translateToString(true));
+      return out.join("\r\n");
+    });
+    await p.evaluate(async full => {
+      term.reset();
+      term.write(full);
+      await __idle(300);
+      window.dispatchEvent(new Event("focus"));
+      await __idle(900);
+    }, full);
+    s = await p.evaluate(() => __state());
+    const prow = await p.evaluate(() => __divRow());
+    if (!s.div || !/^replayed 0 /.test(prow || "")) fail("termLastRead: a replay lost the divider (row: " + JSON.stringify(prow) + ", cursor was " + kept.cursor + ").");
+    await p.evaluate(async () => {
+      window.dispatchEvent(new Event("blur"));
+      __say("lr-a", __lines(0, 4, "gone"));
+      await __idle();
+      term.reset();
+      term.write(__lines(0, 80, "a different history"));
+      await __idle(300);
+      window.dispatchEvent(new Event("focus"));
+      await __idle(900);
+    });
+    s = await p.evaluate(() => __state());
+    if (s.div || s.pill) fail("termLastRead: a history that does not match still drew a divider: " + JSON.stringify(s));
+    if (s.top !== s.base) fail("termLastRead: a divider that could not be found should leave the terminal at the bottom: " + JSON.stringify(s));
+
+    // 7. The control is in settings, defaulting to where I left off.
+    const ui = await p.evaluate(() => { paintSettingsPrefs(); const e = document.getElementById("s-termreturn"); return e ? e.value : null; });
+    if (ui !== "left") fail("termLastRead: the settings control is missing or does not default to 'left': " + ui);
+  } finally {
+    await ctx.close();
+  }
+  if (errors.length) fail("the last-read page threw: " + errors.join(" | "));
+  landList = []; landPerms = [];
+  tasksMode = was;
+  if (!bad) console.log("termLastRead ok");
 }
 
 // ── the debug switches are per card ──────────────────────────────────────
@@ -25141,7 +25338,7 @@ async function main() {
       mSwitcher: mSwitcherSection,
       mPull: mPullSection, joinedLive: joinedLiveSection, joinedClick: joinedClickSection,
       coverPoll: coverPollSection, coverSteps: coverStepsSection, termBox: termBoxSection, termRowBleed: termRowBleedSection,
-      termDebug: termDebugSection, termDebugPerCard: termDebugPerCardSection, termLag: termLagSection, termHiddenRedraw: termHiddenRedrawSection, termSortStarted: termSortStartedSection,
+      termDebug: termDebugSection, termDebugPerCard: termDebugPerCardSection, termLag: termLagSection, termHiddenRedraw: termHiddenRedrawSection, termLastRead: termLastReadSection, termSortStarted: termSortStartedSection,
       noReadyChildren: noReadyChildrenSection, childUnderParent: childUnderParentSection, topNav: topNavSection,
       u002: u002Section, childFold: childFoldSection, liveHome: liveHomeSection,
       pulls: pullsSection, prMove: prMoveSection, quickPaste: quickPasteSection, recogniserRepo: recogniserRepoSection, hubRepos: hubReposSection, hubReposShelf: hubReposShelfSection, hubReposLedger: hubReposLedgerSection, hubReposFeed: hubReposFeedSection, changeReq: changeReqSection, mChangeReq: mChangeReqSection, trayHead: trayHeadSection, pullsAbsent: pullsAbsentSection, oneTooltip: oneTooltipSection, burnChart: burnChartSection, burnReadout: burnReadoutSection, switchPrewarm: switchPrewarmSection, attachAtOnce: attachAtOnceSection, fileView: fileViewSection, keepAlive: keepAliveSection, switchBackCost: switchBackCostSection, keepMemory: keepMemorySection, pullsDrawer: pullsDrawerSection };
@@ -27265,6 +27462,7 @@ async function main() {
     await unit("termDebug", () => termDebugSection(browser, base));
     await unit("termDebugPerCard", () => termDebugPerCardSection(browser, base));
     await unit("termHiddenRedraw", () => termHiddenRedrawSection(browser, base));
+    await unit("termLastRead", () => termLastReadSection(browser, base));
     await unit("termSortStarted", () => termSortStartedSection(browser, base));
     await unit("topNav", () => topNavSection(browser, base));
     await unit("pulls", () => pullsSection(browser, base));
