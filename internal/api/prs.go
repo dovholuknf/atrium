@@ -161,7 +161,12 @@ func (s *Server) postPR(w http.ResponseWriter, r *http.Request) {
 			fmt.Sprintf("why is over %d characters", store.MaxPRWhy), nil)
 		return
 	}
-	got, err := s.Recognise(body.URL)
+	// The open verb has recognised this link a moment ago, and asking again is another read of the forge for nothing.
+	got, _ := r.Context().Value(openRecognisedKey{}).(*store.Resolved)
+	var err error
+	if got == nil {
+		got, err = s.Recognise(body.URL)
+	}
 	if errors.Is(err, store.ErrNoRecogniser) {
 		prError(w, http.StatusUnprocessableEntity, "no_recogniser", "no recogniser matches this", nil)
 		return

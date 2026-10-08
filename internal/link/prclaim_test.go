@@ -65,6 +65,9 @@ type claimRoom struct {
 	noSCM bool
 	// tasksDelay holds back the answer to the task list, as a slow or remote room does.
 	tasksDelay time.Duration
+	// holds is the repos ("host/org/repo") this room has a checkout of, as GET /v1/scm/has answers. A room with no
+	// list at all answers 404, as a room built before the question does.
+	holds map[string]bool
 }
 
 func (c *claimRoom) reviewCalls() (imported []byte, archived, walkers []string) {
@@ -107,6 +110,12 @@ func (c *claimRoom) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		c.mu.Unlock()
 		w.WriteHeader(http.StatusUnprocessableEntity)
 		_, _ = w.Write([]byte(`{"error":"no recogniser matches this","code":"no_recogniser","step":"recognise"}`))
+	case r.URL.Path == "/v1/scm/has":
+		if c.holds == nil {
+			http.NotFound(w, r)
+			return
+		}
+		_ = json.NewEncoder(w).Encode(map[string]bool{"has": c.holds[r.URL.Query().Get("repo")]})
 	case r.URL.Path == "/v1/tasks":
 		if c.tasksDelay > 0 {
 			select {

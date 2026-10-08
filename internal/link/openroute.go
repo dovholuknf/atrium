@@ -37,7 +37,8 @@ func (p *Proxy) placeOpen(w http.ResponseWriter, r *http.Request) (*http.Request
 	if room, named := p.roomFor(r); named || room != "" {
 		return r.WithContext(context.WithValue(r.Context(), openRoomKey{}, room)), true
 	}
-	if key := p.openKey(r); key != "" {
+	key, repo := p.openTarget(r)
+	if key != "" {
 		if st := p.prClaims(); st != nil {
 			if c, err := st.PRClaimOf(key); err == nil {
 				r = p.placedOn(w, r, c.Room)
@@ -45,8 +46,9 @@ func (p *Proxy) placeOpen(w http.ResponseWriter, r *http.Request) (*http.Request
 			}
 		}
 	}
-	// The least busy room. One too old to read the hub's rows hands it on to the next. See retryDeaf.
-	room := p.placePRRoom(r.Context(), "")
+	// The least busy room, one that already holds the repo ahead of one that would have to clone it. One too old to
+	// read the hub's rows hands it on to the next. See retryDeaf.
+	room := p.placeRoomHolding(r.Context(), "", nil, repo)
 	if room == "" {
 		return r, true
 	}
@@ -57,35 +59,59 @@ func (p *Proxy) placeOpen(w http.ResponseWriter, r *http.Request) (*http.Request
 // openKey is the claim key of a pasted pull request, read from the hub's recogniser table, or "" when the hub has no
 // table, nothing matches, or the match is not a pull request. The body is put back for the room.
 func (p *Proxy) openKey(r *http.Request) string {
+	key, _ := p.openTarget(r)
+	return key
+}
+
+// openTarget reads a pasted link against the hub's recogniser table: the claim key when it is a pull request, and the
+// repo ("host/org/repo") the link opens in when it has one, so placement can prefer a room that holds it. A link that
+// names no repo opens in the request's `repo`, else the row's default repo, and "none" is a scratch folder (no repo).
+// Both are "" when the hub has no table or nothing matches. The body is put back for the room.
+func (p *Proxy) openTarget(r *http.Request) (key, repo string) {
 	if r.Body == nil {
-		return ""
+		return "", ""
 	}
 	raw, _ := io.ReadAll(io.LimitReader(r.Body, 64<<10))
 	r.Body = io.NopCloser(io.MultiReader(bytes.NewReader(raw), r.Body))
 	var in struct {
-		URL string `json:"url"`
+		URL  string `json:"url"`
+		Repo string `json:"repo"`
 	}
 	if json.Unmarshal(raw, &in) != nil || strings.TrimSpace(in.URL) == "" {
-		return ""
+		return "", ""
 	}
 	f := p.forgeSide()
 	if f == nil {
-		return ""
+		return "", ""
 	}
 	rows, err := hubRecogniserRows(f.st)
 	if err != nil {
-		return ""
+		return "", ""
 	}
 	row, vars, err := store.MatchRecogniserIn(rows, in.URL)
-	if err != nil || !store.IsPRRow(row.Tags) {
+	if err != nil {
+		return "", ""
+	}
+	host, org, name := strings.ToLower(strings.TrimSpace(vars["host"])), strings.TrimSpace(vars["org"]), strings.TrimSpace(vars["repo"])
+	if host != "" && org != "" && name != "" {
+		repo = host + "/" + org + "/" + name
+	} else if pick := strings.Trim(strings.TrimSpace(in.Repo), "/"); pick != "" {
+		repo = pick
+	} else {
+		repo = strings.Trim(strings.TrimSpace(row.DefaultRepo), "/")
+	}
+	if strings.EqualFold(repo, "none") || !store.RepoSlug(repo) {
+		repo = ""
+	}
+	if !store.IsPRRow(row.Tags) {
 		// An issue, a branch or a support link is not claimed by key yet: it goes to the least busy room.
-		return ""
+		return "", repo
 	}
 	num, _ := strconv.Atoi(strings.TrimSpace(vars["num"]))
-	if vars["host"] == "" || vars["org"] == "" || vars["repo"] == "" || num <= 0 {
-		return ""
+	if host == "" || org == "" || name == "" || num <= 0 {
+		return "", repo
 	}
-	return store.PRKey(vars["host"], vars["org"], vars["repo"], num)
+	return store.PRKey(vars["host"], vars["org"], vars["repo"], num), repo
 }
 
 // retagOpen puts the room on an open's answer, and on its card and review ids, in the merged view. A scoped board

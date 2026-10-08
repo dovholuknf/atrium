@@ -41,6 +41,9 @@ import (
 // openHeldKey marks the review row's claim as asked by the open verb. See postPR.
 type openHeldKey struct{}
 
+// openRecognisedKey carries what the open verb recognised, to the review row it makes.
+type openRecognisedKey struct{}
+
 // openRequest is the link, and what the launch dialog let somebody change first (shift-enter): an empty field takes
 // the recogniser's.
 type openRequest struct {
@@ -173,7 +176,7 @@ func (s *Server) open(w http.ResponseWriter, r *http.Request) {
 
 	// 4. the review row, claimed for this room
 	steps.begin("review", "starting the review")
-	row, created, failStatus, failBody := s.openRow(r, in)
+	row, created, failStatus, failBody := s.openRow(r, in, got)
 	if row == nil {
 		undoPRWorktree(wt)
 		disown()
@@ -279,10 +282,11 @@ func (s *Server) liveWalker(p *store.PRReview) *store.Task {
 
 // openRow makes or finds the review row through postPR, so the claim, the run folder and the runner start exactly as
 // a paste on the pulls tab does. A nil row is a refusal, with the status and body to answer.
-func (s *Server) openRow(r *http.Request, in openRequest) (row *store.PRReview, created bool, status int, body map[string]any) {
+func (s *Server) openRow(r *http.Request, in openRequest, got *store.Resolved) (row *store.PRReview, created bool, status int, body map[string]any) {
 	raw, _ := json.Marshal(map[string]string{"url": in.URL, "why": in.Why})
+	ctx := context.WithValue(r.Context(), openHeldKey{}, true)
 	req := httptest.NewRequest(http.MethodPost, "/v1/prs", bytes.NewReader(raw)).
-		WithContext(context.WithValue(r.Context(), openHeldKey{}, true))
+		WithContext(context.WithValue(ctx, openRecognisedKey{}, got))
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 	s.postPR(rec, req)

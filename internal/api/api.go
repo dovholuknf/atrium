@@ -583,6 +583,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /v1/recognise", s.recognise)
 	// A pasted link to a live card in its own worktree, in one call. See open.go.
 	mux.HandleFunc("POST /v1/open", s.open)
+	mux.HandleFunc("GET /v1/scm/has", s.scmHas)
 	// A card's inventory, and its disk. See resources.go.
 	mux.HandleFunc("GET /v1/tasks/{id}/resources", s.getResources)
 	mux.HandleFunc("POST /v1/tasks/{id}/resources/measure", s.measureResourcesNow)
