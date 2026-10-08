@@ -27,8 +27,8 @@ func (e fakeEnv) HasPrefix(dir, prefix string) bool {
 	return false
 }
 func (e fakeEnv) ReadFile(string) ([]byte, error) { return nil, errors.New("none") }
-func (e fakeEnv) Getenv(k string) string         { return e.vars[k] }
-func (e fakeEnv) Agent() string                  { return e.agent }
+func (e fakeEnv) Getenv(k string) string          { return e.vars[k] }
+func (e fakeEnv) Agent() string                   { return e.agent }
 
 type call struct {
 	tool    string

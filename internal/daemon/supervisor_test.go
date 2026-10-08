@@ -245,6 +245,22 @@ func TestLastOutputRefusesToProcessMoreThanTheBound(t *testing.T) {
 	}
 }
 
+// A failure message reads as text whatever the terminal was told around it. pwsh on Linux opens with ESC [?1h ESC =,
+// and the bare ESC = once landed in front of a card's "failed to start" line.
+func TestLastOutputStripsEveryEscapeATerminalConsumes(t *testing.T) {
+	for _, in := range []string{
+		"\x1b[?1h\x1b=boom-message\r\n",
+		"\x1b=boom-message\x1b>\r\n",
+		"\x1b(B\x1b[0mboom-message\x1b[0 q\r\n",
+		"\x1b]0;title\x1b\\boom-message\x1b7\x1b8\r\n",
+		"\x1b]0;title\x07boom-message\r\n",
+	} {
+		if got := lastOutput([]byte(in), 12); got != "boom-message" {
+			t.Errorf("%q: got %q", in, got)
+		}
+	}
+}
+
 // AN HOUR OF EIGHTY COLUMN OUTPUT, AND A TWO HUNDRED COLUMN WINDOW ATTACHES.
 //
 // This used to assert that nothing came back. Those bytes carry line breaks

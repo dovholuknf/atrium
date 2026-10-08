@@ -3,6 +3,8 @@ package cli
 import (
 	"encoding/json"
 	"errors"
+	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -85,7 +87,8 @@ func TestGuardHookBuiltin(t *testing.T) {
 }
 
 func TestGuardHookOverride(t *testing.T) {
-	const path = `D:\rules\guard.json`
+	// Native paths, so filepath.Clean in the guard reads them as this OS does.
+	path := filepath.FromSlash("/rules/guard.json")
 	good := `{"rules":[{"id":"no-echo","check":"command","tools":["shell"],"reason":"no {name}","params":{"names":["echo"]}}]}`
 	env := guardFakeEnv{vars: map[string]string{"ATRIUM_GUARD": "yes", guardRulesEnv: path},
 		files: map[string]string{path: good}}
@@ -98,6 +101,11 @@ func TestGuardHookOverride(t *testing.T) {
 	}
 
 	env.files[path] = `{"rules":[{"id":"x","check":"no-such-check","tools":["shell"],"reason":"r"}]}`
+	// Another spelling of the file is the file only where the file system ignores case.
+	otherCase := "deny"
+	if runtime.GOOS == "windows" || runtime.GOOS == "darwin" {
+		otherCase = ""
+	}
 	for _, c := range []struct {
 		tool  string
 		input map[string]any
@@ -106,9 +114,10 @@ func TestGuardHookOverride(t *testing.T) {
 		{"Bash", map[string]any{"command": "echo hi"}, "deny"},
 		{"PowerShell", map[string]any{"command": "Get-Date"}, "deny"},
 		{"Agent", map[string]any{"subagent_type": "x"}, "deny"},
-		{"Write", map[string]any{"file_path": `D:\other.json`, "content": "{}"}, "deny"},
-		{"Write", map[string]any{"file_path": `d:\rules\guard.json`, "content": "{}"}, ""},
-		{"Edit", map[string]any{"file_path": `D:\rules\.\guard.json`, "new_string": "{}"}, ""},
+		{"Write", map[string]any{"file_path": filepath.FromSlash("/other.json"), "content": "{}"}, "deny"},
+		{"Write", map[string]any{"file_path": path, "content": "{}"}, ""},
+		{"Write", map[string]any{"file_path": filepath.FromSlash("/RULES/guard.json"), "content": "{}"}, otherCase},
+		{"Edit", map[string]any{"file_path": filepath.FromSlash("/rules/./guard.json"), "new_string": "{}"}, ""},
 		{"Read", map[string]any{"file_path": path}, ""},
 	} {
 		out := guardHook(guardCall(c.tool, c.input), env)

@@ -59,7 +59,7 @@ func TestAWakeSurvivesTheDaemonComingBack(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		t.Cleanup(func() { d.Close() })
+		closeAtCleanup(t, d)
 		return d
 	}
 	d := open()

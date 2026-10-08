@@ -35,11 +35,10 @@ func startDaemonWith(t *testing.T, mutate func(*Options)) (*Daemon, *safeBuf, co
 	if err != nil {
 		t.Fatalf("daemon did not start: %v", err)
 	}
-	t.Cleanup(func() { d.Close() })
-
-	ctx, cancel := context.WithCancel(context.Background())
-	errCh := make(chan error, 1)
-	go func() { errCh <- d.Run(ctx) }()
+	closeAtCleanup(t, d)
+	cancel, errCh := runAtCleanup(t, d)
+	// A listener accepts as soon as net.Listen returns, which is before the
+	// startup lines are written. Waiting on the port would race the log.
 	logs.waitFor(t, "ready. ctrl-c to stop")
 	return d, logs, cancel, errCh
 }

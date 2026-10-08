@@ -427,10 +427,20 @@ func (n *newContexts) fail(taskID string, gen uint64, reason string) bool {
 
 // finish takes the chip off: the wake prompt landed.
 func (n *newContexts) finish(taskID string, gen uint64) bool {
+	return n.finishRecorded(taskID, gen, nil)
+}
+
+// finishRecorded is finish that runs record first, while the chip is still on and
+// only if it is still gen's, so nobody who sees the chip gone reads a history that
+// does not yet say why.
+func (n *newContexts) finishRecorded(taskID string, gen uint64, record func()) bool {
 	n.mu.Lock()
 	if cur := n.by[taskID]; cur == nil || cur.gen != gen {
 		n.mu.Unlock()
 		return false
+	}
+	if record != nil {
+		record()
 	}
 	delete(n.by, taskID)
 	n.mu.Unlock()
@@ -645,13 +655,27 @@ func (d *Daemon) runNewContext(taskID string, gen uint64) {
 	if cur.auto {
 		by = cycleBy
 	}
-	end := func(ev map[string]any) {
+	record := func(ev map[string]any) {
 		ev["by"] = by
 		if err := d.st.AppendEvent(taskID, store.EventNotified, ev); err != nil {
 			log.Printf("[atrium] could not record the new context on %s: %v", taskID, err)
 		}
+	}
+	after := func() {
 		d.publishTask(taskID)
 		d.releaseHeld(taskID)
+	}
+	end := func(ev map[string]any) {
+		record(ev)
+		after()
+	}
+	// finish takes the chip off with ev already in the card's history.
+	finish := func(ev map[string]any) bool {
+		if !d.nctx.finishRecorded(taskID, gen, func() { record(ev) }) {
+			return false
+		}
+		after()
+		return true
 	}
 	fail := func(step string, err error) {
 		if errors.Is(err, errNewContextGone) {
@@ -670,9 +694,8 @@ func (d *Daemon) runNewContext(taskID string, gen uint64) {
 	if start == NewContextLimit {
 		if err := d.cycleAwaitAck(taskID, gen); err != nil {
 			if errors.Is(err, errCycleUnder) {
-				if d.nctx.finish(taskID, gen) {
+				if finish(map[string]any{"dropped": err.Error()}) {
 					log.Printf("[atrium] context cycle on %s dropped: %v", taskID, err)
-					end(map[string]any{"dropped": err.Error()})
 				}
 				return
 			}
@@ -729,9 +752,8 @@ func (d *Daemon) runNewContext(taskID string, gen uint64) {
 		fail("could not type the wake prompt", err)
 		return
 	}
-	if d.nctx.finish(taskID, gen) {
+	if finish(map[string]any{"done": true, "path": file}) {
 		log.Printf("[atrium] new context on %s done", taskID)
-		end(map[string]any{"done": true, "path": file})
 	}
 }
 

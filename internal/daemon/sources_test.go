@@ -86,19 +86,7 @@ func testDaemon(t *testing.T) *Daemon {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() {
-		d.Close()
-		// A connection a goroutine was still using when the store closed is let go when its query ends, and until
-		// then Windows will not delete the file and the temp dir's cleanup fails. Wait for it here.
-		for _, f := range []string{"atrium.db", "atrium.db-wal", "atrium.db-shm"} {
-			p := filepath.Join(dir, f)
-			for end := time.Now().Add(5 * time.Second); ; time.Sleep(50 * time.Millisecond) {
-				if err := os.Remove(p); err == nil || os.IsNotExist(err) || time.Now().After(end) {
-					break
-				}
-			}
-		}
-	})
+	closeAtCleanup(t, d)
 	// EVERY RUNNER A TEST STARTED IS STOPPED WITH IT, before the store closes (a
 	// cleanup runs last in, first out). One that outlived its test daemon kept
 	// running on the machine.

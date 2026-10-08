@@ -71,8 +71,9 @@ func (d *Daemon) settleFor(taskID string, window time.Duration) (string, bool) {
 const tailBytes = 64 << 10
 
 // ansi strips the escape sequences a terminal would have consumed, so a failure
-// message reads as text.
-var ansi = regexp.MustCompile(`\x1b\[[0-9;?]*[a-zA-Z]|\x1b\][^\x07]*\x07|\r`)
+// message reads as text. CSI and OSC, and the two-byte ones too: pwsh on Linux
+// opens with `ESC =` (keypad mode), which otherwise prefixed its first line.
+var ansi = regexp.MustCompile(`\x1b\[[0-9;?<=>!]*[ -/]*[@-~]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)|\x1b[()*+][0-9A-Za-z]|\x1b[=>78DEHMNOZc]|\r`)
 
 // lastOutput takes the final few non-empty lines of a terminal's scrollback.
 // The end, not the beginning: a program that fails to start prints its banner
