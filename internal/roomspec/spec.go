@@ -227,7 +227,7 @@ func isKnownRunner(r string) bool {
 }
 
 // CheckPackArg is why a pack's repo and branch cannot be used, or "". The same rule as the provision script's
-// Test-AgentPackArg: both end up as git arguments, so neither may look like an option or climb out of a path.
+// Test-PackArg (scripts/room-spec.ps1): both end up as git arguments, so neither may look like an option or climb out of a path.
 func CheckPackArg(repo, branch string) string {
 	if !repoRE.MatchString(repo) {
 		return fmt.Sprintf("repo %q is not owner/name", repo)

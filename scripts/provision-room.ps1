@@ -94,17 +94,22 @@
 # drive, and takes the place of the shared folder: <work>\git (git_root, scm_root and the clones with their -worktrees
 # folders), <work>\reviews (reviews_root), <work>\handoff (context_handoff_dir) and <work>\cache for npm, go (GOMODCACHE and
 # GOCACHE), pip and cargo, which are written as each tool's own user file (.npmrc, go env, pip.ini, CARGO_HOME), never a
-# link. Every parent of the root must be EXAMINABLE by the account, or Claude Code raises a prompt nothing can answer. When
-# one is not, or the root cannot be made or written, the step is `work-root fail` with the lines an administrator runs (the
-# drive gets attributes only, `icacls V:\ /grant <acct>:(RA,REA)`, no listing and no creating) and the exit is 13, with
-# nothing else changed. A rerun keeps the recorded root and says `ok`, and settings of a running room are read from it.
-# -Check reports the same read only, and on a Windows box with a second fixed drive and no -WorkRoot it advises one.
+# link. ALL OF IT IS DONE BY THE ROOM'S OWN atrium: this script writes a room.yaml (scripts/room-spec.ps1) and runs
+# `atrium room setup --spec - --plan` on the remote before anything is changed (a machine that has an atrium) and `--apply`
+# after the join (internal/roomspec has the rules). Every parent of the root must be EXAMINABLE by the account, or Claude Code
+# raises a prompt nothing can answer. When one is not, or the root cannot be made or written, the step is `work-root fail`
+# with the lines an administrator runs (the drive gets attributes only, `icacls V:\ /grant <acct>:(RA,REA)`, no listing and
+# no creating) and the exit is 13. A rerun keeps the recorded root and says `ok`, and settings of a running room are read
+# from it. -Check reports the same read only, and on a Windows box with a second fixed drive and no -WorkRoot it advises one.
+# A machine with no atrium yet is checked by the first run. With no work root there is no room.yaml, so the old shared
+# folder behaviour stays and the agent pack is not installed (it is installed together with a work root).
 #
 # THE AGENT PACK. Unless -NoAgentPack, the agents and skills of -AgentPackRepo (dovholuknf/dotfiles, branch
 # -AgentPackBranch main), claude/agents/*.md and claude/skills/<name>/, are installed as real files in the account's
-# ~/.claude, and the commit is recorded in ~/.claude/atrium-agent-pack.json. They come from the hub's own mirror of the
-# repository, fetched WHOLE here and sent as a tarball, because the room's /git/hub forwarder is tokenized per card and no
-# card exists at provision time. A rerun at the same commit changes nothing. -Remove leaves the work root and the pack.
+# ~/.claude by `atrium room setup --apply`, and the commit is recorded in ~/.claude/atrium-agent-pack.json. They come from
+# the hub's own mirror of the repository, cloned WHOLE here and sent as a tarball (`--pack-dir`), because the room's
+# /git/hub forwarder is tokenized per card and no card exists at provision time. A rerun at the same commit changes
+# nothing. -Remove leaves the work root and the pack.
 #
 # THE ACCOUNT'S RIGHTS. The ssh login IS the account the room runs as, since everything here runs as that login. Right
 # after the account check, `account-rights` (a provision run only, not -Remove, -Restart or -SmokeOnly) reads who that
@@ -344,15 +349,16 @@ $Runners = Split-List $Runners
 $Install = Split-List $Install
 $AllowedFolders = Split-List $AllowedFolders
 . (Join-Path $PSScriptRoot 'room-folders.ps1')
-. (Join-Path $PSScriptRoot 'room-work.ps1')
+. (Join-Path $PSScriptRoot 'room-spec.ps1')
 . (Join-Path $PSScriptRoot 'room-account.ps1')
 . (Join-Path $PSScriptRoot 'room-start.ps1')
-if ($PSBoundParameters.ContainsKey('WorkRoot')) {
-    $why = Test-WorkRootArg $WorkRoot
-    if ($why) { Write-Host "provision args fail -WorkRoot '$WorkRoot' $why"; exit 1 }
+# A -WorkRoot is judged by the room's own `atrium room setup` (exit 1, with its reason, before anything is changed), so only
+# what cannot be written into a spec is refused here.
+if ($PSBoundParameters.ContainsKey('WorkRoot') -and (-not $WorkRoot -or $WorkRoot -match '[\x00-\x1f\x7f]')) {
+    Write-Host "provision args fail -WorkRoot '$WorkRoot' is empty or holds a control character"; exit 1
 }
 if (-not $NoAgentPack) {
-    $why = Test-AgentPackArg $AgentPackRepo $AgentPackBranch
+    $why = Test-PackArg $AgentPackRepo $AgentPackBranch
     if ($why) { Write-Host "provision args fail $why"; exit 1 }
 }
 $operators = @(Get-OperatorList (Split-List $OperatorAccount))
@@ -911,6 +917,29 @@ if [ -d "$d" ]; then if [ -w "$d" ]; then echo writable=True; else echo writable
     $dir
 }
 
+# THE ROOM'S OWN SETUP (`atrium room setup`, internal/roomspec): the work root, the tool caches, the room's folder settings and
+# the agent pack are made and judged by the room's atrium from a room.yaml built here (scripts/room-spec.ps1). Get-SetupYaml is
+# that spec, Invoke-RoomSetup runs it on the remote with --plan (reads, cannot write) or --apply, and Show-SetupRows prints what
+# it said as step lines, `todo` as a warn and `human` as a fail, followed by the lines an administrator runs.
+function Get-SetupYaml {
+    $n = if ($Name) { $Name } elseif ($manifest) { "$($manifest.name)" } else { ($remoteHost.ToLower() -replace '[^a-z0-9._-]', '-') -replace '^[^a-z0-9]+', '' }
+    if (-not $n) { $n = 'room' }
+    try { New-RoomSpecYaml -Name $n -Os $os -WorkRoot $workRoot -PackRepo $(if ($NoAgentPack) { '' } else { $AgentPackRepo }) -PackBranch $AgentPackBranch }
+    catch { Fail 'work-root' 1 "$_" }
+}
+function Invoke-RoomSetup {
+    param([string] $Mode, [switch] $UsePackDir)
+    $r = Invoke-Remote (Get-RoomSetupScript -Os $os -Yaml (Get-SetupYaml) -Mode $Mode -UsePackDir:$UsePackDir)
+    ConvertFrom-RoomSetup $r.Out $r.Code
+}
+function Show-SetupRows {
+    param($res)
+    $rows = @($res.Rows)
+    if ($Check -and -not $NoAgentPack) { $rows = @(Set-PackRowLatest $rows (Get-HubMirrorCommit $HubAddr $AgentPackRepo $AgentPackBranch)) }
+    foreach ($r in $rows) { Step $r.Step (ConvertTo-StepStatus $r.Status) $r.Detail }
+    foreach ($l in $res.AdminLines) { Write-Host "    $l" }
+}
+
 # Right after the state is read, on a provision run. A refusal here has changed nothing.
 $sharedDir = $null
 if (-not ($Remove -or $Restart -or $SmokeOnly)) {
@@ -921,14 +950,24 @@ if (-not ($Remove -or $Restart -or $SmokeOnly)) {
     $workRoot = if ($WorkRoot) { $WorkRoot } elseif ($manifest -and $manifest.workroot) { "$($manifest.workroot)" } else { $null }
     if ($workRoot) {
         Step 'shared-folder' 'skip' "the work root $workRoot holds the clones, so there is no shared folder"
-        $wr = Invoke-WorkRoot { param($s) Invoke-Remote $s } $os $workRoot (-not $Check) $remoteHost
-        foreach ($s in $wr.Steps) { Step $s.Step $s.Status $s.Detail }
-        foreach ($l in $wr.AdminLines) { Write-Host "    $l" }
-        if ($wr.Code -ne 0) { Finish $wr.Code }
-        $workLayout = $wr.Layout
-        $sharedDir = $workLayout.Git
-        if ($Check) { Step 'git-root' 'ok' "a run without -Check sets git_root and scm_root to $($workLayout.Git), reviews_root to $($workLayout.Reviews) and context_handoff_dir to $($workLayout.Handoff) (atrium room set)" }
+        # THE ROOM'S OWN atrium judges the work root, so a machine that has one is asked first, with --plan, which cannot write:
+        # a parent folder the account cannot examine, or a root it cannot make, ends the run here with the lines an
+        # administrator runs and exit 13, before anything is changed. A machine with no atrium yet (or an older one with no
+        # `room setup`) is checked by the first run, which installs it and then asks.
+        $pl = if ($state.binsha) { Invoke-RoomSetup 'plan' } else { $null }
+        if ($pl -and $pl.Kind -eq 'ok') {
+            if ($Check -or $pl.Code -ne 0) { Show-SetupRows $pl }
+            if ($pl.Code -ne 0) { Finish $pl.Code }
+        } elseif ($pl -and $pl.Kind -eq 'error') {
+            Step 'work-root' 'fail' "atrium room setup refused: $(($pl.Other | Select-Object -First 3) -join ' | ')"
+            Finish $(if ($pl.Code -eq 1) { 1 } else { 3 })
+        } else {
+            Step 'work-root' 'warn' "$remoteHost has no atrium that runs 'room setup' yet, so $workRoot and the agent pack are checked by the first run, which installs one and then asks"
+        }
+        $sharedDir = (Format-WorkPath $workRoot) + '/git'
+        if ($Check) { Step 'git-root' 'ok' "a run without -Check sets git_root and scm_root to $sharedDir, reviews_root and context_handoff_dir under $workRoot (atrium room setup)" }
     } else {
+        if (-not $NoAgentPack) { Step 'agent-pack' 'skip' 'the agent pack is installed together with a work root, and this run has none (-WorkRoot)' }
         $sharedDir = Invoke-SharedFolder $newMachine $acctName
         # THE ROOM'S git_root SETTING is written after the join, by `room set git_root` on the remote, while no room runs.
         if ($sharedDir -and $Check) { Step 'git-root' 'ok' "a run without -Check sets the room's git_root to $sharedDir (atrium room set git_root)" }
@@ -937,14 +976,7 @@ if (-not ($Remove -or $Restart -or $SmokeOnly)) {
             if ($hd) { Step 'work-root' 'warn' $hd }
         }
     }
-    if ($Check) {
-        if (-not $NoAgentPack) {
-            $ps = Invoke-Remote (Get-AgentPackStateScript $os)
-            $pv = Get-AgentPackVerdict $ps.Out (Get-HubMirrorCommit $HubAddr $AgentPackRepo $AgentPackBranch)
-            Step 'agent-pack' $pv.Status $pv.Detail
-        }
-        Step 'check' 'ok' 'read only: nothing was changed'; Finish 0
-    }
+    if ($Check) { Step 'check' 'ok' 'read only: nothing was changed'; Finish 0 }
 }
 
 # ── -Remove ─────────────────────────────────────────────────────────────────
@@ -2172,11 +2204,44 @@ $scm = if ($sharedDir) { $sharedDir } else { '~/git' }
 $want = [ordered]@{}
 if ($sharedDir) { $want['git_root'] = $sharedDir }
 $want['scm_root'] = $scm
-if ($workLayout) { $want['reviews_root'] = $workLayout.Reviews; $want['context_handoff_dir'] = $workLayout.Handoff }
+if ($workRoot) { $want['reviews_root'] = (Format-WorkPath $workRoot) + '/reviews'; $want['context_handoff_dir'] = (Format-WorkPath $workRoot) + '/handoff' }
 $served = @{ scm_root = 'git_scm_root'; reviews_root = 'reviews_root'; context_handoff_dir = 'context_handoff_dir' }
 $stepOf = @{ git_root = 'git-root'; scm_root = 'scm-root'; reviews_root = 'reviews-root'; context_handoff_dir = 'handoff-dir' }
 $have = $null; $setNow = @()
-if ($state.up7781 -eq 'True') {
+# WITH A WORK ROOT the room's own `atrium room setup --apply` does the lot, here, after the join and before any start: it makes the
+# root and its folders, points the tool caches at it, sets the four settings above (a running room cannot be set, and that
+# is a warn row carrying the command), and installs the agent pack. The pack's source is THIS machine's clone of the hub's
+# mirror, sent as a tarball, because the room's /git/hub forwarder is tokenized per card and no card exists yet.
+$packSent = $false; $packCommit = $null
+if ($workRoot) {
+    if (-not $NoAgentPack) {
+        $pk = New-PackSource -HubAddr $HubAddr -Repo $AgentPackRepo -Branch $AgentPackBranch -OutDir $work
+        if (-not $pk.Ok) { Step 'agent-pack' 'warn' "$($pk.Why). the hub mirrors $AgentPackRepo only when it is watched there. rerun when it is" }
+        else {
+            $c = Copy-ToRemote $pk.Tgz '.atrium/provision/pack-src.tgz'
+            if ($c.Code -ne 0) { Step 'agent-pack' 'warn' "could not copy the pack to $remoteHost ($(($c.Out | Select-Object -Last 1)))" }
+            else {
+                $u = Invoke-Remote (Get-PackUnpackScript $os)
+                if ($u.Code -ne 0) { Step 'agent-pack' 'warn' "$remoteHost could not unpack the pack ($(($u.Out | Select-Object -Last 1)))" }
+                else { $packSent = $true; $packCommit = $pk.Commit }
+            }
+        }
+    }
+    $ap = Invoke-RoomSetup 'apply' -UsePackDir:$packSent
+    switch ($ap.Kind) {
+        'ok' { Show-SetupRows $ap }
+        default { Step 'work-root' 'fail' "atrium room setup did not answer on ${remoteHost}: $(($ap.Other | Select-Object -First 3) -join ' | ')"; Finish 3 }
+    }
+    foreach ($k in $want.Keys) { if (@($ap.Rows | Where-Object { $_.Step -eq $stepOf[$k] -and $_.Status -eq 'done' }).Count) { $setNow += $k } }
+    if ($packCommit) { $manifest | Add-Member -NotePropertyName agentpack -NotePropertyValue ([pscustomobject]@{ repo = $AgentPackRepo; branch = $AgentPackBranch; commit = $packCommit }) -Force }
+    if ($ap.Code -ne 0) {
+        # an administrator's lines were printed. The root is recorded so the rerun after they ran is the same run
+        $manifest | Add-Member -NotePropertyName workroot -NotePropertyValue $workRoot -Force
+        Save-Manifest
+        Finish $ap.Code
+    }
+}
+if ($state.up7781 -eq 'True' -and -not $workRoot) {
     $rq = if ($os -eq 'windows') {
 @'
 try { $j = Invoke-RestMethod 'http://127.0.0.1:7781/v1/settings' -TimeoutSec 5
@@ -2191,7 +2256,7 @@ echo read=ok
     }
     $have = ConvertFrom-KeyValue (Invoke-Remote $rq).Out
 }
-foreach ($k in $want.Keys) {
+foreach ($k in @(if (-not $workRoot) { $want.Keys })) {
     $v = $want[$k]
     $rcmd = "$(if ($os -eq 'windows') { '.\.atrium\bin\atrium.exe' } else { '~/.local/bin/atrium' }) room set $k $v"
     $stop = "stop the room and run: $((@($Ssh) + $SshOption + @($Target)) -join ' ') $rcmd"
@@ -2857,31 +2922,6 @@ fi
 # where the smoke card below runs, when init succeeded.
 $clonePath = $null
 if ($Repo -ne 'none') { & pwsh -NoProfile -File (Join-Path $PSScriptRoot 'room-git.ps1') init $Name -Target $Target -Ssh $Ssh -Scp $Scp @(if ($sharedDir) { '-GitRoot'; $sharedDir }) @(if ($GitVersion) { '-GitVersion'; $GitVersion }) @(if ($SshOption) { '-SshOption'; $SshOption -join ',' }) *>&1 | ForEach-Object { Write-Host $_; if ("$_" -match '^room-git cwd ok (.+)$') { $clonePath = $Matches[1].Trim() } }; if ($LASTEXITCODE -ne 0) { $clonePath = $null; Step 'git' 'warn' "room-git init exited $LASTEXITCODE. rerun: room-git.ps1 init $Name -Target $Target" } }
-
-# THE AGENT PACK, independent of the clone: the operator's agents and skills as real files in the account's ~/.claude, from the
-# hub's own mirror of the dotfiles repository (see room-work.ps1). The room's /git/hub forwarder is tokenized per card and no card
-# exists yet, so THIS machine fetches from the mirror and sends the room a tarball. Never a warn that stops the run: a room
-# without the pack works, it only cannot run the operator's panels and skills.
-function Invoke-AgentPack {
-    if ($NoAgentPack) { Step 'agent-pack' 'skip' '-NoAgentPack'; return }
-    $pk = New-AgentPack -HubAddr $HubAddr -Repo $AgentPackRepo -Branch $AgentPackBranch -OutDir $work
-    if (-not $pk.Ok) { Step 'agent-pack' 'warn' "$($pk.Why). the hub mirrors $AgentPackRepo only when it is watched there. rerun when it is" ; return }
-    $c = Copy-ToRemote $pk.Tgz '.atrium/provision/agent-pack.tgz'
-    if ($c.Code -ne 0) { Step 'agent-pack' 'warn' "could not copy the pack to $remoteHost ($(($c.Out | Select-Object -Last 1)))"; return }
-    $r = Invoke-Remote (Get-AgentPackInstallScript $os $true)
-    $kv = ConvertFrom-KeyValue $r.Out
-    $short = "$($pk.Commit)".Substring(0, 9)
-    if ($r.Code -ne 0 -or -not $kv.commit) { Step 'agent-pack' 'warn' "the remote could not unpack the pack: $(($r.Out | Select-Object -Last 2) -join ' ')"; return }
-    $n = @($pk.Meta.agents).Count; $s = @($pk.Meta.skills).Count
-    if ([int]$kv.changed -eq 0 -and $kv.was -eq $kv.commit -and [int]$kv.refused -eq 0) { Step 'agent-pack' 'ok' "already at $short, nothing changed ($n agents, $s skills)" }
-    elseif ([int]$kv.refused -gt 0) { Step 'agent-pack' 'warn' "$($kv.refused) of $($kv.files) files were not written, because a folder on their way is a link and the write would leave ~/.claude: $($kv.refused_files). the record was not updated, so a rerun tries again. replace the link with a folder, or leave those files to whatever owns it" }
-    else { Step 'agent-pack' 'done' "$n agents and $s skills from $AgentPackRepo at $short, $($kv.changed) of $($kv.files) files written to ~/.claude" }
-    if ([int]$kv.edited -gt 0) { Step 'agent-pack' 'warn' "$($kv.edited) file(s) had been edited on the room and were replaced by the pack's: $($kv.edited_files)" }
-    foreach ($sk in @($pk.Skipped)) { Step 'agent-pack' 'skip' "$sk is not in $AgentPackRepo, so it is not in the pack" }
-    $manifest | Add-Member -NotePropertyName agentpack -NotePropertyValue ([pscustomobject]@{ repo = $AgentPackRepo; branch = $AgentPackBranch; commit = $pk.Commit }) -Force
-    Save-Manifest
-}
-Invoke-AgentPack
 
 # The permission gate, after the hooks: room-gate.ps1 copies the one dotfiles script and registers it first.
 & pwsh -NoProfile -File (Join-Path $PSScriptRoot 'room-gate.ps1') $Name -Target $Target -Ssh $Ssh -Scp $Scp @(if ($SshOption) { '-SshOption'; $SshOption -join ',' }) *>&1 | ForEach-Object { Write-Host $_ }; if ($LASTEXITCODE -ne 0) { Step 'gate' 'warn' "room-gate exited $LASTEXITCODE. rerun: room-gate.ps1 $Name -Target $Target" }

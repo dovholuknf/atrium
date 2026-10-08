@@ -33,13 +33,15 @@
 #                       enforced, warn "no allowed folders set" when it is empty, skip when that atrium has no such verb.
 #                       With -Fix -Yes, `folders allow <clone> <clone>-worktrees`: a room's own setting, but it turns the
 #                       launch bound on, so it needs -Yes like the hooks do
-#   work-root           the work root the room's manifest records (provision-room.ps1 -WorkRoot), read only (scripts/room-work.ps1):
-#                       the root, then `work-dirs` and `work-cache`. `human`, with the lines an administrator runs, when the
-#                       account cannot examine a parent folder of the root or cannot write it. A warn when a folder or a cache
-#                       is not yet where it should be, `skip` when the manifest records no work root
-#   agent-pack          the agents and skills installed from the hub's mirror of the dotfiles repository: warn when the pack
-#                       is not installed, is older than the mirror's commit, or lacks an agent the review panel names. Never
-#                       fixed here: a provision run installs it
+#   work-root           the work root the room's manifest records (provision-room.ps1 -WorkRoot), read only: the room's own
+#                       `atrium room setup --plan` (scripts/room-spec.ps1, from a room.yaml rebuilt from the manifest) says the
+#                       root, then `work-dirs`, `work-cache`, the four room settings and `agent-pack`. `human`, with the lines
+#                       an administrator runs, when the account cannot examine a parent folder of the root or cannot write it.
+#                       A warn when a folder, a cache or a setting is not yet where it should be, `skip` when the manifest
+#                       records no work root or the room's atrium has no `room setup`
+#   agent-pack          the agents and skills installed from the hub's mirror of the dotfiles repository (a row of the same
+#                       plan): warn when the pack is not installed, is older than the mirror's commit, or lacks an agent the
+#                       review panel names. Never fixed here: a provision run installs it
 #
 # WITHOUT -Fix IT WRITES NOTHING, on the room or here. (The smoke card is the one thing that runs.) With -Fix it does
 # every `apply` fix whose scope is machine or room. A fix at ACCOUNT scope (the hooks, which change every project and
@@ -98,7 +100,7 @@ $OutputEncoding = [Text.UTF8Encoding]::new($false)
 function Split-List { param($v) @($v | ForEach-Object { "$_" -split ',' } | ForEach-Object { $_.Trim() } | Where-Object { $_ }) }
 $SshOption = Split-List $SshOption
 . (Join-Path $PSScriptRoot 'room-account.ps1')
-. (Join-Path $PSScriptRoot 'room-work.ps1')
+. (Join-Path $PSScriptRoot 'room-spec.ps1')
 $operators = @(Get-OperatorList (Split-List $OperatorAccount))
 foreach ($o in $operators) { $why = Test-OperatorArg $o; if ($why) { Write-Host "room-check args fail $why"; exit 1 } }
 
@@ -788,17 +790,31 @@ $mfl = ConvertFrom-KeyValue (Invoke-Remote $mfs).Out
 $mf = if ($mfl.manifest) { try { $mfl.manifest | ConvertFrom-Json } catch { $null } } else { $null }
 if (-not $mf -or -not $mf.workroot) {
     Row 'work-root' 'skip' 'the manifest on the room records no work root (provision-room.ps1 -WorkRoot)'
+    Row 'agent-pack' 'skip' 'the agent pack is installed together with a work root, and the manifest on the room records none'
 } else {
-    $wr = Invoke-WorkRoot { param($s) Invoke-Remote $s } $kind "$($mf.workroot)" $false $Target
-    foreach ($s in $wr.Steps) {
-        if ($s.Status -eq 'fail') { Row $s.Step 'human' $s.Detail; Unmet 'human' } else { Row $s.Step $s.Status $s.Detail }
+    # The rows are the room's own: `atrium room setup --plan` on the room, from a room.yaml rebuilt from the manifest. The agent
+    # pack row is judged here against the commit the hub's mirror has, since the room is not told the hub's address.
+    $packRepo = if ($mf.agentpack.repo) { "$($mf.agentpack.repo)" } else { 'dovholuknf/dotfiles' }
+    $packBranch = if ($mf.agentpack.branch) { "$($mf.agentpack.branch)" } else { 'main' }
+    try { $yaml = New-RoomSpecYaml -Name $(if ($mf.name) { "$($mf.name)" } else { $Room }) -Os $kind -WorkRoot "$($mf.workroot)" -PackRepo $(if ($mf.agentpack) { $packRepo } else { '' }) -PackBranch $packBranch }
+    catch { $yaml = $null; Row 'work-root' 'fail' "the manifest's work root cannot be written into a room.yaml: $_"; Unmet 'human' }
+    if ($yaml) {
+        $sr = Invoke-Remote (Get-RoomSetupScript -Os $kind -Yaml $yaml -Mode plan)
+        $sp = ConvertFrom-RoomSetup $sr.Out $sr.Code
+        if ($sp.Kind -eq 'ok') {
+            $rows = if ($mf.agentpack) { @(Set-PackRowLatest $sp.Rows (Get-HubMirrorCommit $HubAddr $packRepo $packBranch)) } else { @($sp.Rows) }
+            foreach ($s in $rows) {
+                if ($s.Status -eq 'human' -or $s.Status -eq 'fail') { Row $s.Step $(if ($s.Status -eq 'human') { 'human' } else { 'fail' }) $s.Detail; Unmet 'human' }
+                else { Row $s.Step (ConvertTo-StepStatus $s.Status) $s.Detail }
+            }
+            foreach ($l in $sp.AdminLines) { Note $l }
+        } elseif ($sp.Kind -eq 'error') {
+            Row 'work-root' 'fail' "atrium room setup refused: $(($sp.Other | Select-Object -First 3) -join ' | ')"; Unmet 'human'
+        } else {
+            Row 'work-root' 'skip' "the atrium on $Target has no 'room setup' yet, so the work root and the agent pack are not read. a provision run installs one"
+        }
     }
-    foreach ($l in $wr.AdminLines) { Note $l }
 }
-# THE AGENT PACK, read only: the record's commit against the hub's own mirror, and the agents the review panel names.
-$aps = Invoke-Remote (Get-AgentPackStateScript $kind)
-$apv = Get-AgentPackVerdict $aps.Out (Get-HubMirrorCommit $HubAddr $(if ($mf -and $mf.agentpack.repo) { "$($mf.agentpack.repo)" } else { 'dovholuknf/dotfiles' }) $(if ($mf -and $mf.agentpack.branch) { "$($mf.agentpack.branch)" } else { 'main' }))
-Row 'agent-pack' $apv.Status $apv.Detail
 
 # ── 7. rows waiting on what is not built ────────────────────────────────────
 

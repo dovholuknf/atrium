@@ -307,6 +307,13 @@ no admin. It takes the place of the shared folder, and it lays out one folder:
 | `V:\localai\cache\pip` | pip's cache | `cache-dir` under `[global]` in `%APPDATA%\pip\pip.ini` |
 | `V:\localai\cache\cargo` | `CARGO_HOME` | a user environment variable, or a profile line on Unix |
 
+None of that is done by the script itself. `provision-room.ps1` writes a `room.yaml` for the machine (`scripts/room-spec.ps1`)
+and runs the room's own `atrium room setup --spec - --plan` on it over ssh before anything is changed, and `--apply` after
+the join. A machine with no atrium yet (or one too old to have `room setup`) is checked by the first run, which installs
+one and then asks. A work root that `room setup` refuses (a relative folder, a drive root, a UNC path) is exit 1 with its
+reason. With no `-WorkRoot` there is no `room.yaml`: the shared folder stays as it was and the agent pack is not installed,
+since it is installed together with a work root.
+
 The caches are written as each tool's own file, so they work before the tool is installed, and a rerun edits the file in
 place and writes nothing when it is already right. When the tool is there it is asked afterwards, and an answer that
 differs (`GOENV`, a project `.npmrc`) is a `warn`. A running room cannot be set, so a rerun reads the settings it serves
@@ -322,8 +329,9 @@ would let the account list the drive and read all of it. A mapped drive belongs 
 ssh, so name a drive letter that is a real disk. On a Windows machine with a second fixed drive and no `-WorkRoot`,
 `provision-room.ps1` and `-Check` say so as a `warn` naming the roomiest drive.
 
-`room-check.ps1` has the same read as two rows, `work-root` (with `work-dirs` and `work-cache`) and `agent-pack`. An
-account that cannot examine a parent is `human` there, and anything else is a `warn`.
+`room-check.ps1` has the same read, the rows of `atrium room setup --plan` for a `room.yaml` rebuilt from the manifest:
+`work-root` (with `work-dirs` and `work-cache`), the four settings, and `agent-pack`. An account that cannot examine a
+parent is `human` there, and anything else is a `warn`.
 
 By hand, as the room's account, with the room stopped for the first:
 
@@ -359,10 +367,11 @@ left alone. A skill that is a link into another repository (two on sg3, `debug-z
 
 The source is the hub's own git mirror of the repository, never the checkout on the operator's machine. The room does not
 fetch it itself: the room's `/git/hub` forwarder is tokenized per card and no card exists when a room is provisioned. So
-the hub machine fetches the mirror, whole, since the hub serves whole fetches only, packs a tarball, and sends it over
-scp. A mirror that cannot be fetched is a `warn`, not a failure, and the run goes on. `room-check.ps1` and
-`provision-room.ps1 -Check` read the record and `warn` when the pack is missing, older than the mirror's commit, or lacks an
-agent the review panel names by default (`c-systems-reviewer`, `go-security-reviewer`, `functional-tester` and
+the hub machine clones the mirror, whole, since the hub serves whole fetches only, tars the checkout with its `.git`, and
+sends it over scp, and the room's `atrium room setup --apply --pack-dir <folder>` installs from that. A mirror that cannot
+be fetched is a `warn`, not a failure, and the run goes on. `room-check.ps1` and `provision-room.ps1 -Check` read the
+record and `warn` when the pack is missing, older than the mirror's commit (the scripts compare it, since the room is not
+told the hub's address), or lacks an agent the review panel names by default (`c-systems-reviewer`, `go-security-reviewer`, `functional-tester` and
 `nonfunctional-tester`).
 
 ## If you really must run as yourself

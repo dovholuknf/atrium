@@ -29,6 +29,13 @@ func (e exitCodeError) Error() string { return fmt.Sprintf("exit %d", e.Code) }
 // Is makes it an already-said failure too, so cobra and Execute print nothing more.
 func (e exitCodeError) Is(target error) bool { return target == errAlreadySaid }
 
+// setupRefused says why the arguments or the spec cannot be used, on stderr, and ends the command with exit 1. alreadySaid
+// prints nothing itself, so without this a refused spec would exit 1 in silence.
+func setupRefused(cmd *cobra.Command, format string, a ...any) error {
+	fmt.Fprintf(cmd.ErrOrStderr(), "atrium room setup: %s\n", fmt.Sprintf(format, a...))
+	return alreadySaid(format, a...)
+}
+
 // roomSetupCmd is `atrium room setup`: converge THIS machine to a room.yaml. It runs on the room, as the room's account.
 func roomSetupCmd() *cobra.Command {
 	var (
@@ -46,10 +53,10 @@ Exit codes: 0 everything is as the spec says, 13 an administrator must run the l
 		Args: cobra.NoArgs,
 		RunE: speaksForItself(func(cmd *cobra.Command, _ []string) error {
 			if plan == apply {
-				return alreadySaid("pass exactly one of --plan or --apply")
+				return setupRefused(cmd, "pass exactly one of --plan or --apply")
 			}
 			if specPath == "" {
-				return alreadySaid("--spec <file|-> is required")
+				return setupRefused(cmd, "--spec <file|-> is required")
 			}
 			var data []byte
 			var err error
@@ -59,15 +66,15 @@ Exit codes: 0 everything is as the spec says, 13 an administrator must run the l
 				data, err = os.ReadFile(specPath)
 			}
 			if err != nil {
-				return alreadySaid("read the spec: %v", err)
+				return setupRefused(cmd, "read the spec: %v", err)
 			}
 			spec, err := roomspec.Parse(data)
 			if err != nil {
-				return alreadySaid("%v", err)
+				return setupRefused(cmd, "%v", err)
 			}
 			ad, err := roomspec.ForOS(spec.OS)
 			if err != nil {
-				return alreadySaid("%v", err)
+				return setupRefused(cmd, "%v", err)
 			}
 			db = orDefault(db, defaultRoomDB())
 			fetch := setupFetcher(hubAddr, packDir)
