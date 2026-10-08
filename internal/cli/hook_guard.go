@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"path/filepath"
+	"runtime"
 	"strings"
 
 	"github.com/dovholuknf/atrium/internal/guard"
@@ -100,7 +101,12 @@ func guardFixesRules(in guard.Input, path string) bool {
 	if a == "" || b == "" {
 		return false
 	}
-	return strings.EqualFold(filepath.Clean(a), filepath.Clean(b))
+	a, b = filepath.Clean(a), filepath.Clean(b)
+	if runtime.GOOS == "windows" || runtime.GOOS == "darwin" {
+		// Their file systems ignore case, so any spelling is the same file.
+		return strings.EqualFold(a, b)
+	}
+	return a == b
 }
 
 func guardOutput(d guard.Decision) []byte {
