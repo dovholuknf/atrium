@@ -79,9 +79,16 @@ func TestBriefPromptPutsTheReadFirst(t *testing.T) {
 		t.Fatalf("the task was dropped: %q", p)
 	}
 
-	empty := briefPrompt("")
-	if !strings.Contains(empty, "do what it asks") {
-		t.Fatalf("an empty prompt should still tell it to act on the brief: %q", empty)
+	want := "Read BRIEF.md in this directory first. It holds everything you are expected to know. " +
+		"Re-read it whenever you lose the thread rather than guessing.\nThen: do as BRIEF.md describes.\n\n" +
+		LaunchEndingLine
+	for _, in := range []string{"", "read BRIEF.md and do it", "Read BRIEF.md and do it.", "read BRIEF.md and do it\n\n" + LaunchEndingLine} {
+		if got := briefPrompt(in); got != want {
+			t.Fatalf("briefPrompt(%q) = %q, want %q", in, got, want)
+		}
+	}
+	if n := strings.Count(briefPrompt("do the thing\n\n"+LaunchEndingLine), "atrium_done"); n != 1 {
+		t.Fatalf("the ending appears %d times", n)
 	}
 }
 

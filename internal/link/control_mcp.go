@@ -241,6 +241,10 @@ func (c *controlMCP) server(class ctlClass) *mcp.Server {
 			"an `fyi` on its card and is not interrupted. Only `progress` with no `ask` can be an `fyi`: `done`, `blocked`, `question` and anything with an `ask` are always `needs`.",
 	}, c.reportHandler)
 
+	end := EndDoor{Report: c.endReport}
+	addTool(s, class, &mcp.Tool{Name: "atrium_done", Description: doneToolDesc}, end.Done)
+	addTool(s, class, &mcp.Tool{Name: "atrium_blocked", Description: blockedToolDesc}, end.Blocked)
+
 	addTool(s, class, &mcp.Tool{
 		Name: "atrium_task",
 		Description: "One card: its status, what its runner is doing right now, and its recent " +
@@ -982,6 +986,36 @@ func (c *controlMCP) reportHandler(ctx context.Context, req *mcp.CallToolRequest
 	return nil, out, nil
 }
 
+// endReport files atrium_done and atrium_blocked as the caller's report, by the path reportHandler takes.
+func (c *controlMCP) endReport(ctx context.Context, req *mcp.CallToolRequest, body map[string]any) (EndOutput, error) {
+	out := EndOutput{}
+	me := agentOf(req)
+	if me == "" {
+		return out, fmt.Errorf("this is for a session atrium knows. this call did not say which one it is")
+	}
+	room := roomOf(req)
+	id, _, err := c.resolvePeer(ctx, room, me)
+	if err != nil {
+		return out, err
+	}
+	var res struct {
+		Recorded     bool   `json:"recorded"`
+		Status       string `json:"status"`
+		LauncherTold bool   `json:"launcher_told"`
+	}
+	if err := c.ask(ctx, http.MethodPost, "/v1/tasks/"+url.PathEscape(id)+"/report", room, body, &res); err != nil {
+		return out, err
+	}
+	out.Recorded, out.Status, out.LauncherTold = res.Recorded, res.Status, res.LauncherTold
+	if res.Recorded {
+		c.followItem(ctx, room, id, fmt.Sprint(body["status"]), me)
+	}
+	if !res.LauncherTold {
+		out.Note = "recorded on your card. nobody launched you, so there was nobody else to tell."
+	}
+	return out, nil
+}
+
 // ── one card ────────────────────────────────────────────────────────────────────
 
 type taskInput struct {
@@ -1187,11 +1221,12 @@ func lastN[T any](s []T, n int) []T {
 // lowercase and free of commas and spaces survives NormalizeTags unchanged.
 const OriginTag = "origin:agent"
 
-// reportLine is appended to every agent launch's prompt. See launchHandler. ONE INSTRUCTION, the
-// same the room's nudge gives (daemon.silentNudgeText): atrium_say the launcher. It never names
-// atrium_report, which a launcher's brief may forbid because a done report closes the card.
-const reportLine = "Before you end your turn, tell your launcher with atrium_say: done <sha> when the work is " +
-	"finished, blocked: <one line> when something stops you, or the question when you need an answer."
+// reportLine is appended to every agent launch's prompt. See launchHandler. How a worker ends: atrium_done or
+// atrium_blocked. The same text as daemon.LaunchEndingLine, which a test keeps equal.
+const reportLine = "Before you end your turn, tell your launcher either:\n" +
+	"- atrium_done <sha> when the work is finished\n" +
+	"- atrium_blocked <up to 50 words> when something stops you, such as a question you need answered, a tool you " +
+	"need installed, or a permission you need."
 
 // AgentLaunchTags is what an agent launch's tags become: the caller's own, the origin marker,
 // and a WORKER marker unless the caller says it is a director or already a subagent. The
@@ -1258,11 +1293,14 @@ func (c *controlMCP) launcherTags(ctx context.Context, callerRoom, who string) [
 	return nil
 }
 
+// ReportLine is how a launch prompt ends, for a test outside the package.
+const ReportLine = reportLine
+
 // WithReportLine ends a launch prompt with the one line of the worker contract a prompt most
 // often leaves out. An empty prompt stays empty: there is nothing to scope.
 func WithReportLine(prompt string) string {
 	prompt = strings.TrimSpace(prompt)
-	if prompt != "" {
+	if prompt != "" && !strings.HasSuffix(prompt, reportLine) {
 		prompt += "\n\n" + reportLine
 	}
 	return prompt

@@ -44,8 +44,11 @@ var workerTools = map[string]bool{
 	"atrium_peers":  true,
 	"atrium_say":    true,
 	"atrium_report": true,
-	"atrium_task":   true,
-	"atrium_alias":  true,
+	// How a worker ends, in one line. See ctl_end.go.
+	"atrium_done":    true,
+	"atrium_blocked": true,
+	"atrium_task":    true,
+	"atrium_alias":   true,
 	// Workers write the reports, so a worker publishes. See docs_mcp.go.
 	"atrium_publish": true,
 	// The cards that push to the hub are workers. See git_hub.go.

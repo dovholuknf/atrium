@@ -107,6 +107,8 @@ func addPeerTools(s *mcp.Server) {
 			"an `fyi` on its card and is not interrupted. Only `progress` with no `ask` can be an `fyi`: `done`, `blocked`, `question` and anything with an `ask` are always `needs`.",
 	}, reportHandler)
 
+	link.AddEndTools(s, link.EndDoor{Report: endReport})
+
 	mcp.AddTool(s, &mcp.Tool{
 		Name: "atrium_launch",
 		Description: "Start a new agent in a directory, on its own card, supervised by atrium.\n\n" +
@@ -691,15 +693,7 @@ func writeBrief(cwd, brief string) (string, error) {
 // task still has to be in the prompt rather than only in the file, or the
 // session reads a briefing and sits there waiting to be told what to do with
 // it.
-func briefPrompt(prompt string) string {
-	read := "Read " + briefFile + " in this directory first. It is your briefing, written " +
-		"for you by another agent, and it holds everything you are expected to know. " +
-		"Re-read it whenever you lose the thread rather than guessing."
-	if prompt == "" {
-		return read + " Then do what it asks."
-	}
-	return read + "\n\nThen: " + prompt
-}
+func briefPrompt(prompt string) string { return daemon.BriefPrompt(briefFile, prompt) }
 
 func launchHandler(ctx context.Context, _ *mcp.CallToolRequest, in LaunchInput) (
 	*mcp.CallToolResult, LaunchOutput, error) {
