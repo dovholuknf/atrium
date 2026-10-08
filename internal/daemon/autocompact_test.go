@@ -226,3 +226,60 @@ func TestTheCaptionIsWhereTheSessionReallyCompacts(t *testing.T) {
 		t.Fatalf("card details = %+v", got)
 	}
 }
+
+// The runner's compaction point is read from claude's own settings, and it caps the limit a card cycles at.
+func TestACardIsCycledBeforeClaudesOwnSettingsCompactIt(t *testing.T) {
+	d := testDaemon(t)
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	if err := os.MkdirAll(filepath.Join(home, ".claude"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	write := func(body string) {
+		t.Helper()
+		if err := os.WriteFile(filepath.Join(home, ".claude", "settings.json"), []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	task := &store.Task{ID: "x", Runner: "claude", Worktree: t.TempDir(),
+		Overrides: map[string]string{"context_limit_k": "900"}}
+
+	if got := d.runnerCompactAtK(task); got != 0 {
+		t.Fatalf("no settings file gave %dk, want none", got)
+	}
+	if d.cycleLimit(task) != 900000 {
+		t.Fatalf("with no settings the limit is %d, want the card's 900k", d.cycleLimit(task))
+	}
+
+	write(`{"autoCompactEnabled": true, "autoCompactWindow": 253000}`)
+	if got := d.runnerCompactAtK(task); got != 220 {
+		t.Fatalf("a 253k window compacts at %dk, want 220k", got)
+	}
+	if got := d.cycleLimit(task); got != 200000 {
+		t.Fatalf("a 900k card limit under that cycles at %d, want 200000", got)
+	}
+
+	write(`{"autoCompactEnabled": false, "autoCompactWindow": 253000}`)
+	if got := d.runnerCompactAtK(task); got != 0 {
+		t.Fatalf("compaction switched off gave %dk, want none", got)
+	}
+
+	// A project's own file is narrower and wins.
+	write(`{"autoCompactWindow": 253000}`)
+	if err := os.MkdirAll(filepath.Join(task.Worktree, ".claude"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(task.Worktree, ".claude", "settings.json"),
+		[]byte(`{"autoCompactWindow": 143000}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if got := d.runnerCompactAtK(task); got != 110 {
+		t.Fatalf("a project window of 143k compacts at %dk, want 110k", got)
+	}
+
+	// Not claude: not read.
+	if got := d.runnerCompactAtK(&store.Task{Runner: "codex", Worktree: task.Worktree}); got != 0 {
+		t.Fatalf("a non-claude runner gave %dk", got)
+	}
+}

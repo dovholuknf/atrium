@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -124,10 +125,13 @@ func TestAHeldAskWithNobodyPollingIsDropped(t *testing.T) {
 	}
 }
 
-// runGateScript runs scripts/hub-restart-gate.ps1 against a hub, skipping when
-// pwsh is not installed.
+// runGateScript runs scripts/hub-restart-gate.ps1 against a hub. It is a PowerShell
+// script, so it runs on Windows only and is skipped there when pwsh is not installed.
 func runGateScript(t *testing.T, hub string, args ...string) (chan int, chan string) {
 	t.Helper()
+	if runtime.GOOS != "windows" {
+		t.Skip("the gate script is PowerShell, and pwsh is not started off Windows")
+	}
 	pwsh, err := exec.LookPath("pwsh")
 	if err != nil {
 		t.Skip("pwsh is not installed")

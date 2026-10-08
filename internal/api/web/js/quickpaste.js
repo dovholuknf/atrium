@@ -35,10 +35,79 @@ addEventListener("keydown", e => {
 
 const QUICKPASTE_URL = /^https?:\/\/\S+$/;
 
+const QUICKPASTE_HELP = "a pull request, an issue, a branch or a support ticket. it is read as a paste on the board is.";
+
 function quickPasteSay(text, warn) {
   const note = document.getElementById("qp-note");
   note.textContent = text;
   note.classList.toggle("warn", !!warn);
+  note.classList.remove("seen");
+  note.removeAttribute("data-kind");
+}
+
+// WHAT THE BOX READ THE LINK AS, LIVE. The same /v1/recognise a paste on the board asks, a moment after the typing
+// stops, and nothing is started or filled in by it. The kind is `pastedOpenKind`'s, read off the captures, so the
+// chip says what Enter would open and a link the open verb takes no card for is plainly just a link.
+const QUICKPASTE_KINDS = { pr: "PR", issue: "issue", support: "ticket", branch: "branch", "": "link" };
+let quickPasteTimer = 0;
+let quickPasteSeq = 0;
+
+function quickPasteSeen(got) {
+  const note = document.getElementById("qp-note");
+  const kind = pastedOpenKind(got);
+  const v = got.vars || {};
+  const bits = [];
+  if (v.org && v.repo) bits.push(v.org + "/" + v.repo + (Number(v.num) > 0 ? "#" + v.num : ""));
+  else if (Number(v.num) > 0) bits.push("#" + v.num);
+  const detail = got.title && !bits.includes(got.title) ? got.title : bits[0] || "";
+  const problem = kind ? "" : got.problem;
+  const bad = problem || got.fetch_error;
+  note.textContent = "";
+  const chip = document.createElement("span");
+  chip.className = "qpkind";
+  chip.textContent = QUICKPASTE_KINDS[kind];
+  const label = document.createElement("span");
+  label.className = "qplabel";
+  label.textContent = got.label || got.recogniser || "";
+  note.append(chip, label);
+  if (detail || bad) {
+    const rest = document.createElement("span");
+    rest.className = "qpdetail";
+    rest.textContent = bad ? (got.fetch_error ? "the fetch failed: " + got.fetch_error : problem) : detail;
+    note.append(rest);
+  }
+  note.setAttribute("data-kind", kind || "link");
+  note.classList.add("seen");
+  note.classList.toggle("warn", !!bad);
+}
+
+async function quickPasteRecognise() {
+  const url = document.getElementById("qp-url").value.trim();
+  const seq = ++quickPasteSeq;
+  if (!QUICKPASTE_URL.test(url)) {
+    quickPasteSay(QUICKPASTE_HELP);
+    return;
+  }
+  let got;
+  try {
+    got = await api("/v1/recognise", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ url })
+    });
+  } catch (e) {
+    if (seq !== quickPasteSeq) return;
+    quickPasteSay(/404|no recogniser/i.test(e.message)
+      ? "nothing here knows what that is yet. add a row for it under runners, recognisers." : e.message, true);
+    return;
+  }
+  if (seq === quickPasteSeq) quickPasteSeen(got);
+}
+
+// `now` for a link that arrived whole (the clipboard), a short wait for one being typed.
+function quickPasteWatch(now) {
+  clearTimeout(quickPasteTimer);
+  if (now) quickPasteRecognise();
+  else quickPasteTimer = setTimeout(quickPasteRecognise, 350);
 }
 
 // `url` and `say` reopen the box on a link nothing recognised, with the reason.
@@ -50,8 +119,9 @@ async function openQuickPaste(url, say) {
   if (document.querySelector("dialog[open]")) return;
   const box = document.getElementById("qp-url");
   box.value = url || "";
-  quickPasteSay(say || "a pull request, an issue or a support link. it is recognised the same as a paste on the board.",
-    !!say);
+  clearTimeout(quickPasteTimer);
+  quickPasteSeq++;
+  quickPasteSay(say || QUICKPASTE_HELP, !!say);
   dlg.showModal();
   box.focus();
   if (url) return;
@@ -70,11 +140,14 @@ async function openQuickPaste(url, say) {
   if (dlg.open && !box.value && QUICKPASTE_URL.test(text)) {
     box.value = text;
     box.select();
+    quickPasteWatch(true);
   }
 }
 
 async function quickPasteGo(edit) {
   const url = document.getElementById("qp-url").value.trim();
+  clearTimeout(quickPasteTimer);
+  quickPasteSeq++;
   if (!QUICKPASTE_URL.test(url)) {
     quickPasteSay("that is not a link. paste one that starts with http:// or https://.", true);
     return;
@@ -101,6 +174,7 @@ async function quickPasteGo(edit) {
 (function () {
   const box = document.getElementById("qp-url");
   if (!box) return;
+  box.addEventListener("input", () => quickPasteWatch(false));
   box.addEventListener("keydown", e => {
     if (e.key !== "Enter") return;
     e.preventDefault();

@@ -36,12 +36,25 @@ function peekCard(id) {
 // hub's limit for its harness, or the built-in default. Empty for a row from a daemon that does not say.
 function limitSource(t) {
   const s = t && t.context_size && t.context_size.source;
-  return s === "card" || s === "hub" || s === "default" ? s : "";
+  return s === "card" || s === "hub" || s === "default" || s === "runner" ? s : "";
 }
-// "200k from hub", or just "200k" when the source is not known.
+// "200k from hub", or just "200k" when the source is not known. A limit its runner's own compaction point cut says
+// so and says what it was cut from: "200k, capped by its runner from 900k (card)".
 function limitFrom(t) {
   const s = limitSource(t);
+  const c = t && t.context_size || {};
+  if (s === "runner") {
+    return `${peekThresholdK(t)}k, capped by its runner from ${c.wanted_k || "?"}k${c.wanted_from ? " (" + c.wanted_from + ")" : ""}`;
+  }
   return `${peekThresholdK(t)}k${s ? " from " + s : ""}`;
+}
+// What the card's own limit is doing, for the details and the menu: empty when it has none.
+function ownLimitNote(t) {
+  const c = t && t.context_size;
+  if (!c || !c.own_k) return "";
+  return c.source === "runner" && c.wanted_from === "card"
+    ? `its own limit, ${c.own_k}k, is above its runner's ceiling of ${c.ceiling_k}k`
+    : `its own limit is ${c.own_k}k`;
 }
 
 function peekThresholdK(t) {

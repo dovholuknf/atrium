@@ -1736,6 +1736,16 @@ func (s *Server) patchTask(w http.ResponseWriter, r *http.Request) {
 				writeErr(w, http.StatusBadRequest, err)
 				return
 			}
+			// Refused, not capped, so a number typed in is never quietly not the number in force. A limit the
+			// runner would compact before is a cycle that never gets to run.
+			if k, _ := strconv.Atoi(clean); k > 0 && before != nil {
+				if c := RunnerCeilingK(before); c > 0 && k > c {
+					writeErr(w, http.StatusBadRequest, fmt.Errorf("context_limit_k %dk is above this card's ceiling of %dk: "+
+						"its runner compacts on its own at %dk, so atrium has to cycle it first. use %dk or less, or empty "+
+						"for the hub's limit", k, c, RunnerCompactAtK(before), c))
+					return
+				}
+			}
 			body.Overrides[OverrideContextLimitK] = clean
 		}
 		if v, ok := body.Overrides[OverrideContextCycle]; ok {

@@ -1186,15 +1186,21 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
 <!-- Paste a link, start its card: ctrl-alt-r or the link button in the header. js/quickpaste.js. `type="search"`
      for the switcher's reason below: a lone text field gets an autofill bubble. -->
 <dialog id="quickpaste">
-  <input type="search" id="qp-url" class="swq" spellcheck="false" autocomplete="off"
-    placeholder="paste a link: a pull request, an issue, a support thread">
-  <div id="qp-note" class="qpnote"></div>
+  <label class="qpfield" for="qp-url">
+    <svg class="qpicon" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"
+      stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <path d="M10 13a5 5 0 0 0 7.07 0l3-3a5 5 0 0 0-7.07-7.07l-1.7 1.7"/>
+      <path d="M14 11a5 5 0 0 0-7.07 0l-3 3a5 5 0 0 0 7.07 7.07l1.7-1.7"/>
+    </svg>
+    <input type="search" id="qp-url" class="swq" spellcheck="false" autocomplete="off" placeholder="paste a link">
+  </label>
+  <div id="qp-note" class="qpnote" aria-live="polite"></div>
   <div class="swfoot">
     <span><kbd>enter</kbd> start</span>
     <span><kbd>shift</kbd><kbd>enter</kbd> edit first</span>
     <span><kbd>esc</kbd> close</span>
     <span class="grow"></span>
-    <span>ctrl-alt-r</span>
+    <span class="qpkeys"><kbd>ctrl</kbd><kbd>alt</kbd><kbd>r</kbd></span>
   </div>
 </dialog>
 
@@ -3604,6 +3610,8 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
         <input id="d-ctx-limit" type="number" min="10" max="2000" placeholder="hub's limit"
           onchange="saveCardCycle()" style="max-width:110px">
         <span class="unit">k tokens</span>
+        <button type="button" id="d-ctx-clear" hidden onclick="clearCardLimit()"
+          data-tip="remove this card's own limit, so the hub's applies again">clear</button>
       </div>
       <span class="hintline" id="d-ctx-now"></span>
       <span class="hintline">Past the limit atrium asks the agent to write a handoff and run

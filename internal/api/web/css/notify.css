@@ -270,27 +270,60 @@
     padding: 0 5px; color: var(--body); font-family: inherit;
   }
   #switcher .empty { padding: 18px 12px; text-align: center; }
-  /* Paste a link (js/quickpaste.js): the switcher's field and footer, with a line for what the box will do or why
-     it did not. Wider than the switcher, so a long support or pull request link reads whole. */
-  #quickpaste { width: min(960px, 92vw); padding: 0; border-radius: 12px; }
-  #quickpaste .swq {
-    width: 100%; box-sizing: border-box; font-size: var(--fs-lg);
-    padding: 12px 14px; background: var(--bg-2); color: var(--head);
-    border: 0; border-bottom: 1px solid var(--stroke-dim); border-radius: 0;
-    outline: none;
+  /* Paste a link (js/quickpaste.js): a command palette. A field with an icon and a focus ring, one line under it that
+     is the help until the link is recognised and then says what it was read as, and the keys. Every colour is a
+     token, so each skin draws it, the light ones included. Narrower than it was, since a long link scrolls in the
+     field and the line under it is what is read. */
+  #quickpaste { width: min(640px, 92vw); padding: 0; border-radius: var(--r-lg); top: 14vh; }
+  #quickpaste .qpfield {
+    display: flex; align-items: center; gap: var(--sp-3); margin: var(--sp-4) var(--sp-4) 0;
+    padding: 0 var(--sp-4); background: var(--bg-2); border: 1px solid var(--stroke);
+    border-radius: var(--r-md); color: var(--label); cursor: text;
+    transition: border-color .12s, box-shadow .12s;
   }
-  #quickpaste .qpnote { padding: 10px 14px; color: var(--dim); font-size: var(--fs-sm); }
+  #quickpaste .qpfield:focus-within {
+    border-color: var(--teal); color: var(--teal);
+    box-shadow: 0 0 0 3px rgba(var(--teal-rgb),.28);
+  }
+  #quickpaste .qpicon { flex: none; }
+  #quickpaste .swq {
+    flex: 1 1 auto; min-width: 0; box-sizing: border-box; font-size: var(--fs-xl);
+    padding: 14px 0; background: transparent; color: var(--head);
+    border: 0; border-radius: 0; outline: none; box-shadow: none; appearance: none;
+  }
+  #quickpaste .swq::placeholder { color: var(--label); opacity: 1; }
+  #quickpaste .swq::-webkit-search-cancel-button { appearance: none; }
+  #quickpaste .qpnote {
+    display: flex; align-items: center; gap: var(--sp-3); min-height: 22px;
+    padding: var(--sp-4) var(--sp-5); color: var(--body); font-size: var(--fs-sm); line-height: 1.4;
+  }
   #quickpaste .qpnote.warn { color: var(--warn); }
+  #quickpaste .qpkind {
+    flex: none; padding: 1px 9px; border-radius: var(--r-pill); font-size: var(--fs-xs); font-weight: 600;
+    letter-spacing: .04em; text-transform: uppercase; color: var(--head);
+    background: color-mix(in srgb, var(--qpk, var(--label)) 20%, transparent);
+    border: 1px solid color-mix(in srgb, var(--qpk, var(--label)) 60%, transparent);
+  }
+  #quickpaste .qpnote[data-kind="pr"] { --qpk: var(--teal); }
+  #quickpaste .qpnote[data-kind="issue"] { --qpk: var(--path); }
+  #quickpaste .qpnote[data-kind="support"] { --qpk: var(--warn); }
+  #quickpaste .qpnote[data-kind="branch"] { --qpk: var(--blue); }
+  #quickpaste .qplabel { flex: none; color: var(--head); font-weight: 600; }
+  #quickpaste .qpdetail {
+    flex: 1 1 auto; min-width: 0; color: var(--label); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  #quickpaste .qpnote.warn .qpdetail { color: var(--warn); white-space: normal; }
   #quickpaste .swfoot {
-    display: flex; gap: 10px; align-items: center; flex-wrap: wrap;
-    padding: 8px 12px; border-top: 1px solid var(--stroke-dim);
-    color: var(--dimmest); font-size: var(--fs-xs);
+    display: flex; gap: var(--sp-4); align-items: center; flex-wrap: wrap;
+    padding: var(--sp-3) var(--sp-4); border-top: 1px solid var(--stroke-dim);
+    color: var(--label); font-size: var(--fs-xs);
   }
   #quickpaste .swfoot kbd {
-    background: var(--chip); border: 1px solid var(--stroke-dim); border-radius: 4px;
-    padding: 0 5px; color: var(--body); font-family: inherit;
+    background: var(--chip); border: 1px solid var(--stroke); border-bottom-width: 2px; border-radius: var(--r-sm);
+    padding: 0 6px; margin-right: 3px; min-width: 18px; text-align: center; color: var(--head);
+    font-family: var(--mono); font-size: var(--fs-xs); line-height: 1.5;
   }
-  /* One terminal in its own window: the same page with everything that is not the terminal hidden.
+  #quickpaste .qpkeys kbd { color: var(--label); }  /* One terminal in its own window: the same page with everything that is not the terminal hidden.
 
      Hidden rather than removed, so every code path keeps working. The session list, the card dialog and the
      settings all still exist here and are simply never shown, which makes this a mode of the board and not a
