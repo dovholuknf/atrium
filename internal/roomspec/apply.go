@@ -221,17 +221,28 @@ func checkMovedPackDir(goos, dir string, h Home, workRoot string, others []strin
 	if strings.ContainsAny(d, "%$") {
 		return "it holds a % or $ that was not expanded"
 	}
+	if goos == Windows {
+		if strings.Contains(d[2:], ":") {
+			return "it holds a : after the drive letter"
+		}
+		for i := 0; i+1 < len(d); i++ {
+			if d[i] == '~' && d[i+1] >= '0' && d[i+1] <= '9' {
+				return "it holds a ~ and a digit, a short 8.3 name that could be any folder"
+			}
+		}
+	}
 	for _, seg := range strings.Split(d, "/") {
 		if seg == ".." {
 			return "it holds .."
 		}
 	}
+	d = path.Clean(d) // /./ and // are the same folder, so the comparisons below see it as it is
 	under := func(p, root string) bool {
 		root = fold(slash(root))
 		return root != "" && strings.HasPrefix(fold(p)+"/", root+"/") && fold(p) != root
 	}
 	for _, o := range others {
-		o = slash(o)
+		o = path.Clean(slash(o))
 		if fold(d) == fold(o) || under(d, o) || under(o, d) {
 			return "it is the folder of another runner's pack, or inside or around it: " + o
 		}
@@ -262,6 +273,8 @@ func packStep(spec *Spec, a Adapter, v View, host *Host, pk Pack, lk *Lock, add 
 			add(name, StatusFail, fmt.Sprintf("%s=\"%s\" is not used, nothing was installed: %s", k, strings.Map(printable, raw(k)), why))
 			return
 		}
+		layout.Dir = path.Clean(slash(layout.Dir))
+		dir = layout.Dir
 	}
 	full, _ := spec.PackFor(pk.Runner)
 	rec := ReadRecord(v.FS, dir)
