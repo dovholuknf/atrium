@@ -255,6 +255,9 @@ type newContext struct {
 	// abandoned marks a failed chip seeded at startup from the journal. A
 	// SessionStart cannot clear it: see sessionStarted.
 	abandoned bool
+	// typing is set while atrium's own write to the terminal is under way. It is
+	// the only time board typing is refused. See typingHeld.
+	typing bool
 }
 
 type newContexts struct {
@@ -489,7 +492,27 @@ func (d *Daemon) newContextFor(taskID string) any {
 	if cur == nil {
 		return nil
 	}
-	return newContextView(cur)
+	v := newContextView(cur)
+	if cur.step != NewContextFailed {
+		v["typing"] = cur.typing && !cur.capOnly
+		if cur.typing {
+			v["label"] = "atrium is typing into the terminal"
+		}
+		// What the operator composed while a write was under way waits as an ordinary
+		// held message, and the card says how many.
+		if msgs, err := d.st.PendingMessages(taskID); err == nil {
+			q := 0
+			for _, m := range msgs {
+				if m.FromPeer == "" {
+					q++
+				}
+			}
+			if q > 0 {
+				v["queued"] = q
+			}
+		}
+	}
+	return v
 }
 
 // newContextView carries the wording, so the board says what the daemon means
@@ -863,7 +886,9 @@ func (d *Daemon) cyclePrompt(taskID string, gen uint64, path string) error {
 		return mid || !busy
 	}
 	text := newContextLimitPrompt(path, atriumBinary())
+	d.nctx.setTyping(taskID, gen, true)
 	wrote, err := d.typeLabelledGuarded(run, taskID, newContextLabel, text, ok)
+	d.nctx.setTyping(taskID, gen, false)
 	if gone {
 		return errNewContextGone
 	}
@@ -1033,7 +1058,9 @@ func (d *Daemon) ncType(taskID string, gen uint64, label, text string, limit tim
 			return !d.act.dialogOpen(taskID) && !d.ncBusy(taskID) &&
 				d.act.sinceBusy(taskID) >= ncTiming.turnSettle
 		}
+		d.nctx.setTyping(taskID, gen, true)
 		wrote, err := d.typeLabelledGuarded(run, taskID, label, text, quiet)
+		d.nctx.setTyping(taskID, gen, false)
 		if gone {
 			return false, errNewContextGone
 		}

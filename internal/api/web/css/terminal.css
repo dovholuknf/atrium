@@ -555,6 +555,18 @@
     box-shadow: 0 14px 34px rgba(var(--shadow-rgb),.6);
   }
   .pastebox[hidden] { display: none; }
+  .pastebox #t-compose-free { opacity: 1; margin-right: auto; border: 1px solid var(--term-line, var(--stroke)); }
+  .term-ncbar {
+    display: flex; align-items: center; gap: 8px; padding: 3px 10px;
+    font: var(--fs-xs)/1.4 var(--mono); color: var(--term-fg, var(--dim));
+    border-top: 1px solid var(--term-line, var(--stroke-dim));
+  }
+  .term-ncbar[hidden] { display: none; }
+  .term-ncbar button {
+    all: unset; cursor: pointer; margin-left: auto; padding: 2px 9px; border-radius: var(--r-sm);
+    border: 1px solid var(--term-line, var(--stroke)); font: var(--fs-sm)/1.2 var(--mono);
+  }
+  .term-ncbar button:hover { background: rgba(255,255,255,.08); }
   .pastebox-say {
     font: var(--fs-xs)/1.4 var(--mono); color: var(--term-fg, var(--dim));
     opacity: .8;
@@ -563,7 +575,7 @@
     background: rgba(var(--shadow-rgb),.25);
     border: 1px solid var(--term-line, var(--stroke-dim));
     color: var(--term-fg, var(--head)); border-radius: var(--r-sm);
-    padding: 6px 8px; min-height: 96px; resize: vertical;
+    padding: 6px 8px; min-height: 96px; resize: vertical; width: 100%; box-sizing: border-box;
     font: var(--fs-sm)/1.35 var(--mono);
   }
   .pastebox textarea:focus { outline: none; border-color: var(--term-thumb-hi, var(--blue)); }

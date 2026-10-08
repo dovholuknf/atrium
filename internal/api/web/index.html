@@ -606,6 +606,20 @@ Exports honor whatever filter is applied.">?</span>
             <button onclick="closePasteBox()" aria-label="close (escape)" data-tip="close (escape)">&times;</button>
           </div>
         </div>
+        <!-- The compose box: atrium is typing into this card for a new context, so a key typed now would be
+             dropped. It opens on the first one, seeded with it, and the text is queued on the card and typed when
+             the cycle ends. The button is the way out: it stops the cycle and gives the terminal back. See
+             js/compose.js. -->
+        <div class="pastebox" id="t-compose" hidden role="dialog" aria-label="message to send when the new context is ready">
+          <div class="pastebox-say">starting a new context, this is sent when it is ready</div>
+          <textarea id="t-compose-in" spellcheck="false" autocomplete="off"></textarea>
+          <div class="pastebox-row">
+            <button id="t-compose-free" onclick="composeFree()"
+              data-tip="stop the new context, send what is queued and type in the terminal now">let me type</button>
+            <button onclick="composeSend()" data-tip="queue it (enter)">queue</button>
+            <button onclick="composeClose()" aria-label="discard (escape)" data-tip="discard (escape)">&times;</button>
+          </div>
+        </div>
         <!-- The walk drawer sits BESIDE the one terminal and never replaces it: a second xterm on a card is the
              re-entry that spun the board. `.term-body` is only a row to hold both. See js/walk.js. -->
         <div class="term-body">
@@ -693,6 +707,12 @@ Exports honor whatever filter is applied.">?</span>
         <!-- What atrium thinks is on the input line, and whether a say may be
              typed in. A debug readout, off unless switched on. See js/typing.js. -->
         <div class="term-typing" id="t-typing" role="status" hidden></div>
+        <!-- The way out of a new context, always on screen while one is under way. See js/compose.js. -->
+        <div class="term-ncbar" id="t-ncbar" role="status" hidden>
+          <span id="t-ncbar-say"></span>
+          <button type="button" tabindex="-1" onclick="composeStop()"
+            data-tip="stop the new context, send what is queued and type in the terminal now">let me type</button>
+        </div>
         <!-- Keep the shortcut strip to one line, listing keys and actions. The
              line, or its expando, opens the drawer above it. -->
         <div class="term-help" onclick="toggleTermDrawer()">
@@ -3771,6 +3791,7 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
 <script src="/js/termfull.js"></script>
 <script src="/js/inputlag.js"></script>
 <script src="/js/typing.js"></script>
+<script src="/js/compose.js"></script>
 <script src="/js/peek-debug.js"></script>
 <script src="/js/theme-debug.js"></script>
 <script src="/js/termtrace.js"></script>

@@ -11,8 +11,8 @@ import (
 	"github.com/coder/websocket"
 )
 
-// Typing from a board while a new context runs is dropped, acked and refused out
-// loud. Once the cycle ends the same typing reaches the pty.
+// Typing from a board while atrium itself types for a new context is dropped, acked
+// and refused out loud. While the cycle waits, or once it ends, typing reaches the pty.
 func TestTypingDuringANewContextIsRefusedAndAcked(t *testing.T) {
 	d := testDaemon(t)
 	f, _ := sizedSession(t, d, "nc-input", 120, 30)
@@ -54,6 +54,21 @@ func TestTypingDuringANewContextIsRefusedAndAcked(t *testing.T) {
 	if !ok {
 		t.Fatal("could not begin a new context")
 	}
+	// Waiting on the agent holds nothing: the key reaches the terminal.
+	send(attachIn{T: "in", D: "waiting-bytes", ID: "p0"})
+	select {
+	case fr := <-frames:
+		if fr != "in-done:p0" {
+			t.Fatalf("want in-done:p0 while the cycle only waits, got %q", fr)
+		}
+	case <-ctx.Done():
+		t.Fatal("no ack while the cycle waits")
+	}
+	if w := f.written(); !strings.Contains(w, "waiting-bytes") {
+		t.Fatalf("typing did not reach the pty while the cycle waited: %q", w)
+	}
+	// Only atrium's own write refuses it.
+	d.nctx.setTyping("nc-input", gen, true)
 	send(attachIn{T: "in", D: "held-bytes", ID: "p1"})
 	seen := map[string]bool{}
 	for len(seen) < 2 {
@@ -71,7 +86,6 @@ func TestTypingDuringANewContextIsRefusedAndAcked(t *testing.T) {
 		t.Fatalf("typing reached the pty during a new context: %q", w)
 	}
 
-	_ = gen
 	d.nctx.clear("nc-input")
 	send(attachIn{T: "in", D: "free-bytes", ID: "p2"})
 	select {

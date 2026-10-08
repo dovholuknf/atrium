@@ -977,8 +977,13 @@ function newContextChip(t) {
       >new context failed</span>`;
   }
   const word = NEW_CONTEXT_WORDS[n.step] || n.step;
+  // What the operator queued while atrium was typing waits on the card until the cycle ends. The way out ("let me
+  // type") is on the terminal's own bar and in the compose box. See js/compose.js.
+  const q = Number(n.queued) || 0;
+  const queued = q ? `<span class="chip" data-tip="typed into the card when the new context ends"
+    >${q} message${q === 1 ? "" : "s"} queued</span>` : "";
   return `<span class="chip" data-tip="${esc("context cycle, step " + n.n + " of " + n.of + ": " + n.label)}"
-    >context ${n.n}/${n.of}: ${esc(word)}</span>`;
+    >context ${n.n}/${n.of}: ${esc(word)}</span>${queued}`;
 }
 const NEW_CONTEXT_WORDS = { limit: "waiting for ack", clear: "clearing", wake: "waking", capture: "handoff" };
 

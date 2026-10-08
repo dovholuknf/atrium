@@ -588,6 +588,7 @@ function paintTermChips(task) {
        ><button class="copybit" data-tip="copy this path"
          onclick="event.stopPropagation();copyPath(this.parentNode)"
          >${copyIcon()}</button>${esc(task.worktree || "")}</span>`;
+  if (typeof composeBar === "function") composeBar(task);
 }
 
 

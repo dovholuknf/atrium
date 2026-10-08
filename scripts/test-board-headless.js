@@ -9995,10 +9995,81 @@ async function contextCycleSection(browser, base) {
 
     // The chip names the step in words.
     const chip = await wp.evaluate(() => newContextChip(lastTasks.find(t => t.id === "ll-cycle")));
-    if (!/context 1\/3: waiting for ack\. waiting for: limit prompt typed/.test(chip)) fail("the cycle chip does not say 'context 1/3: waiting for ack': " + chip);
+    if (!/context 1\/3: waiting for ack/.test(chip)) fail("the cycle chip does not say 'context 1/3: waiting for ack': " + chip);
     const words = await wp.evaluate(() => ["clear", "wake"].map(step => newContextChip({ id: "x",
       new_context: { step, n: step === "clear" ? 2 : 3, of: 3, label: "" } })));
     if (!/2\/3: clearing/.test(words[0]) || !/3\/3: waking/.test(words[1])) fail("the clear and wake chips read " + words.join(" | "));
+
+    // THE WAY OUT AND THE QUEUE. The card says how many messages wait and carries a "let me type" that
+    // stops the cycle; the room refusing a key opens the compose cbox seeded with it; Enter queues it as a
+    // message; "let me type" in the cbox dismisses the cycle and Escape discards.
+    const wayOut = await wp.evaluate(() => newContextChip({ id: "x",
+      new_context: { step: "limit", n: 1, of: 3, label: "", queued: 1 } }));
+    if (!/1 message queued/.test(wayOut)) fail("the cycle chip has no 'N message queued': " + wayOut);
+    const ncbar = await wp.evaluate(() => {
+      termTask = { id: "ll-cycle" };
+      composeBar({ new_context: { step: "limit", n: 1, of: 3, label: "waiting for atrium ready", queued: 1 } });
+      const b = document.getElementById("t-ncbar");
+      return { hidden: b.hidden, text: b.textContent.replace(/\s+/g, " ") };
+    });
+    if (ncbar.hidden || !/1 message queued/.test(ncbar.text) || !/let me type/.test(ncbar.text))
+      fail("the terminal bar has no way out: " + JSON.stringify(ncbar));
+    const composed = [], freed = [];
+    await wp.route("**/v1/tasks/ll-cycle/message", async route => {
+      composed.push(JSON.parse(route.request().postData() || "{}"));
+      await route.fulfill({ json: { delivered: "queued" } });
+    });
+    await wp.route("**/v1/tasks/ll-cycle/new-context", async route => {
+      if (route.request().method() !== "DELETE") return route.fallback();
+      freed.push(1);
+      await route.fulfill({ json: { card: "ll-cycle", cleared: true } });
+    });
+    await wp.evaluate(() => { termTask = { id: "ll-cycle" }; termKind = "runner"; composeNoteTyped("h"); composeRefused(); });
+    const cbox = await wp.evaluate(() => ({ open: composeOpen(), text: document.getElementById("t-compose-in").value }));
+    if (!cbox.open || cbox.text !== "h") fail("a refused key did not open the compose cbox seeded with it: " + JSON.stringify(cbox));
+    if (/Typing dropped/.test(await wp.evaluate(() => document.body.innerText))) fail("the Typing dropped toast is still shown");
+    // COMPOSE_SHOTS=<dir> writes compose-before.png (the old toast) and compose-after.png (the box and the bar).
+    if (process.env.COMPOSE_SHOTS) {
+      await wp.evaluate(() => {
+        for (let e = document.getElementById("t-compose"); e && e !== document.body; e = e.parentElement) {
+          e.hidden = false;
+          if (getComputedStyle(e).display === "none") e.style.display = "block";
+        }
+        // The box is only ever up while atrium itself is typing, so that is the state the bar shows.
+        composeBar({ new_context: { step: "limit", n: 1, of: 3, label: "atrium is typing into the terminal", typing: true, queued: 1 } });
+        const ta = document.getElementById("t-compose-in");
+        ta.value = "also fix the failing test";
+      });
+      await wp.screenshot({ path: path.join(process.env.COMPOSE_SHOTS, "compose-after.png") });
+      await wp.evaluate(() => {
+        document.getElementById("t-compose").hidden = true;
+        toast("Typing dropped", "input is refused during a new context", null, "in-refused");
+      });
+      await wp.waitForTimeout(400);
+      await wp.screenshot({ path: path.join(process.env.COMPOSE_SHOTS, "compose-before.png") });
+      process.exit(0);
+    }
+    await wp.evaluate(() => { document.getElementById("t-compose-in").value = "hello after the cycle"; });
+    await wp.evaluate(() => document.getElementById("t-compose-in").dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true })));
+    await wp.waitForFunction(() => !composeOpen(), null, { timeout: slow(5000) });
+    if (composed.length !== 1 || composed[0].text !== "hello after the cycle") fail("Enter did not queue the text: " + JSON.stringify(composed));
+    await wp.evaluate(() => composeRefused());
+    await wp.evaluate(() => { document.getElementById("t-compose-in").value = "never mind"; });
+    await wp.evaluate(() => document.getElementById("t-compose-in").dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true })));
+    if (await wp.evaluate(() => composeOpen()) || composed.length !== 1) fail("Escape did not discard the compose cbox.");
+    await wp.evaluate(() => composeRefused());
+    await wp.evaluate(() => document.getElementById("t-compose-free").click());
+    await wp.waitForFunction(() => !composeOpen(), null, { timeout: slow(5000) });
+    if (freed.length !== 1) fail("'let me type' did not dismiss the cycle.");
+    // WEDGED: the card still says the cycle is on its limit step (the mock never ends it), and the bar's own
+    // "let me type" must still cancel it and put the bar away. No cycle step has to finish first.
+    await wp.evaluate(() => {
+      composeBar({ new_context: { step: "limit", n: 1, of: 3, label: "waiting for atrium ready" } });
+      document.querySelector("#t-ncbar button").click();
+    });
+    await wp.waitForFunction(() => document.getElementById("t-ncbar").hidden, null, { timeout: slow(5000) });
+    if (freed.length !== 2) fail("the bar's 'let me type' did not cancel a cycle that never ends: " + freed.length);
+    await wp.evaluate(() => { termTask = null; });
 
     // The details: the switch on, no own limit, and a line naming the limit in force and where from.
     await wp.evaluate(() => openTask("ll-cycle"));
@@ -29964,3 +30035,4 @@ async function mGrowlSection(browser) {
   } finally { await st.close(); }
   if (!bad) console.log("mGrowl ok");
 }
+
