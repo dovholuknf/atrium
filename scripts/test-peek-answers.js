@@ -144,6 +144,32 @@ const server = http.createServer((req, res) => {
     if (m2 !== `re ${clock} Q2 (Keep the old flag): keep it\nQ1 (Which branch): main`) fail("the second message was: " + JSON.stringify(m2));
     await shoot("peek-answers-after");
 
+    // CTRL+ENTER: on the last question with another unanswered it goes to that one and stays open. With everything
+    // answered it sends, from any question, and the hint says which it will do.
+    card.seen = { unseen: false, answered: false, questions_at: QAT2, open_questions: ["One?", "Two?", "Three?"] };
+    delete card.answer_drafts;
+    await refresh();
+    await open();
+    await p.waitForSelector('.peek-qa .qa-q[data-qi="2"]');
+    await p.click('.peek-qa .qa-q[data-qi="2"]');
+    await p.fill(".qa-fly textarea", "c");
+    await p.keyboard.press("Control+Enter");
+    await p.waitForTimeout(200);
+    if (!await p.locator(".qa-fly.on").count()) fail("ctrl+enter on the last question must not close the flyout");
+    if (!/Two/.test(await p.innerText(".qa-fly .qa-fq")) && !/One/.test(await p.innerText(".qa-fly .qa-fq"))) fail("ctrl+enter on the last should jump to an unanswered question");
+    if (!/for the next one/.test(await p.innerText(".qa-fly .qa-hint"))) fail("the hint should say next while some are unanswered");
+    const before = messages.length;
+    await p.fill(".qa-fly textarea", "a");
+    await p.keyboard.press("Control+Enter");
+    await p.waitForTimeout(200);
+    await p.fill(".qa-fly textarea", "b");
+    if (!/to send to the agent/.test(await p.innerText(".qa-fly .qa-hint"))) fail("the hint should say send once all are answered");
+    await p.click('.qa-fly .qa-dot[data-dot="0"]');
+    await p.keyboard.press("Control+Enter");
+    await p.waitForTimeout(500);
+    if (messages.length !== before + 1) fail("ctrl+enter with everything answered should send, from any question");
+    if (await p.locator(".qa-fly.on").count()) fail("the flyout should close after the send");
+
     // THE TERMINALS TAB, where the work is done: its row wears the chip, and the chip opens the same peek and flyout.
     card.seen = { unseen: false, answered: false, questions_at: QAT2, open_questions: ["Which branch?"] };
     card.answer_drafts = JSON.stringify([{ at: QAT2, qs: ["Which branch?"], a: ["main"] }]);
