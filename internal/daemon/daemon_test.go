@@ -4,9 +4,9 @@ import (
 	"bytes"
 	"context"
 	"io"
-	"log"
 	"net"
 	"net/http"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -83,35 +83,61 @@ func (b *safeBuf) waitFor(t *testing.T, want string) {
 
 func startDaemon(t *testing.T) (*Daemon, *safeBuf, context.CancelFunc, chan error) {
 	t.Helper()
-	logs := &safeBuf{}
-	old := log.Writer()
-	log.SetOutput(logs)
-	t.Cleanup(func() { log.SetOutput(old) })
+	return startDaemonWith(t, nil)
+}
 
-	dir := t.TempDir()
-	d, err := New(Options{
-		AgentAddr: freePort(t),
-		HumanAddr: freePort(t),
-		DBPath:    filepath.ToSlash(filepath.Join(dir, "atrium.db")),
-		LongPoll:  2 * time.Second,
-		// Never the machine's real one. Run writes this file on start and
-		// deletes it on stop, so a test without this removes the address of
-		// whatever daemon is actually running while the test suite runs.
-		LocationFile: filepath.Join(dir, "daemon.json"),
+// closeAtCleanup closes d when the test ends and waits until its database files can be deleted, so the temp dir's
+// own cleanup, which runs after this one, can remove them. Every helper that makes a daemon on a temp dir uses it.
+//
+// Closing is not enough on Windows. A connection a goroutine was still using when the store closed is let go only
+// when its query ends, and until then the file cannot be deleted.
+func closeAtCleanup(t *testing.T, d *Daemon) {
+	t.Helper()
+	t.Cleanup(func() {
+		_ = d.Close()
+		releaseDB(t, filepath.FromSlash(d.opts.DBPath))
 	})
-	if err != nil {
-		t.Fatalf("daemon did not start: %v", err)
-	}
-	t.Cleanup(func() { d.Close() })
+}
 
+// releaseDB waits until the database at path and its WAL files are gone, deleting each as soon as nothing holds it.
+func releaseDB(t *testing.T, path string) {
+	t.Helper()
+	for _, p := range []string{path, path + "-wal", path + "-shm"} {
+		end := time.Now().Add(10 * time.Second)
+		for {
+			err := os.Remove(p)
+			if err == nil || os.IsNotExist(err) {
+				break
+			}
+			if time.Now().After(end) {
+				t.Errorf("%s is still held 10s after the daemon closed: %v", p, err)
+				break
+			}
+			time.Sleep(50 * time.Millisecond)
+		}
+	}
+}
+
+// runAtCleanup runs d until the test ends, then cancels it and waits for Run to return, so nothing Run started is
+// still writing when the store closes. It is registered after closeAtCleanup and so runs before it.
+func runAtCleanup(t *testing.T, d *Daemon) (context.CancelFunc, chan error) {
+	t.Helper()
 	ctx, cancel := context.WithCancel(context.Background())
 	errCh := make(chan error, 1)
-	go func() { errCh <- d.Run(ctx) }()
-
-	// A listener accepts as soon as net.Listen returns, which is before the
-	// startup lines are written. Waiting on the port would race the log.
-	logs.waitFor(t, "ready. ctrl-c to stop")
-	return d, logs, cancel, errCh
+	done := make(chan struct{})
+	go func() {
+		errCh <- d.Run(ctx)
+		close(done)
+	}()
+	t.Cleanup(func() {
+		cancel()
+		select {
+		case <-done:
+		case <-time.After(30 * time.Second):
+			t.Errorf("the daemon's Run had not returned 30s after it was cancelled")
+		}
+	})
+	return cancel, errCh
 }
 
 // Ctrl-C has to say what it is doing. Several seconds of silence while long

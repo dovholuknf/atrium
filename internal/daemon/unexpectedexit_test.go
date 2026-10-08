@@ -23,7 +23,7 @@ func roomOn(t *testing.T, dir string) *Daemon {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { d.Close() })
+	closeAtCleanup(t, d)
 	return d
 }
 

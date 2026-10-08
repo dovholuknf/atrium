@@ -53,7 +53,7 @@ func dbcopyDaemon(t *testing.T, src string) *Daemon {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { d.Close() })
+	closeAtCleanup(t, d)
 	return d
 }
 

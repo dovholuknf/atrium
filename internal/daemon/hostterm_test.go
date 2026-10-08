@@ -50,7 +50,7 @@ func daemonAt(t *testing.T, dir string) *Daemon {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { d.Close() })
+	closeAtCleanup(t, d)
 	if err := d.st.SetSetting(store.SettingPtyHost, "on"); err != nil {
 		t.Fatal(err)
 	}
