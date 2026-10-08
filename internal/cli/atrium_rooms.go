@@ -43,7 +43,8 @@ func hubRoomsCmd(use, prefix string) *cobra.Command {
 			"pastes it does not choose what it is called.",
 	}
 	c.AddCommand(roomAddCmd(prefix), roomListCmd(prefix), roomTokenCmd(prefix), roomMarkCmd(prefix),
-		roomRemoveCmd(prefix), roomLogCmd(prefix), roomLegacyCmd(prefix), roomGitCmd(prefix))
+		roomRemoveCmd(prefix), roomLogCmd(prefix), roomLegacyCmd(prefix), roomGitCmd(prefix),
+		roomSpecCmd(prefix), roomLockCmd(prefix))
 	return c
 }
 
@@ -225,7 +226,7 @@ func backupsIn(dir, db string) string {
 // roomAddCmd is the command decision 8 is about.
 func roomAddCmd(prefix string) *cobra.Command {
 	var f hubStoreFlags
-	var port, advertise, transport, service string
+	var port, advertise, transport, service, specFile string
 	c := &cobra.Command{
 		Use:   "add <name>",
 		Short: "Add a room and print its join string",
@@ -242,9 +243,24 @@ func roomAddCmd(prefix string) *cobra.Command {
 			}
 			defer store.Close()
 
+			// A SPEC THAT WILL NOT BE KEPT STOPS THE ADD, before the room exists, so nothing is half made.
+			var spec []byte
+			if specFile != "" {
+				if spec, err = readSpecArg(cmd, specFile); err != nil {
+					return err
+				}
+				if err := hubstore.CheckRoomSpec(strings.TrimSpace(args[0]), spec); err != nil {
+					return err
+				}
+			}
 			r, err := store.Add(args[0], transport)
 			if err != nil {
 				return err
+			}
+			if spec != nil {
+				if _, err := store.SetRoomSpec(r.Name, spec, specBy()); err != nil {
+					return err
+				}
 			}
 			line, err := joinStringFor(f.keys(), store, r, port, advertise, transport, service)
 			if err != nil {
@@ -273,6 +289,7 @@ func roomAddCmd(prefix string) *cobra.Command {
 	c.Flags().StringVar(&transport, "transport", "direct",
 		"how this room reaches the hub: direct, ziti or zrok")
 	c.Flags().StringVar(&service, "service", "atrium-hub", "the ziti service, with --transport ziti")
+	c.Flags().StringVar(&specFile, "spec", "", "a room.yaml to keep for this room (- for standard input)")
 	return c
 }
 

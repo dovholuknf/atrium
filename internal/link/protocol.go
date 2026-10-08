@@ -247,10 +247,10 @@ func hearHello(conn net.Conn, br *bufio.Reader) (hello, error) {
 		return h, fmt.Errorf("link version %d, wanted %d", h.V, Version)
 	}
 	switch h.Kind {
-	case "control", "data", "enrol", upgradeKind, announceKind, relayKind, gitKind:
+	case "control", "data", "enrol", upgradeKind, announceKind, relayKind, gitKind, roomSpecKind:
 	default:
 		_ = writeJSON(conn, welcome{OK: false,
-			Error: "a connection is control, data, enrol, upgrade, announce, relay or git"})
+			Error: "a connection is control, data, enrol, upgrade, announce, relay, git or roomspec"})
 		return h, fmt.Errorf("unknown connection kind %q", h.Kind)
 	}
 	return h, conn.SetDeadline(time.Time{})

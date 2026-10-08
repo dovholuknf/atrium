@@ -151,3 +151,21 @@ keeps what it has. A hub can never make a room upgrade.
 daemon code as a room with the board served in-process. The service installers still default to it
 (`docs/release/packaging.md`). Mode A (`atrium hub`, `atrium agent`) and Mode B (`atrium serve`, `status`, `watch`) are
 gone.
+
+## Room spec and lock
+
+What a room is lives as data. The hub keeps, for each room, a desired `room.yaml` (verbatim, with its sha256 and who set
+it when) and the latest observed `room.lock` the room posted (verbatim, with when it arrived). They are separate tables,
+so posting a lock never touches the spec. The hub checks only that `version` is 1, that the spec's `name` is the room's,
+that the size is within bounds (64 KiB for a spec, 256 KiB for a lock) and that no key is named like a token, password,
+secret or key.
+
+- On the hub: `atrium rooms add <name> --spec <file>`, `atrium rooms spec get|set <name>`,
+  `atrium rooms lock get <name>`.
+- On the board, read only: `GET /_hub/rooms/<name>/spec` and `GET /_hub/rooms/<name>/lock`.
+- On the room: `atrium room spec pull [--out file]`. Phase A's `atrium room setup` posts its lock with
+  `cli.PostRoomLock(ctx, dir, lock)`, where `dir` is the room's key directory (empty for the default) and `lock` is the
+  JSON bytes. Underneath are `link.FetchRoomSpec` and `link.PostRoomLock`, which take the room's `link.Dialer`.
+
+The room link carries these on the `roomspec` connection kind: one HTTP request on a connection the room dialled, as the
+room its certificate names. The path names no room, so a room can only read and write its own.

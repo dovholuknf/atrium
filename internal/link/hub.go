@@ -115,6 +115,9 @@ type Hub struct {
 	// one the hello named, set on the request by serveGit and never read from the room's own headers. Nil answers 404,
 	// which a room reads as a hub that cannot be asked, so its row is `claim: pending`. See prclaim.go.
 	PRClaim http.Handler
+	// RoomSpec answers a room's read of its own spec and post of its lock, on the `roomspec` kind, as the room the
+	// certificate named, which serveRoomSpec sets in RoomSpecRoomHeader. Nil refuses the kind. See roomspec.go.
+	RoomSpec http.Handler
 	// Forge answers a room's forge question (a pull request, an issue, a repository to hold) on the same `git` kind
 	// connection, at ForgePrefix. The room is the one the hello named, set by serveGit. Nil answers 404, which a room
 	// reads as a hub that cannot be asked. See forgeroute.go.
@@ -372,6 +375,10 @@ func (h *Hub) take(ctx context.Context, conn net.Conn) {
 		// after the hub said Git. See `git.go`.
 		defer conn.Close()
 		h.serveGit(name, hi.Session, conn, br)
+	case roomSpecKind:
+		// A ROOM ASKING FOR ITS OWN SPEC, or leaving its lock, as HTTP on this connection. See roomspec.go.
+		defer conn.Close()
+		h.serveRoomSpec(name, conn, br)
 	}
 }
 

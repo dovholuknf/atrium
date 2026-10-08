@@ -40,7 +40,7 @@ func TestANewHubsRefusalNamesGit(t *testing.T) {
 		t.Fatal("an unknown kind was accepted")
 	}
 	<-done
-	want := "a connection is control, data, enrol, upgrade, announce, relay or git"
+	want := "a connection is control, data, enrol, upgrade, announce, relay, git or roomspec"
 	if w.Error != want {
 		t.Fatalf("refusal = %q, want %q", w.Error, want)
 	}

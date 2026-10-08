@@ -266,6 +266,7 @@ func roomCmd() *cobra.Command {
 	// session command the /atrium-join skill runs, so a room's join lives here.
 	c.AddCommand(joinCmd())
 	c.AddCommand(roomSettingCmds()...)
+	c.AddCommand(roomSpecPullCmd())
 	return c
 }
 
