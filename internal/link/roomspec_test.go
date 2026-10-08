@@ -189,10 +189,72 @@ func TestBoardReadsSpecAndLockReadOnly(t *testing.T) {
 			t.Errorf("%s spec = %d", m, code)
 		}
 	}
-	if code, _ := get("GET", "/_hub/rooms/nobody/spec"); code != 404 {
-		t.Errorf("unknown room = %d", code)
+	// AN UNKNOWN ROOM AND A ROOM WITH NO SPEC SAY THE SAME WORDS.
+	h.st.Add("bare", hubstore.TransportDirect)
+	c1, b1 := get("GET", "/_hub/rooms/nobody/spec")
+	c2, b2 := get("GET", "/_hub/rooms/bare/spec")
+	if c1 != 404 || c2 != 404 || b1 != b2 {
+		t.Errorf("unknown %d %q, no spec %d %q", c1, b1, c2, b2)
+	}
+	c1, b1 = get("GET", "/_hub/rooms/nobody/lock")
+	c2, b2 = get("GET", "/_hub/rooms/bare/lock")
+	if c1 != 404 || c2 != 404 || b1 != b2 {
+		t.Errorf("lock: unknown %d %q, none %d %q", c1, b1, c2, b2)
 	}
 	if got, _ := h.st.RoomSpecOf("sg3"); got.YAML != specSG3 {
 		t.Fatal("the board changed the spec")
 	}
+}
+
+// A CONNECTION WITH NO CERTIFICATE CANNOT READ OR POST ANOTHER ROOM'S SPEC OR LOCK by naming it in its hello. The hub
+// here asks for authentication as an overlay hub does, and the old path (a legacyConn) proves nothing but the overlay's
+// word, so the kind is refused for it whatever name it claims, enrolled or not.
+func TestLegacyConnectionCannotNameARoomForItsSpec(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	st, err := hubstore.Open(filepath.Join(t.TempDir(), "hub.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, r := range []string{"sg3", "never"} {
+		if _, err := st.Add(r, hubstore.TransportDirect); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := st.SetRoomSpec(r, []byte("version: 1\nname: "+r+"\n"), "t"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	hub := NewHub(Timings{Beat: 200 * time.Millisecond, Silence: 2 * time.Second, Warm: 2})
+	hub.Authenticated = OverlayAuthenticated
+	hub.Enrolled = func(name string) bool { return name == "sg3" }
+	p := NewProxy(hub, nil, "", nil)
+	p.SetRoomSpecs(st)
+	ctx, stop := context.WithCancel(context.Background())
+	go func() { _ = hub.Serve(ctx, legacyListener{ln}) }()
+	t.Cleanup(func() { stop(); ln.Close(); st.Close() })
+
+	for _, claim := range []string{"sg3", "never"} {
+		if _, _, err := FetchRoomSpec(ctx, plain{ln.Addr().String()}, claim); err == nil {
+			t.Errorf("a legacy connection read the spec of %s", claim)
+		}
+		if err := PostRoomLock(ctx, plain{ln.Addr().String()}, claim, lockFor("forged")); err == nil {
+			t.Errorf("a legacy connection posted the lock of %s", claim)
+		}
+		if _, err := st.RoomLockOf(claim); !errors.Is(err, hubstore.ErrNoRoomLock) {
+			t.Errorf("a lock landed on %s: %v", claim, err)
+		}
+	}
+}
+
+// legacyListener hands the hub connections that look like the old overlay path.
+type legacyListener struct{ net.Listener }
+
+func (l legacyListener) Accept() (net.Conn, error) {
+	c, err := l.Listener.Accept()
+	if err != nil {
+		return nil, err
+	}
+	return &legacyConn{peeked: &peeked{Conn: c, r: bufio.NewReader(c)}, transport: "ziti"}, nil
 }

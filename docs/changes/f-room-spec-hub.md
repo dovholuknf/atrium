@@ -41,3 +41,12 @@
 2. Send a POST to the same address.
 
 **Expected:** the GETs answer JSON and the POST is refused with 405.
+
+The board's read is board-visible by design, like the backlog's reads: the board is on loopback with no login, so anybody
+who can reach it sees every room's spec and lock. A room with no spec and a room that does not exist answer the same 404.
+
+### @LETTER@7. A room with no certificate is refused
+
+1. From a room still on the old overlay path (no certificate), run `atrium room spec pull`.
+
+**Expected:** the hub refuses with a sentence telling it to re-join, and no spec or lock is read or written.

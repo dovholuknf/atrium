@@ -101,3 +101,20 @@ func TestRoomsAddWithASpecStoresIt(t *testing.T) {
 		t.Fatalf("spec = %+v %v", sp, err)
 	}
 }
+
+// The pulled spec is written 0600, atomically, and replaces what was there.
+func TestWriteFileAtomicIsPrivateAndReplaces(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "room.yaml")
+	os.WriteFile(path, []byte("old"), 0o644)
+	if err := writeFileAtomic(path, []byte("new")); err != nil {
+		t.Fatal(err)
+	}
+	b, _ := os.ReadFile(path)
+	fi, _ := os.Stat(path)
+	if string(b) != "new" || fi.Mode().Perm() != 0o600 {
+		t.Fatalf("%q %v", b, fi.Mode())
+	}
+	if es, _ := os.ReadDir(filepath.Dir(path)); len(es) != 1 {
+		t.Fatalf("a temp file was left: %v", es)
+	}
+}

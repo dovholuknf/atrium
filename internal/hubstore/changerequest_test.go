@@ -298,22 +298,26 @@ func TestChangeRequestMigrationToleratesBeingThere(t *testing.T) {
 }
 
 // 0009 FOLLOWS 0008, so a hub that already has the push log applies it and what came after, and 0010 (the PR claim
-// table) follows it. 0011 (backlog and reports) is the last.
+// table) follows it. 0011 (push subscriptions), 0012 (backlog and reports) and 0013 (room spec and lock, the last)
+// come after.
 func TestChangeRequestMigrationIsAtTheEnd(t *testing.T) {
 	n := len(migrations)
-	if got := migrations[n-1].name; got != "0012_backlog_reports" {
+	if got := migrations[n-1].name; got != "0013_room_spec" {
 		t.Fatalf("the last migration is %q", got)
 	}
-	if got := migrations[n-2].name; got != "0011_push_subscription" {
+	if got := migrations[n-2].name; got != "0012_backlog_reports" {
 		t.Fatalf("the one before it is %q", got)
 	}
-	if got := migrations[n-3].name; got != "0010_pr_claim" {
+	if got := migrations[n-3].name; got != "0011_push_subscription" {
 		t.Fatalf("the one before that is %q", got)
 	}
-	if got := migrations[n-4].name; got != "0009_change_request" {
+	if got := migrations[n-4].name; got != "0010_pr_claim" {
 		t.Fatalf("the one before that is %q", got)
 	}
-	if got := migrations[n-5].name; got != "0008_git_push" {
+	if got := migrations[n-5].name; got != "0009_change_request" {
+		t.Fatalf("the one before that is %q", got)
+	}
+	if got := migrations[n-6].name; got != "0008_git_push" {
 		t.Fatalf("the one before that is %q", got)
 	}
 }

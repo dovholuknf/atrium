@@ -115,14 +115,22 @@ func noCredentials(v any) error {
 	return nil
 }
 
+// credentialName is a TRIPWIRE, not a guarantee. It catches the names people give a secret and cannot see one under an
+// innocent name or in a value.
 func credentialName(k string) bool {
 	k = strings.ToLower(k)
-	for _, w := range []string{"token", "password", "passwd", "secret", "credential", "apikey"} {
+	for _, w := range []string{"token", "password", "passwd", "secret", "credential", "apikey", "privatekey",
+		"private_key", "private-key"} {
 		if strings.Contains(k, w) {
 			return true
 		}
 	}
-	return k == "key" || strings.HasSuffix(k, "_key") || strings.HasSuffix(k, "-key")
+	switch k {
+	case "key", "auth", "authorization", "bearer", "cookie", "session":
+		return true
+	}
+	return strings.HasSuffix(k, "_key") || strings.HasSuffix(k, "-key") ||
+		strings.HasSuffix(k, "_auth") || strings.HasSuffix(k, "_cookie") || strings.HasSuffix(k, "_session")
 }
 
 // SetRoomSpec stores the spec for a room, replacing the one there. The lock is not touched.
@@ -197,6 +205,8 @@ func (s *Store) PutRoomLock(room string, raw []byte) (RoomLock, error) {
 	if err != nil {
 		return RoomLock{}, err
 	}
+	sum := sha256.Sum256(raw)
+	s.Log(r, "lock-posted", "sha256 "+hex.EncodeToString(sum[:])[:12])
 	return lk, nil
 }
 

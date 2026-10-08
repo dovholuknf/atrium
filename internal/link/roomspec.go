@@ -32,6 +32,13 @@ import (
 // arrived. A room can therefore only ever read and write its own spec and lock. The board's read is the only way to
 // name a room, and it is read only: the spec is set by the operator with `atrium rooms spec set`, on the hub.
 //
+// ── who can see it ──────────────────────────────────────
+//
+// THE BOARD'S READ IS BOARD-VISIBLE BY DESIGN. The board is on loopback with no login, as the backlog's reads are, so
+// anybody who can reach it can read every room's spec and lock, which is why neither may hold a credential. On the room
+// link the certificate decides, and a connection with no certificate (the old overlay path, or anything else `identify`
+// cannot read) is refused this kind outright, so a name claimed in a hello is never believed here.
+//
 // ── bounded ─────────────────────────────────────────────
 //
 // A connection carries one request. The lock is limited to hubstore.MaxRoomLock, and the answer to a spec is at most
@@ -75,7 +82,7 @@ func (p *Proxy) serveRoomSpec(w http.ResponseWriter, r *http.Request) {
 	case r.URL.Path == RoomSpecPrefix+"spec" && r.Method == http.MethodGet:
 		sp, err := st.RoomSpecOf(room)
 		if err != nil {
-			specFail(w, err)
+			specFail(w, err, "spec")
 			return
 		}
 		w.Header().Set("Content-Type", "text/yaml; charset=utf-8")
@@ -88,7 +95,7 @@ func (p *Proxy) serveRoomSpec(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if _, err := st.PutRoomLock(room, raw); err != nil {
-			specFail(w, err)
+			specFail(w, err, "lock")
 			return
 		}
 		crJSON(w, http.StatusOK, map[string]bool{"ok": true})
@@ -98,16 +105,20 @@ func (p *Proxy) serveRoomSpec(w http.ResponseWriter, r *http.Request) {
 }
 
 // specFail answers a store error: what is missing is 404, what the caller got wrong is 400, and anything else 500.
-func specFail(w http.ResponseWriter, err error) {
+//
+// AN UNKNOWN ROOM AND A ROOM WITH NOTHING SET ANSWER WITH THE SAME WORDS, so the board cannot be used to find out which
+// room names exist. what is "spec" or "lock". A store failure is logged here and answered with a fixed sentence.
+func specFail(w http.ResponseWriter, err error, what string) {
 	w.Header().Set("Content-Type", "application/json")
 	switch {
 	case errors.Is(err, hubstore.ErrNoRoomSpec), errors.Is(err, hubstore.ErrNoRoomLock),
 		errors.Is(err, hubstore.ErrNoSuchRoom):
-		crFail(w, http.StatusNotFound, err.Error())
+		crFail(w, http.StatusNotFound, "there is no "+what+" for that room")
 	case hubstore.IsRefusal(err):
 		crFail(w, http.StatusBadRequest, err.Error())
 	default:
-		crFail(w, http.StatusInternalServerError, err.Error())
+		log.Printf("[hub] room %s: %v", what, err)
+		crFail(w, http.StatusInternalServerError, "the hub could not read or write that. see the hub's log")
 	}
 }
 
@@ -126,7 +137,7 @@ func (p *Proxy) serveRoomSpecBoard(w http.ResponseWriter, r *http.Request, sub s
 	if parts[1] == "spec" {
 		sp, err := st.RoomSpecOf(parts[0])
 		if err != nil {
-			specFail(w, err)
+			specFail(w, err, "spec")
 			return
 		}
 		crJSON(w, http.StatusOK, sp)
@@ -134,7 +145,7 @@ func (p *Proxy) serveRoomSpecBoard(w http.ResponseWriter, r *http.Request, sub s
 	}
 	lk, err := st.RoomLockOf(parts[0])
 	if err != nil {
-		specFail(w, err)
+		specFail(w, err, "lock")
 		return
 	}
 	crJSON(w, http.StatusOK, lk)

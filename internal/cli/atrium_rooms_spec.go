@@ -2,6 +2,8 @@ package cli
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -189,7 +191,14 @@ func roomSpecPullCmd() *cobra.Command {
 			if out == "" {
 				out = filepath.Join(orDefault(dir, roomDir()), "room.yaml")
 			}
-			if err := os.WriteFile(out, raw, 0o644); err != nil {
+			// THE BODY MUST MATCH THE HASH THE HUB SAID, so a spec cut short or changed on the way is never written.
+			if sum != "" {
+				got := sha256.Sum256(raw)
+				if hex.EncodeToString(got[:]) != sum {
+					return errors.New("the spec that arrived does not match the sha256 the hub gave. nothing was written")
+				}
+			}
+			if err := writeFileAtomic(out, raw); err != nil {
 				return err
 			}
 			fmt.Fprintf(cmd.OutOrStdout(), "wrote %s, sha256 %s\n", out, sum)
@@ -201,4 +210,28 @@ func roomSpecPullCmd() *cobra.Command {
 	c := &cobra.Command{Use: "spec", Short: "This room's spec, from the hub"}
 	c.AddCommand(pull)
 	return c
+}
+
+// writeFileAtomic writes to a temporary file beside path with mode 0600 and renames it into place, so a reader never
+// sees half a spec.
+func writeFileAtomic(path string, raw []byte) error {
+	f, err := os.CreateTemp(filepath.Dir(path), ".room-spec-*")
+	if err != nil {
+		return err
+	}
+	tmp := f.Name()
+	_, err = f.Write(raw)
+	if cerr := f.Close(); err == nil {
+		err = cerr
+	}
+	if err == nil {
+		err = os.Chmod(tmp, 0o600)
+	}
+	if err == nil {
+		err = os.Rename(tmp, path)
+	}
+	if err != nil {
+		os.Remove(tmp)
+	}
+	return err
 }

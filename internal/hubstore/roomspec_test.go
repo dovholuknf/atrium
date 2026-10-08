@@ -112,3 +112,46 @@ func TestRoomSpecUnknownRoomAndMigrationTwice(t *testing.T) {
 		t.Fatalf("migrating again: %v", err)
 	}
 }
+
+// THE KEY TRIPWIRE, as a table: names that must trip it, in nested lists and mixed case, and names that must not.
+func TestCredentialTripwire(t *testing.T) {
+	trips := []string{
+		"version: 1\nname: sg3\nGitHub_Token: x\n",
+		"version: 1\nname: sg3\npacks:\n  - runner: claude\n    extras:\n      - {PrivateKey: x}\n",
+		"version: 1\nname: sg3\nauth: x\n",
+		"version: 1\nname: sg3\nAuthorization: Bearer x\n",
+		"version: 1\nname: sg3\nbearer: x\n",
+		"version: 1\nname: sg3\nCookie: x\n",
+		"version: 1\nname: sg3\nsession: x\n",
+		"version: 1\nname: sg3\nssh_key: x\n",
+		"version: 1\nname: sg3\nlayout: {deep: [{ok: 1}, {DB-Password: x}]}\n",
+	}
+	for _, y := range trips {
+		if err := CheckRoomSpec("sg3", []byte(y)); err == nil || !strings.Contains(err.Error(), "credential") {
+			t.Errorf("not tripped: %q (%v)", y, err)
+		}
+	}
+	passes := []string{
+		"version: 1\nname: sg3\nkeyboard: us\n",
+		"version: 1\nname: sg3\nauthors: [a]\npacks:\n  - {runner: claude, repo: o/r, from: claude}\n",
+	}
+	for _, y := range passes {
+		if err := CheckRoomSpec("sg3", []byte(y)); err != nil {
+			t.Errorf("tripped: %q (%v)", y, err)
+		}
+	}
+}
+
+// A lock post is written to the room's audit log like a spec set.
+func TestLockPostIsLogged(t *testing.T) {
+	s := open(t)
+	r := added(t, s, "sg3")
+	if _, err := s.PutRoomLock("sg3", []byte(goodLock)); err != nil {
+		t.Fatal(err)
+	}
+	var n int
+	if err := s.db.QueryRow(`SELECT COUNT(*) FROM room_audit WHERE room_id = ? AND kind = 'lock-posted'`, r.ID).
+		Scan(&n); err != nil || n != 1 {
+		t.Fatalf("lock-posted entries = %d %v", n, err)
+	}
+}
