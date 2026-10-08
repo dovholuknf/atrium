@@ -151,7 +151,20 @@ $pw = Read-Host -AsSecureString 'password for the new account'
 New-LocalUser -Name localai -Password $pw -FullName 'atrium room' -Description 'runs the atrium room, not an admin' -PasswordNeverExpires
 if (-not (Get-LocalGroupMember -SID S-1-5-32-545 | Where-Object Name -like '*\localai')) { Add-LocalGroupMember -SID S-1-5-32-545 -Member localai }
 icacls D:\worktrees /grant 'SG3\localai:(OI)(CI)M'
-icacls V:\work /grant 'SG3\localai:(OI)(CI)M'
+```
+
+Then the work drive, if the machine has one. Do not grant on the drive's top folder the way you grant on `D:\worktrees`.
+Claude Code examines every folder on the way to a path it writes, so the account must be able to read the attributes of
+each parent, and must still be unable to list the drive or create anything at its root. See
+[Keep agent files off the system drive](#keep-agent-files-off-the-system-drive) for why. The first line can take a long
+time on a big drive, and should be left to finish.
+
+```powershell
+# localai may read V:\'s attributes, cannot list it, cannot create in it, and nothing is inherited
+icacls V:\ /grant 'SG3\localai:(RA,REA)'
+# the agent folder, full control, inherited below
+New-Item -ItemType Directory V:\localai
+icacls V:\localai /grant 'SG3\localai:(OI)(CI)F'
 ```
 
 Now ssh. Windows OpenSSH reads a standard user's keys from that user's own `.ssh`. The profile folder does not exist
@@ -250,6 +263,53 @@ and an executable that is setgid `work` runs as that group.
 
 Then `pwsh -File scripts/provision-room.ps1 localai@lab1 -Name lab1` from the hub installs the room as a systemd user
 unit for `localai`. `-Linger` on that command does the `enable-linger` step if you skipped it.
+
+## Keep agent files off the system drive
+
+An agent room fills a disk. Every pull request is a worktree, every worktree has a `node_modules` (0.41 GB for
+ziti-console), and the npm cache grows beside them (0.40 GB on sg3). On sg3 all of it landed on C: because the room's
+`git.scm_root` was `C:/Users/claude/git` and the caches sat in `claude`'s profile. The rule is that everything an agent
+writes goes on the work volume, and nothing of it on the system drive.
+
+### The Claude Code prompt
+
+Putting the work on another drive has a trap. Claude Code examines every folder on the way to a path before it writes
+there. When it cannot, it raises a prompt of its own:
+
+```
+Where V:/work/localai/... leads on disk could not be determined (a link or directory on the way could not be examined,
+or the links do not resolve)
+```
+
+That prompt is not atrium's. The permission hook had already answered allow on sg3 (board auto mode, recorded four
+times) and the prompt still showed, so the card sat blocked in its terminal until a person answered it. Neither atrium
+rules nor auto mode can answer it. The cause on sg3 was that `claude` had full control of `V:\work\localai` and no access
+at all to `V:\` or `V:\work`. Every parent folder of the agent folder has to be examinable by the room's account, which
+is the `(RA,REA)` grant in the Windows block above. It gives the account the attributes of `V:\` and nothing else: no
+listing, no creating, and nothing inherited. Check it as the room's account. Creating `V:\probe` must be refused,
+creating a folder under `V:\localai` must work, and a Claude Code session must write there with no prompt.
+
+### Point the settings at the agent folder
+
+Set each one straight at the agent folder, as the room's account, with the room stopped for the first:
+
+- `git.scm_root`: `atrium room set scm_root V:/localai/git`, and `atrium room get scm_root` to read it back.
+- The npm cache: `npm config set cache V:\localai\npm-cache`.
+- The other tool caches the same way: Go's `GOMODCACHE` and `GOCACHE`, pip's cache folder, and cargo's `CARGO_HOME`.
+
+Do not use a symlink or a junction to make a short path lead to the work drive, or to get past the prompt above. A link
+hides where the files really are and adds one more path for Claude Code to examine. On sg3 the link was not the cause,
+the unreadable parents were. The rule is clint's choice: point the settings at the real folder.
+
+Agents must never be able to create a folder at the root of the work drive, so do not grant the account anything on it
+beyond the attributes. Run a dependency install once, from one session. Two concurrent `npm ci` in one `node_modules`
+failed with `ENOTEMPTY`.
+
+### macOS and Linux
+
+The same idea applies and the commands are the ones above. Every parent folder of the work folder must be readable and
+searchable by the room's user (`chmod o+x` on a parent, or the `work` group from the blocks above), and the caches and
+`scm_root` belong on the work volume, not in the home folder on the boot disk.
 
 ## If you really must run as yourself
 
