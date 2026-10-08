@@ -2,6 +2,7 @@ package forge
 
 import (
 	"archive/zip"
+	"bufio"
 	"bytes"
 	"context"
 	"errors"
@@ -185,20 +186,26 @@ func TestTailWriterHoldsToItsBoundsWhileWritten(t *testing.T) {
 	}
 }
 
+// TestHelperProcess is not a test. It is the process TestExecBoundsALogItReads runs: this test binary, re-executed,
+// the way os/exec's own tests do it, so it needs no shell and no compiler and runs the same on every OS.
+func TestHelperProcess(t *testing.T) {
+	if os.Getenv("ATRIUM_FORGE_HELPER") != "print" {
+		return
+	}
+	w := bufio.NewWriter(os.Stdout)
+	for i := 1; i <= 200000; i++ {
+		fmt.Fprintf(w, "row %d\n", i)
+	}
+	w.Flush()
+	os.Exit(0)
+}
+
 func TestExecBoundsALogItReads(t *testing.T) {
-	if _, err := exec.LookPath("go"); err != nil {
-		t.Skip("no go to print a big output with")
-	}
-	dir := t.TempDir()
-	src := filepath.Join(dir, "main.go")
-	_ = os.WriteFile(src, []byte(`package main
-import ("fmt";"os")
-func main(){ w:=os.Stdout; for i:=1;i<=200000;i++{ fmt.Fprintf(w,"row %d\n",i) } }`), 0o644)
-	bin := filepath.Join(dir, "printer")
-	if out, err := exec.Command("go", "build", "-o", bin, src).CombinedOutput(); err != nil {
-		t.Skipf("cannot build the printer: %v %s", err, out)
-	}
-	out, err := Exec(nil)(context.Background(), Cmd{Name: bin, Tail: 5, Limit: 1 << 10})
+	t.Setenv("ATRIUM_FORGE_HELPER", "print")
+	helper := Cmd{Name: os.Args[0], Args: []string{"-test.run=^TestHelperProcess$"}, Limit: 1 << 10}
+	tailed := helper
+	tailed.Tail = 5
+	out, err := Exec(nil)(context.Background(), tailed)
 	if err != nil {
 		t.Fatalf("a long log is not an error: %v", err)
 	}
@@ -206,7 +213,7 @@ func main(){ w:=os.Stdout; for i:=1;i<=200000;i++{ fmt.Fprintf(w,"row %d\n",i) }
 		t.Errorf("%q", out)
 	}
 	// Without Tail the same output is refused, as before.
-	if _, err := Exec(nil)(context.Background(), Cmd{Name: bin, Limit: 1 << 10}); err == nil {
+	if _, err := Exec(nil)(context.Background(), helper); err == nil {
 		t.Error("want the old refusal")
 	}
 }
