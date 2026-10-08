@@ -819,7 +819,7 @@ async function termMenu(e, id) {
     typeof aliasMenuItem === "function" ? aliasMenuItem(t) : null,
     // The card layer of the context limit: the hub's for its harness, then this. Only Claude cards carry one.
     t.context_size
-      ? { label: "context limit…", note: limitFrom(t),
+      ? { label: "context limit…", note: limitFrom(t) + (typeof ownLimitNote === "function" && ownLimitNote(t) ? ", its own" : ""),
           help: "The size at which atrium cycles this card's context. It overrides the hub's limit for its " +
             "harness. Empty goes back to it.",
           act: () => setTaskContextLimit(id, t) }
@@ -952,7 +952,7 @@ async function renameTask(id, currentName) {
 async function setTaskContextLimit(id, t) {
   const own = t.overrides && t.overrides.context_limit_k || "";
   const v = await askText("context limit for this card",
-    `In thousands of tokens, from 10 to 2000. Now ${limitFrom(t)}. Past it atrium cycles the card's context. ` +
+    `In thousands of tokens, from 10 to ${(t.context_size && t.context_size.ceiling_k) || 2000}. Now ${limitFrom(t)}. Past it atrium cycles the card's context. ` +
     "This is the card's own setting and wins over the hub's limit for its harness (settings). Leave it empty " +
     "to go back to that.", own);
   if (v === null) return;

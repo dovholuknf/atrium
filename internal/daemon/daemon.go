@@ -634,6 +634,7 @@ func New(opts Options) (*Daemon, error) {
 	d.acProbe = newAutocompactProbe()
 	api.ContextSizeOf = d.contextSizeFor
 	api.AutocompactOf = d.autocompactFor
+	api.RunnerCompactAtK = d.runnerCompactAtK
 	api.OutputAtOf = d.outputAtFor
 	// Token use on record, read only by a card's details. See usage.go.
 	d.usage = newUsageTracker(st)
