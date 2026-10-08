@@ -12,6 +12,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/dovholuknf/atrium/internal/testdiag"
 )
 
 // freePort asks the OS for a port nobody is using, so tests never collide with
@@ -94,6 +96,10 @@ func startDaemon(t *testing.T) (*Daemon, *safeBuf, context.CancelFunc, chan erro
 func closeAtCleanup(t *testing.T, d *Daemon) {
 	t.Helper()
 	t.Cleanup(func() {
+		// Before the close, while whatever the test was waiting on is still there to see.
+		if t.Failed() {
+			testdiag.Dump(t, "the test failed")
+		}
 		_ = d.Close()
 		releaseDB(t, filepath.FromSlash(d.opts.DBPath))
 	})
@@ -111,6 +117,7 @@ func releaseDB(t *testing.T, path string) {
 			}
 			if time.Now().After(end) {
 				t.Errorf("%s is still held 10s after the daemon closed: %v", p, err)
+				testdiag.Dump(t, filepath.Base(p)+" is still held after the daemon closed")
 				break
 			}
 			time.Sleep(50 * time.Millisecond)
@@ -135,6 +142,7 @@ func runAtCleanup(t *testing.T, d *Daemon) (context.CancelFunc, chan error) {
 		case <-done:
 		case <-time.After(30 * time.Second):
 			t.Errorf("the daemon's Run had not returned 30s after it was cancelled")
+			testdiag.Dump(t, "Run had not returned 30s after it was cancelled")
 		}
 	})
 	return cancel, errCh

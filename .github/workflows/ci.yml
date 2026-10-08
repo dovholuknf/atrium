@@ -8,7 +8,8 @@
 #
 # The two `setup-` steps are the exception the rule allows: they are how a
 # runner acquires a toolchain and they are GitHub-specific by nature. They
-# configure the environment. They do not decide anything.
+# configure the environment. They do not decide anything. So is the upload at
+# the end, which carries off the files ci.sh wrote and decides nothing either.
 
 name: ci
 
@@ -65,3 +66,15 @@ jobs:
         shell: bash
         # Invoke bash explicitly because ci.sh has no executable bit in git.
         run: bash scripts/ci.sh
+
+      # What ci.sh left in build.claude/ci: go test's raw stream, the whole
+      # output of each failed package, every test's time, and the goroutine
+      # dumps of failed tests. Kept on a pass too, so a slow test can be
+      # compared against a run that was fine.
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ci-${{ matrix.os }}-attempt-${{ github.run_attempt }}
+          path: build.claude/ci/
+          retention-days: 14
+          if-no-files-found: ignore
