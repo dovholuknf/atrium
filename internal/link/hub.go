@@ -380,6 +380,7 @@ func (h *Hub) take(ctx context.Context, conn net.Conn) {
 		// certificate to read, which is right for them and wrong for a spec: a peer the overlay admits could name a
 		// room that never enrolled and read or write its spec and lock. A connection with nothing for `identify` to
 		// read is turned away here, whether it is the old overlay path or anything else that is not a certificate.
+		// With h.Authenticated nil (no mutual TLS) the hub trusts every hello for every kind, this one included.
 		if h.Authenticated != nil && identify(conn) == "" {
 			_ = writeJSON(conn, welcome{OK: false, Error: "a room's spec is served only to a room that proves its name " +
 				"with a certificate. " + RejoinSentence(name)})
