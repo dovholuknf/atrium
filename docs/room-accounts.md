@@ -298,8 +298,8 @@ Set each one straight at the agent folder, as the room's account, with the room 
 - The other tool caches the same way: Go's `GOMODCACHE` and `GOCACHE`, pip's cache folder, and cargo's `CARGO_HOME`.
 
 Do not use a symlink or a junction to make a short path lead to the work drive, or to get past the prompt above. A link
-is the very thing Claude Code fails to resolve, and it hides where the files really are. The choice is deliberate: point
-the settings at the real folder.
+hides where the files really are and adds one more path for Claude Code to examine. On sg3 the link was not the cause,
+the unreadable parents were. The rule is clint's choice: point the settings at the real folder.
 
 Agents must never be able to create a folder at the root of the work drive, so do not grant the account anything on it
 beyond the attributes. Run a dependency install once, from one session. Two concurrent `npm ci` in one `node_modules`
