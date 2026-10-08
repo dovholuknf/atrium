@@ -20140,9 +20140,25 @@ async function quickPasteSection(browser, base) {
       document.getElementById("qp-url").value === "https://github.com/openziti/zrok/pull/12", null, { timeout: slow(5000) })
       .catch(() => fail("quickPaste: ctrl-alt-r did not open the box with the clipboard's link"));
     await shot(p, "box");
+    // QPSHOT only: the box in a dark skin and a light one, with the link already recognised
+    if (process.env.QPSHOT) {
+      for (const skin of ["harbour", "paper"]) {
+        await p.evaluate(s => document.documentElement.setAttribute("data-skin", s), skin);
+        await p.waitForTimeout(700);
+        await shot(p, "box-" + skin);
+      }
+      await p.evaluate(() => document.documentElement.setAttribute("data-skin", "harbour"));
+    }
     // the key again closes it
     await p.keyboard.press("Control+Alt+KeyR");
     if (await p.evaluate(open("quickpaste"))) fail("quickPaste: ctrl-alt-r did not close an open box");
+
+    // the box reads the link as it is pasted and says what it was read as: a PR, with its label and title
+    await p.waitForFunction(() => document.getElementById("qp-note").dataset.kind === "pr", null, { timeout: slow(5000) })
+      .catch(() => fail("quickPaste: the box did not say it read a pull request"));
+    if (!/PR.*github pull request.*review zrok#12/.test(await p.textContent("#qp-note")))
+      fail("quickPaste: the line read " + await p.textContent("#qp-note"));
+    st.calls = [];
 
     // text that is not a link is refused in the box, and nothing is asked
     await p.evaluate(() => { window.__clip = "just words"; });
@@ -20185,6 +20201,8 @@ async function quickPasteSection(browser, base) {
     await p.evaluate(() => { window.__clip = "https://github.com/openziti/zrok/pull/12"; });
     await p.keyboard.press("Control+Alt+KeyR");
     await p.waitForFunction(() => document.getElementById("qp-url").value !== "", null, { timeout: slow(5000) });
+    await p.waitForFunction(() => document.getElementById("qp-note").classList.contains("seen"), null, { timeout: slow(5000) });
+    st.calls = [];
     await p.press("#qp-url", "Enter");
     await p.waitForFunction(() => !document.getElementById("launch").open && !document.getElementById("quickpaste").open,
       null, { timeout: slow(8000) }).catch(() => {});
@@ -20208,6 +20226,8 @@ async function quickPasteSection(browser, base) {
       await p.keyboard.press("Control+Alt+KeyR");
       await p.waitForFunction(u => document.getElementById("qp-url").value === u, url, { timeout: slow(5000) })
         .catch(() => fail("quickPaste: the box did not open on " + url));
+      await p.waitForFunction(() => document.getElementById("qp-note").classList.contains("seen"), null, { timeout: slow(5000) });
+      st.calls = [];
       await p.press("#qp-url", edit ? "Shift+Enter" : "Enter");
       if (edit) {
         await p.waitForFunction(() => document.getElementById("launch").open && launchResolved, null, { timeout: slow(5000) })
