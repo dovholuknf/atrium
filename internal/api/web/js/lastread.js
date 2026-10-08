@@ -184,6 +184,9 @@ function lrDraw(t, row, cur, k) {
 function lrReturn(why) {
   const t = term;
   if (!t || !termTask || !t.buffer) return;
+  // Not while the Terminals view is hidden: a restore spent on a hidden element is lost, and the return that matters is
+  // the tab coming back.
+  if (document.getElementById("terms").hidden) return;
   const L = lrOf(t);
   const fresh = why === "attach" || why === "show";
   if (!L.away && !fresh) return;
