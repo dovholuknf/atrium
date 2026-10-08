@@ -5469,7 +5469,45 @@ async function termLastReadSection(browser, base) {
     if (s.div || s.pill) fail("termLastRead: a history that does not match still drew a divider: " + JSON.stringify(s));
     if (s.top !== s.base) fail("termLastRead: a divider that could not be found should leave the terminal at the bottom: " + JSON.stringify(s));
 
-    // 7. The control is in settings, defaulting to where I left off.
+    // 7. Alt-tab while on the board: leave for the board tab, blur and focus the window, come back. The focus must not
+    // spend the restore against the hidden view.
+    await p.evaluate(async () => {
+      lrBlurMin = 0;
+      __say("lr-a", __lines(0, 3, "settled"));
+      await __idle();
+      switchView("board");
+      await __idle();
+      __say("lr-a", __lines(0, 9, "tabbed"));
+      window.dispatchEvent(new Event("blur"));
+      await __idle(100);
+      window.dispatchEvent(new Event("focus"));
+      await __idle(300);
+    });
+    const held = await p.evaluate(() => !!(term._lr && term._lr.away && term._lr.rec));
+    if (!held) fail("termLastRead: a focus while the board tab is up spent the restore.");
+    await p.evaluate(async () => { switchView("terms"); await __idle(900); });
+    s = await p.evaluate(() => __state());
+    const trow = await p.evaluate(() => __divRow());
+    if (!s.div || !/^tabbed 0 /.test(trow || "")) fail("termLastRead: coming back from the board tab after an alt-tab lost the divider (row: " + JSON.stringify(trow) + ").");
+
+    // 8. A clear while away (2J, 3J, and what /clear redraws) draws no divider rather than one at a wrong line.
+    for (const clear of ["\x1b[2J\x1b[H", "\x1b[3J\x1b[2J\x1b[H"]) {
+      await p.evaluate(async clear => {
+        __say("lr-a", __lines(0, 20, "beforeclear"));
+        await __idle();
+        window.dispatchEvent(new Event("blur"));
+        await __idle(100);
+        __say("lr-a", clear + __lines(0, 6, "afterclear"));
+        await __idle();
+        window.dispatchEvent(new Event("focus"));
+        await __idle(900);
+      }, clear);
+      s = await p.evaluate(() => __state());
+      if (s.div || s.pill) fail("termLastRead: a clear screen left a divider: " + JSON.stringify(s) + " for " + JSON.stringify(clear));
+      if (s.top !== s.base) fail("termLastRead: after a clear the terminal should be at the bottom: " + JSON.stringify(s));
+    }
+
+    // 9. The control is in settings, defaulting to where I left off.
     const ui = await p.evaluate(() => { paintSettingsPrefs(); const e = document.getElementById("s-termreturn"); return e ? e.value : null; });
     if (ui !== "left") fail("termLastRead: the settings control is missing or does not default to 'left': " + ui);
   } finally {

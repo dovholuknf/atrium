@@ -149,6 +149,7 @@ function lrLeave(why) {
   L.awayAt = Date.now();
   L.awayWhy = why;
   L.watch = false;
+  L.cleared = false;
   lrStore(termTask.id, rec);
   lrPill(t);
 }
@@ -217,14 +218,16 @@ function lrReturn(why) {
   L.away = false;
   lrForget(id);
 
-  const carry = rec.div || L.carry;
+  const carry = L.cleared ? null : rec.div || L.carry;
   L.carry = null;
+  const cleared = L.cleared;
+  L.cleared = false;
   let divRow = -1, k = rec.k;
-  if (endRow >= 0 && cur > endRow) divRow = endRow + rec.k;
+  if (!cleared && endRow >= 0 && cur > endRow) divRow = endRow + rec.k;
   else if (carry) { divRow = lrLocate(b, carry, 0); k = 0; }
   if (divRow >= 0 && divRow <= cur) lrDraw(t, divRow, cur, k);
 
-  if (mode === "bottom" || endRow < 0) bottom();
+  if (mode === "bottom" || endRow < 0 || cleared) bottom();
   else if (rec.top) {
     if (topRow >= 0) lrHold(t, () => t.scrollToLine(topRow)); else bottom();
   } else if (divRow >= 0 && L.div) {
@@ -272,6 +275,14 @@ function lrPill(t) {
 // Per terminal, once it is built.
 function lrInit(t) {
   // xterm leaves a marker where it was after a reset, pointing at whatever now has that number. Nothing may trust one.
+  // A clear while away (2J, or 3J from /clear) moves the cursor's row for reasons that are not new lines, so the
+  // divider is dropped rather than drawn at a row that no longer means what it did. Registered after the board's own
+  // J handler in openTerm, which swallows 3J before an earlier one would see it.
+  t.parser.registerCsiHandler({ final: "J" }, params => {
+    const n = params[0];
+    if ((n === 2 || n === 3) && t._lr && t._lr.away) t._lr.cleared = true;
+    return false;
+  });
   const reset = t.reset.bind(t);
   t.reset = () => {
     const L = lrOf(t), b = t.buffer.active;

@@ -1075,7 +1075,6 @@ function openTerm(task) {
   syncPhoneView();
   term.onWriteParsed(() => { phoneSyncTextarea(); phoneKeepSoon(); tallFollow(); });
   term.onScroll(() => tallFollow());
-  lrInit(term);
   // Erase-display 2 keeps the page first. 3 only clears the scrollback, which
   // is the history this is here to keep, so it is swallowed without touching
   // the rows: a lone 3 (`tput E3`, some tools on resize) must not blank the
@@ -1090,6 +1089,7 @@ function openTerm(task) {
     keepPage(mine, false);
     return false;
   });
+  lrInit(term);
   term.open(screen);
   term.textarea.addEventListener("focus", () => { tallFollow(); requestAnimationFrame(tallFollow); });
   phoneInputMode();
