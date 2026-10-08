@@ -341,6 +341,34 @@ if (Test-Path -LiteralPath $prs) {
 Check 'mirror url: the host is github, as in the hub''s own git urls' (Get-HubMirrorUrl '127.0.0.1:7778' 'dovholuknf/dotfiles') 'http://127.0.0.1:7778/git/hub/github/dovholuknf/dotfiles.git'
 Check 'mirror url: slashes around the repo are dropped' (Get-HubMirrorUrl 'h:1' '/o/r/') 'http://h:1/git/hub/github/o/r.git'
 
+# ── the wiring: provision-room.ps1 and room-check.ps1 ───────────────────────
+
+foreach ($n in 'provision-room.ps1', 'room-check.ps1') {
+    $errs = $null; [void][Management.Automation.Language.Parser]::ParseFile((Join-Path $PSScriptRoot $n), [ref]$null, [ref]$errs)
+    Check "parse: $n" @($errs).Count 0
+}
+$pr = Join-Path $PSScriptRoot 'provision-room.ps1'
+function Run-Pr { param([string[]] $a) $o = & pwsh -NoProfile -File $pr 'x@nowhere' @a 2>&1; [pscustomobject]@{ Out = @($o | ForEach-Object { "$_" }); Code = $LASTEXITCODE } }
+foreach ($c in @(
+        @('a relative folder', @('-WorkRoot', 'work\localai'), 'is not an absolute path'),
+        @('a drive root', @('-WorkRoot', 'V:\'), 'filesystem root'),
+        @('a UNC path', @('-WorkRoot', '\\h\s\localai'), 'network path'),
+        @('a semicolon', @('-WorkRoot', 'V:\a;b'), 'semicolon'),
+        @('-Remove', @('-WorkRoot', 'V:\localai', '-Remove'), 'belong to a provision run'),
+        @('-Restart', @('-WorkRoot', 'V:\localai', '-Restart'), 'belong to a provision run'),
+        @('-SmokeOnly', @('-WorkRoot', 'V:\localai', '-SmokeOnly'), 'belong to a provision run'),
+        @('-NoAgentPack with -Remove', @('-NoAgentPack', '-Remove'), 'belong to a provision run'),
+        @('-NoSharedFolder', @('-WorkRoot', 'V:\localai', '-NoSharedFolder'), 'takes the place of the shared folder'))) {
+    $r = Run-Pr $c[1]
+    Check "provision: -WorkRoot, $($c[0]) is exit 1 and says why" @($r.Code, [bool](@($r.Out | Where-Object { $_ -like "provision args fail*$($c[2])*" }).Count)) @(1, $true)
+}
+$r = Run-Pr @('-WorkRoot', 'V:\localai', '-Check')
+Check 'provision: a good -WorkRoot passes the argument checks and fails at ssh (exit 2)' $r.Code 2
+$text = Get-Content -LiteralPath $pr -Raw
+Check 'provision: the work root is wired in, with exit 13 and the agent pack' @([bool]($text -match 'Invoke-WorkRoot'), [bool]($text -match 'Finish \$wr\.Code'), [bool]($text -match 'Invoke-AgentPack'), [bool]($text -match '#  13  ')) @($true, $true, $true, $true)
+$rc = Get-Content -LiteralPath (Join-Path $PSScriptRoot 'room-check.ps1') -Raw
+Check 'room-check: the work-root and agent-pack rows are wired in' @([bool]($rc -match "Row 'agent-pack'"), [bool]($rc -match 'Invoke-WorkRoot')) @($true, $true)
+
 Remove-Item -LiteralPath $tmp -Recurse -Force -ErrorAction SilentlyContinue
 Write-Host ''
 if ($script:failed) { Write-Host "$script:failed of $script:ran checks failed."; exit 1 }
