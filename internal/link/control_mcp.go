@@ -341,21 +341,23 @@ func (c *controlMCP) server(class ctlClass) *mcp.Server {
 
 	addTool(s, class, &mcp.Tool{
 		Name: "atrium_cull",
-		Description: "Retire a finished worker whose work you have ACCEPTED: ask it to leave, then " +
-			"remove its worktree and delete its branch.\n\n" +
-			"CALLING THIS IS THE ACCEPTANCE. Call it once the worker's branch is merged into " +
-			"claude/main (or `into`) and you, the orchestrator or the merger acting for it, are " +
-			"done with the work. Not before: a culled worker cannot be sent back to fix anything. " +
-			"A worker cannot cull itself.\n\n" +
+		Description: "Reclaim a finished worker once its work is MERGED AND DEPLOYED: ask it to leave, then " +
+			"remove its worktree and branch, its BRIEF.md, its scratch directory and what it owns.\n\n" +
+			"CALLING THIS IS YOUR WORD THAT THE WORK IS MERGED AND DEPLOYED. Call it then, as the launcher, " +
+			"or the merger acting for it. Not before: a reclaimed worker cannot be sent back to fix " +
+			"anything. A worker cannot cull itself. Its done report closed its card already, so " +
+			"this is the second step, and it is yours.\n\n" +
+			"NEVER RECLAIMED, and refused: a card that is not done (it stays in Terminals), a card " +
+			"you did not launch, and a card tagged atrium:keep-open or atrium:investigation.\n\n" +
 			"THE ROOM CHECKS, and refuses the whole cull when the card is not tagged " +
 			"atrium:subagent or its branch is not merged. A worktree with uncommitted changes is " +
 			"kept, and so is its branch, and the answer says why. The worker is still asked to " +
 			"leave in that case, which frees its launch-cap slot. Nothing is forced: git removes " +
 			"the worktree only when it agrees it is clean. The card and its history stay.\n\n" +
-			"YOU USUALLY DO NOT NEED TO CALL THIS. When a worker's branch merges, its room marks it " +
-			"and culls it after a grace period (30 minutes by default) unless it has a new turn or " +
-			"is held, and tells its launcher once. `hold=true` keeps a worker for good: the mark is " +
-			"dropped and nothing marks it again, only an explicit cull removes it.",
+			"A merge alone reclaims nothing. A room whose operator set merged_cull_grace marks a merged " +
+			"worker and culls it after that grace unless it has a new turn or is held. `hold=true` " +
+			"keeps a worker for good: the mark is dropped and nothing marks it again, only an " +
+			"explicit cull removes it.",
 	}, audited(c, "ctl-cull", describeCull, c.cullHandler))
 
 	addTool(s, class, &mcp.Tool{
@@ -1797,6 +1799,8 @@ type cullOutput struct {
 	Worktree        string `json:"worktree,omitempty"`
 	WorktreeRemoved bool   `json:"worktree_removed"`
 	BranchDeleted   bool   `json:"branch_deleted"`
+	BriefRemoved    bool   `json:"brief_removed"`
+	ScratchRemoved  bool   `json:"scratch_removed"`
 	Kept            string `json:"kept,omitempty"`
 	Note            string `json:"note,omitempty"`
 }
@@ -1858,6 +1862,8 @@ func (c *controlMCP) cullHandler(ctx context.Context, req *mcp.CallToolRequest, 
 	}
 	res.Card, res.Handle = out.Card, out.Handle
 	switch {
+	case res.ScratchRemoved && res.BriefRemoved:
+		res.Note = "reclaimed: asked to leave, BRIEF.md and its scratch directory removed. the card and its history stay."
 	case res.WorktreeRemoved && res.BranchDeleted:
 		res.Note = "culled: asked to leave, worktree removed, branch deleted. the card and its history stay."
 	default:

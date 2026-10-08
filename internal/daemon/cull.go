@@ -78,7 +78,11 @@ type CullResult struct {
 	Worktree        string `json:"worktree,omitempty"`
 	WorktreeRemoved bool   `json:"worktree_removed"`
 	BranchDeleted   bool   `json:"branch_deleted"`
-	Kept            string `json:"kept,omitempty"`
+	// BriefRemoved and ScratchRemoved say what became of the BRIEF.md atrium wrote and of a directory that was
+	// not a git worktree. See reclaim.go.
+	BriefRemoved   bool   `json:"brief_removed"`
+	ScratchRemoved bool   `json:"scratch_removed"`
+	Kept           string `json:"kept,omitempty"`
 }
 
 // Cull asks a merged worker to leave and removes its worktree and branch. See
@@ -109,6 +113,9 @@ func (d *Daemon) CullProved(taskID, into, tip string) (*CullResult, error) {
 	if d.nctx.holding(taskID) {
 		return nil, fmt.Errorf("%s was not culled: %w", t.DisplayTitle(), errCullNewContext)
 	}
+	if why := d.reclaimBlock(t); why != "" {
+		return nil, fmt.Errorf("%s was not culled: %s", t.DisplayTitle(), why)
+	}
 	if strings.TrimSpace(t.Worktree) == "" {
 		return nil, fmt.Errorf("%s has no directory recorded, so atrium cannot check its "+
 			"branch is merged", t.DisplayTitle())
@@ -118,6 +125,13 @@ func (d *Daemon) CullProved(taskID, into, tip string) (*CullResult, error) {
 	// worktree while it is being removed. See RestartRunner.
 	unlock := d.launching.lock(launchKeys(taskID, t.ResumeID)...)
 	defer unlock()
+
+	// A directory that is not a git checkout is the scratch directory a launcher made. There is no branch of its
+	// own to prove merged, so the launcher's call is the claim. See reclaim.go.
+	if fi, err := os.Stat(filepath.FromSlash(t.Worktree)); err == nil && fi.IsDir() && !hasDotGit(t.Worktree) &&
+		strings.TrimSpace(tip) == "" {
+		return d.reclaimPlain(t, into)
+	}
 
 	res := &CullResult{Card: taskID, Into: into, Worktree: t.Worktree}
 	plan, err := inspectCullProved(t.Worktree, into, tip)
@@ -134,20 +148,8 @@ func (d *Daemon) CullProved(taskID, into, tip string) (*CullResult, error) {
 			t.DisplayTitle(), plan.branch, into)
 	}
 
-	// Ask it to leave first. Its process holds the worktree as its directory, and
-	// on Windows a directory in use cannot be removed.
-	if d.sup.get(taskID) != nil {
-		if err := d.StopRunnerBy(taskID, "atrium (cull)"); err != nil {
-			return nil, err
-		}
-		if !d.waitRunnerGone(taskID, restartGoneWait) {
-			return nil, fmt.Errorf("%s did not stop in time, so nothing was removed. try again",
-				t.DisplayTitle())
-		}
-		res.Exited = true
-	} else if t.PID > 0 && !finishedStatus(t.Status) {
-		return nil, fmt.Errorf("%s is still live and atrium does not own its terminal, so it "+
-			"cannot be asked to leave from here and nothing was removed", t.DisplayTitle())
+	if err := d.leaveForCull(t, res); err != nil {
+		return nil, err
 	}
 
 	// Again, after the exit: a runner writes on its way out.
@@ -169,13 +171,32 @@ func (d *Daemon) CullProved(taskID, into, tip string) (*CullResult, error) {
 		res.Kept = err.Error()
 		return d.culled(t, res), nil
 	}
-	res.WorktreeRemoved = true
+	res.WorktreeRemoved, res.BriefRemoved = true, true
 	if err := deleteMergedBranch(plan, into); err != nil {
 		res.Kept = err.Error()
 		return d.culled(t, res), nil
 	}
 	res.BranchDeleted = true
 	return d.culled(t, res), nil
+}
+
+// leaveForCull asks a worker to leave first. Its process holds the worktree as its directory, and on Windows a
+// directory in use cannot be removed.
+func (d *Daemon) leaveForCull(t *store.Task, res *CullResult) error {
+	taskID := t.ID
+	if d.sup.get(taskID) != nil {
+		if err := d.StopRunnerBy(taskID, "atrium (cull)"); err != nil {
+			return err
+		}
+		if !d.waitRunnerGone(taskID, restartGoneWait) {
+			return fmt.Errorf("%s did not stop in time, so nothing was removed. try again", t.DisplayTitle())
+		}
+		res.Exited = true
+	} else if t.PID > 0 && !finishedStatus(t.Status) {
+		return fmt.Errorf("%s is still live and atrium does not own its terminal, so it "+
+			"cannot be asked to leave from here and nothing was removed", t.DisplayTitle())
+	}
+	return nil
 }
 
 // culled logs what a cull did, and hands the result back. Reaching here means

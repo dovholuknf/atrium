@@ -47,10 +47,23 @@ func (d *Daemon) exitsOnReport(task *store.Task, in FinishRequest) bool {
 			return false
 		}
 	}
-	if isLinkCard(task) {
+	if isLinkCard(task) || staysOpen(task) {
 		return false
 	}
 	return true
+}
+
+// KeepOpenTag and InvestigationTag are the two tags that say a card is not closed by a done report and is never
+// reclaimed. The launcher puts one on when the card is meant to outlive its first answer: a long conversation, or
+// an investigation whose transcript is the product. See reclaim.go.
+const (
+	KeepOpenTag      = "atrium:keep-open"
+	InvestigationTag = "atrium:investigation"
+)
+
+// staysOpen says whether a card is tagged to stay open or is an investigation.
+func staysOpen(t *store.Task) bool {
+	return t != nil && (hasTag(t.Tags, KeepOpenTag) || hasTag(t.Tags, InvestigationTag))
 }
 
 // LinkTagPrefix marks a card a link opened (`link:<key>`, internal/api/open.go). Its lifetime is the link's: a done

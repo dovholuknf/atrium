@@ -2500,6 +2500,7 @@ func (s *Server) cullRunner(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if t, err := s.st.Get(r.PathValue("id")); err == nil {
+		s.reclaimInventory(r.Context(), t)
 		s.PublishTask(t)
 	}
 	writeJSON(w, http.StatusOK, res)

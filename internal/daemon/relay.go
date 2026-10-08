@@ -343,7 +343,7 @@ func (d *Daemon) sayAcross(ctx context.Context, from, name, room, text, when, ki
 			return http.StatusInternalServerError, errBody("could not reach " + room + " (" + why +
 				") and could not hold the message either: " + herr.Error())
 		}
-		d.reportedAcross(sender, to, "")
+		d.reportedAcross(sender, to, "", text)
 		log.Printf("[atrium] %s's message to %s is held: %s", wire, to, why)
 		// Held on this room, and moved on by the drain. See docs/runtime/say-lifecycle-design.md.
 		rec.State, rec.RelayID, rec.Note = store.SayHeld, held.ID, "not answering: "+why
@@ -387,7 +387,7 @@ func (d *Daemon) sayAcross(ctx context.Context, from, name, room, text, when, ki
 	if res.To != "" {
 		to = res.To
 	}
-	d.reportedAcross(sender, to, res.Card)
+	d.reportedAcross(sender, to, res.Card, text)
 	log.Printf("[atrium] %s told %s something across rooms (%d chars, %s)", wire, to, len(text), res.Delivered)
 	rec.ToWire, rec.State, rec.Note = to, store.SayHanded, "the hub took it: "+res.Delivered
 	if res.Delivered == "terminal" {
@@ -411,7 +411,7 @@ func (d *Daemon) sayAcross(ctx context.Context, from, name, room, text, when, ki
 // reportedAcross marks a worker reported when what it said went to its
 // launcher on another room. The address it was resolved to and the card are
 // both compared, since either may be what the lineage recorded.
-func (d *Daemon) reportedAcross(sender *store.Task, to, card string) {
+func (d *Daemon) reportedAcross(sender *store.Task, to, card, text string) {
 	if sender == nil || !sender.Launched() {
 		return
 	}
@@ -433,6 +433,7 @@ func (d *Daemon) reportedAcross(sender *store.Task, to, card string) {
 	if err := d.st.MarkReported(sender.ID); err != nil {
 		log.Printf("[atrium] could not record that %s reported: %v", sender.DisplayTitle(), err)
 	}
+	d.doneBySay(sender, text)
 }
 
 // sameAddress compares two `name@room` addresses, the room without case.

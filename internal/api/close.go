@@ -546,6 +546,35 @@ func (s *Server) closeCard(t *store.Task, pv *closePreview, answers map[string]s
 	return res
 }
 
+// reclaimInventory frees what a reclaimed worker owns, which is a close without its questions: a worktree that holds
+// work nowhere else has is KEPT, never deleted and never asked about, because the launcher said the work was merged
+// and deployed and did not say this. Best effort, like the rest of a reclaim: a failure is logged and the cull stands.
+func (s *Server) reclaimInventory(ctx context.Context, t *store.Task) {
+	pv, err := s.closePreview(ctx, t)
+	if err != nil {
+		log.Printf("[atrium api] reclaim %s: the inventory did not read: %v", t.ID, err)
+		return
+	}
+	live := false
+	for _, it := range pv.Items {
+		if it.Action != "freed" {
+			live = true
+		}
+	}
+	if !live {
+		return
+	}
+	if _, busy := closing.LoadOrStore(t.ID, true); busy {
+		return
+	}
+	defer closing.Delete(t.ID)
+	answers := map[string]string{}
+	for _, a := range pv.Asks {
+		answers[strconv.Itoa(a.Seq)] = CloseKeep
+	}
+	s.closeCard(t, pv, answers, false)
+}
+
 // procStillIt is whether a proc row's pid is still the process recorded: running, with the same start time.
 func procStillIt(r *store.CardResource) bool {
 	pid, err := strconv.Atoi(r.Ref)
