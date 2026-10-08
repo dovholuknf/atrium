@@ -8,6 +8,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/dovholuknf/atrium/internal/link"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -68,6 +69,34 @@ func reportHandler(ctx context.Context, _ *mcp.CallToolRequest, in ReportInput) 
 		out.Note = "recorded on your card. nobody launched you, so there was nobody else to tell."
 	}
 	return nil, out, nil
+}
+
+// endReport is atrium_done and atrium_blocked on the stdio server: the same report endpoint, with the ending flagged.
+// The room checks the commit and the reason, so nothing is recorded for one it refuses.
+func endReport(ctx context.Context, _ *mcp.CallToolRequest, body map[string]any) (link.EndOutput, error) {
+	out := link.EndOutput{}
+	me := strings.TrimSpace(os.Getenv("ATRIUM_AGENT_NAME"))
+	if me == "" {
+		return out, fmt.Errorf("this is for a session atrium launched. this one has no ATRIUM_AGENT_NAME, " +
+			"so there is no card to end")
+	}
+	id, _, err := resolvePeer(ctx, me)
+	if err != nil {
+		return out, err
+	}
+	var res struct {
+		Recorded     bool   `json:"recorded"`
+		Status       string `json:"status"`
+		LauncherTold bool   `json:"launcher_told"`
+	}
+	if err := ask(ctx, http.MethodPost, "/v1/tasks/"+url.PathEscape(id)+"/report", body, &res); err != nil {
+		return out, err
+	}
+	out.Recorded, out.Status, out.LauncherTold = res.Recorded, res.Status, res.LauncherTold
+	if !res.LauncherTold {
+		out.Note = "recorded on your card. nobody launched you, so there was nobody else to tell."
+	}
+	return out, nil
 }
 
 // peersRoomsPath is the room's list of sessions on other rooms.

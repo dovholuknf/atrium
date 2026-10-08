@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/dovholuknf/atrium/internal/gitsync"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -71,6 +72,9 @@ type FinishRequest struct {
 	Ask string `json:"ask,omitempty"`
 	// Kind is `fyi` or `needs`. See fyi.go. Anything but fyi is needs.
 	Kind string `json:"kind,omitempty"`
+	// Ended is a worker ending with atrium_done or atrium_blocked: one line, and the work is over either way, so a
+	// blocked report moves its item to reported as a done one does. See ledgerReport.
+	Ended bool `json:"ended,omitempty"`
 	// viaSay is a done that was read out of a worker's own atrium_say to its launcher. The launcher has the words
 	// already, so no second notice is queued to it. Never on the wire. See doneBySay.
 	viaSay bool
@@ -172,12 +176,96 @@ var commitExists = func(dir, sha string) bool {
 	return cmd.Run() == nil
 }
 
+// commitInDir says whether `git rev-parse --verify <sha>^{commit}` resolves in a directory. A variable so a test does
+// not need a repository.
+var commitInDir = func(dir, sha string) bool {
+	if strings.TrimSpace(dir) == "" {
+		return false
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "git", "-C", filepath.FromSlash(dir), "rev-parse", "--verify", "--quiet", sha+"^{commit}")
+	hideWindow(cmd)
+	return cmd.Run() == nil
+}
+
+// commitOnHub says whether the hub has a commit, asked as atrium_git_url asks: for every branch of the card's
+// repository, whose tips are listed with their shas. A variable so a test does not need a hub.
+var commitOnHub = func(d *Daemon, task *store.Task, sha string) bool {
+	ctx, cancel := context.WithTimeout(context.Background(), gitsync.LookupRoomWait)
+	defer cancel()
+	dir := filepath.FromSlash(task.Worktree)
+	repo := gitsync.HubNameOf(ctx, gitsync.Default, dir, d.cloneRoots()...)
+	if repo == "" {
+		return false
+	}
+	rt, err := d.hubTransport()
+	if err != nil {
+		return false
+	}
+	ans, err := gitsync.AskHubLookup(ctx, rt, gitsync.URLQuery{Repo: repo})
+	if err != nil {
+		return false
+	}
+	sha = strings.ToLower(sha)
+	for _, b := range ans.Branches {
+		for _, s := range b.Sources {
+			if strings.HasPrefix(strings.ToLower(s.SHA), sha) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// validEnd refuses atrium_done and atrium_blocked that the tool let through: a commit nobody has, a reason that is not
+// one short line. The card's own directory first, then the hub. Nothing is recorded when it refuses.
+func (d *Daemon) validEnd(task *store.Task, in FinishRequest) error {
+	switch in.Status {
+	case ReportDone:
+		sha := strings.TrimSpace(in.SHA)
+		if !shaShape.MatchString(sha) {
+			return fmt.Errorf("sha %q is not a commit id: 7 to 40 hex characters", sha)
+		}
+		if !commitInDir(task.Worktree, sha) && !commitOnHub(d, task, sha) {
+			return fmt.Errorf("neither your directory nor the hub has commit %s. commit the work first, then call again", sha)
+		}
+	case ReportBlocked:
+		if why := CheckBlockedReason(in.Ask); why != "" {
+			return errString(why)
+		}
+	default:
+		return fmt.Errorf("an ending is done or blocked, not %q", in.Status)
+	}
+	return nil
+}
+
+// CheckBlockedReason is why a reason for atrium_blocked is refused, or "": 1 to 50 words, split on whitespace.
+func CheckBlockedReason(reason string) string {
+	n := len(strings.Fields(reason))
+	switch {
+	case n == 0:
+		return "say why you are blocked, in up to 50 words"
+	case n > EndReasonMax:
+		return fmt.Sprintf("the reason is %d words, over %d. shorten it, details go in REPORT.md", n, EndReasonMax)
+	}
+	return ""
+}
+
+// EndReasonMax is the longest reason atrium_blocked takes, in words.
+const EndReasonMax = 50
+
 // finish records a report and says what it did. The error carries the HTTP
 // status to answer with.
 func (d *Daemon) finish(task *store.Task, in FinishRequest) (map[string]any, int, error) {
 	in.Status = strings.ToLower(strings.TrimSpace(in.Status))
 	if err := validReport(task, in); err != nil {
 		return nil, http.StatusBadRequest, err
+	}
+	if in.Ended {
+		if err := d.validEnd(task, in); err != nil {
+			return nil, http.StatusBadRequest, err
+		}
 	}
 
 	status := store.StatusDone
@@ -252,6 +340,7 @@ func (d *Daemon) finish(task *store.Task, in FinishRequest) (map[string]any, int
 		MoveStatus: task.Status != store.StatusShelved && status != task.Status,
 		Status:     status, Reason: reason,
 		ReportStatus: in.Status, UnheardIsUnsent: agentLaunched(task),
+		SayReport: in.Ended && (in.Status == ReportDone || in.Status == ReportBlocked),
 	}
 	if status == store.StatusDone {
 		out := &store.WorkOutputs{NoCommit: strings.TrimSpace(in.NoCommit)}

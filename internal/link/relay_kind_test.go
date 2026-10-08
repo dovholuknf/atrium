@@ -3,19 +3,24 @@ package link
 import (
 	"strings"
 	"testing"
+
+	"github.com/dovholuknf/atrium/internal/daemon"
 )
 
 // r-comms-one-instruction: the launch line names atrium_say and not atrium_report, and a
 // relayed say keeps its kind, so a launcher's fyi on another room makes no report owed there.
 
-func TestTheLaunchLineNamesAtriumSayAndNotAtriumReport(t *testing.T) {
-	for _, want := range []string{"atrium_say", "done <sha>", "blocked: <one line>"} {
+func TestTheLaunchLineNamesDoneAndBlockedAndNotAtriumReport(t *testing.T) {
+	for _, want := range []string{"atrium_done <sha>", "atrium_blocked <up to 50 words>"} {
 		if !strings.Contains(reportLine, want) {
 			t.Errorf("the launch line misses %q: %q", want, reportLine)
 		}
 	}
 	if strings.Contains(reportLine, "atrium_report") {
 		t.Errorf("the launch line names atrium_report: %q", reportLine)
+	}
+	if reportLine != daemon.LaunchEndingLine {
+		t.Errorf("the hub's ending and the room's differ:\n%q\n%q", reportLine, daemon.LaunchEndingLine)
 	}
 }
 

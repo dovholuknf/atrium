@@ -70,7 +70,7 @@ func TestAStdioLaunchRecordsItsLauncherAndIsAWorker(t *testing.T) {
 			t.Fatalf("tags %v lack %q", tags, want)
 		}
 	}
-	if p, _ := body["prompt"].(string); !strings.HasPrefix(p, "do the thing") || !strings.Contains(p, "atrium_say") ||
+	if p, _ := body["prompt"].(string); !strings.HasPrefix(p, "do the thing") || !strings.HasSuffix(p, link.ReportLine) ||
 		strings.Contains(p, "atrium_report") {
 		t.Fatalf("the prompt lacks the report line: %q", p)
 	}
@@ -109,7 +109,8 @@ func TestAHandRunStdioLaunchIsNotAttributedToABlankName(t *testing.T) {
 func TestAStdioLaunchWithABriefStillEndsWithTheReportLine(t *testing.T) {
 	dir := t.TempDir()
 	body := stdioLaunchBody(t, "boss", LaunchInput{Cwd: dir, Brief: "the whole task"})
-	if p, _ := body["prompt"].(string); !strings.Contains(p, briefFile) || !strings.HasSuffix(p, "when you need an answer.") {
+	if p, _ := body["prompt"].(string); !strings.Contains(p, briefFile) || !strings.HasSuffix(p, link.ReportLine) ||
+		!strings.Contains(p, "Then: do as BRIEF.md describes.") {
 		t.Fatalf("prompt = %q", p)
 	}
 }

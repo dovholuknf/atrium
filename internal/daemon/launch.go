@@ -1681,14 +1681,38 @@ func withResourcesLine(text string) string {
 // first starts answering it, and the briefing arrives as correction. The task
 // still has to be in the prompt rather than only in the file, or the session
 // reads a briefing and sits there waiting to be told what to do with it.
-func briefPrompt(prompt string) string {
-	read := "Read " + briefFileName + " in this directory first. It is your briefing, written " +
-		"for you by another agent, and it holds everything you are expected to know. " +
-		"Re-read it whenever you lose the thread rather than guessing."
-	if strings.TrimSpace(prompt) == "" {
-		return read + " Then do what it asks."
+func briefPrompt(prompt string) string { return BriefPrompt(briefFileName, prompt) }
+
+// LaunchEndingLine is how a launched session is told to end: the same text link.reportLine ends a launch prompt
+// with, kept equal by a test in internal/link.
+const LaunchEndingLine = "Before you end your turn, tell your launcher either:\n" +
+	"- atrium_done <sha> when the work is finished\n" +
+	"- atrium_blocked <up to 50 words> when something stops you, such as a question you need answered, a tool you need " +
+	"installed, or a permission you need."
+
+// BriefPrompt is the launch text of a session with a brief file: read it, do what it describes, and how to end.
+// ONE CODE for the room's launch and the stdio atrium_launch. A launcher's prompt that only says to read the brief
+// and do it is not repeated after "Then:", and the ending is never doubled.
+func BriefPrompt(file, prompt string) string {
+	body := strings.TrimSpace(strings.TrimSuffix(strings.TrimSpace(prompt), LaunchEndingLine))
+	then := "Then: do as " + file + " describes."
+	if body != "" && !onlyReadTheBrief(body, file) {
+		then = "Then: " + body
 	}
-	return read + "\n\nThen: " + prompt
+	return "Read " + file + " in this directory first. It holds everything you are expected to know. " +
+		"Re-read it whenever you lose the thread rather than guessing.\n" + then + "\n\n" + LaunchEndingLine
+}
+
+// onlyReadTheBrief says whether a prompt is just "read BRIEF.md and do it".
+func onlyReadTheBrief(prompt, file string) bool {
+	p := strings.ToLower(strings.TrimRight(strings.TrimSpace(prompt), ".! "))
+	f := strings.ToLower(file)
+	switch p {
+	case "read " + f + " and do it", "read " + f + " and do what it says", "read " + f + " and do what it asks",
+		"read " + f + " and do the job it describes":
+		return true
+	}
+	return false
 }
 
 // childEnv builds the environment for a launched runner: everything inherited
