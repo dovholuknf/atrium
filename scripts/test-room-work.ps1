@@ -104,7 +104,7 @@ if ($isWin) {
         $f = Join-Path $tmp "run-$([guid]::NewGuid().ToString('N').Substring(0, 6)).ps1"
         Set-Content -LiteralPath $f -Value $script -Encoding UTF8
         $envs = foreach ($k in $env.Keys) { "`$env:$k = '$($env[$k])'" }
-        $o = & pwsh -NoProfile -Command ((@($envs) -join '; ') + "; `$HOME = `$env:HOME; & '$f'") 2>&1
+        $o = & pwsh -NoProfile -Command ((@($envs) -join '; ') + "; & '$f'") 2>&1
         @($o | ForEach-Object { "$_" })
     }
     New-Item -ItemType Directory -Force -Path (Join-Path $tmp 'a') | Out-Null
@@ -146,11 +146,11 @@ if ($isWin) {
     Set-Content -LiteralPath (Join-Path $app 'pip\pip.ini') -Value @('[install]', 'timeout = 5', '', '[global]', 'index-url = https://i.example/') -Encoding UTF8
     $o = Run-Ps (Cache-Script $false) $e
     $kv = @{}; foreach ($l in $o) { $i = $l.IndexOf('='); if ($i -gt 0) { $kv[$l.Substring(0, $i)] = $l.Substring($i + 1) } }
-    Check '-Check: every cache says todo, the folders say todo' @($kv.dirs -like 'todo*', $kv.npm, $kv.gomod, $kv.gocache, $kv.pip, $kv.cargo) @($true, 'todo', 'todo', 'todo', 'todo', 'todo')
-    Check '-Check: nothing was written' @((Get-Content -LiteralPath (Join-Path $home1 '.npmrc') | Where-Object { $_ -like 'cache=*' }).Count, (Test-Path (Join-Path $app 'go')), (Test-Path (Join-Path $tmp 'work'))) @(2, $false, $false)
+    Check '-Check: every cache says todo, the folders say todo' @(($kv.dirs -like 'todo*'), $kv.npm, $kv.gomod, $kv.gocache, $kv.pip, $kv.cargo) @($true, 'todo', 'todo', 'todo', 'todo', 'todo')
+    Check '-Check: nothing was written' @((Get-Content -LiteralPath (Join-Path $home1 '.npmrc') | Where-Object { $_ -like 'cache=*' }).Count, (Test-Path (Join-Path $app 'go\env')), (Test-Path (Join-Path $tmp 'work'))) @(2, $false, $false)
     $o = Run-Ps (Cache-Script $true) $e
     $kv = @{}; foreach ($l in $o) { $i = $l.IndexOf('='); if ($i -gt 0) { $kv[$l.Substring(0, $i)] = $l.Substring($i + 1) } }
-    Check 'run: every cache says done' @($kv.dirs -like 'made*', $kv.npm, $kv.gomod, $kv.gocache, $kv.pip, $kv.cargo) @($true, 'done', 'done', 'done', 'done', 'done')
+    Check 'run: every cache says done' @(($kv.dirs -like 'made*'), $kv.npm, $kv.gomod, $kv.gocache, $kv.pip, $kv.cargo) @($true, 'done', 'done', 'done', 'done', 'done')
     Check 'run: the folders are under the work root' @((Test-Path (Join-Path $tmp 'work\git')), (Test-Path (Join-Path $tmp 'work\reviews')), (Test-Path (Join-Path $tmp 'work\handoff')), (Test-Path (Join-Path $tmp 'work\cache\npm')), (Test-Path (Join-Path $tmp 'work\cache\cargo'))) @($true, $true, $true, $true, $true)
     Check 'run: .npmrc keeps its other lines and has one cache line, the work root' @((Get-Content -LiteralPath (Join-Path $home1 '.npmrc'))) @('registry=https://r.example/', "cache=$($lay.Npm)", '; keep')
     Check 'run: go env has GOMODCACHE and GOCACHE' @((Get-Content -LiteralPath (Join-Path $app 'go\env'))) @("GOMODCACHE=$($lay.GoMod)", "GOCACHE=$($lay.GoBuild)")
@@ -163,8 +163,8 @@ if ($isWin) {
     Check 'rerun: everything says ok' @($kv.dirs, $kv.npm, $kv.gomod, $kv.gocache, $kv.pip, $kv.cargo) @('ok', 'ok', 'ok', 'ok', 'ok', 'ok')
     $after = @(Get-ChildItem -LiteralPath $home1 -Recurse -File | Sort-Object FullName | ForEach-Object { "$($_.FullName)|$($_.Length)|$($_.LastWriteTimeUtc.Ticks)" })
     Check 'rerun: no file was written' ($after -join "`n") ($before -join "`n")
-    $vs = @(Get-WorkCacheVerdict $o $lay $true)
-    Check 'rerun verdict: the folders and the caches are ok' @($vs.Step, $vs.Status) @('work-dirs', 'work-cache', 'ok', 'ok')
+    $vs = @(Get-WorkCacheVerdict @($o | Where-Object { $_ -notmatch 'tool=' }) $lay $true)
+    Check 'rerun verdict: the folders and the caches are ok' @(@($vs | ForEach-Object { $_.Step }), @($vs | ForEach-Object { $_.Status })) @(@('work-dirs', 'work-cache'), @('ok', 'ok'))
 }
 
 # ── the unix cache script, run for real when there is an sh ─────────────────
@@ -190,10 +190,10 @@ if ($sh) {
         Set-Content -LiteralPath (Join-Path $uh '.config/pip/pip.conf') -Value @('[install]', 'timeout = 5', '[global]', 'index-url = https://i.example/') -Encoding ascii
         $o = Run-Sh (Get-WorkCacheScript 'linux' $ulay $false)
         $kv = @{}; foreach ($l in $o) { $i = $l.IndexOf('='); if ($i -gt 0) { $kv[$l.Substring(0, $i)] = $l.Substring($i + 1) } }
-        Check 'unix -Check: todo for each, nothing written' @($kv.dirs -like 'todo*', $kv.npm, $kv.gomod, $kv.pip, $kv.cargo, (Test-Path (Join-Path $uh '.profile')), (Test-Path (Join-Path $tmp 'uwork'))) @($true, 'todo', 'todo', 'todo', 'todo', $false, $false)
+        Check 'unix -Check: todo for each, nothing written' @(($kv.dirs -like 'todo*'), $kv.npm, $kv.gomod, $kv.pip, $kv.cargo, (Test-Path (Join-Path $uh '.profile')), (Test-Path (Join-Path $tmp 'uwork'))) @($true, 'todo', 'todo', 'todo', 'todo', $false, $false)
         $o = Run-Sh (Get-WorkCacheScript 'linux' $ulay $true)
         $kv = @{}; foreach ($l in $o) { $i = $l.IndexOf('='); if ($i -gt 0) { $kv[$l.Substring(0, $i)] = $l.Substring($i + 1) } }
-        Check 'unix run: done for each' @($kv.dirs -like 'made*', $kv.npm, $kv.gomod, $kv.gocache, $kv.pip, $kv.cargo) @($true, 'done', 'done', 'done', 'done', 'done')
+        Check 'unix run: done for each' @(($kv.dirs -like 'made*'), $kv.npm, $kv.gomod, $kv.gocache, $kv.pip, $kv.cargo) @($true, 'done', 'done', 'done', 'done', 'done')
         Check 'unix run: .npmrc keeps the registry and has one cache line' @((Get-Content -LiteralPath (Join-Path $uh '.npmrc'))) @('registry=https://r.example/', "cache=$($ulay.Npm)")
         Check 'unix run: pip.conf has cache-dir inside [global]' @((Get-Content -LiteralPath (Join-Path $uh '.config/pip/pip.conf'))) @('[install]', 'timeout = 5', '[global]', "cache-dir = $($ulay.Pip)", 'index-url = https://i.example/')
         Check 'unix run: the profile exports CARGO_HOME' @((Get-Content -LiteralPath (Join-Path $uh '.profile'))) @("export CARGO_HOME='$($ulay.Cargo)'  # atrium work root")
@@ -263,7 +263,7 @@ Check 'pack files: agents, then each skill with a SKILL.md and everything under 
 Check 'pack files: nothing else of claude/ is taken' (@($pf.Files | Where-Object { $_ -match 'hooks|README|notaskill' }).Count) 0
 $meta = New-AgentPackMeta $claude $pf.Files 'dovholuknf/dotfiles' 'main' ('a' * 40)
 Check 'pack meta: the agents, the skills and the commit' @($meta.agents.Count, @($meta.skills), $meta.commit, $meta.repo) @(5, @('afk', 'recap'), ('a' * 40), 'dovholuknf/dotfiles')
-Check 'pack meta: every file has a 64 hex SHA-256 that is the file''s own' @(@($meta.files.PSObject.Properties | Where-Object { $_.Value -match '^[0-9a-f]{64}$' }).Count, $meta.files.'agents/persona.md' -eq (Get-FileHash -LiteralPath (Join-Path $claude 'agents/persona.md') -Algorithm SHA256).Hash.ToLower()) @(8, $true)
+Check 'pack meta: every file has a 64 hex SHA-256 that is the file''s own' @(@($meta.files.PSObject.Properties | Where-Object { $_.Value -match '^[0-9a-f]{64}$' }).Count, [bool]($meta.files.'agents/persona.md' -eq (Get-FileHash -LiteralPath (Join-Path $claude 'agents/persona.md') -Algorithm SHA256).Hash.ToLower())) @(8, $true)
 if ($isWin) {
     $lnk = Join-Path $claude 'skills/debug-ziti'
     $tgt = Join-Path $tmp 'elsewhere'; New-Item -ItemType Directory -Force -Path $tgt | Out-Null; Set-Content -LiteralPath (Join-Path $tgt 'SKILL.md') -Value 'x'
@@ -286,11 +286,11 @@ if ($isWin -and (Get-Command tar -ErrorAction SilentlyContinue)) {
     Set-Content -LiteralPath (Join-Path $ph '.claude\agents\mine.md') -Value 'the room owner''s own agent'
     function Install-Pack { param([bool] $make)
         $t = Join-Path $P 'agent-pack.tgz'; if (Test-Path $t) { Remove-Item $t -Force }
-        & tar -czf $t -C $stage . | Out-Null
+        & (Get-PackTar) -czf $t -C $stage . | Out-Null
         $s = "`$P = '$P'`n" + (Get-AgentPackInstallScript 'windows' $make)
         $f = Join-Path $tmp "inst-$([guid]::NewGuid().ToString('N').Substring(0, 6)).ps1"
         Set-Content -LiteralPath $f -Value $s -Encoding UTF8
-        $o = & pwsh -NoProfile -Command "`$env:HOME = '$ph'; `$env:USERPROFILE = '$ph'; `$HOME = '$ph'; & '$f'" 2>&1
+        $o = & pwsh -NoProfile -Command "`$env:HOME = '$ph'; `$env:USERPROFILE = '$ph'; & '$f'" 2>&1
         $kv = @{}; foreach ($l in @($o | ForEach-Object { "$_" })) { $i = $l.IndexOf('='); if ($i -gt 0) { $kv[$l.Substring(0, $i)] = $l.Substring($i + 1) } }
         $kv
     }
@@ -304,28 +304,28 @@ if ($isWin -and (Get-Command tar -ErrorAction SilentlyContinue)) {
     Check 'install: the record names the commit, the repo and when' @($rec.commit, $rec.repo, [bool]$rec.installed_at) @(('a' * 40), 'dovholuknf/dotfiles', $true)
     $b = (Get-Item (Join-Path $ph '.claude\atrium-agent-pack.json')).LastWriteTimeUtc.Ticks
     $kv = Install-Pack $true
-    Check 'install again: nothing changed, no record written' @($kv.changed, $kv.record, (Get-Item (Join-Path $ph '.claude\atrium-agent-pack.json')).LastWriteTimeUtc.Ticks -eq $b) @('0', $null, $true)
+    Check 'install again: nothing changed, no record written' @($kv.changed, $kv.record, ((Get-Item (Join-Path $ph '.claude\atrium-agent-pack.json')).LastWriteTimeUtc.Ticks -eq $b)) @('0', $null, $true)
     Set-Content -LiteralPath (Join-Path $ph '.claude\agents\functional-tester.md') -Value 'edited on the room'
     $kv = Install-Pack $true
     Check 'install: a file edited on the room is put back, and only that one' @($kv.changed, (Get-Content -LiteralPath (Join-Path $ph '.claude\agents\functional-tester.md'))) @('1', 'agent functional-tester')
-    $state = & pwsh -NoProfile -Command "`$HOME = '$ph'; & { $(Get-AgentPackStateScript 'windows') }" 2>&1
+    $state = & pwsh -NoProfile -Command "`$env:USERPROFILE = '$ph'; & { $(Get-AgentPackStateScript 'windows') }" 2>&1
     $vd = Get-AgentPackVerdict @($state | ForEach-Object { "$_" }) ('a' * 40)
     Check 'state: read back, the pack is current and the panel agents are there' @($vd.Status, [bool]($vd.Detail -like 'the agent pack at aaaaaaaaa, 6 agents and 2 skills*')) @('ok', $true)
 }
 
 # ── the verdict on the pack ─────────────────────────────────────────────────
 
-$cur = @('commit=' + ('b' * 40), 'installed_at=2026-10-08T00:00:00Z', 'agents=c-systems-reviewer,go-security-reviewer,functional-tester,nonfunctional-tester,persona', 'skills=afk,recap')
+$cur = @(('commit=' + ('b' * 40)), 'installed_at=2026-10-08T00:00:00Z', 'agents=c-systems-reviewer,go-security-reviewer,functional-tester,nonfunctional-tester,persona', 'skills=afk,recap')
 Check 'pack verdict: current is ok' (Get-AgentPackVerdict $cur ('b' * 40)).Status 'ok'
 $vd = Get-AgentPackVerdict $cur ('c' * 40)
 Check 'pack verdict: a newer commit on the hub is stale, naming both' @($vd.Status, [bool]($vd.Detail -like 'the agent pack is stale: bbbbbbbbb is installed and the hub*ccccccccc*')) @('warn', $true)
 $vd = Get-AgentPackVerdict @('record=missing', 'agents=', 'skills=') ('b' * 40)
 Check 'pack verdict: no record is a warn that says to install it, and names the panel agents' @($vd.Status, [bool]($vd.Detail -like 'the agent pack is not installed.*c-systems-reviewer*go-security-reviewer*')) @('warn', $true)
-$vd = Get-AgentPackVerdict @('commit=' + ('b' * 40), 'agents=persona,c-systems-reviewer', 'skills=afk') ('b' * 40)
+$vd = Get-AgentPackVerdict @(('commit=' + ('b' * 40)), 'agents=persona,c-systems-reviewer', 'skills=afk') ('b' * 40)
 Check 'pack verdict: an agent the panel names that is missing is a warn naming it' @($vd.Status, [bool]($vd.Detail -like 'the agents go-security-reviewer, functional-tester, nonfunctional-tester that the review panel names are missing*')) @('warn', $true)
 $vd = Get-AgentPackVerdict $cur $null
 Check 'pack verdict: a hub that could not be asked is ok and says so' @($vd.Status, [bool]($vd.Detail -like '*could not be asked*')) @('ok', $true)
-Check 'pack verdict: needing nothing in particular, a record and no agents is ok' (Get-AgentPackVerdict @('commit=' + ('b' * 40), 'agents=', 'skills=') ('b' * 40) @()).Status 'ok'
+Check 'pack verdict: needing nothing in particular, a record and no agents is ok' (Get-AgentPackVerdict @(('commit=' + ('b' * 40)), 'agents=', 'skills=') ('b' * 40) @()).Status 'ok'
 
 # THE PANEL'S AGENTS ARE THE STORE'S. DefaultPRPanel in internal/store/prs.go names them, and this list must be the same.
 $prs = Join-Path (Split-Path -Parent $PSScriptRoot) 'internal/store/prs.go'

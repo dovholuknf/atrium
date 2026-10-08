@@ -251,17 +251,17 @@ function Set-KeyLine { param($file, $key, $val)
 function Set-IniKey { param($file, $sec, $key, $val)
     $line = "$key = $val"
     $old = if (Test-Path -LiteralPath $file) { @(Get-Content -LiteralPath $file) } else { @() }
-    $new = @(); $in = $false; $done = $false; $seen = $false
+    $new = @(); $in = $false; $seen = $false
     foreach ($l in $old) {
         if ($l -match '^\s*\[.*\]') {
-            if ($in -and -not $done) { $new += $line; $done = $true }
-            $in = ($l -match ('^\s*\[' + [regex]::Escape($sec) + '\]\s*$')); if ($in) { $seen = $true }
-            $new += $l; continue
+            $in = ($l -match ('^\s*\[' + [regex]::Escape($sec) + '\]\s*$'))
+            $new += $l
+            if ($in -and -not $seen) { $new += $line; $seen = $true }
+            continue
         }
-        if ($in -and $l -match ('^\s*' + [regex]::Escape($key) + '\s*[=:]')) { if (-not $done) { $new += $line; $done = $true }; continue }
+        if ($in -and $l -match ('^\s*' + [regex]::Escape($key) + '\s*[=:]')) { continue }
         $new += $l
     }
-    if ($in -and -not $done) { $new += $line }
     if (-not $seen) { $new += "[$sec]"; $new += $line }
     if (($new -join "`n") -ceq ($old -join "`n")) { return 'ok' }
     if (-not $mk) { return 'todo' }
@@ -270,7 +270,7 @@ function Set-IniKey { param($file, $sec, $key, $val)
 $made = 0
 foreach ($d in $dirs) { if (-not (Test-Path -LiteralPath $d -PathType Container)) { if ($mk) { New-Item -ItemType Directory -Force -Path $d | Out-Null; $made++ } else { $made++ } } }
 "dirs=$(if ($made) { if ($mk) { "made $made" } else { "todo $made" } } else { 'ok' })"
-"npm=$(Set-KeyLine (Join-Path $HOME '.npmrc') 'cache' $npm)"
+"npm=$(Set-KeyLine (Join-Path $env:USERPROFILE '.npmrc') 'cache' $npm)"
 $goenv = Join-Path $env:APPDATA 'go\env'
 "gomod=$(Set-KeyLine $goenv 'GOMODCACHE' $gomod)"
 "gocache=$(Set-KeyLine $goenv 'GOCACHE' $gocache)"
@@ -292,11 +292,11 @@ setkv() { f=$1; k=$2; v=$3; t="$f.atrium-tmp.$$"; mkdir -p "$(dirname "$f")" 2>/
   awk -v k="$k" -v l="$k=$v" 'BEGIN { p=0 } $0 ~ "^[ \t]*" k "[ \t]*=" { if (!p) { print l; p=1 }; next } { print } END { if (!p) print l }' "$src" > "$t"
   rm -f "$t.empty"; apply "$f" "$t"; }
 setini() { f=$1; s=$2; k=$3; v=$4; t="${TMPDIR:-/tmp}/atrium-ini.$$"; src="$f"; if [ ! -f "$f" ]; then : > "$t.empty"; src="$t.empty"; fi
-  awk -v sec="$s" -v k="$k" -v l="$k = $v" 'BEGIN { inn=0; done=0; seen=0 }
-    /^[ \t]*\[.*\]/ { if (inn && !done) { print l; done=1 }; inn = ($0 ~ "^[ \t]*\\[" sec "\\][ \t]*$"); if (inn) seen=1; print; next }
-    inn && $0 ~ "^[ \t]*" k "[ \t]*[=:]" { if (!done) { print l; done=1 }; next }
+  awk -v sec="$s" -v k="$k" -v l="$k = $v" 'BEGIN { inn=0; seen=0 }
+    /^[ \t]*\[.*\]/ { inn = ($0 ~ "^[ \t]*\\[" sec "\\][ \t]*$"); print; if (inn && !seen) { print l; seen=1 }; next }
+    inn && $0 ~ "^[ \t]*" k "[ \t]*[=:]" { next }
     { print }
-    END { if (inn && !done) print l; if (!seen) { print "[" sec "]"; print l } }' "$src" > "$t"
+    END { if (!seen) { print "[" sec "]"; print l } }' "$src" > "$t"
   rm -f "$t.empty"; apply "$f" "$t"; }
 made=0
 for d in "${dirs[@]}"; do if [ ! -d "$d" ]; then if [ "$mk" = 1 ]; then mkdir -p "$d" && made=$((made+1)); else made=$((made+1)); fi; fi; done
@@ -410,7 +410,8 @@ function Get-AgentPackFiles {
             }
         }
     }
-    [pscustomobject]@{ Files = $files; Skipped = $skipped }
+    $sorted = [string[]]@($files); [Array]::Sort($sorted, [StringComparer]::Ordinal)
+    [pscustomobject]@{ Files = @($sorted); Skipped = $skipped }
 }
 
 # New-AgentPackMeta is the record that rides in the pack and is written to ~/.claude/atrium-agent-pack.json: the repo, branch and
@@ -440,6 +441,9 @@ function Get-HubMirrorCommit {
     if ($l.Count) { ($l[0] -split '\s+')[0] } else { $null }
 }
 
+# Get-PackTar is bsdtar where Windows ships it, since the GNU tar a Windows bash puts first on the PATH reads C:\x as a host.
+function Get-PackTar { $w = Join-Path $env:SystemRoot 'System32\tar.exe'; if ($IsWindows -ne $false -and (Test-Path -LiteralPath $w)) { $w } else { 'tar' } }
+
 # New-AgentPack fetches the repository from the hub's mirror, WHOLE (the hub serves whole fetches only), and packs the agents
 # and skills of its claude/ folder into <OutDir>/agent-pack.tgz, with the record that rides in it as .atrium-pack.json. The
 # checkout on this machine is never read. Returns Ok, Why, Commit, Tgz, Meta, Skipped.
@@ -466,7 +470,7 @@ function New-AgentPack {
     [IO.File]::WriteAllText((Join-Path $stage '.atrium-pack.json'), ($meta | ConvertTo-Json -Depth 5), [Text.UTF8Encoding]::new($false))
     $tgz = Join-Path $OutDir 'agent-pack.tgz'
     if (Test-Path -LiteralPath $tgz) { Remove-Item -LiteralPath $tgz -Force }
-    $t = & tar -czf $tgz -C $stage . 2>&1
+    $t = & (Get-PackTar) -czf $tgz -C $stage . 2>&1
     if ($LASTEXITCODE -ne 0) { return (& $fail "tar could not pack the agents: $((@($t) | Select-Object -First 1))") }
     [pscustomobject]@{ Ok = $true; Why = $null; Commit = $commit; Tgz = $tgz; Meta = $meta; Skipped = $f.Skipped }
 }
@@ -483,11 +487,12 @@ $tgz = Join-Path $P 'agent-pack.tgz'; $tmp = Join-Path $P 'agent-pack'
 Remove-Item -LiteralPath $tmp -Recurse -Force -ErrorAction SilentlyContinue
 New-Item -ItemType Directory -Force -Path $tmp | Out-Null
 $ErrorActionPreference = 'Continue'
-& tar.exe -xzf $tgz -C $tmp 2>&1 | ForEach-Object { "tar=$_" }
+$tarx = Join-Path $env:SystemRoot 'System32\tar.exe'; if (-not (Test-Path -LiteralPath $tarx)) { $tarx = 'tar.exe' }
+& $tarx -xzf $tgz -C $tmp 2>&1 | ForEach-Object { "tar=$_" }
 if ($LASTEXITCODE -ne 0) { 'unpack=fail'; exit 1 }
 $ErrorActionPreference = 'Stop'
 $meta = Get-Content -LiteralPath (Join-Path $tmp '.atrium-pack.json') -Raw | ConvertFrom-Json
-$dst = Join-Path $HOME '.claude'; $changed = 0; $n = 0
+$dst = Join-Path $env:USERPROFILE '.claude'; $changed = 0; $n = 0
 foreach ($f in $meta.files.PSObject.Properties) {
     $n++
     $to = Join-Path $dst $f.Name; $src = Join-Path $tmp $f.Name
@@ -540,7 +545,7 @@ function Get-AgentPackStateScript {
     param([string] $os)
     if ($os -eq 'windows') {
         return @'
-$c = Join-Path $HOME '.claude'; $rec = Join-Path $c 'atrium-agent-pack.json'
+$c = Join-Path $env:USERPROFILE '.claude'; $rec = Join-Path $c 'atrium-agent-pack.json'
 if (Test-Path -LiteralPath $rec) { try { $j = Get-Content -LiteralPath $rec -Raw | ConvertFrom-Json; "commit=$($j.commit)"; "installed_at=$($j.installed_at)"; "repo=$($j.repo)" } catch { 'record=bad' } } else { 'record=missing' }
 "agents=$((@(Get-ChildItem -LiteralPath (Join-Path $c 'agents') -Filter '*.md' -File -ErrorAction SilentlyContinue | ForEach-Object { $_.BaseName }) -join ','))"
 "skills=$((@(Get-ChildItem -LiteralPath (Join-Path $c 'skills') -Directory -ErrorAction SilentlyContinue | Where-Object { Test-Path -LiteralPath (Join-Path $_.FullName 'SKILL.md') } | ForEach-Object { $_.Name }) -join ','))"
