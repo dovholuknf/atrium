@@ -381,9 +381,16 @@ func (d *Daemon) onSession(in SessionEvent) error {
 		if d.pending != nil {
 			d.pending.drop(task.ID)
 		}
-		if err := d.st.AppendEvent(task.ID, store.EventExited, map[string]any{
-			"by": "session hook", "source": in.Source, "reason": in.Reason,
-		}); err != nil {
+		exited := map[string]any{"by": "session hook", "source": in.Source, "reason": in.Reason}
+		// WHY ATRIUM ENDED IT, when it did: the hook often lands before the runner's own exit does.
+		ck, cb := d.sup.get(task.ID).endCause()
+		if ck == "" && d.windingDown.Load() {
+			ck = store.CauseShutdown
+		}
+		if ck != "" {
+			exited["cause"], exited["cause_by"] = ck, cb
+		}
+		if err := d.st.AppendEvent(task.ID, store.EventExited, exited); err != nil {
 			return err
 		}
 		// /exit TYPED IN A SUPERVISED CARD'S OWN TERMINAL is somebody deciding, and

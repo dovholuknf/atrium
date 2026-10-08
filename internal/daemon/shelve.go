@@ -30,7 +30,10 @@ var shelveGrace = 5 * time.Second
 // The alternative was attaching, typing whatever that runner wants, and waiting.
 // Terminate exists for when that does not work: it kills the process outright.
 // This one asks.
-func (d *Daemon) StopRunner(taskID string) error {
+func (d *Daemon) StopRunner(taskID string) error { return d.StopRunnerBy(taskID, "") }
+
+// StopRunnerBy is StopRunner with who asked, so the exit says it was asked for.
+func (d *Daemon) StopRunnerBy(taskID, by string) error {
 	t, err := d.st.Get(taskID)
 	if err != nil {
 		return err
@@ -48,6 +51,7 @@ func (d *Daemon) StopRunner(taskID string) error {
 	if err := d.st.AppendEvent(taskID, store.EventNotified, map[string]any{"by": store.ExitAskedBy}); err != nil {
 		return err
 	}
+	d.sup.get(taskID).noteCause(store.CauseAsked, by)
 	if !d.stopOne(taskID, shelveGrace) {
 		return fmt.Errorf("atrium does not own a terminal for %s, so there is "+
 			"nothing here to exit", t.DisplayTitle())
@@ -72,10 +76,11 @@ func (d *Daemon) Shelve(taskID string) error {
 		return err
 	}
 
+	d.sup.get(taskID).noteCause(store.CauseShelved, "")
 	stopped := d.stopOne(taskID, shelveGrace)
 	if stopped {
 		if err := d.st.AppendEvent(taskID, store.EventExited, map[string]any{
-			"by": "shelved", "resume": t.ResumeID,
+			"by": "shelved", "resume": t.ResumeID, "cause": store.CauseShelved,
 		}); err != nil {
 			return err
 		}

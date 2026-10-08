@@ -444,6 +444,14 @@ func (d *Daemon) silentStop(taskID string) bool {
 	if !ok {
 		return false
 	}
+	// A CARD WAITING ON ITS HUMAN IS NOT STALLED. An unanswered question to the operator is the turn's point,
+	// and a card that already said done or blocked since its launcher's prompt has reported.
+	if sn, err := d.st.GetSeen(t.ID); err == nil && sn.View().OpenCount() != 0 {
+		return false
+	}
+	if t.OwedAt != nil && d.st.ReportedSince(t.ID, *t.OwedAt) {
+		return false
+	}
 	key := t.PromptKey()
 	nudgedAt, nudged := d.st.NoticeAt(t.ID, NoticeSilentNudge, key)
 	if !nudged {

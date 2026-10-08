@@ -311,6 +311,7 @@ func (d *Daemon) idlePark(t *store.Task, idle time.Duration, m *handoffMark) {
 				log.Printf("[atrium] could not record the handoff for %s: %v", id, err)
 			}
 		}
+		r.noteCause(store.CauseIdlePark, "")
 		idleLeave(d, r, id)
 		deadline := time.Now().Add(idleGoneWait)
 		for d.sup.get(id) != nil && time.Now().Before(deadline) {

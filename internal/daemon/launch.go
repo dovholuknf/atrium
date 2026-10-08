@@ -1780,7 +1780,7 @@ func (d *Daemon) Kill(taskID string) error {
 		detected = "already gone"
 	}
 	if err := d.st.AppendEvent(taskID, store.EventExited, map[string]any{
-		"pid": t.PID, "by": detected,
+		"pid": t.PID, "by": detected, "cause": store.CauseKilled,
 	}); err != nil {
 		return err
 	}

@@ -692,6 +692,11 @@ type runner struct {
 	// after it is atrium's doing, never a person typing /exit.
 	leaving atomic.Bool
 
+	// cause is why atrium ended this runner, set before the wind-down starts so the exit that follows carries
+	// it. The first cause wins. Empty means nobody asked: the session died or quit on its own.
+	causeMu        sync.Mutex
+	cause, causeBy string
+
 	taskID string
 	// runID names this one start, and is what an exit is filed against. Empty
 	// for a runner built without a start, which is only a test. See ptyrun.go in
@@ -2153,9 +2158,10 @@ func (d *Daemon) awaitExit(r *runner) {
 	if d.sup.get(r.taskID) == nil {
 		d.revokeHubGit(r.taskID, r.started)
 	}
+	ck, cb := r.endCause()
 	_, err := d.fileExitChecked(runExit{
 		taskID: r.taskID, runID: r.runID, code: code, tail: tail, lived: lived,
-		resumed: r.resumed, spec: r.spec,
+		resumed: r.resumed, spec: r.spec, cause: ck, causeBy: cb,
 	})
 	// Collected only after the filing committed. Ahead of it, a crash would lose an exit nobody had recorded.
 	if ht != nil && err == nil {
@@ -2186,6 +2192,8 @@ type runExit struct {
 	// superseded says the card has a different, live runner now, so this end is filed as history only. See
 	// reattachRuns.
 	superseded bool
+	// cause is why atrium ended the run, when it did. See runner.cause.
+	cause, causeBy string
 }
 
 // fileExit records a runner's end and marks its card dead, AT MOST ONCE per
@@ -2208,6 +2216,9 @@ func (d *Daemon) fileExitChecked(x runExit) (bool, error) {
 	payload := map[string]any{
 		"exit_code": code, "by": "supervisor",
 		"ran_for": lived.Round(time.Millisecond).String(),
+	}
+	if x.cause != "" {
+		payload["cause"], payload["cause_by"] = x.cause, x.causeBy
 	}
 	// A runner that lasted seconds did no work, so its last output is a failure
 	// message. One that ran for an hour ended for reasons its final twelve
@@ -2319,6 +2330,7 @@ func (d *Daemon) stopSupervised(grace time.Duration) {
 	var wg sync.WaitGroup
 	for _, r := range live {
 		wg.Add(1)
+		r.noteCause(store.CauseShutdown, "")
 		go func(r *runner) {
 			defer wg.Done()
 			windDown(r, grace, d.exitKeysFor(r.taskID))
@@ -2351,6 +2363,28 @@ func (d *Daemon) stopSupervised(grace time.Duration) {
 			log.Printf("[atrium] could not record the terminal size for %s: %v", r.taskID, err)
 		}
 	}
+}
+
+// noteCause records why atrium is ending this runner. See runner.cause.
+func (r *runner) noteCause(kind, by string) {
+	if r == nil {
+		return
+	}
+	r.causeMu.Lock()
+	defer r.causeMu.Unlock()
+	if r.cause == "" {
+		r.cause, r.causeBy = kind, by
+	}
+}
+
+// endCause is the cause noteCause recorded, if any.
+func (r *runner) endCause() (kind, by string) {
+	if r == nil {
+		return "", ""
+	}
+	r.causeMu.Lock()
+	defer r.causeMu.Unlock()
+	return r.cause, r.causeBy
 }
 
 // stopOne winds a single runner down and waits for it. Returns whether atrium

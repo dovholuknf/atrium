@@ -27,7 +27,7 @@ import (
 var exitOnReportDelay = 5 * time.Second
 
 // stopAfterReport is the exit itself. A variable so a test can watch it without owning a terminal.
-var stopAfterReport = func(d *Daemon, taskID string) error { return d.StopRunner(taskID) }
+var stopAfterReport = func(d *Daemon, taskID string) error { return d.StopRunnerBy(taskID, "atrium after its report") }
 
 // exitsOnReport says whether this report ends the card's runner. A done report that carries an ask is a question
 // in a done report's clothes: the launcher's answer has to reach a running card, so it stays.
