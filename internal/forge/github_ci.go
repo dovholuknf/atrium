@@ -1,15 +1,19 @@
 package forge
 
 import (
+	"archive/zip"
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -200,24 +204,55 @@ func (g *github) Download(ctx context.Context, ref Ref, runID int64, name, dest 
 	if rel, err := filepath.Rel(dest, dir); err != nil || strings.HasPrefix(rel, "..") {
 		return nil, fmt.Errorf("that artifact name does not make a folder under the hub's download folder")
 	}
+	// ONE DOWNLOAD OF A FOLDER AT A TIME, so two asks for the same artifact do not unpack over each other. The second
+	// finds the first's folder and reads it.
+	mu := dirLock(dir)
+	mu.Lock()
+	defer mu.Unlock()
+	PruneDownloads(dest, ArtifactMaxAge, ArtifactStoreBytes)
 	if d, err := scanDir(dir, maxBytes); err == nil && len(d.Files) > 0 {
 		d.Name = name
 		return d, nil
 	}
-	_ = os.RemoveAll(dir)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return nil, fmt.Errorf("the hub could not make %s: %w", dir, err)
+	if err := os.MkdirAll(filepath.Dir(dir), 0o755); err != nil {
+		return nil, fmt.Errorf("the hub could not make %s: %w", filepath.Dir(dir), err)
 	}
-	_, err = g.run(ctx, Cmd{Name: g.cmd, Timeout: ghDownloadTimeout, Limit: 1 << 20,
-		Args: []string{"run", "download", strconv.FormatInt(runID, 10), "--repo", repoArg(ref), "--name", name,
-			"--dir", dir}})
+	// Unpacked into a folder of its own and renamed into place, so a failure leaves nothing half there.
+	tmp, err := os.MkdirTemp(filepath.Dir(dir), filepath.Base(dir)+tmpMark)
 	if err != nil {
-		_ = os.RemoveAll(dir)
+		return nil, fmt.Errorf("the hub could not make a folder under %s: %w", filepath.Dir(dir), err)
+	}
+	defer os.RemoveAll(tmp)
+	// gh never unpacks: it writes the zip to a file, bounded to the compressed size the forge listed plus a margin, and
+	// atrium unpacks it below with its own bounds.
+	zipPath := filepath.Join(tmp, ".artifact.zip")
+	zf, err := os.Create(zipPath)
+	if err != nil {
+		return nil, err
+	}
+	args := []string{"api"}
+	if h := host(ref); !strings.EqualFold(h, "github.com") {
+		args = append(args, "--hostname", h)
+	}
+	args = append(args, fmt.Sprintf("repos/%s/%s/actions/artifacts/%d/zip", ref.Org, ref.Repo, found.ID))
+	_, err = g.run(ctx, Cmd{Name: g.cmd, Args: args, Timeout: ghDownloadTimeout, Limit: int(min(maxBytes, found.Size+(1<<20))),
+		Sink: zf})
+	zf.Close()
+	if err != nil {
 		return nil, access(g.cmd, host(ref), err)
 	}
+	if err := unzipBounded(zipPath, tmp, maxBytes); err != nil {
+		return nil, err
+	}
+	_ = os.Remove(zipPath)
+	_ = os.RemoveAll(dir)
+	if err := os.Rename(tmp, dir); err != nil {
+		return nil, fmt.Errorf("the hub could not put the artifact in place: %w", err)
+	}
+	now := time.Now()
+	_ = os.Chtimes(dir, now, now)
 	d, err := scanDir(dir, maxBytes)
 	if err != nil {
-		_ = os.RemoveAll(dir)
 		return nil, err
 	}
 	d.Name = name
@@ -287,4 +322,144 @@ func ReadFile(d *CIDownload, rel string, lines int) error {
 	text, _, dropped := w.Result()
 	d.File, d.Text, d.Truncated = rel, text, dropped > 0
 	return nil
+}
+
+// The bounds of the hub's download folder.
+const (
+	// ArtifactMaxAge is how long a download is kept.
+	ArtifactMaxAge = 24 * time.Hour
+	// ArtifactStoreBytes is the most the whole download folder may hold. The oldest downloads go first.
+	ArtifactStoreBytes = 1 << 30
+	// maxZipEntries is the most files one artifact may unpack to.
+	maxZipEntries = 10000
+	tmpMark       = ".dl-"
+)
+
+var dirLocks sync.Map
+
+// dirLock is the lock of one download folder.
+func dirLock(dir string) *sync.Mutex {
+	m, _ := dirLocks.LoadOrStore(dir, &sync.Mutex{})
+	return m.(*sync.Mutex)
+}
+
+// unzipBounded unpacks a zip into dir, counting the bytes of every entry AS IT IS WRITTEN, so an entry that says it is
+// small and is not, or a zip of many small ones, stops at maxBytes in all. An entry name that is absolute or leaves
+// dir, and anything that is not a plain file or folder, is refused.
+func unzipBounded(zipPath, dir string, maxBytes int64) error {
+	zr, err := zip.OpenReader(zipPath)
+	if err != nil {
+		return fmt.Errorf("the artifact is not a readable zip: %w", err)
+	}
+	defer zr.Close()
+	if len(zr.File) > maxZipEntries {
+		return fmt.Errorf("the artifact has %d entries, over the %d the hub unpacks", len(zr.File), maxZipEntries)
+	}
+	var total int64
+	for _, e := range zr.File {
+		name := filepath.FromSlash(strings.ReplaceAll(e.Name, "\\", "/"))
+		if !filepath.IsLocal(name) {
+			return fmt.Errorf("the artifact has an entry named %q, outside its own folder, so it was refused", e.Name)
+		}
+		target := filepath.Join(dir, name)
+		switch {
+		case e.FileInfo().IsDir():
+			if err := os.MkdirAll(target, 0o755); err != nil {
+				return err
+			}
+			continue
+		case !e.Mode().IsRegular():
+			return fmt.Errorf("the artifact has %q, which is not a plain file, so it was refused", e.Name)
+		}
+		if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+			return err
+		}
+		in, err := e.Open()
+		if err != nil {
+			return err
+		}
+		out, err := os.OpenFile(target, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
+		if err != nil {
+			in.Close()
+			return err
+		}
+		n, err := io.Copy(out, io.LimitReader(in, maxBytes-total+1))
+		in.Close()
+		out.Close()
+		total += n
+		if total > maxBytes {
+			return fmt.Errorf("the artifact is over the %d byte cap once unpacked, so it was stopped and removed", maxBytes)
+		}
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// PruneDownloads removes the downloads under dest older than maxAge, then the oldest of the rest until the folder holds
+// at most maxBytes. A download is a folder `<host>/<owner>/<repo>/<run>/<name>`. One being written is never taken.
+func PruneDownloads(dest string, maxAge time.Duration, maxBytes int64) {
+	type dl struct {
+		path string
+		mod  time.Time
+		size int64
+	}
+	var all []dl
+	var total int64
+	now := time.Now()
+	for _, d := range globDepth(dest, 5) {
+		info, err := os.Stat(d)
+		if err != nil || !info.IsDir() {
+			continue
+		}
+		if maxAge > 0 && now.Sub(info.ModTime()) > maxAge {
+			_ = os.RemoveAll(d)
+			continue
+		}
+		if strings.Contains(filepath.Base(d), tmpMark) {
+			continue
+		}
+		var size int64
+		_ = filepath.WalkDir(d, func(_ string, e fs.DirEntry, err error) error {
+			if err == nil && !e.IsDir() {
+				if i, err := e.Info(); err == nil {
+					size += i.Size()
+				}
+			}
+			return nil
+		})
+		all = append(all, dl{d, info.ModTime(), size})
+		total += size
+	}
+	sort.Slice(all, func(i, j int) bool { return all[i].mod.Before(all[j].mod) })
+	for _, d := range all {
+		if total <= maxBytes {
+			break
+		}
+		if os.RemoveAll(d.path) == nil {
+			total -= d.size
+		}
+	}
+}
+
+// globDepth lists the folders exactly depth levels under root.
+func globDepth(root string, depth int) []string {
+	level := []string{root}
+	for i := 0; i < depth; i++ {
+		var next []string
+		for _, p := range level {
+			ents, err := os.ReadDir(p)
+			if err != nil {
+				continue
+			}
+			for _, e := range ents {
+				if e.IsDir() {
+					next = append(next, filepath.Join(p, e.Name()))
+				}
+			}
+		}
+		level = next
+	}
+	return level
 }

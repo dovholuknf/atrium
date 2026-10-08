@@ -1,6 +1,8 @@
 package forge
 
 import (
+	"archive/zip"
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -8,7 +10,9 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 )
 
 // fakeGH answers the gh commands of the CI reads, no network. It records each command.
@@ -18,6 +22,21 @@ type fakeGH struct {
 	err  error
 	// dl is written under --dir when `run download` runs.
 	dl map[string]string
+	// zipBytes, when set, is the artifact as the forge serves it.
+	zipBytes []byte
+	zips     int
+}
+
+// zipOf is a zip of the named files.
+func zipOf(files map[string]string) []byte {
+	var b bytes.Buffer
+	w := zip.NewWriter(&b)
+	for n, body := range files {
+		f, _ := w.Create(n)
+		_, _ = f.Write([]byte(body))
+	}
+	_ = w.Close()
+	return b.Bytes()
 }
 
 func (f *fakeGH) run(_ context.Context, c Cmd) ([]byte, error) {
@@ -43,15 +62,17 @@ func (f *fakeGH) run(_ context.Context, c Cmd) ([]byte, error) {
 			return []byte(t), nil
 		}
 		return []byte(f.logs), nil
+	case strings.HasPrefix(a, "api") && strings.HasSuffix(a, "/zip"):
+		f.zips++
+		if f.zipBytes != nil {
+			_, err := c.Sink.Write(f.zipBytes)
+			return nil, err
+		}
+		_, err := c.Sink.Write(zipOf(f.dl))
+		return nil, err
 	case strings.HasPrefix(a, "api"):
 		return []byte(`{"artifacts":[{"id":1,"name":"ci","size_in_bytes":20,"expired":false,"created_at":"t"},` +
 			`{"id":2,"name":"big","size_in_bytes":999999999999,"expired":false},{"id":3,"name":"old","size_in_bytes":1,"expired":true}]}`), nil
-	case strings.HasPrefix(a, "run download"):
-		dir := c.Args[len(c.Args)-1]
-		for n, body := range f.dl {
-			_ = os.WriteFile(filepath.Join(dir, n), []byte(body), 0o644)
-		}
-		return nil, nil
 	}
 	return nil, fmt.Errorf("unexpected gh %s", a)
 }
@@ -244,5 +265,95 @@ func TestCIOnBitbucketIsNotSupported(t *testing.T) {
 	g, _ := New(GitHub, "", nil)
 	if _, err := CIOf(g); err != nil {
 		t.Errorf("%v", err)
+	}
+}
+
+// THE CAP HOLDS WHILE THE ZIP IS UNPACKED: a zip bomb of small headers and large content stops at the cap, and leaves
+// nothing behind.
+func TestCIDownloadStopsAZipBombWhileWriting(t *testing.T) {
+	f := &fakeGH{zipBytes: zipOf(map[string]string{"a.bin": strings.Repeat("\x00", 5<<20), "b.bin": strings.Repeat("\x00", 5<<20)})}
+	dest := t.TempDir()
+	_, err := newGitHub("", f.run).Download(context.Background(), ciRef, 9, "ci", dest, 1<<20)
+	if err == nil || !strings.Contains(err.Error(), "byte cap once unpacked") {
+		t.Fatalf("%v", err)
+	}
+	var left []string
+	_ = filepath.WalkDir(dest, func(p string, e os.DirEntry, _ error) error {
+		if !e.IsDir() {
+			left = append(left, p)
+		}
+		return nil
+	})
+	if len(left) != 0 {
+		t.Errorf("left behind: %v", left)
+	}
+	// The zip itself is bounded as it is written: gh printing more than it listed is stopped.
+	f = &fakeGH{zipBytes: bytes.Repeat([]byte("z"), 3<<20)}
+	if _, err := newGitHub("", f.run).Download(context.Background(), ciRef, 9, "ci", t.TempDir(), 1<<20); err == nil {
+		t.Error("want the oversize zip refused")
+	}
+}
+
+func TestCIDownloadRefusesEntriesOutsideItsFolder(t *testing.T) {
+	for _, name := range []string{"../evil.txt", "/etc/evil.txt", "a/../../evil.txt", "..\\evil.txt"} {
+		f := &fakeGH{dl: map[string]string{name: "x"}}
+		dest := t.TempDir()
+		_, err := newGitHub("", f.run).Download(context.Background(), ciRef, 9, "ci", dest, 0)
+		if err == nil || !strings.Contains(err.Error(), "outside its own folder") {
+			t.Errorf("%q: %v", name, err)
+		}
+		if _, err := os.Stat(filepath.Join(filepath.Dir(dest), "evil.txt")); err == nil {
+			t.Errorf("%q escaped", name)
+		}
+	}
+}
+
+func TestPruneDownloadsByAgeAndTotalSize(t *testing.T) {
+	root := t.TempDir()
+	mk := func(run string, size int, age time.Duration) string {
+		d := filepath.Join(root, "github.com", "o", "r", run, "ci")
+		_ = os.MkdirAll(d, 0o755)
+		_ = os.WriteFile(filepath.Join(d, "f"), make([]byte, size), 0o644)
+		at := time.Now().Add(-age)
+		_ = os.Chtimes(d, at, at)
+		return d
+	}
+	old := mk("1", 10, 48*time.Hour)
+	a := mk("2", 100, 3*time.Hour)
+	b := mk("3", 100, 2*time.Hour)
+	c := mk("4", 100, time.Hour)
+	writing := filepath.Join(root, "github.com", "o", "r", "5", "ci"+tmpMark+"x")
+	_ = os.MkdirAll(writing, 0o755)
+	_ = os.WriteFile(filepath.Join(writing, "f"), make([]byte, 500), 0o644)
+	PruneDownloads(root, 24*time.Hour, 250)
+	exists := func(p string) bool { _, err := os.Stat(p); return err == nil }
+	if exists(old) || exists(a) || !exists(b) || !exists(c) || !exists(writing) {
+		t.Errorf("old=%v a=%v b=%v c=%v writing=%v", exists(old), exists(a), exists(b), exists(c), exists(writing))
+	}
+}
+
+func TestCIConcurrentDownloadsOfOneArtifactDoNotRace(t *testing.T) {
+	f := &fakeGH{dl: map[string]string{"summary.txt": "ok\n"}}
+	g := newGitHub("", f.run)
+	dest := t.TempDir()
+	var wg sync.WaitGroup
+	errs := make(chan error, 8)
+	for i := 0; i < 8; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			d, err := g.Download(context.Background(), ciRef, 9, "ci", dest, 0)
+			if err == nil && (len(d.Files) != 1 || d.Files[0].Path != "summary.txt") {
+				err = fmt.Errorf("files = %+v", d.Files)
+			}
+			errs <- err
+		}()
+	}
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		if err != nil {
+			t.Error(err)
+		}
 	}
 }

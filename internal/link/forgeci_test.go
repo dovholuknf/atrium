@@ -1,6 +1,8 @@
 package link
 
 import (
+	"archive/zip"
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -45,11 +47,16 @@ func newCIHub(t *testing.T) *ciHub {
 			_, _ = w.Write([]byte(x.logs))
 			text, _, _ := w.Result()
 			return []byte(text), nil
+		case strings.HasSuffix(a, "/zip"):
+			var b bytes.Buffer
+			zw := zip.NewWriter(&b)
+			f, _ := zw.Create("out.txt")
+			_, _ = f.Write([]byte("one\ntwo\n"))
+			_ = zw.Close()
+			_, err := c.Sink.Write(b.Bytes())
+			return nil, err
 		case strings.HasPrefix(a, "api"):
 			return []byte(`{"artifacts":[{"id":1,"name":"ci","size_in_bytes":5}]}`), nil
-		case strings.HasPrefix(a, "run download"):
-			_ = os.WriteFile(filepath.Join(c.Args[len(c.Args)-1], "out.txt"), []byte("one\ntwo\n"), 0o644)
-			return nil, nil
 		}
 		return nil, errors.New("unexpected " + a)
 	}

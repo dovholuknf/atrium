@@ -155,6 +155,8 @@ for a paste.
 A log is bounded while it is read, never read whole and cut after. It keeps the last `tail` lines (400 by default,
 at most 5000) within 64 KiB, and `truncated` says earlier lines were left out. An artifact lives on the hub's disk, which
 a room cannot read, so pass `file` to read the last lines of one file in it.
+The hub downloads the zip itself and unpacks it with the cap counted as it writes, so a zip bomb stops at
+200 MiB. Downloads are kept 24 hours and at most 1 GiB in all, oldest first.
 
 A GitHub login the hub lacks, or a `gh` it does not have, answers the command to run ON THE HUB, for example
 ``gh auth login --hostname github.com``, and raises the hub's forge alert. Bitbucket answers `not supported on
