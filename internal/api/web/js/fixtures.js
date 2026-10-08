@@ -1552,8 +1552,8 @@ function pastedPR() {
 // no card for. The board's copy of `classify` in internal/api/openkinds.go, read off the captures and never the text.
 // The server decides in the end: a link this calls openable and it does not is a not_openable refusal, and the launch
 // goes the old way.
-function pastedOpenKind() {
-  const r = launchResolved;
+function pastedOpenKind(resolved) {
+  const r = resolved || launchResolved;
   if (!r) return "";
   const v = r.vars || {};
   const host = String(v.host || r.host || "").trim();
