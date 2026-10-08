@@ -21,3 +21,17 @@ func canWriteDir(dir string) bool {
 	_ = windows.CloseHandle(h)
 	return true
 }
+
+// longPath is p with its 8.3 short names written out. Anything it cannot expand is left as it is.
+func longPath(p string) string {
+	in, err := windows.UTF16PtrFromString(p)
+	if err != nil {
+		return p
+	}
+	buf := make([]uint16, windows.MAX_LONG_PATH)
+	n, err := windows.GetLongPathName(in, &buf[0], uint32(len(buf)))
+	if err != nil || n == 0 || int(n) > len(buf) {
+		return p
+	}
+	return windows.UTF16ToString(buf[:n])
+}

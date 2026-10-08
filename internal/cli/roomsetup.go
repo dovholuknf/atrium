@@ -29,11 +29,19 @@ func (e exitCodeError) Error() string { return fmt.Sprintf("exit %d", e.Code) }
 // Is makes it an already-said failure too, so cobra and Execute print nothing more.
 func (e exitCodeError) Is(target error) bool { return target == errAlreadySaid }
 
+// setupRefused says why the arguments or the spec cannot be used, on stderr, and ends the command with exit 1. alreadySaid
+// prints nothing itself, so without this a refused spec would exit 1 in silence.
+func setupRefused(cmd *cobra.Command, format string, a ...any) error {
+	fmt.Fprintf(cmd.ErrOrStderr(), "atrium room setup: %s\n", fmt.Sprintf(format, a...))
+	return alreadySaid(format, a...)
+}
+
 // roomSetupCmd is `atrium room setup`: converge THIS machine to a room.yaml. It runs on the room, as the room's account.
 func roomSetupCmd() *cobra.Command {
 	var (
 		specPath, db, hubAddr, packDir string
-		plan, apply, asJSON            bool
+		plan, apply, asJSON, validate  bool
+		vOS, vRoot, vAccount           string
 	)
 	c := &cobra.Command{
 		Use:   "setup --spec <file|-> (--plan | --apply)",
@@ -45,11 +53,23 @@ Exit codes: 0 everything is as the spec says, 13 an administrator must run the l
 1 the arguments are wrong, 3 a step failed.`,
 		Args: cobra.NoArgs,
 		RunE: speaksForItself(func(cmd *cobra.Command, _ []string) error {
+			if validate {
+				// no spec, no disk, no database: the rules a work root must meet for an operating system, which the machine
+				// that provisions a room asks before it changes the room
+				if plan || apply || specPath != "" {
+					return setupRefused(cmd, "--validate takes --os, --work-root and --account, and no --spec, --plan or --apply")
+				}
+				if err := roomspec.ValidateWorkRoot(vOS, vRoot, vAccount); err != nil {
+					return setupRefused(cmd, "%v", err)
+				}
+				fmt.Fprintf(cmd.OutOrStdout(), "setup work-root ok %s is a work root %s accepts\n", vRoot, vOS)
+				return nil
+			}
 			if plan == apply {
-				return alreadySaid("pass exactly one of --plan or --apply")
+				return setupRefused(cmd, "pass exactly one of --plan or --apply")
 			}
 			if specPath == "" {
-				return alreadySaid("--spec <file|-> is required")
+				return setupRefused(cmd, "--spec <file|-> is required")
 			}
 			var data []byte
 			var err error
@@ -59,15 +79,15 @@ Exit codes: 0 everything is as the spec says, 13 an administrator must run the l
 				data, err = os.ReadFile(specPath)
 			}
 			if err != nil {
-				return alreadySaid("read the spec: %v", err)
+				return setupRefused(cmd, "read the spec: %v", err)
 			}
 			spec, err := roomspec.Parse(data)
 			if err != nil {
-				return alreadySaid("%v", err)
+				return setupRefused(cmd, "%v", err)
 			}
 			ad, err := roomspec.ForOS(spec.OS)
 			if err != nil {
-				return alreadySaid("%v", err)
+				return setupRefused(cmd, "%v", err)
 			}
 			db = orDefault(db, defaultRoomDB())
 			fetch := setupFetcher(hubAddr, packDir)
@@ -97,6 +117,10 @@ Exit codes: 0 everything is as the spec says, 13 an administrator must run the l
 	c.Flags().StringVar(&specPath, "spec", "", "the room.yaml, a file or - for stdin")
 	c.Flags().BoolVar(&plan, "plan", false, "say what --apply would do; writes nothing")
 	c.Flags().BoolVar(&apply, "apply", false, "make it so, and write ~/.atrium/room.lock")
+	c.Flags().BoolVar(&validate, "validate", false, "only check --work-root for --os (and --account when known); reads nothing, changes nothing")
+	c.Flags().StringVar(&vOS, "os", "", "with --validate: the room's operating system (windows, linux, darwin)")
+	c.Flags().StringVar(&vRoot, "work-root", "", "with --validate: the work root to check")
+	c.Flags().StringVar(&vAccount, "account", "", "with --validate: the account the room runs as, when known")
 	c.Flags().BoolVar(&asJSON, "json", false, "print the lock as JSON")
 	c.Flags().StringVar(&db, "db", "", "the room's database (default: the room's own)")
 	c.Flags().StringVar(&hubAddr, "hub-addr", "", "host:port of the hub's git mirror, where the agent pack comes from")

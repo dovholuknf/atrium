@@ -48,6 +48,26 @@ func (OSFS) Examine(p string) Examine {
 // Writable is canWriteDir (access_unix.go, access_windows.go): the permission asked for, nothing written.
 func (OSFS) Writable(dir string) bool { return canWriteDir(dir) }
 
+// Resolve follows links, junctions and short names on the deepest ancestor of p that exists, and puts the rest back.
+func (OSFS) Resolve(p string) string {
+	cur, rest := filepath.FromSlash(p), ""
+	for {
+		if r, err := filepath.EvalSymlinks(cur); err == nil {
+			r = longPath(r)
+			if rest != "" {
+				r = filepath.Join(r, rest)
+			}
+			return strings.TrimPrefix(slash(filepath.ToSlash(r)), "//?/")
+		}
+		par := filepath.Dir(cur)
+		if par == cur {
+			return p
+		}
+		rest = filepath.Join(filepath.Base(cur), rest)
+		cur = par
+	}
+}
+
 // Home is this account's folders.
 func (OSFS) Home() Home {
 	h, _ := os.UserHomeDir()

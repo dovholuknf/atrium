@@ -307,6 +307,24 @@ no admin. It takes the place of the shared folder, and it lays out one folder:
 | `V:\localai\cache\pip` | pip's cache | `cache-dir` under `[global]` in `%APPDATA%\pip\pip.ini` |
 | `V:\localai\cache\cargo` | `CARGO_HOME` | a user environment variable, or a profile line on Unix |
 
+None of that is done by the script itself. `provision-room.ps1` writes a `room.yaml` for the machine (`scripts/room-spec.ps1`).
+It first asks the atrium on the machine it runs on whether the work root is one the room's operating system accepts
+(`atrium room setup --validate --os <os> --work-root <dir> --account <login>`, strings only: no ssh, no disk). A relative
+folder, a drive root, a UNC path, a root of the wrong kind for the OS, a system folder, another user's home (or root's, or
+`C:\Users\Public`) is exit 1 with its reason before anything on the room changes. Then it runs the room's own
+`atrium room setup --spec - --plan` over ssh, and `--apply` after the join. What only the room's disk can tell (a link,
+junction or 8.3 short name that leads into another home, the account's real profile folder when it is not named like the
+login) is judged there, by the plan or the apply. A machine with no atrium yet (or one too old to have `room setup`) has its
+plan skipped, with a warn: the first run installs an atrium and then asks, so a root that only the room's disk refuses is
+found after the account and the binary were put there. That is the trade: `-Check` and `room-check` cannot read the work
+root of a machine with no current atrium, where the old probe could, and so give a warn or a skip and not the early 13.
+
+With no `-WorkRoot` the room gets a `room.yaml` of the agent pack alone: the shared folder stays as it was and the pack is
+installed and read as before. The agent pack never stops a run: a pack that cannot be fetched or installed is a `warn`
+and not an exit code. A mirror that cannot be fetched is a warn too, and the run goes on. `-NoAgentPack` is recorded in the
+manifest (`agentpack: none`), so `room-check` reads a room with no pack record against the default repository and shows a
+missing pack as a row, unless that choice was made.
+
 The caches are written as each tool's own file, so they work before the tool is installed, and a rerun edits the file in
 place and writes nothing when it is already right. When the tool is there it is asked afterwards, and an answer that
 differs (`GOENV`, a project `.npmrc`) is a `warn`. A running room cannot be set, so a rerun reads the settings it serves
@@ -322,8 +340,9 @@ would let the account list the drive and read all of it. A mapped drive belongs 
 ssh, so name a drive letter that is a real disk. On a Windows machine with a second fixed drive and no `-WorkRoot`,
 `provision-room.ps1` and `-Check` say so as a `warn` naming the roomiest drive.
 
-`room-check.ps1` has the same read as two rows, `work-root` (with `work-dirs` and `work-cache`) and `agent-pack`. An
-account that cannot examine a parent is `human` there, and anything else is a `warn`.
+`room-check.ps1` has the same read, the rows of `atrium room setup --plan` for a `room.yaml` rebuilt from the manifest:
+`work-root` (with `work-dirs` and `work-cache`), the four settings, and `agent-pack`. An account that cannot examine a
+parent is `human` there, and anything else is a `warn`.
 
 By hand, as the room's account, with the room stopped for the first:
 
@@ -359,10 +378,11 @@ left alone. A skill that is a link into another repository (two on sg3, `debug-z
 
 The source is the hub's own git mirror of the repository, never the checkout on the operator's machine. The room does not
 fetch it itself: the room's `/git/hub` forwarder is tokenized per card and no card exists when a room is provisioned. So
-the hub machine fetches the mirror, whole, since the hub serves whole fetches only, packs a tarball, and sends it over
-scp. A mirror that cannot be fetched is a `warn`, not a failure, and the run goes on. `room-check.ps1` and
-`provision-room.ps1 -Check` read the record and `warn` when the pack is missing, older than the mirror's commit, or lacks an
-agent the review panel names by default (`c-systems-reviewer`, `go-security-reviewer`, `functional-tester` and
+the hub machine clones the mirror, whole, since the hub serves whole fetches only, tars the checkout with its `.git`, and
+sends it over scp, and the room's `atrium room setup --apply --pack-dir <folder>` installs from that. A mirror that cannot
+be fetched is a `warn`, not a failure, and the run goes on. `room-check.ps1` and `provision-room.ps1 -Check` read the
+record and `warn` when the pack is missing, older than the mirror's commit (the scripts compare it, since the room is not
+told the hub's address), or lacks an agent the review panel names by default (`c-systems-reviewer`, `go-security-reviewer`, `functional-tester` and
 `nonfunctional-tester`).
 
 ## If you really must run as yourself
