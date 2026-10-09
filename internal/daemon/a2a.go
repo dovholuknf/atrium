@@ -420,10 +420,11 @@ func (d *Daemon) peerSaid(from string, target *store.Task, text, kind string) {
 // ── silent stops ────────────────────────────────────────────────────────────────
 
 // silentNudgeText is what atrium says to a worker whose first turn ended silently. The same one
-// instruction the launch prompt ends with (link.reportLine): atrium_say the launcher. Never
-// atrium_report, which a launcher's brief may forbid because a done report closes the card.
-const silentNudgeText = "Your turn ended without telling your launcher anything. Tell your launcher with atrium_say: " +
-	"done <sha> if the work is finished, blocked: <one line> if something stops you. Otherwise carry on with your brief."
+// instruction the launch prompt ends with (link.reportLine): atrium_done or atrium_blocked, and wait for every
+// command. Never atrium_report, which a launcher's brief may forbid because a done report closes the card.
+const silentNudgeText = "Your turn ended without telling your launcher anything. End every turn with atrium_done <sha> " +
+	"if the work is finished or atrium_blocked <reason> if something stops you. Wait for every command in the same turn: " +
+	"never end a turn on a background command. Otherwise carry on with your brief."
 
 // NoticeSilentNudge is the claim that the worker was nudged for one launcher prompt.
 const NoticeSilentNudge = "silent-nudge"

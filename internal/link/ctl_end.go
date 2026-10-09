@@ -24,12 +24,12 @@ const EndReasonMax = 50
 var endSHAShape = regexp.MustCompile(`^[0-9a-fA-F]{7,40}$`)
 
 const doneToolDesc = "End your work: it is finished and committed. THIS IS HOW TO END. Nothing else is needed: " +
-	"else: give `sha`, the commit the work landed as (7 to 40 hex characters, and it has to exist in your " +
+	"give `sha`, the commit the work landed as (7 to 40 hex characters, and it has to exist in your " +
 	"directory or on the hub, or the call is refused and nothing is recorded). Details go in REPORT.md, not here. " +
 	"Stop after the call: say nothing more and do no more work."
 
 const blockedToolDesc = "End your work: something stops you and you cannot go on. THIS IS HOW TO END. " +
-	"Nothing else is needed: `reason`, what stops you and what you need, in up to 50 words. A longer reason is " +
+	"Nothing else is needed: give `reason`, what stops you and what you need, in up to 50 words. A longer reason is " +
 	"refused, not cut. Details go in REPORT.md, not here. Stop after the call: say " +
 	"nothing more and do no more work."
 

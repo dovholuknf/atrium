@@ -104,7 +104,9 @@ func newPendingInjector(d *Daemon) *pendingInjector {
 // on screen. The banner and body are rebuilt the same way tellByTyping does, so
 // a retry types exactly what an immediate injection would have.
 func (d *Daemon) deferPeerInjection(taskID, msgID, from, text, kind string, waitTurn bool) {
-	if d.pending == nil || d.frozenForMove(taskID) {
+	// A card a wake is delivering to gets everything pending in one turn once its runner is ready: a message queued
+	// meanwhile is carried by that, not typed alone onto a startup screen. See injectKept.
+	if _, waking := d.kept.Load(taskID); waking || d.pending == nil || d.frozenForMove(taskID) {
 		// A frozen card's message is in the freeze queue, not in message. It is
 		// replayed with its id when the move is undone.
 		return

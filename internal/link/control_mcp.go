@@ -1226,7 +1226,8 @@ const OriginTag = "origin:agent"
 const reportLine = "Before you end your turn, tell your launcher either:\n" +
 	"- atrium_done <sha> when the work is finished\n" +
 	"- atrium_blocked <up to 50 words> when something stops you, such as a question you need answered, a tool you " +
-	"need installed, or a permission you need."
+	"need installed, or a permission you need.\n" +
+	"Wait for every command, test and build in the same turn. Never end a turn on a command still running in the background."
 
 // AgentLaunchTags is what an agent launch's tags become: the caller's own, the origin marker,
 // and a WORKER marker unless the caller says it is a director or already a subagent. The

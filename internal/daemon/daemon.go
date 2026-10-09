@@ -278,6 +278,8 @@ type Daemon struct {
 	// so a repeat of that launch answers with the card rather than a refusal. See
 	// repeatLaunch in launch.go.
 	startedAt sync.Map
+	// kept is the cards a wake is delivering held messages to. See injectKept.
+	kept sync.Map
 
 	// closeOnce guards releasing the store, so the shutdown path and a caller's
 	// deferred Close cannot both close the database. See closeDB.

@@ -11,8 +11,8 @@ import (
 // atrium_say its launcher, and a launcher's fyi asks for no reply, so the worker
 // owes none. See docs/changes/r-comms-one-instruction.md.
 
-func TestTheNudgeNamesAtriumSayAndNotAtriumReport(t *testing.T) {
-	for _, want := range []string{"atrium_say", "done <sha>", "blocked: <one line>"} {
+func TestTheNudgeNamesDoneBlockedAndTheWaitRule(t *testing.T) {
+	for _, want := range []string{"atrium_done <sha>", "atrium_blocked <reason>", "background command"} {
 		if !strings.Contains(silentNudgeText, want) {
 			t.Errorf("the nudge misses %q: %q", want, silentNudgeText)
 		}

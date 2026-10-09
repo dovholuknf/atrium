@@ -52,18 +52,100 @@ func (d *Daemon) keepOnCard(w http.ResponseWriter, from string, target *store.Ta
 	writeJSONCode(w, http.StatusOK, out)
 }
 
-// injectKept types what was kept for a card into its session, now that one is starting. A resumed session sits at
-// its prompt and makes no tool call and ends no turn, so the hooks alone would leave the words there. It goes through
-// the operator's retry, which waits for a free line. The row stays undelivered until the session has it.
+// How a woken card is given what it holds. Vars so a test can shorten them.
+var (
+	// keptTick is how often a woken card is looked at until its runner can take input.
+	keptTick = 2 * time.Second
+	// keptSettle is how long after the runner's SessionStart hook its input box can be trusted. See wakeSettle.
+	keptSettle = wakeSettle
+	// keptGiveUp is how long a woken card may be unready before its launcher is told.
+	keptGiveUp = 3 * time.Minute
+)
+
+// injectKept hands a card that is waking what it holds, as ONE submitted turn, once its runner can take input. A
+// resumed session sits at its prompt and makes no tool call and ends no turn, so the hooks alone would leave the words
+// there. Typed straight away, they land on the startup screen and are lost, and a row marked delivered then keeps the
+// card from being thought of as holding anything: it sat idle for two hours until the idle park ended it
+// (r-wake-say-resumes-but-not-delivered). So nothing is typed before the runner is ready, every pending row goes in
+// the same turn, the rows are marked delivered only after the bytes are written, and a card that is not ready in
+// keptGiveUp has its launcher told. The deferred per-message retry stands aside meanwhile: see deferPeerInjection.
 func (d *Daemon) injectKept(taskID string) {
-	msgs, err := d.st.PendingMessages(taskID)
-	if err != nil {
-		log.Printf("[atrium] could not read what is kept for %s: %v", taskID, err)
+	if _, running := d.kept.LoadOrStore(taskID, true); running {
 		return
 	}
-	for _, m := range msgs {
-		d.deferPeerInjection(taskID, m.ID, "", messageBanner([]*store.Message{m}, false), "", false)
+	go func() {
+		defer d.kept.Delete(taskID)
+		d.deliverKept(taskID)
+	}()
+}
+
+// keptRunnerReady reports whether the runner now on a card can take input: its SessionStart hook has fired and settled,
+// or a runner with no hooks has been up a minute. The after-restart wake asks the same question.
+func (d *Daemon) keptRunnerReady(taskID string, run *runner, now time.Time) bool {
+	if d.wake != nil {
+		if at, ok := d.wake.sessionStarted(taskID); ok && !at.Before(run.started) {
+			return now.Sub(at) >= keptSettle
+		}
 	}
+	return now.Sub(run.started) >= wakeNoHook
+}
+
+// deliverKept waits for the card's runner, then types every pending message as one turn.
+func (d *Daemon) deliverKept(taskID string) {
+	deadline := time.Now().Add(keptGiveUp)
+	for {
+		msgs, err := d.st.PendingMessages(taskID)
+		if err != nil {
+			log.Printf("[atrium] could not read what is kept for %s: %v", taskID, err)
+			return
+		}
+		if len(msgs) == 0 {
+			return
+		}
+		now := time.Now()
+		if run := d.sup.get(taskID); run != nil && d.keptRunnerReady(taskID, run, now) &&
+			!d.act.dialogOpen(taskID) && !d.act.midTurn(taskID) && !d.holdingMessages(taskID) && !d.deployHeld(taskID) {
+			wrote, err := d.typeLabelledThroughGate(run, taskID, "", messageBanner(msgs, false))
+			if err != nil {
+				log.Printf("[atrium] could not type what is kept into %s: %v", taskID, err)
+			}
+			if wrote {
+				ids := make([]string, 0, len(msgs))
+				for _, m := range msgs {
+					ids = append(ids, m.ID)
+				}
+				if err := d.st.MarkDelivered(taskID, "terminal", ids); err != nil {
+					log.Printf("[atrium] typed what is kept into %s but could not mark it delivered: %v", taskID, err)
+				}
+				for _, m := range msgs {
+					d.notePeerTyped(taskID, m.FromPeer, m.Text, "", "typed and sent when the resumed session was ready")
+				}
+				if d.pending != nil {
+					d.pending.deliveredElsewhere(taskID, ids)
+				}
+				d.publishTask(taskID)
+				return
+			}
+		}
+		if now.After(deadline) {
+			d.keptUndelivered(taskID, len(msgs))
+			return
+		}
+		time.Sleep(keptTick)
+	}
+}
+
+// keptUndelivered tells the launcher that a woken card never took what it holds. The rows stay pending, so the hooks of
+// the session still carry them if it makes a call, but nobody is left believing they were read.
+func (d *Daemon) keptUndelivered(taskID string, n int) {
+	t, err := d.st.Get(taskID)
+	if err != nil {
+		return
+	}
+	log.Printf("[atrium] %s was woken but its runner never took %d held message(s)", t.DisplayTitle(), n)
+	d.notifyLauncher(t, "wake-undelivered", fmt.Sprintf("%s:%d", taskID, time.Now().Unix()),
+		fmt.Sprintf("%s was woken but its session did not take the %d message(s) held for it, so it is idle and has not "+
+			"read them. They are still on its card. Resume it and say again, or end it.", t.WireName, n))
 }
 
 // wakeGone resumes a done or dead card that has a conversation, the way unpark does for a parked one. The card is
