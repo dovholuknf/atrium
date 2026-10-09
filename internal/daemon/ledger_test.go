@@ -101,7 +101,7 @@ func TestALaunchMakesTheItemAndAFailedStartEndsItOnce(t *testing.T) {
 	dir := t.TempDir()
 	_, launchErr := d.Launch(LaunchRequest{
 		Harness: "quick", Cwd: dir, Title: "sa99", Brief: "the brief", Prompt: "go",
-		Tags: []string{OriginAgentTag}, SpawnedBy: "orchestrator",
+		Tags: []string{OriginAgentTag}, SpawnedBy: "orchestrator", Scratch: true,
 	})
 	if launchErr == nil {
 		t.Fatal("the quick runner should have failed to settle")

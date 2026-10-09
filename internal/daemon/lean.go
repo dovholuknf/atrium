@@ -195,6 +195,7 @@ func leanOptions(req LaunchRequest, task *store.Task, gateway string) (lean bool
 	mcp = append(mcp, req.MCP...)
 	kit = leanKit{Agents: cleanKitNames(req.LeanAgents), Skills: cleanKitNames(req.LeanSkills)}
 	lean = lean || !kit.empty()
+	kit.Interview = hasTag(req.Tags, InterviewTag) || (task != nil && hasTag(task.Tags, InterviewTag))
 	if task != nil && hasTag(task.Tags, LeanTag) {
 		lean = true
 		var agents, skills []string
@@ -313,12 +314,16 @@ func leanArgs(args []string, userSettings []byte, stopHook string, mcp []string,
 	if err != nil {
 		return nil, err
 	}
+	systemPrompt := leanSystemPrompt
+	if kit.Interview {
+		systemPrompt = interviewSystemPrompt
+	}
 	out := []string{
 		"--setting-sources", "project,local",
 		"--settings", settings,
 		"--strict-mcp-config", "--mcp-config", servers,
 		"--disallowedTools", strings.Join(leanDisallowedFor(kit), ","),
-		"--append-system-prompt", leanSystemPrompt,
+		"--append-system-prompt", systemPrompt,
 	}
 	if !kit.empty() {
 		dir, err := leanPluginDir(kit)

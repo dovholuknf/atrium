@@ -514,7 +514,7 @@ func (d *Daemon) stoppedSilently(t *store.Task) (time.Time, bool) {
 	// waiting for work or for its workers, and its launcher prompting it created
 	// the debt this checks. The tag is what atrium_launch sets for it. Its real
 	// blockers (a menu, a stuck tool) have their own escalations.
-	if hasTag(t.Tags, DirectorTag) {
+	if hasTag(t.Tags, DirectorTag) || hasTag(t.Tags, InterviewTag) {
 		return time.Time{}, false
 	}
 	// A CARD NO HOOK HAS SPOKEN FOR SINCE LAUNCH never began a turn to stop. Its
