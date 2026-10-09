@@ -530,6 +530,13 @@ func (s *Server) closeCard(t *store.Task, pv *closePreview, answers map[string]s
 	if orphan {
 		return res
 	}
+	// A close the operator made is the clean up a "clean up when done" mark asks for, so the mark goes before the card
+	// reaches done and no board offers the close a second time. See cleanupWhenDone in js/sharing.js.
+	if kept := withoutCleanupTags(t.Tags); len(kept) != len(t.Tags) {
+		if err := s.st.SetTags(t.ID, kept); err != nil {
+			warn("the clean up mark did not come off: %v", err)
+		}
+	}
 	if t.Status != store.StatusShelved {
 		if err := s.st.SetStatusBecause(t.ID, store.StatusDone, "closed"); err != nil {
 			warn("the card did not move to done: %v", err)
@@ -573,6 +580,18 @@ func (s *Server) reclaimInventory(ctx context.Context, t *store.Task) {
 		answers[strconv.Itoa(a.Seq)] = CloseKeep
 	}
 	s.closeCard(t, pv, answers, false)
+}
+
+// withoutCleanupTags is tags with the board's two clean up marks taken off: cleanup:when-done, set when a link is
+// opened, and cleanup:offered, which the board swaps it for when it shows the close.
+func withoutCleanupTags(tags []string) []string {
+	kept := make([]string, 0, len(tags))
+	for _, g := range tags {
+		if g != "cleanup:when-done" && g != "cleanup:offered" {
+			kept = append(kept, g)
+		}
+	}
+	return kept
 }
 
 // procStillIt is whether a proc row's pid is still the process recorded: running, with the same start time.

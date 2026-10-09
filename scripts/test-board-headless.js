@@ -20162,6 +20162,13 @@ async function quickPasteSection(browser, base) {
     Object.defineProperty(navigator, "clipboard", { configurable: true, value: {
       readText: async () => window.__clip, read: async () => [], writeText: async () => {} } });
   });
+  // the card the clean up check reads and swaps the mark on
+  const held = { tags: ["link:x", "cleanup:when-done"] };
+  await ctx.route(/\/v1\/tasks\/c1$/, async route => {
+    const req = route.request();
+    if (req.method() === "PATCH") Object.assign(held, JSON.parse(req.postData() || "{}"));
+    return json(route, 200, { id: "c1", status: "done", tags: held.tags });
+  });
   await ctx.route(/\/v1\/(recognise|prs|providers|launch|open|tasks\/t-q)(\/|\?|$)/, async route => {
     const req = route.request();
     const p = new URL(req.url()).pathname, m = req.method();
@@ -20353,9 +20360,12 @@ async function quickPasteSection(browser, base) {
           .catch(() => fail("quickPaste: shift-enter did not stop at the launch dialog for " + url));
         return null;
       }
-      await p.waitForFunction(() => !document.getElementById("launch").open && !document.getElementById("switcher").open,
-        null, { timeout: slow(8000) }).catch(() => fail("quickPaste: enter did not start " + url));
-      await p.waitForTimeout(200);
+      // WAIT ON THE REQUEST, not on the dialogs: they are shut before the open is sent, so a wait on them is true at
+      // once. Then until the calls stop coming (the fallback launch follows a refused open).
+      const until = Date.now() + slow(8000);
+      while (!st.calls.some(x => x.indexOf("POST /v1/open") === 0) && Date.now() < until) await p.waitForTimeout(25);
+      if (!st.calls.some(x => x.indexOf("POST /v1/open") === 0)) fail("quickPaste: enter did not start " + url);
+      for (let n = -1; n !== st.calls.length;) { n = st.calls.length; await p.waitForTimeout(300); }
       const c = st.calls.find(x => x.indexOf("POST /v1/open") === 0);
       return { order: st.calls.map(x => x.split(" ")[1]), open: c ? JSON.parse(c.split(" ").slice(2).join(" ")) : null };
     };
@@ -20449,20 +20459,27 @@ async function quickPasteSection(browser, base) {
     // clean up when done: a marked card reaching done is offered the card's own close, once, with the mark taken off
     const cleaned = await p.evaluate(async () => {
       const asked = [], patched = [];
-      const was = [window.closeCardAsk, window.patchTask];
+      const was = [closeCardAsk, patchTask];
       closeCardAsk = id => asked.push(id);
-      patchTask = async (id, body) => { patched.push(body.tags.join()); };
+      patchTask = async (id, body) => {
+        patched.push(body.tags.join());
+        await fetch("/v1/tasks/c1", { method: "PATCH", body: JSON.stringify(body) });
+      };
       const row = s => ({ id: "c1", status: s, tags: ["link:x", CLEANUP_TAG] });
+      const settle = () => new Promise(r => setTimeout(r, 50));
+      cleanupWhenDone(row("running"), row("done"));
+      await settle();
+      // a second board, a moment later: the mark is already swapped, so it shows nothing
       cleanupWhenDone(row("running"), row("done"));
       cleanupWhenDone(row("done"), row("done"));
       cleanupWhenDone(row("running"), { id: "c2", status: "done", tags: [] });
       cleanupWhenDone(undefined, row("done"));
-      await Promise.resolve();
-      await Promise.resolve();
+      await settle();
       [closeCardAsk, patchTask] = was;
       return { asked, patched };
     });
-    if (cleaned.asked.join() !== "c1" || cleaned.patched.join("|") !== "link:x") fail("quickPaste: clean up when done was " + JSON.stringify(cleaned));
+    if (cleaned.asked.join() !== "c1" || cleaned.patched.join("|") !== "link:x,cleanup:offered")
+      fail("quickPaste: clean up when done was " + JSON.stringify(cleaned));
     if (errors.length) fail("quickPaste: page errors: " + errors.join(" | "));
   } finally { await ctx.close(); }
   if (!bad) console.log("quickPaste ok");

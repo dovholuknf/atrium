@@ -750,15 +750,30 @@ function isLinkCard(t) { return !!t && (t.tags || []).some(g => String(g).starts
 // "CLEAN UP WHEN DONE", chosen when a link is opened (the launch dialog's tick). The card carries this tag, and when a
 // board sees it reach done the close above is offered: the same one the card's menu has, so the worktree, the clone
 // and the claude/* branches here and on the hub are freed by what already frees them, and a worktree holding work
-// nowhere else is asked about. The tag is taken off first, so declining asks once and not on every refresh.
+// nowhere else is asked about.
+//
+// ONCE PER CARD. The board that sees it first reads the card again, and if the mark is still there swaps it for
+// cleanup:offered and shows the close. A second board finds the mark gone and shows nothing. The operator's own close
+// takes both marks off on the server, before the card reaches done (internal/api/close.go), so a closed card is
+// never offered a close again.
 const CLEANUP_TAG = "cleanup:when-done";
+const CLEANUP_OFFERED_TAG = "cleanup:offered";
 
 function cleanupWhenDone(prev, row) {
   if (!prev || !row || row.status !== "done" || prev.status === "done") return;
-  const tags = row.tags || [];
+  if (!(row.tags || []).includes(CLEANUP_TAG)) return;
+  cleanupOffer(row);
+}
+
+async function cleanupOffer(row) {
+  let now;
+  try { now = await api("/v1/tasks/" + encodeURIComponent(row.id)); } catch (e) { return; }
+  const tags = (now && now.tags) || [];
   if (!tags.includes(CLEANUP_TAG)) return;
-  patchTask(row.id, { tags: tags.filter(g => g !== CLEANUP_TAG) })
-    .then(() => closeCardAsk(row.id, row));
+  try {
+    await patchTask(row.id, { tags: tags.filter(g => g !== CLEANUP_TAG).concat(CLEANUP_OFFERED_TAG) });
+  } catch (e) { return; }
+  closeCardAsk(row.id, row);
 }
 
 // via {owner, room} closes what an owner with no card holds, through the sweep (internal/api/sweep.go).
