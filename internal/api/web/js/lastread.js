@@ -29,6 +29,8 @@
 
 // A window losing focus for less than this is not leaving. Alt-tabbing to copy a path should not move the view.
 let lrBlurMin = 5000;
+// The feature is switched off for now: each entry point returns first. Everything below stays so it can come back.
+const LR_OFF = true;
 const LR_KEY = "atrium.termReturn";
 const LR_STORE = "atrium.lastread.";
 const LR_KEEP = 60;
@@ -125,6 +127,7 @@ function lrMarkLine(m) { return m && !m.isDisposed && m.line >= 0 ? m.line : -1;
 
 // Writes down where this terminal was left. Idempotent while away.
 function lrLeave(why) {
+  if (LR_OFF) return;
   const t = term;
   if (!t || !termTask || !t.buffer || !t.element) return;
   if (document.getElementById("terms").hidden) return;
@@ -183,6 +186,7 @@ function lrDraw(t, row, cur, k) {
 // Coming back. `why` is tab, focus, visible (the window or tab came back), show (a kept terminal was shown) or attach
 // (a terminal was built or reconnected and its replay has settled).
 function lrReturn(why) {
+  if (LR_OFF) return;
   const t = term;
   if (!t || !termTask || !t.buffer) return;
   // Not while the Terminals view is hidden: a restore spent on a hidden element is lost, and the return that matters is
@@ -274,6 +278,7 @@ function lrPill(t) {
 
 // Per terminal, once it is built.
 function lrInit(t) {
+  if (LR_OFF) return;
   // xterm leaves a marker where it was after a reset, pointing at whatever now has that number. Nothing may trust one.
   // A clear while away (2J, or 3J from /clear) moves the cursor's row for reasons that are not new lines, so the
   // divider is dropped rather than drawn at a row that no longer means what it did. Registered after the board's own
@@ -298,6 +303,7 @@ function lrInit(t) {
 
 // A socket opened and its replay is on its way: the return happens when the replay has gone quiet.
 function lrAfterOpen(t) {
+  if (LR_OFF) return;
   const L = lrOf(t);
   L.lastWrite = Date.now();
   clearInterval(L.poll);

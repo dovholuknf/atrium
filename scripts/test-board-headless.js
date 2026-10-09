@@ -27726,7 +27726,8 @@ async function main() {
     await unit("termDebug", () => termDebugSection(browser, base));
     await unit("termDebugPerCard", () => termDebugPerCardSection(browser, base));
     await unit("termHiddenRedraw", () => termHiddenRedrawSection(browser, base));
-    await unit("termLastRead", () => termLastReadSection(browser, base));
+    // termLastRead is off while the new-since divider is (js/lastread.js, LR_OFF).
+    // await unit("termLastRead", () => termLastReadSection(browser, base));
     await unit("termSortStarted", () => termSortStartedSection(browser, base));
     await unit("topNav", () => topNavSection(browser, base));
     await unit("pulls", () => pullsSection(browser, base));
