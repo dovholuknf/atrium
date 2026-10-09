@@ -32,17 +32,17 @@ README or wiki alone and not on code, it says so.
 inside `tmux`, and the web server holds a pty that is a `tmux attach-session` client (`src/pane-exit-sweep.ts`,
 `src/reboot-restore.ts`). Programmatic input goes through `tmux send-keys -l` (`src/tmux-manager.ts`,
 `src/session-submit-verifier.ts`). tmux is the persistence layer: sessions survive a server restart and are rediscovered
-on boot ("ghost recovery"). Everything else is built on the stream of cleaned terminal text: idle detection, usage
-limit detection, the respawn controller (`src/respawn-controller.ts`, 3,200 lines), Ralph loop tracking, the subagent
-watcher. The one-process model is simple and it is the reason most Codeman features are screen scrapers. Claude's hooks
+on boot ("ghost recovery"). Everything else is built on the stream of cleaned terminal text: idle detection, usage limit
+detection, the respawn controller (`src/respawn-controller.ts`, 3,200 lines), Ralph loop tracking, the subagent watcher.
+The one-process model is simple and it is the reason most Codeman features are screen scrapers. Claude's hooks
 supplement that for Claude only (`src/hooks-config.ts`).
 
 **Atrium** is a hub and rooms. The room owns the database, the ptys and the agents, and runs for days. The hub serves
 the board and holds no work, so it restarts while agents are mid-turn. With `pty_host` on, the ptys live in a third
 process and survive a room restart (`docs/terminal/ptyhost-protocol.md`), which is the job tmux does for Codeman, done
 without a dependency and on Windows too. Atrium learns what an agent is doing from hooks first (twelve events for claude
-and codex, `docs/runtime/other-runners.md`) and from the screen second (`internal/daemon/looksidle.go`,
-`idleframe.go`). A runner with no hooks (ollama, shell) shows a terminal and nothing else.
+and codex, `docs/runtime/other-runners.md`) and from the screen second (`internal/daemon/looksidle.go`, `idleframe.go`).
+A runner with no hooks (ollama, shell) shows a terminal and nothing else.
 
 The consequence for this comparison: Codeman's features that need the agent's state are screen scraping with a
 Claude-only upgrade path. Atrium's equivalents start from a structured signal where the runner gives one. Usage limits
@@ -60,17 +60,16 @@ Per session, off by default, Claude only.
 1. **Detect.** `processCleanData` runs on the ANSI-stripped output. `detectUsageLimitPause` matches a limit phrase
    (`limit reached`, `you've hit your limit`, `you're out of extra usage`) and then requires a reset time within 160
    characters after it. A limit phrase with no parseable reset is ignored on purpose, so chat text that mentions limits
-   cannot arm it. The file lists eleven message shapes seen across Claude Code 1.0 to 2.1, including a weekly reset
-   with a weekday, an explicit date, an IANA timezone in parentheses, and the raw API form with epoch seconds.
+   cannot arm it. The file lists eleven message shapes seen across Claude Code 1.0 to 2.1, including a weekly reset with
+   a weekday, an explicit date, an IANA timezone in parentheses, and the raw API form with epoch seconds.
 2. **Parse.** The reset is wall-clock in the named timezone when there is one, server-local otherwise, and anything more
    than about eight days out is rejected. Year rollover and DST are handled loosely, and the file says so: the retry
-   loop
-   absorbs the error.
+   loop absorbs the error.
 3. **Arm.** The fire time is the reset plus two minutes (`RESUME_BUFFER_MS`), at least five seconds out. A stale reset
    in the past arms a five minute retry instead. While a timer is armed, re-detections are ignored unless they are
    earlier by more than 90 seconds, because the footer redraws constantly.
-4. **Fire.** It sends Escape (to dismiss the limit options dialog), waits 600ms, then types `continue` and Enter. If
-   the session is already working at fire time, it does nothing.
+4. **Fire.** It sends Escape (to dismiss the limit options dialog), waits 600ms, then types `continue` and Enter. If the
+   session is already working at fire time, it does nothing.
 5. **Retry.** `_limitPaused` is cleared optimistically at fire. If Claude is still limited, the footer comes back, the
    detector re-arms, and the cycle repeats. `notifyWorking` resets the attempt count when the session works again.
 6. **Survive.** The reset time is persisted and restored after a Codeman restart (`restoreAutoResume`, minimum five
@@ -92,11 +91,11 @@ message wording, and the single `continue` prompt is fixed.
   move the work to another runner. It is a design, and it needs a capture while turns still work.
 - Machinery to reuse for the delivery: `internal/daemon/restartwake.go` types a line into a card once its runner is at
   an empty prompt with the keyboard quiet (the `injectPeer` gate), and
-  `docs/backlog/runtime/r-new-resume-says-continue.md`
-  is a filed item for typing "continue" at a card a restart interrupted.
+  `docs/backlog/runtime/r-new-resume-says-continue.md` is a filed item for typing "continue" at a card a restart
+  interrupted.
 - Auto compact and context cycling (`internal/daemon/autocompact.go`, `docs/runtime/context-cycle-design.md`) are the
-  atrium counterpart of Codeman's respawn `/clear`. Whatever resumes a limited card must hold those, for the same
-  reason Codeman holds respawn. I did not trace whether they would fire on a card sitting at a limit.
+  atrium counterpart of Codeman's respawn `/clear`. Whatever resumes a limited card must hold those, for the same reason
+  Codeman holds respawn. I did not trace whether they would fire on a card sitting at a limit.
 
 Nothing in `internal/` detects the limit message on screen or schedules a resume. I searched for the limit phrases and
 the `resets` text and found only unrelated zrok name limits and the usage tab.
@@ -104,16 +103,16 @@ the `resets` text and found only unrelated zrok name limits and the usage tab.
 ### Local input prediction ("zerolag")
 
 The author's pitch is "local input prediction so typing feels instant over a slow link". The package is
-`packages/xterm-zerolag-input` (MIT, zero dependencies, published as `xterm-zerolag-input`, repo
-`Ark0N/Codeman` directory `packages/xterm-zerolag-input`). It is client-side only, with no server or protocol change.
-It ships two addons for two kinds of TUI, and Codeman picks per runner in `src/web/public/terminal-ui.js`
-(`_updateLocalEchoState`, around line 3970).
+`packages/xterm-zerolag-input` (MIT, zero dependencies, published as `xterm-zerolag-input`, repo `Ark0N/Codeman`
+directory `packages/xterm-zerolag-input`). It is client-side only, with no server or protocol change. It ships two
+addons for two kinds of TUI, and Codeman picks per runner in `src/web/public/terminal-ui.js` (`_updateLocalEchoState`,
+around line 3970).
 
 **Common mechanism.** An absolutely positioned DOM overlay at z-index 7 inside `.xterm-screen`, one `<span>` per
 character at exact cell coordinates from xterm's render dimensions (`src/cell-dimensions.ts`). Writing into xterm's
 buffer was tried twice and failed, because Ink repaints the screen and overwrites injected cells
-(`docs/local-echo-overlay-plan.md`). The overlay is a layer Ink cannot reach. Fonts are copied from computed style.
-CJK and emoji take two cells. It works with the DOM, canvas and WebGL renderers.
+(`docs/local-echo-overlay-plan.md`). The overlay is a layer Ink cannot reach. Fonts are copied from computed style. CJK
+and emoji take two cells. It works with the DOM, canvas and WebGL renderers.
 
 **Mode 1, buffer (`ZerolagInputAddon`, `src/zerolag-input-addon.ts`).** Used for Claude, Gemini and similar prompts.
 
@@ -125,17 +124,17 @@ CJK and emoji take two cells. It works with the DOM, canvas and WebGL renderers.
   falls back to the cursor cell when the glyph is scrolled out of the viewport. It does not trust `cursorY`, which in
   Ink points at a status bar. OpenCode uses a custom finder for its `┃` border.
 - *How it reconciles.* There is little to reconcile, because nothing was sent. On Enter the overlay clears and the real
-  echo draws on the same pixels. The harder case is text already in the pty (flushed). The addon tracks a flushed
-  count and text, shows it opaque, and `removeChar` returns `pending`, `flushed` or `false` so the caller knows whether
-  a backspace must go to the pty (a three-layer cascade). The app keeps per-session flushed offsets for tab switches
-  and survives a reload through local storage.
-- *What breaks with full-screen TUIs.* Quite a lot, and Codeman's own history shows it. Holding keys until Enter
-  starves anything that reacts per keystroke: a live slash command picker, history and cursor arrows, composer rewrap,
+  echo draws on the same pixels. The harder case is text already in the pty (flushed). The addon tracks a flushed count
+  and text, shows it opaque, and `removeChar` returns `pending`, `flushed` or `false` so the caller knows whether a
+  backspace must go to the pty (a three-layer cascade). The app keeps per-session flushed offsets for tab switches and
+  survives a reload through local storage.
+- *What breaks with full-screen TUIs.* Quite a lot, and Codeman's own history shows it. Holding keys until Enter starves
+  anything that reacts per keystroke: a live slash command picker, history and cursor arrows, composer rewrap,
   paste-burst detection. Codeman issues #218 to #222 are all this, and the fix for Codex was to stop buffering. For
   Claude it works around the cases it can: arrows, Home, End, Delete and paging flush the pending text and hand the
   session back to plain pty echo until Enter or Ctrl+C (`_echoPassthroughSessions`). A bracketed paste flushes pending
-  text first, then sends the paste in its own write 80ms later. Escape and Tab are control characters and flush. What
-  it cannot do is show the picker or history reaction before the round trip.
+  text first, then sends the paste in its own write 80ms later. Escape and Tab are control characters and flush. What it
+  cannot do is show the picker or history reaction before the round trip.
 - *Cost of being wrong.* Text on screen may not have reached the agent. The wiki says so: "If a prompt appears to have
   been ignored, press Enter" (`docs/wiki/Input-And-Voice.md`). The README describes 50ms debounced forwarding instead.
   The code on the main path holds until Enter, so I would trust the code and the wiki over the README.
@@ -157,16 +156,16 @@ CJK and emoji take two cells. It works with the DOM, canvas and WebGL renderers.
   run (`onWriteParsed`, coalesced in a microtask), not against the byte stream. The stream matching approach failed
   against Ink and tmux, which turn a keystroke echo into `e\x1b[K\x1b[20;80H...` and paint spaces with ECH plus cursor
   forward. The buffer converges to the same cells however the bytes arrive. The rules:
-  - a prefix-only confirm loop: a prediction is confirmed when the cell matches **and** the cursor advanced past it,
-    which stops false confirms against placeholder text
-  - positions fixed at predict time and removed on confirm, with no relayout, so partial confirmation does not jitter
-  - a two-pass mismatch rule: a cell that is neither the snapshot nor the prediction must persist across two parse
-    passes before the run is dropped, since a half-parsed row is redrawn milliseconds later
-  - a TTL of 1000ms drops a stale suffix, and an off-row cursor is tolerated for 150ms
-  - an anchor hold: after a wire input whose cursor effect is not displayed yet (a backspace over echoed text, a
-    paste, a control key) predictions pause until the next parsed write, which costs at most one unpredicted keystroke
-    and removed a "tehh" ghost bug
-  - everything clears on scroll, resize, tab switch, reconnect and font change
+- a prefix-only confirm loop: a prediction is confirmed when the cell matches **and** the cursor advanced past it, which
+    stops false confirms against placeholder text
+- positions fixed at predict time and removed on confirm, with no relayout, so partial confirmation does not jitter
+- a two-pass mismatch rule: a cell that is neither the snapshot nor the prediction must persist across two parse passes
+    before the run is dropped, since a half-parsed row is redrawn milliseconds later
+- a TTL of 1000ms drops a stale suffix, and an off-row cursor is tolerated for 150ms
+- an anchor hold: after a wire input whose cursor effect is not displayed yet (a backspace over echoed text, a paste, a
+    control key) predictions pause until the next parsed write, which costs at most one unpredicted keystroke and
+    removed a "tehh" ghost bug
+- everything clears on scroll, resize, tab switch, reconnect and font change
 - *What it does not do.* Deleting already echoed text still waits for the round trip. Wide characters work in the
   package but IME input never reaches the hook in Codeman.
 - *Measured.* The plan records phase 0 recordings of codex-cli 0.147.0 in tmux at 100x30 as fixtures
@@ -174,18 +173,17 @@ CJK and emoji take two cells. It works with the DOM, canvas and WebGL renderers.
   (`predictive-echo-fuzz.test.ts`, `codex-replay.test.ts`). The test count in its README (227 in the badge, 175 in the
   alt text) is inconsistent, so treat it as roughly 200.
 - *Claude is not on this mode.* Claude sessions still use buffer mode. The predictive composer gate is written for
-  Codex's `› ` row only. Porting it to Claude means a composer gate for Claude's `❯` row, and Claude's composer
-  has its own per-key behaviour (slash picker, `@` file picker, vim mode) that would need the same recording work.
+  Codex's `› ` row only. Porting it to Claude means a composer gate for Claude's `❯` row, and Claude's composer has its
+  own per-key behaviour (slash picker, `@` file picker, vim mode) that would need the same recording work.
 
 **What atrium has.** Nothing that predicts. `internal/inputlag` and `js/inputlag.js` are measurement: they time a
 keystroke from xterm's `onData` to the frame after its echo is parsed and log which hop (board, hub, link, room) was
-slow
-(`docs/terminal/input-lag-logging.md`). Atrium's keystroke path has more hops than Codeman's (browser, hub, link,
+slow (`docs/terminal/input-lag-logging.md`). Atrium's keystroke path has more hops than Codeman's (browser, hub, link,
 room, pty), so on a slow overlay it has more to gain, and it already has the measurement needed to prove a gain.
 
 What atrium does for a slow link today is a different answer, on the phone only. The phone terminal types into a real
-textarea and sends once on the send button as one bracketed paste then Enter (`js/tcompose.js`, `m/js/compose.js`).
-That avoids the lag by never sending per key, the same trade as Codeman's buffer mode, with the OS keyboard in charge of
+textarea and sends once on the send button as one bracketed paste then Enter (`js/tcompose.js`, `m/js/compose.js`). That
+avoids the lag by never sending per key, the same trade as Codeman's buffer mode, with the OS keyboard in charge of
 swipe, dictation and autocorrect. A desktop browser on a slow link has no equivalent.
 
 ### Remote shell beside the agent
@@ -196,19 +194,17 @@ without it passing through the agent.
 
 Atrium **already does this, and ties it to the card.** `internal/daemon/shell.go`: a card may hold two terminals, the
 runner's and one shell in the same directory, deliberately two and not N. The shell has no card of its own and records
-no
-activity, is not resumed, closes after 30 minutes unattended, and does not survive the daemon. The design note rejects a
-list of shells as building a multiplexer. Codeman's model is more flexible, atrium's keeps the shell next to the thing
-it
-inspects and out of the event log.
+no activity, is not resumed, closes after 30 minutes unattended, and does not survive the daemon. The design note
+rejects a list of shells as building a multiplexer. Codeman's model is more flexible, atrium's keeps the shell next to
+the thing it inspects and out of the event log.
 
 ### Many runners
 
 Codeman: nine CLIs plus a shell, each a mode with its own idle and prompt handling (`src/session-cli-builder.ts`,
 `src/session-cli-registry-bridge.ts`, `docs/wiki/Agent-CLIs.md`), plus custom model endpoints
 (`src/custom-model-hosts.ts`, `docs/wiki/Custom-Model-Endpoints.md`) and a DeepSeek harness route
-(`src/deepseek-route-config.ts`), which is how a local GPU model reaches an agent. The wiki is honest that most
-features are Claude-only because they need hooks or Claude's output format.
+(`src/deepseek-route-config.ts`), which is how a local GPU model reaches an agent. The wiki is honest that most features
+are Claude-only because they need hooks or Claude's output format.
 
 Atrium: runners are rows in a table, with a profile of what each reports (`internal/runnerprofile/profile.go`). Two of
 four (claude, codex) have hooks and give atrium everything. Ollama and a plain shell give a terminal and nothing else,
@@ -242,20 +238,19 @@ box on Tailscale. Atrium has no Tailscale path today beyond binding where Tailsc
 ### Keeping an agent working
 
 Codeman: the respawn controller re-prompts an idle session, cycles `/clear` and a kickstart prompt on a timer, has
-adaptive timing, circuit breakers and a Ralph loop for task lists (`src/respawn-controller.ts`,
-`src/ralph-tracker.ts`, `docs/wiki/Autonomous-Loops.md`). Cron jobs launch sessions on a schedule. The wiki states
-every cycle is real spend.
+adaptive timing, circuit breakers and a Ralph loop for task lists (`src/respawn-controller.ts`, `src/ralph-tracker.ts`,
+`docs/wiki/Autonomous-Loops.md`). Cron jobs launch sessions on a schedule. The wiki states every cycle is real spend.
 
 Atrium: wake after a restart (`docs/runtime/restart-wake.md`), a cache keep-alive that refreshes idle cards to avoid
 cache rewrites (`internal/daemon/keepalive.go`, `docs/runtime/cache-keepalive-design.md`), idle parking, and an
-orchestrator that directs cards. I found no idle re-prompt loop and no scheduler in `internal/daemon`. That is by
-design more than gap: atrium has an orchestrator session doing that job with judgment.
+orchestrator that directs cards. I found no idle re-prompt loop and no scheduler in `internal/daemon`. That is by design
+more than gap: atrium has an orchestrator session doing that job with judgment.
 
 ### Permissions and review
 
-Codeman defaults to `--dangerously-skip-permissions`, offers Anthropic's `auto` mode and an allowed tools list, and
-has an Approvals Inbox (`src/web/approval-inbox.ts`). Atrium gates every tool call through a hook, with standing rules
-and per-card auto mode that still records every call and who answered (`docs/runtime/auto-mode.md`).
+Codeman defaults to `--dangerously-skip-permissions`, offers Anthropic's `auto` mode and an allowed tools list, and has
+an Approvals Inbox (`src/web/approval-inbox.ts`). Atrium gates every tool call through a hook, with standing rules and
+per-card auto mode that still records every call and who answered (`docs/runtime/auto-mode.md`).
 
 ## Where Codeman is ahead
 
@@ -270,8 +265,8 @@ and per-card auto mode that still records every call and who answered (`docs/run
   many sessions.
 - **Voice input** on mobile.
 - **Submit verification.** `src/session-submit-verifier.ts` re-presses Enter while a sent prompt still sits in the
-  composer, written after Claude Code 2.1.277 ignored Enter for 30 to 50 seconds after first paint. Any tool that
-  types prompts into Claude Code can lose a turn to this.
+  composer, written after Claude Code 2.1.277 ignored Enter for 30 to 50 seconds after first paint. Any tool that types
+  prompts into Claude Code can lose a turn to this.
 - **Idle re-prompt and cron** for unattended runs without a director.
 - **Multi-user mode** with per-user grants.
 
@@ -296,29 +291,29 @@ and per-card auto mode that still records every call and who answered (`docs/run
 ## Backlog ideas worth stealing
 
 1. **Auto-resume at a limit reset.** Type "continue" into a card when its `ResetsAt` from telemetry passes plus a
-   buffer, through the `restartwake.go` gate, with a per-card switch. It matters because overnight cards stall on the
-   5 hour window. It is cheaper for atrium than for Codeman since the reset time is structured. Cost: small to medium,
+   buffer, through the `restartwake.go` gate, with a per-card switch. It matters because overnight cards stall on the 5
+   hour window. It is cheaper for atrium than for Codeman since the reset time is structured. Cost: small to medium,
    about two days with tests, and it must also hold auto compact and context cycling while a card is limit-paused.
 2. **A limit-paused state on the card.** Show "paused until 3pm" on the row and fire an `fyi` so the operator knows an
    overnight run is waiting, not dead. It matters because today a limited card looks like an idle one. Cost: small,
    follows idea 1.
 3. **Predictive echo for claude and codex, behind a per-card setting, off by default.** Vendor the MIT
    `PredictiveEchoAddon` (about 480 lines plus 60 for rendering) and give it a composer gate per runner. It matters for
-   a board reached over zrok from a phone or a hotel. Cost: medium. Record Claude's composer in a pty first, as
-   Codeman did for Codex, check that the vendored xterm exposes `onWriteParsed`, and prove the gain with the existing
-   input-lag log before turning it on for anyone.
+   a board reached over zrok from a phone or a hotel. Cost: medium. Record Claude's composer in a pty first, as Codeman
+   did for Codex, check that the vendored xterm exposes `onWriteParsed`, and prove the gain with the existing input-lag
+   log before turning it on for anyone.
 4. **Prefer predict over buffer.** If atrium ports anything, port only the write-through mode. Buffer mode's
    hold-until-Enter is the source of Codeman's #218 to #222. It matters because it keeps every keystroke on the wire.
    Cost: none beyond idea 3, it is a decision.
 5. **Submit verification for typed prompts.** After a peer message, a wake line or a resume line is typed, read the
    screen and press Enter again while the composer still holds the head of it. It matters because Claude Code has been
-   seen ignoring Enter for 30 to 50 seconds after first paint and a lost wake costs a whole turn. Cost: small, one
-   check beside `injectPeer`, but measure whether current Claude Code still does it first.
+   seen ignoring Enter for 30 to 50 seconds after first paint and a lost wake costs a whole turn. Cost: small, one check
+   beside `injectPeer`, but measure whether current Claude Code still does it first.
 6. **A Tailscale path in the installer.** Detect Tailscale, put `tailscale serve` in front of the loopback board, print
    the URL and a QR. It matters for the single machine user, who does not want zrok. Cost: small to medium, mostly
    installer and docs, no new auth since the tailnet is the login.
-7. **Voice input on `/m`.** A push-to-talk button feeding the composer. It matters on a phone where typing is the
-   slow part. Cost: medium, browser speech APIs or a server transcription route.
+7. **Voice input on `/m`.** A push-to-talk button feeding the composer. It matters on a phone where typing is the slow
+   part. Cost: medium, browser speech APIs or a server transcription route.
 8. **Idle re-prompt as an orchestrator tool, not a loop.** Offer "nudge idle cards" as an action the orchestrator can
-   take on a timer, without importing Codeman's respawn cycling or its spend. It matters for cards the director
-   forgot. Cost: small, and only if the orchestrator does not already cover it.
+   take on a timer, without importing Codeman's respawn cycling or its spend. It matters for cards the director forgot.
+   Cost: small, and only if the orchestrator does not already cover it.
