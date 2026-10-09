@@ -181,6 +181,31 @@ func TestAHumanTurnIsNotASilentStop(t *testing.T) {
 	}
 }
 
+// The same when the human types straight into the terminal: that stamps human_at and never reaches handleMessage.
+func TestATerminalTypedTurnIsNotASilentStop(t *testing.T) {
+	d := testDaemon(t)
+	launcher, worker := launchedPair(t, d)
+	time.Sleep(5 * time.Millisecond)
+	if err := d.st.TouchHuman(worker.ID, "typed", time.Now()); err != nil {
+		t.Fatal(err)
+	}
+
+	stopTwice(t, d, "worker")
+	if n := len(pendingFrom(t, d, worker.ID)); n != 0 {
+		t.Fatalf("the worker was nudged in the human's conversation: %d messages", n)
+	}
+	if n := len(pendingFrom(t, d, launcher.ID)); n != 0 {
+		t.Fatalf("the launcher heard of a human turn: %d messages", n)
+	}
+
+	time.Sleep(5 * time.Millisecond)
+	prompt(t, d, worker.ID)
+	stopTurn(t, d, "worker")
+	if n := len(pendingFrom(t, d, worker.ID)); n != 1 {
+		t.Fatalf("a launcher prompt then a silent stop gave %d nudges, want one", n)
+	}
+}
+
 // A new prompt is a new turn owed, so a silent stop after it is a new notice.
 func TestEachPromptGetsItsOwnSilentStop(t *testing.T) {
 	d := testDaemon(t)
