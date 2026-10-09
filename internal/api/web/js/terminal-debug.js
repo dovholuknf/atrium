@@ -211,6 +211,8 @@ function restartTerm(full) {
 function restartCard(id, full) {
   const t = typeof peekCard === "function" ? peekCard(id) : null;
   if (!t) return;
+  // A parked card has no process to stop, so restarting it is waking it on its conversation.
+  if (!t.supervised && t.parked_at && t.resume_id) return resumeParked(t.id);
   if (!t.supervised) {
     toast("cannot restart", "atrium does not own this session's terminal, so it cannot type its exit keys");
     return;
@@ -218,14 +220,17 @@ function restartCard(id, full) {
   return oneAtATime("launch:" + bareId(t.id), () => restartTermNow(t, full));
 }
 
+// Mid-turn is anything but idle, the test the header's working count uses.
+const cardIsWorking = (t) => !!(t && t.activity && t.activity.what && t.activity.what !== "idle");
+
 async function restartTermNow(t, full) {
-  if (!await confirmUser(`restart ${t.display_title}${full ? " with your full setup" : ""}?`,
+  // An idle card restarts at once. One mid-turn would lose the turn, so it asks first.
+  if (cardIsWorking(t) && !await confirmUser(`${t.display_title} is working right now. restart anyway?`,
     "Types its exit keys, waits for it to leave, then resumes the same " +
     "conversation on the same card with the same model, effort and settings. " +
-    "If it will not leave it is left running and you are told. The terminal " +
-    "drops for a few seconds while it comes back." +
-    "<br><br>Nothing is lost: it picks up where it left off.",
-    "restart it", "restart-session")) return;
+    "The turn in flight is interrupted. If it will not leave it is left running and you are told. " +
+    "The terminal drops for a few seconds while it comes back.",
+    "restart it")) return;
   if (full) {
     try {
       await api(`/v1/tasks/${t.id}`, {
@@ -238,6 +243,7 @@ async function restartTermNow(t, full) {
   try { await api(`/v1/tasks/${t.id}/restart`, { method: "POST" }); }
   catch (e) { clearSessionRestart(t.id); toast("could not restart", e.message); return; }
   toast("restarting", t.display_title);
+  if (typeof refresh === "function") refresh();
 }
 
 // The runner is gone. Keeps the scrollback, drops every claim that it is live.

@@ -1,4 +1,4 @@
-// The board, in a real browser, must not blank on a hung fetch.
+﻿// The board, in a real browser, must not blank on a hung fetch.
 //
 // The unit test (test-refresh-storm.js) proves the debounce, single-flight,
 // abort, cap and watchdog as logic. This proves the two things only a browser
@@ -14558,6 +14558,99 @@ async function phoneNudgeSection(browser, base) {
   if (errors.length) fail("phoneNudge: the page threw: " + errors.join(" | "));
 }
 
+// THE CARD MENU'S RESTART. Offered on a supervised card and on a parked card with a resume id, left out of one
+// atrium cannot restart. An idle card posts to /v1/tasks/<id>/restart at once, a working one asks first, and a
+// refusal is a toast. `RESTART_SHOT=/path.png` also saves a picture of the menu.
+async function restartMenuSection(browser, base) {
+  const was = tasksMode;
+  tasksMode = "land";
+  landCard("land-rs-idle", { supervised: true, created_at: "2026-10-09T12:00:00Z" });
+  landCard("land-rs-work", { supervised: true, activity: { what: "Bash" }, created_at: "2026-10-09T12:01:00Z" });
+  landCard("land-rs-park", { supervised: false, parked_at: "2026-10-09T11:00:00Z", resume_id: "abc-123",
+    created_at: "2026-10-09T12:02:00Z" });
+  landCard("land-rs-bare", { supervised: false, pinned: true, created_at: "2026-10-09T12:03:00Z" });
+  landList = [LAND["land-rs-idle"], LAND["land-rs-work"], LAND["land-rs-park"], LAND["land-rs-bare"]];
+  landPerms = [];
+  const errors = [];
+  const ctx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+  const posts = [];
+  let refuse = false;
+  await ctx.route("**/v1/tasks/*/restart", route => {
+    posts.push(new URL(route.request().url()).pathname + " " + route.request().method());
+    if (refuse) return route.fulfill({ status: 400, contentType: "application/json", body: JSON.stringify({ error: "it did not exit when asked" }) });
+    return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(LAND["land-rs-idle"]) });
+  });
+  await ctx.route("**/v1/tasks/*/resume", route => {
+    posts.push(new URL(route.request().url()).pathname + " " + route.request().method());
+    return route.fulfill({ status: 200, contentType: "application/json", body: "{}" });
+  });
+  try {
+    const p = await ctx.newPage();
+    p.on("pageerror", e => errors.push(String(e)));
+    await p.goto(base, { waitUntil: "domcontentloaded" });
+    await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
+    const open = async (id) => {
+      await p.click(`#stack-list .stackrow[data-id="${id}"]`, { button: "right" });
+      await p.waitForSelector("#cardmenu button", { state: "visible", timeout: slow(5000) });
+      return p.evaluate(() => [...document.querySelectorAll("#cardmenu button")].map(b => b.textContent));
+    };
+    const item = () => p.locator("#cardmenu button", { hasText: /^restart/ }).first();
+    const dialogUp = () => p.locator("dialog[open] button", { hasText: "restart it" });
+
+    // idle: offered, with its sub-text, and one click posts with no question.
+    let labels = await open("land-rs-idle");
+    if (!labels.some(l => /^restart/.test(l) && /start it again, same conversation/.test(l))) {
+      fail("restartMenu: no restart entry with its sub-text on a supervised card: " + JSON.stringify(labels));
+    }
+    if (process.env.RESTART_SHOT) await p.screenshot({ path: process.env.RESTART_SHOT });
+    await item().click();
+    await p.waitForTimeout(500);
+    if (await dialogUp().count()) fail("restartMenu: an idle card asked before restarting.");
+    if (posts.join() !== "/v1/tasks/land-rs-idle/restart POST") fail("restartMenu: idle restart did not POST once: " + JSON.stringify(posts));
+    posts.length = 0;
+
+    // working: asks, cancel posts nothing, confirming posts.
+    await open("land-rs-work");
+    await item().click();
+    await dialogUp().waitFor({ state: "visible", timeout: slow(5000) })
+      .catch(() => fail("restartMenu: a working card did not ask before restarting."));
+    if (!/working right now/.test(await p.locator("dialog[open]").first().textContent())) fail("restartMenu: the question does not say it is working.");
+    await p.locator("dialog[open] button", { hasText: "cancel" }).click();
+    await p.waitForTimeout(300);
+    if (posts.length) fail("restartMenu: cancelling still posted: " + JSON.stringify(posts));
+    await open("land-rs-work");
+    await item().click();
+    await dialogUp().click();
+    await p.waitForTimeout(500);
+    if (posts.join() !== "/v1/tasks/land-rs-work/restart POST") fail("restartMenu: confirmed restart did not POST once: " + JSON.stringify(posts));
+    posts.length = 0;
+
+    // a refusal is a toast.
+    refuse = true;
+    await open("land-rs-idle");
+    await item().click();
+    await p.waitForFunction(() => /could not restart/.test(document.body.textContent), null, { timeout: slow(5000) })
+      .catch(() => fail("restartMenu: a refused restart did not toast."));
+    refuse = false;
+    posts.length = 0;
+
+    // parked: offered, and it wakes the card.
+    labels = await open("land-rs-park");
+    if (!labels.some(l => /^restart/.test(l))) fail("restartMenu: no restart on a parked card with a resume id.");
+    await item().click();
+    await p.waitForTimeout(500);
+    if (posts.join() !== "/v1/tasks/land-rs-park/resume POST") fail("restartMenu: restarting a parked card did not resume it: " + JSON.stringify(posts));
+
+    // a card atrium cannot restart: left out.
+    labels = await open("land-rs-bare");
+    if (labels.some(l => /^restart/.test(l))) fail("restartMenu: restart is offered on a card atrium cannot restart.");
+  } finally {
+    await ctx.close();
+    tasksMode = was;
+  }
+  if (errors.length) fail("the restart menu page threw: " + errors.join(" | "));
+}
+
 // u-031: Shift+right click in the attached terminal opens termMenu at the pointer, with "new context".
 async function shiftMenuSection(browser, base) {
   const was = tasksMode;
@@ -25473,7 +25566,7 @@ async function main() {
       groupDrag: groupDragSection, tooltip: tooltipSection, linkTip: linkTipSection, fileOpenOutside: fileOpenOutsideSection, readTabSize: readTabSizeSection,popoutTagFlip: popoutTagFlipSection, prefsEverywhere: prefsEverywhereSection, mPrefsEverywhere: (b) => mPrefsEverywhereSection(b), idleRate: idleRateSection, foldStill: foldStillSection,
       untaggedSort: untaggedSortSection, newCard: newCardSection, themePreview: themePreviewSection, themeLab: themeLabSection, land: landSection, reselect: reselectSection, clearKeepsPage: clearKeepsPageSection,
       resumeSpinner: resumeSpinnerSection, toastsTop: toastsTopSection, sayWhen: sayWhenSection, pasteSpinner: pasteSpinnerSection,
-      pasteBig: pasteBigSection, pasteBusy: pasteBusySection, typing: typingSection, alias: aliasSection, askAgain: askAgainSection, copySelect: copySelectSection, busyGuard: busyGuardSection, keepalive: keepaliveSection,
+      pasteBig: pasteBigSection, pasteBusy: pasteBusySection, typing: typingSection, alias: aliasSection, askAgain: askAgainSection, copySelect: copySelectSection, busyGuard: busyGuardSection, keepalive: keepaliveSection, restartMenu: restartMenuSection,
       stuck: stuckSection, blockerMark: blockerMarkSection, carryLink: carryLinkSection,
       skinScope: skinScopeSection, skinHeal: skinHealSection, toastLives: toastLivesSection,
       history: historySection, contextSize: contextSizeSection, ctxLine: ctxLineSection, ctxLimitLayers: ctxLimitLayersSection, contextCycle: contextCycleSection, landThePlane: landThePlaneSection, peekEverywhere: peekEverywhereSection, peekOneHover: peekOneHoverSection, cardRoute: cardRouteSection,
@@ -27501,6 +27594,7 @@ async function main() {
     await unit("busyGuard", () => busyGuardSection(browser, base));
     // ── keep-alive chips, the card switch, and the break-even toast ────────
     await unit("keepalive", () => keepaliveSection(browser, base));
+    await unit("restartMenu", () => restartMenuSection(browser, base));
     // ── a stuck card wears a mark, and the gear decides whether it rings ───
     await unit("stuck", () => stuckSection(browser, base));
     await unit("blockerMark", () => blockerMarkSection(browser, base));
