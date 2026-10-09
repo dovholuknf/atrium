@@ -59,6 +59,16 @@ func TestLaunchIdleAfterGraceWithNoHook(t *testing.T) {
 	}
 }
 
+// A card a restart reopened is idle at its prompt, not stuck at launch.
+func TestLaunchIdleNotForAReopenedCard(t *testing.T) {
+	d := testDaemon(t)
+	task, r := stuckWorker(t, d, "starting up\r\n", 5*time.Minute, 5*time.Minute)
+	r.resumed = true
+	if x := d.launchStuck(task, time.Now()); x != nil {
+		t.Fatalf("%+v for a resumed runner", x)
+	}
+}
+
 func TestLaunchIdleWaitsOutTheGrace(t *testing.T) {
 	d := testDaemon(t)
 	task, _ := stuckWorker(t, d, "starting up\r\n", 20*time.Second, time.Hour)
