@@ -576,7 +576,7 @@ function mockTasks(reading) {
   if (tasksMode === "stuck") { return stuckCards(); }
   if (tasksMode === "blocker") { return blockerCards(); }
   if (tasksMode === "ctxsize") { return CTX_CARDS; }
-  if (tasksMode === "onehover") { return [ONE_HOVER_CARD]; }
+  if (tasksMode === "onehover") { return [ONE_HOVER_CARD, OH_ASKED, OH_IDLE]; }
   if (tasksMode === "peek") {
     // Idle a second longer on every read, so a refresh redraws the entries.
     if (reading) peekReads++;
@@ -9017,13 +9017,11 @@ async function cacheChipSection(browser, base) {
     };
     await p.waitForFunction(() => document.querySelectorAll("#stack-list .stackrow .chip.cache").length >= 6, null, { timeout: slow(10000) });
     check("stack", await texts("#stack-list .stackrow"));
-    // A dot, never words: clint saw the chip squeeze a title to one letter. The words are in the details.
+    // A dot, never words: clint saw the chip squeeze a title to one letter. The words are in the tooltip.
     const dot = await p.evaluate(() => [...document.querySelectorAll("#stack-list .chip.cache")].map(e => {
       const r = e.getBoundingClientRect(); return { w: r.width, h: r.height, text: e.innerText.trim() };
     }).filter(d => d.w > 16 || d.h > 16 || d.text));
     if (dot.length) fail("cacheChip: chips are not dots " + JSON.stringify(dot));
-    const peekWords = await p.evaluate(() => { const d = document.createElement("div"); d.innerHTML = peekFoot(KA_SEEN.get("cc-warm")); return d.innerText; });
-    if (!/won't refresh: busy/.test(peekWords) || !/not idle/.test(peekWords)) fail("cacheChip: the details lack the words " + JSON.stringify(peekWords));
     const tip = await p.evaluate(() => document.querySelector('#stack-list [data-cid="cc-warm"]').dataset.tip);
     if (!/not idle/.test(tip) || !/busy/.test(tip)) fail("cacheChip: the tooltip lacks the raw why: " + tip);
     if (shots) { fs.mkdirSync(shots, { recursive: true }); await p.screenshot({ path: path.join(shots, "u-032-stack-1400x900.png") }); }
@@ -10863,7 +10861,7 @@ async function peekEverywhereSection(browser, base) {
       await settle();
       let pk = await state();
       if (pk) {
-        if (pk.id !== "cx-big" || !/warns at 150k/.test(pk.text) || !/41\s*prompts/.test(pk.text) || /\$/.test(pk.text)) {
+        if (pk.id !== "cx-big" || !/warns at 150k/.test(pk.text) || !/212k/.test(pk.text) || /\$|prompts/.test(pk.text)) {
           fail("the " + view + " tab's details are not the card's body: " + pk.text);
         }
         if (Math.abs(pk.x - (px + 4)) > 2 || pk.y < py + 4 || pk.y > py + 20) {
@@ -11046,6 +11044,23 @@ const ONE_HOVER_CARD = Object.assign({}, T1, {
   keepalive: { state: "on", state_at: "2026-09-27T10:00:00Z", refreshes: 3, spent: 0.18, budget: 0.3,
     warm_until: new Date(Date.now() + 30 * 60000).toISOString() },
 });
+// The two cards the peek is measured on: one open question and a recap, and a plain idle card.
+const OH_RECAP = "Moved the peek's size rules into one place and cut the card block, the usage grid and the cache paragraph. " +
+  "The popover now reads as a header, what needs you, the last recap and the context bar. The recap is long on purpose so " +
+  "that it has to be clamped: it keeps going for a while, past four lines at the popover's width, so the rest sits " +
+  "behind a click. Tests pass for the board's own sections and the remaining work is only the changelog.";
+const OH_ASKED = Object.assign({}, T1, {
+  id: "sg4-control~oh2", status: "needs-input", display_title: "asked one", resume_id: "sess-oh2", runner: "claude",
+  supervised: true, pinned: true, worktree: "/src/atrium/oh2", repo: "atrium", branch: "claude/oh2", model: "claude-opus-5-5",
+  context_size: { tokens: 172000, threshold_k: 160, source: "hub" }, recap: OH_RECAP,
+  seen: { answered: false, open_questions: ["land sa21 first?"] },
+});
+const OH_IDLE = Object.assign({}, T1, {
+  id: "sg4-control~oh3", status: "idle", display_title: "plain idle", resume_id: "sess-oh3", runner: "claude",
+  supervised: true, pinned: true, worktree: "/src/atrium/oh3", repo: "atrium", branch: "claude/oh3", model: "claude-opus-5-5",
+  context_size: { tokens: 90000, threshold_k: 160, source: "hub" },
+});
+
 async function peekOneHoverSection(browser, base) {
   const W = 1400, H = 1000;
   const ctx = await browser.newContext({ viewport: { width: W, height: H } });
@@ -11064,8 +11079,9 @@ async function peekOneHoverSection(browser, base) {
     return { text: norm(el.textContent), b: r.bottom, y: r.top, vh: innerHeight };
     function norm(s) { return String(s || "").replace(/\s+/g, " ").trim(); }
   });
-  const was = tasksMode;
+  const was = tasksMode, wasDocs = boardDocs;
   tasksMode = "onehover";
+  boardDocs = true;
   try {
     await p.goto(base, { waitUntil: "domcontentloaded" });
     await p.evaluate(() => document.querySelector('.tab[data-view="terms"]').click());
@@ -11094,18 +11110,61 @@ async function peekOneHoverSection(browser, base) {
       if (pk.y < 7 || pk.b > pk.vh - 7) fail("onehover: the details leave the viewport over " + sel + ": " + JSON.stringify(pk));
       if (shots && sel === badges[0]) await p.screenshot({ path: shots + "/" + (process.env.ONEHOVER_NAME || "peek") + ".png" });
     }
+    // THE SIZE: a card with one open question and a recap fits in 420px at the default --uiscale, and a popover taller
+    // than the viewport scrolls inside. A plain idle card is smaller still. ONEHOVER_SHOTS writes both pictures.
+    const measure = async (id, name) => {
+      await p.evaluate(() => closePeek());
+      await p.evaluate(i => openPeek(i, document.querySelector('#term-list .card.tab[data-id="' + i + '"]'), "hover"), id);
+      await p.waitForFunction(() => /\d+k/.test((document.querySelector(".peek.on .peek-ctx") || {}).textContent || ""),
+        null, { timeout: slow(4000) }).catch(() => fail("onehover: the details of " + id + " never showed a context size."));
+      await new Promise(r => setTimeout(r, 400));
+      const m = await p.evaluate(() => {
+        const b = document.querySelector(".peek.on .peek-body");
+        const r = b.getBoundingClientRect();
+        return { h: Math.round(r.height), w: Math.round(r.width), text: b.textContent.replace(/\s+/g, " ").trim(), scale: getComputedStyle(document.documentElement).getPropertyValue("--uiscale").trim(),
+          actions: [...b.querySelectorAll(".peek-acts button")].map(x => x.textContent.trim()), more: !!b.querySelector(".peek-more:not([hidden])"),
+          cut: b.querySelectorAll(".peek-grid, .peek-foot, .peek-cache, .peek-sec.about").length };
+      });
+      if (shots) {
+        const box = await p.locator(".peek.on .peek-body").boundingBox();
+        await p.screenshot({ path: shots + "/" + name + ".png", clip: { x: Math.max(0, box.x - 10), y: Math.max(0, box.y - 10), width: box.width + 20, height: box.height + 20 } });
+        console.log("onehover: " + name + " " + m.h + "px");
+      }
+      return m;
+    };
+    const asked = await measure("sg4-control~oh2", process.env.ONEHOVER_NAME ? process.env.ONEHOVER_NAME + "-asked" : "peek-asked");
+    if (asked.w > 420) fail("onehover: the details are " + asked.w + "px wide, past 420px");
+    if (!/published 1 document/.test(asked.text)) fail("onehover: the published documents line is gone: " + asked.text);
+    if (asked.h > 420) fail("onehover: a card with one question and a recap is " + asked.h + "px tall, past 420px");
+    if (!/land sa21 first\?/.test(asked.text) || !/Moved the peek/.test(asked.text)) fail("onehover: the question or the recap is missing: " + asked.text);
+    if (!asked.more) fail("onehover: a long recap has no way to read the rest");
+    if (asked.actions.join(",") !== "open,say,exit,restart") fail("onehover: the actions are " + asked.actions.join(",") + ", want open,say,exit,restart");
+    if (asked.cut) fail("onehover: the usage grid, footer, cache paragraph or card block is still drawn");
+    if (/launched with|launched by|prompts|cache read|idle \d/.test(asked.text)) fail("onehover: cut text is still there: " + asked.text);
+    const idle = await measure("sg4-control~oh3", process.env.ONEHOVER_NAME ? process.env.ONEHOVER_NAME + "-idle" : "peek-idle");
+    if (idle.h > asked.h) fail("onehover: a plain idle card (" + idle.h + "px) is taller than the asked one (" + asked.h + "px)");
+    // Short window: it never grows past the viewport, and scrolls inside.
+    await p.evaluate(() => closePeek());
+    await p.setViewportSize({ width: W, height: 260 });
+    await p.evaluate(() => openPeek("sg4-control~oh2", document.querySelector('#term-list .card.tab[data-id="sg4-control~oh2"]'), "hover"));
+    await new Promise(r => setTimeout(r, 600));
+    const short = await p.evaluate(() => { const b = document.querySelector(".peek.on .peek-body"); const r = b.getBoundingClientRect();
+      return { top: r.top, bottom: r.bottom, vh: innerHeight, scrolls: b.scrollHeight > b.clientHeight, oy: getComputedStyle(b).overflowY }; });
+    if (short.top < 0 || short.bottom > short.vh || short.oy !== "auto") fail("onehover: in a short window the details leave it: " + JSON.stringify(short));
+    await p.evaluate(() => closePeek());
+    await p.setViewportSize({ width: W, height: H });
+
     const [firstSel, first] = hovered[0] || ["", ""];
     for (const [sel, text] of hovered) {
       if (text !== first) fail("onehover: the details over " + sel + " differ from those over " + firstSel + ":\n  " + text + "\n  " + first);
     }
     const want = [
-      /running/, /claude-opus-5-5/, /sg4-control/, /2 messages have been waiting to be delivered to this agent for 15s and are held while a new-context cycle/,
-      /context 1\/3: waiting for ack\. waiting for: limit prompt typed/, /212k/, /warns at 160k from hub/, /cache: .*warm/, /limit 160k . compacts at 176k/,
-      /auto mode/, /ends in 40m|until \d/, /land sa21 first\?/, /build the tray\?/, /unseen|nobody has looked/, /boss/, /sg4/,
-      /3 held notices/, /2 owed/, /thinking/,
+      /running/, /claude-opus-5-5/, /orchestrator/, /atrium.*claude\/oh/, /212k/, /warns at 160k from hub/,
+      /land sa21 first\?/, /build the tray\?/,
     ];
     for (const re of want) if (!re.test(first)) fail("onehover: the details do not say " + re + ": " + first);
     // Off the card, a tooltip is as it was.
+    await p.mouse.move(W / 2, 3);
     const gear = await p.locator("#gear").boundingBox();
     await p.mouse.move(Math.round(gear.x + gear.width / 2), Math.round(gear.y + gear.height / 2));
     await p.waitForFunction(() => document.getElementById("tip").classList.contains("on"), null, { timeout: slow(2000) })
@@ -11113,6 +11172,7 @@ async function peekOneHoverSection(browser, base) {
   } finally {
     await ctx.close();
     tasksMode = was;
+    boardDocs = wasDocs;
   }
   if (errors.length) fail("the one hover page threw: " + errors.join(" | "));
 }
@@ -18447,46 +18507,8 @@ async function mCardUploadSection(browser) {
   if (!bad) console.log("mCardUpload ok");
 }
 
-// The details' counts show a dash for a field the room did not send, and a 0 for a real zero. See js/peek.js.
-async function peekDashSection(browser, base) {
-  const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
-  try {
-    const p = await ctx.newPage();
-    await p.goto(base, { waitUntil: "domcontentloaded" });
-    await p.waitForFunction(() => typeof peekBody === "function");
-    const r = await p.evaluate(() => {
-      const t = { id: "x", resume_id: "r" };
-      const read = v => {
-        const d = document.createElement("div");
-        d.innerHTML = peekBody(t, v);
-        return [...d.querySelectorAll(".peek-cell")].map(c => ({
-          label: c.querySelector("span").textContent, value: c.querySelector("b").textContent, tip: c.dataset.tip || "" }));
-      };
-      return {
-        missing: read({ context_now: 61000 }),
-        empty: read({ context_now: 61000, totals: {} }),
-        noRows: read({ context_now: 46146, by_cause: {}, totals: { rows: 0, replies: 0, input: 0, output: 0, cache_read: 0, cache_write_5m: 0, cache_write_1h: 0 } }),
-        zero: read({ context_now: 61000, by_cause: { operator: { rows: 0, replies: 0 } }, totals: { rows: 1, input: 0, output: 0, cache_read: 0, cache_write_5m: 0, cache_write_1h: 0 } }),
-        real: read({ context_now: 61000, by_cause: { operator: { rows: 2, replies: 9 } },
-          totals: { rows: 2, input: 5, output: 700, cache_read: 4000, cache_write_5m: 11, cache_write_1h: 0 } }),
-      };
-    });
-    for (const k of ["missing", "empty", "noRows"]) {
-      for (const c of r[k]) {
-        if (c.value !== "–" || !/not reported by this room/.test(c.tip) || !/turn ends/.test(c.tip)) fail("peekDash " + k + ": " + c.label + " drew " + JSON.stringify(c));
-      }
-    }
-    for (const c of r.zero) if (c.value !== "0") fail("peekDash zero: " + c.label + " drew " + JSON.stringify(c.value) + ", not 0");
-    const out = r.real.find(c => c.label === "out");
-    if (!out || out.value !== "700" || r.real.find(c => c.label === "calls").value !== "9") fail("peekDash real: " + JSON.stringify(r.real));
-  } finally {
-    await ctx.close();
-  }
-  if (!bad) console.log("peekDash ok");
-}
-
-// PEEK LAUNCH LINE. A lean worker's launch command carries KB of JSON. The peek shows every flag name and only short values on one
-// line; the card details hold the whole command behind a fold.
+// A lean worker's launch command carries KB of JSON. The peek does not show it at all (u-peek-redesign); the card details hold the
+// whole command behind a fold.
 async function peekLaunchSection(browser, base) {
   const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
   try {
@@ -18503,15 +18525,12 @@ async function peekLaunchSection(browser, base) {
       const t = { id: "x", launch_cmd: cmd, status: "working" };
       const d = document.createElement("div");
       d.innerHTML = peekBody(t, null);
-      const row = [...d.querySelectorAll(".peek-row")].find(x => x.querySelector("b").textContent === "launched with");
-      const line = row ? row.querySelector("span").textContent : "";
+      const line = d.textContent;
       let err = ""; try { await openTask("x"); } catch (e) { err = String(e && e.stack || e).slice(0, 300); }
       return { err, line, full: document.getElementById("d-launch").textContent, hidden: document.getElementById("d-launch-sec").hidden,
         open: document.getElementById("d-launch-fold").open, want: launchFull(t) };
     }, cmd);
-    if (r.line.length >= 200) fail("peekLaunch: the peek line is " + r.line.length + " characters: " + r.line);
-    if (!r.line.includes("--settings {…}") || !r.line.includes("--model sonnet") || !r.line.includes("--resume") || r.line.includes("BRIEF.md") || !r.line.includes("ATRIUM_TOKEN"))
-      fail("peekLaunch: the peek line is " + r.line);
+    if (/--settings|--model|ATRIUM_TOKEN|launched with/.test(r.line)) fail("peekLaunch: the peek still shows the launch command: " + r.line);
     if (r.hidden || r.open || !r.full || r.full !== r.want || !r.full.includes("do the thing")) fail("peekLaunch: details block " + JSON.stringify({ hidden: r.hidden, open: r.open, len: r.full.length, err: r.err }));
   } finally {
     await ctx.close();
@@ -25588,7 +25607,7 @@ async function main() {
       u001Audit: u001AuditSection,
       pasteStart: pasteStartSection, pasteDone: pasteDoneSection, pasteOldRoom: pasteOldRoomSection, pasteClose: pasteCloseSection,
       growlQuestionShots: growlQuestionShotsSection, growlQuestionBody: growlQuestionBodySection, growlReplyGrow: growlReplyGrowSection, growlChoices: growlChoicesSection, replies: repliesSection, repliesOf: repliesOfSection, repliesShots: repliesShotsSection, growlStable: growlStableSection, growlOnIt: growlOnItSection, mGrowlQuestion: mGrowlQuestionSection,
-      roomsSetup: roomsSetupSection, discreteGroup: discreteGroupSection, groupingPerView: groupingPerViewSection, repoColors: repoColorsSection, themePicker: themePickerSection, themePickerShots: themePickerShotsSection, borderColourLag: borderColourLagSection, bootClean: bootCleanSection, dropdownsInstant: dropdownsInstantSection, peekDash: peekDashSection, peekLaunch: peekLaunchSection, mReload: mReloadSection, mReconnect: mReconnectSection, mActivityRead: mActivityReadSection, mReadRetry: mReadRetrySection, mWorking: mWorkingSection, mOwnMessages: mOwnMessagesSection, mBubbles: mBubblesSection, mRecapSheet: mRecapSheetSection,
+      roomsSetup: roomsSetupSection, discreteGroup: discreteGroupSection, groupingPerView: groupingPerViewSection, repoColors: repoColorsSection, themePicker: themePickerSection, themePickerShots: themePickerShotsSection, borderColourLag: borderColourLagSection, bootClean: bootCleanSection, dropdownsInstant: dropdownsInstantSection, peekLaunch: peekLaunchSection, mReload: mReloadSection, mReconnect: mReconnectSection, mActivityRead: mActivityReadSection, mReadRetry: mReadRetrySection, mWorking: mWorkingSection, mOwnMessages: mOwnMessagesSection, mBubbles: mBubblesSection, mRecapSheet: mRecapSheetSection,
       mHomeOrder: mHomeOrderSection, cardUrlWayOut: cardUrlWayOutSection, phoneBoot: phoneBootSection, sayEnter: sayEnterSection, sendArrow: sendArrowSection, mTables: mTablesSection, mMarkdown: mMarkdownSection, mHostile: mHostileSection, mPictures: mPicturesSection, soundPhone: soundPhoneSection, phoneBell: phoneBellSection, mBell: mBellSection,
       mHomeOrder: mHomeOrderSection, cardUrlWayOut: cardUrlWayOutSection, phoneBoot: phoneBootSection, sayEnter: sayEnterSection, sendArrow: sendArrowSection, mTables: mTablesSection, mMarkdown: mMarkdownSection, mHostile: mHostileSection, mPictures: mPicturesSection, phoneRedirect: phoneRedirectSection,
       mHomeOrder: mHomeOrderSection, cardUrlWayOut: cardUrlWayOutSection, phoneBoot: phoneBootSection, sayEnter: sayEnterSection, sendArrow: sendArrowSection, mTables: mTablesSection, mMarkdown: mMarkdownSection, mHostile: mHostileSection, mPictures: mPicturesSection, mHidden: mHiddenSection, soundPhone: soundPhoneSection, phoneBell: phoneBellSection, mBell: mBellSection,
@@ -27611,7 +27630,6 @@ async function main() {
     await unit("phoneNudge", () => phoneNudgeSection(browser, base));
     await unit("cacheChip", () => cacheChipSection(browser, base));
     await unit("cacheLine", () => cacheLineSection(browser, base));
-    await unit("peekDash", () => peekDashSection(browser, base));
     await unit("peekLaunch", () => peekLaunchSection(browser, base));
     await unit("readyOnce", () => readyOnceSection(browser, base));
     await unit("readyPopout", () => readyPopoutSection(browser, base));

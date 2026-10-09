@@ -687,11 +687,15 @@
     if (!(await ready())) return;
     const c = counts.get(cardId) || { n: -1, at: 0, busy: false };
     counts.set(cardId, c);
+    // The newest node asked about is the one drawn when the read lands. The peek rebuilds its body when its usage
+    // read answers, so the node that started the read may be gone by then.
+    c.node = node;
     const draw = () => {
-      if (!node.isConnected || c.n <= 0) { node.hidden = true; return; }
-      node.textContent = "published " + c.n + (c.n === 1 ? " document" : " documents");
-      node.hidden = false;
-      node.onclick = () => { openList({ card: cardId }); };
+      const n = c.node;
+      if (!n || !n.isConnected || c.n <= 0) { if (n) n.hidden = true; return; }
+      n.textContent = "published " + c.n + (c.n === 1 ? " document" : " documents");
+      n.hidden = false;
+      n.onclick = () => { openList({ card: cardId }); };
     };
     if (c.n >= 0) draw();
     if (c.busy || Date.now() - c.at < CARD_TTL) return;

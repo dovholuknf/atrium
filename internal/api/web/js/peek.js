@@ -1,5 +1,5 @@
-// A card's details, small. Context now, against the gear's threshold, and the
-// token totals on record, in one compact view reached three ways:
+// A card's details, small. Its name and status, what needs you, the last recap, context now against the gear's
+// threshold, and four actions, in one compact view reached three ways:
 //
 //   - holding the pointer for a second on a card, on the board, the stack or
 //     the terminals list. It opens under the pointer, not beside the card
@@ -9,8 +9,8 @@
 //
 // One body for all three (`peekBody`), so they cannot drift. It reads
 // GET /v1/tasks/{id}/usage when it opens and never otherwise: nothing polls,
-// and the board's list carries only the warn flag. See js/usage.js for the
-// full table in the details dialog, and internal/daemon/usage.go.
+// and the board's list carries only the warn flag. The token totals, the launch command and the rest of the card are
+// in the details dialog, see js/usage.js and internal/daemon/usage.go.
 
 const PEEK_HOVER_MS = 1000;
 // How long the pointer may be off both the card and the popover before a
@@ -123,137 +123,71 @@ function peekReadable(t) {
 }
 
 
-// ALL OF A CARD'S STATE, as rows, the same whichever part of it was hovered. Every badge a row draws says one fact
-// about the card; this says them all, each only when it applies, urgent first: what needs you, what is in progress,
-// what is held, then what the card is. Read from the card as the board last drew it, so it needs no request and
-// cannot differ between the board, the stack and the terminals list.
+// WHAT THE CARD WANTS FROM YOU, and its last recap: the rest of a card's state is on its row and in its details dialog.
+// The peek is a glance, so it says the urgent things and nothing about how the card was launched, what it costs or
+// whether its cache is warm. Read from the card as the board last drew it, so it needs no request and cannot differ
+// between the board, the stack and the terminals list.
 function peekRows(t) {
-  const sec = (cls, label, rows) => {
-    rows = rows.filter(Boolean);
-    return rows.length ? `<div class="peek-sec ${cls}"><div class="peek-sech">${esc(label)}</div>${rows.join("")}</div>` : "";
-  };
   const row = (k, v) => v ? `<div class="peek-row"><b>${esc(k)}</b><span>${esc(v)}</span></div>` : "";
   const fn = (name, ...a) => typeof window[name] === "function" ? window[name](...a) : undefined;
   const clock = iso => { const d = new Date(iso); return isNaN(d) ? "" : d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }); };
-  const since = iso => { const ms = Date.parse(iso); return isNaN(ms) ? "" : fn("ago", Math.max(0, Math.floor((Date.now() - ms) / 1000))) || ""; };
-  const a = t.activity || {};
   const n = t.new_context;
   const s = t.seen || {};
   const qs = s.open_questions || [];
-  const need = [], doing = [], held = [], about = [];
+  const need = [];
 
-  // NEEDS YOU
   if (fn("isBlocker", t)) need.push(row("blocked", fn("blockerReason", t)));
   else if (fn("isStuck", t)) need.push(row("stuck", t.escalation.text + (t.escalation.since ? ", since " + clock(t.escalation.since) : "")));
-  if (t.budget) about.push(row("budget", t.budget.text));
   if (t.offline) need.push(row("offline", "room " + (fn("roomOf", t.id) || t.room || "") + " is offline. cannot restore terminal"));
   if (fn("isOutOfContact", t)) need.push(row("no contact", "nothing heard from the session, and no process to ask. it may be working or may have ended"));
   if (fn("isWaiting", t)) {
     need.push(row(fn("statusLabel", t.status), (t.status === "needs-permission" ? "frozen waiting to be answered for " : "asked for you ") +
       fn("ago", fn("cardSecs", fn("cardWaitSeconds", t)))));
   }
-  if (t.ask) {
+  const hasQs = s.answered === false && (qs.length || s.questions_unparsed);
+  // The question line is the first of the open questions, so it is only drawn when there is no list to show.
+  if (t.ask && !hasQs) {
     const more = (t.asks_open || 0) - 1;
     need.push(row(t.ask_peer ? "asked " + t.ask_peer : "question", t.ask + (more > 0 ? ` (+${more} more)` : "")));
   }
   if (s.answered === false && qs.length && typeof peekQuestionsHtml === "function") {
     need.push(peekQuestionsHtml(t));
-  } else if (s.answered === false && (qs.length || s.questions_unparsed)) {
+  } else if (hasQs) {
     need.push(row("open questions", qs.length ? qs.map((q, i) => (i + 1) + ". " + q).join("\n") : "its last turn asked questions atrium could not read"));
   }
-  if (s.unseen) need.push(row("unseen turn", "its last turn ended and nobody has looked at it since"));
   if (n && n.step === "failed") need.push(row("new context failed", (n.reason || "") + ". nothing further was typed"));
   if (t.report_unverified) need.push(row("sha unverified", "it reported done at " + (t.report_sha || "") + ", and that commit is not in its worktree"));
-  if (t.held_notices) need.push(row("held notices", t.held_notices + " held notice" + (t.held_notices === 1 ? "" : "s") + " unread" + (t.oldest_held_at ? ", the oldest " + since(t.oldest_held_at) : "")));
-  if (t.owed) {
-    need.push(row("owed to its launcher", t.owed + " owed" + (t.owed_since ? " for " + since(t.owed_since) : "") +
-      (t.owed_no_launcher ? ", and it has no launcher to keep it" : "")));
-  }
-  if (t.replies_owed) need.push(row("replies owed", t.replies_owed + " asked for a reply that has not come"));
 
-  // IN PROGRESS
-  if (n && n.step !== "failed") {
-    const word = (typeof NEW_CONTEXT_WORDS !== "undefined" && NEW_CONTEXT_WORDS[n.step]) || n.step;
-    doing.push(row("context cycle", `context ${n.n}/${n.of}: ${word}. waiting for: ${n.label}`));
-  }
-  if (a.looks_idle) doing.push(row("looks idle", "no turn-end from the agent. its screen has been idle for " + fn("ago", a.idle_seconds || 0)));
-  else if (a.what) {
-    const what = a.what === "tool" ? (a.tool ? "running " + a.tool : "running a tool") : a.what;
-    doing.push(row("activity", what + (a.seconds > 5 ? " " + fn("ago", a.seconds) : "") +
-      (a.what === "compacting" ? ". it is about to forget most of its context" : "")));
-  }
-  const subs = Math.max(a.subagents || 0, (a.running || []).length);
-  if (subs) doing.push(row("subagents", fn("subagentTitle", a.subagents ? a : { subagents: subs, running: a.running }).replace(/\. click to expand\.$/, "")));
-  if (t.restart_wake) doing.push(row("wake queued", "typed in once after the next restart brings it back: " + t.restart_wake.text));
-  if (t.parked_at) doing.push(row("parked", "idle with no process since " + clock(t.parked_at) + ". a key in its terminal, or resume, wakes it"));
-  if (t.starting && !t.supervised) doing.push(row("starting", "atrium is starting this one, its runner is not up yet"));
-  if (t.held) doing.push(row("deploy hold", [t.held.kind, t.held.by && "by " + t.held.by, t.held.since && "since " + clock(t.held.since)].filter(Boolean).join(" ")));
-
-  // HELD MESSAGES: how many, how long, and what holds them.
-  if (a.held_peer) {
-    const count = Number(a.held_count) || 1, secs = Number(a.held_seconds) || 0;
-    held.push(row(a.held_quiet ? "queued" : "held", a.held_quiet ? fn("termQueuedTip", count, secs, a.held_turn) : fn("termHeldTip", count, secs, a.held_for, a.held_turn)));
-  }
-
-  // WHAT IT IS
-  if (t.status === "shelved") about.push(row("shelved", fn("cannotResume", t) ? "comes off the shelf, but nothing starts: " + fn("cannotResume", t) : "start it again from where the conversation left off"));
-  const room = fn("roomOf", t.id);
-  if (room) about.push(row("room", room));
-  if (t.runner) about.push(row("runner", t.runner));
-  about.push(row("launched with", launchedWith(t)));
-  if (t.model || t.effort || (t.launch_args || []).length || (t.launch_env_keys || []).length) {
-    about.push(row("launch", [t.model && "model " + t.model, t.effort && "effort " + t.effort,
-      (t.launch_args || []).length && "args " + t.launch_args.join(" "),
-      (t.launch_env_keys || []).length && "env " + t.launch_env_keys.join(", ")].filter(Boolean).join(", ")));
-  }
-  if (t.auto_approve) about.push(row("auto mode", "requests are approved without asking, and recorded" +
-    (t.auto_until ? ". ends in " + fn("ago", Math.max(0, Math.floor((Date.parse(t.auto_until) - Date.now()) / 1000))) + ", at " + clock(t.auto_until) : "")));
-  if (t.spawned_by || t.launcher_id) about.push(row("launched by", t.spawned_by || t.launcher_id));
-  if (t.alias) about.push(row("alias", "@" + t.alias + (t.alias_note ? ". " + t.alias_note : "")));
-  if ((t.tags || []).length) about.push(row("tags", t.tags.join(", ")));
-  if (t.pinned) about.push(row("pinned", "always listed"));
-  const origin = [t.source, t.external_id, t.url].filter(Boolean).join(" ");
-  if (origin) about.push(row("origin", origin));
-  if (typeof sharedCards !== "undefined" && sharedCards.has(t.id)) {
-    about.push(row("shared", "published at " + (sharedCards.get(t.id).address || "") + ". anyone with that address types into it as you would"));
-  }
-  if ((t.note || "").trim()) about.push(row("note", "held, not sent: " + t.note.trim()));
-  if (t.recap) about.push(row("recap", t.recap));
-  else if (t.status === "done") about.push(row("recap", "finished without saying what it did"));
-  if (t.telemetry) {
-    const c = t.telemetry;
-    const lim = [["5h limit", c.five_hour], ["weekly limit", c.weekly]].filter(x => x[1])
-      .map(([l, v]) => `${l} ${v.pct}%${v.resets_at ? ", resets " + fn("resetsIn", v.resets_at) : ""}`);
-    if (c.pct) about.push(row("statusline", [`${c.pct}% of the context window`, ...lim].join(" · ")));
-    else if (lim.length) about.push(row("account", lim.join(" · ")));
-  }
-  return sec("need", "needs you", need) + sec("doing", "in progress", doing) + sec("held", "messages", held) + sec("about", "card", about);
+  const recap = t.recap || (t.status === "done" ? "finished without saying what it did" : "");
+  return (need.length ? `<div class="peek-sec need"><div class="peek-sech">needs you</div>${need.join("")}</div>` : "") +
+    (recap ? `<div class="peek-recap"><div class="peek-rtext">${esc(recap)}</div>` +
+      `<button type="button" class="peek-more" hidden>more</button></div>` : "");
 }
 
 // The body. `v` is the usage read, or null while it is under way, or an
-// Error when it failed.
+// Error when it failed. Only the context number and its bar come from the read.
 function peekBody(t, v) {
   const title = (t && (t.display_title || t.title)) || "this card";
-  const model = v && !(v instanceof Error) && v.model ? v.model : "";
+  const model = v && !(v instanceof Error) && v.model ? v.model : (t && t.model) || "";
   const sub = [t && t.status, model].filter(Boolean).join(" · ");
-  // The whole name and the repo/worktree:branch address, what a terminals row
-  // said in its own tooltip. That tooltip gives way to this (see peekOwnsTip),
-  // so what it said is here, unclipped.
+  // The repo/worktree:branch address, what a terminals row said in its own tooltip. That tooltip gives way to this
+  // (see peekOwnsTip), so what it said is here. Title on one line, address and status under it on one.
   const where = t && typeof terminalLabel === "function" ? terminalLabel(t) : "";
   const cold = t && typeof termCold === "function" && termCold(t)
     ? "this one has exited. click it to start it again here" : "";
   const head = `<div class="peek-head"><span class="peek-title">${esc(title)}</span>` +
+    `<div class="peek-meta">` +
     (where && where !== title ? `<span class="peek-path">${esc(where)}</span>` : "") +
-    (sub ? `<span class="peek-sub">${esc(sub)}</span>` : "") +
+    (sub ? `<span class="peek-sub">${esc(sub)}</span>` : "") + `</div>` +
     (cold ? `<span class="peek-path">${esc(cold)}</span>` : "") + `</div>`;
   const rows = t ? peekRows(t) : "";
   if (!peekReadable(t)) {
     return head + rows + `<div class="peek-none">${t && t.offline
       ? "that machine is not answering, so nothing here can be read."
-      : "no token use on record. only a Claude conversation keeps it."}</div>` + peekFoot(t);
+      : "no token use on record. only a Claude conversation keeps it."}</div>`;
   }
   if (v instanceof Error) {
-    return head + rows + `<div class="peek-none">could not read it: ${esc(v.message)}</div>` + peekFoot(t);
+    return head + rows + `<div class="peek-none">could not read it: ${esc(v.message)}</div>`;
   }
   const loading = !v;
   const ctx = loading ? 0 : Number(v.context_now) || 0;
@@ -262,54 +196,13 @@ function peekBody(t, v) {
   const limit = landK * 1000;
   const warn = !loading && ctx >= k * 1000;
   const land = !loading && ctx >= limit;
-  const tot = (v && v.totals) || {};
-  const own = usageOwn(v && v.by_cause);
-  // A field the room did not send is a dash, never a 0: a zero is a count the room reported.
-  // No recorded rows is the same: the room counts a turn when it ends, so a card in its first turn has none yet.
-  const NOT_SENT = "not reported by this room, or counted when the turn ends and none has yet";
-  const has = (o, ...ks) => !!o && typeof o.rows === "number" && o.rows > 0 && ks.every(k => typeof o[k] === "number");
-  const byOk = !!(v && v.by_cause && typeof v.by_cause === "object" && Object.keys(v.by_cause).length);
-  const cell = (label, value, tip, missing) =>
-    `<div class="peek-cell"${missing || tip ? ` data-tip="${esc(missing ? NOT_SENT : tip)}"` : ""}><b>${loading ? "&nbsp;" : missing ? "–" : esc(value)}</b>` +
-    `<span>${esc(label)}</span></div>`;
+  const state = land ? "land the plane" : warn ? "past the line" : "context";
   return head + rows +
     `<div class="peek-ctx${warn ? " warn" : ""}${land ? " hot" : ""}">
-      <div class="peek-num"><b>${loading ? "&nbsp;" : usageTokens(ctx)}</b><span>context</span></div>
       ${ctxMeter(ctx, limit, "", loading ? "" : landTip({ context_size: { tokens: ctx, threshold_k: k, source: limitSource(t) }, telemetry: t && t.telemetry }))}
-      <div class="peek-scale"><span>${land ? "land the plane" : warn ? "past the line" : ""}</span>` +
-        `<span>warns at ${limitFrom(t)}, lands at ${landK}k</span></div>
-    </div>
-    <div class="peek-grid">
-      ${cell("prompts", String(own.prompts), USAGE_TIPS.prompts + ". " + USAGE_TIPS.scope, !loading && !byOk)}
-      ${cell("calls", String(own.calls), USAGE_TIPS.calls, !loading && !byOk)}
-      ${cell("uncached in", usageTokens(tot.input), USAGE_TIPS.input, !loading && !has(tot, "input"))}
-      ${cell("out", usageTokens(tot.output), USAGE_TIPS.output, !loading && !has(tot, "output"))}
-      ${cell("cache read", usageTokens(tot.cache_read), USAGE_TIPS.read, !loading && !has(tot, "cache_read"))}
-      ${cell("cache write", usageTokens((tot.cache_write_5m || 0) + (tot.cache_write_1h || 0)),
-        "5m and 1h cache writes together. " + USAGE_TIPS.write5m + ". " + USAGE_TIPS.write1h,
-        !loading && !has(tot, "cache_write_5m", "cache_write_1h"))}
-    </div>` + peekFoot(t);
-}
-
-// The command line atrium started the runner with, or the plain fact that it did not start this one.
-// Flag names all show. A value shows only when short and one line; a long or JSON one collapses, and the prompt is left out.
-// The whole command is in the card details, see launchFull.
-function launchedWith(t) {
-  const c = t.launch_cmd;
-  if (!c) return "not started by atrium (joined), or started before the command was kept";
-  const out = [];
-  const args = c.args || [];
-  for (let i = 0; i < args.length; i++) {
-    const a = String(args[i]);
-    if (!a.startsWith("-")) continue;
-    out.push(a.length > 40 || /\s/.test(a) ? a.split(/[=\s]/)[0] : a);
-    const v = args[i + 1];
-    if (v === undefined || String(v).startsWith("-") || a.includes("=")) continue;
-    i++;
-    const sv = String(v);
-    out.push(sv.length < 40 && !/\n/.test(sv) ? sv : /^\s*[{[]/.test(sv) ? "{…}" : "\"…\"");
-  }
-  return [c.exe].concat(out).join(" ") + ((c.env_keys || []).length ? "  env: " + c.env_keys.join(", ") : "");
+      <div class="peek-scale"><span class="peek-num"><b>${loading ? "&nbsp;" : usageTokens(ctx)}</b> ${state}</span>` +
+        `<span>warns at ${limitFrom(t)}${landK !== Number(k) ? `, lands ${landK}k` : ""}</span></div>
+    </div>`;
 }
 
 // The whole command, for the card details to hold behind a fold.
@@ -317,24 +210,6 @@ function launchFull(t) {
   const c = t && t.launch_cmd;
   if (!c) return "";
   return [c.exe].concat(c.args || []).join(" ") + ((c.env_keys || []).length ? "\nenv: " + c.env_keys.join(", ") : "");
-}
-
-function peekFoot(t) {
-  if (!t) return "";
-  const parts = [];
-  if (t.runner) parts.push(t.runner);
-  // The line atrium holds the card to, and the size its runner compacts itself at.
-  if (t.autocompact && t.autocompact.note) parts.push(t.autocompact.note);
-  else if (t.autocompact) parts.push(`limit ${t.autocompact.limit_k}k · compacts at ${t.autocompact.compacts_k}k`);
-  // Only for a card that says when it last did anything, by either field. The same number the sorts place it by.
-  if (isFinite(cardIdleSeconds(t))) {
-    const idle = cardIdleAge(t);
-    parts.push(idle < 5 ? "active now" : "idle " + ago(idle));
-  }
-  const leaf = String(t.worktree || "").split(/[\\/]/).filter(Boolean).pop() || "";
-  // The cache's words live here, and the rows carry only its dot. See js/keepalive.js.
-  const cache = typeof peekCache === "function" ? peekCache(t) : "";
-  return cache + `<div class="peek-foot"><span>${esc(parts.join(" · "))}</span><span>${esc(leaf)}</span></div>`;
 }
 
 // The documents this card published, as one line under the details. Nothing at all on a board with no hub documents.
@@ -348,18 +223,57 @@ function peekDocs(box, id) {
   window.mDocs.paintCard(b, id);
 }
 
-// The restart action, under the details. Only on a card atrium supervises: a joined session has no terminal here
-// to type exit keys into. See restartCard in js/terminal-debug.js.
-function peekRestart(box, id) {
+// The recap's tail behind a click: shown only where the text runs past its four lines.
+function peekRecap(box) {
+  const text = box.querySelector(".peek-rtext"), more = box.querySelector(".peek-more");
+  if (!text || !more) return;
+  more.hidden = !(text.scrollHeight > text.clientHeight + 1);
+  more.onclick = () => {
+    const open = text.classList.toggle("open");
+    more.textContent = open ? "less" : "more";
+  };
+}
+
+// The actions, in one row under the details: open, say, exit and restart. Exit and restart need a terminal atrium owns
+// (they type the runner's own exit keys), so they are only on a supervised card that has not finished. See
+// exitTermNow and restartCard in js/terminal-debug.js. Open attaches where it can and opens the card's settings
+// where it cannot.
+function peekActions(box, id) {
   const t = peekCard(id);
-  if (!t || !t.supervised || t.status === "done") return;
-  const b = document.createElement("button");
-  b.type = "button";
-  b.className = "peek-restart";
-  b.textContent = "restart";
-  b.dataset.tip = "exit it with its own keys and resume the same conversation on this card";
-  b.onclick = () => { closePeek(); restartCard(id); };
-  box.appendChild(b);
+  if (!t) return;
+  const row = document.createElement("div");
+  row.className = "peek-acts";
+  const add = (label, tip, act) => {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "peek-act";
+    b.textContent = label;
+    b.dataset.tip = tip;
+    b.onclick = () => { closePeek(); act(); };
+    row.appendChild(b);
+  };
+  add("open", t.supervised ? "attach its terminal" : "open the card", () => t.supervised ? attachTask(id) : openTask(id));
+  add("say", "queue a message for it", () => peekSay(id));
+  if (t.supervised && t.status !== "done") {
+    add("exit", "ask it to exit with its own keys. its card stays", () => oneAtATime("kill:" + bareId(id), () => exitTermNow(t)));
+    add("restart", "exit it with its own keys and resume the same conversation on this card", () => restartCard(id));
+  }
+  box.appendChild(row);
+}
+
+// A message for the card, queued the way every say from the board is.
+async function peekSay(id) {
+  const t = peekCard(id);
+  const title = (t && (t.display_title || t.title)) || "this card";
+  const text = await askUser({ title: "message " + title, input: true,
+    body: "It is queued and reaches the session on its next tool call.",
+    buttons: [{ label: "cancel", value: null }, { label: "send", value: true, style: "go" }] });
+  if (!text || !String(text).trim()) return;
+  try {
+    await api(`/v1/tasks/${encodeURIComponent(id)}/message`, { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text: String(text).trim() }) });
+  } catch (e) { toast("not sent", e.message); return; }
+  toast("sent", title);
 }
 
 // Fills `box` with card `id`'s details: the card at once, the numbers when
@@ -368,7 +282,8 @@ async function peekFill(box, id, still) {
   const t = peekCard(id);
   box.innerHTML = peekBody(t, null);
   peekDocs(box, id);
-  peekRestart(box, id);
+  peekActions(box, id);
+  peekRecap(box);
   box.classList.toggle("loading", peekReadable(t));
   if (!peekReadable(t)) return;
   let v;
@@ -381,7 +296,8 @@ async function peekFill(box, id, still) {
   box.classList.remove("loading");
   box.innerHTML = peekBody(peekCard(id) || t, v);
   peekDocs(box, id);
-  peekRestart(box, id);
+  peekActions(box, id);
+  peekRecap(box);
 }
 
 // ── the popover ─────────────────────────────────────────────────────────────
