@@ -582,6 +582,30 @@ func (s *Server) reclaimInventory(ctx context.Context, t *store.Task) {
 	s.closeCard(t, pv, answers, false)
 }
 
+// POST /v1/tasks/{id}/cleanup-offer claims the one offer of a "clean up when done" close: it swaps cleanup:when-done
+// for cleanup:offered in one step and answers 200 to the single caller that swapped it, 409 to every other, since the
+// mark was already gone. Boards show the close only on a 200, so two open boards never both offer it.
+func (s *Server) postCleanupOffer(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if _, err := s.st.Get(id); err != nil {
+		writeErr(w, http.StatusNotFound, err)
+		return
+	}
+	swapped, err := s.st.SwapTag(id, "cleanup:when-done", "cleanup:offered")
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	if !swapped {
+		prError(w, http.StatusConflict, "already_offered", "the clean up was already offered, or the card does not carry it", nil)
+		return
+	}
+	if nt, err := s.st.Get(id); err == nil {
+		s.PublishTask(nt)
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
 // withoutCleanupTags is tags with the board's two clean up marks taken off: cleanup:when-done, set when a link is
 // opened, and cleanup:offered, which the board swaps it for when it shows the close.
 func withoutCleanupTags(tags []string) []string {

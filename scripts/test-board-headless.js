@@ -20163,11 +20163,13 @@ async function quickPasteSection(browser, base) {
       readText: async () => window.__clip, read: async () => [], writeText: async () => {} } });
   });
   // the card the clean up check reads and swaps the mark on
-  const held = { tags: ["link:x", "cleanup:when-done"] };
-  await ctx.route(/\/v1\/tasks\/c1$/, async route => {
-    const req = route.request();
-    if (req.method() === "PATCH") Object.assign(held, JSON.parse(req.postData() || "{}"));
-    return json(route, 200, { id: "c1", status: "done", tags: held.tags });
+  const claimed = { tags: ["link:x", "cleanup:when-done"] };
+  await ctx.route(/\/v1\/tasks\/c[12]\/cleanup-offer$/, async route => {
+    if (/c2/.test(route.request().url())) return json(route, 500, { error: "boom" });
+    // the claim: the one swap wins, every other asker is told 409
+    if (!claimed.tags.includes("cleanup:when-done")) return json(route, 409, { error: "already offered" });
+    claimed.tags = claimed.tags.filter(g => g !== "cleanup:when-done").concat("cleanup:offered");
+    return json(route, 200, { ok: true });
   });
   await ctx.route(/\/v1\/(recognise|prs|providers|launch|open|tasks\/t-q)(\/|\?|$)/, async route => {
     const req = route.request();
@@ -20459,27 +20461,25 @@ async function quickPasteSection(browser, base) {
     // clean up when done: a marked card reaching done is offered the card's own close, once, with the mark taken off
     const cleaned = await p.evaluate(async () => {
       const asked = [], patched = [];
-      const was = [closeCardAsk, patchTask];
+      const was = closeCardAsk;
       closeCardAsk = id => asked.push(id);
-      patchTask = async (id, body) => {
-        patched.push(body.tags.join());
-        await fetch("/v1/tasks/c1", { method: "PATCH", body: JSON.stringify(body) });
-      };
-      const row = s => ({ id: "c1", status: s, tags: ["link:x", CLEANUP_TAG] });
-      const settle = () => new Promise(r => setTimeout(r, 50));
-      cleanupWhenDone(row("running"), row("done"));
+      const row = (id, s) => ({ id, status: s, tags: ["link:x", CLEANUP_TAG] });
+      const settle = () => new Promise(r => setTimeout(r, 80));
+      // two boards at the same moment: the server's claim lets exactly one show the close
+      cleanupWhenDone(row("c1", "running"), row("c1", "done"));
+      cleanupWhenDone(row("c1", "running"), row("c1", "done"));
       await settle();
-      // a second board, a moment later: the mark is already swapped, so it shows nothing
-      cleanupWhenDone(row("running"), row("done"));
-      cleanupWhenDone(row("done"), row("done"));
-      cleanupWhenDone(row("running"), { id: "c2", status: "done", tags: [] });
-      cleanupWhenDone(undefined, row("done"));
+      // not a transition, not marked, and a claim the server failed: nothing is shown
+      cleanupWhenDone(row("c1", "done"), row("c1", "done"));
+      cleanupWhenDone(row("c1", "running"), { id: "c1", status: "done", tags: [] });
+      cleanupWhenDone(undefined, row("c1", "done"));
+      cleanupWhenDone(row("c2", "running"), row("c2", "done"));
       await settle();
-      [closeCardAsk, patchTask] = was;
-      return { asked, patched };
+      closeCardAsk = was;
+      return { asked };
     });
-    if (cleaned.asked.join() !== "c1" || cleaned.patched.join("|") !== "link:x,cleanup:offered")
-      fail("quickPaste: clean up when done was " + JSON.stringify(cleaned));
+    if (cleaned.asked.join() !== "c1" || claimed.tags.join() !== "link:x,cleanup:offered")
+      fail("quickPaste: clean up when done was " + JSON.stringify(cleaned) + " " + claimed.tags.join());
     if (errors.length) fail("quickPaste: page errors: " + errors.join(" | "));
   } finally { await ctx.close(); }
   if (!bad) console.log("quickPaste ok");

@@ -765,14 +765,15 @@ function cleanupWhenDone(prev, row) {
   cleanupOffer(row);
 }
 
+// The claim is the server's, one atomic swap (POST /v1/tasks/{id}/cleanup-offer): 200 for the one board that made it,
+// 409 for the rest. The close is shown on a 200 and on nothing else, a failed request included. `api` throws on any
+// non-2xx, and `patchTask` is not used because it swallows its own errors.
 async function cleanupOffer(row) {
-  let now;
-  try { now = await api("/v1/tasks/" + encodeURIComponent(row.id)); } catch (e) { return; }
-  const tags = (now && now.tags) || [];
-  if (!tags.includes(CLEANUP_TAG)) return;
   try {
-    await patchTask(row.id, { tags: tags.filter(g => g !== CLEANUP_TAG).concat(CLEANUP_OFFERED_TAG) });
-  } catch (e) { return; }
+    await api("/v1/tasks/" + encodeURIComponent(row.id) + "/cleanup-offer", { method: "POST" });
+  } catch (e) {
+    return;
+  }
   closeCardAsk(row.id, row);
 }
 
