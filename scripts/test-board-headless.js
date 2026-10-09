@@ -22205,6 +22205,54 @@ async function boardDocsSection(browser, base) {
   if (!bad) console.log("boardDocs ok");
 }
 
+// THE SWITCHER'S RANKING AND ITS ROWS. Typing a name finds the card, and once a card matches as a real substring the cards
+// whose directory only holds the letters scattered in order are gone. A row says the card's title first and the short path
+// second, so two cards of one repo can be told apart. SWITCHER_SHOTS and SWITCHER_TAG write the picture.
+async function switcherRankSection(browser, base) {
+  const was = tasksMode;
+  tasksMode = "land";
+  landList = [];
+  landPerms = [];
+  const card = (id, title, wt, branch, tags) => Object.assign({}, T1, { id, display_title: title, title, supervised: true,
+    worktree: wt, repo: "ziti-console", display_repo: "ziti-console", branch, tags: tags || [] });
+  const cards = [
+    card("sw-a", "Config screens", "/w/github/openziti/ziti-console", "ui-for-config"),
+    card("sw-b", "Router list", "/w/github/openziti/ziti-console", "router-list"),
+    card("sw-c", "Fips transition", "/work/ui-fix/or-tools/cfg-on-fig", "e2e"),
+  ];
+  const shots = process.env.SWITCHER_SHOTS || "", tag = process.env.SWITCHER_TAG || "after";
+  const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+  try {
+    const p = await ctx.newPage();
+    const errors = [];
+    p.on("pageerror", e => errors.push(String(e)));
+    await p.goto(base, { waitUntil: "domcontentloaded" });
+    await p.waitForSelector('header nav .tab[data-view="stack"]', { timeout: slow(15000) });
+    await p.evaluate(() => openSwitcher());
+    await p.waitForFunction(() => document.getElementById("switcher").open, null, { timeout: slow(5000) });
+    await p.waitForTimeout(500);
+    const rows = async q => p.evaluate(([cs, q]) => {
+      swTasks = cs;
+      swSetQuery(q);
+      return [...document.querySelectorAll("#sw-list .swrow[data-id]")].map(r => ({ id: r.dataset.id,
+        name: r.querySelector(".swname").textContent, dir: r.querySelector(".swdir").textContent }));
+    }, [cards, q]);
+    const sub = await rows("ui-for-config");
+    if (sub.map(r => r.id).join() !== "sw-a") fail("switcherRank: ui-for-config should find only sw-a, got " + sub.map(r => r.id).join());
+    if (sub[0] && sub[0].name !== "Config screens") fail("switcherRank: the row's main text is " + JSON.stringify(sub[0].name) + ", want the card's title");
+    if (sub[0] && !/ziti-console/.test(sub[0].dir)) fail("switcherRank: the dim text is " + JSON.stringify(sub[0].dir) + ", want the short path");
+    if (shots) { fs.mkdirSync(shots, { recursive: true }); await p.screenshot({ path: path.join(shots, "switcher-" + tag + ".png") }); }
+    // With no real match, the scattered one is all there is and stays.
+    const scatter = await rows("uixtlsfig");
+    if (scatter.map(r => r.id).join() !== "sw-c") fail("switcherRank: a scattered query with no real match should keep sw-c, got " + scatter.map(r => r.id).join());
+    // Two cards of one repo are told apart by their titles.
+    const both = await rows("ziti-console");
+    if (new Set(both.map(r => r.name)).size !== 2) fail("switcherRank: two cards of one repo read alike: " + JSON.stringify(both));
+    if (errors.length) fail("switcherRank: page errors: " + errors.join(" | "));
+  } finally { tasksMode = was; await ctx.close(); }
+  if (!bad) console.log("switcherRank ok");
+}
+
 // THE DOCUMENTS PAGE, laid out: one centred column, a header row with the count, the card-or-every switch and a search,
 // upload as the one primary control with its title inside it, deleted as a quiet toggle, roomy rows, a usage meter at the
 // foot. Several documents are mocked at the route. DOCSPAGE_SHOTS and DOCSPAGE_TAG write the pictures.
@@ -27774,7 +27822,8 @@ async function main() {
     await unit("mHomeLive", () => mHomeLiveSection(browser));
     await unit("soundPhone", () => soundPhoneSection(browser, base));
     await unit("boardDocs", () => boardDocsSection(browser, base));
-    await unit("docsPage", () => docsPageSection(browser, base));
+    await unit("switcherRank", () => switcherRankSection(browser, base));
+    await unit("docsPage",() => docsPageSection(browser, base));
     await unit("phoneBoardCompact", () => phoneBoardCompactSection(browser, base));
     await unit("phoneBell", () => phoneBellSection(browser, base));
     await unit("mBell", () => mBellSection(browser));
