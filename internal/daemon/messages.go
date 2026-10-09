@@ -523,6 +523,13 @@ func (d *Daemon) handleMessage(w http.ResponseWriter, r *http.Request) {
 		d.refreshLauncher(taskID)
 	}
 	waitTurn := d.waitsForTurn(taskID, when)
+	// A PROMPT THE HUMAN TYPED AT THE BOARD RESETS WHAT IS OWED. The turn it starts is theirs, so when it ends
+	// without a word to the launcher there is no nudge and no went-quiet notice. See stoppedSilently.
+	if from == "" {
+		if err := d.st.ClearOwed(taskID); err != nil {
+			log.Printf("[atrium] could not clear what %s owes: %v", taskID, err)
+		}
+	}
 
 	// A message from a session is peer traffic whichever door it came in by, so
 	// it gets the peer bus's bounds. `atrium_say` arrives here rather than at
@@ -677,7 +684,8 @@ func (d *Daemon) handleMessage(w http.ResponseWriter, r *http.Request) {
 	// NOR FROM ANOTHER AGENT WHILE THE CARD IS HELD FOR A DEPLOY. The operator's
 	// words still go. See roomhold.go.
 	holding := d.holdingFrom(taskID, from)
-	if run := d.sup.get(taskID); run != nil && !holding && !woke && !d.act.dialogOpen(taskID) && !d.turnHolds(taskID, waitTurn) {
+	byHooks := d.carriedByHooks(taskID, from, waitTurn)
+	if run := d.sup.get(taskID); run != nil && !holding && !woke && !byHooks && !d.act.dialogOpen(taskID) && !d.turnHolds(taskID, waitTurn) {
 		wrote, err := d.typeThroughGate(run, taskID, from, body.Text)
 		if err != nil {
 			writeJSONErr(w, http.StatusInternalServerError, err)
@@ -758,7 +766,9 @@ func (d *Daemon) handleMessage(w http.ResponseWriter, r *http.Request) {
 	// A queued message keeps trying to type in on the same backoff as the bus,
 	// whoever sent it, so it lands the moment the line clears. See
 	// pendinginject.go.
-	d.deferPeerInjection(taskID, m.ID, from, body.Text, kind, waitTurn)
+	if !byHooks {
+		d.deferPeerInjection(taskID, m.ID, from, body.Text, kind, waitTurn)
+	}
 
 	// SAY WHETHER IT WILL EVER ARRIVE. A queued message is only as good as the
 	// hook that drains it, and a card whose runner has none (a gemini session

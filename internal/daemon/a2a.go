@@ -517,6 +517,12 @@ func (d *Daemon) stoppedSilently(t *store.Task) (time.Time, bool) {
 	if hasTag(t.Tags, DirectorTag) {
 		return time.Time{}, false
 	}
+	// A PERSON TYPED AT THE CARD'S TERMINAL after the launcher's prompt: the turn is theirs, as for a board
+	// message (see handleMessage). Typing straight into the terminal never reaches handleMessage, so it is read
+	// from the stamp the keystroke leaves.
+	if t.HumanAt != nil && t.HumanAt.After(*t.OwedAt) {
+		return time.Time{}, false
+	}
 	// A CARD NO HOOK HAS SPOKEN FOR SINCE LAUNCH never began a turn to stop. Its
 	// escalation is launch-idle. See launchStuck.
 	if d.neverHeard(t) {
