@@ -49,26 +49,49 @@ func (h *Hub) lookupCommit(ctx context.Context, q URLQuery) URLAnswer {
 		for _, b := range v.Branches {
 			tips = append(tips, tip{b.Name, b.SHA})
 		}
+		found := func(branch, tipSHA string) URLAnswer {
+			return URLAnswer{State: URLFound, Repo: name, Branch: branch, Branches: []URLBranch{{
+				Name: branch, Sources: []URLSource{{Source: "hub", SHA: tipSHA}}}}}
+		}
+		// THE TIP FAST PATH needs no git at all.
 		for _, t := range tips {
-			if !isHex40(t.sha) {
-				continue
+			if isHex40(t.sha) && strings.HasPrefix(strings.ToLower(t.sha), sha) {
+				return found(t.branch, t.sha)
 			}
-			if strings.HasPrefix(strings.ToLower(t.sha), sha) || h.Store().commitUnder(ctx, dir, sha, t.sha) {
-				return URLAnswer{State: URLFound, Repo: name, Branch: t.branch, Branches: []URLBranch{{
-					Name: t.branch, Sources: []URLSource{{Source: "hub", SHA: t.sha}}}}}
-			}
+		}
+		// THEN ONE GIT CALL TO SKIP A REPOSITORY THAT HAS NO SUCH OBJECT, and one to name a branch that contains it,
+		// not one per branch: the atrium store has hundreds, and a spawn is slow on Windows.
+		if branch, tipSHA := h.Store().branchContaining(ctx, dir, sha); branch != "" {
+			return found(branch, tipSHA)
 		}
 	}
 	return URLAnswer{State: URLNotFound, Note: "no branch on the hub has commit " + sha}
 }
 
-// commitUnder says whether sha (hex, 7 to 40) is reachable from tip (40 hex) in a bare repository.
-func (s *Store) commitUnder(ctx context.Context, dir, sha, tip string) bool {
-	if dir == "" || !isHex(sha) || !isHex40(tip) {
-		return false
+// onContains is told of each repository whose branches are searched, which is only one that has the object. Tests only.
+var onContains func(dir string)
+
+// branchContaining is a branch of a bare repository that has sha (hex, 7 to 40) in its history, and its tip, or "".
+func (s *Store) branchContaining(ctx context.Context, dir, sha string) (string, string) {
+	if dir == "" || !isHex(sha) {
+		return "", ""
 	}
-	_, err := s.git(ctx, dir, "merge-base", "--is-ancestor", sha, tip)
-	return err == nil
+	if _, err := s.git(ctx, dir, "cat-file", "-e", sha+"^{commit}"); err != nil {
+		return "", ""
+	}
+	if onContains != nil {
+		onContains(dir)
+	}
+	out, err := s.git(ctx, dir, "for-each-ref", "--contains", sha, "--format=%(refname:lstrip=2) %(objectname)", "refs/heads")
+	if err != nil {
+		return "", ""
+	}
+	for _, line := range strings.Split(out, "\n") {
+		if b, tip, ok := strings.Cut(strings.TrimSpace(line), " "); ok && b != "" && isHex40(tip) {
+			return b, tip
+		}
+	}
+	return "", ""
 }
 
 func isHex(s string) bool {

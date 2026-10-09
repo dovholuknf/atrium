@@ -21,6 +21,32 @@ func TestACommitIsFoundOnAnyHubBranchWithNoRepositoryNamed(t *testing.T) {
 	}
 }
 
+// A repository without the object is skipped with one git call: its branches are never searched.
+func TestARepositoryWithoutTheCommitIsSkippedAndNotSearched(t *testing.T) {
+	x := newRecv(t)
+	other := x.makeRepo("github/a/other")
+	x.seedMain(hubRepo)
+	first := x.branch("claude/item-w", "x.txt")
+	x.must(x.push(roomCard("sg4", "C1"), hubRepo, "claude/item-w:refs/heads/claude/item-w"))
+	x.grow("claude/item-w", "y.txt")
+	x.must(x.push(roomCard("sg4", "C1"), hubRepo, "claude/item-w:refs/heads/claude/item-w"))
+
+	var searched []string
+	onContains = func(dir string) { searched = append(searched, dir) }
+	t.Cleanup(func() { onContains = nil })
+	if a := x.h.Lookup(bg, URLQuery{Commit: first}); a.State != URLFound || a.Repo != hubRepo || a.Branch == "" {
+		t.Fatalf("%+v", a)
+	}
+	for _, dir := range searched {
+		if dir == other {
+			t.Fatalf("searched the repository that has no such commit: %v", searched)
+		}
+	}
+	if len(searched) != 1 {
+		t.Fatalf("searched %v, want only the repository that has it", searched)
+	}
+}
+
 // A commit no hub branch has is not found, and neither is something that is not a commit id.
 func TestACommitNoHubBranchHasIsNotFound(t *testing.T) {
 	x := newRecv(t)
