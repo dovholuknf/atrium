@@ -565,13 +565,13 @@ function paintTermTitle(task) {
 // The runner's mark and the chips under the name. Its own function so a card that arrives a moment after the pane
 // opened (see `refreshAttachedCard`) can repaint them without rebuilding the terminal.
 function paintTermChips(task) {
-  document.getElementById("t-mark").innerHTML = runnerMark(task.runner);
-  const tc = document.getElementById("t-copy");
-  if (tc && !tc.firstChild) tc.innerHTML = copyIcon();  // What is left is what changes: the process, and where it is. The theme
+  document.getElementById("t-mark").innerHTML = runnerMark(task.runner);  // What is left is what changes: the process, and where it is. The theme
   // moved into the cog, with the rest of how this terminal behaves.
   // The path copies itself. It is the thing most often wanted somewhere else,
   // and reading it off a screen to retype it is the worst way to spend a
   // minute.
+  const tc = document.getElementById("t-copy");
+  if (tc && !tc.firstChild) tc.innerHTML = copyIcon();
   document.getElementById("t-chips").innerHTML =
     // WHICH ROOM, first, when there is more than one. `roomOf` reads the room off
     // the id's tag and answers "" with a single room attached, so this draws
