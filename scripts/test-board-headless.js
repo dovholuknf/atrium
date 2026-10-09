@@ -22253,6 +22253,65 @@ async function switcherRankSection(browser, base) {
   if (!bad) console.log("switcherRank ok");
 }
 
+// GOING TO A CARD OPENS EVERY FOLD IT SITS IN. The card's heading path in the terminals list, its project group and its
+// column on the board are all folded, then the switcher goes to it: every one is open afterwards, the stores say so, and
+// the row is on screen.
+async function revealFoldsSection(browser, base) {
+  const was = tasksMode;
+  tasksMode = "untagged";
+  const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+  try {
+    const p = await ctx.newPage();
+    const errors = [];
+    p.on("pageerror", e => errors.push(String(e)));
+    await p.goto(base, { waitUntil: "domcontentloaded" });
+    await p.evaluate(() => document.querySelector('.tab[data-view="terms"]').click());
+    const row = '#term-list .card.tab[data-id="u-disc"]';
+    await p.waitForSelector(row, { state: "visible", timeout: slow(15000) });
+    // Fold everything that holds the card, the way a person would, through the stores the folds write.
+    const folded = await p.evaluate(() => {
+      const t = lastTasks.find(x => x.id === "u-disc");
+      const segs = termPathOf(t).segs;
+      const termKeys = segs.map((_, i) => segs.slice(0, i + 1).join("/"));
+      const col = COLUMNS.find(c => c.statuses.includes(t.status));
+      const keys = [col.id].concat(col.statuses.length > 1 ? ["group:" + t.status] : []);
+      localStorage.setItem("atrium.termfolded", JSON.stringify(termKeys));
+      localStorage.setItem("atrium.folded", JSON.stringify(keys));
+      repaintLists();
+      return { termKeys, keys };
+    });
+    if (!folded.termKeys.length) fail("revealFolds: the card sits under no heading, so nothing is tested");
+    await p.waitForFunction(r => !document.querySelector(r), row, { timeout: slow(5000) })
+      .catch(() => fail("revealFolds: folding the headings did not hide the row"));
+    const shots = process.env.REVEAL_SHOTS || "";
+    if (shots) { fs.mkdirSync(shots, { recursive: true }); await p.screenshot({ path: path.join(shots, "reveal-folded.png") }); }
+    await p.evaluate(() => openSwitcher());
+    await p.waitForFunction(() => document.getElementById("switcher").open, null, { timeout: slow(5000) });
+    await p.fill("#sw-q", "discourse-6101");
+    await p.waitForSelector('#sw-list .swrow[data-id="u-disc"]', { timeout: slow(5000) });
+    await p.press("#sw-q", "Enter");
+    await p.waitForSelector(row, { state: "visible", timeout: slow(5000) })
+      .catch(() => fail("revealFolds: going to the card did not open the headings above it"));
+    const after = await p.evaluate(() => {
+      const el = document.querySelector('#term-list .card.tab[data-id="u-disc"]');
+      const box = document.querySelector("#term-list .termscroll");
+      const r = el && el.getBoundingClientRect(), b = box && box.getBoundingClientRect();
+      return { termfolded: JSON.parse(localStorage.getItem("atrium.termfolded") || "[]"), folded: JSON.parse(localStorage.getItem("atrium.folded") || "[]"),
+        inView: !!(r && b && r.top >= b.top - 1 && r.bottom <= b.bottom + 1) };
+    });
+    if (shots) await p.screenshot({ path: path.join(shots, "reveal-" + (process.env.REVEAL_TAG || "after") + ".png") });
+    for (const k of folded.termKeys) if (after.termfolded.includes(k)) fail("revealFolds: the heading " + k + " is still recorded as folded");
+    for (const k of folded.keys) if (after.folded.includes(k)) fail("revealFolds: " + k + " is still recorded as folded");
+    if (!after.inView) fail("revealFolds: the row is not scrolled into view");
+    // The board's column is open too, so the card is there.
+    await p.evaluate(() => document.querySelector('.tab[data-view="board"]').click());
+    await p.waitForSelector('#board [data-id="u-disc"]', { state: "visible", timeout: slow(5000) })
+      .catch(() => fail("revealFolds: the card is not visible on the board"));
+    if (errors.length) fail("revealFolds: page errors: " + errors.join(" | "));
+  } finally { tasksMode = was; await ctx.close(); }
+  if (!bad) console.log("revealFolds ok");
+}
+
 // THE DOCUMENTS PAGE, laid out: one centred column, a header row with the count, the card-or-every switch and a search,
 // upload as the one primary control with its title inside it, deleted as a quiet toggle, roomy rows, a usage meter at the
 // foot. Several documents are mocked at the route. DOCSPAGE_SHOTS and DOCSPAGE_TAG write the pictures.
@@ -27823,7 +27882,8 @@ async function main() {
     await unit("soundPhone", () => soundPhoneSection(browser, base));
     await unit("boardDocs", () => boardDocsSection(browser, base));
     await unit("switcherRank", () => switcherRankSection(browser, base));
-    await unit("docsPage",() => docsPageSection(browser, base));
+    await unit("revealFolds", () => revealFoldsSection(browser, base));
+    await unit("docsPage", () => docsPageSection(browser, base));
     await unit("phoneBoardCompact", () => phoneBoardCompactSection(browser, base));
     await unit("phoneBell", () => phoneBellSection(browser, base));
     await unit("mBell", () => mBellSection(browser));
