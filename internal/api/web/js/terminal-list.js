@@ -1892,6 +1892,13 @@ async function renderTermList() {
   // the one you are most likely to be on while something is working, and it is
   // the view that does not call `renderBoard`.
   if (typeof paintWorking === "function") paintWorking(all);
+  // THE NEW-CONTEXT BAR FOLLOWS THE CARD. It was painted only when the pane opened, so a cycle that moved on, or
+  // ended, left the bar saying "1/3: waiting for atrium ready" until the next switch.
+  const open = termTask && all.find(t => t.id === termTask.id);
+  if (open) {
+    termTask.new_context = open.new_context;
+    if (typeof composeBar === "function") composeBar(open);
+  }
   // AND THE BOARD'S COPY OF THE LIST. `renderBoard` and `renderStack` both set
   // this and only one of the three runs per poll, so on the terminals view it
   // was whatever the last visit to another view left behind. The alert for a
