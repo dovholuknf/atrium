@@ -110,6 +110,8 @@ type screen struct {
 	// user of the grid, which then pays a nil check and nothing else. It only
 	// watches. See screen_repair.go.
 	rep *repairWatch
+	// pushed is the text of the page `keepPage` last put into history.
+	pushed string
 }
 
 // region is the rows a line feed scrolls between, inclusive.
@@ -465,15 +467,56 @@ func (s *screen) eraseDisplay(mode int) {
 			s.cells[i] = blankRow(s.cols)
 		}
 	default:
-		if !s.alt {
-			for i := 0; i < s.rows; i++ {
-				if !rowIsBlank(s.cells[i]) {
-					s.history = append(s.history, s.cells[i])
-				}
-			}
-		}
+		s.keepPage()
 		for i := 0; i < s.rows; i++ {
 			s.cells[i] = blankRow(s.cols)
+		}
+	}
+}
+
+// clearMark is the OSC payload atrium writes into the output stream at the moment
+// it knows a session is being cleared: a new-context cycle it drives, or a
+// `/clear` the operator typed. See `runner.markClear`.
+//
+// A clear does not reach the board as erase-display. The pty on Windows is a
+// ConPTY, which repaints the cleared grid in place (`ESC[H`, then the new frame
+// over the old rows, `ESC[K` for the rest) and never says 2J or 3J, so the page
+// that was showing was overwritten without ever going into history. The mark is
+// in the stream, so it is in the ring and in every replay, and a live viewer and
+// a reattach both see it at the same byte. A terminal that does not know the OSC
+// ignores it.
+const (
+	clearMarkOSC     = "\x1b]7777;atrium-clear\x07"
+	clearMarkPayload = "7777;atrium-clear"
+)
+
+// keepPage puts the rows now showing into history without touching them. Not on
+// the alternate screen, and not when the page is the one pushed last, so a
+// repaint that clears and draws the same frame, or a mark followed by the 2J a
+// restart sends, does not stack copies. The board's `keepPage` does the same.
+func (s *screen) keepPage() {
+	if s.alt {
+		return
+	}
+	var sig strings.Builder
+	for i := 0; i < s.rows && i < len(s.cells); i++ {
+		if rowIsBlank(s.cells[i]) {
+			continue
+		}
+		for _, c := range s.cells[i] {
+			if c.ch > 0 {
+				sig.WriteRune(c.ch)
+			}
+		}
+		sig.WriteByte('\n')
+	}
+	if sig.Len() == 0 || sig.String() == s.pushed {
+		return
+	}
+	s.pushed = sig.String()
+	for i := 0; i < s.rows && i < len(s.cells); i++ {
+		if !rowIsBlank(s.cells[i]) {
+			s.history = append(s.history, append([]cell(nil), s.cells[i]...))
 		}
 	}
 }
@@ -1021,11 +1064,18 @@ func (s *screen) escape(b []byte, i int) int {
 		// OSC: a string ended by BEL or ST. A window title, a hyperlink.
 		// Nothing it says is on the grid.
 		i++
+		body := i
 		for i < len(b) {
 			if b[i] == 0x07 {
+				if string(b[body:i]) == clearMarkPayload {
+					s.keepPage()
+				}
 				return i + 1
 			}
 			if b[i] == 0x1b && i+1 < len(b) && b[i+1] == '\\' {
+				if string(b[body:i]) == clearMarkPayload {
+					s.keepPage()
+				}
 				return i + 2
 			}
 			i++

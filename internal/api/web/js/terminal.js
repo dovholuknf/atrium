@@ -1090,6 +1090,16 @@ function openTerm(task) {
     keepPage(mine, false);
     return false;
   });
+  // THE CLEAR MARK. A clear on Windows reaches here as ConPTY's repaint in
+  // place, never as erase-display, so the handler above does not see it. The
+  // room writes this OSC into the stream when it types `/clear` or sees one
+  // submitted, and the same bytes are in every replay. See `clearMarkOSC` in
+  // internal/daemon/screen.go. A room that does not send it changes nothing,
+  // and a terminal that does not know it ignores it.
+  term.parser.registerOscHandler(7777, data => {
+    if (data === "atrium-clear") keepPage(mine, true);
+    return true;
+  });
   lrInit(term);
   term.open(screen);
   term.textarea.addEventListener("focus", () => { tallFollow(); requestAnimationFrame(tallFollow); });
