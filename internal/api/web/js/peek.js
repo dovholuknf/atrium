@@ -13,6 +13,8 @@
 // in the details dialog, see js/usage.js and internal/daemon/usage.go.
 
 const PEEK_HOVER_MS = 1000;
+// A pointer farther than this from where the hover timer began has not come to rest (hand jitter is less).
+const PEEK_HOVER_JITTER_PX = 10;
 // How long the pointer may be off both the card and the popover before a
 // hover-opened one goes. Enough to cross the gap between them.
 const PEEK_GRACE_MS = 260;
@@ -372,7 +374,10 @@ function peekPop() {
 // Where the pointer last was, in the viewport. The popover opens from here.
 let peekPointer = null;
 document.addEventListener("pointermove", e => {
-  if (!e.pointerType || e.pointerType === "mouse") peekPointer = { x: e.clientX, y: e.clientY };
+  if (e.pointerType && e.pointerType !== "mouse") return;
+  peekPointer = { x: e.clientX, y: e.clientY };
+  // The second counts from rest: a pointer still travelling across the card starts it again.
+  if (peekHoverFrom && peekHoverId && Math.hypot(e.clientX - peekHoverFrom.x, e.clientY - peekHoverFrom.y) > PEEK_HOVER_JITTER_PX) peekArmHover(peekHoverId);
 }, { passive: true, capture: true });
 
 // Under the pointer `at`: its top left corner just below and right of it,
@@ -439,7 +444,7 @@ function peekCloseSoon() {
 // several times a second, so the element under a still pointer is replaced
 // long before the second is up.
 
-let peekHoverId = null, peekHoverEl = null, peekHoverTimer = null;
+let peekHoverId = null, peekHoverEl = null, peekHoverTimer = null, peekHoverFrom = null;
 
 function peekCanHover() {
   if (document.querySelector("dialog[open]")) return false;
@@ -479,21 +484,31 @@ document.addEventListener("pointerover", e => {
     return;
   }
   clearTimeout(peekHoverTimer);
+  peekHoverFrom = null;
   peekHoverId = id;
   peekHoverEl = card;
   if (peekMode === "hover" && peekFor !== id) peekCloseSoon();
   if (!id) return;
+  peekArmHover(id);
+});
+
+// Starts the second from where the pointer is now.
+function peekArmHover(id) {
+  clearTimeout(peekHoverTimer);
+  peekHoverFrom = peekPointer ? { x: peekPointer.x, y: peekPointer.y } : null;
   peekHoverTimer = setTimeout(() => {
+    peekHoverFrom = null;
     if (peekHoverId !== id || !peekCanHover()) return;
     const at = peekHoverEl && peekHoverEl.isConnected ? peekHoverEl
       : document.querySelector(`.card[data-id="${CSS.escape(id)}"], .stackrow[data-id="${CSS.escape(id)}"]`);
     if (at && peekMode !== "menu") openPeek(id, at, "hover");
   }, PEEK_HOVER_MS);
-});
+}
 
 // A press is a click on the card, which opens its menu. Nothing pops over it.
 document.addEventListener("pointerdown", e => {
   clearTimeout(peekHoverTimer);
+  peekHoverFrom = null;
   peekHoverId = null;
   if (peekEl && peekEl.classList.contains("on") && !peekEl.contains(e.target) && !e.target.closest(".qa-fly")) closePeek();
 }, true);
