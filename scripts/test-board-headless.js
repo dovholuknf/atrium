@@ -4083,6 +4083,85 @@ async function clearKeepsPageSection(browser, base) {
   tasksMode = was;
 }
 
+// ── the room's clear mark puts the page into scrollback ────────────────────
+// A clear on Windows reaches the board as ConPTY's repaint in place, not erase-display, so the room writes an OSC
+// (`clearMarkOSC`, internal/daemon/screen.go) when it types or sees `/clear`. Drives the real xterm: a page, the mark,
+// then the in-place repaint, and the old rows have to sit above the viewport. Without the mark they are overwritten,
+// the alternate screen keeps nothing, an unknown OSC is ignored, and a replay of the same bytes agrees with live.
+// CLEARMARK_SHOTS=/dir with CLEARMARK_SHOT=before|after saves the picture.
+async function clearMarkSection(browser, base) {
+  const was = tasksMode;
+  tasksMode = "land";
+  landCard("land-mark", { supervised: true, created_at: "2026-09-19T12:00:00Z" });
+  landList = [LAND["land-mark"]];
+  landPerms = [];
+  const errors = [];
+  const ctx = await landContext(browser);
+  try {
+    const p = await ctx.newPage();
+    p.on("pageerror", e => errors.push(String(e)));
+    await p.goto(base, { waitUntil: "domcontentloaded" });
+    await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
+    await p.evaluate(() => attachTask("land-mark"));
+    await p.waitForFunction(() => termSock && termTask && termTask.id === "land-mark", null, { timeout: slow(10000) });
+    // What sits above the viewport on the normal buffer, as text.
+    const run = (seq, fresh) => p.evaluate(async ([seq, fresh]) => {
+      const w = d => new Promise(r => term.write(d, r));
+      if (fresh) { term.reset(); term._atriumPushed = ""; }
+      await w(seq);
+      const b = term.buffer.normal, above = [], shown = [];
+      for (let i = 0; i < b.baseY; i++) above.push(b.getLine(i).translateToString(true));
+      for (let i = 0; i < term.rows; i++) shown.push(b.getLine(b.baseY + i).translateToString(true));
+      return { above, shown, base: b.baseY, type: term.buffer.active.type };
+    }, [seq, fresh]);
+    const MARK = "\x1b]7777;atrium-clear\x07";
+    const OLD = "old line 1\r\nold line 2\r\n";
+    const REPAINT = "\x1b[H\x1b[Knew banner\r\n\x1b[K\r\n\x1b[K\r\n";
+    const shot = async name => {
+      if (!process.env.CLEARMARK_SHOTS) return;
+      fs.mkdirSync(process.env.CLEARMARK_SHOTS, { recursive: true });
+      await p.screenshot({ path: path.join(process.env.CLEARMARK_SHOTS, name + ".png") });
+    };
+
+    let got = await run(OLD + REPAINT, true);
+    if (got.above.includes("old line 1")) fail("clearMark: without the mark the old page is in scrollback, so this case proves nothing.");
+    await shot(process.env.CLEARMARK_SHOT === "after" ? "unmarked" : "before");
+
+    got = await run(OLD + MARK + REPAINT, true);
+    for (const l of ["old line 1", "old line 2"]) if (!got.above.includes(l)) fail("clearMark: " + l + " is not above the viewport after a marked clear: " + JSON.stringify(got));
+    if (!got.shown.includes("new banner")) fail("clearMark: the repaint is not on screen: " + JSON.stringify(got.shown.slice(0, 3)));
+    if (got.shown.includes("old line 1")) fail("clearMark: the old page is still on screen after the repaint.");
+    const live = got.above.join("|");
+    await shot(process.env.CLEARMARK_SHOT || "after");
+
+    // The mark and then the 2J a restart sends over the same page: one copy.
+    got = await run(OLD + MARK + "\x1b[2J\x1b[3J\x1b[Hnew\r\n", true);
+    if (got.above.filter(l => l === "old line 1").length !== 1) fail("clearMark: the mark then a 2J stacked the page: " + JSON.stringify(got.above));
+
+    // A replay is the same bytes through a reset terminal.
+    await p.evaluate(() => { term.reset(); term._atriumPushed = ""; });
+    got = await run(OLD + MARK + REPAINT, false);
+    if (got.above.join("|") !== live) fail("clearMark: a replay left a different history than live: " + JSON.stringify(got.above));
+
+    // The alternate screen leaves no trace.
+    got = await run("before\r\n\x1b[?1049h" + "PAGER ROW\r\n" + MARK + "\x1b[?1049l" + "after\r\n", true);
+    if (got.above.some(l => /PAGER/.test(l)) || got.shown.some(l => /PAGER/.test(l))) fail("clearMark: the alternate screen left a trace: " + JSON.stringify(got));
+    if (got.base !== 0) fail("clearMark: the alternate screen pushed " + got.base + " lines into history.");
+
+    // An OSC that is not the mark does nothing, and the mark on an empty screen does nothing.
+    got = await run(OLD + "\x1b]7777;something-else\x07" + REPAINT, true);
+    if (got.above.includes("old line 1")) fail("clearMark: an unknown OSC kept the page.");
+    got = await run(MARK, true);
+    if (got.base !== 0) fail("clearMark: the mark on an empty screen pushed " + got.base + " lines.");
+  } finally {
+    await ctx.close();
+  }
+  if (errors.length) fail("the clear mark page threw: " + errors.join(" | "));
+  landList = []; landPerms = [];
+  tasksMode = was;
+  if (!bad) console.log("clearMark ok");
+}
+
 // ── over a terminal the toasts hang from the top right ─────────────────────
 // Backlog-2 item 18. A toast in the bottom right sat on the terminal's input
 // line and status bar, where clint was typing. On the terminals view (and in a
@@ -25795,7 +25874,7 @@ async function main() {
       groupRemove: groupRemoveSection, worn: wornSection, restartGate: restartGateSection, restartStays: restartStaysSection, atriumDown: atriumDownSection,
       toastStays: toastStaysSection, groupColor: groupColorSection,
       groupDrag: groupDragSection, tooltip: tooltipSection, linkTip: linkTipSection, fileOpenOutside: fileOpenOutsideSection, readTabSize: readTabSizeSection,popoutTagFlip: popoutTagFlipSection, prefsEverywhere: prefsEverywhereSection, mPrefsEverywhere: (b) => mPrefsEverywhereSection(b), idleRate: idleRateSection, foldStill: foldStillSection,
-      untaggedSort: untaggedSortSection, newCard: newCardSection, themePreview: themePreviewSection, themeLab: themeLabSection, land: landSection, reselect: reselectSection, clearKeepsPage: clearKeepsPageSection,
+      untaggedSort: untaggedSortSection, newCard: newCardSection, themePreview: themePreviewSection, themeLab: themeLabSection, land: landSection, reselect: reselectSection, clearKeepsPage: clearKeepsPageSection, clearMark: clearMarkSection,
       resumeSpinner: resumeSpinnerSection, toastsTop: toastsTopSection, sayWhen: sayWhenSection, pasteSpinner: pasteSpinnerSection,
       pasteBig: pasteBigSection, pasteEmpty: pasteEmptySection, pasteBusy: pasteBusySection, typing: typingSection, alias: aliasSection, askAgain: askAgainSection, copySelect: copySelectSection, busyGuard: busyGuardSection, keepalive: keepaliveSection, restartMenu: restartMenuSection,
       stuck: stuckSection, blockerMark: blockerMarkSection, carryLink: carryLinkSection,
@@ -27723,6 +27802,7 @@ async function main() {
     // ── the terminals list's three theme switches ───────────────────────────
     await unit("termWear", () => termWearSection(browser, base));
     await unit("clearKeepsPage", () => clearKeepsPageSection(browser, base));
+    await unit("clearMark", () => clearMarkSection(browser, base));
     // ── the attached row's bridge into the terminal, and the terminal's frame ─
     await unit("bridge", () => bridgeSection(browser, base));
     // ── a load reads settings once ──────────────────────────────────────────

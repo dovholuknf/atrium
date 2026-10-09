@@ -1246,6 +1246,11 @@ func (r *runner) injectPeerIf(banner, body string, ok func() bool) (bool, error)
 	if ok != nil && !ok() {
 		return false, nil
 	}
+	// BEFORE THE BYTES, so the mark is in the stream ahead of anything the clear
+	// makes the runner draw. A new-context cycle types `/clear` here.
+	if isClearCommand(body) {
+		r.markClear()
+	}
 	// r.Write goes straight to the pty and takes no runner lock. The operator's
 	// own writes are held on pasteMu, which this owns, for the duration.
 	if err := r.Write([]byte(banner + body)); err != nil {
@@ -1688,6 +1693,29 @@ func (r *runner) deliverOutput(chunk []byte) {
 		(*w)("output")
 	}
 	r.lagFanout(t0, len(chunk))
+}
+
+// isClearCommand is whether a typed line is the session's `/clear`, with or
+// without the bracketed paste atrium wraps its own text in.
+func isClearCommand(s string) bool {
+	s = strings.TrimPrefix(s, "\x1b[200~")
+	s = strings.TrimSuffix(s, "\x1b[201~")
+	return strings.TrimSpace(s) == newContextClear
+}
+
+// markClear writes the clear mark into the output stream: the ring, so every
+// replay carries it, and every attached viewer, so a live one acts on it at the
+// same byte. Called at the moment atrium knows a session is about to be cleared,
+// which is when it types `/clear` itself or sees the operator submit one.
+//
+// NOT `deliverOutput`, because the runner did not say this: it must not move the
+// idle clock or wake the waiters that read output as the session being alive.
+// See `clearMarkOSC` for why it exists and why an older board is unharmed.
+func (r *runner) markClear() {
+	r.mu.Lock()
+	_, _ = r.buf.Write([]byte(clearMarkOSC))
+	r.fanoutLocked([]byte(clearMarkOSC))
+	r.mu.Unlock()
 }
 
 // SHARED MULTI-PANE INPUT, and it is OFF by default. See

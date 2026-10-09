@@ -392,6 +392,13 @@ func (d *Daemon) attach(w http.ResponseWriter, r *http.Request, taskID string, s
 					// remember too. See modelswitch.go.
 					if line := run.takeSubmitted(); line != "" {
 						go d.noteTypedModel(taskID, line)
+						// A `/clear` typed by hand. The mark goes into the
+						// stream before the Enter below reaches the pty, so
+						// it precedes whatever the clear makes the runner
+						// draw. See `clearMarkOSC`.
+						if isClearCommand(line) {
+							run.markClear()
+						}
 					}
 				}
 				// Typing into it is looking at it. One map lookup when the
