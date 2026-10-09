@@ -1431,6 +1431,56 @@ func (s *Store) SetTags(id string, tags []string) error {
 	})
 }
 
+// SwapTag claims a tag: it replaces `from` with `to` on a card and says whether it did. False when the card does not
+// carry `from`, which is how two callers racing for it are told apart: exactly one gets true.
+//
+// The write is a compare-and-set on the stored tags (`WHERE tags = <what was read>`), so it is one atomic statement
+// and a tag set another writer changed in between is read again rather than overwritten.
+func (s *Store) SwapTag(id, from, to string) (bool, error) {
+	swapped := false
+	err := s.guard(func() error {
+		for try := 0; try < 5; try++ {
+			var raw string
+			if err := s.db.QueryRow(`SELECT tags FROM task WHERE id = ?`, id).Scan(&raw); err != nil {
+				return err
+			}
+			var tags []string
+			if raw != "" {
+				if err := json.Unmarshal([]byte(raw), &tags); err != nil {
+					return err
+				}
+			}
+			next := make([]string, 0, len(tags)+1)
+			had := false
+			for _, g := range tags {
+				if g == from {
+					had = true
+					continue
+				}
+				next = append(next, g)
+			}
+			if !had {
+				return nil
+			}
+			next = NormalizeTags(append(next, to))
+			body, err := json.Marshal(next)
+			if err != nil {
+				return err
+			}
+			res, err := s.db.Exec(`UPDATE task SET tags = ? WHERE id = ? AND tags = ?`, string(body), id, raw)
+			if err != nil {
+				return err
+			}
+			if n, _ := res.RowsAffected(); n == 1 {
+				swapped = true
+				return nil
+			}
+		}
+		return nil
+	})
+	return swapped, err
+}
+
 // PRIORITY WAS REMOVED, and the columns stayed.
 //
 // It was three levels, a chip, a filter and a fade. What it was not was a fact:

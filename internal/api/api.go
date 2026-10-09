@@ -594,6 +594,7 @@ func (s *Server) Handler() http.Handler {
 	// Closing a card frees its inventory. See close.go.
 	mux.HandleFunc("GET /v1/tasks/{id}/close", s.getClose)
 	mux.HandleFunc("POST /v1/tasks/{id}/close", s.postClose)
+	mux.HandleFunc("POST /v1/tasks/{id}/cleanup-offer", s.postCleanupOffer)
 	// What no live card holds any more. See sweep.go.
 	mux.HandleFunc("GET /v1/sweep", s.getSweep)
 	mux.HandleFunc("POST /v1/sweep", s.postSweep)

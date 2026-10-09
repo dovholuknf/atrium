@@ -747,6 +747,36 @@ async function killNow(id) {
 // answer, and a last press closes it.
 function isLinkCard(t) { return !!t && (t.tags || []).some(g => String(g).startsWith("link:")); }
 
+// "CLEAN UP WHEN DONE", chosen when a link is opened (the launch dialog's tick). The card carries this tag, and when a
+// board sees it reach done the close above is offered: the same one the card's menu has, so the worktree, the clone
+// and the claude/* branches here and on the hub are freed by what already frees them, and a worktree holding work
+// nowhere else is asked about.
+//
+// ONCE PER CARD. The board that sees it first reads the card again, and if the mark is still there swaps it for
+// cleanup:offered and shows the close. A second board finds the mark gone and shows nothing. The operator's own close
+// takes both marks off on the server, before the card reaches done (internal/api/close.go), so a closed card is
+// never offered a close again.
+const CLEANUP_TAG = "cleanup:when-done";
+const CLEANUP_OFFERED_TAG = "cleanup:offered";
+
+function cleanupWhenDone(prev, row) {
+  if (!prev || !row || row.status !== "done" || prev.status === "done") return;
+  if (!(row.tags || []).includes(CLEANUP_TAG)) return;
+  cleanupOffer(row);
+}
+
+// The claim is the server's, one atomic swap (POST /v1/tasks/{id}/cleanup-offer): 200 for the one board that made it,
+// 409 for the rest. The close is shown on a 200 and on nothing else, a failed request included. `api` throws on any
+// non-2xx, and `patchTask` is not used because it swallows its own errors.
+async function cleanupOffer(row) {
+  try {
+    await api("/v1/tasks/" + encodeURIComponent(row.id) + "/cleanup-offer", { method: "POST" });
+  } catch (e) {
+    return;
+  }
+  closeCardAsk(row.id, row);
+}
+
 // via {owner, room} closes what an owner with no card holds, through the sweep (internal/api/sweep.go).
 function closeCardAsk(id, t, via) { return oneAtATime("close:" + id, () => closeCardNow(id, t, via)); }
 

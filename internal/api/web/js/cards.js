@@ -34,6 +34,7 @@ function loadCards(signal) {
     const { tasks } = await api("/v1/tasks", { signal });
     const next = new Map();
     (tasks || []).forEach(t => { if (t && t.id) next.set(t.id, t); });
+    if (cardsLoaded) next.forEach((t, id) => cleanupWhenDone(cardRows.get(id), t));
     cardRows = next;
     cardsLoaded = true;
     cardsReadAt = Date.now();
@@ -56,6 +57,7 @@ function cardRowComplete(d) {
 }
 
 function upsertCard(row) {
+  cleanupWhenDone(cardRows.get(row.id), row);
   cardRows.set(row.id, row);
 }
 

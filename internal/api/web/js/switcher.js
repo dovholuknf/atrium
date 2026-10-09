@@ -120,13 +120,20 @@ function toggleSwitcher() {
   openSwitcher();
 }
 
-async function openSwitcher() {
+// THE SAME BAR OPENS A LINK. A URL typed or pasted here puts "open <kind> <name>" at the top (js/quickpaste.js), so
+// there is one key and one box for going somewhere. `opts.link` is a bar opened to open one (ctrl-alt-r, the link
+// button): the field says so, and `opts.url` is a link it opens on.
+async function openSwitcher(opts) {
   const dlg = switcherDlg();
   if (!dlg) return;
-  swQuery = "";
+  const link = !!(opts && opts.link);
+  const url = (opts && opts.url) || "";
+  swQuery = url;
   swSel = 0;
   const q = document.getElementById("sw-q");
-  q.value = "";
+  q.value = url;
+  q.placeholder = link ? "paste a link to open, or type to find a session"
+    : "go to a session, or paste a link: name, directory, tag or url";
   document.getElementById("sw-key").textContent = comboName(switchKey());
   // Painted from the card map (js/cards.js), which the event stream keeps
   // current, so the list is there in the frame the dialog opens. Only a board
@@ -138,6 +145,7 @@ async function openSwitcher() {
   paintSwitcher();
   dlg.showModal();
   q.focus();
+  if (url) q.select();
   swWatchForTheft();
   let all = null;
   try { all = await boardCards(); } catch (e) {}
@@ -265,14 +273,38 @@ function switcherRows() {
   return scored.map(x => x.t);
 }
 
+// A link in the field. It is the first row, so Enter on a pasted link opens it, and it is not a session.
+function swLinkOf(q) { return typeof QUICKPASTE_URL !== "undefined" && QUICKPASTE_URL.test(q) ? q : ""; }
+
+// Drawn open or shut: a read that lands as the bar closes is there when it opens again.
+function swRepaint() {
+  if (switcherDlg()) paintSwitcher();
+}
+
+// Set the field and the query together, so what is drawn and what Enter does cannot disagree.
+function swSetQuery(text) {
+  document.getElementById("sw-q").value = text;
+  swQuery = text.trim();
+  swSel = 0;
+  paintSwitcher();
+}
+
 function paintSwitcher() {
   const host = document.getElementById("sw-list");
   if (!host) return;
-  swRows = switcherRows();
+  const link = swLinkOf(swQuery);
+  swRows = (link ? [{ link }] : []).concat(switcherRows());
   if (swSel >= swRows.length) swSel = Math.max(0, swRows.length - 1);
   const here = swHere();
   setHTML(host, swRows.length
-    ? swRows.map((t, i) => `
+    ? swRows.map((t, i) => {
+      if (t.link) {
+        const r = quickPasteRow(t.link);
+        return `
+      <div class="swrow swopen ${i === swSel ? "on" : ""} ${r.warn ? "warn" : ""} ${r.seen ? "seen" : ""}"
+        id="sw-open" data-link="${esc(t.link)}" data-kind="${esc(r.kind)}">${r.html}</div>`;
+      }
+      return `
       <div class="swrow ${i === swSel ? "on" : ""}" data-id="${esc(t.id)}">
         ${runnerMark(t.runner)}
         <span class="swname">${esc(terminalLabel(t) || t.display_title)}</span>
@@ -281,13 +313,14 @@ function paintSwitcher() {
           ? `<span class="chip accent" data-tip="this one is in a window of its own">&#8599;</span>` : ""}
         ${isWaiting(t) ? `<span class="chip warn">wants you</span>` : ""}
         <span class="swdir" data-tip="${esc(t.worktree || "")}">${esc(t.worktree || "")}</span>
-      </div>`).join("")
+      </div>`;
+    }).join("")
     : `<div class="empty">${swQuery ? "nothing matches that"
         : (swLoaded ? "no sessions to go to" : "looking&hellip;")}</div>`);
   // The id travels in a data attribute and comes back through the DOM, never
   // through an inline handler. The house rule, and it costs nothing here.
   host.querySelectorAll(".swrow").forEach(el => {
-    el.onclick = () => switchTo(el.dataset.id);
+    el.onclick = e => el.dataset.link ? quickPasteGo(el.dataset.link, e.shiftKey) : switchTo(el.dataset.id);
   });
   const on = host.querySelector(".swrow.on");
   if (on) on.scrollIntoView({ block: "nearest" });
@@ -383,6 +416,9 @@ async function soloSwitch(id) {
     // the highlighted row jumps to whatever is now in that position, which is
     // a different session and one keystroke from being opened.
     swSel = 0;
+    // A link is read as it is typed or pasted, so Enter has the answer already.
+    const link = swLinkOf(swQuery);
+    if (link) quickPasteWatch(link, e.inputType === "insertFromPaste");
     paintSwitcher();
   });
   q.addEventListener("keydown", e => {
@@ -391,7 +427,9 @@ async function soloSwitch(id) {
     else if (e.key === "Enter") {
       e.preventDefault();
       const t = swRows[swSel];
-      if (t) switchTo(t.id);
+      // Shift-Enter on a link stops at the launch dialog. On a session it is Enter.
+      if (t && t.link) quickPasteGo(t.link, e.shiftKey);
+      else if (t) switchTo(t.id);
     }
     // Escape is the dialog's own and needs nothing here.
   });
