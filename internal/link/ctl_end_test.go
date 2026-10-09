@@ -46,6 +46,29 @@ func TestDoneDeliversAsADoneReportWithTheEndedFlag(t *testing.T) {
 	}
 }
 
+func TestDoneTakesAnArtifactInPlaceOfASHAButNotBothOrNeither(t *testing.T) {
+	d, got := fakeEnd()
+	if _, _, err := d.Done(context.Background(), nil, doneInput{Artifact: " /tmp/report.md "}); err != nil {
+		t.Fatal(err)
+	}
+	b := (*got)[0]
+	if b["status"] != "done" || b["artifact"] != "/tmp/report.md" || b["ended"] != true || b["sha"] != nil {
+		t.Fatalf("body = %v", b)
+	}
+	for name, in := range map[string]doneInput{
+		"both":    {SHA: "abc1234", Artifact: "/tmp/r.md"},
+		"neither": {},
+	} {
+		d, got := fakeEnd()
+		if _, _, err := d.Done(context.Background(), nil, in); err == nil || len(*got) != 0 {
+			t.Fatalf("%s: err = %v, recorded %d, want a refusal and nothing recorded", name, err, len(*got))
+		}
+	}
+	if !strings.Contains(doneToolDesc, "sha or artifact location") {
+		t.Fatalf("the description: %s", doneToolDesc)
+	}
+}
+
 func TestBlockedRefusesAnEmptyReasonOrOver50Words(t *testing.T) {
 	for name, reason := range map[string]string{
 		"empty":             "",

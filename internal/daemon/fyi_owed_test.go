@@ -12,7 +12,7 @@ import (
 // owes none. See docs/changes/r-comms-one-instruction.md.
 
 func TestTheNudgeNamesDoneBlockedAndTheWaitRule(t *testing.T) {
-	for _, want := range []string{"atrium_done <sha>", "atrium_blocked <reason>", "background command"} {
+	for _, want := range []string{"atrium_done", "atrium_blocked", "background command"} {
 		if !strings.Contains(silentNudgeText, want) {
 			t.Errorf("the nudge misses %q: %q", want, silentNudgeText)
 		}

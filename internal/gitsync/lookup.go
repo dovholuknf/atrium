@@ -72,6 +72,8 @@ type URLQuery struct {
 	// Room, when set, asks that one room and no other.
 	Room string
 	Base string
+	// Commit, with no Repo, asks which hub branch has that commit. See lookup_commit.go.
+	Commit string
 }
 
 // URLSource is where one branch can be fetched from.
@@ -226,6 +228,9 @@ func resolveRepo(in string, known map[string]*knownRepo) (name string, candidate
 
 // Lookup answers one question. The caller has already decided that this reach may ask.
 func (h *Hub) Lookup(ctx context.Context, q URLQuery) URLAnswer {
+	if strings.TrimSpace(q.Commit) != "" && strings.TrimSpace(q.Repo) == "" {
+		return h.lookupCommit(ctx, q)
+	}
 	q.Repo, q.Branch, q.Room = strings.TrimSpace(q.Repo), strings.TrimSpace(q.Branch), strings.TrimSpace(q.Room)
 	attached := h.attachedByName()
 	if q.Room != "" {
@@ -586,6 +591,9 @@ func AskHubLookup(ctx context.Context, rt http.RoundTripper, q URLQuery) (URLAns
 	if r := strings.TrimSpace(q.Room); r != "" {
 		v.Set("room", r)
 	}
+	if c := strings.TrimSpace(q.Commit); c != "" {
+		v.Set("commit", c)
+	}
 	var ans URLAnswer
 	code, body, err := hubGet(ctx, rt, LinkLookupPath+"?"+v.Encode(), 1<<20)
 	if err != nil {
@@ -604,6 +612,9 @@ func AskHubLookup(ctx context.Context, rt http.RoundTripper, q URLQuery) (URLAns
 
 	// THE HUB IS OLDER THAN THE LOOKUP OVER THE LINK: read its store.
 	in := strings.TrimSpace(q.Repo)
+	if in == "" {
+		return URLAnswer{}, fmt.Errorf("this room's hub is older than the lookup by commit")
+	}
 	var ref Ref
 	if strings.Contains(in, "://") || scpRe.MatchString(in) {
 		ref, err = ParseURL(in)

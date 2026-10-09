@@ -11,7 +11,7 @@ import (
 // relayed say keeps its kind, so a launcher's fyi on another room makes no report owed there.
 
 func TestTheLaunchLineNamesDoneAndBlockedAndNotAtriumReport(t *testing.T) {
-	for _, want := range []string{"atrium_done <sha>", "atrium_blocked <up to 50 words>", "Wait for every command", "background"} {
+	for _, want := range []string{"atrium_done <sha or artifact>", "atrium_blocked <up to 50 words>", "Wait for every command", "background"} {
 		if !strings.Contains(reportLine, want) {
 			t.Errorf("the launch line misses %q: %q", want, reportLine)
 		}

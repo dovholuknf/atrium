@@ -98,7 +98,7 @@ func TestLeanArgsBuildsTheLeanFlagsAndKeepsThePromptLast(t *testing.T) {
 		}
 	}
 	sys := flagValue(t, got, "--append-system-prompt")
-	for _, rule := range []string{"atrium_say", "done <sha>", "claude/main", "restart atrium", "build.claude/", "trailer"} {
+	for _, rule := range []string{"atrium_done", "atrium_blocked", "claude/main", "restart atrium", "build.claude/", "trailer"} {
 		if !strings.Contains(sys, rule) {
 			t.Fatalf("worker prompt misses %q", rule)
 		}

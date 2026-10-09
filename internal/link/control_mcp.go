@@ -217,16 +217,17 @@ func (c *controlMCP) server(class ctlClass) *mcp.Server {
 			"anything that wants an answer or an action. A receiver that holds its notices keeps an " +
 			"`fyi` on its card and is not interrupted, so say `needs` for anything you want read now. " +
 			"A launcher's fyi, such as 'stop, nothing else to do', asks for no reply and the worker owes none.\n\n" +
-			"IF ANOTHER SESSION LAUNCHED YOU, END EVERY TURN BY TELLING IT WITH THIS: `done <sha>` when " +
-			"the work is finished, `blocked: <one line>` when something stops you. A turn that ends " +
-			"without it is a silent stop: you are nudged once, then your launcher is told you went quiet.",
+			"IF ANOTHER SESSION LAUNCHED YOU, END WITH `atrium_done` when the work is finished and " +
+			"`atrium_blocked` when something stops you. That is the one message your launcher gets, so do " +
+			"not say the same thing with this as well. A turn that ends without either is a silent stop: " +
+			"you are nudged once, then your launcher is told you went quiet.",
 	}, audited(c, "ctl-wake-say", describeSay, c.sayHandler))
 
 	addTool(s, class, &mcp.Tool{
 		Name: "atrium_report",
 		Description: "Report on your work to the session that launched you.\n\n" +
-			"A launched session tells its launcher with `atrium_say` (`done <sha>`, `blocked: <one " +
-			"line>`), and that is what its launch prompt asks for. Use this only when your launcher " +
+			"A launched session ends with `atrium_done` or `atrium_blocked`, " +
+			"and that is what its launch prompt asks for. Use this only when your launcher " +
 			"asks for a report by this tool. Either one counts as telling your launcher.\n\n" +
 			"status is one of:\n" +
 			"- `done`: the work is finished. Give `sha`, the commit it landed as, or `no_commit` " +
@@ -1224,7 +1225,7 @@ const OriginTag = "origin:agent"
 // reportLine is appended to every agent launch's prompt. See launchHandler. How a worker ends: atrium_done or
 // atrium_blocked. The same text as daemon.LaunchEndingLine, which a test keeps equal.
 const reportLine = "Before you end your turn, tell your launcher either:\n" +
-	"- atrium_done <sha> when the work is finished\n" +
+	"- atrium_done <sha or artifact> when the work is finished\n" +
 	"- atrium_blocked <up to 50 words> when something stops you, such as a question you need answered, a tool you " +
 	"need installed, or a permission you need.\n" +
 	"Wait for every command, test and build in the same turn. Never end a turn on a command still running in the background."

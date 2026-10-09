@@ -401,6 +401,12 @@ func (d *Daemon) handleTell(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// A SECOND WORD OF AN END THE WORKER ALREADY MADE is not sent. See endonce.go.
+	if d.endSayDropped(in.From, in.Text) {
+		writeEndSayDropped(w)
+		return
+	}
+
 	// ANOTHER ROOM, `name@room`, relayed through the hub. See relay.go.
 	if name, room, err := SplitAddress(in.To); err == nil {
 		if other := d.otherRoom(room); other != "" {

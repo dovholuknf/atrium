@@ -178,14 +178,14 @@ func serveLinkLookup(w http.ResponseWriter, r *http.Request, lookup func(context
 		return
 	}
 	q := r.URL.Query()
-	if strings.TrimSpace(q.Get("repo")) == "" {
+	if strings.TrimSpace(q.Get("repo")) == "" && strings.TrimSpace(q.Get("commit")) == "" {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusBadRequest)
 		_ = json.NewEncoder(w).Encode(map[string]string{"error": "say which repository"})
 		return
 	}
 	ans := lookup(r.Context(), gitsync.URLQuery{Repo: q.Get("repo"), Branch: q.Get("branch"), Room: q.Get("room"),
-		Base: gitsync.LinkBase})
+		Commit: q.Get("commit"), Base: gitsync.LinkBase})
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(ans)
 }

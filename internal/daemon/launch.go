@@ -1686,7 +1686,7 @@ func briefPrompt(prompt string) string { return BriefPrompt(briefFileName, promp
 // LaunchEndingLine is how a launched session is told to end: the same text link.reportLine ends a launch prompt
 // with, kept equal by a test in internal/link.
 const LaunchEndingLine = "Before you end your turn, tell your launcher either:\n" +
-	"- atrium_done <sha> when the work is finished\n" +
+	"- atrium_done <sha or artifact> when the work is finished\n" +
 	"- atrium_blocked <up to 50 words> when something stops you, such as a question you need answered, a tool you need " +
 	"installed, or a permission you need.\n" +
 	"Wait for every command, test and build in the same turn. Never end a turn on a command still running in the background."

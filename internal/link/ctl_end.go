@@ -23,10 +23,11 @@ const EndReasonMax = 50
 // endSHAShape is what a commit id looks like: seven to forty hex characters.
 var endSHAShape = regexp.MustCompile(`^[0-9a-fA-F]{7,40}$`)
 
-const doneToolDesc = "End your work: it is finished and committed. THIS IS HOW TO END. Nothing else is needed: " +
-	"give `sha`, the commit the work landed as (7 to 40 hex characters, and it has to exist in your " +
-	"directory or on the hub, or the call is refused and nothing is recorded). Details go in REPORT.md, not here. " +
-	"Stop after the call: say nothing more and do no more work."
+const doneToolDesc = "End your work: it is finished. THIS IS HOW TO END. Nothing else is needed. Give exactly one of " +
+	"`sha` or `artifact`: sha or artifact location. `sha` is the commit the work landed as (7 to 40 hex " +
+	"characters, and it has to exist in your directory or on any hub branch, or the call is refused and nothing is " +
+	"recorded). `artifact` is a path or URL to what you made, for work with no commit, and a path has to exist on " +
+	"your own room. Details go in REPORT.md, not here. Stop after the call: say nothing more and do no more work."
 
 const blockedToolDesc = "End your work: something stops you and you cannot go on. THIS IS HOW TO END. " +
 	"Nothing else is needed: give `reason`, what stops you and what you need, in up to 50 words. A longer reason is " +
@@ -34,7 +35,8 @@ const blockedToolDesc = "End your work: something stops you and you cannot go on
 	"nothing more and do no more work."
 
 type doneInput struct {
-	SHA string `json:"sha" jsonschema:"the commit the work landed as: 7 to 40 hex characters"`
+	SHA      string `json:"sha,omitempty" jsonschema:"sha or artifact location. the commit the work landed as: 7 to 40 hex characters"`
+	Artifact string `json:"artifact,omitempty" jsonschema:"sha or artifact location. a path or URL to what you made, when there is no commit"`
 }
 
 type blockedInput struct {
@@ -79,10 +81,21 @@ type EndDoor struct {
 func (d EndDoor) Done(ctx context.Context, req *mcp.CallToolRequest, in doneInput) (
 	*mcp.CallToolResult, EndOutput, error) {
 
-	if why := CheckDoneSHA(in.SHA); why != "" {
+	sha, artifact := strings.TrimSpace(in.SHA), strings.TrimSpace(in.Artifact)
+	switch {
+	case sha != "" && artifact != "":
+		return nil, EndOutput{}, fmt.Errorf("give sha or artifact, not both")
+	case sha == "" && artifact == "":
+		return nil, EndOutput{}, fmt.Errorf("give sha (the commit) or artifact (a path or URL to what you made)")
+	case artifact != "":
+		out, err := d.Report(ctx, req, map[string]any{
+			"status": "done", "recap": "done " + artifact, "artifact": artifact, "ended": true,
+		})
+		return nil, out, err
+	}
+	if why := CheckDoneSHA(sha); why != "" {
 		return nil, EndOutput{}, fmt.Errorf("%s", why)
 	}
-	sha := strings.TrimSpace(in.SHA)
 	out, err := d.Report(ctx, req, map[string]any{
 		"status": "done", "recap": "done " + sha, "sha": sha, "ended": true,
 	})

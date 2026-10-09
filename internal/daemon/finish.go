@@ -7,6 +7,8 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"net/url"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
@@ -68,6 +70,8 @@ type FinishRequest struct {
 	// unless NoCommit says why there is none.
 	SHA      string `json:"sha,omitempty"`
 	NoCommit string `json:"no_commit,omitempty"`
+	// Artifact is what an atrium_done with no commit names instead: a path on this room or a URL.
+	Artifact string `json:"artifact,omitempty"`
 	// Ask is what a `blocked` or `question` needs. Required for both.
 	Ask string `json:"ask,omitempty"`
 	// Kind is `fyi` or `needs`. See fyi.go. Anything but fyi is needs.
@@ -156,7 +160,8 @@ func validReport(task *store.Task, in FinishRequest) error {
 		return fmt.Errorf("sha %q is not a commit id", sha)
 	}
 	isDone := in.Status == "" || in.Status == ReportDone
-	if isDone && agentLaunched(task) && strings.TrimSpace(in.SHA) == "" && strings.TrimSpace(in.NoCommit) == "" {
+	if isDone && agentLaunched(task) && strings.TrimSpace(in.SHA) == "" && strings.TrimSpace(in.NoCommit) == "" &&
+		strings.TrimSpace(in.Artifact) == "" {
 		return errString("a done report needs sha, the commit the work landed as, or no_commit saying " +
 			"why there is none")
 	}
@@ -194,6 +199,15 @@ var commitInDir = func(dir, sha string) bool {
 var commitOnHub = func(d *Daemon, task *store.Task, sha string) bool {
 	ctx, cancel := context.WithTimeout(context.Background(), gitsync.LookupRoomWait)
 	defer cancel()
+	// ANY BRANCH OF ANY REPOSITORY THE HUB HAS, whatever the worker's directory is. Naming the repository from the
+	// directory missed every worker whose directory is not a clone the room can name. See gitsync/lookup_commit.go.
+	if rt, err := d.hubTransport(); err == nil {
+		if ans, err := gitsync.AskHubLookup(ctx, rt, gitsync.URLQuery{Commit: sha}); err == nil {
+			if ans.State == gitsync.URLFound {
+				return true
+			}
+		}
+	}
 	dir := filepath.FromSlash(task.Worktree)
 	repo := gitsync.HubNameOf(ctx, gitsync.Default, dir, d.cloneRoots()...)
 	if repo == "" {
@@ -223,7 +237,13 @@ var commitOnHub = func(d *Daemon, task *store.Task, sha string) bool {
 func (d *Daemon) validEnd(task *store.Task, in FinishRequest) error {
 	switch in.Status {
 	case ReportDone:
-		sha := strings.TrimSpace(in.SHA)
+		sha, artifact := strings.TrimSpace(in.SHA), strings.TrimSpace(in.Artifact)
+		if sha != "" && artifact != "" {
+			return errString("give sha or artifact, not both")
+		}
+		if artifact != "" {
+			return checkArtifact(task, artifact)
+		}
 		if !shaShape.MatchString(sha) {
 			return fmt.Errorf("sha %q is not a commit id: 7 to 40 hex characters", sha)
 		}
@@ -236,6 +256,33 @@ func (d *Daemon) validEnd(task *store.Task, in FinishRequest) error {
 		}
 	default:
 		return fmt.Errorf("an ending is done or blocked, not %q", in.Status)
+	}
+	return nil
+}
+
+// artifactPath is where an artifact path is on this room: a relative one is the card's directory's. "" for a URL.
+func artifactPath(task *store.Task, artifact string) string {
+	if strings.Contains(artifact, "://") {
+		return ""
+	}
+	p := filepath.FromSlash(artifact)
+	if !filepath.IsAbs(p) {
+		p = filepath.Join(filepath.FromSlash(task.Worktree), p)
+	}
+	return p
+}
+
+// checkArtifact refuses an artifact that is not there. A path is looked for on this room only, which is the worker's
+// own, and a URL is taken as given: nothing here can say what a remote address holds.
+func checkArtifact(task *store.Task, artifact string) error {
+	if strings.Contains(artifact, "://") {
+		if u, err := url.Parse(artifact); err != nil || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https") {
+			return fmt.Errorf("artifact %q is not a path or an http(s) URL", artifact)
+		}
+		return nil
+	}
+	if _, err := os.Stat(artifactPath(task, artifact)); err != nil {
+		return fmt.Errorf("artifact %s does not exist on this room. write it first, then call again", artifact)
 	}
 	return nil
 }
@@ -266,6 +313,11 @@ func (d *Daemon) finish(task *store.Task, in FinishRequest) (map[string]any, int
 		if err := d.validEnd(task, in); err != nil {
 			return nil, http.StatusBadRequest, err
 		}
+		// A say of the same meaning already told the launcher this turn: record the end, send no second notice.
+		if d.endEchoesSay(task, in.Status) {
+			in.viaSay = true
+		}
+		d.markEnded(task.ID, in.Status)
 	}
 
 	status := store.StatusDone
@@ -349,6 +401,9 @@ func (d *Daemon) finish(task *store.Task, in FinishRequest) (map[string]any, int
 			if unverified {
 				out.Unverified = []string{sha}
 			}
+		}
+		if a := strings.TrimSpace(in.Artifact); a != "" {
+			out.Paths = []string{a}
 		}
 		write.Outputs = out
 	}

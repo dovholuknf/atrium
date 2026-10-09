@@ -115,6 +115,8 @@ type Daemon struct {
 	modelWaits sync.Map
 	// modelLocks is card id to the mutex one switch holds. See modelLock.
 	modelLocks sync.Map
+	// endedMarks is card id to the moment it ended with atrium_done or atrium_blocked. See endonce.go.
+	endedMarks sync.Map
 
 	opts Options
 	st   *store.Store

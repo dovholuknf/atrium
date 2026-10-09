@@ -1288,6 +1288,9 @@ func (s *Store) LogWorkMessage(fromID, toID, byHandle, text string) (bool, error
 	return logged, err
 }
 
+// SayEndStatus is sayReportStatus for the daemon: see daemon/endonce.go.
+func SayEndStatus(text string) string { return sayReportStatus(text) }
+
 // sayReportStatus is `done` or `blocked` when a say is the worker's final word to its launcher: the first
 // word of the text, at its start. Anything else is free text and reports nothing.
 func sayReportStatus(text string) string {
