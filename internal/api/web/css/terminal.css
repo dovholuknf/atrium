@@ -868,6 +868,13 @@
   padding: 0 8px; border-radius: 0 0 var(--r-md) var(--r-md);
   font: 600 10px/16px var(--mono); letter-spacing: .04em; color: var(--bg-2); background: var(--teal);
 }
+/* The line a cleared context leaves. See js/clearline.js. The same look as the new-since line, in the dim colour. */
+.xterm .atrium-clearline { pointer-events: none; border-top: 2px solid var(--dim, #8a8f98); }
+.xterm .atrium-clearline::after {
+  content: attr(data-label); position: absolute; right: 12px; top: -1px;
+  padding: 0 8px; border-radius: 0 0 var(--r-md) var(--r-md);
+  font: 600 10px/16px var(--mono); letter-spacing: .04em; color: var(--bg-2); background: var(--dim, #8a8f98);
+}
 #t-newpill {
   position: absolute; bottom: 44px; left: 50%; transform: translateX(-50%); z-index: 30;
   padding: 4px 14px; border-radius: 999px; border: 1px solid var(--teal);

@@ -55,7 +55,7 @@ function keepPage(t, restore) {
   }
   if (last < 0) return;
   const sig = rows.slice(0, last + 1).join("\n");
-  if (sig === t._atriumPushed) return;
+  if (sig === t._atriumPushed) return true;
   t._atriumPushed = sig;
   const saved = restore ? [] : null;
   if (saved) for (let i = 0; i < t.rows; i++) saved.push(b.lines.get(b.ybase + i).clone());
@@ -64,6 +64,7 @@ function keepPage(t, restore) {
   for (let i = 0; i <= last; i++) ih.lineFeed();
   b.y = y;
   if (saved) for (let i = 0; i < t.rows; i++) b.lines.get(b.ybase + i).copyFrom(saved[i]);
+  return true;
 }
 
 // Runner capabilities arrive in the first attach message. Reset per socket
@@ -1097,10 +1098,12 @@ function openTerm(task) {
   // internal/daemon/screen.go. A room that does not send it changes nothing,
   // and a terminal that does not know it ignores it.
   term.parser.registerOscHandler(7777, data => {
-    if (data === "atrium-clear") keepPage(mine, true);
+    // The divider is drawn where the page was kept. See js/clearline.js.
+    if (data === "atrium-clear" && keepPage(mine, true)) clMark(mine);
     return true;
   });
   lrInit(term);
+  clInit(term);
   term.open(screen);
   term.textarea.addEventListener("focus", () => { tallFollow(); requestAnimationFrame(tallFollow); });
   phoneInputMode();
