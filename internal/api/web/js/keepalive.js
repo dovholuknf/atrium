@@ -35,7 +35,7 @@ function keepaliveTime(at) {
 // row, the terminals list, the attached terminal's header and the phone tray. It is
 // a coloured dot and nothing else, because words there squeezed the title to one
 // letter. The words (is it warm, who keeps it so, until when, and if not, why) are
-// in the card's details, `peekCache`, and the tooltip. A card with no `keepalive` is
+// in the tooltip. A card with no `keepalive` is
 // not Claude and draws nothing. See docs/backlog/ui/u-032.md.
 //
 // `kaModel` is the ONE function that decides what a card is. The chip and the
@@ -230,14 +230,6 @@ function keepaliveChip(t) {
   return `<span class="chip keepalive cache ${m.cls}" data-cid="${esc(t.id)}" data-bucket="${m.bucket}"${pie}
     data-state="${esc(t.keepalive.state)}" role="img" aria-label="${esc(m.full + ". " + tip)}"
     data-tip="${esc(m.full + ". " + tip)}"><span class="cfull">${esc(m.full)}</span></span>`;
-}
-
-// The words, for the card's details. Drawn from the same `kaModel` as the dot.
-function peekCache(t) {
-  const m = t && t.keepalive && !t.archived_at ? kaModel(t, kaNow()) : null;
-  if (!m) return "";
-  return `<div class="peek-cache ${m.cls}"><b>cache: ${esc(m.full)}</b>` +
-    m.tip.map(s => `<span>${esc(s)}.</span> `).join("") + `</div>`;
 }
 
 // ── keeping the words true without a fetch ───────────────────────────────────

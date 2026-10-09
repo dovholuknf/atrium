@@ -466,6 +466,7 @@ async function measureCardDisk() {
 }
 
 async function openTask(id) {
+  if (typeof revealCard === "function") revealCard(id);
   current = await api(`/v1/tasks/${id}`);
   document.getElementById("d-title").textContent = current.display_title;
   document.getElementById("d-chips").innerHTML = [
@@ -935,6 +936,8 @@ async function attachTask(id) {
   swMark("click");
   // Attaching is looking at it, so a new card's mark goes. See js/newcard.js.
   newCardClear(id);
+  // And whatever folds hide its row in the lists are opened, so it can be found there. See js/reveal.js.
+  if (typeof revealCard === "function") revealCard(id);
   // Already in a window of its own. Raise that rather than attaching here.
   //
   // Two views onto one terminal both taking input is the situation

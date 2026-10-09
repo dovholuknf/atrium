@@ -203,17 +203,35 @@
     dropUrls();
     els.title.textContent = st.card ? "documents of one card" : "documents";
     const root = el("div", "d-list-view");
-    const bar = el("div", "d-bar");
+    // One header row: the title with its count, the card-or-every switch when there is a card to switch from, a search.
+    const head = el("div", "d-lhead");
+    const heading = el("h2", "d-lh", st.card ? "This card" : "Documents");
+    const count = el("span", "d-count");
+    heading.appendChild(count);
+    head.appendChild(heading);
+    if (st.card) {
+      const seg = el("div", "d-seg");
+      seg.setAttribute("role", "group");
+      seg.setAttribute("aria-label", "which documents");
+      const one = el("button", "d-segb", "this card");
+      const all = el("button", "d-segb", "every card");
+      one.type = all.type = "button";
+      one.setAttribute("aria-pressed", "true");
+      all.setAttribute("aria-pressed", "false");
+      all.addEventListener("click", () => go({ v: "list" }, true));
+      seg.append(one, all);
+      head.appendChild(seg);
+    }
     const q = el("input", "d-q");
     q.type = "search";
-    q.placeholder = "filter by title";
+    q.placeholder = "search titles";
     q.setAttribute("aria-label", "filter by title");
     q.spellcheck = false;
     q.autocomplete = "off";
     q.value = st.q || "";
-    const row2 = el("div", "d-bar");
-    const delChip = btn("deleted", null, "d-chip");
-    delChip.setAttribute("aria-pressed", st.deleted ? "true" : "false");
+    head.appendChild(q);
+    // The actions: upload is the one primary control with its optional title inside it, and deleted is a quiet toggle.
+    const bar = el("div", "d-bar");
     const pick = el("input");
     pick.type = "file";
     pick.hidden = true;
@@ -224,17 +242,21 @@
     titleIn.placeholder = "title (optional)";
     titleIn.setAttribute("aria-label", "title of the new document");
     titleIn.autocomplete = "off";
-    row2.append(delChip, upBtn, titleIn, pick);
-    bar.append(q);
+    const up = el("div", "d-upload");
+    up.append(upBtn, titleIn, pick);
+    const delChip = btn("deleted", null, "d-chip");
+    delChip.setAttribute("aria-pressed", st.deleted ? "true" : "false");
+    bar.append(up, delChip);
     const status = el("p", "d-status");
     status.setAttribute("role", "status");
     const list = el("div", "d-rows");
     const usage = el("p", "d-usage");
-    root.append(bar, row2, status, list, usage);
-    if (st.card) {
-      const clear = btn("show every document", () => go({ v: "list" }, true), "d-chip");
-      root.insertBefore(clear, bar);
-    }
+    const meter = el("div", "d-meter");
+    const fill = el("i");
+    meter.appendChild(fill);
+    const foot = el("div", "d-foot");
+    foot.append(meter, usage);
+    root.append(head, bar, status, list, foot);
     show(root);
 
     let timer = 0;
@@ -254,6 +276,9 @@
       docs.forEach(d => list.appendChild(rowOf(d, st)));
       const u = g.body && g.body.usage;
       usage.textContent = u ? size(u.bytes) + " of " + size(u.cap) + " used" : "";
+      fill.style.width = u && u.cap ? Math.max(1, Math.min(100, u.bytes * 100 / u.cap)).toFixed(1) + "%" : "0%";
+      meter.hidden = !(u && u.cap);
+      count.textContent = docs.length ? String(docs.length) : "";
     };
     const again = () => { st.q = q.value; clearTimeout(timer); timer = setTimeout(load, 250); };
     q.addEventListener("input", again);
@@ -292,8 +317,10 @@
     main.type = "button";
     main.appendChild(el("b", "d-t", d.title || d.slug));
     const l = d.latest || {};
-    const bits = [l.kind, d.versions > 1 ? d.versions + " versions" : "1 version", age(d.updated), originText(l)].filter(Boolean);
-    main.appendChild(el("span", "d-m", bits.join(" · ")));
+    const meta = el("span", "d-m");
+    [l.kind, d.versions > 1 ? d.versions + " versions" : "1 version", age(d.updated), originText(l)].filter(Boolean)
+      .forEach((bit, i) => meta.appendChild(el("span", i === 0 ? "d-bit d-kind" : "d-bit", bit)));
+    main.appendChild(meta);
     main.addEventListener("click", () => go({ v: "doc", slug: d.slug }));
     row.appendChild(main);
     if (d.deleted) {
@@ -687,11 +714,15 @@
     if (!(await ready())) return;
     const c = counts.get(cardId) || { n: -1, at: 0, busy: false };
     counts.set(cardId, c);
+    // The newest node asked about is the one drawn when the read lands. The peek rebuilds its body when its usage
+    // read answers, so the node that started the read may be gone by then.
+    c.node = node;
     const draw = () => {
-      if (!node.isConnected || c.n <= 0) { node.hidden = true; return; }
-      node.textContent = "published " + c.n + (c.n === 1 ? " document" : " documents");
-      node.hidden = false;
-      node.onclick = () => { openList({ card: cardId }); };
+      const n = c.node;
+      if (!n || !n.isConnected || c.n <= 0) { if (n) n.hidden = true; return; }
+      n.textContent = "published " + c.n + (c.n === 1 ? " document" : " documents");
+      n.hidden = false;
+      n.onclick = () => { openList({ card: cardId }); };
     };
     if (c.n >= 0) draw();
     if (c.busy || Date.now() - c.at < CARD_TTL) return;

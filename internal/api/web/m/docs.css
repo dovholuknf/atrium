@@ -66,3 +66,46 @@
 .c-docs { display: block; margin: 4px 0 0; padding: 0; min-height: 28px; border: 0; background: none; color: var(--teal, #00e3b0); font: inherit; font-size: calc(var(--m-fs, 14px) * .9); text-align: left; cursor: pointer; }
 .peek-docs { margin-top: 6px; }
 body.docs-open { overflow: hidden; }
+
+/* The list: one centred column, a header row, one primary action, roomy rows and a usage meter in the footer. */
+.d-body:has(.d-list-view) { max-width: 880px; }
+.d-scroll:has(.d-list-view) { padding-top: var(--sp-5); }
+.d-list-view { display: flex; flex-direction: column; min-height: calc(100% - var(--sp-2)); }
+.d-lhead { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-3) var(--sp-4); margin: 0 0 var(--sp-4); }
+.d-lh { display: flex; align-items: baseline; gap: var(--sp-2); margin: 0 auto 0 0; color: var(--head); font-size: calc(var(--m-fs) * 1.5); font-weight: 650; line-height: 1.2; }
+.d-count { color: var(--dim); font-size: calc(var(--m-fs) * .95); font-weight: 500; font-variant-numeric: tabular-nums; }
+.d-seg { display: inline-flex; padding: 2px; border-radius: var(--r-pill); background: var(--bg-2); box-shadow: inset 0 0 0 1px var(--stroke-dim); }
+.d-segb { min-height: 36px; padding: 0 var(--sp-4); border: 0; border-radius: var(--r-pill); background: none; color: var(--label); font: inherit; font-size: calc(var(--m-fs) * .92); font-weight: 600; cursor: pointer; }
+.d-segb[aria-pressed="true"] { background: var(--teal-bg); color: var(--head); box-shadow: inset 0 0 0 1px var(--teal); }
+.d-list-view .d-q { flex: 0 1 240px; min-width: 0; border-radius: var(--r-pill); padding: 0 var(--sp-4); }
+.d-list-view .d-bar { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3); margin: 0 0 var(--sp-4); }
+.d-upload { display: inline-flex; align-items: center; flex: 0 1 460px; min-width: 0; border-radius: var(--r-md); background: var(--bg-2); box-shadow: inset 0 0 0 1px var(--stroke-dim); overflow: hidden; }
+.d-upload .d-up { flex: none; align-self: stretch; border: 0; border-radius: 0; background: var(--teal-bg); color: var(--head); box-shadow: inset 0 0 0 1px var(--teal); padding: 0 var(--sp-5); }
+.d-upload .d-up:hover { background: var(--lift-strong); }
+.d-upload .d-tin { flex: 1 1 auto; min-width: 0; border: 0; border-radius: 0; background: none; }
+.d-list-view .d-chip { border: 0; background: none; color: var(--dim); font-weight: 500; padding: 0 var(--sp-3); }
+.d-list-view .d-chip[aria-pressed="true"] { background: var(--lift); color: var(--head); box-shadow: none; }
+.d-list-view .d-rows { gap: var(--sp-2); }
+.d-list-view .d-row { flex-wrap: nowrap; border-radius: var(--r-md); }
+.d-list-view .d-row:hover { background: var(--lift); }
+.d-list-view .d-main { gap: var(--sp-1); padding: var(--sp-4) var(--sp-5); min-height: 64px; }
+.d-list-view .d-t { font-size: calc(var(--m-fs) * 1.1); font-weight: 600; }
+.d-list-view .d-m { display: flex; flex-wrap: wrap; align-items: center; gap: 0 var(--sp-3); font-size: calc(var(--m-fs) * .88); }
+.d-bit + .d-bit::before { content: ""; display: inline-block; width: 3px; height: 3px; margin-right: var(--sp-3); border-radius: 50%; background: var(--dimmest); vertical-align: middle; }
+.d-kind { color: var(--teal); text-transform: uppercase; letter-spacing: .04em; font-size: .9em; font-weight: 600; }
+.d-list-view .d-link { align-self: center; margin-right: var(--sp-3); }
+.d-foot { margin-top: auto; padding-top: var(--sp-6); }
+.d-meter { height: 4px; border-radius: var(--r-pill); background: var(--lift-strong); overflow: hidden; }
+.d-meter[hidden] { display: none; }
+.d-meter i { display: block; height: 100%; border-radius: inherit; background: var(--teal); }
+.d-list-view .d-usage { margin: var(--sp-2) 0 0; text-align: right; }
+@media (max-width: 560px) {
+  .d-lh { flex: 1 0 100%; }
+  .d-seg { flex: 1 0 100%; }
+  .d-segb { flex: 1; }
+  .d-list-view .d-q { flex: 1 0 100%; }
+  .d-list-view .d-bar { flex-wrap: wrap; }
+  .d-upload { flex: 1 0 100%; }
+  .d-list-view .d-chip { margin-left: auto; }
+  .d-list-view .d-main { padding: var(--sp-4); }
+}

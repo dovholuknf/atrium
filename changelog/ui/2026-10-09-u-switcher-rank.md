@@ -1,0 +1,1 @@
+The ctrl-k switcher no longer lists junk: once any card matches what you typed as a real substring of its title, name, tag or directory, the cards that only hold the letters scattered in order are dropped. Each row now leads with the card's title and shows its short path dim beside it, so two cards of one repo are tellable apart. (u-switcher-rank)

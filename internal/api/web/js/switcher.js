@@ -194,7 +194,7 @@ function swWatchForTheft() {
 function swScore(t, q) {
   const terms = q.toLowerCase().split(/\s+/).filter(Boolean);
   if (!terms.length) return 0;
-  const name = String(terminalLabel(t) || t.display_title || "").toLowerCase();
+  const name = (String(t.display_title || t.title || "") + " " + String(terminalLabel(t) || "")).trim().toLowerCase();
   const dir = String(t.worktree || "").toLowerCase().replace(/\\/g, "/");
   const tags = (t.tags || []).join(" ").toLowerCase();
   let total = 0;
@@ -210,6 +210,16 @@ function swScore(t, q) {
     total += s;
   }
   return total;
+}
+
+// Whether every term is a real substring of the card's title, label, tags or directory, with no scattering of letters
+// involved. Once one card matches like that, the cards that only match as a subsequence are noise, so they are dropped.
+function swReal(t, q) {
+  const terms = q.toLowerCase().split(/\s+/).filter(Boolean);
+  if (!terms.length) return false;
+  const hay = [t.display_title, t.title, terminalLabel(t), (t.tags || []).join(" "), String(t.worktree || "").replace(/\\/g, "/")]
+    .join(" ").toLowerCase();
+  return terms.every(term => hay.includes(term));
 }
 
 function swSubseq(hay, needle) {
@@ -258,8 +268,10 @@ function switcherRows() {
     const s = swScore(t, swQuery);
     if (s < 0) return;
     const r = recent.indexOf(t.id);
-    scored.push({ t, s, r: r < 0 ? recent.length + 1 : r });
+    scored.push({ t, s, r: r < 0 ? recent.length + 1 : r, real: !swQuery || swReal(t, swQuery) });
   });
+  // A real match anywhere means the subsequence-only ones are not wanted. With no real match they are all there is.
+  if (scored.some(x => x.real)) for (let i = scored.length - 1; i >= 0; i--) if (!scored[i].real) scored.splice(i, 1);
   scored.sort((a, b) => {
     if (swQuery && b.s !== a.s) return b.s - a.s;
     if (a.r !== b.r) return a.r - b.r;
@@ -307,12 +319,12 @@ function paintSwitcher() {
       return `
       <div class="swrow ${i === swSel ? "on" : ""}" data-id="${esc(t.id)}">
         ${runnerMark(t.runner)}
-        <span class="swname">${esc(terminalLabel(t) || t.display_title)}</span>
+        <span class="swname">${esc(t.display_title || t.title || terminalLabel(t))}</span>
         ${sameCard(t.id, here) ? `<span class="chip">here</span>` : ""}
         ${poppedOut(t.id) && !sameCard(t.id, here)
           ? `<span class="chip accent" data-tip="this one is in a window of its own">&#8599;</span>` : ""}
         ${isWaiting(t) ? `<span class="chip warn">wants you</span>` : ""}
-        <span class="swdir" data-tip="${esc(t.worktree || "")}">${esc(t.worktree || "")}</span>
+        <span class="swdir" data-tip="${esc(t.worktree || "")}">${esc(terminalLabel(t) || t.worktree || "")}</span>
       </div>`;
     }).join("")
     : `<div class="empty">${swQuery ? "nothing matches that"
