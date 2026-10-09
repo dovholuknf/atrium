@@ -211,7 +211,7 @@ function peekRows(t) {
 
   const age = t.recap ? peekRecapAge(t) : "";
   const recap = t.recap || (t.status === "done" ? "finished without saying what it did" : "");
-  return (need.length ? `<div class="peek-sec need"><div class="peek-sech">needs you</div>${need.join("")}</div>` : "") +
+  return (need.length ? `<div class="peek-sec need">${need.join("")}</div>` : "") +
     (recap ? `<div class="peek-recap">${age ? `<div class="peek-rage">${esc(age)}</div>` : ""}<div class="peek-rtext">${esc(recap)}</div>` +
       `<button type="button" class="peek-more" hidden>more</button></div>` : "");
 }

@@ -11349,7 +11349,7 @@ async function peekStatusTruthSection(browser, base) {
         const b = document.querySelector(".peek.on .peek-body");
         const q = s => (b.querySelector(s) || {}).textContent || "";
         return { text: b.textContent.replace(/\s+/g, " ").trim(), status: q(".peek-status"), statusCls: (b.querySelector(".peek-status") || {}).className || "",
-          needs: !!b.querySelector(".peek-sec.need"), rage: q(".peek-rage") };
+          needs: !!b.querySelector(".peek-sec.need"), sech: !!b.querySelector(".peek-sech"), rage: q(".peek-rage") };
       });
     };
     const shot = async name => {
@@ -11364,6 +11364,7 @@ async function peekStatusTruthSection(browser, base) {
     await shot("your-move");
     const as = await show("sg4-control~ps2");
     if (!/^needs you2 questions/.test(as.status) || !/ ps-ask$/.test(as.statusCls) || !as.needs) fail("peekStatus: a card with questions does not need you: " + JSON.stringify(as));
+    if (as.sech) fail("peekStatus: the needs-you block repeats a NEEDS YOU heading the status line already says");
     const run = await show("sg4-control~ps3");
     if (!/^workingthinking/.test(run.status) || !/ ps-work$/.test(run.statusCls) || /needs/i.test(run.status)) fail("peekStatus: a running turn does not show its activity: " + JSON.stringify(run));
 
