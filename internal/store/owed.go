@@ -100,6 +100,15 @@ func (s *Store) OwedClosedOf(workerID string) *OwedClosed {
 	return &c
 }
 
+// ClearOwed ends what a card owes its launcher. The operator typing at the card has taken the conversation, so a
+// turn that answers them and ends is not a silent stop. The launcher's next prompt owes again.
+func (s *Store) ClearOwed(taskID string) error {
+	return s.guard(func() error {
+		_, err := s.db.Exec(`UPDATE task SET owed_at = '' WHERE id = ? AND owed_at != ''`, taskID)
+		return err
+	})
+}
+
 const reportedPrefix = "owed_reported:"
 
 // SetOwedReported records that a report of the worker's went to the orchestrator because it had

@@ -523,6 +523,13 @@ func (d *Daemon) handleMessage(w http.ResponseWriter, r *http.Request) {
 		d.refreshLauncher(taskID)
 	}
 	waitTurn := d.waitsForTurn(taskID, when)
+	// A PROMPT THE HUMAN TYPED AT THE BOARD RESETS WHAT IS OWED. The turn it starts is theirs, so when it ends
+	// without a word to the launcher there is no nudge and no went-quiet notice. See stoppedSilently.
+	if from == "" {
+		if err := d.st.ClearOwed(taskID); err != nil {
+			log.Printf("[atrium] could not clear what %s owes: %v", taskID, err)
+		}
+	}
 
 	// A message from a session is peer traffic whichever door it came in by, so
 	// it gets the peer bus's bounds. `atrium_say` arrives here rather than at

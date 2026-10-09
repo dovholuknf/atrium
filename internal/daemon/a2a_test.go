@@ -151,6 +151,36 @@ func TestASecondStopOnOnePromptIsNotASecondNotice(t *testing.T) {
 	}
 }
 
+// A prompt the human typed at the board resets what is owed: the turn it starts is theirs, so ending it silent
+// earns no nudge and no notice. The launcher's next prompt owes again, and a silent stop then nudges once.
+func TestAHumanTurnIsNotASilentStop(t *testing.T) {
+	d := testDaemon(t)
+	launcher, worker := launchedPair(t, d)
+
+	raw, _ := json.Marshal(map[string]string{"text": "what do you think of this?"})
+	req := httptest.NewRequest(http.MethodPost, "/message", bytes.NewReader(raw))
+	req.SetPathValue("id", worker.ID)
+	d.handleMessage(httptest.NewRecorder(), req)
+	if _, err := d.takeMessages(worker.ID, "stop"); err != nil {
+		t.Fatal(err)
+	}
+
+	stopTwice(t, d, "worker")
+	if n := len(pendingFrom(t, d, worker.ID)); n != 0 {
+		t.Fatalf("the worker was nudged in the human's conversation: %d messages", n)
+	}
+	if n := len(pendingFrom(t, d, launcher.ID)); n != 0 {
+		t.Fatalf("the launcher heard of a human turn: %d messages", n)
+	}
+
+	time.Sleep(5 * time.Millisecond)
+	prompt(t, d, worker.ID)
+	stopTurn(t, d, "worker")
+	if n := len(pendingFrom(t, d, worker.ID)); n != 1 {
+		t.Fatalf("a launcher prompt then a silent stop gave %d nudges, want one", n)
+	}
+}
+
 // A new prompt is a new turn owed, so a silent stop after it is a new notice.
 func TestEachPromptGetsItsOwnSilentStop(t *testing.T) {
 	d := testDaemon(t)
