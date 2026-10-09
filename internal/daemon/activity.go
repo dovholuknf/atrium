@@ -841,6 +841,13 @@ func (d *Daemon) onActivity(in ActivityEvent) string {
 		d.act.set(taskID, ActivityThinking, "")
 		d.act.promptSeen(taskID)
 		d.turnResumed(taskID)
+		// A submit emptied the runner's prompt, so a model that still holds text
+		// was wrong, a swallowed Enter in a stuck paste above all. See resetLine.
+		if run := d.sup.get(taskID); run != nil {
+			if run.resetLine() {
+				log.Printf("[atrium] %s: prompt hook, typing model reset", taskID)
+			}
+		}
 		// What started this turn, for the usage record. See usage.go.
 		cause := d.promptCause(taskID)
 		d.usage.prompted(taskID, cause)
