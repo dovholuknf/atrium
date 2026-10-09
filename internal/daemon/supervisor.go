@@ -819,6 +819,9 @@ type runner struct {
 	typeMu    sync.Mutex
 	line      typedLine
 	lastTyped time.Time
+	// lastEnter is lastTyped when the keystroke was an Enter that ended its frame, the
+	// submit. A prompt hook that follows it is that submit. See `resetLine`.
+	lastEnter time.Time
 	// peerSent is when atrium last submitted ANOTHER SESSION'S message here, or
 	// a labelled after-restart wake. The prompt that follows is not the operator, and
 	// must not mark the turn seen or its questions answered. See
@@ -1025,6 +1028,9 @@ func (r *runner) noteOperatorTyped(p []byte) bool {
 	keyed := r.line.feed(p)
 	if keyed {
 		r.lastTyped = time.Now()
+		if p[len(p)-1] == '\r' {
+			r.lastEnter = r.lastTyped
+		}
 	}
 	r.typeMu.Unlock()
 	if !keyed {
@@ -1100,6 +1106,7 @@ const (
 func (r *runner) howBusy() peerRoom {
 	r.typeMu.Lock()
 	defer r.typeMu.Unlock()
+	r.line.settle()
 	if !r.line.empty() {
 		return peerMidLine
 	}
@@ -1132,6 +1139,10 @@ func (r *runner) peerGateOpen() bool {
 // gateLocked is the gate and the reason for it, in words the readout shows.
 // The caller holds typeMu.
 func (r *runner) gateLocked() (bool, string) {
+	r.line.settle()
+	if why := r.wedgedLocked(); why != "" {
+		return false, why
+	}
 	if r.line.unsure != "" {
 		return false, "not sure what is on the line, after " + r.line.unsure
 	}
@@ -1147,13 +1158,54 @@ func (r *runner) gateLocked() (bool, string) {
 	return true, "line empty and quiet"
 }
 
+// wedgedLocked says so when the line has sat inside a paste, non empty and with
+// no key, for over `pasteWedged`: an end marker that never came, or a submit read
+// as text. Empty otherwise. Logged once per occurrence, so the next one is
+// findable. The caller holds typeMu.
+func (r *runner) wedgedLocked() string {
+	if !r.line.inPaste || r.line.count() == 0 || r.lastTyped.IsZero() {
+		return ""
+	}
+	quiet := time.Since(r.lastTyped)
+	if quiet < pasteWedged {
+		return ""
+	}
+	why := fmt.Sprintf("a paste has been open with no key for %ds, %d character(s) on the line, "+
+		"so its end marker was probably lost", int(quiet.Seconds()), r.line.count())
+	if !r.line.wedgeLogged {
+		r.line.wedgeLogged = true
+		log.Printf("[atrium] %s: typing model stuck in a paste: %s", r.taskID, why)
+	}
+	return why
+}
+
+// resetLine empties the typing model after a prompt hook, when that prompt
+// certainly emptied the runner's prompt. It does not when a key landed after the
+// prompt began, because then there is a draft the model rightly holds.
+//
+// The prompt began at the operator's Enter (the last key, so `lastEnter`) or at
+// atrium's own submit of a peer's message (`peerSent`). A Stop is NOT a reset:
+// an operator can have a draft up when a turn ends. Reports whether it cleared.
+func (r *runner) resetLine() bool {
+	r.typeMu.Lock()
+	defer r.typeMu.Unlock()
+	if r.line.empty() && len(r.line.pending) == 0 && !r.line.inPaste {
+		return false
+	}
+	if !r.lastTyped.IsZero() && !r.lastTyped.Equal(r.lastEnter) && r.lastTyped.After(r.peerSent) {
+		return false
+	}
+	r.line.clear()
+	return true
+}
+
 // typingState is what the board's typing readout shows: atrium's model of the
 // operator's line and the gate it drives. See `handleTypingState`.
 type typingState struct {
 	Line    string `json:"line"`
 	Count   int    `json:"count"`
 	Unsure  string `json:"unsure,omitempty"`
-	InPaste bool   `json:"in_paste,omitempty"`
+	InPaste bool   `json:"in_paste"`
 	// SinceMS is how long ago the last keystroke landed, or -1 for never.
 	SinceMS int64  `json:"since_ms"`
 	Open    bool   `json:"open"`
