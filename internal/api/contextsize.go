@@ -136,6 +136,7 @@ func contextCycleView(st *store.Store, out map[string]any) {
 	out["context_limit_k_min"] = store.MinContextLimitK
 	out["context_limit_k_max"] = store.MaxContextLimitK
 	out["context_handoff_dir"] = st.ContextHandoffDir()
+	out["context_prep_pct"] = st.ContextPrepPct()
 	out["restart_wrap_wait_s"] = int(st.RestartWrapWait() / time.Second)
 }
 

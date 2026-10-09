@@ -137,3 +137,35 @@ func CheckContextCycleText(v string) (string, error) {
 	}
 	return "", fmt.Errorf("context_cycle is off, or empty for on, not %q", v)
 }
+
+// SettingContextPrepPct is the percent of a card's context limit at which atrium tells it, once, to write its
+// handoff now. Empty reads as DefaultContextPrepPct, and 0 turns the notice off.
+const SettingContextPrepPct = "context_prep_pct"
+
+// The range and default of the prep notice's percent. The cycle itself still fires at the limit.
+const (
+	MinContextPrepPct     = 1
+	MaxContextPrepPct     = 99
+	DefaultContextPrepPct = 80
+)
+
+// ContextPrepPct reads the percent, 0 for off. Unset or unreadable reads as the default.
+func (s *Store) ContextPrepPct() int {
+	v, err := s.Setting(SettingContextPrepPct)
+	if err != nil || strings.TrimSpace(v) == "" {
+		return DefaultContextPrepPct
+	}
+	n, err := strconv.Atoi(strings.TrimSpace(v))
+	if err != nil || n < 0 || n > MaxContextPrepPct {
+		return DefaultContextPrepPct
+	}
+	return n
+}
+
+// CheckContextPrepPct validates a typed percent. Empty is the default and is returned as empty, 0 is off.
+func CheckContextPrepPct(v string) (string, error) {
+	if strings.TrimSpace(v) == "0" {
+		return "0", nil
+	}
+	return checkInt(SettingContextPrepPct, "percent of the limit (0 for off)", v, MinContextPrepPct, MaxContextPrepPct)
+}

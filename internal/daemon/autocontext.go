@@ -1,6 +1,7 @@
 package daemon
 
 import (
+	"fmt"
 	"log"
 	"time"
 
@@ -61,10 +62,54 @@ func (d *Daemon) cycleCheck(t *store.Task, tokens int64) {
 		return
 	}
 	limit := d.cycleLimit(t)
-	if limit <= 0 || tokens < limit {
+	if limit <= 0 {
+		return
+	}
+	if tokens < limit {
+		d.prepNotice(t, tokens, limit)
 		return
 	}
 	d.startCycle(t, tokens, limit)
+}
+
+// prepNoticeSource is the claim that a conversation was told to prepare its handoff.
+const prepNoticeSource = "context-prep"
+
+// prepAtTokens is where the prep notice goes, in tokens: the set percent of the limit. 0 when it is off.
+func (d *Daemon) prepAtTokens(limit int64) int64 {
+	pct := d.st.ContextPrepPct()
+	if pct <= 0 || limit <= 0 {
+		return 0
+	}
+	return limit * int64(pct) / 100
+}
+
+// prepNoticeText is the one line a card gets before its cycle.
+func prepNoticeText(limit int64) string {
+	return fmt.Sprintf("atrium will cycle your context at %dk. write your handoff now, then carry on: "+
+		"no ack and no reply are needed, and this is said once.", limit/1000)
+}
+
+// prepNotice tells a card below its limit, ONCE per conversation, to write its handoff now. Every atrium turn
+// costs a full context re-read, so it is never repeated and never polled: the claim is per conversation, and a
+// /clear starts a new one. A card already past the limit is the cycle's, not this.
+func (d *Daemon) prepNotice(t *store.Task, tokens, limit int64) {
+	at := d.prepAtTokens(limit)
+	if at <= 0 || tokens < at {
+		return
+	}
+	key := d.conversationOf(t)
+	if key == "" {
+		key = "unknown"
+	}
+	if fresh, err := d.st.RecordNotice(t.ID, prepNoticeSource, key); err != nil || !fresh {
+		return
+	}
+	if _, err := d.deliverPeerAs(store.DeliveryNotice, t, "atrium", prepNoticeText(limit)); err != nil {
+		log.Printf("[atrium] could not tell %s to prepare its handoff: %v", t.DisplayTitle(), err)
+		return
+	}
+	log.Printf("[atrium] told %s to prepare its handoff at %dk (cycle at %dk)", t.DisplayTitle(), tokens/1000, limit/1000)
 }
 
 // cycleOnStatusline is the check for a card whose statusline just posted. The size is the transcript's, read

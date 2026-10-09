@@ -335,6 +335,7 @@ func (s *Server) setSettings(w http.ResponseWriter, r *http.Request) {
 		ContextLimits     *map[string]int `json:"context_limits"`
 		ContextHandoffDir *string         `json:"context_handoff_dir"`
 		RestartWrapWaitS  *string         `json:"restart_wrap_wait_s"`
+		ContextPrepPct    *string         `json:"context_prep_pct"`
 		// The default model and the dollar budget for an agent-launched card. The hub owns it, like
 		// context_limits. See store/workerpolicy.go.
 		WorkerPolicy *store.WorkerPolicy `json:"worker_policy"`
@@ -815,6 +816,18 @@ func (s *Server) setSettings(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if err := s.st.SetSetting(store.SettingRestartWrapWait, v); err != nil {
+			s.fail(w, err)
+			return
+		}
+	}
+
+	if body.ContextPrepPct != nil {
+		v, err := store.CheckContextPrepPct(*body.ContextPrepPct)
+		if err != nil {
+			writeErr(w, http.StatusBadRequest, err)
+			return
+		}
+		if err := s.st.SetSetting(store.SettingContextPrepPct, v); err != nil {
 			s.fail(w, err)
 			return
 		}
