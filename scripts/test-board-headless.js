@@ -11497,6 +11497,66 @@ async function peekStatusTruthSection(browser, base) {
   if (errors.length) fail("the peek status page threw: " + errors.join(" | "));
 }
 
+// THE SECOND COUNTS FROM REST. A pointer travelling across a card in steps over 10px opens nothing, however long it
+// travels. Resting, or jitter under 10px, opens it PEEK_HOVER_MS after the last big move. Reuses the onehover cards.
+async function peekHoverRestSection(browser, base) {
+  const W = 1400, H = 1000;
+  const ctx = await browser.newContext({ viewport: { width: W, height: H } });
+  const p = await ctx.newPage();
+  const errors = [];
+  p.on("pageerror", e => errors.push(String(e)));
+  await ctx.route("**/v1/tasks/*/usage*", route => route.fulfill({ json: CTX_USAGE["cx-big"] }));
+  await ctx.addInitScript(() => { try { localStorage.setItem("atrium.termlist.w", "640"); } catch (e) {} });
+  const wait = ms => new Promise(r => setTimeout(r, ms));
+  const isOpen = () => p.evaluate(() => !!document.querySelector(".peek.on"));
+  const was = tasksMode, wasDocs = boardDocs;
+  tasksMode = "onehover";
+  boardDocs = true;
+  try {
+    await p.goto(base, { waitUntil: "domcontentloaded" });
+    await p.evaluate(() => document.querySelector('.tab[data-view="terms"]').click());
+    const row = '#term-list .card.tab[data-id="sg4-control~oh1"]';
+    await p.waitForSelector(row, { state: "visible", timeout: slow(15000) });
+    await wait(1500);
+    const b = await p.locator(row).boundingBox();
+    const y = Math.round(b.y + b.height / 2);
+    const x0 = Math.round(b.x + 20);
+    const ms = await p.evaluate(() => PEEK_HOVER_MS);
+    const away = async () => { await p.mouse.move(W / 2, 3); await p.evaluate(() => closePeek()); await wait(300); };
+
+    await away();
+    // Sweep: 15px steps every 200ms for 2s, all inside the card.
+    await p.mouse.move(x0, y);
+    for (let i = 1; i <= 10; i++) {
+      await wait(200);
+      await p.mouse.move(x0 + i * 15, y);
+      if (await isOpen()) fail("peekHoverRest: the details opened while the pointer was still moving (step " + i + ")");
+    }
+    // Rest: it opens one PEEK_HOVER_MS after the last big move, not before.
+    await wait(ms - 350);
+    if (await isOpen()) fail("peekHoverRest: the details opened before a full second of rest");
+    await p.waitForFunction(() => !!document.querySelector(".peek.on"), null, { timeout: slow(2500) })
+      .catch(() => fail("peekHoverRest: resting after the sweep did not open the details"));
+
+    // Jitter: 6px wiggles every 150ms do not re-arm the timer.
+    await away();
+    await p.mouse.move(x0, y);
+    for (let i = 0; i < 4; i++) { await wait(150); await p.mouse.move(x0 + (i % 2 ? 0 : 6), y); }
+    await p.waitForFunction(() => !!document.querySelector(".peek.on"), null, { timeout: slow(2500) })
+      .catch(() => fail("peekHoverRest: jitter under 10px kept the details from opening"));
+    // An open one is not touched by moving within its card.
+    await p.mouse.move(x0 + 150, y + 3);
+    await p.mouse.move(x0 + 300, y);
+    await wait(300);
+    if (!(await isOpen())) fail("peekHoverRest: moving within the card closed an open hover");
+  } finally {
+    await ctx.close();
+    tasksMode = was;
+    boardDocs = wasDocs;
+  }
+  if (errors.length) fail("the hover rest page threw: " + errors.join(" | "));
+}
+
 // A running card the room says looks idle (no turn-end arrived). The chip replaces
 // the live one, the spinner stops (no `live` chip, not "working"), and the words are
 // a guess. Drawn from the functions directly: the daemon decides, the board only draws.
@@ -26077,7 +26137,7 @@ async function main() {
       pasteBig: pasteBigSection, pasteEmpty: pasteEmptySection, pasteBusy: pasteBusySection, typing: typingSection, alias: aliasSection, askAgain: askAgainSection, copySelect: copySelectSection, busyGuard: busyGuardSection, keepalive: keepaliveSection, restartMenu: restartMenuSection,
       stuck: stuckSection, blockerMark: blockerMarkSection, carryLink: carryLinkSection,
       skinScope: skinScopeSection, skinHeal: skinHealSection, toastLives: toastLivesSection,
-      history: historySection, contextSize: contextSizeSection, ctxLine: ctxLineSection, ctxLimitLayers: ctxLimitLayersSection, contextCycle: contextCycleSection, landThePlane: landThePlaneSection, peekEverywhere: peekEverywhereSection, peekOneHover: peekOneHoverSection, peekStatusTruth: peekStatusTruthSection, cardRoute: cardRouteSection,
+      history: historySection, contextSize: contextSizeSection, ctxLine: ctxLineSection, ctxLimitLayers: ctxLimitLayersSection, contextCycle: contextCycleSection, landThePlane: landThePlaneSection, peekEverywhere: peekEverywhereSection, peekOneHover: peekOneHoverSection, peekStatusTruth: peekStatusTruthSection, peekHoverRest: peekHoverRestSection, cardRoute: cardRouteSection,
       quietDoer: quietDoerSection, autoPerm: autoPermSection, looksIdle: looksIdleSection, notifyOff: notifyOffSection,
       questionsClick: questionsClickSection, walk: walkSection, walkContext: walkContextSection, linkReuse: linkReuseSection,
       usageCacheReads: usageCacheReadsSection, usageTurns: usageTurnsSection, roomsDash: roomsDashSection, phoneView: phoneViewSection, heldLine: heldLineSection, u016: u016Section, phoneHeader: phoneHeaderSection, phoneFocus: phoneFocusSection, phoneTermBar: phoneTermBarSection, phoneShare: phoneShareSection, phonePan: phonePanSection, phoneFollow: phoneFollowSection, phoneTap: phoneTapSection, phoneKeyboard: phoneKeyboardSection, phoneCompose: phoneComposeSection, mCompose: mComposeSection, mPerms: mPermsSection, mReview: mReviewSection, usagePolish: usagePolishSection, usageLimits: usageLimitsSection, usageGroups: usageGroupsSection,
@@ -28118,6 +28178,7 @@ async function main() {
     await unit("peekEverywhere", () => peekEverywhereSection(browser, base));
     await unit("peekOneHover", () => peekOneHoverSection(browser, base));
     await unit("peekStatusTruth", () => peekStatusTruthSection(browser, base));
+    await unit("peekHoverRest", () => peekHoverRestSection(browser, base));
     await unit("phoneListFit", () => phoneListFitSection(browser, base));
     await unit("termListLastRow", () => termListLastRowSection(browser, base));
     await unit("phoneNudge", () => phoneNudgeSection(browser, base));
