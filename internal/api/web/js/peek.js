@@ -123,6 +123,56 @@ function peekReadable(t) {
 }
 
 
+// WHAT THE CARD ASKS OF YOU, in one line the peek opens with. Status is a column and activity is a badge
+// (docs/runtime/activity-design.md), so a turn that is running says what it is doing over whatever the stored column
+// still reads. A turn that ended with questions "needs you". A turn that ended with none is "your move", which asks
+// nothing: it is not needs-you however the column spells it. `seen.open_questions` is what tells them apart.
+// `cls` is the style, ps-ask (warn), ps-turn (teal), ps-work (live), ps-plain (dim). Prefixed, as a bare `ask` is a global.
+function peekHasQuestions(t) {
+  return !!t && (!!t.ask || (typeof cardHasOpenQuestion === "function" && cardHasOpenQuestion(t)));
+}
+// A turn is running now: the board's own test for the working badge, less its exclusion of a waiting card. The
+// stored column can still read needs-input for a moment after a new prompt, and the live activity is the truth.
+function peekRunning(t) {
+  const a = t && t.activity;
+  return !!(a && a.what && a.what !== "idle" && !a.looks_idle && t.status !== "shelved" &&
+    typeof staleActivity === "function" && !staleActivity(t));
+}
+function peekStatus(t) {
+  if (!t) return null;
+  const s = t.seen || {};
+  const n = (s.open_questions || []).length;
+  const waited = () => typeof ago === "function" && typeof cardSecs === "function" && typeof cardWaitSeconds === "function"
+    ? ago(cardSecs(cardWaitSeconds(t))) : "";
+  const since = () => waited() ? ", " + waited() : "";
+  const waiting = typeof isWaiting === "function" && isWaiting(t);
+  if (t.status === "needs-permission" && waiting) {
+    return { cls: "ps-ask", word: "needs you", why: "permission to go on" + since() };
+  }
+  if (peekRunning(t)) {
+    const a = t.activity;
+    return { cls: "ps-work", word: "working", why: a.what === "tool" ? (a.tool ? "running " + a.tool : "running a tool") : a.what };
+  }
+  if (t.status === "needs-input" && waiting) {
+    if (peekHasQuestions(t)) {
+      return { cls: "ps-ask", word: "needs you", why: (n ? n + (n === 1 ? " question" : " questions") : "a question") + since() };
+    }
+    return { cls: "ps-turn", word: "your move", why: "its turn ended, nothing asked" + since() };
+  }
+  const label = typeof statusLabel === "function" ? statusLabel(t.status) : t.status;
+  return label ? { cls: "ps-plain", word: label, why: "" } : null;
+}
+
+// A recap older than the session's latest prompt is not what the card is doing now. It is LABELLED, not hidden: it
+// is still the last thing the card said about itself, and a card prompted since is usually on the same work, so
+// dropping it would leave the peek with nothing. The label says how old, so it is never read as current. Empty when
+// it is current, or when either stamp is missing.
+function peekRecapAge(t) {
+  const r = Date.parse(t && t.recap_at), p = Date.parse(t && t.prompted_at);
+  if (isNaN(r) || isNaN(p) || r >= p || typeof ago !== "function") return "";
+  return "said " + ago((Date.now() - r) / 1000) + " ago, before its latest prompt";
+}
+
 // WHAT THE CARD WANTS FROM YOU, and its last recap: the rest of a card's state is on its row and in its details dialog.
 // The peek is a glance, so it says the urgent things and nothing about how the card was launched, what it costs or
 // whether its cache is warm. Read from the card as the board last drew it, so it needs no request and cannot differ
@@ -140,7 +190,8 @@ function peekRows(t) {
   else if (fn("isStuck", t)) need.push(row("stuck", t.escalation.text + (t.escalation.since ? ", since " + clock(t.escalation.since) : "")));
   if (t.offline) need.push(row("offline", "room " + (fn("roomOf", t.id) || t.room || "") + " is offline. cannot restore terminal"));
   if (fn("isOutOfContact", t)) need.push(row("no contact", "nothing heard from the session, and no process to ask. it may be working or may have ended"));
-  if (fn("isWaiting", t)) {
+  // A needs-input card with nothing asked is the status line's "your move", not something it needs from you.
+  if (fn("isWaiting", t) && (t.status !== "needs-input" || peekHasQuestions(t))) {
     need.push(row(fn("statusLabel", t.status), (t.status === "needs-permission" ? "frozen waiting to be answered for " : "asked for you ") +
       fn("ago", fn("cardSecs", fn("cardWaitSeconds", t)))));
   }
@@ -158,9 +209,10 @@ function peekRows(t) {
   if (n && n.step === "failed") need.push(row("new context failed", (n.reason || "") + ". nothing further was typed"));
   if (t.report_unverified) need.push(row("sha unverified", "it reported done at " + (t.report_sha || "") + ", and that commit is not in its worktree"));
 
+  const age = t.recap ? peekRecapAge(t) : "";
   const recap = t.recap || (t.status === "done" ? "finished without saying what it did" : "");
-  return (need.length ? `<div class="peek-sec need"><div class="peek-sech">needs you</div>${need.join("")}</div>` : "") +
-    (recap ? `<div class="peek-recap"><div class="peek-rtext">${esc(recap)}</div>` +
+  return (need.length ? `<div class="peek-sec need">${need.join("")}</div>` : "") +
+    (recap ? `<div class="peek-recap">${age ? `<div class="peek-rage">${esc(age)}</div>` : ""}<div class="peek-rtext">${esc(recap)}</div>` +
       `<button type="button" class="peek-more" hidden>more</button></div>` : "");
 }
 
@@ -169,13 +221,15 @@ function peekRows(t) {
 function peekBody(t, v) {
   const title = (t && (t.display_title || t.title)) || "this card";
   const model = v && !(v instanceof Error) && v.model ? v.model : (t && t.model) || "";
-  const sub = [t && t.status, model].filter(Boolean).join(" · ");
+  const sub = model;
+  const st = peekStatus(t);
   // The repo/worktree:branch address, what a terminals row said in its own tooltip. That tooltip gives way to this
   // (see peekOwnsTip), so what it said is here. Title on one line, address and status under it on one.
   const where = t && typeof terminalLabel === "function" ? terminalLabel(t) : "";
   const cold = t && typeof termCold === "function" && termCold(t)
     ? "this one has exited. click it to start it again here" : "";
   const head = `<div class="peek-head"><span class="peek-title">${esc(title)}</span>` +
+    (st ? `<div class="peek-status ${st.cls}"><b>${esc(st.word)}</b>${st.why ? `<span>${esc(st.why)}</span>` : ""}</div>` : "") +
     `<div class="peek-meta">` +
     (where && where !== title ? `<span class="peek-path">${esc(where)}</span>` : "") +
     (sub ? `<span class="peek-sub">${esc(sub)}</span>` : "") + `</div>` +
@@ -201,7 +255,7 @@ function peekBody(t, v) {
     `<div class="peek-ctx${warn ? " warn" : ""}${land ? " hot" : ""}">
       ${ctxMeter(ctx, limit, "", loading ? "" : landTip({ context_size: { tokens: ctx, threshold_k: k, source: limitSource(t) }, telemetry: t && t.telemetry }))}
       <div class="peek-scale"><span class="peek-num"><b>${loading ? "&nbsp;" : usageTokens(ctx)}</b> ${state}</span>` +
-        `<span>warns at ${limitFrom(t)}${landK !== Number(k) ? `, lands ${landK}k` : ""}</span></div>
+        `<span>${landK !== Number(k) ? `warns at ${limitFrom(t)}, lands ${landK}k` : `warns and lands at ${limitFrom(t)}`}</span></div>
     </div>`;
 }
 

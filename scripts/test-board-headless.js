@@ -577,6 +577,7 @@ function mockTasks(reading) {
   if (tasksMode === "blocker") { return blockerCards(); }
   if (tasksMode === "ctxsize") { return CTX_CARDS; }
   if (tasksMode === "onehover") { return [ONE_HOVER_CARD, OH_ASKED, OH_IDLE]; }
+  if (tasksMode === "peekstatus") { return [PS_YOURMOVE, PS_ASKS, PS_RUNNING, PS_STALE, PS_FRESH, PS_LONG]; }
   if (tasksMode === "peek") {
     // Idle a second longer on every read, so a refresh redraws the entries.
     if (reading) peekReads++;
@@ -11281,7 +11282,7 @@ async function peekOneHoverSection(browser, base) {
       if (text !== first) fail("onehover: the details over " + sel + " differ from those over " + firstSel + ":\n  " + text + "\n  " + first);
     }
     const want = [
-      /running/, /claude-opus-5-5/, /orchestrator/, /atrium.*claude\/oh/, /212k/, /warns at 160k from hub/,
+      /working/, /claude-opus-5-5/, /orchestrator/, /atrium.*claude\/oh/, /212k/, /warns at 160k from hub/,
       /land sa21 first\?/, /build the tray\?/,
     ];
     for (const re of want) if (!re.test(first)) fail("onehover: the details do not say " + re + ": " + first);
@@ -11297,6 +11298,112 @@ async function peekOneHoverSection(browser, base) {
     boardDocs = wasDocs;
   }
   if (errors.length) fail("the one hover page threw: " + errors.join(" | "));
+}
+
+// THE PEEK'S STATUS IS TRUE. A turn that ended with nothing asked is "your move", not needs-you. A turn that is running
+// says what it is doing over the stored column. A recap older than the latest prompt carries its age. Hovering a
+// question changes neither the peek's width nor its height, and a long unbroken word makes no horizontal scrollbar.
+// PEEKSTATUS_SHOTS=<dir> writes the pictures.
+const PS_BASE = Object.assign({}, T1, { resume_id: "sess-ps", runner: "claude", supervised: true, pinned: true,
+  worktree: "/src/atrium/ps", repo: "atrium", branch: "claude/ps", model: "claude-opus-5-5",
+  context_size: { tokens: 120000, threshold_k: 160, source: "hub" } });
+const PS_AGO = ms => new Date(Date.now() - ms).toISOString();
+const PS_YOURMOVE = Object.assign({}, PS_BASE, { id: "sg4-control~ps1", status: "needs-input", display_title: "turn over",
+  waiting_since: PS_AGO(300000), seen: { answered: true, open_questions: [] } });
+const PS_ASKS = Object.assign({}, PS_BASE, { id: "sg4-control~ps2", status: "needs-input", display_title: "asks two",
+  waiting_since: PS_AGO(300000), seen: { answered: false, open_questions: ["first?", "second?"] } });
+const PS_RUNNING = Object.assign({}, PS_BASE, { id: "sg4-control~ps3", status: "needs-input", display_title: "mid turn",
+  activity: { what: "thinking", seconds: 3 }, seen: { answered: true, open_questions: [] } });
+const PS_STALE = Object.assign({}, PS_BASE, { id: "sg4-control~ps4", status: "idle", display_title: "old recap",
+  recap: "Handoff written.", recap_at: PS_AGO(9 * 86400000), prompted_at: PS_AGO(3600000) });
+const PS_FRESH = Object.assign({}, PS_BASE, { id: "sg4-control~ps5", status: "idle", display_title: "new recap",
+  recap: "Handoff written.", recap_at: PS_AGO(60000), prompted_at: PS_AGO(3600000) });
+const PS_LONGWORD = "x".repeat(260);
+const PS_LONG = Object.assign({}, PS_BASE, { id: "sg4-control~ps6", status: "needs-input", display_title: "long question",
+  waiting_since: PS_AGO(300000), recap: "Short recap.",
+  seen: { answered: false, open_questions: ["Do you want `" + PS_LONGWORD + "` or /docs/" + PS_LONGWORD + "/config-builder in the unified config? Tell me where."] } });
+
+async function peekStatusTruthSection(browser, base) {
+  const W = 1400, H = 1000;
+  const ctx = await browser.newContext({ viewport: { width: W, height: H } });
+  const p = await ctx.newPage();
+  const errors = [];
+  p.on("pageerror", e => errors.push(String(e)));
+  await ctx.route("**/v1/tasks/*/usage*", route => route.fulfill({ json: CTX_USAGE["cx-big"] }));
+  await ctx.addInitScript(() => { try { localStorage.setItem("atrium.termlist.w", "640"); } catch (e) {} });
+  const shots = process.env.PEEKSTATUS_SHOTS || "";
+  const was = tasksMode;
+  tasksMode = "peekstatus";
+  try {
+    await p.goto(base, { waitUntil: "domcontentloaded" });
+    await p.evaluate(() => document.querySelector('.tab[data-view="terms"]').click());
+    await p.waitForSelector('#term-list .card.tab[data-id="sg4-control~ps1"]', { state: "visible", timeout: slow(15000) });
+    await new Promise(r => setTimeout(r, 1000));
+    const show = async id => {
+      await p.evaluate(() => closePeek());
+      await p.evaluate(i => openPeek(i, document.querySelector('#term-list .card.tab[data-id="' + i + '"]'), "menu"), id);
+      await p.waitForFunction(() => /\d+k/.test((document.querySelector(".peek.on .peek-ctx") || {}).textContent || ""),
+        null, { timeout: slow(4000) }).catch(() => fail("peekStatus: " + id + " never showed a context size."));
+      await new Promise(r => setTimeout(r, 400));
+      return p.evaluate(() => {
+        const b = document.querySelector(".peek.on .peek-body");
+        const q = s => (b.querySelector(s) || {}).textContent || "";
+        return { text: b.textContent.replace(/\s+/g, " ").trim(), status: q(".peek-status"), statusCls: (b.querySelector(".peek-status") || {}).className || "",
+          needs: !!b.querySelector(".peek-sec.need"), sech: !!b.querySelector(".peek-sech"), rage: q(".peek-rage") };
+      });
+    };
+    const shot = async name => {
+      if (!shots) return;
+      const box = await p.locator(".peek.on .peek-body").boundingBox();
+      await p.screenshot({ path: shots + "/" + name + ".png", clip: { x: Math.max(0, box.x - 10), y: Math.max(0, box.y - 10), width: box.width + 20, height: box.height + 20 } });
+    };
+
+    const mv = await show("sg4-control~ps1");
+    if (mv.needs || /needs you/i.test(mv.text) || /needs-input/.test(mv.text)) fail("peekStatus: a turn with no open questions still says needs you: " + mv.text);
+    if (!/^your move/.test(mv.status) || !/ ps-turn$/.test(mv.statusCls)) fail("peekStatus: a turn with nothing asked is not 'your move': " + JSON.stringify(mv));
+    await shot("your-move");
+    const as = await show("sg4-control~ps2");
+    if (!/^needs you2 questions/.test(as.status) || !/ ps-ask$/.test(as.statusCls) || !as.needs) fail("peekStatus: a card with questions does not need you: " + JSON.stringify(as));
+    if (as.sech) fail("peekStatus: the needs-you block repeats a NEEDS YOU heading the status line already says");
+    const run = await show("sg4-control~ps3");
+    if (!/^workingthinking/.test(run.status) || !/ ps-work$/.test(run.statusCls) || /needs/i.test(run.status)) fail("peekStatus: a running turn does not show its activity: " + JSON.stringify(run));
+
+    const stale = await show("sg4-control~ps4");
+    if (!/said 9d\d* ago, before its latest prompt/.test(stale.rage) && !/said \d+d.* ago, before its latest prompt/.test(stale.rage)) fail("peekStatus: a recap from before the latest prompt is not labelled: " + JSON.stringify(stale.rage));
+    await shot("stale-recap");
+    const fresh = await show("sg4-control~ps5");
+    if (fresh.rage) fail("peekStatus: a current recap is labelled stale: " + fresh.rage);
+    if (!/warns at 160k from hub, lands 200k/.test(fresh.text)) fail("peekStatus: the limit line is not 'warns at 160k from hub, lands 200k': " + fresh.text);
+
+    // HOVER CHANGES NOTHING. Both boxes measured, before the pointer is on the question and after.
+    await show("sg4-control~ps6");
+    const size = () => p.evaluate(() => {
+      const r = x => { const b = x.getBoundingClientRect(); return [b.x, b.y, b.width, b.height].map(n => Math.round(n * 100) / 100).join(","); };
+      const el = document.querySelector(".peek.on"), body = el.querySelector(".peek-body"), sec = el.querySelector(".peek-sec");
+      return { peek: r(el), body: r(body), sec: r(sec), secOverX: sec.scrollWidth - sec.clientWidth, bodyOverX: body.scrollWidth - body.clientWidth,
+        qOverX: [...el.querySelectorAll(".qa-q, .qa-t")].map(x => x.scrollWidth - x.clientWidth), secY: sec.clientHeight, bodyY: body.clientHeight };
+    });
+    await p.mouse.move(W / 2, 3);
+    const before = await size();
+    const q = await p.locator(".peek.on .qa-q").first().boundingBox();
+    // The question is taller than its scrolling block, so the pointer goes on its top edge, the part in view.
+    await p.mouse.move(Math.round(q.x + q.width / 2), Math.round(q.y + 12));
+    await new Promise(r => setTimeout(r, 500));
+    const hov = await p.evaluate(() => document.querySelector(".peek.on .qa-q:hover") !== null);
+    if (!hov) fail("peekStatus: the pointer is not over the question, so the hover check proves nothing: " + JSON.stringify({ q, at: await p.evaluate(([x, y]) => { const e = document.elementFromPoint(x, y); return e ? e.className + "|" + e.tagName : ""; }, [Math.round(q.x + q.width / 2), Math.round(q.y + q.height / 2)]) }));
+    await shot("hover");
+    const after = await size();
+    if (before.peek !== after.peek || before.body !== after.body || before.sec !== after.sec) fail("peekStatus: hover changed the peek's box:\n  " + JSON.stringify(before) + "\n  " + JSON.stringify(after));
+    for (const [tag, v] of [["before", before], ["after", after]]) {
+      if (v.secOverX > 0 || v.bodyOverX > 0 || v.qOverX.some(n => n > 0)) fail("peekStatus: long unbroken text overflows sideways " + tag + " hover: " + JSON.stringify(v));
+    }
+    const ov = await p.evaluate(() => { const s = document.querySelector(".peek.on .peek-sec"); const c = getComputedStyle(s); return { x: c.overflowX, g: c.scrollbarGutter }; });
+    if (ov.x === "auto" || ov.x === "scroll" || !/stable/.test(ov.g)) fail("peekStatus: the needs-you block can scroll sideways or does not reserve its gutter: " + JSON.stringify(ov));
+  } finally {
+    await ctx.close();
+    tasksMode = was;
+  }
+  if (errors.length) fail("the peek status page threw: " + errors.join(" | "));
 }
 
 // A running card the room says looks idle (no turn-end arrived). The chip replaces
@@ -25879,7 +25986,7 @@ async function main() {
       pasteBig: pasteBigSection, pasteEmpty: pasteEmptySection, pasteBusy: pasteBusySection, typing: typingSection, alias: aliasSection, askAgain: askAgainSection, copySelect: copySelectSection, busyGuard: busyGuardSection, keepalive: keepaliveSection, restartMenu: restartMenuSection,
       stuck: stuckSection, blockerMark: blockerMarkSection, carryLink: carryLinkSection,
       skinScope: skinScopeSection, skinHeal: skinHealSection, toastLives: toastLivesSection,
-      history: historySection, contextSize: contextSizeSection, ctxLine: ctxLineSection, ctxLimitLayers: ctxLimitLayersSection, contextCycle: contextCycleSection, landThePlane: landThePlaneSection, peekEverywhere: peekEverywhereSection, peekOneHover: peekOneHoverSection, cardRoute: cardRouteSection,
+      history: historySection, contextSize: contextSizeSection, ctxLine: ctxLineSection, ctxLimitLayers: ctxLimitLayersSection, contextCycle: contextCycleSection, landThePlane: landThePlaneSection, peekEverywhere: peekEverywhereSection, peekOneHover: peekOneHoverSection, peekStatusTruth: peekStatusTruthSection, cardRoute: cardRouteSection,
       quietDoer: quietDoerSection, autoPerm: autoPermSection, looksIdle: looksIdleSection, notifyOff: notifyOffSection,
       questionsClick: questionsClickSection, walk: walkSection, walkContext: walkContextSection, linkReuse: linkReuseSection,
       usageCacheReads: usageCacheReadsSection, usageTurns: usageTurnsSection, roomsDash: roomsDashSection, phoneView: phoneViewSection, heldLine: heldLineSection, u016: u016Section, phoneHeader: phoneHeaderSection, phoneFocus: phoneFocusSection, phoneTermBar: phoneTermBarSection, phoneShare: phoneShareSection, phonePan: phonePanSection, phoneFollow: phoneFollowSection, phoneTap: phoneTapSection, phoneKeyboard: phoneKeyboardSection, phoneCompose: phoneComposeSection, mCompose: mComposeSection, mPerms: mPermsSection, mReview: mReviewSection, usagePolish: usagePolishSection, usageLimits: usageLimitsSection, usageGroups: usageGroupsSection,
@@ -27918,6 +28025,7 @@ async function main() {
     await unit("landThePlane", () => landThePlaneSection(browser, base));
     await unit("peekEverywhere", () => peekEverywhereSection(browser, base));
     await unit("peekOneHover", () => peekOneHoverSection(browser, base));
+    await unit("peekStatusTruth", () => peekStatusTruthSection(browser, base));
     await unit("phoneListFit", () => phoneListFitSection(browser, base));
     await unit("termListLastRow", () => termListLastRowSection(browser, base));
     await unit("phoneNudge", () => phoneNudgeSection(browser, base));
