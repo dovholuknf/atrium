@@ -22205,6 +22205,68 @@ async function boardDocsSection(browser, base) {
   if (!bad) console.log("boardDocs ok");
 }
 
+// THE DOCUMENTS PAGE, laid out: one centred column, a header row with the count, the card-or-every switch and a search,
+// upload as the one primary control with its title inside it, deleted as a quiet toggle, roomy rows, a usage meter at the
+// foot. Several documents are mocked at the route. DOCSPAGE_SHOTS and DOCSPAGE_TAG write the pictures.
+async function docsPageSection(browser, base) {
+  const was = tasksMode, wasDocs = boardDocs;
+  tasksMode = "land";
+  landList = [];
+  landPerms = [];
+  boardDocs = true;
+  const at = "2026-10-09T08:00:00Z";
+  const mk = (slug, title, kind, versions, by) => ({ slug, title, created: at, updated: at, versions, deleted: null,
+    latest: { n: versions, kind, name: slug + ".md", size: 1200, at, by, origin: "card" } });
+  const docs = [
+    mk("a", "Interview: forge access, paste-open, private repos (2026-10-09)", "markdown", 1, "orchestrator-sg4-control@sg4-control"),
+    mk("b", "Usage report for the week", "markdown", 4, "r-031@sg4"),
+    mk("c", "Trace of the stuck terminal", "text", 2, "u-docs-peek-switcher@sg4"),
+    mk("d", "Board screenshot", "image", 1, "r-typing-fixes@sg4"),
+  ];
+  const shots = process.env.DOCSPAGE_SHOTS || "", tag = process.env.DOCSPAGE_TAG || "after";
+  try {
+    for (const vp of [{ width: 1565, height: 536, name: "desktop" }, { width: 390, height: 844, name: "phone" }]) {
+      const ctx = await browser.newContext({ viewport: { width: vp.width, height: vp.height } });
+      await ctx.addInitScript(() => localStorage.setItem("atrium.skipconfirm", JSON.stringify({ "width-floor": true })));
+      await ctx.route(/\/_hub\/docs(\?.*)?$/, route => route.request().method() === "GET"
+        ? route.fulfill({ json: { docs, usage: { bytes: 211000, cap: 2147483648 } } }) : route.fallback());
+      const p = await ctx.newPage();
+      const errors = [];
+      p.on("pageerror", e => errors.push(String(e)));
+      const t = "docsPage " + vp.name + ": ";
+      await p.goto(base, { waitUntil: "domcontentloaded" });
+      await p.waitForSelector('header nav .tab[data-view="stack"]', { timeout: slow(15000) });
+      await p.waitForFunction(() => window.mDocs && window.mDocs.available(), null, { timeout: slow(8000) });
+      await p.evaluate(() => window.mDocs.openList({ card: "land-live" }));
+      await p.waitForSelector("#m-docs .d-row", { timeout: slow(5000) });
+      await p.waitForTimeout(300);
+      const m = await p.evaluate(() => {
+        const r = s => { const e = document.querySelector(s); if (!e) return null; const b = e.getBoundingClientRect(); return { x: b.x, y: b.y, w: b.width, h: b.height, r: b.right }; };
+        return { body: r("#m-docs .d-list-view"), head: r(".d-lhead"), seg: r(".d-seg"), q: r(".d-q"), up: r(".d-upload"), tin: r(".d-tin"),
+          tinShown: !!document.querySelector(".d-tin") && getComputedStyle(document.querySelector(".d-tin")).display !== "none",
+          del: r(".d-chip"), row: r(".d-row"), meter: r(".d-meter"), foot: r(".d-usage"), rows: document.querySelectorAll(".d-row").length,
+          count: (document.querySelector(".d-count") || {}).textContent, bits: document.querySelectorAll(".d-row:first-child .d-bit").length,
+          scrollW: document.querySelector(".d-scroll").scrollWidth, clientW: document.querySelector(".d-scroll").clientWidth, vw: innerWidth };
+      });
+      if (!m.body || !m.seg || !m.up || !m.meter) { fail(t + "the page is missing a part: " + JSON.stringify(m)); }
+      else {
+        const left = m.body.x, right = m.vw - m.body.r;
+        if (Math.abs(left - right) > 14) fail(t + "the column is not centred, " + Math.round(left) + "px left and " + Math.round(right) + "px right");
+        if (vp.name === "desktop" && m.body.w > 900) fail(t + "the column is " + Math.round(m.body.w) + "px wide, past 900");
+        if (m.rows !== docs.length || m.count !== String(docs.length)) fail(t + "rows " + m.rows + " count " + m.count);
+        if (m.bits < 4) fail(t + "a row does not carry kind, versions, age and author: " + m.bits);
+        if (m.scrollW > m.clientW + 1) fail(t + "the page scrolls sideways: " + m.scrollW + " over " + m.clientW);
+        if (m.meter.h > 6) fail(t + "the usage meter is not thin: " + m.meter.h + "px");
+        if (m.row.h < 56) fail(t + "the rows are not roomy: " + m.row.h + "px");
+      }
+      if (shots) { fs.mkdirSync(shots, { recursive: true }); await p.screenshot({ path: path.join(shots, "docs-" + vp.name + "-" + tag + ".png") }); }
+      if (errors.length) fail(t + "page errors: " + errors.join(" | "));
+      await ctx.close();
+    }
+  } finally { tasksMode = was; boardDocs = wasDocs; }
+  if (!bad) console.log("docsPage ok");
+}
+
 async function soundPhoneSection(browser, base) {
   const was = tasksMode;
   tasksMode = "land";
@@ -27712,6 +27774,7 @@ async function main() {
     await unit("mHomeLive", () => mHomeLiveSection(browser));
     await unit("soundPhone", () => soundPhoneSection(browser, base));
     await unit("boardDocs", () => boardDocsSection(browser, base));
+    await unit("docsPage", () => docsPageSection(browser, base));
     await unit("phoneBoardCompact", () => phoneBoardCompactSection(browser, base));
     await unit("phoneBell", () => phoneBellSection(browser, base));
     await unit("mBell", () => mBellSection(browser));
