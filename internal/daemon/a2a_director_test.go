@@ -42,7 +42,7 @@ func directorRig(t *testing.T, d *Daemon) (orch, director, worker *store.Task) {
 
 func liveRunner(d *Daemon, id string) {
 	d.sup.mu.Lock()
-	d.sup.runners[id] = &runner{}
+	d.sup.runners[id] = &runner{started: time.Now()}
 	d.sup.mu.Unlock()
 }
 
