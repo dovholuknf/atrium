@@ -5880,6 +5880,19 @@ async function aliasSection(browser, base) {
     if (bar.cleared.text !== bar.label || bar.cleared.handle) fail("clearing the alias did not put the label back: " + JSON.stringify(bar.cleared));
     if (!/^@saorch · /.test(bar.win)) fail("a popped-out window's title does not lead with the alias: " + bar.win);
 
+    // A drag that selects the name must not open the alias dialog; a plain click still does.
+    const dragged = await ap.evaluate(() => {
+      const el = document.getElementById("t-title");
+      const r = el.getBoundingClientRect(), y = r.top + r.height / 2;
+      const ev = (type, x) => new MouseEvent(type, { bubbles: true, cancelable: true, clientX: x, clientY: y });
+      el.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, clientX: r.left + 2, clientY: y }));
+      window.getSelection().selectAllChildren(el);
+      el.dispatchEvent(ev("click", r.left + 22));
+      return !!document.querySelector("#ask[open]");
+    });
+    if (dragged) fail("a drag that selected the bar's name still opened the alias dialog");
+    await ap.evaluate(() => window.getSelection().removeAllRanges());
+
     aliasWrites = [];
     await ap.evaluate(() => document.getElementById("t-title").click());
     await ap.waitForSelector("#ask[open] #ask-input", { timeout: slow(5000) });

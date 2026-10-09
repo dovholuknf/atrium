@@ -420,6 +420,7 @@
     display: flex; align-items: center; gap: var(--sp-3);
     min-width: 0; flex: 0 1 auto;
   }
+  #t-copy { flex: none; }
   .term-bar strong {
     color: var(--head); font-size: var(--fs-lg);
     min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;

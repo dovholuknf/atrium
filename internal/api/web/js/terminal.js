@@ -570,6 +570,8 @@ function paintTermChips(task) {
   // The path copies itself. It is the thing most often wanted somewhere else,
   // and reading it off a screen to retype it is the worst way to spend a
   // minute.
+  const tc = document.getElementById("t-copy");
+  if (tc && !tc.firstChild) tc.innerHTML = copyIcon();
   document.getElementById("t-chips").innerHTML =
     // WHICH ROOM, first, when there is more than one. `roomOf` reads the room off
     // the id's tag and answers "" with a single room attached, so this draws
@@ -1751,6 +1753,19 @@ function wireTerminalDrops(screen) {
     if (isGuest()) { toast("files are not part of this link", guestWord); return; }
     uploadIntoTerm(files);
   });
+}
+
+// The bar's name, onto the clipboard: what the bar shows, so `@alias` when the card has one.
+async function copyTermName() {
+  const name = document.getElementById("t-title").textContent.trim();
+  if (!name) return;
+  try {
+    await navigator.clipboard.writeText(name);
+  } catch (e) {
+    toast("could not copy it", e.message);
+    return;
+  }
+  toast("copied", name);
 }
 
 // A path, onto the clipboard.

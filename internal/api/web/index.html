@@ -447,6 +447,8 @@ Exports honor whatever filter is applied.">?</span>
           <span class="term-who">
             <span id="t-mark"></span>
             <strong id="t-title">nothing attached</strong>
+            <button type="button" id="t-copy" class="copybit" data-tip="copy the name" aria-label="copy the name"
+              onclick="event.stopPropagation();copyTermName()"></button>
           </span>
           <!-- PHONE ONLY (body.term-phone, see phone.css): this bar is the tray. Hidden by default, it slides over the
                terminal from the handle at the pane's top edge. The picker switches card, the chevron hides the tray. -->
@@ -3721,6 +3723,7 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
   <div class="dlg-body" id="rev-body"></div>
 </dialog>
 
+<script src="/js/dragclick.js"></script>
 <script src="/js/prefs-live.js"></script>
 <script src="/js/cardrules.js"></script>
 <script src="/js/sounds.js"></script>
