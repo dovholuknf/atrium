@@ -27,6 +27,12 @@ func (d *Daemon) workerDefaultModel(h *store.Harness, req LaunchRequest, task *s
 	if req.Resume != "" || task != nil || !isClaude(h) {
 		return ""
 	}
+	if hasTag(req.Tags, InterviewTag) {
+		if m := d.st.WorkerPolicy().InterviewModel; m != "" {
+			return m
+		}
+		return DefaultInterviewModel
+	}
 	if !hasTag(req.Tags, OriginAgentTag) && reportTo == "" {
 		return ""
 	}

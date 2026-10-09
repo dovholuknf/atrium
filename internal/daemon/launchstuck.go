@@ -219,7 +219,7 @@ func (d *Daemon) launchStuck(t *store.Task, now time.Time) *Escalation {
 	// with no atrium hooks is healthy and silent. A RESUMED RUNNER IS NOT A LAUNCH:
 	// a card a restart reopened sits idle at its prompt with its first prompt long
 	// since run, and its restarted clock would call that "no activity since launch".
-	if !run.resumed && d.reportsToLauncher(t) && now.Sub(run.started) >= LaunchIdleAfter && silent >= TerminalMenuAfter {
+	if !run.resumed && d.reportsToLauncher(t) && !hasTag(t.Tags, InterviewTag) && now.Sub(run.started) >= LaunchIdleAfter && silent >= TerminalMenuAfter {
 		since := run.started.Add(LaunchIdleAfter)
 		mins := int(now.Sub(run.started) / time.Minute)
 		e := mkEsc(NoticeLaunchIdle, "", since, fmt.Sprintf("%s: no activity since launch, %d min", who, mins))

@@ -315,6 +315,16 @@ func (c *controlMCP) server(class ctlClass) *mcp.Server {
 			"An unknown room is refused with the rooms the hub knows. A session on a room says `room` " +
 			"to its own hub the same way, and a launch that may have started is `unconfirmed` and never " +
 			"retried: look at `atrium_peers` with `rooms` before launching again.\n\n" +
+			"`kind: \"interview\"` STARTS AN INTERVIEWER. Atrium writes the interviewer rules into BRIEF.md " +
+			"ahead of your `brief`, so put only the topic and context in `brief`. The card is tagged " +
+			"`atrium:interview`: its reply IS the question, it asks one per reply and calls no atrium tool " +
+			"between questions, and atrium never nudges it or calls it stuck for stopping on a question. " +
+			"The human answers in its terminal, so point them at the card. At the end it commits, pushes " +
+			"to the hub, publishes and calls atrium_done. It runs on opus unless `model` or the " +
+			"worker_policy `interview_model` says otherwise.\n\n" +
+			"WHAT IT WRITES GOES IN GIT. A `cwd` that is not a git checkout on a `claude/*` branch is " +
+			"REFUSED, with the reason, so a writeup is not lost in a scratch folder. Make a worktree on a " +
+			"claude/* branch, or pass `scratch: true` for work that is throwaway.\n\n" +
 			"Returns the card id. Use it with `atrium_task`, `atrium_say` and `atrium_exit`, on another room too.",
 	}, audited(c, "ctl-launch", describeLaunch, c.launchHandler))
 
@@ -1473,6 +1483,10 @@ type launchInput struct {
 	Env    map[string]string `json:"env,omitempty" jsonschema:"extra environment for the runner, used as given. ATRIUM_ names are refused. the values stay on the room and the card shows the names only"`
 	// Room launches on another room. The worker's reports come back across.
 	Room string `json:"room,omitempty" jsonschema:"launch on this room instead of your own. its reports and notices still reach you, as your-handle@your-room"`
+	// Kind is what sort of session this is. Empty is an ordinary worker.
+	Kind string `json:"kind,omitempty" jsonschema:"what sort of session to start. empty is an ordinary worker. interview starts an interviewer: atrium writes the interviewer rules into BRIEF.md ahead of your brief (put the topic and context in brief), tags the card atrium:interview, and does not nudge it for stopping on a question. its questions reach the human in its terminal, so tell the human to watch its card. it runs on opus unless model says otherwise"`
+	// Scratch lets the launch start outside a git checkout.
+	Scratch bool `json:"scratch,omitempty" jsonschema:"start in a directory that is not a git checkout on a claude/* branch. without this such a launch is refused, because what an agent writes there is not kept in git. say it only for throwaway work"`
 }
 
 // leanLaunch is whether an atrium_launch starts lean. On by default for the
@@ -1544,6 +1558,9 @@ func (c *controlMCP) launchOnRoom(ctx context.Context, in launchInput, harness, 
 	spawnedBy, spawnedByID string) (launchOutput, error) {
 
 	out := launchOutput{}
+	if err := checkKind(in.Kind); err != nil {
+		return out, err
+	}
 
 	// AN ITEM THAT WAITS ON OTHER WORK does not start, before any slot is reserved. A
 	// worker's title starts with its item id, so a director cannot start blocked work by
@@ -1594,10 +1611,18 @@ func (c *controlMCP) launchOnRoom(ctx context.Context, in launchInput, harness, 
 	// most often leaves out. A launch prompt that lists steps scopes the turn to
 	// those steps, and the worker stops without a word.
 	prompt := WithReportLine(in.Prompt)
+	brief := strings.TrimSpace(in.Brief)
+	if isInterview(in.Kind) {
+		// AN INTERVIEWER'S TURNS END ON A QUESTION, so it is not told to end each one with a report. The rules go into
+		// BRIEF.md from the binary, ahead of the caller's topic, and the tag is what the room reads.
+		prompt = strings.TrimSpace(in.Prompt)
+		brief = interviewBrief(in.Brief)
+		tags = append(tags, InterviewTag)
+	}
 	reqBody := map[string]any{
 		"harness": harness, "cwd": in.Cwd, "title": in.Title,
-		"why": in.Why, "prompt": prompt,
-		"brief": strings.TrimSpace(in.Brief), "tags": tags,
+		"why": in.Why, "prompt": prompt, "scratch": in.Scratch,
+		"brief": brief, "tags": tags,
 		"theme": strings.TrimSpace(in.Theme), "spawned_by": spawnedBy,
 		"lean": leanLaunch(in, harness), "mcp": in.MCP, "lean_agents": in.LeanAgents, "lean_skills": in.LeanSkills,
 		"model": strings.TrimSpace(in.Model), "effort": strings.TrimSpace(in.Effort),
@@ -1619,7 +1644,7 @@ func (c *controlMCP) launchOnRoom(ctx context.Context, in launchInput, harness, 
 		// Named the way atrium_say takes it from here.
 		out.Card, out.Handle = tagFor(room, t.ID), t.Wire+"@"+room
 	}
-	if strings.TrimSpace(in.Brief) != "" {
+	if brief != "" {
 		// The room wrote it; name it back in the same slash form the rest of
 		// atrium carries, so the caller can add to the file it already reads.
 		out.Brief = strings.TrimRight(strings.ReplaceAll(in.Cwd, "\\", "/"), "/") + "/" + "BRIEF.md"

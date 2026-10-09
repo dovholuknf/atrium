@@ -35,6 +35,8 @@ const leanPluginName = "atrium"
 // and skills, by name.
 type leanKit struct {
 	Agents, Skills []string
+	// Interview swaps the worker's system prompt for the interviewer's. It is not a kit: empty() ignores it.
+	Interview bool
 }
 
 func (k leanKit) empty() bool { return len(k.Agents) == 0 && len(k.Skills) == 0 }

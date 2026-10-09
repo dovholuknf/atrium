@@ -20,6 +20,8 @@ type WorkerPolicy struct {
 	// BudgetUSD is the dollars, at list price, an agent-launched card may spend before its launcher is told once.
 	// Zero is off. Nothing is ever stopped by it.
 	BudgetUSD float64 `json:"budget_usd"`
+	// InterviewModel is the model an interview launch (kind interview) gets when it names none. Empty means opus.
+	InterviewModel string `json:"interview_model,omitempty"`
 }
 
 // MaxWorkerBudgetUSD is the largest budget taken, so a typo is refused rather than quietly meaning never.
@@ -36,6 +38,7 @@ func (s *Store) WorkerPolicy() WorkerPolicy {
 		return WorkerPolicy{}
 	}
 	p.Model = strings.TrimSpace(p.Model)
+	p.InterviewModel = strings.TrimSpace(p.InterviewModel)
 	if math.IsNaN(p.BudgetUSD) || p.BudgetUSD < 0 || p.BudgetUSD > MaxWorkerBudgetUSD {
 		p.BudgetUSD = 0
 	}
@@ -48,12 +51,17 @@ func CheckWorkerPolicy(in WorkerPolicy) (string, error) {
 	if len(in.Model) > 80 || strings.ContainsAny(in.Model, " \t\r\n\"'`;|&<>$") {
 		return "", fmt.Errorf("worker_policy model is a model name like sonnet or claude-sonnet-5-5, not %q", in.Model)
 	}
+	in.InterviewModel = strings.TrimSpace(in.InterviewModel)
+	if len(in.InterviewModel) > 80 || strings.ContainsAny(in.InterviewModel, " \t\r\n\"'`;|&<>$") {
+		return "", fmt.Errorf("worker_policy interview_model is a model name like opus or claude-opus-5-5, not %q",
+			in.InterviewModel)
+	}
 	if math.IsNaN(in.BudgetUSD) || in.BudgetUSD < 0 || in.BudgetUSD > MaxWorkerBudgetUSD {
 		return "", fmt.Errorf("worker_policy budget_usd takes dollars from 0 (off) to %d, not %v", MaxWorkerBudgetUSD,
 			in.BudgetUSD)
 	}
 	in.BudgetUSD = math.Round(in.BudgetUSD*100) / 100
-	if in.Model == "" && in.BudgetUSD == 0 {
+	if in.Model == "" && in.BudgetUSD == 0 && in.InterviewModel == "" {
 		return "", nil
 	}
 	b, err := json.Marshal(in)

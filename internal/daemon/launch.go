@@ -181,6 +181,10 @@ type LaunchRequest struct {
 	// gets no git token in its environment, so that code cannot read it and push as the card. It can only take
 	// something away, so any caller may set it. The tag atrium:outside-code says the same and survives a reopen.
 	OutsideCode bool `json:"outside_code,omitempty"`
+
+	// Scratch lets an agent launch start in a directory that is not a git checkout on a claude/* branch. Without it
+	// such a launch is refused, so what an agent writes is kept in git. See agentCheckoutRefusal.
+	Scratch bool `json:"scratch,omitempty"`
 }
 
 // TerminalTemplate wraps a command so it opens in a real terminal window.
@@ -869,6 +873,14 @@ func (d *Daemon) launchLocked(req LaunchRequest) (*store.Task, error) {
 	if fi, err := os.Stat(cwd); err != nil || !fi.IsDir() {
 		return nil, fmt.Errorf("%s is not a directory", cwd)
 	}
+	// AN AGENT'S OUTPUT BELONGS IN GIT. A fresh agent launch outside a claude/* checkout is refused unless it says
+	// `scratch`. A throwaway is a scratch directory by definition, and the board's own launches are not an agent's.
+	if task == nil && req.Resume == "" && !throwaway && !req.Scratch && hasTag(req.Tags, OriginAgentTag) {
+		if why := agentCheckoutRefusal(cwd); why != "" {
+			return nil, fmt.Errorf("%s. launch it in a worktree on a claude/* branch, or pass scratch: true if this is "+
+				"throwaway work", why)
+		}
+	}
 
 	// ONE SESSION PER DIRECTORY, when the caller asks for it. See `IfRunning`.
 	if req.TaskID == "" && req.IfRunning != "" {
@@ -931,7 +943,11 @@ func (d *Daemon) launchLocked(req LaunchRequest) (*store.Task, error) {
 			return nil, err
 		}
 		briefPath = filepath.ToSlash(p)
-		wanted = briefPrompt(wanted)
+		if hasTag(req.Tags, InterviewTag) {
+			wanted = briefPromptEnding(briefFileName, wanted, "")
+		} else {
+			wanted = briefPrompt(wanted)
+		}
 	} else if req.Resume == "" && wanted != "" && !outside {
 		// NO BRIEF, so no BRIEF.md to carry the line. It rides on the prompt
 		// instead, on a fresh start only, like the brief.
@@ -1695,13 +1711,23 @@ const LaunchEndingLine = "Before you end your turn, tell your launcher either:\n
 // ONE CODE for the room's launch and the stdio atrium_launch. A launcher's prompt that only says to read the brief
 // and do it is not repeated after "Then:", and the ending is never doubled.
 func BriefPrompt(file, prompt string) string {
+	return briefPromptEnding(file, prompt, LaunchEndingLine)
+}
+
+// briefPromptEnding is BriefPrompt with the ending it closes on. An interview closes on none: its turns end on a
+// question, and its rules for finishing are in the brief.
+func briefPromptEnding(file, prompt, ending string) string {
 	body := strings.TrimSpace(strings.TrimSuffix(strings.TrimSpace(prompt), LaunchEndingLine))
 	then := "Then: do as " + file + " describes."
 	if body != "" && !onlyReadTheBrief(body, file) {
 		then = "Then: " + body
 	}
-	return "Read " + file + " in this directory first. It holds everything you are expected to know. " +
-		"Re-read it whenever you lose the thread rather than guessing.\n" + then + "\n\n" + LaunchEndingLine
+	out := "Read " + file + " in this directory first. It holds everything you are expected to know. " +
+		"Re-read it whenever you lose the thread rather than guessing.\n" + then
+	if ending != "" {
+		out += "\n\n" + ending
+	}
+	return out
 }
 
 // onlyReadTheBrief says whether a prompt is just "read BRIEF.md and do it".
