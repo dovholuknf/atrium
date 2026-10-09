@@ -4163,6 +4163,97 @@ async function clearMarkSection(browser, base) {
   if (!bad) console.log("clearMark ok");
 }
 
+// ── a cleared context leaves a line ────────────────────────────────────────
+// js/clearline.js. The mark draws a divider on the first row of the new screen, between the kept page and the new
+// screen, with the time when it arrived live and without one when it came in a replay. It is a marker and a
+// decoration, so no row of the buffer changes. CLEARLINE_SHOTS=/dir with CLEARLINE_SHOT=before|after saves the picture.
+async function clearLineSection(browser, base) {
+  const was = tasksMode;
+  tasksMode = "land";
+  landCard("land-clearline", { supervised: true, created_at: "2026-09-19T12:00:00Z" });
+  landList = [LAND["land-clearline"]];
+  landPerms = [];
+  const errors = [];
+  const ctx = await landContext(browser);
+  try {
+    const p = await ctx.newPage();
+    p.on("pageerror", e => errors.push(String(e)));
+    await p.goto(base, { waitUntil: "domcontentloaded" });
+    await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
+    await p.evaluate(() => attachTask("land-clearline"));
+    await p.waitForFunction(() => termSock && termTask && termTask.id === "land-clearline", null, { timeout: slow(10000) });
+    // Feeds `seq` (after `quiet` ms of nothing, so the terminal counts as live) and reads what the divider did.
+    const run = (seq, o) => p.evaluate(async ([seq, o]) => {
+      const w = d => new Promise(r => term.write(d, r));
+      if (o.fresh) { term.reset(); term._atriumPushed = ""; }
+      if (o.quiet) { await w("\x1b[0m"); await new Promise(r => setTimeout(r, o.quiet)); }
+      await w(seq);
+      await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+      const b = term.buffer.normal, rows = [];
+      for (let i = 0; i < b.length; i++) rows.push(b.getLine(i).translateToString(true));
+      const divs = (term._cl ? term._cl.divs : []).map(d => ({ line: d.marker.line, prev: d.marker.line > 0 ? rows[d.marker.line - 1] : "", at: rows[d.marker.line] }));
+      const els = [...document.querySelectorAll(".xterm .atrium-clearline")].map(e => e.dataset.label);
+      return { base: b.baseY, rows, divs, els };
+    }, [seq, o]);
+    const MARK = "\x1b]7777;atrium-clear\x07";
+    const OLD = "old line 1\r\nold line 2\r\n";
+    const REPAINT = "\x1b[H\x1b[Knew banner\r\n\x1b[K\r\n\x1b[K\r\n";
+    const shot = async name => {
+      if (!process.env.CLEARLINE_SHOTS) return;
+      fs.mkdirSync(process.env.CLEARLINE_SHOTS, { recursive: true });
+      await p.screenshot({ path: path.join(process.env.CLEARLINE_SHOTS, name + ".png") });
+    };
+
+    let got = await run(OLD + REPAINT, { fresh: true });
+    if (got.divs.length || got.els.length) fail("clearLine: a divider without a mark: " + JSON.stringify(got.divs));
+    await shot(process.env.CLEARLINE_SHOT === "after" ? "unmarked" : "before");
+
+    // Live: the divider sits between the kept page and the new screen, with a time.
+    got = await run(OLD + MARK + REPAINT, { fresh: true, quiet: 600 });
+    if (got.divs.length !== 1) fail("clearLine: a live clear drew " + got.divs.length + " dividers: " + JSON.stringify(got.divs));
+    else {
+      const d = got.divs[0];
+      if (d.prev !== "old line 2" || d.at !== "new banner") fail("clearLine: the divider is not between the kept page and the new screen: " + JSON.stringify(d));
+      if (d.line !== got.base) fail("clearLine: the divider is at " + d.line + ", not the first row of the screen (" + got.base + ").");
+    }
+    if (got.els.length !== 1 || !/^context cleared · \d/.test(got.els[0] || "")) fail("clearLine: a live clear should say context cleared and a time: " + JSON.stringify(got.els));
+    await shot(process.env.CLEARLINE_SHOT || "after");
+    const rowsLive = got.rows.join("|");
+
+    // A replay is the same bytes through a reset terminal, with no way to know when: one divider, no time, same rows.
+    got = await run(OLD + MARK + REPAINT, { fresh: true });
+    if (got.divs.length !== 1 || got.els.length !== 1) fail("clearLine: a replay drew " + got.divs.length + " dividers and " + got.els.length + " elements.");
+    if (got.els[0] !== "context cleared") fail("clearLine: a replay should not invent a time: " + JSON.stringify(got.els));
+    if (got.rows.join("|") !== rowsLive) fail("clearLine: the divider changed the rows of the buffer.");
+    // Rendered again over the same terminal: still one.
+    got = await run("", {});
+    if (got.els.length !== 1) fail("clearLine: a second render stacked dividers: " + JSON.stringify(got.els));
+
+    // Several clears, several dividers, each its own line.
+    got = await run("a1\r\na2\r\n" + MARK + "\x1b[H\x1b[Kb1\r\nb2\r\n" + MARK + "\x1b[H\x1b[Kc1\r\n", { fresh: true });
+    if (got.divs.length !== 2 || got.els.length < 1 || got.divs[0].line === got.divs[1].line) fail("clearLine: two clears should draw two dividers: " + JSON.stringify(got.divs) + " " + JSON.stringify(got.els));
+
+    // The alternate screen draws none.
+    got = await run("before\r\n\x1b[?1049h" + "PAGER\r\n" + MARK + "\x1b[?1049l" + "after\r\n", { fresh: true });
+    if (got.divs.length || got.els.length) fail("clearLine: the alternate screen drew a divider: " + JSON.stringify(got.divs));
+    // An empty screen kept nothing, so there is no seam to mark.
+    got = await run(MARK, { fresh: true });
+    if (got.divs.length) fail("clearLine: a mark on an empty screen drew a divider.");
+
+    // Scrollback trimming takes the line and the divider with it, and nothing throws.
+    await p.evaluate(() => { term.reset(); term._atriumPushed = ""; term.options.scrollback = 5; });
+    got = await run(OLD + MARK + REPAINT + Array.from({ length: 80 }, (_, i) => "filler " + i + "\r\n").join(""), {});
+    if (got.divs.length) fail("clearLine: a trimmed line kept its divider: " + JSON.stringify(got.divs));
+    await p.evaluate(() => { term.options.scrollback = scrollbackLines(); });
+  } finally {
+    await ctx.close();
+  }
+  if (errors.length) fail("the clear line page threw: " + errors.join(" | "));
+  landList = []; landPerms = [];
+  tasksMode = was;
+  if (!bad) console.log("clearLine ok");
+}
+
 // ── over a terminal the toasts hang from the top right ─────────────────────
 // Backlog-2 item 18. A toast in the bottom right sat on the terminal's input
 // line and status bar, where clint was typing. On the terminals view (and in a
@@ -25981,7 +26072,7 @@ async function main() {
       groupRemove: groupRemoveSection, worn: wornSection, restartGate: restartGateSection, restartStays: restartStaysSection, atriumDown: atriumDownSection,
       toastStays: toastStaysSection, groupColor: groupColorSection,
       groupDrag: groupDragSection, tooltip: tooltipSection, linkTip: linkTipSection, fileOpenOutside: fileOpenOutsideSection, readTabSize: readTabSizeSection,popoutTagFlip: popoutTagFlipSection, prefsEverywhere: prefsEverywhereSection, mPrefsEverywhere: (b) => mPrefsEverywhereSection(b), idleRate: idleRateSection, foldStill: foldStillSection,
-      untaggedSort: untaggedSortSection, newCard: newCardSection, themePreview: themePreviewSection, themeLab: themeLabSection, land: landSection, reselect: reselectSection, clearKeepsPage: clearKeepsPageSection, clearMark: clearMarkSection,
+      untaggedSort: untaggedSortSection, newCard: newCardSection, themePreview: themePreviewSection, themeLab: themeLabSection, land: landSection, reselect: reselectSection, clearKeepsPage: clearKeepsPageSection, clearMark: clearMarkSection, clearLine: clearLineSection,
       resumeSpinner: resumeSpinnerSection, toastsTop: toastsTopSection, sayWhen: sayWhenSection, pasteSpinner: pasteSpinnerSection,
       pasteBig: pasteBigSection, pasteEmpty: pasteEmptySection, pasteBusy: pasteBusySection, typing: typingSection, alias: aliasSection, askAgain: askAgainSection, copySelect: copySelectSection, busyGuard: busyGuardSection, keepalive: keepaliveSection, restartMenu: restartMenuSection,
       stuck: stuckSection, blockerMark: blockerMarkSection, carryLink: carryLinkSection,
@@ -27910,6 +28001,7 @@ async function main() {
     await unit("termWear", () => termWearSection(browser, base));
     await unit("clearKeepsPage", () => clearKeepsPageSection(browser, base));
     await unit("clearMark", () => clearMarkSection(browser, base));
+    await unit("clearLine", () => clearLineSection(browser, base));
     // ── the attached row's bridge into the terminal, and the terminal's frame ─
     await unit("bridge", () => bridgeSection(browser, base));
     // ── a load reads settings once ──────────────────────────────────────────
