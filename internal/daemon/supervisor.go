@@ -822,6 +822,10 @@ type runner struct {
 	// lastEnter is lastTyped when the keystroke was an Enter that ended its frame, the
 	// submit. A prompt hook that follows it is that submit. See `resetLine`.
 	lastEnter time.Time
+	// keySeq counts keystroke frames, enterSeq is keySeq at the last submit, and
+	// peerKeySeq is keySeq when atrium last submitted a peer's message. Counters,
+	// not times: two keys in one clock tick (Windows) tie on a timestamp.
+	keySeq, enterSeq, peerKeySeq uint64
 	// peerSent is when atrium last submitted ANOTHER SESSION'S message here, or
 	// a labelled after-restart wake. The prompt that follows is not the operator, and
 	// must not mark the turn seen or its questions answered. See
@@ -1028,8 +1032,10 @@ func (r *runner) noteOperatorTyped(p []byte) bool {
 	keyed := r.line.feed(p)
 	if keyed {
 		r.lastTyped = time.Now()
+		r.keySeq++
 		if p[len(p)-1] == '\r' {
 			r.lastEnter = r.lastTyped
+			r.enterSeq = r.keySeq
 		}
 	}
 	r.typeMu.Unlock()
@@ -1192,7 +1198,7 @@ func (r *runner) resetLine() bool {
 	if r.line.empty() && len(r.line.pending) == 0 && !r.line.inPaste {
 		return false
 	}
-	if !r.lastTyped.IsZero() && !r.lastTyped.Equal(r.lastEnter) && r.lastTyped.After(r.peerSent) {
+	if r.keySeq > r.enterSeq && r.keySeq > r.peerKeySeq {
 		return false
 	}
 	r.line.clear()
@@ -1319,6 +1325,7 @@ func (r *runner) injectPeerIf(banner, body string, ok func() bool) (bool, error)
 	if banner != "" {
 		r.typeMu.Lock()
 		r.peerSent = time.Now()
+		r.peerKeySeq = r.keySeq
 		r.peerCause = causeOfBanner(banner)
 		r.typeMu.Unlock()
 	}
