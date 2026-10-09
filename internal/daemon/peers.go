@@ -602,7 +602,9 @@ func (d *Daemon) deliverPeerCaused(target *store.Task, from, text, kind, cause s
 		return false, "", err
 	}
 	d.publishTask(target.ID)
-	d.deferPeerInjection(target.ID, m.ID, from, text, kind, waitTurn)
+	if !d.carriedByHooks(target.ID, from, waitTurn) {
+		d.deferPeerInjection(target.ID, m.ID, from, text, kind, waitTurn)
+	}
 	return false, m.ID, nil
 }
 
@@ -674,6 +676,10 @@ func (d *Daemon) tellByTyping(target *store.Task, from, text, kind string, waitT
 	// A FIFTH, and it waits rather than refuses: a message that asked to wait
 	// for the turn, while the runner is mid-turn. See saywhen.go.
 	if d.turnHolds(target.ID, waitTurn) {
+		return false, ""
+	}
+	// A SIXTH: mid-turn in a runner that would only queue the line. See carriedByHooks.
+	if d.carriedByHooks(target.ID, from, waitTurn) {
 		return false, ""
 	}
 	// Bracketed paste when supported, so a long report stays together even if

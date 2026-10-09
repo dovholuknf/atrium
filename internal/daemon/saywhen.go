@@ -83,6 +83,26 @@ func (d *Daemon) turnReachWarning(t *store.Task) string {
 		"under rooms > runners.", t.WireName)
 }
 
+// carriedByHooks reports whether a session's immediate message is left for its hooks and not typed: the card is a
+// claude runner mid-turn that has been heard on a hook.
+//
+// CLAUDE CODE PUTS A LINE TYPED MID-TURN IN ITS OWN QUEUED-MESSAGE BOX, and the model does not read the box until the
+// turn is over, so a `terminal` answer for such a say was untrue and a "stop now" did not stop anything. Queued
+// instead, the PreToolUse hook carries it at the next tool call (step 2 of the permission chain, see takeMessages)
+// and the Stop hook at the turn's end. Nothing is typed, so the injector holds no retry for it, and the answer is
+// `queued` until a hook has handed it to the model. Only a message from a session: the operator's own typing is
+// unchanged.
+func (d *Daemon) carriedByHooks(taskID, from string, waitTurn bool) bool {
+	if from == "" || waitTurn || !d.act.midTurn(taskID) {
+		return false
+	}
+	t, err := d.st.Get(taskID)
+	if err != nil || !strings.EqualFold(t.Runner, "claude") {
+		return false
+	}
+	return t.ToolHookSeenAt != nil || t.StopHookSeenAt != nil
+}
+
 // turnHolds reports whether a message that waits for the turn is still held by
 // it: it asked to wait and the runner is mid-turn. An immediate message is
 // never held by the turn, only by the gate.

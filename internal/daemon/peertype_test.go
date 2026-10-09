@@ -9,6 +9,35 @@ import (
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
+// A say to a claude runner that is mid-turn is not typed: Claude Code would park the line in its own queued-message
+// box, unread, and the sender was told `terminal`. It is queued for the PreToolUse hook, nothing is written to the
+// terminal, and no retry is held to type it later.
+func TestAMidTurnSayToClaudeIsLeftForTheHooks(t *testing.T) {
+	d := testDaemon(t)
+	target, _, f := peerPair(t, d)
+	t.Cleanup(func() { d.pending.stopAll() })
+	if err := d.st.SawHook(target.ID, store.HookTool); err != nil {
+		t.Fatal(err)
+	}
+	target, _ = d.st.Get(target.ID)
+	d.act.set(target.ID, ActivityTool, "Bash")
+
+	typed, id, err := d.deliverPeerWhenID(target, "sg4/doer", "stop now", "", false)
+	if err != nil || typed || id == "" {
+		t.Fatalf("typed %v id %q err %v, want queued", typed, id, err)
+	}
+	if got := f.written(); strings.Contains(got, "stop now") {
+		t.Fatalf("typed into a mid-turn claude: %q", got)
+	}
+	if a := d.act.get(target.ID); a != nil && a.HeldCount != 0 {
+		t.Fatalf("a retry is held to type it later: %+v", a)
+	}
+	msgs, err := d.takeMessages(target.ID, "permission")
+	if err != nil || len(msgs) != 1 || msgs[0].Text != "stop now" {
+		t.Fatalf("the PreToolUse hook carried %+v, err %v", msgs, err)
+	}
+}
+
 // Whether one session may type into another's terminal, and what it does about
 // Enter when it does.
 //

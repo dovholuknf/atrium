@@ -684,7 +684,8 @@ func (d *Daemon) handleMessage(w http.ResponseWriter, r *http.Request) {
 	// NOR FROM ANOTHER AGENT WHILE THE CARD IS HELD FOR A DEPLOY. The operator's
 	// words still go. See roomhold.go.
 	holding := d.holdingFrom(taskID, from)
-	if run := d.sup.get(taskID); run != nil && !holding && !woke && !d.act.dialogOpen(taskID) && !d.turnHolds(taskID, waitTurn) {
+	byHooks := d.carriedByHooks(taskID, from, waitTurn)
+	if run := d.sup.get(taskID); run != nil && !holding && !woke && !byHooks && !d.act.dialogOpen(taskID) && !d.turnHolds(taskID, waitTurn) {
 		wrote, err := d.typeThroughGate(run, taskID, from, body.Text)
 		if err != nil {
 			writeJSONErr(w, http.StatusInternalServerError, err)
@@ -765,7 +766,9 @@ func (d *Daemon) handleMessage(w http.ResponseWriter, r *http.Request) {
 	// A queued message keeps trying to type in on the same backoff as the bus,
 	// whoever sent it, so it lands the moment the line clears. See
 	// pendinginject.go.
-	d.deferPeerInjection(taskID, m.ID, from, body.Text, kind, waitTurn)
+	if !byHooks {
+		d.deferPeerInjection(taskID, m.ID, from, body.Text, kind, waitTurn)
+	}
 
 	// SAY WHETHER IT WILL EVER ARRIVE. A queued message is only as good as the
 	// hook that drains it, and a card whose runner has none (a gemini session
