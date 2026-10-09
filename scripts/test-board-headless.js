@@ -5973,6 +5973,49 @@ async function pasteBigSection(browser, base) {
   tasksMode = was;
 }
 
+// ── a pasted image with no bytes is never uploaded ────────────────────────
+// A delay-rendered clipboard image reaches the paste event as a 0-byte File. It must not become a file on disk
+// whose path is pasted to the agent: no upload request, and a toast saying to paste again.
+async function pasteEmptySection(browser, base) {
+  const was = tasksMode;
+  tasksMode = "land";
+  landCard("land-live", { supervised: true, created_at: "2026-09-19T12:00:00Z" });
+  landList = [LAND["land-live"]];
+  landPerms = [];
+  const errors = [];
+  const ctx = await landContext(browser);
+  let uploads = 0;
+  await ctx.route("**/v1/tasks/*/files", route => {
+    if (route.request().method() === "POST") uploads++;
+    return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ paths: ["/x/pasted.png"] }) });
+  });
+  try {
+    const p = await ctx.newPage();
+    p.on("pageerror", e => errors.push(String(e)));
+    await p.goto(base, { waitUntil: "domcontentloaded" });
+    await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
+    await p.evaluate(() => attachTask("land-live"));
+    await p.waitForFunction(() => termSock && termSock.readyState === 1 && termTask && termTask.id === "land-live", null,
+      { timeout: slow(10000) });
+    await p.evaluate(() => {
+      Object.defineProperty(navigator, "clipboard", { configurable: true,
+        value: { readText: () => Promise.resolve(""), read: () => Promise.resolve([]) } });
+      const dt = new DataTransfer();
+      dt.items.add(new File([], "image.png", { type: "image/png" }));
+      document.getElementById("t-screen").dispatchEvent(
+        new ClipboardEvent("paste", { clipboardData: dt, bubbles: true, cancelable: true }));
+    });
+    await p.waitForFunction(() => [...document.querySelectorAll(".toast")].some(t => /was empty/.test(t.textContent)),
+      null, { timeout: slow(4000) }).catch(() => fail("an empty pasted image did not say it was empty"));
+    if (uploads) fail("an empty pasted image was uploaded " + uploads + " time(s)");
+  } finally {
+    await ctx.close();
+  }
+  if (errors.length) fail("the empty paste page threw: " + errors.join(" | "));
+  landList = []; landPerms = [];
+  tasksMode = was;
+}
+
 // ── a slow paste shows the busy mark at once and keeps it ─────────────────
 // Test plan (u-007). The mock runner does what Claude Code does: it echoes the
 // paste within milliseconds, then works, and prints its real answer late. The
@@ -25566,7 +25609,7 @@ async function main() {
       groupDrag: groupDragSection, tooltip: tooltipSection, linkTip: linkTipSection, fileOpenOutside: fileOpenOutsideSection, readTabSize: readTabSizeSection,popoutTagFlip: popoutTagFlipSection, prefsEverywhere: prefsEverywhereSection, mPrefsEverywhere: (b) => mPrefsEverywhereSection(b), idleRate: idleRateSection, foldStill: foldStillSection,
       untaggedSort: untaggedSortSection, newCard: newCardSection, themePreview: themePreviewSection, themeLab: themeLabSection, land: landSection, reselect: reselectSection, clearKeepsPage: clearKeepsPageSection,
       resumeSpinner: resumeSpinnerSection, toastsTop: toastsTopSection, sayWhen: sayWhenSection, pasteSpinner: pasteSpinnerSection,
-      pasteBig: pasteBigSection, pasteBusy: pasteBusySection, typing: typingSection, alias: aliasSection, askAgain: askAgainSection, copySelect: copySelectSection, busyGuard: busyGuardSection, keepalive: keepaliveSection, restartMenu: restartMenuSection,
+      pasteBig: pasteBigSection, pasteEmpty: pasteEmptySection, pasteBusy: pasteBusySection, typing: typingSection, alias: aliasSection, askAgain: askAgainSection, copySelect: copySelectSection, busyGuard: busyGuardSection, keepalive: keepaliveSection, restartMenu: restartMenuSection,
       stuck: stuckSection, blockerMark: blockerMarkSection, carryLink: carryLinkSection,
       skinScope: skinScopeSection, skinHeal: skinHealSection, toastLives: toastLivesSection,
       history: historySection, contextSize: contextSizeSection, ctxLine: ctxLineSection, ctxLimitLayers: ctxLimitLayersSection, contextCycle: contextCycleSection, landThePlane: landThePlaneSection, peekEverywhere: peekEverywhereSection, peekOneHover: peekOneHoverSection, cardRoute: cardRouteSection,
@@ -27580,6 +27623,7 @@ async function main() {
     await unit("resumeSpinner", () => resumeSpinnerSection(browser, base));
     await unit("pasteSpinner", () => pasteSpinnerSection(browser, base));
     await unit("pasteBig", () => pasteBigSection(browser, base));
+    await unit("pasteEmpty", () => pasteEmptySection(browser, base));
     await unit("pasteBusy", () => pasteBusySection(browser, base));
     // ── the typing gate readout, off until switched on ─────────────────────
     await unit("typing", () => typingSection(browser, base));

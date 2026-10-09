@@ -254,6 +254,25 @@ func TestDownloadingAFileInsideWorks(t *testing.T) {
 	}
 }
 
+// A delay-rendered clipboard image can arrive as zero bytes. Saving it would hand the agent a path to an empty
+// file with nobody the wiser.
+func TestUploadRefusesAnEmptyFileAndWritesNothing(t *testing.T) {
+	s, st, work := fileServer(t)
+	task := cardIn(t, st, work)
+
+	w := httptest.NewRecorder()
+	s.uploadFiles(w, uploadReq(t, task.ID, []string{"pasted.png"}, nil))
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("an empty upload answered %d: %s", w.Code, w.Body.String())
+	}
+	if !strings.Contains(w.Body.String(), "an empty file was sent, nothing was saved") {
+		t.Fatalf("the refusal does not say why: %s", w.Body.String())
+	}
+	if entries, err := os.ReadDir(filepath.Join(work, ".atrium", "incoming")); err == nil && len(entries) != 0 {
+		t.Fatalf("%d files landed", len(entries))
+	}
+}
+
 // Everything is an attachment and nothing is sniffed. Serving an HTML file
 // from a working directory inline would be serving attacker-authored script on
 // the board's own origin, and the board holds the settings and every card.

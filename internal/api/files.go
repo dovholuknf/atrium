@@ -194,6 +194,15 @@ func (s *Server) uploadFiles(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Refused before anything is written, so a bad part never leaves a 0-byte
+	// file whose path gets pasted to an agent.
+	for _, h := range headers {
+		if h.Size == 0 {
+			writeErr(w, http.StatusBadRequest, errors.New("an empty file was sent, nothing was saved"))
+			return
+		}
+	}
+
 	stamp := time.Now().Format("20060102-150405")
 	written := make([]string, 0, len(headers))
 	for i, h := range headers {

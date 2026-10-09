@@ -1369,15 +1369,20 @@ function wireTerminalPaste(screen) {
     // kind `file` with no name, and browsers have not always populated
     // `files` for it.
     const files = [];
+    let sawEmpty = false;
     for (const item of dt.items || []) {
       if (item.kind !== "file") continue;
       const f = item.getAsFile();
-      if (f) files.push(f);
+      if (f && f.size > 0) files.push(f);
+      else if (f) sawEmpty = true;
     }
 
     e.preventDefault();
     e.stopPropagation();
     lagPasteStart("paste event");
+    // A delay-rendered clipboard image can arrive here with no bytes, while
+    // the async clipboard API still has them.
+    if (!files.length && sawEmpty && !isGuest()) { pasteFilesIntoTerm(true); return; }
     // A guest has no file endpoint, so a pasted picture is offered nothing and
     // falls through to the text below it. Pasting TEXT is the terminal, which
     // is the one thing this link does share.
@@ -1577,21 +1582,24 @@ function wirePasteBox() {
     const dt = e.clipboardData;
     if (!dt) return;
     const files = [];
+    let sawEmpty = false;
     for (const item of dt.items || []) {
       if (item.kind !== "file") continue;
       const f = item.getAsFile();
-      if (f) files.push(f);
+      if (f && f.size > 0) files.push(f);
+      else if (f) sawEmpty = true;
     }
     // Text is left alone and lands in the box, where it can be read before it
     // is sent. Files have nothing to read and no text form worth sending, so
     // they go straight up.
-    if (!files.length) return;
+    if (!files.length && !sawEmpty) return;
     // A guest has no file endpoint. Left alone rather than refused: whatever
     // text form the clipboard also carries lands in the box, which is the same
     // thing this box does for every paste it cannot upload.
     if (isGuest()) return;
     e.preventDefault();
     closePasteBox();
+    if (!files.length) { pasteFilesIntoTerm(true); return; }
     uploadIntoTerm(files);
   });
 
@@ -1612,14 +1620,18 @@ function wirePasteBox() {
 // pipeline covers files of any kind.
 //
 // Returns whether it handled the paste.
-async function pasteFilesIntoTerm() {
-  if (!termTask || !navigator.clipboard || !navigator.clipboard.read) return false;
+//
+// `fromEmpty` says the paste event already held an empty file, so a clipboard
+// that gives nothing either is answered with a toast rather than silence.
+async function pasteFilesIntoTerm(fromEmpty) {
+  const emptyToast = () => { if (fromEmpty) { pasteEnd("the pasted image being empty"); toast("the pasted image was empty", "paste it again"); } return fromEmpty === true; };
+  if (!termTask || !navigator.clipboard || !navigator.clipboard.read) return emptyToast();
   // A guest has no file endpoint, so this hands the paste back and the text
   // branch behind it takes over. Not handled here means not handled, which is
   // what the caller already knows how to do something with.
   if (isGuest()) return false;
   let items;
-  try { items = await navigator.clipboard.read(); } catch (e) { return false; }
+  try { items = await navigator.clipboard.read(); } catch (e) { return emptyToast(); }
 
   const files = [];
   for (const item of items) {
@@ -1629,10 +1641,10 @@ async function pasteFilesIntoTerm() {
     if (!type) continue;
     try {
       const blob = await item.getType(type);
-      files.push(new File([blob], "pasted." + (type.split("/")[1] || "bin"), { type }));
+      if (blob.size > 0) files.push(new File([blob], "pasted." + (type.split("/")[1] || "bin"), { type }));
     } catch (e) { /* an item that will not read is one to skip */ }
   }
-  if (!files.length) return false;
+  if (!files.length) return emptyToast();
 
   await uploadIntoTerm(files);
   return true;
@@ -1643,7 +1655,12 @@ async function pasteFilesIntoTerm() {
 // Whatever gesture produced the bytes, the bytes go to the same endpoint and
 // what comes back is a path. Charon's lesson, and worth taking whole.
 async function uploadIntoTerm(files) {
-  if (!termTask || !files || !files.length) return;
+  if (!termTask || !files) return;
+  // Last guard: a path to an empty file is worse than no path.
+  const sent = Array.from(files).filter(f => f.size > 0);
+  if (sent.length < files.length) toast("the pasted image was empty", "paste it again");
+  files = sent;
+  if (!files.length) return;
   // On a phone with the composer up, it owns the upload: chips, progress and the paths at its caret.
   if (typeof tcomposeAttach === "function" && tcomposeAttach(files)) return;
   const form = new FormData();
