@@ -135,9 +135,12 @@ function lrLeave(why) {
   if (L.away) return;
   const b = t.buffer.active;
   const cur = b.baseY + b.cursorY;
-  const k = lrText(b, cur) === "" ? 0 : 1;
   const atBottom = b.viewportY >= b.baseY;
-  const rec = { end: lrSig(b, cur, cur - 1), endRow: cur, k, top: null, topRow: 0, div: null, at: Date.now() };
+  // The last row seen: the bottom of the view when scrolled up (never past the cursor, below which is blank), else the
+  // cursor's row, which counts as seen only when it holds text. The divider goes on the row after it.
+  const seen = atBottom ? cur : Math.min(cur, b.viewportY + t.rows - 1);
+  const k = atBottom && lrText(b, cur) === "" ? 0 : 1;
+  const rec = { end: lrSig(b, seen, atBottom ? seen - 1 : seen), endRow: seen, k, top: null, topRow: 0, div: null, at: Date.now() };
   if (!atBottom) { rec.top = lrSig(b, b.viewportY, b.viewportY); rec.topRow = b.viewportY; }
   // A divider that is still there when the terminal is reset for a replay is carried over it. Any other time leaving
   // retires it: what it marked has been seen.
@@ -145,7 +148,7 @@ function lrLeave(why) {
   if (why === "reset" && dl >= 0) rec.div = lrSig(b, dl, dl - 1);
   else lrClearDiv(L);
   lrDropMarks(L);
-  L.mkEnd = t.registerMarker(0);
+  L.mkEnd = t.registerMarker(seen - cur);
   if (!atBottom) L.mkTop = t.registerMarker(b.viewportY - cur);
   L.rec = rec;
   L.away = true;

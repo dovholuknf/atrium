@@ -6007,6 +6007,9 @@ async function termLastReadSection(browser, base) {
       await __idle(500);
       term.scrollToLine(40);
       await __idle();
+      const b0 = term.buffer.active;
+      window.__firstUnseen = b0.getLine(b0.viewportY + term.rows).translateToString(true);
+      window.__unseen = b0.baseY + b0.cursorY - (b0.viewportY + term.rows) + 1;
       await __goto("lr-b");
       __say("lr-a", __lines(0, 30, "later"));
       await __idle();
@@ -6017,8 +6020,10 @@ async function termLastReadSection(browser, base) {
     const row = await p.evaluate(() => __divRow());
     await shot(p, process.env.LASTREAD_SHOT || "after");
     if (s.top !== 40) fail("termLastRead: coming back landed at line " + s.top + ", not where it was left (40).");
-    if (!s.div || !/^later 0 /.test(row || "")) fail("termLastRead: no divider at the first new line (row: " + JSON.stringify(row) + ").");
-    if (!s.pill || !/30/.test(s.pillText)) fail("termLastRead: the pill does not count 30 new lines: " + JSON.stringify(s.pillText));
+    // The divider is under the last row that was in view, so the first row under it is the first one not seen.
+    const fu = await p.evaluate(() => ({ row: __firstUnseen, n: __unseen + 30 }));
+    if (!s.div || row !== fu.row) fail("termLastRead: no divider at the first row not seen (row: " + JSON.stringify(row) + ", wanted " + JSON.stringify(fu.row) + ").");
+    if (!s.pill || s.pillText !== "↓ " + fu.n + " new lines") fail("termLastRead: the pill does not count the " + fu.n + " rows under the divider: " + JSON.stringify(s.pillText));
     // Reaching the bottom retires the pill and keeps the divider.
     await p.evaluate(async () => { term.scrollToBottom(); await __idle(); });
     s = await p.evaluate(() => __state());
@@ -6057,7 +6062,8 @@ async function termLastReadSection(browser, base) {
     await p.evaluate(async () => {
       __say("lr-a", "spinner 0\r\n");
       await __idle();
-      term.scrollToLine(20);
+      term.scrollToBottom();
+      await __idle();
       await __goto("lr-b");
       for (let i = 1; i <= 300; i++) __say("lr-a", "\x1b[1A\x1b[2Kspinner " + i + "\r\n");
       await __idle();
@@ -6071,6 +6077,7 @@ async function termLastReadSection(browser, base) {
     await p.evaluate(async () => {
       lrBlurMin = 0;
       __say("lr-a", __lines(0, 5, "tail"));
+      term.scrollToBottom();
       await __idle();
       window.dispatchEvent(new Event("blur"));
       __say("lr-a", __lines(0, 12, "resized"));
@@ -6157,6 +6164,43 @@ async function termLastReadSection(browser, base) {
       s = await p.evaluate(() => __state());
       if (s.div || s.pill) fail("termLastRead: a clear screen left a divider: " + JSON.stringify(s) + " for " + JSON.stringify(clear));
       if (s.top !== s.base) fail("termLastRead: after a clear the terminal should be at the bottom: " + JSON.stringify(s));
+    }
+
+    // 8b. EXACT. Leaving scrolled up, the view comes back on the same top row and the divider sits directly under the
+    // last row that was in view, whatever arrived meanwhile: short lines, lines that wrap, and a resize while away.
+    for (const c of [{ name: "short", wrap: false, resize: false }, { name: "wrapped", wrap: true, resize: false }, { name: "resized", wrap: false, resize: true }, { name: "bottom", wrap: false, resize: false, bottom: true }]) {
+      const r = await p.evaluate(async c => {
+        lrBlurMin = 0;
+        const tag = "ex" + c.name;
+        const mk = (i, t) => { let s = t + " " + i; if (c.wrap) for (let j = 0; s.length < term.cols * 2.5; j++) s += " seg" + i + "-" + j; return s + "\r\n"; };
+        let out = "";
+        for (let i = 0; i < 120; i++) out += mk(i, tag);
+        __say("lr-a", out);
+        await __idle(500);
+        const b = term.buffer.active, txt = n => { const l = b.getLine(n); return l ? l.translateToString(true) : null; };
+        if (!c.bottom) term.scrollToLine(b.baseY - 37); else term.scrollToBottom();
+        await __idle();
+        const top = b.viewportY, atBottom = b.viewportY >= b.baseY;
+        const topText = txt(top), lastSeen = atBottom ? null : txt(top + term.rows - 1), firstUnseen = atBottom ? null : txt(top + term.rows);
+        window.dispatchEvent(new Event("blur"));
+        await __idle(100);
+        let n = ""; for (let i = 0; i < 30; i++) n += mk(i, "new" + c.name);
+        __say("lr-a", n);
+        await __idle();
+        if (c.resize) { term.resize(term.cols - 25, term.rows); await __idle(); }
+        window.dispatchEvent(new Event("focus"));
+        await __idle(1200);
+        return { atBottom, top, topText, lastSeen, firstUnseen, now: b.viewportY, nowText: txt(b.viewportY), div: __divRow(), divLine: term._lr.div ? term._lr.div.marker.line : -1,
+          above: term._lr.div ? txt(term._lr.div.marker.line - 1) : null };
+      }, c);
+      const w = "termLastRead exact (" + c.name + "): ";
+      if (r.atBottom) {
+        if (!/^newbottom 0\b/.test(r.div || "")) fail(w + "the divider is not on the first line written after leaving: " + JSON.stringify(r.div));
+        continue;
+      }
+      if (r.nowText !== r.topText) fail(w + "the view came back on " + JSON.stringify(r.nowText) + " (row " + r.now + "), not on " + JSON.stringify(r.topText) + " (row " + r.top + ").");
+      if (r.div !== r.firstUnseen) fail(w + "the divider is on " + JSON.stringify(r.div) + ", not on the first row not seen, " + JSON.stringify(r.firstUnseen) + ".");
+      if (r.above !== r.lastSeen) fail(w + "the row above the divider is " + JSON.stringify(r.above) + ", not the last row in view, " + JSON.stringify(r.lastSeen) + ".");
     }
 
     // 9. The control is in settings, defaulting to where I left off.
