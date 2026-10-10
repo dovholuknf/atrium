@@ -368,12 +368,18 @@ func (d *Daemon) listOwed(host *store.Task) {
 // owedSaid is what a message between sessions does to owing, called from peerSaid. A worker's
 // needs say to its launcher is a question the launcher owes an answer to; the launcher's message
 // to the worker answers it, and closes the item. An fyi opens nothing.
+//
+// A WORKER'S SAY TO ITS LAUNCHER IS THE REPORT unless it asks something. The default kind is
+// needs, so kind alone cannot tell "merged, 28 pass" from a question. The rule is the one the seen
+// view uses: the say ends in an `Open Questions:` block (store.OpenQuestions reports one, even
+// with no readable item). Only then does the launcher owe an answer. A plain say settles the
+// worker's debt (peerSaid marks it reported) and opens nothing on the launcher.
 func (d *Daemon) owedSaid(sender, target *store.Task, kind, text string) {
 	if sender == nil || target == nil {
 		return
 	}
 	if sender.Launched() && (sender.SpawnedByID == target.ID || d.st.Qualify(sender.SpawnedBy) == target.WireName) {
-		if kind == KindNeeds {
+		if _, asks := store.OpenQuestions(text); kind == KindNeeds && asks {
 			if err := d.st.SetOwedAsk(sender.ID, firstWords(text)); err != nil {
 				log.Printf("[atrium] could not record %s's question: %v", sender.DisplayTitle(), err)
 			}
