@@ -1760,7 +1760,14 @@ async function chatterSection(browser, base) {
     if (!shown || !/second line of 0/.test(shown)) fail("opening a row did not show its full text: " + shown);
     // The cut text says how much was kept.
     const cut = await nth(4, "r.querySelector('.chat-text').textContent");
-    if (!/\[cut: 16000 of 20000 characters kept\]/.test(cut)) fail("a cut say does not say it was cut: " + cut.slice(-60));
+    if (!/\[cut: the say was 20000 characters\]/.test(cut)) fail("a cut say does not say it was cut: " + cut.slice(-60));
+    // The count is in runes: astral characters are two UTF-16 units each and are not a cut.
+    const runes = await dp.evaluate(() => {
+      const note = s => peekChatterRow("me-1", Object.assign({ from_task: "me-1", sent_at: new Date().toISOString(), state: "queued" }, s))
+        .querySelector(".chat-text").textContent.includes("[cut:");
+      return { whole: note({ text: "😀😀😀", chars: 3 }), cut: note({ text: "😀😀", chars: 5 }), preview: note({ preview: "hi", chars: 9 }) };
+    });
+    if (runes.whole || !runes.cut || runes.preview) fail("the cut note counts the wrong thing: " + JSON.stringify(runes));
     if (process.env.CHATTER_SHOTS) {
       await dp.screenshot({ path: require("path").join(process.env.CHATTER_SHOTS, "say-log-view-after.png") });
       // What it looked like before: the same details with no chatter section.

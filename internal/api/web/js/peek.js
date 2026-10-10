@@ -332,7 +332,8 @@ function peekChatterRow(id, s) {
   body.className = "chat-text";
   body.hidden = true;
   const full = s.text || s.preview || "";
-  body.textContent = full + (s.chars > full.length && s.text ? `\n[cut: ${full.length} of ${s.chars} characters kept]` : "");
+  // s.chars counts runes, so the kept text is counted in runes too, not in UTF-16 units.
+  body.textContent = full + (s.text && Array.from(s.text).length < s.chars ? `\n[cut: the say was ${s.chars} characters]` : "");
   const toggle = document.createElement("button");
   toggle.type = "button";
   toggle.className = "chat-toggle";
