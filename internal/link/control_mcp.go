@@ -1565,27 +1565,38 @@ func (c *controlMCP) launchHandler(ctx context.Context, req *mcp.CallToolRequest
 	// ANOTHER ROOM. The lineage then names the launcher as `me@myroom`, and its
 	// card as `myroom~id`, so the worker's reports and notices come back across
 	// to exactly this card. See docs/fabric/cross-room-say-design.md.
-	spawnedBy, spawnedByID := agentOf(req), ""
+	spawnedBy, spawnedByID, spawnedByDir := agentOf(req), "", ""
 	if r := strings.TrimSpace(in.Room); r != "" && !equalFold(r, room) {
 		if room != "" && spawnedBy != "" {
 			if id, _, err := c.resolvePeer(ctx, room, spawnedBy); err == nil {
 				spawnedByID = tagFor(room, id)
+				spawnedByDir = c.launcherDir(ctx, room, id)
 			}
 			spawnedBy += "@" + room
 		}
 		room = r
 	}
-	out, err := c.launchOnRoom(ctx, in, harness, room, callerRoom, spawnedBy, spawnedByID)
+	out, err := c.launchOnRoom(ctx, in, harness, room, callerRoom, spawnedBy, spawnedByID, spawnedByDir)
 	return nil, out, err
+}
+
+// launcherDir is the directory of the launcher's card on its own room, "" when it cannot be read. Best effort: the
+// room it launches on only asks git about it.
+func (c *controlMCP) launcherDir(ctx context.Context, room, id string) string {
+	t, _, _, err := c.readCard(ctx, room, id, false, false)
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(t.Worktree)
 }
 
 // launchOnRoom is the part of a launch that does not care who asked: the gate, the
 // cap on `room`, the tags, the lineage and the post to that room's /v1/launch. Shared by
 // the hub's own atrium_launch and by a room's launch relayed here (launchAcross), so
 // the two cannot drift. `callerRoom` is the room the caller's cards are named from, and
-// `spawnedBy` and `spawnedByID` are the lineage already worked out.
+// `spawnedBy`, `spawnedByID` and `spawnedByDir` are the lineage already worked out.
 func (c *controlMCP) launchOnRoom(ctx context.Context, in launchInput, harness, room, callerRoom,
-	spawnedBy, spawnedByID string) (launchOutput, error) {
+	spawnedBy, spawnedByID, spawnedByDir string) (launchOutput, error) {
 
 	out := launchOutput{}
 	if err := checkKind(in.Kind); err != nil {
@@ -1660,6 +1671,9 @@ func (c *controlMCP) launchOnRoom(ctx context.Context, in launchInput, harness, 
 	}
 	if spawnedByID != "" {
 		reqBody["spawned_by_id"] = spawnedByID
+	}
+	if spawnedByDir != "" {
+		reqBody["spawned_by_dir"] = spawnedByDir
 	}
 	var t ctlCard
 	if err := c.ask(ctx, http.MethodPost, "/v1/launch", room, reqBody, &t); err != nil {

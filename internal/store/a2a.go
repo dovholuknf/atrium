@@ -44,6 +44,18 @@ func (s *Store) SetLineage(id, handle, parentID string) error {
 	})
 }
 
+// SetSpawnedByDir keeps where a launcher on another room works. An empty dir writes nothing.
+func (s *Store) SetSpawnedByDir(id, dir string) error {
+	dir = strings.TrimSpace(dir)
+	if dir == "" {
+		return nil
+	}
+	return s.guard(func() error {
+		_, err := s.db.Exec(`UPDATE task SET spawned_by_dir = ? WHERE id = ?`, dir, id)
+		return err
+	})
+}
+
 // SetReportTo keeps the name a launch was told to report to, as given.
 func (s *Store) SetReportTo(id, name string) error {
 	name = strings.TrimSpace(name)

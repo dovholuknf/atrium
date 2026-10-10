@@ -2194,6 +2194,14 @@ var migrations = []struct {
 			`ALTER TABLE task ADD COLUMN lifetime TEXT NOT NULL DEFAULT ''`,
 		},
 	},
+	{
+		// WHERE THE LAUNCHER WORKS when it is on another room of this machine, as the hub read it from the launcher's
+		// card. Only ever compared with git, to tell a worker its commits are visible to the launcher already.
+		name: "0096_task_spawned_by_dir",
+		stmts: []string{
+			`ALTER TABLE task ADD COLUMN spawned_by_dir TEXT NOT NULL DEFAULT ''`,
+		},
+	},
 }
 
 // migrate applies any migration not already recorded. This runs before the
