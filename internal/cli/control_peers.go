@@ -78,8 +78,9 @@ func addPeerTools(s *mcp.Server) {
 			"day. `unconfirmed` means it may or may not have arrived, so ask before sending it " +
 			"again.\n\n" +
 			"`kind` is `fyi` for news the receiver need not act on, or `needs` (the default) for " +
-			"anything that wants an answer or an action. A receiver that holds its notices keeps an " +
-			"`fyi` on its card and is not interrupted, so say `needs` for anything you want read now. " +
+			"anything that wants an answer or an action. An `fyi` to a session that holds its notices, such as " +
+			"the orchestrator, is typed when its turn ends, or at once if it is idle, and the answer says " +
+			"`queued` with `when: \"done\"`. `queued` is not `held`: `held` is only for a hub or room that is not answering. " +
 			"A launcher's fyi, such as 'stop, nothing else to do', asks for no reply and the worker owes none.\n\n" +
 			"IF ANOTHER SESSION LAUNCHED YOU, END WITH `atrium_done` when the work is finished and " +
 			"`atrium_blocked` when something stops you. That is the one message your launcher gets, so do " +
@@ -102,8 +103,8 @@ func addPeerTools(s *mcp.Server) {
 			"`summary` is what happened, in your words. It reaches your launcher verbatim. An " +
 			"incomplete report is refused with what is missing, so fix it and call again.\n\n" +
 			"`kind` is `fyi` for news your launcher need not act on, or `needs` (the default) for " +
-			"anything that wants an answer or an action. A launcher that holds its notices keeps " +
-			"an `fyi` on its card and is not interrupted. Only `progress` with no `ask` can be an `fyi`: `done`, `blocked`, `question` and anything with an `ask` are always `needs`.",
+			"anything that wants an answer or an action. An `fyi` to a launcher that holds its notices is " +
+			"typed when its turn ends, so it is read without being interrupted. Only `progress` with no `ask` can be an `fyi`: `done`, `blocked`, `question` and anything with an `ask` are always `needs`.",
 	}, reportHandler)
 
 	link.AddEndTools(s, link.EndDoor{Report: endReport})
@@ -414,7 +415,7 @@ type SayInput struct {
 	// Wake resumes a parked card so this reaches it. Without it a say to a parked card is refused.
 	Wake bool `json:"wake,omitempty" jsonschema:"true to resume a PARKED session (idle, no process) and deliver this. it costs a cold start, so leave it off unless the message is worth it. a launcher need not pass it for its own worker, parked or finished, unless kind is fyi. without it a say to a parked session is refused and nothing is queued. a card on another room, named as name@room or reached by a bare name on every room, is resumed there too. a room that is not attached refuses it, and nothing is held"`
 	// Kind is `fyi` or `needs`. See internal/daemon/fyi.go.
-	Kind string `json:"kind,omitempty" jsonschema:"needs (the default): wants an answer or an action. fyi: news the receiver need not act on, which a receiver that holds its notices keeps on its card instead of being interrupted"`
+	Kind string `json:"kind,omitempty" jsonschema:"needs (the default): wants an answer or an action. fyi: news the receiver need not act on, which a receiver that holds its notices is typed at the end of its turn instead of mid-turn"`
 }
 
 type SayOutput struct {

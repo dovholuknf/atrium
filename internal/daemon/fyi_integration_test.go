@@ -36,22 +36,23 @@ func sayKind(t *testing.T, d *Daemon, to *store.Task, from, kind string) *httpte
 }
 
 // A notice a worker on ANOTHER ROOM sends its launcher arrives as an fyi from `handle@room`, a
-// sender with no card here. It is held on an orchestrator's card, never typed or queued.
-func TestACrossRoomNoticeToAnOrchestratorIsHeldNotTyped(t *testing.T) {
+// sender with no card here. It is never parked: it is queued for the end of the orchestrator's turn.
+func TestACrossRoomNoticeToAnOrchestratorIsQueuedForTurnEnd(t *testing.T) {
 	t.Parallel()
 	for _, tag := range []string{HoldNoticesTag, OrchestratorTag} {
 		d := testDaemon(t)
 		launcher, _ := holdingPair(t, d, tag)
 		rec := sayKind(t, d, launcher, "sa1@claude-sg4", KindFYI)
-		if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "held") {
-			t.Fatalf("%s: answered %d, want held: %s", tag, rec.Code, rec.Body)
+		if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"delivered":"queued`) ||
+			!strings.Contains(rec.Body.String(), `"done"`) || strings.Contains(rec.Body.String(), `"held"`) {
+			t.Fatalf("%s: answered %d, want queued with when done: %s", tag, rec.Code, rec.Body)
 		}
-		if msgs := pendingFrom(t, d, launcher.ID); len(msgs) != 0 {
-			t.Fatalf("%s: %d queued for a cross-room fyi, want none: %v", tag, len(msgs), msgs)
+		msgs := pendingFrom(t, d, launcher.ID)
+		if len(msgs) != 1 || !msgs[0].WaitTurn || msgs[0].FromPeer != "sa1@claude-sg4" {
+			t.Fatalf("%s: queued = %+v, want the fyi waiting for the turn end", tag, msgs)
 		}
-		held := heldOn(t, d, launcher.ID)
-		if len(held) != 1 || held[0]["about"] != "sa1@claude-sg4" {
-			t.Fatalf("%s: held = %v", tag, held)
+		if n := len(heldOn(t, d, launcher.ID)); n != 0 {
+			t.Fatalf("%s: %d held, want none", tag, n)
 		}
 	}
 }
@@ -64,7 +65,7 @@ func tellKind(t *testing.T, d *Daemon, to *store.Task, from, kind string) *httpt
 	return rec
 }
 
-func TestAnFYIReportIsHeldNotTypedForBothTags(t *testing.T) {
+func TestAnFYIReportIsQueuedForTurnEndForBothTags(t *testing.T) {
 	t.Parallel()
 	for _, tag := range []string{HoldNoticesTag, OrchestratorTag} {
 		d := testDaemon(t)
@@ -72,16 +73,15 @@ func TestAnFYIReportIsHeldNotTypedForBothTags(t *testing.T) {
 
 		rec, out := finishWith(t, d, FinishRequest{Agent: "worker", Status: ReportProgress, Kind: "fyi",
 			Recap: "the matrix is written up"})
-		if rec.Code != http.StatusOK || out["launcher_told"] != "held" {
-			t.Fatalf("%s: report answered %d, want launcher_told held: %s", tag, rec.Code, rec.Body)
+		if rec.Code != http.StatusOK || out["launcher_told"] != true {
+			t.Fatalf("%s: report answered %d, want launcher_told true: %s", tag, rec.Code, rec.Body)
 		}
-		if msgs := pendingFrom(t, d, launcher.ID); len(msgs) != 0 {
-			t.Fatalf("%s: %d queued for an fyi, want none: %v", tag, len(msgs), msgs)
+		msgs := pendingFrom(t, d, launcher.ID)
+		if len(msgs) != 1 || !strings.Contains(msgs[0].Text, "the matrix") || !msgs[0].WaitTurn {
+			t.Fatalf("%s: queued = %+v, want the report for the turn end", tag, msgs)
 		}
-		held := heldOn(t, d, launcher.ID)
-		if len(held) != 1 || held[0]["source"] != NoticeFYI || held[0]["about_card"] != worker.ID ||
-			held[0]["about"] != worker.WireName || !strings.Contains(held[0]["text"].(string), "the matrix") {
-			t.Fatalf("%s: held = %v", tag, held)
+		if n := len(heldOn(t, d, launcher.ID)); n != 0 {
+			t.Fatalf("%s: %d held, want none (worker %s)", tag, n, worker.ID)
 		}
 	}
 }
@@ -145,13 +145,8 @@ func TestADoneOrAskingFYIReportIsForcedToNeeds(t *testing.T) {
 					t.Fatalf("%s %s: held as an fyi: %v", name, tag, h)
 				}
 			}
-			// Typed as today. A hold-notices launcher already keeps every report, as a report.
-			want := 1
-			if tag == HoldNoticesTag {
-				want = 0
-			}
-			if n := len(pendingFrom(t, d, launcher.ID)); n != want {
-				t.Fatalf("%s %s: %d queued, want %d", name, tag, n, want)
+			if n := len(pendingFrom(t, d, launcher.ID)); n != 1 {
+				t.Fatalf("%s %s: %d queued, want 1", name, tag, n)
 			}
 		}
 	}
@@ -190,7 +185,7 @@ func TestAnFYIReportStillCountsAsTheWorkersReport(t *testing.T) {
 	}
 }
 
-func TestAnFYISayIsHeldNotTypedNotQueuedForBothTags(t *testing.T) {
+func TestAnFYISayIsQueuedForTurnEndForBothTags(t *testing.T) {
 	t.Parallel()
 	for _, tag := range []string{HoldNoticesTag, OrchestratorTag} {
 		d := testDaemon(t)
@@ -200,13 +195,14 @@ func TestAnFYISayIsHeldNotTypedNotQueuedForBothTags(t *testing.T) {
 		if rec.Code != http.StatusOK {
 			t.Fatalf("%s: say answered %d: %s", tag, rec.Code, rec.Body)
 		}
-		if msgs := pendingFrom(t, d, launcher.ID); len(msgs) != 0 {
-			t.Fatalf("%s: %d queued for an fyi say: %v", tag, len(msgs), msgs)
+		if !strings.Contains(rec.Body.String(), `"delivered":"queued`) || strings.Contains(rec.Body.String(), `"held"`) {
+			t.Fatalf("%s: answered %s, want queued", tag, rec.Body)
 		}
-		held := heldOn(t, d, launcher.ID)
-		if len(held) != 1 || held[0]["source"] != NoticeFYI || held[0]["about"] != worker.WireName ||
-			held[0]["text"] != "all quiet" {
-			t.Fatalf("%s: held = %v", tag, held)
+		if msgs := pendingFrom(t, d, launcher.ID); len(msgs) != 1 || msgs[0].Text != "all quiet" || !msgs[0].WaitTurn {
+			t.Fatalf("%s: queued = %+v, want the fyi for the turn end", tag, msgs)
+		}
+		if n := len(heldOn(t, d, launcher.ID)); n != 0 {
+			t.Fatalf("%s: %d held, want none", tag, n)
 		}
 		// A say to the launcher is the worker's report.
 		if got, _ := d.st.Get(worker.ID); got.ReportedAt == nil {
@@ -215,7 +211,7 @@ func TestAnFYISayIsHeldNotTypedNotQueuedForBothTags(t *testing.T) {
 	}
 }
 
-func TestAnFYITellIsHeldAndANeedsTellIsQueued(t *testing.T) {
+func TestAnFYITellAndANeedsTellAreBothQueued(t *testing.T) {
 	t.Parallel()
 	d := testDaemon(t)
 	launcher, worker := holdingPair(t, d, OrchestratorTag)
@@ -223,21 +219,18 @@ func TestAnFYITellIsHeldAndANeedsTellIsQueued(t *testing.T) {
 	if rec := tellKind(t, d, launcher, worker.WireName, "fyi"); rec.Code != http.StatusOK {
 		t.Fatalf("tell answered %d: %s", rec.Code, rec.Body)
 	}
-	if n := len(pendingFrom(t, d, launcher.ID)); n != 0 {
-		t.Fatalf("%d queued for an fyi tell", n)
+	if n := len(pendingFrom(t, d, launcher.ID)); n != 1 {
+		t.Fatalf("%d queued for an fyi tell, want 1", n)
 	}
-	if n := len(heldOn(t, d, launcher.ID)); n != 1 {
-		t.Fatalf("%d held, want one", n)
+	if n := len(heldOn(t, d, launcher.ID)); n != 0 {
+		t.Fatalf("%d held, want none", n)
 	}
 
 	if rec := tellKind(t, d, launcher, worker.WireName, "needs"); rec.Code != http.StatusOK {
 		t.Fatalf("tell answered %d: %s", rec.Code, rec.Body)
 	}
-	if n := len(pendingFrom(t, d, launcher.ID)); n != 1 {
-		t.Fatalf("%d queued for a needs tell, want one", n)
-	}
-	if n := len(heldOn(t, d, launcher.ID)); n != 1 {
-		t.Fatalf("%d held after a needs tell, want still one", n)
+	if n := len(pendingFrom(t, d, launcher.ID)); n != 2 {
+		t.Fatalf("%d queued after a needs tell, want 2", n)
 	}
 }
 
@@ -274,13 +267,13 @@ func TestTheHeldCountAndOldestRiseWithHeldAndFallWithRead(t *testing.T) {
 	if n, at := d.heldNoticesFor(launcher); n != 0 || at != "" {
 		t.Fatalf("a fresh card has %d held at %q", n, at)
 	}
-	sayKind(t, d, launcher, worker.WireName, "fyi")
+	d.holdNotice(launcher, worker, NoticeSilentStop, "a")
 	n1, at1 := d.heldNoticesFor(launcher)
 	if n1 != 1 || at1 == "" {
 		t.Fatalf("after one fyi: %d at %q", n1, at1)
 	}
 	time.Sleep(5 * time.Millisecond)
-	sayKind(t, d, launcher, worker.WireName, "fyi")
+	d.holdNotice(launcher, worker, NoticeSilentStop, "b")
 	n2, at2 := d.heldNoticesFor(launcher)
 	if n2 != 2 || at2 != at1 {
 		t.Fatalf("after two: %d at %q, want 2 and the oldest unchanged %q", n2, at2, at1)
@@ -303,7 +296,7 @@ func TestTheHeldCountAndOldestRiseWithHeldAndFallWithRead(t *testing.T) {
 		t.Fatal("a second read with nothing new reported a change")
 	}
 	time.Sleep(5 * time.Millisecond)
-	sayKind(t, d, launcher, worker.WireName, "fyi")
+	d.holdNotice(launcher, worker, NoticeSilentStop, "c")
 	if n, _ := d.heldNoticesFor(launcher); n != 1 {
 		t.Fatalf("after a new fyi: %d, want 1", n)
 	}
@@ -317,7 +310,7 @@ func TestANoticeHeldBetweenTheReadAndTheStampStillCountsUnread(t *testing.T) {
 	launcher, worker := holdingPair(t, d, OrchestratorTag)
 	launcher, _ = d.st.Get(launcher.ID)
 
-	sayKind(t, d, launcher, worker.WireName, "fyi")
+	d.holdNotice(launcher, worker, NoticeSilentStop, "a")
 	// What the read handed back: the newest notice's own `at`.
 	events, err := d.st.Events(launcher.ID, 100)
 	if err != nil {
@@ -331,7 +324,7 @@ func TestANoticeHeldBetweenTheReadAndTheStampStillCountsUnread(t *testing.T) {
 	}
 	through := newest.UTC().Format(store.TimeFormat)
 	time.Sleep(5 * time.Millisecond)
-	sayKind(t, d, launcher, worker.WireName, "fyi") // held after the read, before the stamp
+	d.holdNotice(launcher, worker, NoticeSilentStop, "b") // held after the read, before the stamp
 
 	if changed, err := d.st.MarkNoticesRead(launcher.ID, through); err != nil || !changed {
 		t.Fatalf("stamp: %v %v", changed, err)
@@ -397,5 +390,22 @@ func TestAStuckCardDoesNotWakeALauncherThatDoesNotHold(t *testing.T) {
 	// Today's one silent-stop notice, and no second one for a wake.
 	if n := len(pendingFrom(t, d, launcher.ID)); n != 1 {
 		t.Fatalf("%d queued, want only the silent stop", n)
+	}
+}
+
+// Fyis parked on a holding card before fyis stopped being held are delivered once, at its next turn end.
+func TestParkedFyisAreRedeliveredOnce(t *testing.T) {
+	t.Parallel()
+	d := testDaemon(t)
+	launcher, worker := holdingPair(t, d, OrchestratorTag)
+	launcher, _ = d.st.Get(launcher.ID)
+	d.holdNotice(launcher, worker, NoticeFYI, "parked before the upgrade")
+	d.holdNotice(launcher, worker, NoticeSilentStop, "an automatic notice")
+
+	d.redeliverHeldFyis()
+	d.redeliverHeldFyis()
+	msgs := pendingFrom(t, d, launcher.ID)
+	if len(msgs) != 1 || msgs[0].Text != "parked before the upgrade" || !msgs[0].WaitTurn {
+		t.Fatalf("queued = %+v, want the one parked fyi for the turn end", msgs)
 	}
 }

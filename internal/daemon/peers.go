@@ -449,23 +449,10 @@ func (d *Daemon) handleTell(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	// AN FYI TO A CARD THAT HOLDS ITS NOTICES waits on that card. See fyi.go.
+	// AN FYI TO A CARD THAT HOLDS ITS NOTICES waits for the end of that card's turn. See fyi.go.
 	if parseKind(in.Kind) == KindFYI && !in.Reply {
-		if t, err := d.st.GetByWireName(to); err == nil {
-			if sender := d.fyiSender(in.From, t); sender != nil {
-				if !d.peerLimit.allow(from) {
-					writeJSONErr(w, http.StatusTooManyRequests, fmt.Errorf(
-						"%s has sent %d messages in the last minute, which is the limit",
-						from, peerSendsPerMinute))
-					return
-				}
-				d.holdFyi(sender, t, "tell", text)
-				writeJSONCode(w, http.StatusOK, map[string]any{
-					"ok": true, "held": true, "typed": false, "queued": false,
-					"note": "held on the card as an fyi. it reads it with atrium_task notices.",
-				})
-				return
-			}
+		if t, err := d.st.GetByWireName(to); err == nil && fyiWaitsForTurn(in.From, t) {
+			when = WhenDone
 		}
 	}
 	target := d.resolvePeerSayWake(w, from, to, "tell", text, in.When, in.Kind, in.Reply, in.Wake)

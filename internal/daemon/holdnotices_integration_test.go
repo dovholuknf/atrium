@@ -88,17 +88,16 @@ func TestHoldNoticesTagHoldsNoticesAndReports(t *testing.T) {
 	}
 	rec, out := finishWith(t, d, FinishRequest{Agent: "worker", Status: ReportDone,
 		NoCommit: "research only", Recap: "the matrix is written up"})
-	// Held on the launcher's card is not told: the worker must not claim the launcher has heard.
-	if rec.Code != http.StatusOK || out["launcher_told"] != "held" {
-		t.Fatalf("report answered %d, want launcher_told held: %s", rec.Code, rec.Body)
+	// A report is queued for the turn end, never parked on the card. Only the silent stop is held.
+	if rec.Code != http.StatusOK || out["launcher_told"] != true {
+		t.Fatalf("report answered %d, want launcher_told true: %s", rec.Code, rec.Body)
 	}
-	if msgs := pendingFrom(t, d, launcher.ID); len(msgs) != 0 {
-		t.Fatalf("the launcher has %d queued, want none: %v", len(msgs), msgs)
+	if msgs := pendingFrom(t, d, launcher.ID); len(msgs) != 1 || !strings.Contains(msgs[0].Text, "the matrix is written up") {
+		t.Fatalf("the launcher has %+v, want the report", msgs)
 	}
 	held := heldOn(t, d, launcher.ID)
-	if len(held) != 2 || held[1]["source"] != NoticeReport || held[1]["about_card"] != worker.ID ||
-		!strings.Contains(held[1]["text"].(string), "the matrix is written up") {
-		t.Fatalf("held = %v, want the silent stop then the report", held)
+	if len(held) != 1 || held[0]["source"] != NoticeSilentStop || held[0]["about_card"] != worker.ID {
+		t.Fatalf("held = %v, want only the silent stop (worker %s)", held, worker.ID)
 	}
 }
 

@@ -1,6 +1,7 @@
 package daemon
 
 import (
+	"log"
 	"strings"
 
 	"github.com/dovholuknf/atrium/internal/store"
@@ -11,9 +12,8 @@ import (
 // A message that is only news should wait on the receiver's card and not start a turn.
 // The orchestrator received 235 "ok" relays in two days, each one a full turn.
 //
-// THE SENDER CHOOSES, AND THE RECEIVER DECIDES WHETHER IT HOLDS. An fyi to a card that
-// holds its notices (OrchestratorTag or HoldNoticesTag) is held on that card exactly like
-// an automatic notice. An fyi to anything else is delivered as it always was.
+// THE SENDER CHOOSES, AND NOTHING IS PARKED UNSEEN. An fyi to a card that holds its notices
+// waits for the end of that card's turn and is then typed. See fyiWaitsForTurn.
 //
 // NEEDS IS THE DEFAULT, AND ANY UNKNOWN WORD IS NEEDS. A model that spells the kind wrong
 // must still reach the receiver. The only failure this can cause is one extra turn.
@@ -54,44 +54,66 @@ func parseKind(s string) string {
 	return KindNeeds
 }
 
-// fyiSender is the sender's card when an fyi from it to target should be held, and nil when
-// it should go the ordinary way: no sender card, a say to itself, a receiver that does not
-// hold, or one nobody can read.
-func (d *Daemon) fyiSender(from string, target *store.Task) *store.Task {
-	from = strings.TrimSpace(from)
-	if from == "" || target == nil || !holdsNotices(target) {
-		return nil
+// fyiWaitsForTurn reports whether an fyi from `from` to target waits for the end of target's turn.
+//
+// AN FYI IS NEVER PARKED UNSEEN. A card that holds its notices (OrchestratorTag or HoldNoticesTag) used to keep
+// an fyi on the card and type nothing, and nothing read it. Now the fyi is delivered like `when: "done"`: typed
+// at once when the card is idle, and at the end of its current turn when it is not. Only automatic notices that
+// are not says stay held. The sender's own answer is `queued` with `when: "done"`, and `held` is kept for the
+// hub or a room not answering.
+func fyiWaitsForTurn(from string, target *store.Task) bool {
+	if strings.TrimSpace(from) == "" || target == nil {
+		return false
 	}
-	if d.sayGate(target) == sayGone {
-		return nil
+	return holdsNotices(target)
+}
+
+// heldFyisRedeliveredKey is the setting that says the fyis parked before this change were delivered.
+const heldFyisRedeliveredKey = "held_fyis_redelivered"
+
+// redeliverHeldFyis delivers, once, the fyi says that were parked on a holding card before fyis stopped being
+// held. Each is queued to wait for the card's next turn end. They stay on the card's held list as well, which is
+// only a record now.
+func (d *Daemon) redeliverHeldFyis() {
+	if v, err := d.st.Setting(heldFyisRedeliveredKey); err != nil || v != "" {
+		return
 	}
-	sender, err := d.st.GetByWireName(d.st.Qualify(from))
+	cards, err := d.st.List()
 	if err != nil {
-		// A SENDER ON ANOTHER ROOM, `handle@room`, has no card here. Its fyi is held all the same: a
-		// notice relayed through the hub used to be typed into the orchestrator's terminal for this.
-		if strings.Contains(from, "@") {
-			return &store.Task{WireName: from}
+		log.Printf("[atrium] could not list cards to redeliver held fyis: %v", err)
+		return
+	}
+	n := 0
+	for _, t := range cards {
+		if !holdsNotices(t) {
+			continue
 		}
-		return nil
+		held, err := d.st.UnreadHeldNotices(t.ID)
+		if err != nil {
+			continue
+		}
+		for _, h := range held {
+			if h.Source != NoticeFYI || strings.TrimSpace(h.Text) == "" {
+				continue
+			}
+			from := h.About
+			if from == "" {
+				from = "atrium"
+			}
+			if _, _, err := d.deliverPeerCaused(t, from, h.Text, store.PromptFYI, "", true); err != nil {
+				log.Printf("[atrium] could not redeliver a held fyi to %s: %v", t.DisplayTitle(), err)
+				continue
+			}
+			n++
+		}
 	}
-	if sender.ID == target.ID {
-		return nil
+	if err := d.st.SetSetting(heldFyisRedeliveredKey, "1"); err != nil {
+		log.Printf("[atrium] could not record the held fyi redelivery: %v", err)
 	}
-	return sender
+	if n > 0 {
+		log.Printf("[atrium] delivered %d fyi(s) that were parked on a card", n)
+	}
 }
-
-// holdFyi records an fyi on the receiver's card and in the sender's say record. Nothing is
-// typed and nothing is queued. It still counts as a report when the receiver is the
-// sender's launcher, because peerSaid is what marks that.
-func (d *Daemon) holdFyi(sender, target *store.Task, door, text string) {
-	text = truncatePeer(text)
-	d.holdNotice(target, sender, NoticeFYI, text)
-	rec := sayRecordFor(sender.WireName, target, sayTrace{}, false, door, "", false)
-	rec.State, rec.Note = store.SayDelivered, "held on the card as an fyi"
-	d.recordSay(rec, text)
-	d.peerSaid(sender.WireName, target, text, KindFYI)
-}
-
 // heldNoticesFor is how many held notices a card has not read and when the oldest was held,
 // for the board's row. A card that does not hold notices has none.
 func (d *Daemon) heldNoticesFor(t *store.Task) (int, string) {

@@ -66,9 +66,9 @@ func TestAnEndingReachesALauncherOnAnotherRoomByWayOfTheHub(t *testing.T) {
 	}
 }
 
-// A launcher tagged atrium:hold-notices has the ending held on its card, visible there and on the worker's work item,
-// never typed, never queued, and the worker is told "held", not told.
-func TestAnEndingIsHeldVisibleOnAHoldNoticesLaunchersCard(t *testing.T) {
+// A worker's ending always reaches its launcher as typed input at turn end, whatever tags the launcher carries, and
+// the worker is told true only because it is queued for real. Never held on a card.
+func TestAnEndingIsQueuedForTurnEndOnAHoldNoticesLaunchersCard(t *testing.T) {
 	for _, c := range []struct {
 		name string
 		in   FinishRequest
@@ -85,21 +85,20 @@ func TestAnEndingIsHeldVisibleOnAHoldNoticesLaunchersCard(t *testing.T) {
 			stubCommits(t, true, false)
 
 			rec, out := finishWith(t, d, c.in)
-			if rec.Code != http.StatusOK || out["launcher_told"] != "held" {
-				t.Fatalf("code %d, want launcher_told held: %s", rec.Code, rec.Body)
+			if rec.Code != http.StatusOK || out["launcher_told"] != true {
+				t.Fatalf("code %d, want launcher_told true: %s", rec.Code, rec.Body)
 			}
-			if msgs := pendingFrom(t, d, launcher.ID); len(msgs) != 0 {
-				t.Fatalf("the launcher has %d queued, want none: %v", len(msgs), msgs)
+			msgs := pendingFrom(t, d, launcher.ID)
+			if len(msgs) != 1 || !msgs[0].WaitTurn || !strings.Contains(msgs[0].Text, c.want) {
+				t.Fatalf("the launcher has %+v, want the ending queued for the turn end (worker %s)", msgs, worker.ID)
 			}
-			held := heldOn(t, d, launcher.ID)
-			if len(held) != 1 || held[0]["source"] != NoticeReport || held[0]["about_card"] != worker.ID ||
-				!strings.Contains(held[0]["text"].(string), c.want) {
-				t.Fatalf("held = %v", held)
+			if n := len(heldOn(t, d, launcher.ID)); n != 0 {
+				t.Fatalf("%d held, want none", n)
 			}
-			// Held is not delivered by a later nudge either: a silent stop after the ending adds nothing.
+			// A silent stop after the ending adds nothing.
 			stopSilently(t, d, "worker")
-			if n := len(heldOn(t, d, launcher.ID)); n != 1 {
-				t.Fatalf("%d held notices after a stop that followed the ending, want 1", n)
+			if n := len(heldOn(t, d, launcher.ID)); n != 0 {
+				t.Fatalf("%d held notices after a stop that followed the ending, want 0", n)
 			}
 			if n := len(pendingFrom(t, d, worker.ID)); n != 0 {
 				t.Fatalf("the worker was nudged after its ending: %d", n)
@@ -115,7 +114,7 @@ func TestAnEndingResumesNoHoldNoticesLauncherAndQueuesForAnOrchestratorOne(t *te
 	launcher, _ := holdingPair(t, d, HoldNoticesTag)
 	stubCommits(t, true, false)
 	if _, out := finishWith(t, d, FinishRequest{Agent: "worker", Status: ReportBlocked, Ask: "need a token",
-		Ended: true}); out["launcher_told"] != "held" {
+		Ended: true}); out["launcher_told"] != true {
 		t.Fatalf("out %v", out)
 	}
 	got, _ := d.st.Get(launcher.ID)
