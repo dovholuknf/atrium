@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io/fs"
 	"log"
 	"os"
 	"os/exec"
@@ -1021,6 +1022,19 @@ func (pr *prRun) prime() error {
 
 // ---- 3 panel ----
 
+// panelEmptyReason says why no reviewer ran. A panel agent whose file is not in the room's agents folder is named, with the fix,
+// so the row says what to install and not only that nothing applied.
+func panelEmptyReason(missing []string, dir string) string {
+	if len(missing) == 0 {
+		return "no reviewer in the panel applies to the files of this pull request"
+	}
+	files := make([]string, len(missing))
+	for i, m := range missing {
+		files[i] = m + ".md"
+	}
+	return fmt.Sprintf("the panel's agents are not installed on this room: %s not found in %s. install the agent pack: run room-check -Fix (or atrium room setup --apply) on the room", strings.Join(files, ", "), dir)
+}
+
 type prFindings struct {
 	Findings []prrender.Finding `json:"findings"`
 }
@@ -1046,6 +1060,7 @@ func (pr *prRun) panel() error {
 	}
 	type job struct{ agent, prompt string }
 	var jobs []job
+	var missing []string
 	seen := map[string]bool{}
 	for _, e := range entries {
 		if seen[e.Agent] {
@@ -1055,13 +1070,16 @@ func (pr *prRun) panel() error {
 		body, err := pr.r.agentBody(e.Agent)
 		if err != nil {
 			pr.logf("panel skips %s: %v", e.Agent, err)
+			if errors.Is(err, fs.ErrNotExist) {
+				missing = append(missing, e.Agent)
+			}
 			continue
 		}
 		jobs = append(jobs, job{e.Agent, body + "\n\n---\n\nYou are " + e.Agent + ". Review this pull request.\n" +
 			prRules + prSchema})
 	}
 	if len(jobs) == 0 {
-		return errors.New("no reviewer in the panel applies, or none of their agent files was found")
+		return errors.New(panelEmptyReason(missing, pr.r.agentsDir()))
 	}
 	pr.mu.Lock()
 	pr.review.Panel = nil
