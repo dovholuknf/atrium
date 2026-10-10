@@ -1705,7 +1705,7 @@ const LaunchEndingLine = "Before you end your turn, tell your launcher either:\n
 	"- atrium_done <sha or artifact> when the work is finished\n" +
 	"- atrium_blocked <up to 50 words> when something stops you, such as a question you need answered, a tool you need " +
 	"installed, or a permission you need.\n" +
-	"Wait for every command, test and build in the same turn. Never end a turn on a command still running in the background."
+	"Run tests and builds in the foreground, with a longer command timeout if needed. If a command must run in the background, wait for it in the same turn. Never end a turn while a command you started is still running."
 
 // BriefPrompt is the launch text of a session with a brief file: read it, do what it describes, and how to end.
 // ONE CODE for the room's launch and the stdio atrium_launch. A launcher's prompt that only says to read the brief

@@ -27,12 +27,13 @@ const doneToolDesc = "End your work: it is finished. THIS IS HOW TO END. Nothing
 	"`sha` or `artifact`: sha or artifact location. `sha` is the commit the work landed as (7 to 40 hex " +
 	"characters, and it has to exist in your directory or on any hub branch, or the call is refused and nothing is " +
 	"recorded). `artifact` is a path or URL to what you made, for work with no commit, and a path has to exist on " +
-	"your own room. Details go in REPORT.md, not here. Stop after the call: say nothing more and do no more work."
+	"your own room. Details go in REPORT.md, not here. Never end a turn while a command you started is still running. " +
+	"Stop after the call: say nothing more and do no more work."
 
 const blockedToolDesc = "End your work: something stops you and you cannot go on. THIS IS HOW TO END. " +
-	"Nothing else is needed: give `reason`, what stops you and what you need, in up to 50 words. A longer reason is " +
-	"refused, not cut. Details go in REPORT.md, not here. Stop after the call: say " +
-	"nothing more and do no more work."
+	"Nothing else is needed. Give `reason`, what stops you and what you need, in up to 50 words. A longer reason is " +
+	"refused, not cut. Details go in REPORT.md, not here. Never end a turn while a command you started is still running. " +
+	"Stop after the call: say nothing more and do no more work."
 
 type doneInput struct {
 	SHA      string `json:"sha,omitempty" jsonschema:"sha or artifact location. the commit the work landed as: 7 to 40 hex characters"`

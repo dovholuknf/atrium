@@ -64,7 +64,7 @@ func reportHandler(ctx context.Context, _ *mcp.CallToolRequest, in ReportInput) 
 	switch {
 	case res.Unverified:
 		out.Note = "recorded, but that commit is not in your worktree, so the card is flagged. if it " +
-			"landed somewhere else, say where with atrium_say."
+			"landed somewhere else, say where in REPORT.md."
 	case res.LauncherTold == link.ToldHeld:
 		out.Note = link.HeldNote
 	case !res.LauncherTold.Any():

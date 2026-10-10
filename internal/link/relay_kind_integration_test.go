@@ -10,7 +10,7 @@ import (
 )
 
 func TestTheLaunchLineNamesDoneAndBlockedAndNotAtriumReport(t *testing.T) {
-	for _, want := range []string{"atrium_done <sha or artifact>", "atrium_blocked <up to 50 words>", "Wait for every command", "background"} {
+	for _, want := range []string{"atrium_done <sha or artifact>", "atrium_blocked <up to 50 words>", "foreground", "wait for it in the same turn", "Never end a turn while a command you started is still running"} {
 		if !strings.Contains(reportLine, want) {
 			t.Errorf("the launch line misses %q: %q", want, reportLine)
 		}

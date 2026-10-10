@@ -991,7 +991,7 @@ func (c *controlMCP) reportHandler(ctx context.Context, req *mcp.CallToolRequest
 	switch {
 	case res.Unverified:
 		out.Note = "recorded, but that commit is not in your worktree, so the card is flagged. if it " +
-			"landed somewhere else, say where with atrium_say."
+			"landed somewhere else, say where in REPORT.md."
 	case res.LauncherTold == ToldHeld:
 		out.Note = HeldNote
 	case !res.LauncherTold.Any():
@@ -1243,7 +1243,7 @@ const reportLine = "Before you end your turn, tell your launcher either:\n" +
 	"- atrium_done <sha or artifact> when the work is finished\n" +
 	"- atrium_blocked <up to 50 words> when something stops you, such as a question you need answered, a tool you " +
 	"need installed, or a permission you need.\n" +
-	"Wait for every command, test and build in the same turn. Never end a turn on a command still running in the background."
+	"Run tests and builds in the foreground, with a longer command timeout if needed. If a command must run in the background, wait for it in the same turn. Never end a turn while a command you started is still running."
 
 // AgentLaunchTags is what an agent launch's tags become: the caller's own, the origin marker,
 // and a WORKER marker unless the caller says it is a director or already a subagent. The
