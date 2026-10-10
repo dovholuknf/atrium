@@ -767,7 +767,7 @@ func (d *Daemon) stuckNow(t *store.Task, now time.Time) *Escalation {
 	who := t.DisplayTitle()
 	if x := d.launchStuck(t, now); x != nil {
 		d.notifyLauncher(t, x.Source, x.Since.UTC().Format(time.RFC3339Nano), fmt.Sprintf(
-			"%s. atrium cannot answer it for the session, so this is a report. card %s", x.Text, t.ID))
+			"%s. atrium cannot answer it for the session, so this is a report. card %s (%s)", x.Text, t.ID, t.WireName))
 		return x
 	}
 	if since, ok := d.stoppedSilently(t); ok {

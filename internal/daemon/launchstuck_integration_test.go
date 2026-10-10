@@ -464,3 +464,86 @@ func TestAResumeAfterAnExitStartsUnheard(t *testing.T) {
 		t.Fatalf("a resumed card counted as heard from its last run: %+v", x)
 	}
 }
+
+// A launched worker sitting at a menu tells its launcher once, however many ticks
+// see it, and again only for a menu that came after the first was answered.
+func TestLauncherHearsAStuckMenuOnce(t *testing.T) {
+	t.Parallel()
+	d := testDaemon(t)
+	task, r := stuckWorker(t, d, modelSwitchFrame, time.Hour, time.Hour)
+	launcher, err := d.st.GetByWireName(d.st.Qualify("orchestrator"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := d.st.SetTags(launcher.ID, []string{HoldNoticesTag}); err != nil {
+		t.Fatal(err)
+	}
+	d.act.set(task.ID, ActivityThinking, "")
+	if err := d.st.SetStatus(task.ID, store.StatusRunning); err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 4; i++ {
+		if err := d.watchWorkers(time.Now()); err != nil {
+			t.Fatal(err)
+		}
+	}
+	held := heldOn(t, d, launcher.ID)
+	if len(held) != 1 {
+		t.Fatalf("%d held notices over four ticks, want one: %v", len(held), held)
+	}
+	text, _ := held[0]["text"].(string)
+	if held[0]["source"] != NoticeTerminalMenu || held[0]["about_card"] != task.ID ||
+		!strings.Contains(text, "Model switch") || !strings.Contains(text, task.WireName) {
+		t.Fatalf("held notice = %v", held[0])
+	}
+
+	// answered, then a new menu: a new episode, so one more notice
+	_, _ = r.buf.Write([]byte("\x1b[2J\x1b[Hback at the prompt\r\n"))
+	r.lastOut.Store(time.Now().Add(-time.Hour).UnixNano())
+	if err := d.watchWorkers(time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	_, _ = r.buf.Write([]byte(modelSwitchFrame))
+	r.lastOut.Store(time.Now().Add(-30 * time.Minute).UnixNano())
+	for i := 0; i < 3; i++ {
+		if err := d.watchWorkers(time.Now()); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if n := len(heldOn(t, d, launcher.ID)); n != 2 {
+		t.Fatalf("%d held notices after a second menu, want two", n)
+	}
+}
+
+// The operator's own card has no launcher: its menu is on the board and nowhere else.
+func TestACardWithNoLauncherTellsNobodyAboutItsMenu(t *testing.T) {
+	t.Parallel()
+	d := testDaemon(t)
+	other := peerCard(t, d, "bystander")
+	task := peerCard(t, d, "by-hand")
+	r := &runner{taskID: task.ID, pty: newFakePTY(), started: time.Now().Add(-time.Hour),
+		buf: newRing(1<<16, 80), watchers: map[chan []byte]struct{}{}, done: make(chan struct{})}
+	_, _ = r.buf.Write([]byte(modelSwitchFrame))
+	r.lastOut.Store(time.Now().Add(-time.Hour).UnixNano())
+	d.sup.add(r)
+	d.act.set(task.ID, ActivityThinking, "")
+	if err := d.st.SetStatus(task.ID, store.StatusRunning); err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 3; i++ {
+		if err := d.watchWorkers(time.Now()); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if x := d.esc.get(task.ID); x == nil || x.Source != NoticeTerminalMenu {
+		t.Fatalf("the card itself should still show the menu, got %+v", x)
+	}
+	for _, id := range []string{other.ID, task.ID} {
+		if held := heldOn(t, d, id); len(held) != 0 {
+			t.Fatalf("%s holds %v, want none", id, held)
+		}
+		if msgs := pendingFrom(t, d, id); len(msgs) != 0 {
+			t.Fatalf("%s has queued %v, want none", id, msgs)
+		}
+	}
+}
