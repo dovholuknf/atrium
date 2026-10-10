@@ -160,7 +160,8 @@ Each phase is one worker, one branch and one merge.
    Done when: the headless pulls section passes, check-pulls-closed.js passes, and an after picture is committed at
    `docs/changes/img/u-pulls-overhaul-after.png`.
 3. **Card state and primary action (board).** Join `walker_task` to the task list for working, waiting and done.
-   Wire the primary button per the table above, including Answer. Done when: a headless test per row in the table clicks the
+   Wire the primary button per the table above, including Answer.
+   Done when: a headless test per row in the table clicks the
    primary and asserts the call made or the card attached.
 4. **Cut the inputs and rename (board).** Remove the two inputs, move paste into a popover, rename leftovers and move.
    Done when: no `#pulls-url` or `#pulls-why` is on the tab, the paste popover still opens a card (headless), and the
