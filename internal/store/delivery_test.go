@@ -5,6 +5,7 @@ import (
 )
 
 func TestDeliveryKindAndReply(t *testing.T) {
+	t.Parallel()
 	for _, c := range []struct{ from, cause, want string }{
 		{"", "", DeliveryOperator}, {"atrium", "", DeliveryNotice}, {"w-1", "", DeliverySay},
 		{"w-1", DeliveryReport, DeliveryReport}, {"atrium", DeliveryNudge, DeliveryNudge}, {"", DeliveryNotice, DeliveryNotice},

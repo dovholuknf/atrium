@@ -9,6 +9,7 @@ import (
 )
 
 func TestARecapRoundTrips(t *testing.T) {
+	t.Parallel()
 	s := open(t)
 	task, _, err := s.Register(Observed{WireName: "r1", Worktree: "d:/w", Runner: "claude"})
 	if err != nil {
@@ -40,6 +41,7 @@ func TestARecapRoundTrips(t *testing.T) {
 // still wrote something worth keeping, and failing the call would make an
 // agent retry, and the retry would be longer.
 func TestAnOverlongRecapIsCutRatherThanRefused(t *testing.T) {
+	t.Parallel()
 	s := open(t)
 	task, _, err := s.Register(Observed{WireName: "r2", Worktree: "d:/w", Runner: "claude"})
 	if err != nil {
@@ -64,6 +66,7 @@ func TestAnOverlongRecapIsCutRatherThanRefused(t *testing.T) {
 
 // Cutting must never produce invalid UTF-8 in a field the board renders.
 func TestTruncationDoesNotSplitARune(t *testing.T) {
+	t.Parallel()
 	s := open(t)
 	task, _, err := s.Register(Observed{WireName: "r3", Worktree: "d:/w", Runner: "claude"})
 	if err != nil {
@@ -90,6 +93,7 @@ func TestTruncationDoesNotSplitARune(t *testing.T) {
 // Clearing is the operator deciding an account was wrong. It takes the time
 // with it, so nothing claims a card was written up.
 func TestClearingARecapClearsItsTime(t *testing.T) {
+	t.Parallel()
 	s := open(t)
 	task, _, err := s.Register(Observed{WireName: "r4", Worktree: "d:/w", Runner: "claude"})
 	if err != nil {
@@ -115,6 +119,7 @@ func TestClearingARecapClearsItsTime(t *testing.T) {
 
 // Whitespace is not an account of anything.
 func TestWhitespaceIsNotARecap(t *testing.T) {
+	t.Parallel()
 	s := open(t)
 	task, _, err := s.Register(Observed{WireName: "r5", Worktree: "d:/w", Runner: "claude"})
 	if err != nil {

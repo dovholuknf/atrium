@@ -10,6 +10,7 @@ import (
 // The per-harness limits read the default when unset or unreadable, drop an entry out of range, and the check
 // refuses one.
 func TestContextLimitsReadAndCheck(t *testing.T) {
+	t.Parallel()
 	s := openTestStore(t)
 	if got := s.ContextLimits(); len(got) != 1 || got["claude"] != 200 {
 		t.Fatalf("unset reads %v, want claude 200", got)
@@ -40,6 +41,7 @@ func TestContextLimitsReadAndCheck(t *testing.T) {
 }
 
 func TestContextCycleChecks(t *testing.T) {
+	t.Parallel()
 	for v, want := range map[string]string{"": "", "on": "", " OFF ": "off"} {
 		if got, err := CheckContextCycleText(v); err != nil || got != want {
 			t.Fatalf("%q gave %q %v", v, got, err)
@@ -59,6 +61,7 @@ func TestContextCycleChecks(t *testing.T) {
 
 // The migration drops the old automatic new context settings, and running it again is harmless.
 func TestContextCycleMigrationDropsTheOldSettings(t *testing.T) {
+	t.Parallel()
 	s := openTestStore(t)
 	for _, k := range []string{"auto_new_context", "auto_new_context_k", "context_ceiling_k", "context_threshold_k"} {
 		if err := s.SetSetting(k, "1"); err != nil {

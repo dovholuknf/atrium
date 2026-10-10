@@ -10,6 +10,7 @@ import (
 )
 
 func TestSetOriginRecordsAllThree(t *testing.T) {
+	t.Parallel()
 	s := open(t)
 	task, _, err := s.Register(Observed{WireName: "a", Worktree: "d:/w", Runner: "claude"})
 	if err != nil {
@@ -40,6 +41,7 @@ func TestSetOriginRecordsAllThree(t *testing.T) {
 // already supplied. A poller knows the identifier; a human pasting a link
 // knows the url; neither should erase the other.
 func TestSetOriginLeavesWhatItIsNotTold(t *testing.T) {
+	t.Parallel()
 	s := open(t)
 	task, _, err := s.Register(Observed{WireName: "b", Worktree: "d:/w", Runner: "claude"})
 	if err != nil {
@@ -67,6 +69,7 @@ func TestSetOriginLeavesWhatItIsNotTold(t *testing.T) {
 // The pair is the key. The same number is an issue in one tracker and a ticket
 // in another, and they are not the same work.
 func TestBySourceExternalIsKeyedOnThePair(t *testing.T) {
+	t.Parallel()
 	s := open(t)
 	issue, _, err := s.Register(Observed{WireName: "issue", Worktree: "d:/w", Runner: "claude"})
 	if err != nil {
@@ -102,6 +105,7 @@ func TestBySourceExternalIsKeyedOnThePair(t *testing.T) {
 // Half a key is not a key. Answering with some arbitrary card that happens to
 // carry that identifier would make a poller adopt unrelated work.
 func TestBySourceExternalRefusesHalfAKey(t *testing.T) {
+	t.Parallel()
 	s := open(t)
 	task, _, err := s.Register(Observed{WireName: "c", Worktree: "d:/w", Runner: "claude"})
 	if err != nil {
@@ -122,6 +126,7 @@ func TestBySourceExternalRefusesHalfAKey(t *testing.T) {
 // that raised it runs. Archiving takes a card off the board, and off the board
 // is not the same as never having happened.
 func TestBySourceExternalStillFindsAnArchivedCard(t *testing.T) {
+	t.Parallel()
 	s := open(t)
 	task, _, err := s.Register(Observed{WireName: "d", Worktree: "d:/w", Runner: "claude"})
 	if err != nil {
@@ -152,6 +157,7 @@ func TestBySourceExternalStillFindsAnArchivedCard(t *testing.T) {
 // The seeded runners that can take an opening prompt say so, and the one that
 // would try to execute it does not.
 func TestPromptArgsAreSeededOnlyWhereTheyWork(t *testing.T) {
+	t.Parallel()
 	s := open(t)
 
 	claude, err := s.Harness("claude")
@@ -192,6 +198,7 @@ func TestPromptArgsAreSeededOnlyWhereTheyWork(t *testing.T) {
 // The field survives a round trip through SaveHarness, which rewrites every
 // column and is where a forgotten one goes missing.
 func TestPromptArgsSurviveASave(t *testing.T) {
+	t.Parallel()
 	s := open(t)
 	if _, err := s.SaveHarness(Harness{
 		ID: "custom", Cmd: "thing", LaunchMode: LaunchPTY,

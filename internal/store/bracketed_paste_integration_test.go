@@ -8,6 +8,7 @@ import "testing"
 // a bool beside sixteen other columns, and a scan that lands in the wrong field
 // is not a compile error.
 func TestBracketedPasteSurvivesBeingSaved(t *testing.T) {
+	t.Parallel()
 	s := openTestStore(t)
 
 	saved, err := s.SaveHarness(Harness{
@@ -49,6 +50,7 @@ func TestBracketedPasteSurvivesBeingSaved(t *testing.T) {
 // Existing databases need the migration backfill; DefaultHarnesses only
 // seeds new databases.
 func TestAnExistingClaudeRowAlreadyDeclaresBracketedPaste(t *testing.T) {
+	t.Parallel()
 	s := openTestStore(t)
 
 	h, err := s.Harness("claude")

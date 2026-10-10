@@ -10,6 +10,7 @@ import (
 // r-012: a bucket's replies, in the total and per card and per cause, are the
 // sum of the rows it came from. The usage tab reads them as "calls".
 func TestUsageBucketsSumReplies(t *testing.T) {
+	t.Parallel()
 	s := openTestStore(t)
 	a, _, err := s.Register(Observed{WireName: "ra", Worktree: "/ra"})
 	if err != nil {
@@ -49,6 +50,7 @@ func TestUsageBucketsSumReplies(t *testing.T) {
 
 // Bucket sums match the row sums, per card and per cause, and the bounds hold.
 func TestUsageBucketsSumRows(t *testing.T) {
+	t.Parallel()
 	s := openTestStore(t)
 	a, _, err := s.Register(Observed{WireName: "a", Worktree: "/a"})
 	if err != nil {
@@ -108,6 +110,7 @@ func TestUsageBucketsSumRows(t *testing.T) {
 
 // A range past 30 days is cut, and a width too narrow for 500 buckets is widened.
 func TestUsageBucketsBounds(t *testing.T) {
+	t.Parallel()
 	s := openTestStore(t)
 	until := time.Date(2026, 9, 28, 12, 0, 0, 0, time.UTC)
 	got, err := s.UsageBuckets(until.Add(-90*24*time.Hour), until, 1, "")

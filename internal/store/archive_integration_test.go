@@ -10,6 +10,7 @@ import (
 // Archiving takes a dead card off the board and keeps the row, so the history
 // of what has ever run here survives a sweep.
 func TestArchiveTakesDeadCardsOffTheBoard(t *testing.T) {
+	t.Parallel()
 	s := open(t)
 	task, _, err := s.Register(Observed{WireName: "over", Worktree: "/w", Runner: "claude"})
 	if err != nil {
@@ -57,6 +58,7 @@ func TestArchiveTakesDeadCardsOffTheBoard(t *testing.T) {
 // while it was plainly running, which reached the operator as a terminal that
 // had started and was nowhere to be seen.
 func TestRevivingACardUnarchivesIt(t *testing.T) {
+	t.Parallel()
 	s := open(t)
 	task, _, err := s.Register(Observed{WireName: "risen", Worktree: "/w", Runner: "claude"})
 	if err != nil {
@@ -99,6 +101,7 @@ func TestRevivingACardUnarchivesIt(t *testing.T) {
 // Going from one over-and-done status to the other keeps the stamp. Nothing
 // came back to life, so nothing should return to the board.
 func TestMovingBetweenFinishedStatusesStaysArchived(t *testing.T) {
+	t.Parallel()
 	s := open(t)
 	task, _, err := s.Register(Observed{WireName: "filed", Worktree: "/w", Runner: "claude"})
 	if err != nil {
@@ -125,6 +128,7 @@ func TestMovingBetweenFinishedStatusesStaysArchived(t *testing.T) {
 
 // Shelving is never swept, because it says the work is coming back.
 func TestArchiveNeverTakesShelved(t *testing.T) {
+	t.Parallel()
 	s := open(t)
 	task, _, err := s.Register(Observed{WireName: "putdown", Worktree: "/w", Runner: "claude"})
 	if err != nil {
@@ -150,6 +154,7 @@ func TestArchiveNeverTakesShelved(t *testing.T) {
 // before it goes. A card that failed to start puts its reason on itself, and
 // that reason is the one thing worth seeing.
 func TestArchiveRespectsTheAge(t *testing.T) {
+	t.Parallel()
 	s := open(t)
 	task, _, err := s.Register(Observed{WireName: "recent", Worktree: "/w", Runner: "claude"})
 	if err != nil {

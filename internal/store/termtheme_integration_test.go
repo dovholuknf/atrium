@@ -28,6 +28,7 @@ func good() Palette {
 }
 
 func TestOnlySixHexDigitsIsAColour(t *testing.T) {
+	t.Parallel()
 	// Each of these is a colour some browser would render, and every one of
 	// them is a second grammar somebody would then have to be sure of. The
 	// last two are the ones that matter: they are what an injection looks like
@@ -58,6 +59,7 @@ func TestOnlySixHexDigitsIsAColour(t *testing.T) {
 // The list in `slots` is the validator. A field that is not in it is a colour
 // nobody checks, and it would be stored and handed to the browser.
 func TestEveryColourInAPaletteIsChecked(t *testing.T) {
+	t.Parallel()
 	var p Palette
 	for _, s := range p.slots() {
 		th := TermTheme{Name: "brought", Palette: good()}
@@ -73,6 +75,7 @@ func TestEveryColourInAPaletteIsChecked(t *testing.T) {
 }
 
 func TestAThemeNeedsTheSixteenAnsiColours(t *testing.T) {
+	t.Parallel()
 	var p Palette
 	for _, s := range p.slots() {
 		if !s.required {
@@ -93,6 +96,7 @@ func TestAThemeNeedsTheSixteenAnsiColours(t *testing.T) {
 // Windows Terminal has no `selectionForeground`, so requiring it would refuse
 // every scheme the format this feature exists for produces.
 func TestTheThreeOptionalColoursMayBeAbsent(t *testing.T) {
+	t.Parallel()
 	th := TermTheme{Name: "brought", Palette: good()}
 	th.Palette.Cursor = ""
 	th.Palette.SelectionBackground = ""
@@ -109,6 +113,7 @@ func TestTheThreeOptionalColoursMayBeAbsent(t *testing.T) {
 // `constructor` handed xterm a function. The board is fixed and this is the
 // second defence: see `reservedNames`.
 func TestANameEveryObjectAlreadyAnswersToIsRefused(t *testing.T) {
+	t.Parallel()
 	for _, name := range []string{"constructor", "prototype", "toString", "valueOf", "__proto__"} {
 		th := TermTheme{Name: name, Palette: good()}
 		if err := th.Normalise(); err == nil {
@@ -118,6 +123,7 @@ func TestANameEveryObjectAlreadyAnswersToIsRefused(t *testing.T) {
 }
 
 func TestAThemeNameIsLowercaseLettersDigitsAndHyphens(t *testing.T) {
+	t.Parallel()
 	for _, name := range []string{
 		"", "-leading", "trailing-", "has space", "has/slash", "has<tag>", "has\"quote",
 		"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", // thirty five, past the limit
@@ -134,6 +140,7 @@ func TestAThemeNameIsLowercaseLettersDigitsAndHyphens(t *testing.T) {
 // alphanumeric characters in a row. A name that could reach forty would be a
 // legal theme that stops the whole export with an error about a key.
 func TestAThemeNameCannotReachTheExportSecretThreshold(t *testing.T) {
+	t.Parallel()
 	th := TermTheme{Name: strings.Repeat("a", 40), Palette: good()}
 	if err := th.Normalise(); err == nil {
 		t.Fatal("a forty character name was accepted. it would trip the export's secret scanner")
@@ -143,6 +150,7 @@ func TestAThemeNameCannotReachTheExportSecretThreshold(t *testing.T) {
 // What is stored is the validator's output. A caller cannot smuggle a field
 // through by putting it in the JSON, because the JSON is never what is written.
 func TestWhatComesBackIsWhatWasValidated(t *testing.T) {
+	t.Parallel()
 	st := themeStore(t)
 	in := TermTheme{Name: "Brought-IT", Palette: good()}
 	in.Palette.Red = "#AABBCC"
@@ -164,6 +172,7 @@ func TestWhatComesBackIsWhatWasValidated(t *testing.T) {
 }
 
 func TestABadThemeIsNotStoredAtAll(t *testing.T) {
+	t.Parallel()
 	st := themeStore(t)
 	bad := TermTheme{Name: "brought", Palette: good()}
 	bad.Palette.BrightCyan = "chartreuse"
@@ -182,6 +191,7 @@ func TestABadThemeIsNotStoredAtAll(t *testing.T) {
 // Saving the same name twice is an edit, which is what the editor does every
 // time somebody changes a colour and presses save.
 func TestSavingTheSameNameEditsIt(t *testing.T) {
+	t.Parallel()
 	st := themeStore(t)
 	first := TermTheme{Name: "brought", Palette: good()}
 	if _, err := st.SaveTermTheme(first); err != nil {
@@ -205,6 +215,7 @@ func TestSavingTheSameNameEditsIt(t *testing.T) {
 }
 
 func TestDeletingAThemeLeavesTheOthers(t *testing.T) {
+	t.Parallel()
 	st := themeStore(t)
 	for _, n := range []string{"one", "two"} {
 		if _, err := st.SaveTermTheme(TermTheme{Name: n, Palette: good()}); err != nil {

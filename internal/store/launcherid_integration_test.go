@@ -7,6 +7,7 @@ import "testing"
 // LauncherID resolves report_to, then spawned_by_id, then spawned_by, never to the card itself, and
 // LauncherIDs (the list's one SELECT) agrees with it on every card of one table.
 func TestLauncherIDResolveAndTheBatchAgrees(t *testing.T) {
+	t.Parallel()
 	s := openTestStore(t)
 	mk := func(name string) *Task {
 		c, _, err := s.Register(Observed{WireName: name, Worktree: "/tmp/" + name})

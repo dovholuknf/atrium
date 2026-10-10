@@ -12,6 +12,7 @@ import (
 // so adding perm_rule to 0001 would never reach it and the first rule lookup
 // would fail at runtime. Reopening must repair it.
 func TestMigrationRepairsDatabaseMissingPermRule(t *testing.T) {
+	t.Parallel()
 	path := filepath.Join(t.TempDir(), "old.db")
 
 	s, err := Open(path)
@@ -54,6 +55,7 @@ func TestMigrationRepairsDatabaseMissingPermRule(t *testing.T) {
 // Reopening an already-current database must be a no-op, not a duplicate
 // column error from the ADD COLUMN migration.
 func TestMigrationsAreIdempotent(t *testing.T) {
+	t.Parallel()
 	path := filepath.Join(t.TempDir(), "repeat.db")
 	for i := 0; i < 3; i++ {
 		s, err := Open(path)
@@ -81,6 +83,7 @@ func TestMigrationsAreIdempotent(t *testing.T) {
 // Every table the code touches has to exist after a fresh open. This is the
 // check that would have caught the missing perm_rule before it halted.
 func TestAllTablesExistAfterMigrate(t *testing.T) {
+	t.Parallel()
 	s := open(t)
 	for _, table := range []string{"task", "event", "permission", "perm_rule", "launch_spec",
 		"provider", "provider_repo", "schema_migration"} {
@@ -99,6 +102,7 @@ func TestAllTablesExistAfterMigrate(t *testing.T) {
 
 // decided_by has to survive a decision, or the log cannot say who answered.
 func TestDecisionRecordsWhoAnswered(t *testing.T) {
+	t.Parallel()
 	s := open(t)
 	task, _, err := s.Register(Observed{WireName: "hist", Worktree: "d:/w", Runner: "claude"})
 	if err != nil {

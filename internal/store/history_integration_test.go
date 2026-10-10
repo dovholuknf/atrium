@@ -22,6 +22,7 @@ func ranAndFinished(t *testing.T, s *Store, name, recap string) *Task {
 }
 
 func TestEverRunIncludesArchivedCards(t *testing.T) {
+	t.Parallel()
 	s := open(t)
 	live := ranAndFinished(t, s, "still-here", "")
 	swept := ranAndFinished(t, s, "swept-away", "")
@@ -56,6 +57,7 @@ func TestEverRunIncludesArchivedCards(t *testing.T) {
 // The useful cut. A session that finished with a recap said what it did; one
 // that did not is either still worth writing up or was never worth starting.
 func TestEverRunCutsByWhetherThereIsARecap(t *testing.T) {
+	t.Parallel()
 	s := open(t)
 	written := ranAndFinished(t, s, "written-up", "bumped the dep and opened a pull request")
 	silent := ranAndFinished(t, s, "said-nothing", "")
@@ -80,6 +82,7 @@ func TestEverRunCutsByWhetherThereIsARecap(t *testing.T) {
 // Whitespace is not an account of anything, and the cut has to agree with
 // Recapped() about that or the two halves would not add up to the whole.
 func TestAWhitespaceRecapCountsAsNone(t *testing.T) {
+	t.Parallel()
 	s := open(t)
 	task, _, err := s.Register(Observed{WireName: "ws", Worktree: "d:/w", Runner: "claude"})
 	if err != nil {
@@ -113,6 +116,7 @@ func TestAWhitespaceRecapCountsAsNone(t *testing.T) {
 // One box, because a person looking for "that thing about DNS" does not know
 // which field they are remembering it from.
 func TestSearchLooksInEveryFieldWorthRemembering(t *testing.T) {
+	t.Parallel()
 	s := open(t)
 	task := ranAndFinished(t, s, "searchable", "fixed the dns resolver on resume")
 	if err := s.SetWhy(task.ID, "reported by a customer"); err != nil {
@@ -140,6 +144,7 @@ func TestSearchLooksInEveryFieldWorthRemembering(t *testing.T) {
 // Paged from the start, because this grows forever until somebody turns
 // pruning on.
 func TestEverRunPages(t *testing.T) {
+	t.Parallel()
 	s := open(t)
 	for i := 0; i < 5; i++ {
 		ranAndFinished(t, s, string(rune('a'+i))+"-card", "")
@@ -180,6 +185,7 @@ func TestEverRunPages(t *testing.T) {
 // An absurd limit is bounded rather than honored. A view is not a way to ask
 // for the whole table.
 func TestAnAbsurdLimitIsBounded(t *testing.T) {
+	t.Parallel()
 	s := open(t)
 	for i := 0; i < 3; i++ {
 		ranAndFinished(t, s, string(rune('a'+i))+"-x", "")

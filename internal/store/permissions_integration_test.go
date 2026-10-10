@@ -8,6 +8,7 @@ import "testing"
 // permits many NULLs but only one empty string, so an un-keyed request has to
 // store NULL rather than ”.
 func TestUnkeyedPermissionsDoNotCollide(t *testing.T) {
+	t.Parallel()
 	s := open(t)
 	task, _, err := s.Register(Observed{WireName: "agent-f", Worktree: "d:/w", Runner: "claude"})
 	if err != nil {
@@ -38,6 +39,7 @@ func TestUnkeyedPermissionsDoNotCollide(t *testing.T) {
 // command for instance, would collide and the second would be handed the
 // first's answer.
 func TestDedupKeyIsScopedToTheTask(t *testing.T) {
+	t.Parallel()
 	s := open(t)
 	a, _, err := s.Register(Observed{WireName: "agent-one", Worktree: "d:/one", Runner: "claude"})
 	if err != nil {

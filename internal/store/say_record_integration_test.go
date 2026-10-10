@@ -9,6 +9,7 @@ import (
 )
 
 func TestSayRecordLifecycle(t *testing.T) {
+	t.Parallel()
 	s := openTestStore(t)
 	bob, _, err := s.Register(Observed{WireName: "bob", Runner: "claude", PID: 1})
 	if err != nil {
@@ -71,6 +72,7 @@ func TestSayRecordLifecycle(t *testing.T) {
 }
 
 func TestSayRecordSweepKeepsOpenOwed(t *testing.T) {
+	t.Parallel()
 	s := openTestStore(t)
 	old := ts(now().Add(-SayKeep - 1))
 	mk := func(reply bool) string {
@@ -95,6 +97,7 @@ func TestSayRecordSweepKeepsOpenOwed(t *testing.T) {
 }
 
 func TestSayRecordLapsesForEndedCard(t *testing.T) {
+	t.Parallel()
 	s := openTestStore(t)
 	id, _ := s.RecordSay(Say{FromWire: "a", ToTask: "t1", ToInput: "t", Via: "handle", Door: "say",
 		State: SayQueued, ReplyWant: true}, "hi")
@@ -111,6 +114,7 @@ func TestSayRecordLapsesForEndedCard(t *testing.T) {
 }
 
 func TestSayKeepsBoundedTextAndPagesBack(t *testing.T) {
+	t.Parallel()
 	s := openTestStore(t)
 	a, _, _ := s.Register(Observed{WireName: "alice", Runner: "claude", PID: 1})
 	b, _, _ := s.Register(Observed{WireName: "bob", Runner: "claude", PID: 2})

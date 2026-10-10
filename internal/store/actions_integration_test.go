@@ -8,6 +8,7 @@ import (
 )
 
 func TestTheSeededActionsAreThereOnce(t *testing.T) {
+	t.Parallel()
 	path := t.TempDir() + "/atrium.db"
 	first, err := Open(path)
 	if err != nil {
@@ -56,6 +57,7 @@ func TestTheSeededActionsAreThereOnce(t *testing.T) {
 }
 
 func TestAnActionNeedsANameAndSomethingToSay(t *testing.T) {
+	t.Parallel()
 	s := open(t)
 	if _, err := s.SaveCardAction(CardAction{Prompt: "do it"}); err == nil {
 		t.Fatal("an action with no name was accepted")
@@ -73,6 +75,7 @@ func TestAnActionNeedsANameAndSomethingToSay(t *testing.T) {
 // An unrecognized `after` is `keep`, which is the harmless one. Guessing exit
 // would quit a session because a value was mistyped.
 func TestAnUnknownAfterIsKeep(t *testing.T) {
+	t.Parallel()
 	s := open(t)
 	got, err := s.SaveCardAction(CardAction{
 		Label: "x", Prompt: "y", After: "explode", Enabled: true,
@@ -86,6 +89,7 @@ func TestAnUnknownAfterIsKeep(t *testing.T) {
 }
 
 func TestAnActionWithNoConditionsIsOfferedEverywhere(t *testing.T) {
+	t.Parallel()
 	a := &CardAction{Label: "x", Prompt: "y", Enabled: true}
 	for _, task := range []*Task{
 		{Runner: "claude", Tags: []string{}},
@@ -101,6 +105,7 @@ func TestAnActionWithNoConditionsIsOfferedEverywhere(t *testing.T) {
 // "Run the tests" means something different in a Go repo and a docs repo, and
 // a tag is the cut the operator already makes.
 func TestATagLimitsAnActionToCardsCarryingIt(t *testing.T) {
+	t.Parallel()
 	a := &CardAction{Label: "x", Prompt: "y", Enabled: true, Tag: "go"}
 	if !a.Offers(&Task{Tags: []string{"lab", "go"}}) {
 		t.Fatal("an action was withheld from a card carrying its tag")
@@ -119,6 +124,7 @@ func TestATagLimitsAnActionToCardsCarryingIt(t *testing.T) {
 }
 
 func TestARunnerLimitsAnActionToThatHarness(t *testing.T) {
+	t.Parallel()
 	a := &CardAction{Label: "x", Prompt: "y", Enabled: true, Runner: "claude"}
 	if !a.Offers(&Task{Runner: "claude"}) {
 		t.Fatal("an action was withheld from its own runner")
@@ -136,6 +142,7 @@ func TestARunnerLimitsAnActionToThatHarness(t *testing.T) {
 // Both conditions have to pass. Either one alone would make the other
 // decorative.
 func TestBothConditionsApply(t *testing.T) {
+	t.Parallel()
 	a := &CardAction{Label: "x", Prompt: "y", Enabled: true, Tag: "go", Runner: "claude"}
 	if !a.Offers(&Task{Runner: "claude", Tags: []string{"go"}}) {
 		t.Fatal("an action matching both conditions was withheld")
@@ -149,6 +156,7 @@ func TestBothConditionsApply(t *testing.T) {
 }
 
 func TestADisabledActionIsOfferedNowhere(t *testing.T) {
+	t.Parallel()
 	a := &CardAction{Label: "x", Prompt: "y", Enabled: false}
 	if a.Offers(&Task{Runner: "claude"}) {
 		t.Fatal("a disabled action was offered")
@@ -156,6 +164,7 @@ func TestADisabledActionIsOfferedNowhere(t *testing.T) {
 }
 
 func TestActionsForFiltersTheStoredSet(t *testing.T) {
+	t.Parallel()
 	s := open(t)
 	for _, a := range []CardAction{
 		{ID: "any", Label: "any", Prompt: "p", Enabled: true, Sort: 1},
@@ -190,6 +199,7 @@ func TestActionsForFiltersTheStoredSet(t *testing.T) {
 // Saving without an id makes one. A caller that had to mint one would be
 // inventing a key format atrium owns.
 func TestSavingWithoutAnIDMakesOne(t *testing.T) {
+	t.Parallel()
 	s := open(t)
 	got, err := s.SaveCardAction(CardAction{Label: "new one", Prompt: "hello", Enabled: true})
 	if err != nil {

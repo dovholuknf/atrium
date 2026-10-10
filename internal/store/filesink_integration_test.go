@@ -63,6 +63,7 @@ func segmentCount(t *testing.T, dir string) int {
 
 // The file sink writes one JSON line per event, and Close flushes what it holds.
 func TestFileSinkWritesOneLinePerEvent(t *testing.T) {
+	t.Parallel()
 	dir := filepath.Join(t.TempDir(), "events")
 	fs, err := newFileSink(dir)
 	if err != nil {
@@ -90,6 +91,7 @@ func TestFileSinkWritesOneLinePerEvent(t *testing.T) {
 
 // A full segment rolls to a new file, so an operator retires closed files.
 func TestFileSinkRollsBySize(t *testing.T) {
+	t.Parallel()
 	dir := filepath.Join(t.TempDir(), "events")
 	// One byte forces a roll before every event after the first.
 	fs, err := newFileSinkWith(dir, 1)
@@ -118,6 +120,7 @@ func TestFileSinkRollsBySize(t *testing.T) {
 // Events on different days land in different segments, so a day can be retired
 // whole.
 func TestFileSinkRollsByDay(t *testing.T) {
+	t.Parallel()
 	dir := filepath.Join(t.TempDir(), "events")
 	fs, err := newFileSink(dir)
 	if err != nil {
@@ -144,6 +147,7 @@ func TestFileSinkRollsByDay(t *testing.T) {
 
 // A cold sink does not serve reads.
 func TestFileSinkRecentUnsupported(t *testing.T) {
+	t.Parallel()
 	dir := filepath.Join(t.TempDir(), "events")
 	fs, err := newFileSink(dir)
 	if err != nil {
@@ -159,6 +163,7 @@ func TestFileSinkRecentUnsupported(t *testing.T) {
 // fills its queue and counts every event past it as a loss, and Append still
 // returns nil.
 func TestFileSinkDropsUnderBackpressure(t *testing.T) {
+	t.Parallel()
 	// Built by hand with no writer goroutine, so the queue never drains.
 	fs := &fileSink{ch: make(chan *Event, 2), done: make(chan struct{})}
 	for i := 0; i < 5; i++ {
@@ -175,6 +180,7 @@ func TestFileSinkDropsUnderBackpressure(t *testing.T) {
 // The setting turns the file sink on end to end: db stays hot, and every event
 // also lands in the logs directory beside the database.
 func TestEventSinkSettingAddsFileColdSink(t *testing.T) {
+	t.Parallel()
 	dbPath := filepath.Join(t.TempDir(), "atrium.db")
 	first, err := Open(dbPath)
 	if err != nil {

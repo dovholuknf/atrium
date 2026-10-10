@@ -9,6 +9,7 @@ import (
 )
 
 func TestBranchAliasIsItsLastSegmentAsAHandle(t *testing.T) {
+	t.Parallel()
 	for branch, want := range map[string]string{
 		"claude/u-foo":                      "u-foo",
 		"win32crypto-e2e":                   "win32crypto-e2e",
@@ -35,6 +36,7 @@ func TestBranchAliasIsItsLastSegmentAsAHandle(t *testing.T) {
 }
 
 func TestADefaultAliasComesFromTheBranch(t *testing.T) {
+	t.Parallel()
 	s := openTestStore(t)
 
 	// No title prefix: the branch.

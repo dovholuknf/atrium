@@ -10,6 +10,7 @@ import (
 // A released key lets the same item be offered again as a new card, and only
 // that one card is touched.
 func TestReleaseIntakeKeyLetsTheNextOfferInsert(t *testing.T) {
+	t.Parallel()
 	s := open(t)
 	first, created, err := s.Offer(item("runner-update", "@openai/codex"))
 	if err != nil || !created {
@@ -42,6 +43,7 @@ func TestReleaseIntakeKeyLetsTheNextOfferInsert(t *testing.T) {
 // Withdrawing archives an inbox card, says why, and frees the key. A started
 // card is left alone.
 func TestWithdrawOfferedOnlyTakesAnInboxCard(t *testing.T) {
+	t.Parallel()
 	s := open(t)
 	inbox, _, _ := s.Offer(item("runner-update", "a"))
 	started, _, _ := s.Offer(item("runner-update", "b"))

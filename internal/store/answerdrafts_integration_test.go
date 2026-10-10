@@ -6,6 +6,7 @@ import "testing"
 
 // Drafted answers ride on the card, read back as written, and clear with an empty string.
 func TestAnswerDraftsRoundTripOnTheCard(t *testing.T) {
+	t.Parallel()
 	s := openTestStore(t)
 	c := aliasCard(t, s, "drafts-1")
 	const d = `[{"at":"2026-10-07T10:12:00Z","qs":["a?"],"a":["yes"]}]`
@@ -26,6 +27,7 @@ func TestAnswerDraftsRoundTripOnTheCard(t *testing.T) {
 
 // Anything that is not a JSON array is refused, so a bad write cannot break the board's read of the card.
 func TestAnswerDraftsRefuseJunk(t *testing.T) {
+	t.Parallel()
 	s := openTestStore(t)
 	c := aliasCard(t, s, "drafts-2")
 	if err := s.SetAnswerDrafts(c.ID, "not json"); err == nil {

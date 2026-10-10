@@ -8,6 +8,7 @@ import "testing"
 // which agent wants you without looking only works if the answer is the same
 // tomorrow and in another browser.
 func TestSoundIsStoredOnTheCard(t *testing.T) {
+	t.Parallel()
 	s := open(t)
 	task, _, err := s.Register(Observed{WireName: "belled", Worktree: "/w", Runner: "claude"})
 	if err != nil {
@@ -45,6 +46,7 @@ func TestSoundIsStoredOnTheCard(t *testing.T) {
 // The column was added to a table that already had rows, so a card written
 // before the migration has to read back rather than fail the scan.
 func TestACardFromBeforeTheSoundColumnStillReads(t *testing.T) {
+	t.Parallel()
 	s := open(t)
 	task, _, err := s.Register(Observed{WireName: "older", Worktree: "/w", Runner: "claude"})
 	if err != nil {

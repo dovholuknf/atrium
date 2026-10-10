@@ -28,6 +28,7 @@ func resumeOf(t *testing.T, s *Store, id string) string {
 // r-021: a claim bound by task id moves a conversation off a card that is not
 // live, and is refused against one that is. A claim by name is refused either way.
 func TestClaimResumeIDRanksTheClaimant(t *testing.T) {
+	t.Parallel()
 	s := openTestStore(t)
 	old, mine := claimCard(t, s, "old"), claimCard(t, s, "mine")
 	if err := s.SetResumeID(old.ID, "conv-1"); err != nil {
@@ -66,6 +67,7 @@ func TestClaimResumeIDRanksTheClaimant(t *testing.T) {
 // r-021: a name taken from the directory never matches a finished or archived
 // card. The same name told to the hook still does.
 func TestRegisterWillNotMatchADoneCardByADirectoryName(t *testing.T) {
+	t.Parallel()
 	s := openTestStore(t)
 	done := claimCard(t, s, "atriumx")
 	if err := s.SetStatus(done.ID, StatusDone); err != nil {
@@ -91,6 +93,7 @@ func TestRegisterWillNotMatchADoneCardByADirectoryName(t *testing.T) {
 
 // r-042: a claimant that does not exist stores nothing and clears nothing.
 func TestClaimResumeIDMissingClaimantKeepsTheHolder(t *testing.T) {
+	t.Parallel()
 	s := openTestStore(t)
 	old := claimCard(t, s, "old")
 	if err := s.SetResumeID(old.ID, "conv-1"); err != nil {
@@ -107,6 +110,7 @@ func TestClaimResumeIDMissingClaimantKeepsTheHolder(t *testing.T) {
 
 // r-042: the archived half of "finished or archived", which the done test skips.
 func TestRegisterWillNotMatchAnArchivedCardByADirectoryName(t *testing.T) {
+	t.Parallel()
 	s := openTestStore(t)
 	card := claimCard(t, s, "atriumx")
 	if _, err := s.db.Exec(`UPDATE task SET archived_at = ? WHERE id = ?`, ts(now()), card.ID); err != nil {
@@ -124,6 +128,7 @@ func TestRegisterWillNotMatchAnArchivedCardByADirectoryName(t *testing.T) {
 // r-042: a directory name that matches nothing still finds the live card the
 // pid and worktree point at, and never a finished one.
 func TestRegisterDirectoryNameFallsBackToThePidHint(t *testing.T) {
+	t.Parallel()
 	s := openTestStore(t)
 	card, _, err := s.Register(Observed{WireName: "named", Worktree: "/tmp/w", PID: 4242, Runner: "claude"})
 	if err != nil {
@@ -144,6 +149,7 @@ func TestRegisterDirectoryNameFallsBackToThePidHint(t *testing.T) {
 
 // r-042: SetResumeID ignores a blank, so ClearResumeID is the way to drop a bad id.
 func TestClearResumeIDDropsTheId(t *testing.T) {
+	t.Parallel()
 	s := openTestStore(t)
 	c := claimCard(t, s, "c")
 	if err := s.SetResumeID(c.ID, "conv-1"); err != nil {

@@ -9,6 +9,7 @@ import "testing"
 // around the path, and `rm -f "C:/x/*"` fails against `rm -f "C:/x/y.db"` over
 // the closing quote alone. Silently. A path rule says what was meant.
 func TestPathRuleMatchesAQuotedPathMidCommand(t *testing.T) {
+	t.Parallel()
 	s := open(t)
 	if _, err := s.AddPathRule("Bash", "C:/Users/claude/AppData/Local/Temp/claude",
 		"approve", "my own scratch space", ""); err != nil {
@@ -35,6 +36,7 @@ func TestPathRuleMatchesAQuotedPathMidCommand(t *testing.T) {
 // The trailing separator is what stops a sibling directory with the same start
 // from being swept in.
 func TestPathRuleDoesNotMatchASiblingPrefix(t *testing.T) {
+	t.Parallel()
 	s := open(t)
 	if _, err := s.AddPathRule("Bash", "D:/tmp", "approve", "", ""); err != nil {
 		t.Fatal(err)
@@ -52,6 +54,7 @@ func TestPathRuleDoesNotMatchASiblingPrefix(t *testing.T) {
 // Windows paths are case insensitive, and a rule that failed over a capital
 // letter would look broken for no visible reason.
 func TestPathRuleIgnoresCase(t *testing.T) {
+	t.Parallel()
 	s := open(t)
 	if _, err := s.AddPathRule("Bash", "D:/Git/Atrium", "approve", "", ""); err != nil {
 		t.Fatal(err)
@@ -69,6 +72,7 @@ func TestPathRuleIgnoresCase(t *testing.T) {
 // A path short enough to be a drive or a filesystem root covers the whole
 // machine. That is a decision to make on purpose, not by pasting.
 func TestPathRuleRefusesTheWholeMachine(t *testing.T) {
+	t.Parallel()
 	s := open(t)
 	for _, p := range []string{"/", "C:/", `C:\`, "  /  "} {
 		if _, err := s.AddPathRule("Bash", p, "approve", "", ""); err == nil {
@@ -80,6 +84,7 @@ func TestPathRuleRefusesTheWholeMachine(t *testing.T) {
 // A narrow rule has to beat a broad one, or turning on a folder would override
 // a specific block inside it.
 func TestNarrowPathRuleBeatsABroadOne(t *testing.T) {
+	t.Parallel()
 	s := open(t)
 	if _, err := s.AddPathRule("Bash", "D:/git", "approve", "everything I work on", ""); err != nil {
 		t.Fatal(err)
@@ -100,6 +105,7 @@ func TestNarrowPathRuleBeatsABroadOne(t *testing.T) {
 // The two kinds are different rules even with the same text, because they
 // answer different requests.
 func TestPathAndCommandRulesCoexist(t *testing.T) {
+	t.Parallel()
 	s := open(t)
 	if _, err := s.AddPathRule("Bash", "D:/git/atrium", "approve", "", ""); err != nil {
 		t.Fatal(err)
@@ -119,6 +125,7 @@ func TestPathAndCommandRulesCoexist(t *testing.T) {
 // Existing rules predate the column, so they have to keep behaving as the
 // command patterns they were.
 func TestRulesWithoutAKindStayCommandRules(t *testing.T) {
+	t.Parallel()
 	s := open(t)
 	r, err := s.AddRule("Bash", "go build", "approve", "", "")
 	if err != nil {
@@ -139,6 +146,7 @@ func TestRulesWithoutAKindStayCommandRules(t *testing.T) {
 // A path rule has to cover the file tools too, since their command IS a path.
 // That is most of the value: "stop asking about edits in this repo".
 func TestPathRuleCoversFileTools(t *testing.T) {
+	t.Parallel()
 	s := open(t)
 	if _, err := s.AddPathRule("Edit", "D:/git/atrium", "approve", "", ""); err != nil {
 		t.Fatal(err)
@@ -161,6 +169,7 @@ func TestPathRuleCoversFileTools(t *testing.T) {
 // directory a folder rule would keep prompting in exactly the workflow it
 // exists to simplify.
 func TestPathRuleCoversRelativeCommandsFromInside(t *testing.T) {
+	t.Parallel()
 	s := open(t)
 	const repo = "D:/git/atrium"
 	if _, err := s.AddPathRule("Bash", repo, "approve", "", ""); err != nil {
@@ -185,6 +194,7 @@ func TestPathRuleCoversRelativeCommandsFromInside(t *testing.T) {
 
 // Working inside an allowed folder does not license reaching out of it.
 func TestPathRuleDoesNotCoverReachingOutside(t *testing.T) {
+	t.Parallel()
 	s := open(t)
 	const repo = "D:/git/atrium"
 	if _, err := s.AddPathRule("Bash", repo, "approve", "", ""); err != nil {
@@ -208,6 +218,7 @@ func TestPathRuleDoesNotCoverReachingOutside(t *testing.T) {
 
 // A relative path that walks upward is not inside anything.
 func TestPathRuleRefusesUpwardEscapes(t *testing.T) {
+	t.Parallel()
 	s := open(t)
 	const repo = "D:/git/atrium"
 	if _, err := s.AddPathRule("Bash", repo, "approve", "", ""); err != nil {
@@ -232,6 +243,7 @@ func TestPathRuleRefusesUpwardEscapes(t *testing.T) {
 // A session working somewhere else gets nothing from the rule, even for a
 // command that names no path at all.
 func TestPathRuleIgnoresSessionsElsewhere(t *testing.T) {
+	t.Parallel()
 	s := open(t)
 	if _, err := s.AddPathRule("Bash", "D:/git/atrium", "approve", "", ""); err != nil {
 		t.Fatal(err)
@@ -250,6 +262,7 @@ func TestPathRuleIgnoresSessionsElsewhere(t *testing.T) {
 // the first one it finds inside would approve exfiltrating out of an allowed
 // folder, so reaching out has to be checked before reaching in.
 func TestPathRuleRefusesAMixOfInsideAndOutside(t *testing.T) {
+	t.Parallel()
 	s := open(t)
 	const repo = "D:/git/atrium"
 	if _, err := s.AddPathRule("Bash", repo, "approve", "", ""); err != nil {
@@ -277,6 +290,7 @@ func TestPathRuleRefusesAMixOfInsideAndOutside(t *testing.T) {
 // neither look absolute, so a command reaching outside reads as if it named no
 // absolute path at all and the working-directory rule approves it.
 func TestPathRuleSeesQuotedPathsWithSpaces(t *testing.T) {
+	t.Parallel()
 	s := open(t)
 	const repo = "D:/git/atrium"
 	if _, err := s.AddPathRule("Bash", repo, "approve", "", ""); err != nil {
@@ -310,6 +324,7 @@ func TestPathRuleSeesQuotedPathsWithSpaces(t *testing.T) {
 
 // A path hidden behind a flag is still a path.
 func TestPathRuleSeesPathsAttachedToFlags(t *testing.T) {
+	t.Parallel()
 	s := open(t)
 	const repo = "D:/git/atrium"
 	if _, err := s.AddPathRule("Bash", repo, "approve", "", ""); err != nil {
@@ -328,6 +343,7 @@ func TestPathRuleSeesPathsAttachedToFlags(t *testing.T) {
 // A literal cd out of the folder is visible in the command text, so it is
 // caught even though nothing here simulates a shell.
 func TestPathRuleCatchesALiteralCdOut(t *testing.T) {
+	t.Parallel()
 	s := open(t)
 	const repo = "D:/git/atrium"
 	if _, err := s.AddPathRule("Bash", repo, "approve", "", ""); err != nil {
@@ -346,6 +362,7 @@ func TestPathRuleCatchesALiteralCdOut(t *testing.T) {
 // A url is not a path on this machine, so it must not be read as one reaching
 // outside the folder either.
 func TestPathRuleIgnoresURLs(t *testing.T) {
+	t.Parallel()
 	s := open(t)
 	const repo = "D:/git/atrium"
 	if _, err := s.AddPathRule("Bash", repo, "approve", "", ""); err != nil {

@@ -21,6 +21,7 @@ func askCard(t *testing.T, s *Store, name string) *Task {
 
 // THE BUG, PINNED. Two questions, both still there.
 func TestASecondAskDoesNotDestroyTheFirst(t *testing.T) {
+	t.Parallel()
 	s := open(t)
 	task := askCard(t, s, "asker")
 
@@ -56,6 +57,7 @@ func TestASecondAskDoesNotDestroyTheFirst(t *testing.T) {
 // Answering one leaves the other standing, and the card moves on to it. This
 // is what makes the card a queue that drains rather than a single slot.
 func TestAnsweringOneAskLeavesTheOtherStanding(t *testing.T) {
+	t.Parallel()
 	s := open(t)
 	task := askCard(t, s, "asker")
 
@@ -109,6 +111,7 @@ func TestAnsweringOneAskLeavesTheOtherStanding(t *testing.T) {
 // replying settles only what it was asked, or a question meant for a human
 // disappears off the board without ever being answered.
 func TestAPeerAskAndAHumanAskCoexist(t *testing.T) {
+	t.Parallel()
 	s := open(t)
 	task := askCard(t, s, "asker")
 
@@ -160,6 +163,7 @@ func TestAPeerAskAndAHumanAskCoexist(t *testing.T) {
 // not be able to turn a card into a wall, and a question thrown away silently
 // is the defect this file exists to fix wearing different clothes.
 func TestTheAskCapHoldsAndRecordsWhatItDropped(t *testing.T) {
+	t.Parallel()
 	s := open(t)
 	task := askCard(t, s, "flood")
 
@@ -203,6 +207,7 @@ func TestTheAskCapHoldsAndRecordsWhatItDropped(t *testing.T) {
 // follows, and the truncation lands on a rune boundary so the board never
 // renders half a character.
 func TestALongAskIsTruncatedOnARuneBoundary(t *testing.T) {
+	t.Parallel()
 	s := open(t)
 	task := askCard(t, s, "wordy")
 
@@ -222,6 +227,7 @@ func TestALongAskIsTruncatedOnARuneBoundary(t *testing.T) {
 // Dropping the outstanding ask on upgrade is the exact loss 0044 exists to
 // stop, so the migration has to carry it.
 func TestTheMigrationCarriesAnAskFromTheOldColumns(t *testing.T) {
+	t.Parallel()
 	path := t.TempDir() + "/old.db"
 	s, err := Open(path)
 	if err != nil {
@@ -293,6 +299,7 @@ func TestTheMigrationCarriesAnAskFromTheOldColumns(t *testing.T) {
 // already there. Copy the database out, point this at the copy, delete the
 // copy.
 func TestTheAskMigrationAgainstACopyOfALiveDatabase(t *testing.T) {
+	t.Parallel()
 	path := os.Getenv("ATRIUM_LIVE_COPY")
 	if path == "" {
 		t.Skip("set ATRIUM_LIVE_COPY to a COPY of a real atrium.db")

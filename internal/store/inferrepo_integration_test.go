@@ -8,6 +8,7 @@ import "testing"
 // checkout, on a card nobody told the repo, drew as three nested headings
 // called doc, troubleshooting and debug-skill.
 func TestInferRepoReadsTheRepoOutOfAWorktreePath(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		path, want string
 	}{
@@ -39,6 +40,7 @@ func TestInferRepoReadsTheRepoOutOfAWorktreePath(t *testing.T) {
 // AN EMPTY ANSWER IS THE SAFE ANSWER. Every caller falls back to what it did
 // before, so a path this does not recognise cannot be made worse by it.
 func TestInferRepoDeclinesWhatItCannotRead(t *testing.T) {
+	t.Parallel()
 	for _, p := range []string{
 		"",
 		"   ",
@@ -61,6 +63,7 @@ func TestInferRepoDeclinesWhatItCannotRead(t *testing.T) {
 // The three tiers, in order. An override beats what the launcher recorded,
 // which beats the guess.
 func TestDisplayRepoPrefersAnOverrideThenTheRecordThenTheGuess(t *testing.T) {
+	t.Parallel()
 	const path = "D:/worktrees/github/openziti/desktop-edge-win/wt/doc/troubleshooting/debug-skill"
 
 	guessed := &Task{Worktree: path}

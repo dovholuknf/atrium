@@ -9,6 +9,7 @@ import (
 )
 
 func TestKeepaliveTokensSinceCountsOnlyTheWindow(t *testing.T) {
+	t.Parallel()
 	st, err := Open(filepath.Join(t.TempDir(), "t.db"))
 	if err != nil {
 		t.Fatal(err)

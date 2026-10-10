@@ -7,6 +7,7 @@ import "testing"
 // A card's inventory: rows count per card, a pending owner hands its rows to the card after the card's own, a freed
 // row stays with when it went, and the disk is the measured live rows only.
 func TestCardResourcesCountMoveFreeAndMeasure(t *testing.T) {
+	t.Parallel()
 	st := open(t)
 	if _, err := st.AddResource("c1", ResDir, "/tmp/c1-scratch", ""); err != nil {
 		t.Fatal(err)

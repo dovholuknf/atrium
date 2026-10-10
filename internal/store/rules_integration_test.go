@@ -5,6 +5,7 @@ package store
 import "testing"
 
 func TestDefaultPrefixIsToolAware(t *testing.T) {
+	t.Parallel()
 	cases := []struct{ tool, command, want string }{
 		// Commands: the verb, not its arguments.
 		{"Bash", "go build -o build.claude/ ./...", "go build"},
@@ -26,6 +27,7 @@ func TestDefaultPrefixIsToolAware(t *testing.T) {
 }
 
 func TestMatchPattern(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		pattern, command string
 		want             bool
@@ -61,6 +63,7 @@ func TestMatchPattern(t *testing.T) {
 // A narrow rule has to beat a broad one, or a repo-wide approve would swallow
 // a deliberate block on one directory.
 func TestMostSpecificRuleWins(t *testing.T) {
+	t.Parallel()
 	s := open(t)
 	if _, err := s.AddRule("Edit", "D:/git/atrium/", "approve", "", ""); err != nil {
 		t.Fatal(err)
@@ -86,6 +89,7 @@ func TestMostSpecificRuleWins(t *testing.T) {
 
 // Wildcards must not win specificity by padding themselves with stars.
 func TestGlobDoesNotOutrankLongerLiteral(t *testing.T) {
+	t.Parallel()
 	s := open(t)
 	if _, err := s.AddRule("Bash", "go test ./internal/store/", "block", "", ""); err != nil {
 		t.Fatal(err)
@@ -103,6 +107,7 @@ func TestGlobDoesNotOutrankLongerLiteral(t *testing.T) {
 }
 
 func TestAddRuleRejectsMatchEverything(t *testing.T) {
+	t.Parallel()
 	s := open(t)
 	if _, err := s.AddRule("Bash", "*", "approve", "", ""); err == nil {
 		t.Fatal("a bare wildcard was accepted, which silently approves every command")
@@ -116,6 +121,7 @@ func TestAddRuleRejectsMatchEverything(t *testing.T) {
 }
 
 func TestRuleUpsertAndForget(t *testing.T) {
+	t.Parallel()
 	s := open(t)
 	first, err := s.AddRule("Bash", "go build", "approve", "", "")
 	if err != nil {
@@ -149,6 +155,7 @@ func TestRuleUpsertAndForget(t *testing.T) {
 }
 
 func TestRuleCountsHits(t *testing.T) {
+	t.Parallel()
 	s := open(t)
 	if _, err := s.AddRule("Bash", "go build", "approve", "", ""); err != nil {
 		t.Fatal(err)

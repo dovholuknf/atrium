@@ -13,6 +13,7 @@ import "testing"
 // model cannot get out of that, and the message it keeps being shown was
 // delivered once and marked delivered.
 func TestAMessageDeliveryIsNeverReplayed(t *testing.T) {
+	t.Parallel()
 	s := open(t)
 	task, _, err := s.Register(Observed{WireName: "courier", Worktree: "/w", Runner: "claude"})
 	if err != nil {
@@ -46,6 +47,7 @@ func TestAMessageDeliveryIsNeverReplayed(t *testing.T) {
 // The ordinary replay still works. A decision that judged the command really
 // was an answer to it, and a reconnect must not ask the operator twice.
 func TestANonMessageBlockStillReplays(t *testing.T) {
+	t.Parallel()
 	s := open(t)
 	task, _, err := s.Register(Observed{WireName: "judged", Worktree: "/w", Runner: "claude"})
 	if err != nil {

@@ -9,6 +9,7 @@ import (
 // AN ASKED EXIT IS A COLUMN, so no event setting can lose it: routing `notified`
 // to the cold sink or compacting it away leaves the card down (r-new-review-ff747683).
 func TestAnAskedExitSurvivesItsEventsGoing(t *testing.T) {
+	t.Parallel()
 	s := open(t)
 	task, _, err := s.Register(Observed{WireName: "w", Worktree: t.TempDir(), Runner: "claude"})
 	if err != nil {
@@ -37,6 +38,7 @@ func TestAnAskedExitSurvivesItsEventsGoing(t *testing.T) {
 // THE MIGRATION CARRIES OVER what ff747683 wrote as events: the newest of an
 // exit-asked and a launch decides.
 func TestTheExitAskedBackfill(t *testing.T) {
+	t.Parallel()
 	s := open(t)
 	mk := func(name string) string {
 		task, _, err := s.Register(Observed{WireName: name, Worktree: t.TempDir(), Runner: "claude"})

@@ -6,6 +6,7 @@ import "testing"
 
 // The runner's context limit is saved, returned, and validated like the board's threshold.
 func TestARunnerContextLimitIsSavedAndChecked(t *testing.T) {
+	t.Parallel()
 	s := open(t)
 	save := func(k int) error {
 		_, err := s.SaveHarness(Harness{ID: "probe", Cmd: "probe", LaunchMode: LaunchPTY, ContextLimitK: k})

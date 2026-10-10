@@ -5,6 +5,7 @@ package store
 import "testing"
 
 func TestALastSizeRoundTripsBothSides(t *testing.T) {
+	t.Parallel()
 	s := openTestStore(t)
 	c := aliasCard(t, s, "sized")
 	if err := s.SetLastSize(c.ID, 177, 48); err != nil {
@@ -28,6 +29,7 @@ func TestALastSizeRoundTripsBothSides(t *testing.T) {
 }
 
 func TestANewCardHasNoLastRows(t *testing.T) {
+	t.Parallel()
 	s := openTestStore(t)
 	c := aliasCard(t, s, "fresh")
 	if got, _ := s.Get(c.ID); got.LastRows != 0 {
@@ -36,6 +38,7 @@ func TestANewCardHasNoLastRows(t *testing.T) {
 }
 
 func TestTheLastRowsMigrationToleratesItsColumn(t *testing.T) {
+	t.Parallel()
 	s := openTestStore(t)
 	c := aliasCard(t, s, "kept")
 	if err := s.SetLastSize(c.ID, 120, 33); err != nil {

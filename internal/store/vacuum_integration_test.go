@@ -12,6 +12,7 @@ import (
 // mode can only be chosen before any table exists. Getting this wrong means the
 // file never hands freed pages back for the life of that database.
 func TestFreshDatabaseIsIncremental(t *testing.T) {
+	t.Parallel()
 	s := open(t)
 	if !s.IncrementalVacuumOn() {
 		t.Fatal("a fresh database did not come up in incremental auto_vacuum mode")
@@ -29,6 +30,7 @@ func TestFreshDatabaseIsIncremental(t *testing.T) {
 // Switching it would need a full VACUUM, which needs exclusive access a live
 // room cannot give, so Open must detect and leave rather than force it.
 func TestExistingLegacyDatabaseIsLeftAlone(t *testing.T) {
+	t.Parallel()
 	path := filepath.Join(t.TempDir(), "legacy.db")
 
 	// A file that exists and is NOT in incremental mode: a plain table on the
@@ -70,6 +72,7 @@ func TestExistingLegacyDatabaseIsLeftAlone(t *testing.T) {
 // database where it does real work and on a legacy one where it is a no-op. It
 // must never halt the store either way.
 func TestIncrementalVacuumRuns(t *testing.T) {
+	t.Parallel()
 	s := open(t)
 	// Make some free pages to reclaim: fill a table, then drop it. On an
 	// incremental database the pages land on the free list for the vacuum.
@@ -95,6 +98,7 @@ func TestIncrementalVacuumRuns(t *testing.T) {
 // On a database not in incremental mode the call must be a silent no-op, not an
 // error and not a halt.
 func TestIncrementalVacuumNoopOnLegacy(t *testing.T) {
+	t.Parallel()
 	path := filepath.Join(t.TempDir(), "legacy.db")
 	raw, err := sql.Open("sqlite", path)
 	if err != nil {

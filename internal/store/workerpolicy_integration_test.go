@@ -5,6 +5,7 @@ package store
 import "testing"
 
 func TestWorkerPolicyIsOffUntilSet(t *testing.T) {
+	t.Parallel()
 	s := openTestStore(t)
 	if p := s.WorkerPolicy(); p != (WorkerPolicy{}) {
 		t.Fatalf("policy %+v on a fresh store", p)
@@ -12,6 +13,7 @@ func TestWorkerPolicyIsOffUntilSet(t *testing.T) {
 }
 
 func TestWorkerPolicyRoundTripsAndOffIsEmpty(t *testing.T) {
+	t.Parallel()
 	s := openTestStore(t)
 	v, err := CheckWorkerPolicy(WorkerPolicy{Model: " sonnet ", BudgetUSD: 12.345})
 	if err != nil {
@@ -29,6 +31,7 @@ func TestWorkerPolicyRoundTripsAndOffIsEmpty(t *testing.T) {
 }
 
 func TestWorkerPolicyRefusesNonsense(t *testing.T) {
+	t.Parallel()
 	for _, p := range []WorkerPolicy{{BudgetUSD: -1}, {BudgetUSD: MaxWorkerBudgetUSD + 1}, {Model: "two words"},
 		{Model: "a;b"}} {
 		if _, err := CheckWorkerPolicy(p); err == nil {

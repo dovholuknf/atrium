@@ -10,6 +10,7 @@ import (
 // Lineage is written once. A reopen runs the launch again, and must not
 // rename the parent to whoever pressed the button the second time.
 func TestLineageIsWrittenOnce(t *testing.T) {
+	t.Parallel()
 	s := openTestStore(t)
 	card, _, err := s.Register(Observed{WireName: "kid", Worktree: "/tmp/kid"})
 	if err != nil {
@@ -36,6 +37,7 @@ func TestLineageIsWrittenOnce(t *testing.T) {
 // The board's own dialog is the human, and a human-launched card owes nobody
 // a report.
 func TestAHumanLaunchIsNotAnAgentLaunch(t *testing.T) {
+	t.Parallel()
 	s := openTestStore(t)
 	card, _, _ := s.Register(Observed{WireName: "mine", Worktree: "/tmp/mine"})
 	if err := s.SetLineage(card.ID, HumanLauncher, ""); err != nil {
@@ -49,6 +51,7 @@ func TestAHumanLaunchIsNotAnAgentLaunch(t *testing.T) {
 
 // A prompt makes a report owed, and a report after it pays it.
 func TestAPromptOwesAReportAndAReportPaysIt(t *testing.T) {
+	t.Parallel()
 	s := openTestStore(t)
 	card, _, _ := s.Register(Observed{WireName: "w", Worktree: "/tmp/w"})
 	got, _ := s.Get(card.ID)
@@ -76,6 +79,7 @@ func TestAPromptOwesAReportAndAReportPaysIt(t *testing.T) {
 
 // One notice per worker, source and key, however often it is asked for.
 func TestANoticeIsRecordedOnce(t *testing.T) {
+	t.Parallel()
 	s := openTestStore(t)
 	first, err := s.RecordNotice("w", "silent-stop", "k1")
 	if err != nil || !first {
@@ -93,6 +97,7 @@ func TestANoticeIsRecordedOnce(t *testing.T) {
 
 // A hook is stamped the first time it is heard from and not again.
 func TestAHookIsStampedOnce(t *testing.T) {
+	t.Parallel()
 	s := openTestStore(t)
 	card, _, _ := s.Register(Observed{WireName: "h", Worktree: "/tmp/h"})
 	if err := s.SawHook(card.ID, HookTool); err != nil {
@@ -114,6 +119,7 @@ func TestAHookIsStampedOnce(t *testing.T) {
 // A turn ends when a working card starts waiting. A resume from done, and a
 // prompt that changes no status, are not turns. See 0062_turn_end.
 func TestOnlyAWorkingCardEndsATurn(t *testing.T) {
+	t.Parallel()
 	s := openTestStore(t)
 	card, _, _ := s.Register(Observed{WireName: "w", Worktree: "/tmp/w"})
 	for _, st := range []string{StatusDone, StatusNeedsInput} {
@@ -140,6 +146,7 @@ func TestOnlyAWorkingCardEndsATurn(t *testing.T) {
 // A database from before 0062 is seeded from its event log, so a card that
 // really stopped silently before the upgrade still reads stuck after it.
 func TestTheTurnEndIsSeededFromTheEventLog(t *testing.T) {
+	t.Parallel()
 	s := openTestStore(t)
 	card, _, _ := s.Register(Observed{WireName: "w", Worktree: "/tmp/w"})
 	for _, st := range []string{StatusRunning, StatusNeedsInput} {
