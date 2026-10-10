@@ -14,6 +14,29 @@ type ring struct {
 	cap   int
 	total int64
 	cuts  []Cut
+	// marks are the offsets the daemon put a clear mark at. The mark's bytes are never in the ring, so offsets stay the
+	// pty's own and a live subscriber sees nothing. A replay reports where they go and the daemon lays them back.
+	marks []int64
+}
+
+// mark records a clear mark at absolute offset at, clamped into what the ring has produced.
+func (r *ring) mark(at int64) {
+	at = min(max(at, 0), r.total)
+	if n := len(r.marks); n > 0 && r.marks[n-1] > at {
+		at = r.marks[n-1]
+	}
+	r.marks = append(r.marks, at)
+	r.forgetMarks()
+}
+
+// forgetMarks drops marks behind the window and keeps the list bounded.
+func (r *ring) forgetMarks() {
+	st := r.start()
+	i := 0
+	for i < len(r.marks) && r.marks[i] < st {
+		i++
+	}
+	r.marks = r.marks[i:]
 }
 
 func newRing(cap int, cols, rows int) *ring {
@@ -35,6 +58,18 @@ func (r *ring) write(p []byte) {
 		r.buf = append([]byte(nil), r.buf[len(r.buf)-r.cap:]...)
 	}
 	r.forgetCuts()
+	r.forgetMarks()
+}
+
+// marksFrom is the marks at or after offset from, for a replay that starts there.
+func (r *ring) marksFrom(from int64) []int64 {
+	var out []int64
+	for _, m := range r.marks {
+		if m >= from {
+			out = append(out, m)
+		}
+	}
+	return out
 }
 
 // forgetCuts drops cuts wholly behind the window, keeping the last one at or before its start, which says what

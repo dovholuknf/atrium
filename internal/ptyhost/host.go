@@ -416,7 +416,7 @@ func (c *client) handle(q *Request) {
 		}
 		sort.Slice(list, func(i, j int) bool { return list[i].RunID < list[j].RunID })
 		c.reply(q, Reply{OK: true, List: list})
-	case VAttach, VWrite, VResize, VSignal, VCollect:
+	case VAttach, VWrite, VResize, VSignal, VCollect, VMark:
 		h.mu.Lock()
 		p := h.ptys[q.RunID]
 		h.mu.Unlock()
@@ -436,6 +436,8 @@ func (c *client) handle(q *Request) {
 			c.signal(q, p)
 		case VCollect:
 			c.collect(q, p)
+		case VMark:
+			c.mark(q, p)
 		}
 	default:
 		c.fail(q, "unknown verb %q", q.V)
@@ -621,11 +623,21 @@ func (c *client) attach(q *Request, p *hpty) {
 	data, from, trunc, cuts := p.rg.snapshot(q.From)
 	info := p.infoLocked()
 	p.subs[c] = struct{}{}
-	c.reply(q, Reply{OK: true, Info: &info, From: from, Truncated: trunc, Cuts: cuts, Data: data})
+	c.reply(q, Reply{OK: true, Info: &info, From: from, Truncated: trunc, Cuts: cuts, Marks: p.rg.marksFrom(from),
+		Data: data})
 	if p.exited {
 		c.push(&Event{Ev: EvExit, RunID: p.runID, Exited: true, ExitCode: p.exitCode}, 0)
 	}
 	p.mu.Unlock()
+}
+
+// mark records where the daemon put a clear mark in the stream. It touches no byte and sends no event: the daemon
+// already wrote the mark into its own stream, and every later attach is told where it goes.
+func (c *client) mark(q *Request, p *hpty) {
+	p.mu.Lock()
+	p.rg.mark(q.At)
+	p.mu.Unlock()
+	c.reply(q, Reply{OK: true})
 }
 
 func (c *client) write(q *Request, p *hpty) {
