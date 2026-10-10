@@ -661,6 +661,7 @@ async function soloRefresh() {
   // A branch can change under a running session, and the title is the whole
   // product here, so it is re-read rather than fixed at open.
   if (task) { soloTask = task; }
+  if (task && typeof composeFollow === "function") composeFollow(task);
   // And so can its alias, which is this window's bar name. See js/alias.js.
   if (task && typeof followTermAlias === "function") followTermAlias([task]);
 

@@ -1466,6 +1466,7 @@ function onTaskEvent(e) {
   try { d = JSON.parse(e.data); } catch (err) {}
   if (typeof dockKick === "function") dockKick(d && d.id);
   hearActivity(d);
+  if (cardRowComplete(d) && typeof composeFollow === "function") composeFollow(d);
   if (termOnly()) { soloTaskEvent(d); return; }
   if (cardRowComplete(d)) { upsertCard(d); paintSoon(); return; }
   // A CARD THE BOARD HAS NEVER HEARD OF is read for now, not at the next throttle slot: the alert and the terminals
