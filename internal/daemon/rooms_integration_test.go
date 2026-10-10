@@ -29,6 +29,7 @@ func roomsOf(t *testing.T, d *Daemon) []Room {
 // mean a card deleted on the room lives forever on the hub, and the point of
 // holding nothing durable is that the room is the truth about itself.
 func TestACheckInReplacesTheCards(t *testing.T) {
+	t.Parallel()
 	d := &Daemon{}
 	if _, err := d.RoomCheckIn(RoomReport{Name: "one", Cards: []RoomCard{
 		{ID: "a", Title: "first"}, {ID: "b", Title: "second"},
@@ -53,6 +54,7 @@ func TestACheckInReplacesTheCards(t *testing.T) {
 // that died and one that was never there look the same otherwise, and the first
 // is the one worth noticing.
 func TestAQuietRoomGoesStaleBeforeItGoes(t *testing.T) {
+	t.Parallel()
 	d := &Daemon{}
 	if _, err := d.RoomCheckIn(RoomReport{Name: "quiet"}); err != nil {
 		t.Fatal(err)
@@ -78,6 +80,7 @@ func TestAQuietRoomGoesStaleBeforeItGoes(t *testing.T) {
 // And a room nobody has heard from in long enough disappears, because listing
 // it is a claim rather than a memory.
 func TestAForgottenRoomIsGone(t *testing.T) {
+	t.Parallel()
 	d := &Daemon{}
 	if _, err := d.RoomCheckIn(RoomReport{Name: "gone"}); err != nil {
 		t.Fatal(err)
@@ -94,6 +97,7 @@ func TestAForgottenRoomIsGone(t *testing.T) {
 // The waiting count is what makes a remote room actionable rather than
 // informational, and it is computed on read because it is a fact about now.
 func TestWaitingIsCountedFromTheCards(t *testing.T) {
+	t.Parallel()
 	d := &Daemon{}
 	if _, err := d.RoomCheckIn(RoomReport{Name: "busy", Cards: []RoomCard{
 		{ID: "a", Status: "running"},
@@ -112,6 +116,7 @@ func TestWaitingIsCountedFromTheCards(t *testing.T) {
 // with one name are one room that flaps, and an unnamed one would be every
 // room at once.
 func TestARoomHasToBeNamed(t *testing.T) {
+	t.Parallel()
 	d := &Daemon{}
 	if _, err := d.RoomCheckIn(RoomReport{Name: "  "}); err == nil {
 		t.Fatal("a room with no name was accepted")
@@ -123,6 +128,7 @@ func TestARoomHasToBeNamed(t *testing.T) {
 
 // Checking in twice is one room, not two. The second is an update.
 func TestCheckingInTwiceIsOneRoom(t *testing.T) {
+	t.Parallel()
 	d := &Daemon{}
 	for i := 0; i < 5; i++ {
 		if _, err := d.RoomCheckIn(RoomReport{Name: "same", Host: "h"}); err != nil {
@@ -160,6 +166,7 @@ func reportAsking(t *testing.T, d *Daemon, room, perm string) []RoomDecision {
 // A room dials out, so nothing here can dial back into it, and a hub that
 // believed it could would leave the agent frozen while reporting success.
 func TestADecisionLeavesOnTheNextCheckIn(t *testing.T) {
+	t.Parallel()
 	d := &Daemon{}
 	reportAsking(t, d, "leaf", "p1")
 
@@ -178,6 +185,7 @@ func TestADecisionLeavesOnTheNextCheckIn(t *testing.T) {
 // And it is handed over ONCE. Collected twice means the room applies it twice,
 // and for an approval that means running the command a second time.
 func TestADecisionIsHandedOverOnce(t *testing.T) {
+	t.Parallel()
 	d := &Daemon{}
 	reportAsking(t, d, "leaf", "p1")
 	if err := d.RoomDecide("leaf", "p1", RoomDecision{Decision: "approve"}); err != nil {
@@ -201,6 +209,7 @@ func TestADecisionIsHandedOverOnce(t *testing.T) {
 // before it collects the decision, and offering the buttons again in that
 // window is how one approval becomes two.
 func TestAnAnsweredRequestIsNotOfferedAgain(t *testing.T) {
+	t.Parallel()
 	d := &Daemon{}
 	reportAsking(t, d, "leaf", "p1")
 	if got := requestsOf(t, d, "leaf"); len(got) != 1 {
@@ -225,6 +234,7 @@ func TestAnAnsweredRequestIsNotOfferedAgain(t *testing.T) {
 // agent frozen on another machine with nothing on any board to say so, which is
 // the exact failure this feature exists to remove.
 func TestAnAnswerThatDidNotTakeExpires(t *testing.T) {
+	t.Parallel()
 	d := &Daemon{}
 	reportAsking(t, d, "leaf", "p1")
 	if err := d.RoomDecide("leaf", "p1", RoomDecision{Decision: "approve"}); err != nil {
@@ -255,6 +265,7 @@ func TestAnAnswerThatDidNotTakeExpires(t *testing.T) {
 // than delivered. The room answered it on its own board, so delivering would
 // answer whatever that id means next.
 func TestAnAnswerForARequestThatWentAwayIsDropped(t *testing.T) {
+	t.Parallel()
 	d := &Daemon{}
 	reportAsking(t, d, "leaf", "p1")
 	if err := d.RoomDecide("leaf", "p1", RoomDecision{Decision: "approve"}); err != nil {
@@ -281,6 +292,7 @@ func TestAnAnswerForARequestThatWentAwayIsDropped(t *testing.T) {
 // as the same event the local queue reports with a conflict: a button drawn
 // from a poll one moment out of date.
 func TestAStaleDecisionIsRefused(t *testing.T) {
+	t.Parallel()
 	d := &Daemon{}
 	reportAsking(t, d, "leaf", "p1")
 
@@ -314,6 +326,7 @@ func TestAStaleDecisionIsRefused(t *testing.T) {
 // matches everything, and finding that out on the other machine means finding
 // out after it was written into that machine's rule table.
 func TestARoomDecisionIsChecked(t *testing.T) {
+	t.Parallel()
 	d := &Daemon{}
 	reportAsking(t, d, "leaf", "p1")
 
@@ -343,6 +356,7 @@ func TestARoomDecisionIsChecked(t *testing.T) {
 // would have it read against this machine's clock, and two machines that
 // disagree by a minute would draw a request as frozen before it was made.
 func TestTheWaitIsReadAgainstThisClock(t *testing.T) {
+	t.Parallel()
 	d := &Daemon{}
 	if _, err := d.RoomCheckIn(RoomReport{Name: "leaf", Perms: []RoomPerm{
 		{ID: "p1", Tool: "Bash", Command: "go build", Waiting: 90},
@@ -377,6 +391,7 @@ func TestTheWaitIsReadAgainstThisClock(t *testing.T) {
 // not: a browser asked to draw a thousand permission cards stops responding,
 // which is worse than a diff that ends early.
 func TestAReportIsBounded(t *testing.T) {
+	t.Parallel()
 	d := &Daemon{}
 	many := make([]RoomPerm, roomPermsMax+20)
 	for i := range many {
@@ -404,6 +419,7 @@ func TestAReportIsBounded(t *testing.T) {
 // and a copy here would be a second answer to "was this approved" that is wrong
 // whenever the room refused it.
 func TestTheHubKeepsNoRecordOfADecision(t *testing.T) {
+	t.Parallel()
 	d := &Daemon{}
 	reportAsking(t, d, "leaf", "p1")
 	if err := d.RoomDecide("leaf", "p1", RoomDecision{
@@ -434,6 +450,7 @@ func TestTheHubKeepsNoRecordOfADecision(t *testing.T) {
 // design exists to not have. A machine still running `atrium room` must come
 // straight back.
 func TestForgettingARoomDoesNotKeepItAway(t *testing.T) {
+	t.Parallel()
 	d := &Daemon{}
 	if _, err := d.RoomCheckIn(RoomReport{Name: "leaf"}); err != nil {
 		t.Fatal(err)
@@ -462,6 +479,7 @@ func TestForgettingARoomDoesNotKeepItAway(t *testing.T) {
 // room that aged out between the draw and the click, mean the same thing to
 // whoever pressed it.
 func TestForgettingWhatIsNotThere(t *testing.T) {
+	t.Parallel()
 	d := &Daemon{}
 	had, err := d.RoomForget("never-existed")
 	if err != nil {
@@ -479,6 +497,7 @@ func TestForgettingWhatIsNotThere(t *testing.T) {
 // is a state, and the board needs a deadline to tell somebody whether to wait
 // or go and look at that machine.
 func TestAStaleRoomSaysWhenItGoes(t *testing.T) {
+	t.Parallel()
 	d := &Daemon{}
 	if _, err := d.RoomCheckIn(RoomReport{Name: "fading"}); err != nil {
 		t.Fatal(err)

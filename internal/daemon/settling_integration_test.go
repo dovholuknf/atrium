@@ -12,6 +12,7 @@ import (
 // first version would have failed: it reported settling correctly for twenty
 // seconds and the sessions took longer than that to come back.
 func TestSettlingHoldsUntilEveryExpectedCardIsBack(t *testing.T) {
+	t.Parallel()
 	var s settling
 	s.begin()
 	s.expect([]string{"a", "b", "c"})
@@ -42,6 +43,7 @@ func TestSettlingHoldsUntilEveryExpectedCardIsBack(t *testing.T) {
 // pending. That instant is where the arrivals leaked, and the boot entry is
 // what closes it.
 func TestSettlingSurvivesTheGapBetweenStages(t *testing.T) {
+	t.Parallel()
 	var s settling
 	s.begin()
 	s.floor.Store(0)
@@ -71,6 +73,7 @@ func TestSettlingSurvivesTheGapBetweenStages(t *testing.T) {
 // start counts as arriving. Otherwise a deleted worktree keeps the board quiet
 // until the backstop on every restart.
 func TestACardThatFailedToStartStopsHoldingTheWindowOpen(t *testing.T) {
+	t.Parallel()
 	var s settling
 	s.begin()
 	s.floor.Store(0)
@@ -90,6 +93,7 @@ func TestACardThatFailedToStartStopsHoldingTheWindowOpen(t *testing.T) {
 // A daemon with nothing to restore is still coming up: its sessions rejoin
 // through their own hooks, which nothing here can see.
 func TestADaemonWithNothingToRestoreIsStillSettlingBriefly(t *testing.T) {
+	t.Parallel()
 	var s settling
 	s.begin()
 	s.arrived(settleBoot)
@@ -109,6 +113,7 @@ func TestADaemonWithNothingToRestoreIsStillSettlingBriefly(t *testing.T) {
 // The backstop overrides the set, so one card that never reports cannot
 // silence the board indefinitely.
 func TestTheBackstopEndsTheWindowWhateverIsPending(t *testing.T) {
+	t.Parallel()
 	var s settling
 	s.begin()
 	s.floor.Store(0)
@@ -125,6 +130,7 @@ func TestTheBackstopEndsTheWindowWhateverIsPending(t *testing.T) {
 // A passive daemon starts nothing and must not be quiet about cards it had no
 // hand in.
 func TestAPassiveDaemonIsNotSettling(t *testing.T) {
+	t.Parallel()
 	var s settling
 	if s.on() {
 		t.Fatal("settling without ever having begun")
@@ -139,6 +145,7 @@ func TestAPassiveDaemonIsNotSettling(t *testing.T) {
 
 // Every stage runs in a goroutine and the reader is an HTTP handler.
 func TestSettlingIsRacefree(t *testing.T) {
+	t.Parallel()
 	var s settling
 	s.begin()
 	var wg sync.WaitGroup

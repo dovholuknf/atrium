@@ -71,6 +71,7 @@ func attachUntil(t *testing.T, h http.Handler, path, want string) string {
 }
 
 func TestTheNoticeCarriesTheBoardsNonceInItsLinks(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	old := cutSession(t, d, "cut")
 	got := attachUntil(t, d.ap.Handler(), "/v1/tasks/cut/attach?link=n0nce", liveLine)
@@ -91,6 +92,7 @@ func TestTheNoticeCarriesTheBoardsNonceInItsLinks(t *testing.T) {
 // No nonce is an older board, and a nonce that is not plain letters and
 // digits is not one this board made. Both get the line with no links.
 func TestWithoutAUsableNonceTheNoticeHasNoLinks(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	cutSession(t, d, "cut")
 	for _, q := range []string{"", "?link=", "?link=a%1b%5D8%3B%3Bx", "?link=" + strings.Repeat("a", 65)} {
@@ -105,6 +107,7 @@ func TestWithoutAUsableNonceTheNoticeHasNoLinks(t *testing.T) {
 }
 
 func TestCarryAllReplaysEverySavedLine(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	cutSession(t, d, "cut")
 	got := attachUntil(t, d.ap.Handler(), "/v1/tasks/cut/attach?carry=all&link=n0nce", firstSaved)
@@ -129,6 +132,7 @@ func TestAGuestCannotAskForTheWholeHistory(t *testing.T) {
 }
 
 func TestAGuestGetsTheNoticeWithoutLinks(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	cutSession(t, d, "cut")
 	got := attachUntil(t, d.guestHandler("cut"), "/v1/tasks/cut/attach?link=n0nce", "not replayed here")

@@ -13,6 +13,7 @@ import (
 // the hub and the room and nothing else, which left runner and atrium to be
 // told apart by the absence of other lines. The split names it.
 func TestEchoSplitNamesTheRunnerAndAtrium(t *testing.T) {
+	t.Parallel()
 	in := time.Unix(100, 0).UnixNano()
 	ms := int64(time.Millisecond)
 
@@ -31,6 +32,7 @@ func TestEchoSplitNamesTheRunnerAndAtrium(t *testing.T) {
 // The pty reader stamps the read the split is taken at, and only while the
 // logging is on, so the default path stays one atomic load.
 func TestDeliverOutputStampsThePtyReadOnlyWhenLogging(t *testing.T) {
+	t.Parallel()
 	if !inputlag.SetLive(false) {
 		t.Skip(inputlag.Env + " is set, so the logging cannot be switched")
 	}

@@ -73,6 +73,7 @@ func spawnSleeper(t *testing.T, d *Daemon, name string) (uint32, map[uint32]bool
 }
 
 func TestRunnerAndConsoleHostAreRaised(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	pid, hosts := spawnSleeper(t, d, "raised")
 	if len(hosts) == 0 {
@@ -89,6 +90,7 @@ func TestRunnerAndConsoleHostAreRaised(t *testing.T) {
 }
 
 func TestRunnerPriorityNormalLeavesBothAlone(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	if err := d.st.SetSetting(store.SettingRunnerPriority, "normal"); err != nil {
 		t.Fatal(err)

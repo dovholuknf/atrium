@@ -8,6 +8,7 @@ import (
 )
 
 func TestShareNameIsUnguessable(t *testing.T) {
+	t.Parallel()
 	// Sixty bits, spelled as twelve symbols from an alphabet of thirty two.
 	// A shorter name or a smaller alphabet is a name somebody can walk.
 	if got := len(shareNameAlphabet); got != 32 {
@@ -49,6 +50,7 @@ func TestShareNameIsUnguessable(t *testing.T) {
 // A generated name must never repeat. Two cards sharing one address would mean
 // the link you sent one person reaches the other person's terminal.
 func TestShareNamesDoNotRepeat(t *testing.T) {
+	t.Parallel()
 	seen := map[string]bool{}
 	for i := 0; i < 500; i++ {
 		n, err := newShareName()

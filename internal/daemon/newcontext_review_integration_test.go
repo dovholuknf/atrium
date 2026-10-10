@@ -10,6 +10,7 @@ import (
 // After a /clear the card resumes on a new conversation. Its SessionStart must not
 // read as proof the clear finished and delete the seeded chip.
 func TestASeededChipSurvivesTheNewConversationsSessionStart(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	task, _, _ := ncCard(t, d)
 	d.saveNewContextJournal(map[string]ncJournalRow{task.ID: {Step: NewContextWake, File: "HANDOFF.x.md", Conv: "c1"}})
@@ -26,6 +27,7 @@ func TestASeededChipSurvivesTheNewConversationsSessionStart(t *testing.T) {
 // The idle parking's capture is never journalled, not even before it is marked,
 // and a person can still type while it waits.
 func TestACaptureOnlyRunIsNeverJournalledAndNeverHoldsTyping(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	task, _, _ := ncCard(t, d)
 

@@ -29,6 +29,7 @@ func cloneCall(t *testing.T, d *Daemon, id, url string) (int, map[string]any) {
 }
 
 func TestGitCloneWithNoSCMRootSaysHowToSetIt(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	task, _, err := d.st.Register(store.Observed{WireName: "w", Worktree: "/tmp/w", Runner: "claude"})
 	if err != nil {
@@ -41,6 +42,7 @@ func TestGitCloneWithNoSCMRootSaysHowToSetIt(t *testing.T) {
 }
 
 func TestGitCloneOfAnOperatorsCloneAsksOnTheBoardOnceThenAddsTheRemotes(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	task, _, err := d.st.Register(store.Observed{WireName: "w", Worktree: "/tmp/w", Runner: "claude"})
 	if err != nil {
@@ -100,6 +102,7 @@ func TestGitCloneOfAnOperatorsCloneAsksOnTheBoardOnceThenAddsTheRemotes(t *testi
 }
 
 func TestGitCloneDeniedLeavesTheCloneAlone(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	task, _, _ := d.st.Register(store.Observed{WireName: "w", Worktree: "/tmp/w", Runner: "claude"})
 	root := t.TempDir()

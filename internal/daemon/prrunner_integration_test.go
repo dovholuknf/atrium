@@ -234,6 +234,7 @@ func readReview(t *testing.T, p *store.PRReview) prReviewFile {
 }
 
 func TestPRRunnerHappyRun(t *testing.T) {
+	t.Parallel()
 	f := newPRFix(t)
 	before, _ := f.st.List()
 	p := f.run(t)
@@ -328,6 +329,7 @@ func TestPRRunnerHappyRun(t *testing.T) {
 }
 
 func TestPRRunnerProvenOnlyWhenVerified(t *testing.T) {
+	t.Parallel()
 	f := newPRFix(t)
 	p := f.run(t)
 	dir := filepath.FromSlash(p.RunDir)
@@ -359,6 +361,7 @@ func TestPRRunnerProvenOnlyWhenVerified(t *testing.T) {
 }
 
 func TestPRRunnerFetchFailure(t *testing.T) {
+	t.Parallel()
 	f := newPRFix(t)
 	f.ghErr = errors.New("gh pr view: GraphQL: Could not resolve to a PullRequest")
 	p := f.run(t)
@@ -433,6 +436,7 @@ func TestPRRunnerAReviewThatCannotStartIsFailed(t *testing.T) {
 }
 
 func TestPRRunnerBudgetStopsAndRetryRaisesOnce(t *testing.T) {
+	t.Parallel()
 	f := newPRFix(t)
 	// The prime costs about $0.17 and a panel fork about $0.03: a $0.10 budget is
 	// spent by the prime and a $0.20 one by the panel.
@@ -485,6 +489,7 @@ func TestPRRunnerBudgetStopsAndRetryRaisesOnce(t *testing.T) {
 }
 
 func TestPRRunnerAbortMidStepLeavesAborted(t *testing.T) {
+	t.Parallel()
 	f := newPRFix(t)
 	inFork := make(chan struct{}, 8)
 	f.r.fork = func(ctx context.Context, spec forkSpec) ([]byte, error) {
@@ -522,6 +527,7 @@ func TestPRRunnerAbortMidStepLeavesAborted(t *testing.T) {
 }
 
 func TestPRRunnerResendRound(t *testing.T) {
+	t.Parallel()
 	f := newPRFix(t)
 	fixture := prFindingsFixture(t)
 	base := f.claude
@@ -563,6 +569,7 @@ func TestPRRunnerResendRound(t *testing.T) {
 }
 
 func TestPRRunnerFailsMergeAfterOneResend(t *testing.T) {
+	t.Parallel()
 	f := newPRFix(t)
 	fixture := prFindingsFixture(t)
 	base := f.claude
@@ -587,6 +594,7 @@ func TestPRRunnerFailsMergeAfterOneResend(t *testing.T) {
 
 // A PR's checked-in .claude/settings.json must never be read by the prime or a fork.
 func TestPRRunnerNeverRunsInThePRsCheckout(t *testing.T) {
+	t.Parallel()
 	f := newPRFix(t)
 	p := f.run(t)
 	if p.State != store.PRReady {
@@ -633,6 +641,7 @@ func TestPRRunnerNeverRunsInThePRsCheckout(t *testing.T) {
 // A retry after merge finished replays the merged list, not the claude receipt, so the
 // review is not ready with no findings.
 func TestPRRunnerRetryAfterMergeKeepsTheFindings(t *testing.T) {
+	t.Parallel()
 	f := newPRFix(t)
 	p := f.run(t)
 	if p.State != store.PRReady {
@@ -667,6 +676,7 @@ func TestPRRunnerRetryAfterMergeKeepsTheFindings(t *testing.T) {
 
 // After a Resend the retry replays the list the renderer accepted.
 func TestPRRunnerReplaysTheResentListAfterARetry(t *testing.T) {
+	t.Parallel()
 	f := newPRFix(t)
 	fixture := prFindingsFixture(t)
 	base := f.claude
@@ -695,6 +705,7 @@ func TestPRRunnerReplaysTheResentListAfterARetry(t *testing.T) {
 // A review cut by a restart is queued again and runs on the folder it left: the steps that finished are read back and
 // not asked of the model or the forge again, and the write step is done afresh.
 func TestPRRunnerResumesAReviewTheRestartCut(t *testing.T) {
+	t.Parallel()
 	f := newPRFix(t)
 	p := f.run(t)
 	if p.State != store.PRReady {

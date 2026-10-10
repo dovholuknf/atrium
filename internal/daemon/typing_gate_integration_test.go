@@ -12,6 +12,7 @@ import (
 // The count of what the operator has typed and not sent is the whole gate, so
 // the keys that put a newline INTO a prompt must not read as sending it.
 func TestANewlineInsideAPromptKeepsTheLineUnsent(t *testing.T) {
+	t.Parallel()
 	cases := map[string][]byte{
 		"shift-enter":        []byte("first line\x1b\r"),
 		"ctrl-enter":         []byte("first line\n"),
@@ -30,6 +31,7 @@ func TestANewlineInsideAPromptKeepsTheLineUnsent(t *testing.T) {
 }
 
 func TestEnterControlCAndControlUStillEmptyTheLine(t *testing.T) {
+	t.Parallel()
 	for name, end := range map[string]string{"enter": "\r", "ctrl-c": "\x03", "ctrl-u": "\x15"} {
 		t.Run(name, func(t *testing.T) {
 			r := &runner{}
@@ -44,6 +46,7 @@ func TestEnterControlCAndControlUStillEmptyTheLine(t *testing.T) {
 
 // A paste followed by Enter in a later frame sends it.
 func TestEnterAfterAPasteSendsIt(t *testing.T) {
+	t.Parallel()
 	r := &runner{}
 	r.noteOperatorTyped([]byte("\x1b[200~pasted\rtext\x1b[201~"))
 	r.noteOperatorTyped([]byte("\r"))
@@ -56,6 +59,7 @@ func TestEnterAfterAPasteSendsIt(t *testing.T) {
 // session using the API arrives, was typed straight in over a line he was
 // writing. It must be queued and the terminal left alone.
 func TestAnOperatorMessageNeverTypesIntoAPartWrittenLine(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	target, r, f := peerPair(t, d)
 	t.Cleanup(func() { d.pending.stopAll() })
@@ -82,6 +86,7 @@ func TestAnOperatorMessageNeverTypesIntoAPartWrittenLine(t *testing.T) {
 // A free terminal still takes the operator's message at once, with no banner,
 // so a slash command reaches the runner as one.
 func TestAnOperatorMessageToAFreeTerminalIsTypedBare(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	target, r, f := peerPair(t, d)
 	r.noteOperatorTyped([]byte("ls\r"))

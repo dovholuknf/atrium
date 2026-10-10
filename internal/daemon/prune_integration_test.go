@@ -37,6 +37,7 @@ func alive(t *testing.T, d *Daemon, id string) bool {
 // Nobody has turned it on, so nothing is deleted. This is the case that has to
 // be right, because the alternative is a board that quietly eats its history.
 func TestPruningIsOffUnlessAskedFor(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	old := finishedCard(t, d, "prune-1", store.StatusDone, 400*24*time.Hour)
 
@@ -49,6 +50,7 @@ func TestPruningIsOffUnlessAskedFor(t *testing.T) {
 }
 
 func TestPruningDeletesWhatIsOldEnoughAndNothingElse(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	if err := d.st.SetSetting(store.SettingPruneAfter, "86400"); err != nil {
 		t.Fatal(err)
@@ -87,6 +89,7 @@ func TestPruningDeletesWhatIsOldEnoughAndNothingElse(t *testing.T) {
 // a schedule would make the inbox quietly lossy, which is worse than an inbox
 // with something stale in it.
 func TestPruningLeavesTheInboxAlone(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	if err := d.st.SetSetting(store.SettingPruneAfter, "3600"); err != nil {
 		t.Fatal(err)
@@ -111,6 +114,7 @@ func TestPruningLeavesTheInboxAlone(t *testing.T) {
 
 // `off` is a value and it means never, whatever else is true.
 func TestOffMeansNever(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	if err := d.st.SetSetting(store.SettingPruneAfter, "off"); err != nil {
 		t.Fatal(err)
@@ -128,6 +132,7 @@ func TestOffMeansNever(t *testing.T) {
 // floor is far shorter than anybody would choose and far longer than an
 // accident.
 func TestAnAbsurdlyShortAgeIsRefused(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	for _, v := range []string{"1", "60", "3599", "-5", "banana"} {
 		if err := d.st.SetSetting(store.SettingPruneAfter, v); err != nil {
@@ -148,6 +153,7 @@ func TestAnAbsurdlyShortAgeIsRefused(t *testing.T) {
 // Sweeping and pruning are different operations, and a card being archived
 // does not put it out of reach of the one that deletes.
 func TestAnArchivedCardIsStillPrunable(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	if err := d.st.SetSetting(store.SettingPruneAfter, "3600"); err != nil {
 		t.Fatal(err)

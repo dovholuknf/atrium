@@ -13,6 +13,7 @@ import (
 )
 
 func TestAClaudePtyLaunchDeclinesTheFullscreenRenderer(t *testing.T) {
+	t.Parallel()
 	claude := &store.Harness{ID: "claude", Cmd: "claude", LaunchMode: store.LaunchPTY}
 	if v, ok := classicRendererDefault(claude, nil); !ok || v != "1" {
 		t.Fatalf("a supervised claude was not kept on the classic renderer: %q %v", v, ok)

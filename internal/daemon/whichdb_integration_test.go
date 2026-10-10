@@ -106,6 +106,7 @@ func TestTheSameDatabaseSaysNothing(t *testing.T) {
 // What the daemon remembers must survive the thing that deletes the address
 // file, because that is the whole correction.
 func TestWhatWasOpenedSurvivesAWindDown(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	d := &Daemon{opts: Options{
 		DBPath:       filepath.ToSlash(filepath.Join(dir, "a.db")),
@@ -127,6 +128,7 @@ func TestWhatWasOpenedSurvivesAWindDown(t *testing.T) {
 // It lives beside the address file, so naming another isolates both and a test
 // can never reach the machine's real record.
 func TestTheRecordIsIsolatedByTheLocationOption(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	d := &Daemon{opts: Options{LocationFile: filepath.Join(dir, "daemon.json")}}
 	got, err := d.lastDBPath()
@@ -141,6 +143,7 @@ func TestTheRecordIsIsolatedByTheLocationOption(t *testing.T) {
 // Slash direction and case are noise on Windows. Warning about them would
 // train the reader to skip the warning.
 func TestSpellingTheSamePathDifferentlyIsNotADifference(t *testing.T) {
+	t.Parallel()
 	// True everywhere: `..` is resolved and surrounding whitespace is not part
 	// of a path.
 	same := [][2]string{
@@ -192,6 +195,7 @@ func TestAFirstRunSaysNothing(t *testing.T) {
 // It has to come from a READ-ONLY open: going through store.Open would run
 // every migration against a database this daemon was not asked to touch.
 func TestTheCountComesFromTheOtherDatabaseWithoutTouchingIt(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	other := filepath.ToSlash(filepath.Join(dir, "other.db"))
 
@@ -229,6 +233,7 @@ func TestTheCountComesFromTheOtherDatabaseWithoutTouchingIt(t *testing.T) {
 // Anything unreadable answers "could not say" rather than "empty". Zero would
 // be a lie that reads as data loss.
 func TestAnUncountableDatabaseSaysSoRatherThanZero(t *testing.T) {
+	t.Parallel()
 	for _, path := range []string{
 		"",
 		"   ",
@@ -250,6 +255,7 @@ func TestAnUncountableDatabaseSaysSoRatherThanZero(t *testing.T) {
 }
 
 func TestCardCountReads(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		n    int
 		want string

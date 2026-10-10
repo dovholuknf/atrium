@@ -14,6 +14,7 @@ import (
 )
 
 func TestPublishTaskSendsTheDecoratedRow(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	card, _, err := d.st.Register(store.Observed{WireName: "pub", Worktree: "/tmp/pub", Runner: "claude"})
 	if err != nil {

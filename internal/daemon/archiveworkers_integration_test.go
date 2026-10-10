@@ -33,6 +33,7 @@ func archived(t *testing.T, d *Daemon, id string) bool {
 }
 
 func TestArchiveWorkersTakesOnlyDoneWorkers(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	worker := doneCard(t, d, "w1", OriginAgentTag, SubagentTag)
 	director := doneCard(t, d, "dir", OriginAgentTag, SubagentTag, DirectorTag)
@@ -66,6 +67,7 @@ func TestArchiveWorkersTakesOnlyDoneWorkers(t *testing.T) {
 }
 
 func TestArchiveWorkersDryRunChangesNothing(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	worker := doneCard(t, d, "w1", OriginAgentTag, SubagentTag)
 	res, err := d.ArchiveWorkers(true)
@@ -81,6 +83,7 @@ func TestArchiveWorkersDryRunChangesNothing(t *testing.T) {
 }
 
 func TestArchiveWorkersLeavesAFixtureCard(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	card := doneCard(t, d, "fx", OriginAgentTag, SubagentTag)
 	if _, err := d.st.SaveFixture(&store.Fixture{ID: "f1", Harness: "shell", Cwd: "/tmp", Enabled: true,

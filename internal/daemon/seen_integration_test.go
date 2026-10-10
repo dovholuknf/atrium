@@ -139,6 +139,7 @@ func TestATurnWithNoBlockKeepsTheQuestions(t *testing.T) {
 // A prompt that is the peer message atrium just typed in is not the operator.
 // One the operator typed after it is.
 func TestAPeerTypedPromptIsNotTheOperator(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	target, r, _ := peerPair(t, d)
 	if err := d.st.NoteTurnEnded(target.ID, store.TurnQuestions{Known: true, Block: true, List: []string{"q"}}); err != nil {
@@ -172,6 +173,7 @@ func TestAPeerTypedPromptIsNotTheOperator(t *testing.T) {
 // Typing into the terminal sees the turn, from memory on the keystroke path,
 // and survives a restart through the store.
 func TestTypingSeesTheTurn(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	task := cardFor(t, d, "typist")
 	d.noteTurnForSeen(task.ID, store.TurnQuestions{Known: true}, "")
@@ -206,6 +208,7 @@ func reportToLauncher(t *testing.T, d *Daemon, worker *store.Task) {
 // A worker that reported and then stopped is not waiting on a human, and says
 // its launcher is the reason.
 func TestAReportedWorkersTurnIsSeenByItsLauncher(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	_, worker := launchedPair(t, d)
 	reportToLauncher(t, d, worker)
@@ -226,6 +229,7 @@ func TestAReportedWorkersTurnIsSeenByItsLauncher(t *testing.T) {
 // Stopping without a report is the case the dot exists for, and the launcher is
 // told once the nudge for the first silence has gone unanswered.
 func TestASilentWorkersTurnIsUnseenAndNoticed(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	launcher, worker := launchedPair(t, d)
 	stopSilently(t, d, "worker")
@@ -240,6 +244,7 @@ func TestASilentWorkersTurnIsUnseenAndNoticed(t *testing.T) {
 
 // A card a human launched keeps the dot whatever it said.
 func TestAHumanLaunchedCardStillWearsTheDot(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	mine := peerCard(t, d, "mine")
 	prompt(t, d, mine.ID)
@@ -252,6 +257,7 @@ func TestAHumanLaunchedCardStillWearsTheDot(t *testing.T) {
 
 // The launcher reading a report is not clint answering a question.
 func TestLauncherSeenLeavesQuestionsOpen(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	_, worker := launchedPair(t, d)
 	reportToLauncher(t, d, worker)

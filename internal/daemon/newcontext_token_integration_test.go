@@ -32,6 +32,7 @@ func withLine(token string, body []byte) []byte {
 
 // A file from before the capture passes when it carries this run's line.
 func TestHandoffWrittenAcceptsAnOldFileWithTheToken(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	task, _, dir := ncCard(t, d)
 	writeAged(t, filepath.Join(dir, HandoffName(task)), withLine("7-abc", handoffBody), time.Minute)
@@ -42,6 +43,7 @@ func TestHandoffWrittenAcceptsAnOldFileWithTheToken(t *testing.T) {
 
 // Markdown dressing around the line does not stop it counting.
 func TestHandoffWrittenAcceptsTheTokenInMarkdown(t *testing.T) {
+	t.Parallel()
 	for name, line := range map[string]string{
 		"backticks": "`" + captureLine("7-abc") + "`",
 		"bullet":    "- " + captureLine("7-abc"),
@@ -89,6 +91,7 @@ func TestHandoffWrittenAcceptsAFileWrittenDuringTheCapture(t *testing.T) {
 
 // A token from an earlier run is not this run's.
 func TestHandoffWrittenRefusesAnEarlierRunsToken(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	task, _, dir := ncCard(t, d)
 	writeAged(t, filepath.Join(dir, HandoffName(task)), withLine("6-old", handoffBody), time.Minute)
@@ -99,6 +102,7 @@ func TestHandoffWrittenRefusesAnEarlierRunsToken(t *testing.T) {
 
 // A token alone is not a handoff, by either rule.
 func TestHandoffWrittenRefusesAFileUnderTheFloor(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	task, _, dir := ncCard(t, d)
 	small := []byte(captureLine("7-abc") + "\nshort\n")
@@ -113,6 +117,7 @@ func TestHandoffWrittenRefusesAFileUnderTheFloor(t *testing.T) {
 
 // Only the first 4 KB is looked at.
 func TestHandoffWrittenDoesNotFindATokenBeyond4KB(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	task, _, dir := ncCard(t, d)
 	body := append([]byte(strings.Repeat("x", handoffHead)+"\n"), withLine("7-abc", handoffBody)...)

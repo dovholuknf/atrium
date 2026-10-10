@@ -53,6 +53,7 @@ func settle(d *Daemon) { d.drainRelays() }
 // THE FEATURE, ROOM SIDE. `name@room` is relayed with this room's handle for
 // the sender, and the answer names the target as `name@room`.
 func TestASayToAnotherRoomIsRelayed(t *testing.T) {
+	t.Parallel()
 	d, f := roomDaemon(t)
 	peerCard(t, d, "sa1")
 
@@ -72,6 +73,7 @@ func TestASayToAnotherRoomIsRelayed(t *testing.T) {
 
 // RULE 3. No sender, no cross-room message: it would be typed as the operator.
 func TestASayToAnotherRoomNeedsASender(t *testing.T) {
+	t.Parallel()
 	d, f := roomDaemon(t)
 	code, out := say(t, d, map[string]string{"to": "x@claude-sg4", "text": "hi"})
 	if code != http.StatusBadRequest || !strings.Contains(out["error"].(string), "operator") {
@@ -85,6 +87,7 @@ func TestASayToAnotherRoomNeedsASender(t *testing.T) {
 // A bare name, and this room's own name as the room part, stay here, and go
 // the way every local message goes: queued from the sender, as a peer.
 func TestASayToThisRoomIsLocal(t *testing.T) {
+	t.Parallel()
 	d, f := roomDaemon(t)
 	peerCard(t, d, "sa1")
 	target := peerCard(t, d, "sa2")
@@ -107,6 +110,7 @@ func TestASayToThisRoomIsLocal(t *testing.T) {
 // Unreachable is held on this room, the sender is told `held`, and it goes
 // when the hub answers.
 func TestAnUnreachableRoomIsHeldAndSentLater(t *testing.T) {
+	t.Parallel()
 	d, f := roomDaemon(t)
 	sender := peerCard(t, d, "sa1")
 	f.set(func(RelaySay) (RelayResult, error) { return RelayResult{}, ErrRelayDown })
@@ -136,6 +140,7 @@ func TestAnUnreachableRoomIsHeldAndSentLater(t *testing.T) {
 
 // The hub saying the target room is not attached is held the same way.
 func TestATargetRoomNotAttachedIsHeld(t *testing.T) {
+	t.Parallel()
 	d, f := roomDaemon(t)
 	peerCard(t, d, "sa1")
 	f.set(func(RelaySay) (RelayResult, error) {
@@ -153,6 +158,7 @@ func TestATargetRoomNotAttachedIsHeld(t *testing.T) {
 
 // C1. Unconfirmed is said, and not held, so it cannot arrive twice.
 func TestAnUnconfirmedSayIsNotHeld(t *testing.T) {
+	t.Parallel()
 	d, f := roomDaemon(t)
 	peerCard(t, d, "sa1")
 	f.set(func(RelaySay) (RelayResult, error) { return RelayResult{}, ErrRelayUnconfirmed })
@@ -167,6 +173,7 @@ func TestAnUnconfirmedSayIsNotHeld(t *testing.T) {
 
 // An old hub is said, and not held, since nothing would ever send it.
 func TestAnOldHubIsNotHeldFor(t *testing.T) {
+	t.Parallel()
 	d, f := roomDaemon(t)
 	peerCard(t, d, "sa1")
 	f.set(func(RelaySay) (RelayResult, error) { return RelayResult{}, ErrRelayOld })
@@ -181,6 +188,7 @@ func TestAnOldHubIsNotHeldFor(t *testing.T) {
 
 // A refusal from the far room comes back with its code and sentence.
 func TestARefusalFromTheOtherRoomIsPassedBack(t *testing.T) {
+	t.Parallel()
 	d, f := roomDaemon(t)
 	peerCard(t, d, "sa1")
 	f.set(func(RelaySay) (RelayResult, error) {
@@ -197,6 +205,7 @@ func TestARefusalFromTheOtherRoomIsPassedBack(t *testing.T) {
 
 // `atrium tell` takes the same grammar.
 func TestTellReachesAnotherRoom(t *testing.T) {
+	t.Parallel()
 	d, f := roomDaemon(t)
 	peerCard(t, d, "sa1")
 	raw, _ := json.Marshal(map[string]string{"from": "sa1", "to": "orch@claude-sg4", "text": "hello"})
@@ -209,6 +218,7 @@ func TestTellReachesAnotherRoom(t *testing.T) {
 
 // A room with no hub says so rather than pretending.
 func TestASayFromADaemonWithNoHubIsRefused(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	d.opts.Room = "m1mini"
 	peerCard(t, d, "sa1")
@@ -239,6 +249,7 @@ func remoteWorker(t *testing.T, d *Daemon) *store.Task {
 // RULE 5. A silent stop reaches a launcher on another room, addressed to its
 // CARD so a later card with the same handle cannot take it (C2).
 func TestASilentStopReachesALauncherOnAnotherRoom(t *testing.T) {
+	t.Parallel()
 	d, f := roomDaemon(t)
 	remoteWorker(t, d)
 	f.set(func(RelaySay) (RelayResult, error) { return RelayResult{}, ErrRelayDown })
@@ -271,6 +282,7 @@ func TestASilentStopReachesALauncherOnAnotherRoom(t *testing.T) {
 // arbiter is `claude-sg4~L1`, which is no card here, and the notice was
 // logged as having nowhere to go.
 func TestAnEndedNoticeReachesALauncherOnAnotherRoom(t *testing.T) {
+	t.Parallel()
 	d, f := roomDaemon(t)
 	w := remoteWorker(t, d)
 	f.set(func(RelaySay) (RelayResult, error) { return RelayResult{}, ErrRelayDown })
@@ -301,6 +313,7 @@ func TestAnEndedNoticeReachesALauncherOnAnotherRoom(t *testing.T) {
 // RULE 5. A report to a launcher on another room is held in the same
 // transaction as the report, and the worker is told its launcher was told.
 func TestAReportReachesALauncherOnAnotherRoom(t *testing.T) {
+	t.Parallel()
 	d, f := roomDaemon(t)
 	w := remoteWorker(t, d)
 	f.set(func(RelaySay) (RelayResult, error) { return RelayResult{}, ErrRelayDown })
@@ -319,6 +332,7 @@ func TestAReportReachesALauncherOnAnotherRoom(t *testing.T) {
 // A worker's own say to its launcher across rooms pays the turn, the way a say
 // to a launcher on this room does.
 func TestSayingToARemoteLauncherCountsAsReporting(t *testing.T) {
+	t.Parallel()
 	d, f := roomDaemon(t)
 	w := remoteWorker(t, d)
 	f.set(func(s RelaySay) (RelayResult, error) {
@@ -336,6 +350,7 @@ func TestSayingToARemoteLauncherCountsAsReporting(t *testing.T) {
 // C1 on the drain. A held say that turns out unconfirmed is dropped with an
 // event, never sent twice. A held notice is kept and tried again.
 func TestTheDrainDropsAnUnconfirmedSayAndKeepsANotice(t *testing.T) {
+	t.Parallel()
 	d, f := roomDaemon(t)
 	sender := peerCard(t, d, "sa1")
 	f.set(func(RelaySay) (RelayResult, error) { return RelayResult{}, ErrRelayDown })
@@ -390,6 +405,7 @@ func TestAHeldMessageExpires(t *testing.T) {
 // parent. A bare spawned_by_id cannot point at a card on this room, and a
 // same-room launch is resolved here as before.
 func TestALaunchFromAnotherRoomKeepsTheTaggedLauncher(t *testing.T) {
+	t.Parallel()
 	d, _ := roomDaemon(t)
 	h := slowHarness(t, d)
 	task, err := d.Launch(LaunchRequest{Harness: h, Cwd: t.TempDir(), Tags: []string{OriginAgentTag},
@@ -427,6 +443,7 @@ func TestALaunchFromAnotherRoomKeepsTheTaggedLauncher(t *testing.T) {
 
 // RULE 4, room side.
 func TestRoomPeersComeFromTheHub(t *testing.T) {
+	t.Parallel()
 	d, f := roomDaemon(t)
 	f.peers = []RemotePeer{{Handle: "orch@claude-sg4", Room: "claude-sg4", Card: "claude-sg4~L1", Status: "working"}}
 	rec := httptest.NewRecorder()
@@ -464,6 +481,7 @@ func roomExit(d *Daemon, to string) (int, map[string]any) {
 // ITEM 68, ROOM SIDE. A card on another room is read and exited through the
 // hub, by `name@room` or `room~id`, and comes back named across.
 func TestACardOnAnotherRoomIsReadAndExitedThroughTheHub(t *testing.T) {
+	t.Parallel()
 	d, f := roomDaemon(t)
 
 	code, out := roomCard(d, "orch@claude-sg4", true)
@@ -485,6 +503,7 @@ func TestACardOnAnotherRoomIsReadAndExitedThroughTheHub(t *testing.T) {
 // This room's own name, and no room at all, are answered as local, and the
 // hub is not asked.
 func TestACardOnThisRoomIsAnsweredLocal(t *testing.T) {
+	t.Parallel()
 	d, f := roomDaemon(t)
 	for _, to := range []string{"sa1@M1MINI", "m1mini~01ABC", "sa1"} {
 		code, out := roomCard(d, to, false)
@@ -503,6 +522,7 @@ func TestACardOnThisRoomIsAnsweredLocal(t *testing.T) {
 // A refusal from the far side is passed back in its words with its code. A hub
 // older than this is told apart from one that simply refused.
 func TestACardAcrossRoomsPassesRefusalsBack(t *testing.T) {
+	t.Parallel()
 	d, f := roomDaemon(t)
 	f.mu.Lock()
 	f.reach = func(RelaySay) (RelayResult, error) {
@@ -532,6 +552,7 @@ func TestACardAcrossRoomsPassesRefusalsBack(t *testing.T) {
 
 // A room with no hub says so rather than pretending the card is not there.
 func TestACardAcrossRoomsWithNoHubIsRefused(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	d.opts.Room = "m1mini"
 	code, out := roomCard(d, "orch@claude-sg4", false)
@@ -544,6 +565,7 @@ func TestACardAcrossRoomsWithNoHubIsRefused(t *testing.T) {
 // whether they force it. Dropping them here turns an agent into the operator at
 // the target room. See api.guardExit.
 func TestACrossRoomExitHandsTheHubWhoIsAsking(t *testing.T) {
+	t.Parallel()
 	d, f := roomDaemon(t)
 	for _, c := range []struct {
 		body string

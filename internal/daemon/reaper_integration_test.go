@@ -14,6 +14,7 @@ import (
 // Liveness is an operating system question, so it must be answerable without
 // touching the runner at all.
 func TestProcessAliveOnSelf(t *testing.T) {
+	t.Parallel()
 	if !processAlive(os.Getpid()) {
 		t.Fatal("this process reported itself as dead")
 	}
@@ -23,6 +24,7 @@ func TestProcessAliveOnSelf(t *testing.T) {
 }
 
 func TestProcessAliveAfterExit(t *testing.T) {
+	t.Parallel()
 	name, args := "true", []string{}
 	if runtime.GOOS == "windows" {
 		name, args = "cmd.exe", []string{"/c", "exit"}

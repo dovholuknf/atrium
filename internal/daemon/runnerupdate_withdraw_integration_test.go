@@ -63,6 +63,7 @@ func updateCards(t *testing.T, d *Daemon, pkg string) map[string]*store.Task {
 }
 
 func TestOfferedVersionRoundTripsThroughTheURL(t *testing.T) {
+	t.Parallel()
 	for _, pkg := range []string{codexPkg, "left-pad"} {
 		u := runnerUpdateURL(pkg, "1.2.3")
 		if got := offeredVersion(pkg, u); got != "1.2.3" {

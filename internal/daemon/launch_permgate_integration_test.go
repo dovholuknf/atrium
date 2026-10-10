@@ -37,6 +37,7 @@ func launchEnv(harnessEnv map[string]string) []string {
 // the board-wide switch never sees them. Launching with the gate on routes them
 // to atrium instead, so the one board switch controls them.
 func TestLaunchGatesTheRunnerByDefault(t *testing.T) {
+	t.Parallel()
 	env := launchEnv(nil)
 	got, ok := permGate(env)
 	if !ok {
@@ -50,6 +51,7 @@ func TestLaunchGatesTheRunnerByDefault(t *testing.T) {
 // A default, not an override. An operator who set ATRIUM_PERM_GATE=off on a
 // runner meant it, so that runner stays ungated.
 func TestLaunchHonorsAHarnessGateSetting(t *testing.T) {
+	t.Parallel()
 	if _, ok := permGateDefault(map[string]string{"ATRIUM_PERM_GATE": "off"}); ok {
 		t.Fatal("the launch default overrode a harness that set the gate itself")
 	}

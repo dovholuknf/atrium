@@ -15,6 +15,7 @@ import (
 )
 
 func TestAStashIsRefusedWhenTheRoomOrTheCardSaysNo(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	task := plainTask(t, d, "closer")
 	ctx := context.Background()
@@ -42,6 +43,7 @@ func TestAStashIsRefusedWhenTheRoomOrTheCardSaysNo(t *testing.T) {
 // The dirty files go into one WIP commit on the worktree's branch, and the local stash name is gone again whether
 // the push landed or not. The push here has nowhere to go.
 func TestAStashCommitsTheDirtyFilesAndLeavesNoLocalStashBranch(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	d.setAgentAddr(&net.TCPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 7777})
 	task := plainTask(t, d, "closer")
@@ -67,6 +69,7 @@ func TestAStashCommitsTheDirtyFilesAndLeavesNoLocalStashBranch(t *testing.T) {
 
 // A card being closed may push its stash though its session ended, and only while the stash is going.
 func TestAClosedCardsTokenIsGoodOnlyWhileItsStashIsPushed(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	task := plainTask(t, d, "closer")
 	if err := d.st.SetStatus(task.ID, store.StatusDead); err != nil {

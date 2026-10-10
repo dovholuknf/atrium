@@ -5,6 +5,7 @@ package daemon
 import "testing"
 
 func TestTheDefaultIsStillToStart(t *testing.T) {
+	t.Parallel()
 	for _, live := range []bool{true, false} {
 		if got := handOverTo("", live); got != startAnyway {
 			t.Fatalf("an unasked launch was interfered with (live=%v): %v", live, got)
@@ -13,6 +14,7 @@ func TestTheDefaultIsStillToStart(t *testing.T) {
 }
 
 func TestSkipHandsBackWhateverIsThere(t *testing.T) {
+	t.Parallel()
 	for _, live := range []bool{true, false} {
 		if got := handOverTo("skip", live); got != handBack {
 			t.Fatalf("skip started something (live=%v): %v", live, got)
@@ -24,6 +26,7 @@ func TestSkipHandsBackWhateverIsThere(t *testing.T) {
 // processes on one card, writing to one directory, and the card describing
 // whichever spoke last. It degrades to skip rather than to start.
 func TestAdoptWillNotJoinALiveRunner(t *testing.T) {
+	t.Parallel()
 	if got := handOverTo("adopt", true); got != handBack {
 		t.Fatalf("adopt put a second runner on a live card: %v", got)
 	}
@@ -36,6 +39,7 @@ func TestAdoptWillNotJoinALiveRunner(t *testing.T) {
 // asking for nothing, so a typo in a script starts one session rather than
 // silently skipping every launch it ever makes.
 func TestAnUnknownAnswerIsTheDefault(t *testing.T) {
+	t.Parallel()
 	if got := handOverTo("SKIP", false); got != startAnyway {
 		t.Fatalf("an unrecognised if_running was acted on: %v", got)
 	}

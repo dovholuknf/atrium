@@ -15,6 +15,7 @@ import (
 // nine words, and a reader who does not already know what a transcript is gets
 // nothing from any of them.
 func TestTheResumeRefusalHasNoMetaphorInIt(t *testing.T) {
+	t.Parallel()
 	err := &ResumeBusy{
 		HolderID:    "t1",
 		HolderTitle: "discourse-6080",
@@ -45,6 +46,7 @@ func TestTheResumeRefusalHasNoMetaphorInIt(t *testing.T) {
 // A card with no directory recorded still produces a readable sentence rather
 // than an empty bracket.
 func TestTheResumeRefusalReadsWithNoWorktree(t *testing.T) {
+	t.Parallel()
 	err := &ResumeBusy{HolderTitle: "discourse-6080", Resume: "abc-123"}
 	msg := err.Error()
 	if strings.Contains(msg, "()") {
@@ -58,6 +60,7 @@ func TestTheResumeRefusalReadsWithNoWorktree(t *testing.T) {
 // THE FIELDS ARE THE POINT. The board draws two buttons off these, so a
 // refusal that carries no holder id is a dialog that can only say `ok`.
 func TestTheResumeRefusalCarriesWhatTheButtonsNeed(t *testing.T) {
+	t.Parallel()
 	err := &ResumeBusy{
 		HolderID: "t1", HolderTitle: "discourse-6080",
 		Worktree: "D:/wt", Resume: "abc-123",
@@ -83,6 +86,7 @@ func TestTheResumeRefusalCarriesWhatTheButtonsNeed(t *testing.T) {
 // second actionable refusal without the API learning its name. If this stops
 // compiling, the API's type assertion has quietly stopped matching.
 func TestTheRefusalSatisfiesTheInterfaceTheAPIChecksFor(t *testing.T) {
+	t.Parallel()
 	var err error = &ResumeBusy{HolderID: "t1"}
 	if _, ok := err.(interface{ ResumeConflict() map[string]any }); !ok {
 		t.Fatal("the API tests for this method and would send a bare 400 instead")

@@ -12,6 +12,7 @@ import (
 // the new one's first Stop. The popup's context_now must be the session the
 // runner last started, as contextsize.go reads it (item 62), not the resume id.
 func TestUsageContextNowFollowsTheStartedSession(t *testing.T) {
+	t.Parallel()
 	f := newUsageFix(t)
 	dir := filepath.Dir(f.path)
 	old := filepath.Join(dir, "s1.jsonl")

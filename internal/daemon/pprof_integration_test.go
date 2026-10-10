@@ -40,6 +40,7 @@ func TestTheLoopbackBoardServesAHeapProfile(t *testing.T) {
 // An overlay share, the hub link and a lent card all serve `BoardHandler` on a
 // listener of their own. None of them may profile.
 func TestTheBoardHandlerAloneHasNoProfiler(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	req := httptest.NewRequest("GET", "http://127.0.0.1/debug/pprof/heap?debug=1", nil)
 	req.RemoteAddr = "127.0.0.1:5555"
@@ -58,6 +59,7 @@ type fakeLn struct {
 func (f fakeLn) Addr() net.Addr { return f.addr }
 
 func TestTheProfilerRefusesAnythingNotPlainlyLocal(t *testing.T) {
+	t.Parallel()
 	board := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, _ = io.WriteString(w, "the board")
 	})

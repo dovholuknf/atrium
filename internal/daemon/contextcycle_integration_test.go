@@ -336,6 +336,7 @@ func TestOnlySupervisedCardsCycle(t *testing.T) {
 
 // The limit prompt names the binary and the path, in clint's words.
 func TestTheLimitPromptWording(t *testing.T) {
+	t.Parallel()
 	got := newContextLimitPrompt("/tmp/atrium/handoffs/c1.md", "/usr/local/bin/atrium")
 	want := "you are at context limit. wrap what is in flight, write your handoff to /tmp/atrium/handoffs/c1.md, " +
 		"then run /usr/local/bin/atrium ready."

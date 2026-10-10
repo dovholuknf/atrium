@@ -48,6 +48,7 @@ func holdingPair(t *testing.T, d *Daemon, tag string) (launcher, worker *store.T
 }
 
 func TestTheOrchestratorGetsASilentStopOnItsCardNotInItsTerminal(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	launcher, worker := holdingPair(t, d, OrchestratorTag)
 
@@ -77,6 +78,7 @@ func TestTheOrchestratorGetsASilentStopOnItsCardNotInItsTerminal(t *testing.T) {
 }
 
 func TestHoldNoticesTagHoldsNoticesAndReports(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	launcher, worker := holdingPair(t, d, HoldNoticesTag)
 
@@ -101,6 +103,7 @@ func TestHoldNoticesTagHoldsNoticesAndReports(t *testing.T) {
 }
 
 func TestTheOrchestratorTagAloneStillHasReportsQueued(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	launcher, _ := holdingPair(t, d, OrchestratorTag)
 
@@ -116,6 +119,7 @@ func TestTheOrchestratorTagAloneStillHasReportsQueued(t *testing.T) {
 }
 
 func TestAnEndedNoticeIsHeldForTheOrchestrator(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	launcher, worker := holdingPair(t, d, OrchestratorTag)
 
@@ -133,6 +137,7 @@ func TestAnEndedNoticeIsHeldForTheOrchestrator(t *testing.T) {
 }
 
 func TestAnUntaggedLauncherStillHasItsNoticeQueued(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	launcher, _ := holdingPair(t, d, "orchestrators")
 

@@ -37,6 +37,7 @@ func exists(p string) bool {
 // The launch text tells a worker to atrium_say `done <sha>`. That is a done report too: the card closes, the report
 // lands on the work item, and the launcher is not sent a second notice for words it already has.
 func TestSayingDoneToTheLauncherClosesTheCard(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	launcher := peerCard(t, d, "orchestrator")
 	worker := cullCard(t, d, scratchDir(t), OriginAgentTag, SubagentTag)
@@ -68,6 +69,7 @@ func TestSayingDoneToTheLauncherClosesTheCard(t *testing.T) {
 
 // Free text is never read as a verdict, and only the worker's words to its own launcher count.
 func TestOnlyDoneAndAShaClosesACardBySay(t *testing.T) {
+	t.Parallel()
 	for _, text := range []string{
 		"done with the refactor, one thing left", "done", "done abc", "blocked: no sha", "almost done 8918f846",
 		"not done 8918f846",
@@ -113,6 +115,7 @@ func TestOnlyDoneAndAShaClosesACardBySay(t *testing.T) {
 
 // A card tagged to stay open, or an investigation, is not ended by its own done report.
 func TestAStayOpenCardIsNotExitedByDone(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	for _, tc := range []struct {
 		tags []string
@@ -132,6 +135,7 @@ func TestAStayOpenCardIsNotExitedByDone(t *testing.T) {
 // A worker in a scratch directory: its session, its BRIEF.md and its directory go, and the card is archived with
 // its history.
 func TestCullReclaimsAScratchDirectoryAndItsBrief(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	dir := scratchDir(t)
 	_, worker := mergedWorker(t, d, cullRepo{wt: dir})
@@ -160,6 +164,7 @@ func TestCullReclaimsAScratchDirectoryAndItsBrief(t *testing.T) {
 
 // What the worker left in its directory is its output, not atrium's to delete: BRIEF.md goes, the rest stays.
 func TestCullKeepsAScratchDirectoryThatHoldsOtherFiles(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	dir := scratchDir(t, "notes.txt")
 	_, worker := mergedWorker(t, d, cullRepo{wt: dir})
@@ -178,6 +183,7 @@ func TestCullKeepsAScratchDirectoryThatHoldsOtherFiles(t *testing.T) {
 
 // H4 and the clint-started rule: none of these is ever reclaimed, and nothing on disk moves.
 func TestCullNeverReclaimsWhatMustStay(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name string
 		tags []string
@@ -237,6 +243,7 @@ func TestCullNeverReclaimsWhatMustStay(t *testing.T) {
 
 // The sweep re-checks the same rules, so a card that became ineligible after it was marked is let go.
 func TestTheSweepNeverCullsAStayOpenCard(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	r := newCullRepo(t, true)
 	_, worker := mergedWorker(t, d, r)
@@ -258,6 +265,7 @@ func TestTheSweepNeverCullsAStayOpenCard(t *testing.T) {
 // A merge alone reclaims nothing: the setting is off until the operator sets a grace, and the launcher's
 // atrium_cull is what says the work is merged and deployed.
 func TestAMergeAloneReclaimsNothingByDefault(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	r := newCullRepo(t, true)
 	launcher := peerCard(t, d, "orchestrator")
@@ -279,6 +287,7 @@ func TestAMergeAloneReclaimsNothingByDefault(t *testing.T) {
 }
 
 func TestReclaimScratchLeavesAGitCheckoutAlone(t *testing.T) {
+	t.Parallel()
 	r := newCullRepo(t, true)
 	// BRIEF.md tracked by the repository is somebody's file.
 	if err := os.WriteFile(filepath.Join(r.main, briefFile), []byte("mine\n"), 0o644); err != nil {
@@ -305,6 +314,7 @@ func TestReclaimScratchLeavesAGitCheckoutAlone(t *testing.T) {
 }
 
 func TestReclaimScratchRefusesWhatIsNotItsToRemove(t *testing.T) {
+	t.Parallel()
 	root := filepath.VolumeName(os.TempDir()) + string(filepath.Separator)
 	if _, dirGone, kept := reclaimScratch(root); dirGone || kept == "" {
 		t.Errorf("a drive root: dir %v kept %q", dirGone, kept)
@@ -326,6 +336,7 @@ func TestReclaimScratchRefusesWhatIsNotItsToRemove(t *testing.T) {
 
 // A BRIEF.md that is a link to somewhere else is not followed and not removed.
 func TestReclaimScratchDoesNotFollowABriefLink(t *testing.T) {
+	t.Parallel()
 	dir := scratchDir(t)
 	outside := filepath.Join(t.TempDir(), "precious.txt")
 	if err := os.WriteFile(outside, []byte("keep\n"), 0o644); err != nil {

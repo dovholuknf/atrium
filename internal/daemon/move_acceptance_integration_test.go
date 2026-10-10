@@ -201,6 +201,7 @@ func asString(v any) string {
 
 // An undo after the launch leaves the old card as it was, its queue replayed once.
 func TestAnUndoLeavesTheOldCardAsItWas(t *testing.T) {
+	t.Parallel()
 	a, _ := roomDaemon(t)
 	a.opts.Room = "sg3"
 	peerCard(t, a, "sender")
@@ -222,6 +223,7 @@ func TestAnUndoLeavesTheOldCardAsItWas(t *testing.T) {
 
 // A card whose hub never came back undoes its own freeze at the lease.
 func TestAnExpiredLeaseUndoesTheFreeze(t *testing.T) {
+	t.Parallel()
 	a, _ := roomDaemon(t)
 	peerCard(t, a, "sender")
 	old := peerCard(t, a, "old")

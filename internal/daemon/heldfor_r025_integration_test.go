@@ -37,6 +37,7 @@ func TestHeldDuringCaptureReportsNewContext(t *testing.T) {
 // Held behind a shut line still reports the line, and an open gate with nothing
 // else holding never does.
 func TestHeldForLineOnlyWhenTheGateIsShut(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	target, r, _ := peerPair(t, d)
 	t.Cleanup(func() { d.pending.stopAll() })

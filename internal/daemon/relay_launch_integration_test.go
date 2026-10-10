@@ -31,6 +31,7 @@ func launchBody(room string) map[string]any {
 // The launch goes to the hub whole, from the launcher, for the room it named, and the answer
 // names the card across. The brief is carried and the cwd is not looked at.
 func TestARoomLaunchGoesToTheHubWholeAndNamesTheCardAcross(t *testing.T) {
+	t.Parallel()
 	d, f := roomDaemon(t)
 	code, out := roomLaunch(t, d, launchBody("claude-sg4"))
 	if code != http.StatusOK || out["card"] != "claude-sg4~kid" || out["handle"] != "kid@claude-sg4" ||
@@ -53,6 +54,7 @@ func TestARoomLaunchGoesToTheHubWholeAndNamesTheCardAcross(t *testing.T) {
 // This room's own name, in any case, is no launch across: nothing reaches the hub, and
 // the caller carries on locally.
 func TestARoomLaunchOnThisRoomIsLocalAndAsksNobody(t *testing.T) {
+	t.Parallel()
 	d, f := roomDaemon(t)
 	for _, room := range []string{"m1mini", "M1MINI", " m1mini "} {
 		code, out := roomLaunch(t, d, launchBody(room))
@@ -66,6 +68,7 @@ func TestARoomLaunchOnThisRoomIsLocalAndAsksNobody(t *testing.T) {
 }
 
 func TestARoomLaunchNeedsADirectoryAndALink(t *testing.T) {
+	t.Parallel()
 	d, f := roomDaemon(t)
 	b := launchBody("claude-sg4")
 	b["cwd"] = " "
@@ -82,6 +85,7 @@ func TestARoomLaunchNeedsADirectoryAndALink(t *testing.T) {
 // A refusal keeps the target's code and sentence, so an unknown room's list of rooms and the
 // cap's reason reach the launcher as they were written.
 func TestARoomLaunchRefusalKeepsItsCodeAndWords(t *testing.T) {
+	t.Parallel()
 	for _, c := range []struct {
 		code int
 		msg  string
@@ -105,6 +109,7 @@ func TestARoomLaunchRefusalKeepsItsCodeAndWords(t *testing.T) {
 // A room the hub knows and cannot reach, and a hub that does not answer, are refused now
 // and never held: sent late, a launch starts a session nobody is waiting for.
 func TestARoomLaunchThatCannotBeTakenIsRefusedNotHeld(t *testing.T) {
+	t.Parallel()
 	d, f := roomDaemon(t)
 	f.launch = func(RelayLaunch) (RelayResult, error) {
 		return RelayResult{Unreachable: true, Code: 503, Error: "the room claude-sg4 is not attached to the hub right now"}, nil
@@ -131,6 +136,7 @@ func TestARoomLaunchThatCannotBeTakenIsRefusedNotHeld(t *testing.T) {
 
 // A launch that may have started is unconfirmed, never retried, and says to look first.
 func TestARoomLaunchThatMayHaveStartedIsUnconfirmedAndNotRetried(t *testing.T) {
+	t.Parallel()
 	for name, fn := range map[string]func(RelayLaunch) (RelayResult, error){
 		"answer": func(RelayLaunch) (RelayResult, error) {
 			return RelayResult{Unconfirmed: true, Code: 504, Error: "the room timed out"}, nil
@@ -155,6 +161,7 @@ func TestARoomLaunchThatMayHaveStartedIsUnconfirmedAndNotRetried(t *testing.T) {
 // An old hub, found out either way, is told to the launcher as too old to launch on
 // another room, naming what to do.
 func TestARoomLaunchThroughAnOldHubSaysToUpdateIt(t *testing.T) {
+	t.Parallel()
 	for name, fn := range map[string]func(RelayLaunch) (RelayResult, error){
 		"refused at hello": func(RelayLaunch) (RelayResult, error) { return RelayResult{}, ErrRelayOld },
 		"unknown op": func(RelayLaunch) (RelayResult, error) {

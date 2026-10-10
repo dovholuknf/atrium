@@ -9,6 +9,7 @@ import (
 )
 
 func TestADialogBlocksTypingUntilSomethingElseHappens(t *testing.T) {
+	t.Parallel()
 	tr := newActivityTracker()
 	tr.set("t1", ActivityIdle, "")
 	if tr.dialogOpen("t1") {
@@ -32,6 +33,7 @@ func TestADialogBlocksTypingUntilSomethingElseHappens(t *testing.T) {
 // catches it being reversed. `set` clears the flag, so raising the dialog
 // before it means raising it and then immediately forgetting.
 func TestRaisingADialogAfterSettingActivityIsWhatSticks(t *testing.T) {
+	t.Parallel()
 	tr := newActivityTracker()
 
 	// The right way round, which is what the waiting branch does.
@@ -52,6 +54,7 @@ func TestRaisingADialogAfterSettingActivityIsWhatSticks(t *testing.T) {
 
 // A card atrium has never heard of is not a card with a dialog on it.
 func TestAnUnknownCardHasNoDialog(t *testing.T) {
+	t.Parallel()
 	tr := newActivityTracker()
 	if tr.dialogOpen("nobody") {
 		t.Fatal("an unknown card reported a dialog")
@@ -62,6 +65,7 @@ func TestAnUnknownCardHasNoDialog(t *testing.T) {
 // with no activity at all has to create the entry, or the first dialog on a
 // freshly seen session is dropped.
 func TestADialogOnACardWithNoActivityYetIsStillRecorded(t *testing.T) {
+	t.Parallel()
 	tr := newActivityTracker()
 	tr.dialogRaised("t1")
 	if !tr.dialogOpen("t1") {
@@ -77,6 +81,7 @@ func TestADialogOnACardWithNoActivityYetIsStillRecorded(t *testing.T) {
 // queued that could have been typed costs a delay, and typing into a dialog
 // costs an answer nobody gave.
 func TestAPendingRequestOfOurOwnMeansTheDialogIsNotTheRunners(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	task, _, err := d.st.Register(store.Observed{
 		WireName: "dialog-test", Worktree: "/tmp/atrium-test", Runner: "claude",

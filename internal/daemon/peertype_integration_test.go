@@ -15,6 +15,7 @@ import (
 // box, unread, and the sender was told `terminal`. It is queued for the PreToolUse hook, nothing is written to the
 // terminal, and no retry is held to type it later.
 func TestAMidTurnSayToClaudeIsLeftForTheHooks(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	target, _, f := peerPair(t, d)
 	t.Cleanup(func() { d.pending.stopAll() })
@@ -74,6 +75,7 @@ func peerPair(t *testing.T, d *Daemon) (*store.Task, *runner, *fakePTY) {
 // talking to an agent while the operator is asleep. Typed AND submitted,
 // because a message that does not submit does nothing.
 func TestAPeerMessageIsTypedAndSentWhenNobodyIsTyping(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	target, _, f := peerPair(t, d)
 
@@ -99,6 +101,7 @@ func TestAPeerMessageIsTypedAndSentWhenNobodyIsTyping(t *testing.T) {
 // THE CASE THE OLD REFUSAL PROTECTED, and it stays protected. There is no way
 // to insert into a line somebody is halfway through without wrecking it.
 func TestAPeerMessageIsNeverTypedIntoAPartWrittenLine(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	target, r, f := peerPair(t, d)
 	r.noteOperatorTyped([]byte("git comm"))
@@ -122,6 +125,7 @@ func TestAPeerMessageIsNeverTypedIntoAPartWrittenLine(t *testing.T) {
 // so a carriage return in it submits whatever he had already typed. That is
 // what split his line: the banner used to open and close with `\r\n`.
 func TestThePeerBannerNeverSubmitsALine(t *testing.T) {
+	t.Parallel()
 	if strings.ContainsAny(peerBanner("sg4/builder"), "\r\n") {
 		t.Fatalf("the banner carries a line ending, so it can submit the operator's line: %q",
 			peerBanner("sg4/builder"))
@@ -132,6 +136,7 @@ func TestThePeerBannerNeverSubmitsALine(t *testing.T) {
 // in a supervised session when a peer `atrium_say` arrived. It must not reach
 // the pty at all, and it must fall to the queue so nothing is lost.
 func TestAPeerTellWhileTypingQueuesAndLeavesThePtyAlone(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	peerCard(t, d, "sender")
 	target, r, f := peerPair(t, d) // wire name "listener", with a fakePTY
@@ -165,6 +170,7 @@ func TestAPeerTellWhileTypingQueuesAndLeavesThePtyAlone(t *testing.T) {
 // atrium_say queues one, must not type into a line the operator is composing any
 // more than the bus may. Same guard, same fallback to the queue.
 func TestARelayPeerMessageWhileTypingQueuesAndLeavesThePtyAlone(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	target, r, f := peerPair(t, d)
 	r.noteOperatorTyped([]byte("git comm"))
@@ -192,6 +198,7 @@ func TestARelayPeerMessageWhileTypingQueuesAndLeavesThePtyAlone(t *testing.T) {
 // And into a clear terminal the relay path still types, so the guard is a defer
 // and not a refusal.
 func TestARelayPeerMessageTypesIntoAFreeTerminal(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	target, _, f := peerPair(t, d)
 
@@ -219,6 +226,7 @@ func TestARelayPeerMessageTypesIntoAFreeTerminal(t *testing.T) {
 // it, which is what makes the deferral temporary rather than a session that
 // can never be told anything again.
 func TestSubmittingTheLineMakesTheTerminalAvailableAgain(t *testing.T) {
+	t.Parallel()
 	for _, end := range []struct {
 		name string
 		key  []byte
@@ -252,6 +260,7 @@ func TestSubmittingTheLineMakesTheTerminalAvailableAgain(t *testing.T) {
 // dropped into their line: the message waits and is retried once the line is
 // empty and the keyboard has been quiet for peerGateIdle.
 func TestAPeerMessageIsNotTypedWhileTheOperatorIsActive(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	target, r, f := peerPair(t, d)
 	// A line finished this instant. Nothing is part written, but the keyboard
@@ -271,6 +280,7 @@ func TestAPeerMessageIsNotTypedWhileTheOperatorIsActive(t *testing.T) {
 // gate is the idle rule plus the empty line, so a finished line past
 // peerGateIdle is open.
 func TestAPeerMessageIsTypedOnceTheOperatorGoesQuiet(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	target, r, f := peerPair(t, d)
 	r.noteOperatorTyped([]byte("ls\r"))
@@ -298,6 +308,7 @@ func TestAPeerMessageIsTypedOnceTheOperatorGoesQuiet(t *testing.T) {
 // A card can refuse on its own account. A lent card is the case: the guest
 // holds that terminal and was handed exactly one session.
 func TestACardCanRefusePeerTyping(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	target, _, f := peerPair(t, d)
 	if err := d.st.SetPeerTyping(target.ID, false); err != nil {
@@ -316,6 +327,7 @@ func TestACardCanRefusePeerTyping(t *testing.T) {
 // A card with no terminal atrium owns cannot be typed into at all, and that is
 // the ordinary case for a window mode runner rather than an error.
 func TestACardWithNoTerminalFallsBackToTheQueue(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	target := cardFor(t, d, "elsewhere")
 	if typed, _ := d.tellByTyping(target, "sg4/builder", "anything", "", false); typed {
@@ -327,6 +339,7 @@ func TestACardWithNoTerminalFallsBackToTheQueue(t *testing.T) {
 // `Write`, and counting those would have atrium reading its own typing as the
 // person being busy, so a second message would always defer behind the first.
 func TestAtriumTypingDoesNotCountAsTheOperatorTyping(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	target, r, _ := peerPair(t, d)
 
@@ -343,6 +356,7 @@ func TestAtriumTypingDoesNotCountAsTheOperatorTyping(t *testing.T) {
 
 // The window is what separates "watching" from "away", so it has to expire.
 func TestTheTerminalIsFreeAgainOnceTheOperatorHasStopped(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	_, r, _ := peerPair(t, d)
 	r.noteOperatorTyped([]byte("ls\r"))

@@ -14,6 +14,7 @@ import (
 )
 
 func TestParseKindDefaultsToNeedsAndNeverErrors(t *testing.T) {
+	t.Parallel()
 	for in, want := range map[string]string{
 		"fyi": KindFYI, " FYI ": KindFYI, "Fyi": KindFYI,
 		"": KindNeeds, "needs": KindNeeds, "urgent": KindNeeds, "fyi!": KindNeeds, "f y i": KindNeeds,
@@ -43,6 +44,7 @@ func tellKind(t *testing.T, d *Daemon, to *store.Task, from, kind string) *httpt
 }
 
 func TestAnFYIReportIsHeldNotTypedForBothTags(t *testing.T) {
+	t.Parallel()
 	for _, tag := range []string{HoldNoticesTag, OrchestratorTag} {
 		d := testDaemon(t)
 		launcher, worker := holdingPair(t, d, tag)
@@ -64,6 +66,7 @@ func TestAnFYIReportIsHeldNotTypedForBothTags(t *testing.T) {
 }
 
 func TestANeedsReportIsTypedAsToday(t *testing.T) {
+	t.Parallel()
 	for _, kind := range []string{"", "needs", "gibberish"} {
 		d := testDaemon(t)
 		launcher, _ := holdingPair(t, d, OrchestratorTag)
@@ -83,6 +86,7 @@ func TestANeedsReportIsTypedAsToday(t *testing.T) {
 }
 
 func TestABlockedFYIReportIsStillNeeds(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	launcher, _ := holdingPair(t, d, OrchestratorTag)
 	rec, _ := finishWith(t, d, FinishRequest{Agent: "worker", Status: ReportBlocked, Kind: "fyi",
@@ -101,6 +105,7 @@ func TestABlockedFYIReportIsStillNeeds(t *testing.T) {
 // A done report waits on acceptance and a merge, and one carrying an ask wants an answer.
 // Neither may sit unseen as a held notice, whatever it was labelled.
 func TestADoneOrAskingFYIReportIsForcedToNeeds(t *testing.T) {
+	t.Parallel()
 	for name, in := range map[string]FinishRequest{
 		"done": {Agent: "worker", Status: ReportDone, Kind: "fyi", NoCommit: "research only",
 			Recap: "the matrix is written up"},
@@ -132,6 +137,7 @@ func TestADoneOrAskingFYIReportIsForcedToNeeds(t *testing.T) {
 }
 
 func TestAnFYIReportToALauncherThatDoesNotHoldIsTypedAsToday(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	launcher, _ := holdingPair(t, d, "orchestrators")
 	finishWith(t, d, FinishRequest{Agent: "worker", Status: ReportDone, Kind: "fyi",
@@ -145,6 +151,7 @@ func TestAnFYIReportToALauncherThatDoesNotHoldIsTypedAsToday(t *testing.T) {
 }
 
 func TestAnFYIReportStillCountsAsTheWorkersReport(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	launcher, worker := holdingPair(t, d, OrchestratorTag)
 	finishWith(t, d, FinishRequest{Agent: "worker", Status: ReportProgress, Kind: "fyi",
@@ -163,6 +170,7 @@ func TestAnFYIReportStillCountsAsTheWorkersReport(t *testing.T) {
 }
 
 func TestAnFYISayIsHeldNotTypedNotQueuedForBothTags(t *testing.T) {
+	t.Parallel()
 	for _, tag := range []string{HoldNoticesTag, OrchestratorTag} {
 		d := testDaemon(t)
 		launcher, worker := holdingPair(t, d, tag)
@@ -187,6 +195,7 @@ func TestAnFYISayIsHeldNotTypedNotQueuedForBothTags(t *testing.T) {
 }
 
 func TestAnFYITellIsHeldAndANeedsTellIsQueued(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	launcher, worker := holdingPair(t, d, OrchestratorTag)
 
@@ -212,6 +221,7 @@ func TestAnFYITellIsHeldAndANeedsTellIsQueued(t *testing.T) {
 }
 
 func TestANeedsSayAndAnFYIToANonHolderAreQueuedAsToday(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	launcher, worker := holdingPair(t, d, OrchestratorTag)
 	sayKind(t, d, launcher, worker.WireName, "needs")
@@ -234,6 +244,7 @@ func TestANeedsSayAndAnFYIToANonHolderAreQueuedAsToday(t *testing.T) {
 }
 
 func TestTheHeldCountAndOldestRiseWithHeldAndFallWithRead(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	launcher, worker := holdingPair(t, d, OrchestratorTag)
 	// holdingPair hands back the launcher as it was before it was tagged.
@@ -280,6 +291,7 @@ func TestTheHeldCountAndOldestRiseWithHeldAndFallWithRead(t *testing.T) {
 // A notice held between the read and the stamp is newer than what was handed back, so it
 // still counts. The marker never moves back either.
 func TestANoticeHeldBetweenTheReadAndTheStampStillCountsUnread(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	launcher, worker := holdingPair(t, d, OrchestratorTag)
 	launcher, _ = d.st.Get(launcher.ID)
@@ -316,6 +328,7 @@ func TestANoticeHeldBetweenTheReadAndTheStampStillCountsUnread(t *testing.T) {
 }
 
 func TestAStuckCardWakesAnOrchestratorOnlyPastTheSecondStep(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	launcher, worker := holdingPair(t, d, OrchestratorTag)
 	d.turnEnded(worker.ID)
@@ -350,6 +363,7 @@ func TestAStuckCardWakesAnOrchestratorOnlyPastTheSecondStep(t *testing.T) {
 }
 
 func TestAStuckCardDoesNotWakeALauncherThatDoesNotHold(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	launcher, worker := launchedPair(t, d)
 	d.turnEnded(worker.ID)

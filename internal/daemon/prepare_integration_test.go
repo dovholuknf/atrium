@@ -13,6 +13,7 @@ import (
 // hands the runner, or the agent starts without the tools it was prepared for
 // and nothing says why.
 func TestCaptureEnvKeepsWhatThePrepareCommandSet(t *testing.T) {
+	t.Parallel()
 	set := `$env:ATRIUM_PREPARE_PROBE = 'yes'`
 	if runtime.GOOS != "windows" {
 		set = `export ATRIUM_PREPARE_PROBE=yes`
@@ -36,6 +37,7 @@ func TestCaptureEnvKeepsWhatThePrepareCommandSet(t *testing.T) {
 // Prepending to PATH is the actual use. Whatever was added has to be on the
 // front, since that is what picking one toolchain over another means.
 func TestCaptureEnvKeepsPathOrder(t *testing.T) {
+	t.Parallel()
 	set := `$env:PATH = 'C:\atrium-probe;' + $env:PATH`
 	if runtime.GOOS != "windows" {
 		set = `export PATH=/atrium-probe:$PATH`
@@ -59,6 +61,7 @@ func TestCaptureEnvKeepsPathOrder(t *testing.T) {
 // environment still has to come back. This is the launch that failed with
 // "invalid character 'd'" because a profile said `docker -> ...` on stdout.
 func TestCaptureEnvIgnoresWhatThePrepareCommandPrinted(t *testing.T) {
+	t.Parallel()
 	set := `Write-Host 'noise -> before'
 Write-Output 'more noise before'
 $env:ATRIUM_PREPARE_PROBE = 'yes'
@@ -88,6 +91,7 @@ printf 'ATRIUM_PREPARE_PROBE=forged\0'`
 // never printed them has to say what it printed instead, bounded, because that
 // is the line the operator needs to see.
 func TestFencedReadsOnlyBetweenTheFences(t *testing.T) {
+	t.Parallel()
 	nonce := envNonce()
 	fence := envFencePrefix + nonce + envFenceSuffix
 	stale := envFencePrefix + "not-this-call" + envFenceSuffix
@@ -119,6 +123,7 @@ func TestFencedReadsOnlyBetweenTheFences(t *testing.T) {
 // Nothing configured does nothing, rather than running a shell for no reason
 // on every launch.
 func TestCaptureEnvIsSkippedWhenEmpty(t *testing.T) {
+	t.Parallel()
 	for _, in := range []string{"", "   ", "\n"} {
 		env, err := captureEnv(in, t.TempDir())
 		if err != nil {
@@ -134,6 +139,7 @@ func TestCaptureEnvIsSkippedWhenEmpty(t *testing.T) {
 // without the tools it was supposed to set up produces an agent that cannot
 // find them, which is a much worse thing to debug.
 func TestCaptureEnvReportsWhatTheShellSaid(t *testing.T) {
+	t.Parallel()
 	_, err := captureEnv("atrium-no-such-command-probe", t.TempDir())
 	if err == nil {
 		t.Fatal("a command that does not exist was reported as working")

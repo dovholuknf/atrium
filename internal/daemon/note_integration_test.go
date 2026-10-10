@@ -37,6 +37,7 @@ func sendNote(t *testing.T, d *Daemon, id string) (map[string]any, int) {
 // Writing one down sends nothing. That is the entire distinction from the box
 // underneath it, which fires as soon as there is anything in it.
 func TestWritingANoteSendsNothing(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	task := noteCard(t, d, "note-1")
 
@@ -63,6 +64,7 @@ func TestWritingANoteSendsNothing(t *testing.T) {
 // Three things written during a long turn arrive as ONE instruction. That is
 // the whole reason a note exists rather than three messages.
 func TestSendingANoteMakesOneMessage(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	task := noteCard(t, d, "note-2")
 
@@ -95,6 +97,7 @@ func TestSendingANoteMakesOneMessage(t *testing.T) {
 // Sending empties the pad, or the next glance at the card shows something that
 // has already gone.
 func TestSendingClearsTheNote(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	task := noteCard(t, d, "note-3")
 
@@ -116,6 +119,7 @@ func TestSendingClearsTheNote(t *testing.T) {
 // Nothing written down is a refusal rather than an empty message, because an
 // empty message reaches a model and costs it a turn to read nothing.
 func TestSendingAnEmptyNoteIsRefused(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	task := noteCard(t, d, "note-4")
 
@@ -136,6 +140,7 @@ func TestSendingAnEmptyNoteIsRefused(t *testing.T) {
 
 // Whitespace is not something to say.
 func TestWhitespaceIsNotANote(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	task := noteCard(t, d, "note-5")
 	if err := d.st.SetNote(task.ID, "   \n\t "); err != nil {
@@ -150,6 +155,7 @@ func TestWhitespaceIsNotANote(t *testing.T) {
 // activity clock would move a silent card to the top of an activity-sorted
 // list, which is the same reason tagging does not.
 func TestWritingANoteIsNotActivity(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	task := noteCard(t, d, "note-6")
 
@@ -171,6 +177,7 @@ func TestWritingANoteIsNotActivity(t *testing.T) {
 
 // A card that does not exist is a refusal, not a panic.
 func TestSendingANoteOnAMissingCardIsRefused(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	if _, code := sendNote(t, d, "no-such-card"); code != http.StatusNotFound {
 		t.Fatalf("answered %d", code)

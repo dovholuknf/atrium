@@ -54,6 +54,7 @@ func launchesIn(t *testing.T, reply map[string]any) []map[string]any {
 }
 
 func TestQueuedWorkRidesTheReplyToACheckIn(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	if _, err := d.st.QueueDispatch(store.Dispatch{
 		Room: "cdaws", Harness: "claude", Prompt: "backlog 12",
@@ -81,6 +82,7 @@ func TestQueuedWorkRidesTheReplyToACheckIn(t *testing.T) {
 }
 
 func TestOneRoomIsNeverHandedAnothersWork(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	if _, err := d.st.QueueDispatch(store.Dispatch{Room: "cdaws", Harness: "claude"}); err != nil {
 		t.Fatal(err)
@@ -94,6 +96,7 @@ func TestOneRoomIsNeverHandedAnothersWork(t *testing.T) {
 // A room that has decided not to run anything is handed nothing, so its queue
 // stays visible on the board instead of being spent on refusals.
 func TestARoomThatRefusesWorkIsHandedNoneOfIt(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	item, err := d.st.QueueDispatch(store.Dispatch{Room: "cdaws", Harness: "claude"})
 	if err != nil {
@@ -120,6 +123,7 @@ func TestARoomThatRefusesWorkIsHandedNoneOfIt(t *testing.T) {
 // end to end would outlast the lease on the first, and the hub would take back
 // an item that room is still starting.
 func TestARoomStartingThingsIsHandedNoMore(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	item, err := d.st.QueueDispatch(store.Dispatch{Room: "cdaws", Harness: "claude"})
 	if err != nil {
@@ -143,6 +147,7 @@ func TestARoomStartingThingsIsHandedNoMore(t *testing.T) {
 // under the untrimmed one, a room checking in as " cdaws " would be drawn on
 // the board and never collect anything queued for it.
 func TestWhitespaceAroundARoomNameDoesNotSplitItsQueue(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	if _, err := d.st.QueueDispatch(store.Dispatch{Room: "cdaws", Harness: "claude"}); err != nil {
 		t.Fatal(err)
@@ -154,6 +159,7 @@ func TestWhitespaceAroundARoomNameDoesNotSplitItsQueue(t *testing.T) {
 }
 
 func TestARoomReportsWhatHappenedAndOnlyWithItsToken(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	item, err := d.st.QueueDispatch(store.Dispatch{Room: "cdaws", Harness: "claude"})
 	if err != nil {
@@ -201,6 +207,7 @@ func result(t *testing.T, d *Daemon, id, body string) (int, string) {
 // check-in, on that room's own board. A durable copy here is what federation
 // rules out.
 func TestAStartedItemPointsAtTheRoomAndKeepsNoCopy(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	item, err := d.st.QueueDispatch(store.Dispatch{Room: "cdaws", Harness: "claude"})
 	if err != nil {

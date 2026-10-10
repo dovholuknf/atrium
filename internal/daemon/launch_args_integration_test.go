@@ -20,6 +20,7 @@ func claudeLike() *store.Harness {
 // A prompt is one argv element however many words it has. Splitting it would
 // hand the runner a dozen arguments it has no flags for.
 func TestPromptStaysOneArgument(t *testing.T) {
+	t.Parallel()
 	text := `investigate #4211 and say "why" it regressed`
 	args, _, err := runnerArgs(claudeLike(), "", text, "")
 	if err != nil {
@@ -37,6 +38,7 @@ func TestPromptStaysOneArgument(t *testing.T) {
 // there is a paragraph in a column meant to hold a command line, and for a
 // support case it is a customer's words in atrium's own database.
 func TestTheLoggedCommandOmitsThePrompt(t *testing.T) {
+	t.Parallel()
 	_, logged, err := runnerArgs(claudeLike(), "", "a very long instruction about a customer", "")
 	if err != nil {
 		t.Fatal(err)
@@ -51,6 +53,7 @@ func TestTheLoggedCommandOmitsThePrompt(t *testing.T) {
 
 // Resuming and prompting together is refused rather than guessed at.
 func TestPromptAndResumeAreRefusedTogether(t *testing.T) {
+	t.Parallel()
 	_, _, err := runnerArgs(claudeLike(), "sess-1", "do the thing", "")
 	if err == nil {
 		t.Fatal("a resume and a prompt were accepted together")
@@ -63,6 +66,7 @@ func TestPromptAndResumeAreRefusedTogether(t *testing.T) {
 // A runner with no way to take a prompt says so, instead of starting a session
 // that will never read it. A shell is the case: it would try to execute it.
 func TestARunnerThatCannotTakeAPromptSaysSo(t *testing.T) {
+	t.Parallel()
 	shell := &store.Harness{ID: "shell", Label: "shell", Cmd: "pwsh", Args: []string{"-NoLogo"}}
 	_, _, err := runnerArgs(shell, "", "run the tests", "")
 	if err == nil {
@@ -76,6 +80,7 @@ func TestARunnerThatCannotTakeAPromptSaysSo(t *testing.T) {
 // A prompt is appended to the runner's own arguments rather than replacing
 // them. Ollama's model name is in Args and losing it starts the wrong model.
 func TestPromptIsAppendedNotSubstituted(t *testing.T) {
+	t.Parallel()
 	h := &store.Harness{
 		ID: "ollama", Label: "ollama", Cmd: "ollama",
 		Args: []string{"run", "llama3"}, PromptArgs: []string{"{prompt}"},
@@ -92,6 +97,7 @@ func TestPromptIsAppendedNotSubstituted(t *testing.T) {
 // Nothing changes for a launch that supplies no prompt, which is every launch
 // that existed before this.
 func TestNoPromptChangesNothing(t *testing.T) {
+	t.Parallel()
 	h := claudeLike()
 	h.Args = []string{"--verbose"}
 	args, logged, err := runnerArgs(h, "", "   ", "")
@@ -108,6 +114,7 @@ func TestNoPromptChangesNothing(t *testing.T) {
 
 // Resuming still works, and its own arguments still substitute.
 func TestResumeIsUnchanged(t *testing.T) {
+	t.Parallel()
 	args, logged, err := runnerArgs(claudeLike(), "sess-9", "", "")
 	if err != nil {
 		t.Fatal(err)

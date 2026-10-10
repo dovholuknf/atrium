@@ -90,6 +90,7 @@ func none(t *testing.T, ev []repairEvent) {
 // THE CASE: a repaint that starts from old row 4 means rows 1 to 3 were
 // overwritten in place.
 func TestARepaintFromALaterRowIsReportedAsRepairable(t *testing.T) {
+	t.Parallel()
 	rows := append(lineRows(4, 10), newRows(11, 13)...)
 	ev := only(t, watched(t, 30, 10, nlines(1, 10)+repaint(rows, true), nil))
 	if ev.outcome != "repaired" || ev.k != 3 || ev.added != 3 || ev.cut != 0 || ev.rows != 10 {
@@ -101,6 +102,7 @@ func TestARepaintFromALaterRowIsReportedAsRepairable(t *testing.T) {
 }
 
 func TestTheSameWhenTheLastRowHasNoLineFeed(t *testing.T) {
+	t.Parallel()
 	rows := append(lineRows(4, 10), newRows(11, 13)...)
 	b := nlines(1, 10) + repaint(rows, false) + "\x1b[2;3H"
 	ev := only(t, watched(t, 30, 10, b, nil))
@@ -110,6 +112,7 @@ func TestTheSameWhenTheLastRowHasNoLineFeed(t *testing.T) {
 }
 
 func TestARepaintIdenticalToTheScreenIsNothing(t *testing.T) {
+	t.Parallel()
 	ev := only(t, watched(t, 30, 10, nlines(1, 10)+repaint(lineRows(1, 10), true), nil))
 	if ev.outcome != "no-match" || ev.added != 0 {
 		t.Fatalf("got %+v", ev)
@@ -119,6 +122,7 @@ func TestARepaintIdenticalToTheScreenIsNothing(t *testing.T) {
 // Blank rows and a border line up at every k. The distinct rows are there to stop
 // exactly this.
 func TestMostlyBlankRowsAndOneBorderDoNotMatch(t *testing.T) {
+	t.Parallel()
 	screen := "------\r\n" + strings.Repeat("\r\n", 8) + "------"
 	rows := append(blankRows(9), "------")
 	ev := only(t, watched(t, 30, 10, screen+repaint(rows, true), nil))
@@ -129,6 +133,7 @@ func TestMostlyBlankRowsAndOneBorderDoNotMatch(t *testing.T) {
 
 // Two shifts passing is a guess, and the rule does not guess.
 func TestTwoPassingShiftsAreAmbiguous(t *testing.T) {
+	t.Parallel()
 	pat := []string{"AA", "BB", "CC", "DD"}
 	var screen []string
 	for i := 0; i < 14; i++ {
@@ -142,6 +147,7 @@ func TestTwoPassingShiftsAreAmbiguous(t *testing.T) {
 }
 
 func TestASecondCutInsideARepaintCancelsIt(t *testing.T) {
+	t.Parallel()
 	rows := append(lineRows(4, 10), newRows(11, 13)...)
 	head := nlines(1, 10)
 	full := repaint(rows, true)
@@ -153,6 +159,7 @@ func TestASecondCutInsideARepaintCancelsIt(t *testing.T) {
 }
 
 func TestAnythingElseInsideARepaintCancelsIt(t *testing.T) {
+	t.Parallel()
 	rows := append(lineRows(4, 10), newRows(11, 13)...)
 	for name, inject := range map[string]string{
 		"erase-display": "\x1b[J", "insert-delete": "\x1b[L", "scroll": "\x1b[S",
@@ -168,6 +175,7 @@ func TestAnythingElseInsideARepaintCancelsIt(t *testing.T) {
 }
 
 func TestUnderDECSTBMThereIsNoCandidate(t *testing.T) {
+	t.Parallel()
 	rows := append(lineRows(4, 10), newRows(11, 13)...)
 	ev := watched(t, 30, 10, nlines(1, 10)+"\x1b[2;9r"+repaint(rows, true), nil)
 	if len(ev) != 0 {
@@ -176,6 +184,7 @@ func TestUnderDECSTBMThereIsNoCandidate(t *testing.T) {
 }
 
 func TestOnTheAlternateScreenThereIsNoCandidate(t *testing.T) {
+	t.Parallel()
 	rows := append(lineRows(4, 10), newRows(11, 13)...)
 	ev := watched(t, 30, 10, nlines(1, 10)+"\x1b[?1049h"+repaint(rows, true), nil)
 	if len(ev) != 0 {
@@ -184,6 +193,7 @@ func TestOnTheAlternateScreenThereIsNoCandidate(t *testing.T) {
 }
 
 func TestTheFirstScreenfulIsNotACandidate(t *testing.T) {
+	t.Parallel()
 	ev := watched(t, 30, 10, nlines(1, 4)+repaint(append(lineRows(2, 4), newRows(5, 11)...), true), nil)
 	if len(ev) != 0 {
 		t.Fatalf("got %+v", ev)
@@ -191,6 +201,7 @@ func TestTheFirstScreenfulIsNotACandidate(t *testing.T) {
 }
 
 func TestARepaintTheRingEndedInsideIsIncomplete(t *testing.T) {
+	t.Parallel()
 	ev := only(t, watched(t, 30, 10, nlines(1, 10)+repaint(lineRows(4, 8), true), nil))
 	if ev.outcome != "incomplete" {
 		t.Fatalf("got %+v", ev)
@@ -202,6 +213,7 @@ func TestARepaintTheRingEndedInsideIsIncomplete(t *testing.T) {
 // that were overwritten, and the rule cannot tell them apart when the rows match.
 // It only ever ADDS a line to history, and the report exists to count these.
 func TestAReallyCollapsedBlockIsReportedAsRepairable(t *testing.T) {
+	t.Parallel()
 	rows := append(lineRows(4, 10), blankRows(3)...)
 	ev := only(t, watched(t, 30, 10, nlines(1, 10)+repaint(rows, true), nil))
 	if ev.outcome != "repaired" || ev.k != 3 || ev.added != 3 {
@@ -212,6 +224,7 @@ func TestAReallyCollapsedBlockIsReportedAsRepairable(t *testing.T) {
 // AT A CUT. 50 rows become 40, so the grid files 10 off the top, and conhost's
 // repaint follows at the new height.
 func TestARepaintAtAShrinkOnlyAddsWhatTheResizeDidNotFile(t *testing.T) {
+	t.Parallel()
 	head := nlines(1, 50)
 	cut := []sizeCut{{len(head), 30, 40}}
 
@@ -228,6 +241,7 @@ func TestARepaintAtAShrinkOnlyAddsWhatTheResizeDidNotFile(t *testing.T) {
 }
 
 func TestARepaintAtAGrowAddsNothing(t *testing.T) {
+	t.Parallel()
 	head := nlines(1, 40)
 	ev := only(t, watched(t, 30, 40, head+repaint(append(lineRows(1, 40), blankRows(10)...), true),
 		[]sizeCut{{len(head), 30, 50}}))
@@ -238,6 +252,7 @@ func TestARepaintAtAGrowAddsNothing(t *testing.T) {
 
 // A repaint that comes well after the cut is not at it.
 func TestARepaintAfterSomethingWasDrawnIsNotAtTheCut(t *testing.T) {
+	t.Parallel()
 	head := nlines(1, 50)
 	b := head + "\r\nmore" + repaint(append(lineRows(14, 50), newRows(51, 53)...), true)
 	ev := only(t, watched(t, 30, 50, b, []sizeCut{{len(head), 30, 40}}))
@@ -247,6 +262,7 @@ func TestARepaintAfterSomethingWasDrawnIsNotAtTheCut(t *testing.T) {
 }
 
 func TestTheReportFormat(t *testing.T) {
+	t.Parallel()
 	got := formatRepairReport([]repairEvent{
 		{offset: 9, rows: 10, cols: 30, outcome: "repaired", k: 3, added: 3},
 		{offset: 99, rows: 40, cols: 30, cut: 50, outcome: "resize-filed", why: "k=10 gone=10"},
@@ -278,6 +294,7 @@ func repairStream() string {
 }
 
 func TestTheReportThroughHTTP(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	_, r := sizedSession(t, d, "rep-card", 30, 10)
 	r.buf.Write([]byte(repairStream()))
@@ -302,6 +319,7 @@ func TestTheReportThroughHTTP(t *testing.T) {
 }
 
 func TestTheReportReadsAShellWhenAsked(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	_, _ = sizedSession(t, d, "rep-shell", 30, 10)
 	sh := &runner{
@@ -322,6 +340,7 @@ func TestTheReportReadsAShellWhenAsked(t *testing.T) {
 // NOTHING ELSE MOVES. Plain /scrollback/text and the screen replay an attach uses
 // are what they were, before and after a report has run over the same bytes.
 func TestThePlainReplayIsUnchangedByTheDetector(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	_, r := sizedSession(t, d, "rep-plain", 30, 10)
 	r.buf.Write([]byte(repairStream()))

@@ -73,6 +73,7 @@ func TestLaunchSkipsBriefOnResume(t *testing.T) {
 // task before it has read what it was handed. The task still has to be present,
 // or the session reads a briefing and waits to be told what to do with it.
 func TestBriefPromptPutsTheReadFirst(t *testing.T) {
+	t.Parallel()
 	p := briefPrompt("do the thing")
 	if !strings.HasPrefix(p, "Read "+briefFileName) {
 		t.Fatalf("the read instruction is not first: %q", p)
@@ -95,6 +96,7 @@ func TestBriefPromptPutsTheReadFirst(t *testing.T) {
 }
 
 func TestBriefFileCarriesTheGitURLLineOnce(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	if _, err := writeBriefFile(dir, "do the thing", true); err != nil {
 		t.Fatal(err)
@@ -109,6 +111,7 @@ func TestBriefFileCarriesTheGitURLLineOnce(t *testing.T) {
 }
 
 func TestABriefThatAlreadyHasTheLineIsNotDoubled(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	once := "task\n\n" + gitURLLine + "\n"
 	if _, err := writeBriefFile(dir, once, true); err != nil {
@@ -153,6 +156,7 @@ func promptSeenBy(t *testing.T, d *Daemon, req LaunchRequest) string {
 }
 
 func TestALaunchWithNoBriefCarriesTheLineOnItsPromptOnce(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	got := promptSeenBy(t, d, LaunchRequest{Prompt: "just do it"})
 	if !strings.HasPrefix(got, "just do it") || strings.Count(got, "atrium_git_url") != 1 {
@@ -168,6 +172,7 @@ func TestALaunchWithNoBriefCarriesTheLineOnItsPromptOnce(t *testing.T) {
 // nothing can carry the line onto one. Pinned here so a change that lets a resume
 // take a prompt meets this test.
 func TestAResumeTakesNoGitURLLine(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	h := briefHarness(t, d)
 	dir := t.TempDir()
@@ -181,6 +186,7 @@ func TestAResumeTakesNoGitURLLine(t *testing.T) {
 }
 
 func TestAnOutsideCodeCardsBriefAndPromptCarryNoGitURLLine(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	if _, err := writeBriefFile(dir, "task", false); err != nil {
 		t.Fatal(err)
@@ -202,6 +208,7 @@ func TestAnOutsideCodeCardsBriefAndPromptCarryNoGitURLLine(t *testing.T) {
 
 // A runner with no atrium control MCP cannot see the tool, so the line says "if you have it".
 func TestTheGitURLLineIsConditionalOnHavingTheTool(t *testing.T) {
+	t.Parallel()
 	if !strings.HasPrefix(gitURLLine, "If you have `atrium_git_url`") {
 		t.Fatalf("the line is unconditional: %q", gitURLLine)
 	}

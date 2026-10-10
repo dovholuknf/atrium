@@ -13,6 +13,7 @@ import (
 // `ESC[K ESC[42;7H do…)` is columns 7 onward of a row drawn earlier. The
 // flattener emitted the fragment alone, because it had no row 42 to put it on.
 func TestAPartialRepaintLandsOnItsRow(t *testing.T) {
+	t.Parallel()
 	// Column 14, which is where `file` starts: `CSI H` counts from one, so the
 	// f is column 14 and index 13.
 	in := "\x1b[3;1Hlooking at a file\x1b[3;14Hdirectory  "
@@ -28,6 +29,7 @@ func TestAPartialRepaintLandsOnItsRow(t *testing.T) {
 
 // A SPINNER REDRAWN IN PLACE IS ONE LINE, not one line per frame.
 func TestASpinnerInPlaceIsOneLine(t *testing.T) {
+	t.Parallel()
 	var b strings.Builder
 	b.WriteString("some real work\r\n")
 	for i := 1; i <= 200; i++ {
@@ -54,6 +56,7 @@ func TestASpinnerInPlaceIsOneLine(t *testing.T) {
 // it", and without a grid each fragment became its own line between spinner
 // frames.
 func TestAPromptRedrawnWhileTypingReadsAsTheWord(t *testing.T) {
+	t.Parallel()
 	var b strings.Builder
 	b.WriteString("earlier output\r\n")
 	for _, sofar := range []string{"i", "i f", "i fou", "i found", "i found it"} {
@@ -83,6 +86,7 @@ func TestAPromptRedrawnWhileTypingReadsAsTheWord(t *testing.T) {
 // SCROLLED-OFF LINES ARE THE HISTORY. Without eviction this answers "what was
 // on screen at the end", which is one screenful.
 func TestLinesThatScrollOffAreKept(t *testing.T) {
+	t.Parallel()
 	var b strings.Builder
 	for i := 1; i <= 500; i++ {
 		b.WriteString("line " + strconv.Itoa(i) + "\r\n")
@@ -103,6 +107,7 @@ func TestLinesThatScrollOffAreKept(t *testing.T) {
 // Ordinary output is untouched: this must not become a reason to distrust the
 // pane for the 99% of sessions that never repaint anything.
 func TestPlainOutputIsUnchanged(t *testing.T) {
+	t.Parallel()
 	in := "first\r\nsecond\r\nthird\r\n"
 	if got := plain(render(in, 40)); got != "first\r\nsecond\r\nthird\r\n" {
 		t.Fatalf("plain output came out as %q", got)
@@ -112,6 +117,7 @@ func TestPlainOutputIsUnchanged(t *testing.T) {
 // A full-width line does not gain a blank line after it. The deferred wrap is
 // the detail every naive implementation gets wrong.
 func TestAFullWidthLineDoesNotWrapEarly(t *testing.T) {
+	t.Parallel()
 	got := lines(plain(render(strings.Repeat("x", 10)+"\r\nnext\r\n", 10)))
 	if len(got) != 2 {
 		t.Fatalf("a full width line produced %d lines: %q", len(got), got)
@@ -123,6 +129,7 @@ func TestAFullWidthLineDoesNotWrapEarly(t *testing.T) {
 
 // And a line PAST the width does wrap, rather than losing the tail.
 func TestTextPastTheWidthWraps(t *testing.T) {
+	t.Parallel()
 	got := lines(plain(render(strings.Repeat("x", 15), 10)))
 	if len(got) != 2 {
 		t.Fatalf("expected two lines, got %q", got)
@@ -135,6 +142,7 @@ func TestTextPastTheWidthWraps(t *testing.T) {
 // CLEARING THE SCREEN IS NOT ERASING HISTORY. A program that clears to redraw
 // does not mean the operator never saw what was there.
 func TestClearingTheScreenKeepsWhatWasOnIt(t *testing.T) {
+	t.Parallel()
 	in := "something worth reading\r\n\x1b[2J\x1b[Hafter the clear\r\n"
 	got := plain(render(in, 40))
 	if !strings.Contains(got, "something worth reading") {
@@ -148,6 +156,7 @@ func TestClearingTheScreenKeepsWhatWasOnIt(t *testing.T) {
 // The alternate screen is NOT history. A full-screen program draws there and
 // switches back, and what it drew was never part of the session's output.
 func TestTheAlternateScreenIsNotHistory(t *testing.T) {
+	t.Parallel()
 	in := "before\r\n" +
 		"\x1b[?1049h" + "\x1b[2J\x1b[HI AM A PAGER\r\n" + "\x1b[?1049l" +
 		"after\r\n"
@@ -165,6 +174,7 @@ func TestTheAlternateScreenIsNotHistory(t *testing.T) {
 
 // Colour survives, and is emitted once per run rather than once per character.
 func TestColourSurvivesAndIsNotRepeatedPerCharacter(t *testing.T) {
+	t.Parallel()
 	in := "\x1b[31mred text\x1b[m plain\r\n"
 	got := render(in, 40)
 
@@ -200,6 +210,7 @@ func TestColourSurvivesAndIsNotRepeatedPerCharacter(t *testing.T) {
 // wreckage, and a day went into fixing renderers that were being handed
 // pre-broken input.
 func TestAWrappedParagraphSurvivesTheReplay(t *testing.T) {
+	t.Parallel()
 	const cols = 40
 	r := newRing(1<<16, cols)
 	r.Write([]byte("#: 1\r\nSev: high\r\nLocation: e2ee_tls.c:159\r\n"))
@@ -241,6 +252,7 @@ func TestAWrappedParagraphSurvivesTheReplay(t *testing.T) {
 // A line that leaves colour on closes it, or every line after it is painted by
 // a sequence that belonged to one.
 func TestALineClosesItsColour(t *testing.T) {
+	t.Parallel()
 	got := render("\x1b[31mred\r\nplain\r\n", 40)
 	first := strings.SplitN(got, "\r\n", 2)[0]
 	if !strings.HasSuffix(first, "\x1b[m") {
@@ -250,6 +262,7 @@ func TestALineClosesItsColour(t *testing.T) {
 
 // Erase to end of line removes the tail and nothing else.
 func TestEraseToEndOfLine(t *testing.T) {
+	t.Parallel()
 	got := plain(render("abcdefgh\r\x1b[3C\x1b[K", 20))
 	if strings.TrimRight(got, "\r\n") != "abc" {
 		t.Fatalf("came out as %q", got)
@@ -258,6 +271,7 @@ func TestEraseToEndOfLine(t *testing.T) {
 
 // Backspace moves without erasing, which is how a shell redraws a line.
 func TestBackspaceMovesWithoutErasing(t *testing.T) {
+	t.Parallel()
 	got := plain(render("abc\b\bX", 20))
 	if strings.TrimRight(got, "\r\n") != "aXc" {
 		t.Fatalf("came out as %q", got)
@@ -266,6 +280,7 @@ func TestBackspaceMovesWithoutErasing(t *testing.T) {
 
 // Insert and delete line, which is how a list grows and shrinks in place.
 func TestInsertAndDeleteLine(t *testing.T) {
+	t.Parallel()
 	got := lines(plain(render("one\r\ntwo\r\nthree\r\n\x1b[2;1H\x1b[L", 20)))
 	if len(got) < 4 || got[0] != "one" || got[1] != "" || got[2] != "two" {
 		t.Fatalf("insert line came out as %q", got)
@@ -280,6 +295,7 @@ func TestInsertAndDeleteLine(t *testing.T) {
 // A sequence cut in half by the ring's own boundary must not panic or eat the
 // rest of the buffer.
 func TestATruncatedSequenceIsSurvivable(t *testing.T) {
+	t.Parallel()
 	for _, in := range []string{"text\x1b", "text\x1b[", "text\x1b[3", "text\x1b[38;2;1"} {
 		got := plain(render(in, 20))
 		if !strings.HasPrefix(got, "text") {
@@ -290,6 +306,7 @@ func TestATruncatedSequenceIsSurvivable(t *testing.T) {
 
 // A parameter nobody would type is bounded rather than believed.
 func TestAnAbsurdParameterIsBounded(t *testing.T) {
+	t.Parallel()
 	got := plain(render("top\x1b[999999;1Hbottom", 20))
 	if !strings.Contains(got, "top") || !strings.Contains(got, "bottom") {
 		t.Fatalf("text was lost: %q", got)
@@ -300,6 +317,7 @@ func TestAnAbsurdParameterIsBounded(t *testing.T) {
 }
 
 func TestEmptyInput(t *testing.T) {
+	t.Parallel()
 	if got := renderHistory(nil, 80); len(got) != 0 {
 		t.Fatalf("empty input produced %q", got)
 	}

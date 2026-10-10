@@ -11,6 +11,7 @@ import (
 
 // A say to a card that moved goes on to the new card and the sender is told where.
 func TestASayToAMovedCardIsForwarded(t *testing.T) {
+	t.Parallel()
 	d, f := roomDaemon(t)
 	peerCard(t, d, "sa1")
 	old := peerCard(t, d, "sa2")
@@ -34,6 +35,7 @@ func TestASayToAMovedCardIsForwarded(t *testing.T) {
 
 // A frozen card is held: its says are queued for the move, not delivered.
 func TestAFrozenCardHoldsItsSays(t *testing.T) {
+	t.Parallel()
 	d, _ := roomDaemon(t)
 	peerCard(t, d, "sa1")
 	c := peerCard(t, d, "sa2")
@@ -66,6 +68,7 @@ func TestAFrozenCardHoldsItsSays(t *testing.T) {
 
 // The chain is followed up to eight hops and a loop is named.
 func TestFollowMovedChainsAndLoops(t *testing.T) {
+	t.Parallel()
 	d, _ := roomDaemon(t)
 	a, b := peerCard(t, d, "sa1"), peerCard(t, d, "sa2")
 	if _, err := d.st.Freeze(a.ID, "m", time.Minute); err != nil {
@@ -92,6 +95,7 @@ func TestFollowMovedChainsAndLoops(t *testing.T) {
 
 // A worker whose launcher moved to another room reports there.
 func TestALauncherThatMovedIsFollowed(t *testing.T) {
+	t.Parallel()
 	d, _ := roomDaemon(t)
 	l := peerCard(t, d, "sa1")
 	w := peerCard(t, d, "sa2")

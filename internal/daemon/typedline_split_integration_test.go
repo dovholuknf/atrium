@@ -71,6 +71,7 @@ func runFrames(frames []string) string {
 // frames of 1 to 7 bytes, must leave the model exactly where the whole stream
 // does. This is the test that would have caught the 2228 phantom.
 func TestTypedLineSameStateWhereverTheFramesSplit(t *testing.T) {
+	t.Parallel()
 	for name, s := range splitStreams {
 		want := runFrames([]string{s})
 		for i := 1; i < len(s); i++ {
@@ -96,6 +97,7 @@ func TestTypedLineSameStateWhereverTheFramesSplit(t *testing.T) {
 
 // The five lines of the plan's probe.
 func TestTypedLinePasteProbe(t *testing.T) {
+	t.Parallel()
 	body := strings.Repeat("x", 2228)
 	cases := []struct {
 		name      string
@@ -127,6 +129,7 @@ func TestTypedLinePasteProbe(t *testing.T) {
 
 // A paste with no byte for two seconds is over, so the Enter after it submits.
 func TestTypedLinePasteWatchdog(t *testing.T) {
+	t.Parallel()
 	now := time.Unix(1000, 0)
 	l := &typedLine{clock: func() time.Time { return now }}
 	l.feed([]byte("\x1b[200~pasted text"))
@@ -150,6 +153,7 @@ func TestTypedLinePasteWatchdog(t *testing.T) {
 
 // A real alt-[ is not held for ever.
 func TestTypedLineSettlesAHeldSequence(t *testing.T) {
+	t.Parallel()
 	now := time.Unix(1000, 0)
 	l := &typedLine{clock: func() time.Time { return now }}
 	l.feed([]byte("ab\x1b["))
@@ -164,6 +168,7 @@ func TestTypedLineSettlesAHeldSequence(t *testing.T) {
 }
 
 func TestTypingReadoutSaysAStuckPaste(t *testing.T) {
+	t.Parallel()
 	r := &runner{taskID: "t"}
 	r.noteOperatorTyped([]byte("\x1b[200~" + strings.Repeat("x", 50)))
 	s := r.typing()
@@ -195,6 +200,7 @@ func resetRig(t *testing.T) (*Daemon, *runner, string) {
 // A submit emptied the prompt, so a model that still holds text (an Enter read as
 // paste text) is cleared by the prompt hook.
 func TestPromptHookClearsTheTypingModel(t *testing.T) {
+	t.Parallel()
 	d, r, id := resetRig(t)
 	r.noteOperatorTyped([]byte("\x1b[200~" + strings.Repeat("x", 2228)))
 	r.noteOperatorTyped([]byte("\r"))
@@ -209,6 +215,7 @@ func TestPromptHookClearsTheTypingModel(t *testing.T) {
 
 // A key after the prompt began is a draft, and stays.
 func TestPromptHookKeepsADraftTypedAfterIt(t *testing.T) {
+	t.Parallel()
 	d, r, id := resetRig(t)
 	r.noteOperatorTyped([]byte("old\r"))
 	r.noteOperatorTyped([]byte("new draft"))
@@ -220,6 +227,7 @@ func TestPromptHookKeepsADraftTypedAfterIt(t *testing.T) {
 
 // A draft typed during the turn survives the Stop that ends it.
 func TestStopKeepsADraftTypedDuringTheTurn(t *testing.T) {
+	t.Parallel()
 	d, r, id := resetRig(t)
 	r.noteOperatorTyped([]byte("old\r"))
 	d.onActivity(ActivityEvent{TaskID: id, Event: "prompt"})
@@ -234,6 +242,7 @@ func TestStopKeepsADraftTypedDuringTheTurn(t *testing.T) {
 // paste the runner sent itself) is still on the model after the prompt hook
 // refuses it. The Stop that ends that turn clears it.
 func TestStopClearsALineSubmittedByAnUnseenPath(t *testing.T) {
+	t.Parallel()
 	d, r, id := resetRig(t)
 	r.noteOperatorTyped([]byte("old\r"))
 	r.noteOperatorTyped([]byte("\x1b[200~" + strings.Repeat("x", 2228) + "\x1b[201~"))

@@ -135,6 +135,7 @@ func restarted(t *testing.T, old *Daemon, dir string) *Daemon {
 }
 
 func TestReattachReplaysTheRingAndFollowsWithNothingLostOrRepeated(t *testing.T) {
+	t.Parallel()
 	dir, _ := hostFixture(t)
 	d1 := daemonAt(t, dir)
 	task := cardAt(t, d1, "reattach-replay", t.TempDir())
@@ -189,6 +190,7 @@ func TestReattachReplaysTheRingAndFollowsWithNothingLostOrRepeated(t *testing.T)
 }
 
 func TestAResizeAfterReattachIsCutBeforeAnyByteAtTheNewSize(t *testing.T) {
+	t.Parallel()
 	dir, _ := hostFixture(t)
 	d1 := daemonAt(t, dir)
 	task := cardAt(t, d1, "reattach-resize", t.TempDir())
@@ -240,6 +242,7 @@ func TestAResizeAfterReattachIsCutBeforeAnyByteAtTheNewSize(t *testing.T) {
 }
 
 func TestEachVerbReachesOnlyTheRunIDItNames(t *testing.T) {
+	t.Parallel()
 	dir, _ := hostFixture(t)
 	d := daemonAt(t, dir)
 	task := cardAt(t, d, "runner-and-shell", t.TempDir())
@@ -293,6 +296,7 @@ func TestEachVerbReachesOnlyTheRunIDItNames(t *testing.T) {
 }
 
 func TestALiveExitIsFiledOnceAndCollectedAfterIt(t *testing.T) {
+	t.Parallel()
 	dir, _ := hostFixture(t)
 	d := daemonAt(t, dir)
 	task := cardAt(t, d, "live-exit", t.TempDir())
@@ -360,6 +364,7 @@ func TestACrashBetweenFilingAndCollectingFilesNothingTwice(t *testing.T) {
 // A runner that dies inside the startup window while no daemon is connected must leave the card as the live path
 // would have: the same tail and the same `why`.
 func TestAStartupFailureWhileNoDaemonIsConnectedRecordsWhatTheLivePathDoes(t *testing.T) {
+	t.Parallel()
 	dir, _ := hostFixture(t)
 	d1 := daemonAt(t, dir)
 	const say = "echo boom-message; exit 7"
@@ -398,6 +403,7 @@ func TestAStartupFailureWhileNoDaemonIsConnectedRecordsWhatTheLivePathDoes(t *te
 }
 
 func TestAnUnreachableHostFallsBackToAnInProcessTerminal(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir() // no host here
 	d := daemonAt(t, dir)
 	d.ph.opts = ptyhost.StartOptions{Exe: filepath.Join(dir, "no-such-atrium.exe")}
@@ -426,6 +432,7 @@ func TestAnUnreachableHostFallsBackToAnInProcessTerminal(t *testing.T) {
 
 // An old exited run and a newer live one on the same card: the old end is history, and the card is not dead.
 func TestAnOldExitedRunDoesNotKillACardWithANewerLiveOne(t *testing.T) {
+	t.Parallel()
 	dir, _ := hostFixture(t)
 	d1 := daemonAt(t, dir)
 	task := cardAt(t, d1, "old-and-new", t.TempDir())
@@ -462,6 +469,7 @@ func TestAnOldExitedRunDoesNotKillACardWithANewerLiveOne(t *testing.T) {
 // Off is the rollback: a host started while the setting was on keeps its runners after it is turned off, and the
 // next start must pick them up rather than leave them to be started a second time.
 func TestAHostStillHoldingRunnersIsReattachedWithTheSettingOff(t *testing.T) {
+	t.Parallel()
 	dir, _ := hostFixture(t)
 	d1 := daemonAt(t, dir)
 	task := cardAt(t, d1, "setting-off", t.TempDir())
@@ -490,6 +498,7 @@ func TestAHostStillHoldingRunnersIsReattachedWithTheSettingOff(t *testing.T) {
 
 // A Spawn whose reply never came leaves a run nobody knows the id of. The fallback must not be a second copy.
 func TestAStartThatDidNotAnswerLeavesNoRunBehindTheFallback(t *testing.T) {
+	t.Parallel()
 	dir, _ := hostFixture(t)
 	d := daemonAt(t, dir)
 	task := cardAt(t, d, "stray", t.TempDir())
@@ -507,6 +516,7 @@ func TestAStartThatDidNotAnswerLeavesNoRunBehindTheFallback(t *testing.T) {
 
 // The run this daemon already holds is not a stray.
 func TestStrayCleanupSparesTheRunThisDaemonHolds(t *testing.T) {
+	t.Parallel()
 	dir, _ := hostFixture(t)
 	d := daemonAt(t, dir)
 	task := cardAt(t, d, "spared", t.TempDir())

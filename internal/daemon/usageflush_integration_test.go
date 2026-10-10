@@ -39,6 +39,7 @@ func (f *usageFix) settled(n int) {
 }
 
 func TestFlushedRecordsWithoutAStop(t *testing.T) {
+	t.Parallel()
 	f := newUsageFix(t)
 	f.u.settle = 0
 	f.line(f.base, "m1", 0, 1000, 9000, 50, false)
@@ -49,6 +50,7 @@ func TestFlushedRecordsWithoutAStop(t *testing.T) {
 
 // Report, then Stop, then an exit: each reply once.
 func TestReportThenStopThenExitCountEachReplyOnce(t *testing.T) {
+	t.Parallel()
 	f := newUsageFix(t)
 	f.u.settle = 0
 	f.line(f.base, "m1", 0, 1000, 9000, 50, false)
@@ -63,6 +65,7 @@ func TestReportThenStopThenExitCountEachReplyOnce(t *testing.T) {
 
 // Stop first, then the report, then the exit.
 func TestStopThenReportThenExitCountEachReplyOnce(t *testing.T) {
+	t.Parallel()
 	f := newUsageFix(t)
 	f.u.settle = 0
 	f.line(f.base, "m1", 0, 1000, 9000, 50, false)
@@ -77,6 +80,7 @@ func TestStopThenReportThenExitCountEachReplyOnce(t *testing.T) {
 
 // A flush leaves the turn open: the Stop that closes it still carries its cause.
 func TestFlushedLeavesTheTurnsCauseForTheStop(t *testing.T) {
+	t.Parallel()
 	f := newUsageFix(t)
 	f.u.settle = 0
 	f.u.prompted(f.task.ID, store.UsageSay)
@@ -97,6 +101,7 @@ func TestFlushedLeavesTheTurnsCauseForTheStop(t *testing.T) {
 // No transcript, no resume id, or a nil tracker: nothing recorded and nothing
 // raised.
 func TestFlushedWithoutATranscriptIsQuiet(t *testing.T) {
+	t.Parallel()
 	f := newUsageFix(t)
 	f.u.settle = 0
 	f.line(f.base, "m1", 0, 1000, 9000, 50, false)
@@ -116,6 +121,7 @@ func TestFlushedWithoutATranscriptIsQuiet(t *testing.T) {
 
 // Subagent files are read on a flush as on a Stop.
 func TestFlushedReadsSubagentFiles(t *testing.T) {
+	t.Parallel()
 	f := newUsageFix(t)
 	f.u.settle = 0
 	f.line(f.base, "m1", 0, 1000, 9000, 50, false)
@@ -151,6 +157,7 @@ func siteDaemon(t *testing.T) (*Daemon, *usageFix) {
 }
 
 func TestAReportRecordsTheWorkersUsage(t *testing.T) {
+	t.Parallel()
 	d, f := siteDaemon(t)
 	if _, _, err := d.finish(f.task, FinishRequest{TaskID: f.task.ID, Status: ReportDone, Recap: "done", NoCommit: "nothing to commit"}); err != nil {
 		t.Fatal(err)
@@ -159,6 +166,7 @@ func TestAReportRecordsTheWorkersUsage(t *testing.T) {
 }
 
 func TestASessionEndRecordsTheWorkersUsage(t *testing.T) {
+	t.Parallel()
 	d, f := siteDaemon(t)
 	if err := d.onSession(SessionEvent{Event: "end", TaskID: f.task.ID, Agent: "worker", Reason: "other"}); err != nil {
 		t.Fatal(err)
@@ -167,12 +175,14 @@ func TestASessionEndRecordsTheWorkersUsage(t *testing.T) {
 }
 
 func TestARunnerExitRecordsTheWorkersUsage(t *testing.T) {
+	t.Parallel()
 	d, f := siteDaemon(t)
 	d.fileExit(runExit{taskID: f.task.ID, runID: "run-x", code: 0, lived: time.Hour})
 	f.settled(1)
 }
 
 func TestATerminateRecordsTheWorkersUsage(t *testing.T) {
+	t.Parallel()
 	d, f := siteDaemon(t)
 	if err := d.Kill(f.task.ID); err != nil {
 		t.Skipf("kill of a stand-in pid: %v", err)

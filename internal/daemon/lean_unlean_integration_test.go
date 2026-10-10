@@ -71,6 +71,7 @@ func startedLean(t *testing.T, d *Daemon, id string) bool {
 
 // The control: with nothing said, the card decides, and this one is lean.
 func TestALeanCardStartsLeanWhenNothingSaysOtherwise(t *testing.T) {
+	t.Parallel()
 	_, card, h := unleanDaemon(t)
 	w := launchOnto(h, card, "")
 	if w.Code == http.StatusOK || !strings.Contains(w.Body.String(), "cannot start lean") {
@@ -81,6 +82,7 @@ func TestALeanCardStartsLeanWhenNothingSaysOtherwise(t *testing.T) {
 // Path one: `lean: false` on the launch wins over the card, and takes the lean
 // tags off it so the next reopen is not lean either.
 func TestLeanFalseStartsALeanCardWithTheFullSetup(t *testing.T) {
+	t.Parallel()
 	d, card, h := unleanDaemon(t)
 	w := launchOnto(h, card, `,"lean":false`)
 	if w.Code != http.StatusOK {
@@ -102,6 +104,7 @@ func TestLeanFalseStartsALeanCardWithTheFullSetup(t *testing.T) {
 // Path two: a tag edit that takes atrium:lean off clears lean for the next
 // start, with no lean field on that start.
 func TestATagEditThatDropsLeanClearsIt(t *testing.T) {
+	t.Parallel()
 	d, card, h := unleanDaemon(t)
 	if w := send(h, "PATCH", "/v1/tasks/"+card.ID, `{"tags":["`+OriginAgentTag+`"]}`); w.Code != http.StatusOK {
 		t.Fatalf("the tag edit answered %d: %s", w.Code, w.Body)
@@ -122,6 +125,7 @@ func TestATagEditThatDropsLeanClearsIt(t *testing.T) {
 // A card whose only tag was the lean one comes out with none, not with it kept
 // because the list was empty.
 func TestLeanFalseClearsACardWhoseOnlyTagWasLean(t *testing.T) {
+	t.Parallel()
 	d, card, h := unleanDaemon(t)
 	if err := d.st.SetTags(card.ID, []string{LeanTag}); err != nil {
 		t.Fatal(err)

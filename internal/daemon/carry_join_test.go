@@ -11,6 +11,7 @@ import (
 // cut where that reprint begins, so the joined replay holds the older history
 // once and the recent part once.
 func TestTheSavedHistoryIsCutWhereTheReprintBegins(t *testing.T) {
+	t.Parallel()
 	old := []byte("banner\r\n● first answer, long enough to be an anchor line\r\n" +
 		"● second answer, which the reprint repeats from here on\r\nmore of it\r\n")
 	live := []byte("\x1b[2J\x1b[H Claude Code v2\r\n● second\x1b[1Canswer, which the reprint repeats\r\n" +
@@ -28,6 +29,7 @@ func TestTheSavedHistoryIsCutWhereTheReprintBegins(t *testing.T) {
 // No line in common keeps the saved bytes whole. A duplicate can be read past,
 // a gap cannot be read at all.
 func TestNoMatchKeepsTheSavedHistoryWhole(t *testing.T) {
+	t.Parallel()
 	old := []byte("● something the reprint never mentions again at all\r\n")
 	live := []byte("● an entirely different conversation line here\r\n")
 	if cut := reprintCut(old, live); cut != len(old) {
@@ -38,6 +40,7 @@ func TestNoMatchKeepsTheSavedHistoryWhole(t *testing.T) {
 // The joined replay puts the saved run at its own width and moves the live
 // ring's marks past it.
 func TestTheJoinedReplayKeepsEachRunsWidth(t *testing.T) {
+	t.Parallel()
 	r := &runner{carried: &carryover{cols: 188, bytes: []byte("● old line that only the saved file holds\r\n")}}
 	live := []byte("● live line from the new process, long enough\r\n")
 	out, cuts, trimmed, _ := r.withCarried(live, []sizeCut{{0, 164, 0}}, 164, 1<<20, false)
@@ -66,6 +69,7 @@ func savedLines(n int) []byte {
 // A scrollback setting smaller than the replay bound still cuts first, and says
 // so the way it always has.
 func TestASmallScrollbackSettingStillCutsTheJoin(t *testing.T) {
+	t.Parallel()
 	r := &runner{carried: &carryover{cols: 188, bytes: savedLines(1000)}}
 	live := []byte("● live line from the new process, long enough\r\n")
 	out, _, trimmed, held := r.withCarried(live, nil, 164, 16<<10, false)

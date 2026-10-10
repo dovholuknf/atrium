@@ -33,6 +33,7 @@ func dismissedCount(out map[string]any) float64 {
 // the board falls back to the ask field when no waiting reason is set, so
 // every later turn-end on that card announced itself as a question.
 func TestDismissingTakesEveryQuestionOffWithoutSayingAnything(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	card := cardFor(t, d, "dotfiles")
 
@@ -102,6 +103,7 @@ func TestDismissingTakesEveryQuestionOffWithoutSayingAnything(t *testing.T) {
 // appears when there is something to dismiss, and a second click on a menu
 // drawn a moment ago must not fail.
 func TestDismissingNothingIsFine(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	card := cardFor(t, d, "quiet")
 
@@ -121,6 +123,7 @@ func TestDismissingNothingIsFine(t *testing.T) {
 // decision either way, and leaving peer questions behind would mean the menu
 // said it cleared them and did not.
 func TestDismissingAlsoTakesOffAQuestionPutToAPeer(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	card := cardFor(t, d, "asker")
 	// The peer has to be a session atrium knows, or the ask is refused before

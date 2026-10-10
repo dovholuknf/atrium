@@ -43,6 +43,7 @@ func aThrowaway(t *testing.T, d *Daemon) *store.Task {
 
 // Cleanup removes both the temporary directory and the card.
 func TestTheEndOfAThrowawayTakesItsDirectoryAndItsCard(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	task := aThrowaway(t, d)
 
@@ -58,6 +59,7 @@ func TestTheEndOfAThrowawayTakesItsDirectoryAndItsCard(t *testing.T) {
 
 // Ordinary cards and their directories must survive the same exit handler.
 func TestAnOrdinaryCardIsNotThrownAway(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	dir := t.TempDir()
 	task, _, err := d.st.Register(store.Observed{
@@ -80,6 +82,7 @@ func TestAnOrdinaryCardIsNotThrownAway(t *testing.T) {
 // Refuse cleanup outside atrium's temporary directory, even if the card is
 // marked throwaway. Keep the card so the error remains visible.
 func TestAThrowawayPointingSomewhereRealIsRefused(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	dir := t.TempDir()
 	task, _, err := d.st.Register(store.Observed{
@@ -104,6 +107,7 @@ func TestAThrowawayPointingSomewhereRealIsRefused(t *testing.T) {
 
 // Promotion moves the directory after the session exits.
 func TestAPromotedThrowawayMovesInsteadOfGoing(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	task := aThrowaway(t, d)
 	to := filepath.Join(t.TempDir(), "kept")
@@ -131,6 +135,7 @@ func TestAPromotedThrowawayMovesInsteadOfGoing(t *testing.T) {
 
 // Do not reopen throwaways on restart, since their directories are deleted (B2-06).
 func TestAThrowawayIsNotReopened(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	task := aThrowaway(t, d)
 	other, _, err := d.st.Register(store.Observed{
@@ -155,6 +160,7 @@ func TestAThrowawayIsNotReopened(t *testing.T) {
 
 // Startup cleanup handles leftovers from a daemon killed before awaitExit.
 func TestAThrowawayLeftBySomethingThatDiedIsSweptAtStartup(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	task := aThrowaway(t, d)
 

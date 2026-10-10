@@ -16,6 +16,7 @@ import (
 // A say to a card that finished with no process left is KEPT on the card, stored before the sender is answered, and
 // nothing is held for its line. See keep.go.
 func TestASayToAGoneSessionIsKept(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	target, _, _ := peerPair(t, d)
 	t.Cleanup(func() { d.pending.stopAll() })
@@ -55,6 +56,7 @@ func TestASayToAGoneSessionIsKept(t *testing.T) {
 // A card still running after it reported done is somebody to talk to, and a
 // card that is not over is never gone whatever its pid says.
 func TestOnlyAnOverCardWithNoProcessIsGone(t *testing.T) {
+	t.Parallel()
 	for _, c := range []struct {
 		status string
 		pid    int
@@ -76,6 +78,7 @@ func TestOnlyAnOverCardWithNoProcessIsGone(t *testing.T) {
 // The fixtures' dead pid is dead on this platform too. Pid 1 passed on Windows
 // and failed on Linux, where it is init.
 func TestTheFixturePidIsDeadHere(t *testing.T) {
+	t.Parallel()
 	if processAlive(impossiblePID) {
 		t.Fatalf("pid %d is alive here, so cardFor's card has a process", impossiblePID)
 	}
@@ -85,6 +88,7 @@ func TestTheFixturePidIsDeadHere(t *testing.T) {
 // it is delivered through the same path as a say to a running card, whatever pid
 // the card has recorded.
 func TestASayToADoneCardWithALiveTerminalIsDelivered(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	target, _, f := peerPair(t, d)
 	t.Cleanup(func() { d.pending.stopAll() })
@@ -113,6 +117,7 @@ func TestASayToADoneCardWithALiveTerminalIsDelivered(t *testing.T) {
 // The same card is reachable by `atrium tell`, and stops being once its session
 // has ended even though the runner lingers.
 func TestTellAgreesWithSayAboutADoneCard(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	peerCard(t, d, "alice")
 	bob := peerCard(t, d, "bob")
@@ -137,6 +142,7 @@ func TestTellAgreesWithSayAboutADoneCard(t *testing.T) {
 // to set `held_for: line` again, for as long as the runner stayed. It is
 // dropped instead, and the message stays queued for a resumed session.
 func TestAHeldMessageOnAnEndedSessionIsDropped(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	target, r, _ := peerPair(t, d)
 	t.Cleanup(func() { d.pending.stopAll() })

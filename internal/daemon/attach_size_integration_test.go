@@ -86,6 +86,7 @@ func sizedSession(t *testing.T, d *Daemon, taskID string, cols, rows int) (*fake
 }
 
 func TestTheAttachingViewersSizeBecomesThePTYs(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	f, r := sizedSession(t, d, "size-attach", 120, 30)
 
@@ -97,6 +98,7 @@ func TestTheAttachingViewersSizeBecomesThePTYs(t *testing.T) {
 // is raises SIGWINCH and every viewer repaints, so the second attach of a tab
 // that was just switched away and back must not cost one.
 func TestReattachingAtTheSameSizeDoesNotResize(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	f, r := sizedSession(t, d, "size-reattach", 120, 30)
 
@@ -118,6 +120,7 @@ func TestReattachingAtTheSameSizeDoesNotResize(t *testing.T) {
 // end up at the pane's, not stay at the saved one, or the runner draws for a
 // width nobody is looking at. `launchWidthFor` is what reopenSaved's launch asks.
 func TestARestartedSessionFollowsThePaneNotTheSavedWidth(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	task := plainTask(t, d, "size-restart")
 	if err := d.st.SetLastCols(task.ID, 160); err != nil {
@@ -137,6 +140,7 @@ func TestARestartedSessionFollowsThePaneNotTheSavedWidth(t *testing.T) {
 // pair, a narrower second viewer moves nothing, and the wider one leaving hands
 // the width back to the one that remains.
 func TestASecondViewerSizesThePTYBetweenTheTwo(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	f, r := sizedSession(t, d, "size-two", 120, 30)
 

@@ -13,6 +13,7 @@ import (
 // should replay. The attach keeps the NEWEST part, says where the rest is, and
 // does not blame the scrollback setting, which is not the reason.
 func TestAnAttachReplaysOnlyTheNewestPreRestartHistory(t *testing.T) {
+	t.Parallel()
 	old := savedLines(3 * carryReplayMax / 80)
 	r := &runner{carried: &carryover{cols: 188, bytes: old}}
 	live := []byte("● live line from the new process, long enough\r\n")
@@ -42,6 +43,7 @@ func TestAnAttachReplaysOnlyTheNewestPreRestartHistory(t *testing.T) {
 // The reprint is still found when the saved file is far bigger than what is
 // searched, because it repeats the END of what was saved.
 func TestTheReprintIsFoundAtTheEndOfABigSavedFile(t *testing.T) {
+	t.Parallel()
 	old := append(savedLines(3*carryReplayMax/80),
 		"● the answer the resumed session reprints, long enough to anchor\r\nrest of it\r\n"...)
 	live := []byte("● the answer the resumed session reprints, long enough to anchor\r\nrest of it\r\nnew\r\n")
@@ -55,6 +57,7 @@ func TestTheReprintIsFoundAtTheEndOfABigSavedFile(t *testing.T) {
 // Against a real saved file and a real live ring, when both are handed in.
 // ATRIUM_CARRY_OLD is a `.scrollback` file, ATRIUM_CARRY_LIVE the raw ring.
 func TestRealCarryJoinFindsTheReprint(t *testing.T) {
+	t.Parallel()
 	oldPath, livePath := os.Getenv("ATRIUM_CARRY_OLD"), os.Getenv("ATRIUM_CARRY_LIVE")
 	if oldPath == "" || livePath == "" {
 		t.Skip("set ATRIUM_CARRY_OLD and ATRIUM_CARRY_LIVE to run against real data")

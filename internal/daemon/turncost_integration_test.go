@@ -41,6 +41,7 @@ func (f *usageFix) reportOf() *store.CostReport {
 // The turn after a delivery is read at the Stop and costed on it: tokens from the replies once per message id, an
 // estimated dollar figure, and the reply an ack. A turn that used a tool is work.
 func TestTurnCostLandsOnTheDelivery(t *testing.T) {
+	t.Parallel()
 	f := newUsageFix(t)
 	f.u.launched(f.task.ID, false)
 	text := func(s string) map[string]any { return map[string]any{"type": "text", "text": s} }

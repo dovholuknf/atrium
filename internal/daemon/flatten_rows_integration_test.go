@@ -20,6 +20,7 @@ func block(rows ...string) string {
 }
 
 func TestARowJumpBecomesALineEnding(t *testing.T) {
+	t.Parallel()
 	in := block(
 		`1 #!/usr/bin/env bash`,
 		`2 out="D:/tmp/b2-01"`,
@@ -52,6 +53,7 @@ func TestARowJumpBecomesALineEnding(t *testing.T) {
 
 // The column becomes leading spaces, so an indented row comes back indented.
 func TestAColumnBecomesIndent(t *testing.T) {
+	t.Parallel()
 	got := string(flatten([]byte("top\x1b[2;5Hindented")))
 	if !strings.Contains(got, "\n    indented") {
 		t.Fatalf("the indent was lost: %q", got)
@@ -60,6 +62,7 @@ func TestAColumnBecomesIndent(t *testing.T) {
 
 // Backward and same-row moves must not overwrite previously emitted output.
 func TestARowJumpBackwardsDrawsNothing(t *testing.T) {
+	t.Parallel()
 	in := "\x1b[5;1Hfifth row" + "\x1b[2;1Hsecond row, drawn later"
 
 	got := string(flatten([]byte(in)))
@@ -74,6 +77,7 @@ func TestARowJumpBackwardsDrawsNothing(t *testing.T) {
 
 // A forward jump contributes one line ending regardless of its distance.
 func TestARowJumpIsAlwaysOneBreak(t *testing.T) {
+	t.Parallel()
 	for _, in := range []string{
 		"top\x1b[2;1Hnext",   // the very next row
 		"top\x1b[8;1Hnext",   // a few rows down
@@ -92,6 +96,7 @@ func TestARowJumpIsAlwaysOneBreak(t *testing.T) {
 // Cursor moves must not add blank lines. Preserve a real newline between
 // blocks; repeated blank lines are tested separately.
 func TestARowMoveAddsNoBlankLine(t *testing.T) {
+	t.Parallel()
 	got := string(flatten([]byte("one\r\n\r\ntwo")))
 	if n := strings.Count(got, "\n"); n != 2 {
 		t.Fatalf("the separating blank line was changed: %q", got)
@@ -104,6 +109,7 @@ func TestARowMoveAddsNoBlankLine(t *testing.T) {
 // A real newline advances the row too, or the next positioning computes its
 // gap from a row the text has already passed.
 func TestARealNewlineAdvancesTheRow(t *testing.T) {
+	t.Parallel()
 	got := string(flatten([]byte("one\r\ntwo\x1b[2;1Hthree")))
 	// Row 2 has already been reached by the newline, so this positioning is
 	// backwards and draws nothing.
@@ -114,6 +120,7 @@ func TestARealNewlineAdvancesTheRow(t *testing.T) {
 
 // A private mode is not a position, whatever its final byte looks like.
 func TestAPrivateModeIsNotAPosition(t *testing.T) {
+	t.Parallel()
 	got := string(flatten([]byte("kept\x1b[?1049hstill kept")))
 	if strings.Contains(got, "\n") {
 		t.Fatalf("a private mode was read as a cursor move: %q", got)
@@ -126,6 +133,7 @@ func TestAPrivateModeIsNotAPosition(t *testing.T) {
 // Collapse repeated blank rows left by screen redraws while keeping a
 // single blank line between blocks.
 func TestARunOfBlankLinesBecomesOne(t *testing.T) {
+	t.Parallel()
 	got := string(flatten([]byte("above\r\n\r\n\r\n\r\n\r\n\r\n\r\nbelow")))
 	if n := strings.Count(got, "\n"); n != 2 {
 		t.Fatalf("a run of seven blank lines came out as %d line endings: %q", n, got)
@@ -138,6 +146,7 @@ func TestARunOfBlankLinesBecomesOne(t *testing.T) {
 // ONE IS KEPT. A blank line between blocks is how the runner separates them,
 // and removing it runs them together.
 func TestOneBlankLineSurvives(t *testing.T) {
+	t.Parallel()
 	got := string(flatten([]byte("above\r\n\r\nbelow")))
 	if !strings.Contains(got, "above\r\n\r\nbelow") {
 		t.Fatalf("the separating blank line was removed: %q", got)

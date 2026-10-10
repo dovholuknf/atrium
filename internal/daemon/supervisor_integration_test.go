@@ -14,6 +14,7 @@ import (
 )
 
 func TestRingBufferKeepsTheTail(t *testing.T) {
+	t.Parallel()
 	r := newRing(16, testCols)
 
 	r.Write([]byte("hello"))
@@ -42,6 +43,7 @@ func TestRingBufferKeepsTheTail(t *testing.T) {
 // A single write larger than the whole buffer keeps its tail, not its head.
 // The end of a huge burst is the part that still matters.
 func TestRingBufferHandlesOversizedWrite(t *testing.T) {
+	t.Parallel()
 	r := newRing(8, testCols)
 	r.Write(bytes.Repeat([]byte("x"), 20))
 	r.Write([]byte("\nEND"))
@@ -61,6 +63,7 @@ func TestRingBufferHandlesOversizedWrite(t *testing.T) {
 // introducer is gone, so the terminal prints the tail of it: `2;34Hdone` typed
 // across the screen instead of a cursor move.
 func TestASnapshotNeverStartsInsideAnEscapeSequence(t *testing.T) {
+	t.Parallel()
 	r := newRing(16, testCols)
 	r.Write([]byte("first line\n"))
 	// Lands so that the retained bytes begin part way through the escape.
@@ -79,6 +82,7 @@ func TestASnapshotNeverStartsInsideAnEscapeSequence(t *testing.T) {
 // severed rune renders as a replacement character, and a terminal reading a
 // continuation byte on its own can swallow what follows it.
 func TestASnapshotNeverStartsInsideARune(t *testing.T) {
+	t.Parallel()
 	r := newRing(24, testCols)
 	r.Write([]byte("one\n"))
 	r.Write([]byte("héllo wörld ünicode\n"))
@@ -92,6 +96,7 @@ func TestASnapshotNeverStartsInsideARune(t *testing.T) {
 // That is megabytes of one line redrawing itself, which has nowhere safe to
 // start and is about to be drawn again anyway.
 func TestOutputWithNoLineBoundaryIsNotShippedHalfway(t *testing.T) {
+	t.Parallel()
 	r := newRing(8, testCols)
 	r.Write([]byte("\x1b[1;1Hprogress bar with no newline anywhere"))
 	if got := r.Snapshot(); len(got) != 0 {
@@ -100,6 +105,7 @@ func TestOutputWithNoLineBoundaryIsNotShippedHalfway(t *testing.T) {
 }
 
 func TestTailReturnsTheEndOfAWrappedRing(t *testing.T) {
+	t.Parallel()
 	r := newRing(64, testCols)
 	for i := 0; i < 40; i++ {
 		r.Write([]byte("line of output\n"))
@@ -120,6 +126,7 @@ func TestTailReturnsTheEndOfAWrappedRing(t *testing.T) {
 // overwritten what came before, and asking for more than it holds must not
 // read whatever happens to be in the slice.
 func TestTailNeverReachesPastWhatIsRetained(t *testing.T) {
+	t.Parallel()
 	r := newRing(32, testCols)
 	r.Write([]byte("this line is overwritten by what follows it\n"))
 	r.Write([]byte("the newest output\n"))
@@ -141,6 +148,7 @@ func TestTailNeverReachesPastWhatIsRetained(t *testing.T) {
 // A ring bigger than what has been written to it returns all of it, rather
 // than a short read or a panic reaching back before the start of the stream.
 func TestTailOfALightlyUsedRingReturnsEverything(t *testing.T) {
+	t.Parallel()
 	r := newRing(1<<20, testCols)
 	r.Write([]byte("only a little output\n"))
 	if got := string(r.Tail(64 << 10)); got != "only a little output\n" {
@@ -219,6 +227,7 @@ var sink []byte
 // So the output comes back and `widths` says what it was drawn for. The caller
 // decides what to say; `attach.go` says it.
 func TestOutputComposedAtAnotherWidthComesBackLabelled(t *testing.T) {
+	t.Parallel()
 	r := newRing(1024, 80)
 	r.Write([]byte("an hour of narrow output\n"))
 
@@ -238,6 +247,7 @@ func TestOutputComposedAtAnotherWidthComesBackLabelled(t *testing.T) {
 // width before any output is composed at it, so the trailing run is empty and
 // a naive read of "the last mark" returns nothing at all.
 func TestAResizeWithNoOutputAfterItStillReplaysWhatCameBefore(t *testing.T) {
+	t.Parallel()
 	r := newRing(1024, 80)
 	r.Write([]byte("an hour of narrow output\n"))
 	r.SetWidth(200)
@@ -254,6 +264,7 @@ func TestAResizeWithNoOutputAfterItStillReplaysWhatCameBefore(t *testing.T) {
 // The ordinary attach, which none of this is allowed to make worse: one width,
 // and it is the one in force.
 func TestOutputComposedAtThisWidthIsReplayedWhole(t *testing.T) {
+	t.Parallel()
 	r := newRing(1024, 80)
 	r.Write([]byte("an hour of narrow output\n"))
 
@@ -275,6 +286,7 @@ func TestOutputComposedAtThisWidthIsReplayedWhole(t *testing.T) {
 //
 // Both halves come back now, and `widths` names both.
 func TestBothSidesOfAResizeComeBack(t *testing.T) {
+	t.Parallel()
 	r := newRing(1024, 80)
 	r.Write([]byte("narrow, drawn before the drag\n"))
 	r.SetWidth(200)
@@ -301,6 +313,7 @@ func TestBothSidesOfAResizeComeBack(t *testing.T) {
 // scrollback. The widths are reported in the order they occur so the note can
 // say the session was resized rather than name one width for all of it.
 func TestAWidthComingBackKeepsEveryStretch(t *testing.T) {
+	t.Parallel()
 	r := newRing(1024, 80)
 	r.Write([]byte("first narrow stretch\n"))
 	r.SetWidth(200)
@@ -323,6 +336,7 @@ func TestAWidthComingBackKeepsEveryStretch(t *testing.T) {
 // both read. `setViewport` recomputes the agreed size on every frame, and a
 // browser sends one whenever anything on the page moves.
 func TestAgreeingOnTheSizeAgainDoesNotSplitTheRun(t *testing.T) {
+	t.Parallel()
 	r := newRing(1024, 80)
 	r.Write([]byte("before\n"))
 	r.SetWidth(80)
@@ -345,6 +359,7 @@ func TestAgreeingOnTheSizeAgainDoesNotSplitTheRun(t *testing.T) {
 // mark at each step cut the replay to whatever followed the last one: the
 // operator reattached to an hour-old session and found one page.
 func TestAWidthNothingWasWrittenAtIsNotAMark(t *testing.T) {
+	t.Parallel()
 	r := newRing(1024, 200)
 	r.Write([]byte("an hour of two hundred column output\n"))
 	// A narrow window opens and closes without the runner saying anything.
@@ -363,6 +378,7 @@ func TestAWidthNothingWasWrittenAtIsNotAMark(t *testing.T) {
 // And the same when it happens repeatedly, which is what a viewer attaching and
 // detaching in a loop looks like.
 func TestRepeatedEmptyWidthChangesKeepTheRun(t *testing.T) {
+	t.Parallel()
 	r := newRing(1024, 200)
 	r.Write([]byte("kept\n"))
 	for i := 0; i < 5; i++ {
@@ -383,6 +399,7 @@ func TestRepeatedEmptyWidthChangesKeepTheRun(t *testing.T) {
 // narrow, write, wide again is a real stretch of eighty column output in the
 // middle, and the note has to be able to say so.
 func TestAWidthThatWasWrittenAtIsStillAMark(t *testing.T) {
+	t.Parallel()
 	r := newRing(1024, 200)
 	r.Write([]byte("wide\n"))
 	r.SetWidth(80)
@@ -401,6 +418,7 @@ func TestAWidthThatWasWrittenAtIsStillAMark(t *testing.T) {
 // A day of dragging a window must not leave a mark per drag describing bytes
 // that were overwritten hours ago.
 func TestWidthMarksDoNotGrowWithTheSession(t *testing.T) {
+	t.Parallel()
 	r := newRing(32, 80)
 	for i := 0; i < 500; i++ {
 		r.SetWidth(80 + i%7)
@@ -418,6 +436,7 @@ func TestWidthMarksDoNotGrowWithTheSession(t *testing.T) {
 // what must survive being wrapped past. Losing it would leave the buffer
 // claiming its whole contents were written at whatever width came later.
 func TestTheWidthOfTheOldestRetainedByteIsKept(t *testing.T) {
+	t.Parallel()
 	r := newRing(16, 80)
 	r.SetWidth(200)
 	// Enough to wrap several times over, all of it at two hundred columns.
@@ -442,6 +461,7 @@ func TestTheWidthOfTheOldestRetainedByteIsKept(t *testing.T) {
 // runner had been restarted, and a restart is the thing somebody raising it is
 // trying to survive.
 func TestGrowingTheBufferKeepsEverythingInIt(t *testing.T) {
+	t.Parallel()
 	r := newRing(64, 80)
 	// Past its size, so it has wrapped and the oldest byte is mid-slice.
 	for i := 0; i < 20; i++ {
@@ -478,6 +498,7 @@ func TestGrowingTheBufferKeepsEverythingInIt(t *testing.T) {
 
 // Shrinking has to throw bytes away, so it is refused rather than obeyed.
 func TestShrinkingTheBufferIsRefused(t *testing.T) {
+	t.Parallel()
 	r := newRing(4096, 80)
 	r.Write([]byte("output that must not be dropped by a settings change\n"))
 	r.Grow(16)
@@ -490,6 +511,7 @@ func TestShrinkingTheBufferIsRefused(t *testing.T) {
 // Subscribing after the runner has gone must not hang the caller waiting for
 // output that will never come.
 func TestSubscribeAfterExitClosesImmediately(t *testing.T) {
+	t.Parallel()
 	r := &runner{
 		taskID:   "t",
 		buf:      newRing(64, testCols),
@@ -514,6 +536,7 @@ func TestSubscribeAfterExitClosesImmediately(t *testing.T) {
 // before the loop everything past the first three bytes was dropped and Write
 // reported success.
 func TestWriteFinishesAShortWrite(t *testing.T) {
+	t.Parallel()
 	p := &stubbornPty{most: 3}
 	r := &runner{taskID: "t", pty: p}
 
@@ -532,6 +555,7 @@ func TestWriteFinishesAShortWrite(t *testing.T) {
 // Say is the case where lost bytes become wrong behaviour. The Enter goes
 // whatever happened to the text, so half a prompt gets SUBMITTED.
 func TestSayDeliversTheWholeTextBeforeTheEnter(t *testing.T) {
+	t.Parallel()
 	p := &stubbornPty{most: 4}
 	r := &runner{taskID: "t", pty: p}
 
@@ -544,6 +568,7 @@ func TestSayDeliversTheWholeTextBeforeTheEnter(t *testing.T) {
 }
 
 func TestWriteGivesUpOnAWriterThatMakesNoProgress(t *testing.T) {
+	t.Parallel()
 	r := &runner{taskID: "t", pty: stuckPty{}}
 	if err := r.Write([]byte("anything")); err != io.ErrShortWrite {
 		t.Fatalf("want io.ErrShortWrite, got %v", err)
@@ -553,6 +578,7 @@ func TestWriteGivesUpOnAWriterThatMakesNoProgress(t *testing.T) {
 // Replay only the last frame of a progress line whose counters change
 // between redraws and which has no newline until completion.
 func TestAnInPlaceRunReplaysAsItsLastFrameOnly(t *testing.T) {
+	t.Parallel()
 	r := newRing(4096, 80)
 	r.Write([]byte("the work before it\n"))
 	for i := 0; i < 50; i++ {
@@ -579,6 +605,7 @@ func TestAnInPlaceRunReplaysAsItsLastFrameOnly(t *testing.T) {
 
 // Changing counters must not prevent frames from collapsing.
 func TestFramesThatDifferAreStillOneRun(t *testing.T) {
+	t.Parallel()
 	r := newRing(4096, 80)
 	for i := 0; i < 20; i++ {
 		fmt.Fprintf(r, "Garnishing… %d tokens\r", i)
@@ -596,6 +623,7 @@ func TestFramesThatDifferAreStillOneRun(t *testing.T) {
 
 // Never collapse across newlines; completed lines remain in history.
 func TestCompletedLinesAreNeverCollapsed(t *testing.T) {
+	t.Parallel()
 	r := newRing(4096, 80)
 	for i := 0; i < 5; i++ {
 		fmt.Fprintf(r, "\rstep %d\n", i)
@@ -612,6 +640,7 @@ func TestCompletedLinesAreNeverCollapsed(t *testing.T) {
 // One carriage return in a line is a runner overwriting what it just wrote,
 // not an animation, and what it overwrote stays readable.
 func TestASingleRedrawIsLeftAlone(t *testing.T) {
+	t.Parallel()
 	r := newRing(4096, 80)
 	r.Write([]byte("password: \rpassword: ****\n"))
 

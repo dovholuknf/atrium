@@ -19,6 +19,7 @@ func foundSG4(name string) (RelayResult, error) {
 // FE1, room side: a bare name that misses here is looked up, and the say goes on
 // through the ordinary cross-room path with the room written out.
 func TestABareNameThatMissesHereFallsThroughToTheEverywhereCard(t *testing.T) {
+	t.Parallel()
 	d, f := roomDaemon(t)
 	peerCard(t, d, "sa1")
 	f.find = foundSG4
@@ -38,6 +39,7 @@ func TestABareNameThatMissesHereFallsThroughToTheEverywhereCard(t *testing.T) {
 
 // FE2: a card here wins, and the hub is not asked.
 func TestALocalCardShadowsTheEverywhereOne(t *testing.T) {
+	t.Parallel()
 	d, f := roomDaemon(t)
 	peerCard(t, d, "sa1")
 	peerCard(t, d, "orchestrator")
@@ -54,6 +56,7 @@ func TestALocalCardShadowsTheEverywhereOne(t *testing.T) {
 
 // FE3: two rooms match, so it is refused naming both and nothing is sent.
 func TestTwoEverywhereMatchesAreRefusedAndNothingIsSent(t *testing.T) {
+	t.Parallel()
 	d, f := roomDaemon(t)
 	peerCard(t, d, "sa1")
 	f.find = func(string) (RelayResult, error) {
@@ -72,6 +75,7 @@ func TestTwoEverywhereMatchesAreRefusedAndNothingIsSent(t *testing.T) {
 // FE4: the owning room offline. The hub answers find, and the say after it is
 // held the way a typed name@room is.
 func TestAnEverywhereCardOnAnOfflineRoomIsHeld(t *testing.T) {
+	t.Parallel()
 	d, f := roomDaemon(t)
 	peerCard(t, d, "sa1")
 	f.find = foundSG4
@@ -90,6 +94,7 @@ func TestAnEverywhereCardOnAnOfflineRoomIsHeld(t *testing.T) {
 
 // FE5: the hub not answering is today's 404 with the note, and nothing held.
 func TestAHubThatDoesNotAnswerIsANoteOnTheMiss(t *testing.T) {
+	t.Parallel()
 	d, f := roomDaemon(t)
 	peerCard(t, d, "sa1")
 	f.find = func(string) (RelayResult, error) { return RelayResult{}, ErrRelayDown }
@@ -104,6 +109,7 @@ func TestAHubThatDoesNotAnswerIsANoteOnTheMiss(t *testing.T) {
 
 // An old hub refuses the op, which is the same 404 with its own note.
 func TestAnOldHubIsANoteOnTheMiss(t *testing.T) {
+	t.Parallel()
 	for name, find := range map[string]func(string) (RelayResult, error){
 		"refused the kind": func(string) (RelayResult, error) { return RelayResult{}, ErrRelayOld },
 		"unknown op": func(string) (RelayResult, error) {
@@ -125,6 +131,7 @@ func TestAnOldHubIsANoteOnTheMiss(t *testing.T) {
 
 // A miss the hub also has no card for carries the hub's list.
 func TestAMissCarriesTheHubsEverywhereList(t *testing.T) {
+	t.Parallel()
 	d, f := roomDaemon(t)
 	peerCard(t, d, "sa1")
 	f.find = func(string) (RelayResult, error) {
@@ -138,6 +145,7 @@ func TestAMissCarriesTheHubsEverywhereList(t *testing.T) {
 
 // The tell door falls through the same way.
 func TestTellFallsThroughToTheEverywhereCard(t *testing.T) {
+	t.Parallel()
 	d, f := roomDaemon(t)
 	peerCard(t, d, "sa1")
 	f.find = foundSG4
@@ -169,6 +177,7 @@ func roomPeers(t *testing.T, d *Daemon, query string) []RemotePeer {
 // the room adds none of them. Today's `rooms:true` answer returns exactly those
 // rows, so forgetting this filter would list every remote peer.
 func TestAnOldHubsPeersAddNothingToTheLocalList(t *testing.T) {
+	t.Parallel()
 	d, f := roomDaemon(t)
 	f.peers = []RemotePeer{
 		{Handle: "a@claude-sg4", Room: "claude-sg4", Card: "claude-sg4~1", Status: "working"},
@@ -185,6 +194,7 @@ func TestAnOldHubsPeersAddNothingToTheLocalList(t *testing.T) {
 
 // A new hub's rows carry the flag and are kept, the rest dropped.
 func TestOnlyTheRowsThatCarryEverywhereAreAppended(t *testing.T) {
+	t.Parallel()
 	d, f := roomDaemon(t)
 	f.peers = []RemotePeer{
 		{Handle: "a@claude-sg4", Room: "claude-sg4", Card: "claude-sg4~1", Status: "working", Everywhere: true},

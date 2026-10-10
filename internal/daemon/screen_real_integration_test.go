@@ -108,12 +108,14 @@ func checkReplays(t *testing.T, f realFile) {
 }
 
 func TestEveryRealSessionReplays(t *testing.T) {
+	t.Parallel()
 	for _, f := range fixtureScrollbacks(t) {
 		checkReplays(t, f)
 	}
 }
 
 func TestLiveEverySessionReplays(t *testing.T) {
+	t.Parallel()
 	for _, f := range liveScrollbacks(t) {
 		checkReplays(t, f)
 	}
@@ -218,6 +220,7 @@ func checkKeepsText(t *testing.T, f realFile, live bool) {
 }
 
 func TestRealSessionsKeepTheirText(t *testing.T) {
+	t.Parallel()
 	for _, f := range fixtureScrollbacks(t) {
 		if f.floor == 0 {
 			continue // the lost-lines capture has its own tests
@@ -227,6 +230,7 @@ func TestRealSessionsKeepTheirText(t *testing.T) {
 }
 
 func TestLiveSessionsKeepTheirText(t *testing.T) {
+	t.Parallel()
 	for _, f := range liveScrollbacks(t) {
 		checkKeepsText(t, f, true)
 	}
@@ -254,11 +258,13 @@ func checkLinearOutput(t *testing.T, name string, small, big []byte, bound int) 
 }
 
 func TestReplayOutputGrowsLinearly(t *testing.T) {
+	t.Parallel()
 	f := largestFixture(t)
 	checkLinearOutput(t, f.name, bytes.Repeat(f.raw, 2), bytes.Repeat(f.raw, 4), 3)
 }
 
 func TestLiveReplayOutputGrowsLinearly(t *testing.T) {
+	t.Parallel()
 	for _, f := range liveScrollbacks(t) {
 		if len(f.raw) < 400_000 {
 			continue
@@ -302,6 +308,7 @@ func checkSpinners(t *testing.T, f realFile) int {
 }
 
 func TestRealSpinnersCollapse(t *testing.T) {
+	t.Parallel()
 	most := 0
 	for _, f := range fixtureScrollbacks(t) {
 		if m := checkSpinners(t, f); m > most {
@@ -315,6 +322,7 @@ func TestRealSpinnersCollapse(t *testing.T) {
 }
 
 func TestLiveSpinnersCollapse(t *testing.T) {
+	t.Parallel()
 	for _, f := range liveScrollbacks(t) {
 		checkSpinners(t, f)
 	}
@@ -367,6 +375,7 @@ func lostSurvivors(t testing.TB) (kept int, inOrder bool, text string) {
 // logs how many of the 300 survived, so the number is visible without being a
 // bar anyone has to clear.
 func TestLostLinesFixtureRenders(t *testing.T) {
+	t.Parallel()
 	kept, _, text := lostSurvivors(t)
 	for _, marker := range []string{lostBefore, lostAfter} {
 		if !strings.Contains(text, marker) {
@@ -384,6 +393,7 @@ func TestLostLinesFixtureRenders(t *testing.T) {
 // That makes it a guard on the renderer, run every time. A capture that really
 // loses lines needs a build without the hold, and belongs to item 74.
 func TestLongReplyThroughResizesKeepsEveryLine(t *testing.T) {
+	t.Parallel()
 	kept, inOrder, _ := lostSurvivors(t)
 	if kept != lostCount || !inOrder {
 		t.Errorf("%s: %d of %d numbered lines survived, in order: %v", lostFixture, kept, lostCount, inOrder)

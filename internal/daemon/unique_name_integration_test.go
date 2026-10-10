@@ -16,6 +16,7 @@ import (
 // own. The orchestrator relaunches doers into the same worktree, so this is the
 // normal case, not an unlucky one.
 func TestLaunchedNameDisambiguatesACollision(t *testing.T) {
+	t.Parallel()
 	live := map[string]bool{}
 	taken := func(n string) (bool, error) { return live[n], nil }
 
@@ -36,6 +37,7 @@ func TestLaunchedNameDisambiguatesACollision(t *testing.T) {
 
 // A run of collisions keeps counting up rather than sticking at -2 forever.
 func TestLaunchedNameCountsPastTheFirstCollision(t *testing.T) {
+	t.Parallel()
 	live := map[string]bool{"atriumx": true, "atriumx-2": true, "atriumx-3": true}
 	taken := func(n string) (bool, error) { return live[n], nil }
 	got, _ := launchedName("", "/work/atriumx", taken)
@@ -47,6 +49,7 @@ func TestLaunchedNameCountsPastTheFirstCollision(t *testing.T) {
 // A LAUNCH TITLE IS PREFERRED OVER THE DIRECTORY LEAF, because the board shows
 // the title and a name slugged from it reads as the same work.
 func TestLaunchedNamePrefersTheTitle(t *testing.T) {
+	t.Parallel()
 	free := func(string) (bool, error) { return false, nil }
 	got, _ := launchedName("Fix the flaky attach test", "/work/atriumx", free)
 	if got != "fix-the-flaky-attach-test" {
@@ -57,6 +60,7 @@ func TestLaunchedNamePrefersTheTitle(t *testing.T) {
 // A title still has to be unique. Two sessions launched with the same title in
 // the same directory get distinct names.
 func TestLaunchedNameDisambiguatesADuplicateTitle(t *testing.T) {
+	t.Parallel()
 	live := map[string]bool{"review-the-pr": true}
 	taken := func(n string) (bool, error) { return live[n], nil }
 	got, _ := launchedName("review the PR", "/work/atriumx", taken)
@@ -66,6 +70,7 @@ func TestLaunchedNameDisambiguatesADuplicateTitle(t *testing.T) {
 }
 
 func TestNameSlug(t *testing.T) {
+	t.Parallel()
 	cases := map[string]string{
 		"Fix the flaky attach test": "fix-the-flaky-attach-test",
 		"  spaced  out  ":           "spaced-out",
@@ -93,6 +98,7 @@ func TestNameSlug(t *testing.T) {
 // status, so a launch titled the same as a finished card was handed that card and
 // re-prompted its old recap. r-028.
 func TestLaunchedNameSkipsADeadCardsName(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	old, _, err := d.st.Register(store.Observed{WireName: "smoke", Worktree: "/work/smoke"})
 	if err != nil {
@@ -108,6 +114,7 @@ func TestLaunchedNameSkipsADeadCardsName(t *testing.T) {
 
 // An ARCHIVED card holds its name too: List skips it, Register does not.
 func TestLaunchedNameSkipsAnArchivedCardsName(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	old, _, err := d.st.Register(store.Observed{WireName: "smoke", Worktree: "/work/smoke"})
 	if err != nil {
@@ -128,6 +135,7 @@ func TestLaunchedNameSkipsAnArchivedCardsName(t *testing.T) {
 // true on any error, so a store that halted mid-launch spun launchedName forever
 // while holding the launch path. r-044.
 func TestLaunchedNameFailsOnAHaltedStore(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	d.st.Close()
 	got, err := d.launchedName("smoke", "/work/smoke")
@@ -138,6 +146,7 @@ func TestLaunchedNameFailsOnAHaltedStore(t *testing.T) {
 
 // The cap is the backstop: a taken func that says true forever fails at it.
 func TestLaunchedNameGivesUpAtTheCap(t *testing.T) {
+	t.Parallel()
 	calls := 0
 	always := func(string) (bool, error) { calls++; return true, nil }
 	got, err := launchedName("smoke", "/work/smoke", always)
@@ -154,6 +163,7 @@ func TestLaunchedNameGivesUpAtTheCap(t *testing.T) {
 
 // A store error from taken is returned, wrapped, and stops the search.
 func TestLaunchedNameReturnsTheStoreError(t *testing.T) {
+	t.Parallel()
 	boom := errors.New("disk gone")
 	calls := 0
 	failing := func(string) (bool, error) { calls++; return false, boom }

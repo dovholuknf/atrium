@@ -192,6 +192,7 @@ func TestShutdownWithAnOpenEventStream(t *testing.T) {
 // A database that cannot be opened is tier one: refuse to start rather than
 // run without durable state.
 func TestRefusesToStartOnBadDatabase(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	// A directory where the file should be makes the open fail.
 	_, err := New(Options{

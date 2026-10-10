@@ -21,6 +21,7 @@ func basicConfig(t *testing.T, user, pass string) AuthConfig {
 // THE PASSWORD IS NEVER STORED. A database somebody takes has to be worth
 // nothing without the guessing.
 func TestThePasswordIsNotKept(t *testing.T) {
+	t.Parallel()
 	c := basicConfig(t, "clint", "correct horse battery staple")
 	if strings.Contains(c.PassHash, "correct") || c.PassHash == "correct horse battery staple" {
 		t.Fatalf("the password is in the hash: %q", c.PassHash)
@@ -35,6 +36,7 @@ func TestThePasswordIsNotKept(t *testing.T) {
 
 // A FRESH SALT EVERY TIME, or a stolen table is worth precomputing against.
 func TestTwoBoardsWithOnePasswordDoNotShareAHash(t *testing.T) {
+	t.Parallel()
 	a := basicConfig(t, "clint", "the same password")
 	b := basicConfig(t, "clint", "the same password")
 	if a.PassSalt == b.PassSalt {
@@ -46,6 +48,7 @@ func TestTwoBoardsWithOnePasswordDoNotShareAHash(t *testing.T) {
 }
 
 func TestTheRightPasswordIsAccepted(t *testing.T) {
+	t.Parallel()
 	c := basicConfig(t, "clint", "hunter2")
 	if !c.checks("clint", "hunter2") {
 		t.Fatal("the configured password was refused")
@@ -53,6 +56,7 @@ func TestTheRightPasswordIsAccepted(t *testing.T) {
 }
 
 func TestAWrongPasswordOrNameIsRefused(t *testing.T) {
+	t.Parallel()
 	c := basicConfig(t, "clint", "hunter2")
 	for _, try := range []struct{ user, pass string }{
 		{"clint", "hunter3"},
@@ -70,6 +74,7 @@ func TestAWrongPasswordOrNameIsRefused(t *testing.T) {
 // Off means off. A configuration carrying a password that is not switched on
 // must not let anybody in, or turning the login off would do nothing.
 func TestAPasswordIsNotCheckedWhenBasicIsOff(t *testing.T) {
+	t.Parallel()
 	c := basicConfig(t, "clint", "hunter2")
 	c.Basic = false
 	if c.checks("clint", "hunter2") {
@@ -81,6 +86,7 @@ func TestAPasswordIsNotCheckedWhenBasicIsOff(t *testing.T) {
 // somebody who configured a password refuses the simple case for missing the
 // complicated one.
 func TestAPasswordAloneIsAReadyConfiguration(t *testing.T) {
+	t.Parallel()
 	if err := basicConfig(t, "clint", "hunter2").ready(); err != nil {
 		t.Fatalf("refused a password-only login: %v", err)
 	}
@@ -88,6 +94,7 @@ func TestAPasswordAloneIsAReadyConfiguration(t *testing.T) {
 
 // And an incomplete one is refused rather than quietly letting everybody in.
 func TestAnIncompletePasswordLoginIsRefused(t *testing.T) {
+	t.Parallel()
 	var noUser AuthConfig
 	noUser = AuthConfig{Enabled: true, Basic: true}
 	if err := setBasicPassword(&noUser, "hunter2"); err != nil {
@@ -107,6 +114,7 @@ func TestAnIncompletePasswordLoginIsRefused(t *testing.T) {
 
 // THE GUARD, end to end over a real request.
 func TestTheGuardAsksForAPasswordAndThenLetsYouIn(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	if err := d.SaveAuth(basicConfig(t, "clint", "hunter2")); err != nil {
 		t.Fatal(err)
@@ -160,6 +168,7 @@ func TestTheGuardAsksForAPasswordAndThenLetsYouIn(t *testing.T) {
 // and a login that arrived on the local one would lock somebody out of their
 // own machine.
 func TestAnUnconfiguredLoginLetsEverythingThrough(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	guarded := d.authGuard(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte("the board"))

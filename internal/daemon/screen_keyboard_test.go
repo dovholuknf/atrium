@@ -15,6 +15,7 @@ import (
 // attach replayed it there: `load this prlandeinspect2it.280` over
 // `Claude Code v2.1.280`.
 func TestKeyboardProtocolSequencesDoNotMoveTheCursor(t *testing.T) {
+	t.Parallel()
 	in := "\x1b[HClaude Code v2.1.280\r\n" +
 		"----------\r\n" +
 		"> \r\n" +
@@ -48,6 +49,7 @@ func TestKeyboardProtocolSequencesDoNotMoveTheCursor(t *testing.T) {
 // The standard sequences sharing those finals still work: `CSI s` and `CSI u`
 // save and restore, and a plain SGR still colours.
 func TestSaveAndRestoreStillWork(t *testing.T) {
+	t.Parallel()
 	in := "top\r\nmid\x1b[s\r\nbottom\x1b[u!"
 	got := string(Replay([]byte(in), "screen", 40, 10))
 	if !strings.Contains(got, "mid!") {

@@ -10,6 +10,7 @@ import (
 
 // Captured frame boundaries use synchronized output with no carriage returns.
 func TestASynchronizedSpinnerCollapses(t *testing.T) {
+	t.Parallel()
 	var b strings.Builder
 	b.WriteString("real work above\r\n")
 	for i := 0; i < 200; i++ {
@@ -36,6 +37,7 @@ func TestASynchronizedSpinnerCollapses(t *testing.T) {
 // Several absolute cursor positions can occur within one frame. They must
 // not count as redraw boundaries or the earlier parts of a frame will be lost.
 func TestAbsolutePositioningIsNotAFrameBoundary(t *testing.T) {
+	t.Parallel()
 	one := "\x1b[?2026h" +
 		"\x1b[43;1H first line of the block" +
 		"\x1b[43;3H second line of the block" +
@@ -55,6 +57,7 @@ func TestAbsolutePositioningIsNotAFrameBoundary(t *testing.T) {
 // double the boundary count and move where the two-boundary threshold falls,
 // so a single frame would start collapsing.
 func TestOneFrameIsLeftAlone(t *testing.T) {
+	t.Parallel()
 	one := frame("Lollygagging… 1 token")
 	if got := string(collapseRedraws([]byte(one))); got != one {
 		t.Fatalf("a single frame was collapsed:\n got %q\nwant %q", got, one)
@@ -64,6 +67,7 @@ func TestOneFrameIsLeftAlone(t *testing.T) {
 // What was already true stays true: a shell-script progress bar uses carriage
 // returns and still collapses.
 func TestACarriageReturnSpinnerStillCollapses(t *testing.T) {
+	t.Parallel()
 	in := "10%\r50%\r99%\r100%\r\ndone\r\n"
 	got := string(collapseRedraws([]byte(in)))
 	if strings.Contains(got, "10%") || strings.Contains(got, "50%") {
@@ -77,6 +81,7 @@ func TestACarriageReturnSpinnerStillCollapses(t *testing.T) {
 // Preserve spacing in this captured table header, which uses cursor-forward
 // instead of literal spaces.
 func TestCursorForwardBecomesSpacing(t *testing.T) {
+	t.Parallel()
 	row := "id" + "\x1b[4C" + "wire_name" + "\x1b[2C" + "status"
 
 	got := string(flatten([]byte(row)))
@@ -91,6 +96,7 @@ func TestCursorForwardBecomesSpacing(t *testing.T) {
 
 // No parameter means one, the same as every other movement sequence.
 func TestCursorForwardDefaultsToOneColumn(t *testing.T) {
+	t.Parallel()
 	if got := string(flatten([]byte("a\x1b[Cb"))); got != "a b" {
 		t.Fatalf("got %q, wanted one space", got)
 	}
@@ -99,6 +105,7 @@ func TestCursorForwardDefaultsToOneColumn(t *testing.T) {
 // The parameter is somebody else's number, so it is bounded. A corrupt one
 // must not become a megabyte of spaces in the middle of history.
 func TestCursorForwardIsBounded(t *testing.T) {
+	t.Parallel()
 	got := string(flatten([]byte("a\x1b[99999999Cb")))
 	if n := strings.Count(got, " "); n > maxSkipColumns {
 		t.Fatalf("%d spaces, which is past the bound", n)
@@ -112,6 +119,7 @@ func TestCursorForwardIsBounded(t *testing.T) {
 // are translated: horizontal moves become spaces and downward row jumps
 // become line breaks. See flatten_rows_test.go.
 func TestMovementsThatCouldReachHistoryAreDropped(t *testing.T) {
+	t.Parallel()
 	for _, seq := range []string{
 		"\x1b[3A",     // up
 		"\x1b[3D",     // back

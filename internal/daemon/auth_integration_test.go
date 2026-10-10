@@ -20,6 +20,7 @@ func okHandler() http.Handler {
 // Unconfigured is a pass-through. Turning sharing on before setting a provider
 // up must leave the board exactly as it was rather than locking it.
 func TestWithNoProviderTheGuardLetsEverythingThrough(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	rec := httptest.NewRecorder()
 	d.authGuard(okHandler()).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/", nil))
@@ -32,6 +33,7 @@ func TestWithNoProviderTheGuardLetsEverythingThrough(t *testing.T) {
 // published handler, so the loopback board, every hook, the CLI and the MCP
 // server are untouched by construction. This asserts the construction.
 func TestTheLocalBoardIsNotWrapped(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	if err := d.SaveAuth(AuthConfig{
 		Enabled: true, Issuer: "https://idp.example/realms/x",
@@ -57,6 +59,7 @@ func TestTheLocalBoardIsNotWrapped(t *testing.T) {
 // question asked first: a browser the provider still knows comes back with a
 // session having seen nothing at all.
 func TestABrowserIsSentToTheProvider(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	if err := d.SaveAuth(AuthConfig{
 		Enabled: true, Issuer: "https://idp.example/realms/x",
@@ -79,6 +82,7 @@ func TestABrowserIsSentToTheProvider(t *testing.T) {
 // page produces an HTML document where JSON was expected, which reads as a
 // corrupt response rather than as a missing session.
 func TestAnApiCallIsRefusedNotRedirected(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	if err := d.SaveAuth(AuthConfig{
 		Enabled: true, Issuer: "https://idp.example/realms/x",
@@ -96,6 +100,7 @@ func TestAnApiCallIsRefusedNotRedirected(t *testing.T) {
 
 // A valid session gets through, and a tampered one does not.
 func TestASessionIsCheckedRatherThanTrusted(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	if err := d.SaveAuth(AuthConfig{
 		Enabled: true, Issuer: "https://idp.example/realms/x",
@@ -134,6 +139,7 @@ func TestASessionIsCheckedRatherThanTrusted(t *testing.T) {
 
 // An expired session is not a session.
 func TestAnExpiredSessionIsRefused(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	key, err := d.cookieKey()
 	if err != nil {
@@ -146,6 +152,7 @@ func TestAnExpiredSessionIsRefused(t *testing.T) {
 
 // The signing key survives a read, or everybody is logged out on every restart.
 func TestTheCookieKeyIsStable(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	first, err := d.cookieKey()
 	if err != nil {
@@ -165,6 +172,7 @@ func TestTheCookieKeyIsStable(t *testing.T) {
 // authenticated", which on a provider with open registration is the whole
 // internet with an extra step.
 func TestAConfigurationThatCouldNotWorkIsRefused(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	for _, tc := range []struct {
 		what string
@@ -189,6 +197,7 @@ func TestAConfigurationThatCouldNotWorkIsRefused(t *testing.T) {
 // board can ask it to hold a state for five minutes. Without a bound that is a
 // way to spend the daemon's memory from outside with no credential at all.
 func TestAFloodOfLoginsIsBounded(t *testing.T) {
+	t.Parallel()
 	// Emptied afterwards whatever happens. The map is package level, and a
 	// test that left it full would fail every login in every test after it.
 	t.Cleanup(func() {
@@ -219,6 +228,7 @@ func TestAFloodOfLoginsIsBounded(t *testing.T) {
 // to a page on another domain, having just signed in, is the oldest phishing
 // primitive there is.
 func TestALoginCannotSendSomebodyOffThisBoard(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct{ back, want string }{
 		{"/", "/"},
 		{"/?card=7", "/?card=7"},
@@ -237,6 +247,7 @@ func TestALoginCannotSendSomebodyOffThisBoard(t *testing.T) {
 // The cookie key and the auth configuration never leave this machine. The key
 // mints sessions for any subject and the configuration holds a client secret.
 func TestTheAuthSecretsAreNeverExported(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	if err := d.SaveAuth(AuthConfig{
 		Enabled: true, Issuer: "https://idp.example/realms/x",

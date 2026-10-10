@@ -23,6 +23,7 @@ func stopTurnWithBackground(t *testing.T, d *Daemon, agent string, n int) {
 // sa31. A worker whose turn ended with background runs going is waiting, not
 // stopped: neither the launcher notice nor the board escalation fires.
 func TestATurnEndedOnBackgroundWorkIsNotASilentStop(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	launcher, worker := launchedPair(t, d)
 	stopTurnWithBackground(t, d, "worker", 5)
@@ -45,6 +46,7 @@ func TestATurnEndedOnBackgroundWorkIsNotASilentStop(t *testing.T) {
 // When the work ends the session wakes and stops again, and that Stop names
 // nothing running: the clock is that turn's end, not the first one's.
 func TestBackgroundWorkEndingStartsTheSilentStopClock(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	launcher, worker := launchedPair(t, d)
 	stopTurnWithBackground(t, d, "worker", 2)
@@ -77,6 +79,7 @@ func TestBackgroundWorkEndingStartsTheSilentStopClock(t *testing.T) {
 
 // A dev server left running names itself in every Stop, so the hold is bounded.
 func TestBackgroundWorkHoldsTheAlertOnlyForAWhile(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	_, worker := launchedPair(t, d)
 	stopTurnWithBackground(t, d, "worker", 1)

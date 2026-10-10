@@ -19,6 +19,7 @@ const shareRefusedErr = `[POST /share][401] shareUnauthorized`
 // name. There is no longer name that works, and somebody following that
 // instruction tries forever.
 func TestNameLimitIsNotReportedAsATakenName(t *testing.T) {
+	t.Parallel()
 	got := zrokSays("could not create the name", errors.New(nameLimitErr)).Error()
 
 	if strings.Contains(got, "that name is taken") || strings.Contains(got, "longer one") {
@@ -35,6 +36,7 @@ func TestNameLimitIsNotReportedAsATakenName(t *testing.T) {
 // `limit reached` name a ceiling, and a bare 429 naming the reserved names
 // would send somebody to release names over something else entirely.
 func TestAnUnnamedLimitDoesNotClaimToBeTheNameLimit(t *testing.T) {
+	t.Parallel()
 	got := zrokSays("could not open the share",
 		errors.New(`[POST /share][429] shareTooManyRequests`)).Error()
 
@@ -50,6 +52,7 @@ func TestAnUnnamedLimitDoesNotClaimToBeTheNameLimit(t *testing.T) {
 // somebody else IS fixed by choosing another, and folding both cases into one
 // message would lose that.
 func TestATakenNameStillReadsAsATakenName(t *testing.T) {
+	t.Parallel()
 	got := zrokSays("could not create the name", errors.New(nameTakenErr)).Error()
 
 	if !strings.Contains(got, "taken") {
@@ -62,6 +65,7 @@ func TestATakenNameStillReadsAsATakenName(t *testing.T) {
 // dead token, so a message that picks one is wrong half the time, and the half
 // it is wrong about sends somebody to re-enable an environment that is fine.
 func TestAShareRefusalNamesBothCauses(t *testing.T) {
+	t.Parallel()
 	got := strings.ToLower(zrokSays("could not open the share", errors.New(shareRefusedErr)).Error())
 
 	if !strings.Contains(got, "limit") {
@@ -79,6 +83,7 @@ func TestAShareRefusalNamesBothCauses(t *testing.T) {
 // into the second call it comes back as "the name exists but could not be
 // reserved", which describes a state the account is not in.
 func TestReservingDoesNotSwallowANameLimit(t *testing.T) {
+	t.Parallel()
 	if alreadyThere(errors.New(nameLimitErr)) {
 		t.Fatal("a name-limit refusal is being read as a name that already exists, so " +
 			"reserving carries on to the update, which refuses for the same reason and " +
@@ -94,6 +99,7 @@ func TestReservingDoesNotSwallowANameLimit(t *testing.T) {
 // "how many of these reservations are mine" has an answer. Losing the prefix
 // silently zeroes that number rather than breaking anything.
 func TestAtriumNamesAreAttributable(t *testing.T) {
+	t.Parallel()
 	n, err := newShareNameOf(boardShareNameLen)
 	if err != nil {
 		t.Fatal(err)

@@ -63,6 +63,7 @@ func TestAnEndingDoneTakesACommitTheHubHasAndTellsTheLauncherWithNoNudge(t *test
 }
 
 func TestAnEndingBlockedRefusesNoReasonAndOver50WordsAndDeliversTheReasonWithNoNudge(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	launcher, worker := launchedPair(t, d)
 	for _, why := range []string{"", " \n ", strings.Repeat("w ", 51)} {

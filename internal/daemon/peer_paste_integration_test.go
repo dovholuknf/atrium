@@ -14,6 +14,7 @@ func longReport() string {
 }
 
 func TestALongPeerMessageIsBracketedAndWhole(t *testing.T) {
+	t.Parallel()
 	report := longReport()
 	if len(report) < 4096 {
 		t.Fatalf("the specimen is %d bytes, which is under the pipe size this is about", len(report))
@@ -54,6 +55,7 @@ func TestALongPeerMessageIsBracketedAndWhole(t *testing.T) {
 // markers it does not understand are printed as `200~` on its screen and into
 // its transcript.
 func TestAnUndeclaredRunnerIsNotBracketedByAPeer(t *testing.T) {
+	t.Parallel()
 	p := &stubbornPty{most: 4096}
 	r := &runner{pty: p}
 

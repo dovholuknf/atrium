@@ -40,6 +40,7 @@ func peerCard(t *testing.T, d *Daemon, name string) *store.Task {
 }
 
 func TestOneSessionCanTellAnother(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	peerCard(t, d, "alice")
 	bob := peerCard(t, d, "bob")
@@ -78,6 +79,7 @@ func TestOneSessionCanTellAnother(t *testing.T) {
 // every message to a window mode runner, which is most of them on a machine
 // where atrium owns nothing.
 func TestAPeerMessageToACardThatCannotBeTypedIntoIsStillQueued(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	peerCard(t, d, "alice")
 	bob := peerCard(t, d, "bob")
@@ -111,6 +113,7 @@ func TestAPeerMessageToACardThatCannotBeTypedIntoIsStillQueued(t *testing.T) {
 
 // A model messaging itself is a loop with extra steps.
 func TestASessionCannotTellItself(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	peerCard(t, d, "alice")
 	if _, code := tell(t, d, "alice", "alice", "hello me"); code != http.StatusBadRequest {
@@ -122,6 +125,7 @@ func TestASessionCannotTellItself(t *testing.T) {
 // is what turns a guess into discovery. A bare subcommand cannot make listing
 // mandatory the way a tool description can, so the failure has to teach.
 func TestAnUnknownHandleAnswersWithTheList(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	peerCard(t, d, "alice")
 	peerCard(t, d, "bob")
@@ -147,6 +151,7 @@ func TestAnUnknownHandleAnswersWithTheList(t *testing.T) {
 
 // A session that has ended cannot read anything now, so the words are kept on its card for when it next runs.
 func TestTellingAnEndedSessionIsKept(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	peerCard(t, d, "alice")
 	bob := peerCard(t, d, "bob")
@@ -165,6 +170,7 @@ func TestTellingAnEndedSessionIsKept(t *testing.T) {
 // A model in a loop is the failure the limit exists for. Without one, a
 // confused session fills every other queue faster than any of them drains.
 func TestASessionCannotFloodAnother(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	peerCard(t, d, "alice")
 	peerCard(t, d, "bob")
@@ -181,6 +187,7 @@ func TestASessionCannotFloodAnother(t *testing.T) {
 
 // And the window moves, or one busy minute silences a session forever.
 func TestTheLimitIsAWindowAndNotACeiling(t *testing.T) {
+	t.Parallel()
 	l := newPeerLimiter()
 	at := time.Now()
 	l.now = func() time.Time { return at }
@@ -202,6 +209,7 @@ func TestTheLimitIsAWindowAndNotACeiling(t *testing.T) {
 
 // One sender's flood does not silence another.
 func TestTheLimitIsPerSender(t *testing.T) {
+	t.Parallel()
 	l := newPeerLimiter()
 	for i := 0; i < peerSendsPerMinute; i++ {
 		l.allow("alice")
@@ -214,6 +222,7 @@ func TestTheLimitIsPerSender(t *testing.T) {
 // A document is not a message. Handing over more than this means writing a
 // file and saying where it is.
 func TestAnEnormousMessageIsRefused(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	peerCard(t, d, "alice")
 	peerCard(t, d, "bob")
@@ -227,6 +236,7 @@ func TestAnEnormousMessageIsRefused(t *testing.T) {
 // Listing leaves the asker out of its own list, and leaves out anything that
 // cannot be reached.
 func TestListingIsWhatCanActuallyBeReached(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	peerCard(t, d, "alice")
 	peerCard(t, d, "bob")
@@ -261,6 +271,7 @@ func TestListingIsWhatCanActuallyBeReached(t *testing.T) {
 // How much is already queued for a peer, so a model can tell that somebody is
 // buried before adding to it.
 func TestListingSaysHowMuchIsAlreadyWaiting(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	peerCard(t, d, "alice")
 	peerCard(t, d, "bob")

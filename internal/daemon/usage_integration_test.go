@@ -115,6 +115,7 @@ func (f *usageFix) record(seg usageSegment) *store.SessionUsage {
 // subagent replies left out, the split by TTL kept, and the context the last
 // reply's.
 func TestUsageRecordsOneRowPerTurn(t *testing.T) {
+	t.Parallel()
 	f := newUsageFix(t)
 	f.u.launched(f.task.ID, false)
 	f.u.prompted(f.task.ID, store.UsageOperator)
@@ -152,6 +153,7 @@ func TestUsageRecordsOneRowPerTurn(t *testing.T) {
 
 // A row written is announced once, with its card id and figures and no message.
 func TestUsageRowWrittenIsBroadcast(t *testing.T) {
+	t.Parallel()
 	f := newUsageFix(t)
 	var kinds []string
 	var got map[string]any
@@ -180,6 +182,7 @@ func TestUsageRowWrittenIsBroadcast(t *testing.T) {
 // Replies stamped after the Stop belong to the turn a blocked Stop continued,
 // and the next read counts them once.
 func TestUsageLeavesTheNextTurnForTheNextRow(t *testing.T) {
+	t.Parallel()
 	f := newUsageFix(t)
 	b := f.base
 	f.u.prompted(f.task.ID, store.UsageOperator)
@@ -203,6 +206,7 @@ func TestUsageLeavesTheNextTurnForTheNextRow(t *testing.T) {
 // nothing written while it was down is lost. The resumed runner's first turn is
 // flagged and, prompted by nobody else, called a resume.
 func TestUsageAfterARestartCountsFromTheLastRow(t *testing.T) {
+	t.Parallel()
 	f := newUsageFix(t)
 	b := f.base
 	f.line(b, "m1", 0, 100, 1000, 10, false)
@@ -236,6 +240,7 @@ func TestUsageAfterARestartCountsFromTheLastRow(t *testing.T) {
 
 // A resume flag whose Stop found no request stays for the turn that spends.
 func TestUsageResumeFlagWaitsForASpendingTurn(t *testing.T) {
+	t.Parallel()
 	f := newUsageFix(t)
 	f.u.launched(f.task.ID, true)
 	if row := f.record(f.u.endSegment(f.task.ID, f.base)); row != nil {
@@ -250,6 +255,7 @@ func TestUsageResumeFlagWaitsForASpendingTurn(t *testing.T) {
 
 // What a prompt atrium typed was, from its label.
 func TestUsageCauseOfBanner(t *testing.T) {
+	t.Parallel()
 	for banner, want := range map[string]string{
 		wakeLabel: store.UsageRestartWake, exitLabel: store.UsageRestartWake,
 		peerBanner("worker"): store.UsageSay,
@@ -266,6 +272,7 @@ func TestUsageCauseOfBanner(t *testing.T) {
 
 // A keep-alive refresh is a row in the card's usage record too.
 func TestKeepaliveRefreshIsAUsageRow(t *testing.T) {
+	t.Parallel()
 	f := newKAFix(t)
 	f.reply(f.now.Add(-56*time.Minute), replyOpt{})
 	f.tick()
@@ -285,6 +292,7 @@ func TestKeepaliveRefreshIsAUsageRow(t *testing.T) {
 // second Stop and a restarted daemon count nothing again, and a reply id the
 // card's row holds is never also a subagent's.
 func TestUsageCountsSubagentsOnceInTheirOwnRow(t *testing.T) {
+	t.Parallel()
 	f := newUsageFix(t)
 	b := f.base
 	dir := strings.TrimSuffix(f.path, ".jsonl")
@@ -391,6 +399,7 @@ func TestUsageCountsSubagentsOnceInTheirOwnRow(t *testing.T) {
 // Every current Claude model has a usage price, and the models keep-alive may
 // not refresh stay out of its table.
 func TestUsagePricesEveryCurrentModel(t *testing.T) {
+	t.Parallel()
 	for model, in := range map[string]float64{
 		"claude-fable-5-1": 10, "claude-opus-5-5": 4, "claude-opus-5-5[1m]": 4, "claude-sonnet-5": 2,
 		"claude-sonnet-5-5": 2, "claude-sonnet-5-5[1m]": 2,

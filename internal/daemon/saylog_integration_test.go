@@ -25,6 +25,7 @@ func sayAny(t *testing.T, d *Daemon, body map[string]any) (int, map[string]any) 
 
 // A name that matches nothing answers with candidates and queues nothing.
 func TestSayMissListsCandidatesAndQueuesNothing(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	peerCard(t, d, "sa1")
 	target := peerCard(t, d, "atrium-runtime")
@@ -48,6 +49,7 @@ func TestSayMissListsCandidatesAndQueuesNothing(t *testing.T) {
 
 // An alias resolves, and the row says it was an alias.
 func TestSayByAliasRecordsVia(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	peerCard(t, d, "sa1")
 	target := peerCard(t, d, "sa2")
@@ -62,6 +64,7 @@ func TestSayByAliasRecordsVia(t *testing.T) {
 
 // A queued say becomes delivered on the hook that drains it.
 func TestSayQueuedThenDeliveredByHook(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	peerCard(t, d, "sa1")
 	target := peerCard(t, d, "sa2")
@@ -90,6 +93,7 @@ func TestSayQueuedThenDeliveredByHook(t *testing.T) {
 
 // A reply asked for is owed until the receiver says something back.
 func TestSayReplyOwedUntilAnswered(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	peerCard(t, d, "sa1")
 	target := peerCard(t, d, "sa2")
@@ -112,6 +116,7 @@ func TestSayReplyOwedUntilAnswered(t *testing.T) {
 
 // A compact or a clear stamps the says it may have erased.
 func TestSayContextResetIsStamped(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	peerCard(t, d, "sa1")
 	target := peerCard(t, d, "sa2")

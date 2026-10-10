@@ -184,6 +184,7 @@ func (f *kaFix) toasts() []string {
 // A warm, idle card inside the margin is refreshed with exactly the guarded
 // command line, in its own directory, with atrium's hooks off.
 func TestKeepaliveRefreshesAnIdleCardInsideTheMargin(t *testing.T) {
+	t.Parallel()
 	f := newKAFix(t)
 	f.reply(f.now.Add(-56*time.Minute), replyOpt{})
 	f.tick()
@@ -244,6 +245,7 @@ func TestKeepaliveRefreshesAnIdleCardInsideTheMargin(t *testing.T) {
 // fork without the card's env can reach a different endpoint or account. The
 // atrium overrides still win, and the card's extra args are not carried.
 func TestKeepaliveForkCarriesTheCardsEnvAndEffort(t *testing.T) {
+	t.Parallel()
 	f := newKAFix(t)
 	if err := f.st.SetLaunchOptions(f.task.ID, "low", []string{"--verbose"},
 		map[string]string{"ANTHROPIC_BASE_URL": "https://gw.example", keepaliveTTLVar: "5m"}); err != nil {
@@ -276,6 +278,7 @@ func TestKeepaliveForkCarriesTheCardsEnvAndEffort(t *testing.T) {
 
 // A card whose effort its runner cannot take is not forked at a different one.
 func TestKeepaliveRefusesAForkItCannotGiveTheCardsEffort(t *testing.T) {
+	t.Parallel()
 	f := newKAFix(t)
 	h, err := f.st.Harness("claude")
 	if err != nil {
@@ -299,6 +302,7 @@ func TestKeepaliveRefusesAForkItCannotGiveTheCardsEffort(t *testing.T) {
 // A paid fork whose row will not save must not fork again on the next ticks,
 // though the saved rows still show the old expiry. A real turn lifts the hold.
 func TestKeepaliveUnsavedRefreshDoesNotForkAgain(t *testing.T) {
+	t.Parallel()
 	f := newKAFix(t)
 	f.k.record = func(*store.KeepaliveRefresh) error { return store.ErrClosed }
 	f.reply(f.now.Add(-56*time.Minute), replyOpt{})
@@ -328,6 +332,7 @@ func TestKeepaliveUnsavedRefreshDoesNotForkAgain(t *testing.T) {
 
 // Turning the switch on by hand lifts the hold from an unsaved refresh.
 func TestKeepaliveHandOnLiftsTheUnsavedHold(t *testing.T) {
+	t.Parallel()
 	f := newKAFix(t)
 	f.k.record = func(*store.KeepaliveRefresh) error { return store.ErrClosed }
 	f.reply(f.now.Add(-56*time.Minute), replyOpt{})
@@ -345,6 +350,7 @@ func TestKeepaliveHandOnLiftsTheUnsavedHold(t *testing.T) {
 }
 
 func TestKeepaliveEachRuleBlocksARefresh(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name  string
 		setup func(f *kaFix)
@@ -400,6 +406,7 @@ func TestKeepaliveEachRuleBlocksARefresh(t *testing.T) {
 
 // Local settings without hooks do not block it.
 func TestKeepaliveLocalSettingsWithoutHooksAreFine(t *testing.T) {
+	t.Parallel()
 	f := newKAFix(t)
 	f.reply(f.now.Add(-56*time.Minute), replyOpt{})
 	dir := filepath.Join(filepath.FromSlash(f.task.Worktree), ".claude")
@@ -427,6 +434,7 @@ func (f *kaFix) seed(n int, cost float64, last time.Duration) {
 // At break-even the refresh is not sent, the card stops, and exactly one toast
 // says so.
 func TestKeepaliveStopsAtBreakEvenWithOneToast(t *testing.T) {
+	t.Parallel()
 	f := newKAFix(t)
 	// A 300k Opus 5.5 card: budget is 1/8 of 300k x $8/M = $0.30, and a
 	// refresh reads 300k at $0.20/M = $0.06. Five spent leaves no room.
@@ -459,6 +467,7 @@ func TestKeepaliveStopsAtBreakEvenWithOneToast(t *testing.T) {
 
 // Four spent still leaves room for the fifth.
 func TestKeepaliveRefreshesUpToTheBudget(t *testing.T) {
+	t.Parallel()
 	f := newKAFix(t)
 	f.reply(f.now.Add(-5*time.Hour), replyOpt{})
 	f.seed(4, 0.06, 56*time.Minute)
@@ -470,6 +479,7 @@ func TestKeepaliveRefreshesUpToTheBudget(t *testing.T) {
 
 // A real turn clears a break-even stop and starts a fresh budget.
 func TestKeepaliveRealTurnClearsTheStopAndTheBudget(t *testing.T) {
+	t.Parallel()
 	f := newKAFix(t)
 	f.reply(f.now.Add(-6*time.Hour), replyOpt{})
 	f.seed(5, 0.06, 56*time.Minute)
@@ -491,6 +501,7 @@ func TestKeepaliveRealTurnClearsTheStopAndTheBudget(t *testing.T) {
 
 // Turning it on by hand restarts the budget too.
 func TestKeepaliveHandOnRestartsTheBudget(t *testing.T) {
+	t.Parallel()
 	f := newKAFix(t)
 	f.reply(f.now.Add(-6*time.Hour), replyOpt{})
 	f.seed(5, 0.06, 56*time.Minute)
@@ -508,6 +519,7 @@ func TestKeepaliveHandOnRestartsTheBudget(t *testing.T) {
 
 // A card turned off by hand stays off through a real turn.
 func TestKeepaliveHandOffSurvivesARealTurn(t *testing.T) {
+	t.Parallel()
 	f := newKAFix(t)
 	f.st.SetKeepaliveState(f.task.ID, store.KeepaliveOff)
 	f.now = f.now.Add(time.Minute)
@@ -519,6 +531,7 @@ func TestKeepaliveHandOffSurvivesARealTurn(t *testing.T) {
 }
 
 func TestKeepaliveClassifiesReceiptsInOrder(t *testing.T) {
+	t.Parallel()
 	var none *forkReceipt
 	parse := func(b []byte) *forkReceipt {
 		var r forkReceipt
@@ -565,6 +578,7 @@ func TestKeepaliveClassifiesReceiptsInOrder(t *testing.T) {
 // A miss is counted and priced: the card's tooltip shows the miss and the
 // whole rewrite it cost, not "0 refreshes" beside $1.02. sa55's card.
 func TestKeepaliveMissShowsInTheView(t *testing.T) {
+	t.Parallel()
 	f := newKAFix(t)
 	f.answer = func() ([]byte, error) { return receipt(1, 0, "success", 0, 127_952), nil }
 	f.reply(f.now.Add(-56*time.Minute), replyOpt{ctx: 123_752})
@@ -586,6 +600,7 @@ func TestKeepaliveMissShowsInTheView(t *testing.T) {
 
 // A fork that acted stops the card for good and suspends the room.
 func TestKeepaliveActedSuspendsTheRoom(t *testing.T) {
+	t.Parallel()
 	f := newKAFix(t)
 	f.answer = func() ([]byte, error) { return receipt(2, 0, "success", 297_000, 1_000), nil }
 	f.reply(f.now.Add(-56*time.Minute), replyOpt{})
@@ -608,6 +623,7 @@ func TestKeepaliveActedSuspendsTheRoom(t *testing.T) {
 
 // A refused tool stops the card but leaves the room alone.
 func TestKeepaliveRefusedStopsTheCardOnly(t *testing.T) {
+	t.Parallel()
 	f := newKAFix(t)
 	f.answer = func() ([]byte, error) { return receipt(2, 1, "error_max_turns", 297_000, 1_000), nil }
 	f.reply(f.now.Add(-56*time.Minute), replyOpt{})
@@ -623,6 +639,7 @@ func TestKeepaliveRefusedStopsTheCardOnly(t *testing.T) {
 // A suspended room refreshes nothing, but a stopped card still goes back on
 // after a real turn, and the card's view says the room is suspended and why.
 func TestKeepaliveSuspendedRoomStillClearsAStoppedCard(t *testing.T) {
+	t.Parallel()
 	f := newKAFix(t)
 	f.reply(f.now.Add(-56*time.Minute), replyOpt{})
 	if _, err := f.st.SetKeepaliveStateAt(f.task.ID, store.KeepaliveMiss, f.now.Add(-50*time.Minute)); err != nil {
@@ -648,6 +665,7 @@ func TestKeepaliveSuspendedRoomStillClearsAStoppedCard(t *testing.T) {
 
 // Two failures in a row stop the card.
 func TestKeepaliveTwoFailuresStopTheCard(t *testing.T) {
+	t.Parallel()
 	f := newKAFix(t)
 	f.answer = func() ([]byte, error) { return nil, fmt.Errorf("claude not found") }
 	f.reply(f.now.Add(-56*time.Minute), replyOpt{})
@@ -664,6 +682,7 @@ func TestKeepaliveTwoFailuresStopTheCard(t *testing.T) {
 
 // Two misses on two different cards suspend the room. One miss stops its card.
 func TestKeepaliveTwoMissesOnTwoCardsSuspend(t *testing.T) {
+	t.Parallel()
 	f := newKAFix(t)
 	f.answer = func() ([]byte, error) { return receipt(1, 0, "success", 1_000, 290_000), nil }
 	f.reply(f.now.Add(-56*time.Minute), replyOpt{})
@@ -688,6 +707,7 @@ func TestKeepaliveTwoMissesOnTwoCardsSuspend(t *testing.T) {
 // A new card takes the room default, an existing one keeps its own switch, and
 // the 1h pin follows the switch.
 func TestKeepaliveAtLaunch(t *testing.T) {
+	t.Parallel()
 	f := newKAFix(t)
 	d := &Daemon{st: f.st, ka: f.k}
 	h, err := f.st.Harness("claude")
@@ -731,6 +751,7 @@ func TestKeepaliveAtLaunch(t *testing.T) {
 
 // The 1M window variant is asked for when telemetry says so.
 func TestKeepaliveForksOnTheOneMillionVariant(t *testing.T) {
+	t.Parallel()
 	f := newKAFix(t)
 	f.k.window = func(string) int { return 1_000_000 }
 	f.reply(f.now.Add(-56*time.Minute), replyOpt{})
@@ -741,6 +762,7 @@ func TestKeepaliveForksOnTheOneMillionVariant(t *testing.T) {
 }
 
 func TestKeepaliveViewShowsLastAndNextRefresh(t *testing.T) {
+	t.Parallel()
 	f := newKAFix(t)
 	reply := f.now.Add(-30 * time.Minute)
 	f.reply(reply, replyOpt{})
@@ -780,6 +802,7 @@ func TestKeepaliveViewShowsLastAndNextRefresh(t *testing.T) {
 }
 
 func TestKeepaliveNextRefreshOnlyWhenNotDue(t *testing.T) {
+	t.Parallel()
 	cases := map[string]func(f *kaFix){
 		"off": func(f *kaFix) {
 			f.reply(f.now.Add(-30*time.Minute), replyOpt{})

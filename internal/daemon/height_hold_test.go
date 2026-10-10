@@ -61,6 +61,7 @@ func woke(ch <-chan struct{}) bool {
 // 50, 40, 50 INSIDE THE HOLD NEVER TOUCHES THE PTY, which is the flip that
 // lost ten lines. The shorter viewer is a reattach or a window passing through.
 func TestAHeightFlipInsideTheHoldNeverResizes(t *testing.T) {
+	t.Parallel()
 	r, f := heldRunner(t)
 	_ = r.setViewport("passing", 120, 40)
 	if got := heldRows(r); got != 40 {
@@ -79,6 +80,7 @@ func TestAHeightFlipInsideTheHoldNeverResizes(t *testing.T) {
 // THE REATTACH SHAPE: the shortest viewer's old socket goes before its new one
 // says how big it is, so the height GROWS and comes back. Growing waits too.
 func TestAReattachOfTheShortestViewerNeverResizes(t *testing.T) {
+	t.Parallel()
 	r, f := heldRunner(t)
 	_ = r.setViewport("short-old", 120, 40)
 	fireHeld(r)
@@ -99,6 +101,7 @@ func TestAReattachOfTheShortestViewerNeverResizes(t *testing.T) {
 // A HEIGHT THAT HOLDS IS APPLIED ONCE, and until then everything reports the
 // applied size.
 func TestAHeldHeightIsAppliedOnceItHolds(t *testing.T) {
+	t.Parallel()
 	r, f := heldRunner(t)
 	_ = r.setViewport("short", 120, 40)
 	if cols, rows := r.buf.CurrentSize(); cols != 120 || rows != 50 {
@@ -123,6 +126,7 @@ func TestAHeldHeightIsAppliedOnceItHolds(t *testing.T) {
 // THE WIDTH IS IMMEDIATE, AT THE APPLIED ROWS. A width change during a waiting
 // shrink must not carry the new height past the hold.
 func TestAWidthChangeDuringAHeldShrinkKeepsTheAppliedRows(t *testing.T) {
+	t.Parallel()
 	r, f := heldRunner(t)
 	_ = r.setViewport("short", 120, 40)
 	_ = r.setViewport("pane", 200, 50)
@@ -140,6 +144,7 @@ func TestAWidthChangeDuringAHeldShrinkKeepsTheAppliedRows(t *testing.T) {
 
 // A NEW HEIGHT RESTARTS THE HOLD, and the timer it replaced does nothing.
 func TestASupersededHeightIsNotAppliedByTheOldTimer(t *testing.T) {
+	t.Parallel()
 	r, f := heldRunner(t)
 	_ = r.setViewport("short", 120, 40)
 	r.resizeMu.Lock()
@@ -161,6 +166,7 @@ func TestASupersededHeightIsNotAppliedByTheOldTimer(t *testing.T) {
 
 // A CANCELLED OR SUPERSEDED HOLD RE-TELLS THE VIEWERS, with no resize.
 func TestACancelledOrSupersededHoldReTellsWithoutResizing(t *testing.T) {
+	t.Parallel()
 	r, f := heldRunner(t)
 	_ = r.setViewport("short", 120, 40)
 	wake := r.sizeChanged()
@@ -187,6 +193,7 @@ func TestACancelledOrSupersededHoldReTellsWithoutResizing(t *testing.T) {
 // THE TIMER RE-READS THE VIEWERS. A height the viewers no longer agree on is
 // dropped and re-told, not applied.
 func TestTheTimerRevalidatesTheAgreedHeight(t *testing.T) {
+	t.Parallel()
 	r, f := heldRunner(t)
 	_ = r.setViewport("short", 120, 40)
 	// Behind the hold's back, which no path does: the defensive branch.
@@ -208,6 +215,7 @@ func TestTheTimerRevalidatesTheAgreedHeight(t *testing.T) {
 
 // EVERY VIEWER GONE BEFORE THE HOLD RUNS OUT keeps the size the pty had.
 func TestAHeldHeightIsCancelledWhenEveryViewerLeaves(t *testing.T) {
+	t.Parallel()
 	r, f := heldRunner(t)
 	_ = r.setViewport("pane", 120, 40)
 	r.dropViewport("pane")
@@ -222,6 +230,7 @@ func TestAHeldHeightIsCancelledWhenEveryViewerLeaves(t *testing.T) {
 
 // NEVER A DEAD TERMINAL.
 func TestAHeldHeightIsNotAppliedAfterExit(t *testing.T) {
+	t.Parallel()
 	r, f := heldRunner(t)
 	_ = r.setViewport("short", 120, 40)
 	close(r.done)

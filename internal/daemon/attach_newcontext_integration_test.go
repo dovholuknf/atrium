@@ -16,6 +16,7 @@ import (
 // Typing from a board while atrium itself types for a new context is dropped, acked
 // and refused out loud. While the cycle waits, or once it ends, typing reaches the pty.
 func TestTypingDuringANewContextIsRefusedAndAcked(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	f, _ := sizedSession(t, d, "nc-input", 120, 30)
 

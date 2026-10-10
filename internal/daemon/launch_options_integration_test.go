@@ -18,6 +18,7 @@ func claudeWithEffort() *store.Harness {
 
 // The interviewer case, and the ORDER: base, model, effort, extra args, prompt.
 func TestEffortAndExtraArgsGoBeforeThePrompt(t *testing.T) {
+	t.Parallel()
 	args, logged, err := runnerArgsWith(claudeWithEffort(), "", "ask clint", launchOptions{
 		Model: "claude-haiku-4-5-20251001", Effort: "low", Args: []string{"--verbose"},
 	})
@@ -36,6 +37,7 @@ func TestEffortAndExtraArgsGoBeforeThePrompt(t *testing.T) {
 // Not a list: a level atrium has never heard of is passed through, and the
 // runner is the one to refuse it.
 func TestAnEffortIsNotCheckedAgainstAList(t *testing.T) {
+	t.Parallel()
 	args, _, err := runnerArgsWith(claudeWithEffort(), "", "", launchOptions{Effort: "turbo-9000"})
 	if err != nil {
 		t.Fatal(err)
@@ -47,6 +49,7 @@ func TestAnEffortIsNotCheckedAgainstAList(t *testing.T) {
 
 // Codex takes it as a config override, which is only a template.
 func TestCodexTakesEffortAsAConfigOverride(t *testing.T) {
+	t.Parallel()
 	h := codexLike("resume", "{resume}")
 	h.EffortArgs = []string{"-c", "model_reasoning_effort={effort}"}
 	args, _, err := runnerArgsWith(h, "", "", launchOptions{Effort: "high"})
@@ -60,6 +63,7 @@ func TestCodexTakesEffortAsAConfigOverride(t *testing.T) {
 
 // Refused, never ignored, for a runner with no way to take an effort.
 func TestAnEffortForARunnerWithoutOneIsRefused(t *testing.T) {
+	t.Parallel()
 	_, _, err := runnerArgsWith(claudeWithModel(), "", "", launchOptions{Effort: "low"})
 	if err == nil || !strings.Contains(err.Error(), "{effort}") {
 		t.Fatalf("got %v, want a refusal naming {effort}", err)
@@ -73,6 +77,7 @@ func TestAnEffortForARunnerWithoutOneIsRefused(t *testing.T) {
 
 // A row that maps a field by env var only takes it with no argv.
 func TestAFieldMappedByEnvNeedsNoArgs(t *testing.T) {
+	t.Parallel()
 	h := &store.Harness{ID: "x", Label: "x", Cmd: "x", ModelEnv: "X_MODEL", EffortEnv: "X_EFFORT"}
 	args, _, err := runnerArgsWith(h, "", "", launchOptions{Model: "m1", Effort: "low"})
 	if err != nil || len(args) != 0 {
@@ -89,6 +94,7 @@ func TestAFieldMappedByEnvNeedsNoArgs(t *testing.T) {
 
 // The three collisions the design review asked to be refused.
 func TestLaunchEnvCollisionsAreRefused(t *testing.T) {
+	t.Parallel()
 	h := &store.Harness{ID: "x", Label: "x", Cmd: "x", ModelEnv: "X_MODEL", EffortEnv: "X_EFFORT"}
 	if _, err := launchOptionEnv(h, map[string]string{"ATRIUM_TASK_ID": "t"}, "", ""); err == nil {
 		t.Fatal("an ATRIUM_ key should be refused")
@@ -108,6 +114,7 @@ func TestLaunchEnvCollisionsAreRefused(t *testing.T) {
 
 // The env the runner gets: the harness's own, then the launch's, then atrium's.
 func TestLaunchEnvSitsBetweenTheHarnessAndAtrium(t *testing.T) {
+	t.Parallel()
 	harness := map[string]string{"A": "harness", "B": "harness"}
 	env := childEnvFrom(nil, overEnv(harness, map[string]string{"B": "launch"}),
 		map[string]string{"ATRIUM_TASK_ID": "t1"})
@@ -129,6 +136,7 @@ func TestLaunchEnvSitsBetweenTheHarnessAndAtrium(t *testing.T) {
 // A shell stands in for the runner, with an effort template it will not choke
 // on, because what is under test is the launch path and not any runner.
 func TestALaunchCarriesItsOptionsOntoTheCard(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	cmd, effort := "sh", []string{"-c", "sleep 60", "{effort}"}
 	if runtime.GOOS == "windows" {
@@ -174,6 +182,7 @@ func TestALaunchCarriesItsOptionsOntoTheCard(t *testing.T) {
 
 // A reopen replays the effort and the extras from the card.
 func TestAReopenedCardComesBackWithItsLaunchOptions(t *testing.T) {
+	t.Parallel()
 	d := reopenDaemon(t)
 	task, _, err := d.st.Register(store.Observed{WireName: "opts", Worktree: t.TempDir(), Runner: "claude"})
 	if err != nil {

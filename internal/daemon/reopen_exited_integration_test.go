@@ -33,6 +33,7 @@ func endedCard(t *testing.T, d *Daemon, name, dir string) *store.Task {
 // A CARD ASKED TO EXIT STAYS DOWN, even when its runner was still at the prompt when
 // the daemon stopped and so is on the list of what was open.
 func TestAnEndedCardIsNotReopened(t *testing.T) {
+	t.Parallel()
 	d := reopenDaemon(t)
 	task := endedCard(t, d, "exited", t.TempDir())
 	d.saveReopen([]*runner{{taskID: task.ID, buf: newRing(64, 80)}})
@@ -44,6 +45,7 @@ func TestAnEndedCardIsNotReopened(t *testing.T) {
 // A FIXTURE WHOSE CARD WAS ASKED TO EXIT DOES NOT START AT BOOT, and its row says why,
 // which is where somebody looks for a fixture that did not come up.
 func TestAFixtureWhoseCardWasEndedDoesNotStart(t *testing.T) {
+	t.Parallel()
 	d := reopenDaemon(t)
 	dir := t.TempDir()
 	task := endedCard(t, d, "atrium-87300", dir)

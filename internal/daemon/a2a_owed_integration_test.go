@@ -26,6 +26,7 @@ func reportedWorker(t *testing.T) (*Daemon, *store.Task, *store.Task) {
 // AB2. The saorch case: a message from a third session, then a silent stop,
 // gives the launcher no notice, and the board no STUCK.
 func TestAMessageFromAThirdSessionOwesNothing(t *testing.T) {
+	t.Parallel()
 	d, launcher, worker := reportedWorker(t)
 	third := peerCard(t, d, "third")
 
@@ -50,6 +51,7 @@ func TestAMessageFromAThirdSessionOwesNothing(t *testing.T) {
 
 // The launcher's own message is a prompt it sent, so it makes the card owe.
 func TestAMessageFromTheLauncherOwesAReport(t *testing.T) {
+	t.Parallel()
 	d, launcher, worker := reportedWorker(t)
 
 	if _, err := d.deliverPeer(worker, launcher.WireName, "now do the other thing"); err != nil {
@@ -68,6 +70,7 @@ func TestAMessageFromTheLauncherOwesAReport(t *testing.T) {
 
 // The operator's own prompt is not the launcher's.
 func TestTheOperatorsPromptOwesNothingToTheLauncher(t *testing.T) {
+	t.Parallel()
 	d, launcher, worker := reportedWorker(t)
 	if err := d.st.AppendEvent(worker.ID, store.EventPrompted,
 		map[string]any{"text": "hold on", "via": "terminal"}); err != nil {
@@ -82,6 +85,7 @@ func TestTheOperatorsPromptOwesNothingToTheLauncher(t *testing.T) {
 // nothing, and before one it shares the debt of the prompt it never paid, so
 // the launcher hears once rather than once per wake.
 func TestAMonitorWakeOwesNothingNew(t *testing.T) {
+	t.Parallel()
 	d, launcher, worker := reportedWorker(t)
 	for i := 0; i < 3; i++ {
 		d.turnResumed(worker.ID)

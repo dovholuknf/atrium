@@ -26,6 +26,7 @@ func lineEmpty(r *runner) (bool, int) {
 // Esc Esc clears a Claude prompt, so it empties the line and a held message
 // goes in on the next retry. It used to stay held until a control-c.
 func TestEscEscClearsTheLineAndReleasesAHeldMessage(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	target, r, f := peerPair(t, d)
 	t.Cleanup(func() { d.pending.stopAll() })
@@ -56,6 +57,7 @@ func TestEscEscClearsTheLineAndReleasesAHeldMessage(t *testing.T) {
 
 // Both in one write is the same two keys.
 func TestEscEscInOneWriteClearsTheLine(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	_, r, _ := peerPair(t, d)
 	r.line.escClears = true
@@ -70,6 +72,7 @@ func TestEscEscInOneWriteClearsTheLine(t *testing.T) {
 // it. One Esc, an arrow key, an Esc with a key between, and Esc Esc in a shell
 // all leave the line as it was.
 func TestOnlyEscEscOnAClaudePromptClearsTheLine(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	_, r, _ := peerPair(t, d)
 	for _, c := range []struct {

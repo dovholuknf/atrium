@@ -45,6 +45,7 @@ func cardFor(t *testing.T, d *Daemon, name string) *store.Task {
 
 // The whole point: the ask lands on the card, where the board already draws it.
 func TestAnAskLandsOnTheCard(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	task := cardFor(t, d, "stuck-one")
 
@@ -81,6 +82,7 @@ func TestAnAskLandsOnTheCard(t *testing.T) {
 // it back from. The two facts also read identically once they share a line,
 // which is the other half of the same bug.
 func TestAnAskDoesNotOverwriteWhatTheCardIsFor(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	task := cardFor(t, d, "has-a-why")
 	if err := d.st.SetWhy(task.ID, "port the vcpkg dependency and open a pull request"); err != nil {
@@ -105,6 +107,7 @@ func TestAnAskDoesNotOverwriteWhatTheCardIsFor(t *testing.T) {
 // column is a bucket of human attention, and putting a working session in it
 // makes the alerting count wrong.
 func TestAWorkingSessionIsNotFiledAsWaiting(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	task := cardFor(t, d, "still-going")
 	if err := d.st.SetStatus(task.ID, store.StatusRunning); err != nil {
@@ -133,6 +136,7 @@ func TestAWorkingSessionIsNotFiledAsWaiting(t *testing.T) {
 // A card put down by hand stays put. Shelving is an answer, and a session
 // inside a shelved worktree does not overrule it.
 func TestAShelvedCardIsNotDraggedBack(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	task := cardFor(t, d, "shelved-one")
 	if err := d.st.SetStatus(task.ID, store.StatusShelved); err != nil {
@@ -152,6 +156,7 @@ func TestAShelvedCardIsNotDraggedBack(t *testing.T) {
 // An empty ask is refused, because it is what needs-input already means and
 // recording it would overwrite whatever the card said before.
 func TestAnEmptyAskIsRefused(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	cardFor(t, d, "silent")
 	rec, _ := askOf(t, d, HelpRequest{Agent: "silent", Ask: "   ", Blocked: true})
@@ -163,6 +168,7 @@ func TestAnEmptyAskIsRefused(t *testing.T) {
 // Long asks are truncated rather than refused. Refusing makes an agent retry,
 // and the retry is longer.
 func TestALongAskIsTruncatedNotRefused(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	task := cardFor(t, d, "wordy")
 	rec, _ := askOf(t, d, HelpRequest{
@@ -184,6 +190,7 @@ func TestALongAskIsTruncatedNotRefused(t *testing.T) {
 // recorded, because failing here would mean a session could fail at the moment
 // it tried to ask for help.
 func TestAnUnknownSessionIsNotAnError(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	rec, out := askOf(t, d, HelpRequest{Agent: "nobody-here", Ask: "hello", Blocked: true})
 	if rec.Code != http.StatusOK {
@@ -205,6 +212,7 @@ func TestAnUnknownSessionIsNotAnError(t *testing.T) {
 // A session that asked two things got one answered and never learned the
 // other had been dropped.
 func TestASecondAskDoesNotDestroyTheFirstOnTheCard(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	task := cardFor(t, d, "asks-twice")
 

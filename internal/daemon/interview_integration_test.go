@@ -14,6 +14,7 @@ import (
 
 // An interviewer's turn ends on a question to the human, so atrium neither nudges it nor calls it stuck.
 func TestAnInterviewerIsNeverSilentlyStopped(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	orch := peerCard(t, d, "orchestrator")
 	iv := peerCard(t, d, "interviewer")
@@ -35,6 +36,7 @@ func TestAnInterviewerIsNeverSilentlyStopped(t *testing.T) {
 }
 
 func TestAnInterviewerGetsItsOwnSystemPrompt(t *testing.T) {
+	t.Parallel()
 	in := []string{"--mcp-config", "C:/t/mcp.json"}
 	read := func(string) ([]byte, error) { return []byte(`{"mcpServers":{}}`), nil }
 	get := func(kit leanKit) string {
@@ -63,6 +65,7 @@ func TestAnInterviewerGetsItsOwnSystemPrompt(t *testing.T) {
 }
 
 func TestAnInterviewDefaultsToOpusFromTheSetting(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	h := &store.Harness{ID: "claude", Label: "Claude"}
 	req := LaunchRequest{Tags: []string{OriginAgentTag, InterviewTag}}
@@ -85,6 +88,7 @@ func TestAnInterviewDefaultsToOpusFromTheSetting(t *testing.T) {
 }
 
 func TestAnInterviewPromptHasNoReportEnding(t *testing.T) {
+	t.Parallel()
 	if got := briefPromptEnding("BRIEF.md", "", ""); strings.Contains(got, "atrium_done") || !strings.Contains(got, "BRIEF.md") {
 		t.Fatalf("prompt = %q", got)
 	}
@@ -100,6 +104,7 @@ func gitRun(t *testing.T, dir string, args ...string) {
 }
 
 func TestAgentCheckoutRefusal(t *testing.T) {
+	t.Parallel()
 	plain := t.TempDir()
 	if why := agentCheckoutRefusal(plain); !strings.Contains(why, "not a git checkout") {
 		t.Errorf("plain dir: %q", why)
@@ -119,6 +124,7 @@ func TestAgentCheckoutRefusal(t *testing.T) {
 }
 
 func TestAnAgentLaunchOutsideGitIsRefusedUnlessScratch(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	dir := t.TempDir()
 	_, err := d.launchLocked(LaunchRequest{Harness: "claude", Cwd: dir, Tags: []string{OriginAgentTag}})

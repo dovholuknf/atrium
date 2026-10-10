@@ -45,6 +45,7 @@ func TestTheAddressGoesWhereTheOptionsSay(t *testing.T) {
 // wants, and the default has to stay the default: an option that has to be set
 // to get correct behavior is an option everybody forgets.
 func TestNoOptionMeansTheRealPlace(t *testing.T) {
+	t.Parallel()
 	real, err := LocationPath()
 	if err != nil {
 		t.Skip("this machine has no answer for where runtime state goes")
@@ -75,6 +76,7 @@ func TestNoOptionMeansTheRealPlace(t *testing.T) {
 // Every other case has to stay silent, or the warning becomes noise and stops
 // being read. That is most of what this checks.
 func TestTakingTheAddressFromALiveDaemonIsAnnounced(t *testing.T) {
+	t.Parallel()
 	const me = 1000
 	living := func(int) bool { return true }
 	gone := func(int) bool { return false }
@@ -210,6 +212,7 @@ func TestTheLocationPathAgreesWithTheHookResolver(t *testing.T) {
 
 // A room's --dir is written down, so a restart can pass it back.
 func TestLocationRecordsTheRoomDir(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	path := filepath.Join(dir, "daemon.json")
 	d := &Daemon{opts: Options{Room: "r1", RoomDir: "/r/dir", LocationFile: path}}

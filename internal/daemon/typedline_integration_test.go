@@ -42,6 +42,7 @@ var terminalReports = map[string]string{
 // behind an empty line. A report must count nothing, move no clock and wake no
 // waiting message.
 func TestTerminalReportsAreNotTyping(t *testing.T) {
+	t.Parallel()
 	for name, seq := range terminalReports {
 		t.Run(name, func(t *testing.T) {
 			r := &runner{}
@@ -67,6 +68,7 @@ func TestTerminalReportsAreNotTyping(t *testing.T) {
 
 // And a report in the middle of a line leaves the line as it was.
 func TestAReportInsideALineLeavesItsText(t *testing.T) {
+	t.Parallel()
 	for name, seq := range terminalReports {
 		t.Run(name, func(t *testing.T) {
 			r := &runner{}
@@ -82,6 +84,7 @@ func TestAReportInsideALineLeavesItsText(t *testing.T) {
 
 // A word delete is a word delete, by all three keys.
 func TestWordDeleteTakesAWord(t *testing.T) {
+	t.Parallel()
 	keys := map[string]string{
 		"control-backspace": "\x08",
 		"alt-backspace":     "\x1b\x7f",
@@ -119,6 +122,7 @@ func TestWordDeleteTakesAWord(t *testing.T) {
 // count got wrong: control-backspace took one character where the runner took
 // a word, so the line read as part written.
 func TestAWordDeletedLineOpensTheGate(t *testing.T) {
+	t.Parallel()
 	r := &runner{}
 	r.noteOperatorTyped([]byte("git commit"))
 	r.noteOperatorTyped([]byte{0x08})
@@ -136,6 +140,7 @@ func TestAWordDeletedLineOpensTheGate(t *testing.T) {
 
 // Characters, not bytes. A backspace after a two-byte glyph takes the glyph.
 func TestTheLineCountsCharacters(t *testing.T) {
+	t.Parallel()
 	r := &runner{}
 	r.noteOperatorTyped([]byte("héllo"))
 	if r.line.count() != 5 {
@@ -152,6 +157,7 @@ func TestTheLineCountsCharacters(t *testing.T) {
 // shut until something certainly empties the line, even if the text atrium
 // kept has gone.
 func TestKeysAtriumCannotFollowHoldTheGate(t *testing.T) {
+	t.Parallel()
 	lost := map[string]string{
 		"up arrow":       "\x1b[A",
 		"down arrow":     "\x1b[B",
@@ -201,6 +207,7 @@ func TestKeysAtriumCannotFollowHoldTheGate(t *testing.T) {
 // written line the next edit may not be at the end, so the line is unsure and
 // backspacing it to nothing does not open the gate.
 func TestACursorMoveOnlyMattersOnAWrittenLine(t *testing.T) {
+	t.Parallel()
 	moves := map[string]string{
 		"left":      "\x1b[D",
 		"right":     "\x1b[C",
@@ -232,6 +239,7 @@ func TestACursorMoveOnlyMattersOnAWrittenLine(t *testing.T) {
 
 // Keys that put nothing on the line leave it alone.
 func TestKeysThatWriteNothingLeaveTheLine(t *testing.T) {
+	t.Parallel()
 	for name, key := range map[string]string{
 		"escape":    "\x1b",
 		"page up":   "\x1b[5~",
@@ -258,6 +266,7 @@ func TestKeysThatWriteNothingLeaveTheLine(t *testing.T) {
 // A long paste keeps its tail and its full count, and is not empty until every
 // character is gone.
 func TestALongPasteIsCountedInFull(t *testing.T) {
+	t.Parallel()
 	r := &runner{}
 	long := make([]byte, 3*typedLineCap)
 	for i := range long {
@@ -278,6 +287,7 @@ func TestALongPasteIsCountedInFull(t *testing.T) {
 
 // The readout's endpoint says what the gate says.
 func TestTheTypingEndpointShowsTheLineAndTheGate(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	target, r, _ := peerPair(t, d)
 

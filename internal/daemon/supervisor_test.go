@@ -17,6 +17,7 @@ import (
 const testCols = 80
 
 func TestRingBufferIsEmptyBeforeAnyWrite(t *testing.T) {
+	t.Parallel()
 	if got := newRing(32, testCols).Snapshot(); len(got) != 0 {
 		t.Fatalf("fresh buffer is not empty: %q", got)
 	}
@@ -33,6 +34,7 @@ func TestRingBufferIsEmptyBeforeAnyWrite(t *testing.T) {
 // lastOutput trims what it is given, so widening a caller cannot quietly bring
 // back the cost this was fixed to remove.
 func TestLastOutputRefusesToProcessMoreThanTheBound(t *testing.T) {
+	t.Parallel()
 	huge := []byte(strings.Repeat("padding that should never be scanned\n", 40000))
 	huge = append(huge, "the line that matters\n"...)
 	if len(huge) <= tailBytes {
@@ -51,6 +53,7 @@ func TestLastOutputRefusesToProcessMoreThanTheBound(t *testing.T) {
 // A failure message reads as text whatever the terminal was told around it. pwsh on Linux opens with ESC [?1h ESC =,
 // and the bare ESC = once landed in front of a card's "failed to start" line.
 func TestLastOutputStripsEveryEscapeATerminalConsumes(t *testing.T) {
+	t.Parallel()
 	for _, in := range []string{
 		"\x1b[?1h\x1b=boom-message\r\n",
 		"\x1b=boom-message\x1b>\r\n",
@@ -67,6 +70,7 @@ func TestLastOutputStripsEveryEscapeATerminalConsumes(t *testing.T) {
 // A slow attacher must be dropped rather than allowed to block the reader,
 // because a blocked reader eventually stalls the runner itself.
 func TestFanoutDoesNotBlockOnASlowWatcher(t *testing.T) {
+	t.Parallel()
 	r := &runner{
 		taskID:   "t",
 		buf:      newRing(64, testCols),

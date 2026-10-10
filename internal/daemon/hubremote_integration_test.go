@@ -160,6 +160,7 @@ func TestAPRRunnersCommandsAndForksHaveNoGitTokenInTheirEnv(t *testing.T) {
 }
 
 func TestGitPushIsRefusedWhenTheRoomOrTheCardSaysNo(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	d.setAgentAddr(&net.TCPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 7777})
 	task := plainTask(t, d, "pusher")
@@ -191,6 +192,7 @@ func TestGitPushIsRefusedWhenTheRoomOrTheCardSaysNo(t *testing.T) {
 }
 
 func TestACardLosesItsTokenWhenItIsNoLongerRunning(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	task := plainTask(t, d, "finisher")
 	tok, err := d.hubGit.cards.Mint(task.ID)
@@ -250,6 +252,7 @@ func TestTheForwarderRouteIsOnTheAgentListenerAndTheTokenOpensNothingElse(t *tes
 
 // A GIT_CONFIG_* an inherited environment carries (a room started from inside a card) is not passed to a runner.
 func TestInheritedGitConfigIsTaintedForLaunchedRunners(t *testing.T) {
+	t.Parallel()
 	for _, k := range []string{"GIT_CONFIG_COUNT", "GIT_CONFIG_KEY_0", "GIT_CONFIG_VALUE_0", "GIT_CONFIG_VALUE_12", "git_config_value_1"} {
 		if !inheritedTaint(k) {
 			t.Errorf("%s is passed to launched runners", k)
@@ -263,6 +266,7 @@ func TestInheritedGitConfigIsTaintedForLaunchedRunners(t *testing.T) {
 
 // A resume mints its token before it registers the new runner, so the old run's late exit must not take it away.
 func TestAnOldRunsExitDoesNotRevokeTheTokenOfAResume(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	d.setAgentAddr(&net.TCPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 7777})
 	task := plainTask(t, d, "resumer")
@@ -284,6 +288,7 @@ func TestAnOldRunsExitDoesNotRevokeTheTokenOfAResume(t *testing.T) {
 
 // A listener bound to one address is reached at that address. Only a wildcard bind is reached at loopback.
 func TestAgentAddrIsKeptForASpecificBindAndMappedForAWildcard(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	for _, c := range []struct {
 		in   net.Addr

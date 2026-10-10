@@ -193,6 +193,7 @@ func TestLeanKitRefusesAnUnknownOrUnsafeName(t *testing.T) {
 }
 
 func TestLeanOptionsCarryTheKitOnTheCardAndTheRequestReplacesIt(t *testing.T) {
+	t.Parallel()
 	lean, _, kit := leanOptions(LaunchRequest{LeanAgents: []string{" b", "a", "a"}, LeanSkills: []string{"s"}}, nil, "")
 	if !lean || strings.Join(kit.Agents, ",") != "a,b" || strings.Join(kit.Skills, ",") != "s" {
 		t.Fatalf("lean_agents implies lean, got %v %+v", lean, kit)
@@ -375,6 +376,7 @@ func TestLeanAgentsAllowsABuiltinListedByBareName(t *testing.T) {
 }
 
 func TestLeanWithoutAgentsIsUnchangedByTheBuiltinRule(t *testing.T) {
+	t.Parallel()
 	if got := leanDisallowedFor(leanKit{}); strings.Join(got, ",") != strings.Join(leanDisallowed, ",") {
 		t.Fatalf("a lean launch with no agents changed: %v", got)
 	}

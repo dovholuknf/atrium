@@ -37,6 +37,7 @@ func waitingReasonAfter(t *testing.T, kind string, prior bool) string {
 // A real prompt asked: the hub's input notice reads `asked` for a card that
 // has no Stop yet. See link/notify.go.
 func TestARealNotificationRecordsThatTheCardAsked(t *testing.T) {
+	t.Parallel()
 	for _, kind := range []string{"permission_prompt", "elicitation_dialog", ""} {
 		if got := waitingReasonAfter(t, kind, false); got != store.WaitingAsked {
 			t.Errorf("%q: waiting reason %q, want asked", kind, got)
@@ -47,6 +48,7 @@ func TestARealNotificationRecordsThatTheCardAsked(t *testing.T) {
 // The prompt sitting idle for a minute asks nothing. Writing `asked` here let
 // a card that never did anything raise an `input` notice (atrium-87300).
 func TestAnIdlePromptDoesNotRecordAnAsk(t *testing.T) {
+	t.Parallel()
 	if got := waitingReasonAfter(t, "idle_prompt", false); got != "" {
 		t.Fatalf("an idle prompt wrote waiting reason %q", got)
 	}
@@ -54,6 +56,7 @@ func TestAnIdlePromptDoesNotRecordAnAsk(t *testing.T) {
 
 // ...and it does not erase a question the card really asked earlier.
 func TestAnIdlePromptKeepsARealEarlierAsk(t *testing.T) {
+	t.Parallel()
 	if got := waitingReasonAfter(t, "idle_prompt", true); got != store.WaitingAsked {
 		t.Fatalf("an idle prompt lost the earlier ask: %q", got)
 	}

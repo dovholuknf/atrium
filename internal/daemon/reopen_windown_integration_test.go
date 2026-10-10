@@ -89,6 +89,7 @@ func waitGone(t *testing.T, d *Daemon, id string) {
 }
 
 func TestARestartBringsBackACardAtItsPrompt(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	task := shellCard(t, d)
 	windDownLike(t, d, task)
@@ -102,6 +103,7 @@ func TestARestartBringsBackACardAtItsPrompt(t *testing.T) {
 }
 
 func TestARestartBringsBackAFixtureAtItsPrompt(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	task := shellCard(t, d)
 	f, err := d.st.SaveFixture(&store.Fixture{Label: "shell", Harness: "shelltest", Cwd: task.Worktree, Enabled: true})
@@ -121,6 +123,7 @@ func TestARestartBringsBackAFixtureAtItsPrompt(t *testing.T) {
 
 // A TERMINATE KEEPS A CARD DOWN like an asked exit.
 func TestAKilledCardStaysDown(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	task := shellCard(t, d)
 	d.saveReopen([]*runner{d.sup.get(task.ID)})
@@ -136,6 +139,7 @@ func TestAKilledCardStaysDown(t *testing.T) {
 // /exit TYPED IN THE CARD'S OWN TERMINAL keeps it down, and the same ending
 // during a wind-down does not.
 func TestATypedExitStaysDownAndAWindDownDoesNot(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	task := shellCard(t, d)
 	end := SessionEvent{Agent: task.WireName, Event: "end", Reason: "prompt_input_exit", TaskID: task.ID,
@@ -160,6 +164,7 @@ func TestATypedExitStaysDownAndAWindDownDoesNot(t *testing.T) {
 // idle park and the worktree sweep go through windDown, and the session's end
 // that follows must not keep the card, or its fixture, down.
 func TestAnExitAtriumTypesDoesNotKeepACardDown(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	task := shellCard(t, d)
 	r := d.sup.get(task.ID)
@@ -175,6 +180,7 @@ func TestAnExitAtriumTypesDoesNotKeepACardDown(t *testing.T) {
 
 // AN ASKED EXIT STAYS DOWN across the restart, and a launch afterwards undoes it.
 func TestAnAskedExitStaysDown(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	task := shellCard(t, d)
 	d.saveReopen([]*runner{d.sup.get(task.ID)})
@@ -201,6 +207,7 @@ func TestAnAskedExitStaysDown(t *testing.T) {
 // their hooks reach it and never the machine's shared file, which names the live
 // room. A test daemon is exactly that daemon.
 func TestAChildIsToldWhereItsDaemonIs(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	env := map[string]string{}
 	d.tellWhereIAm(env)

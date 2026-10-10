@@ -24,6 +24,7 @@ func message(t *testing.T, d *Daemon, taskID string, fields map[string]string) i
 }
 
 func TestMessageCarriesTheCaller(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	bob := peerCard(t, d, "bob")
 
@@ -51,6 +52,7 @@ func TestMessageCarriesTheCaller(t *testing.T) {
 // atrium_say reaches a session through this endpoint, so a message with a
 // sender gets the peer bus's bounds: the size cap and the per-sender rate.
 func TestAMessageFromASessionIsBoundedLikeTheBus(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	bob := peerCard(t, d, "bob")
 
@@ -75,6 +77,7 @@ func TestAMessageFromASessionIsBoundedLikeTheBus(t *testing.T) {
 // The operator is not a peer, so neither bound applies to a message with no
 // sender.
 func TestTheOperatorsMessagesAreNotRateLimited(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	bob := peerCard(t, d, "bob")
 
@@ -86,6 +89,7 @@ func TestTheOperatorsMessagesAreNotRateLimited(t *testing.T) {
 }
 
 func TestMessageWithNoCallerStaysTheOperator(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	bob := peerCard(t, d, "bob")
 

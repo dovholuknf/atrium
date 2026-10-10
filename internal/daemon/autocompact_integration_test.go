@@ -32,6 +32,7 @@ func setLimits(t *testing.T, d *Daemon, v string) {
 
 // Untouched, the default claude limit gives a window.
 func TestAutocompactKDefaultsToTheClaudeLimit(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	if got := d.autocompactK(&store.Task{Runner: "claude"}); got != 253 {
 		t.Fatalf("default window = %dk, want 253k (200k + 10%% + the 33k claude keeps back)", got)
@@ -39,6 +40,7 @@ func TestAutocompactKDefaultsToTheClaudeLimit(t *testing.T) {
 }
 
 func TestAutocompactKFollowsTheLimitAndClamps(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	setLimits(t, d, `{"claude":400}`)
 	if got := d.autocompactK(&store.Task{Runner: "claude"}); got != 473 {
@@ -56,6 +58,7 @@ func TestAutocompactKFollowsTheLimitAndClamps(t *testing.T) {
 
 // A card's own limit moves its window.
 func TestAutocompactKForACardOverride(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	got := d.autocompactK(&store.Task{Runner: "claude", Overrides: map[string]string{"context_limit_k": "300"}})
 	if got != 363 {
@@ -65,6 +68,7 @@ func TestAutocompactKForACardOverride(t *testing.T) {
 
 // The limit is one function: what the cycle is held to is the same number.
 func TestCardLimitIsWhatTheCycleIsHeldTo(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	task := &store.Task{ID: "x", Runner: "claude", Overrides: map[string]string{"context_limit_k": "120"}}
 	if d.cardLimit(task) != d.cycleLimit(task) || d.cycleLimit(task) != 120000 {
@@ -73,6 +77,7 @@ func TestCardLimitIsWhatTheCycleIsHeldTo(t *testing.T) {
 }
 
 func TestTheRunnerRowSaysHowItTakesTheWindow(t *testing.T) {
+	t.Parallel()
 	args, logged, err := runnerArgsWith(claudeWithAutocompact(), "", "", launchOptions{Autocompact: "330k"})
 	if err != nil {
 		t.Fatal(err)
@@ -84,6 +89,7 @@ func TestTheRunnerRowSaysHowItTakesTheWindow(t *testing.T) {
 
 // Resume replaces the base arguments, and the window must be on a resumed card too, before any prompt.
 func TestAResumeAndAPromptCarryTheWindow(t *testing.T) {
+	t.Parallel()
 	args, _, err := runnerArgsWith(claudeWithAutocompact(), "sess-1", "", launchOptions{Autocompact: "330k"})
 	if err != nil {
 		t.Fatal(err)
@@ -102,6 +108,7 @@ func TestAResumeAndAPromptCarryTheWindow(t *testing.T) {
 
 // A runner with no way to take it is not refused, it just gets nothing.
 func TestARunnerWithoutTheFlagIsLeftAlone(t *testing.T) {
+	t.Parallel()
 	args, _, err := runnerArgsWith(claudeWithModel(), "", "", launchOptions{Autocompact: "330k"})
 	if err != nil || len(args) != 0 {
 		t.Fatalf("args %v err %v", args, err)
@@ -110,6 +117,7 @@ func TestARunnerWithoutTheFlagIsLeftAlone(t *testing.T) {
 
 // Arguments that never name the value would start with whatever they spell.
 func TestAutocompactArgsMustCarryThePlaceholder(t *testing.T) {
+	t.Parallel()
 	h := claudeWithModel()
 	h.AutocompactArgs = []string{"--autocompact", "auto"}
 	if _, _, err := runnerArgsWith(h, "", "", launchOptions{Autocompact: "330k"}); err == nil {
@@ -119,6 +127,7 @@ func TestAutocompactArgsMustCarryThePlaceholder(t *testing.T) {
 
 // The seeded claude row, and the migrated one, carry it.
 func TestTheSeededClaudeRowTakesAutocompact(t *testing.T) {
+	t.Parallel()
 	for _, h := range store.DefaultHarnesses() {
 		if h.ID == "claude" {
 			if strings.Join(h.AutocompactArgs, " ") != "--autocompact {autocompact}" {
@@ -154,6 +163,7 @@ func fakeClaude(t *testing.T, help string) string {
 }
 
 func TestARunnerThatListsTheFlagTakesIt(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	h := claudeWithAutocompact()
 	h.BinPath = fakeClaude(t, "Options:\n  --autocompact <auto|tokens>  Auto-compact window size")
@@ -164,6 +174,7 @@ func TestARunnerThatListsTheFlagTakesIt(t *testing.T) {
 
 // An older claude would hard-fail on the unknown option, so the flag is left off and the card says why.
 func TestAnOlderClaudeIsStartedWithoutTheFlagAndTheDetailsSayWhy(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	h := claudeWithAutocompact()
 	h.BinPath = fakeClaude(t, "Options:\n  --model <model>  Model")
@@ -189,6 +200,7 @@ func TestAnOlderClaudeIsStartedWithoutTheFlagAndTheDetailsSayWhy(t *testing.T) {
 }
 
 func TestAClaudeThatCannotBeAskedIsAssumedToTakeIt(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	d.acProbe.help = func(string) (string, error) { return "", os.ErrNotExist }
 	if d.autocompactArgsFor(claudeWithAutocompact()) == nil {
@@ -198,6 +210,7 @@ func TestAClaudeThatCannotBeAskedIsAssumedToTakeIt(t *testing.T) {
 
 // A window past the model's is clamped to it, and an unnamed model is left to the 100k-1M range.
 func TestTheWindowNeverPassesTheModels(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	setLimits(t, d, `{"claude":300}`)
 	for model, want := range map[string]int{
@@ -215,6 +228,7 @@ func TestTheWindowNeverPassesTheModels(t *testing.T) {
 // The peek's caption is the launch value less claude's reserve, from the same function, and it is never before the
 // card's limit when the model's window leaves room.
 func TestTheCaptionIsWhereTheSessionReallyCompacts(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	task := &store.Task{Runner: "claude", Model: "claude-opus-5-5[1m]"}
 	if w, c := d.autocompactK(task), d.compactsAtK(task); w != 253 || c != 220 {

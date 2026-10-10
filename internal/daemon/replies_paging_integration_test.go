@@ -150,6 +150,7 @@ func checkWalk(t *testing.T, path string, n, count, blocks int) int {
 }
 
 func TestRepliesPageCapIs50(t *testing.T) {
+	t.Parallel()
 	f := newUsageFix(t)
 	for i := 0; i < 60; i++ {
 		transcriptReply(t, f.path, fmt.Sprintf("m%d", i), f.base.Add(time.Duration(i)*time.Second), false,
@@ -330,6 +331,7 @@ func TestRepliesBeforeReadsPastTheReachToFindARecord(t *testing.T) {
 // The first page's 50-cap keeps a tie together: the entry cut off at the floor's
 // time would be on neither page.
 func TestRepliesFirstPageCapKeepsTies(t *testing.T) {
+	t.Parallel()
 	var sb strings.Builder
 	for k := 0; k < 56; k++ {
 		sb.WriteString(pagingReplyLine(fmt.Sprintf("m%d", k), pagingBase.Add(time.Duration(k/2)*time.Second),
@@ -356,6 +358,7 @@ func TestRepliesFirstPageCapKeepsTies(t *testing.T) {
 
 // Entries sharing the cut's time stay on one page.
 func TestRepliesCutKeepsTiesTogether(t *testing.T) {
+	t.Parallel()
 	var sb strings.Builder
 	for k := 0; k < 12; k++ {
 		sb.WriteString(pagingReplyLine(fmt.Sprintf("m%d", k), pagingBase.Add(time.Duration(k/4)*time.Second),
@@ -377,6 +380,7 @@ func TestRepliesCutKeepsTiesTogether(t *testing.T) {
 }
 
 func TestRepliesFirstPageHasNoMoreForTheScreen(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	task, _, err := d.st.Register(store.Observed{WireName: "codexer2", Worktree: "/tmp/codexer2", Runner: "codex"})
 	if err != nil {
@@ -393,6 +397,7 @@ func TestRepliesFirstPageHasNoMoreForTheScreen(t *testing.T) {
 }
 
 func TestRepliesRouteParsesBefore(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	task, _, err := d.st.Register(store.Observed{WireName: "codexer3", Worktree: "/tmp/codexer3", Runner: "codex"})
 	if err != nil {

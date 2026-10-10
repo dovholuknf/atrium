@@ -25,6 +25,7 @@ func inATurn(d *Daemon, id string, began, at time.Time, calls int) {
 }
 
 func TestALongTurnIsReportedOnce(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	launcher, worker := launchedPair(t, d)
 	began := time.Now().Add(-2 * time.Hour)
@@ -68,6 +69,7 @@ func TestALongTurnIsReportedOnce(t *testing.T) {
 // Under the setting, nothing. A card with no launcher is flagged and nobody is
 // told. One long tool call inside a long turn shows the tool call.
 func TestALongTurnOnEveryCardAndItsPriority(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	mine := peerCard(t, d, "mine")
 	if err := d.st.SetStatus(mine.ID, store.StatusRunning); err != nil {

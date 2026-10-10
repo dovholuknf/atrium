@@ -22,6 +22,7 @@ func reopenDaemon(t *testing.T) *Daemon {
 
 // THE BUG: a card with a runner that was not a fixture was left behind.
 func TestWhatWasOpenIsRecordedAtTheWindDown(t *testing.T) {
+	t.Parallel()
 	d := reopenDaemon(t)
 	live := []*runner{
 		{taskID: "card-a", buf: newRing(64, 80)},
@@ -41,6 +42,7 @@ func TestWhatWasOpenIsRecordedAtTheWindDown(t *testing.T) {
 // Skipping the write when there is nothing open would leave the last list in
 // place and do exactly that.
 func TestStoppingWithNothingOpenClearsTheList(t *testing.T) {
+	t.Parallel()
 	d := reopenDaemon(t)
 	d.saveReopen([]*runner{{taskID: "card-a", buf: newRing(64, 80)}})
 	if len(d.readReopen()) != 1 {
@@ -56,6 +58,7 @@ func TestStoppingWithNothingOpenClearsTheList(t *testing.T) {
 
 // A machine that has never run this, and every card that had no runner.
 func TestNoRecordIsNormal(t *testing.T) {
+	t.Parallel()
 	d := reopenDaemon(t)
 	if got := d.readReopen(); got != nil {
 		t.Fatalf("invented a list out of nothing: %v", got)
@@ -66,6 +69,7 @@ func TestNoRecordIsNormal(t *testing.T) {
 // Nothing, never an error: this is a convenience over disposable state and
 // refusing to start over it would be a self-inflicted outage.
 func TestAnUnreadableRecordIsIgnored(t *testing.T) {
+	t.Parallel()
 	d := reopenDaemon(t)
 	if err := os.WriteFile(d.reopenPath(), []byte("{not json"), 0o600); err != nil {
 		t.Fatal(err)
@@ -78,6 +82,7 @@ func TestAnUnreadableRecordIsIgnored(t *testing.T) {
 // WRITTEN ASIDE AND RENAMED, so a kill during the write leaves the last good
 // list rather than half of this one.
 func TestTheRecordIsWrittenAtomically(t *testing.T) {
+	t.Parallel()
 	d := reopenDaemon(t)
 	d.saveReopen([]*runner{{taskID: "card-a", buf: newRing(64, 80)}})
 	if _, err := os.Stat(d.reopenPath() + ".tmp"); !os.IsNotExist(err) {
@@ -92,6 +97,7 @@ func TestTheRecordIsWrittenAtomically(t *testing.T) {
 // asserted is the filter, one row at a time, because every one of these was a
 // way to reopen the wrong thing.
 func TestOnlyCardsWorthReopeningAreChosen(t *testing.T) {
+	t.Parallel()
 	d := reopenDaemon(t)
 
 	mk := func(t *testing.T, name, runner, worktree, status string) string {
@@ -139,6 +145,7 @@ func TestOnlyCardsWorthReopeningAreChosen(t *testing.T) {
 // whether it resumes from the directory or from the card. Reopening it here
 // first would quietly change how a fixture starts.
 func TestACardAFixtureAlreadyStartedIsSkipped(t *testing.T) {
+	t.Parallel()
 	d := reopenDaemon(t)
 	dir := t.TempDir()
 	task, _, err := d.st.Register(store.Observed{
@@ -166,6 +173,7 @@ func TestACardAFixtureAlreadyStartedIsSkipped(t *testing.T) {
 // a second, which reaches the board as a dead card and a terminal that never
 // appeared. Starting fresh in the right directory is worth more.
 func TestAStaleResumeIsDroppedRatherThanUsed(t *testing.T) {
+	t.Parallel()
 	d := reopenDaemon(t)
 	task := &store.Task{
 		ID:       "card-a",
@@ -185,6 +193,7 @@ func TestAStaleResumeIsDroppedRatherThanUsed(t *testing.T) {
 // The record lives beside the database, so naming another database isolates it
 // and a test can never reach the machine's real one.
 func TestTheRecordSitsBesideTheDatabase(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	d := &Daemon{opts: Options{DBPath: filepath.ToSlash(filepath.Join(dir, "a.db"))}}
 	if filepath.Dir(d.reopenPath()) != dir {
@@ -195,6 +204,7 @@ func TestTheRecordSitsBesideTheDatabase(t *testing.T) {
 // The shape on disk, locked so a future reader can tell an old file from a new
 // one rather than guessing.
 func TestTheRecordSaysWhenItWasWritten(t *testing.T) {
+	t.Parallel()
 	d := reopenDaemon(t)
 	d.saveReopen([]*runner{{taskID: "card-a", buf: newRing(64, 80)}})
 	raw, err := os.ReadFile(d.reopenPath())

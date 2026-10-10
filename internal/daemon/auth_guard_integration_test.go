@@ -52,6 +52,7 @@ func markPublicShareRunning(t *testing.T, d *Daemon) {
 
 // POINT 1. Turning the login off under a running public share is refused.
 func TestTheLoginCannotBeTurnedOffUnderAPublicShare(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	if err := d.SaveAuth(basicConfig(t, "clint", "hunter2")); err != nil {
 		t.Fatal(err)
@@ -76,6 +77,7 @@ func TestTheLoginCannotBeTurnedOffUnderAPublicShare(t *testing.T) {
 }
 
 func TestTheLoginCanBeTurnedOffWhenNoPublicShareRuns(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	if err := d.SaveAuth(basicConfig(t, "clint", "hunter2")); err != nil {
 		t.Fatal(err)
@@ -88,6 +90,7 @@ func TestTheLoginCanBeTurnedOffWhenNoPublicShareRuns(t *testing.T) {
 // POINT 2. A source that keeps guessing wrong waits, and the wait comes before
 // any scrypt.
 func TestRepeatedWrongPasswordsMakeASourceWait(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	if err := d.SaveAuth(basicConfig(t, "clint", "hunter2")); err != nil {
 		t.Fatal(err)
@@ -130,6 +133,7 @@ func TestRepeatedWrongPasswordsMakeASourceWait(t *testing.T) {
 // Behind a share's proxy everybody is loopback, so the address the proxy
 // appended is what counts, and the part a caller wrote is ignored.
 func TestTheSourceBehindAProxyIsTheLastForwardedAddress(t *testing.T) {
+	t.Parallel()
 	r := httptest.NewRequest(http.MethodGet, "/", nil)
 	r.RemoteAddr = "127.0.0.1:5000"
 	r.Header.Set("X-Forwarded-For", "1.1.1.1, 203.0.113.9")
@@ -144,6 +148,7 @@ func TestTheSourceBehindAProxyIsTheLastForwardedAddress(t *testing.T) {
 
 // Only so many password checks run at once.
 func TestPasswordChecksAreBounded(t *testing.T) {
+	t.Parallel()
 	var l authLimiter
 	for i := 0; i < authScryptSlots; i++ {
 		if !l.acquire() {
@@ -160,6 +165,7 @@ func TestPasswordChecksAreBounded(t *testing.T) {
 }
 
 func TestAFullBoardRefusesRatherThanQueues(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	if err := d.SaveAuth(basicConfig(t, "clint", "hunter2")); err != nil {
 		t.Fatal(err)
@@ -175,6 +181,7 @@ func TestAFullBoardRefusesRatherThanQueues(t *testing.T) {
 }
 
 func TestTheFailureTableIsBounded(t *testing.T) {
+	t.Parallel()
 	var l authLimiter
 	for i := 0; i < authFailsMost+50; i++ {
 		l.fail("src-" + strings.Repeat("x", i%7) + string(rune('a'+i%26)) + time.Duration(i).String())
@@ -187,6 +194,7 @@ func TestTheFailureTableIsBounded(t *testing.T) {
 }
 
 func TestTheWaitDoublesAndIsCapped(t *testing.T) {
+	t.Parallel()
 	var l authLimiter
 	now := time.Now()
 	l.now = func() time.Time { return now }
@@ -208,6 +216,7 @@ func TestTheWaitDoublesAndIsCapped(t *testing.T) {
 
 // POINT 3. A password change ends sessions issued before it.
 func TestAPasswordChangeEndsEarlierSessions(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	if err := d.SaveAuth(basicConfig(t, "clint", "hunter2")); err != nil {
 		t.Fatal(err)
@@ -239,6 +248,7 @@ func TestAPasswordChangeEndsEarlierSessions(t *testing.T) {
 
 // Saving the same login again does not log everybody out.
 func TestSavingTheSameLoginKeepsSessions(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	cfg := basicConfig(t, "clint", "hunter2")
 	if err := d.SaveAuth(cfg); err != nil {
@@ -256,6 +266,7 @@ func TestSavingTheSameLoginKeepsSessions(t *testing.T) {
 // Removing somebody from the allowlist ends their session, and the guard
 // re-checks the subject, so a leftover cookie is not enough.
 func TestAnAllowlistRemovalEndsThatSession(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	oidc := func(allow ...string) AuthConfig {
 		return AuthConfig{
@@ -306,6 +317,7 @@ func TestAnAllowlistRemovalEndsThatSession(t *testing.T) {
 // Logout is a POST, and with a password login the browser's cached credentials
 // do not sign it straight back in.
 func TestLogoutIsAPostAndASignedOutBrowserIsNotSignedBackIn(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	if err := d.SaveAuth(basicConfig(t, "clint", "hunter2")); err != nil {
 		t.Fatal(err)
@@ -356,6 +368,7 @@ func TestLogoutIsAPostAndASignedOutBrowserIsNotSignedBackIn(t *testing.T) {
 
 // Many parallel guesses do not run more than the bound of checks at once.
 func TestParallelGuessesStayWithinTheBound(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	if err := d.SaveAuth(basicConfig(t, "clint", "hunter2")); err != nil {
 		t.Fatal(err)

@@ -11,6 +11,7 @@ import (
 
 // An unchanged statusline writes nothing, and a changed figure writes a row.
 func TestKeepLimitReadingsOnChange(t *testing.T) {
+	t.Parallel()
 	f := newUsageFix(t)
 	d := &Daemon{st: f.st}
 	reset := time.Date(2026, 9, 29, 15, 0, 0, 0, time.UTC)

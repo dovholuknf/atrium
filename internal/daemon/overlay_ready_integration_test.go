@@ -10,6 +10,7 @@ import (
 )
 
 func TestSharingZitiWithNoIdentityIsRefusedWithTheNextStep(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 
 	err := d.readyToShare(OverlayZiti)
@@ -25,6 +26,7 @@ func TestSharingZitiWithNoIdentityIsRefusedWithTheNextStep(t *testing.T) {
 // it is worth telling apart from never configured. Somebody who has enrolled
 // before needs to hear "it has gone", not "there is none".
 func TestAnIdentityThatHasGoneSaysSoRatherThanSayingThereIsNone(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	gone := filepath.ToSlash(filepath.Join(t.TempDir(), "vanished.json"))
 	if err := d.saveOverlay("ziti", []byte(`{"identity":"`+gone+`","service":"board"}`)); err != nil {
@@ -47,6 +49,7 @@ func TestAnIdentityThatHasGoneSaysSoRatherThanSayingThereIsNone(t *testing.T) {
 // bind, which comes back from ziti as a refusal that reads like a permissions
 // problem.
 func TestAnIdentityWithNoServiceIsRefused(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	dir := t.TempDir()
 	id := filepath.Join(dir, "id.json")
@@ -70,6 +73,7 @@ func TestAnIdentityWithNoServiceIsRefused(t *testing.T) {
 // would be easy to break while making the refusals work, and breaking it means
 // the overlay can never start at all.
 func TestAConfiguredZitiOverlayPassesPreflight(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	dir := t.TempDir()
 	id := filepath.Join(dir, "id.json")
@@ -89,6 +93,7 @@ func TestAConfiguredZitiOverlayPassesPreflight(t *testing.T) {
 // An overlay nobody has heard of is not silently allowed through the
 // pre-flight, which would then reach a start that has no case for it.
 func TestAnUnknownOverlayCannotBeStarted(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	if err := d.startOverlay("carrier-pigeon"); err == nil {
 		t.Fatal("an unknown overlay was started")
@@ -98,6 +103,7 @@ func TestAnUnknownOverlayCannotBeStarted(t *testing.T) {
 // The pre-flight is a pre-flight: it must not be reachable only through the
 // happy path, or a caller that goes straight to the start skips it.
 func TestStartGoesThroughThePreflight(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	err := d.startOverlay("ziti")
 	if err == nil {

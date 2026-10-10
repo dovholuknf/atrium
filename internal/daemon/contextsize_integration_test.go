@@ -66,6 +66,7 @@ func contextNotices(t *testing.T, d *Daemon, launcherID string) []*store.Message
 
 // Every Claude card carries its size, marked past its limit.
 func TestACardShowsItsContextSize(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	card := peerCard(t, d, "mine")
 	prompt(t, d, card.ID)
@@ -85,6 +86,7 @@ func TestACardShowsItsContextSize(t *testing.T) {
 
 // The hub's per-harness setting moves the line.
 func TestTheLimitIsAHubSetting(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	_, worker := launchedPair(t, d)
 	reply := withTranscript(t, d, worker)
@@ -100,6 +102,7 @@ func TestTheLimitIsAHubSetting(t *testing.T) {
 
 // Plan 1: nobody hears about a card's size. Not its launcher, not anyone.
 func TestNobodyIsToldAboutASize(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	launcher, worker := launchedPair(t, d)
 	reply := withTranscript(t, d, worker)
@@ -114,6 +117,7 @@ func TestNobodyIsToldAboutASize(t *testing.T) {
 
 // A card that is not Claude has no size.
 func TestANonClaudeCardHasNoSize(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	task, _, err := d.st.Register(store.Observed{WireName: "sh", Worktree: "/tmp/sh", Runner: "shell"})
 	if err != nil {
@@ -132,6 +136,7 @@ func TestANonClaudeCardHasNoSize(t *testing.T) {
 // new transcript has something in it. The new session's transcript is the one read,
 // before its first turn has ended.
 func TestAClearedCardReadsItsNewSession(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	_, worker := launchedPair(t, d)
 	reply := withTranscript(t, d, worker)
@@ -168,6 +173,7 @@ func TestAClearedCardReadsItsNewSession(t *testing.T) {
 
 // The row carries the limit in force and the layer it came from, and the mark follows that limit.
 func TestTheRowNamesTheLayerTheLimitCameFrom(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	card := peerCard(t, d, "layered")
 	prompt(t, d, card.ID)

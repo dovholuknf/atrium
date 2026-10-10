@@ -7,6 +7,7 @@ import "testing"
 // A spinner line redrawn with a VS16 must spend one table entry, not one per
 // redraw, so a long session does not fill the cap before real text needs it.
 func TestCombiningMarksAreInterned(t *testing.T) {
+	t.Parallel()
 	s := newScreenSized(40, 4)
 	for i := 0; i < 100000; i++ {
 		s.apply([]byte("\r⠋ working️"))
@@ -22,6 +23,7 @@ func TestCombiningMarksAreInterned(t *testing.T) {
 
 // Past the cap a sequence already held still attaches and a new one is dropped.
 func TestCombiningMarksPastTheCap(t *testing.T) {
+	t.Parallel()
 	s := newScreenSized(40, 4)
 	first := string([]rune{0x300, 0x300, 0x300})
 	// Every sequence of three marks from U+0300..U+036F, until the table is full.
