@@ -7115,6 +7115,7 @@ async function phoneViewSection(browser, base) {
     return p;
   };
   const resizes = (p) => p.evaluate(() => window.__sent.filter(x => /"t":"resize"/.test(x)));
+  let phoneFocusSent = 0;
   try {
     // ── the phone
     const pctx = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
@@ -7148,6 +7149,8 @@ async function phoneViewSection(browser, base) {
     await p.waitForTimeout(500);
     n = (await resizes(p)).length;
     if (n) fail("phoneView: a resize or a keyboard-sized height change sent " + n + " resize frame(s)");
+    phoneFocusSent = await p.evaluate(() => { window.dispatchEvent(new Event("focus"));
+      return window.__sent.filter(x => /"t":"focus"/.test(x)).length; });
     d = await dims();
     if (d.cols !== 132 || d.rows !== 41) fail("phoneView: the grid moved with the window: " + JSON.stringify(d));
 
@@ -7235,6 +7238,14 @@ async function phoneViewSection(browser, base) {
     if (!(await dp.evaluate(() => termPhone()))) fail("phoneView: the desktop-size override did not make the phone view");
     await dp.evaluate(() => localStorage.removeItem("atrium.termview.land-live"));
     if (!(await resizes(dp)).length) fail("phoneView: a desktop attach sent no resize");
+    // two board windows on one terminal: the room sizes the pty for the one used last, so a window says when it is
+    if (!(await dp.evaluate(() => window.__sent.some(x => /"t":"focus"/.test(x)))))
+      fail("twoWindowSize: a desktop attach in a focused window sent no focus frame");
+    await dp.evaluate(() => { window.__sent.length = 0; });
+    await dp.evaluate(() => window.dispatchEvent(new Event("focus")));
+    if (!(await dp.evaluate(() => window.__sent.some(x => /"t":"focus"/.test(x)))))
+      fail("twoWindowSize: a window gaining focus sent no focus frame");
+    if ((await phoneFocusSent) > 0) fail("twoWindowSize: a phone view sent a focus frame");
     await dp.evaluate(() => { window.__sent.length = 0; });
     await dp.setViewportSize({ width: 1200, height: 700 });
     await dp.waitForTimeout(700);
