@@ -542,9 +542,9 @@ var migrations = []struct {
 			`DROP TABLE backlog_item`,
 			`ALTER TABLE backlog_item_rebuilt RENAME TO backlog_item`,
 			`CREATE INDEX IF NOT EXISTS backlog_item_dept ON backlog_item (dept, status)`,
-			},
 		},
-		{
+	},
+	{
 		// THE MERGE FLOW'S STATE. See flow.go and docs/design/merge-flow.md. flow_role is who holds each role, one row per
 		// holder (only the tester may have several; flow.go enforces that, so the table need not). flow_item is a backlog
 		// item's stage, kept apart from backlog_item.status so nothing that reads that column changes. flow_check is a
