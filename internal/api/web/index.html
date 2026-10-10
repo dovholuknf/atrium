@@ -2299,6 +2299,19 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
         saying so, typed when its line is empty. A session that queued its own restart wake gets that
         instead. A session that had finished its turn gets nothing. On by default.</span>
     </div>
+
+    <!-- Idle parking: seconds on the wire, minutes here. The floor and the default come from the room. -->
+    <div class="field" id="s-idlepark-field">
+      <label class="eyebrow" for="s-idlepark-on">park a card that sits idle</label>
+      <div class="picker">
+        <label style="white-space:nowrap"><input id="s-idlepark-on" type="checkbox" data-saves="saveIdlePark">
+          park after</label>
+        <input id="s-idlepark-min" type="number" min="1" step="1" data-saves="saveIdlePark" style="width:7em;flex:none"
+          aria-label="minutes idle before a card is parked">
+        <span>minutes</span>
+      </div>
+      <span class="hintline" id="s-idlepark-hint"></span>
+    </div>
     </section>
   </div>
 </dialog>

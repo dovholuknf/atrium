@@ -1053,6 +1053,7 @@ function fillMachineFields(s) {
   showForgeSettings(s);
   const exitWake = document.getElementById("s-exitwake");
   if (exitWake) exitWake.checked = s.unexpected_exit_wake !== false;
+  fillIdlePark(s);
   // What an empty box comes out as. A search of the daemon's own PATH, so it
   // is not something the person reading the box could work out from here.
   const shellNow = document.getElementById("s-shell-now");
@@ -1665,6 +1666,57 @@ async function saveExitWake() {
   toast("saved", el.checked
     ? "a session this room interrupts mid-turn is told so when it comes back"
     : "nothing is typed after this room goes away mid-turn");
+}
+
+// The idle park timer is seconds on the wire and minutes in the box. `idle_park_after_now` is what is in force,
+// a number of seconds or "off". The floor and the default are the room's own answer.
+let idlePark = { min: 1800, def: 7200 };
+
+function fillIdlePark(s) {
+  const on = document.getElementById("s-idlepark-on");
+  const min = document.getElementById("s-idlepark-min");
+  if (!on || !min) return;
+  const now = s.idle_park_after_now;
+  idlePark.min = Number(s.idle_park_after_min) || idlePark.min;
+  idlePark.def = Number(s.idle_park_after_default) || idlePark.def;
+  on.checked = now !== "off";
+  min.value = now === "off" ? "" : Math.round(Number(now || idlePark.def) / 60);
+  min.min = Math.ceil(idlePark.min / 60);
+  min.placeholder = Math.round(idlePark.def / 60);
+  min.disabled = !on.checked;
+  const hint = document.getElementById("s-idlepark-hint");
+  if (hint) hint.textContent = "Default " + Math.round(idlePark.def / 60) + " minutes, and the least it takes is " +
+    Math.round(idlePark.min / 60) + ". Off keeps an idle card running until you park it.";
+}
+
+async function saveIdlePark() {
+  const on = document.getElementById("s-idlepark-on");
+  const min = document.getElementById("s-idlepark-min");
+  if (!on || !min) return;
+  let v = "off";
+  if (on.checked) {
+    const m = min.value.trim() === "" ? idlePark.def / 60 : Number(min.value);
+    if (!Number.isFinite(m) || m * 60 < idlePark.min) {
+      toast("not saved", "the least is " + Math.round(idlePark.min / 60) + " minutes, so a card is not parked between two of its own turns");
+      try {
+        const h = typeof roomCfgFor !== "undefined" && roomCfgFor ? { "X-Atrium-Room": roomCfgFor } : {};
+        fillIdlePark(await plainFetch("/v1/settings", { headers: h }).then(x => x.json()));
+      } catch (e) {}
+      return;
+    }
+    v = String(Math.round(m * 60));
+  }
+  try {
+    pastePrefs = await api("/v1/settings", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ idle_park_after: v })
+    });
+  } catch (e) {
+    toast("that did not save", e.message);
+    return;
+  }
+  fillIdlePark(pastePrefs);
+  toast("saved", v === "off" ? "idle cards are not parked" : "an idle card is parked after " + (Number(v) / 60) + " minutes");
 }
 
 // Both halves together, since they are one decision in two units.
