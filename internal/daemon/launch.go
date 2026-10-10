@@ -1720,7 +1720,8 @@ const LaunchEndingLine = "Before you end your turn, tell your launcher either:\n
 	"- atrium_done <sha or artifact> when the work is finished\n" +
 	"- atrium_blocked <up to 50 words> when something stops you, such as a question you need answered, a tool you need " +
 	"installed, or a permission you need.\n" +
-	"Run tests and builds in the foreground, with a longer command timeout if needed. If a command must run in the background, wait for it in the same turn. Never end a turn while a command you started is still running."
+	"Run tests and builds in the foreground, with a longer command timeout if needed. If a command must run in the background, wait for it in the same turn. Never end a turn while a command you started is still running.\n" +
+	"Report to your launcher, never to the operator, unless your launcher is the operator. Your commit is read from your worktree or any hub branch, so never ask where to push and never offer a push to origin. A launcher's \"stop\" is a valid end: answer it with atrium_done, or with nothing."
 
 // BriefPrompt is the launch text of a session with a brief file: read it, do what it describes, and how to end.
 // ONE CODE for the room's launch and the stdio atrium_launch. A launcher's prompt that only says to read the brief
