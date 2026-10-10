@@ -76,6 +76,7 @@ func handles(list []Peer) []string {
 
 // finished. `atrium finish` with an account of itself.
 func TestAFinishedSessionReadsAsFinishedAndCarriesItsRecap(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	fleetCard(t, d, "shipper")
 	finishOf(t, d, FinishRequest{Agent: "shipper", Recap: "wired the reaper to the pty"})
@@ -92,6 +93,7 @@ func TestAFinishedSessionReadsAsFinishedAndCarriesItsRecap(t *testing.T) {
 // finished, and it said nothing. Still finished, and worth seeing that it is
 // the kind with nothing to read.
 func TestAFinishedSessionWithNoRecapSaysSo(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	fleetCard(t, d, "silent-shipper")
 	finishOf(t, d, FinishRequest{Agent: "silent-shipper"})
@@ -116,6 +118,7 @@ func TestAFinishedSessionWithNoRecapSaysSo(t *testing.T) {
 // first board this was pointed at had nineteen real recaps buried under twenty
 // five rows of those.
 func TestACardInDoneThatNoSessionClaimedIsNotListed(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	task := fleetCard(t, d, "dragged")
 	if err := d.st.SetStatus(task.ID, store.StatusDone); err != nil {
@@ -136,6 +139,7 @@ func TestACardInDoneThatNoSessionClaimedIsNotListed(t *testing.T) {
 // been waiting since yesterday is exactly the failure this whole list exists
 // to fix.
 func TestTheWindowDropsOldFinishedWorkAndNothingElse(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	fleetCard(t, d, "shipped")
 	finishOf(t, d, FinishRequest{Agent: "shipped", Recap: "landed it"})
@@ -179,6 +183,7 @@ func findPeer(list []Peer, handle string) (Peer, bool) {
 // message a session that has ended wastes a turn and produces a message
 // nobody reads.
 func TestAFinishedSessionIsNotOfferedAsSomebodyToTell(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	fleetCard(t, d, "gone")
 	finishOf(t, d, FinishRequest{Agent: "gone", Recap: "done"})
@@ -192,6 +197,7 @@ func TestAFinishedSessionIsNotOfferedAsSomebodyToTell(t *testing.T) {
 
 // blocked. `atrium ask`, stopped, with the words on the card.
 func TestASessionThatStoppedAndAskedReadsAsBlockedAndShowsTheQuestion(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	fleetCard(t, d, "stuck")
 	askOf(t, d, HelpRequest{
@@ -220,6 +226,7 @@ func TestASessionThatStoppedAndAskedReadsAsBlockedAndShowsTheQuestion(t *testing
 // which reads as "a turn ended", and a session that stopped on purpose to ask
 // something is indistinguishable from one that merely ran out of things to do.
 func TestABlockedAskRecordsThatItIsAQuestion(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	task := fleetCard(t, d, "asker")
 	askOf(t, d, HelpRequest{Agent: "asker", Blocked: true, Ask: "which branch"})
@@ -239,6 +246,7 @@ func TestABlockedAskRecordsThatItIsAQuestion(t *testing.T) {
 // moved the card. A working session filed as waiting makes the count that
 // drives every alert lie.
 func TestASessionThatAskedWhileWorkingIsNotFiledAsBlocked(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	task := fleetCard(t, d, "curious")
 	askOf(t, d, HelpRequest{
@@ -268,6 +276,7 @@ func TestASessionThatAskedWhileWorkingIsNotFiledAsBlocked(t *testing.T) {
 // quiet. THE ONE NOBODY LOOKS AT. Nothing recorded, nothing heard, and no
 // question to bring it to anybody's attention.
 func TestASessionWithNothingRecordedReadsAsQuiet(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	task := fleetCard(t, d, "vanished")
 	if err := d.st.SetStatus(task.ID, store.StatusRunning); err != nil {
@@ -290,6 +299,7 @@ func TestASessionWithNothingRecordedReadsAsQuiet(t *testing.T) {
 // been open. Activity is the answer here and it comes out of memory, never the
 // database.
 func TestASessionThatIsMovingIsNotQuiet(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	task := fleetCard(t, d, "busy")
 	if err := d.st.SetStatus(task.ID, store.StatusRunning); err != nil {
@@ -313,6 +323,7 @@ func TestASessionThatIsMovingIsNotQuiet(t *testing.T) {
 // waiting column and atrium cannot say what for, which is the same problem
 // wearing a different status.
 func TestATurnThatEndedWithNothingSaidReadsAsQuiet(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	task := fleetCard(t, d, "trailed-off")
 	if err := d.st.SetStatus(task.ID, store.StatusNeedsInput); err != nil {
@@ -328,6 +339,7 @@ func TestATurnThatEndedWithNothingSaidReadsAsQuiet(t *testing.T) {
 // THE ORDER IS THE FEATURE. A dispatcher reads the top of this list and stops,
 // so anything that wants a human has to be above anything that does not.
 func TestTheMostWantingComeFirst(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 
 	working := fleetCard(t, d, "z-working")
@@ -369,6 +381,7 @@ func TestTheMostWantingComeFirst(t *testing.T) {
 // long a thing has waited is a fact, not a judgement, which is the rule the
 // Stack view already follows.
 func TestWithinABucketTheLongestWaitComesFirst(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	old := fleetCard(t, d, "old-quiet")
 	recent := fleetCard(t, d, "recent-quiet")
@@ -393,6 +406,7 @@ func TestWithinABucketTheLongestWaitComesFirst(t *testing.T) {
 // The endpoint answers both questions, and the fleet one is the only one that
 // includes work that is over.
 func TestTheEndpointOnlyIncludesFinishedWorkWhenAsked(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	fleetCard(t, d, "over")
 	finishOf(t, d, FinishRequest{Agent: "over", Recap: "done"})

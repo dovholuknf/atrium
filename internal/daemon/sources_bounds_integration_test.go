@@ -67,6 +67,7 @@ func TestOutputJustUnderTheLimitIsFine(t *testing.T) {
 // makes the child's next write fail, which for a shell script is a broken pipe
 // and a confusing exit status instead of the clear reason the caller wants.
 func TestTheBoundedWriterDoesNotFailTheChild(t *testing.T) {
+	t.Parallel()
 	var buf bytes.Buffer
 	w := &limitedWriter{w: &buf, left: 10}
 
@@ -126,6 +127,7 @@ func TestAPartialImportIsNotRecordedAsSuccess(t *testing.T) {
 // offered is safe to leave behind, because offering is keyed on the pair and
 // the next tick sees it as known.
 func TestReofferingAfterAFailedRunIsHarmless(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	item := store.IntakeItem{Source: "github", ExternalID: "4211", Title: "x"}
 

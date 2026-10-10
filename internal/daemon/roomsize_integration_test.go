@@ -17,6 +17,7 @@ import (
 )
 
 func TestAFreshCardOpensAtTheRoomsLastViewport(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	task := plainTask(t, d, "room-fresh")
 
@@ -30,6 +31,7 @@ func TestAFreshCardOpensAtTheRoomsLastViewport(t *testing.T) {
 }
 
 func TestTheRoomsViewportSurvivesARestart(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	d.noteRoomSize(150, 44)
 
@@ -41,6 +43,7 @@ func TestTheRoomsViewportSurvivesARestart(t *testing.T) {
 }
 
 func TestACardWithItsOwnSizeReopensAtIt(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	task := plainTask(t, d, "room-own")
 	d.noteRoomSize(177, 48)
@@ -62,6 +65,7 @@ func TestACardWithItsOwnSizeReopensAtIt(t *testing.T) {
 }
 
 func TestAViewerAgreeingOnASizeIsRememberedByTheRoom(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	f, r := sizedSession(t, d, "room-remember", 120, 30)
 	r.onSized = d.noteRoomSize
@@ -75,6 +79,7 @@ func TestAViewerAgreeingOnASizeIsRememberedByTheRoom(t *testing.T) {
 
 // THE FIRST ATTACH IS ONE RESIZE WITH BOTH SIZES, and does not wait out the hold.
 func TestTheFirstViewerResizesOnceWithBothSizes(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	f, r := sizedSession(t, d, "first-once", 120, 30)
 
@@ -87,6 +92,7 @@ func TestTheFirstViewerResizesOnceWithBothSizes(t *testing.T) {
 
 // AT THE SIZE IT ALREADY IS, THE FIRST ATTACH RESIZES NOTHING.
 func TestTheFirstViewerAtTheOpeningSizeResizesNothing(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	f, _ := sizedSession(t, d, "first-none", 177, 48)
 
@@ -98,6 +104,7 @@ func TestTheFirstViewerAtTheOpeningSizeResizesNothing(t *testing.T) {
 
 // A SECOND VIEWER STILL GOES THROUGH THE HOLD: the width now, the height later.
 func TestASecondViewersHeightStillWaitsOutTheHold(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	f, r := sizedSession(t, d, "second-hold", 120, 30)
 	r.hold = 400 * time.Millisecond
@@ -126,6 +133,7 @@ func TestASecondViewersHeightStillWaitsOutTheHold(t *testing.T) {
 // THE LAST VIEWER LEAVING NEVER RESIZES, and the next first viewer is a first
 // viewer again.
 func TestALoneViewerLeavingAndComingBackResizesOnceMore(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	f, r := sizedSession(t, d, "first-again", 120, 30)
 
@@ -229,6 +237,7 @@ func freshCardAttachedElsewhere(t *testing.T, recordRoom bool) (map[string]int, 
 }
 
 func TestAFreshCardAttachedAtAnotherSizeFilesNoDuplicateLines(t *testing.T) {
+	t.Parallel()
 	_, bad := freshCardAttachedElsewhere(t, true)
 	if len(bad) > 0 {
 		t.Fatalf("with a recorded room viewport these lines are not exactly once: %v", bad)
@@ -239,6 +248,7 @@ func TestAFreshCardAttachedAtAnotherSizeFilesNoDuplicateLines(t *testing.T) {
 // real resize. Whether conhost shifts its repaint on that one resize is not
 // atrium's to decide, so this reports rather than fails on a duplicate.
 func TestAFreshCardOnAnUnrecordedRoomAttachesWithOneResize(t *testing.T) {
+	t.Parallel()
 	_, bad := freshCardAttachedElsewhere(t, false)
 	if len(bad) > 0 {
 		t.Logf("conhost repainted across the one resize: %v", bad)

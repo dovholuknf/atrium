@@ -65,6 +65,7 @@ func count(args []string, flag string) int {
 }
 
 func TestLeanArgsBuildsTheLeanFlagsAndKeepsThePromptLast(t *testing.T) {
+	t.Parallel()
 	in := []string{"--mcp-config", "C:/atrium/mcp.json", "--strict-mcp-config",
 		"--model", "claude-opus-5-5", "read BRIEF.md"}
 	got, err := leanArgs(in, []byte(leanTestSettings), "", nil, leanKit{}, "",
@@ -112,6 +113,7 @@ func TestLeanArgsBuildsTheLeanFlagsAndKeepsThePromptLast(t *testing.T) {
 }
 
 func TestLeanArgsKeepsAtriumControlAndMercuriusByDefault(t *testing.T) {
+	t.Parallel()
 	read := leanTestRead(map[string]string{
 		"C:/atrium/mcp.json":  leanTestMCP,
 		"C:/atrium/bare.json": `{"mcpServers":{"atrium-control":{"type":"http","url":"http://x/_hub/mcp"}}}`,
@@ -147,6 +149,7 @@ func TestLeanArgsKeepsAtriumControlAndMercuriusByDefault(t *testing.T) {
 }
 
 func TestLeanArgsRefusesAnMCPServerTheRunnerDoesNotHave(t *testing.T) {
+	t.Parallel()
 	in := []string{"--mcp-config", "C:/atrium/mcp.json"}
 	_, err := leanArgs(in, nil, "", []string{"nosuch"}, leanKit{}, "",
 		leanTestRead(map[string]string{"C:/atrium/mcp.json": leanTestMCP}))
@@ -156,6 +159,7 @@ func TestLeanArgsRefusesAnMCPServerTheRunnerDoesNotHave(t *testing.T) {
 }
 
 func TestLeanSettingsKeepsGateAndHooksAndDropsWhatPrintsIntoContext(t *testing.T) {
+	t.Parallel()
 	raw, err := leanSettings([]byte(leanTestSettings), "", nil)
 	if err != nil {
 		t.Fatal(err)
@@ -185,6 +189,7 @@ func TestLeanSettingsKeepsGateAndHooksAndDropsWhatPrintsIntoContext(t *testing.T
 }
 
 func TestLeanSettingsKeepsACardOutOfTheAgentView(t *testing.T) {
+	t.Parallel()
 	raw, err := leanSettings([]byte(leanTestSettings), "", nil)
 	if err != nil {
 		t.Fatal(err)
@@ -214,6 +219,7 @@ func TestLeanSettingsAddsTheStopHookWhenAsked(t *testing.T) {
 }
 
 func TestLeanOptionsComeFromTheRequestOrTheCard(t *testing.T) {
+	t.Parallel()
 	if lean, _, _ := leanOptions(LaunchRequest{}, nil, ""); lean {
 		t.Fatal("a plain launch is not lean")
 	}
@@ -234,6 +240,7 @@ func TestLeanOptionsComeFromTheRequestOrTheCard(t *testing.T) {
 }
 
 func TestWithoutLeanTagsKeepsTheRest(t *testing.T) {
+	t.Parallel()
 	got, cut := withoutLeanTags([]string{"origin:agent", LeanTag, "atrium:mcp:ziti", "docs"})
 	if !cut || strings.Join(got, ",") != "origin:agent,docs" {
 		t.Fatalf("got %q %v", got, cut)

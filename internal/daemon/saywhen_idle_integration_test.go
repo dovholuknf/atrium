@@ -11,6 +11,7 @@ import (
 
 // A done message to a session with no turn running has nothing to wait for.
 func TestADoneMessageToAnIdleSessionIsTypedAtOnce(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	target, _, f := peerPair(t, d)
 	t.Cleanup(func() { d.pending.stopAll() })
@@ -24,6 +25,7 @@ func TestADoneMessageToAnIdleSessionIsTypedAtOnce(t *testing.T) {
 
 // A busy session still gets it when the turn ends, not before.
 func TestADoneMessageToABusySessionStillWaits(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	target, _, f := peerPair(t, d)
 	t.Cleanup(func() { d.pending.stopAll() })
@@ -43,6 +45,7 @@ func TestADoneMessageToABusySessionStillWaits(t *testing.T) {
 
 // A runner that takes no input mid-turn falls back to done, and idle means now.
 func TestAMessageToAnIdleRunnerWithoutMidTurnInputIsTypedAtOnce(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	h, err := d.st.Harness("claude")
 	if err != nil {
@@ -66,6 +69,7 @@ func TestAMessageToAnIdleRunnerWithoutMidTurnInputIsTypedAtOnce(t *testing.T) {
 
 // The turn ended but its Stop hook never landed, so the activity still reads busy. A card that looks idle has no turn.
 func TestALooksIdleSessionHasNoTurnToWaitFor(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	target, _, f := peerPair(t, d)
 	t.Cleanup(func() { d.pending.stopAll() })

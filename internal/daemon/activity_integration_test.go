@@ -23,6 +23,7 @@ func fixedClock(start time.Time) (*time.Time, func() time.Time) {
 // build or hung. The activity is what tells those apart, so the tool name and
 // the age both have to survive the round trip.
 func TestActivityReportsToolAndAge(t *testing.T) {
+	t.Parallel()
 	at, clock := fixedClock(time.Date(2026, 9, 1, 12, 0, 0, 0, time.UTC))
 	tr := newActivityTracker()
 	tr.now = clock
@@ -45,6 +46,7 @@ func TestActivityReportsToolAndAge(t *testing.T) {
 // An unchanged state keeps counting from when it began. Otherwise every hook
 // would reset the clock and "thinking for 20 minutes" could never be shown.
 func TestActivityKeepsItsStartTimeWhenUnchanged(t *testing.T) {
+	t.Parallel()
 	at, clock := fixedClock(time.Date(2026, 9, 1, 12, 0, 0, 0, time.UTC))
 	tr := newActivityTracker()
 	tr.now = clock
@@ -62,6 +64,7 @@ func TestActivityKeepsItsStartTimeWhenUnchanged(t *testing.T) {
 
 // A different tool is a different activity, so its clock restarts.
 func TestActivityRestartsOnAChange(t *testing.T) {
+	t.Parallel()
 	at, clock := fixedClock(time.Date(2026, 9, 1, 12, 0, 0, 0, time.UTC))
 	tr := newActivityTracker()
 	tr.now = clock
@@ -81,6 +84,7 @@ func TestActivityRestartsOnAChange(t *testing.T) {
 // obvious case. Past the cutoff the honest answer is that atrium does not know,
 // not that a long-dead process is still running Bash.
 func TestActivityGoesQuietWhenStale(t *testing.T) {
+	t.Parallel()
 	at, clock := fixedClock(time.Date(2026, 9, 1, 12, 0, 0, 0, time.UTC))
 	tr := newActivityTracker()
 	tr.now = clock
@@ -100,6 +104,7 @@ func TestActivityGoesQuietWhenStale(t *testing.T) {
 // step. A negative count would render as nonsense, so the floor is enforced
 // rather than assumed.
 func TestSubagentCountNeverGoesNegative(t *testing.T) {
+	t.Parallel()
 	tr := newActivityTracker()
 	tr.set("t1", ActivityThinking, "")
 
@@ -117,6 +122,7 @@ func TestSubagentCountNeverGoesNegative(t *testing.T) {
 // The count is a running tally, not part of the state, so changing what a
 // session is doing must not lose track of its subagents.
 func TestSubagentCountSurvivesAStateChange(t *testing.T) {
+	t.Parallel()
 	tr := newActivityTracker()
 	tr.addSubagents("t1", 2)
 	tr.set("t1", ActivityTool, "Bash")
@@ -383,6 +389,7 @@ func TestActivityReachesTheBoardView(t *testing.T) {
 // thing that stops the badge when the session goes quiet. Past it the card
 // reads `thinking`, because a compaction happens mid-turn.
 func TestCompactingEndsOnTheTimeout(t *testing.T) {
+	t.Parallel()
 	at, clock := fixedClock(time.Date(2026, 9, 1, 12, 0, 0, 0, time.UTC))
 	tr := newActivityTracker()
 	tr.now = clock
@@ -407,6 +414,7 @@ func TestCompactingEndsOnTheTimeout(t *testing.T) {
 // next replaces it. That is what makes the timeout a backstop rather than the
 // mechanism.
 func TestCompactingEndsOnTheNextEvent(t *testing.T) {
+	t.Parallel()
 	at, clock := fixedClock(time.Date(2026, 9, 1, 12, 0, 0, 0, time.UTC))
 	tr := newActivityTracker()
 	tr.now = clock

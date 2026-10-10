@@ -77,6 +77,7 @@ func sendFrames(t *testing.T, d *Daemon, path string, frames ...string) {
 }
 
 func TestHumanTouchKeyCounts(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	card := peerCard(t, d, "typist")
 	typedRunner(t, d, card.ID)
@@ -85,6 +86,7 @@ func TestHumanTouchKeyCounts(t *testing.T) {
 }
 
 func TestHumanTouchReportsDoNotCount(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	card := peerCard(t, d, "quiet")
 	typedRunner(t, d, card.ID)
@@ -94,6 +96,7 @@ func TestHumanTouchReportsDoNotCount(t *testing.T) {
 }
 
 func TestHumanTouchShellAttachIgnored(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	card := peerCard(t, d, "shelly")
 	r, _ := typedRunner(t, d, card.ID)
@@ -111,6 +114,7 @@ func activityPrompt(t *testing.T, d *Daemon, card *store.Task) {
 }
 
 func TestHumanTouchPeerPromptIgnored(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	card := peerCard(t, d, "listener2")
 	r, _ := typedRunner(t, d, card.ID)
@@ -137,6 +141,7 @@ func TestHumanTouchPeerPromptIgnored(t *testing.T) {
 }
 
 func TestHumanTouchPromptWithNoPeerCounts(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	card := peerCard(t, d, "solo")
 	typedRunner(t, d, card.ID)
@@ -145,6 +150,7 @@ func TestHumanTouchPromptWithNoPeerCounts(t *testing.T) {
 }
 
 func TestHumanTouchPermissionByHuman(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	card := peerCard(t, d, "asker")
 	p, _, err := d.st.RecordPermission(card.ID, "Bash", "ls", "k1", "")
@@ -173,6 +179,7 @@ func TestHumanTouchPermissionByHuman(t *testing.T) {
 }
 
 func TestHumanTouchThrottled(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	card := peerCard(t, d, "hammer")
 	before := touchWrites.Load()
@@ -196,6 +203,7 @@ func TestHumanTouchThrottled(t *testing.T) {
 }
 
 func TestHumanTouchStoreFailureSwallowed(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	// A card that is not there: the write updates nothing and must not panic or
 	// block the caller. A halted store would return an error the same way.
@@ -220,6 +228,7 @@ func parkedCard(t *testing.T, d *Daemon, name, status string) *store.Task {
 }
 
 func TestParkKeepsStatusAndWritesOneEvent(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	card := peerCard(t, d, "sleeper")
 	if err := d.st.SetStatus(card.ID, store.StatusNeedsInput); err != nil {
@@ -256,6 +265,7 @@ func TestParkKeepsStatusAndWritesOneEvent(t *testing.T) {
 }
 
 func TestSessionGoneFalseWhenParked(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	card := parkedCard(t, d, "donepark", store.StatusDone)
 	if d.sessionGone(card) {
@@ -267,6 +277,7 @@ func TestSessionGoneFalseWhenParked(t *testing.T) {
 }
 
 func TestParkedPrecedesGone(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	card := parkedCard(t, d, "both", store.StatusDone)
 	// Unparked, the same card is gone, so the order is what says parked.
@@ -292,6 +303,7 @@ func TestParkedPrecedesGone(t *testing.T) {
 }
 
 func TestUnparkClearsFlagAndStamps(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	card := parkedCard(t, d, "wakes", store.StatusRunning)
 	liveRunner(d, card.ID)
@@ -316,6 +328,7 @@ func TestUnparkClearsFlagAndStamps(t *testing.T) {
 }
 
 func TestUnparkByPeerDoesNotStamp(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	card := parkedCard(t, d, "peerwoken", store.StatusRunning)
 	liveRunner(d, card.ID)
@@ -326,6 +339,7 @@ func TestUnparkByPeerDoesNotStamp(t *testing.T) {
 }
 
 func TestUnparkIsIdempotent(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	card := parkedCard(t, d, "twice", store.StatusRunning)
 	liveRunner(d, card.ID)
@@ -353,6 +367,7 @@ func TestUnparkIsIdempotent(t *testing.T) {
 }
 
 func TestUnparkFailureLeavesItParked(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	card := parkedCard(t, d, "nowhere", store.StatusRunning)
 	// No runner and a harness that does not exist: the launch fails.
@@ -366,6 +381,7 @@ func TestUnparkFailureLeavesItParked(t *testing.T) {
 }
 
 func TestReopenRequestCarriesTheCard(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	card := peerCard(t, d, "shape")
 	got, _ := d.st.Get(card.ID)
@@ -376,6 +392,7 @@ func TestReopenRequestCarriesTheCard(t *testing.T) {
 }
 
 func TestReaperAndReopenSkipParked(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	card := parkedCard(t, d, "skipped", store.StatusRunning)
 	d.saveReopen([]*runner{{taskID: card.ID, buf: newRing(64, 80)}})
@@ -390,6 +407,7 @@ func TestReaperAndReopenSkipParked(t *testing.T) {
 }
 
 func TestParkedCardNeverSilent(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	orch := peerCard(t, d, "orchestrator")
 	card := peerCard(t, d, "worker")
@@ -413,6 +431,7 @@ func TestParkedCardNeverSilent(t *testing.T) {
 }
 
 func TestDirectorWithParkedWorkerNotSilent(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	orch, director, worker := directorRig(t, d)
 	if err := d.parkCard(worker.ID, store.StatusRunning, nil); err != nil {
@@ -426,6 +445,7 @@ func TestDirectorWithParkedWorkerNotSilent(t *testing.T) {
 }
 
 func TestAttachAloneDoesNotUnparkButAKeyDoes(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	card := parkedCard(t, d, "peeked", store.StatusRunning)
 
@@ -463,6 +483,7 @@ func TestAttachAloneDoesNotUnparkButAKeyDoes(t *testing.T) {
 }
 
 func TestSayToParkedIsKeptAndDoesNotWake(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	card := parkedCard(t, d, "asleep", store.StatusRunning)
 	peerCard(t, d, "alice")
@@ -492,6 +513,7 @@ func sayWake(t *testing.T, d *Daemon, from, id, text string) map[string]any {
 }
 
 func TestSayToParkedWithWakeResumesThenQueuesNotTyped(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	card := parkedCard(t, d, "woken", store.StatusRunning)
 	_, f := typedRunner(t, d, card.ID)
@@ -513,6 +535,7 @@ func TestSayToParkedWithWakeResumesThenQueuesNotTyped(t *testing.T) {
 }
 
 func TestOperatorSayResumesImmediately(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	card := parkedCard(t, d, "boss", store.StatusRunning)
 	liveRunner(d, card.ID)
@@ -535,6 +558,7 @@ func TestOperatorSayResumesImmediately(t *testing.T) {
 }
 
 func TestWakeIgnoredWhenNotParked(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	card := peerCard(t, d, "awake")
 	_, f := typedRunner(t, d, card.ID)
@@ -551,6 +575,7 @@ func TestWakeIgnoredWhenNotParked(t *testing.T) {
 }
 
 func TestTellToParked(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	card := parkedCard(t, d, "tellee", store.StatusRunning)
 	peerCard(t, d, "alice")
@@ -564,6 +589,7 @@ func TestTellToParked(t *testing.T) {
 }
 
 func TestTellWakeResumesThenQueuesNotTyped(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	card := parkedCard(t, d, "tellwoken", store.StatusRunning)
 	_, f := typedRunner(t, d, card.ID)
@@ -587,6 +613,7 @@ func TestTellWakeResumesThenQueuesNotTyped(t *testing.T) {
 }
 
 func TestPeersMarksParked(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	parkedCard(t, d, "sleepy", store.StatusRunning)
 	peerCard(t, d, "alice")
@@ -609,6 +636,7 @@ func TestPeersMarksParked(t *testing.T) {
 }
 
 func TestReportToParkedLauncherWakes(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	launcher, worker := launchedPair(t, d)
 	liveRunner(d, launcher.ID)

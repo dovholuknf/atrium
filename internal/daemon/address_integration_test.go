@@ -28,6 +28,7 @@ var addressCases = []struct {
 }
 
 func TestAddressGrammar(t *testing.T) {
+	t.Parallel()
 	for _, c := range addressCases {
 		name, room, err := SplitAddress(c.in)
 		if c.bad {
@@ -43,6 +44,7 @@ func TestAddressGrammar(t *testing.T) {
 }
 
 func TestOwnRoomIsNoRoom(t *testing.T) {
+	t.Parallel()
 	d := &Daemon{opts: Options{Room: "sg4"}}
 	if d.otherRoom("SG4") != "" || d.otherRoom("") != "" || d.otherRoom("m1mini") != "m1mini" {
 		t.Fatal("a room part naming this room, in any case, is the same as none")

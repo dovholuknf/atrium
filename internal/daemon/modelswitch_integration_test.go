@@ -46,6 +46,7 @@ func modelEvents(t *testing.T, d *Daemon, id string) []map[string]any {
 }
 
 func TestValidModel(t *testing.T) {
+	t.Parallel()
 	for in, want := range map[string]string{
 		"sonnet": "sonnet", " Opus ": "opus", "HAIKU": "haiku", "fable": "fable",
 		"claude-opus-4-7": "claude-opus-4-7", "claude-sonnet-5-5[1m]": "claude-sonnet-5-5[1m]",
@@ -65,6 +66,7 @@ func TestValidModel(t *testing.T) {
 // TYPED NOW. A free line takes `/model opus` and Enter, the card remembers the
 // model, and the answer and the timeline say who asked, from what and to what.
 func TestAModelSwitchIsTypedAndRecorded(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	target, _, f := peerPair(t, d)
 	if err := d.st.SetModel(target.ID, "sonnet"); err != nil {
@@ -93,6 +95,7 @@ func TestAModelSwitchIsTypedAndRecorded(t *testing.T) {
 
 // A full id is taken as given, and the operator is the default asker.
 func TestAModelSwitchTakesAFullIDAndDefaultsToTheOperator(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	target, _, f := peerPair(t, d)
 
@@ -108,6 +111,7 @@ func TestAModelSwitchTakesAFullIDAndDefaultsToTheOperator(t *testing.T) {
 }
 
 func TestAModelSwitchRefusesWhatItCannotType(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	target, _, f := peerPair(t, d)
 
@@ -126,6 +130,7 @@ func TestAModelSwitchRefusesWhatItCannotType(t *testing.T) {
 }
 
 func TestAModelSwitchOnAnUnknownCardIs404(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	if code, _ := switchModel(t, d, "nosuchcard", `{"model":"opus"}`); code != http.StatusNotFound {
 		t.Fatalf("answered %d, want 404", code)
@@ -135,6 +140,7 @@ func TestAModelSwitchOnAnUnknownCardIs404(t *testing.T) {
 // ONLY A CLAUDE CARD ATRIUM OWNS THE TERMINAL OF. Anything else is a 409 that
 // says why, and records nothing.
 func TestAModelSwitchIsRefusedWithoutAClaudeTerminal(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 
 	// A claude card with no runner under atrium.
@@ -247,6 +253,7 @@ func TestANewerModelSwitchReplacesAWaitingOne(t *testing.T) {
 
 // A DIALOG ON SCREEN is answered by Enter, so nothing is typed.
 func TestAModelSwitchIsNotTypedOverADialog(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	target, _, f := peerPair(t, d)
 	d.act.dialogRaised(target.ID)
@@ -264,6 +271,7 @@ func TestAModelSwitchIsNotTypedOverADialog(t *testing.T) {
 // MID-TURN follows the runner's own setting, as an immediate say does: typed now
 // when the runner takes input mid-turn, and waiting for the turn when it does not.
 func TestAModelSwitchFollowsTheMidTurnRule(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	target, _, f := peerPair(t, d)
 	d.act.set(target.ID, ActivityThinking, "")
@@ -288,6 +296,7 @@ func TestAModelSwitchFollowsTheMidTurnRule(t *testing.T) {
 // claude command takes `/model`, and a row named claude-something that runs another
 // program does not.
 func TestAModelSwitchTakesAnyHarnessThatRunsClaude(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	for _, h := range []store.Harness{
 		{ID: "claude-worker", Label: "claude worker", Cmd: "claude", Enabled: true, LaunchMode: store.LaunchPTY},
@@ -396,6 +405,7 @@ func TestAWaitThatGivesUpIsRecorded(t *testing.T) {
 // A `/model <alias>` TYPED BY HAND is a switch the card remembers, so the room
 // restart's resume does not put it back. This is what happened on @fabric.
 func TestAHandTypedModelSwitchIsRecorded(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	target, r, _ := peerPair(t, d)
 
@@ -421,6 +431,7 @@ func TestAHandTypedModelSwitchIsRecorded(t *testing.T) {
 // the card would fail every later resume. The endpoint still takes ids, because
 // a caller chose one on purpose.
 func TestAHandTypedFullIDIsNotRecorded(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	target, _, _ := peerPair(t, d)
 
@@ -440,6 +451,7 @@ func TestAHandTypedFullIDIsNotRecorded(t *testing.T) {
 // Only an exact `/model <one value>` counts. The picker, other commands, a bad
 // value and a line atrium could not follow record nothing.
 func TestOnlyAnExactHandTypedModelLineIsRecorded(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	target, r, _ := peerPair(t, d)
 
@@ -460,6 +472,7 @@ func TestOnlyAnExactHandTypedModelLineIsRecorded(t *testing.T) {
 
 // THE ROUTE IS ON THE BOARD'S HANDLER, and a card by its handle reaches it too.
 func TestTheModelRouteIsServedAndTakesAHandle(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	target, _, f := peerPair(t, d)
 
@@ -478,6 +491,7 @@ func TestTheModelRouteIsServedAndTakesAHandle(t *testing.T) {
 // THE STATUSLINE DOES NOT FIGHT THE CARD. Telemetry names the model the runner
 // reports, in its own words, and never writes to the card's model.
 func TestTelemetryDoesNotOverwriteTheCardsModel(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	target, _, _ := peerPair(t, d)
 	if code, out := switchModel(t, d, target.ID, `{"model":"opus"}`); code != http.StatusOK {

@@ -11,6 +11,7 @@ import (
 // system working, so the held signal says it is quiet and names the sender's
 // rule. The `!` is for a message held against what its sender asked for.
 func TestADoneMessageMidTurnIsAQuietHold(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	target, _, _ := peerPair(t, d)
 	t.Cleanup(func() { d.pending.stopAll() })
@@ -33,6 +34,7 @@ func TestADoneMessageMidTurnIsAQuietHold(t *testing.T) {
 // A runner that does not take input mid-turn holds every message for the turn,
 // and the signal names the runner and not the sender.
 func TestARunnerTurnWaitIsQuietAndNamesTheRunner(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	h, err := d.st.Harness("claude")
 	if err != nil {
@@ -57,6 +59,7 @@ func TestARunnerTurnWaitIsQuietAndNamesTheRunner(t *testing.T) {
 
 // A message the line holds asked to go in now, so it is never quiet.
 func TestALineHoldIsNotQuiet(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	target, r, _ := peerPair(t, d)
 	t.Cleanup(func() { d.pending.stopAll() })
@@ -74,6 +77,7 @@ func TestALineHoldIsNotQuiet(t *testing.T) {
 // An immediate message queued behind a done one is held against its sender,
 // although the oldest is only waiting for the turn. The hold is not quiet.
 func TestAnImmediateBehindADoneMessageIsNotQuiet(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	target, r, _ := peerPair(t, d)
 	t.Cleanup(func() { d.pending.stopAll() })
@@ -95,6 +99,7 @@ func TestAnImmediateBehindADoneMessageIsNotQuiet(t *testing.T) {
 // A turn wait past `heldTurnPatience` turns loud, and the retry that notices
 // it reports the change so the board is told once.
 func TestATurnWaitPastItsPatienceIsNotQuiet(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	target, _, _ := peerPair(t, d)
 	t.Cleanup(func() { d.pending.stopAll() })

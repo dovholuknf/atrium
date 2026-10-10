@@ -68,6 +68,7 @@ func stuckAgrees(t *testing.T, d *Daemon, id string, wantStuck bool) {
 }
 
 func TestDirectorWithLiveWorkerNotSilent(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	orch, director, worker := directorRig(t, d)
 	liveRunner(d, worker.ID)
@@ -87,6 +88,7 @@ func TestDirectorWithLiveWorkerNotSilent(t *testing.T) {
 // A director is resident: ending a turn waiting for work is not a stop, with
 // workers outstanding or without. See stoppedSilently.
 func TestDirectorWhoseWorkersAllEndedIsNotSilent(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	orch, director, worker := directorRig(t, d)
 	liveRunner(d, worker.ID)
@@ -101,6 +103,7 @@ func TestDirectorWhoseWorkersAllEndedIsNotSilent(t *testing.T) {
 }
 
 func TestDirectorWithNoWorkersIsNotSilent(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	orch := peerCard(t, d, "orchestrator")
 	director := peerCard(t, d, "director")
@@ -120,6 +123,7 @@ func TestDirectorWithNoWorkersIsNotSilent(t *testing.T) {
 
 // Without the director tag the same card is a worker owing a report.
 func TestUntaggedLauncherSessionStillOwesAndIsSilent(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	orch := peerCard(t, d, "orchestrator")
 	card := peerCard(t, d, "resident")
@@ -135,6 +139,7 @@ func TestUntaggedLauncherSessionStillOwesAndIsSilent(t *testing.T) {
 }
 
 func TestWorkerSilentStopUnchanged(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	directorRig(t, d)
 	worker, err := d.st.GetByWireName(d.st.Qualify("worker"))

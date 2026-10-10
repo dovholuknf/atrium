@@ -10,6 +10,7 @@ import (
 )
 
 func TestBriefFileCarriesTheResourcesLineOnceEvenWithoutGitURL(t *testing.T) {
+	t.Parallel()
 	for _, gitURL := range []bool{true, false} {
 		dir := t.TempDir()
 		if _, err := writeBriefFile(dir, "do the thing\n\n"+resourcesLine, gitURL); err != nil {
@@ -31,6 +32,7 @@ func TestBriefFileCarriesTheResourcesLineOnceEvenWithoutGitURL(t *testing.T) {
 }
 
 func TestResourcesLineCarriesNoSecretAndIsOneLine(t *testing.T) {
+	t.Parallel()
 	got := withResourcesLine("task")
 	if got != "task\n\n"+resourcesLine || withResourcesLine(got) != got {
 		t.Fatalf("withResourcesLine = %q", got)

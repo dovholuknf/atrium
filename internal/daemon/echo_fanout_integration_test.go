@@ -36,6 +36,7 @@ func drain(ch chan []byte) (string, bool) {
 
 // THE DEFAULT IS OFF, so nothing changes for a runner nobody opted in.
 func TestEchoIsOffByDefault(t *testing.T) {
+	t.Parallel()
 	r, chans := echoRunner(t, 3)
 	writer := chans[0]
 
@@ -52,6 +53,7 @@ func TestEchoIsOffByDefault(t *testing.T) {
 // written exactly once, which here means never, because the pty is nil and a
 // write would panic.
 func TestEchoReachesPeersButNotTheWriter(t *testing.T) {
+	t.Parallel()
 	r, chans := echoRunner(t, 3)
 	writer := chans[0]
 	r.setEchoPeers(true)
@@ -76,6 +78,7 @@ func TestEchoReachesPeersButNotTheWriter(t *testing.T) {
 // subscribed, excludes nobody. Correct, because the writer is not yet a
 // watcher, so there is no pane to double.
 func TestEchoWithNoWriterReachesEveryPane(t *testing.T) {
+	t.Parallel()
 	r, chans := echoRunner(t, 2)
 	r.setEchoPeers(true)
 
@@ -90,6 +93,7 @@ func TestEchoWithNoWriterReachesEveryPane(t *testing.T) {
 
 // The toggle turns it back off.
 func TestEchoCanBeTurnedOffAgain(t *testing.T) {
+	t.Parallel()
 	r, chans := echoRunner(t, 2)
 	r.setEchoPeers(true)
 	r.setEchoPeers(false)

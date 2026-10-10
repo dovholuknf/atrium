@@ -182,6 +182,7 @@ func TestOpencodeOneExportInFlightAndCached(t *testing.T) {
 }
 
 func TestOpencodeSessionIDShape(t *testing.T) {
+	t.Parallel()
 	for id, ok := range map[string]bool{ocSession: true, "ses_": false, "abc": false, "ses_a b": false, "ses_a/../b": false, "": false} {
 		if opencodeSessionID.MatchString(id) != ok {
 			t.Errorf("%q: want %v", id, ok)

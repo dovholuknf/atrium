@@ -16,6 +16,7 @@ import (
 // the top of the old screen erased it. The operator attached to a fresh
 // session and saw one screen of it.
 func TestReplayKeepsOutputDrawnAtAnEarlierHeight(t *testing.T) {
+	t.Parallel()
 	r := newRingSized(1<<20, 80, 24)
 	var b strings.Builder
 	b.WriteString("the banner\r\n")
@@ -43,6 +44,7 @@ func TestReplayKeepsOutputDrawnAtAnEarlierHeight(t *testing.T) {
 // A height that changes and changes back with nothing written in between
 // leaves no mark, the same as a width does.
 func TestAHeightNothingWasWrittenAtIsNotAMark(t *testing.T) {
+	t.Parallel()
 	r := newRingSized(1024, 80, 30)
 	r.Write([]byte("output\r\n"))
 	r.SetSize(80, 10)
@@ -58,6 +60,7 @@ func TestAHeightNothingWasWrittenAtIsNotAMark(t *testing.T) {
 // Shrinking the grid scrolls rows off the top into history and keeps the
 // cursor on the row it was writing.
 func TestShrinkingTheGridFilesTheTopAway(t *testing.T) {
+	t.Parallel()
 	s := newScreenSized(20, 10)
 	for i := 0; i < 10; i++ {
 		s.apply([]byte(fmt.Sprintf("row %d", i)))

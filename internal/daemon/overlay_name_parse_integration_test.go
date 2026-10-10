@@ -5,6 +5,7 @@ package daemon
 import "testing"
 
 func TestAShareNameIsParsedTheWayZrokSpellsIt(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		in   string
 		ns   string
@@ -38,6 +39,7 @@ func TestAShareNameIsParsedTheWayZrokSpellsIt(t *testing.T) {
 // was wrong with it, rather than three calls later as "a reservation needs a
 // name" with nothing pointing at the box it came from.
 func TestAShareNameWithNoShareInItIsRefused(t *testing.T) {
+	t.Parallel()
 	for _, in := range []string{"", "   ", "public:", "public/", ":", "/"} {
 		if sel, err := parseShareName(in); err == nil {
 			t.Fatalf("%q was accepted as namespace %q name %q", in, sel.NamespaceToken, sel.Name)

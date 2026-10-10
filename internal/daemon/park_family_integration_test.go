@@ -14,6 +14,7 @@ import (
 )
 
 func TestFamilySayWakesParked(t *testing.T) {
+	t.Parallel()
 	say := func(t *testing.T, d *Daemon, from, id string) map[string]any {
 		t.Helper()
 		body := `{"from":"` + from + `","text":"FAMILY"}`
@@ -94,6 +95,7 @@ func TestFamilySayWakesParked(t *testing.T) {
 }
 
 func TestKeepaliveNeverRefreshesAParkedCard(t *testing.T) {
+	t.Parallel()
 	f := newKAFix(t)
 	f.reply(f.now.Add(-56*time.Minute), replyOpt{})
 	if _, err := f.st.Park(f.task.ID, store.StatusNeedsInput, nil); err != nil {

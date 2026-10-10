@@ -15,6 +15,7 @@ import (
 )
 
 func TestHelperSourceProcess(t *testing.T) {
+	t.Parallel()
 	if os.Getenv("ATRIUM_TEST_SOURCE") == "" {
 		t.Skip("not the helper")
 	}
@@ -303,6 +304,7 @@ func TestOneBadItemFailsTheWholeRun(t *testing.T) {
 // Only what is due runs. A source with a fifteen minute interval that ran a
 // moment ago is not due, and one that has never run is.
 func TestOnlyDueSourcesRun(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	fresh, err := d.st.SaveSource(store.Source{
 		ID: "never-run", Cmd: "x", Enabled: true, IntervalSecs: 900,
@@ -349,6 +351,7 @@ func TestOnlyDueSourcesRun(t *testing.T) {
 // Turning a source back on is the operator saying they fixed it, so the count
 // that switched it off goes with the switch.
 func TestEnablingASourceClearsWhySwitchedOff(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	if _, err := d.st.SaveSource(store.Source{
 		ID: "s", Cmd: "x", Enabled: true, IntervalSecs: 60,
@@ -382,6 +385,7 @@ func TestEnablingASourceClearsWhySwitchedOff(t *testing.T) {
 // There is nowhere in a source to put a credential, and an interval floor
 // keeps a typo from becoming a fork bomb with a settings screen.
 func TestASourceCannotRunEverySecond(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	got, err := d.st.SaveSource(store.Source{ID: "fast", Cmd: "x", IntervalSecs: 1})
 	if err != nil {

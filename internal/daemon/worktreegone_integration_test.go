@@ -68,6 +68,7 @@ func (g goneRig) waitAsked(t *testing.T, want int32) {
 
 // Gone on one tick is not enough. Gone on the second asks, once, and records why.
 func TestARemovedWorktreeIsActedOnAtTheSecondTick(t *testing.T) {
+	t.Parallel()
 	dir := liveDir(t)
 	g := newGoneRig(t, dir, SubagentTag)
 	if err := os.RemoveAll(dir); err != nil {
@@ -104,6 +105,7 @@ func TestARemovedWorktreeIsActedOnAtTheSecondTick(t *testing.T) {
 
 // A directory that HAD a .git and lost it is what git leaves behind.
 func TestADirectoryThatHadGitAndLostItIsGoneOnTheSecondTick(t *testing.T) {
+	t.Parallel()
 	dir := liveDir(t)
 	g := newGoneRig(t, dir, SubagentTag)
 	g.d.reapGoneWorktrees() // .git seen
@@ -122,6 +124,7 @@ func TestADirectoryThatHadGitAndLostItIsGoneOnTheSecondTick(t *testing.T) {
 // A worker launched in a subdirectory never had a .git of its own, so the lack
 // of one says nothing. Only the directory disappearing ends it.
 func TestADirectoryThatNeverHadGitIsLeftAloneUntilItIsDeleted(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	g := newGoneRig(t, dir, SubagentTag)
 	for i := 0; i < 4; i++ {
@@ -141,6 +144,7 @@ func TestADirectoryThatNeverHadGitIsLeftAloneUntilItIsDeleted(t *testing.T) {
 
 // A worktree that is there is never touched, however many ticks pass.
 func TestALiveWorktreeIsLeftAlone(t *testing.T) {
+	t.Parallel()
 	g := newGoneRig(t, liveDir(t), SubagentTag)
 	for i := 0; i < 4; i++ {
 		g.d.reapGoneWorktrees()
@@ -153,6 +157,7 @@ func TestALiveWorktreeIsLeftAlone(t *testing.T) {
 
 // Only atrium:subagent cards. A human's own terminal is not this job's.
 func TestACardNotTaggedSubagentIsLeftAlone(t *testing.T) {
+	t.Parallel()
 	g := newGoneRig(t, filepath.Join(t.TempDir(), "missing"), OriginAgentTag)
 	for i := 0; i < 3; i++ {
 		g.d.reapGoneWorktrees()
@@ -165,6 +170,7 @@ func TestACardNotTaggedSubagentIsLeftAlone(t *testing.T) {
 
 // A shell is not in `runners`, so it is never looked at.
 func TestAShellIsLeftAlone(t *testing.T) {
+	t.Parallel()
 	g := newGoneRig(t, filepath.Join(t.TempDir(), "missing"), SubagentTag)
 	g.d.sup.remove(g.r.taskID)
 	g.d.sup.mu.Lock()
@@ -184,6 +190,7 @@ func TestAShellIsLeftAlone(t *testing.T) {
 
 // A directory that comes back between ticks resets the guard.
 func TestADirectoryThatComesBackResetsTheGuard(t *testing.T) {
+	t.Parallel()
 	dir := filepath.Join(t.TempDir(), "wt")
 	g := newGoneRig(t, dir, SubagentTag)
 

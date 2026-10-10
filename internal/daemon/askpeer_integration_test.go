@@ -29,6 +29,7 @@ func answerOf(t *testing.T, d *Daemon, from, to, text string) (*httptest.Respons
 // A peer whose operator is part way through a line gets the question queued,
 // and the line is left alone.
 func TestAnAskToAPeerMidLineIsQueuedAndNotTyped(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	peerCard(t, d, "asker")
 	helper, r, f := peerPair(t, d) // wire name "listener"
@@ -73,6 +74,7 @@ func TestAnAskToAPeerMidLineIsQueuedAndNotTyped(t *testing.T) {
 // A peer whose terminal is free gets the question typed and sent, and not
 // queued as well, which would deliver it twice.
 func TestAnAskToAFreePeerIsTypedAndSent(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	peerCard(t, d, "asker")
 	helper, _, f := peerPair(t, d)
@@ -101,6 +103,7 @@ func TestAnAskToAFreePeerIsTypedAndSent(t *testing.T) {
 // A blocked asker sits idle at its prompt and makes no tool call, so a queued
 // answer waited on a Stop hook that may not be installed. Typed, it lands now.
 func TestAnAnswerToAFreeAskerIsTypedAndSettlesTheCard(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	peerCard(t, d, "helper")
 	asker, _, f := peerPair(t, d) // the asker is "listener", with a terminal
@@ -127,6 +130,7 @@ func TestAnAnswerToAFreeAskerIsTypedAndSettlesTheCard(t *testing.T) {
 // read as one stopped on you, and the peer's name is the only thing that tells
 // those apart.
 func TestACardSaysWhichPeerItAsked(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	asker := peerCard(t, d, "asker")
 	peerCard(t, d, "helper")
@@ -155,6 +159,7 @@ func TestACardSaysWhichPeerItAsked(t *testing.T) {
 // handles that would have worked, which is the only discovery a bare
 // subcommand can offer.
 func TestAnAskToAnUnknownPeerIsRefusedAndTeaches(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	asker := peerCard(t, d, "asker")
 	peerCard(t, d, "helper")
@@ -185,6 +190,7 @@ func TestAnAskToAnUnknownPeerIsRefusedAndTeaches(t *testing.T) {
 // A session cannot route a question to itself, which is a loop with extra
 // steps and queues a message it then has to read.
 func TestASessionCannotAskItself(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	peerCard(t, d, "alone")
 	rec, _ := askOf(t, d, HelpRequest{Agent: "alone", Peer: "alone", Ask: "well?"})
@@ -196,6 +202,7 @@ func TestASessionCannotAskItself(t *testing.T) {
 // A peer that has ended cannot answer anything, and saying so beats a card
 // claiming it is waiting on a dead session.
 func TestAskingAnEndedPeerIsRefused(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	peerCard(t, d, "asker")
 	gone := peerCard(t, d, "gone")
@@ -212,6 +219,7 @@ func TestAskingAnEndedPeerIsRefused(t *testing.T) {
 // asking twenty questions a minute is the same failure as one sending twenty
 // messages, and a limit that only two of three doors enforce is not a limit.
 func TestRoutedAsksAreBoundedByTheSameLimit(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	peerCard(t, d, "asker")
 	peerCard(t, d, "helper")
@@ -231,6 +239,7 @@ func TestRoutedAsksAreBoundedByTheSameLimit(t *testing.T) {
 // An answer lands the same way the ask did: queued on the same bus, carried by
 // whichever hook fires first, and it takes the question off the card.
 func TestAnAnswerIsQueuedForTheAskerAndClearsTheCard(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	asker := peerCard(t, d, "asker")
 	peerCard(t, d, "helper")
@@ -284,6 +293,7 @@ func TestAnAnswerIsQueuedForTheAskerAndClearsTheCard(t *testing.T) {
 // hands the message over. Moving it here would put the card in `running` while
 // the session is still sitting at its prompt.
 func TestAnAnswerDoesNotMoveTheCardBackByItself(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	asker := peerCard(t, d, "asker")
 	peerCard(t, d, "helper")
@@ -304,6 +314,7 @@ func TestAnAnswerDoesNotMoveTheCardBackByItself(t *testing.T) {
 // cleared. Refusing would fail a session for being helpful, and saying nothing
 // would leave it believing it had settled a card.
 func TestAnAnswerToASessionWithNoQuestionSaysSo(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	peerCard(t, d, "asker")
 	peerCard(t, d, "helper")
@@ -322,6 +333,7 @@ func TestAnAnswerToASessionWithNoQuestionSaysSo(t *testing.T) {
 // A card left holding a question that was answered minutes ago makes the one
 // field that says "somebody still owes this session something" mean nothing.
 func TestAMessageFromTheOperatorAlsoSettlesTheAsk(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	asker := peerCard(t, d, "asker")
 
@@ -349,6 +361,7 @@ func TestAMessageFromTheOperatorAlsoSettlesTheAsk(t *testing.T) {
 // that got unstuck on its own and finished sits in `done` still asking, and
 // the field collects cards nobody owes anything to.
 func TestFinishingTakesTheQuestionOffTheCard(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	asker := peerCard(t, d, "asker")
 	askOf(t, d, HelpRequest{Agent: "asker", Blocked: true, Ask: "which branch is base"})
@@ -379,6 +392,7 @@ func TestFinishingTakesTheQuestionOffTheCard(t *testing.T) {
 // question that was put to a human, and clearing the card wholesale would take
 // that question off the board without anybody ever answering it.
 func TestAPeerAnswerLeavesTheHumanQuestionStanding(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	asker := peerCard(t, d, "asker")
 	peerCard(t, d, "helper")
@@ -431,6 +445,7 @@ func TestAPeerAnswerLeavesTheHumanQuestionStanding(t *testing.T) {
 // and a card left holding an answered one makes the field that says "somebody
 // still owes this session something" mean nothing.
 func TestAMessageFromTheOperatorSettlesEveryQuestion(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	asker := peerCard(t, d, "asker")
 	peerCard(t, d, "helper")

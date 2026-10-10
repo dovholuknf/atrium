@@ -18,6 +18,7 @@ import (
 // sent as soon as the line is empty, because Claude Code queues a line typed
 // mid-turn and reads it at its next step. See saywhen.go.
 func TestASayMidTurnIsTypedImmediatelyByDefault(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	target, _, f := peerPair(t, d)
 	t.Cleanup(func() { d.pending.stopAll() })
@@ -38,6 +39,7 @@ func TestASayMidTurnIsTypedImmediatelyByDefault(t *testing.T) {
 
 // The same through the message endpoint `atrium_say` posts to, with no `when`.
 func TestTheMessageEndpointTypesMidTurnWithNoWhen(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	target, _, f := peerPair(t, d)
 	t.Cleanup(func() { d.pending.stopAll() })
@@ -54,6 +56,7 @@ func TestTheMessageEndpointTypesMidTurnWithNoWhen(t *testing.T) {
 // `when: "done"` is the old rule for one message: not typed mid-turn, not
 // carried by the hooks, and typed and sent once the turn ends.
 func TestASayWhenDoneWaitsForTheTurnToEnd(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	target, _, f := peerPair(t, d)
 	t.Cleanup(func() { d.pending.stopAll() })
@@ -110,6 +113,7 @@ func TestASayWhenDoneWaitsForTheTurnToEnd(t *testing.T) {
 // permission hook fires mid-turn, and carrying it there is the interruption it
 // asked not to have.
 func TestADoneMessageRidesOnlyTheStopHook(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	bob := peerCard(t, d, "bob")
 
@@ -132,6 +136,7 @@ func TestADoneMessageRidesOnlyTheStopHook(t *testing.T) {
 
 // And an immediate one rides the next tool call, the way it always has.
 func TestAnImmediateMessageRidesThePermissionHook(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	bob := peerCard(t, d, "bob")
 	if code := message(t, d, bob.ID, map[string]string{"text": "stop now", "from": "alice"}); code != http.StatusOK {
@@ -145,6 +150,7 @@ func TestAnImmediateMessageRidesThePermissionHook(t *testing.T) {
 // A runner set not to take input mid-turn falls back to done for every
 // message, the default included.
 func TestARunnerThatTakesNoMidTurnInputFallsBackToDone(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	h, err := d.st.Harness("claude")
 	if err != nil {
@@ -174,6 +180,7 @@ func TestARunnerThatTakesNoMidTurnInputFallsBackToDone(t *testing.T) {
 // Immediate still goes through the gate: a line with text holds it, and a
 // cleared line lets it through.
 func TestAnImmediateSayWaitsForTheLineToEmpty(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	target, r, f := peerPair(t, d)
 	t.Cleanup(func() { d.pending.stopAll() })
@@ -212,6 +219,7 @@ func TestAnImmediateSayWaitsForTheLineToEmpty(t *testing.T) {
 // Immediate still goes through the gate: an open dialog holds it, and the
 // held signal says so rather than blaming the line.
 func TestAnImmediateSayWaitsForAnOpenDialog(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	target, _, f := peerPair(t, d)
 	t.Cleanup(func() { d.pending.stopAll() })
@@ -227,6 +235,7 @@ func TestAnImmediateSayWaitsForAnOpenDialog(t *testing.T) {
 
 // Two held messages are counted, which the chip shows as `! 2`.
 func TestTheHeldSignalCountsTheMessages(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	target, r, _ := peerPair(t, d)
 	t.Cleanup(func() { d.pending.stopAll() })
@@ -244,6 +253,7 @@ func TestTheHeldSignalCountsTheMessages(t *testing.T) {
 // A done message to a card that cannot be typed into and has never shown a
 // Stop hook would wait forever, so the sender is told.
 func TestADoneMessageNothingWillCarrySaysSo(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	bob := peerCard(t, d, "bob")
 	if err := d.st.SawHook(bob.ID, store.HookTool); err != nil {
@@ -266,6 +276,7 @@ func TestADoneMessageNothingWillCarrySaysSo(t *testing.T) {
 
 // A `when` that is neither word is refused, rather than read as the default.
 func TestAnUnknownWhenIsRefused(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	bob := peerCard(t, d, "bob")
 	if code := message(t, d, bob.ID, map[string]string{"text": "x", "from": "alice", "when": "later"}); code != http.StatusBadRequest {
@@ -275,6 +286,7 @@ func TestAnUnknownWhenIsRefused(t *testing.T) {
 
 // The operator's text follows the same rule: immediate unless it asks to wait.
 func TestTheOperatorsTextFollowsTheSameRule(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	target, _, _ := peerPair(t, d)
 	d.act.set(target.ID, ActivityThinking, "")

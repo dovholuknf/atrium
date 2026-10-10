@@ -21,6 +21,7 @@ func claudeWithModel() *store.Harness {
 // The ordinary case, and the ORDER, which is the part that is easy to get
 // wrong and impossible to see.
 func TestAModelBecomesTheArgumentsTheRunnerDeclared(t *testing.T) {
+	t.Parallel()
 	args, logged, err := runnerArgs(claudeWithModel(), "", "", "claude-fable-5-1")
 	if err != nil {
 		t.Fatal(err)
@@ -41,6 +42,7 @@ func TestAModelBecomesTheArgumentsTheRunnerDeclared(t *testing.T) {
 // instruction rather than as a flag, and the session starts on the default
 // having been told to work on "--model claude-fable-5-1".
 func TestTheModelComesBeforeThePrompt(t *testing.T) {
+	t.Parallel()
 	args, _, err := runnerArgs(claudeWithModel(), "", "fix the parser", "claude-opus-5")
 	if err != nil {
 		t.Fatal(err)
@@ -60,6 +62,7 @@ func TestTheModelComesBeforeThePrompt(t *testing.T) {
 // arguments, so a model appended before that substitution would be thrown
 // away, and every card would revert on the first restart.
 func TestAResumedSessionStillGetsItsModel(t *testing.T) {
+	t.Parallel()
 	args, _, err := runnerArgs(claudeWithModel(), "sess-7", "", "claude-opus-5")
 	if err != nil {
 		t.Fatal(err)
@@ -81,6 +84,7 @@ func TestAResumedSessionStillGetsItsModel(t *testing.T) {
 // default after being asked for something else is invisible until the output
 // is wrong, and by then nobody remembers which session was which.
 func TestARunnerWithNoModelArgumentsRefuses(t *testing.T) {
+	t.Parallel()
 	shell := &store.Harness{ID: "shell", Label: "shell", Cmd: "pwsh"}
 	_, _, err := runnerArgs(shell, "", "", "claude-opus-5")
 	if err == nil {
@@ -94,6 +98,7 @@ func TestARunnerWithNoModelArgumentsRefuses(t *testing.T) {
 // Arguments that never mention the model would run, and run on whatever they
 // spell. The same refusal `{resume}` gets, for the same reason.
 func TestModelArgumentsWithoutThePlaceholderAreRefused(t *testing.T) {
+	t.Parallel()
 	h := claudeWithModel()
 	h.ModelArgs = []string{"--model", "sonnet"}
 	_, _, err := runnerArgs(h, "", "", "claude-opus-5")
@@ -108,6 +113,7 @@ func TestModelArgumentsWithoutThePlaceholderAreRefused(t *testing.T) {
 // Nothing changes for a launch that names no model, which is every launch that
 // existed before this.
 func TestNoModelChangesNothing(t *testing.T) {
+	t.Parallel()
 	h := claudeWithModel()
 	h.Args = []string{"--verbose"}
 	args, logged, err := runnerArgs(h, "", "", "   ")

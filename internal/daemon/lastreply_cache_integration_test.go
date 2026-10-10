@@ -27,6 +27,7 @@ func TestLastReplyUnchangedTranscriptScansOnce(t *testing.T) {
 }
 
 func TestLastReplyAppendedReplyIncrementalMatchesWhole(t *testing.T) {
+	t.Parallel()
 	p := filepath.Join(t.TempDir(), "a.jsonl")
 	now := time.Now()
 	appendTo(t, p, replyLine("1", 10, now), now)
@@ -58,6 +59,7 @@ func TestLastReplyShrunkFileReadWhole(t *testing.T) {
 }
 
 func TestLastReplyErrorNotCached(t *testing.T) {
+	t.Parallel()
 	p := filepath.Join(t.TempDir(), "a.jsonl")
 	now := time.Now()
 	appendTo(t, p, `{"type":"user"}`+"\n", now)

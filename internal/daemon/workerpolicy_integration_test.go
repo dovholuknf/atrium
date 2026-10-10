@@ -40,6 +40,7 @@ func budgetNotices(t *testing.T, d *Daemon, launcherID string) int {
 }
 
 func TestTheWorkerBudgetIsOffUntilSet(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	launcher, worker := holdingPair(t, d, OrchestratorTag)
 	spend(t, d, worker.ID, 50)
@@ -53,6 +54,7 @@ func TestTheWorkerBudgetIsOffUntilSet(t *testing.T) {
 }
 
 func TestAWorkerPastTheBudgetTellsItsLauncherOnceAndShowsOnItsCard(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	launcher, worker := holdingPair(t, d, OrchestratorTag)
 	setPolicy(t, d, store.WorkerPolicy{BudgetUSD: 25})
@@ -84,6 +86,7 @@ func TestAWorkerPastTheBudgetTellsItsLauncherOnceAndShowsOnItsCard(t *testing.T)
 }
 
 func TestTheBudgetNeverTouchesACardTheOperatorStarted(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	own := peerCard(t, d, "mine")
 	setPolicy(t, d, store.WorkerPolicy{BudgetUSD: 1})
@@ -95,6 +98,7 @@ func TestTheBudgetNeverTouchesACardTheOperatorStarted(t *testing.T) {
 }
 
 func TestACardBackUnderTheBudgetStopsShowingIt(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	_, worker := holdingPair(t, d, OrchestratorTag)
 	setPolicy(t, d, store.WorkerPolicy{BudgetUSD: 5})
@@ -111,6 +115,7 @@ func TestACardBackUnderTheBudgetStopsShowingIt(t *testing.T) {
 }
 
 func TestTheDefaultWorkerModelOnlyReachesAFreshAgentLaunchThatNamedNone(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	claude := &store.Harness{ID: "claude"}
 	agent := LaunchRequest{Tags: []string{OriginAgentTag}}

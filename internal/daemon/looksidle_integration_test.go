@@ -24,6 +24,7 @@ const (
 )
 
 func TestClassifyFrame(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name  string
 		frame string
@@ -52,6 +53,7 @@ func TestClassifyFrame(t *testing.T) {
 // Real captures from Claude Code, 64KB raw tails. Both are mid-turn: one is the
 // turn ending under its Stop hooks, one is inside a tool. Neither may read idle.
 func TestClassifyFrameOnRealCaptures(t *testing.T) {
+	t.Parallel()
 	for _, f := range []string{"frame-turn-ending.bin", "frame-mid-tool.bin"} {
 		b, err := os.ReadFile("testdata/" + f)
 		if err != nil {
@@ -66,6 +68,7 @@ func TestClassifyFrameOnRealCaptures(t *testing.T) {
 // A settled prompt, taken from a session idle for over an hour. Its custom status
 // line puts several rows under the bottom rule, and it must still read idle.
 func TestClassifyFrameOnARealSettledPromptWithAStatusLine(t *testing.T) {
+	t.Parallel()
 	b, err := os.ReadFile("testdata/frame-settled-statusline.bin")
 	if err != nil {
 		t.Fatal(err)
@@ -81,6 +84,7 @@ func TestClassifyFrameOnARealSettledPromptWithAStatusLine(t *testing.T) {
 // looks like, and must read idle. Guards the layout half of the signature against
 // the real bytes, where the hand-written frame guards it only against itself.
 func TestClassifyFrameOnARealCaptureMadeIdle(t *testing.T) {
+	t.Parallel()
 	b, err := os.ReadFile("testdata/frame-mid-tool.bin")
 	if err != nil {
 		t.Fatal(err)
@@ -118,6 +122,7 @@ func runningCard(t *testing.T, d *Daemon, frame string, quiet time.Duration) (*s
 }
 
 func TestARunningCardWithASilentIdleScreenLooksIdle(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	task, _ := runningCard(t, d, workingFrame+idleFrame, time.Minute)
 
@@ -138,6 +143,7 @@ func TestARunningCardWithASilentIdleScreenLooksIdle(t *testing.T) {
 }
 
 func TestLooksIdleNeedsSilenceAndAnIdleFrame(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	task, r := runningCard(t, d, idleFrame, time.Second)
 	_ = d.watchLooksIdle(time.Now())
@@ -155,6 +161,7 @@ func TestLooksIdleNeedsSilenceAndAnIdleFrame(t *testing.T) {
 }
 
 func TestLooksIdleIsClaudeOnly(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	other, _, err := d.st.Register(store.Observed{WireName: "codex-test", Worktree: "/tmp/atrium-test2", Runner: "codex"})
 	if err != nil {
@@ -172,6 +179,7 @@ func TestLooksIdleIsClaudeOnly(t *testing.T) {
 }
 
 func TestLooksIdleClearsOnOutputKeystrokeAndHook(t *testing.T) {
+	t.Parallel()
 	for _, cause := range []string{"output", "keystroke", "hook"} {
 		d := testDaemon(t)
 		task, r := runningCard(t, d, idleFrame, time.Minute)

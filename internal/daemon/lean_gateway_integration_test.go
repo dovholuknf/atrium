@@ -35,6 +35,7 @@ func leanGatewayServers(t *testing.T, extra []string, gateway string) map[string
 }
 
 func TestLeanGatewayEmptySettingLeavesTheConfigUnchanged(t *testing.T) {
+	t.Parallel()
 	read := leanTestRead(map[string]string{"C:/t/mcp.json": leanGatewayMCP})
 	a, err := leanServers([]string{"C:/t/mcp.json"}, nil, "", read)
 	if err != nil {
@@ -52,6 +53,7 @@ func TestLeanGatewayEmptySettingLeavesTheConfigUnchanged(t *testing.T) {
 }
 
 func TestLeanGatewayDefaultLaunchGetsTheNarrowEntry(t *testing.T) {
+	t.Parallel()
 	s := leanGatewayServers(t, nil, "mercurius-worker")
 	if s["mercurius"]["url"] != "http://127.0.0.1:8089/mcp" || s["mercurius-worker"] != nil || len(s) != 2 {
 		t.Fatalf("got %v", s)
@@ -59,6 +61,7 @@ func TestLeanGatewayDefaultLaunchGetsTheNarrowEntry(t *testing.T) {
 }
 
 func TestLeanGatewayExplicitNameOrTagGetsTheWideEntry(t *testing.T) {
+	t.Parallel()
 	on := true
 	_, mcp, _ := leanOptions(LaunchRequest{Lean: &on, MCP: []string{"mercurius"}}, nil, "mercurius-worker")
 	if len(mcp) != 1 || mcp[0] != "mercurius" {
@@ -75,6 +78,7 @@ func TestLeanGatewayExplicitNameOrTagGetsTheWideEntry(t *testing.T) {
 }
 
 func TestLeanGatewayUnknownNameIsRefusedWithTheList(t *testing.T) {
+	t.Parallel()
 	_, err := leanArgs([]string{"--mcp-config", "C:/t/mcp.json"}, nil, "", nil, leanKit{}, "nosuch",
 		leanTestRead(map[string]string{"C:/t/mcp.json": leanGatewayMCP}))
 	if err == nil || !strings.Contains(err.Error(), "nosuch") || !strings.Contains(err.Error(), "mercurius-worker") {
@@ -84,6 +88,7 @@ func TestLeanGatewayUnknownNameIsRefusedWithTheList(t *testing.T) {
 
 // A restart reads the card's tags again and keeps what it had.
 func TestLeanGatewayRestartKeepsWhatTheCardHad(t *testing.T) {
+	t.Parallel()
 	launched := leanTags([]string{"mercurius"}, leanKit{})
 	if !hasTag(launched, leanMCPTagPrefix+"mercurius") {
 		t.Fatalf("a wide launch did not tag the card: %v", launched)
@@ -108,6 +113,7 @@ func TestLeanGatewayRestartKeepsWhatTheCardHad(t *testing.T) {
 }
 
 func TestLeanGatewayCheckOnSaveReadsTheRunnersMCPConfig(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	if _, err := d.st.SaveHarness(store.Harness{
 		ID: "claude-gw", Label: "claude", Enabled: true, Cmd: "claude",

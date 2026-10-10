@@ -11,6 +11,7 @@ import (
 // A worker's row carries its dept and its director, a director rolls up under
 // itself, and an operator's card rolls up under "".
 func TestUsageGroupsOfACard(t *testing.T) {
+	t.Parallel()
 	f := newUsageFix(t)
 	dir, _, err := f.st.Register(store.Observed{WireName: "boss", Worktree: "/boss", Runner: "claude"})
 	if err != nil {

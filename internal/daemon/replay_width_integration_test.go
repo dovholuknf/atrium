@@ -28,6 +28,7 @@ func conptyLine(n, cols int) string {
 // onto a row of their own: a blank line under every coloured diff line, which
 // is what the operator saw after the 14:39 deploy.
 func TestAReplayAfterARestartKeepsWiderHistoryOnItsOwnWidth(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	f := newFakePTY()
 	t.Cleanup(func() { f.Close() })
@@ -71,6 +72,7 @@ func TestAReplayAfterARestartKeepsWiderHistoryOnItsOwnWidth(t *testing.T) {
 // resize the pty to the viewers left, so the size recorded for the next room
 // was the last window left rather than the one the session was drawn for.
 func TestAWindDownDetachLeavesTheSizeTheSessionHad(t *testing.T) {
+	t.Parallel()
 	f := newFakePTY()
 	t.Cleanup(func() { f.Close() })
 	r := &runner{

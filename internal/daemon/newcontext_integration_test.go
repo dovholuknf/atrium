@@ -340,6 +340,7 @@ func TestNewContextEndpoint(t *testing.T) {
 
 // A turn that begins and ends between two looks is still a turn.
 func TestTurnsBegunCountsAFastTurn(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	before := d.act.turnsBegun("c1")
 	d.act.set("c1", ActivityThinking, "")

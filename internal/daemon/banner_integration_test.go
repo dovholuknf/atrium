@@ -10,6 +10,7 @@ import (
 )
 
 func TestAMessageFromYouReadsAsFromYou(t *testing.T) {
+	t.Parallel()
 	got := messageBanner([]*store.Message{{Text: "run the tests"}}, false)
 	if !strings.Contains(got, "from the human") {
 		t.Fatalf("the banner does not say who: %q", got)
@@ -20,6 +21,7 @@ func TestAMessageFromYouReadsAsFromYou(t *testing.T) {
 }
 
 func TestAMessageFromAPeerSaysWhichAndSaysItWasNotYou(t *testing.T) {
+	t.Parallel()
 	got := messageBanner([]*store.Message{
 		{Text: "have you got the lock", FromPeer: "sg4/ziti-acme"},
 	}, false)
@@ -36,6 +38,7 @@ func TestAMessageFromAPeerSaysWhichAndSaysItWasNotYou(t *testing.T) {
 // A mixed batch is described as mixed rather than picking one, since claiming
 // it is all from you would be wrong about part of it.
 func TestAMixedBatchIsDescribedAsMixed(t *testing.T) {
+	t.Parallel()
 	got := messageBanner([]*store.Message{
 		{Text: "mine"},
 		{Text: "theirs", FromPeer: "sg4/other"},
@@ -53,6 +56,7 @@ func TestAMixedBatchIsDescribedAsMixed(t *testing.T) {
 // Two different peers in one batch is also mixed, even with no message of
 // yours in it.
 func TestTwoPeersInOneBatchIsMixed(t *testing.T) {
+	t.Parallel()
 	got := messageBanner([]*store.Message{
 		{Text: "a", FromPeer: "sg4/one"},
 		{Text: "b", FromPeer: "sg4/two"},
@@ -65,6 +69,7 @@ func TestTwoPeersInOneBatchIsMixed(t *testing.T) {
 // The blocked wording still explains why a tool call was interrupted, whoever
 // sent the message, or the model reads a refusal on its merits.
 func TestTheBlockedExplanationSurvivesAPeerMessage(t *testing.T) {
+	t.Parallel()
 	got := messageBanner([]*store.Message{
 		{Text: "x", FromPeer: "sg4/other"},
 	}, true)
@@ -77,6 +82,7 @@ func TestTheBlockedExplanationSurvivesAPeerMessage(t *testing.T) {
 // with an optional sender is one defaulted argument away from a peer message
 // that claims to be from you.
 func TestAPeerMessageMustNameItsSender(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	task := noteCard(t, d, "peer-envelope")
 
@@ -108,6 +114,7 @@ func TestAPeerMessageMustNameItsSender(t *testing.T) {
 // Everything written before the column existed is from the operator, which is
 // what an empty value has to mean.
 func TestAnEmptySenderIsTheOperator(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	task := noteCard(t, d, "peer-default")
 

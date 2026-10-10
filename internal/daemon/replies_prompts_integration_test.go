@@ -30,6 +30,7 @@ func transcriptUser(t *testing.T, path string, at time.Time, content any, extra 
 // words wherever they were typed, a peer's message, a slash command. Never a tool
 // result, a notification, a meta line or a subagent's prompt.
 func TestRepliesCarryThePromptsFromEverySource(t *testing.T) {
+	t.Parallel()
 	f := newUsageFix(t)
 	at := func(s int) time.Time { return f.base.Add(time.Duration(s) * time.Second) }
 	human := map[string]any{"origin": map[string]any{"kind": "human"}}
@@ -78,6 +79,7 @@ func TestRepliesCarryThePromptsFromEverySource(t *testing.T) {
 
 // A command with arguments keeps them.
 func TestACommandPromptKeepsItsArgs(t *testing.T) {
+	t.Parallel()
 	p, ok := promptOf("<command-name>/model</command-name>\n<command-args>opus</command-args>")
 	if !ok || p.Text != "/model opus" || p.Kind != PromptCommand {
 		t.Fatalf("got %+v %v", p, ok)

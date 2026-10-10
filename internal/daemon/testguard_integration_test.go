@@ -12,6 +12,7 @@ import (
 // THE GUARD IS ON FOR EVERY TEST HERE (TestMain). An agent becomes a shell, no
 // ATRIUM_* pointer but the dead location is left, and home is not the user's.
 func TestNoTestHereCanReachALiveRoom(t *testing.T) {
+	t.Parallel()
 	for _, exe := range []string{"claude", "claude.exe", `C:\Users\x\AppData\Roaming\npm\claude.cmd`, "codex", "gemini"} {
 		got, _ := agentSpawn(exe, []string{"--settings", "x"})
 		if strings.Contains(strings.ToLower(got), "claude") || got == exe {

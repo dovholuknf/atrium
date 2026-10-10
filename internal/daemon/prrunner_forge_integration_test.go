@@ -41,6 +41,7 @@ func (f *fakeForge) FetchSpec(r forge.Ref) forge.FetchSpec {
 func (f *fakeForge) PRURL(r forge.Ref) string { return "https://example.test/o/r/change/1" }
 
 func TestPRRunnerWorksWithNoGh(t *testing.T) {
+	t.Parallel()
 	f := newPRFix(t)
 	diff, err := os.ReadFile("../prreview/render/testdata/run/pr.diff")
 	if err != nil {
@@ -68,6 +69,7 @@ func TestPRRunnerWorksWithNoGh(t *testing.T) {
 }
 
 func TestPRRunnerNoForgeFailsTheRow(t *testing.T) {
+	t.Parallel()
 	f := newPRFix(t)
 	if _, err := f.st.SaveProvider(store.Provider{Name: "off", Root: t.TempDir(), Host: "github.com",
 		Forge: "none", Enabled: true}); err != nil {
@@ -81,6 +83,7 @@ func TestPRRunnerNoForgeFailsTheRow(t *testing.T) {
 }
 
 func TestPRRunnerAccessErrorSentenceIsTheReason(t *testing.T) {
+	t.Parallel()
 	f := newPRFix(t)
 	f.r.forgeOf = func(string) (forge.Forge, error) {
 		return &fakeForge{err: &forge.AccessError{Tool: "gh", Host: "github.com", Detail: "x"}}, nil
@@ -93,6 +96,7 @@ func TestPRRunnerAccessErrorSentenceIsTheReason(t *testing.T) {
 }
 
 func TestPRRunnerPicksForgeFromProviderHost(t *testing.T) {
+	t.Parallel()
 	f := newPRFix(t)
 	if _, err := f.st.SaveProvider(store.Provider{Name: "ghe", Root: t.TempDir(), Host: "ghe.example",
 		Forge: "github", ForgeCmd: "ghw", Enabled: true}); err != nil {
@@ -108,6 +112,7 @@ func TestPRRunnerPicksForgeFromProviderHost(t *testing.T) {
 }
 
 func TestPRRunnerTellsTheDaemonOfAnAccessErrorAndOfASuccess(t *testing.T) {
+	t.Parallel()
 	f := newPRFix(t)
 	ae := &forge.AccessError{Tool: "gh", Host: "github.com", Detail: "x"}
 	f.r.forgeOf = func(string) (forge.Forge, error) { return &fakeForge{err: ae}, nil }
@@ -131,6 +136,7 @@ func TestPRRunnerTellsTheDaemonOfAnAccessErrorAndOfASuccess(t *testing.T) {
 // A ROOM WITH A HUB ASKS THE HUB AND READS THE HEAD FROM ITS STORE: no gh, no forge URL, a whole fetch of the
 // hub's ref through the loopback, and the loopback closed after.
 func TestPRRunnerWithAHubAsksTheHubAndFetchesFromItsStore(t *testing.T) {
+	t.Parallel()
 	f := newPRFix(t)
 	diff, err := os.ReadFile("../prreview/render/testdata/run/pr.diff")
 	if err != nil {
@@ -188,6 +194,7 @@ func TestPRRunnerWithAHubAsksTheHubAndFetchesFromItsStore(t *testing.T) {
 
 // A ROOM WITH A HUB PICKS THE HUB'S FORGE for every host, and never a provider of its own.
 func TestPRRunnerForgeForIsTheHubsWhenThereIsOne(t *testing.T) {
+	t.Parallel()
 	f := newPRFix(t)
 	remote := forge.NewRemote(nil)
 	f.r.hub = func() *forge.Remote { return remote }

@@ -30,6 +30,7 @@ func exportOf(t *testing.T, d *Daemon) (*Export, string) {
 // A zrok account token is reusable on every machine and grants everything that
 // account can do. It is the single worst thing that could end up in a commit.
 func TestAZrokAccountTokenNeverLeaves(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	// Stored the way the daemon really stores it, so this cannot pass against
 	// a shape the real code would never have written.
@@ -59,6 +60,7 @@ func TestAZrokAccountTokenNeverLeaves(t *testing.T) {
 // a path puts the location of a key in a repository and invites a second
 // machine to be pointed at the same one.
 func TestAZitiIdentityPathNeverLeaves(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	cfg := d.zitiConfig()
 	cfg.Identity = "C:/Users/someone/.atrium/identities/atrium-secret.json"
@@ -88,6 +90,7 @@ func TestAZitiIdentityPathNeverLeaves(t *testing.T) {
 // problem: add the field to ExportZrok on purpose, or add it to the list below
 // as one more thing that stays here.
 func TestAFieldNobodyAllowlistedDoesNotAppear(t *testing.T) {
+	t.Parallel()
 	// Every field on the stored config, and what it is.
 	held := map[string]bool{} // name -> may it leave
 	for _, f := range []struct {
@@ -130,6 +133,7 @@ func TestAFieldNobodyAllowlistedDoesNotAppear(t *testing.T) {
 // value with no home ends up, and the next thing put in it will not be
 // considered against the export.
 func TestAnUnknownSettingIsNotExported(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	if err := d.st.SetSetting("something_invented_later", "a-secret-value"); err != nil {
 		t.Fatal(err)
@@ -147,6 +151,7 @@ func TestAnUnknownSettingIsNotExported(t *testing.T) {
 // the settings table generically would carry both wholesale, which is every
 // credential atrium holds.
 func TestTheOverlayBlobsAreNotExportedAsSettings(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	for _, key := range NeverExportedKeys() {
 		for _, allowed := range ExportSettingKeys() {
@@ -170,6 +175,7 @@ func TestTheOverlayBlobsAreNotExportedAsSettings(t *testing.T) {
 // this machine is approving everything right now. Restoring it onto another
 // machine is the worst thing an import could silently do.
 func TestGlobalAutoIsNotExported(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	if err := d.st.SetSetting(store.SettingGlobalAuto, "on"); err != nil {
 		t.Fatal(err)
@@ -184,6 +190,7 @@ func TestGlobalAutoIsNotExported(t *testing.T) {
 // command line is where somebody puts a token. The allowlist cannot help,
 // because the source itself is legitimately exported.
 func TestACredentialTypedIntoASourceStopsTheExport(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct{ name, secret string }{
 		{"a github token", "ghp_abcdefghijklmnopqrstuvwxyz0123456789"},
 		{"a private key", "-----BEGIN RSA PRIVATE KEY-----"},
@@ -218,6 +225,7 @@ func TestACredentialTypedIntoASourceStopsTheExport(t *testing.T) {
 // and useless, and this is the test that would fail if the secret shapes were
 // tightened until nothing could get out.
 func TestAnOrdinaryConfigurationExportsCleanly(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	if _, err := d.st.SaveSource(store.Source{
 		ID: "issues", Label: "my issues", Enabled: true,

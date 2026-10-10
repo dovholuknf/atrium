@@ -5,6 +5,7 @@ package daemon
 import "testing"
 
 func TestOneViewerGetsWhatItAsksFor(t *testing.T) {
+	t.Parallel()
 	got := agreedViewport(map[any]viewport{"a": {120, 40}})
 	if got != (viewport{120, 40}) {
 		t.Fatalf("a single viewer was not given its own size: %+v", got)
@@ -16,6 +17,7 @@ func TestOneViewerGetsWhatItAsksFor(t *testing.T) {
 // and every other window keeps that copy in its scrollback. The narrow viewer
 // scrolls sideways instead.
 func TestTheWidestViewerSetsTheWidth(t *testing.T) {
+	t.Parallel()
 	got := agreedViewport(map[any]viewport{
 		"wide":   {200, 50},
 		"narrow": {80, 24},
@@ -28,6 +30,7 @@ func TestTheWidestViewerSetsTheWidth(t *testing.T) {
 // Each axis on its own. The width is the widest and the height is the
 // shortest, because a pty taller than a pane puts the prompt off its bottom.
 func TestEachAxisIsDecidedSeparately(t *testing.T) {
+	t.Parallel()
 	got := agreedViewport(map[any]viewport{
 		"tall-narrow": {80, 60},
 		"short-wide":  {200, 20},
@@ -40,6 +43,7 @@ func TestEachAxisIsDecidedSeparately(t *testing.T) {
 // A viewer that left stops counting, or one wide monitor that attached once
 // holds every phone at its width for the rest of the day.
 func TestADepartedViewerStopsCounting(t *testing.T) {
+	t.Parallel()
 	all := map[any]viewport{"desk": {200, 50}, "phone": {40, 20}}
 	delete(all, "desk")
 	got := agreedViewport(all)
@@ -51,6 +55,7 @@ func TestADepartedViewerStopsCounting(t *testing.T) {
 // Nobody attached is not a size. Resizing to zero is what would happen if the
 // size of an empty set were applied, and `dropViewport` refuses to.
 func TestNoViewersIsNotZero(t *testing.T) {
+	t.Parallel()
 	if got := agreedViewport(map[any]viewport{}); got != (viewport{}) {
 		t.Fatalf("an empty set answered something: %+v", got)
 	}

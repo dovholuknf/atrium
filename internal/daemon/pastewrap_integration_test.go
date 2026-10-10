@@ -31,6 +31,7 @@ func onlyBracketsAtTheEnds(t *testing.T, what, got string) {
 }
 
 func TestSayPastedStripsMarkers(t *testing.T) {
+	t.Parallel()
 	p := &stubbornPty{most: 4096}
 	r := &runner{pty: p}
 	if err := r.SayPasted(hostile); err != nil {
@@ -62,6 +63,7 @@ func TestAMessageCannotEndItsOwnPaste(t *testing.T) {
 }
 
 func TestAPeerMessageCannotEndItsOwnPaste(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	target := pasteTask(t, d, "peer-strip", "claude")
 	_, f := typedRunner(t, d, target.ID)
@@ -79,6 +81,7 @@ func TestAPeerMessageCannotEndItsOwnPaste(t *testing.T) {
 }
 
 func TestAHeldMessageCannotEndItsOwnPaste(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	target := pasteTask(t, d, "held-strip", "claude")
 	typedRunner(t, d, target.ID)

@@ -79,6 +79,7 @@ func finishWith(t *testing.T, d *Daemon, in FinishRequest) (*httptest.ResponseRe
 // hears about it as the turn ends, once, and the Stop hook does NOT block.
 // Atrium never forces a turn.
 func TestASilentStopTellsTheLauncherAndNeverBlocks(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	launcher, worker := launchedPair(t, d)
 
@@ -107,6 +108,7 @@ func TestASilentStopTellsTheLauncherAndNeverBlocks(t *testing.T) {
 
 // F6. The same stop seen again is one notice, not two.
 func TestASecondStopOnOnePromptIsNotASecondNotice(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	launcher, _ := launchedPair(t, d)
 	stopSilently(t, d, "worker")
@@ -119,6 +121,7 @@ func TestASecondStopOnOnePromptIsNotASecondNotice(t *testing.T) {
 // A prompt the human typed at the board resets what is owed: the turn it starts is theirs, so ending it silent
 // earns no nudge and no notice. The launcher's next prompt owes again, and a silent stop then nudges once.
 func TestAHumanTurnIsNotASilentStop(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	launcher, worker := launchedPair(t, d)
 
@@ -151,6 +154,7 @@ func TestAHumanTurnIsNotASilentStop(t *testing.T) {
 
 // The same when the human types straight into the terminal: that stamps human_at and never reaches handleMessage.
 func TestATerminalTypedTurnIsNotASilentStop(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	launcher, worker := launchedPair(t, d)
 	time.Sleep(5 * time.Millisecond)
@@ -179,6 +183,7 @@ func TestATerminalTypedTurnIsNotASilentStop(t *testing.T) {
 
 // A new prompt is a new turn owed, so a silent stop after it is a new notice.
 func TestEachPromptGetsItsOwnSilentStop(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	launcher, worker := launchedPair(t, d)
 	stopSilently(t, d, "worker")
@@ -193,6 +198,7 @@ func TestEachPromptGetsItsOwnSilentStop(t *testing.T) {
 // A structured report pays the turn. The launcher gets the report, verbatim,
 // and no silent-stop notice after it.
 func TestAReportIsNotASilentStop(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	launcher, _ := launchedPair(t, d)
 	rec, out := finishWith(t, d, FinishRequest{Agent: "worker", Status: ReportDone,
@@ -210,6 +216,7 @@ func TestAReportIsNotASilentStop(t *testing.T) {
 
 // Clint's decision: an atrium_say to the launcher counts as a report.
 func TestSayingSomethingToTheLauncherCountsAsAReport(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	launcher, worker := launchedPair(t, d)
 	rec := httptest.NewRecorder()
@@ -229,6 +236,7 @@ func TestSayingSomethingToTheLauncherCountsAsAReport(t *testing.T) {
 
 // A human's card is left exactly as it was.
 func TestAHumanCardIsUntouchedByTheGuard(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	other := peerCard(t, d, "someone")
 	mine := peerCard(t, d, "mine")
@@ -243,6 +251,7 @@ func TestAHumanCardIsUntouchedByTheGuard(t *testing.T) {
 
 // The Stop hook still carries queued messages, exactly as it always did.
 func TestTheStopHookStillDeliversQueuedMessages(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	_, worker := launchedPair(t, d)
 	if _, err := d.st.QueueFromPeer(worker.ID, "rebase first", "orchestrator"); err != nil {
@@ -256,6 +265,7 @@ func TestTheStopHookStillDeliversQueuedMessages(t *testing.T) {
 
 // F13. A notice is not a model looping, so the peer limit does not drop it.
 func TestANoticeIsNotRateLimited(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	launcher, worker := launchedPair(t, d)
 	for i := 0; i < peerSendsPerMinute+1; i++ {
@@ -270,6 +280,7 @@ func TestANoticeIsNotRateLimited(t *testing.T) {
 // F5. A done with no commit, or a blocked with no ask, is refused with what
 // is missing, and the card does not move.
 func TestAnIncompleteReportIsRefused(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	_, worker := launchedPair(t, d)
 	for _, in := range []FinishRequest{
@@ -293,6 +304,7 @@ func TestAnIncompleteReportIsRefused(t *testing.T) {
 
 // A blocked report puts the card in needs-input with what it needs.
 func TestABlockedReportSaysWhatItNeeds(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	launcher, worker := launchedPair(t, d)
 	rec, _ := finishWith(t, d, FinishRequest{Agent: "worker", Status: ReportBlocked,
@@ -312,6 +324,7 @@ func TestABlockedReportSaysWhatItNeeds(t *testing.T) {
 
 // A human's own `atrium finish` keeps working with no sha.
 func TestAHumansFinishNeedsNoSha(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	peerCard(t, d, "mine")
 	if rec, _ := finishWith(t, d, FinishRequest{Agent: "mine", Recap: "done"}); rec.Code != http.StatusOK {
@@ -357,6 +370,7 @@ func TestAVerifiedShaIsNotFlagged(t *testing.T) {
 
 // The operator's backoff, measured from the moment a card got stuck.
 func TestTheEscalationBackoff(t *testing.T) {
+	t.Parallel()
 	for _, c := range []struct {
 		after time.Duration
 		step  int
@@ -374,6 +388,7 @@ func TestTheEscalationBackoff(t *testing.T) {
 // F1 without a Stop hook: the watchdog tells the launcher, then escalates to
 // the board on the backoff, and forgets it the moment the card moves.
 func TestTheWatchdogCatchesASilentStopAndResetsWhenTheCardMoves(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	launcher, worker := launchedPair(t, d)
 	d.turnEnded(worker.ID)
@@ -417,6 +432,7 @@ func TestTheWatchdogCatchesASilentStopAndResetsWhenTheCardMoves(t *testing.T) {
 // `waiting_since`, and the watchdog rang STUCK from one minute. A prompt that
 // started no turn owes no report, and a resume is not a turn.
 func TestASlashCommandAndARestartAreNotASilentStop(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	launcher, worker := launchedPair(t, d)
 	if err := d.st.MarkReported(worker.ID); err != nil {
@@ -455,6 +471,7 @@ func TestASlashCommandAndARestartAreNotASilentStop(t *testing.T) {
 // A card that did stop without reporting stays stuck across a restart, and
 // its clock is the turn's end, so the resume does not start the backoff over.
 func TestASilentStopKeepsItsClockAcrossAResume(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	_, worker := launchedPair(t, d)
 	d.turnEnded(worker.ID)
@@ -480,6 +497,7 @@ func TestASilentStopKeepsItsClockAcrossAResume(t *testing.T) {
 // F7. One tool call running too long: the launcher is told once, the board
 // escalates, and nothing is killed.
 func TestTheWatchdogReportsAStuckTool(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	launcher, worker := launchedPair(t, d)
 	began := time.Now().Add(-time.Hour)
@@ -504,6 +522,7 @@ func TestTheWatchdogReportsAStuckTool(t *testing.T) {
 
 // A card nobody launched is not watched.
 func TestTheWatchdogLeavesHumanCardsAlone(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	mine := peerCard(t, d, "mine")
 	prompt(t, d, mine.ID)
@@ -518,6 +537,7 @@ func TestTheWatchdogLeavesHumanCardsAlone(t *testing.T) {
 
 // F15. A message to a card with no way to drain its queue says so.
 func TestAMessageNothingWillDeliverSaysSo(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	gem, _, err := d.st.Register(store.Observed{WireName: "gem", Worktree: "/tmp/gem", Runner: "gemini"})
 	if err != nil {
@@ -558,6 +578,7 @@ func TestAMessageNothingWillDeliverSaysSo(t *testing.T) {
 
 // F15 on the tell door too.
 func TestATellNothingWillDeliverSaysSo(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	peerCard(t, d, "alice")
 	if _, _, err := d.st.Register(store.Observed{WireName: "gem", Worktree: "/tmp/gem", Runner: "gemini"}); err != nil {
@@ -601,6 +622,7 @@ func TestOnlyAnAgentLaunchedClaudeGetsTheStopHook(t *testing.T) {
 // The board's own dialog records the human as the launcher. An agent launch
 // that lost its sender stays unnamed.
 func TestTheBoardDialogIsTheHuman(t *testing.T) {
+	t.Parallel()
 	for _, c := range []struct {
 		req  LaunchRequest
 		want string
@@ -617,6 +639,7 @@ func TestTheBoardDialogIsTheHuman(t *testing.T) {
 
 // F8. A launch records who asked for it, and resolves the parent's card.
 func TestALaunchRecordsItsLauncher(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	parent := peerCard(t, d, "orchestrator")
 	h := slowHarness(t, d)
@@ -644,6 +667,7 @@ func TestALaunchRecordsItsLauncher(t *testing.T) {
 // session coming up waiting is not a turn ending, so it is not stuck before it
 // has started.
 func TestAFirstTurnWithoutAReportIsASilentStop(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	parent := peerCard(t, d, "orchestrator")
 	cmd, args := "sh", []string{"-c", "sleep 60", "{prompt}"}
@@ -693,6 +717,7 @@ func TestAFirstTurnWithoutAReportIsASilentStop(t *testing.T) {
 
 // A card with an unanswered question for the operator is waiting on them, not stalled: no nudge, no notice.
 func TestASilentStopWithAnOpenQuestionIsNotNudged(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	launcher, worker := launchedPair(t, d)
 	if err := d.st.NoteTurnEnded(worker.ID, store.TurnQuestions{Known: true, Block: true,
@@ -710,6 +735,7 @@ func TestASilentStopWithAnOpenQuestionIsNotNudged(t *testing.T) {
 
 // A card that already said done to its launcher since its prompt gets no nudge and no notice.
 func TestASilentStopAfterADoneSayIsNotNudged(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	launcher, worker := launchedPair(t, d)
 	if _, err := d.st.CreateWorkItem(mustTask(t, d, worker.ID), store.NewWorkItem{Brief: "do the thing"}); err != nil {

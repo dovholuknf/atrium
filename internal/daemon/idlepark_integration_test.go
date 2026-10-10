@@ -31,6 +31,7 @@ func mayPark(t *testing.T, d *Daemon, id string) bool {
 }
 
 func TestOrchestratorParksWithNothingElseLive(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	orch := orchestratorCard(t, d)
 	liveRunner(d, orch.ID)
@@ -40,6 +41,7 @@ func TestOrchestratorParksWithNothingElseLive(t *testing.T) {
 }
 
 func TestOrchestratorDoesNotParkWhileAnotherCardIsLive(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	orch := orchestratorCard(t, d)
 	other := peerCard(t, d, "busy")
@@ -58,6 +60,7 @@ func TestOrchestratorDoesNotParkWhileAnotherCardIsLive(t *testing.T) {
 }
 
 func TestOrchestratorParksOnceTheLastOneParksOrEnds(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	orch := orchestratorCard(t, d)
 	a := peerCard(t, d, "a")
@@ -84,6 +87,7 @@ func TestOrchestratorParksOnceTheLastOneParksOrEnds(t *testing.T) {
 }
 
 func TestOrchestratorIgnoresFixturesAndShells(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	orch := orchestratorCard(t, d)
 	fix := peerCard(t, d, "fixture-term")
@@ -103,6 +107,7 @@ func TestOrchestratorIgnoresFixturesAndShells(t *testing.T) {
 }
 
 func TestOrchestratorRuleIsNotTheOptInTag(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	// The opt-in tag on an operator card has no orchestrator condition, and the
 	// orchestrator tag alone makes a card subject. An untagged operator card is
@@ -128,6 +133,7 @@ func TestOrchestratorRuleIsNotTheOptInTag(t *testing.T) {
 }
 
 func TestIdleParkNeverSubjectsFixturesOrThrowaways(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	fix := peerCard(t, d, "fixed")
 	if err := d.st.SetTags(fix.ID, []string{OriginAgentTag}); err != nil {

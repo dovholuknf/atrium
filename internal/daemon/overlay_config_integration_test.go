@@ -5,6 +5,7 @@ package daemon
 import "testing"
 
 func TestALegacyModeBecomesTheMatchingFlag(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		mode           string
 		public, privat bool
@@ -27,6 +28,7 @@ func TestALegacyModeBecomesTheMatchingFlag(t *testing.T) {
 // A configuration nobody has touched shares privately, because the board has no
 // login in front of it. That was the default before and it stays the default.
 func TestAnEmptyConfigIsPrivate(t *testing.T) {
+	t.Parallel()
 	var c ZrokConfig
 	c.normalise()
 	if !c.Private || c.Public {
@@ -41,6 +43,7 @@ func TestAnEmptyConfigIsPrivate(t *testing.T) {
 // reduced back to one on the way through, and the board's own share picks
 // public, because that is what somebody ticking both is reaching for.
 func TestBothAtOnceSurvivesAndTheBoardGoesPublic(t *testing.T) {
+	t.Parallel()
 	c := ZrokConfig{Public: true, Private: true}
 	c.normalise()
 	if !c.Public || !c.Private {
@@ -54,6 +57,7 @@ func TestBothAtOnceSurvivesAndTheBoardGoesPublic(t *testing.T) {
 // A stale mode arriving beside fresh flags is what an older browser tab sends.
 // The flags are what the operator just ticked, so they win.
 func TestTheFlagsBeatAStaleMode(t *testing.T) {
+	t.Parallel()
 	c := ZrokConfig{Mode: "private", Public: true}
 	c.normalise()
 	if c.Mode != "public" {
@@ -68,6 +72,7 @@ func TestTheFlagsBeatAStaleMode(t *testing.T) {
 // path, so a value that drifts each time it passes through would drift on every
 // save.
 func TestNormaliseIsIdempotent(t *testing.T) {
+	t.Parallel()
 	for _, start := range []ZrokConfig{
 		{},
 		{Mode: "public"},

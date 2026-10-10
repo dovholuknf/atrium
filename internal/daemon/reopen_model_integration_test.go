@@ -20,6 +20,7 @@ import (
 // goes wrong is a field nobody copied, and no runner has to start for that to
 // be true or false.
 func TestAReopenedCardComesBackOnItsModel(t *testing.T) {
+	t.Parallel()
 	d := reopenDaemon(t)
 
 	dir := t.TempDir()

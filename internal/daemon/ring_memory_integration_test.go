@@ -13,6 +13,7 @@ import (
 // board of cards that had printed very little. Each ring used to be that
 // setting in full from the moment it was made. Now it is what it holds.
 func TestARingCostsWhatItHoldsNotItsCeiling(t *testing.T) {
+	t.Parallel()
 	r := newRing(512<<20, testCols)
 	if cap(r.data) != 0 {
 		t.Fatalf("an empty ring allocated %d bytes before anything was written", cap(r.data))
@@ -63,6 +64,7 @@ func TestABoardOfQuietRingsStaysSmall(t *testing.T) {
 // doublings, wraps, and is then raised, checked after every write against a
 // plain model of "the last max bytes".
 func TestAGrowingRingHoldsExactlyTheLastBytes(t *testing.T) {
+	t.Parallel()
 	rng := rand.New(rand.NewSource(57))
 	ceiling := 3*ringFloor + 1234
 	r := newRing(ceiling, testCols)
@@ -121,6 +123,7 @@ func TestAGrowingRingHoldsExactlyTheLastBytes(t *testing.T) {
 // Raising the ceiling on a ring that has not wrapped allocates nothing, which
 // is every attach on a quiet card: attach calls Grow with the setting.
 func TestRaisingAQuietRingAllocatesNothing(t *testing.T) {
+	t.Parallel()
 	r := newRing(16<<20, testCols)
 	r.Write([]byte("hello\n"))
 	before := cap(r.data)
@@ -135,6 +138,7 @@ func TestRaisingAQuietRingAllocatesNothing(t *testing.T) {
 
 // A zero ceiling holds nothing and must not panic.
 func TestAZeroRingHoldsNothing(t *testing.T) {
+	t.Parallel()
 	r := newRing(0, testCols)
 	r.Write([]byte("anything"))
 	if r.retained() != 0 || len(r.raw()) != 0 {

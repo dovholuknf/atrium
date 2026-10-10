@@ -10,6 +10,7 @@ import (
 // The unsent-buffer count is what makes the gate stricter than the old midLine
 // bool: a line typed and then backspaced to nothing has to read as EMPTY.
 func TestUnsentCountTracksTheOperatorsLine(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	_, r, _ := peerPair(t, d)
 
@@ -46,6 +47,7 @@ func TestUnsentCountTracksTheOperatorsLine(t *testing.T) {
 
 // The gate is the two facts together: empty line AND peerGateIdle of quiet.
 func TestPeerGateNeedsEmptyLineAndIdle(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	_, r, _ := peerPair(t, d)
 
@@ -82,6 +84,7 @@ func TestPeerGateNeedsEmptyLineAndIdle(t *testing.T) {
 // takes the lock closes the gate, and the paste writes nothing rather than
 // tangling into what the operator just started.
 func TestInjectPeerAbortsWhenAKeystrokeRacesTheLock(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	_, r, f := peerPair(t, d)
 
@@ -111,6 +114,7 @@ func TestInjectPeerAbortsWhenAKeystrokeRacesTheLock(t *testing.T) {
 // And the operator's own bytes WAIT behind a paste in flight, which is how the
 // two never interleave. The bookkeeping does not wait, only the write.
 func TestOperatorBytesWaitBehindAPasteButBookkeepingDoesNot(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	_, r, _ := peerPair(t, d)
 

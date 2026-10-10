@@ -34,6 +34,7 @@ func heldRoom(t *testing.T) (d *Daemon, worker, deployer *store.Task) {
 }
 
 func TestADeployHoldRefusesAHeldCallAndNotTheDeployers(t *testing.T) {
+	t.Parallel()
 	d, _, _ := heldRoom(t)
 
 	id, auto := ask(t, d, "worker", "Bash", "go test ./...")
@@ -57,6 +58,7 @@ func TestADeployHoldRefusesAHeldCallAndNotTheDeployers(t *testing.T) {
 }
 
 func TestAnExemptCardIsNotHeld(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	peerCard(t, d, "worker")
 	watcher := peerCard(t, d, "watcher")
@@ -73,6 +75,7 @@ func TestAnExemptCardIsNotHeld(t *testing.T) {
 }
 
 func TestASecondHoldIsRefused(t *testing.T) {
+	t.Parallel()
 	d, _, _ := heldRoom(t)
 	r := httptest.NewRequest(http.MethodPost, "/v1/hold", strings.NewReader(`{"action":"start","by":"merge"}`))
 	w := httptest.NewRecorder()
@@ -83,6 +86,7 @@ func TestASecondHoldIsRefused(t *testing.T) {
 }
 
 func TestAnAgentsSayIsHeldAndTheOperatorsIsNot(t *testing.T) {
+	t.Parallel()
 	d, worker, _ := heldRoom(t)
 
 	out := sayViaMessage(t, d, "alice", worker.ID, "from alice")
@@ -116,6 +120,7 @@ func TestAnAgentsSayIsHeldAndTheOperatorsIsNot(t *testing.T) {
 }
 
 func TestALaunchOntoAHeldRoomIsRefusedAndTheDeployersIsNot(t *testing.T) {
+	t.Parallel()
 	d, _, _ := heldRoom(t)
 	if err := d.launchHeld(LaunchRequest{SpawnedBy: "worker"}); err == nil ||
 		!strings.Contains(err.Error(), "launch after the wake") {
@@ -137,6 +142,7 @@ func restartUnder(t *testing.T, d *Daemon, ids ...string) {
 }
 
 func TestTheRoomLiftsItsHoldAtStartupOnANewBuild(t *testing.T) {
+	t.Parallel()
 	d, worker, _ := heldRoom(t)
 	restartUnder(t, d, worker.ID)
 	// The binary that set the hold is not this one.
@@ -186,6 +192,7 @@ func resumeEvents(t *testing.T, d *Daemon, id string) int {
 }
 
 func TestOnlyACardWorkingAtTheHoldIsToldToContinue(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	busy := peerCard(t, d, "busy")
 	idle := peerCard(t, d, "idle")
@@ -240,6 +247,7 @@ func TestOnlyACardWorkingAtTheHoldIsToldToContinue(t *testing.T) {
 }
 
 func TestWithUnexpectedExitOffTheLiftWakesNobody(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	busy := peerCard(t, d, "busy")
 	if err := d.st.SetStatus(busy.ID, store.StatusRunning); err != nil {
@@ -266,6 +274,7 @@ func TestWithUnexpectedExitOffTheLiftWakesNobody(t *testing.T) {
 }
 
 func TestEscalationKeepsWaitingWhileAWakeIsToBeTyped(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	d.holds.await([]string{"c1"}, time.Now())
 	old := time.Now().Add(-time.Hour)
@@ -278,6 +287,7 @@ func TestEscalationKeepsWaitingWhileAWakeIsToBeTyped(t *testing.T) {
 }
 
 func TestTheSameBuildComingBackSaysTheDeployDidNotTake(t *testing.T) {
+	t.Parallel()
 	d, worker, _ := heldRoom(t)
 	restartUnder(t, d, worker.ID)
 	d.liftAtStartup()
@@ -288,6 +298,7 @@ func TestTheSameBuildComingBackSaysTheDeployDidNotTake(t *testing.T) {
 }
 
 func TestACardWithItsOwnWakeHearsBothInOneLine(t *testing.T) {
+	t.Parallel()
 	d, worker, _ := heldRoom(t)
 	if _, _, err := d.queueWake(worker.ID, "pick up r-038", "worker"); err != nil {
 		t.Fatal(err)
@@ -303,6 +314,7 @@ func TestACardWithItsOwnWakeHearsBothInOneLine(t *testing.T) {
 }
 
 func TestAHoldThatRunsOutIsLiftedWithItsSentence(t *testing.T) {
+	t.Parallel()
 	d, worker, _ := heldRoom(t)
 	d.holdTick(time.Now().Add(2 * time.Hour))
 	if d.deployHold() != nil {
@@ -315,6 +327,7 @@ func TestAHoldThatRunsOutIsLiftedWithItsSentence(t *testing.T) {
 }
 
 func TestWithNoHoldNothingChanges(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	worker := peerCard(t, d, "worker")
 	if d.deployHeld(worker.ID) {
@@ -329,6 +342,7 @@ func TestWithNoHoldNothingChanges(t *testing.T) {
 }
 
 func TestBusyCardIsTheRoomsRule(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name       string
 		supervised bool

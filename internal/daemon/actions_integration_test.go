@@ -23,6 +23,7 @@ func actionCard(t *testing.T, d *Daemon, name string) *store.Task {
 // No terminal, so it queues. This is the ordinary case: a session atrium did
 // not launch has no pty for atrium to type into.
 func TestAnActionQueuesWhenThereIsNoTerminal(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	task := actionCard(t, d, "act-1")
 	action, err := d.st.SaveCardAction(store.CardAction{
@@ -56,6 +57,7 @@ func TestAnActionQueuesWhenThereIsNoTerminal(t *testing.T) {
 // run, and they have to agree. A board that offered the right ones and ran any
 // of them would be a filter that only worked when it was looked at.
 func TestAnActionThatDoesNotBelongOnACardIsRefused(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	task := actionCard(t, d, "act-2")
 	if err := d.st.SetTags(task.ID, []string{"docs"}); err != nil {
@@ -74,6 +76,7 @@ func TestAnActionThatDoesNotBelongOnACardIsRefused(t *testing.T) {
 }
 
 func TestADisabledActionCannotBeRun(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	task := actionCard(t, d, "act-3")
 	action, err := d.st.SaveCardAction(store.CardAction{
@@ -90,6 +93,7 @@ func TestADisabledActionCannotBeRun(t *testing.T) {
 // `and exit` with no terminal to send keys to says so rather than silently
 // doing half the job. Half the reason the button was pressed is the exit.
 func TestExitingWithoutATerminalSaysSo(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	task := actionCard(t, d, "act-4")
 	action, err := d.st.SaveCardAction(store.CardAction{
@@ -127,6 +131,7 @@ func TestExitingWithoutATerminalSaysSo(t *testing.T) {
 // is a prompt somebody chose, and six months later "why did it start running
 // the tests" is a question with an answer.
 func TestRunningAnActionIsRecorded(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	task := actionCard(t, d, "act-5")
 	action, err := d.st.SaveCardAction(store.CardAction{
@@ -156,6 +161,7 @@ func TestRunningAnActionIsRecorded(t *testing.T) {
 
 // An action id that names nothing is a refusal, not a panic.
 func TestAnUnknownActionIsRefused(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	task := actionCard(t, d, "act-6")
 	if _, err := d.runAction(task.ID, "no-such-action"); err == nil {

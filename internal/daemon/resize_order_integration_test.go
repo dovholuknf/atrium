@@ -29,6 +29,7 @@ func (s *slowPTY) Resize(cols, rows int) error {
 // The agreed size is computed from the viewers, so the last compute has to be
 // the last apply. Otherwise the pty, the ring's marks and the viewers disagree.
 func TestConcurrentViewportChangesLeavePtyRingAndViewersAgreeing(t *testing.T) {
+	t.Parallel()
 	for round := 0; round < 200; round++ {
 		f := newFakePTY()
 		r := &runner{

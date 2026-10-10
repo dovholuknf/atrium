@@ -12,6 +12,7 @@ import (
 // A clear mark put in the stream of a terminal under a pty host is still in its replay after the room restarts and
 // re-adopts it, at the offset it was written at and not at the end.
 func TestAClearMarkSurvivesAReadoptOfAPtyHostTerminal(t *testing.T) {
+	t.Parallel()
 	dir, _ := hostFixture(t)
 	d1 := daemonAt(t, dir)
 	task := cardAt(t, d1, "mark-readopt", t.TempDir())

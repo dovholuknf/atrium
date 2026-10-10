@@ -16,6 +16,7 @@ import (
 // board to explain it: the theme was right and the child had simply decided
 // not to use it.
 func TestAPseudoTerminalSaysItIsOne(t *testing.T) {
+	t.Parallel()
 	got := declareATerminal([]string{"PATH=/usr/bin"})
 	for _, want := range []string{"TERM=xterm-256color", "COLORTERM=truecolor"} {
 		if !envHas(got, want) {
@@ -30,6 +31,7 @@ func TestAPseudoTerminalSaysItIsOne(t *testing.T) {
 // A harness naming its own TERM is somebody saying they know better about
 // their own runner. This is a default, not a policy.
 func TestAnExistingTerminalIsLeftAlone(t *testing.T) {
+	t.Parallel()
 	got := declareATerminal([]string{"TERM=dumb", "COLORTERM=", "PATH=/usr/bin"})
 	if envHas(got, "TERM=xterm-256color") {
 		t.Error("a runner that asked for TERM=dumb was overruled")

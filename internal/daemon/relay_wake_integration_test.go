@@ -10,6 +10,7 @@ import (
 
 // wake=true goes on to the hub with the message, so the room that holds the card resumes it.
 func TestAWakeSayToAnotherRoomAsksTheHubToResumeIt(t *testing.T) {
+	t.Parallel()
 	d, f := roomDaemon(t)
 	peerCard(t, d, "sa1")
 
@@ -30,6 +31,7 @@ func TestAWakeSayToAnotherRoomAsksTheHubToResumeIt(t *testing.T) {
 // A held message carries no wake, so a say that asks for one is refused when the hub cannot be
 // reached, not held and later delivered to a card that is still parked.
 func TestAWakeSayToAnUnreachableRoomIsRefusedNotHeld(t *testing.T) {
+	t.Parallel()
 	d, f := roomDaemon(t)
 	peerCard(t, d, "sa1")
 	for _, down := range []func(RelaySay) (RelayResult, error){
@@ -51,6 +53,7 @@ func TestAWakeSayToAnUnreachableRoomIsRefusedNotHeld(t *testing.T) {
 
 // An unconfirmed wake say is reported as unconfirmed, and not held, so it is not repeated.
 func TestAnUnconfirmedWakeSayIsNotHeld(t *testing.T) {
+	t.Parallel()
 	d, f := roomDaemon(t)
 	peerCard(t, d, "sa1")
 	f.set(func(RelaySay) (RelayResult, error) { return RelayResult{Unconfirmed: true, Error: "no answer"}, nil })
@@ -63,6 +66,7 @@ func TestAnUnconfirmedWakeSayIsNotHeld(t *testing.T) {
 // L1 of the review. An older hub drops the wake and the target answers `parked`. The sender is told
 // the hub is too old, never to send again with wake=true, which would loop.
 func TestAWakeSayAnsweredParkedMeansTheHubIsOld(t *testing.T) {
+	t.Parallel()
 	d, f := roomDaemon(t)
 	peerCard(t, d, "sa1")
 	f.set(func(s RelaySay) (RelayResult, error) {

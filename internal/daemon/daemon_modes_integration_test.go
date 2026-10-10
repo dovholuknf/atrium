@@ -10,6 +10,7 @@ import (
 )
 
 func TestFreshRoomStateIsOwnerOnly(t *testing.T) {
+	t.Parallel()
 	if runtime.GOOS == "windows" {
 		t.Skip("unix modes")
 	}

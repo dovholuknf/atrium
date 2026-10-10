@@ -15,6 +15,7 @@ func ontoCard(status string) *store.Task {
 }
 
 func TestALaunchOntoADeadCardBringsItBack(t *testing.T) {
+	t.Parallel()
 	got, move := statusAfterLaunchOnto(store.StatusDead)
 	if !move {
 		t.Fatal("a dead card was left dead with a process on it")
@@ -28,6 +29,7 @@ func TestALaunchOntoADeadCardBringsItBack(t *testing.T) {
 // state, so a live runner left under a done card would work forever in the
 // finished column with nothing able to move it.
 func TestALaunchOntoADoneCardPicksItBackUp(t *testing.T) {
+	t.Parallel()
 	got, move := statusAfterLaunchOnto(store.StatusDone)
 	if !move {
 		t.Fatal("starting a runner onto a finished card left it finished")
@@ -40,6 +42,7 @@ func TestALaunchOntoADoneCardPicksItBackUp(t *testing.T) {
 // An offered item that nobody had started. Starting it is what the inbox is
 // for, and a backlog card with a process on it is the same lie as a dead one.
 func TestALaunchOntoABacklogCardTakesItOutOfTheInbox(t *testing.T) {
+	t.Parallel()
 	got, move := statusAfterLaunchOnto(store.StatusBacklog)
 	if !move {
 		t.Fatal("an offered card kept sitting in the inbox with a runner on it")
@@ -52,6 +55,7 @@ func TestALaunchOntoABacklogCardTakesItOutOfTheInbox(t *testing.T) {
 // A session that came up and got to work during the settle window must not be
 // dragged back to `needs-input` to announce work it has already begun.
 func TestALaunchDoesNotReopenACardThatIsAlreadyWorking(t *testing.T) {
+	t.Parallel()
 	for _, status := range []string{
 		store.StatusRunning, store.StatusNeedsInput, store.StatusNeedsPermission,
 	} {
@@ -67,6 +71,7 @@ func TestALaunchDoesNotReopenACardThatIsAlreadyWorking(t *testing.T) {
 // just started, or quietly overturns the one status somebody chose by hand.
 // Neither, and it says which way through.
 func TestALaunchOntoAShelvedCardIsRefused(t *testing.T) {
+	t.Parallel()
 	err := ontoRefusal(ontoCard(store.StatusShelved), false)
 	if err == nil {
 		t.Fatal("a runner was started onto a shelved card")
@@ -78,6 +83,7 @@ func TestALaunchOntoAShelvedCardIsRefused(t *testing.T) {
 
 // And it must never do it by moving the card instead.
 func TestShelvedIsNeverQuietlyUnshelved(t *testing.T) {
+	t.Parallel()
 	if _, move := statusAfterLaunchOnto(store.StatusShelved); move {
 		t.Fatal("a launch unshelved a card the operator had put down")
 	}
@@ -87,6 +93,7 @@ func TestShelvedIsNeverQuietlyUnshelved(t *testing.T) {
 // describing whichever spoke last. `handOverTo` already refuses this for the
 // adopt path; the `task_id` path had no such guard at all.
 func TestALaunchOntoALiveCardIsRefused(t *testing.T) {
+	t.Parallel()
 	err := ontoRefusal(ontoCard(store.StatusRunning), true)
 	if err == nil {
 		t.Fatal("a second runner was started onto a card that already had one")
@@ -100,6 +107,7 @@ func TestALaunchOntoALiveCardIsRefused(t *testing.T) {
 // exactly what a relaunch is for, and refusing that would be worse than the
 // bug.
 func TestADeadCardWithNothingOnItIsNotRefused(t *testing.T) {
+	t.Parallel()
 	if err := ontoRefusal(ontoCard(store.StatusDead), false); err != nil {
 		t.Fatalf("relaunching a dead card was refused: %v", err)
 	}
@@ -110,6 +118,7 @@ func TestADeadCardWithNothingOnItIsNotRefused(t *testing.T) {
 // and believing it would refuse the relaunch this whole change exists to make
 // work. Only a column that claims to be running gets the pid asked about.
 func TestAStalePidOnADeadCardDoesNotCountAsLive(t *testing.T) {
+	t.Parallel()
 	// No listeners and no store: `runnerIsLive` asks the supervisor and the
 	// operating system, and neither of those is a daemon that has to be up.
 	d := &Daemon{sup: newSupervisor()}

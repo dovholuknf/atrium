@@ -16,6 +16,7 @@ import (
 // this card's. Another card's alias and a name that exists nowhere are the same
 // 403, so a guest cannot ask which names exist here.
 func TestAGuestReachesItsCardByNameAndNoOther(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	d.opts.Room = "claude-sg4"
 	mk := func(name, alias string) *store.Task {

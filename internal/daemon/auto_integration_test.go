@@ -189,6 +189,7 @@ func TestAutoModeSurvivesAReopen(t *testing.T) {
 // still recorded on a card, so it is asked and never fails open. Activity from
 // the same name stays a silent no-op.
 func TestStaleDirectoryNamePermissionStillLandsOnACard(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	done, _, err := d.st.Register(store.Observed{WireName: "checkout", Worktree: "/tmp/checkout", Runner: "claude"})
 	if err != nil {

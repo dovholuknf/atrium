@@ -20,6 +20,7 @@ import (
 // The comparison the whole feature rests on. String comparison says 0.9.0 is
 // newer than 0.10.0, which would raise a card telling somebody to downgrade.
 func TestNewerVersionIsNumericPerSegment(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		latest, installed string
 		want              bool
@@ -51,6 +52,7 @@ func TestNewerVersionIsNumericPerSegment(t *testing.T) {
 // the point of the whole file. Both npm layouts are covered because Windows
 // uses one and every version manager uses the other.
 func TestInstalledVersionIsReadFromTheInstalledPackage(t *testing.T) {
+	t.Parallel()
 	const pkg = "@anthropic-ai/claude-code"
 
 	t.Run("beside the launcher", func(t *testing.T) {
@@ -128,6 +130,7 @@ func TestLatestPublishedEscapesAScopedName(t *testing.T) {
 // wave of requests, and the ones that lose must not queue behind the one that
 // won.
 func TestOnlyOneCheckIsInFlightPerPackage(t *testing.T) {
+	t.Parallel()
 	var u updates
 	mine, ch := u.claim("@openai/codex")
 	if !mine {
@@ -158,6 +161,7 @@ func TestOnlyOneCheckIsInFlightPerPackage(t *testing.T) {
 
 // Concurrent claims must hand exactly one caller the work.
 func TestClaimIsRacefree(t *testing.T) {
+	t.Parallel()
 	var u updates
 	var wg sync.WaitGroup
 	var mu sync.Mutex
@@ -183,6 +187,7 @@ func TestClaimIsRacefree(t *testing.T) {
 // WORK and not the state of it, so a second release rewrites the card that is
 // already there.
 func TestASecondReleaseRewritesTheCardRatherThanAddingOne(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	item := store.IntakeItem{
 		Source:     "runner-update",
@@ -229,6 +234,7 @@ func TestASecondReleaseRewritesTheCardRatherThanAddingOne(t *testing.T) {
 // and a history, and a later offer must not rewrite what somebody is working
 // in.
 func TestAStartedCardIsNotRewrittenByALaterOffer(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	item := store.IntakeItem{
 		Source: "github", ExternalID: "4211", Title: "the original title",
@@ -258,6 +264,7 @@ func TestAStartedCardIsNotRewrittenByALaterOffer(t *testing.T) {
 // it. Editing the prompt before pressing start is a documented use of the
 // inbox, and a source that stops sending one must not wipe that.
 func TestARefreshDoesNotBlankWhatItDoesNotSend(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	first, _, err := d.st.Offer(store.IntakeItem{
 		Source: "github", ExternalID: "9", Title: "t", Prompt: "do the thing",

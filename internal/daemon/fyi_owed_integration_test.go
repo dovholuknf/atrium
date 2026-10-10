@@ -10,6 +10,7 @@ import (
 )
 
 func TestTheLeanWorkerPromptNeverNamesAtriumReport(t *testing.T) {
+	t.Parallel()
 	if strings.Contains(leanSystemPrompt, "atrium_report") {
 		t.Errorf("the lean worker prompt names atrium_report")
 	}
@@ -30,6 +31,7 @@ func nudged(t *testing.T, d *Daemon, id string) bool {
 // else to do" as an fyi, and the worker ended its turn as told. No debt, no
 // nudge, no notice, on the queued path, the tell path and the typed record.
 func TestALaunchersFyiAfterADoneReportOwesNothing(t *testing.T) {
+	t.Parallel()
 	for _, door := range []string{"say", "tell", "typed"} {
 		d, launcher, worker := reportedWorker(t)
 		switch door {
@@ -65,6 +67,7 @@ func TestALaunchersFyiAfterADoneReportOwesNothing(t *testing.T) {
 // A launcher's needs, the default, still makes the worker owe, and its silence
 // still earns its launcher a notice.
 func TestALaunchersNeedsStillOwesAReport(t *testing.T) {
+	t.Parallel()
 	for _, kind := range []string{"needs", ""} {
 		d, launcher, worker := reportedWorker(t)
 		if rec := sayKind(t, d, worker, "orchestrator", kind); rec.Code >= 400 {
@@ -88,6 +91,7 @@ func TestALaunchersNeedsStillOwesAReport(t *testing.T) {
 
 // An fyi that asks for a reply wants one, so it owes like needs.
 func TestAnFyiThatAsksForAReplyStillOwes(t *testing.T) {
+	t.Parallel()
 	if got := promptKind("fyi", true); got != "" {
 		t.Fatalf("promptKind(fyi, reply) = %q, want empty", got)
 	}
@@ -99,6 +103,7 @@ func TestAnFyiThatAsksForAReplyStillOwes(t *testing.T) {
 // A say to the worker still marks the worker reported. Unchanged, checked here
 // because the nudge now points every worker at it.
 func TestASayToTheLauncherStillMarksTheWorkerReported(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	launcher, worker := launchedPair(t, d)
 	if got, _ := d.st.Get(worker.ID); !got.OwesReport() {
@@ -114,6 +119,7 @@ func TestASayToTheLauncherStillMarksTheWorkerReported(t *testing.T) {
 
 // ACROSS ROOMS the kind rides the relay, and a held say keeps it for the drain.
 func TestACrossRoomFyiKeepsItsKind(t *testing.T) {
+	t.Parallel()
 	d, f := roomDaemon(t)
 	peerCard(t, d, "sa1")
 	code, out := say(t, d, map[string]string{"from": "sa1", "to": "w@claude-sg4", "text": "stop", "kind": "fyi"})

@@ -16,6 +16,7 @@ import (
 // TestHelperEnvDump is the runner in TestALaunchedRunnerDoesNotInheritTheRoomsDebugSwitches.
 // It writes its own environment into its working directory and exits.
 func TestHelperEnvDump(t *testing.T) {
+	t.Parallel()
 	if os.Getenv("ATRIUM_TEST_ENV_DUMP") == "" {
 		t.Skip("not the helper")
 	}

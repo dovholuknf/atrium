@@ -11,6 +11,7 @@ import (
 // Two callers sharing a key run one at a time. This is the whole point: it is
 // the mutual exclusion that makes a launch's check-then-spawn region atomic.
 func TestKeyedMutexSerializesSameKey(t *testing.T) {
+	t.Parallel()
 	k := newKeyedMutex()
 
 	unlock := k.lock("task:one")
@@ -37,6 +38,7 @@ func TestKeyedMutexSerializesSameKey(t *testing.T) {
 // Different keys do not block each other, so two unrelated launches are not
 // dragged into a queue behind one another.
 func TestKeyedMutexAllowsDifferentKeys(t *testing.T) {
+	t.Parallel()
 	k := newKeyedMutex()
 
 	unlock := k.lock("task:one")
@@ -59,6 +61,7 @@ func TestKeyedMutexAllowsDifferentKeys(t *testing.T) {
 // deadlock. The sorted acquisition order is what stops each from holding the one
 // the other wants.
 func TestKeyedMutexMultiKeyNoDeadlock(t *testing.T) {
+	t.Parallel()
 	k := newKeyedMutex()
 
 	done := make(chan struct{})
@@ -92,6 +95,7 @@ func TestKeyedMutexMultiKeyNoDeadlock(t *testing.T) {
 // An empty set is a valid no-op, so a plain launch that names neither a card nor
 // a resume is serialized against nothing.
 func TestKeyedMutexEmptyIsANoOp(t *testing.T) {
+	t.Parallel()
 	k := newKeyedMutex()
 	unlock := k.lock(launchKeys("", "")...)
 	unlock()

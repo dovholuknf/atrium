@@ -24,6 +24,7 @@ func replayOf(r *runner) string {
 // The mark is requested after the first k bytes of a stream, wherever k falls. It must come out whole, at the
 // nearest point between sequences at or after k, and every other byte must be unchanged.
 func TestMarkWaitsForTheEndOfASequenceSplitAtEveryOffset(t *testing.T) {
+	t.Parallel()
 	// each case is "pre", one sequence, then "tail": the parser is only in ground state in "pre" and after the sequence
 	for _, tc := range []struct {
 		name   string
@@ -65,6 +66,7 @@ func TestMarkWaitsForTheEndOfASequenceSplitAtEveryOffset(t *testing.T) {
 
 // The same, with the stream split in a chunk of its own on every byte, so the held mark crosses many chunks.
 func TestMarkHeldAcrossManyChunks(t *testing.T) {
+	t.Parallel()
 	stream := "a\x1b]0;a long title\x07b"
 	r := newEscRunner()
 	r.deliverOutput([]byte(stream[:5]))
@@ -80,6 +82,7 @@ func TestMarkHeldAcrossManyChunks(t *testing.T) {
 
 // A watcher sees the same bytes as the ring, the mark whole and after the sequence.
 func TestHeldMarkReachesWatchersAfterTheSequence(t *testing.T) {
+	t.Parallel()
 	r := newEscRunner()
 	_, _, _, _, _, updates := r.subscribeSized()
 	r.deliverOutput([]byte("x\x1b[3"))
@@ -96,6 +99,7 @@ func TestHeldMarkReachesWatchersAfterTheSequence(t *testing.T) {
 
 // A sequence that never ends does not hold the mark for good: the byte bound releases it.
 func TestHeldMarkIsForcedOutByBytes(t *testing.T) {
+	t.Parallel()
 	r := newEscRunner()
 	r.deliverOutput([]byte("\x1b]0;"))
 	r.markClear()
@@ -110,6 +114,7 @@ func TestHeldMarkIsForcedOutByBytes(t *testing.T) {
 
 // A stream that stops mid-sequence does not hold it either: the timer releases it.
 func TestHeldMarkIsForcedOutByTime(t *testing.T) {
+	t.Parallel()
 	r := newEscRunner()
 	r.deliverOutput([]byte("\x1b[3"))
 	r.markClear()

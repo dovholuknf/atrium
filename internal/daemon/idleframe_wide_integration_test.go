@@ -10,6 +10,7 @@ import (
 // The heuristics mask a stray U+FFFD, so this looks at the text itself: a wide
 // character reaches classifyScreen once, with no replacement after it.
 func TestClassifyFrameTextHasEachWideCharacterOnce(t *testing.T) {
+	t.Parallel()
 	frame := "\x1b[H\x1b[2J✻ Crunched for 1m 0s\r\n\r\n" + frameRule + "\r\n❯ 日本語のテキスト\r\n" + frameRule +
 		"\r\n  ⏵⏵ auto mode on (shift+tab to cycle) · ← for agents\r\n"
 	sc := newScreenSized(80, 40)

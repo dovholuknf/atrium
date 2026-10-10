@@ -89,6 +89,7 @@ func cullCard(t *testing.T, d *Daemon, dir string, tags ...string) *store.Task {
 
 // Merged, clean but for BRIEF.md, and tagged: the worktree and branch go.
 func TestCullRemovesAMergedWorkersWorktreeAndBranch(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	r := newCullRepo(t, true)
 	task := cullCard(t, d, r.wt, OriginAgentTag, SubagentTag)
@@ -114,6 +115,7 @@ func TestCullRemovesAMergedWorkersWorktreeAndBranch(t *testing.T) {
 // A cull takes the card off the board with an event saying why, and never files
 // it as dead: that would put a death in the ledger for accepted work.
 func TestCullArchivesTheCardWithoutKillingIt(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	r := newCullRepo(t, true)
 	task := cullCard(t, d, r.wt, OriginAgentTag, SubagentTag)
@@ -148,6 +150,7 @@ func TestCullArchivesTheCardWithoutKillingIt(t *testing.T) {
 
 // An unmerged branch refuses the whole cull and touches nothing.
 func TestCullRefusesAnUnmergedBranch(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	r := newCullRepo(t, false)
 	task := cullCard(t, d, r.wt, OriginAgentTag, SubagentTag)
@@ -166,6 +169,7 @@ func TestCullRefusesAnUnmergedBranch(t *testing.T) {
 
 // Uncommitted changes keep the worktree and the branch, and say why.
 func TestCullKeepsADirtyWorktree(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	r := newCullRepo(t, true)
 	if err := os.WriteFile(filepath.Join(r.wt, "notes.txt"), []byte("unsaved\n"), 0o644); err != nil {
@@ -190,6 +194,7 @@ func TestCullKeepsADirtyWorktree(t *testing.T) {
 
 // A card without atrium:subagent is never culled, whoever asks.
 func TestCullRefusesACardNotTaggedSubagent(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	r := newCullRepo(t, true)
 	task := cullCard(t, d, r.wt, OriginAgentTag)
@@ -204,6 +209,7 @@ func TestCullRefusesACardNotTaggedSubagent(t *testing.T) {
 
 // The main checkout is never removed, even on a worker's card.
 func TestCullRefusesTheMainCheckout(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	r := newCullRepo(t, true)
 	cullGit(t, r.main, "checkout", "-q", "-b", "feature")
@@ -217,6 +223,7 @@ func TestCullRefusesTheMainCheckout(t *testing.T) {
 // A card whose work is not done is not reclaimed, and a live session atrium does not own could not be asked to
 // leave anyway, so nothing is removed from under it. H4: it stays where the operator can see it.
 func TestCullRefusesALiveSessionItDoesNotOwn(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	r := newCullRepo(t, true)
 	task := cullCard(t, d, r.wt, OriginAgentTag, SubagentTag)
@@ -275,6 +282,7 @@ func TestCullExitsASupervisedWorkerFirst(t *testing.T) {
 }
 
 func TestProtectedBranches(t *testing.T) {
+	t.Parallel()
 	for _, b := range []string{"main", "master", "claude/main", "Release"} {
 		if !protectedBranch(b, "release") {
 			t.Errorf("%s is not protected", b)

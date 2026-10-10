@@ -33,6 +33,7 @@ func makeJWT(t *testing.T, iss, sub string, exp time.Time) string {
 // spent, is the difference between a useful form and one that fails at a
 // controller.
 func TestReadJWT(t *testing.T) {
+	t.Parallel()
 	tok := makeJWT(t, "https://ctrl.example.com", "atrium", time.Now().Add(time.Hour))
 	claims, err := readJWT(tok)
 	if err != nil {
@@ -51,6 +52,7 @@ func TestReadJWT(t *testing.T) {
 
 // Spent is worth saying before it is spent again.
 func TestReadJWTNoticesAnExpiredToken(t *testing.T) {
+	t.Parallel()
 	tok := makeJWT(t, "https://ctrl.example.com", "atrium", time.Now().Add(-time.Minute))
 	claims, err := readJWT(tok)
 	if err != nil {
@@ -64,6 +66,7 @@ func TestReadJWTNoticesAnExpiredToken(t *testing.T) {
 // Something pasted into the wrong box should say so, rather than being sent to
 // a controller to be refused there.
 func TestReadJWTRefusesSomethingElse(t *testing.T) {
+	t.Parallel()
 	for _, in := range []string{"", "not-a-token", "one.two", "abc.!!!.def"} {
 		if _, err := readJWT(in); err == nil {
 			t.Fatalf("%q was accepted as an enrollment token", in)
@@ -75,6 +78,7 @@ func TestReadJWTRefusesSomethingElse(t *testing.T) {
 // plainly a name is dropped rather than escaped, so nothing can climb out of
 // the directory atrium chose.
 func TestSafeNameCannotEscape(t *testing.T) {
+	t.Parallel()
 	cases := map[string]string{
 		"atrium":        "atrium",
 		"My Laptop":     "mylaptop",
@@ -96,6 +100,7 @@ func TestSafeNameCannotEscape(t *testing.T) {
 }
 
 func TestSafeNameIsBounded(t *testing.T) {
+	t.Parallel()
 	if got := safeName(strings.Repeat("a", 500)); len(got) > 40 {
 		t.Fatalf("a 500 character name produced %d characters", len(got))
 	}
@@ -125,6 +130,7 @@ func TestEnrollZitiRefusesWithNoToken(t *testing.T) {
 // JWT in place. It refuses the same bad inputs, without a daemon, and into a
 // directory the caller names.
 func TestEnrollZitiIntoRefusesBadInputWithoutADaemon(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	if _, _, err := EnrollZitiInto("", "room", dir); err == nil {
 		t.Fatal("enrolling was accepted with no token")
@@ -222,6 +228,7 @@ func TestZrokEnvNeverCarriesTheToken(t *testing.T) {
 // A path pointing at nothing is a state worth telling apart from never having
 // configured one, because the fix is different.
 func TestZitiEnrolmentTellsMissingFromUnset(t *testing.T) {
+	t.Parallel()
 	if got := zitiEnrolment(""); got.Path != "" || got.Present {
 		t.Fatalf("an unset identity reported as %+v", got)
 	}
@@ -240,6 +247,7 @@ func TestZitiEnrolmentTellsMissingFromUnset(t *testing.T) {
 // The controller is read out so the board can say which network this is. The
 // key material beside it is deliberately not a field.
 func TestZitiEnrolmentReadsTheControllerAndNotTheKey(t *testing.T) {
+	t.Parallel()
 	path := filepath.Join(t.TempDir(), "id.json")
 	key := "PRIVATE-KEY-MATERIAL"
 	body := `{"ztAPI":"https://ctrl.example.com:1280","id":{"key":"` + key + `"}}`
@@ -266,6 +274,7 @@ func TestZitiEnrolmentReadsTheControllerAndNotTheKey(t *testing.T) {
 // The description is optional and zrok has its own default, so an empty one
 // must not become an empty flag.
 func TestZrokEnableArgs(t *testing.T) {
+	t.Parallel()
 	args := zrokEnableArgs("tok123", "")
 	got := strings.Join(args, " ")
 	if !strings.Contains(got, "enable tok123") {

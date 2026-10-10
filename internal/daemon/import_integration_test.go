@@ -13,6 +13,7 @@ import (
 // question somebody restoring a machine actually asks, and an answer that
 // arrives by doing it is not an answer.
 func TestADryRunChangesNothing(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	in := &Export{
 		Version:  ExportVersion,
@@ -40,6 +41,7 @@ func TestADryRunChangesNothing(t *testing.T) {
 // THE ONE THAT MATTERS. Restoring onto a machine that is already configured
 // must not quietly replace what is there.
 func TestAnImportKeepsWhatIsAlreadySet(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	if err := d.st.SetSetting(store.SettingSweepDead, "mine"); err != nil {
 		t.Fatal(err)
@@ -76,6 +78,7 @@ func TestAnImportKeepsWhatIsAlreadySet(t *testing.T) {
 
 // Forcing does overwrite, or the escape hatch is not one.
 func TestForceOverwrites(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	if err := d.st.SetSetting(store.SettingSweepDead, "mine"); err != nil {
 		t.Fatal(err)
@@ -103,6 +106,7 @@ func TestForceOverwrites(t *testing.T) {
 // the token with a value that was deliberately absent, and the machine would
 // look configured and refuse to share. So the overlay is MERGED.
 func TestAnImportDoesNotEraseTheZrokToken(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	cfg := d.zrokConfig()
 	cfg.ShareToken = "a-token-that-must-survive"
@@ -137,6 +141,7 @@ func TestAnImportDoesNotEraseTheZrokToken(t *testing.T) {
 
 // The same, for the ziti identity. An identity path points at a private key.
 func TestAnImportDoesNotEraseTheZitiIdentity(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	cfg := d.zitiConfig()
 	cfg.Identity = "C:/keys/atrium.json"
@@ -163,6 +168,7 @@ func TestAnImportDoesNotEraseTheZitiIdentity(t *testing.T) {
 // A hand-edited file does not get to name a setting the export itself refuses
 // to carry. The import list and the export list are the same list.
 func TestAnImportRefusesASettingTheExportWouldNotCarry(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	in := &Export{
 		Version: ExportVersion,
@@ -191,6 +197,7 @@ func TestAnImportRefusesASettingTheExportWouldNotCarry(t *testing.T) {
 // A version this daemon does not understand is refused whole. Half a
 // configuration is worse than none, because it looks like it worked.
 func TestAnUnknownVersionIsRefusedWhole(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	in := &Export{
 		Version:  ExportVersion + 41,
@@ -211,6 +218,7 @@ func TestAnUnknownVersionIsRefusedWhole(t *testing.T) {
 // Round trip. Export a configured machine, import onto an empty one, and the
 // second should end up saying the same things as the first.
 func TestExportThenImportCarriesTheConfiguration(t *testing.T) {
+	t.Parallel()
 	from := testDaemon(t)
 	if err := from.st.SetSetting(store.SettingSweepDead, "7200"); err != nil {
 		t.Fatal(err)
@@ -251,6 +259,7 @@ func TestExportThenImportCarriesTheConfiguration(t *testing.T) {
 // restores every fixture and then draws them all in atrium's own blue has
 // restored the work and lost the thing the operator notices first.
 func TestABroughtThemeSurvivesTheRoundTrip(t *testing.T) {
+	t.Parallel()
 	from := testDaemon(t)
 	mine := store.TermTheme{Name: "mine", Palette: store.Palette{
 		Background: "#0c0c0c", Foreground: "#cccccc",
@@ -289,6 +298,7 @@ func TestABroughtThemeSurvivesTheRoundTrip(t *testing.T) {
 // a file edited by hand cannot put something that is not a colour into the
 // table by arriving as configuration instead of through the editor.
 func TestAnImportedThemeIsStillValidated(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	in := &Export{
 		Version: ExportVersion,

@@ -17,6 +17,7 @@ import (
 // The name is the alias, else 13 characters of the id, and two ids sharing eight
 // characters do not collide.
 func TestHandoffName(t *testing.T) {
+	t.Parallel()
 	withAlias := &store.Task{ID: "01a0ede4-945c-aaaa", Alias: "Merge"}
 	if got := HandoffName(withAlias); got != "HANDOFF.merge.md" {
 		t.Fatalf("alias name: %q", got)

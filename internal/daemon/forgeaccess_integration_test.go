@@ -166,6 +166,7 @@ func TestForgeUnknownToolAndBadHostRunNothing(t *testing.T) {
 
 // The hook the forge package's AccessError will be wired to.
 func TestRaiseForgeAccessRaisesTheSameAlert(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	d.opts.Room = "sg3"
 	d.RaiseForgeAccess("gh", "github.com", "gh: To get started with GitHub CLI, please run: gh auth login")
@@ -186,6 +187,7 @@ func TestRaiseForgeAccessRaisesTheSameAlert(t *testing.T) {
 }
 
 func TestForgeScopesIn(t *testing.T) {
+	t.Parallel()
 	have, ok := forgeScopesIn("x\n  - Token scopes: 'gist', 'read:org', 'repo'\r\n")
 	if !ok || !have["repo"] || !have["read:org"] || !have["gist"] || have["admin"] {
 		t.Fatalf("%v %v", have, ok)
@@ -196,6 +198,7 @@ func TestForgeScopesIn(t *testing.T) {
 }
 
 func TestForgeAccessFromRaisesAndForgeWorkedClears(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	d.opts.Room = "sg3"
 	if d.prr.onAccess == nil || d.prr.onWorked == nil || d.ap.ForgeFailed == nil || d.ap.ForgeWorked == nil {

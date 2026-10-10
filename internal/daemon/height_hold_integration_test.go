@@ -9,6 +9,7 @@ import (
 
 // THE REAL TIMER, once, so the path by hand above is the one that runs.
 func TestTheHoldTimerAppliesTheHeight(t *testing.T) {
+	t.Parallel()
 	r, f := heldRunner(t)
 	r.resizeMu.Lock()
 	r.hold = 20 * time.Millisecond

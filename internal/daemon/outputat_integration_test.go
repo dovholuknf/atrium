@@ -13,6 +13,7 @@ import (
 // output_at moves when the transcript gains a reply with text, and only then: a
 // tool call with no text, or a subagent's reply, leaves it where it was.
 func TestOutputAtMovesOnANewReply(t *testing.T) {
+	t.Parallel()
 	f := newUsageFix(t)
 	d := &Daemon{st: f.st, usage: f.u, ctx: newContextSizes()}
 
@@ -57,6 +58,7 @@ func TestOutputAtMovesOnANewReply(t *testing.T) {
 // A line still being written is not skipped: the read stops before it, and the
 // next read takes it whole.
 func TestOutputAtWaitsForAWholeLine(t *testing.T) {
+	t.Parallel()
 	f := newUsageFix(t)
 	d := &Daemon{st: f.st, usage: f.u, ctx: newContextSizes()}
 	transcriptReply(t, f.path, "m1", f.base, false, textBlock("first"))
@@ -96,6 +98,7 @@ func appendRaw(t *testing.T, path string, b []byte) {
 // A LINE OVER THE SCANNER'S LIMIT, a pasted image stored base64, does not freeze
 // output_at: the read is capped at the tail and moves past it.
 func TestOutputAtGetsPastAHugeLine(t *testing.T) {
+	t.Parallel()
 	f := newUsageFix(t)
 	d := &Daemon{st: f.st, usage: f.u, ctx: newContextSizes()}
 	transcriptReply(t, f.path, "m1", f.base, false, textBlock("before the paste"))
@@ -124,6 +127,7 @@ func TestOutputAtGetsPastAHugeLine(t *testing.T) {
 
 // A check armed before Close never runs.
 func TestCloseStopsAPendingOutputCheck(t *testing.T) {
+	t.Parallel()
 	f := newUsageFix(t)
 	d := &Daemon{st: f.st, usage: f.u, ctx: newContextSizes()}
 	transcriptReply(t, f.path, "m1", f.base, false, textBlock("hello"))
@@ -141,6 +145,7 @@ func TestCloseStopsAPendingOutputCheck(t *testing.T) {
 
 // A card that is not Claude has no transcript to read.
 func TestOutputAtIsClaudeOnly(t *testing.T) {
+	t.Parallel()
 	f := newUsageFix(t)
 	transcriptReply(t, f.path, "m1", f.base, false, textBlock("hello"))
 	d := &Daemon{st: f.st, usage: f.u, ctx: newContextSizes()}

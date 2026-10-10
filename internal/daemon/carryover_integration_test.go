@@ -38,6 +38,7 @@ func carryRunner(id string, size, cols int) *runner {
 // A terminal running claude shows one session's output. So does this now, and
 // the older bytes are fetched by somebody who asks for them.
 func TestCarryoverIsKeptOnDiskAndNotReplayedIntoTheTerminal(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	before := carryRunner("card1", 4096, 100)
 	before.buf.Write([]byte("what I was doing before the restart\r\n"))
@@ -84,6 +85,7 @@ func TestCarryoverIsKeptOnDiskAndNotReplayedIntoTheTerminal(t *testing.T) {
 // AND IT IS SERVED AS PLAIN TEXT, because it opens in a browser tab and a tab
 // is not a terminal. Colour codes would render as `[38;5;244m` throughout.
 func TestTheOlderScrollbackIsServedWithoutEscapes(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	r := carryRunner("card1", 4096, 100)
 	r.buf.Write([]byte("\x1b[38;5;244mcoloured output\x1b[0m\r\n\x1b[Hand a redraw over it\r\n"))
@@ -116,6 +118,7 @@ func TestTheOlderScrollbackIsServedWithoutEscapes(t *testing.T) {
 // A CARD WITH NOTHING SAVED SAYS SO, and says why, because "it is written when
 // atrium is stopped" is the whole answer and nobody can guess it.
 func TestTheOlderScrollbackSaysWhenThereIsNone(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	req := httptest.NewRequest(http.MethodGet, "/v1/tasks/card1/scrollback/older", nil)
 	req.SetPathValue("id", "card1")
@@ -138,6 +141,7 @@ func TestTheOlderScrollbackSaysWhenThereIsNone(t *testing.T) {
 // every restart's scrollback for any session that had been resized, which is
 // most of them.
 func TestCarryoverIsSavedWhateverWidthItWasDrawnAt(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	before := carryRunner("card1", 4096, 80)
 	before.buf.Write([]byte("eighty column output\r\n"))
@@ -169,6 +173,7 @@ func TestCarryoverIsSavedWhateverWidthItWasDrawnAt(t *testing.T) {
 // (pop a window out, close it, restart) also emptied the file. Everything
 // retained is saved now.
 func TestCarryoverAfterAResizeStillSavesEverything(t *testing.T) {
+	t.Parallel()
 	r := carryRunner("card1", 4096, 80)
 	r.buf.Write([]byte("eighty column output\r\n"))
 	r.buf.SetWidth(200)
@@ -188,6 +193,7 @@ func TestCarryoverAfterAResizeStillSavesEverything(t *testing.T) {
 // And a runner that has produced nothing writes no file at all, because an
 // empty file is one the next daemon has to decide about.
 func TestCarryoverOfAnEmptyRingIsNotSaved(t *testing.T) {
+	t.Parallel()
 	r := carryRunner("card1", 4096, 80)
 	if c := r.carryFrom(4096); c != nil {
 		t.Fatalf("saved %d bytes for a runner that never wrote anything", len(c.bytes))
@@ -204,6 +210,7 @@ func TestCarryoverOfAnEmptyRingIsNotSaved(t *testing.T) {
 // saying the history was drawn for another terminal, and was right that the
 // thing producing it was the problem.
 func TestATerminalReopensAtTheWidthItWasLastLookedAt(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	task, _, err := d.st.Register(store.Observed{
 		WireName: "wide-window", Worktree: t.TempDir(), Runner: "claude",
@@ -244,6 +251,7 @@ func TestATerminalReopensAtTheWidthItWasLastLookedAt(t *testing.T) {
 // anything else unreadable means "there is no scrollback", never an error.
 // Halting on storage failure is the DATABASE's rule and this is not it.
 func TestCarryoverFromACorruptFileIsDiscarded(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	good := carryRunner("card1", 4096, 100)
 	good.buf.Write([]byte("real output\r\n"))
@@ -278,6 +286,7 @@ func TestCarryoverFromACorruptFileIsDiscarded(t *testing.T) {
 // The ordinary case on a machine that has never run this, and the case for
 // every card that had no runner when the daemon stopped.
 func TestCarryoverMissingFileIsNormal(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	if c := readCarry(dir, "card1", 4096); c != nil {
 		t.Fatal("invented scrollback for a card that has none")
@@ -295,6 +304,7 @@ func TestCarryoverMissingFileIsNormal(t *testing.T) {
 // written from one is too, and a file larger than a ring did not come from
 // one.
 func TestCarryoverIsBounded(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	r := carryRunner("card1", 4096, 100)
 	for i := 0; i < 500; i++ {
@@ -319,6 +329,7 @@ func TestCarryoverIsBounded(t *testing.T) {
 // Saving must never be what makes a shutdown hang. The budget covers every
 // card together, and running out of it stops rather than finishing.
 func TestSavingCarryoverIsBoundedInTime(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	var live []*runner
 	for i := 0; i < 40; i++ {
@@ -345,6 +356,7 @@ func TestSavingCarryoverIsBoundedInTime(t *testing.T) {
 // The offer is made once per card. A card relaunched by hand hours later is
 // new work, and this morning's output does not belong on top of it.
 func TestCarryoverIsOfferedOncePerCard(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	before := carryRunner("card1", 4096, 100)
 	before.buf.Write([]byte("earlier output\r\n"))
@@ -367,6 +379,7 @@ func TestCarryoverIsOfferedOncePerCard(t *testing.T) {
 // A file nothing will ever read again is swept, and a card that is still there
 // keeps its own.
 func TestSweepDropsCarryoverForCardsThatAreGone(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	task, _, err := d.st.Register(store.Observed{
 		WireName: "still-here", Worktree: "/tmp/atrium-still-here", Runner: "claude",

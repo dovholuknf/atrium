@@ -15,6 +15,7 @@ import (
 
 // A tell to a done card is kept on it, with wake or without, when there is no conversation to resume.
 func TestTellToADoneCardIsKept(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	target, _, _ := peerPair(t, d)
 	t.Cleanup(func() { d.pending.stopAll() })
@@ -44,6 +45,7 @@ func TestTellToADoneCardIsKept(t *testing.T) {
 
 // A kept message is a row, so it survives the daemon: the store, not memory, holds it.
 func TestAKeptMessageIsADurableRow(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	card := parkedCard(t, d, "sleeper", store.StatusRunning)
 	peerCard(t, d, "alice")
@@ -59,6 +61,7 @@ func TestAKeptMessageIsADurableRow(t *testing.T) {
 
 // A relayed say that is given up on lands on the sender's card as a message with its words, not only an event.
 func TestAGivenUpRelayComesBackAsAMessage(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	target, _, _ := peerPair(t, d)
 	d.giveUpRelay(store.RelayRow{ID: "r1", FromTask: target.ID, FromWire: target.WireName,

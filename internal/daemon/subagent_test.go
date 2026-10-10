@@ -7,6 +7,7 @@ import "testing"
 // can fall out of step.
 
 func TestSubagentsAreNamed(t *testing.T) {
+	t.Parallel()
 	a := newActivityTracker()
 	a.subagentStarted("t1", "ag-1", "explore")
 	a.subagentStarted("t1", "ag-2", "review")
@@ -25,6 +26,7 @@ func TestSubagentsAreNamed(t *testing.T) {
 
 // Stopping drops the one that stopped, not the newest.
 func TestStoppingRemovesTheRightOne(t *testing.T) {
+	t.Parallel()
 	a := newActivityTracker()
 	a.subagentStarted("t1", "ag-1", "explore")
 	a.subagentStarted("t1", "ag-2", "review")
@@ -43,6 +45,7 @@ func TestStoppingRemovesTheRightOne(t *testing.T) {
 // that must not lie, and "2 subagents: explore" is honest about knowing one of
 // them.
 func TestAnUnnamedSubagentStillCounts(t *testing.T) {
+	t.Parallel()
 	a := newActivityTracker()
 	a.subagentStarted("t1", "ag-1", "explore")
 	a.subagentStarted("t1", "", "")
@@ -60,6 +63,7 @@ func TestAnUnnamedSubagentStillCounts(t *testing.T) {
 // even when the start that would have named it was lost, and refusing it
 // leaves a session claiming a subagent that has finished.
 func TestAnUnknownStopStillCountsDown(t *testing.T) {
+	t.Parallel()
 	a := newActivityTracker()
 	a.subagentStarted("t1", "ag-1", "explore")
 	a.subagentStopped("t1", "ag-never-seen")
@@ -77,6 +81,7 @@ func TestAnUnknownStopStillCountsDown(t *testing.T) {
 
 // Hooks are retried, and two rows for one agent looks like real work.
 func TestARepeatedStartIsOneSubagent(t *testing.T) {
+	t.Parallel()
 	a := newActivityTracker()
 	a.subagentStarted("t1", "ag-1", "explore")
 	a.subagentStarted("t1", "ag-1", "explore")
@@ -89,6 +94,7 @@ func TestARepeatedStartIsOneSubagent(t *testing.T) {
 
 // The count never goes below zero, whatever the hooks do.
 func TestTheCountHasAFloor(t *testing.T) {
+	t.Parallel()
 	a := newActivityTracker()
 	a.subagentStopped("t1", "ag-1")
 	a.subagentStopped("t1", "ag-2")

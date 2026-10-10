@@ -35,6 +35,7 @@ func itemOf(t *testing.T, d *Daemon, id string) *store.WorkItem {
 
 // The store's `origin:agent` and the daemon's are one string.
 func TestTheLedgerAndTheDaemonAgreeOnTheAgentTag(t *testing.T) {
+	t.Parallel()
 	if OriginAgentTag != "origin:agent" {
 		t.Fatalf("OriginAgentTag is %q, and the backfill reads origin:agent", OriginAgentTag)
 	}
@@ -43,6 +44,7 @@ func TestTheLedgerAndTheDaemonAgreeOnTheAgentTag(t *testing.T) {
 // A worker's done moves its card to done and its work to reported, which is
 // not finished. The launcher is told once, from the same transaction.
 func TestADoneReportIsReportedNotFinished(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	launcher, worker := ledgerWorker(t, d)
 
@@ -71,6 +73,7 @@ func TestADoneReportIsReportedNotFinished(t *testing.T) {
 // A card nobody gave an item still reports as it always has, and its launcher
 // still hears about it.
 func TestAReportWithNoWorkItemStillReachesTheLauncher(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	launcher, _ := launchedPair(t, d)
 	_, out := finishWith(t, d, FinishRequest{Agent: "worker", Status: ReportProgress, Recap: "half"})
@@ -157,6 +160,7 @@ func TestALaunchMakesTheItemAndAFailedStartEndsItOnce(t *testing.T) {
 
 // A board launch gets no item.
 func TestABoardLaunchGetsNoWorkItem(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	h := briefHarness(t, d)
 	// Fails at the spawn, before any item could be made, and a board launch
@@ -181,6 +185,7 @@ func deadPID(t *testing.T) int {
 // The sweep ends work whose process is gone with no exit recorded, and leaves
 // work whose liveness it cannot know exactly where it is.
 func TestTheSweepEndsGoneWorkAndLeavesUnknownAlone(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	launcher, worker := ledgerWorker(t, d)
 	if _, _, err := d.st.Register(store.Observed{WireName: "worker", Worktree: "/tmp/worker", Runner: "claude",
@@ -228,6 +233,7 @@ func TestTheSweepEndsGoneWorkAndLeavesUnknownAlone(t *testing.T) {
 
 // What a worker and its launcher say to each other is on the worker's item.
 func TestPeerMessagesLandOnTheWork(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	_, worker := ledgerWorker(t, d)
 	if _, code := tell(t, d, "worker", "orchestrator", "halfway, tests next"); code != 200 {
@@ -253,6 +259,7 @@ func TestPeerMessagesLandOnTheWork(t *testing.T) {
 // The snapshot is written beside the database on start and on change, and a
 // write that cannot happen fails nothing.
 func TestTheSnapshotFileFollowsTheLedger(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	_, worker := ledgerWorker(t, d)
 	d.startLedger()

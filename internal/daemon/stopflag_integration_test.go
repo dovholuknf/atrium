@@ -28,6 +28,7 @@ func flaggedStop(t *testing.T, d *Daemon, agent string) string {
 // stop rather than telling the launcher, never blocks, and leaves anything
 // queued since then queued, ahead of the nudge.
 func TestAFlaggedStopEndsTheTurnAndNeverBlocks(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	launcher, worker := launchedPair(t, d)
 	before := time.Now().Add(-time.Second)
@@ -63,6 +64,7 @@ func TestAFlaggedStopEndsTheTurnAndNeverBlocks(t *testing.T) {
 
 // A worker that reported owes nothing, so its flagged Stop tells nobody.
 func TestAFlaggedStopAfterAReportTellsNobody(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	launcher, _ := launchedPair(t, d)
 	if rec, _ := finishWith(t, d, FinishRequest{Agent: "worker", Status: ReportDone,

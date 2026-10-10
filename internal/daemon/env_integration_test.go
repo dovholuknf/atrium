@@ -43,6 +43,7 @@ func TestChildEnvDropsInheritedSessionMarkers(t *testing.T) {
 // A harness may set its own environment, and atrium's values are applied last
 // so a launch always identifies itself correctly.
 func TestChildEnvLayering(t *testing.T) {
+	t.Parallel()
 	env := childEnv(
 		map[string]string{"MODEL": "llama3", "ATRIUM_TASK_ID": "harness-wins-not"},
 		map[string]string{"ATRIUM_TASK_ID": "the-real-one"},
@@ -88,6 +89,7 @@ func TestChildEnvDropsInheritedRoom(t *testing.T) {
 // empty value would still be sent as an empty X-Atrium-Room header, and leaving
 // it unset is what makes the session fall back to the aggregate view.
 func TestChildEnvOmitsRoomWhenUnset(t *testing.T) {
+	t.Parallel()
 	env := childEnv(nil, map[string]string{"ATRIUM_AGENT_NAME": "a"})
 	for _, kv := range env {
 		if strings.HasPrefix(kv, "ATRIUM_ROOM=") {
@@ -97,6 +99,7 @@ func TestChildEnvOmitsRoomWhenUnset(t *testing.T) {
 }
 
 func TestInheritedTaint(t *testing.T) {
+	t.Parallel()
 	for _, k := range []string{
 		"CLAUDE_CODE_CHILD_SESSION", "claude_code_entrypoint", "CLAUDECODE",
 		"ATRIUM_AGENT_NAME", "ATRIUM_TASK_ID", "ATRIUM_ROOM",

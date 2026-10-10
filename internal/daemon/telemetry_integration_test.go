@@ -227,6 +227,7 @@ func TestTelemetryIsNotActivity(t *testing.T) {
 // stops a caller that ignores it from turning every terminal redraw into a
 // database read.
 func TestTelemetryFloorDropsAFloodOfPosts(t *testing.T) {
+	t.Parallel()
 	at, clock := fixedClock(time.Date(2026, 9, 1, 12, 0, 0, 0, time.UTC))
 	tr := newActivityTracker()
 	tr.now = clock
@@ -255,6 +256,7 @@ func TestTelemetryFloorDropsAFloodOfPosts(t *testing.T) {
 // claiming a number. It lives LONGER than an activity does, because context
 // only grows: a figure from ten minutes ago is a floor on the figure now.
 func TestTelemetryGoesStaleOnItsOwnClock(t *testing.T) {
+	t.Parallel()
 	at, clock := fixedClock(time.Date(2026, 9, 1, 12, 0, 0, 0, time.UTC))
 	tr := newActivityTracker()
 	tr.now = clock
@@ -284,6 +286,7 @@ func TestTelemetryGoesStaleOnItsOwnClock(t *testing.T) {
 // conversation that is over, and it is the number that decides which card you
 // go and look at.
 func TestForgettingACardDropsItsTelemetry(t *testing.T) {
+	t.Parallel()
 	tr := newActivityTracker()
 	tr.setTelemetry("t1", Telemetry{Pct: 92})
 	tr.set("t1", ActivityTool, "Bash")

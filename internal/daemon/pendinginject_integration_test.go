@@ -30,6 +30,7 @@ func heldStep(pi *pendingInjector, taskID string) int {
 // A deferred message is registered, raises the live board signal, and does not
 // touch the terminal while the gate is shut.
 func TestADeferredMessageIsHeldAndNotTyped(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	target, r, f := peerPair(t, d)
 	// The operator is mid-line, so the gate is shut.
@@ -57,6 +58,7 @@ func TestADeferredMessageIsHeldAndNotTyped(t *testing.T) {
 // A retry into a still-shut gate types nothing, warns by widening the backoff,
 // and keeps the message.
 func TestARetryIntoAShutGateWidensTheBackoff(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	target, r, f := peerPair(t, d)
 	t.Cleanup(func() { d.pending.stopAll() })
@@ -84,6 +86,7 @@ func TestARetryIntoAShutGateWidensTheBackoff(t *testing.T) {
 // A retry into an open gate types the message, submits it, marks it delivered
 // so the hooks do not send it twice, and clears the hold.
 func TestARetryIntoAnOpenGateLandsAndClears(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	target, r, f := peerPair(t, d)
 	// Emptied and quiet past the idle window: the gate is open.
@@ -122,6 +125,7 @@ func TestARetryIntoAnOpenGateLandsAndClears(t *testing.T) {
 // A message the hooks delivered another way is dropped on the next retry rather
 // than typed on top.
 func TestARetryDropsAMessageTheHooksAlreadyDelivered(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	target, r, f := peerPair(t, d)
 	// Open gate, so the only thing that can stop a type is the reconcile.
@@ -151,6 +155,7 @@ func TestARetryDropsAMessageTheHooksAlreadyDelivered(t *testing.T) {
 // once, rather than leaving the chip lit until the next backoff tick. The
 // operator's own text, because a held peer message is left to the typist.
 func TestHookDeliveryClearsTheHeldSignal(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	target, r, _ := peerPair(t, d)
 	t.Cleanup(func() { d.pending.stopAll() })
@@ -187,6 +192,7 @@ func TestHookDeliveryClearsTheHeldSignal(t *testing.T) {
 // An operator keystroke re-arms the backoff to the front, so a message that had
 // slid out to a long interval gets an early retry once he is back.
 func TestAKeystrokeReArmsTheBackoff(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	target, r, _ := peerPair(t, d)
 	t.Cleanup(func() { d.pending.stopAll() })
@@ -211,6 +217,7 @@ func TestAKeystrokeReArmsTheBackoff(t *testing.T) {
 // A card that refuses peer typing is not held at all: there is nothing to retry
 // on screen, and the queue plus the hooks carry it.
 func TestACardThatRefusesPeerTypingIsNotHeld(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	target, _, _ := peerPair(t, d)
 	if err := d.st.SetPeerTyping(target.ID, false); err != nil {

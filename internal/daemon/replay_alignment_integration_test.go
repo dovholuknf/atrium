@@ -25,6 +25,7 @@ import (
 // session's own terminal holds. The attaching terminal is modelled with the same
 // screen grid, at the same size, since xterm scrolls and clamps the same way.
 func TestReplayKeepsTheSessionsRows(t *testing.T) {
+	t.Parallel()
 	const cols, rows = 60, 12
 	// Claude's frame, shortened: banner, two blank rows, rule, prompt, rule,
 	// status, and the cursor parked in the prompt.
@@ -66,6 +67,7 @@ func TestReplayKeepsTheSessionsRows(t *testing.T) {
 // above it. A replay that drew the rows right and dropped the region let the
 // next line feed scroll the whole screen, footer included.
 func TestReplayKeepsTheScrollRegion(t *testing.T) {
+	t.Parallel()
 	const cols, rows = 40, 8
 	session := "\x1b[1;6r" + strings.Repeat("chat\r\n", 3) + "\x1b[8;1Hfooter\x1b[6;1Hlast chat"
 	next := "\r\nmore one\r\nmore two\r\n"

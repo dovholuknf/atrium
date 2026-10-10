@@ -12,6 +12,7 @@ import (
 // A transcript's turns become rows once, a second run adds nothing, a reply a
 // row already covers is left alone, and it stops at UsageMaxBack.
 func TestBackfillWritesTurnsOnce(t *testing.T) {
+	t.Parallel()
 	f := newUsageFix(t)
 	now := time.Now().UTC().Truncate(time.Second)
 	old := now.Add(-store.UsageMaxBack - 24*time.Hour)
@@ -61,6 +62,7 @@ func TestBackfillWritesTurnsOnce(t *testing.T) {
 
 // A dry run writes nothing.
 func TestBackfillDryRunWritesNothing(t *testing.T) {
+	t.Parallel()
 	f := newUsageFix(t)
 	a := time.Now().UTC().Add(-time.Hour)
 	f.line(a, "m1", 0, 100, 1000, 10, false)

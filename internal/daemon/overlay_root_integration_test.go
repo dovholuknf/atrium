@@ -17,6 +17,7 @@ import (
 // binary's own compiled-in default reads back as). `SetZrokEnvironment`
 // compared the two byte for byte and refused a change nobody asked for.
 func TestSameZrokInstance(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		a, b string
 		want bool

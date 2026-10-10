@@ -11,6 +11,7 @@ import (
 // leaves it in its input box, and the replay must end by putting the terminal
 // cursor back there.
 func TestReplayRestoresTheCursor(t *testing.T) {
+	t.Parallel()
 	// Three rows drawn, then the cursor parked at row 2, column 6 (1-based),
 	// which the app addresses absolutely. It is not the end of the output.
 	in := "line one\r\nline two\r\nline three\r\n\x1b[2;6H"
@@ -29,6 +30,7 @@ func TestReplayRestoresTheCursor(t *testing.T) {
 // move. The cursor is parked in the prompt row, and the attach must hand the
 // browser the sequence that puts it there.
 func TestAttachRestoresTheCursorOverTheSocket(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	// A prompt and a line under it, cursor left at row 1, column 3, which is
 	// where a TUI sits it in the input box after drawing the screen.

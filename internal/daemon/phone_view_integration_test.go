@@ -78,6 +78,7 @@ func waitSize(t *testing.T, w *sizeWatcher, cols, rows int) {
 }
 
 func TestAPhoneAttachSendsNoResizeAndStillHearsTheSize(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	f, r := sizedSession(t, d, "phone-view", 120, 30)
 

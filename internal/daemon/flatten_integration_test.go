@@ -12,6 +12,7 @@ import (
 // Move to the top of the screen and draw, which is what a redraw does, and
 // everything above goes.
 func TestAnAbsoluteCursorMoveCannotOverwriteHistory(t *testing.T) {
+	t.Parallel()
 	got := string(flatten([]byte("an hour of history\r\n\x1b[Hthe latest redraw\r\n")))
 	if !strings.Contains(got, "an hour of history") {
 		t.Fatalf("the history was left able to be overwritten: %q", got)
@@ -27,6 +28,7 @@ func TestAnAbsoluteCursorMoveCannotOverwriteHistory(t *testing.T) {
 // Erase in line and erase in display are the other half of a redraw: land on a
 // row, wipe it, write the new version.
 func TestErasesAreDropped(t *testing.T) {
+	t.Parallel()
 	for _, seq := range []string{"\x1b[K", "\x1b[2K", "\x1b[J", "\x1b[2J", "\x1b[3J"} {
 		got := string(flatten([]byte("kept" + seq + "also kept")))
 		if strings.Contains(got, "\x1b") {
@@ -48,6 +50,7 @@ func TestErasesAreDropped(t *testing.T) {
 // pipe, about four kilobytes, is delivered in installments, and a session that
 // tells typing from pasting by timing sees one paste as five.
 func TestBracketedPasteModeSurvivesFlattening(t *testing.T) {
+	t.Parallel()
 	got := string(flatten([]byte("history\r\n\x1b[?2004hlive\r\n")))
 	if !strings.Contains(got, "\x1b[?2004h") {
 		t.Fatalf("stripped the enable, so a pane after this replay pastes raw: %q", got)
@@ -61,6 +64,7 @@ func TestBracketedPasteModeSurvivesFlattening(t *testing.T) {
 // not draw is the shorter rule and it lets the alternate screen buffer back
 // in, which takes the whole scrollback off the display at once.
 func TestOnlyBracketedPasteIsKeptAmongThePrivateModes(t *testing.T) {
+	t.Parallel()
 	for _, seq := range []string{
 		"\x1b[?1049h", "\x1b[?1049l", // the alternate screen
 		"\x1b[?25l", "\x1b[?25h", // the cursor
@@ -77,6 +81,7 @@ func TestOnlyBracketedPasteIsKeptAmongThePrivateModes(t *testing.T) {
 // the whole display, so one of these in a replay takes every byte of history
 // off the screen at once.
 func TestTheAlternateScreenIsNeverEntered(t *testing.T) {
+	t.Parallel()
 	got := string(flatten([]byte("history\r\n\x1b[?1049hfullscreen thing\x1b[?1049l")))
 	if strings.Contains(got, "1049") {
 		t.Fatalf("left a screen buffer switch in the replay: %q", got)
@@ -89,6 +94,7 @@ func TestTheAlternateScreenIsNeverEntered(t *testing.T) {
 // A FULL RESET WOULD CLEAR EVERYTHING, and it is two bytes with no final byte
 // to key on, so it is easy to miss when only CSI is being filtered.
 func TestTwoByteEscapesAreDropped(t *testing.T) {
+	t.Parallel()
 	for _, seq := range []string{"\x1bc", "\x1b7", "\x1b8", "\x1bM"} {
 		got := string(flatten([]byte("kept" + seq + "still here")))
 		if strings.Contains(got, "\x1b") {
@@ -103,6 +109,7 @@ func TestTwoByteEscapesAreDropped(t *testing.T) {
 // COLOUR IS KEPT. A transcript in one colour is much harder to read, and SGR
 // cannot move or erase anything, so there is nothing to trade away.
 func TestColourSurvives(t *testing.T) {
+	t.Parallel()
 	in := "\x1b[38;5;244mgrey\x1b[0m and \x1b[1mbold\x1b[22m\r\n"
 	got := string(flatten([]byte(in)))
 	if got != in {
@@ -114,6 +121,7 @@ func TestColourSurvives(t *testing.T) {
 // and writing over itself. Every version is kept, which is more lines than
 // were ever on screen and all of them true.
 func TestABareCarriageReturnBecomesALineEnding(t *testing.T) {
+	t.Parallel()
 	got := string(flatten([]byte("10%\r50%\r100%\r\ndone\r\n")))
 	want := "10%\r\n50%\r\n100%\r\ndone\r\n"
 	if got != want {
@@ -124,6 +132,7 @@ func TestABareCarriageReturnBecomesALineEnding(t *testing.T) {
 // And a run of them is one break rather than one each, or the transcript fills
 // with blank lines.
 func TestARunOfCarriageReturnsIsOneBreak(t *testing.T) {
+	t.Parallel()
 	got := string(flatten([]byte("a\r\r\nb\r\n\r\nc")))
 	want := "a\r\nb\r\n\r\nc"
 	if got != want {
@@ -135,6 +144,7 @@ func TestARunOfCarriageReturnsIsOneBreak(t *testing.T) {
 // end halfway through a sequence. Neither may run off the end of the slice or
 // swallow the buffer.
 func TestASequenceCutInHalfDoesNotPanicOrEatTheBuffer(t *testing.T) {
+	t.Parallel()
 	cases := []string{
 		"text then a cut escape\x1b",
 		"text then a cut csi\x1b[",
@@ -153,6 +163,7 @@ func TestASequenceCutInHalfDoesNotPanicOrEatTheBuffer(t *testing.T) {
 // A window title is not history and an unterminated one would swallow
 // everything after it, so the whole string is dropped.
 func TestOperatingSystemCommandsAreDropped(t *testing.T) {
+	t.Parallel()
 	got := string(flatten([]byte("before\x1b]0;a window title\x07after")))
 	if got != "beforeafter" {
 		t.Fatalf("got %q, want %q", got, "beforeafter")
@@ -166,6 +177,7 @@ func TestOperatingSystemCommandsAreDropped(t *testing.T) {
 // Text and runes pass through byte for byte. A replacement character in the
 // scrollback would be this function's fault rather than the ring's.
 func TestOrdinaryTextAndRunesAreUntouched(t *testing.T) {
+	t.Parallel()
 	in := "héllo wörld ünicode ✓ 日本語\r\n"
 	if got := string(flatten([]byte(in))); got != in {
 		t.Fatalf("altered ordinary text: %q", got)
@@ -173,6 +185,7 @@ func TestOrdinaryTextAndRunesAreUntouched(t *testing.T) {
 }
 
 func TestFlattenOfNothingIsNothing(t *testing.T) {
+	t.Parallel()
 	if got := flatten(nil); len(got) != 0 {
 		t.Fatalf("invented bytes: %q", got)
 	}
@@ -181,6 +194,7 @@ func TestFlattenOfNothingIsNothing(t *testing.T) {
 // THE SHAPE OF THE REAL BUG, end to end on the buffer rather than a sequence
 // at a time: an hour of output, then the redraw that used to wipe it.
 func TestAnHourOfHistoryFollowedByARedrawKeepsTheHour(t *testing.T) {
+	t.Parallel()
 	var b strings.Builder
 	for i := 0; i < 500; i++ {
 		b.WriteString("line of real work that must survive\r\n")

@@ -28,6 +28,7 @@ func transcriptQueued(t *testing.T, path string, at time.Time, prompt string) {
 // A message typed mid-turn is a queued_command attachment, not a user line. It still starts a turn, so the
 // reply to it does not carry the edits of the turn before, and it is one of the prompts /replies lists.
 func TestAReplyToAQueuedMessageEditedNothing(t *testing.T) {
+	t.Parallel()
 	f := newChangesFix(t)
 	a := filepath.Join(f.repo, "a.txt")
 	writeF(t, a, "changed\n")

@@ -15,6 +15,7 @@ import (
 // `atrium tell sa89 ...` and `@sa89` both reach the card, and the handle still
 // wins over an alias.
 func TestTellAcceptsAnAlias(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	peerCard(t, d, "alice")
 	bob := peerCard(t, d, "bob-41800")
@@ -40,6 +41,7 @@ func TestTellAcceptsAnAlias(t *testing.T) {
 // and lands on that card. A live card with the same alias is preferred. An
 // archived one is a miss again.
 func TestSayReachesADoneCardByAlias(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	peerCard(t, d, "alice")
 	bob := peerCard(t, d, "sa89-old")
@@ -85,6 +87,7 @@ func TestSayReachesADoneCardByAlias(t *testing.T) {
 
 // Naming yourself by your own alias is still telling yourself.
 func TestASessionCannotTellItselfByAlias(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	me := peerCard(t, d, "sa89-typing-gate")
 	if err := d.st.SetAlias(me.ID, "sa89"); err != nil {
@@ -97,6 +100,7 @@ func TestASessionCannotTellItselfByAlias(t *testing.T) {
 
 // The list says each peer's alias, so a session can learn the short name.
 func TestPeersCarryTheAlias(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	peerCard(t, d, "alice")
 	bob := peerCard(t, d, "bob-41800")
@@ -122,6 +126,7 @@ func TestPeersCarryTheAlias(t *testing.T) {
 // worker with the same prefix while the first is live starts with none rather
 // than failing to launch.
 func TestALaunchedWorkerTakesItsTitlePrefix(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	h := slowHarness(t, d)
 	first, err := d.Launch(LaunchRequest{Harness: h, Cwd: t.TempDir(),
@@ -152,6 +157,7 @@ func TestALaunchedWorkerTakesItsTitlePrefix(t *testing.T) {
 // The board sets an alias through the card's PATCH, and a clash is refused
 // naming the holder.
 func TestTheBoardSetsAnAliasAndHearsWhoHoldsIt(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	a := peerCard(t, d, "dotfiles-41800")
 	b := peerCard(t, d, "other")

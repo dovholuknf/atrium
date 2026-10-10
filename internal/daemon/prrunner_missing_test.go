@@ -6,6 +6,7 @@ import (
 )
 
 func TestPanelEmptyReasonNamesMissingAgentFiles(t *testing.T) {
+	t.Parallel()
 	got := panelEmptyReason([]string{"review-panel", "go-reviewer"}, "/home/x/.claude/agents")
 	for _, want := range []string{"review-panel.md", "go-reviewer.md", "/home/x/.claude/agents", "room-check -Fix"} {
 		if !strings.Contains(got, want) {

@@ -14,6 +14,7 @@ import (
 // may send either and an operator adding their own address should not have to
 // know which.
 func TestEitherTheSubjectOrTheEmailLetsSomebodyIn(t *testing.T) {
+	t.Parallel()
 	c := AuthConfig{Allow: []string{"Someone@Example.com", "sub-123"}}
 	for _, tc := range []struct {
 		sub, mail string
@@ -33,6 +34,7 @@ func TestEitherTheSubjectOrTheEmailLetsSomebodyIn(t *testing.T) {
 
 // A state is single use, or a callback can be replayed.
 func TestALoginStateCannotBeReplayed(t *testing.T) {
+	t.Parallel()
 	s, _, err := startLogin("/", false)
 	if err != nil {
 		t.Fatal(err)
@@ -51,6 +53,7 @@ func TestALoginStateCannotBeReplayed(t *testing.T) {
 // Every login carries its own verifier, or one stolen code opens every session
 // that board ever starts.
 func TestEveryLoginGetsItsOwnVerifier(t *testing.T) {
+	t.Parallel()
 	a, first, err := startLogin("/", false)
 	if err != nil {
 		t.Fatal(err)

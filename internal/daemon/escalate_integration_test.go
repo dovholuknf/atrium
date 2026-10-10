@@ -38,6 +38,7 @@ func age(t *testing.T, d *Daemon, msgID string, by time.Duration) {
 // A done message is delivered by the first tool call after 15 minutes, with the
 // framing line, and not before. The card and the sender's say both record it.
 func TestADoneMessageIsCarriedByTheToolCallAfterFifteenMinutes(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	bob := peerCard(t, d, "bob")
 	id := doneTo(t, d, bob.ID, "alice", "rebase when you can")
@@ -87,6 +88,7 @@ func TestADoneMessageIsCarriedByTheToolCallAfterFifteenMinutes(t *testing.T) {
 
 // The age is the room setting, in minutes.
 func TestTheHeldAfterSettingMovesTheLine(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	bob := peerCard(t, d, "bob")
 	if err := d.st.SetSetting(store.SettingEscalateHeldAfter, "5"); err != nil {
@@ -106,6 +108,7 @@ func TestTheHeldAfterSettingMovesTheLine(t *testing.T) {
 // A message younger than the setting at the turn's end is the Stop hook's, with no
 // framing and no escalation event.
 func TestAYoungDoneMessageIsStillDeliveredByTheStopHook(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	bob := peerCard(t, d, "bob")
 	id := doneTo(t, d, bob.ID, "alice", "rebase when you can")
@@ -128,6 +131,7 @@ func TestAYoungDoneMessageIsStillDeliveredByTheStopHook(t *testing.T) {
 
 // A card whose deploy wake is still to be typed keeps an old message waiting.
 func TestAnAgedMessageWaitsForTheDeployWake(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	bob := peerCard(t, d, "bob")
 	id := doneTo(t, d, bob.ID, "", "rebase when you can")
@@ -146,6 +150,7 @@ func TestAnAgedMessageWaitsForTheDeployWake(t *testing.T) {
 // The typist, on a runner that takes input mid-turn: an aged message stops waiting
 // for the turn and is typed.
 func TestTheTypistStopsHoldingAnAgedMessageMidTurn(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	target, _, f := peerPair(t, d)
 	t.Cleanup(func() { d.pending.stopAll() })
@@ -183,6 +188,7 @@ func TestTheTypistStopsHoldingAnAgedMessageMidTurn(t *testing.T) {
 // A runner that does not take input mid-turn: the typist keeps waiting for the
 // turn however old the message is, and the hook route delivers it.
 func TestARunnerWithoutMidTurnInputGetsAnAgedMessageByTheHookOnly(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	h, err := d.st.Harness("claude")
 	if err != nil {
@@ -217,6 +223,7 @@ func TestARunnerWithoutMidTurnInputGetsAnAgedMessageByTheHookOnly(t *testing.T) 
 // pending for the card, the injector holds nothing, and the activity the board
 // reads no longer says a message is held.
 func TestAnEscalatedDoneMessageLeavesNothingQueued(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	target, _, _ := peerPair(t, d)
 	t.Cleanup(func() { d.pending.stopAll() })

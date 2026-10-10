@@ -19,6 +19,7 @@ func boolp(b bool) *bool { return &b }
 // fails, atrium starts fresh, the fresh session reports its own unresumable
 // id, and tomorrow it fails again a little further from the original.
 func TestAnUnwrittenSessionDoesNotClobberAGoodResumeID(t *testing.T) {
+	t.Parallel()
 	d, _, cancel, errCh := startDaemon(t)
 	defer func() {
 		cancel()

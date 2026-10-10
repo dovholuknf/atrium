@@ -11,6 +11,7 @@ import (
 )
 
 func TestASayThenAtriumBlockedReachesTheLauncherOnce(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	launcher, worker := launchedPair(t, d)
 	if _, code := tell(t, d, "worker", "orchestrator", "blocked: need a token"); code != http.StatusOK {
@@ -56,6 +57,7 @@ func TestASayThatIsNotTheSameEndIsStillDelivered(t *testing.T) {
 }
 
 func TestAnEndingDoneTakesAnArtifactThatExistsOnTheRoom(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	launcher, worker := launchedPair(t, d)
 	dir := t.TempDir()

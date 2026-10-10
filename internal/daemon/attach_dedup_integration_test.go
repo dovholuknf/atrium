@@ -24,6 +24,7 @@ import (
 // The fix is to serialise ring write and fanout under `r.mu`, so a subscribe
 // either sees the chunk in the backlog OR on the channel and never both.
 func TestAttachDoesNotSeeAChunkTwiceOnASubscribeRace(t *testing.T) {
+	t.Parallel()
 	const chunks = 200
 	const attaches = 40
 	const size = 1 << 20
@@ -111,6 +112,7 @@ func TestAttachDoesNotSeeAChunkTwiceOnASubscribeRace(t *testing.T) {
 // piece, then a chunk that looks like a status line right after. An attach
 // that lands between the two writes must not receive either chunk twice.
 func TestBannerAndStatusLineArriveExactlyOnce(t *testing.T) {
+	t.Parallel()
 	f := newFakePTY()
 	t.Cleanup(func() { f.Close() })
 	r := &runner{
@@ -167,6 +169,7 @@ drain:
 // inherently timing-dependent. Under -race the pattern IS a data race, so
 // the assertion is the race detector's, not a chunk count.
 func TestUnsafeWriteThenFanoutStillRaces(t *testing.T) {
+	t.Parallel()
 	t.Skip("kept for diagnosis; timing-dependent, run under -race explicitly")
 	if testing.Short() {
 		t.Skip("race exercise")

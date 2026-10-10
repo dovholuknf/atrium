@@ -52,6 +52,7 @@ func prRow(cwd string) store.Recogniser {
 // The whole feature in one test: paste a pull request URL, get a launch dialog
 // that knows the repo, the org, the host, the title and the first instruction.
 func TestAPullRequestURLFillsInADialog(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	dir := t.TempDir()
 	if _, err := d.st.SaveRecogniser(prRow(filepath.ToSlash(dir))); err != nil {
@@ -83,6 +84,7 @@ func TestAPullRequestURLFillsInADialog(t *testing.T) {
 // on: a tool that knew git would clone here, and it would be a second, worse
 // implementation of something already on the PATH.
 func TestAMissingWorktreeIsSaidRatherThanCreated(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	missing := filepath.ToSlash(filepath.Join(t.TempDir(), "not-here"))
 	if _, err := d.st.SaveRecogniser(prRow(missing)); err != nil {
@@ -235,6 +237,7 @@ func TestAFailingFetchStillFillsTheDialogIn(t *testing.T) {
 // A path with a placeholder still in it does not exist for an uninteresting
 // reason, and "no such directory" about it sends somebody off to create one.
 func TestAnUnfilledPlaceholderIsReportedBeforeTheDirectoryIs(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	row := prRow(filepath.ToSlash(t.TempDir()) + "/{branch}")
 	if _, err := d.st.SaveRecogniser(row); err != nil {
@@ -255,6 +258,7 @@ func TestAnUnfilledPlaceholderIsReportedBeforeTheDirectoryIs(t *testing.T) {
 }
 
 func TestNothingRecognisesAnUnknownURL(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	if _, err := d.st.SaveRecogniser(prRow(t.TempDir())); err != nil {
 		t.Fatal(err)
@@ -299,6 +303,7 @@ func TestAFetchThatPrintsNonsenseSaysSo(t *testing.T) {
 
 // THE BUILT-IN FORGE FETCH on a room with a hub asks the hub, under gh's fact names, and fetches no head for a paste.
 func TestTheForgeFetchAsksTheHub(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	var asked []forge.HubAsk
 	var paths []string
@@ -351,6 +356,7 @@ func TestTheForgeFetchAsksTheHub(t *testing.T) {
 
 // A ROOM WITH A HUB DOES NOT RUN gh AS A FETCH, and says to use the forge fetch.
 func TestARoomWithAHubRefusesAGhFetch(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	d.SetHubForge(forge.NewRemote(func(_ context.Context, path string, _, _ any) error {
 		if path == forge.HubRecognisersPath {
@@ -374,6 +380,7 @@ func TestARoomWithAHubRefusesAGhFetch(t *testing.T) {
 }
 
 func TestTheForgeFetchTakesPrOrIssue(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	d.SetHubForge(forge.NewRemote(func(_ context.Context, path string, _, _ any) error {
 		if path == forge.HubRecognisersPath {
@@ -401,6 +408,7 @@ var errOlderHub = errors.New("the hub does not run a forge for its rooms. update
 // A ROOM WITH A HUB RECOGNISES FROM THE HUB'S ROWS, with none of its own (u-pulls-no-recogniser-on-hub), and its own
 // table is not asked while the hub answers.
 func TestARoomRecognisesFromTheHubsRows(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	local := prRow(filepath.ToSlash(t.TempDir()))
 	local.ID, local.Title = "local", "local {num}"
@@ -430,6 +438,7 @@ func TestARoomRecognisesFromTheHubsRows(t *testing.T) {
 
 // A HUB THAT CANNOT BE ASKED leaves the room on its own table, so a room cut off from its hub still recognises.
 func TestARoomWhoseHubCannotBeAskedUsesItsOwnRecognisers(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	if _, err := d.st.SaveRecogniser(prRow(filepath.ToSlash(t.TempDir()))); err != nil {
 		t.Fatal(err)

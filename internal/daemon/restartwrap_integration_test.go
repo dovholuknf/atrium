@@ -238,6 +238,7 @@ func TestShutdownNowEndsAWrapUpAlreadyWaiting(t *testing.T) {
 }
 
 func TestRestartWrapWaitSetting(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	if got := d.st.RestartWrapWait(); got != 5*time.Minute {
 		t.Fatalf("default = %s", got)

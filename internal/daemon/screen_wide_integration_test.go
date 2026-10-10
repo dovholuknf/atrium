@@ -33,6 +33,7 @@ func assertWideInvariant(t *testing.T, s *screen) {
 }
 
 func TestWidthTable(t *testing.T) {
+	t.Parallel()
 	for _, c := range []struct {
 		r rune
 		w int
@@ -52,6 +53,7 @@ func TestWidthTable(t *testing.T) {
 // code point. It is what stops the table drifting when xterm.js is upgraded, or
 // when the board starts loading its unicode11 addon.
 func TestWidthMatchesXterm(t *testing.T) {
+	t.Parallel()
 	node, err := exec.LookPath("node")
 	if err != nil {
 		t.Skip("node is not on PATH: the width parity check needs it (testdata/gen_widths.js)")
@@ -119,6 +121,7 @@ func wideScreen(cols, rows int, data string) *screen {
 }
 
 func TestWideCellsTakeTwoColumns(t *testing.T) {
+	t.Parallel()
 	s := wideScreen(10, 3, "あいう")
 	if s.col != 6 {
 		t.Fatalf("cursor at %d after three wide characters, want 6", s.col)
@@ -130,6 +133,7 @@ func TestWideCellsTakeTwoColumns(t *testing.T) {
 }
 
 func TestWideOverwriteBlanksTheOtherHalf(t *testing.T) {
+	t.Parallel()
 	for _, c := range []struct{ name, data, want string }{
 		{"first half", "あい\rx", "x い"},
 		{"second half", "あい\x1b[3Dx", " xい"},
@@ -144,6 +148,7 @@ func TestWideOverwriteBlanksTheOtherHalf(t *testing.T) {
 }
 
 func TestWideMarksAttachToTheCellBefore(t *testing.T) {
+	t.Parallel()
 	s := wideScreen(10, 2, "éあ́x́")
 	if got, want := texts(s)[0], "éあ́x́"; got != want {
 		t.Fatalf("%q, want %q", got, want)
@@ -158,6 +163,7 @@ func TestWideMarksAttachToTheCellBefore(t *testing.T) {
 }
 
 func TestWideInvariantSurvivesEditing(t *testing.T) {
+	t.Parallel()
 	for _, data := range []string{
 		"あいう\x1b[2G\x1b[P", "あいう\x1b[3G\x1b[P", "あいう\x1b[2G\x1b[@", "あいうえお\x1b[3G\x1b[@",
 		"あいう\x1b[2G\x1b[X", "あいう\x1b[3G\x1b[K", "あいう\x1b[3G\x1b[1K", "あいうえお\x1b[9G\x1b[@",
@@ -168,6 +174,7 @@ func TestWideInvariantSurvivesEditing(t *testing.T) {
 }
 
 func TestWideResizeNeverLeavesAHalf(t *testing.T) {
+	t.Parallel()
 	for cols := 1; cols <= 8; cols++ {
 		s := wideScreen(8, 3, "あいうえ\r\nabあ")
 		s.resize(cols)
@@ -179,6 +186,7 @@ func TestWideResizeNeverLeavesAHalf(t *testing.T) {
 }
 
 func TestWideTextEmitsTheRuneOnce(t *testing.T) {
+	t.Parallel()
 	s := wideScreen(10, 0, "あいう\r\nx\x1b[1;3H")
 	if got := s.text(); got != "あいう\r\nx\r\n" {
 		t.Fatalf("text %q", got)
@@ -196,6 +204,7 @@ func TestWideTextEmitsTheRuneOnce(t *testing.T) {
 }
 
 func TestReplayOfWideTextLandsOnTheSameColumns(t *testing.T) {
+	t.Parallel()
 	session := "あいう\x1b[2D.\r\nabあ\x1b[1D\x1b[K"
 	want := newScreenSized(10, 4)
 	want.apply([]byte(session))
@@ -210,6 +219,7 @@ func TestReplayOfWideTextLandsOnTheSameColumns(t *testing.T) {
 }
 
 func TestDecodeRuneReadsOneBadByteAsOne(t *testing.T) {
+	t.Parallel()
 	if r, n := decodeRune([]byte{0xe3, 'a', 'b'}); r != 0xfffd || n != 1 {
 		t.Fatalf("got %U, %d", r, n)
 	}

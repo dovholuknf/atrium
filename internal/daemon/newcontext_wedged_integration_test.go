@@ -63,6 +63,7 @@ func TestAWedgedWaitForTheAckIsNeverATrap(t *testing.T) {
 // clear it, as if the writer were wedged. The board's key is refused, then "let me
 // type" frees it at once, queued text goes, and the terminal takes keys again.
 func TestAWedgedMidTypeCycleIsFreedByLetMeType(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	f, _ := sizedSession(t, d, "nc-wedge", 120, 30)
 

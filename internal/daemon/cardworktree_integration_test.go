@@ -14,6 +14,7 @@ import (
 // A runner launched fresh has no resume spec, and still reports the directory
 // it was started in, whatever the card says.
 func TestRunnerDirIsTheLaunchDirectoryOnAFreshLaunch(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	task, _, err := d.st.Register(store.Observed{WireName: "fresh", Worktree: "/somewhere/else", Runner: "claude"})
 	if err != nil {
@@ -31,6 +32,7 @@ func TestRunnerDirIsTheLaunchDirectoryOnAFreshLaunch(t *testing.T) {
 // sa96: launched where there is no .git, the session's directory moves into a
 // subdirectory that has one and back. Nothing about that is a .git going away.
 func TestAWorkerThatMovesIntoARepoAndBackIsLeftAlone(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	sub := filepath.Join(root, "src")
 	if err := os.Mkdir(sub, 0o755); err != nil {
@@ -63,6 +65,7 @@ func TestAWorkerThatMovesIntoARepoAndBackIsLeftAlone(t *testing.T) {
 
 // The launch directory really going away still ends it, with no resume spec.
 func TestALaunchDirectoryRemovedStillWindsDownWithoutASpec(t *testing.T) {
+	t.Parallel()
 	dir := liveDir(t)
 	g := newGoneRig(t, dir, SubagentTag)
 	g.r.spec = nil
@@ -77,6 +80,7 @@ func TestALaunchDirectoryRemovedStillWindsDownWithoutASpec(t *testing.T) {
 
 // A launch directory that had a .git and lost it is still gone, with no spec.
 func TestALaunchDirectoryThatLostItsGitStillWindsDown(t *testing.T) {
+	t.Parallel()
 	dir := liveDir(t)
 	g := newGoneRig(t, dir, SubagentTag)
 	g.r.spec = nil
@@ -92,6 +96,7 @@ func TestALaunchDirectoryThatLostItsGitStillWindsDown(t *testing.T) {
 
 // A .git seen in one directory never makes another read as one that lost it.
 func TestGitSeenInOneDirectoryDoesNotCountForAnother(t *testing.T) {
+	t.Parallel()
 	with := liveDir(t)
 	without := t.TempDir()
 	g := newGoneRig(t, with, SubagentTag)
@@ -111,6 +116,7 @@ func TestGitSeenInOneDirectoryDoesNotCountForAnother(t *testing.T) {
 // A permission request, an activity report and a session hook, all carrying a
 // cwd in a subdirectory, leave the card where it was launched.
 func TestHooksCarryingASubdirectoryDoNotMoveTheCard(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	task, _, err := d.st.Register(store.Observed{WireName: "stays", Worktree: "/launch/root", Runner: "claude"})
 	if err != nil {

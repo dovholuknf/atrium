@@ -47,6 +47,7 @@ func stuckWorker(t *testing.T, d *Daemon, frame string, age, quiet time.Duration
 }
 
 func TestLaunchIdleAfterGraceWithNoHook(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	task, _ := stuckWorker(t, d, "starting up\r\n", 5*time.Minute, 5*time.Minute)
 	x := d.launchStuck(task, time.Now())
@@ -63,6 +64,7 @@ func TestLaunchIdleAfterGraceWithNoHook(t *testing.T) {
 
 // A card a restart reopened is idle at its prompt, not stuck at launch.
 func TestLaunchIdleNotForAReopenedCard(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	task, r := stuckWorker(t, d, "starting up\r\n", 5*time.Minute, 5*time.Minute)
 	r.resumed = true
@@ -72,6 +74,7 @@ func TestLaunchIdleNotForAReopenedCard(t *testing.T) {
 }
 
 func TestLaunchIdleWaitsOutTheGrace(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	task, _ := stuckWorker(t, d, "starting up\r\n", 20*time.Second, time.Hour)
 	if x := d.launchStuck(task, time.Now()); x != nil {
@@ -80,6 +83,7 @@ func TestLaunchIdleWaitsOutTheGrace(t *testing.T) {
 }
 
 func TestLaunchIdleNeedsAQuietTerminal(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	task, _ := stuckWorker(t, d, "working\r\n", 5*time.Minute, time.Second)
 	if x := d.launchStuck(task, time.Now()); x != nil {
@@ -88,6 +92,7 @@ func TestLaunchIdleNeedsAQuietTerminal(t *testing.T) {
 }
 
 func TestLaunchIdleIsForCardsWhoseHooksAreExpected(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	task := peerCard(t, d, "by-hand")
 	r := &runner{taskID: task.ID, pty: newFakePTY(), started: time.Now().Add(-time.Hour),
@@ -100,6 +105,7 @@ func TestLaunchIdleIsForCardsWhoseHooksAreExpected(t *testing.T) {
 }
 
 func TestAHookClearsLaunchIdle(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	task, _ := stuckWorker(t, d, "x\r\n", 5*time.Minute, 5*time.Minute)
 	d.act.set(task.ID, ActivityThinking, "")
@@ -109,6 +115,7 @@ func TestAHookClearsLaunchIdle(t *testing.T) {
 }
 
 func TestLaunchPromptFolderTrust(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	task, _ := stuckWorker(t, d, trustFrame, 30*time.Second, 10*time.Second)
 	x := d.launchStuck(task, time.Now())
@@ -121,6 +128,7 @@ func TestLaunchPromptFolderTrust(t *testing.T) {
 }
 
 func TestLaunchPromptKinds(t *testing.T) {
+	t.Parallel()
 	cases := map[string]string{
 		"Select login method:\r\n 1. Claude account\r\n":                                PromptLogin,
 		"Update available!\r\n 1. Update now\r\n Enter to select · ↑/↓ to navigate\r\n": PromptUpdate,
@@ -138,6 +146,7 @@ func TestLaunchPromptKinds(t *testing.T) {
 }
 
 func TestLaunchPromptNeedsQuiet(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	task, _ := stuckWorker(t, d, trustFrame, 30*time.Second, 0)
 	// a young, still drawing screen is neither a prompt nor idle
@@ -147,6 +156,7 @@ func TestLaunchPromptNeedsQuiet(t *testing.T) {
 }
 
 func TestLaunchPromptBeatsLaunchIdle(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	task, _ := stuckWorker(t, d, trustFrame, 10*time.Minute, 10*time.Minute)
 	if x := d.launchStuck(task, time.Now()); x == nil || x.Source != NoticeLaunchPrompt {
@@ -156,6 +166,7 @@ func TestLaunchPromptBeatsLaunchIdle(t *testing.T) {
 
 // The exact text of the 3.8 hour stall.
 func TestTerminalMenuModelSwitch(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	task, _ := stuckWorker(t, d, modelSwitchFrame, 4*time.Hour, 4*time.Hour)
 	d.act.set(task.ID, ActivityThinking, "")
@@ -172,6 +183,7 @@ func TestTerminalMenuModelSwitch(t *testing.T) {
 }
 
 func TestTerminalMenuOtherAndOnNonReportingCard(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	task := peerCard(t, d, "by-hand")
 	r := &runner{taskID: task.ID, pty: newFakePTY(), started: time.Now().Add(-time.Hour),
@@ -193,6 +205,7 @@ func TestTerminalMenuOtherAndOnNonReportingCard(t *testing.T) {
 }
 
 func TestTerminalMenuNeedsQuietAndAMenu(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	task, r := stuckWorker(t, d, modelSwitchFrame, 4*time.Hour, 5*time.Second)
 	d.act.set(task.ID, ActivityThinking, "")
@@ -207,6 +220,7 @@ func TestTerminalMenuNeedsQuietAndAMenu(t *testing.T) {
 }
 
 func TestTerminalMenuIsMemoizedWhileTheTerminalIsQuiet(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	task, r := stuckWorker(t, d, modelSwitchFrame, time.Hour, time.Hour)
 	d.act.set(task.ID, ActivityThinking, "")
@@ -227,6 +241,7 @@ func TestTerminalMenuIsMemoizedWhileTheTerminalIsQuiet(t *testing.T) {
 }
 
 func TestBusyCardIsNeverRendered(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	task, _ := stuckWorker(t, d, modelSwitchFrame, time.Hour, 2*time.Second)
 	d.act.set(task.ID, ActivityThinking, "")
@@ -243,6 +258,7 @@ func TestBusyCardIsNeverRendered(t *testing.T) {
 }
 
 func TestAPendingPermissionIsNotAMenu(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	task, _ := stuckWorker(t, d, modelSwitchFrame, time.Hour, time.Hour)
 	d.act.set(task.ID, ActivityThinking, "")
@@ -254,6 +270,7 @@ func TestAPendingPermissionIsNotAMenu(t *testing.T) {
 
 // Addendum 1: never the silent-stop wording for a card that never began.
 func TestACardNoHookHasHeardIsLaunchIdleNeverSilentStop(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	task, _ := stuckWorker(t, d, "x\r\n", 10*time.Minute, 10*time.Minute)
 	// The pty went quiet and the store moved it to waiting, with no hook behind it.
@@ -274,6 +291,7 @@ func TestACardNoHookHasHeardIsLaunchIdleNeverSilentStop(t *testing.T) {
 }
 
 func TestEscalationCountsFromWhenItBecameStuck(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	task, _ := stuckWorker(t, d, "x\r\n", 90*time.Minute, 90*time.Minute)
 	x := d.launchStuck(task, time.Now())
@@ -286,6 +304,7 @@ func TestEscalationCountsFromWhenItBecameStuck(t *testing.T) {
 }
 
 func TestLaunchStuckIsClaudeOnly(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	task, _ := stuckWorker(t, d, trustFrame, time.Hour, time.Hour)
 	task.Runner = "codex"
@@ -295,6 +314,7 @@ func TestLaunchStuckIsClaudeOnly(t *testing.T) {
 }
 
 func TestAToolHookAfterTheStartClearsItAndOneBeforeDoesNot(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	task, r := stuckWorker(t, d, "x\r\n", 10*time.Minute, 10*time.Minute)
 	before := r.started.Add(-time.Hour)
@@ -315,6 +335,7 @@ func TestAToolHookAfterTheStartClearsItAndOneBeforeDoesNot(t *testing.T) {
 }
 
 func TestOnlyTheGenericMenuFooterMakesAMenu(t *testing.T) {
+	t.Parallel()
 	if h := readFrame(" Title\r\n 1. a\r\n Enter to select\r\n"); h.menu {
 		t.Fatal("a footer without the navigate half is not the marker")
 	}
@@ -324,6 +345,7 @@ func TestOnlyTheGenericMenuFooterMakesAMenu(t *testing.T) {
 }
 
 func TestASessionStartHookCountsAsHeard(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	task, _ := stuckWorker(t, d, "x\r\n", 10*time.Minute, 10*time.Minute)
 	if x := d.launchStuck(task, time.Now()); x == nil {
@@ -350,6 +372,7 @@ const quotedFooterFrame = clearScreen +
 	"  ? for shortcuts\r\n"
 
 func TestAFooterQuotedAboveTheInputBoxIsNotAMenu(t *testing.T) {
+	t.Parallel()
 	if h := readFrame(strings.TrimPrefix(quotedFooterFrame, clearScreen)); h.menu || h.prompt != "" {
 		t.Fatalf("a quoted footer read as a menu: %+v", h)
 	}
@@ -362,6 +385,7 @@ func TestAFooterQuotedAboveTheInputBoxIsNotAMenu(t *testing.T) {
 }
 
 func TestTheFooterMustBeWholeAndOnTheLastTwoLines(t *testing.T) {
+	t.Parallel()
 	menu := " Pick\r\n 1. a\r\n Enter to select · ↑/↓ to navigate · Esc to cancel\r\n"
 	if !readFrame(menu).menu {
 		t.Fatal("the footer on the last line was missed")
@@ -379,6 +403,7 @@ func TestTheFooterMustBeWholeAndOnTheLastTwoLines(t *testing.T) {
 }
 
 func TestAnUpdateBannerIsNotAPromptButAnUpdateDialogIs(t *testing.T) {
+	t.Parallel()
 	if h := readFrame(" Update available! Run claude update\r\n"); h.prompt != "" {
 		t.Fatalf("a banner read as %q", h.prompt)
 	}
@@ -389,6 +414,7 @@ func TestAnUpdateBannerIsNotAPromptButAnUpdateDialogIs(t *testing.T) {
 
 // A real silent stop is not hidden behind a menu on the screen.
 func TestASilentStopWinsOverAMenuOnAnEndedTurn(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	task, _ := stuckWorker(t, d, modelSwitchFrame, time.Hour, time.Hour)
 	d.act.set(task.ID, ActivityThinking, "")
@@ -404,6 +430,7 @@ func TestASilentStopWinsOverAMenuOnAnEndedTurn(t *testing.T) {
 }
 
 func TestAPendingPermissionOrNeedsPermissionIsNotAMenu(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	task, _ := stuckWorker(t, d, modelSwitchFrame, time.Hour, time.Hour)
 	d.act.set(task.ID, ActivityThinking, "")
@@ -425,6 +452,7 @@ func TestAPendingPermissionOrNeedsPermissionIsNotAMenu(t *testing.T) {
 
 // A resume starts unheard: the last run's session hook must not count.
 func TestAResumeAfterAnExitStartsUnheard(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	task, _ := stuckWorker(t, d, "x\r\n", 10*time.Minute, 10*time.Minute)
 	d.act.sessionSpoke(task.ID)

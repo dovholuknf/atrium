@@ -21,6 +21,7 @@ import (
 // r-024: main-chain assistant text only, one reply per message id, oldest first,
 // the last n, and each reply cut at replyTextMax.
 func TestRepliesAreTheLastMainChainTextOldestFirst(t *testing.T) {
+	t.Parallel()
 	f := newUsageFix(t)
 	path := f.path
 	base := f.base
@@ -68,6 +69,7 @@ func TestRepliesAreTheLastMainChainTextOldestFirst(t *testing.T) {
 
 // The conversation the runner last started, not the stored resume id (r-021).
 func TestRepliesFollowTheStartedSession(t *testing.T) {
+	t.Parallel()
 	f := newUsageFix(t)
 	dir := filepath.Dir(f.path)
 	fresh := filepath.Join(dir, "s2.jsonl")
@@ -97,6 +99,7 @@ func TestRepliesFollowTheStartedSession(t *testing.T) {
 // A card with no readable transcript (codex here) answers from the screen, and
 // an unknown card is 404 on the route.
 func TestRepliesFallBackToTheScreenAndTheRouteAnswers404(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	task, _, err := d.st.Register(store.Observed{WireName: "codexer", Worktree: "/tmp/codexer", Runner: "codex"})
 	if err != nil {
@@ -134,6 +137,7 @@ func TestRepliesFallBackToTheScreenAndTheRouteAnswers404(t *testing.T) {
 
 // r-042: only a missing row is "no such card". A store error is an error.
 func TestRepliesForSurfacesAStoreError(t *testing.T) {
+	t.Parallel()
 	f := newUsageFix(t)
 	d := &Daemon{st: f.st, usage: f.u, ctx: newContextSizes()}
 	if _, err := d.repliesFor("01a0nosuchcard", 3); !errors.Is(err, errNoSuchCard) {
@@ -149,6 +153,7 @@ func TestRepliesForSurfacesAStoreError(t *testing.T) {
 // r-042: a transcript over the tail window is read from its tail, so what lies
 // before it is gone and the cut line is skipped, not an error.
 func TestReadRepliesSeeksTheTail(t *testing.T) {
+	t.Parallel()
 	path := filepath.Join(t.TempDir(), "big.jsonl")
 	base := time.Date(2026, 9, 28, 10, 0, 0, 0, time.UTC)
 	transcriptReply(t, path, "old", base, false, textBlock("ancient"))
@@ -176,6 +181,7 @@ func TestReadRepliesSeeksTheTail(t *testing.T) {
 
 // r-042: a changed size or modification time is read again, an unchanged file is not.
 func TestReadRepliesCacheInvalidates(t *testing.T) {
+	t.Parallel()
 	path := filepath.Join(t.TempDir(), "c.jsonl")
 	base := time.Date(2026, 9, 28, 10, 0, 0, 0, time.UTC)
 	transcriptReply(t, path, "m1", base, false, textBlock("aaaa"))
@@ -213,6 +219,7 @@ func TestReadRepliesCacheInvalidates(t *testing.T) {
 
 // r-042: a reply cut at replyTextMax through a multi-byte rune stays valid UTF-8.
 func TestRepliesCutOnARuneBoundary(t *testing.T) {
+	t.Parallel()
 	for _, r := range []string{"é", "€", "😀"} {
 		text := "a" + strings.Repeat(r, replyTextMax) // the first rune starts at an odd offset
 		path := filepath.Join(t.TempDir(), "m.jsonl")
@@ -233,6 +240,7 @@ func TestRepliesCutOnARuneBoundary(t *testing.T) {
 // r-042: a reply whose timestamp is missing or unparseable is still a reply,
 // with a zero time.
 func TestRepliesWithBadTimestamps(t *testing.T) {
+	t.Parallel()
 	path := filepath.Join(t.TempDir(), "ts.jsonl")
 	for i, ts := range []string{"", "not a time", "2026-09-28 10:00:00"} {
 		b, _ := json.Marshal(map[string]any{
@@ -257,6 +265,7 @@ func TestRepliesWithBadTimestamps(t *testing.T) {
 // r-042: an unsupervised card owns a session when it has no pid, no live pid, or
 // the same pid.
 func TestOwnsSessionUnsupervised(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	alive := os.Getpid()
 	dead := 2147483000

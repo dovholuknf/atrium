@@ -22,6 +22,7 @@ func newMarkRunner(f *fakePTY) *runner {
 // The mark is in the ring, so a replay has it, and on every watcher, so a live viewer gets it at the same byte. It is
 // not the runner's output, so it does not move the clock the idle checks read.
 func TestMarkClearReachesTheReplayAndTheWatchersAndNotTheOutputClock(t *testing.T) {
+	t.Parallel()
 	f := newFakePTY()
 	t.Cleanup(func() { f.Close() })
 	r := newMarkRunner(f)
@@ -52,6 +53,7 @@ func TestMarkClearReachesTheReplayAndTheWatchersAndNotTheOutputClock(t *testing.
 
 // A `/clear` the room types itself marks first. Anything else does not.
 func TestTypingSlashClearMarksTheStreamBeforeTheBytesAndOtherTextDoesNot(t *testing.T) {
+	t.Parallel()
 	f := newFakePTY()
 	t.Cleanup(func() { f.Close() })
 	r := newMarkRunner(f)
@@ -77,6 +79,7 @@ func TestTypingSlashClearMarksTheStreamBeforeTheBytesAndOtherTextDoesNot(t *test
 }
 
 func TestIsClearCommand(t *testing.T) {
+	t.Parallel()
 	for in, want := range map[string]bool{
 		"/clear": true, " /clear ": true, "\x1b[200~/clear\x1b[201~": true,
 		"/clear now": false, "/clearing": false, "clear": false, "": false,

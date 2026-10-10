@@ -54,6 +54,7 @@ func owedHeld(t *testing.T, d *Daemon, id, contains string) int {
 }
 
 func TestAWorkerThatEndsWithNoReportOpensAnItemOnItsLauncher(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	launcher, worker := launchedPair(t, d)
 	endWorker(t, d, worker)
@@ -75,6 +76,7 @@ func TestAWorkerThatEndsWithNoReportOpensAnItemOnItsLauncher(t *testing.T) {
 }
 
 func TestTheOrchestratorHearsOnceAtTenMinutesAndNothingIsTyped(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	launcher, worker := launchedPair(t, d)
 	orch := orchCard(t, d, "chief")
@@ -99,6 +101,7 @@ func TestTheOrchestratorHearsOnceAtTenMinutesAndNothingIsTyped(t *testing.T) {
 }
 
 func TestTheOrchestratorIsNeverToldAboutItself(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	launcher, worker := launchedPair(t, d)
 	if err := d.st.SetTags(launcher.ID, []string{OrchestratorTag}); err != nil {
@@ -117,6 +120,7 @@ func TestTheOrchestratorIsNeverToldAboutItself(t *testing.T) {
 }
 
 func TestAQuestionOpensAnItemAndTheLaunchersReplyClosesIt(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	launcher, worker := launchedPair(t, d)
 	d.peerSaid(worker.WireName, launcher, "which table?", KindNeeds)
@@ -142,6 +146,7 @@ func TestAQuestionOpensAnItemAndTheLaunchersReplyClosesIt(t *testing.T) {
 }
 
 func TestAnFYIOpensNothing(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	launcher, worker := launchedPair(t, d)
 	d.peerSaid(worker.WireName, launcher, "fyi: tests pass", KindFYI)
@@ -177,6 +182,7 @@ func TestADoneReportOwesOnlyWhenItCarriesAnAsk(t *testing.T) {
 }
 
 func TestReadingTheNoticesDoesNotCloseAnItem(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	launcher, worker := launchedPair(t, d)
 	if err := d.st.SetTags(launcher.ID, []string{HoldNoticesTag}); err != nil {
@@ -198,6 +204,7 @@ func TestReadingTheNoticesDoesNotCloseAnItem(t *testing.T) {
 }
 
 func TestADismissClosesAndAnExitClosesTheItem(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	launcher, worker := launchedPair(t, d)
 	endWorker(t, d, worker)
@@ -214,6 +221,7 @@ func TestADismissClosesAndAnExitClosesTheItem(t *testing.T) {
 }
 
 func TestExitingTheWorkerClosesItsItem(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	parent := peerCard(t, d, "orchestrator")
 	h := slowHarness(t, d)
@@ -236,6 +244,7 @@ func TestExitingTheWorkerClosesItsItem(t *testing.T) {
 }
 
 func TestTheListingLineAfterAClearAndAfterACompaction(t *testing.T) {
+	t.Parallel()
 	for _, ev := range []SessionEvent{
 		{Event: "start", Source: "clear"},
 		{Event: "compact", Trigger: "auto"},
@@ -261,6 +270,7 @@ func TestTheListingLineAfterAClearAndAfterACompaction(t *testing.T) {
 }
 
 func TestAnOrphanKeepsItsItemOnTheOrchestratorOrOnItsOwnRow(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	worker := orphanWorker(t, d, "worker", "ghost")
 	endWorker(t, d, worker)
@@ -283,6 +293,7 @@ func TestAnOrphanKeepsItsItemOnTheOrchestratorOrOnItsOwnRow(t *testing.T) {
 }
 
 func TestAnOrphanOnARoomWithNoOrchestratorTellsTheHubsOne(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	rl := &fakeRelay{peers: []RemotePeer{{Handle: "chief", Room: "sg4-control", Tags: []string{OrchestratorTag}}}}
 	d.SetRelay(rl)
@@ -310,6 +321,7 @@ func TestAnOrphanOnARoomWithNoOrchestratorTellsTheHubsOne(t *testing.T) {
 }
 
 func TestAPermissionItemClosesWithoutAPushWhenApprovedInTime(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	launcher, worker := launchedPair(t, d)
 	orch := orchCard(t, d, "chief")
@@ -368,6 +380,7 @@ func TestAReportThatReachesNobodyIsNotStampedAndTheOrchestratorHearsOfIt(t *test
 }
 
 func TestAnAnsweredQuestionBeforeTheWorkerStopsOwesNothing(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	launcher, worker := launchedPair(t, d)
 	d.peerSaid(worker.WireName, launcher, "which table?", KindNeeds)
@@ -397,6 +410,7 @@ func TestAReportWithNoAskWithdrawsAnEarlierQuestion(t *testing.T) {
 }
 
 func TestOnlyAPermissionWaitNudgesALauncherThatHoldsNothing(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	launcher, worker := launchedPair(t, d)
 	if err := d.st.SetStatus(worker.ID, store.StatusNeedsPermission); err != nil {
@@ -425,6 +439,7 @@ func TestOnlyAPermissionWaitNudgesALauncherThatHoldsNothing(t *testing.T) {
 }
 
 func TestNoListingLineWhenNothingIsOwedOrWhenTheItemIsTheWorkersOwn(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	launcher, _ := launchedPair(t, d)
 	if err := d.onSession(SessionEvent{Agent: launcher.WireName, Event: "start", Source: "clear"}); err != nil {
@@ -505,6 +520,7 @@ func waitSays(rl *fakeRelay, want int) []RelaySay {
 }
 
 func TestAnUntaggedPeerCalledOrchestratorGetsNothingAndIsNotRemembered(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	rl := &fakeRelay{peers: []RemotePeer{{Handle: "orchestrator", Room: "someroom"}}}
 	d.SetRelay(rl)
@@ -520,6 +536,7 @@ func TestAnUntaggedPeerCalledOrchestratorGetsNothingAndIsNotRemembered(t *testin
 }
 
 func TestTheRememberedOrchestratorIsUsedOnlyWhenTheHubIsAway(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	rl := &fakeRelay{peers: []RemotePeer{{Handle: "chief", Room: "sg4", Tags: []string{OrchestratorTag}}}}
 	d.SetRelay(rl)
@@ -543,6 +560,7 @@ func TestTheRememberedOrchestratorIsUsedOnlyWhenTheHubIsAway(t *testing.T) {
 }
 
 func TestAnExitedItemDoesNotReopenWhenTheCardGoesDead(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	launcher, worker := launchedPair(t, d)
 	endWorker(t, d, worker)
@@ -562,6 +580,7 @@ func TestAnExitedItemDoesNotReopenWhenTheCardGoesDead(t *testing.T) {
 }
 
 func TestANewQuestionAfterAClosedOneOpensANewItem(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	launcher, worker := launchedPair(t, d)
 	d.peerSaid(worker.WireName, launcher, "which table?", KindNeeds)
@@ -601,6 +620,7 @@ func TestAnOrphansDoneReportIsTheOnlyNoticeTheOrchestratorGets(t *testing.T) {
 }
 
 func TestAnOrphansPushDoesNotNameALauncher(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	orch := orchCard(t, d, "chief")
 	w := orphanWorker(t, d, "worker", "ghost")
@@ -624,6 +644,7 @@ func TestAnOrphansPushDoesNotNameALauncher(t *testing.T) {
 }
 
 func TestAWorkerWhoseLauncherIsOnAnotherRoomIsNamedNotCalledLauncherless(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	orch := orchCard(t, d, "chief")
 	w := orphanWorker(t, d, "worker", "boss@sg4")
@@ -640,6 +661,7 @@ func TestAWorkerWhoseLauncherIsOnAnotherRoomIsNamedNotCalledLauncherless(t *test
 }
 
 func TestAnOrphanWithNoOrchestratorHoldsNothingOnItsOwnCard(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	w := orphanWorker(t, d, "worker", "ghost")
 	endWorker(t, d, w)
@@ -675,6 +697,7 @@ func TestACardTheOperatorLaunchedStillStampsItsReport(t *testing.T) {
 }
 
 func TestALaunchNamedAtriumMovesOnToTheNextName(t *testing.T) {
+	t.Parallel()
 	free := func(string) (bool, error) { return false, nil }
 	for title, cwd := range map[string]string{"": "/home/c/atrium", "Atrium": "/x/y", "ATRIUM": "/x/y"} {
 		if got, err := launchedName(title, cwd, free); err != nil || got != "atrium-2" {
@@ -684,6 +707,7 @@ func TestALaunchNamedAtriumMovesOnToTheNextName(t *testing.T) {
 }
 
 func TestADismissedQuestionStaysClosedUntilANewOne(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	launcher, worker := launchedPair(t, d)
 	d.peerSaid(worker.WireName, launcher, "which table?", KindNeeds)
@@ -701,6 +725,7 @@ func TestADismissedQuestionStaysClosedUntilANewOne(t *testing.T) {
 // A launcher that re-tasks a worker by TYPING writes the prompt before peerSaid closes the item, so the
 // close is stamped after it. The worker's next silent ending still owes. M6 of the review.
 func TestARetaskedWorkerOwesAgainInTheTypedAndTheQueuedOrder(t *testing.T) {
+	t.Parallel()
 	for _, typed := range []bool{true, false} {
 		d := testDaemon(t)
 		launcher, worker := launchedPair(t, d)
@@ -745,6 +770,7 @@ func TestARetaskedWorkerOwesAgainInTheTypedAndTheQueuedOrder(t *testing.T) {
 
 // A question asked while an older one's item is open is answered by the close, however it closes.
 func TestAQuestionAskedWhileAnItemIsOpenIsClosedWithIt(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	launcher, worker := launchedPair(t, d)
 	d.peerSaid(worker.WireName, launcher, "which table?", KindNeeds)
@@ -764,6 +790,7 @@ func TestAQuestionAskedWhileAnItemIsOpenIsClosedWithIt(t *testing.T) {
 
 // A dismissed permission wait does not let an old, stale question open an item.
 func TestADifferentReasonFromBeforeTheCloseDoesNotReopen(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	launcher, worker := launchedPair(t, d)
 	d.peerSaid(worker.WireName, launcher, "which table?", KindNeeds)

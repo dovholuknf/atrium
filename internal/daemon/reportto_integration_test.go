@@ -32,6 +32,7 @@ func launchTo(t *testing.T, d *Daemon, to string) *store.Task {
 }
 
 func TestAReportToLaunchSetsTheLauncherAndKeepsTheName(t *testing.T) {
+	t.Parallel()
 	for _, name := range []string{"review", "@review"} {
 		d := testDaemon(t)
 		rev := reviewCard(t, d, "reviewer")
@@ -60,6 +61,7 @@ func TestAReportToLaunchSetsTheLauncherAndKeepsTheName(t *testing.T) {
 }
 
 func TestAReportFromAReportToCardReachesItsLauncher(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	rev := reviewCard(t, d, "reviewer")
 	task := launchTo(t, d, "review")
@@ -75,6 +77,7 @@ func TestAReportFromAReportToCardReachesItsLauncher(t *testing.T) {
 }
 
 func TestASilentStopAndOwedReportCountAgainstTheReportToCard(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	rev := reviewCard(t, d, "reviewer")
 	task := launchTo(t, d, "review")
@@ -91,6 +94,7 @@ func TestASilentStopAndOwedReportCountAgainstTheReportToCard(t *testing.T) {
 }
 
 func TestAnUnknownOrForeignReportToRefusesAndCreatesNoCard(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	reviewCard(t, d, "reviewer")
 	h := slowHarness(t, d)
@@ -111,6 +115,7 @@ func TestAnUnknownOrForeignReportToRefusesAndCreatesNoCard(t *testing.T) {
 }
 
 func TestAnAgentLaunchCannotCarryReportTo(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	reviewCard(t, d, "reviewer")
 	h := slowHarness(t, d)
@@ -123,6 +128,7 @@ func TestAnAgentLaunchCannotCarryReportTo(t *testing.T) {
 }
 
 func TestARelaunchedTargetIsReachedByItsAliasAndTheStoredIDIsTheFallback(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	old := reviewCard(t, d, "reviewer")
 	task := launchTo(t, d, "review")
@@ -169,6 +175,7 @@ func TestARelaunchedTargetIsReachedByItsAliasAndTheStoredIDIsTheFallback(t *test
 }
 
 func TestAReportToChildIsNotCountedAsAnAgentSession(t *testing.T) {
+	t.Parallel()
 	d := testDaemon(t)
 	reviewCard(t, d, "reviewer")
 	got, _ := d.st.Get(launchTo(t, d, "review").ID)
