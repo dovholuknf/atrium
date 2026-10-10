@@ -18,8 +18,8 @@ scripts/chattiness/test.sh
   stdout. `--from-tsv FILE` summarizes rows already written.
 - `collect.sh` runs `chattiness.sh` locally for the room named like this machine (default rooms `m1mini,sg4,sg3`, so it
   works from sg4 too) and over `ssh <room>` for the others, then merges the rows and prints one summary. A room that
-  does not answer is
-  named on stderr with the exact error and listed as not covered. `--rooms m1mini,sg4` picks rooms (`local` is this machine).
+  does not answer is named on stderr with the exact error and listed as not covered. `--rooms m1mini,sg4` picks
+  rooms (`local` is this machine).
 - `test.sh` checks the counts on `testdata/`, a synthetic transcript. A change in the transcript format shows up as a
   failing test. The fixture holds no real text.
 

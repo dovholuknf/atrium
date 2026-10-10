@@ -6,8 +6,9 @@
 #
 # A room named like this machine (or `local`) runs here, on ~/.claude/projects. Any other room is reached with
 # `ssh <host> bash -s`: sg3 and sg4 are Windows and read C:/Users/claude/.claude/projects, the rest their default.
-# Each needs ssh without a prompt, bash (git-bash) and jq on the other side. chattiness.sh itself travels over stdin, so nothing is installed there. A room that cannot be reached is named on stderr with the exact error
-# and left out of the merge. The summary lists which rooms made it in.
+# Each needs ssh without a prompt, bash (git-bash) and jq on the other side. chattiness.sh itself travels over stdin,
+# so nothing is installed there. A room that cannot be reached is named on stderr with the exact error and left out
+# of the merge. The summary lists which rooms made it in.
 set -uo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
 
