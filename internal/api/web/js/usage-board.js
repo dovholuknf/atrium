@@ -2,7 +2,7 @@
 // control's name is its most stable handle (see controlName). Counts are batched to POST /v1/usage every 10 s and on
 // pagehide. Best effort: a failed post is dropped. Nothing is typed text, terminal input, scroll or hover.
 (function () {
-  const PICK = 'button, a[href], [role="button"], [role="tab"], [role="menuitem"], summary, select, ' +
+  const PICK = 'button, a[data-usage], a[data-action], a[data-view], a[id], [role="button"], [role="tab"], [role="menuitem"], summary, select, ' +
     'input[type="checkbox"], input[type="radio"], input[type="button"], input[type="submit"], .tab, .pill, ' +
     '[data-action], [data-view], [data-usage]';
   const MAXLEN = 200;
@@ -16,8 +16,14 @@
   function labelOf(el) {
     return el.getAttribute("aria-label") || el.getAttribute("title") || el.value && el.type === "button" && el.value || el.textContent;
   }
-  // The most stable name: data-usage, then data-action, data-view, the id, a dialog's title plus the button's label,
-  // and last the label alone.
+  // A label with its digits made '#' and cut to 40, so "stash 3 files" and "stash 12 files" are one control.
+  function tidy(s) {
+    return clip(String(s || "").replace(/\d+/g, "#")).slice(0, 40).trim();
+  }
+  const ROW = '[data-id], [data-task], li, tr, .row, .card, .term-row';
+  // The most stable name: data-usage, then data-action, data-view, the id, a dialog's id plus the button's label, a
+  // button in a repeated row as the row's class plus the button's label, and last the label alone. Never text that
+  // varies per card (a dialog title, a row's own text), or the counts split per card and not per control.
   function controlName(el) {
     if (!el || !el.getAttribute) return "";
     const d = el.dataset || {};
@@ -26,13 +32,15 @@
     if (d.view) return clip("view:" + d.view);
     const dlg = el.closest && el.closest("dialog");
     if (dlg) {
-      const h = dlg.querySelector("h2, h1, .dlg-title");
-      const title = (h && h.textContent) || dlg.id || "dialog";
-      return clip("dialog:" + title + " / " + (el.id || labelOf(el)));
+      const dn = dlg.dataset.usage || dlg.id || "dialog";
+      return clip("dialog:" + dn + " / " + (el.id || tidy(labelOf(el))));
     }
     if (el.id) return clip("id:" + el.id);
-    const l = labelOf(el);
-    return l && l.trim() ? clip("label:" + l) : "";
+    const l = tidy(labelOf(el));
+    if (!l) return "";
+    const row = el.closest && el.closest(ROW);
+    if (row && row !== el) return clip((row.classList[0] || row.tagName.toLowerCase()) + ":" + l);
+    return clip("label:" + l);
   }
   window.boardControlName = controlName;
 

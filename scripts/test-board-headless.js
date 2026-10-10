@@ -8101,6 +8101,28 @@ async function boardUsageSection(browser, base) {
     const hot = vis[vis.length - 1];
     await p.click('header nav .tab[data-view="' + hot + '"]');
     await p.click('header nav .tab[data-view="' + hot + '"]');
+    // A name never carries a card: the same button in two card rows, and the same dialog button under two card titles, are one control.
+    await p.evaluate(() => {
+      const box = document.createElement("div"); box.id = "usage-probe";
+      box.innerHTML = '<ul><li class="trow" data-id="a1"><span>openziti/ziti-console #967</span><button>stash 3 files</button></li>' +
+        '<li class="trow" data-id="b2"><span>openziti/zrok #12</span><button>stash 12 files</button></li></ul>' +
+        '<a href="#probe-967">openziti/ziti-console 967</a>' +
+        '<dialog id="probedlg"><h2>close openziti/ziti-console #967?</h2><button>go</button></dialog>' +
+        '<dialog id="probedlg2"><h2>close openziti/zrok #12?</h2><button>go</button></dialog>';
+      box.style.cssText = "position:fixed;left:0;top:0;z-index:99999;background:#222;padding:8px";
+      document.body.append(box);
+      for (const d of box.querySelectorAll("dialog")) { d.show(); d.style.cssText = "position:static;display:block;margin:4px;inset:auto;transform:none"; }
+    });
+    for (const sel of ["#usage-probe li:nth-child(1) button", "#usage-probe li:nth-child(2) button", "#usage-probe a",
+      "#probedlg button", "#probedlg2 button"]) await p.click(sel);
+    await p.evaluate(() => window.boardUsageFlush());
+    await p.waitForTimeout(300);
+    const probe = [...boardUsageSeen].filter(([k]) => /stash|go$|ziti|zrok/.test(k));
+    const rowNames = probe.filter(([k]) => k.startsWith("trow:"));
+    if (rowNames.length !== 1 || rowNames[0][1] !== 2) fail("boardUsage: the same button in two card rows is not one control with 2 clicks: " + JSON.stringify(probe));
+    if (probe.some(([k]) => /ziti|zrok/.test(k))) fail("boardUsage: a control name carries a card or repo: " + JSON.stringify(probe));
+    if (probe.filter(([k]) => k.startsWith("dialog:")).length !== 2) fail("boardUsage: a dialog is not named by its id: " + JSON.stringify(probe));
+    await p.evaluate(() => document.getElementById("usage-probe").remove());
     await p.click("#tabmore");
     await p.evaluate(() => window.boardUsageFlush());
     await p.waitForTimeout(300);
