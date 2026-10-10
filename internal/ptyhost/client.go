@@ -89,7 +89,7 @@ type Attachment struct {
 	Truncated bool
 	Cuts      []Cut
 	Marks     []int64 // absolute offsets of the clear marks in Replay
-	Replay   []byte
+	Replay    []byte
 	Events    <-chan Event
 }
 

@@ -125,7 +125,7 @@ type Reply struct {
 	Truncated bool     `json:"truncated,omitempty"`
 	Cuts      []Cut    `json:"cuts,omitempty"`
 	Marks     []int64  `json:"marks,omitempty"` // clear marks at or after From, as absolute offsets, oldest first
-	Data     []byte   `json:"data,omitempty"`
+	Data      []byte   `json:"data,omitempty"`
 
 	// resize
 	Cut *Cut `json:"cut,omitempty"`
