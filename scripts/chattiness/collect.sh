@@ -1,0 +1,66 @@
+#!/usr/bin/env bash
+# Run chattiness.sh against every room's transcripts and merge the rows into one summary.
+#
+#   scripts/chattiness/collect.sh --since 2026-10-09T22:00:00-04:00 --until 2026-10-10T08:00:00-04:00
+#   scripts/chattiness/collect.sh --rooms local,sg4,sg3 --tsv merged.tsv
+#
+# local is this machine's ~/.claude/projects. sg4 and sg3 are Windows rooms reached with `ssh <host> bash -s`, so
+# they need ssh access without a prompt, bash (git-bash) and jq on the other side. chattiness.sh itself travels
+# over stdin, so nothing is installed there. A room that cannot be reached is named on stderr with the exact error
+# and left out of the merge. The summary lists which rooms made it in.
+set -uo pipefail
+here="$(cd "$(dirname "$0")" && pwd)"
+
+since="1970-01-01T00:00:00Z"
+until_="2999-01-01T00:00:00Z"
+rooms="local,sg4,sg3"
+tsv="chattiness-merged.tsv"
+win_root="C:/Users/claude/.claude/projects"
+
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --since) since="$2"; shift 2 ;;
+    --until) until_="$2"; shift 2 ;;
+    --rooms) rooms="$2"; shift 2 ;;
+    --tsv) tsv="$2"; shift 2 ;;
+    --win-root) win_root="$2"; shift 2 ;;
+    -h|--help) sed -n '2,11p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    *) echo "collect: unknown argument $1" >&2; exit 2 ;;
+  esac
+done
+
+work="$(mktemp -d)"
+trap 'rm -rf "$work"' EXIT
+covered=""
+missed=""
+
+for room in ${rooms//,/ }; do
+  out="$work/$room.tsv"
+  if [ "$room" = local ]; then
+    "$here/chattiness.sh" --since "$since" --until "$until_" --tsv - > "$out" 2> "$work/$room.err"
+  else
+    ssh -o BatchMode=yes -o ConnectTimeout=10 "$room" bash -s -- \
+      --root "$win_root" --since "$since" --until "$until_" --tsv - < "$here/chattiness.sh" > "$out" 2> "$work/$room.err"
+  fi
+  rc=$?
+  if [ $rc -ne 0 ] || [ ! -s "$out" ]; then
+    echo "collect: room $room failed (exit $rc): $(tr '\n' ' ' < "$work/$room.err")" >&2
+    missed="$missed $room"
+    continue
+  fi
+  covered="$covered $room"
+done
+
+[ -n "$covered" ] || { echo "collect: no room answered" >&2; exit 1; }
+
+first=1
+: > "$tsv"
+for room in $covered; do
+  if [ $first = 1 ]; then head -n 1 "$work/$room.tsv" >> "$tsv"; first=0; fi
+  tail -n +2 "$work/$room.tsv" | jq -Rr --arg r "$room" 'split("\t") | .[1] = $r + ":" + .[1] | @tsv' >> "$tsv"
+done
+
+"$here/chattiness.sh" --since "$since" --until "$until_" --from-tsv "$tsv"
+echo
+echo "Rooms covered:${covered}."
+[ -z "$missed" ] || echo "Rooms NOT covered:${missed} (see stderr for the error)."
