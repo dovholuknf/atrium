@@ -10250,40 +10250,40 @@ async function contextCycleSection(browser, base) {
       await route.fulfill({ json: { card: "ll-cycle", cleared: true } });
     });
     await wp.evaluate(() => { termTask = { id: "ll-cycle" }; termKind = "runner"; composeNoteTyped("h"); composeRefused(); });
-    const cbox = await wp.evaluate(() => ({ open: composeOpen(), text: document.getElementById("t-compose-in").value }));
+    const cbox = await wp.evaluate(() => ({ open: composeOpen(), text: document.getElementById("t-ctxbox-in").value }));
     if (!cbox.open || cbox.text !== "h") fail("a refused key did not open the compose cbox seeded with it: " + JSON.stringify(cbox));
     if (/Typing dropped/.test(await wp.evaluate(() => document.body.innerText))) fail("the Typing dropped toast is still shown");
     // COMPOSE_SHOTS=<dir> writes compose-before.png (the old toast) and compose-after.png (the box and the bar).
     if (process.env.COMPOSE_SHOTS) {
       await wp.evaluate(() => {
-        for (let e = document.getElementById("t-compose"); e && e !== document.body; e = e.parentElement) {
+        for (let e = document.getElementById("t-ctxbox"); e && e !== document.body; e = e.parentElement) {
           e.hidden = false;
           if (getComputedStyle(e).display === "none") e.style.display = "block";
         }
         // The box is only ever up while atrium itself is typing, so that is the state the bar shows.
         composeBar({ new_context: { step: "limit", n: 1, of: 3, label: "atrium is typing into the terminal", typing: true, queued: 1 } });
-        const ta = document.getElementById("t-compose-in");
+        const ta = document.getElementById("t-ctxbox-in");
         ta.value = "also fix the failing test";
       });
       await wp.screenshot({ path: path.join(process.env.COMPOSE_SHOTS, "compose-after.png") });
       await wp.evaluate(() => {
-        document.getElementById("t-compose").hidden = true;
+        document.getElementById("t-ctxbox").hidden = true;
         toast("Typing dropped", "input is refused during a new context", null, "in-refused");
       });
       await wp.waitForTimeout(400);
       await wp.screenshot({ path: path.join(process.env.COMPOSE_SHOTS, "compose-before.png") });
       process.exit(0);
     }
-    await wp.evaluate(() => { document.getElementById("t-compose-in").value = "hello after the cycle"; });
-    await wp.evaluate(() => document.getElementById("t-compose-in").dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true })));
+    await wp.evaluate(() => { document.getElementById("t-ctxbox-in").value = "hello after the cycle"; });
+    await wp.evaluate(() => document.getElementById("t-ctxbox-in").dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true })));
     await wp.waitForFunction(() => !composeOpen(), null, { timeout: slow(5000) });
     if (composed.length !== 1 || composed[0].text !== "hello after the cycle") fail("Enter did not queue the text: " + JSON.stringify(composed));
     await wp.evaluate(() => composeRefused());
-    await wp.evaluate(() => { document.getElementById("t-compose-in").value = "never mind"; });
-    await wp.evaluate(() => document.getElementById("t-compose-in").dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true })));
+    await wp.evaluate(() => { document.getElementById("t-ctxbox-in").value = "never mind"; });
+    await wp.evaluate(() => document.getElementById("t-ctxbox-in").dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true })));
     if (await wp.evaluate(() => composeOpen()) || composed.length !== 1) fail("Escape did not discard the compose cbox.");
     await wp.evaluate(() => composeRefused());
-    await wp.evaluate(() => document.getElementById("t-compose-free").click());
+    await wp.evaluate(() => document.getElementById("t-ctxbox-free").click());
     await wp.waitForFunction(() => !composeOpen(), null, { timeout: slow(5000) });
     if (freed.length !== 1) fail("'let me type' did not dismiss the cycle.");
     // WEDGED: the card still says the cycle is on its limit step (the mock never ends it), and the bar's own

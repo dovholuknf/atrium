@@ -556,7 +556,7 @@
     box-shadow: 0 14px 34px rgba(var(--shadow-rgb),.6);
   }
   .pastebox[hidden] { display: none; }
-  .pastebox #t-compose-free { opacity: 1; margin-right: auto; border: 1px solid var(--term-line, var(--stroke)); }
+  .pastebox #t-ctxbox-free { opacity: 1; margin-right: auto; border: 1px solid var(--term-line, var(--stroke)); }
   .term-ncbar {
     display: flex; align-items: center; gap: 8px; padding: 3px 10px;
     font: var(--fs-xs)/1.4 var(--mono); color: var(--term-fg, var(--dim));
