@@ -449,6 +449,8 @@ func (s *Server) Broadcast(kind string, payload any) { s.bus.publish(kind, paylo
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /v1/health", s.health)
+	mux.HandleFunc("POST /v1/usage", s.postBoardUsage)
+	mux.HandleFunc("GET /v1/usage/board", s.getBoardUsage)
 	mux.HandleFunc("GET /v1/room/stats", s.roomStats)
 	mux.HandleFunc("GET /v1/settings", s.getSettings)
 	mux.HandleFunc("POST /v1/settings", s.setSettings)

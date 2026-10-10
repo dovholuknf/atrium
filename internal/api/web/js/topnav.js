@@ -146,8 +146,16 @@
     arr.type = "button";
     arr.className = "arrange";
     arr.textContent = "arrange tabs...";
+    arr.dataset.usage = "menu:arrange tabs";
     arr.onclick = () => { closeMenu(); openArrange(); };
     menu.append(arr);
+    const used = document.createElement("button");
+    used.type = "button";
+    used.className = "arrange";
+    used.dataset.usage = "menu:controls used";
+    used.textContent = "controls used";
+    used.onclick = () => { closeMenu(); if (window.openControlsUsed) window.openControlsUsed(); };
+    menu.append(used);
   }
 
   // The editor: one row per tab, up and down to order it, a select for where it shows, and a reset.

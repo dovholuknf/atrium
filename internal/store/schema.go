@@ -2174,6 +2174,18 @@ var migrations = []struct {
 			`ALTER TABLE say ADD COLUMN text TEXT NOT NULL DEFAULT ''`,
 		},
 	},
+	{
+		// HOW OFTEN EACH BOARD CONTROL IS USED, per day, so a cut is made from data. Written by POST /v1/usage.
+		name: "0094_board_usage",
+		stmts: []string{
+			`CREATE TABLE IF NOT EXISTS board_usage (
+				control TEXT NOT NULL,
+				day     TEXT NOT NULL,
+				n       INTEGER NOT NULL,
+				PRIMARY KEY (control, day)
+			)`,
+		},
+	},
 }
 
 // migrate applies any migration not already recorded. This runs before the
