@@ -196,3 +196,66 @@ func TestAWokenCardThatNeverTakesItsMessagesTellsTheLauncher(t *testing.T) {
 		t.Fatalf("the launcher has %+v, want one notice that nothing was delivered", told)
 	}
 }
+
+// A parked card, a say with wake, and a runner that is ready only after a delay: nothing is typed before it is ready,
+// then ONE submitted prompt carries every held message, and the card is resumed once.
+func TestAWakeSayToAParkedCardTypesNothingUntilReadyThenOneTurn(t *testing.T) {
+	oldTick, oldSettle := keptTick, keptSettle
+	keptTick, keptSettle = 20*time.Millisecond, 100*time.Millisecond
+	defer func() { keptTick, keptSettle = oldTick, oldSettle }()
+	d := testDaemon(t)
+	target := cardFor(t, d, "sleeper")
+	peerCard(t, d, "alice")
+	t.Cleanup(func() { d.pending.stopAll() })
+	if err := d.st.SetResumeID(target.ID, "conv-1"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := d.st.Park(target.ID, store.StatusDone, nil); err != nil {
+		t.Fatal(err)
+	}
+	d.sup.remove(target.ID)
+	if out, code := tell(t, d, "alice", "sleeper", "HELDONE"); code != http.StatusOK || out["reachable"] != "kept" {
+		t.Fatalf("first say: %d %v", code, out)
+	}
+
+	var f *fakePTY
+	launched := 0
+	d.wakeLaunch = func(req LaunchRequest) (*store.Task, error) {
+		launched++
+		_, f = typedRunner(t, d, target.ID)
+		return d.st.Get(target.ID)
+	}
+	for _, text := range []string{"WAKEONE", "WAKETWO"} {
+		raw, _ := json.Marshal(map[string]any{"from": "alice", "to": "sleeper", "text": text, "wake": true})
+		w := httptest.NewRecorder()
+		d.handleTell(w, httptest.NewRequest("POST", "/tell", strings.NewReader(string(raw))))
+		if w.Code != http.StatusOK {
+			t.Fatalf("wake say answered %d: %s", w.Code, w.Body.String())
+		}
+	}
+	if launched != 1 {
+		t.Fatalf("resumed %d times, want 1", launched)
+	}
+	time.Sleep(10 * keptTick)
+	if got := f.written(); got != "" {
+		t.Fatalf("typed before the runner was ready: %q", got)
+	}
+	d.wakeSawSession(target.ID, "conv-1")
+	deadline := time.Now().Add(5 * time.Second)
+	for !strings.Contains(f.written(), "\r") && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	time.Sleep(10 * keptTick)
+	got := f.written()
+	for _, want := range []string{"HELDONE", "WAKEONE", "WAKETWO"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("%s missing from the turn: %q", want, got)
+		}
+	}
+	if n := strings.Count(got, "\r"); n != 1 {
+		t.Fatalf("%d submits, want ONE turn: %q", n, got)
+	}
+	if n, _ := d.st.UndeliveredCount(target.ID); n != 0 {
+		t.Fatalf("undelivered %d, want 0", n)
+	}
+}

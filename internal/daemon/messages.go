@@ -685,6 +685,9 @@ func (d *Daemon) handleMessage(w http.ResponseWriter, r *http.Request) {
 	// words still go. See roomhold.go.
 	holding := d.holdingFrom(taskID, from)
 	byHooks := d.carriedByHooks(taskID, from, waitTurn)
+	if _, waking := d.kept.Load(taskID); waking {
+		woke = true
+	}
 	if run := d.sup.get(taskID); run != nil && !holding && !woke && !byHooks && !d.act.dialogOpen(taskID) && !d.turnHolds(taskID, waitTurn) {
 		wrote, err := d.typeThroughGate(run, taskID, from, body.Text)
 		if err != nil {

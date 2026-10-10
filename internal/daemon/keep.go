@@ -99,11 +99,16 @@ func (d *Daemon) deliverKept(taskID string) {
 			log.Printf("[atrium] could not read what is kept for %s: %v", taskID, err)
 			return
 		}
-		if len(msgs) == 0 {
+		now := time.Now()
+		run := d.sup.get(taskID)
+		ready := run != nil && d.keptRunnerReady(taskID, run, now)
+		// NOTHING HELD IS NOT THE END UNTIL THE RUNNER IS READY. The say that woke the card is queued just after the
+		// resume returns, so an empty look at the start is a look too early. Giving up then would leave that say to
+		// the per-message retry, which types it onto the startup screen.
+		if len(msgs) == 0 && ready {
 			return
 		}
-		now := time.Now()
-		if run := d.sup.get(taskID); run != nil && d.keptRunnerReady(taskID, run, now) &&
+		if ready && len(msgs) > 0 &&
 			!d.act.dialogOpen(taskID) && !d.act.midTurn(taskID) && !d.holdingMessages(taskID) && !d.deployHeld(taskID) {
 			wrote, err := d.typeLabelledThroughGate(run, taskID, "", messageBanner(msgs, false))
 			if err != nil {
@@ -128,7 +133,9 @@ func (d *Daemon) deliverKept(taskID string) {
 			}
 		}
 		if now.After(deadline) {
-			d.keptUndelivered(taskID, len(msgs))
+			if len(msgs) > 0 {
+				d.keptUndelivered(taskID, len(msgs))
+			}
 			return
 		}
 		time.Sleep(keptTick)
