@@ -1,4 +1,4 @@
-﻿# t-docs-build-no-pwsh: the docs build runs under bash
+# t-docs-build-no-pwsh: the docs build runs under bash
 
 `scripts/build-docs.ps1` is ported to `scripts/build-docs.sh` and deleted. Behavior is the same: `npm ci`, the gate
 script check, `docusaurus build`, the link check of the built HTML, and `.nojekyll`. The parameters Url, BaseUrl and
@@ -6,7 +6,6 @@ OutDir are now `--url`, `--base-url` and `--out-dir`. The script runs with `set 
 
 Calls made without asking:
 
-- The changelog entry is filed under `runtime`, since the item has no prefix that names a department.
 - The script exports `MSYS2_ENV_CONV_EXCL` for the two `ATRIUM_DOCS_*` variables. Without it git-bash turns
   `/atrium/` into a Windows path on its way to node, and the link check fails on every page.
 - `website/scripts/test-gate-hook.js` still spawns `pwsh`, because the gate script in `docs/hooks.md` is PowerShell.
