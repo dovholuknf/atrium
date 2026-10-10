@@ -13,9 +13,10 @@ import (
 // (internal/daemon/closestash.go), and nothing else on the hub removes one. Each pass of the hub's collect timer
 // deletes the ones older than the `git.stash_retention_days` setting, 30 by default, 0 for never.
 //
-// AGE is the time of the stash's push when the push log has one, and the commit's committer date when it has not,
-// whichever is LATER. A stash of a clean worktree is an old commit, and the commit date alone would expire it the
-// moment it landed.
+// AGE is the time of the stash's push or the commit's committer date, whichever is LATER. A stash of a clean worktree
+// is an old commit, and the commit date alone would expire it the moment it landed. A stash the push log has no record
+// of is KEPT, never aged by its commit date alone, and a push log that cannot be read expires nothing in that
+// repository.
 //
 // Only refs/heads/stash/ is ever looked at. Every expiry is logged and audited with the ref, the card and the sha, so
 // the stash can be got back with `git branch <name> <sha>` until git's own gc drops the commit.
@@ -78,13 +79,16 @@ func (h *Hub) expireStashesIn(ctx context.Context, e Entry, cut time.Time) ([]Ex
 	if err != nil {
 		return nil, err
 	}
+	if h.PushLog == nil {
+		return nil, nil
+	}
+	recs, err := h.PushLog.Branches(ctx, name)
+	if err != nil {
+		return nil, err
+	}
 	pushed := map[string]time.Time{}
-	if h.PushLog != nil {
-		if recs, err := h.PushLog.Branches(ctx, name); err == nil {
-			for _, r := range recs {
-				pushed[r.Ref] = r.At
-			}
-		}
+	for _, r := range recs {
+		pushed[r.Ref] = r.At
 	}
 	var out []ExpiredStash
 	for _, line := range strings.Split(text, "\n") {
@@ -97,8 +101,12 @@ func (h *Hub) expireStashesIn(ctx context.Context, e Entry, cut time.Time) ([]Ex
 		if err != nil {
 			continue
 		}
+		p, ok := pushed[ref]
+		if !ok {
+			continue
+		}
 		at := time.Unix(secs, 0)
-		if p := pushed[ref]; p.After(at) {
+		if p.After(at) {
 			at = p
 		}
 		if at.After(cut) {

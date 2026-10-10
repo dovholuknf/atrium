@@ -4,6 +4,7 @@ package gitsync
 
 import (
 	"context"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -57,6 +58,26 @@ func refsOf(t *testing.T, dir string) []string {
 
 const day = 24 * time.Hour
 
+// seedPushes is a push log with a settled push of each ref, `age` ago.
+func seedPushes(t *testing.T, refs map[string]time.Duration) *MemPushLog {
+	t.Helper()
+	log := &MemPushLog{}
+	for ref, age := range refs {
+		if err := log.Append(context.Background(), PushRow{Repo: "github/o/r", Ref: ref, Card: "abc12345", Room: "r",
+			At: time.Now().Add(-age)}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return log
+}
+
+// brokenBranches is a push log that cannot answer which branches it has rows for.
+type brokenBranches struct{ *MemPushLog }
+
+func (brokenBranches) Branches(context.Context, string) ([]BranchRecord, error) {
+	return nil, errors.New("push log is down")
+}
+
 func TestAStashOlderThanTheRetentionIsGoneAndAYoungerOneStays(t *testing.T) {
 	h, dir := stashRepo(t, map[string]time.Duration{
 		"refs/heads/stash/abc12345/old":   40 * day,
@@ -64,6 +85,10 @@ func TestAStashOlderThanTheRetentionIsGoneAndAYoungerOneStays(t *testing.T) {
 		"refs/heads/claude/main":          400 * day,
 		"refs/heads/main":                 400 * day,
 		"refs/tags/stash/abc12345/tagged": 400 * day,
+	})
+	h.PushLog = seedPushes(t, map[string]time.Duration{
+		"refs/heads/stash/abc12345/old":   40 * day,
+		"refs/heads/stash/abc12345/young": 5 * day,
 	})
 	var audited []string
 	h.Audit = func(room, kind, detail string) { audited = append(audited, kind+" "+detail) }
@@ -116,6 +141,31 @@ func TestAStashPushedRecentlyIsNotExpiredByItsOldCommit(t *testing.T) {
 	}
 	if len(refsOf(t, dir)) != 1 {
 		t.Errorf("refs = %v", refsOf(t, dir))
+	}
+}
+
+func TestAStashWithNoPushRecordSurvivesAnOldCommitDate(t *testing.T) {
+	h, dir := stashRepo(t, map[string]time.Duration{"refs/heads/stash/abc12345/unrecorded": 60 * day})
+	h.PushLog = &MemPushLog{}
+	h.StashRetentionDays = func() int { return 30 }
+	if got, err := h.ExpireStashes(context.Background()); err != nil || len(got) != 0 {
+		t.Fatalf("%v %v", got, err)
+	}
+	if len(refsOf(t, dir)) != 1 {
+		t.Errorf("the stash with no push record was expired: %v", refsOf(t, dir))
+	}
+}
+
+func TestAPushLogThatCannotBeReadExpiresNothing(t *testing.T) {
+	h, dir := stashRepo(t, map[string]time.Duration{"refs/heads/stash/abc12345/old": 60 * day})
+	h.PushLog = brokenBranches{seedPushes(t, map[string]time.Duration{"refs/heads/stash/abc12345/old": 60 * day})}
+	h.StashRetentionDays = func() int { return 30 }
+	got, err := h.ExpireStashes(context.Background())
+	if err == nil || len(got) != 0 {
+		t.Fatalf("want the push log's error and nothing expired, got %v %v", got, err)
+	}
+	if len(refsOf(t, dir)) != 1 {
+		t.Errorf("a stash was expired while the push log was down: %v", refsOf(t, dir))
 	}
 }
 

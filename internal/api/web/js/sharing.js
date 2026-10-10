@@ -815,7 +815,7 @@ async function closeCardNow(id, t, via) {
     (pv.can_stash ? pick(a, "stash", "stash to the hub") : "") + pick(a, "delete", "delete, the work is gone", "cw-del") +
     `</div></div>`).join("") +
     ((pv.asks || []).length && !pv.can_stash
-      ? `<div class="cw-why">This room cannot stash to the hub, so keep is the answer unless you pick delete.</div>` : "");
+      ? `<div class="cw-note">This room cannot stash to the hub, so keep is the answer unless you pick delete.</div>` : "");
   const body =
     (going ? `Frees${sized(pv.disk_bytes)}:<ul>${going}</ul>` : "Nothing on disk to free.<br>") +
     (warns ? `<ul>${warns}</ul>` : "") + rows +

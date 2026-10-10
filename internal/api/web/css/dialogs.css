@@ -805,6 +805,7 @@
   .close-wt .cw-pick { display: flex; gap: 14px; margin-top: 6px; flex-wrap: wrap; }
   .close-wt .cw-pick label { cursor: pointer; }
   .close-wt .cw-pick label.cw-del { color: var(--danger); }
+  .cw-note { color: var(--dim); font: var(--fs-sm)/1.4 var(--sans); margin: 0 0 1em; }
   .close-steps { list-style: none; margin: 10px 0 0; padding: 0; }
   .close-steps li { display: flex; gap: 8px; align-items: baseline; padding: 2px 0; font: var(--fs-sm)/1.4 var(--sans); }
   .close-steps .cs-mark { width: 1.2em; text-align: center; flex: none; }
