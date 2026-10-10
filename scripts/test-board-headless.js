@@ -4533,10 +4533,10 @@ async function sayWhenSection(browser, base) {
     const wantQuiet = {
       asked: ["chip queued", "✉︎",
         "1 message queued for this agent for 1m 30s, sent to arrive when the session's turn ends. " +
-        "It goes in when the turn ends"],
+        "It goes in when the turn ends, or after 15 minutes if the turn runs that long"],
       runner: ["chip queued", "✉︎ 2",
         "2 messages queued for this agent for 1m 30s, because this runner does not take input mid-turn. " +
-        "They go in when the turn ends"],
+        "They go in when the turn ends, or after 15 minutes if the turn runs that long"],
       overdue: ["chip held", "!",
         "1 message has been waiting to be delivered to this agent for 1h 2m 3s and is blocked by " +
         "the session's turn, which it was sent to wait for. It goes in when the turn ends"],
@@ -4552,8 +4552,31 @@ async function sayWhenSection(browser, base) {
           JSON.stringify({ cls, text, tip }));
       }
     }
-    if (/\bor\b/.test(quiet.asked.tip + quiet.runner.tip)) {
+    if (/\bor\b/.test(quiet.asked.tip.split(". ")[0] + quiet.runner.tip.split(". ")[0])) {
       fail("a quiet hold's tip offers a choice of reasons: " + quiet.asked.tip + " | " + quiet.runner.tip);
+    }
+
+    // A delivered message is not queued. The tip's wait comes from the setting the room sends, and once the task
+    // update carries no held message the envelope and its tip are gone.
+    const gone = await p.evaluate(() => {
+      const draw = (act) => {
+        const d = document.createElement("div");
+        d.innerHTML = termHeldChip({ activity: act });
+        const s = d.querySelector(".chip");
+        return s ? s.dataset.tip : "";
+      };
+      return {
+        thirty: draw({ held_peer: "sg4/doer", held_seconds: 90, held_for: "turn", held_turn: "asked",
+          held_quiet: true, held_escalate_min: 30 }),
+        delivered: draw({ what: "tool" }),
+        nothing: draw(undefined),
+      };
+    });
+    if (!/or after 30 minutes if the turn runs that long$/.test(gone.thirty)) {
+      fail("the queued tip ignores escalate_held_after: " + gone.thirty);
+    }
+    if (gone.delivered !== "" || gone.nothing !== "") {
+      fail("the envelope still draws after the message was delivered: " + JSON.stringify(gone));
     }
 
     // For checking by eye: HELD_SHOTS=<dir> writes each chip with its tip open

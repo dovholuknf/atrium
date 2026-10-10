@@ -100,6 +100,21 @@ func messageIDs(msgs []*store.Message) []string {
 	return out
 }
 
+// markDelivered is how EVERY delivery path records that messages reached a session: the hooks, the typist and a
+// wake. The store row is marked, then the injector forgets the ids and the card is published, so the held count,
+// the envelope on the terminals row and the queued line in its peek drop at once and the board hears it over SSE.
+// A path that marked the row and left the injector's held set standing is how a delivered message read as queued.
+func (d *Daemon) markDelivered(taskID, via string, ids []string) error {
+	if err := d.st.MarkDelivered(taskID, via, ids); err != nil {
+		return err
+	}
+	if d.pending != nil {
+		d.pending.deliveredElsewhere(taskID, ids)
+	}
+	d.publishTask(taskID)
+	return nil
+}
+
 // takeMessages returns anything queued for a task and marks it delivered.
 func (d *Daemon) takeMessages(taskID, via string) ([]*store.Message, error) {
 	// HELD FOR A NEW CONTEXT. A hook delivery during the capture turn would put
@@ -160,20 +175,13 @@ func (d *Daemon) takeMessages(taskID, via string) ([]*store.Message, error) {
 		}
 	}
 	ids := messageIDs(msgs)
-	if err := d.st.MarkDelivered(taskID, via, ids); err != nil {
+	if err := d.markDelivered(taskID, via, ids); err != nil {
 		return nil, err
 	}
 	for _, m := range msgs {
 		if age, ok := escalated[m.ID]; ok {
 			d.noteEscalated(taskID, m.ID, m.FromPeer, age)
 		}
-	}
-	// The hooks just drained the durable queue, so anything the injector was
-	// still retrying on screen has now landed. Clear its held set and the board
-	// signal here rather than waiting for the next backoff tick, which can be a
-	// day out and would leave the held chip lit long after the message arrived.
-	if d.pending != nil {
-		d.pending.deliveredElsewhere(taskID, ids)
 	}
 	log.Printf("[atrium] delivered %d message(s) to %s via the %s hook", len(msgs), taskID, via)
 	return msgs, nil
