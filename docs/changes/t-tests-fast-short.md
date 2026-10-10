@@ -38,8 +38,8 @@ No test was skipped because it is flaky. Subtests are not skipped on their own, 
 ## Resilience tests left in the short set
 
 A test whose name mentions the halt, a hook, a shutdown or fail-open is never skipped, even when it is slow. The
-repository has no AGENTS.md, so the list of guarantees comes from `docs/test-plan.md` section F and the halt notes in
-`docs/archive/architecture-v2.md`. Two tests over 2s were left in because of it:
+list of guarantees comes from the Resilience guarantees in AGENTS.md and `docs/test-plan.md` section F, and the halt
+notes in `docs/archive/architecture-v2.md`. Two tests over 2s were left in because of it:
 
 - `internal/store` `TestShareSurvivesAShutdownAndDiesOnAStop` (shutdown)
 - `internal/gitsync` `TestARepositorysOwnHookAndConfigAreNotUsed` (a repository's hook is never run)
