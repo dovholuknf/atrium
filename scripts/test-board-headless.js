@@ -10293,9 +10293,15 @@ async function contextCycleSection(browser, base) {
       composeFollow({ id: "ll-cycle", row: 1, new_context: { step: "clear", n: 2, of: 3, label: "clearing the context" } });
       const mid = { hidden: document.getElementById("t-ncbar").hidden, text: document.getElementById("t-ncbar-say").textContent };
       composeRefused();
+      document.getElementById("t-ctxbox-in").value = "typed during the cycle";
+      const realSend = window.sendInput, typed = [];
+      window.sendInput = text => { typed.push(text); };
       composeFollow({ id: "ll-cycle", row: 1 });
-      return { mid, hidden: document.getElementById("t-ncbar").hidden, box: composeOpen() };
+      window.sendInput = realSend;
+      return { mid, hidden: document.getElementById("t-ncbar").hidden, box: composeOpen(), typed };
     });
+    if (composed.length !== 1 || JSON.stringify(endFrame.typed) !== JSON.stringify(["typed during the cycle"]))
+      fail("the end frame did not put the box text on the input line: " + JSON.stringify({ composed, typed: endFrame.typed }));
     if (endFrame.mid.hidden || !/2\/3: clearing the context/.test(endFrame.mid.text))
       fail("a mid-cycle frame did not move the bar to step 2: " + JSON.stringify(endFrame.mid));
     if (!endFrame.hidden || endFrame.box) fail("the end frame left the strip or 'let me type' on screen: " + JSON.stringify(endFrame));
