@@ -329,6 +329,7 @@ function skipConfirm(key, on) {
 const SKIP_LABELS = {
   "exit-terminal": "ask a runner to exit",
   "kill-runner": "terminate a runner",
+  "cleanup-unsaved": "delete work only a folder has when cleaning up",
   "move-while-pending": "move a card an agent is waiting on",
   "hooks-nag": "tell me when claude hooks are not wired",
   "width-floor": "tell me a terminal will not go narrower"

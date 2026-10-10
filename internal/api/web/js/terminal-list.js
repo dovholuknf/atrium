@@ -196,6 +196,18 @@ function toggleHideAgents() {
   setHideAgents(hideAgentsMode() === "none" ? "on" : "none");
 }
 
+// SHOW STOPPED, the third pill of the hide control. Off by default: a card that was stopped (the menu's `stop`) is
+// out of the list until this is on. Device-scoped like the two hide keys.
+const SHOW_STOPPED_KEY = "atrium.showstopped";
+function showStoppedOn() {
+  try { return localStorage.getItem(termDeviceKey(SHOW_STOPPED_KEY)) === "on"; } catch (e) { return false; }
+}
+function toggleShowStopped() {
+  try { localStorage.setItem(termDeviceKey(SHOW_STOPPED_KEY), showStoppedOn() ? "off" : "on"); } catch (e) {}
+  paintTermGear();
+  renderTermList();
+}
+
 // IS THIS SESSION WORKING RIGHT NOW. The one live-activity guard the whole
 // strip reads from: the doer filter's hide-inactive test, the runner mark that
 // animates, and the `by activity` sort all ask this and get the same answer,
@@ -332,6 +344,11 @@ function termHideControlsHTML(c) {
       seg("agents", aOn, c.agentHidden, "toggleHideAgents()", agentTitle)
     }${
       seg("subagents", sOn, c.subHidden, "toggleHideSubagents()", subTitle)
+    }${
+      `<button class="${showStoppedOn() ? "on" : ""}" onclick="toggleShowStopped()"
+        data-tip="${showStoppedOn()
+          ? "stopped cards are listed, cold. click to hide them again"
+          : "list the cards you stopped (the menu's stop), so they can be resumed"}">show stopped</button>`
     }</div>`;
 }
 
@@ -784,123 +801,95 @@ function shortLabel(task) {
 }
 
 // The list of things worth attaching to, so switching is a click.
-// Right click a session in the list. Renaming is the one people reach for
-// most: a launched runner is named after its directory and a timestamp, which
-// says nothing about what it is doing.
+//
+// RIGHT CLICK A SESSION IN THE LIST (or Shift+right click in its terminal). docs/interviews/INTERVIEW-card-menu-2026-10-09.md
+// settled this menu with clint, top to bottom:
+//
+//   restart, resume (a stopped card), new context, add to group, remove from group,
+//   ---
+//   settings
+//   ---
+//   stop, terminate and clean up
+//
+// Every item keeps its (?) bubble and none carries a grey sub-line. Nothing asks "are you sure?" but terminate and
+// clean up, and only when the folder holds work that exists nowhere else (see `cleanUpCard` in js/sharing.js).
+// What is NOT here and where it went: rename and alias are a click on the terminal's title (js/alias.js), the context
+// limit is in settings (the cog), and "what did it do?", "open a shell here", attach, "which repo" and "new agent
+// here" are gone. The board's menu is a different interview and is untouched.
 async function termMenu(e, id) {
   e.preventDefault();
   e.stopPropagation();
   const t = await api(`/v1/tasks/${id}`);
-  // The runners, for `new agent here`. Same bargain as the board's card menu:
-  // read once and held, because the menu is drawn on a click and a round trip
-  // would open it a beat late every time.
+  // The runners, for the resume check: whether a card's runner has resume arguments.
   await loadHarnesses();
-  showMenu(e, [
-    // FIRST, because on a card whose runner has gone it is the only entry that
-    // does anything, and it was not here at all.
-    //
-    // `attach` was the thing people reached for instead, and on a stopped card
-    // it attaches to nothing: the pane says `nothing attached` and the socket
-    // sits in its five minute reconnect saying "waiting for it to come back",
-    // for a runner that is not coming. So attach is now offered only while
-    // there is one, which is the rule the board's card menu already follows.
-    //
-    // Same two entries as the board, and the same reasoning: placement comes
-    // off `lastPlace` rather than being asked, and the conversation is the
-    // card's own unless you ask to choose.
-    t.worktree && canResume(t) && !cannotResume(t) ? {
-      label: "resume", note: isLeanCard(t) ? "lean" : "",
-      help: "Starts a runner in this card's directory and picks the " +
-        "conversation back up where it stopped. It opens where this card was " +
-        "last open.",
+  showMenu(e, termMenuItems(id, t));
+}
+
+// The items, apart from the drawing so a test and the phone sheet read the same list.
+function termMenuItems(id, t) {
+  // A finished card has nothing to restart or stop, and offering them produced a dialog that failed.
+  const over = ["done", "dead", "shelved"].includes(t.status);
+  const stopped = t.status === "shelved";
+  return [
+    // The one used nearly every time. Only where atrium owns the terminal, since it types the exit keys, or on a
+    // parked card, which restarts as a resume.
+    !over && (t.supervised || (t.parked_at && t.resume_id)) ? {
+      label: "restart",
+      help: "Types the runner's exit keys (claude: ctrl-d twice), waits for it to leave, then starts it again " +
+        "on this card, resuming the same conversation with the same model, effort, arguments and settings. " +
+        "A runner that will not leave is left running and the card says so. For a fresh conversation use " +
+        "new context.",
+      act: () => restartCard(id)
+    } : null,
+    // A stopped card. `stop` shelves it, and shelved is the status with no runner whose request block is still up, so
+    // resuming it lifts the block and starts the runner. Any other card with no runner and a conversation resumes by
+    // the same two entries the board has.
+    stopped ? {
+      label: "resume",
+      help: "Starts this card's runner again and picks the conversation back up where it stopped.",
+      limited: !!cannotResume(t),
+      tip: cannotResume(t) || "",
+      act: () => cannotResume(t) ? toast("cannot resume", cannotResume(t)) : unshelveCard(id)
+    } : t.parked_at ? {
+      label: "resume",
+      help: "This card was parked after sitting idle, so nothing is running. Starting it again resumes the same " +
+        "conversation, and its prompt cache is probably cold, so the first turn runs on a full context.",
+      act: () => resumeParked(id)
+    } : t.worktree && canResume(t) && !cannotResume(t) ? {
+      label: "resume",
+      help: "Starts a runner in this card's directory and picks the conversation back up where it stopped. It " +
+        "opens where this card was last open.",
       sub: resumeEntries(id, t)
     } : null,
-    { label: "rename…", act: () => renameTask(id, t.display_title) },
-    typeof aliasMenuItem === "function" ? aliasMenuItem(t) : null,
-    // The card layer of the context limit: the hub's for its harness, then this. Only Claude cards carry one.
-    t.context_size
-      ? { label: "context limit…", note: limitFrom(t) + (typeof ownLimitNote === "function" && ownLimitNote(t) ? ", its own" : ""),
-          help: "The size at which atrium cycles this card's context. It overrides the hub's limit for its " +
-            "harness. Empty goes back to it.",
-          act: () => setTaskContextLimit(id, t) }
-      : null,
-    // Beside rename because they are the same kind of act: both write an
-    // override, both survive the runner reconnecting and reporting for itself.
-    // Rename decides what the row says, this decides where it sits.
-    //
-    // Only where there is a path to place it against. A card with no worktree
-    // is not in the tree at all, so there is nothing for this to move.
-    t.worktree
-      ? { label: "which repo…", note: t.display_repo || "guessing",
-          act: () => setTaskRepo(id, t.display_repo) }
-      : null,
-    // Filing into your groups and out of them, the board's two entries. The
-    // strip draws those groups and had neither.
-    typeof groupItem === "function" ? groupItem(id, t) : null,
-    typeof outOfGroupItem === "function" ? outOfGroupItem(id, t) : null,
-    // Only while there IS one. Attaching to a card whose runner has exited
-    // draws an empty pane and then waits five minutes for something that has
-    // already gone. `resume` above is what that click meant.
-    t.supervised ? { label: "attach", act: () => attachTask(id) } : null,
-    // THE SAME ENTRY THE BOARD'S CARD MENU HAS, because it is the same
-    // question asked from the other surface. Starting a second agent beside
-    // this one is most wanted while you are looking at the first one, which is
-    // here, and the strip was the one place it could not be reached from.
-    t.worktree ? { label: "new agent here", sub: newAgentSub(id, t) } : null,
-    // The point of the whole feature, offered where you are when you need it:
-    // the agent has stopped answering and you want to look at the directory
-    // it is sitting in. Only for a card atrium owns a runner for, since a
-    // window mode session has no terminal here to sit beside.
-    t.supervised
-      ? { label: t.shell ? "go to its shell" : "open a shell here", act: () => openShellFor(id) }
-      : null,
-    t.shell ? { label: "close its shell", act: () => closeShellFor(id) } : null,
-    // THE CARD MENU'S ENTRY, same guard. Ctrl+Alt+N is not always reachable, and this menu is what
-    // Shift+right click in the terminal opens. Absent while a cycle runs, since a second one would
-    // type over the first. A failed cycle may be run again.
-    t.supervised && !["done", "dead", "shelved"].includes(t.status) &&
-      !(t.new_context && t.new_context.step !== "failed") ? {
-      label: "new context", note: "commit, hand off, clear",
-      help: "Asks the session to commit or stash and write everything relevant to " +
-        "its own HANDOFF.<name>.md, waits for that turn to end, clears the context, " +
-        "and then tells it to read the file and continue. Ctrl+Alt+N in its " +
-        "terminal does the same.",
+    // Absent while a cycle runs, since a second one would type over the first. A failed cycle may be run again.
+    t.supervised && !over && !(t.new_context && t.new_context.step !== "failed") ? {
+      label: "new context",
+      help: "Asks the session to commit or stash and write everything relevant to its own HANDOFF.<name>.md, " +
+        "waits for that turn to end, clears the context, and then tells it to read the file and continue. " +
+        "Ctrl+Alt+N in its terminal does the same.",
       act: () => newContext(id)
     } : null,
+    typeof groupItem === "function" ? groupItem(id, t, true) : null,
+    typeof outOfGroupItem === "function" ? outOfGroupItem(id, t, true) : null,
     { sep: true },
-    { label: "what did it do?", act: () => { current = t; openReview(); } },
-    { label: "details…", act: () => openTask(id) },
+    // Everything about what this card is, the context limit included (settings-spine.js).
+    { label: "settings", act: () => openTask(id) },
     { sep: true },
-    // NOT `pid > 0` ALONE. The pid is a reconnect hint that is never cleared,
-    // so a card whose runner exited weeks ago still carries the number it had.
-    // The menu offered `terminate` on a codex card already sitting in `dead`,
-    // the kill signalled a pid belonging to nothing, and the server answered
-    // 200, so pressing it reported neither success nor failure and looked like
-    // the board had ignored the click.
-    //
-    // `dead` is the one status that means the process is known to have gone.
-    // `done` is not: a card is filed when its work is finished and its runner
-    // may still be sitting at a prompt, which is exactly when you want this.
-    (t.supervised || t.pid > 0) && t.status !== "dead"
-      ? { label: "terminate", danger: true, act: () => killById(id) } : null,
-    // A COLD ROW IS ONLY HERE BECAUSE IT IS PINNED, so dismissing it is
-    // unpinning it. The strip draws a row when it is supervised or pinned, so a
-    // card whose runner is gone shows only while the pin holds it, and clearing
-    // the pin drops it from the list and keeps it gone on the next poll rather
-    // than hiding it once.
-    //
-    // This is the entry that makes a dead terminal's menu never a dead end.
-    // `terminate` above is gone once the process is (its guards drop it on a
-    // `dead` card, and there is nothing to signal), which left the card the
-    // operator just killed with a menu full of things that do not remove it.
-    // `resume` still stands beside this for the ordinary cold pinned fixture:
-    // dismiss is for the one you are done with, resume for the one you keep.
-    !t.supervised && t.pinned
-      ? { label: "dismiss",
-          help: "Takes this exited terminal out of the list by unpinning it. " +
-            "The card and its history stay on the board.",
-          act: () => togglePin(id, false) } : null
-  ].filter(Boolean));
+    // What the board calls shelved. It stops the runner and the card keeps its place, hidden from this list unless
+    // `show stopped` is on. Resume starts it again.
+    t.supervised && !over ? {
+      label: "stop",
+      help: "Stops the agent so it can be resumed later. The card stays on the board, and is left out of this " +
+        "list unless show stopped is on.",
+      act: () => oneAtATime("shelve:" + id, () => patchTask(id, { status: "shelved" }).then(refresh))
+    } : null,
+    {
+      label: "terminate and clean up", danger: true,
+      help: "Stops the agent and removes the folder and branch it was working in, here and on the hub. " +
+        "It asks only when that folder holds changes that exist nowhere else.",
+      act: () => cleanUpCard(id, t)
+    }
+  ].filter(Boolean);
 }
 
 // Attach to a card and land on its shell, from anywhere that offers it.
@@ -1937,7 +1926,11 @@ async function renderTermList() {
   // were already safe; this is about the pinned ones.
   // A live joined card (see `termJoined`) is listed too, unattachable. A parked
   // or exited one is cold, so only a pin keeps it here.
-  const tasks = all.filter(t => !t.offline && (t.supervised || t.pinned || termJoined(t)));
+  // A STOPPED CARD (`stop` in the menu, the board's shelved) is left out unless `show stopped` is on, pinned or not,
+  // and then it is listed cold, so a click resumes it. The attached one stays, like every other hide here.
+  const tasks = all.filter(t => !t.offline && (t.status === "shelved"
+    ? showStoppedOn() || !!(termTask && t.id === termTask.id)
+    : (t.supervised || t.pinned || termJoined(t))));
   // The badge counts what is actually attachable, since it is a count of live
   // terminals rather than of rows. It counts over the WHOLE set, before the
   // doers are hidden: the nav badge is a fact about the board, not about how

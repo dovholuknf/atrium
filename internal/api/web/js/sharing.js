@@ -834,6 +834,60 @@ async function closeCardNow(id, t, via) {
   refresh();
 }
 
+// TERMINATE AND CLEAN UP, the terminals tab menu's last entry. The same close as `closeCardAsk` (internal/api/close.go:
+// stops the session, then frees its worktree and branch here and on the hub) without its two questions.
+//
+// NO "ARE YOU SURE?". A click is the decision. The one exception is a folder holding changes or commits that exist
+// nowhere else: then it asks, per folder, to stash it to the hub or delete it, with a "never show me this again" tick.
+// Ticked, the next one deletes without asking, which is what clint wants when it is stuff he does not care about. The
+// tick is only kept on an answer that deletes, so ticking it and choosing stash does not turn into a standing delete.
+// A cancel changes nothing.
+const CLEANUP_ASK_KEY = "cleanup-unsaved";
+
+function cleanUpCard(id, t) { return oneAtATime("close:" + id, () => cleanUpNow(id, t)); }
+
+async function cleanUpNow(id, t) {
+  let pv;
+  try { pv = await api(`/v1/tasks/${encodeURIComponent(id)}/close`); }
+  catch (e) { toast("could not read what cleaning up frees", e.message); return; }
+  const title = (t && t.display_title) || id;
+  const answers = {};
+  for (const a of pv.asks || []) {
+    if (skippedConfirms()[CLEANUP_ASK_KEY]) { answers[String(a.seq)] = "delete"; continue; }
+    const buttons = [{ label: "cancel", value: null }];
+    if (pv.can_stash) buttons.push({ label: "stash to the hub", value: "stash" });
+    buttons.push({ label: "delete it", value: "delete", style: "no" });
+    const ans = await askUser({
+      title: "work only this folder has",
+      body: `<b>${esc(a.path)}</b> on <b>${esc(a.branch || "no branch")}</b>: ` +
+        `${a.dirty} changed files, ${a.unpushed} commits on no remote and not on the hub.<br><br>` +
+        (pv.can_stash ? `<b>stash</b> pushes it to the hub as stash/&lt;card&gt;/&lt;branch&gt;, then removes it. ` : "") +
+        `<b>delete</b> removes it, and the work is gone.`,
+      buttons,
+      rememberKey: CLEANUP_ASK_KEY,
+      rememberLabel: "never show me this again, just delete"
+    });
+    if (ans === null) return;
+    // askUser stored the tick on any answer but a cancel. Only a delete may leave it standing.
+    if (ans !== "delete") skipConfirm(CLEANUP_ASK_KEY, false);
+    answers[String(a.seq)] = ans;
+  }
+  try {
+    const out = await api(`/v1/tasks/${encodeURIComponent(id)}/close`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ confirm: true, answers })
+    });
+    const said = [];
+    (out.stashes || []).forEach(s => said.push("stashed " + s.branch));
+    if (out.left) said.push(out.left + " left on the card");
+    (out.warnings || []).forEach(w => said.push(w));
+    toast("cleaned up " + title, said.join(". "));
+  } catch (e) {
+    toast("could not clean up", e.message);
+  }
+  refresh();
+}
+
 // The open card, forgotten. Closes the dialog first: leaving it up over a card
 // that no longer exists means every control in it now edits nothing.
 async function forgetCurrent() {

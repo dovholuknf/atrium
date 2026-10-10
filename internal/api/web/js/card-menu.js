@@ -574,7 +574,9 @@ function isShellRunner(h) {
 // unfiling means removing it. The write is the same shape as any other tag
 // edit, which is why the toggle reads from `t.tags` and patches the whole
 // set.
-function groupItem(id, t) {
+// `terms` is the terminals tab menu, which says "add to group" and "remove from group". The board's own menu keeps its
+// wording until its interview.
+function groupItem(id, t, terms) {
   if (typeof groupingPrefs !== "function") return null;
   const p = groupingPrefs();
   if (p.mode !== "custom") return null;
@@ -582,7 +584,7 @@ function groupItem(id, t) {
   if (!groups.length) return null;
   const mine = new Set(t.tags || []);
   return {
-    label: "into group",
+    label: terms ? "add to group" : "into group",
     help: "Files this card into one of your named buckets. It is the same as " +
       "putting the group's tag on the card.",
     sub: groups.map(name => ({
@@ -601,7 +603,7 @@ function groupItem(id, t) {
 // unfiles by pressing a ticked group a second time, and nobody reads a tick in
 // a flyout called "into" as the way out, so the way out had no name. One group
 // is one entry. Several open a flyout of just the ones the card is in.
-function outOfGroupItem(id, t) {
+function outOfGroupItem(id, t, terms) {
   if (typeof groupingPrefs !== "function") return null;
   const p = groupingPrefs();
   if (p.mode !== "custom") return null;
@@ -610,6 +612,11 @@ function outOfGroupItem(id, t) {
   if (!inside.length) return null;
   const out = name => () => patchTask(id, { tags: tags.filter(x => x !== name) }).then(refresh);
   const help = "Takes the group's tag off this card. Nothing else about the card changes.";
+  if (terms) {
+    return inside.length === 1
+      ? { label: "remove from group", help, act: out(inside[0]) }
+      : { label: "remove from group", help, sub: inside.map(name => ({ label: name, act: out(name) })) };
+  }
   if (inside.length === 1) return { label: "out of " + inside[0], help, act: out(inside[0]) };
   return { label: "out of group", help, sub: inside.map(name => ({ label: name, act: out(name) })) };
 }
