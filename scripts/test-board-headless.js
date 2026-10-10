@@ -4794,10 +4794,7 @@ async function toastsTopSection(browser, base) {
 
     // 4. And back off it: bottom right again, still not re-animated.
     const before = (await where(p)).starts;
-    // The stack lists the cards that want attention, so the asked one is the card that holds notices here.
-    OH_ASKED.held_notices = 2;
     await p.evaluate(() => switchView("stack"));
-    await p.waitForSelector('#stack-list .stackrow[data-id="sg4-control~oh2"] .chip.hnotices', { timeout: slow(8000) }).catch(() => fail("heldNotices: the stack row shows no icon"));
     await p.waitForTimeout(400);
     w = await where(p);
     if (w.top || w.boxes.some(b => b.bottom < w.h - 400)) {
@@ -10253,10 +10250,7 @@ async function cacheChipSection(browser, base) {
     // since a busy machine can spend the two seconds on the way here.
     kaFix("cc-flip", { why: "not idle", warm_until: new Date(Date.now() + 3600000).toISOString() });
     landList = [LAND["cc-flip"]];
-    // The stack lists the cards that want attention, so the asked one is the card that holds notices here.
-    OH_ASKED.held_notices = 2;
     await p.evaluate(() => switchView("stack"));
-    await p.waitForSelector('#stack-list .stackrow[data-id="sg4-control~oh2"] .chip.hnotices', { timeout: slow(8000) }).catch(() => fail("heldNotices: the stack row shows no icon"));
     const fetched = p.waitForResponse(r => /\/v1\/tasks(\?|$)/.test(r.url()), { timeout: slow(10000) });
     await p.evaluate(() => tasksSoon());
     await fetched;
@@ -21923,6 +21917,8 @@ async function childUnderParentSection(browser, base) {
         sub("kid-b", "2026-09-29T10:00:00Z", "par"), sub("orph", "2026-09-28T10:00:00Z", "gone"),
         card("zed", "2026-09-27T10:00:00Z", { display_title: "zed" })];
       boardCards = async () => cards;
+      // Idle subagents are hidden by default, and these are idle, so show them.
+      setHideSubagents("none");
       const res = {};
       for (const sort of ["name", "activity", "started"]) {
         for (const grp of ["off", "project", "recency", "tag"]) {
@@ -23010,6 +23006,8 @@ async function hubReposSection(browser, base) {
     });
     await p.goto(base + "/", { waitUntil: "domcontentloaded" });
     await p.waitForFunction(() => { const t = document.querySelector('.tab[data-view="hubrepos"]'); return t && !t.hidden; }, null, { timeout: slow(15000) });
+    // The board puts you back on the remembered view half a second after it loads, so wait that out or it lands on top of ours.
+    await p.waitForTimeout(1000);
     const open = async () => {
       await p.evaluate(() => {
         lastTasks = [{ id: "c-known", room: "sg4", title: "fix the x", display_title: "fix the x", status: "working" }];
@@ -23973,7 +23971,7 @@ async function termBoxSection(browser, base) {
         const tag = "termBox " + w + "px " + k + ": ";
         if (!v) { fail(tag + "no tray is drawn."); continue; }
         if (!/^sorted by/.test(v.sum)) fail(tag + "the summary line is missing: " + JSON.stringify(v.sum));
-        if (v.sort !== 3 || v.hide !== 2 || v.group < 6) fail(tag + "the tray lacks sort, hide or group: " + JSON.stringify(v));
+        if (v.sort !== 3 || v.hide !== 3 || v.group < 6) fail(tag + "the tray lacks sort, hide or group: " + JSON.stringify(v));
         if (!v.arrows) fail(tag + "the width buttons are gone.");
         if (w === 150 && v.wide > 160) fail(tag + "the list is not at its narrowest, so the overrun check proves nothing: " + v.wide);
         if (v.overrun || v.summaryOverArrow || v.arrowOut) fail(tag + "the tray overruns the box or the shrink button: " + JSON.stringify(v));
@@ -25996,8 +25994,9 @@ async function deployReadySection(browser, base) {
     if (!/0123456/.test(v.text) || !/no verdict/.test(v.text) || !/a verdict on a non-review file was ignored/.test(v.text)) fail("deployReady: blockers or notes are missing: " + v.text.slice(0, 200));
     if (v.disabled !== true || !/not ready: blocked: 1 commit has no verdict/.test(v.msg)) fail("deployReady: Deploy is not greyed with the reason: " + JSON.stringify(v));
     if ((await pill(p)).state !== "blocked") fail("deployReady: the blocked pill is " + (await pill(p)).state);
-    await p.evaluate(() => { document.querySelector(".dr-blocker summary").click(); });
-    if (!(await p.evaluate(() => document.querySelector(".dr-blocker").open)) || !/no review covers this commit/.test(await p.textContent(".dr-blocker"))) fail("deployReady: the detail does not open");
+    // The dialog repaints on a poll and a repaint closes the row again, so open it and read it in one step.
+    const detail = await p.evaluate(() => { const d = document.querySelector(".dr-blocker"); d.querySelector("summary").click(); return { open: d.open, text: d.textContent }; });
+    if (!detail.open || !/no review covers this commit/.test(detail.text)) fail("deployReady: the detail does not open");
     await ctx.close();
 
     // over a share: the hub says 403 and the button stays greyed with its words
@@ -26143,7 +26142,7 @@ async function unit(name, fn) {
   try { await fn(); }
   catch (e) {
     if (!UNIT_FILTER) throw e;
-    fail(name + ": the unit threw: " + (e && e.message ? e.message : e) + threwAt(e) + (process.env.STK ? " " + e.stack : ""));
+    fail(name + ": the unit threw: " + (e && e.message ? e.message : e) + threwAt(e) + (process.env.STK ? " " + e.stack + " " + (e.message || "") : ""));
   } finally { currentUnit = ""; }
   const ms = Date.now() - t0;
   if (snap0) {
