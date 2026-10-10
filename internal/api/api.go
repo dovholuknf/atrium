@@ -174,6 +174,8 @@ type Server struct {
 	RoomPeers http.HandlerFunc
 	// TaskSays lists the says a card sent or received, `GET /v1/tasks/{id}/says`.
 	TaskSays http.HandlerFunc
+	// Says lists every say the room recorded, `GET /v1/says`.
+	Says http.HandlerFunc
 	// RoomCard and RoomExit read and exit a card on another room by address,
 	// `name@room` or `room~id`, through the same relay.
 	RoomCard http.HandlerFunc
@@ -757,6 +759,9 @@ func (s *Server) Handler() http.Handler {
 	}
 	if s.TaskSays != nil {
 		mux.HandleFunc("GET /v1/tasks/{id}/says", s.TaskSays)
+	}
+	if s.Says != nil {
+		mux.HandleFunc("GET /v1/says", s.Says)
 	}
 	if s.RoomPeers != nil {
 		mux.HandleFunc("GET /v1/peers/rooms", s.RoomPeers)

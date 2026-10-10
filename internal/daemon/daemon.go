@@ -457,6 +457,7 @@ func New(opts Options) (*Daemon, error) {
 	d.ap.Say = d.handleSay
 	d.ap.Move = d.moveHandler()
 	d.ap.TaskSays = d.handleTaskSays
+	d.ap.Says = d.handleSays
 	d.ap.RoomPeers = d.handleRoomPeers
 	d.ap.RoomCard = d.handleRoomCard
 	d.ap.RoomExit = d.handleRoomExit

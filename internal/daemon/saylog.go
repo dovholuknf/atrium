@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/dovholuknf/atrium/internal/store"
 )
@@ -197,6 +198,37 @@ func (d *Daemon) writeMissNote(w http.ResponseWriter, from, name, door, text, wh
 func (d *Daemon) handleTaskSays(w http.ResponseWriter, r *http.Request) {
 	const page = 20
 	rows, err := d.st.SaysBefore(r.PathValue("id"), r.URL.Query().Get("before"), page+1)
+	if err != nil {
+		writeJSONErr(w, http.StatusInternalServerError, err)
+		return
+	}
+	more := len(rows) > page
+	if more {
+		rows = rows[:page]
+	}
+	if rows == nil {
+		rows = []store.Say{}
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]any{"says": rows, "more": more})
+}
+
+// handleSays is `GET /v1/says`: handleTaskSays without the card, so every say this room recorded, newest first, 20 a
+// page, with `before` and `more` the same way. `from` and `to` each take a wire name or a card id, `agent` either end
+// the same way, `state` one state, and `since` an RFC3339 time. Through the hub with several rooms attached it is merged there, see link/says.go.
+func (d *Daemon) handleSays(w http.ResponseWriter, r *http.Request) {
+	const page = 20
+	q := r.URL.Query()
+	f := store.SayFilter{Agent: q.Get("agent"), From: q.Get("from"), To: q.Get("to"), State: q.Get("state")}
+	if v := q.Get("since"); v != "" {
+		t, err := time.Parse(time.RFC3339, v)
+		if err != nil {
+			writeJSONErr(w, http.StatusBadRequest, err)
+			return
+		}
+		f.Since = t.UTC().Format(store.TimeFormat)
+	}
+	rows, err := d.st.SaysWhere(f, q.Get("before"), page+1)
 	if err != nil {
 		writeJSONErr(w, http.StatusInternalServerError, err)
 		return

@@ -341,7 +341,7 @@ function firstSeen(iso) {
 
 const isWaiting = (t) => (t.status === "needs-input" || t.status === "needs-permission") && !agentIdle(t);
 
-const VIEWS = ["board", "stack", "perms", "runners", "terms", "history", "usage", "audit", "pulls", "hubrepos", "backlog"];
+const VIEWS = ["board", "stack", "perms", "runners", "terms", "history", "usage", "audit", "chatter", "pulls", "hubrepos", "backlog"];
 
 // BACK AND FORWARD, over the board's own moves.
 //
@@ -450,6 +450,8 @@ function switchView(name) {
   // worth polling while you are reading something else. It also refreshes on an
   // `audit` delta and on stream reconnect. See js/audit.js.
   if (name === "audit" && typeof loadAudit === "function") loadAudit();
+  // Read on the way in and on `more`, never polled and not live. See js/chatter.js.
+  if (name === "chatter" && typeof loadChatter === "function") loadChatter(false);
   // Read once. The rows are kept current by `pr` events and by the stream reopening. See js/pulls.js.
   if (name === "pulls" && typeof loadPulls === "function" && !pulls.loaded) loadPulls();
   // Read when you go there, and on its refresh button. No stream event. See js/hubrepos.js.

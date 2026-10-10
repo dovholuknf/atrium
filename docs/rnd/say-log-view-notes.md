@@ -9,7 +9,22 @@
 - Only the room's own card is read, so a say to or from a card on another room appears on both rooms' cards only if
   each room recorded it. Nothing was added to the hub.
 
-## Phase 2, the all-cards view, would need
+## Phase 2 landed (u-say-log-view-all)
+
+- Room: `GET /v1/says`, the card clause dropped from the same query (`SaysWhere`). Filters `from`, `to`, `agent` (either
+  end), `state` and `since`, each name a wire name or a card id. Twenty a page, `before` and `more` as before.
+- Hub (`internal/link/says.go`): asks every attached room for one page from its own position, merges by `sent_at` and
+  cuts 20. The `cursor` it answers is base64 of `{room: last id shown}`, `-` for a room with nothing further back. A
+  room that did not answer keeps its position and is named in `missing`. Rows gain `room` and `room~id` on `id`,
+  `from_task` and `to_task`. `room` narrows the rooms asked, and a `room~id` in `from`, `to` or `agent` asks only that
+  room and arrives bare.
+- Board: the chatter tab (`js/chatter.js`), read on open and on `more` and not live.
+- Retention is unchanged: 30 days and 2000 rows per room, so the view is that much history and no more. A hub with
+  several rooms shows up to 2000 per room.
+- Not done: a way to follow one conversation (a pair of cards) across both directions. The agent filter with sent or
+  received is the closest.
+
+## Phase 2, the all-cards view, would have needed
 
 - An endpoint that is not scoped to one card: `GET /v1/says` with the same `before` cursor and a `from`, `to` and
   `state` filter. The store query is `SaysBefore` without the card clause.

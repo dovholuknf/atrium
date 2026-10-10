@@ -734,6 +734,11 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			p.history(w, r)
 			return
 		}
+		// Every room's says, merged by time and paged with a cursor per room. See says.go.
+		if r.URL.Path == "/v1/says" && r.Method == http.MethodGet && len(p.hub.Rooms()) > 0 {
+			p.says(w, r)
+			return
+		}
 		// THE BOARD SKIN IS THE HUB'S IN THE ALL VIEW, not borrowed from a room.
 		// Read gives the hub's skin over the borrowed settings; a skin-only save
 		// lands on the hub rather than being refused for want of a room. Anything
