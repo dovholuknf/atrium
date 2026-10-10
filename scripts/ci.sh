@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
 # Everything CI runs, in one file you can run yourself.
 #
-#   scripts/ci.sh               unit tests only
-#   scripts/ci.sh integration   unit and integration tests
+#   scripts/ci.sh
 #
 # THE WORKFLOW CONTAINS NO LOGIC. `.github/workflows/ci.yml` checks out the
 # code, installs Go and node, and calls this. That is the whole rule and the
@@ -110,12 +109,8 @@ step "go test"
 # a package that died without a failing test (a timeout's panic names the
 # tests still running), and the slowest tests. The raw stream is kept whole.
 started=$(date +%s)
-# Unit tests only. The integration tests run when asked for: `bash scripts/ci.sh integration` here, or the
-# `integration` box on a manual run of the workflow. See scripts/test.sh.
-tests="unit"
-[ "${1:-}" = "integration" ] && tests="all"
-echo "tests: $tests"
-bash scripts/test.sh "$tests" -json -p "$cpus" -timeout 20m 2>&1 \
+# ALL the tests, unit and integration. CI is the only place the integration tests run. See scripts/test.sh.
+bash scripts/test.sh all -json -p "$cpus" -timeout 20m 2>&1 \
   | tee "$artefacts/go-test.json" \
   | go run scripts/ci-report.go -dir "$artefacts"
 codes=("${PIPESTATUS[@]}")
