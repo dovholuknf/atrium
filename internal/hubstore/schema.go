@@ -511,6 +511,39 @@ var migrations = []struct {
 				)`,
 		},
 	},
+	{
+		// A BACKLOG ITEM'S PRIORITY IS ONE OF high, medium, low OR '' (unset), by CHECK. It was free text. SQLite cannot
+		// add a CHECK in place, so backlog_item is rebuilt, the way the room store's 0010 and 0014 do it. Nothing
+		// references backlog_item, so the DROP cascades to nothing. The old text is folded to lower case and trimmed
+		// as it is copied: high, medium and low stay, anything else (blank, `p2`, `urgent`) becomes unset.
+		name: "0014_backlog_priority",
+		stmts: []string{
+			`DROP TABLE IF EXISTS backlog_item_rebuilt`,
+			`CREATE TABLE backlog_item_rebuilt (
+				id          TEXT PRIMARY KEY,
+				dept        TEXT NOT NULL,
+				title       TEXT NOT NULL,
+				body        TEXT NOT NULL DEFAULT '',
+				priority    TEXT NOT NULL DEFAULT '' CHECK (priority IN ('','high','medium','low')),
+				status      TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open','held','in-progress','built','blocked','incomplete','done','dropped')),
+				card        TEXT NOT NULL DEFAULT '',
+				filed_by    TEXT NOT NULL DEFAULT '',
+				filed_room  TEXT NOT NULL DEFAULT '',
+				created_at  TEXT NOT NULL,
+				changed_at  TEXT NOT NULL,
+				changed_by  TEXT NOT NULL DEFAULT ''
+			)`,
+			`INSERT INTO backlog_item_rebuilt (id, dept, title, body, priority, status, card, filed_by, filed_room,
+					created_at, changed_at, changed_by)
+				SELECT id, dept, title, body,
+					CASE WHEN LOWER(TRIM(priority)) IN ('high','medium','low') THEN LOWER(TRIM(priority)) ELSE '' END,
+					status, card, filed_by, filed_room, created_at, changed_at, changed_by
+				FROM backlog_item`,
+			`DROP TABLE backlog_item`,
+			`ALTER TABLE backlog_item_rebuilt RENAME TO backlog_item`,
+			`CREATE INDEX IF NOT EXISTS backlog_item_dept ON backlog_item (dept, status)`,
+		},
+	},
 }
 
 func (s *Store) migrate() error {

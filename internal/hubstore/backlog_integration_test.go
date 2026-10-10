@@ -4,6 +4,7 @@ package hubstore
 
 import (
 	"errors"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -204,5 +205,89 @@ func TestACardsReportMovesTheItemLinkedToIt(t *testing.T) {
 	}
 	if g, _ := s.ItemGet("f-2"); g.Status != ItemOpen {
 		t.Errorf("another item moved: %+v", g)
+	}
+}
+
+func TestPriorityIsHighMediumLowOrUnsetAndFoldsCase(t *testing.T) {
+	s := open(t)
+	for in, want := range map[string]string{"HIGH": "high", " Medium ": "medium", "low": "low", "": "", "unset": ""} {
+		n := newItem("p-"+strings.ReplaceAll(strings.ToLower(strings.TrimSpace(in)), " ", "")+"x", "fabric")
+		n.Priority = in
+		b, err := s.ItemFile(n)
+		if err != nil || b.Priority != want {
+			t.Errorf("file %q: %+v %v", in, b, err)
+		}
+	}
+	for _, bad := range []string{"p2", "urgent", "highest"} {
+		n := newItem("bad", "fabric")
+		n.Priority = bad
+		_, err := s.ItemFile(n)
+		if err == nil || !IsRefusal(err) || !strings.Contains(err.Error(), "high, medium, low") {
+			t.Errorf("%q: %v", bad, err)
+		}
+	}
+}
+
+func TestItemSetPriorityAndFilter(t *testing.T) {
+	s := open(t)
+	_, _ = s.ItemFile(newItem("a", "fabric"))
+	n := newItem("b", "fabric")
+	n.Priority = ""
+	_, _ = s.ItemFile(n)
+	b, err := s.ItemSetPriority("b", "Low", "orch@sg4")
+	if err != nil || b.Priority != "low" || b.ChangedBy != "orch@sg4" {
+		t.Fatalf("set: %+v %v", b, err)
+	}
+	if b, err = s.ItemSetPriority("b", "unset", "x"); err != nil || b.Priority != "" {
+		t.Fatalf("unset: %+v %v", b, err)
+	}
+	if _, err := s.ItemSetPriority("b", "p1", "x"); err == nil || !strings.Contains(err.Error(), "high, medium, low") {
+		t.Fatalf("bogus priority: %v", err)
+	}
+	if _, err := s.ItemSetPriority("nope", "high", "x"); !errors.Is(err, ErrItemNotFound) {
+		t.Fatalf("missing: %v", err)
+	}
+	hi, _ := s.ItemList(ItemFilter{Priority: "high"})
+	un, _ := s.ItemList(ItemFilter{Priority: "unset"})
+	if len(hi) != 1 || hi[0].ID != "a" || len(un) != 1 || un[0].ID != "b" {
+		t.Fatalf("filters: %+v %+v", hi, un)
+	}
+}
+
+func TestPriorityMigrationNormalisesExistingRows(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "hub.db")
+	s, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Put the table back to how 0012 left it: free text, no CHECK.
+	for _, q := range []string{
+		`DROP TABLE backlog_item`,
+		`CREATE TABLE backlog_item (id TEXT PRIMARY KEY, dept TEXT NOT NULL, title TEXT NOT NULL, body TEXT NOT NULL DEFAULT '',
+			priority TEXT NOT NULL DEFAULT '', status TEXT NOT NULL DEFAULT 'open', card TEXT NOT NULL DEFAULT '',
+			filed_by TEXT NOT NULL DEFAULT '', filed_room TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL,
+			changed_at TEXT NOT NULL, changed_by TEXT NOT NULL DEFAULT '')`,
+		`INSERT INTO backlog_item (id, dept, title, priority, created_at, changed_at) VALUES
+			('a','fabric','t','HIGH','x','x'), ('b','fabric','t','','x','x'), ('c','fabric','t','Medium','x','x'),
+			('d','fabric','t','p2','x','x'), ('e','fabric','t',' low ','x','x')`,
+		`DELETE FROM schema_migration WHERE name = '0014_backlog_priority'`,
+	} {
+		if _, err := s.db.Exec(q); err != nil {
+			t.Fatal(err)
+		}
+	}
+	s.Close()
+	s, err = Open(path)
+	if err != nil {
+		t.Fatalf("reopening a database from before 0014: %v", err)
+	}
+	defer s.Close()
+	for id, want := range map[string]string{"a": "high", "b": "", "c": "medium", "d": "", "e": "low"} {
+		if b, err := s.ItemGet(id); err != nil || b.Priority != want {
+			t.Errorf("%s: %+v %v", id, b, err)
+		}
+	}
+	if _, err := s.db.Exec(`UPDATE backlog_item SET priority = 'HIGH' WHERE id = 'a'`); err == nil {
+		t.Error("the CHECK constraint is not there")
 	}
 }

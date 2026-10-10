@@ -22,19 +22,21 @@ const backlogToolDesc = "The backlog, kept on the hub, so a director on any room
 	"An item's id is the one you give, like `f-new-thing` or `r-037`, and is never reused. A department is " +
 	"like `fabric`. Status is `open`, `held`, `in-progress`, `done` or `dropped`.\n\n" +
 	"action is one of:\n" +
-	"- `list {dept?, status?, open?}`: items without their bodies. `open` leaves out done and dropped.\n" +
+	"- `list {dept?, status?, priority?, open?}`: items without their bodies. `open` leaves out done and dropped. " +
+	"`priority` is `high`, `medium`, `low` or `unset`.\n" +
 	"- `get {id}`: one item with its body.\n" +
 	"- `file {id?, dept, title, body?, priority?}`: file one. An id that is taken is refused, and the item that " +
-	"holds it is returned.\n" +
-	"- `status {id, status}`: change the status."
+	"holds it is returned. Priority is `high`, `medium`, `low` or left out for unset: anything else is refused.\n" +
+	"- `status {id, status}`: change the status.\n" +
+	"- `priority {id, priority}`: change the priority to `high`, `medium`, `low` or `unset`."
 
 type backlogInput struct {
-	Action   string `json:"action" jsonschema:"list, get, file or status"`
+	Action   string `json:"action" jsonschema:"list, get, file, status or priority"`
 	ID       string `json:"id,omitempty" jsonschema:"the item id, for get and status, and for file when you choose it"`
 	Dept     string `json:"dept,omitempty" jsonschema:"the department, for file, and to narrow a list"`
 	Title    string `json:"title,omitempty" jsonschema:"for file: one line"`
 	Body     string `json:"body,omitempty" jsonschema:"for file: the item, markdown"`
-	Priority string `json:"priority,omitempty" jsonschema:"for file: HIGH, MEDIUM or the like"`
+	Priority string `json:"priority,omitempty" jsonschema:"high, medium or low (unset for none). for file, priority, and to narrow a list"`
 	Status   string `json:"status,omitempty" jsonschema:"for status: open, held, in-progress, done or dropped. for list: only that status"`
 	Open     bool   `json:"open,omitempty" jsonschema:"for list: leave out done and dropped"`
 }
@@ -97,6 +99,9 @@ func (c *controlMCP) backlogHandler(ctx context.Context, req *mcp.CallToolReques
 		if in.Status != "" {
 			q.Set("status", in.Status)
 		}
+		if p := strings.TrimSpace(in.Priority); p != "" {
+			q.Set("priority", p)
+		}
 		if in.Open {
 			q.Set("open", "1")
 		}
@@ -140,8 +145,20 @@ func (c *controlMCP) backlogHandler(ctx context.Context, req *mcp.CallToolReques
 		}
 		out.Item = &b
 		return nil, out, nil
+	case "priority":
+		if id == "" || strings.TrimSpace(in.Priority) == "" {
+			return nil, out, &refusedError{"priority needs id and priority (" + hubstore.PriorityWords + ", say unset for none)"}
+		}
+		var b hubstore.BacklogItem
+		err := c.ask(ctx, http.MethodPost, "/_hub/backlog/"+url.PathEscape(id), "", map[string]any{
+			"priority": in.Priority, "by": callerName(req)}, &b)
+		if err != nil {
+			return nil, out, err
+		}
+		out.Item = &b
+		return nil, out, nil
 	}
-	return nil, out, &refusedError{fmt.Sprintf("action %q is not one of list, get, file, status", in.Action)}
+	return nil, out, &refusedError{fmt.Sprintf("action %q is not one of list, get, file, status, priority", in.Action)}
 }
 
 func (c *controlMCP) reportsHandler(ctx context.Context, req *mcp.CallToolRequest, in reportsInput) (

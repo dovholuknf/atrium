@@ -261,3 +261,58 @@ func TestALaunchTagLinksTheItemAndTheReportFollowsIt(t *testing.T) {
 		t.Errorf("after the done report: %+v", out.Item)
 	}
 }
+
+func TestBacklogPriorityOverHTTPAndTool(t *testing.T) {
+	x := newBacklogRig(t)
+	srv := httptest.NewServer(x.p)
+	t.Cleanup(srv.Close)
+	c := &controlMCP{board: srv.URL, client: srv.Client()}
+	ctx := context.Background()
+
+	if code, body := x.send("POST", "/_hub/backlog", js(map[string]any{"id": "a", "dept": "fabric", "title": "t",
+		"priority": "HIGH"}), loopAddr); code != http.StatusCreated || str(obj(t, body), "priority") != "high" {
+		t.Fatalf("file HIGH: %d %s", code, body)
+	}
+	code, body := x.send("POST", "/_hub/backlog", js(map[string]any{"id": "b", "dept": "fabric", "title": "t",
+		"priority": "urgent"}), loopAddr)
+	if code != http.StatusBadRequest || !strings.Contains(body, "high, medium, low") {
+		t.Fatalf("file urgent: %d %s", code, body)
+	}
+	x.send("POST", "/_hub/backlog", js(map[string]any{"id": "b", "dept": "fabric", "title": "t"}), loopAddr)
+	if code, body = x.send("POST", "/_hub/backlog/b", `{"priority":"Low","by":"o@sg4"}`, loopAddr); code != 200 ||
+		str(obj(t, body), "priority") != "low" {
+		t.Fatalf("set: %d %s", code, body)
+	}
+	x.sawEvent(t, "backlog")
+	if code, body = x.send("POST", "/_hub/backlog/b", `{"priority":"p1"}`, loopAddr); code != http.StatusBadRequest ||
+		!strings.Contains(body, "high, medium, low") {
+		t.Fatalf("bad priority: %d %s", code, body)
+	}
+	if code, _ = x.send("POST", "/_hub/backlog/b", `{"priority":"high"}`, "203.0.113.9:4000"); code != http.StatusForbidden {
+		t.Fatalf("a priority change from another machine: %d", code)
+	}
+	if code, body = x.send("GET", "/_hub/backlog?priority=low", "", loopAddr); code != 200 || !strings.Contains(body, `"b"`) ||
+		strings.Contains(body, `"a"`) {
+		t.Fatalf("filter: %d %s", code, body)
+	}
+	if code, _ = x.send("GET", "/_hub/backlog?priority=urgent", "", loopAddr); code != http.StatusBadRequest {
+		t.Fatalf("filter by a bad priority: %d", code)
+	}
+
+	_, out, err := c.backlogHandler(ctx, nil, backlogInput{Action: "priority", ID: "a", Priority: "medium"})
+	if err != nil || out.Item == nil || out.Item.Priority != "medium" {
+		t.Fatalf("tool: %+v %v", out, err)
+	}
+	_, out, err = c.backlogHandler(ctx, nil, backlogInput{Action: "priority", ID: "a", Priority: "unset"})
+	if err != nil || out.Item == nil || out.Item.Priority != "" {
+		t.Fatalf("tool unset: %+v %v", out, err)
+	}
+	if _, _, err = c.backlogHandler(ctx, nil, backlogInput{Action: "priority", ID: "a", Priority: "urgent"}); err == nil ||
+		!strings.Contains(err.Error(), "high, medium, low") {
+		t.Fatalf("tool bad priority: %v", err)
+	}
+	if _, _, err = c.backlogHandler(ctx, nil, backlogInput{Action: "file", ID: "z", Dept: "fabric", Title: "t",
+		Priority: "urgent"}); err == nil || !strings.Contains(err.Error(), "high, medium, low") {
+		t.Fatalf("tool file bad priority: %v", err)
+	}
+}

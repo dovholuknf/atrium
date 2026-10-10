@@ -58,6 +58,32 @@ func ValidItemStatus(s string) bool {
 	return false
 }
 
+// The priorities, as the CHECK constraint spells them. Unset is the empty string.
+const (
+	PrioHigh   = "high"
+	PrioMedium = "medium"
+	PrioLow    = "low"
+)
+
+// PriorityWords is what a refusal lists.
+const PriorityWords = "high, medium, low, or unset (empty)"
+
+// NormPriority folds what a caller typed to a priority, and says whether it is one. Case and surrounding space are
+// forgiven (HIGH is high), and "unset" and "none" are the empty priority.
+func NormPriority(s string) (string, bool) {
+	switch p := strings.ToLower(strings.TrimSpace(s)); p {
+	case PrioHigh, PrioMedium, PrioLow, "":
+		return p, true
+	case "unset", "none":
+		return "", true
+	}
+	return "", false
+}
+
+func priorityRefusal(s string) error {
+	return refuse(fmt.Errorf("priority %q is not allowed: it is %s", s, PriorityWords))
+}
+
 // BacklogItem is one row, as the API carries it.
 type BacklogItem struct {
 	ID        string `json:"id"`
@@ -89,16 +115,14 @@ func (n ItemNew) Check() string {
 		return "a department is lower case letters and dashes, like fabric"
 	case strings.TrimSpace(n.Title) == "":
 		return "an item needs a title"
-	case len([]rune(n.Priority)) > ItemMaxPrio:
-		return fmt.Sprintf("the priority is over %d characters", ItemMaxPrio)
+	}
+	if _, ok := NormPriority(n.Priority); !ok {
+		return priorityRefusal(n.Priority).Error()
 	}
 	if why := CRText("title", n.Title, ItemTitleMax, false); why != "" {
 		return why
 	}
 	if why := CRText("body", n.Body, ItemBodyMax, true); why != "" {
-		return why
-	}
-	if why := CRText("priority", n.Priority, ItemMaxPrio, false); why != "" {
 		return why
 	}
 	if why := CRText("filer", n.FiledBy, backlogByMax, false); why != "" {
@@ -124,6 +148,7 @@ func (s *Store) ItemFile(in ItemNew) (BacklogItem, error) {
 		return BacklogItem{}, refuse(errors.New(why))
 	}
 	at := ts(now())
+	in.Priority, _ = NormPriority(in.Priority)
 	var out BacklogItem
 	err := s.tx(func(t *sql.Tx) error {
 		out = BacklogItem{}
@@ -173,7 +198,9 @@ func (s *Store) ItemGet(id string) (BacklogItem, error) {
 // place of Status.
 type ItemFilter struct {
 	Dept, Status string
-	Open         bool
+	// Priority is one of high, medium, low, or "unset" for the items with none.
+	Priority string
+	Open     bool
 }
 
 // ItemList is the items that match, grouped by department and in the order they were filed.
@@ -184,6 +211,10 @@ func (s *Store) ItemList(f ItemFilter) ([]BacklogItem, error) {
 		where, args := []string{"1 = 1"}, []any{}
 		if f.Dept != "" {
 			where, args = append(where, "dept = ?"), append(args, f.Dept)
+		}
+		if f.Priority != "" {
+			p, _ := NormPriority(f.Priority)
+			where, args = append(where, "priority = ?"), append(args, p)
 		}
 		switch {
 		case f.Open:
@@ -221,6 +252,34 @@ func (s *Store) ItemSetStatus(id, status, by string) (BacklogItem, error) {
 	err := s.tx(func(t *sql.Tx) error {
 		res, err := t.Exec(`UPDATE backlog_item SET status = ?, changed_at = ?, changed_by = ? WHERE id = ?`,
 			status, ts(now()), by, id)
+		if err != nil {
+			return err
+		}
+		if n, _ := res.RowsAffected(); n == 0 {
+			return refuse(ErrItemNotFound)
+		}
+		out, err = scanItem(t.QueryRow(`SELECT `+itemCols+` FROM backlog_item WHERE id = ?`, id))
+		return err
+	})
+	if errors.Is(err, ErrItemNotFound) {
+		return BacklogItem{}, ErrItemNotFound
+	}
+	return out, err
+}
+
+// ItemSetPriority changes an item's priority and says who did. An empty priority makes it unset.
+func (s *Store) ItemSetPriority(id, priority, by string) (BacklogItem, error) {
+	p, ok := NormPriority(priority)
+	if !ok {
+		return BacklogItem{}, priorityRefusal(priority)
+	}
+	if why := CRText("changer", by, backlogByMax, false); why != "" {
+		return BacklogItem{}, refuse(errors.New(why))
+	}
+	var out BacklogItem
+	err := s.tx(func(t *sql.Tx) error {
+		res, err := t.Exec(`UPDATE backlog_item SET priority = ?, changed_at = ?, changed_by = ? WHERE id = ?`,
+			p, ts(now()), by, id)
 		if err != nil {
 			return err
 		}

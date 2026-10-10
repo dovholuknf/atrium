@@ -77,18 +77,18 @@ func backlogCmd() *cobra.Command {
 	var board string
 	c := &cobra.Command{
 		Use:   "backlog",
-		Short: "The hub's backlog: list, show, file, status, import",
+		Short: "The hub's backlog: list, show, file, status, priority, import",
 		Long: "The backlog items every room reads and writes through the hub. Filing and changing a status work only\n" +
 			"from the machine the hub runs on.",
 	}
 	boardFlag(c, &board)
 	c.AddCommand(backlogListCmd(&board), backlogShowCmd(&board), backlogFileCmd(&board), backlogStatusCmd(&board),
-		backlogImportCmd(&board))
+		backlogPriorityCmd(&board), backlogImportCmd(&board))
 	return c
 }
 
 func backlogListCmd(board *string) *cobra.Command {
-	var dept, status string
+	var dept, status, priority string
 	var all bool
 	c := &cobra.Command{
 		Use:   "list",
@@ -98,6 +98,9 @@ func backlogListCmd(board *string) *cobra.Command {
 			q := url.Values{}
 			if dept != "" {
 				q.Set("dept", dept)
+			}
+			if priority != "" {
+				q.Set("priority", priority)
 			}
 			if status != "" {
 				q.Set("status", status)
@@ -115,13 +118,14 @@ func backlogListCmd(board *string) *cobra.Command {
 				fmt.Fprintln(w, "no items")
 			}
 			for _, b := range out.Items {
-				fmt.Fprintf(w, "%-12s %-10s %-6s %-40s %s\n", b.Status, b.Dept, b.Priority, b.ID, b.Title)
+				fmt.Fprintf(w, "%-12s %-10s %-6s %-40s %s\n", b.Status, b.Dept, orDefault(b.Priority, "-"), b.ID, b.Title)
 			}
 			return nil
 		},
 	}
 	c.Flags().StringVar(&dept, "dept", "", "only this department")
 	c.Flags().StringVar(&status, "status", "", "only this status: open, held, in-progress, built, blocked, incomplete, done or dropped")
+	c.Flags().StringVar(&priority, "priority", "", "only this priority: high, medium, low or unset")
 	c.Flags().BoolVar(&all, "all", false, "every status, not just the open ones")
 	return c
 }
@@ -180,7 +184,7 @@ func backlogFileCmd(board *string) *cobra.Command {
 	c.Flags().StringVar(&dept, "dept", "", "the department that owns it, like fabric")
 	c.Flags().StringVar(&title, "title", "", "one line")
 	c.Flags().StringVar(&body, "body", "", "the words, or - for stdin")
-	c.Flags().StringVar(&priority, "priority", "", "optional, like p2")
+	c.Flags().StringVar(&priority, "priority", "", "optional: high, medium or low")
 	_ = c.MarkFlagRequired("dept")
 	_ = c.MarkFlagRequired("title")
 	return c
@@ -200,6 +204,29 @@ func backlogStatusCmd(board *string) *cobra.Command {
 				return err
 			}
 			fmt.Fprintf(cmd.OutOrStdout(), "%s is now %s\n", b.ID, b.Status)
+			return nil
+		},
+	}
+}
+
+func backlogPriorityCmd(board *string) *cobra.Command {
+	return &cobra.Command{
+		Use:   "priority <id> <high|medium|low|unset>",
+		Short: "Change an item's priority",
+		Args:  cobra.ExactArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			by, _ := backlogFiler()
+			p := args[1]
+			if strings.EqualFold(strings.TrimSpace(p), "unset") {
+				p = ""
+			}
+			var b hubstore.BacklogItem
+			err := backlogCall(*board, http.MethodPost, "/_hub/backlog/"+url.PathEscape(args[0]),
+				map[string]string{"priority": p, "by": by}, &b)
+			if err != nil {
+				return err
+			}
+			fmt.Fprintf(cmd.OutOrStdout(), "%s priority is now %s\n", b.ID, orDefault(b.Priority, "unset"))
 			return nil
 		},
 	}
