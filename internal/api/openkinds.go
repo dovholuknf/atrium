@@ -87,7 +87,7 @@ func (s *Server) openOther(w http.ResponseWriter, r *http.Request, in openReques
 	// and the next paste of the link goes to this room. A hub that cannot be asked is the same as no hub.
 	if s.ClaimPR != nil {
 		ctx, cancel := context.WithTimeout(r.Context(), prClaimWait)
-		rep, err := s.ClaimPR(ctx, PRClaimAsk{Key: key, Source: "open", Held: true})
+		rep, err := s.ClaimPR(ctx, PRClaimAsk{Key: strings.ToLower(key), Source: "open", Held: true})
 		cancel()
 		if err == nil && !rep.Mine {
 			openFail(w, http.StatusConflict, "claim", "held", "that link is held by "+rep.Owner+". open it there")

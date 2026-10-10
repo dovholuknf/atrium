@@ -127,6 +127,8 @@ func TestOpenOnTheHubRoutesARepastedIssueOrBranchToItsClaim(t *testing.T) {
 		{"github.com/openziti/zrok/i12", "https://github.com/openziti/zrok/issues/12"},
 		{"github.com/openziti/zrok@feat/y", "https://github.com/openziti/zrok/tree/feat/y"},
 		{"github.com/openziti/zrok/12", "https://github.com/openziti/zrok/pull/12/files"},
+		// a room claims the lower-case key, so a link pasted in mixed case routes to it on the second paste
+		{"github.com/openziti/zrok/i15", "https://github.com/OpenZiti/Zrok/issues/15"},
 	} {
 		if _, _, err := x.st.ClaimPR(c.key, "alpha", "open"); err != nil {
 			t.Fatal(err)

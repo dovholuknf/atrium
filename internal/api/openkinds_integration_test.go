@@ -194,6 +194,32 @@ func TestOpenAnIssueClaimsItsKeyAndRefusesOneAnotherRoomHolds(t *testing.T) {
 	}
 }
 
+// THE CLAIM IS LOWER CASE whatever the paste's case, as the hub's lookup is, while the link tag keeps the case.
+func TestOpenAMixedCaseIssueClaimsItsLowerCaseKey(t *testing.T) {
+	oh := newOpenHarness(t, &fakeForge{})
+	oh.checkout(t, "o", "r")
+	inner := oh.srv.Recognise
+	oh.srv.Recognise = func(url string) (*store.Resolved, error) {
+		got, err := inner(url)
+		if got != nil && strings.Contains(url, "/issues/") {
+			got.Vars = map[string]string{"host": "github.com", "org": "O", "repo": "R", "num": "3"}
+		}
+		return got, err
+	}
+	var asked []PRClaimAsk
+	oh.srv.ClaimPR = func(_ context.Context, a PRClaimAsk) (PRClaimReply, error) {
+		asked = append(asked, a)
+		return PRClaimReply{Owner: "alpha", Mine: true}, nil
+	}
+	code, out := oh.open(t, "https://github.com/O/R/issues/3")
+	if code != 201 || len(asked) != 1 || asked[0].Key != "github.com/o/r/i3" {
+		t.Fatalf("a mixed-case issue was claimed as %+v (%d %v)", asked, code, out)
+	}
+	if out["key"] != "github.com/O/R/i3" {
+		t.Errorf("the answer's key lost the pasted case: %v", out["key"])
+	}
+}
+
 // The kind comes from the captures and the pull-request tag, never the text.
 func TestClassifyReadsTheKindOffTheCaptures(t *testing.T) {
 	for _, c := range []struct {
