@@ -10286,6 +10286,19 @@ async function contextCycleSection(browser, base) {
     await wp.evaluate(() => document.getElementById("t-ctxbox-free").click());
     await wp.waitForFunction(() => !composeOpen(), null, { timeout: slow(5000) });
     if (freed.length !== 1) fail("'let me type' did not dismiss the cycle.");
+    // THE END FRAME TAKES THE STRIP AND THE BOX AWAY (r-new-context-strip-stuck-at-1of3). The bar followed only the list
+    // pass, so a window that never ran it kept "1/3" and "let me type" after the cycle ended.
+    const endFrame = await wp.evaluate(() => {
+      termTask = { id: "ll-cycle" }; termKind = "runner";
+      composeFollow({ id: "ll-cycle", row: 1, new_context: { step: "clear", n: 2, of: 3, label: "clearing the context" } });
+      const mid = { hidden: document.getElementById("t-ncbar").hidden, text: document.getElementById("t-ncbar-say").textContent };
+      composeRefused();
+      composeFollow({ id: "ll-cycle", row: 1 });
+      return { mid, hidden: document.getElementById("t-ncbar").hidden, box: composeOpen() };
+    });
+    if (endFrame.mid.hidden || !/2\/3: clearing the context/.test(endFrame.mid.text))
+      fail("a mid-cycle frame did not move the bar to step 2: " + JSON.stringify(endFrame.mid));
+    if (!endFrame.hidden || endFrame.box) fail("the end frame left the strip or 'let me type' on screen: " + JSON.stringify(endFrame));
     // WEDGED: the card still says the cycle is on its limit step (the mock never ends it), and the bar's own
     // "let me type" must still cancel it and put the bar away. No cycle step has to finish first.
     await wp.evaluate(() => {

@@ -94,6 +94,19 @@ function composeBar(task) {
   bar.hidden = false;
 }
 
+// THE BAR AND THE BOX FOLLOW THE CARD'S OWN TASK EVENT, not the next list paint. The bar was redrawn only by the
+// terminals list pass, which a popped-out or card-URL window never runs and which a text selection withholds, so a
+// cycle that ran to its end left "1/3: waiting for atrium ready" and "let me type" on screen. Called with every whole
+// row the stream or a read brings. A box left open by a cycle that has ended sends what it holds, which the room
+// now types at once.
+function composeFollow(row) {
+  if (!row || !row.id || typeof termTask === "undefined" || !termTask || !sameCard(row.id, termTask.id)) return;
+  termTask.new_context = row.new_context;
+  composeBar(termTask);
+  const n = row.new_context;
+  if ((!n || n.step === "failed") && composeOpen()) composeSend();
+}
+
 async function composeStop() {
   if (!termTask) return;
   try {
