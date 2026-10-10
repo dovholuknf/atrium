@@ -67,7 +67,34 @@ type OverlayInput struct {
 	Services []string `json:"services,omitempty" jsonschema:"tunnel proxy: the services to listen for, one port each"`
 }
 
+const procStartToolDesc = "Start a long-running process for your card (a controller, a dev server, a watcher) and have " +
+	"the room own it. It runs in the background in a group of its own, its output goes to a log named for your card, " +
+	"and it is recorded on your card at once, so closing the card stops it with everything it started. A context " +
+	"cycle or a restart of your runner leaves it running. Answers its pid and its log. `cwd` defaults to your " +
+	"worktree and must be inside it or the scratch folder. Get its ports from atrium_port first. Not for builds or " +
+	"tests or anything you wait on: run those yourself."
+
+type ProcStartInput struct {
+	Argv []string `json:"argv" jsonschema:"the program and its arguments, one per element. no shell"`
+	Cwd  string   `json:"cwd,omitempty" jsonschema:"absolute folder to run in, inside your worktree. default your worktree"`
+	Name string   `json:"name,omitempty" jsonschema:"a short name, used in the log file's name"`
+}
+
+func procStartHandler(ctx context.Context, _ *mcp.CallToolRequest, in ProcStartInput) (*mcp.CallToolResult, map[string]any, error) {
+	out := map[string]any{}
+	if len(in.Argv) == 0 {
+		return nil, out, fmt.Errorf("say argv: the program and its arguments")
+	}
+	path, err := myCardPath("/proc")
+	if err != nil {
+		return nil, out, err
+	}
+	err = askFor(ctx, 30*time.Second, http.MethodPost, path, in, &out)
+	return nil, out, err
+}
+
 func addOwnTools(s *mcp.Server) {
+	mcp.AddTool(s, &mcp.Tool{Name: "atrium_proc_start", Description: procStartToolDesc}, procStartHandler)
 	mcp.AddTool(s, &mcp.Tool{Name: "atrium_port", Description: portToolDesc}, portHandler)
 	mcp.AddTool(s, &mcp.Tool{Name: "atrium_own", Description: ownToolDesc}, ownHandler)
 	mcp.AddTool(s, &mcp.Tool{Name: "atrium_overlay", Description: overlayToolDesc}, overlayHandler)
