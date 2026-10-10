@@ -54,24 +54,93 @@ func git(t *testing.T, dir string, args ...string) {
 	}
 }
 
-func initRepo(t *testing.T, path, extraBranch string) {
+// template makes the one repository every other is copied from: a commit on main, and aliases to prove the guard
+// resolves them instead of matching verbs. Git runs three times here and nowhere else in the fixture, since a git
+// process costs about 150ms on Windows and the fixture once spent 15s on a hundred of them.
+func template(t *testing.T) string {
 	t.Helper()
-	if err := os.MkdirAll(path, 0o755); err != nil {
-		t.Fatal(err)
-	}
+	path := t.TempDir()
 	git(t, path, "-c", "init.defaultBranch=main", "init", "-q", ".")
 	if err := os.WriteFile(filepath.Join(path, "README.md"), []byte("x\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	git(t, path, "add", "README.md")
 	git(t, path, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "-m", "init")
-	// Aliases, to prove the guard resolves them instead of matching verbs.
-	git(t, path, "config", "alias.co", "checkout")
-	git(t, path, "config", "alias.ci", "commit")
-	git(t, path, "config", "alias.p", "push")
-	git(t, path, "config", "alias.evil", "!touch pwned")
+	addConfig(t, path, `[alias]
+	co = checkout
+	ci = commit
+	p = push
+	evil = "!touch pwned"
+`)
+	return path
+}
+
+// initRepo copies the template to path, and checks out extraBranch at the same commit when one is named.
+func initRepo(t *testing.T, tmpl, path, extraBranch string) {
+	t.Helper()
+	copyTree(t, tmpl, path)
 	if extraBranch != "" {
-		git(t, path, "checkout", "-q", "-b", extraBranch)
+		writeFile(t, filepath.Join(path, ".git", "refs", "heads", filepath.FromSlash(extraBranch)), headSHA(t, path)+"\n")
+		writeFile(t, filepath.Join(path, ".git", "HEAD"), "ref: refs/heads/"+extraBranch+"\n")
+	}
+}
+
+func headSHA(t *testing.T, path string) string {
+	t.Helper()
+	b, err := os.ReadFile(filepath.Join(path, ".git", "refs", "heads", "main"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return strings.TrimSpace(string(b))
+}
+
+// addConfig appends text to a repository's .git/config, which is what `git config` and `git remote add` would write.
+func addConfig(t *testing.T, path, text string) {
+	t.Helper()
+	f, err := os.OpenFile(filepath.Join(path, ".git", "config"), os.O_APPEND|os.O_WRONLY, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	if _, err := f.WriteString(text); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func addRemote(t *testing.T, path, name, url string) {
+	t.Helper()
+	addConfig(t, path, "[remote \""+name+"\"]\n\turl = "+url+"\n\tfetch = +refs/heads/*:refs/remotes/"+name+"/*\n")
+}
+
+func writeFile(t *testing.T, path, body string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func copyTree(t *testing.T, from, to string) {
+	t.Helper()
+	err := filepath.WalkDir(from, func(p string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		rel, _ := filepath.Rel(from, p)
+		dst := filepath.Join(to, rel)
+		if d.IsDir() {
+			return os.MkdirAll(dst, 0o755)
+		}
+		b, err := os.ReadFile(p)
+		if err != nil {
+			return err
+		}
+		return os.WriteFile(dst, b, 0o644)
+	})
+	if err != nil {
+		t.Fatal(err)
 	}
 }
 
@@ -92,14 +161,15 @@ func buildRepos(t *testing.T) repos {
 		rp[name] = p
 		return p
 	}
-	initRepo(t, add("claude-repo"), "claude/test")
-	initRepo(t, add("main-repo"), "")
+	tmpl := template(t)
+	initRepo(t, tmpl, add("claude-repo"), "claude/test")
+	initRepo(t, tmpl, add("main-repo"), "")
 	rp["claude"], rp["main"] = rp["claude-repo"], rp["main-repo"]
 
 	midRebase := func(name, headName string) {
 		p := add(name)
-		initRepo(t, p, "")
-		git(t, p, "checkout", "-q", "--detach")
+		initRepo(t, tmpl, p, "")
+		writeFile(t, filepath.Join(p, ".git", "HEAD"), headSHA(t, p)+"\n")
 		if headName != "" {
 			rm := filepath.Join(p, ".git", "rebase-merge")
 			if err := os.MkdirAll(rm, 0o755); err != nil {
@@ -117,10 +187,10 @@ func buildRepos(t *testing.T) repos {
 	hubGood := fakeAgent + "/git/hub/github.com/o/r.git"
 	hubRepo := func(name, url string) string {
 		p := add(name)
-		initRepo(t, p, "claude/test")
-		git(t, p, "remote", "add", "origin", "https://github.com/o/r.git")
-		git(t, p, "remote", "add", "hub", url)
-		git(t, p, "remote", "add", "atrium-hub", url)
+		initRepo(t, tmpl, p, "claude/test")
+		addRemote(t, p, "origin", "https://github.com/o/r.git")
+		addRemote(t, p, "hub", url)
+		addRemote(t, p, "atrium-hub", url)
 		return p
 	}
 	hubRepo("hub-repo", hubGood)
@@ -129,13 +199,13 @@ func buildRepos(t *testing.T) repos {
 	hubRepo("evil-hub-repo", "https://git.example.com/o/r.git")
 	rp["evil-hub"] = rp["evil-hub-repo"]
 	p := hubRepo("pushurl-repo", hubGood)
-	git(t, p, "config", "remote.hub.pushurl", "https://git.example.com/o/r.git")
+	addConfig(t, p, "[remote \"hub\"]\n\tpushurl = https://git.example.com/o/r.git\n")
 	rp["pushurl"] = p
 	p = hubRepo("insteadof-repo", hubGood)
-	git(t, p, "config", "url.https://git.example.com/.insteadOf", fakeAgent+"/git/")
+	addConfig(t, p, "[url \"https://git.example.com/\"]\n\tinsteadOf = "+fakeAgent+"/git/\n")
 	rp["insteadof"] = p
 	p = hubRepo("pushinsteadof-repo", hubGood)
-	git(t, p, "config", "url.https://git.example.com/.pushInsteadOf", fakeAgent+"/git/")
+	addConfig(t, p, "[url \"https://git.example.com/\"]\n\tpushInsteadOf = "+fakeAgent+"/git/\n")
 	rp["pushinsteadof"] = p
 	hubRepo("otherport-repo", "http://127.0.0.1:9999/git/hub/github.com/o/r.git")
 	rp["other-port"] = rp["otherport-repo"]
@@ -143,11 +213,8 @@ func buildRepos(t *testing.T) repos {
 	// Good hub repos whose literal name means another directory to a shell.
 	lit := func(name string) {
 		p := add(name)
-		if err := os.MkdirAll(p, 0o755); err != nil {
-			t.Fatal(err)
-		}
-		git(t, p, "init", "-q", ".")
-		git(t, p, "remote", "add", "hub", hubGood)
+		initRepo(t, tmpl, p, "")
+		addRemote(t, p, "hub", hubGood)
 	}
 	lit("[e]vil-hub-repo")
 	rp["glob"] = rp["[e]vil-hub-repo"]
@@ -158,13 +225,9 @@ func buildRepos(t *testing.T) repos {
 	if err := os.MkdirAll(add("plain-dir"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	initRepo(t, add("alias-repo"), "claude/test")
-	git(t, rp["alias-repo"], "config", "alias.zz", "push")
-	git(t, rp["claude"], "config", "alias.a1", "a2")
-	git(t, rp["claude"], "config", "alias.a2", "push")
-	git(t, rp["claude"], "config", "alias.l1", "l2")
-	git(t, rp["claude"], "config", "alias.l2", "l1")
-	git(t, rp["claude"], "config", "alias.lg", "log --oneline")
+	initRepo(t, tmpl, add("alias-repo"), "claude/test")
+	addConfig(t, rp["alias-repo"], "[alias]\n\tzz = push\n")
+	addConfig(t, rp["claude"], "[alias]\n\ta1 = a2\n\ta2 = push\n\tl1 = l2\n\tl2 = l1\n\tlg = log --oneline\n")
 	return rp
 }
 
