@@ -136,6 +136,8 @@ function pullFindingTotal(r) {
 // What the row says its state is. `running` is drawn from run_state: the API has no N of M.
 function pullStateWords(r) {
   const w = r.walk || {};
+  // A closed review is closed whatever state it was left in: the card was closed and the row archived.
+  if (r.archived_at) return "closed";
   switch (r.state) {
     case "queued": return "queued";
     case "fetching": return "fetching";
@@ -187,23 +189,26 @@ function pullBtn(act, id, label, tip) {
 function pullRowHTML(r) {
   const title = r.title || r.url || "";
   const cost = r.cost_usd ? "$" + Number(r.cost_usd).toFixed(2) + (r.state === "running" || r.state === "fetching" ? " so far" : "") : "";
-  const when = pullAgo(r.state === "ready" && r.ready_at ? r.ready_at : r.created_at);
+  const closed = !!r.archived_at;
+  const when = closed ? "closed " + pullAgo(r.archived_at)
+    : pullAgo(r.state === "ready" && r.ready_at ? r.ready_at : r.created_at);
   const counts = r.state === "ready" ? pullCounts(r) : "";
   const second = pullSecond(r);
+  // A closed row has nothing to act on: the review is over.
   const acts = [];
-  if (r.state === "queued") acts.push(pullBtn("start", r.id, "review", "start the review of this PR"));
-  if (r.state === "queued" || r.state === "fetching" || r.state === "running") acts.push(pullBtn("abort", r.id, "abort"));
-  if (r.state === "failed" || r.state === "aborted") acts.push(pullBtn("retry", r.id, "retry"));
-  if (r.state === "failed") acts.push(pullBtn("log", r.id, "log", "the tail of run.log"));
-  if (r.state === "ready") {
+  if (!closed && r.state === "queued") acts.push(pullBtn("start", r.id, "review", "start the review of this PR"));
+  if (!closed && (r.state === "queued" || r.state === "fetching" || r.state === "running")) acts.push(pullBtn("abort", r.id, "abort"));
+  if (!closed && (r.state === "failed" || r.state === "aborted")) acts.push(pullBtn("retry", r.id, "retry"));
+  if (!closed && r.state === "failed") acts.push(pullBtn("log", r.id, "log", "the tail of run.log"));
+  if (!closed && r.state === "ready") {
     acts.push(pullBtn("walk", r.id, "walk", r.walker_task
       ? "open the walker's terminal with the findings beside it"
       : "start a walker session and open the findings beside it"));
   }
-  if (prMoveOffered()) acts.push(pullBtn("move", r.id, "move", "move this review and a card for it to another room"));
+  if (!closed && prMoveOffered()) acts.push(pullBtn("move", r.id, "move", "move this review and a card for it to another room"));
   // The review is over: its card is closed and what it holds on disk is freed. See closeCardAsk in js/sharing.js.
-  if (r.walker_task) acts.push(pullBtn("close", r.id, "close", "close its card: free the worktree, branch and review"));
-  return '<div class="pull" data-id="' + esc(r.id) + '" data-state="' + esc(r.state) + '">' +
+  if (!closed && r.walker_task) acts.push(pullBtn("close", r.id, "close", "close its card: free the worktree, branch and review"));
+  return '<div class="pull" data-id="' + esc(r.id) + '" data-state="' + esc(closed ? "closed" : r.state) + '">' +
     '<div class="pull-main">' +
       '<div class="pull-who"><span class="pull-repo">' + esc(r.org_repo) + " #" + esc(r.number) + "</span>" +
         '<span class="pull-head7">' + esc(r.head7 || "") + "</span>" +
@@ -224,8 +229,10 @@ function pullRowHTML(r) {
 
 // ── drawing ─────────────────────────────────────────────
 
+// The "open" filter leaves a closed row at once: an event can carry an archived row the list read never had.
 function pullsShown() {
-  return pulls.rows.filter(r => !pulls.filterRepo || r.org_repo === pulls.filterRepo);
+  return pulls.rows.filter(r => (!pulls.filterRepo || r.org_repo === pulls.filterRepo) &&
+    (pulls.filterState === "all" || !r.archived_at));
 }
 
 function pullsPaintFilters() {

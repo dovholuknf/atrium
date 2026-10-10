@@ -202,6 +202,8 @@ const SHOW_STOPPED_KEY = "atrium.showstopped";
 function showStoppedOn() {
   try { return localStorage.getItem(termDeviceKey(SHOW_STOPPED_KEY)) === "on"; } catch (e) { return false; }
 }
+const CLOSED_TAG = "atrium:closed";
+const termClosedGone = t => !t.supervised && (t.tags || []).includes(CLOSED_TAG);
 function toggleShowStopped() {
   try { localStorage.setItem(termDeviceKey(SHOW_STOPPED_KEY), showStoppedOn() ? "off" : "on"); } catch (e) {}
   paintTermGear();
@@ -1928,7 +1930,11 @@ async function renderTermList() {
   // or exited one is cold, so only a pin keeps it here.
   // A STOPPED CARD (`stop` in the menu, the board's shelved) is left out unless `show stopped` is on, pinned or not,
   // and then it is listed cold, so a click resumes it. The attached one stays, like every other hide here.
-  const tasks = all.filter(t => !t.offline && (t.status === "shelved"
+  // A CLOSED CARD (it carries `atrium:closed`, which a close writes) is not listed while it has no session, whatever
+  // `show stopped` says: a close freed its folder, so there is nothing to resume. The attached one stays.
+  const tasks = all.filter(t => !t.offline && (termClosedGone(t)
+    ? !!(termTask && t.id === termTask.id)
+    : t.status === "shelved"
     ? showStoppedOn() || !!(termTask && t.id === termTask.id)
     : (t.supervised || t.pinned || termJoined(t))));
   // The badge counts what is actually attachable, since it is a count of live

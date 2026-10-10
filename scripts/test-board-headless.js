@@ -15252,7 +15252,10 @@ async function termMenuSection(browser, base) {
   landCard("land-tm-run", { supervised: true, status: "running", created_at: "2026-09-19T12:00:00Z" });
   landCard("land-tm-stop", { supervised: false, status: "shelved", resume_id: "r-1", worktree: "/tmp/stopped",
     created_at: "2026-09-19T12:01:00Z" });
-  landList = [LAND["land-tm-run"], LAND["land-tm-stop"]];
+  // A closed card: done, no session, pinned (the case that kept it listed), carrying the mark a close writes.
+  landCard("land-tm-closed", { supervised: false, status: "done", pinned: true, tags: ["atrium:closed"],
+    worktree: "/tmp/closed", created_at: "2026-09-19T12:02:00Z" });
+  landList = [LAND["land-tm-run"], LAND["land-tm-stop"], LAND["land-tm-closed"]];
   landPerms = [];
   const errors = [];
   try {
@@ -15322,7 +15325,9 @@ async function termMenuSection(browser, base) {
 
     // a stopped card is not in the list until show stopped is on.
     const listed = () => p.evaluate(() => !!document.querySelector('#term-list [oncontextmenu*="land-tm-stop"]'));
+    const closedListed = () => p.evaluate(() => !!document.querySelector('#term-list [oncontextmenu*="land-tm-closed"]'));
     if (await listed()) fail("termMenu: a stopped card is listed with show stopped off.");
+    if (await closedListed()) fail("termMenu: a closed card is listed with show stopped off.");
     await p.evaluate(() => toggleShowStopped());
     await p.waitForSelector('#term-list [oncontextmenu*="land-tm-stop"]', { timeout: slow(5000) })
       .catch(() => fail("termMenu: show stopped did not list the stopped card."));
@@ -15330,6 +15335,8 @@ async function termMenuSection(browser, base) {
     if (m.labels[0] !== "resume" || m.labels.includes("stop") || m.labels.includes("restart")) {
       fail("termMenu: a stopped card's menu is " + JSON.stringify(m.labels));
     }
+    // a closed card stays off the list even with show stopped on: its folder was freed, so there is nothing to resume.
+    if (await closedListed()) fail("termMenu: a closed card is listed with show stopped on.");
     await p.keyboard.press("Escape");
     await p.evaluate(() => toggleShowStopped());
     if (await listed()) fail("termMenu: show stopped off did not hide the stopped card again.");
