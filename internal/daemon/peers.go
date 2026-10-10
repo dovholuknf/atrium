@@ -590,7 +590,8 @@ func (d *Daemon) deliverPeerCaused(target *store.Task, from, text, kind, cause s
 	// A target still marked parked here was woken by this very say: it is queued
 	// and carried by the ordinary path, never typed into a session that has only
 	// just started.
-	if isParked(target) {
+	// The same for a say that arrives while an earlier wake is still waiting for its runner: injectKept takes it.
+	if _, waking := d.kept.Load(target.ID); isParked(target) || waking {
 		// fall through to the queue
 	} else if typed, _ := d.tellByTyping(target, from, text, kind, waitTurn); typed {
 		d.noteDelivery(target.ID, from, store.DeliveryKind(from, cause))
