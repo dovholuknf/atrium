@@ -24317,6 +24317,10 @@ async function boardDocsSection(browser, base) {
         await p.waitForSelector("#m-docs .d-content .md", { timeout: slow(5000) });
         if (!/hello/.test(await p.textContent("#m-docs .d-content"))) fail(tag + "the document is not drawn");
         if (await p.evaluate(() => location.pathname) !== "/") fail(tag + "the board's address changed");
+        // back from a document is back to the list it was opened from, the panel stays open, and back again closes it
+        await p.click("#m-docs .d-back");
+        await p.waitForSelector("#m-docs .d-row", { timeout: slow(3000) });
+        if (await p.evaluate(() => document.getElementById("m-docs").hidden)) fail(tag + "back from a document closed the panel instead of showing the list");
         await p.click("#m-docs .d-back");
         await p.waitForFunction(() => document.getElementById("m-docs").hidden, null, { timeout: slow(3000) });
         // a /d/ link anywhere on the board opens the panel and does not navigate

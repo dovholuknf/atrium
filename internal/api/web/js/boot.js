@@ -138,7 +138,10 @@ async function bootBoard() {
     // where the page actually landed. Recording it earlier would name the
     // board this page passes through on its way to the session you were
     // reading yesterday.
-    if (!termOnly() && !(history.state && history.state.atrium)) {
+    //
+    // Not over the documents panel's entry, though: a panel opened before this timer fires has pushed its list, and
+    // replacing that with the board's state made back from a document skip the list and close the panel.
+    if (!termOnly() && !(history.state && (history.state.atrium || history.state.mdocs))) {
       history.replaceState(navState(), "");
     }
   }, soloRollCall);

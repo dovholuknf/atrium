@@ -9,10 +9,6 @@
    "kind": "race-in-test",
    "reason": "no new-context entry in the row menu: termMenu is async (a GET of the card, then loadHarnesses) and the row-menu check waits only for any `#cardmenu button`, which the previous menu's buttons already satisfy, so a slow answer reads the stale, closed menu. Wait for the menu to be shown, as the shift-click check above it does."
   },
-  "boardDocs": {
-   "kind": "load-sensitive",
-   "reason": "the documents panel is still open after its back button (waitForFunction timeout, line 16151). Read in the page after the failure: history.state is {mdocs:{v:\"list\"}}, so back from a document returned to the list and the panel stayed open, which the check does not expect. Passes alone (7 of 7) and 8 of 8 with two copies at once, fails 1 of 3 with three and 6 of 6 with six, so what the browser does with history.back() depends on how busy it is. The test and the panel disagree about what back from a document does and timing picks the winner. Not diagnosed further, one for @ui."
-  },
   "phoneNudge": {
    "kind": "race-in-test",
    "reason": "the header bell does not carry the envelope. Failed once in the first serial run on sg3 and passed alone (4 of 4), in the second serial run, in every sharded run and in ten copies at once. The check reads `#toastlog-open .hmsg` right after waiting on a different element (#phone-bell hidden), with no wait for the envelope the header draws on its own tick, so a late tick reads it hidden. Wait for the state the check asserts."
