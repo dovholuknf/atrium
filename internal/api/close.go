@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -59,6 +60,10 @@ const (
 
 // closedBy is the `by` of the notified event a close writes on its card. The sweep reads it (sweep.go).
 const closedBy = "card-closed"
+
+// ClosedTag is on a card the operator closed. The terminals tab does not list a card that carries it and has no
+// session, even with show stopped on: a close freed its folder, so there is nothing to resume.
+const ClosedTag = "atrium:closed"
 
 // closeGitWait bounds one git command of a close.
 const closeGitWait = time.Minute
@@ -466,6 +471,10 @@ func (s *Server) closeCard(t *store.Task, pv *closePreview, answers map[string]s
 			keptBranch[r.Detail+"\x00"+a.Branch] = true
 			continue
 		}
+		// Measured now, ignored trees included, so the row says what was freed and not what an early look saw.
+		if n := dirSize(context.Background(), filepath.FromSlash(r.Ref)); n > 0 {
+			_ = s.st.SetResourceBytes(r.Card, r.Seq, n)
+		}
 		if err := removeWorktree(r.Detail, r.Ref); err != nil {
 			failed(r, err)
 			keptBranch[r.Detail+"\x00"+a.Branch] = true
@@ -532,10 +541,13 @@ func (s *Server) closeCard(t *store.Task, pv *closePreview, answers map[string]s
 	}
 	// A close the operator made is the clean up a "clean up when done" mark asks for, so the mark goes before the card
 	// reaches done and no board offers the close a second time. See cleanupWhenDone in js/sharing.js.
-	if kept := withoutCleanupTags(t.Tags); len(kept) != len(t.Tags) {
-		if err := s.st.SetTags(t.ID, kept); err != nil {
-			warn("the clean up mark did not come off: %v", err)
-		}
+	// The closed mark goes on in the same write. The terminals tab leaves a card with it out of the list.
+	kept := withoutCleanupTags(t.Tags)
+	if !slices.Contains(kept, ClosedTag) {
+		kept = append(kept, ClosedTag)
+	}
+	if err := s.st.SetTags(t.ID, kept); err != nil {
+		warn("the closed mark did not go on: %v", err)
 	}
 	if t.Status != store.StatusShelved {
 		if err := s.st.SetStatusBecause(t.ID, store.StatusDone, "closed"); err != nil {
@@ -657,11 +669,16 @@ func removeWorktree(repo, path string) error {
 		ctx, cancel := context.WithTimeout(context.Background(), closeGitWait)
 		_, err = gitIn(ctx, repo, "worktree", "remove", "--force", "--force", filepath.FromSlash(path))
 		cancel()
-		if err == nil {
-			return nil
+		if err == nil || !worktreeListed(repo, path) {
+			err = nil
+			break
 		}
 	}
-	return err
+	if err != nil {
+		return err
+	}
+	// Git is done with it. What is still at the path is not freed until it is gone.
+	return removeLeftover(repo, path)
 }
 
 // closeReview stops a review that is going, sets its run folder aside without its source copy, and archives the

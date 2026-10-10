@@ -105,7 +105,7 @@ func (s *Server) measureResources(ctx context.Context, id string) {
 // followed, so a link out of the tree is not counted.
 func dirSize(ctx context.Context, dir string) int64 {
 	var n int64
-	_ = filepath.WalkDir(dir, func(_ string, d fs.DirEntry, err error) error {
+	_ = filepath.WalkDir(longPath(dir), func(_ string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return nil
 		}
@@ -119,7 +119,7 @@ func dirSize(ctx context.Context, dir string) int64 {
 		}
 		return nil
 	})
-	if _, err := os.Stat(dir); err != nil {
+	if _, err := os.Stat(longPath(dir)); err != nil {
 		return 0
 	}
 	return n
