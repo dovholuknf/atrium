@@ -2146,7 +2146,7 @@ function fitTerm() {
 
 // The rows to draw for a fit of `fit` rows: the pty's whenever the daemon has said one (t-003c). Rows follow the
 // TALLEST viewer, so a pane shorter than the pty draws all of it and `markWide` clips it (`tall`). A taller pane
-// keeps the grid on the footer as before. An old room never makes the pty taller than a viewer, so there the pty's
+// keeps the grid at the top of the pane. An old room never makes the pty taller than a viewer, so there the pty's
 // rows are never above the fit and `tall` never switches on.
 function ptyRowsFor(fit) {
   return termPtyRows > 0 ? termPtyRows : fit;
@@ -2397,15 +2397,14 @@ prefLive("atrium.termfont.*", key => {
   setTermFont(readTermFont(termTask.id));
 });
 
-// SIT THE GRID ON THE FOOTER. xterm draws whole rows, so the grid is
+// SIZE THE GRID TO ITS ROWS. xterm draws whole rows, so the grid is
 // `rows * cellHeight` and rarely the exact height of `#t-screen`: the leftover
-// is up to one line, and left to itself it falls below the last row as a band
-// of the host's background between the terminal and the help bar. That band is
-// the dead space clint circled.
+// is up to one line, and a pty shorter than the pane adds whole rows to it.
 //
-// The fix is to size `.xterm` to the grid exactly and let `#t-screen`'s
-// `justify-content: flex-end` park it at the bottom, so the leftover joins the
-// air under the bar rather than sitting above the footer. `fit()` measures
+// `.xterm` is sized to the grid exactly and `#t-screen`'s
+// `justify-content: flex-start` parks it under the bar, so the leftover falls
+// below the last row. It used to be `flex-end`, which moved the whole leftover
+// above the first row: the empty band at the top of a terminal. `fit()` measures
 // `#t-screen`, not `.xterm`, so writing this height back is not a feedback loop:
 // the next fit proposes the same rows.
 //

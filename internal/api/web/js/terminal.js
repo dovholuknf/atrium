@@ -102,7 +102,7 @@ function takeTermCaps(data) {
 // pty's last row. In a taller grid that newline lands on a spare row and
 // scrolls nothing, so from then on every absolute row is one off: the typed
 // text is drawn on the rule above claude's input box. So xterm draws the pty's
-// rows when the pty is shorter, and the host sits it on the footer. See
+// rows when the pty is shorter, and the host sits it under the bar. See
 // `applyPtySize`.
 //
 // `termFitRows` is what this window can show, and what it tells the daemon, or

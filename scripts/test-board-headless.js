@@ -9055,6 +9055,95 @@ async function phoneFollowSection(browser, base) {
   if (errors.length) fail("phoneFollow: the page threw: " + errors.join(" | "));
 }
 
+// ── no empty band above the first row of an attached terminal ─────────────
+// The grid is `rows * cellHeight` and the pane is rarely a whole number of rows, and a pty shorter than the pane
+// draws fewer rows than the pane fits. Either way the leftover must not sit ABOVE the first row: the first row's top
+// stays within 2px of the top of the pane's content box, after the attach, after a size frame and after a fit.
+// TERM_TOP_GAP_SHOTS=dir writes a screenshot of each state there.
+async function terminalTopGapSection(browser, base) {
+  const was = tasksMode;
+  tasksMode = "land";
+  landCard("land-live", { supervised: true, created_at: "2026-09-19T12:00:00Z" });
+  landList = [LAND["land-live"]];
+  landPerms = [];
+  const errors = [];
+  const fakeSock = () => {
+    const Real = window.WebSocket;
+    window.__sent = [];
+    window.WebSocket = function (url, protocols) {
+      if (!/\/attach(\?|$)/.test(url)) return new Real(url, protocols);
+      const s = { url, readyState: 0, binaryType: "arraybuffer", bufferedAmount: 0,
+        onopen: null, onclose: null, onmessage: null, onerror: null,
+        send(d) { window.__sent.push(String(d)); }, close() { this.readyState = 3; } };
+      setTimeout(() => { s.readyState = 1; if (s.onopen) s.onopen({}); }, 0);
+      return s;
+    };
+    Object.assign(window.WebSocket, { CONNECTING: 0, OPEN: 1, CLOSING: 2, CLOSED: 3 });
+  };
+  const ctx = await browser.newContext({ viewport: { width: 1280, height: 700 } });
+  try {
+    await ctx.addInitScript(() => {
+      localStorage.setItem("atrium.skipconfirm", JSON.stringify({ "width-floor": true }));
+      localStorage.setItem("atrium.termphone", "0");
+    });
+    await ctx.addInitScript(fakeSock);
+    const p = await ctx.newPage();
+    p.on("pageerror", e => errors.push(String(e.stack || e)));
+    await p.goto(base, { waitUntil: "domcontentloaded" });
+    await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
+    await p.evaluate(() => attachTask("land-live"));
+    await p.waitForFunction(() => termSock && termSock.readyState === 1 && termTask && termTask.id === "land-live",
+      null, { timeout: slow(10000) });
+    await p.waitForTimeout(300);
+    await p.evaluate((x) => termSock.onmessage({ data: x }), "\x1b[2J\x1b[1;1Hfirst line\r\nsecond line\r\nthird line");
+    await p.waitForTimeout(250);
+    // From the top of the pane's content box to the top of the first grid row.
+    const gap = () => p.evaluate(() => {
+      const host = document.getElementById("t-screen"), x = host.querySelector(".xterm");
+      const hb = host.getBoundingClientRect(), xb = x.getBoundingClientRect();
+      const pad = parseFloat(getComputedStyle(host).paddingTop) || 0;
+      return { top: xb.top - (hb.top + pad), bottom: hb.bottom - xb.bottom, rows: term.rows, fit: termFitRows,
+        pty: termPtyRows, tall: host.classList.contains("tall") };
+    });
+    const shot = async (name) => {
+      const dir = process.env.TERM_TOP_GAP_SHOTS;
+      if (dir) await p.locator(".term-pane").screenshot({ path: dir + "/" + name + ".png" });
+    };
+    const check = async (what) => {
+      const g = await gap();
+      console.log("terminalTopGap: " + what + " " + JSON.stringify(g));
+      if (!g.tall && g.top > 2) fail("terminalTopGap: " + what + ": the first row sits " + g.top.toFixed(1) +
+        "px under the top of the pane: " + JSON.stringify(g));
+    };
+    const size = async (rows) => {
+      await p.evaluate((r) => termSock.onmessage({ data: '{"t":"size","cols":132,"rows":' + r + '}' }), rows);
+      await p.waitForTimeout(250);
+    };
+    await check("after attach");
+    await shot("attach");
+    const fit = (await gap()).fit;
+    await size(fit);
+    await check("pty as tall as the pane");
+    await size(fit - 2);
+    await check("pty two rows shorter than the pane");
+    await shot("pty-short");
+    await size(fit - 7);
+    await check("pty seven rows shorter than the pane");
+    // a fit: the window changes by part of a row
+    for (const h of [723, 690, 711]) {
+      await p.setViewportSize({ width: 1280, height: h });
+      await p.waitForTimeout(400);
+      await check("after a fit at " + h + "px");
+      await size((await gap()).fit);
+      await check("pty as tall as the pane after a fit at " + h + "px");
+    }
+    await ctx.close();
+  } finally {
+    tasksMode = was;
+  }
+  if (errors.length) fail("terminalTopGap: the page threw: " + errors.join(" | "));
+}
+
 // ── tap to position the cursor on a phone (u-017c) ────────────────────────
 // A tap on the input's rows (between Claude Code's two rules) sends arrow keys in one frame; a tap on output,
 // a drag, and a long press send nothing; the helper textarea is focused at most once.
@@ -27852,7 +27941,7 @@ async function main() {
       questionsClick: questionsClickSection, walk: walkSection, walkContext: walkContextSection, linkReuse: linkReuseSection,
       usageCacheReads: usageCacheReadsSection, usageTurns: usageTurnsSection, turnLimits: turnLimitsSection, roomsDash: roomsDashSection, phoneView: phoneViewSection, heldLine: heldLineSection, u016: u016Section, phoneHeader: phoneHeaderSection, phoneFocus: phoneFocusSection, phoneTermBar: phoneTermBarSection, phoneShare: phoneShareSection, phonePan: phonePanSection, phoneFollow: phoneFollowSection, phoneTap: phoneTapSection, phoneKeyboard: phoneKeyboardSection, phoneCompose: phoneComposeSection, mCompose: mComposeSection, mPerms: mPermsSection, mReview: mReviewSection, usagePolish: usagePolishSection, usageLimits: usageLimitsSection, usageGroups: usageGroupsSection,
       eventDriven: eventDrivenSection, idleBudget: idleBudgetSection, pollsGone: pollsGoneSection,
-      phoneListFit: phoneListFitSection, termListLastRow: termListLastRowSection, phoneNudge: phoneNudgeSection,
+      terminalTopGap: terminalTopGapSection, phoneListFit: phoneListFitSection, termListLastRow: termListLastRowSection, phoneNudge: phoneNudgeSection,
       growlStack: growlStackSection, growlActions: growlActionsSection, growlModal: growlModalSection, growlQuiet: growlQuietSection, growlAttention: growlAttentionSection, growlPhone: growlPhoneSection, mGrowl: mGrowlSection, growlPopout: growlPopoutSection, growlOff: growlOffSection, growlRemind: growlRemindSection,
       cacheChip: cacheChipSection, cacheLine: cacheLineSection, mHome: mHomeSection, mCard: mCardSection, mServe: mServeSection, phoneKeyLabel: phoneKeyLabelSection, phoneKeyLit: phoneKeyLitSection, shiftMenu: shiftMenuSection, termMenu: termMenuSection, notifyCommand: notifyCommandSection, presence: presenceSection, tallPty: tallPtySection, roomsMachine: roomsMachineSection, readyOnce: readyOnceSection, readyPopout: readyPopoutSection, popoutNotify: popoutNotifySection, readyTwoWindows: readyTwoWindowsSection,
       cardUrlTable: cardUrlTableSection, cardUrlClash: cardUrlClashSection, cardUrlLinks: cardUrlLinksSection, cardUrlRoom: cardUrlRoomSection, mCardUrl: (b) => mCardUrlSection(b), cardUrlNotify: cardUrlNotifySection,
@@ -29844,6 +29933,7 @@ async function main() {
     await unit("phoneShare", () => phoneShareSection(browser, base));
     await unit("phonePan", () => phonePanSection(browser, base));
     await unit("phoneFollow", () => phoneFollowSection(browser, base));
+    await unit("terminalTopGap", () => terminalTopGapSection(browser, base));
     await unit("phoneTap", () => phoneTapSection(browser, base));
     await unit("phoneKeyboard", () => phoneKeyboardSection(browser, base));
     await unit("phoneCompose", () => phoneComposeSection(browser, base));
