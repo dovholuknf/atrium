@@ -95,6 +95,21 @@ func orWord(s, fallback string) string {
 	return s
 }
 
+// defaultAlias gives a card new to the board its alias: the title's prefix, or
+// else the one its git branch makes. A title the board made itself is passed as
+// "", since it says nothing about what anybody calls the card. A card with an alias keeps it, and one that
+// cannot have its default starts without, which is logged and never an error.
+// See store.GiveDefaultAliasFor.
+func (d *Daemon) defaultAlias(id, title string) {
+	t, err := d.st.Get(id)
+	if err != nil {
+		return
+	}
+	if _, err := d.st.GiveDefaultAliasFor(id, title, t.Branch); err != nil {
+		log.Printf("[atrium] %s starts with no alias: %v", id, err)
+	}
+}
+
 // handleGate answers the permission hook's question: should this session be
 // gated right now?
 //
@@ -182,7 +197,7 @@ func (d *Daemon) onSession(in SessionEvent) error {
 		}
 	}
 	if !bound {
-		t, _, err := d.st.Register(obs)
+		t, created, err := d.st.Register(obs)
 		if errors.Is(err, store.ErrStaleName) {
 			// Not an error: a directory name that only a finished card holds says
 			// nothing about which session this is. Recorded in the log and dropped.
@@ -193,6 +208,10 @@ func (d *Daemon) onSession(in SessionEvent) error {
 			return err
 		}
 		task = t
+		// A session atrium had never heard of is adopted onto a new card.
+		if created {
+			d.defaultAlias(t.ID, "")
+		}
 	} else if _, err := d.st.Observe(task.ID, obs); err != nil {
 		// ONTO THE CARD IT WAS LAUNCHED ON, never `Register`.
 		//
@@ -274,6 +293,10 @@ func (d *Daemon) onSession(in SessionEvent) error {
 				return err
 			}
 		}
+		// Joining is how a session already running comes onto the board, so
+		// it takes the default a new card would: the title's, else the
+		// branch's. A card that has an alias keeps it.
+		d.defaultAlias(task.ID, in.Title)
 		// A join is a launch too: somebody is running it again.
 		if err := d.st.ClearExitAsked(task.ID); err != nil {
 			return err

@@ -1364,9 +1364,10 @@ func (d *Daemon) launchLocked(req LaunchRequest) (*store.Task, error) {
 	// the card starts without one and its `alias_note` says who has it. See
 	// store/alias.go.
 	if req.Resume == "" {
-		if _, err := d.st.GiveDefaultAlias(created.ID, req.Title); err != nil {
-			log.Printf("[atrium] %s starts with no alias: %v", created.ID, err)
-		}
+		// With none from the title, the card's git branch: `claude/u-foo` gives
+		// `@u-foo`. The branch is read back after SetPlace, which may have just
+		// written it.
+		d.defaultAlias(created.ID, req.Title)
 	}
 	// A WORK ITEM, for a card another session launched: the brief, the
 	// launcher, and a work state only a report, a verdict or the session

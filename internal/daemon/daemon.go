@@ -877,17 +877,20 @@ func (d *Daemon) onPermRequest(req PermissionRequest) (string, *AutoDecision, er
 	if req.Cwd != "" {
 		obs.Worktree = strings.ReplaceAll(req.Cwd, `\`, "/")
 	}
-	task, _, err := d.st.Register(obs)
+	task, created, err := d.st.Register(obs)
 	if errors.Is(err, store.ErrStaleName) {
 		// A directory name only a finished card holds. A gated call must
 		// still land on a card, or the board has nowhere to ask and the hook
 		// fails open, so this falls back to matching as a told name.
 		log.Printf("[atrium] permission from %q: name is only held by a finished card, matching it anyway", req.Agent)
 		obs.NameSource = ""
-		task, _, err = d.st.Register(obs)
+		task, created, err = d.st.Register(obs)
 	}
 	if err != nil {
 		return "", nil, err
+	}
+	if created {
+		d.defaultAlias(task.ID, "")
 	}
 	tool, command := req.Tool, req.Command
 	// A permission request is a tool starting, so it doubles as an activity

@@ -291,10 +291,14 @@ func (d *Daemon) handleStop(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if task == nil {
-		task, _, err = d.st.Register(obs)
+		var created bool
+		task, created, err = d.st.Register(obs)
 		if err != nil {
 			nothing()
 			return
+		}
+		if created {
+			d.defaultAlias(task.ID, "")
 		}
 	}
 	// The id that lets this conversation be resumed later. Recorded here as

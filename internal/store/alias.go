@@ -250,6 +250,87 @@ func (s *Store) GiveDefaultAlias(id, title string) (string, error) {
 	}
 }
 
+// BranchAlias is the alias a git branch makes: its last path segment, lowercased,
+// with every character a handle cannot hold turned into `-`. `claude/u-foo` gives
+// `u-foo`. No branch, a detached HEAD, `main`, `master` and the reserved `atrium`
+// give "", since none of them names anybody.
+func BranchAlias(branch string) string {
+	branch = strings.TrimSpace(branch)
+	if i := strings.LastIndex(branch, "/"); i >= 0 {
+		branch = branch[i+1:]
+	}
+	var b strings.Builder
+	for _, r := range strings.ToLower(branch) {
+		switch {
+		case r >= 'a' && r <= 'z', r >= '0' && r <= '9', r == '.', r == '_', r == '-':
+			b.WriteRune(r)
+		default:
+			b.WriteByte('-')
+		}
+	}
+	a := strings.TrimLeft(b.String(), "._-")
+	if len(a) > MaxAliasLen {
+		a = a[:MaxAliasLen]
+	}
+	a = strings.TrimRight(a, "._-")
+	switch a {
+	case "", "head", "main", "master":
+		return ""
+	}
+	if isReserved(a) || ValidAlias(a) != nil {
+		return ""
+	}
+	return a
+}
+
+// GiveDefaultAliasFor is GiveDefaultAlias for a card that is new to the board: the
+// title's prefix when it has one, and otherwise the alias its git branch makes.
+// See BranchAlias.
+//
+// The title wins, and a title default another card holds is not replaced by the
+// branch. A branch default another live card holds, or that is somebody's
+// handle, takes `-2`, `-3` and so on instead, since a branch name carries no
+// intent about the handle. A card that already has an alias keeps it.
+func (s *Store) GiveDefaultAliasFor(id, title, branch string) (string, error) {
+	if DefaultAlias(title) != "" {
+		return s.GiveDefaultAlias(id, title)
+	}
+	base := BranchAlias(branch)
+	if base == "" {
+		return "", nil
+	}
+	t, err := s.Get(id)
+	if err != nil {
+		return "", err
+	}
+	if t.Alias != "" {
+		return "", nil
+	}
+	for n := 1; n <= 99; n++ {
+		a := base
+		if n > 1 {
+			suffix := fmt.Sprintf("-%d", n)
+			if len(a)+len(suffix) > MaxAliasLen {
+				a = strings.TrimRight(a[:MaxAliasLen-len(suffix)], "._-")
+			}
+			a += suffix
+		}
+		err := s.SetAlias(id, a)
+		var taken *AliasTakenError
+		switch {
+		case err == nil:
+			return a, nil
+		case errors.As(err, &taken):
+			continue
+		case errors.Is(err, ErrReservedName):
+			return "", nil
+		default:
+			return "", err
+		}
+	}
+	return "", nil
+}
+
 // setAliasNote records why a card wears no alias. SetAlias clears it.
 func (s *Store) setAliasNote(id, note string) error {
 	return s.guard(func() error {
