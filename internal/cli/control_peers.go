@@ -414,7 +414,7 @@ type SayInput struct {
 	// Reply marks the say as needing an answer, so it shows as owed on the receiving card.
 	Reply bool `json:"reply,omitempty" jsonschema:"true when you need an answer, not just a delivery. it shows as owed on that session until it says something back"`
 	// Wake resumes a parked card so this reaches it. Without it a say to a parked card is refused.
-	Wake bool `json:"wake,omitempty" jsonschema:"true to resume a PARKED session (idle, no process) and deliver this. it costs a cold start, so leave it off unless the message is worth it. without it a say to a parked session is refused and nothing is queued. a card on another room, named as name@room or reached by a bare name on every room, is resumed there too. a room that is not attached refuses it, and nothing is held"`
+	Wake bool `json:"wake,omitempty" jsonschema:"true to resume a PARKED session (idle, no process) and deliver this. it costs a cold start, so leave it off unless the message is worth it. a launcher need not pass it for its own worker, parked or finished, which a say wakes anyway. without it a say to a parked session is refused and nothing is queued. a card on another room, named as name@room or reached by a bare name on every room, is resumed there too. a room that is not attached refuses it, and nothing is held"`
 	// Kind is `fyi` or `needs`. See internal/daemon/fyi.go.
 	Kind string `json:"kind,omitempty" jsonschema:"needs (the default): wants an answer or an action. fyi: news the receiver need not act on, which a receiver that holds its notices keeps on its card instead of being interrupted"`
 }
@@ -612,9 +612,9 @@ func resolvePeer(ctx context.Context, who string) (id, handle string, err error)
 type LaunchInput struct {
 	// Lifetime is not a parameter: atrium_launch_worker sets it to `work`.
 	Lifetime string `json:"-"`
-	Cwd   string `json:"cwd" jsonschema:"the directory to run in. it has to exist already"`
-	Title string `json:"title,omitempty" jsonschema:"what to call the card"`
-	Why   string `json:"why,omitempty" jsonschema:"what this is for, read back later"`
+	Cwd      string `json:"cwd" jsonschema:"the directory to run in. it has to exist already"`
+	Title    string `json:"title,omitempty" jsonschema:"what to call the card"`
+	Why      string `json:"why,omitempty" jsonschema:"what this is for, read back later"`
 	// Prompt is the first thing the new session is told.
 	Prompt string `json:"prompt,omitempty" jsonschema:"the first instruction it gets"`
 	// Brief is everything the new session needs to know before that.
