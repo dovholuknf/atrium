@@ -560,6 +560,11 @@ func (a *activityTracker) midTurn(taskID string) bool {
 	if cur == nil {
 		return false
 	}
+	// A card flagged looks-idle is at an idle prompt with its Stop hook lost, so no turn is running. Believing the
+	// stale state would hold a `when: "done"` message for a turn end that already happened. See looksidle.go.
+	if _, idle := a.looksIdle[taskID]; idle {
+		return false
+	}
 	return midTurnState(cur.What)
 }
 

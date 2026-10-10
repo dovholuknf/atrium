@@ -143,6 +143,10 @@ func (d *Daemon) flagLooksIdle(t *store.Task, run *runner, silent time.Duration,
 		go d.looksIdleGone(t.ID, t.WireName, cause)
 	}
 	run.wake.Store(&wake)
+	// Messages held for a turn end that already happened are retried now, not on the backoff.
+	if d.pending != nil {
+		d.pending.reset(t.ID)
+	}
 	d.publishTask(t.ID)
 	d.ap.Broadcast("activity", map[string]any{"task_id": t.ID, "activity": d.act.get(t.ID)})
 }
