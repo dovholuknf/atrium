@@ -202,6 +202,8 @@ const SHOW_STOPPED_KEY = "atrium.showstopped";
 function showStoppedOn() {
   try { return localStorage.getItem(termDeviceKey(SHOW_STOPPED_KEY)) === "on"; } catch (e) { return false; }
 }
+// The ended group's open rooms (see 	ermEndedHTML). Defined up here because prefLive below reads it at load.
+const TERM_ENDED_KEY = "atrium.termended";
 const CLOSED_TAG = "atrium:closed";
 const termClosedGone = t => !t.supervised && (t.tags || []).includes(CLOSED_TAG);
 function toggleShowStopped() {
@@ -660,7 +662,7 @@ function setTermListMode(mode) {
 
 // Another window of this browser changed how the list looks: its mode and width, the tray, the two hides, the folded
 // groups. Read again and drawn the way the control in that window drew it.
-prefLive(["atrium.termlist.*", "atrium.termtray*", "atrium.termfolded", HIDE_SUBAGENTS_KEY + "*", HIDE_AGENTS_KEY + "*"], () => {
+prefLive(["atrium.termlist.*", "atrium.termtray*", "atrium.termfolded", TERM_ENDED_KEY + "*", HIDE_SUBAGENTS_KEY + "*", HIDE_AGENTS_KEY + "*"], () => {
   const mode = localStorage.getItem("atrium.termlist.mode") || "full";
   termListMode = TERM_LIST_MODES.includes(mode) ? mode : "full";
   termListW = Number(localStorage.getItem("atrium.termlist.w")) || 260;
@@ -2034,12 +2036,14 @@ async function renderTermList() {
   // the list directly. The board card, its shape and class, is unchanged:
   // this list is a switcher, and what it drops (the status chip, the duration)
   // it drops because the board says those better.
-  setHTML(host, tasks.length
+  const ended = all.filter(termEnded);
+  setHTML(host, tasks.length || ended.length
     ? termDropHTML() + `<div class="termbody">` + termTrayHTML(hideCounts) +
       `<div class="termscroll">` +
       termBucketHTML(pinnedTasks, tasks.filter(t => t.pinned).length,
         termFolded().has(PINNED_FOLD)) +
       termGroupsHTML(top.filter(t => !t.pinned || termFiled(t))) +
+      termEndedHTML(ended) +
       `</div><div class="tlcorner">${termListButtons()}</div></div>`
     : `<div class="panel"><div class="empty">
          no terminals. start one from the board, or attach to a running session.
@@ -2069,6 +2073,99 @@ async function renderTermList() {
   // event driven like the stack's. See js/keepalive.js.
   paintTermGear(hideCounts);
   if (typeof paintCacheLine === "function") paintCacheLine("cache-line-gear", shown);
+}
+
+// ── the ended cards ──────────────────────────────────────────────────────────
+//
+// A CARD WHOSE SESSION ENDED STAYS FINDABLE. The strip lists live terminals and pinned ones, so a worker that
+// reported done and left (told to stay open, or not) fell out of it and was found only when a say to it came back
+// undeliverable. Per room there is a collapsed `ended` group under the rows: its count in the heading, closed by
+// default, and each row says what it was, when it ended, how, and offers the one thing worth doing: resume.
+//
+// ENDED IS `done` OR `dead` WITH NO RUNNER, and nothing the strip already shows: a pinned card stays in its bucket,
+// a stopped one has `show stopped`, a closed one has no folder to resume into. It ignores the two hide toggles,
+// since those are about the live rows and a worker's husk is exactly what the group is for.
+//
+// HOW IT ENDED comes from what the card already holds: the commit a done report named, the `needs:` line a blocked
+// report leaves in the recap, any other recap, and otherwise the status (dead is a crash, done with no report an exit).
+//
+// OPEN IS PER DEVICE like the strip's other view settings, kept as the list of rooms whose group is open.
+const TERM_ENDED_MAX = 30;
+const termEndedMore = new Set();
+
+function termEnded(t) {
+  return !!t && !t.offline && !t.supervised && !t.pinned && !t.parked_at && !termClosedGone(t) &&
+    (t.status === "done" || t.status === "dead");
+}
+
+function termEndedOpen() {
+  try { return new Set(JSON.parse(localStorage.getItem(termDeviceKey(TERM_ENDED_KEY)) || "[]")); }
+  catch (e) { return new Set(); }
+}
+
+function toggleTermEnded(room) {
+  const open = termEndedOpen();
+  if (open.has(room)) open.delete(room); else open.add(room);
+  try { localStorage.setItem(termDeviceKey(TERM_ENDED_KEY), JSON.stringify([...open])); } catch (e) {}
+  renderTermList();
+}
+
+function termEndedAt(t) { return Date.parse(t.last_activity_at || t.reported_at || "") || 0; }
+
+// How it ended, as the one line a row shows.
+function termEndedHow(t) {
+  const recap = String(t.recap || "");
+  const needs = /(?:^|\n)needs: (.*)/.exec(recap);
+  if (t.report_sha) return "done " + String(t.report_sha).slice(0, 8);
+  if (needs) return "blocked: " + needs[1].trim();
+  const first = recap.split("\n").map(s => s.trim()).find(Boolean);
+  if (first) return "report: " + first;
+  return t.status === "dead" ? "crashed" : "exited";
+}
+
+function termEndedRow(t) {
+  const at = termEndedAt(t);
+  const when = at ? ago((Date.now() - at) / 1000) + " ago" : "";
+  const how = termEndedHow(t);
+  const id = String(t.id).replace(/\\/g, "\\\\").replace(/'/g, "\\'");
+  return `<div class="endedrow" data-ended-id="${esc(t.id)}">
+      <div class="endedmain">
+        <span class="endedtitle" data-tip="${esc(t.display_title || t.title || t.id)}">${esc(t.display_title || t.title || t.id)}</span>
+        <span class="endedhow" data-tip="${esc(how)}">${esc(how)}</span>
+      </div>
+      <span class="endedwhen">${esc(when)}</span>
+      <button class="endedresume" onclick="resumeParked('${esc(id)}')"
+        data-tip="start it again on the same conversation">resume</button>
+    </div>`;
+}
+
+function termEndedHTML(ended) {
+  if (!ended.length) return "";
+  const rooms = new Map();
+  for (const t of ended) {
+    const r = t.room || "";
+    if (!rooms.has(r)) rooms.set(r, []);
+    rooms.get(r).push(t);
+  }
+  const open = termEndedOpen();
+  return [...rooms.entries()].map(([room, list]) => {
+    list.sort((a, b) => termEndedAt(b) - termEndedAt(a));
+    const isOpen = open.has(room);
+    const all = termEndedMore.has(room);
+    const rows = isOpen ? list.slice(0, all ? list.length : TERM_ENDED_MAX).map(termEndedRow).join("") : "";
+    const more = isOpen && !all && list.length > TERM_ENDED_MAX
+      ? `<button class="endedmore" onclick="termEndedMore.add('${esc(room)}');renderTermList()">show older (${list.length - TERM_ENDED_MAX})</button>`
+      : "";
+    const name = rooms.size > 1 || room ? "ended · " + (room || "this room") : "ended";
+    return `<div class="termended${isOpen ? " open" : ""}" data-ended-room="${esc(room)}">
+      <button class="tgroup endedhead" onclick="toggleTermEnded('${esc(room.replace(/'/g, "\\'"))}')"
+        data-tip="${isOpen ? "hide" : "show"} the cards whose session ended"
+        ><span class="tcaret">${isOpen ? "&#9662;" : "&#9656;"}</span
+        ><span class="tgname">${esc(name)}</span
+        ><span class="tgcount">${list.length}</span></button>
+      ${rows}${more}
+    </div>`;
+  }).join("");
 }
 
 // The fold key for the pinned bucket.

@@ -132,6 +132,25 @@
     font: var(--fs-xxs)/1.4 var(--sans); color: var(--label);
   }
 
+  /* The ended group under the rows: a heading, and when open one quiet line per card. */
+  .termended { display: flex; flex-direction: column; gap: 2px; margin-top: 6px; }
+  .endedrow {
+    display: grid; grid-template-columns: 1fr auto; gap: 0 8px; align-items: center;
+    padding: 3px 6px; border-radius: var(--r-sm); font: var(--fs-xxs)/1.4 var(--sans); color: var(--label);
+  }
+  .endedrow:hover { background: var(--lift); }
+  .endedmain { display: flex; flex-direction: column; min-width: 0; }
+  .endedtitle { color: var(--head); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .endedhow { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; opacity: .8; }
+  .endedwhen { grid-column: 2; grid-row: 1; opacity: .65; white-space: nowrap; }
+  .endedresume, .endedmore {
+    border: 1px solid var(--hairline); border-radius: var(--r-sm); background: transparent; color: var(--label);
+    font: inherit; cursor: pointer; padding: 1px 8px;
+  }
+  .endedresume { grid-column: 2; grid-row: 2; justify-self: end; }
+  .endedresume:hover, .endedmore:hover { background: var(--lift); color: var(--head); }
+  .endedmore { align-self: flex-start; margin: 2px 6px; border: none; text-decoration: underline; }
+
   /* A pinned row whose runner has exited. Faded rather than hidden, and not struck through or tinted with the
      danger colour, because nothing went wrong: the session ended, the place it ran is still yours, and the row
      is a bookmark until you start it again. Washed hard enough that a glance down the strip separates live from
