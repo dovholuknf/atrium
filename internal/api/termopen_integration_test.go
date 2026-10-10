@@ -18,6 +18,7 @@ func termReq(id string) *http.Request {
 }
 
 func TestTerminalIsOffUntilConfigured(t *testing.T) {
+	t.Parallel()
 	s, st, work := fileServer(t)
 	task := cardIn(t, st, work)
 
@@ -37,6 +38,7 @@ func TestTerminalIsOffUntilConfigured(t *testing.T) {
 }
 
 func TestTerminalNeedsADirectory(t *testing.T) {
+	t.Parallel()
 	s, st, _ := fileServer(t)
 	// A card with no worktree at all, which is every card atrium heard about
 	// before it learned where it was running.
@@ -53,6 +55,7 @@ func TestTerminalNeedsADirectory(t *testing.T) {
 }
 
 func TestTerminalRefusesADirectoryThatIsGone(t *testing.T) {
+	t.Parallel()
 	s, st, work := fileServer(t)
 	task := cardIn(t, st, filepath.Join(work, "went-away"))
 	if err := st.SetSetting(SettingTerminal, "wt.exe -d {path}"); err != nil {
@@ -72,6 +75,7 @@ func TestTerminalRefusesADirectoryThatIsGone(t *testing.T) {
 // here rather than handed to a shell. A directory called `x; shutdown` on the
 // other side of `cmd /c` is two commands.
 func TestTerminalPathIsNeverASecondCommand(t *testing.T) {
+	t.Parallel()
 	name, args := editorCommand(`wt.exe -d {path}`, `C:\work\x; shutdown -s`)
 	if name != "wt.exe" {
 		t.Fatalf("program is %q, want wt.exe", name)
@@ -84,6 +88,7 @@ func TestTerminalPathIsNeverASecondCommand(t *testing.T) {
 // A command with no `{path}` still gets the directory, which is the obvious
 // spelling for a terminal that takes one positionally.
 func TestTerminalWithoutThePlaceholderStillGetsTheDirectory(t *testing.T) {
+	t.Parallel()
 	name, args := editorCommand(`"C:\Program Files\wt\wt.exe"`, `C:\work`)
 	if name != `C:\Program Files\wt\wt.exe` {
 		t.Fatalf("program is %q, want the quoted path unquoted", name)
@@ -94,6 +99,7 @@ func TestTerminalWithoutThePlaceholderStillGetsTheDirectory(t *testing.T) {
 }
 
 func TestTerminalRunsTheConfiguredCommand(t *testing.T) {
+	t.Parallel()
 	s, st, work := fileServer(t)
 	task := cardIn(t, st, work)
 
@@ -117,6 +123,7 @@ func TestTerminalRunsTheConfiguredCommand(t *testing.T) {
 }
 
 func TestTerminalSaysWhichProgramItCouldNotRun(t *testing.T) {
+	t.Parallel()
 	s, st, work := fileServer(t)
 	task := cardIn(t, st, work)
 	if err := st.SetSetting(SettingTerminal, "atrium-no-such-terminal {path}"); err != nil {

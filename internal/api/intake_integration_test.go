@@ -5,6 +5,7 @@ package api
 import "testing"
 
 func TestIntakeTakesOneItemOrMany(t *testing.T) {
+	t.Parallel()
 	one := `{"source":"github","external_id":"4211","title":"x"}`
 	items, err := decodeIntake([]byte(one))
 	if err != nil {
@@ -27,6 +28,7 @@ func TestIntakeTakesOneItemOrMany(t *testing.T) {
 // Leading whitespace decides nothing. A script that pretty-prints its output
 // still gets read as an array.
 func TestIntakeIgnoresLeadingWhitespace(t *testing.T) {
+	t.Parallel()
 	items, err := decodeIntake([]byte("\n\t  [{\"source\":\"ci\",\"external_id\":\"9\"}]"))
 	if err != nil {
 		t.Fatal(err)
@@ -40,6 +42,7 @@ func TestIntakeIgnoresLeadingWhitespace(t *testing.T) {
 // rather than read as zero items, because zero items and a broken script look
 // identical afterwards and only one of them is fine.
 func TestIntakeRefusesAnEmptyBody(t *testing.T) {
+	t.Parallel()
 	for _, raw := range []string{"", "   ", "\n"} {
 		if _, err := decodeIntake([]byte(raw)); err == nil {
 			t.Fatalf("an empty body (%q) was accepted", raw)
@@ -48,6 +51,7 @@ func TestIntakeRefusesAnEmptyBody(t *testing.T) {
 }
 
 func TestIntakeRefusesGarbage(t *testing.T) {
+	t.Parallel()
 	if _, err := decodeIntake([]byte("not json at all")); err == nil {
 		t.Fatal("a non-JSON body was accepted")
 	}

@@ -14,6 +14,7 @@ func cardColorsOf(t *testing.T, srv *Server) map[string]any {
 }
 
 func TestCardColorsSeededOnceAndEmptyStaysEmpty(t *testing.T) {
+	t.Parallel()
 	srv, _, _ := fileServer(t)
 	if n := len(cardColorsOf(t, srv)["repos"].(map[string]any)); n != 17 {
 		t.Fatalf("seeded %d entries", n)

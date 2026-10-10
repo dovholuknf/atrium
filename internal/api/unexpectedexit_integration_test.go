@@ -7,6 +7,7 @@ import "testing"
 // The room cog's checkbox for the unexpected-exit notice: on by default, and
 // off when switched off.
 func TestTheUnexpectedExitSettingIsOnUntilSwitchedOff(t *testing.T) {
+	t.Parallel()
 	srv, st, _ := fileServer(t)
 
 	if got := settingsGet(t, srv)["unexpected_exit_wake"]; got != true {

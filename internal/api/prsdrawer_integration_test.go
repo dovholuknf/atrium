@@ -63,6 +63,7 @@ type findingsBody struct {
 }
 
 func TestFindingsAreParsedInWalkOrder(t *testing.T) {
+	t.Parallel()
 	s, _, id, _ := readyPR(t)
 	w := drawerDo(s, s.getPRFindings, "GET", "", id)
 	if w.Code != 200 {
@@ -92,6 +93,7 @@ func TestFindingsAreParsedInWalkOrder(t *testing.T) {
 }
 
 func TestFindingsETagGives304AndWalkChangesIt(t *testing.T) {
+	t.Parallel()
 	s, _, id, _ := readyPR(t)
 	w := drawerDo(s, s.getPRFindings, "GET", "", id)
 	etag := w.Header().Get("ETag")
@@ -120,6 +122,7 @@ func TestFindingsETagGives304AndWalkChangesIt(t *testing.T) {
 }
 
 func TestFindingsNeedAReadyRow(t *testing.T) {
+	t.Parallel()
 	s, st, id, _ := readyPR(t)
 	st.SetPRState(id, store.PRRunning, "panel", "")
 	w := drawerDo(s, s.getPRFindings, "GET", "", id)
@@ -132,6 +135,7 @@ func TestFindingsNeedAReadyRow(t *testing.T) {
 }
 
 func TestARunFolderOutsideTheRootIsOutside(t *testing.T) {
+	t.Parallel()
 	s, st, _ := prServer(t)
 	other := t.TempDir()
 	os.MkdirAll(filepath.Join(other, "findings"), 0o755)
@@ -144,6 +148,7 @@ func TestARunFolderOutsideTheRootIsOutside(t *testing.T) {
 }
 
 func TestEditingAFindingBehindTheHash(t *testing.T) {
+	t.Parallel()
 	s, _, id, dir := readyPR(t)
 	var b findingsBody
 	json.Unmarshal(drawerDo(s, s.getPRFindings, "GET", "", id).Body.Bytes(), &b)
@@ -179,6 +184,7 @@ func TestEditingAFindingBehindTheHash(t *testing.T) {
 }
 
 func TestMarkingTheWalkReplacesOnlyThatLine(t *testing.T) {
+	t.Parallel()
 	s, _, id, dir := readyPR(t)
 	walkFile := filepath.Join(dir, "walk.txt")
 	os.WriteFile(walkFile, []byte("02-nit-x.go-L9.txt   deferred  2026-10-01T10:00Z\n"), 0o644)
@@ -211,6 +217,7 @@ func TestMarkingTheWalkReplacesOnlyThatLine(t *testing.T) {
 }
 
 func TestAcceptedIsItsOwnWalkState(t *testing.T) {
+	t.Parallel()
 	s, _, id, dir := readyPR(t)
 	w := drawerDo(s, s.walkPRFinding, "POST", `{"state":"accepted","url":"https://x.y/z"}`, id, "f-3a9c01d4e2")
 	var out struct {
@@ -232,6 +239,7 @@ func TestAcceptedIsItsOwnWalkState(t *testing.T) {
 }
 
 func TestWalkMarkRefusals(t *testing.T) {
+	t.Parallel()
 	s, _, id, _ := readyPR(t)
 	cases := []struct {
 		body string
@@ -255,6 +263,7 @@ func TestWalkMarkRefusals(t *testing.T) {
 }
 
 func TestTheWalkerLaunchSetAndClear(t *testing.T) {
+	t.Parallel()
 	s, st, id, dir := readyPR(t)
 	var sent map[string]any
 	s.Launch = func(body []byte) (*store.Task, error) {
@@ -296,6 +305,7 @@ func TestTheWalkerLaunchSetAndClear(t *testing.T) {
 }
 
 func TestTheWalkerNeedsAReadyRowAndALauncher(t *testing.T) {
+	t.Parallel()
 	s, st, id, _ := readyPR(t)
 	if w := drawerDo(s, s.walkerPR, "POST", ``, id); w.Code != 501 {
 		t.Fatalf("no launcher: %d", w.Code)

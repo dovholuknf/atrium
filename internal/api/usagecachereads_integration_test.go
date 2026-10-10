@@ -6,6 +6,7 @@ import "testing"
 
 // The usage tab's cache reads toggle: off until switched on, and it reads back.
 func TestUsageCacheReadsSettingRoundTrip(t *testing.T) {
+	t.Parallel()
 	srv, _, _ := fileServer(t)
 
 	if got := settingsGet(t, srv)["usage_cache_reads"]; got != false {

@@ -84,6 +84,7 @@ func (rh *reuseHarness) make(t *testing.T, ctx context.Context) prWorktreeResult
 // A repo the room already has under its scm folder is not cloned: the clone is found, the one ref is fetched, and the
 // worktree is added. That is what gwt does.
 func TestPRWorktreeOnAnExistingCloneFetchesOneRefAndClonesNothing(t *testing.T) {
+	t.Parallel()
 	rh := newReuseHarness(t, headForge, nil)
 	res := rh.make(t, context.Background())
 	if res.Existed || res.Branch != "feat/x" {
@@ -110,6 +111,7 @@ func TestPRWorktreeOnAnExistingCloneFetchesOneRefAndClonesNothing(t *testing.T) 
 // With the clone already there, finding it runs while the forge is read: the forge here does not answer until the
 // clone has been asked for, so a path that found the clone only after the read would wait it out.
 func TestPRWorktreeFindsTheCloneWhileTheForgeIsRead(t *testing.T) {
+	t.Parallel()
 	release := make(chan struct{})
 	var once sync.Once
 	rh := newReuseHarness(t, func(up string) forge.Forge {
@@ -129,6 +131,7 @@ func TestPRWorktreeFindsTheCloneWhileTheForgeIsRead(t *testing.T) {
 
 // A repo the room has to clone is still cloned only after the forge answers, so a forge that refuses clones nothing.
 func TestPRWorktreeWithoutACloneWaitsForTheForgeBeforeCloning(t *testing.T) {
+	t.Parallel()
 	rh := newReuseHarness(t, func(string) forge.Forge {
 		return &fakeForge{err: &forge.AccessError{Tool: "gh", Host: "github.com", NotInstalled: true}}
 	}, nil)
@@ -144,6 +147,7 @@ func TestPRWorktreeWithoutACloneWaitsForTheForgeBeforeCloning(t *testing.T) {
 
 // Every step is said as it starts, so a slow one is never silent, and in order.
 func TestPRWorktreeSaysEachStep(t *testing.T) {
+	t.Parallel()
 	rh := newReuseHarness(t, headForge, nil)
 	var said []string
 	steps := &opSteps{label: "test", last: time.Now(), say: func(s string) { said = append(said, s) }}

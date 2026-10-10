@@ -55,6 +55,7 @@ func post(t *testing.T, h http.Handler, path string, body any) *httptest.Respons
 // alone. Applying half and reporting a failure is the worst of both: the caller
 // reads an error and the machine has changed anyway.
 func TestSaveProviderRefusedWholeOnBlockedToggle(t *testing.T) {
+	t.Parallel()
 	base := t.TempDir()
 	root := filepath.Join(base, "git")
 	wt := filepath.Join(base, "worktrees")
@@ -94,6 +95,7 @@ func TestSaveProviderRefusedWholeOnBlockedToggle(t *testing.T) {
 
 // Turning it ON never reads the filesystem, because there is nothing to orphan.
 func TestWorktreeToggleOnNeedsNoCheck(t *testing.T) {
+	t.Parallel()
 	base := t.TempDir()
 	root := filepath.Join(base, "git")
 	mkDir(t, root)
@@ -120,6 +122,7 @@ func TestWorktreeToggleOnNeedsNoCheck(t *testing.T) {
 // Deleting a provider whose toggle is on is the same failure by a different
 // door, so it gets the same refusal.
 func TestDeleteProviderRefusedWhileWorktreesExist(t *testing.T) {
+	t.Parallel()
 	base := t.TempDir()
 	root := filepath.Join(base, "git")
 	wt := filepath.Join(base, "worktrees")
@@ -159,6 +162,7 @@ func TestDeleteProviderRefusedWhileWorktreesExist(t *testing.T) {
 // The check answers the same question and writes nothing, so somebody clearing
 // the directory can ask whether they are done without attempting a save.
 func TestCheckWorktreesSavesNothing(t *testing.T) {
+	t.Parallel()
 	base := t.TempDir()
 	root := filepath.Join(base, "git")
 	wt := filepath.Join(base, "worktrees")
@@ -214,6 +218,7 @@ func TestCheckWorktreesSavesNothing(t *testing.T) {
 // A root that cannot be read is a 200 carrying the problem, because nothing
 // went wrong with the request and no row moved.
 func TestDiscoverReportsAMissingRootWithoutFailing(t *testing.T) {
+	t.Parallel()
 	_, st, h := serverFor(t)
 	if _, err := st.SaveProvider(store.Provider{
 		Name: "github", Root: "z:/not/here", Enabled: true,
@@ -244,6 +249,7 @@ func TestDiscoverReportsAMissingRootWithoutFailing(t *testing.T) {
 // Making a worktree when the toggle is off names the toggle rather than failing
 // somewhere inside git.
 func TestMakeWorktreeRefusedWhenTheToggleIsOff(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	mkCheckout(t, filepath.Join(root, "org", "repo"))
 
@@ -266,6 +272,7 @@ func TestMakeWorktreeRefusedWhenTheToggleIsOff(t *testing.T) {
 
 // ATRIUM DOES NOT CLONE. A repository that is not there is a sentence.
 func TestMakeWorktreeRefusesToCloneAnything(t *testing.T) {
+	t.Parallel()
 	base := t.TempDir()
 	root := filepath.Join(base, "git")
 	mkDir(t, root)
@@ -292,6 +299,7 @@ func TestMakeWorktreeRefusesToCloneAnything(t *testing.T) {
 // slash in it is flattened so it cannot leave an empty parent behind, which
 // would block the feature's own toggle.
 func TestWorktreeDestinationAndBranchFlattening(t *testing.T) {
+	t.Parallel()
 	got := worktreeDest("d:/worktrees/github", "dovholuknf", "atrium", "rb1")
 	if got != "d:/worktrees/github/dovholuknf/atrium/rb1" {
 		t.Fatalf("got %q", got)
@@ -305,6 +313,7 @@ func TestWorktreeDestinationAndBranchFlattening(t *testing.T) {
 // Presence travels on the read and is never written, so the row can say "not on
 // disk" without having been rewritten.
 func TestReposReportPresenceWithoutStoringIt(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	mkCheckout(t, filepath.Join(root, "org", "here"))
 

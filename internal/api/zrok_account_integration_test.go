@@ -17,6 +17,7 @@ func zrokAccountGet(t *testing.T, srv *Server) *httptest.ResponseRecorder {
 }
 
 func TestTheAccountEndpointCarriesItsFailureRatherThanReturningOne(t *testing.T) {
+	t.Parallel()
 	srv, _, _ := fileServer(t)
 	srv.ZrokAccount = func() any {
 		return map[string]any{"err": "could not reach the zrok instance"}
@@ -37,6 +38,7 @@ func TestTheAccountEndpointCarriesItsFailureRatherThanReturningOne(t *testing.T)
 // a renamed field paints zeroes, which looks like an account with nothing on
 // it rather than like a bug.
 func TestTheAccountEndpointReportsTheCountsTheBoardReads(t *testing.T) {
+	t.Parallel()
 	srv, _, _ := fileServer(t)
 	srv.ZrokAccount = func() any {
 		return map[string]any{
@@ -59,6 +61,7 @@ func TestTheAccountEndpointReportsTheCountsTheBoardReads(t *testing.T) {
 // rather than register one that panics on a nil call. Same shape as every
 // other optional field on `Server`.
 func TestTheAccountEndpointIsAbsentWithoutADaemon(t *testing.T) {
+	t.Parallel()
 	srv, _, _ := fileServer(t)
 
 	if rec := zrokAccountGet(t, srv); rec.Code != http.StatusNotFound {

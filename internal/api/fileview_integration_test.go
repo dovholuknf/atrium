@@ -22,6 +22,7 @@ func viewReq(id, p string) *http.Request {
 // image and never as a document. Every one of these would run script on the
 // board's origin if served as itself.
 func TestAViewIsNeverADocument(t *testing.T) {
+	t.Parallel()
 	s, st, work := fileServer(t)
 	task := cardIn(t, st, work)
 
@@ -65,6 +66,7 @@ func TestAViewIsNeverADocument(t *testing.T) {
 // A link named for an image that points at a page is served as the page's type,
 // which is text, because the extension that counts is the resolved one.
 func TestAViewTypesWhatTheLinkResolvesTo(t *testing.T) {
+	t.Parallel()
 	s, st, work := fileServer(t)
 	task := cardIn(t, st, work)
 	if err := os.WriteFile(filepath.Join(work, "page.html"), []byte("<script>1</script>"), 0o600); err != nil {
@@ -81,6 +83,7 @@ func TestAViewTypesWhatTheLinkResolvesTo(t *testing.T) {
 }
 
 func TestAViewOutsideTheCardIsRefused(t *testing.T) {
+	t.Parallel()
 	s, st, work := fileServer(t)
 	task := cardIn(t, st, work)
 	outside := t.TempDir()
@@ -115,6 +118,7 @@ func TestAViewOutsideTheCardIsRefused(t *testing.T) {
 }
 
 func TestAViewOfNothingOrADirectory(t *testing.T) {
+	t.Parallel()
 	s, st, work := fileServer(t)
 	task := cardIn(t, st, work)
 	if err := os.Mkdir(filepath.Join(work, "d"), 0o700); err != nil {
@@ -131,6 +135,7 @@ func TestAViewOfNothingOrADirectory(t *testing.T) {
 
 // The card is the boundary: another card's file is not this card's to read.
 func TestAViewCannotReachAnotherCardsFile(t *testing.T) {
+	t.Parallel()
 	s, st, work := fileServer(t)
 	task := cardIn(t, st, work)
 	other := t.TempDir()

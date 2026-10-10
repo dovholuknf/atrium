@@ -49,6 +49,7 @@ func probed(t *testing.T, s *Server, id string, paths []string) map[string]probe
 }
 
 func TestAProbeAnswersOnlyForWhatIsThere(t *testing.T) {
+	t.Parallel()
 	s, st, work := fileServer(t)
 	task := cardIn(t, st, work)
 
@@ -81,6 +82,7 @@ func TestAProbeAnswersOnlyForWhatIsThere(t *testing.T) {
 // A full path is what a runner prints, far more often than a relative one, so
 // it has to work. It works ONLY while it lands inside the card.
 func TestAProbeTakesAFullPathInsideTheCard(t *testing.T) {
+	t.Parallel()
 	s, st, work := fileServer(t)
 	task := cardIn(t, st, work)
 
@@ -99,6 +101,7 @@ func TestAProbeTakesAFullPathInsideTheCard(t *testing.T) {
 // simply absent, which is the same answer as one that is not there, so the
 // board learns nothing about the machine it is not already allowed to see.
 func TestAProbeNeverLeavesTheCard(t *testing.T) {
+	t.Parallel()
 	s, st, work := fileServer(t)
 	task := cardIn(t, st, work)
 
@@ -126,6 +129,7 @@ func TestAProbeNeverLeavesTheCard(t *testing.T) {
 // the candidate cannot catch it. Refusing has to happen after the link is
 // followed, or one `ln -s` inside a worktree reads the whole disk.
 func TestAProbeRefusesASymlinkOutOfTheCard(t *testing.T) {
+	t.Parallel()
 	s, st, work := fileServer(t)
 	task := cardIn(t, st, work)
 
@@ -151,6 +155,7 @@ func TestAProbeRefusesASymlinkOutOfTheCard(t *testing.T) {
 // what is on a line, and a line it miscounted should cost a truncated answer
 // rather than a failed request that leaves nothing underlined.
 func TestAProbeCapsTheBatchRatherThanRefusingIt(t *testing.T) {
+	t.Parallel()
 	s, st, work := fileServer(t)
 	task := cardIn(t, st, work)
 
@@ -179,6 +184,7 @@ func TestAProbeCapsTheBatchRatherThanRefusingIt(t *testing.T) {
 // because Windows will not create a name past 255 characters and the cap being
 // tested is on the whole path.
 func TestAProbeIgnoresACandidateLongerThanTheCap(t *testing.T) {
+	t.Parallel()
 	s, st, work := fileServer(t)
 	task := cardIn(t, st, work)
 
@@ -202,6 +208,7 @@ func TestAProbeIgnoresACandidateLongerThanTheCap(t *testing.T) {
 // A card with no directory has nothing to measure a candidate against, and
 // saying so is better than answering about some other directory.
 func TestProbingACardWithNoDirectoryIsRefused(t *testing.T) {
+	t.Parallel()
 	s, st, _ := fileServer(t)
 	task, _, err := st.Register(store.Observed{WireName: "nodir", Runner: "claude"})
 	if err != nil {

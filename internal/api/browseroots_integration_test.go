@@ -16,6 +16,7 @@ import (
 // resolve while the configured list is unchanged. A change to the list shows
 // on the next read, not after the window.
 func TestSettingsBrowseRootsFollowTheListAtOnce(t *testing.T) {
+	t.Parallel()
 	srv, st, work := fileServer(t)
 	a, b := filepath.Join(work, "a"), filepath.Join(work, "b")
 	for _, d := range []string{a, b} {
@@ -48,6 +49,7 @@ func TestSettingsBrowseRootsFollowTheListAtOnce(t *testing.T) {
 // A settings read on a machine with a worktree per card. Timed, so the log says
 // what one read costs with the resolve reused.
 func TestSettingsReadWithManyWorktrees(t *testing.T) {
+	t.Parallel()
 	srv, st, work := fileServer(t)
 	for i := 0; i < 160; i++ {
 		d := filepath.Join(work, fmt.Sprintf("wt%03d", i))

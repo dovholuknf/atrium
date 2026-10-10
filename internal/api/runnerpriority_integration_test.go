@@ -7,6 +7,7 @@ import "testing"
 // The runner priority defaults to above normal, reads back what was written, and refuses a class it
 // does not know rather than storing something that would look like it took.
 func TestRunnerPrioritySetting(t *testing.T) {
+	t.Parallel()
 	srv, st, _ := fileServer(t)
 	if got := settingsGet(t, srv)["runner_priority"]; got != "above_normal" {
 		t.Fatalf("default = %v, want above_normal", got)

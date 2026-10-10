@@ -24,6 +24,7 @@ func sweepNow(t *testing.T, oh *openHarness) sweepReport {
 }
 
 func TestSweepLeavesALiveCardAloneAndOffersADoneOne(t *testing.T) {
+	t.Parallel()
 	oh, card, wt, _ := openForClose(t)
 	if rep := sweepNow(t, oh); len(rep.Leftovers) != 0 || len(rep.Freed) != 0 {
 		t.Fatalf("a live card's rows were swept: %+v", rep)
@@ -60,6 +61,7 @@ func TestSweepLeavesALiveCardAloneAndOffersADoneOne(t *testing.T) {
 }
 
 func TestSweepMarksWhatIsGoneFreed(t *testing.T) {
+	t.Parallel()
 	oh, card, wt, _ := openForClose(t)
 	if err := oh.srv.st.SetStatusBecause(card, store.StatusDead, "killed"); err != nil {
 		t.Fatal(err)
@@ -95,6 +97,7 @@ func TestSweepMarksWhatIsGoneFreed(t *testing.T) {
 
 // A card forgotten with its inventory, or an open that died before its card started, is closed by owner.
 func TestSweepClosesAnOwnerWithNoCard(t *testing.T) {
+	t.Parallel()
 	oh, card, wt, _ := openForClose(t)
 	if err := oh.srv.st.MoveResources(card, "forgotten"); err != nil {
 		t.Fatal(err)
@@ -125,6 +128,7 @@ func TestSweepClosesAnOwnerWithNoCard(t *testing.T) {
 
 // An open in flight holds its rows under a pending owner, and the sweep does not offer them.
 func TestSweepLeavesAnOpenInFlightAlone(t *testing.T) {
+	t.Parallel()
 	oh := newOpenHarness(t, &fakeForge{})
 	if _, err := oh.srv.st.AddResource("pending:github.com/o/r/7:x", store.ResDir, t.TempDir(), ""); err != nil {
 		t.Fatal(err)
@@ -136,6 +140,7 @@ func TestSweepLeavesAnOpenInFlightAlone(t *testing.T) {
 
 // A card closed with a worktree kept is listed as kept on purpose, so the board does not word it as forgotten.
 func TestSweepSaysWhatAClosedCardKept(t *testing.T) {
+	t.Parallel()
 	oh, card, wt, _ := openForClose(t)
 	if err := os.WriteFile(filepath.Join(filepath.FromSlash(wt), "notes.txt"), []byte("mine"), 0o644); err != nil {
 		t.Fatal(err)
@@ -151,6 +156,7 @@ func TestSweepSaysWhatAClosedCardKept(t *testing.T) {
 }
 
 func TestSweepListsAWorktreeNobodyOwns(t *testing.T) {
+	t.Parallel()
 	oh := newOpenHarness(t, &fakeForge{})
 	scm := t.TempDir()
 	if err := oh.srv.st.SetSetting(gitsync.SettingSCMRoot, scm); err != nil {

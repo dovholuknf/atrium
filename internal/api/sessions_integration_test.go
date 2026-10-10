@@ -8,6 +8,7 @@ import "testing"
 // that is not a letter or a digit into a dash. A dot missed here meant a card in
 // `build.claude` looked for a folder that was never written and never resumed.
 func TestProjectDirEncodingMatchesClaudeCode(t *testing.T) {
+	t.Parallel()
 	cases := map[string]string{
 		`D:\git\github\dovholuknf\atrium`:                           "D--git-github-dovholuknf-atrium",
 		`D:\worktrees\claude\atrium\terminal-suite\build.claude\tw`: "D--worktrees-claude-atrium-terminal-suite-build-claude-tw",

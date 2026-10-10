@@ -12,6 +12,7 @@ import (
 // Renaming a card that wears no alias to `saorch: ...` gives it `@saorch`, and
 // a rename that also sets the alias keeps what it set. See backlog-2 item 47.
 func TestARenameGivesTheDefaultAlias(t *testing.T) {
+	t.Parallel()
 	srv, st, dir := fileServer(t)
 	c := cardIn(t, st, dir)
 	patch := func(body string) {

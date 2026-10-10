@@ -12,6 +12,7 @@ import (
 // git.push defaults to hub, reads back what was written, and refuses a value it does not know rather than storing
 // something that would read as `none` and look like it took.
 func TestGitPushSetting(t *testing.T) {
+	t.Parallel()
 	srv, st, _ := fileServer(t)
 	if got := settingsGet(t, srv)["git_push"]; got != "hub" {
 		t.Fatalf("default = %v, want hub", got)
@@ -42,6 +43,7 @@ func TestGitPushSetting(t *testing.T) {
 
 // A damaged row closes the door: only hub, or nothing, lets a card push.
 func TestAnUnreadableGitPushValueReadsAsNone(t *testing.T) {
+	t.Parallel()
 	_, st, _ := fileServer(t)
 	if err := st.SetSetting("git_push", "banana"); err != nil {
 		t.Fatal(err)
@@ -52,6 +54,7 @@ func TestAnUnreadableGitPushValueReadsAsNone(t *testing.T) {
 }
 
 func TestTheGitPushRouteTakesABranchAndNothingElse(t *testing.T) {
+	t.Parallel()
 	srv, st, dir := fileServer(t)
 	id := cardIn(t, st, dir).ID
 	var got [2]string

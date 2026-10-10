@@ -9,6 +9,7 @@ import (
 )
 
 func TestWithoutCleanupTags(t *testing.T) {
+	t.Parallel()
 	got := withoutCleanupTags([]string{"link:x", "cleanup:when-done", "cleanup:offered", "pr"})
 	if !reflect.DeepEqual(got, []string{"link:x", "pr"}) {
 		t.Fatalf("got %v", got)
@@ -17,6 +18,7 @@ func TestWithoutCleanupTags(t *testing.T) {
 
 // Two boards both see a marked card reach done and both ask to offer the close. Exactly one is told yes.
 func TestCleanupOfferIsClaimedByExactlyOneCaller(t *testing.T) {
+	t.Parallel()
 	oh, card, _, _ := openForClose(t)
 	task, _ := oh.srv.st.Get(card)
 	if err := oh.srv.st.SetTags(card, append(task.Tags, "cleanup:when-done")); err != nil {
@@ -60,6 +62,7 @@ func TestCleanupOfferIsClaimedByExactlyOneCaller(t *testing.T) {
 
 // The operator's own close takes the marks off, so the card is never offered a close it already had.
 func TestCloseTakesTheCleanupMarksOff(t *testing.T) {
+	t.Parallel()
 	oh, card, _, _ := openForClose(t)
 	task, _ := oh.srv.st.Get(card)
 	if err := oh.srv.st.SetTags(card, append(task.Tags, "cleanup:when-done")); err != nil {

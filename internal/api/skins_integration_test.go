@@ -33,6 +33,7 @@ func settingsGet(t *testing.T, srv *Server) map[string]any {
 }
 
 func TestASkinNobodyShipsIsRefused(t *testing.T) {
+	t.Parallel()
 	srv, _, _ := fileServer(t)
 
 	rec := settingsPost(t, srv, `{"board_skin":"midnight-hacker-pro"}`)
@@ -50,6 +51,7 @@ func TestASkinNobodyShipsIsRefused(t *testing.T) {
 }
 
 func TestASkinThatShipsIsKeptAndReported(t *testing.T) {
+	t.Parallel()
 	srv, _, _ := fileServer(t)
 
 	if rec := settingsPost(t, srv, `{"board_skin":"noir"}`); rec.Code != http.StatusOK {
@@ -61,6 +63,7 @@ func TestASkinThatShipsIsKeptAndReported(t *testing.T) {
 }
 
 func TestClearingTheSkinIsARequest(t *testing.T) {
+	t.Parallel()
 	srv, _, _ := fileServer(t)
 
 	settingsPost(t, srv, `{"board_skin":"vapor"}`)
@@ -82,6 +85,7 @@ func TestClearingTheSkinIsARequest(t *testing.T) {
 // an attribute nothing matches and look exactly like the default while the
 // picker showed something else.
 func TestASkinThatIsNoLongerShippedReadsAsTheDefault(t *testing.T) {
+	t.Parallel()
 	srv, st, _ := fileServer(t)
 
 	if err := st.SetSetting(SettingBoardSkin, "a-skin-from-the-future"); err != nil {
@@ -95,6 +99,7 @@ func TestASkinThatIsNoLongerShippedReadsAsTheDefault(t *testing.T) {
 // The picker is built from what this answers, so an empty or short list is a
 // board with no way to choose.
 func TestTheSkinListIsSentToTheBoard(t *testing.T) {
+	t.Parallel()
 	srv, _, _ := fileServer(t)
 
 	raw, ok := settingsGet(t, srv)["board_skins"].([]any)

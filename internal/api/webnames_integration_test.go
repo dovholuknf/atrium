@@ -15,6 +15,7 @@ import (
 var declared = regexp.MustCompile(`(?m)^(?:async\s+)?(?:function|const|let|var|class)\s+([A-Za-z_$][\w$]*)`)
 
 func TestNoTwoBoardScriptsDeclareTheSameName(t *testing.T) {
+	t.Parallel()
 	dir := filepath.Join("web", "js")
 	entries, err := os.ReadDir(dir)
 	if err != nil {

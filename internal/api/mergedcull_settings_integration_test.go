@@ -10,6 +10,7 @@ import (
 // A worker leaves only when somebody says so, so a room with no merged_cull_grace set, and one that had it reset,
 // both read as off.
 func TestMergedCullGraceDefaultsToOffAndResetsToOff(t *testing.T) {
+	t.Parallel()
 	srv, _, _ := fileServer(t)
 
 	out := settingsGet(t, srv)

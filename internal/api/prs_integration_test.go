@@ -76,6 +76,7 @@ func prDecode(t *testing.T, w *httptest.ResponseRecorder) prAnswerBody {
 const prURL = "https://github.com/openziti/tlsuv/pull/378"
 
 func TestPostingAPRMakesARowAndAFolderAndStartsIt(t *testing.T) {
+	t.Parallel()
 	s, st, _ := prServer(t)
 	run := &fakePRRunner{st: st}
 	s.PRRunner = run
@@ -116,6 +117,7 @@ func TestPostingAPRMakesARowAndAFolderAndStartsIt(t *testing.T) {
 }
 
 func TestPostingAPRRefusals(t *testing.T) {
+	t.Parallel()
 	s, _, _ := prServer(t)
 	cases := []struct {
 		name, body string
@@ -144,6 +146,7 @@ func TestPostingAPRRefusals(t *testing.T) {
 
 // With no runner wired the stub fails the run at once and the row says so.
 func TestTheStubRunnerFailsTheRowAndARepostRetriesIt(t *testing.T) {
+	t.Parallel()
 	s, _, _ := prServer(t)
 	w := prDo(s, s.postPR, "POST", "/v1/prs", `{"url":"`+prURL+`","head":"ad5ddf4aaaa"}`, "")
 	b := prDecode(t, w)
@@ -163,6 +166,7 @@ func TestTheStubRunnerFailsTheRowAndARepostRetriesIt(t *testing.T) {
 }
 
 func TestListingAndTheNavCount(t *testing.T) {
+	t.Parallel()
 	s, st, _ := prServer(t)
 	for _, n := range []string{"1", "2", "3"} {
 		w := prDo(s, s.postPR, "POST", "/v1/prs", `{"url":"https://github.com/o/r/pull/`+n+`"}`, "")
@@ -195,6 +199,7 @@ func TestListingAndTheNavCount(t *testing.T) {
 }
 
 func TestAnEmptyIndexIsNotNull(t *testing.T) {
+	t.Parallel()
 	s, _, _ := prServer(t)
 	w := prDo(s, s.listPRs, "GET", "/v1/prs", "", "")
 	if !strings.Contains(w.Body.String(), `"prs":[]`) || !strings.Contains(w.Body.String(), `"nav_count":0`) {
@@ -203,6 +208,7 @@ func TestAnEmptyIndexIsNotNull(t *testing.T) {
 }
 
 func TestARowReadsItsFolderForCountsAndLog(t *testing.T) {
+	t.Parallel()
 	s, st, _ := prServer(t)
 	w := prDo(s, s.postPR, "POST", "/v1/prs", `{"url":"`+prURL+`"}`, "")
 	b := prDecode(t, w)
@@ -236,6 +242,7 @@ func TestARowReadsItsFolderForCountsAndLog(t *testing.T) {
 }
 
 func TestTheRunLogTailStartsAtALine(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	dir := filepath.Join(root, "run")
 	os.MkdirAll(dir, 0o755)
@@ -266,6 +273,7 @@ func TestTheRunLogTailStartsAtALine(t *testing.T) {
 }
 
 func TestAMissingRowIsThePullsNotFound(t *testing.T) {
+	t.Parallel()
 	s, _, _ := prServer(t)
 	for name, h := range map[string]http.HandlerFunc{"get": s.getPR, "retry": s.retryPR, "abort": s.abortPR,
 		"start": s.startPR} {
@@ -277,6 +285,7 @@ func TestAMissingRowIsThePullsNotFound(t *testing.T) {
 }
 
 func TestAbortRetryAndStartGuards(t *testing.T) {
+	t.Parallel()
 	s, st, root := prServer(t)
 	run := &fakePRRunner{st: st}
 	s.PRRunner = run
@@ -317,6 +326,7 @@ func TestAbortRetryAndStartGuards(t *testing.T) {
 }
 
 func TestAbortLeavesAFolderOutsideTheRootAlone(t *testing.T) {
+	t.Parallel()
 	s, st, _ := prServer(t)
 	outside := t.TempDir()
 	os.WriteFile(filepath.Join(outside, "keep.txt"), []byte("x"), 0o644)
@@ -335,6 +345,7 @@ func TestAbortLeavesAFolderOutsideTheRootAlone(t *testing.T) {
 }
 
 func TestRetryOfAFailedRowAndStartOfAQueuedOne(t *testing.T) {
+	t.Parallel()
 	s, st, _ := prServer(t)
 	// the stub fails it
 	b := prDecode(t, prDo(s, s.postPR, "POST", "/v1/prs", `{"url":"`+prURL+`"}`, ""))

@@ -12,6 +12,7 @@ import (
 // PUT /v1/auth is for the operator on the machine. Anybody signed in to a
 // published board reaches this route, and could otherwise turn the login off.
 func TestPutAuthIsLoopbackOperatorOnly(t *testing.T) {
+	t.Parallel()
 	saved := 0
 	s := &Server{
 		SaveAuth:   func([]byte) error { saved++; return nil },

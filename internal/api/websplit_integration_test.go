@@ -20,6 +20,7 @@ func shortSum(raw []byte) string {
 }
 
 func TestEveryScriptThePageLoadsIsServed(t *testing.T) {
+	t.Parallel()
 	h := webHandler("")
 
 	get := func(path string) *httptest.ResponseRecorder {
@@ -71,6 +72,7 @@ func TestEveryScriptThePageLoadsIsServed(t *testing.T) {
 // to get half an old board and half a new one. `no-cache` asks every time, and
 // the ETag makes an unchanged file a 304. See internal/webasset.
 func TestTheSplitBoardIsNotCached(t *testing.T) {
+	t.Parallel()
 	h := webHandler("")
 	paths := []string{"/", "/js/core.js"}
 	for _, f := range styleFiles(t) {
@@ -107,6 +109,7 @@ func TestTheSplitBoardIsNotCached(t *testing.T) {
 // tree it does not have, so this asserts the property that makes that true:
 // every file under `web/` is part of the hash.
 func TestTheBuildIDCoversMoreThanThePage(t *testing.T) {
+	t.Parallel()
 	if BuildID == "" {
 		t.Fatal("there is no build id, so a board and a daemon can never be told apart")
 	}

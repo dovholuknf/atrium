@@ -14,6 +14,7 @@ import (
 
 // A WORKTREE STEP THAT FAILED FOR WANT OF AN SCM FOLDER ANSWERS no_scm_root, 422, so the hub tries another room.
 func TestWorktreeFailAnswersNoSCMRootWithItsOwnCode(t *testing.T) {
+	t.Parallel()
 	for _, err := range []error{gitsync.ErrNoSCMRoot, fmt.Errorf("wrapped: %w", errNoScratchRoot)} {
 		w := httptest.NewRecorder()
 		worktreeFail(w, http.StatusBadRequest, err)

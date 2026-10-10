@@ -36,6 +36,7 @@ func browseAt(t *testing.T, srv *Server, path string) *httptest.ResponseRecorder
 }
 
 func TestBrowseListsInsideARoot(t *testing.T) {
+	t.Parallel()
 	srv, work := browseServer(t)
 	if err := os.MkdirAll(filepath.Join(work, "project"), 0o700); err != nil {
 		t.Fatal(err)
@@ -58,6 +59,7 @@ func TestBrowseListsInsideARoot(t *testing.T) {
 
 // The obvious one, and the one a lexical check does catch.
 func TestBrowseRefusesTraversal(t *testing.T) {
+	t.Parallel()
 	srv, work := browseServer(t)
 	rec := browseAt(t, srv, filepath.ToSlash(filepath.Join(work, "..")))
 	if rec.Code != http.StatusForbidden {
@@ -67,6 +69,7 @@ func TestBrowseRefusesTraversal(t *testing.T) {
 
 // A path with nothing to do with any root.
 func TestBrowseRefusesAnUnrelatedPath(t *testing.T) {
+	t.Parallel()
 	srv, _ := browseServer(t)
 	elsewhere := t.TempDir()
 	rec := browseAt(t, srv, filepath.ToSlash(elsewhere))
@@ -78,6 +81,7 @@ func TestBrowseRefusesAnUnrelatedPath(t *testing.T) {
 // THE ONE A STRING COMPARISON MISSES. `work-evil` is not inside `work`, and
 // `strings.HasPrefix` says it is.
 func TestBrowseRefusesASiblingWithTheRootAsAPrefix(t *testing.T) {
+	t.Parallel()
 	srv, work := browseServer(t)
 	evil := work + "-evil"
 	if err := os.MkdirAll(evil, 0o700); err != nil {
@@ -96,6 +100,7 @@ func TestBrowseRefusesASiblingWithTheRootAsAPrefix(t *testing.T) {
 // lexical test there is, which is the whole reason safepath touches the
 // filesystem.
 func TestBrowseRefusesASymlinkOutOfTheRoot(t *testing.T) {
+	t.Parallel()
 	srv, work := browseServer(t)
 	outside := t.TempDir()
 	link := filepath.Join(work, "escape")
@@ -114,6 +119,7 @@ func TestBrowseRefusesASymlinkOutOfTheRoot(t *testing.T) {
 // Outside and missing answer the same, or the refusal is an oracle for what
 // exists on the machine.
 func TestBrowseRefusesMissingAndOutsideIdentically(t *testing.T) {
+	t.Parallel()
 	srv, _ := browseServer(t)
 	missing := browseAt(t, srv, "/no/such/place/anywhere")
 	outside := browseAt(t, srv, filepath.ToSlash(t.TempDir()))
@@ -125,6 +131,7 @@ func TestBrowseRefusesMissingAndOutsideIdentically(t *testing.T) {
 
 // With no path, the picker offers the roots rather than the machine's drives.
 func TestBrowseWithNoPathOffersTheRoots(t *testing.T) {
+	t.Parallel()
 	srv, work := browseServer(t)
 	rec := browseAt(t, srv, "")
 	if rec.Code != http.StatusOK {
@@ -151,6 +158,7 @@ func TestBrowseWithNoPathOffersTheRoots(t *testing.T) {
 // Stepping up from a root stops at the root, rather than handing back its
 // parent, which is the directory the picker is not allowed to see.
 func TestBrowseUpFromARootHasNoParent(t *testing.T) {
+	t.Parallel()
 	srv, work := browseServer(t)
 	rec := browseAt(t, srv, filepath.ToSlash(work))
 	var body struct {
@@ -168,6 +176,7 @@ func TestBrowseUpFromARootHasNoParent(t *testing.T) {
 // A card's directory is browsable without configuring anything, which is what
 // keeps the default useful.
 func TestBrowseDefaultsToCardDirectories(t *testing.T) {
+	t.Parallel()
 	srv, st, work := fileServer(t)
 	cardIn(t, st, work)
 	if err := os.MkdirAll(filepath.Join(work, "sub"), 0o700); err != nil {

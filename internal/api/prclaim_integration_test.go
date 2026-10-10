@@ -11,6 +11,7 @@ import (
 )
 
 func TestAnotherRoomsPRMakesNoRowHere(t *testing.T) {
+	t.Parallel()
 	s, st, _ := prServer(t)
 	run := &fakePRRunner{st: st}
 	s.PRRunner = run
@@ -32,6 +33,7 @@ func TestAnotherRoomsPRMakesNoRowHere(t *testing.T) {
 }
 
 func TestAnUnreachableHubMakesAPendingRowAndTheReturnReconciles(t *testing.T) {
+	t.Parallel()
 	s, st, _ := prServer(t)
 	run := &fakePRRunner{st: st}
 	s.PRRunner = run
