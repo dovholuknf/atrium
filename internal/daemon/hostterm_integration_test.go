@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"sync"
 	"testing"
 	"time"
 
@@ -26,7 +27,18 @@ func hostFixture(t *testing.T) (dir string, h *ptyhost.Host) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = os.RemoveAll(dir) })
-	h, err = ptyhost.Listen(dir, ptyhost.Options{Logf: func(f string, a ...any) { t.Logf("host: "+f, a...) }})
+	// The host's goroutines log "exited" and "client closed" as h.Close kills what is under it, and can still be at
+	// it after Close returns. A t.Logf once the test is over panics, so logging stops when the cleanups are done.
+	var logMu sync.Mutex
+	over := false
+	t.Cleanup(func() { logMu.Lock(); over = true; logMu.Unlock() })
+	h, err = ptyhost.Listen(dir, ptyhost.Options{Logf: func(f string, a ...any) {
+		logMu.Lock()
+		defer logMu.Unlock()
+		if !over {
+			t.Logf("host: "+f, a...)
+		}
+	}})
 	if err != nil {
 		t.Fatal(err)
 	}
