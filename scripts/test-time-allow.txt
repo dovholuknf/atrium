@@ -24,8 +24,8 @@ internal/link.* 65 each test starts a hub, a forwarder and real git. The slowest
 internal/deployready.* 16 every test builds a git repo with a run of git subprocesses. 10.5s measured on a busy box
 internal/store.* 35 TestMCPPrecedence was 22s on a busy box, the rest 6s or less
 internal/api.TestBoardScriptParses 13 a real parse of the whole board script, CPU bound
-internal/api.TestCloseStopsAndDeletesTheCardsOverlay 10 waits out a 5s retry on taskkill access denied on a locked-down box
-internal/api.TestOverlayDownStopsOnlyThatOne 10 waits out a 5s retry on taskkill access denied on a locked-down box
-internal/api.TestCloseStopsAProcessTheCardOwns 10 waits out a 5s retry on taskkill access denied on a locked-down box
+internal/api.TestCloseStopsAndDeletesTheCardsOverlay 10 waits out a 5s taskkill retry on a locked-down box
+internal/api.TestOverlayDownStopsOnlyThatOne 10 waits out a 5s taskkill retry on a locked-down box
+internal/api.TestCloseStopsAProcessTheCardOwns 10 waits out a 5s taskkill retry on a locked-down box
 internal/hubstore.TestOldSnapshotsThinOutRatherThanPilingUp 16 writes 8640 small files
 internal/cli.TestRunnerPIDFindsOpencode 9 real child processes
