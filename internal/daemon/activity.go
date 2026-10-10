@@ -879,6 +879,12 @@ func (d *Daemon) onActivity(in ActivityEvent) string {
 		// you something from one that had simply finished, and both landed in
 		// `ready` reading the same. That was the gap.
 		d.act.set(taskID, ActivityIdle, "")
+		// A turn that ran means its prompt was sent. See resetLineAtStop.
+		if in.Event == "idle" {
+			if run := d.sup.get(taskID); run != nil && run.resetLineAtStop() {
+				log.Printf("[atrium] %s: stop hook, typing model reset", taskID)
+			}
+		}
 		// "Claude is waiting for your input" says only that the prompt has sat
 		// idle, and a session whose subagents are still out is idle on purpose.
 		// A question or a dialog still counts. See turnPaused.

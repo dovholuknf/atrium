@@ -216,9 +216,33 @@ func TestPromptHookKeepsADraftTypedAfterIt(t *testing.T) {
 	if s := r.typing(); s.Count != 9 {
 		t.Fatalf("draft lost: %+v", s)
 	}
-	// And a Stop is no reset.
+}
+
+// A draft typed during the turn survives the Stop that ends it.
+func TestStopKeepsADraftTypedDuringTheTurn(t *testing.T) {
+	d, r, id := resetRig(t)
+	r.noteOperatorTyped([]byte("old\r"))
+	d.onActivity(ActivityEvent{TaskID: id, Event: "prompt"})
+	r.noteOperatorTyped([]byte("new draft"))
 	d.onActivity(ActivityEvent{TaskID: id, Event: "idle"})
 	if s := r.typing(); s.Count != 9 {
 		t.Fatalf("a Stop cleared the draft: %+v", s)
+	}
+}
+
+// A line submitted by a path atrium never saw as Enter (the compose bar, a
+// paste the runner sent itself) is still on the model after the prompt hook
+// refuses it. The Stop that ends that turn clears it.
+func TestStopClearsALineSubmittedByAnUnseenPath(t *testing.T) {
+	d, r, id := resetRig(t)
+	r.noteOperatorTyped([]byte("old\r"))
+	r.noteOperatorTyped([]byte("\x1b[200~" + strings.Repeat("x", 2228) + "\x1b[201~"))
+	d.onActivity(ActivityEvent{TaskID: id, Event: "prompt"})
+	if r.typing().Count == 0 {
+		t.Fatal("rig: the prompt hook should have refused")
+	}
+	d.onActivity(ActivityEvent{TaskID: id, Event: "idle"})
+	if s := r.typing(); s.Count != 0 || s.Unsure != "" {
+		t.Fatalf("Stop did not clear the model: %+v", s)
 	}
 }
