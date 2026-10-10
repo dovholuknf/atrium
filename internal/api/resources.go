@@ -2,14 +2,13 @@ package api
 
 import (
 	"context"
-	"io/fs"
 	"log"
 	"net/http"
-	"os"
 	"path/filepath"
 	"time"
 
 	"github.com/dovholuknf/atrium/internal/store"
+	"github.com/dovholuknf/atrium/internal/wtfree"
 )
 
 // A CARD'S INVENTORY, READ AND MEASURED. Design: docs/rnd/card-lifecycle-design.md section 6. Item
@@ -103,24 +102,4 @@ func (s *Server) measureResources(ctx context.Context, id string) {
 
 // dirSize is the bytes of every regular file under dir, 0 for a directory that is not there. Symlinks are not
 // followed, so a link out of the tree is not counted.
-func dirSize(ctx context.Context, dir string) int64 {
-	var n int64
-	_ = filepath.WalkDir(longPath(dir), func(_ string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return nil
-		}
-		if ctx.Err() != nil {
-			return fs.SkipAll
-		}
-		if d.Type().IsRegular() {
-			if info, err := d.Info(); err == nil {
-				n += info.Size()
-			}
-		}
-		return nil
-	})
-	if _, err := os.Stat(longPath(dir)); err != nil {
-		return 0
-	}
-	return n
-}
+func dirSize(ctx context.Context, dir string) int64 { return wtfree.DirSize(ctx, dir) }
