@@ -200,6 +200,12 @@ var ncTiming = struct {
 	turnSettle time.Duration
 	// clearWait is how long `/clear` has to produce a new session.
 	clearWait time.Duration
+	// clearTypeWait is how long `/clear` has to find a turn end and an open gate once
+	// the ack is in. Past it the cycle fails naming what blocked it, rather than
+	// sitting on step 2 for captureEnd.
+	clearTypeWait time.Duration
+	// logEvery is how often a step that waits says what it waits on.
+	logEvery time.Duration
 	// sessionSettle is how long after the new session's SessionStart the wake
 	// waits. The hook fires a moment before the input box is drawn, and bytes
 	// typed before then are lost. See wakeSettle.
@@ -218,6 +224,8 @@ var ncTiming = struct {
 	captureEnd:    15 * time.Minute,
 	turnSettle:    2 * time.Second,
 	clearWait:     time.Minute,
+	clearTypeWait: 5 * time.Minute,
+	logEvery:      30 * time.Second,
 	sessionSettle: wakeSettle,
 	promptGap:     30 * time.Second,
 	promptLost:    2 * time.Minute,
@@ -728,6 +736,7 @@ func (d *Daemon) runNewContext(taskID string, gen uint64) {
 		if !d.nctx.advance(taskID, gen, NewContextClear) {
 			return
 		}
+		log.Printf("[atrium] new context on %s: step 2/3, waiting for the turn to end to type /clear", taskID)
 		d.publishTask(taskID)
 	}
 
@@ -736,10 +745,12 @@ func (d *Daemon) runNewContext(taskID string, gen uint64) {
 	if start != NewContextWake {
 		before, _ := d.wake.sessionStarted(taskID)
 		typedAt := time.Now()
-		if err := d.ncType(taskID, gen, "", newContextClear, ncTiming.captureEnd); err != nil {
+		if err := d.ncTypeBusy(taskID, gen, "", newContextClear, ncTiming.clearTypeWait, d.ncBusyAfterAck); err != nil {
 			fail("could not type /clear", err)
 			return
 		}
+		log.Printf("[atrium] new context on %s: typed /clear, waiting up to %s for the new session",
+			taskID, ncTiming.clearWait.Round(time.Second))
 		d.nctx.noteCleared(taskID, gen)
 		err := d.ncWait(taskID, gen, ncTiming.clearWait, "a new session to start after /clear (is the session hook installed?)",
 			func() (bool, error) {
@@ -753,6 +764,7 @@ func (d *Daemon) runNewContext(taskID string, gen uint64) {
 		if !d.nctx.advance(taskID, gen, NewContextWake) {
 			return
 		}
+		log.Printf("[atrium] new context on %s: step 3/3, the new session started, typing the wake", taskID)
 		d.publishTask(taskID)
 	}
 
@@ -1042,9 +1054,49 @@ func (d *Daemon) ncWait(taskID string, gen uint64, limit time.Duration, what str
 // give was atomicity: a message already past its own check when the run began.
 // The lock gives it.
 func (d *Daemon) ncType(taskID string, gen uint64, label, text string, limit time.Duration) error {
-	return d.ncWait(taskID, gen, limit, "an empty line and no turn in progress", func() (bool, error) {
+	return d.ncTypeBusy(taskID, gen, label, text, limit, d.ncBusy)
+}
+
+// ncBusyAfterAck is ncBusy for `/clear`, typed once the agent has run `atrium ready`
+// and been told to end its turn. Only the activity counts, with the settled screen as
+// the tiebreak for a lost Stop: the Stop hook has landed when it reads idle. The card's status and the subagent tally do not, because a
+// turn that ended with subagents or background work out leaves the status on running
+// and the screen unsettled for as long as they last, or for ever when a SubagentStop
+// hook was lost. That held `/clear` back with no end (r-new-context-stuck-at-clearing),
+// and the context it clears is the one that work was reporting into anyway.
+func (d *Daemon) ncBusyAfterAck(taskID string) bool {
+	return d.act.midTurn(taskID) && !d.atIdlePrompt(taskID)
+}
+
+// ncBlocker says what keeps a step from typing now, for the log and the card's reason.
+func (d *Daemon) ncBlocker(taskID string, busy func(string) bool) string {
+	switch {
+	case d.sup.get(taskID) == nil:
+		return "no terminal"
+	case d.act.dialogOpen(taskID):
+		return "a dialog is open on the screen"
+	case busy(taskID):
+		what, _ := d.act.describe(taskID, time.Now())
+		return "a turn is in progress (activity " + what + ")"
+	case d.act.sinceBusy(taskID) < ncTiming.turnSettle:
+		return "a prompt arrived moments ago"
+	}
+	return "the input line is not clear or the keyboard is not quiet"
+}
+
+// ncTypeBusy is ncType with the question of what counts as a turn in progress given.
+// It logs what it waits on every ncTiming.logEvery, and names it in the reason it
+// gives up with.
+func (d *Daemon) ncTypeBusy(taskID string, gen uint64, label, text string, limit time.Duration, busy func(string) bool) error {
+	began, logged := time.Now(), time.Now()
+	err := d.ncWait(taskID, gen, limit, "an empty line and no turn in progress", func() (bool, error) {
+		if time.Since(logged) >= ncTiming.logEvery {
+			logged = time.Now()
+			log.Printf("[atrium] new context on %s still waiting to type %q after %s: %s", taskID, text,
+				time.Since(began).Round(time.Second), d.ncBlocker(taskID, busy))
+		}
 		run := d.sup.get(taskID)
-		if run == nil || d.act.dialogOpen(taskID) || d.ncBusy(taskID) {
+		if run == nil || d.act.dialogOpen(taskID) || busy(taskID) {
 			return false, nil
 		}
 		gone := false
@@ -1055,7 +1107,7 @@ func (d *Daemon) ncType(taskID string, gen uint64, label, text string, limit tim
 				gone = true
 				return false
 			}
-			return !d.act.dialogOpen(taskID) && !d.ncBusy(taskID) &&
+			return !d.act.dialogOpen(taskID) && !busy(taskID) &&
 				d.act.sinceBusy(taskID) >= ncTiming.turnSettle
 		}
 		d.nctx.setTyping(taskID, gen, true)
@@ -1074,6 +1126,10 @@ func (d *Daemon) ncType(taskID string, gen uint64, label, text string, limit tim
 		}
 		return true, nil
 	})
+	if err != nil && !errors.Is(err, errNewContextGone) {
+		return fmt.Errorf("%w; blocked by: %s", err, d.ncBlocker(taskID, busy))
+	}
+	return err
 }
 
 // handoffDir is the card's directory, or "" when it cannot be read from here,

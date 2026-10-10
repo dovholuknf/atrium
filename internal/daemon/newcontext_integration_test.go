@@ -25,6 +25,8 @@ func fastNewContext(t *testing.T) {
 	ncTiming.typeWait = 400 * time.Millisecond
 	ncTiming.captureBegin = 400 * time.Millisecond
 	ncTiming.captureEnd = 2 * time.Second
+	ncTiming.clearTypeWait = 2 * time.Second
+	ncTiming.logEvery = 50 * time.Millisecond
 	ncTiming.turnSettle = 40 * time.Millisecond
 	ncTiming.clearWait = 400 * time.Millisecond
 	ncTiming.sessionSettle = 20 * time.Millisecond
