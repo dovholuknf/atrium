@@ -43,9 +43,15 @@ func TestKeepaliveForkCarriesALeanCardsPromptToolsAndMCP(t *testing.T) {
 	if n := strings.Count(args, "--setting-sources"); n != 1 || strings.Contains(args, "project,local") {
 		t.Fatalf("the lean setting sources reached the fork: %q", spec.Args)
 	}
-	for _, mustNot := range []string{"--dangerously-skip-permissions", "--add-dir", "/x", "permissions"} {
+	for _, mustNot := range []string{"--dangerously-skip-permissions", "--add-dir", "permissions"} {
 		if strings.Contains(args, mustNot) {
 			t.Fatalf("the fork carries %q: %q", mustNot, spec.Args)
+		}
+	}
+	// "/x" is compared as a whole argument: a substring check matched the macOS temp dir /var/folders/xd/....
+	for _, a := range spec.Args {
+		if a == "/x" {
+			t.Fatalf("the fork carries the --add-dir value /x: %q", spec.Args)
 		}
 	}
 	if !strings.Contains(strings.Join(spec.Env, "\n"), "CLAUDE_CODE_DISABLE_AUTO_MEMORY=1") {

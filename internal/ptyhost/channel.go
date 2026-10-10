@@ -16,7 +16,8 @@ import (
 // name has to be a hash rather than something read out of the state dir.
 //
 // Elsewhere: a unix socket `ptyhost-<hash>.sock` inside the state dir, at mode 0600. Mind sun_path, about 104
-// bytes on macOS and 108 on Linux: a state dir path near that limit will not bind.
+// bytes on macOS and 108 on Linux. When the path in the state dir would be over the limit, the socket goes to
+// `/tmp/atrium-<uid>/` instead, a private directory, so a long home or TMPDIR still binds.
 func Address(stateDir string) string {
 	h := channelHash(stateDir)
 	return channelAddress(stateDir, h)
