@@ -89,6 +89,13 @@ func TestALaunchMakesTheItemAndAFailedStartEndsItOnce(t *testing.T) {
 	d := testDaemon(t)
 	launcher := peerCard(t, d, "orchestrator")
 	t.Setenv("ATRIUM_TEST_SOURCE", "1")
+	// The runner is a test binary that dies on a bad flag, and under load it can
+	// take longer than the suite's short window to start and die. Launch returns
+	// the moment the runner exits, so a long window costs nothing when it works
+	// and only bounds a runner that never dies.
+	prev := settleWindow
+	settleWindow = 30 * time.Second
+	t.Cleanup(func() { settleWindow = prev })
 	if _, err := d.st.SaveHarness(store.Harness{
 		ID: "quick", Label: "quick", Enabled: true, LaunchMode: store.LaunchPTY,
 		Cmd: os.Args[0], Args: []string{"-test.run=TestHelperSourceProcess"},
@@ -112,13 +119,22 @@ func TestALaunchMakesTheItemAndAFailedStartEndsItOnce(t *testing.T) {
 		t.Fatalf("ledger = %+v, launch said %v", items.Open, launchErr)
 	}
 	w := items.Open[0]
-	// The supervisor's exit may still be on its way. Give it a moment, then
-	// count: however many paths saw the death, it is one.
-	deadline := time.Now().Add(5 * time.Second)
-	for time.Now().Before(deadline) && d.sup.get(w.TaskID) != nil {
-		time.Sleep(20 * time.Millisecond)
+	// The supervisor's exit may still be on its way, and the runner leaving the
+	// supervisor is not the exit being filed. Wait for what is asserted: the item
+	// ended and the launcher told, then count, since however many paths saw the
+	// death it is one.
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		cur := itemOf(t, d, w.TaskID)
+		if cur.State == store.WorkEnded && d.sup.get(w.TaskID) == nil && len(pendingFrom(t, d, launcher.ID)) > 0 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("the failed start was never filed as ended within 10s: item = %+v, runner present = %v, notices = %d",
+				cur, d.sup.get(w.TaskID) != nil, len(pendingFrom(t, d, launcher.ID)))
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
-	time.Sleep(100 * time.Millisecond)
 	w = itemOf(t, d, w.TaskID)
 	if w.State != store.WorkEnded || w.LauncherID != launcher.ID || !strings.Contains(w.Brief, "the brief") ||
 		!strings.HasSuffix(w.BriefPath, "BRIEF.md") {

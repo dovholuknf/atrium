@@ -2091,13 +2091,26 @@ func (d *Daemon) spawnPTY(taskID, cmdName string, args []string, cwd string, env
 // what to run instead if that turns out to be stale.
 func (d *Daemon) spawnPTYResume(taskID, cmdName string, args []string, cwd string, env []string,
 	resumed bool, fresh *launchSpec) (int, error) {
+	r, err := d.spawnPTYRunner(taskID, cmdName, args, cwd, env, resumed, fresh)
+	if err != nil {
+		return 0, err
+	}
+	return r.pid, nil
+}
+
+// spawnPTYRunner is spawnPTYResume that hands back the runner it started. A launch
+// settles on that handle: a runner that dies at once is already out of the
+// supervisor by the time a lookup by card id runs, and the lookup would call it
+// alive.
+func (d *Daemon) spawnPTYRunner(taskID, cmdName string, args []string, cwd string, env []string,
+	resumed bool, fresh *launchSpec) (*runner, error) {
 	// Resolve on PATH before setting a working directory. go-pty resolves the
 	// command relative to Dir, so a bare `claude` or `cmd.exe` would be looked
 	// for inside the repo being worked in and reported as missing.
 	cmdName, args = agentSpawn(cmdName, args)
 	resolved, err := exec.LookPath(cmdName)
 	if err != nil {
-		return 0, fmt.Errorf("%s is not on PATH: %w", cmdName, err)
+		return nil, fmt.Errorf("%s is not on PATH: %w", cmdName, err)
 	}
 	resolved, args = viaShellIfScript(resolved, args)
 
@@ -2123,7 +2136,7 @@ func (d *Daemon) spawnPTYResume(taskID, cmdName string, args []string, cwd strin
 	// this process opened, and whether it is a terminal is not in doubt.
 	t, err := d.startTerm(taskID, store.RunKindRunner, cmdName, resolved, args, cwd, declareATerminal(env), cols, rows)
 	if err != nil {
-		return 0, err
+		return nil, err
 	}
 	// The host assigns its own run id, and it is the one the host is addressed by.
 	runID := store.NewRunID()
@@ -2229,7 +2242,7 @@ func (d *Daemon) spawnPTYResume(taskID, cmdName string, args []string, cwd strin
 	}
 	d.emitLifecycle("session-start", lifecycleStart(d.taskTitle(taskID), runner, resumed))
 
-	return r.pid, nil
+	return r, nil
 }
 
 // awaitExit waits for the runner to end, does what only a live runner can, and

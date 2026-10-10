@@ -46,8 +46,10 @@ const startupFailureWindow = 20 * time.Second
 // A command that cannot start says why on its own terminal, and that text is
 // already in the scrollback. Reporting a bare "exited" instead leaves a dead
 // card and a dozen candidate causes.
-func (d *Daemon) settleFor(taskID string, window time.Duration) (string, bool) {
-	r := d.sup.get(taskID)
+//
+// It takes the runner itself, not a card id: one that died at once is already
+// out of the supervisor, and a lookup would find nothing and call it running.
+func (d *Daemon) settleFor(r *runner, window time.Duration) (string, bool) {
 	if r == nil {
 		// Nothing to watch. Window mode hands off to a terminal that exits at
 		// once by design, so it cannot be checked this way.
