@@ -228,6 +228,9 @@ type Daemon struct {
 	// has dismissed. In memory. See newcontext.go.
 	nctx *newContexts
 
+	// inCtx is what reached each card in its latest turn, handed back after a new context. See contextlog.go.
+	inCtx *contextLog
+
 	// wrap is the restart wrap-up under way. See restartwrap.go.
 	wrap *restartWrap
 
@@ -376,6 +379,7 @@ func New(opts Options) (*Daemon, error) {
 	d.holds = newHoldState()
 	d.build = buildIdentity()
 	d.nctx = newNewContexts()
+	d.inCtx = newContextLog()
 	d.wrap = newRestartWrap()
 	d.nctx.persist = d.saveNewContextJournal
 	// Input-lag logging as the gear last left it, so a room that restarts keeps

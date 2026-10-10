@@ -179,6 +179,7 @@ func (d *Daemon) takeMessages(taskID, via string) ([]*store.Message, error) {
 		return nil, err
 	}
 	for _, m := range msgs {
+		d.noteInContext(taskID, m.FromPeer, m.Text, "")
 		if age, ok := escalated[m.ID]; ok {
 			d.noteEscalated(taskID, m.ID, m.FromPeer, age)
 		}
@@ -715,6 +716,7 @@ func (d *Daemon) handleMessage(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			d.askAnswered(taskID, "the operator")
+			d.noteInContext(taskID, from, body.Text, promptKind(body.Kind, body.Reply))
 			if target, err := d.st.Get(taskID); err == nil {
 				d.peerSaid(from, target, body.Text, owedKind(body.Kind, body.Reply))
 			}

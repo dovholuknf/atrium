@@ -683,6 +683,9 @@ func (d *Daemon) runNewContext(taskID string, gen uint64) {
 	}
 	// Recorded at the claim, so a setting changed mid-cycle cannot split the three uses.
 	file, start, by := cur.file, cur.step, newContextBy
+	// What reached the card in its latest turn is in the context about to be cleared, and the model is told to write
+	// a handoff, not to act on it. Handed back once the wake is typed. See contextlog.go.
+	carried := d.takeInContext(taskID)
 	if cur.auto {
 		by = cycleBy
 	}
@@ -789,6 +792,7 @@ func (d *Daemon) runNewContext(taskID string, gen uint64) {
 	}
 	if finish(map[string]any{"done": true, "path": file}) {
 		log.Printf("[atrium] new context on %s done", taskID)
+		d.requeueCarried(taskID, carried)
 	}
 }
 

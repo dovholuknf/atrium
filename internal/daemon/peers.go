@@ -711,6 +711,7 @@ func (d *Daemon) tellByTyping(target *store.Task, from, text, kind string, waitT
 // the terminal, because a message that failed to type is not one that happened.
 // kind is store.PromptFYI for a launcher's fyi, which makes no report owed.
 func (d *Daemon) notePeerTyped(taskID, from, text, kind, how string) {
+	d.noteInContext(taskID, from, text, kind)
 	ev := map[string]any{"text": text, "via": "terminal", "from_peer": from, "how": how}
 	if kind == store.PromptFYI {
 		ev["kind"] = kind
