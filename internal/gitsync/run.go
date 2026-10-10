@@ -124,10 +124,17 @@ func (e *Error) First() string {
 // LOAD BEARING. On sg3 a command run with GIT_DIR, GIT_WORK_TREE or GIT_INDEX_FILE set
 // acted on the real repository and deleted its work tree. Anything atrium runs may itself
 // be running inside a hook, so its environment cannot be trusted to be clean.
+//
+// SSH_ASKPASS goes too. Git Bash sets it to git-askpass.exe, and git asks it for a username
+// whatever GIT_TERMINAL_PROMPT says, so a 401 opened a "Git for Windows" dialog that held the
+// command until somebody clicked it.
 func CleanEnv(extra ...string) []string {
 	var out []string
 	for _, kv := range os.Environ() {
 		if len(kv) >= 4 && strings.EqualFold(kv[:4], "GIT_") {
+			continue
+		}
+		if len(kv) >= 12 && strings.EqualFold(kv[:12], "SSH_ASKPASS=") {
 			continue
 		}
 		out = append(out, kv)
