@@ -836,14 +836,17 @@ Tokens only, except the turns atrium caused, which carry an estimated dollar fig
     <div id="hubrepos-list"></div>
   </div>
 
-  <!-- The hub's backlog and director reports, read-only, drawn by js/backlog.js. Hub only. -->
+  <!-- The hub's backlog and director reports, drawn by js/backlog.js. Hub only. -->
   <div id="backlog" hidden>
     <div class="col-head" style="margin:0 0 10px"><span>backlog</span></div>
     <div class="filters" style="margin-bottom:12px">
       <span class="barlabel">department</span>
       <input id="backlog-dept" type="text" placeholder="all" aria-label="department">
       <label><input id="backlog-open" type="checkbox" checked> open only</label>
+      <span class="barlabel">priority</span>
+      <div class="seg multi" id="backlog-prios" role="group" aria-label="priority"></div>
     </div>
+    <p class="pane-lead" id="backlog-note" role="status"></p>
     <div id="backlog-items"></div>
     <div class="col-head" style="margin:16px 0 10px"><span>director reports</span></div>
     <div id="backlog-reports"></div>

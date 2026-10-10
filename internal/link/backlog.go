@@ -20,7 +20,8 @@ import (
 //	                                          the next `<prefix>-<n>` of the department. {upsert:true, status?} makes
 //	                                          the row for the id match a file (import), changing only what differs
 //	GET  /_hub/backlog/<id>                   one, with its body
-//	POST /_hub/backlog/<id>                   {status, by?}, or {card, by?} to link the card launched for it
+//	POST /_hub/backlog/<id>                   {status, by?}, {priority, by?} (high, medium, low or "" for unset), or
+//	                                          {card, by?} to link the card launched for it. GET takes ?priority= too
 //	POST /_hub/backlog/follow                 {card, status, by?}: a card's report moves the item linked to it
 //	GET  /_hub/reports?to=&unread=1&limit=    the reports, newest first
 //	POST /_hub/reports                        leave one {to?, subject, body?, by?, room?}
@@ -138,6 +139,13 @@ func (p *Proxy) itemList(w http.ResponseWriter, r *http.Request, st *hubstore.St
 		}
 		f.Status = s
 	}
+	if p := q.Get("priority"); p != "" {
+		if _, ok := hubstore.NormPriority(p); !ok {
+			crFail(w, http.StatusBadRequest, "priority is "+hubstore.PriorityWords)
+			return
+		}
+		f.Priority = p
+	}
 	items, err := st.ItemList(f)
 	if err != nil {
 		bfail(w, err)
@@ -207,9 +215,10 @@ func (p *Proxy) itemFile(w http.ResponseWriter, r *http.Request, st *hubstore.St
 
 func (p *Proxy) itemDo(w http.ResponseWriter, r *http.Request, st *hubstore.Store, id string) {
 	var in struct {
-		Status string `json:"status"`
-		Card   string `json:"card"`
-		By     string `json:"by"`
+		Status   string  `json:"status"`
+		Card     string  `json:"card"`
+		Priority *string `json:"priority"`
+		By       string  `json:"by"`
 	}
 	if err := crDecode(r, &in); err != nil {
 		crFail(w, http.StatusBadRequest, "could not read that: "+err.Error())
@@ -217,7 +226,16 @@ func (p *Proxy) itemDo(w http.ResponseWriter, r *http.Request, st *hubstore.Stor
 	}
 	var b hubstore.BacklogItem
 	var err error
-	if in.Card != "" {
+	if in.Priority != nil {
+		b, err = st.ItemSetPriority(id, *in.Priority, in.By)
+		if err == nil {
+			p.RecordAudit("", "backlog-priority", id+" "+orUnset(b.Priority))
+			p.backlogEvent("backlog", map[string]string{"id": b.ID, "dept": b.Dept, "status": b.Status, "title": b.Title,
+				"priority": b.Priority})
+			crJSON(w, http.StatusOK, b)
+			return
+		}
+	} else if in.Card != "" {
 		b, err = st.ItemLink(id, in.Card, in.By)
 	} else {
 		b, err = st.ItemSetStatus(id, in.Status, in.By)
@@ -320,6 +338,13 @@ func (p *Proxy) reportDo(w http.ResponseWriter, r *http.Request, st *hubstore.St
 		return
 	}
 	crJSON(w, http.StatusOK, rep)
+}
+
+func orUnset(s string) string {
+	if s == "" {
+		return "unset"
+	}
+	return s
 }
 
 func (p *Proxy) backlogEvent(kind string, v any) {

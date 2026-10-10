@@ -72,6 +72,7 @@ func (s *Store) ItemUpsert(in ItemNew, status string) (BacklogItem, string, erro
 	if why := in.Check(); why != "" {
 		return BacklogItem{}, "", refuse(errors.New(why))
 	}
+	in.Priority, _ = NormPriority(in.Priority)
 	var out BacklogItem
 	how := "unchanged"
 	err := s.tx(func(t *sql.Tx) error {

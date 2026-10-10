@@ -1,4 +1,4 @@
-﻿// The board, in a real browser, must not blank on a hung fetch.
+// The board, in a real browser, must not blank on a hung fetch.
 //
 // The unit test (test-refresh-storm.js) proves the debounce, single-flight,
 // abort, cap and watchdog as logic. This proves the two things only a browser
@@ -929,7 +929,7 @@ const server = http.createServer((req, res) => {
     const q = new URL(req.url, "http://x").searchParams;
     if (url.startsWith("/_hub/backlog")) {
       let items = [
-        { id: "f-003", dept: "fabric", title: "An inventory of resources", status: "built", priority: "LOW" },
+        { id: "f-003", dept: "fabric", title: "An inventory of resources", status: "built", priority: "low" },
         { id: "f-new-x", dept: "fabric", title: "Open work", status: "open" },
         { id: "r-037", dept: "runtime", title: "Finished work", status: "done" }
       ];
@@ -27623,24 +27623,35 @@ async function main() {
         return tab && !tab.hidden;
       }, null, { timeout: slow(15000) });
       await hub.evaluate(() => switchView("backlog"));
-      await hub.waitForFunction(() => document.querySelectorAll("#backlog-items .aud-row").length === 2 &&
+      await hub.waitForFunction(() => document.querySelectorAll("#backlog-items .aud-row[data-id]").length === 2 &&
         document.querySelectorAll("#backlog-reports .aud-row").length === 1, null, { timeout: slow(15000) });
       const backlog = await hub.evaluate(() => ({
-        ids: [...document.querySelectorAll("#backlog-items .aud-row")].map(r => r.dataset.id),
+        ids: [...document.querySelectorAll("#backlog-items .aud-row[data-id]")].map(r => r.dataset.id),
         built: !!document.querySelector('#backlog-items .aud-row[data-id="f-003"] .aud-when') &&
           document.querySelector('#backlog-items .aud-row[data-id="f-003"] .aud-when').textContent === "built",
         report: document.querySelector("#backlog-reports .aud-row").textContent.includes("f-003 built"),
-        writes: document.querySelectorAll("#backlog button, #backlog textarea").length
+        writes: document.querySelectorAll("#backlog textarea").length
       }));
       if (backlog.ids.join() !== "f-003,f-new-x" || !backlog.built || !backlog.report || backlog.writes) {
         fail("the backlog tab did not draw the open items, the built status and the report read-only: " +
           JSON.stringify(backlog));
       }
+      // A click on a header sorts by it and a second reverses it; a priority chip narrows the list; the default order is
+      // priority high to low, then newest. See js/backlog.js.
+      const ids = () => hub.evaluate(() => [...document.querySelectorAll("#backlog-items .aud-row[data-id]")].map(r => r.dataset.id).join());
+      await hub.evaluate(() => document.querySelector('#backlog-items button[data-sort="id"]').click());
+      if ((await ids()) !== "f-003,f-new-x") fail("sorting by id gave " + await ids());
+      await hub.evaluate(() => document.querySelector('#backlog-items button[data-sort="id"]').click());
+      if ((await ids()) !== "f-new-x,f-003") fail("a second click on id did not reverse: " + await ids());
+      await hub.evaluate(() => document.querySelector('#backlog-prios button[data-prio="low"]').click());
+      if ((await ids()) !== "f-003") fail("the low chip left " + await ids());
+      await hub.evaluate(() => document.querySelector('#backlog-prios button[data-prio="low"]').click());
+      await hub.evaluate(() => { backlogSort = null; paintBacklog(); });
       await hub.evaluate(() => { const c = document.getElementById("backlog-open"); c.checked = false; c.dispatchEvent(new Event("change")); });
-      await hub.waitForFunction(() => document.querySelectorAll("#backlog-items .aud-row").length === 3, null,
+      await hub.waitForFunction(() => document.querySelectorAll("#backlog-items .aud-row[data-id]").length === 3, null,
         { timeout: slow(15000) });
       await hub.evaluate(() => { const d = document.getElementById("backlog-dept"); d.value = "runtime"; d.dispatchEvent(new Event("change")); });
-      await hub.waitForFunction(() => [...document.querySelectorAll("#backlog-items .aud-row")].map(r => r.dataset.id).join() === "r-037",
+      await hub.waitForFunction(() => [...document.querySelectorAll("#backlog-items .aud-row[data-id]")].map(r => r.dataset.id).join() === "r-037",
         null, { timeout: slow(15000) });
       if (hubErrors.length) {
         fail("the hub page threw uncaught errors after the backlog tab: " + hubErrors.join(" | "));

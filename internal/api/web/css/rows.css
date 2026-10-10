@@ -580,8 +580,23 @@
     font: var(--fs-xs)/1.4 var(--mono); color: var(--teal); white-space: nowrap;
   }
   .aud-detail { color: var(--body); overflow-wrap: anywhere; }
+  /* The backlog list: status, dept, id, priority, title, created, changed. The header row is buttons that sort. */
+  .aud-row.bl-row { grid-template-columns: max-content max-content max-content max-content 1fr max-content max-content; }
+  .bl-head { position: sticky; top: 0; background: var(--bg-2); }
+  .bl-sort {
+    font: 600 var(--fs-xs)/1.4 var(--sans); color: var(--dim); background: none; border: 0; padding: 0;
+    text-align: left; cursor: pointer; text-transform: uppercase; letter-spacing: .04em;
+  }
+  .bl-sort:hover, .bl-sort.on { color: var(--head); }
+  .bl-prio {
+    font: var(--fs-xs)/1.4 var(--mono); color: var(--dim); background: rgba(var(--sink-rgb),.6);
+    border: 1px solid var(--stroke-dim); border-radius: var(--r-sm); padding: 1px 4px; cursor: pointer;
+  }
+  .bl-prio[data-prio="high"] { color: var(--danger); border-color: var(--danger); }
+  .bl-prio[data-prio="medium"] { color: var(--warn); border-color: var(--warn); }
   /* On a narrow screen the meta stacks above the detail rather than crushing it. */
   @media (max-width: 640px) {
-    .aud-row { grid-template-columns: 1fr; gap: 2px; }
+    .aud-row, .aud-row.bl-row { grid-template-columns: 1fr; gap: 2px; }
+    .bl-head { position: static; display: flex; flex-wrap: wrap; gap: var(--sp-3); }
   }
 
