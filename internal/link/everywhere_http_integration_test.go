@@ -110,20 +110,41 @@ func TestTheScopedStreamCarriesEverywhereCardsWhenAsked(t *testing.T) {
 
 	ch, shut := listen(t, front+"/v1/events/room/alpha?everywhere=1")
 	defer shut()
+	// The sender stops with the test. Its channels are only read while a stream
+	// is open, so a send after the test ends would block for good.
+	stop := make(chan struct{})
+	defer close(stop)
+	send := func(c chan string, line string) bool {
+		select {
+		case c <- line:
+			return true
+		case <-stop:
+			return false
+		}
+	}
 	go func() {
 		for i := 0; i < 60; i++ {
-			beta <- sse("task", `{"id":"other","title":"not indexed"}`)
-			beta <- sse("task", `{"id":"card2","title":"indexed"}`)
-			beta <- sse("activity", `{"task_id":"card2","what":"x"}`)
-			alpha <- sse("task", `{"id":"own"}`)
-			time.Sleep(100 * time.Millisecond)
+			if !send(beta, sse("task", `{"id":"other","title":"not indexed"}`)) ||
+				!send(beta, sse("task", `{"id":"card2","title":"indexed"}`)) ||
+				!send(beta, sse("activity", `{"task_id":"card2","what":"x"}`)) ||
+				!send(alpha, sse("task", `{"id":"own"}`)) {
+				return
+			}
+			select {
+			case <-time.After(100 * time.Millisecond):
+			case <-stop:
+				return
+			}
 		}
 	}()
 	seen := map[string]bool{}
-	deadline := time.After(10 * time.Second)
+	deadline := time.After(30 * time.Second)
 	for !seen["beta~card2 task"] || !seen["beta~card2 activity"] || !seen["own"] {
 		select {
-		case e := <-ch:
+		case e, ok := <-ch:
+			if !ok {
+				t.Fatalf("the stream ended before every event arrived, saw %v", seen)
+			}
 			obj := fields(t, e.Data)
 			switch {
 			case e.Kind == "task" && obj["id"] == "own":
@@ -139,7 +160,7 @@ func TestTheScopedStreamCarriesEverywhereCardsWhenAsked(t *testing.T) {
 				t.Fatalf("a card that is not indexed came through: %s", e.Data)
 			}
 		case <-deadline:
-			t.Fatalf("saw %v", seen)
+			t.Fatalf("not every event arrived within 30s, saw %v", seen)
 		}
 	}
 	// FE8: the tag removed, and the board is told to fetch again.

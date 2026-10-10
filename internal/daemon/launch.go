@@ -1217,6 +1217,8 @@ func (d *Daemon) launchLocked(req LaunchRequest) (*store.Task, error) {
 	env := childEnvFrom(base, launchEnv, atrium)
 	d.prepareRunnerSetup(h, cwd, env)
 	via := ""
+	// The runner a PTY launch started, nil in window mode. See spawnPTYRunner.
+	var spawned *runner
 
 	if h.LaunchMode == store.LaunchPTY {
 		// Atrium owns the process. That is what makes terminate, the liveness
@@ -1242,7 +1244,7 @@ func (d *Daemon) launchLocked(req LaunchRequest) (*store.Task, error) {
 			}
 			fresh = &launchSpec{cmd: h.Exe(), args: freshArgs, cwd: cwd, env: env}
 		}
-		pid, err := d.spawnPTYResume(task.ID, h.Exe(), args, cwd, env, req.Resume != "", fresh)
+		sp, err := d.spawnPTYRunner(task.ID, h.Exe(), args, cwd, env, req.Resume != "", fresh)
 		if err != nil {
 			// The card was created before the process, so a failure to start
 			// has to move it. Left in `running` it describes a process that
@@ -1250,6 +1252,8 @@ func (d *Daemon) launchLocked(req LaunchRequest) (*store.Task, error) {
 			d.launchFailed(task.ID, err.Error())
 			return nil, err
 		}
+		spawned = sp
+		pid := sp.pid
 		via = "pty"
 		// Terminate and the liveness reaper both key off the pid. A window mode
 		// launch never has one.
@@ -1465,7 +1469,7 @@ func (d *Daemon) launchLocked(req LaunchRequest) (*store.Task, error) {
 
 	// Starting is not running. A command on PATH still falls over on a bad
 	// flag, a missing key or a broken config, and does so within a moment.
-	if out, alive := d.settleFor(created.ID, settleWindow); !alive {
+	if out, alive := d.settleFor(spawned, settleWindow); !alive {
 		d.launchFailed(created.ID, out)
 		msg := fmt.Sprintf("%s exited as soon as it started", h.Label)
 		if out != "" {

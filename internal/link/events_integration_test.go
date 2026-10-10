@@ -51,16 +51,25 @@ func sse(kind, data string) string { return "event: " + kind + "\ndata: " + data
 // listen opens a stream and reads events off it.
 func listen(t *testing.T, url string) (<-chan Event, func()) {
 	t.Helper()
-	req, _ := http.NewRequest(http.MethodGet, url, nil)
+	// The wait for the stream's headers is bounded: with none the request would
+	// block until the whole run timed out. The bound is off once they arrive.
+	ctx, cancel := context.WithCancel(context.Background())
+	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	req.Header.Set("Accept", "text/event-stream")
+	opening := time.AfterFunc(30*time.Second, cancel)
 	res, err := http.DefaultClient.Do(req)
+	if !opening.Stop() && err != nil {
+		t.Fatalf("the stream at %s sent no headers within 30s: %v", url, err)
+	}
 	if err != nil {
+		cancel()
 		t.Fatal(err)
 	}
 	if res.StatusCode != http.StatusOK {
+		cancel()
 		t.Fatalf("the stream answered %d", res.StatusCode)
 	}
-	return readSSE(res), func() { res.Body.Close() }
+	return readSSE(res), func() { res.Body.Close(); cancel() }
 }
 
 // readSSE reads events off a stream already open.
