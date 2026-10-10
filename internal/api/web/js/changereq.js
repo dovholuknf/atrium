@@ -65,6 +65,22 @@ async function crDetail(id, quiet) {
   if (r.ok && r.body && r.body.id === id) cr.detail[id] = r.body;
   else cr.detail[id] = { error: r.offline ? "the hub is not answering" : crCore.errText(r) };
   if (!quiet && cr.sel === id) hubReposPaint();
+  crPushedRetry(id);
+}
+
+// The hub answers `pushed` from its last pass, null while the first one runs: ask once more shortly, one timer at a time,
+// the same as deployready.js does, once per request. It does nothing once the view is closed.
+let crPushedTimer = 0;
+const crPushedAsked = {};
+function crPushedRetry(id) {
+  const d = cr.detail[id], r = cr.reqs.find(x => x.id === id);
+  if (crPushedTimer || crPushedAsked[id] || !d || d.error || d.pushed || !r || !r.source || !r.source.sha) return;
+  crPushedAsked[id] = true;
+  crPushedTimer = setTimeout(() => {
+    crPushedTimer = 0;
+    const list = document.getElementById("hubrepos-list");
+    if (list && list.offsetParent && cr.loaded) crLoad();
+  }, 1500);
 }
 
 // ---- the page ------------------------------------------------------------------------------------------------------
