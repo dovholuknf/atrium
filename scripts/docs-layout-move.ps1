@@ -139,8 +139,8 @@ $Keep = @('README.md', 'architecture-v2.md', 'atrium-for-agents.md', 'backlog.md
 
 # Never rewritten. CHANGELOG.md is history, written against the paths of its day, and only @merge writes it. The
 # scrollback captures are byte-exact test input. website/ has a docs/ of its own (website/docs/hooks.md,
-# overlays.md, intake.md), and build-docs.ps1 runs from inside website/, so its `docs/hooks.md` is THAT file.
-$Skip = @('CHANGELOG.md', 'scripts/build-docs.ps1')
+# overlays.md, intake.md), and build-docs.sh runs from inside website/, so its `docs/hooks.md` is THAT file.
+$Skip = @('CHANGELOG.md', 'scripts/build-docs.sh')
 $SkipPrefix = @('internal/daemon/testdata/', 'website/')
 $TextExt = @('.md', '.go', '.js', '.css', '.html', '.sh', '.ps1', '.yaml', '.yml', '.json', '.txt', '.toml', '.cjs', '.mjs')
 $TextName = @('Makefile', '.gitignore')
