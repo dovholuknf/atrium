@@ -12,6 +12,7 @@ import (
 )
 
 func TestGitCappedStopsGitAtTheCap(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	run := func(args ...string) {
 		c := exec.Command("git", args...)
@@ -26,7 +27,7 @@ func TestGitCappedStopsGitAtTheCap(t *testing.T) {
 		t.Fatal(err)
 	}
 	run("add", ".")
-	run("commit", "-m", "x")
+	run("-c", "commit.gpgsign=false", "commit", "-m", "x")
 	r := NewRunner()
 	out, err := r.GitCapped(context.Background(), dir, nil, 1000, "show", "--format=", "HEAD")
 	if !errors.Is(err, ErrOutputCap) || len(out) != 1000 {

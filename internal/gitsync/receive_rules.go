@@ -358,7 +358,10 @@ func (h *Hub) ReleaseBranch(ctx context.Context, repo, branch string) (string, e
 // removeCreated takes away a repository a push made and that took nothing, and the owner and host
 // directories it left empty, which would make a later differently cased name collide with them.
 func (rc *Receiver) removeCreated(dir string) {
-	_ = os.RemoveAll(dir)
+	// On Windows a file git or a virus scanner still holds open cannot be removed, and it is let go a moment later.
+	for i := 0; i < 20 && os.RemoveAll(dir) != nil; i++ {
+		time.Sleep(50 * time.Millisecond)
+	}
 	gl := rc.h.lock(storeWideLock)
 	gl.Lock()
 	defer gl.Unlock()

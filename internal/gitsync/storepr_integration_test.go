@@ -18,6 +18,7 @@ func (f *forge) prHead(t *testing.T, n, file, body string, at int64) string {
 }
 
 func TestFetchPRPutsTheHeadUnderTheAtriumRef(t *testing.T) {
+	t.Parallel()
 	x := newStore(t, "main")
 	main := x.forge.push(t, "main", "a.txt", "one", 1000)
 	name, err := x.s.Hold(bg, repoURL)
@@ -44,6 +45,7 @@ func TestFetchPRPutsTheHeadUnderTheAtriumRef(t *testing.T) {
 }
 
 func TestFetchPRFillsAnEmptyMainFromTheBase(t *testing.T) {
+	t.Parallel()
 	x := newStore(t, "main")
 	// The forge is empty when the store first holds it, as a private repository looks to a seed with no login.
 	name, err := x.s.Hold(bg, repoURL)
@@ -65,6 +67,7 @@ func TestFetchPRFillsAnEmptyMainFromTheBase(t *testing.T) {
 }
 
 func TestFetchPRRefusesWhatIsNotAPullRequestHead(t *testing.T) {
+	t.Parallel()
 	x := newStore(t, "main")
 	x.forge.push(t, "main", "a.txt", "one", 1000)
 	name, err := x.s.Hold(bg, repoURL)
@@ -89,6 +92,7 @@ func TestFetchPRRefusesWhatIsNotAPullRequestHead(t *testing.T) {
 }
 
 func TestFetchPRSaysAMissingHeadIsNotAnAuthFailure(t *testing.T) {
+	t.Parallel()
 	x := newStore(t, "main")
 	x.forge.push(t, "main", "a.txt", "one", 1000)
 	name, err := x.s.Hold(bg, repoURL)
@@ -106,6 +110,7 @@ func TestFetchPRSaysAMissingHeadIsNotAnAuthFailure(t *testing.T) {
 }
 
 func TestFetchFailedMarksAMissingCredential(t *testing.T) {
+	t.Parallel()
 	x := newStore(t, "main")
 	ref, _ := ParseName("github/o/r")
 	for _, stderr := range []string{
@@ -128,6 +133,7 @@ func TestFetchFailedMarksAMissingCredential(t *testing.T) {
 }
 
 func TestPRFetchArgsSetTheHelperForThisCommandOnly(t *testing.T) {
+	t.Parallel()
 	args := prFetchArgs("https://github.com/o/r", "!gh auth git-credential", []string{"+a:b"})
 	// The configured helpers are reset first, then the CLI's own is the only one.
 	i := slices.Index(args, "credential.helper=")

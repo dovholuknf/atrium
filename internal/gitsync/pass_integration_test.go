@@ -57,6 +57,7 @@ func okRT(body string) http.RoundTripper {
 }
 
 func TestAtMostTwoPassThroughsRunAtOncePerRoom(t *testing.T) {
+	t.Parallel()
 	gate := make(chan struct{})
 	started := make(chan struct{}, 8)
 	rt := rtFunc(func(r *http.Request) (*http.Response, error) {
@@ -97,6 +98,7 @@ func TestAtMostTwoPassThroughsRunAtOncePerRoom(t *testing.T) {
 }
 
 func TestTheRateIsPerReaderAndPerMinute(t *testing.T) {
+	t.Parallel()
 	p := passFor([]RoomInfo{{Name: "sg3", Git: true}}, okRT("ok"))
 	now := time.Date(2026, 10, 2, 12, 0, 0, 0, time.UTC)
 	p.Now = func() time.Time { return now }
@@ -119,6 +121,7 @@ func TestTheRateIsPerReaderAndPerMinute(t *testing.T) {
 }
 
 func TestARefusedRequestIsNotPassedOn(t *testing.T) {
+	t.Parallel()
 	var passed int
 	var mu sync.Mutex
 	rt := rtFunc(func(r *http.Request) (*http.Response, error) {
@@ -150,6 +153,7 @@ func TestARefusedRequestIsNotPassedOn(t *testing.T) {
 }
 
 func TestThePassThroughSendsNoProtocolHeaderCredentialOrCardAndOnlyTheFetchPaths(t *testing.T) {
+	t.Parallel()
 	var got *http.Request
 	rt := rtFunc(func(r *http.Request) (*http.Response, error) {
 		got = r
@@ -200,6 +204,7 @@ func TestThePassThroughSendsNoProtocolHeaderCredentialOrCardAndOnlyTheFetchPaths
 }
 
 func TestARoomThatPredatesGitOrDoesNotAnswerIs503(t *testing.T) {
+	t.Parallel()
 	old := passFor([]RoomInfo{{Name: "sg3", Git: false}}, okRT("ok"))
 	if rec := ask(old, "GET", refsPath, "", "a"); rec.Code != http.StatusServiceUnavailable {
 		t.Errorf("a room that never said git = %d", rec.Code)
@@ -280,6 +285,7 @@ func quickPass(rt http.RoundTripper) *Pass {
 }
 
 func TestAReaderThatStopsReadingGivesTheSlotBack(t *testing.T) {
+	t.Parallel()
 	var normal atomic.Bool
 	p := quickPass(rtFunc(func(r *http.Request) (*http.Response, error) {
 		if normal.Load() {
@@ -309,6 +315,7 @@ func TestAReaderThatStopsReadingGivesTheSlotBack(t *testing.T) {
 }
 
 func TestARoomThatNeverAnswersGivesTheSlotBackAndTheReaderA504(t *testing.T) {
+	t.Parallel()
 	p := quickPass(rtFunc(func(r *http.Request) (*http.Response, error) {
 		<-r.Context().Done()
 		return nil, r.Context().Err()
@@ -331,6 +338,7 @@ func TestARoomThatNeverAnswersGivesTheSlotBackAndTheReaderA504(t *testing.T) {
 }
 
 func TestARoomThatGoesQuietMidAnswerGivesTheSlotBack(t *testing.T) {
+	t.Parallel()
 	p := quickPass(rtFunc(func(r *http.Request) (*http.Response, error) {
 		return &http.Response{StatusCode: 200, Header: http.Header{}, Body: &ctxBody{ctx: r.Context()}}, nil
 	}))
@@ -346,6 +354,7 @@ func TestARoomThatGoesQuietMidAnswerGivesTheSlotBack(t *testing.T) {
 }
 
 func TestABodyThatStopsGivesTheSlotBack(t *testing.T) {
+	t.Parallel()
 	p := quickPass(okRT("ok"))
 	srv := servePass(t, p)
 	c := rawConn(t, srv)
@@ -368,6 +377,7 @@ func TestABodyThatStopsGivesTheSlotBack(t *testing.T) {
 
 // A fetch that keeps moving is not cut, though it takes far longer than any one deadline.
 func TestAFetchThatKeepsMakingProgressIsNotCut(t *testing.T) {
+	t.Parallel()
 	const chunks = 12
 	p := quickPass(rtFunc(func(r *http.Request) (*http.Response, error) {
 		pr, pw := io.Pipe()
@@ -426,6 +436,7 @@ func TestAFetchThatKeepsMakingProgressIsNotCut(t *testing.T) {
 
 // The connection may carry the reader's next request, so a deadline that passed must not be left on it.
 func TestTheDeadlinesAreClearedWhenTheRequestEnds(t *testing.T) {
+	t.Parallel()
 	p := quickPass(okRT("ok"))
 	srv := servePass(t, p)
 	c := &http.Client{Transport: &http.Transport{MaxIdleConnsPerHost: 1}}

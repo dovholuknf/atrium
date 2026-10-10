@@ -77,6 +77,7 @@ func (x *forgeFix) stale() {
 }
 
 func TestABranchOnlyTheForgeHasIsFoundAndFetchableThroughTheHub(t *testing.T) {
+	t.Parallel()
 	x := newForgeFix(t)
 	if _, err := x.h.Store().Init(bg, repoURL); err != nil {
 		t.Fatal(err)
@@ -137,6 +138,7 @@ func TestABranchOnlyTheForgeHasIsFoundAndFetchableThroughTheHub(t *testing.T) {
 }
 
 func TestAFirstAskMakesTheRepositoryFromItsForge(t *testing.T) {
+	t.Parallel()
 	x := newForgeFix(t)
 	tip := x.forgeBranch(t, "feature", "f.txt")
 	// A typo makes nothing.
@@ -156,6 +158,7 @@ func TestAFirstAskMakesTheRepositoryFromItsForge(t *testing.T) {
 }
 
 func TestAPushedBranchOfTheSameNameIsNotShadowed(t *testing.T) {
+	t.Parallel()
 	x := newForgeFix(t)
 	if _, err := x.h.Store().Init(bg, repoURL); err != nil {
 		t.Fatal(err)
@@ -187,6 +190,7 @@ func TestAPushedBranchOfTheSameNameIsNotShadowed(t *testing.T) {
 }
 
 func TestAMissingBranchIsStillNotFound(t *testing.T) {
+	t.Parallel()
 	x := newForgeFix(t)
 	if _, err := x.h.Store().Init(bg, repoURL); err != nil {
 		t.Fatal(err)
@@ -207,6 +211,7 @@ func TestAMissingBranchIsStillNotFound(t *testing.T) {
 }
 
 func TestABranchTheForgeDroppedIsDroppedFromTheStore(t *testing.T) {
+	t.Parallel()
 	x := newForgeFix(t)
 	if _, err := x.h.Store().Init(bg, repoURL); err != nil {
 		t.Fatal(err)
@@ -225,6 +230,7 @@ func TestABranchTheForgeDroppedIsDroppedFromTheStore(t *testing.T) {
 }
 
 func TestAPrivateRepositoryWithNoCredentialSaysSo(t *testing.T) {
+	t.Parallel()
 	x := newForgeFix(t)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("WWW-Authenticate", `Basic realm="forge"`)
@@ -277,6 +283,7 @@ func (x *forgeFix) lookupMain(t *testing.T) string {
 }
 
 func TestASeededMainFollowsItsForge(t *testing.T) {
+	t.Parallel()
 	x := newForgeFix(t)
 	if _, err := x.h.Store().Init(bg, repoURL); err != nil {
 		t.Fatal(err)
@@ -314,6 +321,7 @@ func TestASeededMainFollowsItsForge(t *testing.T) {
 }
 
 func TestAForgeThatCannotBeReachedLeavesMainAndTheFetchGoesOn(t *testing.T) {
+	t.Parallel()
 	x := newForgeFix(t)
 	if _, err := x.h.Store().Init(bg, repoURL); err != nil {
 		t.Fatal(err)
@@ -334,6 +342,7 @@ func TestAForgeThatCannotBeReachedLeavesMainAndTheFetchGoesOn(t *testing.T) {
 }
 
 func TestAnOperatorsPushedMainIsNeverOverwrittenByTheForge(t *testing.T) {
+	t.Parallel()
 	x := newForgeFix(t)
 	if _, err := x.h.Store().Init(bg, repoURL); err != nil {
 		t.Fatal(err)
@@ -379,6 +388,7 @@ func TestAnOperatorsPushedMainIsNeverOverwrittenByTheForge(t *testing.T) {
 }
 
 func TestMainIsRefreshedAtMostOncePerFreshFor(t *testing.T) {
+	t.Parallel()
 	x := newForgeFix(t)
 	if _, err := x.h.Store().Init(bg, repoURL); err != nil {
 		t.Fatal(err)
@@ -408,6 +418,7 @@ func TestMainIsRefreshedAtMostOncePerFreshFor(t *testing.T) {
 }
 
 func TestOneFetchPerBranchAtATime(t *testing.T) {
+	t.Parallel()
 	var fs forgeState
 	var runs atomic.Int32
 	release := make(chan struct{})
@@ -461,6 +472,7 @@ func TestOneFetchPerBranchAtATime(t *testing.T) {
 }
 
 func TestForgeAdvertAddsPlainNamesThatNoBranchHas(t *testing.T) {
+	t.Parallel()
 	in := advert(
 		sha1h+" refs/heads/main",
 		sha2h+" refs/heads/Fix",

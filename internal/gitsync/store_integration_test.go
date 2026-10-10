@@ -19,6 +19,7 @@ import (
 )
 
 func TestParseURLTakesEveryShapeAndMapsTheHost(t *testing.T) {
+	t.Parallel()
 	for in, want := range map[string]string{
 		"https://github.com/openziti/zrok":       "github/openziti/zrok",
 		"https://github.com/openziti/zrok.git":   "github/openziti/zrok",
@@ -45,6 +46,7 @@ func TestParseURLTakesEveryShapeAndMapsTheHost(t *testing.T) {
 }
 
 func TestParseURLRefusesTheHostileOnes(t *testing.T) {
+	t.Parallel()
 	long := "https://github.com/o/" + strings.Repeat("a", 5000)
 	for name, in := range map[string]string{
 		"a token":            "https://ghp_SECRETTOKEN123@github.com/o/r",
@@ -112,6 +114,7 @@ func TestParseURLRefusesTheHostileOnes(t *testing.T) {
 }
 
 func TestParseNameAcceptsShortAndFull(t *testing.T) {
+	t.Parallel()
 	for in, want := range map[string]string{
 		"openziti/zrok":              "github/openziti/zrok",
 		"github/openziti/zrok":       "github/openziti/zrok",
@@ -199,6 +202,7 @@ func newStore(t *testing.T, branch string) *storeFixture {
 const repoURL = "https://github.com/o/r"
 
 func TestInitSeedsMainEvenWhenTheForgeCallsItMaster(t *testing.T) {
+	t.Parallel()
 	x := newStore(t, "master")
 	want := x.forge.push(t, "master", "a.txt", "one", 1000)
 	x.forge.push(t, "feature", "b.txt", "two", 2000)
@@ -230,6 +234,7 @@ func TestInitSeedsMainEvenWhenTheForgeCallsItMaster(t *testing.T) {
 }
 
 func TestASecondInitIsANoOpAndNeverFetchesAgain(t *testing.T) {
+	t.Parallel()
 	x := newStore(t, "master")
 	first := x.forge.push(t, "master", "a.txt", "one", 1000)
 	if _, err := x.s.Init(bg, repoURL); err != nil {
@@ -258,6 +263,7 @@ func TestASecondInitIsANoOpAndNeverFetchesAgain(t *testing.T) {
 }
 
 func TestAnUnreachableForgeLeavesAnEmptyRepoAndASentence(t *testing.T) {
+	t.Parallel()
 	x := newStore(t, "main")
 	x.s.Forge = func(Ref) string { return filepath.Join(x.root, "no", "such.git") }
 	res, err := x.s.Init(bg, repoURL)
@@ -281,6 +287,7 @@ func TestAnUnreachableForgeLeavesAnEmptyRepoAndASentence(t *testing.T) {
 }
 
 func TestAPrivateForgeThatAsksForACredentialIsToldApart(t *testing.T) {
+	t.Parallel()
 	x := newStore(t, "main")
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("WWW-Authenticate", `Basic realm="forge"`)
@@ -299,6 +306,7 @@ func TestAPrivateForgeThatAsksForACredentialIsToldApart(t *testing.T) {
 }
 
 func TestANetworkErrorSaysToRerunAndTheRerunSeeds(t *testing.T) {
+	t.Parallel()
 	x := newStore(t, "master")
 	want := x.forge.push(t, "master", "a.txt", "one", 1000)
 	// Nothing listens on port 1.
@@ -333,6 +341,7 @@ func TestANetworkErrorSaysToRerunAndTheRerunSeeds(t *testing.T) {
 }
 
 func TestAnEmptyRepoThatTheOperatorPushedMainToIsLeftAlone(t *testing.T) {
+	t.Parallel()
 	x := newStore(t, "master")
 	x.s.Forge = func(Ref) string { return filepath.Join(x.root, "no", "such.git") }
 	if _, err := x.s.Init(bg, repoURL); err != nil {
@@ -351,6 +360,7 @@ func TestAnEmptyRepoThatTheOperatorPushedMainToIsLeftAlone(t *testing.T) {
 }
 
 func TestAnEmptyForgeRepositoryMakesAnEmptyRepo(t *testing.T) {
+	t.Parallel()
 	x := newStore(t, "main")
 	res, err := x.s.Init(bg, repoURL)
 	if err != nil {
@@ -363,6 +373,7 @@ func TestAnEmptyForgeRepositoryMakesAnEmptyRepo(t *testing.T) {
 
 // Nothing of the URL, the forge or a credential is written into the new repository.
 func TestTheNewRepoHoldsNoURLOrCredential(t *testing.T) {
+	t.Parallel()
 	x := newStore(t, "master")
 	x.forge.push(t, "master", "a.txt", "one", 1000)
 	if _, err := x.s.Init(bg, "git@github.com:o/r.git"); err != nil {
@@ -396,6 +407,7 @@ func TestTheNewRepoHoldsNoURLOrCredential(t *testing.T) {
 
 // No receive-pack and no hook: the bare repository is ready for them and has neither.
 func TestTheNewRepoIsReadyForReceiveAndHasNoHook(t *testing.T) {
+	t.Parallel()
 	x := newStore(t, "main")
 	if _, err := x.s.Init(bg, repoURL); err != nil {
 		t.Fatal(err)
@@ -443,6 +455,7 @@ func TestTheSeedIgnoresTheOperatorsGlobalGitConfig(t *testing.T) {
 }
 
 func TestCaseCollisionsAreRefusedAndSaidSo(t *testing.T) {
+	t.Parallel()
 	x := newStore(t, "main")
 	if _, err := x.s.Init(bg, "https://github.com/foo/bar"); err != nil {
 		t.Fatal(err)
@@ -474,6 +487,7 @@ func TestCaseCollisionsAreRefusedAndSaidSo(t *testing.T) {
 }
 
 func TestInitRefusesWhatIsAlreadyThereAndIsNotARepository(t *testing.T) {
+	t.Parallel()
 	x := newStore(t, "main")
 	d := filepath.Join(x.root, "git", "github", "o", "r.git")
 	if err := os.MkdirAll(d, 0o755); err != nil {
@@ -495,6 +509,7 @@ func TestInitRefusesWhatIsAlreadyThereAndIsNotARepository(t *testing.T) {
 }
 
 func TestInitRemovesWhatItMadeWhenGitFails(t *testing.T) {
+	t.Parallel()
 	x := newStore(t, "main")
 	x.h.Runner = NewRunner()
 	x.h.Runner.Stop(time.Second)
@@ -507,6 +522,7 @@ func TestInitRemovesWhatItMadeWhenGitFails(t *testing.T) {
 }
 
 func TestReftableOnlyWhereGitHasItAndTheProbeWorks(t *testing.T) {
+	t.Parallel()
 	realVer, err := Default.Git(bg, "", "--version")
 	if err != nil {
 		t.Fatal(err)
@@ -582,6 +598,7 @@ func TestReftableOnlyWhereGitHasItAndTheProbeWorks(t *testing.T) {
 
 // The git_repos mirrors live under the same directory by default, and the store leaves them alone.
 func TestTheStoreAndTheGitReposMirrorsCoexist(t *testing.T) {
+	t.Parallel()
 	x := newStore(t, "master")
 	x.forge.push(t, "master", "a.txt", "one", 1000)
 	ck := filepath.Join(t.TempDir(), "checkout")
@@ -674,6 +691,7 @@ func TestTheStoreAndTheGitReposMirrorsCoexist(t *testing.T) {
 }
 
 func TestTheStoreRootIsTheSettingAndTheDefaultIsUnderTheHubDir(t *testing.T) {
+	t.Parallel()
 	x := newStore(t, "main")
 	if x.s.Root() != filepath.Join(x.root, "git") {
 		t.Fatalf("default root = %s", x.s.Root())
@@ -696,6 +714,7 @@ func TestTheStoreRootIsTheSettingAndTheDefaultIsUnderTheHubDir(t *testing.T) {
 }
 
 func TestInitInParallelMakesItOnce(t *testing.T) {
+	t.Parallel()
 	x := newStore(t, "master")
 	x.forge.push(t, "master", "a.txt", "one", 1000)
 	var wg sync.WaitGroup
@@ -724,6 +743,7 @@ func TestInitInParallelMakesItOnce(t *testing.T) {
 }
 
 func TestViewIsTheExactShapeTheBoardReads(t *testing.T) {
+	t.Parallel()
 	x := newStore(t, "master")
 	empty := func() []byte {
 		raw, _ := json.Marshal(map[string]any{"repos": mustView(t, x.s)})
@@ -800,6 +820,7 @@ func mustView(t *testing.T, s *Store) []RepoView {
 
 // An answer or an error never names a directory on the hub's disk.
 func TestNoAnswerNamesAPathOnTheHubsDisk(t *testing.T) {
+	t.Parallel()
 	x := newStore(t, "main")
 	x.s.Forge = func(Ref) string { return filepath.Join(x.root, "no", "such.git") }
 	res, err := x.s.Init(bg, repoURL)
@@ -818,6 +839,7 @@ func TestNoAnswerNamesAPathOnTheHubsDisk(t *testing.T) {
 }
 
 func TestInitRefusesAHostileURLBeforeTouchingTheDisk(t *testing.T) {
+	t.Parallel()
 	x := newStore(t, "main")
 	for _, in := range []string{"https://tok@github.com/o/r", "https://github.com/../x", "https://github.com/o/r\nx", ""} {
 		if _, err := x.s.Init(bg, in); !errors.Is(err, ErrRefused) {
@@ -831,6 +853,7 @@ func TestInitRefusesAHostileURLBeforeTouchingTheDisk(t *testing.T) {
 
 // A repository the store made is seeded on a rerun, and one it adopted never is: the kind is in the marker.
 func TestTheMarkerSaysMadeOrAdoptedAndAnOldMarkerReadsAsMade(t *testing.T) {
+	t.Parallel()
 	x := newStore(t, "master")
 	x.s.Forge = func(Ref) string { return filepath.Join(x.root, "none.git") }
 	if _, err := x.s.Init(bg, repoURL); err != nil {
@@ -858,6 +881,7 @@ func TestTheMarkerSaysMadeOrAdoptedAndAnOldMarkerReadsAsMade(t *testing.T) {
 // A store step and the mirror pass never run in one git_repos mirror at once: the store takes the
 // mirror's own lock whenever the directory is a configured mirror, and not for any other repository.
 func TestAnInitOfAMirrorTakesTheMirrorsLock(t *testing.T) {
+	t.Parallel()
 	x := newStore(t, "master")
 	x.forge.push(t, "master", "a.txt", "one", 1000)
 	ck := filepath.Join(t.TempDir(), "checkout")
@@ -903,6 +927,7 @@ func TestAnInitOfAMirrorTakesTheMirrorsLock(t *testing.T) {
 }
 
 func TestTheScrubTakesOutResolvedAndDifferentlyCasedPaths(t *testing.T) {
+	t.Parallel()
 	x := newStore(t, "main")
 	// A symlinked hub directory: git prints the real path.
 	real := t.TempDir()
@@ -936,6 +961,7 @@ func TestTheScrubTakesOutResolvedAndDifferentlyCasedPaths(t *testing.T) {
 
 // Foo/x and foo/y have different repository locks and must not both get past the case check.
 func TestDifferentlyCasedOwnersWithDifferentReposDoNotRace(t *testing.T) {
+	t.Parallel()
 	x := newStore(t, "main")
 	x.s.Forge = func(Ref) string { return filepath.Join(x.root, "none.git") }
 	paused := make(chan struct{})
@@ -979,6 +1005,7 @@ func TestDifferentlyCasedOwnersWithDifferentReposDoNotRace(t *testing.T) {
 
 // A failed init leaves no empty owner directory to collide with a later spelling.
 func TestAFailedInitLeavesNoEmptyOwnerDirectory(t *testing.T) {
+	t.Parallel()
 	x := newStore(t, "main")
 	x.h.Runner = NewRunner()
 	x.h.Runner.Stop(time.Second)
@@ -996,6 +1023,7 @@ func TestAFailedInitLeavesNoEmptyOwnerDirectory(t *testing.T) {
 
 // The forge's objects are checked: history that fails git's object checks is not stored.
 func TestTheSeedChecksTheForgesObjects(t *testing.T) {
+	t.Parallel()
 	x := newStore(t, "master")
 	x.forge.push(t, "master", "a.txt", "fine", 1000)
 	// A commit with no email in its author line, which git's object check refuses.

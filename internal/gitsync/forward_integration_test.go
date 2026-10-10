@@ -26,6 +26,7 @@ func forwarded(t *testing.T, s *served) *Forwarder {
 }
 
 func TestTheForwarderCarriesAFetch(t *testing.T) {
+	t.Parallel()
 	s := newServed(t)
 	f := forwarded(t, s)
 	dst := t.TempDir()
@@ -37,6 +38,7 @@ func TestTheForwarderCarriesAFetch(t *testing.T) {
 }
 
 func TestTheForwarderRefusesARequestWithoutItsToken(t *testing.T) {
+	t.Parallel()
 	s := newServed(t)
 	f := forwarded(t, s)
 	base := strings.TrimSuffix(f.URL, f.URL[strings.LastIndex(f.URL, "/"):])
@@ -57,6 +59,7 @@ func TestTheForwarderRefusesARequestWithoutItsToken(t *testing.T) {
 }
 
 func TestTheForwarderClosesWhenTheCommandExits(t *testing.T) {
+	t.Parallel()
 	s := newServed(t)
 	f := forwarded(t, s)
 	addr := strings.TrimPrefix(strings.SplitN(f.URL, "/", 4)[2], "")
@@ -78,6 +81,7 @@ func TestTheForwarderClosesWhenTheCommandExits(t *testing.T) {
 // A fetch of many distinct tips, so the want list is far past git's post buffer floor and
 // the client sends the POST chunked. It has to survive forwarder, transport and cgi.
 func TestAChunkedPostGoesThrough(t *testing.T) {
+	t.Parallel()
 	s := freshServed(t)
 	var stream strings.Builder
 	for i := 0; i < 1500; i++ {
@@ -109,6 +113,7 @@ func (s toServer) RoundTrip(r *http.Request) (*http.Response, error) {
 }
 
 func TestTheHubLoopbackServesAFetchOfOneRepositoryAndNothingElse(t *testing.T) {
+	t.Parallel()
 	var seen []string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		seen = append(seen, r.Method+" "+r.URL.Path)

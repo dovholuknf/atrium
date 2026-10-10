@@ -296,6 +296,7 @@ func (x *recvFix) pushRows() []PushRow {
 const hubRepo = "github/o/r"
 
 func TestACardsPushOfANewBranchLandsAndIsLogged(t *testing.T) {
+	t.Parallel()
 	x := newRecv(t)
 	main := x.seedMain(hubRepo)
 	sha := x.branch("fix/x", "x.txt")
@@ -324,6 +325,7 @@ func TestACardsPushOfANewBranchLandsAndIsLogged(t *testing.T) {
 }
 
 func TestTheOwnerFastForwardsItsOwnBranch(t *testing.T) {
+	t.Parallel()
 	x := newRecv(t)
 	x.seedMain(hubRepo)
 	x.branch("fix/x", "x.txt")
@@ -340,6 +342,7 @@ func TestTheOwnerFastForwardsItsOwnBranch(t *testing.T) {
 }
 
 func TestANonFastForwardIsRefusedAndMovesNothing(t *testing.T) {
+	t.Parallel()
 	x := newRecv(t)
 	x.seedMain(hubRepo)
 	first := x.branch("fix/x", "x.txt")
@@ -366,6 +369,7 @@ func TestANonFastForwardIsRefusedAndMovesNothing(t *testing.T) {
 }
 
 func TestARefusalReachesGitAsRemoteRejectedWithTheSentence(t *testing.T) {
+	t.Parallel()
 	x := newRecv(t)
 	x.seedMain(hubRepo)
 	x.branch("fix/x", "x.txt")
@@ -381,6 +385,7 @@ func TestARefusalReachesGitAsRemoteRejectedWithTheSentence(t *testing.T) {
 }
 
 func TestAPushOfMainFromACardIsRefusedAndFromTheOperatorLands(t *testing.T) {
+	t.Parallel()
 	x := newRecv(t)
 	main := x.seedMain(hubRepo)
 	for _, ref := range []string{"refs/heads/main", "refs/heads/claude/main"} {
@@ -416,6 +421,7 @@ func TestAPushOfMainFromACardIsRefusedAndFromTheOperatorLands(t *testing.T) {
 }
 
 func TestAnotherCardCannotPushToAnOwnedBranchOnAnyRoom(t *testing.T) {
+	t.Parallel()
 	x := newRecv(t)
 	x.seedMain(hubRepo)
 	owned := x.branch("fix/x", "x.txt")
@@ -440,6 +446,7 @@ func TestAnotherCardCannotPushToAnOwnedBranchOnAnyRoom(t *testing.T) {
 }
 
 func TestTheOwnersSuccessorByChainPushesAndTakesTheBranchOver(t *testing.T) {
+	t.Parallel()
 	x := newRecv(t)
 	x.seedMain(hubRepo)
 	x.branch("fix/x", "x.txt")
@@ -469,6 +476,7 @@ func TestTheOwnersSuccessorByChainPushesAndTakesTheBranchOver(t *testing.T) {
 // A CHAIN IS HONOURED ONLY AGAINST AN OWNER ON THE PUSHER'S OWN ROOM. The hub trusts a room's forwarder for its
 // own cards, and no other room's.
 func TestAChainNamingAnotherRoomsCardDoesNotHelp(t *testing.T) {
+	t.Parallel()
 	x := newRecv(t)
 	x.seedMain(hubRepo)
 	x.branch("fix/x", "x.txt")
@@ -496,6 +504,7 @@ func TestAChainNamingAnotherRoomsCardDoesNotHelp(t *testing.T) {
 }
 
 func TestAnOwnerWhoIsGoneDeadOrLongDoneReleasesTheBranch(t *testing.T) {
+	t.Parallel()
 	for name, tc := range map[string]struct {
 		st   CardState
 		err  error
@@ -539,6 +548,7 @@ func TestAnOwnerWhoIsGoneDeadOrLongDoneReleasesTheBranch(t *testing.T) {
 }
 
 func TestAnOwnerWhoIsLiveOrRecentlyDoneKeepsTheBranch(t *testing.T) {
+	t.Parallel()
 	for name, st := range map[string]CardState{
 		"running":  {Status: "working"},
 		"idle":     {Status: "needs-input", IdleSeconds: 30 * 24 * 3600},
@@ -562,6 +572,7 @@ func TestAnOwnerWhoIsLiveOrRecentlyDoneKeepsTheBranch(t *testing.T) {
 }
 
 func TestAnUnreachableOwnersRoomKeepsTheBranchOwnedAndSaysWhy(t *testing.T) {
+	t.Parallel()
 	x := newRecv(t)
 	x.seedMain(hubRepo)
 	x.branch("fix/x", "x.txt")
@@ -584,6 +595,7 @@ func TestAnUnreachableOwnersRoomKeepsTheBranchOwnedAndSaysWhy(t *testing.T) {
 }
 
 func TestTheOperatorReleasesABranchAndTheNextCardOwnsIt(t *testing.T) {
+	t.Parallel()
 	x := newRecv(t)
 	x.seedMain(hubRepo)
 	x.branch("fix/x", "x.txt")
@@ -612,6 +624,7 @@ func TestTheOperatorReleasesABranchAndTheNextCardOwnsIt(t *testing.T) {
 }
 
 func TestTheOperatorMayFastForwardAnyBranchAndOwnershipIsUnchanged(t *testing.T) {
+	t.Parallel()
 	x := newRecv(t)
 	x.seedMain(hubRepo)
 	x.branch("fix/x", "x.txt")
@@ -635,6 +648,7 @@ func TestTheOperatorMayFastForwardAnyBranchAndOwnershipIsUnchanged(t *testing.T)
 }
 
 func TestACaseVariantOfAnExistingBranchIsRefused(t *testing.T) {
+	t.Parallel()
 	x := newRecv(t)
 	x.seedMain(hubRepo)
 	first := x.branch("fix/x", "x.txt")
@@ -664,6 +678,7 @@ func TestACaseVariantOfAnExistingBranchIsRefused(t *testing.T) {
 }
 
 func TestTwoNewRefsInOnePushThatDifferOnlyInCaseAreRefused(t *testing.T) {
+	t.Parallel()
 	x := newRecv(t)
 	x.seedMain(hubRepo)
 	a := x.branch("a/b", "1.txt")
@@ -678,6 +693,7 @@ func TestTwoNewRefsInOnePushThatDifferOnlyInCaseAreRefused(t *testing.T) {
 }
 
 func TestAHostileRefNameSet(t *testing.T) {
+	t.Parallel()
 	x := newRecv(t)
 	x.seedMain(hubRepo)
 	sha := x.branch("fix/x", "x.txt")
@@ -737,6 +753,7 @@ func TestAHostileRefNameSet(t *testing.T) {
 }
 
 func TestDeleteTagNotesAndStashFromACardAreRefusedAndNothingMoves(t *testing.T) {
+	t.Parallel()
 	x := newRecv(t)
 	x.seedMain(hubRepo)
 	x.branch("fix/x", "x.txt")
@@ -777,6 +794,7 @@ func TestDeleteTagNotesAndStashFromACardAreRefusedAndNothingMoves(t *testing.T) 
 }
 
 func TestAMultiRefPushWithOneBadRefMovesNothing(t *testing.T) {
+	t.Parallel()
 	x := newRecv(t)
 	main := x.seedMain(hubRepo)
 	x.branch("fix/a", "a.txt")
@@ -819,6 +837,7 @@ func TestAMultiRefPushWithOneBadRefMovesNothing(t *testing.T) {
 }
 
 func TestAnOldShaThatIsNotTheRefsCurrentValueIsRefused(t *testing.T) {
+	t.Parallel()
 	x := newRecv(t)
 	x.seedMain(hubRepo)
 	first := x.branch("fix/x", "x.txt")
@@ -843,6 +862,7 @@ func TestAnOldShaThatIsNotTheRefsCurrentValueIsRefused(t *testing.T) {
 }
 
 func TestAPushToARepositoryTheHubLacksIsRefusedUnlessCreateOnPushIsOn(t *testing.T) {
+	t.Parallel()
 	x := newRecv(t)
 	sha := x.branch("fix/x", "x.txt")
 	card := roomCard("sg4", "C1")
@@ -896,6 +916,7 @@ func TestAPushToARepositoryTheHubLacksIsRefusedUnlessCreateOnPushIsOn(t *testing
 }
 
 func TestARepositoryMadeByAPushThatTakesNothingIsTakenAway(t *testing.T) {
+	t.Parallel()
 	x := newRecv(t)
 	x.create.Store(true)
 	x.branch("fix/x", "x.txt")
@@ -964,6 +985,7 @@ func TestAnOversizePushIsRefusedAndNothingIsKept(t *testing.T) {
 }
 
 func TestAPushWithNoIdentityIsRefusedAndHeadersAreIgnoredOffTheLink(t *testing.T) {
+	t.Parallel()
 	x := newRecv(t)
 	x.seedMain(hubRepo)
 	x.branch("fix/x", "x.txt")
@@ -985,6 +1007,7 @@ func TestAPushWithNoIdentityIsRefusedAndHeadersAreIgnoredOffTheLink(t *testing.T
 }
 
 func TestARoomsPushWithNoCardIsRefusedWithASentence(t *testing.T) {
+	t.Parallel()
 	x := newRecv(t)
 	x.seedMain(hubRepo)
 	x.branch("fix/x", "x.txt")
@@ -1010,6 +1033,7 @@ func TestARoomsPushWithNoCardIsRefusedWithASentence(t *testing.T) {
 }
 
 func TestAMirrorIsNotServedOrPushedThroughTheStoreRoute(t *testing.T) {
+	t.Parallel()
 	x := newRecv(t)
 	// A bare repository at a store path with no marker, as a git_repos mirror is.
 	ref, _ := ParseName("github/m/mirror")
@@ -1043,6 +1067,7 @@ func TestAMirrorIsNotServedOrPushedThroughTheStoreRoute(t *testing.T) {
 // NOBODY PUSHES WHAT AN ADOPTED MIRROR KEEPS IN STEP, the operator included: the mirror pass force-fetches the
 // checkout over it. A card's work branch lands beside it.
 func TestAnAdoptedMirrorTakesWorkBranchesAndNothingThePassOwns(t *testing.T) {
+	t.Parallel()
 	x := newRecv(t)
 	ref, _ := ParseName("github/m/mirror")
 	dir := x.h.Store().dir(ref)
@@ -1099,6 +1124,7 @@ func TestAnAdoptedMirrorTakesWorkBranchesAndNothingThePassOwns(t *testing.T) {
 }
 
 func TestARoomAndTheOperatorCanFetchTheStore(t *testing.T) {
+	t.Parallel()
 	x := newRecv(t)
 	main := x.seedMain(hubRepo)
 	sha := x.branch("fix/x", "x.txt")
@@ -1119,6 +1145,7 @@ func TestARoomAndTheOperatorCanFetchTheStore(t *testing.T) {
 }
 
 func TestShallowDeepenAndFilterFetchesAreRefusedBeforeGit(t *testing.T) {
+	t.Parallel()
 	x := newRecv(t)
 	main := x.seedMain(hubRepo)
 	want := pktLine("want " + main + " multi_ack_detailed side-band-64k ofs-delta\n")
@@ -1152,6 +1179,7 @@ func TestShallowDeepenAndFilterFetchesAreRefusedBeforeGit(t *testing.T) {
 }
 
 func TestProtocolV2IsDroppedAndTheDumbProtocolIsOff(t *testing.T) {
+	t.Parallel()
 	x := newRecv(t)
 	x.seedMain(hubRepo)
 	for _, svc := range []string{"git-upload-pack", "git-receive-pack"} {
@@ -1190,6 +1218,7 @@ func TestProtocolV2IsDroppedAndTheDumbProtocolIsOff(t *testing.T) {
 }
 
 func TestARepositorysOwnHookAndConfigAreNotUsed(t *testing.T) {
+	t.Parallel()
 	x := newRecv(t)
 	x.seedMain(hubRepo)
 	dir, _ := x.h.Store().Path(hubRepo)
@@ -1222,6 +1251,7 @@ func TestARepositorysOwnHookAndConfigAreNotUsed(t *testing.T) {
 
 // A PUSH THE LOG CANNOT BEGIN IS NOT TAKEN: the row is written before git runs.
 func TestAPushTheLogCannotBeginMovesNothing(t *testing.T) {
+	t.Parallel()
 	x := newRecv(t)
 	x.seedMain(hubRepo)
 	x.branch("fix/x", "x.txt")
@@ -1247,6 +1277,7 @@ func TestAPushTheLogCannotBeginMovesNothing(t *testing.T) {
 
 // With no log at all, nothing is taken.
 func TestAHubWithNoPushLogTakesNoPush(t *testing.T) {
+	t.Parallel()
 	x := newRecv(t, func(h *Hub) { h.PushLog = nil })
 	x.makeRepo(hubRepo)
 	x.branch("fix/x", "x.txt")
@@ -1261,6 +1292,7 @@ func TestAHubWithNoPushLogTakesNoPush(t *testing.T) {
 // A push git took and the log could not settle STAYS OWNED by its pusher, because the row is pending and counts, and
 // the next push to the repository settles it from the refs.
 func TestAPushTheLogCannotSettleStaysOwnedAndIsSettledByTheNextPush(t *testing.T) {
+	t.Parallel()
 	x := newRecv(t)
 	x.seedMain(hubRepo)
 	sha := x.branch("fix/x", "x.txt")
@@ -1302,6 +1334,7 @@ func TestAPushTheLogCannotSettleStaysOwnedAndIsSettledByTheNextPush(t *testing.T
 // owned (any card could otherwise take it), and settling it from the refs makes it done if the ref moved and drops it
 // if it did not, at startup or on the next push.
 func TestACrashBetweenGitAndTheLogLeavesTheBranchOwnedUntilStartupSettlesIt(t *testing.T) {
+	t.Parallel()
 	x := newRecv(t)
 	x.seedMain(hubRepo)
 	sha := x.branch("fix/x", "x.txt")
@@ -1357,6 +1390,7 @@ func TestACrashBetweenGitAndTheLogLeavesTheBranchOwnedUntilStartupSettlesIt(t *t
 
 // THE FIRST PUSH TO A REPOSITORY settles what was left pending in it, with no startup in between.
 func TestTheNextPushToARepositorySettlesWhatACrashLeftPending(t *testing.T) {
+	t.Parallel()
 	x := newRecv(t)
 	x.seedMain(hubRepo)
 	sha := x.branch("fix/x", "x.txt")
@@ -1379,6 +1413,7 @@ func TestTheNextPushToARepositorySettlesWhatACrashLeftPending(t *testing.T) {
 
 // A TAKEOVER THAT GIT REFUSES RELEASES NOTHING: the release is written with the push row when it lands.
 func TestATakeoverGitRefusesReleasesNothing(t *testing.T) {
+	t.Parallel()
 	x := newRecv(t)
 	x.seedMain(hubRepo)
 	x.branch("fix/x", "x.txt")
@@ -1410,6 +1445,7 @@ func TestATakeoverGitRefusesReleasesNothing(t *testing.T) {
 }
 
 func TestTwoPushesToTheSameNewBranchHaveExactlyOneWinner(t *testing.T) {
+	t.Parallel()
 	x := newRecv(t)
 	x.seedMain(hubRepo)
 	x.branch("fix/x", "a.txt")
@@ -1446,6 +1482,7 @@ func TestTwoPushesToTheSameNewBranchHaveExactlyOneWinner(t *testing.T) {
 }
 
 func TestTheListingTakesOwnersAndTimesFromThePushLog(t *testing.T) {
+	t.Parallel()
 	x := newRecv(t)
 	x.seedMain(hubRepo)
 	x.branch("fix/x", "x.txt")
@@ -1506,6 +1543,7 @@ const (
 
 // THE REFUSAL IS THE HUB'S SENTENCE, not git's own backup rule that would also have held.
 func TestDeleteAndTagRefusalsAreTheHubsSentences(t *testing.T) {
+	t.Parallel()
 	x := newRecv(t)
 	x.seedMain(hubRepo)
 	x.branch("fix/x", "x.txt")
@@ -1536,6 +1574,7 @@ func TestDeleteAndTagRefusalsAreTheHubsSentences(t *testing.T) {
 // A push that names a ref twice, a push from a shallow clone, and a card's push into an adopted mirror that
 // never asked for the advertisement, all hand-built because git does not send them.
 func TestHandBuiltPushesAreRefusedBeforeGit(t *testing.T) {
+	t.Parallel()
 	x := newRecv(t)
 	x.seedMain(hubRepo)
 	caps := "\x00report-status side-band-64k"
@@ -1599,6 +1638,7 @@ func TestADeclaredOversizeBodyIsNotRead(t *testing.T) {
 
 // WHAT GIT IS GIVEN: no card header, no credential, no protocol version.
 func TestGitIsNotGivenTheAtriumHeadersCredentialsOrProtocol(t *testing.T) {
+	t.Parallel()
 	r := httptest.NewRequest(http.MethodGet, "http://hub/git/hub/github/o/r.git/info/refs", nil)
 	for k, v := range map[string]string{HeaderCard: "C1", HeaderChain: "C1,C0", "Authorization": "Bearer x",
 		"Cookie": "a=b", "Git-Protocol": "version=2", "User-Agent": "git/2"} {
@@ -1661,6 +1701,7 @@ func TestTwoCaseTwinRepositoriesMadeAtOnceLeaveOne(t *testing.T) {
 // A FEATURE LIST RIDES ON ANY COMMAND LINE, as git reads it, so a push-options or a sha256 on the second line is as
 // refused as on the first.
 func TestACapabilityOnAnyCommandLineIsHeldToTheSameChecks(t *testing.T) {
+	t.Parallel()
 	x := newRecv(t)
 	x.seedMain(hubRepo)
 	zero := strings.Repeat("0", 40)
@@ -1689,6 +1730,7 @@ func TestACapabilityOnAnyCommandLineIsHeldToTheSameChecks(t *testing.T) {
 // ONE VALUE EACH. A forwarder that Adds to the card headers instead of setting them has a client's own value first,
 // and the hub refuses the request instead of letting the first win.
 func TestARepeatedCardHeaderIsRefused(t *testing.T) {
+	t.Parallel()
 	x := newRecv(t)
 	x.seedMain(hubRepo)
 	for name, hdr := range map[string][][2]string{
@@ -1737,6 +1779,7 @@ func TestARepeatedCardHeaderIsRefused(t *testing.T) {
 // A PUSH ASKS AT MOST maxOwnerAsks ROOMS, and the owners it did not ask are treated as unreachable: the branch stays
 // owned, and the refusal says why.
 func TestAPushAsksOnlyAFewOwnersAndTheRestStayOwned(t *testing.T) {
+	t.Parallel()
 	x := newRecv(t)
 	x.seedMain(hubRepo)
 	var refs, specs []string
@@ -1850,6 +1893,7 @@ func (p *lockProbe) Write(b []byte) (int, error) { p.note(); return p.ResponseWr
 
 // THE ANSWER IS WRITTEN TO THE CLIENT AFTER THE LOCK IS LET GO, so a client that stops reading holds nothing.
 func TestTheAnswerIsWrittenAfterTheRepositoryLockIsReleased(t *testing.T) {
+	t.Parallel()
 	x := newRecv(t)
 	x.seedMain(hubRepo)
 	l := x.h.lock("store:" + strings.ToLower(hubRepo))
@@ -1875,6 +1919,7 @@ func TestTheAnswerIsWrittenAfterTheRepositoryLockIsReleased(t *testing.T) {
 }
 
 func TestGitsProbeBeforeALargePushIsAnsweredAndDoesNothing(t *testing.T) {
+	t.Parallel()
 	x := newRecv(t)
 	card := roomCard("sg4", "C1")
 	x.create.Store(true)
@@ -1899,6 +1944,7 @@ func TestGitsProbeBeforeALargePushIsAnsweredAndDoesNothing(t *testing.T) {
 }
 
 func TestAPushThatMakesGitProbeLandsThroughTheReceiver(t *testing.T) {
+	t.Parallel()
 	x := newRecv(t)
 	x.seedMain(hubRepo)
 	sha := x.branch("fix/x", "x.txt")

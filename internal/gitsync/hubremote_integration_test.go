@@ -80,6 +80,7 @@ func (f *remoteFix) git(env []string, dir string, args ...string) (string, error
 }
 
 func TestInACardEnvGitPushHubLandsWithTheCardInThePushLog(t *testing.T) {
+	t.Parallel()
 	f := newRemote(t)
 	f.seedMain(hubRepo)
 	sha := f.branch("fix/x", "x.txt")
@@ -106,6 +107,7 @@ func TestInACardEnvGitPushHubLandsWithTheCardInThePushLog(t *testing.T) {
 }
 
 func TestAProcessWithNoCardTokenIsRefusedByTheForwarderBeforeTheHub(t *testing.T) {
+	t.Parallel()
 	f := newRemote(t)
 	f.seedMain(hubRepo)
 	f.branch("fix/x", "x.txt")
@@ -135,6 +137,7 @@ func TestAProcessWithNoCardTokenIsRefusedByTheForwarderBeforeTheHub(t *testing.T
 }
 
 func TestAWrongRevokedOrOtherCardsTokenIsRefused(t *testing.T) {
+	t.Parallel()
 	f := newRemote(t)
 	f.seedMain(hubRepo)
 	git(t, f.work, "remote", "add", "hub", f.repoURL(hubRepo))
@@ -167,6 +170,7 @@ func TestAWrongRevokedOrOtherCardsTokenIsRefused(t *testing.T) {
 }
 
 func TestGitPushNoneRefusesReceivePackAndStillFetches(t *testing.T) {
+	t.Parallel()
 	f := newRemote(t)
 	f.seedMain(hubRepo)
 	f.branch("fix/x", "x.txt")
@@ -205,6 +209,7 @@ func TestGitPushNoneRefusesReceivePackAndStillFetches(t *testing.T) {
 }
 
 func TestAClientsOwnCardHeadersNeverReachTheHub(t *testing.T) {
+	t.Parallel()
 	f := newRemote(t)
 	f.seedMain(hubRepo)
 	f.branch("fix/x", "x.txt")
@@ -235,6 +240,7 @@ func TestAClientsOwnCardHeadersNeverReachTheHub(t *testing.T) {
 }
 
 func TestAFetchFromAnotherServerInACardEnvReceivesNoAtriumHeader(t *testing.T) {
+	t.Parallel()
 	f := newRemote(t)
 	var mu sync.Mutex
 	var seen []http.Header
@@ -270,6 +276,7 @@ func TestAFetchFromAnotherServerInACardEnvReceivesNoAtriumHeader(t *testing.T) {
 }
 
 func TestTheForwarderServesNothingButGitsFourRequests(t *testing.T) {
+	t.Parallel()
 	f := newRemote(t)
 	tok, _ := f.cards.Mint("C1")
 	for _, c := range []struct{ method, path, ctype string }{
@@ -300,6 +307,7 @@ func TestTheForwarderServesNothingButGitsFourRequests(t *testing.T) {
 }
 
 func TestTheHubsRefusalReachesGitUntouched(t *testing.T) {
+	t.Parallel()
 	f := newRemote(t)
 	f.seedMain(hubRepo)
 	f.branch("fix/x", "x.txt")
@@ -315,6 +323,7 @@ func TestTheHubsRefusalReachesGitUntouched(t *testing.T) {
 }
 
 func TestCardTokensAreMintedPerCardAndReplaced(t *testing.T) {
+	t.Parallel()
 	c := &CardTokens{}
 	a, _ := c.Mint("C1")
 	b, _ := c.Mint("C1")
@@ -338,6 +347,7 @@ func TestCardTokensAreMintedPerCardAndReplaced(t *testing.T) {
 // The same, by hand: a request that already carries two values of each card header, as a client that Adds would.
 // Whatever the client sent, the hub sees one of each and it is the forwarder's.
 func TestTwoCardHeadersFromAClientBecomeTheForwardersOneEach(t *testing.T) {
+	t.Parallel()
 	f := newRemote(t)
 	f.seedMain(hubRepo)
 	tok, _ := f.cards.Mint("C1")
