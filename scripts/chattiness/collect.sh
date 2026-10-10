@@ -15,7 +15,11 @@ since="1970-01-01T00:00:00Z"
 until_="2999-01-01T00:00:00Z"
 rooms="m1mini,sg4,sg3"
 tsv="chattiness-merged.tsv"
-win_bash="C:/PROGRA~1/Git/bin/bash.exe"
+# git-bash is on PATH in the ssh shell of a Windows room (sg3: V:\work\tools\git\bin). If it is not, pass --win-bash with
+# the PowerShell form, e.g. "& 'C:/Program Files/Git/bin/bash.exe'".
+win_bash="bash"
+win_root=""
+win_rooms="sg3,sg4"
 me="$(hostname 2>/dev/null | cut -d. -f1 | tr "[:upper:]" "[:lower:]")"
 
 while [ $# -gt 0 ]; do
@@ -26,6 +30,7 @@ while [ $# -gt 0 ]; do
     --tsv) tsv="$2"; shift 2 ;;
     --win-root) win_root="$2"; shift 2 ;;
     --win-bash) win_bash="$2"; shift 2 ;;
+    --win-rooms) win_rooms="$2"; shift 2 ;;
     -h|--help) sed -n '2,11p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) echo "collect: unknown argument $1" >&2; exit 2 ;;
   esac
@@ -46,7 +51,7 @@ for room in ${rooms//,/ }; do
     # because the default shell on a Windows room is cmd or PowerShell and mangles quotes and $ in a jq program.
     remote_bash=bash
     args=(--since "$since" --until "$until_" --tsv -)
-    case "$room" in sg3|sg4) remote_bash="$win_bash"; args=(--root "$win_root" "${args[@]}") ;; esac
+    case ",$win_rooms," in *",$room,"*) remote_bash="$win_bash"; [ -z "$win_root" ] || args=(--root "$win_root" "${args[@]}") ;; esac
     { printf 'set --'; printf ' %q' "${args[@]}"; printf '\n'; cat "$here/chattiness.sh"; } |
       ssh -o BatchMode=yes -o ConnectTimeout=10 "$room" "$remote_bash -s" > "$out" 2> "$work/$room.err"
   fi

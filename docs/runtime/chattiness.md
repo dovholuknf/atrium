@@ -19,7 +19,7 @@ scripts/chattiness/test.sh
 - `collect.sh` runs `chattiness.sh` locally for the room named like this machine (default rooms `m1mini,sg4,sg3`, so it
   works from sg4 too) and over `ssh <room>` for the others, then merges the rows and prints one summary. A room that
   does not answer is
-  named on stderr with the exact error and listed as not covered. `--rooms m1mini,sg4` picks rooms.
+  named on stderr with the exact error and listed as not covered. `--rooms m1mini,sg4` picks rooms (`local` is this machine).
 - `test.sh` checks the counts on `testdata/`, a synthetic transcript. A change in the transcript format shows up as a
   failing test. The fixture holds no real text.
 
@@ -66,7 +66,7 @@ first rule that matches:
 | repeat | the turn's text was already delivered to this session earlier, as a turn start or a mid-turn message (same key as the `repeats` column) |
 | notice | an automatic message: source notice, nudge or stop (`[atrium] new context:`, `restart wake:`, `room deploy:`, `atrium says: Your turn ended...`, a Stop hook carrying a message) |
 | ack | a say whose turn made no tool call besides `atrium_say`, `atrium_report`, `atrium_done` or `atrium_blocked`, and wrote under 300 output tokens |
-| result | a say from a worker to its launcher: the sender handle is not a director, the orchestrator, a reviewer, `clint` or `human`, or the text opens with `done` or `blocked` |
+| result | a say from a worker to its launcher: the sender handle is not a director, the orchestrator, its minion, a reviewer, `clint` or `human`, or the text opens with `done` or `blocked` |
 | errand | every other say: a launcher's ask or brief, a peer request, a review request |
 
 Human, launch (`Read BRIEF.md`) and other turns have no class. The result rule goes by the sender's name, so a
@@ -130,8 +130,17 @@ doing its job.
 - Transcripts of a session that was cleared or compacted start over, so one card can be several sessions.
 - Only rooms `collect.sh` can reach are covered. It says which.
 - `collect.sh` sends the script and its arguments over stdin and puts only the shell on the ssh command line, since the
-  default shell on a Windows room is cmd or PowerShell. The shell is `C:/PROGRA~1/Git/bin/bash.exe` for sg3 and sg4,
-  `--win-bash` changes it.
+  default shell on a Windows room is cmd or PowerShell. The Windows rooms are `sg3,sg4` (`--win-rooms` changes that)
+  and the shell is `bash`, which is git-bash on their PATH. `--win-bash` changes it, e.g. to
+  `"& 'C:/Program Files/Git/bin/bash.exe'"`, the PowerShell form of a quoted path. `--win-root` sets `--root` there.
+  A room named like this machine runs here, so on sg4 the room `sg4` is `local`.
+- jq programs go to jq as files (`-f`), never as an argument: Windows jq lost part of a long program passed that way.
+  They must also run on jq 1.6 (sg3), so `$as` and other words newer jq reserves are not used as variable names.
+- Transcripts last written before `--since` are skipped by mtime, which cuts a run on a big `~/.claude` from many
+  minutes to about a minute.
+- A say's body spans lines when it is wrapped in `pasted_content`, so the result rule matches it with `(.|\n)*`: the
+  `s` regex flag does not make `.` match a newline in jq. The sender `minion` (the orchestrator's errand runner) counts
+  as a launcher, like a director.
 - Dates are computed by hand in jq, because Windows jq has no `strptime`. `test.sh` fails if a date builtin comes back.
 - Rows from a Windows jq end in CRLF. `--from-tsv` and `--check-tsv FILE` strip the CR and drop, with a count on stderr,
   any row whose column count differs from the header's or whose number columns hold text.

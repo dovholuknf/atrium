@@ -110,12 +110,23 @@ printf '%s\n' "$@" > "$SSH_ARGS_FILE"
 exec bash -c "$last"
 STUB
 chmod +x "$tmp/bin/ssh"
-SSH_ARGS_FILE="$tmp/ssh.args" PATH="$tmp/bin:$PATH" "$here/collect.sh" --rooms sg4 --win-bash bash --win-root "$root" \
+SSH_ARGS_FILE="$tmp/ssh.args" PATH="$tmp/bin:$PATH" "$here/collect.sh" --rooms stubwin --win-rooms stubwin --win-bash bash --win-root "$root" \
   --since 2026-10-09T22:00:00-04:00 --until 2026-10-10T08:00:00-04:00 --tsv "$tmp/merged.tsv" > "$tmp/collect.md" 2> "$tmp/collect.err" ||
   { echo "FAIL: collect.sh over the stub ssh"; cat "$tmp/collect.err"; fail=1; }
-grep -q 'Rooms covered: sg4' "$tmp/collect.md" || { echo "FAIL: collect.sh did not cover the stub room"; fail=1; }
-grep -q 'sg4:-fixture-proj' "$tmp/merged.tsv" || { echo "FAIL: merged rows lack the room prefix"; fail=1; }
+grep -q 'Rooms covered: stubwin' "$tmp/collect.md" || { echo "FAIL: collect.sh did not cover the stub room"; fail=1; }
+grep -q 'stubwin:-fixture-proj' "$tmp/merged.tsv" || { echo "FAIL: merged rows lack the room prefix"; fail=1; }
 if grep -q 'select\|jq' "$tmp/ssh.args"; then echo "FAIL: a jq program reached the ssh command line"; fail=1; fi
+
+# A worker's report arrives wrapped in pasted_content over several lines and does not open with done or blocked.
+# It is still a result.
+mkdir -p "$tmp/r2/p"
+cat > "$tmp/r2/p/s.jsonl" <<'R2'
+{"type":"user","isSidechain":false,"timestamp":"2026-10-10T03:00:00.000Z","message":{"role":"user","content":"[atrium] worker-x@room says: \n\n<pasted_content id=\"9\">\nreport from worker-x: finished the card\nsecond line\n</pasted_content>"}}
+{"type":"assistant","isSidechain":false,"timestamp":"2026-10-10T03:00:10.000Z","message":{"id":"r1","role":"assistant","content":[{"type":"tool_use","id":"t","name":"Bash","input":{}}],"usage":{"input_tokens":10,"output_tokens":500,"cache_read_input_tokens":100,"cache_creation_input_tokens":0}}}
+R2
+"$here/chattiness.sh" --root "$tmp/r2" --tsv - > "$tmp/r2.tsv"
+want "$tmp/r2.tsv" c_result_turns 1
+want "$tmp/r2.tsv" c_errand_turns 0
 
 [ "$fail" = 0 ] && echo "chattiness: ok"
 exit "$fail"

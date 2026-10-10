@@ -86,8 +86,8 @@ def src: if test("^[[]atrium[]] atrium says:") then "nudge"
 
 # A say is a result, not an errand, when its sender is not a director, the orchestrator, a reviewer or the human, or when
 # its text opens with done or blocked. See docs/runtime/chattiness.md.
-def isresult: (capture("^[[]atrium[]] (?<n>[^ ]+) says: *(?<b>.*)$"; "s")
-    | ((.n | test("director|orchestrator|^review|^clint$|^human$"; "i") | not)
+def isresult: (capture("^[[]atrium[]] (?<n>[^ ]+) says: *(?<b>(.|\n)*)$")
+    | ((.n | test("director|orchestrator|minion|^review|^clint$|^human$"; "i") | not)
        or (.b | gsub("<[^>]*>"; "") | test("^[ \t\n\r]*(done|blocked)"; "i")))) // false;
 
 def ev:
@@ -166,18 +166,18 @@ if $hdr == "1" then cols | @tsv else
       def sum(f): (map(f) | add // 0);
       def tk: .tok.i + .tok.o + .tok.c;
       ["say", "notice", "stop", "nudge"] as $A
-      | [$segs[] | select(.src as $s | $A | index($s))] as $as
+      | [$segs[] | select(.src as $s | $A | index($s))] as $ats
       | [$segs[] | select(.src != "pre")] as $turns
       | ($st.keys | group_by(.k) | map(select(length > 1) | {k: .[0].k, s: .[0].s, n: length})) as $rg
       | ($rg | map(.n - 1) | add // 0) as $rep
       | [$sid, $proj, ($segs[0].t0 | iso),
-         ($turns | length), ([$turns[] | select(.src == "human")] | length), ($as | length),
+         ($turns | length), ([$turns[] | select(.src == "human")] | length), ($ats | length),
          ([$st.mids[] | select(.src == "perm")] | length), ([$st.mids[] | select(.src == "say")] | length),
          ([$st.mids[] | select(.src == "notice")] | length), ([$st.mids[] | select(.src == "nudge")] | length),
          ($segs | sum(.tok.i)), ($segs | sum(.tok.o)), ($segs | sum(.tok.c)),
-         ($as | sum(.tok.i)), ($as | sum(.tok.o)), ($as | sum(.tok.c)),
-         ($as | sum(.wall) | round), ($as | map(.wall) | max // 0 | round),
-         ([$as[] | select(.act | not)] | length), $rep]
+         ($ats | sum(.tok.i)), ($ats | sum(.tok.o)), ($ats | sum(.tok.c)),
+         ($ats | sum(.wall) | round), ($ats | map(.wall) | max // 0 | round),
+         ([$ats[] | select(.act | not)] | length), $rep]
         + [("say", "notice", "stop", "nudge", "perm") as $s | ($rg | map(select(.s == $s) | .n - 1) | add // 0)]
         + [$A[] as $s | ([$segs[] | select(.src == $s)]) as $g
            | ($g | length), ($g | sum(tk)), ([$g[] | select(.act | not)] | length), ($g | sum(.wall) | round)]
@@ -267,12 +267,21 @@ def sum(f): (map(f) | add // 0);
     "## Sessions by chatter (fresh tokens in notices, repeats and acknowledgements)\n",
     "| session | project | turns | chatter turns | turn share | chatter fresh | fresh share | chatter cache read | cache-read share | over threshold |", "|---|---|---|---|---|---|---|---|---|---|",
     ($rows | sort_by(-cfresh) | .[0:10][]
-      | "| \(.session[0:8]) | \(.project | .[-34:]) | \(.turns) | \(cturns) | \(pct(cturns; .turns))% | \(cfresh | n) | \(pct(cfresh; freshall))% | \(cread | n) | \(pct(cread; .tok_cread))% | \(if chatty then "yes" else "no" end) |"),
+      | "| \(.session[0:8]) | \(.project | (if test("^[^:]*:") then sub(":.*$"; ":") else "" end) + (sub("^[^:]*:"; "") | .[-30:])) | \(.turns) | \(cturns) | \(pct(cturns; .turns))% | \(cfresh | n) | \(pct(cfresh; freshall))% | \(cread | n) | \(pct(cread; .tok_cread))% | \(if chatty then "yes" else "no" end) |"),
     "",
     "Thresholds (fixed before the first run): a session is chatty when chatter turns are over \($tt * 100)% of its turns or chatter",
     "fresh tokens are over \($tk * 100)% of its fresh tokens. A source is a PROBLEM when more than half of its turns end with no",
     "action and it holds 5% or more of all turns or of all tokens."
 JQ
+
+# The programs go to jq as files (-f). Windows jq loses part of a long program passed as an argument.
+tmpd="$(mktemp -d)"
+# Native Windows jq cannot open an msys path like /tmp/x, so hand it the mixed form (C:/...).
+if command -v cygpath >/dev/null 2>&1; then tmpd="$(cygpath -m "$tmpd")"; fi
+trap 'rm -rf "$tmpd"' EXIT
+printf '%s\n' "$SESSION_JQ" > "$tmpd/session.jq"
+printf '%s\n' "$SUMMARY_JQ" > "$tmpd/summary.jq"
+printf '%s\n$s | rfc\n' "$RFC_JQ" > "$tmpd/rfc.jq"
 
 # Rows come back from Windows jq with CRLF line ends, and a row from a broken run can be short or hold text where a
 # number belongs. Strip the CR, keep the header, and drop any row whose column count is not the header's or whose
@@ -290,7 +299,7 @@ clean_tsv() {
 
 if [ -n "$from_tsv" ]; then
   [ -r "$from_tsv" ] || { echo "chattiness: cannot read $from_tsv" >&2; exit 2; }
-  clean_tsv "$from_tsv" | jq -nRr --arg since "$since" --arg until "$until_" --argjson tt 0.25 --argjson tk 0.20 "$SUMMARY_JQ"
+  clean_tsv "$from_tsv" | jq -nRr --arg since "$since" --arg until "$until_" --argjson tt 0.25 --argjson tk 0.20 -f "$tmpd/summary.jq"
   exit 0
 fi
 if [ -n "$check_tsv" ]; then
@@ -302,17 +311,19 @@ fi
 [ -d "$root" ] || { echo "chattiness: no such directory $root" >&2; exit 2; }
 
 # Bounds go through jq, which parses RFC3339 with an offset the same way on every platform.
-lo=$(jq -n --arg s "$since" "$RFC_JQ \$s | rfc" | tr -d '\r') || { echo "chattiness: --since is not RFC3339" >&2; exit 2; }
-hi=$(jq -n --arg s "$until_" "$RFC_JQ \$s | rfc" | tr -d '\r') || { echo "chattiness: --until is not RFC3339" >&2; exit 2; }
+lo=$(jq -n --arg s "$since" -f "$tmpd/rfc.jq" | tr -d '\r') || { echo "chattiness: --since is not RFC3339" >&2; exit 2; }
+hi=$(jq -n --arg s "$until_" -f "$tmpd/rfc.jq" | tr -d '\r') || { echo "chattiness: --until is not RFC3339" >&2; exit 2; }
 
-out="$(mktemp)"
-trap 'rm -f "$out"' EXIT
-jq -nr --arg hdr 1 --arg sid "" --arg proj "" --argjson lo 0 --argjson hi 0 "$SESSION_JQ" | tr -d '\r' > "$out"
+out="$tmpd/rows.tsv"
+jq -nr --arg hdr 1 --arg sid "" --arg proj "" --argjson lo 0 --argjson hi 0 -f "$tmpd/session.jq" | tr -d '\r' > "$out"
 
+# A transcript last written before the window opens has nothing in it. Skipping those by mtime saves most of the run.
+touch -d "@$lo" "$tmpd/since.ref" 2>/dev/null || rm -f "$tmpd/since.ref"
 find "$root" -mindepth 2 -maxdepth 2 -name '*.jsonl' | sort | while IFS= read -r f; do
+  [ ! -e "$tmpd/since.ref" ] || [ "$f" -nt "$tmpd/since.ref" ] || continue
   proj="$(basename "$(dirname "$f")")"
   sid="$(basename "$f" .jsonl)"
-  jq -nRr --arg hdr 0 --arg sid "$sid" --arg proj "$proj" --argjson lo "$lo" --argjson hi "$hi" "$SESSION_JQ" < "$f" | tr -d '\r' >> "$out" ||
+  jq -nRr --arg hdr 0 --arg sid "$sid" --arg proj "$proj" --argjson lo "$lo" --argjson hi "$hi" -f "$tmpd/session.jq" < "$f" | tr -d '\r' >> "$out" ||
     echo "chattiness: skipped $f (jq failed)" >&2
 done
 
@@ -321,4 +332,4 @@ if [ "$tsv" = "-" ]; then
   exit 0
 fi
 cp "$out" "$tsv"
-jq -nRr --arg since "$since" --arg until "$until_" --argjson tt 0.25 --argjson tk 0.20 "$SUMMARY_JQ" < "$out"
+jq -nRr --arg since "$since" --arg until "$until_" --argjson tt 0.25 --argjson tk 0.20 -f "$tmpd/summary.jq" < "$out"
