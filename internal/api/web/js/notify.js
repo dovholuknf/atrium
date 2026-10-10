@@ -262,6 +262,9 @@ if (soloBus) {
         soloBus.postMessage({ type: "solo-release", task: soloID });
         clearTermPane(true);
         termWait("another window took this terminal. this one can be closed.");
+        // The board popping this card out again cannot reach this window by name, so it asks it to go.
+        // A tab the script did not open refuses, and is left saying it can be closed.
+        if (m.close) { try { window.close(); } catch (e) {} }
         return;
       }
       // No `solo-raise` here any more, and it is worth saying why it went.
