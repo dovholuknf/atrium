@@ -16245,8 +16245,8 @@ async function closeOneDialogSection(browser, base) {
   try {
     const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 } });
     const posts = [];
-    let asks = [], release = null, answer = null;
-    const preview = () => ({ card: "land-co-a", disk_bytes: 480 * 1048576, can_stash: true,
+    let asks = [], release = null, answer = null, canStash = true;
+    const preview = () => ({ card: "land-co-a", disk_bytes: 480 * 1048576, can_stash: canStash,
       items: [{ seq: 1, kind: "worktree", ref: "/w/ziti-console", action: asks.length ? "ask" : "free", bytes: 470 * 1048576 },
         { seq: 2, kind: "branch", ref: "claude/x", action: "free" }],
       asks, warnings: ["the session is still running. it is stopped first"], kept: ["the card and its transcript"] });
@@ -16267,7 +16267,9 @@ async function closeOneDialogSection(browser, base) {
     for (const end = Date.now() + slow(10000); openStreams.filter(r => !r.destroyed).length < 1 && Date.now() < end;) await p.waitForTimeout(100);
     const say = ev => openStreams.forEach(r => { try { r.write("event: close-progress\ndata: " + JSON.stringify(Object.assign({ id: posts[posts.length - 1].progress, seconds: 0 }, ev)) + "\n\n"); } catch (e) {} });
     const rowsOf = () => p.evaluate(() => [...document.querySelectorAll("#close-steps li")].map(l => l.className + ":" + l.dataset.key));
-    const askUp = () => p.waitForFunction(() => document.getElementById("ask").open && /^close /.test(document.getElementById("ask-title").textContent), null, { timeout: slow(5000) });
+    let askUps = 0;
+    const askUp = () => p.waitForFunction(() => document.getElementById("ask").open && /^close /.test(document.getElementById("ask-title").textContent), null, { timeout: slow(5000) })
+      .catch(e => { throw new Error("askUp #" + (askUps + 1) + ": " + e.message); }).finally(() => { askUps++; });
 
     // ONE dialog with the worktree as a row, its size, and stash preselected
     asks = [{ seq: 1, path: "/w/ziti-console", branch: "claude/x", dirty: 2, unpushed: 1, bytes: 470 * 1048576 }];
@@ -16291,6 +16293,10 @@ async function closeOneDialogSection(browser, base) {
     if (!/ziti-console \(470 MB\)/.test(first.body) || !/Frees \(480 MB\)/.test(first.body)) fail("closeOne: the dialog does not say the worktree's real size: " + first.body);
     if (/work only this worktree has/.test(first.body)) fail("closeOne: the old second dialog's words are in it");
     await shot(p, "close-dialog");
+    // STASH IS THE DEFAULT (f-close-stash-default): the stash choice has the focus, so Enter takes it
+    await shot(p, "close-stash-default");
+    const focus = await p.evaluate(() => { const a = document.activeElement; return a && a.matches && a.matches("#ask-body input") ? a.value : (a && a.tagName) || ""; });
+    if (focus !== "stash") fail("closeStash: the focus is on " + focus + ", not the stash choice");
     // delete is picked inline, cancel changes nothing
     await p.click('#ask-actions button:has-text("cancel")');
     await p.waitForTimeout(200);
@@ -16330,9 +16336,9 @@ async function closeOneDialogSection(browser, base) {
     release = { hit: null };
     await p.evaluate(() => { closeCardAsk("land-co-a", { display_title: "openziti/ziti-console #967" }); });
     await askUp();
-    await p.click('#ask-actions button:has-text("close it")');
+    await p.keyboard.press("Enter");
     for (let i = 0; i < 50 && !posts.length; i++) await p.waitForTimeout(100);
-    if (posts[0].answers["1"] !== "stash") fail("closeOne: the default answer posted was " + JSON.stringify(posts[0].answers));
+    if (!posts.length || posts[0].answers["1"] !== "stash") fail("closeStash: Enter posted " + JSON.stringify(posts[0] && posts[0].answers) + ", not stash");
     say({ key: "worktree:1", line: "stashing /w/ziti-console to the hub", state: "run", detail: "" });
     say({ key: "worktree:1", line: "stashing /w/ziti-console to the hub", state: "fail", detail: "kept, the stash did not land: git push: rejected" });
     await p.waitForFunction(() => document.querySelector('#close-steps li.fail'), null, { timeout: slow(5000) }).catch(() => fail("closeOne: the failed row was not drawn"));
@@ -16346,6 +16352,39 @@ async function closeOneDialogSection(browser, base) {
     await shot(p, "close-failed");
     await p.click('#ask-actions button:has-text("dismiss")');
     await p.waitForFunction(() => !document.getElementById("ask").open, null, { timeout: slow(5000) });
+
+    // A ROOM THAT CANNOT STASH says so, offers no stash, and keep is what Enter takes. Delete is never the default.
+    posts.length = 0;
+    release = null;
+    answer = null;
+    canStash = false;
+    await p.evaluate(() => { closeCardAsk("land-co-a", { display_title: "openziti/ziti-console #967" }); });
+    await askUp();
+    const nostash = await p.evaluate(() => ({ body: document.getElementById("ask-body").textContent,
+      radios: [...document.querySelectorAll("#ask-body .close-wt input")].map(i => i.value).join(),
+      checked: [...document.querySelectorAll("#ask-body .close-wt input:checked")].map(i => i.value).join(),
+      focus: (document.activeElement && document.activeElement.value) || "" }));
+    if (!/cannot stash to the hub/.test(nostash.body)) fail("closeStash: nothing says why it cannot stash: " + nostash.body);
+    if (nostash.radios !== "keep,delete" || nostash.checked !== "keep" || nostash.focus !== "keep") fail("closeStash: without can_stash " + JSON.stringify(nostash));
+    await shot(p, "close-stash-default-cannot");
+    await p.keyboard.press("Enter");
+    for (let i = 0; i < 50 && !posts.length; i++) await p.waitForTimeout(100);
+    if (!posts.length || posts[0].answers["1"] !== "keep") fail("closeStash: Enter without can_stash posted " + JSON.stringify(posts[0] && posts[0].answers));
+    await p.waitForFunction(() => !document.getElementById("ask").open, null, { timeout: slow(5000) }).catch(() => {});
+    canStash = true;
+
+    // THE TERMINALS MENU'S CLEAN UP asks with buttons, and Enter takes the last one: that is stash, never delete
+    posts.length = 0;
+    await p.evaluate(() => { skipConfirm(CLEANUP_ASK_KEY, false); cleanUpCard("land-co-a", { display_title: "openziti/ziti-console #967" }); });
+    await p.waitForFunction(() => document.getElementById("ask").open && /work only this folder has/.test(document.getElementById("ask-title").textContent), null, { timeout: slow(5000) })
+      .catch(() => fail("closeStash: the clean up question did not open"));
+    const cu = await p.evaluate(() => [...document.querySelectorAll("#ask-actions button")].map(b => b.textContent).join());
+    if (cu !== "cancel,delete it,stash to the hub") fail("closeStash: the clean up buttons are " + cu);
+    await p.keyboard.press("Enter");
+    for (let i = 0; i < 50 && !posts.length; i++) await p.waitForTimeout(100);
+    if (!posts.length || posts[0].answers["1"] !== "stash") fail("closeStash: Enter on the clean up question posted " + JSON.stringify(posts[0] && posts[0].answers));
+    await p.waitForFunction(() => !document.getElementById("ask").open && !busyKeys.has("close:land-co-a"), null, { timeout: slow(5000) })
+      .catch(() => fail("closeStash: the clean up question left the dialog or the card busy"));
 
     // nothing asked: the same dialog with no rows. An error from the server is a failed row too
     asks = [];

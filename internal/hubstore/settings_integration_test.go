@@ -161,3 +161,22 @@ func TestHubCardColorsSeededOnceAndEmptyStaysEmpty(t *testing.T) {
 		t.Fatal("a bad key was stored")
 	}
 }
+
+// A HUB THAT WAS NEVER TOLD keeps a stash 30 days. 0 is never, and a negative number is refused.
+func TestStashRetentionDefaultsToThirtyAndRoundTrips(t *testing.T) {
+	s := open(t)
+	if n, err := s.StashRetentionDays(); err != nil || n != 30 {
+		t.Fatalf("unset = %d, %v", n, err)
+	}
+	for _, want := range []int{7, 0, 90} {
+		if err := s.SetStashRetentionDays(want); err != nil {
+			t.Fatal(err)
+		}
+		if n, _ := s.StashRetentionDays(); n != want {
+			t.Errorf("set %d, read %d", want, n)
+		}
+	}
+	if err := s.SetStashRetentionDays(-1); err == nil {
+		t.Error("a negative retention was taken")
+	}
+}

@@ -29,3 +29,17 @@ func TestCloseAnswersMatchTheFlagsToTheAskedWorktrees(t *testing.T) {
 		t.Error("a worktree told keep and delete was taken")
 	}
 }
+
+func TestCloseWithNoAnswerStashesWhenTheRoomCanAndKeepsWhenItCannot(t *testing.T) {
+	if got := defaultCloseAnswer(true); got != "stash" {
+		t.Errorf("a room that can stash defaulted to %q", got)
+	}
+	if got := defaultCloseAnswer(false); got != "keep" {
+		t.Errorf("a room that cannot stash defaulted to %q", got)
+	}
+	for _, can := range []bool{true, false} {
+		if defaultCloseAnswer(can) == "delete" {
+			t.Error("delete was a default")
+		}
+	}
+}

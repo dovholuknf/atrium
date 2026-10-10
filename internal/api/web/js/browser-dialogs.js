@@ -260,13 +260,16 @@ function askUser(opts) {
       { label: "cancel", value: null },
       { label: "ok", value: true, style: "go" }
     ];
+    let pressLast = null;
     buttons.forEach(b => {
       const el = document.createElement("button");
       el.textContent = b.label;
       if (b.style) el.className = b.style;
       // Drawn but off, with the reason on hover, for an action that exists and cannot be done from here.
       if (b.disabled) { el.disabled = true; el.setAttribute("data-tip", b.disabled); }
-      el.onclick = async () => {
+      // `press` is the click, kept apart so Enter can take it without a synthetic click, which dragclick.js can
+      // mistake for the end of a drag and swallow.
+      const press = async () => {
         // A button that WORKS while the dialog stays up: `hold` is an async function. The dialog is not answered
         // until it settles, every button is off and this one spins. It answers "close" to close the dialog with the
         // button's value, and anything else leaves it open with only a dismiss, for a failure that must be read.
@@ -290,6 +293,8 @@ function askUser(opts) {
         }
         askClose(settle, answerOf(opts, b.value, input, choices));
       };
+      el.onclick = press;
+      pressLast = press;
       actions.appendChild(el);
     });
 
@@ -306,8 +311,9 @@ function askUser(opts) {
       if (e.key !== "Enter" || e.shiftKey) return;
       e.preventDefault();
       if (askDlg.dataset.busy) return;
-      const last = buttons[buttons.length - 1];
-      askClose(settle, answerOf(opts, last.value, input, choices));
+      // The button is PRESSED, so one that holds (a close that shows its steps) runs its work, and a remembered
+      // answer is stored as it is for a click.
+      if (pressLast && !actions.lastElementChild.disabled) pressLast();
     };
 
     // Already open means the element on screen has just been rewritten with

@@ -813,7 +813,9 @@ async function closeCardNow(id, t, via) {
     `<b>${esc(a.branch || "no branch")}</b></div><div class="cw-why">${a.dirty} changed files, ${a.unpushed} commits on no ` +
     `remote and not on the hub</div><div class="cw-pick">` + pick(a, "keep", "keep") +
     (pv.can_stash ? pick(a, "stash", "stash to the hub") : "") + pick(a, "delete", "delete, the work is gone", "cw-del") +
-    `</div></div>`).join("");
+    `</div></div>`).join("") +
+    ((pv.asks || []).length && !pv.can_stash
+      ? `<div class="cw-why">This room cannot stash to the hub, so keep is the answer unless you pick delete.</div>` : "");
   const body =
     (going ? `Frees${sized(pv.disk_bytes)}:<ul>${going}</ul>` : "Nothing on disk to free.<br>") +
     (warns ? `<ul>${warns}</ul>` : "") + rows +
@@ -833,7 +835,7 @@ async function closeCardNow(id, t, via) {
     try {
       const out = await post({ confirm: true, answers, progress: closeProgressId });
       const said = [];
-      (out.stashes || []).forEach(s => said.push("stashed " + s.branch));
+      (out.stashes || []).forEach(s => said.push("stashed " + s.branch + (s.expires ? ", on the hub until " + s.expires : "")));
       if (out.left) said.push(out.left + " left on the card");
       (out.warnings || []).forEach(w => said.push(w));
       toast("closed " + title, said.join(". "));
@@ -852,10 +854,15 @@ async function closeCardNow(id, t, via) {
       setClosing(id, false);
     }
   };
-  await askUser({
+  const asked = askUser({
     title: `close ${title}?`, body,
     buttons: [{ label: "cancel", value: null }, { label: "close it", value: true, style: "go", hold: run }]
   });
+  // THE DEFAULT IS STASH, or keep when the room cannot stash. Never delete. The focus goes to the chosen answer, so
+  // Enter (which takes "close it") closes with what is already picked.
+  const first = document.querySelector("#ask-body .close-wt input:checked");
+  if (first) first.focus();
+  await asked;
 }
 
 // WHAT A CLOSE IS DOING, in the close dialog. The server broadcasts each step as `close-progress` carrying the id this
@@ -927,14 +934,15 @@ async function cleanUpNow(id, t) {
   const answers = {};
   for (const a of pv.asks || []) {
     if (skippedConfirms()[CLEANUP_ASK_KEY]) { answers[String(a.seq)] = "delete"; continue; }
-    const buttons = [{ label: "cancel", value: null }];
-    if (pv.can_stash) buttons.push({ label: "stash to the hub", value: "stash" });
-    buttons.push({ label: "delete it", value: "delete", style: "no" });
+    // Enter takes the LAST button, so delete is not it: stash is, or keep when the room cannot stash.
+    const buttons = [{ label: "cancel", value: null }, { label: "delete it", value: "delete", style: "no" }];
+    buttons.push(pv.can_stash ? { label: "stash to the hub", value: "stash" } : { label: "keep it", value: "keep" });
     const ans = await askUser({
       title: "work only this folder has",
       body: `<b>${esc(a.path)}</b> on <b>${esc(a.branch || "no branch")}</b>: ` +
         `${a.dirty} changed files, ${a.unpushed} commits on no remote and not on the hub.<br><br>` +
-        (pv.can_stash ? `<b>stash</b> pushes it to the hub as stash/&lt;card&gt;/&lt;branch&gt;, then removes it. ` : "") +
+        (pv.can_stash ? `<b>stash</b> pushes it to the hub as stash/&lt;card&gt;/&lt;branch&gt;, then removes it. ` :
+          `This room cannot stash to the hub, so <b>keep</b> leaves it on disk. `) +
         `<b>delete</b> removes it, and the work is gone.`,
       buttons,
       rememberKey: CLEANUP_ASK_KEY,
@@ -951,7 +959,7 @@ async function cleanUpNow(id, t) {
       body: JSON.stringify({ confirm: true, answers })
     });
     const said = [];
-    (out.stashes || []).forEach(s => said.push("stashed " + s.branch));
+    (out.stashes || []).forEach(s => said.push("stashed " + s.branch + (s.expires ? ", on the hub until " + s.expires : "")));
     if (out.left) said.push(out.left + " left on the card");
     (out.warnings || []).forEach(w => said.push(w));
     toast("cleaned up " + title, said.join(". "));
