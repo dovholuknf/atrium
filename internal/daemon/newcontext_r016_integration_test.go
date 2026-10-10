@@ -54,21 +54,21 @@ func TestFailedChipClearsOnASessionStartWithANewConversation(t *testing.T) {
 		t.Fatalf("the chip stayed after a new conversation began: %v", d.newContextFor(id))
 	}
 
-	// The reason stays in the card's history.
-	evs, err := d.st.Events(id, 50)
-	if err != nil {
-		t.Fatal(err)
-	}
-	found := false
-	for _, e := range evs {
-		if e.Kind == store.EventNotified && strings.Contains(string(e.Payload), newContextBy) &&
-			strings.Contains(string(e.Payload), "failed") {
-			found = true
+	// The reason stays in the card's history. The run records it just after it
+	// marks the chip failed, so it can land a moment after the chip does.
+	until(t, "the failure reason in the card's history", func() bool {
+		evs, err := d.st.Events(id, 50)
+		if err != nil {
+			t.Fatal(err)
 		}
-	}
-	if !found {
-		t.Fatal("the failure reason is not in the card's history")
-	}
+		for _, e := range evs {
+			if e.Kind == store.EventNotified && strings.Contains(string(e.Payload), newContextBy) &&
+				strings.Contains(string(e.Payload), "failed") {
+				return true
+			}
+		}
+		return false
+	})
 }
 
 func TestFailedChipIsClearedByRerunAndByDismissal(t *testing.T) {
