@@ -826,6 +826,8 @@ type runner struct {
 	// peerKeySeq is keySeq when atrium last submitted a peer's message. Counters,
 	// not times: two keys in one clock tick (Windows) tie on a timestamp.
 	keySeq, enterSeq, peerKeySeq uint64
+	// promptSeq is keySeq when the last prompt hook arrived. See `resetLineAtStop`.
+	promptSeq uint64
 	// peerSent is when atrium last submitted ANOTHER SESSION'S message here, or
 	// a labelled after-restart wake. The prompt that follows is not the operator, and
 	// must not mark the turn seen or its questions answered. See
@@ -1191,14 +1193,37 @@ func (r *runner) wedgedLocked() string {
 //
 // The prompt began at the operator's Enter (the last key, so `lastEnter`) or at
 // atrium's own submit of a peer's message (`peerSent`). A Stop is NOT a reset:
-// an operator can have a draft up when a turn ends. Reports whether it cleared.
+// an operator can have a draft up when a turn ends, which `resetLineAtStop`
+// tells apart. Reports whether it cleared.
 func (r *runner) resetLine() bool {
+	r.typeMu.Lock()
+	defer r.typeMu.Unlock()
+	// Where the keys stood when the turn began, so a Stop can tell a draft typed
+	// since from a line the prompt already took.
+	r.promptSeq = r.keySeq
+	if r.line.empty() && len(r.line.pending) == 0 && !r.line.inPaste {
+		return false
+	}
+	if r.keySeq > r.enterSeq && r.keySeq > r.peerKeySeq {
+		return false
+	}
+	r.line.clear()
+	return true
+}
+
+// resetLineAtStop empties the typing model when a turn ends, if no key has
+// landed since its prompt began. A turn ran, so whatever the model held when it
+// began was sent, even by a path atrium never saw as Enter (the board's compose
+// bar, a paste the runner submitted itself), which `resetLine` refuses because a
+// key came after the last Enter it knew of. A key after the prompt is a draft
+// the human is writing now, and stays. Reports whether it cleared.
+func (r *runner) resetLineAtStop() bool {
 	r.typeMu.Lock()
 	defer r.typeMu.Unlock()
 	if r.line.empty() && len(r.line.pending) == 0 && !r.line.inPaste {
 		return false
 	}
-	if r.keySeq > r.enterSeq && r.keySeq > r.peerKeySeq {
+	if r.keySeq > r.promptSeq {
 		return false
 	}
 	r.line.clear()
