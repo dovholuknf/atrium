@@ -347,3 +347,37 @@ func TestAProvedCullRefusesATipThatIsNotAHexSha(t *testing.T) {
 		t.Errorf("the worktree was touched: %v", err)
 	}
 }
+
+// With merged_cull_grace never set, a merge marks nothing and a merged worker keeps its worktree and branch.
+func TestAMergedWorkerStaysWithTheDefaultSetting(t *testing.T) {
+	d := testDaemon(t)
+	r := newCullRepo(t, true)
+	_, worker := mergedWorker(t, d, r)
+	// cullCard turns the grace on for the tests about it. Put the room back to a new room's state.
+	if err := d.st.SetSetting(SettingMergedCullGrace, ""); err != nil {
+		t.Fatal(err)
+	}
+	if _, on := d.mergedGrace(); on {
+		t.Fatal("an unset merged_cull_grace reads as on")
+	}
+
+	res := markedMerged(t, d, DefaultCullInto)
+	if !res.Off || len(res.Marked) != 0 {
+		t.Fatalf("result = %+v, want off and nothing marked", res)
+	}
+	d.sweepMergedCulls()
+
+	if _, err := os.Stat(r.wt); err != nil {
+		t.Errorf("the worktree was touched: %v", err)
+	}
+	if !r.branchExists(t) {
+		t.Error("the branch was deleted")
+	}
+	got, err := d.st.Get(worker.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.ArchivedAt != nil {
+		t.Error("the merged worker's card was archived")
+	}
+}

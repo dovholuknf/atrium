@@ -56,7 +56,7 @@ func globalAutoView(s *Server) map[string]any {
 		store.SettingSweepDead:  "sweep_dead_after",
 		store.SettingPruneAfter: "prune_after",
 		// How long a worker whose branch merged stays before it is culled.
-		// Empty is the default, thirty minutes, and `off` is never.
+		// Empty is the default, `off`, which is never. See store.DefaultMergedCullGrace.
 		store.SettingMergedCullGrace: "merged_cull_grace",
 		// How many minutes a room deploy hold may last. Empty is sixty.
 		store.SettingDeployHoldMax: "deploy_hold_max",
@@ -119,6 +119,7 @@ func globalAutoView(s *Server) map[string]any {
 	// place and an old tab cannot show a different default than the daemon
 	// would use.
 	out["paste_preamble_default"] = DefaultPastePreamble
+	out["merged_cull_grace_default"] = store.DefaultMergedCullGrace
 	out["paste_preamble_none"] = PastePreambleNone
 	// What is actually in force, whatever the two boxes say. An empty box
 	// means the default, and the person reading it wants the number.
