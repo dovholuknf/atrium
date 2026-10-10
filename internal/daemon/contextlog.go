@@ -84,10 +84,13 @@ func (d *Daemon) requeueCarried(taskID string, carried []deliveredSay) {
 		if !strings.HasPrefix(text, carriedNote) {
 			text = carriedNote + text
 		}
+		// A repeat is never a new ask: it owes no report, whoever sent it. The launcher's
+		// original say opened any debt there is, and that stands or was settled already.
+		// Recorded as a launcher's fyi is, so no nudge and no silent-stop notice follow.
 		var m *store.Message
 		var err error
 		if s.from != "" {
-			m, err = d.st.QueuePeerKind(taskID, text, s.from, s.kind, true)
+			m, err = d.st.QueuePeerKind(taskID, text, s.from, store.PromptFYI, true)
 		} else {
 			m, err = d.st.QueueAfterTurn(taskID, text, "")
 		}
@@ -95,6 +98,6 @@ func (d *Daemon) requeueCarried(taskID string, carried []deliveredSay) {
 			log.Printf("[atrium] could not hand back a say to %s after its new context: %v", taskID, err)
 			continue
 		}
-		d.deferPeerInjection(taskID, m.ID, s.from, text, s.kind, true)
+		d.deferPeerInjection(taskID, m.ID, s.from, text, store.PromptFYI, true)
 	}
 }
