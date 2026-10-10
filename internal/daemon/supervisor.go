@@ -749,6 +749,9 @@ type runner struct {
 	// the pty gets the widest width and the shortest height of them, because
 	// a shared terminal has one size and several windows.
 	views map[any]viewport
+	// viewSeq is when each viewer last had focus or input, from `activeSeq`. See `touchViewport`.
+	viewSeq   map[any]uint64
+	activeSeq uint64
 	// resizeMu is held across the whole of a viewport change: record the
 	// viewer, compute the agreed size, the guard, the mark and the pty resize.
 	// Without it two viewers computing A then B could apply B then A, leaving
@@ -1468,7 +1471,7 @@ func (r *runner) setViewport(id any, cols, rows int) error {
 	// the first, and every later change, still goes through the hold.
 	first := len(r.views) == 0
 	r.views[id] = viewport{cols, rows}
-	agreed := agreedViewport(r.views)
+	agreed := r.agreedLocked()
 	r.mu.Unlock()
 	err := r.applyViewport(agreed, first)
 	if r.onSized != nil {
@@ -1579,7 +1582,7 @@ func (r *runner) applyHeld(gen uint64) {
 	default:
 	}
 	r.mu.Lock()
-	agreed := agreedViewport(r.views)
+	agreed := r.agreedLocked()
 	left := len(r.views)
 	r.mu.Unlock()
 	_, curRows := r.buf.CurrentSize()
@@ -1633,7 +1636,8 @@ func (r *runner) dropViewport(id any) {
 		return
 	}
 	delete(r.views, id)
-	agreed := agreedViewport(r.views)
+	delete(r.viewSeq, id)
+	agreed := r.agreedLocked()
 	left := len(r.views)
 	r.mu.Unlock()
 	// NOT ONCE THE RUNNER HAS EXITED. A wind-down closes every viewer one at a
@@ -1658,6 +1662,63 @@ func (r *runner) dropViewport(id any) {
 	// the marks when nothing was drawn in between, so a popped window costs no
 	// scrollback. A height it frees waits out the hold like any other.
 	_ = r.applyViewport(agreed, false)
+}
+
+// touchViewport makes one viewer the active one, because its window just had focus or input, and moves the pty to
+// its size. Two windows on one terminal then follow whichever the operator used last, and a window that is closed
+// hands the size back to the one used before it. A viewer that has not said its size is ignored.
+func (r *runner) touchViewport(id any) {
+	// Every keystroke comes through here, so the common answer, already the active one, is taken without resizeMu.
+	r.mu.Lock()
+	already := r.activeSeq > 0 && r.viewSeq[id] == r.activeSeq
+	r.mu.Unlock()
+	if already {
+		return
+	}
+	r.resizeMu.Lock()
+	defer r.resizeMu.Unlock()
+	r.mu.Lock()
+	if _, ok := r.views[id]; !ok {
+		r.mu.Unlock()
+		return
+	}
+	if r.viewSeq == nil {
+		r.viewSeq = map[any]uint64{}
+	}
+	if r.activeSeq > 0 && r.viewSeq[id] == r.activeSeq {
+		r.mu.Unlock()
+		return
+	}
+	r.activeSeq++
+	r.viewSeq[id] = r.activeSeq
+	agreed := r.agreedLocked()
+	r.mu.Unlock()
+	select {
+	case <-r.done:
+		return
+	default:
+	}
+	_ = r.applyViewport(agreed, false)
+	if r.onSized != nil {
+		r.onSized(r.buf.CurrentSize())
+	}
+}
+
+// agreedLocked is the size the pty runs at, with `r.mu` held. The viewer that last had focus or input sets it,
+// whole. Until some viewer has, which is every board that does not send `focus`, it is `agreedViewport`: the widest
+// width and the shortest height.
+func (r *runner) agreedLocked() viewport {
+	var best any
+	var bestSeq uint64
+	for id, seq := range r.viewSeq {
+		if _, ok := r.views[id]; ok && seq > bestSeq {
+			best, bestSeq = id, seq
+		}
+	}
+	if bestSeq == 0 {
+		return agreedViewport(r.views)
+	}
+	return r.views[best]
 }
 
 // agreedViewport is the size the pty runs at: the widest viewer's width and

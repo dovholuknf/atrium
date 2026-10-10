@@ -31,6 +31,7 @@ import (
 //	{"t":"in","d":"ls\r"}        keystrokes
 //	{"t":"in","d":"...","id":"p7"} a paste that wants {"t":"in-done","id":"p7"} back
 //	{"t":"resize","cols":120,"rows":40}
+//	{"t":"focus"}             this window was just used, so the pty takes its size
 //	{"t":"signal","s":"int"}     interrupt, which a browser cannot type
 
 type attachIn struct {
@@ -384,6 +385,7 @@ func (d *Daemon) attach(w http.ResponseWriter, r *http.Request, taskID string, s
 				// also reach `Write`, so counting bytes there would have
 				// atrium reading its own typing as the person being busy.
 				// See `runner.noteOperatorTyped`.
+				run.touchViewport(c)
 				if run.noteOperatorTyped([]byte(in.D)) && !shell {
 					// A person at a real key: the human touch that keeps an
 					// idle card up. See park.go.
@@ -459,7 +461,10 @@ func (d *Daemon) attach(w http.ResponseWriter, r *http.Request, taskID string, s
 					log.Printf("[atrium] resize %s: %v", taskID, err)
 				}
 				sizedOnce.Do(func() { close(sized) })
-			case "signal":
+			case "focus":
+			// This window was just used, so the pty takes its size. See `runner.touchViewport`.
+			run.touchViewport(c)
+		case "signal":
 				// A browser cannot press ctrl-c the way a terminal does, so
 				// the control character is sent explicitly on request.
 				if strings.EqualFold(in.S, "int") {

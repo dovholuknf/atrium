@@ -1029,6 +1029,7 @@ function connectTerm(taskID) {
     attachTries = 0;
     resetReattach();
     sendResize();
+    sendFocus();
     focusTerm();
     // The replay is landing: back to where it was left once it has gone quiet. See js/lastread.js.
     if (term) lrAfterOpen(term);
@@ -2034,6 +2035,18 @@ function sendResize() {
   if (termPhone()) return;
   send({ t: "resize", cols: Math.max(termFitCols || term.cols, termMinCols()), rows: termFitRows || term.rows });
 }
+
+// THIS WINDOW WAS JUST USED. Two board windows can show one terminal and the pty has one size, so the room sizes it
+// for the window that last had focus (or typed, which it sees for itself). Said when this window gains focus and when
+// the attach opens in a focused window. A window that is not the one in front says nothing, and a phone view never
+// votes (see `sendResize`). A room that does not know the frame ignores it.
+function sendFocus() {
+  if (!term || termPhone()) return;
+  if (!document.hasFocus()) return;
+  send({ t: "focus" });
+}
+addEventListener("focus", sendFocus);
+document.addEventListener("visibilitychange", () => { if (!document.hidden) sendFocus(); });
 
 // THE WIDTH FLOOR. A runner's terminal never goes under this many columns.
 //
