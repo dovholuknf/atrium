@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io/fs"
 	"log"
@@ -236,6 +237,14 @@ func serveAtrium(f atriumFlags, up atriumUp) error {
 	// The push log is the hub database's git_push table (migration 0008). gitHub.Cards is set when the proxy
 	// exists. A push is refused when there is no log, so the log is set before the handler is.
 	gitHub.PushLog = store
+	// THE MERGER, read from the hub's merge-flow roles on every push to claude/main. See docs/design/merge-flow.md.
+	gitHub.Merger = func(context.Context) (string, string, bool) {
+		hs, err := store.Roles(hubstore.RoleMerger)
+		if err != nil || len(hs) != 1 {
+			return "", "", false
+		}
+		return hs[0].Room, hs[0].Card, true
+	}
 	gitHub.CreateOnPush = func() bool {
 		on, _ := store.GitCreateOnPush()
 		return on
@@ -383,6 +392,9 @@ func serveAtrium(f atriumFlags, up atriumUp) error {
 	proxy.SetChangeRequests(store)
 	// THE BACKLOG AND DIRECTOR REPORTS EVERY ROOM SHARES, rows in the store. See link/backlog.go.
 	proxy.SetBacklog(store)
+	// THE REPOSITORY THE MERGE FLOW READS an item's stage from: the hub setting flow.repo, as `github.com/o/r`. Unset,
+	// the stage is what was reported. See link/flow_git.go.
+	proxy.SetFlowGit(flowGit{store: store, hub: gitHub})
 	// WHICH ROOM RUNS A PR, AND ONE ROW PER PR. See link/prclaim.go.
 	proxy.SetPRClaims(store)
 	// EACH ROOM'S DESIRED SPEC AND OBSERVED LOCK, served to the room itself. See link/roomspec.go.
@@ -830,4 +842,45 @@ func zitiBoardEdge(h http.Handler, service string) http.Handler {
 		return edge.Unnamed(h)
 	}
 	return edge.Named(h)
+}
+
+// flowGit is the merge flow's reach into the hub's repository, named by the `flow.repo` hub setting on every use.
+type flowGit struct {
+	store *hubstore.Store
+	hub   *gitsync.Hub
+}
+
+func (f flowGit) repo() string {
+	name, _ := f.store.HubSetting(hubstore.SettingFlowRepo)
+	return strings.TrimSpace(name)
+}
+
+func (f flowGit) ItemFacts(ctx context.Context, branch, sha string) (gitsync.ItemFacts, error) {
+	if name := f.repo(); name != "" {
+		return f.hub.Store().ItemFacts(ctx, name, branch, sha)
+	}
+	return gitsync.ItemFacts{}, nil
+}
+
+func (f flowGit) CoveredBy(ctx context.Context, base, sha string) (bool, error) {
+	if name := f.repo(); name != "" {
+		return f.hub.Store().CoveredBy(ctx, name, base, sha)
+	}
+	return false, nil
+}
+
+func (f flowGit) EpochPlan(ctx context.Context) (gitsync.EpochPlan, error) {
+	name := f.repo()
+	if name == "" {
+		return gitsync.EpochPlan{}, errors.New("no repository is set for the merge flow: set it with atrium_flow repo")
+	}
+	return f.hub.Store().EpochPlan(ctx, name)
+}
+
+func (f flowGit) EpochMove(ctx context.Context, n int64, branch, expectOld string) (string, string, error) {
+	name := f.repo()
+	if name == "" {
+		return "", "", errors.New("no repository is set for the merge flow: set it with atrium_flow repo")
+	}
+	return f.hub.Store().EpochMove(ctx, name, n, branch, expectOld)
 }
