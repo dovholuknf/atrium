@@ -41,11 +41,11 @@ A screenshot would go stale with the next board change, and the site is rebuilt 
 ## Refreshed on push to main
 
 The site is rebuilt and deployed whenever a push to `main` touches `website/`, `docs/`, the workflow or
-`scripts/build-docs.ps1`. No release tag exists yet, so waiting for a release would leave the site unpublished.
+`scripts/build-docs.sh`. No release tag exists yet, so waiting for a release would leave the site unpublished.
 A docs change ships with the code it describes, and the site follows `main`.
 
 The release number shown on the site is `release` at the top of `docusaurus.config.js`. When a release is cut, bump
-it and `version` in `package.json`. Before pushing a docs change, run `pwsh -NoProfile -File scripts/build-docs.ps1`
+it and `version` in `package.json`. Before pushing a docs change, run `bash scripts/build-docs.sh`
 and look at the result (below).
 
 When a second release needs the first one's docs kept, `npx docusaurus docs:version 0.0.1` snapshots them.
@@ -53,7 +53,7 @@ When a second release needs the first one's docs kept, `npx docusaurus docs:vers
 ## Hosting: GitHub Pages under /atrium/
 
 The site is published at `https://dovholuknf.github.io/atrium/`. `baseUrl` is `/atrium/`, and every link and asset
-must carry it. `scripts/build-docs.ps1` checks the built HTML for any root-relative link that does not, on top of
+must carry it. `scripts/build-docs.sh` checks the built HTML for any root-relative link that does not, on top of
 Docusaurus's own broken-link check.
 
 The workflow holds no logic: it checks out, installs node, asks `configure-pages` for the origin and base path,

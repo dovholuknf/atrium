@@ -6,7 +6,7 @@ import {themes as prismThemes} from 'prism-react-renderer';
 
 const release = '0.0.1';
 
-// Where the site is served. GitHub Pages for dovholuknf/atrium by default. scripts/build-docs.ps1 passes the values
+// Where the site is served. GitHub Pages for dovholuknf/atrium by default. scripts/build-docs.sh passes the values
 // the Pages action reports, so a fork publishes under its own address without editing this file.
 const url = process.env.ATRIUM_DOCS_URL || 'https://dovholuknf.github.io';
 const baseUrl = process.env.ATRIUM_DOCS_BASE_URL || '/atrium/';

@@ -1,6 +1,6 @@
 # Build the docs site and publish it to GitHub Pages.
 #
-# THERE IS NO LOGIC IN THIS FILE. Everything it does lives in `scripts/build-docs.ps1`, which runs on a developer's
+# THERE IS NO LOGIC IN THIS FILE. Everything it does lives in `scripts/build-docs.sh`, which runs on a developer's
 # machine exactly as it runs here. This file checks out, installs node, asks Pages where the site lives, calls the
 # script with those values, and hands the output folder to the Pages actions.
 #
@@ -15,7 +15,7 @@ on:
       - "website/**"
       - "docs/**"
       - ".github/workflows/docs.yml"
-      - "scripts/build-docs.ps1"
+      - "scripts/build-docs.sh"
   workflow_dispatch:
 
 permissions:
@@ -43,11 +43,11 @@ jobs:
         uses: actions/configure-pages@v5
 
       - name: build
-        shell: pwsh
+        shell: bash
         env:
           PAGES_ORIGIN: ${{ steps.pages.outputs.origin }}
           PAGES_BASE_PATH: ${{ steps.pages.outputs.base_path }}
-        run: pwsh -NoProfile -File ./scripts/build-docs.ps1 -Url $env:PAGES_ORIGIN -BaseUrl $env:PAGES_BASE_PATH -OutDir "$PWD/website/build"
+        run: ./scripts/build-docs.sh --url "$PAGES_ORIGIN" --base-url "$PAGES_BASE_PATH" --out-dir "$PWD/website/build"
 
       - uses: actions/upload-pages-artifact@v3
         with:

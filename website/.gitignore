@@ -5,5 +5,5 @@ build/
 npm-debug.log*
 
 # The root .gitignore drops package-lock.json for the Playwright walkthroughs. The site needs its lockfile, because
-# scripts/build-docs.ps1 runs `npm ci`, which refuses to run without one.
+# scripts/build-docs.sh runs `npm ci`, which refuses to run without one.
 !package-lock.json
