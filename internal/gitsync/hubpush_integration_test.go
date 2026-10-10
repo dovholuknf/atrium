@@ -13,6 +13,7 @@ import (
 )
 
 func TestPushToHubPushesAPlainBranchThroughTheForwarder(t *testing.T) {
+	t.Parallel()
 	f := newRemote(t)
 	f.seedMain(hubRepo)
 	sha := f.branch("fix/x", "x.txt")
@@ -37,6 +38,7 @@ func TestPushToHubPushesAPlainBranchThroughTheForwarder(t *testing.T) {
 }
 
 func TestPushToHubTakesAPlainBranchNameAndNothingElse(t *testing.T) {
+	t.Parallel()
 	for _, b := range []string{"", "+fix/x", "fix/x:main", ":fix/x", "-f", "--force", "--all", "--mirror", "--tags", "--delete",
 		"refs/heads/fix/x", "refs/tags/v1", "tags/v1", "HEAD", "a..b", "fix/x.lock", "fix//x", "fix/x/", "a b", "@{u}", "x@{1}"} {
 		if CheckPushBranch(b) == "" {
@@ -91,6 +93,7 @@ func TestPushToHubRefusesWhenAGlobalPushInsteadOfSendsTheForwarderElsewhere(t *t
 
 // A clone whose own `hub` points elsewhere: refused, and the remote atrium adds is atrium-hub.
 func TestAHubRemotePointingElsewhereIsLeftAloneAndAtriumHubIsAdded(t *testing.T) {
+	t.Parallel()
 	f := newRemote(t)
 	f.seedMain(hubRepo)
 	sha := f.branch("fix/x", "x.txt")
@@ -126,6 +129,7 @@ func TestAHubRemotePointingElsewhereIsLeftAloneAndAtriumHubIsAdded(t *testing.T)
 }
 
 func TestEnsureRemotesAddsHubFollowsAPortChangeAndGuardsOriginOnAtriumMadeClones(t *testing.T) {
+	t.Parallel()
 	remote := t.TempDir()
 	git(t, remote, "init", "-q", "--bare", "-b", "main")
 	mk := func() string {
@@ -182,6 +186,7 @@ func TestEnsureRemotesAddsHubFollowsAPortChangeAndGuardsOriginOnAtriumMadeClones
 }
 
 func TestEnsureRemotesLeavesARoomGitCloneAloneAndSilent(t *testing.T) {
+	t.Parallel()
 	// room-git.ps1 init makes the clone by push: no origin, and atrium.clone=made.
 	c := t.TempDir()
 	git(t, c, "init", "-q", "-b", "main")
@@ -203,6 +208,7 @@ func TestEnsureRemotesLeavesARoomGitCloneAloneAndSilent(t *testing.T) {
 }
 
 func TestSyncAddsTheHubRemoteAndGuardsTheOriginOfACloneItMade(t *testing.T) {
+	t.Parallel()
 	s := freshServed(t)
 	sy, root := newSyncer(t)
 	sy.HubRemote = func(c string) string { return "http://127.0.0.1:7777/git/hub/" + c + ".git" }
@@ -226,6 +232,7 @@ func TestSyncAddsTheHubRemoteAndGuardsTheOriginOfACloneItMade(t *testing.T) {
 
 // `git remote get-url --push` prints only the first push url, and git pushes to every one.
 func TestPushToHubRefusesASecondPushURLOnHub(t *testing.T) {
+	t.Parallel()
 	f := newRemote(t)
 	f.seedMain(hubRepo)
 	f.branch("fix/x", "x.txt")
@@ -259,6 +266,7 @@ func TestPushToHubRefusesASecondPushURLOnHub(t *testing.T) {
 // remote.<name>.proxy and http.<url>.proxy beat http.proxy, so a clone could put its own listener between the card's
 // token and the forwarder. Both are cleared, and the push still lands.
 func TestPushToHubIgnoresAProxyTheClonesConfigSets(t *testing.T) {
+	t.Parallel()
 	for _, key := range []string{"remote.hub.proxy", "http.proxy", "http.<base>.proxy", "http.<push>.proxy"} {
 		t.Run(key, func(t *testing.T) {
 			f := newRemote(t)
@@ -293,6 +301,7 @@ func TestPushToHubIgnoresAProxyTheClonesConfigSets(t *testing.T) {
 // A CLONE MADE BY HAND, with no hub remote and no origin, at <root>/<host>/<owner>/<repo>: pushed from a worktree of
 // it to the forwarder's URL for the repository its place names, and nothing is added to its config.
 func TestAHandMadeCloneWithNoHubRemoteIsPushedByTheURLItsPlaceNames(t *testing.T) {
+	t.Parallel()
 	f := newRemote(t)
 	f.seedMain(hubRepo)
 	sha := f.branch("fix/x", "x.txt")
@@ -336,6 +345,7 @@ func TestAHandMadeCloneWithNoHubRemoteIsPushedByTheURLItsPlaceNames(t *testing.T
 }
 
 func TestHubNameOfReadsOriginFirstAndSaysNothingOutsideARoot(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	clone := filepath.Join(root, "github", "o", "r")
 	if err := os.MkdirAll(clone, 0o755); err != nil {

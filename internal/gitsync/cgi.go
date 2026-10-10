@@ -53,6 +53,12 @@ func (h *cgiHandler) command(req *http.Request) *exec.Cmd {
 		cmd.Dir = filepath.Dir(h.Path)
 	}
 	cmd.Env = h.env(req)
+	if cmd.Dir != "" {
+		// Git looks for a repository upward from its directory, and stats every parent on the way. A git installed
+		// under a folder the account cannot stat dies there with "failed to stat", so every request was a 500. The
+		// parent is a ceiling, which stops the walk before it. http-backend finds its repository by GIT_PROJECT_ROOT.
+		cmd.Env = append(cmd.Env, "GIT_CEILING_DIRECTORIES="+filepath.ToSlash(filepath.Dir(cmd.Dir)))
+	}
 	nowindow.Hide(cmd)
 	return cmd
 }

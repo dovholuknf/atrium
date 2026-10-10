@@ -7,6 +7,7 @@ import "testing"
 // A commit a worker pushed is found on the hub by the commit alone, on a claude/*-w branch, as the tip and as an
 // ancestor of the tip. No repository is named.
 func TestACommitIsFoundOnAnyHubBranchWithNoRepositoryNamed(t *testing.T) {
+	t.Parallel()
 	x := newRecv(t)
 	x.seedMain(hubRepo)
 	first := x.branch("claude/item-w", "x.txt")
@@ -51,6 +52,7 @@ func TestARepositoryWithoutTheCommitIsSkippedAndNotSearched(t *testing.T) {
 
 // A commit no hub branch has is not found, and neither is something that is not a commit id.
 func TestACommitNoHubBranchHasIsNotFound(t *testing.T) {
+	t.Parallel()
 	x := newRecv(t)
 	x.seedMain(hubRepo)
 	for _, sha := range []string{"deadbeefdeadbeef", "abc", "--all", ""} {

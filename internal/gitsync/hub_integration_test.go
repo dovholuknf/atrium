@@ -100,6 +100,7 @@ func newHubFixture(t *testing.T, roomGit bool) *hubFixture {
 }
 
 func TestMirrorCreatesTheBareRepositoryAndMovesWithTheBranch(t *testing.T) {
+	t.Parallel()
 	x := newHubFixture(t, true)
 	moved, err := x.h.Mirror(bg)
 	if err != nil || len(moved) != 1 {
@@ -140,6 +141,7 @@ func TestMirrorCreatesTheBareRepositoryAndMovesWithTheBranch(t *testing.T) {
 }
 
 func TestMirrorReportsAMissingBranch(t *testing.T) {
+	t.Parallel()
 	x := newHubFixture(t, true)
 	x.h.Repos = func() ([]Repo, error) {
 		return []Repo{{Name: "github/o/r", Checkout: slash(x.checkout), Branch: "main"}}, nil
@@ -150,6 +152,7 @@ func TestMirrorReportsAMissingBranch(t *testing.T) {
 }
 
 func TestOnlyTheListedNamesAreServed(t *testing.T) {
+	t.Parallel()
 	x := newHubFixture(t, true)
 	if _, err := x.h.Mirror(bg); err != nil {
 		t.Fatal(err)
@@ -165,6 +168,7 @@ func TestOnlyTheListedNamesAreServed(t *testing.T) {
 }
 
 func TestCollectBringsNewBranchesPrunesDeletedAndNeverCollectsClaudeMain(t *testing.T) {
+	t.Parallel()
 	x := newHubFixture(t, true)
 	if _, err := x.h.Mirror(bg); err != nil {
 		t.Fatal(err)
@@ -239,6 +243,7 @@ func TestCollectBringsNewBranchesPrunesDeletedAndNeverCollectsClaudeMain(t *test
 // HEAD is not under refs/, so hiding refs/rooms alone would advertise a HEAD that points at a
 // room's branch.
 func TestHeadPointingAtAHiddenRefIsNotAdvertised(t *testing.T) {
+	t.Parallel()
 	x := newHubFixture(t, true)
 	if _, err := x.h.Mirror(bg); err != nil {
 		t.Fatal(err)
@@ -275,6 +280,7 @@ func TestHeadPointingAtAHiddenRefIsNotAdvertised(t *testing.T) {
 }
 
 func TestAStaleLockUnderAnOwnedRefIsRemovedAndOneElsewhereIsLeft(t *testing.T) {
+	t.Parallel()
 	x := newHubFixture(t, true)
 	if _, err := x.h.Mirror(bg); err != nil {
 		t.Fatal(err)
@@ -325,6 +331,7 @@ func TestAStaleLockUnderAnOwnedRefIsRemovedAndOneElsewhereIsLeft(t *testing.T) {
 }
 
 func TestARoomThatDidNotSayGitIsNeverAskedNorDialled(t *testing.T) {
+	t.Parallel()
 	x := newHubFixture(t, false)
 	res, err := x.h.Sync(bg, "sg3", "", false)
 	if err != nil || len(res) != 1 || res[0].State != "unsupported" {
@@ -341,6 +348,7 @@ func TestARoomThatDidNotSayGitIsNeverAskedNorDialled(t *testing.T) {
 }
 
 func TestSyncAsksTheRoomAndRecordsItsAnswer(t *testing.T) {
+	t.Parallel()
 	x := newHubFixture(t, true)
 	x.answer.Store("behind")
 	res, err := x.h.Sync(bg, "sg3", "github/o/r", true)
@@ -373,6 +381,7 @@ func TestSyncAsksTheRoomAndRecordsItsAnswer(t *testing.T) {
 // The room on the hub's own machine shares the checkout's disk, so it is skipped, and the
 // status says why.
 func TestTheRoomOnTheHubsOwnMachineIsSkipped(t *testing.T) {
+	t.Parallel()
 	x := newHubFixture(t, true)
 	x.rooms.host = "Sg4"
 	x.h.SelfHost = "sg4"
@@ -396,6 +405,7 @@ func TestTheRoomOnTheHubsOwnMachineIsSkipped(t *testing.T) {
 // Another machine is not skipped. (A hub of its own: the attach above left a goroutine that read SelfHost, and
 // changing it under that goroutine is a race.)
 func TestTheRoomOnAnotherMachineIsNotSkipped(t *testing.T) {
+	t.Parallel()
 	x := newHubFixture(t, true)
 	x.rooms.host = "Sg4"
 	x.h.SelfHost = "elsewhere"
@@ -406,6 +416,7 @@ func TestTheRoomOnAnotherMachineIsNotSkipped(t *testing.T) {
 }
 
 func TestRoomNamesInRefsAreLowercasedAndCheckedByGit(t *testing.T) {
+	t.Parallel()
 	h := &Hub{Runner: NewRunner()}
 	if k, err := h.RoomKey(bg, "SG3"); err != nil || k != "sg3" {
 		t.Fatalf("key = %q err=%v", k, err)
@@ -418,6 +429,7 @@ func TestRoomNamesInRefsAreLowercasedAndCheckedByGit(t *testing.T) {
 }
 
 func TestOnlyTheIntegrationBranchMayBeMirrored(t *testing.T) {
+	t.Parallel()
 	ok := `[{"name":"github/o/r","checkout":"` + slash(t.TempDir()) + `","branch":"claude/main"},
 	        {"name":"github/o/s","checkout":"` + slash(t.TempDir()) + `"}]`
 	repos, err := ParseRepos(ok)
@@ -452,6 +464,7 @@ func TestOnlyTheIntegrationBranchMayBeMirrored(t *testing.T) {
 
 // A hub stopped in the middle of a collect leaves every ref at its old sha or its new one.
 func TestAHubStoppedMidFetchLeavesEveryRefWhole(t *testing.T) {
+	t.Parallel()
 	x := newHubFixture(t, true)
 	if _, err := x.h.Mirror(bg); err != nil {
 		t.Fatal(err)

@@ -33,6 +33,7 @@ func advert(lines ...string) []byte {
 }
 
 func TestParseAdvertTakesServedBranchesAndNothingElse(t *testing.T) {
+	t.Parallel()
 	got, ok := parseAdvert(advert(
 		sha1h+" refs/heads/claude/w1",
 		sha2h+" refs/heads/fix/live",
@@ -56,6 +57,7 @@ func TestParseAdvertTakesServedBranchesAndNothingElse(t *testing.T) {
 }
 
 func TestParseAdvertRefusesWhatIsNotOne(t *testing.T) {
+	t.Parallel()
 	for name, b := range map[string][]byte{
 		"empty":     nil,
 		"html":      []byte("<html>not found</html>"),
@@ -75,6 +77,7 @@ func TestParseAdvertRefusesWhatIsNotOne(t *testing.T) {
 }
 
 func TestParseAdvertIsBounded(t *testing.T) {
+	t.Parallel()
 	var lines []string
 	for i := 0; i < lookupBranchMax+50; i++ {
 		lines = append(lines, sha1h+" refs/heads/b"+strings.Repeat("x", i%7)+string(rune('a'+i%26))+string(rune('a'+i/26%26))+string(rune('a'+i/676)))
@@ -86,6 +89,7 @@ func TestParseAdvertIsBounded(t *testing.T) {
 }
 
 func TestClosestNamesAreNearAndBounded(t *testing.T) {
+	t.Parallel()
 	have := []string{"github/openziti/zrok", "github/openziti/ziti", "github/netfoundry/zrok-docs", "github/o/r",
 		"gitlab/a/zrok", "github/x/y1", "github/x/y2", "github/x/y3", "github/x/y4"}
 	for _, c := range []struct {
@@ -122,6 +126,7 @@ func TestClosestNamesAreNearAndBounded(t *testing.T) {
 }
 
 func TestEditDistance(t *testing.T) {
+	t.Parallel()
 	for _, c := range []struct {
 		a, b string
 		d    int
@@ -139,6 +144,7 @@ func TestEditDistance(t *testing.T) {
 }
 
 func TestResolveRepoFindsOnlyWhatTheHubKnows(t *testing.T) {
+	t.Parallel()
 	known := map[string]*knownRepo{
 		"github/openziti/zrok": {}, "github/netfoundry/zrok": {}, "github/o/r": {}, "gitlab/a/b": {},
 	}
@@ -182,6 +188,7 @@ func TestResolveRepoFindsOnlyWhatTheHubKnows(t *testing.T) {
 }
 
 func TestTheLineAModelReads(t *testing.T) {
+	t.Parallel()
 	both := URLAnswer{State: URLFound, Repo: "github/o/r", Branch: "fix/x", Branches: []URLBranch{{Name: "fix/x", Sources: []URLSource{
 		{Source: "hub", URL: "http://h/git/hub/github/o/r.git", SHA: sha1h},
 		{Source: "room", Room: "sg4", Online: true, URL: "http://h/git/room/sg4/github/o/r.git", SHA: sha2h, Ahead: ptr(true)},
@@ -244,6 +251,7 @@ func lookupHub(t *testing.T, rooms *lookupRooms, repos ...string) *Hub {
 
 // An advertisement past 4 MiB is not read: the room did not answer, and its branches are not listed.
 func TestAnAdvertisementPastTheCapIsNotRead(t *testing.T) {
+	t.Parallel()
 	big := string(advert(sha1h + " refs/heads/fix/x"))
 	big = big[:len(big)-len(flushPkt)] + strings.Repeat(string(pktLine(sha1h+" refs/tags/t\n")), (lookupAdvertMax/48)+100) + string(flushPkt)
 	if len(big) <= lookupAdvertMax {
@@ -265,6 +273,7 @@ func TestAnAdvertisementPastTheCapIsNotRead(t *testing.T) {
 
 // Two rooms of 500 branches each do not make an answer of 1000.
 func TestAnAnswerIsCutAtFiveHundredBranches(t *testing.T) {
+	t.Parallel()
 	adv := func(prefix string) string {
 		var lines []string
 		for i := 0; i < lookupBranchMax; i++ {
@@ -287,6 +296,7 @@ func TestAnAnswerIsCutAtFiveHundredBranches(t *testing.T) {
 
 // A short name two repositories answer to is not guessed at, and the answer says so and lists them.
 func TestAnAmbiguousShortNameIsAnsweredWithTheCandidates(t *testing.T) {
+	t.Parallel()
 	rooms := &lookupRooms{serve: func(string) (string, error) { return "", errors.New("no room") }}
 	h := lookupHub(t, rooms, "github/openziti/zrok", "github/netfoundry/zrok", "github/o/r")
 	a := h.Lookup(context.Background(), URLQuery{Repo: "zrok", Base: "http://h"})
@@ -302,6 +312,7 @@ func TestAnAmbiguousShortNameIsAnsweredWithTheCandidates(t *testing.T) {
 // A room that does not answer is asked again at the next call (it may be back), and not held as down. A room that did
 // answer is held.
 func TestADownRoomIsAskedAgainAndAnAnsweringRoomIsHeld(t *testing.T) {
+	t.Parallel()
 	rooms := &lookupRooms{rooms: []RoomInfo{room("sg3")}, serve: func(string) (string, error) { return "", errors.New("down") }}
 	h := lookupHub(t, rooms, "github/o/r")
 	for i := 0; i < 3; i++ {
@@ -323,6 +334,7 @@ func TestADownRoomIsAskedAgainAndAnAnsweringRoomIsHeld(t *testing.T) {
 // Only a room the hub saw sync a repository, whole or behind, is counted as having it. A failed, absent or old room
 // has none of it to be offline for.
 func TestOnlyAnOkOrBehindSyncCountsARoomAsHavingARepo(t *testing.T) {
+	t.Parallel()
 	h := &Hub{Dir: t.TempDir(), rooms: map[string]*RoomState{}}
 	for i, st := range []string{"ok", "behind", "failed", "absent", "unsupported", ""} {
 		room := fmt.Sprintf("r%d", i)
@@ -342,6 +354,7 @@ func TestOnlyAnOkOrBehindSyncCountsARoomAsHavingARepo(t *testing.T) {
 
 // What the caller typed as a room is cut, in the note and in the list.
 func TestARoomNamedAtLengthIsCutInTheAnswer(t *testing.T) {
+	t.Parallel()
 	rooms := &lookupRooms{rooms: []RoomInfo{room("sg3")}, serve: func(string) (string, error) { return "", errors.New("x") }}
 	h := lookupHub(t, rooms, "github/o/r")
 	long := strings.Repeat("r", 5000)
@@ -358,6 +371,7 @@ func TestARoomNamedAtLengthIsCutInTheAnswer(t *testing.T) {
 
 // What a card is given: the hub's URLs on its room's forwarder, none for a room's work, and the original untouched.
 func TestForCardRewritesTheHubsURLsAndTakesTheRoomsAway(t *testing.T) {
+	t.Parallel()
 	a := URLAnswer{State: URLFound, Repo: "github/o/r", Branch: "fix/x", Branches: []URLBranch{{Name: "fix/x", Sources: []URLSource{
 		{Source: "hub", URL: "http://127.0.0.1:7778/git/hub/github/o/r.git", SHA: sha1h},
 		{Source: "room", Room: "sg4", Online: true, URL: "http://127.0.0.1:7778/git/room/sg4/github/o/r.git", SHA: sha2h, Ahead: ptr(true)},

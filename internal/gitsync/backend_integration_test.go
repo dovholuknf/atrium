@@ -107,6 +107,7 @@ func get(t *testing.T, url string) (int, string) {
 }
 
 func TestAFetchWorks(t *testing.T) {
+	t.Parallel()
 	s := newServed(t)
 	dst := t.TempDir()
 	git(t, dst, "init", "-q")
@@ -117,6 +118,7 @@ func TestAFetchWorks(t *testing.T) {
 }
 
 func TestAPushToTheServedURLFails(t *testing.T) {
+	t.Parallel()
 	s := newServed(t)
 	dst := t.TempDir()
 	git(t, dst, "init", "-q", "-b", "claude/main")
@@ -130,6 +132,7 @@ func TestAPushToTheServedURLFails(t *testing.T) {
 }
 
 func TestAHiddenRefIsNotAdvertised(t *testing.T) {
+	t.Parallel()
 	s := newServed(t)
 	code, body := get(t, s.url()+"/info/refs?service=git-upload-pack")
 	if code != 200 {
@@ -147,6 +150,7 @@ func TestAHiddenRefIsNotAdvertised(t *testing.T) {
 // v2 lets a want be any object the server has, so this only holds because the
 // Git-Protocol header is dropped and the server answers in v0.
 func TestAHiddenShaFetchedByIDFailsWhenTheClientAsksForV2(t *testing.T) {
+	t.Parallel()
 	s := newServed(t)
 	dst := t.TempDir()
 	git(t, dst, "init", "-q")
@@ -161,6 +165,7 @@ func TestAHiddenShaFetchedByIDFailsWhenTheClientAsksForV2(t *testing.T) {
 
 // The same, past the client's own check: a raw v0 request that wants the hidden sha.
 func TestARawWantOfAHiddenShaIsRefused(t *testing.T) {
+	t.Parallel()
 	s := newServed(t)
 	line := "want " + s.hiddenSHA + " no-progress\n"
 	body := pkt(line) + "0000" + pkt("done\n")
@@ -185,6 +190,7 @@ func pkt(s string) string {
 }
 
 func TestTheDumbProtocolIsOff(t *testing.T) {
+	t.Parallel()
 	s := newServed(t)
 	loose := git(t, s.bare, "rev-parse", "refs/rooms/x/claude/a")
 	for _, p := range []string{
@@ -203,6 +209,7 @@ func TestTheDumbProtocolIsOff(t *testing.T) {
 }
 
 func TestReceivePackIsRefused(t *testing.T) {
+	t.Parallel()
 	s := newServed(t)
 	code, _ := get(t, s.url()+"/info/refs?service=git-receive-pack")
 	if code != 403 {
@@ -219,6 +226,7 @@ func TestReceivePackIsRefused(t *testing.T) {
 }
 
 func TestNamesNotOnTheListOrMalformedAre404(t *testing.T) {
+	t.Parallel()
 	s := newServed(t)
 	for _, p := range []string{
 		"/github/o/other.git/info/refs?service=git-upload-pack",
@@ -255,6 +263,7 @@ func TestNamesNotOnTheListOrMalformedAre404(t *testing.T) {
 }
 
 func TestNothingIsWrittenIntoTheRepositoryConfig(t *testing.T) {
+	t.Parallel()
 	s := newServed(t)
 	before, _ := os.ReadFile(filepath.Join(s.bare, "config"))
 	dst := t.TempDir()
@@ -298,6 +307,7 @@ func TestAGitDirInTheParentEnvironmentDoesNotLeak(t *testing.T) {
 }
 
 func TestStopCancelsAndWaitsForGitChildren(t *testing.T) {
+	t.Parallel()
 	r := NewRunner()
 	done := make(chan error, 1)
 	go func() {
@@ -315,6 +325,7 @@ func TestStopCancelsAndWaitsForGitChildren(t *testing.T) {
 }
 
 func TestBackendMissingNamesTheCause(t *testing.T) {
+	t.Parallel()
 	bin := t.TempDir()
 	exe, script := filepath.Join(bin, "git"), "#!/bin/sh\necho "+bin+"\n"
 	if runtime.GOOS == "windows" {

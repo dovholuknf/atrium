@@ -42,6 +42,7 @@ func pushedFixture(t *testing.T) (*pushedFix, map[string]string) {
 }
 
 func TestPushedSaysMatchesBehindAheadDivergedAndNotPushed(t *testing.T) {
+	t.Parallel()
 	x, sha := pushedFixture(t)
 	st := x.h.Store()
 	at := func(branch string) string { return x.refOn(hubRepo, "refs/heads/"+branch) }
@@ -84,6 +85,7 @@ func TestPushedSaysMatchesBehindAheadDivergedAndNotPushed(t *testing.T) {
 }
 
 func TestPushedCarriesTheOwnerAndTheTimeOfTheLastPush(t *testing.T) {
+	t.Parallel()
 	x, sha := pushedFixture(t)
 	got, err := x.h.Store().Pushed(bg, hubRepo, "fix/x", sha["first"])
 	if err != nil {
@@ -115,6 +117,7 @@ func TestPushedCarriesTheOwnerAndTheTimeOfTheLastPush(t *testing.T) {
 }
 
 func TestPushedOfARepositoryTheHubLacksIsNotPushed(t *testing.T) {
+	t.Parallel()
 	x, sha := pushedFixture(t)
 	got, err := x.h.Store().Pushed(bg, "github/o/absent", "fix/x", sha["first"])
 	if err != nil || got.State != PushedNotPushed {
@@ -123,6 +126,7 @@ func TestPushedOfARepositoryTheHubLacksIsNotPushed(t *testing.T) {
 }
 
 func TestPushedRefusesWhatIsNotANameOrACommitId(t *testing.T) {
+	t.Parallel()
 	x, sha := pushedFixture(t)
 	st := x.h.Store()
 	for _, head := range []string{"", "main", "HEAD", sha["first"][:12], sha["first"] + "0", strings.ToUpper(sha["first"]),
@@ -150,6 +154,7 @@ func TestPushedRefusesWhatIsNotANameOrACommitId(t *testing.T) {
 }
 
 func TestPushedCancelledIsAnErrorNotAState(t *testing.T) {
+	t.Parallel()
 	x, sha := pushedFixture(t)
 	ctx, cancel := context.WithCancel(bg)
 	cancel()
@@ -160,6 +165,7 @@ func TestPushedCancelledIsAnErrorNotAState(t *testing.T) {
 }
 
 func TestReachableIsTheTipOrWhatItIsBuiltOn(t *testing.T) {
+	t.Parallel()
 	x, sha := pushedFixture(t)
 	st := x.h.Store()
 	main := x.refOn(hubRepo, MainRef)
@@ -186,6 +192,7 @@ func TestReachableIsTheTipOrWhatItIsBuiltOn(t *testing.T) {
 }
 
 func TestBranchSHAIsTheHubsTipOrNotFound(t *testing.T) {
+	t.Parallel()
 	x, sha := pushedFixture(t)
 	got, ok, err := x.h.Store().BranchSHA(bg, hubRepo, "fix/x")
 	if err != nil || !ok || got != sha["first"] {
@@ -201,6 +208,7 @@ func TestBranchSHAIsTheHubsTipOrNotFound(t *testing.T) {
 }
 
 func TestRoomBranchIsTheTipTheRoomAdvertises(t *testing.T) {
+	t.Parallel()
 	x := newHubFixture(t, true)
 	tip := git(t, x.roomWork, "rev-parse", "claude/main")
 	git(t, x.roomWork, "switch", "-q", "-c", "claude/x")
@@ -224,6 +232,7 @@ func TestRoomBranchIsTheTipTheRoomAdvertises(t *testing.T) {
 }
 
 func TestRoomBranchOfARepositoryTheRoomDoesNotServeIsNotFound(t *testing.T) {
+	t.Parallel()
 	x := newHubFixture(t, true)
 	if _, found, err := x.h.RoomBranch(bg, "sg3", "github/o/other", "claude/main"); err != nil || found {
 		t.Fatalf("%v %v", found, err)
@@ -231,6 +240,7 @@ func TestRoomBranchOfARepositoryTheRoomDoesNotServeIsNotFound(t *testing.T) {
 }
 
 func TestRoomBranchSaysWhyARoomCannotBeAsked(t *testing.T) {
+	t.Parallel()
 	x := newHubFixture(t, true)
 	x.rooms.up = false
 	if _, _, err := x.h.RoomBranch(bg, "sg3", "github/o/r", "claude/main"); !errors.Is(err, ErrRoomUnreachable) ||
@@ -262,6 +272,7 @@ func TestRoomBranchSaysWhyARoomCannotBeAsked(t *testing.T) {
 }
 
 func TestRoomBranchOfARoomThatAnswersBadlyIsUnreachableNotAbsent(t *testing.T) {
+	t.Parallel()
 	for name, h := range map[string]http.HandlerFunc{
 		"a server error": func(w http.ResponseWriter, _ *http.Request) { http.Error(w, "no", http.StatusInternalServerError) },
 		"not a git advertisement": func(w http.ResponseWriter, _ *http.Request) {
@@ -283,6 +294,7 @@ func TestRoomBranchOfARoomThatAnswersBadlyIsUnreachableNotAbsent(t *testing.T) {
 
 // Only git's exit status 1 is "no". Any other failure is the read failing, and is never taken for an answer.
 func TestAGitFailureIsAnErrorAndNotANo(t *testing.T) {
+	t.Parallel()
 	x, sha := pushedFixture(t)
 	notARepo := t.TempDir()
 	if ok, err := x.h.Store().commitKnown(bg, notARepo, sha["first"]); err == nil || ok {

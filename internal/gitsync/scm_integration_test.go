@@ -39,7 +39,7 @@ func bareSource(t *testing.T) string {
 		t.Fatal(err)
 	}
 	gitT(t, work, "add", "f")
-	gitT(t, work, "commit", "-q", "-m", "one")
+	gitT(t, work, "-c", "commit.gpgsign=false", "commit", "-q", "-m", "one")
 	bare := filepath.Join(d, "src.git")
 	gitT(t, d, "clone", "-q", "--bare", work, bare)
 	return bare
@@ -59,6 +59,7 @@ func newSCM(t *testing.T) (*SCM, string) {
 }
 
 func TestCloneMakesTheCloneAtHostOwnerRepo(t *testing.T) {
+	t.Parallel()
 	c, root := newSCM(t)
 	res, err := c.Clone(context.Background(), "https://github.com/acme/widget")
 	if err != nil {
@@ -87,6 +88,7 @@ func TestCloneMakesTheCloneAtHostOwnerRepo(t *testing.T) {
 }
 
 func TestCloneOfAtriumsOwnPushToOriginFailsOnTheGuardURL(t *testing.T) {
+	t.Parallel()
 	c, _ := newSCM(t)
 	res, err := c.Clone(context.Background(), "https://github.com/acme/widget")
 	if err != nil {
@@ -111,6 +113,7 @@ func TestCloneOfAtriumsOwnPushToOriginFailsOnTheGuardURL(t *testing.T) {
 }
 
 func TestFailedCloneAnswersTheExactSentence(t *testing.T) {
+	t.Parallel()
 	c, root := newSCM(t)
 	c.source = func(Ref) string { return filepath.Join(t.TempDir(), "nope.git") }
 	_, err := c.Clone(context.Background(), "https://github.com/acme/private")
@@ -123,6 +126,7 @@ func TestFailedCloneAnswersTheExactSentence(t *testing.T) {
 }
 
 func TestCloneRefusesBadURLsAndNamesNothingBack(t *testing.T) {
+	t.Parallel()
 	c, root := newSCM(t)
 	for _, u := range []string{
 		"file:///etc/passwd",
@@ -154,6 +158,7 @@ func TestCloneRefusesBadURLsAndNamesNothingBack(t *testing.T) {
 }
 
 func TestCloneRefusesADestinationThatLeavesTheSCMFolderBySymlink(t *testing.T) {
+	t.Parallel()
 	c, root := newSCM(t)
 	outside := t.TempDir()
 	if err := os.Symlink(outside, filepath.Join(root, "github")); err != nil {
@@ -169,6 +174,7 @@ func TestCloneRefusesADestinationThatLeavesTheSCMFolderBySymlink(t *testing.T) {
 }
 
 func TestCloneWithNoSCMRootRefusesAndSaysHow(t *testing.T) {
+	t.Parallel()
 	c, _ := newSCM(t)
 	c.Root = func() string { return "  " }
 	_, err := c.Clone(context.Background(), "https://github.com/acme/widget")
@@ -178,6 +184,7 @@ func TestCloneWithNoSCMRootRefusesAndSaysHow(t *testing.T) {
 }
 
 func TestCloneLeavesANonCloneFolderAlone(t *testing.T) {
+	t.Parallel()
 	c, root := newSCM(t)
 	d := filepath.Join(root, "github", "acme", "widget")
 	if err := os.MkdirAll(d, 0o755); err != nil {
@@ -206,6 +213,7 @@ func operatorClone(t *testing.T, c *SCM, root string) string {
 }
 
 func TestAnOperatorsCloneIsUntouchedUntilOneYes(t *testing.T) {
+	t.Parallel()
 	c, root := newSCM(t)
 	d := operatorClone(t, c, root)
 	asked := 0
@@ -240,6 +248,7 @@ func TestAnOperatorsCloneIsUntouchedUntilOneYes(t *testing.T) {
 }
 
 func TestADeniedYesChangesNothing(t *testing.T) {
+	t.Parallel()
 	c, root := newSCM(t)
 	d := operatorClone(t, c, root)
 	c.Yes = func(context.Context, string) error { return ErrDenied }
@@ -252,6 +261,7 @@ func TestADeniedYesChangesNothing(t *testing.T) {
 }
 
 func TestAnExistingHubRemoteElsewhereIsLeftAloneAndAtriumHubIsAdded(t *testing.T) {
+	t.Parallel()
 	c, root := newSCM(t)
 	d := operatorClone(t, c, root)
 	gitT(t, d, "remote", "add", "hub", "https://example.org/theirs.git")
@@ -276,6 +286,7 @@ func TestAnExistingHubRemoteElsewhereIsLeftAloneAndAtriumHubIsAdded(t *testing.T
 }
 
 func TestWithNoHubForwarderTheCloneStillWorksAndSaysSo(t *testing.T) {
+	t.Parallel()
 	c, _ := newSCM(t)
 	c.HubURL = nil
 	res, err := c.Clone(context.Background(), "https://github.com/acme/widget")
@@ -285,6 +296,7 @@ func TestWithNoHubForwarderTheCloneStillWorksAndSaysSo(t *testing.T) {
 }
 
 func TestHTTPSURLIsBuiltFromTheCheckedParts(t *testing.T) {
+	t.Parallel()
 	r, err := ParseURL("git@github.com:acme/widget.git")
 	if err != nil {
 		t.Fatal(err)
@@ -299,6 +311,7 @@ func TestHTTPSURLIsBuiltFromTheCheckedParts(t *testing.T) {
 }
 
 func TestCredentialHelperIsScopedToTheCheckedHostAndOnlyForListedHosts(t *testing.T) {
+	t.Parallel()
 	c, _ := newSCM(t)
 	c.CredentialHelper = func() string { return "store" }
 	gh, _ := ParseURL("https://github.com/a/b")
@@ -326,6 +339,7 @@ func TestCredentialHelperIsScopedToTheCheckedHostAndOnlyForListedHosts(t *testin
 // A helper for another host is never called: the clone is of a stub https server that answers 401,
 // the helper writes a marker file when git runs it, and the marker must not exist afterwards.
 func TestAHelperIsNeverCalledForAHostNotListed(t *testing.T) {
+	t.Parallel()
 	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("WWW-Authenticate", `Basic realm="x"`)
 		w.WriteHeader(http.StatusUnauthorized)
@@ -363,6 +377,7 @@ func TestAHelperIsNeverCalledForAHostNotListed(t *testing.T) {
 }
 
 func TestStableHubURLNeverNamesAllInterfaces(t *testing.T) {
+	t.Parallel()
 	r := Ref{Host: "github", Owner: "a", Repo: "b"}
 	for _, addr := range []string{"0.0.0.0:7782", ":7782", "[::]:7782", "127.0.0.1:7782"} {
 		if got := StableHubURL(addr, r); got != "http://127.0.0.1:7782/git/hub/github/a/b.git" {

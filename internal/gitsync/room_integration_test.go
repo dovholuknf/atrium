@@ -37,6 +37,7 @@ func newSyncer(t *testing.T) (*Syncer, string) {
 const repo = "github/o/r"
 
 func TestSyncAbsentRunsNothing(t *testing.T) {
+	t.Parallel()
 	s := freshServed(t)
 	sy, root := newSyncer(t)
 	r := sy.Sync(bg, repo, false, hubFor(s))
@@ -49,6 +50,7 @@ func TestSyncAbsentRunsNothing(t *testing.T) {
 }
 
 func TestSyncInitThenOKThenResigned(t *testing.T) {
+	t.Parallel()
 	s := freshServed(t)
 	sy, root := newSyncer(t)
 	r := sy.Sync(bg, repo, true, hubFor(s))
@@ -91,6 +93,7 @@ func TestSyncInitThenOKThenResigned(t *testing.T) {
 }
 
 func TestSyncBehindWhenAWorktreeHoldsClaudeMain(t *testing.T) {
+	t.Parallel()
 	s := freshServed(t)
 	sy, root := newSyncer(t)
 	if r := sy.Sync(bg, repo, true, hubFor(s)); r.State != StateOK {
@@ -118,6 +121,7 @@ func TestSyncBehindWhenAWorktreeHoldsClaudeMain(t *testing.T) {
 }
 
 func TestSyncBehindWhenHubMainIsCheckedOutDirty(t *testing.T) {
+	t.Parallel()
 	s := freshServed(t)
 	sy, root := newSyncer(t)
 	if r := sy.Sync(bg, repo, true, hubFor(s)); r.State != StateOK {
@@ -150,6 +154,7 @@ func TestSyncBehindWhenHubMainIsCheckedOutDirty(t *testing.T) {
 }
 
 func TestSyncFailedWhenTheHubDidNotSayGit(t *testing.T) {
+	t.Parallel()
 	sy, root := newSyncer(t)
 	if err := os.MkdirAll(filepath.Join(root, "github", "o", "r"), 0o755); err != nil {
 		t.Fatal(err)
@@ -167,6 +172,7 @@ func TestSyncFailedWhenTheHubDidNotSayGit(t *testing.T) {
 }
 
 func TestSyncFailedWhenTheFetchFails(t *testing.T) {
+	t.Parallel()
 	s := freshServed(t)
 	sy, _ := newSyncer(t)
 	r := sy.Sync(bg, "github/o/unknown", true, hubFor(s))
@@ -197,6 +203,7 @@ func post(t *testing.T, url, body string) (int, string) {
 }
 
 func TestSyncRequestCannotNameASourceBranch(t *testing.T) {
+	t.Parallel()
 	s := freshServed(t)
 	srv, root := roomServer(t, s)
 	for _, body := range []string{
@@ -222,6 +229,7 @@ func TestSyncRequestCannotNameASourceBranch(t *testing.T) {
 }
 
 func TestStatusBeforeAnySync(t *testing.T) {
+	t.Parallel()
 	s := freshServed(t)
 	srv, _ := roomServer(t, s)
 	if _, out := get(t, srv.URL+"/v1/git/status"); !strings.Contains(out, `"none"`) {
@@ -230,6 +238,7 @@ func TestStatusBeforeAnySync(t *testing.T) {
 }
 
 func TestTheRoomServesClaudeBranchesExceptMainAndNothingElse(t *testing.T) {
+	t.Parallel()
 	s := freshServed(t)
 	srv, root := roomServer(t, s)
 	if code, out := post(t, srv.URL+"/v1/git/sync", `{"name":"github/o/r","init":true}`); code != 200 {
@@ -289,6 +298,7 @@ func TestTheRoomServesClaudeBranchesExceptMainAndNothingElse(t *testing.T) {
 // Only a repository the hub has synced is served. A clone that is on disk but was never synced,
 // or whose sync was refused, is a 404 even to the hub.
 func TestTheRoomServesOnlyWhatTheHubHasSynced(t *testing.T) {
+	t.Parallel()
 	s := freshServed(t)
 	srv, root := roomServer(t, s)
 	url := srv.URL + "/v1/git/github/o/r.git/info/refs?service=git-upload-pack"
@@ -331,6 +341,7 @@ func TestTheRoomServesOnlyWhatTheHubHasSynced(t *testing.T) {
 }
 
 func TestCleanLocksRemovesOnlyOldOwnedOnes(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	old := time.Now().Add(-time.Hour)
 	mk := func(rel string, age time.Time) string {
@@ -377,6 +388,7 @@ func TestCleanLocksRemovesOnlyOldOwnedOnes(t *testing.T) {
 }
 
 func TestSyncClearsAStaleOwnedLockBeforeFetching(t *testing.T) {
+	t.Parallel()
 	s := freshServed(t)
 	sy, root := newSyncer(t)
 	if r := sy.Sync(bg, repo, true, hubFor(s)); r.State != StateOK {
@@ -401,6 +413,7 @@ func TestSyncClearsAStaleOwnedLockBeforeFetching(t *testing.T) {
 }
 
 func TestCheckGit(t *testing.T) {
+	t.Parallel()
 	v, err := Default.CheckGit(bg)
 	if err != nil {
 		t.Skipf("this machine's git is not usable for sync: %v", err)

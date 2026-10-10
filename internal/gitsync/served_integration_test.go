@@ -17,6 +17,7 @@ import (
 )
 
 func TestServedHideIsAPureFunctionOfTheLiveBranches(t *testing.T) {
+	t.Parallel()
 	base := []string{"HEAD", "refs", "!refs/heads/claude/", "refs/heads/claude/main"}
 	cases := []struct {
 		name string
@@ -125,6 +126,7 @@ func (r *roomRepo) want(t *testing.T, sha string) string {
 }
 
 func TestTheRoomAdvertisesClaudeBranchesAndLiveCardsAndNothingElse(t *testing.T) {
+	t.Parallel()
 	r := newRoomRepo(t)
 	got := r.advertised(t)
 	if got["refs/heads/claude/w1"] != r.w1 {
@@ -148,6 +150,7 @@ func TestTheRoomAdvertisesClaudeBranchesAndLiveCardsAndNothingElse(t *testing.T)
 }
 
 func TestStashNotesAnUnservedBranchAndClaudeMainAreRefusedToAFetch(t *testing.T) {
+	t.Parallel()
 	r := newRoomRepo(t)
 	r.setLive("fix/live")
 	for _, c := range []struct{ name, ref string }{
@@ -172,6 +175,7 @@ func TestStashNotesAnUnservedBranchAndClaudeMainAreRefusedToAFetch(t *testing.T)
 }
 
 func TestAWantByShaOutsideTheServedSetIsRefusedByTheRoomsGit(t *testing.T) {
+	t.Parallel()
 	r := newRoomRepo(t)
 	r.setLive("fix/live")
 	// A served tip is taken. Anything the room did not advertise is not, though the sha is real. (A commit that is an
@@ -190,6 +194,7 @@ func TestAWantByShaOutsideTheServedSetIsRefusedByTheRoomsGit(t *testing.T) {
 }
 
 func TestTheRoomsUploadPackSpeaksV0AndOffersNoFilterOrAnySha(t *testing.T) {
+	t.Parallel()
 	r := newRoomRepo(t)
 	req, _ := http.NewRequest("GET", r.url()+"/info/refs?service=git-upload-pack", nil)
 	req.Header.Set("Git-Protocol", "version=2")
@@ -214,6 +219,7 @@ func TestTheRoomsUploadPackSpeaksV0AndOffersNoFilterOrAnySha(t *testing.T) {
 }
 
 func TestACardIsMatchedToItsRepositoryOnTheFullNameWhenItRecordedOne(t *testing.T) {
+	t.Parallel()
 	for _, c := range []struct {
 		name, host, org, repo string
 		want                  bool
@@ -238,6 +244,7 @@ func TestACardIsMatchedToItsRepositoryOnTheFullNameWhenItRecordedOne(t *testing.
 }
 
 func TestAClonesDefaultBranchWhateverItIsCalledIsNeverServedToALiveCard(t *testing.T) {
+	t.Parallel()
 	// The pure half.
 	got := ServedHide([]string{"develop", "trunk", "fix/x"}, "develop", "trunk")
 	want := []string{"HEAD", "refs", "!refs/heads/claude/", "refs/heads/claude/main", "!refs/heads/fix/x"}

@@ -9,6 +9,7 @@ import (
 
 // Newer git for Windows refuses "NUL" as a config path; "/dev/null" works everywhere.
 func TestGitConfigGlobalIsSlashDevNull(t *testing.T) {
+	t.Parallel()
 	for _, env := range [][]string{cgiEnv(), (&Store{}).env()} {
 		found := false
 		for _, kv := range env {
@@ -23,6 +24,7 @@ func TestGitConfigGlobalIsSlashDevNull(t *testing.T) {
 }
 
 func TestGitCGITrustsTheDirectoryItServes(t *testing.T) {
+	t.Parallel()
 	dir := filepath.Join(t.TempDir(), "repo")
 	h := gitCGI("git", dir, [][2]string{{"http.receivepack", "false"}}, cgiEnv())
 	want := filepath.ToSlash(dir)

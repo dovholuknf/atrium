@@ -23,6 +23,7 @@ func hasNoWindow(cmd *exec.Cmd) bool {
 // The hub and the rooms have no console, so a git child without CREATE_NO_WINDOW opens one
 // on the operator's desktop every time gitsync runs it.
 func TestGitCommandHasNoWindow(t *testing.T) {
+	t.Parallel()
 	cmd := gitCommand(context.Background(), t.TempDir(), nil, []string{"version"})
 	if !hasNoWindow(cmd) {
 		t.Fatalf("git child would open a console window: SysProcAttr = %+v", cmd.SysProcAttr)
@@ -49,7 +50,7 @@ func TestHTTPBackendServesAFetchWithNoWindow(t *testing.T) {
 		return strings.TrimSpace(string(out))
 	}
 	git(root, "init", "-q", "-b", "main", src)
-	git(src, "-c", "user.email=t@x", "-c", "user.name=t", "commit", "-q", "--allow-empty", "-m", "one")
+	git(src, "-c", "user.email=t@x", "-c", "user.name=t", "-c", "commit.gpgsign=false", "commit", "-q", "--allow-empty", "-m", "one")
 	sha := git(src, "rev-parse", "HEAD")
 	git(root, "clone", "-q", "--bare", src, bare)
 
