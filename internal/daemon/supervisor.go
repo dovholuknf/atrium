@@ -725,6 +725,12 @@ type runner struct {
 	// a dead card and a terminal that never appeared. Knowing the launch asked
 	// for a resume is what lets that be retried as a fresh start.
 	resumed bool
+	// esc follows the output stream's escape state and markPending is a clear mark waiting for ground state, with
+	// markHeld the bytes that have gone by since. All under mu. See `markClear`.
+	esc         escParser
+	markPending bool
+	markHeld    int
+	markTimer   *time.Timer
 	// dir is the directory the process was started in, for every launch. It is
 	// the one directory the process holds, so it is what the worktree-gone
 	// reaper asks about. Never the session's live cwd.
@@ -1769,8 +1775,7 @@ func (r *runner) deliverOutput(chunk []byte) {
 		r.lagRead.Store(t0.UnixNano())
 	}
 	r.mu.Lock()
-	_, _ = r.buf.Write(chunk)
-	r.fanoutLocked(chunk)
+	r.outputLocked(chunk)
 	r.mu.Unlock()
 	r.lastOut.Store(time.Now().UnixNano())
 	if w := r.wake.Load(); w != nil {
@@ -1795,11 +1800,68 @@ func isClearCommand(s string) bool {
 // NOT `deliverOutput`, because the runner did not say this: it must not move the
 // idle clock or wake the waiters that read output as the session being alive.
 // See `clearMarkOSC` for why it exists and why an older board is unharmed.
+//
+// The mark is only written between the runner's escape sequences. If the stream is mid-sequence, or mid UTF-8
+// character, it is held and goes out right after the byte that ends it. A stream that stops or never ends the
+// sequence cannot hold it for good: see `markHoldBytes` and `markHoldTime`.
 func (r *runner) markClear() {
 	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.esc.ground() {
+		r.emitMarkLocked()
+		return
+	}
+	if r.markPending {
+		return
+	}
+	r.markPending, r.markHeld = true, 0
+	r.markTimer = time.AfterFunc(markHoldTime, func() {
+		r.mu.Lock()
+		defer r.mu.Unlock()
+		if r.markPending {
+			r.emitMarkLocked()
+		}
+	})
+}
+
+func (r *runner) emitMarkLocked() {
+	r.markPending = false
+	if r.markTimer != nil {
+		r.markTimer.Stop()
+		r.markTimer = nil
+	}
 	_, _ = r.buf.Write([]byte(clearMarkOSC))
 	r.fanoutLocked([]byte(clearMarkOSC))
-	r.mu.Unlock()
+}
+
+// outputLocked is the ring write and fanout of one runner chunk, with r.mu held, and it keeps the escape state. A
+// held mark is written at the first ground point inside the chunk, so the chunk is split there.
+func (r *runner) outputLocked(chunk []byte) {
+	if r.markPending {
+		if i := r.esc.feedUntilGround(chunk); i >= 0 {
+			r.writeLocked(chunk[:i])
+			r.emitMarkLocked()
+			chunk = chunk[i:]
+		} else {
+			r.writeLocked(chunk)
+			if r.markHeld += len(chunk); r.markHeld >= markHoldBytes {
+				r.emitMarkLocked()
+			}
+			return
+		}
+	}
+	for _, c := range chunk {
+		r.esc.feed(c)
+	}
+	r.writeLocked(chunk)
+}
+
+func (r *runner) writeLocked(chunk []byte) {
+	if len(chunk) == 0 {
+		return
+	}
+	_, _ = r.buf.Write(chunk)
+	r.fanoutLocked(chunk)
 }
 
 // SHARED MULTI-PANE INPUT, and it is OFF by default. See
