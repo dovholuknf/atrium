@@ -97,9 +97,9 @@ func orWord(s, fallback string) string {
 
 // defaultAlias gives a card new to the board its alias: the title's prefix, or
 // else the one its git branch makes. A title the board made itself is passed as
-// "", since it says nothing about what anybody calls the card. A card with an alias keeps it, and one that
-// cannot have its default starts without, which is logged and never an error.
-// See store.GiveDefaultAliasFor.
+// "", since it says nothing about what anybody calls the card. A card with an
+// alias keeps it, and one that cannot have its default starts without, which is
+// logged and never an error. See store.GiveDefaultAliasFor.
 func (d *Daemon) defaultAlias(id, title string) {
 	t, err := d.st.Get(id)
 	if err != nil {
@@ -196,8 +196,10 @@ func (d *Daemon) onSession(in SessionEvent) error {
 			obs.WireName = ""
 		}
 	}
+	created := false
 	if !bound {
-		t, created, err := d.st.Register(obs)
+		t, made, err := d.st.Register(obs)
+		created = made
 		if errors.Is(err, store.ErrStaleName) {
 			// Not an error: a directory name that only a finished card holds says
 			// nothing about which session this is. Recorded in the log and dropped.
@@ -208,8 +210,8 @@ func (d *Daemon) onSession(in SessionEvent) error {
 			return err
 		}
 		task = t
-		// A session atrium had never heard of is adopted onto a new card.
-		if created {
+		// A session atrium had never heard of is adopted onto a new card. A join names it from its own title below.
+		if created && in.Event != "join" {
 			d.defaultAlias(t.ID, "")
 		}
 	} else if _, err := d.st.Observe(task.ID, obs); err != nil {
@@ -295,8 +297,11 @@ func (d *Daemon) onSession(in SessionEvent) error {
 		}
 		// Joining is how a session already running comes onto the board, so
 		// it takes the default a new card would: the title's, else the
-		// branch's. A card that has an alias keeps it.
-		d.defaultAlias(task.ID, in.Title)
+		// branch's. Only a card this join created: a card that was already
+		// there keeps its alias, or the lack of one a person chose.
+		if created {
+			d.defaultAlias(task.ID, in.Title)
+		}
 		// A join is a launch too: somebody is running it again.
 		if err := d.st.ClearExitAsked(task.ID); err != nil {
 			return err
