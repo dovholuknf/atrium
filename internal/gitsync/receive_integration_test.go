@@ -516,6 +516,7 @@ func TestAnOwnerWhoIsGoneDeadOrLongDoneReleasesTheBranch(t *testing.T) {
 		"done 365d": {st: CardState{Status: "done", IdleSeconds: 365 * 24 * 3600}, want: "card done over 7 days"},
 	} {
 		t.Run(name, func(t *testing.T) {
+			t.Parallel()
 			x := newRecv(t)
 			x.seedMain(hubRepo)
 			x.branch("fix/x", "x.txt")
@@ -555,6 +556,7 @@ func TestAnOwnerWhoIsLiveOrRecentlyDoneKeepsTheBranch(t *testing.T) {
 		"done 6 d": {Status: "done", IdleSeconds: 6 * 24 * 3600},
 	} {
 		t.Run(name, func(t *testing.T) {
+			t.Parallel()
 			x := newRecv(t)
 			x.seedMain(hubRepo)
 			owned := x.branch("fix/x", "x.txt")

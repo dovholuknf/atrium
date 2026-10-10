@@ -269,6 +269,7 @@ func TestPushToHubIgnoresAProxyTheClonesConfigSets(t *testing.T) {
 	t.Parallel()
 	for _, key := range []string{"remote.hub.proxy", "http.proxy", "http.<base>.proxy", "http.<push>.proxy"} {
 		t.Run(key, func(t *testing.T) {
+			t.Parallel()
 			f := newRemote(t)
 			f.seedMain(hubRepo)
 			sha := f.branch("fix/x", "x.txt")

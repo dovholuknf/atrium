@@ -14,6 +14,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -194,6 +195,7 @@ func newStore(t *testing.T, branch string) *storeFixture {
 	x := &storeFixture{root: root, forge: newForge(t, branch)}
 	x.h = &Hub{Dir: root, Runner: NewRunner(), Repos: func() ([]Repo, error) { return nil, nil }}
 	x.s = x.h.Store()
+	x.s.skipInitRefresh = true
 	x.s.Protocols = "file"
 	x.s.Forge = func(Ref) string { return x.forge.dir }
 	return x
@@ -697,7 +699,10 @@ func TestTheStoreRootIsTheSettingAndTheDefaultIsUnderTheHubDir(t *testing.T) {
 		t.Fatalf("default root = %s", x.s.Root())
 	}
 	alt := filepath.Join(t.TempDir(), "elsewhere")
-	x.h.StoreRoot = func() string { return alt }
+	// A background view refresh reads the setting, so it is switched through an atomic and not by reassigning the func.
+	var setting atomic.Pointer[string]
+	setting.Store(&alt)
+	x.h.StoreRoot = func() string { return *setting.Load() }
 	if _, err := x.s.Init(bg, repoURL); err != nil {
 		t.Fatal(err)
 	}
@@ -707,7 +712,8 @@ func TestTheStoreRootIsTheSettingAndTheDefaultIsUnderTheHubDir(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(x.root, "git")); err == nil {
 		t.Fatal("the default directory was made")
 	}
-	x.h.StoreRoot = func() string { return "" }
+	none := ""
+	setting.Store(&none)
 	if x.s.Root() != filepath.Join(x.root, "git") {
 		t.Fatal("an empty setting is not the default")
 	}

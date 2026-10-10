@@ -281,6 +281,7 @@ func TestRoomBranchOfARoomThatAnswersBadlyIsUnreachableNotAbsent(t *testing.T) {
 		"a cut-off advertisement": func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte("001e# serv")) },
 	} {
 		t.Run(name, func(t *testing.T) {
+			t.Parallel()
 			x := newHubFixture(t, true)
 			bad := httptest.NewServer(h)
 			t.Cleanup(bad.Close)
