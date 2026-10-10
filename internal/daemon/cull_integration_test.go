@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/dovholuknf/atrium/internal/store"
+	"github.com/dovholuknf/atrium/internal/wtfree"
 )
 
 // cullRepo is a repository with claude/main and one worker's worktree on its
@@ -109,6 +110,47 @@ func TestCullRemovesAMergedWorkersWorktreeAndBranch(t *testing.T) {
 	}
 	if res.Branch != r.branch || res.Into != DefaultCullInto {
 		t.Errorf("branch %q into %q, want %q into %q", res.Branch, res.Into, r.branch, DefaultCullInto)
+	}
+}
+
+// An ignored node_modules-like folder, deep enough to pass the Windows path limit, is gone with the worktree, and
+// the bytes it held are counted as freed.
+func TestCullFreesAnIgnoredDeepFolderAndCountsItsBytes(t *testing.T) {
+	t.Parallel()
+	d := testDaemon(t)
+	r := newCullRepo(t, true)
+	exclude := cullGit(t, r.wt, "rev-parse", "--path-format=absolute", "--git-path", "info/exclude")
+	if err := os.MkdirAll(filepath.Dir(exclude), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(exclude, []byte("node_modules/\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	dir := filepath.Join(r.wt, "node_modules")
+	for len(dir) < 330 {
+		dir = filepath.Join(dir, strings.Repeat("d", 40))
+	}
+	if err := os.MkdirAll(wtfree.LongPath(dir), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	body := []byte(strings.Repeat("x", 100_000))
+	if err := os.WriteFile(wtfree.LongPath(filepath.Join(dir, "big.js")), body, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	task := cullCard(t, d, r.wt, OriginAgentTag, SubagentTag)
+
+	res, err := d.Cull(task.ID, "")
+	if err != nil {
+		t.Fatalf("cull: %v", err)
+	}
+	if !res.WorktreeRemoved || res.Kept != "" {
+		t.Fatalf("result = %+v, want the worktree removed", res)
+	}
+	if _, err := os.Lstat(wtfree.LongPath(r.wt)); !os.IsNotExist(err) {
+		t.Errorf("the folder is still on disk: %v", err)
+	}
+	if res.BytesFreed < int64(len(body)) {
+		t.Errorf("bytes freed = %d, the ignored tree alone is %d", res.BytesFreed, len(body))
 	}
 }
 

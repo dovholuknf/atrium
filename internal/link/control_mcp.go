@@ -1896,6 +1896,7 @@ type cullOutput struct {
 	BranchDeleted   bool   `json:"branch_deleted"`
 	BriefRemoved    bool   `json:"brief_removed"`
 	ScratchRemoved  bool   `json:"scratch_removed"`
+	BytesFreed      int64  `json:"bytes_freed"`
 	Kept            string `json:"kept,omitempty"`
 	Note            string `json:"note,omitempty"`
 }
@@ -1960,7 +1961,8 @@ func (c *controlMCP) cullHandler(ctx context.Context, req *mcp.CallToolRequest, 
 	case res.ScratchRemoved && res.BriefRemoved:
 		res.Note = "reclaimed: asked to leave, BRIEF.md and its scratch directory removed. the card and its history stay."
 	case res.WorktreeRemoved && res.BranchDeleted:
-		res.Note = "culled: asked to leave, worktree removed, branch deleted. the card and its history stay."
+		res.Note = fmt.Sprintf("culled: asked to leave, worktree removed (%d bytes freed, %.1f MB), branch deleted. "+
+			"the card and its history stay.", res.BytesFreed, float64(res.BytesFreed)/(1<<20))
 	default:
 		res.Note = "not everything was removed. see kept, which says why."
 	}

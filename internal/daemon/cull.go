@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/dovholuknf/atrium/internal/store"
+	"github.com/dovholuknf/atrium/internal/wtfree"
 )
 
 // Culling a finished worker: asking it to leave, then removing its worktree and
@@ -78,6 +79,8 @@ type CullResult struct {
 	Worktree        string `json:"worktree,omitempty"`
 	WorktreeRemoved bool   `json:"worktree_removed"`
 	BranchDeleted   bool   `json:"branch_deleted"`
+	// BytesFreed is what the worktree held on disk, ignored files included, counted only once its path is gone.
+	BytesFreed int64 `json:"bytes_freed"`
 	// BriefRemoved and ScratchRemoved say what became of the BRIEF.md atrium wrote and of a directory that was
 	// not a git worktree. See reclaim.go.
 	BriefRemoved   bool   `json:"brief_removed"`
@@ -167,11 +170,13 @@ func (d *Daemon) CullProved(taskID, into, tip string) (*CullResult, error) {
 		res.Kept = "its branch moved on the way out and is no longer merged, so it and the worktree were kept"
 		return d.culled(t, res), nil
 	}
+	// Measured before anything goes, ignored files included, because it is what the removal frees.
+	size := wtfree.DirSize(context.Background(), plan.wt)
 	if err := removeWorktree(plan); err != nil {
 		res.Kept = err.Error()
 		return d.culled(t, res), nil
 	}
-	res.WorktreeRemoved, res.BriefRemoved = true, true
+	res.WorktreeRemoved, res.BriefRemoved, res.BytesFreed = true, true, size
 	if err := deleteMergedBranch(plan, into); err != nil {
 		res.Kept = err.Error()
 		return d.culled(t, res), nil
@@ -395,7 +400,23 @@ func removeWorktree(p *cullPlan) error {
 		}
 	}
 	if _, err := gitIn(p.common, "--git-dir="+p.common, "worktree", "remove", p.wt); err != nil {
-		return fmt.Errorf("git kept the worktree: %v", err)
+		// On Windows git cannot delete a path past the limit and stays listed. The worktree was just read as merged
+		// and clean, so what is left is ignored files: delete them, then let git forget the folder.
+		if !filepath.IsAbs(p.wt) || wtfree.EqPath(p.wt, filepath.Dir(p.common)) {
+			return fmt.Errorf("git kept the worktree: %v", err)
+		}
+		if _, serr := os.Lstat(wtfree.LongPath(p.wt)); serr == nil {
+			_ = wtfree.RemoveAllSoon(wtfree.LongPath(p.wt))
+		}
+		_, _ = gitIn(p.common, "--git-dir="+p.common, "worktree", "prune")
+		if wtfree.Listed(p.common, p.wt) {
+			return fmt.Errorf("git kept the worktree: %v", err)
+		}
+	}
+	// Git is done with it. What is still at the path, such as an ignored node_modules past the Windows path limit, is
+	// not freed until it is gone.
+	if err := wtfree.RemoveLeftover(p.common, p.wt); err != nil {
+		return fmt.Errorf("git removed the worktree and the folder was not freed: %v", err)
 	}
 	return nil
 }
