@@ -147,6 +147,54 @@ func newContextLimitPrompt(path, bin string) string {
 // newContextWake is what the new session is told, and reads the handoff back.
 func newContextWake(path string) string { return "read " + path + " and continue." }
 
+// sentLines is how many already delivered says the wake lists, newest kept, and sentLen how much of each.
+const (
+	sentLines = 8
+	sentLen   = 160
+)
+
+// newContextWakeFor is the wake with the says the card sent since its launcher last prompted it, marked as already
+// delivered. The fresh context knows only the handoff, and one that re-ran its last errand sent the same reply twice.
+func (d *Daemon) newContextWakeFor(taskID, path string) string {
+	text := newContextWake(path)
+	t, err := d.st.Get(taskID)
+	if err != nil {
+		return text
+	}
+	f := store.SayFilter{From: taskID}
+	if t.OwedAt != nil {
+		f.Since = t.OwedAt.UTC().Format(store.TimeFormat)
+	}
+	rows, err := d.st.SaysWhere(f, "", sentLines)
+	if err != nil || len(rows) == 0 {
+		return text
+	}
+	var parts []string
+	for i := len(rows) - 1; i >= 0; i-- {
+		r := rows[i]
+		if r.State == store.SayRefused || r.State == store.SayUnresolved {
+			continue
+		}
+		to := r.ToWire
+		if to == "" {
+			to = r.ToInput
+		}
+		body := strings.Join(strings.Fields(r.Text), " ")
+		if r.Text == "" {
+			body = r.Preview
+		}
+		if rs := []rune(body); len(rs) > sentLen {
+			body = string(rs[:sentLen]) + "..."
+		}
+		parts = append(parts, fmt.Sprintf("to %s: %q", to, body))
+	}
+	if len(parts) == 0 {
+		return text
+	}
+	return text + " these says were already sent and delivered before this context started, so do NOT resend them: " +
+		strings.Join(parts, "; ")
+}
+
 // atriumBinary is the full path of this atrium, for the limit prompt. A variable for a test.
 var atriumBinary = func() string {
 	if p, err := os.Executable(); err == nil {
@@ -786,7 +834,7 @@ func (d *Daemon) runNewContext(taskID string, gen uint64) {
 	}
 	// A turn in progress is waited out: the new session may already be taking a turn
 	// on something else (r-016, @ui).
-	if err := d.ncType(taskID, gen, newContextLabel, newContextWake(file), ncTiming.captureEnd); err != nil {
+	if err := d.ncType(taskID, gen, newContextLabel, d.newContextWakeFor(taskID, file), ncTiming.captureEnd); err != nil {
 		fail("could not type the wake prompt", err)
 		return
 	}
@@ -913,7 +961,7 @@ func (d *Daemon) cyclePrompt(taskID string, gen uint64, path string) error {
 	}
 	d.nctx.notePrompt(taskID, gen, turn, cycleTimeNow())
 	if err := d.st.AppendEvent(taskID, store.EventPrompted, map[string]any{
-		"text": text, "via": "terminal", "from": newContextBy,
+		"text": text, "via": "terminal", "from": newContextBy, "kind": store.PromptFYI,
 	}); err != nil {
 		log.Printf("[atrium] could not record the limit prompt on %s: %v", taskID, err)
 	}
@@ -1124,7 +1172,7 @@ func (d *Daemon) ncTypeBusy(taskID string, gen uint64, label, text string, limit
 			return false, err
 		}
 		if err := d.st.AppendEvent(taskID, store.EventPrompted, map[string]any{
-			"text": text, "via": "terminal", "from": newContextBy,
+			"text": text, "via": "terminal", "from": newContextBy, "kind": store.PromptFYI,
 		}); err != nil {
 			log.Printf("[atrium] could not record the new context prompt on %s: %v", taskID, err)
 		}
