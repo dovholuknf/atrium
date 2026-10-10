@@ -1,4 +1,4 @@
-﻿## Test plan
+## Test plan
 
 ## @LETTER@. A worker's result is not a question
 
