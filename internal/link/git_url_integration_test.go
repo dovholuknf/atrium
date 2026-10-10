@@ -32,24 +32,37 @@ func newURLRig(t *testing.T) *urlRig {
 	// store repository.
 	x.store = filepath.Join(x.root, "store")
 	x.g.StoreRoot = func() string { return x.store }
-	// A forge for the one seed of main.
+	// A forge for the one seed of main. Like the pass-through rig, the first is built and the rest are copies.
 	forge := filepath.Join(x.root, "forge.git")
-	gitRun(t, "", "init", "-q", "--bare", "-b", "master", forge)
-	work := filepath.Join(x.root, "forgework")
-	if err := os.MkdirAll(work, 0o755); err != nil {
-		t.Fatal(err)
+	snap, building := urlSnap.start()
+	if building {
+		defer urlSnap.abandon()
 	}
-	gitRun(t, work, "init", "-q", "-b", "master")
-	if err := os.WriteFile(filepath.Join(work, "m.txt"), []byte("main"), 0o644); err != nil {
-		t.Fatal(err)
+	if snap != nil {
+		copyTree(t, filepath.Join(snap.dir, "forge.git"), forge)
+		copyTree(t, filepath.Join(snap.dir, "store"), x.store)
 	}
-	gitRun(t, work, "add", "-A")
-	gitRun(t, work, "-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false", "commit", "-q", "-m", "main")
-	gitRun(t, work, "push", "-q", forge, "HEAD:refs/heads/master")
 	x.g.Store().Protocols = "file"
 	x.g.Store().Forge = func(gitsync.Ref) string { return forge }
-	if _, err := x.g.Store().Init(context.Background(), "https://github.com/o/r"); err != nil {
-		t.Fatal(err)
+	if snap == nil {
+		gitRun(t, "", "init", "-q", "--bare", "-b", "master", forge)
+		work := filepath.Join(x.root, "forgework")
+		if err := os.MkdirAll(work, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		gitRun(t, work, "init", "-q", "-b", "master")
+		if err := os.WriteFile(filepath.Join(work, "m.txt"), []byte("main"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		gitRun(t, work, "add", "-A")
+		gitRun(t, work, "-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false", "commit", "-q", "-m", "main")
+		gitRun(t, work, "push", "-q", forge, "HEAD:refs/heads/master")
+		if _, err := x.g.Store().Init(context.Background(), "https://github.com/o/r"); err != nil {
+			t.Fatal(err)
+		}
+		if building {
+			urlSnap.publish(t, x.root, []string{"forge.git", "store"}, nil)
+		}
 	}
 	// Each lookup asks the room afresh, except in the test of the hold.
 	x.g.LookupTTL = time.Nanosecond
@@ -121,6 +134,7 @@ func TestABranchOnTheHubAloneAnswersTheHubsURL(t *testing.T) {
 	if testing.Short() {
 		t.Skip("slow: a real link, hub and git rig over loopback")
 	}
+	lightSlot(t)
 	x := newURLRig(t)
 	x.pushToStore(t, x.claudeW1, "feat/done")
 	a := x.ask(t, "repo=o/r&branch=feat/done")
@@ -142,6 +156,7 @@ func TestABranchOnAnOnlineRoomAloneAnswersTheRoomsURL(t *testing.T) {
 	if testing.Short() {
 		t.Skip("slow: a real link, hub and git rig over loopback")
 	}
+	lightSlot(t)
 	x := newURLRig(t)
 	a := x.ask(t, "repo=github/o/r&branch=claude/w1")
 	if a.State != gitsync.URLFound || len(a.Branches) != 1 || len(a.Branches[0].Sources) != 1 {
@@ -164,6 +179,7 @@ func TestABranchOnBothAnswersBothAndSaysWhetherTheRoomIsAhead(t *testing.T) {
 	if testing.Short() {
 		t.Skip("slow: a real link, hub and git rig over loopback")
 	}
+	lightSlot(t)
 	x := newURLRig(t)
 	x.setLive("fix/live")
 
@@ -199,6 +215,7 @@ func TestAMissAnswersNotFoundWithTheClosestAndAsksNoRoom(t *testing.T) {
 	if testing.Short() {
 		t.Skip("slow: a real link, hub and git rig over loopback")
 	}
+	lightSlot(t)
 	x := newURLRig(t)
 	before := x.advs.Load()
 
@@ -227,6 +244,7 @@ func TestAnOfflineRoomAnswersOfflineBeforeAnyoneFetches(t *testing.T) {
 	if testing.Short() {
 		t.Skip("slow: a real link, hub and git rig over loopback")
 	}
+	lightSlot(t)
 	x := newURLRig(t)
 	x.pushToStore(t, x.claudeW1, "feat/done")
 	x.cancel()
@@ -257,6 +275,7 @@ func TestABranchTheRoomWouldNotServeIsNeverListed(t *testing.T) {
 	if testing.Short() {
 		t.Skip("slow: a real link, hub and git rig over loopback")
 	}
+	lightSlot(t)
 	x := newURLRig(t)
 	// The clone's own main and master are live-card branches here and are not served, and neither are the stash,
 	// the notes and a branch with no live card.
@@ -304,6 +323,7 @@ func TestTheURLIsOnTheHostTheCallerReachedTheHubBy(t *testing.T) {
 	if testing.Short() {
 		t.Skip("slow: a real link, hub and git rig over loopback")
 	}
+	lightSlot(t)
 	x := newURLRig(t)
 	x.pushToStore(t, x.claudeW1, "claude/w1")
 	for _, c := range []struct {
@@ -350,6 +370,7 @@ func TestOnlyTheReachesOfAFetchMayAskForAURL(t *testing.T) {
 	if testing.Short() {
 		t.Skip("slow: a real link, hub and git rig over loopback")
 	}
+	lightSlot(t)
 	x := newURLRig(t)
 	q := "repo=o/r"
 	for name, c := range map[string]struct {
@@ -392,6 +413,7 @@ func TestARoomsAnswerIsHeldBrieflyAndNotForever(t *testing.T) {
 	if testing.Short() {
 		t.Skip("slow: a real link, hub and git rig over loopback")
 	}
+	lightSlot(t)
 	x := newURLRig(t)
 	x.g.LookupTTL = time.Hour
 	before := x.advs.Load()
@@ -413,6 +435,7 @@ func TestTheToolReturnsTheEndpointsJSONAndALine(t *testing.T) {
 	if testing.Short() {
 		t.Skip("slow: a real link, hub and git rig over loopback")
 	}
+	lightSlot(t)
 	x := newURLRig(t)
 	x.setLive("fix/live")
 	x.pushToStore(t, x.liveSHA, "fix/live")
@@ -486,6 +509,7 @@ func TestABranchPushedByARoomThatIsGoneNamesTheRoomAsAway(t *testing.T) {
 	if testing.Short() {
 		t.Skip("slow: a real link, hub and git rig over loopback")
 	}
+	lightSlot(t)
 	x := newURLRig(t)
 	log := &gitsync.MemPushLog{}
 	x.g.PushLog = log
@@ -574,6 +598,7 @@ func TestACardOnAnotherRoomIsGivenItsRoomsForwarderAndFetchesThroughIt(t *testin
 	if testing.Short() {
 		t.Skip("slow: a real link, hub and git rig over loopback")
 	}
+	lightSlot(t)
 	x := newURLRig(t)
 	x.setLive("fix/live")
 	x.pushToStore(t, x.liveSHA, "fix/live")
@@ -620,6 +645,7 @@ func TestACardIsGivenNoURLForARoomsWorkInProgress(t *testing.T) {
 	if testing.Short() {
 		t.Skip("slow: a real link, hub and git rig over loopback")
 	}
+	lightSlot(t)
 	x := newURLRig(t)
 	x.setLive("fix/live")
 	base, _ := x.forwarder(t)
@@ -660,6 +686,7 @@ func TestACardWhoseRoomDoesNotSayWhereItsForwarderIsIsGivenNoURL(t *testing.T) {
 	if testing.Short() {
 		t.Skip("slow: a real link, hub and git rig over loopback")
 	}
+	lightSlot(t)
 	x := newURLRig(t)
 	x.setLive("fix/live")
 	x.pushToStore(t, x.liveSHA, "fix/live")
@@ -711,6 +738,7 @@ func TestAHostThatIsNotANameAndAPortIsNotMadeIntoAURL(t *testing.T) {
 	if testing.Short() {
 		t.Skip("slow: a real link, hub and git rig over loopback")
 	}
+	lightSlot(t)
 	x := newURLRig(t)
 	call := func(host string) int {
 		req := httptest.NewRequest("GET", "http://127.0.0.1:7778/_hub/git/url?repo=o%2Fr", nil)

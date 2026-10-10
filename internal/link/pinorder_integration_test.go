@@ -103,6 +103,7 @@ func TestAHungRoomDoesNotStallThePinOrder(t *testing.T) {
 	if testing.Short() {
 		t.Skip("slow: a real link, hub and git rig over loopback")
 	}
+	lightSlot(t)
 	ok, hung := &pinRoom{}, &pinRoom{hang: make(chan struct{})}
 	defer close(hung.hang)
 	front, _, done := two(t, ok, hung)

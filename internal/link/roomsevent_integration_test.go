@@ -360,6 +360,7 @@ func TestAutoApprovesFromTheEventWithNoBoardAndNoPolling(t *testing.T) {
 	if testing.Short() {
 		t.Skip("slow: a real link, hub and git rig over loopback")
 	}
+	lightSlot(t)
 	b := newBench(t)
 	l := newPermRoom()
 	b.attach("alpha", l.handler())
@@ -433,6 +434,7 @@ func TestAnEventPastTheDeadlineIsNotApproved(t *testing.T) {
 	if testing.Short() {
 		t.Skip("slow: a real link, hub and git rig over loopback")
 	}
+	lightSlot(t)
 	b := newBench(t)
 	l := newPermRoom()
 	b.attach("alpha", l.handler())

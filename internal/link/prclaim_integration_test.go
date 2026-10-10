@@ -351,6 +351,7 @@ func TestPlacementDoesNotWaitForASlowRoom(t *testing.T) {
 	if testing.Short() {
 		t.Skip("slow: a real link, hub and git rig over loopback")
 	}
+	lightSlot(t)
 	x := newClaimHub(t, map[string]int{"alpha": 4, "beta": 0})
 	defer x.done()
 	x.rooms["beta"].tasksDelay = 8 * time.Second
@@ -410,6 +411,7 @@ func TestOfflineOwnerWarnsAndDoesNotMove(t *testing.T) {
 	if testing.Short() {
 		t.Skip("slow: a real link, hub and git rig over loopback")
 	}
+	lightSlot(t)
 	old := prWarnGrace
 	prWarnGrace = 0
 	defer func() { prWarnGrace = old }()
@@ -452,6 +454,7 @@ func TestManualMoveUpdatesTheClaim(t *testing.T) {
 	if testing.Short() {
 		t.Skip("slow: a real link, hub and git rig over loopback")
 	}
+	lightSlot(t)
 	old := prWarnGrace
 	prWarnGrace = 0
 	defer func() { prWarnGrace = old }()

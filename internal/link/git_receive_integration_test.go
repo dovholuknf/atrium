@@ -91,6 +91,7 @@ func TestTheOperatorPushesOnLoopbackThroughTheBoardAndCardHeadersAreDropped(t *t
 	if testing.Short() {
 		t.Skip("slow: a real link, hub and git rig over loopback")
 	}
+	lightSlot(t)
 	x := newPushFix(t)
 	x.repo(t, boardRepo)
 	srv := httptest.NewServer(x.p)
@@ -219,6 +220,7 @@ func TestTheReleaseRouteIsTheLoopbackOperatorsAndLetsGoOfABranch(t *testing.T) {
 	if testing.Short() {
 		t.Skip("slow: a real link, hub and git rig over loopback")
 	}
+	lightSlot(t)
 	x := newPushFix(t)
 	x.repo(t, boardRepo)
 	srv := httptest.NewServer(x.p)
@@ -312,6 +314,7 @@ func TestARoomPushesToTheHubStoreOverTheLinkAsItselfWithItsCard(t *testing.T) {
 	if testing.Short() {
 		t.Skip("slow: a real link, hub and git rig over loopback")
 	}
+	lightSlot(t)
 	x := newRoomPush(t, "SG4")
 	x.repo(t, boardRepo)
 	// The operator seeds main, directly through the handler's other door: the board.
@@ -422,6 +425,7 @@ func TestOnlyTheRecordedMergerMovesClaudeMain(t *testing.T) {
 	if testing.Short() {
 		t.Skip("slow: a real link, hub and git rig over loopback")
 	}
+	lightSlot(t)
 	x := newRoomPush(t, "SG4")
 	x.repo(t, boardRepo)
 	srv := httptest.NewServer(x.p)

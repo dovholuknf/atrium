@@ -109,6 +109,7 @@ func TestAHungRoomDoesNotStallThePrune(t *testing.T) {
 	if testing.Short() {
 		t.Skip("slow: a real link, hub and git rig over loopback")
 	}
+	lightSlot(t)
 	ok, hung := &pruneRoom{removed: 1}, &pruneRoom{hang: make(chan struct{})}
 	defer close(hung.hang)
 	front, _, done := two(t, ok, hung)

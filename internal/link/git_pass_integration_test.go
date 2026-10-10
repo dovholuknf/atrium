@@ -60,6 +60,18 @@ func newPassRig(t *testing.T) *passRig {
 	checkout := filepath.Join(x.root, "checkout")
 	gitRoot := filepath.Join(x.root, "roomgit")
 	x.hubDir = filepath.Join(x.root, "hub")
+	// The first rig is built command by command and its folders kept; every other one starts from a copy of them,
+	// which is the same state for the price of a few files and not a few dozen git processes.
+	snap, building := passSnap.start()
+	if building {
+		defer passSnap.abandon()
+	}
+	if snap != nil {
+		copyTree(t, filepath.Join(snap.dir, "checkout"), checkout)
+		copyTree(t, filepath.Join(snap.dir, "roomgit"), gitRoot)
+		copyTree(t, filepath.Join(snap.dir, "hub"), x.hubDir)
+		x.claudeW1, x.liveSHA, x.secret, x.stash, x.notes = snap.sha[0], snap.sha[1], snap.sha[2], snap.sha[3], snap.sha[4]
+	}
 	for _, d := range []string{checkout, gitRoot, x.hubDir} {
 		if err := os.MkdirAll(d, 0o755); err != nil {
 			t.Fatal(err)
@@ -73,8 +85,10 @@ func newPassRig(t *testing.T) *passRig {
 		run(t, dir, "-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false", "commit", "-q", "-m", msg)
 		return run(t, dir, "rev-parse", "HEAD")
 	}
-	run(t, checkout, "init", "-q", "-b", "claude/main")
-	commitIn(checkout, "a.txt", "one")
+	if snap == nil {
+		run(t, checkout, "init", "-q", "-b", "claude/main")
+		commitIn(checkout, "a.txt", "one")
+	}
 
 	x.hub = NewHub(Timings{Beat: 200 * time.Millisecond, Silence: time.Second, Warm: 1})
 	x.g = &gitsync.Hub{
@@ -133,27 +147,32 @@ func newPassRig(t *testing.T) *passRig {
 	})
 	go func() { _ = x.room.Run(ctx) }()
 	waitFor(t, 5*time.Second, func() bool { return x.hub.Has("sg3") && x.room.State().Up && x.room.HubServesGit() })
+	x.clone = filepath.Join(gitRoot, "github", "o", "r")
+	// The hub holds what a sync said in memory, so even a copy of a synced rig is synced, which is quick for it.
 	if res, err := x.g.Sync(ctx, "sg3", "github/o/r", true); err != nil || res[0].State != "ok" {
 		t.Fatalf("sync: %+v %v", res, err)
 	}
-
-	// The card's work on the room: a claude/* branch, committed and NOT pushed anywhere, and what must not be
-	// served: a stash, a note and a branch with no live card.
-	x.clone = filepath.Join(gitRoot, "github", "o", "r")
-	run(t, x.clone, "checkout", "-q", "-b", "claude/w1")
-	x.claudeW1 = commitIn(x.clone, "w.txt", "worker one")
-	run(t, x.clone, "checkout", "-q", "-b", "fix/live", "hub-main")
-	x.liveSHA = commitIn(x.clone, "l.txt", "live")
-	run(t, x.clone, "checkout", "-q", "-b", "secret/x", "hub-main")
-	x.secret = commitIn(x.clone, "s.txt", "secret")
-	run(t, x.clone, "checkout", "-q", "hub-main")
-	if err := os.WriteFile(filepath.Join(x.clone, "a.txt"), []byte("dirty"), 0o644); err != nil {
-		t.Fatal(err)
+	if snap == nil {
+		// The card's work on the room: a claude/* branch, committed and NOT pushed anywhere, and what must not be
+		// served: a stash, a note and a branch with no live card.
+		run(t, x.clone, "checkout", "-q", "-b", "claude/w1")
+		x.claudeW1 = commitIn(x.clone, "w.txt", "worker one")
+		run(t, x.clone, "checkout", "-q", "-b", "fix/live", "hub-main")
+		x.liveSHA = commitIn(x.clone, "l.txt", "live")
+		run(t, x.clone, "checkout", "-q", "-b", "secret/x", "hub-main")
+		x.secret = commitIn(x.clone, "s.txt", "secret")
+		run(t, x.clone, "checkout", "-q", "hub-main")
+		if err := os.WriteFile(filepath.Join(x.clone, "a.txt"), []byte("dirty"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		run(t, x.clone, "-c", "user.name=t", "-c", "user.email=t@t", "stash")
+		x.stash = run(t, x.clone, "rev-parse", "refs/stash")
+		run(t, x.clone, "-c", "user.name=t", "-c", "user.email=t@t", "notes", "add", "-m", "private", "HEAD")
+		x.notes = run(t, x.clone, "rev-parse", "refs/notes/commits")
+		if building {
+			passSnap.publish(t, x.root, []string{"checkout", "roomgit", "hub"}, []string{x.claudeW1, x.liveSHA, x.secret, x.stash, x.notes})
+		}
 	}
-	run(t, x.clone, "-c", "user.name=t", "-c", "user.email=t@t", "stash")
-	x.stash = run(t, x.clone, "rev-parse", "refs/stash")
-	run(t, x.clone, "-c", "user.name=t", "-c", "user.email=t@t", "notes", "add", "-m", "private", "HEAD")
-	x.notes = run(t, x.clone, "rev-parse", "refs/notes/commits")
 
 	x.proxy = NewProxy(x.hub, nil, "", nil)
 	x.proxy.SetGit(x.g)
@@ -211,6 +230,7 @@ func TestAFetchOfAClaudeBranchPassesThroughAndTheHubStoresNothing(t *testing.T) 
 	if testing.Short() {
 		t.Skip("slow: a real link, hub and git rig over loopback")
 	}
+	lightSlot(t)
 	x := newPassRig(t)
 	before := treeDigest(t, x.root+"/hub")
 	hubObjects := run(t, x.root+"/checkout", "count-objects", "-v")
@@ -250,6 +270,7 @@ func TestStashNotesAndAnUnservedBranchAreRefusedThroughTheHub(t *testing.T) {
 	if testing.Short() {
 		t.Skip("slow: a real link, hub and git rig over loopback")
 	}
+	lightSlot(t)
 	x := newPassRig(t)
 	for _, c := range []struct{ name, ref string }{
 		{"stash", "refs/stash"},
@@ -307,6 +328,7 @@ func TestAShallowOrFilteredFetchIsRefusedBeforeItIsPassedOn(t *testing.T) {
 	if testing.Short() {
 		t.Skip("slow: a real link, hub and git rig over loopback")
 	}
+	lightSlot(t)
 	x := newPassRig(t)
 	for _, args := range [][]string{
 		{"--depth", "1"},
@@ -341,6 +363,7 @@ func TestADetachedOrUnknownRoomAnswers503(t *testing.T) {
 	if testing.Short() {
 		t.Skip("slow: a real link, hub and git rig over loopback")
 	}
+	lightSlot(t)
 	x := newPassRig(t)
 	get := func(room string) (int, string) {
 		resp, err := http.Get(x.url(room) + "/info/refs?service=git-upload-pack")
@@ -374,6 +397,7 @@ func TestOnlyTheOperatorsReachesMayFetchThroughTheHub(t *testing.T) {
 	if testing.Short() {
 		t.Skip("slow: a real link, hub and git rig over loopback")
 	}
+	lightSlot(t)
 	x := newPassRig(t)
 	do := func(h http.Handler, host, remote string) int {
 		req := httptest.NewRequest("GET", "http://"+host+"/git/room/sg3/github/o/r.git/info/refs?service=git-upload-pack", nil)
@@ -409,6 +433,7 @@ func TestACardOnARoomDoesNotReachThePassThroughOverTheLink(t *testing.T) {
 	if testing.Short() {
 		t.Skip("slow: a real link, hub and git rig over loopback")
 	}
+	lightSlot(t)
 	x := newPassRig(t)
 	other := &Room{Name: "m1mini", Dial: plain{addr: x.hubAddr(t)}, Git: true,
 		T: Timings{Beat: 200 * time.Millisecond, Warm: 1, Backoff: 50 * time.Millisecond}}
@@ -436,6 +461,7 @@ func TestSevenFetchesInAMinuteFromOneReaderAreTooMany(t *testing.T) {
 	if testing.Short() {
 		t.Skip("slow: a real link, hub and git rig over loopback")
 	}
+	lightSlot(t)
 	x := newPassRig(t)
 	x.g.PassHandler().FetchesPerMinute, x.g.PassHandler().RoundsPerMinute = 0, 0
 	codes := map[int]int{}
@@ -461,6 +487,7 @@ func TestReadersWithNoAddressShareTheReachsBudgetAndPeersWithOneDoNot(t *testing
 	if testing.Short() {
 		t.Skip("slow: a real link, hub and git rig over loopback")
 	}
+	lightSlot(t)
 	if got := readerKey("overlay", "ziti-edge-router connId=7, logical=er1"); got != "overlay" {
 		t.Errorf("a ziti peer is keyed %q", got)
 	}

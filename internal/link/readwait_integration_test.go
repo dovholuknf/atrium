@@ -45,6 +45,7 @@ func TestAQuietEventStreamIsNotCut(t *testing.T) {
 	if testing.Short() {
 		t.Skip("slow: a real link, hub and git rig over loopback")
 	}
+	lightSlot(t)
 	release := make(chan struct{})
 	front, _, done := pairWith(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Nothing at all, headers included, until something happens.

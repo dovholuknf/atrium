@@ -226,6 +226,7 @@ func TestShaLiveAndRoomConditions(t *testing.T) {
 	if testing.Short() {
 		t.Skip("slow: a real link, hub and git rig over loopback")
 	}
+	lightSlot(t)
 	f := newDepsFix(t)
 	c2 := f.commit(t, "changelog/runtime/2026-09-30-r-050.md", "after the build")
 	gs := f.add(t, "r-038", "sha:"+f.c1[:8], "sha:deadbeef", "live:r-037", "live:r-050", "room:sg4", "room:sg3",

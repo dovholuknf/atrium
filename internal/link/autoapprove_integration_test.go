@@ -120,6 +120,7 @@ func TestHubLeavesARequestPendingWhenBoardWideAutoIsOff(t *testing.T) {
 	if testing.Short() {
 		t.Skip("slow: a real link, hub and git rig over loopback")
 	}
+	lightSlot(t)
 	g := &gate{}
 	proxy, done := oneRoom(t, "alpha", g.handler())
 	defer done()
