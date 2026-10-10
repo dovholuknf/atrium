@@ -4,6 +4,7 @@ package link
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -12,6 +13,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/dovholuknf/atrium/internal/gitsync"
 )
@@ -212,10 +214,44 @@ func TestInitAnswersTheExactJSONAndRefusesTheHostile(t *testing.T) {
 // createdField is a repo's created time in GET /_hub/git/repos, with the comma after it.
 var createdField = regexp.MustCompile(`"created":"\d{4}-\d\d-\d\dT[^"]*",`)
 
+// reposOnly is the answer of GET /_hub/git/repos cut down to `{"repos":...}`: the snapshot's own fields
+// (building, computed, age_seconds) move with the clock and the background build, so they are checked for apart.
+func reposOnly(t *testing.T, out string) string {
+	t.Helper()
+	var ans map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(out), &ans); err != nil {
+		t.Fatalf("not an object: %s", out)
+	}
+	if _, ok := ans["building"]; !ok {
+		t.Fatalf("no building field: %s", out)
+	}
+	repos, ok := ans["repos"]
+	if !ok {
+		t.Fatalf("no repos field: %s", out)
+	}
+	return `{"repos":` + string(repos) + `}`
+}
+
+// settledRepos asks for the list until the snapshot says it is no longer building, so an init's rebuild has landed.
+func (x *storeProxy) settledRepos(t *testing.T, remote string) (int, string) {
+	t.Helper()
+	deadline := time.Now().Add(15 * time.Second)
+	for {
+		code, out := x.call("GET", "/_hub/git/repos", "", remote)
+		var ans struct {
+			Building bool `json:"building"`
+		}
+		if json.Unmarshal([]byte(out), &ans) == nil && !ans.Building || time.Now().After(deadline) {
+			return code, reposOnly(t, out)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+}
+
 func TestReposIsOpenLikeGrowlsAndExactlyShaped(t *testing.T) {
 	x := newStoreProxy(t)
-	// Empty: exactly this, from anywhere.
-	if code, out := x.call("GET", "/_hub/git/repos", "", offLoopback); code != http.StatusOK || out != `{"repos":[]}` {
+	// Empty: an empty repos list inside the snapshot object, from anywhere.
+	if code, out := x.call("GET", "/_hub/git/repos", "", offLoopback); code != http.StatusOK || reposOnly(t, out) != `{"repos":[]}` {
 		t.Fatalf("empty = %d %s", code, out)
 	}
 	if code, _ := x.call("POST", "/_hub/git/repos", `{}`, ""); code != http.StatusMethodNotAllowed {
@@ -227,7 +263,7 @@ func TestReposIsOpenLikeGrowlsAndExactlyShaped(t *testing.T) {
 	if code, _ := x.call("POST", "/_hub/git/init", `{"url":"https://github.com/o/r"}`, ""); code != http.StatusOK {
 		t.Fatal(code)
 	}
-	code, out := x.call("GET", "/_hub/git/repos", "", offLoopback)
+	code, out := x.settledRepos(t, offLoopback)
 	// created is the store's marker file time, which the test did not pin either, so it is checked apart too.
 	if !createdField.MatchString(out) {
 		t.Fatalf("no created time: %s", out)
@@ -247,7 +283,7 @@ func TestReposIsOpenLikeGrowlsAndExactlyShaped(t *testing.T) {
 	if code, _ := x.call("POST", "/_hub/git/init", `{"url":"https://gitlab.com/g/p"}`, ""); code != http.StatusOK {
 		t.Fatal(code)
 	}
-	_, out = x.call("GET", "/_hub/git/repos", "", "")
+	_, out = x.settledRepos(t, "")
 	out = createdField.ReplaceAllString(out, "")
 	if !strings.Contains(out, `{"host":"gitlab.com","owner":"g","repo":"p","url":"git@hub.atrium:gitlab.com/g/p.git",`+
 		`"path":"/git/hub/gitlab.com/g/p.git","main":{"sha":"","at":null},"branches":[]}`) {
