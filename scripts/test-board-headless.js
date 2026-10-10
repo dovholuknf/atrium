@@ -26181,8 +26181,8 @@ const unitResults = {};
 // are meant to see each other's state. The plain serial run does not: it keeps what each unit leaves, as it always did.
 // It cannot reset a module-level `const` that a section mutates in place (qDismissed, LAND, walkDirs, gateCalls, HON and
 // FON), so a unit that leaves one changed still reaches the next unit in its shard. A new `let` of this kind goes in here too. The list is checked against the file when the units are listed.
-const mockVars = () => ({ qDismissMode, qHeldQuiet, qDismissWrites, histMany, histManyLive, untaggedExtra, untaggedDown, untaggedEmpty, untaggedTag, landList, landPerms, typingAnswer, typingPolls, aliasWrites, boardDocs, tasksMode, wornTasks, loopListSupervised, soloMode, hubMode, sggAttached, hubHasRoom, gatePaused, gateCountdownLeft, gateBoot, hubAway, gateRestartMode, gateAsked, gateSlowMs, healthBuild, serveSW, page502, auditLive, auditMany, auditManyLive, skinFor, kaSettings, kaWrites, gautoOn, roomSettingsDown, settingsReads, settingsDelay, switchFail, switchWrites, roomStallUntil, stalledCount, mockBroadcast, waitingReads, mockSaid });
-const mockSet = s => { ({ qDismissMode, qHeldQuiet, qDismissWrites, histMany, histManyLive, untaggedExtra, untaggedDown, untaggedEmpty, untaggedTag, landList, landPerms, typingAnswer, typingPolls, aliasWrites, boardDocs, tasksMode, wornTasks, loopListSupervised, soloMode, hubMode, sggAttached, hubHasRoom, gatePaused, gateCountdownLeft, gateBoot, hubAway, gateRestartMode, gateAsked, gateSlowMs, healthBuild, serveSW, page502, auditLive, auditMany, auditManyLive, skinFor, kaSettings, kaWrites, gautoOn, roomSettingsDown, settingsReads, settingsDelay, switchFail, switchWrites, roomStallUntil, stalledCount, mockBroadcast, waitingReads, mockSaid } = s); };
+const mockVars = () => ({ qDismissMode, qHeldQuiet, qDismissWrites, histMany, histManyLive, untaggedExtra, untaggedDown, untaggedEmpty, untaggedTag, landList, landPerms, typingAnswer, typingPolls, aliasWrites, boardDocs, tasksMode, wornTasks, loopListSupervised, soloMode, hubMode, sggAttached, hubHasRoom, gatePaused, gateCountdownLeft, gateBoot, hubAway, gateRestartMode, gateAsked, gateSlowMs, healthBuild, serveSW, page502, auditLive, auditMany, auditManyLive, skinFor, kaSettings, kaWrites, gautoOn, roomSettingsDown, settingsReads, settingsDelay, switchFail, switchWrites, roomStallUntil, stalledCount, mockBroadcast, waitingReads, mockSaid, cardColorsMock, blockerEsc, idleParkNow, idleParkWrites });
+const mockSet = s => { ({ qDismissMode, qHeldQuiet, qDismissWrites, histMany, histManyLive, untaggedExtra, untaggedDown, untaggedEmpty, untaggedTag, landList, landPerms, typingAnswer, typingPolls, aliasWrites, boardDocs, tasksMode, wornTasks, loopListSupervised, soloMode, hubMode, sggAttached, hubHasRoom, gatePaused, gateCountdownLeft, gateBoot, hubAway, gateRestartMode, gateAsked, gateSlowMs, healthBuild, serveSW, page502, auditLive, auditMany, auditManyLive, skinFor, kaSettings, kaWrites, gautoOn, roomSettingsDown, settingsReads, settingsDelay, switchFail, switchWrites, roomStallUntil, stalledCount, mockBroadcast, waitingReads, mockSaid, cardColorsMock, blockerEsc, idleParkNow, idleParkWrites } = s); };
 let mockInit = null, lastUnit = "";
 const pinnedTogether = (a, b) => Object.values(PIN_GROUPS).some(g => g.units.includes(a) && g.units.includes(b));
 function mockSnapshot() {
@@ -26722,6 +26722,7 @@ async function keepAliveSection(browser, base) {
 // What switching away and back costs with terminals kept (atrium.termKeep=8) and without (0), with the room's real
 // replay played into the socket (a JSON list of {t, bin, b64} frames, captured from a live attach). Prints a table.
 async function switchBackCostSection(browser, base) {
+  if (!process.env.REPLAY) return;
   const frames = JSON.parse(fs.readFileSync(process.env.REPLAY, "utf8"));
   const was = tasksMode;
   const live = id => Object.assign({}, T1, { id, display_title: "row " + id, supervised: true, pinned: false, worktree: "/tmp/sb/" + id });
@@ -26785,6 +26786,7 @@ async function switchBackCostSection(browser, base) {
 // The JS heap with 1, then 9 terminals each given the room's real replay, kept (atrium.termKeep=8, hidden history cut
 // to atrium.termKeepLines) and not kept, after a garbage collection. Prints the cost per kept terminal.
 async function keepMemorySection(browser, base) {
+  if (!process.env.REPLAY) return;
   const frames = JSON.parse(fs.readFileSync(process.env.REPLAY, "utf8"));
   const kb = Math.round(frames.reduce((n, f) => n + f.b64.length * 0.75, 0) / 1024);
   const was = tasksMode;
@@ -29995,6 +29997,7 @@ async function main() {
     await unit("growlReplyGrow", () => growlReplyGrowSection(browser, base));
     await unit("growlChoices", () => growlChoicesSection(browser, base));
     await unit("replies", () => repliesSection(browser, base));
+    await unit("repliesShots", () => repliesShotsSection(browser, base));
     await unit("repliesOf", () => repliesOfSection(browser, base));
     await unit("growlStable", () => growlStableSection(browser, base));
     await unit("growlOnIt", () => growlOnItSection(browser, base));
@@ -30015,10 +30018,15 @@ async function main() {
     await unit("groupingPerView", () => groupingPerViewSection(browser, base));
     await unit("repoColors", () => repoColorsSection(browser, base));
     await unit("themePicker", () => themePickerSection(browser, base));
+    await unit("themePickerShots", () => themePickerShotsSection(browser, base));
     await unit("borderColourLag", () => borderColourLagSection(browser, base));
     await unit("bootClean", () => bootCleanSection(browser, base));
     await unit("dropdownsInstant", () => dropdownsInstantSection(browser, base));
     await unit("mWorking", () => mWorkingSection(browser));
+    await unit("mReload", () => mReloadSection(browser));
+    await unit("mReconnect", () => mReconnectSection(browser));
+    await unit("mActivityRead", () => mActivityReadSection(browser));
+    await unit("mReadRetry", () => mReadRetrySection(browser));
     await unit("mOwnMessages", () => mOwnMessagesSection(browser));
     await unit("mBubbles", () => mBubblesSection(browser));
     await unit("mRecapSheet", () => mRecapSheetSection(browser));
@@ -30075,6 +30083,7 @@ async function main() {
     await unit("termRowBleed", () => termRowBleedSection(browser, base));
     await unit("termDebug", () => termDebugSection(browser, base));
     await unit("termDebugPerCard", () => termDebugPerCardSection(browser, base));
+    await unit("termLag", () => termLagSection(browser, base));
     await unit("termHiddenRedraw", () => termHiddenRedrawSection(browser, base));
     // termLastRead is off while the new-since divider is (js/lastread.js, LR_OFF).
     // await unit("termLastRead", () => termLastReadSection(browser, base));
@@ -30090,6 +30099,7 @@ async function main() {
     await unit("childUnderParent", () => childUnderParentSection(browser, base));
     await unit("childFold", () => childFoldSection(browser, base));
     await unit("liveHome", () => liveHomeSection(browser, base));
+    await unit("u002", () => u002Section(browser, base));
     await unit("burnChart", () => burnChartSection(browser, base));
     await unit("burnReadout", () => burnReadoutSection(browser, base));
     await unit("switchPrewarm", () => switchPrewarmSection(browser, base));
@@ -30097,6 +30107,8 @@ async function main() {
     await unit("fileView", () => fileViewSection(browser, base));
     await unit("keepAlive", () => keepAliveSection(browser, base));
     await unit("pullsDrawer", () => pullsDrawerSection(browser, base));
+    await unit("switchBackCost", () => switchBackCostSection(browser, base));
+    await unit("keepMemory", () => keepMemorySection(browser, base));
     await unit("prMove", () => prMoveSection(browser, base));
     await unit("quickPaste", () => quickPasteSection(browser, base));
     await unit("recogniserRepo", () => recogniserRepoSection(browser, base));
@@ -30128,12 +30140,15 @@ async function main() {
     const lets = fs.readFileSync(__filename, "utf8").split("\n").filter(l => /^let [A-Za-z_]/.test(l)).map(l => /^let ([A-Za-z_]\w*)/.exec(l)[1]);
     const known = new Set(Object.keys(mockVars()).concat(["chromium", "exePath", "bad", "currentUnit", "stuckStep", "peekReads", "mockInit", "lastUnit"]));
     const missing = lets.filter(n => !known.has(n));
-    if (missing.length) console.error("mockVars() is missing " + missing.join(", ") + ": a shard will not reset them between units.");
+    if (missing.length) {
+      console.error("mockVars() is missing " + missing.join(", ") + ": a shard will not reset them between units. Add each to mockVars() and mockSet().");
+      process.exitCode = 1;
+    }
     // A section called bare from main() runs in every shard, outside any unit. Every section belongs to one unit, bar these.
     const notUnits = new Set(["u001AuditSection", "groupRemoveSection", "growlQuestionShotsSection", "linkTipSection"]);
     const src = fs.readFileSync(__filename, "utf8");
     const bare = (src.match(/^\s*await \w+Section\(/gm) || []).map(l => l.trim().slice(6, -1));
-    const owned = new Set((src.match(/unit\("\w+", \(\) => \w+Section/g) || []).map(l => l.replace(/^.*=> /, "")));
+    const owned = new Set((src.match(/unit\("\w+",\s*\(\) => \w+Section/g) || []).map(l => l.replace(/^.*=> /, "")));
     const loose = (src.match(/^async function \w+Section/gm) || []).map(l => l.split(" ")[2]).filter(n => !owned.has(n) && !notUnits.has(n));
     if (bare.length || loose.length) {
       console.error("sections no unit owns: " + bare.concat(loose).join(", ") + ". Register each as await unit(name, ...) in main().");
@@ -32236,7 +32251,7 @@ async function repliesSection(browser, base) {
 // Pictures, not assertions: `REPLIES_SHOTS=dir REPLIES_TAG=before|after`. It runs on a tree that has no replies.js too.
 async function repliesShotsSection(browser, base) {
   const dir = process.env.REPLIES_SHOTS, tag = process.env.REPLIES_TAG || "after";
-  if (!dir) { fail("repliesShots: set REPLIES_SHOTS."); return; }
+  if (!dir) return;
   fs.mkdirSync(dir, { recursive: true });
   const scenes = [
     ["options-stop", { body: "Should I build the worktrees next, or review the diffs first?\n\n{choices}\nbuild the worktrees\nreview the diffs first\n{/choices}" }],
