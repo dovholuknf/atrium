@@ -18,10 +18,26 @@ function aliasChip(t) {
       onclick="event.stopPropagation();setTaskAlias('${t.id}', '')">no alias</span>`;
   }
   if (!t || !t.alias) return "";
+  // No tooltip: the chip is the handle, and the icon after it copies it.
   return `<span class="chip alias"
-    data-tip="${esc("mention this card as @" + t.alias + ". atrium_say, atrium_peers and atrium tell take it " +
-      "wherever they take a handle. click to change it")}"
-    onclick="event.stopPropagation();setTaskAlias('${t.id}', '${esc(t.alias)}')">@${esc(t.alias)}</span>`;
+    onclick="event.stopPropagation();setTaskAlias('${t.id}', '${esc(t.alias)}')">@${esc(t.alias)}</span>` +
+    `<button type="button" class="copybit alias-copy" data-tip="copy @${esc(t.alias)}" aria-label="copy @${esc(t.alias)}"
+    onclick="event.stopPropagation();copyAliasHandle(this, '${esc(t.alias)}')">${copyIcon()}</button>`;
+}
+
+// `@handle` to the clipboard, and the icon says so for a moment: a check mark, no toast.
+async function copyAliasHandle(btn, alias, text) {
+  try {
+    await navigator.clipboard.writeText(text || "@" + alias);
+  } catch (e) {
+    if (btn) btn.textContent = "✗";
+    setTimeout(() => { if (btn) btn.innerHTML = copyIcon(); }, 1200);
+    return;
+  }
+  if (!btn) return;
+  btn.textContent = "✓";
+  btn.classList.add("copied");
+  setTimeout(() => { btn.innerHTML = copyIcon(); btn.classList.remove("copied"); }, 1200);
 }
 
 // The menu entry, beside rename on both surfaces.
@@ -74,10 +90,8 @@ function paintTermAlias(task, el, label) {
     return;
   }
   el.innerHTML = `<span class="at">@</span>${esc(task.alias)}`;
-  const named = String(task.display_title || "").trim();
-  el.dataset.tip = ["alias @" + task.alias + ", the handle to mention this card by",
-    named && named !== label ? named : "", label, task.worktree || "", "click to change it"]
-    .filter(Boolean).join(" · ");
+  // The chip wears no tooltip. The copy icon beside it (`#t-copy`) copies the handle.
+  delete el.dataset.tip;
 }
 
 // Repaints the bar when the attached card's alias changed under it: set from

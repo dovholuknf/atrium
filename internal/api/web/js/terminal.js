@@ -1760,13 +1760,8 @@ function wireTerminalDrops(screen) {
 async function copyTermName() {
   const name = document.getElementById("t-title").textContent.trim();
   if (!name) return;
-  try {
-    await navigator.clipboard.writeText(name);
-  } catch (e) {
-    toast("could not copy it", e.message);
-    return;
-  }
-  toast("copied", name);
+  // The icon flashes a check, no toast.
+  await copyAliasHandle(document.getElementById("t-copy"), name.replace(/^@/, ""), name);
 }
 
 // A path, onto the clipboard.
