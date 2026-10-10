@@ -1131,6 +1131,22 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
   </div>
 </dialog>
 
+<!-- Every board control with its total and last-used day, and the ones nobody has used. See js/usage-board.js. -->
+<dialog id="usagedlg">
+  <div class="dlg-head">
+    <div class="grow"><div class="dlg-eyebrow">this room</div><h2>controls used</h2></div>
+  </div>
+  <div class="dlg-body">
+    <div id="usagedlg-list" class="usagedlg-list"></div>
+    <span class="hintline">Counts of clicks on the board's own controls, kept in this room and never sent anywhere
+      else. A control in a menu that is closed is not known until the menu has been opened.</span>
+  </div>
+  <div class="dlg-foot">
+    <div class="grow"></div>
+    <button type="button" id="usagedlg-close" class="go">done</button>
+  </div>
+</dialog>
+
 <dialog id="ask">
   <div class="dlg-head">
     <div class="grow"><div class="dlg-eyebrow">atrium asks</div><h2 id="ask-title"></h2></div>
@@ -3852,6 +3868,7 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
 <script src="/js/hubrestart.js"></script>
 <script src="/js/deployready.js"></script>
 <script src="/js/topnav.js"></script>
+<script src="/js/usage-board.js"></script>
 <script src="/js/down.js"></script>
 <script src="/js/boot.js"></script>
 </body>

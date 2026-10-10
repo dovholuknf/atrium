@@ -799,6 +799,19 @@ const server = http.createServer((req, res) => {
   if (url === "/v1/permissions") { sendJSON(res, { permissions: tasksMode === "land" ? landPerms : [] }); return; }
   if (url === "/v1/shares") { sendJSON(res, { shares: [] }); return; }
   if (url === "/v1/rooms") { sendJSON(res, { rooms: [] }); return; }
+  if (url === "/v1/usage" && req.method === "POST") {
+    let raw = "";
+    req.on("data", c => { raw += c; });
+    req.on("end", () => {
+      try { for (const [k, n] of Object.entries(JSON.parse(raw).counts || {})) boardUsageSeen.set(k, (boardUsageSeen.get(k) || 0) + n); } catch (e) {}
+      res.writeHead(204); res.end();
+    });
+    return;
+  }
+  if (url === "/v1/usage/board") {
+    const controls = [...boardUsageSeen].map(([control, n]) => ({ control, n, last: "2026-10-10" })).sort((x, y) => y.n - x.n);
+    sendJSON(res, { controls }); return;
+  }
   if (url === "/v1/health") {
     sendJSON(res, { build: healthBuild, settling: false, halted: false }); return;
   }
@@ -7927,8 +7940,62 @@ async function phoneHeaderSection(browser, base) {
   if (errors.length) fail("phoneHeader: the page threw: " + errors.join(" | "));
 }
 
+/* The board counts its own controls (js/usage-board.js) and the ... menu lists them, most used first, with the ones
+   never used at the bottom. */
+const boardUsageSeen = new Map();
+async function boardUsageSection(browser, base) {
+  const errors = [];
+  const imgs = path.join(__dirname, "..", "docs", "changes", "img");
+  const stage = process.env.BOARDUSAGE_SHOT || "";
+  try {
+    fs.mkdirSync(imgs, { recursive: true });
+    boardUsageSeen.clear();
+    const ctx = await browser.newContext({ viewport: { width: 940, height: 700 } });
+    await ctx.addInitScript(() => localStorage.setItem("atrium.skipconfirm", JSON.stringify({ "width-floor": true })));
+    const p = await ctx.newPage();
+    p.on("pageerror", e => errors.push(String(e)));
+    await p.goto(base, { waitUntil: "domcontentloaded" });
+    await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
+    await p.waitForTimeout(300);
+    await p.click("#tabmore");
+    if (stage === "before") {
+      await p.screenshot({ path: path.join(imgs, "board-usage-menu-before.png"), clip: { x: 0, y: 0, width: 940, height: 400 } });
+      await ctx.close();
+      console.log("boardUsage before shot taken");
+      return;
+    }
+    await p.screenshot({ path: path.join(imgs, "board-usage-menu-after.png"), clip: { x: 0, y: 0, width: 940, height: 400 } });
+    await p.click("#tabmore");
+    // Two controls: the last tab in the bar twice and the ... button, which the run has already opened twice. The docs tab is never touched.
+    const vis = await p.evaluate(() => [...document.querySelectorAll("header nav .tab")]
+      .filter(t => t.getClientRects().length > 0 && !t.classList.contains("ovf")).map(t => t.dataset.view));
+    if (vis.length < 2) fail("boardUsage: fewer than two tabs show in the bar: " + vis);
+    const hot = vis[vis.length - 1];
+    await p.click('header nav .tab[data-view="' + hot + '"]');
+    await p.click('header nav .tab[data-view="' + hot + '"]');
+    await p.click("#tabmore");
+    await p.evaluate(() => window.boardUsageFlush());
+    await p.waitForTimeout(300);
+    await p.click('#tabs-menu button[data-usage="menu:controls used"]');
+    await p.waitForSelector("#usagedlg[open] .usagedlg-row");
+    await p.waitForTimeout(300);
+    const rows = await p.evaluate(() => [...document.querySelectorAll("#usagedlg-list .usagedlg-row")].map(r => ({
+      name: r.querySelector(".name").textContent, n: r.querySelector(".n").textContent, never: r.classList.contains("never") })));
+    const at = (name) => rows.findIndex(r => r.name === name);
+    const used = at("view:" + hot), more = at("id:tabmore"), never = at("view:docs");
+    if (used < 0 || rows[used].n !== "2" || (used > 1)) fail("boardUsage: the most clicked tab is not first with 2: " + JSON.stringify(rows.slice(0, 4)));
+    if (more < 0 || rows[more].n !== "3") fail("boardUsage: the ... button is not listed with 3 clicks: " + JSON.stringify(rows.slice(0, 4)));
+    if (never < 0 || !rows[never].never || rows[never].n !== "never") fail("boardUsage: an untouched tab is not listed as never: " + JSON.stringify(rows.slice(-6)));
+    if (never < Math.max(used, more)) fail("boardUsage: a never control sits above a used one");
+    if (rows.some(r => r.never) && rows.findIndex(r => r.never) < rows.filter(r => !r.never).length) fail("boardUsage: the never rows are not all at the bottom");
+    await p.screenshot({ path: path.join(imgs, "board-usage-view.png"), clip: { x: 0, y: 0, width: 940, height: 700 } });
+    await ctx.close();
+    if (errors.length) fail("boardUsage: the page threw: " + errors.join(" | "));
+    if (!bad) console.log("boardUsage ok");
+  } catch (e) { fail("boardUsage: " + (e && e.message ? e.message : e)); }
+}
+
 // ── the desktop top nav: every tab whole or in the overflow menu, the chips give way first ───────
-// Every chip is forced on with long text, and the row is measured at four widths. A tab is fine when its label fits its own box
 // and its right edge is inside the nav, or when it sits in the `more` menu. The phone width keeps its scrolling nav.
 async function topNavSection(browser, base) {
   const was = tasksMode;
@@ -27515,7 +27582,7 @@ async function main() {
       mPull: mPullSection, joinedLive: joinedLiveSection, termEnded: termEndedSection, joinedClick: joinedClickSection,
       coverPoll: coverPollSection, coverSteps: coverStepsSection, termBox: termBoxSection, termRowBleed: termRowBleedSection,
       termDebug: termDebugSection, termDebugPerCard: termDebugPerCardSection, termLag: termLagSection, termHiddenRedraw: termHiddenRedrawSection, termLastRead: termLastReadSection, termSortStarted: termSortStartedSection,
-      noReadyChildren: noReadyChildrenSection, childUnderParent: childUnderParentSection, topNav: topNavSection, tabsOrder: tabsOrderSection,
+      noReadyChildren: noReadyChildrenSection, childUnderParent: childUnderParentSection, topNav: topNavSection, boardUsage: boardUsageSection, tabsOrder: tabsOrderSection,
       u002: u002Section, childFold: childFoldSection, liveHome: liveHomeSection,
       pulls: pullsSection, prMove: prMoveSection, quickPaste: quickPasteSection, recogniserRepo: recogniserRepoSection, hubRepos: hubReposSection, hubReposShelf: hubReposShelfSection, hubReposLedger: hubReposLedgerSection, hubReposFeed: hubReposFeedSection, changeReq: changeReqSection, mChangeReq: mChangeReqSection, trayHead: trayHeadSection, pullsAbsent: pullsAbsentSection, oneTooltip: oneTooltipSection, burnChart: burnChartSection, burnReadout: burnReadoutSection, switchPrewarm: switchPrewarmSection, attachAtOnce: attachAtOnceSection, fileView: fileViewSection, keepAlive: keepAliveSection, switchBackCost: switchBackCostSection, keepMemory: keepMemorySection, pullsDrawer: pullsDrawerSection };
     try {
@@ -29672,6 +29739,7 @@ async function main() {
     await unit("termSortStarted", () => termSortStartedSection(browser, base));
     await unit("topNav", () => topNavSection(browser, base));
     await unit("tabsOrder", () => tabsOrderSection(browser, base));
+    await unit("boardUsage", () => boardUsageSection(browser, base));
     await unit("pulls", () => pullsSection(browser, base));
     await unit("pullsAbsent", () => pullsAbsentSection(browser, base));
     await unit("oneTooltip", () => oneTooltipSection(browser, base));
