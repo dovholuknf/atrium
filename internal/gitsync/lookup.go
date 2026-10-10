@@ -89,6 +89,9 @@ type URLSource struct {
 	Ahead *bool `json:"ahead,omitempty"`
 	// Note is said of a source a card cannot fetch from, which has no URL (ForCard).
 	Note string `json:"note,omitempty"`
+	// ReadOnly is on the hub's main and integration branch: a card can fetch them to base on, and a push to either is
+	// refused.
+	ReadOnly bool `json:"readOnly,omitempty"`
 	// Forge is on a hub source no room pushed: the hub fetched it from the repository's forge into refs/forge/ for
 	// this ask. A room older than this reads it as a plain hub source, whose URL fetches it all the same.
 	Forge bool `json:"forge,omitempty"`
@@ -317,6 +320,14 @@ func (h *Hub) Lookup(ctx context.Context, q URLQuery) URLAnswer {
 					hubOffline[b.Room] = true
 				}
 			}
+			// THE INTEGRATION BRANCH is left out of the board's view, but it is fetchable, so it is answered here.
+			if heads, err := h.Store().heads(ctx, hubDir); err == nil {
+				for _, hd := range heads {
+					if hd.name == IntegrationBranch {
+						hub[IntegrationBranch] = onHub{sha: hd.SHA}
+					}
+				}
+			}
 		}
 	}
 
@@ -508,7 +519,7 @@ func answer(q URLQuery, name string, hub map[string]onHub, served []askedRoom, o
 		on, onHub := hub[b]
 		if onHub {
 			ub.Sources = append(ub.Sources, URLSource{Source: "hub", URL: q.Base + StorePrefix + name + ".git", SHA: on.sha,
-				Forge: on.forge})
+				Forge: on.forge, ReadOnly: b == "main" || b == IntegrationBranch})
 		}
 		for _, s := range served {
 			sha, ok := s.ans.Branches[b]
@@ -998,6 +1009,9 @@ func (b URLBranch) pick() (URLSource, string) {
 	}
 	if hub != nil {
 		why := "finished, on the hub"
+		if hub.ReadOnly {
+			why = "on the hub, read-only: base your work on it and push under another branch name"
+		}
 		if hub.Forge {
 			why = "fetched from the forge by the hub, as nobody has pushed it"
 		}

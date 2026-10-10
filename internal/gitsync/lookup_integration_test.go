@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"sort"
 	"strings"
 	"sync/atomic"
@@ -387,5 +388,48 @@ func TestForCardRewritesTheHubsURLsAndTakesTheRoomsAway(t *testing.T) {
 		{Source: "room", Room: "sg4", Online: true, URL: "http://h/git/room/sg4/x.git"}}}}}.ForCard("http://127.0.0.1:7777/git/")
 	if got := only.Text(); strings.Contains(got, "git fetch") || !strings.Contains(got, "atrium_git_push") {
 		t.Fatalf("%s", got)
+	}
+}
+
+// A hub mirror's integration branch and main are answered as fetchable and read-only, and an ordinary claude/* branch
+// answers as before. The push of the integration branch is still refused.
+func TestAMirrorsIntegrationBranchAndMainAnswerReadOnly(t *testing.T) {
+	x := newRecv(t)
+	ref, _ := ParseName("github/m/mirror")
+	dir := x.h.Store().dir(ref)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	git(t, dir, "init", "-q", "--bare")
+	if err := writeMarker(dir, KindAdopted); err != nil {
+		t.Fatal(err)
+	}
+	x.branch("claude/w1", "w1.txt")
+	git(t, x.work, "push", "-q", dir, "main:refs/heads/main", "main:refs/heads/claude/main",
+		"claude/w1:refs/heads/claude/w1")
+
+	for _, b := range []string{"claude/main", "main"} {
+		a := x.h.Lookup(bg, URLQuery{Repo: "github/m/mirror", Branch: b, Base: "http://h"})
+		if a.State != URLFound || len(a.Branches) != 1 || len(a.Branches[0].Sources) != 1 {
+			t.Fatalf("%s: %+v", b, a)
+		}
+		src := a.Branches[0].Sources[0]
+		if src.Source != "hub" || src.URL == "" || src.SHA == "" || !src.ReadOnly {
+			t.Errorf("%s: %+v", b, src)
+		}
+		if !strings.Contains(a.Text(), "read-only") {
+			t.Errorf("%s: %s", b, a.Text())
+		}
+	}
+	a := x.h.Lookup(bg, URLQuery{Repo: "github/m/mirror", Branch: "claude/w1", Base: "http://h"})
+	if a.State != URLFound || a.Branches[0].Sources[0].ReadOnly {
+		t.Errorf("an ordinary branch: %+v", a)
+	}
+	if a := x.h.Lookup(bg, URLQuery{Repo: "github/m/mirror", Base: "http://h"}); len(a.Branches) != 3 {
+		t.Errorf("the listing: %+v", a.Branches)
+	}
+	if out, err := x.push(roomCard("sg4", "C1"), "github/m/mirror", "claude/w1:refs/heads/claude/main"); err == nil ||
+		!strings.Contains(out, "is a mirror the hub keeps in step") {
+		t.Errorf("claude/main was pushed: %v\n%s", err, out)
 	}
 }
