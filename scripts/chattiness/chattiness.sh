@@ -127,8 +127,10 @@ def fin: . + {
 def seg($t; $s; $k): {src: $s, key: $k, t0: $t, last: $t, msgs: {}, tools: [], n: 0};
 
 def cols: ["session", "project", "first", "turns", "human", "a_turns", "mid_perm", "mid_say", "mid_notice", "mid_nudge",
-  "tok_in", "tok_out", "tok_cread", "a_in", "a_out", "a_cread", "a_wall_s", "a_wall_max_s", "a_noact", "repeats"]
-  + ([("say", "notice", "stop", "nudge") as $s | ($s + "_turns", $s + "_tok", $s + "_noact", $s + "_wall_s")]);
+  "tok_in", "tok_out", "tok_cread", "a_in", "a_out", "a_cread", "a_wall_s", "a_wall_max_s", "a_noact", "repeats",
+  "rep_say", "rep_notice", "rep_stop", "rep_nudge", "rep_perm"]
+  + ([("say", "notice", "stop", "nudge") as $s | ($s + "_turns", $s + "_tok", $s + "_noact", $s + "_wall_s")])
+  + ["rep_top"];
 
 if $hdr == "1" then cols | @tsv else
   [inputs | fromjson? | select(type == "object" and .isSidechain != true and .timestamp != null)
@@ -136,9 +138,9 @@ if $hdr == "1" then cols | @tsv else
   | (reduce $evs[] as $e ({segs: [], cur: null, mids: [], keys: []};
       if $e.k == "start" then
         (if .cur != null and .cur.n > 0 then .segs += [.cur | fin] else . end)
-        | .cur = seg($e.t; $e.src; $e.key) | .keys += (if $e.key != null then [$e.key] else [] end)
+        | .cur = seg($e.t; $e.src; $e.key) | .keys += (if $e.key != null then [{k: $e.key, s: $e.src}] else [] end)
       elif $e.k == "mid" then
-        .mids += [$e] | .keys += (if $e.key != null then [$e.key] else [] end)
+        .mids += [$e] | .keys += (if $e.key != null then [{k: $e.key, s: $e.src}] else [] end)
       else
         (if .cur == null then .cur = seg($e.t; "pre"; null) else . end)
         | .cur.msgs[$e.id] = $e.u | .cur.tools += $e.tools | .cur.last = $e.t | .cur.n += 1
@@ -151,7 +153,8 @@ if $hdr == "1" then cols | @tsv else
       ["say", "notice", "stop", "nudge"] as $A
       | [$segs[] | select(.src as $s | $A | index($s))] as $as
       | [$segs[] | select(.src != "pre")] as $turns
-      | ($st.keys | group_by(.) | map(length - 1 | select(. > 0)) | add // 0) as $rep
+      | ($st.keys | group_by(.k) | map(select(length > 1) | {k: .[0].k, s: .[0].s, n: length})) as $rg
+      | ($rg | map(.n - 1) | add // 0) as $rep
       | [$sid, $proj, ($segs[0].t0 | iso),
          ($turns | length), ([$turns[] | select(.src == "human")] | length), ($as | length),
          ([$st.mids[] | select(.src == "perm")] | length), ([$st.mids[] | select(.src == "say")] | length),
@@ -160,8 +163,10 @@ if $hdr == "1" then cols | @tsv else
          ($as | sum(.tok.i)), ($as | sum(.tok.o)), ($as | sum(.tok.c)),
          ($as | sum(.wall) | round), ($as | map(.wall) | max // 0 | round),
          ([$as[] | select(.act | not)] | length), $rep]
+        + [("say", "notice", "stop", "nudge", "perm") as $s | ($rg | map(select(.s == $s) | .n - 1) | add // 0)]
         + [$A[] as $s | ([$segs[] | select(.src == $s)]) as $g
            | ($g | length), ($g | sum(tk)), ([$g[] | select(.act | not)] | length), ($g | sum(.wall) | round)]
+        + [($rg | sort_by(-.n) | .[0:5] | map("\(.n)\u001f\(.k[0:80])") | join("\u001e"))]
       | @tsv
     end
 end
@@ -176,7 +181,7 @@ def sum(f): (map(f) | add // 0);
 ([inputs] | map(split("\t"))) as $lines
 | ($lines[0]) as $h
 | ($lines[1:] | map(. as $r | [range(0; $h | length)] | map({key: $h[.], value: ($r[.] // "")}) | from_entries
-    | with_entries(if .key == "session" or .key == "project" or .key == "first" then . else .value |= tonumber end))) as $rows
+    | with_entries(if .key == "session" or .key == "project" or .key == "first" or .key == "rep_top" then . else .value |= tonumber end))) as $rows
 | ["say", "notice", "stop", "nudge"] as $A
 | def atok: .a_in + .a_out + .a_cread;
   def alltok: .tok_in + .tok_out + .tok_cread;
@@ -213,6 +218,19 @@ def sum(f): (map(f) | add // 0);
          else "fine" end) as $v
       | "| \($s) | \($st) | \(pct($st; $T))% | \($sk | n) | \(pct($sk; $K))% | \($sn) (\(pct($sn; $st))%) | \(if $st == 0 then 0 else ($sw / $st | round) end) | \($v) |"),
     "",
+    "## Repeats\n",
+    "A repeat is a text a session was given again after the first time. Deliveries are turn starts plus mid-turn messages.\n",
+    "| source | deliveries | repeats | repeat share |", "|---|---|---|---|",
+    (["say", "notice", "stop", "nudge", "perm"][] as $s
+      | ($rows | sum((if $s == "perm" then 0 else .[$s + "_turns"] end) + (if $s == "stop" then 0 else .["mid_" + $s] end))) as $d
+      | ($rows | sum(.["rep_" + $s])) as $r
+      | "| \($s) | \($d) | \($r) | \(pct($r; $d))% |"),
+    "",
+    "Top repeated texts (first 80 characters, repeats counted past the first, summed over sessions):\n",
+    ($rows | map(.rep_top | split("\u001e") | map(select(. != "") | split("\u001f") | {n: (.[0] | tonumber - 1), t: .[1]})) | add // []
+      | group_by(.t) | map({t: .[0].t, n: (map(.n) | add), s: length}) | sort_by(-.n) | .[0:5]
+      | if length == 0 then ["none"] else map("1. \(.n) repeats in \(.s) session(s): `\(.t | gsub("[|`]"; "/"))`") end | .[]),
+    "",
     "Mid-turn messages: permission hook \($mp), say \($ms), notice \($mn), silent-turn reminder \($mu). They start no turn, so they carry no",
     "token or wall figure of their own.\n",
     "## Worst sessions (by tokens in atrium-started turns)\n",
@@ -230,7 +248,7 @@ JQ
 # numeric columns (the fourth on) are not numbers. The drop count goes to stderr.
 clean_tsv() {
   local n kept total
-  local good='select(. != "") | select(split("\t") as $f | ($f | length) == $n and ($f[3:] | all(test("^[0-9.eE+-]+$"))))'
+  local good='select(. != "") | select(split("\t") as $f | ($f | length) == $n and ($f[3:-1] | all(test("^[0-9.eE+-]+$"))))'
   n="$(head -n 1 "$1" | tr -d '\r' | jq -Rr 'split("\t") | length')"
   kept="$(tr -d '\r' < "$1" | tail -n +2 | jq -Rr --argjson n "$n" "$good" | wc -l | tr -d ' ')"
   head -n 1 "$1" | tr -d '\r'

@@ -48,6 +48,8 @@ want "$f" stop_noact 0
 want "$f" nudge_noact 1
 want "$f" say_tok 582
 want "$f" repeats 1
+want "$f" rep_say 1
+want "$f" rep_notice 0
 
 # The first column is the turn time written back by hand-made date arithmetic.
 want "$tmp/win.tsv" first 2026-10-10T03:00:00Z
@@ -76,9 +78,28 @@ want "$tmp/all.tsv" tok_in 172
 # The summary reads the same rows and says what it should.
 "$here/chattiness.sh" --root "$root" --since 2026-10-09T22:00:00-04:00 --tsv "$tmp/out.tsv" > "$tmp/summary.md"
 grep -q '| turns atrium started | 5 (83.3% of all turns) |' "$tmp/summary.md" || { echo "FAIL: summary turn share"; fail=1; }
+grep -q '| say | 3 | 1 | 33.3% |' "$tmp/summary.md" || { echo "FAIL: summary repeats by source"; fail=1; }
+grep -qF '1 repeats in 1 session(s): `[atrium] peer-a@room says: hello there`' "$tmp/summary.md" || { echo "FAIL: summary top repeated text"; fail=1; }
 grep -q '| sessions over the threshold | 1 of 1 |' "$tmp/summary.md" || { echo "FAIL: summary threshold"; fail=1; }
 "$here/chattiness.sh" --since 2026-10-09T22:00:00-04:00 --from-tsv "$tmp/out.tsv" > "$tmp/summary2.md"
 cmp -s "$tmp/summary.md" "$tmp/summary2.md" || { echo "FAIL: --from-tsv differs from the direct summary"; fail=1; }
+
+# collect.sh sends the program and its arguments over stdin and puts only the shell on the ssh command line. A stub
+# ssh stands in for the Windows room: it records its arguments and runs the last one, which is `bash -s`.
+mkdir "$tmp/bin"
+cat > "$tmp/bin/ssh" <<'STUB'
+#!/usr/bin/env bash
+for a in "$@"; do last="$a"; done
+printf '%s\n' "$@" > "$SSH_ARGS_FILE"
+exec bash -c "$last"
+STUB
+chmod +x "$tmp/bin/ssh"
+SSH_ARGS_FILE="$tmp/ssh.args" PATH="$tmp/bin:$PATH" "$here/collect.sh" --rooms sg4 --win-bash bash --win-root "$root" \
+  --since 2026-10-09T22:00:00-04:00 --until 2026-10-10T08:00:00-04:00 --tsv "$tmp/merged.tsv" > "$tmp/collect.md" 2> "$tmp/collect.err" ||
+  { echo "FAIL: collect.sh over the stub ssh"; cat "$tmp/collect.err"; fail=1; }
+grep -q 'Rooms covered: sg4' "$tmp/collect.md" || { echo "FAIL: collect.sh did not cover the stub room"; fail=1; }
+grep -q 'sg4:-fixture-proj' "$tmp/merged.tsv" || { echo "FAIL: merged rows lack the room prefix"; fail=1; }
+if grep -q 'select\|jq' "$tmp/ssh.args"; then echo "FAIL: a jq program reached the ssh command line"; fail=1; fi
 
 [ "$fail" = 0 ] && echo "chattiness: ok"
 exit "$fail"

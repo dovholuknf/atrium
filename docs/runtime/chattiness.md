@@ -70,6 +70,8 @@ One row per session. Token columns sum input plus cache write, output, and cache
 | a_wall_s, a_wall_max_s | seconds from an atrium message to the last assistant entry of the turn it started: sum and longest |
 | a_noact | atrium-started turns with no action |
 | repeats | deliveries of a text a session has already been given, counted past the first (whitespace and paste wrappers removed, first 200 characters compared) |
+| rep_say, rep_notice, rep_stop, rep_nudge, rep_perm | the repeats by the source of the repeated text |
+| rep_top | up to five most repeated texts of the session, first 80 characters, count and text (the summary ranks them across sessions) |
 | say_*, notice_*, stop_*, nudge_* | per source: `_turns`, `_tok` (in + out + cache read), `_noact`, `_wall_s` |
 
 No action is the waste signal. A turn has no action when its only tool calls are `atrium_say`, `atrium_report`,
@@ -101,6 +103,9 @@ no-action count first, then the share.
 - Wall time stops at the last assistant entry, so a turn that ends on a long tool call is read short.
 - Transcripts of a session that was cleared or compacted start over, so one card can be several sessions.
 - Only rooms `collect.sh` can reach are covered. It says which.
+- `collect.sh` sends the script and its arguments over stdin and puts only the shell on the ssh command line, because the
+  default shell on a Windows room is cmd or PowerShell. The shell is `C:/PROGRA~1/Git/bin/bash.exe` for sg3 and sg4,
+  `--win-bash` changes it.
 - Dates are computed by hand in jq, because Windows jq has no `strptime`. `test.sh` fails if a date builtin comes back.
 - Rows from a Windows jq end in CRLF. `--from-tsv` and `--check-tsv FILE` strip the CR and drop, with a count on stderr,
   any row whose column count differs from the header's or whose number columns hold text.

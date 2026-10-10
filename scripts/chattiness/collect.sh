@@ -15,7 +15,7 @@ since="1970-01-01T00:00:00Z"
 until_="2999-01-01T00:00:00Z"
 rooms="m1mini,sg4,sg3"
 tsv="chattiness-merged.tsv"
-win_root="C:/Users/claude/.claude/projects"
+$1win_bash="C:/PROGRA~1/Git/bin/bash.exe"
 me="$(hostname 2>/dev/null | cut -d. -f1 | tr "[:upper:]" "[:lower:]")"
 
 while [ $# -gt 0 ]; do
@@ -25,6 +25,7 @@ while [ $# -gt 0 ]; do
     --rooms) rooms="$2"; shift 2 ;;
     --tsv) tsv="$2"; shift 2 ;;
     --win-root) win_root="$2"; shift 2 ;;
+    --win-bash) win_bash="$2"; shift 2 ;;
     -h|--help) sed -n '2,11p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) echo "collect: unknown argument $1" >&2; exit 2 ;;
   esac
@@ -41,10 +42,13 @@ for room in ${rooms//,/ }; do
   if [ "$room" = local ] || [ "$lc" = "$me" ]; then
     "$here/chattiness.sh" --since "$since" --until "$until_" --tsv - > "$out" 2> "$work/$room.err"
   else
-    root_args=()
-    case "$room" in sg3|sg4) root_args=(--root "$win_root") ;; esac
-    ssh -o BatchMode=yes -o ConnectTimeout=10 "$room" bash -s -- \
-      "${root_args[@]+"${root_args[@]}"}" --since "$since" --until "$until_" --tsv - < "$here/chattiness.sh" > "$out" 2> "$work/$room.err"
+    # The program and its arguments both travel on stdin. Nothing but the shell's own path is on the ssh command line,
+    # because the default shell on a Windows room is cmd or PowerShell and mangles quotes and $ in a jq program.
+    remote_bash=bash
+    args=(--since "$since" --until "$until_" --tsv -)
+    case "$room" in sg3|sg4) remote_bash="$win_bash"; args=(--root "$win_root" "${args[@]}") ;; esac
+    { printf 'set --'; printf ' %q' "${args[@]}"; printf '\n'; cat "$here/chattiness.sh"; } |
+      ssh -o BatchMode=yes -o ConnectTimeout=10 "$room" "$remote_bash -s" > "$out" 2> "$work/$room.err"
   fi
   rc=$?
   if [ $rc -ne 0 ] || [ ! -s "$out" ]; then
