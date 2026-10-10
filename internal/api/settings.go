@@ -108,6 +108,8 @@ func globalAutoView(s *Server) map[string]any {
 		SettingShellCommand: "shell_command",
 		// The narrowest a runner's terminal goes. Empty means the default.
 		SettingTerminalMinCols: "terminal_min_cols",
+		// The daily limit per kind of atrium text. Empty is the default. See store/turnlimits.go.
+		store.SettingTurnCauseLimits: "turn_cause_limits",
 	} {
 		v, err := s.st.Setting(key)
 		if err != nil {
@@ -120,6 +122,7 @@ func globalAutoView(s *Server) map[string]any {
 	// would use.
 	out["paste_preamble_default"] = DefaultPastePreamble
 	out["merged_cull_grace_default"] = store.DefaultMergedCullGrace
+	out["turn_cause_limit_default"] = map[string]any{"turns": store.DefaultTurnLimit, "tokens": store.DefaultTokenLimit}
 	out["paste_preamble_none"] = PastePreambleNone
 	// What is actually in force, whatever the two boxes say. An empty box
 	// means the default, and the person reading it wants the number.
@@ -351,6 +354,8 @@ func (s *Server) setSettings(w http.ResponseWriter, r *http.Request) {
 		KeepaliveSuspended *bool `json:"cache_keepalive_suspended"`
 		// How long a card sits idle before it is parked: seconds, or off.
 		IdleParkAfter *string `json:"idle_park_after"`
+		// The daily limit per kind of atrium text: JSON, empty for the default, or off.
+		TurnCauseLimits *string `json:"turn_cause_limits"`
 	}
 	// Read once and decoded twice: into the struct, which is what the handler
 	// works from, and into a map, which is the only way to notice a field that
@@ -834,6 +839,18 @@ func (s *Server) setSettings(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if err := s.st.SetSetting(store.SettingIdleParkAfter, v); err != nil {
+			s.fail(w, err)
+			return
+		}
+	}
+
+	if body.TurnCauseLimits != nil {
+		v := strings.TrimSpace(*body.TurnCauseLimits)
+		if _, err := store.ParseTurnLimits(v); err != nil {
+			writeErr(w, http.StatusBadRequest, err)
+			return
+		}
+		if err := s.st.SetSetting(store.SettingTurnCauseLimits, v); err != nil {
 			s.fail(w, err)
 			return
 		}

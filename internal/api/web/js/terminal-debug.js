@@ -504,5 +504,6 @@ async function decideFromTermNow(id, decision) {
 async function renderTerms() {
   await renderTermList();
   await renderTermPerm();
+  if (typeof renderTurnLimits === "function") await renderTurnLimits();
 }
 

@@ -802,6 +802,11 @@
     padding: 12px 14px; border-bottom: 1px solid var(--warn);
     background: linear-gradient(90deg, rgba(var(--warn-rgb),.16), rgba(var(--warn-rgb),.04));
   }
+  /* A turn cause over its daily limit: one compact line each, above the terminals. */
+  .term-limits { flex: 0 0 auto; border-bottom: 1px solid var(--warn); background: rgba(var(--warn-rgb),.08); }
+  .tl-limit { display: flex; align-items: center; gap: var(--sp-4); padding: 3px 12px; font-size: var(--fs-sm); }
+  .tl-limit-text { flex: 1; min-width: 0; color: var(--head); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .tl-limit-dismiss { flex: 0 0 auto; padding: 0 8px; min-height: 0; line-height: 1.5; font-size: var(--fs-sm); }
   .term-perm .who { flex: 1; min-width: 240px; }
   .term-perm b { display: block; color: var(--warn); font-size: var(--fs-base); }
   .term-perm code {

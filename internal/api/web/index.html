@@ -416,6 +416,8 @@ Exports honor whatever filter is applied.">?</span>
   <!-- Terminals are a view, not a modal. A modal is the wrong shape for
        something you switch between and leave open while doing other things. -->
   <div id="terms" hidden>
+    <!-- Atrium text that caused more turns than its daily limit. See js/turn-limits.js. -->
+    <div class="term-limits" id="term-limits" hidden></div>
     <div class="term-layout" id="term-layout">
       <!-- The way back when the list is hidden. Before the list in the DOM so
            hovering it can reveal the list with a sibling selector, which keeps
@@ -3881,6 +3883,7 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
 <script src="/m/js/docs.js"></script>
 <script src="/js/tcompose.js"></script>
 <script src="/js/walk.js"></script>
+<script src="/js/turn-limits.js"></script>
 <script src="/js/terminal-debug.js"></script>
 <script src="/js/termfull.js"></script>
 <script src="/js/inputlag.js"></script>

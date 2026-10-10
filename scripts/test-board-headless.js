@@ -14087,6 +14087,67 @@ async function usageTurnsSection(browser, base) {
   if (errors.length) fail("usageTurns: the page threw: " + errors.join(" | "));
 }
 
+// A turn cause over its daily limit shows on the Terminals tab as one compact, dismissable line, and nothing shows when
+// it is under. /v1/usage/turn-limits is mocked over and under. TURNLIMIT_SHOT=<dir> writes limit-over.png and
+// limit-under.png of the tab.
+async function turnLimitsSection(browser, base) {
+  const errors = [];
+  const day = new Date().toISOString().slice(0, 10);
+  const over = { day, off: false, findings: [
+    { kind: "notice", turns: 130, tokens: 4100000, limit_turns: 100, limit_tokens: 5000000, over: "turns", item: "r-expected-end-notices" },
+    { kind: "say", turns: 12, tokens: 7200000, limit_turns: 100, limit_tokens: 5000000, over: "tokens" },
+    { kind: "<img src=x onerror=window.__xss=1>", turns: 101, tokens: 1, limit_turns: 100, limit_tokens: 0, over: "turns" }] };
+  const under = { day, off: false, findings: [] };
+  let answer = over, asked = 0;
+  const ctx = await browser.newContext({ viewport: { width: 1400, height: 800 } });
+  const sp = await ctx.newPage();
+  sp.on("pageerror", e => errors.push(String(e)));
+  await ctx.route(/\/v1\/usage\/turn-limits/, route => { asked++; route.fulfill({ json: answer }); });
+  const lines = () => sp.evaluate(() => {
+    const h = document.getElementById("term-limits");
+    return { hidden: h.hidden, rows: [...h.querySelectorAll(".tl-limit")].map(r => r.querySelector(".tl-limit-text").textContent),
+      imgs: h.querySelectorAll("img").length, xss: window.__xss || 0 };
+  });
+  const again = async () => { await sp.evaluate(() => { turnLimits.at = 0; return renderTurnLimits(); }); };
+  const shot = async name => {
+    if (!process.env.TURNLIMIT_SHOT) return;
+    await sp.waitForTimeout(300);
+    await sp.screenshot({ path: process.env.TURNLIMIT_SHOT + "/" + name });
+  };
+  try {
+    await sp.goto(base, { waitUntil: "domcontentloaded" });
+    await sp.waitForSelector("#stack-list .stackrow", { state: "attached", timeout: slow(15000) });
+    await sp.evaluate(() => { localStorage.removeItem("atrium.turnlimits.dismissed"); switchView("terms"); });
+    await sp.waitForFunction(() => !document.getElementById("term-limits").hidden, null, { timeout: slow(10000) });
+    let t = await lines();
+    if (t.rows.length !== 3) fail("turnLimits: want one line per firing cause, got " + JSON.stringify(t.rows));
+    if (!/^notice: 130 turns, .* tokens today, limit 100 turns\. to remove it: r-expected-end-notices$/.test(t.rows[0])) fail("turnLimits: the notice line reads " + t.rows[0]);
+    if (!/^say: 12 turns, .* tokens today, limit .* tokens\. no item removes it\. to raise the limit set turn_cause_limits/.test(t.rows[1])) fail("turnLimits: the say line reads " + t.rows[1]);
+    if (t.imgs || t.xss) fail("turnLimits: a kind from the server was drawn as markup");
+    if (!t.rows[2].startsWith("<img src=x")) fail("turnLimits: a kind was not shown as text: " + t.rows[2]);
+    await shot("limit-over.png");
+    // dismiss one for the day, and it stays gone when the tab asks again
+    await sp.click("#term-limits .tl-limit:first-child .tl-limit-dismiss");
+    t = await lines();
+    if (t.rows.length !== 2 || /^notice/.test(t.rows[0])) fail("turnLimits: dismiss did not remove its line: " + JSON.stringify(t.rows));
+    await again();
+    t = await lines();
+    if (t.rows.length !== 2) fail("turnLimits: a dismissed line came back on the next read: " + JSON.stringify(t.rows));
+    // a dismissal is for the day it was made
+    await sp.evaluate(() => localStorage.setItem("atrium.turnlimits.dismissed", JSON.stringify({ day: "2000-01-01", kinds: ["say"] })));
+    await again();
+    t = await lines();
+    if (t.rows.length !== 3) fail("turnLimits: yesterday's dismissal still hides a line: " + JSON.stringify(t.rows));
+    // under the limit: nothing shows
+    answer = under;
+    await again();
+    t = await lines();
+    if (!t.hidden || t.rows.length) fail("turnLimits: a cause under its limit shows a line: " + JSON.stringify(t));
+    await shot("limit-under.png");
+    if (!asked) fail("turnLimits: the tab never asked");
+  } finally { await ctx.close(); }
+  if (errors.length) fail("turnLimits: the page threw: " + errors.join(" | "));
+}
 // The usage tab and its cache reads toggle. Off by default: four counted kinds
 // stacked, the cache reads named on one line under the split, five kinds still on
 // the hover. On is the tab as it always was. The choice is the daemon's.
@@ -27807,7 +27868,7 @@ async function main() {
       history: historySection, contextSize: contextSizeSection, ctxLine: ctxLineSection, ctxLimitLayers: ctxLimitLayersSection, contextCycle: contextCycleSection, landThePlane: landThePlaneSection, peekEverywhere: peekEverywhereSection, peekOneHover: peekOneHoverSection, peekStatusTruth: peekStatusTruthSection, peekHoverRest: peekHoverRestSection, cardRoute: cardRouteSection,
       quietDoer: quietDoerSection, autoPerm: autoPermSection, looksIdle: looksIdleSection, notifyOff: notifyOffSection,
       questionsClick: questionsClickSection, walk: walkSection, walkContext: walkContextSection, linkReuse: linkReuseSection,
-      usageCacheReads: usageCacheReadsSection, usageTurns: usageTurnsSection, roomsDash: roomsDashSection, phoneView: phoneViewSection, heldLine: heldLineSection, u016: u016Section, phoneHeader: phoneHeaderSection, phoneFocus: phoneFocusSection, phoneTermBar: phoneTermBarSection, phoneShare: phoneShareSection, phonePan: phonePanSection, phoneFollow: phoneFollowSection, phoneTap: phoneTapSection, phoneKeyboard: phoneKeyboardSection, phoneCompose: phoneComposeSection, mCompose: mComposeSection, mPerms: mPermsSection, mReview: mReviewSection, usagePolish: usagePolishSection, usageLimits: usageLimitsSection, usageGroups: usageGroupsSection,
+      usageCacheReads: usageCacheReadsSection, usageTurns: usageTurnsSection, turnLimits: turnLimitsSection, roomsDash: roomsDashSection, phoneView: phoneViewSection, heldLine: heldLineSection, u016: u016Section, phoneHeader: phoneHeaderSection, phoneFocus: phoneFocusSection, phoneTermBar: phoneTermBarSection, phoneShare: phoneShareSection, phonePan: phonePanSection, phoneFollow: phoneFollowSection, phoneTap: phoneTapSection, phoneKeyboard: phoneKeyboardSection, phoneCompose: phoneComposeSection, mCompose: mComposeSection, mPerms: mPermsSection, mReview: mReviewSection, usagePolish: usagePolishSection, usageLimits: usageLimitsSection, usageGroups: usageGroupsSection,
       eventDriven: eventDrivenSection, idleBudget: idleBudgetSection, pollsGone: pollsGoneSection,
       phoneListFit: phoneListFitSection, termListLastRow: termListLastRowSection, phoneNudge: phoneNudgeSection,
       growlStack: growlStackSection, growlActions: growlActionsSection, growlModal: growlModalSection, growlQuiet: growlQuietSection, growlAttention: growlAttentionSection, growlPhone: growlPhoneSection, mGrowl: mGrowlSection, growlPopout: growlPopoutSection, growlOff: growlOffSection, growlRemind: growlRemindSection,
@@ -29790,6 +29851,7 @@ async function main() {
     await unit("linkReuse", () => linkReuseSection(browser, base));
     await unit("usageCacheReads", () => usageCacheReadsSection(browser, base));
     await unit("usageTurns", () => usageTurnsSection(browser, base));
+  await unit("turnLimits", () => turnLimitsSection(browser, base));
     await unit("roomsDash", () => roomsDashSection(browser, base));
     await unit("phoneView", () => phoneViewSection(browser, base));
     await unit("heldLine", () => heldLineSection(browser, base));
