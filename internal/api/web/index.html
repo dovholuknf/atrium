@@ -188,7 +188,7 @@
     </nav>
     <!-- Desktop only (css/topnav.css, js/topnav.js): the tabs that have no room, whole, in a menu. -->
     <button type="button" id="tabmore" class="tabmore" hidden aria-haspopup="true" aria-expanded="false"
-      aria-label="more tabs" data-tip="more tabs">&#8943;</button>
+      aria-label="more tabs" data-tip="more tabs">&#8943;<span class="count" hidden></span></button>
     <div class="grow"></div>
     <!-- In the header, not the gear. Nothing on this machine is asking you
          while it is on, and a switch that broad has to be visible from every
@@ -1147,6 +1147,23 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
   </div>
 </dialog>
 
+<!-- Order, and shown / in the ... menu / hidden, for each top tab. Per browser. See js/topnav.js. -->
+<dialog id="tabsdlg">
+  <div class="dlg-head">
+    <div class="grow"><div class="dlg-eyebrow">top bar</div><h2>arrange tabs</h2></div>
+  </div>
+  <div class="dlg-body">
+    <div id="tabsdlg-list" class="tabsdlg-list"></div>
+    <span class="hintline">A tab you hide still shows in the ... menu while it has a count waiting, so nothing
+      that needs you goes quiet. Kept in this browser only.</span>
+  </div>
+  <div class="dlg-foot">
+    <button type="button" id="tabsdlg-reset">reset to default</button>
+    <div class="grow"></div>
+    <button type="button" id="tabsdlg-close" class="go">done</button>
+  </div>
+</dialog>
+
 <dialog id="ask">
   <div class="dlg-head">
     <div class="grow"><div class="dlg-eyebrow">atrium asks</div><h2 id="ask-title"></h2></div>
@@ -1503,6 +1520,11 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
       </div>
       <span class="hintline">How much room around things, without changing how big anything reads.
         Tight fits about a third more rows on a screen.</span>
+    </div>
+    <div class="field">
+      <label class="eyebrow">top bar tabs</label>
+      <div class="picker"><button type="button" id="s-arrangetabs">arrange tabs...</button></div>
+      <span class="hintline">Choose the order, and which tabs show in the bar, sit in the ... menu or are hidden.</span>
     </div>
     <!-- Kept in this browser, like text size: it is how this screen reads the
          cards, and a phone or a second monitor may want the other answer. -->

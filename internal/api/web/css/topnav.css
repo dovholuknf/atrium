@@ -4,9 +4,11 @@
   /* Compact chips. Each keeps its words in the DOM (the tests and the screen readers read them) and draws a short form
      in their place, the way `.gauto` already does under 1150px. */
   .tabmore { display: none; }
+  .tab.uhide { display: none; }
   @media (min-width: 901px) {
     nav { overflow: hidden; }
     .tab.ovf { visibility: hidden; }
+    .tab.umenu { display: none; }
     .tabmore {
       display: inline-flex; align-items: center;
       font: 600 var(--fs-xl)/1 var(--mono); padding: calc(6px * var(--uiscale) * var(--density)) 11px;
@@ -74,3 +76,11 @@
     .bar { gap: var(--sp-2); }
     .wordmark { letter-spacing: .12em; font-size: var(--fs-2xl); }
   }
+
+  .tabmore .count[hidden] { display: none; }
+  .tabs-menu button.arrange { margin-top: var(--sp-1); border-top: 1px solid var(--stroke-dim); border-radius: 0 0 var(--r-sm) var(--r-sm); font-size: var(--fs-lg); }
+  dialog#tabsdlg { width: min(520px, 94vw); }
+  .tabsdlg-list { display: flex; flex-direction: column; gap: var(--sp-2); margin-bottom: var(--sp-4); }
+  .tabsdlg-row { display: flex; align-items: center; gap: var(--sp-3); }
+  .tabsdlg-row .name { flex: 1; font-size: var(--fs-xl); }
+  .tabsdlg-row button { padding: 2px 10px; }

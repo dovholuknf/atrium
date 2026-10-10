@@ -7306,7 +7306,135 @@ async function readTabSizeSection(browser, base) {
     await p.keyboard.press("Control+0");
     r = await m();
     if (r.fs !== 15) fail("ctrl+0 did not reset: " + JSON.stringify(r));
-    if (r.keys.some(k => /read|zoom|font/i.test(k) && k !== "atrium.readfont")) fail("the read page wrote another storage key: " + JSON.stringify(r.keys));
+    if (r.keys.some(k => /read|zoom|font/i.test(k) && !["atrium.readfont", "atrium.readwidth", "atrium.readskin"].includes(k))) fail("the read page wrote another storage key: " + JSON.stringify(r.keys));
+    if (errors.length) fail("the read tab threw: " + errors.join(" | "));
+  } finally {
+    tasksMode = was;
+    await ctx.close();
+  }
+}
+
+// ── the read tab's width and skin (u-reader-width-and-skins) ─────────────
+// The rendered page was a 52rem column on any window, so a four-column table wrapped every cell. Width is now
+// narrow / wide / full, a table may run past the column, and the page wears the board's skin with a picker of
+// its own. RW_SHOTS=<dir> takes pictures, named by RW_PREFIX (before|after). RW_BEFORE=1 only takes them, since the
+// old page has none of the controls.
+async function readWidthSkinSection(browser, base) {
+  const was = tasksMode;
+  tasksMode = "land";
+  landCard("land-live", { supervised: true, room: "sg4", created_at: "2026-09-19T12:00:00Z" });
+  landList = [LAND["land-live"]];
+  landPerms = [];
+  resetSkins();
+  const errors = [];
+  const shots = process.env.RW_SHOTS || "";
+  const prefix = process.env.RW_PREFIX || (process.env.RW_BEFORE ? "before" : "after");
+  const before = !!process.env.RW_BEFORE;
+  const cell = "the quick brown fox jumps over the lazy dog and then does it all again";
+  const doc = ["# Wide table", "",
+    "A paragraph of prose that stays a readable column wherever the window is, so the eye does not have to travel.", "",
+    "| name | owner | status | notes |", "| - | - | - | - |"]
+    .concat(Array.from({ length: 6 }, (_, i) => `| item ${i + 1} | owner ${i + 1} | ${cell} | ${cell} again ${i + 1} |`))
+    .concat(["", "```", "const x = 1;", "```", "", "Another paragraph after the table."]).join("\n");
+  const ctx = await landContext(browser);
+  try {
+    await ctx.route("**/files/view?*", route => route.fulfill({ status: 200, contentType: "text/plain; charset=utf-8", body: doc }));
+    const p = await ctx.newPage();
+    p.on("pageerror", e => errors.push(String(e)));
+    const open = async (w, h) => {
+      await p.setViewportSize({ width: w, height: h });
+      await p.goto(base + "/read.html#land-live/docs%2Fplan.md", { waitUntil: "domcontentloaded" });
+      await p.waitForSelector("#md table", { timeout: slow(8000) }).catch(async e => {
+        throw new Error(e.message + " body: " + (await p.evaluate(() => document.body.innerText.slice(0, 300))));
+      });
+      await p.waitForTimeout(400);
+    };
+    const m = () => p.evaluate(() => {
+      const w = e => Math.round(e.getBoundingClientRect().width);
+      const para = document.querySelector("#md p");
+      const t = document.querySelector("#md table");
+      const row = t.querySelector("tbody tr");
+      return { para: w(para), table: w(t), cellH: Math.round(row.cells[2].getBoundingClientRect().height),
+        line: parseFloat(getComputedStyle(row.cells[2]).lineHeight),
+        skin: document.documentElement.getAttribute("data-skin"), width: document.documentElement.getAttribute("data-width"),
+        bg: getComputedStyle(document.body).backgroundColor, sel: document.getElementById("skin") && document.getElementById("skin").value,
+        opts: document.getElementById("skin") ? [...document.getElementById("skin").options].map(o => o.value) : [],
+        pressed: [...document.querySelectorAll("#width button[aria-pressed=true]")].map(b => b.dataset.width),
+        page: document.documentElement.scrollWidth, win: innerWidth,
+        keys: Object.keys(localStorage).filter(k => /^atrium\.(read|skin)/.test(k)) };
+    });
+    if (before) {
+      for (const [name, w, h] of [["wide", 2558, 1000], ["phone", 390, 844]]) {
+        await open(w, h);
+        if (shots) await p.screenshot({ path: path.join(shots, `${prefix}-${name}.png`) });
+      }
+      return;
+    }
+    const sets0 = skinFor[""];
+
+    // 2558 wide. Narrow is the default and keeps the prose measure, and the table is let out of it.
+    await open(2558, 1000);
+    await p.waitForFunction(() => document.getElementById("skin").options.length > 1, null, { timeout: slow(5000) });
+    let r = await m();
+    if (r.width !== "narrow" || r.pressed.join() !== "narrow") fail("the default width is " + JSON.stringify(r));
+    if (r.para > 52 * 16 + 4) fail("narrow is wider than 52rem: " + r.para);
+    if (r.table < r.para + 200) fail("the table is held in the narrow column: " + JSON.stringify(r));
+    if (r.cellH > r.line * 1.5) fail("a table cell still wraps on a 2558px window: " + JSON.stringify(r));
+    if (r.page > r.win) fail("the page scrolls sideways: " + JSON.stringify(r));
+    const lefts = await p.evaluate(() => ["h1", "p", "pre"].map(s => Math.round(document.querySelector("#md " + s).getBoundingClientRect().left)));
+    if (new Set(lefts).size !== 1) fail("the heading, prose and code are not in one column: " + lefts.join());
+    if (shots) await p.screenshot({ path: path.join(shots, `${prefix}-wide.png`) });
+
+    await p.click('#width button[data-width="wide"]');
+    let r2 = await m();
+    if (r2.width !== "wide" || r2.pressed.join() !== "wide" || r2.para <= r.para + 200) fail("wide did not widen the column: " + JSON.stringify(r2));
+    await p.click('#width button[data-width="full"]');
+    r2 = await m();
+    if (r2.width !== "full" || r2.para < 2558 - 100) fail("full is not the whole window: " + JSON.stringify(r2));
+    if (shots) await p.screenshot({ path: path.join(shots, `${prefix}-full.png`) });
+    if (r2.keys.join() !== "atrium.readwidth") fail("the width wrote these keys: " + r2.keys.join());
+    await p.reload({ waitUntil: "domcontentloaded" });
+    await p.waitForSelector("#md table");
+    r2 = await m();
+    if (r2.width !== "full") fail("the width did not survive a reload: " + JSON.stringify(r2));
+    await p.click('#width button[data-width="narrow"]');
+
+    // The skin: the board's (the hub's, noir here), then this page's own, then back.
+    await p.waitForFunction(() => document.getElementById("skin").options.length > 1, null, { timeout: slow(5000) });
+    r = await m();
+    if (r.skin !== skinFor[""] || r.sel !== "") fail("the page does not wear the board's skin: " + JSON.stringify({ skin: r.skin, board: skinFor[""], sel: r.sel }));
+    if (JSON.stringify(r.opts) !== JSON.stringify([""].concat(SKINS))) fail("the picker is not the daemon's skin list: " + JSON.stringify(r.opts));
+    const bg0 = r.bg;
+    await p.selectOption("#skin", "ember");
+    r = await m();
+    if (r.skin !== "ember" || r.bg === bg0) fail("picking ember did not repaint: " + JSON.stringify(r));
+    if (!r.keys.includes("atrium.readskin") || r.keys.includes("atrium.skin")) fail("the skin keys are " + r.keys.join());
+    if (skinFor[""] !== sets0) fail("the page changed the board's skin to " + skinFor[""]);
+    await p.reload({ waitUntil: "domcontentloaded" });
+    await p.waitForSelector("#md table");
+    await p.waitForFunction(() => document.getElementById("skin").options.length > 1, null, { timeout: slow(5000) });
+    r = await m();
+    if (r.skin !== "ember" || r.sel !== "ember") fail("the page's skin did not survive a reload: " + JSON.stringify(r));
+    // The default skin has no rule of its own, so picking it clears the attribute.
+    await p.selectOption("#skin", SKINS[0]);
+    r = await m();
+    if (r.skin !== null) fail("the default skin left an attribute: " + JSON.stringify(r));
+    await p.selectOption("#skin", "");
+    r = await m();
+    if (r.skin !== skinFor[""] || r.keys.includes("atrium.readskin")) fail("the board's skin did not come back: " + JSON.stringify(r));
+    await p.selectOption("#skin", "sandstone");
+    if (shots) await p.screenshot({ path: path.join(shots, `${prefix}-wide-sandstone.png`) });
+    await p.selectOption("#skin", "");
+
+    // A phone: the column is the window, and a table scrolls inside itself instead of widening the page.
+    await open(390, 844);
+    r = await m();
+    if (r.page > r.win) fail("the page scrolls sideways at 390px: " + JSON.stringify(r));
+    if (r.table > 390) fail("the table is wider than the phone: " + JSON.stringify(r));
+    if (shots) await p.screenshot({ path: path.join(shots, `${prefix}-phone.png`) });
+    await p.click('#width button[data-width="full"]');
+    await p.selectOption("#skin", "sandstone");
+    if (shots) await p.screenshot({ path: path.join(shots, `${prefix}-phone-sandstone.png`) });
     if (errors.length) fail("the read tab threw: " + errors.join(" | "));
   } finally {
     tasksMode = was;
@@ -7951,7 +8079,7 @@ async function topNavSection(browser, base) {
       if (t.classList.contains("ovf")) { out.push(t.dataset.view); continue; }
       if (t.scrollWidth > t.clientWidth + 1 || r.right > nr.right + 1 || r.left < nr.left - 1) inMenu.push("clipped:" + t.dataset.view);
     }
-    if (out.length) { more.click(); for (const b of menu.querySelectorAll("button")) inMenu.push("menu:" + b.dataset.view); more.click(); }
+    if (out.length) { more.click(); for (const b of menu.querySelectorAll("button:not(.arrange)")) inMenu.push("menu:" + b.dataset.view); more.click(); }
     const bar = document.querySelector("header .bar");
     const chips = [...bar.children].filter(c => c.getClientRects().length > 0 && !c.classList.contains("grow"));
     return { out, inMenu, moreOn, clippedChip: chips.filter(c => c.getBoundingClientRect().right > innerWidth + 1).map(c => c.id || c.className),
@@ -8015,6 +8143,144 @@ async function topNavSection(browser, base) {
   }
   if (errors.length) fail("topNav: the page threw: " + errors.join(" | "));
   if (!bad) console.log("topNav ok");
+}
+
+// ── u-tabs-order-and-hide: the top tabs can be ordered, put in the ... menu, or hidden ─────────────────────
+async function tabsOrderSection(browser, base) {
+  const was = tasksMode;
+  tasksMode = "land";
+  landList = [];
+  landPerms = [];
+  const errors = [];
+  const imgs = path.join(__dirname, "..", "docs", "changes", "img");
+  const stage = process.env.TABS_SHOT || "";
+  const view = (p) => p.evaluate(() => {
+    const nav = document.querySelector("header nav");
+    const all = [...nav.querySelectorAll(".tab")];
+    const shown = all.filter(t => !t.hidden && getComputedStyle(t).display !== "none" && !t.classList.contains("ovf"));
+    const more = document.getElementById("tabmore"), menu = document.getElementById("tabs-menu");
+    const moreOn = !more.hidden && more.getClientRects().length > 0;
+    let listed = [];
+    if (moreOn) { more.click(); listed = [...menu.querySelectorAll("button[data-view]")].map(b => b.dataset.view); more.click(); }
+    const nr = nav.getBoundingClientRect();
+    return { order: all.map(t => t.dataset.view), shown: shown.map(t => t.dataset.view), listed, moreOn,
+      badge: more.querySelector(".count").hidden ? "" : more.querySelector(".count").textContent,
+      clipped: shown.some(t => t.getBoundingClientRect().right > nr.right + 1),
+      saved: localStorage.getItem("atrium.tabs") };
+  });
+  const arrange = async (p) => { await p.evaluate(() => window.openTabsArrange()); await p.waitForSelector("#tabsdlg[open]"); };
+  const row = (v) => '#tabsdlg-list .tabsdlg-row[data-view="' + v + '"]';
+  try {
+    fs.mkdirSync(imgs, { recursive: true });
+    const ctx = await browser.newContext({ viewport: { width: 1280, height: 700 } });
+    await ctx.addInitScript(() => localStorage.setItem("atrium.skipconfirm", JSON.stringify({ "width-floor": true })));
+    const p = await ctx.newPage();
+    p.on("pageerror", e => errors.push(String(e)));
+    await p.goto(base, { waitUntil: "domcontentloaded" });
+    await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
+    await p.waitForTimeout(250);
+    if (stage === "before") {
+      await p.screenshot({ path: path.join(imgs, "u-tabs-order-and-hide-before.png"), clip: { x: 0, y: 0, width: 1280, height: 700 } });
+      await ctx.close();
+      console.log("tabsOrder before shot taken");
+      return;
+    }
+    let v = await view(p);
+    const dflt = v.order.join(",");
+    if (v.saved !== null) fail("tabsOrder: a fresh browser has a saved tab layout: " + v.saved);
+    if (!v.shown.includes("usage") || v.moreOn) fail("tabsOrder: the default bar is not the plain one " + JSON.stringify(v));
+
+    // reorder: usage up past history and terms
+    await arrange(p);
+    await p.click(row("usage") + ' button[aria-label^="move up"]');
+    await p.click(row("usage") + ' button[aria-label^="move up"]');
+    v = await view(p);
+    const want = ["stack", "board", "terms", "usage", "pulls", "history"];
+    if (v.order.slice(0, 6).join(",") !== want.join(",")) fail("tabsOrder: usage did not move up two places: " + v.order);
+    if (!/"usage"/.test(v.saved || "")) fail("tabsOrder: the order is not saved: " + v.saved);
+    await p.reload({ waitUntil: "domcontentloaded" });
+    await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
+    v = await view(p);
+    if (v.order.slice(0, 6).join(",") !== want.join(",")) fail("tabsOrder: the order did not survive a reload: " + v.order);
+
+    // place: history hidden, rooms in the menu
+    await arrange(p);
+    await p.selectOption(row("history") + " select", "hidden");
+    await p.selectOption(row("runners") + " select", "menu");
+    v = await view(p);
+    if (v.shown.includes("history") || v.listed.includes("history")) fail("tabsOrder: a hidden tab is still shown " + JSON.stringify(v));
+    if (v.shown.includes("runners") || !v.listed.includes("runners") || !v.moreOn) fail("tabsOrder: a menu tab is not in the menu " + JSON.stringify(v));
+    // a hidden tab with a count waiting still tells the human
+    // the board repaints this badge on its own events, which would zero it under the test
+    await p.evaluate(() => { window.badge = () => {}; });
+    await p.selectOption(row("perms") + " select", "hidden");
+    v = await view(p);
+    if (v.shown.includes("perms") || v.listed.includes("perms")) fail("tabsOrder: perms with nothing waiting should be gone " + JSON.stringify(v));
+    await p.evaluate(() => { const c = document.getElementById("c-perm"); c.textContent = "3"; c.classList.remove("zero"); });
+    await p.waitForTimeout(150);
+    v = await view(p);
+    if (!v.listed.includes("perms") || v.badge !== "3") fail("tabsOrder: hidden perms with 3 waiting did not reach the ... button " + JSON.stringify(v));
+    if (v.shown.includes("perms")) fail("tabsOrder: hidden perms is back in the bar");
+    await p.evaluate(() => { const c = document.getElementById("c-perm"); c.textContent = ""; c.classList.add("zero"); });
+    await p.waitForTimeout(150);
+    v = await view(p);
+    if (v.listed.includes("perms") || v.badge) fail("tabsOrder: perms stays in the menu once nothing waits " + JSON.stringify(v));
+    await p.evaluate(() => { const c = document.getElementById("c-perm"); c.textContent = "3"; c.classList.remove("zero"); });
+    await p.waitForTimeout(150);
+    if (stage === "after") {
+      await p.screenshot({ path: path.join(imgs, "u-tabs-order-and-hide-after.png"), clip: { x: 0, y: 0, width: 1280, height: 700 } });
+    }
+    await p.click("#tabsdlg-close");
+    if (stage === "after") {
+      await p.evaluate(() => document.getElementById("tabmore").click());
+      await p.screenshot({ path: path.join(imgs, "u-tabs-order-and-hide-after-bar.png"), clip: { x: 0, y: 0, width: 1280, height: 330 } });
+      await p.evaluate(() => document.getElementById("tabmore").click());
+    }
+
+    // the overflow keeps working with a custom order: a narrow window of its own, everything revealed
+    const saved = v.saved;
+    const nctx = await browser.newContext({ viewport: { width: 1024, height: 700 } });
+    await nctx.addInitScript((val) => {
+      localStorage.setItem("atrium.skipconfirm", JSON.stringify({ "width-floor": true }));
+      localStorage.setItem("atrium.tabs", val);
+    }, saved);
+    const n = await nctx.newPage();
+    n.on("pageerror", e => errors.push(String(e)));
+    await n.goto(base, { waitUntil: "domcontentloaded" });
+    await n.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
+    await n.evaluate(() => {
+      window.badge = () => {};
+      document.querySelectorAll('.tab[data-view="docs"], .tab[data-view="audit"], .tab[data-view="hubrepos"], .tab[data-view="backlog"]').forEach(t => t.hidden = false);
+      const c = document.getElementById("c-perm"); c.textContent = "3"; c.classList.remove("zero");
+    });
+    await n.waitForTimeout(300);
+    v = await view(n);
+    if (v.clipped) fail("tabsOrder: a tab clips at 1024 with a custom order " + JSON.stringify(v));
+    if (!v.listed.includes("runners") || !v.listed.includes("perms") || !v.listed.includes("docs") || v.listed.includes("history"))
+      fail("tabsOrder: the menu at 1024 is wrong " + JSON.stringify(v));
+    if (v.shown.includes("history") || v.shown.includes("perms") || v.shown.includes("runners")) fail("tabsOrder: a moved tab is in the bar at 1024 " + JSON.stringify(v));
+    if (v.listed.length + v.shown.length < 10) fail("tabsOrder: a tab is lost at 1024 " + JSON.stringify(v));
+    if (v.badge !== "3") fail("tabsOrder: the ... button does not carry the waiting count at 1024 " + JSON.stringify(v));
+    await nctx.close();
+
+    // reset
+    await arrange(p);
+    await p.click("#tabsdlg-reset");
+    v = await view(p);
+    if (v.order.join(",") !== dflt || v.saved !== null) fail("tabsOrder: reset did not restore the default " + JSON.stringify(v));
+    if (!v.shown.includes("history") || !v.shown.includes("runners")) fail("tabsOrder: reset left tabs out of the bar " + JSON.stringify(v));
+    // the settings dialog has the way in too
+    await p.click("#tabsdlg-close");
+    await p.click("#gear");
+    await p.evaluate(() => document.getElementById("s-arrangetabs").scrollIntoView());
+    await p.click("#s-arrangetabs");
+    if (!await p.evaluate(() => document.getElementById("tabsdlg").open)) fail("tabsOrder: the settings button does not open the arrange dialog");
+    await ctx.close();
+  } finally {
+    tasksMode = was;
+  }
+  if (errors.length) fail("tabsOrder: the page threw: " + errors.join(" | "));
+  if (!bad) console.log("tabsOrder ok");
 }
 
 // ── focusing a phone terminal does not bounce or hide it (u-017) ──────────
@@ -20587,6 +20853,25 @@ async function bootCleanSection(browser, base) {
       if (errors.length) fail(tag + "threw while booting: " + errors.join(" | "));
     }
   }
+  // The read page too: its width and skin code runs at load, and a throw there leaves a header with dead buttons.
+  for (const v of views) {
+    const ctx = await browser.newContext(v.phone
+      ? { viewport: { width: v.w, height: v.h }, hasTouch: true, isMobile: true }
+      : { viewport: { width: v.w, height: v.h } });
+    const p = await ctx.newPage();
+    const errors = [];
+    p.on("pageerror", e => errors.push(String(e && e.message || e)));
+    const tag = "bootClean read.html " + v.w + ": ";
+    try {
+      await p.goto(base + "/read.html#land-live/docs%2Fplan.md", { waitUntil: "load" });
+      await p.waitForTimeout(600);
+      const have = await p.evaluate(() => ["width", "skin", "zoom-up"].filter(id => !document.getElementById(id)));
+      if (have.length) fail(tag + "has no " + have.join(", "));
+    } finally {
+      await ctx.close();
+    }
+    if (errors.length) fail(tag + "threw while booting: " + errors.join(" | "));
+  }
   if (!bad) console.log("bootClean ok");
 }
 
@@ -27304,7 +27589,7 @@ async function main() {
   if (ONLY) {    const only = { closeOneDialog: closeOneDialogSection, boardDocs: boardDocsSection, phoneBoardCompact: phoneBoardCompactSection, termWear: termWearSection, bridge: bridgeSection, detailsHover: detailsHoverSection, detailsSide: detailsSideBySideSection, chatter: chatterSection, chatterTab: chatterTabSection, settingsOnce: settingsOnceSection,
       groupRemove: groupRemoveSection, worn: wornSection, restartGate: restartGateSection, restartStays: restartStaysSection, atriumDown: atriumDownSection,
       toastStays: toastStaysSection, groupColor: groupColorSection,
-      groupDrag: groupDragSection, tooltip: tooltipSection, linkTip: linkTipSection, fileOpenOutside: fileOpenOutsideSection, readTabSize: readTabSizeSection,popoutTagFlip: popoutTagFlipSection, prefsEverywhere: prefsEverywhereSection, mPrefsEverywhere: (b) => mPrefsEverywhereSection(b), idleRate: idleRateSection, foldStill: foldStillSection,
+      groupDrag: groupDragSection, tooltip: tooltipSection, linkTip: linkTipSection, fileOpenOutside: fileOpenOutsideSection, readTabSize: readTabSizeSection, readWidthSkin: readWidthSkinSection, popoutTagFlip: popoutTagFlipSection, prefsEverywhere: prefsEverywhereSection, mPrefsEverywhere: (b) => mPrefsEverywhereSection(b), idleRate: idleRateSection, foldStill: foldStillSection,
       untaggedSort: untaggedSortSection, newCard: newCardSection, themePreview: themePreviewSection, themeLab: themeLabSection, land: landSection, reselect: reselectSection, clearKeepsPage: clearKeepsPageSection, clearMark: clearMarkSection, clearLine: clearLineSection,
       resumeSpinner: resumeSpinnerSection, toastsTop: toastsTopSection, sayWhen: sayWhenSection, pasteSpinner: pasteSpinnerSection,
       pasteBig: pasteBigSection, pasteEmpty: pasteEmptySection, pasteBusy: pasteBusySection, typing: typingSection, alias: aliasSection, askAgain: askAgainSection, copySelect: copySelectSection, busyGuard: busyGuardSection, keepalive: keepaliveSection, idlePark: idleParkSection, restartMenu: restartMenuSection,
@@ -27343,7 +27628,7 @@ async function main() {
       mPull: mPullSection, joinedLive: joinedLiveSection, termEnded: termEndedSection, joinedClick: joinedClickSection,
       coverPoll: coverPollSection, coverSteps: coverStepsSection, termBox: termBoxSection, termRowBleed: termRowBleedSection,
       termDebug: termDebugSection, termDebugPerCard: termDebugPerCardSection, termLag: termLagSection, termHiddenRedraw: termHiddenRedrawSection, termLastRead: termLastReadSection, termSortStarted: termSortStartedSection,
-      noReadyChildren: noReadyChildrenSection, childUnderParent: childUnderParentSection, topNav: topNavSection,
+      noReadyChildren: noReadyChildrenSection, childUnderParent: childUnderParentSection, topNav: topNavSection, tabsOrder: tabsOrderSection,
       u002: u002Section, childFold: childFoldSection, liveHome: liveHomeSection,
       pulls: pullsSection, prMove: prMoveSection, quickPaste: quickPasteSection, recogniserRepo: recogniserRepoSection, hubRepos: hubReposSection, hubReposShelf: hubReposShelfSection, hubReposLedger: hubReposLedgerSection, hubReposFeed: hubReposFeedSection, changeReq: changeReqSection, mChangeReq: mChangeReqSection, trayHead: trayHeadSection, pullsAbsent: pullsAbsentSection, oneTooltip: oneTooltipSection, burnChart: burnChartSection, burnReadout: burnReadoutSection, switchPrewarm: switchPrewarmSection, attachAtOnce: attachAtOnceSection, fileView: fileViewSection, keepAlive: keepAliveSection, switchBackCost: switchBackCostSection, keepMemory: keepMemorySection, pullsDrawer: pullsDrawerSection };
     try {
@@ -29430,6 +29715,7 @@ async function main() {
     await unit("fileOpenOutside", () => fileOpenOutsideSection(browser, base));
     await unit("roomsSetup", () => roomsSetupSection(browser, base));
     await unit("readTabSize", () => readTabSizeSection(browser, base));
+    await unit("readWidthSkin", () => readWidthSkinSection(browser, base));
     await unit("discreteGroup", () => discreteGroupSection(browser, base));
     await unit("groupingPerView", () => groupingPerViewSection(browser, base));
     await unit("repoColors", () => repoColorsSection(browser, base));
@@ -29499,6 +29785,7 @@ async function main() {
     // await unit("termLastRead", () => termLastReadSection(browser, base));
     await unit("termSortStarted", () => termSortStartedSection(browser, base));
     await unit("topNav", () => topNavSection(browser, base));
+    await unit("tabsOrder", () => tabsOrderSection(browser, base));
     await unit("pulls", () => pullsSection(browser, base));
     await unit("pullsAbsent", () => pullsAbsentSection(browser, base));
     await unit("oneTooltip", () => oneTooltipSection(browser, base));

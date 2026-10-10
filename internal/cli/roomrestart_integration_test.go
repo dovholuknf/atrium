@@ -3,10 +3,13 @@
 package cli
 
 import (
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 // The restarter must start the SAME room. It once passed only --http, --agent
@@ -49,5 +52,27 @@ func TestRestartLogAppends(t *testing.T) {
 	lines := strings.Split(strings.TrimSpace(string(raw)), "\n")
 	if len(lines) != 2 || !strings.HasSuffix(lines[0], "first 1") || !strings.HasSuffix(lines[1], "second") {
 		t.Fatalf("restart.log is %q, want two appended lines", raw)
+	}
+}
+
+func TestWrapCallLimitFollowsTheConfiguredWait(t *testing.T) {
+	if got := wrapCallLimit(90 * time.Second); got != 90*time.Second+wrapMargin {
+		t.Fatalf("limit = %s", got)
+	}
+	if got := wrapCallLimit(99999 * time.Second); got != time.Hour+wrapMargin {
+		t.Fatalf("over-cap limit = %s", got)
+	}
+}
+
+func TestRoomWrapWaitReadsTheSetting(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"restart_wrap_wait_s":120}`))
+	}))
+	defer srv.Close()
+	if got := roomWrapWait(srv.URL); got != 2*time.Minute {
+		t.Fatalf("wait = %s", got)
+	}
+	if got := roomWrapWait("http://127.0.0.1:1"); got != time.Hour {
+		t.Fatalf("unreachable wait = %s", got)
 	}
 }
