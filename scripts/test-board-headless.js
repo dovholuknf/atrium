@@ -18212,6 +18212,69 @@ async function cardUrlWinNameSection(browser, base) {
   if (!bad) console.log("cardUrlWinName ok");
 }
 
+// A second pop-out click on a card that is already out brings that window up and says nothing. Asked twice: with the
+// handle the board kept, and after a board reload, when only the window's NAME is left to find it by.
+async function popoutRaiseSection(browser, base) {
+  const was = tasksMode;
+  tasksMode = "land";
+  landList = [];
+  landCard("land-a", { alias: "rnd", room: "r1" });
+  try {
+    const r = await cuOpen(browser, base, "/", {});
+    try {
+      const { ctx, page } = r;
+      await ctx.route("**/*", route => {
+        const rq = route.request();
+        if (/^\/(alias|room)\//.test(new URL(rq.url()).pathname) && rq.resourceType() === "document") {
+          return route.fulfill({ status: 200, contentType: "text/html", body: HTML });
+        }
+        return route.continue();
+      });
+      await page.waitForFunction(() => typeof cardList === "function" && cardList().length >= 1, null, { timeout: slow(15000) });
+      const dialogs = () => page.evaluate(() => [...document.querySelectorAll("body *:not(script):not(style)")].filter(e => /this terminal is open in another window/.test(e.children.length ? "" : e.textContent)).length);
+      const click = async tag => {
+        const what = await page.evaluate(() => popOutTask("land-a"));
+        if (await dialogs()) fail("popoutRaise " + tag + ": the 'open in another window' dialog showed");
+        return what;
+      };
+      const popups = () => ctx.pages().filter(p => p !== page);
+      const first = await click("first");
+      if (first !== "opened") fail("popoutRaise: the first click answered " + first);
+      await page.waitForTimeout(800);
+      if (popups().length !== 1) fail("popoutRaise: " + popups().length + " pop-outs after the first click");
+      if (await click("second") !== "raised") fail("popoutRaise: the second click did not raise by handle");
+
+      // A board that reloaded has no handle.
+      await page.reload({ waitUntil: "domcontentloaded" });
+      await page.waitForFunction(() => typeof cardList === "function" && cardList().length >= 1, null, { timeout: slow(15000) });
+      await page.waitForTimeout(1500);
+      const again = await click("after reload");
+      await page.waitForTimeout(1000);
+      if (popups().length !== 1) fail("popoutRaise: " + popups().length + " pop-outs after a click on a reloaded board (" + again + ")");
+      if (again !== "raised") fail("popoutRaise: after a reload the click answered " + again);
+
+      // A window opened from a pasted url has no name to be found by. It is asked to close, and a named one takes its place.
+      for (const w of popups()) await w.close();
+      const [pasted] = await Promise.all([ctx.waitForEvent("page"), page.evaluate(u => { window.open(u, "_blank"); }, base + "/#term=land-a")]);
+      await cuSolo(pasted, "land-a");
+      await pasted.waitForTimeout(1500);
+      const nameless = await page.evaluate(() => { popOuts.clear(); return poppedOut("land-a"); });
+      if (!nameless) fail("popoutRaise: the pasted-url window did not claim the card");
+      const last = await click("pasted url");
+      await page.waitForTimeout(1000);
+      if (last !== "opened") fail("popoutRaise: the click past an unnamed window answered " + last);
+      if (!pasted.isClosed()) fail("popoutRaise: the unnamed window was not asked to close");
+      const out = popups();
+      if (out.length !== 1) fail("popoutRaise: " + out.length + " pop-outs after replacing an unnamed one");
+      else if (await out[0].evaluate(() => window.name) !== "atrium-term-land-a") fail("popoutRaise: the replacement is not named for the card");
+    } finally { await r.ctx.close(); }
+  } finally {
+    landList = []; landPerms = [];
+    tasksMode = was;
+  }
+  if (!bad) console.log("popoutRaise ok");
+}
+
 // The suite's one clock (see CLOCK_OFFSET at the top). The page starts the run at
 // noon or at HEADLESS_CLOCK, a window the page opens agrees, Node and the page
 // read the same time, and the clock still advances. A context that asked for the
@@ -27921,7 +27984,7 @@ async function main() {
       mViewer: mViewerSection, mHomeLive: mHomeLiveSection, mChanges: mChangesSection, mChangesReal: mChangesRealSection, deployReady: deployReadySection, trayHead: trayHeadSection,
       gearTermList: gearTermListSection, growlLinks: growlLinksSection, growlChoiceOnce: growlChoiceOnceSection,
       mOutputAt: mOutputAtSection, mStickBottom: mStickBottomSection, mSendFree: mSendFreeSection, mCardUpload: mCardUploadSection, mCompact: mCompactSection, mPinch: mPinchSection, mPrompts: mPromptsSection,
-      cardUrlWinName: cardUrlWinNameSection,
+      cardUrlWinName: cardUrlWinNameSection, popoutRaise: popoutRaiseSection,
       gearHosts: gearHostsSection,
       mTypeSteady: mTypeSteadySection, mOlder: mOlderSection, mFollow: mFollowSection, mDocs: mDocsSection,
       mSwitcher: mSwitcherSection,
@@ -30077,6 +30140,7 @@ async function main() {
     await unit("mPull", () => mPullSection(browser));
     await unit("mPrompts", () => mPromptsSection(browser));
     await unit("cardUrlWinName", () => cardUrlWinNameSection(browser, base));
+    await unit("popoutRaise", () => popoutRaiseSection(browser, base));
     await unit("gearHosts", () => gearHostsSection(browser, base));
     await unit("joinedLive", () => joinedLiveSection(browser, base));
     await unit("termEnded", () => termEndedSection(browser, base));

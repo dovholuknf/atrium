@@ -237,13 +237,17 @@ async function popOutTask(id) {
     // was not there any more" about a window still on screen.
     //
     // So the difference is asked for rather than guessed at. A window that
-    // answers is out there, and the honest answer is that this board cannot
-    // bring it forward.
+    // answers is out there and cannot be reached by name, and a dialog telling
+    // somebody to go and find it is the worst answer to a click that asked for
+    // the terminal. The board asks that window to let go and close itself, and
+    // opens a named one in its place, so one click ends with the terminal in
+    // front.
     if (await stillOutThere(id)) {
-      tellUser("this terminal is open in another window",
-        "Switch to that window to use it. If you cannot find it, close it and pop the card " +
-        "out again from here.");
-      return "unreachable";
+      if (soloBus) soloBus.postMessage({ type: "solo-yield", task: id, close: true });
+      // Asked again, because a broadcast has no delivery report. Going on either way: a window
+      // that ignored it is an older build, and it says plainly that it can be closed.
+      await stillOutThere(id);
+      soloHeld.delete(id);
     }
   }
 
