@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -63,6 +64,26 @@ func classify(got *store.Resolved) linkKind {
 	return linkKind{kind: c.Kind, host: c.Host, org: c.Org, repo: c.Repo, num: c.Num, branch: c.Branch}
 }
 
+// supportFromURLOnly makes a support link's kind, title, tags and branch out of the row's kind and the ticket number
+// alone. Section 11: the card's title is `zendesk-12345`, and a stranger's text never chooses a directory or a branch.
+// A row's fetch may have filled these templates with ticket prose, so none of them is taken from the row. The number
+// comes from the link, or from the address a redirect landed on, which only a numeric group can fill.
+func supportFromURLOnly(got *store.Resolved, k linkKind) (*store.Resolved, linkKind) {
+	kind := strings.ToLower(strings.TrimSpace(got.Kind))
+	if !supportKindName.MatchString(kind) {
+		kind = "link"
+	}
+	name := kind + "-" + strconv.Itoa(k.num)
+	g := *got
+	g.Kind, g.Title, g.Branch = kind, name, name
+	g.Tags = []string{kind, "support", name}
+	k.branch = name
+	return &g, k
+}
+
+// supportKindName is what a row's kind may be for a support card, so a filled template cannot reach a branch name.
+var supportKindName = regexp.MustCompile(`^[a-z][a-z0-9]{0,31}$`)
+
 // holed is whether a filled template still has a `{name}` nothing answered.
 func holed(s string) bool { return strings.Contains(s, "{") }
 
@@ -73,8 +94,11 @@ func (k linkKind) key(rowKind string) string {
 
 // openOther is the open verb for an issue, a branch or a support link. See the top of this file.
 func (s *Server) openOther(w http.ResponseWriter, r *http.Request, in openRequest, got *store.Resolved, k linkKind, steps *opSteps) {
+	if k.kind == linkSupport {
+		got, k = supportFromURLOnly(got, k)
+	}
 	key := k.key(got.Kind)
-	ans := openAnswer{Key: key, Kind: k.kind, Recogniser: got.Recogniser, Title: got.Title}
+	ans :=openAnswer{Key: key, Kind: k.kind, Recogniser: got.Recogniser, Title: got.Title}
 
 	// 1. a live card for the link already
 	if t := s.liveLinkCard(key); t != nil {
