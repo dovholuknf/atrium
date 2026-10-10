@@ -34,7 +34,8 @@ roomstats, runnerprofile, safepath, shellpick, testdiag, webasset, scripts/recog
 - deployready: every one of 36 tests is 1.1 to 3.2s, a git repo built with a run of git subprocesses. All serial.
 - cli: TestRunnerPIDFindsOpencode and TestFakeRunnerSubagentsDoNotEndTheTurn 2.8s (real child processes),
   TestFakeRunnerDoneSayRidesTheStopHook, TestFakeRunnerContinuedTurnStillEnds,
-  TestFakeRunnerDrivesTheCardThroughEveryHook 1.5 to 1.9s (fake runner process), TestPermProbeNotGatedAndTimeout 1.0s (a real timeout).
+  TestFakeRunnerDrivesTheCardThroughEveryHook 1.5 to 1.9s (fake runner process),
+  TestPermProbeNotGatedAndTimeout 1.0s (a real timeout).
 - hubstore: TestOldSnapshotsThinOutRatherThanPilingUp 5.8s writes 8640 small files. Left.
 - ptyhost: TestIdleExit 3.9s (a real idle timer, the sleep is the assertion), TestExitWithNoClientIsKeptAndCollected
   1.5s (real pty). Left.
