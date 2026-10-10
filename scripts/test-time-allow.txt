@@ -1,0 +1,31 @@
+# The time guard's allowlist. scripts/test-time-guard.sh fails CI when a package takes more than 60s or a
+# single test more than 5s, unless it has a line here.
+#
+#   <package, Pkg.TestName or Pkg.*>  <ceiling in seconds>  <reason, one line>
+#
+# A package is its path under the module (internal/store). Pkg.* covers every test of the package. A subtest is
+# covered by its own line, then by its parent test's. The ceiling replaces the default limit for that entry.
+#
+# THE CEILINGS ARE A RATCHET. Each is about 1.5x what the entry took when it was added, measured with -p 4 on a
+# busy Windows box, so a runner is under it with room. When you make something faster, lower its line. Do not
+# raise one without saying why in the reason. A line that is no longer needed should be deleted.
+
+# Packages over 60s.
+internal/daemon 830 about 1600 tests with real processes, ptys and git. 553s measured, owned by daemon-tests-slow
+internal/link 575 every test starts a hub, a forwarder and real git. 383s measured, being made parallel
+internal/gitsync 380 a bare hub, clones and pushes with real git. 254s measured, being made parallel
+internal/store 150 about 440 tests each migrating a database. 40s on a quiet box, 98s measured on a busy one
+internal/api 105 git subprocess rigs. 57 to 74s measured, and 16s of that is taskkill retries on a locked-down box
+
+# Tests over 5s, by package. Pkg.* is for packages whose tests are all git subprocess rigs.
+internal/daemon.* 18 real processes, ptys and git. The slowest, TestScreenAgainstXterm, was 11.7s
+internal/gitsync.* 105 each test is a real git rig. The slowest was 68s
+internal/link.* 65 each test starts a hub, a forwarder and real git. The slowest was 43s
+internal/deployready.* 16 every test builds a git repo with a run of git subprocesses. 10.5s measured on a busy box
+internal/store.* 35 TestMCPPrecedence was 22s on a busy box, the rest 6s or less
+internal/api.TestBoardScriptParses 13 a real parse of the whole board script, CPU bound
+internal/api.TestCloseStopsAndDeletesTheCardsOverlay 10 waits out a 5s taskkill retry on a locked-down box
+internal/api.TestOverlayDownStopsOnlyThatOne 10 waits out a 5s taskkill retry on a locked-down box
+internal/api.TestCloseStopsAProcessTheCardOwns 10 waits out a 5s taskkill retry on a locked-down box
+internal/hubstore.TestOldSnapshotsThinOutRatherThanPilingUp 16 writes 8640 small files
+internal/cli.TestRunnerPIDFindsOpencode 9 real child processes

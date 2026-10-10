@@ -1,0 +1,5 @@
+{"Time":"2026-10-10T10:00:01Z","Action":"pass","Package":"example.com/atrium/internal/quick","Test":"TestA","Elapsed":1.2}
+{"Time":"2026-10-10T10:00:01Z","Action":"pass","Package":"example.com/atrium/internal/quick","Test":"TestTooSlow","Elapsed":7.5}
+{"Time":"2026-10-10T10:00:02Z","Action":"pass","Package":"example.com/atrium/internal/quick","Elapsed":61.4}
+{"Time":"2026-10-10T10:00:03Z","Action":"pass","Package":"example.com/atrium/internal/slowok","Test":"TestSlowButListed","Elapsed":13}
+{"Time":"2026-10-10T10:00:04Z","Action":"pass","Package":"example.com/atrium/internal/slowok","Elapsed":100}
