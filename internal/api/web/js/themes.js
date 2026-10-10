@@ -221,26 +221,28 @@ function themeSource(t) {
   return themeNamed(repoColorName(t));
 }
 
-// The name a repo colour resolves to for a card, or "". Order: the user's entry for the full `provider/org/repo`, then
-// for a card with no repo of its own the colour of the card that launched it, then the user's default.
+// The name a repo colour resolves to for a card, or "". Order: the user's entry for the card's own `provider/org/repo`,
+// then the colour of the card that launched it, then the user's default. A repo with no entry is no colour of its own.
 function repoColorName(t) {
   const key = repoKeyOf(t);
   const mine = repoColors.get();
-  if (key) return mine.repos[key] || mine.default;
-  return launcherRepoColor(t, mine) || mine.default;
+  if (key && mine.repos[key]) return mine.repos[key];
+  return launcherColor(t, mine) || mine.default;
 }
 
-// The repo colour of the card that launched `t`, walking up while the launcher has no repo of its own, or "". A child
-// runs wherever its work is, often a scratch folder that is no repo, and the hub's map would leave it plain beside its
-// parent. `launcher_id` is the bare id of a card on the same room, so it is paired with the row's room.
-function launcherRepoColor(t, mine) {
+// The colour the card that launched `t` wears, or "": its own theme, else its repo's entry, else ITS launcher's, up to
+// 5 hops. A child runs wherever its work is, often a scratch folder or a repo nobody coloured, and the hub's map would
+// leave it plain beside its parent. `launcher_id` is the bare id of a card on the same room, so it is paired with the
+// row's room.
+function launcherColor(t, mine) {
   const tasks = typeof lastTasks !== "undefined" ? lastTasks : [];
   for (let at = t, hops = 0; at && at.launcher_id && hops < 5; hops++) {
     const room = roomOf(at.id);
     const up = tasks.find(x => bareId(x.id) === at.launcher_id && roomOf(x.id) === room);
     if (!up) return "";
+    if (themeNamed(up.theme)) return up.theme;
     const key = repoKeyOf(up);
-    if (key) return mine.repos[key] || "";
+    if (key && mine.repos[key]) return mine.repos[key];
     at = up;
   }
   return "";
