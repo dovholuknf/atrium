@@ -44,6 +44,7 @@ func gitAs(t *testing.T, dir string, headers []string, args ...string) (string, 
 
 func newPushFix(t *testing.T) *pushFix {
 	t.Helper()
+	gitSlot(t)
 	x := &pushFix{log: &gitsync.MemPushLog{}, tmp: t.TempDir()}
 	x.g = &gitsync.Hub{Dir: filepath.Join(x.tmp, "hub"), Runner: gitsync.NewRunner(), PushLog: x.log,
 		Repos: func() ([]gitsync.Repo, error) { return nil, nil }}

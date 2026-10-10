@@ -104,6 +104,8 @@ func (s *roomState) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 // caching stands up a hub that keeps what it is told, and a room attached to it.
 func caching(t *testing.T, state http.Handler) (*Hub, *[]announcement, *sync.Mutex, func()) {
 	t.Helper()
+	// Most of these tests are waits, and each has a hub and a room of its own.
+	t.Parallel()
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)

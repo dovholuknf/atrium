@@ -55,6 +55,7 @@ func (x *passRig) setLive(b ...string) { x.mu.Lock(); x.live = b; x.mu.Unlock() 
 
 func newPassRig(t *testing.T) *passRig {
 	t.Helper()
+	gitSlot(t)
 	x := &passRig{root: t.TempDir()}
 	checkout := filepath.Join(x.root, "checkout")
 	gitRoot := filepath.Join(x.root, "roomgit")
