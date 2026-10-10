@@ -136,6 +136,7 @@ func TestARoomDoesNotInstallTheBinaryItIsAlreadyRunning(t *testing.T) {
 	if testing.Short() {
 		t.Skip("slow: a real link, hub and git rig over loopback")
 	}
+	lightSlot(t)
 	sum, size := selfSum(t)
 	var asked bool
 	var mu sync.Mutex
@@ -170,6 +171,7 @@ func TestAHubCannotUpgradeARoomThatDidNotAgree(t *testing.T) {
 	if testing.Short() {
 		t.Skip("slow: a real link, hub and git rig over loopback")
 	}
+	lightSlot(t)
 	var asked bool
 	var mu sync.Mutex
 	up := &Upgrades{
@@ -202,6 +204,7 @@ func TestAnotherPlatformsBuildIsRefused(t *testing.T) {
 	if testing.Short() {
 		t.Skip("slow: a real link, hub and git rig over loopback")
 	}
+	lightSlot(t)
 	var asked bool
 	var mu sync.Mutex
 	up := &Upgrades{
@@ -233,6 +236,7 @@ func TestABuildThatDoesNotMatchItsHashIsNotInstalled(t *testing.T) {
 	if testing.Short() {
 		t.Skip("slow: a real link, hub and git rig over loopback")
 	}
+	lightSlot(t)
 	dir := t.TempDir()
 	var asked bool
 	var mu sync.Mutex

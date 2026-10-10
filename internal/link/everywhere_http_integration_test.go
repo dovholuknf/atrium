@@ -174,6 +174,7 @@ func TestTheScopedStreamWithoutTheParameterIsUnchanged(t *testing.T) {
 	if testing.Short() {
 		t.Skip("slow: a real link, hub and git rig over loopback")
 	}
+	lightSlot(t)
 	front, hub, alpha, beta, done := rigEverywhere(t)
 	defer done()
 	hub.IndexEverywhere("beta", []CardState{everyRow("card2", "running", "atrium-2", "orchestrator", EverywhereTag)})

@@ -184,6 +184,7 @@ func TestAHubKnowsWhichRoomsSaidGit(t *testing.T) {
 	if testing.Short() {
 		t.Skip("slow: a real link, hub and git rig over loopback")
 	}
+	lightSlot(t)
 	x := newGitFixture(t, true, true, nil)
 	if !x.hub.RoomSaysGit("SG3") {
 		t.Fatal("the hub did not record the room's Git")
@@ -195,6 +196,7 @@ func TestTheHubFetchesFromARoomOverThePool(t *testing.T) {
 	if testing.Short() {
 		t.Skip("slow: a real link, hub and git rig over loopback")
 	}
+	lightSlot(t)
 	// A room serving a repository at /v1/git.
 	root := t.TempDir()
 	work := filepath.Join(root, "work")
@@ -232,6 +234,7 @@ func TestAChunkedPostGoesThroughForwarderLinkAndCgi(t *testing.T) {
 	if testing.Short() {
 		t.Skip("slow: a real link, hub and git rig over loopback")
 	}
+	lightSlot(t)
 	x := newGitFixture(t, true, true, nil)
 	var stream strings.Builder
 	for i := 0; i < 1500; i++ {

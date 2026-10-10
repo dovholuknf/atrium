@@ -192,6 +192,7 @@ func TestTypingHoldsTheCountdownBack(t *testing.T) {
 	if testing.Short() {
 		t.Skip("slow: a real link, hub and git rig over loopback")
 	}
+	lightSlot(t)
 	gt := newGateUnderTest(1)
 	clock := stopClock(gt.g)
 	ctx, cancel := context.WithCancel(context.Background())
@@ -281,6 +282,7 @@ func TestAPatientPauseOutlastsTheWaitThenGoesOnResume(t *testing.T) {
 	if testing.Short() {
 		t.Skip("slow: a real link, hub and git rig over loopback")
 	}
+	lightSlot(t)
 	gt := newGateUnderTest(1)
 	const wait = 300 * time.Millisecond
 	ch := gt.askPatient(context.Background(), 150*time.Millisecond, 50*time.Millisecond, wait, true)

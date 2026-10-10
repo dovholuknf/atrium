@@ -81,6 +81,7 @@ func TestTheMoveIsRefusedWhileEitherRoomIsOffline(t *testing.T) {
 	if testing.Short() {
 		t.Skip("slow: a real link, hub and git rig over loopback")
 	}
+	lightSlot(t)
 	x := newClaimHub(t, map[string]int{"alpha": 0, "beta": 0})
 	defer x.done()
 	claimed(t, x, "beta")

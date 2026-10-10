@@ -105,7 +105,7 @@ func (s *roomState) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 func caching(t *testing.T, state http.Handler) (*Hub, *[]announcement, *sync.Mutex, func()) {
 	t.Helper()
 	// Most of these tests are waits, and each has a hub and a room of its own.
-	t.Parallel()
+	parallel(t)
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
@@ -220,6 +220,7 @@ func TestNothingIsSentWhenNothingChanged(t *testing.T) {
 	if testing.Short() {
 		t.Skip("slow: a real link, hub and git rig over loopback")
 	}
+	lightSlot(t)
 	state := newRoomState(map[string]any{"id": "one", "status": "running"})
 	_, got, mu, stop := caching(t, state)
 	defer stop()
@@ -263,6 +264,7 @@ func TestARoomInTroubleDoesNotAnnounceItselfEmpty(t *testing.T) {
 	if testing.Short() {
 		t.Skip("slow: a real link, hub and git rig over loopback")
 	}
+	lightSlot(t)
 	state := newRoomState(map[string]any{"id": "one", "status": "running"})
 	_, got, mu, stop := caching(t, state)
 	defer stop()
@@ -299,6 +301,7 @@ func TestAnAnswerWithNoCardListIsNotAnEmptyRoom(t *testing.T) {
 	if testing.Short() {
 		t.Skip("slow: a real link, hub and git rig over loopback")
 	}
+	lightSlot(t)
 	state := newRoomState(map[string]any{"id": "one", "status": "running"})
 	_, got, mu, stop := caching(t, state)
 	defer stop()
@@ -357,6 +360,7 @@ func TestAnAnnouncementThatFailedIsSentAgain(t *testing.T) {
 	if testing.Short() {
 		t.Skip("slow: a real link, hub and git rig over loopback")
 	}
+	lightSlot(t)
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
@@ -414,6 +418,7 @@ func TestARoomDoesNotAnnounceAtAHubThatKeepsNothing(t *testing.T) {
 	if testing.Short() {
 		t.Skip("slow: a real link, hub and git rig over loopback")
 	}
+	lightSlot(t)
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)

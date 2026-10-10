@@ -22,6 +22,7 @@ func TestGitSyncAndCollectEndToEndOverTheLink(t *testing.T) {
 	if testing.Short() {
 		t.Skip("slow: a real link, hub and git rig over loopback")
 	}
+	lightSlot(t)
 	root := t.TempDir()
 	checkout := filepath.Join(root, "checkout")
 	gitRoot := filepath.Join(root, "roomgit")

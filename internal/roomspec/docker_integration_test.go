@@ -35,7 +35,7 @@ func TestLinuxAdapterInDocker(t *testing.T) {
 	run(docker, "version", "--format", "{{.Server.Version}}")
 
 	bin := filepath.Join(t.TempDir(), "rs.test")
-	build := exec.Command("go", "test", "-c", "-o", bin, ".")
+	build := exec.Command("go", "test", "-tags", "integration", "-c", "-o", bin, ".")
 	build.Env = append(os.Environ(), "GOOS=linux", "GOARCH=amd64", "CGO_ENABLED=0")
 	if out, err := build.CombinedOutput(); err != nil {
 		t.Fatalf("cross-compile: %v\n%s", err, out)

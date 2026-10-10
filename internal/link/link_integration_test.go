@@ -84,12 +84,41 @@ func gitSlot(t *testing.T) {
 		return
 	}
 	t.Cleanup(func() { slotted.Delete(t) })
-	t.Parallel()
+	parallel(t)
 	gitSlots <- struct{}{}
 	t.Cleanup(func() { <-gitSlots })
 }
 
 var slotted sync.Map
+
+// lightSlots bounds how many of the tests that wait on a real link and hub, and run no git, go at once. They are
+// mostly waiting, on a timer or on a beat, so many go side by side, but not so many that a loaded machine starves the
+// heartbeats they run at a second's silence.
+var lightSlots = make(chan struct{}, 8)
+
+// lightSlot lets the calling test run beside the others, once, and holds one of the slots until it ends.
+func lightSlot(t *testing.T) {
+	t.Helper()
+	if _, again := lighted.LoadOrStore(t, true); again {
+		return
+	}
+	t.Cleanup(func() { lighted.Delete(t) })
+	parallel(t)
+	lightSlots <- struct{}{}
+	t.Cleanup(func() { <-lightSlots })
+}
+
+var lighted, paralleled sync.Map
+
+// parallel is t.Parallel for a test that may ask for it more than once, through more than one helper.
+func parallel(t *testing.T) {
+	t.Helper()
+	if _, again := paralleled.LoadOrStore(t, true); again {
+		return
+	}
+	t.Cleanup(func() { paralleled.Delete(t) })
+	t.Parallel()
+}
 
 func waitFor(t *testing.T, limit time.Duration, ok func() bool) {
 	t.Helper()
@@ -287,7 +316,7 @@ func TestAConnectionThatWaitedInThePoolStillWorks(t *testing.T) {
 		t.Skip("this one has to actually wait")
 	}
 	// Twelve seconds of nothing, so it waits beside the other tests.
-	t.Parallel()
+	parallel(t)
 	front, _, done := pair(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprint(w, "still here")
 	}))

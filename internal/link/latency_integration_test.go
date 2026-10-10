@@ -122,6 +122,7 @@ func TestAKeystrokeCrossesTheLinkWithoutDelay(t *testing.T) {
 	if testing.Short() {
 		t.Skip("slow: a real link, hub and git rig over loopback")
 	}
+	lightSlot(t)
 	front, done := tlsPair(t, http.HandlerFunc(echoWS))
 	defer done()
 	for _, gap := range []time.Duration{0, 5 * time.Millisecond, 50 * time.Millisecond} {

@@ -36,6 +36,7 @@ func TestAHeldAskIsPolledThroughAPause(t *testing.T) {
 	if testing.Short() {
 		t.Skip("slow: a real link, hub and git rig over loopback")
 	}
+	lightSlot(t)
 	p := NewProxy(NewHub(Timings{}), nil, "", nil)
 	front := httptest.NewServer(p)
 	defer front.Close()

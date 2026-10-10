@@ -246,6 +246,7 @@ func TestThePushedReadSaysAllFiveStatesAndTheOwner(t *testing.T) {
 	if testing.Short() {
 		t.Skip("slow: a real link, hub and git rig over loopback")
 	}
+	lightSlot(t)
 	x := newCRRig(t)
 	x.hubPush(t, x.c[1], "claude/x")
 	x.owner(t, "claude/x", x.c[1], "sg4", "s1")
@@ -338,6 +339,7 @@ func TestAChangeRequestIsMadeAndTheBoardAndTheAuditHearOfIt(t *testing.T) {
 	if testing.Short() {
 		t.Skip("slow: a real link, hub and git rig over loopback")
 	}
+	lightSlot(t)
 	x := newCRRig(t)
 	x.hubPush(t, x.c[1], "claude/x")
 	x.owner(t, "claude/x", x.c[1], "sg4", "s1")
@@ -389,6 +391,7 @@ func TestACardMakesOneForItsOwnRoomsBranchAndTheHubReadsTheTip(t *testing.T) {
 	if testing.Short() {
 		t.Skip("slow: a real link, hub and git rig over loopback")
 	}
+	lightSlot(t)
 	x := newCRRig(t)
 	x.tip("sg4", "claude/y", x.c[2])
 	code, c := x.create(t, x.asCard("sg4", "s1"), roomReq("sg4", "claude/y", "release"))
@@ -410,6 +413,7 @@ func TestAChangeRequestIsRefusedWhenItIsNotAsked(t *testing.T) {
 	if testing.Short() {
 		t.Skip("slow: a real link, hub and git rig over loopback")
 	}
+	lightSlot(t)
 	x := newCRRig(t)
 	x.hubPush(t, x.c[1], "claude/x")
 	long := func(n int) string { return strings.Repeat("a", n) }
@@ -483,6 +487,7 @@ func TestAskingAgainWhileOneIsOpenHandsBackThatOneAndSaysNothing(t *testing.T) {
 	if testing.Short() {
 		t.Skip("slow: a real link, hub and git rig over loopback")
 	}
+	lightSlot(t)
 	x := newCRRig(t)
 	x.hubPush(t, x.c[1], "claude/x")
 	_, first := x.create(t, x.op, hubReq("claude/x", "release"))
@@ -517,6 +522,7 @@ func TestTwoAsksThatDifferOnlyInTheRoomsCaseAreOneRequest(t *testing.T) {
 	if testing.Short() {
 		t.Skip("slow: a real link, hub and git rig over loopback")
 	}
+	lightSlot(t)
 	x := newCRRig(t)
 	for _, r := range []string{"Spare", "spare", "SPARE"} {
 		x.tip(r, "claude/q", x.c[1])
@@ -546,6 +552,7 @@ func TestTwoAsksThatDifferOnlyInTheReposCaseAreOneRequest(t *testing.T) {
 	if testing.Short() {
 		t.Skip("slow: a real link, hub and git rig over loopback")
 	}
+	lightSlot(t)
 	x := newCRRig(t)
 	x.tip("sg4", "claude/q", x.c[1])
 	first := roomReq("sg4", "claude/q", "release")
@@ -593,6 +600,7 @@ func TestAWriteFromAnotherReachOrOriginIsRefusedAsSnoozeIs(t *testing.T) {
 	if testing.Short() {
 		t.Skip("slow: a real link, hub and git rig over loopback")
 	}
+	lightSlot(t)
 	x := newCRRig(t)
 	x.hubPush(t, x.c[1], "claude/x")
 	_, c := x.create(t, x.op, hubReq("claude/x", "release"))
@@ -679,6 +687,7 @@ func TestTheListFiltersByStateRoomTargetAndRepo(t *testing.T) {
 	if testing.Short() {
 		t.Skip("slow: a real link, hub and git rig over loopback")
 	}
+	lightSlot(t)
 	x := newCRRig(t)
 	x.hubPush(t, x.c[1], "claude/x")
 	x.hubPush(t, x.c[1], "claude/z")
@@ -755,6 +764,7 @@ func TestOneRequestCarriesThePushedReadForItsSource(t *testing.T) {
 	if testing.Short() {
 		t.Skip("slow: a real link, hub and git rig over loopback")
 	}
+	lightSlot(t)
 	x := newCRRig(t)
 	x.hubPush(t, x.c[1], "claude/x")
 	gitRun(t, x.work, "checkout", "-q", "-b", "side", x.c[0])
@@ -826,6 +836,7 @@ func TestWhoMayCloseAndWithdraw(t *testing.T) {
 	if testing.Short() {
 		t.Skip("slow: a real link, hub and git rig over loopback")
 	}
+	lightSlot(t)
 	x := newCRRig(t)
 	x.hubPush(t, x.c[1], "claude/x")
 	x.owner(t, "claude/x", x.c[1], "sg4", "s1")
@@ -916,6 +927,7 @@ func TestMergedIsTheOperatorsAndTheHubChecksTheShaIsOnTheTarget(t *testing.T) {
 	if testing.Short() {
 		t.Skip("slow: a real link, hub and git rig over loopback")
 	}
+	lightSlot(t)
 	x := newCRRig(t)
 	x.hubPush(t, x.c[2], "main")
 	x.hubPush(t, x.c[1], "claude/x")
@@ -975,6 +987,7 @@ func TestAFinishedRequestCannotChangeAgain(t *testing.T) {
 	if testing.Short() {
 		t.Skip("slow: a real link, hub and git rig over loopback")
 	}
+	lightSlot(t)
 	x := newCRRig(t)
 	x.hubPush(t, x.c[1], "claude/x")
 	x.hubPush(t, x.c[1], "main")
@@ -1011,6 +1024,7 @@ func TestTheOwnerCardIsToldAsAnFyiWithTheWordsQuotedAsData(t *testing.T) {
 	if testing.Short() {
 		t.Skip("slow: a real link, hub and git rig over loopback")
 	}
+	lightSlot(t)
 	x := newCRRig(t)
 	x.hubPush(t, x.c[1], "claude/x")
 	x.owner(t, "claude/x", x.c[1], "sg4", "s1")
@@ -1060,6 +1074,7 @@ func TestNobodyIsToldWhenThereIsNoOwnerOrTheChangeWasRefused(t *testing.T) {
 	if testing.Short() {
 		t.Skip("slow: a real link, hub and git rig over loopback")
 	}
+	lightSlot(t)
 	x := newCRRig(t)
 	x.hubPush(t, x.c[1], "claude/x")
 	// no owner row, so nobody to tell
@@ -1082,6 +1097,7 @@ func TestARequestIntoMainRaisesAQuestionForTheOperatorAndItEndsWithTheRequest(t 
 	if testing.Short() {
 		t.Skip("slow: a real link, hub and git rig over loopback")
 	}
+	lightSlot(t)
 	x := newCRRig(t)
 	x.hubPush(t, x.c[1], "main")
 	x.tip("sg4", "claude/y", x.c[2])

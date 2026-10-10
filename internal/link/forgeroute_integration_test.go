@@ -188,6 +188,7 @@ func TestAnAuthFailureFetchingTheHeadRaisesTheAlert(t *testing.T) {
 	if testing.Short() {
 		t.Skip("slow: a real link, hub and git rig over loopback")
 	}
+	lightSlot(t)
 	x := newForgeHub(t)
 	f := x.p.forgeSide()
 	code, he := x.p.forgeRefusal(f, "beta", prAsk, &forgeAccess{kind: forge.GitHub,
@@ -211,6 +212,7 @@ func TestTheHubForgeCheckAnswersAndRaisesNothing(t *testing.T) {
 	if testing.Short() {
 		t.Skip("slow: a real link, hub and git rig over loopback")
 	}
+	lightSlot(t)
 	x := newForgeHub(t)
 	code, body := x.call(http.MethodPost, "/_hub/forge/check", `{"forges":[{"tool":"gh"},{"tool":"curl"}]}`, "")
 	if code != 200 || !strings.Contains(body, `"state":"logged_out"`) || !strings.Contains(body, `"state":"unknown"`) ||
@@ -227,6 +229,7 @@ func TestTheHubForgeEntries(t *testing.T) {
 	if testing.Short() {
 		t.Skip("slow: a real link, hub and git rig over loopback")
 	}
+	lightSlot(t)
 	x := newForgeHub(t)
 	if code, body := x.call(http.MethodPut, "/_hub/forge", `{"entries":[{"Host":"Git.Corp.X","Forge":"github","Cmd":"ghe"}]}`, ""); code != 200 {
 		t.Fatalf("put = %d %s", code, body)
