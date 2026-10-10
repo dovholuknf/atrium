@@ -20588,6 +20588,75 @@ async function joinedClickSection(browser, base) {
   if (!bad) console.log("joinedClick ok");
 }
 
+// The Terminals tab keeps the cards whose session ended in a collapsed group per room, with how each ended and a
+// one click resume. SHOTS=/dir also writes the three pictures of the change.
+async function termEndedSection(browser, base) {
+  const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+  const p = await ctx.newPage();
+  const errors = [];
+  p.on("pageerror", e => errors.push(e.message));
+  const posted = [];
+  await p.route("**/v1/tasks/*/resume", r => { posted.push(r.request().method() + " " + new URL(r.request().url()).pathname);
+    r.fulfill({ json: { ok: true } }); });
+  const shots = process.env.TERM_ENDED_SHOTS || "";
+  try {
+    await p.goto(base + "/", { waitUntil: "domcontentloaded" });
+    await p.waitForFunction(() => typeof termEndedHTML === "function" && (() => { try { newCardBook; termSuffix; return true; } catch (e) { return false; } })(), null, { timeout: slow(15000) });
+    const setup = async () => { await p.waitForFunction(() => typeof termEndedHTML === "function" && (() => { try { newCardBook; termSuffix; return true; } catch (e) { return false; } })(), null, { timeout: slow(15000) });
+      await p.evaluate(() => {
+      const h = n => new Date(Date.now() - n * 3600e3).toISOString();
+      const card = (id, status, extra) => ({ id, status, supervised: false, pinned: false, title: id, display_title: id, tags: [], ...extra });
+      window.__cards = [card("lv", "running", { supervised: true, display_title: "live one" }),
+        card("dn", "done", { display_title: "ship the thing", report_sha: "7062cc11aabbccdd", last_activity_at: h(2) }),
+        card("bl", "done", { display_title: "needs a key", recap: "tried\n\nneeds: the signing key, from clint", last_activity_at: h(5) }),
+        card("cr", "dead", { display_title: "crashed worker", last_activity_at: h(30) }),
+        card("ex", "done", { display_title: "plain exit", last_activity_at: h(50) }),
+        card("r2~rm", "done", { room: "r2", display_title: "remote ended", report_sha: "abcdef0123456789", last_activity_at: h(1) })];
+      boardCards = async () => window.__cards;
+      });
+      await p.waitForTimeout(1500);
+      await p.evaluate(async () => { switchView("terms"); await renderTermList(); });
+    };
+    const shot = name => shots ? p.screenshot({ path: require("path").join(shots, name) }) : null;
+    await p.evaluate(() => localStorage.removeItem("atrium.termended"));
+    await setup();
+    // The "before" picture: the same cards with the group switched off.
+    if (shots) {
+      await p.evaluate(async () => { window.__te = termEnded; termEnded = () => false; await renderTermList(); });
+      await shot("terminals-ended-before.png");
+      await p.evaluate(async () => { termEnded = window.__te; await renderTermList(); });
+    }
+    const closed = await p.evaluate(() => ({
+      heads: [...document.querySelectorAll(".endedhead")].map(b => b.textContent.replace(/\s+/g, " ").trim()),
+      rows: document.querySelectorAll(".endedrow").length,
+      strip: [...document.querySelectorAll("#term-list .card.tab[data-id]")].map(e => e.dataset.id)
+    }));
+    if (closed.rows || closed.heads.length !== 2 || !closed.heads.some(h => /ended.*4$/.test(h)) ||
+        !closed.heads.some(h => /r2.*1$/.test(h))) fail("termEnded: closed by default, one heading per room with its count: " + JSON.stringify(closed));
+    if (closed.strip.join() !== "lv") fail("termEnded: the live strip changed: " + JSON.stringify(closed.strip));
+    await shot("terminals-ended-after.png");
+    await p.click(".termended[data-ended-room=''] .endedhead");
+    const open = await p.evaluate(() => ({
+      rows: [...document.querySelectorAll(".termended[data-ended-room=''] .endedrow")].map(r => r.innerText.replace(/\s+/g, " ").trim()),
+      stored: localStorage.getItem("atrium.termended")
+    }));
+    if (open.rows.length !== 4) fail("termEnded: opening shows the room's four rows: " + JSON.stringify(open));
+    const want = [/ship the thing.*done 7062cc11.*2h.* ago/, /needs a key.*blocked: the signing key, from clint.*5h/, /crashed worker.*crashed.*1d/, /plain exit.*exited/];
+    want.forEach((re, i) => { if (!re.test(open.rows[i])) fail("termEnded: row " + i + " reads '" + open.rows[i] + "', wanted " + re); });
+    if (open.stored !== '[""]') fail("termEnded: the open state is not kept: " + open.stored);
+    await p.reload({ waitUntil: "domcontentloaded" });
+    await setup();
+    if (!await p.$(".termended[data-ended-room=\"\"] .endedrow")) fail("termEnded: the open group did not come back after a reload");
+    await shot("terminals-ended-open.png");
+    await p.click(".termended[data-ended-room='r2'] .endedhead");
+    await p.click(".endedrow[data-ended-id='r2~rm'] .endedresume");
+    await p.waitForTimeout(300);
+    if (posted.join() !== "POST /v1/tasks/r2~rm/resume" && posted.join() !== "POST /v1/tasks/r2%7Erm/resume") fail("termEnded: resume posted " + posted.join());
+    if (errors.length) fail("termEnded: page errors: " + errors.join(" | "));
+  } finally { await ctx.close(); }
+  if (!bad) console.log("termEnded ok");
+}
+
 async function joinedLiveSection(browser, base) {
   const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 } });
   const p = await ctx.newPage();
@@ -26618,7 +26687,7 @@ async function main() {
       gearHosts: gearHostsSection,
       mTypeSteady: mTypeSteadySection, mOlder: mOlderSection, mFollow: mFollowSection, mDocs: mDocsSection,
       mSwitcher: mSwitcherSection,
-      mPull: mPullSection, joinedLive: joinedLiveSection, joinedClick: joinedClickSection,
+      mPull: mPullSection, joinedLive: joinedLiveSection, termEnded: termEndedSection, joinedClick: joinedClickSection,
       coverPoll: coverPollSection, coverSteps: coverStepsSection, termBox: termBoxSection, termRowBleed: termRowBleedSection,
       termDebug: termDebugSection, termDebugPerCard: termDebugPerCardSection, termLag: termLagSection, termHiddenRedraw: termHiddenRedrawSection, termLastRead: termLastReadSection, termSortStarted: termSortStartedSection,
       noReadyChildren: noReadyChildrenSection, childUnderParent: childUnderParentSection, topNav: topNavSection,
@@ -28758,6 +28827,7 @@ async function main() {
     await unit("cardUrlWinName", () => cardUrlWinNameSection(browser, base));
     await unit("gearHosts", () => gearHostsSection(browser, base));
     await unit("joinedLive", () => joinedLiveSection(browser, base));
+    await unit("termEnded", () => termEndedSection(browser, base));
     await unit("joinedClick", () => joinedClickSection(browser, base));
     await unit("coverPoll", () => coverPollSection(browser, base));
     await unit("coverSteps", () => coverStepsSection(browser, base));
