@@ -2,6 +2,7 @@
 #   scripts/test-groups.ps1 -List                 every group, its purpose, packages, -run pattern, last time
 #   scripts/test-groups.ps1 -Group link-git       run one group (several: -Group a,b)
 #   scripts/test-groups.ps1 -All                  run every group, keep going after a failure, print a table
+#                                                 groups of different packages run in parallel; add -Serial for one at a time
 #   scripts/test-groups.ps1 -Failed               re-run only the tests that failed last time
 #   scripts/test-groups.ps1 -Check                fail if a test is in no group or in two
 # PowerShell 7. Run it from anywhere inside the repository. Full output of each group goes to
@@ -15,7 +16,9 @@ param(
     [string[]] $Group,
     [switch] $All,
     [switch] $Failed,
-    [switch] $Check
+    [switch] $Check,
+    [switch] $Serial,
+    [string] $ResultFile
 )
 
 $ErrorActionPreference = 'Stop'
@@ -303,11 +306,59 @@ if ($All -or $Group) {
             $g
         }
     }
+    $sel = @($sel)
     $results = @()
-    foreach ($g in $sel) {
-        $r = Invoke-Group $g $null
-        Save-Result $r
-        $results += $r
+    if ($ResultFile) {
+        # A child of the parallel run: run the groups in order, hand the records back, leave last.json to the parent.
+        $results = @($sel | ForEach-Object { Invoke-Group $_ $null })
+        ConvertTo-Json -InputObject $results -Depth 6 | Set-Content $ResultFile
+        return
+    }
+    $byPackage = @($sel | Group-Object { $_.Packages[0] })
+    if ($Serial -or $byPackage.Count -lt 2) {
+        foreach ($g in $sel) {
+            $r = Invoke-Group $g $null
+            Save-Result $r
+            $results += $r
+        }
+    }
+    else {
+        # One child pwsh per package, four at a time. Groups of one package stay in order inside their child.
+        New-Item -ItemType Directory -Force $OutDir | Out-Null
+        $pwsh = (Get-Process -Id $PID).Path
+        $jobs = @()
+        $queue = [System.Collections.Queue]::new($byPackage)
+        while ($queue.Count -or $jobs.Count) {
+            while ($queue.Count -and $jobs.Count -lt 4) {
+                $pk = $queue.Dequeue()
+                $tag = ($pk.Name -replace '[^\w]+', '_').Trim('_')
+                $job = [pscustomobject]@{
+                    Names = $pk.Group.Name; Json = Join-Path $OutDir "job-$tag.json"; Log = Join-Path $OutDir "job-$tag.log"
+                }
+                $job | Add-Member Proc (Start-Process $pwsh -PassThru -WindowStyle Hidden -RedirectStandardOutput $job.Log -ArgumentList (
+                    '-NoProfile', '-File', $PSCommandPath, '-Group', ($job.Names -join ','), '-ResultFile', $job.Json))
+                Write-Host "started $($pk.Name): $($job.Names -join ', ')"
+                $jobs += $job
+            }
+            Start-Sleep -Milliseconds 500
+            foreach ($job in @($jobs | Where-Object { $_.Proc.HasExited })) {
+                Get-Content $job.Log | Write-Host
+                $jobs = @($jobs | Where-Object { $_ -ne $job })
+            }
+        }
+        $byName = @{}
+        foreach ($pk in $byPackage) {
+            $tag = ($pk.Name -replace '[^\w]+', '_').Trim('_')
+            $json = Join-Path $OutDir "job-$tag.json"
+            if (-not (Test-Path $json)) { throw "the run of $($pk.Name) wrote no result, see $(Join-Path $OutDir "job-$tag.log")" }
+            foreach ($r in @(Get-Content $json -Raw | ConvertFrom-Json)) { $byName[$r.Name] = $r }
+        }
+        foreach ($g in $sel) {
+            $r = $byName[$g.Name]
+            $r.Failed = @($r.Failed); $r.Failures = @($r.Failures)
+            Save-Result $r
+            $results += $r
+        }
     }
     if ($results.Count -gt 1) { Show-Summary $results }
     if ($results | Where-Object { -not $_.Ok }) { exit 1 }

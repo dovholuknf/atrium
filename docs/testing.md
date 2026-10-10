@@ -7,7 +7,7 @@ or less, and each leaves its own output file.
 ```
 pwsh scripts/test-groups.ps1 -List             every group, what it covers, its packages, -run pattern, last time
 pwsh scripts/test-groups.ps1 -Group link-git   one group (several: -Group link-git,api)
-pwsh scripts/test-groups.ps1 -All              every group in turn, keeps going after a failure, ends with a table
+pwsh scripts/test-groups.ps1 -All              every group, packages in parallel (-Serial for one at a time), ends with a table
 pwsh scripts/test-groups.ps1 -Failed           re-run only the tests that failed last time
 pwsh scripts/test-groups.ps1 -Check            fail if a test is in no group or in two groups
 ```
