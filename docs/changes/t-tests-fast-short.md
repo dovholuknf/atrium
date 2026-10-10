@@ -12,7 +12,6 @@ Measured on one machine (8 cores, not the m1mini, so read the numbers as a ratio
 | run | wall time |
 |---|---|
 | `make test-all` before | 4m29s |
-| `make test-short` before any skip | not run, same as above |
 | `make test-short` after | 55s, then 56s on a second run |
 | `make test-all` after | passes (one run hit the flake below, the next was clean) |
 
