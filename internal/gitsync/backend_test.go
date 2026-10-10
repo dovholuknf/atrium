@@ -5,6 +5,8 @@ import (
 	"os"
 	"sync"
 	"testing"
+
+	"github.com/dovholuknf/atrium/internal/testguard"
 )
 
 // served is a bare repository holding claude/main and a hidden room ref, behind a Backend.
@@ -23,7 +25,12 @@ var (
 )
 
 func TestMain(m *testing.M) {
+	// The git every test here runs ignores the operator's own git config. See internal/testguard.
+	gitDir := testguard.Git("")
 	code := m.Run()
+	if gitDir != "" {
+		_ = os.RemoveAll(gitDir)
+	}
 	if shared != nil {
 		shared.srv.Close()
 	}
