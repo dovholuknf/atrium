@@ -101,3 +101,6 @@ no-action count first, then the share.
 - Wall time stops at the last assistant entry, so a turn that ends on a long tool call is read short.
 - Transcripts of a session that was cleared or compacted start over, so one card can be several sessions.
 - Only rooms `collect.sh` can reach are covered. It says which.
+- Dates are computed by hand in jq, because Windows jq has no `strptime`. `test.sh` fails if a date builtin comes back.
+- Rows from a Windows jq end in CRLF. `--from-tsv` and `--check-tsv FILE` strip the CR and drop, with a count on stderr,
+  any row whose column count differs from the header's or whose number columns hold text.

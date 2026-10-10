@@ -60,8 +60,9 @@ done
 first=1
 : > "$tsv"
 for room in $covered; do
-  if [ $first = 1 ]; then head -n 1 "$work/$room.tsv" >> "$tsv"; first=0; fi
-  tail -n +2 "$work/$room.tsv" | jq -Rr --arg r "$room" 'split("\t") | .[1] = $r + ":" + .[1] | @tsv' >> "$tsv"
+  "$here/chattiness.sh" --check-tsv "$work/$room.tsv" > "$work/$room.clean" || continue
+  if [ $first = 1 ]; then head -n 1 "$work/$room.clean" >> "$tsv"; first=0; fi
+  tail -n +2 "$work/$room.clean" | jq -Rr --arg r "$room" 'split("\t") | .[1] = $r + ":" + .[1] | @tsv' | tr -d '\r' >> "$tsv"
 done
 
 "$here/chattiness.sh" --since "$since" --until "$until_" --from-tsv "$tsv"

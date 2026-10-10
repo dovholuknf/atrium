@@ -16,6 +16,7 @@ since="1970-01-01T00:00:00Z"
 until_="2999-01-01T00:00:00Z"
 tsv="chattiness.tsv"
 from_tsv=""
+check_tsv=""
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -24,6 +25,7 @@ while [ $# -gt 0 ]; do
     --until) until_="$2"; shift 2 ;;
     --tsv) tsv="$2"; shift 2 ;;
     --from-tsv) from_tsv="$2"; shift 2 ;;
+    --check-tsv) check_tsv="$2"; shift 2 ;;
     -h|--help) sed -n '2,10p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) echo "chattiness: unknown argument $1" >&2; exit 2 ;;
   esac
@@ -31,19 +33,45 @@ done
 
 command -v jq >/dev/null 2>&1 || { echo "chattiness: jq is required" >&2; exit 2; }
 
-# RFC3339 with an offset to epoch seconds. Run through jq so every platform parses it the same way.
+# Date arithmetic by hand. Windows jq has no strptime, so fromdateiso8601, mktime and todate are not used anywhere
+# in this script. A test checks that. days() is days from 1970-01-01 for a civil date, iso() turns epoch seconds back into a timestamp.
+read -r -d '' CIVIL_JQ <<'JQ' || true
+def num: if length > 1 and startswith("0") then .[1:] | tonumber else tonumber end;
+def days($y; $m; $d):
+  ($y - (if $m <= 2 then 1 else 0 end)) as $yy
+  | ($yy / 400 | floor) as $era | ($yy - $era * 400) as $yoe
+  | ((153 * ($m + (if $m > 2 then -3 else 9 end)) + 2) / 5 | floor) as $doy0
+  | ($yoe * 365 + ($yoe / 4 | floor) - ($yoe / 100 | floor) + $doy0 + $d - 1) as $doe
+  | $era * 146097 + $doe - 719468;
+def pad: tostring | if length < 2 then "0" + . else . end;
+def iso: floor as $s
+  | ($s / 86400 | floor) as $dd | ($s - $dd * 86400) as $sec
+  | ($dd + 719468) as $z | ($z / 146097 | floor) as $era | ($z - $era * 146097) as $doe
+  | (($doe - ($doe / 1460 | floor) + ($doe / 36524 | floor) - ($doe / 146096 | floor)) / 365 | floor) as $yoe
+  | ($doe - (365 * $yoe + ($yoe / 4 | floor) - ($yoe / 100 | floor))) as $doy
+  | ((5 * $doy + 2) / 153 | floor) as $mp
+  | ($doy - ((153 * $mp + 2) / 5 | floor) + 1) as $d
+  | ($mp + (if $mp < 10 then 3 else -9 end)) as $m
+  | ($yoe + $era * 400 + (if $m <= 2 then 1 else 0 end)) as $y
+  | "\($y)-\($m | pad)-\($d | pad)T\($sec / 3600 | floor | pad):\($sec % 3600 / 60 | floor | pad):\($sec % 60 | pad)Z";
+def stamp: days(.[0:4] | num; .[5:7] | num; .[8:10] | num) * 86400
+  + (.[11:13] | num) * 3600 + (.[14:16] | num) * 60 + (.[17:19] | num);
+JQ
+
+# RFC3339 with an offset to epoch seconds.
 read -r -d '' RFC_JQ <<'JQ' || true
 def rfc: capture("^(?<d>[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2})(?<f>[.][0-9]+)?(?<z>Z|[+-][0-9]{2}:[0-9]{2})$")
-  | (.d + "Z" | fromdateiso8601)
+  | (.d | stamp)
     - (if .z == "Z" then 0
-       else ((if .z[0:1] == "-" then -1 else 1 end) * ((.z[1:3] | tonumber) * 3600 + (.z[4:6] | tonumber) * 60)) end);
+       else ((if .z[0:1] == "-" then -1 else 1 end) * ((.z[1:3] | num) * 3600 + (.z[4:6] | num) * 60)) end);
 JQ
+RFC_JQ="$CIVIL_JQ"$'\n'"$RFC_JQ"
 
 # The per-session program. Input is the raw JSONL lines (jq -nR). It segments the session into turns at every
 # non-tool-result user entry and at every Stop hook that carried a message, tags each turn by what started it,
 # and sums the assistant usage inside it.
 read -r -d '' SESSION_JQ <<'JQ' || true
-def epoch: (.[0:19] + "Z" | fromdateiso8601)
+def epoch: stamp
   + (([.[19:] | capture("^(?<f>[.][0-9]+)").f | tonumber] | .[0]) // 0);
 def txt: if type == "string" then .
   elif type == "array" then (map(select(type == "object" and .type == "text") | .text) | join("\n"))
@@ -124,7 +152,7 @@ if $hdr == "1" then cols | @tsv else
       | [$segs[] | select(.src as $s | $A | index($s))] as $as
       | [$segs[] | select(.src != "pre")] as $turns
       | ($st.keys | group_by(.) | map(length - 1 | select(. > 0)) | add // 0) as $rep
-      | [$sid, $proj, ($segs[0].t0 | floor | todate),
+      | [$sid, $proj, ($segs[0].t0 | iso),
          ($turns | length), ([$turns[] | select(.src == "human")] | length), ($as | length),
          ([$st.mids[] | select(.src == "perm")] | length), ([$st.mids[] | select(.src == "say")] | length),
          ([$st.mids[] | select(.src == "notice")] | length), ([$st.mids[] | select(.src == "nudge")] | length),
@@ -138,6 +166,7 @@ if $hdr == "1" then cols | @tsv else
     end
 end
 JQ
+SESSION_JQ="$CIVIL_JQ"$'\n'"$SESSION_JQ"
 
 # The summary. Input is the merged TSV, header first.
 read -r -d '' SUMMARY_JQ <<'JQ' || true
@@ -196,26 +225,45 @@ def sum(f): (map(f) | add // 0);
     "half of its turns end with no action and it holds 5% or more of all turns or of all tokens."
 JQ
 
+# Rows come back from Windows jq with CRLF line ends, and a row from a broken run can be short or hold text where a
+# number belongs. Strip the CR, keep the header, and drop any row whose column count is not the header's or whose
+# numeric columns (the fourth on) are not numbers. The drop count goes to stderr.
+clean_tsv() {
+  local n kept total
+  local good='select(. != "") | select(split("\t") as $f | ($f | length) == $n and ($f[3:] | all(test("^[0-9.eE+-]+$"))))'
+  n="$(head -n 1 "$1" | tr -d '\r' | jq -Rr 'split("\t") | length')"
+  kept="$(tr -d '\r' < "$1" | tail -n +2 | jq -Rr --argjson n "$n" "$good" | wc -l | tr -d ' ')"
+  head -n 1 "$1" | tr -d '\r'
+  tr -d '\r' < "$1" | tail -n +2 | jq -Rr --argjson n "$n" "$good"
+  total="$(tr -d '\r' < "$1" | tail -n +2 | jq -Rr 'select(. != "")' | wc -l | tr -d ' ')"
+  [ "$total" = "$kept" ] || echo "chattiness: dropped $((total - kept)) malformed row(s) from $1" >&2
+}
+
 if [ -n "$from_tsv" ]; then
   [ -r "$from_tsv" ] || { echo "chattiness: cannot read $from_tsv" >&2; exit 2; }
-  jq -nRr --arg since "$since" --arg until "$until_" --argjson tt 0.25 --argjson tk 0.20 "$SUMMARY_JQ" < "$from_tsv"
+  clean_tsv "$from_tsv" | jq -nRr --arg since "$since" --arg until "$until_" --argjson tt 0.25 --argjson tk 0.20 "$SUMMARY_JQ"
+  exit 0
+fi
+if [ -n "$check_tsv" ]; then
+  [ -r "$check_tsv" ] || { echo "chattiness: cannot read $check_tsv" >&2; exit 2; }
+  clean_tsv "$check_tsv"
   exit 0
 fi
 
 [ -d "$root" ] || { echo "chattiness: no such directory $root" >&2; exit 2; }
 
 # Bounds go through jq, which parses RFC3339 with an offset the same way on every platform.
-lo=$(jq -n --arg s "$since" "$RFC_JQ \$s | rfc") || { echo "chattiness: --since is not RFC3339" >&2; exit 2; }
-hi=$(jq -n --arg s "$until_" "$RFC_JQ \$s | rfc") || { echo "chattiness: --until is not RFC3339" >&2; exit 2; }
+lo=$(jq -n --arg s "$since" "$RFC_JQ \$s | rfc" | tr -d '\r') || { echo "chattiness: --since is not RFC3339" >&2; exit 2; }
+hi=$(jq -n --arg s "$until_" "$RFC_JQ \$s | rfc" | tr -d '\r') || { echo "chattiness: --until is not RFC3339" >&2; exit 2; }
 
 out="$(mktemp)"
 trap 'rm -f "$out"' EXIT
-jq -nr --arg hdr 1 --arg sid "" --arg proj "" --argjson lo 0 --argjson hi 0 "$SESSION_JQ" > "$out"
+jq -nr --arg hdr 1 --arg sid "" --arg proj "" --argjson lo 0 --argjson hi 0 "$SESSION_JQ" | tr -d '\r' > "$out"
 
 find "$root" -mindepth 2 -maxdepth 2 -name '*.jsonl' | sort | while IFS= read -r f; do
   proj="$(basename "$(dirname "$f")")"
   sid="$(basename "$f" .jsonl)"
-  jq -nRr --arg hdr 0 --arg sid "$sid" --arg proj "$proj" --argjson lo "$lo" --argjson hi "$hi" "$SESSION_JQ" < "$f" >> "$out" ||
+  jq -nRr --arg hdr 0 --arg sid "$sid" --arg proj "$proj" --argjson lo "$lo" --argjson hi "$hi" "$SESSION_JQ" < "$f" | tr -d '\r' >> "$out" ||
     echo "chattiness: skipped $f (jq failed)" >&2
 done
 

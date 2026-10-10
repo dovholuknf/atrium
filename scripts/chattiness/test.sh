@@ -49,6 +49,24 @@ want "$f" nudge_noact 1
 want "$f" say_tok 582
 want "$f" repeats 1
 
+# The first column is the turn time written back by hand-made date arithmetic.
+want "$tmp/win.tsv" first 2026-10-10T03:00:00Z
+
+# Windows jq has no strptime. None of the date builtins that need it may appear in the script's code.
+if grep -v '^[[:space:]]*#' "$here/chattiness.sh" | grep -Eq 'fromdate|todate|strptime|strftime|mktime|gmtime'; then
+  echo "FAIL: chattiness.sh uses a date builtin Windows jq lacks"; fail=1
+fi
+
+# A Windows-style TSV: CRLF line ends, plus one row a column short and one with text in a number column.
+head -n 2 "$tmp/win.tsv" | sed 's/$/\r/' > "$tmp/crlf.tsv"
+printf 'short\trow\r\n' >> "$tmp/crlf.tsv"
+sed -n 2p "$tmp/win.tsv" | jq -Rr 'split("\t") | .[3] = "notanumber" | join("\t")' | sed 's/$/\r/' >> "$tmp/crlf.tsv"
+"$here/chattiness.sh" --from-tsv "$tmp/crlf.tsv" > "$tmp/crlf.md" 2> "$tmp/crlf.err"
+grep -q 'Sessions: 1\.' "$tmp/crlf.md" || { echo "FAIL: CRLF rows not read as one session"; fail=1; }
+grep -q '| turns atrium started | 5 (83.3% of all turns) |' "$tmp/crlf.md" || { echo "FAIL: CRLF summary figures"; fail=1; }
+grep -q 'dropped 2 malformed row' "$tmp/crlf.err" || { echo "FAIL: malformed rows not reported"; fail=1; }
+"$here/chattiness.sh" --check-tsv "$tmp/crlf.tsv" 2>/dev/null | grep -q "$(printf '\r')" && { echo "FAIL: CR left in cleaned rows"; fail=1; }
+
 # With no window the early human turn comes in.
 "$here/chattiness.sh" --root "$root" --tsv - > "$tmp/all.tsv"
 want "$tmp/all.tsv" turns 7
