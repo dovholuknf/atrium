@@ -5,6 +5,7 @@ package store
 import "testing"
 
 func TestShareSurvivesAShutdownAndDiesOnAStop(t *testing.T) {
+	t.Parallel()
 	s := open(t)
 	rec := CardShare{
 		TaskID: "card-1", Kind: "zrok", Mode: "public",
@@ -77,6 +78,7 @@ func TestShareSurvivesAShutdownAndDiesOnAStop(t *testing.T) {
 // A card can be pruned while its share is recorded. Nothing on the board can
 // see what is left, because the board draws cards and the card is what went.
 func TestStaleSharesAreFindableAfterTheCardIsGone(t *testing.T) {
+	t.Parallel()
 	s := open(t)
 	task, _, err := s.Register(Observed{
 		WireName: "atrium-9", Worktree: "d:/git/atrium", Runner: "claude", PID: 9})
@@ -126,6 +128,7 @@ func TestStaleSharesAreFindableAfterTheCardIsGone(t *testing.T) {
 // one. One card, one address: two rows would mean two names reserved and only
 // one of them ever released.
 func TestOneShareRowPerCard(t *testing.T) {
+	t.Parallel()
 	s := open(t)
 	for _, name := range []string{"atrium-first0000000", "atrium-second000000"} {
 		if err := s.PutCardShare(CardShare{
@@ -150,6 +153,7 @@ func TestOneShareRowPerCard(t *testing.T) {
 // A mode outside the two that exist is refused by the schema rather than
 // stored. A stored third mode would be a share nothing knows how to rebind.
 func TestShareModeIsChecked(t *testing.T) {
+	t.Parallel()
 	s := open(t)
 	err := s.PutCardShare(CardShare{TaskID: "card-3", Mode: "sort-of-public", Wanted: true})
 	if err == nil {

@@ -16,6 +16,7 @@ import (
 // without `@`, and `alias@room` for this room. A miss lists what would have
 // worked, and another room's card is the hub's to find.
 func TestACardByItsHandleOnTheRoom(t *testing.T) {
+	t.Parallel()
 	srv, st, work := fileServer(t)
 	if err := st.SetTenant("sparta"); err != nil {
 		t.Fatal(err)

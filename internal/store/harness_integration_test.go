@@ -10,6 +10,7 @@ import (
 // How a runner is asked to exit is per runner, and the tokens exist so the
 // field can be written without knowing that control-d is 0x04.
 func TestExitBytesDecodesControlKeys(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name string
 		keys []string
@@ -70,6 +71,7 @@ func TestExitBytesDecodesControlKeys(t *testing.T) {
 // The column has to survive a round trip, or the exit button silently falls
 // back to the shell default for every runner.
 func TestExitKeysSurviveSaving(t *testing.T) {
+	t.Parallel()
 	s := open(t)
 
 	if _, err := s.SaveHarness(Harness{
@@ -90,6 +92,7 @@ func TestExitKeysSurviveSaving(t *testing.T) {
 
 // The seeded runners each carry the sequence their tool actually wants.
 func TestSeededHarnessesKnowHowToExit(t *testing.T) {
+	t.Parallel()
 	s := open(t)
 	want := map[string]int{"claude": 2, "codex": 1, "ollama": 1}
 

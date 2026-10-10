@@ -9,6 +9,7 @@ import (
 )
 
 func TestAFrozenCardKeepsWhatIsSaidToItAndReplaysItInOrder(t *testing.T) {
+	t.Parallel()
 	s := openTestStore(t)
 	c := mustRegister(t, s, "old")
 	if _, err := s.Freeze(c.ID, "m1", time.Hour); err != nil {
@@ -40,6 +41,7 @@ func TestAFrozenCardKeepsWhatIsSaidToItAndReplaysItInOrder(t *testing.T) {
 }
 
 func TestAnAckDropsOneQueuedMessageAndARepeatIsHarmless(t *testing.T) {
+	t.Parallel()
 	s := openTestStore(t)
 	c := mustRegister(t, s, "old")
 	s.Freeze(c.ID, "m1", time.Hour)
@@ -56,6 +58,7 @@ func TestAnAckDropsOneQueuedMessageAndARepeatIsHarmless(t *testing.T) {
 }
 
 func TestFreezeIsIdempotentByMoveAndRefusesAnotherMove(t *testing.T) {
+	t.Parallel()
 	s := openTestStore(t)
 	c := mustRegister(t, s, "old")
 	if _, err := s.Freeze(c.ID, "m1", time.Hour); err != nil {
@@ -71,6 +74,7 @@ func TestFreezeIsIdempotentByMoveAndRefusesAnotherMove(t *testing.T) {
 
 // The lease and the cut-over are one decision: whichever commits first refuses the other.
 func TestAnExpiredLeaseUndoesTheFreezeAndRefusesMovedTo(t *testing.T) {
+	t.Parallel()
 	s := openTestStore(t)
 	c := mustRegister(t, s, "old")
 	s.Freeze(c.ID, "m1", time.Millisecond)
@@ -89,6 +93,7 @@ func TestAnExpiredLeaseUndoesTheFreezeAndRefusesMovedTo(t *testing.T) {
 }
 
 func TestMovedToRefusesTheSelfUndoAndTheReplay(t *testing.T) {
+	t.Parallel()
 	s := openTestStore(t)
 	c := mustRegister(t, s, "old")
 	s.Freeze(c.ID, "m1", time.Hour)
@@ -118,6 +123,7 @@ func TestMovedToRefusesTheSelfUndoAndTheReplay(t *testing.T) {
 }
 
 func TestSeenMoveDropsARepeat(t *testing.T) {
+	t.Parallel()
 	s := openTestStore(t)
 	if f, _ := s.SeenMove("id1", "t"); !f {
 		t.Fatal("first is new")
@@ -128,6 +134,7 @@ func TestSeenMoveDropsARepeat(t *testing.T) {
 }
 
 func TestAMovedCardKeepsItsHandle(t *testing.T) {
+	t.Parallel()
 	s := openTestStore(t)
 	c := mustRegister(t, s, "keeper")
 	s.Freeze(c.ID, "m1", time.Hour)

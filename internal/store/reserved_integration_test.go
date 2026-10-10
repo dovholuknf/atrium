@@ -8,6 +8,7 @@ import (
 )
 
 func TestTheAtriumHandleAndAliasAreReserved(t *testing.T) {
+	t.Parallel()
 	s := openTestStore(t)
 	if _, _, err := s.Register(Observed{WireName: "atrium", Runner: "claude"}); !errors.Is(err, ErrReservedName) {
 		t.Fatalf("a told atrium: %v", err)
@@ -30,6 +31,7 @@ func TestTheAtriumHandleAndAliasAreReserved(t *testing.T) {
 }
 
 func TestAnOwedItemSurvivesAndClosesOnce(t *testing.T) {
+	t.Parallel()
 	s := openTestStore(t)
 	if err := s.PutOwedItem(OwedItem{Worker: "w1", Host: "h1"}); err != nil {
 		t.Fatal(err)
@@ -53,6 +55,7 @@ func TestAnOwedItemSurvivesAndClosesOnce(t *testing.T) {
 }
 
 func TestTheReservedHandleCannotBeSpelledAround(t *testing.T) {
+	t.Parallel()
 	s := openTestStore(t)
 	for _, name := range []string{"atrium@x", "аtrium", "atrium​", "ATRIUM", " atrium", "ａｔｒｉｕｍ", "átrium", "sg4/atrium@x"} {
 		if _, _, err := s.Register(Observed{WireName: name, Runner: "claude"}); !errors.Is(err, ErrReservedName) {

@@ -31,6 +31,7 @@ func cwdAnswer(t *testing.T, srv *Server, path string) (exists, dir bool) {
 }
 
 func TestLaunchCwdSaysAnExistingDirectoryIsOne(t *testing.T) {
+	t.Parallel()
 	srv, _, work := fileServer(t)
 	if exists, dir := cwdAnswer(t, srv, work); !exists || !dir {
 		t.Fatalf("a directory that is there answered exists=%v dir=%v", exists, dir)
@@ -38,6 +39,7 @@ func TestLaunchCwdSaysAnExistingDirectoryIsOne(t *testing.T) {
 }
 
 func TestLaunchCwdSaysAMissingDirectoryIsNot(t *testing.T) {
+	t.Parallel()
 	srv, _, work := fileServer(t)
 	if exists, dir := cwdAnswer(t, srv, filepath.Join(work, "nowhere")); exists || dir {
 		t.Fatalf("a directory that is not there answered exists=%v dir=%v", exists, dir)
@@ -46,6 +48,7 @@ func TestLaunchCwdSaysAMissingDirectoryIsNot(t *testing.T) {
 
 // A file is there and is not a place to run.
 func TestLaunchCwdSaysAFileIsNotADirectory(t *testing.T) {
+	t.Parallel()
 	srv, _, work := fileServer(t)
 	file := filepath.Join(work, "a-file")
 	if err := os.WriteFile(file, []byte("x"), 0o600); err != nil {
@@ -58,6 +61,7 @@ func TestLaunchCwdSaysAFileIsNotADirectory(t *testing.T) {
 
 // Relative to the daemon's own directory means nothing to the caller.
 func TestLaunchCwdIgnoresARelativePath(t *testing.T) {
+	t.Parallel()
 	srv, _, _ := fileServer(t)
 	for _, p := range []string{"", ".", "..", "internal"} {
 		if exists, dir := cwdAnswer(t, srv, p); exists || dir {
@@ -70,6 +74,7 @@ func TestLaunchCwdIgnoresARelativePath(t *testing.T) {
 // to the named host with the room user's credentials. Every spelling a direct call
 // could use answers 400, and says neither yes nor no about the host.
 func TestLaunchCwdRefusesANetworkPath(t *testing.T) {
+	t.Parallel()
 	srv, _, _ := fileServer(t)
 	for _, p := range []string{`\\evil\share`, `//evil/share`, `\\?\UNC\evil\share`, `\\.\pipe\x`, `/\evil/share`, `\\?\C:\x`} {
 		rec := httptest.NewRecorder()

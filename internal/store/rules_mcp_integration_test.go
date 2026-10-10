@@ -34,6 +34,7 @@ func addMCP(t *testing.T, s *Store, tool, decision, scope string) *Rule {
 }
 
 func TestMCPExactRule(t *testing.T) {
+	t.Parallel()
 	s := open(t)
 	addMCP(t, s, mSearch, "approve", "")
 	if got := answer(t, s, mSearch, ""); got != "approve" {
@@ -45,6 +46,7 @@ func TestMCPExactRule(t *testing.T) {
 }
 
 func TestMCPServerGlob(t *testing.T) {
+	t.Parallel()
 	s := open(t)
 	addMCP(t, s, "mcp__mercurius__*", "approve", "")
 	for _, tool := range []string{mSearch, mOpen} {
@@ -60,6 +62,7 @@ func TestMCPServerGlob(t *testing.T) {
 }
 
 func TestMCPPrefixGlob(t *testing.T) {
+	t.Parallel()
 	s := open(t)
 	addMCP(t, s, "mcp__mercurius__discourse_discourse_get_*", "approve", "")
 	if got := answer(t, s, mGetU, ""); got != "approve" {
@@ -72,6 +75,7 @@ func TestMCPPrefixGlob(t *testing.T) {
 
 // The five rows of the table in section 5 of the design.
 func TestMCPPrecedence(t *testing.T) {
+	t.Parallel()
 	const (
 		server   = "mcp__mercurius__*"
 		create   = "mcp__mercurius__discourse_discourse_create_*"
@@ -107,6 +111,7 @@ func TestMCPPrecedence(t *testing.T) {
 }
 
 func TestEqualSpecificityBlockWinsWhicheverIsInsertedFirst(t *testing.T) {
+	t.Parallel()
 	for _, blockFirst := range []bool{false, true} {
 		s := open(t)
 		add := func(decision string) {
@@ -139,6 +144,7 @@ func TestEqualSpecificityBlockWinsWhicheverIsInsertedFirst(t *testing.T) {
 }
 
 func TestMCPGlobIsNotACandidateForOtherTools(t *testing.T) {
+	t.Parallel()
 	s := open(t)
 	// A rule for a tool that is not MCP and contains a star must stay literal:
 	// the glob path is for mcp__ names only.
@@ -156,6 +162,7 @@ func TestMCPGlobIsNotACandidateForOtherTools(t *testing.T) {
 }
 
 func TestAddMCPRuleValidation(t *testing.T) {
+	t.Parallel()
 	s := open(t)
 	for _, bad := range []string{"mcp__*", "mcp__m*__x", "mcp__", "*", "mcp__m__t(x)", "Bash", "mcp____t", "mcp__m__"} {
 		if _, err := s.AddMCPRule(bad, "approve", "", ""); err == nil {
@@ -172,6 +179,7 @@ func TestAddMCPRuleValidation(t *testing.T) {
 }
 
 func TestMCPRuleScope(t *testing.T) {
+	t.Parallel()
 	s := open(t)
 	addMCP(t, s, mSearch, "approve", "D:/git/one")
 	if got := answer(t, s, mSearch, "D:/git/one"); got != "approve" {
@@ -187,6 +195,7 @@ func TestMCPRuleScope(t *testing.T) {
 }
 
 func TestMCPRuleIsIdempotent(t *testing.T) {
+	t.Parallel()
 	s := open(t)
 	first := addMCP(t, s, "mcp__mercurius__*", "approve", "")
 	second := addMCP(t, s, "mcp__mercurius__*", "block", "")
@@ -205,6 +214,7 @@ func TestMCPRuleIsIdempotent(t *testing.T) {
 // What the old approve-forever path wrote: an exact MCP tool with a prefix cut
 // from the compacted JSON of one call.
 func TestOldMCPRuleWithAPrefixStillMatchesAndIsMarked(t *testing.T) {
+	t.Parallel()
 	s := open(t)
 	if _, err := s.AddRule(mSearch, `{"query":"ziti`, "approve", "", ""); err != nil {
 		t.Fatal(err)

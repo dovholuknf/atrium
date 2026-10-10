@@ -16,6 +16,7 @@ func item(source, id string) IntakeItem {
 }
 
 func TestOfferCreatesACardWithNoRunner(t *testing.T) {
+	t.Parallel()
 	s := open(t)
 
 	task, created, err := s.Offer(item("github", "openziti/ziti#4211"))
@@ -42,6 +43,7 @@ func TestOfferCreatesACardWithNoRunner(t *testing.T) {
 // A source posts everything it can see on every tick and lets atrium work out
 // what is new. Anything else means every source keeping its own memory.
 func TestOfferingTheSameItemTwiceIsOneCard(t *testing.T) {
+	t.Parallel()
 	s := open(t)
 
 	first, created, err := s.Offer(item("github", "4211"))
@@ -63,6 +65,7 @@ func TestOfferingTheSameItemTwiceIsOneCard(t *testing.T) {
 // Two scripts spelling the same system differently are one source. This is the
 // normalization gap round one raised as C2.
 func TestSourceCaseDoesNotSplitAnItem(t *testing.T) {
+	t.Parallel()
 	s := open(t)
 
 	first, _, err := s.Offer(item("GitHub", "4211"))
@@ -87,6 +90,7 @@ func TestSourceCaseDoesNotSplitAnItem(t *testing.T) {
 // The identifier alone is not the key. 4211 is an issue in one tracker and a
 // ticket in another.
 func TestTheSameNumberInTwoTrackersIsTwoCards(t *testing.T) {
+	t.Parallel()
 	s := open(t)
 
 	issue, _, err := s.Offer(item("github", "4211"))
@@ -108,6 +112,7 @@ func TestTheSameNumberInTwoTrackersIsTwoCards(t *testing.T) {
 // Half a key is refused rather than stored, because a source producing either
 // half would raise the same work again on every tick.
 func TestAnItemWithoutBothHalvesOfAKeyIsRefused(t *testing.T) {
+	t.Parallel()
 	s := open(t)
 
 	for _, tc := range []struct {
@@ -130,6 +135,7 @@ func TestAnItemWithoutBothHalvesOfAKeyIsRefused(t *testing.T) {
 // and the pid is zero and three separate pieces of code all check one of those.
 // This asserts the outcome rather than the argument.
 func TestAnOfferedCardIsNotReachableAsASession(t *testing.T) {
+	t.Parallel()
 	s := open(t)
 
 	offered, _, err := s.Offer(item("zendesk", "12345"))
@@ -174,6 +180,7 @@ func TestAnOfferedCardIsNotReachableAsASession(t *testing.T) {
 // A card raised, worked and swept must not come back the next time its source
 // runs. This is the failure mode that makes a poller unusable.
 func TestAnArchivedItemIsStillDeduplicated(t *testing.T) {
+	t.Parallel()
 	s := open(t)
 
 	first, _, err := s.Offer(item("ci", "run/991"))
@@ -202,6 +209,7 @@ func TestAnArchivedItemIsStillDeduplicated(t *testing.T) {
 // The inbox is what has not been started. A card that has been started is on
 // the board doing something and does not belong in a list of suggestions.
 func TestOfferedListsOnlyWhatHasNotStarted(t *testing.T) {
+	t.Parallel()
 	s := open(t)
 
 	waiting, _, err := s.Offer(item("github", "1"))
@@ -228,6 +236,7 @@ func TestOfferedListsOnlyWhatHasNotStarted(t *testing.T) {
 // Starting an offered card attaches a name to the card that already exists.
 // Registering instead would make a second one and strand the first.
 func TestClaimAttachesASessionToAnOfferedCard(t *testing.T) {
+	t.Parallel()
 	s := open(t)
 
 	offered, _, err := s.Offer(item("github", "4211"))
@@ -264,6 +273,7 @@ func TestClaimAttachesASessionToAnOfferedCard(t *testing.T) {
 // Renaming a live session is refused. Every card the agent endpoints resolve
 // is resolved by that name.
 func TestClaimingATakenCardIsRefused(t *testing.T) {
+	t.Parallel()
 	s := open(t)
 
 	live, _, err := s.Register(Observed{WireName: "already-here", Worktree: "d:/w", Runner: "claude"})
@@ -277,6 +287,7 @@ func TestClaimingATakenCardIsRefused(t *testing.T) {
 
 // A source's suggested directory stands until a runner reports a real one.
 func TestClaimKeepsTheSuggestedDirectoryWhenTheRunnerHasNone(t *testing.T) {
+	t.Parallel()
 	s := open(t)
 
 	it := item("github", "4211")
@@ -302,6 +313,7 @@ func TestClaimKeepsTheSuggestedDirectoryWhenTheRunnerHasNone(t *testing.T) {
 // first, because a source's wording is a guess by something that never read
 // the ticket.
 func TestThePromptSurvivesUntilItIsStartedAndCanBeEdited(t *testing.T) {
+	t.Parallel()
 	s := open(t)
 
 	it := item("zendesk", "12345")
@@ -328,6 +340,7 @@ func TestThePromptSurvivesUntilItIsStartedAndCanBeEdited(t *testing.T) {
 
 // The key cannot be forged by moving a separator across the join.
 func TestIntakeKeyCannotCollideAcrossTheJoin(t *testing.T) {
+	t.Parallel()
 	if IntakeKey("a", "b:c") == IntakeKey("a:b", "c") {
 		t.Fatal("two different items produce the same key")
 	}

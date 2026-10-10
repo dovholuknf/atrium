@@ -9,6 +9,7 @@ import (
 )
 
 func TestGitSCMRootSavesReadsBackAndRefusesARelativePath(t *testing.T) {
+	t.Parallel()
 	srv, _, _ := fileServer(t)
 	if out := settingsGet(t, srv); out["git_scm_root"] != "" {
 		t.Fatalf("unset reads %q", out["git_scm_root"])

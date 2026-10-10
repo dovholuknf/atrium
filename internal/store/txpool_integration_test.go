@@ -33,6 +33,7 @@ import (
 // ATRIUM_TXPOOL_DIR points it at another copy of this package, which is how
 // it was checked against the tree that deadlocked.
 func TestNothingHoldingTheConnectionReachesThePool(t *testing.T) {
+	t.Parallel()
 	dir := "."
 	if d := os.Getenv("ATRIUM_TXPOOL_DIR"); d != "" {
 		dir = d

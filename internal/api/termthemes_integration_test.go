@@ -54,6 +54,7 @@ const campbell = `{
 }`
 
 func TestWindowsTerminalPurpleLandsInMagenta(t *testing.T) {
+	t.Parallel()
 	srv, _, _ := fileServer(t)
 
 	rec := themeReq(t, srv, http.MethodPost, "/v1/themes/import", campbell)
@@ -86,6 +87,7 @@ func TestWindowsTerminalPurpleLandsInMagenta(t *testing.T) {
 // Refusing the file the format's own editor produces would leave the import
 // working only on a file somebody had cleaned up by hand first.
 func TestAWholeSettingsFileWithCommentsIsRead(t *testing.T) {
+	t.Parallel()
 	srv, _, _ := fileServer(t)
 
 	body := `{
@@ -115,6 +117,7 @@ func TestAWholeSettingsFileWithCommentsIsRead(t *testing.T) {
 // The array on its own, which is what somebody pastes when they know where the
 // schemes are.
 func TestJustTheSchemesArrayIsRead(t *testing.T) {
+	t.Parallel()
 	srv, _, _ := fileServer(t)
 
 	rec := themeReq(t, srv, http.MethodPost, "/v1/themes/import", "["+campbell+"]")
@@ -127,6 +130,7 @@ func TestJustTheSchemesArrayIsRead(t *testing.T) {
 }
 
 func TestASchemeNameBecomesAThemeName(t *testing.T) {
+	t.Parallel()
 	for _, c := range []struct{ in, want string }{
 		{"Campbell", "campbell"},
 		{"One Half Dark", "one-half-dark"},
@@ -145,6 +149,7 @@ func TestASchemeNameBecomesAThemeName(t *testing.T) {
 // whole collection, and a colour atrium will not take in one of them is not a
 // reason to import none of them.
 func TestOneUnusableSchemeDoesNotStopTheRest(t *testing.T) {
+	t.Parallel()
 	srv, _, _ := fileServer(t)
 
 	broken := strings.Replace(campbell, `"name": "Campbell"`, `"name": "Broken"`, 1)
@@ -170,6 +175,7 @@ func TestOneUnusableSchemeDoesNotStopTheRest(t *testing.T) {
 // The dangerous direction never overwrites silently, which is the same rule the
 // configuration import follows.
 func TestImportingTwiceKeepsWhatIsThereUnlessTold(t *testing.T) {
+	t.Parallel()
 	srv, _, _ := fileServer(t)
 
 	themeReq(t, srv, http.MethodPost, "/v1/themes/import", campbell)
@@ -203,6 +209,7 @@ func TestImportingTwiceKeepsWhatIsThereUnlessTold(t *testing.T) {
 // The editor's refusals arrive as something the operator can act on, which
 // means a 400 naming the box rather than a 500.
 func TestEditingRefusesAColourThatIsNotOneAndSaysWhich(t *testing.T) {
+	t.Parallel()
 	srv, _, _ := fileServer(t)
 
 	rec := themeReq(t, srv, http.MethodPut, "/v1/themes/mine",
@@ -216,6 +223,7 @@ func TestEditingRefusesAColourThatIsNotOneAndSaysWhich(t *testing.T) {
 }
 
 func TestDeletingAThemeTakesItOffTheList(t *testing.T) {
+	t.Parallel()
 	srv, _, _ := fileServer(t)
 
 	themeReq(t, srv, http.MethodPost, "/v1/themes/import", campbell)
@@ -230,6 +238,7 @@ func TestDeletingAThemeTakesItOffTheList(t *testing.T) {
 // The editor draws its boxes from this list rather than from a second list in
 // the page, which is the same rule the skin picker follows.
 func TestTheSlotsGoOutWithTheThemes(t *testing.T) {
+	t.Parallel()
 	srv, _, _ := fileServer(t)
 
 	rec := themeReq(t, srv, http.MethodGet, "/v1/themes", "")
@@ -264,6 +273,7 @@ func TestTheSlotsGoOutWithTheThemes(t *testing.T) {
 }
 
 func TestSomethingThatIsNotASchemeIsRefusedWithSomewhereToGo(t *testing.T) {
+	t.Parallel()
 	srv, _, _ := fileServer(t)
 
 	rec := themeReq(t, srv, http.MethodPost, "/v1/themes/import", "not json at all")

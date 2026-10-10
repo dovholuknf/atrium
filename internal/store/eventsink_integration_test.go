@@ -11,6 +11,7 @@ import (
 // and there are no cold sinks. This is the whole promise that a fresh install
 // and every existing one behave exactly as before.
 func TestDefaultEventSinkIsDbAlone(t *testing.T) {
+	t.Parallel()
 	s := open(t)
 	if _, ok := s.hot.(*dbSink); !ok {
 		t.Fatalf("default hot sink is %T, want *dbSink", s.hot)
@@ -23,6 +24,7 @@ func TestDefaultEventSinkIsDbAlone(t *testing.T) {
 // AppendEvent and Events round-trip through the sink exactly as the table did:
 // newest limit, oldest first within the window.
 func TestEventsRoundTripThroughHotSink(t *testing.T) {
+	t.Parallel()
 	s := open(t)
 	task, _, err := s.Register(Observed{WireName: "sink-rt", Worktree: "d:/w", Runner: "claude"})
 	if err != nil {
@@ -54,6 +56,7 @@ func TestEventsRoundTripThroughHotSink(t *testing.T) {
 // The limit applies to the NEWEST end. On a card with more events than the
 // window, the window is the most recent ones, still oldest-first.
 func TestEventsLimitKeepsNewest(t *testing.T) {
+	t.Parallel()
 	s := open(t)
 	task, _, err := s.Register(Observed{WireName: "sink-window", Worktree: "d:/w", Runner: "claude"})
 	if err != nil {
@@ -81,6 +84,7 @@ func TestEventsLimitKeepsNewest(t *testing.T) {
 // A cold sink never fails the caller. AppendEvent must return nil even when a
 // cold sink's Append reports trouble, because a hook must never fail a session.
 func TestColdSinkFailureNeverFailsAppend(t *testing.T) {
+	t.Parallel()
 	s := open(t)
 	s.cold = append(s.cold, failCold{})
 	task, _, err := s.Register(Observed{WireName: "cold-fail", Worktree: "d:/w", Runner: "claude"})

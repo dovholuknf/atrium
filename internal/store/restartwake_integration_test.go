@@ -12,6 +12,7 @@ import (
 
 // The wake is about a restart, so it has to outlive the process that took it.
 func TestARestartWakeSurvivesReopeningTheStore(t *testing.T) {
+	t.Parallel()
 	path := filepath.ToSlash(filepath.Join(t.TempDir(), "atrium.db"))
 	s, err := Open(path)
 	if err != nil {
@@ -44,6 +45,7 @@ func TestARestartWakeSurvivesReopeningTheStore(t *testing.T) {
 
 // One per card, and the newer one wins.
 func TestANewerRestartWakeReplacesTheOlder(t *testing.T) {
+	t.Parallel()
 	s := openTestStore(t)
 	task, _, err := s.Register(Observed{WireName: "orchestrator", Worktree: "d:/git/atrium", Runner: "claude", PID: 1})
 	if err != nil {
@@ -78,6 +80,7 @@ func TestANewerRestartWakeReplacesTheOlder(t *testing.T) {
 // A wake for a card that does not exist is refused without halting the store,
 // and one with no text is refused before it is written.
 func TestARestartWakeIsRefusedForNoCardOrNoText(t *testing.T) {
+	t.Parallel()
 	s := openTestStore(t)
 	if _, _, err := s.SetRestartWake("no-such-card", "we up", ""); !errors.Is(err, sql.ErrNoRows) {
 		t.Fatalf("a missing card answered %v", err)

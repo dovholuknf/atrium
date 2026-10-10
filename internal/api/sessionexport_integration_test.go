@@ -10,6 +10,7 @@ import (
 // Exercise mixed transcript records: prompts, tool results, assistant text,
 // thinking, injected reminders, and inline sidechain conversations.
 func TestBoilDownKeepsOnlyTheConversation(t *testing.T) {
+	t.Parallel()
 	lines := []string{
 		`{"type":"user","message":{"content":"add the export\n<system-reminder>\nnot typed by anybody\n</system-reminder>\nsmall as you can"}}`,
 		`{"type":"assistant","message":{"content":[{"type":"thinking","thinking":"pondering"},{"type":"text","text":"on it"},{"type":"tool_use","name":"Bash","input":{}}]}}`,

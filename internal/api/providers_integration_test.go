@@ -60,6 +60,7 @@ func orName(n string) string {
 
 // The ordinary case, and the shape the whole feature is named for.
 func TestDiscoverAdoptsOrgRepo(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	mkCheckout(t, filepath.Join(root, "dovholuknf", "atrium"))
 	mkCheckout(t, filepath.Join(root, "openziti", "ziti"))
@@ -86,6 +87,7 @@ func TestDiscoverAdoptsOrgRepo(t *testing.T) {
 // A vendored or submodule checkout inside a repository is not a second row.
 // The walk does not descend into a checkout, so it is never even reached.
 func TestDiscoverStopsAtACheckout(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	repo := filepath.Join(root, "org", "outer")
 	mkCheckout(t, repo)
@@ -103,6 +105,7 @@ func TestDiscoverStopsAtACheckout(t *testing.T) {
 // A repository sitting directly under the root, with no org above it, is a real
 // arrangement and `root/org/repo` is a default rather than a law.
 func TestDiscoverAdoptsARepoWithNoOrg(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	mkCheckout(t, filepath.Join(root, "dotfiles"))
 
@@ -128,6 +131,7 @@ func TestDiscoverAdoptsARepoWithNoOrg(t *testing.T) {
 // Counted and reported, not adopted and not an error. Dropping them silently is
 // how somebody spends an afternoon working out why one repository is missing.
 func TestDiscoverSkipsAndCountsNonCheckouts(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	mkCheckout(t, filepath.Join(root, "org", "real"))
 	mkDir(t, filepath.Join(root, "org", "notarepo"))
@@ -154,6 +158,7 @@ func TestDiscoverSkipsAndCountsNonCheckouts(t *testing.T) {
 // Running it twice adopts nothing the second time, which is what makes the
 // button safe to press.
 func TestDiscoverIsIdempotent(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	mkCheckout(t, filepath.Join(root, "org", "repo"))
 
@@ -175,6 +180,7 @@ func TestDiscoverIsIdempotent(t *testing.T) {
 // THE ONE THAT MATTERS MOST. A root on a drive that is not plugged in must
 // leave every row alone, or one run erases everything the operator typed.
 func TestDiscoverDoesNotDeleteRowsWhenTheRootIsGone(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	mkCheckout(t, filepath.Join(root, "org", "repo"))
 
@@ -207,6 +213,7 @@ func TestDiscoverDoesNotDeleteRowsWhenTheRootIsGone(t *testing.T) {
 // A glob keeps a subtree out, so a mirror of three hundred repositories cannot
 // burn the adoption cap.
 func TestDiscoverHonoursExclude(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	mkCheckout(t, filepath.Join(root, "keep", "repo"))
 	mkCheckout(t, filepath.Join(root, "archive", "old"))
@@ -226,6 +233,7 @@ func TestDiscoverHonoursExclude(t *testing.T) {
 // Past the cap the walk stops and SAYS it stopped, rather than reporting a
 // partial answer that looks complete.
 func TestDiscoverBoundsRepos(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	for i := 0; i < 12; i++ {
 		mkCheckout(t, filepath.Join(root, "org", "repo"+string(rune('a'+i))))
@@ -248,6 +256,7 @@ func TestDiscoverBoundsRepos(t *testing.T) {
 // A root that is itself a checkout is a repository, not a root. Adopting it
 // would make both org and repo meaningless.
 func TestDiscoverRefusesARootThatIsACheckout(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	mkCheckout(t, root)
 
@@ -266,6 +275,7 @@ func TestDiscoverRefusesARootThatIsACheckout(t *testing.T) {
 // One directory in the worktree root blocks the toggle, which is the whole
 // requirement.
 func TestWorktreeToggleOffRefusesWhenNotEmpty(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	mkDir(t, filepath.Join(root, "something"))
 
@@ -282,6 +292,7 @@ func TestWorktreeToggleOffRefusesWhenNotEmpty(t *testing.T) {
 // and NOTHING ELSE IS. A dotfile rule would be broader and would let a `.git`
 // under the worktree root pass, which is the half that would silently rot.
 func TestWorktreeToggleOffIgnoresOnlyTheThreeNames(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	for _, name := range []string{".DS_Store", "Thumbs.db", "desktop.ini"} {
 		if err := os.WriteFile(filepath.Join(root, name), []byte("x"), 0o644); err != nil {
@@ -311,6 +322,7 @@ func TestWorktreeToggleOffIgnoresOnlyTheThreeNames(t *testing.T) {
 
 // A directory that is not there holds nothing.
 func TestWorktreeToggleOffAllowsAMissingDirectory(t *testing.T) {
+	t.Parallel()
 	gone := filepath.Join(t.TempDir(), "never-made")
 	blockers, err := worktreeRootBlockers(filepath.ToSlash(gone))
 	if err != nil {
@@ -325,6 +337,7 @@ func TestWorktreeToggleOffAllowsAMissingDirectory(t *testing.T) {
 // where the directories are most likely to be there and least likely to be
 // noticed.
 func TestWorktreeToggleOffRefusesAnUnreadableDirectory(t *testing.T) {
+	t.Parallel()
 	if runtime.GOOS == "windows" {
 		t.Skip("a directory cannot be made unreadable to its owner here")
 	}
@@ -343,6 +356,7 @@ func TestWorktreeToggleOffRefusesAnUnreadableDirectory(t *testing.T) {
 
 // The refusal names every entry, because "not empty" makes somebody hunt.
 func TestWorktreeToggleOffNamesWhatIsInTheWay(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	mkCheckout(t, filepath.Join(root, "acheckout"))
 	if err := os.WriteFile(filepath.Join(root, "notes.txt"), []byte("x"), 0o644); err != nil {
@@ -366,6 +380,7 @@ func TestWorktreeToggleOffNamesWhatIsInTheWay(t *testing.T) {
 // Past twenty it is a count, because an error listing four hundred directories
 // is not a message.
 func TestWorktreeToggleOffBoundsTheList(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	for i := 0; i < 50; i++ {
 		mkDir(t, filepath.Join(root, "d"+string(rune('a'+i%26))+string(rune('a'+i/26))))
@@ -395,6 +410,7 @@ func TestWorktreeToggleOffBoundsTheList(t *testing.T) {
 // Two providers that describe the same directories mean one directory adopted
 // twice, and a refusal that reads a directory somebody else still owns.
 func TestOverlappingRootsAreRefused(t *testing.T) {
+	t.Parallel()
 	base := t.TempDir()
 	outer := filepath.Join(base, "git")
 	inner := filepath.Join(outer, "github")
@@ -422,6 +438,7 @@ func TestOverlappingRootsAreRefused(t *testing.T) {
 // A worktree root inside another provider's root is the same failure by a
 // different door, and it is the one somebody actually arranges by accident.
 func TestAWorktreeRootInsideAnotherRootIsRefused(t *testing.T) {
+	t.Parallel()
 	base := t.TempDir()
 	git := filepath.Join(base, "git")
 	mkDir(t, git)

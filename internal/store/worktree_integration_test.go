@@ -5,6 +5,7 @@ package store
 import "testing"
 
 func TestObserveAndRegisterNeverMoveASetWorktree(t *testing.T) {
+	t.Parallel()
 	s := open(t)
 	task, _, err := s.Register(Observed{WireName: "w", Worktree: "/launch", Runner: "claude"})
 	if err != nil {
@@ -23,6 +24,7 @@ func TestObserveAndRegisterNeverMoveASetWorktree(t *testing.T) {
 }
 
 func TestAnEmptyWorktreeIsFilledOnceThenNeverMoves(t *testing.T) {
+	t.Parallel()
 	s := open(t)
 	task, _, err := s.Register(Observed{WireName: "w", Runner: "claude"})
 	if err != nil {
@@ -41,6 +43,7 @@ func TestAnEmptyWorktreeIsFilledOnceThenNeverMoves(t *testing.T) {
 }
 
 func TestADeliberateMoveStillMovesTheWorktree(t *testing.T) {
+	t.Parallel()
 	s := open(t)
 	task, _, err := s.Register(Observed{WireName: "w", Worktree: "/a", Runner: "claude"})
 	if err != nil {

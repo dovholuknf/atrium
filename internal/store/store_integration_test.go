@@ -20,6 +20,7 @@ func open(t *testing.T) *Store {
 }
 
 func TestRegisterIsIdempotentByWireName(t *testing.T) {
+	t.Parallel()
 	s := open(t)
 	obs := Observed{WireName: "atrium-101", Worktree: "d:/git/atrium", Runner: "claude", PID: 101}
 
@@ -42,6 +43,7 @@ func TestRegisterIsIdempotentByWireName(t *testing.T) {
 // A new pid for the same wire name must land on the same card. This is the
 // whole reason pid is not the identity.
 func TestRegisterSurvivesPIDChange(t *testing.T) {
+	t.Parallel()
 	s := open(t)
 	first, _, err := s.Register(Observed{WireName: "agent-a", Worktree: "d:/w", Runner: "claude", PID: 1})
 	if err != nil {
@@ -60,6 +62,7 @@ func TestRegisterSurvivesPIDChange(t *testing.T) {
 }
 
 func TestOverrideSurvivesReconnect(t *testing.T) {
+	t.Parallel()
 	s := open(t)
 	obs := Observed{WireName: "agent-b", Worktree: "d:/w", Runner: "claude", PID: 7}
 	task, _, err := s.Register(obs)
@@ -91,6 +94,7 @@ func TestOverrideSurvivesReconnect(t *testing.T) {
 }
 
 func TestWaitingIsOldestFirst(t *testing.T) {
+	t.Parallel()
 	s := open(t)
 	var ids []string
 	for _, name := range []string{"one", "two", "three"} {
@@ -126,6 +130,7 @@ func TestWaitingIsOldestFirst(t *testing.T) {
 // Re-entering a waiting state must not reset the clock, or a permission round
 // trip would push a long-waiting card to the back of the stack.
 func TestWaitingSinceSurvivesPermissionRoundTrip(t *testing.T) {
+	t.Parallel()
 	s := open(t)
 	task, _, err := s.Register(Observed{WireName: "agent-c", Worktree: "d:/w", Runner: "claude"})
 	if err != nil {
@@ -161,6 +166,7 @@ func TestWaitingSinceSurvivesPermissionRoundTrip(t *testing.T) {
 }
 
 func TestPermissionDedup(t *testing.T) {
+	t.Parallel()
 	s := open(t)
 	task, _, err := s.Register(Observed{WireName: "agent-d", Worktree: "d:/w", Runner: "claude"})
 	if err != nil {
@@ -194,6 +200,7 @@ func TestPermissionDedup(t *testing.T) {
 }
 
 func TestRankPlacesNewCardsOnTop(t *testing.T) {
+	t.Parallel()
 	s := open(t)
 	var ranks []float64
 	for _, name := range []string{"first", "second", "third"} {
@@ -230,6 +237,7 @@ func TestRankPlacesNewCardsOnTop(t *testing.T) {
 }
 
 func TestEventsRecordHistory(t *testing.T) {
+	t.Parallel()
 	s := open(t)
 	task, _, err := s.Register(Observed{WireName: "agent-e", Worktree: "d:/w", Runner: "claude"})
 	if err != nil {
@@ -257,6 +265,7 @@ func TestEventsRecordHistory(t *testing.T) {
 // or the newest N upside down. The endpoint answers "what just happened", and
 // for two years it answered with the day the card was created.
 func TestEventsReturnsTheNewestWindowInTimeOrder(t *testing.T) {
+	t.Parallel()
 	s := open(t)
 	task, _, err := s.Register(Observed{WireName: "agent-window", Worktree: "d:/w", Runner: "claude"})
 	if err != nil {
@@ -312,6 +321,7 @@ func TestEventsReturnsTheNewestWindowInTimeOrder(t *testing.T) {
 // clean stop used to end in `HALTED: sql: database is closed` because the
 // shutdown path read a setting after releasing the store.
 func TestCallAfterCloseDoesNotHalt(t *testing.T) {
+	t.Parallel()
 	s := open(t)
 	halts := 0
 	s.OnHalt = func(error) { halts++ }
@@ -327,6 +337,7 @@ func TestCallAfterCloseDoesNotHalt(t *testing.T) {
 }
 
 func TestHaltRefusesFurtherWork(t *testing.T) {
+	t.Parallel()
 	s := open(t)
 	var gotCause error
 	s.OnHalt = func(cause error) { gotCause = cause }

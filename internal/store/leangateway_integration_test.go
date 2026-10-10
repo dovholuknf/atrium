@@ -5,6 +5,7 @@ package store
 import "testing"
 
 func TestSettingLeanWorkerGatewayAndMercuriusFor(t *testing.T) {
+	t.Parallel()
 	st := openTestStore(t)
 	if st.LeanWorkerGateway() != "" {
 		t.Fatal("default is not empty")

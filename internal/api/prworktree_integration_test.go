@@ -6,11 +6,13 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/dovholuknf/atrium/internal/forge"
@@ -54,18 +56,50 @@ func git(t *testing.T, dir string, args ...string) string {
 	return strings.TrimSpace(string(out))
 }
 
-// upstream is a local repo with one commit and refs/pull/7/head one commit further on.
+var (
+	upstreamOnce sync.Once
+	upstreamErr  error
+)
+
+// upstream is a local repo with one commit and refs/pull/7/head one commit further on. It is built once for the
+// package, which costs eight git runs, and each test gets its own copy because some of them add branches to it.
 func upstream(t *testing.T) string {
 	t.Helper()
+	upstreamOnce.Do(func() {
+		tmpl, err := os.MkdirTemp("", "atrium-api-upstream-")
+		if err != nil {
+			upstreamErr = err
+			return
+		}
+		upstreamTemplateDir = tmpl
+		up := filepath.Join(tmpl, "up")
+		if upstreamErr = os.Mkdir(up, 0o755); upstreamErr != nil {
+			return
+		}
+		for _, args := range [][]string{
+			{"init", "-q", "-b", "main"},
+			{"commit", "-q", "--allow-empty", "-m", "base"},
+			{"checkout", "-q", "-b", "tmp"},
+			{"commit", "-q", "--allow-empty", "-m", "pr"},
+			{"update-ref", "refs/pull/7/head", "HEAD"},
+			{"checkout", "-q", "main"},
+			{"branch", "-q", "-D", "tmp"},
+		} {
+			cmd := exec.Command("git", append([]string{"-c", "user.email=t@t", "-c", "user.name=t"}, args...)...)
+			cmd.Dir = up
+			if out, err := cmd.CombinedOutput(); err != nil {
+				upstreamErr = fmt.Errorf("git %v: %v\n%s", args, err, out)
+				return
+			}
+		}
+	})
+	if upstreamErr != nil {
+		t.Fatal(upstreamErr)
+	}
 	up := filepath.Join(t.TempDir(), "up")
-	mkDir(t, up)
-	git(t, up, "init", "-q", "-b", "main")
-	git(t, up, "commit", "-q", "--allow-empty", "-m", "base")
-	git(t, up, "checkout", "-q", "-b", "tmp")
-	git(t, up, "commit", "-q", "--allow-empty", "-m", "pr")
-	git(t, up, "update-ref", "refs/pull/7/head", "HEAD")
-	git(t, up, "checkout", "-q", "main")
-	git(t, up, "branch", "-q", "-D", "tmp")
+	if err := os.CopyFS(up, os.DirFS(filepath.Join(upstreamTemplateDir, "up"))); err != nil {
+		t.Fatal(err)
+	}
 	return up
 }
 
@@ -121,6 +155,7 @@ func (hn *prHarness) ask(t *testing.T) (int, map[string]any) {
 }
 
 func TestPRWorktreeSameRepoUsesTheRealBranch(t *testing.T) {
+	t.Parallel()
 	hn := newPRHarness(t, &fakeForge{pr: forge.PR{HeadRef: "feat/x"}})
 	hn.checkout(t, "o", "r")
 	code, out := hn.ask(t)
@@ -140,6 +175,7 @@ func TestPRWorktreeSameRepoUsesTheRealBranch(t *testing.T) {
 }
 
 func TestPRWorktreeForkUsesPRNumber(t *testing.T) {
+	t.Parallel()
 	hn := newPRHarness(t, &fakeForge{pr: forge.PR{HeadRef: "main", FromFork: true}})
 	hn.checkout(t, "o", "r")
 	code, out := hn.ask(t)
@@ -152,6 +188,7 @@ func TestPRWorktreeForkUsesPRNumber(t *testing.T) {
 }
 
 func TestPRWorktreeSecondCallIsTheAnswer(t *testing.T) {
+	t.Parallel()
 	hn := newPRHarness(t, &fakeForge{pr: forge.PR{HeadRef: "feat/x"}})
 	hn.checkout(t, "o", "r")
 	_, first := hn.ask(t)
@@ -162,6 +199,7 @@ func TestPRWorktreeSecondCallIsTheAnswer(t *testing.T) {
 }
 
 func TestPRWorktreeWithNoCheckoutGoesThroughTheClonePath(t *testing.T) {
+	t.Parallel()
 	hn := newPRHarness(t, &fakeForge{pr: forge.PR{HeadRef: "feat/x"}})
 	scm := filepath.Join(t.TempDir(), "scm", "o", "r")
 	hn.srv.SCMClone = func(_ context.Context, url string) (gitsync.SCMResult, error) {
@@ -193,6 +231,7 @@ func TestPRWorktreeWithNoCheckoutGoesThroughTheClonePath(t *testing.T) {
 }
 
 func TestPRWorktreeCloneFailureIsTheExactSentence(t *testing.T) {
+	t.Parallel()
 	hn := newPRHarness(t, &fakeForge{pr: forge.PR{HeadRef: "feat/x"}})
 	hn.srv.SCMClone = func(context.Context, string) (gitsync.SCMResult, error) {
 		return gitsync.SCMResult{}, errors.New(gitsync.CloneFailed)
@@ -207,6 +246,7 @@ func TestPRWorktreeCloneFailureIsTheExactSentence(t *testing.T) {
 }
 
 func TestPRWorktreeAccessErrorIsUnchangedAndNothingIsCloned(t *testing.T) {
+	t.Parallel()
 	ae := &forge.AccessError{Tool: "gh", Host: "github.com", NotInstalled: true}
 	hn := newPRHarness(t, &fakeForge{err: ae})
 	hn.srv.SCMClone = func(context.Context, string) (gitsync.SCMResult, error) {
@@ -229,6 +269,7 @@ func real(v any) string {
 }
 
 func TestPRWorktreeRaisesAndClearsTheForgeAlert(t *testing.T) {
+	t.Parallel()
 	ae := &forge.AccessError{Tool: "gh", Host: "github.com"}
 	hn := newPRHarness(t, &fakeForge{err: ae})
 	var raised error
@@ -250,6 +291,7 @@ func TestPRWorktreeRaisesAndClearsTheForgeAlert(t *testing.T) {
 }
 
 func TestCredentialHelperIsTheForgeCLIsOwn(t *testing.T) {
+	t.Parallel()
 	if got := credentialHelper(forge.GitHub, ""); got != "!gh auth git-credential" {
 		t.Errorf("%q", got)
 	}
@@ -273,6 +315,7 @@ func TestCredentialHelperIsTheForgeCLIsOwn(t *testing.T) {
 
 // A failed fetch still answers the one sentence, and the helper reaches the default fetch from the provider.
 func TestPRWorktreeFetchFailureSentence(t *testing.T) {
+	t.Parallel()
 	hn := newPRHarness(t, &fakeForge{pr: forge.PR{HeadRef: "feat"}})
 	hn.checkout(t, "o", "r")
 	hn.srv.PRFetch = func(context.Context, string, forge.FetchSpec, string) error {
@@ -287,6 +330,7 @@ func TestPRWorktreeFetchFailureSentence(t *testing.T) {
 // A HEAD IN THE HUB'S STORE is fetched over the room's loopback, http alone and with no credential helper, even when
 // the forge has one.
 func TestAHubHeadIsFetchedWithNoCredential(t *testing.T) {
+	t.Parallel()
 	spec := forge.FetchSpec{Remote: "http://127.0.0.1:9/tok/git/hub/github/o/r.git", Refspec: "refs/atrium/pr/7",
 		Hub: "github/o/r"}
 	args := strings.Join(fetchArgs(spec, "refs/atrium/pr/7", "!gh auth git-credential"), " ")
@@ -299,6 +343,7 @@ func TestAHubHeadIsFetchedWithNoCredential(t *testing.T) {
 
 // A ROOM WITH A HUB reads the head through the hub's store and never from the forge, and says why when it cannot.
 func TestPRWorktreeWithAHubReadsTheHeadFromTheHubsStore(t *testing.T) {
+	t.Parallel()
 	f := &fakeForge{pr: forge.PR{HeadRef: "feat"}}
 	hn := newPRHarness(t, f)
 	hn.checkout(t, "o", "r")
@@ -320,6 +365,7 @@ func TestPRWorktreeWithAHubReadsTheHeadFromTheHubsStore(t *testing.T) {
 
 // THE HUB PLACES BY HOST, so a provider with another name on this room still takes the PR.
 func TestPRWorktreeFindsTheProviderByHost(t *testing.T) {
+	t.Parallel()
 	hn := newPRHarness(t, &fakeForge{pr: forge.PR{HeadRef: "feat"}})
 	hn.checkout(t, "o", "r")
 	rec := post(t, hn.h, "/v1/providers/gh/pr-worktree",

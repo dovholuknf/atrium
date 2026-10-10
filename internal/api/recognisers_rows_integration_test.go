@@ -65,6 +65,7 @@ func recogniseOver(t *testing.T, s *Server, st *store.Store, url string) (int, s
 }
 
 func TestTheShippedGitHubRowsResolvePullRequestsAndIssues(t *testing.T) {
+	t.Parallel()
 	s, st := recogniserServer(t)
 	if n := loadShippedRows(t, s, "github.json"); n != 7 {
 		t.Fatalf("github.json holds %d rows, wanted 7", n)
@@ -105,6 +106,7 @@ func TestTheShippedGitHubRowsResolvePullRequestsAndIssues(t *testing.T) {
 }
 
 func TestTheShippedBitbucketRowResolvesAPullRequest(t *testing.T) {
+	t.Parallel()
 	s, st := recogniserServer(t)
 	if n := loadShippedRows(t, s, "bitbucket.json"); n != 4 {
 		t.Fatalf("bitbucket.json holds %d rows, wanted 4", n)
@@ -128,6 +130,7 @@ func TestTheShippedBitbucketRowResolvesAPullRequest(t *testing.T) {
 }
 
 func TestTheShippedSupportRowsDefaultLikeGwt(t *testing.T) {
+	t.Parallel()
 	s, st := recogniserServer(t)
 	if n := loadShippedRows(t, s, "support.json"); n != 3 {
 		t.Fatalf("support.json holds %d rows, wanted 3", n)
@@ -163,6 +166,7 @@ func TestTheShippedSupportRowsDefaultLikeGwt(t *testing.T) {
 // marker is a different thing, and letters glued to the number are not a number.
 // None may be answered by the pull request rows.
 func TestTheShippedRowsDoNotAnswerNearMisses(t *testing.T) {
+	t.Parallel()
 	s, st := recogniserServer(t)
 	loadShippedRows(t, s, "github.json")
 	loadShippedRows(t, s, "bitbucket.json")

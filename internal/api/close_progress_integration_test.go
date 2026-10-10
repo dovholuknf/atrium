@@ -30,6 +30,7 @@ func closeEvents(ch chan message) []map[string]any {
 }
 
 func TestCloseSaysEachStepInItsOwnOrderAndTicksThemOff(t *testing.T) {
+	t.Parallel()
 	oh, card, wt, _ := openForClose(t)
 	ch := oh.srv.bus.subscribe()
 	defer oh.srv.bus.unsubscribe(ch)
@@ -80,6 +81,7 @@ func TestCloseSaysEachStepInItsOwnOrderAndTicksThemOff(t *testing.T) {
 }
 
 func TestClosePreviewSizesAWorktreeWithItsIgnoredTreesAndAsksWithTheSize(t *testing.T) {
+	t.Parallel()
 	oh, card, wt, _ := openForClose(t)
 	dir := filepath.Join(filepath.FromSlash(wt), "node_modules", "big")
 	if err := os.MkdirAll(dir, 0o755); err != nil {

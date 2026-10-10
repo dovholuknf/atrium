@@ -32,6 +32,7 @@ func decided(t *testing.T, s *Store, taskID, tool, cmd, decision, by string) {
 // four hundred times would otherwise bury the single destructive call that also
 // went through, so identical commands fold into one line with a count.
 func TestReviewFoldsRepeatedCommands(t *testing.T) {
+	t.Parallel()
 	s := open(t)
 	task := reviewTask(t, s)
 
@@ -72,6 +73,7 @@ func TestReviewFoldsRepeatedCommands(t *testing.T) {
 // purpose, and counting every time it fires would bury the requests that were
 // never considered at all.
 func TestReviewCountsOnlyAutoAsUnattended(t *testing.T) {
+	t.Parallel()
 	s := open(t)
 	task := reviewTask(t, s)
 
@@ -91,6 +93,7 @@ func TestReviewCountsOnlyAutoAsUnattended(t *testing.T) {
 // A block under auto mode means the session hit a wall and worked around it,
 // which is exactly what a review should surface.
 func TestReviewCountsBlocks(t *testing.T) {
+	t.Parallel()
 	s := open(t)
 	task := reviewTask(t, s)
 
@@ -109,6 +112,7 @@ func TestReviewCountsBlocks(t *testing.T) {
 // The tool with the most decisions nobody saw is what a person should read
 // first. A tool whose every call matched a rule is the least interesting.
 func TestReviewPutsUnattendedToolsFirst(t *testing.T) {
+	t.Parallel()
 	s := open(t)
 	task := reviewTask(t, s)
 
@@ -130,6 +134,7 @@ func TestReviewPutsUnattendedToolsFirst(t *testing.T) {
 // Undecided requests are not part of a review. Something still waiting has not
 // happened yet.
 func TestReviewIgnoresPendingRequests(t *testing.T) {
+	t.Parallel()
 	s := open(t)
 	task := reviewTask(t, s)
 
@@ -148,6 +153,7 @@ func TestReviewIgnoresPendingRequests(t *testing.T) {
 
 // A task nothing ever asked about has to come back empty rather than error.
 func TestReviewOfAnEmptyTask(t *testing.T) {
+	t.Parallel()
 	s := open(t)
 	task := reviewTask(t, s)
 

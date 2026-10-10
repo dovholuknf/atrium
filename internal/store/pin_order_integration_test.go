@@ -43,6 +43,7 @@ func order(t *testing.T, s *Store, ids ...string) []int {
 // on looks exactly as it did before the column existed: the pinned set sorts
 // among itself by whatever the strip's own sort says.
 func TestAPinnedCardStartsWithNoOrderOfItsOwn(t *testing.T) {
+	t.Parallel()
 	s := open(t)
 	a := pinned(t, s, "first")
 	b := pinned(t, s, "second")
@@ -52,6 +53,7 @@ func TestAPinnedCardStartsWithNoOrderOfItsOwn(t *testing.T) {
 }
 
 func TestTheOrderWrittenIsTheOrderReadBack(t *testing.T) {
+	t.Parallel()
 	s := open(t)
 	a := pinned(t, s, "alpha")
 	b := pinned(t, s, "bravo")
@@ -83,6 +85,7 @@ func TestTheOrderWrittenIsTheOrderReadBack(t *testing.T) {
 // it would mean a drag that silently did nothing. The cards that ARE there
 // still get the positions they were given.
 func TestAnUnknownIDDoesNotSinkTheReorder(t *testing.T) {
+	t.Parallel()
 	s := open(t)
 	a := pinned(t, s, "here")
 	b := pinned(t, s, "also-here")
@@ -102,6 +105,7 @@ func TestAnUnknownIDDoesNotSinkTheReorder(t *testing.T) {
 // writes rank, which every view sorts by, so writing it to a card that is no
 // longer in the strip would move that card in its group.
 func TestAnUnpinnedCardKeepsItsRankWhenTheOrderLands(t *testing.T) {
+	t.Parallel()
 	s := open(t)
 	a := pinned(t, s, "still-pinned")
 	b := pinned(t, s, "unpinned-meanwhile")
@@ -132,6 +136,7 @@ func TestAnUnpinnedCardKeepsItsRankWhenTheOrderLands(t *testing.T) {
 // where the card sat. Somebody who unpins by accident and pins straight back
 // gets the row where it was rather than at the end of the bucket.
 func TestUnpinningKeepsThePlace(t *testing.T) {
+	t.Parallel()
 	s := open(t)
 	a := pinned(t, s, "one")
 	b := pinned(t, s, "two")
@@ -161,6 +166,7 @@ func TestUnpinningKeepsThePlace(t *testing.T) {
 // Skipped unless ATRIUM_LIVE_COPY names a COPY, the same rule as
 // `livecopy_check_test.go`. Never the real database.
 func TestPinOrderLandsOnALiveDatabase(t *testing.T) {
+	t.Parallel()
 	path := os.Getenv("ATRIUM_LIVE_COPY")
 	if path == "" {
 		t.Skip("set ATRIUM_LIVE_COPY to a COPY of a real atrium.db")

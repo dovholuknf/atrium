@@ -10,6 +10,7 @@ import (
 // Counted and cache_read per item equal the linked cards' rows, a card shared by
 // two items is split evenly, and an accepted item with no card is unlinked.
 func TestAcceptedItemUsage(t *testing.T) {
+	t.Parallel()
 	s := openTestStore(t)
 	at := time.Now().UTC().Add(-time.Hour)
 	item := func(id, state, continues string, when time.Time) {

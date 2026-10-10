@@ -19,6 +19,7 @@ func carries(args []string, want string) bool {
 
 // The seeded row, which is what a machine setting atrium up today gets.
 func TestTheClaudeRowStartsWithNoMCPServers(t *testing.T) {
+	t.Parallel()
 	s := openTestStore(t)
 
 	h, err := s.Harness("claude")
@@ -42,6 +43,7 @@ func TestTheClaudeRowStartsWithNoMCPServers(t *testing.T) {
 // Do not name an MCP config file: a missing file would fail startup in
 // worktrees that have no .mcp.json.
 func TestNoMCPConfigFileIsNamed(t *testing.T) {
+	t.Parallel()
 	s := openTestStore(t)
 
 	h, err := s.Harness("claude")
@@ -64,6 +66,7 @@ func TestNoMCPConfigFileIsNamed(t *testing.T) {
 // This used to name the shell row, which no longer exists: a shell is the
 // machine's, not a runner.
 func TestOnlyClaudeIsGivenClaudesFlag(t *testing.T) {
+	t.Parallel()
 	s := openTestStore(t)
 
 	rows, err := s.Harnesses()
@@ -85,6 +88,7 @@ func TestOnlyClaudeIsGivenClaudesFlag(t *testing.T) {
 // Verify the migration updates existing defaults, since DefaultHarnesses
 // only seeds new databases.
 func TestAnExistingClaudeRowIsBackfilled(t *testing.T) {
+	t.Parallel()
 	path := filepath.Join(t.TempDir(), "old.db")
 
 	s, err := Open(path)
@@ -127,6 +131,7 @@ func TestAnExistingClaudeRowIsBackfilled(t *testing.T) {
 // An operator who has written their own command line keeps it. The migration
 // is a fix for a default nobody chose, not permission to rewrite an edit.
 func TestAnEditedClaudeRowIsLeftAlone(t *testing.T) {
+	t.Parallel()
 	path := filepath.Join(t.TempDir(), "edited.db")
 
 	s, err := Open(path)

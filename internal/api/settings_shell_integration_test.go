@@ -18,6 +18,7 @@ import (
 // Nothing rejected it either. The guard on this handler is a rule about one
 // specific pair of fields, not a check that every key is one the handler knows.
 func TestTheShellCommandCanBeSaved(t *testing.T) {
+	t.Parallel()
 	srv, _, _ := fileServer(t)
 
 	if rec := settingsPost(t, srv, `{"shell_command":"pwsh -NoLogo"}`); rec.Code != http.StatusOK {
@@ -35,6 +36,7 @@ func TestTheShellCommandCanBeSaved(t *testing.T) {
 // way left would have been to name a command that does not exist. `off` is the
 // same word the worktree command already takes for the same idea.
 func TestShellsCanBeSwitchedOffAndBackOn(t *testing.T) {
+	t.Parallel()
 	srv, _, _ := fileServer(t)
 
 	if got := settingsGet(t, srv)["shell_command_ok"]; got != true {

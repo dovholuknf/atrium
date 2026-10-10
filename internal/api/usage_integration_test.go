@@ -14,6 +14,7 @@ import (
 
 // The room usage read answers buckets, holds the range, and refuses nonsense.
 func TestUsageRoomEndpointShapeAndBounds(t *testing.T) {
+	t.Parallel()
 	s, st, dir := fileServer(t)
 	task := cardIn(t, st, dir)
 	end := time.Now().UTC().Add(-30 * time.Second)

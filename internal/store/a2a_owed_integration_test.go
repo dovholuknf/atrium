@@ -11,6 +11,7 @@ import (
 // pool. The pool holds one connection and the transaction has it, so the room
 // froze at startup when a ledger notice was queued inside the exit transaction.
 func TestPromptInsideATransactionDoesNotDeadlock(t *testing.T) {
+	t.Parallel()
 	s := openTestStore(t)
 	if err := s.SetTenant("sg4"); err != nil {
 		t.Fatal(err)
@@ -46,6 +47,7 @@ func TestPromptInsideATransactionDoesNotDeadlock(t *testing.T) {
 
 // Only the launcher's prompt makes a card owe it a report (item 41).
 func TestOnlyTheLaunchersPromptOwesAReport(t *testing.T) {
+	t.Parallel()
 	s := openTestStore(t)
 	launcher, _, _ := s.Register(Observed{WireName: "boss", Worktree: "/tmp/boss"})
 	card, _, _ := s.Register(Observed{WireName: "kid", Worktree: "/tmp/kid"})

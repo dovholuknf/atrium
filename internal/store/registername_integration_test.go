@@ -30,6 +30,7 @@ func mustNotBeHalted(t *testing.T, s *Store) {
 // r-040: a directory-derived name that only a done card holds, arriving with the
 // pid and worktree of a DIFFERENT live card, must not rename that card onto it.
 func TestRegisterDirNameNeverRenamesALiveCardOntoADoneOne(t *testing.T) {
+	t.Parallel()
 	s, done, live := nameCollisionSetup(t)
 	got, created, err := s.Register(Observed{WireName: "x-name", NameSource: NameFromDir,
 		Worktree: "/tmp/w", Runner: "claude", PID: 4242})
@@ -48,6 +49,7 @@ func TestRegisterDirNameNeverRenamesALiveCardOntoADoneOne(t *testing.T) {
 
 // A told name still matches the done card, as before.
 func TestRegisterToldNameStillMatchesTheDoneCard(t *testing.T) {
+	t.Parallel()
 	s, done, _ := nameCollisionSetup(t)
 	got, created, err := s.Register(Observed{WireName: "x-name", Worktree: "/tmp/w", PID: 4242})
 	if err != nil || created || got.ID != done.ID {
@@ -58,6 +60,7 @@ func TestRegisterToldNameStillMatchesTheDoneCard(t *testing.T) {
 
 // The guard in refreshObserved: a rename onto a held name keeps the old name.
 func TestRefreshObservedKeepsNameWhenAnotherRowHoldsIt(t *testing.T) {
+	t.Parallel()
 	s, _, live := nameCollisionSetup(t)
 	err := s.guard(func() error {
 		return s.refreshObserved(live, Observed{WireName: "x-name", Worktree: "/tmp/w", PID: 4243})

@@ -34,6 +34,7 @@ func policyRead(t *testing.T, srv *Server) store.WorkerPolicy {
 
 // Both worker settings are off on a fresh room, saved and read back, and a bad one is refused.
 func TestTheWorkerSettingsAreOffThenSavedAndChecked(t *testing.T) {
+	t.Parallel()
 	srv, st, _ := fileServer(t)
 	if p := policyRead(t, srv); p != (store.WorkerPolicy{}) {
 		t.Fatalf("a fresh room has %+v, want both off", p)

@@ -36,6 +36,7 @@ func putRecogniser(t *testing.T, s *Server, id, body string) *httptest.ResponseR
 // the position in the expression. Reported as a 500 it would read as "atrium is
 // broken" and the position would be buried.
 func TestSavingABadPatternIsA400ThatSaysWhy(t *testing.T) {
+	t.Parallel()
 	s, _ := recogniserServer(t)
 	w := putRecogniser(t, s, "bad", `{"pattern":"(?P<org>[^/]+","enabled":true}`)
 	if w.Code != http.StatusBadRequest {
@@ -54,6 +55,7 @@ func TestSavingABadPatternIsA400ThatSaysWhy(t *testing.T) {
 // knows what that is yet" and points at where rows are written, which it can
 // only do if it can tell this apart from a broken request.
 func TestAnUnrecognisedURLIsA404(t *testing.T) {
+	t.Parallel()
 	s, _ := recogniserServer(t)
 	s.Recognise = func(url string) (*store.Resolved, error) { return nil, store.ErrNoRecogniser }
 
@@ -69,6 +71,7 @@ func TestAnUnrecognisedURLIsA404(t *testing.T) {
 // and it is the reason a browser can be pointed at this endpoint: the worst a
 // url can do here is fill some text boxes in.
 func TestRecognisingNeverLaunches(t *testing.T) {
+	t.Parallel()
 	s, st := recogniserServer(t)
 	launched := 0
 	s.Launch = func(body []byte) (*store.Task, error) {
@@ -108,6 +111,7 @@ func TestRecognisingNeverLaunches(t *testing.T) {
 
 // Deleting the thing that recognised the link does not make the work not work.
 func TestDeletingARecogniserLeavesTheCardsItFilled(t *testing.T) {
+	t.Parallel()
 	s, st := recogniserServer(t)
 	if _, err := st.SaveRecogniser(store.Recogniser{
 		ID: "pr", Enabled: true, Pattern: `^https://x/(?P<repo>\w+)$`,
@@ -136,6 +140,7 @@ func TestDeletingARecogniserLeavesTheCardsItFilled(t *testing.T) {
 // A daemon that never wired the hook says so rather than pretending the url is
 // unknown, which would send somebody off to write a row that already exists.
 func TestRecogniseWithoutADaemonSaysSo(t *testing.T) {
+	t.Parallel()
 	s, _ := recogniserServer(t)
 	r := httptest.NewRequest("POST", "/v1/recognise", strings.NewReader(`{"url":"https://x/y"}`))
 	w := httptest.NewRecorder()

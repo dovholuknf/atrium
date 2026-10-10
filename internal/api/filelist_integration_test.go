@@ -49,6 +49,7 @@ func doList(t *testing.T, s *Server, id, path string) (listing, int) {
 }
 
 func TestListingShowsFilesAndDirectories(t *testing.T) {
+	t.Parallel()
 	s, st, work := fileServer(t)
 	task := cardIn(t, st, work)
 	if err := os.MkdirAll(filepath.Join(work, "sub"), 0o700); err != nil {
@@ -84,6 +85,7 @@ func TestListingShowsFilesAndDirectories(t *testing.T) {
 // The place something just wrote to is the place you usually want, so an
 // unqualified listing starts there when it exists.
 func TestAnUnqualifiedListingStartsAtIncoming(t *testing.T) {
+	t.Parallel()
 	s, st, work := fileServer(t)
 	task := cardIn(t, st, work)
 
@@ -110,6 +112,7 @@ func TestAnUnqualifiedListingStartsAtIncoming(t *testing.T) {
 // Every path the board uses comes from the server, including where up goes,
 // so the board never does path arithmetic.
 func TestParentIsServerComputedAndStopsAtTheCard(t *testing.T) {
+	t.Parallel()
 	s, st, work := fileServer(t)
 	task := cardIn(t, st, work)
 	sub := filepath.Join(work, "a", "b")
@@ -141,6 +144,7 @@ func TestParentIsServerComputedAndStopsAtTheCard(t *testing.T) {
 }
 
 func TestListingOutsideTheCardIsRefused(t *testing.T) {
+	t.Parallel()
 	s, st, work := fileServer(t)
 	task := cardIn(t, st, work)
 	outside := t.TempDir()
@@ -163,6 +167,7 @@ func TestListingOutsideTheCardIsRefused(t *testing.T) {
 // Outside and missing answer the same, so this is not an oracle for what is on
 // the machine. Same rule download follows.
 func TestListingOutsideAndMissingAnswerTheSame(t *testing.T) {
+	t.Parallel()
 	s, st, work := fileServer(t)
 	task := cardIn(t, st, work)
 	outside := t.TempDir()
@@ -179,6 +184,7 @@ func TestListingOutsideAndMissingAnswerTheSame(t *testing.T) {
 // is going to read. The answer is a shorter list that says so, not a slow
 // board.
 func TestAHugeDirectoryIsBoundedAndSaysSo(t *testing.T) {
+	t.Parallel()
 	s, st, work := fileServer(t)
 	task := cardIn(t, st, work)
 	big := filepath.Join(work, "many")
@@ -207,6 +213,7 @@ func TestAHugeDirectoryIsBoundedAndSaysSo(t *testing.T) {
 // Asking for a file answers with its directory, because clicking a file in a
 // picker meaning "show me where that is" is a reasonable thing to have meant.
 func TestAskingForAFileListsItsDirectory(t *testing.T) {
+	t.Parallel()
 	s, st, work := fileServer(t)
 	task := cardIn(t, st, work)
 	f := filepath.Join(work, "notes.txt")
@@ -226,6 +233,7 @@ func TestAskingForAFileListsItsDirectory(t *testing.T) {
 // A card with no directory has nothing to list, and saying so beats an empty
 // panel that looks like an empty directory.
 func TestListingACardWithNoDirectoryIsRefused(t *testing.T) {
+	t.Parallel()
 	s, st, _ := fileServer(t)
 	task := cardIn(t, st, "")
 	_, code := doList(t, s, task.ID, "")

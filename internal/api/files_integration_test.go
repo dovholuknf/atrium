@@ -66,6 +66,7 @@ func uploadReq(t *testing.T, id string, names []string, body []byte) *http.Reque
 }
 
 func TestAnUploadLandsUnderTheCardsDirectory(t *testing.T) {
+	t.Parallel()
 	s, st, work := fileServer(t)
 	task := cardIn(t, st, work)
 
@@ -100,6 +101,7 @@ func TestAnUploadLandsUnderTheCardsDirectory(t *testing.T) {
 // name it with. This is the whole security argument for the first version, and
 // it is worth a test that says so.
 func TestAnUploadCannotChooseWhereItLands(t *testing.T) {
+	t.Parallel()
 	s, st, work := fileServer(t)
 	task := cardIn(t, st, work)
 
@@ -138,6 +140,7 @@ func TestAnUploadCannotChooseWhereItLands(t *testing.T) {
 // Several files in one paste do not overwrite each other, even landing in the
 // same second under the same name.
 func TestTwoFilesInOnePasteBothSurvive(t *testing.T) {
+	t.Parallel()
 	s, st, work := fileServer(t)
 	task := cardIn(t, st, work)
 
@@ -158,6 +161,7 @@ func TestTwoFilesInOnePasteBothSurvive(t *testing.T) {
 // A card with no directory has nowhere to put anything, and saying so is
 // better than inventing somewhere.
 func TestUploadingToACardWithNoDirectoryIsRefused(t *testing.T) {
+	t.Parallel()
 	s, st, _ := fileServer(t)
 	task, _, err := st.Register(store.Observed{WireName: "nodir", Runner: "claude"})
 	if err != nil {
@@ -174,6 +178,7 @@ func TestUploadingToACardWithNoDirectoryIsRefused(t *testing.T) {
 // Uploading into the working directory of a session that ended is almost
 // always a mistake about which card is which.
 func TestUploadingToAnArchivedCardIsRefused(t *testing.T) {
+	t.Parallel()
 	s, st, work := fileServer(t)
 	task := cardIn(t, st, work)
 	if err := st.SetStatus(task.ID, store.StatusDead); err != nil {
@@ -198,6 +203,7 @@ func TestUploadingToAnArchivedCardIsRefused(t *testing.T) {
 //
 // The order is the whole fix. Resolve first, create second.
 func TestUploadRefusesAnIncomingDirectoryThatEscapes(t *testing.T) {
+	t.Parallel()
 	s, st, work := fileServer(t)
 	task := cardIn(t, st, work)
 
@@ -232,6 +238,7 @@ func downloadReq(id, path string) *http.Request {
 }
 
 func TestDownloadingAFileInsideWorks(t *testing.T) {
+	t.Parallel()
 	s, st, work := fileServer(t)
 	task := cardIn(t, st, work)
 	if err := os.WriteFile(filepath.Join(work, "notes.txt"), []byte("hello"), 0o600); err != nil {
@@ -251,6 +258,7 @@ func TestDownloadingAFileInsideWorks(t *testing.T) {
 // A delay-rendered clipboard image can arrive as zero bytes. Saving it would hand the agent a path to an empty
 // file with nobody the wiser.
 func TestUploadRefusesAnEmptyFileAndWritesNothing(t *testing.T) {
+	t.Parallel()
 	s, st, work := fileServer(t)
 	task := cardIn(t, st, work)
 
@@ -271,6 +279,7 @@ func TestUploadRefusesAnEmptyFileAndWritesNothing(t *testing.T) {
 // from a working directory inline would be serving attacker-authored script on
 // the board's own origin, and the board holds the settings and every card.
 func TestEverythingIsServedAsAnAttachment(t *testing.T) {
+	t.Parallel()
 	s, st, work := fileServer(t)
 	task := cardIn(t, st, work)
 	if err := os.WriteFile(filepath.Join(work, "page.html"),
@@ -295,6 +304,7 @@ func TestEverythingIsServedAsAnAttachment(t *testing.T) {
 }
 
 func TestDownloadingOutsideTheCardIsRefused(t *testing.T) {
+	t.Parallel()
 	s, st, work := fileServer(t)
 	task := cardIn(t, st, work)
 
@@ -323,6 +333,7 @@ func TestDownloadingOutsideTheCardIsRefused(t *testing.T) {
 // One status for "outside" and for "does not exist", so this cannot be used to
 // find out what is on the machine outside the card.
 func TestOutsideAndMissingAnswerTheSame(t *testing.T) {
+	t.Parallel()
 	s, st, work := fileServer(t)
 	task := cardIn(t, st, work)
 
@@ -347,6 +358,7 @@ func TestOutsideAndMissingAnswerTheSame(t *testing.T) {
 // A directory is refused rather than zipped. A zip stream is a second
 // mechanism with its own bounds, and the case that comes up is one file.
 func TestDownloadingADirectoryIsRefused(t *testing.T) {
+	t.Parallel()
 	s, st, work := fileServer(t)
 	task := cardIn(t, st, work)
 
@@ -358,6 +370,7 @@ func TestDownloadingADirectoryIsRefused(t *testing.T) {
 }
 
 func TestDownloadingNeedsAPath(t *testing.T) {
+	t.Parallel()
 	s, st, work := fileServer(t)
 	task := cardIn(t, st, work)
 
@@ -371,6 +384,7 @@ func TestDownloadingNeedsAPath(t *testing.T) {
 // THE DOWNLOAD SAYS WHAT THE PATH RESOLVED TO, so the hub can refuse a link `notes.md -> .env` by
 // the name of the file that is really being read.
 func TestDownloadSaysWhatItResolvedTo(t *testing.T) {
+	t.Parallel()
 	s, st, work := fileServer(t)
 	task := cardIn(t, st, work)
 	if err := os.WriteFile(filepath.Join(work, ".env"), []byte("TOKEN=1"), 0o600); err != nil {

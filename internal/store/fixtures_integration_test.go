@@ -10,6 +10,7 @@ import (
 // it survives a restart, it can be turned off without being retyped, and it
 // comes back in the order somebody chose.
 func TestFixtureRoundTrip(t *testing.T) {
+	t.Parallel()
 	s := open(t)
 
 	f, err := s.SaveFixture(&Fixture{
@@ -39,6 +40,7 @@ func TestFixtureRoundTrip(t *testing.T) {
 // A fixture needs something to start, and saying so beats a start that fails
 // later with a stranger message.
 func TestFixtureNeedsARunner(t *testing.T) {
+	t.Parallel()
 	s := open(t)
 	if _, err := s.SaveFixture(&Fixture{Label: "nope", Cwd: "D:/x"}); err == nil {
 		t.Fatal("a fixture with no runner was saved")
@@ -48,6 +50,7 @@ func TestFixtureNeedsARunner(t *testing.T) {
 // Order is the whole point of `sort`: it is what "the dotfiles one is always
 // first" means.
 func TestFixturesComeBackInOrder(t *testing.T) {
+	t.Parallel()
 	s := open(t)
 	for _, c := range []struct {
 		label string
@@ -75,6 +78,7 @@ func TestFixturesComeBackInOrder(t *testing.T) {
 // the board's pill toggle does: re-save the row with Enabled changed and it
 // survives, while the daemon-owned card link is left alone.
 func TestFixtureEnabledToggles(t *testing.T) {
+	t.Parallel()
 	s := open(t)
 	f, err := s.SaveFixture(&Fixture{Label: "morning", Harness: "claude", Enabled: true})
 	if err != nil {
@@ -118,6 +122,7 @@ func TestFixtureEnabledToggles(t *testing.T) {
 // happened, and an edit in the board must not clear it: losing it means the
 // next start opens a second card beside the first.
 func TestNoteFixtureTaskSurvivesAnEdit(t *testing.T) {
+	t.Parallel()
 	s := open(t)
 	f, err := s.SaveFixture(&Fixture{Label: "one", Harness: "claude", Enabled: true})
 	if err != nil {
@@ -149,6 +154,7 @@ func TestNoteFixtureTaskSurvivesAnEdit(t *testing.T) {
 // Deleting a fixture is forgetting an instruction, not ending the work it
 // started.
 func TestDeletingAFixture(t *testing.T) {
+	t.Parallel()
 	s := open(t)
 	f, err := s.SaveFixture(&Fixture{Label: "gone", Harness: "claude", Enabled: true})
 	if err != nil {
@@ -171,6 +177,7 @@ func TestDeletingAFixture(t *testing.T) {
 // this exists to prevent, and it would happen to anybody who pins a session
 // and then writes a fixture for it.
 func TestAdoptableTaskFindsALiveCard(t *testing.T) {
+	t.Parallel()
 	s := open(t)
 	task, _, err := s.Register(Observed{
 		WireName: "dotfiles", Worktree: "D:/git/dotfiles", Runner: "claude",
@@ -190,6 +197,7 @@ func TestAdoptableTaskFindsALiveCard(t *testing.T) {
 
 // A finished card is history. Resuming onto it would rewrite what happened.
 func TestAdoptableTaskIgnoresFinishedCards(t *testing.T) {
+	t.Parallel()
 	s := open(t)
 	task, _, err := s.Register(Observed{
 		WireName: "old", Worktree: "D:/git/old", Runner: "claude",
@@ -211,6 +219,7 @@ func TestAdoptableTaskIgnoresFinishedCards(t *testing.T) {
 
 // Nothing to adopt is the ordinary case, not a failure.
 func TestAdoptableTaskWithNothingThere(t *testing.T) {
+	t.Parallel()
 	s := open(t)
 	for _, in := range []string{"", "   ", "D:/nowhere"} {
 		got, err := s.AdoptableTask(in)

@@ -14,6 +14,7 @@ import (
 // Skipped unless ATRIUM_LIVE_COPY names one, so the suite stays hermetic. Copy
 // the database out, point this at the copy, delete the copy.
 func TestMigrationsAgainstACopyOfALiveDatabase(t *testing.T) {
+	t.Parallel()
 	path := os.Getenv("ATRIUM_LIVE_COPY")
 	if path == "" {
 		t.Skip("set ATRIUM_LIVE_COPY to a COPY of a real atrium.db")

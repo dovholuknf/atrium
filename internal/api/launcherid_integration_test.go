@@ -15,6 +15,7 @@ import (
 // launcher_id is the BARE id of the launching card on this room, computed from the lineage, and
 // absent for an operator launch and for a launcher on another room.
 func TestLauncherIDOnTheTaskRow(t *testing.T) {
+	t.Parallel()
 	srv, st, _ := fileServer(t)
 	boss := exitCard(t, st, "boss")
 	byID := exitCard(t, st, "by-id")
@@ -70,6 +71,7 @@ func TestLauncherIDOnTheTaskRow(t *testing.T) {
 
 // ?name= answers the one card a handle, alias or id means, with its launcher_id.
 func TestListTasksByName(t *testing.T) {
+	t.Parallel()
 	srv, st, _ := fileServer(t)
 	boss, kid := exitCard(t, st, "boss"), exitCard(t, st, "kid")
 	if err := st.SetAlias(boss.ID, "bo"); err != nil {
@@ -96,6 +98,7 @@ func TestListTasksByName(t *testing.T) {
 
 // 301 cards, all launched, to time the list (go test -run X -v).
 func TestListTasksLauncherCostWithManyCards(t *testing.T) {
+	t.Parallel()
 	srv, st, _ := fileServer(t)
 	boss := exitCard(t, st, "boss")
 	for i := 0; i < 300; i++ {

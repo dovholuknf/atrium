@@ -27,6 +27,7 @@ func payloadBytes(events []*Event) int {
 // keeps every event no matter how much it holds, and nothing reports as rolled
 // off.
 func TestHotWindowUnboundedByDefault(t *testing.T) {
+	t.Parallel()
 	s := open(t)
 	if db, ok := s.hot.(*dbSink); !ok || db.windowBytes != 0 {
 		t.Fatalf("default hot sink is not an unbounded dbSink: %#v", s.hot)
@@ -88,6 +89,7 @@ func reopenWithSettings(t *testing.T, kv map[string]string) (*Store, string) {
 // roll off. The newest is always kept, the retained bytes fit the window, and
 // the card reports its history as rolled off.
 func TestHotWindowRollsOffOldest(t *testing.T) {
+	t.Parallel()
 	const window = 400
 	s, _ := reopenWithSettings(t, map[string]string{
 		SettingEventWindowBytes: strconv.Itoa(window),
@@ -139,6 +141,7 @@ func TestHotWindowRollsOffOldest(t *testing.T) {
 // A window larger than one payload always keeps at least the newest event, even
 // when that one event is itself bigger than the window.
 func TestHotWindowKeepsNewestEvenIfLarger(t *testing.T) {
+	t.Parallel()
 	s, _ := reopenWithSettings(t, map[string]string{SettingEventWindowBytes: "10"})
 	task, _, err := s.Register(Observed{WireName: "tiny-window", Worktree: "d:/w", Runner: "claude"})
 	if err != nil {
@@ -160,6 +163,7 @@ func TestHotWindowKeepsNewestEvenIfLarger(t *testing.T) {
 // file: cold sinks receive every event at append time, so dropping it from the
 // db later loses nothing durable.
 func TestRollOffPreservedInFileSink(t *testing.T) {
+	t.Parallel()
 	s, dbPath := reopenWithSettings(t, map[string]string{
 		SettingEventSink:        "db,file",
 		SettingEventWindowBytes: "400",

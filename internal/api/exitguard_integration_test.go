@@ -43,6 +43,7 @@ func postExit(srv *Server, id, body string) *httptest.ResponseRecorder {
 
 // An agent may exit itself and a card it launched, and no other.
 func TestExitGuardSelfChildAndStranger(t *testing.T) {
+	t.Parallel()
 	srv, st, stopped := exitGuardRoom(t)
 	me, kid, stranger := exitCard(t, st, "me"), exitCard(t, st, "kid"), exitCard(t, st, "stranger")
 	if err := st.SetLineage(kid.ID, "me", me.ID); err != nil {
@@ -63,6 +64,7 @@ func TestExitGuardSelfChildAndStranger(t *testing.T) {
 
 // A card that is not the caller's needs force, and the force is on the card.
 func TestExitGuardForceIsRecorded(t *testing.T) {
+	t.Parallel()
 	srv, st, stopped := exitGuardRoom(t)
 	exitCard(t, st, "me")
 	stranger := exitCard(t, st, "stranger")
@@ -86,6 +88,7 @@ func TestExitGuardForceIsRecorded(t *testing.T) {
 
 // A director is the operator's to end: not by an agent, not with force.
 func TestExitGuardDirectorsAreNeverAnAgents(t *testing.T) {
+	t.Parallel()
 	srv, st, stopped := exitGuardRoom(t)
 	exitCard(t, st, "me")
 	for _, tag := range []string{"atrium:director", "atrium:context-ceiling"} {
@@ -108,6 +111,7 @@ func TestExitGuardDirectorsAreNeverAnAgents(t *testing.T) {
 // A name from another room is not this room's card of the same name: `me` with
 // foreign set is a stranger to the local `me`, whatever the names say.
 func TestExitGuardForeignCallerIsNotTheLocalCard(t *testing.T) {
+	t.Parallel()
 	srv, st, _ := exitGuardRoom(t)
 	me := exitCard(t, st, "me")
 	if rec := postExit(srv, me.ID, `{"from":"me","foreign":true}`); rec.Code != 403 {
@@ -122,6 +126,7 @@ func TestExitGuardForeignCallerIsNotTheLocalCard(t *testing.T) {
 // foreign asker of that name may exit it without force. Any other foreign name
 // may not.
 func TestExitGuardForeignLauncherMayExitItsChild(t *testing.T) {
+	t.Parallel()
 	srv, st, stopped := exitGuardRoom(t)
 	kid := exitCard(t, st, "kid")
 	if err := st.SetLineage(kid.ID, "boss@claude-sg4", "claude-sg4~01ABC"); err != nil {
@@ -146,6 +151,7 @@ func TestExitGuardForeignLauncherMayExitItsChild(t *testing.T) {
 
 // A director is told it is the one being refused when it asks to exit itself.
 func TestExitGuardADirectorExitingItselfIsToldSo(t *testing.T) {
+	t.Parallel()
 	srv, st, _ := exitGuardRoom(t)
 	d := exitCard(t, st, "boss", "atrium:director")
 	rec := postExit(srv, d.ID, `{"from":"boss"}`)
@@ -157,6 +163,7 @@ func TestExitGuardADirectorExitingItselfIsToldSo(t *testing.T) {
 // A body that does not parse is refused, never taken for the operator's. No body
 // at all is the operator's.
 func TestExitGuardMalformedBodyIsNotTheOperator(t *testing.T) {
+	t.Parallel()
 	srv, st, stopped := exitGuardRoom(t)
 	d := exitCard(t, st, "boss", "atrium:director")
 	if rec := postExit(srv, d.ID, `{"from":"me","for`); rec.Code != 400 {
@@ -173,6 +180,7 @@ func TestExitGuardMalformedBodyIsNotTheOperator(t *testing.T) {
 // A launcher recorded by id is matched by id only: a later card that reuses the
 // launcher's name is not the launcher.
 func TestExitGuardLauncherIsMatchedByIDWhenThereIsOne(t *testing.T) {
+	t.Parallel()
 	srv, st, _ := exitGuardRoom(t)
 	kid := exitCard(t, st, "kid")
 	if err := st.SetLineage(kid.ID, "gone", "some-other-id"); err != nil {

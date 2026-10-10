@@ -92,6 +92,7 @@ func (oh *openHarness) open(t *testing.T, url string) (int, map[string]any) {
 }
 
 func TestOpenMakesTheWorktreeTheRowAndTheCardAndTiesThem(t *testing.T) {
+	t.Parallel()
 	oh := newOpenHarness(t, &fakeForge{pr: forge.PR{HeadRef: "feat/x"}})
 	oh.checkout(t, "o", "r")
 	code, out := oh.open(t, openURL)
@@ -152,6 +153,7 @@ func httpDo(t *testing.T, h http.Handler, method, path string) *httptest.Respons
 }
 
 func TestOpenTwiceAnswersTheLiveCard(t *testing.T) {
+	t.Parallel()
 	oh := newOpenHarness(t, &fakeForge{pr: forge.PR{HeadRef: "feat/x"}})
 	oh.checkout(t, "o", "r")
 	_, first := oh.open(t, openURL)
@@ -165,6 +167,7 @@ func TestOpenTwiceAnswersTheLiveCard(t *testing.T) {
 }
 
 func TestOpenUndoesTheWorktreeAndTheRowWhenTheCardDoesNotStart(t *testing.T) {
+	t.Parallel()
 	oh := newOpenHarness(t, &fakeForge{pr: forge.PR{HeadRef: "feat/x"}})
 	repo := oh.checkout(t, "o", "r")
 	oh.refuse = errors.New("no runner called ghost")
@@ -195,6 +198,7 @@ func TestOpenUndoesTheWorktreeAndTheRowWhenTheCardDoesNotStart(t *testing.T) {
 }
 
 func TestOpenRefusesALinkNothingKnowsAndOneThatNamesNoWork(t *testing.T) {
+	t.Parallel()
 	oh := newOpenHarness(t, &fakeForge{pr: forge.PR{HeadRef: "feat/x"}})
 	if code, out := oh.open(t, "https://nowhere.example/x"); code != 422 || out["code"] != "no_recogniser" {
 		t.Errorf("unknown: %d %v", code, out)
@@ -208,6 +212,7 @@ func TestOpenRefusesALinkNothingKnowsAndOneThatNamesNoWork(t *testing.T) {
 }
 
 func TestOpenNeedsNoProviderRow(t *testing.T) {
+	t.Parallel()
 	oh := newOpenHarness(t, &fakeForge{pr: forge.PR{HeadRef: "main", FromFork: true}})
 	if err := oh.srv.st.DeleteProvider("github"); err != nil {
 		t.Fatal(err)
@@ -231,6 +236,7 @@ func TestOpenNeedsNoProviderRow(t *testing.T) {
 
 // A PASTED LINK IS RECOGNISED ONCE. Recognising reads the forge, and the open used to do it again for the review row.
 func TestOpenRecognisesTheLinkOnce(t *testing.T) {
+	t.Parallel()
 	oh := newOpenHarness(t, &fakeForge{pr: forge.PR{HeadRef: "feat/x"}})
 	oh.checkout(t, "o", "r")
 	asked, inner := 0, oh.srv.Recognise
@@ -244,6 +250,7 @@ func TestOpenRecognisesTheLinkOnce(t *testing.T) {
 }
 
 func TestScmHasSaysWhetherTheRoomHoldsTheRepo(t *testing.T) {
+	t.Parallel()
 	oh := newOpenHarness(t, &fakeForge{pr: forge.PR{HeadRef: "feat/x"}})
 	oh.srv.SCMHas = func(url string) bool { return url == "https://github.com/o/r" }
 	for repo, want := range map[string]string{"github.com/o/r": `"has":true`, "github.com/o/other": `"has":false`} {

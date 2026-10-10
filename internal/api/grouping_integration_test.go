@@ -9,6 +9,7 @@ import (
 )
 
 func TestAGroupingExpressionCannotBeStoredOnTheDaemon(t *testing.T) {
+	t.Parallel()
 	for _, field := range []string{"group_by", "group_order"} {
 		srv, _, _ := fileServer(t)
 		rec := settingsPost(t, srv, `{"`+field+`":"return task.repo"}`)
@@ -34,6 +35,7 @@ func TestAGroupingExpressionCannotBeStoredOnTheDaemon(t *testing.T) {
 // that ARE settings. A request carrying both is refused whole rather than
 // half-applied.
 func TestAGoodSettingBesideAGroupingExpressionIsStillRefused(t *testing.T) {
+	t.Parallel()
 	srv, _, _ := fileServer(t)
 
 	rec := settingsPost(t, srv, `{"board_skin":"noir","group_by":"return task.repo"}`)
@@ -48,6 +50,7 @@ func TestAGoodSettingBesideAGroupingExpressionIsStillRefused(t *testing.T) {
 // And it does not fire on anything else, which is the failure that would make
 // somebody delete the guard rather than understand it.
 func TestOrdinarySettingsAreUnaffected(t *testing.T) {
+	t.Parallel()
 	srv, _, _ := fileServer(t)
 
 	if rec := settingsPost(t, srv, `{"board_skin":"moss","browse_roots":"/tmp"}`); rec.Code != http.StatusOK {

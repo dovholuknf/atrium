@@ -21,6 +21,7 @@ func postJSON(t *testing.T, srv *Server, path, body string) *httptest.ResponseRe
 }
 
 func TestAddRuleForAnMCPTool(t *testing.T) {
+	t.Parallel()
 	srv, st, _ := fileServer(t)
 
 	rec := postJSON(t, srv, "/v1/rules", `{"tool":"mcp__mercurius__*","decision":"approve"}`)
@@ -52,6 +53,7 @@ func TestAddRuleForAnMCPTool(t *testing.T) {
 }
 
 func TestImportBroadMCPDenyNeedsInclude(t *testing.T) {
+	t.Parallel()
 	entries := `[{"tool":"mcp__*","pattern":"*","decision":"block","source":"test","broad":true},` +
 		`{"tool":"mcp__mercurius__*","pattern":"*","decision":"approve","source":"test"}]`
 
@@ -91,6 +93,7 @@ func TestImportBroadMCPDenyNeedsInclude(t *testing.T) {
 // Approve-forever on an MCP call writes a rule about the tool, not about the
 // compacted JSON of that one call.
 func TestForeverOnAnMCPCallWritesAToolRule(t *testing.T) {
+	t.Parallel()
 	srv, st, dir := fileServer(t)
 	c := cardIn(t, st, dir)
 	p, _, err := st.RecordPermission(c.ID, "mcp__mercurius__discourse_discourse_search",
@@ -122,6 +125,7 @@ func TestForeverOnAnMCPCallWritesAToolRule(t *testing.T) {
 }
 
 func TestListRulesMarksAnExactInputRule(t *testing.T) {
+	t.Parallel()
 	srv, st, _ := fileServer(t)
 	if _, err := st.AddRule("mcp__mercurius__x", `{"query":"ziti`, "approve", "", ""); err != nil {
 		t.Fatal(err)

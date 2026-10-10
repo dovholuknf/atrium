@@ -8,6 +8,7 @@ import (
 )
 
 func TestAutoWithNoDeadlineIsOnForever(t *testing.T) {
+	t.Parallel()
 	task := &Task{AutoApprove: true}
 	far := time.Now().AddDate(10, 0, 0)
 	if !task.AutoOn(far) {
@@ -19,6 +20,7 @@ func TestAutoWithNoDeadlineIsOnForever(t *testing.T) {
 }
 
 func TestAutoIsOnUntilItsDeadlineAndOffAfter(t *testing.T) {
+	t.Parallel()
 	at := time.Now().UTC()
 	deadline := at.Add(time.Hour)
 	task := &Task{AutoApprove: true, AutoUntil: &deadline}
@@ -40,6 +42,7 @@ func TestAutoIsOnUntilItsDeadlineAndOffAfter(t *testing.T) {
 // Off is off, whatever the deadline says. A deadline is a limit on being on,
 // not a way of being on.
 func TestADeadlineCannotTurnAutoModeOn(t *testing.T) {
+	t.Parallel()
 	at := time.Now().UTC()
 	deadline := at.Add(time.Hour)
 	task := &Task{AutoApprove: false, AutoUntil: &deadline}
@@ -53,6 +56,7 @@ func TestADeadlineCannotTurnAutoModeOn(t *testing.T) {
 
 // The state the chain cleans up: still flagged on, deadline gone by.
 func TestExpiryIsDistinctFromBeingOff(t *testing.T) {
+	t.Parallel()
 	at := time.Now().UTC()
 	past := at.Add(-time.Minute)
 	task := &Task{AutoApprove: true, AutoUntil: &past}
@@ -65,6 +69,7 @@ func TestExpiryIsDistinctFromBeingOff(t *testing.T) {
 }
 
 func TestADeadlineRoundTripsThroughTheDatabase(t *testing.T) {
+	t.Parallel()
 	s := open(t)
 	task, _, err := s.Register(Observed{WireName: "a", Worktree: "d:/w", Runner: "claude"})
 	if err != nil {
@@ -94,6 +99,7 @@ func TestADeadlineRoundTripsThroughTheDatabase(t *testing.T) {
 // anybody means, and a deadline left behind by an off switch would turn itself
 // back on the next time somebody flipped it.
 func TestTurningItOffClearsTheDeadline(t *testing.T) {
+	t.Parallel()
 	s := open(t)
 	task, _, err := s.Register(Observed{WireName: "b", Worktree: "d:/w", Runner: "claude"})
 	if err != nil {
@@ -129,6 +135,7 @@ func TestTurningItOffClearsTheDeadline(t *testing.T) {
 }
 
 func TestGlobalAutoWithADeadline(t *testing.T) {
+	t.Parallel()
 	s := open(t)
 
 	if on, until := s.GlobalAutoUntil(); on || until != nil {
@@ -154,6 +161,7 @@ func TestGlobalAutoWithADeadline(t *testing.T) {
 // A deadline in the past is off, without anything having run to make it so.
 // This is the whole point: nothing has to fire.
 func TestAGlobalDeadlineInThePastIsOff(t *testing.T) {
+	t.Parallel()
 	s := open(t)
 	past := time.Now().UTC().Add(-time.Minute)
 	if err := s.SetGlobalAutoUntil(true, &past); err != nil {
@@ -173,6 +181,7 @@ func TestAGlobalDeadlineInThePastIsOff(t *testing.T) {
 
 // Turning it on with no deadline is still available and still means forever.
 func TestGlobalAutoWithNoDeadlineIsUnchanged(t *testing.T) {
+	t.Parallel()
 	s := open(t)
 	if err := s.SetGlobalAuto(true); err != nil {
 		t.Fatal(err)
@@ -190,6 +199,7 @@ func TestGlobalAutoWithNoDeadlineIsUnchanged(t *testing.T) {
 // This is the failure posture the whole permission path uses: the safe answer
 // to "should I stop asking" is no.
 func TestAnUnreadableDeadlineIsOff(t *testing.T) {
+	t.Parallel()
 	s := open(t)
 	if err := s.SetSetting(SettingGlobalAuto, "until:not-a-time"); err != nil {
 		t.Fatal(err)
@@ -202,6 +212,7 @@ func TestAnUnreadableDeadlineIsOff(t *testing.T) {
 // It survives a restart as whatever it was, deadline included. A restart is
 // not consent to start asking again and it is not consent to keep approving.
 func TestADeadlineSurvivesAReopen(t *testing.T) {
+	t.Parallel()
 	path := t.TempDir() + "/atrium.db"
 	first, err := Open(path)
 	if err != nil {

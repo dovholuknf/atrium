@@ -5,6 +5,7 @@ package store
 import "testing"
 
 func TestOnlyWebLinksSurvive(t *testing.T) {
+	t.Parallel()
 	for _, ok := range []string{
 		"https://github.com/openziti/ziti/issues/4211",
 		"http://localhost:8080/x",
@@ -38,6 +39,7 @@ func TestOnlyWebLinksSurvive(t *testing.T) {
 // It is applied where links enter, not only where they are drawn, so bad data
 // never reaches the database.
 func TestABadLinkNeverReachesACard(t *testing.T) {
+	t.Parallel()
 	s := open(t)
 	task, _, err := s.Register(Observed{WireName: "u1", Worktree: "d:/w", Runner: "claude"})
 	if err != nil {
@@ -62,6 +64,7 @@ func TestABadLinkNeverReachesACard(t *testing.T) {
 
 // Same at the intake end, which is the one that actually faces outward.
 func TestABadLinkFromASourceIsDropped(t *testing.T) {
+	t.Parallel()
 	s := open(t)
 	got, _, err := s.Offer(IntakeItem{
 		Source: "github", ExternalID: "4211", Title: "x",

@@ -12,6 +12,7 @@ import (
 // A CARD'S READABLE ADDRESS IS THE BOARD PAGE on the room's own port, the phone's
 // on /m/, a wrong shape is a 404 naming the shapes, and no API path is shadowed.
 func TestCardAddressesServeThePage(t *testing.T) {
+	t.Parallel()
 	srv, _, _ := fileServer(t)
 	get := func(path string) *httptest.ResponseRecorder {
 		rec := httptest.NewRecorder()

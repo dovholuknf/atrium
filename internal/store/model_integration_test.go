@@ -21,6 +21,7 @@ func openTestStore(t *testing.T) *Store {
 // JSON, exactly like the resume and prompt arguments beside them, and a column
 // read back into the wrong field is not a compile error.
 func TestModelArgumentsSurviveBeingSaved(t *testing.T) {
+	t.Parallel()
 	s := openTestStore(t)
 
 	saved, err := s.SaveHarness(Harness{
@@ -49,6 +50,7 @@ func TestModelArgumentsSurviveBeingSaved(t *testing.T) {
 // operator's own `claude` row would gain the column and no way to use it, and
 // the runner most likely to be asked for a model would be the one that refuses.
 func TestAnExistingClaudeRowCanBeGivenAModel(t *testing.T) {
+	t.Parallel()
 	s := openTestStore(t)
 
 	h, err := s.Harness("claude")
@@ -78,6 +80,7 @@ func TestAnExistingClaudeRowCanBeGivenAModel(t *testing.T) {
 // `model_args`, so a launch naming a model is refused rather than started with
 // the flag as an argument.
 func TestOnlyRunnersThatTakeAModelDeclareOne(t *testing.T) {
+	t.Parallel()
 	s := openTestStore(t)
 
 	rows, err := s.Harnesses()
@@ -104,6 +107,7 @@ func TestOnlyRunnersThatTakeAModelDeclareOne(t *testing.T) {
 // out of the card after a restart and a model not written down is a session
 // moved back to the default.
 func TestACardRemembersItsModel(t *testing.T) {
+	t.Parallel()
 	s := openTestStore(t)
 
 	task, _, err := s.Register(Observed{WireName: "one", Worktree: "/tmp/one"})
@@ -128,6 +132,7 @@ func TestACardRemembersItsModel(t *testing.T) {
 // on a model is not a second act of typing. It is never a catalog: atrium does
 // not know which models exist.
 func TestModelsUsedListsWhatWasChosen(t *testing.T) {
+	t.Parallel()
 	s := openTestStore(t)
 
 	for i, name := range []string{"claude-opus-5", "claude-fable-5-1", "claude-opus-5"} {

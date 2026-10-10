@@ -86,6 +86,7 @@ func sameJSON(t *testing.T, a, b string) {
 }
 
 func TestTaskEventEqualsListRow(t *testing.T) {
+	t.Parallel()
 	srv, st, work := fileServer(t)
 	busy := cardIn(t, st, work)
 	other := filepath.Join(work, "other")
@@ -131,6 +132,7 @@ func TestTaskEventEqualsListRow(t *testing.T) {
 }
 
 func TestTaskEventFromAClosedStoreSendsNothing(t *testing.T) {
+	t.Parallel()
 	srv, st, work := fileServer(t)
 	card := cardIn(t, st, work)
 	ts := httptest.NewServer(srv.Handler())
@@ -148,6 +150,7 @@ func TestTaskEventFromAClosedStoreSendsNothing(t *testing.T) {
 }
 
 func TestNoTaskBroadcastOutsideTheHelper(t *testing.T) {
+	t.Parallel()
 	files, _ := filepath.Glob("../*/*.go")
 	for _, f := range files {
 		if strings.HasSuffix(f, "_test.go") {
@@ -199,6 +202,7 @@ func readTaskEvents(resp *http.Response, d time.Duration) []string {
 }
 
 func TestPublishTaskCoalescesABurstToTheLatestState(t *testing.T) {
+	t.Parallel()
 	srv, st, work := fileServer(t)
 	card := cardIn(t, st, work)
 	other := filepath.Join(work, "other")
@@ -239,6 +243,7 @@ func TestPublishTaskCoalescesABurstToTheLatestState(t *testing.T) {
 }
 
 func TestPublishTaskForADeletedCardSendsNoTaskEvent(t *testing.T) {
+	t.Parallel()
 	srv, st, work := fileServer(t)
 	card := cardIn(t, st, work)
 	ts := httptest.NewServer(srv.Handler())
@@ -258,6 +263,7 @@ func TestPublishTaskForADeletedCardSendsNoTaskEvent(t *testing.T) {
 }
 
 func TestPublishTaskPendingStopsWithTheServer(t *testing.T) {
+	t.Parallel()
 	srv, st, work := fileServer(t)
 	card := cardIn(t, st, work)
 	srv.PublishTask(card)

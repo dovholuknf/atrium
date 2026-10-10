@@ -12,6 +12,7 @@ import (
 
 // An unmodified disk copy must hash to the same id as the embedded board.
 func TestADirectoryCopyOfTheBoardHasTheEmbeddedBuildID(t *testing.T) {
+	t.Parallel()
 	s := &Server{BoardDir: "web"}
 	if got := s.boardID(); got != BuildID {
 		t.Errorf("the board on disk hashes to %q and the embedded one to %q. "+
@@ -20,6 +21,7 @@ func TestADirectoryCopyOfTheBoardHasTheEmbeddedBuildID(t *testing.T) {
 }
 
 func TestTheBuildIDFollowsAFileChangedOnDisk(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	page := filepath.Join(dir, "index.html")
 	if err := os.WriteFile(page, []byte("<html>one</html>"), 0o600); err != nil {
@@ -44,6 +46,7 @@ func TestTheBuildIDFollowsAFileChangedOnDisk(t *testing.T) {
 
 // Serving from a directory is serving the files in it, not the embedded copy.
 func TestTheHandlerServesTheDirectoryWhenGivenOne(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "index.html"), []byte("from disk"), 0o600); err != nil {
 		t.Fatal(err)

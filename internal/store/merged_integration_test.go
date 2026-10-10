@@ -9,6 +9,7 @@ import (
 )
 
 func TestAMarkIsDueOnlyOnceItsTimeHasCome(t *testing.T) {
+	t.Parallel()
 	s := open(t)
 	_, worker, _ := ledgerPair(t, s)
 	at := time.Now().Add(30 * time.Minute)
@@ -29,6 +30,7 @@ func TestAMarkIsDueOnlyOnceItsTimeHasCome(t *testing.T) {
 
 // A second merge must not push the deadline out from under whoever watches the chip.
 func TestASecondMergeDoesNotMoveTheDeadline(t *testing.T) {
+	t.Parallel()
 	s := open(t)
 	_, worker, _ := ledgerPair(t, s)
 	first := time.Now().Add(10 * time.Minute)
@@ -42,6 +44,7 @@ func TestASecondMergeDoesNotMoveTheDeadline(t *testing.T) {
 
 // A new turn clears the mark, and the next merge marks it again.
 func TestANewTurnClearsTheMark(t *testing.T) {
+	t.Parallel()
 	s := open(t)
 	_, worker, _ := ledgerPair(t, s)
 	if err := s.SetStatus(worker.ID, StatusDone); err != nil {
@@ -64,6 +67,7 @@ func TestANewTurnClearsTheMark(t *testing.T) {
 // A hold drops the mark, is not marked over, is never due, and survives a
 // restart and a new turn.
 func TestAHoldKeepsACardAcrossARestartAndANewTurn(t *testing.T) {
+	t.Parallel()
 	path := filepath.Join(t.TempDir(), "atrium.db")
 	s, err := Open(path)
 	if err != nil {
@@ -106,6 +110,7 @@ func TestAHoldKeepsACardAcrossARestartAndANewTurn(t *testing.T) {
 }
 
 func TestAcceptMergedSetsAcceptedOnce(t *testing.T) {
+	t.Parallel()
 	s := open(t)
 	_, worker, _ := ledgerPair(t, s)
 	if err := s.AcceptMerged(worker.ID); err != nil {

@@ -8,6 +8,7 @@ import (
 )
 
 func TestCodexHasAWayToResume(t *testing.T) {
+	t.Parallel()
 	s := open(t)
 	if err := s.SeedHarnesses(); err != nil {
 		t.Fatal(err)
@@ -28,6 +29,7 @@ func TestCodexHasAWayToResume(t *testing.T) {
 // arrive as a migration or every machine atrium is already installed on keeps
 // the empty list forever.
 func TestAnExistingCodexRowGetsItsResumeArgs(t *testing.T) {
+	t.Parallel()
 	s := open(t)
 	if err := s.SeedHarnesses(); err != nil {
 		t.Fatal(err)
@@ -55,6 +57,7 @@ func TestAnExistingCodexRowGetsItsResumeArgs(t *testing.T) {
 // And an operator who already wrote their own is not overwritten by it. A
 // migration that corrects a default has no business correcting a decision.
 func TestTheMigrationLeavesAnOperatorsOwnResumeAlone(t *testing.T) {
+	t.Parallel()
 	s := open(t)
 	if err := s.SeedHarnesses(); err != nil {
 		t.Fatal(err)

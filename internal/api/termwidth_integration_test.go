@@ -10,6 +10,7 @@ import (
 // The width floor is refused out of range rather than clamped, reads back what
 // was stored, and falls back to the default when cleared.
 func TestTheWidthFloorRefusesOutOfRange(t *testing.T) {
+	t.Parallel()
 	srv, _, _ := fileServer(t)
 
 	if got := settingsGet(t, srv)["terminal_min_cols_now"]; got != float64(120) {

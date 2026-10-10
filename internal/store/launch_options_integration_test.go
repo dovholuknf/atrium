@@ -12,6 +12,7 @@ import (
 // A card keeps its effort and extras the way it keeps its model, and its JSON
 // names the env keys and never carries a value.
 func TestACardRemembersItsLaunchOptions(t *testing.T) {
+	t.Parallel()
 	s := openTestStore(t)
 	task, _, err := s.Register(Observed{WireName: "one", Worktree: "/tmp/one"})
 	if err != nil {
@@ -57,6 +58,7 @@ func TestACardRemembersItsLaunchOptions(t *testing.T) {
 // migration on a database that already has the columns, which is also the
 // "already there" case the brief asks it to tolerate.
 func TestLaunchOptionsMigrationBackfillsOnlyEmptyRows(t *testing.T) {
+	t.Parallel()
 	path := filepath.Join(t.TempDir(), "old.db")
 	s, err := Open(path)
 	if err != nil {
@@ -98,6 +100,7 @@ func TestLaunchOptionsMigrationBackfillsOnlyEmptyRows(t *testing.T) {
 
 // The command a launch recorded comes back with the card, and a card nothing launched has none.
 func TestACardKeepsTheCommandItWasLaunchedWith(t *testing.T) {
+	t.Parallel()
 	s := openTestStore(t)
 	task, _, err := s.Register(Observed{WireName: "one", Worktree: "/tmp/one"})
 	if err != nil {

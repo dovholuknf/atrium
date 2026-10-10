@@ -12,6 +12,7 @@ import (
 // this was learned the hard way when `perm_rule` was added to `0001` and every
 // existing database skipped it.
 func TestProviderMigrationRunsOnAnExistingDatabase(t *testing.T) {
+	t.Parallel()
 	path := filepath.Join(t.TempDir(), "existing.db")
 
 	s, err := Open(path)
@@ -50,6 +51,7 @@ func TestProviderMigrationRunsOnAnExistingDatabase(t *testing.T) {
 // Two spellings of one name are one provider, because they are one directory
 // on the filesystem this runs on.
 func TestProviderNamesAreCaseFolded(t *testing.T) {
+	t.Parallel()
 	s := open(t)
 	if _, err := s.SaveProvider(Provider{Name: "github", Root: "d:/git/github", Enabled: true}); err != nil {
 		t.Fatal(err)
@@ -77,6 +79,7 @@ func TestProviderNamesAreCaseFolded(t *testing.T) {
 // Same rule one level down, and for the same reason: `Dovholuknf/Atrium` and
 // `dovholuknf/atrium` are one directory on Windows.
 func TestProviderRepoKeyIsCaseFolded(t *testing.T) {
+	t.Parallel()
 	s := open(t)
 	mustProvider(t, s, "github", "d:/git/github")
 
@@ -103,6 +106,7 @@ func TestProviderRepoKeyIsCaseFolded(t *testing.T) {
 // happens to sit in one of those directories is not configuration and must not
 // be touched.
 func TestDeleteProviderCascadesToReposAndLeavesCardsAlone(t *testing.T) {
+	t.Parallel()
 	s := open(t)
 	mustProvider(t, s, "github", "d:/git/github")
 	if _, err := s.SaveProviderRepo(ProviderRepo{
@@ -139,6 +143,7 @@ func TestDeleteProviderCascadesToReposAndLeavesCardsAlone(t *testing.T) {
 // Running discovery twice adopts nothing the second time, and never
 // resurrects something deliberately dismissed.
 func TestAdoptIsIdempotentAndRespectsHidden(t *testing.T) {
+	t.Parallel()
 	s := open(t)
 	mustProvider(t, s, "github", "d:/git/github")
 
@@ -181,6 +186,7 @@ func TestAdoptIsIdempotentAndRespectsHidden(t *testing.T) {
 // The path is derived from the root, so moving the root moves every row with
 // it and nothing has to be rewritten.
 func TestRepoPathFollowsTheRoot(t *testing.T) {
+	t.Parallel()
 	s := open(t)
 	mustProvider(t, s, "github", "d:/git/github")
 	if _, err := s.SaveProviderRepo(ProviderRepo{
@@ -213,6 +219,7 @@ func TestRepoPathFollowsTheRoot(t *testing.T) {
 // A repository directly under the root, with no org above it, is a real
 // arrangement. `root/org/repo` is a default, not a law.
 func TestARepoWithNoOrgGetsATwoPartPath(t *testing.T) {
+	t.Parallel()
 	if got := ProviderPath("d:/git/github", "", "dotfiles"); got != "d:/git/github/dotfiles" {
 		t.Fatalf("got %q", got)
 	}
@@ -224,6 +231,7 @@ func TestARepoWithNoOrgGetsATwoPartPath(t *testing.T) {
 // A save carries no observations. Only `RecordProviderScan` writes those, or a
 // form post could claim a scan that never ran.
 func TestSaveDoesNotWriteTheObservedFields(t *testing.T) {
+	t.Parallel()
 	s := open(t)
 	mustProvider(t, s, "github", "d:/git/github")
 	if err := s.RecordProviderScan("github", "adopted 3", "could not read that root"); err != nil {
@@ -253,6 +261,7 @@ func TestSaveDoesNotWriteTheObservedFields(t *testing.T) {
 // Worktree support with nowhere to put them is refused at save, rather than
 // when somebody presses make and it is far too late to say so.
 func TestWorktreesOnNeedsARoot(t *testing.T) {
+	t.Parallel()
 	s := open(t)
 	if _, err := s.SaveProvider(Provider{
 		Name: "github", Root: "d:/git/github", Enabled: true, Worktrees: true,
@@ -262,6 +271,7 @@ func TestWorktreesOnNeedsARoot(t *testing.T) {
 }
 
 func TestAProviderNeedsANameAndARoot(t *testing.T) {
+	t.Parallel()
 	s := open(t)
 	if _, err := s.SaveProvider(Provider{Root: "d:/git"}); err == nil {
 		t.Error("a nameless provider was accepted")
@@ -280,6 +290,7 @@ func TestAProviderNeedsANameAndARoot(t *testing.T) {
 // Orgs are derived, so an org stops existing the moment its last repository
 // row is forgotten and nothing has to tidy up after it.
 func TestOrgsAreDerivedFromRows(t *testing.T) {
+	t.Parallel()
 	s := open(t)
 	mustProvider(t, s, "github", "d:/git/github")
 	for _, r := range []ProviderRepo{
@@ -319,6 +330,7 @@ func mustProvider(t *testing.T, s *Store, name, root string) {
 }
 
 func TestProviderForgeIsValidatedAndKept(t *testing.T) {
+	t.Parallel()
 	st := openTestStore(t)
 	base := Provider{Name: "ghe", Root: "/r", Host: "ghe.example", Enabled: true}
 	for _, bad := range []Provider{

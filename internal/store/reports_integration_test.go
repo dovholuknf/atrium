@@ -21,6 +21,7 @@ func reportCard(t *testing.T, s *Store, name string) *Task {
 // has finished, and a list that showed the question would send somebody to
 // answer work that is already over.
 func TestOnlyTheNewestReportPerCardIsReturned(t *testing.T) {
+	t.Parallel()
 	s := open(t)
 	task := reportCard(t, s, "twice")
 
@@ -48,6 +49,7 @@ func TestOnlyTheNewestReportPerCardIsReturned(t *testing.T) {
 // this does not recognise is an event it does not know about rather than an
 // error. Reading one as a report would put words on a card that nobody said.
 func TestSomethingThatIsNotAnAgentReportIsIgnored(t *testing.T) {
+	t.Parallel()
 	s := open(t)
 	task := reportCard(t, s, "noise")
 
@@ -82,6 +84,7 @@ func TestSomethingThatIsNotAnAgentReportIsIgnored(t *testing.T) {
 // off the timeline. Nothing else records the difference: a session that asks
 // while it carries on does not move its card on purpose, so no column changed.
 func TestAWorkingAskKeepsItsWordsAndItsBlockedFlag(t *testing.T) {
+	t.Parallel()
 	s := open(t)
 	task := reportCard(t, s, "working-ask")
 

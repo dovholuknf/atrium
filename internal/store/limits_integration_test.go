@@ -10,6 +10,7 @@ import (
 // A reading is written only when the percent or the reset changes, pruned past
 // its keep by kind, and served by since.
 func TestLimitReadings(t *testing.T) {
+	t.Parallel()
 	s := openTestStore(t)
 	at := time.Date(2026, 9, 29, 12, 0, 0, 0, time.UTC)
 	reset := at.Add(time.Hour)

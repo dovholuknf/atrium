@@ -11,6 +11,7 @@ import (
 // showing up as two groups is the failure this feature would be judged on, so
 // everything is folded to one form on the way in.
 func TestNormalizeTags(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		in   []string
 		want string
@@ -40,6 +41,7 @@ func TestNormalizeTags(t *testing.T) {
 // Never nil, so the board can filter without a guard and the JSON carries an
 // empty list rather than null.
 func TestNormalizeTagsIsNeverNil(t *testing.T) {
+	t.Parallel()
 	if got := NormalizeTags(nil); got == nil {
 		t.Fatal("NormalizeTags(nil) returned nil rather than an empty list")
 	}
@@ -48,6 +50,7 @@ func TestNormalizeTagsIsNeverNil(t *testing.T) {
 // A tag is a label, not a paragraph. Bounded so one pasted mistake cannot
 // stretch every row that carries it.
 func TestNormalizeTagsAreBounded(t *testing.T) {
+	t.Parallel()
 	got := NormalizeTags([]string{strings.Repeat("a", 200)})
 	if len(got) != 1 || len(got[0]) > 40 {
 		t.Fatalf("a 200 character tag came back as %d characters", len(got[0]))
@@ -57,6 +60,7 @@ func TestNormalizeTagsAreBounded(t *testing.T) {
 // Tags survive a restart like everything else the daemon keeps, and they
 // replace rather than merge so removing one is possible.
 func TestTagsRoundTripAndReplace(t *testing.T) {
+	t.Parallel()
 	s := open(t)
 
 	task, _, err := s.Register(Observed{WireName: "tagged", Worktree: "/tmp/x", Runner: "claude"})
@@ -94,6 +98,7 @@ func TestTagsRoundTripAndReplace(t *testing.T) {
 // Tagging is the operator filing a card, not the session doing anything.
 // Bumping activity would move a silent card to the top of a list sorted by it.
 func TestTaggingDoesNotCountAsActivity(t *testing.T) {
+	t.Parallel()
 	s := open(t)
 	task, _, err := s.Register(Observed{WireName: "quiet", Worktree: "/tmp/x", Runner: "claude"})
 	if err != nil {
@@ -118,6 +123,7 @@ func TestTaggingDoesNotCountAsActivity(t *testing.T) {
 
 // Pinning is a fixture marker and has to outlive a restart.
 func TestPinnedRoundTrips(t *testing.T) {
+	t.Parallel()
 	s := open(t)
 	task, _, err := s.Register(Observed{WireName: "fixture", Worktree: "/tmp/x", Runner: "claude"})
 	if err != nil {

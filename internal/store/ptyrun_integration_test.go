@@ -27,6 +27,7 @@ func countExits(t *testing.T, s *Store, id string) int {
 // The migration applies to a fresh database, and again to one that already
 // has every migration recorded but the new one, with a card in it.
 func TestThePtyRunMigrationAppliesFreshAndToAnExistingDatabase(t *testing.T) {
+	t.Parallel()
 	path := filepath.Join(t.TempDir(), "old.db")
 	s, err := Open(path)
 	if err != nil {
@@ -72,6 +73,7 @@ func TestThePtyRunMigrationAppliesFreshAndToAnExistingDatabase(t *testing.T) {
 }
 
 func TestARunIsRecordedWithItsHostAndNotFiled(t *testing.T) {
+	t.Parallel()
 	s := open(t)
 	card, _, _ := s.Register(Observed{WireName: "c", Worktree: "/w"})
 	id := NewRunID()
@@ -91,6 +93,7 @@ func TestARunIsRecordedWithItsHostAndNotFiled(t *testing.T) {
 }
 
 func TestAnExitIsFiledOncePerRun(t *testing.T) {
+	t.Parallel()
 	s := open(t)
 	card, _, _ := s.Register(Observed{WireName: "c", Worktree: "/w"})
 	id := NewRunID()
@@ -129,6 +132,7 @@ func TestAnExitIsFiledOncePerRun(t *testing.T) {
 
 // A start whose row never landed is still filed once.
 func TestAnUnrecordedRunIsStillFiledOnce(t *testing.T) {
+	t.Parallel()
 	s := open(t)
 	card, _, _ := s.Register(Observed{WireName: "c", Worktree: "/w"})
 	f := ExitFiling{TaskID: card.ID, RunID: NewRunID(), Payload: map[string]any{"exit_code": 0}}
@@ -141,6 +145,7 @@ func TestAnUnrecordedRunIsStillFiledOnce(t *testing.T) {
 
 // A run id filed against the wrong card is not that card's exit.
 func TestAnExitForAnotherCardsRunIsRefused(t *testing.T) {
+	t.Parallel()
 	s := open(t)
 	a, _, _ := s.Register(Observed{WireName: "a", Worktree: "/a"})
 	b, _, _ := s.Register(Observed{WireName: "b", Worktree: "/b"})
@@ -153,6 +158,7 @@ func TestAnExitForAnotherCardsRunIsRefused(t *testing.T) {
 }
 
 func TestAnEmptyRunIDFilesEveryTime(t *testing.T) {
+	t.Parallel()
 	s := open(t)
 	card, _, _ := s.Register(Observed{WireName: "c", Worktree: "/w"})
 	f := ExitFiling{TaskID: card.ID, Payload: map[string]any{}}
@@ -164,6 +170,7 @@ func TestAnEmptyRunIDFilesEveryTime(t *testing.T) {
 }
 
 func TestPtyHostIsOffUnlessSetOn(t *testing.T) {
+	t.Parallel()
 	s := open(t)
 	if s.PtyHostOn() {
 		t.Fatal("on by default")
@@ -175,6 +182,7 @@ func TestPtyHostIsOffUnlessSetOn(t *testing.T) {
 }
 
 func TestPruningRunRowsKeepsUnfiledAndRecentOnes(t *testing.T) {
+	t.Parallel()
 	s := open(t)
 	card, _, err := s.Register(Observed{WireName: "prune-card", Worktree: "/w"})
 	if err != nil {

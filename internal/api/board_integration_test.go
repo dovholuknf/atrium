@@ -16,6 +16,7 @@ import (
 // This has no dependencies and always runs, which is the point: it catches the
 // exact mistake that has now been made three times in one file.
 func TestNoBacktickInMarkupComments(t *testing.T) {
+	t.Parallel()
 	for _, f := range scriptFiles(t) {
 		for i, line := range strings.Split(f.body, "\n") {
 			start := strings.Index(line, "<!--")
@@ -44,6 +45,7 @@ func TestNoBacktickInMarkupComments(t *testing.T) {
 // does not build, and a machine without node can still work on the daemon. CI
 // has node, so nothing reaches a tag unparsed.
 func TestBoardScriptParses(t *testing.T) {
+	t.Parallel()
 	node, err := exec.LookPath("node")
 	if err != nil {
 		t.Skip("node is not on PATH, so the board's script cannot be parsed here")
@@ -82,6 +84,7 @@ func TestBoardScriptParses(t *testing.T) {
 
 // The service worker is a separate file and a separate way to break the board.
 func TestServiceWorkerParses(t *testing.T) {
+	t.Parallel()
 	node, err := exec.LookPath("node")
 	if err != nil {
 		t.Skip("node is not on PATH")

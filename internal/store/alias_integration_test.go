@@ -21,6 +21,7 @@ func aliasCard(t *testing.T, s *Store, wire string) *Task {
 // An alias is set, read back on the card, and resolves to it, with or without
 // the `@` it is written with in a sentence.
 func TestAnAliasResolvesToItsCard(t *testing.T) {
+	t.Parallel()
 	s := openTestStore(t)
 	c := aliasCard(t, s, "dotfiles-41800")
 	if err := s.SetAlias(c.ID, "@Dotfiles"); err != nil {
@@ -49,6 +50,7 @@ func TestAnAliasResolvesToItsCard(t *testing.T) {
 
 // UNIQUE AMONG LIVE CARDS, and the refusal names the holder.
 func TestATakenAliasIsRefusedNamingTheHolder(t *testing.T) {
+	t.Parallel()
 	s := openTestStore(t)
 	a := aliasCard(t, s, "sa89-typing-gate")
 	b := aliasCard(t, s, "sa90-other")
@@ -76,6 +78,7 @@ func TestATakenAliasIsRefusedNamingTheHolder(t *testing.T) {
 // A card that has ended no longer holds its alias, so the next worker can take
 // it, and resolution finds the live one.
 func TestAnEndedCardGivesUpItsAlias(t *testing.T) {
+	t.Parallel()
 	s := openTestStore(t)
 	old := aliasCard(t, s, "sa89-first")
 	if err := s.SetAlias(old.ID, "sa89"); err != nil {
@@ -100,6 +103,7 @@ func TestAnEndedCardGivesUpItsAlias(t *testing.T) {
 // A worker that reported done still sits at its prompt, so its alias still
 // resolves. An archived card and a dead one no longer answer.
 func TestADoneCardStillAnswersToItsAlias(t *testing.T) {
+	t.Parallel()
 	s := openTestStore(t)
 	done := aliasCard(t, s, "sa89-done")
 	if err := s.SetAlias(done.ID, "sa89"); err != nil {
@@ -134,6 +138,7 @@ func TestADoneCardStillAnswersToItsAlias(t *testing.T) {
 // LIVE FIRST. A done card and a live one sharing an alias resolve to the live
 // one, whichever was created first.
 func TestALiveCardBeatsADoneOneForAnAlias(t *testing.T) {
+	t.Parallel()
 	for _, liveIsNewer := range []bool{true, false} {
 		s := openTestStore(t)
 		older := aliasCard(t, s, "sa89-old")
@@ -171,6 +176,7 @@ func TestALiveCardBeatsADoneOneForAnAlias(t *testing.T) {
 // An alias equal to another card's handle could never be reached, since a
 // handle is matched first. Refused, naming whose handle it is.
 func TestAnAliasCannotBeAnotherCardsHandle(t *testing.T) {
+	t.Parallel()
 	s := openTestStore(t)
 	a := aliasCard(t, s, "atriumx")
 	b := aliasCard(t, s, "sa91-x")
@@ -186,6 +192,7 @@ func TestAnAliasCannotBeAnotherCardsHandle(t *testing.T) {
 }
 
 func TestAnAliasHasAShape(t *testing.T) {
+	t.Parallel()
 	s := openTestStore(t)
 	c := aliasCard(t, s, "shape")
 	for _, bad := range []string{"has space", "-flag", "a/b", "@", strings.Repeat("x", MaxAliasLen+1), "ünï"} {
@@ -209,6 +216,7 @@ func TestAnAliasHasAShape(t *testing.T) {
 
 // A worker's default alias is its title's prefix, when it has one.
 func TestDefaultAliasIsTheTitlePrefix(t *testing.T) {
+	t.Parallel()
 	for title, want := range map[string]string{
 		"sa89: typing gate and card aliases": "sa89",
 		"SA90: loud":                         "sa90",
@@ -238,6 +246,7 @@ func TestDefaultAliasIsTheTitlePrefix(t *testing.T) {
 // The migration tolerates its column already being there, which is how a
 // database that ran it once and lost the record comes back up.
 func TestTheAliasMigrationToleratesItsColumn(t *testing.T) {
+	t.Parallel()
 	s := openTestStore(t)
 	c := aliasCard(t, s, "kept")
 	if err := s.SetAlias(c.ID, "kept"); err != nil {
@@ -257,6 +266,7 @@ func TestTheAliasMigrationToleratesItsColumn(t *testing.T) {
 // A resident's default is taken when free, and when another live card holds
 // it the card says who, until somebody sets or clears its alias.
 func TestADefaultThatClashesSaysWhy(t *testing.T) {
+	t.Parallel()
 	s := openTestStore(t)
 	holder := aliasCard(t, s, "sa84-merger")
 	if err := s.SetAlias(holder.ID, "saorch"); err != nil {
@@ -295,6 +305,7 @@ func TestADefaultThatClashesSaysWhy(t *testing.T) {
 // The cards already on the board take their defaults once, and a card the
 // operator cleared afterwards is not handed its default back.
 func TestTheDefaultBackfillRunsOnce(t *testing.T) {
+	t.Parallel()
 	s := openTestStore(t)
 	c := aliasCard(t, s, "sa84-merger-owns-claude-main")
 	if err := s.SetOverrides(c.ID, map[string]string{"title": "saorch: merger"}); err != nil {

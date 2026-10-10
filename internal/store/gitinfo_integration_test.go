@@ -11,6 +11,7 @@ import (
 // A session started inside a subdirectory belongs to the repository, not to
 // the subdirectory. This is the one that turned `dotfiles` into `powershell`.
 func TestASubdirectoryBelongsToItsRepo(t *testing.T) {
+	t.Parallel()
 	repo := t.TempDir()
 	writeGitDir(t, filepath.Join(repo, ".git"), "ref: refs/heads/main\n")
 	sub := filepath.Join(repo, "powershell", "onpath")
@@ -35,6 +36,7 @@ func TestASubdirectoryBelongsToItsRepo(t *testing.T) {
 // repository made them the same row twice, and the only way to tell which one
 // you had been talking to was to open each and read its path.
 func TestTwoSessionsInOneRepoGetTwoNames(t *testing.T) {
+	t.Parallel()
 	repo := t.TempDir()
 	writeGitDir(t, filepath.Join(repo, ".git"), "ref: refs/heads/main\n")
 	sub := filepath.Join(repo, "powershell")
@@ -59,6 +61,7 @@ func TestTwoSessionsInOneRepoGetTwoNames(t *testing.T) {
 // after it loses which repository it is. Two worktrees of one repo became
 // `2026-08-21` and `aug-21-2026` with nothing tying either to `ziti-tv`.
 func TestAWorktreeKnowsItsRepo(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 
 	// The real repository, with the worktree's git directory inside it.
@@ -92,6 +95,7 @@ func TestAWorktreeKnowsItsRepo(t *testing.T) {
 // against what the gwt session ledger has always printed, since the complaint
 // that started this was the two disagreeing.
 func TestTitleMatchesTheLedger(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name string
 		git  GitInfo
@@ -122,6 +126,7 @@ func TestTitleMatchesTheLedger(t *testing.T) {
 // Outside a repository there is nothing to read, and the wire name is what
 // atrium always used. That path has to keep working.
 func TestTitleFallsBackToTheWireName(t *testing.T) {
+	t.Parallel()
 	if got := TitleFor(GitInfo{}, "/w/some-dir", "some-agent"); got != "some-agent" {
 		t.Fatalf("got %q, wanted the wire name", got)
 	}
@@ -135,6 +140,7 @@ func TestTitleFallsBackToTheWireName(t *testing.T) {
 
 // A branch with a slash in it is one branch, not a path.
 func TestABranchCanContainASlash(t *testing.T) {
+	t.Parallel()
 	repo := t.TempDir()
 	writeGitDir(t, filepath.Join(repo, ".git"), "ref: refs/heads/feature/nested/thing\n")
 
@@ -146,6 +152,7 @@ func TestABranchCanContainASlash(t *testing.T) {
 // A detached head has no branch. That is a state, not a failure, and the
 // repository is still known.
 func TestADetachedHeadHasNoBranch(t *testing.T) {
+	t.Parallel()
 	repo := t.TempDir()
 	writeGitDir(t, filepath.Join(repo, ".git"),
 		"9fceb02d0ae598e95dc970b74767f19372d61af8\n")
@@ -162,6 +169,7 @@ func TestADetachedHeadHasNoBranch(t *testing.T) {
 // A directory that is in no repository answers nothing rather than walking to
 // the root and inventing something.
 func TestNoRepoAnswersNothing(t *testing.T) {
+	t.Parallel()
 	got := ReadGitInfo(t.TempDir())
 	if got.Repo != "" || got.Branch != "" {
 		t.Fatalf("a directory outside a repo answered %+v", got)
@@ -170,6 +178,7 @@ func TestNoRepoAnswersNothing(t *testing.T) {
 
 // An empty path is asked about constantly, since a card can have no worktree.
 func TestNoPathAnswersNothing(t *testing.T) {
+	t.Parallel()
 	if got := ReadGitInfo(""); got.Repo != "" || got.Branch != "" {
 		t.Fatalf("an empty path answered %+v", got)
 	}

@@ -6,6 +6,7 @@ import "testing"
 
 // The runner flag survives a round trip, on and off.
 func TestMidTurnInputSurvivesBeingSaved(t *testing.T) {
+	t.Parallel()
 	s := openTestStore(t)
 	for _, on := range []bool{true, false} {
 		if _, err := s.SaveHarness(Harness{
@@ -26,6 +27,7 @@ func TestMidTurnInputSurvivesBeingSaved(t *testing.T) {
 // An existing database gets claude and codex switched on by the migration, and
 // running it a second time over columns already there is not an error.
 func TestTheMigrationSeedsMidTurnInputOnAnExistingDatabase(t *testing.T) {
+	t.Parallel()
 	s := openTestStore(t)
 	if _, err := s.db.Exec(`UPDATE harness SET mid_turn_input = 0`); err != nil {
 		t.Fatal(err)
@@ -50,6 +52,7 @@ func TestTheMigrationSeedsMidTurnInputOnAnExistingDatabase(t *testing.T) {
 // A message that waits for the turn says so when it is read back, and one that
 // does not, does not.
 func TestAMessageRemembersItWaitsForTheTurn(t *testing.T) {
+	t.Parallel()
 	s := openTestStore(t)
 	task, _, err := s.Register(Observed{WireName: "bob", Runner: "claude", PID: 1})
 	if err != nil {

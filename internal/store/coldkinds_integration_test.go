@@ -18,6 +18,7 @@ func countKinds(events []*Event) map[string]int {
 
 // The default routes nothing cold-only: every kind lands in the db.
 func TestColdKindsOffByDefault(t *testing.T) {
+	t.Parallel()
 	s := open(t)
 	if got := s.ColdOnlyKinds(); len(got) != 0 {
 		t.Fatalf("default install routes %v cold-only, want none", got)
@@ -41,6 +42,7 @@ func TestColdKindsOffByDefault(t *testing.T) {
 // With a file sink and the perm kinds routed cold, the db holds none of them and
 // the file holds all of them. Other kinds still land in both.
 func TestColdKindsSkipDBAndLandInFile(t *testing.T) {
+	t.Parallel()
 	s, dbPath := reopenWithSettings(t, map[string]string{
 		SettingEventSink:      "db,file",
 		SettingEventColdKinds: "perm-requested, PERM-DECIDED",
@@ -85,6 +87,7 @@ func TestColdKindsSkipDBAndLandInFile(t *testing.T) {
 // Without a cold sink a cold-only event would be written nowhere, so the setting
 // is ignored and every kind stays in the db.
 func TestColdKindsIgnoredWithoutColdSink(t *testing.T) {
+	t.Parallel()
 	s, _ := reopenWithSettings(t, map[string]string{SettingEventColdKinds: "perm-requested"})
 	if got := s.ColdOnlyKinds(); len(got) != 0 {
 		t.Fatalf("cold kinds %v applied with no cold sink; events would be lost", got)
@@ -108,6 +111,7 @@ func TestColdKindsIgnoredWithoutColdSink(t *testing.T) {
 // created and submitted are read back from the table, so they stay in the db
 // even when named; the rest of the list still applies.
 func TestColdKindsKeepPinnedKindsInDB(t *testing.T) {
+	t.Parallel()
 	s, _ := reopenWithSettings(t, map[string]string{
 		SettingEventSink:      "db,file",
 		SettingEventColdKinds: "created,submitted,notified",

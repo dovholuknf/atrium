@@ -11,6 +11,7 @@ import (
 )
 
 func TestSettingsKeepaliveTodayFigures(t *testing.T) {
+	t.Parallel()
 	st, err := store.Open(filepath.Join(t.TempDir(), "atrium.db"))
 	if err != nil {
 		t.Fatal(err)

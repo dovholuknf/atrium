@@ -8,6 +8,7 @@ import (
 )
 
 func TestHeldNoticeStatsCountUnreadHeldNoticesOnly(t *testing.T) {
+	t.Parallel()
 	s := openTestStore(t)
 	card, _, err := s.Register(Observed{WireName: "orch", Worktree: "D:/w/orch", Runner: "claude"})
 	if err != nil {

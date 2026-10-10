@@ -37,6 +37,7 @@ func newTestPR(t *testing.T, st *Store, head string) *PRReview {
 }
 
 func TestTheDefaultRecipeIsSeededOnceAndStaysDeleted(t *testing.T) {
+	t.Parallel()
 	path := t.TempDir() + "/atrium.db"
 	first, err := Open(path)
 	if err != nil {
@@ -71,6 +72,7 @@ func TestTheDefaultRecipeIsSeededOnceAndStaysDeleted(t *testing.T) {
 }
 
 func TestCreatePRIsIdempotentPerRunFolder(t *testing.T) {
+	t.Parallel()
 	st := openPRStore(t)
 	a := newTestPR(t, st, "ad5ddf4aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
 	b, created, err := st.CreatePR(NewPR{Org: "openziti", Repo: "tlsuv", Number: 378, Host: "github.com",
@@ -98,6 +100,7 @@ func newTestPR2(t *testing.T, st *Store) *PRReview {
 }
 
 func TestCreatePRRefusals(t *testing.T) {
+	t.Parallel()
 	st := openPRStore(t)
 	cases := map[string]NewPR{
 		"no org":    {Repo: "r", Number: 1, RunDir: "x"},
@@ -114,6 +117,7 @@ func TestCreatePRRefusals(t *testing.T) {
 }
 
 func TestPRStatesStampAndClear(t *testing.T) {
+	t.Parallel()
 	st := openPRStore(t)
 	p := newTestPR(t, st, "")
 	if p.StartedAt != "" {
@@ -161,6 +165,7 @@ func TestPRStatesStampAndClear(t *testing.T) {
 }
 
 func TestPRCountsHasEveryKey(t *testing.T) {
+	t.Parallel()
 	st := openPRStore(t)
 	counts, err := st.PRCounts()
 	if err != nil || len(counts) != 6 {
@@ -183,6 +188,7 @@ func TestPRCountsHasEveryKey(t *testing.T) {
 }
 
 func TestSetPRFetchedMovesTheRun(t *testing.T) {
+	t.Parallel()
 	st := openPRStore(t)
 	p := newTestPR(t, st, "")
 	if !strings.HasSuffix(p.RunDir, "/pr-378-pending") {
@@ -213,6 +219,7 @@ func TestSetPRFetchedMovesTheRun(t *testing.T) {
 }
 
 func TestRunFolderPathNames(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		host, org, repo string
 		n               int
@@ -243,6 +250,7 @@ func TestRunFolderPathNames(t *testing.T) {
 }
 
 func TestRunFolderMakesItsSubfolders(t *testing.T) {
+	t.Parallel()
 	st := openPRStore(t)
 	dir, err := st.RunFolder("openziti", "tlsuv", 378, "ad5ddf4")
 	if err != nil {
@@ -270,6 +278,7 @@ func goodRecipe(name, match string) PRRecipe {
 }
 
 func TestRecipeForMostSpecificWins(t *testing.T) {
+	t.Parallel()
 	st := openPRStore(t)
 	for _, r := range []PRRecipe{goodRecipe("org", "openziti/*"), goodRecipe("exact", "openziti/tlsuv")} {
 		if _, err := st.SavePRRecipe(r); err != nil {
@@ -285,6 +294,7 @@ func TestRecipeForMostSpecificWins(t *testing.T) {
 }
 
 func TestSavePRRecipeRefusals(t *testing.T) {
+	t.Parallel()
 	st := openPRStore(t)
 	mut := map[string]func(r *PRRecipe){
 		"no name":     func(r *PRRecipe) { r.Name = " " },
@@ -314,6 +324,7 @@ func TestSavePRRecipeRefusals(t *testing.T) {
 }
 
 func TestReviewersForMatchesBaseNames(t *testing.T) {
+	t.Parallel()
 	st := openPRStore(t)
 	r, _ := st.PRRecipeByName("default")
 	got, err := r.ReviewersFor([]string{"lib/src/x.go"})
@@ -334,6 +345,7 @@ func TestReviewersForMatchesBaseNames(t *testing.T) {
 }
 
 func TestMovePRRefusesAWrongStateWithoutHaltingTheStore(t *testing.T) {
+	t.Parallel()
 	st := openPRStore(t)
 	p := newTestPR(t, st, "")
 	if _, err := st.MovePR(p.ID, []string{PRFailed}, PRRunning, "", ""); !errors.Is(err, ErrPRState) {
@@ -362,6 +374,7 @@ func TestMovePRRefusesAWrongStateWithoutHaltingTheStore(t *testing.T) {
 }
 
 func TestLivePRFindsTheRunningReviewOfAPullRequest(t *testing.T) {
+	t.Parallel()
 	st := openPRStore(t)
 	if got, err := st.LivePR("github.com", "openziti", "tlsuv", 378); err != nil || got != nil {
 		t.Fatalf("empty index: %v %v", err, got)
@@ -384,6 +397,7 @@ func TestLivePRFindsTheRunningReviewOfAPullRequest(t *testing.T) {
 }
 
 func TestRequeueInterruptedPRsMovesOnlyTheCutOnes(t *testing.T) {
+	t.Parallel()
 	st := openPRStore(t)
 	cut := newTestPR(t, st, "")
 	if _, err := st.MovePR(cut.ID, nil, PRRunning, "panel", ""); err != nil {

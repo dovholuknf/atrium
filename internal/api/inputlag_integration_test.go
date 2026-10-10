@@ -11,6 +11,7 @@ import (
 // The gear's checkbox switches this room's logging at once, keeps it for the
 // next start, and reads back what is in force.
 func TestTheInputLagSettingSwitchesTheRoomLive(t *testing.T) {
+	t.Parallel()
 	if !inputlag.SetLive(false) {
 		t.Skip(inputlag.Env + " is set, so the setting cannot switch the logging")
 	}

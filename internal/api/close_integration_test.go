@@ -66,6 +66,7 @@ func worktreeSeq(t *testing.T, st *store.Store, card string) int {
 func exists(p string) bool { _, err := os.Stat(filepath.FromSlash(p)); return err == nil }
 
 func TestCloseFreesWhatTheOpenMadeAndKeepsTheHistory(t *testing.T) {
+	t.Parallel()
 	oh, card, wt, row := openForClose(t)
 	if err := os.MkdirAll(filepath.Join(filepath.FromSlash(row.RunDir), "src"), 0o755); err != nil {
 		t.Fatal(err)
@@ -117,6 +118,7 @@ func TestCloseFreesWhatTheOpenMadeAndKeepsTheHistory(t *testing.T) {
 }
 
 func TestCloseAsksAboutWorkThatIsNowhereElseAndKeepsWhatItIsTold(t *testing.T) {
+	t.Parallel()
 	oh, card, wt, _ := openForClose(t)
 	if err := os.WriteFile(filepath.Join(filepath.FromSlash(wt), "notes.txt"), []byte("mine"), 0o644); err != nil {
 		t.Fatal(err)
@@ -146,6 +148,7 @@ func TestCloseAsksAboutWorkThatIsNowhereElseAndKeepsWhatItIsTold(t *testing.T) {
 }
 
 func TestCloseDeletesWhenToldTo(t *testing.T) {
+	t.Parallel()
 	oh, card, wt, _ := openForClose(t)
 	git(t, wt, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "--allow-empty", "-m", "local")
 	seq := strconv.Itoa(worktreeSeq(t, oh.srv.st, card))
@@ -162,6 +165,7 @@ func TestCloseDeletesWhenToldTo(t *testing.T) {
 }
 
 func TestCloseStashesToTheHubAndKeepsTheWorktreeWhenTheStashFails(t *testing.T) {
+	t.Parallel()
 	oh, card, wt, _ := openForClose(t)
 	if err := os.WriteFile(filepath.Join(filepath.FromSlash(wt), "notes.txt"), []byte("mine"), 0o644); err != nil {
 		t.Fatal(err)
@@ -196,6 +200,7 @@ func TestCloseStashesToTheHubAndKeepsTheWorktreeWhenTheStashFails(t *testing.T) 
 
 // A card that walks a review its inventory does not name, one from before cards kept an inventory, archives it too.
 func TestCloseArchivesAReviewTheCardWalksOutsideItsInventory(t *testing.T) {
+	t.Parallel()
 	oh := newOpenHarness(t, &fakeForge{pr: forge.PR{HeadRef: "feat/x"}})
 	rec := post(t, oh.h, "/v1/prs", map[string]any{"url": openURL})
 	var made struct {

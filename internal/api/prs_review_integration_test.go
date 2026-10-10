@@ -15,6 +15,7 @@ import (
 )
 
 func TestABlockingFindingIsCountedListedAndMarkable(t *testing.T) {
+	t.Parallel()
 	s, st, _ := prServer(t)
 	b := prDecode(t, prDo(s, s.postPR, "POST", "/v1/prs", `{"url":"`+prURL+`","head":"ad5ddf4aaaa"}`, ""))
 	id, dir := b.PR["id"].(string), filepath.FromSlash(b.PR["run_dir"].(string))
@@ -45,6 +46,7 @@ func TestABlockingFindingIsCountedListedAndMarkable(t *testing.T) {
 }
 
 func TestASpacedFileNameKeepsOneWalkLineAndReadsBack(t *testing.T) {
+	t.Parallel()
 	s, st, _ := prServer(t)
 	b := prDecode(t, prDo(s, s.postPR, "POST", "/v1/prs", `{"url":"`+prURL+`","head":"ad5ddf4aaaa"}`, ""))
 	id, dir := b.PR["id"].(string), filepath.FromSlash(b.PR["run_dir"].(string))
@@ -74,6 +76,7 @@ func TestASpacedFileNameKeepsOneWalkLineAndReadsBack(t *testing.T) {
 }
 
 func TestParseWalkLineSharesTheRenderersRule(t *testing.T) {
+	t.Parallel()
 	l, ok := parseWalkLine("01-med-a b.go-L1.txt  deferred  2026-10-01T10:00:00Z  https://x.y/z")
 	if !ok || l.File != "01-med-a b.go-L1.txt" || l.State != "deferred" || l.At != "2026-10-01T10:00:00Z" || l.URL != "https://x.y/z" {
 		t.Fatalf("%+v %v", l, ok)
@@ -87,6 +90,7 @@ func TestParseWalkLineSharesTheRenderersRule(t *testing.T) {
 }
 
 func TestOnlyOneOfManyRacingRetriesWins(t *testing.T) {
+	t.Parallel()
 	s, st, _ := prServer(t)
 	b := prDecode(t, prDo(s, s.postPR, "POST", "/v1/prs", `{"url":"`+prURL+`"}`, ""))
 	id := b.PR["id"].(string) // failed by the stub
@@ -113,6 +117,7 @@ func TestOnlyOneOfManyRacingRetriesWins(t *testing.T) {
 }
 
 func TestOnlyOneOfManyRacingStartsAndAbortsWins(t *testing.T) {
+	t.Parallel()
 	s, st, _ := prServer(t)
 	s.PRRunner = &fakePRRunner{st: st}
 	run := s.PRRunner.(*fakePRRunner)
@@ -154,6 +159,7 @@ func TestOnlyOneOfManyRacingStartsAndAbortsWins(t *testing.T) {
 }
 
 func TestARefusedStateChangeIsNotAHalt(t *testing.T) {
+	t.Parallel()
 	s, _, _ := prServer(t)
 	b := prDecode(t, prDo(s, s.postPR, "POST", "/v1/prs", `{"url":"`+prURL+`"}`, ""))
 	id := b.PR["id"].(string)
@@ -167,6 +173,7 @@ func TestARefusedStateChangeIsNotAHalt(t *testing.T) {
 }
 
 func TestAPasteWithNoHeadWhileOneIsLiveFindsTheSameReview(t *testing.T) {
+	t.Parallel()
 	s, st, _ := prServer(t)
 	run := &fakePRRunner{st: st}
 	s.PRRunner = run
@@ -193,6 +200,7 @@ func TestAPasteWithNoHeadWhileOneIsLiveFindsTheSameReview(t *testing.T) {
 }
 
 func TestAHaltedStoreInsideRecogniseIs503(t *testing.T) {
+	t.Parallel()
 	path := filepath.Join(t.TempDir(), "atrium.db")
 	st, err := store.Open(path)
 	if err != nil {
@@ -223,6 +231,7 @@ func TestAHaltedStoreInsideRecogniseIs503(t *testing.T) {
 }
 
 func TestARefusedPostLeavesNoFolder(t *testing.T) {
+	t.Parallel()
 	s, _, root := prServer(t)
 	for _, body := range []string{
 		`{"url":"https://example.invalid/x"}`,
@@ -240,6 +249,7 @@ func TestARefusedPostLeavesNoFolder(t *testing.T) {
 }
 
 func TestTheWalkerBriefNamesThePullRequestNumber(t *testing.T) {
+	t.Parallel()
 	s, st, id, dir := readyPR(t)
 	var sent map[string]any
 	s.Launch = func(body []byte) (*store.Task, error) {

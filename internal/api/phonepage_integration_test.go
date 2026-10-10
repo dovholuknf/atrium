@@ -17,6 +17,7 @@ var phoneOptional = map[string]bool{"js/compose.js": true, "js/perms.js": true, 
 
 // Every script and stylesheet the phone page names is served, and every file under web/m is named by the page.
 func TestPhonePageLoadsEveryFile(t *testing.T) {
+	t.Parallel()
 	raw, err := os.ReadFile(filepath.Join("web", "m", "index.html"))
 	if err != nil {
 		t.Fatal(err)
@@ -61,6 +62,7 @@ func TestPhonePageLoadsEveryFile(t *testing.T) {
 
 // The room's file server sends /m to the relative m/, which a browser resolves to /m/.
 func TestPhonePageRouteAndManifest(t *testing.T) {
+	t.Parallel()
 	h := webHandler("")
 	get := func(p string) *httptest.ResponseRecorder {
 		rec := httptest.NewRecorder()
@@ -89,6 +91,7 @@ func TestPhonePageRouteAndManifest(t *testing.T) {
 
 // The reload check notices a change to the phone page, not only to the board.
 func TestBuildIDCoversThePhonePage(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	os.MkdirAll(filepath.Join(dir, "m"), 0o755)
 	os.WriteFile(filepath.Join(dir, "index.html"), []byte("x"), 0o644)

@@ -17,6 +17,7 @@ import (
 // two are not interchangeable. The routes are read out of api.go, so a route
 // added later is walked without anybody remembering to list it.
 func TestUnknownCardIsNeverA5xx(t *testing.T) {
+	t.Parallel()
 	src, err := os.ReadFile("api.go")
 	if err != nil {
 		t.Fatal(err)

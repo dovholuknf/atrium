@@ -44,6 +44,7 @@ func stateCards(t *testing.T, srv *Server) map[string]json.RawMessage {
 // payload carried no seen view at all, and a card with open questions came out
 // as whatever its status said, never as a question.
 func TestStateCarriesWhatTheNotifierReads(t *testing.T) {
+	t.Parallel()
 	srv, st, dir := fileServer(t)
 	asked := cardIn(t, st, dir)
 	if err := st.NoteTurnEnded(asked.ID, store.TurnQuestions{Known: true, Block: true,
@@ -73,6 +74,7 @@ func TestStateCarriesWhatTheNotifierReads(t *testing.T) {
 // send an empty seen object for it, or the hub reads it as an older room and
 // notifies as before. After a turn ends, waiting for input notifies.
 func TestAFreshCardWaitingForInputDoesNotNotify(t *testing.T) {
+	t.Parallel()
 	srv, st, dir := fileServer(t)
 	fresh := cardIn(t, st, dir)
 	if err := st.SetStatus(fresh.ID, "needs-input"); err != nil {
@@ -105,6 +107,7 @@ func TestAFreshCardWaitingForInputDoesNotNotify(t *testing.T) {
 // A room with no cards still answers a list, never null, which the hub reads
 // as "clear" rather than "could not tell".
 func TestStateWithNoCardsIsAnEmptyList(t *testing.T) {
+	t.Parallel()
 	srv, _, _ := fileServer(t)
 	rec := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/state", nil))

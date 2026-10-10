@@ -26,6 +26,7 @@ func pullRequestRow() Recogniser {
 }
 
 func TestSaveRecogniserRefusesAPatternThatDoesNotCompile(t *testing.T) {
+	t.Parallel()
 	s := open(t)
 	r := pullRequestRow()
 	r.Pattern = `(?P<org>[^/]+` // no closing paren
@@ -41,6 +42,7 @@ func TestSaveRecogniserRefusesAPatternThatDoesNotCompile(t *testing.T) {
 
 // THE DEFAULT REPO is saved, read back and filled through unchanged, and only a host/org/repo is taken.
 func TestTheDefaultRepoIsSavedAndCheckedAndFilled(t *testing.T) {
+	t.Parallel()
 	s := open(t)
 	r := pullRequestRow()
 	r.DefaultRepo = " github.com/openziti/ziti/ "
@@ -63,6 +65,7 @@ func TestTheDefaultRepoIsSavedAndCheckedAndFilled(t *testing.T) {
 }
 
 func TestSaveRecogniserNeedsAPattern(t *testing.T) {
+	t.Parallel()
 	s := open(t)
 	r := pullRequestRow()
 	r.Pattern = "   "
@@ -75,6 +78,7 @@ func TestSaveRecogniserNeedsAPattern(t *testing.T) {
 // are the same pull request, and a generic "any repo on a known host" row will
 // happily swallow both, so the specific rows have to be asked first.
 func TestMostSpecificRecogniserWins(t *testing.T) {
+	t.Parallel()
 	s := open(t)
 	if _, err := s.SaveRecogniser(pullRequestRow()); err != nil {
 		t.Fatal(err)
@@ -111,6 +115,7 @@ func TestMostSpecificRecogniserWins(t *testing.T) {
 }
 
 func TestDisabledRecognisersAreNotAsked(t *testing.T) {
+	t.Parallel()
 	s := open(t)
 	r := pullRequestRow()
 	r.Enabled = false
@@ -123,6 +128,7 @@ func TestDisabledRecognisersAreNotAsked(t *testing.T) {
 }
 
 func TestUnmatchedURLIsNotAnError(t *testing.T) {
+	t.Parallel()
 	s := open(t)
 	if _, err := s.SaveRecogniser(pullRequestRow()); err != nil {
 		t.Fatal(err)
@@ -137,6 +143,7 @@ func TestUnmatchedURLIsNotAnError(t *testing.T) {
 // a bare host writes the scheme as optional and has said so; one who did not
 // gets no help, which is the behaviour they can reason about.
 func TestNoURLNormalisationHappens(t *testing.T) {
+	t.Parallel()
 	s := open(t)
 	if _, err := s.SaveRecogniser(pullRequestRow()); err != nil {
 		t.Fatal(err)
@@ -152,6 +159,7 @@ func TestNoURLNormalisationHappens(t *testing.T) {
 }
 
 func TestFillSubstitutesCapturesIntoEveryTemplate(t *testing.T) {
+	t.Parallel()
 	s := open(t)
 	if _, err := s.SaveRecogniser(pullRequestRow()); err != nil {
 		t.Fatal(err)
@@ -189,6 +197,7 @@ func TestFillSubstitutesCapturesIntoEveryTemplate(t *testing.T) {
 // nothing to put in it becomes `feature/`, which is a directory somebody
 // creates by accident and then wonders about.
 func TestAPlaceholderNothingFilledIsLeftStandingAndReported(t *testing.T) {
+	t.Parallel()
 	s := open(t)
 	r := pullRequestRow()
 	r.Cwd = "d:/worktrees/{org}/{repo}/{branch}"
@@ -211,6 +220,7 @@ func TestAPlaceholderNothingFilledIsLeftStandingAndReported(t *testing.T) {
 // A title fetched from an issue tracker is somebody else's text, and somebody
 // else's text has newlines in it. A card title is one line and a path is a path.
 func TestFetchedTextDoesNotBreakOutOfItsField(t *testing.T) {
+	t.Parallel()
 	r := &Recogniser{
 		ID: "x", Title: "{title}", Cwd: "d:/w/{repo}", Prompt: "fix {title}",
 	}
@@ -233,6 +243,7 @@ func TestFetchedTextDoesNotBreakOutOfItsField(t *testing.T) {
 
 // FillPrompt takes the captures only: a fetched fact's placeholder is blank, an unknown one stays.
 func TestFillPromptTakesOnlyTheCaptures(t *testing.T) {
+	t.Parallel()
 	r := &Recogniser{ID: "x", Prompt: "Work on {url} in {repo}.\n\n{body}{other}"}
 	got := r.FillPrompt(map[string]string{"url": "https://h/o/r/issues/1", "repo": "r"}, map[string]bool{"body": true})
 	if got != "Work on https://h/o/r/issues/1 in r.\n\n{other}" {
@@ -243,6 +254,7 @@ func TestFillPromptTakesOnlyTheCaptures(t *testing.T) {
 // A capture group called `url` does not get to redefine what {url} means, or
 // every prompt built on it would point somewhere the operator did not paste.
 func TestURLAlwaysMeansTheURL(t *testing.T) {
+	t.Parallel()
 	s := open(t)
 	r := pullRequestRow()
 	r.Pattern = `^(?P<url>https?://)(?P<host>github\.com)/(?P<org>[^/]+)/(?P<repo>[^/]+)/pull/(?P<num>\d+)`
@@ -261,6 +273,7 @@ func TestURLAlwaysMeansTheURL(t *testing.T) {
 }
 
 func TestFillArgvKeepsEveryArgumentSeparate(t *testing.T) {
+	t.Parallel()
 	cmd, args := FillArgv("gh", []string{"issue", "view", "{num}", "--repo", "{org}/{repo}"},
 		map[string]string{"num": "12", "org": "open ziti", "repo": "ziti"})
 	if cmd != "gh" {
@@ -277,6 +290,7 @@ func TestFillArgvKeepsEveryArgumentSeparate(t *testing.T) {
 // The failure bookkeeping is what atrium observed. It is not writable, the same
 // as a source, and turning a row back on is the operator saying they fixed it.
 func TestRecogniserFailuresAreObservedNotTyped(t *testing.T) {
+	t.Parallel()
 	s := open(t)
 	r := pullRequestRow()
 	if _, err := s.SaveRecogniser(r); err != nil {
@@ -313,6 +327,7 @@ func TestRecogniserFailuresAreObservedNotTyped(t *testing.T) {
 // the board in front of them, and a row that switched itself off would make the
 // next paste silently match nothing while they watched.
 func TestAFailingFetchNeverSwitchesTheRowOff(t *testing.T) {
+	t.Parallel()
 	s := open(t)
 	if _, err := s.SaveRecogniser(pullRequestRow()); err != nil {
 		t.Fatal(err)
@@ -336,6 +351,7 @@ func TestAFailingFetchNeverSwitchesTheRowOff(t *testing.T) {
 }
 
 func TestDeleteRecogniser(t *testing.T) {
+	t.Parallel()
 	s := open(t)
 	if _, err := s.SaveRecogniser(pullRequestRow()); err != nil {
 		t.Fatal(err)
@@ -356,6 +372,7 @@ func TestDeleteRecogniser(t *testing.T) {
 // hand, can carry a pattern that does not compile. One of those must not stop
 // the rows below it from being asked.
 func TestABadPatternInTheTableDoesNotBlockTheRestOfIt(t *testing.T) {
+	t.Parallel()
 	s := open(t)
 	if _, err := s.SaveRecogniser(pullRequestRow()); err != nil {
 		t.Fatal(err)

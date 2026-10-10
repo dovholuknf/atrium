@@ -10,6 +10,7 @@ import (
 // A message that reaches a session is a delivery, the turn after it is costed once however many came, and the report
 // leaves the operator's out of the top and the noise.
 func TestDeliveryCostedAtStop(t *testing.T) {
+	t.Parallel()
 	s := openTestStore(t)
 	task, _, err := s.Register(Observed{WireName: "target", Worktree: "D:/w/target", Runner: "claude"})
 	if err != nil {

@@ -71,6 +71,7 @@ func eventRows(t *testing.T, path string) int64 {
 // With no options the copy holds every row, is incremental, and opens as a
 // store that can hand pages back. The input keeps every row too.
 func TestCompactCopiesEverythingAndSwitchesMode(t *testing.T) {
+	t.Parallel()
 	in, _ := legacyStore(t, 3, 20)
 	before := eventRows(t, in)
 	out := filepath.Join(t.TempDir(), "compact.db")
@@ -100,6 +101,7 @@ func TestCompactCopiesEverythingAndSwitchesMode(t *testing.T) {
 
 // The window and the dropped kinds trim the copy, and only the copy.
 func TestCompactWindowAndDropKinds(t *testing.T) {
+	t.Parallel()
 	in, ids := legacyStore(t, 3, 40)
 	before := eventRows(t, in)
 	out := filepath.Join(t.TempDir(), "compact.db")
@@ -138,6 +140,7 @@ func TestCompactWindowAndDropKinds(t *testing.T) {
 
 // A database somebody has open is refused, and nothing is written.
 func TestCompactRefusesAnOpenDatabase(t *testing.T) {
+	t.Parallel()
 	in, _ := legacyStore(t, 1, 2)
 	s, err := Open(in)
 	if err != nil {
@@ -159,6 +162,7 @@ func TestCompactRefusesAnOpenDatabase(t *testing.T) {
 }
 
 func TestCompactRefusals(t *testing.T) {
+	t.Parallel()
 	in, _ := legacyStore(t, 1, 2)
 	if _, err := Compact(in, in, CompactOptions{}); err == nil {
 		t.Fatal("compacting onto the input was allowed")

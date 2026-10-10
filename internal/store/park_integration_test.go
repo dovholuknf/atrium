@@ -18,6 +18,7 @@ func parkCardFor(t *testing.T, s *Store) *Task {
 }
 
 func TestHumanTouchSurvivesRestart(t *testing.T) {
+	t.Parallel()
 	path := t.TempDir() + "/atrium.db"
 	first, err := Open(path)
 	if err != nil {
@@ -48,6 +49,7 @@ func TestHumanTouchSurvivesRestart(t *testing.T) {
 }
 
 func TestMigrationHumanAtParkedAtIsTolerant(t *testing.T) {
+	t.Parallel()
 	path := t.TempDir() + "/atrium.db"
 	s, err := Open(path)
 	if err != nil {
@@ -66,6 +68,7 @@ func TestMigrationHumanAtParkedAtIsTolerant(t *testing.T) {
 }
 
 func TestParkKeepsStatusAndWritesOneEvent(t *testing.T) {
+	t.Parallel()
 	s, err := Open(t.TempDir() + "/atrium.db")
 	if err != nil {
 		t.Fatal(err)

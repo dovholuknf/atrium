@@ -30,6 +30,7 @@ func deepTree(t *testing.T, root string) int64 {
 }
 
 func TestCloseRemovesAnIgnoredDeepTreeAndCountsItsBytes(t *testing.T) {
+	t.Parallel()
 	oh, card, wt, _ := openForClose(t)
 	// node_modules is ignored, so it does not make the worktree ask.
 	exclude := git(t, wt, "rev-parse", "--path-format=absolute", "--git-path", "info/exclude")
@@ -56,6 +57,7 @@ func TestCloseRemovesAnIgnoredDeepTreeAndCountsItsBytes(t *testing.T) {
 }
 
 func TestRemoveLeftoverRemovesWhatGitLeftAndNamesWhatItCannot(t *testing.T) {
+	t.Parallel()
 	_, _, wt, _ := openForClose(t)
 	repo := git(t, filepath.FromSlash(wt), "rev-parse", "--path-format=absolute", "--git-common-dir")
 	repo = filepath.Dir(repo)
@@ -80,6 +82,7 @@ func TestRemoveLeftoverRemovesWhatGitLeftAndNamesWhatItCannot(t *testing.T) {
 }
 
 func TestCloseMarksTheCardClosed(t *testing.T) {
+	t.Parallel()
 	oh, card, _, _ := openForClose(t)
 	if code, out := closeCall(t, oh, card, map[string]any{"confirm": true}); code != 200 || !out.Closed {
 		t.Fatalf("%d %+v", code, out)
