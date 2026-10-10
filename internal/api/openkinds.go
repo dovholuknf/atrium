@@ -98,7 +98,7 @@ func (s *Server) openOther(w http.ResponseWriter, r *http.Request, in openReques
 		got, k = supportFromURLOnly(got, k)
 	}
 	key := k.key(got.Kind)
-	ans :=openAnswer{Key: key, Kind: k.kind, Recogniser: got.Recogniser, Title: got.Title}
+	ans := openAnswer{Key: key, Kind: k.kind, Recogniser: got.Recogniser, Title: got.Title}
 
 	// 1. a live card for the link already
 	if t := s.liveLinkCard(key); t != nil {
