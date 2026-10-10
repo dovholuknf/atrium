@@ -71,6 +71,8 @@ type Store struct {
 	afterCollision func(name string)
 	// forge is the forge branch fetches in flight, and when each repository's were last refreshed. See storeforge.go.
 	forge forgeState
+	// views is the snapshot GET /_hub/git/repos answers from. See viewcache.go.
+	views viewCache
 }
 
 // Tip is a ref's tip: the sha and the commit time.
@@ -356,6 +358,7 @@ func (s *Store) Init(ctx context.Context, rawURL string) (InitResult, error) {
 		return res, fmt.Errorf("%s", s.scrub(err.Error()))
 	}
 	res.Note = s.scrub(res.Note)
+	s.RefreshView()
 	s.h.audit("", "git-store-init", fmt.Sprintf("%s created=%v seeded=%v main=%s",
 		res.Repo, res.Created, res.Seeded, short(res.Main)))
 	return res, nil
@@ -664,7 +667,8 @@ func (s *Store) ViewOne(ctx context.Context, name string) (RepoView, bool) {
 	return s.viewEntry(ctx, Entry{Ref: ref, Dir: dir}), true
 }
 
-func (s *Store) viewEntry(ctx context.Context, e Entry) RepoView {
+// bareEntry is a repository's listing with no branches: what the disk's directories say, with no git run.
+func (s *Store) bareEntry(e Entry) RepoView {
 	v := RepoView{
 		Host: e.Ref.Host, Owner: e.Ref.Owner, Repo: e.Ref.Repo, URL: CloneURL(e.Ref),
 		Path: "/git/hub/" + e.Ref.Name() + ".git", Branches: []BranchView{},
@@ -672,6 +676,11 @@ func (s *Store) viewEntry(ctx context.Context, e Entry) RepoView {
 	if fi, err := os.Stat(filepath.Join(e.Dir, Marker)); err == nil {
 		v.Created = fi.ModTime().UTC().Format(time.RFC3339)
 	}
+	return v
+}
+
+func (s *Store) viewEntry(ctx context.Context, e Entry) RepoView {
+	v := s.bareEntry(e)
 	heads, _ := s.heads(ctx, e.Dir)
 	// THE PUSH LOG says who owns each branch and when it was last pushed. A row whose ref is gone is
 	// ignored, because only the refs git has are listed, and a branch with no row (made on the hub's disk)

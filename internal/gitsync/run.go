@@ -29,6 +29,9 @@ type Runner struct {
 	// Bound overrides CommandBound. Zero takes it. Tests only.
 	Bound time.Duration
 
+	// Spawned counts the git processes started. A test reads it to show a request started none.
+	Spawned atomic.Int64
+
 	mu       sync.Mutex
 	stopped  bool
 	stop     context.CancelFunc
@@ -197,6 +200,7 @@ func (r *Runner) gitWith(ctx context.Context, dir string, extraEnv []string, std
 	stop := context.AfterFunc(r.root, cancel)
 	defer stop()
 
+	r.Spawned.Add(1)
 	cmd := gitCommand(ctx, dir, extraEnv, args)
 	var stdout, stderr bytes.Buffer
 	capped := &capWriter{buf: &stdout, max: maxOut, stop: cancel}

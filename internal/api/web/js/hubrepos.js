@@ -491,6 +491,7 @@ function hubReposPaint() {
 async function loadHubRepos() {
   if (hubRepos.inflight) return;
   hubRepos.inflight = true;
+  let building = false;
   const refresh = document.getElementById("hubrepos-refresh");
   if (refresh) refresh.disabled = true;
   try {
@@ -500,6 +501,8 @@ async function loadHubRepos() {
     hubRepos.repos = (body && body.repos) || [];
     hubRepos.note = "";
     hubRepos.loaded = true;
+    // The hub answers from a snapshot and says when it is still building the first one: paint what it has, ask again shortly.
+    building = !!(body && body.building);
   } catch (e) {
     hubRepos.note = "The hub's repos are not answering right now. This hub may be too old to list them.";
   } finally {
@@ -507,6 +510,7 @@ async function loadHubRepos() {
     if (refresh) refresh.disabled = false;
   }
   hubReposPaint();
+  if (building) setTimeout(loadHubRepos, 1500);
   // The requests are read with the repos, so a branch row can say it has one. A failure here is the requests view's to show.
   if (typeof crLoad === "function") crLoad();
 }

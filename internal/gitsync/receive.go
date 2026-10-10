@@ -675,6 +675,7 @@ func (rc *Receiver) push(w http.ResponseWriter, r *http.Request, ref Ref, exe st
 	out.Header.Set("Content-Length", strconv.FormatInt(size, 10))
 
 	serveCGI(gitCGI(exe, dir, pushConfig(hooks), cgiEnv()), resp, out)
+	defer rc.h.Store().RefreshView()
 
 	// THE REFS ARE THE RESULT. Whatever git said, a push is settled for exactly the refs that now hold the
 	// sha it asked for.
