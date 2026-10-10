@@ -144,14 +144,14 @@ Each phase is one worker.
 ## 5. Open questions for clint
 
 1. A worker finishes a feature, fixes `website/docs/cli.md` in its branch, and leaves `README.md` wrong. Then?
-   Recommended: it files ONE doc item that names only `README.md` under `stale:` and `cli.md` under `updated:`. A feature that
-   fixed all its pages files nothing.
+   Recommended: it files ONE doc item that names only `README.md` under `stale:` and `cli.md` under
+   `updated:`. A feature that fixed all its pages files nothing.
 2. Seven features sit open for 12 days and the meter is under 8 items. Is that too quiet? Recommended: no. The rule is 8
    items, or 3 items with the oldest at 10 days, so this fires on day 10. Tell me if you want it sooner.
 3. Somebody fixes a typo on `cli.md`, which a doc item says is three verbs behind. Then? Recommended: the hub
-   shows "page changed since" and leaves the item open, and only a doc worker closes it. This departs from your item 3, doc items
-   close when the page changes. I did it because a typo would hide real debt. Do you want automatic close anyway, with
-   reopen as one click?
+   shows "page changed since" and leaves the item open, and only a doc worker closes it. This departs from your item 3,
+   doc items close when the page changes. I did it because a typo would hide real debt. Do you want automatic close
+   anyway, with reopen as one click?
 4. A worker forgets to file a doc item and the branch merges. Then? Recommended: the fold prints a warning naming the
    item, nothing fails, and the merger's one report to the orchestrator lists the warnings. A refusal gets a round trip
    per forgotten line.
