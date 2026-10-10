@@ -68,6 +68,9 @@ func TestSayingDoneToTheLauncherClosesTheCard(t *testing.T) {
 
 // Free text is never read as a verdict, and only the worker's words to its own launcher count.
 func TestOnlyDoneAndAShaClosesACardBySay(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	for _, text := range []string{
 		"done with the refactor, one thing left", "done", "done abc", "blocked: no sha", "almost done 8918f846",
 		"not done 8918f846",
@@ -178,6 +181,9 @@ func TestCullKeepsAScratchDirectoryThatHoldsOtherFiles(t *testing.T) {
 
 // H4 and the clint-started rule: none of these is ever reclaimed, and nothing on disk moves.
 func TestCullNeverReclaimsWhatMustStay(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	cases := []struct {
 		name string
 		tags []string
@@ -237,6 +243,9 @@ func TestCullNeverReclaimsWhatMustStay(t *testing.T) {
 
 // The sweep re-checks the same rules, so a card that became ineligible after it was marked is let go.
 func TestTheSweepNeverCullsAStayOpenCard(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d := testDaemon(t)
 	r := newCullRepo(t, true)
 	_, worker := mergedWorker(t, d, r)
@@ -258,6 +267,9 @@ func TestTheSweepNeverCullsAStayOpenCard(t *testing.T) {
 // A merge alone reclaims nothing: the setting is off until the operator sets a grace, and the launcher's
 // atrium_cull is what says the work is merged and deployed.
 func TestAMergeAloneReclaimsNothingByDefault(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d := testDaemon(t)
 	r := newCullRepo(t, true)
 	launcher := peerCard(t, d, "orchestrator")
@@ -279,6 +291,9 @@ func TestAMergeAloneReclaimsNothingByDefault(t *testing.T) {
 }
 
 func TestReclaimScratchLeavesAGitCheckoutAlone(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	r := newCullRepo(t, true)
 	// BRIEF.md tracked by the repository is somebody's file.
 	if err := os.WriteFile(filepath.Join(r.main, briefFile), []byte("mine\n"), 0o644); err != nil {

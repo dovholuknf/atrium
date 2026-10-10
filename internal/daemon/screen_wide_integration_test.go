@@ -52,6 +52,9 @@ func TestWidthTable(t *testing.T) {
 // code point. It is what stops the table drifting when xterm.js is upgraded, or
 // when the board starts loading its unicode11 addon.
 func TestWidthMatchesXterm(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	node, err := exec.LookPath("node")
 	if err != nil {
 		t.Skip("node is not on PATH: the width parity check needs it (testdata/gen_widths.js)")

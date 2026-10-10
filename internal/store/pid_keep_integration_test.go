@@ -8,6 +8,9 @@ import "testing"
 // same session. A different conversation means a different process, whose pid is
 // not known yet, so the old one is dropped rather than trusted.
 func TestAPidlessReportKeepsThePidOnlyForTheSameSession(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real sqlite database on disk")
+	}
 	t.Parallel()
 	s := openTestStore(t)
 	task, _, err := s.Register(Observed{WireName: "pidkeep", Worktree: "/tmp/pidkeep", Runner: "claude", PID: 4242})

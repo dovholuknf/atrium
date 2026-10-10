@@ -155,6 +155,9 @@ func (hn *prHarness) ask(t *testing.T) (int, map[string]any) {
 }
 
 func TestPRWorktreeSameRepoUsesTheRealBranch(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real server with git worktrees and a database")
+	}
 	t.Parallel()
 	hn := newPRHarness(t, &fakeForge{pr: forge.PR{HeadRef: "feat/x"}})
 	hn.checkout(t, "o", "r")
@@ -175,6 +178,9 @@ func TestPRWorktreeSameRepoUsesTheRealBranch(t *testing.T) {
 }
 
 func TestPRWorktreeForkUsesPRNumber(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real server with git worktrees and a database")
+	}
 	t.Parallel()
 	hn := newPRHarness(t, &fakeForge{pr: forge.PR{HeadRef: "main", FromFork: true}})
 	hn.checkout(t, "o", "r")
@@ -188,6 +194,9 @@ func TestPRWorktreeForkUsesPRNumber(t *testing.T) {
 }
 
 func TestPRWorktreeSecondCallIsTheAnswer(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real server with git worktrees and a database")
+	}
 	t.Parallel()
 	hn := newPRHarness(t, &fakeForge{pr: forge.PR{HeadRef: "feat/x"}})
 	hn.checkout(t, "o", "r")
@@ -199,6 +208,9 @@ func TestPRWorktreeSecondCallIsTheAnswer(t *testing.T) {
 }
 
 func TestPRWorktreeWithNoCheckoutGoesThroughTheClonePath(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real server with git worktrees and a database")
+	}
 	t.Parallel()
 	hn := newPRHarness(t, &fakeForge{pr: forge.PR{HeadRef: "feat/x"}})
 	scm := filepath.Join(t.TempDir(), "scm", "o", "r")
@@ -269,6 +281,9 @@ func real(v any) string {
 }
 
 func TestPRWorktreeRaisesAndClearsTheForgeAlert(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real server with git worktrees and a database")
+	}
 	t.Parallel()
 	ae := &forge.AccessError{Tool: "gh", Host: "github.com"}
 	hn := newPRHarness(t, &fakeForge{err: ae})

@@ -24,6 +24,9 @@ func shelvable(t *testing.T, d *Daemon, name string) *store.Task {
 // mode launch owns itself and a session that joined by hand belongs to whoever
 // started it, so there is nothing to stop and the card still goes down.
 func TestShelvingWithoutARunnerSucceeds(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d, _, cancel, _ := startDaemon(t)
 	defer cancel()
 
@@ -36,6 +39,9 @@ func TestShelvingWithoutARunnerSucceeds(t *testing.T) {
 // Unshelving has to say why nothing started rather than looking like it worked.
 // A card with no resume id has no conversation to pick up.
 func TestUnshelveWithoutAResumeIDExplainsItself(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d, _, cancel, _ := startDaemon(t)
 	defer cancel()
 
@@ -55,6 +61,9 @@ func TestUnshelveWithoutAResumeIDExplainsItself(t *testing.T) {
 // A runner atrium no longer has configuration for cannot be started, and the
 // operator has to be told which half is missing.
 func TestUnshelveWithAnUnknownRunnerExplainsItself(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d, _, cancel, _ := startDaemon(t)
 	defer cancel()
 
@@ -80,6 +89,9 @@ func TestUnshelveWithAnUnknownRunnerExplainsItself(t *testing.T) {
 // Starting onto a card that does not exist has to name the card, not fail
 // somewhere deeper with a message about a directory.
 func TestLaunchOntoAMissingCardSaysSo(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d, _, cancel, _ := startDaemon(t)
 	defer cancel()
 
@@ -96,6 +108,9 @@ func TestLaunchOntoAMissingCardSaysSo(t *testing.T) {
 
 // Unshelving something already running must not start a second one.
 func TestUnshelveRefusesWhenAlreadyRunning(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d, _, cancel, _ := startDaemon(t)
 	defer cancel()
 

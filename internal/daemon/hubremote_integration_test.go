@@ -210,6 +210,9 @@ func TestACardLosesItsTokenWhenItIsNoLongerRunning(t *testing.T) {
 }
 
 func TestTheForwarderRouteIsOnTheAgentListenerAndTheTokenOpensNothingElse(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d, _, cancel, _ := startDaemon(t)
 	defer cancel()
 	base := "http://" + d.opts.AgentAddr

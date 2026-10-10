@@ -8,6 +8,9 @@ import (
 )
 
 func TestASessionEndingSaysSo(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d, _, cancel, _ := startDaemon(t)
 	defer cancel()
 
@@ -21,6 +24,9 @@ func TestASessionEndingSaysSo(t *testing.T) {
 }
 
 func TestAShellClosingIsNotASessionEnding(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d, _, cancel, _ := startDaemon(t)
 	defer cancel()
 
@@ -38,6 +44,9 @@ func TestAShellClosingIsNotASessionEnding(t *testing.T) {
 // Once a wind-down has started every close is the restart, whichever kind of
 // terminal it was.
 func TestDuringAWindDownEveryCloseSaysRestarting(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d, _, cancel, _ := startDaemon(t)
 	defer cancel()
 
@@ -56,6 +65,9 @@ func TestDuringAWindDownEveryCloseSaysRestarting(t *testing.T) {
 // how the board starts guessing again, and it guesses wrong in the case that
 // costs the most.
 func TestTheThreeReasonsAreDistinct(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d, _, cancel, _ := startDaemon(t)
 	defer cancel()
 

@@ -12,6 +12,9 @@ import (
 // hook has nothing to report. SessionStart is what makes it visible, and it
 // costs nothing because it is a hook rather than a model turn.
 func TestSessionStartRegistersImmediately(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d, _, cancel, errCh := startDaemon(t)
 	defer func() {
 		cancel()
@@ -50,6 +53,9 @@ func TestSessionStartRegistersImmediately(t *testing.T) {
 // starting there safe. Both halves are needed: a card that started ready and
 // stayed there through a whole turn would be worse than the bug it fixed.
 func TestAFreshSessionLeavesReadyWhenItWorks(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d, _, cancel, errCh := startDaemon(t)
 	defer func() {
 		cancel()
@@ -83,6 +89,9 @@ func TestAFreshSessionLeavesReadyWhenItWorks(t *testing.T) {
 // SessionEnd is the only reliable signal that a session is over. Without it a
 // card sits in running forever.
 func TestSessionEndMarksDead(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d, _, cancel, errCh := startDaemon(t)
 	defer func() {
 		cancel()
@@ -109,6 +118,9 @@ func TestSessionEndMarksDead(t *testing.T) {
 // Starting again revives the card rather than making a second one, which is
 // what a resume looks like from atrium's side.
 func TestSessionStartRevivesADeadCard(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d, _, cancel, errCh := startDaemon(t)
 	defer func() {
 		cancel()
@@ -145,6 +157,9 @@ func TestSessionStartRevivesADeadCard(t *testing.T) {
 
 // A card put down by hand stays down when its session ends.
 func TestSessionEndLeavesShelvedAlone(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d, _, cancel, errCh := startDaemon(t)
 	defer func() {
 		cancel()
@@ -175,6 +190,9 @@ func TestSessionEndLeavesShelvedAlone(t *testing.T) {
 // A launched runner is told which card it belongs to, so it must bind to that
 // one rather than opening a second.
 func TestSessionBindsToLaunchedCard(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d, _, cancel, errCh := startDaemon(t)
 	defer func() {
 		cancel()

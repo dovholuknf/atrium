@@ -22,6 +22,9 @@ func pasteTask(t *testing.T, d *Daemon, name, runner string) *store.Task {
 // The case the defect was reported against: a claude session, whose harness row
 // declares the mode.
 func TestAnAttachSaysWhenTheRunnerAsksForBracketedPaste(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d, _, cancel, _ := startDaemon(t)
 	defer cancel()
 
@@ -35,6 +38,9 @@ func TestAnAttachSaysWhenTheRunnerAsksForBracketedPaste(t *testing.T) {
 
 // Shell panes rely on stream detection because paste mode changes around prompts.
 func TestACardsShellIsNeverToldToBracket(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d, _, cancel, _ := startDaemon(t)
 	defer cancel()
 
@@ -48,6 +54,9 @@ func TestACardsShellIsNeverToldToBracket(t *testing.T) {
 // Unknown runners and missing cards return false, leaving paste detection
 // to the stream instead of sending potentially unsupported markers.
 func TestAnUndeclaredRunnerIsNotBracketed(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d, _, cancel, _ := startDaemon(t)
 	defer cancel()
 

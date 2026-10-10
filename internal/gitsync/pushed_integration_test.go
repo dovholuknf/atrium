@@ -42,6 +42,9 @@ func pushedFixture(t *testing.T) (*pushedFix, map[string]string) {
 }
 
 func TestPushedSaysMatchesBehindAheadDivergedAndNotPushed(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: git subprocesses and a real smart-HTTP rig")
+	}
 	t.Parallel()
 	x, sha := pushedFixture(t)
 	st := x.h.Store()
@@ -85,6 +88,9 @@ func TestPushedSaysMatchesBehindAheadDivergedAndNotPushed(t *testing.T) {
 }
 
 func TestPushedCarriesTheOwnerAndTheTimeOfTheLastPush(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: git subprocesses and a real smart-HTTP rig")
+	}
 	t.Parallel()
 	x, sha := pushedFixture(t)
 	got, err := x.h.Store().Pushed(bg, hubRepo, "fix/x", sha["first"])
@@ -117,6 +123,9 @@ func TestPushedCarriesTheOwnerAndTheTimeOfTheLastPush(t *testing.T) {
 }
 
 func TestPushedOfARepositoryTheHubLacksIsNotPushed(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: git subprocesses and a real smart-HTTP rig")
+	}
 	t.Parallel()
 	x, sha := pushedFixture(t)
 	got, err := x.h.Store().Pushed(bg, "github/o/absent", "fix/x", sha["first"])
@@ -126,6 +135,9 @@ func TestPushedOfARepositoryTheHubLacksIsNotPushed(t *testing.T) {
 }
 
 func TestPushedRefusesWhatIsNotANameOrACommitId(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: git subprocesses and a real smart-HTTP rig")
+	}
 	t.Parallel()
 	x, sha := pushedFixture(t)
 	st := x.h.Store()
@@ -154,6 +166,9 @@ func TestPushedRefusesWhatIsNotANameOrACommitId(t *testing.T) {
 }
 
 func TestPushedCancelledIsAnErrorNotAState(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: git subprocesses and a real smart-HTTP rig")
+	}
 	t.Parallel()
 	x, sha := pushedFixture(t)
 	ctx, cancel := context.WithCancel(bg)
@@ -165,6 +180,9 @@ func TestPushedCancelledIsAnErrorNotAState(t *testing.T) {
 }
 
 func TestReachableIsTheTipOrWhatItIsBuiltOn(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: git subprocesses and a real smart-HTTP rig")
+	}
 	t.Parallel()
 	x, sha := pushedFixture(t)
 	st := x.h.Store()
@@ -192,6 +210,9 @@ func TestReachableIsTheTipOrWhatItIsBuiltOn(t *testing.T) {
 }
 
 func TestBranchSHAIsTheHubsTipOrNotFound(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: git subprocesses and a real smart-HTTP rig")
+	}
 	t.Parallel()
 	x, sha := pushedFixture(t)
 	got, ok, err := x.h.Store().BranchSHA(bg, hubRepo, "fix/x")
@@ -272,6 +293,9 @@ func TestRoomBranchSaysWhyARoomCannotBeAsked(t *testing.T) {
 }
 
 func TestRoomBranchOfARoomThatAnswersBadlyIsUnreachableNotAbsent(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: git subprocesses and a real smart-HTTP rig")
+	}
 	t.Parallel()
 	for name, h := range map[string]http.HandlerFunc{
 		"a server error": func(w http.ResponseWriter, _ *http.Request) { http.Error(w, "no", http.StatusInternalServerError) },
@@ -294,6 +318,9 @@ func TestRoomBranchOfARoomThatAnswersBadlyIsUnreachableNotAbsent(t *testing.T) {
 
 // Only git's exit status 1 is "no". Any other failure is the read failing, and is never taken for an answer.
 func TestAGitFailureIsAnErrorAndNotANo(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: git subprocesses and a real smart-HTTP rig")
+	}
 	t.Parallel()
 	x, sha := pushedFixture(t)
 	notARepo := t.TempDir()

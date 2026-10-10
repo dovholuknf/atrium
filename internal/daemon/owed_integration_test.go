@@ -505,6 +505,9 @@ func waitSays(rl *fakeRelay, want int) []RelaySay {
 }
 
 func TestAnUntaggedPeerCalledOrchestratorGetsNothingAndIsNotRemembered(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d := testDaemon(t)
 	rl := &fakeRelay{peers: []RemotePeer{{Handle: "orchestrator", Room: "someroom"}}}
 	d.SetRelay(rl)

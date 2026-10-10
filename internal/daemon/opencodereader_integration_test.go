@@ -130,6 +130,9 @@ func TestOpencodeReplyIsCutAtReplyTextMax(t *testing.T) {
 }
 
 func TestOpencodeFallsBackToTheScreen(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	cases := []struct {
 		name, session string
 		out           func() ([]byte, error)
@@ -192,6 +195,9 @@ func TestOpencodeSessionIDShape(t *testing.T) {
 // The export is bounded by its timeout plus the wait delay even when a process it
 // started keeps stdout open, and the next call is not held up by it.
 func TestOpencodeExecIsBoundedAgainstAChildHoldingStdout(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	if runtime.GOOS == "windows" {
 		t.Skip("shell fakes")
 	}

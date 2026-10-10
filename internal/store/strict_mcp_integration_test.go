@@ -43,6 +43,9 @@ func TestTheClaudeRowStartsWithNoMCPServers(t *testing.T) {
 // Do not name an MCP config file: a missing file would fail startup in
 // worktrees that have no .mcp.json.
 func TestNoMCPConfigFileIsNamed(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real sqlite database on disk")
+	}
 	t.Parallel()
 	s := openTestStore(t)
 
@@ -66,6 +69,9 @@ func TestNoMCPConfigFileIsNamed(t *testing.T) {
 // This used to name the shell row, which no longer exists: a shell is the
 // machine's, not a runner.
 func TestOnlyClaudeIsGivenClaudesFlag(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real sqlite database on disk")
+	}
 	t.Parallel()
 	s := openTestStore(t)
 
@@ -88,6 +94,9 @@ func TestOnlyClaudeIsGivenClaudesFlag(t *testing.T) {
 // Verify the migration updates existing defaults, since DefaultHarnesses
 // only seeds new databases.
 func TestAnExistingClaudeRowIsBackfilled(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real sqlite database on disk")
+	}
 	t.Parallel()
 	path := filepath.Join(t.TempDir(), "old.db")
 
@@ -131,6 +140,9 @@ func TestAnExistingClaudeRowIsBackfilled(t *testing.T) {
 // An operator who has written their own command line keeps it. The migration
 // is a fix for a default nobody chose, not permission to rewrite an edit.
 func TestAnEditedClaudeRowIsLeftAlone(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real sqlite database on disk")
+	}
 	t.Parallel()
 	path := filepath.Join(t.TempDir(), "edited.db")
 

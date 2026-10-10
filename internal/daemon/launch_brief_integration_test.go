@@ -32,6 +32,9 @@ func briefHarness(t *testing.T, d *Daemon) string {
 // already there when the session reads it. The write happens before the spawn,
 // so even a launch that fails to spawn on a bare test database has left the file.
 func TestLaunchWritesBriefFile(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d, _, cancel, _ := startDaemon(t)
 	defer cancel()
 
@@ -55,6 +58,9 @@ func TestLaunchWritesBriefFile(t *testing.T) {
 // A resume continues a conversation and takes no first prompt, so it must not
 // rewrite the briefing under a session that already read it.
 func TestLaunchSkipsBriefOnResume(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d, _, cancel, _ := startDaemon(t)
 	defer cancel()
 
@@ -153,6 +159,9 @@ func promptSeenBy(t *testing.T, d *Daemon, req LaunchRequest) string {
 }
 
 func TestALaunchWithNoBriefCarriesTheLineOnItsPromptOnce(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d := testDaemon(t)
 	got := promptSeenBy(t, d, LaunchRequest{Prompt: "just do it"})
 	if !strings.HasPrefix(got, "just do it") || strings.Count(got, "atrium_git_url") != 1 {
@@ -181,6 +190,9 @@ func TestAResumeTakesNoGitURLLine(t *testing.T) {
 }
 
 func TestAnOutsideCodeCardsBriefAndPromptCarryNoGitURLLine(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	dir := t.TempDir()
 	if _, err := writeBriefFile(dir, "task", false); err != nil {
 		t.Fatal(err)
@@ -211,6 +223,9 @@ func TestTheGitURLLineIsConditionalOnHavingTheTool(t *testing.T) {
 }
 
 func TestALaunchedOutsideCodeCardsBriefFileHasNoGitURLLine(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d, _, cancel, _ := startDaemon(t)
 	defer cancel()
 	h := briefHarness(t, d)

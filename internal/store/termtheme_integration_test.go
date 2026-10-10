@@ -150,6 +150,9 @@ func TestAThemeNameCannotReachTheExportSecretThreshold(t *testing.T) {
 // What is stored is the validator's output. A caller cannot smuggle a field
 // through by putting it in the JSON, because the JSON is never what is written.
 func TestWhatComesBackIsWhatWasValidated(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real sqlite database on disk")
+	}
 	t.Parallel()
 	st := themeStore(t)
 	in := TermTheme{Name: "Brought-IT", Palette: good()}
@@ -172,6 +175,9 @@ func TestWhatComesBackIsWhatWasValidated(t *testing.T) {
 }
 
 func TestABadThemeIsNotStoredAtAll(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real sqlite database on disk")
+	}
 	t.Parallel()
 	st := themeStore(t)
 	bad := TermTheme{Name: "brought", Palette: good()}
@@ -191,6 +197,9 @@ func TestABadThemeIsNotStoredAtAll(t *testing.T) {
 // Saving the same name twice is an edit, which is what the editor does every
 // time somebody changes a colour and presses save.
 func TestSavingTheSameNameEditsIt(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real sqlite database on disk")
+	}
 	t.Parallel()
 	st := themeStore(t)
 	first := TermTheme{Name: "brought", Palette: good()}
@@ -215,6 +224,9 @@ func TestSavingTheSameNameEditsIt(t *testing.T) {
 }
 
 func TestDeletingAThemeLeavesTheOthers(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real sqlite database on disk")
+	}
 	t.Parallel()
 	st := themeStore(t)
 	for _, n := range []string{"one", "two"} {

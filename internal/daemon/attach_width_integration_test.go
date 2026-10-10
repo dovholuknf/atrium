@@ -93,6 +93,9 @@ func attachVia(t *testing.T, h http.Handler, path string, cols, rows int) string
 // note that used to sit above it is gone: the operator found it noise and it
 // fired on every reattach after a hub restart. The bytes still arrive.
 func TestAttachingWideReplaysNarrowOutputWithoutANote(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d := testDaemon(t)
 	narrow := "an hour of output composed for eighty columns\n"
 	f := narrowSession(t, d, "wide-attach", narrow)
@@ -117,6 +120,9 @@ func TestAttachingWideReplaysNarrowOutputWithoutANote(t *testing.T) {
 // The ordinary attach, which none of this is allowed to make worse: same
 // width, so the whole buffer is replayed and nothing is announced.
 func TestAttachingAtTheSameWidthStillShowsTheScrollback(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d := testDaemon(t)
 	narrowSession(t, d, "same-width", "an hour of output composed for eighty columns\n")
 
@@ -132,6 +138,9 @@ func TestAttachingAtTheSameWidthStillShowsTheScrollback(t *testing.T) {
 // The smallest attached viewer decides, so a narrow window joining a wide
 // session resizes the terminal. The narrow viewer still gets the history.
 func TestASecondNarrowerViewerStillGetsTheHistory(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d := testDaemon(t)
 	f := narrowSession(t, d, "two-viewers", "drawn at eighty columns\n")
 
@@ -162,6 +171,9 @@ func TestASecondNarrowerViewerStillGetsTheHistory(t *testing.T) {
 // So the check is not that the bytes were sent. It is that what was sent
 // cannot destroy itself once xterm parses it.
 func TestTheReplayCannotEraseItself(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d := testDaemon(t)
 	// An hour of work, then the redraw claude-code emits on every turn.
 	history := strings.Repeat("a line of real work\r\n", 200) +
@@ -293,6 +305,9 @@ func TestAResizeWakesSizeWatchers(t *testing.T) {
 // first attempt at this fix went wrong: `subscribe` asked for one run of
 // output, and the run WAS the whole contract.
 func TestAResizedSessionReplaysEverythingOverTheSocket(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d := testDaemon(t)
 	f := narrowSession(t, d, "resized", "drawn before the drag\n")
 	// The drag, and something drawn after it.

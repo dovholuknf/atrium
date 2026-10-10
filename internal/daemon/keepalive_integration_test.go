@@ -184,6 +184,9 @@ func (f *kaFix) toasts() []string {
 // A warm, idle card inside the margin is refreshed with exactly the guarded
 // command line, in its own directory, with atrium's hooks off.
 func TestKeepaliveRefreshesAnIdleCardInsideTheMargin(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	f := newKAFix(t)
 	f.reply(f.now.Add(-56*time.Minute), replyOpt{})
 	f.tick()
@@ -345,6 +348,9 @@ func TestKeepaliveHandOnLiftsTheUnsavedHold(t *testing.T) {
 }
 
 func TestKeepaliveEachRuleBlocksARefresh(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	cases := []struct {
 		name  string
 		setup func(f *kaFix)
@@ -780,6 +786,9 @@ func TestKeepaliveViewShowsLastAndNextRefresh(t *testing.T) {
 }
 
 func TestKeepaliveNextRefreshOnlyWhenNotDue(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	cases := map[string]func(f *kaFix){
 		"off": func(f *kaFix) {
 			f.reply(f.now.Add(-30*time.Minute), replyOpt{})

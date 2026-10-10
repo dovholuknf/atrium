@@ -40,6 +40,9 @@ func TestSayPastedStripsMarkers(t *testing.T) {
 }
 
 func TestAMessageCannotEndItsOwnPaste(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d, _, cancel, _ := startDaemon(t)
 	defer cancel()
 	task := pasteTask(t, d, "paste-strip", "claude")

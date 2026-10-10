@@ -46,6 +46,9 @@ func hasCursorMove(s string) bool {
 }
 
 func TestALiveRefitRestoresTheCursorOnlyWhenThePtyMoves(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d := testDaemon(t)
 	// A parked cursor, not at the bottom: row 2 col 6 of three drawn rows.
 	f := narrowSession(t, d, "refit", "line one\r\nline two\r\nline three\r\n\x1b[2;6H")

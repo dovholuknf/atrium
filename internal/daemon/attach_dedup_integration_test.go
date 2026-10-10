@@ -24,6 +24,9 @@ import (
 // The fix is to serialise ring write and fanout under `r.mu`, so a subscribe
 // either sees the chunk in the backlog OR on the channel and never both.
 func TestAttachDoesNotSeeAChunkTwiceOnASubscribeRace(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	const chunks = 200
 	const attaches = 40
 	const size = 1 << 20
@@ -111,6 +114,9 @@ func TestAttachDoesNotSeeAChunkTwiceOnASubscribeRace(t *testing.T) {
 // piece, then a chunk that looks like a status line right after. An attach
 // that lands between the two writes must not receive either chunk twice.
 func TestBannerAndStatusLineArriveExactlyOnce(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	f := newFakePTY()
 	t.Cleanup(func() { f.Close() })
 	r := &runner{

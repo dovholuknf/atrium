@@ -38,6 +38,9 @@ func TestClearIsTypedWhenTheTurnEndedWithSubagentsStillOut(t *testing.T) {
 // A /clear that can never be typed fails the cycle with the reason, instead of sitting
 // on step 2.
 func TestClearThatCannotBeTypedFailsWithWhatBlockedIt(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	fastNewContext(t)
 	ncTiming.clearTypeWait = 300 * time.Millisecond
 	d := testDaemon(t)

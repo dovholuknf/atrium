@@ -118,6 +118,9 @@ func sourceOf(b *gitsync.URLBranch, source string) *gitsync.URLSource {
 }
 
 func TestABranchOnTheHubAloneAnswersTheHubsURL(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real link, hub and git rig over loopback")
+	}
 	x := newURLRig(t)
 	x.pushToStore(t, x.claudeW1, "feat/done")
 	a := x.ask(t, "repo=o/r&branch=feat/done")
@@ -136,6 +139,9 @@ func TestABranchOnTheHubAloneAnswersTheHubsURL(t *testing.T) {
 }
 
 func TestABranchOnAnOnlineRoomAloneAnswersTheRoomsURL(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real link, hub and git rig over loopback")
+	}
 	x := newURLRig(t)
 	a := x.ask(t, "repo=github/o/r&branch=claude/w1")
 	if a.State != gitsync.URLFound || len(a.Branches) != 1 || len(a.Branches[0].Sources) != 1 {
@@ -155,6 +161,9 @@ func TestABranchOnAnOnlineRoomAloneAnswersTheRoomsURL(t *testing.T) {
 }
 
 func TestABranchOnBothAnswersBothAndSaysWhetherTheRoomIsAhead(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real link, hub and git rig over loopback")
+	}
 	x := newURLRig(t)
 	x.setLive("fix/live")
 
@@ -187,6 +196,9 @@ func TestABranchOnBothAnswersBothAndSaysWhetherTheRoomIsAhead(t *testing.T) {
 }
 
 func TestAMissAnswersNotFoundWithTheClosestAndAsksNoRoom(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real link, hub and git rig over loopback")
+	}
 	x := newURLRig(t)
 	before := x.advs.Load()
 
@@ -212,6 +224,9 @@ func TestAMissAnswersNotFoundWithTheClosestAndAsksNoRoom(t *testing.T) {
 }
 
 func TestAnOfflineRoomAnswersOfflineBeforeAnyoneFetches(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real link, hub and git rig over loopback")
+	}
 	x := newURLRig(t)
 	x.pushToStore(t, x.claudeW1, "feat/done")
 	x.cancel()
@@ -239,6 +254,9 @@ func TestAnOfflineRoomAnswersOfflineBeforeAnyoneFetches(t *testing.T) {
 }
 
 func TestABranchTheRoomWouldNotServeIsNeverListed(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real link, hub and git rig over loopback")
+	}
 	x := newURLRig(t)
 	// The clone's own main and master are live-card branches here and are not served, and neither are the stash,
 	// the notes and a branch with no live card.
@@ -283,6 +301,9 @@ func TestABranchTheRoomWouldNotServeIsNeverListed(t *testing.T) {
 }
 
 func TestTheURLIsOnTheHostTheCallerReachedTheHubBy(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real link, hub and git rig over loopback")
+	}
 	x := newURLRig(t)
 	x.pushToStore(t, x.claudeW1, "claude/w1")
 	for _, c := range []struct {
@@ -326,6 +347,9 @@ func TestTheURLIsOnTheHostTheCallerReachedTheHubBy(t *testing.T) {
 }
 
 func TestOnlyTheReachesOfAFetchMayAskForAURL(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real link, hub and git rig over loopback")
+	}
 	x := newURLRig(t)
 	q := "repo=o/r"
 	for name, c := range map[string]struct {
@@ -365,6 +389,9 @@ func TestOnlyTheReachesOfAFetchMayAskForAURL(t *testing.T) {
 }
 
 func TestARoomsAnswerIsHeldBrieflyAndNotForever(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real link, hub and git rig over loopback")
+	}
 	x := newURLRig(t)
 	x.g.LookupTTL = time.Hour
 	before := x.advs.Load()
@@ -383,6 +410,9 @@ func TestARoomsAnswerIsHeldBrieflyAndNotForever(t *testing.T) {
 
 // The tool is the same code over the same board.
 func TestTheToolReturnsTheEndpointsJSONAndALine(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real link, hub and git rig over loopback")
+	}
 	x := newURLRig(t)
 	x.setLive("fix/live")
 	x.pushToStore(t, x.liveSHA, "fix/live")
@@ -453,6 +483,9 @@ func TestTheToolReturnsTheEndpointsJSONAndALine(t *testing.T) {
 // A branch pushed by a room that is not attached is on the hub, and the room is named as away: its work in progress
 // may be newer than what was pushed, and cannot be read now.
 func TestABranchPushedByARoomThatIsGoneNamesTheRoomAsAway(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real link, hub and git rig over loopback")
+	}
 	x := newURLRig(t)
 	log := &gitsync.MemPushLog{}
 	x.g.PushLog = log
@@ -538,6 +571,9 @@ func (f rtFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r)
 // A card on another room is handed a URL on ITS room's forwarder, not the hub's loopback, and a real git fetch of it
 // with the card's token gets the branch out of the hub's store.
 func TestACardOnAnotherRoomIsGivenItsRoomsForwarderAndFetchesThroughIt(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real link, hub and git rig over loopback")
+	}
 	x := newURLRig(t)
 	x.setLive("fix/live")
 	x.pushToStore(t, x.liveSHA, "fix/live")
@@ -581,6 +617,9 @@ func TestACardOnAnotherRoomIsGivenItsRoomsForwarderAndFetchesThroughIt(t *testin
 // A room's work in progress is passed through on the hub's board only, and a card's room has no forwarder for it. So a
 // card is given no URL for it, with the way on, and the operator still is.
 func TestACardIsGivenNoURLForARoomsWorkInProgress(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real link, hub and git rig over loopback")
+	}
 	x := newURLRig(t)
 	x.setLive("fix/live")
 	base, _ := x.forwarder(t)
@@ -618,6 +657,9 @@ func TestACardIsGivenNoURLForARoomsWorkInProgress(t *testing.T) {
 // A room that does not say where its forwarder is (older than it, or not answering), or that says an address that is
 // not a forwarder on its own loopback, leaves its card with no URL and the sentence why.
 func TestACardWhoseRoomDoesNotSayWhereItsForwarderIsIsGivenNoURL(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real link, hub and git rig over loopback")
+	}
 	x := newURLRig(t)
 	x.setLive("fix/live")
 	x.pushToStore(t, x.liveSHA, "fix/live")
@@ -666,6 +708,9 @@ func TestForwarderBaseIsOnlyAForwarderOnTheRoomsOwnLoopback(t *testing.T) {
 // directly on the overlay (where a Host is not held to loopback), serveGitURL still refuses a Host that is not a name
 // and a port, so a URL is never made of one.
 func TestAHostThatIsNotANameAndAPortIsNotMadeIntoAURL(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real link, hub and git rig over loopback")
+	}
 	x := newURLRig(t)
 	call := func(host string) int {
 		req := httptest.NewRequest("GET", "http://127.0.0.1:7778/_hub/git/url?repo=o%2Fr", nil)

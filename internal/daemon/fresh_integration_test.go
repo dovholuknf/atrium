@@ -18,6 +18,9 @@ import (
 // This is not hypothetical: WORKTREE_ROOT unset once sent the path to the home
 // directory, and a hundred and twenty five rules appeared to have vanished.
 func TestNewDatabaseIsAnnouncedLoudly(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	_, logs, cancel, _ := startDaemon(t)
 	defer cancel()
 
@@ -34,6 +37,9 @@ func TestNewDatabaseIsAnnouncedLoudly(t *testing.T) {
 // database it made last time must be silent about it, or the notice becomes
 // noise and stops being read.
 func TestReopeningADatabaseIsQuiet(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	dir := t.TempDir()
 	path := filepath.ToSlash(filepath.Join(dir, "atrium.db"))
 	opts := Options{

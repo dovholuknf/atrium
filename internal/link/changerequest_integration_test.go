@@ -243,6 +243,9 @@ func (x *crRig) state(t *testing.T, id string) string {
 }
 
 func TestThePushedReadSaysAllFiveStatesAndTheOwner(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real link, hub and git rig over loopback")
+	}
 	x := newCRRig(t)
 	x.hubPush(t, x.c[1], "claude/x")
 	x.owner(t, "claude/x", x.c[1], "sg4", "s1")
@@ -332,6 +335,9 @@ func TestThePushedReadRefusesWhatItCannotRead(t *testing.T) {
 }
 
 func TestAChangeRequestIsMadeAndTheBoardAndTheAuditHearOfIt(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real link, hub and git rig over loopback")
+	}
 	x := newCRRig(t)
 	x.hubPush(t, x.c[1], "claude/x")
 	x.owner(t, "claude/x", x.c[1], "sg4", "s1")
@@ -380,6 +386,9 @@ func TestAChangeRequestIsMadeAndTheBoardAndTheAuditHearOfIt(t *testing.T) {
 }
 
 func TestACardMakesOneForItsOwnRoomsBranchAndTheHubReadsTheTip(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real link, hub and git rig over loopback")
+	}
 	x := newCRRig(t)
 	x.tip("sg4", "claude/y", x.c[2])
 	code, c := x.create(t, x.asCard("sg4", "s1"), roomReq("sg4", "claude/y", "release"))
@@ -398,6 +407,9 @@ func TestACardMakesOneForItsOwnRoomsBranchAndTheHubReadsTheTip(t *testing.T) {
 }
 
 func TestAChangeRequestIsRefusedWhenItIsNotAsked(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real link, hub and git rig over loopback")
+	}
 	x := newCRRig(t)
 	x.hubPush(t, x.c[1], "claude/x")
 	long := func(n int) string { return strings.Repeat("a", n) }
@@ -468,6 +480,9 @@ func TestAChangeRequestIsRefusedWhenItIsNotAsked(t *testing.T) {
 }
 
 func TestAskingAgainWhileOneIsOpenHandsBackThatOneAndSaysNothing(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real link, hub and git rig over loopback")
+	}
 	x := newCRRig(t)
 	x.hubPush(t, x.c[1], "claude/x")
 	_, first := x.create(t, x.op, hubReq("claude/x", "release"))
@@ -499,6 +514,9 @@ func TestAskingAgainWhileOneIsOpenHandsBackThatOneAndSaysNothing(t *testing.T) {
 // A room not attached keeps the name it was asked in, so the store has to fold it: the same source in another case is
 // the same request, and 409 hands it back.
 func TestTwoAsksThatDifferOnlyInTheRoomsCaseAreOneRequest(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real link, hub and git rig over loopback")
+	}
 	x := newCRRig(t)
 	for _, r := range []string{"Spare", "spare", "SPARE"} {
 		x.tip(r, "claude/q", x.c[1])
@@ -525,6 +543,9 @@ func TestTwoAsksThatDifferOnlyInTheRoomsCaseAreOneRequest(t *testing.T) {
 // A repository's owner and name are one name in any case, so two asks for github/O/R and github/o/r are one request.
 // (A room's branch, so that the store's directory, which tells the cases apart on some disks, is not what is tested.)
 func TestTwoAsksThatDifferOnlyInTheReposCaseAreOneRequest(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real link, hub and git rig over loopback")
+	}
 	x := newCRRig(t)
 	x.tip("sg4", "claude/q", x.c[1])
 	first := roomReq("sg4", "claude/q", "release")
@@ -569,6 +590,9 @@ func TestACardMakesOneOnlyForItsOwnRoomOrTheHub(t *testing.T) {
 }
 
 func TestAWriteFromAnotherReachOrOriginIsRefusedAsSnoozeIs(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real link, hub and git rig over loopback")
+	}
 	x := newCRRig(t)
 	x.hubPush(t, x.c[1], "claude/x")
 	_, c := x.create(t, x.op, hubReq("claude/x", "release"))
@@ -652,6 +676,9 @@ func ids(t *testing.T, raw string) []string {
 func same(a, b []string) bool { return strings.Join(a, ",") == strings.Join(b, ",") }
 
 func TestTheListFiltersByStateRoomTargetAndRepo(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real link, hub and git rig over loopback")
+	}
 	x := newCRRig(t)
 	x.hubPush(t, x.c[1], "claude/x")
 	x.hubPush(t, x.c[1], "claude/z")
@@ -725,6 +752,9 @@ func TestTheListFiltersByStateRoomTargetAndRepo(t *testing.T) {
 }
 
 func TestOneRequestCarriesThePushedReadForItsSource(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real link, hub and git rig over loopback")
+	}
 	x := newCRRig(t)
 	x.hubPush(t, x.c[1], "claude/x")
 	gitRun(t, x.work, "checkout", "-q", "-b", "side", x.c[0])
@@ -793,6 +823,9 @@ func TestOneRequestCarriesThePushedReadForItsSource(t *testing.T) {
 }
 
 func TestWhoMayCloseAndWithdraw(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real link, hub and git rig over loopback")
+	}
 	x := newCRRig(t)
 	x.hubPush(t, x.c[1], "claude/x")
 	x.owner(t, "claude/x", x.c[1], "sg4", "s1")
@@ -880,6 +913,9 @@ func TestWhoMayCloseAndWithdraw(t *testing.T) {
 }
 
 func TestMergedIsTheOperatorsAndTheHubChecksTheShaIsOnTheTarget(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real link, hub and git rig over loopback")
+	}
 	x := newCRRig(t)
 	x.hubPush(t, x.c[2], "main")
 	x.hubPush(t, x.c[1], "claude/x")
@@ -936,6 +972,9 @@ func TestMergedIsTheOperatorsAndTheHubChecksTheShaIsOnTheTarget(t *testing.T) {
 }
 
 func TestAFinishedRequestCannotChangeAgain(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real link, hub and git rig over loopback")
+	}
 	x := newCRRig(t)
 	x.hubPush(t, x.c[1], "claude/x")
 	x.hubPush(t, x.c[1], "main")
@@ -969,6 +1008,9 @@ func TestAFinishedRequestCannotChangeAgain(t *testing.T) {
 func quotedIn(text, s string) bool { return strings.Contains(text, strconv.Quote(s)) }
 
 func TestTheOwnerCardIsToldAsAnFyiWithTheWordsQuotedAsData(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real link, hub and git rig over loopback")
+	}
 	x := newCRRig(t)
 	x.hubPush(t, x.c[1], "claude/x")
 	x.owner(t, "claude/x", x.c[1], "sg4", "s1")
@@ -1015,6 +1057,9 @@ func TestTheOwnerCardIsToldAsAnFyiWithTheWordsQuotedAsData(t *testing.T) {
 }
 
 func TestNobodyIsToldWhenThereIsNoOwnerOrTheChangeWasRefused(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real link, hub and git rig over loopback")
+	}
 	x := newCRRig(t)
 	x.hubPush(t, x.c[1], "claude/x")
 	// no owner row, so nobody to tell
@@ -1034,6 +1079,9 @@ func TestNobodyIsToldWhenThereIsNoOwnerOrTheChangeWasRefused(t *testing.T) {
 }
 
 func TestARequestIntoMainRaisesAQuestionForTheOperatorAndItEndsWithTheRequest(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real link, hub and git rig over loopback")
+	}
 	x := newCRRig(t)
 	x.hubPush(t, x.c[1], "main")
 	x.tip("sg4", "claude/y", x.c[2])

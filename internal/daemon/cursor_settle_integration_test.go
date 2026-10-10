@@ -8,6 +8,9 @@ import "testing"
 // profile. Codex shows its cursor at cells it is only drawing, claude never
 // does, and a card's shell is neither.
 func TestAnAttachCarriesTheRunnersCursorSettle(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d, _, cancel, _ := startDaemon(t)
 	defer cancel()
 

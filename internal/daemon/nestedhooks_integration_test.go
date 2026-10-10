@@ -30,6 +30,9 @@ func nestedParent(t *testing.T, d *Daemon) *store.Task {
 }
 
 func TestANestedEndAndCompactLeaveTheParentAlone(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d, _, cancel, errCh := startDaemon(t)
 	defer func() { cancel(); <-errCh }()
 	parent := nestedParent(t, d)
@@ -71,6 +74,9 @@ func TestTheParentsOwnEndAndAnOldHooksEndStillWork(t *testing.T) {
 }
 
 func TestANestedStopDoesNotEndTheParentsTurnOrTakeItsMessages(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d, _, cancel, errCh := startDaemon(t)
 	defer func() { cancel(); <-errCh }()
 	parent := nestedParent(t, d)
@@ -103,6 +109,9 @@ func TestANestedStopDoesNotEndTheParentsTurnOrTakeItsMessages(t *testing.T) {
 }
 
 func TestANestedPermissionIsGatedButDoesNotMoveTheParentsPid(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d, _, cancel, errCh := startDaemon(t)
 	defer func() { cancel(); <-errCh }()
 	parent := nestedParent(t, d)

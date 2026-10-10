@@ -85,6 +85,9 @@ func TestClearingTheSkinIsARequest(t *testing.T) {
 // an attribute nothing matches and look exactly like the default while the
 // picker showed something else.
 func TestASkinThatIsNoLongerShippedReadsAsTheDefault(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real server with git worktrees and a database")
+	}
 	t.Parallel()
 	srv, st, _ := fileServer(t)
 

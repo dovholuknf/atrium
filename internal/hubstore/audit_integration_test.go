@@ -75,6 +75,9 @@ func TestAuditWhereFiltersAndOrdersNewestFirst(t *testing.T) {
 // The log is bounded. A fleet that attaches and detaches all day cannot grow the
 // file forever, so a write past the cap drops the oldest.
 func TestAuditIsTrimmedToTheCap(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real snapshots on disk")
+	}
 	s := open(t)
 
 	base := time.Date(2026, 9, 19, 12, 0, 0, 0, time.UTC)

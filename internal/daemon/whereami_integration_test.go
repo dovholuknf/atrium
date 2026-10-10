@@ -13,6 +13,9 @@ import (
 )
 
 func TestTheAddressGoesWhereTheOptionsSay(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d, _, cancel, errCh := startDaemon(t)
 
 	want := d.opts.LocationFile
@@ -116,6 +119,9 @@ func TestTakingTheAddressFromALiveDaemonIsAnnounced(t *testing.T) {
 
 // And the warning actually reaches the log, rather than only being decided.
 func TestTheTakeoverWarningIsPrinted(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d, logs, cancel, errCh := startDaemon(t)
 	defer func() { cancel(); <-errCh }()
 
@@ -155,6 +161,9 @@ func TestTheTakeoverWarningIsPrinted(t *testing.T) {
 // writing that binary's path into settings.json while the daemon runs from
 // somewhere else. `internal/claudeconf/whichexe.go` reads this field.
 func TestTheAddressRecordsWhichBinaryIsRunning(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d, _, cancel, errCh := startDaemon(t)
 	defer func() {
 		cancel()

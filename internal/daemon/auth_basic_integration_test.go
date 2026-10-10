@@ -21,6 +21,9 @@ func basicConfig(t *testing.T, user, pass string) AuthConfig {
 // THE PASSWORD IS NEVER STORED. A database somebody takes has to be worth
 // nothing without the guessing.
 func TestThePasswordIsNotKept(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	c := basicConfig(t, "clint", "correct horse battery staple")
 	if strings.Contains(c.PassHash, "correct") || c.PassHash == "correct horse battery staple" {
 		t.Fatalf("the password is in the hash: %q", c.PassHash)
@@ -35,6 +38,9 @@ func TestThePasswordIsNotKept(t *testing.T) {
 
 // A FRESH SALT EVERY TIME, or a stolen table is worth precomputing against.
 func TestTwoBoardsWithOnePasswordDoNotShareAHash(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	a := basicConfig(t, "clint", "the same password")
 	b := basicConfig(t, "clint", "the same password")
 	if a.PassSalt == b.PassSalt {
@@ -46,6 +52,9 @@ func TestTwoBoardsWithOnePasswordDoNotShareAHash(t *testing.T) {
 }
 
 func TestTheRightPasswordIsAccepted(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	c := basicConfig(t, "clint", "hunter2")
 	if !c.checks("clint", "hunter2") {
 		t.Fatal("the configured password was refused")
@@ -53,6 +62,9 @@ func TestTheRightPasswordIsAccepted(t *testing.T) {
 }
 
 func TestAWrongPasswordOrNameIsRefused(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	c := basicConfig(t, "clint", "hunter2")
 	for _, try := range []struct{ user, pass string }{
 		{"clint", "hunter3"},
@@ -88,6 +100,9 @@ func TestAPasswordAloneIsAReadyConfiguration(t *testing.T) {
 
 // And an incomplete one is refused rather than quietly letting everybody in.
 func TestAnIncompletePasswordLoginIsRefused(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	var noUser AuthConfig
 	noUser = AuthConfig{Enabled: true, Basic: true}
 	if err := setBasicPassword(&noUser, "hunter2"); err != nil {
@@ -107,6 +122,9 @@ func TestAnIncompletePasswordLoginIsRefused(t *testing.T) {
 
 // THE GUARD, end to end over a real request.
 func TestTheGuardAsksForAPasswordAndThenLetsYouIn(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d := testDaemon(t)
 	if err := d.SaveAuth(basicConfig(t, "clint", "hunter2")); err != nil {
 		t.Fatal(err)

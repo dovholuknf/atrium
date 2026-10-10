@@ -12,6 +12,9 @@ import (
 // Still on before the deadline, which is the case that would be easy to break
 // while making the expiry work.
 func TestAutoModeWithATimeLeftStillApproves(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d, _, cancel, _ := startDaemon(t)
 	defer cancel()
 	task := autoTask(t, d, "auto-until-1")
@@ -33,6 +36,9 @@ func TestAutoModeWithATimeLeftStillApproves(t *testing.T) {
 // Past the deadline, the request reaches a human. Nothing ran to make this
 // true: the deadline is read when the decision is made.
 func TestAutoModeAsksAgainOnceItsTimeIsUp(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d, _, cancel, _ := startDaemon(t)
 	defer cancel()
 	task := autoTask(t, d, "auto-until-2")
@@ -58,6 +64,9 @@ func TestAutoModeAsksAgainOnceItsTimeIsUp(t *testing.T) {
 // And the flag is turned off on the way through, so the badge on the board
 // stops claiming something that stopped being true.
 func TestAnExpiredDeadlineTidiesItselfUp(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d, _, cancel, _ := startDaemon(t)
 	defer cancel()
 	task := autoTask(t, d, "auto-until-3")
@@ -84,6 +93,9 @@ func TestAnExpiredDeadlineTidiesItselfUp(t *testing.T) {
 // card that was turned loose on its own. They are different answers to give six
 // hours later and they stay different.
 func TestGlobalAutoExpiringLeavesAPerCardSwitchAlone(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d, _, cancel, _ := startDaemon(t)
 	defer cancel()
 	task := autoTask(t, d, "auto-until-4")
@@ -113,6 +125,9 @@ func TestGlobalAutoExpiringLeavesAPerCardSwitchAlone(t *testing.T) {
 // A board-wide deadline with time left approves a session that was never set
 // up, which is what board-wide means.
 func TestGlobalAutoWithATimeLeftApprovesAnyone(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d, _, cancel, _ := startDaemon(t)
 	defer cancel()
 	if _, _, err := d.st.Register(store.Observed{
@@ -135,6 +150,9 @@ func TestGlobalAutoWithATimeLeftApprovesAnyone(t *testing.T) {
 // and does not discard answers already given, and a deadline changes nothing
 // about the order of the chain.
 func TestADeadlineDoesNotReorderTheChain(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d, _, cancel, _ := startDaemon(t)
 	defer cancel()
 	task := autoTask(t, d, "auto-until-6")

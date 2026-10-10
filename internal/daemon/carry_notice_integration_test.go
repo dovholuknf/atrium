@@ -91,6 +91,9 @@ func TestTheNoticeCarriesTheBoardsNonceInItsLinks(t *testing.T) {
 // No nonce is an older board, and a nonce that is not plain letters and
 // digits is not one this board made. Both get the line with no links.
 func TestWithoutAUsableNonceTheNoticeHasNoLinks(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d := testDaemon(t)
 	cutSession(t, d, "cut")
 	for _, q := range []string{"", "?link=", "?link=a%1b%5D8%3B%3Bx", "?link=" + strings.Repeat("a", 65)} {
@@ -119,6 +122,9 @@ func TestCarryAllReplaysEverySavedLine(t *testing.T) {
 // A GUEST GETS NEITHER. The whole history is `/scrollback/older` by another
 // route, and a guest is refused that.
 func TestAGuestCannotAskForTheWholeHistory(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d, _, cancel, _ := startDaemon(t)
 	defer cancel()
 	task := sharedCard(t, d, "lent")

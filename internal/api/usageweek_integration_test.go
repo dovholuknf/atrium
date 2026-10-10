@@ -20,6 +20,9 @@ func weekResetOf(t *testing.T, srv *Server) UsageWeekReset {
 // The weekly reset setting: Sunday 18:00 New York until told otherwise, it reads back, and a bad one is refused
 // and leaves the old one standing.
 func TestUsageWeekResetSettingRoundTrip(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real server with git worktrees and a database")
+	}
 	t.Parallel()
 	srv, _, _ := fileServer(t)
 

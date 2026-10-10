@@ -76,6 +76,9 @@ func settlesTo(t *testing.T, d *Daemon, id string, want bool) bool {
 func idleAfter(d time.Duration) time.Time { return time.Now().Add(d) }
 
 func TestIdleParkRule(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	quickPark(t)
 	cases := []struct {
 		name   string
@@ -173,6 +176,9 @@ func TestIdleClockIgnoresHandoffTurn(t *testing.T) {
 }
 
 func TestIdleClockReadsHumanTouch(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	quickPark(t)
 	d := testDaemon(t)
 	card := idleAgent(t, d, "touched", store.StatusNeedsInput)
@@ -247,6 +253,9 @@ func TestIdleParkExemptsOperatorCards(t *testing.T) {
 }
 
 func TestIdleParkSetting(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d := testDaemon(t)
 	if got, on := d.st.IdleParkAfter(); !on || got != 2*time.Hour {
 		t.Fatalf("default is %v %v, want 2h on", got, on)
@@ -283,6 +292,9 @@ func TestIdleParkSetting(t *testing.T) {
 }
 
 func TestIdleParkKeepsStatus(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	quickPark(t)
 	d := testDaemon(t)
 	card := idleAgent(t, d, "donecard", store.StatusDone)
@@ -305,6 +317,9 @@ func TestIdleParkKeepsStatus(t *testing.T) {
 // A director is asked for its handoff at 50 minutes idle, once, and parked at two
 // hours with no second turn.
 func TestIdleHandoffBeforeCold(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	fastNewContext(t)
 	quickPark(t)
 	d := testDaemon(t)
@@ -368,6 +383,9 @@ func TestIdleHandoffBeforeCold(t *testing.T) {
 }
 
 func TestIdleHandoffTimeoutStillParks(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	fastNewContext(t)
 	ncTiming.captureBegin = 100 * time.Millisecond
 	quickPark(t)

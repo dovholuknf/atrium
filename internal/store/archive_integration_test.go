@@ -10,6 +10,9 @@ import (
 // Archiving takes a dead card off the board and keeps the row, so the history
 // of what has ever run here survives a sweep.
 func TestArchiveTakesDeadCardsOffTheBoard(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real sqlite database on disk")
+	}
 	t.Parallel()
 	s := open(t)
 	task, _, err := s.Register(Observed{WireName: "over", Worktree: "/w", Runner: "claude"})
@@ -101,6 +104,9 @@ func TestRevivingACardUnarchivesIt(t *testing.T) {
 // Going from one over-and-done status to the other keeps the stamp. Nothing
 // came back to life, so nothing should return to the board.
 func TestMovingBetweenFinishedStatusesStaysArchived(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real sqlite database on disk")
+	}
 	t.Parallel()
 	s := open(t)
 	task, _, err := s.Register(Observed{WireName: "filed", Worktree: "/w", Runner: "claude"})

@@ -507,6 +507,9 @@ func TestAStaleRoomSaysWhenItGoes(t *testing.T) {
 // holds nothing else. This is how that gets broken: somebody makes the dialog
 // register the room it is about to describe.
 func TestAskingHowToJoinAddsNoRoom(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d, _, cancel, _ := startDaemon(t)
 	defer cancel()
 
@@ -524,6 +527,9 @@ func TestAskingHowToJoinAddsNoRoom(t *testing.T) {
 // a room that retries forever against something that was never an address, and
 // the failure is on the far machine where nobody is looking.
 func TestJoinOffersNoAddressWhenNothingIsShared(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d, _, cancel, _ := startDaemon(t)
 	defer cancel()
 
@@ -550,6 +556,9 @@ func TestJoinOffersNoAddressWhenNothingIsShared(t *testing.T) {
 // segment away from being read as a room called join, and a board pressing
 // forget would get back the join instructions instead.
 func TestTheRoomRoutesDoNotOverlap(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d, _, cancel, _ := startDaemon(t)
 	defer cancel()
 	base := "http://" + d.opts.HumanAddr

@@ -57,6 +57,9 @@ func launchSlow(t *testing.T, d *Daemon) string {
 // about: without the lock, two racers both read "not live" and both spawn onto
 // one conversation.
 func TestLaunchSerializesOnTheCardLock(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d, _, cancel, _ := startDaemon(t)
 	defer cancel()
 
@@ -95,6 +98,9 @@ func TestLaunchSerializesOnTheCardLock(t *testing.T) {
 // both get through, so a launch waits on the resume lock exactly as it waits on
 // the card lock.
 func TestLaunchSerializesOnTheResumeLock(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d, _, cancel, _ := startDaemon(t)
 	defer cancel()
 
@@ -128,6 +134,9 @@ func TestLaunchSerializesOnTheResumeLock(t *testing.T) {
 // they run one after the other, both succeed, and the card ends with exactly one
 // live runner.
 func TestConcurrentRestartsKeepOneRunner(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d, _, cancel, errCh := startDaemon(t)
 	defer func() {
 		cancel()
@@ -163,6 +172,9 @@ func TestConcurrentRestartsKeepOneRunner(t *testing.T) {
 // The happy path: restarting a live card lands on the SAME card with a runner on
 // it, rather than making a second card or leaving the first without one.
 func TestRestartRunnerLandsOnTheSameCard(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d, _, cancel, errCh := startDaemon(t)
 	defer func() {
 		cancel()

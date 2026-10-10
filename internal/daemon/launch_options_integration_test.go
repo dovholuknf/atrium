@@ -129,6 +129,9 @@ func TestLaunchEnvSitsBetweenTheHarnessAndAtrium(t *testing.T) {
 // A shell stands in for the runner, with an effort template it will not choke
 // on, because what is under test is the launch path and not any runner.
 func TestALaunchCarriesItsOptionsOntoTheCard(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d := testDaemon(t)
 	cmd, effort := "sh", []string{"-c", "sleep 60", "{effort}"}
 	if runtime.GOOS == "windows" {

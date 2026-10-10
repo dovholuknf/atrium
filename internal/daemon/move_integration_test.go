@@ -126,6 +126,9 @@ func mustGet(t *testing.T, d *Daemon, id string) *store.Task {
 // A launch for one move is made once: a repeat answers the same card, which is
 // moved_from the old one and sits in its pinned slot.
 func TestARepeatLaunchForOneMoveAnswersTheSameCard(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d, _, cancel, errCh := startDaemon(t)
 	defer func() {
 		cancel()

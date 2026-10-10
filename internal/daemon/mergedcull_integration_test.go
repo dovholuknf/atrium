@@ -48,6 +48,9 @@ func markedMerged(t *testing.T, d *Daemon, into string, branches ...string) *Mer
 }
 
 func TestAMergeMarksAFinishedWorkerAndTellsItsLauncherOnce(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d := testDaemon(t)
 	r := newCullRepo(t, true)
 	launcher, worker := mergedWorker(t, d, r)
@@ -84,6 +87,9 @@ func TestAMergeMarksAFinishedWorkerAndTellsItsLauncherOnce(t *testing.T) {
 // When the time comes the room culls it with every check re-run, accepts the
 // work, and archives the card.
 func TestADueMarkCullsAcceptsAndArchives(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d := testDaemon(t)
 	r := newCullRepo(t, true)
 	_, worker := mergedWorker(t, d, r)
@@ -107,6 +113,9 @@ func TestADueMarkCullsAcceptsAndArchives(t *testing.T) {
 }
 
 func TestANewTurnBeforeTheTimeClearsTheMark(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d := testDaemon(t)
 	r := newCullRepo(t, true)
 	_, worker := mergedWorker(t, d, r)
@@ -124,6 +133,9 @@ func TestANewTurnBeforeTheTimeClearsTheMark(t *testing.T) {
 }
 
 func TestAHeldWorkerIsNeverMarkedOrCulled(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d := testDaemon(t)
 	r := newCullRepo(t, true)
 	_, worker := mergedWorker(t, d, r)
@@ -139,6 +151,9 @@ func TestAHeldWorkerIsNeverMarkedOrCulled(t *testing.T) {
 }
 
 func TestAHoldAfterTheMarkCancelsIt(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d := testDaemon(t)
 	r := newCullRepo(t, true)
 	_, worker := mergedWorker(t, d, r)
@@ -153,6 +168,9 @@ func TestAHoldAfterTheMarkCancelsIt(t *testing.T) {
 }
 
 func TestADirectorIsNeverMarked(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d := testDaemon(t)
 	r := newCullRepo(t, true)
 	mergedWorker(t, d, r, OriginAgentTag, SubagentTag, DirectorTag)
@@ -162,6 +180,9 @@ func TestADirectorIsNeverMarked(t *testing.T) {
 }
 
 func TestACardWithoutAWorkerTagIsNeverMarked(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d := testDaemon(t)
 	r := newCullRepo(t, true)
 	mergedWorker(t, d, r, "sdk")
@@ -172,6 +193,9 @@ func TestACardWithoutAWorkerTagIsNeverMarked(t *testing.T) {
 
 // origin:agent with a recorded launcher and no director tag is a worker, tag or no tag.
 func TestAnAgentLaunchedCardWithALauncherCountsAsAWorker(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d := testDaemon(t)
 	r := newCullRepo(t, true)
 	_, worker := mergedWorker(t, d, r, OriginAgentTag)
@@ -185,6 +209,9 @@ func TestAnAgentLaunchedCardWithALauncherCountsAsAWorker(t *testing.T) {
 }
 
 func TestARunningWorkerIsNotMarkedUntilItIsDone(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d := testDaemon(t)
 	r := newCullRepo(t, true)
 	_, worker := mergedWorker(t, d, r)
@@ -203,6 +230,9 @@ func TestARunningWorkerIsNotMarkedUntilItIsDone(t *testing.T) {
 }
 
 func TestAWorkerWithAnOpenQuestionIsNotMarked(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d := testDaemon(t)
 	r := newCullRepo(t, true)
 	_, worker := mergedWorker(t, d, r)
@@ -215,6 +245,9 @@ func TestAWorkerWithAnOpenQuestionIsNotMarked(t *testing.T) {
 }
 
 func TestAnUnmergedBranchIsNotMarked(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d := testDaemon(t)
 	r := newCullRepo(t, false)
 	mergedWorker(t, d, r)
@@ -225,6 +258,9 @@ func TestAnUnmergedBranchIsNotMarked(t *testing.T) {
 
 // A worktree that went dirty during the grace period is kept, not force-removed.
 func TestADirtyWorktreeIsKeptWhenTheTimeComes(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d := testDaemon(t)
 	r := newCullRepo(t, true)
 	_, worker := mergedWorker(t, d, r)
@@ -242,6 +278,9 @@ func TestADirtyWorktreeIsKeptWhenTheTimeComes(t *testing.T) {
 }
 
 func TestMergedHonoursTheBranchFilter(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d := testDaemon(t)
 	r := newCullRepo(t, true)
 	mergedWorker(t, d, r)
@@ -254,6 +293,9 @@ func TestMergedHonoursTheBranchFilter(t *testing.T) {
 }
 
 func TestMergedGraceOffMarksNothing(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d := testDaemon(t)
 	r := newCullRepo(t, true)
 	mergedWorker(t, d, r)
@@ -269,6 +311,9 @@ func TestMergedGraceOffMarksNothing(t *testing.T) {
 // The remote room accepts a proof only while its worktree still sits at the tip
 // the merge was checked at.
 func TestAProvedCullIsRefusedOnceTheWorktreeMoved(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d := testDaemon(t)
 	r := newCullRepo(t, true)
 	task := cullCard(t, d, r.wt, OriginAgentTag, SubagentTag)
@@ -285,6 +330,9 @@ func TestAProvedCullIsRefusedOnceTheWorktreeMoved(t *testing.T) {
 }
 
 func TestAProvedCullIsAcceptedAtTheProvedTip(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d := testDaemon(t)
 	r := newCullRepo(t, false)
 	task := cullCard(t, d, r.wt, OriginAgentTag, SubagentTag)
@@ -299,6 +347,9 @@ func TestAProvedCullIsAcceptedAtTheProvedTip(t *testing.T) {
 }
 
 func TestAProvedCullAcceptsAnAbbreviatedTip(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d := testDaemon(t)
 	r := newCullRepo(t, false)
 	task := cullCard(t, d, r.wt, OriginAgentTag, SubagentTag)
@@ -313,6 +364,9 @@ func TestAProvedCullAcceptsAnAbbreviatedTip(t *testing.T) {
 }
 
 func TestAProvedCullRefusesATipThatIsNotACommitHere(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d := testDaemon(t)
 	r := newCullRepo(t, false)
 	task := cullCard(t, d, r.wt, OriginAgentTag, SubagentTag)
@@ -326,6 +380,9 @@ func TestAProvedCullRefusesATipThatIsNotACommitHere(t *testing.T) {
 }
 
 func TestAProvedCullShowsBothShasAtTheSameLengthWhenMoved(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d := testDaemon(t)
 	r := newCullRepo(t, true)
 	task := cullCard(t, d, r.wt, OriginAgentTag, SubagentTag)
@@ -338,6 +395,9 @@ func TestAProvedCullShowsBothShasAtTheSameLengthWhenMoved(t *testing.T) {
 }
 
 func TestAProvedCullRefusesATipThatIsNotAHexSha(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d := testDaemon(t)
 	r := newCullRepo(t, false)
 	task := cullCard(t, d, r.wt, OriginAgentTag, SubagentTag)
@@ -354,6 +414,9 @@ func TestAProvedCullRefusesATipThatIsNotAHexSha(t *testing.T) {
 
 // With merged_cull_grace never set, a merge marks nothing and a merged worker keeps its worktree and branch.
 func TestAMergedWorkerStaysWithTheDefaultSetting(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d := testDaemon(t)
 	r := newCullRepo(t, true)
 	_, worker := mergedWorker(t, d, r)
@@ -418,6 +481,9 @@ func launchedMerged(t *testing.T, d *Daemon, r cullRepo, lifetime string) *store
 }
 
 func TestALaunchRecordsItsLifetimeAndRefusesAnUnknownOne(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d := testDaemon(t)
 	r := newCullRepo(t, true)
 	if _, err := d.Launch(LaunchRequest{Harness: slowHarness(t, d), Cwd: filepath.ToSlash(r.wt), Lifetime: "forever"}); err == nil ||
@@ -428,6 +494,9 @@ func TestALaunchRecordsItsLifetimeAndRefusesAnUnknownOne(t *testing.T) {
 
 // A work card is exited once its branch merges, even with merged_cull_grace off, and only the runner goes.
 func TestAWorkCardIsExitedWhenItsBranchMergesWithTheGraceOff(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d, _, cancel, errCh := startDaemon(t)
 	defer func() {
 		cancel()
@@ -458,6 +527,9 @@ func TestAWorkCardIsExitedWhenItsBranchMergesWithTheGraceOff(t *testing.T) {
 
 // A card from atrium_launch has no lifetime and is never exited because of a merge.
 func TestAKeptCardIsNotExitedWhenItsBranchMerges(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d, _, cancel, errCh := startDaemon(t)
 	defer func() {
 		cancel()
@@ -484,6 +556,9 @@ func TestAKeptCardIsNotExitedWhenItsBranchMerges(t *testing.T) {
 
 // A work card whose branch is not merged keeps running.
 func TestAWorkCardWhoseBranchIsNotMergedKeepsRunning(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d, _, cancel, errCh := startDaemon(t)
 	defer func() {
 		cancel()

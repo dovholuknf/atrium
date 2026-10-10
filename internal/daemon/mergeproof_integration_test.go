@@ -7,6 +7,9 @@ import "testing"
 // The proof is made where the area branch lives: a fetched tip that the area
 // branch contains is merged, one it does not is an answer and not an error.
 func TestMergeProofSaysWhetherTheAreaBranchHoldsTheTip(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d := testDaemon(t)
 	r := newCullRepo(t, false)
 	cullCard(t, d, r.wt, OriginAgentTag, SubagentTag)
@@ -26,6 +29,9 @@ func TestMergeProofSaysWhetherTheAreaBranchHoldsTheTip(t *testing.T) {
 
 // It is not a way to ask git about any directory on the machine.
 func TestMergeProofRefusesADirectoryNoCardWorksIn(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d := testDaemon(t)
 	r := newCullRepo(t, true)
 	if _, err := d.MergeProof(r.wt, r.branch, DefaultCullInto); err == nil {

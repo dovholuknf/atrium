@@ -81,6 +81,9 @@ func TestTheForwarderClosesWhenTheCommandExits(t *testing.T) {
 // A fetch of many distinct tips, so the want list is far past git's post buffer floor and
 // the client sends the POST chunked. It has to survive forwarder, transport and cgi.
 func TestAChunkedPostGoesThrough(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: git subprocesses and a real smart-HTTP rig")
+	}
 	t.Parallel()
 	s := freshServed(t)
 	var stream strings.Builder

@@ -45,6 +45,9 @@ func TestNoBacktickInMarkupComments(t *testing.T) {
 // does not build, and a machine without node can still work on the daemon. CI
 // has node, so nothing reaches a tag unparsed.
 func TestBoardScriptParses(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real server with git worktrees and a database")
+	}
 	t.Parallel()
 	node, err := exec.LookPath("node")
 	if err != nil {

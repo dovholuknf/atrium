@@ -72,6 +72,9 @@ func TestAGivenUpRelayComesBackAsAMessage(t *testing.T) {
 // THE WHOLE PROMISE, with a fake runner in place of the launch. A say to a done card is kept, a wake say resumes the
 // card, and the text kept earlier is typed into the new session, with the wake text queued behind it, not typed.
 func TestASayToADoneCardIsKeptThenTypedInWhenWakeResumesIt(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	oldTick, oldSettle := keptTick, keptSettle
 	keptTick, keptSettle = 20*time.Millisecond, 300*time.Millisecond
 	defer func() { keptTick, keptSettle = oldTick, oldSettle }()
@@ -151,6 +154,9 @@ func TestASayToADoneCardIsKeptThenTypedInWhenWakeResumesIt(t *testing.T) {
 // A woken card whose runner never becomes ready is not left holding the words in silence: the launcher is told, and
 // the rows stay pending.
 func TestAWokenCardThatNeverTakesItsMessagesTellsTheLauncher(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d := testDaemon(t)
 	launcher, target := launchedPair(t, d)
 	t.Cleanup(func() { d.pending.stopAll() })
@@ -200,6 +206,9 @@ func TestAWokenCardThatNeverTakesItsMessagesTellsTheLauncher(t *testing.T) {
 // A parked card, a say with wake, and a runner that is ready only after a delay: nothing is typed before it is ready,
 // then ONE submitted prompt carries every held message, and the card is resumed once.
 func TestAWakeSayToAParkedCardTypesNothingUntilReadyThenOneTurn(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	oldTick, oldSettle := keptTick, keptSettle
 	keptTick, keptSettle = 20*time.Millisecond, 100*time.Millisecond
 	defer func() { keptTick, keptSettle = oldTick, oldSettle }()

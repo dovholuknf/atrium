@@ -7,6 +7,9 @@ import "testing"
 // A commit a worker pushed is found on the hub by the commit alone, on a claude/*-w branch, as the tip and as an
 // ancestor of the tip. No repository is named.
 func TestACommitIsFoundOnAnyHubBranchWithNoRepositoryNamed(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: git subprocesses and a real smart-HTTP rig")
+	}
 	t.Parallel()
 	x := newRecv(t)
 	x.seedMain(hubRepo)
@@ -26,6 +29,9 @@ func TestACommitIsFoundOnAnyHubBranchWithNoRepositoryNamed(t *testing.T) {
 
 // A repository without the object is skipped with one git call: its branches are never searched.
 func TestARepositoryWithoutTheCommitIsSkippedAndNotSearched(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: git subprocesses and a real smart-HTTP rig")
+	}
 	x := newRecv(t)
 	other := x.makeRepo("github/a/other")
 	x.seedMain(hubRepo)
@@ -52,6 +58,9 @@ func TestARepositoryWithoutTheCommitIsSkippedAndNotSearched(t *testing.T) {
 
 // A commit no hub branch has is not found, and neither is something that is not a commit id.
 func TestACommitNoHubBranchHasIsNotFound(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: git subprocesses and a real smart-HTTP rig")
+	}
 	t.Parallel()
 	x := newRecv(t)
 	x.seedMain(hubRepo)

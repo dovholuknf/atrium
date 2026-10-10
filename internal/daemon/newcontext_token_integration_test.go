@@ -125,6 +125,9 @@ func TestHandoffWrittenDoesNotFindATokenBeyond4KB(t *testing.T) {
 // The capture prompt carries the token, and a file already written with it passes.
 // The idle parking's and the move's capture, which is not a context cycle.
 func TestNewContextCapturePromptCarriesTheToken(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	fastNewContext(t)
 	d := testDaemon(t)
 	task, f, dir := ncCard(t, d)

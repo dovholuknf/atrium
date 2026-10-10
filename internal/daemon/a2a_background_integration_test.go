@@ -23,6 +23,9 @@ func stopTurnWithBackground(t *testing.T, d *Daemon, agent string, n int) {
 // sa31. A worker whose turn ended with background runs going is waiting, not
 // stopped: neither the launcher notice nor the board escalation fires.
 func TestATurnEndedOnBackgroundWorkIsNotASilentStop(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d := testDaemon(t)
 	launcher, worker := launchedPair(t, d)
 	stopTurnWithBackground(t, d, "worker", 5)

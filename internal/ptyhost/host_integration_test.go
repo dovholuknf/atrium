@@ -295,6 +295,9 @@ func TestRunnerAndShellOnOneCardAreAddressedByRunID(t *testing.T) {
 func (c *Client) Attach2(runID string) (*Attachment, error) { return c.Attach(runID, 0) }
 
 func TestExitWithNoClientIsKeptAndCollected(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real pty child processes and idle timers")
+	}
 	for _, tc := range []struct {
 		cmd  string
 		code int
@@ -424,6 +427,9 @@ func TestSlowReaderIsClosedAndTheDrainCarriesOn(t *testing.T) {
 }
 
 func TestIdleExit(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real pty child processes and idle timers")
+	}
 	t.Run("empty host with no daemon exits", func(t *testing.T) {
 		h, _ := testHost(t, Options{IdleExit: 300 * time.Millisecond})
 		select {

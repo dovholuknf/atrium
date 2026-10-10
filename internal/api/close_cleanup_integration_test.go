@@ -62,6 +62,9 @@ func TestCleanupOfferIsClaimedByExactlyOneCaller(t *testing.T) {
 
 // The operator's own close takes the marks off, so the card is never offered a close it already had.
 func TestCloseTakesTheCleanupMarksOff(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real server with git worktrees and a database")
+	}
 	t.Parallel()
 	oh, card, _, _ := openForClose(t)
 	task, _ := oh.srv.st.Get(card)

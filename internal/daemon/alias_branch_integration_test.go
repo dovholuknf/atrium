@@ -27,6 +27,9 @@ func repoOn(t *testing.T, branch string) string {
 
 // A session atrium had never heard of is adopted onto a card named for its branch.
 func TestAnAdoptedSessionTakesItsBranchAsAlias(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d, _, cancel, _ := startDaemon(t)
 	defer cancel()
 
@@ -53,6 +56,9 @@ func TestAnAdoptedSessionTakesItsBranchAsAlias(t *testing.T) {
 // A join that brings a session onto the board takes the branch as its alias, or the title's prefix when it has one.
 // A card that was already there keeps what it has: a person's alias, or the lack of one they chose.
 func TestJoinTakesTheBranchAsAliasOnlyForANewCard(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d, _, cancel, _ := startDaemon(t)
 	defer cancel()
 
@@ -91,6 +97,9 @@ func TestJoinTakesTheBranchAsAliasOnlyForANewCard(t *testing.T) {
 
 // A card whose alias a person cleared does not get one back when its session joins again.
 func TestARejoinDoesNotGiveAClearedAliasBack(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d, _, cancel, _ := startDaemon(t)
 	defer cancel()
 

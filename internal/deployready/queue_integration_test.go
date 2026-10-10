@@ -46,6 +46,9 @@ func TestQueueSaysWhichDeployEachCommitNeeds(t *testing.T) {
 }
 
 func TestQueueBothWhenHubAndRoomAreBehind(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: git subprocesses on throwaway repositories")
+	}
 	t.Parallel()
 	r := newRepo(t)
 	base := r.commit("base", map[string]string{"internal/a/a.go": "package a\n"})

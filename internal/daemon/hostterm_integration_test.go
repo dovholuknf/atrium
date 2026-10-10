@@ -135,6 +135,9 @@ func restarted(t *testing.T, old *Daemon, dir string) *Daemon {
 }
 
 func TestReattachReplaysTheRingAndFollowsWithNothingLostOrRepeated(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	dir, _ := hostFixture(t)
 	d1 := daemonAt(t, dir)
 	task := cardAt(t, d1, "reattach-replay", t.TempDir())
@@ -189,6 +192,9 @@ func TestReattachReplaysTheRingAndFollowsWithNothingLostOrRepeated(t *testing.T)
 }
 
 func TestAResizeAfterReattachIsCutBeforeAnyByteAtTheNewSize(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	dir, _ := hostFixture(t)
 	d1 := daemonAt(t, dir)
 	task := cardAt(t, d1, "reattach-resize", t.TempDir())
@@ -293,6 +299,9 @@ func TestEachVerbReachesOnlyTheRunIDItNames(t *testing.T) {
 }
 
 func TestALiveExitIsFiledOnceAndCollectedAfterIt(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	dir, _ := hostFixture(t)
 	d := daemonAt(t, dir)
 	task := cardAt(t, d, "live-exit", t.TempDir())
@@ -324,6 +333,9 @@ func TestALiveExitIsFiledOnceAndCollectedAfterIt(t *testing.T) {
 
 // A crash between FileExit and collect must lose nothing and file nothing new.
 func TestACrashBetweenFilingAndCollectingFilesNothingTwice(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	dir, _ := hostFixture(t)
 	d1 := daemonAt(t, dir)
 	task := cardAt(t, d1, "crash-window", t.TempDir())
@@ -360,6 +372,9 @@ func TestACrashBetweenFilingAndCollectingFilesNothingTwice(t *testing.T) {
 // A runner that dies inside the startup window while no daemon is connected must leave the card as the live path
 // would have: the same tail and the same `why`.
 func TestAStartupFailureWhileNoDaemonIsConnectedRecordsWhatTheLivePathDoes(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	dir, _ := hostFixture(t)
 	d1 := daemonAt(t, dir)
 	const say = "echo boom-message; exit 7"
@@ -398,6 +413,9 @@ func TestAStartupFailureWhileNoDaemonIsConnectedRecordsWhatTheLivePathDoes(t *te
 }
 
 func TestAnUnreachableHostFallsBackToAnInProcessTerminal(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	dir := t.TempDir() // no host here
 	d := daemonAt(t, dir)
 	d.ph.opts = ptyhost.StartOptions{Exe: filepath.Join(dir, "no-such-atrium.exe")}
@@ -426,6 +444,9 @@ func TestAnUnreachableHostFallsBackToAnInProcessTerminal(t *testing.T) {
 
 // An old exited run and a newer live one on the same card: the old end is history, and the card is not dead.
 func TestAnOldExitedRunDoesNotKillACardWithANewerLiveOne(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	dir, _ := hostFixture(t)
 	d1 := daemonAt(t, dir)
 	task := cardAt(t, d1, "old-and-new", t.TempDir())
@@ -507,6 +528,9 @@ func TestAStartThatDidNotAnswerLeavesNoRunBehindTheFallback(t *testing.T) {
 
 // The run this daemon already holds is not a stray.
 func TestStrayCleanupSparesTheRunThisDaemonHolds(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	dir, _ := hostFixture(t)
 	d := daemonAt(t, dir)
 	task := cardAt(t, d, "spared", t.TempDir())

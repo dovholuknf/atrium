@@ -180,6 +180,9 @@ func TestFileSinkDropsUnderBackpressure(t *testing.T) {
 // The setting turns the file sink on end to end: db stays hot, and every event
 // also lands in the logs directory beside the database.
 func TestEventSinkSettingAddsFileColdSink(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real sqlite database on disk")
+	}
 	t.Parallel()
 	dbPath := filepath.Join(t.TempDir(), "atrium.db")
 	first, err := Open(dbPath)

@@ -272,6 +272,9 @@ func TestALockThatStaysHeldGivesUp(t *testing.T) {
 // the lock, re-read, change one key, write) and launches trusting folders at
 // the same time: every change survives.
 func TestConcurrentClaudeWritesKeepEveryChange(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real file locking and writes")
+	}
 	env, path := claudeHome(t)
 	const n = 8
 	var dirs []string

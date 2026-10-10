@@ -60,6 +60,9 @@ func orName(n string) string {
 
 // The ordinary case, and the shape the whole feature is named for.
 func TestDiscoverAdoptsOrgRepo(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real server with git worktrees and a database")
+	}
 	t.Parallel()
 	root := t.TempDir()
 	mkCheckout(t, filepath.Join(root, "dovholuknf", "atrium"))
@@ -87,6 +90,9 @@ func TestDiscoverAdoptsOrgRepo(t *testing.T) {
 // A vendored or submodule checkout inside a repository is not a second row.
 // The walk does not descend into a checkout, so it is never even reached.
 func TestDiscoverStopsAtACheckout(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real server with git worktrees and a database")
+	}
 	t.Parallel()
 	root := t.TempDir()
 	repo := filepath.Join(root, "org", "outer")
@@ -105,6 +111,9 @@ func TestDiscoverStopsAtACheckout(t *testing.T) {
 // A repository sitting directly under the root, with no org above it, is a real
 // arrangement and `root/org/repo` is a default rather than a law.
 func TestDiscoverAdoptsARepoWithNoOrg(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real server with git worktrees and a database")
+	}
 	t.Parallel()
 	root := t.TempDir()
 	mkCheckout(t, filepath.Join(root, "dotfiles"))
@@ -131,6 +140,9 @@ func TestDiscoverAdoptsARepoWithNoOrg(t *testing.T) {
 // Counted and reported, not adopted and not an error. Dropping them silently is
 // how somebody spends an afternoon working out why one repository is missing.
 func TestDiscoverSkipsAndCountsNonCheckouts(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real server with git worktrees and a database")
+	}
 	t.Parallel()
 	root := t.TempDir()
 	mkCheckout(t, filepath.Join(root, "org", "real"))
@@ -158,6 +170,9 @@ func TestDiscoverSkipsAndCountsNonCheckouts(t *testing.T) {
 // Running it twice adopts nothing the second time, which is what makes the
 // button safe to press.
 func TestDiscoverIsIdempotent(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real server with git worktrees and a database")
+	}
 	t.Parallel()
 	root := t.TempDir()
 	mkCheckout(t, filepath.Join(root, "org", "repo"))
@@ -180,6 +195,9 @@ func TestDiscoverIsIdempotent(t *testing.T) {
 // THE ONE THAT MATTERS MOST. A root on a drive that is not plugged in must
 // leave every row alone, or one run erases everything the operator typed.
 func TestDiscoverDoesNotDeleteRowsWhenTheRootIsGone(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real server with git worktrees and a database")
+	}
 	t.Parallel()
 	root := t.TempDir()
 	mkCheckout(t, filepath.Join(root, "org", "repo"))

@@ -140,6 +140,9 @@ func TestSweepLeavesAnOpenInFlightAlone(t *testing.T) {
 
 // A card closed with a worktree kept is listed as kept on purpose, so the board does not word it as forgotten.
 func TestSweepSaysWhatAClosedCardKept(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real server with git worktrees and a database")
+	}
 	t.Parallel()
 	oh, card, wt, _ := openForClose(t)
 	if err := os.WriteFile(filepath.Join(filepath.FromSlash(wt), "notes.txt"), []byte("mine"), 0o644); err != nil {

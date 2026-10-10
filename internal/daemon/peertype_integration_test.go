@@ -327,6 +327,9 @@ func TestACardWithNoTerminalFallsBackToTheQueue(t *testing.T) {
 // `Write`, and counting those would have atrium reading its own typing as the
 // person being busy, so a second message would always defer behind the first.
 func TestAtriumTypingDoesNotCountAsTheOperatorTyping(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d := testDaemon(t)
 	target, r, _ := peerPair(t, d)
 

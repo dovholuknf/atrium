@@ -48,6 +48,9 @@ func gitRepo(t *testing.T, dir string) {
 
 // THE M1 ACCEPTANCE, two rooms on one machine, driven by hand through the room routes.
 func TestAWorkerMovesBetweenRoomsThroughTheRoomRoutes(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	t.Setenv("USERPROFILE", home)

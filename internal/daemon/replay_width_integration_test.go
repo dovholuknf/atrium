@@ -28,6 +28,9 @@ func conptyLine(n, cols int) string {
 // onto a row of their own: a blank line under every coloured diff line, which
 // is what the operator saw after the 14:39 deploy.
 func TestAReplayAfterARestartKeepsWiderHistoryOnItsOwnWidth(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d := testDaemon(t)
 	f := newFakePTY()
 	t.Cleanup(func() { f.Close() })

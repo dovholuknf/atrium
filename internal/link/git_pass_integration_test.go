@@ -208,6 +208,9 @@ func treeDigest(t *testing.T, dir string) string {
 }
 
 func TestAFetchOfAClaudeBranchPassesThroughAndTheHubStoresNothing(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real link, hub and git rig over loopback")
+	}
 	x := newPassRig(t)
 	before := treeDigest(t, x.root+"/hub")
 	hubObjects := run(t, x.root+"/checkout", "count-objects", "-v")
@@ -244,6 +247,9 @@ func TestAFetchOfAClaudeBranchPassesThroughAndTheHubStoresNothing(t *testing.T) 
 }
 
 func TestStashNotesAndAnUnservedBranchAreRefusedThroughTheHub(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real link, hub and git rig over loopback")
+	}
 	x := newPassRig(t)
 	for _, c := range []struct{ name, ref string }{
 		{"stash", "refs/stash"},
@@ -298,6 +304,9 @@ func post(t *testing.T, url, body string) string {
 }
 
 func TestAShallowOrFilteredFetchIsRefusedBeforeItIsPassedOn(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real link, hub and git rig over loopback")
+	}
 	x := newPassRig(t)
 	for _, args := range [][]string{
 		{"--depth", "1"},
@@ -329,6 +338,9 @@ func TestAShallowOrFilteredFetchIsRefusedBeforeItIsPassedOn(t *testing.T) {
 }
 
 func TestADetachedOrUnknownRoomAnswers503(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real link, hub and git rig over loopback")
+	}
 	x := newPassRig(t)
 	get := func(room string) (int, string) {
 		resp, err := http.Get(x.url(room) + "/info/refs?service=git-upload-pack")
@@ -359,6 +371,9 @@ func TestADetachedOrUnknownRoomAnswers503(t *testing.T) {
 }
 
 func TestOnlyTheOperatorsReachesMayFetchThroughTheHub(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real link, hub and git rig over loopback")
+	}
 	x := newPassRig(t)
 	do := func(h http.Handler, host, remote string) int {
 		req := httptest.NewRequest("GET", "http://"+host+"/git/room/sg3/github/o/r.git/info/refs?service=git-upload-pack", nil)
@@ -391,6 +406,9 @@ func TestOnlyTheOperatorsReachesMayFetchThroughTheHub(t *testing.T) {
 }
 
 func TestACardOnARoomDoesNotReachThePassThroughOverTheLink(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real link, hub and git rig over loopback")
+	}
 	x := newPassRig(t)
 	other := &Room{Name: "m1mini", Dial: plain{addr: x.hubAddr(t)}, Git: true,
 		T: Timings{Beat: 200 * time.Millisecond, Warm: 1, Backoff: 50 * time.Millisecond}}
@@ -415,6 +433,9 @@ func (x *passRig) hubAddr(t *testing.T) string {
 }
 
 func TestSevenFetchesInAMinuteFromOneReaderAreTooMany(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real link, hub and git rig over loopback")
+	}
 	x := newPassRig(t)
 	x.g.PassHandler().FetchesPerMinute, x.g.PassHandler().RoundsPerMinute = 0, 0
 	codes := map[int]int{}
@@ -437,6 +458,9 @@ func TestSevenFetchesInAMinuteFromOneReaderAreTooMany(t *testing.T) {
 // A ziti service's peers have no IP: RemoteAddr is one string per connection. They share one budget, so opening a new
 // connection is not a new reader.
 func TestReadersWithNoAddressShareTheReachsBudgetAndPeersWithOneDoNot(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real link, hub and git rig over loopback")
+	}
 	if got := readerKey("overlay", "ziti-edge-router connId=7, logical=er1"); got != "overlay" {
 		t.Errorf("a ziti peer is keyed %q", got)
 	}

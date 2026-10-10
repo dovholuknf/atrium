@@ -33,6 +33,9 @@ func postGate(t *testing.T, url, body string) (int, map[string]any) {
 // at most `hold`, a pause holds the ask past its wait, and the poll after the
 // resume collects `go`.
 func TestAHeldAskIsPolledThroughAPause(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real link, hub and git rig over loopback")
+	}
 	p := NewProxy(NewHub(Timings{}), nil, "", nil)
 	front := httptest.NewServer(p)
 	defer front.Close()

@@ -24,6 +24,9 @@ func quietTask(t *testing.T, d *Daemon, name string, pid int) *store.Task {
 // board untrustworthy. With no pid there is nothing to ask the operating
 // system, so silence is the only signal left.
 func TestSilentCardWithNoPIDIsAssumedGone(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d, _, cancel, _ := startDaemon(t)
 	defer cancel()
 
@@ -47,6 +50,9 @@ func TestSilentCardWithNoPIDIsAssumedGone(t *testing.T) {
 // Being wrong has to cost one status change, not a lost session. Anything the
 // session does brings the card back.
 func TestAnAssumedGoneCardRevives(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d, _, cancel, _ := startDaemon(t)
 	defer cancel()
 
@@ -76,6 +82,9 @@ func TestAnAssumedGoneCardRevives(t *testing.T) {
 // dead would throw the question away and leave the agent frozen with nothing
 // coming.
 func TestWaitingCardsAreNeverAssumedGone(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d, _, cancel, _ := startDaemon(t)
 	defer cancel()
 
@@ -103,6 +112,9 @@ func TestWaitingCardsAreNeverAssumedGone(t *testing.T) {
 
 // A session that spoke recently is left alone, whatever else is true of it.
 func TestRecentlyActiveCardsAreLeftAlone(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d, _, cancel, _ := startDaemon(t)
 	defer cancel()
 

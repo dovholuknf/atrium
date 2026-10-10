@@ -6,6 +6,9 @@ import "testing"
 
 // Drafted answers ride on the card, read back as written, and clear with an empty string.
 func TestAnswerDraftsRoundTripOnTheCard(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real sqlite database on disk")
+	}
 	t.Parallel()
 	s := openTestStore(t)
 	c := aliasCard(t, s, "drafts-1")

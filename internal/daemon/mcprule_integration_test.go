@@ -33,6 +33,9 @@ func mcpRule(t *testing.T, d *Daemon, tool, decision string) {
 
 // An MCP rule is a standing rule, step 4, and answers like any other one.
 func TestMCPRuleAnswersAtTheStandingRuleStep(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d, _, cancel, _ := startDaemon(t)
 	defer cancel()
 	mcpTask(t, d, "gw-1")
@@ -55,6 +58,9 @@ func TestMCPRuleAnswersAtTheStandingRuleStep(t *testing.T) {
 
 // The decider for an ordinary rule is still its pattern.
 func TestNonMCPRuleKeepsItsPatternAsDecider(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d, _, cancel, _ := startDaemon(t)
 	defer cancel()
 	mcpTask(t, d, "plain-1")
@@ -72,6 +78,9 @@ func TestNonMCPRuleKeepsItsPatternAsDecider(t *testing.T) {
 
 // Steps 2 and 3 still sit ahead of a rule, and step 5 behind it.
 func TestMCPRuleChainOrder(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d, _, cancel, _ := startDaemon(t)
 	defer cancel()
 
@@ -114,6 +123,9 @@ func TestMCPRuleChainOrder(t *testing.T) {
 // Turning auto mode on drains the queued call a rule covers with the rule, and
 // leaves an uncovered one for the human.
 func TestDrainUsesAnMCPRule(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d, _, cancel, _ := startDaemon(t)
 	defer cancel()
 	task := mcpTask(t, d, "gw-drain")

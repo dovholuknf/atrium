@@ -158,6 +158,9 @@ func waitForActivity(t *testing.T, d *Daemon, taskID string) *Activity {
 // heard of, must not fail. This rides PreToolUse, so anything that errors here
 // breaks every tool call a session makes.
 func TestActivityEndpointAcceptsAnUnknownAgent(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d, _, cancel, _ := startDaemon(t)
 	defer cancel()
 
@@ -176,6 +179,9 @@ func TestActivityEndpointAcceptsAnUnknownAgent(t *testing.T) {
 // reporting can never affect a tool call, and a 400 on a malformed body breaks
 // that just as surely as a slow answer would.
 func TestActivityEndpointNeverRefuses(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d, _, cancel, _ := startDaemon(t)
 	defer cancel()
 
@@ -201,6 +207,9 @@ func TestActivityEndpointNeverRefuses(t *testing.T) {
 
 // End to end: a hook posts, the card carries the activity.
 func TestActivityEndpointRecordsAgainstACard(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d, _, cancel, _ := startDaemon(t)
 	defer cancel()
 
@@ -286,6 +295,9 @@ func TestSubagentCountFollowsTheSubagentHooks(t *testing.T) {
 // A session ending has to take its activity with it, or its card claims to be
 // running a tool inside a process that has exited.
 func TestSessionEndClearsActivity(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d, _, cancel, _ := startDaemon(t)
 	defer cancel()
 
@@ -312,6 +324,9 @@ func TestSessionEndClearsActivity(t *testing.T) {
 // `thinking` again. Then Stop fires. The Stop has to put the badge to idle,
 // whatever column the card is in, or a finished card reads `thinking`.
 func TestAStopOnADoneCardClearsThinking(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d, _, cancel, _ := startDaemon(t)
 	defer cancel()
 
@@ -340,6 +355,9 @@ func TestAStopOnADoneCardClearsThinking(t *testing.T) {
 // one has to be absent rather than an empty object, or every card would render
 // a blank badge.
 func TestActivityReachesTheBoardView(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d, _, cancel, _ := startDaemon(t)
 	defer cancel()
 

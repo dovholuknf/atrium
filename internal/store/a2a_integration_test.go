@@ -10,6 +10,9 @@ import (
 // Lineage is written once. A reopen runs the launch again, and must not
 // rename the parent to whoever pressed the button the second time.
 func TestLineageIsWrittenOnce(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real sqlite database on disk")
+	}
 	t.Parallel()
 	s := openTestStore(t)
 	card, _, err := s.Register(Observed{WireName: "kid", Worktree: "/tmp/kid"})

@@ -18,6 +18,9 @@ import (
 // hub untags the path and not the body, so the room saw ids its store has no
 // row for, wrote no rank, and the next refresh put the pins back.
 func TestPinOrderAcceptsRoomTaggedIDs(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real server with git worktrees and a database")
+	}
 	t.Parallel()
 	srv, st, dir := fileServer(t)
 	var ids []string

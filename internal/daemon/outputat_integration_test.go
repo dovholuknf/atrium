@@ -124,6 +124,9 @@ func TestOutputAtGetsPastAHugeLine(t *testing.T) {
 
 // A check armed before Close never runs.
 func TestCloseStopsAPendingOutputCheck(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	f := newUsageFix(t)
 	d := &Daemon{st: f.st, usage: f.u, ctx: newContextSizes()}
 	transcriptReply(t, f.path, "m1", f.base, false, textBlock("hello"))

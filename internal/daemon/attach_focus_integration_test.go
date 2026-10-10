@@ -21,6 +21,9 @@ func sendFrame(t *testing.T, h *heldAttach, in attachIn) {
 // TWO WINDOWS, ONE TERMINAL. The pty follows the window that last had focus or input, and goes back to the one
 // that is left when the other detaches. This is the second board window that resized a terminal and never gave it back.
 func TestThePTYFollowsTheWindowThatWasLastUsedAndReturnsOnDetach(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d := testDaemon(t)
 	f, r := sizedSession(t, d, "two-windows", 130, 30)
 
@@ -48,6 +51,9 @@ func TestThePTYFollowsTheWindowThatWasLastUsedAndReturnsOnDetach(t *testing.T) {
 
 // A window that never says it is used does not take the lead from one that does, and one window is unchanged.
 func TestOneWindowIsUnchangedByFocus(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d := testDaemon(t)
 	f, r := sizedSession(t, d, "one-window", 130, 30)
 

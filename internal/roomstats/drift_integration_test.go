@@ -26,6 +26,9 @@ func measure(t *testing.T, d time.Duration) time.Duration {
 // A loaded process reads worse than an idle one. One P and spinning goroutines
 // make the timer wait its turn.
 func TestLoadedProcessDriftsMore(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real work")
+	}
 	prev := runtime.GOMAXPROCS(1)
 	defer runtime.GOMAXPROCS(prev)
 

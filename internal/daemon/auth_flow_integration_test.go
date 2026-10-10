@@ -138,6 +138,9 @@ func authorizeOf(t *testing.T, d *Daemon, path string) url.Values {
 // PKCE IS ON EVERY LOGIN AND THERE IS NO SWITCH FOR IT. A challenge atrium can
 // be configured out of is a challenge that is off on the board that needed it.
 func TestALoginCarriesAPkceChallenge(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	idp := newFakeIDP(t)
 	d := idp.on(t)
 	q := authorizeOf(t, d, "/")
@@ -158,6 +161,9 @@ func TestALoginCarriesAPkceChallenge(t *testing.T) {
 // history, in a referer and in every proxy on the way, which is every place the
 // code it protects already is.
 func TestTheVerifierNeverGoesToTheBrowser(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	idp := newFakeIDP(t)
 	d := idp.on(t)
 
@@ -184,6 +190,9 @@ func TestTheVerifierNeverGoesToTheBrowser(t *testing.T) {
 // The whole round trip, against a provider that refuses an exchange without a
 // matching verifier. This is the test that fails if PKCE is decoration.
 func TestASignInSpendsItsCodeWithTheVerifier(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	idp := newFakeIDP(t)
 	d := idp.on(t)
 	q := authorizeOf(t, d, "/?card=7")
@@ -238,6 +247,9 @@ func TestASignInSpendsItsCodeWithTheVerifier(t *testing.T) {
 // provider answers from the session it already has, or refuses, and either way
 // nobody is shown a form they did not ask for.
 func TestARenewalAsksTheProviderSilently(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	idp := newFakeIDP(t)
 	d := idp.on(t)
 	if got := authorizeOf(t, d, "/").Get("prompt"); got != "none" {

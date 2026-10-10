@@ -372,6 +372,9 @@ func TestDeleteRecogniser(t *testing.T) {
 // hand, can carry a pattern that does not compile. One of those must not stop
 // the rows below it from being asked.
 func TestABadPatternInTheTableDoesNotBlockTheRestOfIt(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real sqlite database on disk")
+	}
 	t.Parallel()
 	s := open(t)
 	if _, err := s.SaveRecogniser(pullRequestRow()); err != nil {

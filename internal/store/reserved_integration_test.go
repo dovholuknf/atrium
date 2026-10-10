@@ -55,6 +55,9 @@ func TestAnOwedItemSurvivesAndClosesOnce(t *testing.T) {
 }
 
 func TestTheReservedHandleCannotBeSpelledAround(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real sqlite database on disk")
+	}
 	t.Parallel()
 	s := openTestStore(t)
 	for _, name := range []string{"atrium@x", "аtrium", "atrium​", "ATRIUM", " atrium", "ａｔｒｉｕｍ", "átrium", "sg4/atrium@x"} {

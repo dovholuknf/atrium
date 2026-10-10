@@ -14,6 +14,9 @@ import (
 
 // The room usage read answers buckets, holds the range, and refuses nonsense.
 func TestUsageRoomEndpointShapeAndBounds(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real server with git worktrees and a database")
+	}
 	t.Parallel()
 	s, st, dir := fileServer(t)
 	task := cardIn(t, st, dir)

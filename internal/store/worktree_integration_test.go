@@ -5,6 +5,9 @@ package store
 import "testing"
 
 func TestObserveAndRegisterNeverMoveASetWorktree(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real sqlite database on disk")
+	}
 	t.Parallel()
 	s := open(t)
 	task, _, err := s.Register(Observed{WireName: "w", Worktree: "/launch", Runner: "claude"})
@@ -24,6 +27,9 @@ func TestObserveAndRegisterNeverMoveASetWorktree(t *testing.T) {
 }
 
 func TestAnEmptyWorktreeIsFilledOnceThenNeverMoves(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real sqlite database on disk")
+	}
 	t.Parallel()
 	s := open(t)
 	task, _, err := s.Register(Observed{WireName: "w", Runner: "claude"})
@@ -43,6 +49,9 @@ func TestAnEmptyWorktreeIsFilledOnceThenNeverMoves(t *testing.T) {
 }
 
 func TestADeliberateMoveStillMovesTheWorktree(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real sqlite database on disk")
+	}
 	t.Parallel()
 	s := open(t)
 	task, _, err := s.Register(Observed{WireName: "w", Worktree: "/a", Runner: "claude"})

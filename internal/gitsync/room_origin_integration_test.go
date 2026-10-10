@@ -11,6 +11,9 @@ import (
 
 // A clone path that already holds somebody else's repository is not synced into.
 func TestSyncRefusesAClonePathWhoseOriginIsAnotherRepository(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: git subprocesses and a real smart-HTTP rig")
+	}
 	t.Parallel()
 	s := freshServed(t)
 	sy, root := newSyncer(t)

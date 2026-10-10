@@ -115,6 +115,9 @@ func TestPermSkipsBothSubagentToolNames(t *testing.T) {
 }
 
 func TestPermProbeNotGatedAndTimeout(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real work")
+	}
 	// Answers "not gated" and there is no .mcp.json.
 	h := newFakeHub(t, false, 200, `{"decision":"approve"}`)
 	permEnv(t, "")

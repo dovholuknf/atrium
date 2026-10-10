@@ -52,6 +52,9 @@ func markPublicShareRunning(t *testing.T, d *Daemon) {
 
 // POINT 1. Turning the login off under a running public share is refused.
 func TestTheLoginCannotBeTurnedOffUnderAPublicShare(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d := testDaemon(t)
 	if err := d.SaveAuth(basicConfig(t, "clint", "hunter2")); err != nil {
 		t.Fatal(err)
@@ -88,6 +91,9 @@ func TestTheLoginCanBeTurnedOffWhenNoPublicShareRuns(t *testing.T) {
 // POINT 2. A source that keeps guessing wrong waits, and the wait comes before
 // any scrypt.
 func TestRepeatedWrongPasswordsMakeASourceWait(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d := testDaemon(t)
 	if err := d.SaveAuth(basicConfig(t, "clint", "hunter2")); err != nil {
 		t.Fatal(err)
@@ -208,6 +214,9 @@ func TestTheWaitDoublesAndIsCapped(t *testing.T) {
 
 // POINT 3. A password change ends sessions issued before it.
 func TestAPasswordChangeEndsEarlierSessions(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d := testDaemon(t)
 	if err := d.SaveAuth(basicConfig(t, "clint", "hunter2")); err != nil {
 		t.Fatal(err)

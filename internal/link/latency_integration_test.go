@@ -119,6 +119,9 @@ func summarize(d []time.Duration) string {
 // about half a millisecond on loopback, so 5ms at the median is a wide margin
 // that still fails on any buffering or Nagle delay, which cost 40ms or more.
 func TestAKeystrokeCrossesTheLinkWithoutDelay(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real link, hub and git rig over loopback")
+	}
 	front, done := tlsPair(t, http.HandlerFunc(echoWS))
 	defer done()
 	for _, gap := range []time.Duration{0, 5 * time.Millisecond, 50 * time.Millisecond} {

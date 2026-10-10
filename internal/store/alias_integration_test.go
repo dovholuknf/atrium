@@ -138,6 +138,9 @@ func TestADoneCardStillAnswersToItsAlias(t *testing.T) {
 // LIVE FIRST. A done card and a live one sharing an alias resolve to the live
 // one, whichever was created first.
 func TestALiveCardBeatsADoneOneForAnAlias(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real sqlite database on disk")
+	}
 	t.Parallel()
 	for _, liveIsNewer := range []bool{true, false} {
 		s := openTestStore(t)
@@ -305,6 +308,9 @@ func TestADefaultThatClashesSaysWhy(t *testing.T) {
 // The cards already on the board take their defaults once, and a card the
 // operator cleared afterwards is not handed its default back.
 func TestTheDefaultBackfillRunsOnce(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real sqlite database on disk")
+	}
 	t.Parallel()
 	s := openTestStore(t)
 	c := aliasCard(t, s, "sa84-merger-owns-claude-main")

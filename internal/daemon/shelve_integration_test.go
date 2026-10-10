@@ -12,6 +12,9 @@ import (
 // request left pending keeps its agent frozen with nobody coming, and stays in
 // the queue to be approved later against a situation already walked away from.
 func TestCancelPendingReleasesTheAgent(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d, _, cancel, errCh := startDaemon(t)
 	defer func() {
 		cancel()
@@ -66,6 +69,9 @@ func TestCancelPendingReleasesTheAgent(t *testing.T) {
 // A shelved card is a standing no. Without this an agent asks, gets nothing,
 // and freezes behind a card the operator has deliberately stopped looking at.
 func TestShelvedTaskBlocksNewRequests(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d, _, cancel, errCh := startDaemon(t)
 	defer func() {
 		cancel()
@@ -109,6 +115,9 @@ func TestShelvedTaskBlocksNewRequests(t *testing.T) {
 
 // Unshelving restores normal behavior, or shelving would be a trap.
 func TestUnshelvedTaskAsksAgain(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d, _, cancel, errCh := startDaemon(t)
 	defer func() {
 		cancel()

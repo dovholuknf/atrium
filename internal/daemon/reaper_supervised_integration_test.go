@@ -15,6 +15,9 @@ import (
 // runner, whatever its pid says and however long it has been silent. m1mini
 // filed one dead for "15m silent and no pid", and the next tick revived it.
 func TestASupervisedCardIsNeverAssumedGoneForSilence(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d, _, cancel, _ := startDaemon(t)
 	defer cancel()
 
@@ -43,6 +46,9 @@ func TestASupervisedCardIsNeverAssumedGoneForSilence(t *testing.T) {
 // A stored pid can be a hook's report of some other process. While the runner
 // is supervised, a gone pid is not the card's death either.
 func TestASupervisedCardIgnoresAGonePid(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d, _, cancel, _ := startDaemon(t)
 	defer cancel()
 
@@ -64,6 +70,9 @@ func TestASupervisedCardIgnoresAGonePid(t *testing.T) {
 
 // Once the runner has left the supervisor, the old checks apply again.
 func TestAnUnsupervisedCardStillFallsBackToSilence(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d, _, cancel, _ := startDaemon(t)
 	defer cancel()
 

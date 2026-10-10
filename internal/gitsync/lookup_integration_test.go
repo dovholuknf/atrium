@@ -408,6 +408,9 @@ func TestForCardRewritesTheHubsURLsAndTakesTheRoomsAway(t *testing.T) {
 // A hub mirror's integration branch and main are answered as fetchable and read-only, and an ordinary claude/* branch
 // answers as before. The push of the integration branch is still refused.
 func TestAMirrorsIntegrationBranchAndMainAnswerReadOnly(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: git subprocesses and a real smart-HTTP rig")
+	}
 	x := newRecv(t)
 	ref, _ := ParseName("github/m/mirror")
 	dir := x.h.Store().dir(ref)

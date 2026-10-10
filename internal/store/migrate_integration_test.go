@@ -55,6 +55,9 @@ func TestMigrationRepairsDatabaseMissingPermRule(t *testing.T) {
 // Reopening an already-current database must be a no-op, not a duplicate
 // column error from the ADD COLUMN migration.
 func TestMigrationsAreIdempotent(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real sqlite database on disk")
+	}
 	t.Parallel()
 	path := filepath.Join(t.TempDir(), "repeat.db")
 	for i := 0; i < 3; i++ {

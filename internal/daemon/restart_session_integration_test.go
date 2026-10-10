@@ -15,6 +15,9 @@ import (
 // itself and a joined session belongs to whoever started it, so there is no
 // terminal here to exit and nothing to relaunch.
 func TestRestartRunnerRefusesACardItDoesNotOwn(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d, _, cancel, _ := startDaemon(t)
 	defer cancel()
 
@@ -36,6 +39,9 @@ func TestRestartRunnerRefusesACardItDoesNotOwn(t *testing.T) {
 
 // A card that does not exist names the card rather than failing somewhere deeper.
 func TestRestartRunnerOnAMissingCardSaysSo(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d, _, cancel, _ := startDaemon(t)
 	defer cancel()
 
@@ -47,6 +53,9 @@ func TestRestartRunnerOnAMissingCardSaysSo(t *testing.T) {
 // A runner that ignores its exit keys is left running, and the refusal says so.
 // Restart is not terminate: nothing is closed or killed behind the operator's back.
 func TestRestartRunnerLeavesAStubbornRunnerUp(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d, _, cancel, errCh := startDaemon(t)
 	defer func() {
 		cancel()

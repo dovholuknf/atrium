@@ -36,6 +36,9 @@ func ask(t *testing.T, d *Daemon, agent, tool, command string) (string, *AutoDec
 
 // The whole point: nothing is asked, and the agent is not left waiting.
 func TestAutoModeApprovesWithoutAsking(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d, _, cancel, _ := startDaemon(t)
 	defer cancel()
 	task := autoTask(t, d, "auto-1")
@@ -61,6 +64,9 @@ func TestAutoModeApprovesWithoutAsking(t *testing.T) {
 // the same as not gating at all, and the review that justifies the mode would
 // have nothing to read.
 func TestAutoModeStillRecordsEverything(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d, _, cancel, _ := startDaemon(t)
 	defer cancel()
 	task := autoTask(t, d, "auto-2")
@@ -89,6 +95,9 @@ func TestAutoModeStillRecordsEverything(t *testing.T) {
 // Auto mode says stop asking me new questions, not forget the answers I gave.
 // A never rule is an answer already given.
 func TestAutoModeDoesNotOverrideANeverRule(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d, _, cancel, _ := startDaemon(t)
 	defer cancel()
 	autoTask(t, d, "auto-3")
@@ -110,6 +119,9 @@ func TestAutoModeDoesNotOverrideANeverRule(t *testing.T) {
 // A shelved card is a standing no, and shelving is explicit. Auto mode must not
 // quietly reopen work the operator deliberately put down.
 func TestAutoModeDoesNotOverrideShelving(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d, _, cancel, _ := startDaemon(t)
 	defer cancel()
 	task := autoTask(t, d, "auto-4")
@@ -126,6 +138,9 @@ func TestAutoModeDoesNotOverrideShelving(t *testing.T) {
 // A message is the operator reaching out. Auto mode means do not interrupt me,
 // not do not let me speak.
 func TestAutoModeStillDeliversMessages(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d, _, cancel, _ := startDaemon(t)
 	defer cancel()
 	task := autoTask(t, d, "auto-5")
@@ -148,6 +163,9 @@ func TestAutoModeStillDeliversMessages(t *testing.T) {
 
 // Turning the mode off has to put the asking back.
 func TestAutoModeOffAsksAgain(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d, _, cancel, _ := startDaemon(t)
 	defer cancel()
 	task := autoTask(t, d, "auto-6")
@@ -172,6 +190,9 @@ func TestAutoModeOffAsksAgain(t *testing.T) {
 // silently start interrupting again, which is the failure the operator would
 // notice last and trust least.
 func TestAutoModeSurvivesAReopen(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d, _, cancel, _ := startDaemon(t)
 	defer cancel()
 	task := autoTask(t, d, "auto-7")

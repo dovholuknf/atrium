@@ -13,6 +13,9 @@ import (
 )
 
 func TestPushToHubPushesAPlainBranchThroughTheForwarder(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: git subprocesses and a real smart-HTTP rig")
+	}
 	t.Parallel()
 	f := newRemote(t)
 	f.seedMain(hubRepo)
@@ -54,6 +57,9 @@ func TestPushToHubTakesAPlainBranchNameAndNothingElse(t *testing.T) {
 
 // The push has to go where the forwarder is AFTER every rewrite, not where the config says.
 func TestPushToHubRefusesWhenAGlobalPushInsteadOfSendsTheForwarderElsewhere(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: git subprocesses and a real smart-HTTP rig")
+	}
 	f := newRemote(t)
 	f.seedMain(hubRepo)
 	f.branch("fix/x", "x.txt")
@@ -93,6 +99,9 @@ func TestPushToHubRefusesWhenAGlobalPushInsteadOfSendsTheForwarderElsewhere(t *t
 
 // A clone whose own `hub` points elsewhere: refused, and the remote atrium adds is atrium-hub.
 func TestAHubRemotePointingElsewhereIsLeftAloneAndAtriumHubIsAdded(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: git subprocesses and a real smart-HTTP rig")
+	}
 	t.Parallel()
 	f := newRemote(t)
 	f.seedMain(hubRepo)
@@ -129,6 +138,9 @@ func TestAHubRemotePointingElsewhereIsLeftAloneAndAtriumHubIsAdded(t *testing.T)
 }
 
 func TestEnsureRemotesAddsHubFollowsAPortChangeAndGuardsOriginOnAtriumMadeClones(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: git subprocesses and a real smart-HTTP rig")
+	}
 	t.Parallel()
 	remote := t.TempDir()
 	git(t, remote, "init", "-q", "--bare", "-b", "main")
@@ -208,6 +220,9 @@ func TestEnsureRemotesLeavesARoomGitCloneAloneAndSilent(t *testing.T) {
 }
 
 func TestSyncAddsTheHubRemoteAndGuardsTheOriginOfACloneItMade(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: git subprocesses and a real smart-HTTP rig")
+	}
 	t.Parallel()
 	s := freshServed(t)
 	sy, root := newSyncer(t)
@@ -232,6 +247,9 @@ func TestSyncAddsTheHubRemoteAndGuardsTheOriginOfACloneItMade(t *testing.T) {
 
 // `git remote get-url --push` prints only the first push url, and git pushes to every one.
 func TestPushToHubRefusesASecondPushURLOnHub(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: git subprocesses and a real smart-HTTP rig")
+	}
 	t.Parallel()
 	f := newRemote(t)
 	f.seedMain(hubRepo)
@@ -266,6 +284,9 @@ func TestPushToHubRefusesASecondPushURLOnHub(t *testing.T) {
 // remote.<name>.proxy and http.<url>.proxy beat http.proxy, so a clone could put its own listener between the card's
 // token and the forwarder. Both are cleared, and the push still lands.
 func TestPushToHubIgnoresAProxyTheClonesConfigSets(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: git subprocesses and a real smart-HTTP rig")
+	}
 	t.Parallel()
 	for _, key := range []string{"remote.hub.proxy", "http.proxy", "http.<base>.proxy", "http.<push>.proxy"} {
 		t.Run(key, func(t *testing.T) {
@@ -301,6 +322,9 @@ func TestPushToHubIgnoresAProxyTheClonesConfigSets(t *testing.T) {
 // A CLONE MADE BY HAND, with no hub remote and no origin, at <root>/<host>/<owner>/<repo>: pushed from a worktree of
 // it to the forwarder's URL for the repository its place names, and nothing is added to its config.
 func TestAHandMadeCloneWithNoHubRemoteIsPushedByTheURLItsPlaceNames(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: git subprocesses and a real smart-HTTP rig")
+	}
 	t.Parallel()
 	f := newRemote(t)
 	f.seedMain(hubRepo)

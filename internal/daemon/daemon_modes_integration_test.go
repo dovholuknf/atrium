@@ -10,6 +10,9 @@ import (
 )
 
 func TestFreshRoomStateIsOwnerOnly(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	if runtime.GOOS == "windows" {
 		t.Skip("unix modes")
 	}

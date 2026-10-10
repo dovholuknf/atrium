@@ -42,6 +42,9 @@ func TestAStashIsRefusedWhenTheRoomOrTheCardSaysNo(t *testing.T) {
 // The dirty files go into one WIP commit on the worktree's branch, and the local stash name is gone again whether
 // the push landed or not. The push here has nowhere to go.
 func TestAStashCommitsTheDirtyFilesAndLeavesNoLocalStashBranch(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d := testDaemon(t)
 	d.setAgentAddr(&net.TCPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 7777})
 	task := plainTask(t, d, "closer")

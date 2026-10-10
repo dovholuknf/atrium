@@ -265,6 +265,9 @@ func TestFakeRunnerDoneSayRidesTheStopHook(t *testing.T) {
 // Claude only. The payloads are the ones a live Claude Code sent on 2026-09-28:
 // the parent's Stop lists `background_tasks`. Codex sends no such field.
 func TestFakeRunnerSubagentsDoNotEndTheTurn(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real work")
+	}
 	r := runnerShapes[0]
 	agentAddr, humanAddr := startTestDaemon(t)
 	for _, k := range []string{"ATRIUM_AGENT_NAME", "ATRIUM_TASK_ID", "ATRIUM_RUNNER", "ATRIUM_PERM_GATE"} {

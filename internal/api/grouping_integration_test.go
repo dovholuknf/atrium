@@ -9,6 +9,9 @@ import (
 )
 
 func TestAGroupingExpressionCannotBeStoredOnTheDaemon(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real server with git worktrees and a database")
+	}
 	t.Parallel()
 	for _, field := range []string{"group_by", "group_order"} {
 		srv, _, _ := fileServer(t)

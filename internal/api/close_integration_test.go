@@ -66,6 +66,9 @@ func worktreeSeq(t *testing.T, st *store.Store, card string) int {
 func exists(p string) bool { _, err := os.Stat(filepath.FromSlash(p)); return err == nil }
 
 func TestCloseFreesWhatTheOpenMadeAndKeepsTheHistory(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real server with git worktrees and a database")
+	}
 	t.Parallel()
 	oh, card, wt, row := openForClose(t)
 	if err := os.MkdirAll(filepath.Join(filepath.FromSlash(row.RunDir), "src"), 0o755); err != nil {
@@ -118,6 +121,9 @@ func TestCloseFreesWhatTheOpenMadeAndKeepsTheHistory(t *testing.T) {
 }
 
 func TestCloseAsksAboutWorkThatIsNowhereElseAndKeepsWhatItIsTold(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real server with git worktrees and a database")
+	}
 	t.Parallel()
 	oh, card, wt, _ := openForClose(t)
 	if err := os.WriteFile(filepath.Join(filepath.FromSlash(wt), "notes.txt"), []byte("mine"), 0o644); err != nil {
@@ -148,6 +154,9 @@ func TestCloseAsksAboutWorkThatIsNowhereElseAndKeepsWhatItIsTold(t *testing.T) {
 }
 
 func TestCloseDeletesWhenToldTo(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real server with git worktrees and a database")
+	}
 	t.Parallel()
 	oh, card, wt, _ := openForClose(t)
 	git(t, wt, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "--allow-empty", "-m", "local")
@@ -165,6 +174,9 @@ func TestCloseDeletesWhenToldTo(t *testing.T) {
 }
 
 func TestCloseStashesToTheHubAndKeepsTheWorktreeWhenTheStashFails(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real server with git worktrees and a database")
+	}
 	t.Parallel()
 	oh, card, wt, _ := openForClose(t)
 	if err := os.WriteFile(filepath.Join(filepath.FromSlash(wt), "notes.txt"), []byte("mine"), 0o644); err != nil {

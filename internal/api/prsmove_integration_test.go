@@ -188,6 +188,9 @@ func hand(entries ...tar.Header) []byte {
 }
 
 func TestAnImportRefusesWhatLeavesTheFolderALinkOrADuplicate(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real server with git worktrees and a database")
+	}
 	reg := func(name string) tar.Header { return tar.Header{Name: name, Mode: 0o644, Typeflag: tar.TypeReg} }
 	cases := map[string][]tar.Header{
 		"dotdot":    {reg("files/../escape.txt")},

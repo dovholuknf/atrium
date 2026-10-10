@@ -15,6 +15,9 @@ import (
 )
 
 func TestABlockingFindingIsCountedListedAndMarkable(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real server with git worktrees and a database")
+	}
 	t.Parallel()
 	s, st, _ := prServer(t)
 	b := prDecode(t, prDo(s, s.postPR, "POST", "/v1/prs", `{"url":"`+prURL+`","head":"ad5ddf4aaaa"}`, ""))
@@ -46,6 +49,9 @@ func TestABlockingFindingIsCountedListedAndMarkable(t *testing.T) {
 }
 
 func TestASpacedFileNameKeepsOneWalkLineAndReadsBack(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real server with git worktrees and a database")
+	}
 	t.Parallel()
 	s, st, _ := prServer(t)
 	b := prDecode(t, prDo(s, s.postPR, "POST", "/v1/prs", `{"url":"`+prURL+`","head":"ad5ddf4aaaa"}`, ""))
@@ -90,6 +96,9 @@ func TestParseWalkLineSharesTheRenderersRule(t *testing.T) {
 }
 
 func TestOnlyOneOfManyRacingRetriesWins(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real server with git worktrees and a database")
+	}
 	t.Parallel()
 	s, st, _ := prServer(t)
 	b := prDecode(t, prDo(s, s.postPR, "POST", "/v1/prs", `{"url":"`+prURL+`"}`, ""))
@@ -117,6 +126,9 @@ func TestOnlyOneOfManyRacingRetriesWins(t *testing.T) {
 }
 
 func TestOnlyOneOfManyRacingStartsAndAbortsWins(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real server with git worktrees and a database")
+	}
 	t.Parallel()
 	s, st, _ := prServer(t)
 	s.PRRunner = &fakePRRunner{st: st}
@@ -173,6 +185,9 @@ func TestARefusedStateChangeIsNotAHalt(t *testing.T) {
 }
 
 func TestAPasteWithNoHeadWhileOneIsLiveFindsTheSameReview(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real server with git worktrees and a database")
+	}
 	t.Parallel()
 	s, st, _ := prServer(t)
 	run := &fakePRRunner{st: st}

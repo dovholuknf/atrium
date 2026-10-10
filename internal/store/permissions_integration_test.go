@@ -8,6 +8,9 @@ import "testing"
 // permits many NULLs but only one empty string, so an un-keyed request has to
 // store NULL rather than ”.
 func TestUnkeyedPermissionsDoNotCollide(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real sqlite database on disk")
+	}
 	t.Parallel()
 	s := open(t)
 	task, _, err := s.Register(Observed{WireName: "agent-f", Worktree: "d:/w", Runner: "claude"})

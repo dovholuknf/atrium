@@ -12,6 +12,9 @@ import (
 // git.push defaults to hub, reads back what was written, and refuses a value it does not know rather than storing
 // something that would read as `none` and look like it took.
 func TestGitPushSetting(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real server with git worktrees and a database")
+	}
 	t.Parallel()
 	srv, st, _ := fileServer(t)
 	if got := settingsGet(t, srv)["git_push"]; got != "hub" {

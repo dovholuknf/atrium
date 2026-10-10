@@ -104,6 +104,9 @@ func TestSafeNameIsBounded(t *testing.T) {
 // Enabling needs the token, and saying which field is missing beats a command
 // failing somewhere downstream.
 func TestEnableZrokRefusesWithNoToken(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d, _, cancel, _ := startDaemon(t)
 	defer cancel()
 
@@ -113,6 +116,9 @@ func TestEnableZrokRefusesWithNoToken(t *testing.T) {
 }
 
 func TestEnrollZitiRefusesWithNoToken(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d, _, cancel, _ := startDaemon(t)
 	defer cancel()
 
@@ -138,6 +144,9 @@ func TestEnrollZitiIntoRefusesBadInputWithoutADaemon(t *testing.T) {
 // An expired token is refused here, with its date, rather than by a controller
 // with something less useful.
 func TestEnrollZitiRefusesAnExpiredToken(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d, _, cancel, _ := startDaemon(t)
 	defer cancel()
 

@@ -45,6 +45,9 @@ func TestNormalizeTenantNeverContainsTheSeparator(t *testing.T) {
 // and renaming every card on a board that will never federate would be a
 // migration for no benefit.
 func TestQualifyIsANoOpWithoutAName(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real sqlite database on disk")
+	}
 	t.Parallel()
 	s := open(t)
 	if got := s.Qualify("atrium"); got != "atrium" {
@@ -67,6 +70,9 @@ func TestQualifyPrefixes(t *testing.T) {
 // A session that reconnects registers again, and it must not accumulate
 // prefixes into sg4/sg4/atrium.
 func TestQualifyIsIdempotent(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real sqlite database on disk")
+	}
 	t.Parallel()
 	s := open(t)
 	if err := s.SetTenant("sg4"); err != nil {
@@ -81,6 +87,9 @@ func TestQualifyIsIdempotent(t *testing.T) {
 // The name is immutable. Accepting a change would orphan every card already
 // registered under the old one.
 func TestTenantCannotChange(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real sqlite database on disk")
+	}
 	t.Parallel()
 	s := open(t)
 	if err := s.SetTenant("sg4"); err != nil {
@@ -104,6 +113,9 @@ func TestTenantCannotChange(t *testing.T) {
 
 // A name that leaves nothing usable is a mistake worth naming.
 func TestSetTenantRefusesNothing(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real sqlite database on disk")
+	}
 	t.Parallel()
 	s := open(t)
 	for _, in := range []string{"", "   ", "///", "---"} {
@@ -117,6 +129,9 @@ func TestSetTenantRefusesNothing(t *testing.T) {
 // each other's cards. Registration is where a wire name becomes a stored one,
 // so that is where the prefix has to be applied.
 func TestRegisterQualifiesTheWireName(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real sqlite database on disk")
+	}
 	t.Parallel()
 	s := open(t)
 	if err := s.SetTenant("sg4"); err != nil {
@@ -143,6 +158,9 @@ func TestRegisterQualifiesTheWireName(t *testing.T) {
 
 // A hook says the name the session knows. It has to find the card anyway.
 func TestLookupsQualifyToo(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real sqlite database on disk")
+	}
 	t.Parallel()
 	s := open(t)
 	if err := s.SetTenant("sg4"); err != nil {
@@ -176,6 +194,9 @@ func TestLookupsQualifyToo(t *testing.T) {
 // Two atriums, same session name, two cards. This is the collision the prefix
 // exists to prevent, tested by standing in for the second machine.
 func TestTwoTenantsDoNotCollide(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real sqlite database on disk")
+	}
 	t.Parallel()
 	s := open(t)
 	if err := s.SetTenant("sg4"); err != nil {

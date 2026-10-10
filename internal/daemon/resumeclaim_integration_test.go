@@ -65,6 +65,9 @@ func eventReason(t *testing.T, d *Daemon, id, kind string) string {
 // r-021 item 1: a session bound by task id takes its conversation from a card
 // with no live session, and is refused against a live one, with a reason on both.
 func TestATaskBoundResumeMovesOrIsRefusedByLiveness(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d, _, cancel, errCh := startDaemon(t)
 	defer func() { cancel(); <-errCh }()
 
@@ -110,6 +113,9 @@ func TestATaskBoundResumeMovesOrIsRefusedByLiveness(t *testing.T) {
 // r-021 item 2: a claude nested in an agent's shell posts with the parent's task
 // id and name. Its Stop and its SessionStart change nothing on the parent.
 func TestANestedClaudeCannotChangeTheParentsResumeID(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d, _, cancel, errCh := startDaemon(t)
 	defer func() { cancel(); <-errCh }()
 
@@ -157,6 +163,9 @@ func TestANestedClaudeCannotChangeTheParentsResumeID(t *testing.T) {
 // r-021 item 3: a Stop whose name came from the directory does not land on a
 // finished card.
 func TestADirectoryNameNeverReachesADoneCard(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d, _, cancel, errCh := startDaemon(t)
 	defer func() { cancel(); <-errCh }()
 
@@ -181,6 +190,9 @@ func TestADirectoryNameNeverReachesADoneCard(t *testing.T) {
 // the merge conversation) repairs itself when the merge card's own session
 // reports its id with its task id. No one-off clear.
 func TestTheStrandedConversationMovesWhenItsOwnerStarts(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d, _, cancel, errCh := startDaemon(t)
 	defer func() { cancel(); <-errCh }()
 

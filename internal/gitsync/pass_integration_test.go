@@ -377,6 +377,9 @@ func TestABodyThatStopsGivesTheSlotBack(t *testing.T) {
 
 // A fetch that keeps moving is not cut, though it takes far longer than any one deadline.
 func TestAFetchThatKeepsMakingProgressIsNotCut(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: git subprocesses and a real smart-HTTP rig")
+	}
 	t.Parallel()
 	const chunks = 12
 	p := quickPass(rtFunc(func(r *http.Request) (*http.Response, error) {
@@ -436,6 +439,9 @@ func TestAFetchThatKeepsMakingProgressIsNotCut(t *testing.T) {
 
 // The connection may carry the reader's next request, so a deadline that passed must not be left on it.
 func TestTheDeadlinesAreClearedWhenTheRequestEnds(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: git subprocesses and a real smart-HTTP rig")
+	}
 	t.Parallel()
 	p := quickPass(okRT("ok"))
 	srv := servePass(t, p)

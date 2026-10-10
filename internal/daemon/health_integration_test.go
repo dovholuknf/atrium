@@ -78,6 +78,9 @@ func TestAHaltIsPublishedAsHealth(t *testing.T) {
 // The settle window is a clock and a pending set, so nothing fires when it
 // closes. The watcher says it is open, then says once that it closed.
 func TestTheSettleWindowOpeningAndClosingIsPublished(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d := testDaemon(t)
 	d.settle.begin()
 	ctx, cancel := context.WithCancel(context.Background())

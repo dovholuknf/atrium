@@ -16,6 +16,9 @@ import (
 // r-020: the hub's board-wide auto switch approves through the room's decide
 // route, and the room records it as `global-auto`, not as the operator.
 func TestTheHubsAutoApprovalIsRecordedAsGlobalAuto(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d, _, cancel, _ := startDaemon(t)
 	defer cancel()
 	task := permTask(t, d, "decide-by-parked")
@@ -81,6 +84,9 @@ func TestAGlobalAutoDecisionWithNoHookParkedIsRecordedTheSame(t *testing.T) {
 
 // No caller can name any other decider, and leaving `by` out is the operator.
 func TestTheDecideRouteRefusesAForgedDecider(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d, _, cancel, _ := startDaemon(t)
 	defer cancel()
 	task := permTask(t, d, "decide-by-forged")

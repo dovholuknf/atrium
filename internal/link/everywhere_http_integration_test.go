@@ -171,6 +171,9 @@ func TestTheScopedStreamCarriesEverywhereCardsWhenAsked(t *testing.T) {
 // FE9. Without the parameter the stream is what it was: the room's own events
 // exactly as it sent them, nothing from another room, and no `everywhere` event.
 func TestTheScopedStreamWithoutTheParameterIsUnchanged(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real link, hub and git rig over loopback")
+	}
 	front, hub, alpha, beta, done := rigEverywhere(t)
 	defer done()
 	hub.IndexEverywhere("beta", []CardState{everyRow("card2", "running", "atrium-2", "orchestrator", EverywhereTag)})

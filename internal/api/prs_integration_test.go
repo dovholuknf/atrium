@@ -166,6 +166,9 @@ func TestTheStubRunnerFailsTheRowAndARepostRetriesIt(t *testing.T) {
 }
 
 func TestListingAndTheNavCount(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real server with git worktrees and a database")
+	}
 	t.Parallel()
 	s, st, _ := prServer(t)
 	for _, n := range []string{"1", "2", "3"} {
@@ -208,6 +211,9 @@ func TestAnEmptyIndexIsNotNull(t *testing.T) {
 }
 
 func TestARowReadsItsFolderForCountsAndLog(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real server with git worktrees and a database")
+	}
 	t.Parallel()
 	s, st, _ := prServer(t)
 	w := prDo(s, s.postPR, "POST", "/v1/prs", `{"url":"`+prURL+`"}`, "")
@@ -273,6 +279,9 @@ func TestTheRunLogTailStartsAtALine(t *testing.T) {
 }
 
 func TestAMissingRowIsThePullsNotFound(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real server with git worktrees and a database")
+	}
 	t.Parallel()
 	s, _, _ := prServer(t)
 	for name, h := range map[string]http.HandlerFunc{"get": s.getPR, "retry": s.retryPR, "abort": s.abortPR,
@@ -285,6 +294,9 @@ func TestAMissingRowIsThePullsNotFound(t *testing.T) {
 }
 
 func TestAbortRetryAndStartGuards(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real server with git worktrees and a database")
+	}
 	t.Parallel()
 	s, st, root := prServer(t)
 	run := &fakePRRunner{st: st}
@@ -326,6 +338,9 @@ func TestAbortRetryAndStartGuards(t *testing.T) {
 }
 
 func TestAbortLeavesAFolderOutsideTheRootAlone(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real server with git worktrees and a database")
+	}
 	t.Parallel()
 	s, st, _ := prServer(t)
 	outside := t.TempDir()
@@ -345,6 +360,9 @@ func TestAbortLeavesAFolderOutsideTheRootAlone(t *testing.T) {
 }
 
 func TestRetryOfAFailedRowAndStartOfAQueuedOne(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real server with git worktrees and a database")
+	}
 	t.Parallel()
 	s, st, _ := prServer(t)
 	// the stub fails it

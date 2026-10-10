@@ -11,6 +11,9 @@ import (
 // Turning auto mode on with a full queue has to empty it. The switch says
 // nothing will stop to ask, and a queue that stays full says otherwise.
 func TestDrainApprovesWhatWasAlreadyWaiting(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d, _, cancel, _ := startDaemon(t)
 	defer cancel()
 
@@ -48,6 +51,9 @@ func TestDrainApprovesWhatWasAlreadyWaiting(t *testing.T) {
 // over it. A card can be shelved after its request was recorded, which is the
 // only way a pending request ends up on a shelved card at all.
 func TestDrainLeavesAShelvedCardAlone(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d, _, cancel, _ := startDaemon(t)
 	defer cancel()
 

@@ -27,6 +27,9 @@ func countExits(t *testing.T, s *Store, id string) int {
 // The migration applies to a fresh database, and again to one that already
 // has every migration recorded but the new one, with a card in it.
 func TestThePtyRunMigrationAppliesFreshAndToAnExistingDatabase(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real sqlite database on disk")
+	}
 	t.Parallel()
 	path := filepath.Join(t.TempDir(), "old.db")
 	s, err := Open(path)

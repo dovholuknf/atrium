@@ -10,6 +10,9 @@ import (
 // Rows sum per department and per director, and a row from before the columns
 // existed lands in @before and never in a department.
 func TestUsageBucketsGroup(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real sqlite database on disk")
+	}
 	t.Parallel()
 	s := openTestStore(t)
 	a, _, err := s.Register(Observed{WireName: "a", Worktree: "/a"})

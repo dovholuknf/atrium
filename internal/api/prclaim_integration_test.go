@@ -11,6 +11,9 @@ import (
 )
 
 func TestAnotherRoomsPRMakesNoRowHere(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real server with git worktrees and a database")
+	}
 	t.Parallel()
 	s, st, _ := prServer(t)
 	run := &fakePRRunner{st: st}
@@ -33,6 +36,9 @@ func TestAnotherRoomsPRMakesNoRowHere(t *testing.T) {
 }
 
 func TestAnUnreachableHubMakesAPendingRowAndTheReturnReconciles(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real server with git worktrees and a database")
+	}
 	t.Parallel()
 	s, st, _ := prServer(t)
 	run := &fakePRRunner{st: st}

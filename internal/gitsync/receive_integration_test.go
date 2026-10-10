@@ -296,6 +296,9 @@ func (x *recvFix) pushRows() []PushRow {
 const hubRepo = "github/o/r"
 
 func TestACardsPushOfANewBranchLandsAndIsLogged(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: git subprocesses and a real smart-HTTP rig")
+	}
 	t.Parallel()
 	x := newRecv(t)
 	main := x.seedMain(hubRepo)
@@ -325,6 +328,9 @@ func TestACardsPushOfANewBranchLandsAndIsLogged(t *testing.T) {
 }
 
 func TestTheOwnerFastForwardsItsOwnBranch(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: git subprocesses and a real smart-HTTP rig")
+	}
 	t.Parallel()
 	x := newRecv(t)
 	x.seedMain(hubRepo)
@@ -342,6 +348,9 @@ func TestTheOwnerFastForwardsItsOwnBranch(t *testing.T) {
 }
 
 func TestANonFastForwardIsRefusedAndMovesNothing(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: git subprocesses and a real smart-HTTP rig")
+	}
 	t.Parallel()
 	x := newRecv(t)
 	x.seedMain(hubRepo)
@@ -369,6 +378,9 @@ func TestANonFastForwardIsRefusedAndMovesNothing(t *testing.T) {
 }
 
 func TestARefusalReachesGitAsRemoteRejectedWithTheSentence(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: git subprocesses and a real smart-HTTP rig")
+	}
 	t.Parallel()
 	x := newRecv(t)
 	x.seedMain(hubRepo)
@@ -385,6 +397,9 @@ func TestARefusalReachesGitAsRemoteRejectedWithTheSentence(t *testing.T) {
 }
 
 func TestAPushOfMainFromACardIsRefusedAndFromTheOperatorLands(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: git subprocesses and a real smart-HTTP rig")
+	}
 	t.Parallel()
 	x := newRecv(t)
 	main := x.seedMain(hubRepo)
@@ -421,6 +436,9 @@ func TestAPushOfMainFromACardIsRefusedAndFromTheOperatorLands(t *testing.T) {
 }
 
 func TestAnotherCardCannotPushToAnOwnedBranchOnAnyRoom(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: git subprocesses and a real smart-HTTP rig")
+	}
 	t.Parallel()
 	x := newRecv(t)
 	x.seedMain(hubRepo)
@@ -446,6 +464,9 @@ func TestAnotherCardCannotPushToAnOwnedBranchOnAnyRoom(t *testing.T) {
 }
 
 func TestTheOwnersSuccessorByChainPushesAndTakesTheBranchOver(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: git subprocesses and a real smart-HTTP rig")
+	}
 	t.Parallel()
 	x := newRecv(t)
 	x.seedMain(hubRepo)
@@ -476,6 +497,9 @@ func TestTheOwnersSuccessorByChainPushesAndTakesTheBranchOver(t *testing.T) {
 // A CHAIN IS HONOURED ONLY AGAINST AN OWNER ON THE PUSHER'S OWN ROOM. The hub trusts a room's forwarder for its
 // own cards, and no other room's.
 func TestAChainNamingAnotherRoomsCardDoesNotHelp(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: git subprocesses and a real smart-HTTP rig")
+	}
 	t.Parallel()
 	x := newRecv(t)
 	x.seedMain(hubRepo)
@@ -504,6 +528,9 @@ func TestAChainNamingAnotherRoomsCardDoesNotHelp(t *testing.T) {
 }
 
 func TestAnOwnerWhoIsGoneDeadOrLongDoneReleasesTheBranch(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: git subprocesses and a real smart-HTTP rig")
+	}
 	t.Parallel()
 	for name, tc := range map[string]struct {
 		st   CardState
@@ -548,6 +575,9 @@ func TestAnOwnerWhoIsGoneDeadOrLongDoneReleasesTheBranch(t *testing.T) {
 }
 
 func TestAnOwnerWhoIsLiveOrRecentlyDoneKeepsTheBranch(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: git subprocesses and a real smart-HTTP rig")
+	}
 	t.Parallel()
 	for name, st := range map[string]CardState{
 		"running":  {Status: "working"},
@@ -572,6 +602,9 @@ func TestAnOwnerWhoIsLiveOrRecentlyDoneKeepsTheBranch(t *testing.T) {
 }
 
 func TestAnUnreachableOwnersRoomKeepsTheBranchOwnedAndSaysWhy(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: git subprocesses and a real smart-HTTP rig")
+	}
 	t.Parallel()
 	x := newRecv(t)
 	x.seedMain(hubRepo)
@@ -595,6 +628,9 @@ func TestAnUnreachableOwnersRoomKeepsTheBranchOwnedAndSaysWhy(t *testing.T) {
 }
 
 func TestTheOperatorReleasesABranchAndTheNextCardOwnsIt(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: git subprocesses and a real smart-HTTP rig")
+	}
 	t.Parallel()
 	x := newRecv(t)
 	x.seedMain(hubRepo)
@@ -624,6 +660,9 @@ func TestTheOperatorReleasesABranchAndTheNextCardOwnsIt(t *testing.T) {
 }
 
 func TestTheOperatorMayFastForwardAnyBranchAndOwnershipIsUnchanged(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: git subprocesses and a real smart-HTTP rig")
+	}
 	t.Parallel()
 	x := newRecv(t)
 	x.seedMain(hubRepo)
@@ -648,6 +687,9 @@ func TestTheOperatorMayFastForwardAnyBranchAndOwnershipIsUnchanged(t *testing.T)
 }
 
 func TestACaseVariantOfAnExistingBranchIsRefused(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: git subprocesses and a real smart-HTTP rig")
+	}
 	t.Parallel()
 	x := newRecv(t)
 	x.seedMain(hubRepo)
@@ -678,6 +720,9 @@ func TestACaseVariantOfAnExistingBranchIsRefused(t *testing.T) {
 }
 
 func TestTwoNewRefsInOnePushThatDifferOnlyInCaseAreRefused(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: git subprocesses and a real smart-HTTP rig")
+	}
 	t.Parallel()
 	x := newRecv(t)
 	x.seedMain(hubRepo)
@@ -693,6 +738,9 @@ func TestTwoNewRefsInOnePushThatDifferOnlyInCaseAreRefused(t *testing.T) {
 }
 
 func TestAHostileRefNameSet(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: git subprocesses and a real smart-HTTP rig")
+	}
 	t.Parallel()
 	x := newRecv(t)
 	x.seedMain(hubRepo)
@@ -753,6 +801,9 @@ func TestAHostileRefNameSet(t *testing.T) {
 }
 
 func TestDeleteTagNotesAndStashFromACardAreRefusedAndNothingMoves(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: git subprocesses and a real smart-HTTP rig")
+	}
 	t.Parallel()
 	x := newRecv(t)
 	x.seedMain(hubRepo)
@@ -794,6 +845,9 @@ func TestDeleteTagNotesAndStashFromACardAreRefusedAndNothingMoves(t *testing.T) 
 }
 
 func TestAMultiRefPushWithOneBadRefMovesNothing(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: git subprocesses and a real smart-HTTP rig")
+	}
 	t.Parallel()
 	x := newRecv(t)
 	main := x.seedMain(hubRepo)
@@ -837,6 +891,9 @@ func TestAMultiRefPushWithOneBadRefMovesNothing(t *testing.T) {
 }
 
 func TestAnOldShaThatIsNotTheRefsCurrentValueIsRefused(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: git subprocesses and a real smart-HTTP rig")
+	}
 	t.Parallel()
 	x := newRecv(t)
 	x.seedMain(hubRepo)
@@ -862,6 +919,9 @@ func TestAnOldShaThatIsNotTheRefsCurrentValueIsRefused(t *testing.T) {
 }
 
 func TestAPushToARepositoryTheHubLacksIsRefusedUnlessCreateOnPushIsOn(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: git subprocesses and a real smart-HTTP rig")
+	}
 	t.Parallel()
 	x := newRecv(t)
 	sha := x.branch("fix/x", "x.txt")
@@ -944,6 +1004,9 @@ func TestARepositoryMadeByAPushThatTakesNothingIsTakenAway(t *testing.T) {
 }
 
 func TestAnOversizePushIsRefusedAndNothingIsKept(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: git subprocesses and a real smart-HTTP rig")
+	}
 	x := newRecv(t)
 	x.seedMain(hubRepo)
 	old := maxPush
@@ -985,6 +1048,9 @@ func TestAnOversizePushIsRefusedAndNothingIsKept(t *testing.T) {
 }
 
 func TestAPushWithNoIdentityIsRefusedAndHeadersAreIgnoredOffTheLink(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: git subprocesses and a real smart-HTTP rig")
+	}
 	t.Parallel()
 	x := newRecv(t)
 	x.seedMain(hubRepo)
@@ -1007,6 +1073,9 @@ func TestAPushWithNoIdentityIsRefusedAndHeadersAreIgnoredOffTheLink(t *testing.T
 }
 
 func TestARoomsPushWithNoCardIsRefusedWithASentence(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: git subprocesses and a real smart-HTTP rig")
+	}
 	t.Parallel()
 	x := newRecv(t)
 	x.seedMain(hubRepo)
@@ -1067,6 +1136,9 @@ func TestAMirrorIsNotServedOrPushedThroughTheStoreRoute(t *testing.T) {
 // NOBODY PUSHES WHAT AN ADOPTED MIRROR KEEPS IN STEP, the operator included: the mirror pass force-fetches the
 // checkout over it. A card's work branch lands beside it.
 func TestAnAdoptedMirrorTakesWorkBranchesAndNothingThePassOwns(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: git subprocesses and a real smart-HTTP rig")
+	}
 	t.Parallel()
 	x := newRecv(t)
 	ref, _ := ParseName("github/m/mirror")
@@ -1124,6 +1196,9 @@ func TestAnAdoptedMirrorTakesWorkBranchesAndNothingThePassOwns(t *testing.T) {
 }
 
 func TestARoomAndTheOperatorCanFetchTheStore(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: git subprocesses and a real smart-HTTP rig")
+	}
 	t.Parallel()
 	x := newRecv(t)
 	main := x.seedMain(hubRepo)
@@ -1145,6 +1220,9 @@ func TestARoomAndTheOperatorCanFetchTheStore(t *testing.T) {
 }
 
 func TestShallowDeepenAndFilterFetchesAreRefusedBeforeGit(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: git subprocesses and a real smart-HTTP rig")
+	}
 	t.Parallel()
 	x := newRecv(t)
 	main := x.seedMain(hubRepo)
@@ -1179,6 +1257,9 @@ func TestShallowDeepenAndFilterFetchesAreRefusedBeforeGit(t *testing.T) {
 }
 
 func TestProtocolV2IsDroppedAndTheDumbProtocolIsOff(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: git subprocesses and a real smart-HTTP rig")
+	}
 	t.Parallel()
 	x := newRecv(t)
 	x.seedMain(hubRepo)
@@ -1251,6 +1332,9 @@ func TestARepositorysOwnHookAndConfigAreNotUsed(t *testing.T) {
 
 // A PUSH THE LOG CANNOT BEGIN IS NOT TAKEN: the row is written before git runs.
 func TestAPushTheLogCannotBeginMovesNothing(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: git subprocesses and a real smart-HTTP rig")
+	}
 	t.Parallel()
 	x := newRecv(t)
 	x.seedMain(hubRepo)
@@ -1292,6 +1376,9 @@ func TestAHubWithNoPushLogTakesNoPush(t *testing.T) {
 // A push git took and the log could not settle STAYS OWNED by its pusher, because the row is pending and counts, and
 // the next push to the repository settles it from the refs.
 func TestAPushTheLogCannotSettleStaysOwnedAndIsSettledByTheNextPush(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: git subprocesses and a real smart-HTTP rig")
+	}
 	t.Parallel()
 	x := newRecv(t)
 	x.seedMain(hubRepo)
@@ -1334,6 +1421,9 @@ func TestAPushTheLogCannotSettleStaysOwnedAndIsSettledByTheNextPush(t *testing.T
 // owned (any card could otherwise take it), and settling it from the refs makes it done if the ref moved and drops it
 // if it did not, at startup or on the next push.
 func TestACrashBetweenGitAndTheLogLeavesTheBranchOwnedUntilStartupSettlesIt(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: git subprocesses and a real smart-HTTP rig")
+	}
 	t.Parallel()
 	x := newRecv(t)
 	x.seedMain(hubRepo)
@@ -1390,6 +1480,9 @@ func TestACrashBetweenGitAndTheLogLeavesTheBranchOwnedUntilStartupSettlesIt(t *t
 
 // THE FIRST PUSH TO A REPOSITORY settles what was left pending in it, with no startup in between.
 func TestTheNextPushToARepositorySettlesWhatACrashLeftPending(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: git subprocesses and a real smart-HTTP rig")
+	}
 	t.Parallel()
 	x := newRecv(t)
 	x.seedMain(hubRepo)
@@ -1413,6 +1506,9 @@ func TestTheNextPushToARepositorySettlesWhatACrashLeftPending(t *testing.T) {
 
 // A TAKEOVER THAT GIT REFUSES RELEASES NOTHING: the release is written with the push row when it lands.
 func TestATakeoverGitRefusesReleasesNothing(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: git subprocesses and a real smart-HTTP rig")
+	}
 	t.Parallel()
 	x := newRecv(t)
 	x.seedMain(hubRepo)
@@ -1445,6 +1541,9 @@ func TestATakeoverGitRefusesReleasesNothing(t *testing.T) {
 }
 
 func TestTwoPushesToTheSameNewBranchHaveExactlyOneWinner(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: git subprocesses and a real smart-HTTP rig")
+	}
 	t.Parallel()
 	x := newRecv(t)
 	x.seedMain(hubRepo)
@@ -1482,6 +1581,9 @@ func TestTwoPushesToTheSameNewBranchHaveExactlyOneWinner(t *testing.T) {
 }
 
 func TestTheListingTakesOwnersAndTimesFromThePushLog(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: git subprocesses and a real smart-HTTP rig")
+	}
 	t.Parallel()
 	x := newRecv(t)
 	x.seedMain(hubRepo)
@@ -1543,6 +1645,9 @@ const (
 
 // THE REFUSAL IS THE HUB'S SENTENCE, not git's own backup rule that would also have held.
 func TestDeleteAndTagRefusalsAreTheHubsSentences(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: git subprocesses and a real smart-HTTP rig")
+	}
 	t.Parallel()
 	x := newRecv(t)
 	x.seedMain(hubRepo)
@@ -1574,6 +1679,9 @@ func TestDeleteAndTagRefusalsAreTheHubsSentences(t *testing.T) {
 // A push that names a ref twice, a push from a shallow clone, and a card's push into an adopted mirror that
 // never asked for the advertisement, all hand-built because git does not send them.
 func TestHandBuiltPushesAreRefusedBeforeGit(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: git subprocesses and a real smart-HTTP rig")
+	}
 	t.Parallel()
 	x := newRecv(t)
 	x.seedMain(hubRepo)
@@ -1661,6 +1769,9 @@ func TestGitIsNotGivenTheAtriumHeadersCredentialsOrProtocol(t *testing.T) {
 // TWO PUSHES THAT WOULD MAKE `Own/r` AND `own/r2` AT ONCE: one makes it, the other is told why. The store-wide lock is
 // what holds the case check and the owner directory together, and the repositories' own locks differ.
 func TestTwoCaseTwinRepositoriesMadeAtOnceLeaveOne(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: git subprocesses and a real smart-HTTP rig")
+	}
 	x := newRecv(t)
 	x.create.Store(true)
 	// Wide enough that, without the lock, both pushes pass the case check before either has made a directory.
@@ -1701,6 +1812,9 @@ func TestTwoCaseTwinRepositoriesMadeAtOnceLeaveOne(t *testing.T) {
 // A FEATURE LIST RIDES ON ANY COMMAND LINE, as git reads it, so a push-options or a sha256 on the second line is as
 // refused as on the first.
 func TestACapabilityOnAnyCommandLineIsHeldToTheSameChecks(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: git subprocesses and a real smart-HTTP rig")
+	}
 	t.Parallel()
 	x := newRecv(t)
 	x.seedMain(hubRepo)
@@ -1730,6 +1844,9 @@ func TestACapabilityOnAnyCommandLineIsHeldToTheSameChecks(t *testing.T) {
 // ONE VALUE EACH. A forwarder that Adds to the card headers instead of setting them has a client's own value first,
 // and the hub refuses the request instead of letting the first win.
 func TestARepeatedCardHeaderIsRefused(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: git subprocesses and a real smart-HTTP rig")
+	}
 	t.Parallel()
 	x := newRecv(t)
 	x.seedMain(hubRepo)
@@ -1779,6 +1896,9 @@ func TestARepeatedCardHeaderIsRefused(t *testing.T) {
 // A PUSH ASKS AT MOST maxOwnerAsks ROOMS, and the owners it did not ask are treated as unreachable: the branch stays
 // owned, and the refusal says why.
 func TestAPushAsksOnlyAFewOwnersAndTheRestStayOwned(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: git subprocesses and a real smart-HTTP rig")
+	}
 	t.Parallel()
 	x := newRecv(t)
 	x.seedMain(hubRepo)
@@ -1811,6 +1931,9 @@ func TestAPushAsksOnlyAFewOwnersAndTheRestStayOwned(t *testing.T) {
 
 // AND FOR AT MOST ownerAskTotal IN ALL, a room that does not answer taking the rest of it.
 func TestAPushAsksOwnersForABoundedTimeInAll(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: git subprocesses and a real smart-HTTP rig")
+	}
 	x := newRecv(t)
 	x.seedMain(hubRepo)
 	old := ownerAskTotal
@@ -1893,6 +2016,9 @@ func (p *lockProbe) Write(b []byte) (int, error) { p.note(); return p.ResponseWr
 
 // THE ANSWER IS WRITTEN TO THE CLIENT AFTER THE LOCK IS LET GO, so a client that stops reading holds nothing.
 func TestTheAnswerIsWrittenAfterTheRepositoryLockIsReleased(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: git subprocesses and a real smart-HTTP rig")
+	}
 	t.Parallel()
 	x := newRecv(t)
 	x.seedMain(hubRepo)
@@ -1944,6 +2070,9 @@ func TestGitsProbeBeforeALargePushIsAnsweredAndDoesNothing(t *testing.T) {
 }
 
 func TestAPushThatMakesGitProbeLandsThroughTheReceiver(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: git subprocesses and a real smart-HTTP rig")
+	}
 	t.Parallel()
 	x := newRecv(t)
 	x.seedMain(hubRepo)

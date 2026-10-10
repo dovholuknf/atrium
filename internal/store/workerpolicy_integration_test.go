@@ -5,6 +5,9 @@ package store
 import "testing"
 
 func TestWorkerPolicyIsOffUntilSet(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real sqlite database on disk")
+	}
 	t.Parallel()
 	s := openTestStore(t)
 	if p := s.WorkerPolicy(); p != (WorkerPolicy{}) {
@@ -13,6 +16,9 @@ func TestWorkerPolicyIsOffUntilSet(t *testing.T) {
 }
 
 func TestWorkerPolicyRoundTripsAndOffIsEmpty(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real sqlite database on disk")
+	}
 	t.Parallel()
 	s := openTestStore(t)
 	v, err := CheckWorkerPolicy(WorkerPolicy{Model: " sonnet ", BudgetUSD: 12.345})

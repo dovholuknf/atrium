@@ -106,6 +106,9 @@ func TestProviderRepoKeyIsCaseFolded(t *testing.T) {
 // happens to sit in one of those directories is not configuration and must not
 // be touched.
 func TestDeleteProviderCascadesToReposAndLeavesCardsAlone(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real sqlite database on disk")
+	}
 	t.Parallel()
 	s := open(t)
 	mustProvider(t, s, "github", "d:/git/github")
@@ -290,6 +293,9 @@ func TestAProviderNeedsANameAndARoot(t *testing.T) {
 // Orgs are derived, so an org stops existing the moment its last repository
 // row is forgotten and nothing has to tidy up after it.
 func TestOrgsAreDerivedFromRows(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real sqlite database on disk")
+	}
 	t.Parallel()
 	s := open(t)
 	mustProvider(t, s, "github", "d:/git/github")

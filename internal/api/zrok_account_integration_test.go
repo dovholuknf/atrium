@@ -17,6 +17,9 @@ func zrokAccountGet(t *testing.T, srv *Server) *httptest.ResponseRecorder {
 }
 
 func TestTheAccountEndpointCarriesItsFailureRatherThanReturningOne(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real server with git worktrees and a database")
+	}
 	t.Parallel()
 	srv, _, _ := fileServer(t)
 	srv.ZrokAccount = func() any {
@@ -38,6 +41,9 @@ func TestTheAccountEndpointCarriesItsFailureRatherThanReturningOne(t *testing.T)
 // a renamed field paints zeroes, which looks like an account with nothing on
 // it rather than like a bug.
 func TestTheAccountEndpointReportsTheCountsTheBoardReads(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real server with git worktrees and a database")
+	}
 	t.Parallel()
 	srv, _, _ := fileServer(t)
 	srv.ZrokAccount = func() any {

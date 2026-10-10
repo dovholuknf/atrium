@@ -189,6 +189,9 @@ func TestAQuietBoardIsCountedDownThenRestarted(t *testing.T) {
 // TYPING HOLDS THE COUNTDOWN BACK. Input inside the idle window means no
 // countdown yet, however long the typing goes on.
 func TestTypingHoldsTheCountdownBack(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real link, hub and git rig over loopback")
+	}
 	gt := newGateUnderTest(1)
 	clock := stopClock(gt.g)
 	ctx, cancel := context.WithCancel(context.Background())
@@ -275,6 +278,9 @@ func TestResumeLetsAHeldRestartThrough(t *testing.T) {
 // HELD MEANS HELD. A patient ask outlasts its wait while paused, and after the
 // resume it gets the idle window and a fresh countdown, then `go`.
 func TestAPatientPauseOutlastsTheWaitThenGoesOnResume(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real link, hub and git rig over loopback")
+	}
 	gt := newGateUnderTest(1)
 	const wait = 300 * time.Millisecond
 	ch := gt.askPatient(context.Background(), 150*time.Millisecond, 50*time.Millisecond, wait, true)

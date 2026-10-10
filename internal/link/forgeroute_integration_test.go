@@ -185,6 +185,9 @@ func TestTheHubRaisesTheForgeAlertOnceAndEndsItOnSuccess(t *testing.T) {
 // A HEAD FETCH THE FORGE REFUSED A CREDENTIAL FOR raises the same alert (fix-up c). Any other fetch failure is said
 // and raises nothing.
 func TestAnAuthFailureFetchingTheHeadRaisesTheAlert(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real link, hub and git rig over loopback")
+	}
 	x := newForgeHub(t)
 	f := x.p.forgeSide()
 	code, he := x.p.forgeRefusal(f, "beta", prAsk, &forgeAccess{kind: forge.GitHub,
@@ -205,6 +208,9 @@ func TestAnAuthFailureFetchingTheHeadRaisesTheAlert(t *testing.T) {
 
 // THE OPERATOR'S CHECK ANSWERS AND RAISES NOTHING, since no room is waiting on it.
 func TestTheHubForgeCheckAnswersAndRaisesNothing(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real link, hub and git rig over loopback")
+	}
 	x := newForgeHub(t)
 	code, body := x.call(http.MethodPost, "/_hub/forge/check", `{"forges":[{"tool":"gh"},{"tool":"curl"}]}`, "")
 	if code != 200 || !strings.Contains(body, `"state":"logged_out"`) || !strings.Contains(body, `"state":"unknown"`) ||
@@ -218,6 +224,9 @@ func TestTheHubForgeCheckAnswersAndRaisesNothing(t *testing.T) {
 
 // THE HUB'S ENTRIES PER HOST are the operator's, held to a host, a forge and a command name.
 func TestTheHubForgeEntries(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real link, hub and git rig over loopback")
+	}
 	x := newForgeHub(t)
 	if code, body := x.call(http.MethodPut, "/_hub/forge", `{"entries":[{"Host":"Git.Corp.X","Forge":"github","Cmd":"ghe"}]}`, ""); code != 200 {
 		t.Fatalf("put = %d %s", code, body)

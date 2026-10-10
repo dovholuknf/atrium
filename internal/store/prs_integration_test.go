@@ -117,6 +117,9 @@ func TestCreatePRRefusals(t *testing.T) {
 }
 
 func TestPRStatesStampAndClear(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real sqlite database on disk")
+	}
 	t.Parallel()
 	st := openPRStore(t)
 	p := newTestPR(t, st, "")

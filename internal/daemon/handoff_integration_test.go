@@ -54,6 +54,9 @@ func ncSibling(t *testing.T, d *Daemon, dir, alias string) *store.Task {
 // The handoff path is fixed when the cycle is claimed, and the prompt and the wake
 // both use it, even if the room's handoff directory changes mid-cycle.
 func TestNewContextUsesOnePathThroughTheCycle(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	fastNewContext(t)
 	d := testDaemon(t)
 	task, f, dir := ncCard(t, d)

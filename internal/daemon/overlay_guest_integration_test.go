@@ -43,6 +43,9 @@ func guestGet(h http.Handler, path string) *httptest.ResponseRecorder {
 // session, it is lending the machine, and it is the line `docs/fabric/overlays.md`
 // says atrium does not cross.
 func TestAWritableGuestCannotReachTheShell(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d, _, cancel, _ := startDaemon(t)
 	defer cancel()
 
@@ -58,6 +61,9 @@ func TestAWritableGuestCannotReachTheShell(t *testing.T) {
 // Nothing a guest sends may CREATE a shell either. The POST is not on the
 // allowlist, and this asserts that rather than trusting the list to stay short.
 func TestAGuestCannotOpenAShell(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d, _, cancel, _ := startDaemon(t)
 	defer cancel()
 
@@ -77,6 +83,9 @@ func TestAGuestCannotOpenAShell(t *testing.T) {
 // A share is one card. The rest of the board is the thing it exists to avoid
 // handing over, and this is the list from the handler's own comment.
 func TestAGuestSeesOneCardAndNoMore(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d, _, cancel, _ := startDaemon(t)
 	defer cancel()
 
@@ -109,6 +118,9 @@ func TestAGuestSeesOneCardAndNoMore(t *testing.T) {
 // the list did not name. A guest refused those does not get a smaller board,
 // they get an unstyled document with no script on it, and nothing says why.
 func TestAGuestGetsTheWholeBoard(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d, _, cancel, _ := startDaemon(t)
 	defer cancel()
 

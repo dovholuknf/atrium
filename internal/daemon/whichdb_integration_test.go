@@ -68,6 +68,9 @@ func TestACleanStopThenADifferentDatabaseStillWarns(t *testing.T) {
 }
 
 func TestADifferentDatabaseIsAnnouncedLoudly(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d, logs, cancel, errCh := startDaemon(t)
 	defer func() { cancel(); <-errCh }()
 
@@ -91,6 +94,9 @@ func TestADifferentDatabaseIsAnnouncedLoudly(t *testing.T) {
 // The same database must stay silent, or the warning becomes noise and stops
 // being read, which is the only way it can fail.
 func TestTheSameDatabaseSaysNothing(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d, logs, cancel, errCh := startDaemon(t)
 	defer func() { cancel(); <-errCh }()
 
@@ -174,6 +180,9 @@ func TestSpellingTheSamePathDifferentlyIsNotADifference(t *testing.T) {
 // No previous file is a first run, which is not a surprise and gets no
 // warning.
 func TestAFirstRunSaysNothing(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d, logs, cancel, errCh := startDaemon(t)
 	defer func() { cancel(); <-errCh }()
 
@@ -192,6 +201,9 @@ func TestAFirstRunSaysNothing(t *testing.T) {
 // It has to come from a READ-ONLY open: going through store.Open would run
 // every migration against a database this daemon was not asked to touch.
 func TestTheCountComesFromTheOtherDatabaseWithoutTouchingIt(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	dir := t.TempDir()
 	other := filepath.ToSlash(filepath.Join(dir, "other.db"))
 

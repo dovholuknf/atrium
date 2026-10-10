@@ -84,6 +84,9 @@ func (rh *reuseHarness) make(t *testing.T, ctx context.Context) prWorktreeResult
 // A repo the room already has under its scm folder is not cloned: the clone is found, the one ref is fetched, and the
 // worktree is added. That is what gwt does.
 func TestPRWorktreeOnAnExistingCloneFetchesOneRefAndClonesNothing(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real server with git worktrees and a database")
+	}
 	t.Parallel()
 	rh := newReuseHarness(t, headForge, nil)
 	res := rh.make(t, context.Background())

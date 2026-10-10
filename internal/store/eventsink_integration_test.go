@@ -84,6 +84,9 @@ func TestEventsLimitKeepsNewest(t *testing.T) {
 // A cold sink never fails the caller. AppendEvent must return nil even when a
 // cold sink's Append reports trouble, because a hook must never fail a session.
 func TestColdSinkFailureNeverFailsAppend(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real sqlite database on disk")
+	}
 	t.Parallel()
 	s := open(t)
 	s.cold = append(s.cold, failCold{})

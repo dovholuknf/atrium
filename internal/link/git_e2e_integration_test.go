@@ -19,6 +19,9 @@ import (
 // itself on both ends. Sync makes the clone, a moved claude/main reaches it, a worker's
 // branch on the room is collected into the hub's checkout as refs/remotes/<room>/claude/*.
 func TestGitSyncAndCollectEndToEndOverTheLink(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real link, hub and git rig over loopback")
+	}
 	root := t.TempDir()
 	checkout := filepath.Join(root, "checkout")
 	gitRoot := filepath.Join(root, "roomgit")

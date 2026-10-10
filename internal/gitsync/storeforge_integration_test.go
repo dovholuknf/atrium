@@ -77,6 +77,9 @@ func (x *forgeFix) stale() {
 }
 
 func TestABranchOnlyTheForgeHasIsFoundAndFetchableThroughTheHub(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: git subprocesses and a real smart-HTTP rig")
+	}
 	t.Parallel()
 	x := newForgeFix(t)
 	if _, err := x.h.Store().Init(bg, repoURL); err != nil {
@@ -138,6 +141,9 @@ func TestABranchOnlyTheForgeHasIsFoundAndFetchableThroughTheHub(t *testing.T) {
 }
 
 func TestAFirstAskMakesTheRepositoryFromItsForge(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: git subprocesses and a real smart-HTTP rig")
+	}
 	t.Parallel()
 	x := newForgeFix(t)
 	tip := x.forgeBranch(t, "feature", "f.txt")
@@ -158,6 +164,9 @@ func TestAFirstAskMakesTheRepositoryFromItsForge(t *testing.T) {
 }
 
 func TestAPushedBranchOfTheSameNameIsNotShadowed(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: git subprocesses and a real smart-HTTP rig")
+	}
 	t.Parallel()
 	x := newForgeFix(t)
 	if _, err := x.h.Store().Init(bg, repoURL); err != nil {
@@ -190,6 +199,9 @@ func TestAPushedBranchOfTheSameNameIsNotShadowed(t *testing.T) {
 }
 
 func TestAMissingBranchIsStillNotFound(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: git subprocesses and a real smart-HTTP rig")
+	}
 	t.Parallel()
 	x := newForgeFix(t)
 	if _, err := x.h.Store().Init(bg, repoURL); err != nil {
@@ -211,6 +223,9 @@ func TestAMissingBranchIsStillNotFound(t *testing.T) {
 }
 
 func TestABranchTheForgeDroppedIsDroppedFromTheStore(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: git subprocesses and a real smart-HTTP rig")
+	}
 	t.Parallel()
 	x := newForgeFix(t)
 	if _, err := x.h.Store().Init(bg, repoURL); err != nil {
@@ -230,6 +245,9 @@ func TestABranchTheForgeDroppedIsDroppedFromTheStore(t *testing.T) {
 }
 
 func TestAPrivateRepositoryWithNoCredentialSaysSo(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: git subprocesses and a real smart-HTTP rig")
+	}
 	t.Parallel()
 	x := newForgeFix(t)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -283,6 +301,9 @@ func (x *forgeFix) lookupMain(t *testing.T) string {
 }
 
 func TestASeededMainFollowsItsForge(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: git subprocesses and a real smart-HTTP rig")
+	}
 	t.Parallel()
 	x := newForgeFix(t)
 	if _, err := x.h.Store().Init(bg, repoURL); err != nil {
@@ -321,6 +342,9 @@ func TestASeededMainFollowsItsForge(t *testing.T) {
 }
 
 func TestAForgeThatCannotBeReachedLeavesMainAndTheFetchGoesOn(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: git subprocesses and a real smart-HTTP rig")
+	}
 	t.Parallel()
 	x := newForgeFix(t)
 	if _, err := x.h.Store().Init(bg, repoURL); err != nil {
@@ -342,6 +366,9 @@ func TestAForgeThatCannotBeReachedLeavesMainAndTheFetchGoesOn(t *testing.T) {
 }
 
 func TestAnOperatorsPushedMainIsNeverOverwrittenByTheForge(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: git subprocesses and a real smart-HTTP rig")
+	}
 	t.Parallel()
 	x := newForgeFix(t)
 	if _, err := x.h.Store().Init(bg, repoURL); err != nil {
@@ -388,6 +415,9 @@ func TestAnOperatorsPushedMainIsNeverOverwrittenByTheForge(t *testing.T) {
 }
 
 func TestMainIsRefreshedAtMostOncePerFreshFor(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: git subprocesses and a real smart-HTTP rig")
+	}
 	t.Parallel()
 	x := newForgeFix(t)
 	if _, err := x.h.Store().Init(bg, repoURL); err != nil {

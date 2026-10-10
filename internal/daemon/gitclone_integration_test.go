@@ -41,6 +41,9 @@ func TestGitCloneWithNoSCMRootSaysHowToSetIt(t *testing.T) {
 }
 
 func TestGitCloneOfAnOperatorsCloneAsksOnTheBoardOnceThenAddsTheRemotes(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d := testDaemon(t)
 	task, _, err := d.st.Register(store.Observed{WireName: "w", Worktree: "/tmp/w", Runner: "claude"})
 	if err != nil {

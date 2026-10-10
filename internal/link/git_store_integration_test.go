@@ -184,6 +184,9 @@ func TestInitIsLoopbackOperatorOnlyAndAPostAndBounded(t *testing.T) {
 }
 
 func TestInitAnswersTheExactJSONAndRefusesTheHostile(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real link, hub and git rig over loopback")
+	}
 	x := newStoreProxy(t)
 	code, out := x.call("POST", "/_hub/git/init", `{"url":"https://github.com/o/r"}`, "")
 	want := `{"repo":"github/o/r","created":true,"seeded":true,"main":"` + x.sha + `","note":"created, and main seeded from the forge's default branch"}`
@@ -250,6 +253,9 @@ func (x *storeProxy) settledRepos(t *testing.T, remote string) (int, string) {
 }
 
 func TestReposIsOpenLikeGrowlsAndExactlyShaped(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real link, hub and git rig over loopback")
+	}
 	x := newStoreProxy(t)
 	// Empty: an empty repos list inside the snapshot object, from anywhere.
 	if code, out := x.call("GET", "/_hub/git/repos", "", offLoopback); code != http.StatusOK || reposOnly(t, out) != `{"repos":[]}` {

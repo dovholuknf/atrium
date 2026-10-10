@@ -102,6 +102,9 @@ func toolUse(name, path string) map[string]any {
 }
 
 func TestChangesHeadShowsUncommittedAndUntracked(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	f := newChangesFix(t)
 	// A GIT_DIR in the room's own environment must not change what is diffed.
 	other := t.TempDir()
@@ -148,6 +151,9 @@ func TestChangesHeadShowsUncommittedAndUntracked(t *testing.T) {
 }
 
 func TestChangesBaseIsTheBranchSinceTheMergeBase(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	f := newChangesFix(t)
 	gitT(t, f.repo, time.Time{}, "switch", "-c", "feature")
 	writeF(t, filepath.Join(f.repo, "b.txt"), "one\ntwo\nbranch\n")
@@ -175,6 +181,9 @@ func TestChangesBaseIsTheBranchSinceTheMergeBase(t *testing.T) {
 }
 
 func TestChangesRefusals(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	f := newChangesFix(t)
 	if code, m := f.get("?path=a.txt"); code != 400 {
 		t.Fatalf("a path parameter answered %d %v", code, m)
@@ -219,6 +228,9 @@ func TestChangesRefusals(t *testing.T) {
 }
 
 func TestChangesBoundsCutTheListAndSayWhat(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	f := newChangesFix(t)
 	for i := 0; i < changesFilesMax+5; i++ {
 		writeF(t, filepath.Join(f.repo, "many", fmt.Sprintf("f%04d.txt", i)), "x\n")
@@ -261,6 +273,9 @@ func TestChangesBoundsCutTheListAndSayWhat(t *testing.T) {
 }
 
 func TestChangesTurnListsOnlyWhatTheTurnsEditsNamed(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	f := newChangesFix(t)
 	outside := filepath.Join(t.TempDir(), "secret-name.txt")
 	writeF(t, outside, "x\n")
@@ -310,6 +325,9 @@ func TestChangesTurnListsOnlyWhatTheTurnsEditsNamed(t *testing.T) {
 }
 
 func TestChangesTurnWithNoEditCallsIsEmptyAndPartial(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	f := newChangesFix(t)
 	writeF(t, filepath.Join(f.repo, "a.txt"), "dirty by a shell\n")
 	at := f.turn(changesBase, "t1")
@@ -323,6 +341,9 @@ func TestChangesTurnWithNoEditCallsIsEmptyAndPartial(t *testing.T) {
 }
 
 func TestChangesTurnFindsWhatTheTurnCommitted(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	f := newChangesFix(t)
 	c := filepath.Join(f.repo, "c.txt")
 	writeF(t, c, "one\ntwo\nthree\nfour\n")
@@ -344,6 +365,9 @@ func TestChangesTurnFindsWhatTheTurnCommitted(t *testing.T) {
 }
 
 func TestChangesTurnSaysWhenCommitDatesWereRewritten(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	f := newChangesFix(t)
 	c := filepath.Join(f.repo, "c.txt")
 	writeF(t, c, "one\ntwo\nthree\n")
@@ -364,6 +388,9 @@ func TestChangesTurnSaysWhenCommitDatesWereRewritten(t *testing.T) {
 }
 
 func TestChangesTurnMarksAFileEditedInAnotherTurnCumulative(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	f := newChangesFix(t)
 	a, b := filepath.Join(f.repo, "a.txt"), filepath.Join(f.repo, "b.txt")
 	writeF(t, a, "one\nfirst\n")
@@ -386,6 +413,9 @@ func TestChangesTurnMarksAFileEditedInAnotherTurnCumulative(t *testing.T) {
 }
 
 func TestChangesATranscriptPathIsALiteralPathspec(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	f := newChangesFix(t)
 	// A file literally named with a glob and a magic prefix must not match anything else.
 	writeF(t, filepath.Join(f.repo, "a.txt"), "changed\n")
@@ -456,6 +486,9 @@ func TestTurnsOfReadsOnlyWhatTheTranscriptGained(t *testing.T) {
 }
 
 func TestChangesTurnWithNoPromptBeforeItFindsNoCommits(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	f := newChangesFix(t)
 	c := filepath.Join(f.repo, "c.txt")
 	writeF(t, c, "one\ntwo\nthree\n")
@@ -471,6 +504,9 @@ func TestChangesTurnWithNoPromptBeforeItFindsNoCommits(t *testing.T) {
 }
 
 func TestChangesTurnWithHundredsOfPathsFitsTheCommandLine(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	f := newChangesFix(t)
 	dir := "a/rather/deeply/nested/directory/structure/for/the/command/line/overflow/test"
 	const n = 600
@@ -497,6 +533,9 @@ func TestChangesTurnWithHundredsOfPathsFitsTheCommandLine(t *testing.T) {
 }
 
 func TestChangesAHugeTrackedDiffIsStoppedWhileRead(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	f := newChangesFix(t)
 	line := strings.Repeat("0123456789abcdef", 64) + "\n"
 	big := strings.Repeat(line, (patchMax*2)/len(line))

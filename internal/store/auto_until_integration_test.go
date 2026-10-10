@@ -69,6 +69,9 @@ func TestExpiryIsDistinctFromBeingOff(t *testing.T) {
 }
 
 func TestADeadlineRoundTripsThroughTheDatabase(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real sqlite database on disk")
+	}
 	t.Parallel()
 	s := open(t)
 	task, _, err := s.Register(Observed{WireName: "a", Worktree: "d:/w", Runner: "claude"})
@@ -135,6 +138,9 @@ func TestTurningItOffClearsTheDeadline(t *testing.T) {
 }
 
 func TestGlobalAutoWithADeadline(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real sqlite database on disk")
+	}
 	t.Parallel()
 	s := open(t)
 

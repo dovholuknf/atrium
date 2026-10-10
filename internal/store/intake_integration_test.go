@@ -287,6 +287,9 @@ func TestClaimingATakenCardIsRefused(t *testing.T) {
 
 // A source's suggested directory stands until a runner reports a real one.
 func TestClaimKeepsTheSuggestedDirectoryWhenTheRunnerHasNone(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real sqlite database on disk")
+	}
 	t.Parallel()
 	s := open(t)
 

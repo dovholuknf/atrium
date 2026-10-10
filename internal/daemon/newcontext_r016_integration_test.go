@@ -30,6 +30,9 @@ func failedCycle(t *testing.T, d *Daemon, id string) {
 }
 
 func TestFailedChipClearsOnASessionStartWithANewConversation(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	fastNewContext(t)
 	d := testDaemon(t)
 	task, _, _ := ncCard(t, d)
@@ -69,6 +72,9 @@ func TestFailedChipClearsOnASessionStartWithANewConversation(t *testing.T) {
 }
 
 func TestFailedChipIsClearedByRerunAndByDismissal(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	fastNewContext(t)
 	d := testDaemon(t)
 	task, f, _ := ncCard(t, d)
@@ -102,6 +108,9 @@ func TestFailedChipIsClearedByRerunAndByDismissal(t *testing.T) {
 
 // The @ui case: a peer message starts a turn, and that proves nothing.
 func TestFailedChipSurvivesATurnStart(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	fastNewContext(t)
 	d := testDaemon(t)
 	task, _, _ := ncCard(t, d)
@@ -121,6 +130,9 @@ func TestFailedChipSurvivesATurnStart(t *testing.T) {
 // Reaching the wake with a turn already running (a peer message started one after
 // the clear) waits it out rather than failing at typeWait.
 func TestWakeWaitsOutATurnInProgress(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	fastNewContext(t)
 	d := testDaemon(t)
 	task, f, dir := ncCard(t, d)
@@ -148,6 +160,9 @@ func TestWakeWaitsOutATurnInProgress(t *testing.T) {
 }
 
 func TestWakeFailsWhenNoGapOpensInCaptureEnd(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	fastNewContext(t)
 	d := testDaemon(t)
 	task, f, dir := ncCard(t, d)
@@ -186,6 +201,9 @@ func os_WriteHandoff(d *Daemon, id, dir string) error {
 
 // A prompt event a moment ago means the runner is taking input: wait it out.
 func TestNcTypeWaitsTurnSettleAfterAPromptEvent(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	fastNewContext(t)
 	ncTiming.turnSettle = 300 * time.Millisecond
 	ncTiming.typeWait = 3 * time.Second
@@ -213,6 +231,9 @@ func TestNcTypeWaitsTurnSettleAfterAPromptEvent(t *testing.T) {
 
 // The injector firing inside turnSettle: /clear first, the message after the wake.
 func TestInjectorDuringTurnSettleTypesClearFirst(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	fastNewContext(t)
 	ncTiming.turnSettle = 300 * time.Millisecond
 	d := testDaemon(t)
@@ -253,6 +274,9 @@ func TestInjectorDuringTurnSettleTypesClearFirst(t *testing.T) {
 
 // The fabric sequence: a queued peer message and the capture turn's end together.
 func TestQueuedMessageAndCaptureEndTogetherTypeClearAlone(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	fastNewContext(t)
 	d := testDaemon(t)
 	task, f, dir := ncCard(t, d)

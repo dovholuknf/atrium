@@ -103,6 +103,9 @@ func requireEnabled(t *testing.T, d *Daemon) {
 // trailing slash must accept a request for the same instance spelled without
 // one. Before the fix this returned the exact refusal quoted in the ticket.
 func TestSetZrokEnvironmentIgnoresATrailingSlash(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	enableMachineZrokEnv(t, "https://api-v2.zrok.io/")
 	d, _, cancel, _ := startDaemon(t)
 	defer cancel()
@@ -115,6 +118,9 @@ func TestSetZrokEnvironmentIgnoresATrailingSlash(t *testing.T) {
 
 // Also true the other way round.
 func TestSetZrokEnvironmentIgnoresAMissingTrailingSlash(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	enableMachineZrokEnv(t, "https://api-v2.zrok.io")
 	d, _, cancel, _ := startDaemon(t)
 	defer cancel()
@@ -129,6 +135,9 @@ func TestSetZrokEnvironmentIgnoresAMissingTrailingSlash(t *testing.T) {
 // different, and the message must name both addresses so a one character
 // difference is visible rather than invisible.
 func TestSetZrokEnvironmentStillRefusesARealMove(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	enableMachineZrokEnv(t, "https://api-v2.zrok.io/")
 	d, _, cancel, _ := startDaemon(t)
 	defer cancel()
@@ -149,6 +158,9 @@ func TestSetZrokEnvironmentStillRefusesARealMove(t *testing.T) {
 // An empty endpoint asks for nothing in particular ("keep using whatever this
 // root already has"), and must never be refused as a move.
 func TestSetZrokEnvironmentAcceptsAnEmptyEndpointWhileEnabled(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	enableMachineZrokEnv(t, "https://api-v2.zrok.io/")
 	d, _, cancel, _ := startDaemon(t)
 	defer cancel()

@@ -21,6 +21,9 @@ func postJSON(t *testing.T, srv *Server, path, body string) *httptest.ResponseRe
 }
 
 func TestAddRuleForAnMCPTool(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real server with git worktrees and a database")
+	}
 	t.Parallel()
 	srv, st, _ := fileServer(t)
 
@@ -53,6 +56,9 @@ func TestAddRuleForAnMCPTool(t *testing.T) {
 }
 
 func TestImportBroadMCPDenyNeedsInclude(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real server with git worktrees and a database")
+	}
 	t.Parallel()
 	entries := `[{"tool":"mcp__*","pattern":"*","decision":"block","source":"test","broad":true},` +
 		`{"tool":"mcp__mercurius__*","pattern":"*","decision":"approve","source":"test"}]`
@@ -125,6 +131,9 @@ func TestForeverOnAnMCPCallWritesAToolRule(t *testing.T) {
 }
 
 func TestListRulesMarksAnExactInputRule(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real server with git worktrees and a database")
+	}
 	t.Parallel()
 	srv, st, _ := fileServer(t)
 	if _, err := st.AddRule("mcp__mercurius__x", `{"query":"ziti`, "approve", "", ""); err != nil {

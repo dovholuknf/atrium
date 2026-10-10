@@ -69,6 +69,9 @@ func TestSetOriginLeavesWhatItIsNotTold(t *testing.T) {
 // The pair is the key. The same number is an issue in one tracker and a ticket
 // in another, and they are not the same work.
 func TestBySourceExternalIsKeyedOnThePair(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real sqlite database on disk")
+	}
 	t.Parallel()
 	s := open(t)
 	issue, _, err := s.Register(Observed{WireName: "issue", Worktree: "d:/w", Runner: "claude"})

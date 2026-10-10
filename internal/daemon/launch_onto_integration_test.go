@@ -130,6 +130,9 @@ func TestAStalePidOnADeadCardDoesNotCountAsLive(t *testing.T) {
 // The supervisor is not a guess: it holds an entry only while the process
 // atrium started is running. It answers before the status does.
 func TestAnOwnedRunnerIsLiveWhateverTheCardSays(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d, _, cancel, errCh := startDaemon(t)
 	defer func() {
 		cancel()
@@ -163,6 +166,9 @@ func TestAnOwnedRunnerIsLiveWhateverTheCardSays(t *testing.T) {
 // Launching onto a shelved card has to be refused by the endpoint, not only by
 // the helper, and before anything is spawned so the card is left as it was.
 func TestTheLaunchPathRefusesAShelvedCard(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d, _, cancel, errCh := startDaemon(t)
 	defer func() {
 		cancel()
@@ -230,6 +236,9 @@ func TestStartedOntoLeavesACardAHookAlreadyMoved(t *testing.T) {
 // And the case the whole item is about: a card filed dead, started onto, and
 // left saying dead while its process posted activity.
 func TestStartedOntoBringsADeadCardBackWithAReason(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d, _, cancel, errCh := startDaemon(t)
 	defer func() {
 		cancel()
