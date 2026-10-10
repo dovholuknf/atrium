@@ -17,6 +17,27 @@ type testEnv struct {
 	OSEnv
 	agent string
 	vars  map[string]string
+	// memo holds each git answer by directory and arguments. The repos never change during a run, and asking git
+	// again costs a process per question.
+	memo map[string]gitAnswer
+}
+
+type gitAnswer struct {
+	out string
+	err error
+}
+
+func (e testEnv) Git(dir string, args ...string) (string, error) {
+	if e.memo == nil {
+		return e.OSEnv.Git(dir, args...)
+	}
+	key := dir + "\x00" + strings.Join(args, "\x00")
+	if a, ok := e.memo[key]; ok {
+		return a.out, a.err
+	}
+	out, err := e.OSEnv.Git(dir, args...)
+	e.memo[key] = gitAnswer{out, err}
+	return out, err
 }
 
 func (e testEnv) Agent() string { return e.agent }
@@ -459,6 +480,7 @@ func TestGitGuard(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	memo := map[string]gitAnswer{}
 	for _, c := range gitCases {
 		if c.win && runtime.GOOS != "windows" {
 			continue
@@ -473,7 +495,7 @@ func TestGitGuard(t *testing.T) {
 		}
 		in := Input{ToolName: tool, CWD: rp[c.repo]}
 		in.ToolInput.Command = cmd
-		env := testEnv{agent: fakeAgent}
+		env := testEnv{agent: fakeAgent, memo: memo}
 		if c.noRoom {
 			env.agent = ""
 		}
