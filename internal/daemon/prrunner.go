@@ -208,6 +208,10 @@ type prStepRec struct {
 	Done    bool        `json:"done"`
 	Error   string      `json:"error,omitempty"`
 	Forks   []prForkRec `json:"forks,omitempty"`
+	// Outcome and Note are a stage that did not do its work without stopping the review: "skipped" or "failed",
+	// and the one short line the row shows. See panelStage.
+	Outcome string `json:"outcome,omitempty"`
+	Note    string `json:"note,omitempty"`
 }
 
 // prReviewFile is review.json: what the run was of, what it cost, and the cache
@@ -1035,6 +1039,26 @@ func panelEmptyReason(missing []string, dir string) string {
 	return fmt.Sprintf("the panel's agents are not installed on this room: %s not found in %s. install the agent pack: run room-check -Fix (or atrium room setup --apply) on the room", strings.Join(files, ", "), dir)
 }
 
+// panelNote is the one short line the row shows for a panel that did not run.
+func panelNote(missing []string) string {
+	if len(missing) == 0 {
+		return "panel skipped: no reviewer applies"
+	}
+	return "panel: missing agent files " + strings.Join(missing, ", ")
+}
+
+// panelStage records the panel's own outcome on its step. The panel is one stage of the review, so a panel that finds
+// no reviewer, or whose reviewers all fail, does not fail the pull request: the review carries on with no panel findings
+// and the row says so in a muted line. The long reason stays on the step, for review.json.
+func (pr *prRun) panelStage(outcome, note, reason string) {
+	pr.mu.Lock()
+	if s := pr.review.Steps["panel"]; s != nil {
+		s.Outcome, s.Note, s.Error = outcome, note, reason
+	}
+	pr.mu.Unlock()
+	pr.logf("panel %s: %s", outcome, reason)
+}
+
 type prFindings struct {
 	Findings []prrender.Finding `json:"findings"`
 }
@@ -1079,7 +1103,9 @@ func (pr *prRun) panel() error {
 			prRules + prSchema})
 	}
 	if len(jobs) == 0 {
-		return errors.New(panelEmptyReason(missing, pr.r.agentsDir()))
+		pr.raw = nil
+		pr.panelStage("skipped", panelNote(missing), panelEmptyReason(missing, pr.r.agentsDir()))
+		return nil
 	}
 	pr.mu.Lock()
 	pr.review.Panel = nil
@@ -1116,7 +1142,9 @@ func (pr *prRun) panel() error {
 		}
 	}
 	if failed == len(jobs) {
-		return fmt.Errorf("every reviewer failed: %v", firstErr(errs))
+		pr.raw = nil
+		pr.panelStage("failed", "panel failed: every reviewer failed", fmt.Sprintf("every reviewer failed: %v", firstErr(errs)))
+		return nil
 	}
 	var all []prrender.Finding
 	n := 0

@@ -382,6 +382,56 @@ func TestPRRunnerFetchFailure(t *testing.T) {
 	}
 }
 
+// The panel is one stage. A room without the reviewer agent files has no panel, and the review carries on.
+func TestPRRunnerPanelWithNoReviewerLeavesTheReviewNotFailed(t *testing.T) {
+	f := newPRFix(t)
+	empty := t.TempDir()
+	f.r.agentsDir = func() string { return empty }
+	p := f.run(t)
+	if p.State == store.PRFailed || p.State != store.PRReady || p.RunError != "" {
+		t.Fatalf("a panel with no reviewer failed the row: %s %q", p.State, p.RunError)
+	}
+	rv := readReview(t, p)
+	st := rv.Steps["panel"]
+	if st == nil || st.Outcome != "skipped" || !strings.HasPrefix(st.Note, "panel: missing agent files ") || st.Error == "" {
+		t.Fatalf("the panel stage did not record its outcome: %+v", st)
+	}
+	if rv.Steps["merge"] == nil || !rv.Steps["merge"].Done {
+		t.Fatal("the review did not carry on past the panel")
+	}
+}
+
+func TestPRRunnerEveryReviewerFailingLeavesTheReviewNotFailed(t *testing.T) {
+	f := newPRFix(t)
+	inner := f.claude
+	f.claude = func(f *prFix, spec forkSpec, prompt string) ([]byte, error) {
+		if containsArg(spec.Args, "--resume") && strings.Contains(prompt, "Review this pull request.") {
+			return nil, errors.New("the reviewer crashed")
+		}
+		return inner(f, spec, prompt)
+	}
+	p := f.run(t)
+	if p.State != store.PRReady || p.RunError != "" {
+		t.Fatalf("every reviewer failing failed the row: %s %q", p.State, p.RunError)
+	}
+	if st := readReview(t, p).Steps["panel"]; st == nil || st.Outcome != "failed" || st.Note == "" {
+		t.Fatalf("the panel stage did not record its failure: %+v", st)
+	}
+}
+
+// A review that cannot start is still failed, and it says nothing about a panel.
+func TestPRRunnerAReviewThatCannotStartIsFailed(t *testing.T) {
+	f := newPRFix(t)
+	f.ghErr = errors.New("gh pr view: no such pull request")
+	p := f.run(t)
+	if p.State != store.PRFailed || !strings.HasPrefix(p.RunError, "fetch: ") {
+		t.Fatalf("%s %q", p.State, p.RunError)
+	}
+	if st := readReview(t, p).Steps["panel"]; st != nil && st.Note != "" {
+		t.Fatalf("a panel note on a review that never reached the panel: %+v", st)
+	}
+}
+
 func TestPRRunnerBudgetStopsAndRetryRaisesOnce(t *testing.T) {
 	f := newPRFix(t)
 	// The prime costs about $0.17 and a panel fork about $0.03: a $0.10 budget is

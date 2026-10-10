@@ -68,6 +68,29 @@ type prView struct {
 	Walk     PRWalkCounts    `json:"walk"`
 	// DiskBytes is the walker card's measured inventory: the worktree and the run folder. See resources.go.
 	DiskBytes int64 `json:"disk_bytes,omitempty"`
+	// StageNote is one short line about a stage that did not do its work while the review carried on, such as a panel
+	// with no reviewer to run. It is not the row's state. It is read from review.json.
+	StageNote string `json:"stage_note,omitempty"`
+}
+
+// readPRStageNote is the note a step left in review.json, panel first.
+func readPRStageNote(dir string) string {
+	if dir == "" {
+		return ""
+	}
+	b, err := os.ReadFile(filepath.Join(filepath.FromSlash(dir), "review.json"))
+	if err != nil {
+		return ""
+	}
+	var rv struct {
+		Steps map[string]struct {
+			Note string `json:"note"`
+		} `json:"steps"`
+	}
+	if json.Unmarshal(b, &rv) != nil {
+		return ""
+	}
+	return rv.Steps["panel"].Note
 }
 
 // viewPRDisk is viewPR with the walker card's disk.
@@ -83,6 +106,9 @@ func (s *Server) viewPRDisk(p *store.PRReview) prView {
 // ready, since a run that is still writing has findings that are not final.
 func viewPR(p *store.PRReview) prView {
 	v := prView{PRReview: p}
+	if p.State != store.PRFailed && p.State != store.PRQueued {
+		v.StageNote = readPRStageNote(p.RunDir)
+	}
 	if p.State == store.PRReady {
 		v.Findings, v.Walk = readPRCounts(p.RunDir)
 	}
