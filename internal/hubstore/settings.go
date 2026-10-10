@@ -6,6 +6,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -320,6 +321,9 @@ const (
 	// SettingGitCreateOnPush is whether a room's first push of a repository the hub does not have may
 	// create it. Off until the operator turns it on. This item only stores it: f-new-hub-receive reads it.
 	SettingGitCreateOnPush = "git.create_on_push"
+	// SettingStashRetentionDays is how many days a close's stash/<card>/<branch> stays on the hub before the hub
+	// removes it. Unwritten is 30, and 0 is never.
+	SettingStashRetentionDays = "git.stash_retention_days"
 )
 
 // GitStorePath is where the hub's git store is: the setting, or `<hubDir>/git`.
@@ -370,6 +374,28 @@ func (s *Store) SetGitCreateOnPush(on bool) error {
 		return s.SetHubSetting(SettingGitCreateOnPush, "on")
 	}
 	return s.SetHubSetting(SettingGitCreateOnPush, "off")
+}
+
+// StashRetentionDays reads the retention, 30 when it was never written or holds something that is not a number of
+// days. 0 is never expire.
+func (s *Store) StashRetentionDays() (int, error) {
+	v, err := s.HubSetting(SettingStashRetentionDays)
+	if err != nil {
+		return gitsync.DefaultStashRetentionDays, err
+	}
+	n, err := strconv.Atoi(strings.TrimSpace(v))
+	if err != nil || n < 0 {
+		return gitsync.DefaultStashRetentionDays, nil
+	}
+	return n, nil
+}
+
+// SetStashRetentionDays sets it. 0 keeps every stash.
+func (s *Store) SetStashRetentionDays(days int) error {
+	if days < 0 {
+		return errors.New("git.stash_retention_days is a number of days, or 0 for never")
+	}
+	return s.SetHubSetting(SettingStashRetentionDays, strconv.Itoa(days))
 }
 
 // HubCardColors is the board's card colours, which the hub owns like the skin: colours belong to the

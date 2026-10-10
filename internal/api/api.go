@@ -94,6 +94,10 @@ type Server struct {
 	// top, and answers the hub branch and repository. A close calls it for a worktree it was told to stash. Nil is
 	// a room that cannot stash. See close.go.
 	Stash func(ctx context.Context, card, dir, branch string) (hubBranch, hubRepo string, err error)
+	// StashRetentionDays is how long the hub keeps a stash before it removes it, for the expiry date a close names. Nil
+	// is 30, the hub's default. The room does not hear the hub's setting, so a hub set to another number removes it
+	// on its own date and this one is what the close could say. 0 is never.
+	StashRetentionDays func() int
 	// PRFetch fetches a PR head into a ref of the checkout. Nil runs git over https. A seam for tests.
 	PRFetch func(ctx context.Context, dir string, spec forge.FetchSpec, dst string) error
 	// PRRunner runs pull request reviews. Nil means the stub that fails every run

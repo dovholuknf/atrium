@@ -114,6 +114,20 @@ type closeRequest struct {
 type closeStash struct {
 	Branch string `json:"branch"`
 	Repo   string `json:"repo,omitempty"`
+	// Expires is the day the hub removes the stash (2006-01-02), empty when the hub keeps stashes for ever.
+	Expires string `json:"expires,omitempty"`
+}
+
+// stashExpiry is the date a stash made now is removed on, or "" for never. See internal/gitsync/stashexpiry.go.
+func (s *Server) stashExpiry(now time.Time) string {
+	days := 30
+	if s.StashRetentionDays != nil {
+		days = s.StashRetentionDays()
+	}
+	if days <= 0 {
+		return ""
+	}
+	return now.AddDate(0, 0, days).UTC().Format("2006-01-02")
 }
 
 type closeResult struct {
@@ -500,7 +514,7 @@ func (s *Server) closeCard(t *store.Task, pv *closePreview, answers map[string]s
 				steps.problem("kept, the stash did not land: %v", err)
 				ans = CloseKeep
 			} else {
-				res.Stashes = append(res.Stashes, closeStash{Branch: hubBranch, Repo: hubRepo})
+				res.Stashes = append(res.Stashes, closeStash{Branch: hubBranch, Repo: hubRepo, Expires: s.stashExpiry(time.Now())})
 				if _, err := s.st.AddResource(t.ID, store.ResStash, hubBranch, hubRepo); err != nil {
 					warn("the stash %s is on the hub, but the card did not record it: %v", hubBranch, err)
 				}

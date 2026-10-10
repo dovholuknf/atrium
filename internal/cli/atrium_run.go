@@ -249,6 +249,10 @@ func serveAtrium(f atriumFlags, up atriumUp) error {
 		on, _ := store.GitCreateOnPush()
 		return on
 	}
+	gitHub.StashRetentionDays = func() int {
+		n, _ := store.StashRetentionDays()
+		return n
+	}
 	h.GitStore = gitHub.StoreHandler()
 	// A room's atrium_git_url, asked over the same kind.
 	h.GitLookup = gitHub.Lookup

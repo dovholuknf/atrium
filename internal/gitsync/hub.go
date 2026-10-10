@@ -70,6 +70,9 @@ type Hub struct {
 	// Merger is the (room, card) the hub has recorded as the merger, which may move claude/main by fast-forward. Nil, or
 	// ok false, and nobody but the operator does. Read on every push to claude/main. See docs/design/merge-flow.md.
 	Merger func(ctx context.Context) (room, card string, ok bool)
+	// StashRetentionDays is the `git.stash_retention_days` setting: how old a close's stash is let get before the
+	// collect timer removes it. Nil is DefaultStashRetentionDays, 0 is never. See stashexpiry.go.
+	StashRetentionDays func() int
 	// LookupTTL and LookupWait override how long a room's answer to the lookup is held, and how long a room has
 	// to give it, when above zero. A test sets them. See lookup.go.
 	LookupTTL, LookupWait time.Duration
@@ -702,6 +705,10 @@ func (h *Hub) Start(ctx context.Context, wait time.Duration) {
 						h.auditFailure(r.Name, "git-collected", "collect:"+r.Name, err)
 					}
 				}
+			}
+			_, err := h.ExpireStashes(ctx)
+			if ctx.Err() == nil {
+				h.auditFailure("", "git-stash-expiry", "stash-expiry", err)
 			}
 		}
 	}()

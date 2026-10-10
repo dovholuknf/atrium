@@ -44,7 +44,8 @@ func newClose() *cobra.Command {
 			"goes), and the worktree, its branch and the fetched PR ref are removed. The card goes to done and " +
 			"stays in history. A re-paste of the link afterwards starts a fresh card and review.\n\n" +
 			"A worktree with uncommitted changes, or commits on no remote and not on the hub, is asked about. " +
-			"Say --keep (it stays on disk), --stash (pushed to the hub as stash/<card>/<branch>, then removed) " +
+			"With no answer it is stashed to the hub, or kept when the room cannot stash. The hub removes a stash " +
+			"after its retention (30 days by default). Say --keep (it stays on disk), --stash (pushed to the hub as stash/<card>/<branch>, then removed) " +
 			"or --delete (removed as it is), with the worktree's seq or path, or all.",
 		Args:          cobra.ExactArgs(1),
 		SilenceUsage:  true,
@@ -97,8 +98,9 @@ type closeResultOut struct {
 	Closed  bool           `json:"closed"`
 	Items   []closeItemOut `json:"items"`
 	Stashes []struct {
-		Branch string `json:"branch"`
-		Repo   string `json:"repo"`
+		Branch  string `json:"branch"`
+		Repo    string `json:"repo"`
+		Expires string `json:"expires"`
 	} `json:"stashes"`
 	Left     int      `json:"left"`
 	Warnings []string `json:"warnings"`
@@ -138,6 +140,14 @@ func closeAnswers(asks []closeAskOut, keep, stash, del []string) (answers map[st
 	return answers, missing, nil
 }
 
+// defaultCloseAnswer is what a worktree with no --keep, --stash or --delete gets.
+func defaultCloseAnswer(canStash bool) string {
+	if canStash {
+		return "stash"
+	}
+	return "keep"
+}
+
 func samePath(a, b string) bool {
 	norm := func(p string) string { return strings.TrimRight(strings.ReplaceAll(p, `\`, "/"), "/") }
 	return strings.EqualFold(norm(a), norm(b))
@@ -157,7 +167,7 @@ func closeCardCmd(card string, o closeOpts) error {
 		printClosePreview(pv)
 		fmt.Println()
 		if len(pv.Asks) > 0 {
-			fmt.Println("nothing was changed. run again with --yes and --keep, --stash or --delete for each worktree above")
+			fmt.Println("nothing was changed. run again with --yes. a worktree above with no --keep or --delete is stashed to the hub (kept when this room cannot stash)")
 		} else {
 			fmt.Println("nothing was changed. run again with --yes to close it")
 		}
@@ -167,9 +177,16 @@ func closeCardCmd(card string, o closeOpts) error {
 	if err != nil {
 		return err
 	}
+	// NO ANSWER IS STASH when the room can, and keep when it cannot. Never delete.
 	if len(missing) > 0 {
-		printClosePreview(pv)
-		return fmt.Errorf("say --keep, --stash or --delete for %s", strings.Join(missing, ", "))
+		def := defaultCloseAnswer(pv.CanStash)
+		for _, a := range pv.Asks {
+			if k := strconv.Itoa(a.Seq); answers[k] == "" {
+				answers[k] = def
+				fmt.Printf("%s: no answer given, so %s\n", a.Path, map[string]string{"stash": "stashing it to the hub",
+					"keep": "keeping it (this room cannot stash to a hub)"}[def])
+			}
+		}
 	}
 	var res closeResultOut
 	if _, err := closeAsk(board, http.MethodPost, path, map[string]any{"confirm": true, "answers": answers}, &res); err != nil {
@@ -180,7 +197,11 @@ func closeCardCmd(card string, o closeOpts) error {
 	}
 	fmt.Printf("closed %s\n", res.Card)
 	for _, s := range res.Stashes {
-		fmt.Printf("  stashed on the hub: %s %s\n", s.Repo, s.Branch)
+		line := "  stashed on the hub: " + s.Repo + " " + s.Branch
+		if s.Expires != "" {
+			line += ", removed from the hub on " + s.Expires
+		}
+		fmt.Println(line)
 	}
 	for _, w := range res.Warnings {
 		fmt.Printf("  note: %s\n", w)

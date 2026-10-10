@@ -121,14 +121,18 @@ func gitReleaseCmd(prefix string) *cobra.Command {
 func gitSettingsCmd(prefix string) *cobra.Command {
 	var f hubStoreFlags
 	var storeDir, createOnPush string
+	var stashDays int
 	c := &cobra.Command{
 		Use:   "settings",
-		Short: "Show or set git.store and git.create_on_push",
+		Short: "Show or set git.store, git.create_on_push and git.stash_retention_days",
 		Long: "git.store is where the hub's bare repositories are. It defaults to <the hub's directory>/git, and\n" +
 			"changing it moves nothing already in the old one. `--store ''` puts it back to the default.\n\n" +
 			"git.create_on_push is whether a room's first push of a repository the hub does not have may create\n" +
 			"it, under the same case check as init. It is off by default. The operator never makes a repository by a\n" +
-			"push, only with init.",
+			"push, only with init.\n\n" +
+			"git.stash_retention_days is how long a close's stash/<card>/<branch> stays on the hub before the hub\n" +
+			"removes it. It is 30 by default and 0 keeps every stash. Each removal is logged with the ref, the card\n" +
+			"and the sha.",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			st, err := f.open()
@@ -154,6 +158,11 @@ func gitSettingsCmd(prefix string) *cobra.Command {
 					return err
 				}
 			}
+			if cmd.Flags().Changed("stash-retention-days") {
+				if err := st.SetStashRetentionDays(stashDays); err != nil {
+					return err
+				}
+			}
 			path, err := st.GitStorePath(f.keys().Dir)
 			if err != nil {
 				return err
@@ -165,11 +174,24 @@ func gitSettingsCmd(prefix string) *cobra.Command {
 			w := cmd.OutOrStdout()
 			fmt.Fprintf(w, "git.store           %s\n", path)
 			fmt.Fprintf(w, "git.create_on_push  %s\n", map[bool]string{true: "on", false: "off"}[on])
+			days, err := st.StashRetentionDays()
+			if err != nil {
+				return err
+			}
+			fmt.Fprintf(w, "git.stash_retention_days  %s\n", stashRetentionSaid(days))
 			return nil
 		},
 	}
 	c.Flags().StringVar(&storeDir, "store", "", "set git.store, an absolute path on this machine (empty is the default)")
 	c.Flags().StringVar(&createOnPush, "create-on-push", "", "set git.create_on_push: on or off")
+	c.Flags().IntVar(&stashDays, "stash-retention-days", 30, "set git.stash_retention_days: days a close's stash stays on the hub, 0 for never")
 	f.bind(c, prefix)
 	return c
+}
+
+func stashRetentionSaid(days int) string {
+	if days == 0 {
+		return "0 (never removed)"
+	}
+	return fmt.Sprintf("%d", days)
 }

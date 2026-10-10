@@ -63,6 +63,13 @@ type GitSettings interface {
 	SetGitCreateOnPush(on bool) error
 }
 
+// StashRetentionSettings is the retention of a close's stash, which hubstore.Store has too. GitSettings does not ask for
+// it so a stand-in that predates it still serves the rest.
+type StashRetentionSettings interface {
+	StashRetentionDays() (int, error)
+	SetStashRetentionDays(days int) error
+}
+
 // SetGitSettings wires the git.store and git.create_on_push settings. Without it /_hub/git/settings
 // answers 404.
 func (p *Proxy) SetGitSettings(s GitSettings, hubDir string) {
@@ -238,14 +245,26 @@ func (p *Proxy) serveGitSettings(w http.ResponseWriter, r *http.Request, fail fu
 		var in struct {
 			Store        *string `json:"store"`
 			CreateOnPush *bool   `json:"create_on_push"`
+			StashDays    *int    `json:"stash_retention_days"`
 		}
 		if err := json.NewDecoder(io.LimitReader(r.Body, 4<<10)).Decode(&in); err != nil {
 			fail(http.StatusBadRequest, "could not read that: "+err.Error())
 			return
 		}
-		if in.Store == nil && in.CreateOnPush == nil {
-			fail(http.StatusBadRequest, "say store, create_on_push, or both")
+		if in.Store == nil && in.CreateOnPush == nil && in.StashDays == nil {
+			fail(http.StatusBadRequest, "say store, create_on_push or stash_retention_days")
 			return
+		}
+		if in.StashDays != nil {
+			sr, ok := st.(StashRetentionSettings)
+			if !ok {
+				fail(http.StatusNotImplemented, "this hub cannot set the stash retention")
+				return
+			}
+			if err := sr.SetStashRetentionDays(*in.StashDays); err != nil {
+				fail(http.StatusBadRequest, err.Error())
+				return
+			}
 		}
 		if in.Store != nil {
 			if err := st.SetGitStore(*in.Store); err != nil {
@@ -274,7 +293,13 @@ func (p *Proxy) serveGitSettings(w http.ResponseWriter, r *http.Request, fail fu
 		fail(http.StatusInternalServerError, "could not read the settings: "+err.Error())
 		return
 	}
-	_ = json.NewEncoder(w).Encode(map[string]any{"store": path, "create_on_push": on})
+	out := map[string]any{"store": path, "create_on_push": on}
+	if sr, ok := st.(StashRetentionSettings); ok {
+		if n, err := sr.StashRetentionDays(); err == nil {
+			out["stash_retention_days"] = n
+		}
+	}
+	_ = json.NewEncoder(w).Encode(out)
 }
 
 // ── control tools ───────────────────────────────────────
