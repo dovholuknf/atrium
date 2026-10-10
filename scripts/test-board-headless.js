@@ -15496,6 +15496,143 @@ async function termMenuSection(browser, base) {
   }
   if (errors.length) fail("the terminals menu page threw: " + errors.join(" | "));
 }
+// ── closing a card is one dialog that shows its steps (u-close-one-dialog, u-close-progress) ──────────────────────
+// The summary, the asked worktree as a row inside it with keep / stash / delete, one button. Pressed, the dialog stays
+// up and ticks off each step the server says as a close-progress event, shuts itself when done and stays on a failure.
+// CLOSE_SHOT=<dir> writes the pictures there, CLOSE_SHOT_TAG names them (before or after).
+async function closeOneDialogSection(browser, base) {
+  const was = tasksMode;
+  tasksMode = "land";
+  landCard("land-co-a", { supervised: true, status: "running", created_at: "2026-09-19T12:00:00Z" });
+  landList = [LAND["land-co-a"]];
+  landPerms = [];
+  const errors = [];
+  const shot = async (p, name) => {
+    if (!process.env.CLOSE_SHOT) return;
+    await p.locator("dialog#ask").screenshot({ path: process.env.CLOSE_SHOT + "/" + name + "-" + (process.env.CLOSE_SHOT_TAG || "after") + ".png" });
+  };
+  try {
+    const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+    const posts = [];
+    let asks = [], release = null, answer = null;
+    const preview = () => ({ card: "land-co-a", disk_bytes: 480 * 1048576, can_stash: true,
+      items: [{ seq: 1, kind: "worktree", ref: "/w/ziti-console", action: asks.length ? "ask" : "free", bytes: 470 * 1048576 },
+        { seq: 2, kind: "branch", ref: "claude/x", action: "free" }],
+      asks, warnings: ["the session is still running. it is stopped first"], kept: ["the card and its transcript"] });
+    await ctx.route("**/v1/tasks/land-co-a/close", async route => {
+      const r = route.request();
+      if (r.method() === "GET") return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(preview()) });
+      const body = JSON.parse(r.postData() || "{}");
+      posts.push(body);
+      if (release) await new Promise(res => { release.go = res; release.hit && release.hit(); });
+      if (answer) return route.fulfill(answer(body));
+      return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ closed: true, items: [], stashes: [], left: 0, warnings: [] }) });
+    });
+    const p = await ctx.newPage();
+    p.on("pageerror", e => errors.push(String(e)));
+    await p.goto(base, { waitUntil: "domcontentloaded" });
+    await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
+    await p.evaluate(() => { switchView("terms"); });
+    for (const end = Date.now() + slow(10000); openStreams.filter(r => !r.destroyed).length < 1 && Date.now() < end;) await p.waitForTimeout(100);
+    const say = ev => openStreams.forEach(r => { try { r.write("event: close-progress\ndata: " + JSON.stringify(Object.assign({ id: posts[posts.length - 1].progress, seconds: 0 }, ev)) + "\n\n"); } catch (e) {} });
+    const rowsOf = () => p.evaluate(() => [...document.querySelectorAll("#close-steps li")].map(l => l.className + ":" + l.dataset.key));
+    const askUp = () => p.waitForFunction(() => document.getElementById("ask").open && /^close /.test(document.getElementById("ask-title").textContent), null, { timeout: slow(5000) });
+
+    // ONE dialog with the worktree as a row, its size, and stash preselected
+    asks = [{ seq: 1, path: "/w/ziti-console", branch: "claude/x", dirty: 2, unpushed: 1, bytes: 470 * 1048576 }];
+    await p.evaluate(() => { closeCardAsk("land-co-a", { display_title: "openziti/ziti-console #967" }); });
+    await askUp().catch(() => fail("closeOne: no close dialog"));
+    if (process.env.CLOSE_SHOT_TAG === "before") {
+      // the base board: two dialogs. Only for taking the "before" pictures from it.
+      await shot(p, "close-dialog-1");
+      await p.click('#ask-actions button:has-text("stash to the hub")');
+      await p.waitForFunction(() => /^close /.test(document.getElementById("ask-title").textContent), null, { timeout: slow(5000) });
+      await shot(p, "close-dialog-2");
+      await ctx.close();
+      return;
+    }
+    const first = await p.evaluate(() => ({ title: document.getElementById("ask-title").textContent, body: document.getElementById("ask-body").textContent,
+      buttons: [...document.querySelectorAll("#ask-actions button")].map(b => b.textContent).join(), checked: [...document.querySelectorAll("#ask-body .close-wt input:checked")].map(i => i.value).join(),
+      rows: document.querySelectorAll("#ask-body .close-wt").length }));
+    if (first.title !== "close openziti/ziti-console #967?") fail("closeOne: the title is " + first.title);
+    if (first.buttons !== "cancel,close it") fail("closeOne: the buttons are " + first.buttons);
+    if (first.rows !== 1 || first.checked !== "stash") fail("closeOne: rows " + first.rows + ", chosen " + first.checked);
+    if (!/ziti-console \(470 MB\)/.test(first.body) || !/Frees \(480 MB\)/.test(first.body)) fail("closeOne: the dialog does not say the worktree's real size: " + first.body);
+    if (/work only this worktree has/.test(first.body)) fail("closeOne: the old second dialog's words are in it");
+    await shot(p, "close-dialog");
+    // delete is picked inline, cancel changes nothing
+    await p.click('#ask-actions button:has-text("cancel")');
+    await p.waitForTimeout(200);
+    if (posts.length) fail("closeOne: cancel posted a close");
+
+    // pressed: the dialog stays, the button is off and spins, the steps tick, the card reads closing
+    release = { hit: null };
+    await p.evaluate(() => { closeCardAsk("land-co-a", { display_title: "openziti/ziti-console #967" }); });
+    await askUp();
+    await p.click('#ask-body .close-wt input[value="delete"]');
+    await p.click('#ask-actions button:has-text("close it")');
+    for (let i = 0; i < 50 && !posts.length; i++) await p.waitForTimeout(100);
+    if (!posts.length || posts[0].confirm !== true || JSON.stringify(posts[0].answers) !== '{"1":"delete"}' || !/^close-/.test(posts[0].progress || "")) fail("closeOne: the close posted " + JSON.stringify(posts));
+    const busy = await p.evaluate(() => ({ off: [...document.querySelectorAll("#ask-actions button")].every(b => b.disabled), spin: !!document.querySelector("#ask-actions button.busy"),
+      open: document.getElementById("ask").open, radios: [...document.querySelectorAll("#ask-body .close-wt input")].every(i => i.disabled),
+      closing: (document.getElementById("closing-style") || {}).textContent || "" }));
+    if (!busy.off || !busy.spin || !busy.open || !busy.radios) fail("closeOne: not busy after the press: " + JSON.stringify(busy));
+    if (!/land-co-a/.test(busy.closing) || !/closing/.test(busy.closing)) fail("closeOne: the card does not read closing: " + busy.closing);
+    await p.keyboard.press("Escape");
+    await p.waitForTimeout(150);
+    if (!(await p.evaluate(() => document.getElementById("ask").open))) fail("closeOne: escape shut a working dialog");
+    say({ key: "session", line: "stopping the session", state: "run", detail: "" });
+    say({ key: "session", line: "stopping the session", state: "ok", detail: "" });
+    say({ key: "worktree:1", line: "removing /w/ziti-console (0.46 GB)", state: "run", detail: "" });
+    await p.waitForFunction(() => document.querySelectorAll("#close-steps li").length === 2, null, { timeout: slow(5000) }).catch(() => fail("closeOne: the steps were not drawn"));
+    let rows = await rowsOf();
+    if (rows.join() !== "ok:session,run:worktree:1") fail("closeOne: the rows are " + rows.join());
+    await shot(p, "close-progress");
+    say({ key: "worktree:1", line: "removing /w/ziti-console (0.46 GB)", state: "ok", detail: "" });
+    await p.waitForFunction(() => document.querySelector('#close-steps li[data-key="worktree:1"]').className === "ok", null, { timeout: slow(5000) }).catch(() => fail("closeOne: the worktree row did not tick off"));
+    release.go();
+    await p.waitForFunction(() => !document.getElementById("ask").open, null, { timeout: slow(5000) }).catch(() => fail("closeOne: the dialog did not shut itself when done"));
+    if ((await p.evaluate(() => (document.getElementById("closing-style") || {}).textContent || "")).length) fail("closeOne: the card still reads closing");
+
+    // a failure leaves the dialog open on the failed row, with what git said
+    posts.length = 0;
+    release = { hit: null };
+    await p.evaluate(() => { closeCardAsk("land-co-a", { display_title: "openziti/ziti-console #967" }); });
+    await askUp();
+    await p.click('#ask-actions button:has-text("close it")');
+    for (let i = 0; i < 50 && !posts.length; i++) await p.waitForTimeout(100);
+    if (posts[0].answers["1"] !== "stash") fail("closeOne: the default answer posted was " + JSON.stringify(posts[0].answers));
+    say({ key: "worktree:1", line: "stashing /w/ziti-console to the hub", state: "run", detail: "" });
+    say({ key: "worktree:1", line: "stashing /w/ziti-console to the hub", state: "fail", detail: "kept, the stash did not land: git push: rejected" });
+    await p.waitForFunction(() => document.querySelector('#close-steps li.fail'), null, { timeout: slow(5000) }).catch(() => fail("closeOne: the failed row was not drawn"));
+    answer = () => ({ status: 200, contentType: "application/json", body: JSON.stringify({ closed: true, items: [], stashes: [], left: 1, warnings: ["kept"] }) });
+    release.go();
+    await p.waitForTimeout(500);
+    const stayed = await p.evaluate(() => ({ open: document.getElementById("ask").open, fail: (document.querySelector("#close-steps li.fail") || {}).textContent || "",
+      buttons: [...document.querySelectorAll("#ask-actions button")].map(b => b.textContent + (b.disabled ? "!" : "")).join() }));
+    if (!stayed.open || !/git push: rejected/.test(stayed.fail)) fail("closeOne: a failure did not leave the dialog open on its row: " + JSON.stringify(stayed));
+    if (stayed.buttons !== "dismiss") fail("closeOne: after a failure the buttons are " + stayed.buttons);
+    await shot(p, "close-failed");
+    await p.click('#ask-actions button:has-text("dismiss")');
+    await p.waitForFunction(() => !document.getElementById("ask").open, null, { timeout: slow(5000) });
+
+    // nothing asked: the same dialog with no rows. An error from the server is a failed row too
+    asks = [];
+    release = null;
+    answer = () => ({ status: 409, contentType: "application/json", body: JSON.stringify({ error: "that card is being closed already", code: "closing" }) });
+    await p.evaluate(() => { closeCardAsk("land-co-a", { display_title: "openziti/ziti-console #967" }); });
+    await askUp();
+    if (await p.locator("#ask-body .close-wt").count()) fail("closeOne: rows with nothing asked");
+    await p.click('#ask-actions button:has-text("close it")');
+    await p.waitForFunction(() => /being closed already/.test((document.getElementById("close-steps") || {}).textContent || ""), null, { timeout: slow(5000) })
+      .catch(() => fail("closeOne: a refused close did not leave a failed row"));
+    if (!(await p.evaluate(() => document.getElementById("ask").open))) fail("closeOne: a refused close shut the dialog");
+    if (errors.length) fail("closeOne: page errors: " + errors.join(" | "));
+    await ctx.close();
+  } finally {
+    tasksMode = was;
+  }
+}
 // ── the hub's notify command in the gear (u-030) ────────────────────────────
 //
 // The mock server answers 404 to /_hub/notify, so each case routes it in the browser context.
@@ -21092,16 +21229,20 @@ async function pullsSection(browser, base) {
     await p.waitForSelector('#pulls-list .pull[data-id="pr_b"] button[data-act="close"]', { timeout: slow(5000) })
       .catch(() => fail("pulls: a row with a walker has no close button"));
     await p.click('#pulls-list .pull[data-id="pr_b"] button[data-act="close"]');
-    await p.waitForFunction(() => document.getElementById("ask").open && /work only this worktree has/.test(document.getElementById("ask-title").textContent), null, { timeout: slow(5000) })
-      .catch(() => fail("pulls: close did not ask about the dirty worktree"));
-    const asked = await p.evaluate(() => [...document.querySelectorAll("#ask-actions button")].map(b => b.textContent).join());
-    if (asked !== "cancel,keep,stash to the hub,delete") fail("pulls: the worktree ask offers " + asked);
-    await p.click('#ask-actions button:has-text("keep")');
     await p.waitForFunction(() => document.getElementById("ask").open && /^close /.test(document.getElementById("ask-title").textContent), null, { timeout: slow(5000) })
-      .catch(() => fail("pulls: close did not confirm"));
+      .catch(() => fail("pulls: close did not open its dialog"));
+    // ONE dialog: the dirty worktree is a row in it with its choice, stash preselected
+    const asked = await p.evaluate(() => [...document.querySelectorAll("#ask-actions button")].map(b => b.textContent).join());
+    if (asked !== "cancel,close it") fail("pulls: the close dialog offers " + asked);
+    if (await p.locator("#ask-body .close-wt").count() !== 1) fail("pulls: the dirty worktree is not a row in the close dialog");
+    if (await p.locator('#ask-body .close-wt input:checked').getAttribute("value") !== "stash") fail("pulls: stash is not preselected");
+    await p.click('#ask-body .close-wt input[value="keep"]');
     await p.click('#ask-actions button:has-text("close it")');
     for (let i = 0; i < 50 && !st.posts.some(x => x.startsWith("POST /v1/tasks/t-walker/close ")); i++) await p.waitForTimeout(100);
-    if (!st.posts.some(x => x === 'POST /v1/tasks/t-walker/close {"confirm":true,"answers":{"1":"keep"}}')) fail("pulls: the close did not post the answer: " + st.posts.filter(x => x.indexOf("close") >= 0).join(" | "));
+    const closePost = st.posts.filter(x => x.startsWith("POST /v1/tasks/t-walker/close ")).map(x => JSON.parse(x.slice("POST /v1/tasks/t-walker/close ".length)))[0];
+    if (!closePost || closePost.confirm !== true || JSON.stringify(closePost.answers) !== '{"1":"keep"}' || !closePost.progress) fail("pulls: the close did not post the answer: " + st.posts.filter(x => x.indexOf("close") >= 0).join(" | "));
+    await p.waitForFunction(() => !document.getElementById("ask").open, null, { timeout: slow(5000) })
+      .catch(() => fail("pulls: the close dialog did not close itself when done"));
     // leftovers: grouped by owner with one close each, and a worktree nobody owns listed with none
     await p.click("#pulls-sweep");
     await p.waitForFunction(() => document.querySelectorAll('#pulls-left button[data-act="left-close"]').length === 2, null, { timeout: slow(5000) })
@@ -21113,7 +21254,7 @@ async function pullsSection(browser, base) {
       .catch(() => fail("pulls: closing an owner with no card did not confirm"));
     await p.click('#ask-actions button:has-text("close it")');
     for (let i = 0; i < 50 && !st.posts.some(x => x.indexOf('"confirm":true') >= 0 && x.startsWith("POST /v1/sweep/close ")); i++) await p.waitForTimeout(100);
-    if (!st.posts.some(x => x === 'POST /v1/sweep/close {"owner":"pending:x","confirm":true,"answers":{}}')) fail("pulls: the owner's close did not post: " + st.posts.filter(x => x.indexOf("sweep") >= 0).join(" | "));
+    if (!st.posts.some(x => /^POST \/v1\/sweep\/close \{"owner":"pending:x","confirm":true,"answers":\{\},"progress":"close-[a-z0-9]+"\}$/.test(x))) fail("pulls: the owner's close did not post: " + st.posts.filter(x => x.indexOf("sweep") >= 0).join(" | "));
     // the log of a failed row
     await p.click('#pulls-list .pull[data-id="pr_c"] button[data-act="log"]');
     await p.waitForFunction(() => /fetch FAILED/.test((document.querySelector('#pulls-list .pull[data-id="pr_c"] .pull-log') || {}).textContent || ""), null, { timeout: slow(5000) })
@@ -26415,7 +26556,7 @@ async function main() {
   // HEADLESS_ONLY=termWear,bridge, or `node scripts/test-board-headless.js termWear bridge`, runs just those sections, for working on one.
   // An unknown name exits 2 and runs nothing.
   const ONLY = process.env.HEADLESS_ONLY || process.argv.slice(2).join(",");
-  if (ONLY) {    const only = { boardDocs: boardDocsSection, phoneBoardCompact: phoneBoardCompactSection, termWear: termWearSection, bridge: bridgeSection, settingsOnce: settingsOnceSection,
+  if (ONLY) {    const only = { closeOneDialog: closeOneDialogSection, boardDocs: boardDocsSection, phoneBoardCompact: phoneBoardCompactSection, termWear: termWearSection, bridge: bridgeSection, settingsOnce: settingsOnceSection,
       groupRemove: groupRemoveSection, worn: wornSection, restartGate: restartGateSection, restartStays: restartStaysSection, atriumDown: atriumDownSection,
       toastStays: toastStaysSection, groupColor: groupColorSection,
       groupDrag: groupDragSection, tooltip: tooltipSection, linkTip: linkTipSection, fileOpenOutside: fileOpenOutsideSection, readTabSize: readTabSizeSection,popoutTagFlip: popoutTagFlipSection, prefsEverywhere: prefsEverywhereSection, mPrefsEverywhere: (b) => mPrefsEverywhereSection(b), idleRate: idleRateSection, foldStill: foldStillSection,
@@ -28434,6 +28575,7 @@ async function main() {
     await unit("phoneKeyLit", () => phoneKeyLitSection(browser, base));
     await unit("shiftMenu", () => shiftMenuSection(browser, base));
     await unit("termMenu", () => termMenuSection(browser, base));
+    await unit("closeOneDialog", () => closeOneDialogSection(browser, base));
     await unit("notifyCommand", () => notifyCommandSection(browser, base));
     await unit("presence", () => presenceSection(browser, base));
     await unit("tallPty", () => tallPtySection(browser, base));

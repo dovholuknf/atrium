@@ -266,7 +266,25 @@ function askUser(opts) {
       if (b.style) el.className = b.style;
       // Drawn but off, with the reason on hover, for an action that exists and cannot be done from here.
       if (b.disabled) { el.disabled = true; el.setAttribute("data-tip", b.disabled); }
-      el.onclick = () => {
+      el.onclick = async () => {
+        // A button that WORKS while the dialog stays up: `hold` is an async function. The dialog is not answered
+        // until it settles, every button is off and this one spins. It answers "close" to close the dialog with the
+        // button's value, and anything else leaves it open with only a dismiss, for a failure that must be read.
+        if (b.hold) {
+          const all = [...actions.querySelectorAll("button")];
+          all.forEach(x => { x.disabled = true; });
+          el.classList.add("busy");
+          askDlg.dataset.busy = "1";
+          let how = "";
+          try { how = await b.hold(); } catch (e) { how = ""; }
+          delete askDlg.dataset.busy;
+          el.classList.remove("busy");
+          if (how === "close") { askClose(settle, answerOf(opts, b.value, input, choices)); return; }
+          all.forEach(x => { x.disabled = false; });
+          el.remove();
+          if (all[0]) all[0].textContent = "dismiss";
+          return;
+        }
         if (opts.rememberKey && rememberOn.checked && b.value !== null) {
           skipConfirm(opts.rememberKey, true);
         }
@@ -282,9 +300,12 @@ function askUser(opts) {
     // was answered can be open again by the time the first one's event lands,
     // and it answered the new question with a cancel before anybody saw it.
     askDlg.onclose = () => { if (!askDlg.open) settle(null); };
+    // A dialog that is working is not dismissed by escape.
+    askDlg.oncancel = e => { if (askDlg.dataset.busy) e.preventDefault(); };
     askDlg.onkeydown = e => {
       if (e.key !== "Enter" || e.shiftKey) return;
       e.preventDefault();
+      if (askDlg.dataset.busy) return;
       const last = buttons[buttons.length - 1];
       askClose(settle, answerOf(opts, last.value, input, choices));
     };
