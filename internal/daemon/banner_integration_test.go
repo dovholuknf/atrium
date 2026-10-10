@@ -30,7 +30,7 @@ func TestAMessageFromAPeerSaysWhichAndSaysItWasNotYou(t *testing.T) {
 		t.Fatalf("the banner does not say which session: %q", got)
 	}
 	// The load-bearing half. Without it a peer's request reads as yours.
-	if !strings.Contains(got, "not as something the human typed") {
+	if !strings.Contains(got, "not the human") {
 		t.Fatalf("the banner does not disclaim the human: %q", got)
 	}
 }
@@ -48,7 +48,7 @@ func TestAMixedBatchIsDescribedAsMixed(t *testing.T) {
 		t.Fatalf("a mixed batch claimed one author: %q", got)
 	}
 	// And each is labeled, or "some of these are from a peer" is unusable.
-	if !strings.Contains(got, "From sg4/other:") {
+	if !strings.Contains(got, "@sg4/other says:") {
 		t.Fatalf("a mixed batch does not say which is which: %q", got)
 	}
 }
@@ -61,7 +61,7 @@ func TestTwoPeersInOneBatchIsMixed(t *testing.T) {
 		{Text: "a", FromPeer: "sg4/one"},
 		{Text: "b", FromPeer: "sg4/two"},
 	}, false)
-	if !strings.Contains(got, "other sessions") {
+	if !strings.Contains(got, "some from the human") {
 		t.Fatalf("two peers were reported as one: %q", got)
 	}
 }

@@ -50,7 +50,7 @@ func TestAnEndingDoneTakesACommitTheHubHasAndTellsTheLauncherWithNoNudge(t *test
 		t.Fatalf("code %d, out %v", rec.Code, out)
 	}
 	msgs := pendingFrom(t, d, launcher.ID)
-	if len(msgs) != 1 || !strings.Contains(msgs[0].Text, "done at abc1234") {
+	if len(msgs) != 1 || !strings.Contains(msgs[0].Text, "done abc1234") {
 		t.Fatalf("the launcher has %+v", msgs)
 	}
 	stopSilently(t, d, "worker")

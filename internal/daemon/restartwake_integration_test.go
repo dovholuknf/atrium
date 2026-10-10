@@ -213,7 +213,7 @@ func TestAWakeIsTypedBehindTheAtriumLabel(t *testing.T) {
 	if !strings.HasPrefix(got, want) {
 		t.Fatalf("the wake was not typed behind the label: %q", got)
 	}
-	if wakeLabel != atriumLabel("restart wake:") || peerBanner("x") != atriumLabel("x says:") {
+	if wakeLabel != atriumLabel("restart wake:") || peerBanner("x") != atriumLabel("@x says:") {
 		t.Fatal("the wake and the peer banner do not share one label style")
 	}
 	if strings.ContainsAny(wakeLabel, "\r\n") {

@@ -19,7 +19,7 @@ func TestAnEndingReachesALauncherOnAnotherRoomByWayOfTheHub(t *testing.T) {
 		want string
 	}{
 		{"done", FinishRequest{Agent: "worker", Status: ReportDone, SHA: "abc1234", Recap: "all green", Ended: true},
-			"done at abc1234"},
+			"done abc1234"},
 		{"blocked", FinishRequest{Agent: "worker", Status: ReportBlocked, Ask: "need a token", Ended: true},
 			"need a token"},
 	} {
@@ -75,7 +75,7 @@ func TestAnEndingIsHeldVisibleOnAHoldNoticesLaunchersCard(t *testing.T) {
 		want string
 	}{
 		{"done", FinishRequest{Agent: "worker", Status: ReportDone, SHA: "abc1234", Recap: "all green", Ended: true},
-			"done at abc1234"},
+			"done abc1234"},
 		{"blocked", FinishRequest{Agent: "worker", Status: ReportBlocked, Ask: "need a token", Ended: true},
 			"need a token"},
 	} {
