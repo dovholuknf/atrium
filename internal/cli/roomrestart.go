@@ -17,6 +17,7 @@ import (
 
 	"github.com/dovholuknf/atrium/internal/daemon"
 	"github.com/dovholuknf/atrium/internal/link"
+	"github.com/dovholuknf/atrium/internal/store"
 )
 
 // Restarting a room because its hub asked it to.
@@ -315,16 +316,45 @@ func tellRoomToPark(boardURL, id, why string) error {
 	return nil
 }
 
+// wrapMargin is what the wrap-up call is given over the wait the room keeps.
+const wrapMargin = time.Minute
+
+// wrapCallLimit bounds the wrap-up call: the wait the room keeps, capped as the room caps it, plus a margin.
+func wrapCallLimit(wait time.Duration) time.Duration {
+	if max := store.MaxRestartWrapWaitS * time.Second; wait > max {
+		wait = max
+	}
+	return wait + wrapMargin
+}
+
+// roomWrapWait reads the wait the room is configured with. When it cannot be read the longest the room allows is
+// assumed, so the call is still bounded.
+func roomWrapWait(boardURL string) time.Duration {
+	client := &http.Client{Timeout: 5 * time.Second}
+	res, err := client.Get(boardURL + "/v1/settings")
+	if err == nil {
+		defer res.Body.Close()
+		var v struct {
+			Secs int `json:"restart_wrap_wait_s"`
+		}
+		if res.StatusCode < 300 && json.NewDecoder(res.Body).Decode(&v) == nil && v.Secs > 0 {
+			return time.Duration(v.Secs) * time.Second
+		}
+	}
+	return store.MaxRestartWrapWaitS * time.Second
+}
+
 // wrapRoomAgents asks this room to wrap its working cards up and waits for the answer. A zero wait takes the
 // room's own setting. The call is bounded by that wait, which the room keeps, plus a margin.
 func wrapRoomAgents(boardURL, why string, wait time.Duration, dir string) (daemon.WrapReport, error) {
 	var rep daemon.WrapReport
 	q := url.Values{"why": {why}}
-	limit := time.Hour
 	if wait > 0 {
 		q.Set("wait", strconv.Itoa(int(wait/time.Second)))
-		limit = wait + time.Minute
+	} else {
+		wait = roomWrapWait(boardURL)
 	}
+	limit := wrapCallLimit(wait)
 	restartLog(dir, "asking the working cards to wrap up before the restart")
 	client := &http.Client{Timeout: limit}
 	res, err := client.Post(boardURL+"/v1/restart-wrap?"+q.Encode(), "application/json", nil)

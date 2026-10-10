@@ -252,3 +252,62 @@ func TestRestartWrapWaitSetting(t *testing.T) {
 		t.Fatalf("set = %s", got)
 	}
 }
+
+func TestSecondStopJoinsTheRunningWrapUp(t *testing.T) {
+	fastWrap(t)
+	d := testDaemon(t)
+	d.opts.ShutdownToken = "tok"
+	task, f, _ := ncCard(t, d)
+	midTurn(d, task.ID)
+	if err := d.st.SetSetting(store.SettingRestartWrapWait, "3600"); err != nil {
+		t.Fatal(err)
+	}
+
+	d.handleShutdown(httptest.NewRecorder(), wrapShutdownReq(""))
+	until(t, "the wrap-up prompt", func() bool { return wraps(f) == 1 })
+	joined := make(chan WrapReport, 1)
+	go func() { joined <- d.wrapUpForRestart(context.Background(), time.Hour, "a second stop") }()
+	d.handleShutdown(httptest.NewRecorder(), wrapShutdownReq(""))
+	time.Sleep(50 * time.Millisecond)
+	select {
+	case <-joined:
+		t.Fatal("the second stop did not wait for the running wrap-up")
+	default:
+	}
+	if stopped(d) {
+		t.Fatal("the room stopped while the wrap-up waited")
+	}
+	if _, _, err := d.ready(task); err != nil {
+		t.Fatal(err)
+	}
+	rep := report(t, joined)
+	if !rep.Already || len(rep.Ready) != 1 {
+		t.Fatalf("the joiner got %+v, want the running outcome", rep)
+	}
+	until(t, "the stop", func() bool { return stopped(d) })
+}
+
+func TestJoinGivesUpPastTheRunningDeadline(t *testing.T) {
+	old := wrapJoinMargin
+	wrapJoinMargin = 20 * time.Millisecond
+	t.Cleanup(func() { wrapJoinMargin = old })
+	d := testDaemon(t)
+	run, mine := d.wrap.begin(func() {}, time.Now().Add(20*time.Millisecond))
+	if !mine {
+		t.Fatal("begin refused")
+	}
+	start := time.Now()
+	rep := d.joinWrapUp(context.Background(), run)
+	if !rep.Already || time.Since(start) > 2*time.Second {
+		t.Fatalf("join = %+v after %s", rep, time.Since(start))
+	}
+}
+
+func TestCapWrapWait(t *testing.T) {
+	if got := capWrapWait(99999 * time.Second); got != time.Hour {
+		t.Fatalf("over-cap = %s", got)
+	}
+	if got := capWrapWait(90 * time.Second); got != 90*time.Second {
+		t.Fatalf("under-cap = %s", got)
+	}
+}
