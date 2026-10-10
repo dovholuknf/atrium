@@ -594,14 +594,17 @@ func TestOnlyAnAgentLaunchedClaudeGetsTheStopHook(t *testing.T) {
 		!strings.Contains(got[1], "turn --event end") || got[2] != "--mcp-config" {
 		t.Fatalf("agent claude launch got %q", got)
 	}
-	if got := withStopHook(claude, args, false); len(got) != 2 {
+	// A human's launch gets the agent view keys and no hook.
+	if got := withStopHook(claude, args, false); len(got) != 4 || got[0] != "--settings" ||
+		strings.Contains(got[1], "Stop") || !strings.Contains(got[1], `"disableAgentView":true`) {
 		t.Fatalf("a human's launch got %q", got)
 	}
 	if got := withStopHook(&store.Harness{ID: "gemini", Cmd: "gemini"}, args, true); len(got) != 2 {
 		t.Fatalf("a gemini launch got %q", got)
 	}
 	stopHookCommand = func() string { return "" }
-	if got := withStopHook(claude, args, true); len(got) != 2 {
+	if got := withStopHook(claude, args, true); len(got) != 4 || strings.Contains(got[1], "Stop") ||
+		!strings.Contains(got[1], `"leftArrowOpensAgents":false`) {
 		t.Fatalf("with the operator's own Stop hook installed it still added one: %q", got)
 	}
 }

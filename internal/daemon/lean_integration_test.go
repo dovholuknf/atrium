@@ -184,6 +184,18 @@ func TestLeanSettingsKeepsGateAndHooksAndDropsWhatPrintsIntoContext(t *testing.T
 	}
 }
 
+func TestLeanSettingsKeepsACardOutOfTheAgentView(t *testing.T) {
+	raw, err := leanSettings([]byte(leanTestSettings), "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{`"disableAgentView":true`, `"leftArrowOpensAgents":false`, "hook --event tool-start"} {
+		if !strings.Contains(raw, want) {
+			t.Fatalf("%s missing from %s", want, raw)
+		}
+	}
+}
+
 func TestLeanSettingsAddsTheStopHookWhenAsked(t *testing.T) {
 	raw, err := leanSettings([]byte(leanTestSettings), "C:/a/atrium.exe turn --event end")
 	if err != nil {

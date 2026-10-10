@@ -417,6 +417,9 @@ func leanSettings(user []byte, stopHook string) (string, error) {
 		// Empty attribution: no Co-Authored-By trailer and no reminder about one.
 		"attribution": map[string]string{"commit": "", "pr": ""},
 	}
+	for k, v := range noAgentViewSettings {
+		out[k] = v
+	}
 	for _, k := range []string{"permissions", "env", "model", "effortLevel", "statusLine"} {
 		if v, ok := doc[k]; ok {
 			out[k] = v
