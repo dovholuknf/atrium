@@ -530,18 +530,31 @@ func reportBody(task *store.Task, status, sha string, unverified bool, recap str
 	if status == "" {
 		status = ReportDone
 	}
-	head := "report from " + task.WireName + ": " + status
+	who := task.WireName
+	if task.Alias != "" {
+		who = task.Alias
+	}
+	head := "@" + who + " " + status
 	if sha != "" {
-		head += " at " + sha
+		short := sha
+		if len(short) > 8 {
+			short = short[:8]
+		}
+		head += " " + short
 		if unverified {
-			head += " (unverified: that commit is not in " + task.Worktree + ")"
+			head += " unverified"
 		}
 	}
-	body := head + "\ncard " + task.ID
 	if recap != "" {
-		body += "\n\n" + recap
+		if status == ReportBlocked {
+			// A blocked worker's ask rides in the recap and is the point of the report: all of it, on one line.
+			head += ": " + strings.Join(strings.Fields(strings.TrimPrefix(recap, "needs: ")), " ")
+		} else {
+			line, _, _ := strings.Cut(strings.TrimSpace(recap), "\n")
+			head += ": " + line
+		}
 	}
-	return body
+	return head
 }
 
 // taskFor resolves a session to its card, by id when it has one and by wire

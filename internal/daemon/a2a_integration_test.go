@@ -208,7 +208,7 @@ func TestAReportIsNotASilentStop(t *testing.T) {
 	}
 	stopTurn(t, d, "worker")
 	msgs := pendingFrom(t, d, launcher.ID)
-	if len(msgs) != 1 || !strings.Contains(msgs[0].Text, "report from") ||
+	if len(msgs) != 1 || !strings.Contains(msgs[0].Text, " done") ||
 		!strings.Contains(msgs[0].Text, "the matrix is written up") {
 		t.Fatalf("the launcher has %d: %v", len(msgs), msgs)
 	}

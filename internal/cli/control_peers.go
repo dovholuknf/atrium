@@ -69,11 +69,9 @@ func addPeerTools(s *mcp.Server) {
 			"reply: if you want one, ask for it and then look, or wait to be told.\n\n" +
 			"`when: \"done\"` waits for that session's turn to end instead, for something that " +
 			"should not disturb it mid-thought.\n\n" +
-			"What arrives is framed as a person speaking, not as a refusal, so write it as one " +
-			"agent talking to another. The receiving session is told who you are " +
-			"automatically, so do not announce yourself.\n\n" +
-			"Ask for a reply explicitly, and say how. The other session answers by calling " +
-			"`atrium_say` back at your own handle, which is in `atrium_peers` under `me`.\n\n" +
+			"Write one or two sentences. The receiver is told who you are and already knows how to " +
+			"answer, so never add \"reply with atrium_say to X\". Ask outright if you want an answer.\n\n" +
+			"Answer with an atrium tool if an answer is owed. Write nothing else: the human sees the tool call.\n\n" +
 			"ANOTHER ROOM is `name@room` (or `alias@room`), carried by this room's hub. The " +
 			"recipient sees you as `you@thisroom` and answers to that. `held` means the hub or " +
 			"that room is not answering: it is kept here and sent when they are, for up to a " +

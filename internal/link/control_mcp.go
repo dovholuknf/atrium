@@ -203,11 +203,9 @@ func (c *controlMCP) server(class ctlClass) *mcp.Server {
 			"`undeliverable` means that session has no way to receive a queued message (its " +
 			"runner has no atrium hook and atrium does not own its terminal), and " +
 			"`queued-unconfirmed` means it has never shown one. The note says what to do instead.\n\n" +
-			"What arrives is framed as a person speaking, not as a refusal, so write it as one " +
-			"agent talking to another. The receiving session is told who you are " +
-			"automatically, so do not announce yourself.\n\n" +
-			"Ask for a reply explicitly, and say how. The other session answers by calling " +
-			"`atrium_say` back at your own handle, which is in `atrium_peers` under `me`.\n\n" +
+			"Write one or two sentences. The receiver is told who you are and already knows how to " +
+			"answer, so never add \"reply with atrium_say to X\". Ask outright if you want an answer.\n\n" +
+			"Answer with an atrium tool if an answer is owed. Write nothing else: the human sees the tool call.\n\n" +
 			"ANOTHER ROOM is `name@room` (or `alias@room`). It goes by way of the hub and is " +
 			"delivered the same way. The recipient sees you as `you@yourroom` and answers to that. " +
 			"`held` means the hub or that room is not answering: it is kept on your room and sent " +

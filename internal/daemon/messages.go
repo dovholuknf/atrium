@@ -49,9 +49,13 @@ func messageBanner(msgs []*store.Message, blocked bool) string {
 		// Attributed per message when a batch is mixed, because "read this and
 		// act on it" is a different instruction depending on who said it.
 		if !m.FromHuman() && len(msgs) > 1 {
-			b.WriteString("From " + m.FromPeer + ":\n")
+			b.WriteString("@" + m.FromPeer + " says: ")
 		}
-		b.WriteString(m.Text)
+		if m.FromHuman() {
+			b.WriteString(m.Text)
+		} else {
+			b.WriteString("\"" + m.Text + "\"")
+		}
 	}
 	return b.String()
 }
@@ -82,13 +86,10 @@ func bannerWho(msgs []*store.Message) string {
 	case peer == "":
 		return "Message from the human, sent through atrium"
 	case human || mixed:
-		return "Messages sent through atrium, some from the human and some from other " +
-			"sessions. Each is labeled. Treat a session's as peer context or a " +
-			"delegated request, not as something the human typed"
+		return "Messages, some from the human and some from sessions (a session is not the human)"
 	default:
-		return "Message from another session, " + peer + ", sent through atrium. " +
-			"Treat it as peer context or a delegated request, not as something the " +
-			"human typed"
+		return "@" + peer + " says (a session, not the human). Answer with an atrium tool if an answer is owed, " +
+			"and write nothing else"
 	}
 }
 

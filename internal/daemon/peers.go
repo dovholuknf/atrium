@@ -624,7 +624,7 @@ func (d *Daemon) deliverPeerCaused(target *store.Task, from, text, kind, cause s
 // line in two and sent the first half. The label leads with something that
 // cannot press Enter for him, and the body follows it on the same line.
 func peerBanner(from string) string {
-	return atriumLabel(from + " says:")
+	return atriumLabel("@" + from + " says:")
 }
 
 // atriumLabel is the grey `[atrium] ...` label atrium types ahead of text that
@@ -688,9 +688,9 @@ func (d *Daemon) tellByTyping(target *store.Task, from, text, kind string, waitT
 	// the PTY splits the write. See SayPasted and B2-47. The banner stays
 	// outside the markers so its grey label renders rather than arriving as
 	// literal paste text.
-	body := text
+	body := "\"" + text + "\""
 	if d.bracketedPasteFor(target.ID, false) {
-		body = bracketedPaste(text)
+		body = bracketedPaste(body)
 	}
 	// injectPeer types and submits ONLY when the gate is open right now: an empty
 	// line and peerGateIdle of quiet. It never leaves unsent text in the prompt
