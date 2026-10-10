@@ -353,6 +353,23 @@ func TestSecretFileNames(t *testing.T) {
 	}
 }
 
+// The Windows spellings of a secret name are refused, and the near misses are not.
+func TestSecretFileNamesWindowsForms(t *testing.T) {
+	for _, n := range []string{"key.pem.", "key.pem ", "key.pem...", "key.pem. . ", "a.pem::$DATA", "a.pem:alt",
+		".env:alt", ".env.", "sub/id_rsa.", `sub\key.pem.`, ".git./config", ".git::$INDEX_ALLOCATION/config",
+		".ssh /id", "x.key::$DATA", "ca.key. "} {
+		if !SecretFileName(n) {
+			t.Errorf("%q was allowed", n)
+		}
+	}
+	for _, n := range []string{"notes.md.", "notes.md ", "notes.md::$DATA", "notes.md:alt", "a.b.", "...", ":", "a:.pem.md",
+		"git./readme.md", "key.pem.md."} {
+		if SecretFileName(n) {
+			t.Errorf("%q was refused", n)
+		}
+	}
+}
+
 func TestEmptyAndTitleRules(t *testing.T) {
 	s := open(t)
 	_, err := s.DocAdd(docIn("t", "t.md", ""))
