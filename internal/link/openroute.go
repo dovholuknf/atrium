@@ -21,7 +21,8 @@ import (
 //
 //   - a room the caller named, by header or query, is where it goes.
 //   - otherwise the link is matched against the hub's own recogniser table, and a pull request some room already
-//     claimed goes to that room, which answers its live card rather than making a second one.
+//     claimed goes to that room, which answers its live card rather than making a second one. An issue, a branch and a
+//     support link are claimed by their key the same way.
 //   - otherwise the least busy room, as a paste on the pulls tab is placed. That room claims the key for itself.
 //
 // The answer comes back with `room` set and `card` and `pr` tagged, so the board can attach the card wherever it is.
@@ -56,14 +57,15 @@ func (p *Proxy) placeOpen(w http.ResponseWriter, r *http.Request) (*http.Request
 	return r.WithContext(context.WithValue(r.Context(), openRoomKey{}, room)), true
 }
 
-// openKey is the claim key of a pasted pull request, read from the hub's recogniser table, or "" when the hub has no
-// table, nothing matches, or the match is not a pull request. The body is put back for the room.
+// openKey is the claim key of a pasted link, read from the hub's recogniser table, or "" when the hub has no table,
+// nothing matches, or the link is one no room opens. The body is put back for the room.
 func (p *Proxy) openKey(r *http.Request) string {
 	key, _ := p.openTarget(r)
 	return key
 }
 
-// openTarget reads a pasted link against the hub's recogniser table: the claim key when it is a pull request, and the
+// openTarget reads a pasted link against the hub's recogniser table: the claim key of a pull request, issue, branch or
+// support link (empty when it is none of them), and the
 // repo ("host/org/repo") the link opens in when it has one, so placement can prefer a room that holds it. A link that
 // names no repo opens in the request's `repo`, else the row's default repo, and "none" is a scratch folder (no repo).
 // Both are "" when the hub has no table or nothing matches. The body is put back for the room.
@@ -104,8 +106,9 @@ func (p *Proxy) openTarget(r *http.Request) (key, repo string) {
 		repo = ""
 	}
 	if !store.IsPRRow(row.Tags) {
-		// An issue, a branch or a support link is not claimed by key yet: it goes to the least busy room.
-		return "", repo
+		// An issue, a branch or a support link is keyed as the room keys it, and the room claims it on the first open.
+		// A link the room could not open has no key, and goes to the least busy room.
+		return strings.ToLower(store.ClassifyLink(row.Fill(vars)).Key(row.Kind)), repo
 	}
 	num, _ := strconv.Atoi(strings.TrimSpace(vars["num"]))
 	if host == "" || org == "" || name == "" || num <= 0 {

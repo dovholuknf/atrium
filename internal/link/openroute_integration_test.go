@@ -105,3 +105,52 @@ func TestOpenOnTheHubPrefersARoomThatHoldsTheRepo(t *testing.T) {
 		t.Fatalf("rooms that cannot say went to %q", placed)
 	}
 }
+
+// AN ISSUE OR A BRANCH LINK IS CLAIMED BY ITS KEY, as a PR's is. A re-paste goes to the room that holds the claim, busy
+// as it is, and a first paste with no claim goes to the least busy room. A PR link still routes as it did.
+func TestOpenOnTheHubRoutesARepastedIssueOrBranchToItsClaim(t *testing.T) {
+	pr := seedRow("github-pull-request", 10,
+		`^https?://(?P<host>github\.com)/(?P<org>[A-Za-z0-9_.-]+)/(?P<repo>[A-Za-z0-9_.-]+)/pull/(?P<num>\d+)(?:[/?#].*)?$`)
+	pr.Tags = "pull-request,{repo}"
+	issue := seedRow("github-issue", 20,
+		`^https?://(?P<host>github\.com)/(?P<org>[A-Za-z0-9_.-]+)/(?P<repo>[A-Za-z0-9_.-]+)/issues/(?P<num>\d+)(?:[/?#].*)?$`)
+	issue.Tags, issue.Branch, issue.Kind = "issue", "issue-{num}", "github"
+	branch := seedRow("github-branch", 30,
+		`^https?://(?P<host>github\.com)/(?P<org>[A-Za-z0-9_.-]+)/(?P<repo>[A-Za-z0-9_.-]+)/tree/(?P<ref>[A-Za-z0-9_./-]+)$`)
+	branch.Tags, branch.Branch, branch.Kind = "branch", "{ref}", "github"
+	withSeed(t, pr, issue, branch)
+	x := newClaimHub(t, map[string]int{"alpha": 3, "beta": 0})
+	defer x.done()
+	x.proxy.SetForge(&memSettings{m: map[string]string{}}, nil)
+
+	for _, c := range []struct{ key, url string }{
+		{"github.com/openziti/zrok/i12", "https://github.com/openziti/zrok/issues/12"},
+		{"github.com/openziti/zrok@feat/y", "https://github.com/openziti/zrok/tree/feat/y"},
+		{"github.com/openziti/zrok/12", "https://github.com/openziti/zrok/pull/12/files"},
+	} {
+		if _, _, err := x.st.ClaimPR(c.key, "alpha", "open"); err != nil {
+			t.Fatal(err)
+		}
+		code, placed, out := x.openVia(t, "", c.url)
+		if code != http.StatusCreated || placed != "alpha" || out["room"] != "alpha" {
+			t.Errorf("%s held by alpha = %d %q %v", c.url, code, placed, out)
+		}
+	}
+
+	// no claim: the least busy room. The room claims the key when it opens, so the hub does not
+	_, placed, _ := x.openVia(t, "", "https://github.com/openziti/zrok/issues/13")
+	if placed != "beta" {
+		t.Errorf("an unclaimed issue went to %q", placed)
+	}
+	if _, err := x.st.PRClaimOf("github.com/openziti/zrok/i13"); err == nil {
+		t.Error("the hub claimed a key the room has not")
+	}
+	// the claim table keeps keys in lower case, so a branch pasted in another case still finds its claim
+	if _, _, err := x.st.ClaimPR("github.com/openziti/zrok@feat/z", "alpha", "open"); err != nil {
+		t.Fatal(err)
+	}
+	_, placed, _ = x.openVia(t, "", "https://github.com/openziti/zrok/tree/Feat/Z")
+	if placed != "alpha" {
+		t.Errorf("a branch in another case went to %q", placed)
+	}
+}

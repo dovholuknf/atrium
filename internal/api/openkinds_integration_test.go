@@ -3,6 +3,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"strings"
 	"testing"
@@ -160,6 +161,36 @@ func TestOpenATicketWithNoRepoAndNoSCMRootSaysWhy(t *testing.T) {
 	code, out := oh.open(t, "https://acme.zendesk.com/agent/tickets/9")
 	if code != 422 || out["code"] != "no_scm_root" || out["step"] != "worktree" || !strings.Contains(out["error"].(string), "git.scm_root") {
 		t.Errorf("%d %v", code, out)
+	}
+}
+
+// A FIRST OPEN OF A NON-PR LINK CLAIMS ITS KEY with the hub, as a PR's is claimed, and a link another room holds is not
+// opened here. A repeat open answers the live card without asking again.
+func TestOpenAnIssueClaimsItsKeyAndRefusesOneAnotherRoomHolds(t *testing.T) {
+	oh := newOpenHarness(t, &fakeForge{})
+	oh.checkout(t, "o", "r")
+	var asked []PRClaimAsk
+	owner := "" // empty: this room is the owner
+	oh.srv.ClaimPR = func(_ context.Context, a PRClaimAsk) (PRClaimReply, error) {
+		asked = append(asked, a)
+		if owner != "" {
+			return PRClaimReply{Owner: owner}, nil
+		}
+		return PRClaimReply{Owner: "alpha", Mine: true}, nil
+	}
+	code, out := oh.open(t, "https://github.com/o/r/issues/3")
+	if code != 201 || len(asked) != 1 || asked[0].Key != "github.com/o/r/i3" || !asked[0].Held {
+		t.Fatalf("first open: %d %v, asked %+v", code, out, asked)
+	}
+	code, _ = oh.open(t, "https://github.com/o/r/issues/3")
+	if code != 200 || len(asked) != 1 {
+		t.Errorf("a live card was asked about again: %d, asked %+v", code, asked)
+	}
+
+	owner = "beta"
+	code, out = oh.open(t, "https://github.com/o/r/tree/feat/y")
+	if code != 409 || out["code"] != "held" || len(oh.launched) != 1 {
+		t.Errorf("a held link: %d %v, launched %d", code, out, len(oh.launched))
 	}
 }
 

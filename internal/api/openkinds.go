@@ -59,35 +59,8 @@ type linkKind struct {
 
 // classify reads the kind off the resolution. "" is a link the open verb cannot make a card for.
 func classify(got *store.Resolved) linkKind {
-	k := linkKind{
-		host:   strings.ToLower(strings.TrimSpace(got.Vars["host"])),
-		org:    strings.TrimSpace(got.Vars["org"]),
-		repo:   strings.TrimSpace(got.Vars["repo"]),
-		branch: strings.TrimSpace(got.Branch),
-	}
-	if k.host == "" {
-		k.host = strings.ToLower(strings.TrimSpace(got.Host))
-	}
-	k.num, _ = strconv.Atoi(strings.TrimSpace(got.Vars["num"]))
-	pr := false
-	for _, t := range got.Tags {
-		if t == store.PRTag {
-			pr = true
-		}
-	}
-	named := k.host != "" && k.org != "" && k.repo != ""
-	switch {
-	case pr && named && k.num > 0:
-		k.kind = linkPR
-	case pr:
-	case named && k.num > 0 && k.branch != "" && !holed(k.branch):
-		k.kind = linkIssue
-	case named && k.num <= 0 && k.branch != "" && !holed(k.branch):
-		k.kind = linkBranch
-	case !named && k.host != "" && k.num > 0 && k.branch != "" && !holed(k.branch):
-		k.kind = linkSupport
-	}
-	return k
+	c := store.ClassifyLink(got)
+	return linkKind{kind: c.Kind, host: c.Host, org: c.Org, repo: c.Repo, num: c.Num, branch: c.Branch}
 }
 
 // holed is whether a filled template still has a `{name}` nothing answered.
@@ -95,19 +68,7 @@ func holed(s string) bool { return strings.Contains(s, "{") }
 
 // key is the canonical key of the link. Section 4: an issue's key carries an `i`, so issue 5 and PR 5 are two keys.
 func (k linkKind) key(rowKind string) string {
-	switch k.kind {
-	case linkIssue:
-		return k.host + "/" + k.org + "/" + k.repo + "/i" + strconv.Itoa(k.num)
-	case linkBranch:
-		return k.host + "/" + k.org + "/" + k.repo + "@" + k.branch
-	case linkSupport:
-		kind := strings.ToLower(strings.TrimSpace(rowKind))
-		if kind == "" {
-			kind = "link"
-		}
-		return kind + ":" + k.host + "/" + strconv.Itoa(k.num)
-	}
-	return ""
+	return store.LinkKind{Kind: k.kind, Host: k.host, Org: k.org, Repo: k.repo, Num: k.num, Branch: k.branch}.Key(rowKind)
 }
 
 // openOther is the open verb for an issue, a branch or a support link. See the top of this file.
@@ -120,6 +81,18 @@ func (s *Server) openOther(w http.ResponseWriter, r *http.Request, in openReques
 		ans.Card, ans.Worktree, ans.Repo = t.ID, t.Worktree, cardRepo(t)
 		writeJSON(w, http.StatusOK, ans)
 		return
+	}
+
+	// THE CLAIM, as a PR's is made: the hub placed the paste here, so this room owns the key unless another holds it,
+	// and the next paste of the link goes to this room. A hub that cannot be asked is the same as no hub.
+	if s.ClaimPR != nil {
+		ctx, cancel := context.WithTimeout(r.Context(), prClaimWait)
+		rep, err := s.ClaimPR(ctx, PRClaimAsk{Key: key, Source: "open", Held: true})
+		cancel()
+		if err == nil && !rep.Mine {
+			openFail(w, http.StatusConflict, "claim", "held", "that link is held by "+rep.Owner+". open it there")
+			return
+		}
 	}
 
 	// 2. which repo
