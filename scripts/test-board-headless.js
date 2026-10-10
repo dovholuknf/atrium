@@ -19661,14 +19661,20 @@ async function repoColorsSection(browser, base) {
       const own = { id: "a~own", launcher_id: "boss", worktree: "/Users/me/git/github/openziti/ziti/main" };
       const named = { id: "a~named", launcher_id: "boss", theme: "dracula", worktree: "C:/temp/n" };
       const stray = { id: "b~kid2", launcher_id: "boss", worktree: "C:/temp/s" };
+      // A repo with no colour entry is no colour of its own, and a launcher's explicit theme passes down.
+      const bare = { id: "a~bare", launcher_id: "boss", worktree: "/Users/me/git/github/dovholuknf/dotagents/main" };
+      const lead = { id: "a~lead", theme: "nord", worktree: "C:/temp/lead" };
+      const heir = { id: "a~heir", launcher_id: "lead", worktree: "D:/tmp/pr1166-review" };
       const saved = lastTasks;
-      lastTasks = [boss, kid, grand, own, named, stray];
+      lastTasks = [boss, kid, grand, own, named, stray, bare, lead, heir];
       try {
         out.kid = themeSource(kid) === themeNamed("deep-amethyst");
         out.grand = themeSource(grand) === themeNamed("deep-amethyst");
         out.own = themeSource(own) === themeNamed("teal-dusk");
         out.named = themeSource(named) === themeNamed("dracula");
         out.stray = themeSource(stray) === null;
+        out.bare = themeSource(bare) === themeNamed("deep-amethyst");
+        out.heir = themeSource(heir) === themeNamed("nord");
       } finally { lastTasks = saved; }
       put("", {});
       return out;
@@ -19678,6 +19684,8 @@ async function repoColorsSection(browser, base) {
     if (!r.own) fail(tag + "a child in its own repo lost to its launcher's colour");
     if (!r.named) fail(tag + "an explicit theme lost to its launcher's colour");
     if (!r.stray) fail(tag + "a card took the colour of a same-id launcher on another room");
+    if (!r.bare) fail(tag + "a child in a repo with no entry did not take its launcher's colour");
+    if (!r.heir) fail(tag + "a launcher's explicit theme was not passed down");
     if (r.plain !== null) fail(tag + "an uncoloured card wears " + JSON.stringify(r.plain));
     if (!r.keyed) fail(tag + "a full key did not colour its card");
     if (r.otherProvider) fail(tag + "the same org/repo on another provider took the colour");
@@ -19729,6 +19737,9 @@ async function repoColorsSection(browser, base) {
           row("cc-boss", { display_title: "pr-ziti-console-967: review", worktree: "/Users/me/git/github/openziti/ziti-console/feature/967" }),
           row("cc-critic", { display_title: "pr-967 panel: critic", launcher_id: "cc-boss", worktree: "C:/temp/pr967-review/critic" }),
           row("cc-verify", { display_title: "pr-967 verify s5", launcher_id: "cc-boss", worktree: "C:/temp/pr967-review/verify-s5" }),
+          row("cc-bare", { display_title: "dotagents: refresh AGENTS.md", launcher_id: "cc-boss", worktree: "/Users/me/git/github/dovholuknf/dotagents/main" }),
+          row("cc-lead", { display_title: "explicit theme launcher", theme: "nord", worktree: "C:/temp/lead" }),
+          row("cc-heir", { display_title: "child of the explicit theme", launcher_id: "cc-lead", worktree: "D:/tmp/pr1166-review" }),
           row("cc-lone", { display_title: "not launched by anyone", worktree: "C:/temp/lone" })];
         tasksMode = "worn";
         const sp = await ctx.newPage();
