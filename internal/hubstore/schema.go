@@ -511,6 +511,47 @@ var migrations = []struct {
 				)`,
 		},
 	},
+	{
+		// THE MERGE FLOW'S STATE. See flow.go and docs/design/merge-flow.md. flow_role is who holds each role, one row per
+		// holder (only the tester may have several; flow.go enforces that, so the table need not). flow_item is a backlog
+		// item's stage, kept apart from backlog_item.status so nothing that reads that column changes. flow_check is a
+		// verdict on a sha of main, and flow_deploy is the sha a room runs. Cards and rooms are TEXT with no foreign key.
+		name: "0014_merge_flow",
+		stmts: []string{
+			`CREATE TABLE IF NOT EXISTS flow_role (
+					role    TEXT NOT NULL CHECK (role IN ('orchestrator','merger','tester','director')),
+					room    TEXT NOT NULL,
+					card    TEXT NOT NULL,
+					since   TEXT NOT NULL,
+					set_by  TEXT NOT NULL DEFAULT '',
+					PRIMARY KEY (role, room, card)
+				)`,
+			`CREATE TABLE IF NOT EXISTS flow_item (
+					item_id    TEXT PRIMARY KEY,
+					stage      TEXT NOT NULL DEFAULT 'idea' CHECK (stage IN ('idea','designed','implementing','implemented','merged','tested','deployed','pushed-by-clint')),
+					branch     TEXT NOT NULL DEFAULT '',
+					sha        TEXT NOT NULL DEFAULT '',
+					note       TEXT NOT NULL DEFAULT '',
+					changed_at TEXT NOT NULL,
+					changed_by TEXT NOT NULL DEFAULT ''
+				)`,
+			`CREATE TABLE IF NOT EXISTS flow_check (
+					n       INTEGER PRIMARY KEY,
+					sha     TEXT NOT NULL,
+					name    TEXT NOT NULL,
+					result  TEXT NOT NULL CHECK (result IN ('pass','fail','timeout')),
+					by      TEXT NOT NULL DEFAULT '',
+					at      TEXT NOT NULL
+				)`,
+			`CREATE INDEX IF NOT EXISTS flow_check_sha ON flow_check (sha, name)`,
+			`CREATE TABLE IF NOT EXISTS flow_deploy (
+					room    TEXT PRIMARY KEY,
+					sha     TEXT NOT NULL,
+					at      TEXT NOT NULL,
+					by      TEXT NOT NULL DEFAULT ''
+				)`,
+		},
+	},
 }
 
 func (s *Store) migrate() error {
