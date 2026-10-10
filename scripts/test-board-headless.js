@@ -22500,7 +22500,7 @@ async function gearTermListSection(browser, base) {
         cache: !!document.getElementById("cache-line-gear"),
         inList: document.querySelectorAll("#term-list .cacheline").length
       }));
-      if (!f.shown || f.sort !== 3 || f.hide !== 2 || f.group < 6 || !f.cache) fail(tag + "the section is wrong: " + JSON.stringify(f));
+      if (!f.shown || f.sort !== 3 || f.hide !== 3 || f.group < 6 || !f.cache) fail(tag + "the section is wrong: " + JSON.stringify(f));
       if (f.inList) fail(tag + "the list still has the old row or line.");
       const a = await p.evaluate(() => {
         const was = sortByActivity;
