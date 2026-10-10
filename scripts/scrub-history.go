@@ -5,6 +5,7 @@
 // emails change, and so every sha.
 //
 //	go run scripts/scrub-history.go -from main -to main-scrubbed [-sign] [-map build.claude/scrub-map.tsv]
+//	go run scripts/scrub-history.go -filter < message    # one message, the same rules, for land-claude-main.ps1
 //
 // It reads every commit through one `git cat-file --batch`, then writes each with one `git commit-tree`, oldest
 // first, so a parent is always written before its child. -sign passes -S, which signs with user.signingkey.
@@ -34,6 +35,7 @@ var (
 	email   = flag.String("email", "", "author and committer email (default: git config user.email)")
 	mapFile = flag.String("map", "", "write old sha, new sha here")
 	seed    = flag.String("seed", "", "a -map from an earlier run: its commits are already rewritten, so only what -from adds is")
+	filter  = flag.Bool("filter", false, "scrub one message from stdin to stdout and exit, as a filter-branch --msg-filter")
 )
 
 // rules run in order. A branch prefix goes first, so what remains is a word in a sentence.
@@ -87,6 +89,14 @@ type commit struct {
 
 func main() {
 	flag.Parse()
+	if *filter {
+		b, err := io.ReadAll(os.Stdin)
+		if err != nil {
+			die(err.Error())
+		}
+		os.Stdout.WriteString(scrub(string(b)))
+		return
+	}
 	if *name == "" {
 		*name = gitOut("config", "user.name")
 	}
@@ -192,8 +202,13 @@ func verify(old []commit, newSHA map[string]string) {
 	if n != len(distinct) {
 		die(fmt.Sprintf("%s has %d commits, want %d (%d on %s, %d made identical)", *to, n, len(distinct), len(old), *from, len(old)-len(distinct)))
 	}
-	if len(old) != len(distinct) {
-		fmt.Printf("  %d commits on %s were identical to another once rewritten, and are one commit now\n", len(old)-len(distinct), *from)
+	// Seeded commits are in newSHA too, so count collapses among this run's commits only.
+	rewritten := map[string]bool{}
+	for _, c := range old {
+		rewritten[newSHA[c.sha]] = true
+	}
+	if len(old) != len(rewritten) {
+		fmt.Printf("  %d commits on %s were identical to another once rewritten, and are one commit now\n", len(old)-len(rewritten), *from)
 	}
 	bad := 0
 	for i, c := range got {
