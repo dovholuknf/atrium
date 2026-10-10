@@ -7089,7 +7089,135 @@ async function readTabSizeSection(browser, base) {
     await p.keyboard.press("Control+0");
     r = await m();
     if (r.fs !== 15) fail("ctrl+0 did not reset: " + JSON.stringify(r));
-    if (r.keys.some(k => /read|zoom|font/i.test(k) && k !== "atrium.readfont")) fail("the read page wrote another storage key: " + JSON.stringify(r.keys));
+    if (r.keys.some(k => /read|zoom|font/i.test(k) && !["atrium.readfont", "atrium.readwidth", "atrium.readskin"].includes(k))) fail("the read page wrote another storage key: " + JSON.stringify(r.keys));
+    if (errors.length) fail("the read tab threw: " + errors.join(" | "));
+  } finally {
+    tasksMode = was;
+    await ctx.close();
+  }
+}
+
+// ── the read tab's width and skin (u-reader-width-and-skins) ─────────────
+// The rendered page was a 52rem column on any window, so a four-column table wrapped every cell. Width is now
+// narrow / wide / full, a table may run past the column, and the page wears the board's skin with a picker of
+// its own. RW_SHOTS=<dir> takes pictures, named by RW_PREFIX (before|after). RW_BEFORE=1 only takes them, since the
+// old page has none of the controls.
+async function readWidthSkinSection(browser, base) {
+  const was = tasksMode;
+  tasksMode = "land";
+  landCard("land-live", { supervised: true, room: "sg4", created_at: "2026-09-19T12:00:00Z" });
+  landList = [LAND["land-live"]];
+  landPerms = [];
+  resetSkins();
+  const errors = [];
+  const shots = process.env.RW_SHOTS || "";
+  const prefix = process.env.RW_PREFIX || (process.env.RW_BEFORE ? "before" : "after");
+  const before = !!process.env.RW_BEFORE;
+  const cell = "the quick brown fox jumps over the lazy dog and then does it all again";
+  const doc = ["# Wide table", "",
+    "A paragraph of prose that stays a readable column wherever the window is, so the eye does not have to travel.", "",
+    "| name | owner | status | notes |", "| - | - | - | - |"]
+    .concat(Array.from({ length: 6 }, (_, i) => `| item ${i + 1} | owner ${i + 1} | ${cell} | ${cell} again ${i + 1} |`))
+    .concat(["", "```", "const x = 1;", "```", "", "Another paragraph after the table."]).join("\n");
+  const ctx = await landContext(browser);
+  try {
+    await ctx.route("**/files/view?*", route => route.fulfill({ status: 200, contentType: "text/plain; charset=utf-8", body: doc }));
+    const p = await ctx.newPage();
+    p.on("pageerror", e => errors.push(String(e)));
+    const open = async (w, h) => {
+      await p.setViewportSize({ width: w, height: h });
+      await p.goto(base + "/read.html#land-live/docs%2Fplan.md", { waitUntil: "domcontentloaded" });
+      await p.waitForSelector("#md table", { timeout: slow(8000) }).catch(async e => {
+        throw new Error(e.message + " body: " + (await p.evaluate(() => document.body.innerText.slice(0, 300))));
+      });
+      await p.waitForTimeout(400);
+    };
+    const m = () => p.evaluate(() => {
+      const w = e => Math.round(e.getBoundingClientRect().width);
+      const para = document.querySelector("#md p");
+      const t = document.querySelector("#md table");
+      const row = t.querySelector("tbody tr");
+      return { para: w(para), table: w(t), cellH: Math.round(row.cells[2].getBoundingClientRect().height),
+        line: parseFloat(getComputedStyle(row.cells[2]).lineHeight),
+        skin: document.documentElement.getAttribute("data-skin"), width: document.documentElement.getAttribute("data-width"),
+        bg: getComputedStyle(document.body).backgroundColor, sel: document.getElementById("skin") && document.getElementById("skin").value,
+        opts: document.getElementById("skin") ? [...document.getElementById("skin").options].map(o => o.value) : [],
+        pressed: [...document.querySelectorAll("#width button[aria-pressed=true]")].map(b => b.dataset.width),
+        page: document.documentElement.scrollWidth, win: innerWidth,
+        keys: Object.keys(localStorage).filter(k => /^atrium\.(read|skin)/.test(k)) };
+    });
+    if (before) {
+      for (const [name, w, h] of [["wide", 2558, 1000], ["phone", 390, 844]]) {
+        await open(w, h);
+        if (shots) await p.screenshot({ path: path.join(shots, `${prefix}-${name}.png`) });
+      }
+      return;
+    }
+    const sets0 = skinFor[""];
+
+    // 2558 wide. Narrow is the default and keeps the prose measure, and the table is let out of it.
+    await open(2558, 1000);
+    await p.waitForFunction(() => document.getElementById("skin").options.length > 1, null, { timeout: slow(5000) });
+    let r = await m();
+    if (r.width !== "narrow" || r.pressed.join() !== "narrow") fail("the default width is " + JSON.stringify(r));
+    if (r.para > 52 * 16 + 4) fail("narrow is wider than 52rem: " + r.para);
+    if (r.table < r.para + 200) fail("the table is held in the narrow column: " + JSON.stringify(r));
+    if (r.cellH > r.line * 1.5) fail("a table cell still wraps on a 2558px window: " + JSON.stringify(r));
+    if (r.page > r.win) fail("the page scrolls sideways: " + JSON.stringify(r));
+    const lefts = await p.evaluate(() => ["h1", "p", "pre"].map(s => Math.round(document.querySelector("#md " + s).getBoundingClientRect().left)));
+    if (new Set(lefts).size !== 1) fail("the heading, prose and code are not in one column: " + lefts.join());
+    if (shots) await p.screenshot({ path: path.join(shots, `${prefix}-wide.png`) });
+
+    await p.click('#width button[data-width="wide"]');
+    let r2 = await m();
+    if (r2.width !== "wide" || r2.pressed.join() !== "wide" || r2.para <= r.para + 200) fail("wide did not widen the column: " + JSON.stringify(r2));
+    await p.click('#width button[data-width="full"]');
+    r2 = await m();
+    if (r2.width !== "full" || r2.para < 2558 - 100) fail("full is not the whole window: " + JSON.stringify(r2));
+    if (shots) await p.screenshot({ path: path.join(shots, `${prefix}-full.png`) });
+    if (r2.keys.join() !== "atrium.readwidth") fail("the width wrote these keys: " + r2.keys.join());
+    await p.reload({ waitUntil: "domcontentloaded" });
+    await p.waitForSelector("#md table");
+    r2 = await m();
+    if (r2.width !== "full") fail("the width did not survive a reload: " + JSON.stringify(r2));
+    await p.click('#width button[data-width="narrow"]');
+
+    // The skin: the board's (the hub's, noir here), then this page's own, then back.
+    await p.waitForFunction(() => document.getElementById("skin").options.length > 1, null, { timeout: slow(5000) });
+    r = await m();
+    if (r.skin !== skinFor[""] || r.sel !== "") fail("the page does not wear the board's skin: " + JSON.stringify({ skin: r.skin, board: skinFor[""], sel: r.sel }));
+    if (JSON.stringify(r.opts) !== JSON.stringify([""].concat(SKINS))) fail("the picker is not the daemon's skin list: " + JSON.stringify(r.opts));
+    const bg0 = r.bg;
+    await p.selectOption("#skin", "ember");
+    r = await m();
+    if (r.skin !== "ember" || r.bg === bg0) fail("picking ember did not repaint: " + JSON.stringify(r));
+    if (!r.keys.includes("atrium.readskin") || r.keys.includes("atrium.skin")) fail("the skin keys are " + r.keys.join());
+    if (skinFor[""] !== sets0) fail("the page changed the board's skin to " + skinFor[""]);
+    await p.reload({ waitUntil: "domcontentloaded" });
+    await p.waitForSelector("#md table");
+    await p.waitForFunction(() => document.getElementById("skin").options.length > 1, null, { timeout: slow(5000) });
+    r = await m();
+    if (r.skin !== "ember" || r.sel !== "ember") fail("the page's skin did not survive a reload: " + JSON.stringify(r));
+    // The default skin has no rule of its own, so picking it clears the attribute.
+    await p.selectOption("#skin", SKINS[0]);
+    r = await m();
+    if (r.skin !== null) fail("the default skin left an attribute: " + JSON.stringify(r));
+    await p.selectOption("#skin", "");
+    r = await m();
+    if (r.skin !== skinFor[""] || r.keys.includes("atrium.readskin")) fail("the board's skin did not come back: " + JSON.stringify(r));
+    await p.selectOption("#skin", "sandstone");
+    if (shots) await p.screenshot({ path: path.join(shots, `${prefix}-wide-sandstone.png`) });
+    await p.selectOption("#skin", "");
+
+    // A phone: the column is the window, and a table scrolls inside itself instead of widening the page.
+    await open(390, 844);
+    r = await m();
+    if (r.page > r.win) fail("the page scrolls sideways at 390px: " + JSON.stringify(r));
+    if (r.table > 390) fail("the table is wider than the phone: " + JSON.stringify(r));
+    if (shots) await p.screenshot({ path: path.join(shots, `${prefix}-phone.png`) });
+    await p.click('#width button[data-width="full"]');
+    await p.selectOption("#skin", "sandstone");
+    if (shots) await p.screenshot({ path: path.join(shots, `${prefix}-phone-sandstone.png`) });
     if (errors.length) fail("the read tab threw: " + errors.join(" | "));
   } finally {
     tasksMode = was;
@@ -20370,6 +20498,25 @@ async function bootCleanSection(browser, base) {
       if (errors.length) fail(tag + "threw while booting: " + errors.join(" | "));
     }
   }
+  // The read page too: its width and skin code runs at load, and a throw there leaves a header with dead buttons.
+  for (const v of views) {
+    const ctx = await browser.newContext(v.phone
+      ? { viewport: { width: v.w, height: v.h }, hasTouch: true, isMobile: true }
+      : { viewport: { width: v.w, height: v.h } });
+    const p = await ctx.newPage();
+    const errors = [];
+    p.on("pageerror", e => errors.push(String(e && e.message || e)));
+    const tag = "bootClean read.html " + v.w + ": ";
+    try {
+      await p.goto(base + "/read.html#land-live/docs%2Fplan.md", { waitUntil: "load" });
+      await p.waitForTimeout(600);
+      const have = await p.evaluate(() => ["width", "skin", "zoom-up"].filter(id => !document.getElementById(id)));
+      if (have.length) fail(tag + "has no " + have.join(", "));
+    } finally {
+      await ctx.close();
+    }
+    if (errors.length) fail(tag + "threw while booting: " + errors.join(" | "));
+  }
   if (!bad) console.log("bootClean ok");
 }
 
@@ -27087,7 +27234,7 @@ async function main() {
   if (ONLY) {    const only = { closeOneDialog: closeOneDialogSection, boardDocs: boardDocsSection, phoneBoardCompact: phoneBoardCompactSection, termWear: termWearSection, bridge: bridgeSection, detailsHover: detailsHoverSection, detailsSide: detailsSideBySideSection, settingsOnce: settingsOnceSection,
       groupRemove: groupRemoveSection, worn: wornSection, restartGate: restartGateSection, restartStays: restartStaysSection, atriumDown: atriumDownSection,
       toastStays: toastStaysSection, groupColor: groupColorSection,
-      groupDrag: groupDragSection, tooltip: tooltipSection, linkTip: linkTipSection, fileOpenOutside: fileOpenOutsideSection, readTabSize: readTabSizeSection,popoutTagFlip: popoutTagFlipSection, prefsEverywhere: prefsEverywhereSection, mPrefsEverywhere: (b) => mPrefsEverywhereSection(b), idleRate: idleRateSection, foldStill: foldStillSection,
+      groupDrag: groupDragSection, tooltip: tooltipSection, linkTip: linkTipSection, fileOpenOutside: fileOpenOutsideSection, readTabSize: readTabSizeSection, readWidthSkin: readWidthSkinSection, popoutTagFlip: popoutTagFlipSection, prefsEverywhere: prefsEverywhereSection, mPrefsEverywhere: (b) => mPrefsEverywhereSection(b), idleRate: idleRateSection, foldStill: foldStillSection,
       untaggedSort: untaggedSortSection, newCard: newCardSection, themePreview: themePreviewSection, themeLab: themeLabSection, land: landSection, reselect: reselectSection, clearKeepsPage: clearKeepsPageSection, clearMark: clearMarkSection, clearLine: clearLineSection,
       resumeSpinner: resumeSpinnerSection, toastsTop: toastsTopSection, sayWhen: sayWhenSection, pasteSpinner: pasteSpinnerSection,
       pasteBig: pasteBigSection, pasteEmpty: pasteEmptySection, pasteBusy: pasteBusySection, typing: typingSection, alias: aliasSection, askAgain: askAgainSection, copySelect: copySelectSection, busyGuard: busyGuardSection, keepalive: keepaliveSection, idlePark: idleParkSection, restartMenu: restartMenuSection,
@@ -29211,6 +29358,7 @@ async function main() {
     await unit("fileOpenOutside", () => fileOpenOutsideSection(browser, base));
     await unit("roomsSetup", () => roomsSetupSection(browser, base));
     await unit("readTabSize", () => readTabSizeSection(browser, base));
+    await unit("readWidthSkin", () => readWidthSkinSection(browser, base));
     await unit("discreteGroup", () => discreteGroupSection(browser, base));
     await unit("groupingPerView", () => groupingPerViewSection(browser, base));
     await unit("repoColors", () => repoColorsSection(browser, base));

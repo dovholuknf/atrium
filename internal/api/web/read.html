@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>atrium</title>
 <link rel="stylesheet" href="/css/tokens.css">
+<link rel="stylesheet" href="/css/themes.css">
 <!--
   ONE FILE, IN A TAB OF ITS OWN.
 
@@ -51,7 +52,7 @@
     font: var(--read-fs)/1.5 var(--sans);
   }
   header {
-    display: flex; align-items: center; gap: 12px;
+    display: flex; align-items: center; flex-wrap: wrap; gap: 8px 12px;
     padding: 12px 18px; border-bottom: 1px solid var(--stroke-dim);
     background: var(--shell-0); position: sticky; top: 0; z-index: 1;
   }
@@ -63,6 +64,11 @@
     color: var(--label); border-radius: var(--r-sm); font: var(--fs-base) var(--sans); cursor: pointer;
   }
   .zoom button:hover { background: var(--lift); color: var(--head); }
+  .zoom button[aria-pressed="true"] { background: var(--lift); color: var(--head); border-color: var(--stroke); }
+  header select {
+    height: 24px; max-width: 11rem; border: 1px solid var(--stroke-dim); background: var(--chip);
+    color: var(--label); border-radius: var(--r-sm); font: var(--fs-base) var(--sans);
+  }
   .zoom .val { min-width: 34px; text-align: center; color: var(--head); font: var(--fs-base) var(--mono); }
   header code { font: var(--fs-sm)/1.4 var(--mono); color: var(--head); }
   header .by { color: var(--dim); font-size: var(--fs-sm); }
@@ -70,14 +76,25 @@
     margin: 0; padding: 18px; white-space: pre-wrap; word-break: break-word;
     font: calc(var(--read-fs) - 1px)/1.55 var(--mono); color: var(--head); tab-size: 4;
   }
-  .md { max-width: 52rem; margin: 0 auto; padding: 18px 22px 60px; color: var(--body); }
-  .md h1, .md h2, .md h3, .md h4 { color: var(--head); line-height: 1.25; margin: 1.4em 0 .5em; }
+  /* THE READING WIDTH is this page's own, set from read.js on <html data-width>. Narrow is the prose measure. Every
+     top-level block keeps it, centred, and a table is let past it to the right, to the window's edge, and then scrolls. */
+  :root { --read-w: 52rem; }
+  :root[data-width="wide"] { --read-w: 84rem; }
+  :root[data-width="full"] { --read-w: 100%; }
+  .md { margin: 0; padding: 18px 22px 60px; color: var(--body); }
+  .md > * { max-width: var(--read-w); margin-left: auto; margin-right: auto; }
+  .md table { display: block; width: max-content; max-width: 100%; overflow-x: auto; }
+  .md > table {
+    --col-off: max(0px, calc((100% - var(--read-w)) / 2));
+    margin-left: var(--col-off); margin-right: 0; max-width: calc(100% - var(--col-off));
+  }
+  .md h1, .md h2, .md h3, .md h4 { color: var(--head); line-height: 1.25; margin-top: 1.4em; margin-bottom: .5em; }
   .md h1, .md h2 { border-bottom: 1px solid var(--stroke-dim); padding-bottom: .25em; }
   .md a { color: var(--head); text-decoration: underline; }
   .md code { font: .9em/1.4 var(--mono); background: var(--shell-0); padding: .1em .35em; border-radius: 4px; }
   .md pre { background: var(--shell-0); padding: 12px 14px; border-radius: 6px; overflow: auto; white-space: pre; }
   .md pre code { background: none; padding: 0; }
-  .md blockquote { margin: 1em 0; padding: 0 1em; border-left: 3px solid var(--stroke-dim); color: var(--dim); }
+  .md blockquote { margin-top: 1em; margin-bottom: 1em; padding: 0 1em; border-left: 3px solid var(--stroke-dim); color: var(--dim); }
   .md table { border-collapse: collapse; } .md th, .md td { border: 1px solid var(--stroke-dim); padding: 4px 10px; }
   .md img { max-width: 100%; }
   .oops { padding: 18px; color: var(--warn); }
@@ -89,7 +106,13 @@
     <button id="zoom-down" type="button" aria-label="smaller text">A&minus;</button>
     <span class="val" id="zoom-val"></span>
     <button id="zoom-up" type="button" aria-label="bigger text">A+</button>
-  </span></header>
+  </span>
+  <span class="zoom" id="width" role="group" title="Reading width for every read tab.">
+    <button type="button" data-width="narrow" aria-label="narrow column">Narrow</button>
+    <button type="button" data-width="wide" aria-label="wide column">Wide</button>
+    <button type="button" data-width="full" aria-label="the whole window">Full</button>
+  </span>
+  <select id="skin" aria-label="skin for this page only"></select></header>
 <pre id="text"></pre>
 <article id="md" class="md" hidden></article>
 <script src="/vendor/marked.js"></script>
