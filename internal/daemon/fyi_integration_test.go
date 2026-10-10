@@ -35,6 +35,27 @@ func sayKind(t *testing.T, d *Daemon, to *store.Task, from, kind string) *httpte
 	return rec
 }
 
+// A notice a worker on ANOTHER ROOM sends its launcher arrives as an fyi from `handle@room`, a
+// sender with no card here. It is held on an orchestrator's card, never typed or queued.
+func TestACrossRoomNoticeToAnOrchestratorIsHeldNotTyped(t *testing.T) {
+	t.Parallel()
+	for _, tag := range []string{HoldNoticesTag, OrchestratorTag} {
+		d := testDaemon(t)
+		launcher, _ := holdingPair(t, d, tag)
+		rec := sayKind(t, d, launcher, "sa1@claude-sg4", KindFYI)
+		if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "held") {
+			t.Fatalf("%s: answered %d, want held: %s", tag, rec.Code, rec.Body)
+		}
+		if msgs := pendingFrom(t, d, launcher.ID); len(msgs) != 0 {
+			t.Fatalf("%s: %d queued for a cross-room fyi, want none: %v", tag, len(msgs), msgs)
+		}
+		held := heldOn(t, d, launcher.ID)
+		if len(held) != 1 || held[0]["about"] != "sa1@claude-sg4" {
+			t.Fatalf("%s: held = %v", tag, held)
+		}
+	}
+}
+
 func tellKind(t *testing.T, d *Daemon, to *store.Task, from, kind string) *httptest.ResponseRecorder {
 	t.Helper()
 	rec := httptest.NewRecorder()

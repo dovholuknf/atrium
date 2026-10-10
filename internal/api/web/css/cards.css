@@ -351,25 +351,6 @@
   body.tabhidden .chip.held { animation: none; }
   /* A message waiting for the turn to end because that is what was asked. The neutral chip, no pulse and no
      warn colour, because nothing needs the operator. See termHeldChip. */
-  /* Notices held on a card that is not typed at. The warn colour, because something is waiting for the operator
-     or the orchestrator, and a button: it opens them. See js/heldnotices.js. */
-  .chip.hnotices {
-    background: var(--warn-bg); color: var(--warn); border-color: var(--warn-stroke); cursor: pointer;
-    display: inline-flex; align-items: center; gap: .3em; font-weight: 700;
-  }
-  .chip.hnotices b { font-weight: 700; }
-  .hn-back { position: fixed; inset: 0; z-index: 2000; background: rgba(0,0,0,.45); display: flex;
-    align-items: center; justify-content: center; }
-  .hn-box { background: var(--panel, #1e1e1e); color: var(--text, #ddd); border: 1px solid var(--border, #444);
-    border-radius: 8px; width: min(640px, 92vw); max-height: 80vh; display: flex; flex-direction: column; }
-  .hn-head { display: flex; gap: .6em; align-items: baseline; padding: .7em 1em; border-bottom: 1px solid var(--border, #444); }
-  .hn-for { opacity: .7; flex: 1; }
-  .hn-x { background: none; border: 0; color: inherit; font-size: 1.4em; cursor: pointer; }
-  .hn-list { overflow: auto; padding: .4em 1em .8em; user-select: text; }
-  .hn-item { padding: .6em 0; border-bottom: 1px solid var(--border, #444); }
-  .hn-meta { display: flex; gap: .7em; font-size: .85em; opacity: .8; }
-  .hn-text { white-space: pre-wrap; margin-top: .3em; }
-  .hn-none { padding: 1em 0; opacity: .7; }
   .chip.queued { text-align: center; min-width: 1.4em; }
   /* Published. Danger rather than warn, and the same mark as the header, so a card reachable from outside this
      machine says so in the colour that means it. */

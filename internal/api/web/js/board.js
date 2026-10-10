@@ -829,7 +829,6 @@ function cardHTML(t, wearAs) {
         data-tip="${esc("typed in once after the next restart brings this runner back: " + t.restart_wake.text)}"
         >wake queued</span>` : ""}
       ${newContextChip(t)}${parkedChip(t)}
-      ${heldNoticesChip(t)}
       ${typeof keepaliveChip === "function" ? keepaliveChip(t) : ""}
       ${stuckMark(t)}
       ${sharedCards.has(t.id) ? `<span class="chip shared"
