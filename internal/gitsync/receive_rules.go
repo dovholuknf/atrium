@@ -221,7 +221,16 @@ func (rc *Receiver) decide(ctx context.Context, repo string, p Pusher, req pushR
 				continue
 			}
 		case isMainRef(ref) && !p.Operator:
-			d.fail(ref, "only the operator moves "+label+". push your work under another branch name")
+			if ref == ClaudeMainRef && rc.h.isMerger(ctx, p) {
+				// THE RECORDED MERGER MOVES claude/main, and the hub's pre-receive hook already holds every ref
+				// to a fast-forward, so the merger cannot move it back. See docs/design/merge-flow.md.
+				break
+			}
+			if ref == ClaudeMainRef {
+				d.fail(ref, "only the operator and the merger move "+label+". push your work under another branch name")
+			} else {
+				d.fail(ref, "only the operator moves "+label+". push your work under another branch name")
+			}
 			continue
 		}
 		// What the client thinks the ref is has to be what it is.
@@ -364,4 +373,23 @@ func (rc *Receiver) removeCreated(dir string) {
 	defer gl.Unlock()
 	_ = os.Remove(filepath.Dir(dir))
 	_ = os.Remove(filepath.Dir(filepath.Dir(dir)))
+}
+
+// isMerger says whether the pusher is the card the hub has recorded as the merger, or its successor on the same room
+// (a card that moved on to another, which `inherits` honours for a branch). No Merger hook, no merger recorded, or
+// a hook that cannot answer, is no merger: the answer to a doubt is the refusal the hub always gave.
+func (h *Hub) isMerger(ctx context.Context, p Pusher) bool {
+	if h.Merger == nil || p.Operator || p.Room == "" || p.Card == "" {
+		return false
+	}
+	room, card, ok := h.Merger(ctx)
+	if !ok || !strings.EqualFold(p.Room, room) {
+		return false
+	}
+	for _, c := range p.Chain {
+		if c == card {
+			return true
+		}
+	}
+	return false
 }
