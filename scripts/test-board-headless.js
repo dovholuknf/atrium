@@ -1740,14 +1740,14 @@ async function groupDragSection(browser, base) {
 
     // The same, from the card's menu.
     await dp.locator('#term-list .tnest[data-group="active"] .card.tab[data-id="filed1"]').click({ button: "right" });
-    const out = dp.locator("#cardmenu button", { hasText: "out of active" });
+    const out = dp.locator("#cardmenu button", { hasText: "remove from group" });
     await out.waitFor({ timeout: slow(5000) }).catch(() => {});
-    if (!(await out.count())) fail("a card in a group has no `out of` entry on its menu.");
+    if (!(await out.count())) fail("a card in a group has no `remove from group` entry on its menu.");
     else {
       await out.click();
       await dp.waitForTimeout(500);
       if (!writes.some(w => /filed1/.test(w) && /"tags":\[\]/.test(w))) {
-        fail("`out of active` did not take the tag off: " + writes.join(" | "));
+        fail("`remove from group` did not take the tag off: " + writes.join(" | "));
       }
     }
 
@@ -15180,7 +15180,7 @@ async function shiftMenuSection(browser, base) {
       null, { timeout: slow(5000) });
     m = await menu();
     if (!has(m)) fail("shiftMenu: no new context on the terminal menu: " + JSON.stringify(m));
-    if (!m.labels.some(l => /rename/.test(l))) fail("shiftMenu: this is not termMenu: " + JSON.stringify(m));
+    if (!m.labels.some(l => /^settings/.test(l))) fail("shiftMenu: this is not termMenu: " + JSON.stringify(m));
     if (Math.abs(m.left - 210) > 40 || Math.abs(m.top - 160) > 40) fail("shiftMenu: the menu is not at the pointer: " + JSON.stringify(m));
     // choose it
     await p.evaluate(() => [...document.querySelectorAll("#cardmenu button")].find(b => /new context/.test(b.textContent)).click());
@@ -15222,6 +15222,137 @@ async function shiftMenuSection(browser, base) {
   if (errors.length) fail("shiftMenu: the page threw: " + errors.join(" | "));
 }
 
+// ── the terminals tab menu (card-menu) ────────────────────────────────────
+// Right click a row. The menu is what clint settled in docs/interviews/INTERVIEW-card-menu-2026-10-09.md: restart,
+// resume (stopped only), new context, then settings, then stop and terminate and clean up. Every item has its (?), none
+// has a grey line, and nothing asks "are you sure?" but a clean up of work that exists nowhere else, which has a
+// "never show me this again" tick. Stopped cards stay out of the list until `show stopped` is on.
+async function termMenuSection(browser, base) {
+  const was = tasksMode;
+  tasksMode = "land";
+  landCard("land-tm-run", { supervised: true, status: "running", created_at: "2026-09-19T12:00:00Z" });
+  landCard("land-tm-stop", { supervised: false, status: "shelved", resume_id: "r-1", worktree: "/tmp/stopped",
+    created_at: "2026-09-19T12:01:00Z" });
+  landList = [LAND["land-tm-run"], LAND["land-tm-stop"]];
+  landPerms = [];
+  const errors = [];
+  try {
+    const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+    const patches = [], closes = [];
+    let asks = [];
+    await ctx.route("**/v1/tasks/*", route => {
+      const r = route.request();
+      if (r.method() !== "PATCH") return route.fallback();
+      patches.push(new URL(r.url()).pathname + " " + r.postData());
+      return route.fulfill({ status: 200, contentType: "application/json", body: "{}" });
+    });
+    await ctx.route("**/v1/tasks/*/close", route => {
+      const r = route.request();
+      if (r.method() === "GET") {
+        return route.fulfill({ status: 200, contentType: "application/json",
+          body: JSON.stringify({ items: [], asks, can_stash: true, warnings: [], kept: [] }) });
+      }
+      closes.push(JSON.parse(r.postData() || "{}"));
+      return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ closed: true, items: [] }) });
+    });
+    const p = await ctx.newPage();
+    p.on("pageerror", e => errors.push(String(e)));
+    await p.goto(base, { waitUntil: "domcontentloaded" });
+    await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
+    await p.evaluate(() => { try { localStorage.removeItem("atrium.skipconfirm"); } catch (e) {} switchView("terms"); });
+    await p.waitForSelector('#term-list [oncontextmenu*="land-tm-run"]', { timeout: slow(10000) });
+
+    const openMenu = async (id) => {
+      await p.evaluate(i => {
+        const b = document.querySelector('#term-list [oncontextmenu*="' + i + '"]');
+        b.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: 70, clientY: 90 }));
+      }, id);
+      await p.waitForFunction(() => { const m = document.getElementById("cardmenu"); return m.classList.contains("on") && m.querySelector("button"); },
+        null, { timeout: slow(5000) });
+      return p.evaluate(() => {
+        const m = document.getElementById("cardmenu");
+        return {
+          labels: [...m.children].map(c => c.classList.contains("sep") ? "---" : c.firstChild.textContent.replace(/\?$/, "").trim()),
+          noHelp: [...m.querySelectorAll(":scope > button")].filter(b => !b.querySelector(".help")).map(b => b.textContent.trim()),
+          notes: m.querySelectorAll(".note").length,
+        };
+      });
+    };
+    // A real click, not b.click(): js/dragclick.js swallows a click whose pointerdown was somewhere else.
+    const pick = async (label) => {
+      const i = await p.evaluate(l => [...document.querySelectorAll("#cardmenu > button")]
+        .findIndex(b => b.firstChild.textContent.trim() === l), label);
+      await p.locator("#cardmenu > button").nth(i).click();
+    };
+    const dialogUp = () => p.locator("dialog[open]");
+
+    // a running card: the whole menu, in order.
+    let m = await openMenu("land-tm-run");
+    const want = ["restart", "new context", "---", "settings", "---", "stop", "terminate and clean up"];
+    if (JSON.stringify(m.labels) !== JSON.stringify(want)) fail("termMenu: a running card's menu is " + JSON.stringify(m.labels));
+    // settings has no (?) in the interview's table, so it is the only item allowed without one.
+    if (m.noHelp.some(l => l !== "settings")) fail("termMenu: items without their (?): " + JSON.stringify(m.noHelp));
+    if (m.notes) fail("termMenu: the menu still draws " + m.notes + " grey sub-lines.");
+    if (process.env.TERMMENU_SHOT) await p.screenshot({ path: process.env.TERMMENU_SHOT });
+
+    // stop: no question, PATCHes shelved.
+    await pick("stop");
+    await p.waitForTimeout(400);
+    if (await dialogUp().count()) fail("termMenu: stop asked before stopping.");
+    if (!patches.some(x => /land-tm-run/.test(x) && /"status":"shelved"/.test(x))) fail("termMenu: stop did not shelve the card: " + JSON.stringify(patches));
+
+    // a stopped card is not in the list until show stopped is on.
+    const listed = () => p.evaluate(() => !!document.querySelector('#term-list [oncontextmenu*="land-tm-stop"]'));
+    if (await listed()) fail("termMenu: a stopped card is listed with show stopped off.");
+    await p.evaluate(() => toggleShowStopped());
+    await p.waitForSelector('#term-list [oncontextmenu*="land-tm-stop"]', { timeout: slow(5000) })
+      .catch(() => fail("termMenu: show stopped did not list the stopped card."));
+    m = await openMenu("land-tm-stop");
+    if (m.labels[0] !== "resume" || m.labels.includes("stop") || m.labels.includes("restart")) {
+      fail("termMenu: a stopped card's menu is " + JSON.stringify(m.labels));
+    }
+    await p.keyboard.press("Escape");
+    await p.evaluate(() => toggleShowStopped());
+    if (await listed()) fail("termMenu: show stopped off did not hide the stopped card again.");
+
+    // terminate and clean up, nothing at risk: no question, one close with confirm.
+    asks = [];
+    await openMenu("land-tm-run");
+    await pick("terminate and clean up");
+    await p.waitForTimeout(500);
+    if (await dialogUp().count()) fail("termMenu: clean up asked with nothing at risk.");
+    if (closes.length !== 1 || closes[0].confirm !== true) fail("termMenu: clean up did not close once: " + JSON.stringify(closes));
+    closes.length = 0;
+
+    // work nowhere else: asks, with the tick. Cancel changes nothing.
+    asks = [{ seq: 4, path: "/w/x", branch: "claude/x", dirty: 3, unpushed: 1 }];
+    await openMenu("land-tm-run");
+    await pick("terminate and clean up");
+    await dialogUp().waitFor({ state: "visible", timeout: slow(5000) })
+      .catch(() => fail("termMenu: clean up did not ask about work nowhere else."));
+    if (!/never show me this again/.test(await dialogUp().first().textContent())) fail("termMenu: the question has no never-show-me tick.");
+    await p.locator("dialog[open] button", { hasText: "cancel" }).click();
+    await p.waitForTimeout(300);
+    if (closes.length) fail("termMenu: cancelling still closed the card: " + JSON.stringify(closes));
+    // delete with the tick: answered, and the next one does not ask.
+    await openMenu("land-tm-run");
+    await pick("terminate and clean up");
+    await dialogUp().waitFor({ state: "visible", timeout: slow(5000) });
+    await p.locator("#ask-remember-on").check();
+    await p.locator("dialog[open] button", { hasText: "delete it" }).click();
+    await p.waitForTimeout(500);
+    if (closes.length !== 1 || closes[0].answers["4"] !== "delete") fail("termMenu: delete did not close with delete: " + JSON.stringify(closes));
+    closes.length = 0;
+    await openMenu("land-tm-run");
+    await pick("terminate and clean up");
+    await p.waitForTimeout(600);
+    if (await dialogUp().count()) fail("termMenu: it asked again after never show me this again.");
+    if (closes.length !== 1 || closes[0].answers["4"] !== "delete") fail("termMenu: the ticked clean up did not delete: " + JSON.stringify(closes));
+  } finally {
+    tasksMode = was;
+  }
+  if (errors.length) fail("the terminals menu page threw: " + errors.join(" | "));
+}
 // ── the hub's notify command in the gear (u-030) ────────────────────────────
 //
 // The mock server answers 404 to /_hub/notify, so each case routes it in the browser context.
@@ -22369,7 +22500,7 @@ async function gearTermListSection(browser, base) {
         cache: !!document.getElementById("cache-line-gear"),
         inList: document.querySelectorAll("#term-list .cacheline").length
       }));
-      if (!f.shown || f.sort !== 3 || f.hide !== 2 || f.group < 6 || !f.cache) fail(tag + "the section is wrong: " + JSON.stringify(f));
+      if (!f.shown || f.sort !== 3 || f.hide !== 3 || f.group < 6 || !f.cache) fail(tag + "the section is wrong: " + JSON.stringify(f));
       if (f.inList) fail(tag + "the list still has the old row or line.");
       const a = await p.evaluate(() => {
         const was = sortByActivity;
@@ -26157,7 +26288,7 @@ async function main() {
       eventDriven: eventDrivenSection, idleBudget: idleBudgetSection, pollsGone: pollsGoneSection,
       phoneListFit: phoneListFitSection, termListLastRow: termListLastRowSection, phoneNudge: phoneNudgeSection,
       growlStack: growlStackSection, growlActions: growlActionsSection, growlModal: growlModalSection, growlQuiet: growlQuietSection, growlAttention: growlAttentionSection, growlPhone: growlPhoneSection, mGrowl: mGrowlSection, growlPopout: growlPopoutSection, growlOff: growlOffSection, growlRemind: growlRemindSection,
-      cacheChip: cacheChipSection, cacheLine: cacheLineSection, mHome: mHomeSection, mCard: mCardSection, mServe: mServeSection, phoneKeyLabel: phoneKeyLabelSection, phoneKeyLit: phoneKeyLitSection, shiftMenu: shiftMenuSection, notifyCommand: notifyCommandSection, presence: presenceSection, tallPty: tallPtySection, roomsMachine: roomsMachineSection, readyOnce: readyOnceSection, readyPopout: readyPopoutSection, popoutNotify: popoutNotifySection, readyTwoWindows: readyTwoWindowsSection,
+      cacheChip: cacheChipSection, cacheLine: cacheLineSection, mHome: mHomeSection, mCard: mCardSection, mServe: mServeSection, phoneKeyLabel: phoneKeyLabelSection, phoneKeyLit: phoneKeyLitSection, shiftMenu: shiftMenuSection, termMenu: termMenuSection, notifyCommand: notifyCommandSection, presence: presenceSection, tallPty: tallPtySection, roomsMachine: roomsMachineSection, readyOnce: readyOnceSection, readyPopout: readyPopoutSection, popoutNotify: popoutNotifySection, readyTwoWindows: readyTwoWindowsSection,
       cardUrlTable: cardUrlTableSection, cardUrlClash: cardUrlClashSection, cardUrlLinks: cardUrlLinksSection, cardUrlRoom: cardUrlRoomSection, mCardUrl: (b) => mCardUrlSection(b), cardUrlNotify: cardUrlNotifySection,
       clock: clockSection,
       composeImages: composeImagesSection, composePaste: composePasteSection, mComposeImages: mComposeImagesSection,
@@ -28159,6 +28290,7 @@ async function main() {
     await unit("phoneKeyLabel", () => phoneKeyLabelSection(browser, base));
     await unit("phoneKeyLit", () => phoneKeyLitSection(browser, base));
     await unit("shiftMenu", () => shiftMenuSection(browser, base));
+    await unit("termMenu", () => termMenuSection(browser, base));
     await unit("notifyCommand", () => notifyCommandSection(browser, base));
     await unit("presence", () => presenceSection(browser, base));
     await unit("tallPty", () => tallPtySection(browser, base));
@@ -28747,27 +28879,38 @@ async function mResumeSection(browser) {
     if (!(await press("shelf-1", { hold: 800 }))) fail(tag + "a long press did not open the sheet");
     await p.evaluate(() => document.querySelector("#m-list .row").dispatchEvent(new MouseEvent("click", { bubbles: true })));
     if (await p.evaluate(() => document.getElementById("m-card").classList.contains("on"))) fail(tag + "the lift of a long press opened the card");
-    const go = await p.$eval("#m-rmenu .rmenu-go", e => ({ t: e.textContent, d: e.disabled, h: e.getBoundingClientRect().height }));
-    if (go.t !== "resume the last conversation" || go.d || go.h < 44) fail(tag + "the resume button is " + JSON.stringify(go));
+    const go = await p.$eval("#m-rmenu .rmenu-resume", e => ({ t: e.textContent.trim(), d: e.disabled, h: e.getBoundingClientRect().height }));
+    if (go.t !== "resume" || go.d || go.h < 44) fail(tag + "the resume button is " + JSON.stringify(go));
+    // The terminals tab menu, the same items in the same order, each with a (?) whose help a tap shows.
+    const sheet = await p.$eval("#m-rmenu", e => ({
+      labels: [...e.querySelectorAll(".rmenu-item")].map(b => b.firstChild.textContent.trim()),
+      seps: e.querySelectorAll(".rmenu-sep").length,
+      qs: e.querySelectorAll(".rmenu-q").length, items: e.querySelectorAll(".rmenu-row").length }));
+    if (sheet.labels.join() !== "resume,settings,terminate and clean up" || sheet.seps !== 2 || sheet.qs !== sheet.items) {
+      fail(tag + "the phone menu is " + JSON.stringify(sheet));
+    }
+    await p.tap("#m-rmenu .rmenu-q");
+    const helpShown = await p.$eval("#m-rmenu .rmenu-help", e => !e.hidden && e.textContent.length > 10);
+    if (!helpShown) fail(tag + "tapping the (?) did not show its help");
     await shot("m2-menu");
     await p.tap("#m-rmenu .rmenu-x");
     if (await sheetOpen()) fail(tag + "cancel did not close the sheet");
     // a running card cannot be resumed, and says why
     await p.evaluate(() => window.mResume.open("live-1"));
-    const run = await p.$eval("#m-rmenu", e => ({ d: e.querySelector(".rmenu-go").disabled, why: e.querySelector(".rmenu-why").textContent }));
-    if (!run.d || !/already running/.test(run.why)) fail(tag + "a running card was offered a resume: " + JSON.stringify(run));
+    const run = await p.$eval("#m-rmenu", e => [...e.querySelectorAll(".rmenu-item")].map(b => b.firstChild.textContent.trim()));
+    if (run.join() !== "restart,new context,settings,stop,terminate and clean up") fail(tag + "a running card was offered " + JSON.stringify(run));
     await p.tap("#m-rmenu .rmenu-x");
 
     // 3. Resume: one launch with the card's resume id, the row spins and says so, a second resume launches nothing.
     let open; st.launchGate = new Promise(r => { open = r; });
     await p.evaluate(() => window.mResume.open("shelf-1"));
-    await p.tap("#m-rmenu .rmenu-go");
+    await p.tap("#m-rmenu .rmenu-resume");
     await p.waitForSelector(sel + " .opening .m-spin", { timeout: slow(5000) });
     const say = await p.$eval(sel + " .why", e => e.textContent.trim());
     if (!/opening the conversation/.test(say)) fail(tag + "the row says " + JSON.stringify(say));
     await shot("m3-opening");
     await p.evaluate(() => window.mResume.open("shelf-1"));
-    await p.tap("#m-rmenu .rmenu-go");
+    await p.tap("#m-rmenu .rmenu-resume");
     await p.evaluate(() => window.mResume.resume("shelf-1"));
     await p.waitForTimeout(200);
     if (st.launches.length !== 1) fail(tag + "a second resume while opening launched again: " + st.launches.length);

@@ -21,40 +21,191 @@
   const key = id => window.mNet.bareId(id);
 
   // ── the sheet ────────────────────────────────────────────────────────────
+  // THE TERMINALS TAB MENU, the same items in the same order (docs/interviews/INTERVIEW-card-menu-2026-10-09.md, and
+  // `termMenuItems` in js/terminal-list.js, which the phone page does not load): restart, resume, new context, add to
+  // group, remove from group, then settings, then stop and terminate and clean up. Each has its (?), and with no hover a
+  // tap on it shows the help under the row. No grey lines. Nothing asks "are you sure?" but a clean up of a folder holding
+  // work that exists nowhere else, which has its own "never show me this again" tick, kept under the same key the board
+  // uses (js/browser-dialogs.js, SKIP_KEY).
+  const SKIP_KEY = "atrium.skipconfirm";
+  const CLEANUP_KEY = "cleanup-unsaved";
+  const skipped = () => { try { return JSON.parse(localStorage.getItem(SKIP_KEY) || "{}") || {}; } catch (e) { return {}; } };
+  const setSkipped = on => {
+    const all = skipped();
+    if (on) all[CLEANUP_KEY] = true; else delete all[CLEANUP_KEY];
+    try { localStorage.setItem(SKIP_KEY, JSON.stringify(all)); } catch (e) {}
+  };
+  const readKey = k => { try { return JSON.parse(localStorage.getItem(k) || "{}") || {}; } catch (e) { return {}; } };
+  const patch = (id, body) => window.mNet.api("/v1/tasks/" + encodeURIComponent(id), { method: "PATCH", body: JSON.stringify(body) });
+  const post = (id, tail, body) => window.mNet.api("/v1/tasks/" + encodeURIComponent(id) + "/" + tail,
+    { method: "POST", body: JSON.stringify(body || {}) });
+  const said = text => { if (!sheet) return; const w = sheet.querySelector(".rmenu-why"); w.textContent = text || ""; };
+
+  // The named groups, when the terminals tab is grouping by them, as the board's `groupItem` reads them.
+  function groupsOf(t) {
+    const shared = readKey("atrium.grouping"), own = readKey("atrium.grouping.terms");
+    const mode = own.mode !== undefined ? own.mode : shared.mode;
+    const groups = mode === "custom" && Array.isArray(shared.groups) ? shared.groups : [];
+    const mine = t.tags || [];
+    return { all: groups, inside: groups.filter(g => mine.indexOf(g) >= 0), tags: mine };
+  }
+
+  function items(id, t) {
+    const over = ["done", "dead", "shelved"].indexOf(t.status) >= 0;
+    const stopped = t.status === "shelved";
+    const g = groupsOf(t);
+    const why = cannotResumeCard(t);
+    const done = () => window.mNet.refresh();
+    return [
+      !over && (t.supervised || (t.parked_at && t.resume_id)) ? {
+        label: "restart",
+        help: "Stops the agent and starts it again on the same conversation, with the same model and settings.",
+        act: () => post(id, t.supervised ? "restart" : "resume").then(done)
+      } : null,
+      stopped || (!t.supervised && t.worktree && t.resume_id) ? {
+        label: "resume", off: why && !stopped ? why : "",
+        help: "Starts the agent again on this card and picks the conversation back up where it stopped.",
+        act: () => stopped ? patch(id, { status: "running" }).then(done) : resume(id)
+      } : null,
+      t.supervised && !over && !(t.new_context && t.new_context.step !== "failed") ? {
+        label: "new context",
+        help: "Has the agent commit, write a handoff note, clear its context, then carry on from the note.",
+        act: () => post(id, "new-context").then(done)
+      } : null,
+      g.all.length ? {
+        label: "add to group",
+        help: "Files this card into one of your named groups.",
+        pick: g.all.map(name => ({ label: name, on: g.tags.indexOf(name) >= 0,
+          act: () => patch(id, { tags: g.tags.indexOf(name) >= 0 ? g.tags.filter(x => x !== name) : g.tags.concat(name) }).then(done) }))
+      } : null,
+      g.inside.length ? {
+        label: "remove from group",
+        help: "Takes the card out of its group. Nothing else about it changes.",
+        pick: g.inside.length > 1 ? g.inside.map(name => ({ label: name, act: () => patch(id, { tags: g.tags.filter(x => x !== name) }).then(done) })) : null,
+        act: () => patch(id, { tags: g.tags.filter(x => x !== g.inside[0]) }).then(done)
+      } : null,
+      { sep: true },
+      { label: "settings",
+        help: "Opens this card's settings. The context limit lives there.",
+        act: () => { if (window.mCard) window.mCard.open(id); } },
+      { sep: true },
+      t.supervised && !over ? {
+        label: "stop",
+        help: "Stops the agent so it can be resumed later. The card is left out of the list unless show stopped is on.",
+        act: () => patch(id, { status: "shelved" }).then(done)
+      } : null,
+      {
+        label: "terminate and clean up", danger: true,
+        help: "Stops the agent and removes the folder and branch it was working in. It asks only when that folder holds changes that exist nowhere else.",
+        act: () => cleanUp(id, t)
+      }
+    ].filter(Boolean).filter((it, i, all) => !it.sep || (i > 0 && i < all.length - 1 && !all[i - 1].sep));
+  }
+
+  // Terminate and clean up, with the one question. `asks` are folders holding work that exists nowhere else.
+  async function cleanUp(id, t) {
+    let pv;
+    try { pv = await window.mNet.api("/v1/tasks/" + encodeURIComponent(id) + "/close"); }
+    catch (e) { openSheet(id, "could not read what cleaning up frees: " + e.message); return; }
+    const answers = {};
+    const asks = pv.asks || [];
+    if (asks.length && !skipped()[CLEANUP_KEY]) { showAsk(id, t, pv); return; }
+    asks.forEach(a => { answers[String(a.seq)] = "delete"; });
+    finishCleanUp(id, answers);
+  }
+
+  async function finishCleanUp(id, answers) {
+    try { await post(id, "close", { confirm: true, answers }); }
+    catch (e) { openSheet(id, "could not clean up: " + e.message); return; }
+    close();
+    window.mNet.refresh();
+  }
+
+  function showAsk(id, t, pv) {
+    const box = sheet.querySelector(".rmenu-box");
+    const lines = (pv.asks || []).map(a => `<li><b></b> on <i></i>: ${a.dirty} changed files, ${a.unpushed} commits on no remote and not on the hub</li>`).join("");
+    box.innerHTML = '<p class="rmenu-name"></p><p class="rmenu-ask">This folder holds work that exists nowhere else:</p><ul class="rmenu-asks">' + lines + '</ul>' +
+      '<label class="rmenu-tick"><input type="checkbox" class="rmenu-never"> never show me this again, just delete</label>' +
+      (pv.can_stash ? '<button type="button" class="rmenu-go" data-ans="stash">stash to the hub</button>' : "") +
+      '<button type="button" class="rmenu-go rmenu-danger" data-ans="delete">delete it</button>' +
+      '<button type="button" class="rmenu-x" data-close="1">cancel</button>';
+    box.querySelector(".rmenu-name").textContent = window.mUtil.cardName(t).main;
+    box.querySelectorAll(".rmenu-asks li").forEach((li, i) => {
+      li.querySelector("b").textContent = pv.asks[i].path;
+      li.querySelector("i").textContent = pv.asks[i].branch || "no branch";
+    });
+    box.querySelectorAll("[data-ans]").forEach(b => b.onclick = () => {
+      const ans = b.dataset.ans;
+      // Only a delete leaves the tick standing, so ticking it and stashing is not a standing delete.
+      if (ans === "delete" && box.querySelector(".rmenu-never").checked) setSkipped(true);
+      const answers = {};
+      pv.asks.forEach(a => { answers[String(a.seq)] = ans; });
+      finishCleanUp(id, answers);
+    });
+  }
+
   function build() {
     if (sheet) return;
     sheet = document.createElement("div");
     sheet.id = "m-rmenu";
     sheet.className = "rmenu";
     sheet.hidden = true;
-    sheet.innerHTML = '<div class="rmenu-back" data-close="1"></div>' +
-      '<div class="rmenu-box" role="dialog" aria-label="card actions"><p class="rmenu-name"></p>' +
-      '<button type="button" class="rmenu-go" data-act="resume"></button>' +
-      '<p class="rmenu-why" role="status"></p>' +
-      '<button type="button" class="rmenu-x" data-close="1">cancel</button></div>';
     document.body.appendChild(sheet);
     sheet.addEventListener("click", e => {
       if (e.target.closest("[data-close]")) { close(); return; }
-      const b = e.target.closest("[data-act]");
-      if (b && !b.disabled) { const id = openFor; close(); resume(id); }
+      // The (?) explains and does nothing else.
+      const q = e.target.closest(".rmenu-q");
+      if (q) {
+        const row = q.closest(".rmenu-row");
+        const help = row.nextElementSibling;
+        if (help && help.classList.contains("rmenu-help")) help.hidden = !help.hidden;
+        return;
+      }
+      const pick = e.target.closest("[data-pick]");
+      if (pick) { const it = current[Number(pick.dataset.i)].pick[Number(pick.dataset.j)]; close(); it.act(); return; }
+      const b = e.target.closest("[data-i]");
+      if (!b || b.disabled) return;
+      const it = current[Number(b.dataset.i)];
+      if (it.pick) {
+        const list = b.closest(".rmenu-row").parentNode.querySelector('.rmenu-picks[data-i="' + b.dataset.i + '"]');
+        if (list) list.hidden = !list.hidden;
+        return;
+      }
+      close();
+      Promise.resolve(it.act()).catch(err => openSheet(openFor, String(err && err.message || err)));
     });
   }
 
-  function open(id) {
+  let current = [];
+
+  function open(id) { openSheet(id, ""); }
+
+  function openSheet(id, note) {
     const t = window.mStore.card(id);
     if (!t) return;
     build();
     openFor = id;
-    const why = cannotResumeCard(t);
+    current = items(id, t);
     const o = openingState(id);
-    const go = sheet.querySelector(".rmenu-go");
+    const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+    const rows = current.map((it, i) => {
+      if (it.sep) return '<div class="rmenu-sep"></div>';
+      const label = it.label === "resume" && o && o.state === "opening" ? openingText + "…" : it.label;
+      return '<div class="rmenu-row"><button type="button" class="rmenu-item' + (it.label === "resume" ? " rmenu-resume" : "") + (it.danger ? " danger" : "") + '" data-i="' + i + '"' +
+        (it.off ? " disabled" : "") + ">" + esc(label) + (it.pick ? ' <span class="rmenu-more">&#9656;</span>' : "") +
+        '</button><button type="button" class="rmenu-q" aria-label="what is ' + esc(it.label) + '?">?</button></div>' +
+        '<p class="rmenu-help" hidden>' + esc(it.help || "") + (it.off ? " It cannot be resumed: " + esc(it.off) + "." : "") + "</p>" +
+        (it.pick ? '<div class="rmenu-picks" data-i="' + i + '" hidden>' + it.pick.map((p, j) =>
+          '<button type="button" class="rmenu-item sub' + (p.on ? " on" : "") + '" data-pick="1" data-i="' + i + '" data-j="' + j + '">' + esc(p.label) + "</button>").join("") + "</div>" : "");
+    }).join("");
+    sheet.innerHTML = '<div class="rmenu-back" data-close="1"></div>' +
+      '<div class="rmenu-box" role="dialog" aria-label="card actions"><p class="rmenu-name"></p>' + rows +
+      '<p class="rmenu-why" role="status"></p><button type="button" class="rmenu-x" data-close="1">cancel</button></div>';
     sheet.querySelector(".rmenu-name").textContent = window.mUtil.cardName(t).main;
-    go.textContent = o && o.state === "opening" ? openingText + "…" : "resume the last conversation";
-    go.disabled = !!why;
-    sheet.querySelector(".rmenu-why").textContent = why;
+    said(note);
     sheet.hidden = false;
     document.body.classList.add("sheet-open");
-    if (navigator.vibrate) { try { navigator.vibrate(12); } catch (e) {} }
+    if (!note && navigator.vibrate) { try { navigator.vibrate(12); } catch (e) {} }
   }
 
   function close() {

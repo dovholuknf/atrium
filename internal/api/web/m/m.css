@@ -287,3 +287,20 @@ pre.screen { margin: 0; font: 12px/1.4 var(--mono); color: var(--head); overflow
 .rmenu-go:disabled { opacity: .5; }
 .rmenu-why { margin: 0; color: var(--dim); font-size: 13px; }
 .rmenu-why:empty { display: none; }
+/* the terminals tab menu on the phone: the same items in the same order, each with a (?) that shows its help */
+.rmenu-box { max-height: 92vh; overflow-y: auto; }
+.rmenu-row { display: flex; gap: 8px; align-items: stretch; }
+.rmenu-item { flex: 1; min-height: 48px; border: 0; border-radius: 14px; font-size: 16px; font-weight: 600; text-align: left; padding: 0 16px; background: var(--lift); color: var(--head); }
+.rmenu-item:disabled { opacity: .5; }
+.rmenu-item.danger { color: var(--warn); }
+.rmenu-item.sub { margin-left: 16px; width: calc(100% - 16px); }
+.rmenu-item.sub.on::after { content: " \2713"; }
+.rmenu-more { float: right; color: var(--dim); }
+.rmenu-q { flex: none; width: 48px; min-height: 48px; border: 0; border-radius: 14px; background: var(--lift); color: var(--dim); font-size: 16px; font-weight: 600; }
+.rmenu-help { margin: 0; color: var(--dim); font-size: 13px; }
+.rmenu-help[hidden], .rmenu-picks[hidden] { display: none; }
+.rmenu-picks { display: flex; flex-direction: column; gap: 6px; }
+.rmenu-sep { height: 1px; background: var(--lift); margin: 2px 0; }
+.rmenu-asks { margin: 0; padding-left: 18px; font-size: 13px; color: var(--dim); }
+.rmenu-tick { display: flex; gap: 8px; align-items: center; font-size: 14px; }
+.rmenu-danger { color: var(--warn); }
