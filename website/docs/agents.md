@@ -50,5 +50,3 @@ repository is the brief an agent follows to measure what that runner's hooks rep
 It is not an agent and not a framework. It writes no prompts for you and runs no model of its own. It does not
 replace the agent's own tools, only watches and gates them. It is self-hosted for one operator, with no accounts and
 no hosted service.
-
-If you want to see how it compares with the other tools in this space, read [How atrium differs](./differs.md).

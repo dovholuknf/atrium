@@ -9,9 +9,7 @@ atrium is "moving past being an agent harness aggregator/orchestrator" toward a 
 
 Method: researched 2026-10-01 from READMEs, project docs and the GitHub API (stars, licence, last release). Nothing
 was cloned or run. Prices marked (3p) come from third-party sites. Anything a source did not say is marked
-**unverified**. This does not redo `docs/rnd/competitors.md` (2026-09-29, eight tools at source depth: Orca, herdr,
-ruflo, oh-my-claudecode, bb, Charon and others) or `docs/rnd/competitor-features.md` (2026-09-30, ranked features).
-Those are harness aggregators. This file is about factories: systems that take work in and land reviewed code out.
+**unverified**. This file is about factories, not harness aggregators: systems that take work in and land reviewed code out.
 
 ## 0. The answer
 

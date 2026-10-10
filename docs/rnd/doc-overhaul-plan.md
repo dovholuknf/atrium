@@ -112,8 +112,6 @@ build status is not settled yet and the batch settles it from the code before wr
 | `docs/rnd/change-record-design.md` | 188 | 2026-10-02 | Change record: atrium keeps "where are we" for every branch and PR,... | STATUS proposed |
 | `docs/rnd/changes-view-design.md` | 95 | 2026-09-29 | A Changes view on every card (design) | STATUS built? (`/changes` route exists) |
 | `docs/rnd/charon.md` | 786 | before 09-29 (reorg) | Charon: what it is, and what atrium should do about it | THIRD PARTY, as bb.md |
-| `docs/rnd/competitor-features.md` | 342 | 2026-09-29 | Competitor features: what atrium should build next | THIRD PARTY, as bb.md |
-| `docs/rnd/competitors.md` | 755 | before 09-29 (reorg) | Competitors: the field around atrium, and whether atrium can be ext... | THIRD PARTY, as bb.md |
 | `docs/rnd/config-alignment-design.md` | 347 | 2026-10-02 | Config alignment: one config for every session atrium starts, owned... | STATUS proposed |
 | `docs/rnd/context-limit-ownership-design.md` | 348 | 2026-10-02 | Who owns the context limit: atrium's new context or the runner's co... | MERGE into runtime/context-cycle-design.md, or STATUS superseded by it |
 | `docs/rnd/defender-advice-design.md` | 147 | 2026-09-30 | Defender advice (r-new-defender-advice) | STATUS built (`scripts/room-defender.ps1`) |
@@ -456,15 +454,8 @@ Answers recorded here as they come.
   Also asked for: an agent-focused marketing doc. Its reader is settled in Q3.
 - **Q3, the agent-focused marketing doc.** Its reader is (a), a person who runs coding agents, and it lives on the
   site. An agent reading it must come away knowing atrium is an agnostic agent harness: claude, codex, gemini,
-  opencode, ollama or a shell are rows in a runner table, not built-in assumptions. It links the competitive
-  differences page, settled in Q4.
-- **Q4, the comparison.** (a), open and named. A site page, "how atrium differs", compares atrium with the tools
-  clint has named before (the ones in `docs/rnd/competitors.md`, `competitor-features.md`, `bb.md`, `charon.md`,
-  `orca.md`, `factory-landscape.md`, `gateway-fit.md`, `spike-mcp-gateway.md`, `langchain-openwiki-spike.md`,
-  `state-of-the-art.md`). It is complimentary to every one of them and never negative: each is a good tool and a real
-  alternative, and the page says what each is best at and where atrium takes a different path. The `*-comparison*.md`
-  rule in `.gitignore` and its comment go. The rnd reads stay in the repo, and since they are public they get the
-  same tone pass: anything that runs another tool down is reworded to what it does well and how atrium differs.
+  opencode, ollama or a shell are rows in a runner table, not built-in assumptions.
+- **Q4, the comparison.** Product comparisons live outside this repo.
 - **Q5, superseded designs.** Kept, in `docs/archive/`, each with a `Status: superseded by <doc>` line. That covers
   the eight hub-history docs and every other design a later doc replaced. Beside them, a maintained story of how
   atrium changed, `docs/story.md`: it started as X, went to Y, then Z, each step with what broke and the archived

@@ -2,8 +2,8 @@
 
 Status: proposed, not built. clint said build later, 2026-09-30.
 
-Origin: design, 2026-09-30, @rnd. Build later (clint, 2026-09-30). Item r-038 (`docs/backlog/runtime/r-038.md`),
-from item 4 of `docs/rnd/competitor-features.md`. Built by @runtime, with a board pane from @ui.
+Origin: design, 2026-09-30, @rnd. Build later (clint, 2026-09-30). Item r-038 (`docs/backlog/runtime/r-038.md`).
+Built by @runtime, with a board pane from @ui.
 
 ## 1. The answer in five lines
 

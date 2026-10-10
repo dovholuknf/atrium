@@ -2,8 +2,7 @@
 
 Status: stage 1 BUILT 2026-09-30 by @runtime on `claude/r-deps`, to `docs/runtime/item-dependencies-design.md`.
 Hub side only: live at the next hub deploy, no room restart. The board half is @ui's (design section 5, which now
-carries the API shapes). From `docs/rnd/competitor-features.md` item 8 (Orca and Gas Town have it).
-
+carries the API shapes).
 Code: `internal/itemgate` (ids, targets, the landed path, loops), `internal/hubstore/deps.go` (migration
 `0004_item_gate`), `internal/link/deps.go` (the checks, `/_hub/deps*`, the launch refusal, the ticker) and
 `internal/link/deps_mcp.go` (`atrium_deps`). Tests beside each.
