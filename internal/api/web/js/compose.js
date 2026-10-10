@@ -16,12 +16,12 @@ function composeNoteTyped(d) {
   if (typeof d === "string" && d.length && !/[\x00-\x1f\x7f]/.test(d)) composeLast = { d, at: Date.now() };
 }
 
-function composeOpen() { const b = document.getElementById("t-compose"); return !!b && !b.hidden; }
+function composeOpen() { const b = document.getElementById("t-ctxbox"); return !!b && !b.hidden; }
 
 // The room refused typing for the card on screen. A shell terminal is never held, so this is for a card only.
 function composeRefused() {
-  const box = document.getElementById("t-compose");
-  const ta = document.getElementById("t-compose-in");
+  const box = document.getElementById("t-ctxbox");
+  const ta = document.getElementById("t-ctxbox-in");
   if (!box || !ta || !termTask || termKind === "shell") return false;
   if (composeOpen()) return true;
   composeWire();
@@ -35,8 +35,8 @@ function composeRefused() {
 }
 
 function composeClose() {
-  const box = document.getElementById("t-compose");
-  const ta = document.getElementById("t-compose-in");
+  const box = document.getElementById("t-ctxbox");
+  const ta = document.getElementById("t-ctxbox-in");
   if (box) { box.hidden = true; delete box.dataset.card; }
   if (ta) ta.value = "";
   if (term) term.focus();
@@ -44,8 +44,8 @@ function composeClose() {
 
 // Queues the text on the card. If the cycle has ended by now the room types it at once, which is what was wanted.
 async function composeSend() {
-  const box = document.getElementById("t-compose");
-  const ta = document.getElementById("t-compose-in");
+  const box = document.getElementById("t-ctxbox");
+  const ta = document.getElementById("t-ctxbox-in");
   const id = box && box.dataset.card;
   const text = ta ? ta.value.replace(/\s+$/, "") : "";
   if (!id || !text) { composeClose(); return; }
@@ -65,8 +65,8 @@ async function composeSend() {
 
 // Stops the cycle, which sends whatever is queued, then types the box's own text straight into the terminal.
 async function composeFree() {
-  const box = document.getElementById("t-compose");
-  const ta = document.getElementById("t-compose-in");
+  const box = document.getElementById("t-ctxbox");
+  const ta = document.getElementById("t-ctxbox-in");
   const id = box && box.dataset.card;
   const text = ta ? ta.value : "";
   if (!id) { composeClose(); return; }
@@ -109,8 +109,8 @@ async function composeStop() {
 }
 
 function composeWire() {
-  const box = document.getElementById("t-compose");
-  const ta = document.getElementById("t-compose-in");
+  const box = document.getElementById("t-ctxbox");
+  const ta = document.getElementById("t-ctxbox-in");
   if (!box || !ta || box.dataset.wired) return;
   box.dataset.wired = "1";
   ta.addEventListener("keydown", e => {
