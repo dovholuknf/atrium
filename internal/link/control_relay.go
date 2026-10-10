@@ -53,6 +53,8 @@ func (c *controlMCP) relay(ctx context.Context, from string, req RelayRequest) R
 		return c.cardAcross(ctx, target, req.To, req.Events)
 	case RelayLaunch:
 		return c.launchAcross(ctx, from, req)
+	case RelayHub:
+		return c.hubAsk(ctx, from, req)
 	case RelayFind:
 		card, code, err := c.hub.lookupEverywhere(from, req.To)
 		if err != nil {

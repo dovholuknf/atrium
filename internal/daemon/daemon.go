@@ -466,6 +466,7 @@ func New(opts Options) (*Daemon, error) {
 	d.ap.HubRemote = d.HubRemoteBase
 	d.ap.HubGitURL = d.handleHubGitURL
 	d.ap.HubCI = d.handleHubCI
+	d.ap.HubAsk = d.handleHubAsk
 	d.ap.RestartWake = d.handleRestartWake
 	d.ap.Hold = d.handleHold
 	d.ap.NewContext = d.handleNewContext

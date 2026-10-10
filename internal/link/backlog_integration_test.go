@@ -162,30 +162,30 @@ func TestBacklogAndReportsToolsReachTheHub(t *testing.T) {
 	c := &controlMCP{board: srv.URL, client: srv.Client()}
 	ctx := context.Background()
 
-	_, out, err := c.backlogHandler(ctx, nil, backlogInput{Action: "file", ID: "m-1", Dept: "fabric", Title: "from m1mini"})
+	_, out, err := c.tools().backlogHandler(ctx, nil, backlogInput{Action: "file", ID: "m-1", Dept: "fabric", Title: "from m1mini"})
 	if err != nil || out.Item == nil || out.Item.Status != "open" {
 		t.Fatalf("file: %+v %v", out, err)
 	}
-	_, out, err = c.backlogHandler(ctx, nil, backlogInput{Action: "file", ID: "m-1", Dept: "fabric", Title: "again"})
+	_, out, err = c.tools().backlogHandler(ctx, nil, backlogInput{Action: "file", ID: "m-1", Dept: "fabric", Title: "again"})
 	if err == nil || !strings.Contains(err.Error(), "already exists") && !strings.Contains(err.Error(), "409") {
 		t.Fatalf("a taken id was filed: %+v %v", out, err)
 	}
-	_, out, err = c.backlogHandler(ctx, nil, backlogInput{Action: "list", Open: true})
+	_, out, err = c.tools().backlogHandler(ctx, nil, backlogInput{Action: "list", Open: true})
 	if err != nil || len(out.Items) != 1 || out.Items[0].ID != "m-1" {
 		t.Fatalf("list: %+v %v", out, err)
 	}
-	if _, _, err := c.backlogHandler(ctx, nil, backlogInput{Action: "get"}); err == nil {
+	if _, _, err := c.tools().backlogHandler(ctx, nil, backlogInput{Action: "get"}); err == nil {
 		t.Fatal("get without an id")
 	}
-	_, rout, err := c.reportsHandler(ctx, nil, reportsInput{Action: "add", Subject: "hi", Body: "there"})
+	_, rout, err := c.tools().reportsHandler(ctx, nil, reportsInput{Action: "add", Subject: "hi", Body: "there"})
 	if err != nil || rout.Report == nil || rout.Report.ID != "rp_1" {
 		t.Fatalf("add: %+v %v", rout, err)
 	}
-	_, rout, err = c.reportsHandler(ctx, nil, reportsInput{Action: "list", Unread: true})
+	_, rout, err = c.tools().reportsHandler(ctx, nil, reportsInput{Action: "list", Unread: true})
 	if err != nil || len(rout.Reports) != 1 {
 		t.Fatalf("list: %+v %v", rout, err)
 	}
-	_, rout, err = c.reportsHandler(ctx, nil, reportsInput{Action: "read", ID: "rp_1"})
+	_, rout, err = c.tools().reportsHandler(ctx, nil, reportsInput{Action: "read", ID: "rp_1"})
 	if err != nil || rout.Report == nil || rout.Report.ReadAt == nil {
 		t.Fatalf("read: %+v %v", rout, err)
 	}
@@ -239,7 +239,7 @@ func TestALaunchTagLinksTheItemAndTheReportFollowsIt(t *testing.T) {
 	t.Cleanup(srv.Close)
 	c := &controlMCP{board: srv.URL, client: srv.Client()}
 	ctx := context.Background()
-	if _, _, err := c.backlogHandler(ctx, nil, backlogInput{Action: "file", ID: "f-new-y", Dept: "fabric", Title: "y"}); err != nil {
+	if _, _, err := c.tools().backlogHandler(ctx, nil, backlogInput{Action: "file", ID: "f-new-y", Dept: "fabric", Title: "y"}); err != nil {
 		t.Fatal(err)
 	}
 	if note := c.linkItemToCard(ctx, []string{"x", "item:f-new-y"}, "sg4", "c7", "orch"); note != "" {
@@ -251,12 +251,12 @@ func TestALaunchTagLinksTheItemAndTheReportFollowsIt(t *testing.T) {
 	if note := c.linkItemToCard(ctx, []string{"plain"}, "sg4", "c9", "orch"); note != "" {
 		t.Errorf("a launch with no item tag said %q", note)
 	}
-	_, out, _ := c.backlogHandler(ctx, nil, backlogInput{Action: "get", ID: "f-new-y"})
+	_, out, _ := c.tools().backlogHandler(ctx, nil, backlogInput{Action: "get", ID: "f-new-y"})
 	if out.Item == nil || out.Item.Status != "in-progress" || out.Item.Card != "sg4~c7" {
 		t.Fatalf("after launch: %+v", out.Item)
 	}
 	c.followItem(ctx, "sg4", "c7", "done", "w")
-	_, out, _ = c.backlogHandler(ctx, nil, backlogInput{Action: "get", ID: "f-new-y"})
+	_, out, _ = c.tools().backlogHandler(ctx, nil, backlogInput{Action: "get", ID: "f-new-y"})
 	if out.Item.Status != "built" {
 		t.Errorf("after the done report: %+v", out.Item)
 	}
@@ -299,19 +299,19 @@ func TestBacklogPriorityOverHTTPAndTool(t *testing.T) {
 		t.Fatalf("filter by a bad priority: %d", code)
 	}
 
-	_, out, err := c.backlogHandler(ctx, nil, backlogInput{Action: "priority", ID: "a", Priority: "medium"})
+	_, out, err := c.tools().backlogHandler(ctx, nil, backlogInput{Action: "priority", ID: "a", Priority: "medium"})
 	if err != nil || out.Item == nil || out.Item.Priority != "medium" {
 		t.Fatalf("tool: %+v %v", out, err)
 	}
-	_, out, err = c.backlogHandler(ctx, nil, backlogInput{Action: "priority", ID: "a", Priority: "unset"})
+	_, out, err = c.tools().backlogHandler(ctx, nil, backlogInput{Action: "priority", ID: "a", Priority: "unset"})
 	if err != nil || out.Item == nil || out.Item.Priority != "" {
 		t.Fatalf("tool unset: %+v %v", out, err)
 	}
-	if _, _, err = c.backlogHandler(ctx, nil, backlogInput{Action: "priority", ID: "a", Priority: "urgent"}); err == nil ||
+	if _, _, err = c.tools().backlogHandler(ctx, nil, backlogInput{Action: "priority", ID: "a", Priority: "urgent"}); err == nil ||
 		!strings.Contains(err.Error(), "high, medium, low") {
 		t.Fatalf("tool bad priority: %v", err)
 	}
-	if _, _, err = c.backlogHandler(ctx, nil, backlogInput{Action: "file", ID: "z", Dept: "fabric", Title: "t",
+	if _, _, err = c.tools().backlogHandler(ctx, nil, backlogInput{Action: "file", ID: "z", Dept: "fabric", Title: "t",
 		Priority: "urgent"}); err == nil || !strings.Contains(err.Error(), "high, medium, low") {
 		t.Fatalf("tool file bad priority: %v", err)
 	}

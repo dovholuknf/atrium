@@ -54,6 +54,9 @@ const (
 	// RelayLaunch starts a session on another room, for a room's atrium_launch with
 	// `room`. Not idempotent, so nothing is ever held for it. See control_relay_launch.go.
 	RelayLaunch = "launch"
+	// RelayHub asks the hub's own backlog or reports endpoint, for a room's atrium_backlog and
+	// atrium_reports. The hub answers it itself, with no other room in it. See hubask.go.
+	RelayHub = "hub"
 )
 
 // RelayRequest is what a room asks its hub to carry.
@@ -87,6 +90,10 @@ type RelayRequest struct {
 	// Force, for `exit`, is the asker overriding the guard on a card that is
 	// neither theirs nor their own. The room that owns the card records it.
 	Force bool `json:"force,omitempty"`
+	// Method, Path and Body are the hub call, for `hub`. Only /_hub/backlog and /_hub/reports are served.
+	Method string          `json:"method,omitempty"`
+	Path   string          `json:"path,omitempty"`
+	Body   json.RawMessage `json:"body,omitempty"`
 }
 
 // RelayLaunchSpec is one launch for another room, field for field what the hub's own
@@ -136,6 +143,8 @@ type RelayAnswer struct {
 	Brief  string `json:"brief,omitempty"`
 	Model  string `json:"model,omitempty"`
 	Effort string `json:"effort,omitempty"`
+	// Data is the hub endpoint's own JSON answer, for `hub`.
+	Data json.RawMessage `json:"data,omitempty"`
 }
 
 // RelayTask is one card on another room, as atrium_task reports it. Card is

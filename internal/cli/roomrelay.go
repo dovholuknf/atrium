@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 
 	"github.com/dovholuknf/atrium/internal/daemon"
@@ -75,6 +76,16 @@ func (l linkRelay) Launch(ctx context.Context, r daemon.RelayLaunch) (daemon.Rel
 		res.Task = &daemon.RemoteTask{Card: t.Card, Handle: t.Handle, Title: t.Title, Status: t.Status}
 	}
 	return res, nil
+}
+
+// Hub makes linkRelay a daemon.HubAsker: one call to the hub's backlog or reports endpoint, over the link.
+func (l linkRelay) Hub(ctx context.Context, from, method, path string, body json.RawMessage) (daemon.RelayResult, error) {
+	ans, err := l.room.Relay(ctx, link.RelayRequest{Op: link.RelayHub, From: from, Method: method, Path: path, Body: body})
+	if err != nil {
+		return daemon.RelayResult{}, relayErr(err)
+	}
+	return daemon.RelayResult{OK: ans.OK, Code: ans.Code, Error: ans.Error, Unreachable: ans.Unreachable,
+		Unconfirmed: ans.Unconfirmed, Data: ans.Data}, nil
 }
 
 // reach relays one card or exit request, and carries the card back.

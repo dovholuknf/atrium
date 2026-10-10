@@ -201,6 +201,9 @@ type Server struct {
 	// HubCI is atrium_ci for a session here, `POST /v1/hub/ci`, asked of the hub over the link, which runs the forge CLI
 	// and answers the runs, logs and artifacts. Owned by the daemon. See internal/daemon/hubci.go.
 	HubCI http.HandlerFunc
+	// HubAsk is atrium_backlog and atrium_reports for a session here, `POST /v1/hub/ask`, asked of the hub over the
+	// link. Owned by the daemon. See internal/daemon/hubask.go.
+	HubAsk http.HandlerFunc
 	// Hold reads, sets or lifts the room deploy hold. Owned by the daemon, which
 	// runs the permission chain it acts in. See internal/daemon/roomhold.go.
 	Hold http.HandlerFunc
@@ -742,6 +745,9 @@ func (s *Server) Handler() http.Handler {
 	}
 	if s.HubCI != nil {
 		mux.HandleFunc("POST /v1/hub/ci", s.HubCI)
+	}
+	if s.HubAsk != nil {
+		mux.HandleFunc("POST /v1/hub/ask", s.HubAsk)
 	}
 	if s.Say != nil {
 		mux.HandleFunc("POST /v1/say", s.Say)
