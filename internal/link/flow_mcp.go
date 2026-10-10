@@ -24,13 +24,14 @@ const flowToolDesc = "The merge flow, kept on the hub: who holds each role, whic
 	"action is one of:\n" +
 	"- `roles {role?}`: who holds roles.\n" +
 	"- `role_set {role, room, card}` / `role_clear {role, room, card}`: name or release a holder.\n" +
-	"- `items {stage?}`: the items in the flow. `item {id}`: one.\n" +
+	"- `items {stage?}`: the items in the flow. `item {id}`: one, with what git and the recorded checks and deploys say of it. The stage is computed when you ask.\n" +
 	"- `stage {id, stage, branch?, sha?, note?}`: report an item's stage.\n" +
 	"- `checks {sha?}` / `check {sha, name, result}`: list, or record that a check passed, failed or timed out on a sha.\n" +
+	"- `repo {repo?}`: the hub repository stages are read from, like `github.com/dovholuknf/atrium`. Without repo, read it.\n" +
 	"- `deploys` / `deploy {room, sha}`: what each room runs, or record that a room now runs a sha."
 
 type flowInput struct {
-	Action string `json:"action" jsonschema:"roles, role_set, role_clear, items, item, stage, checks, check, deploys or deploy"`
+	Action string `json:"action" jsonschema:"roles, role_set, role_clear, items, item, stage, checks, check, repo, deploys or deploy"`
 	Role   string `json:"role,omitempty" jsonschema:"orchestrator, merger, tester or director"`
 	Room   string `json:"room,omitempty" jsonschema:"the room, for role_set, role_clear and deploy"`
 	Card   string `json:"card,omitempty" jsonschema:"the card id of the holder, for role_set and role_clear"`
@@ -39,6 +40,7 @@ type flowInput struct {
 	Branch string `json:"branch,omitempty" jsonschema:"for stage: the branch the work is on"`
 	SHA    string `json:"sha,omitempty" jsonschema:"a commit id, for stage, check, checks and deploy"`
 	Note   string `json:"note,omitempty" jsonschema:"for stage: one line, or where the doc is"`
+	Repo   string `json:"repo,omitempty" jsonschema:"for repo: github.com/owner/repo, or empty to read"`
 	Name   string `json:"name,omitempty" jsonschema:"for check: the check, like sanity"`
 	Result string `json:"result,omitempty" jsonschema:"for check: pass, fail or timeout"`
 }
@@ -48,8 +50,10 @@ type flowOutput struct {
 	Replaced []hubstore.RoleHolder `json:"replaced,omitempty"`
 	Items    []hubstore.FlowItem   `json:"items,omitempty"`
 	Item     *hubstore.FlowItem    `json:"item,omitempty"`
+	View     *FlowView             `json:"view,omitempty"`
 	Checks   []hubstore.FlowCheck  `json:"checks,omitempty"`
 	Deploys  []hubstore.FlowDeploy `json:"deploys,omitempty"`
+	Repo     *string               `json:"repo,omitempty"`
 	Note     string                `json:"note,omitempty"`
 }
 
@@ -105,11 +109,12 @@ func (c *controlMCP) flowHandler(ctx context.Context, req *mcp.CallToolRequest, 
 		if id == "" {
 			return nil, out, &refusedError{"item needs id"}
 		}
-		var f hubstore.FlowItem
+		var f FlowView
 		if err := c.ask(ctx, http.MethodGet, "/_hub/flow/items/"+url.PathEscape(id), "", nil, &f); err != nil {
 			return nil, out, err
 		}
-		out.Item = &f
+		out.Item = &f.FlowItem
+		out.View = &f
 		return nil, out, nil
 	case "stage":
 		if id == "" || in.Stage == "" {
@@ -141,6 +146,18 @@ func (c *controlMCP) flowHandler(ctx context.Context, req *mcp.CallToolRequest, 
 		}
 		out.Checks = []hubstore.FlowCheck{ck}
 		return nil, out, nil
+	case "repo":
+		var body struct {
+			Repo string `json:"repo"`
+		}
+		var err error
+		if strings.TrimSpace(in.Repo) == "" {
+			err = c.ask(ctx, http.MethodGet, "/_hub/flow/repo", "", nil, &body)
+		} else {
+			err = c.ask(ctx, http.MethodPost, "/_hub/flow/repo", "", map[string]any{"repo": in.Repo, "by": by}, &body)
+		}
+		out.Repo = &body.Repo
+		return nil, out, err
 	case "deploys":
 		err := c.ask(ctx, http.MethodGet, "/_hub/flow/deploys", "", nil, &out)
 		if err == nil && len(out.Deploys) == 0 {
@@ -160,5 +177,5 @@ func (c *controlMCP) flowHandler(ctx context.Context, req *mcp.CallToolRequest, 
 		out.Deploys = []hubstore.FlowDeploy{d}
 		return nil, out, nil
 	}
-	return nil, out, &refusedError{fmt.Sprintf("action %q is not one of roles, role_set, role_clear, items, item, stage, checks, check, deploys, deploy", in.Action)}
+	return nil, out, &refusedError{fmt.Sprintf("action %q is not one of roles, role_set, role_clear, items, item, stage, checks, check, repo, deploys, deploy", in.Action)}
 }

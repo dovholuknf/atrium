@@ -144,6 +144,7 @@ type Proxy struct {
 	cr *changeRequests
 	// backlog is the hub-wide backlog and director reports. Nil answers 404. See backlog.go.
 	backlog *hubstore.Store
+	flowGit FlowGit
 	// specs is the store of room specs and locks. See roomspec.go.
 	specs *hubstore.Store
 	// prc is the PR claim table. See prclaim.go.

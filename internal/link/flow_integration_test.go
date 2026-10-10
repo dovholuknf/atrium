@@ -3,9 +3,12 @@
 package link
 
 import (
+	"context"
 	"net/http"
 	"strings"
 	"testing"
+
+	"github.com/dovholuknf/atrium/internal/gitsync"
 )
 
 func TestFlowRolesStagesChecksAndDeploys(t *testing.T) {
@@ -51,5 +54,76 @@ func TestFlowIsWrittenOnlyFromTheHubsMachine(t *testing.T) {
 	code, _ := x.send("POST", "/_hub/flow/roles", js(map[string]any{"do": "set", "role": "merger", "room": "sg4", "card": "c1"}), "203.0.113.9:4000")
 	if code != http.StatusForbidden {
 		t.Fatalf("got %d", code)
+	}
+}
+
+type fakeFlowGit struct {
+	facts   gitsync.ItemFacts
+	covered map[string]bool
+}
+
+func (f *fakeFlowGit) ItemFacts(context.Context, string, string) (gitsync.ItemFacts, error) {
+	return f.facts, nil
+}
+
+func (f *fakeFlowGit) CoveredBy(_ context.Context, base, _ string) (bool, error) {
+	return f.covered[base], nil
+}
+
+// THE STAGE IS COMPUTED WHEN AN ITEM IS READ: git raises it, the checks and the deploys raise it further, and nobody
+// reported any of it.
+func TestFlowStageIsReadFromGitChecksAndDeploys(t *testing.T) {
+	x := newBacklogRig(t)
+	g := &fakeFlowGit{covered: map[string]bool{}}
+	x.p.SetFlowGit(g)
+	x.send("POST", "/_hub/backlog", js(map[string]any{"id": "f-x", "dept": "fabric", "title": "do x"}), loopAddr)
+	x.send("POST", "/_hub/flow/items/f-x", js(map[string]any{"stage": "implementing", "branch": "claude/x"}), loopAddr)
+	stage := func() (string, map[string]any) {
+		code, body := x.send("GET", "/_hub/flow/items/f-x", "", loopAddr)
+		if code != 200 {
+			t.Fatalf("get: %d %s", code, body)
+		}
+		o := obj(t, body)
+		return str(o, "stage"), o
+	}
+	if s, _ := stage(); s != "implementing" {
+		t.Fatalf("no facts: %s", s)
+	}
+	g.facts = gitsync.ItemFacts{SHA: "abc1234", Implemented: true}
+	if s, _ := stage(); s != "implemented" {
+		t.Fatalf("on the hub: %s", s)
+	}
+	g.facts.Merged = true
+	if s, _ := stage(); s != "merged" {
+		t.Fatalf("merged: %s", s)
+	}
+	// A passing check on a sha that does not cover the item changes nothing; one that does makes it tested.
+	x.send("POST", "/_hub/flow/checks", js(map[string]any{"sha": "def5678", "name": "sanity", "result": "pass"}), loopAddr)
+	if s, _ := stage(); s != "merged" {
+		t.Fatalf("a check that does not cover it: %s", s)
+	}
+	g.covered["def5678"] = true
+	if s, _ := stage(); s != "tested" {
+		t.Fatalf("tested: %s", s)
+	}
+	// Two rooms report deploys: one runs it, one does not. Deployed waits for both.
+	x.send("POST", "/_hub/flow/deploys", js(map[string]any{"room": "sg4", "sha": "def5678"}), loopAddr)
+	x.send("POST", "/_hub/flow/deploys", js(map[string]any{"room": "sg3", "sha": "0000000"}), loopAddr)
+	s, o := stage()
+	if s != "tested" || !strings.Contains(js(o["behind_rooms"]), "sg3") || !strings.Contains(js(o["deployed_on"]), "sg4") {
+		t.Fatalf("one room behind: %s %v", s, o)
+	}
+	g.covered["0000000"] = true
+	if s, _ = stage(); s != "deployed" {
+		t.Fatalf("deployed: %s", s)
+	}
+	g.facts.PushedByClint = true
+	if s, _ = stage(); s != "pushed-by-clint" {
+		t.Fatalf("pushed: %s", s)
+	}
+	// Git going quiet never lowers a stage.
+	g.facts = gitsync.ItemFacts{}
+	if s, _ = stage(); s != "pushed-by-clint" {
+		t.Fatalf("lowered: %s", s)
 	}
 }

@@ -105,3 +105,22 @@ func TestChecksAndDeploysAreKeyedBySha(t *testing.T) {
 		t.Fatalf("deploys: %+v", got)
 	}
 }
+
+func TestFlowRepoIsAStoreNameOrEmpty(t *testing.T) {
+	s := open(t)
+	if got, _ := s.FlowRepo(); got != "" {
+		t.Fatalf("unset reads %q", got)
+	}
+	if err := s.SetFlowRepo("github.com/dovholuknf/atrium"); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := s.FlowRepo(); got != "github.com/dovholuknf/atrium" {
+		t.Fatalf("reads %q", got)
+	}
+	if err := s.SetFlowRepo("../etc"); !IsRefusal(err) {
+		t.Fatalf("bad name: %v", err)
+	}
+	if err := s.SetFlowRepo(""); err != nil {
+		t.Fatal(err)
+	}
+}

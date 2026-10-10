@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+
+	"github.com/dovholuknf/atrium/internal/gitsync"
 )
 
 // The merge flow's rows. See migration 0014 and docs/design/merge-flow.md.
@@ -15,6 +17,21 @@ import (
 //   - A STAGE ONLY MOVES FORWARD through a report. Git can raise it later, and only the operator's reset lowers it.
 //   - A CHECK AND A DEPLOY ARE KEYED BY SHA, not by item: an item is tested when a passing check exists on a sha that
 //     contains it.
+
+// SettingFlowRepo names the hub repository, as `github.com/owner/repo`, that the flow reads an item's stage from. It is a
+// hub setting, so it needs no migration. Unset, a stage is what was reported.
+const SettingFlowRepo = "flow_repo"
+
+// FlowRepo reads the repository the flow reads, "" when unset.
+func (s *Store) FlowRepo() (string, error) { return s.HubSetting(SettingFlowRepo) }
+
+// SetFlowRepo sets it, and "" unsets it. A name is <host>/<owner>/<repo>, as the store spells it.
+func (s *Store) SetFlowRepo(name string) error {
+	if name = strings.TrimSpace(name); name != "" && !gitsync.ValidName(name) {
+		return refuse(errors.New("that is not <host>/<owner>/<repo>, like github.com/dovholuknf/atrium"))
+	}
+	return s.SetHubSetting(SettingFlowRepo, name)
+}
 
 // The roles, as the CHECK constraint spells them.
 const (

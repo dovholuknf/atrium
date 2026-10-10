@@ -13,6 +13,7 @@ import (
 //
 //	GET  /_hub/flow/roles?role=      who holds each role, or one
 //	POST /_hub/flow/roles            {do:"set"|"clear", role, room, card, by?}
+//	GET  /_hub/flow/repo             the repository stages are read from, POST {repo} sets it ("" unsets)
 //	GET  /_hub/flow/items?stage=     the items in the flow
 //	GET  /_hub/flow/items/<id>       one
 //	POST /_hub/flow/items/<id>       {stage, branch?, sha?, note?, by?}: report a stage
@@ -55,6 +56,25 @@ func (p *Proxy) serveFlow(w http.ResponseWriter, r *http.Request, sub string) {
 		crJSON(w, http.StatusOK, map[string]any{"roles": hs})
 	case rest == "roles":
 		p.flowRole(w, r, st)
+	case rest == "repo" && !write:
+		name, err := st.FlowRepo()
+		if err != nil {
+			ffail(w, err)
+			return
+		}
+		crJSON(w, http.StatusOK, map[string]any{"repo": name})
+	case rest == "repo":
+		var in struct{ Repo, By string }
+		if err := crDecode(r, &in); err != nil {
+			crFail(w, http.StatusBadRequest, "could not read that: "+err.Error())
+			return
+		}
+		if err := st.SetFlowRepo(in.Repo); err != nil {
+			ffail(w, err)
+			return
+		}
+		p.RecordAudit("", "flow-repo", in.Repo+" by "+in.By)
+		crJSON(w, http.StatusOK, map[string]any{"repo": strings.TrimSpace(in.Repo)})
 	case rest == "items" && !write:
 		items, err := st.FlowList(r.URL.Query().Get("stage"))
 		if err != nil {
@@ -158,12 +178,12 @@ func (p *Proxy) flowRole(w http.ResponseWriter, r *http.Request, st *hubstore.St
 
 func (p *Proxy) flowItem(w http.ResponseWriter, r *http.Request, st *hubstore.Store, id string, write bool) {
 	if !write {
-		f, err := st.FlowGet(id)
+		v, err := p.flowRefresh(r.Context(), st, id)
 		if err != nil {
 			ffail(w, err)
 			return
 		}
-		crJSON(w, http.StatusOK, f)
+		crJSON(w, http.StatusOK, v)
 		return
 	}
 	var in struct{ Stage, Branch, SHA, Note, By string }
