@@ -68,6 +68,15 @@ type forgeState struct {
 	mu      sync.Mutex
 	flights map[string]*forgeFlight
 	at      map[string]time.Time
+	// now is the clock for freshness. Nil is time.Now.
+	now func() time.Time
+}
+
+func (fs *forgeState) clock() time.Time {
+	if fs.now != nil {
+		return fs.now()
+	}
+	return time.Now()
 }
 
 type forgeFlight struct {
@@ -106,13 +115,13 @@ func (fs *forgeState) once(ctx context.Context, key string, f func() (string, er
 func (fs *forgeState) due(key string) bool {
 	fs.mu.Lock()
 	defer fs.mu.Unlock()
-	if at, ok := fs.at[key]; ok && time.Since(at) < forgeFreshFor {
+	if at, ok := fs.at[key]; ok && fs.clock().Sub(at) < forgeFreshFor {
 		return false
 	}
 	if fs.at == nil {
 		fs.at = map[string]time.Time{}
 	}
-	fs.at[key] = time.Now()
+	fs.at[key] = fs.clock()
 	return true
 }
 
