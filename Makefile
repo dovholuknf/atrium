@@ -50,7 +50,7 @@ release:
 tidy:
 	go mod tidy
 
-# Unit tests. `test-all` adds the integration tests, as CI does. See scripts/test.sh.
+# Unit tests. `test-all` adds the integration tests, which CI runs. See scripts/test.sh.
 test:
 	bash scripts/test.sh unit
 

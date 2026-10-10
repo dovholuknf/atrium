@@ -109,7 +109,7 @@ step "go test"
 # a package that died without a failing test (a timeout's panic names the
 # tests still running), and the slowest tests. The raw stream is kept whole.
 started=$(date +%s)
-# `all`: unit and integration tests. CI is where the integration tests run. See scripts/test.sh.
+# ALL the tests, unit and integration. CI is the only place the integration tests run. See scripts/test.sh.
 bash scripts/test.sh all -json -p "$cpus" -timeout 20m 2>&1 \
   | tee "$artefacts/go-test.json" \
   | go run scripts/ci-report.go -dir "$artefacts"
