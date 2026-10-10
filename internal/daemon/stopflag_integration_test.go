@@ -46,9 +46,8 @@ func TestAFlaggedStopEndsTheTurnAndNeverBlocks(t *testing.T) {
 	if got.Status != store.StatusNeedsInput {
 		t.Fatalf("the card is %s after the turn ended, want %s", got.Status, store.StatusNeedsInput)
 	}
-	if msgs := pendingFrom(t, d, worker.ID); len(msgs) != 2 || msgs[0].Text != "land it next" ||
-		msgs[1].Text != silentNudgeText {
-		t.Fatalf("the worker's queue holds %v, want the message still queued, then the nudge", msgs)
+	if msgs := pendingFrom(t, d, worker.ID); len(msgs) != 1 || msgs[0].Text != "land it next" {
+		t.Fatalf("the worker's queue holds %v, want only the message still queued", msgs)
 	}
 	seen, err := d.st.GetSeen(worker.ID)
 	if err != nil {
@@ -57,8 +56,8 @@ func TestAFlaggedStopEndsTheTurnAndNeverBlocks(t *testing.T) {
 	if seen == nil || seen.TurnEndedAt == nil || seen.TurnEndedAt.Before(before) {
 		t.Fatalf("the turn was not noted for seen: %+v", seen)
 	}
-	if msgs := pendingFrom(t, d, launcher.ID); len(msgs) != 0 {
-		t.Fatalf("the launcher has %v, want nothing until the nudge goes unanswered", msgs)
+	if msgs := pendingFrom(t, d, launcher.ID); len(msgs) != 1 {
+		t.Fatalf("the launcher has %v, want the one silent-stop notice", msgs)
 	}
 }
 

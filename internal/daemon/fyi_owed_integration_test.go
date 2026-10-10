@@ -9,15 +9,7 @@ import (
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
-func TestTheNudgeNamesDoneBlockedAndTheWaitRule(t *testing.T) {
-	for _, want := range []string{"atrium_done", "atrium_blocked", "background command"} {
-		if !strings.Contains(silentNudgeText, want) {
-			t.Errorf("the nudge misses %q: %q", want, silentNudgeText)
-		}
-	}
-	if strings.Contains(silentNudgeText, "atrium_report") {
-		t.Errorf("the nudge names atrium_report: %q", silentNudgeText)
-	}
+func TestTheLeanWorkerPromptNeverNamesAtriumReport(t *testing.T) {
 	if strings.Contains(leanSystemPrompt, "atrium_report") {
 		t.Errorf("the lean worker prompt names atrium_report")
 	}
@@ -27,7 +19,7 @@ func TestTheNudgeNamesDoneBlockedAndTheWaitRule(t *testing.T) {
 func nudged(t *testing.T, d *Daemon, id string) bool {
 	t.Helper()
 	for _, m := range pendingFrom(t, d, id) {
-		if m.Text == silentNudgeText {
+		if m.FromPeer == "atrium" {
 			return true
 		}
 	}
@@ -63,7 +55,7 @@ func TestALaunchersFyiAfterADoneReportOwesNothing(t *testing.T) {
 		if nudged(t, d, worker.ID) {
 			t.Fatalf("%s: the worker was nudged after a launcher's fyi", door)
 		}
-		stopTwice(t, d, "worker")
+		stopSilently(t, d, "worker")
 		if msgs := pendingFrom(t, d, launcher.ID); len(msgs) != 0 {
 			t.Fatalf("%s: the launcher was told of a silent stop: %v", door, msgs)
 		}
@@ -71,10 +63,10 @@ func TestALaunchersFyiAfterADoneReportOwesNothing(t *testing.T) {
 }
 
 // A launcher's needs, the default, still makes the worker owe, and its silence
-// still earns the nudge.
+// still earns its launcher a notice.
 func TestALaunchersNeedsStillOwesAReport(t *testing.T) {
 	for _, kind := range []string{"needs", ""} {
-		d, _, worker := reportedWorker(t)
+		d, launcher, worker := reportedWorker(t)
 		if rec := sayKind(t, d, worker, "orchestrator", kind); rec.Code >= 400 {
 			t.Fatalf("%q: %d %s", kind, rec.Code, rec.Body)
 		}
@@ -85,8 +77,11 @@ func TestALaunchersNeedsStillOwesAReport(t *testing.T) {
 			t.Fatal(err)
 		}
 		stopTurn(t, d, "worker")
-		if !nudged(t, d, worker.ID) {
-			t.Fatalf("%q: no nudge for a silent stop after the launcher's message", kind)
+		if nudged(t, d, worker.ID) {
+			t.Fatalf("%q: a silent stop typed a nudge into the worker", kind)
+		}
+		if msgs := pendingFrom(t, d, launcher.ID); len(msgs) != 1 {
+			t.Fatalf("%q: the launcher has %d messages, want one silent-stop notice", kind, len(msgs))
 		}
 	}
 }

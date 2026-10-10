@@ -433,24 +433,13 @@ func (d *Daemon) peerSaid(from string, target *store.Task, text, kind string) {
 
 // ── silent stops ────────────────────────────────────────────────────────────────
 
-// silentNudgeText is what atrium says to a worker whose first turn ended silently. The same one
-// instruction the launch prompt ends with (link.reportLine): atrium_done or atrium_blocked, and wait for every
-// command. Never atrium_report, which a launcher's brief may forbid because a done report closes the card.
-const silentNudgeText = "Your turn ended without telling your launcher anything. End with atrium_done if the work is " +
-	"finished, or atrium_blocked if something stops you. Wait for every command in the same turn: never end a turn on a " +
-	"background command. Otherwise carry on with your brief."
-
-// NoticeSilentNudge is the claim that the worker was nudged for one launcher prompt.
-const NoticeSilentNudge = "silent-nudge"
-
 // silentStop deals with a worker that ended its turn without saying anything.
 // Called as the turn ends, and by the watchdog for a session that has no Stop
 // hook. Returns whether the launcher was told.
 //
-// THE FIRST SILENT STOP GOES TO THE WORKER, not the launcher: atrium says a
-// fixed line to it, immediately, so the launcher spends no turn on it. Only a
-// turn that ends silently AFTER that nudge reaches the launcher, with the nudge
-// named. One nudge per launcher prompt, never a loop.
+// NOTHING IS EVER TYPED INTO THE WORKER. A nudge cost the worker a full model turn, and it fired
+// on cards that were only waiting. The launcher is told once per prompt, on the first silent stop,
+// and that is a message to the launcher and a turn for nobody else.
 func (d *Daemon) silentStop(taskID string) bool {
 	t, err := d.st.Get(taskID)
 	if err != nil || !d.reportsToLauncher(t) {
@@ -468,29 +457,9 @@ func (d *Daemon) silentStop(taskID string) bool {
 	if t.OwedAt != nil && d.st.ReportedSince(t.ID, *t.OwedAt) {
 		return false
 	}
-	key := t.PromptKey()
-	nudgedAt, nudged := d.st.NoticeAt(t.ID, NoticeSilentNudge, key)
-	if !nudged {
-		fresh, err := d.st.RecordNotice(t.ID, NoticeSilentNudge, key)
-		if err != nil {
-			log.Printf("[atrium] could not record a nudge for %s: %v", t.DisplayTitle(), err)
-		} else if fresh {
-			if _, err := d.deliverPeerAs(store.DeliveryNudge, t, "atrium", silentNudgeText); err != nil {
-				log.Printf("[atrium] could not nudge %s: %v", t.DisplayTitle(), err)
-			} else {
-				log.Printf("[atrium] nudged %s: its turn ended without a report", t.DisplayTitle())
-			}
-		}
-		return false
-	}
-	// The stop seen is the one the nudge answers, or older: wait for a new turn.
-	if !ended.After(nudgedAt) {
-		return false
-	}
-	body := fmt.Sprintf("%s ended its turn without reporting, twice, nudged once at %s. It has been "+
-		"waiting since %s with nothing to say about the work. card %s",
-		t.WireName, nudgedAt.Local().Format("15:04"), ended.Local().Format("15:04:05"), t.ID)
-	return d.notifyLauncher(t, NoticeSilentStop, key, body)
+	body := fmt.Sprintf("fyi: %s ended its turn without reporting. It has been waiting since %s with nothing to "+
+		"say about the work. card %s", t.WireName, ended.Local().Format("15:04:05"), t.ID)
+	return d.notifyLauncher(t, NoticeSilentStop, t.PromptKey(), body)
 }
 
 // stoppedSilently reports whether a card is waiting after a turn that ran

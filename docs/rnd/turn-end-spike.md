@@ -1,7 +1,8 @@
 # Spike: a launched agent never ends a turn with nobody told
 
-Status: built. A launched worker whose turn ends without a report is told to report (`silentNudgeText` in
-`internal/daemon/a2a.go`).
+Status: built, then removed on 2026-10-10. The nudge typed into a silently stopped worker cost a model turn on cards
+that were only waiting, so atrium now types nothing into the worker and tells the launcher once. See
+`changelog/runtime/2026-10-10-r-no-turn-end-nudge.md`. What follows is the original design.
 
 Spike only. Nothing here is built. Written by sa45 for the orchestrator (`atrium-87300`) and clint on 2026-09-24.
 It sits on `docs/runtime/a2a-reliability-design.md` and fits `docs/runtime/work-ledger-design.md`, and it asks clint to reverse one
