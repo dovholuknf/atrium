@@ -28,6 +28,9 @@ func cardAt(t *testing.T, d *Daemon, name, dir string) *store.Task {
 // review called out as the one nothing would catch: it compiles, it runs, and
 // it is silently useless.
 func TestAShellOpensInTheCardsDirectory(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d, _, cancel, _ := startDaemon(t)
 	defer cancel()
 
@@ -50,6 +53,9 @@ func TestAShellOpensInTheCardsDirectory(t *testing.T) {
 
 // A card with nowhere to open must say so rather than opening somewhere.
 func TestACardWithNoDirectoryCannotHaveAShell(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d, _, cancel, _ := startDaemon(t)
 	defer cancel()
 
@@ -69,6 +75,9 @@ func TestACardWithNoDirectoryCannotHaveAShell(t *testing.T) {
 // terminal that appears and vanishes. This is the whole reason opening a shell
 // is a POST and not a side effect of the websocket upgrade.
 func TestAShellRefusesADirectoryThatIsGone(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d, _, cancel, _ := startDaemon(t)
 	defer cancel()
 
@@ -91,6 +100,9 @@ func TestAShellRefusesADirectoryThatIsGone(t *testing.T) {
 // second ask must not start a second shell, which would leak a process per
 // press and put two terminals under one card.
 func TestAskingForAShellTwiceGivesTheSameOne(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d, _, cancel, _ := startDaemon(t)
 	defer cancel()
 
@@ -117,6 +129,9 @@ func TestAskingForAShellTwiceGivesTheSameOne(t *testing.T) {
 // runner. Folding shells into that map is the obvious simplification and it
 // would file a card as dead the moment somebody typed `exit` in a shell.
 func TestAShellIsNotARunner(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d, _, cancel, _ := startDaemon(t)
 	defer cancel()
 
@@ -145,6 +160,9 @@ func TestAShellIsNotARunner(t *testing.T) {
 // retry a stale resume. None of that may happen here, and the way this breaks
 // is somebody reusing `awaitExit` because the two look alike.
 func TestClosingAShellDoesNotTouchTheCard(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d, _, cancel, _ := startDaemon(t)
 	defer cancel()
 
@@ -193,6 +211,9 @@ func TestClosingAShellDoesNotTouchTheCard(t *testing.T) {
 // including a second agent, filing activity against the card as though the
 // runner had done it.
 func TestAShellSaysWhichCardButNotWhichAgent(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d, _, cancel, _ := startDaemon(t)
 	defer cancel()
 
@@ -215,6 +236,9 @@ func TestAShellSaysWhichCardButNotWhichAgent(t *testing.T) {
 // it. A daemon launched from inside a supervised session has `ATRIUM_TASK_ID`
 // set, and a shell inheriting that would report itself as a different card.
 func TestAShellDoesNotInheritSomebodyElsesCard(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d, _, cancel, _ := startDaemon(t)
 	defer cancel()
 
@@ -236,6 +260,9 @@ func TestAShellDoesNotInheritSomebodyElsesCard(t *testing.T) {
 // The room's own lag log is switched on in its environment. A shell opened on a
 // card must not carry it, or a `go test` typed there fails in internal/link.
 func TestAShellDoesNotInheritTheRoomsDebugSwitches(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d, _, cancel, _ := startDaemon(t)
 	defer cancel()
 
@@ -251,6 +278,9 @@ func TestAShellDoesNotInheritTheRoomsDebugSwitches(t *testing.T) {
 // the one wanted is the operator's own and `COMSPEC` on a PowerShell machine
 // is not it.
 func TestTheConfiguredShellWins(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d, _, cancel, _ := startDaemon(t)
 	defer cancel()
 
@@ -269,6 +299,9 @@ func TestTheConfiguredShellWins(t *testing.T) {
 // With nothing configured there is still an answer, on both platforms, because
 // a shell that cannot be named cannot produce an error worth reading either.
 func TestThereIsAlwaysAShellToTry(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d, _, cancel, _ := startDaemon(t)
 	defer cancel()
 
@@ -291,6 +324,9 @@ func TestThereIsAlwaysAShellToTry(t *testing.T) {
 // with it, and the only way left to stop atrium opening one would have been to
 // name a command that does not exist.
 func TestShellsCanBeTurnedOff(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d, _, cancel, _ := startDaemon(t)
 	defer cancel()
 

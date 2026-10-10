@@ -23,6 +23,9 @@ func mk(t *testing.T, s *Store, name, status string) string {
 // ones and leave everything else, above all the shelved ones: shelving is the
 // one act that says "come back to this".
 func TestPruneTakesFinishedAndSparesTheRest(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real sqlite database on disk")
+	}
 	t.Parallel()
 	s := open(t)
 	live := mk(t, s, "live", StatusRunning)
@@ -46,6 +49,9 @@ func TestPruneTakesFinishedAndSparesTheRest(t *testing.T) {
 
 // Asking for a shelved sweep has to come back empty rather than obeying.
 func TestPruneRefusesShelved(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real sqlite database on disk")
+	}
 	t.Parallel()
 	s := open(t)
 	id := mk(t, s, "shelved", StatusShelved)
@@ -64,6 +70,9 @@ func TestPruneRefusesShelved(t *testing.T) {
 
 // One column at a time, so clearing done does not silently take dead with it.
 func TestPruneNarrowsToOneStatus(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real sqlite database on disk")
+	}
 	t.Parallel()
 	s := open(t)
 	mk(t, s, "done", StatusDone)
@@ -84,6 +93,9 @@ func TestPruneNarrowsToOneStatus(t *testing.T) {
 // An age cutoff keeps something that just finished, so a sweep on a timer never
 // deletes a card seconds after it went done.
 func TestPruneHonoursAge(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real sqlite database on disk")
+	}
 	t.Parallel()
 	s := open(t)
 	id := mk(t, s, "done", StatusDone)
@@ -103,6 +115,9 @@ func TestPruneHonoursAge(t *testing.T) {
 // Resume is the whole answer to a runner dying with the daemon, so a blank must
 // never overwrite an id that works.
 func TestSetResumeIDIgnoresBlank(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real sqlite database on disk")
+	}
 	t.Parallel()
 	s := open(t)
 	id := mk(t, s, "r", StatusRunning)

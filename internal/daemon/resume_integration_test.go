@@ -19,6 +19,9 @@ func boolp(b bool) *bool { return &b }
 // fails, atrium starts fresh, the fresh session reports its own unresumable
 // id, and tomorrow it fails again a little further from the original.
 func TestAnUnwrittenSessionDoesNotClobberAGoodResumeID(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	t.Parallel()
 	d, _, cancel, errCh := startDaemon(t)
 	defer func() {
@@ -62,6 +65,9 @@ func TestAnUnwrittenSessionDoesNotClobberAGoodResumeID(t *testing.T) {
 // A session that HAS written a transcript replaces whatever was there. Without
 // this the card would be stuck on the first conversation it ever saw.
 func TestAWrittenSessionDoesUpdateTheResumeID(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d, _, cancel, errCh := startDaemon(t)
 	defer func() {
 		cancel()
@@ -119,6 +125,9 @@ func TestAHookThatSaysNothingIsTrusted(t *testing.T) {
 // This is the case that actually bit: the transcript check alone was not
 // enough, because at SessionStart there is nothing to look at.
 func TestAStartingSessionKeepsTheCardsResumeID(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d, _, cancel, errCh := startDaemon(t)
 	defer func() {
 		cancel()
@@ -165,6 +174,9 @@ func TestAStartingSessionKeepsTheCardsResumeID(t *testing.T) {
 // A card with nothing stored takes whatever the first session offers. Refusing
 // would leave a brand new card with no way to resume at all.
 func TestAFirstStartStillRecordsItsResumeID(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d, _, cancel, errCh := startDaemon(t)
 	defer func() {
 		cancel()
@@ -197,6 +209,9 @@ func TestAFirstStartStillRecordsItsResumeID(t *testing.T) {
 // case: two foreground resumes of the same id both open, silently, which is how
 // this was found.
 func TestASecondRunnerCannotResumeALiveConversation(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d, _, cancel, errCh := startDaemon(t)
 	defer func() {
 		cancel()

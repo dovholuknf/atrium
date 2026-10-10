@@ -85,6 +85,9 @@ func TestTheOperatorsPromptOwesNothingToTheLauncher(t *testing.T) {
 // nothing, and before one it shares the debt of the prompt it never paid, so
 // the launcher hears once rather than once per wake.
 func TestAMonitorWakeOwesNothingNew(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	t.Parallel()
 	d, launcher, worker := reportedWorker(t)
 	for i := 0; i < 3; i++ {

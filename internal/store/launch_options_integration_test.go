@@ -12,6 +12,9 @@ import (
 // A card keeps its effort and extras the way it keeps its model, and its JSON
 // names the env keys and never carries a value.
 func TestACardRemembersItsLaunchOptions(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real sqlite database on disk")
+	}
 	t.Parallel()
 	s := openTestStore(t)
 	task, _, err := s.Register(Observed{WireName: "one", Worktree: "/tmp/one"})
@@ -58,6 +61,9 @@ func TestACardRemembersItsLaunchOptions(t *testing.T) {
 // migration on a database that already has the columns, which is also the
 // "already there" case the brief asks it to tolerate.
 func TestLaunchOptionsMigrationBackfillsOnlyEmptyRows(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real sqlite database on disk")
+	}
 	t.Parallel()
 	path := filepath.Join(t.TempDir(), "old.db")
 	s, err := Open(path)

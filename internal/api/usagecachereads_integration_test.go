@@ -6,6 +6,9 @@ import "testing"
 
 // The usage tab's cache reads toggle: off until switched on, and it reads back.
 func TestUsageCacheReadsSettingRoundTrip(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real server with git worktrees and a database")
+	}
 	t.Parallel()
 	srv, _, _ := fileServer(t)
 

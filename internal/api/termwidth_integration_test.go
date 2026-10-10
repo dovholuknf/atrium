@@ -10,6 +10,9 @@ import (
 // The width floor is refused out of range rather than clamped, reads back what
 // was stored, and falls back to the default when cleared.
 func TestTheWidthFloorRefusesOutOfRange(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real server with git worktrees and a database")
+	}
 	t.Parallel()
 	srv, _, _ := fileServer(t)
 

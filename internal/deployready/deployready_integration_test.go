@@ -142,6 +142,9 @@ func TestRoomSide(t *testing.T) {
 }
 
 func TestNothingLandedIsCurrent(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: git subprocesses on throwaway repositories")
+	}
 	t.Parallel()
 	r := newRepo(t)
 	base := r.commit("base", map[string]string{"internal/a.go": "a"})
@@ -208,6 +211,9 @@ func TestVerdictByRangeCoversOnlyTheRange(t *testing.T) {
 }
 
 func TestSingleCommitVerdict(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: git subprocesses on throwaway repositories")
+	}
 	t.Parallel()
 	r := newRepo(t)
 	base := r.commit("base", map[string]string{"internal/a.go": "a"})
@@ -217,6 +223,9 @@ func TestSingleCommitVerdict(t *testing.T) {
 }
 
 func TestRoomSideNeedsARoomVerdict(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: git subprocesses on throwaway repositories")
+	}
 	t.Parallel()
 	r := newRepo(t)
 	base := r.commit("base", map[string]string{"internal/a.go": "a"})
@@ -233,6 +242,9 @@ func TestRoomSideNeedsARoomVerdict(t *testing.T) {
 }
 
 func TestRoomVerdictAloneIsNotAHubVerdict(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: git subprocesses on throwaway repositories")
+	}
 	t.Parallel()
 	r := newRepo(t)
 	base := r.commit("base", map[string]string{"internal/a.go": "a"})
@@ -248,6 +260,9 @@ func TestRoomVerdictAloneIsNotAHubVerdict(t *testing.T) {
 // A landing rewrites SHAs. The verdict names the branch tip that was read, and the commit that lands is a cherry-pick
 // of it.
 func TestVerdictSurvivesARebase(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: git subprocesses on throwaway repositories")
+	}
 	t.Parallel()
 	r := newRepo(t)
 	base := r.commit("base", map[string]string{"internal/a.go": "a"})
@@ -267,6 +282,9 @@ func TestVerdictSurvivesARebase(t *testing.T) {
 }
 
 func TestVerdictDoesNotSurviveAnAlteredPatch(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: git subprocesses on throwaway repositories")
+	}
 	t.Parallel()
 	r := newRepo(t)
 	base := r.commit("base", map[string]string{"internal/a.go": "a"})
@@ -286,6 +304,9 @@ func TestVerdictDoesNotSurviveAnAlteredPatch(t *testing.T) {
 }
 
 func TestNewestVerdictWins(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: git subprocesses on throwaway repositories")
+	}
 	t.Parallel()
 	r := newRepo(t)
 	base := r.commit("base", map[string]string{"internal/a.go": "a"})
@@ -310,6 +331,9 @@ func TestNewestVerdictWins(t *testing.T) {
 }
 
 func TestHoldThenHubOkOnlyStillHoldsTheRoom(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: git subprocesses on throwaway repositories")
+	}
 	t.Parallel()
 	r := newRepo(t)
 	base := r.commit("base", map[string]string{"internal/a.go": "a"})
@@ -326,6 +350,9 @@ func TestHoldThenHubOkOnlyStillHoldsTheRoom(t *testing.T) {
 }
 
 func TestConditionalOKCountsAsOK(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: git subprocesses on throwaway repositories")
+	}
 	t.Parallel()
 	r := newRepo(t)
 	base := r.commit("base", map[string]string{"internal/a.go": "a"})
@@ -336,6 +363,9 @@ func TestConditionalOKCountsAsOK(t *testing.T) {
 }
 
 func TestVerdictFoldedIntoACodeCommitIsRefused(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: git subprocesses on throwaway repositories")
+	}
 	t.Parallel()
 	r := newRepo(t)
 	base := r.commit("base", map[string]string{"internal/a.go": "a"})
@@ -353,6 +383,9 @@ func TestVerdictFoldedIntoACodeCommitIsRefused(t *testing.T) {
 }
 
 func TestVerdictOnAnUnknownRangeIsIgnoredWithANote(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: git subprocesses on throwaway repositories")
+	}
 	t.Parallel()
 	r := newRepo(t)
 	base := r.commit("base", map[string]string{"internal/a.go": "a"})
@@ -368,6 +401,9 @@ func TestVerdictOnAnUnknownRangeIsIgnoredWithANote(t *testing.T) {
 // The reviewed branch merged claude/main into itself. A range over its first parent covers the branch's own commits
 // and not the unreviewed claude/main commit that came in through the merge.
 func TestRangeIsFirstParentOnly(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: git subprocesses on throwaway repositories")
+	}
 	t.Parallel()
 	r := newRepo(t)
 	base := r.commit("base", map[string]string{"internal/a.go": "a"})
@@ -391,6 +427,9 @@ func TestRangeIsFirstParentOnly(t *testing.T) {
 
 // A merge counts as code only when it carries a change of its own.
 func TestMergeNeedsAVerdictOnlyForItsResolution(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: git subprocesses on throwaway repositories")
+	}
 	t.Parallel()
 	r := newRepo(t)
 	base := r.commit("base", map[string]string{"internal/hubstore/c.go": "base\n"})
@@ -419,6 +458,9 @@ func TestMergeNeedsAVerdictOnlyForItsResolution(t *testing.T) {
 }
 
 func TestCleanMergeIsNotCode(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: git subprocesses on throwaway repositories")
+	}
 	t.Parallel()
 	r := newRepo(t)
 	base := r.commit("base", map[string]string{"internal/hubstore/c.go": "base\n"})
@@ -468,6 +510,9 @@ func TestMissingBranchIsUnknown(t *testing.T) {
 }
 
 func TestSignatureMovesWithTheAnswer(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: git subprocesses on throwaway repositories")
+	}
 	t.Parallel()
 	r := newRepo(t)
 	base := r.commit("base", map[string]string{"internal/a.go": "a"})
@@ -534,6 +579,9 @@ func TestSlowGitEndsAtTheContextBoundAsUnknown(t *testing.T) {
 }
 
 func TestSecondPassReadsAlmostNothingAndAgrees(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: git subprocesses on throwaway repositories")
+	}
 	t.Parallel()
 	r := newRepo(t)
 	base := r.commit("base", map[string]string{"internal/a.go": "a"})
@@ -601,6 +649,9 @@ func resolvedMergeRepo(t *testing.T) (*repo, string) {
 // A merge read that fails for any reason but an old git must fail the pass and cache nothing. Cached as "carries
 // nothing", a conflict resolution would need no verdict and the answer would be ready for the life of the process.
 func TestFailedMergeReadFailsThePassAndIsNotCachedAsEmpty(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: git subprocesses on throwaway repositories")
+	}
 	t.Parallel()
 	r, base := resolvedMergeRepo(t)
 	g := &failMergeGit{inner: gitsync.NewRunner(), err: errors.New("transient: unable to read tree")}
@@ -615,6 +666,9 @@ func TestFailedMergeReadFailsThePassAndIsNotCachedAsEmpty(t *testing.T) {
 }
 
 func TestGitTooOldForRemergeDiffCountsMergesAsCarryingNothing(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: git subprocesses on throwaway repositories")
+	}
 	t.Parallel()
 	r, base := resolvedMergeRepo(t)
 	err := errors.New("git log --remerge-diff: error: unknown option `remerge-diff'")
@@ -624,6 +678,9 @@ func TestGitTooOldForRemergeDiffCountsMergesAsCarryingNothing(t *testing.T) {
 }
 
 func TestVerdictRangeCutAtTheLimitIsReportedInTheNotes(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: git subprocesses on throwaway repositories")
+	}
 	t.Parallel()
 	r := newRepo(t)
 	base := r.commit("base", map[string]string{"internal/a.go": "a"})

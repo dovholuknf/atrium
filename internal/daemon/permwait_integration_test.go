@@ -68,6 +68,9 @@ func permTask(t *testing.T, d *Daemon, name string) *store.Task {
 // A decision on the board wakes the hook parked on it, with the exact fields
 // the dotfiles hook reads: decision, reason, and a rewritten command.
 func TestBoardDecisionWakesParkedPermission(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d, _, cancel, _ := startDaemon(t)
 	defer cancel()
 	task := permTask(t, d, "perm-wake")
@@ -105,6 +108,9 @@ func TestBoardDecisionWakesParkedPermission(t *testing.T) {
 // A block carries its guidance as the reason, and an unchanged command is not
 // echoed back, so the hook runs nothing it did not ask for.
 func TestBoardBlockCarriesReasonAndNoCommand(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d, _, cancel, _ := startDaemon(t)
 	defer cancel()
 	task := permTask(t, d, "perm-block")
@@ -136,6 +142,9 @@ func TestBoardBlockCarriesReasonAndNoCommand(t *testing.T) {
 
 // The orphan reaper's input: a hook that hangs up stops counting as live.
 func TestDroppedPermissionLeavesLiveSet(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d, _, cancel, _ := startDaemon(t)
 	defer cancel()
 	task := permTask(t, d, "perm-drop")
@@ -162,6 +171,9 @@ func TestDroppedPermissionLeavesLiveSet(t *testing.T) {
 // The endpoint's refusals are part of the contract too. The hook fails open on
 // anything that is not an answer, so these must stay errors, not answers.
 func TestPermissionEndpointRefusals(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d, _, cancel, _ := startDaemon(t)
 	defer cancel()
 	base := "http://" + d.opts.AgentAddr

@@ -22,6 +22,9 @@ func viewReq(id, p string) *http.Request {
 // image and never as a document. Every one of these would run script on the
 // board's origin if served as itself.
 func TestAViewIsNeverADocument(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real server with git worktrees and a database")
+	}
 	t.Parallel()
 	s, st, work := fileServer(t)
 	task := cardIn(t, st, work)
@@ -135,6 +138,9 @@ func TestAViewOfNothingOrADirectory(t *testing.T) {
 
 // The card is the boundary: another card's file is not this card's to read.
 func TestAViewCannotReachAnotherCardsFile(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real server with git worktrees and a database")
+	}
 	t.Parallel()
 	s, st, work := fileServer(t)
 	task := cardIn(t, st, work)

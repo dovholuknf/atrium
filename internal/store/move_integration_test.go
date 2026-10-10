@@ -134,6 +134,9 @@ func TestSeenMoveDropsARepeat(t *testing.T) {
 }
 
 func TestAMovedCardKeepsItsHandle(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real sqlite database on disk")
+	}
 	t.Parallel()
 	s := openTestStore(t)
 	c := mustRegister(t, s, "keeper")

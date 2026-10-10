@@ -5,6 +5,9 @@ package store
 import "testing"
 
 func TestALastSizeRoundTripsBothSides(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real sqlite database on disk")
+	}
 	t.Parallel()
 	s := openTestStore(t)
 	c := aliasCard(t, s, "sized")

@@ -197,6 +197,9 @@ func TestAConfigurationThatCouldNotWorkIsRefused(t *testing.T) {
 // board can ask it to hold a state for five minutes. Without a bound that is a
 // way to spend the daemon's memory from outside with no credential at all.
 func TestAFloodOfLoginsIsBounded(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	t.Parallel()
 	// Emptied afterwards whatever happens. The map is package level, and a
 	// test that left it full would fail every login in every test after it.

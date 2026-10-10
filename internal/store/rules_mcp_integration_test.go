@@ -75,6 +75,9 @@ func TestMCPPrefixGlob(t *testing.T) {
 
 // The five rows of the table in section 5 of the design.
 func TestMCPPrecedence(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real sqlite database on disk")
+	}
 	t.Parallel()
 	const (
 		server   = "mcp__mercurius__*"
@@ -111,6 +114,9 @@ func TestMCPPrecedence(t *testing.T) {
 }
 
 func TestEqualSpecificityBlockWinsWhicheverIsInsertedFirst(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real sqlite database on disk")
+	}
 	t.Parallel()
 	for _, blockFirst := range []bool{false, true} {
 		s := open(t)

@@ -14,6 +14,9 @@ import (
 )
 
 func TestPublishTaskSendsTheDecoratedRow(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	t.Parallel()
 	d := testDaemon(t)
 	card, _, err := d.st.Register(store.Observed{WireName: "pub", Worktree: "/tmp/pub", Runner: "claude"})

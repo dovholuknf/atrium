@@ -222,6 +222,9 @@ func TestAModelSwitchWaitsForTheLineAndThenTypes(t *testing.T) {
 // THE NEWEST REQUEST WINS. A switch that is still waiting is replaced, so the
 // terminal never gets both.
 func TestANewerModelSwitchReplacesAWaitingOne(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	oldEvery := modelRetryEvery
 	modelRetryEvery = 20 * time.Millisecond
 	t.Cleanup(func() { modelRetryEvery = oldEvery })
@@ -338,6 +341,9 @@ func TestAModelSwitchTakesAnyHarnessThatRunsClaude(t *testing.T) {
 // newer request went in. The card's lock makes the check and the typing one step,
 // so the waiter either sees it was replaced or goes first.
 func TestAWaiterNeverTypesAnOlderModelAfterANewerOne(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	oldEvery := modelRetryEvery
 	modelRetryEvery = 10 * time.Millisecond
 	t.Cleanup(func() { modelRetryEvery = oldEvery })

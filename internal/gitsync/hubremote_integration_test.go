@@ -80,6 +80,9 @@ func (f *remoteFix) git(env []string, dir string, args ...string) (string, error
 }
 
 func TestInACardEnvGitPushHubLandsWithTheCardInThePushLog(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: git subprocesses and a real smart-HTTP rig")
+	}
 	t.Parallel()
 	f := newRemote(t)
 	f.seedMain(hubRepo)
@@ -107,6 +110,9 @@ func TestInACardEnvGitPushHubLandsWithTheCardInThePushLog(t *testing.T) {
 }
 
 func TestAProcessWithNoCardTokenIsRefusedByTheForwarderBeforeTheHub(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: git subprocesses and a real smart-HTTP rig")
+	}
 	t.Parallel()
 	f := newRemote(t)
 	f.seedMain(hubRepo)
@@ -137,6 +143,9 @@ func TestAProcessWithNoCardTokenIsRefusedByTheForwarderBeforeTheHub(t *testing.T
 }
 
 func TestAWrongRevokedOrOtherCardsTokenIsRefused(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: git subprocesses and a real smart-HTTP rig")
+	}
 	t.Parallel()
 	f := newRemote(t)
 	f.seedMain(hubRepo)
@@ -170,6 +179,9 @@ func TestAWrongRevokedOrOtherCardsTokenIsRefused(t *testing.T) {
 }
 
 func TestGitPushNoneRefusesReceivePackAndStillFetches(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: git subprocesses and a real smart-HTTP rig")
+	}
 	t.Parallel()
 	f := newRemote(t)
 	f.seedMain(hubRepo)
@@ -209,6 +221,9 @@ func TestGitPushNoneRefusesReceivePackAndStillFetches(t *testing.T) {
 }
 
 func TestAClientsOwnCardHeadersNeverReachTheHub(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: git subprocesses and a real smart-HTTP rig")
+	}
 	t.Parallel()
 	f := newRemote(t)
 	f.seedMain(hubRepo)
@@ -307,6 +322,9 @@ func TestTheForwarderServesNothingButGitsFourRequests(t *testing.T) {
 }
 
 func TestTheHubsRefusalReachesGitUntouched(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: git subprocesses and a real smart-HTTP rig")
+	}
 	t.Parallel()
 	f := newRemote(t)
 	f.seedMain(hubRepo)
@@ -347,6 +365,9 @@ func TestCardTokensAreMintedPerCardAndReplaced(t *testing.T) {
 // The same, by hand: a request that already carries two values of each card header, as a client that Adds would.
 // Whatever the client sent, the hub sees one of each and it is the forwarder's.
 func TestTwoCardHeadersFromAClientBecomeTheForwardersOneEach(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: git subprocesses and a real smart-HTTP rig")
+	}
 	t.Parallel()
 	f := newRemote(t)
 	f.seedMain(hubRepo)

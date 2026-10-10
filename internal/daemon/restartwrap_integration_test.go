@@ -99,6 +99,9 @@ func TestWrapAnIdleCardCountsAsAnswered(t *testing.T) {
 }
 
 func TestWrapTimeoutNamesTheCardAndWakesIt(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	fastWrap(t)
 	d := testDaemon(t)
 	task, f, _ := ncCard(t, d)

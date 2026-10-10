@@ -43,6 +43,9 @@ func TestReleaseIntakeKeyLetsTheNextOfferInsert(t *testing.T) {
 // Withdrawing archives an inbox card, says why, and frees the key. A started
 // card is left alone.
 func TestWithdrawOfferedOnlyTakesAnInboxCard(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real sqlite database on disk")
+	}
 	t.Parallel()
 	s := open(t)
 	inbox, _, _ := s.Offer(item("runner-update", "a"))

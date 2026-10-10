@@ -15,6 +15,9 @@ import (
 // `launch`. Both answer the same card, with one runner behind it, and neither
 // is an error.
 func TestASecondLaunchOntoAStartingCardAnswersTheFirst(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d, _, cancel, errCh := startDaemon(t)
 	defer func() {
 		cancel()
@@ -64,6 +67,9 @@ func TestASecondLaunchOntoAStartingCardAnswersTheFirst(t *testing.T) {
 // Outside the window a launch onto a live card is a request made on purpose,
 // and it keeps its refusal.
 func TestALaunchOntoALiveCardLongAfterItStartedIsStillRefused(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d, _, cancel, errCh := startDaemon(t)
 	defer func() {
 		cancel()

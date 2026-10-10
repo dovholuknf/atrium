@@ -86,6 +86,9 @@ func sameJSON(t *testing.T, a, b string) {
 }
 
 func TestTaskEventEqualsListRow(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real server with git worktrees and a database")
+	}
 	t.Parallel()
 	srv, st, work := fileServer(t)
 	busy := cardIn(t, st, work)
@@ -132,6 +135,9 @@ func TestTaskEventEqualsListRow(t *testing.T) {
 }
 
 func TestTaskEventFromAClosedStoreSendsNothing(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real server with git worktrees and a database")
+	}
 	t.Parallel()
 	srv, st, work := fileServer(t)
 	card := cardIn(t, st, work)
@@ -202,6 +208,9 @@ func readTaskEvents(resp *http.Response, d time.Duration) []string {
 }
 
 func TestPublishTaskCoalescesABurstToTheLatestState(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real server with git worktrees and a database")
+	}
 	t.Parallel()
 	srv, st, work := fileServer(t)
 	card := cardIn(t, st, work)
@@ -243,6 +252,9 @@ func TestPublishTaskCoalescesABurstToTheLatestState(t *testing.T) {
 }
 
 func TestPublishTaskForADeletedCardSendsNoTaskEvent(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real server with git worktrees and a database")
+	}
 	t.Parallel()
 	srv, st, work := fileServer(t)
 	card := cardIn(t, st, work)

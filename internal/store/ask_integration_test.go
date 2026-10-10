@@ -227,6 +227,9 @@ func TestALongAskIsTruncatedOnARuneBoundary(t *testing.T) {
 // Dropping the outstanding ask on upgrade is the exact loss 0044 exists to
 // stop, so the migration has to carry it.
 func TestTheMigrationCarriesAnAskFromTheOldColumns(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real sqlite database on disk")
+	}
 	t.Parallel()
 	path := t.TempDir() + "/old.db"
 	s, err := Open(path)

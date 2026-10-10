@@ -12,6 +12,9 @@ import (
 // mode can only be chosen before any table exists. Getting this wrong means the
 // file never hands freed pages back for the life of that database.
 func TestFreshDatabaseIsIncremental(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real sqlite database on disk")
+	}
 	t.Parallel()
 	s := open(t)
 	if !s.IncrementalVacuumOn() {
@@ -30,6 +33,9 @@ func TestFreshDatabaseIsIncremental(t *testing.T) {
 // Switching it would need a full VACUUM, which needs exclusive access a live
 // room cannot give, so Open must detect and leave rather than force it.
 func TestExistingLegacyDatabaseIsLeftAlone(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real sqlite database on disk")
+	}
 	t.Parallel()
 	path := filepath.Join(t.TempDir(), "legacy.db")
 
@@ -72,6 +78,9 @@ func TestExistingLegacyDatabaseIsLeftAlone(t *testing.T) {
 // database where it does real work and on a legacy one where it is a no-op. It
 // must never halt the store either way.
 func TestIncrementalVacuumRuns(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real sqlite database on disk")
+	}
 	t.Parallel()
 	s := open(t)
 	// Make some free pages to reclaim: fill a table, then drop it. On an

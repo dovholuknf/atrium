@@ -32,6 +32,9 @@ func launchTo(t *testing.T, d *Daemon, to string) *store.Task {
 }
 
 func TestAReportToLaunchSetsTheLauncherAndKeepsTheName(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	t.Parallel()
 	for _, name := range []string{"review", "@review"} {
 		d := testDaemon(t)
@@ -61,6 +64,9 @@ func TestAReportToLaunchSetsTheLauncherAndKeepsTheName(t *testing.T) {
 }
 
 func TestAReportFromAReportToCardReachesItsLauncher(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	t.Parallel()
 	d := testDaemon(t)
 	rev := reviewCard(t, d, "reviewer")
@@ -77,6 +83,9 @@ func TestAReportFromAReportToCardReachesItsLauncher(t *testing.T) {
 }
 
 func TestASilentStopAndOwedReportCountAgainstTheReportToCard(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	t.Parallel()
 	d := testDaemon(t)
 	rev := reviewCard(t, d, "reviewer")
@@ -128,6 +137,9 @@ func TestAnAgentLaunchCannotCarryReportTo(t *testing.T) {
 }
 
 func TestARelaunchedTargetIsReachedByItsAliasAndTheStoredIDIsTheFallback(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	t.Parallel()
 	d := testDaemon(t)
 	old := reviewCard(t, d, "reviewer")
@@ -175,6 +187,9 @@ func TestARelaunchedTargetIsReachedByItsAliasAndTheStoredIDIsTheFallback(t *test
 }
 
 func TestAReportToChildIsNotCountedAsAnAgentSession(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	t.Parallel()
 	d := testDaemon(t)
 	reviewCard(t, d, "reviewer")

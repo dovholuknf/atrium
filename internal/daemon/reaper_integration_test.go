@@ -50,6 +50,9 @@ func TestProcessAliveAfterExit(t *testing.T) {
 // card whose process it does not know about. Not knowing is not the same as
 // being dead.
 func TestReaperMarksDeadOnlyWhenPidIsKnownAndGone(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d, _, cancel, errCh := startDaemon(t)
 	defer func() {
 		cancel()

@@ -181,6 +181,9 @@ func TestAGitConnectionWithAStaleSessionIsRefused(t *testing.T) {
 }
 
 func TestAHubKnowsWhichRoomsSaidGit(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real link, hub and git rig over loopback")
+	}
 	x := newGitFixture(t, true, true, nil)
 	if !x.hub.RoomSaysGit("SG3") {
 		t.Fatal("the hub did not record the room's Git")
@@ -189,6 +192,9 @@ func TestAHubKnowsWhichRoomsSaidGit(t *testing.T) {
 
 // The hub fetches from a room's handler over the data pool the room dialled.
 func TestTheHubFetchesFromARoomOverThePool(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real link, hub and git rig over loopback")
+	}
 	// A room serving a repository at /v1/git.
 	root := t.TempDir()
 	work := filepath.Join(root, "work")
@@ -223,6 +229,9 @@ func TestTheHubFetchesFromARoomOverThePool(t *testing.T) {
 // A want list past git's post buffer floor is sent chunked, and has to survive the
 // forwarder, the link and cgi together.
 func TestAChunkedPostGoesThroughForwarderLinkAndCgi(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real link, hub and git rig over loopback")
+	}
 	x := newGitFixture(t, true, true, nil)
 	var stream strings.Builder
 	for i := 0; i < 1500; i++ {

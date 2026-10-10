@@ -119,6 +119,9 @@ func failedWith(d *Daemon, id string) string {
 
 // The whole sequence, in order, each step held until the one before it is over.
 func TestNewContextAsksClearsAndWakes(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	fastNewContext(t)
 	d := testDaemon(t)
 	task, f, dir := ncCard(t, d)
@@ -196,6 +199,9 @@ func TestNewContextAsksClearsAndWakes(t *testing.T) {
 }
 
 func TestNewContextStopsWhenNoSessionStartsAfterTheClear(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	fastNewContext(t)
 	d := testDaemon(t)
 	task, f, _ := ncCard(t, d)
@@ -213,6 +219,9 @@ func TestNewContextStopsWhenNoSessionStartsAfterTheClear(t *testing.T) {
 
 // A SessionStart from before the /clear is not the new session.
 func TestNewContextIgnoresASessionStartFromBeforeTheClear(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	fastNewContext(t)
 	d := testDaemon(t)
 	task, f, _ := ncCard(t, d)
@@ -262,6 +271,9 @@ func TestNewContextIsRefusedWithoutATerminalAndWhileRunning(t *testing.T) {
 // A failed chip stays until it is dismissed or the action is run again, and a rerun
 // after the ack resumes where it stopped rather than asking for a second handoff.
 func TestNewContextFailedChipIsDismissedOrReplaced(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	fastNewContext(t)
 	d := testDaemon(t)
 	task, f, _ := ncCard(t, d)

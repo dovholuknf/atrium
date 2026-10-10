@@ -74,6 +74,9 @@ func lastLaunch(t *testing.T, d *Daemon, id string) (cmd, model string, n int) {
 // the boot resumes each card from the store. A model recorded after the card first
 // started has to be on the command line the resume builds.
 func TestARoomRestartResumesACardOnTheModelItWasSwitchedTo(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	t.Parallel()
 	d := testDaemon(t)
 	task := modelShellCard(t, d)
@@ -111,6 +114,9 @@ func TestARoomRestartResumesACardOnTheModelItWasSwitchedTo(t *testing.T) {
 // A PARKED CARD'S WAKE, a restart of one runner, an unshelve, a fixture and a
 // board relaunch all name the card and no model. Each takes the card's own.
 func TestALaunchOntoACardNamingNoModelKeepsTheCardsModel(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	t.Parallel()
 	d := testDaemon(t)
 	task := modelShellCard(t, d)

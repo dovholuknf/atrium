@@ -17,6 +17,9 @@ import (
 // runs to its end must show 1, 2 and 3 on the way and then publish a frame with no new_context, or the board keeps
 // "1/3: waiting for atrium ready" and "let me type" for good.
 func TestNewContextStepsAdvanceAndTheEndFrameCarriesNoChip(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	fastNewContext(t)
 	ncTiming.sessionSettle = 500 * time.Millisecond
 	d := testDaemon(t)

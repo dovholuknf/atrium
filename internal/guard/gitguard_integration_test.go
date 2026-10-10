@@ -536,6 +536,9 @@ var gitCases = []gitCase{
 }
 
 func TestGitGuard(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real git subprocess")
+	}
 	rp := buildRepos(t)
 	rp["bashhub"] = bashDrive(rp["hub"])
 	rp["hub-backslash"] = rp["hub"]

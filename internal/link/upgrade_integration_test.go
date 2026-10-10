@@ -133,6 +133,9 @@ func TestARoomTakesTheBuildItWasOffered(t *testing.T) {
 // on the bytes, the room fetched it, installed it over itself, and stopped.
 // The room went down and nothing had changed.
 func TestARoomDoesNotInstallTheBinaryItIsAlreadyRunning(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real link, hub and git rig over loopback")
+	}
 	sum, size := selfSum(t)
 	var asked bool
 	var mu sync.Mutex
@@ -164,6 +167,9 @@ func TestARoomDoesNotInstallTheBinaryItIsAlreadyRunning(t *testing.T) {
 // and nothing is fetched. This is the check the whole design exists for: a hub
 // that can write a binary a room will execute owns that room.
 func TestAHubCannotUpgradeARoomThatDidNotAgree(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real link, hub and git rig over loopback")
+	}
 	var asked bool
 	var mu sync.Mutex
 	up := &Upgrades{
@@ -193,6 +199,9 @@ func TestAHubCannotUpgradeARoomThatDidNotAgree(t *testing.T) {
 // A BINARY FOR ANOTHER PLATFORM IS NOT INSTALLED, even if the room agreed to
 // upgrades. Finding that out after the swap is the worst possible moment.
 func TestAnotherPlatformsBuildIsRefused(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real link, hub and git rig over loopback")
+	}
 	var asked bool
 	var mu sync.Mutex
 	up := &Upgrades{
@@ -221,6 +230,9 @@ func TestAnotherPlatformsBuildIsRefused(t *testing.T) {
 // WHAT ARRIVED MUST BE WHAT WAS DESCRIBED. The hash is the check that makes
 // fetching over the link defensible, so a wrong one installs nothing.
 func TestABuildThatDoesNotMatchItsHashIsNotInstalled(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real link, hub and git rig over loopback")
+	}
 	dir := t.TempDir()
 	var asked bool
 	var mu sync.Mutex

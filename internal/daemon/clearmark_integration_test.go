@@ -53,6 +53,9 @@ func TestMarkClearReachesTheReplayAndTheWatchersAndNotTheOutputClock(t *testing.
 
 // A `/clear` the room types itself marks first. Anything else does not.
 func TestTypingSlashClearMarksTheStreamBeforeTheBytesAndOtherTextDoesNot(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	t.Parallel()
 	f := newFakePTY()
 	t.Cleanup(func() { f.Close() })

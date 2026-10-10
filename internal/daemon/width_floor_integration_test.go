@@ -12,6 +12,9 @@ import (
 // A RUNNER'S PTY NEVER GOES UNDER THE FLOOR, whatever a viewer reports. A
 // narrow viewer is sized up to the floor and scrolls sideways on the board.
 func TestANarrowViewerIsHeldAtTheFloor(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	t.Parallel()
 	d := testDaemon(t)
 	f := narrowSession(t, d, "floored", "drawn at eighty columns\n")
@@ -27,6 +30,9 @@ func TestANarrowViewerIsHeldAtTheFloor(t *testing.T) {
 
 // The floor is the setting in force, not a constant.
 func TestTheFloorFollowsTheSetting(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	t.Parallel()
 	d := testDaemon(t)
 	if err := d.st.SetSetting(api.SettingTerminalMinCols, "200"); err != nil {
@@ -44,6 +50,9 @@ func TestTheFloorFollowsTheSetting(t *testing.T) {
 
 // A SHELL IS EXEMPT. It does not reprint, so narrow does no harm there.
 func TestAShellIgnoresTheFloor(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	t.Parallel()
 	d := testDaemon(t)
 	f := newFakePTY()

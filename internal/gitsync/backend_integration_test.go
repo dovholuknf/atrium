@@ -280,6 +280,9 @@ func TestNothingIsWrittenIntoTheRepositoryConfig(t *testing.T) {
 
 // A GIT_DIR in the parent environment must not reach any git we run, nor the CGI child.
 func TestAGitDirInTheParentEnvironmentDoesNotLeak(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: git subprocesses and a real smart-HTTP rig")
+	}
 	decoy := t.TempDir()
 	t.Setenv("GIT_DIR", filepath.Join(decoy, "nope"))
 	t.Setenv("GIT_WORK_TREE", decoy)

@@ -13,6 +13,9 @@ import (
 // the store's "sql: no rows". A drag into a group that reached the wrong room
 // said only that. See backlog-2 item 63.
 func TestAPatchOfACardThisRoomDoesNotHoldNamesIt(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real server with git worktrees and a database")
+	}
 	t.Parallel()
 	srv, _, _ := fileServer(t)
 	srv.Room = "claude-sg4"

@@ -62,6 +62,9 @@ func finishCycle(t *testing.T, d *Daemon, id, dir string, f *fakePTY) {
 const ncWakeMark = "and continue."
 
 func TestSayDuringCaptureIsHeldAndDeliveredAfterTheWake(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	fastNewContext(t)
 	d := testDaemon(t)
 	task, f, dir := ncCard(t, d)
@@ -95,6 +98,9 @@ func TestSayDuringCaptureIsHeldAndDeliveredAfterTheWake(t *testing.T) {
 }
 
 func TestSayDuringClearIsHeldAndTellIsQueued(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	fastNewContext(t)
 	d := testDaemon(t)
 	task, f, dir := ncCard(t, d)
@@ -122,6 +128,9 @@ func TestSayDuringClearIsHeldAndTellIsQueued(t *testing.T) {
 }
 
 func TestAFailedCycleReleasesWhatWasHeld(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	fastNewContext(t)
 	d := testDaemon(t)
 	task, f, dir := ncCard(t, d)
@@ -167,6 +176,9 @@ func TestDismissingACycleReleases(t *testing.T) {
 
 // The cycle's own typing is not held, and a card outside a cycle is unaffected.
 func TestHoldDoesNotStopTheCyclesOwnTyping(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	fastNewContext(t)
 	d := testDaemon(t)
 	task, f, dir := ncCard(t, d)

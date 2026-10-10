@@ -9,6 +9,9 @@ import (
 )
 
 func TestSayRecordLifecycle(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real sqlite database on disk")
+	}
 	t.Parallel()
 	s := openTestStore(t)
 	bob, _, err := s.Register(Observed{WireName: "bob", Runner: "claude", PID: 1})
@@ -114,6 +117,9 @@ func TestSayRecordLapsesForEndedCard(t *testing.T) {
 }
 
 func TestSayKeepsBoundedTextAndPagesBack(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real sqlite database on disk")
+	}
 	t.Parallel()
 	s := openTestStore(t)
 	a, _, _ := s.Register(Observed{WireName: "alice", Runner: "claude", PID: 1})

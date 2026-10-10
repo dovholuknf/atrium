@@ -7,6 +7,9 @@ import "testing"
 // The room cog's checkbox for the unexpected-exit notice: on by default, and
 // off when switched off.
 func TestTheUnexpectedExitSettingIsOnUntilSwitchedOff(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real server with git worktrees and a database")
+	}
 	t.Parallel()
 	srv, st, _ := fileServer(t)
 

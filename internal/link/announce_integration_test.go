@@ -217,6 +217,9 @@ func TestAChangeReachesTheHubWithoutAnybodyAsking(t *testing.T) {
 // a working agent would rewrite the hub's cache every couple of seconds for the
 // whole time it worked.
 func TestNothingIsSentWhenNothingChanged(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real link, hub and git rig over loopback")
+	}
 	state := newRoomState(map[string]any{"id": "one", "status": "running"})
 	_, got, mu, stop := caching(t, state)
 	defer stop()
@@ -257,6 +260,9 @@ func TestNothingIsSentWhenNothingChanged(t *testing.T) {
 //
 // Found by review, and it is one `if` between a cache and a wipe.
 func TestARoomInTroubleDoesNotAnnounceItselfEmpty(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real link, hub and git rig over loopback")
+	}
 	state := newRoomState(map[string]any{"id": "one", "status": "running"})
 	_, got, mu, stop := caching(t, state)
 	defer stop()
@@ -290,6 +296,9 @@ func TestARoomInTroubleDoesNotAnnounceItselfEmpty(t *testing.T) {
 // sends no list. Those mean opposite things and only one of them may reach the
 // hub.
 func TestAnAnswerWithNoCardListIsNotAnEmptyRoom(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real link, hub and git rig over loopback")
+	}
 	state := newRoomState(map[string]any{"id": "one", "status": "running"})
 	_, got, mu, stop := caching(t, state)
 	defer stop()
@@ -345,6 +354,9 @@ func TestARoomWithNoCardsAnnouncesAnEmptyList(t *testing.T) {
 // and then sits quietly because nobody is working on it is exactly the room
 // whose board somebody is looking at, and it would have shown yesterday.
 func TestAnAnnouncementThatFailedIsSentAgain(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real link, hub and git rig over loopback")
+	}
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
@@ -399,6 +411,9 @@ func (e errTest) Error() string { return string(e) }
 // Finding out by being refused meant a failure logged on every change for the
 // life of the attachment, which reads as something being broken.
 func TestARoomDoesNotAnnounceAtAHubThatKeepsNothing(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real link, hub and git rig over loopback")
+	}
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)

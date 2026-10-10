@@ -49,6 +49,9 @@ func TestSettingsBrowseRootsFollowTheListAtOnce(t *testing.T) {
 // A settings read on a machine with a worktree per card. Timed, so the log says
 // what one read costs with the resolve reused.
 func TestSettingsReadWithManyWorktrees(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real server with git worktrees and a database")
+	}
 	t.Parallel()
 	srv, st, work := fileServer(t)
 	for i := 0; i < 160; i++ {

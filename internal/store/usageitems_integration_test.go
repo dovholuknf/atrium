@@ -10,6 +10,9 @@ import (
 // Counted and cache_read per item equal the linked cards' rows, a card shared by
 // two items is split evenly, and an accepted item with no card is unlinked.
 func TestAcceptedItemUsage(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real sqlite database on disk")
+	}
 	t.Parallel()
 	s := openTestStore(t)
 	at := time.Now().UTC().Add(-time.Hour)

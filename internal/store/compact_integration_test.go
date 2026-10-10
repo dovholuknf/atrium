@@ -71,6 +71,9 @@ func eventRows(t *testing.T, path string) int64 {
 // With no options the copy holds every row, is incremental, and opens as a
 // store that can hand pages back. The input keeps every row too.
 func TestCompactCopiesEverythingAndSwitchesMode(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real sqlite database on disk")
+	}
 	t.Parallel()
 	in, _ := legacyStore(t, 3, 20)
 	before := eventRows(t, in)
@@ -162,6 +165,9 @@ func TestCompactRefusesAnOpenDatabase(t *testing.T) {
 }
 
 func TestCompactRefusals(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real sqlite database on disk")
+	}
 	t.Parallel()
 	in, _ := legacyStore(t, 1, 2)
 	if _, err := Compact(in, in, CompactOptions{}); err == nil {

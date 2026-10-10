@@ -79,6 +79,9 @@ func TestAViewerAgreeingOnASizeIsRememberedByTheRoom(t *testing.T) {
 
 // THE FIRST ATTACH IS ONE RESIZE WITH BOTH SIZES, and does not wait out the hold.
 func TestTheFirstViewerResizesOnceWithBothSizes(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	t.Parallel()
 	d := testDaemon(t)
 	f, r := sizedSession(t, d, "first-once", 120, 30)
@@ -92,6 +95,9 @@ func TestTheFirstViewerResizesOnceWithBothSizes(t *testing.T) {
 
 // AT THE SIZE IT ALREADY IS, THE FIRST ATTACH RESIZES NOTHING.
 func TestTheFirstViewerAtTheOpeningSizeResizesNothing(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	t.Parallel()
 	d := testDaemon(t)
 	f, _ := sizedSession(t, d, "first-none", 177, 48)
@@ -104,6 +110,9 @@ func TestTheFirstViewerAtTheOpeningSizeResizesNothing(t *testing.T) {
 
 // A SECOND VIEWER STILL GOES THROUGH THE HOLD: the width now, the height later.
 func TestASecondViewersHeightStillWaitsOutTheHold(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	t.Parallel()
 	d := testDaemon(t)
 	f, r := sizedSession(t, d, "second-hold", 120, 30)
@@ -133,6 +142,9 @@ func TestASecondViewersHeightStillWaitsOutTheHold(t *testing.T) {
 // THE LAST VIEWER LEAVING NEVER RESIZES, and the next first viewer is a first
 // viewer again.
 func TestALoneViewerLeavingAndComingBackResizesOnceMore(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	t.Parallel()
 	d := testDaemon(t)
 	f, r := sizedSession(t, d, "first-again", 120, 30)

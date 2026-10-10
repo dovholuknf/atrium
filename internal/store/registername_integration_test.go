@@ -30,6 +30,9 @@ func mustNotBeHalted(t *testing.T, s *Store) {
 // r-040: a directory-derived name that only a done card holds, arriving with the
 // pid and worktree of a DIFFERENT live card, must not rename that card onto it.
 func TestRegisterDirNameNeverRenamesALiveCardOntoADoneOne(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real sqlite database on disk")
+	}
 	t.Parallel()
 	s, done, live := nameCollisionSetup(t)
 	got, created, err := s.Register(Observed{WireName: "x-name", NameSource: NameFromDir,
@@ -49,6 +52,9 @@ func TestRegisterDirNameNeverRenamesALiveCardOntoADoneOne(t *testing.T) {
 
 // A told name still matches the done card, as before.
 func TestRegisterToldNameStillMatchesTheDoneCard(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real sqlite database on disk")
+	}
 	t.Parallel()
 	s, done, _ := nameCollisionSetup(t)
 	got, created, err := s.Register(Observed{WireName: "x-name", Worktree: "/tmp/w", PID: 4242})

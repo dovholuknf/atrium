@@ -30,6 +30,9 @@ func deepTree(t *testing.T, root string) int64 {
 }
 
 func TestCloseRemovesAnIgnoredDeepTreeAndCountsItsBytes(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real server with git worktrees and a database")
+	}
 	t.Parallel()
 	oh, card, wt, _ := openForClose(t)
 	// node_modules is ignored, so it does not make the worktree ask.
@@ -82,6 +85,9 @@ func TestRemoveLeftoverRemovesWhatGitLeftAndNamesWhatItCannot(t *testing.T) {
 }
 
 func TestCloseMarksTheCardClosed(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real server with git worktrees and a database")
+	}
 	t.Parallel()
 	oh, card, _, _ := openForClose(t)
 	if code, out := closeCall(t, oh, card, map[string]any{"confirm": true}); code != 200 || !out.Closed {

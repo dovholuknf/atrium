@@ -136,6 +136,9 @@ func TestAnUnpinnedCardKeepsItsRankWhenTheOrderLands(t *testing.T) {
 // where the card sat. Somebody who unpins by accident and pins straight back
 // gets the row where it was rather than at the end of the bucket.
 func TestUnpinningKeepsThePlace(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real sqlite database on disk")
+	}
 	t.Parallel()
 	s := open(t)
 	a := pinned(t, s, "one")

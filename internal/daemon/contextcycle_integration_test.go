@@ -62,6 +62,9 @@ func step(d *Daemon, id string) string {
 // once per turn however many statusline updates arrive inside one. Never cleared
 // without the ack.
 func TestTheLimitMidTurnTypesThePromptOncePerTurn(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	fastNewContext(t)
 	ncTiming.promptLost = time.Hour
 	d := testDaemon(t)
@@ -106,6 +109,9 @@ func TestTheLimitMidTurnTypesThePromptOncePerTurn(t *testing.T) {
 
 // Plan 7: no ack, no clear, for longer than any other step would wait.
 func TestNoAckNeverClears(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	fastNewContext(t)
 	d := testDaemon(t)
 	task, f, _ := cycleCard(t, d, 300_000)
@@ -132,6 +138,9 @@ func TestNoAckNeverClears(t *testing.T) {
 
 // The ack, then /clear, then the wake, and the handoff kept on the card.
 func TestAckThenClearThenWake(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	fastNewContext(t)
 	d := testDaemon(t)
 	task, f, _ := cycleCard(t, d, 220_000)

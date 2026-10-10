@@ -14,6 +14,9 @@ import (
 // nowhere else: absent from the agent listener, which any session can reach, and
 // refused to a lent-session guest.
 func TestTheMergedCullRoutesAreOnTheBoardAndNowhereElse(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d, _, cancel, _ := startDaemon(t)
 	defer cancel()
 	task := sharedCard(t, d, "lent")

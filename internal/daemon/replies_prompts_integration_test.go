@@ -30,6 +30,9 @@ func transcriptUser(t *testing.T, path string, at time.Time, content any, extra 
 // words wherever they were typed, a peer's message, a slash command. Never a tool
 // result, a notification, a meta line or a subagent's prompt.
 func TestRepliesCarryThePromptsFromEverySource(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	t.Parallel()
 	f := newUsageFix(t)
 	at := func(s int) time.Time { return f.base.Add(time.Duration(s) * time.Second) }

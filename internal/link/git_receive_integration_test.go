@@ -88,6 +88,9 @@ func (x *pushFix) refOn(t *testing.T, ref string) string {
 }
 
 func TestTheOperatorPushesOnLoopbackThroughTheBoardAndCardHeadersAreDropped(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real link, hub and git rig over loopback")
+	}
 	x := newPushFix(t)
 	x.repo(t, boardRepo)
 	srv := httptest.NewServer(x.p)
@@ -213,6 +216,9 @@ func TestThePushRefusalsOnTheBoardMoveNothing(t *testing.T) {
 }
 
 func TestTheReleaseRouteIsTheLoopbackOperatorsAndLetsGoOfABranch(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real link, hub and git rig over loopback")
+	}
 	x := newPushFix(t)
 	x.repo(t, boardRepo)
 	srv := httptest.NewServer(x.p)
@@ -303,6 +309,9 @@ func newRoomPush(t *testing.T, roomName string) *roomPush {
 }
 
 func TestARoomPushesToTheHubStoreOverTheLinkAsItselfWithItsCard(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real link, hub and git rig over loopback")
+	}
 	x := newRoomPush(t, "SG4")
 	x.repo(t, boardRepo)
 	// The operator seeds main, directly through the handler's other door: the board.
@@ -410,6 +419,9 @@ func TestTheOwnersCardIsAskedThroughTheRelay(t *testing.T) {
 
 // ONLY THE RECORDED MERGER MOVES claude/main, and only forward. Everyone else, and main for everyone, is refused.
 func TestOnlyTheRecordedMergerMovesClaudeMain(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real link, hub and git rig over loopback")
+	}
 	x := newRoomPush(t, "SG4")
 	x.repo(t, boardRepo)
 	srv := httptest.NewServer(x.p)

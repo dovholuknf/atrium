@@ -112,6 +112,9 @@ func TestPRRunnerPicksForgeFromProviderHost(t *testing.T) {
 }
 
 func TestPRRunnerTellsTheDaemonOfAnAccessErrorAndOfASuccess(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	t.Parallel()
 	f := newPRFix(t)
 	ae := &forge.AccessError{Tool: "gh", Host: "github.com", Detail: "x"}

@@ -60,6 +60,9 @@ func TestASpawnedCardReportingDoneIsAskedToLeaveAfterTheLauncherHasTheReport(t *
 
 // A report that is not final leaves the card running.
 func TestAQuestionProgressOrBlockedReportLeavesTheCardRunning(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d := testDaemon(t)
 	launcher, _ := launchedPair(t, d)
 	got := watchExits(t, d, launcher.ID, nil)
@@ -79,6 +82,9 @@ func TestAQuestionProgressOrBlockedReportLeavesTheCardRunning(t *testing.T) {
 
 // A director's done report never exits it, and neither does a card nobody launched.
 func TestADirectorOrAnUnlaunchedCardIsNeverExitedByItsReport(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d := testDaemon(t)
 	launcher, worker := launchedPair(t, d)
 	got := watchExits(t, d, launcher.ID, nil)
@@ -100,6 +106,9 @@ func TestADirectorOrAnUnlaunchedCardIsNeverExitedByItsReport(t *testing.T) {
 
 // An operator who typed into the terminal lately is not exited from under their hands.
 func TestATypedInCardIsNotExitedAfterItsReport(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d := testDaemon(t)
 	launcher, worker := launchedPair(t, d)
 	got := watchExits(t, d, launcher.ID, nil)
@@ -111,6 +120,9 @@ func TestATypedInCardIsNotExitedAfterItsReport(t *testing.T) {
 
 // A resident that opted in to holding notices is exempt like a director.
 func TestAResidentTagExemptsACardFromExitOnReport(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d := testDaemon(t)
 	launcher, worker := launchedPair(t, d)
 	got := watchExits(t, d, launcher.ID, nil)
@@ -124,6 +136,9 @@ func TestAResidentTagExemptsACardFromExitOnReport(t *testing.T) {
 // A card a link opened lives as long as the link: only a close ends it, so an agent that opened it and reports done
 // leaves it running.
 func TestALinkCardIsNotExitedByItsReport(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d := testDaemon(t)
 	launcher, worker := launchedPair(t, d)
 	got := watchExits(t, d, launcher.ID, nil)

@@ -89,6 +89,9 @@ func waitGone(t *testing.T, d *Daemon, id string) {
 }
 
 func TestARestartBringsBackACardAtItsPrompt(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	t.Parallel()
 	d := testDaemon(t)
 	task := shellCard(t, d)
@@ -103,6 +106,9 @@ func TestARestartBringsBackACardAtItsPrompt(t *testing.T) {
 }
 
 func TestARestartBringsBackAFixtureAtItsPrompt(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	t.Parallel()
 	d := testDaemon(t)
 	task := shellCard(t, d)
@@ -123,6 +129,9 @@ func TestARestartBringsBackAFixtureAtItsPrompt(t *testing.T) {
 
 // A TERMINATE KEEPS A CARD DOWN like an asked exit.
 func TestAKilledCardStaysDown(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	t.Parallel()
 	d := testDaemon(t)
 	task := shellCard(t, d)
@@ -139,6 +148,9 @@ func TestAKilledCardStaysDown(t *testing.T) {
 // /exit TYPED IN THE CARD'S OWN TERMINAL keeps it down, and the same ending
 // during a wind-down does not.
 func TestATypedExitStaysDownAndAWindDownDoesNot(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	t.Parallel()
 	d := testDaemon(t)
 	task := shellCard(t, d)
@@ -164,6 +176,9 @@ func TestATypedExitStaysDownAndAWindDownDoesNot(t *testing.T) {
 // idle park and the worktree sweep go through windDown, and the session's end
 // that follows must not keep the card, or its fixture, down.
 func TestAnExitAtriumTypesDoesNotKeepACardDown(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	t.Parallel()
 	d := testDaemon(t)
 	task := shellCard(t, d)
@@ -180,6 +195,9 @@ func TestAnExitAtriumTypesDoesNotKeepACardDown(t *testing.T) {
 
 // AN ASKED EXIT STAYS DOWN across the restart, and a launch afterwards undoes it.
 func TestAnAskedExitStaysDown(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	t.Parallel()
 	d := testDaemon(t)
 	task := shellCard(t, d)

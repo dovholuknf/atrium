@@ -348,6 +348,9 @@ func TestPlacementPicksTheLeastBusyRoom(t *testing.T) {
 // A ROOM THAT IS SLOW TO COUNT ITS SESSIONS IS NOT WAITED FOR. A paste was held for the full ten seconds of one slow
 // room before it was placed, in silence. The room that answered is taken, and the slow one is passed over.
 func TestPlacementDoesNotWaitForASlowRoom(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real link, hub and git rig over loopback")
+	}
 	x := newClaimHub(t, map[string]int{"alpha": 4, "beta": 0})
 	defer x.done()
 	x.rooms["beta"].tasksDelay = 8 * time.Second
@@ -404,6 +407,9 @@ func (f *fakeGrowls) End(id string) (bool, error) {
 // AN OFFLINE OWNER IS A WARNING AND NOT A MOVE: the claim stays, the board is told once, and when the room is back
 // the warning ends.
 func TestOfflineOwnerWarnsAndDoesNotMove(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real link, hub and git rig over loopback")
+	}
 	old := prWarnGrace
 	prWarnGrace = 0
 	defer func() { prWarnGrace = old }()
@@ -443,6 +449,9 @@ func TestOfflineOwnerWarnsAndDoesNotMove(t *testing.T) {
 
 // A MANUAL MOVE UPDATES THE CLAIM, ends the warning, and the next ask is told the new owner.
 func TestManualMoveUpdatesTheClaim(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real link, hub and git rig over loopback")
+	}
 	old := prWarnGrace
 	prWarnGrace = 0
 	defer func() { prWarnGrace = old }()

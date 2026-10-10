@@ -74,6 +74,9 @@ func exitEvents(t *testing.T, d *Daemon, taskID string) []string {
 // A crash leaves the card `running` and no planned-stop mark. The next room
 // queues the notice, and types it once after the runner comes back.
 func TestACrashMidTurnIsToldOnceTheRunnerIsBack(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	t.Parallel()
 	dir := t.TempDir()
 	d := roomOn(t, dir)
@@ -107,6 +110,9 @@ func TestACrashMidTurnIsToldOnceTheRunnerIsBack(t *testing.T) {
 // the card. The next start sees the mark, adds nothing, and the notice says
 // restart.
 func TestAPlannedStopMidTurnIsToldToo(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	t.Parallel()
 	dir := t.TempDir()
 	d := roomOn(t, dir)
@@ -162,6 +168,9 @@ func TestAnIdleCardGetsNoNotice(t *testing.T) {
 
 // A card that queued its own wake gets that one line and not the notice.
 func TestASelfQueuedWakeWinsOverTheNotice(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	t.Parallel()
 	dir := t.TempDir()
 	d := roomOn(t, dir)
@@ -190,6 +199,9 @@ func TestASelfQueuedWakeWinsOverTheNotice(t *testing.T) {
 // A crash loop before the runner is back leaves one notice, and a restart after
 // the notice with no turn in between queues nothing more.
 func TestRestartsInARowNeverStackNotices(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	t.Parallel()
 	dir := t.TempDir()
 	d := roomOn(t, dir)

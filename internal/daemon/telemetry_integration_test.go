@@ -30,6 +30,9 @@ func waitForTelemetry(t *testing.T, d *Daemon, taskID string) *Telemetry {
 // resume id, so the lookup has to work without the caller knowing a wire name
 // or a card id.
 func TestTelemetryLandsOnACardByItsSessionID(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d, _, cancel, _ := startDaemon(t)
 	defer cancel()
 
@@ -68,6 +71,9 @@ func TestTelemetryLandsOnACardByItsSessionID(t *testing.T) {
 // has never heard of. Failing there would put an error in somebody's prompt
 // several times a second.
 func TestTelemetryForAnUnknownSessionIsAcceptedAndDropped(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d, _, cancel, _ := startDaemon(t)
 	defer cancel()
 
@@ -92,6 +98,9 @@ func TestTelemetryForAnUnknownSessionIsAcceptedAndDropped(t *testing.T) {
 // otherwise have its figure drawn on somebody else's card, which is worse than
 // no figure at all.
 func TestTelemetryWithNoKeyMatchesNothing(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d, _, cancel, _ := startDaemon(t)
 	defer cancel()
 
@@ -114,6 +123,9 @@ func TestTelemetryWithNoKeyMatchesNothing(t *testing.T) {
 // The same rule /activity follows, and it matters more here: a statusline runs
 // on every redraw, so a caller that logged a failure would log it forever.
 func TestTelemetryEndpointNeverRefuses(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d, _, cancel, _ := startDaemon(t)
 	defer cancel()
 
@@ -142,6 +154,9 @@ func TestTelemetryEndpointNeverRefuses(t *testing.T) {
 // trusted. A caller that sends more used than window is wrong, and a card
 // reading "ctx 340%" is a board nobody believes again.
 func TestTelemetryClampsWhatItIsGiven(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d, _, cancel, _ := startDaemon(t)
 	defer cancel()
 
@@ -170,6 +185,9 @@ func TestTelemetryClampsWhatItIsGiven(t *testing.T) {
 // away "the account is at 94% of its weekly limit" over a formatting
 // disagreement is the wrong trade.
 func TestABadResetTimeKeepsThePercentage(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d, _, cancel, _ := startDaemon(t)
 	defer cancel()
 
@@ -199,6 +217,9 @@ func TestABadResetTimeKeepsThePercentage(t *testing.T) {
 // card be "the one nobody has looked at" rather than "the one that stopped",
 // which is the sort the whole dispatch decision runs on.
 func TestTelemetryIsNotActivity(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d, _, cancel, _ := startDaemon(t)
 	defer cancel()
 
@@ -305,6 +326,9 @@ func TestForgettingACardDropsItsTelemetry(t *testing.T) {
 // any of this out should send nothing, and one that sends an empty body anyway
 // would otherwise replace a real number with a chip that says nothing.
 func TestAnEmptyTelemetryPostIsNotRecorded(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d, _, cancel, _ := startDaemon(t)
 	defer cancel()
 

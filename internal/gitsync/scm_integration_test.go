@@ -213,6 +213,9 @@ func operatorClone(t *testing.T, c *SCM, root string) string {
 }
 
 func TestAnOperatorsCloneIsUntouchedUntilOneYes(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: git subprocesses and a real smart-HTTP rig")
+	}
 	t.Parallel()
 	c, root := newSCM(t)
 	d := operatorClone(t, c, root)
@@ -339,6 +342,9 @@ func TestCredentialHelperIsScopedToTheCheckedHostAndOnlyForListedHosts(t *testin
 // A helper for another host is never called: the clone is of a stub https server that answers 401,
 // the helper writes a marker file when git runs it, and the marker must not exist afterwards.
 func TestAHelperIsNeverCalledForAHostNotListed(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: git subprocesses and a real smart-HTTP rig")
+	}
 	t.Parallel()
 	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("WWW-Authenticate", `Basic realm="x"`)

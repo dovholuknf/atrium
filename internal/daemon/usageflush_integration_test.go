@@ -50,6 +50,9 @@ func TestFlushedRecordsWithoutAStop(t *testing.T) {
 
 // Report, then Stop, then an exit: each reply once.
 func TestReportThenStopThenExitCountEachReplyOnce(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	t.Parallel()
 	f := newUsageFix(t)
 	f.u.settle = 0
@@ -65,6 +68,9 @@ func TestReportThenStopThenExitCountEachReplyOnce(t *testing.T) {
 
 // Stop first, then the report, then the exit.
 func TestStopThenReportThenExitCountEachReplyOnce(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	t.Parallel()
 	f := newUsageFix(t)
 	f.u.settle = 0
@@ -121,6 +127,9 @@ func TestFlushedWithoutATranscriptIsQuiet(t *testing.T) {
 
 // Subagent files are read on a flush as on a Stop.
 func TestFlushedReadsSubagentFiles(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	t.Parallel()
 	f := newUsageFix(t)
 	f.u.settle = 0
@@ -166,6 +175,9 @@ func TestAReportRecordsTheWorkersUsage(t *testing.T) {
 }
 
 func TestASessionEndRecordsTheWorkersUsage(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	t.Parallel()
 	d, f := siteDaemon(t)
 	if err := d.onSession(SessionEvent{Event: "end", TaskID: f.task.ID, Agent: "worker", Reason: "other"}); err != nil {

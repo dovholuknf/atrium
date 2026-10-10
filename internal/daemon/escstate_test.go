@@ -114,6 +114,9 @@ func TestHeldMarkIsForcedOutByBytes(t *testing.T) {
 
 // A stream that stops mid-sequence does not hold it either: the timer releases it.
 func TestHeldMarkIsForcedOutByTime(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	t.Parallel()
 	r := newEscRunner()
 	r.deliverOutput([]byte("\x1b[3"))

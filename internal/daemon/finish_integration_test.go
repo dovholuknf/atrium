@@ -35,6 +35,9 @@ func finish(t *testing.T, d *Daemon, body map[string]any) map[string]any {
 }
 
 func TestAnAgentCanSayItFinished(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d, _, cancel, _ := startDaemon(t)
 	defer cancel()
 	task, _, err := d.st.Register(store.Observed{
@@ -74,6 +77,9 @@ func TestAnAgentCanSayItFinished(t *testing.T) {
 // distinction is the whole point of storing a recap: a session that ended with
 // an account of itself and one that did not are different.
 func TestFinishingWithNoRecapIsAllowedAndVisible(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d, _, cancel, _ := startDaemon(t)
 	defer cancel()
 	task, _, err := d.st.Register(store.Observed{
@@ -103,6 +109,9 @@ func TestFinishingWithNoRecapIsAllowedAndVisible(t *testing.T) {
 // Handing the work back is a different claim from finishing it, and worth
 // being able to say.
 func TestHandingBackIsNotFinishing(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d, _, cancel, _ := startDaemon(t)
 	defer cancel()
 	task, _, err := d.st.Register(store.Observed{
@@ -132,6 +141,9 @@ func TestHandingBackIsNotFinishing(t *testing.T) {
 // A card put down by hand stays put. Shelving is an answer, and a session
 // inside a shelved worktree announcing it is done does not overrule it.
 func TestFinishingDoesNotUnshelveACard(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d, _, cancel, _ := startDaemon(t)
 	defer cancel()
 	task, _, err := d.st.Register(store.Observed{
@@ -163,6 +175,9 @@ func TestFinishingDoesNotUnshelveACard(t *testing.T) {
 // A session atrium has never heard of is not an error. Failing here would mean
 // a session could fail at the moment it tried to end tidily.
 func TestFinishingAnUnknownSessionIsNotAFailure(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d, _, cancel, _ := startDaemon(t)
 	defer cancel()
 
@@ -178,6 +193,9 @@ func TestFinishingAnUnknownSessionIsNotAFailure(t *testing.T) {
 // Saying which session it is remains required. Guessing would attach an
 // account of one piece of work to another.
 func TestFinishingNeedsToSayWhichSession(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d, _, cancel, _ := startDaemon(t)
 	defer cancel()
 
@@ -196,6 +214,9 @@ func TestFinishingNeedsToSayWhichSession(t *testing.T) {
 // column and not the same claim, so the history has to be able to tell them
 // apart afterwards.
 func TestFinishingIsRecordedAsComingFromTheAgent(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d, _, cancel, _ := startDaemon(t)
 	defer cancel()
 	task, _, err := d.st.Register(store.Observed{

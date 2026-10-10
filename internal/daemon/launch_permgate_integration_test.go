@@ -70,6 +70,9 @@ func TestLaunchHonorsAHarnessGateSetting(t *testing.T) {
 // board-wide switch the moment it asks, and still gates to him when it is off.
 // The launch env carries the request to the gate; the gate is what decides.
 func TestLaunchedSessionUnderGlobalAuto(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	if _, ok := permGate(launchEnv(nil)); !ok {
 		t.Fatal("the launch would not route this session through atrium's gate at all")
 	}

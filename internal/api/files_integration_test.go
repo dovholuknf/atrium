@@ -258,6 +258,9 @@ func TestDownloadingAFileInsideWorks(t *testing.T) {
 // A delay-rendered clipboard image can arrive as zero bytes. Saving it would hand the agent a path to an empty
 // file with nobody the wiser.
 func TestUploadRefusesAnEmptyFileAndWritesNothing(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real server with git worktrees and a database")
+	}
 	t.Parallel()
 	s, st, work := fileServer(t)
 	task := cardIn(t, st, work)
@@ -279,6 +282,9 @@ func TestUploadRefusesAnEmptyFileAndWritesNothing(t *testing.T) {
 // from a working directory inline would be serving attacker-authored script on
 // the board's own origin, and the board holds the settings and every card.
 func TestEverythingIsServedAsAnAttachment(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real server with git worktrees and a database")
+	}
 	t.Parallel()
 	s, st, work := fileServer(t)
 	task := cardIn(t, st, work)
@@ -333,6 +339,9 @@ func TestDownloadingOutsideTheCardIsRefused(t *testing.T) {
 // One status for "outside" and for "does not exist", so this cannot be used to
 // find out what is on the machine outside the card.
 func TestOutsideAndMissingAnswerTheSame(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real server with git worktrees and a database")
+	}
 	t.Parallel()
 	s, st, work := fileServer(t)
 	task := cardIn(t, st, work)
@@ -370,6 +379,9 @@ func TestDownloadingADirectoryIsRefused(t *testing.T) {
 }
 
 func TestDownloadingNeedsAPath(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real server with git worktrees and a database")
+	}
 	t.Parallel()
 	s, st, work := fileServer(t)
 	task := cardIn(t, st, work)

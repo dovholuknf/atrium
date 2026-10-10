@@ -12,6 +12,9 @@ import (
 
 // Every waiting step lets a person type. Only atrium's own write refuses it.
 func TestTypingIsHeldOnlyWhileAtriumTypes(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	fastNewContext(t)
 	d := testDaemon(t)
 	task, f, dir := ncCard(t, d)
@@ -89,6 +92,9 @@ func TestDismissingGivesTheTerminalBackAndSendsTheQueue(t *testing.T) {
 
 // Several queued messages go in the order they were queued, after the wake prompt.
 func TestQueuedTextGoesInOrderAfterTheWake(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	fastNewContext(t)
 	d := testDaemon(t)
 	task, f, dir := ncCard(t, d)

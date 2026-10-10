@@ -11,6 +11,9 @@ import (
 // The default is what gets served when nobody says otherwise, and it has to be
 // the board rather than an empty string.
 func TestOverlayBackendDefaultsToTheBoard(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d, _, cancel, _ := startDaemon(t)
 	defer cancel()
 
@@ -22,6 +25,9 @@ func TestOverlayBackendDefaultsToTheBoard(t *testing.T) {
 // Private, because this board has no login and the safe default for something
 // with no login is the one that needs an account on the other end.
 func TestZrokDefaultsToPrivate(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d, _, cancel, _ := startDaemon(t)
 	defer cancel()
 
@@ -32,6 +38,9 @@ func TestZrokDefaultsToPrivate(t *testing.T) {
 
 // Configuration outlives a restart, like everything else the daemon keeps.
 func TestOverlayConfigIsRemembered(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d, _, cancel, _ := startDaemon(t)
 	defer cancel()
 
@@ -48,6 +57,9 @@ func TestOverlayConfigIsRemembered(t *testing.T) {
 // An overlay nobody has heard of is a typo in a URL, not a reason to start
 // something.
 func TestUnknownOverlayIsRefused(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d, _, cancel, _ := startDaemon(t)
 	defer cancel()
 
@@ -62,6 +74,9 @@ func TestUnknownOverlayIsRefused(t *testing.T) {
 // Each refusal names the field that is missing. Serving on an overlay fails
 // for reasons the operator can fix, and "could not bind" is not one of them.
 func TestZitiRefusesWithoutWhatItNeeds(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d, _, cancel, _ := startDaemon(t)
 	defer cancel()
 
@@ -78,6 +93,9 @@ func TestZitiRefusesWithoutWhatItNeeds(t *testing.T) {
 // The mode decides whether a link needs an account on the other end, so a
 // typo in it must not quietly become the more open one.
 func TestZrokRefusesAModeItDoesNotKnow(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d, _, cancel, _ := startDaemon(t)
 	defer cancel()
 
@@ -97,6 +115,9 @@ func TestZrokRefusesAModeItDoesNotKnow(t *testing.T) {
 // panel refuses to save the public toggle rather than letting it be discovered
 // when the phone cannot get in. This is the design's save-time refusal.
 func TestZrokPublicRefusedWithoutLogin(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d, _, cancel, _ := startDaemon(t)
 	defer cancel()
 
@@ -117,6 +138,9 @@ func TestZrokPublicRefusedWithoutLogin(t *testing.T) {
 // A private share is gated by an account holding its token, so it needs no login
 // of its own and saving it must not be refused for lacking one.
 func TestZrokPrivateSavesWithoutLogin(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d, _, cancel, _ := startDaemon(t)
 	defer cancel()
 
@@ -128,6 +152,9 @@ func TestZrokPrivateSavesWithoutLogin(t *testing.T) {
 // With a working login configured, the public toggle saves: the login is the
 // authorisation a public URL cannot get from reachability.
 func TestZrokPublicSavesWithALogin(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d, _, cancel, _ := startDaemon(t)
 	defer cancel()
 
@@ -145,6 +172,9 @@ func TestZrokPublicSavesWithALogin(t *testing.T) {
 // Stopping something that is not running is a state the board can ask for,
 // since it can be a click behind. It must not panic on the nil it holds.
 func TestStoppingAnOverlayThatIsNotRunning(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d, _, cancel, _ := startDaemon(t)
 	defer cancel()
 
@@ -160,6 +190,9 @@ func TestStoppingAnOverlayThatIsNotRunning(t *testing.T) {
 // Two clicks must not each bind a listener. The second would take the service
 // or the share and leave the first answering nothing.
 func TestOnlyOneListenerPerOverlay(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d, _, cancel, _ := startDaemon(t)
 	defer cancel()
 

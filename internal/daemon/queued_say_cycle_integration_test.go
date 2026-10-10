@@ -31,6 +31,9 @@ func sayWhen(t *testing.T, d *Daemon, from, id, text, when string) map[string]an
 
 // Says queued BEFORE the cycle began, while the card was mid-turn, arrive once each after the wake prompt.
 func TestSaysQueuedBeforeACycleArriveOnceAfterTheWake(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	fastNewContext(t)
 	d := testDaemon(t)
 	task, f, dir := ncCard(t, d)

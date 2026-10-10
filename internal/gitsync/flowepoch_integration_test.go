@@ -10,6 +10,9 @@ import (
 // NO MERGE IS EVER LOST: work the merger landed after clint fetched is replayed onto the re-signed history, and the
 // hub moves claude/main only when everything is on the branch it is moved to.
 func TestEpochMoveKeepsWhatLandedAfterClintFetched(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: git subprocesses and a real smart-HTTP rig")
+	}
 	x := newRecv(t)
 	x.seedMain(hubRepo)
 	card := roomCard("sg4", "C1")
@@ -73,6 +76,9 @@ func TestEpochMoveKeepsWhatLandedAfterClintFetched(t *testing.T) {
 }
 
 func TestEpochMoveToMainWhenEverythingIsAlreadyThere(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: git subprocesses and a real smart-HTTP rig")
+	}
 	x := newRecv(t)
 	x.seedMain(hubRepo)
 	st := x.h.Store()

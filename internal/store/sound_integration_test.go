@@ -8,6 +8,9 @@ import "testing"
 // which agent wants you without looking only works if the answer is the same
 // tomorrow and in another browser.
 func TestSoundIsStoredOnTheCard(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real sqlite database on disk")
+	}
 	t.Parallel()
 	s := open(t)
 	task, _, err := s.Register(Observed{WireName: "belled", Worktree: "/w", Runner: "claude"})

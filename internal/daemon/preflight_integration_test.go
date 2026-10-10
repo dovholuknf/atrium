@@ -207,6 +207,9 @@ func TestPreflightReportsPidAndStartedBy(t *testing.T) {
 }
 
 func TestPreflightIsOnTheHumanListenerOnly(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d, _, cancel, _ := startDaemon(t)
 	defer cancel()
 	f := &fakeExec{}

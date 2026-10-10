@@ -29,6 +29,9 @@ func dismissCycle(t *testing.T, d *Daemon, id string) {
 // held meanwhile, and "let me type" ends the cycle, sends the queued text and leaves
 // the card free.
 func TestAWedgedWaitForTheAckIsNeverATrap(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	fastNewContext(t)
 	d := testDaemon(t)
 	task, f, _ := ncCard(t, d)

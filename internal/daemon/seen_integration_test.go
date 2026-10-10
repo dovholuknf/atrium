@@ -59,6 +59,9 @@ func seenStop(t *testing.T, d *Daemon, agent string, questions []string) {
 // The whole loop: a turn ends with questions, it is unseen and owed, a board
 // window reports seeing it, and a prompt answers the questions.
 func TestATurnIsUnseenUntilTheBoardSeesItAndAnsweredByAPrompt(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d, _, cancel, _ := startDaemon(t)
 	defer cancel()
 	task, _, err := d.st.Register(store.Observed{WireName: "orch", Worktree: "/tmp/atrium-seen", Runner: "claude"})
@@ -98,6 +101,9 @@ func TestATurnIsUnseenUntilTheBoardSeesItAndAnsweredByAPrompt(t *testing.T) {
 
 // A board message from a PEER is not the operator reading anything.
 func TestAPeerMessageDoesNotAnswer(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d, _, cancel, _ := startDaemon(t)
 	defer cancel()
 	task, _, err := d.st.Register(store.Observed{WireName: "orch", Worktree: "/tmp/atrium-seen", Runner: "claude"})
@@ -123,6 +129,9 @@ func TestAPeerMessageDoesNotAnswer(t *testing.T) {
 
 // A turn with no block keeps the questions, as when a peer's report started it.
 func TestATurnWithNoBlockKeepsTheQuestions(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d, _, cancel, _ := startDaemon(t)
 	defer cancel()
 	task, _, err := d.st.Register(store.Observed{WireName: "orch", Worktree: "/tmp/atrium-seen", Runner: "claude"})
@@ -278,6 +287,9 @@ func TestLauncherSeenLeavesQuestionsOpen(t *testing.T) {
 // The seen step publishes a reported worker once, and the card it publishes is
 // already seen, so no reader is shown the dot on the way.
 func TestAReportedWorkersStopPublishesOnce(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d, _, cancel, _ := startDaemon(t)
 	defer cancel()
 	launcher, worker := launchedPair(t, d)

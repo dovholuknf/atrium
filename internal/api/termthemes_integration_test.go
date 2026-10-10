@@ -238,6 +238,9 @@ func TestDeletingAThemeTakesItOffTheList(t *testing.T) {
 // The editor draws its boxes from this list rather than from a second list in
 // the page, which is the same rule the skin picker follows.
 func TestTheSlotsGoOutWithTheThemes(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real server with git worktrees and a database")
+	}
 	t.Parallel()
 	srv, _, _ := fileServer(t)
 
@@ -273,6 +276,9 @@ func TestTheSlotsGoOutWithTheThemes(t *testing.T) {
 }
 
 func TestSomethingThatIsNotASchemeIsRefusedWithSomewhereToGo(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real server with git worktrees and a database")
+	}
 	t.Parallel()
 	srv, _, _ := fileServer(t)
 

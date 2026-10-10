@@ -357,6 +357,9 @@ func (l *permRoom) counts() (gets int, decides map[string]int) {
 // Auto on and no board open: the request is approved from its event, and the room
 // is read only at turn-on, attach and reconnect, never on a clock.
 func TestAutoApprovesFromTheEventWithNoBoardAndNoPolling(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real link, hub and git rig over loopback")
+	}
 	b := newBench(t)
 	l := newPermRoom()
 	b.attach("alpha", l.handler())
@@ -427,6 +430,9 @@ func TestAnEventInFlightWhenAutoIsSwitchedOffIsNotApproved(t *testing.T) {
 }
 
 func TestAnEventPastTheDeadlineIsNotApproved(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real link, hub and git rig over loopback")
+	}
 	b := newBench(t)
 	l := newPermRoom()
 	b.attach("alpha", l.handler())

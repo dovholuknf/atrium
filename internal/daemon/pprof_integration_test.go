@@ -20,6 +20,9 @@ func isProfile(code int, body string) bool {
 // The one place a heap profile is served: the loopback human listener. And the
 // board still answers everything else on it.
 func TestTheLoopbackBoardServesAHeapProfile(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d, _, cancel, _ := startDaemon(t)
 	defer cancel()
 

@@ -100,6 +100,9 @@ func newHubFixture(t *testing.T, roomGit bool) *hubFixture {
 }
 
 func TestMirrorCreatesTheBareRepositoryAndMovesWithTheBranch(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: git subprocesses and a real smart-HTTP rig")
+	}
 	t.Parallel()
 	x := newHubFixture(t, true)
 	moved, err := x.h.Mirror(bg)
@@ -168,6 +171,9 @@ func TestOnlyTheListedNamesAreServed(t *testing.T) {
 }
 
 func TestCollectBringsNewBranchesPrunesDeletedAndNeverCollectsClaudeMain(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: git subprocesses and a real smart-HTTP rig")
+	}
 	t.Parallel()
 	x := newHubFixture(t, true)
 	if _, err := x.h.Mirror(bg); err != nil {
@@ -243,6 +249,9 @@ func TestCollectBringsNewBranchesPrunesDeletedAndNeverCollectsClaudeMain(t *test
 // HEAD is not under refs/, so hiding refs/rooms alone would advertise a HEAD that points at a
 // room's branch.
 func TestHeadPointingAtAHiddenRefIsNotAdvertised(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: git subprocesses and a real smart-HTTP rig")
+	}
 	t.Parallel()
 	x := newHubFixture(t, true)
 	if _, err := x.h.Mirror(bg); err != nil {
@@ -280,6 +289,9 @@ func TestHeadPointingAtAHiddenRefIsNotAdvertised(t *testing.T) {
 }
 
 func TestAStaleLockUnderAnOwnedRefIsRemovedAndOneElsewhereIsLeft(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: git subprocesses and a real smart-HTTP rig")
+	}
 	t.Parallel()
 	x := newHubFixture(t, true)
 	if _, err := x.h.Mirror(bg); err != nil {
@@ -464,6 +476,9 @@ func TestOnlyTheIntegrationBranchMayBeMirrored(t *testing.T) {
 
 // A hub stopped in the middle of a collect leaves every ref at its old sha or its new one.
 func TestAHubStoppedMidFetchLeavesEveryRefWhole(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: git subprocesses and a real smart-HTTP rig")
+	}
 	t.Parallel()
 	x := newHubFixture(t, true)
 	if _, err := x.h.Mirror(bg); err != nil {

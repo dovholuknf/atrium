@@ -13,6 +13,9 @@ import (
 // roomHandler, which is what the hub's own sync and collect reach. It is not on the room's
 // human listener, not on a lent session's guest listener, and not on the agent listener.
 func TestTheRoomsGitSurfaceIsNotOnTheHumanGuestOrAgentListeners(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d, _, cancel, _ := startDaemon(t)
 	defer cancel()
 	task := sharedCard(t, d, "lent")

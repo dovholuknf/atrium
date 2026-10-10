@@ -60,6 +60,9 @@ func TestNormalizeTagsAreBounded(t *testing.T) {
 // Tags survive a restart like everything else the daemon keeps, and they
 // replace rather than merge so removing one is possible.
 func TestTagsRoundTripAndReplace(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real sqlite database on disk")
+	}
 	t.Parallel()
 	s := open(t)
 
@@ -98,6 +101,9 @@ func TestTagsRoundTripAndReplace(t *testing.T) {
 // Tagging is the operator filing a card, not the session doing anything.
 // Bumping activity would move a silent card to the top of a list sorted by it.
 func TestTaggingDoesNotCountAsActivity(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real sqlite database on disk")
+	}
 	t.Parallel()
 	s := open(t)
 	task, _, err := s.Register(Observed{WireName: "quiet", Worktree: "/tmp/x", Runner: "claude"})
@@ -123,6 +129,9 @@ func TestTaggingDoesNotCountAsActivity(t *testing.T) {
 
 // Pinning is a fixture marker and has to outlive a restart.
 func TestPinnedRoundTrips(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real sqlite database on disk")
+	}
 	t.Parallel()
 	s := open(t)
 	task, _, err := s.Register(Observed{WireName: "fixture", Worktree: "/tmp/x", Runner: "claude"})

@@ -98,6 +98,9 @@ func TestTheAttachingViewersSizeBecomesThePTYs(t *testing.T) {
 // is raises SIGWINCH and every viewer repaints, so the second attach of a tab
 // that was just switched away and back must not cost one.
 func TestReattachingAtTheSameSizeDoesNotResize(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	t.Parallel()
 	d := testDaemon(t)
 	f, r := sizedSession(t, d, "size-reattach", 120, 30)
@@ -140,6 +143,9 @@ func TestARestartedSessionFollowsThePaneNotTheSavedWidth(t *testing.T) {
 // pair, a narrower second viewer moves nothing, and the wider one leaving hands
 // the width back to the one that remains.
 func TestASecondViewerSizesThePTYBetweenTheTwo(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	t.Parallel()
 	d := testDaemon(t)
 	f, r := sizedSession(t, d, "size-two", 120, 30)

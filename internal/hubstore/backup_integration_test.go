@@ -56,6 +56,9 @@ func TestASnapshotHasWhatWasJustWritten(t *testing.T) {
 // one a day for a week, one a week for a month. A flat list of the most recent
 // fifty is eight hours, all of it from today.
 func TestOldSnapshotsThinOutRatherThanPilingUp(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real snapshots on disk")
+	}
 	dir := t.TempDir()
 	// Two months of snapshots, one every ten minutes, as empty files: nothing
 	// here reads them, and writing eight thousand real databases to test a

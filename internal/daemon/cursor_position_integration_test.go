@@ -30,6 +30,9 @@ func TestReplayRestoresTheCursor(t *testing.T) {
 // move. The cursor is parked in the prompt row, and the attach must hand the
 // browser the sequence that puts it there.
 func TestAttachRestoresTheCursorOverTheSocket(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	t.Parallel()
 	d := testDaemon(t)
 	// A prompt and a line under it, cursor left at row 1, column 3, which is

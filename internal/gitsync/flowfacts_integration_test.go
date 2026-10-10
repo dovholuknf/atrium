@@ -7,6 +7,9 @@ import "testing"
 // A branch is merged when claude/main has its change, by ancestry or by patch: a cherry-pick, a rebase and a
 // re-sign all give the same change a new sha.
 func TestItemFactsSeeThroughACherryPick(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: git subprocesses and a real smart-HTTP rig")
+	}
 	x := newRecv(t)
 	x.seedMain(hubRepo)
 	card := roomCard("sg4", "C1")

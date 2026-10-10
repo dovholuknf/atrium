@@ -11,6 +11,9 @@ import (
 // The agent never runs `atrium ready`: the hold lifts by itself, says why on the
 // card, and nothing is typed past the limit prompt.
 func TestNewContextAckNeverComesReleasesTheHold(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	fastNewContext(t)
 	ncTiming.ackWait = 300 * time.Millisecond
 	d := testDaemon(t)

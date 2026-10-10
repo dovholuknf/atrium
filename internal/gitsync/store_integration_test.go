@@ -204,6 +204,9 @@ func newStore(t *testing.T, branch string) *storeFixture {
 const repoURL = "https://github.com/o/r"
 
 func TestInitSeedsMainEvenWhenTheForgeCallsItMaster(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: git subprocesses and a real smart-HTTP rig")
+	}
 	t.Parallel()
 	x := newStore(t, "master")
 	want := x.forge.push(t, "master", "a.txt", "one", 1000)
@@ -236,6 +239,9 @@ func TestInitSeedsMainEvenWhenTheForgeCallsItMaster(t *testing.T) {
 }
 
 func TestASecondInitIsANoOpAndNeverFetchesAgain(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: git subprocesses and a real smart-HTTP rig")
+	}
 	t.Parallel()
 	x := newStore(t, "master")
 	first := x.forge.push(t, "master", "a.txt", "one", 1000)
@@ -308,6 +314,9 @@ func TestAPrivateForgeThatAsksForACredentialIsToldApart(t *testing.T) {
 }
 
 func TestANetworkErrorSaysToRerunAndTheRerunSeeds(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: git subprocesses and a real smart-HTTP rig")
+	}
 	t.Parallel()
 	x := newStore(t, "master")
 	want := x.forge.push(t, "master", "a.txt", "one", 1000)
@@ -343,6 +352,9 @@ func TestANetworkErrorSaysToRerunAndTheRerunSeeds(t *testing.T) {
 }
 
 func TestAnEmptyRepoThatTheOperatorPushedMainToIsLeftAlone(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: git subprocesses and a real smart-HTTP rig")
+	}
 	t.Parallel()
 	x := newStore(t, "master")
 	x.s.Forge = func(Ref) string { return filepath.Join(x.root, "no", "such.git") }
@@ -524,6 +536,9 @@ func TestInitRemovesWhatItMadeWhenGitFails(t *testing.T) {
 }
 
 func TestReftableOnlyWhereGitHasItAndTheProbeWorks(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: git subprocesses and a real smart-HTTP rig")
+	}
 	t.Parallel()
 	realVer, err := Default.Git(bg, "", "--version")
 	if err != nil {
@@ -600,6 +615,9 @@ func TestReftableOnlyWhereGitHasItAndTheProbeWorks(t *testing.T) {
 
 // The git_repos mirrors live under the same directory by default, and the store leaves them alone.
 func TestTheStoreAndTheGitReposMirrorsCoexist(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: git subprocesses and a real smart-HTTP rig")
+	}
 	t.Parallel()
 	x := newStore(t, "master")
 	x.forge.push(t, "master", "a.txt", "one", 1000)
@@ -720,6 +738,9 @@ func TestTheStoreRootIsTheSettingAndTheDefaultIsUnderTheHubDir(t *testing.T) {
 }
 
 func TestInitInParallelMakesItOnce(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: git subprocesses and a real smart-HTTP rig")
+	}
 	t.Parallel()
 	x := newStore(t, "master")
 	x.forge.push(t, "master", "a.txt", "one", 1000)
@@ -749,6 +770,9 @@ func TestInitInParallelMakesItOnce(t *testing.T) {
 }
 
 func TestViewIsTheExactShapeTheBoardReads(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: git subprocesses and a real smart-HTTP rig")
+	}
 	t.Parallel()
 	x := newStore(t, "master")
 	empty := func() []byte {
@@ -887,6 +911,9 @@ func TestTheMarkerSaysMadeOrAdoptedAndAnOldMarkerReadsAsMade(t *testing.T) {
 // A store step and the mirror pass never run in one git_repos mirror at once: the store takes the
 // mirror's own lock whenever the directory is a configured mirror, and not for any other repository.
 func TestAnInitOfAMirrorTakesTheMirrorsLock(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: git subprocesses and a real smart-HTTP rig")
+	}
 	t.Parallel()
 	x := newStore(t, "master")
 	x.forge.push(t, "master", "a.txt", "one", 1000)

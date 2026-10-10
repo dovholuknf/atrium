@@ -16,6 +16,9 @@ import (
 // An `in` frame with an id is answered with one `in-done` after its bytes are in
 // the pty, and one without is answered with nothing. See attachInDone.
 func TestAPasteWithAnIDIsAnsweredOnceItsWriteReturns(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	t.Parallel()
 	d := testDaemon(t)
 	f, _ := sizedSession(t, d, "in-done", 120, 30)

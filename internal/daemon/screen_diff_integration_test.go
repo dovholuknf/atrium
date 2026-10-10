@@ -160,6 +160,9 @@ func diffDumps(got, want xtermDump) map[diffKind][]string {
 }
 
 func TestScreenAgainstXterm(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	t.Parallel()
 	for _, c := range traceCases() {
 		t.Run(c.name, func(t *testing.T) {

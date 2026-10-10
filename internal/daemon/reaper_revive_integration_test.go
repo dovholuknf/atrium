@@ -11,6 +11,9 @@ import (
 )
 
 func TestTheReaperBringsBackADeadCardItStillOwnsARunnerFor(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d, _, cancel, errCh := startDaemon(t)
 	defer func() {
 		cancel()
@@ -52,6 +55,9 @@ func TestTheReaperBringsBackADeadCardItStillOwnsARunnerFor(t *testing.T) {
 // supervisor rather than the board, and why coming back has to clear the
 // archive stamp.
 func TestTheReaperBringsBackAnArchivedCardWithALiveRunner(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d, _, cancel, errCh := startDaemon(t)
 	defer func() {
 		cancel()
@@ -97,6 +103,9 @@ func TestTheReaperBringsBackAnArchivedCardWithALiveRunner(t *testing.T) {
 // Shelving is a decision, and the reaper corrects atrium's own guesses rather
 // than overruling the operator.
 func TestTheReaperLeavesAShelvedCardAlone(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d, _, cancel, errCh := startDaemon(t)
 	defer func() {
 		cancel()
@@ -133,6 +142,9 @@ func TestTheReaperLeavesAShelvedCardAlone(t *testing.T) {
 // the card's own stale pid would keep resurrecting sessions that really ended,
 // because the operating system recycles pids.
 func TestTheReaperLeavesADeadCardWithNoRunnerAlone(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d, _, cancel, errCh := startDaemon(t)
 	defer func() {
 		cancel()

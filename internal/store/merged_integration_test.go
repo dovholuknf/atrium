@@ -9,6 +9,9 @@ import (
 )
 
 func TestAMarkIsDueOnlyOnceItsTimeHasCome(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real sqlite database on disk")
+	}
 	t.Parallel()
 	s := open(t)
 	_, worker, _ := ledgerPair(t, s)

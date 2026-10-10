@@ -265,6 +265,9 @@ func TestEventsRecordHistory(t *testing.T) {
 // or the newest N upside down. The endpoint answers "what just happened", and
 // for two years it answered with the day the card was created.
 func TestEventsReturnsTheNewestWindowInTimeOrder(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real sqlite database on disk")
+	}
 	t.Parallel()
 	s := open(t)
 	task, _, err := s.Register(Observed{WireName: "agent-window", Worktree: "d:/w", Runner: "claude"})

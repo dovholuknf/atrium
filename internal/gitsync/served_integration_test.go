@@ -126,6 +126,9 @@ func (r *roomRepo) want(t *testing.T, sha string) string {
 }
 
 func TestTheRoomAdvertisesClaudeBranchesAndLiveCardsAndNothingElse(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: git subprocesses and a real smart-HTTP rig")
+	}
 	t.Parallel()
 	r := newRoomRepo(t)
 	got := r.advertised(t)
@@ -150,6 +153,9 @@ func TestTheRoomAdvertisesClaudeBranchesAndLiveCardsAndNothingElse(t *testing.T)
 }
 
 func TestStashNotesAnUnservedBranchAndClaudeMainAreRefusedToAFetch(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: git subprocesses and a real smart-HTTP rig")
+	}
 	t.Parallel()
 	r := newRoomRepo(t)
 	r.setLive("fix/live")
@@ -175,6 +181,9 @@ func TestStashNotesAnUnservedBranchAndClaudeMainAreRefusedToAFetch(t *testing.T)
 }
 
 func TestAWantByShaOutsideTheServedSetIsRefusedByTheRoomsGit(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: git subprocesses and a real smart-HTTP rig")
+	}
 	t.Parallel()
 	r := newRoomRepo(t)
 	r.setLive("fix/live")
@@ -194,6 +203,9 @@ func TestAWantByShaOutsideTheServedSetIsRefusedByTheRoomsGit(t *testing.T) {
 }
 
 func TestTheRoomsUploadPackSpeaksV0AndOffersNoFilterOrAnySha(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: git subprocesses and a real smart-HTTP rig")
+	}
 	t.Parallel()
 	r := newRoomRepo(t)
 	req, _ := http.NewRequest("GET", r.url()+"/info/refs?service=git-upload-pack", nil)
@@ -244,6 +256,9 @@ func TestACardIsMatchedToItsRepositoryOnTheFullNameWhenItRecordedOne(t *testing.
 }
 
 func TestAClonesDefaultBranchWhateverItIsCalledIsNeverServedToALiveCard(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: git subprocesses and a real smart-HTTP rig")
+	}
 	t.Parallel()
 	// The pure half.
 	got := ServedHide([]string{"develop", "trunk", "fix/x"}, "develop", "trunk")

@@ -195,6 +195,9 @@ func TestRepliesFirstPageMoreWhenWindowStartsMidFile(t *testing.T) {
 // Every window size puts a seam somewhere else: no reply lost, none doubled,
 // every multi-block reply whole.
 func TestRepliesBeforeWalksAcrossSeams(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	path := lockstepTranscript(t, 60, 3, 0)
 	for window := int64(700); window < 1100; window += 53 {
 		withWindows(t, window, 1<<30)
@@ -247,6 +250,9 @@ func TestRepliesBeforeStopsAtTheReach(t *testing.T) {
 // Prompts dense in one stretch, replies dense in another: the lists thin out at
 // different depths, and walking by next_before alone still loses and repeats nothing.
 func TestRepliesBeforeWalksUnevenLists(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	var sb strings.Builder
 	at := func(i int) time.Time { return pagingBase.Add(time.Duration(i) * time.Second) }
 	i := 0

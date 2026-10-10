@@ -98,6 +98,9 @@ func TestListTasksByName(t *testing.T) {
 
 // 301 cards, all launched, to time the list (go test -run X -v).
 func TestListTasksLauncherCostWithManyCards(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real server with git worktrees and a database")
+	}
 	t.Parallel()
 	srv, st, _ := fileServer(t)
 	boss := exitCard(t, st, "boss")

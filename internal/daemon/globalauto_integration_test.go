@@ -25,6 +25,9 @@ func plainTask(t *testing.T, d *Daemon, name string) *store.Task {
 // The whole point: a session nobody turned loose individually is turned loose
 // with everything else.
 func TestGlobalAutoApprovesASessionThatWasNotSetUp(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d, _, cancel, _ := startDaemon(t)
 	defer cancel()
 	plainTask(t, d, "global-1")
@@ -47,6 +50,9 @@ func TestGlobalAutoApprovesASessionThatWasNotSetUp(t *testing.T) {
 // The record has to say which switch answered. Six hours later, "I turned this
 // session loose" and "I turned the whole board loose" are different answers.
 func TestGlobalAutoIsRecordedUnderItsOwnName(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d, _, cancel, _ := startDaemon(t)
 	defer cancel()
 	plainTask(t, d, "global-2")
@@ -67,6 +73,9 @@ func TestGlobalAutoIsRecordedUnderItsOwnName(t *testing.T) {
 // A session with its own auto mode on keeps saying so, rather than being
 // relabeled by the global switch being on at the same time.
 func TestPerSessionAutoKeepsItsOwnMarker(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d, _, cancel, _ := startDaemon(t)
 	defer cancel()
 	autoTask(t, d, "global-3")
@@ -87,6 +96,9 @@ func TestPerSessionAutoKeepsItsOwnMarker(t *testing.T) {
 // Global auto stops new questions. It does not discard answers already given,
 // so a shelved card is still a standing no.
 func TestGlobalAutoDoesNotOverrideShelving(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d, _, cancel, _ := startDaemon(t)
 	defer cancel()
 	task := plainTask(t, d, "global-4")
@@ -105,6 +117,9 @@ func TestGlobalAutoDoesNotOverrideShelving(t *testing.T) {
 
 // Off means asking again, immediately, with nothing to restart.
 func TestGlobalAutoOffAsksAgain(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d, _, cancel, _ := startDaemon(t)
 	defer cancel()
 	plainTask(t, d, "global-5")
@@ -126,6 +141,9 @@ func TestGlobalAutoOffAsksAgain(t *testing.T) {
 // asking again, and it is not consent to keep approving either: it is whatever
 // it was when you left.
 func TestGlobalAutoSurvivesAReopen(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d, _, cancel, errCh := startDaemon(t)
 	path := d.opts.DBPath
 	if err := d.st.SetGlobalAuto(true); err != nil {

@@ -18,6 +18,9 @@ func (f *forge) prHead(t *testing.T, n, file, body string, at int64) string {
 }
 
 func TestFetchPRPutsTheHeadUnderTheAtriumRef(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: git subprocesses and a real smart-HTTP rig")
+	}
 	t.Parallel()
 	x := newStore(t, "main")
 	main := x.forge.push(t, "main", "a.txt", "one", 1000)

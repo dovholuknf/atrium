@@ -14,6 +14,9 @@ import (
 // The board's `? N` click: dismiss the set it was drawn from, refuse a stale
 // one, and reject a body that names nothing.
 func TestDismissQuestionsRoute(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d, _, cancel, _ := startDaemon(t)
 	defer cancel()
 	task, _, err := d.st.Register(store.Observed{WireName: "orch", Worktree: "/tmp/atrium-seen", Runner: "claude"})

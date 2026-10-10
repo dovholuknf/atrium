@@ -81,6 +81,9 @@ func TestBrowseRefusesAnUnrelatedPath(t *testing.T) {
 // THE ONE A STRING COMPARISON MISSES. `work-evil` is not inside `work`, and
 // `strings.HasPrefix` says it is.
 func TestBrowseRefusesASiblingWithTheRootAsAPrefix(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real server with git worktrees and a database")
+	}
 	t.Parallel()
 	srv, work := browseServer(t)
 	evil := work + "-evil"
@@ -158,6 +161,9 @@ func TestBrowseWithNoPathOffersTheRoots(t *testing.T) {
 // Stepping up from a root stops at the root, rather than handing back its
 // parent, which is the directory the picker is not allowed to see.
 func TestBrowseUpFromARootHasNoParent(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real server with git worktrees and a database")
+	}
 	t.Parallel()
 	srv, work := browseServer(t)
 	rec := browseAt(t, srv, filepath.ToSlash(work))

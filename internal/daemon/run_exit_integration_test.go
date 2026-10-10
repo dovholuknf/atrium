@@ -79,6 +79,9 @@ func someShell(t *testing.T) (string, []string) {
 }
 
 func TestFilingTheSameExitTwiceRecordsOneEventAndOneStatusChange(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d, _, cancel, _ := startDaemon(t)
 	defer cancel()
 	task := cardAt(t, d, "twice-filed", t.TempDir())
@@ -102,6 +105,9 @@ func TestFilingTheSameExitTwiceRecordsOneEventAndOneStatusChange(t *testing.T) {
 }
 
 func TestALaterRunsExitIsFiledSeparately(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d, _, cancel, _ := startDaemon(t)
 	defer cancel()
 	task := cardAt(t, d, "restarted", t.TempDir())
@@ -127,6 +133,9 @@ func TestALaterRunsExitIsFiledSeparately(t *testing.T) {
 }
 
 func TestARunnerAndAShellOnOneCardHaveTheirOwnRuns(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d, _, cancel, _ := startDaemon(t)
 	defer cancel()
 	shell, args := someShell(t)
@@ -193,6 +202,9 @@ func TestARunnerAndAShellOnOneCardHaveTheirOwnRuns(t *testing.T) {
 
 // A start is on disk by the time the launch has returned.
 func TestAStartWritesItsRunRowBeforeTheLaunchIsComplete(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d, _, cancel, _ := startDaemon(t)
 	defer cancel()
 	shell, args := someShell(t)
@@ -227,6 +239,9 @@ func TestAStartWritesItsRunRowBeforeTheLaunchIsComplete(t *testing.T) {
 // A runner that dies inside the startup window is explained the way it always
 // was: its last output on the event and on the card.
 func TestAStartupFailureKeepsItsTailAndWhy(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d, _, cancel, _ := startDaemon(t)
 	defer cancel()
 	task := cardAt(t, d, "stillborn", t.TempDir())

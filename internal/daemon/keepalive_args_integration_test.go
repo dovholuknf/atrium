@@ -62,6 +62,9 @@ func TestKeepaliveForkCarriesALeanCardsPromptToolsAndMCP(t *testing.T) {
 // A lean card naming an MCP server its runner does not have is refused, not
 // forked on a different tool list.
 func TestKeepaliveRefusesALeanForkItCannotRebuild(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	t.Parallel()
 	f := newKAFix(t)
 	if err := f.st.SetTags(f.task.ID, []string{LeanTag, leanMCPTagPrefix + "nosuch"}); err != nil {

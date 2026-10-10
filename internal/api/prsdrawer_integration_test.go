@@ -122,6 +122,9 @@ func TestFindingsETagGives304AndWalkChangesIt(t *testing.T) {
 }
 
 func TestFindingsNeedAReadyRow(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real server with git worktrees and a database")
+	}
 	t.Parallel()
 	s, st, id, _ := readyPR(t)
 	st.SetPRState(id, store.PRRunning, "panel", "")

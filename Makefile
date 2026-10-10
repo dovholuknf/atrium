@@ -22,7 +22,7 @@ LDFLAGS  := -X github.com/dovholuknf/atrium/internal/cli.Version=$(VERSION) \
             -X github.com/dovholuknf/atrium/internal/cli.Commit=$(COMMIT) \
             -X github.com/dovholuknf/atrium/internal/cli.Tree=$(TREE)
 
-.PHONY: build release tidy test test-all check clean
+.PHONY: build release tidy test test-short test-all check clean
 
 # Everything that is checked without running anything.
 #
@@ -53,6 +53,11 @@ tidy:
 # Unit tests. `test-all` adds the integration tests, which CI runs. See scripts/test.sh.
 test:
 	bash scripts/test.sh unit
+
+# The fast land set: unit and integration, minus every test that skips itself under -short. See
+# changelog/testing/2026-10-10-t-tests-fast-short.md.
+test-short:
+	bash scripts/test.sh all -short
 
 test-all:
 	bash scripts/test.sh all

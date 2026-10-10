@@ -50,6 +50,9 @@ func TestSyncAbsentRunsNothing(t *testing.T) {
 }
 
 func TestSyncInitThenOKThenResigned(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: git subprocesses and a real smart-HTTP rig")
+	}
 	t.Parallel()
 	s := freshServed(t)
 	sy, root := newSyncer(t)
@@ -93,6 +96,9 @@ func TestSyncInitThenOKThenResigned(t *testing.T) {
 }
 
 func TestSyncBehindWhenAWorktreeHoldsClaudeMain(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: git subprocesses and a real smart-HTTP rig")
+	}
 	t.Parallel()
 	s := freshServed(t)
 	sy, root := newSyncer(t)
@@ -121,6 +127,9 @@ func TestSyncBehindWhenAWorktreeHoldsClaudeMain(t *testing.T) {
 }
 
 func TestSyncBehindWhenHubMainIsCheckedOutDirty(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: git subprocesses and a real smart-HTTP rig")
+	}
 	t.Parallel()
 	s := freshServed(t)
 	sy, root := newSyncer(t)
@@ -203,6 +212,9 @@ func post(t *testing.T, url, body string) (int, string) {
 }
 
 func TestSyncRequestCannotNameASourceBranch(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: git subprocesses and a real smart-HTTP rig")
+	}
 	t.Parallel()
 	s := freshServed(t)
 	srv, root := roomServer(t, s)
@@ -238,6 +250,9 @@ func TestStatusBeforeAnySync(t *testing.T) {
 }
 
 func TestTheRoomServesClaudeBranchesExceptMainAndNothingElse(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: git subprocesses and a real smart-HTTP rig")
+	}
 	t.Parallel()
 	s := freshServed(t)
 	srv, root := roomServer(t, s)
@@ -298,6 +313,9 @@ func TestTheRoomServesClaudeBranchesExceptMainAndNothingElse(t *testing.T) {
 // Only a repository the hub has synced is served. A clone that is on disk but was never synced,
 // or whose sync was refused, is a 404 even to the hub.
 func TestTheRoomServesOnlyWhatTheHubHasSynced(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: git subprocesses and a real smart-HTTP rig")
+	}
 	t.Parallel()
 	s := freshServed(t)
 	srv, root := roomServer(t, s)
@@ -388,6 +406,9 @@ func TestCleanLocksRemovesOnlyOldOwnedOnes(t *testing.T) {
 }
 
 func TestSyncClearsAStaleOwnedLockBeforeFetching(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: git subprocesses and a real smart-HTTP rig")
+	}
 	t.Parallel()
 	s := freshServed(t)
 	sy, root := newSyncer(t)

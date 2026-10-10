@@ -10,6 +10,9 @@ import (
 // A card's usage rows come back newest first, sum by cause, and outlive the
 // card, which is the point of keeping them.
 func TestSessionUsageKeepsHistory(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real sqlite database on disk")
+	}
 	t.Parallel()
 	s := openTestStore(t)
 	card, _, err := s.Register(Observed{WireName: "spender", Worktree: "/w"})
@@ -71,6 +74,9 @@ func TestSessionUsageKeepsHistory(t *testing.T) {
 
 // Re-running the migration is harmless.
 func TestSessionUsageMigrationReruns(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real sqlite database on disk")
+	}
 	t.Parallel()
 	s := openTestStore(t)
 	if _, err := s.db.Exec(`DELETE FROM schema_migration WHERE name = '0063_session_usage'`); err != nil {

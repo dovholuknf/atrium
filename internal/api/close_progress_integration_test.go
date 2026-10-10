@@ -30,6 +30,9 @@ func closeEvents(ch chan message) []map[string]any {
 }
 
 func TestCloseSaysEachStepInItsOwnOrderAndTicksThemOff(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real server with git worktrees and a database")
+	}
 	t.Parallel()
 	oh, card, wt, _ := openForClose(t)
 	ch := oh.srv.bus.subscribe()
@@ -81,6 +84,9 @@ func TestCloseSaysEachStepInItsOwnOrderAndTicksThemOff(t *testing.T) {
 }
 
 func TestClosePreviewSizesAWorktreeWithItsIgnoredTreesAndAsksWithTheSize(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real server with git worktrees and a database")
+	}
 	t.Parallel()
 	oh, card, wt, _ := openForClose(t)
 	dir := filepath.Join(filepath.FromSlash(wt), "node_modules", "big")

@@ -15,6 +15,9 @@ import (
 // that ended on background work) while its status still says running, which is the
 // gap @ui's cycles fell into.
 func TestACycleOnARunnerWithoutMidTurnInputWaitsForTheTurnToEnd(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	fastNewContext(t)
 	d := testDaemon(t)
 	task, f, _ := ncCard(t, d)

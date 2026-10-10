@@ -15,6 +15,9 @@ import (
 // in the connection that has gone. Left pending it keeps offering a question
 // on behalf of a session that no longer exists.
 func TestOrphanedRequestIsClosed(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d, _, cancel, _ := startDaemon(t)
 	defer cancel()
 
@@ -70,6 +73,9 @@ func TestOrphanedRequestIsClosed(t *testing.T) {
 // The card moves too. Left in needs-permission it claims to be asking
 // something, and nothing is.
 func TestOrphanedCardGoesDead(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d, _, cancel, _ := startDaemon(t)
 	defer cancel()
 
@@ -102,6 +108,9 @@ func TestOrphanedCardGoesDead(t *testing.T) {
 // A request somebody is parked on is the ordinary case and must survive. This
 // is the test that stops the whole mechanism becoming a way to lose questions.
 func TestALiveRequestIsNeverOrphaned(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d, _, cancel, _ := startDaemon(t)
 	defer cancel()
 
@@ -176,6 +185,9 @@ func TestALiveRequestIsNeverOrphaned(t *testing.T) {
 // A card with a pid is the reaper's to judge, and its answer is a fact where
 // this one is an inference.
 func TestACardWithAPidIsLeftToTheReaper(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	d, _, cancel, _ := startDaemon(t)
 	defer cancel()
 

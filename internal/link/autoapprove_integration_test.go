@@ -117,6 +117,9 @@ func TestHubApprovesAPendingRequestWhenBoardWideAutoIsOn(t *testing.T) {
 // board-wide auto OFF: the request stays frozen. The hub does nothing, and the
 // room's own gate would ask a human exactly as before.
 func TestHubLeavesARequestPendingWhenBoardWideAutoIsOff(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real link, hub and git rig over loopback")
+	}
 	g := &gate{}
 	proxy, done := oneRoom(t, "alpha", g.handler())
 	defer done()

@@ -329,6 +329,9 @@ func TestPRRunnerHappyRun(t *testing.T) {
 }
 
 func TestPRRunnerProvenOnlyWhenVerified(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	t.Parallel()
 	f := newPRFix(t)
 	p := f.run(t)
@@ -569,6 +572,9 @@ func TestPRRunnerResendRound(t *testing.T) {
 }
 
 func TestPRRunnerFailsMergeAfterOneResend(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	t.Parallel()
 	f := newPRFix(t)
 	fixture := prFindingsFixture(t)

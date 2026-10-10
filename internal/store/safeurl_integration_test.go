@@ -39,6 +39,9 @@ func TestOnlyWebLinksSurvive(t *testing.T) {
 // It is applied where links enter, not only where they are drawn, so bad data
 // never reaches the database.
 func TestABadLinkNeverReachesACard(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real sqlite database on disk")
+	}
 	t.Parallel()
 	s := open(t)
 	task, _, err := s.Register(Observed{WireName: "u1", Worktree: "d:/w", Runner: "claude"})

@@ -639,6 +639,9 @@ func TestTheBoardDialogIsTheHuman(t *testing.T) {
 
 // F8. A launch records who asked for it, and resolves the parent's card.
 func TestALaunchRecordsItsLauncher(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
 	t.Parallel()
 	d := testDaemon(t)
 	parent := peerCard(t, d, "orchestrator")
