@@ -6797,7 +6797,9 @@ async function fileOpenOutsideSection(browser, base) {
     });
     let m = await menu();
     if (!m.on) { fail("clicking a file path did not open the menu: " + JSON.stringify(m)); return; }
-    const want = ["open in atrium's editor", "open in a tab", "open on sg4"];
+    if (!await p.locator("#cardmenu button", { hasText: "open rendered" }).locator("svg.out").count()) fail("open rendered has no icon");
+    if (process.env.FOUTSIDE_MD_SHOT) await p.locator("#cardmenu").screenshot({ path: process.env.FOUTSIDE_MD_SHOT });
+    const want = ["open rendered", "open in atrium's editor", "open on sg4"];
     if (JSON.stringify(m.items) !== JSON.stringify(want)) fail("the file menu offered " + JSON.stringify(m.items) + ", want " + JSON.stringify(want));
     if (!settingsRooms.includes("sg4")) fail("the card's room was not the one asked for its editor_command: " + JSON.stringify(settingsRooms));
 
@@ -6810,12 +6812,16 @@ async function fileOpenOutsideSection(browser, base) {
     await p.mouse.move(...at(40, 5));
     await p.mouse.click(...at(8, 0));
     await p.waitForTimeout(400);
-    await p.locator("#cardmenu button", { hasText: "open in a tab" }).click();
+    await p.locator("#cardmenu button", { hasText: "open rendered" }).click();
     await p.mouse.move(...at(40, 5));
     await p.mouse.move(...at(3, 1), { steps: 2 });
     await p.waitForTimeout(500);
     await p.mouse.click(...at(3, 1));
     await p.waitForTimeout(400);
+    const goMenu = await menu();
+    const wantGo = ["open in atrium's editor", "open in a tab", "open on sg4"];
+    if (JSON.stringify(goMenu.items) !== JSON.stringify(wantGo)) fail("a .go menu offered " + JSON.stringify(goMenu.items));
+    if (!await p.locator("#cardmenu button", { hasText: "open in a tab" }).locator("svg.out").count()) fail("open in a tab has no icon");
     await p.locator("#cardmenu button", { hasText: "open in a tab" }).click();
     const tabs = await p.evaluate(() => window.__tabs);
     if (tabs[0] !== "/read.html#land-live/docs%2Fplan.md") fail("a .md tab opened " + tabs[0]);

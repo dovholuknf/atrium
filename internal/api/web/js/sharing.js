@@ -554,6 +554,11 @@ function showMenu(e, items) {
     : `<button class="${it.danger ? "danger" : ""}${it.limited ? " limited" : ""}${
         it.on === undefined ? "" : " toggle" + (it.on ? " on" : "")}"
         data-i="${i}"${it.tip ? ` data-tip="${esc(it.tip)}"` : ""}>${esc(it.label)}${
+        // A box with an arrow out of its corner: this row opens somewhere else.
+        it.out ? `<svg class="out" viewBox="0 0 16 16" width="12" height="12" aria-hidden="true"
+          style="margin-left:6px;vertical-align:-1px" fill="none" stroke="currentColor" stroke-width="1.5"
+          stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V5a1 1 0 0 1
+          1-1h4M10 2h4v4M14 2 7 9"/></svg>` : ""}${
         // The board's own bubble, not the browser's. A native tooltip arrives
         // a second late, in the operating system's font, at the pointer rather
         // than against the thing it explains, and it is the one part of a menu
