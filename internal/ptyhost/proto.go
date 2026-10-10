@@ -18,6 +18,7 @@ const (
 	VResize  = "resize"
 	VSignal  = "signal"
 	VCollect = "collect"
+	VMark    = "mark"
 )
 
 // Kinds of pty. Stored and reported, never acted on by the host.
@@ -67,6 +68,9 @@ type Request struct {
 
 	// attach
 	From int64 `json:"from,omitempty"`
+
+	// mark: the absolute output offset the clear mark sits at. Zero is a real offset, so it is never omitted.
+	At int64 `json:"at"`
 
 	// write
 	Data []byte `json:"data,omitempty"`
@@ -120,7 +124,8 @@ type Reply struct {
 	From      int64    `json:"from,omitempty"`
 	Truncated bool     `json:"truncated,omitempty"`
 	Cuts      []Cut    `json:"cuts,omitempty"`
-	Data      []byte   `json:"data,omitempty"`
+	Marks     []int64  `json:"marks,omitempty"` // clear marks at or after From, as absolute offsets, oldest first
+	Data     []byte   `json:"data,omitempty"`
 
 	// resize
 	Cut *Cut `json:"cut,omitempty"`

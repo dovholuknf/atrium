@@ -88,7 +88,8 @@ type Attachment struct {
 	From      int64
 	Truncated bool
 	Cuts      []Cut
-	Replay    []byte
+	Marks     []int64 // absolute offsets of the clear marks in Replay
+	Replay   []byte
 	Events    <-chan Event
 }
 
@@ -296,7 +297,7 @@ func (c *Client) Attach(runID string, from int64) (*Attachment, error) {
 		q.finish()
 		return nil, err
 	}
-	a := &Attachment{From: r.From, Truncated: r.Truncated, Cuts: r.Cuts, Replay: r.Data, Events: q.out}
+	a := &Attachment{From: r.From, Truncated: r.Truncated, Cuts: r.Cuts, Marks: r.Marks, Replay: r.Data, Events: q.out}
 	if r.Info != nil {
 		a.Info = *r.Info
 	}
@@ -307,6 +308,13 @@ func (c *Client) Attach(runID string, from int64) (*Attachment, error) {
 // Write sends bytes to the pty.
 func (c *Client) Write(runID string, data []byte) error {
 	_, err := c.call(Request{V: VWrite, RunID: runID, Data: data})
+	return err
+}
+
+// Mark tells the host a clear mark sits at absolute output offset at, so a later attach reports it. A host that
+// predates the verb refuses it, which costs only the mark after a restart.
+func (c *Client) Mark(runID string, at int64) error {
+	_, err := c.call(Request{V: VMark, RunID: runID, At: at})
 	return err
 }
 

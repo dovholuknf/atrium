@@ -198,6 +198,8 @@ type hostTerm struct {
 	host  string
 	runID string
 	pid   int
+	// base is the host offset of the first byte Read hands out.
+	base int64
 
 	mu   sync.Mutex
 	cond *sync.Cond
@@ -218,8 +220,11 @@ func newHostTerm(cl *ptyhost.Client, host, runID string, pid int, att *ptyhost.A
 	t := &hostTerm{cl: cl, host: host, runID: runID, pid: pid,
 		exited: make(chan struct{}), eof: make(chan struct{})}
 	t.cond = sync.NewCond(&t.mu)
+	t.base = att.From
 	if feedReplay {
 		t.buf = append(t.buf, att.Replay...)
+	} else {
+		t.base += int64(len(att.Replay))
 	}
 	go t.follow(att.Events)
 	return t
@@ -434,6 +439,9 @@ func ringFromAttach(att *ptyhost.Attachment, size int) *ringBuffer {
 		cols, rows = att.Cuts[0].Cols, att.Cuts[0].Rows
 	}
 	rb := newRingSized(size, cols, rows)
+	// The host's ring holds the pty's bytes only. The clear marks are laid back at the offsets it reports, so the
+	// replay has them where the live stream did. A mark at a segment boundary goes with the segment before it.
+	marks := att.Marks
 	seg := func(from, to int64) {
 		if from < 0 {
 			from = 0
@@ -441,8 +449,23 @@ func ringFromAttach(att *ptyhost.Attachment, size int) *ringBuffer {
 		if n := int64(len(att.Replay)); to > n {
 			to = n
 		}
-		if to > from {
-			_, _ = rb.Write(att.Replay[from:to])
+		for from < to {
+			end := to
+			if len(marks) > 0 && marks[0]-att.From < end {
+				end = max(marks[0]-att.From, from)
+			}
+			if end > from {
+				_, _ = rb.Write(att.Replay[from:end])
+				from = end
+			}
+			if len(marks) > 0 && marks[0]-att.From <= from {
+				_, _ = rb.Write([]byte(clearMarkOSC))
+				marks = marks[1:]
+			}
+		}
+		for len(marks) > 0 && marks[0]-att.From <= to {
+			_, _ = rb.Write([]byte(clearMarkOSC))
+			marks = marks[1:]
 		}
 	}
 	if len(att.Cuts) == 0 {

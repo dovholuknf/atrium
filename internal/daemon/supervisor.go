@@ -728,6 +728,7 @@ type runner struct {
 	// esc follows the output stream's escape state and markPending is a clear mark waiting for ground state, with
 	// markHeld the bytes that have gone by since. All under mu. See `markClear`.
 	esc         escParser
+	fed         int64 // runner bytes written through writeLocked, so a mark can be placed in the host's offsets
 	markPending bool
 	markHeld    int
 	markTimer   *time.Timer
@@ -1832,6 +1833,13 @@ func (r *runner) emitMarkLocked() {
 	}
 	_, _ = r.buf.Write([]byte(clearMarkOSC))
 	r.fanoutLocked([]byte(clearMarkOSC))
+	// Under a pty host the host's ring holds only what the pty wrote, so a re-adopt would replay it without the mark.
+	// Tell the host the offset of the stream the mark sits at: smaller than keeping the bytes in its ring, which
+	// would move every offset the cuts and a reattach count in. Off the lock, since it is a round trip.
+	if ht := hostOf(r); ht != nil {
+		at := ht.base + r.fed
+		go func() { _ = ht.cl.Mark(ht.runID, at) }()
+	}
 }
 
 // outputLocked is the ring write and fanout of one runner chunk, with r.mu held, and it keeps the escape state. A
@@ -1860,6 +1868,7 @@ func (r *runner) writeLocked(chunk []byte) {
 	if len(chunk) == 0 {
 		return
 	}
+	r.fed += int64(len(chunk))
 	_, _ = r.buf.Write(chunk)
 	r.fanoutLocked(chunk)
 }
