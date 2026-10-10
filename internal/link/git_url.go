@@ -72,8 +72,8 @@ const gitURLToolDesc = "Get the URL to fetch code that is not in your cwd. Call 
 	"is not connected, so say so and do not retry) or `no credential` (a private repository the hub has no login " +
 	"for).\n\n" +
 	"The hub's `main` and integration branch (`claude/main`) answer too, as a `hub` source with `readOnly` true: " +
-		"fetch them to base your work on, and push under another branch name, as a push to either is refused.\n\n" +
-		"A branch that neither the hub nor a room has is fetched from the repository's forge (GitHub) into the hub, " +
+	"fetch them to base your work on, and push under another branch name, as a push to either is refused.\n\n" +
+	"A branch that neither the hub nor a room has is fetched from the repository's forge (GitHub) into the hub, " +
 	"and answered as a `hub` source with `forge` true. Then `git fetch hub <branch>` gets it, and so does " +
 	"`git fetch hub forge/<branch>`. Each ask fetches it again. A repository the hub does not hold yet is made " +
 	"for it, when the forge has that branch.\n\n" +
