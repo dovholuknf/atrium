@@ -462,9 +462,9 @@ func (d *Daemon) attach(w http.ResponseWriter, r *http.Request, taskID string, s
 				}
 				sizedOnce.Do(func() { close(sized) })
 			case "focus":
-			// This window was just used, so the pty takes its size. See `runner.touchViewport`.
-			run.touchViewport(c)
-		case "signal":
+				// This window was just used, so the pty takes its size. See `runner.touchViewport`.
+				run.touchViewport(c)
+			case "signal":
 				// A browser cannot press ctrl-c the way a terminal does, so
 				// the control character is sent explicitly on request.
 				if strings.EqualFold(in.S, "int") {
