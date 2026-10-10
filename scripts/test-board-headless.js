@@ -397,8 +397,12 @@ function resetSkins() { skinFor = { "": "noir", alpha: "moss", sgg: "ember" }; }
 function settingsBody(room) {
   const skin = skinFor[room] != null ? skinFor[room] : skinFor[""];
   return Object.assign({ global_auto: gautoOn, global_auto_seconds: 0, board_skin: skin, board_skins: SKINS,
-    card_colors: cardColorsMock }, kaSettings);
+    card_colors: cardColorsMock, idle_park_after_now: idleParkNow, idle_park_after_default: 7200,
+    idle_park_after_min: 1800 }, kaSettings);
 }
+// The idle park timer the mocked room holds, seconds or "off", and every write the board made to it.
+let idleParkNow = 7200;
+let idleParkWrites = [];
 // The card colours the mocked daemon holds: the seed a fresh daemon writes, then whatever the board saved.
 let cardColorsMock = { default: "", repos: {
   "github/openziti-test-kitchen/appetizer": "active-work", "github/dovholuknf/atrium": "active-light",
@@ -816,6 +820,12 @@ const server = http.createServer((req, res) => {
           kaWrites.push({ url, body });
           if ("cache_keepalive_default" in body) kaSettings.cache_keepalive_default = body.cache_keepalive_default;
           if (body.cache_keepalive_suspended === false) kaSettings.cache_keepalive_suspended = "";
+          sendJSON(res, settingsBody(room));
+          return;
+        }
+        if ("idle_park_after" in body) {
+          idleParkWrites.push({ room, body });
+          idleParkNow = body.idle_park_after === "off" ? "off" : Number(body.idle_park_after);
           sendJSON(res, settingsBody(room));
           return;
         }
@@ -9235,6 +9245,90 @@ const KA_CARDS = [
   Object.assign({}, T1, { id: "ka-off", display_title: "off card", keepalive: {
     state: "off", state_at: "2026-09-27T10:00:00Z", refreshes: 0, spent: 0 } }),
 ];
+
+// THE IDLE PARK TIMER ON A ROOM'S COG. Minutes in the box, seconds on the wire, posted for that room in the
+// X-Atrium-Room header. Off posts "off". A value under the floor is refused in the pane and nothing is sent.
+// Set IDLEPARK_SHOTS to a directory for a picture, and IDLEPARK_BEFORE to take only the picture.
+async function idleParkSection(browser, base) {
+  const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+  const ip = await ctx.newPage();
+  const errors = [];
+  ip.on("pageerror", e => errors.push(String(e)));
+  const wasHub = hubMode;
+  hubMode = true;
+  idleParkNow = 7200;
+  idleParkWrites = [];
+  const shots = process.env.IDLEPARK_SHOTS || "";
+  try {
+    await ip.goto(base, { waitUntil: "domcontentloaded" });
+    await ip.waitForFunction(() => typeof openRoomCog === "function" && typeof loadHubRooms === "function",
+      null, { timeout: slow(15000) });
+    await ip.evaluate(() => loadHubRooms());
+    await ip.evaluate(() => openRoomCog("alpha"));
+    await ip.waitForSelector("#roomcfg[open]", { timeout: slow(8000) });
+    const pane = () => ip.evaluate(() => {
+      const on = document.getElementById("s-idlepark-on"), min = document.getElementById("s-idlepark-min");
+      return on ? { on: on.checked, min: min.value, disabled: min.disabled, floor: min.min,
+        hint: document.getElementById("s-idlepark-hint").textContent } : null;
+    });
+    // The end of the pane, where the control sits under the other room settings.
+    const shot = async name => {
+      if (!shots) return;
+      await ip.evaluate(() => { const b = document.querySelector("#roomcfg .dlg-body"); b.scrollTop = b.scrollHeight; });
+      await ip.locator("#roomcfg").screenshot({ path: path.join(shots, name + ".png") });
+    };
+    const edit = (min, on) => ip.evaluate(([m, o]) => {
+      const c = document.getElementById("s-idlepark-on"), n = document.getElementById("s-idlepark-min");
+      if (o !== null) { c.checked = o; n.disabled = !o; c.dispatchEvent(new Event("change")); }
+      if (m !== null) { n.value = m; n.dispatchEvent(new Event("change")); }
+    }, [min, on]);
+    if (process.env.IDLEPARK_BEFORE) { await shot("idle-park-cog-before"); return; }
+
+    let s = await pane();
+    if (!s) fail("the room's cog has no idle park control.");
+    if (!s.on || s.min !== "120") fail("the control does not show the 2 hour default as 120 minutes: " + JSON.stringify(s));
+    if (!/Default 120 minutes/.test(s.hint) || !/least it takes is 30/.test(s.hint)) {
+      fail("the control does not name the default and the floor: " + JSON.stringify(s.hint));
+    }
+    await shot("idle-park-cog-after");
+
+    await edit("45", null);
+    await ip.waitForTimeout(400);
+    let w = idleParkWrites[0];
+    if (!w || w.body.idle_park_after !== "2700" || Object.keys(w.body).length !== 1) {
+      fail("45 minutes did not post {idle_park_after:\"2700\"}: " + JSON.stringify(idleParkWrites));
+    }
+    if (w && w.room !== "alpha") fail("the idle park write did not name the room in X-Atrium-Room: " + JSON.stringify(w.room));
+
+    await edit(null, false);
+    await ip.waitForTimeout(400);
+    w = idleParkWrites[1];
+    if (!w || w.body.idle_park_after !== "off") fail("turning it off did not post \"off\": " + JSON.stringify(idleParkWrites));
+    if (w && w.room !== "alpha") fail("the off write did not name the room: " + JSON.stringify(w.room));
+    s = await pane();
+    if (s.on || !s.disabled) fail("the control does not read as off after saving off: " + JSON.stringify(s));
+    await shot("idle-park-cog-off");
+
+    await edit(null, true);
+    await ip.waitForTimeout(300);
+    const before = idleParkWrites.length;
+    // The board shows three toasts and queues the rest, so clear the saved ones before looking for the refusal.
+    await ip.evaluate(() => { document.getElementById("toasts").innerHTML = ""; });
+    await edit("10", null);
+    await ip.waitForTimeout(400);
+    if (idleParkWrites.length !== before) {
+      fail("a value under the floor was sent: " + JSON.stringify(idleParkWrites));
+    }
+    await ip.waitForFunction(() => /the least is 30 minutes/.test(document.body.textContent), null,
+      { timeout: slow(3000) }).catch(() => {});
+    const toastText = await ip.evaluate(() => document.body.textContent);
+    if (!/the least is 30 minutes/.test(toastText)) fail("a value under the floor was refused without naming the floor.");
+    if (errors.length) fail("page errors: " + errors.join("; "));
+  } finally {
+    hubMode = wasHub;
+    await ctx.close();
+  }
+}
 
 // THE CACHE KEEP-ALIVE ON THE BOARD. The switch in the gear's settings sets the
 // default for new cards and saves it, a suspension shows with a clear button,
@@ -26996,7 +27090,7 @@ async function main() {
       groupDrag: groupDragSection, tooltip: tooltipSection, linkTip: linkTipSection, fileOpenOutside: fileOpenOutsideSection, readTabSize: readTabSizeSection,popoutTagFlip: popoutTagFlipSection, prefsEverywhere: prefsEverywhereSection, mPrefsEverywhere: (b) => mPrefsEverywhereSection(b), idleRate: idleRateSection, foldStill: foldStillSection,
       untaggedSort: untaggedSortSection, newCard: newCardSection, themePreview: themePreviewSection, themeLab: themeLabSection, land: landSection, reselect: reselectSection, clearKeepsPage: clearKeepsPageSection, clearMark: clearMarkSection, clearLine: clearLineSection,
       resumeSpinner: resumeSpinnerSection, toastsTop: toastsTopSection, sayWhen: sayWhenSection, pasteSpinner: pasteSpinnerSection,
-      pasteBig: pasteBigSection, pasteEmpty: pasteEmptySection, pasteBusy: pasteBusySection, typing: typingSection, alias: aliasSection, askAgain: askAgainSection, copySelect: copySelectSection, busyGuard: busyGuardSection, keepalive: keepaliveSection, restartMenu: restartMenuSection,
+      pasteBig: pasteBigSection, pasteEmpty: pasteEmptySection, pasteBusy: pasteBusySection, typing: typingSection, alias: aliasSection, askAgain: askAgainSection, copySelect: copySelectSection, busyGuard: busyGuardSection, keepalive: keepaliveSection, idlePark: idleParkSection, restartMenu: restartMenuSection,
       stuck: stuckSection, blockerMark: blockerMarkSection, carryLink: carryLinkSection,
       skinScope: skinScopeSection, skinHeal: skinHealSection, toastLives: toastLivesSection,
       history: historySection, contextSize: contextSizeSection, ctxLine: ctxLineSection, ctxLimitLayers: ctxLimitLayersSection, contextCycle: contextCycleSection, landThePlane: landThePlaneSection, peekEverywhere: peekEverywhereSection, peekOneHover: peekOneHoverSection, peekStatusTruth: peekStatusTruthSection, peekHoverRest: peekHoverRestSection, cardRoute: cardRouteSection,
@@ -29042,6 +29136,7 @@ async function main() {
     await unit("busyGuard", () => busyGuardSection(browser, base));
     // ── keep-alive chips, the card switch, and the break-even toast ────────
     await unit("keepalive", () => keepaliveSection(browser, base));
+    await unit("idlePark", () => idleParkSection(browser, base));
     await unit("restartMenu", () => restartMenuSection(browser, base));
     // ── a stuck card wears a mark, and the gear decides whether it rings ───
     await unit("stuck", () => stuckSection(browser, base));
