@@ -1838,9 +1838,24 @@ async function chatterTabSection(browser, base) {
   try {
     await dp.goto(base, { waitUntil: "domcontentloaded" });
     await dp.waitForTimeout(900);
-    // The tab sits in the overflow menu at this width, beside audit and the other late tabs.
-    const tab = await dp.$eval('.tab[data-view="chatter"]', t => ({ text: t.textContent, ovf: t.classList.contains("ovf") }));
-    if (tab.text !== "chatter") fail("the chatter tab reads " + tab.text);
+    // The tab starts in the ... menu whatever the width, and the arrange dialog can put it in the bar and back.
+    const tab = await dp.$eval('.tab[data-view="chatter"]', t => ({ text: t.textContent, menu: t.classList.contains("umenu") }));
+    if (tab.text !== "chatter" || !tab.menu) fail("the chatter tab is not in the menu by default: " + JSON.stringify(tab));
+    await dp.evaluate(() => window.openTabsArrange());
+    await dp.waitForSelector("#tabsdlg[open]");
+    const sel = '#tabsdlg-list .tabsdlg-row[data-view="chatter"] select';
+    if ((await dp.$eval(sel, s => s.value)) !== "menu") fail("the arrange dialog does not show chatter in the menu");
+    await dp.selectOption(sel, "bar");
+    if (await dp.$eval('.tab[data-view="chatter"]', t => t.classList.contains("umenu"))) fail("chatter stays in the menu after being put in the bar");
+    await dp.reload({ waitUntil: "domcontentloaded" });
+    await dp.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
+    await dp.waitForTimeout(1500);
+    if (await dp.$eval('.tab[data-view="chatter"]', t => t.classList.contains("umenu"))) fail("chatter is back in the menu after a reload");
+    await dp.evaluate(() => window.openTabsArrange());
+    await dp.waitForSelector("#tabsdlg[open]");
+    await dp.click("#tabsdlg-reset");
+    await dp.click("#tabsdlg-close");
+    if (!(await dp.$eval('.tab[data-view="chatter"]', t => t.classList.contains("umenu")))) fail("reset did not put chatter back in the menu");
     if (process.env.CHATTER_SHOTS) {
       // Before: the same menu with no chatter in it.
       await dp.evaluate(() => { document.querySelector('.tab[data-view="chatter"]').hidden = true; });
@@ -8188,7 +8203,8 @@ async function tabsOrderSection(browser, base) {
     let v = await view(p);
     const dflt = v.order.join(",");
     if (v.saved !== null) fail("tabsOrder: a fresh browser has a saved tab layout: " + v.saved);
-    if (!v.shown.includes("usage") || v.moreOn) fail("tabsOrder: the default bar is not the plain one " + JSON.stringify(v));
+    // The one tab that starts in the menu is chatter (u-say-log-view-all). Everything else is in the bar.
+    if (!v.shown.includes("usage") || v.shown.includes("chatter") || !v.listed.includes("chatter")) fail("tabsOrder: the default bar is not the plain one " + JSON.stringify(v));
 
     // reorder: usage up past history and terms
     await arrange(p);

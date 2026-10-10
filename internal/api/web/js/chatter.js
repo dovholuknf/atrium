@@ -141,8 +141,7 @@ function chatterDrawChoices() {
 async function loadChatter(more) {
   const list = document.getElementById("chatter-list");
   if (!list) return;
-  const gen = ++chatterState.gen;
-  const p = chatterFilters();
+  const gen = ++chatterState.gen;  const p = chatterFilters();
   if (more) {
     const last = chatterState.rows[chatterState.rows.length - 1];
     const before = chatterState.cursor || (last && last.id) || "";

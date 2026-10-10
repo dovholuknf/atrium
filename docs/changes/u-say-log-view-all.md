@@ -5,8 +5,8 @@
 ### @LETTER@1. The list, its text and its links
 
 1. Have sessions on two rooms say to each other, one of them with a long message.
-2. Open the `chatter` tab. It is in the `...` menu beside `rooms` and `perms` unless the window is wide enough to show
-   it.
+2. Open the `chatter` tab from the `...` menu, where it starts. `arrange tabs...` can put it in the bar, and reset puts
+   it back in the menu.
 
 **Expected:** the says of every room, newest first, each row with the time, the room, from, to, the delivery state and
 a one line preview. Clicking the preview opens the full text, and a say longer than 16000 bytes ends with a note of how

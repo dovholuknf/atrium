@@ -27,6 +27,10 @@
   const defaultOrder = [...nav.querySelectorAll(".tab")].map(t => t.dataset.view);
   const names = Object.fromEntries([...nav.querySelectorAll(".tab")].map(t => [t.dataset.view, t.firstChild.textContent]));
 
+  // Where a tab sits before anybody chose. The chatter tab is a read-through of history rather than daily work, so it starts in
+  // the `...` menu. A saved `"bar"` is the one way to put such a tab back in the bar.
+  const defaultPlace = { chatter: "menu" };
+
   function prefs() {
     let v = {};
     try { v = JSON.parse(localStorage.getItem(KEY) || "{}") || {}; } catch (e) {}
@@ -34,14 +38,21 @@
     const order = (Array.isArray(v.order) ? v.order : []).filter((x, i, a) => known.has(x) && a.indexOf(x) === i);
     for (const x of defaultOrder) if (!order.includes(x)) order.push(x);
     const place = {};
+    for (const [k, w] of Object.entries(defaultPlace)) if (known.has(k)) place[k] = w;
     for (const [k, w] of Object.entries(v.place && typeof v.place === "object" ? v.place : {})) {
-      if (known.has(k) && (w === "menu" || w === "hidden")) place[k] = w;
+      if (!known.has(k)) continue;
+      if (w === "menu" || w === "hidden") place[k] = w;
+      else if (w === "bar") delete place[k];
     }
     return { order, place };
   }
   function savePrefs(p) {
-    const plain = p.order.every((x, i) => x === defaultOrder[i]) && !Object.keys(p.place).length;
-    if (plain) localStorage.removeItem(KEY); else localStorage.setItem(KEY, JSON.stringify(p));
+    // What is stored is only what differs from the defaults, a tab put in the bar against its default as "bar".
+    const place = {};
+    for (const [k, w] of Object.entries(p.place)) if (defaultPlace[k] !== w) place[k] = w;
+    for (const k of Object.keys(defaultPlace)) if (!p.place[k]) place[k] = "bar";
+    const plain = p.order.every((x, i) => x === defaultOrder[i]) && !Object.keys(place).length;
+    if (plain) localStorage.removeItem(KEY); else localStorage.setItem(KEY, JSON.stringify({ order: p.order, place }));
     layout();
   }
   function counted(t) {
