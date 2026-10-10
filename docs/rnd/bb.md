@@ -2,9 +2,7 @@
 
 Status: research, 2026-09-29. A source read of bb, with what atrium could borrow from it ranked in section 5.
 
-Standing reference. Written from the source code, not from the README. The survey of the wider field is
-`docs/rnd/competitors.md`, which is where the extensibility question lives. This file is the depth on the one tool that
-turned out to be large enough to need its own.
+Standing reference. Written from the source code, not from the README.
 
 Source read: `github.com/get-bb/bb`, MIT, cloned shallow to `D:/tmp/bb` on 2026-09-29 and not committed here. Every
 bb path below is relative to that clone. Every atrium path is relative to this repo. Nothing was executed. Every claim
@@ -258,13 +256,12 @@ likely need changes as the surface settles.
 - **Loopback, no login, and an overlay to reach it.** Versus a bind-to-all-interfaces flag and a cloud pairing
   service.
 - **Windows native, one binary.**
-- **Extensions that cannot become the daemon.** See `docs/rnd/competitors.md`: atrium's extension points run commands with
+- **Extensions that cannot become the daemon.** Atrium's extension points run commands with
   bounded output, out of process. Nothing a user writes shares the address space of the permission gate.
 
 ## 5. Worth borrowing, ranked
 
-The ranked list across every tool is at the end of `docs/rnd/competitors.md`. The bb entries, with the sketch that fits
-atrium's design:
+The bb entries, with the sketch that fits atrium's design:
 
 ### 1. A dispatch admission hook, as an out-of-process command
 
@@ -297,11 +294,11 @@ director's brief and skill list and a plain worker does not. The metadata caveat
 attributes can be written by anyone, so the brief must quote them. Cost: small if the brief store exists, and
 `docs/runtime/launch-options-design.md` and `docs/runtime/lean-workers-design.md` suggest it is close. Checked against the code on
 2026-09-29: a launch carries a `brief` that is written to `BRIEF.md` per launch, and there is no template store keyed
-on tags, so this is part of a role (`docs/rnd/competitors.md` section 3.4) and not a small standalone change.
+on tags, so this is part of a role and not a small standalone change.
 
 ### 3. A pack: a directory that carries an extension
 
-See `docs/rnd/competitors.md` section 3.4 for the recommendation. The bb part is the manifest-in-the-directory shape, the
+The bb part is the manifest-in-the-directory shape, the
 collection manifest, the semver-over-tags source with a recorded commit, and the moved-tag refusal.
 
 ### 4. A test kit

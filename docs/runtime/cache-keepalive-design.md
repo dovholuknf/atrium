@@ -43,29 +43,10 @@ repositories carry this section.
 - **What breaks it.** A prefix that changed since the captured request. A captured bearer that has expired. A
   subagent that outlives the cycle cap.
 
-### clodex (avirtual/clodex)
+### What it relies on
 
-- **The request.** The same replay, from its own proxy (`wirescope`). `wire/hold.js` replays the session's exact
-  last request with `max_tokens: 1`. Its comment says thinking is turned off for the ping, which contradicts
-  thermos. Thermos matches the documented cache rules: changing thinking parameters invalidates the message tier.
-- **The credential.** Every captured header is replayed except `authorization`, which is re-read from Claude
-  Code's credential store at ping time. An OAuth token lives about 8 hours and the CLI refreshes it only on a
-  turn, so the captured one returns 401 on exactly the idle seat the feature exists for.
-- **The gate.** "Ping IFF warm." A prefix is warm when a response receipt said so and `stamped_at + ttl` has not
-  passed. Replaying a cold prefix is a write paid for nothing, so it declines. A ping fires only inside a 300 s
-  margin before expiry.
-- **The policy.** A hold per session with a deadline (12 hours at most) and a budget of 24 pings. Every organic
-  turn re-anchors the window and resets the budget. Two consecutive 401 or 403 answers disarm it. Transport
-  errors, 408, 429 and 5xx decline without a strike.
-- **Other levers.** It parks a non-urgent message to a cold peer instead of waking it, and it offers the agent a
-  `compact` intent. Both avoid the write instead of preventing expiry.
-- **Codex.** Messaging and intents only. The wire features are Claude-only.
-- **What breaks it.** A dead credential. An app restart, which loses the in-memory last request. A changed prefix.
-
-### What they agree on
-
-Both replay the exact last request through a proxy already in Claude Code's API path, because the system prompt and
-the tool schemas are not in the transcript. Both keep the conversation untouched.
+Thermos replays the exact last request through a proxy already in Claude Code's API path, because the system prompt
+and the tool schemas are not in the transcript. It keeps the conversation untouched.
 
 ## Mechanism
 
@@ -74,7 +55,7 @@ the tool schemas are not in the transcript. Both keep the conversation untouched
 1. **Type a prompt into the card.** Atrium owns the terminal and can type into it, the way `Say` does. It is a
    visible turn. It adds junk to the transcript every hour, the agent can act on it, and it moves the prefix, so
    each refresh also writes. It cannot run while a dialog is open or a line is part written. Rejected.
-2. **A replay proxy** in the room daemon, as thermos and clodex do. Byte exact. The costs are all in what it
+2. **A replay proxy** in the room daemon, as thermos does. Byte exact. The costs are all in what it
    changes about the card:
    - Every model call, the credential on it and the whole conversation pass through the room daemon. A proxy bug
      breaks every card, not only keep-alive.

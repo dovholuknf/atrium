@@ -804,7 +804,7 @@ row in the store recording what was sent and the review id GitHub returned. Not 
   code then the body. That is clint's label line, arrived at independently, and it is why the tab checks the label's
   code text against the diff rather than trusting the number. What is not taken: vibe-kanban keeps review comments
   in React state, cleared when the workspace changes. The finding files are the reverse of that on purpose.
-- **Gas Town and Orca both deliver to an agent at a turn boundary** (`docs/rnd/competitors.md` 2.2 and 2.7). Not taken
+- **Gas Town and Orca both deliver to an agent at a turn boundary**. Not taken
   here, deliberately: `a` is clint's own keystroke into clint's own terminal, which is the one case where typing
   directly is right.
 

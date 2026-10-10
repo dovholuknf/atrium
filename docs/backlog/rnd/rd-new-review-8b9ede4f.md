@@ -3,7 +3,7 @@
 `docs/rnd/factory-landscape.md`, a spike for clint. Range 020f0cfd..8b9ede4f. e0d08a39 folds my gate-off low into
 the room-to-room spike as written: OK, nothing more needed there.
 
-The survey is good work. It is scoped (factories, not the aggregators competitors.md already covered), and its sources
+The survey is good work. It is scoped (factories, not the aggregators), and its sources
 are named, with `unverified` used where a source is silent. Spot check against the GitHub API today: paperclip 95,810
 stars MIT, agent-orchestrator 12,596 Apache-2.0, ai-software-factory 1 star with no licence, loki-mode NOASSERTION
 (consistent with BUSL), vibe-kanban 28,233, OpenHands 89,743 MIT. All match. The borrows are well chosen, and

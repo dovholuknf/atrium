@@ -2,7 +2,7 @@
 
 Status: built. The Changes view on a card (`internal/api/changes.go`).
 
-Origin: design only, clint ranks. Written 2026-09-30 by @rnd from item 3 of `docs/rnd/competitor-features.md`.
+Origin: design only, clint ranks. Written 2026-09-30 by @rnd.
 Nothing is built. The endpoint is @runtime's, the board half is @ui's, and @review owns how a comment reads.
 
 ## The ask, in one paragraph

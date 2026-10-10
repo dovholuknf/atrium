@@ -2,8 +2,7 @@
 
 Status: research, 2026-09-29. A source read of Orca, with what atrium could borrow from it ranked in section 5.
 
-Standing reference. Written from the source code, not from the README. The survey of the wider field is
-`docs/rnd/competitors.md`, where a shorter entry (section 2.2) points here.
+Standing reference. Written from the source code, not from the README.
 
 Source read: `github.com/stablyai/orca`, MIT (Lovecast Inc.), cloned shallow to `D:/tmp/orca-2026-09-29` on 2026-09-29
 at commit `5c59a2dfec9c5f935a4a38e5fbb03324150f707c` and not committed here. Every Orca path below is relative to that
@@ -135,8 +134,7 @@ CLI. The parts that matter:
   delivered without one (`stage.ts:150-159`).
 
 This types into a terminal a human may be using. Atrium's peer bus does not, on purpose (`CLAUDE.md`, out of scope,
-and `internal/daemon/peers.go`). `docs/rnd/competitors.md` section 4 says atrium already has "typing a peer message when
-the target is settled". That line is loose: atrium queues and delivers by hook, and types only for a human's own say.
+and `internal/daemon/peers.go`). Atrium queues and delivers by hook, and types only for a human's own say.
 What Orca has that atrium lacks is the reservation state machine, not the typing.
 
 ### Agent trust presets
@@ -278,8 +276,7 @@ Credit the Orca path in each commit message. Atrium files were checked on 2026-0
 
 ### 1. Dependencies between work items and a gate only the board resolves (medium)
 
-From `coordinator-decision-gates.ts:52-61` and the ready computation in `db.listTasks({ ready: true })`. Already ranked
-6 in `docs/rnd/competitors.md` section 4, and this read confirms it and adds the invariant re-check. Sketch: `work_item`
+From `coordinator-decision-gates.ts:52-61` and the ready computation in `db.listTasks({ ready: true })`. This read adds the invariant re-check. Sketch: `work_item`
 in `internal/store/schema.go` (migration near `:1497`, add a column at the END of the slice) gets `blocked_by`. A
 launch onto an item whose blockers are not `accepted` is held. A gate is a report kind that only the board's answer
 endpoint resolves, and the daemon re-checks held items on a timer beside `internal/daemon/sweep.go`. Atrium has asks

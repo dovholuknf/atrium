@@ -4,7 +4,7 @@ Status: partly built. The hold step it shares with the room deploy hold is built
 token and tool-call budget are not.
 
 Origin: design approved by clint 2026-09-30, build later. Section 6's questions are answered (clint's decision walk,
-2026-09-30) and folded in. Written by @rnd from item 1 of `docs/rnd/competitor-features.md`. Nothing is built. Off by
+2026-09-30) and folded in. Written by @rnd. Nothing is built. Off by
 default. Owned by @runtime when it is built, with a board control from @ui. Item r-037.
 
 Section 1 is now the HOLD STEP shared with the room deploy hold (`docs/rnd/room-deploy-hold-design.md`,

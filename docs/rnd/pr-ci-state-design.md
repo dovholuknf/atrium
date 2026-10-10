@@ -2,7 +2,7 @@
 
 Status: proposed, not built.
 
-Origin: design only, clint ranks. Written 2026-09-30 by @rnd from item 2 of `docs/rnd/competitor-features.md`.
+Origin: design only, clint ranks. Written 2026-09-30 by @rnd.
 Nothing is built. Owned by @review with @runtime. The board half is @ui's.
 
 ## The ask, in one paragraph
