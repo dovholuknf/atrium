@@ -384,6 +384,19 @@ func (c *controlMCP) server(class ctlClass) *mcp.Server {
 	}, audited(c, "ctl-cull", describeCull, c.cullHandler))
 
 	addTool(s, class, &mcp.Tool{
+		Name: "atrium_close",
+		Description: "Close a card the way the operator does: stop its session, archive its review and remove the " +
+			"worktree, branch and fetched refs its inventory lists. The card goes to done and stays in history.\n\n" +
+			"WITHOUT confirm it changes nothing and answers the preview: `items`, `warnings`, and `asks`, the " +
+			"worktrees holding work that is nowhere else. Each ask needs an answer in `answers` by its seq: keep " +
+			"(stays on disk), stash (pushed to the hub as stash/<card>/<branch>, then removed) or delete (the work " +
+			"is lost). Never pick delete unless whoever you work for said so. Do not close a card you were not " +
+			"asked to.\n\n" +
+			"Use this rather than a script against the API. A card on ANOTHER ROOM is `name@room`, `alias@room` " +
+			"or `room~id`, as `atrium_say` takes it.",
+	}, audited(c, "ctl-close", describeClose, c.closeHandler))
+
+	addTool(s, class, &mcp.Tool{
 		Name: "restart_atrium",
 		Description: "Wind a room's daemon down and bring it straight back on the same database.\n\n" +
 			"FORWARDED TO THE ROOM. The hub spawns nothing on the room's machine: it sends the " +
@@ -1979,6 +1992,49 @@ func (c *controlMCP) cullHandler(ctx context.Context, req *mcp.CallToolRequest, 
 		res.Note = "not everything was removed. see kept, which says why."
 	}
 	return nil, res, nil
+}
+
+// ── close ───────────────────────────────────────────────────────────────────────
+
+// closeTimeout bounds a confirmed atrium_close. The room stops the session, then
+// runs git on each worktree before it answers. A preview is a read and gets
+// cullTimeout.
+const closeTimeout = 5 * time.Minute
+
+type closeInput struct {
+	Card    string            `json:"card" jsonschema:"the card to close: a card id, handle or alias. name@room or room~id for a card on another room"`
+	Confirm bool              `json:"confirm,omitempty" jsonschema:"false (the default) only answers what a close would do. true closes"`
+	Answers map[string]string `json:"answers,omitempty" jsonschema:"keep, stash or delete for each asked worktree, by its seq"`
+}
+
+// closeHandler forwards a close to the card's room, which makes every check and
+// does the work. It is the same route the CLI's atrium_close and the board use.
+func (c *controlMCP) closeHandler(ctx context.Context, req *mcp.CallToolRequest, in closeInput) (
+	*mcp.CallToolResult, map[string]any, error) {
+
+	out := map[string]any{}
+	room := roomOf(req)
+	scope, id, handle, err := c.resolveCard(ctx, room, in.Card)
+	if err != nil {
+		return nil, out, err
+	}
+	path := "/v1/tasks/" + url.PathEscape(id) + "/close"
+	if !in.Confirm {
+		long := &controlMCP{board: c.board, client: &http.Client{Timeout: cullTimeout, Transport: c.client.Transport}}
+		err = long.ask(ctx, http.MethodGet, path, scope, nil, &out)
+	} else {
+		long := &controlMCP{board: c.board, client: &http.Client{Timeout: closeTimeout, Transport: c.client.Transport}}
+		err = long.ask(ctx, http.MethodPost, path, scope, map[string]any{"confirm": true, "answers": in.Answers}, &out)
+	}
+	if err != nil {
+		var be *boardError
+		if errors.As(err, &be) && be.bare && be.code == http.StatusNotFound {
+			return nil, out, fmt.Errorf("that room cannot close cards yet. it needs a newer build")
+		}
+		return nil, out, err
+	}
+	out["card"], out["handle"] = namedFrom(room, scope, id, handle)
+	return nil, out, nil
 }
 
 // ── restart ──────────────────────────────────────────────────────────────────────

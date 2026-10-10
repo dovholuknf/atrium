@@ -59,6 +59,8 @@ var workerTools = map[string]bool{
 	"atrium_ci": true,
 	// And the ones that need a build machine. See resources_mcp.go.
 	"atrium_resources": true,
+	// And the ones that clear up cards, which otherwise script the API by hand. See closeHandler.
+	"atrium_close": true,
 }
 
 // inClass reports whether a tool is served to a class.

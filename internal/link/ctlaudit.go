@@ -182,6 +182,15 @@ func describeCull(req *mcp.CallToolRequest, in cullInput, out cullOutput) (strin
 	return cardRoom(req, in.Card), what, true
 }
 
+// describeClose records a confirmed close only. A preview changes nothing.
+func describeClose(req *mcp.CallToolRequest, in closeInput, out map[string]any) (string, string, bool) {
+	if !in.Confirm {
+		return "", "", false
+	}
+	card, _ := out["card"].(string)
+	return cardRoom(req, in.Card), "close " + namedOr(card, in.Card), true
+}
+
 func describeRestart(req *mcp.CallToolRequest, in restartInput, _ restartOutput) (string, string, bool) {
 	what := "restart"
 	if in.Force {
