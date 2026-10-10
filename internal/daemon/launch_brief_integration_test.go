@@ -90,7 +90,7 @@ func TestBriefPromptPutsTheReadFirst(t *testing.T) {
 			t.Fatalf("briefPrompt(%q) = %q, want %q", in, got, want)
 		}
 	}
-	if n := strings.Count(briefPrompt("do the thing\n\n"+LaunchEndingLine), "atrium_done"); n != 1 {
+	if n := strings.Count(briefPrompt("do the thing\n\n"+LaunchEndingLine), "Before you end your turn"); n != 1 {
 		t.Fatalf("the ending appears %d times", n)
 	}
 }
