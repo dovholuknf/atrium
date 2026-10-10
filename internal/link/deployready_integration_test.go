@@ -1,4 +1,4 @@
-//go:build integration
+//go:build integration && git
 
 package link
 
@@ -87,13 +87,6 @@ func readyProxy(t *testing.T, r *readyRepo, installed string, script string) (*P
 		return &deployProc{Pid: 4242, Wait: func() (int, error) { return <-s.finish, nil }}, nil
 	}
 	return p, &started
-}
-
-func loopbackReq(method, target, body string) *http.Request {
-	r := httptest.NewRequest(method, target, strings.NewReader(body))
-	r.RemoteAddr = "127.0.0.1:50000"
-	r.Host = "127.0.0.1:7778"
-	return r
 }
 
 func getReadyOnce(t *testing.T, p *Proxy, target string) deployReadyView {

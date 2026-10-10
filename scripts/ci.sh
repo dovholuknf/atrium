@@ -110,7 +110,7 @@ step "go test"
 # tests still running), and the slowest tests. The raw stream is kept whole.
 started=$(date +%s)
 # ALL the tests, unit and integration. CI is the only place the integration tests run. See scripts/test.sh.
-bash scripts/test.sh all -json -p "$cpus" -timeout 20m 2>&1 \
+bash scripts/test.sh full -json -p "$cpus" -timeout 20m 2>&1 \
   | tee "$artefacts/go-test.json" \
   | go run scripts/ci-report.go -dir "$artefacts"
 codes=("${PIPESTATUS[@]}")

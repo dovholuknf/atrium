@@ -26,6 +26,7 @@ mode="${1:-unit}"
 case "$mode" in
   unit) tags=() ;;
   all) tags=(-tags integration) ;;
+  full) tags=(-tags integration,git) ;;
   -*|./*) mode=unit; tags=() ; set -- unit "$@" ;;
   *) echo "usage: scripts/test.sh [unit|all] [go test arguments]" >&2; exit 2 ;;
 esac

@@ -1,10 +1,9 @@
-//go:build integration
+//go:build integration && git
 
 package link
 
 import (
 	"context"
-	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -132,8 +131,6 @@ func (x *crRig) tip(room, branch, sha string) {
 	x.roomTips[room+"/"+branch] = sha
 }
 
-const loopAddr = "127.0.0.1:5555"
-
 // send is one request to the hub as the listener would hand it over.
 func (x *crRig) send(method, target, body string, hdr map[string]string, remote string) (int, string) {
 	var rdr *strings.Reader
@@ -152,11 +149,6 @@ func (x *crRig) send(method, target, body string, hdr map[string]string, remote 
 	return rec.Code, rec.Body.String()
 }
 
-func js(v any) string {
-	b, _ := json.Marshal(v)
-	return string(b)
-}
-
 // op is the operator, on the board.
 func (x *crRig) op(method, target, body string) (int, string) {
 	return x.send(method, target, body, nil, loopAddr)
@@ -165,28 +157,6 @@ func (x *crRig) op(method, target, body string) (int, string) {
 // card is a card of a room, as the hub's own control server asks for it.
 func (x *crRig) card(room, card, method, target, body string) (int, string) {
 	return x.send(method, target, body, map[string]string{gitsync.HeaderCard: card, CardRoomHeader: room}, loopAddr)
-}
-
-func obj(t *testing.T, raw string) map[string]any {
-	t.Helper()
-	var m map[string]any
-	if err := json.Unmarshal([]byte(raw), &m); err != nil {
-		t.Fatalf("not an object: %v: %s", err, raw)
-	}
-	return m
-}
-
-func str(m map[string]any, path ...string) string {
-	var cur any = m
-	for _, k := range path {
-		mm, ok := cur.(map[string]any)
-		if !ok {
-			return ""
-		}
-		cur = mm[k]
-	}
-	s, _ := cur.(string)
-	return s
 }
 
 // hubReq is the body of a request for a branch pushed to the hub.

@@ -1,4 +1,4 @@
-//go:build integration
+//go:build integration && git
 
 package link
 
@@ -54,15 +54,6 @@ type gitFixture struct {
 	room *Room
 	sha  string
 	bare string
-}
-
-func run(t *testing.T, dir string, args ...string) string {
-	t.Helper()
-	out, err := gitsync.Default.Git(context.Background(), dir, args...)
-	if err != nil {
-		t.Fatalf("git %v: %v", args, err)
-	}
-	return strings.TrimSpace(out)
 }
 
 func newGitFixture(t *testing.T, hubSaysGit, roomSaysGit bool, roomHandler http.Handler) *gitFixture {
