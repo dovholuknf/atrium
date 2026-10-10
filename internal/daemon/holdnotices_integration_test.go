@@ -51,7 +51,7 @@ func TestTheOrchestratorGetsASilentStopOnItsCardNotInItsTerminal(t *testing.T) {
 	d := testDaemon(t)
 	launcher, worker := holdingPair(t, d, OrchestratorTag)
 
-	stopTwice(t, d, "worker")
+	stopSilently(t, d, "worker")
 	if msgs := pendingFrom(t, d, launcher.ID); len(msgs) != 0 {
 		t.Fatalf("the orchestrator has %d queued, want none: %v", len(msgs), msgs)
 	}
@@ -80,7 +80,7 @@ func TestHoldNoticesTagHoldsNoticesAndReports(t *testing.T) {
 	d := testDaemon(t)
 	launcher, worker := holdingPair(t, d, HoldNoticesTag)
 
-	stopTwice(t, d, "worker")
+	stopSilently(t, d, "worker")
 	if n := len(heldOn(t, d, launcher.ID)); n != 1 {
 		t.Fatalf("%d held notices, want one", n)
 	}
@@ -135,7 +135,7 @@ func TestAnUntaggedLauncherStillHasItsNoticeQueued(t *testing.T) {
 	d := testDaemon(t)
 	launcher, _ := holdingPair(t, d, "orchestrators")
 
-	stopTwice(t, d, "worker")
+	stopSilently(t, d, "worker")
 	if n := len(pendingFrom(t, d, launcher.ID)); n != 1 {
 		t.Fatalf("%d queued, want the silent stop", n)
 	}

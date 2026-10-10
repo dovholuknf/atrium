@@ -50,8 +50,8 @@ func TestBackgroundWorkEndingStartsTheSilentStopClock(t *testing.T) {
 	stopTurnWithBackground(t, d, "worker", 2)
 	time.Sleep(5 * time.Millisecond)
 	stopTurnWithBackground(t, d, "worker", 0)
-	if n := len(pendingFrom(t, d, launcher.ID)); n != 0 {
-		t.Fatalf("the launcher heard of a first silent stop: %d", n)
+	if n := len(pendingFrom(t, d, launcher.ID)); n != 1 {
+		t.Fatalf("the launcher heard of the silent stop %d times, want once", n)
 	}
 	if _, err := d.takeMessages(worker.ID, "stop"); err != nil {
 		t.Fatal(err)

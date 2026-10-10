@@ -53,7 +53,7 @@ func TestAnEndingDoneTakesACommitTheHubHasAndTellsTheLauncherWithNoNudge(t *test
 	if len(msgs) != 1 || !strings.Contains(msgs[0].Text, "done at abc1234") {
 		t.Fatalf("the launcher has %+v", msgs)
 	}
-	stopTwice(t, d, "worker")
+	stopSilently(t, d, "worker")
 	if n := len(pendingFrom(t, d, worker.ID)); n != 0 {
 		t.Fatalf("the worker was nudged after done: %d", n)
 	}
@@ -81,7 +81,7 @@ func TestAnEndingBlockedRefusesNoReasonAndOver50WordsAndDeliversTheReasonWithNoN
 	if len(msgs) != 1 || !strings.Contains(msgs[0].Text, "blocked") || !strings.Contains(msgs[0].Text, "from the operator") {
 		t.Fatalf("the launcher has %+v", msgs)
 	}
-	stopTwice(t, d, "worker")
+	stopSilently(t, d, "worker")
 	if n := len(pendingFrom(t, d, worker.ID)); n != 0 {
 		t.Fatalf("the worker was nudged after blocked: %d", n)
 	}

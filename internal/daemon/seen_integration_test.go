@@ -228,7 +228,7 @@ func TestAReportedWorkersTurnIsSeenByItsLauncher(t *testing.T) {
 func TestASilentWorkersTurnIsUnseenAndNoticed(t *testing.T) {
 	d := testDaemon(t)
 	launcher, worker := launchedPair(t, d)
-	stopTwice(t, d, "worker")
+	stopSilently(t, d, "worker")
 
 	if s, _ := d.st.GetSeen(worker.ID); !s.Unseen() || s.SeenVia != "" {
 		t.Fatalf("a silent stop is not unseen: %+v", s)

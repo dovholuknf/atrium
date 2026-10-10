@@ -220,7 +220,7 @@ func (c *controlMCP) server(class ctlClass) *mcp.Server {
 			"IF ANOTHER SESSION LAUNCHED YOU, END WITH `atrium_done` when the work is finished and " +
 			"`atrium_blocked` when something stops you. That is the one message your launcher gets, so do " +
 			"not say the same thing with this as well. A turn that ends without either is a silent stop: " +
-			"you are nudged once, then your launcher is told you went quiet.",
+			"nothing is typed into you, and your launcher is told you stopped without reporting.",
 	}, audited(c, "ctl-wake-say", describeSay, c.sayHandler))
 
 	addTool(s, class, &mcp.Tool{
