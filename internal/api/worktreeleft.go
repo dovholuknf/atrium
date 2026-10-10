@@ -23,13 +23,25 @@ func worktreeListed(repo, path string) bool {
 		return true
 	}
 	want := filepath.Clean(filepath.FromSlash(path))
+	wantReal := realPath(want)
 	for _, l := range strings.Split(out, "\n") {
-		if p, ok := strings.CutPrefix(strings.TrimSpace(l), "worktree "); ok &&
-			eqPath(filepath.Clean(filepath.FromSlash(p)), want) {
-			return true
+		if p, ok := strings.CutPrefix(strings.TrimSpace(l), "worktree "); ok {
+			got := filepath.Clean(filepath.FromSlash(p))
+			if eqPath(got, want) || eqPath(realPath(got), wantReal) {
+				return true
+			}
 		}
 	}
 	return false
+}
+
+// realPath is path with symlinks resolved, as git reports it (macOS lists /private/var for /var), or path itself when it
+// cannot be resolved.
+func realPath(path string) string {
+	if r, err := filepath.EvalSymlinks(longPath(path)); err == nil {
+		return filepath.Clean(strings.TrimPrefix(r, `\\?\`))
+	}
+	return path
 }
 
 // removeLeftover deletes what is still at path once git no longer lists it as a worktree, then checks it is gone. An
