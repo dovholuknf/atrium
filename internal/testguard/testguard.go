@@ -38,6 +38,7 @@ func Scrub() string {
 		return ""
 	}
 	_ = os.Setenv("ATRIUM_LOCATION", filepath.Join(dir, "no-daemon.json"))
+	Git(dir)
 	_ = os.Setenv(marker, "1")
 	return dir
 }
@@ -56,6 +57,11 @@ func Home(dir string) {
 	if err := os.MkdirAll(home, 0o755); err != nil {
 		return
 	}
+	// The git a test runs keeps the isolated config in the new home too.
+	if os.Getenv(gitMarker) == "1" {
+		_ = os.Setenv("GIT_CONFIG_GLOBAL", writeGitConfig(home))
+		_ = os.Setenv("XDG_CONFIG_HOME", home)
+	}
 	for _, k := range []string{"HOME", "USERPROFILE"} {
 		_ = os.Setenv(k, home)
 	}
@@ -67,6 +73,57 @@ func Home(dir string) {
 			_ = os.Setenv(k, p)
 		}
 	}
+}
+
+// Git makes every git a test runs ignore the operator's git setup: their global and system config, and with it a
+// core.hooksPath whose hooks read /dev/tty or refuse unsigned commits, a gpgsign they have turned on, and an
+// identity they have or have not set. Called from a package's TestMain, before any test runs. Scrub calls it, so a
+// package that scrubs has it. It works under under, or in a directory of its own when that is empty, and returns
+// the directory it made, for the caller to remove.
+//
+// The config is reached two ways. GIT_CONFIG_GLOBAL and GIT_CONFIG_NOSYSTEM cover a git started with os.Environ().
+// gitsync.CleanEnv drops every GIT_* variable, so a git started through it finds the same config as the HOME,
+// USERPROFILE and XDG_CONFIG_HOME this points at a home holding it as .gitconfig.
+func Git(under string) string {
+	// A CHILD OF A GUARDED TEST inherits all of this already.
+	if os.Getenv(gitMarker) == "1" {
+		return ""
+	}
+	dir := under
+	if dir == "" {
+		var err error
+		if dir, err = os.MkdirTemp("", "atrium-testgit-"); err != nil {
+			return ""
+		}
+	}
+	home := filepath.Join(dir, "gitconfig-home")
+	if err := os.MkdirAll(home, 0o755); err != nil {
+		return ""
+	}
+	cfg := writeGitConfig(home)
+	_ = os.Setenv("GIT_CONFIG_GLOBAL", cfg)
+	_ = os.Setenv("GIT_CONFIG_NOSYSTEM", "1")
+	for _, k := range []string{"HOME", "USERPROFILE", "XDG_CONFIG_HOME"} {
+		_ = os.Setenv(k, home)
+	}
+	_ = os.Setenv(gitMarker, "1")
+	return dir
+}
+
+// gitMarker says this process's git setup was isolated already.
+const gitMarker = "TESTGUARD_GIT"
+
+// writeGitConfig writes the config a test's git reads, as .gitconfig in home, and answers its path. The hooks
+// directory beside it is empty on purpose.
+func writeGitConfig(home string) string {
+	hooks := filepath.Join(home, "no-hooks")
+	_ = os.MkdirAll(hooks, 0o755)
+	cfg := filepath.Join(home, ".gitconfig")
+	body := "[user]\n\tname = Atrium Test\n\temail = test@atrium.invalid\n" +
+		"[core]\n\thooksPath = " + filepath.ToSlash(hooks) + "\n" +
+		"[commit]\n\tgpgsign = false\n[tag]\n\tgpgsign = false\n"
+	_ = os.WriteFile(cfg, []byte(body), 0o644)
+	return cfg
 }
 
 // Agents are the runners a test must never start for real: each one bills a

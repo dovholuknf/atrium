@@ -48,10 +48,17 @@ func launchDump(t *testing.T, d *Daemon, req LaunchRequest) map[string]string {
 	}
 }
 
+// testGitIsolation is a GIT_CONFIG_ variable that internal/testguard sets for every test, and not one of the
+// token-carrying GIT_CONFIG_COUNT, GIT_CONFIG_KEY_n and GIT_CONFIG_VALUE_n these tests look for.
+func testGitIsolation(k string) bool {
+	k = strings.ToUpper(k)
+	return k == "GIT_CONFIG_GLOBAL" || k == "GIT_CONFIG_NOSYSTEM"
+}
+
 func gitEnvOf(seen map[string]string) map[string]string {
 	out := map[string]string{}
 	for k, v := range seen {
-		if strings.HasPrefix(k, "GIT_CONFIG_") {
+		if strings.HasPrefix(k, "GIT_CONFIG_") && !testGitIsolation(k) {
 			out[k] = v
 		}
 	}
@@ -152,7 +159,7 @@ func TestAPRRunnersCommandsAndForksHaveNoGitTokenInTheirEnv(t *testing.T) {
 		childEnvFrom(os.Environ(), nil, map[string]string{"ATRIUM_PERM_GATE": "off"}),
 	} {
 		for _, kv := range env {
-			if strings.HasPrefix(strings.ToUpper(kv), "GIT_CONFIG_") || strings.Contains(kv, gitsync.HeaderCardToken) {
+			if k, _, _ := strings.Cut(kv, "="); strings.HasPrefix(strings.ToUpper(k), "GIT_CONFIG_") && !testGitIsolation(k) || strings.Contains(kv, gitsync.HeaderCardToken) {
 				t.Fatalf("a PR runner's environment carries %q", kv)
 			}
 		}
