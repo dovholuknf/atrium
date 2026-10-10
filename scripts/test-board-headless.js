@@ -5951,7 +5951,7 @@ async function aliasSection(browser, base) {
       };
     }, T1);
     if (got.chip !== "@sa89") fail("a card with an alias does not wear it: " + JSON.stringify(got));
-    if (!/atrium_say/.test(got.tip || "")) fail("the alias chip's tooltip does not say what it is for: " + got.tip);
+    if (got.tip) fail("the alias chip still carries a data-tip: " + got.tip);
     if (got.title) fail("the alias chip carries a native title tooltip.");
     if (got.none) fail("a card with no alias drew an alias chip.");
     if (got.label !== "alias…" || got.note !== "@sa89") fail("the alias menu item reads wrong: " + JSON.stringify(got));
@@ -5997,10 +5997,18 @@ async function aliasSection(browser, base) {
       followTermAlias([Object.assign({}, t, { alias: "saorch" })]);
       return { plain, aliased, cleared, label: terminalLabel(t), win: windowTitle(termTask) };
     }, T1);
+    if (process.env.ALIAS_SHOTS) {
+      await ap.evaluate(() => { const t = Object.assign({}, termTask, { alias: "saorch" }); termTask = t; paintTermTitle(t); paintTermChips(t);
+        const host = document.createElement("section"); host.className = "term-pane"; host.id = "shot-host";
+        host.style.cssText = "position:fixed;top:0;left:0;width:900px;z-index:99999;display:block;background:var(--bg,#111)";
+        host.appendChild(document.querySelector("#term-pane .term-bar")); document.body.appendChild(host); });
+      await ap.locator("#shot-host").screenshot({ path: require("path").join(process.env.ALIAS_SHOTS, process.env.ALIAS_SHOT_NAME || "alias-chip.png") });
+      await ap.evaluate(() => { const h = document.getElementById("shot-host"); document.getElementById("term-pane").prepend(h.firstElementChild); h.remove(); });
+    }
     if (bar.plain.text !== bar.label || bar.plain.handle) fail("a card with no alias does not keep today's bar label: " + JSON.stringify(bar));
     if (!/click to give it an alias/.test(bar.plain.tip || "")) fail("the bar label does not offer an alias: " + JSON.stringify(bar.plain));
     if (bar.aliased.text !== "@saorch" || !bar.aliased.handle || !bar.aliased.at) fail("the bar does not wear the alias as a handle: " + JSON.stringify(bar.aliased));
-    if (!(bar.aliased.tip || "").includes("github/dovholuknf/atrium:claude/main")) fail("the repo and branch are not in the alias's tooltip: " + bar.aliased.tip);
+    if (bar.aliased.tip) fail("the bar's alias chip still carries a tooltip: " + bar.aliased.tip);
     if (bar.cleared.text !== bar.label || bar.cleared.handle) fail("clearing the alias did not put the label back: " + JSON.stringify(bar.cleared));
     if (!/^@saorch · /.test(bar.win)) fail("a popped-out window's title does not lead with the alias: " + bar.win);
 
@@ -6016,6 +6024,32 @@ async function aliasSection(browser, base) {
     });
     if (dragged) fail("a drag that selected the bar's name still opened the alias dialog");
     await ap.evaluate(() => window.getSelection().removeAllRanges());
+
+    // THE COPY ICON. It writes `@handle`, flashes a check on itself with no toast, and does not open the rename.
+    // A drag selecting across it copies nothing. The card's chip has the same icon.
+    await ap.evaluate(() => { window.__clip = []; navigator.clipboard.writeText = async t => { window.__clip.push(t); }; });
+    const toastsBefore = await ap.evaluate(() => document.querySelectorAll(".toast").length);
+    await ap.evaluate(() => document.getElementById("t-copy").click());
+    await ap.waitForFunction(() => document.getElementById("t-copy").textContent.trim() === "✓", null, { timeout: slow(3000) });
+    const cp = await ap.evaluate(() => ({ clip: window.__clip.slice(), ask: !!document.querySelector("#ask[open]"),
+      toasts: document.querySelectorAll(".toast").length, tip: document.getElementById("t-title").dataset.tip || "",
+      title: document.getElementById("t-title").getAttribute("title") || "" }));
+    if (cp.clip.join("|") !== "@saorch") fail("the copy icon did not write @saorch: " + JSON.stringify(cp));
+    if (cp.ask) fail("the copy icon opened the rename");
+    if (cp.toasts !== toastsBefore) fail("the copy icon raised a toast");
+    if (cp.tip || cp.title) fail("the alias chip has a title or data-tip: " + JSON.stringify(cp));
+    await ap.waitForFunction(() => !!document.querySelector("#t-copy svg"), null, { timeout: slow(3000) });
+    const cardCopy = await ap.evaluate(t1 => {
+      window.__clip = [];
+      const box = document.createElement("div"); box.innerHTML = cardHTML(Object.assign({}, t1, { id: "al9", alias: "sa89" }));
+      document.body.appendChild(box);
+      const chip = box.querySelector(".chip.alias"), b = box.querySelector(".alias-copy");
+      const r = { chipTip: chip.dataset.tip || chip.getAttribute("title") || "", has: !!b };
+      b.click();
+      return new Promise(res => setTimeout(() => { r.clip = window.__clip.slice(); r.mark = b.textContent.trim(); box.remove(); res(r); }, 50));
+    }, T1);
+    if (!cardCopy.has || cardCopy.chipTip || cardCopy.clip.join("|") !== "@sa89" || cardCopy.mark !== "✓")
+      fail("the card's alias copy icon is wrong: " + JSON.stringify(cardCopy));
 
     aliasWrites = [];
     await ap.evaluate(() => document.getElementById("t-title").click());
