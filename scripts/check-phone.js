@@ -89,19 +89,26 @@ if (!/function sizeCommands\(\)/.test(html)) {
 // size and rewraps them again).
 // Anchored on the DECLARATION, not the name: `switchView` and `renderPerms`
 // are both called from a dozen places, and searching from the first mention
-// measures the distance from some unrelated call site.
+// measures the distance from some unrelated call site. The call is looked for
+// in the BODY, up to the closing brace at column 0. A fixed window in
+// characters read a one line addition near the top of `switchView` as the call
+// having been removed.
 for (const [caller, why] of [
   ["async function renderPerms(", "a newly added card is never measured"],
   ["function switchView(", "a card built while the perms view was hidden stays " +
-    "clipped, because hidden measures as zero exactly like detached"],
-  ["addEventListener(\"resize\"", "rotating a phone rewraps every command and " +
-    "nothing resizes the box"]
+    "clipped, because hidden measures as zero exactly like detached"]
 ]) {
   const from = html.indexOf(caller);
-  const to = from < 0 ? -1 : html.indexOf("sizeCommands", from);
-  if (from < 0 || to < 0 || to - from > 2000) {
+  const end = from < 0 ? -1 : html.indexOf("\n}", from);
+  if (from < 0 || end < 0 || !html.slice(from, end).includes("sizeCommands()")) {
     fail(`\`sizeCommands\` is not called from \`${caller}\`, so ${why}.`);
   }
+}
+// The resize listener by its own line. Eight files listen for resize, and the
+// first in load order is never this one.
+if (!/addEventListener\("resize",[^\n]*sizeCommands/.test(html)) {
+  fail("`sizeCommands` is not called from `addEventListener(\"resize\"`, so " +
+    "rotating a phone rewraps every command and nothing resizes the box.");
 }
 
 // Rule 4: THE ANNOUNCEMENTS DO NOT BURY THE QUEUE.
