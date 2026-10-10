@@ -250,5 +250,4 @@ Each phase is one worker and ends with its tests passing and the earlier phases 
    losing an artifact with the hub disk acceptable, or should the backup include them?
 6. Anyone who can reach the board can download any artifact, then? Recommend: yes, as with documents and the drop.
    A card name is a header anything on loopback can set, so a per-card lock would only look like access control.
-   A private
-   file is not put here. A share widens that reach, so say so on the Files page.
+   A private file is not put here. A share widens that reach, so say so on the Files page.
