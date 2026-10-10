@@ -3,7 +3,6 @@
 package daemon
 
 import (
-	"strings"
 	"testing"
 	"time"
 
@@ -37,32 +36,20 @@ func TestALongTurnIsReportedOnce(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	msgs := pendingFrom(t, d, launcher.ID)
-	if len(msgs) != 1 || !strings.Contains(msgs[0].Text, "one turn for 47 minutes") ||
-		!strings.Contains(msgs[0].Text, "12 tool calls in the last 10 minutes") {
-		t.Fatalf("launcher has %v, want one long-turn notice with the rate", msgs)
+	if msgs := pendingFrom(t, d, launcher.ID); len(msgs) != 0 {
+		t.Fatalf("launcher has %v, want no long-turn notice", msgs)
 	}
 	x := d.esc.get(worker.ID)
 	if x == nil || x.Source != NoticeLongTurn || x.Minutes != 47 {
 		t.Fatalf("escalation %+v, want long-turn at 47 minutes", x)
 	}
-	// Ninety minutes in, the same turn: no second notice.
+	// Ninety minutes in, the same turn: still nothing for the launcher.
 	d.act.now = func() time.Time { return began.Add(90 * time.Minute) }
 	if err := d.watchWorkers(began.Add(90 * time.Minute)); err != nil {
 		t.Fatal(err)
 	}
-	if msgs := pendingFrom(t, d, launcher.ID); len(msgs) != 1 {
-		t.Fatalf("the same turn was reported %d times", len(msgs))
-	}
-	// A new turn re-arms it.
-	d.act.set(worker.ID, ActivityIdle, "")
-	next := began.Add(3 * time.Hour)
-	inATurn(d, worker.ID, next, next.Add(50*time.Minute), 1)
-	if err := d.watchWorkers(next.Add(50 * time.Minute)); err != nil {
-		t.Fatal(err)
-	}
-	if msgs := pendingFrom(t, d, launcher.ID); len(msgs) != 2 {
-		t.Fatalf("a new long turn was reported %d times in all, want 2", len(msgs))
+	if msgs := pendingFrom(t, d, launcher.ID); len(msgs) != 0 {
+		t.Fatalf("the same turn told the launcher %d times", len(msgs))
 	}
 }
 

@@ -494,7 +494,7 @@ func TestASilentStopKeepsItsClockAcrossAResume(t *testing.T) {
 	}
 }
 
-// F7. One tool call running too long: the launcher is told once, the board
+// F7. One tool call running too long: the launcher is not told, the board
 // escalates, and nothing is killed.
 func TestTheWatchdogReportsAStuckTool(t *testing.T) {
 	t.Parallel()
@@ -511,8 +511,8 @@ func TestTheWatchdogReportsAStuckTool(t *testing.T) {
 		}
 	}
 	msgs := pendingFrom(t, d, launcher.ID)
-	if len(msgs) != 1 || !strings.Contains(msgs[0].Text, "Bash") {
-		t.Fatalf("launcher has %v, want one long-tool notice", msgs)
+	if len(msgs) != 0 {
+		t.Fatalf("launcher has %v, want no long-tool notice", msgs)
 	}
 	x := d.esc.get(worker.ID)
 	if x == nil || x.Source != NoticeLongTool || x.Count != escalationStep(5*time.Minute) {

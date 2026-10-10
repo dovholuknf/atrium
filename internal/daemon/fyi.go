@@ -62,11 +62,19 @@ func (d *Daemon) fyiSender(from string, target *store.Task) *store.Task {
 	if from == "" || target == nil || !holdsNotices(target) {
 		return nil
 	}
-	sender, err := d.st.GetByWireName(d.st.Qualify(from))
-	if err != nil || sender.ID == target.ID {
+	if d.sayGate(target) == sayGone {
 		return nil
 	}
-	if d.sayGate(target) == sayGone {
+	sender, err := d.st.GetByWireName(d.st.Qualify(from))
+	if err != nil {
+		// A SENDER ON ANOTHER ROOM, `handle@room`, has no card here. Its fyi is held all the same: a
+		// notice relayed through the hub used to be typed into the orchestrator's terminal for this.
+		if strings.Contains(from, "@") {
+			return &store.Task{WireName: from}
+		}
+		return nil
+	}
+	if sender.ID == target.ID {
 		return nil
 	}
 	return sender

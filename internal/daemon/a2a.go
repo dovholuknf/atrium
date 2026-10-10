@@ -350,8 +350,11 @@ func (d *Daemon) holdNotice(launcher, worker *store.Task, source, text string) {
 		log.Printf("[atrium] could not hold a %s notice for %s: %v", source, launcher.DisplayTitle(), err)
 		return
 	}
-	if err := d.st.LogWorkAtrium(worker.ID, source+" notice held for "+launcher.WireName+": "+text); err != nil {
-		log.Printf("[atrium] could not put the %s notice on %s's work item: %v", source, worker.DisplayTitle(), err)
+	// A worker on another room has no card here, so no work item to log on.
+	if worker.ID != "" {
+		if err := d.st.LogWorkAtrium(worker.ID, source+" notice held for "+launcher.WireName+": "+text); err != nil {
+			log.Printf("[atrium] could not put the %s notice on %s's work item: %v", source, worker.DisplayTitle(), err)
+		}
 	}
 	d.ringHeld(launcher.ID, worker.ID, source, text)
 	log.Printf("[atrium] held for %s that %s: %s", launcher.DisplayTitle(), worker.DisplayTitle(), source)
@@ -384,7 +387,7 @@ func (d *Daemon) notifyRemoteLauncher(worker *store.Task, source, key, body stri
 	if !fresh {
 		return false
 	}
-	if _, err := d.holdRelay(worker, spec.FromWire, spec.ToName, spec.ToRoom, spec.ToCard, spec.Text, "", "",
+	if _, err := d.holdRelay(worker, spec.FromWire, spec.ToName, spec.ToRoom, spec.ToCard, spec.Text, "", KindFYI,
 		store.RelaySourceNotice); err != nil {
 		log.Printf("[atrium] could not hold a notice to %s@%s about %s: %v", spec.ToName, spec.ToRoom,
 			worker.DisplayTitle(), err)
@@ -718,32 +721,20 @@ func (d *Daemon) watchWorkers(now time.Time) error {
 	return nil
 }
 
-// The escalation step after which a stuck card wakes a launcher that holds its notices. A
-// long tool call is already LongToolAfter old when it escalates, so its second step is
-// the wake. A silent stop is told to the launcher at SilentStopNotifyAfter, the second
-// step, so waking there would wake on every one: it waits for the fourth, ten minutes.
-const (
-	wakeStep       = 2
-	wakeStepSilent = 4
-)
+// The escalation step after which a silent stop wakes a launcher that holds its notices. A
+// silent stop is told to the launcher at SilentStopNotifyAfter, the second step, so waking
+// there would wake on every one: it waits for the fourth, ten minutes.
+const wakeStepSilent = 4
 
 // wakeLauncher types one notice to a launcher that holds them, once a card it launched has
-// been stuck past its wake step. Every earlier stuck notice stays held.
-// Only a silent stop or a long tool call is stuck: a long turn is a report, not an alarm.
+// been silently stopped past its wake step. Every earlier stuck notice stays held.
+// Only a silent stop wakes: a long tool call and a long turn are on the card's own flag.
 // Once per stuck episode, keyed on when it began.
 func (d *Daemon) wakeLauncher(t *store.Task, x *Escalation) {
 	if x == nil {
 		return
 	}
-	step := wakeStep
-	switch x.Source {
-	case NoticeSilentStop:
-		step = wakeStepSilent
-	case NoticeLongTool:
-	default:
-		return
-	}
-	if x.Count < step {
+	if x.Source != NoticeSilentStop || x.Count < wakeStepSilent {
 		return
 	}
 	launcher := d.launcherOf(t)
@@ -784,10 +775,7 @@ func (d *Daemon) stuckNow(t *store.Task, now time.Time) *Escalation {
 		if tool, started, ok := d.act.toolSince(t.ID); ok && now.Sub(started) >= LongToolAfter {
 			stuck := started.Add(LongToolAfter)
 			mins := int(now.Sub(started) / time.Minute)
-			d.notifyLauncher(t, NoticeLongTool, started.UTC().Format(time.RFC3339Nano), fmt.Sprintf(
-				"%s has been in one %s call for %d minutes with no hook heard since. atrium cannot tell "+
-					"a hung process from a long build, so this is a report, not an action. card %s",
-				t.WireName, tool, mins, t.ID))
+			// The card's own flag is the report. A launcher is not told: it never acts on it.
 			return &Escalation{
 				Source: NoticeLongTool, Since: stuck, Count: escalationStep(now.Sub(stuck)), Minutes: mins,
 				Text: fmt.Sprintf("%s is STUCK in %s, %d minutes", who, tool, mins),
@@ -814,9 +802,8 @@ func (d *Daemon) turnAfter() time.Duration {
 }
 
 // longTurn is a running card whose turn has run past the setting: flagged on the
-// card, and its launcher told once per turn with how many tool calls the last ten
-// minutes held. A REPORT, NEVER AN ACTION: a long test run and a runaway look the
-// same from here, and the rate is what lets whoever reads it tell them apart.
+// card for the human. THE LAUNCHER IS NOT TOLD: a long test run and a runaway look the
+// same from here, and no launcher ever acted on the notice.
 // Last in the priority, after a silent stop and one long tool call, which are the
 // more specific facts.
 func (d *Daemon) longTurn(t *store.Task, now time.Time) *Escalation {
@@ -830,17 +817,6 @@ func (d *Daemon) longTurn(t *store.Task, now time.Time) *Escalation {
 	}
 	mins := int(now.Sub(began) / time.Minute)
 	calls := d.act.callsLately(t.ID)
-	doing := ""
-	if tool, since, ok := d.act.toolSince(t.ID); ok {
-		doing = fmt.Sprintf(", now in %s for %d minutes", tool, int(now.Sub(since)/time.Minute))
-	}
-	if d.reportsToLauncher(t) {
-		// Keyed on the turn's start, so a second pass of the same turn says
-		// nothing and the next turn says it again.
-		d.notifyLauncher(t, NoticeLongTurn, began.UTC().Format(time.RFC3339Nano), fmt.Sprintf(
-			"%s has been in one turn for %d minutes. %d tool calls in the last 10 minutes%s. a report, "+
-				"not an action. card %s", t.WireName, mins, calls, doing, t.ID))
-	}
 	since := began.Add(after)
 	return &Escalation{
 		Source: NoticeLongTurn, Since: since, Count: escalationStep(now.Sub(since)), Minutes: mins,
