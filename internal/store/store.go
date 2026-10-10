@@ -300,6 +300,9 @@ type Task struct {
 	// launch. Written once, by `SetLineage`. See docs/rnd/agent-lineage-design.md.
 	SpawnedBy   string `json:"spawned_by,omitempty"`
 	SpawnedByID string `json:"spawned_by_id,omitempty"`
+	// SpawnedByDir is where a launcher on ANOTHER room works, as the hub read it from that card. Never a path to
+	// read, only one to ask git about.
+	SpawnedByDir string `json:"spawned_by_dir,omitempty"`
 	// ReportedAt is the last time this card said something to its launcher: a
 	// structured report, or a peer message to it. See
 	// docs/runtime/a2a-reliability-design.md.

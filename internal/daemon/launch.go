@@ -152,6 +152,9 @@ type LaunchRequest struct {
 	// in that tagged form, so it can never name a card on this room. See
 	// docs/fabric/cross-room-say-design.md.
 	SpawnedByID string `json:"spawned_by_id,omitempty"`
+	// SpawnedByDir is where that launcher works, read by the hub from its card. Used only to ask git whether it
+	// shares a repository with this launch, so a path that is not on this machine means nothing.
+	SpawnedByDir string `json:"spawned_by_dir,omitempty"`
 	// Lean starts a claude session with only what a worker needs, and MCP names
 	// the servers from the runner's MCP config it keeps beside atrium-control.
 	// Recorded on the card as tags, so a reopen starts it lean again. See lean.go.
@@ -958,7 +961,7 @@ func (d *Daemon) launchLocked(req LaunchRequest) (*store.Task, error) {
 			wanted = briefPrompt(wanted)
 			if !outside {
 				vctx, vcancel := context.WithTimeout(context.Background(), gitsync.CommandBound)
-				if l := d.visibleLauncher(vctx, task, req.SpawnedByID, req.SpawnedBy, cwd); l != nil {
+				if l := d.visibleLauncher(vctx, task, req.SpawnedByID, req.SpawnedBy, req.SpawnedByDir, cwd); l != nil {
 					wanted = withCommitVisible(wanted, commitVisibleLine(l.WireName))
 				}
 				vcancel()
@@ -1370,6 +1373,9 @@ func (d *Daemon) launchLocked(req LaunchRequest) (*store.Task, error) {
 			}
 		}
 		if err := d.st.SetLineage(created.ID, by, parentID); err != nil {
+			return nil, err
+		}
+		if err := d.st.SetSpawnedByDir(created.ID, req.SpawnedByDir); err != nil {
 			return nil, err
 		}
 	}

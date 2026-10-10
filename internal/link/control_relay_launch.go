@@ -48,10 +48,11 @@ func (c *controlMCP) launchAcross(ctx context.Context, from string, req RelayReq
 	// `myroom~id`, so the worker's reports and notices come back across to this card. The
 	// room comes from the connection, never from the request, so a room cannot launch as
 	// another room's card.
-	spawnedBy, spawnedByID := strings.TrimSpace(req.From), ""
+	spawnedBy, spawnedByID, spawnedByDir := strings.TrimSpace(req.From), "", ""
 	if spawnedBy != "" {
 		if id, _, err := c.resolvePeer(ctx, from, spawnedBy); err == nil {
 			spawnedByID = tagFor(from, id)
+			spawnedByDir = c.launcherDir(ctx, from, id)
 		}
 		spawnedBy += "@" + from
 	}
@@ -60,7 +61,7 @@ func (c *controlMCP) launchAcross(ctx context.Context, from string, req RelayReq
 		Runner: spec.Runner, Tags: spec.Tags, Model: spec.Model, Effort: spec.Effort, Args: spec.Args,
 		Env: spec.Env, LeanAgents: spec.LeanAgents, LeanSkills: spec.LeanSkills, Lifetime: spec.Lifetime, Room: target,
 	}
-	out, err := c.launchOnRoom(ctx, in, harness, target, from, spawnedBy, spawnedByID)
+	out, err := c.launchOnRoom(ctx, in, harness, target, from, spawnedBy, spawnedByID, spawnedByDir)
 	c.auditLaunchAcross(target, from, req.From, harness, out, err)
 	if err != nil {
 		return launchRefusal(err)

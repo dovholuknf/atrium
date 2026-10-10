@@ -49,17 +49,17 @@ func visibleFixture(t *testing.T, d *Daemon) (launcher, worker, stranger *store.
 func TestTheLaunchTextSaysCommitsAreVisibleToALauncherOnTheSameRepository(t *testing.T) {
 	d := testDaemon(t)
 	launcher, worker, stranger, dir := visibleFixture(t, d)
-	l := d.visibleLauncher(t.Context(), worker, "", launcher.WireName, dir)
+	l := d.visibleLauncher(t.Context(), worker, "", launcher.WireName, "", dir)
 	if l == nil || l.ID != launcher.ID {
 		t.Fatalf("the launcher was not found as sharing the repository: %v", l)
 	}
-	if l := d.visibleLauncher(t.Context(), worker, launcher.ID, "", dir); l == nil {
+	if l := d.visibleLauncher(t.Context(), worker, launcher.ID, "", "", dir); l == nil {
 		t.Fatal("not found by card id")
 	}
-	if l := d.visibleLauncher(t.Context(), worker, "", stranger.WireName, dir); l != nil {
+	if l := d.visibleLauncher(t.Context(), worker, "", stranger.WireName, "", dir); l != nil {
 		t.Fatalf("a launcher on another repository was said to see the commit: %v", l.WireName)
 	}
-	if l := d.visibleLauncher(t.Context(), worker, "", "nobody", dir); l != nil {
+	if l := d.visibleLauncher(t.Context(), worker, "", "nobody", "", dir); l != nil {
 		t.Fatal("an unknown launcher was said to see the commit")
 	}
 	text := withCommitVisible(briefPrompt("do it"), commitVisibleLine(launcher.WireName))
@@ -109,4 +109,38 @@ func TestGitPushIsASuccessWhenTheHubRemoteIsAnotherRoomsAndTheLauncherSharesTheR
 		t.Fatalf("report %q", rep)
 	}
 	_ = dir
+}
+
+func TestALauncherOnAnotherRoomIsFoundByItsDirectory(t *testing.T) {
+	d := testDaemon(t)
+	launcher, worker, stranger, dir := visibleFixture(t, d)
+	// not in this store: the launcher's card lives on another room, so only its directory crosses
+	l := d.visibleLauncher(t.Context(), worker, "claude-sg4~abc", "boss@sg4-control", launcher.Worktree, dir)
+	if l == nil || l.WireName != "boss@sg4-control" {
+		t.Fatalf("a launcher on another room in the same repository was not found: %v", l)
+	}
+	if l := d.visibleLauncher(t.Context(), worker, "claude-sg4~abc", "boss@sg4-control", stranger.Worktree, dir); l != nil {
+		t.Fatalf("a launcher in another repository was said to see the commit: %v", l.WireName)
+	}
+	if l := d.visibleLauncher(t.Context(), worker, "", "boss@sg4-control", "", dir); l != nil {
+		t.Fatal("no directory was still said to see the commit")
+	}
+	if l := d.visibleLauncher(t.Context(), worker, "", "boss@sg4-control", filepath.Join(dir, "missing"), dir); l != nil {
+		t.Fatal("a directory that is not there was said to see the commit")
+	}
+	if l := d.visibleLauncher(t.Context(), worker, "", "ghost", launcher.Worktree, dir); l != nil {
+		t.Fatal("a name with no room was trusted for its directory")
+	}
+}
+
+func TestTheCardKeepsALauncherDirectoryFromAnotherRoom(t *testing.T) {
+	d := testDaemon(t)
+	_, worker, _, _ := visibleFixture(t, d)
+	if err := d.st.SetSpawnedByDir(worker.ID, "  /srv/work/y "); err != nil {
+		t.Fatal(err)
+	}
+	got, err := d.st.Get(worker.ID)
+	if err != nil || got.SpawnedByDir != "/srv/work/y" {
+		t.Fatalf("not kept: %v %q", err, got.SpawnedByDir)
+	}
 }

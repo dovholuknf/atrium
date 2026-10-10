@@ -265,7 +265,7 @@ func (d *Daemon) GitPush(taskID, branch string) (any, error) {
 		if by == "" {
 			by = d.st.ReportTo(t.ID)
 		}
-		if l := d.visibleLauncher(ctx, t, t.SpawnedByID, by, dir); l != nil {
+		if l := d.visibleLauncher(ctx, t, t.SpawnedByID, by, t.SpawnedByDir, dir); l != nil {
 			msg := "nothing to push: " + l.WireName + " sees this commit already"
 			return map[string]any{"card": t.ID, "branch": strings.TrimSpace(branch), "report": msg}, nil
 		}
