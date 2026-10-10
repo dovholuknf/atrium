@@ -280,6 +280,109 @@ function peekDocs(box, id) {
   window.mDocs.paintCard(b, id);
 }
 
+// CHATTER: what this card said to other sessions and what they said to it, newest first, twenty to a page. One read of
+// GET /v1/tasks/{id}/says when the details open, so nothing polls. A card with no says draws no section at all.
+// The other party links to its card when the board knows it. A row opens to the full text, which the daemon keeps
+// up to its own bound (store.SayTextLen) and a say from before it was kept shows its preview.
+function peekChatterLoad(id, before) {
+  return api(`/v1/tasks/${encodeURIComponent(id)}/says` + (before ? `?before=${encodeURIComponent(before)}` : ""))
+    .catch(() => null);
+}
+
+function peekChatterWho(s, out) {
+  const wire = out ? (s.to || s.to_input) : s.from;
+  const other = out ? s.to_task : s.from_task;
+  const all = typeof lastTasks !== "undefined" ? lastTasks : [];
+  const card = other && all.find(t => bareId(t.id) === other);
+  return { wire: wire || "unknown", card };
+}
+
+function peekChatterRow(id, s) {
+  const out = s.from_task === bareId(id);
+  const who = peekChatterWho(s, out);
+  const row = document.createElement("div");
+  row.className = "chat-row " + (out ? "out" : "in");
+  const secs = (Date.now() - Date.parse(s.sent_at)) / 1000;
+  const when = isNaN(secs) ? "" : (typeof ago === "function" ? ago(secs) : Math.round(secs) + "s") + " ago";
+  const state = s.state + (s.state === "delivered" && s.channel ? " by " + s.channel : "");
+  const head = document.createElement("div");
+  head.className = "chat-head";
+  const dir = document.createElement("span");
+  dir.className = "chat-dir";
+  dir.textContent = out ? "to" : "from";
+  head.appendChild(dir);
+  let name;
+  if (who.card) {
+    name = document.createElement("button");
+    name.type = "button";
+    name.className = "chat-who link";
+    name.dataset.tip = "open its card";
+    name.onclick = e => { e.stopPropagation(); closePeek(); who.card.supervised ? attachTask(who.card.id) : openTask(who.card.id); };
+  } else {
+    name = document.createElement("span");
+    name.className = "chat-who";
+  }
+  name.textContent = who.wire;
+  head.appendChild(name);
+  const meta = document.createElement("span");
+  meta.className = "chat-meta";
+  meta.textContent = [when, state].filter(Boolean).join(", ");
+  head.appendChild(meta);
+  const body = document.createElement("div");
+  body.className = "chat-text";
+  body.hidden = true;
+  const full = s.text || s.preview || "";
+  body.textContent = full + (s.chars > full.length && s.text ? `\n[cut: ${full.length} of ${s.chars} characters kept]` : "");
+  const toggle = document.createElement("button");
+  toggle.type = "button";
+  toggle.className = "chat-toggle";
+  toggle.textContent = s.preview || "(empty)";
+  toggle.setAttribute("aria-expanded", "false");
+  toggle.onclick = () => {
+    body.hidden = !body.hidden;
+    toggle.classList.toggle("open", !body.hidden);
+    toggle.setAttribute("aria-expanded", String(!body.hidden));
+  };
+  row.append(head, toggle, body);
+  return row;
+}
+
+// `first` is the page read when the fill began. A repaint of the same box reuses it rather than asking again.
+function peekChatter(box, id, first) {
+  const sec = document.createElement("div");
+  sec.className = "peek-sec chatter";
+  sec.hidden = true;
+  box.appendChild(sec);
+  const paint = (page, replace) => {
+    if (!page || !page.says) return;
+    if (replace) sec.textContent = "";
+    if (!sec.querySelector(".chat-title")) {
+      const t = document.createElement("div");
+      t.className = "chat-title";
+      t.textContent = "chatter";
+      sec.appendChild(t);
+    }
+    sec.querySelector(".chat-more")?.remove();
+    for (const s of page.says) sec.appendChild(peekChatterRow(id, s));
+    sec.hidden = !sec.querySelector(".chat-row");
+    if (page.more && page.says.length) {
+      const more = document.createElement("button");
+      more.type = "button";
+      more.className = "chat-more";
+      more.textContent = "more";
+      more.onclick = async () => {
+        more.disabled = true;
+        const next = await peekChatterLoad(id, page.says[page.says.length - 1].id);
+        if (!sec.isConnected) return;
+        if (!next) { more.disabled = false; return; }
+        paint(next, false);
+      };
+      sec.appendChild(more);
+    }
+  };
+  first.then(page => { if (sec.isConnected) paint(page, true); });
+}
+
 // The recap's tail behind a click: shown only where the text runs past its four lines.
 function peekRecap(box) {
   const text = box.querySelector(".peek-rtext"), more = box.querySelector(".peek-more");
@@ -337,8 +440,10 @@ async function peekSay(id) {
 // the read answers. `still` says whether the answer is still wanted.
 async function peekFill(box, id, still) {
   const t = peekCard(id);
+  const chat = peekChatterLoad(id);
   box.innerHTML = peekBody(t, null);
   peekDocs(box, id);
+  peekChatter(box, id, chat);
   peekActions(box, id);
   peekRecap(box);
   box.classList.toggle("loading", peekReadable(t));
@@ -353,6 +458,7 @@ async function peekFill(box, id, still) {
   box.classList.remove("loading");
   box.innerHTML = peekBody(peekCard(id) || t, v);
   peekDocs(box, id);
+  peekChatter(box, id, chat);
   peekActions(box, id);
   peekRecap(box);
 }

@@ -1696,6 +1696,103 @@ async function detailsSideBySideSection(browser, base) {
   }
 }
 
+// The details popover's chatter: the says to and from a card, newest first, 20 to a page. A row shows the other party,
+// when and the delivery state, links to the other party's card when the board has it, and opens to the full text. A
+// "more" pages back by the last id read. The endpoint is answered here, so the test needs no live says.
+// CHATTER_SHOTS names a directory for a picture.
+async function chatterSection(browser, base) {
+  const ctx = await browser.newContext({ viewport: { width: 1400, height: 1000 } });
+  const dp = await ctx.newPage();
+  const errors = [];
+  dp.on("pageerror", e => errors.push(String(e)));
+  const asked = [];
+  const now = Date.now();
+  const all = [];
+  for (let i = 0; i < 25; i++) {
+    const out = i % 3 !== 0;
+    all.push({ id: "say" + String(100 - i), from_task: out ? "me-1" : (i === 3 ? "gone-9" : "other-2"), from: out ? "me" : "other",
+      to_task: out ? (i === 1 ? "gone-9" : "other-2") : "me-1", to: out ? (i === 1 ? "ghost" : "other") : "me", to_input: "other",
+      sent_at: new Date(now - i * 7 * 60000).toISOString(), state: i === 2 ? "queued" : "delivered", channel: i === 2 ? "" : "terminal",
+      preview: "say number " + i + " about the work", chars: i === 4 ? 20000 : 40,
+      text: i === 4 ? "x".repeat(16000) : "say number " + i + " about the work\nsecond line of " + i });
+  }
+  await ctx.route("**/v1/tasks/*/says*", route => {
+    const u = new URL(route.request().url());
+    asked.push(u.search);
+    const before = u.searchParams.get("before");
+    const at = before ? all.findIndex(s => s.id === before) + 1 : 0;
+    const page = all.slice(at, at + 20);
+    route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ says: page, more: at + 20 < all.length }) });
+  });
+  await dp.addInitScript(() => {
+    localStorage.setItem("atrium.skipconfirm", JSON.stringify({ "width-floor": true }));
+  });
+  try {
+    await dp.goto(base, { waitUntil: "domcontentloaded" });
+    await dp.waitForTimeout(900);
+    await dp.click('.tab[data-view="terms"]');
+    await dp.waitForSelector("#t-expando", { state: "attached", timeout: slow(15000) });
+    await dp.evaluate(() => {
+      for (let n = document.getElementById("t-expando"); n; n = n.parentElement) n.hidden = false;
+      lastTasks = lastTasks.concat([{ id: "me-1", title: "me", wire_name: "me", status: "running" },
+        { id: "other-2", title: "other", wire_name: "other", status: "running" }]);
+      document.getElementById("t-drawer").classList.add("open");
+      termDrawerOpen = true;
+      peekFill(document.getElementById("t-drawer-body"), "me-1", () => true);
+    });
+    await dp.waitForSelector("#t-drawer-body .chat-row", { timeout: slow(8000) });
+    let rows = await dp.$$eval("#t-drawer-body .chat-row", r => r.length);
+    if (rows !== 20) fail("the first page of chatter has " + rows + " rows, not 20.");
+    const first = await dp.$eval("#t-drawer-body .chat-row", r => ({ dir: r.querySelector(".chat-dir").textContent,
+      who: r.querySelector(".chat-who").textContent, meta: r.querySelector(".chat-meta").textContent, link: !!r.querySelector("button.chat-who") }));
+    if (first.dir !== "from" || first.who !== "other" || !first.link || !/ago, delivered by terminal/.test(first.meta)) {
+      fail("the newest chatter row reads wrong: " + JSON.stringify(first));
+    }
+    // A card the board does not know is a name and no link.
+    const nth = (i, f) => dp.evaluate(([i, f]) => (new Function("r", "return " + f))(document.querySelectorAll("#t-drawer-body .chat-row")[i]), [i, f]);
+    const unknown = await nth(1, "r.querySelector('.chat-who').tagName + ' ' + r.querySelector('.chat-who').textContent");
+    if (unknown !== "SPAN ghost") fail("an unknown card's name is drawn as " + unknown + ", not plain text.");
+    if (!(await nth(2, "/queued/.test(r.querySelector('.chat-meta').textContent)"))) fail("a queued say does not say queued.");
+    // The text is hidden until the row is opened.
+    if (!(await dp.$eval("#t-drawer-body .chat-text", e => e.hidden))) fail("a row's full text is showing before it is opened.");
+    await dp.click("#t-drawer-body .chat-row .chat-toggle");
+    const shown = await dp.$eval("#t-drawer-body .chat-text", e => !e.hidden && e.textContent);
+    if (!shown || !/second line of 0/.test(shown)) fail("opening a row did not show its full text: " + shown);
+    // The cut text says how much was kept.
+    const cut = await nth(4, "r.querySelector('.chat-text').textContent");
+    if (!/\[cut: 16000 of 20000 characters kept\]/.test(cut)) fail("a cut say does not say it was cut: " + cut.slice(-60));
+    if (process.env.CHATTER_SHOTS) {
+      await dp.screenshot({ path: require("path").join(process.env.CHATTER_SHOTS, "say-log-view-after.png") });
+      // What it looked like before: the same details with no chatter section.
+      await dp.evaluate(() => {
+        window.__chat = peekChatter; peekChatter = () => {};
+        peekFill(document.getElementById("t-drawer-body"), "me-1", () => true);
+      });
+      await dp.waitForTimeout(600);
+      await dp.screenshot({ path: require("path").join(process.env.CHATTER_SHOTS, "say-log-view-before.png") });
+      await dp.evaluate(() => {
+        peekChatter = window.__chat;
+        peekFill(document.getElementById("t-drawer-body"), "me-1", () => true);
+      });
+      await dp.waitForSelector("#t-drawer-body .chat-row", { timeout: slow(8000) });
+    }
+    // More pages back from the last id read, and goes once there is no more.
+    await dp.click("#t-drawer-body .chat-more");
+    await dp.waitForFunction(() => document.querySelectorAll("#t-drawer-body .chat-row").length === 25, null, { timeout: slow(8000) });
+    if (!asked.some(q => q === "?before=say81")) fail("more did not ask for the page before the last row: " + JSON.stringify(asked));
+    if (await dp.$("#t-drawer-body .chat-more")) fail("more is still offered after the last page.");
+    // A card with no says draws no section.
+    await ctx.unroute("**/v1/tasks/*/says*");
+    await ctx.route("**/v1/tasks/*/says*", route => route.fulfill({ status: 200, contentType: "application/json", body: '{"says":[],"more":false}' }));
+    await dp.evaluate(() => peekFill(document.getElementById("t-drawer-body"), "me-1", () => true));
+    await dp.waitForTimeout(600);
+    if (!(await dp.$eval("#t-drawer-body .peek-sec.chatter", e => e.hidden))) fail("an empty chatter section is showing.");
+    if (errors.length) fail("the chatter page threw uncaught errors: " + errors.join(" | "));
+  } finally {
+    await ctx.close();
+  }
+}
+
 // A group made with `+ new group` on the terminals list is removed from its
 // heading's right-click menu. Its cards go back to where they sit without it,
 // with their tags kept, and nothing is closed: no card is written to at all.
@@ -20361,7 +20458,7 @@ async function bootCleanSection(browser, base) {
       try {
         await p.goto(base + at, { waitUntil: "load" });
         await p.waitForTimeout(1500);
-        const missing = await p.evaluate(() => ["alerting", "swReg", "cardUrlIsCard", "growlDraw", "termOnly"]
+        const missing = await p.evaluate(() => ["alerting", "swReg", "cardUrlIsCard", "growlDraw", "termOnly", "peekChatter"]
           .filter(n => { try { return typeof eval(n) === "undefined"; } catch (e) { return true; } }));
         if (missing.length) fail(tag + "booted without " + missing.join(", "));
       } finally {
@@ -27084,7 +27181,7 @@ async function main() {
   // HEADLESS_ONLY=termWear,bridge, or `node scripts/test-board-headless.js termWear bridge`, runs just those sections, for working on one.
   // An unknown name exits 2 and runs nothing.
   const ONLY = process.env.HEADLESS_ONLY || process.argv.slice(2).join(",");
-  if (ONLY) {    const only = { closeOneDialog: closeOneDialogSection, boardDocs: boardDocsSection, phoneBoardCompact: phoneBoardCompactSection, termWear: termWearSection, bridge: bridgeSection, detailsHover: detailsHoverSection, detailsSide: detailsSideBySideSection, settingsOnce: settingsOnceSection,
+  if (ONLY) {    const only = { closeOneDialog: closeOneDialogSection, boardDocs: boardDocsSection, phoneBoardCompact: phoneBoardCompactSection, termWear: termWearSection, bridge: bridgeSection, detailsHover: detailsHoverSection, detailsSide: detailsSideBySideSection, chatter: chatterSection, settingsOnce: settingsOnceSection,
       groupRemove: groupRemoveSection, worn: wornSection, restartGate: restartGateSection, restartStays: restartStaysSection, atriumDown: atriumDownSection,
       toastStays: toastStaysSection, groupColor: groupColorSection,
       groupDrag: groupDragSection, tooltip: tooltipSection, linkTip: linkTipSection, fileOpenOutside: fileOpenOutsideSection, readTabSize: readTabSizeSection,popoutTagFlip: popoutTagFlipSection, prefsEverywhere: prefsEverywhereSection, mPrefsEverywhere: (b) => mPrefsEverywhereSection(b), idleRate: idleRateSection, foldStill: foldStillSection,
@@ -29033,6 +29130,7 @@ async function main() {
     await unit("bridge", () => bridgeSection(browser, base));
     await unit("detailsHover", () => detailsHoverSection(browser, base));
     await unit("detailsSide", () => detailsSideBySideSection(browser, base));
+    await unit("chatter", () => chatterSection(browser, base));
     // ── a load reads settings once ──────────────────────────────────────────
     await unit("settingsOnce", () => settingsOnceSection(browser, base));
     // ── the website skin's effects stay inside the website skin ─────────────

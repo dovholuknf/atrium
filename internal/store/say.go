@@ -10,8 +10,8 @@ import (
 //
 // One row per say from a session to a session. The operator's own channel is
 // not recorded: the lifecycle is about one session speaking to another. The
-// text is NOT copied, only a preview, because a queued say's full text is in
-// `message` and a typed one's is in the `prompted` event.
+// row keeps the text, cut at SayTextLen bytes, and a preview of it. `chars` is
+// the length before the cut.
 
 // Say states. See the design for what each means.
 const (
@@ -35,6 +35,10 @@ const (
 	sayPreviewLen = 200
 	sayNoteLen    = 300
 
+	// SayTextLen bounds the text a row keeps, in bytes, cut on a character boundary. With SayKeepMax rows that is at
+	// most 32 MB on disk.
+	SayTextLen = 16000
+
 	// SayKeep is how long a row is kept, SayKeepMax how many, and SayOwedFor
 	// how long a reply asked for stays owed before it lapses.
 	SayKeep    = 30 * 24 * time.Hour
@@ -54,6 +58,7 @@ type Say struct {
 	Room        string `json:"room,omitempty"`
 	Door        string `json:"door"`
 	Preview     string `json:"preview"`
+	Text        string `json:"text,omitempty"`
 	Chars       int    `json:"chars"`
 	When        string `json:"when,omitempty"`
 	State       string `json:"state"`
@@ -76,7 +81,7 @@ func (s Say) Open() bool { return s.ReplyWant && s.RepliedAt == "" && !s.Lapsed 
 
 const sayCols = `id, from_task, from_wire, to_task, to_wire, to_input, via, room, door, preview, chars,
 	when_word, state, channel, message_id, relay_id, note, reply_wanted, replied_at, lapsed, reset_at,
-	reset_kind, sent_at, queued_at, delivered_at`
+	reset_kind, sent_at, queued_at, delivered_at, text`
 
 func scanSay(r interface{ Scan(...any) error }) (Say, error) {
 	var (
@@ -85,7 +90,7 @@ func scanSay(r interface{ Scan(...any) error }) (Say, error) {
 	)
 	err := r.Scan(&v.ID, &v.FromTask, &v.FromWire, &v.ToTask, &v.ToWire, &v.ToInput, &v.Via, &v.Room, &v.Door,
 		&v.Preview, &v.Chars, &v.When, &v.State, &v.Channel, &v.MessageID, &v.RelayID, &v.Note, &rw,
-		&v.RepliedAt, &lp, &v.ResetAt, &v.ResetKind, &v.SentAt, &v.QueuedAt, &v.DeliveredAt)
+		&v.RepliedAt, &lp, &v.ResetAt, &v.ResetKind, &v.SentAt, &v.QueuedAt, &v.DeliveredAt, &v.Text)
 	v.ReplyWant, v.Lapsed = rw != 0, lp != 0
 	return v, err
 }
@@ -97,6 +102,7 @@ func (s *Store) RecordSay(v Say, text string) (string, error) {
 	v.Chars = len([]rune(text))
 	v.Preview = cutRunes(strings.TrimSpace(text), sayPreviewLen)
 	v.Note = cutRunes(v.Note, sayNoteLen)
+	v.Text = cutRunes(text, SayTextLen)
 	if v.SentAt == "" {
 		v.SentAt = ts(now())
 	}
@@ -111,10 +117,10 @@ func (s *Store) RecordSay(v Say, text string) (string, error) {
 		rw = 1
 	}
 	err := s.guard(func() error {
-		_, err := s.db.Exec(`INSERT INTO say (`+sayCols+`) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,0,?,?,?,?,?)`,
+		_, err := s.db.Exec(`INSERT INTO say (`+sayCols+`) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,0,?,?,?,?,?,?)`,
 			v.ID, v.FromTask, v.FromWire, v.ToTask, v.ToWire, v.ToInput, v.Via, v.Room, v.Door, v.Preview,
 			v.Chars, v.When, v.State, v.Channel, v.MessageID, v.RelayID, v.Note, rw, v.RepliedAt,
-			v.ResetAt, v.ResetKind, v.SentAt, v.QueuedAt, v.DeliveredAt)
+			v.ResetAt, v.ResetKind, v.SentAt, v.QueuedAt, v.DeliveredAt, v.Text)
 		if err != nil || v.MessageID == "" {
 			return err
 		}
@@ -203,14 +209,32 @@ func (s *Store) NoteSayEscalated(messageID, note string) error {
 
 // SaysFor lists the says a card sent or received, newest first.
 func (s *Store) SaysFor(taskID string, limit int) ([]Say, error) {
+	return s.SaysBefore(taskID, "", limit)
+}
+
+// SaysBefore is SaysFor from a cursor: `before` is the id of the last row of the page already read, and the page
+// after it comes back. A cursor naming no row (swept meanwhile) returns nothing, which ends the paging.
+func (s *Store) SaysBefore(taskID, before string, limit int) ([]Say, error) {
 	if limit <= 0 || limit > 100 {
 		limit = 20
 	}
 	var out []Say
 	err := s.guard(func() error {
 		out = nil
-		rows, err := s.db.Query(`SELECT `+sayCols+` FROM say WHERE to_task = ? OR from_task = ?
-			ORDER BY sent_at DESC, id DESC LIMIT ?`, taskID, taskID, limit)
+		q := `SELECT ` + sayCols + ` FROM say WHERE (to_task = ? OR from_task = ?)`
+		args := []any{taskID, taskID}
+		if before != "" {
+			var at string
+			if err := s.db.QueryRow(`SELECT sent_at FROM say WHERE id = ?`, before).Scan(&at); err != nil {
+				if err == sql.ErrNoRows {
+					return nil
+				}
+				return err
+			}
+			q += ` AND (sent_at < ? OR (sent_at = ? AND id < ?))`
+			args = append(args, at, at, before)
+		}
+		rows, err := s.db.Query(q+` ORDER BY sent_at DESC, id DESC LIMIT ?`, append(args, limit)...)
 		if err != nil {
 			return err
 		}

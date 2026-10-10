@@ -2166,6 +2166,14 @@ var migrations = []struct {
 			`ALTER TABLE message ADD COLUMN cause TEXT NOT NULL DEFAULT ''`,
 		},
 	},
+	{
+		// A SAY KEEPS ITS TEXT, cut at SayTextLen bytes, for the chatter list in a card's details. A row from before
+		// this has none and shows its preview. `chars` still says how long the whole say was.
+		name: "0093_say_text",
+		stmts: []string{
+			`ALTER TABLE say ADD COLUMN text TEXT NOT NULL DEFAULT ''`,
+		},
+	},
 }
 
 // migrate applies any migration not already recorded. This runs before the
