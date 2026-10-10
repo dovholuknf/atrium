@@ -126,6 +126,13 @@ if [ "$dumps" != "0" ]; then
   echo "$dumps goroutine dump(s) in $artefacts/goroutines, uploaded with the run"
 fi
 
+step "test time guard"
+# A package over 60s or a test over 5s fails unless scripts/test-time-allow.txt names it. Reads the stream kept above.
+# The self-test and the parser's Go tests run first, so a broken guard is not taken for a fast suite.
+check "time guard self-test" bash scripts/test-time-guard-test.sh
+check "time guard parser" go test scripts/ci-report.go scripts/ci-report_test.go
+check "test time guard" bash scripts/test-time-guard.sh "$artefacts/go-test.json"
+
 step "govulncheck"
 # A vulnerability in the standard library or a dependency is found by this and
 # not by an audit. Pinned so a new govulncheck cannot redden a build by itself,
@@ -181,7 +188,8 @@ for f in packaging/postinstall.sh packaging/preremove.sh \
          scripts/package-macos.sh \
          scripts/release.sh scripts/publish-release.sh \
          scripts/cut-release.sh scripts/check-release.sh \
-         scripts/ci-linux.sh scripts/test.sh; do
+         scripts/ci-linux.sh scripts/test.sh \
+         scripts/test-time-guard.sh scripts/test-time-guard-test.sh; do
   if ! bash -n "$f"; then
     echo "FAILED: $f does not parse" >&2
     fail=1

@@ -1,0 +1,7 @@
+{"Time":"2026-10-10T10:00:00Z","Action":"run","Package":"example.com/atrium/internal/quick","Test":"TestA"}
+{"Time":"2026-10-10T10:00:01Z","Action":"pass","Package":"example.com/atrium/internal/quick","Test":"TestA","Elapsed":1.2}
+{"Time":"2026-10-10T10:00:01Z","Action":"pass","Package":"example.com/atrium/internal/quick","Test":"TestB/sub","Elapsed":4.9}
+{"Time":"2026-10-10T10:00:02Z","Action":"pass","Package":"example.com/atrium/internal/quick","Elapsed":59.9}
+{"Time":"2026-10-10T10:00:03Z","Action":"pass","Package":"example.com/atrium/internal/slowok","Test":"TestSlowButListed","Elapsed":9}
+{"Time":"2026-10-10T10:00:03Z","Action":"pass","Package":"example.com/atrium/internal/slowok","Test":"TestSlowButListed/case","Elapsed":8}
+{"Time":"2026-10-10T10:00:04Z","Action":"pass","Package":"example.com/atrium/internal/slowok","Elapsed":100}

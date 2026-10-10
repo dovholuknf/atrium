@@ -19,6 +19,10 @@
 // time. scripts/ci.sh also tees the raw stream there as go-test.json.
 //
 // Exit status 1 when anything failed, so the caller does not have to parse.
+//
+// With -guard-only it prints nothing of the above. It reads the same stream, and
+// says only which packages and tests ran longer than the limits and are not on
+// the allowlist. scripts/test-time-guard.sh runs it that way. See guard below.
 package main
 
 import (
@@ -26,9 +30,11 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -65,7 +71,32 @@ type timing struct {
 
 func main() {
 	dir := flag.String("dir", "build.claude/ci", "where the files go")
+	guardOnly := flag.Bool("guard-only", false, "print only the time guard's verdict")
+	allowPath := flag.String("allow", "scripts/test-time-allow.txt", "the time guard's allowlist")
+	pkgLimit := flag.Float64("pkg-limit", defaultPkgLimit, "seconds a package may take before it needs an allowlist line")
+	testLimit := flag.Float64("test-limit", defaultTestLimit, "seconds a test may take before it needs an allowlist line")
 	flag.Parse()
+	var allow []allowEntry
+	realOut := os.Stdout
+	if *guardOnly {
+		var err error
+		if allow, err = loadAllow(*allowPath); err != nil {
+			fmt.Fprintln(os.Stderr, "ci-report:", err)
+			os.Exit(2)
+		}
+		// The loop below prints as it reads. Here that goes nowhere, and what it writes to
+		// -dir goes to a folder that is removed after.
+		if devnull, err := os.OpenFile(os.DevNull, os.O_WRONLY, 0); err == nil {
+			os.Stdout = devnull
+		}
+		tmp, err := os.MkdirTemp("", "ci-report-guard")
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "ci-report:", err)
+			os.Exit(2)
+		}
+		defer os.RemoveAll(tmp)
+		*dir = tmp
+	}
 	if err := os.MkdirAll(*dir, 0o755); err != nil {
 		fmt.Fprintln(os.Stderr, "ci-report:", err)
 	}
@@ -185,6 +216,22 @@ func main() {
 		fmt.Println("ci-report: reading go test's output:", err)
 		bad = true
 	}
+	if *guardOnly {
+		os.Stdout = realOut
+		over := overLimit(times, pkgTimes, allow, *pkgLimit, *testLimit)
+		for _, m := range over {
+			fmt.Println(m)
+		}
+		if len(over) > 0 {
+			fmt.Printf("%d over the time limits. see scripts/test-time-allow.txt\n", len(over))
+			_ = os.RemoveAll(*dir)
+			os.Exit(1)
+		}
+		fmt.Printf("ok: no package over %.0fs and no test over %.0fs that is not on the allowlist (%d lines)\n",
+			*pkgLimit, *testLimit, len(allow))
+		_ = os.RemoveAll(*dir)
+		return
+	}
 	for name, p := range pkgs {
 		if !p.finished {
 			bad = true
@@ -252,4 +299,117 @@ func writeTimings(path string, times []timing) {
 	for _, t := range times {
 		fmt.Fprintf(w, "%.3f\t%s\t%s\n", t.secs, t.pkg, t.test)
 	}
+}
+
+// THE TIME GUARD. A suite that has been made fast stays fast only if something
+// fails when it is not. A package past defaultPkgLimit seconds, or one test past
+// defaultTestLimit, fails the run unless scripts/test-time-allow.txt has a line
+// for it. A line carries a ceiling in seconds, which replaces the default for
+// that package or test, and a reason. The ceilings are a ratchet: set a little
+// over what the thing takes today, and lower when it is made faster.
+const (
+	defaultPkgLimit  = 60
+	defaultTestLimit = 5
+)
+
+// allowEntry is one line of the allowlist. test is empty for a package line, a
+// test name for Pkg.TestName, and "*" for every test of the package.
+type allowEntry struct {
+	pkg, test string
+	ceiling   float64
+	reason    string
+}
+
+func loadAllow(path string) ([]allowEntry, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	return parseAllow(f, path)
+}
+
+// parseAllow reads `<package or Pkg.TestName or Pkg.*> <seconds> <reason>`, one per line. Blank
+// lines and lines starting with # are skipped. A line with no ceiling or no reason is an error,
+// since a reason is the point of the file.
+func parseAllow(r io.Reader, name string) ([]allowEntry, error) {
+	var out []allowEntry
+	sc := bufio.NewScanner(r)
+	for n := 1; sc.Scan(); n++ {
+		line := strings.TrimSpace(sc.Text())
+		if line == "" || line[0] == '#' {
+			continue
+		}
+		fields := strings.Fields(line)
+		if len(fields) < 3 {
+			return nil, fmt.Errorf("%s:%d: want `<package or Pkg.TestName> <seconds> <reason>`, got %q", name, n, line)
+		}
+		secs, err := strconv.ParseFloat(fields[1], 64)
+		if err != nil || secs <= 0 {
+			return nil, fmt.Errorf("%s:%d: %q is not a ceiling in seconds", name, n, fields[1])
+		}
+		e := allowEntry{ceiling: secs, reason: strings.Join(fields[2:], " ")}
+		e.pkg = fields[0]
+		if i := strings.Index(fields[0], ".Test"); i >= 0 {
+			e.pkg, e.test = fields[0][:i], fields[0][i+1:]
+		} else if strings.HasSuffix(fields[0], ".*") {
+			e.pkg, e.test = strings.TrimSuffix(fields[0], ".*"), "*"
+		}
+		out = append(out, e)
+	}
+	return out, sc.Err()
+}
+
+// samePkg: go test names a package by its import path and the allowlist by the
+// end of it, so `internal/store` is github.com/.../internal/store and nothing else.
+func samePkg(importPath, entry string) bool {
+	return importPath == entry || strings.HasSuffix(importPath, "/"+entry)
+}
+
+// ceilingFor is the limit that applies, the allowlist's when it has a line.
+// A subtest answers to its own line and then to its parent's.
+func ceilingFor(allow []allowEntry, pkg, test string, def float64) (limit float64, listed bool) {
+	names := []string{test}
+	if i := strings.Index(test, "/"); i >= 0 {
+		names = append(names, test[:i])
+	}
+	for _, name := range append(names, "*") {
+		if test == "" && name != "" {
+			continue
+		}
+		for _, e := range allow {
+			if e.test == name && samePkg(pkg, e.pkg) {
+				return e.ceiling, true
+			}
+		}
+	}
+	return def, false
+}
+
+// overLimit says, one line each, what ran past its limit. Every line names the
+// package or test, its time, the limit, and what to do.
+func overLimit(tests, pkgs []timing, allow []allowEntry, pkgLimit, testLimit float64) []string {
+	var out []string
+	const fix = "make it faster, or add a line to scripts/test-time-allow.txt with a ceiling and the reason"
+	for _, p := range pkgs {
+		if limit, listed := ceilingFor(allow, p.pkg, "", pkgLimit); p.secs > limit {
+			out = append(out, fmt.Sprintf("SLOW PACKAGE %s took %.1fs, the limit is %.0fs%s: %s",
+				p.pkg, p.secs, limit, listedNote(listed), fix))
+		}
+	}
+	for _, t := range tests {
+		if limit, listed := ceilingFor(allow, t.pkg, t.test, testLimit); t.secs > limit {
+			out = append(out, fmt.Sprintf("SLOW TEST %s %s took %.2fs, the limit is %.0fs%s: %s",
+				t.pkg, t.test, t.secs, limit, listedNote(listed), fix))
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
+func listedNote(listed bool) string {
+	if listed {
+		return " (its allowlist ceiling)"
+	}
+	return ""
 }

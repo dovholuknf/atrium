@@ -1,0 +1,3 @@
+# the fixture's allowlist
+internal/slowok 120 a package that is slow on purpose
+internal/slowok.TestSlowButListed 10 a test that is slow on purpose
