@@ -22,7 +22,6 @@ import (
 	"fmt"
 	"path"
 	"regexp"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -107,6 +106,7 @@ type Checker struct {
 	MaxCommits int
 
 	mu     sync.Mutex
+	last   *memo
 	cache  map[string]commitInfo
 	covers map[string]coverResult
 }
@@ -250,23 +250,24 @@ func (c *Checker) Check(ctx context.Context, installed string) Report {
 	}
 	installed = strings.ToLower(strings.TrimSpace(installed))
 
-	tip, err := c.rev(ctx, "refs/heads/"+c.Branch)
+	tip, inst, err := c.revs(ctx, installed)
 	if err != nil {
-		return fail("could not read %s in %s: %v", c.Branch, c.Dir, err)
+		return fail("%v", err)
 	}
-	rep.Tip = tip
-	inst, err := c.rev(ctx, installed)
-	if err != nil {
-		return fail("the installed build %s is not in this checkout", short(installed))
-	}
-	rep.Installed = inst
-	if _, err := c.Git.Git(ctx, c.Dir, "merge-base", "--is-ancestor", inst, tip); err != nil {
-		return fail("the installed build %s is not an ancestor of %s", short(inst), c.Branch)
+	rep.Tip, rep.Installed = tip, inst
+
+	// The same tip against the same build is the same answer, so a pass that finds nothing moved runs one git.
+	if m, ok := c.memoFor(tip, inst); ok {
+		m.CheckedAt = rep.CheckedAt
+		return m
 	}
 
 	cands, err := c.candidates(ctx, inst, tip)
 	if err == nil {
 		err = ctx.Err() // a merge read that was cut off is skipped quietly, and the pass must not go on without it
+	}
+	if errors.Is(err, errNotAncestor) {
+		return fail("the installed build %s is not an ancestor of %s", short(inst), c.Branch)
 	}
 	if err != nil {
 		return fail("could not read the commits since %s: %v", short(inst), err)
@@ -284,10 +285,10 @@ func (c *Checker) Check(ctx context.Context, installed string) Report {
 	if len(need) == 0 {
 		rep.State = StateCurrent
 		rep.Line = fmt.Sprintf("nothing to deploy: no code has landed on %s since %s", c.Branch, short(inst))
-		return rep
+		return c.remember(rep, true)
 	}
 
-	verdicts, notes, err := c.verdicts(ctx)
+	verdicts, notes, pinned, err := c.verdicts(ctx)
 	rep.Notes = notes
 	if err != nil {
 		return fail("could not read the verdicts: %v", err)
@@ -316,11 +317,11 @@ func (c *Checker) Check(ctx context.Context, installed string) Report {
 	if len(rep.Blocking) > 0 {
 		rep.State = StateBlocked
 		rep.Line = blockedLine(rep)
-		return rep
+		return c.remember(rep, pinned)
 	}
 	rep.State, rep.Ready = StateReady, true
 	rep.Line = fmt.Sprintf("deploy ready: %s, %d commit%s, all verdicts in", short(tip), rep.Commits, plural(rep.Commits))
-	return rep
+	return c.remember(rep, pinned)
 }
 
 func blockedLine(r Report) string {
@@ -383,54 +384,52 @@ type candidate struct {
 // candidates are the commits in base..tip, oldest first: every non-merge commit, and a merge only when it carries a
 // change of its own (a conflict resolution, which --remerge-diff shows).
 func (c *Checker) candidates(ctx context.Context, base, tip string) ([]candidate, error) {
+	// ONE LOG NAMES THE RANGE, its parents and its subjects. The symmetric range marks a commit of the installed build
+	// that the tip lacks with `<`, which is the installed build not being an ancestor, so no separate ancestry check.
+	limit := c.maxCommits()
+	out, err := c.Git.Git(ctx, c.Dir, "log", "--reverse", "--left-right", fmt.Sprintf("--max-count=%d", limit+1),
+		"--format=%m%x1f%H%x1f%P%x1f%s", base+"..."+tip)
+	if err != nil {
+		return nil, err
+	}
+	type listed struct{ sha, subject string }
+	var all []listed
+	var nonMerge []string
+	merges := map[string]bool{}
+	for _, line := range strings.Split(out, "\n") {
+		f := strings.SplitN(strings.TrimSpace(line), "\x1f", 4)
+		if len(f) < 4 {
+			continue
+		}
+		if f[0] == "<" {
+			return nil, errNotAncestor
+		}
+		all = append(all, listed{f[1], f[3]})
+		if len(strings.Fields(f[2])) > 1 {
+			merges[f[1]] = true
+		} else {
+			nonMerge = append(nonMerge, f[1])
+		}
+	}
+	if len(all) > limit {
+		return nil, fmt.Errorf("more than the %d commits that are read", limit)
+	}
 	spec := base + ".." + tip
-	count, err := c.Git.Git(ctx, c.Dir, "rev-list", "--count", spec)
-	if err != nil {
-		return nil, err
-	}
-	if n, _ := strconv.Atoi(strings.TrimSpace(count)); n > c.maxCommits() {
-		return nil, fmt.Errorf("%d commits, more than the %d that are read", n, c.maxCommits())
-	}
-	if err := c.fillRange(ctx, spec); err != nil {
-		return nil, err
-	}
-	out, err := c.Git.Git(ctx, c.Dir, "log", "--reverse", "--format=%H%x1f%s", spec)
-	if err != nil {
-		return nil, err
-	}
-	merges, err := c.mergeSet(ctx, spec)
-	if err != nil {
+	if err := c.fillRangeOf(ctx, spec, nonMerge); err != nil {
 		return nil, err
 	}
 	if err := c.fillMerges(ctx, merges, spec); err != nil {
 		return nil, err
 	}
 	var res []candidate
-	for _, line := range strings.Split(out, "\n") {
-		sha, subj, ok := strings.Cut(strings.TrimSpace(line), "\x1f")
-		if !ok {
-			continue
-		}
-		info := c.info(sha)
+	for _, k := range all {
+		info := c.info(k.sha)
 		if len(info.paths) == 0 {
 			continue
 		}
-		res = append(res, candidate{sha: sha, subject: subj, commitInfo: info})
+		res = append(res, candidate{sha: k.sha, subject: k.subject, commitInfo: info})
 	}
 	return res, nil
-}
-
-func (c *Checker) mergeSet(ctx context.Context, spec string, extra ...string) (map[string]bool, error) {
-	args := append([]string{"rev-list", "--merges"}, extra...)
-	out, err := c.Git.Git(ctx, c.Dir, append(args, spec)...)
-	if err != nil {
-		return nil, err
-	}
-	set := map[string]bool{}
-	for _, l := range strings.Fields(out) {
-		set[l] = true
-	}
-	return set, nil
 }
 
 func (c *Checker) info(sha string) commitInfo {
@@ -462,19 +461,9 @@ func (c *Checker) maxCommits() int {
 	return DefaultMaxCommits
 }
 
-// fillRange caches the patch-id and the paths of every non-merge commit in a range, in two git calls. No renames, so
-// a move is a delete and an add in both the paths and the patch, whoever computes it. A range whose commits are all
-// cached costs one cheap call, which is what makes the second pass fast.
-func (c *Checker) fillRange(ctx context.Context, spec string, extra ...string) error {
-	limit := fmt.Sprintf("--max-count=%d", c.maxCommits())
-	listed, err := c.Git.Git(ctx, c.Dir, append(append([]string{"rev-list", "--no-merges", limit}, extra...), spec)...)
-	if err != nil {
-		return err
-	}
-	return c.fillRangeOf(ctx, spec, strings.Fields(listed), extra...)
-}
-
-// fillRangeOf is fillRange for a caller that already has the range's non-merge commits.
+// fillRangeOf caches the patch-id and the paths of every non-merge commit of a range, in two git calls plus the
+// patch-id. No renames, so a move is a delete and an add in both the paths and the patch. A range whose commits are all
+// cached costs nothing, which is what makes the second pass fast. The caller has the range's non-merge commits.
 func (c *Checker) fillRangeOf(ctx context.Context, spec string, nonMerge []string, extra ...string) error {
 	limit := fmt.Sprintf("--max-count=%d", c.maxCommits())
 	allKnown := true
@@ -487,37 +476,40 @@ func (c *Checker) fillRangeOf(ctx context.Context, spec string, nonMerge []strin
 	if allKnown {
 		return nil
 	}
-	base := append([]string{"log", "--no-merges", "--no-renames", limit}, extra...)
-	names, err := c.Git.Git(ctx, c.Dir, append(append([]string{}, base...), "--name-only", "--format=%x1e%H", spec)...)
+	// ONE LOG gives the paths (the raw lines) and the patch under them, and what patch-id reads is the same log
+	// without the raw lines.
+	args := append([]string{"log", "--no-merges", "--no-renames", limit}, extra...)
+	text, err := c.Git.Git(ctx, c.Dir, append(args, "--raw", "-p", "--format=%x1ecommit %H", spec)...)
 	if err != nil {
 		return err
 	}
 	paths := map[string][]string{}
 	var order []string
-	for _, chunk := range strings.Split(names, "\x1e") {
-		lines := strings.Split(strings.TrimSpace(chunk), "\n")
-		if len(lines) == 0 || lines[0] == "" {
+	var patchText strings.Builder
+	for _, chunk := range strings.Split(text, "\x1e") {
+		chunk = strings.TrimLeft(chunk, "\r\n")
+		if chunk == "" {
 			continue
 		}
-		sha := strings.TrimSpace(lines[0])
-		order = append(order, sha)
-		for _, l := range lines[1:] {
-			if l = strings.TrimSpace(l); l != "" {
-				paths[sha] = append(paths[sha], l)
+		var sha string
+		for _, l := range strings.Split(chunk, "\n") {
+			switch {
+			case strings.HasPrefix(l, "commit "):
+				sha = strings.TrimSpace(strings.TrimPrefix(l, "commit "))
+				order = append(order, sha)
+			case strings.HasPrefix(l, ":"):
+				if _, p, ok := strings.Cut(l, "\t"); ok && sha != "" {
+					paths[sha] = append(paths[sha], strings.TrimSpace(p))
+				}
+				continue // a raw line is for the paths, and patch-id is not given it
 			}
+			patchText.WriteString(l)
+			patchText.WriteByte('\n')
 		}
 	}
-	patches := map[string]string{}
-	if len(order) > 0 {
-		patchText, err := c.Git.Git(ctx, c.Dir, append(append([]string{}, base...), "-p", spec)...)
-		if err != nil {
-			return err
-		}
-		pids, err := c.patchIDs(ctx, patchText)
-		if err != nil {
-			return err
-		}
-		patches = pids
+	patches, err := c.patchIDs(ctx, patchText.String())
+	if err != nil {
+		return err
 	}
 	for _, sha := range order {
 		c.put(sha, commitInfo{patch: patches[sha], paths: paths[sha]})
@@ -634,7 +626,7 @@ type verdictCommit struct {
 // and the reviewer holds the deploy if it is not met. A range covers `git rev-list --first-parent base..tip`, which
 // is how a review reads: one branch tip. Without --first-parent a verdict would cover every claude/main commit that
 // was merged into the reviewed branch, none of which the reviewer read.
-func (c *Checker) verdicts(ctx context.Context) (map[string]dims, []string, error) {
+func (c *Checker) verdicts(ctx context.Context) (map[string]dims, []string, bool, error) {
 	max := c.MaxVerdicts
 	if max <= 0 {
 		max = DefaultMaxVerdicts
@@ -643,7 +635,7 @@ func (c *Checker) verdicts(ctx context.Context) (map[string]dims, []string, erro
 		"--extended-regexp", "--grep=^Atrium-Verdict:", fmt.Sprintf("--max-count=%d", max),
 		"--format=%x1e%H%x1f%B%x1f", "refs/heads/"+c.Branch)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, false, err
 	}
 	var vcs []verdictCommit
 	for _, chunk := range strings.Split(out, "\x1e") {
@@ -662,6 +654,7 @@ func (c *Checker) verdicts(ctx context.Context) (map[string]dims, []string, erro
 		}
 	}
 	var notes []string
+	pinned := true
 	res := map[string]dims{}
 	covers := map[string][]string{}
 	// The log is newest first. Apply oldest first so the newest lands last.
@@ -673,13 +666,14 @@ func (c *Checker) verdicts(ctx context.Context) (map[string]dims, []string, erro
 			continue
 		}
 		for _, t := range v.trailers {
+			pinned = pinned && pinnedSpec.MatchString(t.spec)
 			ids, ok := covers[t.spec]
 			if !ok {
 				var err error
 				var note string
 				ids, note, err = c.cover(ctx, t.spec)
 				if ctx.Err() != nil {
-					return nil, nil, ctx.Err()
+					return nil, nil, false, ctx.Err()
 				}
 				if err != nil {
 					notes = append(notes, fmt.Sprintf("verdict %s %s on %s ignored: %v", t.kind, t.spec, short(v.sha), err))
@@ -697,7 +691,7 @@ func (c *Checker) verdicts(ctx context.Context) (map[string]dims, []string, erro
 			}
 		}
 	}
-	return res, notes, nil
+	return res, notes, pinned, nil
 }
 
 func allReview(files []string) bool {
@@ -796,4 +790,55 @@ func (c *Checker) coverRead(ctx context.Context, spec string) ([]string, string,
 			c.maxCommits())
 	}
 	return ids, note, nil
+}
+
+// memo is the last finished answer and what it was read against.
+type memo struct {
+	tip, inst string
+	rep       Report
+}
+
+// remember keeps a finished answer for memoFor. `pinned` is false when a verdict named a branch or a tag, which can
+// move without the tip moving, so that answer is read again.
+func (c *Checker) remember(rep Report, pinned bool) Report {
+	if !pinned {
+		return rep
+	}
+	rep.Notes = append([]string(nil), rep.Notes...)
+	c.mu.Lock()
+	c.last = &memo{tip: rep.Tip, inst: rep.Installed, rep: rep}
+	c.mu.Unlock()
+	return rep
+}
+
+// memoFor is the kept answer when the tip and the installed commit are the ones it was read against. Everything the
+// answer rests on is reachable from the tip, so it cannot have changed under the same tip.
+func (c *Checker) memoFor(tip, inst string) (Report, bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.last == nil || c.last.tip != tip || c.last.inst != inst {
+		return Report{}, false
+	}
+	rep := c.last.rep
+	rep.Notes = append([]string(nil), rep.Notes...)
+	return rep, true
+}
+
+// errNotAncestor is the installed build not being part of the branch.
+var errNotAncestor = errors.New("not an ancestor")
+
+// revs names the branch tip and the installed build in one git. When that fails it asks one at a time, which costs
+// more and says which of the two it was.
+func (c *Checker) revs(ctx context.Context, installed string) (tip, inst string, err error) {
+	out, gerr := c.Git.Git(ctx, c.Dir, "rev-parse", "--quiet", "refs/heads/"+c.Branch+"^{commit}", installed+"^{commit}")
+	if f := strings.Fields(out); gerr == nil && len(f) == 2 {
+		return f[0], f[1], nil
+	}
+	if tip, err = c.rev(ctx, "refs/heads/"+c.Branch); err != nil {
+		return "", "", fmt.Errorf("could not read %s in %s: %v", c.Branch, c.Dir, err)
+	}
+	if inst, err = c.rev(ctx, installed); err != nil {
+		return "", "", fmt.Errorf("the installed build %s is not in this checkout", short(installed))
+	}
+	return tip, inst, nil
 }
