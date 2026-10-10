@@ -246,7 +246,6 @@ func TestThePushedReadSaysAllFiveStatesAndTheOwner(t *testing.T) {
 	if testing.Short() {
 		t.Skip("slow: a real link, hub and git rig over loopback")
 	}
-	lightSlot(t)
 	x := newCRRig(t)
 	x.hubPush(t, x.c[1], "claude/x")
 	x.owner(t, "claude/x", x.c[1], "sg4", "s1")
@@ -764,7 +763,6 @@ func TestOneRequestCarriesThePushedReadForItsSource(t *testing.T) {
 	if testing.Short() {
 		t.Skip("slow: a real link, hub and git rig over loopback")
 	}
-	lightSlot(t)
 	x := newCRRig(t)
 	x.hubPush(t, x.c[1], "claude/x")
 	gitRun(t, x.work, "checkout", "-q", "-b", "side", x.c[0])

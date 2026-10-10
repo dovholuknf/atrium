@@ -411,7 +411,6 @@ func TestOfflineOwnerWarnsAndDoesNotMove(t *testing.T) {
 	if testing.Short() {
 		t.Skip("slow: a real link, hub and git rig over loopback")
 	}
-	lightSlot(t)
 	old := prWarnGrace
 	prWarnGrace = 0
 	defer func() { prWarnGrace = old }()
@@ -454,7 +453,6 @@ func TestManualMoveUpdatesTheClaim(t *testing.T) {
 	if testing.Short() {
 		t.Skip("slow: a real link, hub and git rig over loopback")
 	}
-	lightSlot(t)
 	old := prWarnGrace
 	prWarnGrace = 0
 	defer func() { prWarnGrace = old }()

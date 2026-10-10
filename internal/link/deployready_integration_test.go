@@ -223,7 +223,6 @@ func TestDeployClickStartsOneScriptWithTheTipItWasShown(t *testing.T) {
 	if testing.Short() {
 		t.Skip("slow: a real link, hub and git rig over loopback")
 	}
-	lightSlot(t)
 	r := newReadyRepo(t)
 	base := r.commit("base", map[string]string{"internal/a.go": "a"})
 	code := r.commit("code", map[string]string{"internal/hubstore/a.go": "1"})
@@ -309,7 +308,6 @@ func TestDeployReadyTickTellsAWatchingBoardOnlyWhenTheAnswerMoves(t *testing.T) 
 	if testing.Short() {
 		t.Skip("slow: a real link, hub and git rig over loopback")
 	}
-	lightSlot(t)
 	r := newReadyRepo(t)
 	base := r.commit("base", map[string]string{"internal/a.go": "a"})
 	code := r.commit("code", map[string]string{"internal/hubstore/a.go": "1"})

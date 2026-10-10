@@ -156,7 +156,6 @@ func TestABranchOnAnOnlineRoomAloneAnswersTheRoomsURL(t *testing.T) {
 	if testing.Short() {
 		t.Skip("slow: a real link, hub and git rig over loopback")
 	}
-	lightSlot(t)
 	x := newURLRig(t)
 	a := x.ask(t, "repo=github/o/r&branch=claude/w1")
 	if a.State != gitsync.URLFound || len(a.Branches) != 1 || len(a.Branches[0].Sources) != 1 {
@@ -179,7 +178,6 @@ func TestABranchOnBothAnswersBothAndSaysWhetherTheRoomIsAhead(t *testing.T) {
 	if testing.Short() {
 		t.Skip("slow: a real link, hub and git rig over loopback")
 	}
-	lightSlot(t)
 	x := newURLRig(t)
 	x.setLive("fix/live")
 
@@ -275,7 +273,6 @@ func TestABranchTheRoomWouldNotServeIsNeverListed(t *testing.T) {
 	if testing.Short() {
 		t.Skip("slow: a real link, hub and git rig over loopback")
 	}
-	lightSlot(t)
 	x := newURLRig(t)
 	// The clone's own main and master are live-card branches here and are not served, and neither are the stash,
 	// the notes and a branch with no live card.
@@ -598,7 +595,6 @@ func TestACardOnAnotherRoomIsGivenItsRoomsForwarderAndFetchesThroughIt(t *testin
 	if testing.Short() {
 		t.Skip("slow: a real link, hub and git rig over loopback")
 	}
-	lightSlot(t)
 	x := newURLRig(t)
 	x.setLive("fix/live")
 	x.pushToStore(t, x.liveSHA, "fix/live")
