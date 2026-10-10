@@ -230,7 +230,6 @@ func TestAFetchOfAClaudeBranchPassesThroughAndTheHubStoresNothing(t *testing.T) 
 	if testing.Short() {
 		t.Skip("slow: a real link, hub and git rig over loopback")
 	}
-	lightSlot(t)
 	x := newPassRig(t)
 	before := treeDigest(t, x.root+"/hub")
 	hubObjects := run(t, x.root+"/checkout", "count-objects", "-v")
@@ -270,7 +269,6 @@ func TestStashNotesAndAnUnservedBranchAreRefusedThroughTheHub(t *testing.T) {
 	if testing.Short() {
 		t.Skip("slow: a real link, hub and git rig over loopback")
 	}
-	lightSlot(t)
 	x := newPassRig(t)
 	for _, c := range []struct{ name, ref string }{
 		{"stash", "refs/stash"},
@@ -328,7 +326,6 @@ func TestAShallowOrFilteredFetchIsRefusedBeforeItIsPassedOn(t *testing.T) {
 	if testing.Short() {
 		t.Skip("slow: a real link, hub and git rig over loopback")
 	}
-	lightSlot(t)
 	x := newPassRig(t)
 	for _, args := range [][]string{
 		{"--depth", "1"},

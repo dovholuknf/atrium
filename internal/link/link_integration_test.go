@@ -94,7 +94,7 @@ var slotted sync.Map
 // lightSlots bounds how many of the tests that wait on a real link and hub, and run no git, go at once. They are
 // mostly waiting, on a timer or on a beat, so many go side by side, but not so many that a loaded machine starves the
 // heartbeats they run at a second's silence.
-var lightSlots = make(chan struct{}, 8)
+var lightSlots = make(chan struct{}, 4)
 
 // lightSlot lets the calling test run beside the others, once, and holds one of the slots until it ends.
 func lightSlot(t *testing.T) {
