@@ -734,6 +734,12 @@
   }
   .term-expando svg { transition: transform .22s cubic-bezier(.2,.8,.2,1); }
   .term-help:hover .term-expando, .term-expando:focus-visible { opacity: 1; border-color: currentColor; }
+  /* The board's `button:hover` paints a button in the board's text and hover fill. This pill sits on the card's own
+     surface, which a theme can make any colour, so on hover it takes the terminal's text colour, or the board's
+     head colour on a card nobody themed, and no fill. Before, the label took the board's text colour whatever the
+     card was and could go missing against a card of the other lightness. */
+  .term-help .term-expando:hover { color: var(--term-fg, var(--head)); transform: none; }
+  .term-help .term-expando:hover:not([aria-expanded="true"]) { background: transparent; }
   .term-expando[aria-expanded="true"] { opacity: 1; background: rgba(var(--teal-rgb),.12); }
   .term-expando[aria-expanded="true"] svg { transform: rotate(180deg); }
   .term-drawer {
