@@ -1493,6 +1493,104 @@ async function bridgeSection(browser, base) {
   }
 }
 
+// The `details` pill on a card's footer strip keeps a readable label while it is hovered. The board's own
+// `button:hover` once repainted it with the board's text and hover fill, which on a themed card is a pair that
+// has nothing to do with the terminal's surface, and the label vanished. Measured off computed styles in each
+// skin, on the plain card and on a themed one, with the pointer on the pill.
+async function detailsHoverSection(browser, base) {
+  const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+  const dp = await ctx.newPage();
+  const errors = [];
+  dp.on("pageerror", e => errors.push(String(e)));
+  await dp.addInitScript(() => {
+    localStorage.setItem("atrium.skipconfirm", JSON.stringify({ "width-floor": true }));
+  });
+  try {
+    await dp.goto(base, { waitUntil: "domcontentloaded" });
+    await dp.waitForTimeout(900);
+    await dp.click('.tab[data-view="terms"]');
+    await dp.waitForSelector("#t-expando", { state: "attached", timeout: slow(15000) });
+    const themes = [["plain", null], ["dark theme", ["#e6e6e6", "#101418"]], ["light theme", ["#222222", "#f4f1e8"]]];
+    for (const skin of [...SKINS, "daylight", "paper", "midnight", "website"]) {
+      for (const [name, pair] of themes) {
+        await dp.evaluate(([skin, pair]) => {
+          applySkin(skin);
+          const pane = document.getElementById("term-pane");
+          for (const v of ["--term-bg", "--term-fg", "--term-line"]) pane.style.removeProperty(v);
+          pane.classList.toggle("themed", !!pair);
+          if (pair) {
+            pane.style.setProperty("--term-fg", pair[0]);
+            pane.style.setProperty("--term-bg", pair[1]);
+            pane.style.setProperty("--term-line", pair[0]);
+          }
+          const f = document.querySelector(".term-foot");
+          if (f) f.scrollIntoView();
+        }, [skin, pair]);
+        const pill = dp.locator("#t-expando");
+        await pill.evaluate(el => { for (let n = el; n; n = n.parentElement) n.hidden = false; });
+        await dp.mouse.move(0, 0);
+        await dp.waitForTimeout(350);
+        const box = await pill.boundingBox();
+        if (!box || !box.width) { fail("the details pill is not on screen (" + skin + ", " + name + ")."); continue; }
+        await dp.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+        await dp.waitForTimeout(450);
+        const got = await pill.evaluate(el => {
+          const s = getComputedStyle(el);
+          // The surface under the label: the pill's own fill if it has one, else the nearest ancestor's.
+          const solid = c => c !== "transparent" && !/rgba\(.*,\s*0\)$/.test(c);
+          let bg = s.backgroundColor;
+          for (let n = el.parentElement; n && !solid(bg); n = n.parentElement) bg = getComputedStyle(n).backgroundColor;
+          // And the card's own surface behind the pill, which is what the strip is drawn on.
+          let surface = "transparent";
+          for (let n = el.parentElement; n && !solid(surface); n = n.parentElement) {
+            surface = getComputedStyle(n).backgroundColor;
+          }
+          if (!solid(surface)) {
+            // Nothing opaque up the tree: the board's page is a gradient over --bg-0.
+            const probe = document.createElement("i");
+            probe.style.background = "var(--bg-0)";
+            document.body.appendChild(probe);
+            surface = getComputedStyle(probe).backgroundColor;
+            probe.remove();
+          }
+          return { color: s.color, bg, surface, own: s.backgroundColor, hovered: el.matches(":hover"), op: s.opacity };
+        });
+        const where = "(" + skin + ", " + name + ")";
+        if (process.env.DETAILS_SHOTS) console.log("details " + where + " " + JSON.stringify(got));
+        if (!got.hovered) { fail("the pointer is not on the details pill " + where + "."); continue; }
+        if (got.color === got.bg) {
+          fail("the hovered details pill has its label in its own background colour " + got.color + " " + where + ".");
+        }
+        // Not only different: far enough apart to read.
+        const lum = c => {
+          const m = c.match(/[\d.]+/g).slice(0, 3).map(Number).map(v => {
+            v /= 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4);
+          });
+          return 0.2126 * m[0] + 0.7152 * m[1] + 0.0722 * m[2];
+        };
+        const solidColor = c => !/^rgba\(.*,\s*0\)$/.test(c) && c !== "transparent";
+        const ratio = (a, b) => (Math.max(lum(a), lum(b)) + 0.05) / (Math.min(lum(a), lum(b)) + 0.05);
+        if (solidColor(got.bg) && ratio(got.color, got.bg) < 3) {
+          fail("the hovered details pill's label " + got.color + " is too close to its background " + got.bg + " " +
+            where + ".");
+        }
+        if (solidColor(got.surface) && ratio(got.color, got.surface) < 3) {
+          fail("the hovered details pill's label " + got.color + " is too close to the card behind it, " +
+            got.surface + " " + where + ".");
+        }
+        if (process.env.DETAILS_SHOTS) {
+          await dp.screenshot({ path: require("path").join(process.env.DETAILS_SHOTS,
+            "details-" + skin + "-" + name.replace(" ", "-") + ".png"),
+            clip: { x: Math.max(0, box.x - 200), y: Math.max(0, box.y - 40), width: 320, height: 80 } });
+        }
+      }
+    }
+    if (errors.length) fail("the details page threw uncaught errors: " + errors.join(" | "));
+  } finally {
+    await ctx.close();
+  }
+}
+
 // A group made with `+ new group` on the terminals list is removed from its
 // heading's right-click menu. Its cards go back to where they sit without it,
 // with their tags kept, and nothing is closed: no card is written to at all.
@@ -26648,7 +26746,7 @@ async function main() {
   // HEADLESS_ONLY=termWear,bridge, or `node scripts/test-board-headless.js termWear bridge`, runs just those sections, for working on one.
   // An unknown name exits 2 and runs nothing.
   const ONLY = process.env.HEADLESS_ONLY || process.argv.slice(2).join(",");
-  if (ONLY) {    const only = { closeOneDialog: closeOneDialogSection, boardDocs: boardDocsSection, phoneBoardCompact: phoneBoardCompactSection, termWear: termWearSection, bridge: bridgeSection, settingsOnce: settingsOnceSection,
+  if (ONLY) {    const only = { closeOneDialog: closeOneDialogSection, boardDocs: boardDocsSection, phoneBoardCompact: phoneBoardCompactSection, termWear: termWearSection, bridge: bridgeSection, detailsHover: detailsHoverSection, settingsOnce: settingsOnceSection,
       groupRemove: groupRemoveSection, worn: wornSection, restartGate: restartGateSection, restartStays: restartStaysSection, atriumDown: atriumDownSection,
       toastStays: toastStaysSection, groupColor: groupColorSection,
       groupDrag: groupDragSection, tooltip: tooltipSection, linkTip: linkTipSection, fileOpenOutside: fileOpenOutsideSection, readTabSize: readTabSizeSection,popoutTagFlip: popoutTagFlipSection, prefsEverywhere: prefsEverywhereSection, mPrefsEverywhere: (b) => mPrefsEverywhereSection(b), idleRate: idleRateSection, foldStill: foldStillSection,
@@ -28595,6 +28693,7 @@ async function main() {
     await unit("clearLine", () => clearLineSection(browser, base));
     // ── the attached row's bridge into the terminal, and the terminal's frame ─
     await unit("bridge", () => bridgeSection(browser, base));
+    await unit("detailsHover", () => detailsHoverSection(browser, base));
     // ── a load reads settings once ──────────────────────────────────────────
     await unit("settingsOnce", () => settingsOnceSection(browser, base));
     // ── the website skin's effects stay inside the website skin ─────────────
