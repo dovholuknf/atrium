@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"path"
 	"strings"
 )
 
@@ -25,7 +26,12 @@ func hubAskPath(p string) bool {
 		return false
 	}
 	base, _, _ := strings.Cut(p, "?")
-	if base == "/_hub/backlog/follow" {
+	// The board mux cleans the path and redirects, so an encoded dot-dot or a doubled slash could leave /_hub/backlog and
+	// /_hub/reports: only a path that is already clean and has nothing encoded is passed on.
+	if strings.ContainsAny(base, "%") || strings.Contains(base, "//") || path.Clean(base) != base {
+		return false
+	}
+	if base == "/_hub/backlog/follow" || base == "/_hub/backlog/follow/" {
 		return false
 	}
 	for _, root := range []string{"/_hub/backlog", "/_hub/reports"} {
