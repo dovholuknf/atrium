@@ -1350,7 +1350,7 @@ function termRowChips(t, lead) {
     : termJoined(t) ? `<span class="chip">joined</span>` : "";
   // The past-the-limit mark, which the strip did not draw. A card cycling its context shows that instead.
   const lim = t.new_context ? "" : ctxWarnMark(t);
-  const inner = (lead || "") + stuck + newCardChip(t) + lim + ncx + seenChips(t) + cache + held + room + popped + joined;
+  const inner = (lead || "") + stuck + newCardChip(t) + lim + ncx + seenChips(t) + heldNoticesChip(t) + cache + held + room + popped + joined;
   return inner ? `<div class="chips">${inner}</div>` : "";
 }
 

@@ -86,8 +86,9 @@ func TestHoldNoticesTagHoldsNoticesAndReports(t *testing.T) {
 	}
 	rec, out := finishWith(t, d, FinishRequest{Agent: "worker", Status: ReportDone,
 		NoCommit: "research only", Recap: "the matrix is written up"})
-	if rec.Code != http.StatusOK || out["launcher_told"] != true {
-		t.Fatalf("report answered %d: %s", rec.Code, rec.Body)
+	// Held on the launcher's card is not told: the worker must not claim the launcher has heard.
+	if rec.Code != http.StatusOK || out["launcher_told"] != "held" {
+		t.Fatalf("report answered %d, want launcher_told held: %s", rec.Code, rec.Body)
 	}
 	if msgs := pendingFrom(t, d, launcher.ID); len(msgs) != 0 {
 		t.Fatalf("the launcher has %d queued, want none: %v", len(msgs), msgs)

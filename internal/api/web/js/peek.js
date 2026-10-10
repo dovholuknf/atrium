@@ -209,6 +209,7 @@ function peekRows(t) {
     need.push(row("open questions", qs.length ? qs.map((q, i) => (i + 1) + ". " + q).join("\n") : "its last turn asked questions atrium could not read"));
   }
   if (n && n.step === "failed") need.push(row("new context failed", (n.reason || "") + ". nothing further was typed"));
+  if (heldNoticesOf(t)) need.push(`<div class="peek-row"><b>held notices</b><span>${heldNoticesChip(t)} waiting to be read, not typed to it</span></div>`);
   if (t.report_unverified) need.push(row("sha unverified", "it reported done at " + (t.report_sha || "") + ", and that commit is not in its worktree"));
 
   const age = t.recap ? peekRecapAge(t) : "";

@@ -49,8 +49,8 @@ func TestAnFYIReportIsHeldNotTypedForBothTags(t *testing.T) {
 
 		rec, out := finishWith(t, d, FinishRequest{Agent: "worker", Status: ReportProgress, Kind: "fyi",
 			Recap: "the matrix is written up"})
-		if rec.Code != http.StatusOK || out["launcher_told"] != true {
-			t.Fatalf("%s: report answered %d: %s", tag, rec.Code, rec.Body)
+		if rec.Code != http.StatusOK || out["launcher_told"] != "held" {
+			t.Fatalf("%s: report answered %d, want launcher_told held: %s", tag, rec.Code, rec.Body)
 		}
 		if msgs := pendingFrom(t, d, launcher.ID); len(msgs) != 0 {
 			t.Fatalf("%s: %d queued for an fyi, want none: %v", tag, len(msgs), msgs)

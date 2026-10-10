@@ -43,11 +43,50 @@ type blockedInput struct {
 	Reason string `json:"reason" jsonschema:"what stops you, in up to 50 words"`
 }
 
+// HeldNote is what a worker is told when its report was kept on its launcher's card and not delivered.
+const HeldNote = "held on your launcher's card, not delivered. it reads its notices when it asks, " +
+	"so do not say it has been told."
+
+// Told is the room's launcher_told: true when the launcher was handed the report, "held" when it was kept on the
+// launcher's card for it to read, and false when nobody was told. A worker that read `true` for a held report said
+// "the orchestrator has been told", and nobody had. See daemon/finish.go.
+type Told string
+
+const (
+	ToldNobody Told = ""
+	ToldYes    Told = "true"
+	ToldHeld   Told = "held"
+)
+
+// UnmarshalJSON takes the bool older rooms answer as well as "held".
+func (t *Told) UnmarshalJSON(b []byte) error {
+	switch s := strings.Trim(string(b), `" `); s {
+	case "true":
+		*t = ToldYes
+	case "held":
+		*t = ToldHeld
+	default:
+		*t = ToldNobody
+	}
+	return nil
+}
+
+// Any is whether anybody was told, held or not.
+func (t Told) Any() bool { return t != ToldNobody }
+
+// Value is what a tool answers: true, false or "held".
+func (t Told) Value() any {
+	if t == ToldHeld {
+		return "held"
+	}
+	return t == ToldYes
+}
+
 // EndOutput is what either tool answers.
 type EndOutput struct {
 	Recorded     bool   `json:"recorded"`
 	Status       string `json:"status"`
-	LauncherTold bool   `json:"launcher_told"`
+	LauncherTold any    `json:"launcher_told"`
 	Note         string `json:"note,omitempty"`
 }
 

@@ -47,6 +47,20 @@ func TestNoticesReadClearsTheHeldCountOnTheRow(t *testing.T) {
 		t.Fatalf("one held: %+v", v)
 	}
 
+	// The list the board opens is read-only and is the rows the count counts.
+	rec0 := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec0, httptest.NewRequest(http.MethodGet, "/v1/tasks/"+card.ID+"/notices", nil))
+	var listed struct {
+		Notices []store.HeldNotice `json:"notices"`
+	}
+	if err := json.Unmarshal(rec0.Body.Bytes(), &listed); err != nil || len(listed.Notices) != 1 ||
+		listed.Notices[0].Text != "hi" || listed.Notices[0].About != "w" {
+		t.Fatalf("the notices list: %v %s", err, rec0.Body)
+	}
+	if v := row(); v.HeldNotices != 1 {
+		t.Fatalf("listing the notices cleared the count: %+v", v)
+	}
+
 	// No stamp is no read: the marker is never "now".
 	rec := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/v1/tasks/"+card.ID+"/notices-read", nil))
