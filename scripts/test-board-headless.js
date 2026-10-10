@@ -8091,7 +8091,7 @@ async function topNavSection(browser, base) {
     for (const t of nav.querySelectorAll(".tab")) {
       if (t.hidden) continue;
       const r = t.getBoundingClientRect();
-      if (t.classList.contains("ovf")) { out.push(t.dataset.view); continue; }
+      if (t.classList.contains("ovf") || t.classList.contains("umenu")) { out.push(t.dataset.view); continue; }
       if (t.scrollWidth > t.clientWidth + 1 || r.right > nr.right + 1 || r.left < nr.left - 1) inMenu.push("clipped:" + t.dataset.view);
     }
     if (out.length) { more.click(); for (const b of menu.querySelectorAll("button:not(.arrange)")) inMenu.push("menu:" + b.dataset.view); more.click(); }
