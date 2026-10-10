@@ -1127,19 +1127,25 @@ async function wornSection(browser, base) {
       out["w-default"] = TERM_THEMES["active-light"].background;
       return out;
     });
-    const paintAll = async () => {
+    // `worn` is whether the board's cards should be drawn worn by now. The refresh a toggle starts repaints the
+    // columns after the rows that were already there are counted, so the wait is for the repaint, not the rows.
+    const paintAll = async (worn) => {
       await wp.evaluate(async () => { runRefresh(); await loadCards().catch(() => {}).then(renderTermList); });
       await wp.waitForFunction(n => document.querySelectorAll('#stack-list .stackrow[data-id^="w-"]').length >= n &&
         document.querySelectorAll('#term-list .card.tab[data-id^="w-"]').length >= n,
         wornTasks.length, { timeout: slow(15000) });
       await wp.click('.tab[data-view="board"]');
-      await wp.waitForFunction(n =>
-        document.querySelectorAll('.card:not(.tab)[data-id^="w-"]').length >= n, wornTasks.length, { timeout: slow(15000) });
+      await wp.waitForFunction(([n, w]) =>
+        document.querySelectorAll('.card:not(.tab)[data-id^="w-"]').length >= n &&
+        document.querySelectorAll('.card:not(.tab).worn[data-id^="w-"]').length === (w ? n : 0),
+        [wornTasks.length, !!worn], { timeout: slow(15000) });
       await wp.click('.tab[data-view="stack"]');
     };
 
     // OFF: the current look. No card is worn, and two cards in different
-    // themes are painted the same.
+    // themes are painted the same. The terminals list wears idle rows by default, so that switch is put
+    // off too, the way the OFF-again step below does.
+    await wp.evaluate(() => toggleTermWear("idle", false));
     await paintAll();
     const off = await wp.evaluate(() => {
       const worn = document.querySelectorAll(".worn").length;
@@ -1172,7 +1178,7 @@ async function wornSection(browser, base) {
     await wp.evaluate(() => { toggleCardColors(true); toggleTermWear("idle", true); });
     const stored = await wp.evaluate(() => localStorage.getItem("atrium.cardColors"));
     if (stored !== "1") fail("turning card colours on did not store it in this browser (got " + stored + ").");
-    await paintAll();
+    await paintAll(true);
     // Attach one, so the list has an `.on` card to tell apart.
     await wp.evaluate(async () => { termTask = { id: "w-dracula" }; await loadCards().catch(() => {}).then(renderTermList); });
     const rows = await wp.evaluate(measureWorn);
@@ -2267,8 +2273,10 @@ async function websiteSkinSection(browser, base) {
     if (!/linear-gradient/.test(site.goBg) || site.goColor !== "rgb(4, 18, 29)" || !/rgba\(0, 227, 176/.test(site.goShadow)) {
       fail("the website skin's primary button is not the gradient on its glow: " + JSON.stringify(site));
     }
-    if (!/saturate\(1\.6\)|saturate\(160%\)/.test(site.hdFilter)) {
-      fail("the website skin's header is not frosted: " + site.hdFilter);
+    // The header went opaque on 2026-10-05 (u-new-board-gpu-cpu-fix): a blur over a moving board cost the GPU a
+    // repaint of everything behind it. Only the walk drawer's header is still frosted.
+    if (site.hdFilter !== "none" || !/^rgb\(/.test(site.hdBg.split(" ").slice(1).join(" "))) {
+      fail("the website skin's header is not opaque and unfiltered: " + site.hdFilter + " " + site.hdBg);
     }
     if ((site.bodyBg.match(/radial-gradient/g) || []).length !== 2) {
       fail("the website skin has no glow behind the board: " + site.bodyBg);
@@ -5396,7 +5404,9 @@ async function typingSection(browser, base) {
       const el = document.getElementById("t-typing");
       const help = document.querySelector(".term-help");
       return { hidden: el.hidden, text: el.textContent, shut: el.classList.contains("shut"),
-        aboveHelp: el.nextElementSibling === help,
+        // The new-context bar (f82b1594c) sits between the two, and is hidden unless a new context is under way.
+        aboveHelp: el.nextElementSibling === help ||
+          (el.nextElementSibling && el.nextElementSibling.id === "t-ncbar" && el.nextElementSibling.nextElementSibling === help),
         stored: localStorage.getItem("atrium.debug.typing.land-live") };
     });
     if (on.hidden) fail("the typing readout stayed hidden after it was switched on.");
@@ -6668,6 +6678,7 @@ async function pasteBigSection(browser, base) {
 // ── a pasted image with no bytes is never uploaded ────────────────────────
 // A delay-rendered clipboard image reaches the paste event as a 0-byte File. It must not become a file on disk
 // whose path is pasted to the agent: no upload request, and a toast saying to paste again.
+// There is no socket mock here and the paste path never needs one, so it waits for the card, not for a socket.
 async function pasteEmptySection(browser, base) {
   const was = tasksMode;
   tasksMode = "land";
@@ -6687,7 +6698,7 @@ async function pasteEmptySection(browser, base) {
     await p.goto(base, { waitUntil: "domcontentloaded" });
     await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
     await p.evaluate(() => attachTask("land-live"));
-    await p.waitForFunction(() => termSock && termSock.readyState === 1 && termTask && termTask.id === "land-live", null,
+    await p.waitForFunction(() => termTask && termTask.id === "land-live", null,
       { timeout: slow(10000) });
     await p.evaluate(() => {
       Object.defineProperty(navigator, "clipboard", { configurable: true,
@@ -11738,7 +11749,7 @@ async function landThePlaneSection(browser, base) {
     });
     if (!/peek-ctx warn hot/.test(pop.cls)) fail("the popover is not hot past the line: " + pop.cls);
     if (pop.tip !== "201k of 200k (land the plane), window 1M") fail("the popover tooltip: " + pop.tip);
-    if (!/lands at 200k/.test(pop.scale)) fail("the popover scale does not name the line: " + pop.scale);
+    if (!/lands 200k/.test(pop.scale)) fail("the popover scale does not name the line: " + pop.scale);
     if (pop.h < 8) fail("the popover bar is a thin line: " + pop.h + "px.");
     if (!/rgb\(255, 107, 107\)|rgb\(\d+, \d+, \d+\)/.test(pop.bg)) fail("the popover fill has no colour: " + pop.bg);
     // Phone width: no badge, the strip is inside the row, and the row does not scroll sideways.
@@ -11903,8 +11914,9 @@ async function contextSizeSection(browser, base) {
     pk = await peekState();
     if (pk) {
       if (pk.id !== "cx-big" || !/212k/.test(pk.text) || !pk.warn) fail("the hover details do not show 212k past the line: " + pk.text);
-      if (!/41\s*prompts/.test(pk.text) || !/287\s*calls/.test(pk.text) || /\$/.test(pk.text)
-        || !/uncached in/.test(pk.text)) fail("the hover details do not carry the totals under their new labels: " + pk.text);
+      // The peek was cut to header, needs you, recap, context bar and actions (bcaa01422), so the totals live on the
+      // usage tab now. What stays here is that no dollar figure leaks in.
+      if (/\$/.test(pk.text)) fail("the hover details carry a dollar figure: " + pk.text);
       if (!/warns at 150k/.test(pk.text)) fail("the hover details do not name the threshold: " + pk.text);
       if (pk.pinned) fail("a hover opened the pinned details.");
       if (pk.title) fail("the details use a native title tooltip.");
@@ -13993,6 +14005,9 @@ async function linkReuseSection(browser, base) {
       }, i);
       if (!pt) { fail("row L" + i + " is not on screen"); return; }
       await p.mouse.move(pt.x, pt.y);
+      // The link is looked up after the move, and the first one on a cold page can take longer than a fixed wait.
+      // xterm marks the screen once it has the link under the pointer, and a click before that is just a click.
+      await p.waitForSelector("#t-screen .xterm-cursor-pointer", { timeout: slow(5000) }).catch(() => {});
       await p.waitForTimeout(150);
       await p.mouse.click(pt.x, pt.y);
       await p.waitForTimeout(150);
@@ -15898,6 +15913,11 @@ async function phoneListFitSection(browser, base) {
           });
         });
         const ws = cards.map(c => Math.round(c.getBoundingClientRect().width * 2) / 2);
+        // A row under a repo heading is indented by that heading's nest, so rows are only compared with others at the
+        // same depth. `ws` stays whole for the report.
+        const depthOf = c => { let d = 0; for (let n = c.parentElement; n; n = n.parentElement) if (n.classList && n.classList.contains("tnest")) d++; return d; };
+        const byDepth = {};
+        cards.forEach((c, i) => { (byDepth[depthOf(c)] = byDepth[depthOf(c)] || []).push(ws[i]); });
         const tall = cards.map(c => {
           const cr = c.getBoundingClientRect();
           let bottom = 0;
@@ -15906,7 +15926,7 @@ async function phoneListFitSection(browser, base) {
         });
         const bar = document.querySelector(view === "terms" ? ".termtray" : ".filters");
         const first = cards[0].getBoundingClientRect();
-        return { n: cards.length, bad, ws, tall, lsw: list ? list.scrollWidth - list.clientWidth : 0,
+        return { n: cards.length, bad, ws, byDepth, tall, lsw: list ? list.scrollWidth - list.clientWidth : 0,
           pg: document.documentElement.scrollWidth - innerWidth,
           barBottom: bar ? bar.getBoundingClientRect().bottom : null, firstTop: first.top };
       }, { sel, view });
@@ -15914,7 +15934,7 @@ async function phoneListFitSection(browser, base) {
       if (r.n < 4) fail(tag + "only " + r.n + " cards drew");
       if (r.bad.length) fail(tag + "something passes the right edge " + JSON.stringify(r.bad));
       if (r.lsw > 0 || r.pg > 0) fail(tag + "the list or page scrolls sideways " + JSON.stringify(r));
-      if (Math.max(...r.ws) - Math.min(...r.ws) > 1) fail(tag + "the cards differ in width " + JSON.stringify(r.ws));
+      if (Object.values(r.byDepth).some(w => Math.max(...w) - Math.min(...w) > 1)) fail(tag + "the cards differ in width " + JSON.stringify(r.byDepth));
       if (r.barBottom !== null && r.barBottom > r.firstTop + 0.5) fail(tag + "the summary bar overlaps the first card " + JSON.stringify(r));
       // A card's padding is 6px a side and its border 1px, so 14px of slack under the last child is generous. The fault
       // was a card twice as tall as its content.
@@ -23009,7 +23029,7 @@ async function hubReposSection(browser, base) {
         second: rows[1] && rows[1].textContent,
         branches: [...document.querySelectorAll(".hr-branch")].map(b => b.textContent),
         released: document.querySelectorAll(".hr-branch.released").length,
-        tip: !!document.querySelector(".hr-branch .hr-when[title]"),
+        tip: !!document.querySelector(".hr-branch .hr-when[data-tip]"),
         unlabeled: [...document.querySelectorAll(".hr-copy")].filter(b => !b.getAttribute("aria-label")).length,
         origin: location.origin
       };
@@ -23260,9 +23280,9 @@ async function hubReposShelfSection(browser, base) {
       await hubReposCopyRows(p, tag);
       // Expanding shows the rest, and the very long name stays inside its card.
       await p.click('.hr-repo[data-repo="openziti/ziti"] .hr-more');
-      const x = await p.evaluate((long) => { const z = document.querySelector('.hr-repo[data-repo="openziti/ziti"]'), n = z.querySelector('.hr-name[title^="' + long.slice(0, 30) + '"]');
+      const x = await p.evaluate((long) => { const z = document.querySelector('.hr-repo[data-repo="openziti/ziti"]'), n = z.querySelector('.hr-name[data-tip^="' + long.slice(0, 30) + '"]');
         return { rows: z.querySelectorAll(".hr-branch").length, expanded: z.querySelector(".hr-more").getAttribute("aria-expanded"), cut: n && n.scrollWidth > n.clientWidth, inside: n && n.getBoundingClientRect().right <= z.getBoundingClientRect().right,
-          full: n && n.getAttribute("title") }; }, HR_LONG);
+          full: n && n.getAttribute("data-tip") }; }, HR_LONG);
       if (x.rows !== 12 || x.expanded !== "true") fail(tag + ": show more did not show all twelve " + JSON.stringify(x));
       if (!x.cut || !x.inside || x.full !== HR_LONG) fail(tag + ": the long branch name is not cut inside its card with the whole name in the tooltip " + JSON.stringify(x));
       // A released branch is struck through and marked.
@@ -23306,7 +23326,7 @@ async function hubReposLedgerSection(browser, base) {
           nsz: parseFloat(getComputedStyle(d.querySelector(".hr-dname")).fontSize), cols: d.querySelector(".hr-cols").getBoundingClientRect().width, listW: document.querySelector(".hr-list").getBoundingClientRect().width,
           who: d.querySelectorAll(".hr-side .hr-whorow").length, avatars: d.querySelectorAll(".hr-ev .hr-av").length, term: d.querySelector(".hr-termcmd").textContent,
           chip: d.querySelector(".hr-ev .hr-chip").textContent, title: !![...d.querySelectorAll(".hr-ev .hr-title")].find(t => /link flap/.test(t.textContent)),
-          cut: (() => { const n = d.querySelector('.hr-name[title^="feat/oidc-device"]'); return n && n.scrollWidth > n.clientWidth && n.getAttribute("title"); })() }; });
+          cut: (() => { const n = d.querySelector('.hr-name[data-tip^="feat/oidc-device"]'); return n && n.scrollWidth > n.clientWidth && n.getAttribute("data-tip"); })() }; });
       if (r.n !== 6 || r.tags !== "BUTTON" || r.cur.join() !== "openziti/ziti") fail(tag + ": the list is wrong " + JSON.stringify(r));
       if (r.name !== "ziti" || r.count !== "12" || r.sha.length !== 7 || r.nsz < 44) fail(tag + ": the repo hero is wrong " + JSON.stringify(r));
       if (r.ev !== 12 || r.rel !== 2 || r.days.join() !== "Today,Yesterday,This week,Earlier" || r.who !== 3 || r.avatars !== 12) fail(tag + ": the timeline is wrong " + JSON.stringify(r));
@@ -23398,12 +23418,12 @@ async function hubReposFeedSection(browser, base) {
     const { ctx, p, errors } = await hubReposFixturePage(browser, base, { w: 2000, h: 1200, view: "feed" });
     try {
       const r = await p.evaluate((long) => { const items = [...document.querySelectorAll("#hubrepos-list .hr-it")], chips = [...document.querySelectorAll(".hr-chipbtn")];
-        const n = document.querySelector('.hr-bn[title^="feat/oidc-device"]');
+        const n = document.querySelector('.hr-bn[data-tip^="feat/oidc-device"]');
         return { chips: chips.length, pressed: chips.filter(c => c.getAttribute("aria-pressed") === "true").length, items: items.length, mains: document.querySelectorAll(".hr-it.main").length,
           rel: document.querySelectorAll(".hr-it.released").length, days: [...document.querySelectorAll(".hr-day")].map(x => x.textContent.replace(/\d+$/, "").trim()),
           cols: new Set(items.map(i => Math.round(i.getBoundingClientRect().left))).size, clones: [...document.querySelectorAll(".hr-cr")].map(c => c.querySelector(".hr-copy").dataset.copy),
           rooms: document.querySelectorAll(".hr-side .hr-panel:not(.hr-clones) .hr-whorow").length, big: document.querySelectorAll(".hr-summary .hr-big").length,
-          cut: n && n.scrollWidth > n.clientWidth && n.getAttribute("title") === long, pills: document.querySelectorAll(".hr-it .hr-pill .hr-tile").length,
+          cut: n && n.scrollWidth > n.clientWidth && n.getAttribute("data-tip") === long, pills: document.querySelectorAll(".hr-it .hr-pill .hr-tile").length,
           first: items[0].textContent, known: !![...document.querySelectorAll(".hr-it .hr-title")].find(t => /chase the link flap/.test(t.textContent)), hot: document.querySelectorAll(".hr-it.hot").length }; }, HR_LONG);
       if (r.chips !== 6 || r.pressed !== 1) fail(tag + ": the repo rail is wrong " + JSON.stringify(r));
       if (r.items !== 27 || r.mains !== 4 || r.rel !== 7 || r.days.join() !== "Today,Yesterday,This week,Earlier") fail(tag + ": the feed is wrong " + JSON.stringify(r));
@@ -26123,7 +26143,7 @@ async function unit(name, fn) {
   try { await fn(); }
   catch (e) {
     if (!UNIT_FILTER) throw e;
-    fail(name + ": the unit threw: " + (e && e.message ? e.message : e) + threwAt(e));
+    fail(name + ": the unit threw: " + (e && e.message ? e.message : e) + threwAt(e) + (process.env.STK ? " " + e.stack : ""));
   } finally { currentUnit = ""; }
   const ms = Date.now() - t0;
   if (snap0) {
@@ -28178,7 +28198,7 @@ async function main() {
     }
 
     // NEITHER on: every row is drawn, both segments unlit, and it is ONE pill of
-    // two segments rather than two loose buttons.
+    // three segments (show stopped joined them in card-menu) rather than two loose buttons.
     await page.evaluate(async () => {
       setHideSubagents("none"); setHideAgents("none");
       await loadCards().catch(() => {}).then(renderTermList);
@@ -28205,8 +28225,8 @@ async function main() {
       fail("the hide pill was not in the unlit `none`/`none` state: " +
         JSON.stringify(hNone));
     }
-    if (!hNone.onePill || hNone.segCount !== 2) {
-      fail("the hide control is not one pill with exactly two segments: " +
+    if (!hNone.onePill || hNone.segCount !== 3) {
+      fail("the hide control is not one pill with exactly three segments (agents, subagents, show stopped): " +
         JSON.stringify(hNone));
     }
     if (!/^agents$/.test(hNone.agentLabel) || !/^subagents$/.test(hNone.subLabel)) {
@@ -28399,7 +28419,7 @@ async function main() {
     if (!gearSec.pane || !gearSec.shown || gearSec.labels.join("|") !== "sort|hide inactive|group|cache") {
       fail("the gear has no terminal list section with sort, hide inactive, group and cache: " + JSON.stringify(gearSec));
     }
-    if (gearSec.sortOn.length !== 1 || gearSec.groupPills < 6 || gearSec.hide.join("|") !== "agents|subagents (2)*") {
+    if (gearSec.sortOn.length !== 1 || gearSec.groupPills < 6 || gearSec.hide.join("|") !== "agents|subagents (2)*|show stopped") {
       fail("the gear's terminal list controls do not show the defaults: " + JSON.stringify(gearSec));
     }
     // Changing them there changes the list the way the old row did, and the gear follows.
@@ -32114,7 +32134,7 @@ async function repliesSurfaces(browser, base, sc, use) {
 }
 
 async function repliesSection(browser, base) {
-  const labelsOf = (p, root) => p.$$eval(root + " .rq-btn", b => b.map(x => ({ t: x.textContent, title: x.title, choice: x.dataset.choice })));
+  const labelsOf = (p, root) => p.$$eval(root + " .rq-btn", b => b.map(x => ({ t: x.textContent, title: x.dataset.tip || x.title, choice: x.dataset.choice })));
   const seen = {};
   await repliesSurfaces(browser, base, { body: RS_BODY }, async (surface, p, root, h) => {
     const tag = "replies " + surface + ": ";

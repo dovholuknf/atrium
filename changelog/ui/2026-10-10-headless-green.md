@@ -1,0 +1,1 @@
+A key press on a focused button, such as Space or Enter on an on/off switch, was swallowed by the drag guard whenever you had used the mouse earlier, and so was any click the board makes for you, such as the link in the width notice that opens the settings cog. Both work again. A dead pinned terminal's right-click menu offers dismiss again. (headless-green)
