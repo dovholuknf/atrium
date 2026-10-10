@@ -27,6 +27,11 @@ import (
 // hook and must never fail a merge, so an error is logged and the answer is
 // still 200.
 
+// WORK CARDS ARE EXITED ON MERGE, WHATEVER THE GRACE. A card launched with atrium_launch_worker has lifetime `work`:
+// once its branch is merged atrium exits its runner, and leaves the card and the worktree. merged_cull_grace is
+// only for those cards too, to mark and reclaim them. A card from atrium_launch has no lifetime, and atrium never
+// exits or marks it because of a merge.
+
 // MergedGraceDefault is how long a merged worker stays before it is culled when the operator turns the automatic
 // cull on by setting a grace. Unset, the setting is off (store.DefaultMergedCullGrace): only an explicit atrium_cull
 // or atrium_exit removes a worker.
@@ -87,6 +92,8 @@ type MergedResult struct {
 	Marked  []MarkedCard `json:"marked"`
 	Skipped []string     `json:"skipped,omitempty"`
 	Off     bool         `json:"off,omitempty"`
+	// Exited is the work cards whose runner this merge asked to leave.
+	Exited []string `json:"exited,omitempty"`
 }
 
 // Merged marks the finished workers a merge into `into` covered. The candidates
@@ -100,13 +107,14 @@ func (d *Daemon) Merged(into string, branches []string) (*MergedResult, error) {
 	}
 	res := &MergedResult{Into: into, Marked: []MarkedCard{}}
 	grace, on := d.mergedGrace()
-	if !on {
-		res.Off = true
-		return res, nil
-	}
 	items, err := d.st.MergeCandidates()
 	if err != nil {
 		return nil, err
+	}
+	res.Exited = d.exitMergedWork(items, into, branches)
+	if !on {
+		res.Off = true
+		return res, nil
 	}
 	for _, w := range items {
 		at, reason := d.markIfMerged(w, into, branches, grace)
@@ -127,6 +135,44 @@ func (d *Daemon) Merged(into string, branches []string) (*MergedResult, error) {
 	return res, nil
 }
 
+// exitMergedWork exits the runner of each live work card the merge into `into` covered, and returns their ids. The
+// card and its worktree stay. The same checks as a mark, less the ones about a mark: a card that is not finished, is
+// held or whose branch is not merged is left running. Exits run off the hook, which must not wait on a runner.
+func (d *Daemon) exitMergedWork(items []*store.WorkItem, into string, branches []string) []string {
+	var exited []string
+	for _, w := range items {
+		t, err := d.st.Get(w.TaskID)
+		if err != nil || t.Lifetime != store.LifetimeWork || !d.isWorker(t) || w.HeldBy != "" {
+			continue
+		}
+		if d.sup.get(t.ID) == nil || strings.TrimSpace(t.Worktree) == "" {
+			continue
+		}
+		if into != DefaultCullInto && !d.launcherOn(w, into) {
+			continue
+		}
+		if d.notFinished(t, w) != "" {
+			continue
+		}
+		plan, err := inspectCull(t.Worktree, into)
+		if err != nil || !plan.merged {
+			continue
+		}
+		if len(branches) > 0 && !containsFold(branches, plan.branch) {
+			continue
+		}
+		exited = append(exited, t.ID)
+		go func(id, title, branch string) {
+			if err := d.StopRunnerBy(id, "atrium (merged)"); err != nil {
+				log.Printf("[atrium] could not exit %s after %s merged into %s: %v", title, branch, into, err)
+				return
+			}
+			log.Printf("[atrium] exited %s: %s merged into %s", title, branch, into)
+		}(t.ID, t.DisplayTitle(), plan.branch)
+	}
+	return exited
+}
+
 // markIfMerged marks one worker and returns its cull time, or why it did not.
 func (d *Daemon) markIfMerged(w *store.WorkItem, into string, branches []string, grace time.Duration) (time.Time, string) {
 	fail := func(s string) (time.Time, string) { return time.Time{}, s }
@@ -136,6 +182,9 @@ func (d *Daemon) markIfMerged(w *store.WorkItem, into string, branches []string,
 	}
 	if !d.isWorker(t) {
 		return fail("not a worker")
+	}
+	if t.Lifetime != store.LifetimeWork {
+		return fail("not a work card")
 	}
 	if w.HeldBy != "" {
 		return fail("held")

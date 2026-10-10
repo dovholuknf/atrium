@@ -34,7 +34,7 @@ func launchAcrossRoom(ctx context.Context, in LaunchInput, harness, room string)
 		"runner": harness, "cwd": in.Cwd, "title": in.Title, "why": in.Why,
 		"prompt": strings.TrimSpace(in.Prompt), "brief": strings.TrimSpace(in.Brief), "tags": in.Tags,
 		"model": in.Model, "effort": in.Effort, "args": in.Args, "env": in.Env,
-		"lean_agents": in.LeanAgents, "lean_skills": in.LeanSkills,
+		"lean_agents": in.LeanAgents, "lean_skills": in.LeanSkills, "lifetime": in.Lifetime,
 	}
 	var res struct {
 		Local   bool   `json:"local"`

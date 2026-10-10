@@ -4,6 +4,7 @@ package daemon
 
 import (
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -21,6 +22,9 @@ func mergedWorker(t *testing.T, d *Daemon, r cullRepo, tags ...string) (launcher
 	}
 	worker = cullCard(t, d, r.wt, tags...)
 	if err := d.st.SetLineage(worker.ID, "orchestrator", launcher.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := d.st.SetLifetime(worker.ID, store.LifetimeWork); err != nil {
 		t.Fatal(err)
 	}
 	worker, _ = d.st.Get(worker.ID)
@@ -379,5 +383,118 @@ func TestAMergedWorkerStaysWithTheDefaultSetting(t *testing.T) {
 	}
 	if got.ArchivedAt != nil {
 		t.Error("the merged worker's card was archived")
+	}
+}
+
+// launchedMerged is a supervised worker in r's worktree that reported done, launched with `lifetime`.
+func launchedMerged(t *testing.T, d *Daemon, r cullRepo, lifetime string) *store.Task {
+	t.Helper()
+	launcher := peerCard(t, d, "orchestrator")
+	task, err := d.Launch(LaunchRequest{
+		Harness: slowHarness(t, d), Cwd: filepath.ToSlash(r.wt), Lifetime: lifetime,
+		Tags: []string{OriginAgentTag, SubagentTag},
+	})
+	if err != nil {
+		t.Skipf("could not spawn a slow test runner on this machine: %v", err)
+	}
+	if d.sup.get(task.ID) == nil {
+		t.Skip("the slow test runner did not stay up long enough to supervise")
+	}
+	if err := d.st.SetLineage(task.ID, "orchestrator", launcher.ID); err != nil {
+		t.Fatal(err)
+	}
+	task, _ = d.st.Get(task.ID)
+	if _, err := d.st.CreateWorkItem(task, store.NewWorkItem{Brief: "do the thing"}); err != nil {
+		t.Fatal(err)
+	}
+	if rec, _ := finishWith(t, d, FinishRequest{Agent: task.WireName, Status: ReportDone, NoCommit: "merged",
+		Recap: "done"}); rec.Code != 200 {
+		t.Fatalf("finish answered %d: %s", rec.Code, rec.Body)
+	}
+	if err := d.st.SetStatus(task.ID, store.StatusDone); err != nil {
+		t.Fatal(err)
+	}
+	return task
+}
+
+func TestALaunchRecordsItsLifetimeAndRefusesAnUnknownOne(t *testing.T) {
+	d := testDaemon(t)
+	r := newCullRepo(t, true)
+	if _, err := d.Launch(LaunchRequest{Harness: slowHarness(t, d), Cwd: filepath.ToSlash(r.wt), Lifetime: "forever"}); err == nil ||
+		!strings.Contains(err.Error(), "lifetime") {
+		t.Fatalf("err = %v, want an unknown lifetime refused", err)
+	}
+}
+
+// A work card is exited once its branch merges, even with merged_cull_grace off, and only the runner goes.
+func TestAWorkCardIsExitedWhenItsBranchMergesWithTheGraceOff(t *testing.T) {
+	d, _, cancel, errCh := startDaemon(t)
+	defer func() {
+		cancel()
+		<-errCh
+	}()
+	r := newCullRepo(t, true)
+	task := launchedMerged(t, d, r, store.LifetimeWork)
+	if got, _ := d.st.Get(task.ID); got.Lifetime != store.LifetimeWork {
+		t.Fatalf("lifetime = %q, want work", got.Lifetime)
+	}
+	if err := d.st.SetSetting(SettingMergedCullGrace, "off"); err != nil {
+		t.Fatal(err)
+	}
+	res := markedMerged(t, d, DefaultCullInto)
+	if len(res.Exited) != 1 || res.Exited[0] != task.ID {
+		t.Fatalf("result = %+v, want the work card exited", res)
+	}
+	if !d.waitRunnerGone(task.ID, restartGoneWait) {
+		t.Fatal("the runner is still supervised after the merge")
+	}
+	if _, err := d.st.Get(task.ID); err != nil {
+		t.Errorf("the card is gone: %v", err)
+	}
+	if _, err := os.Stat(r.wt); err != nil {
+		t.Errorf("the worktree was removed: %v", err)
+	}
+}
+
+// A card from atrium_launch has no lifetime and is never exited because of a merge.
+func TestAKeptCardIsNotExitedWhenItsBranchMerges(t *testing.T) {
+	d, _, cancel, errCh := startDaemon(t)
+	defer func() {
+		cancel()
+		<-errCh
+	}()
+	r := newCullRepo(t, true)
+	task := launchedMerged(t, d, r, "")
+	for _, grace := range []string{"off", "1800"} {
+		if err := d.st.SetSetting(SettingMergedCullGrace, grace); err != nil {
+			t.Fatal(err)
+		}
+		res := markedMerged(t, d, DefaultCullInto)
+		if len(res.Exited) != 0 || len(res.Marked) != 0 {
+			t.Fatalf("grace %s: result = %+v, want nothing exited or marked", grace, res)
+		}
+	}
+	if d.sup.get(task.ID) == nil {
+		t.Error("the kept card's runner was stopped")
+	}
+	if _, err := os.Stat(r.wt); err != nil {
+		t.Errorf("the worktree was removed: %v", err)
+	}
+}
+
+// A work card whose branch is not merged keeps running.
+func TestAWorkCardWhoseBranchIsNotMergedKeepsRunning(t *testing.T) {
+	d, _, cancel, errCh := startDaemon(t)
+	defer func() {
+		cancel()
+		<-errCh
+	}()
+	r := newCullRepo(t, false)
+	task := launchedMerged(t, d, r, store.LifetimeWork)
+	if res := markedMerged(t, d, DefaultCullInto); len(res.Exited) != 0 {
+		t.Fatalf("result = %+v, want nothing exited", res)
+	}
+	if d.sup.get(task.ID) == nil {
+		t.Error("an unmerged work card was exited")
 	}
 }

@@ -142,6 +142,16 @@ func addPeerTools(s *mcp.Server) {
 	}, launchHandler)
 
 	mcp.AddTool(s, &mcp.Tool{
+		Name: "atrium_launch_worker",
+		Description: "Start a new agent for PARALLEL WORK that ends when its branch merges. Same parameters as " +
+			"`atrium_launch`, and the same session, but the card is marked `lifetime: work`: once its branch is merged " +
+			"to claude/main atrium EXITS its runner. The card and the worktree stay. Use it for a worker with a job " +
+			"that ends in a merge.\n\n" +
+			"Use `atrium_launch` instead for an investigation, a long conversation, or anything the human said to " +
+			"leave open: atrium never exits that card on a merge. Which one you call is the choice, so make it.",
+	}, launchWorkerHandler)
+
+	mcp.AddTool(s, &mcp.Tool{
 		Name: "atrium_task",
 		Description: "One card: its status, what its runner is doing right now, and its recent " +
 			"events.\n\n" +
@@ -600,6 +610,8 @@ func resolvePeer(ctx context.Context, who string) (id, handle string, err error)
 // ── launch ──────────────────────────────────────────────────────────────────
 
 type LaunchInput struct {
+	// Lifetime is not a parameter: atrium_launch_worker sets it to `work`.
+	Lifetime string `json:"-"`
 	Cwd   string `json:"cwd" jsonschema:"the directory to run in. it has to exist already"`
 	Title string `json:"title,omitempty" jsonschema:"what to call the card"`
 	Why   string `json:"why,omitempty" jsonschema:"what this is for, read back later"`
@@ -696,6 +708,14 @@ func writeBrief(cwd, brief string) (string, error) {
 // it.
 func briefPrompt(prompt string) string { return daemon.BriefPrompt(briefFile, prompt) }
 
+// launchWorkerHandler is atrium_launch_worker: atrium_launch with the card marked lifetime work.
+func launchWorkerHandler(ctx context.Context, req *mcp.CallToolRequest, in LaunchInput) (
+	*mcp.CallToolResult, LaunchOutput, error) {
+
+	in.Lifetime = link.LifetimeWork
+	return launchHandler(ctx, req, in)
+}
+
 func launchHandler(ctx context.Context, _ *mcp.CallToolRequest, in LaunchInput) (
 	*mcp.CallToolResult, LaunchOutput, error) {
 
@@ -739,7 +759,7 @@ func launchHandler(ctx context.Context, _ *mcp.CallToolRequest, in LaunchInput) 
 		"why": in.Why, "prompt": link.WithReportLine(prompt),
 		"tags":  link.WithLauncherDept(link.AgentLaunchTags(in.Tags), myTags(ctx, me)),
 		"model": in.Model, "effort": in.Effort, "args": in.Args, "env": in.Env,
-		"lean_agents": in.LeanAgents, "lean_skills": in.LeanSkills,
+		"lean_agents": in.LeanAgents, "lean_skills": in.LeanSkills, "lifetime": in.Lifetime,
 	}
 	// A hand-run session has no name to attribute a launch to, and is left unattributed rather
 	// than filed under a blank one.

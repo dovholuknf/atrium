@@ -2186,6 +2186,14 @@ var migrations = []struct {
 			)`,
 		},
 	},
+	{
+		// WHETHER A CARD IS PARALLEL WORK OR KEPT OPEN, decided at launch. `work` is what atrium_launch_worker
+		// stamps: atrium exits its runner once its branch merges. Empty is atrium_launch's, never exited by atrium.
+		name: "0095_task_lifetime",
+		stmts: []string{
+			`ALTER TABLE task ADD COLUMN lifetime TEXT NOT NULL DEFAULT ''`,
+		},
+	},
 }
 
 // migrate applies any migration not already recorded. This runs before the

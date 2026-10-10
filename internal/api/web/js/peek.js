@@ -214,7 +214,9 @@ function peekRows(t) {
 
   const age = t.recap ? peekRecapAge(t) : "";
   const recap = t.recap || (t.status === "done" ? "finished without saying what it did" : "");
+  // One short word: atrium_launch_worker cards are exited when their branch merges. A kept card says nothing.
   return (need.length ? `<div class="peek-sec need">${need.join("")}</div>` : "") +
+    (t.lifetime ? `<div class="peek-sec">${row("lifetime", t.lifetime)}</div>` : "") +
     (recap ? `<div class="peek-recap">${age ? `<div class="peek-rage">${esc(age)}</div>` : ""}<div class="peek-rtext">${esc(recap)}</div>` +
       `<button type="button" class="peek-more" hidden>more</button></div>` : "");
 }
