@@ -752,6 +752,18 @@
     opacity: 1; visibility: visible; transform: none;
     transition: opacity .2s ease, transform .26s cubic-bezier(.2,.8,.2,1), visibility 0s;
   }
+  /* Too tall to stack above the strip: the card panel and DEBUG sit side by side, the card panel on the left, growing
+     leftward from the button. `termDrawerFit` in js/peek.js decides, and sets --drawer-room to the height above the
+     strip. Each panel scrolls inside itself when it is still taller than that. */
+  .term-drawer.wide {
+    display: flex; flex-direction: row; align-items: flex-end; gap: 8px;
+    width: min(688px, calc(100% - 20px));
+  }
+  .term-drawer.wide .peek-body { flex: 1 1 0; min-width: 0; box-sizing: border-box; }
+  .term-drawer.wide .peek-debug { margin-top: 0; }
+  .term-drawer.wide .peek-body {
+    max-height: var(--drawer-room, 70vh); overflow-x: hidden; overflow-y: auto;
+  }
   @media (prefers-reduced-motion: reduce) {
     .term-drawer, .term-drawer.open, .term-expando svg { transition: none; }
   }

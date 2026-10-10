@@ -535,7 +535,47 @@ function toggleTermDrawer(force) {
   if (typeof dbgDrawer === "function") dbgDrawer(open && !!id);
   if (!open || !id) { termDrawerSeq++; return; }
   const seq = ++termDrawerSeq;
-  peekFill(document.getElementById("t-drawer-body"), id, () => seq === termDrawerSeq && termDrawerOpen);
+  termDrawerWatch();
+  termDrawerFit();
+  peekFill(document.getElementById("t-drawer-body"), id, () => seq === termDrawerSeq && termDrawerOpen).then(termDrawerFit);
+}
+
+// Stacked when the two panels fit above the strip, else side by side. The one measurement: the stacked height against
+// the room between the top of the viewport and the strip. The room is also each panel's own height cap, so a panel
+// still too tall scrolls inside itself. The layout itself is CSS, flipped by the `wide` class.
+function termDrawerFit() {
+  const drawer = document.getElementById("t-drawer");
+  const foot = drawer && drawer.parentElement;
+  if (!drawer || !termDrawerOpen) return;
+  // The top is the viewport's or, when the strip sits in a pane that clips, the pane's.
+  let top = 0;
+  for (let n = foot.parentElement; n && n !== document.body; n = n.parentElement) {
+    if (getComputedStyle(n).overflowY !== "visible") { top = Math.max(top, n.getBoundingClientRect().top); break; }
+  }
+  const room = Math.max(120, Math.floor(foot.getBoundingClientRect().top - top - 8 - 8));
+  drawer.style.setProperty("--drawer-room", room + "px");
+  drawer.classList.remove("wide");
+  const card = document.getElementById("t-drawer-body");
+  const dbg = document.getElementById("t-drawer-debug");
+  const stacked = card.offsetHeight + (dbg && !dbg.hidden ? 8 + dbg.offsetHeight : 0);
+  if (stacked > room) drawer.classList.add("wide");
+}
+
+let termDrawerRO = null;
+function termDrawerWatch() {
+  if (termDrawerRO || typeof ResizeObserver !== "function") return;
+  let queued = false;
+  const again = () => {
+    if (queued) return;
+    queued = true;
+    requestAnimationFrame(() => { queued = false; termDrawerFit(); });
+  };
+  termDrawerRO = new ResizeObserver(again);
+  for (const id of ["t-drawer-body", "t-drawer-debug"]) {
+    const el = document.getElementById(id);
+    if (el) termDrawerRO.observe(el);
+  }
+  window.addEventListener("resize", again);
 }
 
 // The terminal moved to another card, or closed. An open drawer follows it.
