@@ -40,8 +40,8 @@ done
 
 # -count=1 because a cached pass is not a pass.
 #
-# A UNIT RUN HAS A BUDGET: scripts/unit-budget.go reads the -json stream and fails the run, with names and times,
-# when any test took over 10ms. -json given by hand opts out, since the stream is then yours.
+# A UNIT RUN HAS A BUDGET: scripts/unit-budget.go reads the -json stream, prints each test over 10ms, and fails the
+# run when one took over 20ms. -json given by hand opts out, since the stream is then yours.
 if [ "$mode" = unit ]; then
   wrap=1; vflag=()
   for a in "$@"; do
