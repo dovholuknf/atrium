@@ -1,6 +1,7 @@
 package store
 
 import (
+	"encoding/json"
 	"time"
 )
 
@@ -47,6 +48,52 @@ func (s *Store) MarkNoticesRead(taskID, through string) (bool, error) {
 		return false, err
 	}
 	return after < n, nil
+}
+
+// HeldNotice is one unread held notice as the board lists it: when, who it is about and what it says.
+type HeldNotice struct {
+	At      string `json:"at"`
+	Source  string `json:"source"`
+	About   string `json:"about"`
+	AboutID string `json:"about_card"`
+	Text    string `json:"text"`
+}
+
+// UnreadHeldNotices are the notices HeldNoticeStats counts, oldest first, so the list the board opens and the number on
+// the row come from the same rows. Newest 50 at most.
+func (s *Store) UnreadHeldNotices(taskID string) ([]HeldNotice, error) {
+	read, err := s.Setting(NoticesReadKey(taskID))
+	if err != nil {
+		return nil, err
+	}
+	var out []HeldNotice
+	err = s.guard(func() error {
+		rows, err := s.db.Query(`SELECT at, payload FROM (SELECT at, payload FROM event
+			WHERE task_id = ? AND kind = ? AND at > ? AND payload LIKE '%"held":true%' ORDER BY at DESC LIMIT 50)
+			ORDER BY at`, taskID, EventNotified, read)
+		if err != nil {
+			return err
+		}
+		defer rows.Close()
+		for rows.Next() {
+			var at, payload string
+			if err := rows.Scan(&at, &payload); err != nil {
+				return err
+			}
+			var p struct {
+				Source  string `json:"source"`
+				About   string `json:"about"`
+				AboutID string `json:"about_card"`
+				Text    string `json:"text"`
+			}
+			if json.Unmarshal([]byte(payload), &p) != nil {
+				continue
+			}
+			out = append(out, HeldNotice{At: at, Source: p.Source, About: p.About, AboutID: p.AboutID, Text: p.Text})
+		}
+		return rows.Err()
+	})
+	return out, err
 }
 
 // HeldNoticeStats is how many held notices a card has not read, and when the oldest of

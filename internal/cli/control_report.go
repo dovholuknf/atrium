@@ -30,7 +30,7 @@ type ReportOutput struct {
 	Recorded     bool   `json:"recorded"`
 	Status       string `json:"status"`
 	Unverified   bool   `json:"unverified,omitempty"`
-	LauncherTold bool   `json:"launcher_told"`
+	LauncherTold any    `json:"launcher_told"`
 	Note         string `json:"note,omitempty"`
 }
 
@@ -48,10 +48,10 @@ func reportHandler(ctx context.Context, _ *mcp.CallToolRequest, in ReportInput) 
 		return nil, out, err
 	}
 	var res struct {
-		Recorded     bool   `json:"recorded"`
-		Status       string `json:"status"`
-		Unverified   bool   `json:"unverified"`
-		LauncherTold bool   `json:"launcher_told"`
+		Recorded     bool      `json:"recorded"`
+		Status       string    `json:"status"`
+		Unverified   bool      `json:"unverified"`
+		LauncherTold link.Told `json:"launcher_told"`
 	}
 	if err := ask(ctx, http.MethodPost, "/v1/tasks/"+url.PathEscape(id)+"/report", map[string]string{
 		"status": strings.TrimSpace(in.Status), "recap": in.Summary, "sha": strings.TrimSpace(in.SHA),
@@ -60,12 +60,14 @@ func reportHandler(ctx context.Context, _ *mcp.CallToolRequest, in ReportInput) 
 	}, &res); err != nil {
 		return nil, out, err
 	}
-	out.Recorded, out.Status, out.Unverified, out.LauncherTold = res.Recorded, res.Status, res.Unverified, res.LauncherTold
+	out.Recorded, out.Status, out.Unverified, out.LauncherTold = res.Recorded, res.Status, res.Unverified, res.LauncherTold.Value()
 	switch {
 	case res.Unverified:
 		out.Note = "recorded, but that commit is not in your worktree, so the card is flagged. if it " +
 			"landed somewhere else, say where with atrium_say."
-	case !res.LauncherTold:
+	case res.LauncherTold == link.ToldHeld:
+		out.Note = link.HeldNote
+	case !res.LauncherTold.Any():
 		out.Note = "recorded on your card. nobody launched you, so there was nobody else to tell."
 	}
 	return nil, out, nil
@@ -85,15 +87,17 @@ func endReport(ctx context.Context, _ *mcp.CallToolRequest, body map[string]any)
 		return out, err
 	}
 	var res struct {
-		Recorded     bool   `json:"recorded"`
-		Status       string `json:"status"`
-		LauncherTold bool   `json:"launcher_told"`
+		Recorded     bool      `json:"recorded"`
+		Status       string    `json:"status"`
+		LauncherTold link.Told `json:"launcher_told"`
 	}
 	if err := ask(ctx, http.MethodPost, "/v1/tasks/"+url.PathEscape(id)+"/report", body, &res); err != nil {
 		return out, err
 	}
-	out.Recorded, out.Status, out.LauncherTold = res.Recorded, res.Status, res.LauncherTold
-	if !res.LauncherTold {
+	out.Recorded, out.Status, out.LauncherTold = res.Recorded, res.Status, res.LauncherTold.Value()
+	if res.LauncherTold == link.ToldHeld {
+		out.Note = link.HeldNote
+	} else if !res.LauncherTold.Any() {
 		out.Note = "recorded on your card. nobody launched you, so there was nobody else to tell."
 	}
 	return out, nil

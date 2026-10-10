@@ -641,6 +641,7 @@ func (s *Server) Handler() http.Handler {
 		mux.HandleFunc("POST /v1/restart-wrap", s.RestartWrap)
 	}
 	mux.HandleFunc("GET /v1/tasks/{id}/events", s.taskEvents)
+	mux.HandleFunc("GET /v1/tasks/{id}/notices", s.noticesUnread)
 	mux.HandleFunc("POST /v1/tasks/{id}/notices-read", s.noticesRead)
 	mux.HandleFunc("POST /v1/tasks/{id}/owed-dismiss", s.owedDismiss)
 	mux.HandleFunc("GET /v1/tasks/{id}/review", s.reviewTask)
@@ -1950,6 +1951,25 @@ func (s *Server) taskEvents(w http.ResponseWriter, r *http.Request) {
 	// the db, so the board can say those rows are missing rather than hide it.
 	writeJSON(w, http.StatusOK, map[string]any{"events": events, "rolled_off": rolledOff,
 		"cold_only_kinds": s.st.ColdOnlyKinds()})
+}
+
+// noticesUnread is the list behind the held count on a card's row: who, what and when, oldest first. It reads and
+// changes nothing. The board marks them read with noticesRead, through the `at` of the newest it showed.
+func (s *Server) noticesUnread(w http.ResponseWriter, r *http.Request) {
+	t, err := s.st.Get(r.PathValue("id"))
+	if err != nil {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": err.Error()})
+		return
+	}
+	list, err := s.st.UnreadHeldNotices(t.ID)
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	if list == nil {
+		list = []store.HeldNotice{}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"notices": list})
 }
 
 // noticesRead is a card saying it read the notices held on it, which is what an

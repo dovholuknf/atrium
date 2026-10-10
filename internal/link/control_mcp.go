@@ -950,7 +950,7 @@ type reportOutput struct {
 	Recorded     bool   `json:"recorded"`
 	Status       string `json:"status"`
 	Unverified   bool   `json:"unverified,omitempty"`
-	LauncherTold bool   `json:"launcher_told"`
+	LauncherTold any    `json:"launcher_told"`
 	Note         string `json:"note,omitempty"`
 }
 
@@ -974,7 +974,7 @@ func (c *controlMCP) reportHandler(ctx context.Context, req *mcp.CallToolRequest
 		Recorded     bool   `json:"recorded"`
 		Status       string `json:"status"`
 		Unverified   bool   `json:"unverified"`
-		LauncherTold bool   `json:"launcher_told"`
+		LauncherTold Told   `json:"launcher_told"`
 	}
 	if err := c.ask(ctx, http.MethodPost, "/v1/tasks/"+url.PathEscape(id)+"/report", room,
 		map[string]string{
@@ -983,7 +983,7 @@ func (c *controlMCP) reportHandler(ctx context.Context, req *mcp.CallToolRequest
 		}, &res); err != nil {
 		return nil, out, err
 	}
-	out.Recorded, out.Status, out.Unverified, out.LauncherTold = res.Recorded, res.Status, res.Unverified, res.LauncherTold
+	out.Recorded, out.Status, out.Unverified, out.LauncherTold = res.Recorded, res.Status, res.Unverified, res.LauncherTold.Value()
 	if res.Recorded {
 		c.followItem(ctx, room, id, in.Status, me)
 	}
@@ -991,7 +991,9 @@ func (c *controlMCP) reportHandler(ctx context.Context, req *mcp.CallToolRequest
 	case res.Unverified:
 		out.Note = "recorded, but that commit is not in your worktree, so the card is flagged. if it " +
 			"landed somewhere else, say where with atrium_say."
-	case !res.LauncherTold:
+	case res.LauncherTold == ToldHeld:
+		out.Note = HeldNote
+	case !res.LauncherTold.Any():
 		out.Note = "recorded on your card. nobody launched you, so there was nobody else to tell."
 	}
 	return nil, out, nil
@@ -1012,16 +1014,18 @@ func (c *controlMCP) endReport(ctx context.Context, req *mcp.CallToolRequest, bo
 	var res struct {
 		Recorded     bool   `json:"recorded"`
 		Status       string `json:"status"`
-		LauncherTold bool   `json:"launcher_told"`
+		LauncherTold Told   `json:"launcher_told"`
 	}
 	if err := c.ask(ctx, http.MethodPost, "/v1/tasks/"+url.PathEscape(id)+"/report", room, body, &res); err != nil {
 		return out, err
 	}
-	out.Recorded, out.Status, out.LauncherTold = res.Recorded, res.Status, res.LauncherTold
+	out.Recorded, out.Status, out.LauncherTold = res.Recorded, res.Status, res.LauncherTold.Value()
 	if res.Recorded {
 		c.followItem(ctx, room, id, fmt.Sprint(body["status"]), me)
 	}
-	if !res.LauncherTold {
+	if res.LauncherTold == ToldHeld {
+		out.Note = HeldNote
+	} else if !res.LauncherTold.Any() {
 		out.Note = "recorded on your card. nobody launched you, so there was nobody else to tell."
 	}
 	return out, nil

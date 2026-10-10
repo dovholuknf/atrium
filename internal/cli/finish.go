@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/dovholuknf/atrium/internal/link"
 	"github.com/spf13/cobra"
 )
 
@@ -157,8 +158,8 @@ func reportFinished(out io.Writer, hubURL, name string, rep finishReport) error 
 		TaskID   string `json:"task_id"`
 		Status   string `json:"status"`
 		// A worker's report, checked and passed on. See daemon/finish.go.
-		Unverified   bool `json:"unverified"`
-		LauncherTold bool `json:"launcher_told"`
+		Unverified   bool      `json:"unverified"`
+		LauncherTold link.Told `json:"launcher_told"`
 	}
 	_ = json.Unmarshal(raw, &answer)
 
@@ -173,7 +174,9 @@ func reportFinished(out io.Writer, hubURL, name string, rep finishReport) error 
 	if answer.Unverified {
 		fmt.Fprintln(out, "  that commit is not in this worktree, so the card is flagged.")
 	}
-	if answer.LauncherTold {
+	if answer.LauncherTold == link.ToldHeld {
+		fmt.Fprintln(out, "  held on your launcher's card, not delivered. it reads its notices when it asks.")
+	} else if answer.LauncherTold.Any() {
 		fmt.Fprintln(out, "  your launcher has been told.")
 	}
 	if rep.Recap == "" {

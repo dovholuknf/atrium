@@ -32,6 +32,12 @@ func TestHeldNoticeStatsCountUnreadHeldNoticesOnly(t *testing.T) {
 	if err != nil || n != 2 || oldest.IsZero() {
 		t.Fatalf("two held: %d %v %v", n, oldest, err)
 	}
+	// The list the board opens is the same rows the count counts: who, what, oldest first.
+	list, err := s.UnreadHeldNotices(card.ID)
+	if err != nil || len(list) != 2 || list[0].Text != "one" || list[0].About != "w" || list[0].Source != "fyi" ||
+		list[1].Text != "two" || list[0].At == "" {
+		t.Fatalf("the unread list: %+v %v", list, err)
+	}
 
 	time.Sleep(5 * time.Millisecond)
 	through := ts(now())
@@ -41,6 +47,9 @@ func TestHeldNoticeStatsCountUnreadHeldNoticesOnly(t *testing.T) {
 	}
 	if n, at, _ := s.HeldNoticeStats(card.ID); n != 0 || !at.IsZero() {
 		t.Fatalf("after read: %d %v", n, at)
+	}
+	if list, _ := s.UnreadHeldNotices(card.ID); len(list) != 0 {
+		t.Fatalf("a read card still lists %d", len(list))
 	}
 	if changed, _ := s.MarkNoticesRead(card.ID, through); changed {
 		t.Fatal("reading with nothing unread reported a change")

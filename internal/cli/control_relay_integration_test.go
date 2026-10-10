@@ -167,7 +167,7 @@ func TestStdioReportFilesOnTheCallersCard(t *testing.T) {
 	stdioAgainst(t, b, "m1mini")
 
 	_, out, err := reportHandler(context.Background(), nil, ReportInput{Status: "done", Summary: "did it", SHA: "abc"})
-	if err != nil || !out.Recorded || !out.LauncherTold {
+	if err != nil || !out.Recorded || out.LauncherTold != true {
 		t.Fatalf("report = %+v, %v", out, err)
 	}
 	if b.report["status"] != "done" || b.report["recap"] != "did it" || b.report["sha"] != "abc" {

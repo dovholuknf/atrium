@@ -496,6 +496,7 @@ function stackRow(t) {
       ${originChip(t)}
       ${recapChip(t)}
       ${activityChip(t)}
+      ${heldNoticesChip(t)}
       ${typeof keepaliveChip === "function" ? keepaliveChip(t) : ""}
       ${ctxWarnMark(t)}
       ${contextChip(t)}

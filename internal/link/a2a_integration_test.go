@@ -130,7 +130,7 @@ func TestReportGoesToTheCallersOwnCard(t *testing.T) {
 	if board.report["sha"] != "abc1234" || board.report["recap"] != "it works" || board.report["status"] != "done" {
 		t.Fatalf("the room got %v", board.report)
 	}
-	if !out.Recorded || !out.LauncherTold || !out.Unverified || !strings.Contains(out.Note, "not in your worktree") {
+	if !out.Recorded || out.LauncherTold != true || !out.Unverified || !strings.Contains(out.Note, "not in your worktree") {
 		t.Fatalf("report answered %+v", out)
 	}
 }

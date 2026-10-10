@@ -4338,7 +4338,10 @@ async function toastsTopSection(browser, base) {
 
     // 4. And back off it: bottom right again, still not re-animated.
     const before = (await where(p)).starts;
+    // The stack lists the cards that want attention, so the asked one is the card that holds notices here.
+    OH_ASKED.held_notices = 2;
     await p.evaluate(() => switchView("stack"));
+    await p.waitForSelector('#stack-list .stackrow[data-id="sg4-control~oh2"] .chip.hnotices', { timeout: slow(8000) }).catch(() => fail("heldNotices: the stack row shows no icon"));
     await p.waitForTimeout(400);
     w = await where(p);
     if (w.top || w.boxes.some(b => b.bottom < w.h - 400)) {
@@ -9290,7 +9293,10 @@ async function cacheChipSection(browser, base) {
     // since a busy machine can spend the two seconds on the way here.
     kaFix("cc-flip", { why: "not idle", warm_until: new Date(Date.now() + 3600000).toISOString() });
     landList = [LAND["cc-flip"]];
+    // The stack lists the cards that want attention, so the asked one is the card that holds notices here.
+    OH_ASKED.held_notices = 2;
     await p.evaluate(() => switchView("stack"));
+    await p.waitForSelector('#stack-list .stackrow[data-id="sg4-control~oh2"] .chip.hnotices', { timeout: slow(8000) }).catch(() => fail("heldNotices: the stack row shows no icon"));
     const fetched = p.waitForResponse(r => /\/v1\/tasks(\?|$)/.test(r.url()), { timeout: slow(10000) });
     await p.evaluate(() => tasksSoon());
     await fetched;
@@ -11306,6 +11312,117 @@ const OH_IDLE = Object.assign({}, T1, {
   supervised: true, pinned: true, worktree: "/src/atrium/oh3", repo: "atrium", branch: "claude/oh3", model: "claude-opus-5-5",
   context_size: { tokens: 90000, threshold_k: 160, source: "hub" },
 });
+
+// HELD NOTICES ARE ON THE BOARD: a card holding 3 notices wears an icon and the 3 on its terminals row, its terminal bar
+// and its peek, and on the stack and board rows. A click opens who, what and when, and reading them clears the count.
+// Text selected over the chip must not open it. HELDNOTICES_SHOTS=<dir> writes the picture.
+async function heldNoticesSection(browser, base) {
+  const W = 1400, H = 900;
+  const ctx = await browser.newContext({ viewport: { width: W, height: H } });
+  const p = await ctx.newPage();
+  const errors = [];
+  p.on("pageerror", e => errors.push(String(e)));
+  const at = n => new Date(Date.now() - n * 60000).toISOString();
+  const NOTICES = [
+    { at: at(30), source: "report", about: "interviewer-1", about_card: "w1", text: "interviewer-1 is done: the matrix is written up" },
+    { at: at(20), source: "report", about: "interviewer-2", about_card: "w2", text: "interviewer-2 is done: nothing to merge" },
+    { at: at(10), source: "silent-stop", about: "worker-3", about_card: "w3", text: "worker-3 stopped without a report" },
+  ];
+  const reads = [];
+  await ctx.route("**/v1/tasks/*/notices", route => route.fulfill({ json: { notices: NOTICES } }));
+  await ctx.route("**/v1/tasks/*/notices-read", route => { reads.push(route.request().postData()); ONE_HOVER_CARD.held_notices = 0; route.fulfill({ json: { ok: true, changed: true } }); });
+  await ctx.route("**/v1/tasks/*/usage*", route => route.fulfill({ json: CTX_USAGE["cx-big"] }));
+  await ctx.addInitScript(() => { try { localStorage.setItem("atrium.termlist.w", "640"); } catch (e) {} });
+  const shots = process.env.HELDNOTICES_SHOTS || "";
+  const was = tasksMode, wasDocs = boardDocs;
+  tasksMode = "onehover";
+  boardDocs = true;
+  const chip = sel => p.evaluate(s => { const e = document.querySelector(s); return e ? e.textContent.replace(/\s+/g, "") : null; }, sel);
+  try {
+    await p.goto(base, { waitUntil: "domcontentloaded" });
+    await p.evaluate(() => document.querySelector('.tab[data-view="terms"]').click());
+    const row = '#term-list .card.tab[data-id="sg4-control~oh1"]';
+    await p.waitForSelector(row, { state: "visible", timeout: slow(15000) });
+    if (shots && process.env.HELDNOTICES_BEFORE) {
+      // The row as it was before the icon: the same card with the chip left out, for the change's before picture.
+      await p.evaluate(() => { window.heldNoticesChip = () => ""; repaintLists(undefined, true); });
+      await new Promise(r => setTimeout(r, 500));
+      fs.mkdirSync(shots, { recursive: true });
+      await p.screenshot({ path: path.join(shots, "before-terminals-row.png") });
+      return;
+    }
+    const idle = '#term-list .card.tab[data-id="sg4-control~oh3"]';
+    if (await p.locator(idle + " .chip.hnotices").count()) fail("heldNotices: a card with none held wears the icon");
+    const onRow = await chip(row + " .chip.hnotices");
+    if (!onRow || !/3$/.test(onRow)) fail("heldNotices: the terminals row does not show the count 3: " + onRow);
+    if (shots) { fs.mkdirSync(shots, { recursive: true }); await p.screenshot({ path: path.join(shots, "after-terminals-row.png") }); }
+
+    // The peek says so too.
+    await p.evaluate(i => openPeek(i, document.querySelector('#term-list .card.tab[data-id="' + i + '"]'), "hover"), "sg4-control~oh1");
+    await p.waitForSelector(".peek.on .chip.hnotices", { timeout: slow(4000) }).catch(() => fail("heldNotices: the peek shows no icon"));
+    await p.evaluate(() => closePeek());
+
+    // The bar, with a fake socket as the cache chip test does.
+    await p.evaluate(() => {
+      const Real = window.WebSocket;
+      window.WebSocket = function (url, protocols) {
+        if (!/\/attach(\?|$)/.test(url)) return new Real(url, protocols);
+        const s = { url, readyState: 0, binaryType: "arraybuffer", bufferedAmount: 0, send() {}, close() { this.readyState = 3; } };
+        setTimeout(() => { s.readyState = 1; if (s.onopen) s.onopen({}); }, 0);
+        return s;
+      };
+      Object.assign(window.WebSocket, { CONNECTING: 0, OPEN: 1, CLOSING: 2, CLOSED: 3 });
+      attachTask("sg4-control~oh1");
+    });
+    await p.waitForSelector("#t-chips .chip.hnotices", { timeout: slow(10000) }).catch(() => fail("heldNotices: the terminal bar shows no icon"));
+    const onBar = await chip("#t-chips .chip.hnotices");
+    if (!onBar || !/3$/.test(onBar)) fail("heldNotices: the terminal bar does not show 3: " + onBar);
+
+    // A drag that selected text over the chip opens nothing.
+    const cb = await p.locator(row + " .chip.hnotices").boundingBox();
+    await p.mouse.move(cb.x - 40, cb.y + cb.height / 2);
+    await p.mouse.down();
+    await p.mouse.move(cb.x + cb.width / 2, cb.y + cb.height / 2, { steps: 6 });
+    await p.mouse.up();
+    if (await p.locator("#hn-dialog").count()) fail("heldNotices: a drag across the chip opened the notices");
+
+    // Attaching in a window this size asks about the terminal floor. Answered, so it does not sit over the list.
+    await p.waitForSelector("dialog#ask[open]", { timeout: slow(3000) }).catch(() => {});
+    await p.locator("dialog#ask[open] button", { hasText: "got it" }).click({ timeout: slow(3000) }).catch(() => {});
+    await p.waitForFunction(() => !document.getElementById("ask").open, null, { timeout: slow(3000) }).catch(() => {});
+    // A click opens who, what, when.
+    await p.locator(row + " .chip.hnotices").click();
+    await p.waitForSelector("#hn-dialog .hn-item", { timeout: slow(4000) }).catch(() => fail("heldNotices: a click did not open the notices"));
+    const dlg = await p.evaluate(() => ({ n: document.querySelectorAll("#hn-dialog .hn-item").length,
+      text: document.getElementById("hn-dialog").textContent.replace(/\s+/g, " ") }));
+    if (dlg.n !== 3 || !/interviewer-1/.test(dlg.text) || !/the matrix is written up/.test(dlg.text) || !/30m ago|30 ?m/.test(dlg.text)) {
+      fail("heldNotices: the list does not say who, what and when: " + JSON.stringify(dlg));
+    }
+    if (shots) await p.screenshot({ path: path.join(shots, "after-notices-open.png") });
+    // Reading is the read: the newest `at` is posted, and the count is gone from the row.
+    await p.waitForFunction(() => !document.querySelector('#term-list .card.tab[data-id="sg4-control~oh1"] .chip.hnotices'),
+      null, { timeout: slow(4000) }).catch(() => fail("heldNotices: reading them did not clear the count on the row"));
+    if (reads.length !== 1 || JSON.parse(reads[0]).through !== NOTICES[2].at) fail("heldNotices: the read did not name the newest notice: " + reads.join("|"));
+    await p.keyboard.press("Escape");
+    if (await p.locator("#hn-dialog").count()) fail("heldNotices: Escape did not close the list");
+    ONE_HOVER_CARD.held_notices = 3;
+
+    // The stack and the board draw it as well.
+    // The stack lists the cards that want attention, so the asked one is the card that holds notices here.
+    OH_ASKED.held_notices = 2;
+    await p.evaluate(() => switchView("stack"));
+    await p.waitForSelector('#stack-list .stackrow[data-id="sg4-control~oh2"] .chip.hnotices', { timeout: slow(8000) }).catch(() => fail("heldNotices: the stack row shows no icon"));
+    await p.evaluate(() => switchView("board"));
+    await p.waitForSelector('#board .chip.hnotices', { timeout: slow(8000) }).catch(() => fail("heldNotices: the board card shows no icon"));
+  } finally {
+    await ctx.close();
+    ONE_HOVER_CARD.held_notices = 3;
+    delete OH_ASKED.held_notices;
+    tasksMode = was;
+    boardDocs = wasDocs;
+  }
+  if (errors.length) fail("heldNotices: the page threw: " + errors.join(" | "));
+}
 
 async function peekOneHoverSection(browser, base) {
   const W = 1400, H = 1000;
@@ -28352,6 +28469,7 @@ async function main() {
     await unit("landThePlane", () => landThePlaneSection(browser, base));
     await unit("peekEverywhere", () => peekEverywhereSection(browser, base));
     await unit("peekOneHover", () => peekOneHoverSection(browser, base));
+    await unit("heldNotices", () => heldNoticesSection(browser, base));
     await unit("peekStatusTruth", () => peekStatusTruthSection(browser, base));
     await unit("peekHoverRest", () => peekHoverRestSection(browser, base));
     await unit("phoneListFit", () => phoneListFitSection(browser, base));
