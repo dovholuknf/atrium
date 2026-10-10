@@ -198,6 +198,9 @@ type Task struct {
 	LaunchArgs    []string          `json:"launch_args,omitempty"`
 	LaunchEnv     map[string]string `json:"-"`
 	LaunchEnvKeys []string          `json:"launch_env_keys,omitempty"`
+	// Lifetime is `work` for a card launched with atrium_launch_worker, whose runner atrium exits once its branch
+	// merges. Empty for every other card, which atrium never exits.
+	Lifetime string `json:"lifetime,omitempty"`
 	// LaunchCmd is the exact command line atrium started the runner with, the last time it did. Nil for a card
 	// atrium did not launch.
 	LaunchCmd *LaunchCmd `json:"launch_cmd,omitempty"`

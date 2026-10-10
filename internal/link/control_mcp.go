@@ -329,6 +329,16 @@ func (c *controlMCP) server(class ctlClass) *mcp.Server {
 	}, audited(c, "ctl-launch", describeLaunch, c.launchHandler))
 
 	addTool(s, class, &mcp.Tool{
+		Name: "atrium_launch_worker",
+		Description: "Start a new agent for PARALLEL WORK that ends when its branch merges. Same parameters as " +
+			"`atrium_launch`, and the same session, but the card is marked `lifetime: work`: once its branch is merged " +
+			"to claude/main atrium EXITS its runner. The card and the worktree stay. Use it for a worker with a job " +
+			"that ends in a merge.\n\n" +
+			"Use `atrium_launch` instead for an investigation, a long conversation, or anything the human said to " +
+			"leave open: atrium never exits that card on a merge. Which one you call is the choice, so make it.",
+	}, audited(c, "ctl-launch", describeLaunch, c.launchWorkerHandler))
+
+	addTool(s, class, &mcp.Tool{
 		Name: "atrium_exit",
 		Description: "Ask a session to finish and leave.\n\n" +
 			"ASKED, not killed. Atrium sends the exit keys its harness is configured with, so " +
@@ -1492,6 +1502,8 @@ type launchInput struct {
 	Kind string `json:"kind,omitempty" jsonschema:"what sort of session to start. empty is an ordinary worker. interview starts an interviewer: atrium writes the interviewer rules into BRIEF.md ahead of your brief (put the topic and context in brief), tags the card atrium:interview, and does not nudge it for stopping on a question. its questions reach the human in its terminal, so tell the human to watch its card. it runs on opus unless model says otherwise"`
 	// Scratch lets the launch start outside a git checkout.
 	Scratch bool `json:"scratch,omitempty" jsonschema:"start in a directory that is not a git checkout on a claude/* branch. without this such a launch is refused, because what an agent writes there is not kept in git. say it only for throwaway work"`
+	// Lifetime is not a parameter: atrium_launch_worker sets it to `work`, atrium_launch leaves it empty.
+	Lifetime string `json:"-"`
 }
 
 // leanLaunch is whether an atrium_launch starts lean. On by default for the
@@ -1522,6 +1534,18 @@ type launchOutput struct {
 	Model  string `json:"model,omitempty"`
 	Effort string `json:"effort,omitempty"`
 	Note   string `json:"note,omitempty"`
+}
+
+// LifetimeWork is the lifetime atrium_launch_worker stamps. It is store.LifetimeWork, which this package does not
+// import.
+const LifetimeWork = "work"
+
+// launchWorkerHandler is atrium_launch_worker: atrium_launch with the card marked lifetime work.
+func (c *controlMCP) launchWorkerHandler(ctx context.Context, req *mcp.CallToolRequest, in launchInput) (
+	*mcp.CallToolResult, launchOutput, error) {
+
+	in.Lifetime = LifetimeWork
+	return c.launchHandler(ctx, req, in)
 }
 
 func (c *controlMCP) launchHandler(ctx context.Context, req *mcp.CallToolRequest, in launchInput) (
@@ -1631,7 +1655,7 @@ func (c *controlMCP) launchOnRoom(ctx context.Context, in launchInput, harness, 
 		"theme": strings.TrimSpace(in.Theme), "spawned_by": spawnedBy,
 		"lean": leanLaunch(in, harness), "mcp": in.MCP, "lean_agents": in.LeanAgents, "lean_skills": in.LeanSkills,
 		"model": strings.TrimSpace(in.Model), "effort": strings.TrimSpace(in.Effort),
-		"args": in.Args, "env": in.Env,
+		"args": in.Args, "env": in.Env, "lifetime": in.Lifetime,
 	}
 	if spawnedByID != "" {
 		reqBody["spawned_by_id"] = spawnedByID

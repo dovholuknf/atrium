@@ -185,6 +185,10 @@ type LaunchRequest struct {
 	// Scratch lets an agent launch start in a directory that is not a git checkout on a claude/* branch. Without it
 	// such a launch is refused, so what an agent writes is kept in git. See agentCheckoutRefusal.
 	Scratch bool `json:"scratch,omitempty"`
+
+	// Lifetime is `work` for a launch from atrium_launch_worker: atrium exits the runner once the card's branch
+	// merges. Empty leaves a relaunched card's own value and gives a new card none. Anything but `work` is refused.
+	Lifetime string `json:"lifetime,omitempty"`
 }
 
 // TerminalTemplate wraps a command so it opens in a real terminal window.
@@ -723,6 +727,9 @@ func (d *Daemon) Launch(req LaunchRequest) (*store.Task, error) {
 	// the tag join. This is a safety net under the board's own untagging.
 	if i := strings.IndexByte(req.TaskID, '~'); i > 0 {
 		req.TaskID = req.TaskID[i+1:]
+	}
+	if lt := strings.TrimSpace(req.Lifetime); lt != "" && lt != store.LifetimeWork {
+		return nil, fmt.Errorf("lifetime %q is not one atrium knows. the only one is %q", lt, store.LifetimeWork)
 	}
 	keys := launchKeys(req.TaskID, req.Resume)
 	if req.MovedFrom != "" {
@@ -1394,6 +1401,9 @@ func (d *Daemon) launchLocked(req LaunchRequest) (*store.Task, error) {
 		return nil, err
 	}
 	if err := d.st.SetLaunchOptions(created.ID, effort, extraArgs, extraEnv); err != nil {
+		return nil, err
+	}
+	if err := d.st.SetLifetime(created.ID, req.Lifetime); err != nil {
 		return nil, err
 	}
 	// THE COMMAND LINE, for the card details: the argv this launch started, less the opening prompt, and the

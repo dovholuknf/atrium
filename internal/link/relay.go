@@ -113,6 +113,7 @@ type RelayLaunchSpec struct {
 	Env        map[string]string `json:"env,omitempty"`
 	LeanAgents []string          `json:"lean_agents,omitempty"`
 	LeanSkills []string          `json:"lean_skills,omitempty"`
+	Lifetime   string            `json:"lifetime,omitempty"`
 }
 
 // RelayAnswer is the hub's answer.

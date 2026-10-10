@@ -119,7 +119,7 @@ var workerSeven = []string{"atrium_alias", "atrium_blocked", "atrium_ci", "atriu
 // fullFifteen is f-021's eleven, f-019's two git tools, atrium_deps and atrium_deploy, and atrium_model, and atrium_publish,
 // all full-only. The name is the count it had before atrium_model.
 var fullFifteen = []string{"atrium_alias", "atrium_backlog", "atrium_blocked", "atrium_ci", "atrium_cull", "atrium_deploy", "atrium_deps", "atrium_done", "atrium_exit",
-	"atrium_flow", "atrium_git_collect", "atrium_git_push", "atrium_git_sync", "atrium_git_url", "atrium_launch", "atrium_model", "atrium_peers", "atrium_publish", "atrium_report", "atrium_reports", "atrium_resources",
+	"atrium_flow", "atrium_git_collect", "atrium_git_push", "atrium_git_sync", "atrium_git_url", "atrium_launch", "atrium_launch_worker", "atrium_model", "atrium_peers", "atrium_publish", "atrium_report", "atrium_reports", "atrium_resources",
 	"atrium_say", "atrium_status", "atrium_task", "atrium_wake_after_restart", "restart_atrium"}
 
 func sameNames(t *testing.T, who string, got, want []string) {

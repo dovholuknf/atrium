@@ -58,7 +58,7 @@ func (c *controlMCP) launchAcross(ctx context.Context, from string, req RelayReq
 	in := launchInput{
 		Cwd: spec.Cwd, Title: spec.Title, Why: spec.Why, Prompt: spec.Prompt, Brief: spec.Brief,
 		Runner: spec.Runner, Tags: spec.Tags, Model: spec.Model, Effort: spec.Effort, Args: spec.Args,
-		Env: spec.Env, LeanAgents: spec.LeanAgents, LeanSkills: spec.LeanSkills, Room: target,
+		Env: spec.Env, LeanAgents: spec.LeanAgents, LeanSkills: spec.LeanSkills, Lifetime: spec.Lifetime, Room: target,
 	}
 	out, err := c.launchOnRoom(ctx, in, harness, target, from, spawnedBy, spawnedByID)
 	c.auditLaunchAcross(target, from, req.From, harness, out, err)
