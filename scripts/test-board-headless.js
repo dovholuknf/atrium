@@ -29004,6 +29004,7 @@ async function main() {
           // The drawn grid's bottom sits on the help bar's top: no host-coloured
           // band between the last terminal row and the footer.
           gridToFooter: Math.round(help.top - grid.bottom),
+          rowH: grid.height / term.rows,
           // The scrollable viewport reaches the footer too, so nothing shows the
           // host background below it.
           viewportToFooter: Math.round(help.top - vp.bottom),
@@ -29015,13 +29016,16 @@ async function main() {
         fail("could not measure the attached terminal against the footer (" +
           (fill.why || "unknown") + ").");
       } else {
-        // A pixel or two of sub-pixel rounding is fine; a whole line is the bug.
-        if (Math.abs(fill.gridToFooter) > 3) {
-          fail("the terminal grid does not sit on the footer (gap " + fill.gridToFooter +
-            "px): a remainder band of dead space is back above the help bar.");
+        // The grid sits at the top of the pane (flex-start, see terminalTopGap), so what is left of the pane is
+        // under the last row: less than one row, and never negative. A pixel or two of sub-pixel rounding is
+        // fine; a whole row or more is the dead band, and a negative gap is a grid running under the footer.
+        const under = g => g < -3 || g >= fill.rowH + 3;
+        if (under(fill.gridToFooter)) {
+          fail("the terminal grid is not within a row of the footer (gap " + fill.gridToFooter +
+            "px, a row is " + Math.round(fill.rowH) + "px): a remainder band of dead space is back above the help bar.");
         }
-        if (Math.abs(fill.viewportToFooter) > 3) {
-          fail("the terminal viewport does not reach the footer (gap " +
+        if (under(fill.viewportToFooter)) {
+          fail("the terminal viewport is not within a row of the footer (gap " +
             fill.viewportToFooter + "px).");
         }
         if (Math.abs(fill.hostToFooter) > 3) {
