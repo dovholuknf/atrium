@@ -22050,6 +22050,8 @@ async function childFoldSection(browser, base) {
         sub("kid-b", "2026-09-29T10:00:00Z", "par"), sub("kid-p", "2026-09-28T10:00:00Z", "par", "needs-permission"),
         card("lone", "2026-09-27T10:00:00Z")];
       boardCards = async () => cards;
+      // Idle subagents are hidden by default, and these are idle, so show them.
+      setHideSubagents("none");
       switchView("terms");
     });
     return p;
@@ -23550,7 +23552,8 @@ async function pullsDrawerSection(browser, base) {
   const entry = { name: "01-med-b.go-L7.txt", dir: false, mtime: "2026-10-01T09:00:00Z", size: 10 };
   await ctx.route(/\/v1\/tasks\/land-pw4\/files\/list/, route => json(route, 200, { entries: [entry] }));
   await ctx.route(/\/v1\/tasks\/land-pw4\/files\/text/, route => json(route, 200, { text: st.f.pr_x[0].text, hash: "h", eol: "\n" }));
-  await ctx.route(/\/v1\/tasks\/land-pw[12]\/files\//, async route => { st.files++; return json(route, 404, { error: "no files here" }); });
+  // The walk reads the head tree's copy of a finding's file under src/ for its context lines (u-008), so only other reads count.
+  await ctx.route(/\/v1\/tasks\/land-pw[12]\/files\//, async route => { if (!/[?&]path=src%2F/.test(route.request().url())) st.files++; return json(route, 404, { error: "no files here" }); });
   await ctx.route(/\/v1\/prs(\/|\?|$)/, async route => {
     const req = route.request();
     const m = req.method();
@@ -26535,6 +26538,8 @@ async function keepAliveSection(browser, base) {
     if (!kept || kept.open !== 1 || kept.hidden !== "none" || kept.task !== "ka-b") fail("keepAlive: switching away did not keep ka-a hidden and open (" + JSON.stringify(kept) + ").");
 
     // A frame for the hidden terminal lands in it and touches nothing of the showing pane.
+    // The last attach's socket opens a moment after it, and that open clears the wait line, so let it land before counting.
+    await idle(500);
     const before = await wp.evaluate(() => {
       window.__calls = {};
       for (const n of ["feedReadyQuiet", "noteScrollAct", "pasteSawOutput", "focusTerm", "sendResize", "termWait", "markTermDead", "toast", "paintTermTitle"]) {
@@ -26916,7 +26921,7 @@ async function burnChartSection(browser, base) {
 
     // No reading, no percent: the old picture keeps its token axis and gains the time axis and now.
     r = await draw("24h", { ...day, readings: [] });
-    if (r.ys.length || r.toks.join() !== "0,100k,200k,300k,400k" || r.cap != null || r.resets.length || !r.times.length || !r.nowLine || !/^at this pace: \d+k by midnight$/.test(r.phrase)) fail("burnChart: with no limit reading " + JSON.stringify(r));
+    if (r.ys.length || r.toks.join() !== "0,100k,200k,300k,400k" || r.cap != null || r.resets.length || !r.times.length || !r.nowLine || !/^at this pace: \d+k by midnight(, [0-9.]+[kM] more by the reset .+)?$/.test(r.phrase)) fail("burnChart: with no limit reading " + JSON.stringify(r));
     if (errors.length) fail("burnChart: page errors " + errors.join("; "));
     if (!bad) console.log("burnChart ok");
   } finally { await ctx.close(); }
