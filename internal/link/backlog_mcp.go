@@ -72,9 +72,59 @@ type reportsOutput struct {
 	Note    string                    `json:"note,omitempty"`
 }
 
+// backlogTools is the two tools over one way to reach the hub's endpoints. The hub's own control MCP asks its board
+// over loopback. A room's stdio control asks its room, which carries the call over the link (hubask.go).
+type backlogTools struct {
+	call func(ctx context.Context, method, path string, body, out any) error
+	// by and room are who is calling and from which room, for the row. See callerName and backlogRoom.
+	by   func(req *mcp.CallToolRequest) string
+	room func(req *mcp.CallToolRequest) string
+}
+
+// ask is the handlers' one way out. The room argument is not used: the hub's endpoints are not scoped to one.
+func (b backlogTools) ask(ctx context.Context, method, path, _ string, body, out any) error {
+	return b.call(ctx, method, path, body, out)
+}
+
+// tools is the two tools asking this hub's own board.
+func (c *controlMCP) tools() backlogTools {
+	return backlogTools{
+		call: func(ctx context.Context, method, path string, body, out any) error {
+			return c.ask(ctx, method, path, "", body, out)
+		},
+		by: callerName, room: backlogRoom,
+	}
+}
+
 func (c *controlMCP) registerBacklog(s *mcp.Server, class ctlClass) {
-	addTool(s, class, &mcp.Tool{Name: "atrium_backlog", Description: backlogToolDesc}, c.backlogHandler)
-	addTool(s, class, &mcp.Tool{Name: "atrium_reports", Description: reportsToolDesc}, c.reportsHandler)
+	t := c.tools()
+	addTool(s, class, &mcp.Tool{Name: "atrium_backlog", Description: backlogToolDesc}, t.backlogHandler)
+	addTool(s, class, &mcp.Tool{Name: "atrium_reports", Description: reportsToolDesc}, t.reportsHandler)
+}
+
+// AddRoomBacklogTools puts atrium_backlog and atrium_reports on a room's stdio control server. call reaches the hub's
+// /_hub/backlog and /_hub/reports through the room, and by and room are the session's own handle and room name, which
+// the stdio server has no request headers to read. The hub stamps both again from the link, so they are only a label.
+func AddRoomBacklogTools(s *mcp.Server, call func(ctx context.Context, method, path string, body, out any) error,
+	by, room string) {
+
+	t := backlogTools{
+		call: call,
+		by: func(*mcp.CallToolRequest) string {
+			if by == "" || room == "" {
+				return by
+			}
+			return by + "@" + room
+		},
+		room: func(*mcp.CallToolRequest) string {
+			if validRoomName(room) {
+				return room
+			}
+			return ""
+		},
+	}
+	mcp.AddTool(s, &mcp.Tool{Name: "atrium_backlog", Description: backlogToolDesc}, t.backlogHandler)
+	mcp.AddTool(s, &mcp.Tool{Name: "atrium_reports", Description: reportsToolDesc}, t.reportsHandler)
 }
 
 // backlogRoom is the room a call is from, for the row's filed_room. Empty when the caller is not one of atrium's sessions.
@@ -85,7 +135,7 @@ func backlogRoom(req *mcp.CallToolRequest) string {
 	return ""
 }
 
-func (c *controlMCP) backlogHandler(ctx context.Context, req *mcp.CallToolRequest, in backlogInput) (
+func (c backlogTools) backlogHandler(ctx context.Context, req *mcp.CallToolRequest, in backlogInput) (
 	*mcp.CallToolResult, backlogOutput, error) {
 
 	var out backlogOutput
@@ -127,7 +177,7 @@ func (c *controlMCP) backlogHandler(ctx context.Context, req *mcp.CallToolReques
 		var b hubstore.BacklogItem
 		err := c.ask(ctx, http.MethodPost, "/_hub/backlog", "", map[string]any{
 			"id": id, "dept": strings.TrimSpace(in.Dept), "title": in.Title, "body": in.Body,
-			"priority": in.Priority, "by": callerName(req), "room": backlogRoom(req)}, &b)
+			"priority": in.Priority, "by": c.by(req), "room": c.room(req)}, &b)
 		if err != nil {
 			return nil, out, err
 		}
@@ -139,7 +189,7 @@ func (c *controlMCP) backlogHandler(ctx context.Context, req *mcp.CallToolReques
 		}
 		var b hubstore.BacklogItem
 		err := c.ask(ctx, http.MethodPost, "/_hub/backlog/"+url.PathEscape(id), "", map[string]any{
-			"status": in.Status, "by": callerName(req)}, &b)
+			"status": in.Status, "by": c.by(req)}, &b)
 		if err != nil {
 			return nil, out, err
 		}
@@ -151,7 +201,7 @@ func (c *controlMCP) backlogHandler(ctx context.Context, req *mcp.CallToolReques
 		}
 		var b hubstore.BacklogItem
 		err := c.ask(ctx, http.MethodPost, "/_hub/backlog/"+url.PathEscape(id), "", map[string]any{
-			"priority": in.Priority, "by": callerName(req)}, &b)
+			"priority": in.Priority, "by": c.by(req)}, &b)
 		if err != nil {
 			return nil, out, err
 		}
@@ -161,7 +211,7 @@ func (c *controlMCP) backlogHandler(ctx context.Context, req *mcp.CallToolReques
 	return nil, out, &refusedError{fmt.Sprintf("action %q is not one of list, get, file, status, priority", in.Action)}
 }
 
-func (c *controlMCP) reportsHandler(ctx context.Context, req *mcp.CallToolRequest, in reportsInput) (
+func (c backlogTools) reportsHandler(ctx context.Context, req *mcp.CallToolRequest, in reportsInput) (
 	*mcp.CallToolResult, reportsOutput, error) {
 
 	var out reportsOutput
@@ -173,7 +223,7 @@ func (c *controlMCP) reportsHandler(ctx context.Context, req *mcp.CallToolReques
 		var r hubstore.DirectorReport
 		err := c.ask(ctx, http.MethodPost, "/_hub/reports", "", map[string]any{
 			"to": strings.TrimSpace(in.To), "subject": in.Subject, "body": in.Body,
-			"by": callerName(req), "room": backlogRoom(req)}, &r)
+			"by": c.by(req), "room": c.room(req)}, &r)
 		if err != nil {
 			return nil, out, err
 		}
@@ -201,7 +251,7 @@ func (c *controlMCP) reportsHandler(ctx context.Context, req *mcp.CallToolReques
 		}
 		var r hubstore.DirectorReport
 		err := c.ask(ctx, http.MethodPost, "/_hub/reports/"+url.PathEscape(strings.TrimSpace(in.ID)), "",
-			map[string]any{"do": "read", "by": callerName(req)}, &r)
+			map[string]any{"do": "read", "by": c.by(req)}, &r)
 		if err != nil {
 			return nil, out, err
 		}

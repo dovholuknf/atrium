@@ -92,6 +92,8 @@ type RelayResult struct {
 	// What a launch started: where to watch it, where its briefing was written on the
 	// target's disk, and the model and effort it ran with.
 	Watch, Brief, Model, Effort string
+	// Data is the hub endpoint's own JSON answer, for a hub ask. See hubask.go.
+	Data json.RawMessage
 }
 
 // RemoteTask is one card on another room, as atrium_task reports it.
