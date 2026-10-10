@@ -1,6 +1,7 @@
 package daemon
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"fmt"
@@ -14,6 +15,7 @@ import (
 	"time"
 
 	"github.com/dovholuknf/atrium/internal/api"
+	"github.com/dovholuknf/atrium/internal/gitsync"
 	"github.com/dovholuknf/atrium/internal/runnersetup"
 	"github.com/dovholuknf/atrium/internal/store"
 )
@@ -954,6 +956,13 @@ func (d *Daemon) launchLocked(req LaunchRequest) (*store.Task, error) {
 			wanted = briefPromptEnding(briefFileName, wanted, "")
 		} else {
 			wanted = briefPrompt(wanted)
+			if !outside {
+				vctx, vcancel := context.WithTimeout(context.Background(), gitsync.CommandBound)
+				if l := d.visibleLauncher(vctx, task, req.SpawnedByID, req.SpawnedBy, cwd); l != nil {
+					wanted = withCommitVisible(wanted, commitVisibleLine(l.WireName))
+				}
+				vcancel()
+			}
 		}
 	} else if req.Resume == "" && wanted != "" && !outside {
 		// NO BRIEF, so no BRIEF.md to carry the line. It rides on the prompt
