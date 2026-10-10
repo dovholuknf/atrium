@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -18,13 +19,15 @@ import (
 // slowForge reads a pull request only once release is closed, so a test can show what ran while the forge was being read.
 type slowForge struct {
 	fakeForge
-	release chan struct{}
+	release  chan struct{}
+	timedOut atomic.Bool
 }
 
 func (f *slowForge) View(ctx context.Context, r forge.Ref) (*forge.PR, error) {
 	select {
 	case <-f.release:
 	case <-time.After(5 * time.Second):
+		f.timedOut.Store(true)
 	}
 	return f.fakeForge.View(ctx, r)
 }
@@ -117,15 +120,18 @@ func TestPRWorktreeFindsTheCloneWhileTheForgeIsRead(t *testing.T) {
 	t.Parallel()
 	release := make(chan struct{})
 	var once sync.Once
+	var sf *slowForge
 	rh := newReuseHarness(t, func(up string) forge.Forge {
-		return &slowForge{fakeForge: fakeForge{pr: forge.PR{HeadRef: "feat/x"},
+		sf = &slowForge{fakeForge: fakeForge{pr: forge.PR{HeadRef: "feat/x"},
 			spec: forge.FetchSpec{Remote: up, Refspec: "pull/7/head"}}, release: release}
+		return sf
 	}, func() { once.Do(func() { close(release) }) })
 
-	start := time.Now()
 	res := rh.make(t, context.Background())
-	if took := time.Since(start); took > 4*time.Second {
-		t.Fatalf("the clone was found only after the forge answered: %v", took)
+	// Not a stopwatch on the whole call, which a loaded machine stretches past any bound: the forge says whether it
+	// was let go by the clone being asked for, or gave up waiting for it.
+	if sf.timedOut.Load() {
+		t.Fatal("the clone was found only after the forge answered")
 	}
 	if res.Branch != "feat/x" {
 		t.Errorf("%+v", res)
