@@ -1341,6 +1341,8 @@ function repaintLists(signal, fromStore) {
     // board event has nothing to repaint there. Without a line it logged "no
     // renderer" on every refresh pass while the pane was open.
     audit: () => Promise.resolve(),
+    // Not live at all: read on open and on `more`, so a board event repaints nothing. See js/chatter.js.
+    chatter: () => Promise.resolve(),
     // Live by its own `backlog` and `report` events. See js/backlog.js.
     backlog: () => Promise.resolve(),
     // Live by its own `pr` events, like the audit pane. See js/pulls.js.

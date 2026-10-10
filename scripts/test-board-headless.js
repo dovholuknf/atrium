@@ -1800,6 +1800,134 @@ async function chatterSection(browser, base) {
   }
 }
 
+// The chatter tab: every say from every room, newest first, 20 to a page, read on open and on `more` and never polled.
+// A row shows when, room, from, to, state and a preview that opens to the full text, and both names link to their cards
+// when the board has them. The filters go to GET /v1/says as agent (or from or to), room and since. The endpoint is
+// answered here, merged the way the hub does it. CHATTER_SHOTS names a directory for the pictures.
+async function chatterTabSection(browser, base) {
+  const ctx = await browser.newContext({ viewport: { width: 1100, height: 900 } });
+  const dp = await ctx.newPage();
+  const errors = [];
+  dp.on("pageerror", e => errors.push(String(e)));
+  const asked = [];
+  const now = Date.now();
+  const all = [];
+  for (let i = 0; i < 25; i++) {
+    const room = i % 2 ? "beta" : "alpha";
+    all.push({ id: room + "~say" + String(100 - i), room, from_task: room + "~me-1", from: i % 4 === 1 ? "other" : "me",
+      to_task: i === 2 ? room + "~gone-9" : room + "~other-2", to: i === 2 ? "ghost" : i % 4 === 1 ? "me" : "other", to_input: "other",
+      sent_at: new Date(now - i * 11 * 60000).toISOString(), state: i === 3 ? "queued" : "delivered", channel: i === 3 ? "" : "terminal",
+      preview: "say number " + i + " about the work", chars: i === 4 ? 20000 : 40,
+      text: i === 4 ? "x".repeat(16000) : "say number " + i + " about the work\nsecond line of " + i });
+  }
+  await ctx.route("**/v1/says*", route => {
+    const u = new URL(route.request().url());
+    asked.push(u.search);
+    const before = u.searchParams.get("before");
+    const at = before ? Number(before) : 0;
+    const page = all.slice(at, at + 20);
+    route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ says: page, more: at + 20 < all.length,
+      cursor: at + 20 < all.length ? String(at + 20) : "", missing: before ? [] : ["gamma"] }) });
+  });
+  await dp.addInitScript(() => {
+    localStorage.setItem("atrium.skipconfirm", JSON.stringify({ "width-floor": true }));
+  });
+  const shot = async name => {
+    if (process.env.CHATTER_SHOTS) await dp.screenshot({ path: require("path").join(process.env.CHATTER_SHOTS, name) });
+  };
+  try {
+    await dp.goto(base, { waitUntil: "domcontentloaded" });
+    await dp.waitForTimeout(900);
+    // The tab starts in the ... menu whatever the width, and the arrange dialog can put it in the bar and back.
+    const tab = await dp.$eval('.tab[data-view="chatter"]', t => ({ text: t.textContent, menu: t.classList.contains("umenu") }));
+    if (tab.text !== "chatter" || !tab.menu) fail("the chatter tab is not in the menu by default: " + JSON.stringify(tab));
+    await dp.evaluate(() => window.openTabsArrange());
+    await dp.waitForSelector("#tabsdlg[open]");
+    const sel = '#tabsdlg-list .tabsdlg-row[data-view="chatter"] select';
+    if ((await dp.$eval(sel, s => s.value)) !== "menu") fail("the arrange dialog does not show chatter in the menu");
+    await dp.selectOption(sel, "bar");
+    if (await dp.$eval('.tab[data-view="chatter"]', t => t.classList.contains("umenu"))) fail("chatter stays in the menu after being put in the bar");
+    await dp.reload({ waitUntil: "domcontentloaded" });
+    await dp.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
+    await dp.waitForTimeout(1500);
+    if (await dp.$eval('.tab[data-view="chatter"]', t => t.classList.contains("umenu"))) fail("chatter is back in the menu after a reload");
+    await dp.evaluate(() => window.openTabsArrange());
+    await dp.waitForSelector("#tabsdlg[open]");
+    await dp.click("#tabsdlg-reset");
+    await dp.click("#tabsdlg-close");
+    if (!(await dp.$eval('.tab[data-view="chatter"]', t => t.classList.contains("umenu")))) fail("reset did not put chatter back in the menu");
+    if (process.env.CHATTER_SHOTS) {
+      // Before: the same menu with no chatter in it.
+      await dp.evaluate(() => { document.querySelector('.tab[data-view="chatter"]').hidden = true; });
+      await dp.waitForTimeout(300);
+      await dp.click("#tabmore");
+      await dp.waitForTimeout(300);
+      await shot("say-log-all-before.png");
+      await dp.keyboard.press("Escape");
+      await dp.evaluate(() => { document.querySelector('.tab[data-view="chatter"]').hidden = false; });
+      await dp.waitForTimeout(300);
+      await dp.click("#tabmore");
+      await dp.waitForTimeout(300);
+      await shot("say-log-all-menu.png");
+      await dp.keyboard.press("Escape");
+    }
+    if (asked.length) fail("the board asked for the chatter before the tab was opened: " + JSON.stringify(asked));
+    await dp.evaluate(() => {
+      lastTasks = lastTasks.concat([{ id: "alpha~me-1", title: "me", wire_name: "me", status: "running" },
+        { id: "beta~other-2", title: "other", wire_name: "other", status: "running" }]);
+      switchView("chatter");
+    });
+    await dp.waitForSelector("#chatter-list .chatter-row", { timeout: slow(8000) });
+    if (asked.length !== 1 || asked[0] !== "") fail("opening the tab made " + asked.length + " reads: " + JSON.stringify(asked));
+    const rows = await dp.$$eval("#chatter-list .chatter-row", r => r.length);
+    if (rows !== 20) fail("the first page of chatter has " + rows + " rows, not 20.");
+    const first = await dp.$eval("#chatter-list .chatter-row", r => ({ room: r.querySelector(".aud-room").textContent,
+      who: [...r.querySelectorAll(".chat-who")].map(e => e.tagName + " " + e.textContent), state: r.querySelector(".chatter-state").textContent }));
+    if (first.room !== "alpha" || first.who.join("|") !== "BUTTON me|BUTTON other" || first.state !== "delivered by terminal") {
+      fail("the newest row reads wrong: " + JSON.stringify(first));
+    }
+    const ghost = await dp.$eval("#chatter-list .chatter-row:nth-child(4)", r => r.querySelectorAll(".chat-who")[1].tagName + " " + r.querySelectorAll(".chat-who")[1].textContent);
+    if (ghost !== "SPAN ghost") fail("a card the board does not know is drawn as " + ghost + ", not plain text.");
+    if (!/gamma/.test(await dp.$eval("#chatter-list .chatter-missing", e => e.textContent))) fail("a room that did not answer is not named.");
+    if (!(await dp.$eval("#chatter-list .chat-text", e => e.hidden))) fail("a say's full text is showing before it is opened.");
+    await dp.click("#chatter-list .chatter-row .chat-toggle");
+    const shown = await dp.$eval("#chatter-list .chat-text", e => !e.hidden && e.textContent);
+    if (!shown || !/second line of 0/.test(shown)) fail("opening a row did not show its full text: " + shown);
+    const cut = await dp.$eval("#chatter-list .chatter-row:nth-child(6) .chat-text", e => e.textContent);
+    if (!/\[cut: the say was 20000 characters\]/.test(cut)) fail("a cut say does not say it was cut: " + cut.slice(-60));
+    await shot("say-log-all-after.png");
+    // More pages back by the cursor the hub gave, and goes with the last page.
+    await dp.click("#chatter-list .chat-more");
+    await dp.waitForFunction(() => document.querySelectorAll("#chatter-list .chatter-row").length === 25, null, { timeout: slow(8000) });
+    if (asked[1] !== "?before=20") fail("more did not ask with the hub's cursor: " + JSON.stringify(asked));
+    if (await dp.$("#chatter-list .chat-more")) fail("more is still offered after the last page.");
+    // A filter is a new read from the top: the agent, which side of it, the room and how far back.
+    await dp.fill("#chatter-agent", "me");
+    await dp.selectOption("#chatter-dir", "from");
+    await dp.waitForFunction(() => document.querySelectorAll("#chatter-list .chatter-row").length === 20, null, { timeout: slow(8000) });
+    const q = new URLSearchParams(asked[asked.length - 1]);
+    if (q.get("from") !== "me" || q.has("agent") || q.has("before")) fail("sent by an agent asked " + asked[asked.length - 1]);
+    await dp.selectOption("#chatter-dir", "");
+    await dp.waitForTimeout(300);
+    if (new URLSearchParams(asked[asked.length - 1]).get("agent") !== "me") fail("either side asked " + asked[asked.length - 1]);
+    await dp.selectOption("#chatter-since", "86400");
+    await dp.waitForTimeout(300);
+    const since = new URLSearchParams(asked[asked.length - 1]).get("since");
+    if (!since || Math.abs(Date.parse(since) - (Date.now() - 86400000)) > 60000) fail("the time window asked since " + since);
+    // The room filter lists the rooms the hub reports.
+    await dp.evaluate(() => { hubRooms = [{ name: "alpha" }, { name: "beta" }]; chatterDrawChoices(); });
+    await dp.selectOption("#chatter-room", "beta");
+    await dp.waitForTimeout(300);
+    if (new URLSearchParams(asked[asked.length - 1]).get("room") !== "beta") fail("the room filter asked " + asked[asked.length - 1]);
+    const before = asked.length;
+    await dp.waitForTimeout(1500);
+    if (asked.length !== before) fail("the chatter polled: " + (asked.length - before) + " reads with nothing touched.");
+    if (errors.length) fail("the chatter tab threw uncaught errors: " + errors.join(" | "));
+  } finally {
+    await ctx.close();
+  }
+}
+
 // A group made with `+ new group` on the terminals list is removed from its
 // heading's right-click menu. Its cards go back to where they sit without it,
 // with their tags kept, and nothing is closed: no card is written to at all.
@@ -8075,7 +8203,8 @@ async function tabsOrderSection(browser, base) {
     let v = await view(p);
     const dflt = v.order.join(",");
     if (v.saved !== null) fail("tabsOrder: a fresh browser has a saved tab layout: " + v.saved);
-    if (!v.shown.includes("usage") || v.moreOn) fail("tabsOrder: the default bar is not the plain one " + JSON.stringify(v));
+    // The one tab that starts in the menu is chatter (u-say-log-view-all). Everything else is in the bar.
+    if (!v.shown.includes("usage") || v.shown.includes("chatter") || !v.listed.includes("chatter")) fail("tabsOrder: the default bar is not the plain one " + JSON.stringify(v));
 
     // reorder: usage up past history and terms
     await arrange(p);
@@ -20770,7 +20899,7 @@ async function bootCleanSection(browser, base) {
       try {
         await p.goto(base + at, { waitUntil: "load" });
         await p.waitForTimeout(1500);
-        const missing = await p.evaluate(() => ["alerting", "swReg", "cardUrlIsCard", "growlDraw", "termOnly", "peekChatter"]
+        const missing = await p.evaluate(() => ["alerting", "swReg", "cardUrlIsCard", "growlDraw", "termOnly", "peekChatter", "loadChatter"]
           .filter(n => { try { return typeof eval(n) === "undefined"; } catch (e) { return true; } }));
         if (missing.length) fail(tag + "booted without " + missing.join(", "));
       } finally {
@@ -27512,7 +27641,7 @@ async function main() {
   // HEADLESS_ONLY=termWear,bridge, or `node scripts/test-board-headless.js termWear bridge`, runs just those sections, for working on one.
   // An unknown name exits 2 and runs nothing.
   const ONLY = process.env.HEADLESS_ONLY || process.argv.slice(2).join(",");
-  if (ONLY) {    const only = { closeOneDialog: closeOneDialogSection, boardDocs: boardDocsSection, phoneBoardCompact: phoneBoardCompactSection, termWear: termWearSection, bridge: bridgeSection, detailsHover: detailsHoverSection, detailsSide: detailsSideBySideSection, chatter: chatterSection, settingsOnce: settingsOnceSection,
+  if (ONLY) {    const only = { closeOneDialog: closeOneDialogSection, boardDocs: boardDocsSection, phoneBoardCompact: phoneBoardCompactSection, termWear: termWearSection, bridge: bridgeSection, detailsHover: detailsHoverSection, detailsSide: detailsSideBySideSection, chatter: chatterSection, chatterTab: chatterTabSection, settingsOnce: settingsOnceSection,
       groupRemove: groupRemoveSection, worn: wornSection, restartGate: restartGateSection, restartStays: restartStaysSection, atriumDown: atriumDownSection,
       toastStays: toastStaysSection, groupColor: groupColorSection,
       groupDrag: groupDragSection, tooltip: tooltipSection, linkTip: linkTipSection, fileOpenOutside: fileOpenOutsideSection, readTabSize: readTabSizeSection, readWidthSkin: readWidthSkinSection, popoutTagFlip: popoutTagFlipSection, prefsEverywhere: prefsEverywhereSection, mPrefsEverywhere: (b) => mPrefsEverywhereSection(b), idleRate: idleRateSection, foldStill: foldStillSection,
@@ -29462,6 +29591,7 @@ async function main() {
     await unit("detailsHover", () => detailsHoverSection(browser, base));
     await unit("detailsSide", () => detailsSideBySideSection(browser, base));
     await unit("chatter", () => chatterSection(browser, base));
+    await unit("chatterTab", () => chatterTabSection(browser, base));
     // ── a load reads settings once ──────────────────────────────────────────
     await unit("settingsOnce", () => settingsOnceSection(browser, base));
     // ── the website skin's effects stay inside the website skin ─────────────

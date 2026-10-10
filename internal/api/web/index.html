@@ -179,6 +179,8 @@
            itself once the hub probe finds a hub, the same as the room counter.
            See js/audit.js and js/rooms.js. -->
       <div class="tab" data-view="audit" hidden>audit</div>
+      <!-- Every say between sessions, from every room. Read on open, see js/chatter.js. -->
+      <div class="tab" data-view="chatter">chatter</div>
       <!-- Hub only, revealed with the audit tab. See js/hubrepos.js. -->
       <div class="tab" data-view="hubrepos" hidden>repos</div>
       <!-- Hub only, revealed with the audit tab. See js/backlog.js. -->
@@ -870,6 +872,37 @@ Read-only. It says what happened, it does not change anything. Filter by room to
       <select id="audit-kind"></select>
     </div>
     <div id="audit-list"></div>
+  </div>
+
+  <div id="chatter" hidden>
+    <div class="col-head" style="margin:0 0 10px">
+      <span>what the sessions said to each other</span>
+      <span class="help" tabindex="0" data-tip="Every say from one session to another, from every room, newest first.
+
+A row opens to the full text, and both names open their cards. Filter by one agent (what it sent, what it received, or both), by room, or by how far back to look.
+
+Read when you open the tab and when you press more, it does not update on its own. A room keeps the last 30 days and 2000 says.">?</span>
+    </div>
+    <div class="filters" style="margin-bottom:12px">
+      <span class="barlabel">agent</span>
+      <input id="chatter-agent" type="search" list="chatter-agents" placeholder="any" autocomplete="off" spellcheck="false">
+      <datalist id="chatter-agents"></datalist>
+      <select id="chatter-dir" aria-label="sent or received">
+        <option value="">sent or received</option>
+        <option value="from">sent</option>
+        <option value="to">received</option>
+      </select>
+      <span class="barlabel">room</span>
+      <select id="chatter-room"></select>
+      <span class="barlabel">when</span>
+      <select id="chatter-since">
+        <option value="">all kept</option>
+        <option value="3600">last hour</option>
+        <option value="86400">last day</option>
+        <option value="604800">last 7 days</option>
+      </select>
+    </div>
+    <div id="chatter-list"></div>
   </div>
 
   <!-- FIVE THINGS, NOT ONE SCROLL.
@@ -3772,6 +3805,7 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
 <script src="/js/rooms.js"></script>
 <script src="/js/rooms-dash.js"></script>
 <script src="/js/audit.js"></script>
+<script src="/js/chatter.js"></script>
 <script src="/js/hubrepos.js"></script>
 <script src="/js/backlog.js"></script>
 <script src="/js/changereq-mock.js"></script>

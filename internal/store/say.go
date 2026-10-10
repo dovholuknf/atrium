@@ -215,14 +215,50 @@ func (s *Store) SaysFor(taskID string, limit int) ([]Say, error) {
 // SaysBefore is SaysFor from a cursor: `before` is the id of the last row of the page already read, and the page
 // after it comes back. A cursor naming no row (swept meanwhile) returns nothing, which ends the paging.
 func (s *Store) SaysBefore(taskID, before string, limit int) ([]Say, error) {
+	return s.SaysWhere(SayFilter{Task: taskID}, before, limit)
+}
+
+// SayFilter narrows SaysWhere. Every field is optional. From and To each match a card id or a wire name, Task matches
+// either end by card id, Agent either end by card id or wire name, State is one state and Since is a time in
+// TimeFormat that keeps only rows sent at or after it.
+type SayFilter struct {
+	Task, Agent, From, To, State, Since string
+}
+
+// SaysWhere is SaysBefore without the card clause: the says of every card, newest first, narrowed by the filter.
+func (s *Store) SaysWhere(f SayFilter, before string, limit int) ([]Say, error) {
 	if limit <= 0 || limit > 100 {
 		limit = 20
 	}
 	var out []Say
 	err := s.guard(func() error {
 		out = nil
-		q := `SELECT ` + sayCols + ` FROM say WHERE (to_task = ? OR from_task = ?)`
-		args := []any{taskID, taskID}
+		q := `SELECT ` + sayCols + ` FROM say WHERE 1 = 1`
+		var args []any
+		if f.Task != "" {
+			q += ` AND (to_task = ? OR from_task = ?)`
+			args = append(args, f.Task, f.Task)
+		}
+		if f.Agent != "" {
+			q += ` AND (to_task = ? OR from_task = ? OR to_wire = ? OR from_wire = ?)`
+			args = append(args, f.Agent, f.Agent, f.Agent, f.Agent)
+		}
+		if f.From != "" {
+			q += ` AND (from_task = ? OR from_wire = ?)`
+			args = append(args, f.From, f.From)
+		}
+		if f.To != "" {
+			q += ` AND (to_task = ? OR to_wire = ?)`
+			args = append(args, f.To, f.To)
+		}
+		if f.State != "" {
+			q += ` AND state = ?`
+			args = append(args, f.State)
+		}
+		if f.Since != "" {
+			q += ` AND sent_at >= ?`
+			args = append(args, f.Since)
+		}
 		if before != "" {
 			var at string
 			if err := s.db.QueryRow(`SELECT sent_at FROM say WHERE id = ?`, before).Scan(&at); err != nil {

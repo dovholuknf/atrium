@@ -397,6 +397,7 @@
   main > #perms,
   main > #runners,
   main > #audit,
+  main > #chatter,
   main > #history,
   main > #usage,
   main > #terms { flex: 1 1 auto; min-height: 0; }
@@ -416,13 +417,16 @@
      under them. A view left out of both lists above is as tall as its rows, and main clips the rest. A new
      top-level view goes in one of them. */
   main > #audit,
+  main > #chatter,
   main > #history,
   main > #usage { display: flex; flex-direction: column; overflow: hidden; }
   #audit > *,
+  #chatter > *,
   #history > *,
   #usage > * { flex: 0 0 auto; }
   #usage > #uc-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; overflow-x: hidden; padding-right: 12px; }
   #audit > #audit-list,
+  #chatter > #chatter-list,
   #history > #history-list { flex: 1 1 auto; min-height: 0; overflow-y: auto; overflow-x: hidden; }
   /* ── scrollbars ─────────────────────────────────────── */
   /* Every scrollbar on the board, in one universal rule, with one carve-out.
@@ -478,6 +482,7 @@
      the content. */
   #stack-list,
   #audit-list,
+  #chatter-list,
   #history-list,
   main > #perms,
   main > #runners,
