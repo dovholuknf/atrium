@@ -123,7 +123,7 @@ func TestAQuestionOpensAnItemAndTheLaunchersReplyClosesIt(t *testing.T) {
 	t.Parallel()
 	d := testDaemon(t)
 	launcher, worker := launchedPair(t, d)
-	d.peerSaid(worker.WireName, launcher, "which table?", KindNeeds)
+	d.peerSaid(worker.WireName, launcher, askTable, KindNeeds)
 	if err := d.st.SetStatus(worker.ID, store.StatusNeedsInput); err != nil {
 		t.Fatal(err)
 	}
@@ -383,7 +383,7 @@ func TestAnAnsweredQuestionBeforeTheWorkerStopsOwesNothing(t *testing.T) {
 	t.Parallel()
 	d := testDaemon(t)
 	launcher, worker := launchedPair(t, d)
-	d.peerSaid(worker.WireName, launcher, "which table?", KindNeeds)
+	d.peerSaid(worker.WireName, launcher, askTable, KindNeeds)
 	worker, _ = d.st.Get(worker.ID)
 	d.peerSaid(launcher.WireName, worker, "table three", KindNeeds)
 	if err := d.st.SetStatus(worker.ID, store.StatusNeedsInput); err != nil {
@@ -401,7 +401,7 @@ func TestAReportWithNoAskWithdrawsAnEarlierQuestion(t *testing.T) {
 	t.Cleanup(func() { stopAfterReport = stopAfter })
 	d := testDaemon(t)
 	launcher, worker := launchedPair(t, d)
-	d.peerSaid(worker.WireName, launcher, "which table?", KindNeeds)
+	d.peerSaid(worker.WireName, launcher, askTable, KindNeeds)
 	finishWith(t, d, FinishRequest{Agent: "worker", Status: ReportDone, NoCommit: "research", Recap: "done anyway"})
 	d.owedPass(time.Now())
 	if n, _, _ := d.owedFor(launcher); n != 0 {
@@ -586,14 +586,14 @@ func TestANewQuestionAfterAClosedOneOpensANewItem(t *testing.T) {
 	t.Parallel()
 	d := testDaemon(t)
 	launcher, worker := launchedPair(t, d)
-	d.peerSaid(worker.WireName, launcher, "which table?", KindNeeds)
+	d.peerSaid(worker.WireName, launcher, askTable, KindNeeds)
 	if err := d.st.SetStatus(worker.ID, store.StatusNeedsInput); err != nil {
 		t.Fatal(err)
 	}
 	d.owedPass(time.Now())
 	d.closeOwed(worker.ID, "dismissed")
 	time.Sleep(10 * time.Millisecond)
-	d.peerSaid(worker.WireName, launcher, "and which column?", KindNeeds)
+	d.peerSaid(worker.WireName, launcher, askColumn, KindNeeds)
 	d.owedPass(time.Now().Add(time.Second))
 	if n, _, _ := d.owedFor(launcher); n != 1 {
 		t.Fatalf("a new question opened %d", n)
@@ -713,7 +713,7 @@ func TestADismissedQuestionStaysClosedUntilANewOne(t *testing.T) {
 	t.Parallel()
 	d := testDaemon(t)
 	launcher, worker := launchedPair(t, d)
-	d.peerSaid(worker.WireName, launcher, "which table?", KindNeeds)
+	d.peerSaid(worker.WireName, launcher, askTable, KindNeeds)
 	if err := d.st.SetStatus(worker.ID, store.StatusNeedsInput); err != nil {
 		t.Fatal(err)
 	}
@@ -776,13 +776,13 @@ func TestAQuestionAskedWhileAnItemIsOpenIsClosedWithIt(t *testing.T) {
 	t.Parallel()
 	d := testDaemon(t)
 	launcher, worker := launchedPair(t, d)
-	d.peerSaid(worker.WireName, launcher, "which table?", KindNeeds)
+	d.peerSaid(worker.WireName, launcher, askTable, KindNeeds)
 	if err := d.st.SetStatus(worker.ID, store.StatusNeedsInput); err != nil {
 		t.Fatal(err)
 	}
 	d.owedPass(time.Now())
 	time.Sleep(5 * time.Millisecond)
-	d.peerSaid(worker.WireName, launcher, "and which column?", KindNeeds)
+	d.peerSaid(worker.WireName, launcher, askColumn, KindNeeds)
 	time.Sleep(5 * time.Millisecond)
 	d.closeOwed(worker.ID, "dismissed")
 	d.owedPass(time.Now().Add(time.Minute))
@@ -796,7 +796,7 @@ func TestADifferentReasonFromBeforeTheCloseDoesNotReopen(t *testing.T) {
 	t.Parallel()
 	d := testDaemon(t)
 	launcher, worker := launchedPair(t, d)
-	d.peerSaid(worker.WireName, launcher, "which table?", KindNeeds)
+	d.peerSaid(worker.WireName, launcher, askTable, KindNeeds)
 	if err := d.st.SetStatus(worker.ID, store.StatusNeedsPermission); err != nil {
 		t.Fatal(err)
 	}
@@ -837,5 +837,37 @@ func TestAnOrphanThatIsRetaskedAfterItsReportOwesAgain(t *testing.T) {
 	d.owedPass(time.Now().Add(owedPushAfter + time.Minute))
 	if it, _ := d.st.OwedItemOf(w.ID); it == nil {
 		t.Fatal("a re-tasked orphan that ended silently owes nothing")
+	}
+}
+
+const (
+	askTable  = "Open Questions:\n1. which table?"
+	askColumn = "Open Questions:\n1. and which column?"
+)
+
+// A worker's plain say to its launcher is its report, and the default kind is needs. It owes the
+// launcher nothing and holds no notice on it. A say that ends in an Open Questions list does.
+func TestAReportSayOpensNothingOnTheLauncherButAQuestionListDoes(t *testing.T) {
+	t.Parallel()
+	d := testDaemon(t)
+	launcher, worker := launchedPair(t, d)
+	d.peerSaid(launcher.WireName, worker, "merge it and tell me", KindNeeds)
+	worker, _ = d.st.Get(worker.ID)
+	d.peerSaid(worker.WireName, launcher, "merged, 28 pass", KindNeeds)
+	if err := d.st.SetStatus(worker.ID, store.StatusNeedsInput); err != nil {
+		t.Fatal(err)
+	}
+	d.owedPass(time.Now())
+	d.owedPass(time.Now().Add(2 * owedPushAfter))
+	if n, _, _ := d.owedFor(launcher); n != 0 {
+		t.Fatalf("a result opened %d on the launcher", n)
+	}
+	if n := owedHeld(t, d, launcher.ID, "owes an answer"); n != 0 {
+		t.Fatalf("a result held %d notices on the launcher", n)
+	}
+	d.peerSaid(worker.WireName, launcher, "merged, one thing left.\n\nOpen Questions:\n1. drop the branch?", KindNeeds)
+	d.owedPass(time.Now())
+	if n, _, _ := d.owedFor(launcher); n != 1 {
+		t.Fatalf("a say with an Open Questions list opened %d, want 1", n)
 	}
 }
