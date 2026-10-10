@@ -2,20 +2,21 @@
 # Run chattiness.sh against every room's transcripts and merge the rows into one summary.
 #
 #   scripts/chattiness/collect.sh --since 2026-10-09T22:00:00-04:00 --until 2026-10-10T08:00:00-04:00
-#   scripts/chattiness/collect.sh --rooms local,sg4,sg3 --tsv merged.tsv
+#   scripts/chattiness/collect.sh --rooms m1mini,sg4,sg3 --tsv merged.tsv
 #
-# local is this machine's ~/.claude/projects. sg4 and sg3 are Windows rooms reached with `ssh <host> bash -s`, so
-# they need ssh access without a prompt, bash (git-bash) and jq on the other side. chattiness.sh itself travels
-# over stdin, so nothing is installed there. A room that cannot be reached is named on stderr with the exact error
+# A room named like this machine (or `local`) runs here, on ~/.claude/projects. Any other room is reached with
+# `ssh <host> bash -s`: sg3 and sg4 are Windows and read C:/Users/claude/.claude/projects, the rest their default.
+# Each needs ssh without a prompt, bash (git-bash) and jq on the other side. chattiness.sh itself travels over stdin, so nothing is installed there. A room that cannot be reached is named on stderr with the exact error
 # and left out of the merge. The summary lists which rooms made it in.
 set -uo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
 
 since="1970-01-01T00:00:00Z"
 until_="2999-01-01T00:00:00Z"
-rooms="local,sg4,sg3"
+rooms="m1mini,sg4,sg3"
 tsv="chattiness-merged.tsv"
 win_root="C:/Users/claude/.claude/projects"
+me="$(hostname 2>/dev/null | cut -d. -f1 | tr "[:upper:]" "[:lower:]")"
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -36,11 +37,14 @@ missed=""
 
 for room in ${rooms//,/ }; do
   out="$work/$room.tsv"
-  if [ "$room" = local ]; then
+  lc="$(printf "%s" "$room" | tr "[:upper:]" "[:lower:]")"
+  if [ "$room" = local ] || [ "$lc" = "$me" ]; then
     "$here/chattiness.sh" --since "$since" --until "$until_" --tsv - > "$out" 2> "$work/$room.err"
   else
+    root_args=()
+    case "$room" in sg3|sg4) root_args=(--root "$win_root") ;; esac
     ssh -o BatchMode=yes -o ConnectTimeout=10 "$room" bash -s -- \
-      --root "$win_root" --since "$since" --until "$until_" --tsv - < "$here/chattiness.sh" > "$out" 2> "$work/$room.err"
+      "${root_args[@]+"${root_args[@]}"}" --since "$since" --until "$until_" --tsv - < "$here/chattiness.sh" > "$out" 2> "$work/$room.err"
   fi
   rc=$?
   if [ $rc -ne 0 ] || [ ! -s "$out" ]; then

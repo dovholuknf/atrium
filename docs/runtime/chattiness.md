@@ -16,9 +16,9 @@ scripts/chattiness/test.sh
   directory (default `~/.claude/projects`). `--since` and `--until` are RFC3339 and optional. `--tsv FILE` names the
   per-session rows (default `./chattiness.tsv`, `-` prints them and skips the summary). The markdown summary goes to
   stdout. `--from-tsv FILE` summarizes rows already written.
-- `collect.sh` runs `chattiness.sh` here and, over `ssh <room> bash -s`, on `sg4` and `sg3` (transcripts under
-  `C:/Users/claude/.claude/projects`), then merges the rows and prints one summary. A room that does not answer is
-  named on stderr with the exact error and listed as not covered. `--rooms local,sg4` picks rooms.
+- `collect.sh` runs `chattiness.sh` locally for the room named like this machine (default rooms `m1mini,sg4,sg3`, so it
+  works from sg4 too) and over `ssh <room> bash -s` for the others (sg3 and sg4 read `C:/Users/claude/.claude/projects`), then merges the rows and prints one summary. A room that does not answer is
+  named on stderr with the exact error and listed as not covered. `--rooms m1mini,sg4` picks rooms.
 - `test.sh` checks the counts on `testdata/`, a synthetic transcript. A change in the transcript format shows up as a
   failing test. The fixture holds no real text.
 

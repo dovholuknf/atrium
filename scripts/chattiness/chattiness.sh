@@ -33,7 +33,7 @@ command -v jq >/dev/null 2>&1 || { echo "chattiness: jq is required" >&2; exit 2
 
 # RFC3339 with an offset to epoch seconds. Run through jq so every platform parses it the same way.
 read -r -d '' RFC_JQ <<'JQ' || true
-def rfc: capture("^(?<d>[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2})(?<f>\\.[0-9]+)?(?<z>Z|[+-][0-9]{2}:[0-9]{2})$")
+def rfc: capture("^(?<d>[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2})(?<f>[.][0-9]+)?(?<z>Z|[+-][0-9]{2}:[0-9]{2})$")
   | (.d + "Z" | fromdateiso8601)
     - (if .z == "Z" then 0
        else ((if .z[0:1] == "-" then -1 else 1 end) * ((.z[1:3] | tonumber) * 3600 + (.z[4:6] | tonumber) * 60)) end);
@@ -44,14 +44,14 @@ JQ
 # and sums the assistant usage inside it.
 read -r -d '' SESSION_JQ <<'JQ' || true
 def epoch: (.[0:19] + "Z" | fromdateiso8601)
-  + (([.[19:] | capture("^(?<f>\\.[0-9]+)").f | tonumber] | .[0]) // 0);
+  + (([.[19:] | capture("^(?<f>[.][0-9]+)").f | tonumber] | .[0]) // 0);
 def txt: if type == "string" then .
   elif type == "array" then (map(select(type == "object" and .type == "text") | .text) | join("\n"))
   else "" end;
 def rtxt: (.content | if type == "string" then . elif type == "array" then (map(.text? // "") | join("\n")) else "" end);
-def key: gsub("</?pasted_content[^>]*>"; "") | gsub("^\\s+|\\s+$"; "") | gsub("\\s+"; " ") | .[0:200];
-def src: if test("^\\[atrium\\] atrium says:") then "nudge"
-  elif test("^\\[atrium\\] [^ ]+ says:") then "say"
+def key: gsub("</?pasted_content[^>]*>"; "") | gsub("^[ \t\n\r]+|[ \t\n\r]+$"; "") | gsub("[ \t\n\r]+"; " ") | .[0:200];
+def src: if test("^[[]atrium[]] atrium says:") then "nudge"
+  elif test("^[[]atrium[]] [^ ]+ says:") then "say"
   elif startswith("[atrium]") then "notice"
   elif startswith("Another Claude session sent a message") then "say"
   else null end;
@@ -65,14 +65,14 @@ def ev:
       (.message.content) as $c
       | if ($c | type) == "array" and ($c | length) > 0 and ($c[0] | type) == "object" and $c[0].type == "tool_result" then
           ($c[] | select(.type == "tool_result") | . as $r | ($r | rtxt) as $x
-            | if $r.is_error == true and ($x | test("^PreToolUse:[^ ]+ hook error: (Message from|\\[atrium\\])")) then
+            | if $r.is_error == true and ($x | test("^PreToolUse:[^ ]+ hook error: (Message from|[[]atrium[]])")) then
                 {t: $t, k: "mid", src: "perm", key: ($x | sub("^PreToolUse:[^ ]+ hook error: "; "") | key)}
               else empty end)
         else
           ($c | txt) as $x
           | ($x | src) as $s
           | if $s != null then {t: $t, k: "start", src: $s, key: ($x | key)}
-            elif .isMeta == true or $x == "" or ($x | test("^(This session is being continued|Read BRIEF.md|<|Caveat:|\\[Request interrupted)"))
+            elif .isMeta == true or $x == "" or ($x | test("^(This session is being continued|Read BRIEF.md|<|Caveat:|[[]Request interrupted)"))
               then {t: $t, k: "start", src: "other"}
             else {t: $t, k: "start", src: "human"} end
         end
@@ -85,7 +85,7 @@ def ev:
         else empty end
     elif .type == "system" and .subtype == "stop_hook_summary" then
       ((.hookErrors // []) | map(tostring) | join("\n")) as $x
-      | if $x | test("Message from|open items from your workers|\\[atrium\\]") then {t: $t, k: "start", src: "stop", key: ($x | key)}
+      | if $x | test("Message from|open items from your workers|[[]atrium[]]") then {t: $t, k: "start", src: "stop", key: ($x | key)}
         else empty end
     else empty end;
 
