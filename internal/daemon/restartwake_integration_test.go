@@ -49,7 +49,6 @@ func wakeEvents(t *testing.T, d *Daemon, taskID string) []string {
 
 // The daemon that comes back after the restart finds the wake the old one took.
 func TestAWakeSurvivesTheDaemonComingBack(t *testing.T) {
-	t.Parallel()
 	dir := t.TempDir()
 	open := func() *Daemon {
 		d, err := New(Options{
@@ -85,7 +84,6 @@ func TestAWakeSurvivesTheDaemonComingBack(t *testing.T) {
 // for its session to settle, the turn to end and the line to be empty. Then it
 // is typed once and the wake is gone.
 func TestAWakeWaitsForTheNewRunnerAnEmptyLineAndTheEndOfTheTurn(t *testing.T) {
-	t.Parallel()
 	d := testDaemon(t)
 	t.Cleanup(func() { d.pending.stopAll() })
 	w, r, f := queuedWake(t, d, "we up")
@@ -155,7 +153,6 @@ func TestAWakeWaitsForTheNewRunnerAnEmptyLineAndTheEndOfTheTurn(t *testing.T) {
 // A runner that never posts SessionStart is typed into once it has been up long
 // enough, since there is no other signal that it is ready.
 func TestAWakeReachesARunnerWithNoSessionHook(t *testing.T) {
-	t.Parallel()
 	d := testDaemon(t)
 	w, r, f := queuedWake(t, d, "carry on")
 	r.started = w.QueuedAt.Add(time.Second)
@@ -173,7 +170,6 @@ func TestAWakeReachesARunnerWithNoSessionHook(t *testing.T) {
 // No expiry: a card that takes days to come back still gets its wake, and the
 // days in between leave it queued on the card.
 func TestAWakeQueuedLongAgoIsStillDelivered(t *testing.T) {
-	t.Parallel()
 	d := testDaemon(t)
 	w, r, f := queuedWake(t, d, "we up")
 	id := w.TaskID
@@ -207,7 +203,6 @@ func TestAWakeQueuedLongAgoIsStillDelivered(t *testing.T) {
 // gets, so nobody reads it as the operator, and the prompt it starts is not read
 // as the operator either.
 func TestAWakeIsTypedBehindTheAtriumLabel(t *testing.T) {
-	t.Parallel()
 	d := testDaemon(t)
 	w, r, f := queuedWake(t, d, "we up")
 	r.started = w.QueuedAt.Add(time.Second)
@@ -234,7 +229,6 @@ func TestAWakeIsTypedBehindTheAtriumLabel(t *testing.T) {
 
 // The endpoint a deploy script calls: by wire name, one per card, and cleared.
 func TestTheRestartWakeEndpoint(t *testing.T) {
-	t.Parallel()
 	d := testDaemon(t)
 	card := cardFor(t, d, "orchestrator")
 	call := func(method, who, body string) (*httptest.ResponseRecorder, map[string]any) {

@@ -163,6 +163,7 @@ func TestScreenAgainstXterm(t *testing.T) {
 	t.Parallel()
 	for _, c := range traceCases() {
 		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
 			s := newScreenSized(c.cols, c.rows)
 			s.applyCuts([]byte(c.data), c.cuts)
 			assertWideInvariant(t, s)
