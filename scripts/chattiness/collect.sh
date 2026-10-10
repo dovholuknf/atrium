@@ -15,7 +15,7 @@ since="1970-01-01T00:00:00Z"
 until_="2999-01-01T00:00:00Z"
 rooms="m1mini,sg4,sg3"
 tsv="chattiness-merged.tsv"
-$1win_bash="C:/PROGRA~1/Git/bin/bash.exe"
+win_bash="C:/PROGRA~1/Git/bin/bash.exe"
 me="$(hostname 2>/dev/null | cut -d. -f1 | tr "[:upper:]" "[:lower:]")"
 
 while [ $# -gt 0 ]; do

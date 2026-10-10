@@ -84,6 +84,12 @@ def src: if test("^[[]atrium[]] atrium says:") then "nudge"
   elif startswith("Another Claude session sent a message") then "say"
   else null end;
 
+# A say is a result, not an errand, when its sender is not a director, the orchestrator, a reviewer or the human, or when
+# its text opens with done or blocked. See docs/runtime/chattiness.md.
+def isresult: (capture("^[[]atrium[]] (?<n>[^ ]+) says: *(?<b>.*)$"; "s")
+    | ((.n | test("director|orchestrator|^review|^clint$|^human$"; "i") | not)
+       or (.b | gsub("<[^>]*>"; "") | test("^[ \t\n\r]*(done|blocked)"; "i")))) // false;
+
 def ev:
   (.timestamp | epoch) as $t
   | if .type == "assistant" then
@@ -99,7 +105,7 @@ def ev:
         else
           ($c | txt) as $x
           | ($x | src) as $s
-          | if $s != null then {t: $t, k: "start", src: $s, key: ($x | key)}
+          | if $s != null then {t: $t, k: "start", src: $s, key: ($x | key), res: ($x | isresult)}
             elif .isMeta == true or $x == "" or ($x | test("^(This session is being continued|Read BRIEF.md|<|Caveat:|[[]Request interrupted)"))
               then {t: $t, k: "start", src: "other"}
             else {t: $t, k: "start", src: "human"} end
@@ -123,26 +129,35 @@ def fin: . + {
                      c: (map(.cache_read_input_tokens // 0) | add // 0)}),
   wall: (.last - .t0),
   act: ([.tools[] | select(test("atrium_(say|report|done|blocked)$") | not)] | length > 0)
-} | del(.msgs);
-def seg($t; $s; $k): {src: $s, key: $k, t0: $t, last: $t, msgs: {}, tools: [], n: 0};
+} | del(.msgs)
+  | . + {cls: (if (.src == "say" or .src == "notice" or .src == "nudge" or .src == "stop") | not then null
+      elif .rep then "repeat"
+      elif .src != "say" then "notice"
+      elif (.act | not) and .tok.o < 300 then "ack"
+      elif .res then "result"
+      else "errand" end)};
+def seg($t; $s; $k; $r; $rep): {src: $s, key: $k, res: $r, rep: $rep, t0: $t, last: $t, msgs: {}, tools: [], n: 0};
 
 def cols: ["session", "project", "first", "turns", "human", "a_turns", "mid_perm", "mid_say", "mid_notice", "mid_nudge",
   "tok_in", "tok_out", "tok_cread", "a_in", "a_out", "a_cread", "a_wall_s", "a_wall_max_s", "a_noact", "repeats",
   "rep_say", "rep_notice", "rep_stop", "rep_nudge", "rep_perm"]
   + ([("say", "notice", "stop", "nudge") as $s | ($s + "_turns", $s + "_tok", $s + "_noact", $s + "_wall_s")])
+  + [("errand", "result", "notice", "repeat", "ack") as $c | ("c_" + $c + "_turns", "c_" + $c + "_fresh", "c_" + $c + "_cread", "c_" + $c + "_wall_s")]
   + ["rep_top"];
 
 if $hdr == "1" then cols | @tsv else
   [inputs | fromjson? | select(type == "object" and .isSidechain != true and .timestamp != null)
    | ev | select(.t >= $lo and .t <= $hi)] as $evs
-  | (reduce $evs[] as $e ({segs: [], cur: null, mids: [], keys: []};
+  | (reduce $evs[] as $e ({segs: [], cur: null, mids: [], keys: [], seen: {}};
       if $e.k == "start" then
         (if .cur != null and .cur.n > 0 then .segs += [.cur | fin] else . end)
-        | .cur = seg($e.t; $e.src; $e.key) | .keys += (if $e.key != null then [{k: $e.key, s: $e.src}] else [] end)
+        | ($e.key != null and (.seen[$e.key // ""] // false)) as $rep
+        | .cur = seg($e.t; $e.src; $e.key; ($e.res // false); $rep)
+        | .seen[$e.key // ""] = ($e.key != null) | .keys += (if $e.key != null then [{k: $e.key, s: $e.src}] else [] end)
       elif $e.k == "mid" then
-        .mids += [$e] | .keys += (if $e.key != null then [{k: $e.key, s: $e.src}] else [] end)
+        .mids += [$e] | .seen[$e.key // ""] = ($e.key != null) | .keys += (if $e.key != null then [{k: $e.key, s: $e.src}] else [] end)
       else
-        (if .cur == null then .cur = seg($e.t; "pre"; null) else . end)
+        (if .cur == null then .cur = seg($e.t; "pre"; null; false; false) else . end)
         | .cur.msgs[$e.id] = $e.u | .cur.tools += $e.tools | .cur.last = $e.t | .cur.n += 1
       end)
      | (if .cur != null and .cur.n > 0 then .segs += [.cur | fin] else . end)) as $st
@@ -166,6 +181,8 @@ if $hdr == "1" then cols | @tsv else
         + [("say", "notice", "stop", "nudge", "perm") as $s | ($rg | map(select(.s == $s) | .n - 1) | add // 0)]
         + [$A[] as $s | ([$segs[] | select(.src == $s)]) as $g
            | ($g | length), ($g | sum(tk)), ([$g[] | select(.act | not)] | length), ($g | sum(.wall) | round)]
+        + [("errand", "result", "notice", "repeat", "ack") as $c | ([$segs[] | select(.cls == $c)]) as $g
+           | ($g | length), ($g | sum(.tok.i + .tok.o)), ($g | sum(.tok.c)), ($g | sum(.wall) | round)]
         + [($rg | sort_by(-.n) | .[0:5] | map("\(.n)\u001f\(.k[0:80])") | join("\u001e"))]
       | @tsv
     end
@@ -185,22 +202,36 @@ def sum(f): (map(f) | add // 0);
 | ["say", "notice", "stop", "nudge"] as $A
 | def atok: .a_in + .a_out + .a_cread;
   def alltok: .tok_in + .tok_out + .tok_cread;
-  def chatty: .turns > 0 and (.a_turns > 0)
-     and ((.a_turns / .turns > $tt) or (alltok > 0 and (atok / alltok) > $tk))
-     and (.a_noact * 2 > .a_turns);
+  def cfresh: .c_notice_fresh + .c_repeat_fresh + .c_ack_fresh;
+  def cread: .c_notice_cread + .c_repeat_cread + .c_ack_cread;
+  def cturns: .c_notice_turns + .c_repeat_turns + .c_ack_turns;
+  def freshall: .tok_in + .tok_out;
+  def chatty: .turns > 0 and cturns > 0 and ((cturns / .turns > $tt) or (freshall > 0 and (cfresh / freshall) > $tk));
   ($rows | sum(.turns)) as $T | ($rows | sum(.a_turns)) as $AT
   | ($rows | sum(alltok)) as $K | ($rows | sum(atok)) as $AK
   | ($rows | sum(.a_noact)) as $NA
   | ($rows | sum(.mid_perm)) as $mp | ($rows | sum(.mid_say)) as $ms | ($rows | sum(.mid_notice)) as $mn | ($rows | sum(.mid_nudge)) as $mu
   | "# atrium chattiness\n",
     "Window: \($since) to \($until). Sessions: \($rows | length). Rooms: \($rows | map(.project) | unique | length) projects.\n",
+    "## Headline\n",
+    "Chatter is what atrium sent that did no work: automatic notices, repeats of a text already delivered, and turns that",
+    "only acknowledged. Fresh tokens are input, cache write and output. Cache reads are counted apart, being cheap and large.\n",
+    "**Chatter: \($rows | sum(cturns)) of \($T) turns (\(pct($rows | sum(cturns); $T))%), \($rows | sum(cfresh) | n) of \($rows | sum(freshall) | n) fresh tokens (\(pct($rows | sum(cfresh); $rows | sum(freshall)))%), \($rows | sum(cread) | n) of \($rows | sum(.tok_cread) | n) cache-read tokens (\(pct($rows | sum(cread); $rows | sum(.tok_cread)))%).**\n",
+    "## What woke each turn\n",
+    "| class | turns | fresh tokens | cache-read tokens | mean wall s | share of fresh | share of cache read |", "|---|---|---|---|---|---|---|",
+    (["errand", "result", "notice", "repeat", "ack"][] as $c
+      | ($rows | sum(.["c_" + $c + "_turns"])) as $ct | ($rows | sum(.["c_" + $c + "_fresh"])) as $cf
+      | ($rows | sum(.["c_" + $c + "_cread"])) as $cc | ($rows | sum(.["c_" + $c + "_wall_s"])) as $cw
+      | "| \($c) | \($ct) | \($cf | n) | \($cc | n) | \(if $ct == 0 then 0 else ($cw / $ct | round) end) | \(pct($cf; $rows | sum(freshall)))% | \(pct($cc; $rows | sum(.tok_cread)))% |"),
+    "| not message-started (human, launch, other) | \($T - $AT) | \(($rows | sum(freshall)) - ($rows | sum(.a_in + .a_out)) | n) | \(($rows | sum(.tok_cread)) - ($rows | sum(.a_cread)) | n) | | | |",
+    "",
     "## Totals\n",
     "| measure | value |", "|---|---|",
     "| turns, all | \($T) |",
     "| turns typed by a human | \($rows | sum(.human)) |",
-    "| turns atrium started | \($AT) (\(pct($AT; $T))% of all turns) |",
+    "| turns a message started (errands, results and chatter) | \($AT) (\(pct($AT; $T))% of all turns) |",
     "| tokens, all (input + cache write + output + cache read) | \($K | n) |",
-    "| tokens in atrium-started turns | \($AK | n) (\(pct($AK; $K))% of all tokens) |",
+    "| tokens in message-started turns |\($AK | n) (\(pct($AK; $K))% of all tokens) |",
     "| atrium-started turns with no action | \($NA) (\(pct($NA; $AT))% of atrium-started turns) |",
     "| messages delivered mid-turn (not a turn start): permission hook / queued say / queued notice / reminder | \($mp) / \($ms) / \($mn) / \($mu) |",
     "| repeated deliveries of the same text to one session | \($rows | sum(.repeats)) |",
@@ -233,14 +264,14 @@ def sum(f): (map(f) | add // 0);
     "",
     "Mid-turn messages: permission hook \($mp), say \($ms), notice \($mn), silent-turn reminder \($mu). They start no turn, so they carry no",
     "token or wall figure of their own.\n",
-    "## Worst sessions (by tokens in atrium-started turns)\n",
-    "| session | project | turns | atrium turns | turn share | atrium tokens | token share | no action | over threshold |", "|---|---|---|---|---|---|---|---|---|",
-    ($rows | sort_by(-atok) | .[0:10][]
-      | "| \(.session[0:8]) | \(.project | .[-34:]) | \(.turns) | \(.a_turns) | \(pct(.a_turns; .turns))% | \(atok | n) | \(pct(atok; alltok))% | \(.a_noact) | \(if chatty then "yes" else "no" end) |"),
+    "## Sessions by chatter (fresh tokens in notices, repeats and acknowledgements)\n",
+    "| session | project | turns | chatter turns | turn share | chatter fresh | fresh share | chatter cache read | cache-read share | over threshold |", "|---|---|---|---|---|---|---|---|---|---|",
+    ($rows | sort_by(-cfresh) | .[0:10][]
+      | "| \(.session[0:8]) | \(.project | .[-34:]) | \(.turns) | \(cturns) | \(pct(cturns; .turns))% | \(cfresh | n) | \(pct(cfresh; freshall))% | \(cread | n) | \(pct(cread; .tok_cread))% | \(if chatty then "yes" else "no" end) |"),
     "",
-    "Thresholds (fixed before the first run): a session is chatty when atrium-started turns are over \($tt * 100)% of its turns or",
-    "over \($tk * 100)% of its tokens, and more than half of those turns end with no action. A source is a PROBLEM when more than",
-    "half of its turns end with no action and it holds 5% or more of all turns or of all tokens."
+    "Thresholds (fixed before the first run): a session is chatty when chatter turns are over \($tt * 100)% of its turns or chatter",
+    "fresh tokens are over \($tk * 100)% of its fresh tokens. A source is a PROBLEM when more than half of its turns end with no",
+    "action and it holds 5% or more of all turns or of all tokens."
 JQ
 
 # Rows come back from Windows jq with CRLF line ends, and a row from a broken run can be short or hold text where a

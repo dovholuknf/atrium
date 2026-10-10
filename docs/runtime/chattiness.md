@@ -17,7 +17,8 @@ scripts/chattiness/test.sh
   per-session rows (default `./chattiness.tsv`, `-` prints them and skips the summary). The markdown summary goes to
   stdout. `--from-tsv FILE` summarizes rows already written.
 - `collect.sh` runs `chattiness.sh` locally for the room named like this machine (default rooms `m1mini,sg4,sg3`, so it
-  works from sg4 too) and over `ssh <room> bash -s` for the others (sg3 and sg4 read `C:/Users/claude/.claude/projects`), then merges the rows and prints one summary. A room that does not answer is
+  works from sg4 too) and over `ssh <room>` for the others, then merges the rows and prints one summary. A room that
+  does not answer is
   named on stderr with the exact error and listed as not covered. `--rooms m1mini,sg4` picks rooms.
 - `test.sh` checks the counts on `testdata/`, a synthetic transcript. A change in the transcript format shows up as a
   failing test. The fixture holds no real text.
@@ -54,6 +55,29 @@ A mid-turn delivery starts no turn. It lands inside a turn that is already runni
 A queued message carries `origin.kind: human` and `humanTurn: true` in the transcript, so the origin field cannot tell
 atrium from a person. The text does.
 
+## Classes: what woke a turn
+
+The headline used to count every turn a message started as atrium's doing. An errand from a launcher and a worker's
+report are work, not chatter. So each message-started turn (source say, notice, nudge or stop) gets one class, by the
+first rule that matches:
+
+| class | rule |
+|---|---|
+| repeat | the turn's text was already delivered to this session earlier, as a turn start or a mid-turn message (same key as the `repeats` column) |
+| notice | an automatic message: source notice, nudge or stop (`[atrium] new context:`, `restart wake:`, `room deploy:`, `atrium says: Your turn ended...`, a Stop hook carrying a message) |
+| ack | a say whose turn made no tool call besides `atrium_say`, `atrium_report`, `atrium_done` or `atrium_blocked`, and wrote under 300 output tokens |
+| result | a say from a worker to its launcher: the sender handle is not a director, the orchestrator, a reviewer, `clint` or `human`, or the text opens with `done` or `blocked` |
+| errand | every other say: a launcher's ask or brief, a peer request, a review request |
+
+Human, launch (`Read BRIEF.md`) and other turns have no class. The result rule goes by the sender's name, so a
+reviewer's answer to a director reads as an errand. That misfiles work and not chatter, so the headline is not moved by
+it. A worker that was told to say `done` and then acknowledges a nudge is an ack, as it should be.
+
+Chatter is notice + repeat + ack. The summary reports it three ways: as a share of all turns, of fresh tokens (input,
+cache write and output) and of cache-read tokens. Cache reads are kept apart because they are the cheap, large part
+of every turn and would hide the rest. For each class it gives turns, fresh tokens, cache-read tokens and mean wall
+seconds, from the turn start to its last assistant entry.
+
 ## Columns
 
 One row per session. Token columns sum input plus cache write, output, and cache read for the assistant messages.
@@ -72,6 +96,7 @@ One row per session. Token columns sum input plus cache write, output, and cache
 | repeats | deliveries of a text a session has already been given, counted past the first (whitespace and paste wrappers removed, first 200 characters compared) |
 | rep_say, rep_notice, rep_stop, rep_nudge, rep_perm | the repeats by the source of the repeated text |
 | rep_top | up to five most repeated texts of the session, first 80 characters, count and text (the summary ranks them across sessions) |
+| c_errand_*, c_result_*, c_notice_*, c_repeat_*, c_ack_* | per class: `_turns`, `_fresh` (input + cache write + output), `_cread` (cache read), `_wall_s` |
 | say_*, notice_*, stop_*, nudge_* | per source: `_turns`, `_tok` (in + out + cache read), `_noact`, `_wall_s` |
 
 No action is the waste signal. A turn has no action when its only tool calls are `atrium_say`, `atrium_report`,
@@ -82,8 +107,9 @@ turn are an upper bound on what the message cost. Mid-turn deliveries have no to
 
 ## The verdict, fixed before the first run
 
-- A session is chatty when atrium-started turns are over 25 percent of its turns, or over 20 percent of its tokens,
-  and more than half of those turns end with no action.
+- A session is chatty when its chatter turns are over 25 percent of its turns, or its chatter fresh tokens are over
+  20 percent of its fresh tokens. (Before the classes the rule counted every message-started turn and needed most of
+  them to end with no action. That mixed errands in with waste.)
 - A source is a PROBLEM when more than half of its turns end with no action and it holds 5 percent or more of all turns
   or of all tokens. "wasteful but small" is the same waste below that size. Otherwise it is fine.
 - Repeats are worth a fix when they are over 10 percent of deliveries.
@@ -93,17 +119,17 @@ together.
 
 ## Reading the summary
 
-Totals give the share of turns and tokens atrium started and the share of those that ended in no action. By source
-gives the verdict per marker. Worst sessions lists the ten with the most atrium-started tokens and whether each is over
-the threshold. A high share with a low no-action count means a coordinator doing its job, not waste. Look at the
-no-action count first, then the share.
+The headline is the chatter share. The class table says what the rest of the message-started turns were. Totals and
+By source keep the older counts by marker, with the verdict per marker. Sessions by chatter lists the ten with the most
+chatter fresh tokens and whether each is over the threshold. A coordinator with many errands and few chatter turns is
+doing its job.
 
 ## Limits
 
 - Wall time stops at the last assistant entry, so a turn that ends on a long tool call is read short.
 - Transcripts of a session that was cleared or compacted start over, so one card can be several sessions.
 - Only rooms `collect.sh` can reach are covered. It says which.
-- `collect.sh` sends the script and its arguments over stdin and puts only the shell on the ssh command line, because the
+- `collect.sh` sends the script and its arguments over stdin and puts only the shell on the ssh command line, since the
   default shell on a Windows room is cmd or PowerShell. The shell is `C:/PROGRA~1/Git/bin/bash.exe` for sg3 and sg4,
   `--win-bash` changes it.
 - Dates are computed by hand in jq, because Windows jq has no `strptime`. `test.sh` fails if a date builtin comes back.

@@ -22,10 +22,10 @@ trap 'rm -rf "$tmp"' EXIT
 "$here/chattiness.sh" --root "$root" --since 2026-10-09T22:00:00-04:00 --until 2026-10-10T08:00:00-04:00 --tsv - > "$tmp/win.tsv"
 [ "$(wc -l < "$tmp/win.tsv" | tr -d ' ')" = 2 ] || { echo "FAIL: want a header and one session row"; fail=1; }
 f="$tmp/win.tsv"
-want "$f" turns 6
+want "$f" turns 8
 want "$f" human 1
-want "$f" a_turns 5
-want "$f" say_turns 2
+want "$f" a_turns 7
+want "$f" say_turns 4
 want "$f" notice_turns 1
 want "$f" stop_turns 1
 want "$f" nudge_turns 1
@@ -33,23 +33,32 @@ want "$f" mid_perm 1
 want "$f" mid_say 1
 want "$f" mid_notice 1
 want "$f" mid_nudge 1
-want "$f" tok_in 73
-want "$f" tok_out 50
-want "$f" tok_cread 730
-want "$f" a_in 63
-want "$f" a_out 45
-want "$f" a_cread 630
-want "$f" a_wall_s 69
+want "$f" tok_in 96
+want "$f" tok_out 140
+want "$f" tok_cread 960
+want "$f" a_in 86
+want "$f" a_out 135
+want "$f" a_cread 860
+want "$f" a_wall_s 99
 want "$f" a_wall_max_s 30
 want "$f" a_noact 3
 want "$f" say_noact 1
 want "$f" notice_noact 1
 want "$f" stop_noact 0
 want "$f" nudge_noact 1
-want "$f" say_tok 582
+want "$f" say_tok 925
 want "$f" repeats 1
 want "$f" rep_say 1
 want "$f" rep_notice 0
+
+# What woke each turn: turns, fresh tokens (input + cache write + output), cache reads and wall seconds per class.
+for kv in c_errand_turns=1 c_errand_fresh=51 c_errand_cread=110 c_errand_wall_s=10 \
+          c_result_turns=1 c_result_fresh=62 c_result_cread=120 c_result_wall_s=20 \
+          c_notice_turns=3 c_notice_fresh=26 c_notice_cread=130 c_notice_wall_s=29 \
+          c_repeat_turns=1 c_repeat_fresh=60 c_repeat_cread=300 c_repeat_wall_s=30 \
+          c_ack_turns=1 c_ack_fresh=22 c_ack_cread=200 c_ack_wall_s=10; do
+  want "$f" "${kv%%=*}" "${kv#*=}"
+done
 
 # The first column is the turn time written back by hand-made date arithmetic.
 want "$tmp/win.tsv" first 2026-10-10T03:00:00Z
@@ -65,21 +74,28 @@ printf 'short\trow\r\n' >> "$tmp/crlf.tsv"
 sed -n 2p "$tmp/win.tsv" | jq -Rr 'split("\t") | .[3] = "notanumber" | join("\t")' | sed 's/$/\r/' >> "$tmp/crlf.tsv"
 "$here/chattiness.sh" --from-tsv "$tmp/crlf.tsv" > "$tmp/crlf.md" 2> "$tmp/crlf.err"
 grep -q 'Sessions: 1\.' "$tmp/crlf.md" || { echo "FAIL: CRLF rows not read as one session"; fail=1; }
-grep -q '| turns atrium started | 5 (83.3% of all turns) |' "$tmp/crlf.md" || { echo "FAIL: CRLF summary figures"; fail=1; }
+grep -q '| turns a message started (errands, results and chatter) | 7 (87.5% of all turns) |' "$tmp/crlf.md" || { echo "FAIL: CRLF summary figures"; fail=1; }
 grep -q 'dropped 2 malformed row' "$tmp/crlf.err" || { echo "FAIL: malformed rows not reported"; fail=1; }
 "$here/chattiness.sh" --check-tsv "$tmp/crlf.tsv" 2>/dev/null | grep -q "$(printf '\r')" && { echo "FAIL: CR left in cleaned rows"; fail=1; }
 
 # With no window the early human turn comes in.
 "$here/chattiness.sh" --root "$root" --tsv - > "$tmp/all.tsv"
-want "$tmp/all.tsv" turns 7
+want "$tmp/all.tsv" turns 9
 want "$tmp/all.tsv" human 2
-want "$tmp/all.tsv" tok_in 172
+want "$tmp/all.tsv" tok_in 195
 
 # The summary reads the same rows and says what it should.
 "$here/chattiness.sh" --root "$root" --since 2026-10-09T22:00:00-04:00 --tsv "$tmp/out.tsv" > "$tmp/summary.md"
-grep -q '| turns atrium started | 5 (83.3% of all turns) |' "$tmp/summary.md" || { echo "FAIL: summary turn share"; fail=1; }
-grep -q '| say | 3 | 1 | 33.3% |' "$tmp/summary.md" || { echo "FAIL: summary repeats by source"; fail=1; }
+grep -q '| turns a message started (errands, results and chatter) | 7 (87.5% of all turns) |' "$tmp/summary.md" || { echo "FAIL: summary turn share"; fail=1; }
+grep -q '| say | 5 | 1 | 20% |' "$tmp/summary.md" || { echo "FAIL: summary repeats by source"; fail=1; }
 grep -qF '1 repeats in 1 session(s): `[atrium] peer-a@room says: hello there`' "$tmp/summary.md" || { echo "FAIL: summary top repeated text"; fail=1; }
+grep -q '^\*\*Chatter: 5 of 8 turns (62.5%), 108 of 236 fresh tokens (45.8%), 630 of 960 cache-read tokens (65.6%).\*\*$' "$tmp/summary.md" ||
+  { echo "FAIL: summary headline"; fail=1; }
+grep -q '^| errand | 1 | 51 | 110 | 10 | 21.6% | 11.5% |$' "$tmp/summary.md" || { echo "FAIL: summary class row"; fail=1; }
+# collect.sh with the local room, as a person runs it.
+mkdir -p "$tmp/home/.claude"; cp -R "$root" "$tmp/home/.claude/projects"
+HOME="$tmp/home" "$here/collect.sh" --rooms local --since 2026-10-09T22:00:00-04:00 --tsv "$tmp/local.tsv" > "$tmp/local.md" 2>&1 </dev/null || { echo "FAIL: collect.sh --rooms local"; fail=1; }
+grep -q 'Rooms covered: local' "$tmp/local.md" || { echo "FAIL: collect.sh --rooms local covered nothing"; fail=1; }
 grep -q '| sessions over the threshold | 1 of 1 |' "$tmp/summary.md" || { echo "FAIL: summary threshold"; fail=1; }
 "$here/chattiness.sh" --since 2026-10-09T22:00:00-04:00 --from-tsv "$tmp/out.tsv" > "$tmp/summary2.md"
 cmp -s "$tmp/summary.md" "$tmp/summary2.md" || { echo "FAIL: --from-tsv differs from the direct summary"; fail=1; }
