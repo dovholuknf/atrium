@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/dovholuknf/atrium/internal/gitsync"
+	"github.com/dovholuknf/atrium/internal/hubstore"
 )
 
 func TestFlowRolesStagesChecksAndDeploys(t *testing.T) {
@@ -64,6 +65,17 @@ type fakeFlowGit struct {
 
 func (f *fakeFlowGit) ItemFacts(context.Context, string, string) (gitsync.ItemFacts, error) {
 	return f.facts, nil
+}
+
+func (f *fakeFlowGit) EpochPlan(context.Context) (gitsync.EpochPlan, error) {
+	return gitsync.EpochPlan{OldTip: "aaaaaaa", Base: "bbbbbbb", Replay: []string{"ccccccc"}}, nil
+}
+
+func (f *fakeFlowGit) EpochMove(_ context.Context, _ int64, branch, expectOld string) (string, string, error) {
+	if branch == "" || expectOld != "aaaaaaa" {
+		return "", "", hubstore.ErrNoEpoch
+	}
+	return "aaaaaaa", "ddddddd", nil
 }
 
 func (f *fakeFlowGit) CoveredBy(_ context.Context, base, _ string) (bool, error) {
@@ -125,5 +137,31 @@ func TestFlowStageIsReadFromGitChecksAndDeploys(t *testing.T) {
 	g.facts = gitsync.ItemFacts{}
 	if s, _ = stage(); s != "pushed-by-clint" {
 		t.Fatalf("lowered: %s", s)
+	}
+}
+
+func TestFlowEpochOpensAndClosesThroughTheGitPlan(t *testing.T) {
+	x := newBacklogRig(t)
+	x.p.SetFlowGit(&fakeFlowGit{covered: map[string]bool{}})
+	code, body := x.send("POST", "/_hub/flow/epoch", js(map[string]any{"do": "open", "by": "clint"}), loopAddr)
+	if code != 200 || str(obj(t, body), "fetched_sha") != "aaaaaaa" {
+		t.Fatalf("open takes claude/main's tip: %d %s", code, body)
+	}
+	if code, _ = x.send("POST", "/_hub/flow/epoch", js(map[string]any{"do": "open"}), loopAddr); code != http.StatusBadRequest {
+		t.Fatalf("second open: %d", code)
+	}
+	code, body = x.send("GET", "/_hub/flow/epoch", "", "203.0.113.9:4000")
+	if code != 200 || !strings.Contains(body, `"ccccccc"`) || !strings.Contains(body, `"open"`) {
+		t.Fatalf("read: %d %s", code, body)
+	}
+	if code, _ = x.send("POST", "/_hub/flow/epoch", js(map[string]any{"do": "close", "expect": "zzzzzzz", "branch": "next"}), loopAddr); code == 200 {
+		t.Fatal("a stale close was taken")
+	}
+	code, body = x.send("POST", "/_hub/flow/epoch", js(map[string]any{"do": "close", "expect": "aaaaaaa", "branch": "next", "by": "merger"}), loopAddr)
+	if code != 200 || str(obj(t, body), "new_tip") != "ddddddd" || str(obj(t, body), "state") != "closed" {
+		t.Fatalf("close: %d %s", code, body)
+	}
+	if code, _ = x.send("POST", "/_hub/flow/epoch", js(map[string]any{"do": "close"}), loopAddr); code != http.StatusBadRequest && code != http.StatusNotFound {
+		t.Fatalf("close with none open: %d", code)
 	}
 }

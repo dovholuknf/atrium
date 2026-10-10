@@ -2,6 +2,7 @@ package link
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -27,17 +28,22 @@ const flowToolDesc = "The merge flow, kept on the hub: who holds each role, whic
 	"- `items {stage?}`: the items in the flow. `item {id}`: one, with what git and the recorded checks and deploys say of it. The stage is computed when you ask.\n" +
 	"- `stage {id, stage, branch?, sha?, note?}`: report an item's stage.\n" +
 	"- `checks {sha?}` / `check {sha, name, result}`: list, or record that a check passed, failed or timed out on a sha.\n" +
+	"- `epoch`: the open epoch, the latest ones, and the plan for resetting claude/main onto main: the commits to replay. " +
+	"`epoch_open {sha?}`: clint fetched claude/main (at sha, or where it is now). " +
+	"`epoch_close {branch?, expect?}`: the MERGER ONLY. Replay the plan's commits on a branch with main under it, push " +
+	"it, and give it here; the hub checks that nothing is lost and moves claude/main. No branch is for a plan with nothing to replay.\n" +
 	"- `repo {repo?}`: the hub repository stages are read from, like `github.com/dovholuknf/atrium`. Without repo, read it.\n" +
 	"- `deploys` / `deploy {room, sha}`: what each room runs, or record that a room now runs a sha."
 
 type flowInput struct {
-	Action string `json:"action" jsonschema:"roles, role_set, role_clear, items, item, stage, checks, check, repo, deploys or deploy"`
+	Action string `json:"action" jsonschema:"roles, role_set, role_clear, items, item, stage, checks, check, epoch, epoch_open, epoch_close, repo, deploys or deploy"`
 	Role   string `json:"role,omitempty" jsonschema:"orchestrator, merger, tester or director"`
 	Room   string `json:"room,omitempty" jsonschema:"the room, for role_set, role_clear and deploy"`
 	Card   string `json:"card,omitempty" jsonschema:"the card id of the holder, for role_set and role_clear"`
 	ID     string `json:"id,omitempty" jsonschema:"the backlog item id, for item and stage"`
 	Stage  string `json:"stage,omitempty" jsonschema:"for stage, or to narrow items"`
-	Branch string `json:"branch,omitempty" jsonschema:"for stage: the branch the work is on"`
+	Branch string `json:"branch,omitempty" jsonschema:"for stage: the branch the work is on. for epoch_close: the branch with the replayed commits"`
+	Expect string `json:"expect,omitempty" jsonschema:"for epoch_close: the old_tip of the plan you replayed, so a landing since is caught"`
 	SHA    string `json:"sha,omitempty" jsonschema:"a commit id, for stage, check, checks and deploy"`
 	Note   string `json:"note,omitempty" jsonschema:"for stage: one line, or where the doc is"`
 	Repo   string `json:"repo,omitempty" jsonschema:"for repo: github.com/owner/repo, or empty to read"`
@@ -54,6 +60,7 @@ type flowOutput struct {
 	Checks   []hubstore.FlowCheck  `json:"checks,omitempty"`
 	Deploys  []hubstore.FlowDeploy `json:"deploys,omitempty"`
 	Repo     *string               `json:"repo,omitempty"`
+	Epoch    json.RawMessage       `json:"epoch,omitempty"`
 	Note     string                `json:"note,omitempty"`
 }
 
@@ -146,6 +153,31 @@ func (c *controlMCP) flowHandler(ctx context.Context, req *mcp.CallToolRequest, 
 		}
 		out.Checks = []hubstore.FlowCheck{ck}
 		return nil, out, nil
+	case "epoch":
+		var raw json.RawMessage
+		if err := c.ask(ctx, http.MethodGet, "/_hub/flow/epoch", "", nil, &raw); err != nil {
+			return nil, out, err
+		}
+		out.Epoch = raw
+		return nil, out, nil
+	case "epoch_open":
+		var raw json.RawMessage
+		if err := c.ask(ctx, http.MethodPost, "/_hub/flow/epoch", "", map[string]any{"do": "open", "sha": in.SHA, "by": by}, &raw); err != nil {
+			return nil, out, err
+		}
+		out.Epoch = raw
+		return nil, out, nil
+	case "epoch_close":
+		if err := c.requireMerger(ctx, req); err != nil {
+			return nil, out, err
+		}
+		var raw json.RawMessage
+		if err := c.ask(ctx, http.MethodPost, "/_hub/flow/epoch", "", map[string]any{"do": "close", "branch": in.Branch,
+			"expect": in.Expect, "by": by}, &raw); err != nil {
+			return nil, out, err
+		}
+		out.Epoch = raw
+		return nil, out, nil
 	case "repo":
 		var body struct {
 			Repo string `json:"repo"`
@@ -177,5 +209,30 @@ func (c *controlMCP) flowHandler(ctx context.Context, req *mcp.CallToolRequest, 
 		out.Deploys = []hubstore.FlowDeploy{d}
 		return nil, out, nil
 	}
-	return nil, out, &refusedError{fmt.Sprintf("action %q is not one of roles, role_set, role_clear, items, item, stage, checks, check, repo, deploys, deploy", in.Action)}
+	return nil, out, &refusedError{fmt.Sprintf("action %q is not one of roles, role_set, role_clear, items, item, stage, checks, check, epoch, epoch_open, epoch_close, repo, deploys, deploy", in.Action)}
+}
+
+// requireMerger refuses unless the caller is the card the hub has recorded as the merger. THE CALLER IS A CLAIM, as for
+// every tool here (see ctlaudit.go): the claim is the X-Atrium-Agent name, resolved to a card on the caller's room.
+func (c *controlMCP) requireMerger(ctx context.Context, req *mcp.CallToolRequest) error {
+	agent, room := agentOf(req), roomOf(req)
+	if agent == "" {
+		return &refusedError{"only the merger closes an epoch, and this call carries no session name"}
+	}
+	card, err := c.callerCard(ctx, room, agent)
+	if err != nil {
+		return err
+	}
+	var held struct {
+		Roles []hubstore.RoleHolder `json:"roles"`
+	}
+	if err := c.ask(ctx, http.MethodGet, "/_hub/flow/roles?role="+hubstore.RoleMerger, "", nil, &held); err != nil {
+		return err
+	}
+	for _, h := range held.Roles {
+		if h.Card == card.ID && strings.EqualFold(h.Room, room) {
+			return nil
+		}
+	}
+	return &refusedError{"only the merger closes an epoch, and the hub has recorded another card (or none) as the merger"}
 }

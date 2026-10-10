@@ -552,6 +552,24 @@ var migrations = []struct {
 				)`,
 		},
 	},
+	{
+		// ONE ROW PER ROUND OF clint FETCHING claude/main, re-signing and pushing, so what landed in between can be
+		// accounted for. See flow_epoch.go and docs/design/merge-flow.md, "Between clint's fetch and clint's push".
+		name: "0015_flow_epoch",
+		stmts: []string{
+			`CREATE TABLE IF NOT EXISTS flow_epoch (
+					n            INTEGER PRIMARY KEY,
+					state        TEXT NOT NULL DEFAULT 'open' CHECK (state IN ('open','closed')),
+					fetched_sha  TEXT NOT NULL,
+					old_tip      TEXT NOT NULL DEFAULT '',
+					new_tip      TEXT NOT NULL DEFAULT '',
+					opened_at    TEXT NOT NULL,
+					opened_by    TEXT NOT NULL DEFAULT '',
+					closed_at    TEXT NOT NULL DEFAULT '',
+					closed_by    TEXT NOT NULL DEFAULT ''
+				)`,
+		},
+	},
 }
 
 func (s *Store) migrate() error {

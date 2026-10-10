@@ -2,6 +2,7 @@ package link
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
 	"strings"
 
@@ -14,6 +15,8 @@ import (
 //	GET  /_hub/flow/roles?role=      who holds each role, or one
 //	POST /_hub/flow/roles            {do:"set"|"clear", role, room, card, by?}
 //	GET  /_hub/flow/repo             the repository stages are read from, POST {repo} sets it ("" unsets)
+//	GET  /_hub/flow/epoch            the open epoch, the latest ones and the plan for a reset of claude/main onto main
+//	POST /_hub/flow/epoch            {do:"open", sha?} | {do:"close", n, branch?, expect?}: see flowEpoch
 //	GET  /_hub/flow/items?stage=     the items in the flow
 //	GET  /_hub/flow/items/<id>       one
 //	POST /_hub/flow/items/<id>       {stage, branch?, sha?, note?, by?}: report a stage
@@ -75,6 +78,29 @@ func (p *Proxy) serveFlow(w http.ResponseWriter, r *http.Request, sub string) {
 		}
 		p.RecordAudit("", "flow-repo", in.Repo+" by "+in.By)
 		crJSON(w, http.StatusOK, map[string]any{"repo": strings.TrimSpace(in.Repo)})
+	case rest == "epoch" && !write:
+		cur, err := st.EpochOpenNow()
+		if err != nil && !errors.Is(err, hubstore.ErrNoEpoch) {
+			ffail(w, err)
+			return
+		}
+		recent, err := st.Epochs(0)
+		if err != nil {
+			ffail(w, err)
+			return
+		}
+		out := map[string]any{"epochs": recent}
+		if cur.N != 0 {
+			out["open"] = cur
+		}
+		if g := p.flowGitOf(); g != nil {
+			if plan, perr := g.EpochPlan(r.Context()); perr == nil {
+				out["plan"] = plan
+			}
+		}
+		crJSON(w, http.StatusOK, out)
+	case rest == "epoch":
+		p.flowEpoch(w, r, st)
 	case rest == "items" && !write:
 		items, err := st.FlowList(r.URL.Query().Get("stage"))
 		if err != nil {
@@ -133,7 +159,7 @@ func (p *Proxy) serveFlow(w http.ResponseWriter, r *http.Request, sub string) {
 func ffail(w http.ResponseWriter, err error) {
 	code := http.StatusServiceUnavailable
 	switch {
-	case errors.Is(err, hubstore.ErrItemNotFound), errors.Is(err, hubstore.ErrFlowItemNotFound):
+	case errors.Is(err, hubstore.ErrItemNotFound), errors.Is(err, hubstore.ErrFlowItemNotFound), errors.Is(err, hubstore.ErrNoEpoch):
 		code = http.StatusNotFound
 	case hubstore.IsRefusal(err):
 		code = http.StatusBadRequest
@@ -199,4 +225,70 @@ func (p *Proxy) flowItem(w http.ResponseWriter, r *http.Request, st *hubstore.St
 	p.RecordAudit("", "flow-stage", id+" "+f.Stage)
 	p.backlogEvent("flow", map[string]string{"id": id, "stage": f.Stage})
 	crJSON(w, http.StatusOK, f)
+}
+
+// flowEpoch opens or closes an epoch. Opening says clint fetched claude/main at sha, which is claude/main's tip when
+// none is given. Closing is the reset: the hub moves claude/main onto the branch the merger replayed on (or onto main
+// when nothing is to be replayed), after the checks in gitsync.EpochMove, and records it.
+func (p *Proxy) flowEpoch(w http.ResponseWriter, r *http.Request, st *hubstore.Store) {
+	var in struct {
+		Do, SHA, Branch, Expect, By string
+		N                           int64
+	}
+	if err := crDecode(r, &in); err != nil {
+		crFail(w, http.StatusBadRequest, "could not read that: "+err.Error())
+		return
+	}
+	g := p.flowGitOf()
+	switch in.Do {
+	case "open":
+		sha := in.SHA
+		if sha == "" {
+			if g == nil {
+				crFail(w, http.StatusBadRequest, "say which sha clint fetched")
+				return
+			}
+			plan, err := g.EpochPlan(r.Context())
+			if err != nil {
+				ffail(w, err)
+				return
+			}
+			sha = plan.OldTip
+		}
+		e, err := st.EpochOpen(sha, in.By)
+		if err != nil {
+			ffail(w, err)
+			return
+		}
+		p.RecordAudit("", "flow-epoch", fmt.Sprintf("%d opened at %s by %s", e.N, e.FetchedSHA, in.By))
+		crJSON(w, http.StatusOK, e)
+	case "close":
+		if g == nil {
+			crFail(w, http.StatusServiceUnavailable, "the hub's repository is not wired to the merge flow")
+			return
+		}
+		open, err := st.EpochOpenNow()
+		if err != nil {
+			ffail(w, err)
+			return
+		}
+		if in.N != 0 && in.N != open.N {
+			crFail(w, http.StatusBadRequest, fmt.Sprintf("epoch %d is the open one, not %d", open.N, in.N))
+			return
+		}
+		oldTip, newTip, err := g.EpochMove(r.Context(), open.N, in.Branch, in.Expect)
+		if err != nil {
+			ffail(w, err)
+			return
+		}
+		e, err := st.EpochClose(open.N, oldTip, newTip, in.By)
+		if err != nil {
+			ffail(w, err)
+			return
+		}
+		p.RecordAudit("", "flow-epoch", fmt.Sprintf("%d closed: claude/main %s to %s by %s", e.N, oldTip, newTip, in.By))
+		crJSON(w, http.StatusOK, e)
+	default:
+		crFail(w, http.StatusBadRequest, "do is open or close")
+	}
 }

@@ -124,3 +124,33 @@ func TestFlowRepoIsAStoreNameOrEmpty(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestEpochOpensOnceAndClosesWithTheTips(t *testing.T) {
+	s := open(t)
+	if _, err := s.EpochOpenNow(); !errors.Is(err, ErrNoEpoch) {
+		t.Fatalf("none open: %v", err)
+	}
+	e, err := s.EpochOpen("abc1234", "clint")
+	if err != nil || e.N != 1 || e.State != "open" {
+		t.Fatalf("open: %+v %v", e, err)
+	}
+	if _, err := s.EpochOpen("def5678", "clint"); !errors.Is(err, ErrEpochOpen) || !IsRefusal(err) {
+		t.Fatalf("second open: %v", err)
+	}
+	if _, err := s.EpochOpen("zz", "clint"); !IsRefusal(err) {
+		t.Fatalf("bad sha: %v", err)
+	}
+	c, err := s.EpochClose(1, "abc1234", "def5678", "merger")
+	if err != nil || c.State != "closed" || c.OldTip != "abc1234" || c.NewTip != "def5678" || c.ClosedAt == "" {
+		t.Fatalf("close: %+v %v", c, err)
+	}
+	if _, err := s.EpochClose(1, "abc1234", "def5678", "merger"); !errors.Is(err, ErrNoEpoch) {
+		t.Fatalf("close twice: %v", err)
+	}
+	if e, err = s.EpochOpen("def5678", "clint"); err != nil || e.N != 2 {
+		t.Fatalf("next round: %+v %v", e, err)
+	}
+	if got, _ := s.Epochs(0); len(got) != 2 || got[0].N != 2 {
+		t.Fatalf("epochs: %+v", got)
+	}
+}

@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io/fs"
 	"log"
@@ -866,4 +867,20 @@ func (f flowGit) CoveredBy(ctx context.Context, base, sha string) (bool, error) 
 		return f.hub.Store().CoveredBy(ctx, name, base, sha)
 	}
 	return false, nil
+}
+
+func (f flowGit) EpochPlan(ctx context.Context) (gitsync.EpochPlan, error) {
+	name := f.repo()
+	if name == "" {
+		return gitsync.EpochPlan{}, errors.New("no repository is set for the merge flow: set it with atrium_flow repo")
+	}
+	return f.hub.Store().EpochPlan(ctx, name)
+}
+
+func (f flowGit) EpochMove(ctx context.Context, n int64, branch, expectOld string) (string, string, error) {
+	name := f.repo()
+	if name == "" {
+		return "", "", errors.New("no repository is set for the merge flow: set it with atrium_flow repo")
+	}
+	return f.hub.Store().EpochMove(ctx, name, n, branch, expectOld)
 }

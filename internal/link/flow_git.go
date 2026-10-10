@@ -23,6 +23,10 @@ import (
 type FlowGit interface {
 	ItemFacts(ctx context.Context, branch, sha string) (gitsync.ItemFacts, error)
 	CoveredBy(ctx context.Context, base, sha string) (bool, error)
+	// EpochPlan is what a reset of claude/main onto main has to carry over. EpochMove does the reset, as epoch n, onto
+	// the tip of branch ("" for main), when claude/main is still expectOld. See flow_epoch.go.
+	EpochPlan(ctx context.Context) (gitsync.EpochPlan, error)
+	EpochMove(ctx context.Context, n int64, branch, expectOld string) (oldTip, newTip string, err error)
 }
 
 // SetFlowGit wires the repository the merge flow reads.

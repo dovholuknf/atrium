@@ -103,10 +103,12 @@ The procedure, an *epoch* per clint push:
    `R` by patch equivalence (`git cherry R claude/main`). Commits with an equivalent in `R` are the re-signed copies of
    `abc`'s history: drop them. Commits without one are the work landed after the fetch: they must survive.
 4. The new `claude/main` is `R` plus those commits replayed in their original order (cherry-pick, by the merger, in
-   its worktree, because a replay can conflict and the merger owns conflicts, D12). The merger pushes the result.
-   Because `R` is not an ancestor of the old tip, this one push is the single non-fast-forward `claude/main` ever
-   accepts, and it is accepted only when atrium has an open epoch whose reconcile list the push has consumed: atrium
-   checks that every commit on the old tip is either an ancestor of the new tip or in the cherry-equivalent set.
+   its worktree, because a replay can conflict and the merger owns conflicts, D12). The merger pushes the result to a
+   branch of its own, not to `claude/main`. Because `R` is not an ancestor of the old tip, the move is not a
+   fast-forward, and the hub's pre-receive hook refuses every non-fast-forward push. So the move is not a push: the
+   merger calls `atrium_flow epoch_close {branch, expect}` and the hub moves `claude/main` itself, under the
+   repository lock, when `claude/main` is still at `expect`, the branch has `R` under it, and every commit of the old
+   tip has its change on the branch (`git cherry`). That leaves the hook untouched.
 5. Before the move atrium writes `refs/atrium/epochs/<n>` in the hub repository pointing at the old tip. A ref in that
    namespace is never pushed or served to rooms; it exists so that no commit is ever unreachable, and so that a mistake
    is recoverable by hand. It is the answer to "never lost": the worst case is a commit that has to be found, never a
@@ -165,6 +167,8 @@ recorded the same way; nothing blocks on them. Phase: follow-up, the rows exist 
 
 ## Phases
 
+Built, in this order, one commit each (migration `0014_merge_flow`, then `0015_flow_epoch`):
+
 1. **Roles and item stages, the rows and the tool.** Migration `0014_merge_flow` (`flow_role`, `flow_item`,
    `flow_check`, `flow_deploy`), `hubstore/flow.go`, the HTTP routes under `/_hub/flow`, the control tool `atrium_flow`
    (full class): `role get/set`, `item get/set`, `check add`, `deploy add`. Stages are reported here, with the order
@@ -174,8 +178,15 @@ recorded the same way; nothing blocks on them. Phase: follow-up, the rows exist 
 3. **Stages from git.** `gitsync.Store` answers `implemented`, `merged` (ancestor or patch-equivalent) and
    `pushed-by-clint` against the hub repository; `flow item get` computes them and advances the cache; derived
    `tested` and `deployed` from the sha-keyed rows.
-4. **Epochs: nothing lost between fetch and push.** `flow_epoch`, `flow epoch fetched/reconcile`, `git cherry` based
-   reconcile list, the epoch ref, and the one guarded non-fast-forward for the merger.
+4. **Epochs: nothing lost between fetch and push.** `flow_epoch` (migration 0015), `epoch`, `epoch_open` and
+   `epoch_close` on `atrium_flow`, the `git cherry` plan, the `refs/atrium/epochs/<n>` ref, and the hub-made move
+   described above (`gitsync/flowepoch.go`).
+
+Notes on what was built. Stages from git need to know which hub repository to read: the hub setting `flow_repo`
+(`atrium_flow repo github.com/dovholuknf/atrium`); unset, a stage is what was reported. `claude/main` pushed by the
+merger is checked against `Hub.Merger`, which `atrium_run` wires to the single `merger` role row (none, or more than one,
+is nobody). `epoch_close` is checked against the caller's card, resolved from its session name, as every tool here does:
+a claim, not a proof, like `X-Atrium-Agent` everywhere.
 
 Follow-ups (not built here): the deploy actuator and its per-room queue; the sanity-gate runner and its setting; the
 `flow gc` branch cleanup; tester dispatch across rooms; the director-as-first-merger idea (D26); board UI for stages.
