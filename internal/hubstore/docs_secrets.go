@@ -116,6 +116,16 @@ var secretNames = map[string]bool{
 	"zrok-share": true, "room.json": true, "hub.db": true, "ca.key": true, "ca.crt": true,
 }
 
+// windowsName is a path segment as Windows reads it: cut at the first `:` (an NTFS stream, `a.pem::$DATA`,
+// `.env:alt`), then trailing dots and spaces dropped (`key.pem.` and `key.pem ` open `key.pem`). Done on every
+// platform, because a card's files can be read on a Windows machine whatever the hub runs on.
+func windowsName(seg string) string {
+	if i := strings.IndexByte(seg, ':'); i >= 0 {
+		seg = seg[:i]
+	}
+	return strings.TrimRight(seg, ". \t")
+}
+
 // SecretFileName reports whether a path, which the caller has ALREADY RESOLVED
 // through symlinks and made relative to the card, is a file that is refused by
 // name. Case-insensitive, because `.ENV` is the same file on two of the three
@@ -125,7 +135,7 @@ func SecretFileName(rel string) bool {
 	rel = strings.ReplaceAll(rel, `\`, "/")
 	segs := strings.Split(rel, "/")
 	for i, seg := range segs {
-		seg = strings.ToLower(strings.TrimSpace(seg))
+		seg = windowsName(strings.ToLower(seg))
 		if seg == "" {
 			continue
 		}
