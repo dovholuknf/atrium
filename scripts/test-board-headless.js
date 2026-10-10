@@ -22342,6 +22342,45 @@ async function hubReposLedgerSection(browser, base) {
   if (!bad) console.log("hubReposLedger ok");
 }
 
+// The ledger's branch timeline: each ring is centred on the one line, at two zoom levels and in a light and a dark skin.
+// With DOTS_SHOT=<file> it also saves the timeline as a picture.
+async function hubReposTimelineDotsSection(browser, base) {
+  const wasHub = hubMode; hubMode = true;
+  const tag = "hubReposTimelineDots";
+  try {
+    const { ctx, p, errors } = await hubReposFixturePage(browser, base, { w: 1600, h: 1000, view: "ledger" });
+    try {
+      for (const skin of ["paper", "dark"]) for (const zoom of [1, 1.5]) {
+        await p.evaluate(({ s, z }) => {
+          if (s === "paper") document.documentElement.setAttribute("data-skin", "paper"); else document.documentElement.removeAttribute("data-skin");
+          document.body.style.zoom = String(z);
+        }, { s: skin, z: zoom });
+        await p.waitForTimeout(150);
+        const r = await p.evaluate(() => {
+          const rail = document.querySelector(".hr-detail .hr-rail"), rs = getComputedStyle(rail, "::before");
+          const line = parseFloat(rs.left) + parseFloat(rs.width) / 2;
+          const rings = [...rail.querySelectorAll(".hr-ev")].map(ev => { const s = getComputedStyle(ev, "::before");
+            return ev.offsetLeft + ev.clientLeft + parseFloat(s.left) + parseFloat(s.width) / 2; });
+          return { line, rings, flat: rs.backgroundImage === "none" };
+        });
+        const t = tag + " (" + skin + ", zoom " + zoom + ")";
+        if (r.rings.length < 5) fail(t + ": too few rings to check " + JSON.stringify(r));
+        const off = r.rings.filter(x => Math.abs(x - r.line) > 1);
+        if (off.length) fail(t + ": " + off.length + " rings are off the line at x=" + r.line + ": " + off.slice(0, 3).join(","));
+        if (!r.flat) fail(t + ": the line is a gradient, not one colour");
+      }
+      if (process.env.DOTS_SHOT) {
+        await p.evaluate(() => { document.body.style.zoom = "1"; document.documentElement.setAttribute("data-skin", "paper"); });
+        await p.waitForTimeout(150);
+        const rail = p.locator(".hr-detail .hr-rail"); await rail.scrollIntoViewIfNeeded();
+        await rail.screenshot({ path: process.env.DOTS_SHOT });
+      }
+      if (errors.length) fail(tag + ": page errors: " + errors.join(" | "));
+    } finally { await ctx.close(); }
+  } finally { hubMode = wasHub; }
+  if (!bad) console.log("hubReposTimelineDots ok");
+}
+
 async function hubReposFeedSection(browser, base) {
   const wasHub = hubMode; hubMode = true;
   const tag = "hubReposFeed";
@@ -28863,6 +28902,7 @@ async function main() {
     await unit("hubRepos", () => hubReposSection(browser, base));
     await unit("hubReposShelf", () => hubReposShelfSection(browser, base));
     await unit("hubReposLedger", () => hubReposLedgerSection(browser, base));
+    await unit("hubReposTimelineDots", () => hubReposTimelineDotsSection(browser, base));
     await unit("hubReposFeed", () => hubReposFeedSection(browser, base));
     await unit("changeReq", () => changeReqSection(browser, base));
     await unit("mChangeReq", () => mChangeReqSection(browser));

@@ -184,15 +184,15 @@
   .hr-termcmd { margin: 0; padding: 22px 26px; font: 500 clamp(15px, 1.3vw, 22px)/1.7 var(--mono); color: var(--head); white-space: pre-wrap; overflow-wrap: anywhere; }
   .hr-prompt { color: var(--ac); user-select: none; }
   .hr-cols { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 48px; }
-  .hr-rail { position: relative; margin-left: 14px; }
-  .hr-rail:before { content: ""; position: absolute; left: 11px; top: 6px; bottom: 6px; width: 3px; border-radius: 3px; background: linear-gradient(180deg, var(--ac), color-mix(in srgb, var(--ac) 10%, transparent)); }
-  .hr-rail .hr-day { margin: 22px 0 10px 44px; } .hr-rail .hr-day:first-child { margin-top: 0; }
+  .hr-rail { --hr-line-x: 12px; --hr-line-w: 3px; --hr-ring: 25px; --hr-indent: 44px; position: relative; margin-left: 14px; }
+  .hr-rail:before { content: ""; position: absolute; left: calc(var(--hr-line-x) - var(--hr-line-w) / 2); top: 0; bottom: 0; width: var(--hr-line-w); border-radius: 3px; background: color-mix(in srgb, var(--ac) 45%, transparent); }
+  .hr-rail .hr-day { margin: 22px 0 10px var(--hr-indent); } .hr-rail .hr-day:first-child { margin-top: 0; }
   .hr-day { display: flex; align-items: center; gap: 14px; margin: 26px 0 14px; font: 800 var(--fs-xs)/1 var(--sans); text-transform: uppercase; letter-spacing: .14em; color: var(--label); }
   .hr-day:after { content: ""; flex: 1; height: 1px; background: var(--stroke-dim); } .hr-day:first-child { margin-top: 0; } .hr-day b { color: var(--teal); font-family: var(--mono); }
   .hr-rail .hr-day:after { display: none; }
-  .hr-ev { position: relative; display: flex; align-items: center; gap: 16px; margin: 0 0 10px 44px; padding: 14px 18px; border-radius: 14px; border: 1px solid var(--stroke-dim); background: linear-gradient(180deg, var(--card-0), var(--card-1)); transition: transform .15s ease, border-color .15s ease; }
+  .hr-ev { position: relative; display: flex; align-items: center; gap: 16px; margin: 0 0 10px var(--hr-indent, 44px); padding: 14px 18px; border-radius: 14px; border: 1px solid var(--stroke-dim); background: linear-gradient(180deg, var(--card-0), var(--card-1)); transition: transform .15s ease, border-color .15s ease; }
   .hr-ev:hover { transform: translateX(3px); border-color: var(--stroke); }
-  .hr-ev:before { content: ""; position: absolute; left: -40px; top: 50%; width: 17px; height: 17px; margin-top: -8px; border-radius: 50%; background: var(--bg-1); border: 4px solid var(--ac, var(--teal)); }
+  .hr-ev:before { content: ""; position: absolute; box-sizing: border-box; left: calc(var(--hr-line-x, 12px) - var(--hr-indent, 44px) - var(--hr-ring, 25px) / 2 - 1px); top: 50%; width: var(--hr-ring, 25px); height: var(--hr-ring, 25px); margin-top: calc(var(--hr-ring, 25px) / -2); border-radius: 50%; background: var(--bg-1); border: 4px solid var(--ac, var(--teal)); }
   .hr-ev.released:before { border-color: var(--dim); background: var(--dim); } .hr-ev.fresh:before { background: var(--ac); box-shadow: 0 0 0 6px color-mix(in srgb, var(--ac) 25%, transparent); }
   .hr-evbody { min-width: 0; flex: 1; }
   .hr-evsub { display: flex; gap: 10px; align-items: center; margin-top: 5px; font-size: var(--fs-sm); color: var(--label); min-width: 0; }
@@ -260,7 +260,7 @@
     .hr-detail { padding: 20px 16px 40px; } .hr-dh { gap: 14px; } .hr-dh .hr-tile { --s: 56px !important; } .hr-dname { font-size: 48px; }
     .hr-facts { gap: 22px 28px; padding: 16px 0; } .hr-fact b { font-size: 34px; } .hr-fact b.mono { font-size: 26px; } .hr-facts .hr-badges { margin-left: 0; width: 100%; }
     .hr-termbar { flex-wrap: wrap; } .hr-termbar .hr-go { width: 100%; margin-left: 0; }
-    .hr-ev { padding: 12px; gap: 10px; margin-left: 34px; } .hr-ev:before { left: -30px; } .hr-rail { margin-left: 6px; } .hr-rail .hr-day { margin-left: 34px; }
+    .hr-ev { padding: 12px; gap: 10px; } .hr-rail { --hr-indent: 34px; margin-left: 6px; }
     .hr-ev { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: start; }
     .hr-evwhen { grid-column: 2; flex-direction: row; align-items: center; justify-content: flex-start; gap: 10px; margin-top: -2px; }
     .hr-evsub .hr-title { display: none; } .hr-ev .hr-name { font-size: var(--fs-md); }
