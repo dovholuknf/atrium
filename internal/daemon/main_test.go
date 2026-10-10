@@ -57,6 +57,14 @@ func TestMain(m *testing.M) {
 	windDownKeyGap = 100 * time.Millisecond
 	// No PATH walk on every daemon a test starts.
 	runnerFound = func(*store.Harness) string { return "" }
+	// A fake claude runner is this test binary, and every claude launch now carries atrium's own
+	// `--settings <json>`, which the test flag parser would refuse. Real claude takes it.
+	for i := 1; i+1 < len(os.Args); i++ {
+		if os.Args[i] == "--settings" {
+			os.Args = append(os.Args[:i], os.Args[i+2:]...)
+			break
+		}
+	}
 	code := m.Run()
 	if migratedPath != "" {
 		_ = os.RemoveAll(filepath.Dir(migratedPath))

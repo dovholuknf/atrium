@@ -206,33 +206,47 @@ var stopHookCommand = func() string {
 	return program + " turn --event end"
 }
 
-// stopHookSettings is the `--settings` value that registers one Stop hook.
+// noAgentViewSettings keeps a card out of Claude Code's agent view. Left arrow on an empty
+// prompt backgrounds the conversation there, and Ctrl+C twice quits it. A runner's user
+// settings never reach a lean card, so atrium says it itself, for every claude runner.
+var noAgentViewSettings = map[string]any{
+	"disableAgentView":     true,
+	"leftArrowOpensAgents": false,
+}
+
+// stopHookSettings is the `--settings` value every claude launch gets: the agent view keys,
+// and one Stop hook when command is not empty.
 func stopHookSettings(command string) string {
-	raw, _ := json.Marshal(map[string]any{
-		"hooks": map[string]any{
+	doc := map[string]any{}
+	for k, v := range noAgentViewSettings {
+		doc[k] = v
+	}
+	if command != "" {
+		doc["hooks"] = map[string]any{
 			"Stop": []any{map[string]any{
 				"matcher": "",
 				"hooks":   []any{map[string]any{"type": "command", "command": command}},
 			}},
-		},
-	})
+		}
+	}
+	raw, _ := json.Marshal(doc)
 	return string(raw)
 }
 
-// withStopHook adds the Stop hook to an agent-launched claude session's
-// arguments. Approved for these sessions only: a human's session keeps the
-// opt-in `CLAUDE.md` describes, because the Stop hook is the one hook whose
-// answer can change what a session does. Here it only REPORTS that the turn
-// ended. The guard behind it never blocks.
+// withStopHook adds atrium's `--settings` to a claude session's arguments: the agent view
+// keys for every one, and the Stop hook for an agent-launched one only. A human's session
+// keeps the opt-in `CLAUDE.md` describes, because the Stop hook is the one hook whose
+// answer can change what a session does. Here it only REPORTS that the turn ended. The
+// guard behind it never blocks.
 //
 // In front of the rest, so it can never land after the positional prompt.
 func withStopHook(h *store.Harness, args []string, agent bool) []string {
-	if !agent || !isClaude(h) {
+	if !isClaude(h) {
 		return args
 	}
-	cmd := stopHookCommand()
-	if cmd == "" {
-		return args
+	cmd := ""
+	if agent {
+		cmd = stopHookCommand()
 	}
 	return append([]string{"--settings", stopHookSettings(cmd)}, args...)
 }
