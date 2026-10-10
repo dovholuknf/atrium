@@ -39,4 +39,19 @@ done
 [ ${#pkgs[@]} -eq 0 ] && set -- "$@" ./...
 
 # -count=1 because a cached pass is not a pass.
+#
+# A UNIT RUN HAS A BUDGET: scripts/unit-budget.go reads the -json stream and fails the run, with names and times,
+# when any test took over 10ms. -json given by hand opts out, since the stream is then yours.
+if [ "$mode" = unit ]; then
+  wrap=1; vflag=()
+  for a in "$@"; do
+    case "$a" in -json|-test.json) wrap=0 ;; -v|-test.v) vflag=(-v) ;; esac
+  done
+  if [ "$wrap" = 1 ]; then
+    go test -json -count=1 "$@" | go run scripts/unit-budget.go ${vflag[@]+"${vflag[@]}"}
+    codes=("${PIPESTATUS[@]}")
+    [ "${codes[0]}" = 0 ] && [ "${codes[1]}" = 0 ]
+    exit $?
+  fi
+fi
 exec go test -count=1 ${tags[@]+"${tags[@]}"} "$@"
