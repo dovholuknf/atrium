@@ -1,4 +1,4 @@
-﻿# t-daemon-tests-slow
+# t-daemon-tests-slow
 
 The internal/daemon package has about 1850 tests (with `-tags integration`) and none ran in parallel. CI windows hit
 go test's 10m default at 550 to 600s. The cost is spent starting processes (git, shells, node, pty hosts) and
