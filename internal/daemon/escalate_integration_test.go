@@ -212,3 +212,35 @@ func TestARunnerWithoutMidTurnInputGetsAnAgedMessageByTheHookOnly(t *testing.T) 
 		t.Fatalf("the hook route did not deliver the aged message: %+v", msgs)
 	}
 }
+
+// Once an aged `when: done` message is typed mid-turn it is delivered: nothing is
+// pending for the card, the injector holds nothing, and the activity the board
+// reads no longer says a message is held.
+func TestAnEscalatedDoneMessageLeavesNothingQueued(t *testing.T) {
+	d := testDaemon(t)
+	target, _, _ := peerPair(t, d)
+	t.Cleanup(func() { d.pending.stopAll() })
+	d.act.set(target.ID, ActivityTool, "Bash")
+	id := doneTo(t, d, target.ID, "sg4/doer", "neither matrix exists")
+
+	d.pending.attempt(target.ID)
+	if a := d.act.get(target.ID); a == nil || a.HeldCount != 1 {
+		t.Fatalf("a young done message should be counted as held: %+v", a)
+	}
+
+	age(t, d, id, 20*time.Minute)
+	d.pending.mu.Lock()
+	d.pending.by[target.ID].entries[0].at = time.Now().Add(-20 * time.Minute)
+	d.pending.mu.Unlock()
+	d.pending.attempt(target.ID)
+
+	if pending, _ := d.st.PendingMessages(target.ID); len(pending) != 0 {
+		t.Fatalf("the escalated message is still pending: %d", len(pending))
+	}
+	if heldCount(d.pending, target.ID) != 0 {
+		t.Fatal("the injector still holds the escalated message")
+	}
+	if a := d.act.get(target.ID); a != nil && (a.HeldPeer != "" || a.HeldCount != 0) {
+		t.Fatalf("the board still reads a held message: %+v", a)
+	}
+}

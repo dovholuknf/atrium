@@ -1413,7 +1413,7 @@ function termHeldChip(t) {
   if (a.held_quiet) {
     const n = count > 1 ? " " + count : "";
     return `<span class="chip queued" onclick="event.stopPropagation()"
-      data-tip="${esc(termQueuedTip(count, secs, a.held_turn))}">&#9993;&#xFE0E;${n}</span>`;
+      data-tip="${esc(termQueuedTip(count, secs, a.held_turn, a.held_escalate_min))}">&#9993;&#xFE0E;${n}</span>`;
   }
   const label = count > 1 ? `! ${count}` : "!";
   return `<span class="chip held" onclick="event.stopPropagation()"
@@ -1422,13 +1422,14 @@ function termHeldChip(t) {
 
 // The quiet mark's tooltip: how many, how long, and the one rule that holds
 // them.
-function termQueuedTip(count, secs, turn) {
+function termQueuedTip(count, secs, turn, escalateMin) {
   const one = count === 1;
   const why = turn === "runner"
     ? "because this runner does not take input mid-turn"
     : "sent to arrive when the session's turn ends";
   return `${count} ${one ? "message" : "messages"} queued for this agent for ${termHeldAge(secs)}, ${why}. ` +
-    `${one ? "It goes" : "They go"} in when the turn ends`;
+    `${one ? "It goes" : "They go"} in when the turn ends, or after ${Number(escalateMin) || 15} minutes if the turn runs ` +
+    `that long`;
 }
 
 // The held chip's tooltip, singular or plural throughout.

@@ -148,6 +148,9 @@ type Activity struct {
 	// `!`, which is kept for a message held against what its sender asked for.
 	// Decided here and not on the board, so there is one rule. See heldPeer.quiet.
 	HeldQuiet bool `json:"held_quiet,omitempty"`
+	// HeldEscalateMin is escalate_held_after in minutes, set on a turn wait: a `when: done` message goes in when the
+	// turn ends or after this long, whichever is first, and the board's tip says so. See escalate.go.
+	HeldEscalateMin int `json:"held_escalate_min,omitempty"`
 	// LooksIdle says the card reads running but its terminal has gone quiet on an
 	// idle prompt, so the turn-end never arrived. A guess, drawn as one.
 	// IdleSeconds is how long the pty had been silent when it was decided. IN
@@ -945,6 +948,17 @@ func (d *Daemon) activityFor(taskID string) any {
 	a := d.act.get(taskID)
 	if a == nil {
 		return nil
+	}
+	if a.HeldPeer != "" {
+		// A hold with nothing pending behind it is a delivered message the injector has not been told of yet. The
+		// board must not read it as queued, whichever path delivered it.
+		if pending, err := d.st.PendingMessages(taskID); err == nil && len(pending) == 0 {
+			d.act.clearHeld(taskID)
+			return d.act.get(taskID)
+		}
+		if a.HeldFor == HeldForTurn {
+			a.HeldEscalateMin = int(d.heldAfter() / time.Minute)
+		}
 	}
 	return a
 }

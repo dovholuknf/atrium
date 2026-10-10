@@ -114,16 +114,12 @@ func (d *Daemon) deliverKept(taskID string) {
 				for _, m := range msgs {
 					ids = append(ids, m.ID)
 				}
-				if err := d.st.MarkDelivered(taskID, "terminal", ids); err != nil {
+				if err := d.markDelivered(taskID, "terminal", ids); err != nil {
 					log.Printf("[atrium] typed what is kept into %s but could not mark it delivered: %v", taskID, err)
 				}
 				for _, m := range msgs {
 					d.notePeerTyped(taskID, m.FromPeer, m.Text, "", "typed and sent when the resumed session was ready")
 				}
-				if d.pending != nil {
-					d.pending.deliveredElsewhere(taskID, ids)
-				}
-				d.publishTask(taskID)
 				return
 			}
 		}

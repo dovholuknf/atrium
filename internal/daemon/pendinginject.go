@@ -377,7 +377,7 @@ func (pi *pendingInjector) attempt(taskID string) {
 		if !wrote {
 			break
 		}
-		if err := pi.d.st.MarkDelivered(taskID, "terminal", []string{e.msgID}); err != nil {
+		if err := pi.d.markDelivered(taskID, "terminal", []string{e.msgID}); err != nil {
 			log.Printf("[atrium] typed a held message into %s but could not mark it delivered: %v", taskID, err)
 		}
 		pi.d.notePeerTyped(taskID, e.from, e.text, e.kind, "typed and sent after waiting for your line to clear")
