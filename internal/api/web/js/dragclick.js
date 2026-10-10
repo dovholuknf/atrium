@@ -6,7 +6,11 @@
   document.addEventListener("click", e => {
     const t = e.target;
     if (!t || !t.closest || t.closest("input, textarea, select, [contenteditable], .xterm")) return;
-    let drag = !!down && Math.hypot(e.clientX - down.x, e.clientY - down.y) > down.slop;
+    // A key press on a focused control, or a script's .click(), clicks with detail 0 and no pointer, so the last
+    // mouse-down is not its press and the distance from it means nothing. Measuring it ate every Space and Enter
+    // after a mouse click. A selection touching the target still counts.
+    const fromKey = e.detail === 0;
+    let drag = !fromKey && !!down && Math.hypot(e.clientX - down.x, e.clientY - down.y) > down.slop;
     if (!drag) {
       const sel = window.getSelection();
       // The selection must touch the target: a stale selection elsewhere must not eat a plain click.

@@ -1578,7 +1578,7 @@ function pinnedGroupHTML(pins, keyPrefix) {
       <span class="gname">&#9733; pinned</span>
       <span class="gn">${pins.length}</span>
     </summary>
-    ${pins.map(cardHTML).join("")}
+    ${pins.map(t => cardHTML(t)).join("")}
   </details>`;
 }
 
@@ -1600,7 +1600,7 @@ function cardsHTML(cards, g, keyPrefix) {
   const rest = cards.filter(t => !t.pinned);
   const head = pinnedGroupHTML(pins, keyPrefix);
 
-  if (!g) return head + rest.map(cardHTML).join("");
+  if (!g) return head + rest.map(t => cardHTML(t)).join("");
 
   // A card can belong to several groups when grouping by tag, so it appears
   // under each. Anything else returns one name and this reads the same.
@@ -1613,14 +1613,14 @@ function cardsHTML(cards, g, keyPrefix) {
   }
   seedGroups(byName, g);
   // One group holding everything is not a grouping, so it is not drawn as one.
-  if (byName.size < 2 && byName.has("")) return head + rest.map(cardHTML).join("");
+  if (byName.size < 2 && byName.has("")) return head + rest.map(t => cardHTML(t)).join("");
 
   return head + [...byName.keys()].sort(g.cmp).map(name => {
     const mine = byName.get(name);
     // Cards in none of the operator's groups are the board's own heap, so they
     // keep the sort. Every named group is theirs and keeps its rank.
     if (g.handOrdered && name !== UNTAGGED) mine.sort(byRank);
-    if (!name) return mine.map(cardHTML).join("");
+    if (!name) return mine.map(t => cardHTML(t)).join("");
     const key = keyPrefix + ":" + name;
     // FOLDED BY NAME, BOARD WIDE, and not by name-within-column. A card that
     // changes status moves to another column, where a group of the same name
@@ -1648,7 +1648,7 @@ function cardsHTML(cards, g, keyPrefix) {
         <span class="gname" data-tip="${esc(name)} &mdash; right click to recolor">${esc(name)}</span>
         <span class="gn">${mine.length}</span>
       </summary>
-      ${mine.length ? mine.map(cardHTML).join("") : emptyGroupHint()}
+      ${mine.length ? mine.map(t => cardHTML(t)).join("") : emptyGroupHint()}
     </details>`;
   }).join("");
 }
@@ -2082,7 +2082,7 @@ function offlineGroupHTML(cards, g, keyPrefix) {
       last said ${cards.length === 1 ? "was" : "were"} here. Nothing on
       ${rooms.length === 1 ? "it" : "them"} can be opened or changed until
       ${rooms.length === 1 ? "it is" : "they are"} back.</div>
-    ${cards.map(cardHTML).join("")}
+    ${cards.map(t => cardHTML(t)).join("")}
   </details>`;
 }
 

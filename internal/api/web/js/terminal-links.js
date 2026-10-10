@@ -846,6 +846,10 @@ function termWait(say) {
   if (!box || !line) return;
   if (!say) { box.hidden = true; return; }
   line.textContent = say;
+  // A resume that gave up turns the spinner into its reason. Decided here and not only where the opening is painted,
+  // because openTerm and the reconnect paths call this too, and each of them used to put the spinner back.
+  const o = typeof openingState === "function" && termTask ? openingState(termTask.id) : null;
+  box.classList.toggle("slow", !!o && o.state === "slow");
   box.hidden = false;
 }
 

@@ -887,6 +887,13 @@ function termMenuItems(id, t) {
         "list unless show stopped is on.",
       act: () => oneAtATime("shelve:" + id, () => patchTask(id, { status: "shelved" }).then(refresh))
     } : null,
+    // A COLD ROW IS ONLY HERE BECAUSE IT IS PINNED, so dismissing it is unpinning it. Without this a dead terminal's
+    // menu holds nothing that removes it from the list, since stop needs a runner.
+    !t.supervised && t.pinned ? {
+      label: "dismiss",
+      help: "Takes this exited terminal out of the list by unpinning it. The card and its history stay on the board.",
+      act: () => togglePin(id, false)
+    } : null,
     {
       label: "terminate and clean up", danger: true,
       help: "Stops the agent and removes the folder and branch it was working in, here and on the hub. " +
