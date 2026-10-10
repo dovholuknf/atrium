@@ -79,7 +79,10 @@ async function loadDeployReady() {
   paintDeployReady();
   const dlg = document.getElementById("deployready");
   if (dlg && dlg.open) loadDeployQueue();
+  // The hub answers from its last pass and says when one is still running: ask again shortly.
+  if (v.building && !drRetry) { drRetry = setTimeout(() => { drRetry = 0; loadDeployReady(); }, 1500); }
 }
+let drRetry = 0;
 
 // A read that failed leaves no report: the old one is not kept, since it may no longer be true, and the Deploy button goes
 // with it. The pill says so, and an open dialog says why.

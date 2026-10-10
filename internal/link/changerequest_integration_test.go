@@ -253,11 +253,18 @@ func TestThePushedReadSaysAllFiveStatesAndTheOwner(t *testing.T) {
 
 	ask := func(repo, branch, head string) map[string]any {
 		t.Helper()
-		code, raw := x.op("GET", "/_hub/git/pushed?repo="+repo+"&branch="+branch+"&head="+head, "")
-		if code != 200 {
-			t.Fatalf("%s %s %s = %d %s", repo, branch, head, code, raw)
+		// The hub answers from a snapshot and says `building` until the first build of this question is done.
+		for end := time.Now().Add(10 * time.Second); time.Now().Before(end); time.Sleep(10 * time.Millisecond) {
+			code, raw := x.op("GET", "/_hub/git/pushed?repo="+repo+"&branch="+branch+"&head="+head, "")
+			if code != 200 {
+				t.Fatalf("%s %s %s = %d %s", repo, branch, head, code, raw)
+			}
+			if m := obj(t, raw); m["building"] != true {
+				return m
+			}
 		}
-		return obj(t, raw)
+		t.Fatalf("%s %s %s was still building", repo, branch, head)
+		return nil
 	}
 	want := func(m map[string]any, state, hub string) {
 		t.Helper()
@@ -726,49 +733,56 @@ func TestOneRequestCarriesThePushedReadForItsSource(t *testing.T) {
 	x.hubPush(t, side, "claude/side")
 	x.hubPush(t, x.c[3], "claude/other")
 
-	pushed := func(id string) map[string]any {
+	// The hub answers from a snapshot, null until the first build of it is done, and these pushes go straight to the
+	// hub's disk, so the test asks for a rebuild and reads until the answer is the state it wants.
+	pushed := func(id, want string) map[string]any {
 		t.Helper()
-		code, raw := x.op("GET", "/_hub/change-requests/"+id, "")
-		if code != 200 {
-			t.Fatalf("get %s = %d %s", id, code, raw)
+		var last string
+		for end := time.Now().Add(10 * time.Second); time.Now().Before(end); time.Sleep(20 * time.Millisecond) {
+			x.g.Store().RefreshView()
+			code, raw := x.op("GET", "/_hub/change-requests/"+id, "")
+			if code != 200 {
+				t.Fatalf("get %s = %d %s", id, code, raw)
+			}
+			last = raw
+			m := obj(t, raw)
+			if str(m, "id") != id {
+				t.Errorf("id = %s", str(m, "id"))
+			}
+			if p, ok := m["pushed"].(map[string]any); ok && str(p, "state") == want {
+				return p
+			}
 		}
-		m := obj(t, raw)
-		p, ok := m["pushed"].(map[string]any)
-		if !ok {
-			t.Fatalf("no pushed on %s: %s", id, raw)
-		}
-		if str(m, "id") != id {
-			t.Errorf("id = %s", str(m, "id"))
-		}
-		return p
+		t.Fatalf("no pushed %s on %s: %s", want, id, last)
+		return nil
 	}
 	// matches: a hub-pushed request is at the hub's own tip when it is made.
 	_, c1 := x.create(t, x.op, hubReq("claude/x", "main"))
-	if p := pushed(str(c1, "id")); str(p, "state") != "matches" || str(p, "hub_sha") != x.c[1] {
+	if p := pushed(str(c1, "id"), "matches"); str(p, "state") != "matches" || str(p, "hub_sha") != x.c[1] {
 		t.Errorf("matches: %v", p)
 	}
 	// ahead: the hub moved on after the request was made.
 	x.hubPush(t, x.c[2], "claude/x")
-	if p := pushed(str(c1, "id")); str(p, "state") != "ahead" || str(p, "hub_sha") != x.c[2] {
+	if p := pushed(str(c1, "id"), "ahead"); str(p, "state") != "ahead" || str(p, "hub_sha") != x.c[2] {
 		t.Errorf("ahead: %v", p)
 	}
 	// behind: the room's head is one the hub has never seen.
 	x.tip("sg4", "claude/other", x.c[3])
 	x.hubPush(t, x.c[1], "claude/other")
 	_, c2 := x.create(t, x.op, roomReq("sg4", "claude/other", "main"))
-	if p := pushed(str(c2, "id")); str(p, "state") != "behind" || str(p, "hub_sha") != x.c[1] {
+	if p := pushed(str(c2, "id"), "behind"); str(p, "state") != "behind" || str(p, "hub_sha") != x.c[1] {
 		t.Errorf("behind: %v", p)
 	}
 	// diverged: the hub has the room's head and both have moved.
 	x.tip("sg4", "claude/side", side)
 	x.hubPush(t, x.c[1], "claude/side")
 	_, c3 := x.create(t, x.op, roomReq("sg4", "claude/side", "main"))
-	if p := pushed(str(c3, "id")); str(p, "state") != "diverged" {
+	if p := pushed(str(c3, "id"), "diverged"); str(p, "state") != "diverged" {
 		t.Errorf("diverged: %v", p)
 	}
 	// not-pushed: the branch is gone from the hub.
 	gitRun(t, x.dir, "update-ref", "-d", "refs/heads/claude/x")
-	if p := pushed(str(c1, "id")); str(p, "state") != "not-pushed" || str(p, "hub_sha") != "" {
+	if p := pushed(str(c1, "id"), "not-pushed"); str(p, "state") != "not-pushed" || str(p, "hub_sha") != "" {
 		t.Errorf("not-pushed: %v", p)
 	}
 	for _, id := range []string{"cr_99", "cr_0", "cr_x", "x", "cr_1/extra", "cr_01"} {
