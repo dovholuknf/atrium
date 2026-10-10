@@ -2945,7 +2945,8 @@ fi
 $clonePath = $null
 if ($Repo -ne 'none') { & pwsh -NoProfile -File (Join-Path $PSScriptRoot 'room-git.ps1') init $Name -Target $Target -Ssh $Ssh -Scp $Scp @(if ($sharedDir) { '-GitRoot'; $sharedDir }) @(if ($GitVersion) { '-GitVersion'; $GitVersion }) @(if ($SshOption) { '-SshOption'; $SshOption -join ',' }) *>&1 | ForEach-Object { Write-Host $_; if ("$_" -match '^room-git cwd ok (.+)$') { $clonePath = $Matches[1].Trim() } }; if ($LASTEXITCODE -ne 0) { $clonePath = $null; Step 'git' 'warn' "room-git init exited $LASTEXITCODE. rerun: room-git.ps1 init $Name -Target $Target" } }
 
-# The permission gate, after the hooks: room-gate.ps1 copies the one dotfiles script and registers it first.
+# The permission gate, after the hooks: room-gate.ps1 keeps only atrium's own (hook --event permission) and takes the old
+# atrium-perm-hook.ps1 entry and file out. It copies nothing to the room.
 & pwsh -NoProfile -File (Join-Path $PSScriptRoot 'room-gate.ps1') $Name -Target $Target -Ssh $Ssh -Scp $Scp @(if ($SshOption) { '-SshOption'; $SshOption -join ',' }) *>&1 | ForEach-Object { Write-Host $_ }; if ($LASTEXITCODE -ne 0) { Step 'gate' 'warn' "room-gate exited $LASTEXITCODE. rerun: room-gate.ps1 $Name -Target $Target" }
 
 # DEFENDER, on a Windows room, after the clone so its build folder and worktrees are known. room-defender.ps1 reads the

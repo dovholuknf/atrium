@@ -61,10 +61,12 @@ type RoomSetup struct {
 	HooksMissing int `json:"hooks_missing"`
 	HooksStale   int `json:"hooks_stale"`
 	// HooksUnreadable is the parse error when settings.json cannot be read. Nothing is written then, so no fix.
-	HooksUnreadable string   `json:"hooks_unreadable,omitempty"`
-	Build           string   `json:"build,omitempty"`
-	Go              string   `json:"go,omitempty"`
-	Runners         []string `json:"runners,omitempty"`
+	HooksUnreadable string `json:"hooks_unreadable,omitempty"`
+	// HooksTwoGates is true when the dotfiles gate and atrium's own are both registered. It is one of HooksMissing.
+	HooksTwoGates bool     `json:"hooks_two_gates,omitempty"`
+	Build         string   `json:"build,omitempty"`
+	Go            string   `json:"go,omitempty"`
+	Runners       []string `json:"runners,omitempty"`
 	// Issues is what is wrong, named once here so the pill and the row cannot disagree.
 	Issues []SetupIssue `json:"issues"`
 
@@ -173,6 +175,7 @@ func (p *Proxy) readSetup(ctx context.Context, room string) *RoomSetup {
 	var hooks struct {
 		Missing    int    `json:"missing"`
 		Unreadable string `json:"unreadable"`
+		TwoGates   bool   `json:"two_gates"`
 		Hooks      []struct {
 			Stale bool `json:"stale"`
 		} `json:"hooks"`
@@ -196,6 +199,7 @@ func (p *Proxy) readSetup(ctx context.Context, room string) *RoomSetup {
 	_ = p.setupGet(ctx, room, "/v1/harnesses", &harnesses)
 	f.Answering = true
 	f.HooksMissing, f.HooksUnreadable = hooks.Missing, hooks.Unreadable
+	f.HooksTwoGates = hooks.TwoGates
 	for _, h := range hooks.Hooks {
 		if h.Stale {
 			f.HooksStale++
@@ -237,12 +241,21 @@ func (p *Proxy) setupIssues(f *RoomSetup) []SetupIssue {
 	switch {
 	case f.HooksUnreadable != "":
 		issues = append(issues, SetupIssue{"hooks", "claude settings.json cannot be read, so atrium cannot check its hooks"})
-	case f.HooksMissing > 0:
-		text := fmt.Sprintf("atrium claude hooks: %d missing", f.HooksMissing)
-		if f.HooksStale > 0 {
-			text += fmt.Sprintf(", %d stale", f.HooksStale)
+	default:
+		// The two-gates row is counted once in Missing. It gets its own text, and the count of the rest excludes it.
+		missing := f.HooksMissing
+		if f.HooksTwoGates {
+			issues = append(issues, SetupIssue{"hooks",
+				"two permission gates: atrium-perm-hook.ps1 and atrium hook. every tool call asks twice"})
+			missing--
 		}
-		issues = append(issues, SetupIssue{"hooks", text})
+		if missing > 0 {
+			text := fmt.Sprintf("atrium claude hooks: %d missing", missing)
+			if f.HooksStale > 0 {
+				text += fmt.Sprintf(", %d stale", f.HooksStale)
+			}
+			issues = append(issues, SetupIssue{"hooks", text})
+		}
 	}
 	if p.boardID != "" && f.Build != "" && f.Build != p.boardID {
 		issues = append(issues, SetupIssue{"build",

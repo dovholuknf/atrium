@@ -85,6 +85,26 @@ func TestARoomMissingHooksIsNamedOnItsRow(t *testing.T) {
 	}
 }
 
+func TestTwoGatesIsNamedAsItsOwnIssue(t *testing.T) {
+	b := newBench(t)
+	mux := http.NewServeMux()
+	mux.HandleFunc("/v1/hooks", func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"missing":1,"two_gates":true,"hooks":[]}`))
+	})
+	mux.HandleFunc("/v1/health", func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"ok":true,"build":"","go":"go1.99"}`))
+	})
+	b.attach("sg3", mux)
+	sweep(b)
+	s := setupOf(t, b, "sg3")
+	if s == nil || !s.HooksTwoGates || len(s.Issues) != 1 {
+		t.Fatalf("sg3's setup = %+v", s)
+	}
+	if !strings.Contains(s.Issues[0].Text, "two permission gates") || strings.Contains(s.Issues[0].Text, "missing") {
+		t.Fatalf("the issue is not the two-gates text: %q", s.Issues[0].Text)
+	}
+}
+
 func TestAStaleHookIsCountedAndSaid(t *testing.T) {
 	b := newBench(t)
 	b.attach("alpha", setupRoom(2, 2, ""))

@@ -1,39 +1,35 @@
-# The permission gate for a room, run from THIS side over ssh: one script copied, one hook registered.
+# The permission gate for a room, run from THIS side over ssh: ONE gate, atrium's own.
 #
 #   pwsh -File scripts\room-gate.ps1 m1mini -Check
 #   pwsh -File scripts\room-gate.ps1 m1mini
 #   pwsh -File scripts\room-gate.ps1 sg3 -Target user@host
+#   pwsh -File scripts\room-gate.ps1 x -Local <a .claude folder>      # this machine, no ssh. The tests use it
 #
-# WHAT A ROOM IS MISSING. The gate is not one of atrium's hooks. On the operator's machine it is the dotfiles script
-# ~/.claude/hooks/atrium-perm-hook.ps1, registered FIRST in PreToolUse. A room provisioned with atrium's own hooks has
-# the badge and the session open and close, but a worker's tool calls never reach the board as permission prompts.
-# This puts that ONE script on the room and registers it. Atrium shipping its own gate replaces this (backlog f-006).
-#
-# THE SCRIPT IS NOT IN THIS REPOSITORY. It belongs to dotfiles, so it is read from THIS operator's
-# ~/.claude/hooks/atrium-perm-hook.ps1. Nothing else from dotfiles is ever copied, least of all the footgun guard.
+# THE GATE IS `atrium hook --event permission`, registered in ~/.claude/settings.json by atrium's own hooks install. The
+# dotfiles script ~/.claude/hooks/atrium-perm-hook.ps1 is the gate it replaced, and atrium's hooks are the superset. With
+# both registered every tool call asks the human twice (TwoGates), so this script never installs the script. It takes it
+# out.
 #
 # THE STEPS, in order:
-#   source    the script here. Missing is a fail naming the path
-#   pwsh      the gate RUNS under pwsh, so the room needs one. The absolute path found on the room (its
-#             room-env.ps1 on Windows, its login-shell PATH elsewhere) goes into the hook command, because a bare
-#             `pwsh` is not something a session's hook environment is promised to resolve
-#   copy      to ~/.claude/hooks/atrium-perm-hook.ps1 there. Equal SHA-256 is `ok`, and nothing is written
-#   register  the room's ~/.claude/settings.json: backed up first as settings.json.atrium-<yyyyMMdd-HHmmss>.bak, then
-#             the gate goes FIRST in the PreToolUse group whose matcher is "", ahead of atrium's tool-start hook.
-#             Every other entry and key stays. A gate already registered (matched on the script name) is left alone
+#   ssh       reach the room and read its home
+#   legacy    a PreToolUse entry naming atrium-perm-hook.ps1 is removed from settings.json. Nothing else in the file
+#             changes. Both gates registered is said as `two permission gates`
+#   register  atrium's own gate (`<atrium> hook --event permission`, timeout 86400) is put first in the PreToolUse group
+#             whose matcher is "" when it is absent. The atrium path is read from the room's other atrium hook
+#             commands, so a room with none says so and is left for POST /v1/hooks/install
+#   script    the old script file ~/.claude/hooks/atrium-perm-hook.ps1 is deleted
 #   reach     the gate POSTs to $ATRIUM_HUB_URL, default http://127.0.0.1:7777. The room's agent listener must be
 #             there. It asks GET /gate?agent=probe first, and so does this. It also reads the room's runner row
-#             here and warns when that row switches the gate off. Launched runners get ATRIUM_PERM_GATE=on from the
-#             daemon (permGateDefault in launch.go), so nothing is set globally
+#             here and warns when that row switches the gate off
 #
-# -Check reports every step and writes nothing. A room needs no restart: claude reads settings.json per session.
+# settings.json is written ONCE, after a timestamped backup beside it, settings.json.bak-<yyyymmddHHmmss>. -Check
+# reports every step and writes nothing. A room needs no restart: claude reads settings.json per session.
 #
-# THE SETTINGS EDIT happens HERE, in pwsh 7: the file is copied down, edited with its key order kept (ConvertTo-Json
+# THE SETTINGS EDIT happens HERE, in pwsh 7: the file is read down, edited with its key order kept (ConvertTo-Json
 # -Depth 20), and put back with scp. The remote never needs jq, python or a PowerShell that can edit JSON. Formatting
 # changes to two-space indent. Nothing else does.
 #
-# THE REMOTE runs plain `sh -s` on Unix (no pwsh needed to RUN the installer) and Windows PowerShell 5.1
-# (-EncodedCommand) on Windows, the way room-git.ps1 does.
+# THE REMOTE runs plain `sh -s` on Unix and Windows PowerShell 5.1 (-EncodedCommand) on Windows, the way room-git.ps1 does.
 #
 # ONE LINE PER STEP, prefixed room-gate:
 #
@@ -44,10 +40,10 @@
 #
 # EXIT CODES
 #   0  done
-#   1  a local problem: bad arguments, or the gate script is missing here
+#   1  a local problem: bad arguments
 #   2  ssh could not reach the target, or its OS is not one this covers
-#   3  no pwsh on the room. The fail line names room-toolchain.ps1
-#   4  a remote step failed: copy or register. Nothing half-written is left behind on the settings file
+#   4  a remote step failed, or the room has no atrium hook to take the atrium path from. Nothing half-written is left
+#      behind on the settings file
 #   5  the room's agent listener does not answer on 7777, so the gate would fail open. The gate is installed anyway
 
 param(
@@ -57,8 +53,8 @@ param(
     [switch] $Check,
     # Where the room's runner row is read, for the reach step. The hub on this machine.
     [string] $HubAddr = '127.0.0.1:7778',
-    # The gate script on this side.
-    [string] $Source = (Join-Path $HOME '.claude/hooks/atrium-perm-hook.ps1'),
+    # A .claude folder on THIS machine to work on instead of a room over ssh. No ssh, no reach, no runner row.
+    [string] $Local,
     [string] $Ssh = 'ssh',
     [string] $Scp = 'scp',
     [string[]] $SshOption = @()
@@ -87,41 +83,29 @@ function Fail {
     if ($output) { $output | ForEach-Object { Write-Host "    $_" } }
     Finish $code
 }
-# The word for a step that changed, or in -Check would.
-function Changed { if ($Check) { 'todo' } else { 'done' } }
 
-if (-not $Room) { Write-Host 'usage: room-gate.ps1 <room> [-Target user@host] [-Check]'; exit 1 }
+if (-not $Room) { Write-Host 'usage: room-gate.ps1 <room> [-Target user@host] [-Check] [-Local <.claude folder>]'; exit 1 }
 if ($Room -notmatch '^[A-Za-z0-9][A-Za-z0-9._-]*$') { Fail 'args' 1 "bad room name '$Room'" }
 
 $sshBase = @('-o', 'BatchMode=yes', '-o', 'ConnectTimeout=25') + $SshOption
 $script:sshTarget = if ($Target) { $Target } else { $Room }
 $script:remoteOS = $null
-$gateName = 'atrium-perm-hook.ps1'
-
-# ── source ──────────────────────────────────────────────────────────────────
-
-if (-not (Test-Path -LiteralPath $Source)) {
-    Fail 'source' 1 "$Source is missing on this machine. the gate belongs to dotfiles: put it there, or pass -Source"
-}
-$Source = (Resolve-Path -LiteralPath $Source).Path
-$srcHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $Source).Hash.ToLower()
-Step 'source' 'ok' "$($Source -replace '\\', '/') sha256 $($srcHash.Substring(0, 12))"
+$legacyName = 'atrium-perm-hook.ps1'
+$legacyRe = [regex]::Escape('atrium-perm-hook')
+# atrium's own gate: `<atrium> hook --event permission`.
+$ownRe = 'hook\s+--event\s+permission\b'
 
 # ── the remote ──────────────────────────────────────────────────────────────
 
 function Invoke-Remote {
     param([string] $script)
     if ($script:remoteOS -eq 'windows') {
-        $full = "`$ErrorActionPreference='Continue'; `$ProgressPreference='SilentlyContinue'`n" +
-            "`$env:Path = (@([Environment]::GetEnvironmentVariable('Path', 'Machine'), " +
-            "[Environment]::GetEnvironmentVariable('Path', 'User')) | Where-Object { `$_ }) -join ';'`n" +
-            # The room's own toolchain next: this is where a session finds the pwsh 7 that room-toolchain.ps1 put.
-            "`$e = Join-Path `$HOME '.atrium\toolchain\room-env.ps1'; if (Test-Path `$e) { . `$e }`n" + $script
+        $full = "`$ErrorActionPreference='Continue'; `$ProgressPreference='SilentlyContinue'`n" + $script
         $enc = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($full))
         if ($enc.Length -gt 7800) { throw "remote script too long for cmd.exe ($($enc.Length))" }
         $out = & $Ssh @sshBase $script:sshTarget "powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -EncodedCommand $enc" 2>&1
     } else {
-        # A login shell's PATH, so a Homebrew pwsh is found. A COMMENT LAST: PowerShell ends what it pipes with CRLF.
+        # A login shell's PATH. A COMMENT LAST: PowerShell ends what it pipes with CRLF.
         $full = "lp=`$(`"`${SHELL:-/bin/sh}`" -lc 'printf %s `"`$PATH`"' 2>/dev/null); [ -n `"`$lp`" ] && PATH=`"`$lp:`$PATH`"`n" + $script
         $full = ($full -replace "`r", '') + "`n#"
         $out = $full | & $Ssh @sshBase $script:sshTarget 'sh -s' 2>&1
@@ -149,145 +133,158 @@ function Copy-ToRemote {
     [pscustomobject]@{ Out = @($o | ForEach-Object { "$_" }); Code = $LASTEXITCODE }
 }
 
-# ── ssh ─────────────────────────────────────────────────────────────────────
+# ── the settings edit, pure ─────────────────────────────────────────────────
 
-$probe = & $Ssh @sshBase $script:sshTarget 'uname -sm' 2>&1
-$code = $LASTEXITCODE
-if ($code -eq 255) { Fail 'ssh' 2 "cannot reach $($script:sshTarget) over ssh" $probe }
-$text = ($probe | ForEach-Object { "$_" }) -join ' '
-if ($code -eq 0 -and $text -match '^(Linux|Darwin)\s') {
-    $script:remoteOS = 'unix'; $kind = if ($Matches[1] -eq 'Linux') { 'linux' } else { 'mac' }
-} else {
-    $script:remoteOS = 'windows'; $kind = 'windows'
-    $r = Invoke-Remote '"ok"'
-    if ($r.Code -ne 0) { Fail 'ssh' 2 'not Linux, macOS or Windows PowerShell' ($probe + $r.Out) }
+function Get-Commands {
+    param($s)
+    foreach ($g in @($s.hooks.PreToolUse)) { foreach ($h in @($g.hooks)) { "$($h.command)" } }
 }
-Step 'ssh' 'ok' "$($script:sshTarget) ($kind)"
 
-# ── what the room has now, in one round trip ────────────────────────────────
+# Update-Gates takes the legacy entries out and puts atrium's gate in when it is absent.
+function Update-Gates {
+    param($s)
+    $removed = 0; $added = $false; $noExe = $false
+    $kept = @()
+    foreach ($g in @($s.hooks.PreToolUse | Where-Object { $_ })) {
+        $hs = @($g.hooks)
+        $keep = @($hs | Where-Object { "$($_.command)" -notmatch $legacyRe })
+        $removed += $hs.Count - $keep.Count
+        if ($keep.Count -eq $hs.Count) { $kept += $g; continue }
+        # A group left with no command goes too.
+        if ($keep.Count -gt 0) { $g.hooks = $keep; $kept += $g }
+    }
+    $have = @($kept | ForEach-Object { @($_.hooks) } | Where-Object { "$($_.command)" -match $ownRe })
+    if (-not $have.Count) {
+        # The atrium path comes from the room's own other atrium hook commands.
+        $exe = $null
+        foreach ($ev in @($s.hooks.PSObject.Properties)) {
+            foreach ($g in @($ev.Value)) {
+                foreach ($h in @($g.hooks)) {
+                    $c = "$($h.command)"
+                    if (-not $exe -and $c -match 'atrium' -and $c -notmatch $legacyRe -and $c -match '^(.+?)\s+(hook|session|turn)\s+--event\s') { $exe = $Matches[1] }
+                }
+            }
+        }
+        if ($exe) {
+            $entry = [pscustomobject]@{ type = 'command'; command = "$exe hook --event permission"; timeout = 86400 }
+            $idx = -1
+            for ($i = 0; $i -lt $kept.Count; $i++) { if ("$($kept[$i].matcher)" -eq '') { $idx = $i; break } }
+            if ($idx -ge 0) { $kept[$idx].hooks = @($entry) + @($kept[$idx].hooks) }
+            else { $kept = @([pscustomobject]@{ matcher = ''; hooks = @($entry) }) + $kept }
+            $added = $true
+        } else { $noExe = $true }
+    }
+    if ($removed -gt 0 -or $added) {
+        if (-not $s.PSObject.Properties['hooks']) { $s | Add-Member -NotePropertyName hooks -NotePropertyValue ([pscustomobject]@{}) }
+        if ($s.hooks.PSObject.Properties['PreToolUse']) { $s.hooks.PreToolUse = @($kept) }
+        else { $s.hooks | Add-Member -NotePropertyName PreToolUse -NotePropertyValue @($kept) }
+    }
+    [pscustomobject]@{ Settings = $s; Removed = $removed; Added = $added; NoExe = $noExe; Have = $have.Count }
+}
 
+# ── ssh, or a local folder ──────────────────────────────────────────────────
+
+if ($Local) {
+    $script:remoteOS = 'local'
+    $claudeDir = (New-Item -ItemType Directory -Force -Path $Local).FullName
+    Step 'ssh' 'skip' "-Local $($claudeDir -replace '\\', '/')"
+} else {
+    $probe = & $Ssh @sshBase $script:sshTarget 'uname -sm' 2>&1
+    $code = $LASTEXITCODE
+    if ($code -eq 255) { Fail 'ssh' 2 "cannot reach $($script:sshTarget) over ssh" $probe }
+    $text = ($probe | ForEach-Object { "$_" }) -join ' '
+    if ($code -eq 0 -and $text -match '^(Linux|Darwin)\s') {
+        $script:remoteOS = 'unix'; $kind = if ($Matches[1] -eq 'Linux') { 'linux' } else { 'mac' }
+    } else {
+        $script:remoteOS = 'windows'; $kind = 'windows'
+        $r = Invoke-Remote '"ok"'
+        if ($r.Code -ne 0) { Fail 'ssh' 2 'not Linux, macOS or Windows PowerShell' ($probe + $r.Out) }
+    }
+    Step 'ssh' 'ok' "$($script:sshTarget) ($kind)"
+}
+
+# What the room has now, in one round trip.
 $facts = if ($script:remoteOS -eq 'windows') {
     @'
-$d = Join-Path $HOME '.claude\hooks\atrium-perm-hook.ps1'
 "home=$($HOME -replace '\\', '/')"
-$p = Get-Command pwsh -ErrorAction SilentlyContinue
-if ($p) { "pwsh=$($p.Source -replace '\\', '/')"; "pwshver=$(& $p.Source -NoProfile -Command '$PSVersionTable.PSVersion.ToString()')" }
-if (Test-Path -LiteralPath $d) { "hash=$((Get-FileHash -Algorithm SHA256 -LiteralPath $d).Hash.ToLower())" }
+"script=$(if (Test-Path -LiteralPath (Join-Path $HOME '.claude\hooks\atrium-perm-hook.ps1')) { 'yes' } else { 'no' })"
 "settings=$(if (Test-Path -LiteralPath (Join-Path $HOME '.claude\settings.json')) { 'yes' } else { 'no' })"
 try { "reach=$((Invoke-WebRequest -UseBasicParsing -TimeoutSec 4 'http://127.0.0.1:7777/gate?agent=probe').Content)" } catch { "reacherr=$($_.Exception.Message)" }
 '@
 } else {
     @'
-d="$HOME/.claude/hooks/atrium-perm-hook.ps1"
 echo "home=$HOME"
-p=$(command -v pwsh) && { echo "pwsh=$p"; echo "pwshver=$("$p" -NoProfile -Command '$PSVersionTable.PSVersion.ToString()' 2>/dev/null)"; }
-if [ -f "$d" ]; then
-  h=$(shasum -a 256 "$d" 2>/dev/null | cut -d' ' -f1)
-  [ -z "$h" ] && h=$(sha256sum "$d" 2>/dev/null | cut -d' ' -f1)
-  echo "hash=$h"
-fi
+[ -f "$HOME/.claude/hooks/atrium-perm-hook.ps1" ] && echo script=yes || echo script=no
 [ -f "$HOME/.claude/settings.json" ] && echo settings=yes || echo settings=no
 r=$(curl -s -m 4 'http://127.0.0.1:7777/gate?agent=probe') && echo "reach=$r" || echo "reacherr=curl exit $?"
 '@
 }
-$r = Invoke-Remote $facts
-$kv = ConvertFrom-KeyValue $r.Out
-if (-not $kv.home) { Fail 'ssh' 2 'could not read the remote home' $r.Out }
-$home_ = $kv.home.TrimEnd('/')
-$destRel = '.claude/hooks/atrium-perm-hook.ps1'
-$dest = "$home_/$destRel"
-
-# ── pwsh ────────────────────────────────────────────────────────────────────
-
-if (-not $kv.pwsh) {
-    Fail 'pwsh' 3 "no pwsh on $($script:sshTarget), and the gate runs under it. install it there: room-toolchain.ps1 $Room -Tools pwsh (Windows), or brew install powershell (macOS)"
-}
-$pwshPath = $kv.pwsh
-Step 'pwsh' 'ok' "$pwshPath $($kv.pwshver)"
-
-# ── copy ────────────────────────────────────────────────────────────────────
-
-if ($kv.hash -eq $srcHash) {
-    Step 'copy' 'ok' "$dest is already this script"
-} elseif ($Check) {
-    Step 'copy' 'todo' "$dest $(if ($kv.hash) { 'differs' } else { 'is missing' }), would copy"
+if ($Local) {
+    $kv = @{
+        script   = if (Test-Path -LiteralPath (Join-Path $claudeDir "hooks/$legacyName")) { 'yes' } else { 'no' }
+        settings = if (Test-Path -LiteralPath (Join-Path $claudeDir 'settings.json')) { 'yes' } else { 'no' }
+    }
 } else {
-    $m = if ($script:remoteOS -eq 'windows') {
-        'New-Item -ItemType Directory -Force -Path (Join-Path $HOME ".claude\hooks") | Out-Null; "ok"'
-    } else { 'mkdir -p "$HOME/.claude/hooks" && echo ok' }
-    $r = Invoke-Remote $m
-    if ($r.Code -ne 0) { Fail 'copy' 4 "could not make the hooks folder on $($script:sshTarget)" $r.Out }
-    $c = Copy-ToRemote $Source $destRel
-    if ($c.Code -ne 0) { Fail 'copy' 4 "scp to $dest failed" $c.Out }
     $r = Invoke-Remote $facts
-    $now = (ConvertFrom-KeyValue $r.Out).hash
-    if ($now -ne $srcHash) { Fail 'copy' 4 "$dest does not match after the copy (remote $now)" }
-    Step 'copy' 'done' "$dest ($($srcHash.Substring(0, 12)))"
+    $kv = ConvertFrom-KeyValue $r.Out
+    if (-not $kv.home) { Fail 'ssh' 2 'could not read the remote home' $r.Out }
 }
-
-# ── register ────────────────────────────────────────────────────────────────
-
-$cmdPath = if ($pwshPath -match '\s') { "`"$pwshPath`"" } else { $pwshPath }
-$hookCmd = "$cmdPath -NoProfile -File $dest"
 
 $readS = if ($script:remoteOS -eq 'windows') {
     '$f = Join-Path $HOME ".claude\settings.json"; if (Test-Path -LiteralPath $f) { [IO.File]::ReadAllText($f) }'
 } else { 'f="$HOME/.claude/settings.json"; [ -f "$f" ] && cat "$f"' }
+function Read-Settings {
+    if ($Local) {
+        $f = Join-Path $claudeDir 'settings.json'
+        if (Test-Path -LiteralPath $f) { return @{ Code = 0; Text = [IO.File]::ReadAllText($f).TrimStart([char]0xFEFF) } }
+        return @{ Code = 0; Text = '' }
+    }
+    $r = Invoke-Remote $readS
+    @{ Code = $r.Code; Text = ($r.Out -join "`n").TrimStart([char]0xFEFF); Out = $r.Out }
+}
+
 $settingsText = ''
 if ($kv.settings -eq 'yes') {
-    $r = Invoke-Remote $readS
-    if ($r.Code -ne 0) { Fail 'register' 4 'could not read settings.json on the room' $r.Out }
-    $settingsText = ($r.Out -join "`n").TrimStart([char]0xFEFF)
+    $rs = Read-Settings
+    if ($rs.Code -ne 0) { Fail 'legacy' 4 'could not read settings.json on the room' $rs.Out }
+    $settingsText = $rs.Text
 }
 $settings = $null
 if ($settingsText.Trim()) {
     try { $settings = $settingsText | ConvertFrom-Json -ErrorAction Stop }
-    catch { Fail 'register' 4 'the room settings.json is not JSON. left as it is' }
+    catch { Fail 'legacy' 4 'the room settings.json is not JSON. left as it is' }
 } else { $settings = [pscustomobject]@{} }
 
-function Get-Registered {
-    param($s)
-    $hits = @()
-    foreach ($g in @($s.hooks.PreToolUse)) {
-        foreach ($h in @($g.hooks)) { if ("$($h.command)" -match [regex]::Escape($gateName)) { $hits += $h } }
-    }
-    $hits
-}
+$hadLegacy = @(Get-Commands $settings | Where-Object { $_ -match $legacyRe }).Count
+$hadOwn = @(Get-Commands $settings | Where-Object { $_ -notmatch $legacyRe -and $_ -match $ownRe }).Count
+$edit = Update-Gates $settings
+$changed = $edit.Removed -gt 0 -or $edit.Added
+$stamp = Get-Date -Format 'yyyyMMddHHmmss'
+$bak = "settings.json.bak-$stamp"
 
-$already = @(Get-Registered $settings)
-if ($already.Count -gt 0) {
-    $first = @($settings.hooks.PreToolUse | Where-Object { "$($_.matcher)" -eq '' })
-    $isFirst = $first.Count -gt 0 -and "$(@($first[0].hooks)[0].command)" -match [regex]::Escape($gateName)
-    $note = if ($already.Count -gt 1) { "WARNING $($already.Count) entries name it" } elseif (-not $isFirst) { 'not first in its group, left as it is' } else { 'first' }
-    Step 'register' 'ok' "the gate is already in PreToolUse ($note)"
-} else {
-    $entry = [pscustomobject]@{ type = 'command'; command = $hookCmd; timeout = 86400 }
-    if (-not $settings.PSObject.Properties['hooks']) { $settings | Add-Member -NotePropertyName hooks -NotePropertyValue ([pscustomobject]@{}) }
-    if (-not $settings.hooks.PSObject.Properties['PreToolUse']) { $settings.hooks | Add-Member -NotePropertyName PreToolUse -NotePropertyValue @() }
-    $groups = @($settings.hooks.PreToolUse)
-    $idx = -1
-    for ($i = 0; $i -lt $groups.Count; $i++) { if ("$($groups[$i].matcher)" -eq '') { $idx = $i; break } }
-    if ($idx -ge 0) {
-        $groups[$idx].hooks = @($entry) + @($groups[$idx].hooks)
-    } else {
-        $groups = @([pscustomobject]@{ matcher = ''; hooks = @($entry) }) + $groups
+# ── legacy and register: one write ──────────────────────────────────────────
+
+if ($hadLegacy -gt 0 -and $hadOwn -gt 0) {
+    Step 'legacy' 'warn' "two permission gates: $legacyName and atrium hook, so every tool call asks twice"
+}
+if ($changed -and -not $Check) {
+    $json = ($edit.Settings | ConvertTo-Json -Depth 20)
+    # Round trip before it goes anywhere: it must parse, name no legacy script, and hold one gate of atrium's.
+    $cmds = @(Get-Commands ($json | ConvertFrom-Json))
+    if (@($cmds | Where-Object { $_ -match $legacyRe }).Count -ne 0 -or @($cmds | Where-Object { $_ -match $ownRe }).Count -gt 1) {
+        Fail 'register' 4 'the edited settings did not come out with one gate. nothing written'
     }
-    $settings.hooks.PreToolUse = @($groups)
-    if ($Check) {
-        Step 'register' 'todo' "would put `"$hookCmd`" first in the PreToolUse group with matcher `"`", timeout 86400, after a backup of settings.json"
+    if ($Local) {
+        $s = Join-Path $claudeDir 'settings.json'
+        if (Test-Path -LiteralPath $s) { Copy-Item -LiteralPath $s -Destination (Join-Path $claudeDir $bak) -Force }
+        [IO.File]::WriteAllText($s, $json + "`n", (New-Object Text.UTF8Encoding($false)))
     } else {
-        $json = ($settings | ConvertTo-Json -Depth 20)
-        # Round trip before it goes anywhere: it must parse, and hold exactly one gate.
-        $back = $json | ConvertFrom-Json
-        if (@(Get-Registered $back).Count -ne 1) { Fail 'register' 4 'the edited settings did not hold exactly one gate. nothing written' }
         $tmp = Join-Path ([IO.Path]::GetTempPath()) "room-gate-$Room-settings.json"
         [IO.File]::WriteAllText($tmp, $json + "`n", (New-Object Text.UTF8Encoding($false)))
         try {
             $c = Copy-ToRemote $tmp '.claude/settings.json.atrium-new'
             if ($c.Code -ne 0) { Fail 'register' 4 'scp of the edited settings failed. nothing changed' $c.Out }
         } finally { Remove-Item -LiteralPath $tmp -Force -ErrorAction SilentlyContinue }
-        $stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
-        $bak = "settings.json.atrium-$stamp.bak"
         $w = if ($script:remoteOS -eq 'windows') {
             "`$c = Join-Path `$HOME '.claude'; `$s = Join-Path `$c 'settings.json'; `$n = Join-Path `$c 'settings.json.atrium-new'`n" +
             "if (Test-Path -LiteralPath `$s) { Copy-Item -LiteralPath `$s -Destination (Join-Path `$c '$bak') -Force }`n" +
@@ -300,17 +297,44 @@ if ($already.Count -gt 0) {
         }
         $r = Invoke-Remote $w
         if ($r.Code -ne 0) { Fail 'register' 4 'could not swap the edited settings in. the .atrium-new file is left beside it' $r.Out }
-        $r = Invoke-Remote $readS
-        $verify = $null
-        try { $verify = ($r.Out -join "`n").TrimStart([char]0xFEFF) | ConvertFrom-Json } catch {}
-        if (-not $verify -or @(Get-Registered $verify).Count -ne 1) {
-            Fail 'register' 4 "settings.json does not hold exactly one gate after the swap. restore ~/.claude/$bak"
-        }
-        Step 'register' 'done' "gate first in PreToolUse. backup ~/.claude/$bak"
     }
+    $verify = $null
+    try { $verify = (Read-Settings).Text | ConvertFrom-Json } catch {}
+    if (-not $verify -or @(Get-Commands $verify | Where-Object { $_ -match $legacyRe }).Count -ne 0) {
+        Fail 'register' 4 "settings.json still names $legacyName after the swap. restore ~/.claude/$bak"
+    }
+}
+$word = if ($Check) { 'todo' } else { 'done' }
+if ($edit.Removed) {
+    Step 'legacy' $word "$(if ($Check) { 'would remove' } else { 'removed' }) $($edit.Removed) PreToolUse entry naming $legacyName. backup ~/.claude/$bak"
+} else { Step 'legacy' 'ok' "no registered entry names $legacyName" }
+if ($edit.Added) {
+    Step 'register' $word "$(if ($Check) { 'would put' } else { 'put' }) atrium's hook --event permission first in PreToolUse, timeout 86400"
+} elseif ($edit.NoExe) {
+    Step 'register' 'fail' "no atrium hook is registered on $Room to take the atrium path from. run POST /v1/hooks/install there"
+} else { Step 'register' 'ok' "atrium's hook --event permission is in PreToolUse" }
+
+# ── the old script file ─────────────────────────────────────────────────────
+
+if ($kv.script -eq 'yes') {
+    if ($Check) { Step 'script' 'todo' "would delete ~/.claude/hooks/$legacyName" }
+    else {
+        if ($Local) { Remove-Item -LiteralPath (Join-Path $claudeDir "hooks/$legacyName") -Force }
+        else {
+            $d = if ($script:remoteOS -eq 'windows') { 'Remove-Item -LiteralPath (Join-Path $HOME ".claude\hooks\atrium-perm-hook.ps1") -Force; "ok"' }
+            else { 'rm -f "$HOME/.claude/hooks/atrium-perm-hook.ps1" && echo ok' }
+            $r = Invoke-Remote $d
+            if ($r.Code -ne 0) { Fail 'script' 4 "could not delete ~/.claude/hooks/$legacyName" $r.Out }
+        }
+        Step 'script' 'done' "deleted ~/.claude/hooks/$legacyName"
+    }
+} else {
+    Step 'script' 'ok' "no ~/.claude/hooks/$legacyName"
 }
 
 # ── reach ───────────────────────────────────────────────────────────────────
+
+if ($Local) { Finish $(if ($edit.NoExe) { 4 } else { 0 }) }
 
 $reachFail = $false
 if ($kv.reach -match '"gate"') {
@@ -339,5 +363,6 @@ try {
     Step 'runner' 'skip' "could not read the runner row from http://$HubAddr for $Room"
 }
 
+if ($edit.NoExe) { Finish 4 }
 if ($reachFail) { Finish 5 }
 Finish 0

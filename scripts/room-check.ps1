@@ -690,8 +690,20 @@ true
         if ($g.Code -eq 0 -and -not $todo.Count) { Row 'gate' 'ok' "room-gate -Check finds the permission gate registered first and reachable" }
         else {
             $why = if ($todo.Count) { ($todo | ForEach-Object { $_ -replace '^room-gate ', '' }) -join '; ' } else { "room-gate -Check exited $($g.Code)" }
-            Row 'gate' 'human' "$why. run: pwsh -File scripts\room-gate.ps1 $Room -Target $Target (clint: it copies a dotfiles script, which needs the yes)"
-            Unmet 'human'
+            $fixable = $todo.Count -and $g.Code -eq 0 -and -not @($todo | Where-Object { $_ -match '^room-gate \S+ fail\b' }).Count
+            if ($fixable -and $Fix -and $Yes) {
+                # Only atrium's own gate is installed: the old script's entry and file come out, with a backup of settings.json.
+                Note "changing the account settings.json on $Room: removes the old atrium-perm-hook.ps1 gate, keeps atrium hook --event permission, backup settings.json.bak-<stamp>"
+                $f = Invoke-Script 'room-gate.ps1' (@($Room, '-Target', $Target, '-HubAddr', $HubAddr) + $childSsh)
+                if ($f.Code -eq 0) { Row 'gate' 'done' "room-gate: $(@($f.Out | Where-Object { $_ -match '^room-gate (legacy|register|script) done' }) -join '; ')" }
+                else { Row 'gate' 'fail' "room-gate exited $($f.Code)"; Unmet 'human' }
+            } elseif ($fixable) {
+                Row 'gate' 'fail' "$why. -Fix -Yes runs: pwsh -File scripts\room-gate.ps1 $Room -Target $Target (an ACCOUNT change, backup settings.json.bak-<stamp>)"
+                Unmet 'fixable'
+            } else {
+                Row 'gate' 'human' "$why. run: pwsh -File scripts\room-gate.ps1 $Room -Target $Target"
+                Unmet 'human'
+            }
         }
     }
     # the status line is an account fact too: the room's runner settings.json has a statusLine key, or it shows none
