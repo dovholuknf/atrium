@@ -94,6 +94,71 @@ func TestFamilySayWakesParked(t *testing.T) {
 	})
 }
 
+// A worker that reported done is exited, so its gate is gone and not parked. Its launcher's plain say still resumes it,
+// and anybody else's is only kept.
+func TestFamilySayWakesAFinishedWorker(t *testing.T) {
+	oldTick, oldSettle := keptTick, keptSettle
+	keptTick, keptSettle = 20*time.Millisecond, 20*time.Millisecond
+	defer func() { keptTick, keptSettle = oldTick, oldSettle }()
+	finished := func(t *testing.T) (*Daemon, *store.Task, *store.Task) {
+		d := testDaemon(t)
+		launcher, worker := launchedPair(t, d)
+		t.Cleanup(func() { d.pending.stopAll() })
+		if err := d.st.SetResumeID(worker.ID, "conv-1"); err != nil {
+			t.Fatal(err)
+		}
+		if err := d.st.SetStatus(worker.ID, store.StatusDone); err != nil {
+			t.Fatal(err)
+		}
+		d.sup.remove(worker.ID)
+		return d, launcher, worker
+	}
+	t.Run("the launcher's say resumes it and the text is delivered", func(t *testing.T) {
+		d, launcher, worker := finished(t)
+		var f *fakePTY
+		launched := 0
+		d.wakeLaunch = func(req LaunchRequest) (*store.Task, error) {
+			launched++
+			_, f = typedRunner(t, d, worker.ID)
+			return d.st.Get(worker.ID)
+		}
+		out, code := tell(t, d, launcher.WireName, worker.WireName, "FAMILYWORDS")
+		if code != http.StatusOK {
+			t.Fatalf("answered %d: %v", code, out)
+		}
+		if launched != 1 {
+			t.Fatalf("launched %d times, want 1 (%v)", launched, out)
+		}
+		d.wakeSawSession(worker.ID, "conv-1")
+		deadline := time.Now().Add(5 * time.Second)
+		for (f == nil || !strings.Contains(f.written(), "FAMILYWORDS")) && time.Now().Before(deadline) {
+			time.Sleep(10 * time.Millisecond)
+		}
+		if f == nil || !strings.Contains(f.written(), "FAMILYWORDS") {
+			t.Fatal("the launcher's words never reached the resumed worker")
+		}
+	})
+	t.Run("any other peer is only kept", func(t *testing.T) {
+		d, _, worker := finished(t)
+		peerCard(t, d, "stranger")
+		launched := 0
+		d.wakeLaunch = func(req LaunchRequest) (*store.Task, error) {
+			launched++
+			return d.st.Get(worker.ID)
+		}
+		out, code := tell(t, d, "stranger", worker.WireName, "STRANGERWORDS")
+		if code != http.StatusOK || out["reachable"] != "kept" {
+			t.Fatalf("answer %d %v", code, out)
+		}
+		if launched != 0 {
+			t.Fatal("a stranger's say woke it")
+		}
+		if n := len(pendingFrom(t, d, worker.ID)); n != 1 {
+			t.Fatalf("%d kept, want the say stored on the card", n)
+		}
+	})
+}
+
 func TestKeepaliveNeverRefreshesAParkedCard(t *testing.T) {
 	t.Parallel()
 	f := newKAFix(t)

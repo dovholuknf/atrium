@@ -17,7 +17,8 @@ import (
 // as undelivered, and it is typed in or carried by the hooks the next time the card runs. Nothing expires. See
 // docs/changes/r-nothing-gets-lost.md.
 
-// keptNote is what the sender of a kept say is told.
+// keptNote is what the sender of a kept say is told. It never tells a launcher to pass wake for its own worker: that
+// say resumes the worker without it.
 func keptNote(t *store.Task, why string) string {
 	return fmt.Sprintf("kept on %s: %s. it is stored on the card and delivered the next time it runs, "+
 		"and stays there until it is read.", t.WireName, why)
