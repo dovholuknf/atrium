@@ -1591,6 +1591,101 @@ async function detailsHoverSection(browser, base) {
   }
 }
 
+// The details popover lays its two panels side by side when they do not fit stacked above the strip. The card panel
+// is on the left of DEBUG, neither runs off the top of the screen, and a tall window stacks them again. The panels are
+// filled with fixed text here, so the test needs no live card. DETAILS_SIDE_SHOTS names a directory for a picture.
+async function detailsSideBySideSection(browser, base) {
+  const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+  const dp = await ctx.newPage();
+  const errors = [];
+  dp.on("pageerror", e => errors.push(String(e)));
+  await dp.addInitScript(() => {
+    localStorage.setItem("atrium.skipconfirm", JSON.stringify({ "width-floor": true }));
+  });
+  try {
+    await dp.goto(base, { waitUntil: "domcontentloaded" });
+    await dp.waitForTimeout(900);
+    await dp.click('.tab[data-view="terms"]');
+    await dp.waitForSelector("#t-expando", { state: "attached", timeout: slow(15000) });
+    await dp.evaluate(() => {
+      const pill = document.getElementById("t-expando");
+      for (let n = pill; n; n = n.parentElement) n.hidden = false;
+      const line = (cls, t) => "<div class='" + cls + "' style='margin:3px 0'>" + t + "</div>";
+      let card = "<div id='recap-line'>recap: the work so far, first line of the recap</div>";
+      for (let i = 0; i < 14; i++) card += line("", "card detail row " + i + " with some words in it");
+      document.getElementById("t-drawer-body").innerHTML = card;
+      const dbg = document.getElementById("t-drawer-debug");
+      dbg.hidden = false;
+      let rows = "";
+      for (let i = 0; i < 6; i++) rows += line("", "debug row " + i);
+      document.getElementById("t-dbg-rows").innerHTML = rows;
+      document.getElementById("t-drawer").classList.add("open");
+      termDrawerOpen = true;
+      termDrawerWatch();
+    });
+    const measure = () => dp.evaluate(() => {
+      termDrawerFit();
+      const r = id => { const b = document.getElementById(id).getBoundingClientRect(); return { l: b.left, r: b.right, t: b.top, b: b.bottom }; };
+      const recap = document.getElementById("recap-line").getBoundingClientRect();
+      const cls = document.getElementById("t-drawer").classList.contains("wide");
+      return { wide: cls, card: r("t-drawer-body"), dbg: r("t-drawer-debug"), recapTop: recap.top, vh: innerHeight };
+    });
+    // Short: side by side.
+    await dp.setViewportSize({ width: 1400, height: 420 });
+    await dp.waitForTimeout(500);
+    let m = await measure();
+    if (!m.wide) fail("at a short viewport the details panels are still stacked " + JSON.stringify(m));
+    if (!(m.card.r <= m.dbg.l + 1)) fail("the card panel is not left of DEBUG " + JSON.stringify(m));
+    if (m.card.t < 0 || m.dbg.t < 0) fail("a details panel runs off the top of the screen " + JSON.stringify(m));
+    const paneTop = await dp.evaluate(() => document.getElementById("t-drawer").closest(".term-pane, #term-pane").getBoundingClientRect().top);
+    if (m.card.t < paneTop - 1 || m.dbg.t < paneTop - 1) fail("a details panel runs off the top of its pane " + JSON.stringify(m));
+
+    if (m.recapTop < 0) fail("the recap is cut off at the top " + JSON.stringify(m));
+    if (m.card.l < 0 || m.dbg.r > 1400) fail("a details panel runs off a side " + JSON.stringify(m));
+    if (process.env.DETAILS_SIDE_SHOTS) {
+      await dp.screenshot({ path: require("path").join(process.env.DETAILS_SIDE_SHOTS, "details-side-by-side-after.png") });
+      // What it looked like before: the same panels, stacked whatever the room.
+      await dp.evaluate(() => {
+        window.__fit = termDrawerFit; termDrawerFit = () => {};
+        document.getElementById("t-drawer").classList.remove("wide");
+      });
+      await dp.waitForTimeout(300);
+      await dp.screenshot({ path: require("path").join(process.env.DETAILS_SIDE_SHOTS, "details-side-by-side-before.png") });
+      await dp.evaluate(() => { termDrawerFit = window.__fit; });
+    }
+    // Shorter still: each panel scrolls inside itself.
+    await dp.setViewportSize({ width: 1400, height: 300 });
+    await dp.waitForTimeout(500);
+    m = await measure();
+    if (!m.wide || m.card.t < 0 || m.dbg.t < 0) fail("at a very short viewport a panel leaves the screen " + JSON.stringify(m));
+    const scrolls = await dp.evaluate(() => {
+      const e = document.getElementById("t-drawer-body");
+      return e.scrollHeight > e.clientHeight && getComputedStyle(e).overflowY === "auto";
+    });
+    if (!scrolls) fail("the card panel does not scroll inside itself at a very short viewport.");
+    // Tall: stacked again, after a resize alone.
+    await dp.setViewportSize({ width: 1400, height: 1400 });
+    await dp.waitForTimeout(500);
+    m = await measure();
+    if (m.wide) fail("at a tall viewport the details panels are not stacked " + JSON.stringify(m));
+    if (!(m.dbg.t >= m.card.b - 1)) fail("stacked, DEBUG is not under the card panel " + JSON.stringify(m));
+    // Content growing while open re-decides, with no resize.
+    await dp.setViewportSize({ width: 1400, height: 700 });
+    await dp.waitForTimeout(400);
+    await dp.evaluate(() => {
+      let more = "";
+      for (let i = 0; i < 40; i++) more += "<div style='margin:3px 0'>more " + i + "</div>";
+      document.getElementById("t-drawer-body").insertAdjacentHTML("beforeend", more);
+    });
+    await dp.waitForTimeout(500);
+    const grown = await dp.evaluate(() => document.getElementById("t-drawer").classList.contains("wide"));
+    if (!grown) fail("the panels did not go side by side when the content grew while open.");
+    if (errors.length) fail("the details page threw uncaught errors: " + errors.join(" | "));
+  } finally {
+    await ctx.close();
+  }
+}
+
 // A group made with `+ new group` on the terminals list is removed from its
 // heading's right-click menu. Its cards go back to where they sit without it,
 // with their tags kept, and nothing is closed: no card is written to at all.
@@ -26895,7 +26990,7 @@ async function main() {
   // HEADLESS_ONLY=termWear,bridge, or `node scripts/test-board-headless.js termWear bridge`, runs just those sections, for working on one.
   // An unknown name exits 2 and runs nothing.
   const ONLY = process.env.HEADLESS_ONLY || process.argv.slice(2).join(",");
-  if (ONLY) {    const only = { closeOneDialog: closeOneDialogSection, boardDocs: boardDocsSection, phoneBoardCompact: phoneBoardCompactSection, termWear: termWearSection, bridge: bridgeSection, detailsHover: detailsHoverSection, settingsOnce: settingsOnceSection,
+  if (ONLY) {    const only = { closeOneDialog: closeOneDialogSection, boardDocs: boardDocsSection, phoneBoardCompact: phoneBoardCompactSection, termWear: termWearSection, bridge: bridgeSection, detailsHover: detailsHoverSection, detailsSide: detailsSideBySideSection, settingsOnce: settingsOnceSection,
       groupRemove: groupRemoveSection, worn: wornSection, restartGate: restartGateSection, restartStays: restartStaysSection, atriumDown: atriumDownSection,
       toastStays: toastStaysSection, groupColor: groupColorSection,
       groupDrag: groupDragSection, tooltip: tooltipSection, linkTip: linkTipSection, fileOpenOutside: fileOpenOutsideSection, readTabSize: readTabSizeSection,popoutTagFlip: popoutTagFlipSection, prefsEverywhere: prefsEverywhereSection, mPrefsEverywhere: (b) => mPrefsEverywhereSection(b), idleRate: idleRateSection, foldStill: foldStillSection,
@@ -28843,6 +28938,7 @@ async function main() {
     // ── the attached row's bridge into the terminal, and the terminal's frame ─
     await unit("bridge", () => bridgeSection(browser, base));
     await unit("detailsHover", () => detailsHoverSection(browser, base));
+    await unit("detailsSide", () => detailsSideBySideSection(browser, base));
     // ── a load reads settings once ──────────────────────────────────────────
     await unit("settingsOnce", () => settingsOnceSection(browser, base));
     // ── the website skin's effects stay inside the website skin ─────────────
