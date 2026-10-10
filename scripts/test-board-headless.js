@@ -7838,7 +7838,7 @@ async function topNavSection(browser, base) {
       if (t.classList.contains("ovf")) { out.push(t.dataset.view); continue; }
       if (t.scrollWidth > t.clientWidth + 1 || r.right > nr.right + 1 || r.left < nr.left - 1) inMenu.push("clipped:" + t.dataset.view);
     }
-    if (out.length) { more.click(); for (const b of menu.querySelectorAll("button")) inMenu.push("menu:" + b.dataset.view); more.click(); }
+    if (out.length) { more.click(); for (const b of menu.querySelectorAll("button:not(.arrange)")) inMenu.push("menu:" + b.dataset.view); more.click(); }
     const bar = document.querySelector("header .bar");
     const chips = [...bar.children].filter(c => c.getClientRects().length > 0 && !c.classList.contains("grow"));
     return { out, inMenu, moreOn, clippedChip: chips.filter(c => c.getBoundingClientRect().right > innerWidth + 1).map(c => c.id || c.className),
