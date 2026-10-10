@@ -3,7 +3,6 @@ package daemon
 import (
 	"log"
 	"strings"
-	"time"
 
 	"github.com/dovholuknf/atrium/internal/store"
 )
@@ -43,17 +42,71 @@ func bannerKind(banner string) string {
 	return store.DeliveryCycle
 }
 
+// turnCarry is a turn a mid-turn flush costed before the turn was over: the delivery that carries it.
+type turnCarry struct {
+	delivery string
+	// text and tool are what the turn said and whether it used a tool so far, so the reply class is the whole turn's.
+	text string
+	tool bool
+}
+
 // costDeliveries lands a turn's cost on the card's deliveries. main is the replies the usage row just counted.
-func (u *usageTracker) costDeliveries(t *store.Task, stop time.Time, main *replySet) {
+//
+// A FLUSH IS NOT A STOP. A report, an exit or a runner going reads the transcript while the turn may still run, and
+// the Stop that ends it reads only what came after (the cursor sees to that). Costing on the flush alone would leave
+// the delivery with a part of the turn. So a flush costs what it read and remembers the delivery, and the next read
+// that finds nothing new waiting adds its replies to that same delivery. A delivery that arrived in between starts
+// its own turn and takes the later replies itself. A flush stays costed even if no Stop follows, which is the case
+// for a launched worker with no Stop hook.
+//
+// Called with the tracker's read lock held, which is what guards the carry.
+func (u *usageTracker) costDeliveries(t *store.Task, seg usageSegment, main *replySet) {
 	defer func() {
 		if r := recover(); r != nil {
 			log.Printf("[atrium] could not cost the turn on %s: %v", t.ID, r)
 		}
 	}()
 	c := turnCostOf(main)
-	if _, err := u.st.CostDeliveries(t.ID, stop, c); err != nil {
+	text, tool := replyTextOf(main)
+	n, first, err := u.st.CostDeliveriesFirst(t.ID, seg.stop, c)
+	if err != nil {
 		log.Printf("[atrium] could not cost the turn on %s: %v", t.ID, err)
+		return
 	}
+	prev := u.carry[t.ID]
+	if n > 0 {
+		// A new cause: the earlier carry is a turn that is over.
+		delete(u.carry, t.ID)
+		if seg.flush {
+			u.carry[t.ID] = &turnCarry{delivery: first, text: text, tool: tool}
+		}
+		return
+	}
+	if prev == nil {
+		return
+	}
+	prev.text, prev.tool = prev.text+text, prev.tool || tool
+	c.Reply = store.ClassifyReply(prev.text, prev.tool)
+	if err := u.st.AddToDeliveryCost(prev.delivery, c); err != nil {
+		log.Printf("[atrium] could not finish costing the turn on %s: %v", t.ID, err)
+	}
+	if !seg.flush {
+		delete(u.carry, t.ID)
+	}
+}
+
+// replyTextOf is what a set of replies said, and whether any used a tool.
+func replyTextOf(set *replySet) (string, bool) {
+	var (
+		text strings.Builder
+		tool bool
+	)
+	for _, id := range set.order {
+		r := set.byID[id]
+		text.WriteString(r.Text)
+		tool = tool || r.ToolUse
+	}
+	return text.String(), tool
 }
 
 // turnCostOf sums a set of replies into what the turn spent, each priced on its own model.

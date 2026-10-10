@@ -145,9 +145,15 @@ func (s *Store) SetMessageCause(id, cause string) error {
 // CostDeliveries lands a turn's cost on the deliveries of a card made up to the Stop that ended it. The first carries
 // the cost and the rest are marked as sharing it, so a sum never counts a turn twice. It returns how many it costed.
 func (s *Store) CostDeliveries(taskID string, upTo time.Time, c TurnCost) (int, error) {
-	n := 0
+	n, _, err := s.CostDeliveriesFirst(taskID, upTo, c)
+	return n, err
+}
+
+// CostDeliveriesFirst is CostDeliveries that also says which delivery carries the cost, "" when there was none.
+func (s *Store) CostDeliveriesFirst(taskID string, upTo time.Time, c TurnCost) (int, string, error) {
+	n, first := 0, ""
 	err := s.guard(func() error {
-		n = 0
+		n, first = 0, ""
 		rows, err := s.db.Query(`SELECT id FROM delivery WHERE task_id = ? AND costed_at = '' AND at <= ?
 			ORDER BY at, id`, taskID, ts(upTo))
 		if err != nil {
@@ -181,10 +187,23 @@ func (s *Store) CostDeliveries(taskID string, upTo time.Time, c TurnCost) (int, 
 				return err
 			}
 		}
-		n = len(ids)
+		n, first = len(ids), ids[0]
 		return nil
 	})
-	return n, err
+	return n, first, err
+}
+
+// AddToDeliveryCost adds more of the same turn's spend to a delivery that already carries its cost: the replies a
+// turn made after a mid-turn usage flush had already costed it. Tokens and dollars add, and the reply class, which
+// the whole turn decides, is the one given.
+func (s *Store) AddToDeliveryCost(id string, c TurnCost) error {
+	return s.guard(func() error {
+		_, err := s.db.Exec(`UPDATE delivery SET replies = replies + ?, input = input + ?, output = output + ?,
+			cache_write_5m = cache_write_5m + ?, cache_write_1h = cache_write_1h + ?, cache_read = cache_read + ?,
+			cost = cost + ?, reply = ? WHERE id = ? AND costed_at != '' AND group_id = ''`,
+			c.Replies, c.Input, c.Output, c.CacheWrite5m, c.CacheWrite1h, c.CacheRead, c.Cost, c.Reply, id)
+		return err
+	})
 }
 
 // CostRow is what one kind spent on one card on one day.

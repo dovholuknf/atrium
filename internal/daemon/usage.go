@@ -97,6 +97,8 @@ type usageSegment struct {
 	cause       string
 	afterResume bool
 	stop        time.Time
+	// flush is a read that did not end the turn: a report, an exit, a runner gone. See usageTracker.flushed.
+	flush bool
 }
 
 // usageCursor is how far a card's transcript has been read.
@@ -125,6 +127,9 @@ type usageTracker struct {
 	readMu sync.Mutex
 	cursor map[string]*usageCursor
 	subs   map[string]*subagentCursors
+	// carry is the delivery a mid-turn flush costed and what it read, kept until the Stop that ends the turn adds
+	// the rest. See costDeliveries.
+	carry map[string]*turnCarry
 
 	// broadcast tells the board a row was written. Nil in tests and until the
 	// daemon wires it. See emitRow.
@@ -215,6 +220,7 @@ func newUsageTracker(st *store.Store) *usageTracker {
 		resumed: map[string]bool{},
 		cursor:  map[string]*usageCursor{},
 		subs:    map[string]*subagentCursors{},
+		carry:   map[string]*turnCarry{},
 	}
 }
 
@@ -302,7 +308,7 @@ func (u *usageTracker) flushed(t *store.Task) {
 		return
 	}
 	u.mu.Lock()
-	seg := usageSegment{cause: u.cause[t.ID], afterResume: u.resumed[t.ID], stop: time.Now().UTC()}
+	seg := usageSegment{cause: u.cause[t.ID], afterResume: u.resumed[t.ID], stop: time.Now().UTC(), flush: true}
 	u.mu.Unlock()
 	if seg.cause == "" {
 		seg.cause = store.UsageUnknown
@@ -424,7 +430,7 @@ func (u *usageTracker) record(t *store.Task, seg usageSegment) (*store.SessionUs
 		}
 		main.advance()
 		u.emitRow(row)
-		u.costDeliveries(t, seg.stop, main)
+		u.costDeliveries(t, seg, main)
 	}
 	// A reply is the card's or a subagent's, never both.
 	side.drop(main)
