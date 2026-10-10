@@ -179,6 +179,26 @@ func TestCullKeepsAWorktreeThatTurnedDirtyAfterThePlan(t *testing.T) {
 	}
 }
 
+// A locked worktree is refused by git whatever its state, and a clean status must not turn that into a delete.
+func TestCullKeepsALockedCleanWorktree(t *testing.T) {
+	t.Parallel()
+	d := testDaemon(t)
+	r := newCullRepo(t, true)
+	cullGit(t, r.main, "worktree", "lock", r.wt)
+	task := cullCard(t, d, r.wt, OriginAgentTag, SubagentTag)
+
+	res, err := d.Cull(task.ID, "")
+	if err != nil {
+		t.Fatalf("cull: %v", err)
+	}
+	if res.WorktreeRemoved || !strings.Contains(res.Kept, "git kept the worktree") {
+		t.Fatalf("result = %+v, want the worktree kept with git's refusal", res)
+	}
+	if _, serr := os.Stat(r.wt); serr != nil {
+		t.Errorf("the folder is gone: %v", serr)
+	}
+}
+
 // A cull takes the card off the board with an event saying why, and never files
 // it as dead: that would put a death in the ledger for accepted work.
 func TestCullArchivesTheCardWithoutKillingIt(t *testing.T) {

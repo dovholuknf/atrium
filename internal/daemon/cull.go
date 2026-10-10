@@ -50,7 +50,7 @@ import (
 //
 // `git worktree remove` is run without `--force`, so git refuses on its own a
 // worktree these checks somehow passed as clean. When git fails for another reason, such as a path past the Windows
-// limit, the folder is deleted only if git's own refusal was not about changes and `git status` reports nothing.
+// limit, the folder is deleted only when git's error is "failed to delete" and `git status` reports nothing.
 
 // SubagentTag marks a worker an orchestrator launched to do one piece of work.
 // The same string as `link.SubagentTag`, which the launch cap counts. The
@@ -407,11 +407,11 @@ func removeWorktree(p *cullPlan) error {
 			return fmt.Errorf("git kept the worktree: %v", err)
 		}
 		if _, serr := os.Lstat(wtfree.LongPath(p.wt)); serr == nil {
-			// Git checks for changes before it deletes anything, so "failed to delete" means it passed that check and
-			// had already taken the folder's .git, which leaves status nothing to read. Any other refusal, or a status
-			// that reports a line, keeps the folder.
-			out, serr := gitIn(p.wt, "status", "--porcelain=v1", "--untracked-files=all")
-			if out != "" || (serr != nil && !strings.Contains(err.Error(), "failed to delete")) {
+			// Git checks for changes and locks before it deletes anything, so "failed to delete" means it passed those
+			// checks and had already taken the folder's .git, which leaves status nothing to read. Every other
+			// refusal, or a status that reports a line, keeps the folder.
+			out, _ := gitIn(p.wt, "status", "--porcelain=v1", "--untracked-files=all")
+			if out != "" || !strings.Contains(err.Error(), "failed to delete") {
 				return fmt.Errorf("git kept the worktree: %v", err)
 			}
 			_ = wtfree.RemoveAllSoon(wtfree.LongPath(p.wt))
