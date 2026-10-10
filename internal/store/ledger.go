@@ -909,15 +909,22 @@ func (s *Store) queueNotice(tx *Tx, w *WorkItem, source, key, body string) (*Led
 		})
 		return n, nil
 	}
-	m := &Message{ID: newID(), TaskID: w.ArbiterID, Text: body, CreatedAt: now(), FromPeer: from}
+	// A REPORT WAITS FOR THE END OF THE ARBITER'S TURN, as a say with when done does, so it is typed whole and
+	// never merged into a turn that will not read it.
+	waitTurn := source == "report"
+	m := &Message{ID: newID(), TaskID: w.ArbiterID, Text: body, CreatedAt: now(), FromPeer: from, WaitTurn: waitTurn}
 	// A frozen arbiter keeps the notice in its freeze queue. See enqueueFrozenOn.
 	held, err := enqueueFrozenOn(tx, m)
 	if err != nil {
 		return nil, err
 	}
 	if !held {
-		if _, err := tx.Exec(`INSERT INTO message (id, task_id, text, created_at, from_peer) VALUES (?,?,?,?,?)`,
-			m.ID, m.TaskID, m.Text, ts(m.CreatedAt), m.FromPeer); err != nil {
+		wait := 0
+		if waitTurn {
+			wait = 1
+		}
+		if _, err := tx.Exec(`INSERT INTO message (id, task_id, text, created_at, from_peer, wait_turn) VALUES (?,?,?,?,?,?)`,
+			m.ID, m.TaskID, m.Text, ts(m.CreatedAt), m.FromPeer, wait); err != nil {
 			return nil, err
 		}
 		if _, err := s.appendEventOn(tx, w.ArbiterID, EventPrompted, map[string]any{

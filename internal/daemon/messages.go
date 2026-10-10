@@ -536,6 +536,12 @@ func (d *Daemon) handleMessage(w http.ResponseWriter, r *http.Request) {
 	if from != "" {
 		d.refreshLauncher(taskID)
 	}
+	// AN FYI TO A CARD THAT HOLDS ITS NOTICES waits for the end of that card's turn, and is never parked. See fyi.go.
+	if parseKind(body.Kind) == KindFYI && !body.Reply {
+		if target, err := d.st.Get(taskID); err == nil && fyiWaitsForTurn(from, target) {
+			when = WhenDone
+		}
+	}
 	waitTurn := d.waitsForTurn(taskID, when)
 	// A PROMPT THE HUMAN TYPED AT THE BOARD RESETS WHAT IS OWED. The turn it starts is theirs, so when it ends
 	// without a word to the launcher there is no nudge and no went-quiet notice. See stoppedSilently.
@@ -558,19 +564,6 @@ func (d *Daemon) handleMessage(w http.ResponseWriter, r *http.Request) {
 				"%s has sent %d messages in the last minute, which is the limit",
 				from, peerSendsPerMinute))
 			return
-		}
-		// AN FYI TO A CARD THAT HOLDS ITS NOTICES waits on that card. Not typed, not queued.
-		if parseKind(body.Kind) == KindFYI && !body.Reply {
-			if target, err := d.st.Get(taskID); err == nil {
-				if sender := d.fyiSender(from, target); sender != nil {
-					d.holdFyi(sender, target, "say", strings.TrimSpace(body.Text))
-					writeJSONCode(w, http.StatusOK, map[string]any{
-						"delivered": "held", "reachable": "held", "when": whenWord(waitTurn),
-						"note": "held on the card as an fyi. it reads it with atrium_task notices.",
-					})
-					return
-				}
-			}
 		}
 	}
 

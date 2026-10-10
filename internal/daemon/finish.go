@@ -420,19 +420,11 @@ func (d *Daemon) finish(task *store.Task, in FinishRequest) (map[string]any, int
 	if in.viaSay {
 		launcher = nil
 	}
-	// AN FYI THAT THE LAUNCHER HOLDS is held like any notice. Only a progress report is
-	// news, whatever the rest were labelled: a blocked or a question report wants an
-	// answer, one carrying an ask wants one too, and a done report waits on acceptance and
-	// a merge, which a held notice nobody is woken for would leave sitting.
-	heldFYI := parseKind(in.Kind) == KindFYI && in.Status == ReportProgress && strings.TrimSpace(in.Ask) == "" &&
-		holdsNotices(launcher)
+	// A REPORT TO A LAUNCHER THAT HOLDS ITS NOTICES IS STILL TYPED, at the end of its turn. A done or a blocked
+	// report is never parked: the launcher is the one who has to act on it. See fyi.go.
 	if launcher != nil {
-		source := NoticeReport
-		if heldFYI {
-			source = NoticeFYI
-		}
 		write.Notice = &store.NoticeSpec{
-			ToID: launcher.ID, From: task.WireName, Source: source,
+			ToID: launcher.ID, From: task.WireName, Source: NoticeReport,
 			Key:  time.Now().UTC().Format(time.RFC3339Nano),
 			Text: truncatePeer(reportBody(task, in.Status, sha, unverified, recap)),
 		}
@@ -445,9 +437,8 @@ func (d *Daemon) finish(task *store.Task, in FinishRequest) (map[string]any, int
 	// the one who has to act on it, and a report nobody reads is the failure
 	// parking must not cause. The notice itself is queued by the ledger and typed
 	// or carried by a hook like any other, so it is never typed here. See park.go.
-	// A launcher that holds reports reads them when it asks, so it stays parked.
 	if write.Notice != nil {
-		if launcher, err := d.st.Get(write.Notice.ToID); err == nil && isParked(launcher) && !holdsReports(launcher) && !heldFYI {
+		if launcher, err := d.st.Get(write.Notice.ToID); err == nil && isParked(launcher) {
 			if err := d.unpark(launcher.ID, "report"); err != nil {
 				log.Printf("[atrium] could not resume %s for a report: %v", launcher.DisplayTitle(), err)
 			}

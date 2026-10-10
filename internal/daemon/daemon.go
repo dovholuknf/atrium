@@ -409,11 +409,10 @@ func New(opts Options) (*Daemon, error) {
 	st.OnLedgerNotice = d.ledgerNotice
 	st.RemoteArbiter = d.launcherRelay
 	st.HoldNotice = func(arbiter *store.Task, source string) bool {
-		if source == NoticeReport {
-			return holdsReports(arbiter)
-		}
-		if source == NoticeFYI {
-			return holdsNotices(arbiter)
+		// A REPORT OR AN FYI IS ADDRESSED TO THE LAUNCHER, so it is never parked unseen: it is queued for the
+		// end of the launcher's turn. Only an automatic notice that is not a say stays held. See fyi.go.
+		if source == NoticeReport || source == NoticeFYI {
+			return false
 		}
 		return holdsNotices(arbiter)
 	}
@@ -1339,6 +1338,7 @@ func (d *Daemon) Run(ctx context.Context) error {
 	// The work ledger: the one-time backfill, the items no exit path reached,
 	// and the snapshot beside the database. See ledger.go.
 	d.startLedger()
+	d.redeliverHeldFyis()
 	go d.ledgerWriter(ctx)
 	// Wakes queued before the restart, typed in as their cards come back. A
 	// passive board brings nothing back, so it has nothing to type into.
