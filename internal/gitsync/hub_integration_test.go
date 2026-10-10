@@ -480,9 +480,14 @@ func TestAHubStoppedMidFetchLeavesEveryRefWhole(t *testing.T) {
 	shaB := commit(t, x.roomWork, "b.txt", "worker a again")
 	git(t, x.roomWork, "checkout", "-q", "claude/main")
 	stall := make(chan struct{})
+	stalled := make(chan struct{}, 1)
 	old := x.rooms.srv.Config.Handler
 	x.rooms.srv.Config.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasSuffix(r.URL.Path, "git-upload-pack") && r.Method == http.MethodPost {
+			select {
+			case stalled <- struct{}{}:
+			default:
+			}
 			<-stall
 			return
 		}
@@ -491,7 +496,11 @@ func TestAHubStoppedMidFetchLeavesEveryRefWhole(t *testing.T) {
 	defer close(stall)
 	done := make(chan struct{})
 	go func() { _, _ = x.h.Collect(bg, "sg3"); close(done) }()
-	time.Sleep(3 * time.Second)
+	select {
+	case <-stalled:
+	case <-time.After(30 * time.Second):
+		t.Fatal("the collect never reached the stalled upload-pack")
+	}
 	if !x.h.runner().Stop(15 * time.Second) {
 		t.Fatal("git children did not stop within the bound")
 	}

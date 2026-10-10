@@ -73,6 +73,9 @@ type Store struct {
 	forge forgeState
 	// views is the snapshot GET /_hub/git/repos answers from. See viewcache.go.
 	views viewCache
+	// skipInitRefresh is a test seam: Init does not start the background view rebuild, which reads fields a test
+	// then rewrites.
+	skipInitRefresh bool
 	// pushed is the snapshot GET /_hub/git/pushed answers from. See pushedcache.go.
 	pushed pushedCache
 	// pushedFn is Pushed. A test swaps it.
@@ -362,7 +365,9 @@ func (s *Store) Init(ctx context.Context, rawURL string) (InitResult, error) {
 		return res, fmt.Errorf("%s", s.scrub(err.Error()))
 	}
 	res.Note = s.scrub(res.Note)
-	s.RefreshView()
+	if !s.skipInitRefresh {
+		s.RefreshView()
+	}
 	s.h.audit("", "git-store-init", fmt.Sprintf("%s created=%v seeded=%v main=%s",
 		res.Repo, res.Created, res.Seeded, short(res.Main)))
 	return res, nil
