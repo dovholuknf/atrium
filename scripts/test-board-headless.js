@@ -19652,8 +19652,32 @@ async function repoColorsSection(browser, base) {
       put("pumpkin", {});
       out.def = themeSource({ id: "q", worktree: "/tmp/q" }) === themeNamed("pumpkin");
       out.noTable = typeof REPO_THEMES === "undefined";
+      // A card an agent launched from a folder that is no repo takes its launcher's colour. Its own repo wins, an
+      // explicit theme wins over both, and a launcher on another room is not the launcher.
+      put("", { "github/openziti/ziti-console": "deep-amethyst", "github/openziti/ziti": "teal-dusk" });
+      const boss = { id: "a~boss", worktree: "/Users/me/git/github/openziti/ziti-console/feature/x" };
+      const kid = { id: "a~kid", launcher_id: "boss", worktree: "C:/temp/pr967-review/critic" };
+      const grand = { id: "a~grand", launcher_id: "kid", worktree: "C:/temp/pr967-review/critic/sub" };
+      const own = { id: "a~own", launcher_id: "boss", worktree: "/Users/me/git/github/openziti/ziti/main" };
+      const named = { id: "a~named", launcher_id: "boss", theme: "dracula", worktree: "C:/temp/n" };
+      const stray = { id: "b~kid2", launcher_id: "boss", worktree: "C:/temp/s" };
+      const saved = lastTasks;
+      lastTasks = [boss, kid, grand, own, named, stray];
+      try {
+        out.kid = themeSource(kid) === themeNamed("deep-amethyst");
+        out.grand = themeSource(grand) === themeNamed("deep-amethyst");
+        out.own = themeSource(own) === themeNamed("teal-dusk");
+        out.named = themeSource(named) === themeNamed("dracula");
+        out.stray = themeSource(stray) === null;
+      } finally { lastTasks = saved; }
+      put("", {});
       return out;
     });
+    if (!r.kid) fail(tag + "a child outside a repo did not take its launcher's colour");
+    if (!r.grand) fail(tag + "a grandchild did not take the colour up the chain");
+    if (!r.own) fail(tag + "a child in its own repo lost to its launcher's colour");
+    if (!r.named) fail(tag + "an explicit theme lost to its launcher's colour");
+    if (!r.stray) fail(tag + "a card took the colour of a same-id launcher on another room");
     if (r.plain !== null) fail(tag + "an uncoloured card wears " + JSON.stringify(r.plain));
     if (!r.keyed) fail(tag + "a full key did not colour its card");
     if (r.otherProvider) fail(tag + "the same org/repo on another provider took the colour");
@@ -19694,6 +19718,30 @@ async function repoColorsSection(browser, base) {
     }
     if (process.env.REPO_COLORS_SHOT) await p.evaluate(() => document.getElementById("rc-default").scrollIntoView({ block: "start" }));
     if (process.env.REPO_COLORS_SHOT) await p.locator("#settings").screenshot({ path: process.env.REPO_COLORS_SHOT });
+
+    // CHILD_COLOUR_SHOT=<png> is the terminals list with a purple card and the children it launched from scratch folders.
+    if (process.env.CHILD_COLOUR_SHOT) {
+      const was = tasksMode;
+      const row = (id, extra) => Object.assign({}, T1, { id, display_title: "row " + id, theme: "", supervised: true, pinned: true,
+        status: "running" }, extra);
+      try {
+        wornTasks = [
+          row("cc-boss", { display_title: "pr-ziti-console-967: review", worktree: "/Users/me/git/github/openziti/ziti-console/feature/967" }),
+          row("cc-critic", { display_title: "pr-967 panel: critic", launcher_id: "cc-boss", worktree: "C:/temp/pr967-review/critic" }),
+          row("cc-verify", { display_title: "pr-967 verify s5", launcher_id: "cc-boss", worktree: "C:/temp/pr967-review/verify-s5" }),
+          row("cc-lone", { display_title: "not launched by anyone", worktree: "C:/temp/lone" })];
+        tasksMode = "worn";
+        const sp = await ctx.newPage();
+        await sp.addInitScript(() => localStorage.setItem("atrium.cardColors", "1"));
+        await sp.goto(base, { waitUntil: "domcontentloaded" });
+        await sp.waitForSelector('.tab[data-view="terms"]', { timeout: slow(15000) });
+        await sp.click('.tab[data-view="terms"]');
+        await sp.waitForSelector('#term-list .card.tab[data-id="cc-verify"]', { state: "attached", timeout: slow(15000) });
+        await sp.evaluate(() => repoColorsHave({ card_colors: { default: "", repos: { "github/openziti/ziti-console": "deep-amethyst" } } }));
+        await sp.waitForTimeout(800);
+        await sp.locator("#term-list").screenshot({ path: process.env.CHILD_COLOUR_SHOT });
+      } finally { tasksMode = was; }
+    }
   } finally {
     await ctx.close();
   }

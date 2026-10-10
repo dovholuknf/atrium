@@ -222,11 +222,28 @@ function themeSource(t) {
 }
 
 // The name a repo colour resolves to for a card, or "". Order: the user's entry for the full `provider/org/repo`, then
-// the user's default.
+// for a card with no repo of its own the colour of the card that launched it, then the user's default.
 function repoColorName(t) {
   const key = repoKeyOf(t);
   const mine = repoColors.get();
-  return (key && mine.repos[key]) || mine.default;
+  if (key) return mine.repos[key] || mine.default;
+  return launcherRepoColor(t, mine) || mine.default;
+}
+
+// The repo colour of the card that launched `t`, walking up while the launcher has no repo of its own, or "". A child
+// runs wherever its work is, often a scratch folder that is no repo, and the hub's map would leave it plain beside its
+// parent. `launcher_id` is the bare id of a card on the same room, so it is paired with the row's room.
+function launcherRepoColor(t, mine) {
+  const tasks = typeof lastTasks !== "undefined" ? lastTasks : [];
+  for (let at = t, hops = 0; at && at.launcher_id && hops < 5; hops++) {
+    const room = roomOf(at.id);
+    const up = tasks.find(x => bareId(x.id) === at.launcher_id && roomOf(x.id) === room);
+    if (!up) return "";
+    const key = repoKeyOf(up);
+    if (key) return mine.repos[key] || "";
+    at = up;
+  }
+  return "";
 }
 
 // `provider/org/repo`, lowercase, or "" when the card has no repo to speak of. From the worktree path
