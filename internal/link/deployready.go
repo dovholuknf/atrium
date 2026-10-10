@@ -88,8 +88,10 @@ type deployReadyState struct {
 	haveRep bool
 	// inflight is true while one pass reads git. The lock is not held for it.
 	inflight bool
-	sig      string
-	run      deployRun
+	// kicking is true while a background pass started by a GET is on its way.
+	kicking bool
+	sig     string
+	run     deployRun
 
 	// version is the installed binary's answer, kept while the file is the same file.
 	vPath string
@@ -183,6 +185,11 @@ func parseVersionCommit(out string) string {
 type deployReadyView struct {
 	deployready.Report
 	Deploy deployRun `json:"deploy"`
+	// Building is true while a pass is reading git, or none has finished yet. Computed and AgeSeconds say how old
+	// the answer is, and are absent until the first pass has finished. See readyCached.
+	Building   bool   `json:"building"`
+	Computed   string `json:"computed,omitempty"`
+	AgeSeconds int    `json:"age_seconds"`
 	// Script is what a click would run, so the board can say so. Empty when there is no way to run one.
 	Script string `json:"script,omitempty"`
 }
@@ -330,7 +337,7 @@ func (p *Proxy) serveDeployReady(w http.ResponseWriter, r *http.Request, sub str
 			fail(http.StatusMethodNotAllowed, "that has to be a GET", nil)
 			return
 		}
-		_ = json.NewEncoder(w).Encode(p.deployReadyView(r.Context(), r.URL.Query().Get("fresh") == "1"))
+		_ = json.NewEncoder(w).Encode(p.deployReadyView(r.URL.Query().Get("fresh") == "1"))
 	case "deploy-ready/deploy":
 		if r.Method != http.MethodPost {
 			fail(http.StatusMethodNotAllowed, "that has to be a POST", nil)
@@ -342,16 +349,68 @@ func (p *Proxy) serveDeployReady(w http.ResponseWriter, r *http.Request, sub str
 	}
 }
 
-func (p *Proxy) deployReadyView(ctx context.Context, fresh bool) deployReadyView {
-	rep := p.readyReport(ctx, fresh)
+// deployReadyView answers a GET from the last pass and runs no git: see readyCached. `fresh` asks for a new pass to
+// start, and does not wait for it.
+func (p *Proxy) deployReadyView(fresh bool) deployReadyView {
+	rep, at, building := p.readyCached(fresh)
 	st := p.deployReady()
 	st.mu.Lock()
-	v := deployReadyView{Report: rep, Deploy: st.run}
+	v := deployReadyView{Report: rep, Deploy: st.run, Building: building}
 	st.mu.Unlock()
+	if !at.IsZero() {
+		v.Computed = at.UTC().Format(time.RFC3339)
+		v.AgeSeconds = int(time.Since(at).Seconds())
+	}
 	if s, err := p.scriptFor(); err == nil {
 		v.Script = s
 	}
 	return v
+}
+
+// readyCached is the last answer at once, with when it was read and whether a newer pass is under way. THE GET NEVER
+// WAITS ON GIT: a pass reads the repository and asks the installed binary its version, which took seconds. Before the
+// first pass has finished the answer is unknown with `building` set. A pass is started in the background when the
+// answer is older than deployReadyFresh, when there is none, or when `fresh` is set.
+func (p *Proxy) readyCached(fresh bool) (deployready.Report, time.Time, bool) {
+	st := p.deployReady()
+	st.mu.Lock()
+	rep, have, at := st.last, st.haveRep, st.lastAt
+	if have {
+		rep.Notes = append([]string(nil), rep.Notes...)
+	}
+	building := st.inflight
+	st.mu.Unlock()
+	if have && at.IsZero() {
+		// The last pass gave up at its bound. What it kept is not an answer to act on, and it is read again once it is
+		// as old as an answer may be, not on every ask.
+		at = rep.CheckedAt
+	}
+	if !have || fresh || time.Since(at) >= deployReadyFresh {
+		building = p.kickReady() || building
+	}
+	if !have {
+		return readyUnknown("still reading git for the first time, ask again in a moment"), time.Time{}, true
+	}
+	return rep, at, building
+}
+
+// kickReady starts a pass in the background unless one is running. It says whether one is running now.
+func (p *Proxy) kickReady() bool {
+	st := p.deployReady()
+	st.mu.Lock()
+	if st.inflight || st.kicking {
+		st.mu.Unlock()
+		return true
+	}
+	st.kicking = true
+	st.mu.Unlock()
+	go func() {
+		p.readyReport(context.Background(), true)
+		st.mu.Lock()
+		st.kicking = false
+		st.mu.Unlock()
+	}()
+	return true
 }
 
 func (p *Proxy) startDeploy(w http.ResponseWriter, r *http.Request, st *deployReadyState,

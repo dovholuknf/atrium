@@ -96,16 +96,32 @@ func loopbackReq(method, target, body string) *http.Request {
 	return r
 }
 
-func getReady(t *testing.T, p *Proxy) deployReadyView {
+func getReadyOnce(t *testing.T, p *Proxy, target string) deployReadyView {
 	t.Helper()
 	rec := httptest.NewRecorder()
-	p.ServeHTTP(rec, loopbackReq(http.MethodGet, "/_hub/deploy-ready?fresh=1", ""))
+	p.ServeHTTP(rec, loopbackReq(http.MethodGet, target, ""))
 	if rec.Code != http.StatusOK {
 		t.Fatalf("GET = %d %s", rec.Code, rec.Body)
 	}
 	var v deployReadyView
 	if err := json.Unmarshal(rec.Body.Bytes(), &v); err != nil {
 		t.Fatalf("decode: %v\n%s", err, rec.Body)
+	}
+	return v
+}
+
+// getReady asks for a new pass and waits for the answer the way the board does: a GET answers at once from the last
+// pass, so it asks again until the hub says it is no longer building.
+func getReady(t *testing.T, p *Proxy) deployReadyView {
+	t.Helper()
+	v := getReadyOnce(t, p, "/_hub/deploy-ready?fresh=1")
+	deadline := time.Now().Add(10 * time.Second)
+	for v.Building {
+		if time.Now().After(deadline) {
+			t.Fatalf("the hub is still building: %+v", v.Report)
+		}
+		time.Sleep(10 * time.Millisecond)
+		v = getReadyOnce(t, p, "/_hub/deploy-ready")
 	}
 	return v
 }
@@ -345,7 +361,7 @@ func (g *slowGit) GitInput(ctx context.Context, dir string, _ []byte, a ...strin
 	return g.Git(ctx, dir, a...)
 }
 
-func TestDeployReadyAnswersUnknownAtTheBoundAndNeverMakesASecondCallerWait(t *testing.T) {
+func TestDeployReadyGetAnswersAtOnceWhileGitIsSlowAndGivesUpAtTheBound(t *testing.T) {
 	old := deployReadyBound
 	deployReadyBound = 400 * time.Millisecond
 	defer func() { deployReadyBound = old }()
@@ -357,9 +373,15 @@ func TestDeployReadyAnswersUnknownAtTheBoundAndNeverMakesASecondCallerWait(t *te
 	slow := &slowGit{}
 	st.checker = &deployready.Checker{Git: slow, Dir: r.dir, Branch: "claude/main"}
 
-	first := make(chan deployReadyView, 1)
-	go func() { first <- getReady(t, p) }()
-	// Wait until the first caller is inside git.
+	// The first GET answers at once, unknown and building, and the pass runs behind it.
+	start := time.Now()
+	first := getReadyOnce(t, p, "/_hub/deploy-ready")
+	if d := time.Since(start); d > 200*time.Millisecond {
+		t.Fatalf("the first GET waited %s", d)
+	}
+	if first.State != deployready.StateUnknown || first.Ready || !first.Building || first.Computed != "" {
+		t.Fatalf("first = %+v", first)
+	}
 	deadline := time.Now().Add(2 * time.Second)
 	for {
 		slow.mu.Lock()
@@ -369,44 +391,40 @@ func TestDeployReadyAnswersUnknownAtTheBoundAndNeverMakesASecondCallerWait(t *te
 			break
 		}
 		if time.Now().After(deadline) {
-			t.Fatal("the first caller never reached git")
+			t.Fatal("the pass never reached git")
 		}
 		time.Sleep(5 * time.Millisecond)
 	}
-
-	start := time.Now()
-	second := getReady(t, p)
+	start = time.Now()
+	second := getReadyOnce(t, p, "/_hub/deploy-ready?fresh=1")
 	if d := time.Since(start); d > 200*time.Millisecond {
-		t.Fatalf("the second caller waited %s", d)
+		t.Fatalf("a GET during the pass waited %s", d)
 	}
-	if second.State != deployready.StateUnknown || second.Ready || second.Error == "" {
-		t.Fatalf("second = %+v", second.Report)
+	if second.State != deployready.StateUnknown || second.Ready || !second.Building {
+		t.Fatalf("second = %+v", second)
 	}
 
-	select {
-	case v := <-first:
-		if v.State != deployready.StateUnknown || v.Ready || !strings.Contains(v.Error, "timed out") {
-			t.Fatalf("first = %+v", v.Report)
+	// At the bound the pass gives up, and the answer says so and is no longer building.
+	for end := time.Now().Add(3 * time.Second); ; time.Sleep(10 * time.Millisecond) {
+		v := getReadyOnce(t, p, "/_hub/deploy-ready")
+		if !v.Building {
+			if v.State != deployready.StateUnknown || v.Ready || !strings.Contains(v.Error, "timed out") || v.Computed == "" {
+				t.Fatalf("after the bound = %+v", v)
+			}
+			break
 		}
-	case <-time.After(3 * time.Second):
-		t.Fatal("the first caller was not answered at the bound")
-	}
-
-	// The give-up is not reused: the next ask reads again at once.
-	st.mu.Lock()
-	inflight, reuse := st.inflight, !st.lastAt.IsZero()
-	st.mu.Unlock()
-	if inflight || reuse {
-		t.Fatalf("inflight = %v, reusable = %v", inflight, reuse)
+		if time.Now().After(end) {
+			t.Fatal("the pass was not ended at the bound")
+		}
 	}
 }
 
-func TestDeployReadyHandsBackTheLastAnswerStaleWhileANewerReadRuns(t *testing.T) {
+func TestDeployReadyGetKeepsAnsweringTheLastAnswerWhileANewerReadRuns(t *testing.T) {
 	r := newReadyRepo(t)
 	base := r.commit("base", map[string]string{"internal/a.go": "a"})
 	r.commit("code", map[string]string{"internal/hubstore/a.go": "1"})
 	p, _ := readyProxy(t, r, base, scriptFile(t))
-	if v := getReady(t, p); v.State != deployready.StateBlocked {
+	if v := getReady(t, p); v.State != deployready.StateBlocked || v.Computed == "" {
 		t.Fatalf("warm-up = %+v", v.Report)
 	}
 	st := p.deployReady()
@@ -414,8 +432,12 @@ func TestDeployReadyHandsBackTheLastAnswerStaleWhileANewerReadRuns(t *testing.T)
 	st.inflight = true
 	st.mu.Unlock()
 
-	v := getReady(t, p)
-	if !v.Stale || v.Ready || v.State != deployready.StateBlocked {
+	start := time.Now()
+	v := getReadyOnce(t, p, "/_hub/deploy-ready?fresh=1")
+	if d := time.Since(start); d > 200*time.Millisecond {
+		t.Fatalf("the GET waited %s", d)
+	}
+	if !v.Building || v.Ready || v.State != deployready.StateBlocked {
 		t.Fatalf("view = %+v", v.Report)
 	}
 	rec := postDeploy(p, loopbackReq(http.MethodPost, "/_hub/deploy-ready/deploy",

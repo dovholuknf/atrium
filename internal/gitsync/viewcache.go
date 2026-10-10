@@ -34,18 +34,14 @@ type viewCache struct {
 // Snapshot answers from memory and a directory listing: it runs no git. The first call starts the
 // background loop.
 func (s *Store) Snapshot() Snapshot {
+	s.ensureViewLoop()
 	c := &s.views
 	c.mu.Lock()
-	start := !c.started
-	c.started = true
 	snap, at, building := c.snap, c.at, c.building
 	c.mu.Unlock()
-	if start {
-		go s.viewLoop()
+	if at.IsZero() && !building {
 		s.RefreshView()
-		c.mu.Lock()
 		building = true
-		c.mu.Unlock()
 	}
 	if at.IsZero() {
 		ents, _ := s.List()
@@ -58,8 +54,21 @@ func (s *Store) Snapshot() Snapshot {
 	return Snapshot{Repos: snap, Computed: at, Building: building}
 }
 
-// RefreshView asks for the snapshot to be rebuilt. It returns at once.
+// ensureViewLoop starts the timer that rebuilds the snapshots, once.
+func (s *Store) ensureViewLoop() {
+	c := &s.views
+	c.mu.Lock()
+	start := !c.started
+	c.started = true
+	c.mu.Unlock()
+	if start {
+		go s.viewLoop()
+	}
+}
+
+// RefreshView asks for the snapshots to be rebuilt: the repos list and the pushed answers. It returns at once.
 func (s *Store) RefreshView() {
+	s.refreshPushed()
 	c := &s.views
 	c.mu.Lock()
 	if c.building {

@@ -73,6 +73,10 @@ type Store struct {
 	forge forgeState
 	// views is the snapshot GET /_hub/git/repos answers from. See viewcache.go.
 	views viewCache
+	// pushed is the snapshot GET /_hub/git/pushed answers from. See pushedcache.go.
+	pushed pushedCache
+	// pushedFn is Pushed. A test swaps it.
+	pushedFn func(ctx context.Context, name, branch, head string) (Pushed, error)
 }
 
 // Tip is a ref's tip: the sha and the commit time.

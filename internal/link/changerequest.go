@@ -185,15 +185,40 @@ func (p *Proxy) servePushed(w http.ResponseWriter, r *http.Request) {
 		crFail(w, http.StatusBadRequest, "head is a full commit id")
 		return
 	}
-	got, err := g.Store().Pushed(r.Context(), ref.Name(), branch, head)
+	// FROM THE SNAPSHOT, never from git: see gitsync/pushedcache.go. Before the first build the answer has no state.
+	got, err := g.Store().PushedSnapshot(ref.Name(), branch, head)
 	switch {
 	case errors.Is(err, gitsync.ErrRefused):
 		crFail(w, http.StatusBadRequest, err.Error())
 	case err != nil:
 		crFail(w, http.StatusServiceUnavailable, "the hub could not read its store just now")
 	default:
-		crJSON(w, http.StatusOK, got)
+		crJSON(w, http.StatusOK, pushedAnswer{got.Pushed, got.Building, snapshotAt(got.Computed), snapshotAge(got.Computed)})
 	}
+}
+
+// pushedAnswer is the Pushed fields flat, with how old the snapshot is. Computed and age_seconds are absent until
+// the first build has finished, and `building` is then true and the state empty.
+type pushedAnswer struct {
+	gitsync.Pushed
+	Building   bool   `json:"building"`
+	Computed   string `json:"computed,omitempty"`
+	AgeSeconds *int   `json:"age_seconds,omitempty"`
+}
+
+func snapshotAt(t time.Time) string {
+	if t.IsZero() {
+		return ""
+	}
+	return t.UTC().Format(time.RFC3339)
+}
+
+func snapshotAge(t time.Time) *int {
+	if t.IsZero() {
+		return nil
+	}
+	n := int(time.Since(t).Seconds())
+	return &n
 }
 
 // ── /_hub/change-requests ───────────────────────────────
@@ -306,8 +331,9 @@ func (p *Proxy) crGet(w http.ResponseWriter, r *http.Request, cr *changeRequests
 	v := crView{ChangeRequest: c}
 	// NULL WHEN THE HUB CANNOT SAY, which is not the same as not-pushed.
 	if g := p.git(); g != nil && gitsync.ValidSHA(c.Source.SHA) {
-		if got, err := g.Store().Pushed(r.Context(), c.Repo, c.Source.Branch, c.Source.SHA); err == nil {
-			v.Pushed = &got
+		// And null while the first build of it is under way: the board asks again.
+		if got, err := g.Store().PushedSnapshot(c.Repo, c.Source.Branch, c.Source.SHA); err == nil && !got.Computed.IsZero() {
+			v.Pushed = &got.Pushed
 		}
 	}
 	crJSON(w, http.StatusOK, v)
