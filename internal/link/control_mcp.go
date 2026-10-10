@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/dovholuknf/atrium/internal/hubstore"
+	"github.com/dovholuknf/atrium/internal/store"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -976,6 +977,9 @@ func (c *controlMCP) reportHandler(ctx context.Context, req *mcp.CallToolRequest
 	if me == "" {
 		return nil, out, fmt.Errorf("atrium_report is for a session atrium knows. this call did not say which one it is")
 	}
+	if why := store.CheckReportSummary(in.Summary); why != "" {
+		return nil, out, errors.New(why)
+	}
 	room := roomOf(req)
 	id, _, err := c.resolvePeer(ctx, room, me)
 	if err != nil {
@@ -984,7 +988,7 @@ func (c *controlMCP) reportHandler(ctx context.Context, req *mcp.CallToolRequest
 	var res struct {
 		Recorded     bool   `json:"recorded"`
 		Status       string `json:"status"`
-		Unverified   bool   `json:"unverified"`
+		Unverified  bool   `json:"unverified"`
 		LauncherTold Told   `json:"launcher_told"`
 	}
 	if err := c.ask(ctx, http.MethodPost, "/v1/tasks/"+url.PathEscape(id)+"/report", room,

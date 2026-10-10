@@ -156,6 +156,12 @@ func validReport(task *store.Task, in FinishRequest) error {
 	default:
 		return fmt.Errorf("status %q is not one of done, blocked, question or progress", in.Status)
 	}
+	// A human's recap may be a paragraph. A launched worker's is one line, the detail goes in REPORT.md.
+	if agentLaunched(task) {
+		if why := store.CheckReportSummary(in.Recap); why != "" {
+			return errString(why)
+		}
+	}
 	if sha := strings.TrimSpace(in.SHA); sha != "" && !shaShape.MatchString(sha) {
 		return fmt.Errorf("sha %q is not a commit id", sha)
 	}
