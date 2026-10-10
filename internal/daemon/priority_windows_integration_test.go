@@ -89,8 +89,10 @@ func TestRunnerAndConsoleHostAreRaised(t *testing.T) {
 	}
 }
 
+// Not parallel, on purpose. Console hosts are attributed to a spawn by being new children of this
+// process, so a raised spawn running alongside would have its host counted here as ours, and that host
+// is rightly above normal. Serial tests finish before parallel ones resume, so nothing else spawns.
 func TestRunnerPriorityNormalLeavesBothAlone(t *testing.T) {
-	t.Parallel()
 	d := testDaemon(t)
 	if err := d.st.SetSetting(store.SettingRunnerPriority, "normal"); err != nil {
 		t.Fatal(err)
