@@ -71,6 +71,26 @@ func (p plain) Dial(ctx context.Context) (net.Conn, error) {
 
 func (p plain) Describe() string { return p.addr }
 
+// gitSlots bounds how many git-heavy rigs run at once. Each rig is a few dozen git processes, which is most of this
+// package's wall time, and the rigs share nothing, so they run side by side. The bound keeps a loaded machine from
+// starving the hub's heartbeats, which the rigs run at a second's silence.
+var gitSlots = make(chan struct{}, 4)
+
+// gitSlot lets the calling test run beside the other git rigs, once, and holds one of the slots until it ends.
+// A test that builds two rigs calls it twice and is let through the second time.
+func gitSlot(t *testing.T) {
+	t.Helper()
+	if _, again := slotted.LoadOrStore(t, true); again {
+		return
+	}
+	t.Cleanup(func() { slotted.Delete(t) })
+	t.Parallel()
+	gitSlots <- struct{}{}
+	t.Cleanup(func() { <-gitSlots })
+}
+
+var slotted sync.Map
+
 func waitFor(t *testing.T, limit time.Duration, ok func() bool) {
 	t.Helper()
 	deadline := time.Now().Add(limit)
@@ -266,6 +286,8 @@ func TestAConnectionThatWaitedInThePoolStillWorks(t *testing.T) {
 	if testing.Short() {
 		t.Skip("this one has to actually wait")
 	}
+	// Twelve seconds of nothing, so it waits beside the other tests.
+	t.Parallel()
 	front, _, done := pair(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprint(w, "still here")
 	}))

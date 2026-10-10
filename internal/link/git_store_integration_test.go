@@ -78,6 +78,7 @@ func gitRun(t *testing.T, dir string, args ...string) string {
 
 func newStoreProxy(t *testing.T) *storeProxy {
 	t.Helper()
+	gitSlot(t)
 	x := &storeProxy{p: NewProxy(NewHub(Timings{}), nil, "", nil), dir: t.TempDir(), set: &fakeGitSettings{}}
 	root := t.TempDir()
 	x.forge = filepath.Join(root, "forge.git")

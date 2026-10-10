@@ -67,6 +67,7 @@ func run(t *testing.T, dir string, args ...string) string {
 
 func newGitFixture(t *testing.T, hubSaysGit, roomSaysGit bool, roomHandler http.Handler) *gitFixture {
 	t.Helper()
+	gitSlot(t)
 	root := t.TempDir()
 	work := filepath.Join(root, "work")
 	if err := os.MkdirAll(work, 0o755); err != nil {
