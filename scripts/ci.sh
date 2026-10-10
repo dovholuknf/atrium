@@ -87,7 +87,8 @@ else
 fi
 
 step "go vet"
-check "go vet" go vet ./...
+# With the tag, so the integration test files are vetted too. See scripts/test.sh.
+check "go vet" go vet -tags integration ./...
 
 step "go build"
 # `-o build.claude/` even though `./...` writes nothing anybody keeps.
@@ -108,7 +109,8 @@ step "go test"
 # a package that died without a failing test (a timeout's panic names the
 # tests still running), and the slowest tests. The raw stream is kept whole.
 started=$(date +%s)
-go test -json -count=1 -p "$cpus" -timeout 20m ./... 2>&1 \
+# `all`: unit and integration tests. CI is where the integration tests run. See scripts/test.sh.
+bash scripts/test.sh all -json -p "$cpus" -timeout 20m 2>&1 \
   | tee "$artefacts/go-test.json" \
   | go run scripts/ci-report.go -dir "$artefacts"
 codes=("${PIPESTATUS[@]}")
@@ -179,7 +181,7 @@ for f in packaging/postinstall.sh packaging/preremove.sh \
          scripts/package-macos.sh \
          scripts/release.sh scripts/publish-release.sh \
          scripts/cut-release.sh scripts/check-release.sh \
-         scripts/ci-linux.sh; do
+         scripts/ci-linux.sh scripts/test.sh; do
   if ! bash -n "$f"; then
     echo "FAILED: $f does not parse" >&2
     fail=1

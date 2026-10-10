@@ -22,7 +22,7 @@ LDFLAGS  := -X github.com/dovholuknf/atrium/internal/cli.Version=$(VERSION) \
             -X github.com/dovholuknf/atrium/internal/cli.Commit=$(COMMIT) \
             -X github.com/dovholuknf/atrium/internal/cli.Tree=$(TREE)
 
-.PHONY: build release tidy test check clean
+.PHONY: build release tidy test test-all check clean
 
 # Everything that is checked without running anything.
 #
@@ -50,8 +50,12 @@ release:
 tidy:
 	go mod tidy
 
+# Unit tests. `test-all` adds the integration tests, as CI does. See scripts/test.sh.
 test:
-	go test ./...
+	bash scripts/test.sh unit
+
+test-all:
+	bash scripts/test.sh all
 
 # Keeps $(OUT)/go.mod, which fences build output off from `go vet ./...`.
 clean:
