@@ -833,6 +833,23 @@
     background: none; border: 1px solid var(--line, currentColor); border-radius: 4px; cursor: pointer;
   }
   .peek-act:hover { color: var(--head); }
+  /* CHATTER (peekChatter, js/peek.js): the says to and from the card. A row is a line, its text opens under it. */
+  .peek-sec.chatter { display: flex; flex: none; flex-direction: column; gap: 4px; margin-top: 8px; max-height: 15em; overflow-y: auto; font-size: var(--fs-xs); }
+  .peek-sec.chatter[hidden] { display: none; }
+  .chat-title { font-weight: 600; color: var(--head); font-size: var(--fs-sm); }
+  .chat-row { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+  .chat-head { display: flex; gap: 6px; align-items: baseline; min-width: 0; }
+  .chat-dir { flex: none; width: 2.6em; color: var(--dim); }
+  .chat-row.out .chat-dir { color: var(--teal); }
+  .chat-who { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--head); font-weight: 600; }
+  .chat-who.link { padding: 0; font: inherit; font-weight: 600; background: none; border: 0; cursor: pointer; text-decoration: underline dotted; }
+  .chat-who.link:hover { color: var(--teal); }
+  .chat-meta { margin-left: auto; flex: none; color: var(--dimmest); white-space: nowrap; }
+  .chat-toggle { display: block; width: 100%; padding: 0 0 0 calc(2.6em + 6px); font: inherit; text-align: left; color: var(--body); background: none; border: 0; cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .chat-toggle.open { color: var(--head); }
+  .chat-text { padding: 3px 6px; margin-left: calc(2.6em + 6px); max-height: 12em; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--body); background: rgba(var(--stroke-rgb),.12); border-radius: 4px; cursor: pointer; }
+  .chat-more { align-self: flex-start; padding: 0; font: inherit; color: var(--dim); background: none; border: 0; cursor: pointer; }
+  .chat-more:hover { color: var(--head); }
   /* ── answering a card's questions from its peek ───────────────────────────
      js/peek-answers.js. The questions are buttons in the peek, and each opens a flyout beside it. */
   .chip.mail { font-weight: 600; }

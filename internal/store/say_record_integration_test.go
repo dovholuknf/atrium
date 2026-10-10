@@ -5,6 +5,7 @@ package store
 import (
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestSayRecordLifecycle(t *testing.T) {
@@ -106,5 +107,47 @@ func TestSayRecordLapsesForEndedCard(t *testing.T) {
 	got, _ := s.SayByID(id)
 	if !got.Lapsed {
 		t.Fatal("not lapsed")
+	}
+}
+
+func TestSayKeepsBoundedTextAndPagesBack(t *testing.T) {
+	s := openTestStore(t)
+	a, _, _ := s.Register(Observed{WireName: "alice", Runner: "claude", PID: 1})
+	b, _, _ := s.Register(Observed{WireName: "bob", Runner: "claude", PID: 2})
+	long := strings.Repeat("x", SayTextLen+50)
+	var ids []string
+	for i := 0; i < 5; i++ {
+		text := "say " + string(rune('a'+i))
+		if i == 0 {
+			text = long
+		}
+		id, err := s.RecordSay(Say{FromTask: a.ID, FromWire: "alice", ToTask: b.ID, ToWire: "bob", ToInput: "bob",
+			Via: "handle", Door: "say", State: SayDelivered, SentAt: ts(now().Add(-time.Duration(10-i) * time.Minute))}, text)
+		if err != nil {
+			t.Fatal(err)
+		}
+		ids = append(ids, id)
+	}
+	first, _ := s.SayByID(ids[0])
+	if len(first.Text) != SayTextLen || first.Chars != SayTextLen+50 {
+		t.Fatalf("text not bounded: %d bytes, chars %d", len(first.Text), first.Chars)
+	}
+	if last, _ := s.SayByID(ids[4]); last.Text != "say e" {
+		t.Fatalf("short text not kept whole: %q", last.Text)
+	}
+	page1, _ := s.SaysBefore(b.ID, "", 2)
+	if len(page1) != 2 || page1[0].ID != ids[4] || page1[1].ID != ids[3] {
+		t.Fatalf("first page wrong: %+v", page1)
+	}
+	page2, _ := s.SaysBefore(b.ID, page1[1].ID, 2)
+	if len(page2) != 2 || page2[0].ID != ids[2] || page2[1].ID != ids[1] {
+		t.Fatalf("second page wrong: %+v", page2)
+	}
+	page3, _ := s.SaysBefore(b.ID, page2[1].ID, 2)
+	if len(page3) != 1 || page3[0].ID != ids[0] {
+		t.Fatalf("third page wrong: %+v", page3)
+	}
+	if gone, _ := s.SaysBefore(b.ID, "no-such-row", 2); len(gone) != 0 {
+		t.Fatalf("a cursor naming no row returned %d", len(gone))
 	}
 }

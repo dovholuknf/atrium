@@ -191,16 +191,23 @@ func (d *Daemon) writeMissNote(w http.ResponseWriter, from, name, door, text, wh
 	})
 }
 
-// handleTaskSays is `GET /v1/tasks/{id}/says`: the says a card sent or received.
+// handleTaskSays is `GET /v1/tasks/{id}/says`: the says a card sent or received, newest first, 20 a page. `before`
+// is the id of the last row read and returns the page after it, and `more` says there is one. Through the hub the
+// card is placed by cardroute.go like any other `/v1/tasks/<id>/...`, so a card on another room answers the same way.
 func (d *Daemon) handleTaskSays(w http.ResponseWriter, r *http.Request) {
-	rows, err := d.st.SaysFor(r.PathValue("id"), 20)
+	const page = 20
+	rows, err := d.st.SaysBefore(r.PathValue("id"), r.URL.Query().Get("before"), page+1)
 	if err != nil {
 		writeJSONErr(w, http.StatusInternalServerError, err)
 		return
+	}
+	more := len(rows) > page
+	if more {
+		rows = rows[:page]
 	}
 	if rows == nil {
 		rows = []store.Say{}
 	}
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(map[string]any{"says": rows})
+	_ = json.NewEncoder(w).Encode(map[string]any{"says": rows, "more": more})
 }
