@@ -18,6 +18,7 @@ func entryFor(q Queue, sha string) *QueueEntry {
 }
 
 func TestQueueSaysWhichDeployEachCommitNeeds(t *testing.T) {
+	t.Parallel()
 	r := newRepo(t)
 	base := r.commit("base", map[string]string{"internal/a/a.go": "package a\n"})
 	hubCode := r.commit("hub only", map[string]string{"internal/hubstore/h.go": "package h\n",
@@ -45,6 +46,7 @@ func TestQueueSaysWhichDeployEachCommitNeeds(t *testing.T) {
 }
 
 func TestQueueBothWhenHubAndRoomAreBehind(t *testing.T) {
+	t.Parallel()
 	r := newRepo(t)
 	base := r.commit("base", map[string]string{"internal/a/a.go": "package a\n"})
 	hubOnly := r.commit("hub only", map[string]string{"internal/hubstore/h.go": "package h\n"})
@@ -64,6 +66,7 @@ func TestQueueBothWhenHubAndRoomAreBehind(t *testing.T) {
 }
 
 func TestQueueEmptyWhenEverythingIsLive(t *testing.T) {
+	t.Parallel()
 	r := newRepo(t)
 	r.commit("base", map[string]string{"internal/a/a.go": "package a\n"})
 	tip := r.commit("more", map[string]string{"internal/a/a.go": "package a // 2\n"})
@@ -74,6 +77,7 @@ func TestQueueEmptyWhenEverythingIsLive(t *testing.T) {
 }
 
 func TestQueueTakesARoomThatDoesNotReportAsBehind(t *testing.T) {
+	t.Parallel()
 	r := newRepo(t)
 	base := r.commit("base", map[string]string{"internal/a/a.go": "package a\n"})
 	shared := r.commit("shared", map[string]string{"internal/a/a.go": "package a // 2\n"})
@@ -90,6 +94,7 @@ func TestQueueTakesARoomThatDoesNotReportAsBehind(t *testing.T) {
 }
 
 func TestQueueUnknownWhenTheHubCommitIsNotInTheCheckout(t *testing.T) {
+	t.Parallel()
 	r := newRepo(t)
 	r.commit("base", map[string]string{"internal/a/a.go": "package a\n"})
 	for _, hub := range []string{"", "not-a-sha", strings.Repeat("a", 40)} {
