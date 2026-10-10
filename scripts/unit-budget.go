@@ -16,7 +16,10 @@
 // Over 10ms is printed. Over 20ms fails the run. A test in `fine` is printed and never fails it: each is pure
 // in-memory work that Windows scheduling pushes past 10ms now and then.
 //
-// Exit status 1 when a test failed, a package failed, or a test not in `fine` took over 20ms.
+// -times writes every top-level test's time and result to a table, slowest first. -budget=false turns the 10ms
+// and 20ms checks off, which an integration run needs.
+//
+// Exit status 1 when a test failed, a package failed, or (with the budget on) a test not in `fine` took over 20ms.
 package main
 
 import (
@@ -56,7 +59,19 @@ type over struct {
 	took      time.Duration
 }
 
-var verbose = flag.Bool("v", false, "print every test's output, as go test -v does")
+var (
+	verbose  = flag.Bool("v", false, "print every test's output, as go test -v does")
+	enforce  = flag.Bool("budget", true, "print the tests over 10ms and fail the run on one over 20ms")
+	timesTSV = flag.String("times", "", "write every top-level test's time and result here, slowest first")
+)
+
+// ran is every top-level test, written to -times.
+var ran []result
+
+type result struct {
+	pkg, test, action string
+	took              time.Duration
+}
 
 // held is each test's output so far, printed if the test fails.
 var held = map[string]string{}
@@ -84,7 +99,12 @@ func main() {
 		}
 	}
 
-	if len(slow) > 0 {
+	if *timesTSV != "" {
+		if err := writeTimes(*timesTSV); err != nil {
+			fmt.Fprintln(os.Stderr, "unit-budget:", err)
+		}
+	}
+	if *enforce && len(slow) > 0 {
 		sort.Slice(slow, func(i, j int) bool { return slow[i].took > slow[j].took })
 		fmt.Printf("\nOVER THE 10ms UNIT BUDGET (%d). A unit test is under 10ms and touches nothing outside the process.\n", len(slow))
 		fmt.Println("Over 20ms fails the run: move it into a *_integration_test.go file under //go:build integration.")
@@ -134,10 +154,23 @@ func handle(e event, started map[string]time.Time, paused map[string]bool, slow 
 		if paused[key] || started[key].IsZero() {
 			took = time.Duration(e.Elapsed * float64(time.Second))
 		}
+		pkg := strings.TrimPrefix(e.Package, "github.com/dovholuknf/atrium/")
+		ran = append(ran, result{pkg, e.Test, e.Action, took})
 		if e.Action != "skip" && took > budget {
-			*slow = append(*slow, over{strings.TrimPrefix(e.Package, "github.com/dovholuknf/atrium/"), e.Test, took})
+			*slow = append(*slow, over{pkg, e.Test, took})
 		}
 		return e.Action == "fail"
 	}
 	return false
+}
+
+// writeTimes writes ran as a table: milliseconds, result, package, test, slowest first.
+func writeTimes(path string) error {
+	sort.Slice(ran, func(i, j int) bool { return ran[i].took > ran[j].took })
+	var b strings.Builder
+	b.WriteString("ms\tresult\tpackage\ttest\n")
+	for _, r := range ran {
+		fmt.Fprintf(&b, "%.1f\t%s\t%s\t%s\n", float64(r.took.Microseconds())/1000, r.action, r.pkg, r.test)
+	}
+	return os.WriteFile(path, []byte(b.String()), 0o644)
 }

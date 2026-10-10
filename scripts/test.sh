@@ -41,17 +41,35 @@ done
 # -count=1 because a cached pass is not a pass.
 #
 # A UNIT RUN HAS A BUDGET: scripts/unit-budget.go reads the -json stream, prints each test over 10ms, and fails the
-# run when one took over 20ms. -json given by hand opts out, since the stream is then yours.
-if [ "$mode" = unit ]; then
-  wrap=1; vflag=()
-  for a in "$@"; do
-    case "$a" in -json|-test.json) wrap=0 ;; -v|-test.v) vflag=(-v) ;; esac
-  done
-  if [ "$wrap" = 1 ]; then
-    go test -json -count=1 "$@" | go run scripts/unit-budget.go ${vflag[@]+"${vflag[@]}"}
-    codes=("${PIPESTATUS[@]}")
-    [ "${codes[0]}" = 0 ] && [ "${codes[1]}" = 0 ]
-    exit $?
-  fi
+# run when one took over 20ms. An integration run has no budget.
+#
+# EVERY RUN IS KEPT, so the time of a test is never a reason to run the suite again. Under build.claude/test-runs/:
+#
+#   <stamp>-<mode>.jsonl   the raw `go test -json` stream
+#   <stamp>-<mode>.tsv     each top-level test: ms, result, package, test, slowest first
+#   latest-<mode>.tsv      a copy of the newest table
+#
+# -json given by hand still keeps the stream, but prints it raw and writes no table, since the stream is then yours.
+runs="build.claude/test-runs"
+mkdir -p "$runs"
+stamp="$(date +%Y%m%d-%H%M%S)"
+raw="$runs/$stamp-$mode.jsonl"
+tsv="$runs/$stamp-$mode.tsv"
+
+wrap=1; vflag=()
+for a in "$@"; do
+  case "$a" in -json|-test.json) wrap=0 ;; -v|-test.v) vflag=(-v) ;; esac
+done
+budget=true
+[ "$mode" = all ] && budget=false
+
+if [ "$wrap" = 0 ]; then
+  go test -count=1 ${tags[@]+"${tags[@]}"} "$@" | tee "$raw"
+  exit "${PIPESTATUS[0]}"
 fi
-exec go test -count=1 ${tags[@]+"${tags[@]}"} "$@"
+go test -json -count=1 ${tags[@]+"${tags[@]}"} "$@" | tee "$raw" |
+  go run scripts/unit-budget.go -budget="$budget" -times "$tsv" ${vflag[@]+"${vflag[@]}"}
+codes=("${PIPESTATUS[@]}")
+cp -f "$tsv" "$runs/latest-$mode.tsv" 2>/dev/null
+echo "test times: $tsv" >&2
+[ "${codes[0]}" = 0 ] && [ "${codes[2]}" = 0 ]
