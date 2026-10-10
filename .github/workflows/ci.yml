@@ -18,6 +18,11 @@ on:
     branches: ["**"]
   pull_request:
   workflow_dispatch:
+    inputs:
+      integration:
+        description: "also run the integration tests (slow)"
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -65,7 +70,7 @@ jobs:
         # Windows runs it in.
         shell: bash
         # Invoke bash explicitly because ci.sh has no executable bit in git.
-        run: bash scripts/ci.sh
+        run: bash scripts/ci.sh ${{ inputs.integration && 'integration' || '' }}
 
       # What ci.sh left in build.claude/ci: go test's raw stream, the whole
       # output of each failed package, every test's time, and the goroutine

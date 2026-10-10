@@ -3,7 +3,7 @@
 #
 #   bash scripts/test.sh                        unit tests, every package
 #   bash scripts/test.sh unit ./internal/store/ unit tests, one package
-#   bash scripts/test.sh all                    unit AND integration tests. CI runs this
+#   bash scripts/test.sh all                    unit AND integration tests. Never by default, not even in CI
 #
 # Anything after the mode goes to `go test` as given: packages, -run, -v, -json, -p, -timeout.
 #
@@ -13,8 +13,9 @@
 #
 #   //go:build integration
 #
-# Without `-tags integration` Go does not compile those files at all, so `unit` cannot run one by accident. They
-# run in CI. Run them by hand only when CI fails on one, or when you add or change one.
+# Without `-tags integration` Go does not compile those files at all, so `go test ./...`, `unit` and CI cannot run
+# one by accident. Run them only when you add or change one, or one is suspected: `bash scripts/test.sh all`, or a
+# manual CI run with its `integration` box ticked.
 
 set -uo pipefail
 
