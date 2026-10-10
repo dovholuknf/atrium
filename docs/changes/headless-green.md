@@ -13,6 +13,20 @@ nothing after the abort ran. Each failure below says whether the board or the te
 | terminated pinned terminal's menu offers no dismiss | board | The card-menu rewrite dropped `dismiss`. The interview cuts items from the menu but never asks to remove the way to take a dead pinned card out of the list, and `terminate and clean up` is the only other item that does it, which is far heavier. Restored for a pinned card with no runner, above terminate and clean up. |
 | hide control has 3 segments, not 2 | test | `show stopped` joined agents and subagents on purpose. The interview (Q3) asks that stopped cards stay out of the list unless "show stopped" is toggled. The test now expects three. |
 | gear controls do not show the defaults | test | Same change. The gear's hide row now reads `agents`, `subagents (2)*`, `show stopped`. |
+| board cards never wore their colours | board | `board.js` mapped `cardHTML` directly, so `map` passed the index as the `wearAs` argument. Now `t => cardHTML(t)`. |
+| the spinner stayed on a resume's reason | board | `termWait` never toggled the `slow` class, so a resume that gave up kept the spinner. It now reads `openingState`. |
+| the quick paste button clipped the terminals tab on a phone | board | Hidden while the header is collapsed (`phone.css`). |
+| the gear's hide row, the website skin header, peek totals and scale text, the replies and repos tooltips, and the phone list width check | test | Each follows a change made on purpose (show stopped, the opaque website header, dropped peek totals, `data-tip`, nesting by depth). Expectations updated. |
+| subagents missing from the child rows, the usage pace phrase, the walk drawer reading `src/` | test | Idle subagents are hidden by default, the pace phrase gained the weekly reset, and the walk reads the head tree for context. Expectations updated. |
+| deployReady detail, hubRepos, keepAlive, termBox tray | test | Timing in the test: a repaint closed the detail between two steps, the remembered view restored half a second after load, and a socket opened after the counters reset. The tray now has three hide segments. |
+
+## Not fixed
+
+`scripts/test-board-sharded.js` refuses to run: `mockVars()` lacks `cardColorsMock` and `blockerEsc`, and ten sections
+have no unit (termLagSection, themePickerShotsSection, u002Section, mReloadSection, mReconnectSection,
+mActivityReadSection, mReadRetrySection, switchBackCostSection, keepMemorySection, repliesShotsSection). That predates
+this change. Three units flake once in a while in a long run and pass alone: clearMark (`loadCell`), mViewer and
+boardDocs. The suite was run in six serial chunks of the 247 units, all passing.
 
 ## Test plan
 

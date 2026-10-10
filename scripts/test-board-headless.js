@@ -26145,7 +26145,7 @@ async function unit(name, fn) {
   try { await fn(); }
   catch (e) {
     if (!UNIT_FILTER) throw e;
-    fail(name + ": the unit threw: " + (e && e.message ? e.message : e) + threwAt(e) + (process.env.STK ? " " + e.stack + " " + (e.message || "") : ""));
+    fail(name + ": the unit threw: " + (e && e.message ? e.message : e) + threwAt(e));
   } finally { currentUnit = ""; }
   const ms = Date.now() - t0;
   if (snap0) {
