@@ -206,6 +206,7 @@ document.getElementById("t-screen").addEventListener("mouseleave", linkTipHide);
 
 // A clicked file asks where it should open, and the answer is one of three.
 //
+//   open rendered        a markdown file only, and first: the same tab as below, named for what it shows.
 //   in atrium's editor   here, in this browser, in the drawer. Always offered.
 //   in a tab             here, in a new browser tab, streamed from the room that
 //                        holds the card. Always offered, and the only way to read a
@@ -228,10 +229,12 @@ async function fileLinkMenu(ev, id, hit) {
     cmd = (typeof pastePrefs !== "undefined" && pastePrefs && pastePrefs.editor_command) || "";
   }
   if (!termTask || termTask.id !== id) return;
-  const items = [
-    { label: "open in atrium's editor", act: () => openFromTerminal(id, hit) },
-    { label: "open in a tab", act: () => openFileTabFor(id, hit.rel) }
-  ];
+  // Only the tab renders markdown, so for a markdown file the tab is offered first and says so. The
+  // editor shows the source.
+  const md = !hit.dir && /\.(md|markdown)$/i.test(hit.rel);
+  const editor = { label: "open in atrium's editor", act: () => openFromTerminal(id, hit) };
+  const tab = { label: md ? "open rendered" : "open in a tab", out: true, act: () => openFileTabFor(id, hit.rel) };
+  const items = md ? [tab, editor] : [editor, tab];
   if (cmd) {
     items.push({
       label: where ? "open on " + where : "open where the file is",
