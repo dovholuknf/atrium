@@ -156,7 +156,7 @@ func TestLeanArgsRefusesAnMCPServerTheRunnerDoesNotHave(t *testing.T) {
 }
 
 func TestLeanSettingsKeepsGateAndHooksAndDropsWhatPrintsIntoContext(t *testing.T) {
-	raw, err := leanSettings([]byte(leanTestSettings), "")
+	raw, err := leanSettings([]byte(leanTestSettings), "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -185,7 +185,7 @@ func TestLeanSettingsKeepsGateAndHooksAndDropsWhatPrintsIntoContext(t *testing.T
 }
 
 func TestLeanSettingsKeepsACardOutOfTheAgentView(t *testing.T) {
-	raw, err := leanSettings([]byte(leanTestSettings), "")
+	raw, err := leanSettings([]byte(leanTestSettings), "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -197,7 +197,7 @@ func TestLeanSettingsKeepsACardOutOfTheAgentView(t *testing.T) {
 }
 
 func TestLeanSettingsAddsTheStopHookWhenAsked(t *testing.T) {
-	raw, err := leanSettings([]byte(leanTestSettings), "C:/a/atrium.exe turn --event end")
+	raw, err := leanSettings([]byte(leanTestSettings), "C:/a/atrium.exe turn --event end", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -207,7 +207,7 @@ func TestLeanSettingsAddsTheStopHookWhenAsked(t *testing.T) {
 	was := noPollHookCommand
 	noPollHookCommand = func() string { return "" }
 	defer func() { noPollHookCommand = was }()
-	raw, err = leanSettings(nil, "")
+	raw, err = leanSettings(nil, "", nil)
 	if err != nil || !strings.Contains(raw, `"hooks":{}`) {
 		t.Fatalf("no user settings should still build, got %s %v", raw, err)
 	}
@@ -250,7 +250,7 @@ func TestLeanSettingsAddsTheNoPollHook(t *testing.T) {
 	was := noPollHookCommand
 	noPollHookCommand = func() string { return "C:/a/atrium.exe hook --event no-poll" }
 	defer func() { noPollHookCommand = was }()
-	raw, err := leanSettings([]byte(leanTestSettings), "")
+	raw, err := leanSettings([]byte(leanTestSettings), "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}

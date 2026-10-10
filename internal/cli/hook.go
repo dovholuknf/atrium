@@ -134,7 +134,7 @@ func notificationKind(in hookInput) string {
 }
 
 func newHook() *cobra.Command {
-	var event, name, hubURL, runner string
+	var event, name, hubURL, runner, allow string
 	c := &cobra.Command{
 		Use:   "hook",
 		Short: "Report what this session is doing. Run by a harness, not by hand.",
@@ -160,6 +160,12 @@ func newHook() *cobra.Command {
 			}
 			if strings.EqualFold(strings.TrimSpace(event), noPollEvent) {
 				if out := noPollHook(readStdin()); out != nil {
+					fmt.Fprintln(cmd.OutOrStdout(), string(out))
+				}
+				return nil
+			}
+			if strings.EqualFold(strings.TrimSpace(event), leanAgentsEvent) {
+				if out := leanAgentsHook(readStdin(), allow); out != nil {
 					fmt.Fprintln(cmd.OutOrStdout(), string(out))
 				}
 				return nil
@@ -191,6 +197,7 @@ func newHook() *cobra.Command {
 		},
 	}
 	c.Flags().StringVar(&event, "event", "", "tool-start, tool-end, prompt, subagent-start, subagent-end, permission or pre-tool-use")
+	c.Flags().StringVar(&allow, "allow", "", "lean-agents: the agent names a lean worker may start, comma separated")
 	c.Flags().StringVar(&name, "name", "", "what this session calls itself (default: the directory name)")
 	c.Flags().StringVar(&hubURL, "url", "", "atrium agent address (default: $ATRIUM_HUB_URL or localhost:7777)")
 	// Every command a Named target writes carries this. Without it here,

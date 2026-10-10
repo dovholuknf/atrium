@@ -310,7 +310,7 @@ func leanArgs(args []string, userSettings []byte, stopHook string, mcp []string,
 	if err != nil {
 		return nil, err
 	}
-	settings, err := leanSettings(userSettings, stopHook)
+	settings, err := leanSettings(userSettings, stopHook, kit.Agents)
 	if err != nil {
 		return nil, err
 	}
@@ -325,7 +325,7 @@ func leanArgs(args []string, userSettings []byte, stopHook string, mcp []string,
 		"--disallowedTools", strings.Join(leanDisallowedFor(kit), ","),
 		"--append-system-prompt", systemPrompt,
 	}
-	if !kit.empty() {
+	if kit.needsPlugin() {
 		dir, err := leanPluginDir(kit)
 		if err != nil {
 			return nil, err
@@ -406,7 +406,10 @@ var leanContextHooks = []string{"SessionStart", "UserPromptSubmit"}
 // outside the conversation, and it is what posts a card's context figures to
 // atrium (docs/runtime/statusline-telemetry.md). Dropping it left every lean card, and so
 // every worker, with no status line and no context size on the board.
-func leanSettings(user []byte, stopHook string) (string, error) {
+//
+// agents is the lean_agents list. When it is not empty the Agent tool is kept, and
+// a PreToolUse hook refuses every agent type not in it (internal/cli/hook_leanagents.go).
+func leanSettings(user []byte, stopHook string, agents []string) (string, error) {
 	doc := map[string]json.RawMessage{}
 	if len(strings.TrimSpace(string(user))) > 0 {
 		if err := json.Unmarshal(user, &doc); err != nil {
@@ -458,9 +461,31 @@ func leanSettings(user []byte, stopHook string) (string, error) {
 			"hooks":   []any{map[string]any{"type": "command", "command": cmd}},
 		})
 	}
+	// The agent allowlist. The deny rules cover the built-ins Claude Code ships, and
+	// this covers a type no rule names, such as a project's own agent, and says
+	// which agents are allowed when it refuses.
+	if len(agents) > 0 {
+		if cmd := leanAgentsHookCommand(agents); cmd != "" {
+			pre, _ := hooks["PreToolUse"].([]any)
+			hooks["PreToolUse"] = append(pre, map[string]any{
+				"matcher": "Agent|Task",
+				"hooks":   []any{map[string]any{"type": "command", "command": cmd}},
+			})
+		}
+	}
 	out["hooks"] = hooks
 	b, err := json.Marshal(out)
 	return string(b), err
+}
+
+// leanAgentsHookCommand is the command of the lean-agents PreToolUse hook, or empty
+// when there is no binary to run. A variable so a test can say what it wants.
+var leanAgentsHookCommand = func(agents []string) string {
+	exe := claudeconf.HookExe("")
+	if exe == "" {
+		return ""
+	}
+	return exe + " hook --event lean-agents --allow " + strings.Join(agents, ",")
 }
 
 // noPollHookCommand is the command of the no-poll PreToolUse hook, or empty when
