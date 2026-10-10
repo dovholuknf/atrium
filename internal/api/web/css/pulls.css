@@ -26,7 +26,7 @@
   .pull-repo { color: var(--head); font-weight: 600; }
   .pull-head7, .pull-author { color: var(--dim); font-size: var(--fs-xs); }
   .pull-title { color: var(--body); overflow-wrap: anywhere; }
-  .pull-why, .pull-second { color: var(--dim); font-size: var(--fs-xs); overflow-wrap: anywhere; }
+  .pull-why, .pull-second, .pull-stage { color: var(--dim); font-size: var(--fs-xs); overflow-wrap: anywhere; }
   .pull-counts { color: var(--label); font-size: var(--fs-xs); }
   .pull-side { flex: 0 1 280px; min-width: 0; display: flex; flex-direction: column; align-items: flex-end; gap: 2px; text-align: right; }
   .pull-state { color: var(--head); overflow-wrap: anywhere; }

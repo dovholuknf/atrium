@@ -217,6 +217,7 @@ function pullRowHTML(r) {
       (r.why ? '<div class="pull-why">' + esc(r.why) + "</div>" : "") +
       (counts ? '<div class="pull-counts">' + esc(counts) + "</div>" : "") +
       (second ? '<div class="pull-second">' + esc(second) + "</div>" : "") +
+      (r.stage_note && !closed ? '<div class="pull-stage">' + esc(r.stage_note) + "</div>" : "") +
     "</div>" +
     '<div class="pull-side">' +
       '<span class="pull-state">' + esc(pullStateWords(r)) + "</span>" +

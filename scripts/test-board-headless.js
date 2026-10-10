@@ -22419,6 +22419,71 @@ async function pullsSection(browser, base) {
   if (!bad) console.log("pulls ok");
 }
 
+// ── the panel is a stage, not the row's state ────────────
+// A ready row whose panel found no reviewer says so in one muted line, and its state words are the review's own.
+// PSSHOT=/dir writes the picture.
+async function pullsPanelStageSection(browser, base) {
+  const ctx = await browser.newContext({ viewport: { width: 1280, height: 500 } });
+  const errors = [];
+  const json = (route, status, body) => route.fulfill({ status, contentType: "application/json", body: JSON.stringify(body) });
+  const row = (id, extra) => Object.assign({
+    id, url: "https://github.com/openziti/zrok/pull/967", host: "github.com", org: "openziti", repo: "zrok", org_repo: "openziti/zrok",
+    number: 967, title: "title of " + id, why: "", head: "", head7: "abc1234", state: "ready", run_state: "", run_error: "",
+    cost_usd: 0, started_at: "", ready_at: "2026-10-08T09:20:00Z", created_at: "2026-10-08T09:00:00Z", archived_at: "", run_dir: "",
+    second: { state: "none", summary: "", error: "" }, author: "ekoby",
+    findings: { high: 0, med: 1, low: 0, nit: 0, leak: 0 }, walk: { accepted: 0, done: 0, skipped: 0, deferred: 0, open: 1 }, walker_task: ""
+  }, extra);
+  const rows = [
+    row("pr_skip", { number: 967, stage_note: "panel skipped: no reviewer applies", created_at: "2026-10-08T09:03:00Z" }),
+    row("pr_miss", { number: 968, stage_note: "panel: missing agent files review-panel, go-reviewer", created_at: "2026-10-08T09:02:00Z" }),
+    row("pr_plain", { number: 969, created_at: "2026-10-08T09:01:00Z" }),
+    row("pr_dead", { number: 970, state: "failed", run_error: "fetch: gh said no", created_at: "2026-10-08T09:00:00Z" })
+  ];
+  // PSBEFORE=1 draws the rows as the old daemon sent them, the panel's failure as the row's own, for the "before" picture.
+  if (process.env.PSBEFORE) {
+    for (const r of rows.slice(0, 3)) {
+      delete r.stage_note;
+      Object.assign(r, { state: "failed", run_error: "panel: no reviewer in the panel applies, or none of their agent files was found" });
+    }
+  }
+  await ctx.route(/\/v1\/prs(\/|\?|$)/, route => json(route, 200, { prs: rows, counts: {}, nav_count: 4 }));
+  try {
+    const p = await ctx.newPage();
+    p.on("pageerror", e => errors.push(e.message));
+    await p.goto(base + "/", { waitUntil: "domcontentloaded" });
+    await p.waitForFunction(() => typeof pullsPaint === "function" && typeof switchView === "function", null, { timeout: slow(15000) });
+    await p.waitForFunction(() => !document.querySelector('.tab[data-view="pulls"]').hidden, null, { timeout: slow(10000) });
+    await p.evaluate(() => switchView("pulls"));
+    await p.waitForFunction(() => document.querySelectorAll("#pulls-list .pull").length === 4, null, { timeout: slow(10000) });
+    if (process.env.PSBEFORE) {
+      if (process.env.PSSHOT) await p.screenshot({ path: process.env.PSSHOT });
+      await ctx.close();
+      return;
+    }
+    const q = (id, sel) => p.evaluate(([id, sel]) => {
+      const e = document.querySelector('#pulls-list .pull[data-id="' + id + '"] ' + sel); return e ? e.textContent : null;
+    }, [id, sel]);
+    for (const [id, state, note] of [
+      ["pr_skip", "ready to walk", "panel skipped: no reviewer applies"],
+      ["pr_miss", "ready to walk", "panel: missing agent files review-panel, go-reviewer"],
+      ["pr_plain", "ready to walk", null],
+      ["pr_dead", "failed: fetch: gh said no", null]
+    ]) {
+      if (await q(id, ".pull-state") !== state) fail("pullsPanelStage: " + id + " says " + JSON.stringify(await q(id, ".pull-state")));
+      if (await q(id, ".pull-stage") !== note) fail("pullsPanelStage: " + id + " stage line is " + JSON.stringify(await q(id, ".pull-stage")));
+    }
+    // muted, not the red of a failure: the same colour as the other quiet lines
+    const colours = await p.evaluate(() => {
+      const c = s => getComputedStyle(document.querySelector(s)).color;
+      return { stage: c('.pull[data-id="pr_skip"] .pull-stage'), why: c('.pull[data-id="pr_skip"] .pull-title') };
+    });
+    if (/^rgb\(2[0-9]{2}, [0-9]{1,2}, [0-9]{1,2}\)$/.test(colours.stage)) fail("pullsPanelStage: the stage line is red: " + colours.stage);
+    if (process.env.PSSHOT) await p.screenshot({ path: process.env.PSSHOT });
+    if (errors.length) fail("pullsPanelStage: page errors: " + errors.join(" | "));
+  } finally { await ctx.close(); }
+  if (!bad) console.log("pullsPanelStage ok");
+}
+
 // ── moving a review to another room ──────────────────────
 // A fake hub in the page: the four calls of the move, in order, and nothing after a hub refusal.
 async function prMoveSection(browser, base) {
@@ -27774,7 +27839,7 @@ async function main() {
       termDebug: termDebugSection, termDebugPerCard: termDebugPerCardSection, termLag: termLagSection, termHiddenRedraw: termHiddenRedrawSection, termLastRead: termLastReadSection, termSortStarted: termSortStartedSection,
       noReadyChildren: noReadyChildrenSection, childUnderParent: childUnderParentSection, topNav: topNavSection, boardUsage: boardUsageSection, tabsOrder: tabsOrderSection,
       u002: u002Section, childFold: childFoldSection, liveHome: liveHomeSection,
-      pulls: pullsSection, prMove: prMoveSection, quickPaste: quickPasteSection, recogniserRepo: recogniserRepoSection, hubRepos: hubReposSection, hubReposShelf: hubReposShelfSection, hubReposLedger: hubReposLedgerSection, hubReposFeed: hubReposFeedSection, changeReq: changeReqSection, mChangeReq: mChangeReqSection, trayHead: trayHeadSection, pullsAbsent: pullsAbsentSection, oneTooltip: oneTooltipSection, burnChart: burnChartSection, burnReadout: burnReadoutSection, switchPrewarm: switchPrewarmSection, attachAtOnce: attachAtOnceSection, fileView: fileViewSection, keepAlive: keepAliveSection, switchBackCost: switchBackCostSection, keepMemory: keepMemorySection, pullsDrawer: pullsDrawerSection };
+      pulls: pullsSection, prMove: prMoveSection, quickPaste: quickPasteSection, recogniserRepo: recogniserRepoSection, hubRepos: hubReposSection, hubReposShelf: hubReposShelfSection, hubReposLedger: hubReposLedgerSection, hubReposFeed: hubReposFeedSection, changeReq: changeReqSection, mChangeReq: mChangeReqSection, trayHead: trayHeadSection, pullsAbsent: pullsAbsentSection, pullsPanelStage: pullsPanelStageSection, oneTooltip: oneTooltipSection, burnChart: burnChartSection, burnReadout: burnReadoutSection, switchPrewarm: switchPrewarmSection, attachAtOnce: attachAtOnceSection, fileView: fileViewSection, keepAlive: keepAliveSection, switchBackCost: switchBackCostSection, keepMemory: keepMemorySection, pullsDrawer: pullsDrawerSection };
     try {
       const unknown = ONLY.split(",").filter(n => typeof only[n] !== "function");
       if (unknown.length) {
@@ -29932,7 +29997,8 @@ async function main() {
     await unit("tabsOrder", () => tabsOrderSection(browser, base));
     await unit("boardUsage", () => boardUsageSection(browser, base));
     await unit("pulls", () => pullsSection(browser, base));
-    await unit("pullsAbsent", () => pullsAbsentSection(browser, base));
+    await unit("pullsPanelStage", () => pullsPanelStageSection(browser, base));
+    await unit("pullsAbsent",() => pullsAbsentSection(browser, base));
     await unit("oneTooltip", () => oneTooltipSection(browser, base));
     await unit("noReadyChildren", () => noReadyChildrenSection(browser, base));
     await unit("childUnderParent", () => childUnderParentSection(browser, base));
