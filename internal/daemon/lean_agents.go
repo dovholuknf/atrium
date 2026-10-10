@@ -94,8 +94,39 @@ func withoutKitTags(tags []string) []string {
 	return out
 }
 
+// builtinAgents are the agent types Claude Code ships. The Agent tool offers them
+// next to the plugin's, so keeping the tool for `lean_agents` would let a worker
+// start any of them. A lean_agents name that is one of these is the built-in, not a
+// file in ~/.claude/agents, and it is the one way to allow it.
+var builtinAgents = []string{"Explore", "Plan", "general-purpose", "statusline-setup", "claude-code-guide"}
+
+func isBuiltinAgent(name string) bool {
+	for _, b := range builtinAgents {
+		if name == b {
+			return true
+		}
+	}
+	return false
+}
+
+// fileAgents is the kit's agents that are files in ~/.claude/agents.
+func (k leanKit) fileAgents() []string {
+	var out []string
+	for _, a := range k.Agents {
+		if !isBuiltinAgent(a) {
+			out = append(out, a)
+		}
+	}
+	return out
+}
+
+// needsPlugin says whether the session-only plugin has anything to carry.
+func (k leanKit) needsPlugin() bool { return len(k.fileAgents()) > 0 || len(k.Skills) > 0 }
+
 // leanDisallowedFor is leanDisallowed, less the Agent tool (and its old name,
 // Task) for a launch that names agents, and less Skill for one that names skills.
+// With the Agent tool kept, each built-in agent not named is denied as
+// `Agent(<name>)`, a permission rule Claude Code enforces itself.
 func leanDisallowedFor(k leanKit) []string {
 	var out []string
 	for _, t := range leanDisallowed {
@@ -106,6 +137,13 @@ func leanDisallowedFor(k leanKit) []string {
 			continue
 		}
 		out = append(out, t)
+	}
+	if len(k.Agents) > 0 {
+		for _, b := range builtinAgents {
+			if !hasTag(k.Agents, b) {
+				out = append(out, "Agent("+b+")")
+			}
+		}
 	}
 	return out
 }
@@ -137,7 +175,7 @@ func leanPluginDir(k leanKit) (string, error) {
 			`","description":"named agents and skills for a lean atrium session","version":"1.0.0"}` + "\n"),
 	}
 	var missing []string
-	for _, name := range k.Agents {
+	for _, name := range k.fileAgents() {
 		if !nameRE.MatchString(name) {
 			return "", fmt.Errorf("lean_agents name %q is not an agent's file name", name)
 		}

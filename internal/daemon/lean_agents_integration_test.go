@@ -321,3 +321,70 @@ func TestKeepaliveForkOfALeanKitCardKeepsToolsAndPlugin(t *testing.T) {
 		t.Fatalf("the fork must carry the same tool list and plugin: %q", args)
 	}
 }
+
+// Keeping the Agent tool for lean_agents must not keep Claude Code's built-in
+// agents: each built-in not named is denied by a permission rule Claude Code
+// enforces, and the allowlist hook names the listed agents.
+func TestLeanAgentsDeniesBuiltinsAndAllowsTheListedPluginAgent(t *testing.T) {
+	kitDirs(t)
+	was := leanAgentsHookCommand
+	leanAgentsHookCommand = func(a []string) string { return "atrium hook --event lean-agents --allow " + strings.Join(a, ",") }
+	defer func() { leanAgentsHookCommand = was }()
+	got, err := leanArgs([]string{"go"}, nil, "", nil, leanKit{Agents: []string{"codebase-steward"}}, "", os.ReadFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dis := "," + flagValue(t, got, "--disallowedTools") + ","
+	for _, b := range builtinAgents {
+		if !strings.Contains(dis, ",Agent("+b+"),") {
+			t.Fatalf("built-in %s should be denied: %s", b, dis)
+		}
+	}
+	if strings.Contains(dis, "Agent(codebase-steward)") || strings.Contains(dis, "Agent(atrium:") || strings.Contains(dis, ",Agent,") {
+		t.Fatalf("the listed plugin agent must stay startable: %s", dis)
+	}
+	if !strings.Contains(flagValue(t, got, "--settings"), "hook --event lean-agents --allow codebase-steward") {
+		t.Fatalf("the allowlist hook is missing from --settings: %s", flagValue(t, got, "--settings"))
+	}
+}
+
+func TestLeanAgentsAllowsABuiltinListedByBareName(t *testing.T) {
+	kitDirs(t)
+	got, err := leanArgs([]string{"go"}, nil, "", nil,
+		leanKit{Agents: []string{"Explore", "codebase-steward"}}, "", os.ReadFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dis := "," + flagValue(t, got, "--disallowedTools") + ","
+	if strings.Contains(dis, "Agent(Explore)") || !strings.Contains(dis, ",Agent(Plan),") ||
+		!strings.Contains(dis, ",Agent(general-purpose),") {
+		t.Fatalf("only Explore should come off the deny list: %s", dis)
+	}
+	if dir := flagValue(t, got, "--plugin-dir"); !fileExists(filepath.Join(dir, "agents", "codebase-steward.md")) ||
+		fileExists(filepath.Join(dir, "agents", "Explore.md")) {
+		t.Fatalf("a built-in is not a file, the plugin holds %s", dir)
+	}
+	// A built-in alone needs no file in ~/.claude/agents and no plugin.
+	only, err := leanArgs([]string{"go"}, nil, "", nil, leanKit{Agents: []string{"Explore"}}, "", os.ReadFile)
+	if err != nil || count(only, "--plugin-dir") != 0 {
+		t.Fatalf("Explore alone: no plugin, no refusal, got %v %q", err, only)
+	}
+	if strings.Contains(","+flagValue(t, only, "--disallowedTools")+",", ",Agent,") {
+		t.Fatalf("Agent should be kept for Explore")
+	}
+}
+
+func TestLeanWithoutAgentsIsUnchangedByTheBuiltinRule(t *testing.T) {
+	if got := leanDisallowedFor(leanKit{}); strings.Join(got, ",") != strings.Join(leanDisallowed, ",") {
+		t.Fatalf("a lean launch with no agents changed: %v", got)
+	}
+	if got := leanDisallowedFor(leanKit{Skills: []string{"s"}}); strings.Contains(strings.Join(got, ","), "Agent(") {
+		t.Fatalf("skills alone add no agent rules: %v", got)
+	}
+	raw, err := leanSettings(nil, "", nil)
+	if err != nil || strings.Contains(raw, "lean-agents") {
+		t.Fatalf("no agents, no allowlist hook: %s %v", raw, err)
+	}
+}
+
+func fileExists(p string) bool { _, err := os.Stat(p); return err == nil }
