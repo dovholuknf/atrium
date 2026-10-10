@@ -188,3 +188,86 @@ if (document.getElementById("zoom-up")) {
   // Another read tab changed it.
   addEventListener("storage", e => { if (e.key === READ_FONT_KEY) cur = setReadFont(readFontStored(), false); });
 }
+
+// READING WIDTH, for the document only, under a key of its own. `narrow` is the prose measure and the default.
+const READ_WIDTH_KEY = "atrium.readwidth";
+const READ_WIDTHS = ["narrow", "wide", "full"];
+
+function readWidthStored() {
+  try {
+    const v = localStorage.getItem(READ_WIDTH_KEY);
+    if (READ_WIDTHS.indexOf(v) >= 0) return v;
+  } catch (e) {}
+  return "narrow";
+}
+
+function setReadWidth(w, save) {
+  if (READ_WIDTHS.indexOf(w) < 0) w = "narrow";
+  document.documentElement.setAttribute("data-width", w);
+  for (const b of document.querySelectorAll("#width button")) b.setAttribute("aria-pressed", String(b.dataset.width === w));
+  if (save) { try { localStorage.setItem(READ_WIDTH_KEY, w); } catch (e) {} }
+  return w;
+}
+
+if (document.getElementById("width")) {
+  setReadWidth(readWidthStored(), false);
+  for (const b of document.querySelectorAll("#width button")) b.addEventListener("click", () => setReadWidth(b.dataset.width, true));
+  addEventListener("storage", e => { if (e.key === READ_WIDTH_KEY) setReadWidth(readWidthStored(), false); });
+}
+
+// SKIN. The page wears the board's, which is the daemon's `board_skin`, and `css/themes.css` is where every skin is
+// defined, so nothing here knows a colour. The picker is for this page only: its choice is kept under a key of its
+// own, wins over the board's, and "the board's skin" in the list puts the board's back. Before the daemon answers
+// the page wears what the board last remembered in this browser, so it does not flash the default palette.
+const READ_SKIN_KEY = "atrium.readskin";
+const BOARD_SKIN_KEY = "atrium.skin";
+
+function readSkinStored() {
+  try { return localStorage.getItem(READ_SKIN_KEY) || ""; } catch (e) { return ""; }
+}
+
+// The board's skin as this browser last saw it, scoped to the room the way the board and the phone page scope it.
+function boardSkinRemembered() {
+  try {
+    const room = localStorage.getItem("atrium.room") || "";
+    return localStorage.getItem(BOARD_SKIN_KEY + (room ? "." + room : "")) || "";
+  } catch (e) { return ""; }
+}
+
+// The first name in the daemon's list is the default, which has no rule of its own: it is `:root`.
+function wearSkin(name, names) {
+  if (name && (!names.length || (name !== names[0] && names.indexOf(name) >= 0))) {
+    document.documentElement.setAttribute("data-skin", name);
+  } else {
+    document.documentElement.removeAttribute("data-skin");
+  }
+}
+
+if (document.getElementById("skin")) {
+  const sel = document.getElementById("skin");
+  const early = readSkinStored() || boardSkinRemembered();
+  if (early) document.documentElement.setAttribute("data-skin", early);
+  let names = [], board = "";
+  const paint = () => {
+    const mine = readSkinStored();
+    wearSkin(mine || board || boardSkinRemembered(), names);
+    sel.value = mine && names.indexOf(mine) >= 0 ? mine : "";
+  };
+  sel.innerHTML = '<option value="">the board\'s skin</option>';
+  sel.addEventListener("change", () => {
+    try { sel.value ? localStorage.setItem(READ_SKIN_KEY, sel.value) : localStorage.removeItem(READ_SKIN_KEY); } catch (e) {}
+    paint();
+  });
+  addEventListener("storage", e => { if (e.key === READ_SKIN_KEY) paint(); });
+  fetch("/v1/settings").then(r => r.ok ? r.json() : null).then(s => {
+    if (!s) return;
+    names = Array.isArray(s.board_skins) ? s.board_skins : [];
+    board = typeof s.board_skin === "string" ? s.board_skin : "";
+    for (const n of names) {
+      const o = document.createElement("option");
+      o.value = n; o.textContent = n;
+      sel.appendChild(o);
+    }
+    paint();
+  }).catch(() => {});
+}
