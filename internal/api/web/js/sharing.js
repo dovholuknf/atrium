@@ -793,45 +793,113 @@ async function closeCardNow(id, t, via) {
   try { pv = via ? await post({}) : await api(`/v1/tasks/${encodeURIComponent(id)}/close`); }
   catch (e) { toast("could not read what closing it frees", e.message); return; }
   const title = (t && t.display_title) || id;
-  const answers = {};
-  for (const a of pv.asks || []) {
-    const buttons = [{ label: "cancel", value: null }, { label: "keep", value: "keep" }];
-    if (pv.can_stash) buttons.push({ label: "stash to the hub", value: "stash" });
-    buttons.push({ label: "delete", value: "delete", style: "no" });
-    const ans = await askUser({
-      title: "work only this worktree has",
-      body: `<b>${esc(a.path)}</b> on <b>${esc(a.branch || "no branch")}</b>: ` +
-        `${a.dirty} changed files, ${a.unpushed} commits on no remote and not on the hub.<br><br>` +
-        `<b>keep</b> leaves it on disk and on the card. ` +
-        (pv.can_stash ? `<b>stash</b> pushes it to the hub as stash/&lt;card&gt;/&lt;branch&gt;, then removes it. ` : "") +
-        `<b>delete</b> removes it, and the work is gone.`,
-      buttons
-    });
-    if (ans === null) return;
-    answers[String(a.seq)] = ans;
-  }
-  const going = (pv.items || []).filter(it => it.action === "free")
-    .map(it => `<li>${esc(it.kind)} ${esc(it.ref)}</li>`).join("");
+  // ONE DIALOG. The summary, each asked worktree as a row with its choice inline (stash when the room can, else keep,
+  // never delete unasked), and one button. Pressed, the dialog stays up and names each step as the server says it
+  // (close-progress, see onCloseProgress), shut by itself when done and left open on a step that failed.
+  const sized = n => (typeof diskLabel === "function" && n ? ` (${esc(diskLabel(n))})` : "");
+  const going = (pv.items || []).filter(it => it.action === "free" || it.action === "ask")
+    .map(it => `<li>${esc(it.kind)} ${esc(it.ref)}${it.kind === "worktree" ? sized(it.bytes) : ""}</li>`).join("");
   const kept = (pv.kept || []).map(k => `<li>${esc(k)}</li>`).join("");
   const warns = (pv.warnings || []).map(w => `<li>${esc(w)}</li>`).join("");
-  const disk = typeof diskLabel === "function" && pv.disk_bytes ? ` (${esc(diskLabel(pv.disk_bytes))})` : "";
-  if (!await confirmUser(`close ${title}?`,
-    (going ? `Frees${disk}:<ul>${going}</ul>` : "Nothing on disk to free.<br>") +
-    (warns ? `<ul>${warns}</ul>` : "") +
+  const pick = (a, v, label, cls) => `<label${cls ? ` class="${cls}"` : ""}><input type="radio" name="cw-${esc(String(a.seq))}" ` +
+    `value="${v}"${v === (pv.can_stash ? "stash" : "keep") ? " checked" : ""}> ${label}</label>`;
+  const rows = (pv.asks || []).map(a =>
+    `<div class="close-wt" data-seq="${esc(String(a.seq))}"><div class="cw-what"><b>${esc(a.path)}</b>${sized(a.bytes)} on ` +
+    `<b>${esc(a.branch || "no branch")}</b></div><div class="cw-why">${a.dirty} changed files, ${a.unpushed} commits on no ` +
+    `remote and not on the hub</div><div class="cw-pick">` + pick(a, "keep", "keep") +
+    (pv.can_stash ? pick(a, "stash", "stash to the hub") : "") + pick(a, "delete", "delete, the work is gone", "cw-del") +
+    `</div></div>`).join("");
+  const body =
+    (going ? `Frees${sized(pv.disk_bytes)}:<ul>${going}</ul>` : "Nothing on disk to free.<br>") +
+    (warns ? `<ul>${warns}</ul>` : "") + rows +
     `Kept:<ul>${kept}</ul>` +
-    (via ? "No card holds these." : "The card goes to <b>done</b>. A re-paste of the link starts a fresh card."),
-    "close it")) return;
-  try {
-    const out = await post({ confirm: true, answers });
-    const said = [];
-    (out.stashes || []).forEach(s => said.push("stashed " + s.branch));
-    if (out.left) said.push(out.left + " left on the card");
-    (out.warnings || []).forEach(w => said.push(w));
-    toast("closed " + title, said.join(". "));
-  } catch (e) {
-    toast("could not close it", e.message);
+    (via ? "No card holds these." : "The card goes to <b>done</b>. A re-paste of the link starts a fresh card.") +
+    `<ul class="close-steps" id="close-steps" aria-live="polite"></ul>`;
+  const run = async () => {
+    const answers = {};
+    document.querySelectorAll("#ask-body .close-wt").forEach(row => {
+      const on = row.querySelector("input:checked");
+      if (on) answers[row.dataset.seq] = on.value;
+      row.querySelectorAll("input").forEach(i => { i.disabled = true; });
+    });
+    closeProgressId = "close-" + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+    closeFailed = false;
+    setClosing(id, true);
+    try {
+      const out = await post({ confirm: true, answers, progress: closeProgressId });
+      const said = [];
+      (out.stashes || []).forEach(s => said.push("stashed " + s.branch));
+      if (out.left) said.push(out.left + " left on the card");
+      (out.warnings || []).forEach(w => said.push(w));
+      toast("closed " + title, said.join(". "));
+      // A row that did not free is a failure even when no step event said so (a stream that was down).
+      (out.items || []).filter(it => it.error).forEach(it =>
+        closeStepSay({ key: "row:" + it.kind + ":" + it.ref, line: it.kind + " " + it.ref, state: "fail", detail: it.error }));
+      refresh();
+      return closeFailed ? "stay" : "close";
+    } catch (e) {
+      closeStepSay({ key: "error", line: "could not close it", state: "fail", detail: e.message });
+      toast("could not close it", e.message);
+      refresh();
+      return "stay";
+    } finally {
+      closeProgressId = "";
+      setClosing(id, false);
+    }
+  };
+  await askUser({
+    title: `close ${title}?`, body,
+    buttons: [{ label: "cancel", value: null }, { label: "close it", value: true, style: "go", hold: run }]
+  });
+}
+
+// WHAT A CLOSE IS DOING, in the close dialog. The server broadcasts each step as `close-progress` carrying the id this
+// close sent: running, then ok or fail with what git said. A row per step, in the order they arrive.
+let closeProgressId = "";
+let closeFailed = false;
+
+function closeStepSay(d) {
+  const ul = document.getElementById("close-steps");
+  if (!ul) return;
+  let li = [...ul.children].find(x => x.dataset.key === d.key);
+  if (!li) {
+    li = document.createElement("li");
+    li.dataset.key = d.key;
+    ul.appendChild(li);
   }
-  refresh();
+  li.className = d.state;
+  const secs = d.state !== "run" && d.seconds >= 1 ? ` ${d.seconds.toFixed(1)}s` : "";
+  li.innerHTML = `<span class="cs-mark"></span><span>${esc(d.line)}</span>` +
+    (d.detail || secs ? `<span class="cs-detail">${esc(d.detail || "")}${esc(secs)}</span>` : "");
+  if (d.state === "fail") closeFailed = true;
+}
+
+function onCloseProgress(e) {
+  let d;
+  try { d = JSON.parse(e.data); } catch (err) { return; }
+  if (!d || !closeProgressId || d.id !== closeProgressId || !d.key) return;
+  closeStepSay(d);
+}
+
+// A card being closed reads "closing" on the board until the close is over. The rules are written per id into one style
+// element, so a redraw of the card does not lose it.
+const closingIds = new Set();
+
+function setClosing(id, on) {
+  if (on) closingIds.add(id); else closingIds.delete(id);
+  let st = document.getElementById("closing-style");
+  if (!st) {
+    st = document.createElement("style");
+    st.id = "closing-style";
+    document.head.appendChild(st);
+  }
+  st.textContent = [...closingIds].map(i => {
+    const sel = `.card[data-id="${CSS.escape(i)}"], .stackrow[data-id="${CSS.escape(i)}"]`;
+    return `${sel} { opacity: .55; position: relative; }\n` +
+      sel.split(", ").map(s => s + "::after").join(", ") +
+      ` { content: "closing"; position: absolute; right: 8px; top: 6px; font: 600 11px/1 var(--sans); ` +
+      `color: rgb(var(--warn-rgb)); }`;
+  }).join("\n");
 }
 
 // TERMINATE AND CLEAN UP, the terminals tab menu's last entry. The same close as `closeCardAsk` (internal/api/close.go:

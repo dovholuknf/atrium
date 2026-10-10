@@ -1943,6 +1943,10 @@ function connect() {
   es.addEventListener("open-progress", e => {
     if (typeof onOpenProgress === "function") onOpenProgress(e);
   });
+  // A step of a close: a row in the close dialog. See closeCardNow in js/sharing.js.
+  es.addEventListener("close-progress", e => {
+    if (typeof onCloseProgress === "function") onCloseProgress(e);
+  });
   es.addEventListener("backlog", () => {
     if (typeof onBacklogEvent === "function") onBacklogEvent();
   });

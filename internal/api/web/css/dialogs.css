@@ -798,3 +798,24 @@
   }
   #open-progress[hidden] { display: none; }
 
+  /* THE CLOSE DIALOG: the summary, a row per asked worktree with its choice inline, then the steps as they run. */
+  .close-wt { margin: 8px 0; padding: 8px 10px; border: 1px solid rgba(var(--stroke-rgb), .6); border-radius: 6px; }
+  .close-wt .cw-what { font: 500 var(--fs-sm)/1.4 var(--sans); }
+  .close-wt .cw-why { color: var(--dim); font: var(--fs-sm)/1.4 var(--sans); margin-top: 2px; }
+  .close-wt .cw-pick { display: flex; gap: 14px; margin-top: 6px; flex-wrap: wrap; }
+  .close-wt .cw-pick label { cursor: pointer; }
+  .close-wt .cw-pick label.cw-del { color: var(--danger); }
+  .close-steps { list-style: none; margin: 10px 0 0; padding: 0; }
+  .close-steps li { display: flex; gap: 8px; align-items: baseline; padding: 2px 0; font: var(--fs-sm)/1.4 var(--sans); }
+  .close-steps .cs-mark { width: 1.2em; text-align: center; flex: none; }
+  .close-steps li.run .cs-mark::before { content: ""; display: inline-block; width: .8em; height: .8em; border-radius: 50%;
+    border: 2px solid rgba(var(--teal-rgb), .3); border-top-color: rgb(var(--teal-rgb)); animation: cs-turn .8s linear infinite; }
+  .close-steps li.ok .cs-mark::before { content: "\2713"; color: rgb(var(--teal-rgb)); }
+  .close-steps li.fail .cs-mark::before { content: "\2717"; color: var(--danger); }
+  .close-steps li.fail { color: var(--danger); }
+  .close-steps .cs-detail { color: var(--dim); }
+  @keyframes cs-turn { to { transform: rotate(360deg); } }
+  dialog#ask #ask-actions button.busy::after { content: ""; display: inline-block; width: .8em; height: .8em; margin-left: 8px;
+    vertical-align: -1px; border-radius: 50%; border: 2px solid rgba(255,255,255,.35); border-top-color: currentColor;
+    animation: cs-turn .8s linear infinite; }
+

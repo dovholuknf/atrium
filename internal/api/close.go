@@ -89,6 +89,8 @@ type closeAsk struct {
 	Branch   string `json:"branch,omitempty"`
 	Dirty    int    `json:"dirty"`
 	Unpushed int    `json:"unpushed"`
+	// Bytes is what the worktree holds on disk now, ignored trees (node_modules) included.
+	Bytes int64 `json:"bytes"`
 }
 
 type closePreview struct {
@@ -105,6 +107,8 @@ type closeRequest struct {
 	Confirm bool `json:"confirm"`
 	// Answers is keep, stash or delete by the worktree row's seq.
 	Answers map[string]string `json:"answers"`
+	// Progress is the id the board sends so each step of the close is broadcast as a close-progress event with it.
+	Progress string `json:"progress,omitempty"`
 }
 
 type closeStash struct {
@@ -200,7 +204,8 @@ func (s *Server) closeFlow(w http.ResponseWriter, r *http.Request, t *store.Task
 			"preview": pv})
 		return
 	}
-	writeJSON(w, http.StatusOK, s.closeCard(t, pv, in.Answers, orphan))
+	steps := s.newCloseSteps(strings.TrimSpace(in.Progress), t.ID)
+	writeJSON(w, http.StatusOK, s.closeCard(t, pv, in.Answers, orphan, steps))
 }
 
 // cardRunning is whether a card's session may still be going.
@@ -238,11 +243,19 @@ func (s *Server) closePreview(ctx context.Context, t *store.Task) (*closePreview
 				it.Note = "already gone from disk"
 				break
 			}
+			// Measured now, ignored trees included: a stored size can predate the install that made 0.4 GB of
+			// node_modules, and the dialog must not say a small number for a big delete.
+			mctx, mcancel := context.WithTimeout(ctx, measureWait)
+			if n := dirSize(mctx, filepath.FromSlash(r.Ref)); n > 0 {
+				it.Bytes = n
+				pv.DiskBytes += n - max(r.Bytes, 0)
+			}
+			mcancel()
 			dirty, unpushed, branch := worktreeWork(ctx, r.Ref)
 			if dirty > 0 || unpushed > 0 {
 				it.Action = "ask"
 				pv.Asks = append(pv.Asks, closeAsk{Seq: r.Seq, Path: r.Ref, Branch: branch, Dirty: dirty,
-					Unpushed: unpushed})
+					Unpushed: unpushed, Bytes: it.Bytes})
 			}
 		case store.ResBranch:
 			it.Note = "deleted with its worktree, kept when the worktree is kept"
@@ -362,14 +375,17 @@ func gitIn(ctx context.Context, dir string, args ...string) (string, error) {
 }
 
 // closeCard frees the inventory in the close's order and moves the card to done. An orphan has no card to move.
-func (s *Server) closeCard(t *store.Task, pv *closePreview, answers map[string]string, orphan bool) *closeResult {
+func (s *Server) closeCard(t *store.Task, pv *closePreview, answers map[string]string, orphan bool,
+	steps *closeSteps) *closeResult {
 	res := &closeResult{Card: t.ID, Stashes: []closeStash{}, Warnings: []string{}}
 	warn := func(format string, a ...any) { res.Warnings = append(res.Warnings, fmt.Sprintf(format, a...)) }
 
 	// 1. the runner
 	if cardRunning(t) && s.Kill != nil {
+		steps.begin("session", "stopping the session")
 		if err := s.Kill(t.ID); err != nil {
 			warn("the session did not stop: %v. a worktree it holds open may not remove", err)
+			steps.problem("%v", err)
 		}
 	}
 
@@ -403,16 +419,23 @@ func (s *Server) closeCard(t *store.Task, pv *closePreview, answers map[string]s
 	}
 
 	// 1b. its processes, so nothing holds the worktree, then its ports
+	if n := len(of(store.ResProc)); n > 0 {
+		steps.begin("processes", fmt.Sprintf("stopping %d %s", n, plural(n, "process", "processes")))
+	}
 	for _, r := range of(store.ResProc) {
 		if procStillIt(r) {
 			pid, _ := strconv.Atoi(r.Ref)
 			if err := cardproc.StopTree(pid); err != nil {
 				failed(r, err)
 				warn("process %s did not stop: %v", r.Ref, err)
+				steps.problem("process %s: %v", r.Ref, err)
 				continue
 			}
 		}
 		freed(r)
+	}
+	if n := len(of(store.ResPort)); n > 0 {
+		steps.begin("ports", fmt.Sprintf("releasing %d %s", n, plural(n, "port", "ports")))
 	}
 	for _, r := range of(store.ResPort) {
 		freed(r)
@@ -424,9 +447,11 @@ func (s *Server) closeCard(t *store.Task, pv *closePreview, answers map[string]s
 		if home == "" {
 			continue
 		}
+		steps.begin("overlay:"+strconv.Itoa(r.Seq), "deleting the overlay "+r.Ref)
 		if err := removeAllSoon(home); err != nil {
 			failed(r, err)
 			warn("%s did not delete: %v", r.Ref, err)
+			steps.problem("%v", err)
 			continue
 		}
 		freed(r)
@@ -434,14 +459,20 @@ func (s *Server) closeCard(t *store.Task, pv *closePreview, answers map[string]s
 	}
 
 	// 2. the review
-	for _, p := range s.walkedOutside(t.ID, rows) {
+	outside := s.walkedOutside(t.ID, rows)
+	if len(outside)+len(of(store.ResReview)) > 0 {
+		steps.begin("review", "archiving the review")
+	}
+	for _, p := range outside {
 		if err := s.closeReview(p.ID); err != nil {
 			warn("the review %s did not archive: %v", p.ID, err)
+			steps.problem("%v", err)
 		}
 	}
 	for _, r := range of(store.ResReview) {
 		if err := s.closeReview(r.Ref); err != nil {
 			failed(r, err)
+			steps.problem("%v", err)
 			continue
 		}
 		freed(r)
@@ -452,13 +483,21 @@ func (s *Server) closeCard(t *store.Task, pv *closePreview, answers map[string]s
 	for _, r := range of(store.ResWorktree) {
 		a, isAsked := asked[r.Seq]
 		ans := answers[strconv.Itoa(r.Seq)]
+		key := "worktree:" + strconv.Itoa(r.Seq)
+		if isAsked && ans == CloseKeep {
+			steps.begin(key, "keeping "+r.Ref)
+			keptBranch[r.Detail+"\x00"+a.Branch] = true
+			continue
+		}
 		if isAsked && ans == CloseStash {
+			steps.begin(key, "stashing "+r.Ref+" to the hub")
 			ctx, cancel := context.WithTimeout(context.Background(), 2*closeGitWait)
 			hubBranch, hubRepo, err := s.Stash(ctx, t.ID, r.Ref, a.Branch)
 			cancel()
 			if err != nil {
 				warn("%s was kept: the stash did not land: %v", r.Ref, err)
 				failed(r, fmt.Errorf("kept, the stash did not land: %w", err))
+				steps.problem("kept, the stash did not land: %v", err)
 				ans = CloseKeep
 			} else {
 				res.Stashes = append(res.Stashes, closeStash{Branch: hubBranch, Repo: hubRepo})
@@ -472,19 +511,27 @@ func (s *Server) closeCard(t *store.Task, pv *closePreview, answers map[string]s
 			continue
 		}
 		// Measured now, ignored trees included, so the row says what was freed and not what an early look saw.
-		if n := dirSize(context.Background(), filepath.FromSlash(r.Ref)); n > 0 {
+		n := dirSize(context.Background(), filepath.FromSlash(r.Ref))
+		if n > 0 {
 			_ = s.st.SetResourceBytes(r.Card, r.Seq, n)
+		}
+		if !(isAsked && ans == CloseStash) {
+			steps.begin(key, "removing "+r.Ref+sizeNote(n))
 		}
 		if err := removeWorktree(r.Detail, r.Ref); err != nil {
 			failed(r, err)
 			keptBranch[r.Detail+"\x00"+a.Branch] = true
 			warn("%s did not remove: %v", r.Ref, err)
+			steps.problem("%v", err)
 			continue
 		}
 		freed(r)
 	}
 
 	// 4. branches, 5. refs
+	if n := len(of(store.ResBranch)); n > 0 {
+		steps.begin("branches", fmt.Sprintf("deleting %d %s", n, plural(n, "branch", "branches")))
+	}
 	for _, r := range of(store.ResBranch) {
 		if keptBranch[r.Detail+"\x00"+r.Ref] {
 			continue
@@ -494,9 +541,13 @@ func (s *Server) closeCard(t *store.Task, pv *closePreview, answers map[string]s
 		cancel()
 		if err != nil && branchStillThere(r.Detail, r.Ref) {
 			failed(r, err)
+			steps.problem("%v", err)
 			continue
 		}
 		freed(r)
+	}
+	if n := len(of(store.ResRef)); n > 0 {
+		steps.begin("refs", fmt.Sprintf("deleting %d %s", n, plural(n, "ref", "refs")))
 	}
 	for _, r := range of(store.ResRef) {
 		ctx, cancel := context.WithTimeout(context.Background(), closeGitWait)
@@ -504,6 +555,7 @@ func (s *Server) closeCard(t *store.Task, pv *closePreview, answers map[string]s
 		cancel()
 		if err != nil {
 			failed(r, err)
+			steps.problem("%v", err)
 			continue
 		}
 		freed(r)
@@ -515,15 +567,19 @@ func (s *Server) closeCard(t *store.Task, pv *closePreview, answers map[string]s
 		if dir == "" {
 			continue
 		}
+		steps.begin("scratch:"+strconv.Itoa(r.Seq), "removing the scratch folder "+r.Ref)
 		if err := os.RemoveAll(dir); err != nil {
 			failed(r, err)
 			warn("%s did not remove: %v", r.Ref, err)
+			steps.problem("%v", err)
 			continue
 		}
 		freed(r)
 	}
 
 	// 6. the card
+	steps.begin("card", "marking the card done")
+	defer steps.end("")
 	after, _ := s.st.Resources(t.ID)
 	res.Items = []closeItem{}
 	for _, r := range after {
@@ -591,7 +647,7 @@ func (s *Server) reclaimInventory(ctx context.Context, t *store.Task) {
 	for _, a := range pv.Asks {
 		answers[strconv.Itoa(a.Seq)] = CloseKeep
 	}
-	s.closeCard(t, pv, answers, false)
+	s.closeCard(t, pv, answers, false, nil)
 }
 
 // POST /v1/tasks/{id}/cleanup-offer claims the one offer of a "clean up when done" close: it swaps cleanup:when-done
