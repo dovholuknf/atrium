@@ -393,6 +393,12 @@ func TestMainIsRefreshedAtMostOncePerFreshFor(t *testing.T) {
 	if _, err := x.h.Store().Init(bg, repoURL); err != nil {
 		t.Fatal(err)
 	}
+	// A frozen clock, so a slow machine cannot run out the window between the two fetches.
+	frozen := time.Now()
+	fs := &x.h.Store().forge
+	fs.mu.Lock()
+	fs.now = func() time.Time { return frozen }
+	fs.mu.Unlock()
 	next := x.forgeMain(t, "b.txt", 2000)
 	x.stale()
 	if got, err := x.fetchHead(t, "main"); err != nil || got != next {
