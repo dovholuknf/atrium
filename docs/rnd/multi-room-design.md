@@ -190,7 +190,7 @@ without anybody having to watch for the moment they all stop.
 ### The objection it has to answer
 
 `docs/archive/architecture-v2.md` ("Open risks") and `docs/rnd/process-registry-design.md` both say ConPTY offers no
-reattach, so a runner cannot outlive the room on Windows. `docs/rnd/charon.md` section 3 adopts Charon's holder for
+reattach, so a runner cannot outlive the room on Windows. the Charon read adopts Charon's holder for
 POSIX only, for the same reason.
 
 That is true of handing a pseudo console from one process to another, and C never does that. The holder CREATES the
@@ -246,7 +246,7 @@ On claudevm only, never a live room:
 2. The same with `claude` in the pseudo console, driven through a resize and a reattach.
 3. The same on m1mini, only once clint says m1mini may be used, and on Linux when there is a box.
 
-If step 1 fails, C is POSIX only, as `docs/rnd/charon.md` already says, and the Windows answer stays park and resume.
+If step 1 fails, C is POSIX only, as the Charon read already says, and the Windows answer stays park and resume.
 
 ## Open questions for clint
 

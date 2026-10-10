@@ -13,9 +13,9 @@ any of it can be built safely, because the assumption everyone reaches for first
 halves of it have since been answered: `internal/safepath` is the primitive it says has to exist, and
 `internal/api/browseroots.go` bounds `browse.go` through that primitive, so the share exposure described below
 is closed. It is kept as written because the reasoning is what the answer was built from, and because the
-correction it makes to `docs/rnd/charon.md` still stands.
+correction it makes to the earlier Charon read still stands.
 
-`docs/rnd/charon.md` says, of an upload endpoint:
+The earlier Charon read says, of an upload endpoint:
 
 > `browse.go` already decides what a safe path is, so the landing spot should be derived from `task.worktree`
 > through that same answer rather than from a second idea of safety.
@@ -206,7 +206,7 @@ The shape is HTTP `If-Match` and the reference implementation is Charon's `fs_wr
 returns the file's real hash and does not write. There is no lock and nothing arbitrates who owns a file. The
 daemon simply refuses to clobber silently.
 
-One correction to that reference, which `docs/rnd/charon.md` already makes and which is the only interesting design
+One correction to that reference, which the Charon read already makes and which is the only interesting design
 decision in this section. Charon spells force-overwrite as `expected_sha256=None`, which makes "I did not think
 about this" and "clobber it deliberately" the same value.
 

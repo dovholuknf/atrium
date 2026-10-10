@@ -7,8 +7,8 @@ Origin: research, @rnd, 2026-09-29. Input to the mobile design workshop @ui lead
 do, what a phone is for, and the constraints and recommendations the design should start from.
 
 Method, honestly: product docs and READMEs read on 2026-09-29, not source reads. Claude Code's Remote Control page
-was read in full. Happy's and Omnara's pages gave feature lists and little mechanism. A source read in the `bb.md`
-style is follow-up work, if the workshop wants one.
+was read in full. Happy's and Omnara's pages gave feature lists and little mechanism. A source read
+of each is follow-up work, if the workshop wants one.
 
 ## 1. What the other tools do
 

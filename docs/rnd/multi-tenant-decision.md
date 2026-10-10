@@ -114,7 +114,7 @@ It would be a lie, because the isolation would end at the row. Two things reach 
 - **The peer bus.** `internal/daemon/peers.go:115` builds the addressable list from `d.st.List()` with no filter
   beyond status, and `handleTell` takes `from` off the request body and qualifies it. Nothing checks that the
   caller is who it says it is. Under two tenants, one person's session can enumerate the other's sessions and
-  queue a message into one, wearing any name it likes. `docs/rnd/charon.md` makes discovery mandatory before
+  queue a message into one, wearing any name it likes. Charon makes discovery mandatory before
   sending, which is correct for one operator and is a directory service for everybody else's work under two.
 - **Permission rules.** `MatchRule` (`internal/store/rules.go:329`) scopes on `scope = '' OR scope = ?`, where
   scope is a WORKTREE PATH. An empty scope is a wildcard over the entire database. The only existing scoping key

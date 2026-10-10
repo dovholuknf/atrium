@@ -229,7 +229,7 @@ The jump came once the director agents started, on 09-28 at 22:00.
 
 ### Other
 
-- Research shelf in `docs/rnd/` — source reads of Charon, bb, Orca, gateway fit, factory landscape, a $2,500 room-machine spec — `docs/rnd/charon.md`, `bb.md`, `orca.md`, `gateway-fit.md`, `room-machine-2500-design.md` — 2026-09-03 to 10-01
+- Research shelf in `docs/rnd/` — gateway fit, factory landscape, a $2,500 room-machine spec — `docs/rnd/gateway-fit.md`, `room-machine-2500-design.md` — 2026-09-03 to 10-01
 
 ## 2. Designed, not built (or only partly built)
 
@@ -357,7 +357,6 @@ here name a design that was later built, and the line says so: the design doc is
 - Postgres probe — all 80 DDL statements across 38 migrations apply to Postgres 17 unmodified; what breaks is the halt, the migration runner and four read-then-write pairs — `docs/rnd/postgres-probe.md` — research, no port planned
 - Hook coverage — what the seven unused Claude Code hook events would buy — `docs/rnd/hook-coverage-spike.md` — spike
 - mcp-gateway, llm-gateway and sterling fit — `docs/rnd/spike-mcp-gateway.md`, `docs/rnd/gateway-fit.md`, `docs/rnd/ai-platform-fit.md` — spikes; ideas 2 and 3 built as f-020 and f-021
-- Source reads — Charon, Orca and bb — `docs/rnd/charon.md`, `docs/rnd/orca.md`, `docs/rnd/bb.md` — research
 - Packaging and publishing costs — `docs/release/packaging.md` — partly built (deb, service)
 
 ## 3. Wanted (asked for or queued, not designed yet)

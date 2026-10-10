@@ -106,12 +106,10 @@ build status is not settled yet and the batch settles it from the code before wr
 | `docs/rnd/agent-lineage-design.md` | 208 | before 09-29 (reorg) | Agent lineage: who spawned whom, and showing it | STATUS (check) |
 | `docs/rnd/ai-platform-fit.md` | 342 | before 09-29 (reorg) | Does atrium fit the rest of the stack | STATUS research |
 | `docs/rnd/background-hold-design.md` | 40 | before 09-29 (reorg) | 31 design: hold STUCK while background work runs | STATUS (check) |
-| `docs/rnd/bb.md` | 356 | before 09-29 (reorg) | bb: what it is, and what atrium should do about it | THIRD PARTY: a read of another tool. .gitignore policy says local only. DELETE? or keep |
 | `docs/rnd/card-urls-design.md` | 215 | 2026-09-30 | Card URLs: a card has an address made of names, and every share kee... | STATUS built (/alias/) |
 | `docs/rnd/change-lifecycle-design.md` | 280 | 2026-10-02 | Change lifecycle: the stages a change goes through, each with its g... | STATUS (check) |
 | `docs/rnd/change-record-design.md` | 188 | 2026-10-02 | Change record: atrium keeps "where are we" for every branch and PR,... | STATUS proposed |
 | `docs/rnd/changes-view-design.md` | 95 | 2026-09-29 | A Changes view on every card (design) | STATUS built? (`/changes` route exists) |
-| `docs/rnd/charon.md` | 786 | before 09-29 (reorg) | Charon: what it is, and what atrium should do about it | THIRD PARTY, as bb.md |
 | `docs/rnd/config-alignment-design.md` | 347 | 2026-10-02 | Config alignment: one config for every session atrium starts, owned... | STATUS proposed |
 | `docs/rnd/context-limit-ownership-design.md` | 348 | 2026-10-02 | Who owns the context limit: atrium's new context or the runner's co... | MERGE into runtime/context-cycle-design.md, or STATUS superseded by it |
 | `docs/rnd/defender-advice-design.md` | 147 | 2026-09-30 | Defender advice (r-new-defender-advice) | STATUS built (`scripts/room-defender.ps1`) |
@@ -147,7 +145,6 @@ build status is not settled yet and the batch settles it from the code before wr
 | `docs/rnd/open-with-system-design.md` | 130 | 2026-09-30 | Open with the system (u-new-open-with-system) | STATUS (check) |
 | `docs/rnd/opencode-token-routing.md` | 242 | 2026-10-02 | OpenCode token routing: using clint's Kimi and OpenCode Go models w... | STATUS (check) |
 | `docs/rnd/operator-focus.md` | 412 | 2026-10-02 | Operator focus: one numbered list of decisions, shorter reports, an... | STATUS (check) |
-| `docs/rnd/orca.md` | 388 | before 09-29 (reorg) | Orca: what it is, and what atrium should do about it | THIRD PARTY, as bb.md |
 | `docs/rnd/otel-export-design.md` | 269 | 2026-10-02 | OpenTelemetry export: atrium sends traces, metrics and logs to a co... | STATUS (check) |
 | `docs/rnd/overlay-room-identity.md` | 156 | 2026-09-29 | Decision 18: what proves a room's name over an overlay (rd-003) | STATUS built (rooms legacy allow/refuse), decision 18 |
 | `docs/rnd/owed-report-design.md` | 123 | before 09-29 (reorg) | A card owes its launcher a report only for a prompt its launcher sent | STATUS built |

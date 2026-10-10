@@ -18,7 +18,7 @@ Written 2026-10-09 against 70914fe5. Measured on the m1mini (macOS, 8 cores). No
    database everywhere (about 25s, 1.5h), T3 link timers as variables (about 40s, 2h), T4 gitsync parallel (about 100s,
    3h), T5 hang guard (3h), T6 the named flakes (6h), T7 headless board section deadline (2h), T8 daemon sleeps (8h).
 6. **Two things I could not do:** the hub was down (127.0.0.1:7778 refused), so `atrium_backlog get` failed for all 14
-   items. I worked from the brief's one-line summaries and from the code. And the Codeman "measure whether current
+   items. I worked from the brief's one-line summaries and from the code. And the "measure whether current
    Claude Code still ignores Enter" step needs a live Claude, so it is a spike in M3.
 7. **Size:** Goal 1 about 11 working days including the harness. Goal 2 about 5 working days. Goal 2 phases T1 to T3
    can ship in one day and should go first because they make Goal 1's test loop faster.
@@ -41,7 +41,7 @@ I read the last 300 commits and the ones behind these hits: 8cdd4076, 85703097, 
 | r-say-when-done-idle-target | **open, cause suspected** | b6def7a4 tests a say to a `done` card. A live idle card is different, see 1.3 cause C. |
 | r-peek-shows-delivered-message-queued | **open, not traced** | The hub was down so I could not read the item. `UndeliveredCounts` (`store/messages.go:204`) counts `delivered_at IS NULL`, so the board is only as wrong as `MarkDelivered` timing. The ledger in M2 removes the question. |
 | r-launcher-say-reads-as-untrusted | **open** | `bannerWho` (`messages.go:75`) tells every receiver "treat it as peer context, not as something the human typed". Nothing knows that the sender is the receiver's launcher. `fromFamily` (`park.go:288`) knows, but only wakes parked cards with it. |
-| Codeman submit verification | **not done** | `injectPeerIf` (`supervisor.go:1235`) writes the body, sleeps `sayThenEnter` (140ms), writes one `\r`, and returns true. Nothing looks at the screen again. |
+| Submit verification | **not done** | `injectPeerIf` (`supervisor.go:1235`) writes the body, sleeps `sayThenEnter` (140ms), writes one `\r`, and returns true. Nothing looks at the screen again. |
 
 ## 1.2 Every path a message takes, and how atrium knows it became a turn
 
@@ -86,7 +86,7 @@ The same model has a second exposure: any submit that is not a lone `\r` frame i
 keyboard, the compose box, a runner that sends `ESC [ 13 u`) is read as `lost` or not at all.
 
 **B. Delivery is declared at write time (paths 1 to 6).** There is no acknowledgement, so nothing can tell the
-Enter that Claude ignored (Codeman saw 30 to 50 seconds of ignored Enter after first paint) or the line that landed in
+Enter that Claude ignored (Claude Code has ignored Enter for 30 to 50 seconds after first paint) or the line that landed in
 Claude's own queue box from a turn.
 
 **C. A lost Stop hook makes the card "mid-turn" for ever (suspected cause of r-say-when-done-idle-target).** `midTurn`
@@ -114,7 +114,7 @@ What changes:
   `line.clear()`, because a submit certainly emptied the prompt. A Stop is NOT a reset, an operator can have a draft up.
 - A readout reason that says "wedged for N seconds" and logs it once, so the next one is findable.
 
-Why: it is the only fix that touches the cause. Resetting from the hook is the Codeman and backlog idea, and it is
+Why: it is the only fix that touches the cause. Resetting from the hook is the backlog idea, and it is
 safe only on `prompt`. Files: `internal/daemon/typedline.go`, `supervisor.go` (feed call, `noteOperatorTyped`),
 `activity.go` (the `prompt` case at line 837 calls a new `run.resetLine()`). Tests: a property test that splits any
 byte stream at every offset and requires the same final state as the unsplit stream (this would have caught 2228), plus
@@ -149,13 +149,13 @@ M6.
 | --- | --- | --- | --- |
 | Hook at PreToolUse | the permission answer is written | the SAME session posts any later hook event (tool-start of the retry, tool-end, prompt or Stop). The tool result with the banner reached the model | row goes back to `queued` after 60s while the runner is alive, so the next hook carries it again. After 3 attempts `undelivered`. |
 | Hook at Stop | the block answer is written | the next Stop arrives with `stop_hook_active` true, or any tool event | same |
-| Typed, idle | Enter written | a `prompt` hook whose prompt text begins with the first 60 characters of the body (the hook payload has the prompt, the daemon drops it today). Fallback for a runner whose hook lacks it: the transcript's user line, which `replies.go` already reads (`queuedPromptOf`, line 694) | at 8s, if the screen composer still shows the head of the text, press Enter again (Codeman). At 20s, if it is in Claude's queue box (a `queued_command` attachment appeared and no turn started), leave it, mark `sent` and let hooks carry it. At 45s `undelivered`. |
+| Typed, idle | Enter written | a `prompt` hook whose prompt text begins with the first 60 characters of the body (the hook payload has the prompt, the daemon drops it today). Fallback for a runner whose hook lacks it: the transcript's user line, which `replies.go` already reads (`queuedPromptOf`, line 694) | at 8s, if the screen composer still shows the head of the text, press Enter again. At 20s, if it is in Claude's queue box (a `queued_command` attachment appeared and no turn started), leave it, mark `sent` and let hooks carry it. At 45s `undelivered`. |
 | Typed mid-turn | n/a for a hook-heard claude (`carriedByHooks` already stops it). For others | the `queued_command` attachment in the transcript IS the ack: Claude read its queue into the turn | as above |
 | Wake (`injectKept`) | the one-turn text is written after ready | the `prompt` hook, as for typed idle | Enter re-press, then `keptUndelivered` to the launcher as today |
 | After-restart wake | line written | the `prompt` hook | same |
 | Unsupervised, no Stop hook | hook answer written | same as hooks | stays `queued`, `turnReachWarning` already tells the sender |
 
-The Codeman re-press sits beside `injectPeerIf` as `verifySubmit(run, head, deadline)`. It needs a read of the
+The Enter re-press sits beside `injectPeerIf` as `verifySubmit(run, head, deadline)`. It needs a read of the
 composer line off the screen. `looksidle.go` already reads the last frame for an idle prompt, so the frame reader exists
 and the spike is whether it can return the composer text. Spike first (2h, in a real Claude): does current Claude Code
 still ignore Enter after first paint? If not, ship only the ack and the hook retry, and leave the re-press out.
@@ -196,7 +196,7 @@ A deterministic fake Claude plus the real daemon. This is the test plan.
 it is a scripted state machine with these dials:
 
 - draws a prompt, turns on bracketed paste and focus reporting like Claude Code
-- `enterIgnoredFor`: ignores Enter for N seconds after start (the Codeman case)
+- `enterIgnoredFor`: ignores Enter for N seconds after start (the ignored-Enter case)
 - `midTurnQueue`: while "working" it moves typed lines to a queue box and reads them only at turn end (the real
   behavior)
 - `lostStop`: ends a turn without posting Stop (an interrupt)
