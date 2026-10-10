@@ -154,6 +154,31 @@ func TestCullFreesAnIgnoredDeepFolderAndCountsItsBytes(t *testing.T) {
 	}
 }
 
+// A file written after the plan was read makes git refuse the removal. The fallback must not then delete the folder:
+// it runs only on a worktree git still reports clean.
+func TestCullKeepsAWorktreeThatTurnedDirtyAfterThePlan(t *testing.T) {
+	t.Parallel()
+	r := newCullRepo(t, true)
+	plan, err := inspectCull(r.wt, "claude/main")
+	if err != nil {
+		t.Fatal(err)
+	}
+	late := filepath.Join(r.wt, "late.txt")
+	if err := os.WriteFile(late, []byte("written after the plan\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	err = removeWorktree(plan)
+	if err == nil || !strings.Contains(err.Error(), "git kept the worktree") {
+		t.Fatalf("removeWorktree = %v, want git kept the worktree", err)
+	}
+	if _, serr := os.Stat(late); serr != nil {
+		t.Errorf("the late file is gone: %v", serr)
+	}
+	if _, serr := os.Stat(r.wt); serr != nil {
+		t.Errorf("the folder is gone: %v", serr)
+	}
+}
+
 // A cull takes the card off the board with an event saying why, and never files
 // it as dead: that would put a death in the ledger for accepted work.
 func TestCullArchivesTheCardWithoutKillingIt(t *testing.T) {
