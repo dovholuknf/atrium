@@ -8,9 +8,8 @@
 - Judgment calls made unattended: the `git remote add` example uses the `/git/hub/<host>/<owner>/<repo>.git` form from
   the lookup notes, and the page does not claim a card's clone gets its remote automatically.
 
-- Build: scripts/build-docs.ps1 stops at its gate-script step here because pwsh is not installed. 
-pm run build in
-  website/ passed, and Docusaurus refuses broken links and anchors, so the links are checked.
+- Build: `scripts/build-docs.ps1` stops at its gate-script step here because `pwsh` is not installed. `npm run build`
+  in website/ passed, and Docusaurus refuses broken links and anchors, so the links are checked.
 
 ## Test plan
 
