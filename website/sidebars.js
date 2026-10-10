@@ -19,7 +19,7 @@ const sidebars = {
       type: 'category',
       label: 'Beyond one machine',
       collapsed: false,
-      items: ['rooms', 'overlays'],
+      items: ['rooms', 'git-flow', 'overlays'],
     },
     {
       type: 'category',

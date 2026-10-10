@@ -179,6 +179,11 @@ reads a token. Each forge comes back as ok, not installed, logged out or missing
 raises a forge-access alert on the board that says what to run on which room, for example "gh is not logged in on sg3:
 run `gh auth login --hostname github.com` on sg3". Atrium stores only the host and a bare command name.
 
+## Code between cards
+
+A card never talks to GitHub. It fetches and pushes through its room to the hub's git store, and only the hub talks to
+a forge. [How a card gets code and hands it back](./git-flow.md) has the lookup, the forge fetch and the git rule.
+
 ## Change requests
 
 A room that has work another room, or you, should take can ask for it on the hub. The **Requests** view of the repos

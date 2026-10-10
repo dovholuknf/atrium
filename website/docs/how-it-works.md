@@ -35,7 +35,8 @@ shared backlog, and a git store rooms push finished work to.
 
 The split follows lifetimes. Board code changes often, and agents must not die for it. The room dials the hub, never
 the reverse, so a hub restart is a room noticing a closed socket and dialling again. On one machine, `atrium run`
-starts both. [Rooms and the hub](./rooms.md) covers adding more machines.
+starts both. [Rooms and the hub](./rooms.md) covers adding more machines, and
+[how a card gets code](./git-flow.md) covers the git store.
 
 ## Cards
 
