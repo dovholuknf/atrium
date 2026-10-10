@@ -7695,6 +7695,144 @@ async function topNavSection(browser, base) {
   if (!bad) console.log("topNav ok");
 }
 
+// ── u-tabs-order-and-hide: the top tabs can be ordered, put in the ... menu, or hidden ─────────────────────
+async function tabsOrderSection(browser, base) {
+  const was = tasksMode;
+  tasksMode = "land";
+  landList = [];
+  landPerms = [];
+  const errors = [];
+  const imgs = path.join(__dirname, "..", "docs", "changes", "img");
+  const stage = process.env.TABS_SHOT || "";
+  const view = (p) => p.evaluate(() => {
+    const nav = document.querySelector("header nav");
+    const all = [...nav.querySelectorAll(".tab")];
+    const shown = all.filter(t => !t.hidden && getComputedStyle(t).display !== "none" && !t.classList.contains("ovf"));
+    const more = document.getElementById("tabmore"), menu = document.getElementById("tabs-menu");
+    const moreOn = !more.hidden && more.getClientRects().length > 0;
+    let listed = [];
+    if (moreOn) { more.click(); listed = [...menu.querySelectorAll("button[data-view]")].map(b => b.dataset.view); more.click(); }
+    const nr = nav.getBoundingClientRect();
+    return { order: all.map(t => t.dataset.view), shown: shown.map(t => t.dataset.view), listed, moreOn,
+      badge: more.querySelector(".count").hidden ? "" : more.querySelector(".count").textContent,
+      clipped: shown.some(t => t.getBoundingClientRect().right > nr.right + 1),
+      saved: localStorage.getItem("atrium.tabs") };
+  });
+  const arrange = async (p) => { await p.evaluate(() => window.openTabsArrange()); await p.waitForSelector("#tabsdlg[open]"); };
+  const row = (v) => '#tabsdlg-list .tabsdlg-row[data-view="' + v + '"]';
+  try {
+    fs.mkdirSync(imgs, { recursive: true });
+    const ctx = await browser.newContext({ viewport: { width: 1280, height: 700 } });
+    await ctx.addInitScript(() => localStorage.setItem("atrium.skipconfirm", JSON.stringify({ "width-floor": true })));
+    const p = await ctx.newPage();
+    p.on("pageerror", e => errors.push(String(e)));
+    await p.goto(base, { waitUntil: "domcontentloaded" });
+    await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
+    await p.waitForTimeout(250);
+    if (stage === "before") {
+      await p.screenshot({ path: path.join(imgs, "u-tabs-order-and-hide-before.png"), clip: { x: 0, y: 0, width: 1280, height: 700 } });
+      await ctx.close();
+      console.log("tabsOrder before shot taken");
+      return;
+    }
+    let v = await view(p);
+    const dflt = v.order.join(",");
+    if (v.saved !== null) fail("tabsOrder: a fresh browser has a saved tab layout: " + v.saved);
+    if (!v.shown.includes("usage") || v.moreOn) fail("tabsOrder: the default bar is not the plain one " + JSON.stringify(v));
+
+    // reorder: usage up past history and terms
+    await arrange(p);
+    await p.click(row("usage") + ' button[aria-label^="move up"]');
+    await p.click(row("usage") + ' button[aria-label^="move up"]');
+    v = await view(p);
+    const want = ["stack", "board", "terms", "usage", "pulls", "history"];
+    if (v.order.slice(0, 6).join(",") !== want.join(",")) fail("tabsOrder: usage did not move up two places: " + v.order);
+    if (!/"usage"/.test(v.saved || "")) fail("tabsOrder: the order is not saved: " + v.saved);
+    await p.reload({ waitUntil: "domcontentloaded" });
+    await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
+    v = await view(p);
+    if (v.order.slice(0, 6).join(",") !== want.join(",")) fail("tabsOrder: the order did not survive a reload: " + v.order);
+
+    // place: history hidden, rooms in the menu
+    await arrange(p);
+    await p.selectOption(row("history") + " select", "hidden");
+    await p.selectOption(row("runners") + " select", "menu");
+    v = await view(p);
+    if (v.shown.includes("history") || v.listed.includes("history")) fail("tabsOrder: a hidden tab is still shown " + JSON.stringify(v));
+    if (v.shown.includes("runners") || !v.listed.includes("runners") || !v.moreOn) fail("tabsOrder: a menu tab is not in the menu " + JSON.stringify(v));
+    // a hidden tab with a count waiting still tells the human
+    // the board repaints this badge on its own events, which would zero it under the test
+    await p.evaluate(() => { window.badge = () => {}; });
+    await p.selectOption(row("perms") + " select", "hidden");
+    v = await view(p);
+    if (v.shown.includes("perms") || v.listed.includes("perms")) fail("tabsOrder: perms with nothing waiting should be gone " + JSON.stringify(v));
+    await p.evaluate(() => { const c = document.getElementById("c-perm"); c.textContent = "3"; c.classList.remove("zero"); });
+    await p.waitForTimeout(150);
+    v = await view(p);
+    if (!v.listed.includes("perms") || v.badge !== "3") fail("tabsOrder: hidden perms with 3 waiting did not reach the ... button " + JSON.stringify(v));
+    if (v.shown.includes("perms")) fail("tabsOrder: hidden perms is back in the bar");
+    await p.evaluate(() => { const c = document.getElementById("c-perm"); c.textContent = ""; c.classList.add("zero"); });
+    await p.waitForTimeout(150);
+    v = await view(p);
+    if (v.listed.includes("perms") || v.badge) fail("tabsOrder: perms stays in the menu once nothing waits " + JSON.stringify(v));
+    await p.evaluate(() => { const c = document.getElementById("c-perm"); c.textContent = "3"; c.classList.remove("zero"); });
+    await p.waitForTimeout(150);
+    if (stage === "after") {
+      await p.screenshot({ path: path.join(imgs, "u-tabs-order-and-hide-after.png"), clip: { x: 0, y: 0, width: 1280, height: 700 } });
+    }
+    await p.click("#tabsdlg-close");
+    if (stage === "after") {
+      await p.evaluate(() => document.getElementById("tabmore").click());
+      await p.screenshot({ path: path.join(imgs, "u-tabs-order-and-hide-after-bar.png"), clip: { x: 0, y: 0, width: 1280, height: 330 } });
+      await p.evaluate(() => document.getElementById("tabmore").click());
+    }
+
+    // the overflow keeps working with a custom order: a narrow window of its own, everything revealed
+    const saved = v.saved;
+    const nctx = await browser.newContext({ viewport: { width: 1024, height: 700 } });
+    await nctx.addInitScript((val) => {
+      localStorage.setItem("atrium.skipconfirm", JSON.stringify({ "width-floor": true }));
+      localStorage.setItem("atrium.tabs", val);
+    }, saved);
+    const n = await nctx.newPage();
+    n.on("pageerror", e => errors.push(String(e)));
+    await n.goto(base, { waitUntil: "domcontentloaded" });
+    await n.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
+    await n.evaluate(() => {
+      window.badge = () => {};
+      document.querySelectorAll('.tab[data-view="docs"], .tab[data-view="audit"], .tab[data-view="hubrepos"], .tab[data-view="backlog"]').forEach(t => t.hidden = false);
+      const c = document.getElementById("c-perm"); c.textContent = "3"; c.classList.remove("zero");
+    });
+    await n.waitForTimeout(300);
+    v = await view(n);
+    if (v.clipped) fail("tabsOrder: a tab clips at 1024 with a custom order " + JSON.stringify(v));
+    if (!v.listed.includes("runners") || !v.listed.includes("perms") || !v.listed.includes("docs") || v.listed.includes("history"))
+      fail("tabsOrder: the menu at 1024 is wrong " + JSON.stringify(v));
+    if (v.shown.includes("history") || v.shown.includes("perms") || v.shown.includes("runners")) fail("tabsOrder: a moved tab is in the bar at 1024 " + JSON.stringify(v));
+    if (v.listed.length + v.shown.length < 10) fail("tabsOrder: a tab is lost at 1024 " + JSON.stringify(v));
+    if (v.badge !== "3") fail("tabsOrder: the ... button does not carry the waiting count at 1024 " + JSON.stringify(v));
+    await nctx.close();
+
+    // reset
+    await arrange(p);
+    await p.click("#tabsdlg-reset");
+    v = await view(p);
+    if (v.order.join(",") !== dflt || v.saved !== null) fail("tabsOrder: reset did not restore the default " + JSON.stringify(v));
+    if (!v.shown.includes("history") || !v.shown.includes("runners")) fail("tabsOrder: reset left tabs out of the bar " + JSON.stringify(v));
+    // the settings dialog has the way in too
+    await p.click("#tabsdlg-close");
+    await p.click("#gear");
+    await p.evaluate(() => document.getElementById("s-arrangetabs").scrollIntoView());
+    await p.click("#s-arrangetabs");
+    if (!await p.evaluate(() => document.getElementById("tabsdlg").open)) fail("tabsOrder: the settings button does not open the arrange dialog");
+    await ctx.close();
+  } finally {
+    tasksMode = was;
+  }
+  if (errors.length) fail("tabsOrder: the page threw: " + errors.join(" | "));
+  if (!bad) console.log("tabsOrder ok");
+}
+
 // ── focusing a phone terminal does not bounce or hide it (u-017) ──────────
 // On a phone, tapping the terminal focused xterm's helper textarea, which sat at the grid's top-left; the
 // browser scrolled the pane there, the cursor keep scrolled back, every frame. Headless Chromium does not
@@ -26937,7 +27075,7 @@ async function main() {
       mPull: mPullSection, joinedLive: joinedLiveSection, termEnded: termEndedSection, joinedClick: joinedClickSection,
       coverPoll: coverPollSection, coverSteps: coverStepsSection, termBox: termBoxSection, termRowBleed: termRowBleedSection,
       termDebug: termDebugSection, termDebugPerCard: termDebugPerCardSection, termLag: termLagSection, termHiddenRedraw: termHiddenRedrawSection, termLastRead: termLastReadSection, termSortStarted: termSortStartedSection,
-      noReadyChildren: noReadyChildrenSection, childUnderParent: childUnderParentSection, topNav: topNavSection,
+      noReadyChildren: noReadyChildrenSection, childUnderParent: childUnderParentSection, topNav: topNavSection, tabsOrder: tabsOrderSection,
       u002: u002Section, childFold: childFoldSection, liveHome: liveHomeSection,
       pulls: pullsSection, prMove: prMoveSection, quickPaste: quickPasteSection, recogniserRepo: recogniserRepoSection, hubRepos: hubReposSection, hubReposShelf: hubReposShelfSection, hubReposLedger: hubReposLedgerSection, hubReposFeed: hubReposFeedSection, changeReq: changeReqSection, mChangeReq: mChangeReqSection, trayHead: trayHeadSection, pullsAbsent: pullsAbsentSection, oneTooltip: oneTooltipSection, burnChart: burnChartSection, burnReadout: burnReadoutSection, switchPrewarm: switchPrewarmSection, attachAtOnce: attachAtOnceSection, fileView: fileViewSection, keepAlive: keepAliveSection, switchBackCost: switchBackCostSection, keepMemory: keepMemorySection, pullsDrawer: pullsDrawerSection };
     try {
@@ -29089,6 +29227,7 @@ async function main() {
     // await unit("termLastRead", () => termLastReadSection(browser, base));
     await unit("termSortStarted", () => termSortStartedSection(browser, base));
     await unit("topNav", () => topNavSection(browser, base));
+    await unit("tabsOrder", () => tabsOrderSection(browser, base));
     await unit("pulls", () => pullsSection(browser, base));
     await unit("pullsAbsent", () => pullsAbsentSection(browser, base));
     await unit("oneTooltip", () => oneTooltipSection(browser, base));
