@@ -14094,7 +14094,7 @@ async function turnLimitsSection(browser, base) {
   const errors = [];
   const day = new Date().toISOString().slice(0, 10);
   const over = { day, off: false, findings: [
-    { kind: "notice", turns: 130, tokens: 4100000, limit_turns: 100, limit_tokens: 5000000, over: "turns", item: "r-expected-end-notices" },
+    { kind: "notice", turns: 130, tokens: 4100000, limit_turns: 100, limit_tokens: 5000000, over: "turns", item: "r-some-open-item" },
     { kind: "say", turns: 12, tokens: 7200000, limit_turns: 100, limit_tokens: 5000000, over: "tokens" },
     { kind: "<img src=x onerror=window.__xss=1>", turns: 101, tokens: 1, limit_turns: 100, limit_tokens: 0, over: "turns" }] };
   const under = { day, off: false, findings: [] };
@@ -14121,7 +14121,7 @@ async function turnLimitsSection(browser, base) {
     await sp.waitForFunction(() => !document.getElementById("term-limits").hidden, null, { timeout: slow(10000) });
     let t = await lines();
     if (t.rows.length !== 3) fail("turnLimits: want one line per firing cause, got " + JSON.stringify(t.rows));
-    if (!/^notice: 130 turns, .* tokens today, limit 100 turns\. to remove it: r-expected-end-notices$/.test(t.rows[0])) fail("turnLimits: the notice line reads " + t.rows[0]);
+    if (!/^notice: 130 turns, .* tokens today, limit 100 turns\. to remove it: r-some-open-item$/.test(t.rows[0])) fail("turnLimits: the notice line reads " + t.rows[0]);
     if (!/^say: 12 turns, .* tokens today, limit .* tokens\. no item removes it\. to raise the limit set turn_cause_limits/.test(t.rows[1])) fail("turnLimits: the say line reads " + t.rows[1]);
     if (t.imgs || t.xss) fail("turnLimits: a kind from the server was drawn as markup");
     if (!t.rows[2].startsWith("<img src=x")) fail("turnLimits: a kind was not shown as text: " + t.rows[2]);

@@ -35,8 +35,14 @@ func TestTurnLimitFiresPastTheTokenLimitAndNamesTheItem(t *testing.T) {
 	lim, _ := store.ParseTurnLimits(`{"turns":0,"tokens":5000000}`)
 	rows := []store.CostRow{{Day: "d", Kind: "notice", Turns: 2, Output: 6_000_000}}
 	got := CheckTurnLimits(rows, "d", lim)
-	if len(got) != 1 || got[0].Over != "tokens" || got[0].Item != "r-expected-end-notices" {
+	if len(got) != 1 || got[0].Over != "tokens" || got[0].Item != "" {
 		t.Fatalf("findings %+v", got)
+	}
+	// A kind with an open item names it.
+	turnCauseItems["notice"] = "r-some-open-item"
+	defer delete(turnCauseItems, "notice")
+	if got := CheckTurnLimits(rows, "d", lim); len(got) != 1 || got[0].Item != "r-some-open-item" {
+		t.Fatalf("a kind with an item: %+v", got)
 	}
 }
 

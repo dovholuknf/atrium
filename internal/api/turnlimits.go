@@ -12,12 +12,8 @@ import (
 // kind of atrium text cost and decides nothing. This is the decision: one finding per kind past the limit today.
 
 // turnCauseItems is the backlog item that would remove a cause, when one is known. A kind with no entry has no item,
-// and its finding says how to raise the limit. Keyed by delivery kind. Atrium's own words that have no kind of their
-// own are `notice`, and the expected-end notices are the ones that matter there.
-var turnCauseItems = map[string]string{
-	// The "expected end" notices a launched worker's launcher is sent.
-	"notice": "r-expected-end-notices",
-}
+// and its finding says how to raise the limit. Keyed by delivery kind. Add an entry only while the item is open.
+var turnCauseItems = map[string]string{}
 
 // TurnFinding is one cause kind over a limit today.
 type TurnFinding struct {
