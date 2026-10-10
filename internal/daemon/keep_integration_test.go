@@ -164,7 +164,8 @@ func TestAWokenCardThatNeverTakesItsMessagesTellsTheLauncher(t *testing.T) {
 		t.Fatal(err)
 	}
 	d.sup.remove(target.ID)
-	if out, code := tell(t, d, "orchestrator", "worker", "HELDWORDS"); code != http.StatusOK || out["reachable"] != "kept" {
+	peerCard(t, d, "stranger")
+	if out, code := tell(t, d, "stranger", "worker", "HELDWORDS"); code != http.StatusOK || out["reachable"] != "kept" {
 		t.Fatalf("keep: %d %v", code, out)
 	}
 	old := keptGiveUp

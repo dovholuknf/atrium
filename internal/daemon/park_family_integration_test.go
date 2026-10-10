@@ -138,6 +138,26 @@ func TestFamilySayWakesAFinishedWorker(t *testing.T) {
 			t.Fatal("the launcher's words never reached the resumed worker")
 		}
 	})
+	t.Run("the launcher's fyi is kept and does not wake it", func(t *testing.T) {
+		d, launcher, worker := finished(t)
+		launched := 0
+		d.wakeLaunch = func(req LaunchRequest) (*store.Task, error) {
+			launched++
+			return d.st.Get(worker.ID)
+		}
+		body := `{"from":"` + launcher.WireName + `","to":"` + worker.WireName + `","text":"FYIWORDS","kind":"fyi"}`
+		w := httptest.NewRecorder()
+		d.handleTell(w, httptest.NewRequest("POST", "/tell", strings.NewReader(body)))
+		if w.Code != http.StatusOK {
+			t.Fatalf("answered %d: %s", w.Code, w.Body.String())
+		}
+		if launched != 0 {
+			t.Fatal("a launcher's fyi woke the finished worker")
+		}
+		if n := len(pendingFrom(t, d, worker.ID)); n != 1 {
+			t.Fatalf("%d kept, want the fyi stored on the card", n)
+		}
+	})
 	t.Run("any other peer is only kept", func(t *testing.T) {
 		d, _, worker := finished(t)
 		peerCard(t, d, "stranger")

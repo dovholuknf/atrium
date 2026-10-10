@@ -316,7 +316,7 @@ func (d *Daemon) resolvePeerSayWake(w http.ResponseWriter, from, to, verb, text,
 	// A DONE OR DEAD CARD WITH A CONVERSATION CAN BE WOKEN. Without wake, or with nothing to resume, the words are
 	// kept on the card for when it next runs, and only a verb with no words is refused.
 	// A launcher talking to its own finished worker means for it to read the words, so it needs no wake flag.
-	wakeGone := gate == sayGone && (wake || d.fromFamily(from, target)) && resumable(target)
+	wakeGone := gate == sayGone && (wake || (kind != "fyi" && d.fromFamily(from, target))) && resumable(target)
 	if gate == sayGone && !wakeGone {
 		if text == "" {
 			writeJSONErr(w, http.StatusConflict, fmt.Errorf(

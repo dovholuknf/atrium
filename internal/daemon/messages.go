@@ -614,7 +614,8 @@ func (d *Daemon) handleMessage(w http.ResponseWriter, r *http.Request) {
 		woke, gate = true, sayOK
 	}
 	// A DONE OR DEAD CARD WITH A CONVERSATION IS WOKEN BY WAKE, AND THE OPERATOR'S OWN WORDS WAKE IT TOO.
-	if gate == sayGone && gated != nil && resumable(gated) && (from == "" || body.Wake || d.fromFamily(from, gated)) {
+	if gate == sayGone && gated != nil && resumable(gated) &&
+		(from == "" || body.Wake || (parseKind(body.Kind) != KindFYI && d.fromFamily(from, gated))) {
 		if err := d.wakeGone(taskID, wakeVia(from)); err != nil {
 			writeJSONErr(w, http.StatusInternalServerError, err)
 			return
