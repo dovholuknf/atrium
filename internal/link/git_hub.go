@@ -91,12 +91,14 @@ func (p *Proxy) serveGit(w http.ResponseWriter, r *http.Request, sub string) {
 			fail(http.StatusMethodNotAllowed, "that has to be a GET")
 			return
 		}
-		repos, err := g.Store().View(r.Context())
-		if err != nil {
-			fail(http.StatusServiceUnavailable, "could not list the repositories")
-			return
+		// FROM THE SNAPSHOT, never from git: see gitsync/viewcache.go.
+		snap := g.Store().Snapshot()
+		ans := map[string]any{"repos": snap.Repos, "building": snap.Building}
+		if !snap.Computed.IsZero() {
+			ans["computed"] = snap.Computed.UTC().Format(time.RFC3339)
+			ans["age_seconds"] = int(time.Since(snap.Computed).Seconds())
 		}
-		_ = json.NewEncoder(w).Encode(map[string]any{"repos": repos})
+		_ = json.NewEncoder(w).Encode(ans)
 		return
 	}
 	// THE LOOKUP has the reaches of a fetch, not of a sync: it starts no work and names no path. See git_url.go.
