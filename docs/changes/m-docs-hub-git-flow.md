@@ -1,4 +1,4 @@
-﻿# m-docs-hub-git-flow
+# m-docs-hub-git-flow
 
 - website/docs/git-flow.md: new page. Facts checked against internal/gitsync/lookup.go and the f-new-git-url,
   f-hub-git-store and f-hub-gets-run-git-on-request notes. The hook rules come from the brief, since the hook is not

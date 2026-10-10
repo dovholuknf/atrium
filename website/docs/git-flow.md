@@ -1,4 +1,4 @@
-﻿---
+---
 title: How a card gets code and hands it back
 description: The path code takes between a card, its room, the hub and GitHub, and the one git rule a card lives by.
 ---
@@ -11,7 +11,7 @@ It never talks to GitHub for either. This page follows the path and explains the
 ## The picture
 
 ```text
-  card â”€â”€â”€â–º its room's forwarder â”€â”€â”€â–º the hub's git store â”€â”€â”€â–º the forge (GitHub)
+  card ---> its room's forwarder ---> the hub's git store ---> the forge (GitHub)
   git       <agent>/git/              a bare copy of each        only the hub
   fetch hub                           repo: branches rooms       talks to forges
   push hub                            pushed, plus main
@@ -101,7 +101,7 @@ concerned, whatever it is named.
 A clone has no `hub` remote until someone adds one. Add it with the forwarder address of the room the card runs in:
 
 ```bash
-git remote add hub http://127.0.0.1:7777/git/hub/github.com/owner/repo.git
+git remote add hub http://127.0.0.1:7777/git/hub/github/owner/repo.git
 ```
 
 The address starts with `<agent>/git/`, so `http://127.0.0.1:7777/git/` for a default room. The lookup prints the
