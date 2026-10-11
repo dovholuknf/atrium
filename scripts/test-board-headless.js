@@ -25264,8 +25264,9 @@ async function phoneRedirectSection(browser, base) {
   landPerms = [];
   landCard("land-a", { alias: "rnd", room: "claude-sg4", wire_name: "sparta/rnd-director", supervised: true });
   const raw = fs.readFileSync(path.join(WEB_ROOT, "index.html"));
-  const open = async (view, at, setup) => {
+  const open = async (view, at, setup, fakeClock) => {
     const ctx = await browser.newContext(view, { redirect: true });
+    if (fakeClock) await ctx.clock.install();
     await ctx.addInitScript(() => localStorage.setItem("atrium.skipconfirm", JSON.stringify({ "width-floor": true })));
     if (setup) await ctx.addInitScript(setup);
     const p = await ctx.newPage();
@@ -25288,16 +25289,19 @@ async function phoneRedirectSection(browser, base) {
   try {
     const cases = [["/?land=land-a&view=stack&key=k1", "/m/#term=land-a"], ["/?land=a%20b", "/m/#term=a%20b"], ["/?view=perms&key=k2", "/m/"], ["/?land=land-a&x=1", "/m/?x=1#term=land-a"],
       ["/", "/m/"], ["/alias/rnd", "/m/alias/rnd"], ["/room/claude-sg4/rnd", "/m/room/claude-sg4/rnd"], ["/#term=land-a", "/m/#term=land-a"], ["/room/claude-sg4", "/m/"]];
-    for (const [from, to] of cases) {
-      const r = await open(phone, from);
+    // Each case is its own context and only reads the mock, so they load at once.
+    const opened = await Promise.all(cases.map(([from]) => open(phone, from)));
+    for (const [i, [from, to]] of cases.entries()) {
+      const r = opened[i];
       if (r.where !== to && !(r.where === to.replace("?x=1", "") && /x=1/.test(r.search))) fail("phoneRedirect: a phone at " + from + " ended on " + r.where + ", not " + to);
       if (from === "/room/claude-sg4" && (await r.p.evaluate(() => localStorage.getItem("atrium.room"))) !== "claude-sg4") fail("phoneRedirect: the room scope was lost");
       if (r.errors.length) fail("phoneRedirect " + from + ": " + r.errors.join(" | "));
       await r.ctx.close();
     }
     // a phone at 412, and a phone turned on its side (its short side is still under 600)
-    for (const v of [{ viewport: { width: 412, height: 915 }, hasTouch: true, isMobile: true }, { viewport: { width: 844, height: 390 }, hasTouch: true, isMobile: true }]) {
-      const r = await open(v, "/");
+    const turned = [{ viewport: { width: 412, height: 915 }, hasTouch: true, isMobile: true }, { viewport: { width: 844, height: 390 }, hasTouch: true, isMobile: true }];
+    for (const [i, r] of (await Promise.all(turned.map(v => open(v, "/")))).entries()) {
+      const v = turned[i];
       if (r.where !== "/m/") fail("phoneRedirect: a phone " + v.viewport.width + "x" + v.viewport.height + " ended on " + r.where);
       await r.ctx.close();
     }
@@ -25362,15 +25366,18 @@ async function phoneRedirectSection(browser, base) {
       await x.ctx.close();
       return x;
     };
-    await reason({ viewport: { width: 1400, height: 900 } }, "/?why=1", null, /^redirect: not redirected, not a phone \(coarse=false any-coarse=false touch-points=0 shortest-side=900\)/);
-    await reason(phone, "/?why=1#term=land-a", () => { window.name = "atrium-term-land-a"; }, /^redirect: not redirected, a pop-out window \(atrium-term-land-a\)/);
-    await reason(phone, "/?why=1", () => { if (!sessionStorage.getItem("seeded")) { sessionStorage.setItem("seeded", "1"); sessionStorage.setItem("atrium.m.desktop", "1"); } }, /^redirect: not redirected, this tab chose the desktop board/);
-    await reason(phone, "/raw?why=1", null, /^redirect: not redirected, no \/m page for \/raw/);
+    await Promise.all([
+      reason({ viewport: { width: 1400, height: 900 } }, "/?why=1", null, /^redirect: not redirected, not a phone \(coarse=false any-coarse=false touch-points=0 shortest-side=900\)/),
+      reason(phone, "/?why=1#term=land-a", () => { window.name = "atrium-term-land-a"; }, /^redirect: not redirected, a pop-out window \(atrium-term-land-a\)/),
+      reason(phone, "/?why=1", () => { if (!sessionStorage.getItem("seeded")) { sessionStorage.setItem("seeded", "1"); sessionStorage.setItem("atrium.m.desktop", "1"); } }, /^redirect: not redirected, this tab chose the desktop board/),
+      reason(phone, "/raw?why=1", null, /^redirect: not redirected, no \/m page for \/raw/)]);
     {
-      const x = await open(phone, "/?why=1");
+      // The redirect waits 4s so the reason can be read: a fake clock moves through it.
+      const x = await open(phone, "/?why=1", null, true);
       const said = await x.p.evaluate(() => (document.getElementById("redirect-why") || {}).textContent || "");
       if (!/^redirect: going to \/m\/ \(coarse=true/.test(said)) fail("phoneRedirect: a redirect said " + JSON.stringify(said));
-      await x.p.waitForFunction(() => location.pathname === "/m/", null, { timeout: slow(9000) }).catch(() => fail("phoneRedirect: the redirect with ?why=1 never happened"));
+      await x.p.clock.runFor(4000);
+      await x.p.waitForURL(u => new URL(u).pathname === "/m/", { timeout: slow(5000) }).catch(() => fail("phoneRedirect: the redirect with ?why=1 never happened"));
       await x.ctx.close();
     }
     {
@@ -25388,15 +25395,14 @@ async function phoneRedirectSection(browser, base) {
       await ctx.close();
     }
     // a desktop and a tablet are untouched, and so is a desktop browser window made narrow
-    for (const [name, v] of [["desktop", { viewport: { width: 1400, height: 900 } }], ["tablet", { viewport: { width: 820, height: 1180 }, hasTouch: true, isMobile: true }],
-      ["narrow desktop", { viewport: { width: 400, height: 800 } }]]) {
-      const x = await open(v, "/");
+    await Promise.all([["desktop", { viewport: { width: 1400, height: 900 } }], ["tablet", { viewport: { width: 820, height: 1180 }, hasTouch: true, isMobile: true }],
+      ["narrow desktop", { viewport: { width: 400, height: 800 } }]].map(async ([name, v]) => {
+      const [x, y] = await Promise.all([open(v, "/"), open(v, "/alias/rnd")]);
       if (x.where !== "/") fail("phoneRedirect: a " + name + " was sent to " + x.where);
-      const y = await open(v, "/alias/rnd");
       if (y.where !== "/alias/rnd") fail("phoneRedirect: a " + name + " card address was sent to " + y.where);
       await x.ctx.close();
       await y.ctx.close();
-    }
+    }));
   } finally { tasksMode = was; }
   // the link on /m sets the opt-out and does not bounce back
   const st = mServer({});
