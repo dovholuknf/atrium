@@ -128,6 +128,12 @@ async function fakeWait(p, fn, arg, ms, step = 100) {
   }
 }
 
+// `ms` of page time on the fake clock, every timer fired as it comes due, so a poll or a chained fetch still shows in a
+// request count. The real pause per step lets a fetch or a stream event land before the clock moves on.
+async function fakeTick(p, ms, step = 250) {
+  for (let t = 0; t < ms; t += step) { await p.clock.runFor(Math.min(step, ms - t)); await new Promise(r => setTimeout(r, 10)); }
+}
+
 // Playwright is a devDependency (see package.json) and CI may run without it.
 let chromium;
 try {
@@ -13318,19 +13324,18 @@ async function eventDrivenSection(browser, base) {
   try {
     const p = await ctx.newPage();
     p.on("pageerror", e => errors.push(String(e)));
+    await p.clock.install();
     await p.goto(base, { waitUntil: "domcontentloaded" });
     await p.click('.tab[data-view="terms"]');
     await p.waitForSelector('#term-list .card.tab[data-id="u-sa67"]', { state: "attached", timeout: slow(15000) });
-    await p.waitForTimeout(1500);
+    await fakeTick(p, 1500);
     const card = UNTAGGED_CARDS[0];
+    const say = async (ev, ms) => { mockSay("task", JSON.stringify(ev)); await new Promise(r => setTimeout(r, 20)); await fakeTick(p, ms); };
 
     // (a) An older room: task events with no `row`. One every half second for
     // the whole window, so a board that pulled per clump would pull every 1.5s.
     counts.clear();
-    for (let i = 0; i < secs * 2; i++) {
-      mockSay("task", JSON.stringify({ id: card.id, status: "running" }));
-      await p.waitForTimeout(500);
-    }
+    for (let i = 0; i < secs * 2; i++) await say({ id: card.id, status: "running" }, 500);
     const partial = counts.get("/v1/tasks") || 0;
     console.log("eventDriven: " + secs + "s of task events without row: " + partial + " /v1/tasks");
     // Once every 5s over a window of secs is floor(secs / 5) + 1: one at each
@@ -13345,12 +13350,9 @@ async function eventDrivenSection(browser, base) {
     // the event, so the title below changes with no request at all. A quiet
     // gap first, so the trailing pull the last partial event queued lands
     // before the count starts.
-    await p.waitForTimeout(6000);
+    await fakeTick(p, 6000);
     counts.clear();
-    for (let i = 0; i < secs * 2; i++) {
-      mockSay("task", JSON.stringify(Object.assign({}, card, { row: 1, display_title: "sa67 stages " + i })));
-      await p.waitForTimeout(500);
-    }
+    for (let i = 0; i < secs * 2; i++) await say(Object.assign({}, card, { row: 1, display_title: "sa67 stages " + i }), 500);
     const whole = counts.get("/v1/tasks") || 0;
     console.log("eventDriven: " + secs + "s of task events with row: 1: " + whole + " /v1/tasks");
     // The 60s resync may land inside the window, once.
@@ -13368,7 +13370,8 @@ async function eventDrivenSection(browser, base) {
     // (b) The sort paints in the frame they were clicked in, and
     // ask for nothing.
     counts.clear();
-    const clicks = await p.evaluate(() => {
+    // the frame is the fake clock's, so the clock moves while the clicks wait on it
+    const clicksP = p.evaluate(() => {
       const strip = () => document.getElementById("terms").innerHTML + document.getElementById("gear-term-sort").innerHTML;
       const oneFrame = (act, read) => new Promise(done => {
         const before = read();
@@ -13380,7 +13383,11 @@ async function eventDrivenSection(browser, base) {
         sortBack: await oneFrame(() => toggleTermSort(), strip),
       }))();
     });
-    await p.waitForTimeout(500);
+    let clicks = null;
+    clicksP.then(c => { clicks = c; });
+    for (let i = 0; i < 20 && !clicks; i++) await fakeTick(p, 50, 50);
+    clicks = await clicksP;
+    await fakeTick(p, 500);
     if (!clicks.sort || !clicks.sortBack) fail("the terminal sort did not repaint within one frame: " + JSON.stringify(clicks));
     if (sumCounts(counts)) fail("a sort click made requests: " + topCounts(counts));
 
@@ -13409,16 +13416,17 @@ async function eventDrivenSection(browser, base) {
   });
   try {
     const p = await ctx2.newPage();
+    await p.clock.install();
     await p.goto(base, { waitUntil: "domcontentloaded" });
     await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
-    await p.waitForTimeout(1000);
+    await fakeTick(p, 1000);
     counts2.clear();
-    await p.waitForTimeout(5000);
+    await fakeTick(p, 5000);
     const shown = counts2.get("/v1/tasks") || 0;
     await p.evaluate(() => { window.__hide = true; });
-    await p.waitForTimeout(500);
+    await fakeTick(p, 500);
     counts2.clear();
-    await p.waitForTimeout(6000);
+    await fakeTick(p, 6000);
     const hidden = sumCounts(counts2);
     console.log("eventDriven: resync at 1.5s, visible 5s: " + shown + " /v1/tasks, hidden 6s: " + hidden + " requests");
     if (shown < 2) fail("a visible tab did not resync: " + shown + " /v1/tasks in 5s with a 1.5s resync");
@@ -13451,19 +13459,17 @@ async function idleBudgetSection(browser, base) {
   const counts = countRequests(ctx);
   try {
     const p = await ctx.newPage();
-    // Page seconds on the fake clock, every timer fired as it comes due, so a poll still shows in the count.
     await p.clock.install();
     await p.goto(base, { waitUntil: "domcontentloaded" });
     await p.waitForSelector("#stack-list .stackrow, #term-list .card.tab",
       { state: "attached", timeout: slow(15000) });
-    const tick = async ms => { for (let t = 0; t < ms; t += 250) { await p.clock.runFor(250); await new Promise(r => setTimeout(r, 10)); } };
-    await tick(3000);
+    await fakeTick(p, 3000);
     counts.clear();
     for (let i = 0; i < secs; i++) {
       const c = UNTAGGED_CARDS[i % UNTAGGED_CARDS.length];
       mockSay("task", JSON.stringify(Object.assign({}, c, { row: 1, idle_seconds: i })));
       await new Promise(r => setTimeout(r, 20));
-      await tick(1000);
+      await fakeTick(p, 1000);
     }
     const total = sumCounts(counts);
     const perMin = total * 60 / secs;
