@@ -113,6 +113,27 @@ const WEB_ROOT = path.join(__dirname, "..", "internal", "api", "web");
 const SLOW = Number(process.env.HEADLESS_SLOW) > 0 ? Number(process.env.HEADLESS_SLOW) : 1;
 const slow = ms => Math.round(ms * SLOW);
 
+// For a page on Playwright's fake clock (`page.clock.install()` before the goto): waitForFunction, with the page's
+// clock moved forward a step at a time instead of waited out. `ms` is page time. A short real pause per step lets a
+// fetch or an event land. Rejects on timeout, as waitForFunction does. `step` 0 leaves the page's clock alone and
+// waits `ms` of real time: for what the browser does on its own clock, an EventSource reconnecting say. A fake-clock
+// page cannot use waitForFunction for that, because its polling runs on the faked requestAnimationFrame.
+async function fakeWait(p, fn, arg, ms, step = 100) {
+  const end = Date.now() + slow(ms);
+  for (let t = 0; ; t += step) {
+    if (await p.evaluate(fn, arg)) return true;
+    if (step ? t >= ms : Date.now() > end) throw new Error("fakeWait timed out after " + ms + "ms");
+    if (step) await p.clock.runFor(step);
+    await new Promise(r => setTimeout(r, step ? 5 : 50));
+  }
+}
+
+// `ms` of page time on the fake clock, every timer fired as it comes due, so a poll or a chained fetch still shows in a
+// request count. The real pause per step lets a fetch or a stream event land before the clock moves on.
+async function fakeTick(p, ms, step = 250) {
+  for (let t = 0; t < ms; t += step) { await p.clock.runFor(Math.min(step, ms - t)); await new Promise(r => setTimeout(r, 10)); }
+}
+
 // Playwright is a devDependency (see package.json) and CI may run without it.
 let chromium;
 try {
@@ -350,6 +371,9 @@ let healthBuild = "test";
 // Off by default: every other section runs without a worker. See atriumDownSection.
 let serveSW = false;
 let page502 = false;
+// The reconnect delay the event stream asks for, in ms. 0 says nothing and leaves the browser's own 3s, which is what
+// the daemon does. A section that drops the stream on purpose sets it so the reconnect is not waited out.
+let sseRetry = 0;
 const gateCalls = { input: 0, pause: 0, resume: 0 };
 const ALPHA = { name: "alpha", host: "alpha-host" };
 const SGG = { name: "sgg", host: "sgg-host" };
@@ -473,6 +497,8 @@ const hubStreams = [];       // hub event streams, used to push a `rooms` event
 // proxied read is held until this time, then refused. See idleRateSection.
 let roomStallUntil = 0;
 let stalledCount = 0;
+// The reads a stall is holding, so a stall timed on a page's fake clock can end them when it ends.
+const stallHeld = [];
 
 const HTML = wholeBoard();
 
@@ -602,7 +628,9 @@ const server = http.createServer((req, res) => {
   if (roomStallUntil > Date.now() && url.startsWith("/v1/") && url !== "/v1/health" &&
       !url.startsWith("/v1/events")) {
     stalledCount++;
-    setTimeout(() => { res.writeHead(503); res.end("{}"); }, roomStallUntil - Date.now());
+    const answer = () => { clearTimeout(t); if (!res.headersSent) { res.writeHead(503); res.end("{}"); } };
+    const t = setTimeout(answer, roomStallUntil - Date.now());
+    stallHeld.push(answer);
     return;
   }
 
@@ -893,7 +921,7 @@ const server = http.createServer((req, res) => {
       "Content-Type": "text/event-stream", "Cache-Control": "no-cache",
       "Connection": "keep-alive"
     });
-    res.write(": open\n\n");
+    res.write((sseRetry ? "retry: " + sseRetry + "\n" : "") + ": open\n\n");
     openStreams.push(res);
     if (url === "/v1/events/hub") hubStreams.push(res);
     return;
@@ -1534,8 +1562,12 @@ async function detailsHoverSection(browser, base) {
   await dp.addInitScript(() => {
     localStorage.setItem("atrium.skipconfirm", JSON.stringify({ "width-floor": true }));
   });
+  // What is measured is the colour a hover settles on, so transitions are off and two frames stand in for the
+  // 350ms and 450ms each skin and theme once waited for them to finish.
+  const settle = () => dp.evaluate(() => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r))));
   try {
     await dp.goto(base, { waitUntil: "domcontentloaded" });
+    await dp.addStyleTag({ content: "*, *::before, *::after { transition: none !important; }" });
     await dp.waitForTimeout(900);
     await dp.click('.tab[data-view="terms"]');
     await dp.waitForSelector("#t-expando", { state: "attached", timeout: slow(15000) });
@@ -1558,11 +1590,11 @@ async function detailsHoverSection(browser, base) {
         const pill = dp.locator("#t-expando");
         await pill.evaluate(el => { for (let n = el; n; n = n.parentElement) n.hidden = false; });
         await dp.mouse.move(0, 0);
-        await dp.waitForTimeout(350);
+        await settle();
         const box = await pill.boundingBox();
         if (!box || !box.width) { fail("the details pill is not on screen (" + skin + ", " + name + ")."); continue; }
         await dp.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
-        await dp.waitForTimeout(450);
+        await settle();
         const got = await pill.evaluate(el => {
           const s = getComputedStyle(el);
           // The surface under the label: the pill's own fill if it has one, else the nearest ancestor's.
@@ -2352,6 +2384,7 @@ async function restartGateSection(browser, base) {
   hubMode = true;
   gatePaused = false;
   Object.assign(gateCalls, { input: 0, pause: 0, resume: 0 });
+  sseRetry = 200;
   const say = state => {
     const line = "event: hub-restart\ndata: " + JSON.stringify(state) + "\n\n";
     openStreams.forEach(r => { try { if (!r.destroyed) r.write(line); } catch (e) {} });
@@ -2360,7 +2393,11 @@ async function restartGateSection(browser, base) {
     const el = document.querySelector(".toast.hubgate b");
     return el ? el.textContent : "";
   });
+  // The countdowns, the toast lifetimes and the cover clock run on a fake clock: moved through, not waited out. The
+  // real pause after each move lets a report the page makes reach the mock before it is counted.
+  const run = async ms => { await gp.clock.runFor(ms); await new Promise(r => setTimeout(r, 100)); };
   try {
+    await gp.clock.install();
     await gp.goto(base, { waitUntil: "domcontentloaded" });
     await gp.waitForFunction(() => typeof hubIsHub !== "undefined" && hubIsHub &&
       document.getElementById("conn").classList.contains("live"), null, { timeout: slow(15000) });
@@ -2368,7 +2405,7 @@ async function restartGateSection(browser, base) {
     // Input is reported, and throttled.
     await gp.mouse.click(700, 450);
     await gp.keyboard.press("Shift");
-    await gp.waitForTimeout(300);
+    await run(300);
     if (gateCalls.input !== 1) fail("a click and a key inside the throttle reported input " +
       gateCalls.input + " times, not once.");
 
@@ -2380,25 +2417,25 @@ async function restartGateSection(browser, base) {
     if (!/atrium restarts in [45]s/.test(first)) {
       fail("the countdown toast said: " + first);
     }
-    await gp.waitForTimeout(1300);
+    await run(1300);
     const later = await countdownText();
     if (!/in [34]s/.test(later)) fail("the countdown did not count down: " + first + " then " + later);
 
     // ONLY THE PAUSE BUTTON STOPS IT. Typing, clicking elsewhere, the banner's own
     // text and scrolling leave it running, and none is reported as input.
-    await gp.waitForTimeout(3100);
+    await run(3100);
     const inputBefore = gateCalls.input;
     await gp.mouse.click(700, 450);
     await gp.keyboard.press("a");
     await gp.mouse.wheel(0, 100);
     await gp.click(".toast.hubgate .what");
     await gp.click(".toast.hubgate b");
-    await gp.waitForTimeout(300);
+    await run(300);
     if (gateCalls.pause !== 0) fail("a click on the banner's text paused the countdown.");
     if (gateCalls.input !== inputBefore) fail("input with the countdown up was reported to the hub.");
     if (!(await gp.$(".toast.hubgate"))) fail("typing or clicking elsewhere took the countdown down.");
     await gp.click(".toast.hubgate .hubgate-act");
-    await gp.waitForTimeout(300);
+    await run(300);
     if (gateCalls.pause !== 1) fail("clicking the countdown called pause " + gateCalls.pause + " times.");
     if (await gp.$(".toast.hubgate")) fail("the countdown toast stayed up after it was clicked.");
 
@@ -2410,12 +2447,12 @@ async function restartGateSection(browser, base) {
       return el && /restart on hold/.test(el.textContent);
     }, null, { timeout: slow(5000) }).catch(() => fail("a pause from the hub drew no paused toast."));
     await gp.evaluate(() => { for (let i = 0; i < 5; i++) toast("filler " + i, "pushing the stack"); });
-    await gp.waitForTimeout(100);
+    await run(100);
     if (!(await gp.$(".toast.hubgate .hubgate-act"))) fail("the paused toast was pushed off the stack.");
-    await gp.waitForTimeout(9500);
+    await run(9500);
     if (!(await gp.$(".toast.hubgate"))) fail("the paused toast timed out like an ordinary one.");
     await gp.click(".toast.hubgate .hubgate-act");
-    await gp.waitForTimeout(300);
+    await run(300);
     if (gateCalls.resume !== 1) fail("the resume button called resume " + gateCalls.resume + " times.");
     if (await gp.$(".toast.hubgate")) fail("the paused toast stayed up after resume.");
 
@@ -2438,14 +2475,14 @@ async function restartGateSection(browser, base) {
     await gp.waitForFunction(() => !!document.querySelector(".toast.hubgate"), null, { timeout: slow(5000) })
       .catch(() => fail("the second countdown drew no toast."));
     await gp.evaluate(() => { for (let i = 0; i < 5; i++) toast("filler " + i, "pushing the stack"); });
-    await gp.waitForTimeout(100);
+    await run(100);
     if (!(await hasCountdown())) fail("the countdown toast was pushed off the stack.");
     const plainCount = await gp.evaluate(() => document.querySelectorAll("#toasts .toast:not(.sticky)").length);
     if (plainCount !== 3) fail("with a countdown up the stack held " + plainCount + " ordinary toasts, not 3.");
     await gp.evaluate(() => document.querySelector(".toast.hubgate").remove());
-    await gp.waitForTimeout(100);
+    await run(100);
     if (!(await hasCountdown())) fail("the countdown toast stayed gone after something removed it.");
-    await gp.waitForTimeout(9500);
+    await run(9500);
     if (!(await hasCountdown())) fail("the countdown toast went away on a timer.");
     // Every stream back, not only the one `#conn` watches. The hub's own stream
     // reopens on its own clock, and an event said before it is back is said to
@@ -2456,9 +2493,9 @@ async function restartGateSection(browser, base) {
       { timeout: slow(15000) }).catch(() => fail("the stream did not come back."));
     for (const end = Date.now() + 15000;
       openStreams.filter(r => !r.destroyed).length < streamsWere && Date.now() < end;) {
-      await gp.waitForTimeout(50);
+      await run(50);
     }
-    await gp.waitForTimeout(500);
+    await run(500);
     if (!(await hasCountdown())) fail("the countdown toast went away when the stream reopened.");
     say({ state: "cancelled" });
     await gp.waitForFunction(() => !document.querySelector(".toast.hubgate"), null, { timeout: slow(5000) })
@@ -2470,7 +2507,7 @@ async function restartGateSection(browser, base) {
     await gp.waitForFunction(() => !!document.querySelector(".toast.hubgate"), null, { timeout: slow(5000) })
       .catch(() => fail("a pause on a phone drew no toast."));
     await gp.evaluate(() => { for (let i = 0; i < 3; i++) toast("phone filler " + i, "pushing the stack"); });
-    await gp.waitForTimeout(100);
+    await run(100);
     const phone = await gp.evaluate(() => ({
       paused: !!document.querySelector(".toast.hubgate .hubgate-act"),
       plain: document.querySelectorAll("#toasts .toast:not(.sticky)").length
@@ -2506,7 +2543,7 @@ async function restartGateSection(browser, base) {
       .catch(() => fail("the hub restarting drew no modal."));
     // It says how long it has been, and it wears the skin: its card is the
     // palette's own card colour, whatever skin is on.
-    await gp.waitForTimeout(1200);
+    await run(1200);
     const cover = await gp.evaluate(() => {
       const probe = document.createElement("div");
       probe.style.background = "var(--card-0)";
@@ -2527,7 +2564,7 @@ async function restartGateSection(browser, base) {
     }
     await gp.keyboard.press("Escape");
     await gp.evaluate(() => closeOpenDialogs());
-    await gp.waitForTimeout(200);
+    await run(200);
     if (!(await gp.evaluate(() => document.getElementById("hubrestart").open))) {
       fail("the restarting modal came down while the hub was still away.");
     }
@@ -2542,6 +2579,7 @@ async function restartGateSection(browser, base) {
     hubMode = wasHub;
     gatePaused = false;
     gateCountdownLeft = 0;
+    sseRetry = 0;
     gateBoot = "boot-a";
     await ctx.close();
   }
@@ -2704,6 +2742,8 @@ async function coverPollSection(browser, base) {
   gateBoot = "boot-a";
   gateRestartMode = "";
   healthBuild = "test";
+  // Every case drops the stream: a short retry keeps each reconnect from costing the browser's 3s.
+  sseRetry = 200;
   const say = state => {
     const line = "event: hub-restart\ndata: " + JSON.stringify(state) + "\n\n";
     openStreams.forEach(r => { try { if (!r.destroyed) r.write(line); } catch (e) {} });
@@ -2753,7 +2793,7 @@ async function coverPollSection(browser, base) {
     // A check already in flight swallows the new hub's stream open, and its answer is the old hub's.
     gateBoot = "boot-a";
     gateRestartMode = "slow";
-    gateSlowMs = 8000;
+    gateSlowMs = 3000;
     await cover();
     gateAsked = 0;
     await blip();
@@ -2790,21 +2830,28 @@ async function coverPollSection(browser, base) {
     await cleared("the cover stayed up in a browser with no AbortSignal.timeout.");
     // AN ABANDONED GATE takes its cover down. The hub said restarting and went on answering from the same
     // process (the script was killed): no "something is wrong" while it answers, and the cover clears.
+    // The window is 20s, moved through on the page's fake clock rather than waited out.
     gateBoot = "boot-f";
     gateRestartMode = "";
+    await gp.clock.install();
     await cover();
-    await gp.waitForTimeout(12000);
+    await gp.clock.runFor(12000);
     if (!(await coverUp())) fail("an abandoned gate's cover came down before the window ran out.");
     if (await gp.evaluate(() => document.getElementById("hubrestart").classList.contains("stalled"))) {
       fail("the cover said something was wrong while the hub kept answering.");
     }
-    await cleared("an abandoned gate left its cover up.", 15000);
+    await fakeWait(gp, () => !document.getElementById("hubrestart").open, null, 15000).catch(async () => {
+      fail("an abandoned gate left its cover up.");
+      await gp.evaluate(() => hubClearRestarting());
+    });
     if (errors.length) fail("the cover poll page threw: " + errors.join(" | "));
     if (!bad) console.log("coverPoll ok");
   } finally {
     hubMode = wasHub;
     gateBoot = "boot-a";
     gateRestartMode = "";
+    gateSlowMs = 1500;
+    sseRetry = 0;
     await ctx.close();
   }
 }
@@ -2835,36 +2882,38 @@ async function coverStepsSection(browser, base) {
     };
   });
   try {
+    // The 10s and 30s steps run on the page's fake clock.
+    await gp.clock.install();
     await gp.goto(base, { waitUntil: "domcontentloaded" });
     await gp.waitForFunction(() => typeof hubIsHub !== "undefined" && hubIsHub &&
       document.getElementById("conn").classList.contains("live"), null, { timeout: slow(15000) });
-    await gp.waitForTimeout(500);
+    await gp.clock.runFor(500);
     openStreams.forEach(r => { try { r.write("event: hub-restart\ndata: {\"state\":\"restarting\"}\n\n"); } catch (e) {} });
     await gp.waitForFunction(() => document.getElementById("hubrestart").open, null, { timeout: slow(5000) })
       .catch(() => fail("restarting drew no cover."));
     hubAway = true;
     openStreams.splice(0).forEach(r => { try { r.destroy(); } catch (e) {} });
-    await gp.waitForTimeout(6000);
+    await gp.clock.runFor(6000);
     const early = await state();
     if (early.stalled || early.reload || !/few seconds/.test(early.say)) {
       fail("at 6s the cover already said something was wrong: " + JSON.stringify(early));
     }
     if (early.ring === "none" || early.bar === "none") fail("at 6s the cover's animations were already off.");
-    await gp.waitForFunction(() => document.getElementById("hubrestart").classList.contains("stalled"), null,
-      { timeout: slow(8000) }).catch(() => fail("past 10s the cover did not say something was wrong."));
+    await fakeWait(gp, () => document.getElementById("hubrestart").classList.contains("stalled"), null, 8000)
+      .catch(() => fail("past 10s the cover did not say something was wrong."));
     const wrong = await state();
     if (!/wrong/.test(wrong.say)) fail("past 10s the cover said: " + wrong.say);
     if (wrong.ring !== "none" || wrong.bar !== "none") fail("past 10s the cover still animated: " + JSON.stringify(wrong));
     if (wrong.reload) fail("the reload button showed before 30s.");
-    await gp.waitForFunction(() => { const b = document.getElementById("hubrestart-reload"); return b && !b.hidden; },
-      null, { timeout: slow(25000) }).catch(() => fail("past 30s the cover offered no reload."));
+    await fakeWait(gp, () => { const b = document.getElementById("hubrestart-reload"); return b && !b.hidden; },
+      null, 25000).catch(() => fail("past 30s the cover offered no reload."));
     // The hub comes back and the reload lands on a cover that clears: the written-down cover carries on.
     gateBoot = "boot-b";
     hubAway = false;
     const reloaded = gp.waitForEvent("domcontentloaded", { timeout: slow(15000) }).then(() => true, () => false);
     await gp.click("#hubrestart-reload", { timeout: slow(2000) }).catch(() => {});
     if (!(await reloaded)) fail("the reload button did not reload the page.");
-    await gp.waitForFunction(() => !document.getElementById("hubrestart").open, null, { timeout: slow(15000) })
+    await fakeWait(gp, () => !document.getElementById("hubrestart").open, null, 15000)
       .catch(() => fail("the cover did not clear after the reload found the new hub."));
     if (errors.length) fail("the cover steps page threw: " + errors.join(" | "));
     if (!bad) console.log("coverSteps ok");
@@ -2890,10 +2939,13 @@ async function atriumDownSection(browser, base) {
   const wasHub = hubMode;
   hubMode = true;
   gateBoot = "boot-a";
+  sseRetry = 200;
   const drop = () => openStreams.splice(0).forEach(r => { try { r.destroy(); } catch (e) {} });
   const downUp = () => dp.evaluate(() => { const d = document.getElementById("atriumdown"); return !!(d && d.open); });
-  const live = () => dp.waitForFunction(() => document.getElementById("conn").classList.contains("live"),
-    null, { timeout: slow(15000) });
+  // The page runs on a fake clock: the five seconds, the backoff and the countdown are moved through, not waited out.
+  const run = ms => dp.clock.runFor(ms);
+  const until = (fn, ms) => fakeWait(dp, fn, null, ms);
+  const live = () => fakeWait(dp, () => document.getElementById("conn").classList.contains("live"), null, 15000, 0);
   // Whether the down cover opened at any frame since this was called.
   const watchDown = () => dp.evaluate(() => {
     window.__downSeen = false;
@@ -2904,26 +2956,27 @@ async function atriumDownSection(browser, base) {
     tick();
   });
   try {
+    await dp.clock.install();
     await dp.goto(base, { waitUntil: "domcontentloaded" });
-    await dp.waitForFunction(() => typeof hubIsHub !== "undefined" && hubIsHub &&
-      document.getElementById("conn").classList.contains("live"), null, { timeout: slow(15000) });
-    await dp.waitForTimeout(500);
+    await until(() => typeof hubIsHub !== "undefined" && hubIsHub &&
+      document.getElementById("conn").classList.contains("live"), 15000);
+    await run(500);
 
     // A blip is not atrium being down.
     await watchDown();
     drop();
     await live().catch(() => fail("the stream did not come back after a blip."));
-    await dp.waitForTimeout(6000);
+    await run(6000);
     if (await dp.evaluate(() => window.__downSeen)) fail("a stream blip put the down cover up.");
 
     // Atrium stops with nothing said: nothing for five seconds, then the cover.
     hubAway = true;
     drop();
-    await dp.waitForTimeout(3000);
+    await run(3000);
     if (await downUp()) fail("the down cover went up before five seconds.");
-    await dp.waitForFunction(() => document.getElementById("atriumdown").open, null, { timeout: slow(8000) })
+    await until(() => document.getElementById("atriumdown").open, 8000)
       .catch(() => fail("atrium stopping with nothing said put no down cover up."));
-    await dp.waitForTimeout(1200);
+    await run(1200);
     const card = await dp.evaluate(() => ({
       clock: document.getElementById("atriumdown-el").textContent,
       text: document.getElementById("atriumdown").textContent,
@@ -2938,12 +2991,12 @@ async function atriumDownSection(browser, base) {
     if (/0, 227, 176/.test(card.edge)) fail("the down cover wears the teal edge, not the warning one: " + card.edge);
     await dp.keyboard.press("Escape");
     await dp.evaluate(async () => { await closeOpenDialogs(); document.getElementById("atriumdown").close(); });
-    await dp.waitForTimeout(300);
+    await run(300);
     if (!(await downUp())) fail("the down cover came down while atrium was still away.");
 
     // Atrium answers: the cover comes down on its own.
     hubAway = false;
-    await dp.waitForFunction(() => !document.getElementById("atriumdown").open, null, { timeout: slow(15000) })
+    await until(() => !document.getElementById("atriumdown").open, 15000)
       .catch(() => fail("the down cover did not come down once atrium answered."));
     await live().catch(() => fail("the stream did not come back after atrium did."));
 
@@ -2952,20 +3005,20 @@ async function atriumDownSection(browser, base) {
       const line = "event: hub-restart\ndata: " + JSON.stringify(state) + "\n\n";
       openStreams.forEach(r => { try { if (!r.destroyed) r.write(line); } catch (e) {} });
     };
-    await dp.waitForTimeout(500);
+    await run(500);
     await watchDown();
     say({ state: "countdown", seconds: 1 });
-    await dp.waitForTimeout(1300);
+    await run(1300);
     say({ state: "restarting" });
-    await dp.waitForFunction(() => document.getElementById("hubrestart").open, null, { timeout: slow(5000) })
+    await until(() => document.getElementById("hubrestart").open, 5000)
       .catch(() => fail("restarting drew no restart cover."));
     hubAway = true;
     drop();
-    await dp.waitForTimeout(8000);
+    await run(8000);
     if (await dp.evaluate(() => window.__downSeen)) fail("a planned restart put the down cover up.");
     gateBoot = "boot-b";
     hubAway = false;
-    await dp.waitForFunction(() => !document.getElementById("hubrestart").open, null, { timeout: slow(15000) })
+    await until(() => !document.getElementById("hubrestart").open, 15000)
       .catch(() => fail("the restart cover did not clear on the new hub."));
     if (await dp.evaluate(() => window.__downSeen)) fail("the down cover showed as the planned restart ended.");
     await dp.evaluate(() => cancelAnimationFrame(window.__downWatch));
@@ -3065,6 +3118,7 @@ async function atriumDownSection(browser, base) {
   } finally {
     serveSW = false;
     page502 = false;
+    sseRetry = 0;
     hubAway = false;
     hubMode = wasHub;
     gateBoot = "boot-a";
@@ -3148,11 +3202,13 @@ async function toastLivesSection(browser, base) {
     document.getElementById("toasts").innerHTML = "";
     if (typeof toastQueue !== "undefined") toastQueue.length = 0;
   });
-  const stillUpAt5s = async (title, what, born) => {
-    await tp.waitForTimeout(Math.max(0, 5000 - (Date.now() - born)));
+  // The page runs on a fake clock, so "5s later" is moved through rather than waited out.
+  const stillUpAt5s = async (title, what) => {
+    await tp.clock.runFor(5000);
     if (!(await up(title))) fail(what + ": the toast was gone before 5s.");
   };
   try {
+    await tp.clock.install();
     await tp.goto(base, { waitUntil: "domcontentloaded" });
     await tp.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
 
@@ -3170,26 +3226,23 @@ async function toastLivesSection(browser, base) {
       // machine can push past the 5s this checks at. See toastStaysSection.
       refresh();
     });
-    let born = Date.now();
     await tp.waitForFunction(() => window.__reaps >= 1, null, { timeout: slow(12000) })
       .catch(() => fail("no poll reaped toasts, so the answered case was not exercised."));
-    await stillUpAt5s("gone9 is ready", "a card that stopped waiting", born);
+    await stillUpAt5s("gone9 is ready", "a card that stopped waiting");
     const marked = await tp.evaluate(() => [...document.querySelectorAll("#toasts .toast")]
       .some(el => el.classList.contains("answered")));
     if (!marked) fail("a toast whose card stopped waiting does not say it was answered.");
 
     // 2. A burst of four with room for three.
     await clear();
-    born = Date.now();
     await tp.evaluate(() => { for (let i = 1; i <= 4; i++) toast("burst " + i, "one of four"); });
-    await stillUpAt5s("burst 1", "a burst past the cap", born);
-    await tp.waitForFunction(() => [...document.querySelectorAll("#toasts .toast:not(.leaving) b")]
-      .some(b => b.textContent === "burst 4"), null, { timeout: slow(8000) })
+    await stillUpAt5s("burst 1", "a burst past the cap");
+    await fakeWait(tp, () => [...document.querySelectorAll("#toasts .toast:not(.leaving) b")]
+      .some(b => b.textContent === "burst 4"), null, 8000)
       .catch(() => fail("the fourth toast of a burst never got its turn on screen."));
 
     // 3. A view switch, and a dialog opening and closing.
     await clear();
-    born = Date.now();
     await tp.evaluate(() => {
       toast("through the views", "a view switch and a dialog");
       switchView("terms");
@@ -3198,18 +3251,18 @@ async function toastLivesSection(browser, base) {
       d.showModal();
       d.close();
     });
-    await stillUpAt5s("through the views", "a view switch and a dialog", born);
+    await stillUpAt5s("through the views", "a view switch and a dialog");
 
     // 4. Hovered, it outlives its 9 seconds, and goes once the pointer leaves.
     await clear();
     await tp.evaluate(() => toast("held by the pointer", "hover me"));
     await tp.hover("#toasts .toast");
-    await tp.waitForTimeout(10000);
+    await tp.clock.runFor(10000);
     if (!(await up("held by the pointer"))) fail("a hovered toast went while it was being read.");
     // The life it had left when the pointer arrived, which was nearly all of it.
     await tp.mouse.move(2, 890);
-    await tp.waitForFunction(() => !document.querySelector("#toasts .toast:not(.leaving)"), null,
-      { timeout: slow(12000) }).catch(() => fail("a toast the pointer left never went."));
+    await fakeWait(tp, () => !document.querySelector("#toasts .toast:not(.leaving)"), null, 12000)
+      .catch(() => fail("a toast the pointer left never went."));
     if (errors.length) fail("the toast page threw uncaught errors: " + errors.join(" | "));
   } finally {
     await ctx.close();
@@ -3484,12 +3537,14 @@ async function idleRateSection(browser, base) {
     return p;
   };
   try {
+    // All three documents on the context's fake clock: page seconds, every poll and heartbeat fired as it comes due.
+    await ctx.clock.install();
     const board = await open("board");
-    await board.waitForTimeout(1500);
+    await fakeTick(board, 1500);
     await board.click('.tab[data-view="terms"]').catch(() => {});
     const solo = await open("solo", "#term=sgg~s1");
     const tab2 = await open("tab2");
-    await board.waitForTimeout(3000);
+    await fakeTick(board, 3000);
     // The spelling flip: sgg drops and comes back, so the board re-resolves
     // `sgg~s1` to `s1` and back while the window keeps the spelling it opened on.
     counts.clear();
@@ -3499,8 +3554,9 @@ async function idleRateSection(browser, base) {
       if (i === 2 || i === 6) {
         sggAttached = !sggAttached;
         hubStreams.forEach(r => { try { r.write("event: rooms\ndata: {}\n\n"); } catch (e) {} });
+        await new Promise(r => setTimeout(r, 20));
       }
-      await board.waitForTimeout(1000);
+      await fakeTick(board, 1000);
     }
     const mut1 = await Promise.all(pages.map(p => p.evaluate(() => window.__atriumMut)));
     const total = [...counts.values()].reduce((a, b) => a + b, 0);
@@ -3527,10 +3583,11 @@ async function idleRateSection(browser, base) {
     const stall = +(process.env.IDLE_RATE_STALL || 40);
     if (stall) {
       stalledCount = 0;
-      roomStallUntil = Date.now() + stall * 1000;
+      // The stall is page time: the server holds every read until the loop below has run its page seconds.
+      roomStallUntil = Date.now() + slow(stall * 1000);
       let most = 0, where = "";
       for (let i = 0; i < stall; i++) {
-        await board.waitForTimeout(1000);
+        await fakeTick(board, 1000);
         const qs = await Promise.all(pages.map(p => p.evaluate(() => apiQueue.length)));
         qs.forEach((n, j) => { if (n > most) { most = n; where = pages[j].__who + " at " + (i + 1) + "s"; } });
         if (process.env.IDLE_RATE_REPORT && i % 5 === 4) {
@@ -3538,17 +3595,19 @@ async function idleRateSection(browser, base) {
         }
       }
       roomStallUntil = 0;
+      stallHeld.splice(0).forEach(answer => answer());
       if (most > 4) {
         fail("a room that stopped answering queued " + most + " board fetches (" + where +
           "): a held read is keeping its slot instead of timing out.");
       }
-      await board.waitForTimeout(5000);
+      await fakeTick(board, 5000);
       const after = await Promise.all(pages.map(p => p.evaluate(() => apiInflight + apiQueue.length)));
       if (after.some(n => n > 0)) fail("the board still had fetches out 5s after the room answered: " + after.join(" "));
     }
     if (errors.length) fail("the idle-rate pages threw: " + errors.join(" | "));
   } finally {
     roomStallUntil = 0;
+    stallHeld.splice(0).forEach(answer => answer());
     await ctx.close();
     hubMode = wasHub;
     sggAttached = wasSgg;
@@ -3589,24 +3648,28 @@ async function foldStillSection(browser, base) {
     await p.click('.tab[data-view="board"]');
     return p;
   };
-  let live = 0;
+  // Both windows run on the context's fake clock. A beat is one second of a live board: a card changes, the stream says
+  // so and every pass repaints, which is where the stored answer meets the screen. The real pause lets the pass land.
+  let tick = 0;
+  const beats = async n => {
+    for (let i = 0; i < n; i++) {
+      LOOSE.display_title = "loose card " + (++tick);
+      openStreams.forEach(r => { try { r.write("event: task\ndata: {}\n\n"); } catch (e) {} });
+      await ctx.clock.runFor(1000);
+      await new Promise(r => setTimeout(r, 150));
+    }
+  };
   try {
+    await ctx.clock.install();
     const a = await open("a");
     const b = await open("b");
     await a.waitForSelector('details.cardgroup[data-fold="proj:untagged"]', { state: "attached", timeout: slow(10000) });
     // Open it by hand, the way a click on its summary does.
     await a.evaluate(() => { document.querySelector('details.cardgroup[data-fold="proj:untagged"]').open = true; });
-    // A live board: a card changes and the stream says so, every second, so
-    // every pass repaints. A repaint is where the stored answer meets the screen.
-    let tick = 0;
-    live = setInterval(() => {
-      LOOSE.display_title = "loose card " + (++tick);
-      openStreams.forEach(r => { try { r.write("event: task\ndata: {}\n\n"); } catch (e) {} });
-    }, 1000);
-    await a.waitForTimeout(2500);
+    await beats(3);
     const reset = p => p.evaluate(() => { window.__writes = []; window.__toggles = 0; });
     await reset(a); await reset(b);
-    await a.waitForTimeout(+(process.env.FOLD_STILL_SECONDS || 10) * 1000);
+    await beats(+(process.env.FOLD_STILL_SECONDS || 10));
     const got = await Promise.all([a, b].map(p => p.evaluate(() => ({
       writes: window.__writes, toggles: window.__toggles,
       open: !!(document.querySelector('details.cardgroup[data-fold="proj:untagged"]') || {}).open
@@ -3624,9 +3687,9 @@ async function foldStillSection(browser, base) {
 
     // And shut again, which is its default, so the entry goes and stays gone.
     await a.evaluate(() => { document.querySelector('details.cardgroup[data-fold="proj:untagged"]').open = false; });
-    await a.waitForTimeout(2500);
+    await beats(3);
     await reset(a); await reset(b);
-    await a.waitForTimeout(4000);
+    await beats(4);
     const shut = await Promise.all([a, b].map(p => p.evaluate(() => ({
       writes: window.__writes.length,
       open: !!(document.querySelector('details.cardgroup[data-fold="proj:untagged"]') || {}).open
@@ -3635,7 +3698,6 @@ async function foldStillSection(browser, base) {
     if (shut.some(s => s.writes)) fail("shutting the untagged group left windows writing storage: " + JSON.stringify(shut));
     if (errors.length) fail("the fold-still pages threw: " + errors.join(" | "));
   } finally {
-    clearInterval(live);
     LOOSE.display_title = "loose card";
     await ctx.close();
     tasksMode = was;
@@ -3744,13 +3806,17 @@ async function newCardSection(browser, base) {
     glow: [...document.querySelectorAll(".arrived.glow[data-id]")].map(e => e.dataset.id),
     chips: document.querySelectorAll(".chip.arrived").length
   }));
-  let live = 0;
+  // The page runs on a fake clock: the debounces, the pulse and the quiet spells are moved through, not waited out. The
+  // real pause after each move lets the read a move started land and paint.
+  const run = async (p, ms) => { await p.clock.runFor(ms); await new Promise(r => setTimeout(r, 150)); };
+  sseRetry = 200;
   try {
+    await ctx.clock.install();
     const p = await ctx.newPage();
     p.on("pageerror", e => errors.push(String(e)));
     await p.goto(base, { waitUntil: "domcontentloaded" });
     await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
-    await p.waitForTimeout(800);
+    await run(p, 800);
     let m = await marks(p);
     if (m.arrived.length) fail("a first load marked cards that were already there as new: " + m.arrived.join(","));
 
@@ -3766,7 +3832,7 @@ async function newCardSection(browser, base) {
     if (anim !== "arrived") fail("the new stack row's animation is " + JSON.stringify(anim) + ", not arrived.");
     // NEWCARD_SHOT=dir saves what the pulse looks like, for a human to judge.
     if (process.env.NEWCARD_SHOT) {
-      await p.waitForTimeout(300);
+      await run(p, 300);
       await p.screenshot({ path: path.join(process.env.NEWCARD_SHOT, "newcard-stack.png") });
     }
     m = await marks(p);
@@ -3781,12 +3847,10 @@ async function newCardSection(browser, base) {
     await p.click('.tab[data-view="stack"]');
 
     // Idle, with a repaint every second: nothing is written.
-    await p.waitForTimeout(1500);
+    await run(p, 1500);
     await p.evaluate(() => { window.__writes = []; });
     let tick = 0;
-    live = setInterval(() => { LOOSE.display_title = "loose " + (++tick); poke(); }, 1000);
-    await p.waitForTimeout(5000);
-    clearInterval(live); live = 0;
+    for (let i = 0; i < 5; i++) { LOOSE.display_title = "loose " + (++tick); poke(); await run(p, 1000); }
     const idle = await p.evaluate(() => window.__writes);
     if (idle.length) fail("the new-card cue wrote storage " + idle.length + " times while idle: " +
       [...new Set(idle)].join(", "));
@@ -3795,7 +3859,7 @@ async function newCardSection(browser, base) {
     // and no other card gets one.
     await p.reload({ waitUntil: "domcontentloaded" });
     await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
-    await p.waitForTimeout(1200);
+    await run(p, 1200);
     m = await marks(p);
     if (m.glow.length) fail("a reload pulsed " + m.glow.join(","));
     if (m.arrived.join(",") !== "u-new") fail("after a reload the marked cards are " + m.arrived.join(",") +
@@ -3804,7 +3868,7 @@ async function newCardSection(browser, base) {
     // A click clears it, here and after another reload.
     await p.click('#stack-list .stackrow[data-id="u-new"] .who b');
     await p.keyboard.press("Escape");
-    await p.waitForTimeout(300);
+    await run(p, 300);
     m = await marks(p);
     if (m.arrived.length || m.chips) fail("a click did not clear the new card: " + JSON.stringify(m));
     const stored = await p.evaluate(() => JSON.parse(localStorage.getItem("atrium.newcards") || "{}")["u-new"]);
@@ -3814,31 +3878,31 @@ async function newCardSection(browser, base) {
     // then the same cards come back under a second room's tag. Nothing is new.
     untaggedDown = true;
     openStreams.forEach(r => { try { r.destroy(); } catch (e) {} });
-    await p.waitForTimeout(2500);
+    await run(p, 2500);
     untaggedDown = false; untaggedEmpty = true;
     poke();
-    await p.waitForTimeout(2000);
+    await run(p, 2000);
     untaggedEmpty = false; untaggedTag = "sgg";
     poke();
-    await p.waitForTimeout(3000);
+    await run(p, 3000);
     m = await marks(p);
     if (m.arrived.length) fail("a hub restart that brought the same cards back marked " + m.arrived.join(","));
 
     // And a reload in the middle of one, which starts on an empty board.
     untaggedEmpty = true;
     await p.reload({ waitUntil: "domcontentloaded" });
-    await p.waitForTimeout(2000);
+    await run(p, 2000);
     untaggedEmpty = false;
     poke();
     await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
-    await p.waitForTimeout(1500);
+    await run(p, 1500);
     m = await marks(p);
     if (m.arrived.length) fail("a reload during a hub restart marked " + m.arrived.join(","));
     if (errors.length) fail("the new-card page threw: " + errors.join(" | "));
   } finally {
-    clearInterval(live);
     LOOSE.display_title = "loose card";
     untaggedExtra = []; untaggedDown = false; untaggedEmpty = false; untaggedTag = "";
+    sseRetry = 0;
     await ctx.close();
   }
 
@@ -5700,9 +5764,10 @@ async function termDebugSection(browser, base) {
 
 // ── typing lag with several terminals streaming ──────────────────────────
 // Four cards attached in turn, so three are kept hidden and one shows, every one of them streaming a TUI's redraw
-// the way a working agent does. Traced with CDP for TERMLAG_SECS (default 20): long tasks per minute, the worst
-// animation frame, and every forced layout with the script that forced it. Prints the numbers and fails on a forced
-// layout from inside an animation frame, which is what turned xterm's render frame into a 147ms one.
+// the way a working agent does. Traced with CDP for TERMLAG_SECS (default 5 in the suite, 20 for numbers worth
+// reading): long tasks per minute, the worst animation frame, and every forced layout with the script that forced it.
+// Prints the numbers and fails on a forced layout from inside an animation frame, which is what turned xterm's render
+// frame into a 147ms one.
 // TERMLAG_TRACE=<file> keeps the raw trace. See REPORT.md on claude/u-term-debug-and-lag.
 async function termLagSection(browser, base) {
   const was = tasksMode;
@@ -5747,7 +5812,7 @@ async function termLagSection(browser, base) {
     };
     Object.assign(window.WebSocket, { CONNECTING: 0, OPEN: 1, CLOSING: 2, CLOSED: 3 });
   });
-  const secs = +(process.env.TERMLAG_SECS || 20);
+  const secs = +(process.env.TERMLAG_SECS || 5);
   try {
     const p = await ctx.newPage();
     p.on("pageerror", e => errors.push(String(e)));
@@ -6550,7 +6615,7 @@ async function pasteBigSection(browser, base) {
       return s;
     };
     Object.assign(window.WebSocket, { CONNECTING: 0, OPEN: 1, CLOSING: 2, CLOSED: 3 });
-    // Drives one gesture and samples the box on every frame for 1.5s.
+    // Drives one gesture and samples the box on every frame for 800ms: room to see it paint at once and hold 300ms.
     window.__pasteRun = gesture => new Promise(done => {
       pasteEnd();
       window.__frames = [];
@@ -6562,7 +6627,7 @@ async function pasteBigSection(browser, base) {
         const t = performance.now() - t0;
         if (vis()) { seen.push(t); if (firstFrame < 0) firstFrame = frame; }
         frame++;
-        if (t < 1500) { requestAnimationFrame(loop); return; }
+        if (t < 800) { requestAnimationFrame(loop); return; }
         done({ first: seen.length ? Math.round(seen[0]) : -1, firstFrame,
           span: seen.length ? Math.round(seen[seen.length - 1] - seen[0]) : 0,
           sizes: window.__frames.map(f => f.length), heads: window.__frames.map(f => f.slice(0, 32)),
@@ -13269,19 +13334,18 @@ async function eventDrivenSection(browser, base) {
   try {
     const p = await ctx.newPage();
     p.on("pageerror", e => errors.push(String(e)));
+    await p.clock.install();
     await p.goto(base, { waitUntil: "domcontentloaded" });
     await p.click('.tab[data-view="terms"]');
     await p.waitForSelector('#term-list .card.tab[data-id="u-sa67"]', { state: "attached", timeout: slow(15000) });
-    await p.waitForTimeout(1500);
+    await fakeTick(p, 1500);
     const card = UNTAGGED_CARDS[0];
+    const say = async (ev, ms) => { mockSay("task", JSON.stringify(ev)); await new Promise(r => setTimeout(r, 20)); await fakeTick(p, ms); };
 
     // (a) An older room: task events with no `row`. One every half second for
     // the whole window, so a board that pulled per clump would pull every 1.5s.
     counts.clear();
-    for (let i = 0; i < secs * 2; i++) {
-      mockSay("task", JSON.stringify({ id: card.id, status: "running" }));
-      await p.waitForTimeout(500);
-    }
+    for (let i = 0; i < secs * 2; i++) await say({ id: card.id, status: "running" }, 500);
     const partial = counts.get("/v1/tasks") || 0;
     console.log("eventDriven: " + secs + "s of task events without row: " + partial + " /v1/tasks");
     // Once every 5s over a window of secs is floor(secs / 5) + 1: one at each
@@ -13296,12 +13360,9 @@ async function eventDrivenSection(browser, base) {
     // the event, so the title below changes with no request at all. A quiet
     // gap first, so the trailing pull the last partial event queued lands
     // before the count starts.
-    await p.waitForTimeout(6000);
+    await fakeTick(p, 6000);
     counts.clear();
-    for (let i = 0; i < secs * 2; i++) {
-      mockSay("task", JSON.stringify(Object.assign({}, card, { row: 1, display_title: "sa67 stages " + i })));
-      await p.waitForTimeout(500);
-    }
+    for (let i = 0; i < secs * 2; i++) await say(Object.assign({}, card, { row: 1, display_title: "sa67 stages " + i }), 500);
     const whole = counts.get("/v1/tasks") || 0;
     console.log("eventDriven: " + secs + "s of task events with row: 1: " + whole + " /v1/tasks");
     // The 60s resync may land inside the window, once.
@@ -13319,7 +13380,8 @@ async function eventDrivenSection(browser, base) {
     // (b) The sort paints in the frame they were clicked in, and
     // ask for nothing.
     counts.clear();
-    const clicks = await p.evaluate(() => {
+    // the frame is the fake clock's, so the clock moves while the clicks wait on it
+    const clicksP = p.evaluate(() => {
       const strip = () => document.getElementById("terms").innerHTML + document.getElementById("gear-term-sort").innerHTML;
       const oneFrame = (act, read) => new Promise(done => {
         const before = read();
@@ -13331,7 +13393,11 @@ async function eventDrivenSection(browser, base) {
         sortBack: await oneFrame(() => toggleTermSort(), strip),
       }))();
     });
-    await p.waitForTimeout(500);
+    let clicks = null;
+    clicksP.then(c => { clicks = c; });
+    for (let i = 0; i < 20 && !clicks; i++) await fakeTick(p, 50, 50);
+    clicks = await clicksP;
+    await fakeTick(p, 500);
     if (!clicks.sort || !clicks.sortBack) fail("the terminal sort did not repaint within one frame: " + JSON.stringify(clicks));
     if (sumCounts(counts)) fail("a sort click made requests: " + topCounts(counts));
 
@@ -13360,16 +13426,17 @@ async function eventDrivenSection(browser, base) {
   });
   try {
     const p = await ctx2.newPage();
+    await p.clock.install();
     await p.goto(base, { waitUntil: "domcontentloaded" });
     await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
-    await p.waitForTimeout(1000);
+    await fakeTick(p, 1000);
     counts2.clear();
-    await p.waitForTimeout(5000);
+    await fakeTick(p, 5000);
     const shown = counts2.get("/v1/tasks") || 0;
     await p.evaluate(() => { window.__hide = true; });
-    await p.waitForTimeout(500);
+    await fakeTick(p, 500);
     counts2.clear();
-    await p.waitForTimeout(6000);
+    await fakeTick(p, 6000);
     const hidden = sumCounts(counts2);
     console.log("eventDriven: resync at 1.5s, visible 5s: " + shown + " /v1/tasks, hidden 6s: " + hidden + " requests");
     if (shown < 2) fail("a visible tab did not resync: " + shown + " /v1/tasks in 5s with a 1.5s resync");
@@ -13402,15 +13469,17 @@ async function idleBudgetSection(browser, base) {
   const counts = countRequests(ctx);
   try {
     const p = await ctx.newPage();
+    await p.clock.install();
     await p.goto(base, { waitUntil: "domcontentloaded" });
     await p.waitForSelector("#stack-list .stackrow, #term-list .card.tab",
       { state: "attached", timeout: slow(15000) });
-    await p.waitForTimeout(3000);
+    await fakeTick(p, 3000);
     counts.clear();
     for (let i = 0; i < secs; i++) {
       const c = UNTAGGED_CARDS[i % UNTAGGED_CARDS.length];
       mockSay("task", JSON.stringify(Object.assign({}, c, { row: 1, idle_seconds: i })));
-      await p.waitForTimeout(1000);
+      await new Promise(r => setTimeout(r, 20));
+      await fakeTick(p, 1000);
     }
     const total = sumCounts(counts);
     const perMin = total * 60 / secs;
@@ -13444,6 +13513,9 @@ async function pollsGoneSection(browser, base) {
   landList = [landCard(id, { supervised: true, worktree: "/walk/" + id })];
   landPerms = [];
   const errors = [];
+  // Every page here runs on a fake clock: the quiet spells that prove nothing polls are moved through, not waited out.
+  // The real pause after each move lets a request the page made be counted.
+  const run = async (p, ms) => { await p.clock.runFor(ms); await new Promise(r => setTimeout(r, 100)); };
   try {
     // (a) The walk drawer open for longer than the old 3s: no repeated request. An event for the card reads it.
     const ctx = await landContext(browser);
@@ -13460,6 +13532,7 @@ async function pollsGoneSection(browser, base) {
       Object.assign(window.WebSocket, { CONNECTING: 0, OPEN: 1, CLOSING: 2, CLOSED: 3 });
     });
     try {
+      await ctx.clock.install();
       const p = await ctx.newPage();
       p.on("pageerror", e => errors.push(String(e)));
       await p.goto(base, { waitUntil: "domcontentloaded" });
@@ -13468,10 +13541,10 @@ async function pollsGoneSection(browser, base) {
       await p.waitForSelector("#t-walk:not([hidden])", { timeout: slow(10000) });
       await p.click("#t-walk");
       await p.waitForSelector("#walk-drawer .wk-row", { timeout: slow(10000) });
-      await p.waitForTimeout(500);
+      await run(p, 500);
       const listed = () => (counts.get("/v1/tasks/" + id + "/files/list") || 0);
       const n0 = listed();
-      await p.waitForTimeout(7000);
+      await run(p, 7000);
       if (listed() !== n0) fail("pollsGone: the open walk drawer read the folder " + (listed() - n0) + " times in 7s with no event");
       fs.writeFileSync(path.join(dir, "findings", "02-low-b.go-L2.txt"), "LOW b.go line 2: other\n\nanother\n\nEvidence\ny\n");
       mockSay("task", JSON.stringify({ id }));
@@ -13487,11 +13560,12 @@ async function pollsGoneSection(browser, base) {
     const ctx2 = await browser.newContext({ viewport: { width: 1400, height: 900 } });
     const c2 = countRequests(ctx2);
     try {
+      await ctx2.clock.install();
       const p = await ctx2.newPage();
       p.on("pageerror", e => errors.push(String(e)));
       await p.goto(base, { waitUntil: "domcontentloaded" });
       await p.waitForFunction(() => typeof hubRooms !== "undefined" && hubRooms.length === 1, null, { timeout: slow(15000) });
-      await p.waitForTimeout(2500);
+      await run(p, 2500);
       c2.clear();
       const inv = [Object.assign({ transport: "direct", attached: true, first_seen: "2026-09-19T06:00:00Z" }, ALPHA),
         Object.assign({ transport: "direct", attached: true, first_seen: "2026-09-19T06:00:00Z" }, SGG)];
@@ -13499,14 +13573,14 @@ async function pollsGoneSection(browser, base) {
         rooms: ["alpha", "sgg"], attached: [ALPHA, SGG], inventory: inv, durable: true }) + "\n\n"); } catch (e) {} });
       await p.waitForFunction(() => hubRooms.length === 2, null, { timeout: slow(5000) })
         .catch(() => fail("pollsGone: a rooms event with a payload did not paint the second room"));
-      await p.waitForTimeout(700);
+      await run(p, 700);
       if (c2.get("/_hub/rooms") || c2.get("/_hub/inventory")) {
         fail("pollsGone: a rooms event with a payload still fetched: " + topCounts(c2));
       }
-      await p.waitForTimeout(2500);
+      await run(p, 2500);
       c2.clear();
       hubStreams.forEach(r => { try { r.write("event: rooms\ndata: {}\n\n"); } catch (e) {} });
-      await p.waitForTimeout(1200);
+      await run(p, 1200);
       if (!c2.get("/_hub/rooms")) fail("pollsGone: a rooms event without `attached` did not fall back to fetching");
     } finally {
       await ctx2.close();
@@ -13519,11 +13593,12 @@ async function pollsGoneSection(browser, base) {
     const ctx3 = await browser.newContext({ viewport: { width: 1400, height: 900 } });
     const c3 = countRequests(ctx3);
     try {
+      await ctx3.clock.install();
       const p = await ctx3.newPage();
       p.on("pageerror", e => errors.push(String(e)));
       await p.goto(base, { waitUntil: "domcontentloaded" });
       await p.waitForSelector("#stack-list .stackrow", { state: "attached", timeout: slow(15000) });
-      await p.waitForTimeout(2500);
+      await run(p, 2500);
       c3.clear();
       const say = h => mockSay("health", JSON.stringify(h));
       const halt = () => p.evaluate(() => { const e = document.getElementById("halted");
@@ -13535,9 +13610,9 @@ async function pollsGoneSection(browser, base) {
       say({ halted: false, settling: true });
       await p.waitForFunction(() => document.getElementById("halted").style.display === "none", null, { timeout: slow(5000) })
         .catch(() => fail("pollsGone: a health event without halted left the halt up"));
-      await p.waitForTimeout(6500);
+      await run(p, 6500);
       say({ halted: false, settling: false });
-      await p.waitForTimeout(500);
+      await run(p, 500);
       if (c3.get("/v1/health")) fail("pollsGone: /v1/health was read " + c3.get("/v1/health") + " times while events said it all");
     } finally {
       await ctx3.close();
@@ -19451,7 +19526,7 @@ async function mFollowSection(browser) {
       else { st.replies["fo-1"] = { source: "transcript", replies: replies() }; st.send("task", Object.assign({}, c, { row: 1, seen: { turn_ended_at: mIso(10000 - tick) } })); }
     };
     if ((await gap()) > 4) fail(tag + "did not open at the bottom: " + await gap());
-    // a finger goes down and drags slowly up for 20 s while output arrives every 2 s
+    // a finger goes down and drags slowly up for 8 s while output arrives every 2 s: four outputs, each of the three kinds
     const cdp = await ctx.newCDPSession(p);
     const X = 200;
     let y = 600;
@@ -19459,7 +19534,7 @@ async function mFollowSection(browser) {
     await p.waitForTimeout(150);
     const t0 = Date.now();
     let base = null, bad1 = null, last = null, nextOut = t0 + 1000;
-    while (Date.now() - t0 < 20000) {
+    while (Date.now() - t0 < 8000) {
       y += Number(process.env.FOLLOW_STEP || 0.5);
       await cdp.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [{ x: X, y: Math.round(y) }] });
       await p.waitForTimeout(100);
@@ -24862,57 +24937,73 @@ async function mActivityReadSection(browser) {
   await st.open();
   const tag = "mActivityRead: ";
   const reads = () => st.hits.filter(h => h.indexOf("a-1?") === 0).length;
-  const push = r => { st.tasks = [r]; st.send("task", Object.assign({ row: 1 }, r)); };
+  // The 5s throttle runs on the page's fake clock. `tick` moves it, and real time only carries the event and the read.
+  let p;
+  const tick = ms => p.clock.runFor(ms);
+  const push = async r => {
+    st.tasks = [r]; st.send("task", Object.assign({ row: 1 }, r));
+    const want = JSON.stringify([r.last_activity_at, r.prompted_at, r.output_at]);
+    await p.waitForFunction(w => { const c = window.mStore.cards()[0]; return c && JSON.stringify([c.last_activity_at, c.prompted_at, c.output_at]) === w; }, want, { timeout: slow(4000) }).catch(() => {});
+  };
+  const readsReach = async n => { const end = Date.now() + slow(3000); while (reads() < n && Date.now() < end) await new Promise(r => setTimeout(r, 20)); return reads(); };
+  const readsSettle = async () => { await new Promise(r => setTimeout(r, slow(300))); return reads(); };
   try {
     const ctx = await browser.newContext({ viewport: M_VIEWS[0], hasTouch: true, isMobile: true });
-    const p = await ctx.newPage();
+    p = await ctx.newPage();
     const errors = [];
     p.on("pageerror", e => errors.push(String(e)));
+    await p.clock.install();
     await p.goto(st.url + "/m/", { waitUntil: "domcontentloaded" });
     await p.waitForFunction(() => window.mNet.loaded() && window.mNet.live(), null, { timeout: slow(10000) });
     await p.evaluate(() => window.mCard.open("a-1"));
     await p.waitForFunction(() => /a reply/.test(document.getElementById("m-replies").textContent), null, { timeout: slow(8000) });
-    await p.waitForTimeout(300);
-    const r0 = reads();
+    await tick(300);
+    const r0 = await readsSettle();
     // nothing changed, and the last read is more than 5s old so the throttle cannot be what holds it: no read
-    await p.waitForTimeout(5300);
-    push(row());
-    await p.waitForTimeout(1200);
-    if (reads() !== r0) fail(tag + "an unchanged row made a read");
+    await tick(5300);
+    await push(row());
+    await tick(1200);
+    if (await readsSettle() !== r0) fail(tag + "an unchanged row made a read");
     // last_activity_at moved with output_at still null: one read, a moment later at most
-    push(row({ last_activity_at: mIso(5 * M_MIN) }));
-    await p.waitForTimeout(800);
-    if (reads() !== r0 + 1) fail(tag + "a moved last_activity_at made " + (reads() - r0) + " reads, not 1");
+    await push(row({ last_activity_at: mIso(5 * M_MIN) }));
+    await tick(800);
+    await readsReach(r0 + 1);
+    if (await readsSettle() !== r0 + 1) fail(tag + "a moved last_activity_at made " + (reads() - r0) + " reads, not 1");
     // ten changes in about a second: held, then one trailing read
-    for (let i = 0; i < 10; i++) { push(row({ last_activity_at: mIso(4 * M_MIN - i * 1000) })); await p.waitForTimeout(100); }
-    if (reads() !== r0 + 1) fail(tag + "the throttle let a read through inside 5s: " + (reads() - r0));
-    await p.waitForTimeout(5500);
-    if (reads() !== r0 + 2) fail(tag + "ten changes made " + (reads() - r0 - 1) + " reads after the first, not 1");
+    for (let i = 0; i < 10; i++) { await push(row({ last_activity_at: mIso(4 * M_MIN - i * 1000) })); await tick(100); }
+    if (await readsSettle() !== r0 + 1) fail(tag + "the throttle let a read through inside 5s: " + (reads() - r0));
+    await tick(5500);
+    await readsReach(r0 + 2);
+    if (await readsSettle() !== r0 + 2) fail(tag + "ten changes made " + (reads() - r0 - 1) + " reads after the first, not 1");
     // prompted_at counts too
     const T = mIso(2 * M_MIN);
-    await p.waitForTimeout(5200);
-    push(row({ last_activity_at: T }));
-    await p.waitForTimeout(800);
-    if (reads() !== r0 + 3) fail(tag + "a moved last_activity_at after a quiet spell did not read");
-    await p.waitForTimeout(5200);
-    push(row({ last_activity_at: T, prompted_at: mIso(M_MIN) }));
-    await p.waitForTimeout(800);
-    if (reads() !== r0 + 4) fail(tag + "a moved prompted_at alone did not read");
+    await tick(5200);
+    await push(row({ last_activity_at: T }));
+    await tick(800);
+    if (await readsReach(r0 + 3) !== r0 + 3) fail(tag + "a moved last_activity_at after a quiet spell did not read");
+    await tick(5200);
+    await push(row({ last_activity_at: T, prompted_at: mIso(M_MIN) }));
+    await tick(800);
+    if (await readsReach(r0 + 4) !== r0 + 4) fail(tag + "a moved prompted_at alone did not read");
     // a turn end on a row with no output_at moves the turn and the activity together: one read, not a second one 5s later
-    await p.waitForTimeout(5200);
-    push(row({ last_activity_at: mIso(M_MIN * 2), seen: { turn_ended_at: mIso(M_MIN * 2) } }));
-    await p.waitForTimeout(6500);
-    if (reads() !== r0 + 5) fail(tag + "a turn end made " + (reads() - r0 - 4) + " reads, not 1");
+    await tick(5200);
+    await push(row({ last_activity_at: mIso(M_MIN * 2), seen: { turn_ended_at: mIso(M_MIN * 2) } }));
+    await tick(800);
+    await readsReach(r0 + 5);
+    await tick(5700);
+    if (await readsSettle() !== r0 + 5) fail(tag + "a turn end made " + (reads() - r0 - 4) + " reads, not 1");
     // the same with output_at reported
-    await p.waitForTimeout(200);
+    await tick(200);
     const OUT = mIso(M_MIN), PR = mIso(M_MIN);
-    push(row({ last_activity_at: mIso(M_MIN), prompted_at: PR, output_at: OUT }));
-    await p.waitForTimeout(6500);
-    if (reads() !== r0 + 6) fail(tag + "a turn end with output_at made " + (reads() - r0 - 5) + " reads, not 1");
+    await push(row({ last_activity_at: mIso(M_MIN), prompted_at: PR, output_at: OUT }));
+    await tick(800);
+    await readsReach(r0 + 6);
+    await tick(5700);
+    if (await readsSettle() !== r0 + 6) fail(tag + "a turn end with output_at made " + (reads() - r0 - 5) + " reads, not 1");
     // a room that reports output_at: activity alone is not a reason to read
-    push(row({ last_activity_at: mIso(30000), prompted_at: PR, output_at: OUT }));
-    await p.waitForTimeout(6500);
-    if (reads() !== r0 + 6) fail(tag + "activity alone read though the row reports output_at");
+    await push(row({ last_activity_at: mIso(30000), prompted_at: PR, output_at: OUT }));
+    await tick(6500);
+    if (await readsSettle() !== r0 + 6) fail(tag + "activity alone read though the row reports output_at");
     if (errors.length) fail(tag + "page errors: " + errors.join(" | "));
     await ctx.close();
   } finally { await st.close(); }
@@ -25039,9 +25130,11 @@ async function mReadRetrySection(browser) {
     try {
       const ctx = await browser.newContext({ viewport: M_VIEWS[0], hasTouch: true, isMobile: true });
       const p = await ctx.newPage();
+      // 6.5s of backoff on the page's fake clock, a step at a time so each failed read lands before the next step.
+      await p.clock.install();
       await p.goto(st.url + "/m/", { waitUntil: "domcontentloaded" });
       await p.waitForFunction(() => window.mNet.loaded(), null, { timeout: slow(10000) });
-      await p.waitForTimeout(6500);
+      for (let t = 0; t < 6500; t += 100) { await p.clock.runFor(100); await new Promise(r => setTimeout(r, 10)); }
       const n = st.permsHits;
       if (!status && (n < 3 || n > 5)) fail(tag + "a 503 on permissions was read " + n + " times in 6.5s; backoff wants 3 to 5");
       if (status && n > 2) fail(tag + "a " + status + " was retried: " + n + " reads");
@@ -25203,8 +25296,9 @@ async function phoneRedirectSection(browser, base) {
   landPerms = [];
   landCard("land-a", { alias: "rnd", room: "claude-sg4", wire_name: "sparta/rnd-director", supervised: true });
   const raw = fs.readFileSync(path.join(WEB_ROOT, "index.html"));
-  const open = async (view, at, setup) => {
+  const open = async (view, at, setup, fakeClock) => {
     const ctx = await browser.newContext(view, { redirect: true });
+    if (fakeClock) await ctx.clock.install();
     await ctx.addInitScript(() => localStorage.setItem("atrium.skipconfirm", JSON.stringify({ "width-floor": true })));
     if (setup) await ctx.addInitScript(setup);
     const p = await ctx.newPage();
@@ -25227,16 +25321,19 @@ async function phoneRedirectSection(browser, base) {
   try {
     const cases = [["/?land=land-a&view=stack&key=k1", "/m/#term=land-a"], ["/?land=a%20b", "/m/#term=a%20b"], ["/?view=perms&key=k2", "/m/"], ["/?land=land-a&x=1", "/m/?x=1#term=land-a"],
       ["/", "/m/"], ["/alias/rnd", "/m/alias/rnd"], ["/room/claude-sg4/rnd", "/m/room/claude-sg4/rnd"], ["/#term=land-a", "/m/#term=land-a"], ["/room/claude-sg4", "/m/"]];
-    for (const [from, to] of cases) {
-      const r = await open(phone, from);
+    // Each case is its own context and only reads the mock, so they load at once.
+    const opened = await Promise.all(cases.map(([from]) => open(phone, from)));
+    for (const [i, [from, to]] of cases.entries()) {
+      const r = opened[i];
       if (r.where !== to && !(r.where === to.replace("?x=1", "") && /x=1/.test(r.search))) fail("phoneRedirect: a phone at " + from + " ended on " + r.where + ", not " + to);
       if (from === "/room/claude-sg4" && (await r.p.evaluate(() => localStorage.getItem("atrium.room"))) !== "claude-sg4") fail("phoneRedirect: the room scope was lost");
       if (r.errors.length) fail("phoneRedirect " + from + ": " + r.errors.join(" | "));
       await r.ctx.close();
     }
     // a phone at 412, and a phone turned on its side (its short side is still under 600)
-    for (const v of [{ viewport: { width: 412, height: 915 }, hasTouch: true, isMobile: true }, { viewport: { width: 844, height: 390 }, hasTouch: true, isMobile: true }]) {
-      const r = await open(v, "/");
+    const turned = [{ viewport: { width: 412, height: 915 }, hasTouch: true, isMobile: true }, { viewport: { width: 844, height: 390 }, hasTouch: true, isMobile: true }];
+    for (const [i, r] of (await Promise.all(turned.map(v => open(v, "/")))).entries()) {
+      const v = turned[i];
       if (r.where !== "/m/") fail("phoneRedirect: a phone " + v.viewport.width + "x" + v.viewport.height + " ended on " + r.where);
       await r.ctx.close();
     }
@@ -25301,15 +25398,18 @@ async function phoneRedirectSection(browser, base) {
       await x.ctx.close();
       return x;
     };
-    await reason({ viewport: { width: 1400, height: 900 } }, "/?why=1", null, /^redirect: not redirected, not a phone \(coarse=false any-coarse=false touch-points=0 shortest-side=900\)/);
-    await reason(phone, "/?why=1#term=land-a", () => { window.name = "atrium-term-land-a"; }, /^redirect: not redirected, a pop-out window \(atrium-term-land-a\)/);
-    await reason(phone, "/?why=1", () => { if (!sessionStorage.getItem("seeded")) { sessionStorage.setItem("seeded", "1"); sessionStorage.setItem("atrium.m.desktop", "1"); } }, /^redirect: not redirected, this tab chose the desktop board/);
-    await reason(phone, "/raw?why=1", null, /^redirect: not redirected, no \/m page for \/raw/);
+    await Promise.all([
+      reason({ viewport: { width: 1400, height: 900 } }, "/?why=1", null, /^redirect: not redirected, not a phone \(coarse=false any-coarse=false touch-points=0 shortest-side=900\)/),
+      reason(phone, "/?why=1#term=land-a", () => { window.name = "atrium-term-land-a"; }, /^redirect: not redirected, a pop-out window \(atrium-term-land-a\)/),
+      reason(phone, "/?why=1", () => { if (!sessionStorage.getItem("seeded")) { sessionStorage.setItem("seeded", "1"); sessionStorage.setItem("atrium.m.desktop", "1"); } }, /^redirect: not redirected, this tab chose the desktop board/),
+      reason(phone, "/raw?why=1", null, /^redirect: not redirected, no \/m page for \/raw/)]);
     {
-      const x = await open(phone, "/?why=1");
+      // The redirect waits 4s so the reason can be read: a fake clock moves through it.
+      const x = await open(phone, "/?why=1", null, true);
       const said = await x.p.evaluate(() => (document.getElementById("redirect-why") || {}).textContent || "");
       if (!/^redirect: going to \/m\/ \(coarse=true/.test(said)) fail("phoneRedirect: a redirect said " + JSON.stringify(said));
-      await x.p.waitForFunction(() => location.pathname === "/m/", null, { timeout: slow(9000) }).catch(() => fail("phoneRedirect: the redirect with ?why=1 never happened"));
+      await x.p.clock.runFor(4000);
+      await x.p.waitForURL(u => new URL(u).pathname === "/m/", { timeout: slow(5000) }).catch(() => fail("phoneRedirect: the redirect with ?why=1 never happened"));
       await x.ctx.close();
     }
     {
@@ -25327,15 +25427,14 @@ async function phoneRedirectSection(browser, base) {
       await ctx.close();
     }
     // a desktop and a tablet are untouched, and so is a desktop browser window made narrow
-    for (const [name, v] of [["desktop", { viewport: { width: 1400, height: 900 } }], ["tablet", { viewport: { width: 820, height: 1180 }, hasTouch: true, isMobile: true }],
-      ["narrow desktop", { viewport: { width: 400, height: 800 } }]]) {
-      const x = await open(v, "/");
+    await Promise.all([["desktop", { viewport: { width: 1400, height: 900 } }], ["tablet", { viewport: { width: 820, height: 1180 }, hasTouch: true, isMobile: true }],
+      ["narrow desktop", { viewport: { width: 400, height: 800 } }]].map(async ([name, v]) => {
+      const [x, y] = await Promise.all([open(v, "/"), open(v, "/alias/rnd")]);
       if (x.where !== "/") fail("phoneRedirect: a " + name + " was sent to " + x.where);
-      const y = await open(v, "/alias/rnd");
       if (y.where !== "/alias/rnd") fail("phoneRedirect: a " + name + " card address was sent to " + y.where);
       await x.ctx.close();
       await y.ctx.close();
-    }
+    }));
   } finally { tasksMode = was; }
   // the link on /m sets the opt-out and does not bounce back
   const st = mServer({});
@@ -26274,8 +26373,8 @@ const unitResults = {};
 // are meant to see each other's state. The plain serial run does not: it keeps what each unit leaves, as it always did.
 // It cannot reset a module-level `const` that a section mutates in place (qDismissed, LAND, walkDirs, gateCalls, HON and
 // FON), so a unit that leaves one changed still reaches the next unit in its shard. A new `let` of this kind goes in here too. The list is checked against the file when the units are listed.
-const mockVars = () => ({ qDismissMode, qHeldQuiet, qDismissWrites, histMany, histManyLive, untaggedExtra, untaggedDown, untaggedEmpty, untaggedTag, landList, landPerms, typingAnswer, typingPolls, aliasWrites, boardDocs, tasksMode, wornTasks, loopListSupervised, soloMode, hubMode, sggAttached, hubHasRoom, gatePaused, gateCountdownLeft, gateBoot, hubAway, gateRestartMode, gateAsked, gateSlowMs, healthBuild, serveSW, page502, auditLive, auditMany, auditManyLive, skinFor, kaSettings, kaWrites, gautoOn, roomSettingsDown, settingsReads, settingsDelay, switchFail, switchWrites, roomStallUntil, stalledCount, mockBroadcast, waitingReads, mockSaid, cardColorsMock, blockerEsc, idleParkNow, idleParkWrites });
-const mockSet = s => { ({ qDismissMode, qHeldQuiet, qDismissWrites, histMany, histManyLive, untaggedExtra, untaggedDown, untaggedEmpty, untaggedTag, landList, landPerms, typingAnswer, typingPolls, aliasWrites, boardDocs, tasksMode, wornTasks, loopListSupervised, soloMode, hubMode, sggAttached, hubHasRoom, gatePaused, gateCountdownLeft, gateBoot, hubAway, gateRestartMode, gateAsked, gateSlowMs, healthBuild, serveSW, page502, auditLive, auditMany, auditManyLive, skinFor, kaSettings, kaWrites, gautoOn, roomSettingsDown, settingsReads, settingsDelay, switchFail, switchWrites, roomStallUntil, stalledCount, mockBroadcast, waitingReads, mockSaid, cardColorsMock, blockerEsc, idleParkNow, idleParkWrites } = s); };
+const mockVars = () => ({ qDismissMode, qHeldQuiet, qDismissWrites, histMany, histManyLive, untaggedExtra, untaggedDown, untaggedEmpty, untaggedTag, landList, landPerms, typingAnswer, typingPolls, aliasWrites, boardDocs, tasksMode, wornTasks, loopListSupervised, soloMode, hubMode, sggAttached, hubHasRoom, gatePaused, gateCountdownLeft, gateBoot, hubAway, gateRestartMode, gateAsked, gateSlowMs, healthBuild, serveSW, page502, sseRetry, auditLive, auditMany, auditManyLive, skinFor, kaSettings, kaWrites, gautoOn, roomSettingsDown, settingsReads, settingsDelay, switchFail, switchWrites, roomStallUntil, stalledCount, mockBroadcast, waitingReads, mockSaid, cardColorsMock, blockerEsc, idleParkNow, idleParkWrites });
+const mockSet = s => { ({ qDismissMode, qHeldQuiet, qDismissWrites, histMany, histManyLive, untaggedExtra, untaggedDown, untaggedEmpty, untaggedTag, landList, landPerms, typingAnswer, typingPolls, aliasWrites, boardDocs, tasksMode, wornTasks, loopListSupervised, soloMode, hubMode, sggAttached, hubHasRoom, gatePaused, gateCountdownLeft, gateBoot, hubAway, gateRestartMode, gateAsked, gateSlowMs, healthBuild, serveSW, page502, sseRetry, auditLive, auditMany, auditManyLive, skinFor, kaSettings, kaWrites, gautoOn, roomSettingsDown, settingsReads, settingsDelay, switchFail, switchWrites, roomStallUntil, stalledCount, mockBroadcast, waitingReads, mockSaid, cardColorsMock, blockerEsc, idleParkNow, idleParkWrites } = s); };
 let mockInit = null, lastUnit = "";
 const pinnedTogether = (a, b) => Object.values(PIN_GROUPS).some(g => g.units.includes(a) && g.units.includes(b));
 function mockSnapshot() {
@@ -27336,8 +27435,7 @@ async function crFixturePage(browser, base, o) {
   // The requests are read once by the view and once more when the repos arrive; both are settled before a test touches the page.
   await p.waitForFunction(() => hubRepos.loaded && !hubRepos.inflight && !cr.inflight, null, { timeout: slow(8000) });
   await p.waitForTimeout(300);
-  await p.waitForFunction(() => !cr.inflight, null, { timeout: slow(5000) });
-  return { ctx, p, errors, hub, fx };
+  await p.waitForFunction(() => !cr.inflight, null, { timeout: slow(5000) });  return { ctx, p, errors, hub, fx };
 }
 
 async function changeReqSection(browser, base) {
@@ -27390,7 +27488,8 @@ async function changeReqSection(browser, base) {
       let s = await dis();
       if (!s.off) fail(tag + ": record merged is enabled with no sha");
       for (const [v, ok] of CR_SHAS) {
-        await p.fill("#cr-sha", v);
+        // a late list read repaints the page, and a fill that lands on the input it replaced never reaches the draft
+        for (let i = 0; i < 5; i++) { await p.fill("#cr-sha", v); if (await p.evaluate(v => cr.draft.sha === v, v)) break; }
         s = await dis();
         if (s.off === ok) fail(tag + ": sha " + JSON.stringify(v) + " should be " + (ok ? "accepted" : "refused"));
         if (v && !ok && !s.bad) fail(tag + ": a bad sha has no hint " + v);
@@ -27534,7 +27633,7 @@ async function changeReqSection(browser, base) {
       const bn = await p.evaluate(() => { const b = document.getElementById("cr-mockbar"); const r = b && b.getBoundingClientRect(); return b ? { t: b.textContent, pos: getComputedStyle(b).position, vis: r.width > 100 && r.height > 10, btn: !!b.querySelector("button") } : null; });
       if (!bn || !/Mock data: nothing here reaches the hub/.test(bn.t) || bn.pos !== "fixed" || !bn.vis || !bn.btn) fail(tag + ": the mock is on without a banner " + JSON.stringify(bn));
       await p.click("#cr-mockbar button");
-      await p.waitForFunction(() => !/crmock/.test(location.search) && !document.getElementById("cr-mockbar"), null, { timeout: slow(8000) });
+      await p.waitForFunction(() => !/crmock/.test(location.search) && !document.getElementById("cr-mockbar") && document.readyState === "complete" && typeof crCore !== "undefined", null, { timeout: slow(8000) });
       if (await p.evaluate(() => crCore.mockOn())) fail(tag + ": turn off left the mock on");
     } finally { await ctx.close(); }
     ({ ctx, p, errors } = await crFixturePage(browser, base, { noHub: true }));
@@ -27542,7 +27641,7 @@ async function changeReqSection(browser, base) {
       if (await p.evaluate(() => !!document.getElementById("cr-mockbar"))) fail(tag + ": a banner with the mock off");
       // the old localStorage switch is not honoured: a reload without the parameter is live
       await p.evaluate(() => localStorage.setItem("atrium.crMock", "1"));
-      await p.reload({ waitUntil: "domcontentloaded" });
+      await p.reload({ waitUntil: "load" });
       await p.waitForTimeout(300);
       if (await p.evaluate(() => crCore.mockOn() || !!document.getElementById("cr-mockbar"))) fail(tag + ": localStorage still turns the mock on");
     } finally { await ctx.close(); }
@@ -27608,7 +27707,11 @@ async function crInkCheck(p, skins, sels, width, before) {
       await p.evaluate(s => { if (s) document.documentElement.setAttribute("data-skin", s); else document.documentElement.removeAttribute("data-skin"); }, skin);
       if (before) await before(skin);
       await p.waitForTimeout(80);
+      const passed = await crInkBatch(p, sels, width);
+      // the batch's restore restarts colour transitions, and a miss read mid-transition is not a miss
+      if (passed.size < sels.length) await p.waitForTimeout(400);
       for (const sel of sels) {
+        if (passed.has(sel)) continue;
         let box = null, ratio = 99;
         // A repaint under the shot (an event, a late read) shows the text and reads as 1:1, so a miss is measured again before it counts.
         for (let tries = 0; tries < 3 && ratio < 4.5 || tries === 0; tries++) {
@@ -27646,14 +27749,48 @@ async function crInkCheck(p, skins, sels, width, before) {
   return bad;
 }
 
+// The fast pass of crInkCheck: every selector on screen is blanked at once and read from one shot. Only passes come back, so
+// a selector off screen or under 4.5 is measured again on its own, the slow way, before it counts.
+async function crInkBatch(p, sels, width) {
+  const boxes = await p.evaluate(({ sels, width }) => sels.map(s => {
+    const e = document.querySelector(s); if (!e) return null;
+    const tn = [...e.childNodes].find(n => n.nodeType === 3 && n.textContent.trim()) || (e.firstElementChild && [...e.firstElementChild.childNodes].find(n => n.nodeType === 3 && n.textContent.trim())) || e;
+    const rg = document.createRange(); rg.selectNodeContents(tn); const r = tn === e ? e.getBoundingClientRect() : rg.getBoundingClientRect();
+    if (r.width < 2 || r.height < 2 || r.x < 0 || r.y < 0 || r.right > Math.min(width, innerWidth) || r.bottom > innerHeight) return null;
+    const kill = tn === e ? e : tn.parentElement;
+    return { s, x: Math.round(r.x), y: Math.round(r.y), w: Math.round(r.width), h: Math.round(r.height), c: getComputedStyle(kill).color, kill };
+  }).filter(Boolean).map(b => { b.kill.dataset.crk = "1"; b.kill.style.transition = "none"; b.kill.style.color = "transparent"; delete b.kill; return b; }), { sels, width });
+  if (!boxes.length) return new Set();
+  const png = await p.screenshot();
+  await p.evaluate(() => { document.querySelectorAll("[data-crk]").forEach(k => { k.style.color = ""; k.style.transition = ""; delete k.dataset.crk; }); });
+  const ok = await p.evaluate(async ({ b64, boxes }) => {
+    const img = new Image(); img.src = "data:image/png;base64," + b64; await img.decode();
+    const cv = document.createElement("canvas"); cv.width = img.width; cv.height = img.height; const g = cv.getContext("2d"); g.drawImage(img, 0, 0);
+    const lin = v => { v /= 255; return v <= .03928 ? v / 12.92 : Math.pow((v + .055) / 1.055, 2.4); };
+    const L = (r, gg, b) => .2126 * lin(r) + .7152 * lin(gg) + .0722 * lin(b);
+    return boxes.filter(box => {
+      let m = /rgba?\(([\d.]+),\s*([\d.]+),\s*([\d.]+)(?:,\s*([\d.]+))?/.exec(box.c);
+      if (!m) { const c = /color\(srgb ([\d.]+) ([\d.]+) ([\d.]+)(?: \/ ([\d.]+))?\)/.exec(box.c); m = c && [c[0], c[1] * 255, c[2] * 255, c[3] * 255, c[4]]; }
+      if (!m) return false;
+      const a = m[4] === undefined ? 1 : +m[4], d = g.getImageData(box.x, box.y, box.w, box.h).data;
+      for (let i = 0; i < d.length; i += 4 * 3) {
+        const bg = [d[i], d[i + 1], d[i + 2]], fg = [0, 1, 2].map(k => +m[k + 1] * a + bg[k] * (1 - a));
+        const l1 = L(...fg), l2 = L(...bg);
+        if ((Math.max(l1, l2) + .05) / (Math.min(l1, l2) + .05) < 4.5) return false;
+      }
+      return true;
+    }).map(b => b.s);
+  }, { b64: png.toString("base64"), boxes });
+  return new Set(ok);
+}
+
 async function crContrast(browser, base, tag) {
   const skins = [""].concat(((await (await fetch(base + "/css/themes.css")).text()).match(/:root\[data-skin="([a-z]+)"\]/g) || []).map(s => /"([a-z]+)"/.exec(s)[1]));
   const { ctx, p } = await crFixturePage(browser, base, { w: 1700, h: 1500 });
   const sels = [".cr-h2", ".cr-k", ".cr-hero h3", ".cr-hero .cr-quiet", ".cr-hero .cr-btn", ".cr-li.sel .cr-lt", ".cr-li.sel .cr-lm", ".cr-li .cr-needs", ".cr-seg button[aria-pressed=true]", ".cr-tg span", ".cr-crumb", ".cr-title",
     ".cr-detail .hr-badges .hr-state", ".cr-gate > b", ".cr-gate > span", ".cr-steps li", ".cr-field label", ".cr-btn.go", ".cr-hint", ".cr-panel .hr-h", ".cr-why", ".cr-line", ".cr-kv dt", ".cr-kv dd", ".cr-quiet", ".cr-tl .cr-tlt", ".cr-lane .cr-br", ".cr-end small", ".cr-hero .cr-br"];
   let bad;
-  try { bad = await crInkCheck(p, skins, sels, 1700, () => p.fill("#cr-sha", "xyz")); } finally { await ctx.close(); }
-  if (process.env.CR_CONTRAST) console.log(bad.join("\n"));
+  try { bad = await crInkCheck(p, skins, sels, 1700, () => p.fill("#cr-sha", "xyz")); } finally { await ctx.close(); }  if (process.env.CR_CONTRAST) console.log(bad.join("\n"));
   if (bad.length) fail(tag + ": text under 4.5:1 on " + bad.length + " pairs: " + bad.slice(0, 14).join("; "));
 }
 
