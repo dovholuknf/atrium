@@ -3182,11 +3182,13 @@ async function toastLivesSection(browser, base) {
     document.getElementById("toasts").innerHTML = "";
     if (typeof toastQueue !== "undefined") toastQueue.length = 0;
   });
-  const stillUpAt5s = async (title, what, born) => {
-    await tp.waitForTimeout(Math.max(0, 5000 - (Date.now() - born)));
+  // The page runs on a fake clock, so "5s later" is moved through rather than waited out.
+  const stillUpAt5s = async (title, what) => {
+    await tp.clock.runFor(5000);
     if (!(await up(title))) fail(what + ": the toast was gone before 5s.");
   };
   try {
+    await tp.clock.install();
     await tp.goto(base, { waitUntil: "domcontentloaded" });
     await tp.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
 
@@ -3204,26 +3206,23 @@ async function toastLivesSection(browser, base) {
       // machine can push past the 5s this checks at. See toastStaysSection.
       refresh();
     });
-    let born = Date.now();
     await tp.waitForFunction(() => window.__reaps >= 1, null, { timeout: slow(12000) })
       .catch(() => fail("no poll reaped toasts, so the answered case was not exercised."));
-    await stillUpAt5s("gone9 is ready", "a card that stopped waiting", born);
+    await stillUpAt5s("gone9 is ready", "a card that stopped waiting");
     const marked = await tp.evaluate(() => [...document.querySelectorAll("#toasts .toast")]
       .some(el => el.classList.contains("answered")));
     if (!marked) fail("a toast whose card stopped waiting does not say it was answered.");
 
     // 2. A burst of four with room for three.
     await clear();
-    born = Date.now();
     await tp.evaluate(() => { for (let i = 1; i <= 4; i++) toast("burst " + i, "one of four"); });
-    await stillUpAt5s("burst 1", "a burst past the cap", born);
-    await tp.waitForFunction(() => [...document.querySelectorAll("#toasts .toast:not(.leaving) b")]
-      .some(b => b.textContent === "burst 4"), null, { timeout: slow(8000) })
+    await stillUpAt5s("burst 1", "a burst past the cap");
+    await fakeWait(tp, () => [...document.querySelectorAll("#toasts .toast:not(.leaving) b")]
+      .some(b => b.textContent === "burst 4"), null, 8000)
       .catch(() => fail("the fourth toast of a burst never got its turn on screen."));
 
     // 3. A view switch, and a dialog opening and closing.
     await clear();
-    born = Date.now();
     await tp.evaluate(() => {
       toast("through the views", "a view switch and a dialog");
       switchView("terms");
@@ -3232,18 +3231,18 @@ async function toastLivesSection(browser, base) {
       d.showModal();
       d.close();
     });
-    await stillUpAt5s("through the views", "a view switch and a dialog", born);
+    await stillUpAt5s("through the views", "a view switch and a dialog");
 
     // 4. Hovered, it outlives its 9 seconds, and goes once the pointer leaves.
     await clear();
     await tp.evaluate(() => toast("held by the pointer", "hover me"));
     await tp.hover("#toasts .toast");
-    await tp.waitForTimeout(10000);
+    await tp.clock.runFor(10000);
     if (!(await up("held by the pointer"))) fail("a hovered toast went while it was being read.");
     // The life it had left when the pointer arrived, which was nearly all of it.
     await tp.mouse.move(2, 890);
-    await tp.waitForFunction(() => !document.querySelector("#toasts .toast:not(.leaving)"), null,
-      { timeout: slow(12000) }).catch(() => fail("a toast the pointer left never went."));
+    await fakeWait(tp, () => !document.querySelector("#toasts .toast:not(.leaving)"), null, 12000)
+      .catch(() => fail("a toast the pointer left never went."));
     if (errors.length) fail("the toast page threw uncaught errors: " + errors.join(" | "));
   } finally {
     await ctx.close();
