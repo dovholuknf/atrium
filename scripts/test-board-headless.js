@@ -3787,13 +3787,17 @@ async function newCardSection(browser, base) {
     glow: [...document.querySelectorAll(".arrived.glow[data-id]")].map(e => e.dataset.id),
     chips: document.querySelectorAll(".chip.arrived").length
   }));
-  let live = 0;
+  // The page runs on a fake clock: the debounces, the pulse and the quiet spells are moved through, not waited out. The
+  // real pause after each move lets the read a move started land and paint.
+  const run = async (p, ms) => { await p.clock.runFor(ms); await new Promise(r => setTimeout(r, 150)); };
+  sseRetry = 200;
   try {
+    await ctx.clock.install();
     const p = await ctx.newPage();
     p.on("pageerror", e => errors.push(String(e)));
     await p.goto(base, { waitUntil: "domcontentloaded" });
     await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
-    await p.waitForTimeout(800);
+    await run(p, 800);
     let m = await marks(p);
     if (m.arrived.length) fail("a first load marked cards that were already there as new: " + m.arrived.join(","));
 
@@ -3809,7 +3813,7 @@ async function newCardSection(browser, base) {
     if (anim !== "arrived") fail("the new stack row's animation is " + JSON.stringify(anim) + ", not arrived.");
     // NEWCARD_SHOT=dir saves what the pulse looks like, for a human to judge.
     if (process.env.NEWCARD_SHOT) {
-      await p.waitForTimeout(300);
+      await run(p, 300);
       await p.screenshot({ path: path.join(process.env.NEWCARD_SHOT, "newcard-stack.png") });
     }
     m = await marks(p);
@@ -3824,12 +3828,10 @@ async function newCardSection(browser, base) {
     await p.click('.tab[data-view="stack"]');
 
     // Idle, with a repaint every second: nothing is written.
-    await p.waitForTimeout(1500);
+    await run(p, 1500);
     await p.evaluate(() => { window.__writes = []; });
     let tick = 0;
-    live = setInterval(() => { LOOSE.display_title = "loose " + (++tick); poke(); }, 1000);
-    await p.waitForTimeout(5000);
-    clearInterval(live); live = 0;
+    for (let i = 0; i < 5; i++) { LOOSE.display_title = "loose " + (++tick); poke(); await run(p, 1000); }
     const idle = await p.evaluate(() => window.__writes);
     if (idle.length) fail("the new-card cue wrote storage " + idle.length + " times while idle: " +
       [...new Set(idle)].join(", "));
@@ -3838,7 +3840,7 @@ async function newCardSection(browser, base) {
     // and no other card gets one.
     await p.reload({ waitUntil: "domcontentloaded" });
     await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
-    await p.waitForTimeout(1200);
+    await run(p, 1200);
     m = await marks(p);
     if (m.glow.length) fail("a reload pulsed " + m.glow.join(","));
     if (m.arrived.join(",") !== "u-new") fail("after a reload the marked cards are " + m.arrived.join(",") +
@@ -3847,7 +3849,7 @@ async function newCardSection(browser, base) {
     // A click clears it, here and after another reload.
     await p.click('#stack-list .stackrow[data-id="u-new"] .who b');
     await p.keyboard.press("Escape");
-    await p.waitForTimeout(300);
+    await run(p, 300);
     m = await marks(p);
     if (m.arrived.length || m.chips) fail("a click did not clear the new card: " + JSON.stringify(m));
     const stored = await p.evaluate(() => JSON.parse(localStorage.getItem("atrium.newcards") || "{}")["u-new"]);
@@ -3857,31 +3859,31 @@ async function newCardSection(browser, base) {
     // then the same cards come back under a second room's tag. Nothing is new.
     untaggedDown = true;
     openStreams.forEach(r => { try { r.destroy(); } catch (e) {} });
-    await p.waitForTimeout(2500);
+    await run(p, 2500);
     untaggedDown = false; untaggedEmpty = true;
     poke();
-    await p.waitForTimeout(2000);
+    await run(p, 2000);
     untaggedEmpty = false; untaggedTag = "sgg";
     poke();
-    await p.waitForTimeout(3000);
+    await run(p, 3000);
     m = await marks(p);
     if (m.arrived.length) fail("a hub restart that brought the same cards back marked " + m.arrived.join(","));
 
     // And a reload in the middle of one, which starts on an empty board.
     untaggedEmpty = true;
     await p.reload({ waitUntil: "domcontentloaded" });
-    await p.waitForTimeout(2000);
+    await run(p, 2000);
     untaggedEmpty = false;
     poke();
     await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
-    await p.waitForTimeout(1500);
+    await run(p, 1500);
     m = await marks(p);
     if (m.arrived.length) fail("a reload during a hub restart marked " + m.arrived.join(","));
     if (errors.length) fail("the new-card page threw: " + errors.join(" | "));
   } finally {
-    clearInterval(live);
     LOOSE.display_title = "loose card";
     untaggedExtra = []; untaggedDown = false; untaggedEmpty = false; untaggedTag = "";
+    sseRetry = 0;
     await ctx.close();
   }
 
