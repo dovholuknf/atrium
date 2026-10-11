@@ -2722,6 +2722,8 @@ async function coverPollSection(browser, base) {
   gateBoot = "boot-a";
   gateRestartMode = "";
   healthBuild = "test";
+  // Every case drops the stream: a short retry keeps each reconnect from costing the browser's 3s.
+  sseRetry = 200;
   const say = state => {
     const line = "event: hub-restart\ndata: " + JSON.stringify(state) + "\n\n";
     openStreams.forEach(r => { try { if (!r.destroyed) r.write(line); } catch (e) {} });
@@ -2771,7 +2773,7 @@ async function coverPollSection(browser, base) {
     // A check already in flight swallows the new hub's stream open, and its answer is the old hub's.
     gateBoot = "boot-a";
     gateRestartMode = "slow";
-    gateSlowMs = 8000;
+    gateSlowMs = 3000;
     await cover();
     gateAsked = 0;
     await blip();
@@ -2808,21 +2810,28 @@ async function coverPollSection(browser, base) {
     await cleared("the cover stayed up in a browser with no AbortSignal.timeout.");
     // AN ABANDONED GATE takes its cover down. The hub said restarting and went on answering from the same
     // process (the script was killed): no "something is wrong" while it answers, and the cover clears.
+    // The window is 20s, moved through on the page's fake clock rather than waited out.
     gateBoot = "boot-f";
     gateRestartMode = "";
+    await gp.clock.install();
     await cover();
-    await gp.waitForTimeout(12000);
+    await gp.clock.runFor(12000);
     if (!(await coverUp())) fail("an abandoned gate's cover came down before the window ran out.");
     if (await gp.evaluate(() => document.getElementById("hubrestart").classList.contains("stalled"))) {
       fail("the cover said something was wrong while the hub kept answering.");
     }
-    await cleared("an abandoned gate left its cover up.", 15000);
+    await fakeWait(gp, () => !document.getElementById("hubrestart").open, null, 15000).catch(async () => {
+      fail("an abandoned gate left its cover up.");
+      await gp.evaluate(() => hubClearRestarting());
+    });
     if (errors.length) fail("the cover poll page threw: " + errors.join(" | "));
     if (!bad) console.log("coverPoll ok");
   } finally {
     hubMode = wasHub;
     gateBoot = "boot-a";
     gateRestartMode = "";
+    gateSlowMs = 1500;
+    sseRetry = 0;
     await ctx.close();
   }
 }
@@ -2853,36 +2862,38 @@ async function coverStepsSection(browser, base) {
     };
   });
   try {
+    // The 10s and 30s steps run on the page's fake clock.
+    await gp.clock.install();
     await gp.goto(base, { waitUntil: "domcontentloaded" });
     await gp.waitForFunction(() => typeof hubIsHub !== "undefined" && hubIsHub &&
       document.getElementById("conn").classList.contains("live"), null, { timeout: slow(15000) });
-    await gp.waitForTimeout(500);
+    await gp.clock.runFor(500);
     openStreams.forEach(r => { try { r.write("event: hub-restart\ndata: {\"state\":\"restarting\"}\n\n"); } catch (e) {} });
     await gp.waitForFunction(() => document.getElementById("hubrestart").open, null, { timeout: slow(5000) })
       .catch(() => fail("restarting drew no cover."));
     hubAway = true;
     openStreams.splice(0).forEach(r => { try { r.destroy(); } catch (e) {} });
-    await gp.waitForTimeout(6000);
+    await gp.clock.runFor(6000);
     const early = await state();
     if (early.stalled || early.reload || !/few seconds/.test(early.say)) {
       fail("at 6s the cover already said something was wrong: " + JSON.stringify(early));
     }
     if (early.ring === "none" || early.bar === "none") fail("at 6s the cover's animations were already off.");
-    await gp.waitForFunction(() => document.getElementById("hubrestart").classList.contains("stalled"), null,
-      { timeout: slow(8000) }).catch(() => fail("past 10s the cover did not say something was wrong."));
+    await fakeWait(gp, () => document.getElementById("hubrestart").classList.contains("stalled"), null, 8000)
+      .catch(() => fail("past 10s the cover did not say something was wrong."));
     const wrong = await state();
     if (!/wrong/.test(wrong.say)) fail("past 10s the cover said: " + wrong.say);
     if (wrong.ring !== "none" || wrong.bar !== "none") fail("past 10s the cover still animated: " + JSON.stringify(wrong));
     if (wrong.reload) fail("the reload button showed before 30s.");
-    await gp.waitForFunction(() => { const b = document.getElementById("hubrestart-reload"); return b && !b.hidden; },
-      null, { timeout: slow(25000) }).catch(() => fail("past 30s the cover offered no reload."));
+    await fakeWait(gp, () => { const b = document.getElementById("hubrestart-reload"); return b && !b.hidden; },
+      null, 25000).catch(() => fail("past 30s the cover offered no reload."));
     // The hub comes back and the reload lands on a cover that clears: the written-down cover carries on.
     gateBoot = "boot-b";
     hubAway = false;
     const reloaded = gp.waitForEvent("domcontentloaded", { timeout: slow(15000) }).then(() => true, () => false);
     await gp.click("#hubrestart-reload", { timeout: slow(2000) }).catch(() => {});
     if (!(await reloaded)) fail("the reload button did not reload the page.");
-    await gp.waitForFunction(() => !document.getElementById("hubrestart").open, null, { timeout: slow(15000) })
+    await fakeWait(gp, () => !document.getElementById("hubrestart").open, null, 15000)
       .catch(() => fail("the cover did not clear after the reload found the new hub."));
     if (errors.length) fail("the cover steps page threw: " + errors.join(" | "));
     if (!bad) console.log("coverSteps ok");
