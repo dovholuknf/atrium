@@ -24862,57 +24862,73 @@ async function mActivityReadSection(browser) {
   await st.open();
   const tag = "mActivityRead: ";
   const reads = () => st.hits.filter(h => h.indexOf("a-1?") === 0).length;
-  const push = r => { st.tasks = [r]; st.send("task", Object.assign({ row: 1 }, r)); };
+  // The 5s throttle runs on the page's fake clock. `tick` moves it, and real time only carries the event and the read.
+  let p;
+  const tick = ms => p.clock.runFor(ms);
+  const push = async r => {
+    st.tasks = [r]; st.send("task", Object.assign({ row: 1 }, r));
+    const want = JSON.stringify([r.last_activity_at, r.prompted_at, r.output_at]);
+    await p.waitForFunction(w => { const c = window.mStore.cards()[0]; return c && JSON.stringify([c.last_activity_at, c.prompted_at, c.output_at]) === w; }, want, { timeout: slow(4000) }).catch(() => {});
+  };
+  const readsReach = async n => { const end = Date.now() + slow(3000); while (reads() < n && Date.now() < end) await new Promise(r => setTimeout(r, 20)); return reads(); };
+  const readsSettle = async () => { await new Promise(r => setTimeout(r, slow(300))); return reads(); };
   try {
     const ctx = await browser.newContext({ viewport: M_VIEWS[0], hasTouch: true, isMobile: true });
-    const p = await ctx.newPage();
+    p = await ctx.newPage();
     const errors = [];
     p.on("pageerror", e => errors.push(String(e)));
+    await p.clock.install();
     await p.goto(st.url + "/m/", { waitUntil: "domcontentloaded" });
     await p.waitForFunction(() => window.mNet.loaded() && window.mNet.live(), null, { timeout: slow(10000) });
     await p.evaluate(() => window.mCard.open("a-1"));
     await p.waitForFunction(() => /a reply/.test(document.getElementById("m-replies").textContent), null, { timeout: slow(8000) });
-    await p.waitForTimeout(300);
-    const r0 = reads();
+    await tick(300);
+    const r0 = await readsSettle();
     // nothing changed, and the last read is more than 5s old so the throttle cannot be what holds it: no read
-    await p.waitForTimeout(5300);
-    push(row());
-    await p.waitForTimeout(1200);
-    if (reads() !== r0) fail(tag + "an unchanged row made a read");
+    await tick(5300);
+    await push(row());
+    await tick(1200);
+    if (await readsSettle() !== r0) fail(tag + "an unchanged row made a read");
     // last_activity_at moved with output_at still null: one read, a moment later at most
-    push(row({ last_activity_at: mIso(5 * M_MIN) }));
-    await p.waitForTimeout(800);
-    if (reads() !== r0 + 1) fail(tag + "a moved last_activity_at made " + (reads() - r0) + " reads, not 1");
+    await push(row({ last_activity_at: mIso(5 * M_MIN) }));
+    await tick(800);
+    await readsReach(r0 + 1);
+    if (await readsSettle() !== r0 + 1) fail(tag + "a moved last_activity_at made " + (reads() - r0) + " reads, not 1");
     // ten changes in about a second: held, then one trailing read
-    for (let i = 0; i < 10; i++) { push(row({ last_activity_at: mIso(4 * M_MIN - i * 1000) })); await p.waitForTimeout(100); }
-    if (reads() !== r0 + 1) fail(tag + "the throttle let a read through inside 5s: " + (reads() - r0));
-    await p.waitForTimeout(5500);
-    if (reads() !== r0 + 2) fail(tag + "ten changes made " + (reads() - r0 - 1) + " reads after the first, not 1");
+    for (let i = 0; i < 10; i++) { await push(row({ last_activity_at: mIso(4 * M_MIN - i * 1000) })); await tick(100); }
+    if (await readsSettle() !== r0 + 1) fail(tag + "the throttle let a read through inside 5s: " + (reads() - r0));
+    await tick(5500);
+    await readsReach(r0 + 2);
+    if (await readsSettle() !== r0 + 2) fail(tag + "ten changes made " + (reads() - r0 - 1) + " reads after the first, not 1");
     // prompted_at counts too
     const T = mIso(2 * M_MIN);
-    await p.waitForTimeout(5200);
-    push(row({ last_activity_at: T }));
-    await p.waitForTimeout(800);
-    if (reads() !== r0 + 3) fail(tag + "a moved last_activity_at after a quiet spell did not read");
-    await p.waitForTimeout(5200);
-    push(row({ last_activity_at: T, prompted_at: mIso(M_MIN) }));
-    await p.waitForTimeout(800);
-    if (reads() !== r0 + 4) fail(tag + "a moved prompted_at alone did not read");
+    await tick(5200);
+    await push(row({ last_activity_at: T }));
+    await tick(800);
+    if (await readsReach(r0 + 3) !== r0 + 3) fail(tag + "a moved last_activity_at after a quiet spell did not read");
+    await tick(5200);
+    await push(row({ last_activity_at: T, prompted_at: mIso(M_MIN) }));
+    await tick(800);
+    if (await readsReach(r0 + 4) !== r0 + 4) fail(tag + "a moved prompted_at alone did not read");
     // a turn end on a row with no output_at moves the turn and the activity together: one read, not a second one 5s later
-    await p.waitForTimeout(5200);
-    push(row({ last_activity_at: mIso(M_MIN * 2), seen: { turn_ended_at: mIso(M_MIN * 2) } }));
-    await p.waitForTimeout(6500);
-    if (reads() !== r0 + 5) fail(tag + "a turn end made " + (reads() - r0 - 4) + " reads, not 1");
+    await tick(5200);
+    await push(row({ last_activity_at: mIso(M_MIN * 2), seen: { turn_ended_at: mIso(M_MIN * 2) } }));
+    await tick(800);
+    await readsReach(r0 + 5);
+    await tick(5700);
+    if (await readsSettle() !== r0 + 5) fail(tag + "a turn end made " + (reads() - r0 - 4) + " reads, not 1");
     // the same with output_at reported
-    await p.waitForTimeout(200);
+    await tick(200);
     const OUT = mIso(M_MIN), PR = mIso(M_MIN);
-    push(row({ last_activity_at: mIso(M_MIN), prompted_at: PR, output_at: OUT }));
-    await p.waitForTimeout(6500);
-    if (reads() !== r0 + 6) fail(tag + "a turn end with output_at made " + (reads() - r0 - 5) + " reads, not 1");
+    await push(row({ last_activity_at: mIso(M_MIN), prompted_at: PR, output_at: OUT }));
+    await tick(800);
+    await readsReach(r0 + 6);
+    await tick(5700);
+    if (await readsSettle() !== r0 + 6) fail(tag + "a turn end with output_at made " + (reads() - r0 - 5) + " reads, not 1");
     // a room that reports output_at: activity alone is not a reason to read
-    push(row({ last_activity_at: mIso(30000), prompted_at: PR, output_at: OUT }));
-    await p.waitForTimeout(6500);
-    if (reads() !== r0 + 6) fail(tag + "activity alone read though the row reports output_at");
+    await push(row({ last_activity_at: mIso(30000), prompted_at: PR, output_at: OUT }));
+    await tick(6500);
+    if (await readsSettle() !== r0 + 6) fail(tag + "activity alone read though the row reports output_at");
     if (errors.length) fail(tag + "page errors: " + errors.join(" | "));
     await ctx.close();
   } finally { await st.close(); }
