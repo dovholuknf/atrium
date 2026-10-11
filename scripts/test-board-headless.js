@@ -27415,8 +27415,7 @@ async function crFixturePage(browser, base, o) {
   // The requests are read once by the view and once more when the repos arrive; both are settled before a test touches the page.
   await p.waitForFunction(() => hubRepos.loaded && !hubRepos.inflight && !cr.inflight, null, { timeout: slow(8000) });
   await p.waitForTimeout(300);
-  await p.waitForFunction(() => !cr.inflight, null, { timeout: slow(5000) });
-  return { ctx, p, errors, hub, fx };
+  await p.waitForFunction(() => !cr.inflight, null, { timeout: slow(5000) });  return { ctx, p, errors, hub, fx };
 }
 
 async function changeReqSection(browser, base) {
@@ -27469,7 +27468,8 @@ async function changeReqSection(browser, base) {
       let s = await dis();
       if (!s.off) fail(tag + ": record merged is enabled with no sha");
       for (const [v, ok] of CR_SHAS) {
-        await p.fill("#cr-sha", v);
+        // a late list read repaints the page, and a fill that lands on the input it replaced never reaches the draft
+        for (let i = 0; i < 5; i++) { await p.fill("#cr-sha", v); if (await p.evaluate(v => cr.draft.sha === v, v)) break; }
         s = await dis();
         if (s.off === ok) fail(tag + ": sha " + JSON.stringify(v) + " should be " + (ok ? "accepted" : "refused"));
         if (v && !ok && !s.bad) fail(tag + ": a bad sha has no hint " + v);
@@ -27613,7 +27613,7 @@ async function changeReqSection(browser, base) {
       const bn = await p.evaluate(() => { const b = document.getElementById("cr-mockbar"); const r = b && b.getBoundingClientRect(); return b ? { t: b.textContent, pos: getComputedStyle(b).position, vis: r.width > 100 && r.height > 10, btn: !!b.querySelector("button") } : null; });
       if (!bn || !/Mock data: nothing here reaches the hub/.test(bn.t) || bn.pos !== "fixed" || !bn.vis || !bn.btn) fail(tag + ": the mock is on without a banner " + JSON.stringify(bn));
       await p.click("#cr-mockbar button");
-      await p.waitForFunction(() => !/crmock/.test(location.search) && !document.getElementById("cr-mockbar"), null, { timeout: slow(8000) });
+      await p.waitForFunction(() => !/crmock/.test(location.search) && !document.getElementById("cr-mockbar") && document.readyState === "complete" && typeof crCore !== "undefined", null, { timeout: slow(8000) });
       if (await p.evaluate(() => crCore.mockOn())) fail(tag + ": turn off left the mock on");
     } finally { await ctx.close(); }
     ({ ctx, p, errors } = await crFixturePage(browser, base, { noHub: true }));
@@ -27621,7 +27621,7 @@ async function changeReqSection(browser, base) {
       if (await p.evaluate(() => !!document.getElementById("cr-mockbar"))) fail(tag + ": a banner with the mock off");
       // the old localStorage switch is not honoured: a reload without the parameter is live
       await p.evaluate(() => localStorage.setItem("atrium.crMock", "1"));
-      await p.reload({ waitUntil: "domcontentloaded" });
+      await p.reload({ waitUntil: "load" });
       await p.waitForTimeout(300);
       if (await p.evaluate(() => crCore.mockOn() || !!document.getElementById("cr-mockbar"))) fail(tag + ": localStorage still turns the mock on");
     } finally { await ctx.close(); }
@@ -27687,7 +27687,11 @@ async function crInkCheck(p, skins, sels, width, before) {
       await p.evaluate(s => { if (s) document.documentElement.setAttribute("data-skin", s); else document.documentElement.removeAttribute("data-skin"); }, skin);
       if (before) await before(skin);
       await p.waitForTimeout(80);
+      const passed = await crInkBatch(p, sels, width);
+      // the batch's restore restarts colour transitions, and a miss read mid-transition is not a miss
+      if (passed.size < sels.length) await p.waitForTimeout(400);
       for (const sel of sels) {
+        if (passed.has(sel)) continue;
         let box = null, ratio = 99;
         // A repaint under the shot (an event, a late read) shows the text and reads as 1:1, so a miss is measured again before it counts.
         for (let tries = 0; tries < 3 && ratio < 4.5 || tries === 0; tries++) {
@@ -27725,14 +27729,48 @@ async function crInkCheck(p, skins, sels, width, before) {
   return bad;
 }
 
+// The fast pass of crInkCheck: every selector on screen is blanked at once and read from one shot. Only passes come back, so
+// a selector off screen or under 4.5 is measured again on its own, the slow way, before it counts.
+async function crInkBatch(p, sels, width) {
+  const boxes = await p.evaluate(({ sels, width }) => sels.map(s => {
+    const e = document.querySelector(s); if (!e) return null;
+    const tn = [...e.childNodes].find(n => n.nodeType === 3 && n.textContent.trim()) || (e.firstElementChild && [...e.firstElementChild.childNodes].find(n => n.nodeType === 3 && n.textContent.trim())) || e;
+    const rg = document.createRange(); rg.selectNodeContents(tn); const r = tn === e ? e.getBoundingClientRect() : rg.getBoundingClientRect();
+    if (r.width < 2 || r.height < 2 || r.x < 0 || r.y < 0 || r.right > Math.min(width, innerWidth) || r.bottom > innerHeight) return null;
+    const kill = tn === e ? e : tn.parentElement;
+    return { s, x: Math.round(r.x), y: Math.round(r.y), w: Math.round(r.width), h: Math.round(r.height), c: getComputedStyle(kill).color, kill };
+  }).filter(Boolean).map(b => { b.kill.dataset.crk = "1"; b.kill.style.transition = "none"; b.kill.style.color = "transparent"; delete b.kill; return b; }), { sels, width });
+  if (!boxes.length) return new Set();
+  const png = await p.screenshot();
+  await p.evaluate(() => { document.querySelectorAll("[data-crk]").forEach(k => { k.style.color = ""; k.style.transition = ""; delete k.dataset.crk; }); });
+  const ok = await p.evaluate(async ({ b64, boxes }) => {
+    const img = new Image(); img.src = "data:image/png;base64," + b64; await img.decode();
+    const cv = document.createElement("canvas"); cv.width = img.width; cv.height = img.height; const g = cv.getContext("2d"); g.drawImage(img, 0, 0);
+    const lin = v => { v /= 255; return v <= .03928 ? v / 12.92 : Math.pow((v + .055) / 1.055, 2.4); };
+    const L = (r, gg, b) => .2126 * lin(r) + .7152 * lin(gg) + .0722 * lin(b);
+    return boxes.filter(box => {
+      let m = /rgba?\(([\d.]+),\s*([\d.]+),\s*([\d.]+)(?:,\s*([\d.]+))?/.exec(box.c);
+      if (!m) { const c = /color\(srgb ([\d.]+) ([\d.]+) ([\d.]+)(?: \/ ([\d.]+))?\)/.exec(box.c); m = c && [c[0], c[1] * 255, c[2] * 255, c[3] * 255, c[4]]; }
+      if (!m) return false;
+      const a = m[4] === undefined ? 1 : +m[4], d = g.getImageData(box.x, box.y, box.w, box.h).data;
+      for (let i = 0; i < d.length; i += 4 * 3) {
+        const bg = [d[i], d[i + 1], d[i + 2]], fg = [0, 1, 2].map(k => +m[k + 1] * a + bg[k] * (1 - a));
+        const l1 = L(...fg), l2 = L(...bg);
+        if ((Math.max(l1, l2) + .05) / (Math.min(l1, l2) + .05) < 4.5) return false;
+      }
+      return true;
+    }).map(b => b.s);
+  }, { b64: png.toString("base64"), boxes });
+  return new Set(ok);
+}
+
 async function crContrast(browser, base, tag) {
   const skins = [""].concat(((await (await fetch(base + "/css/themes.css")).text()).match(/:root\[data-skin="([a-z]+)"\]/g) || []).map(s => /"([a-z]+)"/.exec(s)[1]));
   const { ctx, p } = await crFixturePage(browser, base, { w: 1700, h: 1500 });
   const sels = [".cr-h2", ".cr-k", ".cr-hero h3", ".cr-hero .cr-quiet", ".cr-hero .cr-btn", ".cr-li.sel .cr-lt", ".cr-li.sel .cr-lm", ".cr-li .cr-needs", ".cr-seg button[aria-pressed=true]", ".cr-tg span", ".cr-crumb", ".cr-title",
     ".cr-detail .hr-badges .hr-state", ".cr-gate > b", ".cr-gate > span", ".cr-steps li", ".cr-field label", ".cr-btn.go", ".cr-hint", ".cr-panel .hr-h", ".cr-why", ".cr-line", ".cr-kv dt", ".cr-kv dd", ".cr-quiet", ".cr-tl .cr-tlt", ".cr-lane .cr-br", ".cr-end small", ".cr-hero .cr-br"];
   let bad;
-  try { bad = await crInkCheck(p, skins, sels, 1700, () => p.fill("#cr-sha", "xyz")); } finally { await ctx.close(); }
-  if (process.env.CR_CONTRAST) console.log(bad.join("\n"));
+  try { bad = await crInkCheck(p, skins, sels, 1700, () => p.fill("#cr-sha", "xyz")); } finally { await ctx.close(); }  if (process.env.CR_CONTRAST) console.log(bad.join("\n"));
   if (bad.length) fail(tag + ": text under 4.5:1 on " + bad.length + " pairs: " + bad.slice(0, 14).join("; "));
 }
 
