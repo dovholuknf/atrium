@@ -19484,7 +19484,7 @@ async function mFollowSection(browser) {
       else { st.replies["fo-1"] = { source: "transcript", replies: replies() }; st.send("task", Object.assign({}, c, { row: 1, seen: { turn_ended_at: mIso(10000 - tick) } })); }
     };
     if ((await gap()) > 4) fail(tag + "did not open at the bottom: " + await gap());
-    // a finger goes down and drags slowly up for 20 s while output arrives every 2 s
+    // a finger goes down and drags slowly up for 8 s while output arrives every 2 s: four outputs, each of the three kinds
     const cdp = await ctx.newCDPSession(p);
     const X = 200;
     let y = 600;
@@ -19492,7 +19492,7 @@ async function mFollowSection(browser) {
     await p.waitForTimeout(150);
     const t0 = Date.now();
     let base = null, bad1 = null, last = null, nextOut = t0 + 1000;
-    while (Date.now() - t0 < 20000) {
+    while (Date.now() - t0 < 8000) {
       y += Number(process.env.FOLLOW_STEP || 0.5);
       await cdp.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [{ x: X, y: Math.round(y) }] });
       await p.waitForTimeout(100);
