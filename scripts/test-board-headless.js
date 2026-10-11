@@ -5745,9 +5745,10 @@ async function termDebugSection(browser, base) {
 
 // ── typing lag with several terminals streaming ──────────────────────────
 // Four cards attached in turn, so three are kept hidden and one shows, every one of them streaming a TUI's redraw
-// the way a working agent does. Traced with CDP for TERMLAG_SECS (default 20): long tasks per minute, the worst
-// animation frame, and every forced layout with the script that forced it. Prints the numbers and fails on a forced
-// layout from inside an animation frame, which is what turned xterm's render frame into a 147ms one.
+// the way a working agent does. Traced with CDP for TERMLAG_SECS (default 5 in the suite, 20 for numbers worth
+// reading): long tasks per minute, the worst animation frame, and every forced layout with the script that forced it.
+// Prints the numbers and fails on a forced layout from inside an animation frame, which is what turned xterm's render
+// frame into a 147ms one.
 // TERMLAG_TRACE=<file> keeps the raw trace. See REPORT.md on claude/u-term-debug-and-lag.
 async function termLagSection(browser, base) {
   const was = tasksMode;
@@ -5792,7 +5793,7 @@ async function termLagSection(browser, base) {
     };
     Object.assign(window.WebSocket, { CONNECTING: 0, OPEN: 1, CLOSING: 2, CLOSED: 3 });
   });
-  const secs = +(process.env.TERMLAG_SECS || 20);
+  const secs = +(process.env.TERMLAG_SECS || 5);
   try {
     const p = await ctx.newPage();
     p.on("pageerror", e => errors.push(String(e)));
