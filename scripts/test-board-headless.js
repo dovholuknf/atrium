@@ -13483,6 +13483,9 @@ async function pollsGoneSection(browser, base) {
   landList = [landCard(id, { supervised: true, worktree: "/walk/" + id })];
   landPerms = [];
   const errors = [];
+  // Every page here runs on a fake clock: the quiet spells that prove nothing polls are moved through, not waited out.
+  // The real pause after each move lets a request the page made be counted.
+  const run = async (p, ms) => { await p.clock.runFor(ms); await new Promise(r => setTimeout(r, 100)); };
   try {
     // (a) The walk drawer open for longer than the old 3s: no repeated request. An event for the card reads it.
     const ctx = await landContext(browser);
@@ -13499,6 +13502,7 @@ async function pollsGoneSection(browser, base) {
       Object.assign(window.WebSocket, { CONNECTING: 0, OPEN: 1, CLOSING: 2, CLOSED: 3 });
     });
     try {
+      await ctx.clock.install();
       const p = await ctx.newPage();
       p.on("pageerror", e => errors.push(String(e)));
       await p.goto(base, { waitUntil: "domcontentloaded" });
@@ -13507,10 +13511,10 @@ async function pollsGoneSection(browser, base) {
       await p.waitForSelector("#t-walk:not([hidden])", { timeout: slow(10000) });
       await p.click("#t-walk");
       await p.waitForSelector("#walk-drawer .wk-row", { timeout: slow(10000) });
-      await p.waitForTimeout(500);
+      await run(p, 500);
       const listed = () => (counts.get("/v1/tasks/" + id + "/files/list") || 0);
       const n0 = listed();
-      await p.waitForTimeout(7000);
+      await run(p, 7000);
       if (listed() !== n0) fail("pollsGone: the open walk drawer read the folder " + (listed() - n0) + " times in 7s with no event");
       fs.writeFileSync(path.join(dir, "findings", "02-low-b.go-L2.txt"), "LOW b.go line 2: other\n\nanother\n\nEvidence\ny\n");
       mockSay("task", JSON.stringify({ id }));
@@ -13526,11 +13530,12 @@ async function pollsGoneSection(browser, base) {
     const ctx2 = await browser.newContext({ viewport: { width: 1400, height: 900 } });
     const c2 = countRequests(ctx2);
     try {
+      await ctx2.clock.install();
       const p = await ctx2.newPage();
       p.on("pageerror", e => errors.push(String(e)));
       await p.goto(base, { waitUntil: "domcontentloaded" });
       await p.waitForFunction(() => typeof hubRooms !== "undefined" && hubRooms.length === 1, null, { timeout: slow(15000) });
-      await p.waitForTimeout(2500);
+      await run(p, 2500);
       c2.clear();
       const inv = [Object.assign({ transport: "direct", attached: true, first_seen: "2026-09-19T06:00:00Z" }, ALPHA),
         Object.assign({ transport: "direct", attached: true, first_seen: "2026-09-19T06:00:00Z" }, SGG)];
@@ -13538,14 +13543,14 @@ async function pollsGoneSection(browser, base) {
         rooms: ["alpha", "sgg"], attached: [ALPHA, SGG], inventory: inv, durable: true }) + "\n\n"); } catch (e) {} });
       await p.waitForFunction(() => hubRooms.length === 2, null, { timeout: slow(5000) })
         .catch(() => fail("pollsGone: a rooms event with a payload did not paint the second room"));
-      await p.waitForTimeout(700);
+      await run(p, 700);
       if (c2.get("/_hub/rooms") || c2.get("/_hub/inventory")) {
         fail("pollsGone: a rooms event with a payload still fetched: " + topCounts(c2));
       }
-      await p.waitForTimeout(2500);
+      await run(p, 2500);
       c2.clear();
       hubStreams.forEach(r => { try { r.write("event: rooms\ndata: {}\n\n"); } catch (e) {} });
-      await p.waitForTimeout(1200);
+      await run(p, 1200);
       if (!c2.get("/_hub/rooms")) fail("pollsGone: a rooms event without `attached` did not fall back to fetching");
     } finally {
       await ctx2.close();
@@ -13558,11 +13563,12 @@ async function pollsGoneSection(browser, base) {
     const ctx3 = await browser.newContext({ viewport: { width: 1400, height: 900 } });
     const c3 = countRequests(ctx3);
     try {
+      await ctx3.clock.install();
       const p = await ctx3.newPage();
       p.on("pageerror", e => errors.push(String(e)));
       await p.goto(base, { waitUntil: "domcontentloaded" });
       await p.waitForSelector("#stack-list .stackrow", { state: "attached", timeout: slow(15000) });
-      await p.waitForTimeout(2500);
+      await run(p, 2500);
       c3.clear();
       const say = h => mockSay("health", JSON.stringify(h));
       const halt = () => p.evaluate(() => { const e = document.getElementById("halted");
@@ -13574,9 +13580,9 @@ async function pollsGoneSection(browser, base) {
       say({ halted: false, settling: true });
       await p.waitForFunction(() => document.getElementById("halted").style.display === "none", null, { timeout: slow(5000) })
         .catch(() => fail("pollsGone: a health event without halted left the halt up"));
-      await p.waitForTimeout(6500);
+      await run(p, 6500);
       say({ halted: false, settling: false });
-      await p.waitForTimeout(500);
+      await run(p, 500);
       if (c3.get("/v1/health")) fail("pollsGone: /v1/health was read " + c3.get("/v1/health") + " times while events said it all");
     } finally {
       await ctx3.close();
