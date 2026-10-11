@@ -113,6 +113,21 @@ const WEB_ROOT = path.join(__dirname, "..", "internal", "api", "web");
 const SLOW = Number(process.env.HEADLESS_SLOW) > 0 ? Number(process.env.HEADLESS_SLOW) : 1;
 const slow = ms => Math.round(ms * SLOW);
 
+// For a page on Playwright's fake clock (`page.clock.install()` before the goto): waitForFunction, with the page's
+// clock moved forward a step at a time instead of waited out. `ms` is page time. A short real pause per step lets a
+// fetch or an event land. Rejects on timeout, as waitForFunction does. `step` 0 leaves the page's clock alone and
+// waits `ms` of real time: for what the browser does on its own clock, an EventSource reconnecting say. A fake-clock
+// page cannot use waitForFunction for that, because its polling runs on the faked requestAnimationFrame.
+async function fakeWait(p, fn, arg, ms, step = 100) {
+  const end = Date.now() + slow(ms);
+  for (let t = 0; ; t += step) {
+    if (await p.evaluate(fn, arg)) return true;
+    if (step ? t >= ms : Date.now() > end) throw new Error("fakeWait timed out after " + ms + "ms");
+    if (step) await p.clock.runFor(step);
+    await new Promise(r => setTimeout(r, step ? 5 : 50));
+  }
+}
+
 // Playwright is a devDependency (see package.json) and CI may run without it.
 let chromium;
 try {
@@ -350,6 +365,9 @@ let healthBuild = "test";
 // Off by default: every other section runs without a worker. See atriumDownSection.
 let serveSW = false;
 let page502 = false;
+// The reconnect delay the event stream asks for, in ms. 0 says nothing and leaves the browser's own 3s, which is what
+// the daemon does. A section that drops the stream on purpose sets it so the reconnect is not waited out.
+let sseRetry = 0;
 const gateCalls = { input: 0, pause: 0, resume: 0 };
 const ALPHA = { name: "alpha", host: "alpha-host" };
 const SGG = { name: "sgg", host: "sgg-host" };
@@ -893,7 +911,7 @@ const server = http.createServer((req, res) => {
       "Content-Type": "text/event-stream", "Cache-Control": "no-cache",
       "Connection": "keep-alive"
     });
-    res.write(": open\n\n");
+    res.write((sseRetry ? "retry: " + sseRetry + "\n" : "") + ": open\n\n");
     openStreams.push(res);
     if (url === "/v1/events/hub") hubStreams.push(res);
     return;
@@ -2890,10 +2908,13 @@ async function atriumDownSection(browser, base) {
   const wasHub = hubMode;
   hubMode = true;
   gateBoot = "boot-a";
+  sseRetry = 200;
   const drop = () => openStreams.splice(0).forEach(r => { try { r.destroy(); } catch (e) {} });
   const downUp = () => dp.evaluate(() => { const d = document.getElementById("atriumdown"); return !!(d && d.open); });
-  const live = () => dp.waitForFunction(() => document.getElementById("conn").classList.contains("live"),
-    null, { timeout: slow(15000) });
+  // The page runs on a fake clock: the five seconds, the backoff and the countdown are moved through, not waited out.
+  const run = ms => dp.clock.runFor(ms);
+  const until = (fn, ms) => fakeWait(dp, fn, null, ms);
+  const live = () => fakeWait(dp, () => document.getElementById("conn").classList.contains("live"), null, 15000, 0);
   // Whether the down cover opened at any frame since this was called.
   const watchDown = () => dp.evaluate(() => {
     window.__downSeen = false;
@@ -2904,26 +2925,27 @@ async function atriumDownSection(browser, base) {
     tick();
   });
   try {
+    await dp.clock.install();
     await dp.goto(base, { waitUntil: "domcontentloaded" });
-    await dp.waitForFunction(() => typeof hubIsHub !== "undefined" && hubIsHub &&
-      document.getElementById("conn").classList.contains("live"), null, { timeout: slow(15000) });
-    await dp.waitForTimeout(500);
+    await until(() => typeof hubIsHub !== "undefined" && hubIsHub &&
+      document.getElementById("conn").classList.contains("live"), 15000);
+    await run(500);
 
     // A blip is not atrium being down.
     await watchDown();
     drop();
     await live().catch(() => fail("the stream did not come back after a blip."));
-    await dp.waitForTimeout(6000);
+    await run(6000);
     if (await dp.evaluate(() => window.__downSeen)) fail("a stream blip put the down cover up.");
 
     // Atrium stops with nothing said: nothing for five seconds, then the cover.
     hubAway = true;
     drop();
-    await dp.waitForTimeout(3000);
+    await run(3000);
     if (await downUp()) fail("the down cover went up before five seconds.");
-    await dp.waitForFunction(() => document.getElementById("atriumdown").open, null, { timeout: slow(8000) })
+    await until(() => document.getElementById("atriumdown").open, 8000)
       .catch(() => fail("atrium stopping with nothing said put no down cover up."));
-    await dp.waitForTimeout(1200);
+    await run(1200);
     const card = await dp.evaluate(() => ({
       clock: document.getElementById("atriumdown-el").textContent,
       text: document.getElementById("atriumdown").textContent,
@@ -2938,12 +2960,12 @@ async function atriumDownSection(browser, base) {
     if (/0, 227, 176/.test(card.edge)) fail("the down cover wears the teal edge, not the warning one: " + card.edge);
     await dp.keyboard.press("Escape");
     await dp.evaluate(async () => { await closeOpenDialogs(); document.getElementById("atriumdown").close(); });
-    await dp.waitForTimeout(300);
+    await run(300);
     if (!(await downUp())) fail("the down cover came down while atrium was still away.");
 
     // Atrium answers: the cover comes down on its own.
     hubAway = false;
-    await dp.waitForFunction(() => !document.getElementById("atriumdown").open, null, { timeout: slow(15000) })
+    await until(() => !document.getElementById("atriumdown").open, 15000)
       .catch(() => fail("the down cover did not come down once atrium answered."));
     await live().catch(() => fail("the stream did not come back after atrium did."));
 
@@ -2952,20 +2974,20 @@ async function atriumDownSection(browser, base) {
       const line = "event: hub-restart\ndata: " + JSON.stringify(state) + "\n\n";
       openStreams.forEach(r => { try { if (!r.destroyed) r.write(line); } catch (e) {} });
     };
-    await dp.waitForTimeout(500);
+    await run(500);
     await watchDown();
     say({ state: "countdown", seconds: 1 });
-    await dp.waitForTimeout(1300);
+    await run(1300);
     say({ state: "restarting" });
-    await dp.waitForFunction(() => document.getElementById("hubrestart").open, null, { timeout: slow(5000) })
+    await until(() => document.getElementById("hubrestart").open, 5000)
       .catch(() => fail("restarting drew no restart cover."));
     hubAway = true;
     drop();
-    await dp.waitForTimeout(8000);
+    await run(8000);
     if (await dp.evaluate(() => window.__downSeen)) fail("a planned restart put the down cover up.");
     gateBoot = "boot-b";
     hubAway = false;
-    await dp.waitForFunction(() => !document.getElementById("hubrestart").open, null, { timeout: slow(15000) })
+    await until(() => !document.getElementById("hubrestart").open, 15000)
       .catch(() => fail("the restart cover did not clear on the new hub."));
     if (await dp.evaluate(() => window.__downSeen)) fail("the down cover showed as the planned restart ended.");
     await dp.evaluate(() => cancelAnimationFrame(window.__downWatch));
@@ -3065,6 +3087,7 @@ async function atriumDownSection(browser, base) {
   } finally {
     serveSW = false;
     page502 = false;
+    sseRetry = 0;
     hubAway = false;
     hubMode = wasHub;
     gateBoot = "boot-a";
@@ -26290,8 +26313,8 @@ const unitResults = {};
 // are meant to see each other's state. The plain serial run does not: it keeps what each unit leaves, as it always did.
 // It cannot reset a module-level `const` that a section mutates in place (qDismissed, LAND, walkDirs, gateCalls, HON and
 // FON), so a unit that leaves one changed still reaches the next unit in its shard. A new `let` of this kind goes in here too. The list is checked against the file when the units are listed.
-const mockVars = () => ({ qDismissMode, qHeldQuiet, qDismissWrites, histMany, histManyLive, untaggedExtra, untaggedDown, untaggedEmpty, untaggedTag, landList, landPerms, typingAnswer, typingPolls, aliasWrites, boardDocs, tasksMode, wornTasks, loopListSupervised, soloMode, hubMode, sggAttached, hubHasRoom, gatePaused, gateCountdownLeft, gateBoot, hubAway, gateRestartMode, gateAsked, gateSlowMs, healthBuild, serveSW, page502, auditLive, auditMany, auditManyLive, skinFor, kaSettings, kaWrites, gautoOn, roomSettingsDown, settingsReads, settingsDelay, switchFail, switchWrites, roomStallUntil, stalledCount, mockBroadcast, waitingReads, mockSaid, cardColorsMock, blockerEsc, idleParkNow, idleParkWrites });
-const mockSet = s => { ({ qDismissMode, qHeldQuiet, qDismissWrites, histMany, histManyLive, untaggedExtra, untaggedDown, untaggedEmpty, untaggedTag, landList, landPerms, typingAnswer, typingPolls, aliasWrites, boardDocs, tasksMode, wornTasks, loopListSupervised, soloMode, hubMode, sggAttached, hubHasRoom, gatePaused, gateCountdownLeft, gateBoot, hubAway, gateRestartMode, gateAsked, gateSlowMs, healthBuild, serveSW, page502, auditLive, auditMany, auditManyLive, skinFor, kaSettings, kaWrites, gautoOn, roomSettingsDown, settingsReads, settingsDelay, switchFail, switchWrites, roomStallUntil, stalledCount, mockBroadcast, waitingReads, mockSaid, cardColorsMock, blockerEsc, idleParkNow, idleParkWrites } = s); };
+const mockVars = () => ({ qDismissMode, qHeldQuiet, qDismissWrites, histMany, histManyLive, untaggedExtra, untaggedDown, untaggedEmpty, untaggedTag, landList, landPerms, typingAnswer, typingPolls, aliasWrites, boardDocs, tasksMode, wornTasks, loopListSupervised, soloMode, hubMode, sggAttached, hubHasRoom, gatePaused, gateCountdownLeft, gateBoot, hubAway, gateRestartMode, gateAsked, gateSlowMs, healthBuild, serveSW, page502, sseRetry, auditLive, auditMany, auditManyLive, skinFor, kaSettings, kaWrites, gautoOn, roomSettingsDown, settingsReads, settingsDelay, switchFail, switchWrites, roomStallUntil, stalledCount, mockBroadcast, waitingReads, mockSaid, cardColorsMock, blockerEsc, idleParkNow, idleParkWrites });
+const mockSet = s => { ({ qDismissMode, qHeldQuiet, qDismissWrites, histMany, histManyLive, untaggedExtra, untaggedDown, untaggedEmpty, untaggedTag, landList, landPerms, typingAnswer, typingPolls, aliasWrites, boardDocs, tasksMode, wornTasks, loopListSupervised, soloMode, hubMode, sggAttached, hubHasRoom, gatePaused, gateCountdownLeft, gateBoot, hubAway, gateRestartMode, gateAsked, gateSlowMs, healthBuild, serveSW, page502, sseRetry, auditLive, auditMany, auditManyLive, skinFor, kaSettings, kaWrites, gautoOn, roomSettingsDown, settingsReads, settingsDelay, switchFail, switchWrites, roomStallUntil, stalledCount, mockBroadcast, waitingReads, mockSaid, cardColorsMock, blockerEsc, idleParkNow, idleParkWrites } = s); };
 let mockInit = null, lastUnit = "";
 const pinnedTogether = (a, b) => Object.values(PIN_GROUPS).some(g => g.units.includes(a) && g.units.includes(b));
 function mockSnapshot() {
