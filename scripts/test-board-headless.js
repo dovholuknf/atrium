@@ -23472,7 +23472,11 @@ async function hubReposLedgerSection(browser, base) {
           nsz: parseFloat(getComputedStyle(d.querySelector(".hr-dname")).fontSize), cols: d.querySelector(".hr-cols").getBoundingClientRect().width, listW: document.querySelector(".hr-list").getBoundingClientRect().width,
           who: d.querySelectorAll(".hr-side .hr-whorow").length, avatars: d.querySelectorAll(".hr-ev .hr-av").length, term: d.querySelector(".hr-termcmd").textContent,
           chip: d.querySelector(".hr-ev .hr-chip").textContent, title: !![...d.querySelectorAll(".hr-ev .hr-title")].find(t => /link flap/.test(t.textContent)),
-          cut: (() => { const n = d.querySelector('.hr-name[data-tip^="feat/oidc-device"]'); return n && n.scrollWidth > n.clientWidth && n.getAttribute("data-tip"); })() }; });
+          cut: (() => { const n = d.querySelector('.hr-name[data-tip^="feat/oidc-device"]'); if (!n) return null;
+            // Whether the name overflows its column at 2000px depends on the monospace font, and a narrow one fits it.
+            // So the box is held to 200px, which no font fits it in, and the rule that cuts it is read back.
+            n.style.maxWidth = "200px"; const cs = getComputedStyle(n);
+            return n.scrollWidth > n.clientWidth && cs.overflow === "hidden" && cs.textOverflow === "ellipsis" && n.getAttribute("data-tip"); })() }; });
       if (r.n !== 6 || r.tags !== "BUTTON" || r.cur.join() !== "openziti/ziti") fail(tag + ": the list is wrong " + JSON.stringify(r));
       if (r.name !== "ziti" || r.count !== "12" || r.sha.length !== 7 || r.nsz < 44) fail(tag + ": the repo hero is wrong " + JSON.stringify(r));
       if (r.ev !== 12 || r.rel !== 2 || r.days.join() !== "Today,Yesterday,This week,Earlier" || r.who !== 3 || r.avatars !== 12) fail(tag + ": the timeline is wrong " + JSON.stringify(r));
@@ -29004,6 +29008,7 @@ async function main() {
           // The drawn grid's bottom sits on the help bar's top: no host-coloured
           // band between the last terminal row and the footer.
           gridToFooter: Math.round(help.top - grid.bottom),
+          rowH: grid.height / term.rows,
           // The scrollable viewport reaches the footer too, so nothing shows the
           // host background below it.
           viewportToFooter: Math.round(help.top - vp.bottom),
@@ -29015,13 +29020,16 @@ async function main() {
         fail("could not measure the attached terminal against the footer (" +
           (fill.why || "unknown") + ").");
       } else {
-        // A pixel or two of sub-pixel rounding is fine; a whole line is the bug.
-        if (Math.abs(fill.gridToFooter) > 3) {
-          fail("the terminal grid does not sit on the footer (gap " + fill.gridToFooter +
-            "px): a remainder band of dead space is back above the help bar.");
+        // The grid sits at the top of the pane (flex-start, see terminalTopGap), so what is left of the pane is
+        // under the last row: less than one row, and never negative. A pixel or two of sub-pixel rounding is
+        // fine; a whole row or more is the dead band, and a negative gap is a grid running under the footer.
+        const under = g => g < -3 || g >= fill.rowH + 3;
+        if (under(fill.gridToFooter)) {
+          fail("the terminal grid is not within a row of the footer (gap " + fill.gridToFooter +
+            "px, a row is " + Math.round(fill.rowH) + "px): a remainder band of dead space is back above the help bar.");
         }
-        if (Math.abs(fill.viewportToFooter) > 3) {
-          fail("the terminal viewport does not reach the footer (gap " +
+        if (under(fill.viewportToFooter)) {
+          fail("the terminal viewport is not within a row of the footer (gap " +
             fill.viewportToFooter + "px).");
         }
         if (Math.abs(fill.hostToFooter) > 3) {
