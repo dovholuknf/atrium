@@ -3632,24 +3632,28 @@ async function foldStillSection(browser, base) {
     await p.click('.tab[data-view="board"]');
     return p;
   };
-  let live = 0;
+  // Both windows run on the context's fake clock. A beat is one second of a live board: a card changes, the stream says
+  // so and every pass repaints, which is where the stored answer meets the screen. The real pause lets the pass land.
+  let tick = 0;
+  const beats = async n => {
+    for (let i = 0; i < n; i++) {
+      LOOSE.display_title = "loose card " + (++tick);
+      openStreams.forEach(r => { try { r.write("event: task\ndata: {}\n\n"); } catch (e) {} });
+      await ctx.clock.runFor(1000);
+      await new Promise(r => setTimeout(r, 150));
+    }
+  };
   try {
+    await ctx.clock.install();
     const a = await open("a");
     const b = await open("b");
     await a.waitForSelector('details.cardgroup[data-fold="proj:untagged"]', { state: "attached", timeout: slow(10000) });
     // Open it by hand, the way a click on its summary does.
     await a.evaluate(() => { document.querySelector('details.cardgroup[data-fold="proj:untagged"]').open = true; });
-    // A live board: a card changes and the stream says so, every second, so
-    // every pass repaints. A repaint is where the stored answer meets the screen.
-    let tick = 0;
-    live = setInterval(() => {
-      LOOSE.display_title = "loose card " + (++tick);
-      openStreams.forEach(r => { try { r.write("event: task\ndata: {}\n\n"); } catch (e) {} });
-    }, 1000);
-    await a.waitForTimeout(2500);
+    await beats(3);
     const reset = p => p.evaluate(() => { window.__writes = []; window.__toggles = 0; });
     await reset(a); await reset(b);
-    await a.waitForTimeout(+(process.env.FOLD_STILL_SECONDS || 10) * 1000);
+    await beats(+(process.env.FOLD_STILL_SECONDS || 10));
     const got = await Promise.all([a, b].map(p => p.evaluate(() => ({
       writes: window.__writes, toggles: window.__toggles,
       open: !!(document.querySelector('details.cardgroup[data-fold="proj:untagged"]') || {}).open
@@ -3667,9 +3671,9 @@ async function foldStillSection(browser, base) {
 
     // And shut again, which is its default, so the entry goes and stays gone.
     await a.evaluate(() => { document.querySelector('details.cardgroup[data-fold="proj:untagged"]').open = false; });
-    await a.waitForTimeout(2500);
+    await beats(3);
     await reset(a); await reset(b);
-    await a.waitForTimeout(4000);
+    await beats(4);
     const shut = await Promise.all([a, b].map(p => p.evaluate(() => ({
       writes: window.__writes.length,
       open: !!(document.querySelector('details.cardgroup[data-fold="proj:untagged"]') || {}).open
@@ -3678,7 +3682,6 @@ async function foldStillSection(browser, base) {
     if (shut.some(s => s.writes)) fail("shutting the untagged group left windows writing storage: " + JSON.stringify(shut));
     if (errors.length) fail("the fold-still pages threw: " + errors.join(" | "));
   } finally {
-    clearInterval(live);
     LOOSE.display_title = "loose card";
     await ctx.close();
     tasksMode = was;
