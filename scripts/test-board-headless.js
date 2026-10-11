@@ -1552,8 +1552,12 @@ async function detailsHoverSection(browser, base) {
   await dp.addInitScript(() => {
     localStorage.setItem("atrium.skipconfirm", JSON.stringify({ "width-floor": true }));
   });
+  // What is measured is the colour a hover settles on, so transitions are off and two frames stand in for the
+  // 350ms and 450ms each skin and theme once waited for them to finish.
+  const settle = () => dp.evaluate(() => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r))));
   try {
     await dp.goto(base, { waitUntil: "domcontentloaded" });
+    await dp.addStyleTag({ content: "*, *::before, *::after { transition: none !important; }" });
     await dp.waitForTimeout(900);
     await dp.click('.tab[data-view="terms"]');
     await dp.waitForSelector("#t-expando", { state: "attached", timeout: slow(15000) });
@@ -1576,11 +1580,11 @@ async function detailsHoverSection(browser, base) {
         const pill = dp.locator("#t-expando");
         await pill.evaluate(el => { for (let n = el; n; n = n.parentElement) n.hidden = false; });
         await dp.mouse.move(0, 0);
-        await dp.waitForTimeout(350);
+        await settle();
         const box = await pill.boundingBox();
         if (!box || !box.width) { fail("the details pill is not on screen (" + skin + ", " + name + ")."); continue; }
         await dp.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
-        await dp.waitForTimeout(450);
+        await settle();
         const got = await pill.evaluate(el => {
           const s = getComputedStyle(el);
           // The surface under the label: the pill's own fill if it has one, else the nearest ancestor's.
