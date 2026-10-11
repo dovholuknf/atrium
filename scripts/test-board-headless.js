@@ -497,6 +497,8 @@ const hubStreams = [];       // hub event streams, used to push a `rooms` event
 // proxied read is held until this time, then refused. See idleRateSection.
 let roomStallUntil = 0;
 let stalledCount = 0;
+// The reads a stall is holding, so a stall timed on a page's fake clock can end them when it ends.
+const stallHeld = [];
 
 const HTML = wholeBoard();
 
@@ -626,7 +628,9 @@ const server = http.createServer((req, res) => {
   if (roomStallUntil > Date.now() && url.startsWith("/v1/") && url !== "/v1/health" &&
       !url.startsWith("/v1/events")) {
     stalledCount++;
-    setTimeout(() => { res.writeHead(503); res.end("{}"); }, roomStallUntil - Date.now());
+    const answer = () => { clearTimeout(t); if (!res.headersSent) { res.writeHead(503); res.end("{}"); } };
+    const t = setTimeout(answer, roomStallUntil - Date.now());
+    stallHeld.push(answer);
     return;
   }
 
@@ -3533,12 +3537,14 @@ async function idleRateSection(browser, base) {
     return p;
   };
   try {
+    // All three documents on the context's fake clock: page seconds, every poll and heartbeat fired as it comes due.
+    await ctx.clock.install();
     const board = await open("board");
-    await board.waitForTimeout(1500);
+    await fakeTick(board, 1500);
     await board.click('.tab[data-view="terms"]').catch(() => {});
     const solo = await open("solo", "#term=sgg~s1");
     const tab2 = await open("tab2");
-    await board.waitForTimeout(3000);
+    await fakeTick(board, 3000);
     // The spelling flip: sgg drops and comes back, so the board re-resolves
     // `sgg~s1` to `s1` and back while the window keeps the spelling it opened on.
     counts.clear();
@@ -3548,8 +3554,9 @@ async function idleRateSection(browser, base) {
       if (i === 2 || i === 6) {
         sggAttached = !sggAttached;
         hubStreams.forEach(r => { try { r.write("event: rooms\ndata: {}\n\n"); } catch (e) {} });
+        await new Promise(r => setTimeout(r, 20));
       }
-      await board.waitForTimeout(1000);
+      await fakeTick(board, 1000);
     }
     const mut1 = await Promise.all(pages.map(p => p.evaluate(() => window.__atriumMut)));
     const total = [...counts.values()].reduce((a, b) => a + b, 0);
@@ -3576,10 +3583,11 @@ async function idleRateSection(browser, base) {
     const stall = +(process.env.IDLE_RATE_STALL || 40);
     if (stall) {
       stalledCount = 0;
-      roomStallUntil = Date.now() + stall * 1000;
+      // The stall is page time: the server holds every read until the loop below has run its page seconds.
+      roomStallUntil = Date.now() + slow(stall * 1000);
       let most = 0, where = "";
       for (let i = 0; i < stall; i++) {
-        await board.waitForTimeout(1000);
+        await fakeTick(board, 1000);
         const qs = await Promise.all(pages.map(p => p.evaluate(() => apiQueue.length)));
         qs.forEach((n, j) => { if (n > most) { most = n; where = pages[j].__who + " at " + (i + 1) + "s"; } });
         if (process.env.IDLE_RATE_REPORT && i % 5 === 4) {
@@ -3587,17 +3595,19 @@ async function idleRateSection(browser, base) {
         }
       }
       roomStallUntil = 0;
+      stallHeld.splice(0).forEach(answer => answer());
       if (most > 4) {
         fail("a room that stopped answering queued " + most + " board fetches (" + where +
           "): a held read is keeping its slot instead of timing out.");
       }
-      await board.waitForTimeout(5000);
+      await fakeTick(board, 5000);
       const after = await Promise.all(pages.map(p => p.evaluate(() => apiInflight + apiQueue.length)));
       if (after.some(n => n > 0)) fail("the board still had fetches out 5s after the room answered: " + after.join(" "));
     }
     if (errors.length) fail("the idle-rate pages threw: " + errors.join(" | "));
   } finally {
     roomStallUntil = 0;
+    stallHeld.splice(0).forEach(answer => answer());
     await ctx.close();
     hubMode = wasHub;
     sggAttached = wasSgg;
