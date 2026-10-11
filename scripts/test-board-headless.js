@@ -2370,6 +2370,7 @@ async function restartGateSection(browser, base) {
   hubMode = true;
   gatePaused = false;
   Object.assign(gateCalls, { input: 0, pause: 0, resume: 0 });
+  sseRetry = 200;
   const say = state => {
     const line = "event: hub-restart\ndata: " + JSON.stringify(state) + "\n\n";
     openStreams.forEach(r => { try { if (!r.destroyed) r.write(line); } catch (e) {} });
@@ -2378,7 +2379,11 @@ async function restartGateSection(browser, base) {
     const el = document.querySelector(".toast.hubgate b");
     return el ? el.textContent : "";
   });
+  // The countdowns, the toast lifetimes and the cover clock run on a fake clock: moved through, not waited out. The
+  // real pause after each move lets a report the page makes reach the mock before it is counted.
+  const run = async ms => { await gp.clock.runFor(ms); await new Promise(r => setTimeout(r, 100)); };
   try {
+    await gp.clock.install();
     await gp.goto(base, { waitUntil: "domcontentloaded" });
     await gp.waitForFunction(() => typeof hubIsHub !== "undefined" && hubIsHub &&
       document.getElementById("conn").classList.contains("live"), null, { timeout: slow(15000) });
@@ -2386,7 +2391,7 @@ async function restartGateSection(browser, base) {
     // Input is reported, and throttled.
     await gp.mouse.click(700, 450);
     await gp.keyboard.press("Shift");
-    await gp.waitForTimeout(300);
+    await run(300);
     if (gateCalls.input !== 1) fail("a click and a key inside the throttle reported input " +
       gateCalls.input + " times, not once.");
 
@@ -2398,25 +2403,25 @@ async function restartGateSection(browser, base) {
     if (!/atrium restarts in [45]s/.test(first)) {
       fail("the countdown toast said: " + first);
     }
-    await gp.waitForTimeout(1300);
+    await run(1300);
     const later = await countdownText();
     if (!/in [34]s/.test(later)) fail("the countdown did not count down: " + first + " then " + later);
 
     // ONLY THE PAUSE BUTTON STOPS IT. Typing, clicking elsewhere, the banner's own
     // text and scrolling leave it running, and none is reported as input.
-    await gp.waitForTimeout(3100);
+    await run(3100);
     const inputBefore = gateCalls.input;
     await gp.mouse.click(700, 450);
     await gp.keyboard.press("a");
     await gp.mouse.wheel(0, 100);
     await gp.click(".toast.hubgate .what");
     await gp.click(".toast.hubgate b");
-    await gp.waitForTimeout(300);
+    await run(300);
     if (gateCalls.pause !== 0) fail("a click on the banner's text paused the countdown.");
     if (gateCalls.input !== inputBefore) fail("input with the countdown up was reported to the hub.");
     if (!(await gp.$(".toast.hubgate"))) fail("typing or clicking elsewhere took the countdown down.");
     await gp.click(".toast.hubgate .hubgate-act");
-    await gp.waitForTimeout(300);
+    await run(300);
     if (gateCalls.pause !== 1) fail("clicking the countdown called pause " + gateCalls.pause + " times.");
     if (await gp.$(".toast.hubgate")) fail("the countdown toast stayed up after it was clicked.");
 
@@ -2428,12 +2433,12 @@ async function restartGateSection(browser, base) {
       return el && /restart on hold/.test(el.textContent);
     }, null, { timeout: slow(5000) }).catch(() => fail("a pause from the hub drew no paused toast."));
     await gp.evaluate(() => { for (let i = 0; i < 5; i++) toast("filler " + i, "pushing the stack"); });
-    await gp.waitForTimeout(100);
+    await run(100);
     if (!(await gp.$(".toast.hubgate .hubgate-act"))) fail("the paused toast was pushed off the stack.");
-    await gp.waitForTimeout(9500);
+    await run(9500);
     if (!(await gp.$(".toast.hubgate"))) fail("the paused toast timed out like an ordinary one.");
     await gp.click(".toast.hubgate .hubgate-act");
-    await gp.waitForTimeout(300);
+    await run(300);
     if (gateCalls.resume !== 1) fail("the resume button called resume " + gateCalls.resume + " times.");
     if (await gp.$(".toast.hubgate")) fail("the paused toast stayed up after resume.");
 
@@ -2456,14 +2461,14 @@ async function restartGateSection(browser, base) {
     await gp.waitForFunction(() => !!document.querySelector(".toast.hubgate"), null, { timeout: slow(5000) })
       .catch(() => fail("the second countdown drew no toast."));
     await gp.evaluate(() => { for (let i = 0; i < 5; i++) toast("filler " + i, "pushing the stack"); });
-    await gp.waitForTimeout(100);
+    await run(100);
     if (!(await hasCountdown())) fail("the countdown toast was pushed off the stack.");
     const plainCount = await gp.evaluate(() => document.querySelectorAll("#toasts .toast:not(.sticky)").length);
     if (plainCount !== 3) fail("with a countdown up the stack held " + plainCount + " ordinary toasts, not 3.");
     await gp.evaluate(() => document.querySelector(".toast.hubgate").remove());
-    await gp.waitForTimeout(100);
+    await run(100);
     if (!(await hasCountdown())) fail("the countdown toast stayed gone after something removed it.");
-    await gp.waitForTimeout(9500);
+    await run(9500);
     if (!(await hasCountdown())) fail("the countdown toast went away on a timer.");
     // Every stream back, not only the one `#conn` watches. The hub's own stream
     // reopens on its own clock, and an event said before it is back is said to
@@ -2474,9 +2479,9 @@ async function restartGateSection(browser, base) {
       { timeout: slow(15000) }).catch(() => fail("the stream did not come back."));
     for (const end = Date.now() + 15000;
       openStreams.filter(r => !r.destroyed).length < streamsWere && Date.now() < end;) {
-      await gp.waitForTimeout(50);
+      await run(50);
     }
-    await gp.waitForTimeout(500);
+    await run(500);
     if (!(await hasCountdown())) fail("the countdown toast went away when the stream reopened.");
     say({ state: "cancelled" });
     await gp.waitForFunction(() => !document.querySelector(".toast.hubgate"), null, { timeout: slow(5000) })
@@ -2488,7 +2493,7 @@ async function restartGateSection(browser, base) {
     await gp.waitForFunction(() => !!document.querySelector(".toast.hubgate"), null, { timeout: slow(5000) })
       .catch(() => fail("a pause on a phone drew no toast."));
     await gp.evaluate(() => { for (let i = 0; i < 3; i++) toast("phone filler " + i, "pushing the stack"); });
-    await gp.waitForTimeout(100);
+    await run(100);
     const phone = await gp.evaluate(() => ({
       paused: !!document.querySelector(".toast.hubgate .hubgate-act"),
       plain: document.querySelectorAll("#toasts .toast:not(.sticky)").length
@@ -2524,7 +2529,7 @@ async function restartGateSection(browser, base) {
       .catch(() => fail("the hub restarting drew no modal."));
     // It says how long it has been, and it wears the skin: its card is the
     // palette's own card colour, whatever skin is on.
-    await gp.waitForTimeout(1200);
+    await run(1200);
     const cover = await gp.evaluate(() => {
       const probe = document.createElement("div");
       probe.style.background = "var(--card-0)";
@@ -2545,7 +2550,7 @@ async function restartGateSection(browser, base) {
     }
     await gp.keyboard.press("Escape");
     await gp.evaluate(() => closeOpenDialogs());
-    await gp.waitForTimeout(200);
+    await run(200);
     if (!(await gp.evaluate(() => document.getElementById("hubrestart").open))) {
       fail("the restarting modal came down while the hub was still away.");
     }
@@ -2560,6 +2565,7 @@ async function restartGateSection(browser, base) {
     hubMode = wasHub;
     gatePaused = false;
     gateCountdownLeft = 0;
+    sseRetry = 0;
     gateBoot = "boot-a";
     await ctx.close();
   }
