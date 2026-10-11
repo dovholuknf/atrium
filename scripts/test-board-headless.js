@@ -6599,7 +6599,7 @@ async function pasteBigSection(browser, base) {
       return s;
     };
     Object.assign(window.WebSocket, { CONNECTING: 0, OPEN: 1, CLOSING: 2, CLOSED: 3 });
-    // Drives one gesture and samples the box on every frame for 1.5s.
+    // Drives one gesture and samples the box on every frame for 800ms: room to see it paint at once and hold 300ms.
     window.__pasteRun = gesture => new Promise(done => {
       pasteEnd();
       window.__frames = [];
@@ -6611,7 +6611,7 @@ async function pasteBigSection(browser, base) {
         const t = performance.now() - t0;
         if (vis()) { seen.push(t); if (firstFrame < 0) firstFrame = frame; }
         frame++;
-        if (t < 1500) { requestAnimationFrame(loop); return; }
+        if (t < 800) { requestAnimationFrame(loop); return; }
         done({ first: seen.length ? Math.round(seen[0]) : -1, firstFrame,
           span: seen.length ? Math.round(seen[seen.length - 1] - seen[0]) : 0,
           sizes: window.__frames.map(f => f.length), heads: window.__frames.map(f => f.slice(0, 32)),
