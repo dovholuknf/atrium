@@ -13451,15 +13451,19 @@ async function idleBudgetSection(browser, base) {
   const counts = countRequests(ctx);
   try {
     const p = await ctx.newPage();
+    // Page seconds on the fake clock, every timer fired as it comes due, so a poll still shows in the count.
+    await p.clock.install();
     await p.goto(base, { waitUntil: "domcontentloaded" });
     await p.waitForSelector("#stack-list .stackrow, #term-list .card.tab",
       { state: "attached", timeout: slow(15000) });
-    await p.waitForTimeout(3000);
+    const tick = async ms => { for (let t = 0; t < ms; t += 250) { await p.clock.runFor(250); await new Promise(r => setTimeout(r, 10)); } };
+    await tick(3000);
     counts.clear();
     for (let i = 0; i < secs; i++) {
       const c = UNTAGGED_CARDS[i % UNTAGGED_CARDS.length];
       mockSay("task", JSON.stringify(Object.assign({}, c, { row: 1, idle_seconds: i })));
-      await p.waitForTimeout(1000);
+      await new Promise(r => setTimeout(r, 20));
+      await tick(1000);
     }
     const total = sumCounts(counts);
     const perMin = total * 60 / secs;
