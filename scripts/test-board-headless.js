@@ -25110,9 +25110,11 @@ async function mReadRetrySection(browser) {
     try {
       const ctx = await browser.newContext({ viewport: M_VIEWS[0], hasTouch: true, isMobile: true });
       const p = await ctx.newPage();
+      // 6.5s of backoff on the page's fake clock, a step at a time so each failed read lands before the next step.
+      await p.clock.install();
       await p.goto(st.url + "/m/", { waitUntil: "domcontentloaded" });
       await p.waitForFunction(() => window.mNet.loaded(), null, { timeout: slow(10000) });
-      await p.waitForTimeout(6500);
+      for (let t = 0; t < 6500; t += 100) { await p.clock.runFor(100); await new Promise(r => setTimeout(r, 10)); }
       const n = st.permsHits;
       if (!status && (n < 3 || n > 5)) fail(tag + "a 503 on permissions was read " + n + " times in 6.5s; backoff wants 3 to 5");
       if (status && n > 2) fail(tag + "a " + status + " was retried: " + n + " reads");
