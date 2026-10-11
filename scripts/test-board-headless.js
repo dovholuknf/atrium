@@ -23472,7 +23472,11 @@ async function hubReposLedgerSection(browser, base) {
           nsz: parseFloat(getComputedStyle(d.querySelector(".hr-dname")).fontSize), cols: d.querySelector(".hr-cols").getBoundingClientRect().width, listW: document.querySelector(".hr-list").getBoundingClientRect().width,
           who: d.querySelectorAll(".hr-side .hr-whorow").length, avatars: d.querySelectorAll(".hr-ev .hr-av").length, term: d.querySelector(".hr-termcmd").textContent,
           chip: d.querySelector(".hr-ev .hr-chip").textContent, title: !![...d.querySelectorAll(".hr-ev .hr-title")].find(t => /link flap/.test(t.textContent)),
-          cut: (() => { const n = d.querySelector('.hr-name[data-tip^="feat/oidc-device"]'); return n && n.scrollWidth > n.clientWidth && n.getAttribute("data-tip"); })() }; });
+          cut: (() => { const n = d.querySelector('.hr-name[data-tip^="feat/oidc-device"]'); if (!n) return null;
+            // Whether the name overflows its column at 2000px depends on the monospace font, and a narrow one fits it.
+            // So the box is held to 200px, which no font fits it in, and the rule that cuts it is read back.
+            n.style.maxWidth = "200px"; const cs = getComputedStyle(n);
+            return n.scrollWidth > n.clientWidth && cs.overflow === "hidden" && cs.textOverflow === "ellipsis" && n.getAttribute("data-tip"); })() }; });
       if (r.n !== 6 || r.tags !== "BUTTON" || r.cur.join() !== "openziti/ziti") fail(tag + ": the list is wrong " + JSON.stringify(r));
       if (r.name !== "ziti" || r.count !== "12" || r.sha.length !== 7 || r.nsz < 44) fail(tag + ": the repo hero is wrong " + JSON.stringify(r));
       if (r.ev !== 12 || r.rel !== 2 || r.days.join() !== "Today,Yesterday,This week,Earlier" || r.who !== 3 || r.avatars !== 12) fail(tag + ": the timeline is wrong " + JSON.stringify(r));
