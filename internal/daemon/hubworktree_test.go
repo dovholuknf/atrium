@@ -54,3 +54,55 @@ func TestScopeHubRemoteNoOps(t *testing.T) {
 		t.Fatalf("url changed: %s", got)
 	}
 }
+
+func TestScopeHubRemoteLeavesOneUrlPerWorktree(t *testing.T) {
+	main := t.TempDir()
+	hubWtGit(t, main, "init", "-q", "-b", "main")
+	hubWtGit(t, main, "commit", "-q", "--allow-empty", "-m", "x")
+	a := "http://127.0.0.1:7787/git/hub/github/o/r.git"
+	b := "http://127.0.0.1:7777/git/hub/github/o/r.git"
+	hubWtGit(t, main, "remote", "add", "hub", a)
+	sib := filepath.Join(t.TempDir(), "sib")
+	hubWtGit(t, main, "worktree", "add", "-q", "-b", "s", sib)
+	wt := filepath.Join(t.TempDir(), "wt")
+	hubWtGit(t, main, "worktree", "add", "-q", "-b", "w", wt)
+
+	d := &Daemon{}
+	d.hubGit.agent = "127.0.0.1:7777"
+	d.scopeHubRemote(wt)
+	d.scopeHubRemote(wt) // idempotent
+
+	for dir, want := range map[string]string{wt: b, main: a, sib: a} {
+		if got := hubWtGit(t, dir, "config", "--get-all", "remote.hub.url"); got != want {
+			t.Fatalf("%s urls = %q, want %q", dir, got, want)
+		}
+	}
+}
+
+func TestScopeHubRemoteRepairsDoubleUrl(t *testing.T) {
+	main := t.TempDir()
+	hubWtGit(t, main, "init", "-q", "-b", "main")
+	hubWtGit(t, main, "commit", "-q", "--allow-empty", "-m", "x")
+	a := "http://127.0.0.1:7787/git/hub/github/o/r.git"
+	b := "http://127.0.0.1:7777/git/hub/github/o/r.git"
+	hubWtGit(t, main, "remote", "add", "hub", a)
+	wt := filepath.Join(t.TempDir(), "wt")
+	hubWtGit(t, main, "worktree", "add", "-q", "-b", "w", wt)
+	// the old behaviour: a second url in the worktree
+	hubWtGit(t, main, "config", "extensions.worktreeConfig", "true")
+	hubWtGit(t, wt, "config", "--worktree", "remote.hub.url", b)
+	if n := len(strings.Fields(hubWtGit(t, wt, "config", "--get-all", "remote.hub.url"))); n != 2 {
+		t.Fatalf("setup should double the url, got %d", n)
+	}
+
+	d := &Daemon{}
+	d.hubGit.agent = "127.0.0.1:7777"
+	d.scopeHubRemote(wt)
+
+	if got := hubWtGit(t, wt, "config", "--get-all", "remote.hub.url"); got != b {
+		t.Fatalf("worktree urls = %q", got)
+	}
+	if got := hubWtGit(t, main, "config", "--get-all", "remote.hub.url"); got != a {
+		t.Fatalf("main urls = %q", got)
+	}
+}
