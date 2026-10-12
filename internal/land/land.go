@@ -63,11 +63,11 @@ func ParseRevList(out []byte) ([]Commit, error) {
 	return cs, nil
 }
 
-// Message is what filter-branch's msg filter made of a message: blank lines dropped, the first line kept, trailing
+// Message is what filter-branch's msg filter made of a message: blank and whitespace-only lines dropped, the first line kept, trailing
 // whitespace trimmed, then the scrub rules.
 func Message(raw string) string {
 	for _, l := range strings.Split(raw, "\n") {
-		if l == "" {
+		if strings.TrimSpace(l) == "" {
 			continue
 		}
 		return Scrub(strings.TrimRight(l, " \t\r"))

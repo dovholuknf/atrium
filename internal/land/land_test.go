@@ -11,6 +11,7 @@ func TestMessageKeepsOneScrubbedLine(t *testing.T) {
 	cases := map[string]string{
 		"Fix the thing  \n\nbody line\n\nCo-Authored-By: Claude <noreply@anthropic.com>\n": "Fix the thing\n",
 		"\n\nSecond line first\nthird\n":            "Second line first\n",
+		" \t\n  \nAfter blank-looking lines\n":      "After blank-looking lines\n",
 		"Merge claude/main into r-001":              "Merge main into r-001\n",
 		"Update CLAUDE.md and build.claude paths\t": "Update AGENTS.md and the build directory paths\n",
 		"Ask Claude Code about claudevm":            "Ask the agent CLI about workvm\n",
