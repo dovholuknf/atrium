@@ -121,8 +121,8 @@ function backlogItemRow(b) {
     '<select class="bl-prio" data-prio="' + p + '" data-id="' + esc(b.id || "") + '" aria-label="priority of ' + esc(b.id || "") + '">' +
     opts + "</select>" +
     '<span class="aud-detail">' + esc(b.title || "") + "</span>" +
-    '<span class="aud-when" title="' + esc(b.created_at || "") + '">' + esc(backlogStamp(b.created_at)) + "</span>" +
-    '<span class="aud-when" title="' + esc(b.changed_at || "") + '">' + esc(backlogStamp(b.changed_at)) + "</span>" +
+    '<span class="aud-when" data-tip="' + esc(b.created_at || "") + '">' + esc(backlogStamp(b.created_at)) + "</span>" +
+    '<span class="aud-when" data-tip="' + esc(b.changed_at || "") + '">' + esc(backlogStamp(b.changed_at)) + "</span>" +
     "</div>";
 }
 

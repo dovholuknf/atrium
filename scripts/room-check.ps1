@@ -693,7 +693,7 @@ true
             $fixable = $todo.Count -and $g.Code -eq 0 -and -not @($todo | Where-Object { $_ -match '^room-gate \S+ fail\b' }).Count
             if ($fixable -and $Fix -and $Yes) {
                 # Only atrium's own gate is installed: the old script's entry and file come out, with a backup of settings.json.
-                Note "changing the account settings.json on $Room: removes the old atrium-perm-hook.ps1 gate, keeps atrium hook --event permission, backup settings.json.bak-<stamp>"
+                Note "changing the account settings.json on ${Room}: removes the old atrium-perm-hook.ps1 gate, keeps atrium hook --event permission, backup settings.json.bak-<stamp>"
                 $f = Invoke-Script 'room-gate.ps1' (@($Room, '-Target', $Target, '-HubAddr', $HubAddr) + $childSsh)
                 if ($f.Code -eq 0) { Row 'gate' 'done' "room-gate: $(@($f.Out | Where-Object { $_ -match '^room-gate (legacy|register|script) done' }) -join '; ')" }
                 else { Row 'gate' 'fail' "room-gate exited $($f.Code)"; Unmet 'human' }

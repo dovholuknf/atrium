@@ -130,7 +130,7 @@
       b.type = "button";
       b.textContent = t.firstChild.textContent;
       b.dataset.view = t.dataset.view;
-      if (place[t.dataset.view] === "hidden") b.title = "hidden from the bar, shown here while something is waiting";
+      if (place[t.dataset.view] === "hidden") b.dataset.tip = "hidden from the bar, shown here while something is waiting";
       b.classList.toggle("on", t.classList.contains("on"));
       const n = t.querySelector(".count");
       if (n && n.textContent) {
