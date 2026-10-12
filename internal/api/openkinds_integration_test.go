@@ -197,7 +197,7 @@ func TestOpenAnIssueClaimsItsKeyAndRefusesOneAnotherRoomHolds(t *testing.T) {
 // THE CLAIM IS LOWER CASE whatever the paste's case, as the hub's lookup is, while the link tag keeps the case.
 func TestOpenAMixedCaseIssueClaimsItsLowerCaseKey(t *testing.T) {
 	oh := newOpenHarness(t, &fakeForge{})
-	oh.checkout(t, "o", "r")
+	oh.checkout(t, "O", "R") // the folder the pasted URL names: a case-sensitive disk has no "o/r" for it
 	inner := oh.srv.Recognise
 	oh.srv.Recognise = func(url string) (*store.Resolved, error) {
 		got, err := inner(url)
