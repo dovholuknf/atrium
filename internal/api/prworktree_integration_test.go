@@ -12,7 +12,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
-	"sync"
 	"testing"
 
 	"github.com/dovholuknf/atrium/internal/forge"
@@ -54,15 +53,6 @@ func git(t *testing.T, dir string, args ...string) string {
 		t.Fatalf("git %v: %v\n%s", args, err, out)
 	}
 	return strings.TrimSpace(string(out))
-}
-
-// upstreamRepo is the one upstream repo the package builds, on the first ask. Its folder is removed by TestMain.
-var upstreamRepo upstreamFixture
-
-type upstreamFixture struct {
-	once sync.Once
-	dir  string
-	err  error
 }
 
 // upstream is a local repo with one commit and refs/pull/7/head one commit further on. It is built once for the
