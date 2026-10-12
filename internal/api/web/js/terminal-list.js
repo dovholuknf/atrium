@@ -116,12 +116,13 @@ const TERM_SHOW_KEY = "atrium.terms.show";
 const TERM_CHIPS = ["shelved", "dead", "subagents"];
 // The keys the old controls kept, cleared on load (both device variants) so a stale `hide inactive` does not outlive
 // the control that wrote it. `atrium.hidedoers` is older still.
-(function clearLegacyHideKey() {
+function clearLegacyHideKey() {
   try {
     ["atrium.hidedoers", "atrium.hideagents", "atrium.hidesubagents", "atrium.termtray", "atrium.showstopped"]
       .forEach(k => { localStorage.removeItem(k); localStorage.removeItem(k + ".mobile"); });
   } catch (e) {}
-})();
+}
+clearLegacyHideKey();
 
 function termShow() {
   try {
