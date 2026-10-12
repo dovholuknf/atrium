@@ -949,6 +949,9 @@ func (d *Daemon) launchLocked(req LaunchRequest) (*store.Task, error) {
 	briefPath := ""
 	// An outside-code card has no git token, so the room's forwarder is no use to it.
 	outside := isOutsideCode(req, task)
+	if !outside && req.Resume == "" {
+		d.scopeHubRemote(cwd)
+	}
 	if brief := strings.TrimSpace(req.Brief); brief != "" && req.Resume == "" {
 		p, err := writeBriefFile(cwd, brief, !outside)
 		if err != nil {
