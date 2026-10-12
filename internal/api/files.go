@@ -98,11 +98,11 @@ func (s *Server) uploadTarget(t *store.Task) (string, string, error) {
 	// Not kept, so not in the repository. The path has no caller input in it,
 	// the filename is sanitised where it is written, and the root below is this
 	// directory, so a filename that tried to climb out is still refused.
-	if s.pasteIsScrap() && strings.TrimSpace(ScrapDir) != "" {
-		if err := os.MkdirAll(ScrapDir, 0o700); err != nil {
+	if scrap := s.scrapRoot(); s.pasteIsScrap() && strings.TrimSpace(scrap) != "" {
+		if err := os.MkdirAll(scrap, 0o700); err != nil {
 			return "", "", err
 		}
-		return ScrapDir, ScrapDir, nil
+		return scrap, scrap, nil
 	}
 	dir, err := uploadTargetIn(t)
 	if err != nil {

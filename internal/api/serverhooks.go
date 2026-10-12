@@ -22,6 +22,15 @@ type serverHooks struct {
 	isSupervised     func(taskID string) bool
 	// prArchiveCap, when above zero, is the archive cap instead of PRArchiveCap.
 	prArchiveCap int64
+	// scrapDir, when non-nil, is the scrap folder instead of ScrapDir. A pointer so a test can say it is empty.
+	scrapDir *string
+}
+
+func (s *Server) scrapRoot() string {
+	if s.hk.scrapDir != nil {
+		return *s.hk.scrapDir
+	}
+	return ScrapDir
 }
 
 func (s *Server) cardsRoot() string {

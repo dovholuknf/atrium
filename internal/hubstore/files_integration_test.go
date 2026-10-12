@@ -125,9 +125,7 @@ func TestFilesSharedBlobSurvivesOneDelete(t *testing.T) {
 func TestFilesCapsAndRate(t *testing.T) {
 	s := open(t)
 	clock := time.Date(2026, 10, 12, 12, 0, 0, 0, time.UTC)
-	old := now
-	now = func() time.Time { return clock }
-	defer func() { now = old }()
+	s.clock = func() time.Time { return clock }
 
 	if _, err := s.SetFileSettings(FileCaps{File: 10, Total: 25}); err != nil {
 		t.Fatal(err)
@@ -205,9 +203,7 @@ func TestFilesSecretChecks(t *testing.T) {
 func TestFilesExpireAndSweep(t *testing.T) {
 	s := open(t)
 	clock := time.Date(2026, 10, 12, 12, 0, 0, 0, time.UTC)
-	old := now
-	now = func() time.Time { return clock }
-	defer func() { now = old }()
+	s.clock = func() time.Time { return clock }
 
 	r := mustFile(t, s, fileIn("old.txt", "old bytes"))
 	if err := os.MkdirAll(s.FilesDir(), 0o700); err != nil {
@@ -270,9 +266,7 @@ func TestFilesMissingBytesAre410(t *testing.T) {
 func TestFilesTTLBounds(t *testing.T) {
 	s := open(t)
 	clock := time.Date(2026, 10, 12, 12, 0, 0, 0, time.UTC)
-	old := now
-	now = func() time.Time { return clock }
-	defer func() { now = old }()
+	s.clock = func() time.Time { return clock }
 
 	r := mustFile(t, s, fileIn("a", "a"))
 	if want := ts(clock.Add(7 * 24 * time.Hour)); r.Expires != want {

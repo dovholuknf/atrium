@@ -71,15 +71,14 @@ func TestDropInIgnoresScrapMode(t *testing.T) {
 	if err := st.SetSetting(SettingPasteKeep, "scrap"); err != nil {
 		t.Fatal(err)
 	}
-	old := ScrapDir
-	ScrapDir = t.TempDir()
-	defer func() { ScrapDir = old }()
+	scrap := t.TempDir()
+	s.hk.scrapDir = &scrap
 
 	path, rel := dropAnswer(t, dropDo(s, task.ID, "name=a.txt", []byte("x")))
-	if strings.HasPrefix(filepath.FromSlash(path), ScrapDir) || !strings.HasPrefix(rel, ".atrium/incoming/") {
+	if strings.HasPrefix(filepath.FromSlash(path), scrap) || !strings.HasPrefix(rel, ".atrium/incoming/") {
 		t.Fatalf("a drop followed paste_keep: %s", path)
 	}
-	if entries, _ := os.ReadDir(ScrapDir); len(entries) != 0 {
+	if entries, _ := os.ReadDir(scrap); len(entries) != 0 {
 		t.Fatalf("%d things in the scrap dir", len(entries))
 	}
 }

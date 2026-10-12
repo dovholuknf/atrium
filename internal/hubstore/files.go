@@ -229,7 +229,7 @@ func (s *Store) FileAdd(in FileInput) (FileRow, error) {
 		row = FileRow{}
 		if in.Rate && in.Card != "" {
 			var recent int
-			since := ts(now().Add(-time.Hour))
+			since := ts(s.now().Add(-time.Hour))
 			if err := t.QueryRow(`SELECT COUNT(*) FROM hub_files WHERE card = ? AND at > ?`,
 				in.Card, since).Scan(&recent); err != nil {
 				return err
@@ -261,7 +261,7 @@ func (s *Store) FileAdd(in FileInput) (FileRow, error) {
 		if err := writeBlobIn(s.filesDir, sha, in.Data); err != nil {
 			return fmt.Errorf("could not store the bytes: %w", err)
 		}
-		at := now()
+		at := s.now()
 		row = FileRow{Name: chosen, Class: "drop", Size: int64(len(in.Data)), SHA: sha, Origin: in.Origin,
 			By: in.By, Card: in.Card, Room: in.Room, Note: note, At: ts(at),
 			Expires: ts(at.Add(time.Duration(days) * 24 * time.Hour))}
@@ -314,7 +314,7 @@ func (s *Store) FileList(card string) ([]FileRow, error) {
 	out := []FileRow{}
 	err := s.guard(func() error {
 		out = out[:0]
-		q, args := `SELECT `+fileCols+` FROM hub_files WHERE expires > ?`, []any{ts(now())}
+		q, args := `SELECT `+fileCols+` FROM hub_files WHERE expires > ?`, []any{ts(s.now())}
 		if card != "" {
 			q += ` AND card = ?`
 			args = append(args, card)
@@ -366,7 +366,7 @@ func (s *Store) FileOpen(name string) (*os.File, FileRow, error) {
 	if err != nil {
 		return nil, FileRow{}, err
 	}
-	if r.Expires <= ts(now()) {
+	if r.Expires <= ts(s.now()) {
 		return nil, r, &DocError{Kind: DocGone, Msg: "that file expired on " + r.Expires}
 	}
 	f, err := os.Open(s.fileBlob(r.SHA))
@@ -376,7 +376,7 @@ func (s *Store) FileOpen(name string) (*os.File, FileRow, error) {
 	}
 	err = s.guard(func() error {
 		_, err := s.db.Exec(`UPDATE hub_files SET downloads = downloads + 1, last_get = ? WHERE name = ?`,
-			ts(now()), name)
+			ts(s.now()), name)
 		return err
 	})
 	if err != nil {
@@ -429,7 +429,7 @@ func (s *Store) FileSweep() (rows, blobs int, err error) {
 	s.filesMu.Lock()
 	defer s.filesMu.Unlock()
 	err = s.tx(func(t *sql.Tx) error {
-		res, err := t.Exec(`DELETE FROM hub_files WHERE expires <= ?`, ts(now()))
+		res, err := t.Exec(`DELETE FROM hub_files WHERE expires <= ?`, ts(s.now()))
 		if err != nil {
 			return err
 		}
@@ -475,7 +475,7 @@ func (s *Store) FileSweep() (rows, blobs int, err error) {
 		}
 		name := e.Name()
 		if strings.HasPrefix(name, ".tmp-") {
-			if info, err := e.Info(); err == nil && now().Sub(info.ModTime()) > fileTmpStale {
+			if info, err := e.Info(); err == nil && s.now().Sub(info.ModTime()) > fileTmpStale {
 				if os.Remove(filepath.Join(s.filesDir, name)) == nil {
 					blobs++
 				}
