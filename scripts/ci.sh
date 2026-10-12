@@ -131,6 +131,9 @@ step "test time guard"
 # The self-test and the parser's Go tests run first, so a broken guard is not taken for a fast suite.
 check "time guard self-test" bash scripts/test-time-guard-test.sh
 check "time guard parser" go test scripts/ci-report.go scripts/ci-report_test.go
+# A hosted runner is about twice as slow as the box the ceilings were measured on (run 38269244777: 12 over, none by
+# more than 2.2x), so it gets twice the room. A developer's machine keeps the real limits.
+if [ -n "${GITHUB_ACTIONS:-}" ]; then export TEST_TIME_SCALE=2; fi
 check "test time guard" bash scripts/test-time-guard.sh "$artefacts/go-test.json"
 
 step "govulncheck"

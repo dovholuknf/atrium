@@ -15,6 +15,7 @@ internal/daemon 830 about 1600 tests with real processes, ptys and git. 553s mea
 internal/link 575 every test starts a hub, a forwarder and real git. 383s measured, being made parallel
 internal/gitsync 380 a bare hub, clones and pushes with real git. 254s measured, being made parallel
 internal/store 150 about 440 tests each migrating a database. 40s on a quiet box, 98s measured on a busy one
+internal/hubstore 90 a hubstore test writes thousands of small files. 129s on a hosted Windows runner, 60s on a developer box
 internal/api 105 git subprocess rigs. 57 to 74s measured, and 16s of that is taskkill retries on a locked-down box
 
 # Tests over 5s, by package. Pkg.* is for packages whose tests are all git subprocess rigs.

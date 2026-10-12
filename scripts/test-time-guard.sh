@@ -8,7 +8,8 @@
 # parsing is scripts/ci-report.go's, run with -guard-only, so there is one reader of the stream. Run by scripts/ci.sh
 # after the tests. Exit 0 when nothing is over, 1 when something is, 2 when it could not run.
 #
-# ALLOW=path uses another allowlist, which the self-test does.
+# ALLOW=path uses another allowlist, which the self-test does. TEST_TIME_SCALE=2 multiplies every limit and ceiling,
+# which scripts/ci.sh sets on a hosted runner: the ceilings were measured on a developer's box.
 
 set -uo pipefail
 
@@ -25,6 +26,6 @@ if [ $# -eq 1 ]; then
     echo "test-time-guard: no such file: $1" >&2
     exit 2
   fi
-  exec go run scripts/ci-report.go -guard-only -allow "$allow" < "$1"
+  exec go run scripts/ci-report.go -guard-only -scale "${TEST_TIME_SCALE:-1}" -allow "$allow" < "$1"
 fi
-exec go run scripts/ci-report.go -guard-only -allow "$allow"
+exec go run scripts/ci-report.go -guard-only -scale "${TEST_TIME_SCALE:-1}" -allow "$allow"

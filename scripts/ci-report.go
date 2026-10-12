@@ -75,7 +75,10 @@ func main() {
 	allowPath := flag.String("allow", "scripts/test-time-allow.txt", "the time guard's allowlist")
 	pkgLimit := flag.Float64("pkg-limit", defaultPkgLimit, "seconds a package may take before it needs an allowlist line")
 	testLimit := flag.Float64("test-limit", defaultTestLimit, "seconds a test may take before it needs an allowlist line")
+	scale := flag.Float64("scale", 1, "multiplies every limit and ceiling: a shared runner is slower than the box the ceilings were measured on")
 	flag.Parse()
+	*pkgLimit *= *scale
+	*testLimit *= *scale
 	var allow []allowEntry
 	realOut := os.Stdout
 	if *guardOnly {
@@ -83,6 +86,9 @@ func main() {
 		if allow, err = loadAllow(*allowPath); err != nil {
 			fmt.Fprintln(os.Stderr, "ci-report:", err)
 			os.Exit(2)
+		}
+		for i := range allow {
+			allow[i].ceiling *= *scale
 		}
 		// The loop below prints as it reads. Here that goes nowhere, and what it writes to
 		// -dir goes to a folder that is removed after.
