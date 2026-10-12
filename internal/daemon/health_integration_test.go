@@ -61,10 +61,8 @@ func healthEvents(t *testing.T, d *Daemon, want int, trigger func()) []map[strin
 // board would otherwise only learn of it by polling /v1/health.
 func TestAHaltIsPublishedAsHealth(t *testing.T) {
 	d := testDaemon(t)
-	was := healthHalted
-	defer func() { healthHalted = was }()
 	cause := errors.New("disk full")
-	healthHalted = func(*Daemon) (bool, error) { return true, cause }
+	d.hk.healthHalted = func(*Daemon) (bool, error) { return true, cause }
 
 	evs := healthEvents(t, d, 1, func() { d.onHalt(cause) })
 	if evs[0]["halted"] != true || evs[0]["cause"] != "disk full" {

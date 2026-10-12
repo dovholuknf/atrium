@@ -145,7 +145,7 @@ func (d *Daemon) reapGoneWorktrees() {
 			if w.ask != nil {
 				w.ask(r)
 			} else {
-				windDown(r, windDownGrace, d.exitKeysFor(r.taskID))
+				windDown(r, windDownGrace, d.exitKeysFor(r.taskID), d.hk.windDownKeyGap)
 			}
 			w.mu.Lock()
 			delete(w.leaving, r.taskID)

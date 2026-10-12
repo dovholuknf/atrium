@@ -33,7 +33,7 @@ func startDaemonWith(t *testing.T, mutate func(*Options)) (*Daemon, *safeBuf, co
 	if mutate != nil {
 		mutate(&opts)
 	}
-	d, err := New(opts)
+	d, err := testNew(opts)
 	if err != nil {
 		t.Fatalf("daemon did not start: %v", err)
 	}

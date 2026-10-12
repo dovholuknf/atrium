@@ -275,7 +275,7 @@ func (d *Daemon) writeLocation() {
 	// its own `LocationFile` (a test, a preview) is not asking for the machine's
 	// place and may take its own file over, which is only announced.
 	if raw, err := os.ReadFile(path); err == nil {
-		if prev, taking := takingOver(raw, os.Getpid(), pidAlive); taking {
+		if prev, taking := takingOver(raw, os.Getpid(), d.hk.pidAlive); taking {
 			if d.opts.LocationFile == "" {
 				log.Printf("[atrium] NOT recording my address: pid %d is already listening on %s "+
 					"and every hook is aimed at it. start a second or throwaway room with "+

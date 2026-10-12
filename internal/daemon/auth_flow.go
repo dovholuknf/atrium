@@ -115,12 +115,12 @@ type pendingLogin struct {
 	at     time.Time
 }
 
-// pending is the logins this board has started but not finished.
+// loginStates is the logins one daemon has started but not finished.
 //
 // In memory, and short lived. A state that outlived a restart would be a state
 // an attacker could hold onto, and the cost of losing them is that somebody
 // mid-login presses the button again.
-var pending struct {
+type loginStates struct {
 	sync.Mutex
 	at map[string]pendingLogin
 }
@@ -135,7 +135,7 @@ var pending struct {
 const pendingMost = 4096
 
 // startLogin records one and returns the state to send the provider.
-func startLogin(back string, silent bool) (string, pendingLogin, error) {
+func (pending *loginStates) startLogin(back string, silent bool) (string, pendingLogin, error) {
 	b := make([]byte, 24)
 	if _, err := rand.Read(b); err != nil {
 		return "", pendingLogin{}, err
@@ -175,7 +175,7 @@ func startLogin(back string, silent bool) (string, pendingLogin, error) {
 
 // takeLogin consumes one. SINGLE USE: a state that could be replayed is a
 // callback that could be replayed.
-func takeLogin(state string) (pendingLogin, bool) {
+func (pending *loginStates) takeLogin(state string) (pendingLogin, bool) {
 	pending.Lock()
 	defer pending.Unlock()
 	l, ok := pending.at[state]
@@ -385,7 +385,7 @@ func (d *Daemon) authStart(w http.ResponseWriter, r *http.Request, cfg AuthConfi
 		http.Error(w, err.Error(), http.StatusBadGateway)
 		return
 	}
-	state, l, err := startLogin(r.URL.Query().Get("back"), silent)
+	state, l, err := d.logins.startLogin(r.URL.Query().Get("back"), silent)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusServiceUnavailable)
 		return
@@ -412,7 +412,7 @@ func (d *Daemon) authCallback(w http.ResponseWriter, r *http.Request, cfg AuthCo
 	// because the state is what says whether this was a silent renewal. Read
 	// the other way round, a renewal the provider declined becomes an error
 	// page, and the state it belonged to is left in the map to expire.
-	l, ok := takeLogin(r.URL.Query().Get("state"))
+	l, ok := d.logins.takeLogin(r.URL.Query().Get("state"))
 	if e := r.URL.Query().Get("error"); e != "" {
 		// A DECLINED RENEWAL IS NOT AN ERROR. `prompt=none` against a provider
 		// that has forgotten this browser answers `login_required`, which is

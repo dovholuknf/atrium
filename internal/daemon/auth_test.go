@@ -35,17 +35,18 @@ func TestEitherTheSubjectOrTheEmailLetsSomebodyIn(t *testing.T) {
 // A state is single use, or a callback can be replayed.
 func TestALoginStateCannotBeReplayed(t *testing.T) {
 	t.Parallel()
-	s, _, err := startLogin("/", false)
+	var logins loginStates
+	s, _, err := logins.startLogin("/", false)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, ok := takeLogin(s); !ok {
+	if _, ok := logins.takeLogin(s); !ok {
 		t.Fatal("a fresh state was not accepted")
 	}
-	if _, ok := takeLogin(s); ok {
+	if _, ok := logins.takeLogin(s); ok {
 		t.Fatal("a state was accepted twice, so a callback can be replayed")
 	}
-	if _, ok := takeLogin("never issued"); ok {
+	if _, ok := logins.takeLogin("never issued"); ok {
 		t.Fatal("a state nobody issued was accepted")
 	}
 }
@@ -54,15 +55,15 @@ func TestALoginStateCannotBeReplayed(t *testing.T) {
 // that board ever starts.
 func TestEveryLoginGetsItsOwnVerifier(t *testing.T) {
 	t.Parallel()
-	a, first, err := startLogin("/", false)
+	var logins loginStates
+	a, first, err := logins.startLogin("/", false)
 	if err != nil {
 		t.Fatal(err)
 	}
-	b, second, err := startLogin("/", false)
+	b, second, err := logins.startLogin("/", false)
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { takeLogin(a); takeLogin(b) })
 	if first.verifier == "" || first.verifier == second.verifier {
 		t.Fatalf("two logins shared a verifier (%q)", first.verifier)
 	}

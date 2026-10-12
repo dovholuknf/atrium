@@ -225,10 +225,10 @@ func (d *Daemon) prepareHandoff(t *store.Task) (string, error) {
 	return path, nil
 }
 
-// ncTiming is how long each step waits, and how often it looks. Variables so a
+// ncTimings is how long each step waits, and how often it looks. Fields of the daemon's hooks so a
 // test can run the whole sequence in milliseconds rather than name the thing that
 // must not happen by waiting for it.
-var ncTiming = struct {
+type ncTimings struct {
 	// poll is how often a wait looks at the card.
 	poll time.Duration
 	// typeWait is how long a step waits for the gate to open and the runner to be
@@ -264,19 +264,24 @@ var ncTiming = struct {
 	// promptLost is how long a limit prompt typed between turns may go without
 	// starting the turn it was typed for before it is taken as lost and typed again.
 	promptLost time.Duration
-}{
-	poll:          250 * time.Millisecond,
-	ackWait:       30 * time.Minute,
-	typeWait:      2 * time.Minute,
-	captureBegin:  time.Minute,
-	captureEnd:    15 * time.Minute,
-	turnSettle:    2 * time.Second,
-	clearWait:     time.Minute,
-	clearTypeWait: 5 * time.Minute,
-	logEvery:      30 * time.Second,
-	sessionSettle: wakeSettle,
-	promptGap:     30 * time.Second,
-	promptLost:    2 * time.Minute,
+}
+
+// defaultNCTiming is what a daemon starts with. A test changes its own daemon's copy, never a shared one.
+func defaultNCTiming() ncTimings {
+	return ncTimings{
+		poll:          250 * time.Millisecond,
+		ackWait:       30 * time.Minute,
+		typeWait:      2 * time.Minute,
+		captureBegin:  time.Minute,
+		captureEnd:    15 * time.Minute,
+		turnSettle:    2 * time.Second,
+		clearWait:     time.Minute,
+		clearTypeWait: 5 * time.Minute,
+		logEvery:      30 * time.Second,
+		sessionSettle: wakeSettle,
+		promptGap:     30 * time.Second,
+		promptLost:    2 * time.Minute,
+	}
 }
 
 // newContext is one card's sequence as the board draws it.
@@ -796,14 +801,14 @@ func (d *Daemon) runNewContext(taskID string, gen uint64) {
 	if start != NewContextWake {
 		before, _ := d.wake.sessionStarted(taskID)
 		typedAt := time.Now()
-		if err := d.ncTypeBusy(taskID, gen, "", newContextClear, ncTiming.clearTypeWait, d.ncBusyAfterAck); err != nil {
+		if err := d.ncTypeBusy(taskID, gen, "", newContextClear, d.hk.ncTiming.clearTypeWait, d.ncBusyAfterAck); err != nil {
 			fail("could not type /clear", err)
 			return
 		}
 		log.Printf("[atrium] new context on %s: typed /clear, waiting up to %s for the new session",
-			taskID, ncTiming.clearWait.Round(time.Second))
+			taskID, d.hk.ncTiming.clearWait.Round(time.Second))
 		d.nctx.noteCleared(taskID, gen)
-		err := d.ncWait(taskID, gen, ncTiming.clearWait, "a new session to start after /clear (is the session hook installed?)",
+		err := d.ncWait(taskID, gen, d.hk.ncTiming.clearWait, "a new session to start after /clear (is the session hook installed?)",
 			func() (bool, error) {
 				at, ok := d.wake.sessionStarted(taskID)
 				return ok && at.After(before) && !at.Before(typedAt), nil
@@ -820,9 +825,9 @@ func (d *Daemon) runNewContext(taskID string, gen uint64) {
 	}
 
 	// 3. The wake, once the new session has drawn its input box.
-	err := d.ncWait(taskID, gen, ncTiming.sessionSettle+ncTiming.clearWait, "the new session to settle", func() (bool, error) {
+	err := d.ncWait(taskID, gen, d.hk.ncTiming.sessionSettle+d.hk.ncTiming.clearWait, "the new session to settle", func() (bool, error) {
 		at, _ := d.wake.sessionStarted(taskID)
-		return time.Since(at) >= ncTiming.sessionSettle, nil
+		return time.Since(at) >= d.hk.ncTiming.sessionSettle, nil
 	})
 	if err != nil {
 		fail("the new session did not settle", err)
@@ -834,7 +839,7 @@ func (d *Daemon) runNewContext(taskID string, gen uint64) {
 	}
 	// A turn in progress is waited out: the new session may already be taking a turn
 	// on something else (r-016, @ui).
-	if err := d.ncType(taskID, gen, newContextLabel, d.newContextWakeFor(taskID, file), ncTiming.captureEnd); err != nil {
+	if err := d.ncType(taskID, gen, newContextLabel, d.newContextWakeFor(taskID, file), d.hk.ncTiming.captureEnd); err != nil {
 		fail("could not type the wake prompt", err)
 		return
 	}
@@ -847,7 +852,7 @@ func (d *Daemon) runNewContext(taskID string, gen uint64) {
 // cycleAwaitAck types the limit prompt and waits for `atrium ready`, for as long as
 // it takes. Woken by a poll, an ack, a statusline update or the tick.
 func (d *Daemon) cycleAwaitAck(taskID string, gen uint64) error {
-	t := time.NewTicker(ncTiming.poll)
+	t := time.NewTicker(d.hk.ncTiming.poll)
 	defer t.Stop()
 	for {
 		cur := d.nctx.get(taskID)
@@ -862,7 +867,7 @@ func (d *Daemon) cycleAwaitAck(taskID string, gen uint64) error {
 		}
 		// A turn in progress is never typed into because the bound passed: the
 		// cycle just ends and the held input goes at the next clear line.
-		if since := time.Since(cur.since); since > ncTiming.ackWait {
+		if since := time.Since(cur.since); since > d.hk.ncTiming.ackWait {
 			return fmt.Errorf("input was held for %s waiting for atrium ready, released",
 				since.Round(time.Minute))
 		}
@@ -908,7 +913,7 @@ func (d *Daemon) cyclePromptDue(taskID string, c *newContext) bool {
 		return !busy || d.midTurnInputFor(taskID)
 	}
 	since := cycleTimeNow().Sub(c.lastPrompt)
-	if since < ncTiming.promptGap {
+	if since < d.hk.ncTiming.promptGap {
 		return false
 	}
 	switch turns := d.act.turnsBegun(taskID); {
@@ -917,7 +922,7 @@ func (d *Daemon) cyclePromptDue(taskID string, c *newContext) bool {
 	case turns == c.promptTurn:
 		return !busy
 	default:
-		return !busy && since >= ncTiming.promptLost
+		return !busy && since >= d.hk.ncTiming.promptLost
 	}
 }
 
@@ -949,7 +954,7 @@ func (d *Daemon) cyclePrompt(taskID string, gen uint64, path string) error {
 		}
 		return mid || !busy
 	}
-	text := newContextLimitPrompt(path, atriumBinary())
+	text := newContextLimitPrompt(path, d.hk.atriumBinary())
 	d.nctx.setTyping(taskID, gen, true)
 	wrote, err := d.typeLabelledGuarded(run, taskID, newContextLabel, text, ok)
 	d.nctx.setTyping(taskID, gen, false)
@@ -984,16 +989,16 @@ func (d *Daemon) ncCapture(taskID string, gen uint64, file string) (string, erro
 	// twice). With the card between turns when the prompt is typed, the count
 	// taken here is before the capture's own turn and after every other.
 	turns := d.act.turnsBegun(taskID)
-	if err := d.ncType(taskID, gen, newContextLabel, newContextCapture(file, token), ncTiming.captureEnd); err != nil {
+	if err := d.ncType(taskID, gen, newContextLabel, newContextCapture(file, token), d.hk.ncTiming.captureEnd); err != nil {
 		return "could not type the capture prompt", err
 	}
-	err := d.ncWait(taskID, gen, ncTiming.captureBegin, "the capture prompt to start a turn",
+	err := d.ncWait(taskID, gen, d.hk.ncTiming.captureBegin, "the capture prompt to start a turn",
 		func() (bool, error) { return d.act.turnsBegun(taskID) > turns, nil })
 	if err != nil {
 		return "the capture prompt did nothing", err
 	}
 	quiet := time.Time{}
-	err = d.ncWait(taskID, gen, ncTiming.captureEnd, "the capture turn to end", func() (bool, error) {
+	err = d.ncWait(taskID, gen, d.hk.ncTiming.captureEnd, "the capture turn to end", func() (bool, error) {
 		if d.act.midTurn(taskID) || d.act.onSubagents(taskID) || d.cardRunning(taskID) {
 			quiet = time.Time{}
 			return false, nil
@@ -1001,7 +1006,7 @@ func (d *Daemon) ncCapture(taskID string, gen uint64, file string) (string, erro
 		if quiet.IsZero() {
 			quiet = time.Now()
 		}
-		return time.Since(quiet) >= ncTiming.turnSettle, nil
+		return time.Since(quiet) >= d.hk.ncTiming.turnSettle, nil
 	})
 	if err != nil {
 		return "the capture did not finish", err
@@ -1060,7 +1065,7 @@ func (d *Daemon) atIdlePrompt(taskID string) bool {
 // the time is up.
 func (d *Daemon) ncWait(taskID string, gen uint64, limit time.Duration, what string, cond func() (bool, error)) error {
 	deadline := time.Now().Add(limit)
-	t := time.NewTicker(ncTiming.poll)
+	t := time.NewTicker(d.hk.ncTiming.poll)
 	defer t.Stop()
 	for {
 		if !d.nctx.mine(taskID, gen) {
@@ -1130,7 +1135,7 @@ func (d *Daemon) ncBlocker(taskID string, busy func(string) bool) string {
 	case busy(taskID):
 		what, _ := d.act.describe(taskID, time.Now())
 		return "a turn is in progress (activity " + what + ")"
-	case d.act.sinceBusy(taskID) < ncTiming.turnSettle:
+	case d.act.sinceBusy(taskID) < d.hk.ncTiming.turnSettle:
 		return "a prompt arrived moments ago"
 	}
 	return "the input line is not clear or the keyboard is not quiet"
@@ -1142,7 +1147,7 @@ func (d *Daemon) ncBlocker(taskID string, busy func(string) bool) string {
 func (d *Daemon) ncTypeBusy(taskID string, gen uint64, label, text string, limit time.Duration, busy func(string) bool) error {
 	began, logged := time.Now(), time.Now()
 	err := d.ncWait(taskID, gen, limit, "an empty line and no turn in progress", func() (bool, error) {
-		if time.Since(logged) >= ncTiming.logEvery {
+		if time.Since(logged) >= d.hk.ncTiming.logEvery {
 			logged = time.Now()
 			log.Printf("[atrium] new context on %s still waiting to type %q after %s: %s", taskID, text,
 				time.Since(began).Round(time.Second), d.ncBlocker(taskID, busy))
@@ -1160,7 +1165,7 @@ func (d *Daemon) ncTypeBusy(taskID string, gen uint64, label, text string, limit
 				return false
 			}
 			return !d.act.dialogOpen(taskID) && !busy(taskID) &&
-				d.act.sinceBusy(taskID) >= ncTiming.turnSettle
+				d.act.sinceBusy(taskID) >= d.hk.ncTiming.turnSettle
 		}
 		d.nctx.setTyping(taskID, gen, true)
 		wrote, err := d.typeLabelledGuarded(run, taskID, label, text, quiet)

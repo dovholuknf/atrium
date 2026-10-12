@@ -97,11 +97,9 @@ func TestFamilySayWakesParked(t *testing.T) {
 // A worker that reported done is exited, so its gate is gone and not parked. Its launcher's plain say still resumes it,
 // and anybody else's is only kept.
 func TestFamilySayWakesAFinishedWorker(t *testing.T) {
-	oldTick, oldSettle := keptTick, keptSettle
-	keptTick, keptSettle = 20*time.Millisecond, 20*time.Millisecond
-	defer func() { keptTick, keptSettle = oldTick, oldSettle }()
 	finished := func(t *testing.T) (*Daemon, *store.Task, *store.Task) {
 		d := testDaemon(t)
+		d.hk.keptTick, d.hk.keptSettle = 20*time.Millisecond, 20*time.Millisecond
 		launcher, worker := launchedPair(t, d)
 		t.Cleanup(func() { d.pending.stopAll() })
 		if err := d.st.SetResumeID(worker.ID, "conv-1"); err != nil {

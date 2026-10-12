@@ -100,6 +100,8 @@ type gitAt struct {
 	ctx context.Context
 	run *gitsync.Runner
 	dir string
+	// listMax caps how much a listing may say. It is the daemon's hook, copied in, so a free function needs no daemon.
+	listMax int
 }
 
 func (g gitAt) git(args ...string) (string, error) {
@@ -136,7 +138,7 @@ func (d *Daemon) changesFor(ctx context.Context, taskID, against string, turn ti
 	if st, err := os.Stat(dir); err != nil || !st.IsDir() {
 		return nil, refused(http.StatusNotFound, notAWorktree)
 	}
-	g := gitAt{ctx: ctx, run: gitsync.Default, dir: dir}
+	g := gitAt{ctx: ctx, run: gitsync.Default, dir: dir, listMax: d.hk.listMax}
 	if out, err := g.git("rev-parse", "--is-inside-work-tree"); err != nil || strings.TrimSpace(out) != "true" {
 		return nil, refused(http.StatusNotFound, notAWorktree)
 	}
@@ -403,14 +405,14 @@ func fileDiffOne(g gitAt, head, tail, paths []string) ([]ChangeFile, error) {
 		return g.capped(max, args...)
 	}
 	tooMany := refused(http.StatusRequestEntityTooLarge, "this card changed too many files to list")
-	ns, err := run(listMax, "--name-status", "-z")
+	ns, err := run(g.listMax, "--name-status", "-z")
 	if errors.Is(err, gitsync.ErrOutputCap) {
 		return nil, tooMany
 	}
 	if err != nil {
 		return nil, err
 	}
-	num, err := run(listMax, "--numstat", "-z")
+	num, err := run(g.listMax, "--numstat", "-z")
 	if errors.Is(err, gitsync.ErrOutputCap) {
 		return nil, tooMany
 	}
@@ -531,7 +533,7 @@ func untracked(g gitAt, dir string, paths []string) []ChangeFile {
 	}
 	// A listing stopped at the cap ends mid-name, so each one is cut back to its last whole name.
 	list := func(args ...string) (string, bool) {
-		o, err := g.capped(listMax, args...)
+		o, err := g.capped(g.listMax, args...)
 		if errors.Is(err, gitsync.ErrOutputCap) {
 			return o[:strings.LastIndexByte(o, 0)+1], true
 		}

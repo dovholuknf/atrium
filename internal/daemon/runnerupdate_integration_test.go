@@ -110,11 +110,7 @@ func TestLatestPublishedEscapesAScopedName(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	old := updateRegistry
-	updateRegistry = srv.URL
-	defer func() { updateRegistry = old }()
-
-	got, err := latestPublished(context.Background(), "@openai/codex")
+	got, err := latestPublished(context.Background(), srv.URL, "@openai/codex")
 	if err != nil {
 		t.Fatal(err)
 	}

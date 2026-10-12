@@ -14,12 +14,10 @@ import (
 
 // quickPark makes the wind-down instant: the runner is asked to leave by
 // dropping it, as its exit would.
-func quickPark(t *testing.T) {
+func quickPark(t *testing.T, d *Daemon) {
 	t.Helper()
-	oldLeave, oldWait := idleLeave, idleGoneWait
-	idleLeave = func(d *Daemon, r *runner, id string) { endRunner(d, id) }
-	idleGoneWait = 200 * time.Millisecond
-	t.Cleanup(func() { idleLeave, idleGoneWait = oldLeave, oldWait })
+	d.hk.idleLeave = func(d *Daemon, r *runner, id string) { endRunner(d, id) }
+	d.hk.idleGoneWait = 200 * time.Millisecond
 }
 
 // idleAgent is an agent card with a runner, sitting at its prompt.
@@ -79,7 +77,6 @@ func TestIdleParkRule(t *testing.T) {
 	if testing.Short() {
 		t.Skip("slow: real ptys, processes and timers")
 	}
-	quickPark(t)
 	cases := []struct {
 		name   string
 		status string
@@ -129,6 +126,7 @@ func TestIdleParkRule(t *testing.T) {
 	for i, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			d := testDaemon(t)
+			quickPark(t, d)
 			card := idleAgent(t, d, "rule"+string(rune('a'+i)), c.status)
 			if c.mut != nil {
 				c.mut(d, card)
@@ -179,8 +177,8 @@ func TestIdleClockReadsHumanTouch(t *testing.T) {
 	if testing.Short() {
 		t.Skip("slow: real ptys, processes and timers")
 	}
-	quickPark(t)
 	d := testDaemon(t)
+	quickPark(t, d)
 	card := idleAgent(t, d, "touched", store.StatusNeedsInput)
 	if err := d.st.TouchHuman(card.ID, ViaTyped, time.Now().Add(2*time.Hour+50*time.Minute)); err != nil {
 		t.Fatal(err)
@@ -192,8 +190,8 @@ func TestIdleClockReadsHumanTouch(t *testing.T) {
 }
 
 func TestIdleParkWorkersFirst(t *testing.T) {
-	quickPark(t)
 	d := testDaemon(t)
+	quickPark(t, d)
 	_, director, worker := directorRig(t, d)
 	// No handoff for this one: the runner here has no terminal to type it into.
 	if err := d.st.SetTags(director.ID, []string{OriginAgentTag}); err != nil {
@@ -225,8 +223,8 @@ func TestIdleParkWorkersFirst(t *testing.T) {
 }
 
 func TestIdleParkExemptsOperatorCards(t *testing.T) {
-	quickPark(t)
 	d := testDaemon(t)
+	quickPark(t, d)
 	plain := peerCard(t, d, "operators")
 	if err := d.st.SetStatus(plain.ID, store.StatusNeedsInput); err != nil {
 		t.Fatal(err)
@@ -272,7 +270,7 @@ func TestIdleParkSetting(t *testing.T) {
 	if err := d.st.SetSetting(store.SettingIdleParkAfter, "off"); err != nil {
 		t.Fatal(err)
 	}
-	quickPark(t)
+	quickPark(t, d)
 	card := idleAgent(t, d, "offcard", store.StatusNeedsInput)
 	d.parkIdle(idleAfter(100 * time.Hour))
 	if settlesTo(t, d, card.ID, false) {
@@ -295,8 +293,8 @@ func TestIdleParkKeepsStatus(t *testing.T) {
 	if testing.Short() {
 		t.Skip("slow: real ptys, processes and timers")
 	}
-	quickPark(t)
 	d := testDaemon(t)
+	quickPark(t, d)
 	card := idleAgent(t, d, "donecard", store.StatusDone)
 	// The wind-down would file it dead. It must come back as done.
 	go func() {
@@ -320,9 +318,9 @@ func TestIdleHandoffBeforeCold(t *testing.T) {
 	if testing.Short() {
 		t.Skip("slow: real ptys, processes and timers")
 	}
-	fastNewContext(t)
-	quickPark(t)
 	d := testDaemon(t)
+	quickPark(t, d)
+	fastNewContext(t, d)
 	task, f, dir := ncCard(t, d)
 	if err := d.st.SetTags(task.ID, []string{OriginAgentTag, DirectorTag}); err != nil {
 		t.Fatal(err)
@@ -386,10 +384,10 @@ func TestIdleHandoffTimeoutStillParks(t *testing.T) {
 	if testing.Short() {
 		t.Skip("slow: real ptys, processes and timers")
 	}
-	fastNewContext(t)
-	ncTiming.captureBegin = 100 * time.Millisecond
-	quickPark(t)
 	d := testDaemon(t)
+	quickPark(t, d)
+	fastNewContext(t, d)
+	d.hk.ncTiming.captureBegin = 100 * time.Millisecond
 	task, f, _ := ncCard(t, d)
 	if err := d.st.SetTags(task.ID, []string{OriginAgentTag, DirectorTag}); err != nil {
 		t.Fatal(err)

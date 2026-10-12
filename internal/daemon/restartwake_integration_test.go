@@ -51,7 +51,7 @@ func wakeEvents(t *testing.T, d *Daemon, taskID string) []string {
 func TestAWakeSurvivesTheDaemonComingBack(t *testing.T) {
 	dir := t.TempDir()
 	open := func() *Daemon {
-		d, err := New(Options{
+		d, err := testNew(Options{
 			AgentAddr: freePort(t), HumanAddr: freePort(t),
 			DBPath:   filepath.ToSlash(filepath.Join(dir, "atrium.db")),
 			LongPoll: time.Second, LocationFile: filepath.Join(dir, "daemon.json"),

@@ -1062,14 +1062,14 @@ func (d *Daemon) launchLocked(req LaunchRequest) (*store.Task, error) {
 	// finishArgs adds the Stop hook, or for a lean launch the whole lean set,
 	// which carries the Stop hook itself.
 	finishArgs := func(a []string) ([]string, error) {
-		if !lean {
-			return withStopHook(h, a, agent), nil
-		}
 		stop := ""
 		if agent {
-			stop = stopHookCommand()
+			stop = d.hk.stopHookCommand()
 		}
-		return leanArgs(a, readUserSettings(), stop, leanMCP, kit, gateway, os.ReadFile)
+		if !lean {
+			return withStopHook(h, a, stop), nil
+		}
+		return leanArgs(a, d.hk.readUserSettings(), stop, leanMCP, kit, gateway, os.ReadFile, &d.hk)
 	}
 	if args, err = finishArgs(args); err != nil {
 		return nil, err
@@ -1298,7 +1298,7 @@ func (d *Daemon) launchLocked(req LaunchRequest) (*store.Task, error) {
 		// this, `codex` reaches wt.exe as a bare name and comes back as
 		// 0x80070002, "the system cannot find the file specified", about a
 		// file that is on PATH.
-		cmdName, cmdArgs := agentSpawn(h.Exe(), args)
+		cmdName, cmdArgs := d.hk.agentSpawn(h.Exe(), args)
 		if resolved, err := exec.LookPath(cmdName); err == nil {
 			cmdName, cmdArgs = viaShellIfScript(resolved, cmdArgs)
 		}
@@ -1508,7 +1508,7 @@ func (d *Daemon) launchLocked(req LaunchRequest) (*store.Task, error) {
 
 	// Starting is not running. A command on PATH still falls over on a bad
 	// flag, a missing key or a broken config, and does so within a moment.
-	if out, alive := d.settleFor(spawned, settleWindow); !alive {
+	if out, alive := d.settleFor(spawned, d.hk.settleWindow); !alive {
 		d.launchFailed(created.ID, out)
 		msg := fmt.Sprintf("%s exited as soon as it started", h.Label)
 		if out != "" {

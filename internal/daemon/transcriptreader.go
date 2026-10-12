@@ -55,9 +55,9 @@ func (r claudeReader) page(t *store.Task, n int, before time.Time) (replyPage, b
 		err error
 	)
 	if before.IsZero() {
-		pg, err = readTranscriptPage(path, n)
+		pg, err = readTranscriptPage(path, n, &d.hk)
 	} else {
-		pg, err = readTranscriptBefore(path, n, before)
+		pg, err = readTranscriptBefore(path, n, before, &d.hk)
 	}
 	if err != nil {
 		logRepliesFallback(path, err)

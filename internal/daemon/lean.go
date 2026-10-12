@@ -289,7 +289,7 @@ func cleanNames(in []string, keepWide bool) []string {
 // or the Skill tool (skills) comes out of --disallowedTools and `--plugin-dir`
 // carries just those files. See leanPluginDir.
 func leanArgs(args []string, userSettings []byte, stopHook string, mcp []string, kit leanKit, gateway string,
-	readFile func(string) ([]byte, error)) ([]string, error) {
+	readFile func(string) ([]byte, error), hk *hooks) ([]string, error) {
 
 	var kept, configs []string
 	for i := 0; i < len(args); i++ {
@@ -311,7 +311,7 @@ func leanArgs(args []string, userSettings []byte, stopHook string, mcp []string,
 	if err != nil {
 		return nil, err
 	}
-	settings, err := leanSettings(userSettings, stopHook, kit.Agents)
+	settings, err := leanSettings(userSettings, stopHook, kit.Agents, hk)
 	if err != nil {
 		return nil, err
 	}
@@ -327,7 +327,7 @@ func leanArgs(args []string, userSettings []byte, stopHook string, mcp []string,
 		"--append-system-prompt", systemPrompt,
 	}
 	if kit.needsPlugin() {
-		dir, err := leanPluginDir(kit)
+		dir, err := leanPluginDir(kit, hk)
 		if err != nil {
 			return nil, err
 		}
@@ -410,7 +410,7 @@ var leanContextHooks = []string{"SessionStart", "UserPromptSubmit"}
 //
 // agents is the lean_agents list. When it is not empty the Agent tool is kept, and
 // a PreToolUse hook refuses every agent type not in it (internal/cli/hook_leanagents.go).
-func leanSettings(user []byte, stopHook string, agents []string) (string, error) {
+func leanSettings(user []byte, stopHook string, agents []string, hk *hooks) (string, error) {
 	doc := map[string]json.RawMessage{}
 	if len(strings.TrimSpace(string(user))) > 0 {
 		if err := json.Unmarshal(user, &doc); err != nil {
@@ -455,7 +455,7 @@ func leanSettings(user []byte, stopHook string, agents []string) (string, error)
 	}
 	// The no-poll gate: refuses sleep-and-poll and a backgrounded test. See
 	// internal/cli/hook_nopoll.go. It fails open, so a missing binary only loses the nudge.
-	if cmd := noPollHookCommand(); cmd != "" {
+	if cmd := hk.noPollHookCommand(); cmd != "" {
 		pre, _ := hooks["PreToolUse"].([]any)
 		hooks["PreToolUse"] = append(pre, map[string]any{
 			"matcher": "Bash|PowerShell",
@@ -466,7 +466,7 @@ func leanSettings(user []byte, stopHook string, agents []string) (string, error)
 	// this covers a type no rule names, such as a project's own agent, and says
 	// which agents are allowed when it refuses.
 	if len(agents) > 0 {
-		if cmd := leanAgentsHookCommand(agents); cmd != "" {
+		if cmd := hk.leanAgentsHookCommand(agents); cmd != "" {
 			pre, _ := hooks["PreToolUse"].([]any)
 			hooks["PreToolUse"] = append(pre, map[string]any{
 				"matcher": "Agent|Task",

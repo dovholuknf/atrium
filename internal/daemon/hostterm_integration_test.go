@@ -49,7 +49,7 @@ func hostFixture(t *testing.T) (dir string, h *ptyhost.Host) {
 // daemonAt is a daemon with no listeners on the database in dir, with the setting on.
 func daemonAt(t *testing.T, dir string) *Daemon {
 	t.Helper()
-	d, err := New(Options{
+	d, err := testNew(Options{
 		AgentAddr:    freePort(t),
 		HumanAddr:    freePort(t),
 		DBPath:       filepath.ToSlash(filepath.Join(dir, "atrium.db")),
@@ -322,7 +322,7 @@ func TestALiveExitIsFiledOnceAndCollectedAfterIt(t *testing.T) {
 	d := daemonAt(t, dir)
 	task := cardAt(t, d, "live-exit", t.TempDir())
 	sh, args := someShell(t)
-	if _, err := d.spawnPTY(task.ID, sh, append(args, "echo bye; exit 3"), t.TempDir(), os.Environ()); err != nil {
+	if _, err := d.spawnPTY(task.ID, sh, append(args, "echo bye; sleep 1; exit 3"), t.TempDir(), os.Environ()); err != nil {
 		t.Fatal(err)
 	}
 	runID := d.sup.get(task.ID).runID

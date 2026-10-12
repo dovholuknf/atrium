@@ -64,7 +64,7 @@ func (d *Daemon) reapOrphans() error {
 			byTask[p.TaskID]++
 			continue
 		}
-		if time.Since(p.RequestedAt) < OrphanGrace {
+		if time.Since(p.RequestedAt) < d.hk.OrphanGrace {
 			// Too soon to tell the two facts apart.
 			byTask[p.TaskID]++
 			continue

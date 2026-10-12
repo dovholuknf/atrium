@@ -27,7 +27,7 @@ func TestAnEndingReachesALauncherOnAnotherRoomByWayOfTheHub(t *testing.T) {
 		t.Run(c.name, func(t *testing.T) {
 			d, f := roomDaemon(t)
 			w := remoteWorker(t, d)
-			stubCommits(t, true, false)
+			stubCommits(t, d, true, false)
 			f.set(func(RelaySay) (RelayResult, error) { return RelayResult{}, ErrRelayDown })
 
 			rec, out := finishWith(t, d, c.in)
@@ -83,7 +83,7 @@ func TestAnEndingIsQueuedForTurnEndOnAHoldNoticesLaunchersCard(t *testing.T) {
 		t.Run(c.name, func(t *testing.T) {
 			d := testDaemon(t)
 			launcher, worker := holdingPair(t, d, HoldNoticesTag)
-			stubCommits(t, true, false)
+			stubCommits(t, d, true, false)
 
 			rec, out := finishWith(t, d, c.in)
 			if rec.Code != http.StatusOK || out["launcher_told"] != "queued" {
@@ -113,7 +113,7 @@ func TestAnEndingIsQueuedForTurnEndOnAHoldNoticesLaunchersCard(t *testing.T) {
 func TestAnEndingResumesNoHoldNoticesLauncherAndQueuesForAnOrchestratorOne(t *testing.T) {
 	d := testDaemon(t)
 	launcher, _ := holdingPair(t, d, HoldNoticesTag)
-	stubCommits(t, true, false)
+	stubCommits(t, d, true, false)
 	if _, out := finishWith(t, d, FinishRequest{Agent: "worker", Status: ReportBlocked, Ask: "need a token",
 		Ended: true}); out["launcher_told"] != "queued" {
 		t.Fatalf("out %v", out)
@@ -143,7 +143,7 @@ func TestAnEndingResumesNoHoldNoticesLauncherAndQueuesForAnOrchestratorOne(t *te
 func TestARepeatDoneAfterALauncherStopIsSilent(t *testing.T) {
 	d := testDaemon(t)
 	launcher, worker := launchedPair(t, d)
-	stubCommits(t, true, false)
+	stubCommits(t, d, true, false)
 
 	if rec, out := finishWith(t, d, FinishRequest{Agent: "worker", Status: ReportDone, SHA: "abc1234", Ended: true}); rec.Code != http.StatusOK {
 		t.Fatalf("code %d: %v", rec.Code, out)
@@ -184,7 +184,7 @@ func TestAResidentDoneNeitherExitsNorRingsOnSilence(t *testing.T) {
 	if err := d.st.SetTags(worker.ID, []string{"sdk", OriginAgentTag, ResidentTag}); err != nil {
 		t.Fatal(err)
 	}
-	stubCommits(t, true, false)
+	stubCommits(t, d, true, false)
 	task, _ := d.st.Get(worker.ID)
 	if d.exitsOnReport(task, FinishRequest{Status: ReportDone, SHA: "abc1234"}) {
 		t.Fatal("a resident's done exits its runner")
@@ -215,7 +215,7 @@ func TestADoneIsTypedIntoAnIdleOrchestratorsTerminal(t *testing.T) {
 	d := testDaemon(t)
 	launcher, _ := holdingPair(t, d, OrchestratorTag)
 	r, f := typedRunner(t, d, launcher.ID)
-	stubCommits(t, true, false)
+	stubCommits(t, d, true, false)
 	if err := d.st.SetStatus(launcher.ID, store.StatusNeedsInput); err != nil {
 		t.Fatal(err)
 	}
@@ -247,7 +247,7 @@ func TestADoneIsTypedIntoAnIdleOrchestratorsTerminal(t *testing.T) {
 func TestADoneToABusyOrchestratorIsCarriedByItsStopHook(t *testing.T) {
 	d := testDaemon(t)
 	launcher, _ := holdingPair(t, d, OrchestratorTag)
-	stubCommits(t, true, false)
+	stubCommits(t, d, true, false)
 
 	rec, out := finishWith(t, d, FinishRequest{Agent: "worker", Status: ReportDone, SHA: "abc1234", Ended: true})
 	if rec.Code != http.StatusOK || out["launcher_told"] != "queued" {

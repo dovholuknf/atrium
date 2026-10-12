@@ -51,7 +51,7 @@ func TestOrphanedRequestIsClosed(t *testing.T) {
 	}
 
 	// Past it, the request is answered so the queue stops offering it.
-	shrinkGrace(t)
+	shrinkGrace(t, d)
 	if err := d.reapOrphans(); err != nil {
 		t.Fatal(err)
 	}
@@ -91,7 +91,7 @@ func TestOrphanedCardGoesDead(t *testing.T) {
 	if err := d.st.SetStatus(task.ID, store.StatusNeedsPermission); err != nil {
 		t.Fatal(err)
 	}
-	shrinkGrace(t)
+	shrinkGrace(t, d)
 
 	if err := d.reapOrphans(); err != nil {
 		t.Fatal(err)
@@ -158,7 +158,7 @@ func TestALiveRequestIsNeverOrphaned(t *testing.T) {
 	if id == "" {
 		t.Fatal("the request never reached the store with an agent parked on it")
 	}
-	shrinkGrace(t)
+	shrinkGrace(t, d)
 
 	if err := d.reapOrphans(); err != nil {
 		t.Fatal(err)
@@ -204,7 +204,7 @@ func TestACardWithAPidIsLeftToTheReaper(t *testing.T) {
 	if err := d.st.SetStatus(task.ID, store.StatusNeedsPermission); err != nil {
 		t.Fatal(err)
 	}
-	shrinkGrace(t)
+	shrinkGrace(t, d)
 
 	if err := d.reapOrphans(); err != nil {
 		t.Fatal(err)
@@ -223,9 +223,7 @@ func TestACardWithAPidIsLeftToTheReaper(t *testing.T) {
 //
 // The grace period rather than the timestamps, because it is one value and
 // the alternative is a store method whose only caller is a test.
-func shrinkGrace(t *testing.T) {
+func shrinkGrace(t *testing.T, d *Daemon) {
 	t.Helper()
-	was := OrphanGrace
-	OrphanGrace = 0
-	t.Cleanup(func() { OrphanGrace = was })
+	d.hk.OrphanGrace = 0
 }

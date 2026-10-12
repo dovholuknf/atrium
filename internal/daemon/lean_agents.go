@@ -60,11 +60,6 @@ func userClaudeSub(sub string) string {
 	return filepath.Join(home, ".claude", sub)
 }
 
-// leanPluginRoot is where the plugin directories are written: in atrium's own
-// state, set from the database's directory when a daemon starts. Never a
-// worktree, which has to stay clean for the cull.
-var leanPluginRoot string
-
 // cleanKitNames is names trimmed, without blanks and repeats, sorted.
 func cleanKitNames(in []string) []string {
 	seen := map[string]bool{}
@@ -166,8 +161,8 @@ func leanDisallowedFor(k leanKit) []string {
 //
 // A name with no file is REFUSED, like a missing MCP server: a review manager
 // told it has reviewers and started without them finds out mid-task.
-func leanPluginDir(k leanKit) (string, error) {
-	if leanPluginRoot == "" {
+func leanPluginDir(k leanKit, hk *hooks) (string, error) {
+	if hk.leanPluginRoot == "" {
 		return "", fmt.Errorf("atrium has no state directory to write the lean plugin in")
 	}
 	files := map[string][]byte{
@@ -179,7 +174,7 @@ func leanPluginDir(k leanKit) (string, error) {
 		if !nameRE.MatchString(name) {
 			return "", fmt.Errorf("lean_agents name %q is not an agent's file name", name)
 		}
-		b, err := os.ReadFile(filepath.Join(userAgentsDir(), name+".md"))
+		b, err := os.ReadFile(filepath.Join(hk.userAgentsDir(), name+".md"))
 		if err != nil {
 			missing = append(missing, "agent "+name)
 			continue
@@ -190,23 +185,23 @@ func leanPluginDir(k leanKit) (string, error) {
 		if !nameRE.MatchString(name) {
 			return "", fmt.Errorf("lean_skills name %q is not a skill's directory name", name)
 		}
-		if err := readTree(filepath.Join(userSkillsDir(), name), "skills/"+name, files); err != nil {
+		if err := readTree(filepath.Join(hk.userSkillsDir(), name), "skills/"+name, files); err != nil {
 			missing = append(missing, "skill "+name)
 		}
 	}
 	if len(missing) > 0 {
 		return "", fmt.Errorf("no %s in %s or %s. lean_agents names a file there without .md, lean_skills a directory",
-			strings.Join(missing, ", no "), userAgentsDir(), userSkillsDir())
+			strings.Join(missing, ", no "), hk.userAgentsDir(), hk.userSkillsDir())
 	}
-	dir := filepath.Join(leanPluginRoot, pluginHash(files))
+	dir := filepath.Join(hk.leanPluginRoot, pluginHash(files))
 	manifest := filepath.Join(dir, ".claude-plugin", "plugin.json")
 	if _, err := os.Stat(manifest); err == nil {
 		return dir, nil
 	}
-	if err := os.MkdirAll(leanPluginRoot, 0o755); err != nil {
+	if err := os.MkdirAll(hk.leanPluginRoot, 0o755); err != nil {
 		return "", fmt.Errorf("could not write the lean plugin: %w", err)
 	}
-	tmp, err := os.MkdirTemp(leanPluginRoot, "tmp-")
+	tmp, err := os.MkdirTemp(hk.leanPluginRoot, "tmp-")
 	if err != nil {
 		return "", fmt.Errorf("could not write the lean plugin: %w", err)
 	}

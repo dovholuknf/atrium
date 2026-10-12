@@ -70,9 +70,7 @@ func TestRestartRunnerLeavesAStubbornRunnerUp(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	oldGap, oldGrace := windDownKeyGap, restartAskGrace
-	windDownKeyGap, restartAskGrace = 50*time.Millisecond, 300*time.Millisecond
-	defer func() { windDownKeyGap, restartAskGrace = oldGap, oldGrace }()
+	d.hk.windDownKeyGap, d.hk.restartAskGrace = 50*time.Millisecond, 300*time.Millisecond
 
 	r := d.sup.get(taskID)
 	_, err := d.RestartRunner(taskID)

@@ -240,15 +240,11 @@ func stopHookSettings(command string) string {
 // guard behind it never blocks.
 //
 // In front of the rest, so it can never land after the positional prompt.
-func withStopHook(h *store.Harness, args []string, agent bool) []string {
+func withStopHook(h *store.Harness, args []string, stopCmd string) []string {
 	if !isClaude(h) {
 		return args
 	}
-	cmd := ""
-	if agent {
-		cmd = stopHookCommand()
-	}
-	return append([]string{"--settings", stopHookSettings(cmd)}, args...)
+	return append([]string{"--settings", stopHookSettings(stopCmd)}, args...)
 }
 
 // ── telling the launcher ────────────────────────────────────────────────────────

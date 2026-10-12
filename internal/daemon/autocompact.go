@@ -30,8 +30,8 @@ type autocompactProbe struct {
 	help func(exe string) (string, error)
 }
 
-func newAutocompactProbe() *autocompactProbe {
-	return &autocompactProbe{seen: map[string]bool{}, help: helpRunner}
+func newAutocompactProbe(help func(exe string) (string, error)) *autocompactProbe {
+	return &autocompactProbe{seen: map[string]bool{}, help: help}
 }
 
 // helpRunner is what a new probe asks with. A seam, so no test runs a real runner's `--help`.

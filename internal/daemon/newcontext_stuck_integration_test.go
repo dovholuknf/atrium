@@ -15,8 +15,8 @@ import (
 // card's status stayed running and the screen never read settled. /clear was held for
 // the whole of captureEnd with nothing logged.
 func TestClearIsTypedWhenTheTurnEndedWithSubagentsStillOut(t *testing.T) {
-	fastNewContext(t)
 	d := testDaemon(t)
+	fastNewContext(t, d)
 	task, f, _ := ncCard(t, d)
 	id := task.ID
 
@@ -41,9 +41,9 @@ func TestClearThatCannotBeTypedFailsWithWhatBlockedIt(t *testing.T) {
 	if testing.Short() {
 		t.Skip("slow: real ptys, processes and timers")
 	}
-	fastNewContext(t)
-	ncTiming.clearTypeWait = 300 * time.Millisecond
 	d := testDaemon(t)
+	fastNewContext(t, d)
+	d.hk.ncTiming.clearTypeWait = 300 * time.Millisecond
 	task, f, _ := ncCard(t, d)
 	id := task.ID
 

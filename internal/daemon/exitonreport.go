@@ -95,12 +95,12 @@ var reportTypedQuiet = 2 * time.Minute
 // logged and the report has already landed. An operator who typed into the terminal lately is left alone, by the
 // quiet period, reportTypedQuiet.
 func (d *Daemon) exitAfterReport(taskID string) {
-	time.Sleep(exitOnReportDelay)
+	time.Sleep(d.hk.exitOnReportDelay)
 	if run := d.sup.get(taskID); run != nil && run.typedWithin(reportTypedQuiet) {
 		log.Printf("[atrium] %s reported done and was typed in lately, so it keeps running", taskID)
 		return
 	}
-	if err := stopAfterReport(d, taskID); err != nil {
+	if err := d.hk.stopAfterReport(d, taskID); err != nil {
 		log.Printf("[atrium] could not exit %s after its done report: %v", taskID, err)
 	}
 }

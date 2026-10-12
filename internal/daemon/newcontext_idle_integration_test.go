@@ -25,8 +25,8 @@ func staleRunningCard(t *testing.T, d *Daemon, frame string) (*store.Task, *fake
 }
 
 func TestNewContextClearsAtOnceOnAnIdleCardWithALostStop(t *testing.T) {
-	fastNewContext(t)
 	d := testDaemon(t)
+	fastNewContext(t, d)
 	task, f := staleRunningCard(t, d, idleFrame)
 
 	if err := d.StartNewContext(task.ID); err != nil {
@@ -39,8 +39,8 @@ func TestNewContextClearsAtOnceOnAnIdleCardWithALostStop(t *testing.T) {
 
 // Plan 5: the limit prompt goes mid-turn, the way an immediate say does. /clear does not.
 func TestNewContextAsksMidTurnButClearsOnlyBetweenTurns(t *testing.T) {
-	fastNewContext(t)
 	d := testDaemon(t)
+	fastNewContext(t, d)
 	task, f := staleRunningCard(t, d, workingFrame)
 
 	if err := d.StartNewContext(task.ID); err != nil {
@@ -55,8 +55,8 @@ func TestNewContextAsksMidTurnButClearsOnlyBetweenTurns(t *testing.T) {
 }
 
 func TestNewContextBusyNamesTheStepAndHowLong(t *testing.T) {
-	fastNewContext(t)
 	d := testDaemon(t)
+	fastNewContext(t, d)
 	task, _ := staleRunningCard(t, d, workingFrame)
 
 	if err := d.StartNewContext(task.ID); err != nil {

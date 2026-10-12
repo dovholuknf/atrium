@@ -221,7 +221,7 @@ func TestAFixtureFirstStartNeverHaltsTheStore(t *testing.T) {
 	}
 	t.Cleanup(func() {
 		if r := d.sup.get(row.TaskID); r != nil {
-			windDown(r, time.Second, d.exitKeysFor(row.TaskID))
+			windDown(r, time.Second, d.exitKeysFor(row.TaskID), d.hk.windDownKeyGap)
 		}
 		for end := time.Now().Add(10 * time.Second); time.Now().Before(end) && d.sup.get(row.TaskID) != nil; {
 			time.Sleep(50 * time.Millisecond)

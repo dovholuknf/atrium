@@ -78,10 +78,8 @@ func TestASayToADoneCardIsKeptThenTypedInWhenWakeResumesIt(t *testing.T) {
 	if testing.Short() {
 		t.Skip("slow: real ptys, processes and timers")
 	}
-	oldTick, oldSettle := keptTick, keptSettle
-	keptTick, keptSettle = 20*time.Millisecond, 300*time.Millisecond
-	defer func() { keptTick, keptSettle = oldTick, oldSettle }()
 	d := testDaemon(t)
+	d.hk.keptTick, d.hk.keptSettle = 20*time.Millisecond, 300*time.Millisecond
 	target := cardFor(t, d, "finished")
 	peerCard(t, d, "alice")
 	t.Cleanup(func() { d.pending.stopAll() })
@@ -174,9 +172,7 @@ func TestAWokenCardThatNeverTakesItsMessagesTellsTheLauncher(t *testing.T) {
 	if out, code := tell(t, d, "stranger", "worker", "HELDWORDS"); code != http.StatusOK || out["reachable"] != "kept" {
 		t.Fatalf("keep: %d %v", code, out)
 	}
-	old := keptGiveUp
-	keptGiveUp = 200 * time.Millisecond
-	defer func() { keptGiveUp = old }()
+	d.hk.keptGiveUp = 200 * time.Millisecond
 	var f *fakePTY
 	d.wakeLaunch = func(req LaunchRequest) (*store.Task, error) {
 		_, f = typedRunner(t, d, target.ID)
@@ -213,10 +209,8 @@ func TestAWakeSayToAParkedCardTypesNothingUntilReadyThenOneTurn(t *testing.T) {
 	if testing.Short() {
 		t.Skip("slow: real ptys, processes and timers")
 	}
-	oldTick, oldSettle := keptTick, keptSettle
-	keptTick, keptSettle = 20*time.Millisecond, 100*time.Millisecond
-	defer func() { keptTick, keptSettle = oldTick, oldSettle }()
 	d := testDaemon(t)
+	d.hk.keptTick, d.hk.keptSettle = 20*time.Millisecond, 100*time.Millisecond
 	target := cardFor(t, d, "sleeper")
 	peerCard(t, d, "alice")
 	t.Cleanup(func() { d.pending.stopAll() })

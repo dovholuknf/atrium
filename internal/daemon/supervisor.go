@@ -2239,7 +2239,7 @@ func (d *Daemon) spawnPTYRunner(taskID, cmdName string, args []string, cwd strin
 	// Resolve on PATH before setting a working directory. go-pty resolves the
 	// command relative to Dir, so a bare `claude` or `cmd.exe` would be looked
 	// for inside the repo being worked in and reported as missing.
-	cmdName, args = agentSpawn(cmdName, args)
+	cmdName, args = d.hk.agentSpawn(cmdName, args)
 	resolved, err := exec.LookPath(cmdName)
 	if err != nil {
 		return nil, fmt.Errorf("%s is not on PATH: %w", cmdName, err)
@@ -2590,7 +2590,7 @@ func (d *Daemon) stopSupervised(grace time.Duration) {
 		r.noteCause(store.CauseShutdown, "")
 		go func(r *runner) {
 			defer wg.Done()
-			windDown(r, grace, d.exitKeysFor(r.taskID))
+			windDown(r, grace, d.exitKeysFor(r.taskID), d.hk.windDownKeyGap)
 		}(r)
 	}
 	wg.Wait()
@@ -2654,7 +2654,7 @@ func (d *Daemon) stopOne(taskID string, grace time.Duration) bool {
 	if r == nil {
 		return false
 	}
-	windDown(r, grace, d.exitKeysFor(taskID))
+	windDown(r, grace, d.exitKeysFor(taskID), d.hk.windDownKeyGap)
 	return true
 }
 
@@ -2681,8 +2681,8 @@ func (d *Daemon) exitKeysFor(taskID string) [][]byte {
 }
 
 // windDownKeyGap is the moment each exit key is given to take effect before
-// the next is sent. A variable only so tests can shorten it.
-var windDownKeyGap = 600 * time.Millisecond
+// the next is sent. The daemon's hook carries it, so a test shortens its own.
+const windDownKeyGap = 600 * time.Millisecond
 
 // windDown asks a runner to stop, then insists.
 //
@@ -2694,7 +2694,7 @@ var windDownKeyGap = 600 * time.Millisecond
 // Only when all of them are ignored does the terminal close, and only after
 // that is the process killed. An agent mid-turn may be part way through
 // writing a file, and yanking its terminal away loses that.
-func windDown(r *runner, grace time.Duration, keys [][]byte) {
+func windDown(r *runner, grace time.Duration, keys [][]byte, keyGap time.Duration) {
 	// A runner with no terminal has nothing to write to and nothing to close.
 	// Guarded rather than assumed, because reaching this with a partial runner
 	// would panic inside shutdown, which is the worst place to panic.
@@ -2710,7 +2710,7 @@ func windDown(r *runner, grace time.Duration, keys [][]byte) {
 		case <-r.done:
 			log.Printf("[atrium] runner for %s exited when asked", r.taskID)
 			return
-		case <-time.After(windDownKeyGap):
+		case <-time.After(keyGap):
 		}
 	}
 

@@ -15,8 +15,8 @@ func TestTypingIsHeldOnlyWhileAtriumTypes(t *testing.T) {
 	if testing.Short() {
 		t.Skip("slow: real ptys, processes and timers")
 	}
-	fastNewContext(t)
 	d := testDaemon(t)
+	fastNewContext(t, d)
 	task, f, dir := ncCard(t, d)
 	id := task.ID
 	if err := d.StartNewContext(id); err != nil {
@@ -60,8 +60,8 @@ func TestTypingIsHeldOnlyWhileAtriumTypes(t *testing.T) {
 // The way out: a dismissal gives the terminal back at once, even with a write
 // marked under way, and sends what was queued.
 func TestDismissingGivesTheTerminalBackAndSendsTheQueue(t *testing.T) {
-	fastNewContext(t)
 	d := testDaemon(t)
+	fastNewContext(t, d)
 	task, f, _ := ncCard(t, d)
 	id := task.ID
 	if err := d.StartNewContext(id); err != nil {
@@ -95,8 +95,8 @@ func TestQueuedTextGoesInOrderAfterTheWake(t *testing.T) {
 	if testing.Short() {
 		t.Skip("slow: real ptys, processes and timers")
 	}
-	fastNewContext(t)
 	d := testDaemon(t)
+	fastNewContext(t, d)
 	task, f, dir := ncCard(t, d)
 	id := task.ID
 	if err := d.StartNewContext(id); err != nil {

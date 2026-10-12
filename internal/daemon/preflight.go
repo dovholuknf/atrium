@@ -137,7 +137,7 @@ func (d *Daemon) handlePreflight(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ctx, cancel := context.WithTimeout(r.Context(), preflightTotalFor)
+	ctx, cancel := context.WithTimeout(r.Context(), d.hk.preflightTotalFor)
 	defer cancel()
 
 	ans := preflightAnswer{
@@ -196,7 +196,7 @@ func (d *Daemon) handlePreflight(w http.ResponseWriter, r *http.Request) {
 // preflightOne answers one key. argv is nil for a key the table does not know,
 // which is resolved and NEVER executed.
 func (d *Daemon) preflightOne(ctx context.Context, key string, argv []string, lookup string) preflightItem {
-	path, err := preflightLook(lookup)
+	path, err := d.hk.preflightLook(lookup)
 	if err != nil {
 		return preflightItem{Error: "not found"}
 	}
@@ -206,10 +206,10 @@ func (d *Daemon) preflightOne(ctx context.Context, key string, argv []string, lo
 	if ctx.Err() != nil {
 		return preflightItem{Path: path, Error: "timeout"}
 	}
-	cctx, cancel := context.WithTimeout(ctx, preflightEachFor)
+	cctx, cancel := context.WithTimeout(ctx, d.hk.preflightEachFor)
 	defer cancel()
 	var buf bytes.Buffer
-	err = preflightRun(cctx, path, argv[1:], &limitedWriter{w: &buf, left: preflightOutput})
+	err = d.hk.preflightRun(cctx, path, argv[1:], &limitedWriter{w: &buf, left: preflightOutput})
 	item := preflightItem{Path: path, Output: strings.TrimSpace(buf.String())}
 	switch {
 	case cctx.Err() != nil:

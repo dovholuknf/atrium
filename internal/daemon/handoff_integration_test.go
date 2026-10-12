@@ -58,8 +58,8 @@ func TestNewContextUsesOnePathThroughTheCycle(t *testing.T) {
 	if testing.Short() {
 		t.Skip("slow: real ptys, processes and timers")
 	}
-	fastNewContext(t)
 	d := testDaemon(t)
+	fastNewContext(t, d)
 	task, f, dir := ncCard(t, d)
 	first := filepath.Join(dir, task.ID+".md")
 	if err := d.StartNewContext(task.ID); err != nil {
@@ -115,8 +115,8 @@ func TestHandoffWrittenIsPerCard(t *testing.T) {
 // A cycle is refused while a card in the same directory is mid-cycle, allowed
 // once it finishes, and allowed while it merely exists.
 func TestNewContextRefusedWhileASiblingInTheDirectoryIsMidCycle(t *testing.T) {
-	fastNewContext(t)
 	d := testDaemon(t)
+	fastNewContext(t, d)
 	a, _, dir := ncCard(t, d)
 	b := ncSibling(t, d, dir, "other")
 

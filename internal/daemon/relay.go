@@ -538,8 +538,8 @@ func (d *Daemon) drainOnce() {
 	}
 	rl := d.relay()
 	for _, r := range rows {
-		if time.Since(r.CreatedAt) > RelayKeep {
-			d.giveUpRelay(r, fmt.Sprintf("it was held for %s and %s never answered", RelayKeep, r.ToRoom))
+		if time.Since(r.CreatedAt) > d.hk.RelayKeep {
+			d.giveUpRelay(r, fmt.Sprintf("it was held for %s and %s never answered", d.hk.RelayKeep, r.ToRoom))
 			continue
 		}
 		if rl == nil {

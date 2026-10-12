@@ -43,7 +43,7 @@ func copyDB(t *testing.T, src string) string {
 func dbcopyDaemon(t *testing.T, src string) *Daemon {
 	t.Helper()
 	dir := t.TempDir()
-	d, err := New(Options{
+	d, err := testNew(Options{
 		AgentAddr: freePort(t), HumanAddr: freePort(t), DBPath: copyDB(t, src),
 		LongPoll: time.Second, LocationFile: filepath.Join(dir, "daemon.json"),
 	})
@@ -70,14 +70,13 @@ func cardByPrefix(t *testing.T, d *Daemon, prefix string) *store.Task {
 
 // registryAnswering serves one version for every package, through the same seam
 // the real request goes through.
-func registryAnswering(t *testing.T, version string) {
+func registryAnswering(t *testing.T, d *Daemon, version string) {
 	t.Helper()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintf(w, `{"version":%q}`, version)
 	}))
-	old := updateRegistry
-	updateRegistry = srv.URL
-	t.Cleanup(func() { updateRegistry = old; srv.Close() })
+	d.hk.updateRegistry = srv.URL
+	t.Cleanup(srv.Close)
 }
 
 // forceAsk makes the cached answer stale so the check goes to the registry.
@@ -100,7 +99,7 @@ func TestUpdateCardsInACopyOfTheLiveDatabase(t *testing.T) {
 		t.Logf("before: %q status=%s archived=%v url=%q key=%q",
 			before.Title, before.Status, before.ArchivedAt, before.URL, before.IntakeKey)
 		h, _ := fakeRunner(t, "codex", codexPkg, "0.156.1")
-		registryAnswering(t, "0.156.1")
+		registryAnswering(t, d, "0.156.1")
 		forceAsk(t, d)
 		d.checkRunnerUpdate(h, true)
 		after := cardByPrefix(t, d, "01a0d368")
@@ -113,7 +112,7 @@ func TestUpdateCardsInACopyOfTheLiveDatabase(t *testing.T) {
 	t.Run("codex 01a0d368, registry says 0.158.0", func(t *testing.T) {
 		d := dbcopyDaemon(t, src)
 		h, _ := fakeRunner(t, "codex", codexPkg, "0.156.1")
-		registryAnswering(t, "0.158.0")
+		registryAnswering(t, d, "0.158.0")
 		forceAsk(t, d)
 		d.checkRunnerUpdate(h, true)
 		after := cardByPrefix(t, d, "01a0d368")
@@ -130,7 +129,7 @@ func TestUpdateCardsInACopyOfTheLiveDatabase(t *testing.T) {
 		d := dbcopyDaemon(t, src)
 		const pkg = "@anthropic-ai/claude-code"
 		h, _ := fakeRunner(t, "claude", pkg, "2.1.300")
-		registryAnswering(t, "2.1.300")
+		registryAnswering(t, d, "2.1.300")
 		for _, p := range []string{"01a0a201", "01a0a286"} {
 			c := cardByPrefix(t, d, p)
 			t.Logf("before %s: %q status=%s archived=%v ext=%q", p, c.Title, c.Status, c.ArchivedAt, c.ExternalID)

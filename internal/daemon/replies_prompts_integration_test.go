@@ -49,7 +49,7 @@ func TestRepliesCarryThePromptsFromEverySource(t *testing.T) {
 	transcriptUser(t, f.path, at(9), []any{textBlock("look at this"), map[string]any{"type": "image"},
 		textBlock("<system-reminder>injected</system-reminder>")}, human)
 
-	d := &Daemon{st: f.st, usage: f.u, ctx: newContextSizes()}
+	d := &Daemon{hk: *testHooks(), st: f.st, usage: f.u, ctx: newContextSizes()}
 	v, err := d.repliesFor(f.task.ID, 10)
 	if err != nil {
 		t.Fatal(err)

@@ -133,8 +133,8 @@ func TestNewContextCapturePromptCarriesTheToken(t *testing.T) {
 	if testing.Short() {
 		t.Skip("slow: real ptys, processes and timers")
 	}
-	fastNewContext(t)
 	d := testDaemon(t)
+	fastNewContext(t, d)
 	task, f, dir := ncCard(t, d)
 	writeAged(t, filepath.Join(dir, HandoffName(task)), handoffBody, time.Minute)
 	gen, ok := d.nctx.beginCaptureOnly(task.ID, HandoffName(task), "")

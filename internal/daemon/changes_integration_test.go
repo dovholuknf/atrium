@@ -523,10 +523,7 @@ func TestUntrackedTrimsEachCappedListingToWholeNames(t *testing.T) {
 		writeF(t, filepath.Join(f.repo, name), "x\n")
 		paths = append(paths, name)
 	}
-	old := listMax
-	listMax = 100
-	t.Cleanup(func() { listMax = old })
-	g := gitAt{ctx: context.Background(), run: gitsync.Default, dir: f.repo}
+	g := gitAt{ctx: context.Background(), run: gitsync.Default, dir: f.repo, listMax: 100}
 	// Chunks of one name each: every chunk is under the cap, then chunks of all names at once are not.
 	for _, ps := range [][]string{paths[:3], paths} {
 		for _, file := range untracked(g, f.repo, ps) {

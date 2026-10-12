@@ -52,7 +52,7 @@ func (d *Daemon) StopRunnerBy(taskID, by string) error {
 		return err
 	}
 	d.sup.get(taskID).noteCause(store.CauseAsked, by)
-	if !d.stopOne(taskID, shelveGrace) {
+	if !d.stopOne(taskID, d.hk.shelveGrace) {
 		return fmt.Errorf("atrium does not own a terminal for %s, so there is "+
 			"nothing here to exit", t.DisplayTitle())
 	}
@@ -77,7 +77,7 @@ func (d *Daemon) Shelve(taskID string) error {
 	}
 
 	d.sup.get(taskID).noteCause(store.CauseShelved, "")
-	stopped := d.stopOne(taskID, shelveGrace)
+	stopped := d.stopOne(taskID, d.hk.shelveGrace)
 	if stopped {
 		if err := d.st.AppendEvent(taskID, store.EventExited, map[string]any{
 			"by": "shelved", "resume": t.ResumeID, "cause": store.CauseShelved,

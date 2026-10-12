@@ -46,8 +46,8 @@ func historyHas(t *testing.T, d *Daemon, id, what string) bool {
 }
 
 func TestARestartEndsAClearItCutOffAndSaysWhere(t *testing.T) {
-	fastNewContext(t)
 	d := testDaemon(t)
+	fastNewContext(t, d)
 	task, f, _ := ncCard(t, d)
 	ncToClear(t, d, task, f)
 	if !strings.Contains(journalOf(t, d), task.ID) {
@@ -83,8 +83,8 @@ func TestARestartEndsAClearItCutOffAndSaysWhere(t *testing.T) {
 
 // Cut off before the ack: nothing was cleared, so no chip, only a line in the history.
 func TestARestartOnTheLimitStepLeavesNoChip(t *testing.T) {
-	fastNewContext(t)
 	d := testDaemon(t)
+	fastNewContext(t, d)
 	task, f, _ := ncCard(t, d)
 	if err := d.StartNewContext(task.ID); err != nil {
 		t.Fatal(err)
@@ -103,8 +103,8 @@ func TestARestartOnTheLimitStepLeavesNoChip(t *testing.T) {
 }
 
 func TestTheJournalEmptiesWhenARunIsDismissed(t *testing.T) {
-	fastNewContext(t)
 	d := testDaemon(t)
+	fastNewContext(t, d)
 	task, _, _ := ncCard(t, d)
 	if err := d.StartNewContext(task.ID); err != nil {
 		t.Fatal(err)
@@ -119,8 +119,8 @@ func TestTheJournalEmptiesWhenARunIsDismissed(t *testing.T) {
 }
 
 func TestAFailedRunIsNotJournalled(t *testing.T) {
-	fastNewContext(t)
 	d := testDaemon(t)
+	fastNewContext(t, d)
 	task, _, _ := ncCard(t, d)
 	if err := d.StartNewContext(task.ID); err != nil {
 		t.Fatal(err)

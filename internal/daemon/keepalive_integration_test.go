@@ -342,7 +342,7 @@ func TestKeepaliveHandOnLiftsTheUnsavedHold(t *testing.T) {
 	f.tick()
 	f.k.record = f.st.AddKeepaliveRefresh
 	f.now = f.now.Add(time.Minute)
-	d := &Daemon{st: f.st, ka: f.k}
+	d := &Daemon{hk: *testHooks(), st: f.st, ka: f.k}
 	if _, err := d.keepaliveSet(f.task.ID, true); err != nil {
 		t.Fatal(err)
 	}
@@ -512,7 +512,7 @@ func TestKeepaliveHandOnRestartsTheBudget(t *testing.T) {
 	f.reply(f.now.Add(-6*time.Hour), replyOpt{})
 	f.seed(5, 0.06, 56*time.Minute)
 	f.tick()
-	d := &Daemon{st: f.st, ka: f.k}
+	d := &Daemon{hk: *testHooks(), st: f.st, ka: f.k}
 	if _, err := d.keepaliveSet(f.task.ID, true); err != nil {
 		t.Fatal(err)
 	}
@@ -715,7 +715,7 @@ func TestKeepaliveTwoMissesOnTwoCardsSuspend(t *testing.T) {
 func TestKeepaliveAtLaunch(t *testing.T) {
 	t.Parallel()
 	f := newKAFix(t)
-	d := &Daemon{st: f.st, ka: f.k}
+	d := &Daemon{hk: *testHooks(), st: f.st, ka: f.k}
 	h, err := f.st.Harness("claude")
 	if err != nil {
 		t.Fatal(err)

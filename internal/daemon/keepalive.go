@@ -495,7 +495,7 @@ type forkSpec struct {
 }
 
 // runForkProcess runs a fork and returns its stdout. The default fork runner.
-func runForkProcess(ctx context.Context, spec forkSpec) ([]byte, error) {
+func runForkProcess(ctx context.Context, spec forkSpec, agentFork func(exe string, args []string) (string, []string)) ([]byte, error) {
 	timeout := keepaliveForkTimeout
 	if spec.Timeout > 0 {
 		timeout = spec.Timeout
@@ -553,6 +553,8 @@ type keepaliveCardView struct {
 // keepalive holds the loop's collaborators, so a test can run a tick with a fake
 // fork, a fake clock and hand-written transcripts.
 type keepalive struct {
+	// hk is the seams a fork reads. The daemon points it at its own, see hooks.go.
+	hk  *hooks
 	st  *store.Store
 	now func() time.Time
 	// fork runs one refresh and returns the receipt's bytes.
@@ -602,10 +604,15 @@ type unsavedRefresh struct {
 }
 
 func newKeepalive(st *store.Store) *keepalive {
-	return &keepalive{
-		st:         st,
-		now:        func() time.Time { return time.Now().UTC() },
-		fork:       runForkProcess,
+	hk := defaultHooks()
+	var k *keepalive
+	k = &keepalive{
+		st:  st,
+		hk:  &hk,
+		now: func() time.Time { return time.Now().UTC() },
+		fork: func(ctx context.Context, spec forkSpec) ([]byte, error) {
+			return runForkProcess(ctx, spec, k.hk.agentFork)
+		},
 		transcript: api.TranscriptPath,
 		window:     func(string) int { return 0 },
 		broadcast:  func(string, any) {},
@@ -617,6 +624,7 @@ func newKeepalive(st *store.Store) *keepalive {
 		record:     st.AddKeepaliveRefresh,
 		spent:      st.AddSessionUsage,
 	}
+	return k
 }
 
 // ensureHookFile writes the block-all settings file if it is missing or wrong.
@@ -885,14 +893,14 @@ func keepFlags(args []string) []string {
 // depends on. It is built by the code a restart uses: the harness's resume args,
 // the card's stored extra args, and for a lean card the lean set. Model and effort
 // are left to the fork, which names its own.
-func forkCardArgs(st *store.Store, h *store.Harness, t *store.Task) ([]string, error) {
+func forkCardArgs(st *store.Store, h *store.Harness, t *store.Task, hk *hooks) ([]string, error) {
 	args, _, err := runnerArgsWith(h, t.ResumeID, "", launchOptions{Args: t.LaunchArgs})
 	if err != nil {
 		return nil, err
 	}
 	gateway := st.LeanWorkerGateway()
 	if lean, mcp, kit := leanOptions(LaunchRequest{}, t, gateway); lean {
-		if args, err = leanArgs(args, readUserSettings(), "", mcp, kit, gateway, os.ReadFile); err != nil {
+		if args, err = leanArgs(args, hk.readUserSettings(), "", mcp, kit, gateway, os.ReadFile, hk); err != nil {
 			return nil, err
 		}
 	}
@@ -1010,7 +1018,7 @@ func (k *keepalive) refresh(ctx context.Context, t *store.Task, v verdict) {
 		effort, err = forkEffortArgs(v.h, t)
 	}
 	if err == nil {
-		carried, err = forkCardArgs(k.st, v.h, t)
+		carried, err = forkCardArgs(k.st, v.h, t, k.hk)
 	}
 	if err != nil {
 		log.Printf("[atrium] keep-alive: not refreshing %s: %v", t.ID, err)

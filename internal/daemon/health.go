@@ -26,7 +26,7 @@ const settleWatchEvery = 500 * time.Millisecond
 // `/v1/health` answers, without the build id, which does not change while this
 // process runs.
 func (d *Daemon) healthBody() map[string]any {
-	halted, cause := healthHalted(d)
+	halted, cause := d.hk.healthHalted(d)
 	body := map[string]any{"halted": halted, "settling": d.Settling()}
 	if halted {
 		body["cause"] = fmt.Sprint(cause)

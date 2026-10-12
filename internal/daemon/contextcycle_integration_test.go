@@ -65,9 +65,9 @@ func TestTheLimitMidTurnTypesThePromptOncePerTurn(t *testing.T) {
 	if testing.Short() {
 		t.Skip("slow: real ptys, processes and timers")
 	}
-	fastNewContext(t)
-	ncTiming.promptLost = time.Hour
 	d := testDaemon(t)
+	fastNewContext(t, d)
+	d.hk.ncTiming.promptLost = time.Hour
 	task, f, _ := cycleCard(t, d, 250_000)
 	id := task.ID
 	midTurn(d, id)
@@ -112,8 +112,8 @@ func TestNoAckNeverClears(t *testing.T) {
 	if testing.Short() {
 		t.Skip("slow: real ptys, processes and timers")
 	}
-	fastNewContext(t)
 	d := testDaemon(t)
+	fastNewContext(t, d)
 	task, f, _ := cycleCard(t, d, 300_000)
 	id := task.ID
 	if err := os.WriteFile(d.handoffPath(task), handoffBody, 0o644); err != nil {
@@ -121,7 +121,7 @@ func TestNoAckNeverClears(t *testing.T) {
 	}
 	statuslines(d, id, 1)
 	until(t, "the limit prompt", func() bool { return prompts(f) == 1 })
-	deadline := time.Now().Add(ncTiming.captureEnd + ncTiming.clearWait)
+	deadline := time.Now().Add(d.hk.ncTiming.captureEnd + d.hk.ncTiming.clearWait)
 	for time.Now().Before(deadline) {
 		midTurn(d, id)
 		statuslines(d, id, 3)
@@ -141,8 +141,8 @@ func TestAckThenClearThenWake(t *testing.T) {
 	if testing.Short() {
 		t.Skip("slow: real ptys, processes and timers")
 	}
-	fastNewContext(t)
 	d := testDaemon(t)
+	fastNewContext(t, d)
 	task, f, _ := cycleCard(t, d, 220_000)
 	id := task.ID
 	path := d.handoffPath(task)
@@ -196,8 +196,8 @@ func TestAckThenClearThenWake(t *testing.T) {
 
 // Plan 9 and 10: the details switch keeps a card out, and its own limit moves the line.
 func TestTheCardSwitchAndOverride(t *testing.T) {
-	fastNewContext(t)
 	d := testDaemon(t)
+	fastNewContext(t, d)
 	task, f, _ := cycleCard(t, d, 250_000)
 	id := task.ID
 
@@ -240,8 +240,8 @@ func TestTheCardSwitchAndOverride(t *testing.T) {
 
 // The hub's per-harness limit is the one held to, when the card has none.
 func TestTheHubLimitStartsTheCycle(t *testing.T) {
-	fastNewContext(t)
 	d := testDaemon(t)
+	fastNewContext(t, d)
 	task, f, _ := cycleCard(t, d, 150_000)
 	statuslines(d, task.ID, 2)
 	if d.newContextFor(task.ID) != nil {
@@ -257,8 +257,8 @@ func TestTheHubLimitStartsTheCycle(t *testing.T) {
 // The runner compacted under its limit before the ack: nothing to cycle, so the
 // cycle ends quietly and what it held is let go.
 func TestACardBackUnderItsLimitDropsTheCycle(t *testing.T) {
-	fastNewContext(t)
 	d := testDaemon(t)
+	fastNewContext(t, d)
 	task, f, reply := cycleCard(t, d, 250_000)
 	id := task.ID
 	statuslines(d, id, 1)
@@ -277,8 +277,8 @@ func TestACardBackUnderItsLimitDropsTheCycle(t *testing.T) {
 // `atrium ready` is refused with no cycle waiting, and with no handoff written, and
 // the cycle keeps waiting.
 func TestReadyIsRefusedWithNoCycleOrNoHandoff(t *testing.T) {
-	fastNewContext(t)
 	d := testDaemon(t)
+	fastNewContext(t, d)
 	task, f, _ := cycleCard(t, d, 100_000)
 	id := task.ID
 
@@ -325,8 +325,8 @@ func TestReadyIsRefusedWithNoCycleOrNoHandoff(t *testing.T) {
 
 // A card atrium does not supervise is never cycled.
 func TestOnlySupervisedCardsCycle(t *testing.T) {
-	fastNewContext(t)
 	d := testDaemon(t)
+	fastNewContext(t, d)
 	bare := cardFor(t, d, "not-ours")
 	if d.cycleSubject(bare) {
 		t.Fatal("a card with no terminal here is a subject")
@@ -357,9 +357,9 @@ func TestTheLimitPromptWording(t *testing.T) {
 // r-context-always-cycles: a resumed card has no resume id on the card or none on disk yet, so its reading
 // falls to the newest transcript in its directory, and it cycles at the limit.
 func TestAResumedCardGetsAReadingAndCycles(t *testing.T) {
-	fastNewContext(t)
-	ncTiming.promptLost = time.Hour
 	d := testDaemon(t)
+	fastNewContext(t, d)
+	d.hk.ncTiming.promptLost = time.Hour
 	task, f, _ := ncCard(t, d)
 	reply := withTranscript(t, d, task)
 	reply(250_000)
@@ -382,9 +382,9 @@ func TestAResumedCardGetsAReadingAndCycles(t *testing.T) {
 
 // A fixture's card is cycled like any other.
 func TestAFixtureCardCycles(t *testing.T) {
-	fastNewContext(t)
-	ncTiming.promptLost = time.Hour
 	d := testDaemon(t)
+	fastNewContext(t, d)
+	d.hk.ncTiming.promptLost = time.Hour
 	task, f, _ := cycleCard(t, d, 250_000)
 	fx, err := d.st.SaveFixture(&store.Fixture{Harness: "claude", Cwd: task.Worktree, Enabled: true})
 	if err != nil {

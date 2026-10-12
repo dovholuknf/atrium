@@ -195,7 +195,7 @@ func TestRefusesToStartOnBadDatabase(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
 	// A directory where the file should be makes the open fail.
-	_, err := New(Options{
+	_, err := testNew(Options{
 		AgentAddr: freePort(t),
 		HumanAddr: freePort(t),
 		DBPath:    filepath.ToSlash(dir),

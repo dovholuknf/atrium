@@ -40,7 +40,7 @@ func modelShellCard(t *testing.T, d *Daemon) *store.Task {
 	}
 	t.Cleanup(func() {
 		if r := d.sup.get(task.ID); r != nil {
-			windDown(r, time.Second, d.exitKeysFor(task.ID))
+			windDown(r, time.Second, d.exitKeysFor(task.ID), d.hk.windDownKeyGap)
 		}
 		for end := time.Now().Add(10 * time.Second); time.Now().Before(end) && d.sup.get(task.ID) != nil; {
 			time.Sleep(50 * time.Millisecond)

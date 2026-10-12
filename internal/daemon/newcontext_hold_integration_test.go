@@ -65,8 +65,8 @@ func TestSayDuringCaptureIsHeldAndDeliveredAfterTheWake(t *testing.T) {
 	if testing.Short() {
 		t.Skip("slow: real ptys, processes and timers")
 	}
-	fastNewContext(t)
 	d := testDaemon(t)
+	fastNewContext(t, d)
 	task, f, dir := ncCard(t, d)
 	id := task.ID
 	peerCard(t, d, "alice")
@@ -101,8 +101,8 @@ func TestSayDuringClearIsHeldAndTellIsQueued(t *testing.T) {
 	if testing.Short() {
 		t.Skip("slow: real ptys, processes and timers")
 	}
-	fastNewContext(t)
 	d := testDaemon(t)
+	fastNewContext(t, d)
 	task, f, dir := ncCard(t, d)
 	id := task.ID
 	peerCard(t, d, "alice")
@@ -131,8 +131,8 @@ func TestAFailedCycleReleasesWhatWasHeld(t *testing.T) {
 	if testing.Short() {
 		t.Skip("slow: real ptys, processes and timers")
 	}
-	fastNewContext(t)
 	d := testDaemon(t)
+	fastNewContext(t, d)
 	task, f, dir := ncCard(t, d)
 	id := task.ID
 	peerCard(t, d, "alice")
@@ -155,8 +155,8 @@ func TestAFailedCycleReleasesWhatWasHeld(t *testing.T) {
 }
 
 func TestDismissingACycleReleases(t *testing.T) {
-	fastNewContext(t)
 	d := testDaemon(t)
+	fastNewContext(t, d)
 	task, f, _ := ncCard(t, d)
 	id := task.ID
 	peerCard(t, d, "alice")
@@ -179,8 +179,8 @@ func TestHoldDoesNotStopTheCyclesOwnTyping(t *testing.T) {
 	if testing.Short() {
 		t.Skip("slow: real ptys, processes and timers")
 	}
-	fastNewContext(t)
 	d := testDaemon(t)
+	fastNewContext(t, d)
 	task, f, dir := ncCard(t, d)
 	id := task.ID
 	if d.holdingMessages(id) {

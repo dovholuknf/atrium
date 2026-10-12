@@ -27,7 +27,7 @@ func write(t *testing.T, p, body string) {
 
 // kitDirs points the operator's agents and skills, and the plugin root, at temp
 // directories. The real ~/.claude is never read or written.
-func kitDirs(t *testing.T) (agents, skills, root string) {
+func kitDirs(t *testing.T) (hk *hooks, agents, skills, root string) {
 	t.Helper()
 	agents, skills, root = t.TempDir(), t.TempDir(), filepath.Join(t.TempDir(), "lean-plugins")
 	write(t, filepath.Join(agents, "codebase-steward.md"), stewardAgent)
@@ -36,25 +36,24 @@ func kitDirs(t *testing.T) (agents, skills, root string) {
 	write(t, filepath.Join(skills, "review-panel", "SKILL.md"), "---\nname: review-panel\ndescription: Panel\n---\nRun the panel.")
 	write(t, filepath.Join(skills, "review-panel", "refs", "rubric.md"), "rubric")
 	write(t, filepath.Join(skills, "other-skill", "SKILL.md"), "---\nname: other-skill\ndescription: no\n---\nNo.")
-	oa, os_, or := userAgentsDir, userSkillsDir, leanPluginRoot
-	userAgentsDir = func() string { return agents }
-	userSkillsDir = func() string { return skills }
-	leanPluginRoot = root
-	t.Cleanup(func() { userAgentsDir, userSkillsDir, leanPluginRoot = oa, os_, or })
+	hk = testHooks()
+	hk.userAgentsDir = func() string { return agents }
+	hk.userSkillsDir = func() string { return skills }
+	hk.leanPluginRoot = root
 	return
 }
 
 func TestLeanArgsAgentToolIsDisallowedOnlyWithoutLeanAgents(t *testing.T) {
-	kitDirs(t)
+	hk, _, _, _ := kitDirs(t)
 	in := []string{"--model", "m", "go"}
-	without, err := leanArgs(in, nil, "", nil, leanKit{}, "", os.ReadFile)
+	without, err := leanArgs(in, nil, "", nil, leanKit{}, "", os.ReadFile, hk)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(","+flagValue(t, without, "--disallowedTools")+",", ",Agent,") || count(without, "--plugin-dir") != 0 {
 		t.Fatalf("a plain lean launch keeps Agent disallowed and has no --plugin-dir: %q", without)
 	}
-	with, err := leanArgs(in, nil, "", nil, leanKit{Agents: []string{"codebase-steward"}}, "", os.ReadFile)
+	with, err := leanArgs(in, nil, "", nil, leanKit{Agents: []string{"codebase-steward"}}, "", os.ReadFile, hk)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -72,7 +71,7 @@ func TestLeanArgsAgentToolIsDisallowedOnlyWithoutLeanAgents(t *testing.T) {
 	if with[len(with)-1] != "go" || flagValue(t, with, "--setting-sources") != "project,local" || count(with, "--agents") != 0 {
 		t.Fatalf("prompt last, user source still cut, no inline --agents: %q", with)
 	}
-	sk, err := leanArgs(in, nil, "", nil, leanKit{Skills: []string{"review-panel"}}, "", os.ReadFile)
+	sk, err := leanArgs(in, nil, "", nil, leanKit{Skills: []string{"review-panel"}}, "", os.ReadFile, hk)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -83,9 +82,9 @@ func TestLeanArgsAgentToolIsDisallowedOnlyWithoutLeanAgents(t *testing.T) {
 }
 
 func TestLeanPluginHoldsOnlyTheNamedFilesByteForByte(t *testing.T) {
-	agents, _, root := kitDirs(t)
+	hk, agents, _, root := kitDirs(t)
 	got, err := leanArgs([]string{"go"}, nil, "", nil,
-		leanKit{Agents: []string{"codebase-steward", "go-security-reviewer"}, Skills: []string{"review-panel"}}, "", os.ReadFile)
+		leanKit{Agents: []string{"codebase-steward", "go-security-reviewer"}, Skills: []string{"review-panel"}}, "", os.ReadFile, hk)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -119,21 +118,21 @@ func TestLeanPluginHoldsOnlyTheNamedFilesByteForByte(t *testing.T) {
 	}
 	// The same kit finds the same directory and leaves it alone.
 	again, err := leanArgs([]string{"go"}, nil, "", nil,
-		leanKit{Agents: []string{"go-security-reviewer", "codebase-steward"}, Skills: []string{"review-panel"}}, "", os.ReadFile)
+		leanKit{Agents: []string{"go-security-reviewer", "codebase-steward"}, Skills: []string{"review-panel"}}, "", os.ReadFile, hk)
 	if err != nil || flagValue(t, again, "--plugin-dir") != dir {
 		t.Fatalf("same kit, different directory: %v", err)
 	}
 	// A changed file is a different directory, so a live session's is never rewritten.
 	write(t, filepath.Join(agents, "codebase-steward.md"), "---\ndescription: changed\n---\nNew.")
 	changed, err := leanArgs([]string{"go"}, nil, "", nil,
-		leanKit{Agents: []string{"codebase-steward"}}, "", os.ReadFile)
+		leanKit{Agents: []string{"codebase-steward"}}, "", os.ReadFile, hk)
 	if err != nil || flagValue(t, changed, "--plugin-dir") == dir {
 		t.Fatalf("a changed kit should get its own directory: %v", err)
 	}
 }
 
 func TestLeanPluginFollowsLinks(t *testing.T) {
-	agents, _, _ := kitDirs(t)
+	hk, agents, _, _ := kitDirs(t)
 	real := filepath.Join(t.TempDir(), "steward-real.md")
 	write(t, real, stewardAgent)
 	link := filepath.Join(agents, "linked-agent.md")
@@ -143,7 +142,7 @@ func TestLeanPluginFollowsLinks(t *testing.T) {
 	if _, err := os.ReadFile(link); err != nil {
 		t.Skipf("a symlink is made but cannot be followed here (Windows untrusted mount point): %v", err)
 	}
-	dir, err := leanPluginDir(leanKit{Agents: []string{"linked-agent"}})
+	dir, err := leanPluginDir(leanKit{Agents: []string{"linked-agent"}}, hk)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -156,13 +155,13 @@ func TestLeanPluginFollowsLinks(t *testing.T) {
 // A hard link works where a symlink is not allowed, so the copy-through is
 // covered on every platform.
 func TestLeanPluginCopiesAHardLinkedAgent(t *testing.T) {
-	agents, _, _ := kitDirs(t)
+	hk, agents, _, _ := kitDirs(t)
 	real := filepath.Join(t.TempDir(), "steward-real.md")
 	write(t, real, stewardAgent)
 	if err := os.Link(real, filepath.Join(agents, "hard-agent.md")); err != nil {
 		t.Skipf("no hard links here: %v", err)
 	}
-	dir, err := leanPluginDir(leanKit{Agents: []string{"hard-agent"}})
+	dir, err := leanPluginDir(leanKit{Agents: []string{"hard-agent"}}, hk)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -173,20 +172,20 @@ func TestLeanPluginCopiesAHardLinkedAgent(t *testing.T) {
 }
 
 func TestLeanKitRefusesAnUnknownOrUnsafeName(t *testing.T) {
-	kitDirs(t)
-	_, err := leanArgs([]string{"go"}, nil, "", nil, leanKit{Agents: []string{"codebase-steward", "no-such-agent"}}, "", os.ReadFile)
+	hk, _, _, _ := kitDirs(t)
+	_, err := leanArgs([]string{"go"}, nil, "", nil, leanKit{Agents: []string{"codebase-steward", "no-such-agent"}}, "", os.ReadFile, hk)
 	if err == nil || !strings.Contains(err.Error(), "no-such-agent") {
 		t.Fatalf("an unknown agent should be refused by name, got %v", err)
 	}
-	_, err = leanArgs([]string{"go"}, nil, "", nil, leanKit{Skills: []string{"no-such-skill"}}, "", os.ReadFile)
+	_, err = leanArgs([]string{"go"}, nil, "", nil, leanKit{Skills: []string{"no-such-skill"}}, "", os.ReadFile, hk)
 	if err == nil || !strings.Contains(err.Error(), "no-such-skill") {
 		t.Fatalf("an unknown skill should be refused by name, got %v", err)
 	}
 	for _, bad := range []string{"../settings", "a/b", `a\b`, ".hidden"} {
-		if _, err := leanArgs([]string{"go"}, nil, "", nil, leanKit{Agents: []string{bad}}, "", os.ReadFile); err == nil {
+		if _, err := leanArgs([]string{"go"}, nil, "", nil, leanKit{Agents: []string{bad}}, "", os.ReadFile, hk); err == nil {
 			t.Fatalf("agent %q should be refused", bad)
 		}
-		if _, err := leanArgs([]string{"go"}, nil, "", nil, leanKit{Skills: []string{bad}}, "", os.ReadFile); err == nil {
+		if _, err := leanArgs([]string{"go"}, nil, "", nil, leanKit{Skills: []string{bad}}, "", os.ReadFile, hk); err == nil {
 			t.Fatalf("skill %q should be refused", bad)
 		}
 	}
@@ -236,7 +235,6 @@ func agentLaunchDaemon(t *testing.T) (*Daemon, http.Handler) {
 }
 
 func TestLaunchRefusesLeanAgentsOnACodexRunnerAndWithLeanFalse(t *testing.T) {
-	kitDirs(t)
 	_, card, h := unleanDaemon(t)
 	w := launchOnto(h, card, `,"lean_agents":["codebase-steward"]`)
 	if w.Code == http.StatusOK || !strings.Contains(w.Body.String(), "claude launch options") {
@@ -251,8 +249,9 @@ func TestLaunchRefusesLeanAgentsOnACodexRunnerAndWithLeanFalse(t *testing.T) {
 }
 
 func TestLaunchRefusesAnUnknownAgentBeforeStartingAnything(t *testing.T) {
-	kitDirs(t)
+	hk, _, _, _ := kitDirs(t)
 	d, h := agentLaunchDaemon(t)
+	d.hk.userAgentsDir, d.hk.userSkillsDir = hk.userAgentsDir, hk.userSkillsDir
 	cwd := filepath.ToSlash(t.TempDir())
 	w := send(h, "POST", "/v1/launch", `{"harness":"claude","cwd":"`+cwd+`","lean_agents":["codebase-steward","ghost"]}`)
 	if w.Code == http.StatusOK || !strings.Contains(w.Body.String(), "ghost") {
@@ -270,8 +269,9 @@ func TestLaunchRefusesAnUnknownAgentBeforeStartingAnything(t *testing.T) {
 }
 
 func TestLaunchKeepsTheKitOnTheCardForARestartAndWritesNothingInTheWorktree(t *testing.T) {
-	kitDirs(t)
+	hk, _, _, _ := kitDirs(t)
 	d, h := agentLaunchDaemon(t)
+	d.hk.userAgentsDir, d.hk.userSkillsDir = hk.userAgentsDir, hk.userSkillsDir
 	// New pointed the plugin root at this daemon's state.
 	cwd := t.TempDir()
 	w := send(h, "POST", "/v1/launch", `{"harness":"claude","cwd":"`+filepath.ToSlash(cwd)+
@@ -303,14 +303,13 @@ func TestLaunchKeepsTheKitOnTheCardForARestartAndWritesNothingInTheWorktree(t *t
 }
 
 func TestKeepaliveForkOfALeanKitCardKeepsToolsAndPlugin(t *testing.T) {
-	kitDirs(t)
+	hk, _, _, _ := kitDirs(t)
 	f := newKAFix(t)
+	f.k.hk = hk
 	if err := f.st.SetTags(f.task.ID, []string{LeanTag, OriginAgentTag, leanAgentTagPrefix + "codebase-steward"}); err != nil {
 		t.Fatal(err)
 	}
-	old := readUserSettings
-	readUserSettings = func() []byte { return []byte(`{}`) }
-	t.Cleanup(func() { readUserSettings = old })
+	hk.readUserSettings = func() []byte { return []byte(`{}`) }
 	f.reply(f.now.Add(-56*time.Minute), replyOpt{})
 	f.tick()
 	if f.forks() != 1 {
@@ -327,11 +326,9 @@ func TestKeepaliveForkOfALeanKitCardKeepsToolsAndPlugin(t *testing.T) {
 // agents: each built-in not named is denied by a permission rule Claude Code
 // enforces, and the allowlist hook names the listed agents.
 func TestLeanAgentsDeniesBuiltinsAndAllowsTheListedPluginAgent(t *testing.T) {
-	kitDirs(t)
-	was := leanAgentsHookCommand
-	leanAgentsHookCommand = func(a []string) string { return "atrium hook --event lean-agents --allow " + strings.Join(a, ",") }
-	defer func() { leanAgentsHookCommand = was }()
-	got, err := leanArgs([]string{"go"}, nil, "", nil, leanKit{Agents: []string{"codebase-steward"}}, "", os.ReadFile)
+	hk, _, _, _ := kitDirs(t)
+	hk.leanAgentsHookCommand = func(a []string) string { return "atrium hook --event lean-agents --allow " + strings.Join(a, ",") }
+	got, err := leanArgs([]string{"go"}, nil, "", nil, leanKit{Agents: []string{"codebase-steward"}}, "", os.ReadFile, hk)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -350,9 +347,9 @@ func TestLeanAgentsDeniesBuiltinsAndAllowsTheListedPluginAgent(t *testing.T) {
 }
 
 func TestLeanAgentsAllowsABuiltinListedByBareName(t *testing.T) {
-	kitDirs(t)
+	hk, _, _, _ := kitDirs(t)
 	got, err := leanArgs([]string{"go"}, nil, "", nil,
-		leanKit{Agents: []string{"Explore", "codebase-steward"}}, "", os.ReadFile)
+		leanKit{Agents: []string{"Explore", "codebase-steward"}}, "", os.ReadFile, hk)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -366,7 +363,7 @@ func TestLeanAgentsAllowsABuiltinListedByBareName(t *testing.T) {
 		t.Fatalf("a built-in is not a file, the plugin holds %s", dir)
 	}
 	// A built-in alone needs no file in ~/.claude/agents and no plugin.
-	only, err := leanArgs([]string{"go"}, nil, "", nil, leanKit{Agents: []string{"Explore"}}, "", os.ReadFile)
+	only, err := leanArgs([]string{"go"}, nil, "", nil, leanKit{Agents: []string{"Explore"}}, "", os.ReadFile, hk)
 	if err != nil || count(only, "--plugin-dir") != 0 {
 		t.Fatalf("Explore alone: no plugin, no refusal, got %v %q", err, only)
 	}
@@ -383,7 +380,7 @@ func TestLeanWithoutAgentsIsUnchangedByTheBuiltinRule(t *testing.T) {
 	if got := leanDisallowedFor(leanKit{Skills: []string{"s"}}); strings.Contains(strings.Join(got, ","), "Agent(") {
 		t.Fatalf("skills alone add no agent rules: %v", got)
 	}
-	raw, err := leanSettings(nil, "", nil)
+	raw, err := leanSettings(nil, "", nil, testHooks())
 	if err != nil || strings.Contains(raw, "lean-agents") {
 		t.Fatalf("no agents, no allowlist hook: %s %v", raw, err)
 	}

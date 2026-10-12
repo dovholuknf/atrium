@@ -169,7 +169,7 @@ func (pi *pendingInjector) hold(taskID string, m pendingMsg) {
 		// operator who is back gets an early retry. Cleared in drop.
 		reset := func() { pi.reset(taskID) }
 		run.onKey.Store(&reset)
-		ht.timer = time.AfterFunc(backoffSteps[0], func() { pi.attempt(taskID) })
+		ht.timer = time.AfterFunc(pi.d.hk.backoffSteps[0], func() { pi.attempt(taskID) })
 	}
 	pi.mu.Unlock()
 	// The live board signal: this card is holding a message. Named by the first
@@ -316,7 +316,7 @@ func (pi *pendingInjector) attempt(taskID string) {
 	if pi.d.holdingMessages(taskID) {
 		pi.mu.Lock()
 		if ht := pi.by[taskID]; ht != nil && ht.timer != nil {
-			ht.timer.Reset(backoffSteps[step])
+			ht.timer.Reset(pi.d.hk.backoffSteps[step])
 		}
 		pi.mu.Unlock()
 		pi.noteHeld(taskID, HeldForNewContext)
@@ -328,7 +328,7 @@ func (pi *pendingInjector) attempt(taskID string) {
 	if pi.d.deployHeld(taskID) {
 		pi.mu.Lock()
 		if ht := pi.by[taskID]; ht != nil && ht.timer != nil {
-			ht.timer.Reset(backoffSteps[step])
+			ht.timer.Reset(pi.d.hk.backoffSteps[step])
 		}
 		pi.mu.Unlock()
 		pi.noteHeld(taskID, HeldForDeploy)
@@ -341,7 +341,7 @@ func (pi *pendingInjector) attempt(taskID string) {
 	if pi.d.act.dialogOpen(taskID) {
 		pi.mu.Lock()
 		if ht := pi.by[taskID]; ht != nil && ht.timer != nil {
-			ht.timer.Reset(backoffSteps[step])
+			ht.timer.Reset(pi.d.hk.backoffSteps[step])
 		}
 		pi.mu.Unlock()
 		pi.noteHeld(taskID, HeldForDialog)
@@ -410,7 +410,7 @@ func (pi *pendingInjector) attempt(taskID string) {
 	}
 	if turnWait {
 		if ht.timer != nil {
-			ht.timer.Reset(backoffSteps[ht.step])
+			ht.timer.Reset(pi.d.hk.backoffSteps[ht.step])
 		}
 		pi.mu.Unlock()
 		pi.noteHeld(taskID, HeldForTurn)
@@ -419,11 +419,11 @@ func (pi *pendingInjector) attempt(taskID string) {
 	// Still blocked. Widen the backoff, warn once for this tick, and reschedule.
 	from := ht.entries[0].from
 	waited := time.Since(ht.since)
-	final := ht.step >= len(backoffSteps)-1
+	final := ht.step >= len(pi.d.hk.backoffSteps)-1
 	if !final {
 		ht.step++
 	}
-	next := backoffSteps[ht.step]
+	next := pi.d.hk.backoffSteps[ht.step]
 	if ht.timer != nil {
 		ht.timer.Reset(next)
 	}
@@ -451,7 +451,7 @@ func (pi *pendingInjector) reset(taskID string) {
 		return
 	}
 	ht.step = 0
-	ht.timer.Reset(backoffSteps[0])
+	ht.timer.Reset(pi.d.hk.backoffSteps[0])
 }
 
 // drop forgets a card's held messages, because they all landed, were delivered

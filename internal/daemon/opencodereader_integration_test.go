@@ -47,15 +47,14 @@ func newOcFix(t *testing.T, session string, out func() ([]byte, error)) *ocFix {
 	}
 	var calls int32
 	var argv []string
-	oldExec, oldLook, oldTTL := opencodeExec, opencodeLookPath, opencodeTTL
-	t.Cleanup(func() { opencodeExec, opencodeLookPath, opencodeTTL = oldExec, oldLook, oldTTL })
-	opencodeLookPath = func(s string) (string, error) { return "/fake/" + s, nil }
-	opencodeExec = func(ctx context.Context, bin string, args []string, max int64) ([]byte, error) {
+	hk := testHooks()
+	hk.opencodeLookPath = func(s string) (string, error) { return "/fake/" + s, nil }
+	hk.opencodeExec = func(ctx context.Context, bin string, args []string, max int64, _ time.Duration) ([]byte, error) {
 		atomic.AddInt32(&calls, 1)
 		argv = args
 		return out()
 	}
-	return &ocFix{d: &Daemon{st: st, sup: newSupervisor()}, card: task.ID, calls: &calls, argv: &argv}
+	return &ocFix{d: &Daemon{hk: *hk, st: st, sup: newSupervisor()}, card: task.ID, calls: &calls, argv: &argv}
 }
 
 func ocRecorded(t *testing.T) func() ([]byte, error) {
@@ -162,7 +161,7 @@ func TestOpencodeFallsBackToTheScreen(t *testing.T) {
 
 func TestOpencodeMissingBinaryFallsBack(t *testing.T) {
 	f := newOcFix(t, ocSession, ocRecorded(t))
-	opencodeLookPath = func(string) (string, error) { return "", errors.New("not found") }
+	f.d.hk.opencodeLookPath = func(string) (string, error) { return "", errors.New("not found") }
 	v, _ := f.d.repliesFor(f.card, 3)
 	if v.Source != "screen" || atomic.LoadInt32(f.calls) != 0 {
 		t.Fatalf("got %+v", v)
@@ -171,7 +170,7 @@ func TestOpencodeMissingBinaryFallsBack(t *testing.T) {
 
 func TestOpencodeOneExportInFlightAndCached(t *testing.T) {
 	f := newOcFix(t, ocSession, ocRecorded(t))
-	opencodeTTL = time.Minute
+	f.d.hk.opencodeTTL = time.Minute
 	done := make(chan struct{})
 	for i := 0; i < 8; i++ {
 		go func() { f.d.repliesFor(f.card, 3); done <- struct{}{} }()
@@ -202,9 +201,6 @@ func TestOpencodeExecIsBoundedAgainstAChildHoldingStdout(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("shell fakes")
 	}
-	oldDelay := opencodeWaitDelay
-	opencodeWaitDelay = 500 * time.Millisecond
-	t.Cleanup(func() { opencodeWaitDelay = oldDelay })
 	good := `{"messages":[{"info":{"role":"assistant","time":{"created":1000}},"parts":[{"type":"text","text":"hi"}]}]}`
 	cases := map[string]struct {
 		script string
@@ -217,7 +213,7 @@ func TestOpencodeExecIsBoundedAgainstAChildHoldingStdout(t *testing.T) {
 		for i := 0; i < 2; i++ { // the second call is not blocked by the first
 			ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 			start := time.Now()
-			out, _ := opencodeExec(ctx, "/bin/sh", []string{"-c", c.script}, 1<<20)
+			out, _ := opencodeExec(ctx, "/bin/sh", []string{"-c", c.script}, 1<<20, 500*time.Millisecond)
 			cancel()
 			if took := time.Since(start); took > 3*time.Second {
 				t.Fatalf("%s: call %d took %v", name, i, took)
@@ -234,12 +230,12 @@ func TestOpencodeExecStopsAtTheCapAndDropsAtriumEnv(t *testing.T) {
 		t.Skip("shell fakes")
 	}
 	t.Setenv("ATRIUM_RUNNER", "opencode")
-	out, err := opencodeExec(context.Background(), "/bin/sh", []string{"-c", "echo ${ATRIUM_RUNNER:-none}"}, 1<<10)
+	out, err := opencodeExec(context.Background(), "/bin/sh", []string{"-c", "echo ${ATRIUM_RUNNER:-none}"}, 1<<10, opencodeWaitDelay)
 	if err != nil || strings.TrimSpace(string(out)) != "none" {
 		t.Fatalf("env reached the export: %q, %v", out, err)
 	}
 	start := time.Now()
-	out, err = opencodeExec(context.Background(), "/bin/sh", []string{"-c", "yes"}, 1<<10)
+	out, err = opencodeExec(context.Background(), "/bin/sh", []string{"-c", "yes"}, 1<<10, opencodeWaitDelay)
 	if err == nil || out != nil || time.Since(start) > 3*time.Second {
 		t.Fatalf("over the cap: %d bytes, %v, %v", len(out), err, time.Since(start))
 	}

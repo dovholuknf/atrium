@@ -53,7 +53,7 @@ func TestNoOptionMeansTheRealPlace(t *testing.T) {
 	if err != nil {
 		t.Skip("this machine has no answer for where runtime state goes")
 	}
-	d := &Daemon{}
+	d := &Daemon{hk: *testHooks()}
 	got, err := d.locationPath()
 	if err != nil {
 		t.Fatal(err)
@@ -224,7 +224,7 @@ func TestLocationRecordsTheRoomDir(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
 	path := filepath.Join(dir, "daemon.json")
-	d := &Daemon{opts: Options{Room: "r1", RoomDir: "/r/dir", LocationFile: path}}
+	d := &Daemon{hk: *testHooks(), opts: Options{Room: "r1", RoomDir: "/r/dir", LocationFile: path}}
 	d.writeLocation()
 	raw, err := os.ReadFile(path)
 	if err != nil {
@@ -254,19 +254,17 @@ func TestAThrowawayDoesNotOverwriteALiveRoomsAddress(t *testing.T) {
 	if err := os.WriteFile(shared, real, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	was := pidAlive
-	defer func() { pidAlive = was }()
 
-	d := &Daemon{opts: Options{AgentAddr: "127.0.0.1:9", HumanAddr: "127.0.0.1:10"}}
+	d := &Daemon{hk: *testHooks(), opts: Options{AgentAddr: "127.0.0.1:9", HumanAddr: "127.0.0.1:10"}}
 
-	pidAlive = func(int) bool { return true }
+	d.hk.pidAlive = func(int) bool { return true }
 	d.writeLocation()
 	back, _ := os.ReadFile(shared)
 	if string(back) != string(real) {
 		t.Fatalf("a live room's address was overwritten: %s", back)
 	}
 
-	pidAlive = func(int) bool { return false }
+	d.hk.pidAlive = func(int) bool { return false }
 	d.writeLocation()
 	var loc Location
 	back, _ = os.ReadFile(shared)

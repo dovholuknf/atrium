@@ -25,20 +25,14 @@ type fakeExec struct {
 	bytes int
 }
 
-func (f *fakeExec) install(t *testing.T) {
-	oldLook, oldRun := preflightLook, preflightRun
-	oldEach, oldTotal := preflightEachFor, preflightTotalFor
-	t.Cleanup(func() {
-		preflightLook, preflightRun = oldLook, oldRun
-		preflightEachFor, preflightTotalFor = oldEach, oldTotal
-	})
-	preflightLook = func(name string) (string, error) {
+func (f *fakeExec) install(t *testing.T, d *Daemon) {
+	d.hk.preflightLook = func(name string) (string, error) {
 		if strings.HasPrefix(name, "missing") {
 			return "", io.EOF
 		}
 		return "/fake/bin/" + name, nil
 	}
-	preflightRun = func(ctx context.Context, exe string, args []string, out io.Writer) error {
+	d.hk.preflightRun = func(ctx context.Context, exe string, args []string, out io.Writer) error {
 		f.mu.Lock()
 		f.runs = append(f.runs, append([]string{exe}, args...))
 		f.mu.Unlock()
@@ -78,7 +72,7 @@ func preflight(t *testing.T, d *Daemon, body string) (int, preflightAnswer) {
 func TestPreflightKnownKeysRunTheirFixedCommand(t *testing.T) {
 	d := testDaemon(t)
 	f := &fakeExec{}
-	f.install(t)
+	f.install(t, d)
 	code, a := preflight(t, d, `{"tools":["go","pwsh"],"runner_auth":["claude","codex"]}`)
 	if code != 200 {
 		t.Fatalf("code %d", code)
@@ -107,7 +101,7 @@ func TestPreflightKnownKeysRunTheirFixedCommand(t *testing.T) {
 func TestPreflightNeverExecutesAnUnknownKey(t *testing.T) {
 	d := testDaemon(t)
 	f := &fakeExec{}
-	f.install(t)
+	f.install(t, d)
 	code, a := preflight(t, d,
 		`{"tools":["rm -rf /","curl","../evil"],"runner_auth":["evil","missing-runner"]}`)
 	if code != 200 {
@@ -128,7 +122,7 @@ func TestPreflightNeverExecutesAnUnknownKey(t *testing.T) {
 func TestPreflightEnvPresentIsABooleanNeverAValue(t *testing.T) {
 	d := testDaemon(t)
 	f := &fakeExec{}
-	f.install(t)
+	f.install(t, d)
 	const secret = "s3cr3t-value-do-not-leak"
 	t.Setenv("ATRIUM_PREFLIGHT_TEST_SET", secret)
 	req := httptest.NewRequest("POST", "/v1/preflight",
@@ -150,8 +144,8 @@ func TestPreflightEnvPresentIsABooleanNeverAValue(t *testing.T) {
 func TestPreflightEachCommandIsBounded(t *testing.T) {
 	d := testDaemon(t)
 	f := &fakeExec{slow: true}
-	f.install(t)
-	preflightEachFor = 50 * time.Millisecond
+	f.install(t, d)
+	d.hk.preflightEachFor = 50 * time.Millisecond
 	_, a := preflight(t, d, `{"tools":["go"]}`)
 	it := a.Tools["go"]
 	if it.OK || it.Error != "timeout" {
@@ -162,9 +156,9 @@ func TestPreflightEachCommandIsBounded(t *testing.T) {
 func TestPreflightTotalIsBounded(t *testing.T) {
 	d := testDaemon(t)
 	f := &fakeExec{slow: true}
-	f.install(t)
-	preflightEachFor = 80 * time.Millisecond
-	preflightTotalFor = 150 * time.Millisecond
+	f.install(t, d)
+	d.hk.preflightEachFor = 80 * time.Millisecond
+	d.hk.preflightTotalFor = 150 * time.Millisecond
 	start := time.Now()
 	_, a := preflight(t, d, `{"tools":["go","node","git","pwsh","npm","cmake"]}`)
 	if el := time.Since(start); el > 2*time.Second {
@@ -186,7 +180,7 @@ func TestPreflightTotalIsBounded(t *testing.T) {
 func TestPreflightOutputIsCapped(t *testing.T) {
 	d := testDaemon(t)
 	f := &fakeExec{bytes: 1 << 20}
-	f.install(t)
+	f.install(t, d)
 	_, a := preflight(t, d, `{"tools":["go"]}`)
 	if n := len(a.Tools["go"].Output); n != preflightOutput {
 		t.Fatalf("output is %d bytes, want the %d cap", n, preflightOutput)
@@ -196,7 +190,7 @@ func TestPreflightOutputIsCapped(t *testing.T) {
 func TestPreflightReportsPidAndStartedBy(t *testing.T) {
 	d := testDaemon(t)
 	f := &fakeExec{}
-	f.install(t)
+	f.install(t, d)
 	if _, a := preflight(t, d, `{}`); a.StartedBy != "" || a.PID == 0 {
 		t.Errorf("no --started-by should answer empty with a pid: %+v", a)
 	}
@@ -213,7 +207,7 @@ func TestPreflightIsOnTheHumanListenerOnly(t *testing.T) {
 	d, _, cancel, _ := startDaemon(t)
 	defer cancel()
 	f := &fakeExec{}
-	f.install(t)
+	f.install(t, d)
 	body := `{"tools":["go"]}`
 	resp, err := http.Post("http://"+d.opts.HumanAddr+"/v1/preflight", "application/json", strings.NewReader(body))
 	if err != nil {
@@ -243,7 +237,7 @@ func TestPreflightIsOnTheHumanListenerOnly(t *testing.T) {
 func TestPreflightOnARoomWithAHubRunsNoForge(t *testing.T) {
 	d := testDaemon(t)
 	f := &fakeExec{}
-	f.install(t)
+	f.install(t, d)
 	d.SetHubForge(forge.NewRemote(nil))
 	code, a := preflight(t, d, `{"forges":[{"tool":"gh","host":"github.com"},{"tool":"bb","host":"bitbucket.org"}]}`)
 	if code != 200 {

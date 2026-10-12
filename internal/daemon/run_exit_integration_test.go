@@ -187,7 +187,7 @@ func TestARunnerAndAShellOnOneCardHaveTheirOwnRuns(t *testing.T) {
 	}
 
 	// The runner's own exit files against the runner's run.
-	windDown(r, time.Second, nil)
+	windDown(r, time.Second, nil, windDownKeyGap)
 	deadline = time.Now().Add(20 * time.Second)
 	for time.Now().Before(deadline) && len(filedExits(t, d, task.ID)) == 0 {
 		time.Sleep(50 * time.Millisecond)
@@ -219,7 +219,7 @@ func TestAStartWritesItsRunRowBeforeTheLaunchIsComplete(t *testing.T) {
 	}
 	r := d.sup.get(task.ID)
 	t.Cleanup(func() {
-		windDown(r, time.Second, nil)
+		windDown(r, time.Second, nil, windDownKeyGap)
 		select {
 		case <-r.done:
 		case <-time.After(10 * time.Second):

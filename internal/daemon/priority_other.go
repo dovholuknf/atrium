@@ -7,4 +7,7 @@ type ptyRaise struct{}
 
 func (d *Daemon) beginPTYRaise() *ptyRaise { return nil }
 
+// platformHooks has nothing to add where no priority is raised.
+func platformHooks(*hooks) {}
+
 func (r *ptyRaise) apply(pid int) {}

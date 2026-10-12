@@ -14,15 +14,15 @@ import (
 func TestNoTestHereCanReachALiveRoom(t *testing.T) {
 	t.Parallel()
 	for _, exe := range []string{"claude", "claude.exe", `C:\Users\x\AppData\Roaming\npm\claude.cmd`, "codex", "gemini"} {
-		got, _ := agentSpawn(exe, []string{"--settings", "x"})
+		got, _ := testHooks().agentSpawn(exe, []string{"--settings", "x"})
 		if strings.Contains(strings.ToLower(got), "claude") || got == exe {
 			t.Errorf("a test would start %s for real (%s)", exe, got)
 		}
-		if got, _ := agentFork(exe, nil); got == exe {
+		if got, _ := testHooks().agentFork(exe, nil); got == exe {
 			t.Errorf("a test's keep-alive fork would run %s for real", exe)
 		}
 	}
-	if got, _ := agentSpawn("cmd.exe", []string{"/k"}); got != "cmd.exe" {
+	if got, _ := testHooks().agentSpawn("cmd.exe", []string{"/k"}); got != "cmd.exe" {
 		t.Errorf("a shell a test saved became %s", got)
 	}
 	for _, kv := range os.Environ() {

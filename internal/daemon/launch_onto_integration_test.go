@@ -121,7 +121,7 @@ func TestAStalePidOnADeadCardDoesNotCountAsLive(t *testing.T) {
 	t.Parallel()
 	// No listeners and no store: `runnerIsLive` asks the supervisor and the
 	// operating system, and neither of those is a daemon that has to be up.
-	d := &Daemon{sup: newSupervisor()}
+	d := &Daemon{hk: *testHooks(), sup: newSupervisor()}
 
 	// This test binary, which is very much alive, standing in for a recycled
 	// pid on a card that is already filed dead.

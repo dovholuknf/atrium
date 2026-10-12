@@ -20,7 +20,7 @@ func TestFreshRoomStateIsOwnerOnly(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "room")
 	os.MkdirAll(dir, 0o755)
 	db := filepath.Join(dir, "atrium.db")
-	d, err := New(Options{DBPath: db})
+	d, err := testNew(Options{DBPath: db})
 	if err != nil {
 		t.Fatal(err)
 	}

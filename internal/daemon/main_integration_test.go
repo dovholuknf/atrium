@@ -4,10 +4,7 @@ package daemon
 
 import (
 	"os"
-	"path/filepath"
 	"testing"
-
-	"github.com/dovholuknf/atrium/internal/store"
 )
 
 // seedMigratedDB puts an already-migrated, empty database at path, so a test
@@ -16,24 +13,11 @@ import (
 // starts its own daemon and does not call this.
 func seedMigratedDB(t *testing.T, path string) {
 	t.Helper()
-	migratedOnce.Do(func() {
-		dir, err := os.MkdirTemp("", "atrium-template-")
-		if err != nil {
-			migratedErr = err
-			return
-		}
-		migratedPath = filepath.Join(dir, "atrium.db")
-		st, err := store.Open(filepath.ToSlash(migratedPath))
-		if err != nil {
-			migratedErr = err
-			return
-		}
-		migratedErr = st.Close()
-	})
-	if migratedErr != nil {
-		t.Fatalf("building the migrated template: %v", migratedErr)
+	template, err := migratedTemplate()
+	if err != nil {
+		t.Fatalf("building the migrated template: %v", err)
 	}
-	b, err := os.ReadFile(migratedPath)
+	b, err := os.ReadFile(template)
 	if err != nil {
 		t.Fatal(err)
 	}

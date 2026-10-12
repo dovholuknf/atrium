@@ -42,8 +42,8 @@ func TestCyclingAWorkersContextOwesNothingAndIsNoSilentStop(t *testing.T) {
 	if testing.Short() {
 		t.Skip("slow: real ptys, processes and timers")
 	}
-	fastNewContext(t)
 	d := testDaemon(t)
+	fastNewContext(t, d)
 	launcher, worker, f := launchedCycler(t, d)
 
 	// The launcher's say reached the old context, and the worker answered it.
@@ -82,8 +82,8 @@ func TestACycledWorkerThatOwesStillGetsASilentStop(t *testing.T) {
 	if testing.Short() {
 		t.Skip("slow: real ptys, processes and timers")
 	}
-	fastNewContext(t)
 	d := testDaemon(t)
+	fastNewContext(t, d)
 	launcher, worker, f := launchedCycler(t, d)
 
 	cycleToWake(t, d, worker, f)
@@ -102,8 +102,8 @@ func TestTheContinuePromptListsTheSaysAlreadySent(t *testing.T) {
 	if testing.Short() {
 		t.Skip("slow: real ptys, processes and timers")
 	}
-	fastNewContext(t)
 	d := testDaemon(t)
+	fastNewContext(t, d)
 	launcher, worker, f := launchedCycler(t, d)
 
 	say := func(text string) {

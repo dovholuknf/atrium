@@ -201,16 +201,10 @@ func TestAFloodOfLoginsIsBounded(t *testing.T) {
 		t.Skip("slow: real ptys, processes and timers")
 	}
 	t.Parallel()
-	// Emptied afterwards whatever happens. The map is package level, and a
-	// test that left it full would fail every login in every test after it.
-	t.Cleanup(func() {
-		pending.Lock()
-		pending.at = nil
-		pending.Unlock()
-	})
+	var logins loginStates
 	var refused error
 	for i := 0; i < pendingMost+10; i++ {
-		if _, _, err := startLogin("/", false); err != nil {
+		if _, _, err := logins.startLogin("/", false); err != nil {
 			refused = err
 			break
 		}
@@ -218,9 +212,9 @@ func TestAFloodOfLoginsIsBounded(t *testing.T) {
 	if refused == nil {
 		t.Fatal("logins were started without limit, so the map grows on request")
 	}
-	pending.Lock()
-	held := len(pending.at)
-	pending.Unlock()
+	logins.Lock()
+	held := len(logins.at)
+	logins.Unlock()
 	if held > pendingMost {
 		t.Fatalf("%d states are held, above the cap of %d", held, pendingMost)
 	}

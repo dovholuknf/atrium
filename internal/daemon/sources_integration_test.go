@@ -72,7 +72,7 @@ func testDaemon(t *testing.T) *Daemon {
 	t.Helper()
 	dir := t.TempDir()
 	seedMigratedDB(t, filepath.Join(dir, "atrium.db"))
-	d, err := New(Options{
+	d, err := testNew(Options{
 		AgentAddr:    freePort(t),
 		HumanAddr:    freePort(t),
 		DBPath:       filepath.ToSlash(filepath.Join(dir, "atrium.db")),
@@ -93,7 +93,7 @@ func testDaemon(t *testing.T) *Daemon {
 		for _, r := range d.sup.all() {
 			if r.cmd != nil && r.cmd.Process != nil {
 				real = append(real, r)
-				windDown(r, time.Second, d.exitKeysFor(r.taskID))
+				windDown(r, time.Second, d.exitKeysFor(r.taskID), d.hk.windDownKeyGap)
 			}
 		}
 		for end := time.Now().Add(10 * time.Second); time.Now().Before(end); time.Sleep(50 * time.Millisecond) {

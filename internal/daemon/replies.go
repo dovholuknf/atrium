@@ -280,21 +280,21 @@ func laterOf(a, b time.Time) time.Time {
 
 // readReplies is the last n main-chain assistant replies with text in a
 // transcript, oldest first.
-func readReplies(path string, n int) ([]Reply, error) {
-	replies, _, err := readTranscriptText(path, n)
+func readReplies(path string, n int, hk *hooks) ([]Reply, error) {
+	replies, _, err := readTranscriptText(path, n, hk)
 	return replies, err
 }
 
 // readTranscriptText is the last n replies and the last n prompts in a
 // transcript, each oldest first.
-func readTranscriptText(path string, n int) ([]Reply, []Prompt, error) {
-	pg, err := readTranscriptPage(path, n)
+func readTranscriptText(path string, n int, hk *hooks) ([]Reply, []Prompt, error) {
+	pg, err := readTranscriptPage(path, n, hk)
 	return pg.replies, pg.prompts, err
 }
 
 // readTranscriptPage is the first page: the newest n of each, from the cached
 // read of the file's last repliesWindow bytes.
-func readTranscriptPage(path string, n int) (replyPage, error) {
+func readTranscriptPage(path string, n int, hk *hooks) (replyPage, error) {
 	info, err := os.Stat(path)
 	if err != nil {
 		return replyPage{}, err
@@ -308,9 +308,9 @@ func readTranscriptPage(path string, n int) (replyPage, error) {
 			return replyPage{}, err
 		}
 		defer f.Close()
-		mid := info.Size() > repliesWindow
+		mid := info.Size() > hk.repliesWindow
 		if mid {
-			if _, err := f.Seek(info.Size()-repliesWindow, io.SeekStart); err != nil {
+			if _, err := f.Seek(info.Size()-hk.repliesWindow, io.SeekStart); err != nil {
 				return replyPage{}, err
 			}
 		}
@@ -320,7 +320,7 @@ func readTranscriptPage(path string, n int) (replyPage, error) {
 		}
 		var floor time.Time
 		if mid {
-			floor = boundaryAt(f, info.Size()-repliesWindow, firstAt)
+			floor = boundaryAt(f, info.Size()-hk.repliesWindow, firstAt)
 		}
 		// The cap keeps ties together, as a page's own cut does: an entry cut off
 		// at the floor's time would be on neither page.
@@ -371,7 +371,7 @@ func boundaryAt(f *os.File, start int64, firstAt time.Time) time.Time {
 // A step starts mid-line, so its first partial line is carried and put back on
 // the end of the next step, which makes a line read whole once. A reply whose
 // message id spans steps is joined as the forward scan joins it.
-func readTranscriptBefore(path string, n int, before time.Time) (replyPage, error) {
+func readTranscriptBefore(path string, n int, before time.Time, hk *hooks) (replyPage, error) {
 	f, err := os.Open(path)
 	if err != nil {
 		return replyPage{}, err
@@ -388,7 +388,7 @@ func readTranscriptBefore(path string, n int, before time.Time) (replyPage, erro
 		byID    = map[string]int{}
 		prompts []Prompt
 		carry   []byte
-		pos     = lineBefore(f, info.Size(), before)
+		pos     = lineBefore(f, info.Size(), before, hk)
 		read    int64
 	)
 	// older counts what is strictly older than before. The oldest reply may still
@@ -412,7 +412,7 @@ func readTranscriptBefore(path string, n int, before time.Time) (replyPage, erro
 		return r, p
 	}
 	for pos > 0 {
-		step := repliesWindow
+		step := hk.repliesWindow
 		if step > pos {
 			step = pos
 		}
@@ -472,12 +472,12 @@ func readTranscriptBefore(path string, n int, before time.Time) (replyPage, erro
 			// The cursor is the oldest record read, so it must be older than before.
 			// Until one is, read on past the reach, up to repliesCap.
 			if standing := firstAt.Before(before) && !firstAt.IsZero(); !standing {
-				if read >= repliesCap {
+				if read >= hk.repliesCap {
 					break
 				}
 				continue
 			}
-			if read >= repliesReach {
+			if read >= hk.repliesReach {
 				break
 			}
 			if r, p := older(); r >= n && p >= n {
@@ -531,9 +531,9 @@ func readTranscriptBefore(path string, n int, before time.Time) (replyPage, erro
 //
 // It RELIES ON TIME-ORDERED LINES. Claude Code writes them in order today. If that
 // ever stopped being true, the bisection would skip a region without saying so.
-func lineBefore(f *os.File, size int64, before time.Time) int64 {
+func lineBefore(f *os.File, size int64, before time.Time, hk *hooks) int64 {
 	lo, hi := int64(0), size
-	for hi-lo > repliesWindow {
+	for hi-lo > hk.repliesWindow {
 		mid := lo + (hi-lo)/2
 		off, at, ok := probeLine(f, mid)
 		if !ok || off >= hi {

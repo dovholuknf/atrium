@@ -15,29 +15,27 @@ import (
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
-// fastNewContext shrinks every wait so a whole sequence runs in a fraction of a
-// second, and puts them back. The waits are what is under test, so a test that
-// wants one to expire sets that one shorter still.
-func fastNewContext(t *testing.T) {
+// fastNewContext shrinks every wait of one daemon so a whole sequence runs in a fraction of a
+// second. The waits are what is under test, so a test that wants one to expire sets that one shorter still.
+func fastNewContext(t *testing.T, d *Daemon) {
 	t.Helper()
-	old := ncTiming
-	ncTiming.poll = 5 * time.Millisecond
-	ncTiming.typeWait = 400 * time.Millisecond
-	ncTiming.captureBegin = 400 * time.Millisecond
-	ncTiming.captureEnd = 2 * time.Second
-	ncTiming.clearTypeWait = 2 * time.Second
-	ncTiming.logEvery = 50 * time.Millisecond
-	ncTiming.turnSettle = 40 * time.Millisecond
-	ncTiming.clearWait = 400 * time.Millisecond
-	ncTiming.sessionSettle = 20 * time.Millisecond
-	ncTiming.promptGap = 0
-	ncTiming.promptLost = 300 * time.Millisecond
-	oldBin := atriumBinary
-	atriumBinary = func() string { return "/opt/atrium/atrium" }
-	oldSteps := append([]time.Duration(nil), backoffSteps...)
+	d.hk.ncTiming = ncTimings{
+		poll:          5 * time.Millisecond,
+		typeWait:      400 * time.Millisecond,
+		ackWait:       d.hk.ncTiming.ackWait,
+		captureBegin:  400 * time.Millisecond,
+		captureEnd:    2 * time.Second,
+		clearTypeWait: 2 * time.Second,
+		logEvery:      50 * time.Millisecond,
+		turnSettle:    40 * time.Millisecond,
+		clearWait:     400 * time.Millisecond,
+		sessionSettle: 20 * time.Millisecond,
+		promptGap:     0,
+		promptLost:    300 * time.Millisecond,
+	}
+	d.hk.atriumBinary = func() string { return "/opt/atrium/atrium" }
 	// A say held through the cycle is retried on this front step.
-	backoffSteps[0] = 50 * time.Millisecond
-	t.Cleanup(func() { ncTiming = old; copy(backoffSteps, oldSteps); atriumBinary = oldBin })
+	d.hk.backoffSteps[0] = 50 * time.Millisecond
 }
 
 // ncCard is a card with a terminal and a real directory, which is also where its
@@ -122,8 +120,8 @@ func TestNewContextAsksClearsAndWakes(t *testing.T) {
 	if testing.Short() {
 		t.Skip("slow: real ptys, processes and timers")
 	}
-	fastNewContext(t)
 	d := testDaemon(t)
+	fastNewContext(t, d)
 	task, f, dir := ncCard(t, d)
 	id := task.ID
 	path := filepath.Join(dir, id+".md")
@@ -202,8 +200,8 @@ func TestNewContextStopsWhenNoSessionStartsAfterTheClear(t *testing.T) {
 	if testing.Short() {
 		t.Skip("slow: real ptys, processes and timers")
 	}
-	fastNewContext(t)
 	d := testDaemon(t)
+	fastNewContext(t, d)
 	task, f, _ := ncCard(t, d)
 	ncToClear(t, d, task, f)
 
@@ -222,8 +220,8 @@ func TestNewContextIgnoresASessionStartFromBeforeTheClear(t *testing.T) {
 	if testing.Short() {
 		t.Skip("slow: real ptys, processes and timers")
 	}
-	fastNewContext(t)
 	d := testDaemon(t)
+	fastNewContext(t, d)
 	task, f, _ := ncCard(t, d)
 	d.wake.sawSession(task.ID, time.Now().Add(-time.Minute))
 	ncToClear(t, d, task, f)
@@ -235,8 +233,8 @@ func TestNewContextIgnoresASessionStartFromBeforeTheClear(t *testing.T) {
 
 // The gate every automated write goes through: a part written line is waited out.
 func TestNewContextWaitsForAnEmptyLine(t *testing.T) {
-	fastNewContext(t)
 	d := testDaemon(t)
+	fastNewContext(t, d)
 	task, f, _ := ncCard(t, d)
 	run := d.sup.get(task.ID)
 	run.noteOperatorTyped([]byte("half a thou"))
@@ -251,8 +249,8 @@ func TestNewContextWaitsForAnEmptyLine(t *testing.T) {
 }
 
 func TestNewContextIsRefusedWithoutATerminalAndWhileRunning(t *testing.T) {
-	fastNewContext(t)
 	d := testDaemon(t)
+	fastNewContext(t, d)
 
 	bare := cardFor(t, d, "not-ours")
 	if err := d.StartNewContext(bare.ID); err != errNoTerminal {
@@ -274,8 +272,8 @@ func TestNewContextFailedChipIsDismissedOrReplaced(t *testing.T) {
 	if testing.Short() {
 		t.Skip("slow: real ptys, processes and timers")
 	}
-	fastNewContext(t)
 	d := testDaemon(t)
+	fastNewContext(t, d)
 	task, f, _ := ncCard(t, d)
 	ncToClear(t, d, task, f)
 	until(t, "the chip to fail", func() bool { return failedWith(d, task.ID) != "" })
@@ -323,8 +321,8 @@ func TestNewContextFailedChipIsDismissedOrReplaced(t *testing.T) {
 }
 
 func TestNewContextEndpoint(t *testing.T) {
-	fastNewContext(t)
 	d := testDaemon(t)
+	fastNewContext(t, d)
 	task, f, _ := ncCard(t, d)
 
 	post := func(id string) *httptest.ResponseRecorder {

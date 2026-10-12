@@ -174,12 +174,12 @@ func TestTheVerifierNeverGoesToTheBrowser(t *testing.T) {
 		httptest.NewRequest(http.MethodGet, authPrefix+"login", nil))
 	sent := rec.Header().Get("Location") + " " + rec.Body.String()
 
-	pending.Lock()
+	d.logins.Lock()
 	var verifier string
-	for _, l := range pending.at {
+	for _, l := range d.logins.at {
 		verifier = l.verifier
 	}
-	pending.Unlock()
+	d.logins.Unlock()
 	if verifier == "" {
 		t.Fatal("no login was recorded, so this test proves nothing")
 	}
@@ -380,7 +380,7 @@ func TestATokenSignedBySomebodyElseIsRefused(t *testing.T) {
 	if _, _, err := d.claimsOf(t.Context(), disc, d.authConfig(), signed); err == nil {
 		t.Fatal("a token signed with a key the provider does not publish was accepted")
 	}
-	takeLogin(q.Get("state"))
+	d.logins.takeLogin(q.Get("state"))
 }
 
 // A sanity check on the fake, so a green suite above means what it says. If the

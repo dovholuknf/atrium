@@ -85,7 +85,7 @@ func (d *Daemon) injectKept(taskID string) {
 func (d *Daemon) keptRunnerReady(taskID string, run *runner, now time.Time) bool {
 	if d.wake != nil {
 		if at, ok := d.wake.sessionStarted(taskID); ok && !at.Before(run.started) {
-			return now.Sub(at) >= keptSettle
+			return now.Sub(at) >= d.hk.keptSettle
 		}
 	}
 	return now.Sub(run.started) >= wakeNoHook
@@ -93,7 +93,7 @@ func (d *Daemon) keptRunnerReady(taskID string, run *runner, now time.Time) bool
 
 // deliverKept waits for the card's runner, then types every pending message as one turn.
 func (d *Daemon) deliverKept(taskID string) {
-	deadline := time.Now().Add(keptGiveUp)
+	deadline := time.Now().Add(d.hk.keptGiveUp)
 	for {
 		msgs, err := d.st.PendingMessages(taskID)
 		if err != nil {
@@ -135,7 +135,7 @@ func (d *Daemon) deliverKept(taskID string) {
 			}
 			return
 		}
-		time.Sleep(keptTick)
+		time.Sleep(d.hk.keptTick)
 	}
 }
 

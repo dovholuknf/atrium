@@ -48,7 +48,7 @@ func shellCard(t *testing.T, d *Daemon) *store.Task {
 	// the test's TempDir cannot be removed while it does.
 	t.Cleanup(func() {
 		if r := d.sup.get(task.ID); r != nil {
-			windDown(r, time.Second, d.exitKeysFor(task.ID))
+			windDown(r, time.Second, d.exitKeysFor(task.ID), d.hk.windDownKeyGap)
 		}
 		for end := time.Now().Add(10 * time.Second); time.Now().Before(end) && d.sup.get(task.ID) != nil; {
 			time.Sleep(50 * time.Millisecond)
@@ -183,7 +183,7 @@ func TestAnExitAtriumTypesDoesNotKeepACardDown(t *testing.T) {
 	d := testDaemon(t)
 	task := shellCard(t, d)
 	r := d.sup.get(task.ID)
-	windDown(r, 5*time.Second, d.exitKeysFor(task.ID))
+	windDown(r, 5*time.Second, d.exitKeysFor(task.ID), d.hk.windDownKeyGap)
 	if err := d.onSession(SessionEvent{Agent: task.WireName, Event: "end", Reason: "prompt_input_exit",
 		TaskID: task.ID, Runner: "shelltest"}); err != nil {
 		t.Fatal(err)

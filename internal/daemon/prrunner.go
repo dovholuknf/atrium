@@ -74,6 +74,8 @@ type prRunner struct {
 	// agentsDir is where the panel's agent definitions are.
 	agentsDir    func() string
 	userSettings func() []byte
+	// hk is the seams a fork reads. The daemon points it at its own, see hooks.go.
+	hk *hooks
 
 	mu      sync.Mutex
 	cancels map[string]context.CancelFunc
@@ -81,10 +83,14 @@ type prRunner struct {
 }
 
 func newPRRunner(st *store.Store, publish func(string)) *prRunner {
-	r := &prRunner{
-		st: st, publish: publish, fork: runForkProcess, now: func() time.Time { return time.Now().UTC() },
+	hk := defaultHooks()
+	var r *prRunner
+	r = &prRunner{hk: &hk,
+		st: st, publish: publish, fork: func(ctx context.Context, spec forkSpec) ([]byte, error) {
+			return runForkProcess(ctx, spec, r.hk.agentFork)
+		}, now: func() time.Time { return time.Now().UTC() },
 		baseEnv:      os.Environ,
-		userSettings: func() []byte { return readUserSettings() },
+		userSettings: func() []byte { return r.hk.readUserSettings() },
 		cancels:      map[string]context.CancelFunc{},
 		agentsDir: func() string {
 			home, _ := os.UserHomeDir()
@@ -809,7 +815,7 @@ func (pr *prRun) forkCommon() error {
 	}
 	h := pr.harness
 	args := append([]string{}, h.Args...)
-	lean, err := leanArgs(args, pr.r.userSettings(), "", nil, leanKit{}, pr.r.st.LeanWorkerGateway(), os.ReadFile)
+	lean, err := leanArgs(args, pr.r.userSettings(), "", nil, leanKit{}, pr.r.st.LeanWorkerGateway(), os.ReadFile, pr.r.hk)
 	if err != nil {
 		return err
 	}

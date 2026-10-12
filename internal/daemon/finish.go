@@ -253,7 +253,7 @@ func (d *Daemon) validEnd(task *store.Task, in FinishRequest) error {
 		if !shaShape.MatchString(sha) {
 			return fmt.Errorf("sha %q is not a commit id: 7 to 40 hex characters", sha)
 		}
-		if !commitInDir(task.Worktree, sha) && !commitOnHub(d, task, sha) {
+		if !d.hk.commitInDir(task.Worktree, sha) && !d.hk.commitOnHub(d, task, sha) {
 			return fmt.Errorf("neither your directory nor the hub has commit %s. commit the work first, then call again", sha)
 		}
 	case ReportBlocked:
@@ -360,7 +360,7 @@ func (d *Daemon) finish(task *store.Task, in FinishRequest) (map[string]any, int
 	sha := strings.TrimSpace(in.SHA)
 	unverified := false
 	if status == store.StatusDone && sha != "" {
-		unverified = !commitExists(task.Worktree, sha)
+		unverified = !d.hk.commitExists(task.Worktree, sha)
 	}
 
 	if status == store.StatusDone || in.Status == store.StatusNeedsInput {

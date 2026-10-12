@@ -135,8 +135,8 @@ func installedVersion(exePath, pkg string) string {
 // One request to the `/latest` document, which is a few hundred bytes, rather
 // than the package document, which for a runner with a long release history is
 // megabytes. No npm, no node, no subprocess.
-func latestPublished(ctx context.Context, pkg string) (string, error) {
-	url := updateRegistry + "/" + strings.ReplaceAll(pkg, "/", "%2f") + "/latest"
+func latestPublished(ctx context.Context, registry, pkg string) (string, error) {
+	url := registry + "/" + strings.ReplaceAll(pkg, "/", "%2f") + "/latest"
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return "", err
@@ -424,7 +424,7 @@ func (d *Daemon) askRegistry(pkg string, ch chan struct{}) string {
 
 	ctx, cancel := context.WithTimeout(context.Background(), updateBudget)
 	defer cancel()
-	latest, err := latestPublished(ctx, pkg)
+	latest, err := latestPublished(ctx, d.hk.updateRegistry, pkg)
 	if err != nil {
 		// Logged once and dropped. A registry that is unreachable is not the
 		// operator's problem at the moment they are starting a runner.

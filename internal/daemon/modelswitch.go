@@ -244,11 +244,11 @@ func (d *Daemon) runsClaude(t *store.Task) bool {
 // GIVING UP IS RECORDED, once on the card and once in the log: the model is on the
 // card and a later start uses it, but the live session never switched.
 func (d *Daemon) waitForModel(taskID string, mw *modelWait) {
-	deadline := time.Now().Add(modelWaitMax)
+	deadline := time.Now().Add(d.hk.modelWaitMax)
 	go func() {
 		failed := false
 		for {
-			time.Sleep(modelRetryEvery)
+			time.Sleep(d.hk.modelRetryEvery)
 			if d.windingDown.Load() {
 				return
 			}
@@ -313,10 +313,10 @@ func (d *Daemon) giveUpOnModel(taskID string, mw *modelWait) {
 		return
 	}
 	log.Printf("[atrium] gave up typing /model %s into %s after %s: the card holds it for the next start",
-		mw.model, taskID, modelWaitMax)
+		mw.model, taskID, d.hk.modelWaitMax)
 	if err := d.st.AppendEvent(taskID, store.EventNotified, map[string]any{
 		"by": modelSwitchBy, "asked_by": mw.by, "to": mw.model, "state": "gave up waiting",
-		"waited": modelWaitMax.String(),
+		"waited": d.hk.modelWaitMax.String(),
 	}); err != nil {
 		log.Printf("[atrium] could not record the give-up on %s: %v", taskID, err)
 	}

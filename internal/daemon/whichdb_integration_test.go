@@ -21,7 +21,7 @@ import (
 // existed for.
 func writePrev(t *testing.T, d *Daemon, db string) {
 	t.Helper()
-	prev := &Daemon{opts: d.opts}
+	prev := &Daemon{hk: *testHooks(), opts: d.opts}
 	prev.opts.DBPath = db
 	prev.rememberDB()
 }
@@ -39,7 +39,7 @@ func TestACleanStopThenADifferentDatabaseStillWarns(t *testing.T) {
 	location := filepath.Join(dir, "daemon.json")
 
 	// A daemon that ran on one database and stopped tidily.
-	first := &Daemon{opts: Options{
+	first := &Daemon{hk: *testHooks(), opts: Options{
 		DBPath:       filepath.ToSlash(filepath.Join(dir, "first.db")),
 		LocationFile: location,
 	}}
@@ -56,7 +56,7 @@ func TestACleanStopThenADifferentDatabaseStillWarns(t *testing.T) {
 	log.SetOutput(logs)
 	t.Cleanup(func() { log.SetOutput(old) })
 
-	second := &Daemon{opts: Options{
+	second := &Daemon{hk: *testHooks(), opts: Options{
 		DBPath:       filepath.ToSlash(filepath.Join(dir, "second.db")),
 		LocationFile: location,
 	}}
@@ -114,7 +114,7 @@ func TestTheSameDatabaseSaysNothing(t *testing.T) {
 func TestWhatWasOpenedSurvivesAWindDown(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
-	d := &Daemon{opts: Options{
+	d := &Daemon{hk: *testHooks(), opts: Options{
 		DBPath:       filepath.ToSlash(filepath.Join(dir, "a.db")),
 		LocationFile: filepath.Join(dir, "daemon.json"),
 	}}
@@ -136,7 +136,7 @@ func TestWhatWasOpenedSurvivesAWindDown(t *testing.T) {
 func TestTheRecordIsIsolatedByTheLocationOption(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
-	d := &Daemon{opts: Options{LocationFile: filepath.Join(dir, "daemon.json")}}
+	d := &Daemon{hk: *testHooks(), opts: Options{LocationFile: filepath.Join(dir, "daemon.json")}}
 	got, err := d.lastDBPath()
 	if err != nil {
 		t.Fatal(err)

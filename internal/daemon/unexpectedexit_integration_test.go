@@ -15,7 +15,7 @@ import (
 // roomOn opens a room on the database in dir, as a restart would.
 func roomOn(t *testing.T, dir string) *Daemon {
 	t.Helper()
-	d, err := New(Options{
+	d, err := testNew(Options{
 		AgentAddr: freePort(t), HumanAddr: freePort(t),
 		DBPath:   filepath.ToSlash(filepath.Join(dir, "atrium.db")),
 		LongPoll: time.Second, LocationFile: filepath.Join(dir, "daemon.json"),

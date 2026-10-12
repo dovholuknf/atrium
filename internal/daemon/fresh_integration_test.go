@@ -51,7 +51,7 @@ func TestReopeningADatabaseIsQuiet(t *testing.T) {
 		LocationFile: filepath.Join(dir, "daemon.json"),
 	}
 
-	first, err := New(opts)
+	first, err := testNew(opts)
 	if err != nil {
 		t.Fatalf("first open: %v", err)
 	}
@@ -63,7 +63,7 @@ func TestReopeningADatabaseIsQuiet(t *testing.T) {
 	t.Cleanup(func() { log.SetOutput(old) })
 
 	opts.AgentAddr, opts.HumanAddr = freePort(t), freePort(t)
-	second, err := New(opts)
+	second, err := testNew(opts)
 	if err != nil {
 		t.Fatalf("reopen: %v", err)
 	}

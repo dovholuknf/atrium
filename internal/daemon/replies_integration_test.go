@@ -34,7 +34,7 @@ func TestRepliesAreTheLastMainChainTextOldestFirst(t *testing.T) {
 	transcriptReply(t, path, "m4", base.Add(3*time.Second), false, textBlock("second, part two"))
 	transcriptReply(t, path, "m5", base.Add(4*time.Second), false, textBlock(strings.Repeat("x", replyTextMax+500)))
 
-	d := &Daemon{st: f.st, usage: f.u, ctx: newContextSizes()}
+	d := &Daemon{hk: *testHooks(), st: f.st, usage: f.u, ctx: newContextSizes()}
 
 	v, err := d.repliesFor(f.task.ID, 3)
 	if err != nil {
@@ -84,7 +84,7 @@ func TestRepliesFollowTheStartedSession(t *testing.T) {
 	}
 	transcriptReply(t, f.path, "old", f.base, false, textBlock("from before the clear"))
 	transcriptReply(t, fresh, "new", f.base.Add(time.Second), false, textBlock("after the clear"))
-	d := &Daemon{st: f.st, usage: f.u, ctx: newContextSizes()}
+	d := &Daemon{hk: *testHooks(), st: f.st, usage: f.u, ctx: newContextSizes()}
 	d.ctx.started(f.task.ID, "s2")
 
 	v, err := d.repliesFor(f.task.ID, 3)
@@ -139,7 +139,7 @@ func TestRepliesFallBackToTheScreenAndTheRouteAnswers404(t *testing.T) {
 func TestRepliesForSurfacesAStoreError(t *testing.T) {
 	t.Parallel()
 	f := newUsageFix(t)
-	d := &Daemon{st: f.st, usage: f.u, ctx: newContextSizes()}
+	d := &Daemon{hk: *testHooks(), st: f.st, usage: f.u, ctx: newContextSizes()}
 	if _, err := d.repliesFor("01a0nosuchcard", 3); !errors.Is(err, errNoSuchCard) {
 		t.Fatalf("an unknown card gave %v", err)
 	}
@@ -170,7 +170,7 @@ func TestReadRepliesSeeksTheTail(t *testing.T) {
 	if info, _ := os.Stat(path); info.Size() <= transcriptTail {
 		t.Fatalf("the fixture is %d bytes, not over the tail", info.Size())
 	}
-	got, err := readReplies(path, 5)
+	got, err := readReplies(path, 5, testHooks())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -185,13 +185,13 @@ func TestReadRepliesCacheInvalidates(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "c.jsonl")
 	base := time.Date(2026, 9, 28, 10, 0, 0, 0, time.UTC)
 	transcriptReply(t, path, "m1", base, false, textBlock("aaaa"))
-	got, err := readReplies(path, 5)
+	got, err := readReplies(path, 5, testHooks())
 	if err != nil || len(got) != 1 || got[0].Text != "aaaa" {
 		t.Fatalf("first read: %+v %v", got, err)
 	}
 	// Size change.
 	transcriptReply(t, path, "m2", base.Add(time.Second), false, textBlock("bbbb"))
-	if got, _ = readReplies(path, 5); len(got) != 2 {
+	if got, _ = readReplies(path, 5, testHooks()); len(got) != 2 {
 		t.Fatalf("a grown file was served from the cache: %+v", got)
 	}
 	// Same size, later mtime: rewrite the last text in place.
@@ -204,7 +204,7 @@ func TestReadRepliesCacheInvalidates(t *testing.T) {
 	if err := os.Chtimes(path, time.Now(), info.ModTime().Add(time.Hour)); err != nil {
 		t.Fatal(err)
 	}
-	if got, _ = readReplies(path, 5); len(got) != 2 || got[1].Text != "cccc" {
+	if got, _ = readReplies(path, 5, testHooks()); len(got) != 2 || got[1].Text != "cccc" {
 		t.Fatalf("a touched file was served from the cache: %+v", got)
 	}
 	// Untouched: the cache answers, so a change made behind its back is not seen.
@@ -212,7 +212,7 @@ func TestReadRepliesCacheInvalidates(t *testing.T) {
 	b = []byte(strings.Replace(string(b), "cccc", "dddd", 1))
 	os.WriteFile(path, b, 0o600)
 	os.Chtimes(path, time.Now(), info.ModTime())
-	if got, _ = readReplies(path, 5); got[1].Text != "cccc" {
+	if got, _ = readReplies(path, 5, testHooks()); got[1].Text != "cccc" {
 		t.Fatalf("an unchanged size and mtime was read again: %+v", got)
 	}
 }
@@ -224,7 +224,7 @@ func TestRepliesCutOnARuneBoundary(t *testing.T) {
 		text := "a" + strings.Repeat(r, replyTextMax) // the first rune starts at an odd offset
 		path := filepath.Join(t.TempDir(), "m.jsonl")
 		transcriptReply(t, path, "m1", time.Now(), false, textBlock(text))
-		got, err := readReplies(path, 1)
+		got, err := readReplies(path, 1, testHooks())
 		if err != nil || len(got) != 1 {
 			t.Fatalf("%q: %+v %v", r, got, err)
 		}
@@ -251,7 +251,7 @@ func TestRepliesWithBadTimestamps(t *testing.T) {
 		fmt.Fprintln(fh, string(b))
 		fh.Close()
 	}
-	got, err := readReplies(path, 5)
+	got, err := readReplies(path, 5, testHooks())
 	if err != nil || len(got) != 3 {
 		t.Fatalf("%+v %v", got, err)
 	}

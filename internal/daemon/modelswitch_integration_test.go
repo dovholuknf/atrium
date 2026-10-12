@@ -175,11 +175,9 @@ func TestAModelSwitchIsRefusedWithoutAClaudeTerminal(t *testing.T) {
 // NOT INTO A PART WRITTEN LINE. The answer says waiting, the model is already on
 // the card, and it is typed once the line clears.
 func TestAModelSwitchWaitsForTheLineAndThenTypes(t *testing.T) {
-	oldEvery := modelRetryEvery
-	modelRetryEvery = 20 * time.Millisecond
-	t.Cleanup(func() { modelRetryEvery = oldEvery })
 
 	d := testDaemon(t)
+	d.hk.modelRetryEvery = 20 * time.Millisecond
 	target, r, f := peerPair(t, d)
 	r.noteOperatorTyped([]byte("git comm"))
 
@@ -225,11 +223,9 @@ func TestANewerModelSwitchReplacesAWaitingOne(t *testing.T) {
 	if testing.Short() {
 		t.Skip("slow: real ptys, processes and timers")
 	}
-	oldEvery := modelRetryEvery
-	modelRetryEvery = 20 * time.Millisecond
-	t.Cleanup(func() { modelRetryEvery = oldEvery })
 
 	d := testDaemon(t)
+	d.hk.modelRetryEvery = 20 * time.Millisecond
 	target, r, f := peerPair(t, d)
 	r.noteOperatorTyped([]byte("git comm"))
 
@@ -344,11 +340,9 @@ func TestAWaiterNeverTypesAnOlderModelAfterANewerOne(t *testing.T) {
 	if testing.Short() {
 		t.Skip("slow: real ptys, processes and timers")
 	}
-	oldEvery := modelRetryEvery
-	modelRetryEvery = 10 * time.Millisecond
-	t.Cleanup(func() { modelRetryEvery = oldEvery })
 
 	d := testDaemon(t)
+	d.hk.modelRetryEvery = 10 * time.Millisecond
 	target, r, f := peerPair(t, d)
 	r.noteOperatorTyped([]byte("git comm"))
 	switchModel(t, d, target.ID, `{"model":"haiku"}`)
@@ -380,11 +374,8 @@ func TestAWaiterNeverTypesAnOlderModelAfterANewerOne(t *testing.T) {
 // GIVING UP IS RECORDED. The wait ends, the card keeps the model, and the timeline
 // says the live session never took it.
 func TestAWaitThatGivesUpIsRecorded(t *testing.T) {
-	oldEvery, oldMax := modelRetryEvery, modelWaitMax
-	modelRetryEvery, modelWaitMax = 10*time.Millisecond, 80*time.Millisecond
-	t.Cleanup(func() { modelRetryEvery, modelWaitMax = oldEvery, oldMax })
-
 	d := testDaemon(t)
+	d.hk.modelRetryEvery, d.hk.modelWaitMax = 10*time.Millisecond, 80*time.Millisecond
 	target, r, f := peerPair(t, d)
 	r.noteOperatorTyped([]byte("git comm"))
 	switchModel(t, d, target.ID, `{"model":"haiku"}`)

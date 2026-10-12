@@ -96,9 +96,7 @@ func TestALaunchMakesTheItemAndAFailedStartEndsItOnce(t *testing.T) {
 	// take longer than the suite's short window to start and die. Launch returns
 	// the moment the runner exits, so a long window costs nothing when it works
 	// and only bounds a runner that never dies.
-	prev := settleWindow
-	settleWindow = 30 * time.Second
-	t.Cleanup(func() { settleWindow = prev })
+	d.hk.settleWindow = 30 * time.Second
 	if _, err := d.st.SaveHarness(store.Harness{
 		ID: "quick", Label: "quick", Enabled: true, LaunchMode: store.LaunchPTY,
 		Cmd: os.Args[0], Args: []string{"-test.run=TestHelperSourceProcess"},

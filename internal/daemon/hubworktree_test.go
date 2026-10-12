@@ -28,7 +28,7 @@ func TestScopeHubRemoteIsWorktreeOnly(t *testing.T) {
 	wt := filepath.Join(t.TempDir(), "wt")
 	hubWtGit(t, main, "worktree", "add", "-q", "-b", "w", wt)
 
-	d := &Daemon{}
+	d := &Daemon{hk: *testHooks()}
 	d.hubGit.agent = "127.0.0.1:7777"
 	d.scopeHubRemote(wt)
 
@@ -41,7 +41,7 @@ func TestScopeHubRemoteIsWorktreeOnly(t *testing.T) {
 }
 
 func TestScopeHubRemoteNoOps(t *testing.T) {
-	d := &Daemon{}
+	d := &Daemon{hk: *testHooks()}
 	d.hubGit.agent = "127.0.0.1:7777"
 	d.scopeHubRemote(t.TempDir()) // not a git dir
 

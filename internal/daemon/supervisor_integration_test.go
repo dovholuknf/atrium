@@ -193,7 +193,9 @@ func TestReadingTheTailDoesNotCopyTheWholeRing(t *testing.T) {
 	var before, after runtime.MemStats
 	runtime.GC()
 	runtime.ReadMemStats(&before)
-	sink = big.Tail(tailBytes)
+	sink := big.Tail(tailBytes)
+	// keeps the measured allocation alive so the compiler cannot decide the call had no effect and remove it.
+	defer runtime.KeepAlive(sink)
 	runtime.ReadMemStats(&after)
 	grew := after.TotalAlloc - before.TotalAlloc
 	if grew > 4*tailBytes {
@@ -207,10 +209,6 @@ func TestReadingTheTailDoesNotCopyTheWholeRing(t *testing.T) {
 		t.Fatalf("the bounded read lost the output: %q", got)
 	}
 }
-
-// sink keeps a measured allocation alive so the compiler cannot decide the
-// call had no effect and remove it.
-var sink []byte
 
 // AN HOUR OF EIGHTY COLUMN OUTPUT, AND A TWO HUNDRED COLUMN WINDOW ATTACHES.
 //

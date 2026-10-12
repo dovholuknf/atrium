@@ -30,7 +30,7 @@ func roomsOf(t *testing.T, d *Daemon) []Room {
 // holding nothing durable is that the room is the truth about itself.
 func TestACheckInReplacesTheCards(t *testing.T) {
 	t.Parallel()
-	d := &Daemon{}
+	d := &Daemon{hk: *testHooks()}
 	if _, err := d.RoomCheckIn(RoomReport{Name: "one", Cards: []RoomCard{
 		{ID: "a", Title: "first"}, {ID: "b", Title: "second"},
 	}}); err != nil {
@@ -55,7 +55,7 @@ func TestACheckInReplacesTheCards(t *testing.T) {
 // is the one worth noticing.
 func TestAQuietRoomGoesStaleBeforeItGoes(t *testing.T) {
 	t.Parallel()
-	d := &Daemon{}
+	d := &Daemon{hk: *testHooks()}
 	if _, err := d.RoomCheckIn(RoomReport{Name: "quiet"}); err != nil {
 		t.Fatal(err)
 	}
@@ -81,7 +81,7 @@ func TestAQuietRoomGoesStaleBeforeItGoes(t *testing.T) {
 // it is a claim rather than a memory.
 func TestAForgottenRoomIsGone(t *testing.T) {
 	t.Parallel()
-	d := &Daemon{}
+	d := &Daemon{hk: *testHooks()}
 	if _, err := d.RoomCheckIn(RoomReport{Name: "gone"}); err != nil {
 		t.Fatal(err)
 	}
@@ -98,7 +98,7 @@ func TestAForgottenRoomIsGone(t *testing.T) {
 // informational, and it is computed on read because it is a fact about now.
 func TestWaitingIsCountedFromTheCards(t *testing.T) {
 	t.Parallel()
-	d := &Daemon{}
+	d := &Daemon{hk: *testHooks()}
 	if _, err := d.RoomCheckIn(RoomReport{Name: "busy", Cards: []RoomCard{
 		{ID: "a", Status: "running"},
 		{ID: "b", Status: "needs-input"},
@@ -117,7 +117,7 @@ func TestWaitingIsCountedFromTheCards(t *testing.T) {
 // room at once.
 func TestARoomHasToBeNamed(t *testing.T) {
 	t.Parallel()
-	d := &Daemon{}
+	d := &Daemon{hk: *testHooks()}
 	if _, err := d.RoomCheckIn(RoomReport{Name: "  "}); err == nil {
 		t.Fatal("a room with no name was accepted")
 	}
@@ -129,7 +129,7 @@ func TestARoomHasToBeNamed(t *testing.T) {
 // Checking in twice is one room, not two. The second is an update.
 func TestCheckingInTwiceIsOneRoom(t *testing.T) {
 	t.Parallel()
-	d := &Daemon{}
+	d := &Daemon{hk: *testHooks()}
 	for i := 0; i < 5; i++ {
 		if _, err := d.RoomCheckIn(RoomReport{Name: "same", Host: "h"}); err != nil {
 			t.Fatal(err)
@@ -167,7 +167,7 @@ func reportAsking(t *testing.T, d *Daemon, room, perm string) []RoomDecision {
 // believed it could would leave the agent frozen while reporting success.
 func TestADecisionLeavesOnTheNextCheckIn(t *testing.T) {
 	t.Parallel()
-	d := &Daemon{}
+	d := &Daemon{hk: *testHooks()}
 	reportAsking(t, d, "leaf", "p1")
 
 	if err := d.RoomDecide("leaf", "p1", RoomDecision{Decision: "approve"}); err != nil {
@@ -186,7 +186,7 @@ func TestADecisionLeavesOnTheNextCheckIn(t *testing.T) {
 // and for an approval that means running the command a second time.
 func TestADecisionIsHandedOverOnce(t *testing.T) {
 	t.Parallel()
-	d := &Daemon{}
+	d := &Daemon{hk: *testHooks()}
 	reportAsking(t, d, "leaf", "p1")
 	if err := d.RoomDecide("leaf", "p1", RoomDecision{Decision: "approve"}); err != nil {
 		t.Fatal(err)
@@ -210,7 +210,7 @@ func TestADecisionIsHandedOverOnce(t *testing.T) {
 // window is how one approval becomes two.
 func TestAnAnsweredRequestIsNotOfferedAgain(t *testing.T) {
 	t.Parallel()
-	d := &Daemon{}
+	d := &Daemon{hk: *testHooks()}
 	reportAsking(t, d, "leaf", "p1")
 	if got := requestsOf(t, d, "leaf"); len(got) != 1 {
 		t.Fatalf("a pending request was not drawn: %+v", got)
@@ -235,7 +235,7 @@ func TestAnAnsweredRequestIsNotOfferedAgain(t *testing.T) {
 // the exact failure this feature exists to remove.
 func TestAnAnswerThatDidNotTakeExpires(t *testing.T) {
 	t.Parallel()
-	d := &Daemon{}
+	d := &Daemon{hk: *testHooks()}
 	reportAsking(t, d, "leaf", "p1")
 	if err := d.RoomDecide("leaf", "p1", RoomDecision{Decision: "approve"}); err != nil {
 		t.Fatal(err)
@@ -266,7 +266,7 @@ func TestAnAnswerThatDidNotTakeExpires(t *testing.T) {
 // answer whatever that id means next.
 func TestAnAnswerForARequestThatWentAwayIsDropped(t *testing.T) {
 	t.Parallel()
-	d := &Daemon{}
+	d := &Daemon{hk: *testHooks()}
 	reportAsking(t, d, "leaf", "p1")
 	if err := d.RoomDecide("leaf", "p1", RoomDecision{Decision: "approve"}); err != nil {
 		t.Fatal(err)
@@ -293,7 +293,7 @@ func TestAnAnswerForARequestThatWentAwayIsDropped(t *testing.T) {
 // from a poll one moment out of date.
 func TestAStaleDecisionIsRefused(t *testing.T) {
 	t.Parallel()
-	d := &Daemon{}
+	d := &Daemon{hk: *testHooks()}
 	reportAsking(t, d, "leaf", "p1")
 
 	for _, c := range []struct {
@@ -327,7 +327,7 @@ func TestAStaleDecisionIsRefused(t *testing.T) {
 // out after it was written into that machine's rule table.
 func TestARoomDecisionIsChecked(t *testing.T) {
 	t.Parallel()
-	d := &Daemon{}
+	d := &Daemon{hk: *testHooks()}
 	reportAsking(t, d, "leaf", "p1")
 
 	if err := d.RoomDecide("leaf", "p1", RoomDecision{Decision: "maybe"}); err == nil {
@@ -357,7 +357,7 @@ func TestARoomDecisionIsChecked(t *testing.T) {
 // disagree by a minute would draw a request as frozen before it was made.
 func TestTheWaitIsReadAgainstThisClock(t *testing.T) {
 	t.Parallel()
-	d := &Daemon{}
+	d := &Daemon{hk: *testHooks()}
 	if _, err := d.RoomCheckIn(RoomReport{Name: "leaf", Perms: []RoomPerm{
 		{ID: "p1", Tool: "Bash", Command: "go build", Waiting: 90},
 		// A room whose clock ran backwards. Nothing sensible can be drawn from
@@ -392,7 +392,7 @@ func TestTheWaitIsReadAgainstThisClock(t *testing.T) {
 // which is worse than a diff that ends early.
 func TestAReportIsBounded(t *testing.T) {
 	t.Parallel()
-	d := &Daemon{}
+	d := &Daemon{hk: *testHooks()}
 	many := make([]RoomPerm, roomPermsMax+20)
 	for i := range many {
 		many[i] = RoomPerm{
@@ -420,7 +420,7 @@ func TestAReportIsBounded(t *testing.T) {
 // whenever the room refused it.
 func TestTheHubKeepsNoRecordOfADecision(t *testing.T) {
 	t.Parallel()
-	d := &Daemon{}
+	d := &Daemon{hk: *testHooks()}
 	reportAsking(t, d, "leaf", "p1")
 	if err := d.RoomDecide("leaf", "p1", RoomDecision{
 		Decision: "approve", Reason: "go on then",
@@ -451,7 +451,7 @@ func TestTheHubKeepsNoRecordOfADecision(t *testing.T) {
 // straight back.
 func TestForgettingARoomDoesNotKeepItAway(t *testing.T) {
 	t.Parallel()
-	d := &Daemon{}
+	d := &Daemon{hk: *testHooks()}
 	if _, err := d.RoomCheckIn(RoomReport{Name: "leaf"}); err != nil {
 		t.Fatal(err)
 	}
@@ -480,7 +480,7 @@ func TestForgettingARoomDoesNotKeepItAway(t *testing.T) {
 // whoever pressed it.
 func TestForgettingWhatIsNotThere(t *testing.T) {
 	t.Parallel()
-	d := &Daemon{}
+	d := &Daemon{hk: *testHooks()}
 	had, err := d.RoomForget("never-existed")
 	if err != nil {
 		t.Fatalf("forgetting an unknown room was an error: %v", err)
@@ -498,7 +498,7 @@ func TestForgettingWhatIsNotThere(t *testing.T) {
 // or go and look at that machine.
 func TestAStaleRoomSaysWhenItGoes(t *testing.T) {
 	t.Parallel()
-	d := &Daemon{}
+	d := &Daemon{hk: *testHooks()}
 	if _, err := d.RoomCheckIn(RoomReport{Name: "fading"}); err != nil {
 		t.Fatal(err)
 	}

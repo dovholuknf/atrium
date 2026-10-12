@@ -18,8 +18,8 @@ func TestACycleOnARunnerWithoutMidTurnInputWaitsForTheTurnToEnd(t *testing.T) {
 	if testing.Short() {
 		t.Skip("slow: real ptys, processes and timers")
 	}
-	fastNewContext(t)
 	d := testDaemon(t)
+	fastNewContext(t, d)
 	task, f, _ := ncCard(t, d)
 	h, err := d.st.Harness("claude")
 	if err != nil {

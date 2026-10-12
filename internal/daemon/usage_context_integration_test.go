@@ -31,7 +31,7 @@ func TestUsageContextNowFollowsTheStartedSession(t *testing.T) {
 	f.lineTo(fresh, "claude-opus-5-5", f.base.Add(1), "m2", 0, 0, 100000, 10, false)
 	t.Cleanup(func() { os.Remove(old); os.Remove(fresh) })
 
-	d := &Daemon{st: f.st, usage: f.u, ctx: newContextSizes()}
+	d := &Daemon{hk: *testHooks(), st: f.st, usage: f.u, ctx: newContextSizes()}
 
 	// Before any new session is heard of, it is the resume id's transcript.
 	v, err := d.usageFor(f.task.ID, 10)

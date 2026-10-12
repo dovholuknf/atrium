@@ -336,9 +336,7 @@ func TestAHumansFinishNeedsNoSha(t *testing.T) {
 func TestAnUnverifiedShaIsAcceptedAndFlagged(t *testing.T) {
 	d := testDaemon(t)
 	launcher, worker := launchedPair(t, d)
-	was := commitExists
-	commitExists = func(string, string) bool { return false }
-	t.Cleanup(func() { commitExists = was })
+	d.hk.commitExists = func(string, string) bool { return false }
 
 	rec, out := finishWith(t, d, FinishRequest{Agent: "worker", Status: ReportDone, SHA: "abc1234"})
 	if rec.Code != http.StatusOK || out["unverified"] != true {
@@ -358,9 +356,7 @@ func TestAnUnverifiedShaIsAcceptedAndFlagged(t *testing.T) {
 func TestAVerifiedShaIsNotFlagged(t *testing.T) {
 	d := testDaemon(t)
 	_, worker := launchedPair(t, d)
-	was := commitExists
-	commitExists = func(string, string) bool { return true }
-	t.Cleanup(func() { commitExists = was })
+	d.hk.commitExists = func(string, string) bool { return true }
 	finishWith(t, d, FinishRequest{Agent: "worker", Status: ReportDone, SHA: "abc1234"})
 	got, _ := d.st.Get(worker.ID)
 	if got.ReportUnverified {
@@ -593,27 +589,25 @@ func TestATellNothingWillDeliverSaysSo(t *testing.T) {
 // An agent-launched claude session gets the Stop hook in front of its
 // arguments. A human's session and a runner that is not claude do not.
 func TestOnlyAnAgentLaunchedClaudeGetsTheStopHook(t *testing.T) {
-	was := stopHookCommand
-	stopHookCommand = func() string { return "C:/bin/atrium.exe turn --event end" }
-	t.Cleanup(func() { stopHookCommand = was })
+	const stopCmd = "C:/bin/atrium.exe turn --event end"
 	claude := &store.Harness{ID: "claude", Cmd: "claude"}
 	args := []string{"--mcp-config", "x.json"}
 
-	got := withStopHook(claude, args, true)
+	got := withStopHook(claude, args, stopCmd)
 	if len(got) != 4 || got[0] != "--settings" || !strings.Contains(got[1], `"Stop"`) ||
 		!strings.Contains(got[1], "turn --event end") || got[2] != "--mcp-config" {
 		t.Fatalf("agent claude launch got %q", got)
 	}
 	// A human's launch gets the agent view keys and no hook.
-	if got := withStopHook(claude, args, false); len(got) != 4 || got[0] != "--settings" ||
+	if got := withStopHook(claude, args, ""); len(got) != 4 || got[0] != "--settings" ||
 		strings.Contains(got[1], "Stop") || !strings.Contains(got[1], `"disableAgentView":true`) {
 		t.Fatalf("a human's launch got %q", got)
 	}
-	if got := withStopHook(&store.Harness{ID: "gemini", Cmd: "gemini"}, args, true); len(got) != 2 {
+	if got := withStopHook(&store.Harness{ID: "gemini", Cmd: "gemini"}, args, stopCmd); len(got) != 2 {
 		t.Fatalf("a gemini launch got %q", got)
 	}
-	stopHookCommand = func() string { return "" }
-	if got := withStopHook(claude, args, true); len(got) != 4 || strings.Contains(got[1], "Stop") ||
+	// the operator's own Stop hook is installed, so the daemon passes no command
+	if got := withStopHook(claude, args, ""); len(got) != 4 || strings.Contains(got[1], "Stop") ||
 		!strings.Contains(got[1], `"leftArrowOpensAgents":false`) {
 		t.Fatalf("with the operator's own Stop hook installed it still added one: %q", got)
 	}

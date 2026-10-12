@@ -20,9 +20,9 @@ func TestNewContextStepsAdvanceAndTheEndFrameCarriesNoChip(t *testing.T) {
 	if testing.Short() {
 		t.Skip("slow: real ptys, processes and timers")
 	}
-	fastNewContext(t)
-	ncTiming.sessionSettle = 500 * time.Millisecond
 	d := testDaemon(t)
+	fastNewContext(t, d)
+	d.hk.ncTiming.sessionSettle = 500 * time.Millisecond
 	task, f, _ := ncCard(t, d)
 	id := task.ID
 

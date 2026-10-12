@@ -10,8 +10,8 @@ import (
 // r-025: a message held by a new-context cycle says so, and is not blamed on an
 // empty line.
 func TestHeldDuringCaptureReportsNewContext(t *testing.T) {
-	fastNewContext(t)
 	d := testDaemon(t)
+	fastNewContext(t, d)
 	task, f, _ := ncCard(t, d)
 	id := task.ID
 	peerCard(t, d, "alice")

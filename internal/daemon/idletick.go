@@ -34,7 +34,9 @@ const (
 // need not wait out a wind-down.
 var (
 	idleGoneWait = 5 * time.Second
-	idleLeave    = func(d *Daemon, r *runner, id string) { windDown(r, idleParkGrace, d.exitKeysFor(id)) }
+	idleLeave    = func(d *Daemon, r *runner, id string) {
+		windDown(r, idleParkGrace, d.exitKeysFor(id), d.hk.windDownKeyGap)
+	}
 )
 
 // handoffMark is one card's handoff, and the clock it must not move.
@@ -312,8 +314,8 @@ func (d *Daemon) idlePark(t *store.Task, idle time.Duration, m *handoffMark) {
 			}
 		}
 		r.noteCause(store.CauseIdlePark, "")
-		idleLeave(d, r, id)
-		deadline := time.Now().Add(idleGoneWait)
+		d.hk.idleLeave(d, r, id)
+		deadline := time.Now().Add(d.hk.idleGoneWait)
 		for d.sup.get(id) != nil && time.Now().Before(deadline) {
 			time.Sleep(50 * time.Millisecond)
 		}

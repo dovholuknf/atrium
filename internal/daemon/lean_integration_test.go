@@ -69,7 +69,7 @@ func TestLeanArgsBuildsTheLeanFlagsAndKeepsThePromptLast(t *testing.T) {
 	in := []string{"--mcp-config", "C:/atrium/mcp.json", "--strict-mcp-config",
 		"--model", "claude-opus-5-5", "read BRIEF.md"}
 	got, err := leanArgs(in, []byte(leanTestSettings), "", nil, leanKit{}, "",
-		leanTestRead(map[string]string{"C:/atrium/mcp.json": leanTestMCP}))
+		leanTestRead(map[string]string{"C:/atrium/mcp.json": leanTestMCP}), testHooks())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -124,7 +124,7 @@ func TestLeanArgsKeepsAtriumControlAndMercuriusByDefault(t *testing.T) {
 		}
 		in := append([]string{"--mcp-config"}, config...)
 		in = append(in, "--strict-mcp-config")
-		got, err := leanArgs(in, nil, "", extra, leanKit{}, "", read)
+		got, err := leanArgs(in, nil, "", extra, leanKit{}, "", read, testHooks())
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -152,7 +152,7 @@ func TestLeanArgsRefusesAnMCPServerTheRunnerDoesNotHave(t *testing.T) {
 	t.Parallel()
 	in := []string{"--mcp-config", "C:/atrium/mcp.json"}
 	_, err := leanArgs(in, nil, "", []string{"nosuch"}, leanKit{}, "",
-		leanTestRead(map[string]string{"C:/atrium/mcp.json": leanTestMCP}))
+		leanTestRead(map[string]string{"C:/atrium/mcp.json": leanTestMCP}), testHooks())
 	if err == nil || !strings.Contains(err.Error(), "nosuch") || !strings.Contains(err.Error(), "mercurius") {
 		t.Fatalf("want a refusal naming the missing and the available servers, got %v", err)
 	}
@@ -160,7 +160,7 @@ func TestLeanArgsRefusesAnMCPServerTheRunnerDoesNotHave(t *testing.T) {
 
 func TestLeanSettingsKeepsGateAndHooksAndDropsWhatPrintsIntoContext(t *testing.T) {
 	t.Parallel()
-	raw, err := leanSettings([]byte(leanTestSettings), "", nil)
+	raw, err := leanSettings([]byte(leanTestSettings), "", nil, testHooks())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -190,7 +190,7 @@ func TestLeanSettingsKeepsGateAndHooksAndDropsWhatPrintsIntoContext(t *testing.T
 
 func TestLeanSettingsKeepsACardOutOfTheAgentView(t *testing.T) {
 	t.Parallel()
-	raw, err := leanSettings([]byte(leanTestSettings), "", nil)
+	raw, err := leanSettings([]byte(leanTestSettings), "", nil, testHooks())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -202,17 +202,16 @@ func TestLeanSettingsKeepsACardOutOfTheAgentView(t *testing.T) {
 }
 
 func TestLeanSettingsAddsTheStopHookWhenAsked(t *testing.T) {
-	raw, err := leanSettings([]byte(leanTestSettings), "C:/a/atrium.exe turn --event end", nil)
+	raw, err := leanSettings([]byte(leanTestSettings), "C:/a/atrium.exe turn --event end", nil, testHooks())
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(raw, `"Stop"`) || !strings.Contains(raw, "turn --event end") {
 		t.Fatalf("stop hook missing: %s", raw)
 	}
-	was := noPollHookCommand
-	noPollHookCommand = func() string { return "" }
-	defer func() { noPollHookCommand = was }()
-	raw, err = leanSettings(nil, "", nil)
+	hk := testHooks()
+	hk.noPollHookCommand = func() string { return "" }
+	raw, err = leanSettings(nil, "", nil, hk)
 	if err != nil || !strings.Contains(raw, `"hooks":{}`) {
 		t.Fatalf("no user settings should still build, got %s %v", raw, err)
 	}
@@ -254,10 +253,9 @@ func TestWithoutLeanTagsKeepsTheRest(t *testing.T) {
 }
 
 func TestLeanSettingsAddsTheNoPollHook(t *testing.T) {
-	was := noPollHookCommand
-	noPollHookCommand = func() string { return "C:/a/atrium.exe hook --event no-poll" }
-	defer func() { noPollHookCommand = was }()
-	raw, err := leanSettings([]byte(leanTestSettings), "", nil)
+	hk := testHooks()
+	hk.noPollHookCommand = func() string { return "C:/a/atrium.exe hook --event no-poll" }
+	raw, err := leanSettings([]byte(leanTestSettings), "", nil, hk)
 	if err != nil {
 		t.Fatal(err)
 	}

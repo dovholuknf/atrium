@@ -95,6 +95,10 @@ type Options struct {
 
 // Daemon owns the store and both listeners.
 type Daemon struct {
+	// hk is this daemon's own seams, delays and limits. A test changes its daemon's copy. See hooks.go.
+	hk hooks
+	// logins are the sign-ins this daemon has started and not finished. See auth_flow.go.
+	logins loginStates
 	// wakeLaunch replaces the real launch when a done card is woken. Tests only. See keep.go.
 	wakeLaunch func(LaunchRequest) (*store.Task, error)
 	// authLim bounds password guessing on the published board. See auth_limit.go.
@@ -342,6 +346,11 @@ func DefaultDBPath() string {
 // New opens the store and builds the daemon. A storage failure here is fatal
 // by design: the daemon refuses to start rather than run without durable state.
 func New(opts Options) (*Daemon, error) {
+	return newWith(opts, nil)
+}
+
+// newWith is New with a last word on the daemon's hooks, which only a test has. See hooks.go.
+func newWith(opts Options, tune func(*hooks)) (*Daemon, error) {
 	if opts.LongPoll == 0 {
 		opts.LongPoll = time.Minute
 	}
@@ -367,11 +376,14 @@ func New(opts Options) (*Daemon, error) {
 	// says otherwise.
 	st.DefaultReviewsRoot = filepath.Join(filepath.Dir(opts.DBPath), "reviews")
 	d := &Daemon{
-		opts: opts, st: st, perms: newPermWait(), ap: api.New(st),
+		hk: defaultHooks(), opts: opts, st: st, perms: newPermWait(), ap: api.New(st),
 		sup: newSupervisor(), act: newActivityTracker(), stop: newStopper(),
 		nats:      map[overlayKind]*native{},
 		peerLimit: newPeerLimiter(),
 		launching: newKeyedMutex(),
+	}
+	if tune != nil {
+		tune(&d.hk)
 	}
 	d.hubGit.cards = &gitsync.CardTokens{Live: d.cardLive}
 	d.pending = newPendingInjector(d)
@@ -397,7 +409,7 @@ func New(opts Options) (*Daemon, error) {
 	// A card's own state, its overlays first. Closing the card deletes its part (api/cardoverlay.go).
 	api.CardsDir = filepath.Join(filepath.Dir(opts.DBPath), "cards")
 	// Where the lean plugin directories go, in atrium's own state and not a worktree.
-	leanPluginRoot = filepath.Join(filepath.Dir(opts.DBPath), "lean-plugins")
+	d.hk.leanPluginRoot = filepath.Join(filepath.Dir(opts.DBPath), "lean-plugins")
 	if err := os.RemoveAll(api.ScrapDir); err != nil {
 		log.Printf("[atrium] could not empty %s: %v", api.ScrapDir, err)
 	}
@@ -427,6 +439,7 @@ func New(opts Options) (*Daemon, error) {
 	d.ap.Recognise = d.Recognise
 	d.prr = newPRRunner(st, d.ap.PublishPR)
 	d.ap.PRRunner = d.prr
+	d.prr.hk = &d.hk
 	d.prr.onAccess, d.prr.onWorked = d.ForgeAccessFrom, d.ForgeWorked
 	d.prr.hub, d.prr.hubSource = d.HubForge, d.hubSource
 	d.ap.PRForge = d.prr.forgeFor
@@ -635,6 +648,7 @@ func New(opts Options) (*Daemon, error) {
 	// The cache keep-alive: each card's switch and its current idle stretch,
 	// and the per-card switch the board flips. See keepalive.go.
 	d.ka = newKeepalive(st)
+	d.ka.hk = &d.hk
 	d.ka.broadcast = d.ap.Broadcast
 	d.ka.window = func(taskID string) int {
 		if t := d.act.telemetry(taskID); t != nil {
@@ -649,7 +663,7 @@ func New(opts Options) (*Daemon, error) {
 	d.ka.holding = d.nctx.holding
 	d.ka.deployHeld = d.deployHeld
 	d.ka.session = d.ctx.sessionOf
-	d.acProbe = newAutocompactProbe()
+	d.acProbe = newAutocompactProbe(func(exe string) (string, error) { return d.hk.helpRunner(exe) })
 	api.ContextSizeOf = d.contextSizeFor
 	api.AutocompactOf = d.autocompactFor
 	api.RunnerCompactAtK = d.runnerCompactAtK
@@ -817,7 +831,7 @@ func (d *Daemon) reportRunners() {
 		if h.Enabled {
 			state = "on "
 		}
-		if p := runnerFound(h); p != "" {
+		if p := d.hk.runnerFound(h); p != "" {
 			log.Printf("[atrium]   %-*s  %s  %s", width, h.ID, state, p)
 			continue
 		}

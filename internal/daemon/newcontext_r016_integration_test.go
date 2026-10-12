@@ -33,8 +33,8 @@ func TestFailedChipClearsOnASessionStartWithANewConversation(t *testing.T) {
 	if testing.Short() {
 		t.Skip("slow: real ptys, processes and timers")
 	}
-	fastNewContext(t)
 	d := testDaemon(t)
+	fastNewContext(t, d)
 	task, _, _ := ncCard(t, d)
 	id := task.ID
 	failedCycle(t, d, id)
@@ -75,8 +75,8 @@ func TestFailedChipIsClearedByRerunAndByDismissal(t *testing.T) {
 	if testing.Short() {
 		t.Skip("slow: real ptys, processes and timers")
 	}
-	fastNewContext(t)
 	d := testDaemon(t)
+	fastNewContext(t, d)
 	task, f, _ := ncCard(t, d)
 	id := task.ID
 	failedCycle(t, d, id)
@@ -111,8 +111,8 @@ func TestFailedChipSurvivesATurnStart(t *testing.T) {
 	if testing.Short() {
 		t.Skip("slow: real ptys, processes and timers")
 	}
-	fastNewContext(t)
 	d := testDaemon(t)
+	fastNewContext(t, d)
 	task, _, _ := ncCard(t, d)
 	id := task.ID
 	failedCycle(t, d, id)
@@ -133,8 +133,8 @@ func TestWakeWaitsOutATurnInProgress(t *testing.T) {
 	if testing.Short() {
 		t.Skip("slow: real ptys, processes and timers")
 	}
-	fastNewContext(t)
 	d := testDaemon(t)
+	fastNewContext(t, d)
 	task, f, dir := ncCard(t, d)
 	id := task.ID
 
@@ -147,7 +147,7 @@ func TestWakeWaitsOutATurnInProgress(t *testing.T) {
 	d.wakeSawSession(id, "conv-B")
 
 	// Longer than typeWait, which is what used to give up.
-	time.Sleep(ncTiming.typeWait + 200*time.Millisecond)
+	time.Sleep(d.hk.ncTiming.typeWait + 200*time.Millisecond)
 	if failedWith(d, id) != "" {
 		t.Fatalf("the cycle failed while a turn ran: %s", failedWith(d, id))
 	}
@@ -163,8 +163,8 @@ func TestWakeFailsWhenNoGapOpensInCaptureEnd(t *testing.T) {
 	if testing.Short() {
 		t.Skip("slow: real ptys, processes and timers")
 	}
-	fastNewContext(t)
 	d := testDaemon(t)
+	fastNewContext(t, d)
 	task, f, dir := ncCard(t, d)
 	id := task.ID
 
@@ -173,7 +173,7 @@ func TestWakeFailsWhenNoGapOpensInCaptureEnd(t *testing.T) {
 	}
 	until(t, "the limit prompt", func() bool { return strings.Contains(f.written(), limitPrompt) })
 	finishCycle(t, d, id, dir, f)
-	ncTiming.captureEnd = 500 * time.Millisecond
+	d.hk.ncTiming.captureEnd = 500 * time.Millisecond
 	d.act.set(id, ActivityThinking, "")
 	d.wakeSawSession(id, "conv-B")
 
@@ -204,10 +204,10 @@ func TestNcTypeWaitsTurnSettleAfterAPromptEvent(t *testing.T) {
 	if testing.Short() {
 		t.Skip("slow: real ptys, processes and timers")
 	}
-	fastNewContext(t)
-	ncTiming.turnSettle = 300 * time.Millisecond
-	ncTiming.typeWait = 3 * time.Second
 	d := testDaemon(t)
+	fastNewContext(t, d)
+	d.hk.ncTiming.turnSettle = 300 * time.Millisecond
+	d.hk.ncTiming.typeWait = 3 * time.Second
 	task, f, _ := ncCard(t, d)
 	id := task.ID
 	gen, ok := d.nctx.begin(id, HandoffName(task), "")
@@ -218,7 +218,7 @@ func TestNcTypeWaitsTurnSettleAfterAPromptEvent(t *testing.T) {
 	d.act.promptSeen(id)
 	time.Sleep(100 * time.Millisecond)
 	start := time.Now()
-	if err := d.ncType(id, gen, "", "/clear", ncTiming.typeWait); err != nil {
+	if err := d.ncType(id, gen, "", "/clear", d.hk.ncTiming.typeWait); err != nil {
 		t.Fatal(err)
 	}
 	if got := time.Since(start); got < 150*time.Millisecond {
@@ -234,9 +234,9 @@ func TestInjectorDuringTurnSettleTypesClearFirst(t *testing.T) {
 	if testing.Short() {
 		t.Skip("slow: real ptys, processes and timers")
 	}
-	fastNewContext(t)
-	ncTiming.turnSettle = 300 * time.Millisecond
 	d := testDaemon(t)
+	fastNewContext(t, d)
+	d.hk.ncTiming.turnSettle = 300 * time.Millisecond
 	task, f, dir := ncCard(t, d)
 	id := task.ID
 	peerCard(t, d, "alice")
@@ -277,8 +277,8 @@ func TestQueuedMessageAndCaptureEndTogetherTypeClearAlone(t *testing.T) {
 	if testing.Short() {
 		t.Skip("slow: real ptys, processes and timers")
 	}
-	fastNewContext(t)
 	d := testDaemon(t)
+	fastNewContext(t, d)
 	task, f, dir := ncCard(t, d)
 	id := task.ID
 	peerCard(t, d, "alice")

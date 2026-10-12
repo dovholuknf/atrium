@@ -40,7 +40,7 @@ func TestAnInterviewerGetsItsOwnSystemPrompt(t *testing.T) {
 	in := []string{"--mcp-config", "C:/t/mcp.json"}
 	read := func(string) ([]byte, error) { return []byte(`{"mcpServers":{}}`), nil }
 	get := func(kit leanKit) string {
-		args, err := leanArgs(in, nil, "", nil, kit, "", read)
+		args, err := leanArgs(in, nil, "", nil, kit, "", read, testHooks())
 		if err != nil {
 			t.Fatal(err)
 		}

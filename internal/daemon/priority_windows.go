@@ -10,8 +10,10 @@ import (
 	"golang.org/x/sys/windows"
 )
 
-// setPriorityClass is a variable so a test can make the raise fail.
-var setPriorityClass = windows.SetPriorityClass
+// platformHooks gives a daemon its own priority call, so a test can make the raise fail on one daemon.
+func platformHooks(hk *hooks) {
+	hk.setPriorityClass = func(h uintptr, class uint32) error { return windows.SetPriorityClass(windows.Handle(h), class) }
+}
 
 var raiseFailedOnce sync.Once
 
@@ -31,12 +33,13 @@ var raiseFailedOnce sync.Once
 //
 // Never fails a spawn. A runner always starts, even when the raise is refused.
 type ptyRaise struct {
-	on     bool
-	before map[uint32]bool
+	on       bool
+	before   map[uint32]bool
+	setClass func(h uintptr, class uint32) error
 }
 
 func (d *Daemon) beginPTYRaise() *ptyRaise {
-	r := &ptyRaise{on: d.st.RunnerPriorityRaised()}
+	r := &ptyRaise{on: d.st.RunnerPriorityRaised(), setClass: d.hk.setPriorityClass}
 	if r.on {
 		r.before = consoleHosts()
 	}
@@ -57,7 +60,7 @@ func (r *ptyRaise) apply(pid int) {
 		}
 	}
 	for _, t := range targets {
-		if err := raiseProcess(t); err != nil {
+		if err := r.raiseProcess(t); err != nil {
 			raiseFailedOnce.Do(func() {
 				log.Printf("[atrium] could not raise a runner's priority, keystrokes may lag under load: %v", err)
 			})
@@ -65,13 +68,13 @@ func (r *ptyRaise) apply(pid int) {
 	}
 }
 
-func raiseProcess(pid uint32) error {
+func (r *ptyRaise) raiseProcess(pid uint32) error {
 	h, err := windows.OpenProcess(windows.PROCESS_SET_INFORMATION, false, pid)
 	if err != nil {
 		return err
 	}
 	defer windows.CloseHandle(h)
-	return setPriorityClass(h, windows.ABOVE_NORMAL_PRIORITY_CLASS)
+	return r.setClass(uintptr(h), windows.ABOVE_NORMAL_PRIORITY_CLASS)
 }
 
 // consoleHosts is every conhost.exe or OpenConsole.exe that is a child of this process.

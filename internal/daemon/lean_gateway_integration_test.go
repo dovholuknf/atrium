@@ -21,7 +21,7 @@ const leanGatewayMCP = `{"mcpServers":{
 func leanGatewayServers(t *testing.T, extra []string, gateway string) map[string]map[string]string {
 	t.Helper()
 	got, err := leanArgs([]string{"--mcp-config", "C:/t/mcp.json"}, nil, "", extra, leanKit{}, gateway,
-		leanTestRead(map[string]string{"C:/t/mcp.json": leanGatewayMCP}))
+		leanTestRead(map[string]string{"C:/t/mcp.json": leanGatewayMCP}), testHooks())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -80,7 +80,7 @@ func TestLeanGatewayExplicitNameOrTagGetsTheWideEntry(t *testing.T) {
 func TestLeanGatewayUnknownNameIsRefusedWithTheList(t *testing.T) {
 	t.Parallel()
 	_, err := leanArgs([]string{"--mcp-config", "C:/t/mcp.json"}, nil, "", nil, leanKit{}, "nosuch",
-		leanTestRead(map[string]string{"C:/t/mcp.json": leanGatewayMCP}))
+		leanTestRead(map[string]string{"C:/t/mcp.json": leanGatewayMCP}), testHooks())
 	if err == nil || !strings.Contains(err.Error(), "nosuch") || !strings.Contains(err.Error(), "mercurius-worker") {
 		t.Fatalf("got %v", err)
 	}
@@ -134,16 +134,16 @@ func TestLeanGatewayCheckOnSaveReadsTheRunnersMCPConfig(t *testing.T) {
 // A lean launch with lean_agents and the gateway setting gets the plugin dir AND
 // the narrow mercurius, and its keep-alive fork carries both.
 func TestLeanKitAndGatewayTogetherReachTheLaunchAndTheFork(t *testing.T) {
-	kitDirs(t)
+	hk, _, _, _ := kitDirs(t)
 	cfg := filepath.ToSlash(filepath.Join(t.TempDir(), "mcp.json"))
 	if err := os.WriteFile(cfg, []byte(leanGatewayMCP), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	old := readUserSettings
-	readUserSettings = func() []byte { return []byte(`{}`) }
-	t.Cleanup(func() { readUserSettings = old })
+	hk.readUserSettings = func() []byte { return []byte(`{}`) }
 
 	f := newKAFix(t)
+
+	f.k.hk = hk
 	if err := f.st.SetSetting(store.SettingLeanWorkerGateway, "mercurius-worker"); err != nil {
 		t.Fatal(err)
 	}
@@ -155,7 +155,7 @@ func TestLeanKitAndGatewayTogetherReachTheLaunchAndTheFork(t *testing.T) {
 	if !lean || kit.empty() {
 		t.Fatalf("lean_agents should start lean, got %v %+v", lean, kit)
 	}
-	got, err := leanArgs([]string{"--mcp-config", cfg}, nil, "", mcp, kit, gateway, os.ReadFile)
+	got, err := leanArgs([]string{"--mcp-config", cfg}, nil, "", mcp, kit, gateway, os.ReadFile, hk)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -173,7 +173,7 @@ func TestLeanKitAndGatewayTogetherReachTheLaunchAndTheFork(t *testing.T) {
 	}
 	h := &store.Harness{ID: "claude", Label: "claude", Cmd: "claude", LaunchMode: store.LaunchPTY,
 		Args: []string{"--mcp-config", cfg}, ResumeArgs: []string{"--mcp-config", cfg, "--resume", "{resume}"}}
-	fork, err := forkCardArgs(f.st, h, card)
+	fork, err := forkCardArgs(f.st, h, card, hk)
 	if err != nil {
 		t.Fatal(err)
 	}

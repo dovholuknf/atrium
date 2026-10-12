@@ -15,12 +15,10 @@ import (
 
 const wrapPrompt = "the room is restarting."
 
-func fastWrap(t *testing.T) {
+func fastWrap(t *testing.T, d *Daemon) {
 	t.Helper()
-	fastNewContext(t)
-	old := wrapTiming
-	wrapTiming.poll = 5 * time.Millisecond
-	t.Cleanup(func() { wrapTiming = old })
+	fastNewContext(t, d)
+	d.hk.wrapTiming.poll = 5 * time.Millisecond
 }
 
 func wraps(f *fakePTY) int { return strings.Count(f.written(), wrapPrompt) }
@@ -54,8 +52,8 @@ func wakeOf(d *Daemon, id string) *store.RestartWake {
 }
 
 func TestWrapAskedCardSaysReadyAndIsWoken(t *testing.T) {
-	fastWrap(t)
 	d := testDaemon(t)
+	fastWrap(t, d)
 	task, f, _ := ncCard(t, d)
 	midTurn(d, task.ID)
 
@@ -81,8 +79,8 @@ func TestWrapAskedCardSaysReadyAndIsWoken(t *testing.T) {
 }
 
 func TestWrapAnIdleCardCountsAsAnswered(t *testing.T) {
-	fastWrap(t)
 	d := testDaemon(t)
+	fastWrap(t, d)
 	task, f, _ := ncCard(t, d)
 	midTurn(d, task.ID)
 
@@ -102,8 +100,8 @@ func TestWrapTimeoutNamesTheCardAndWakesIt(t *testing.T) {
 	if testing.Short() {
 		t.Skip("slow: real ptys, processes and timers")
 	}
-	fastWrap(t)
 	d := testDaemon(t)
+	fastWrap(t, d)
 	task, f, _ := ncCard(t, d)
 	midTurn(d, task.ID)
 
@@ -138,8 +136,8 @@ func TestWrapTimeoutNamesTheCardAndWakesIt(t *testing.T) {
 }
 
 func TestWrapLeavesAnIdleCardAlone(t *testing.T) {
-	fastWrap(t)
 	d := testDaemon(t)
+	fastWrap(t, d)
 	task, f, _ := ncCard(t, d)
 	ncTurnEnds(d, task.ID)
 
@@ -150,8 +148,8 @@ func TestWrapLeavesAnIdleCardAlone(t *testing.T) {
 }
 
 func TestWrapKeepsACardsOwnWake(t *testing.T) {
-	fastWrap(t)
 	d := testDaemon(t)
+	fastWrap(t, d)
 	task, f, _ := ncCard(t, d)
 	if _, _, err := d.queueWake(task.ID, "my own wake", "me"); err != nil {
 		t.Fatal(err)
@@ -187,8 +185,8 @@ func stopped(d *Daemon) bool {
 }
 
 func TestShutdownWrapsUpFirstAndNowSkipsIt(t *testing.T) {
-	fastWrap(t)
 	d := testDaemon(t)
+	fastWrap(t, d)
 	d.opts.ShutdownToken = "tok"
 	task, f, _ := ncCard(t, d)
 	midTurn(d, task.ID)
@@ -211,8 +209,8 @@ func TestShutdownWrapsUpFirstAndNowSkipsIt(t *testing.T) {
 }
 
 func TestShutdownNowDoesNotAskOrWake(t *testing.T) {
-	fastWrap(t)
 	d := testDaemon(t)
+	fastWrap(t, d)
 	d.opts.ShutdownToken = "tok"
 	task, f, _ := ncCard(t, d)
 	midTurn(d, task.ID)
@@ -225,8 +223,8 @@ func TestShutdownNowDoesNotAskOrWake(t *testing.T) {
 }
 
 func TestShutdownNowEndsAWrapUpAlreadyWaiting(t *testing.T) {
-	fastWrap(t)
 	d := testDaemon(t)
+	fastWrap(t, d)
 	d.opts.ShutdownToken = "tok"
 	task, f, _ := ncCard(t, d)
 	midTurn(d, task.ID)
@@ -258,8 +256,8 @@ func TestRestartWrapWaitSetting(t *testing.T) {
 }
 
 func TestSecondStopJoinsTheRunningWrapUp(t *testing.T) {
-	fastWrap(t)
 	d := testDaemon(t)
+	fastWrap(t, d)
 	d.opts.ShutdownToken = "tok"
 	task, f, _ := ncCard(t, d)
 	midTurn(d, task.ID)
@@ -292,10 +290,8 @@ func TestSecondStopJoinsTheRunningWrapUp(t *testing.T) {
 }
 
 func TestJoinGivesUpPastTheRunningDeadline(t *testing.T) {
-	old := wrapJoinMargin
-	wrapJoinMargin = 20 * time.Millisecond
-	t.Cleanup(func() { wrapJoinMargin = old })
 	d := testDaemon(t)
+	d.hk.wrapJoinMargin = 20 * time.Millisecond
 	run, mine := d.wrap.begin(func() {}, time.Now().Add(20*time.Millisecond))
 	if !mine {
 		t.Fatal("begin refused")

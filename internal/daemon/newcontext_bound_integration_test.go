@@ -14,9 +14,9 @@ func TestNewContextAckNeverComesReleasesTheHold(t *testing.T) {
 	if testing.Short() {
 		t.Skip("slow: real ptys, processes and timers")
 	}
-	fastNewContext(t)
-	ncTiming.ackWait = 300 * time.Millisecond
 	d := testDaemon(t)
+	fastNewContext(t, d)
+	d.hk.ncTiming.ackWait = 300 * time.Millisecond
 	task, f, _ := ncCard(t, d)
 
 	if err := d.StartNewContext(task.ID); err != nil {
@@ -39,8 +39,8 @@ func TestNewContextAckNeverComesReleasesTheHold(t *testing.T) {
 
 // The process dies while the cycle waits: the hold goes with it.
 func TestNewContextProcessDiesReleasesTheHold(t *testing.T) {
-	fastNewContext(t)
 	d := testDaemon(t)
+	fastNewContext(t, d)
 	task, _, _ := ncCard(t, d)
 
 	if err := d.StartNewContext(task.ID); err != nil {
@@ -55,8 +55,8 @@ func TestNewContextProcessDiesReleasesTheHold(t *testing.T) {
 
 // The room restarts mid-cycle: the run comes back as a failed chip, which holds nothing.
 func TestNewContextFailedChipHoldsNothing(t *testing.T) {
-	fastNewContext(t)
 	d := testDaemon(t)
+	fastNewContext(t, d)
 	task, _, _ := ncCard(t, d)
 	d.nctx.claim(task.ID, &newContext{step: NewContextLimit})
 	gen := d.nctx.get(task.ID).gen

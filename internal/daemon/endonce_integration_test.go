@@ -32,7 +32,7 @@ func TestASayThenAtriumBlockedReachesTheLauncherOnce(t *testing.T) {
 func TestAtriumDoneThenASayReachesTheLauncherOnce(t *testing.T) {
 	d := testDaemon(t)
 	launcher, _ := launchedPair(t, d)
-	stubCommits(t, true, true)
+	stubCommits(t, d, true, true)
 	finishWith(t, d, FinishRequest{Agent: "worker", Status: ReportDone, SHA: "abc1234", Recap: "done abc1234", Ended: true})
 	out, code := tell(t, d, "worker", "orchestrator", "done abc1234")
 	if code != http.StatusOK || out["delivered"] != "dropped" || !strings.Contains(out["note"].(string), "atrium_done") {
@@ -46,7 +46,7 @@ func TestAtriumDoneThenASayReachesTheLauncherOnce(t *testing.T) {
 func TestASayThatIsNotTheSameEndIsStillDelivered(t *testing.T) {
 	d := testDaemon(t)
 	launcher, _ := launchedPair(t, d)
-	stubCommits(t, true, true)
+	stubCommits(t, d, true, true)
 	finishWith(t, d, FinishRequest{Agent: "worker", Status: ReportDone, SHA: "abc1234", Ended: true})
 	if out, code := tell(t, d, "worker", "orchestrator", "blocked: something else"); code != http.StatusOK || out["delivered"] == "dropped" {
 		t.Fatalf("%d %v", code, out)
@@ -81,7 +81,7 @@ func TestAnEndingDoneTakesAnArtifactThatExistsOnTheRoom(t *testing.T) {
 func TestAnEndingDoneRefusesAMissingArtifactAndBothAtOnce(t *testing.T) {
 	d := testDaemon(t)
 	launchedPair(t, d)
-	stubCommits(t, true, true)
+	stubCommits(t, d, true, true)
 	missing := filepath.Join(t.TempDir(), "nope.md")
 	if rec, _ := finishWith(t, d, FinishRequest{Agent: "worker", Status: ReportDone, Artifact: missing, Ended: true}); rec.Code != 400 {
 		t.Fatalf("a missing artifact: code %d", rec.Code)

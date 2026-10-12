@@ -26,16 +26,14 @@ type fakeForgeCLI struct {
 	missing bool
 }
 
-func (f *fakeForgeCLI) install(t *testing.T) {
-	oldLook, oldRun := preflightLook, preflightRun
-	t.Cleanup(func() { preflightLook, preflightRun = oldLook, oldRun })
-	preflightLook = func(name string) (string, error) {
+func (f *fakeForgeCLI) install(t *testing.T, d *Daemon) {
+	d.hk.preflightLook = func(name string) (string, error) {
 		if f.missing {
 			return "", errors.New("not found")
 		}
 		return "/fake/bin/" + name, nil
 	}
-	preflightRun = func(ctx context.Context, exe string, args []string, out io.Writer) error {
+	d.hk.preflightRun = func(ctx context.Context, exe string, args []string, out io.Writer) error {
 		f.mu.Lock()
 		f.runs = append(f.runs, append([]string{exe}, args...))
 		f.mu.Unlock()
@@ -71,7 +69,7 @@ func forgeCheck(t *testing.T, d *Daemon, body string) forgeStatus {
 func TestForgeOKRunsTheStatusCommandAndClearsTheAlert(t *testing.T) {
 	d := testDaemon(t)
 	f := &fakeForgeCLI{out: ghOK}
-	f.install(t)
+	f.install(t, d)
 	st := forgeCheck(t, d, `{"forges":[{"tool":"gh","host":"github.com","scopes":["repo","read:org"]}]}`)
 	if st.State != forgeOK {
 		t.Fatalf("state %q: %+v", st.State, st)
@@ -88,7 +86,7 @@ func TestForgeLoggedOutRaisesTheAlertWithTheCommandToRun(t *testing.T) {
 	d := testDaemon(t)
 	d.opts.Room = "sg3"
 	f := &fakeForgeCLI{out: "You are not logged into any GitHub hosts.\n", fail: true}
-	f.install(t)
+	f.install(t, d)
 	st := forgeCheck(t, d, `{"forges":[{"tool":"gh","host":"github.com"}]}`)
 	want := "gh is not logged in on sg3: run `gh auth login --hostname github.com` on sg3"
 	if st.State != forgeLoggedOut || st.Message != want {
@@ -110,7 +108,7 @@ func TestForgeNotInstalled(t *testing.T) {
 	d := testDaemon(t)
 	d.opts.Room = "sg3"
 	f := &fakeForgeCLI{missing: true}
-	f.install(t)
+	f.install(t, d)
 	st := forgeCheck(t, d, `{"forges":[{"tool":"gh","host":"github.com"}]}`)
 	if st.State != forgeNotInstalled || !strings.Contains(st.Message, "gh is not installed on sg3") {
 		t.Fatalf("got %+v", st)
@@ -124,7 +122,7 @@ func TestForgeMissingScopeNamesTheScope(t *testing.T) {
 	d := testDaemon(t)
 	d.opts.Room = "sg3"
 	f := &fakeForgeCLI{out: "  - Token scopes: 'repo'\n"}
-	f.install(t)
+	f.install(t, d)
 	st := forgeCheck(t, d, `{"forges":[{"tool":"gh","host":"github.com","scopes":["repo","read:org"]}]}`)
 	want := "gh on sg3 is missing the scope read:org for github.com: run `gh auth refresh --hostname github.com --scopes read:org` on sg3"
 	if st.State != forgeMissingScope || st.Message != want {
@@ -136,7 +134,7 @@ func TestForgeMissingScopeNamesTheScope(t *testing.T) {
 func TestForgeNoScopeLineIsNotAFailure(t *testing.T) {
 	d := testDaemon(t)
 	f := &fakeForgeCLI{out: "  ✓ Logged in to github.com\n"}
-	f.install(t)
+	f.install(t, d)
 	if st := forgeCheck(t, d, `{"forges":[{"tool":"gh","host":"github.com","scopes":["repo"]}]}`); st.State != forgeOK {
 		t.Fatalf("got %+v", st)
 	}
@@ -146,7 +144,7 @@ func TestForgeNoScopeLineIsNotAFailure(t *testing.T) {
 func TestForgeCommandIsTheToolsOwnName(t *testing.T) {
 	d := testDaemon(t)
 	f := &fakeForgeCLI{out: ghOK}
-	f.install(t)
+	f.install(t, d)
 	forgeCheck(t, d, `{"forges":[{"tool":"gh","host":"github.com","command":"rm"}]}`)
 	if got := f.runs[0][0]; got != "/fake/bin/gh" {
 		t.Errorf("ran %q, want gh", got)
@@ -156,7 +154,7 @@ func TestForgeCommandIsTheToolsOwnName(t *testing.T) {
 func TestForgeUnknownToolAndBadHostRunNothing(t *testing.T) {
 	d := testDaemon(t)
 	f := &fakeForgeCLI{out: ghOK}
-	f.install(t)
+	f.install(t, d)
 	forgeCheck(t, d, `{"forges":[{"tool":"rm","host":"x.org"}]}`)
 	forgeCheck(t, d, `{"forges":[{"tool":"gh","host":"--show-token"}]}`)
 	if len(f.runs) != 0 {

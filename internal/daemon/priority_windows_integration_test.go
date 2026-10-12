@@ -111,10 +111,8 @@ func TestRunnerPriorityNormalLeavesBothAlone(t *testing.T) {
 
 // A refused raise is logged and the runner starts anyway.
 func TestFailedRaiseDoesNotFailTheSpawn(t *testing.T) {
-	old := setPriorityClass
-	setPriorityClass = func(windows.Handle, uint32) error { return errors.New("refused") }
-	t.Cleanup(func() { setPriorityClass = old })
 	d := testDaemon(t)
+	d.hk.setPriorityClass = func(uintptr, uint32) error { return errors.New("refused") }
 	want := defaultClass(t)
 	pid, _ := spawnSleeper(t, d, "refused")
 	if got := classOf(t, pid); got != want {

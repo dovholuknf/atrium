@@ -63,7 +63,7 @@ func (d *Daemon) startRoomStats(ctx context.Context) {
 			}
 			out := make([]roomstats.Runner, 0, len(hs))
 			for _, h := range hs {
-				out = append(out, roomstats.Runner{Kind: h.ID, Resolves: runnerFound(h) != ""})
+				out = append(out, roomstats.Runner{Kind: h.ID, Resolves: d.hk.runnerFound(h) != ""})
 			}
 			return out, nil
 		},

@@ -9,18 +9,16 @@ import (
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
-func stubCommits(t *testing.T, inDir, onHub bool) {
+func stubCommits(t *testing.T, d *Daemon, inDir, onHub bool) {
 	t.Helper()
-	oldDir, oldHub := commitInDir, commitOnHub
-	commitInDir = func(string, string) bool { return inDir }
-	commitOnHub = func(*Daemon, *store.Task, string) bool { return onHub }
-	t.Cleanup(func() { commitInDir, commitOnHub = oldDir, oldHub })
+	d.hk.commitInDir = func(string, string) bool { return inDir }
+	d.hk.commitOnHub = func(*Daemon, *store.Task, string) bool { return onHub }
 }
 
 func TestAnEndingDoneWithAnUnknownCommitIsRefusedAndRecordsNothing(t *testing.T) {
 	d := testDaemon(t)
 	_, worker := launchedPair(t, d)
-	stubCommits(t, false, false)
+	stubCommits(t, d, false, false)
 	rec, _ := finishWith(t, d, FinishRequest{Agent: "worker", Status: ReportDone, SHA: "abc1234", Ended: true})
 	if rec.Code != 400 || !strings.Contains(rec.Body.String(), "abc1234") {
 		t.Fatalf("code %d, body %s", rec.Code, rec.Body)
@@ -34,7 +32,7 @@ func TestAnEndingDoneWithAnUnknownCommitIsRefusedAndRecordsNothing(t *testing.T)
 func TestAnEndingDoneWithABadShapeIsRefused(t *testing.T) {
 	d := testDaemon(t)
 	launchedPair(t, d)
-	stubCommits(t, true, true)
+	stubCommits(t, d, true, true)
 	if rec, _ := finishWith(t, d, FinishRequest{Agent: "worker", Status: ReportDone, SHA: "nothex!", Ended: true}); rec.Code != 400 {
 		t.Fatalf("code %d", rec.Code)
 	}
@@ -43,7 +41,7 @@ func TestAnEndingDoneWithABadShapeIsRefused(t *testing.T) {
 func TestAnEndingDoneTakesACommitTheHubHasAndTellsTheLauncherWithNoNudge(t *testing.T) {
 	d := testDaemon(t)
 	launcher, worker := launchedPair(t, d)
-	stubCommits(t, false, true)
+	stubCommits(t, d, false, true)
 	rec, out := finishWith(t, d, FinishRequest{Agent: "worker", Status: ReportDone, SHA: "abc1234",
 		Recap: "done abc1234", Ended: true})
 	if rec.Code != 200 || out["launcher_told"] != "queued" {

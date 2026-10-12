@@ -47,7 +47,7 @@ func (d *Daemon) askExit(taskID string, grace time.Duration) error {
 		case <-r.done:
 			log.Printf("[atrium] runner for %s exited when asked", taskID)
 			return nil
-		case <-time.After(windDownKeyGap):
+		case <-time.After(d.hk.windDownKeyGap):
 		}
 	}
 	select {
@@ -110,7 +110,7 @@ func (d *Daemon) RestartRunner(taskID string) (*store.Task, error) {
 	// Ask it to exit the way its harness says to, and wait for the slot to clear.
 	// Nothing is closed or killed on the way: a runner that will not leave is left
 	// running and the refusal says so, because a restart is not a terminate.
-	if err := d.askExit(taskID, restartAskGrace); err != nil {
+	if err := d.askExit(taskID, d.hk.restartAskGrace); err != nil {
 		return nil, err
 	}
 	if !d.waitRunnerGone(taskID, restartGoneWait) {

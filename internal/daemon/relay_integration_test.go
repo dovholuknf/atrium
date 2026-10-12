@@ -391,9 +391,7 @@ func TestAHeldMessageExpires(t *testing.T) {
 		t.Fatal(err)
 	}
 	settle(d)
-	was := RelayKeep
-	RelayKeep = time.Nanosecond
-	defer func() { RelayKeep = was }()
+	d.hk.RelayKeep = time.Nanosecond
 	time.Sleep(2 * time.Millisecond)
 	d.drainRelays()
 	if len(owed(t, d)) != 0 {

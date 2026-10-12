@@ -20,9 +20,7 @@ func TestKeepaliveForkCarriesALeanCardsPromptToolsAndMCP(t *testing.T) {
 		"--tools", "Bash,Read"}, nil); err != nil {
 		t.Fatal(err)
 	}
-	old := readUserSettings
-	readUserSettings = func() []byte { return []byte(`{"permissions":{"allow":["Bash"]}}`) }
-	t.Cleanup(func() { readUserSettings = old })
+	f.k.hk.readUserSettings = func() []byte { return []byte(`{"permissions":{"allow":["Bash"]}}`) }
 	f.reply(f.now.Add(-56*time.Minute), replyOpt{})
 	f.tick()
 	if f.forks() != 1 {

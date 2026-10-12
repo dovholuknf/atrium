@@ -107,17 +107,17 @@ func (d *Daemon) checkForge(ctx context.Context, tool, host string, scopes []str
 		st.Host = host
 	}
 	cmd := tool
-	path, err := preflightLook(cmd)
+	path, err := d.hk.preflightLook(cmd)
 	if err != nil {
 		st.State = forgeNotInstalled
 		st.Message, st.Fix = d.forgeSay(tool, cmd, host, st.State, nil)
 		return st
 	}
 	st.Path = path
-	cctx, cancel := context.WithTimeout(ctx, preflightEachFor)
+	cctx, cancel := context.WithTimeout(ctx, d.hk.preflightEachFor)
 	defer cancel()
 	var buf bytes.Buffer
-	err = preflightRun(cctx, path, argsFor(host), &limitedWriter{w: &buf, left: preflightOutput})
+	err = d.hk.preflightRun(cctx, path, argsFor(host), &limitedWriter{w: &buf, left: preflightOutput})
 	switch {
 	case cctx.Err() != nil:
 		st.State, st.Message = forgeUnknown, cmd+" did not answer in time"

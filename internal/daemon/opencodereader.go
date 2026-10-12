@@ -85,14 +85,14 @@ func opencodeEnv() []string {
 // the pipe cannot hold the call. What was printed comes back with the error, so a
 // good answer printed before a timeout is kept; over the cap returns nothing.
 // A variable so a test needs no opencode.
-var opencodeExec = func(ctx context.Context, bin string, args []string, max int64) ([]byte, error) {
+var opencodeExec = func(ctx context.Context, bin string, args []string, max int64, waitDelay time.Duration) ([]byte, error) {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, bin, args...)
 	cmd.Env = opencodeEnv()
 	w := &cappedWriter{max: max, stop: cancel}
 	cmd.Stdout = w
-	cmd.WaitDelay = opencodeWaitDelay
+	cmd.WaitDelay = waitDelay
 	prepareTree(cmd)
 	hideWindow(cmd)
 	err := cmd.Run()
@@ -207,16 +207,16 @@ func (r *opencodeReader) read(card string, h *store.Harness, session string) ([]
 
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if c.session == session && time.Since(c.at) < opencodeTTL {
+	if c.session == session && time.Since(c.at) < r.d.hk.opencodeTTL {
 		return c.replies, c.prompts, nil
 	}
-	bin, err := opencodeLookPath(h.Exe())
+	bin, err := r.d.hk.opencodeLookPath(h.Exe())
 	if err != nil {
 		return nil, nil, fmt.Errorf("opencode is not on PATH: %w", err)
 	}
 	r.sem <- struct{}{}
 	ctx, cancel := context.WithTimeout(context.Background(), opencodeTimeout)
-	out, err := opencodeExec(ctx, bin, []string{"export", session}, opencodeMaxOut)
+	out, err := r.d.hk.opencodeExec(ctx, bin, []string{"export", session}, opencodeMaxOut, r.d.hk.opencodeWaitDelay)
 	cancel()
 	<-r.sem
 	rs, ps, perr := parseOpencodeExport(out)

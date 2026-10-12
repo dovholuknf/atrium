@@ -34,8 +34,8 @@ const wrapBy = "restart-wrap"
 // wrapLabel goes ahead of the prompt, so nobody reads it as the operator's own words.
 var wrapLabel = atriumLabel("restart:")
 
-// wrapTiming is how often a card is looked at. A variable for a test.
-var wrapTiming = struct{ poll time.Duration }{poll: 250 * time.Millisecond}
+// wrapTimings is how often a card is looked at.
+type wrapTimings struct{ poll time.Duration }
 
 // The outcomes of one card.
 const (
@@ -287,7 +287,7 @@ func (d *Daemon) wrapUpForRestart(ctx context.Context, wait time.Duration, why s
 // joinWrapUp waits for the wrap-up already running instead of starting another, so a second stop does not skip the
 // wait. It is bounded by that wrap-up's own deadline plus a margin, and by ctx. It answers with the same outcome.
 func (d *Daemon) joinWrapUp(ctx context.Context, run *wrapRun) WrapReport {
-	limit := time.Until(run.deadline) + wrapJoinMargin
+	limit := time.Until(run.deadline) + d.hk.wrapJoinMargin
 	log.Printf("[atrium] restart wrap-up: one is already waiting, joining it for up to %s", limit.Round(time.Millisecond))
 	timer := time.NewTimer(limit)
 	defer timer.Stop()
@@ -312,7 +312,7 @@ func (d *Daemon) wrapCard(ctx context.Context, t *store.Task, path string, ack <
 	id := t.ID
 	mid := d.midTurnInputFor(id)
 	typed, typedBusy, turn0 := false, false, 0
-	tick := time.NewTicker(wrapTiming.poll)
+	tick := time.NewTicker(d.hk.wrapTiming.poll)
 	defer tick.Stop()
 	for {
 		select {
@@ -330,7 +330,7 @@ func (d *Daemon) wrapCard(ctx context.Context, t *store.Task, path string, ack <
 			return wrapSkipped
 		}
 		if !typed {
-			if !d.ncBusy(id) && d.act.sinceBusy(id) >= ncTiming.turnSettle {
+			if !d.ncBusy(id) && d.act.sinceBusy(id) >= d.hk.ncTiming.turnSettle {
 				return wrapSkipped
 			}
 			busy, turn := false, 0
@@ -342,7 +342,7 @@ func (d *Daemon) wrapCard(ctx context.Context, t *store.Task, path string, ack <
 				turn = d.act.turnsBegun(id)
 				return mid || !busy
 			}
-			text := restartWrapPrompt(path, atriumBinary())
+			text := restartWrapPrompt(path, d.hk.atriumBinary())
 			wrote, err := d.typeLabelledGuarded(run, id, wrapLabel, text, ok)
 			if err != nil || !wrote {
 				continue
@@ -357,7 +357,7 @@ func (d *Daemon) wrapCard(ctx context.Context, t *store.Task, path string, ack <
 			continue
 		}
 		// Asked. Idle is a turn that is over and stayed over. A prompt typed between turns must have started one.
-		if !d.ncBusy(id) && d.act.sinceBusy(id) >= ncTiming.turnSettle &&
+		if !d.ncBusy(id) && d.act.sinceBusy(id) >= d.hk.ncTiming.turnSettle &&
 			(typedBusy || d.act.turnsBegun(id) > turn0) {
 			return wrapIdle
 		}
