@@ -10,7 +10,7 @@ import (
 
 // withLocation points the resolver at a location file written for the test, so
 // nothing here reads or writes the machine's real one.
-func withLocation(t *testing.T, body string) {
+func withLocation(t *testing.T, body string) func() (string, error) {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "daemon.json")
 	if body != "" {
@@ -18,9 +18,7 @@ func withLocation(t *testing.T, body string) {
 			t.Fatal(err)
 		}
 	}
-	prev := locationReader
-	locationReader = func() (string, error) { return path, nil }
-	t.Cleanup(func() { locationReader = prev })
+	return func() (string, error) { return path, nil }
 }
 
 // A binary that exists, for a location file to name.
@@ -41,9 +39,9 @@ func anExe(t *testing.T) string {
 // of the daemon that is RUNNING, not the path of the binary you typed.
 func TestHookExePrefersTheRunningDaemon(t *testing.T) {
 	installed := anExe(t)
-	withLocation(t, `{"pid":1,"exe":"`+installed+`"}`)
+	locate := withLocation(t, `{"pid":1,"exe":"`+installed+`"}`)
 
-	got := HookExe("D:/git/atrium/build.claude/atrium.exe")
+	got := hookExeWith(locate, "D:/git/atrium/build.claude/atrium.exe")
 	if got != installed {
 		t.Fatalf("resolved %q, want the running daemon at %q", got, installed)
 	}
@@ -52,18 +50,18 @@ func TestHookExePrefersTheRunningDaemon(t *testing.T) {
 // No daemon has ever run here, which is the ordinary case for somebody setting
 // this up before starting anything.
 func TestHookExeFallsBackWhenNoDaemonHasRun(t *testing.T) {
-	withLocation(t, "")
+	locate := withLocation(t, "")
 	fallback := anExe(t)
-	if got := HookExe(fallback); got != fallback {
+	if got := hookExeWith(locate, fallback); got != fallback {
 		t.Fatalf("resolved %q, want the caller's own binary %q", got, fallback)
 	}
 }
 
 // A daemon older than the `exe` field wrote the file. It still has to answer.
 func TestHookExeFallsBackWhenTheFileHasNoExe(t *testing.T) {
-	withLocation(t, `{"pid":1,"agent":"http://localhost:7777"}`)
+	locate := withLocation(t, `{"pid":1,"agent":"http://localhost:7777"}`)
 	fallback := anExe(t)
-	if got := HookExe(fallback); got != fallback {
+	if got := hookExeWith(locate, fallback); got != fallback {
 		t.Fatalf("resolved %q, want the caller's own binary %q", got, fallback)
 	}
 }
@@ -71,9 +69,9 @@ func TestHookExeFallsBackWhenTheFileHasNoExe(t *testing.T) {
 // A recorded binary that has been deleted since. Writing a hook naming it would
 // fail silently in every session, which is worse than the fallback being wrong.
 func TestHookExeIgnoresARecordedBinaryThatIsGone(t *testing.T) {
-	withLocation(t, `{"pid":1,"exe":"D:/gone/atrium.exe"}`)
+	locate := withLocation(t, `{"pid":1,"exe":"D:/gone/atrium.exe"}`)
 	fallback := anExe(t)
-	if got := HookExe(fallback); got != fallback {
+	if got := hookExeWith(locate, fallback); got != fallback {
 		t.Fatalf("resolved %q, want the caller's own binary %q when the recorded one is gone", got, fallback)
 	}
 }
@@ -81,19 +79,19 @@ func TestHookExeIgnoresARecordedBinaryThatIsGone(t *testing.T) {
 // Unparseable is the same as absent. A truncated write must not stop hooks
 // being installable.
 func TestHookExeIgnoresAnUnreadableLocationFile(t *testing.T) {
-	withLocation(t, `{"pid":1,`)
+	locate := withLocation(t, `{"pid":1,`)
 	fallback := anExe(t)
-	if got := HookExe(fallback); got != fallback {
+	if got := hookExeWith(locate, fallback); got != fallback {
 		t.Fatalf("resolved %q, want the caller's own binary %q", got, fallback)
 	}
 }
 
 // The override wins over everything, including a daemon that is running.
 func TestHookExeHonoursTheOverride(t *testing.T) {
-	withLocation(t, `{"pid":1,"exe":"`+anExe(t)+`"}`)
+	locate := withLocation(t, `{"pid":1,"exe":"`+anExe(t)+`"}`)
 	mine := anExe(t)
 	t.Setenv(HookExeEnv, mine)
-	if got := HookExe("whatever"); got != mine {
+	if got := hookExeWith(locate, "whatever"); got != mine {
 		t.Fatalf("resolved %q, want the override %q", got, mine)
 	}
 }
@@ -101,8 +99,8 @@ func TestHookExeHonoursTheOverride(t *testing.T) {
 // Forward slashes, always. settings.json is JSON, and a Windows path written
 // with backslashes is a string full of escapes that the next reader gets wrong.
 func TestHookExeUsesForwardSlashes(t *testing.T) {
-	withLocation(t, "")
-	got := HookExe(filepath.FromSlash(anExe(t)))
+	locate := withLocation(t, "")
+	got := hookExeWith(locate, filepath.FromSlash(anExe(t)))
 	if filepath.ToSlash(got) != got {
 		t.Fatalf("resolved %q, want forward slashes", got)
 	}

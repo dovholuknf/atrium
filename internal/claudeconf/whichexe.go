@@ -36,9 +36,9 @@ const HookExeEnv = "ATRIUM_HOOK_EXE"
 // does not import `internal/daemon` (which imports this one) and so a test can
 // point it somewhere harmless.
 //
-// A function variable rather than an interface: there is one implementation and
-// one caller, and an interface would be three names for one line.
-var locationReader = defaultLocationPath
+// A function rather than an interface: there is one implementation and one
+// caller, and an interface would be three names for one line. `hookExeWith`
+// takes it as an argument, so a test hands in its own.
 
 // HookExe is the path to write into a settings file, and to compare a
 // registered command against.
@@ -46,11 +46,14 @@ var locationReader = defaultLocationPath
 // `fallback` is what to use when nothing better is known. Callers inside the
 // daemon pass their own `os.Executable()`; callers outside pass theirs. Empty
 // means work it out.
-func HookExe(fallback string) string {
+func HookExe(fallback string) string { return hookExeWith(defaultLocationPath, fallback) }
+
+// hookExeWith is HookExe with the daemon found by `locate`.
+func hookExeWith(locate func() (string, error), fallback string) string {
 	if v := strings.TrimSpace(os.Getenv(HookExeEnv)); v != "" {
 		return normalizeExe(v)
 	}
-	if exe := runningDaemonExe(); exe != "" {
+	if exe := runningDaemonExe(locate); exe != "" {
 		return exe
 	}
 	if strings.TrimSpace(fallback) != "" {
@@ -67,8 +70,8 @@ func HookExe(fallback string) string {
 //
 // Empty for every failure, which covers the two ordinary cases: no daemon has
 // run on this machine, and a daemon older than this field wrote the file.
-func runningDaemonExe() string {
-	path, err := locationReader()
+func runningDaemonExe(locate func() (string, error)) string {
+	path, err := locate()
 	if err != nil || path == "" {
 		return ""
 	}

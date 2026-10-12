@@ -34,19 +34,15 @@ func TestTheVersionLineSurvivesHavingNothingToSay(t *testing.T) {
 // A stamped tree state wins over Go's, in both directions. Go's counts untracked
 // files, so a build that is exactly its commit has to be able to say clean.
 func TestAStampedTreeWinsOverGo(t *testing.T) {
-	before, beforeTree := Commit, Tree
-	t.Cleanup(func() { Commit, Tree = before, beforeTree })
-	Commit = "99e2d8e51ecdd19b4fe6f9048e06b40c7cae6937"
+	commit := "99e2d8e51ecdd19b4fe6f9048e06b40c7cae6937"
 
-	Tree = "clean"
-	if _, _, dirty := versionInfo(); dirty != "" {
+	if _, _, dirty := versionInfoOf(commit, "clean"); dirty != "" {
 		t.Fatalf("a tree stamped clean says %q", dirty)
 	}
-	if line := VersionLine(); strings.Contains(line, "modified") {
+	if line := versionLineOf(commit, "clean"); strings.Contains(line, "modified") {
 		t.Fatalf("a tree stamped clean is modified in the line: %q", line)
 	}
-	Tree = "modified"
-	if _, _, dirty := versionInfo(); dirty != "modified" {
+	if _, _, dirty := versionInfoOf(commit, "modified"); dirty != "modified" {
 		t.Fatalf("a tree stamped modified says %q", dirty)
 	}
 }
@@ -54,12 +50,9 @@ func TestAStampedTreeWinsOverGo(t *testing.T) {
 // A commit is abbreviated in the one-line form. A forty character hash in a log
 // header pushes everything else off the line, and the first twelve identify it.
 func TestALongCommitIsShortenedInTheLine(t *testing.T) {
-	before := Commit
-	t.Cleanup(func() { Commit = before })
-
-	Commit = "99e2d8e51ecdd19b4fe6f9048e06b40c7cae6937"
-	line := VersionLine()
-	if strings.Contains(line, Commit) {
+	commit := "99e2d8e51ecdd19b4fe6f9048e06b40c7cae6937"
+	line := versionLineOf(commit, "")
+	if strings.Contains(line, commit) {
 		t.Fatalf("the whole hash is in the line: %q", line)
 	}
 	if !strings.Contains(line, "99e2d8e51ecd") {

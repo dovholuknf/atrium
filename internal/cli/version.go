@@ -53,8 +53,11 @@ var Commit = ""
 // files only and says so here.
 var Tree = ""
 
-func versionInfo() (version, commit, dirty string) {
-	version, commit = Version, Commit
+func versionInfo() (version, commit, dirty string) { return versionInfoOf(Commit, Tree) }
+
+// versionInfoOf is versionInfo for the stamped commit and tree state given.
+func versionInfoOf(stampedCommit, stampedTree string) (version, commit, dirty string) {
+	version, commit = Version, stampedCommit
 	info, ok := debug.ReadBuildInfo()
 	if ok {
 		for _, s := range info.Settings {
@@ -70,7 +73,7 @@ func versionInfo() (version, commit, dirty string) {
 			}
 		}
 	}
-	switch Tree {
+	switch stampedTree {
 	case "clean":
 		dirty = ""
 	case "modified":
@@ -80,8 +83,11 @@ func versionInfo() (version, commit, dirty string) {
 }
 
 // VersionLine is one line, for a log or a header.
-func VersionLine() string {
-	version, commit, dirty := versionInfo()
+func VersionLine() string { return versionLineOf(Commit, Tree) }
+
+// versionLineOf is VersionLine for the stamped commit and tree state given.
+func versionLineOf(stampedCommit, stampedTree string) string {
+	version, commit, dirty := versionInfoOf(stampedCommit, stampedTree)
 	out := "atrium " + version
 	if commit != "" {
 		if len(commit) > 12 {
