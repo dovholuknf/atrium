@@ -738,11 +738,11 @@ function termMenuItems(id, t) {
     { label: "settings", act: () => openTask(id) },
     { sep: true },
     // What the board calls shelved. It stops the runner and the card keeps its place, hidden from this list unless
-    // `show stopped` is on. Resume starts it again.
+    // the shelved filter is on. Resume starts it again.
     t.supervised && !over ? {
       label: "stop",
       help: "Stops the agent so it can be resumed later. The card stays on the board, and is left out of this " +
-        "list unless show stopped is on.",
+        "list unless the shelved filter is on.",
       act: () => oneAtATime("shelve:" + id, () => patchTask(id, { status: "shelved" }).then(refresh))
     } : null,
     // A COLD ROW IS ONLY HERE BECAUSE IT IS PINNED, so dismissing it is unpinning it. Without this a dead terminal's
@@ -1081,7 +1081,8 @@ function termRow(t, deep, kid) {
         : "open in the pane, so the filter keeps it listed"}">${keptWord}</span>` : "";
   const allKids = termKids.get(t.id) || [];
   const shut = allKids.length > 0 && termKidsShut(t);
-  const shown = shut ? allKids.filter(termKidWaits) : allKids;
+  // A folded parent still shows a child that needs you, and the one holding the attached terminal (`termHoldsOn`).
+  const shown = shut ? allKids.filter(k => termKidWaits(k) || termHoldsOn(k)) : allKids;
   const kids = shown.map(k => termRow(k, false, true)).join("");
   return `
     <div class="card tab ${on ? "on" : ""}${kid ? " kid" : ""}${
@@ -1877,10 +1878,10 @@ async function renderTermList() {
   // is re-resolved to the form the hub serves now rather than looped on.
   reconcileAttached(tasks);
 
-  // THE SEARCH narrows what is drawn, the attached row included: it is a row like the rest, and the pane does not need
-  // it listed. The chips decided `tasks`; this decides `shown`.
+  // THE SEARCH narrows what is drawn, EXCEPT THE ATTACHED ROW, which stays whatever is typed (`fdAttached`), as it does
+  // whatever chip is off. The chips decided `tasks`; this decides `shown`.
   const q = fdSearchText("terms");
-  const shown = q ? tasks.filter(t => cardMatchesText(t, q)) : tasks;
+  const shown = q ? tasks.filter(t => fdAttached(t) || cardMatchesText(t, q)) : tasks;
   termOrder(shown);
   // Spawned cards move under their parent row, so the lists below hold top rows only. See `termNest`.
   const nest = termNest(shown);
@@ -1975,7 +1976,7 @@ async function renderTermList() {
 // default, and each row says what it was, when it ended, how, and offers the one thing worth doing: resume.
 //
 // ENDED IS `done` OR `dead` WITH NO RUNNER, and nothing the strip already shows: a pinned card stays in its bucket,
-// a stopped one has `show stopped`, a closed one has no folder to resume into. It ignores the two hide toggles,
+// a stopped one has the shelved filter, a closed one has no folder to resume into. It ignores the two hide toggles,
 // since those are about the live rows and a worker's husk is exactly what the group is for.
 //
 // HOW IT ENDED comes from what the card already holds: the commit a done report named, the `needs:` line a blocked

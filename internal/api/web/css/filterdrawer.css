@@ -78,5 +78,7 @@
     .frow { align-items: flex-start; flex-direction: column; gap: 6px; }
     .frow .seg { max-width: 100%; }
   }
-  /* A full screen terminal and a pop-out window have no room for it, and no tab to carry it. */
-  body.term-full #fd-terms, body.solo #fd-terms, body.term-phone #fd-terms { display: none; }
+  /* A full screen terminal and a pop-out window have no room for it, and no tab to carry it. A phone with a terminal
+     attached (`body.term-phone`) is neither: the line stays above the terminal and the session list, so attaching never
+     resizes anything, and the drawer is an overlay over the terminal like everywhere else. */
+  body.term-full #fd-terms, body.solo #fd-terms { display: none; }

@@ -355,11 +355,19 @@ function cardMatchesText(t, q) {
     (t.tags || []).join(" ")).toLowerCase().includes(q);
 }
 
+// THE ATTACHED CARD IS NEVER FILTERED OUT. The card whose terminal is open stays on all three tabs whatever is typed in
+// the search box and whatever chip is off: the stack's and the board's show chips, a board column's chip, the subagents
+// rollup, and on the terminals tab the search, a folded parent and the kind chips. A filter that pulled it out would
+// take the pane's own row away from under the operator. Compared by bare id, since a room-set change retags every id.
+function fdAttached(t) {
+  return typeof termTask !== "undefined" && !!termTask && !!t && bareId(t.id) === bareId(termTask.id);
+}
+
 // THE SUBAGENTS CHIP, off by default on all three tabs: a subagent is not a row (or a card) of its own, and its parent
 // shows a `3 subagents` badge instead. A subagent that needs you still shows, and one whose parent is not on the board
 // has nowhere to roll up to, so it stays a row. Returns `rolled`, the ids that are folded away, and `badge`, how many
 // each parent that stays on screen is carrying (a rolled subagent's own subagents count towards the nearest parent
-// that is still drawn). `rollable` is how many there are, which is the chip's count whether it is on or off.
+// that is still drawn). The attached card is never rolled (`fdAttached`). `rollable` is how many there are, which is the chip's count whether it is on or off.
 function subagentRollup(cards, on) {
   const byBare = new Map(cards.map(t => [bareId(t.id), t]));
   const parentOf = t => {
@@ -367,7 +375,8 @@ function subagentRollup(cards, on) {
     const p = byBare.get(bareId(t.spawned_by_id));
     return p && p !== t ? p : null;
   };
-  const rollable = new Set(cards.filter(t => parentOf(t) && !isWaiting(t)).map(t => t.id));
+  // The attached card is not rollable: it stays a row of its own, and is not counted in its parent's badge.
+  const rollable = new Set(cards.filter(t => parentOf(t) && !isWaiting(t) && !fdAttached(t)).map(t => t.id));
   const rolled = new Set();
   const badge = new Map();
   if (!on) {

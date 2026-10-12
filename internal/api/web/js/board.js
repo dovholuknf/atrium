@@ -1831,10 +1831,14 @@ async function renderBoard(signal) {
   const q = fdSearchText("board");
   const roll = subagentRollup(live, boardSubsOn());
   boardSubBadge = roll.badge;
-  const keepCard = t => !roll.rolled.has(t.id) && cardMatchesText(t, q);
+  const keepCard = t => !roll.rolled.has(t.id) && (fdAttached(t) || cardMatchesText(t, q));
   const all = live.filter(keepCard);
   const offline = everything.filter(t => t.offline && cardMatchesText(t, q));
+  // A column holding the attached card is drawn whatever its chip says (`fdAttached`).
   const showCols = boardShow();
+  const heldCol = COLUMNS.find(c => live.some(t => fdAttached(t) && c.statuses.includes(t.status)));
+  const drawCols = new Set(showCols);
+  if (heldCol) drawCols.add(heldCol.id);
   paintBoardCounts(live.filter(t => !roll.rolled.has(t.id) && cardMatchesText(t, q)), roll.rollable);
   fdStatus("board", {
     summary: boardSummary(showCols),
@@ -1849,7 +1853,7 @@ async function renderBoard(signal) {
 
   const html = COLUMNS.filter(col => {
     // A column whose chip is off is not drawn, and the others take its width.
-    if (!showCols.has(col.id)) return false;
+    if (!drawCols.has(col.id)) return false;
     // The inbox is the one column that should not be there when it is empty.
     //
     // Every other column earns its header while empty: it is somewhere a card

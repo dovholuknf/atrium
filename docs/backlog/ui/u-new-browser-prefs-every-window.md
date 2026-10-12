@@ -42,7 +42,7 @@ The sweep, every `localStorage` key read at load or held in a variable (setting,
 | text size, whitespace | atrium.uiscale, atrium.density | live, new |
 | terminal list sort | atrium.termSort | live, new |
 | terminal list mode and width | atrium.termlist.mode, .w | live, new |
-| terminal tray, subagent and agent hides, folded groups | atrium.termtray*, atrium.hidesubagents*, atrium.hideagents*, atrium.termfolded | live, new |
+| terminal list filter chips (the filter drawer), folded groups | atrium.terms.show, atrium.termfolded | live, new. The old atrium.termtray*, atrium.hidesubagents*, atrium.hideagents*, atrium.showstopped are cleared on load |
 | terminals kept hidden | atrium.termKeep, atrium.termKeepLines | live, new |
 | board sort | atrium.boardsort | live, new |
 | stack filter | atrium.stack.show | live, new |

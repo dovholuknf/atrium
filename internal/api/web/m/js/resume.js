@@ -91,7 +91,7 @@
       { sep: true },
       t.supervised && !over ? {
         label: "stop",
-        help: "Stops the agent so it can be resumed later. The card is left out of the list unless show stopped is on.",
+        help: "Stops the agent so it can be resumed later. The card is left out of the list unless the shelved filter is on.",
         act: () => patch(id, { status: "shelved" }).then(done)
       } : null,
       {
