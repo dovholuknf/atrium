@@ -108,7 +108,8 @@ function fdMount(tab) {
     if (Date.now() - fdDraggedAt < 400) return;
     fdSet(tab, !fdIsOpen(tab));
   });
-  host.querySelector(".fhandle").addEventListener("click", e => { if (e.detail !== 0) fdSet(tab, false, true); });
+  // Closing is open to the keyboard too: only opening is not (the line keeps its `detail` test).
+  host.querySelector(".fhandle").addEventListener("click", () => fdSet(tab, false, true));
   fdWirePanel(tab, host.querySelector(".fpanel"));
   fdWireDrag(tab, host);
 }
@@ -219,19 +220,31 @@ function fdWirePanel(tab, panel) {
 //
 // The pointerdown closes it and arms the swallow; the click that follows is stopped before anything below sees it.
 // A dialog opened from the drawer (`+ new group`) is neither inside nor outside, so it is left alone.
+//
+// ONLY A PRIMARY PRESS THAT CAN STILL BECOME A CLICK ARMS IT. A right-click opens a menu and fires no click, a touch that
+// turns into a scroll is cancelled by the browser, and a press that is carried away (a card drag) comes up elsewhere: each
+// would leave the flag armed for the next real click, which is the first item of the menu or the second tap on a card.
+let fdDown = null;   // where the swallowed press began
 document.addEventListener("pointerdown", e => {
   const tab = fdAnyOpen();
   if (!tab) return;
   const t = e.target;
   if (!t || !t.closest) return;
   if (fdHost(tab).contains(t) || t.closest("dialog, #tip")) return;
-  fdSwallow = Date.now();
+  fdSwallow = e.button === 0 ? Date.now() : 0;
+  fdDown = fdSwallow ? { x: e.clientX, y: e.clientY } : null;
   fdSet(tab, false, false);
 }, true);
+function fdDisarm() { fdSwallow = 0; fdDown = null; }
+document.addEventListener("pointerup", e => {
+  if (!fdSwallow || !fdDown) return;
+  if (Math.hypot(e.clientX - fdDown.x, e.clientY - fdDown.y) > 8) fdDisarm();
+}, true);
+["pointercancel", "contextmenu", "dragstart"].forEach(t => document.addEventListener(t, fdDisarm, true));
 document.addEventListener("click", e => {
   if (!fdSwallow) return;
   const fresh = Date.now() - fdSwallow < 1500;
-  fdSwallow = 0;
+  fdDisarm();
   if (!fresh) return;
   e.stopPropagation();
   e.preventDefault();
