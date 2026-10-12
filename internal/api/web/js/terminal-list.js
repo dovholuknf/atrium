@@ -544,7 +544,8 @@ function applyTermList() {
 function placeTabBridge() {
   const first = document.getElementById("tab-bridge");
   if (!first) return;
-  const cards = [...document.querySelectorAll("#term-list .card.on")];
+  // A shut group holding the attached row stands in for it: its heading is the tab.
+  const cards = [...document.querySelectorAll("#term-list .card.on, #term-list .tgroup.carries")];
   const bridges = [first, ...first.parentNode.querySelectorAll(".tabbridge.extra")];
   while (bridges.length < cards.length) {
     const b = first.cloneNode(false);
@@ -1582,7 +1583,7 @@ function termFlatGroupsHTML(list, g, folded) {
     // made with `+ new group` here could never be taken away from here.
     // `untagged` is the absence of a group and gets no menu.
     const menu = name && name !== UNTAGGED ? name : "";
-    const head = termHeading(shown, at, by.get(name).length, off, menu, style, mine);
+    const head = termHeading(shown, at, by.get(name).length, off, menu, style, mine, by.get(name));
     if (off) return head;
     const rows = by.get(name);
     if (mine) rows.sort(byRank);
@@ -1669,7 +1670,7 @@ function toggleTermGroup(path) {
 // it is the one mode whose order is yours to write (`p.groups`). Every other
 // mode sorts its groups by a rule, so a drag there would be undone by the next
 // paint, and the heading says where reordering lives instead of offering it.
-function termHeading(name, path, count, folded, group, style, movable) {
+function termHeading(name, path, count, folded, group, style, movable, rows) {
   const total = termTotals.get(path);
   const shown = total > count ? `${count}/${total}` : `${count}`;
   const tip = total > count ? ` (${total - count} hidden by hide inactive)` : "";
@@ -1683,7 +1684,9 @@ function termHeading(name, path, count, folded, group, style, movable) {
     ? ` oncontextmenu="groupMenu(event, '${esc(group).replace(/'/g, "&#39;")}')"` : "";
   const how = movable ? ". drag to move it, right click to rename, remove or recolor it"
     : group ? ". right click to recolor it. groups reorder by hand in the custom grouping" : "";
-  return `<button class="tgroup${style ? " hued" : ""}${movable ? " movable" : ""}"${style || ""}${
+  // A SHUT GROUP HOLDING THE ATTACHED SESSION IS WHERE ITS BRIDGE GOES. See `placeTabBridge`.
+  const carries = folded && rows && rows.some(termHoldsOn);
+  return `<button class="tgroup${style ? " hued" : ""}${movable ? " movable" : ""}${carries ? " carries" : ""}"${style || ""}${
       movable ? ` draggable="true" data-ghead="${esc(group)}"` : ""}
       onclick="toggleTermGroup('${arg}')"${menu}
       data-tip="${folded ? "show" : "hide"} ${esc(name)}${tip}${how}"
@@ -1691,6 +1694,11 @@ function termHeading(name, path, count, folded, group, style, movable) {
         class="tcaret">${folded ? "&#9656;" : "&#9662;"}</span
       ><span class="tgname">${esc(name)}</span
       ><span class="tgcount">${shown}</span></button>`;
+}
+
+// Is the attached session this row, or one drawn inside it.
+function termHoldsOn(t) {
+  return !!termTask && (t.id === termTask.id || (termKids.get(t.id) || []).some(termHoldsOn));
 }
 
 // How many rows each heading would hold with nothing hidden, keyed by the same
@@ -1760,7 +1768,7 @@ function termCountTotals(list) {
 function termNodeHTML(node, depth, path, folded) {
   const at = node.name ? (path ? path + "/" + node.name : node.name) : "";
   const isFolded = at !== "" && folded.has(at);
-  let out = node.name ? termHeading(node.name, at, termCount(node), isFolded) : "";
+  let out = node.name ? termHeading(node.name, at, termCount(node), isFolded, "", "", false, isFolded && termNodeRows(node)) : "";
   if (isFolded) return out;
 
   // AT THE ROOT, LOOSE ROWS GET A HEADING OF THEIR OWN.
@@ -1779,7 +1787,7 @@ function termNodeHTML(node, depth, path, folded) {
     if (!node.rows.length) return "";
     if (!node.kids.size) return node.rows.map(t => termRow(t, false)).join("");
     const isOff = folded.has("uncategorized");
-    const head = termHeading("uncategorized", "uncategorized", node.rows.length, isOff);
+    const head = termHeading("uncategorized", "uncategorized", node.rows.length, isOff, "", "", false, node.rows);
     if (isOff) return head;
     return head + `<div class="tnest">${node.rows.map(t => termRow(t, true)).join("")}</div>`;
   })();
@@ -1817,6 +1825,10 @@ function termNodeHTML(node, depth, path, folded) {
 
 // How many sessions are under a heading, at any depth. A folded group has to
 // say what is inside it, or folding loses information rather than hiding it.
+function termNodeRows(node) {
+  return [...node.rows, ...[...node.kids.values()].flatMap(termNodeRows)];
+}
+
 function termCount(node) {
   let n = node.rows.length;
   for (const kid of node.kids.values()) n += termCount(kid);
@@ -2233,7 +2245,7 @@ function termBucketHTML(pinned, total, folded) {
   const count = hidden > 0 ? `${pinned.length}/${total}` : `${pinned.length}`;
   const tip = hidden > 0 ? ` (${hidden} hidden by hide inactive)` : "";
   return `<div class="termbucket${folded ? " folded" : ""}" data-bucket="1">
-      <button class="tgroup pinnedhead" onclick="toggleTermGroup('${PINNED_FOLD}')"
+      <button class="tgroup pinnedhead${folded && pinned.some(termHoldsOn) ? " carries" : ""}" onclick="toggleTermGroup('${PINNED_FOLD}')"
         data-tip="${folded ? "show" : "hide"} the pinned terminals${tip}"
         ><span class="tcaret">${folded ? "&#9656;" : "&#9662;"}</span
         ><span class="tgname">pinned</span

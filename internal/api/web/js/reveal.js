@@ -37,8 +37,7 @@ function revealFolds(t) {
   const openInverted = key => { if (!list.includes(key)) { list.push(key); changed = true; } };
   const openTermFold = key => { if (termSet.delete(key)) changed = true; };
   const chain = revealChain(t);
-  const top = chain[chain.length - 1];
-
+  
   // The rows of the cards that launched it.
   chain.slice(1).forEach(up => open(termKidsKey(up)));
 
@@ -62,23 +61,8 @@ function revealFolds(t) {
   projects(bg, "proj:", t);
   projects(typeof grouper === "function" ? grouper("stack") : null, "proj:stack:", t);
 
-  // The terminals list: its pinned bucket, then the headings above the row. A card launched by another is drawn under
-  // its parent, so the headings are the top card's.
-  if (t.pinned || top.pinned) openTermFold(PINNED_FOLD);
-  const p = typeof groupingPrefs === "function" ? groupingPrefs("terms") : null;
-  const tg = typeof grouper === "function" ? grouper("terms") : null;
-  if (p && p.on) {
-    if (!tg || (p.mode === "project" && !String(p.by || "").trim())) {
-      const segs = termPathOf(top).segs;
-      if (!segs.length) openTermFold("uncategorized");
-      segs.forEach((_, i) => openTermFold(segs.slice(0, i + 1).join("/")));
-    } else {
-      let names = [];
-      try { names = tg.of(top) || []; } catch (e) { names = []; }
-      if (!names.length) names = [""];
-      names.forEach(n => openTermFold("g:" + (String(n ?? "") || "uncategorized")));
-    }
-  }
+  // The terminals list's headings are left as they are. A shut one holding the card carries its bridge instead, see
+  // `placeTabBridge`.
 
   if (!changed) return false;
   try {
