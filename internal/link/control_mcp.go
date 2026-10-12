@@ -286,6 +286,7 @@ func (c *controlMCP) server(class ctlClass) *mcp.Server {
 			"Its permission requests go to the HUMAN, on their board, so an agent started here " +
 			"and left alone stops at the first gated command. Say who asked for it and why, " +
 			"because whoever finds the card later will want to know.\n\n" +
+			"Do not write how to finish into the brief: atrium appends the ending to every launch.\n\n" +
 			"Use `brief` for context it needs before the task. It is written to BRIEF.md in the " +
 			"new session's directory ON THE ROOM and read first, so it survives compaction and is " +
 			"still there when a human takes the card over. Put in it what you would tell a " +
@@ -1261,11 +1262,11 @@ const OriginTag = "origin:agent"
 // reportLine is appended to every agent launch's prompt. See launchHandler. How a worker ends: atrium_done or
 // atrium_blocked. The same text as daemon.LaunchEndingLine, which a test keeps equal.
 const reportLine = "Before you end your turn, tell your launcher either:\n" +
-	"- atrium_done <sha or artifact> when the work is finished\n" +
-	"- atrium_blocked <up to 50 words> when something stops you, such as a question you need answered, a tool you " +
-	"need installed, or a permission you need.\n" +
+	"- atrium_done <sha or artifact> [one line] when the work is finished\n" +
+	"- atrium_blocked <up to 50 words> when something stops you, such as a question you need answered, a tool you need installed, or a permission you need.\n" +
+	"Then stop. Say nothing more.\n" +
 	"Run tests and builds in the foreground, with a longer command timeout if needed. If a command must run in the background, wait for it in the same turn. Never end a turn while a command you started is still running.\n" +
-	"Report to your launcher, never to the operator, unless your launcher is the operator. Your commit is read from your worktree or any hub branch, so never ask where to push and never offer a push to origin. A launcher's \"stop\" is a valid end: answer it with atrium_done, or with nothing."
+	"Report to your launcher, never to the operator, unless your launcher is the operator. Your commit is read from your worktree or any hub branch, so never ask where to push and never offer a push to origin. A launcher's \"stop\" is a valid end: answer it with atrium_done and your last sha."
 
 // AgentLaunchTags is what an agent launch's tags become: the caller's own, the origin marker,
 // and a WORKER marker unless the caller says it is a director or already a subagent. The

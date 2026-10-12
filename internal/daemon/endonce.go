@@ -83,3 +83,21 @@ func writeEndSayDropped(w http.ResponseWriter) {
 			"Nothing more is needed. Stop.",
 	})
 }
+
+// repeatsLastDone says whether a done names what the card's last done named. A launcher's stop is answered with
+// atrium_done and the last sha (D2), and the launcher already has that sha, so the repeat is recorded and settles the
+// debt but sends no second notice.
+func repeatsLastDone(task *store.Task, in FinishRequest) bool {
+	if task == nil {
+		return false
+	}
+	if sha := strings.ToLower(strings.TrimSpace(in.SHA)); sha != "" {
+		last := strings.ToLower(task.ReportSHA)
+		return last != "" && (strings.HasPrefix(last, sha) || strings.HasPrefix(sha, last))
+	}
+	if a := strings.TrimSpace(in.Artifact); a != "" {
+		recap := "done " + a
+		return task.Recap == recap || strings.HasPrefix(task.Recap, recap+":")
+	}
+	return false
+}

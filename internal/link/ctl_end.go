@@ -20,6 +20,9 @@ import (
 // EndReasonMax is the longest reason atrium_blocked takes, in words.
 const EndReasonMax = 50
 
+// EndLineMax is the longest line atrium_done takes after the sha, in words.
+const EndLineMax = 20
+
 // endSHAShape is what a commit id looks like: seven to forty hex characters.
 var endSHAShape = regexp.MustCompile(`^[0-9a-fA-F]{7,40}$`)
 
@@ -28,7 +31,8 @@ const doneToolDesc = "End your work: it is finished. THIS IS HOW TO END. Nothing
 	"characters, and it has to exist in your directory or on any hub branch, or the call is refused and nothing is " +
 	"recorded). `artifact` is a path or URL to what you made, for work with no commit, and a path has to exist on " +
 	"your own room. Details go in REPORT.md, not here. Never end a turn while a command you started is still running. " +
-	"Stop after the call: say nothing more and do no more work. Write nothing else: the human sees the tool call."
+	"Stop after the call: say nothing more and do no more work. Write nothing else: the human sees the tool call. " +
+	"Answer a launcher's stop with this and your last sha."
 
 const blockedToolDesc = "End your work: something stops you and you cannot go on. THIS IS HOW TO END. " +
 	"Nothing else is needed. Give `reason`, what stops you and what you need, in up to 50 words. A longer reason is " +
@@ -38,6 +42,7 @@ const blockedToolDesc = "End your work: something stops you and you cannot go on
 type doneInput struct {
 	SHA      string `json:"sha,omitempty" jsonschema:"sha or artifact location. the commit the work landed as: 7 to 40 hex characters"`
 	Artifact string `json:"artifact,omitempty" jsonschema:"sha or artifact location. a path or URL to what you made, when there is no commit"`
+	Line     string `json:"line,omitempty" jsonschema:"optional: one line, up to 20 words, shown after the sha"`
 }
 
 type blockedInput struct {
@@ -122,6 +127,14 @@ func (d EndDoor) Done(ctx context.Context, req *mcp.CallToolRequest, in doneInpu
 	*mcp.CallToolResult, EndOutput, error) {
 
 	sha, artifact := strings.TrimSpace(in.SHA), strings.TrimSpace(in.Artifact)
+	line := strings.Join(strings.Fields(in.Line), " ")
+	if n := len(strings.Fields(line)); n > EndLineMax {
+		return nil, EndOutput{}, fmt.Errorf("the line is %d words, over %d. details go in REPORT.md", n, EndLineMax)
+	}
+	tail := ""
+	if line != "" {
+		tail = ": " + line
+	}
 	switch {
 	case sha != "" && artifact != "":
 		return nil, EndOutput{}, fmt.Errorf("give sha or artifact, not both")
@@ -129,7 +142,7 @@ func (d EndDoor) Done(ctx context.Context, req *mcp.CallToolRequest, in doneInpu
 		return nil, EndOutput{}, fmt.Errorf("give sha (the commit) or artifact (a path or URL to what you made)")
 	case artifact != "":
 		out, err := d.Report(ctx, req, map[string]any{
-			"status": "done", "recap": "done " + artifact, "artifact": artifact, "ended": true,
+			"status": "done", "recap": "done " + artifact + tail, "artifact": artifact, "ended": true,
 		})
 		return nil, out, err
 	}
@@ -137,7 +150,7 @@ func (d EndDoor) Done(ctx context.Context, req *mcp.CallToolRequest, in doneInpu
 		return nil, EndOutput{}, fmt.Errorf("%s", why)
 	}
 	out, err := d.Report(ctx, req, map[string]any{
-		"status": "done", "recap": "done " + sha, "sha": sha, "ended": true,
+		"status": "done", "recap": "done " + sha + tail, "sha": sha, "ended": true,
 	})
 	return nil, out, err
 }

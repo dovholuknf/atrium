@@ -323,6 +323,10 @@ func (d *Daemon) finish(task *store.Task, in FinishRequest) (map[string]any, int
 		if d.endEchoesSay(task, in.Status) {
 			in.viaSay = true
 		}
+		// A stop answered with the same done again: the launcher already has that sha. See repeatsLastDone.
+		if in.Status == ReportDone && repeatsLastDone(task, in) {
+			in.viaSay = true
+		}
 		d.markEnded(task.ID, in.Status)
 	}
 

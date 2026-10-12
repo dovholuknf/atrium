@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/dovholuknf/atrium/internal/store"
 )
@@ -134,5 +135,43 @@ func TestAnEndingResumesNoHoldNoticesLauncherAndQueuesForAnOrchestratorOne(t *te
 	}
 	if n := len(heldOn(t, d2, l2.ID)); n != 0 {
 		t.Fatalf("an ending was held for an orchestrator-only launcher: %d", n)
+	}
+}
+
+// A launcher's stop is answered with the same done again. The launcher already has that sha, so the repeat is recorded
+// and sends nothing, and the silent stop that follows finds the debt settled.
+func TestARepeatDoneAfterALauncherStopIsSilent(t *testing.T) {
+	d := testDaemon(t)
+	launcher, worker := launchedPair(t, d)
+	stubCommits(t, true, false)
+
+	if rec, out := finishWith(t, d, FinishRequest{Agent: "worker", Status: ReportDone, SHA: "abc1234", Ended: true}); rec.Code != http.StatusOK {
+		t.Fatalf("code %d: %v", rec.Code, out)
+	}
+	var ids []string
+	for _, m := range pendingFrom(t, d, launcher.ID) {
+		ids = append(ids, m.ID)
+	}
+	if err := d.st.MarkDelivered(launcher.ID, "terminal", ids); err != nil {
+		t.Fatal(err)
+	}
+	if n := len(pendingFrom(t, d, launcher.ID)); n != 0 {
+		t.Fatalf("%d pending after draining", n)
+	}
+
+	time.Sleep(5 * time.Millisecond)
+	prompt(t, d, worker.ID)
+	if rec, out := finishWith(t, d, FinishRequest{Agent: "worker", Status: ReportDone, SHA: "abc1234", Ended: true}); rec.Code != http.StatusOK {
+		t.Fatalf("code %d: %v", rec.Code, out)
+	}
+	if n := len(pendingFrom(t, d, launcher.ID)); n != 0 {
+		t.Fatalf("a repeat done told the launcher: %d pending", n)
+	}
+	stopSilently(t, d, "worker")
+	if n := len(pendingFrom(t, d, launcher.ID)); n != 0 {
+		t.Fatalf("a silent stop after the repeat rang the launcher: %d pending", n)
+	}
+	if n := len(heldOn(t, d, launcher.ID)); n != 0 {
+		t.Fatalf("%d held on the launcher", n)
 	}
 }

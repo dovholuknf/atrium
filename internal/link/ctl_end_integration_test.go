@@ -97,3 +97,18 @@ func TestBlockedTakes50WordsWithNewlinesAndDeliversItAsBlocked(t *testing.T) {
 		t.Fatalf("body = %v", b)
 	}
 }
+
+func TestDoneTakesAnOptionalLineAndRefusesOver20Words(t *testing.T) {
+	d, got := fakeEnd()
+	if _, _, err := d.Done(context.Background(), nil, doneInput{SHA: "abc1234", Line: "all five phases are green"}); err != nil {
+		t.Fatal(err)
+	}
+	if len(*got) != 1 || (*got)[0]["recap"] != "done abc1234: all five phases are green" {
+		t.Fatalf("recorded %v", *got)
+	}
+	d, got = fakeEnd()
+	long := strings.TrimSpace(strings.Repeat("word ", 21))
+	if _, _, err := d.Done(context.Background(), nil, doneInput{SHA: "abc1234", Line: long}); err == nil || len(*got) != 0 {
+		t.Fatalf("err = %v, recorded %d, want a refusal and nothing recorded", err, len(*got))
+	}
+}
