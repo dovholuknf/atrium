@@ -12602,12 +12602,15 @@ async function peekOneHoverSection(browser, base) {
     }
     // THE SIZE: a card with one open question and a recap fits in 420px at the default --uiscale, and a popover taller
     // than the viewport scrolls inside. A plain idle card is smaller still. ONEHOVER_SHOTS writes both pictures.
-    const measure = async (id, name) => {
+    const measure = async (id, name, all) => {
       await p.evaluate(() => closePeek());
+      await p.evaluate(() => localStorage.removeItem("atrium.peekDrawers"));
       await p.evaluate(i => openPeek(i, document.querySelector('#term-list .card.tab[data-id="' + i + '"]'), "hover"), id);
       await p.waitForFunction(() => /\d+k/.test((document.querySelector(".peek.on .peek-ctx") || {}).textContent || ""),
         null, { timeout: slow(4000) }).catch(() => fail("onehover: the details of " + id + " never showed a context size."));
       await new Promise(r => setTimeout(r, 400));
+      // Every drawer open, for the picture and for the recap's "more", which only measures in an open drawer.
+      if (all) await p.evaluate(() => document.querySelectorAll(".peek.on .peek-drawer:not(.open) > .peek-dh").forEach(h => h.click()));
       const m = await p.evaluate(() => {
         const b = document.querySelector(".peek.on .peek-body");
         const r = b.getBoundingClientRect();
@@ -12627,7 +12630,8 @@ async function peekOneHoverSection(browser, base) {
     if (!/published 1 document/.test(asked.text)) fail("onehover: the published documents line is gone: " + asked.text);
     if (asked.h > 420) fail("onehover: a card with one question and a recap is " + asked.h + "px tall, past 420px");
     if (!/land sa21 first\?/.test(asked.text) || !/Moved the peek/.test(asked.text)) fail("onehover: the question or the recap is missing: " + asked.text);
-    if (!asked.more) fail("onehover: a long recap has no way to read the rest");
+    const askedOpen = await measure("sg4-control~oh2", process.env.ONEHOVER_NAME ? process.env.ONEHOVER_NAME + "-open" : "peek-open", true);
+    if (!askedOpen.more) fail("onehover: a long recap has no way to read the rest");
     if (asked.actions.join(",") !== "open,say,exit,restart") fail("onehover: the actions are " + asked.actions.join(",") + ", want open,say,exit,restart");
     if (asked.cut) fail("onehover: the usage grid, footer, cache paragraph or card block is still drawn");
     if (/launched with|launched by|prompts|cache read|idle \d/.test(asked.text)) fail("onehover: cut text is still there: " + asked.text);
@@ -12665,6 +12669,116 @@ async function peekOneHoverSection(browser, base) {
     boardDocs = wasDocs;
   }
   if (errors.length) fail("the one hover page threw: " + errors.join(" | "));
+}
+
+// THE PEEK'S DRAWERS. Every section under the header is a drawer: NEEDS YOU open, recap and context shut with a
+// one-line summary. Click and Enter toggle, the state is kept per section across two cards, and a drag that selects
+// text in a header toggles nothing. The header and the actions row are not drawers.
+async function peekDrawersSection(browser, base) {
+  const W = 1400, H = 1000;
+  const ctx = await browser.newContext({ viewport: { width: W, height: H } });
+  const p = await ctx.newPage();
+  const errors = [];
+  p.on("pageerror", e => errors.push(String(e)));
+  await ctx.route("**/v1/tasks/*/usage*", route => route.fulfill({ json: CTX_USAGE["cx-big"] }));
+  await ctx.addInitScript(() => { try { localStorage.setItem("atrium.termlist.w", "640"); } catch (e) {} });
+  const was = tasksMode;
+  tasksMode = "onehover";
+  try {
+    await p.goto(base, { waitUntil: "domcontentloaded" });
+    await p.evaluate(() => document.querySelector('.tab[data-view="terms"]').click());
+    await p.waitForSelector('#term-list .card.tab[data-id="sg4-control~oh2"]', { state: "visible", timeout: slow(15000) });
+    await new Promise(r => setTimeout(r, 1000));
+    const show = async id => {
+      await p.evaluate(() => closePeek());
+      await p.evaluate(i => openPeek(i, document.querySelector('#term-list .card.tab[data-id="' + i + '"]'), "menu"), id);
+      await p.waitForFunction(() => /\d+k/.test((document.querySelector(".peek.on .peek-ctx") || {}).textContent || ""),
+        null, { timeout: slow(4000) }).catch(() => fail("peekDrawers: " + id + " never showed a context size."));
+      await new Promise(r => setTimeout(r, 300));
+    };
+    // What each drawer looks like now: open or not, its summary as seen, whether its body is visible.
+    const drawers = () => p.evaluate(() => {
+      const o = {};
+      for (const d of document.querySelectorAll(".peek.on .peek-drawer")) {
+        const sum = d.querySelector(".peek-dsum"), body = d.querySelector(".peek-dbody");
+        o[d.dataset.key] = { open: d.classList.contains("open"), aria: d.querySelector(".peek-dh").getAttribute("aria-expanded"),
+          sum: sum.textContent.trim(), sumShown: getComputedStyle(sum).display !== "none", bodyShown: !body.hidden && body.offsetHeight > 0 };
+      }
+      return o;
+    });
+    const head = key => '.peek.on .peek-drawer[data-key="' + key + '"] > .peek-dh';
+
+    await p.evaluate(() => localStorage.removeItem("atrium.peekDrawers"));
+    await show("sg4-control~oh2");
+    let d = await drawers();
+    if (!d.need || !d.recap || !d.ctx) fail("peekDrawers: want need, recap and ctx drawers, got " + Object.keys(d).join(","));
+    else {
+      if (!d.need.open || !d.need.bodyShown || d.need.aria !== "true") fail("peekDrawers: NEEDS YOU is not open by default: " + JSON.stringify(d.need));
+      if (d.recap.open || d.recap.bodyShown || d.recap.aria !== "false") fail("peekDrawers: the recap is not shut by default: " + JSON.stringify(d.recap));
+      if (d.ctx.open || d.ctx.bodyShown) fail("peekDrawers: the context is not shut by default: " + JSON.stringify(d.ctx));
+      if (!d.recap.sumShown || !/^Moved the peek's size rules/.test(d.recap.sum)) fail("peekDrawers: the shut recap does not show its first line: " + JSON.stringify(d.recap));
+      if (!d.ctx.sumShown || d.ctx.sum !== "212k of 200k") fail("peekDrawers: the shut context summary is " + JSON.stringify(d.ctx.sum) + ", want '212k of 200k'");
+    }
+    const notDrawers = await p.evaluate(() => ({ head: !!document.querySelector(".peek.on .peek-head").closest(".peek-drawer"),
+      acts: !!document.querySelector(".peek.on .peek-acts").closest(".peek-drawer") }));
+    if (notDrawers.head || notDrawers.acts) fail("peekDrawers: the header or the actions row is a drawer: " + JSON.stringify(notDrawers));
+
+    // Click opens the recap, and its "more" now measures.
+    await p.click(head("recap"));
+    d = await drawers();
+    if (!d.recap.open || !d.recap.bodyShown || d.recap.sumShown) fail("peekDrawers: a click did not open the recap: " + JSON.stringify(d.recap));
+    if (!(await p.locator(".peek.on .peek-more:not([hidden])").count())) fail("peekDrawers: the open long recap has no 'more'");
+    // Enter and Space on a focused header toggle it.
+    await p.focus(head("ctx"));
+    await p.keyboard.press("Enter");
+    d = await drawers();
+    if (!d.ctx.open || !d.ctx.bodyShown) fail("peekDrawers: Enter did not open the context: " + JSON.stringify(d.ctx));
+    await p.keyboard.press("Space");
+    d = await drawers();
+    if (d.ctx.open) fail("peekDrawers: Space did not shut the context: " + JSON.stringify(d.ctx));
+    await p.keyboard.press("Enter");
+    await p.click(head("need"));
+    d = await drawers();
+    if (d.need.open) fail("peekDrawers: a click did not shut NEEDS YOU: " + JSON.stringify(d.need));
+
+    // The state is per section: the other card shows the same drawers as left (need shut, recap and ctx open).
+    await show("sg4-control~oh1");
+    d = await drawers();
+    if (d.need && d.need.open) fail("peekDrawers: NEEDS YOU is open on the second card after it was shut: " + JSON.stringify(d.need));
+    if (!d.ctx || !d.ctx.open) fail("peekDrawers: the context was open and is shut on the second card: " + JSON.stringify(d.ctx));
+    const saved = await p.evaluate(() => JSON.parse(localStorage.getItem("atrium.peekDrawers") || "{}"));
+    if (saved.need !== false || saved.recap !== true || saved.ctx !== true) fail("peekDrawers: the kept state is " + JSON.stringify(saved));
+    await show("sg4-control~oh2");
+    d = await drawers();
+    if (d.need.open || !d.recap.open || !d.ctx.open) fail("peekDrawers: back on the first card the drawers moved: " + JSON.stringify(d));
+
+    // A drag that selects text in a header toggles nothing, and a click after it does.
+    await p.evaluate(() => localStorage.removeItem("atrium.peekDrawers"));
+    await show("sg4-control~oh2");
+    const sb = await p.locator(head("recap") + " .peek-dsum").boundingBox();
+    await p.mouse.move(sb.x + 4, sb.y + sb.height / 2);
+    await p.mouse.down();
+    await p.mouse.move(sb.x + Math.min(sb.width - 4, 120), sb.y + sb.height / 2, { steps: 6 });
+    await p.mouse.up();
+    const sel = await p.evaluate(() => String(window.getSelection()));
+    if (!sel.trim()) fail("peekDrawers: the drag selected nothing, so it proves nothing");
+    d = await drawers();
+    if (d.recap.open) fail("peekDrawers: a drag-select in the recap's header toggled it");
+    // Text inside an open drawer: selecting it leaves it open.
+    await p.click(head("need"));
+    await p.click(head("need"));
+    const tb = await p.locator(".peek.on .peek-drawer[data-key=\"need\"] .peek-row span").first().boundingBox();
+    await p.mouse.move(tb.x + 2, tb.y + tb.height / 2);
+    await p.mouse.down();
+    await p.mouse.move(tb.x + Math.min(tb.width - 2, 60), tb.y + tb.height / 2, { steps: 6 });
+    await p.mouse.up();
+    d = await drawers();
+    if (!d.need.open) fail("peekDrawers: a drag-select in NEEDS YOU's text shut it");
+  } finally {
+    await ctx.close();
+    tasksMode = was;
+  }
+  if (errors.length) fail("the peek drawers page threw: " + errors.join(" | "));
 }
 
 // THE PEEK'S STATUS IS TRUE. A turn that ended with nothing asked is "your move", not needs-you. A turn that is running
@@ -28302,7 +28416,7 @@ async function main() {
       pasteBig: pasteBigSection, pasteLands: pasteLandsSection, pasteEmpty: pasteEmptySection, pasteBusy: pasteBusySection, typing: typingSection, alias: aliasSection, askAgain: askAgainSection, copySelect: copySelectSection, busyGuard: busyGuardSection, keepalive: keepaliveSection, idlePark: idleParkSection, restartMenu: restartMenuSection,
       stuck: stuckSection, blockerMark: blockerMarkSection, carryLink: carryLinkSection,
       skinScope: skinScopeSection, skinHeal: skinHealSection, toastLives: toastLivesSection,
-      history: historySection, contextSize: contextSizeSection, ctxLine: ctxLineSection, ctxLimitLayers: ctxLimitLayersSection, contextCycle: contextCycleSection, landThePlane: landThePlaneSection, peekEverywhere: peekEverywhereSection, peekOneHover: peekOneHoverSection, peekStatusTruth: peekStatusTruthSection, peekHoverRest: peekHoverRestSection, cardRoute: cardRouteSection,
+      history: historySection, contextSize: contextSizeSection, ctxLine: ctxLineSection, ctxLimitLayers: ctxLimitLayersSection, contextCycle: contextCycleSection, landThePlane: landThePlaneSection, peekEverywhere: peekEverywhereSection, peekOneHover: peekOneHoverSection, peekDrawers: peekDrawersSection,peekStatusTruth: peekStatusTruthSection, peekHoverRest: peekHoverRestSection, cardRoute: cardRouteSection,
       quietDoer: quietDoerSection, autoPerm: autoPermSection, looksIdle: looksIdleSection, notifyOff: notifyOffSection,
       questionsClick: questionsClickSection, walk: walkSection, walkContext: walkContextSection, linkReuse: linkReuseSection,
       usageCacheReads: usageCacheReadsSection, usageTurns: usageTurnsSection, turnLimits: turnLimitsSection, roomsDash: roomsDashSection, phoneView: phoneViewSection, heldLine: heldLineSection, u016: u016Section, phoneHeader: phoneHeaderSection, phoneFocus: phoneFocusSection, phoneTermBar: phoneTermBarSection, phoneShare: phoneShareSection, phonePan: phonePanSection, phoneFollow: phoneFollowSection, phoneTap: phoneTapSection, phoneKeyboard: phoneKeyboardSection, phoneCompose: phoneComposeSection, mCompose: mComposeSection, mPerms: mPermsSection, mReview: mReviewSection, usagePolish: usagePolishSection, usageLimits: usageLimitsSection, usageGroups: usageGroupsSection,
@@ -30367,6 +30481,7 @@ async function main() {
     await unit("landThePlane", () => landThePlaneSection(browser, base));
     await unit("peekEverywhere", () => peekEverywhereSection(browser, base));
     await unit("peekOneHover", () => peekOneHoverSection(browser, base));
+    await unit("peekDrawers", () => peekDrawersSection(browser, base));
     await unit("peekStatusTruth", () => peekStatusTruthSection(browser, base));
     await unit("peekHoverRest", () => peekHoverRestSection(browser, base));
     await unit("phoneListFit", () => phoneListFitSection(browser, base));
