@@ -15,6 +15,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"time"
 
 	"github.com/dovholuknf/atrium/internal/runnerprofile"
 	"github.com/dovholuknf/atrium/internal/store"
@@ -63,6 +64,11 @@ type Env struct {
 	AtriumExe string
 	// GOOS is runtime.GOOS unless a test says otherwise.
 	GOOS string
+
+	// lockWait bounds the wait for claude's config lock, claudeLockWait when zero, and mkdirLock is os.Mkdir when nil.
+	// Tests set them to reproduce a held lock and the Windows answers.
+	lockWait  time.Duration
+	mkdirLock func(name string, perm os.FileMode) error
 }
 
 // lookup reads a variable the runner will see, row env first.

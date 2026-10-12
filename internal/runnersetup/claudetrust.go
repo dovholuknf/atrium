@@ -42,7 +42,7 @@ const claudeLockStale = 10 * time.Second
 
 // claudeLockWait bounds how long a launch waits for a session that holds the
 // lock. Claude holds it for one read and one write.
-var claudeLockWait = 5 * time.Second
+const claudeLockWait = 5 * time.Second
 
 // claudeConfigPath is the file claude keeps its global config in.
 func claudeConfigPath(env Env) string {
@@ -111,9 +111,6 @@ func tooWideToTrust(env Env, cwd string) bool {
 	return false
 }
 
-// mkdirLock is os.Mkdir; tests replace it to reproduce the Windows answers.
-var mkdirLock = os.Mkdir
-
 // lockClaudeConfig takes claude's own lock on its config file, the way
 // proper-lockfile does: a directory beside it, made atomically. A lock older
 // than claude's stale limit belongs to a session that died holding it.
@@ -124,12 +121,19 @@ var mkdirLock = os.Mkdir
 // handle. So a denied Mkdir is a lock still being released: it is retried
 // inside the same wait, and only if it is still denied when the wait ends is it
 // reported, as the permission error it then is.
-func lockClaudeConfig(path string) (unlock func(), err error) {
+func lockClaudeConfig(env Env, path string) (unlock func(), err error) {
 	lock := path + ".lock"
-	deadline := time.Now().Add(claudeLockWait)
+	limit, mkdir := env.lockWait, env.mkdirLock
+	if limit <= 0 {
+		limit = claudeLockWait
+	}
+	if mkdir == nil {
+		mkdir = os.Mkdir
+	}
+	deadline := time.Now().Add(limit)
 	wait := 20 * time.Millisecond
 	for {
-		err := mkdirLock(lock, 0o700)
+		err := mkdir(lock, 0o700)
 		if err == nil {
 			return func() { _ = os.Remove(lock) }, nil
 		}
@@ -144,7 +148,7 @@ func lockClaudeConfig(path string) (unlock func(), err error) {
 			if !errors.Is(err, os.ErrExist) {
 				return nil, err
 			}
-			return nil, fmt.Errorf("a claude session held %s for %s", filepath.ToSlash(lock), claudeLockWait)
+			return nil, fmt.Errorf("a claude session held %s for %s", filepath.ToSlash(lock), limit)
 		}
 		time.Sleep(wait)
 		if wait < 200*time.Millisecond {
@@ -164,7 +168,7 @@ func trustClaudeFolder(env Env, cwd string) (Applied, error) {
 	if len(keys) == 0 || !exists(path) {
 		return res, nil
 	}
-	unlock, err := lockClaudeConfig(path)
+	unlock, err := lockClaudeConfig(env, path)
 	if err != nil {
 		return res, err
 	}

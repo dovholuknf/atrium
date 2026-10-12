@@ -256,9 +256,7 @@ func TestALockThatStaysHeldGivesUp(t *testing.T) {
 	if err := os.Mkdir(path+".lock", 0o700); err != nil {
 		t.Fatal(err)
 	}
-	was := claudeLockWait
-	claudeLockWait = 100 * time.Millisecond
-	t.Cleanup(func() { claudeLockWait = was })
+	env.lockWait = 100 * time.Millisecond
 	before, _ := os.ReadFile(path)
 	if _, err := claudeLaunch(env, t.TempDir()); err == nil {
 		t.Fatal("a held lock did not report an error")
@@ -282,7 +280,7 @@ func TestConcurrentClaudeWritesKeepEveryChange(t *testing.T) {
 		dirs = append(dirs, t.TempDir())
 	}
 	claudeWrite := func() error {
-		unlock, err := lockClaudeConfig(path)
+		unlock, err := lockClaudeConfig(env, path)
 		if err != nil {
 			return err
 		}
@@ -325,18 +323,16 @@ func TestConcurrentClaudeWritesKeepEveryChange(t *testing.T) {
 // A Mkdir answered ACCESS_DENIED while the lock is being released (Windows,
 // delete pending) is waited out, and the lock is then taken.
 func TestLockRetriesADeniedMkdir(t *testing.T) {
-	_, path := claudeHome(t)
-	real := mkdirLock
+	env, path := claudeHome(t)
 	denied := 2
-	mkdirLock = func(name string, perm os.FileMode) error {
+	env.mkdirLock = func(name string, perm os.FileMode) error {
 		if denied > 0 {
 			denied--
 			return &os.PathError{Op: "mkdir", Path: name, Err: os.ErrPermission}
 		}
-		return real(name, perm)
+		return os.Mkdir(name, perm)
 	}
-	t.Cleanup(func() { mkdirLock = real })
-	unlock, err := lockClaudeConfig(path)
+	unlock, err := lockClaudeConfig(env, path)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -352,15 +348,12 @@ func TestLockRetriesADeniedMkdir(t *testing.T) {
 // A Mkdir that stays denied is a real permission error, reported as itself
 // when the wait ends rather than as a session holding the lock.
 func TestLockReportsAPersistentDeniedMkdir(t *testing.T) {
-	_, path := claudeHome(t)
-	real := mkdirLock
-	mkdirLock = func(name string, perm os.FileMode) error {
+	env, path := claudeHome(t)
+	env.mkdirLock = func(name string, perm os.FileMode) error {
 		return &os.PathError{Op: "mkdir", Path: name, Err: os.ErrPermission}
 	}
-	was := claudeLockWait
-	claudeLockWait = 100 * time.Millisecond
-	t.Cleanup(func() { mkdirLock = real; claudeLockWait = was })
-	if _, err := lockClaudeConfig(path); !errors.Is(err, os.ErrPermission) {
+	env.lockWait = 100 * time.Millisecond
+	if _, err := lockClaudeConfig(env, path); !errors.Is(err, os.ErrPermission) {
 		t.Fatalf("got %v, want the permission error", err)
 	}
 }
