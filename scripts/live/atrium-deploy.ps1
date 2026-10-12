@@ -132,20 +132,28 @@ $sshOpts = @('-o', 'ConnectTimeout=25', '-o', 'BatchMode=yes')
 $built = @()
 
 # 2. Remote rooms. Each: reach it, cross-build, copy, stop, swap, start detached, check it is back on the hub.
+# `atrium stop` returns before the room lets go of its board port, and a start that finds the port answering
+# leaves it alone and exits. So each swap waits up to a minute for 127.0.0.1:7781 to stop listening.
+$waitFree = '$n = 0 ; while ($n -lt 60) { $c = New-Object Net.Sockets.TcpClient ; ' +
+  'try { if (-not $c.ConnectAsync(''127.0.0.1'', 7781).Wait(500)) { break } } catch { break } ' +
+  'finally { $c.Dispose() } ; Start-Sleep 1 ; $n++ } ; '
 $winSwap = '$e = Join-Path $HOME ''.atrium\toolchain\room-env.ps1'' ; if (Test-Path $e) { . $e } ; ' +
   '$b = Join-Path $HOME ''.atrium\bin\atrium.exe'' ; & $b stop ; ' +
+  $waitFree +
   'Move-Item -Force $b ($b -replace ''atrium.exe$'', ''atrium.prev.exe'') ; ' +
   'Move-Item -Force (Join-Path $HOME ''atrium.new.exe'') $b ; & $b room --detach'
 $remote = @{
   'sg3'    = @{ GOOS = 'windows'; GOARCH = 'amd64'; Dest = 'atrium.new.exe'
-    Swap = 'C:/Users/claude/.atrium/bin/atrium.exe stop ; ' +
+    Swap = 'C:/Users/claude/.atrium/bin/atrium.exe stop ; ' + $waitFree +
       'Move-Item -Force C:/Users/claude/.atrium/bin/atrium.exe C:/Users/claude/.atrium/bin/atrium.prev.exe ; ' +
       'Move-Item -Force C:/Users/claude/atrium.new.exe C:/Users/claude/.atrium/bin/atrium.exe ; ' +
       'C:/Users/claude/.atrium/bin/atrium.exe room --detach --dir C:/Users/claude/.atrium/room ' +
       '--db C:/Users/claude/.atrium/atrium.db' }
   'sgg'    = @{ GOOS = 'windows'; GOARCH = 'amd64'; Dest = 'atrium.new.exe'; Swap = $winSwap }
   'm1mini' = @{ GOOS = 'darwin'; GOARCH = 'arm64'; Dest = '.local/bin/atrium.new'
-    Swap = 'zsh -lic "~/.local/bin/atrium stop ; mv -f ~/.local/bin/atrium ~/.local/bin/atrium.prev && ' +
+    Swap = 'zsh -lic "~/.local/bin/atrium stop ; ' +
+      'for i in {1..60}; do lsof -iTCP:7781 -sTCP:LISTEN >/dev/null || break ; sleep 1 ; done ; ' +
+      'mv -f ~/.local/bin/atrium ~/.local/bin/atrium.prev && ' +
       'mv -f ~/.local/bin/atrium.new ~/.local/bin/atrium && chmod +x ~/.local/bin/atrium && ' +
       '~/.local/bin/atrium room --detach --dir /Users/claude/.atrium/room --db /Users/claude/.atrium/atrium.db ' +
       '--agent 127.0.0.1:7777 --http 127.0.0.1:7781"' }
