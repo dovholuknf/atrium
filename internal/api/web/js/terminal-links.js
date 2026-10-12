@@ -1079,11 +1079,11 @@ function connectTerm(taskID) {
     // Output is binary, so text is the daemon. See `takeTermCaps`.
     if (typeof e.data === "string") {
       if (takeTermCaps(e.data) || takeTermSize(e.data) || takePasteDone(e.data, sock) || takeInRefused(e.data)) return;
-      pasteSawOutput();
+      pasteSawOutput(e.data.length);
       term.write(e.data, lagOnOutput(followScroll));
       return;
     }
-    pasteSawOutput();
+    pasteSawOutput(e.data.byteLength || 0);
     const bytes = new Uint8Array(e.data);
     writeRunnerOutput(term, bytes, carryLoadDone(bytes, lagOnOutput(followScroll)));
   };
@@ -1778,6 +1778,8 @@ function sendInput(text, quiet, pasted) {
 const pasteHoldMs = 400;
 const pasteQuietMs = 1500;
 const pasteGiveUpMs = 20000;
+const pasteRenderMin = 2048;
+const pasteSettleMs = 500;
 
 // A BIG PASTE LANDS LONG AFTER IT DRAINS, and nothing above sees that.
 //
@@ -1888,7 +1890,7 @@ function pasteBegin(n, big) {
     if (termSock !== f.sock || !f.sock || t - f.t0 > pasteGiveUpMs) { pasteEnd("the cap"); return; }
     if (f.sent && !f.drained && f.sock.bufferedAmount === 0) { f.drained = true; lagPasteMark("drained"); }
     // The room said the write finished. Only the floor, so the box can be read, is left to wait for.
-    if (f.done && t >= f.t0 + pasteHoldMs) { pasteEnd("the room's word"); return; }
+    if (pasteWrittenAndSettled(f, t)) { pasteEnd("the room's word"); return; }
     // An echo and then nothing: the runner took it and has no more to say.
     if (f.echoed && t >= f.holdUntil && t - f.lastOut >= pasteQuietMs && pasteMayGuess(f)) { pasteEnd("quiet"); return; }
     if (!f.shown) { f.shown = true; pasteShow(f); lagPasteMark("shown"); }
@@ -1901,9 +1903,10 @@ function pasteBegin(n, big) {
 // it has been up long enough. Read here rather than on the poll, so output that
 // lands between two polls is not missed. Inside the hold it is only noted, and
 // the poll ends it when the hold runs out.
-function pasteSawOutput() {
+function pasteSawOutput(n) {
   const f = pasteFlight;
   if (!f || !f.sent || !f.sock || f.sock.bufferedAmount !== 0) return;
+  if (n >= pasteRenderMin) f.bigOut = Date.now();
   lagPasteMark("output");
   f.lastOut = Date.now();
   if (f.lastOut < f.holdUntil || !pasteMayGuess(f)) { f.echoed = true; return; }
@@ -1929,9 +1932,18 @@ function takePasteDone(data, sock) {
   if (f && f.sock === sock && f.id && f.id === msg.id) {
     lagPasteMark("in-done");
     f.done = true;
-    if (Date.now() >= f.t0 + pasteHoldMs) pasteEnd("the room's word");
+    if (pasteWrittenAndSettled(f, Date.now())) pasteEnd("the room's word");
   }
   return true;
+}
+
+// The room wrote the paste and the box has been up as long as it promised. A paste this size is still landing
+// after the write returns: the runner prints it back, and the main thread is busy parsing that. Output of
+// `pasteRenderMin` or more since the room's word is that, so the box waits for `pasteSettleMs` without any. A
+// runner redrawing a spinner prints small frames and never holds it.
+function pasteWrittenAndSettled(f, t) {
+  if (!f.done || t < f.holdUntil) return false;
+  return t - Math.max(f.bigOut || 0, f.t0) >= (f.bigOut ? pasteSettleMs : 0);
 }
 
 // `{"t":"in-refused","why":...}`: the room dropped typing because a new context is
