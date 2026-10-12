@@ -1548,6 +1548,10 @@ func (p *Proxy) serveHubAPI(w http.ResponseWriter, r *http.Request) {
 		p.serveRestart(w, r, strings.TrimPrefix(strings.TrimPrefix(sub, "restart"), "/"))
 		return
 	}
+	if sub == "files" || strings.HasPrefix(sub, "files/") {
+		p.serveFiles(w, r, sub)
+		return
+	}
 	if sub == "docs" || strings.HasPrefix(sub, "docs/") {
 		p.serveDocs(w, r, sub)
 		return
