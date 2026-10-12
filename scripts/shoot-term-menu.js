@@ -57,7 +57,7 @@ const server = http.createServer((req, res) => {
   const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
   await page.goto("http://127.0.0.1:" + server.address().port + "/");
   await page.waitForFunction(() => typeof renderBoard === "function" && cardsLoaded);
-  await page.evaluate(() => { try { localStorage.setItem("atrium.showstopped", "on"); } catch (e) {} switchView("terms"); });
+  await page.evaluate(() => { try { localStorage.setItem("atrium.terms.show", JSON.stringify(["shelved"])); } catch (e) {} switchView("terms"); });
   const id = process.env.STOPPED ? "tm-stop" : "tm-run";
   const sel = '#term-list [oncontextmenu*="' + id + '"]';
   await page.waitForSelector(sel);

@@ -279,6 +279,8 @@ function paintStack() {
 
   const list = allStack.filter(t => {
     if (roll.rolled.has(t.id)) return false;
+    // The attached card stays whatever the chips and the search say (`fdAttached`).
+    if (fdAttached(t)) return true;
     // No column chosen means every card, which is what the `everything` pill
     // sets. See toggleStackShow: an empty list with no explanation reads as
     // broken.

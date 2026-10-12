@@ -14,6 +14,10 @@
 //   7  each tab keeps its own sort, show and group across a tab switch (and a reload)
 //   8  390px, touch: a quarter of the way down snaps back, half opens, a swipe up closes, a drag on the list scrolls
 //   9  with an xterm focused, ctrl-/ goes to the terminal and not the search box
+//
+// And the second round of the review: a right-click or a scrolled touch outside leaves nothing armed, the close handle
+// answers Enter and Space, the line and drawer are still there on a phone with a terminal attached (hidden only by
+// full screen), and the attached card stays on all three tabs through search, chips and the subagent rollup.
 
 const http = require("http");
 const fs = require("fs");
@@ -477,6 +481,226 @@ async function touch(browser, tabName) {
   await ctx.close();
 }
 
+// Swallow edges, and the close handle by keyboard ------------------------------------------------------------------
+// A press that cannot become a click must not leave the swallow armed for the next real one (review finding 3), and the
+// handle is a button a key can press (finding 4). The probe for "was it swallowed" is the drawer's own line: a click on it
+// opens the drawer unless the swallow ate it.
+async function swallowEdges(browser) {
+  {
+    const tag = "1280px terms";
+    const { ctx, page } = await open(browser, 1280, false);
+    await goto(page, "terms");
+    const openIt = async () => { const p = await linePoint(page); await page.mouse.click(p.x, p.y); await sleep(250); };
+    await openIt();
+    let s = await state(page);
+    check(s && s.open, `${tag} 3b: the drawer is open before the right-click`);
+    const row = await page.evaluate(() => {
+      const p = document.querySelector(".fdrawer.open .fpanel").getBoundingClientRect();
+      const e = [...document.querySelectorAll("#term-list .card.tab")].map(x => ({ x, b: x.getBoundingClientRect() }))
+        .find(r => r.b.top > p.bottom + 6 && r.b.bottom < innerHeight - 4);
+      return e ? { x: e.b.left + 40, y: e.b.top + 12 } : null;
+    });
+    check(!!row, `${tag} 3b: there is a row below the drawer to right-click`);
+    if (row) {
+      await page.mouse.click(row.x, row.y, { button: "right" });
+      await sleep(150);
+      s = await state(page);
+      check(s && !s.open, `${tag} 3b: a right-click outside closes the drawer`);
+      // Within the 1.5 s: a plain click must get through. It is on the line, so it only opens the drawer when not eaten.
+      const p = await linePoint(page);
+      await page.mouse.click(p.x, p.y);
+      await sleep(250);
+      s = await state(page);
+      check(s && s.open, `${tag} 3b: the click that follows a right-click is not swallowed`);
+      await page.keyboard.press("Escape");
+    }
+    // Finding 4: Enter on the focused handle closes it.
+    await sleep(200);
+    await openIt();
+    s = await state(page);
+    check(s && s.open, `${tag} 4b: opened again`);
+    await page.focus(".fdrawer.open .fhandle");
+    await page.keyboard.press("Enter");
+    await sleep(250);
+    s = await state(page);
+    check(s && !s.open, `${tag} 4b: Enter on the close handle closes the drawer`);
+    await openIt();
+    await page.focus(".fdrawer.open .fhandle");
+    await page.keyboard.press("Space");
+    await sleep(250);
+    s = await state(page);
+    check(s && !s.open, `${tag} 4b: and so does Space`);
+    // ...while a key still does not OPEN it: the line's own click with no pointer behind it.
+    await page.evaluate(() => document.querySelector("#fd-terms .fline").click());
+    s = await state(page);
+    check(s && !s.open, `${tag} 4b: a click with no pointer behind it still does not open the drawer`);
+    await ctx.close();
+  }
+  {
+    const tag = "390px terms";
+    const { ctx, page } = await open(browser, 390, true);
+    const cdp = await ctx.newCDPSession(page);
+    await goto(page, "terms");
+    const send = (type, x, y) => cdp.send("Input.dispatchTouchEvent", { type, touchPoints: type === "touchEnd" ? [] : [{ x, y }] });
+    const p = await linePoint(page);
+    const tap = async (x, y) => { await send("touchStart", x, y); await sleep(40); await send("touchEnd"); await sleep(300); };
+    await tap(p.x, p.y);
+    let s = await state(page);
+    check(s && s.open, `${tag} 3c: a tap on the line opens the drawer`);
+    // A finger that lands below the drawer and is carried away more than 8px: the browser scrolls or cancels, no click.
+    const r = await page.evaluate(() => {
+      const pn = document.querySelector(".fdrawer.open .fpanel").getBoundingClientRect();
+      const e = [...document.querySelectorAll("#term-list .card.tab")].map(x => ({ x, b: x.getBoundingClientRect() }))
+        .find(q => q.b.top > pn.bottom + 6 && q.b.bottom < innerHeight - 4);
+      return e ? { x: e.b.left + 40, y: e.b.top + 10 } : null;
+    });
+    check(!!r, `${tag} 3c: there is a row below the drawer to drag from`);
+    if (r) {
+      await send("touchStart", r.x, r.y);
+      for (let i = 1; i <= 6; i++) { await send("touchMove", r.x, r.y + i * 8); await sleep(16); }
+      await send("touchEnd");
+      await sleep(200);
+      s = await state(page);
+      check(s && !s.open, `${tag} 3c: a touch that scrolls outside closes the drawer`);
+      await tap(p.x, p.y);
+      s = await state(page);
+      check(s && s.open, `${tag} 3c: and the tap right after it is not swallowed`);
+    }
+    await ctx.close();
+  }
+}
+
+// The phone with a terminal attached (review finding 1) -------------------------------------------------------------
+// `body.term-phone` is set by `syncPhoneView` for good once a terminal opens. The terminals line must still be there,
+// above the terminal and the session list, and hide only while the terminal fills the screen (`term-full`).
+async function phoneAttached(browser) {
+  const tag = "390px terms attached";
+  const { ctx, page } = await open(browser, 390, true);
+  await goto(page, "terms");
+  const set = await page.evaluate(() => {
+    try { paintPaneBg({ background: "#101828", foreground: "#e6e6e6", cursor: "#4ea1ff" }); } catch (e) {}
+    document.body.classList.add("term-phone");
+    const lay = document.getElementById("term-layout");
+    lay.classList.add("has-term");
+    return { phone: document.body.classList.contains("term-phone"), hasTerm: lay.classList.contains("has-term") };
+  });
+  check(set.phone && set.hasTerm, `${tag}: the phone layout with a terminal attached is set (${JSON.stringify(set)})`);
+  await sleep(300);
+  let s = await state(page);
+  check(s && s.tab === "terms" && s.q.w > 40 && s.line.h > 20, `${tag}: the line and the search box are on screen`);
+  const geo0 = await geometry(page, "#term-layout");
+  const p = await linePoint(page);
+  await page.touchscreen.tap(p.x, p.y);
+  await sleep(300);
+  s = await state(page);
+  check(s && s.open && s.panelVisible, `${tag}: a tap on the line opens the drawer`);
+  const cap = await page.evaluate(() => [...document.querySelectorAll(".fdrawer")].filter(e => e.offsetParent !== null)[0].querySelector(".fpanel").offsetHeight / innerHeight);
+  check(cap <= 0.71, `${tag}: it is capped at 70% of the screen (${cap.toFixed(2)})`);
+  check(geo0 === await geometry(page, "#term-layout"), `${tag}: and the terminal's box did not move or resize`);
+  const top = await page.evaluate(() => {
+    const pn = document.querySelector(".fdrawer.open .fpanel").getBoundingClientRect();
+    const e = document.elementFromPoint(pn.x + pn.width / 2, pn.y + Math.min(30, pn.height / 2));
+    return !!(e && e.closest(".fpanel"));
+  });
+  check(top, `${tag}: it is over the terminal, not under it`);
+  const chip = page.locator('.fdrawer.open .seg button[data-v="shelved"]').first();
+  const cb = await chip.boundingBox();
+  await page.touchscreen.tap(cb.x + cb.width / 2, cb.y + cb.height / 2);
+  await sleep(250);
+  s = await state(page);
+  check(s && s.open && s.count === 1, `${tag}: a chip applies and the drawer stays open (filters ${s && s.count})`);
+  await page.keyboard.press("Escape");
+  await sleep(250);
+  s = await state(page);
+  check(s && !s.open, `${tag}: Esc closes it`);
+  await page.evaluate(() => document.activeElement && document.activeElement.blur());
+  await page.keyboard.press("Control+/");
+  s = await state(page);
+  check(s && s.activeIsQ && !s.open, `${tag}: ctrl-/ reaches the search box and leaves the drawer shut`);
+  await page.keyboard.press("Escape");
+  await page.keyboard.press("Escape");
+  // Full screen takes it away, and leaving full screen brings it back.
+  await page.evaluate(() => document.body.classList.add("term-full"));
+  await sleep(150);
+  check(await page.evaluate(() => getComputedStyle(document.getElementById("fd-terms")).display === "none"), `${tag}: a terminal that fills the screen hides the line`);
+  await page.evaluate(() => document.body.classList.remove("term-full"));
+  await sleep(150);
+  check(await page.evaluate(() => getComputedStyle(document.getElementById("fd-terms")).display !== "none"), `${tag}: and it is back when the terminal does not`);
+  await ctx.close();
+}
+
+// The attached card stays (review finding 5) --------------------------------------------------------------------------
+// Whatever the search says and whichever chip is off, on all three tabs. `termTask` is set and the tab painted in one
+// evaluate, so the terminals tab's own reconcile of a card with no runner does not clear it in between.
+async function attachedStays(browser) {
+  const { ctx, page } = await open(browser, 1280, false);
+  const drawn = (tab, id, task, q) => page.evaluate(async ([tab, id, task, q]) => {
+    termTask = task ? { id: task } : null;
+    document.getElementById({ stack: "stack-q", board: "board-q", terms: "term-q" }[tab]).value = q || "";
+    if (tab === "stack") paintStack(); else if (tab === "board") await renderBoard(); else await renderTermList();
+    const root = { stack: "#stack-list", board: "#board", terms: "#term-list" }[tab];
+    const n = document.querySelectorAll(root + ' [data-id="' + id + '"]').length;
+    const badge = [...document.querySelectorAll(root + " .chip.subs")].map(e => e.textContent).join("|");
+    termTask = null;
+    return { n, badge };
+  }, [tab, id, task, q]);
+
+  await goto(page, "stack");
+  let r = await drawn("stack", "c1", null, "");
+  check(r.n === 0 && /2 subagents/.test(r.badge), `stack attached: a subagent is rolled up when it is not attached (${r.n}, ${r.badge})`);
+  r = await drawn("stack", "c1", "c1", "");
+  check(r.n > 0, `stack attached: the attached subagent is still a row with the subagents chip off (${r.n})`);
+  check(/(^|\|)1 subagent($|\|)/.test(r.badge), `stack attached: and its parent no longer counts it (${r.badge})`);
+  r = await drawn("stack", "c1", "c1", "alpha");
+  check(r.n > 0, `stack attached: and it stays through a search that does not match it (${r.n})`);
+  r = await drawn("stack", "d1", null, "");
+  check(r.n === 0, `stack attached: a finished card is not drawn with the finished chip off (${r.n})`);
+  r = await drawn("stack", "d1", "d1", "");
+  check(r.n > 0, `stack attached: the attached finished card stays with the finished chip off (${r.n})`);
+  r = await drawn("stack", "d1", "d1", "alpha");
+  check(r.n > 0, `stack attached: and through a search (${r.n})`);
+
+  await goto(page, "board");
+  await page.evaluate(() => { toggleBoardShow("finished"); });
+  await sleep(300);
+  r = await drawn("board", "d1", null, "");
+  check(r.n === 0, `board attached: a finished card is not drawn with the finished column off (${r.n})`);
+  r = await drawn("board", "d1", "d1", "");
+  check(r.n > 0, `board attached: the attached finished card is, and its column with it (${r.n})`);
+  r = await drawn("board", "d1", "d1", "alpha");
+  check(r.n > 0, `board attached: and through a search (${r.n})`);
+  r = await drawn("board", "c1", null, "");
+  check(r.n === 0, `board attached: a subagent is rolled up into its parent's card (${r.n})`);
+  r = await drawn("board", "c1", "c1", "");
+  check(r.n > 0 && /(^|\|)1 subagent($|\|)/.test(r.badge), `board attached: the attached subagent is a card, and the parent counts one less (${r.n}, ${r.badge})`);
+  await page.evaluate(() => { toggleBoardShow("finished"); });
+
+  await goto(page, "terms");
+  r = await drawn("terms", "c1", null, "");
+  check(r.n === 0, `terminals attached: a subagent under a folded parent is not a row (${r.n})`);
+  r = await drawn("terms", "c1", "c1", "");
+  check(r.n > 0, `terminals attached: the attached subagent shows under its folded parent (${r.n})`);
+  r = await drawn("terms", "c1", "c1", "run");
+  check(r.n > 0, `terminals attached: and through a search that matches its parent only (${r.n})`);
+  r = await drawn("terms", "c1", "c1", "alpha");
+  check(r.n > 0, `terminals attached: and through a search that matches neither (${r.n})`);
+  r = await drawn("terms", "r2", "r2", "alpha");
+  check(r.n > 0, `terminals attached: the attached ordinary row stays through a search it does not match (${r.n})`);
+  r = await drawn("terms", "r2", null, "alpha");
+  check(r.n === 0, `terminals attached: and goes when it is not attached (${r.n})`);
+  // The chip: with the subagents chip toggled and toggled back, the attached child is still on screen.
+  r = await page.evaluate(async () => {
+    termTask = { id: "c1" };
+    toggleTermShow("subagents"); await renderTermList();
+    toggleTermShow("subagents"); await renderTermList();
+    const n = document.querySelectorAll('#term-list [data-id="c1"]').length;
+    termTask = null;
+    return n;
+  });
+  check(r > 0, `terminals attached: toggling the subagents chip does not fold the attached child out of sight (${r})`);
+  await ctx.close();
+}
+
 (async () => {
   await new Promise(r => server.listen(0, "127.0.0.1", r));
   const browser = await chromium.launch();
@@ -486,6 +710,9 @@ async function touch(browser, tabName) {
       await keeps(browser, width, mobile);
     }
     for (const tab of Object.keys(TABS)) await touch(browser, tab);
+    await swallowEdges(browser);
+    await phoneAttached(browser);
+    await attachedStays(browser);
   } catch (e) {
     check(false, "the check itself threw: " + (e && e.stack || e));
   }

@@ -11780,7 +11780,7 @@ async function ctxLineSection(browser, base) {
       const tag = process.env.ROWFLOOD_TAG || "shot", dir = process.env.ROWFLOOD_REAL_SHOTS;
       const path = require("path");
       const prep = async page => {
-        await page.evaluate(async () => { hubIsHub = true; try { setTermW(520); } catch (e) {} if (hideSubagentsMode() !== "none") toggleHideSubagents(); await loadCards().catch(() => {}); await renderTermList(); });
+        await page.evaluate(async () => { hubIsHub = true; try { setTermW(520); } catch (e) {} if (!termSubsOn()) toggleTermShow("subagents"); await loadCards().catch(() => {}); await renderTermList(); });
       };
       const shoot = async (page, kind, shotsAt) => {
         for (const dens of ["1", "0.72", "0.3"]) {
@@ -16291,7 +16291,7 @@ async function phoneListFitSection(browser, base) {
           [...c.querySelectorAll("*")].forEach(e => { const r = e.getBoundingClientRect(); if (r.height) bottom = Math.max(bottom, r.bottom); });
           return { slack: Math.round(cr.bottom - bottom), h: Math.round(cr.height) };
         });
-        const bar = document.querySelector(view === "terms" ? ".termtray" : ".filters");
+        const bar = document.querySelector(view === "terms" ? "#fd-terms .fline" : ".filters");
         const first = cards[0].getBoundingClientRect();
         return { n: cards.length, bad, ws, byDepth, tall, lsw: list ? list.scrollWidth - list.clientWidth : 0,
           pg: document.documentElement.scrollWidth - innerWidth,
@@ -16698,7 +16698,7 @@ async function shiftMenuSection(browser, base) {
 // Right click a row. The menu is what clint settled in docs/interviews/INTERVIEW-card-menu-2026-10-09.md: restart,
 // resume (stopped only), new context, then settings, then stop and terminate and clean up. Every item has its (?), none
 // has a grey line, and nothing asks "are you sure?" but a clean up of work that exists nowhere else, which has a
-// "never show me this again" tick. Stopped cards stay out of the list until `show stopped` is on.
+// "never show me this again" tick. Stopped cards stay out of the list until the shelved filter is on.
 async function termMenuSection(browser, base) {
   const was = tasksMode;
   tasksMode = "land";
@@ -20994,7 +20994,7 @@ async function groupingPerViewSection(browser, base) {
     await view("stack");
     await check("on the stack");
     if ((await pill("stack-group")) !== "window") fail(tag + "the stack pills show " + await pill("stack-group"));
-    if ((await pill("term-drawer-group")) !== "project") fail(tag + "the terminal pills show " + await pill("term-group-tray"));
+    if ((await pill("term-drawer-group")) !== "project") fail(tag + "the terminal pills show " + await pill("term-drawer-group"));
     if ((await pill("board-group")) !== "tag") fail(tag + "the board pills show " + await pill("board-group"));
     await view("terms");
     await check("back on terminals");
