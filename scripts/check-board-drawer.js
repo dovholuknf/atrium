@@ -464,10 +464,14 @@ async function touch(browser, tabName) {
   // The pull-to-refresh is off on the line.
   const ob = await page.evaluate(() => getComputedStyle([...document.querySelectorAll(".fdrawer")].filter(e => e.offsetParent !== null)[0].querySelector(".fline")).overscrollBehaviorY);
   check(ob === "none", `${tag} 8: overscroll-behavior is off on the line (${ob})`);
-  // A tap on the search box only types.
+  // A tap on the search box only types. Sent as the same touch pair the drags use: mixing `touchscreen.tap` into a session
+  // that has just run raw CDP gestures can lose the tap, which says nothing about the app.
   const q = (await state(page)).q;
-  await page.touchscreen.tap(q.x + q.w / 2, q.y + q.h / 2);
-  await sleep(250);
+  const qx = q.x + q.w / 2, qy = q.y + q.h / 2;
+  await send("touchStart", qx, qy);
+  await sleep(40);
+  await send("touchEnd");
+  await sleep(300);
   s = await state(page);
   check(s && s.activeIsQ && !s.open, `${tag} 8: a tap on the search box focuses it and does not open the drawer`);
   await ctx.close();
