@@ -66,7 +66,7 @@ func (s *Store) ClaimPR(key, room, source string) (owner PRClaim, made bool, err
 	err = s.tx(func(t *sql.Tx) error {
 		made = false
 		res, err := t.Exec(`INSERT INTO pr_claim (key, room, source, claimed_at) VALUES (?, ?, ?, ?)
-			ON CONFLICT (key) DO NOTHING`, key, room, source, ts(now()))
+			ON CONFLICT (key) DO NOTHING`, key, room, source, ts(s.now()))
 		if err != nil {
 			return err
 		}

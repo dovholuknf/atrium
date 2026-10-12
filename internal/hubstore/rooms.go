@@ -92,8 +92,11 @@ const Lively = 20 * time.Second
 // hub wrote down having heard from it. That is enough for a command line to
 // refuse to force out a room that is plainly still there, and it is not enough
 // for anything that must be right: the hub itself asks its own connection list.
-func (r Room) LikelyAttached() bool {
-	return r.LastSeen != nil && now().Sub(*r.LastSeen) < Lively
+func (r Room) LikelyAttached() bool { return r.LikelyAttachedAt(wallNow()) }
+
+// LikelyAttachedAt is LikelyAttached as of `at`.
+func (r Room) LikelyAttachedAt(at time.Time) bool {
+	return r.LastSeen != nil && at.Sub(*r.LastSeen) < Lively
 }
 
 // Add writes a room down and gives it a name.
@@ -119,7 +122,7 @@ func (s *Store) Add(name, transport string) (*Room, error) {
 
 	r := &Room{
 		ID: newID(), Name: name, Transport: transport,
-		State: StateActive, CreatedAt: now(),
+		State: StateActive, CreatedAt: s.now(),
 	}
 	err := s.guard(func() error {
 		_, err := s.db.Exec(
@@ -254,7 +257,7 @@ func (s *Store) ByName(name string) (*Room, error) {
 func (s *Store) MarkEnrolled(id string) error {
 	return s.guard(func() error {
 		_, err := s.db.Exec(`UPDATE room SET enrolled_at = ? WHERE id = ? AND enrolled_at = ''`,
-			ts(now()), id)
+			ts(s.now()), id)
 		return err
 	})
 }
@@ -327,7 +330,7 @@ func scanRoom(sc scanner) (*Room, error) {
 // `first_seen_at` is set once and never again. It is what separates a room that
 // is offline from one that has never been anywhere.
 func (s *Store) Seen(id, selfName, version string) error {
-	at := ts(now())
+	at := ts(s.now())
 	return s.guard(func() error {
 		res, err := s.db.Exec(
 			`UPDATE room
@@ -430,7 +433,7 @@ func (s *Store) SetSetting(name, value string) error {
 			`INSERT INTO hub_setting (name, value, updated_at) VALUES (?, ?, ?)
 			 ON CONFLICT (name) DO UPDATE SET value = excluded.value,
 			                                  updated_at = excluded.updated_at`,
-			name, value, ts(now()))
+			name, value, ts(s.now()))
 		return err
 	})
 }

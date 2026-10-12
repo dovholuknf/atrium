@@ -80,7 +80,7 @@ func (s *Store) Snapshot(dir string) (Backup, error) {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return b, err
 	}
-	at := now()
+	at := s.now()
 	path := filepath.Join(dir, backupPrefix+at.UTC().Format(backupStamp)+backupSuffix)
 	// A name that is already there means one was taken this second. Nothing is
 	// lost by leaving it: it is the same database.
@@ -307,7 +307,7 @@ func Restore(dbPath, from string) (aside string, err error) {
 			return "", fmt.Errorf("could not settle the current store, which usually means "+
 				"a hub is running on it. stop it first: %w", err)
 		}
-		aside = dbPath + ".replaced-" + now().UTC().Format(backupStamp)
+		aside = dbPath + ".replaced-" + wallNow().UTC().Format(backupStamp)
 		if err := os.Rename(dbPath, aside); err != nil {
 			return "", fmt.Errorf("could not move the current store aside, which usually means "+
 				"a hub is running on it. stop it first: %w", err)

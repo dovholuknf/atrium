@@ -169,7 +169,7 @@ func (s *Store) CRCreate(in CRNew) (c ChangeRequest, existed bool, err error) {
 	// A REPOSITORY'S OWNER AND NAME ARE ONE NAME IN ANY CASE too (the forge says so), so the lookup below compares them
 	// lowercased. They are NOT folded in the row: the hub's store keeps the spelling it was made with, and on a disk
 	// that tells Foo from foo the row's repo has to find that directory. The first ask's spelling is the row's.
-	at := ts(now())
+	at := ts(s.now())
 	err = s.tx(func(t *sql.Tx) error {
 		c, existed = ChangeRequest{}, false
 		prior, err := scanCR(t.QueryRow(`SELECT `+crCols+` FROM change_request
@@ -266,7 +266,7 @@ func (s *Store) CREnd(id, to string, by CRParty, note, sha string) (ChangeReques
 	if why := CRText("note", note, CRNoteMax, true); why != "" {
 		return ChangeRequest{}, refuse(errors.New(why))
 	}
-	at := ts(now())
+	at := ts(s.now())
 	var c ChangeRequest
 	err := s.tx(func(t *sql.Tx) error {
 		var err error

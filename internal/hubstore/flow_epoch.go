@@ -62,7 +62,7 @@ func (s *Store) EpochOpen(sha, by string) (FlowEpoch, error) {
 			return err
 		}
 		if _, err := t.Exec(`INSERT INTO flow_epoch (n, state, fetched_sha, opened_at, opened_by) VALUES (?, 'open', ?, ?, ?)`,
-			top+1, sha, ts(now()), by); err != nil {
+			top+1, sha, ts(s.now()), by); err != nil {
 			return err
 		}
 		var err error
@@ -97,7 +97,7 @@ func (s *Store) EpochClose(n int64, oldTip, newTip, by string) (FlowEpoch, error
 	var out FlowEpoch
 	err := s.tx(func(t *sql.Tx) error {
 		res, err := t.Exec(`UPDATE flow_epoch SET state = 'closed', old_tip = ?, new_tip = ?, closed_at = ?, closed_by = ?
-			WHERE n = ? AND state = 'open'`, oldTip, newTip, ts(now()), by, n)
+			WHERE n = ? AND state = 'open'`, oldTip, newTip, ts(s.now()), by, n)
 		if err != nil {
 			return err
 		}

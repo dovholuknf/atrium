@@ -116,7 +116,7 @@ func (s *Store) RoleSet(role, room, card, by string) (RoleHolder, []RoleHolder, 
 			}
 		}
 		if _, err := t.Exec(`INSERT INTO flow_role (role, room, card, since, set_by) VALUES (?, ?, ?, ?, ?)
-			ON CONFLICT (role, room, card) DO UPDATE SET set_by = excluded.set_by`, role, room, card, ts(now()), by); err != nil {
+			ON CONFLICT (role, room, card) DO UPDATE SET set_by = excluded.set_by`, role, room, card, ts(s.now()), by); err != nil {
 			return err
 		}
 		return t.QueryRow(`SELECT role, room, card, since, set_by FROM flow_role WHERE role = ? AND room = ? AND card = ?`,
@@ -233,7 +233,7 @@ func (s *Store) FlowSetStage(f FlowSet) (FlowItem, error) {
 			return err
 		}
 		cur, err := scanFlow(t.QueryRow(`SELECT `+flowCols+` FROM flow_item WHERE item_id = ?`, f.ItemID))
-		at := ts(now())
+		at := ts(s.now())
 		switch {
 		case errors.Is(err, sql.ErrNoRows):
 			if _, err := t.Exec(`INSERT INTO flow_item (`+flowCols+`) VALUES (?, ?, ?, ?, ?, ?, ?)`,
@@ -347,7 +347,7 @@ func (s *Store) CheckAdd(sha, name, result, by string) (FlowCheck, error) {
 			return err
 		}
 		if _, err := t.Exec(`INSERT INTO flow_check (n, sha, name, result, by, at) VALUES (?, ?, ?, ?, ?, ?)`,
-			top+1, sha, name, result, by, ts(now())); err != nil {
+			top+1, sha, name, result, by, ts(s.now())); err != nil {
 			return err
 		}
 		return t.QueryRow(`SELECT n, sha, name, result, by, at FROM flow_check WHERE n = ?`, top+1).
@@ -409,7 +409,7 @@ func (s *Store) DeploySet(room, sha, by string) (FlowDeploy, error) {
 	err := s.tx(func(t *sql.Tx) error {
 		if _, err := t.Exec(`INSERT INTO flow_deploy (room, sha, at, by) VALUES (?, ?, ?, ?)
 			ON CONFLICT (room) DO UPDATE SET sha = excluded.sha, at = excluded.at, by = excluded.by`,
-			room, sha, ts(now()), by); err != nil {
+			room, sha, ts(s.now()), by); err != nil {
 			return err
 		}
 		return t.QueryRow(`SELECT room, sha, at, by FROM flow_deploy WHERE room = ?`, room).

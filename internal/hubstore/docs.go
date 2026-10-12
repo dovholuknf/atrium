@@ -578,7 +578,7 @@ func (s *Store) DocAdd(in DocInput) (DocResult, error) {
 		}
 		if in.Rate && in.Card != "" {
 			var recent int
-			since := ts(now().Add(-time.Hour))
+			since := ts(s.now().Add(-time.Hour))
 			if err := t.QueryRow(`SELECT COUNT(*) FROM doc_version WHERE card = ? AND at > ?`,
 				in.Card, since).Scan(&recent); err != nil {
 				return err
@@ -588,7 +588,7 @@ func (s *Store) DocAdd(in DocInput) (DocResult, error) {
 					"this card has published %d documents in the last hour, which is the cap. try again later", recent))
 			}
 		}
-		at := ts(now())
+		at := ts(s.now())
 		if slug == "" {
 			base := DocSlugFor(title)
 			if base == "" {
@@ -666,7 +666,7 @@ func (s *Store) DocRetitle(slug, title string) error {
 
 // DocDelete tombstones. Deleting twice is not an error.
 func (s *Store) DocDelete(slug, by string) error {
-	return s.docExec(slug, `UPDATE doc SET deleted_at = ?, deleted_by = ? WHERE slug = ?`, ts(now()), by, slug)
+	return s.docExec(slug, `UPDATE doc SET deleted_at = ?, deleted_by = ? WHERE slug = ?`, ts(s.now()), by, slug)
 }
 
 // DocRestore undoes a tombstone. A document with a purged version is restored
@@ -711,9 +711,6 @@ func (s *Store) docExec(slug, q string, args ...any) error {
 		return err
 	})
 }
-
-// afterPurgeCommit is a test's way into the gap between a purge's commit and its file removal.
-var afterPurgeCommit func()
 
 // DocPurgeResult is what a purge did.
 type DocPurgeResult struct {
@@ -801,8 +798,8 @@ func (s *Store) DocPurge(slug string, n int) (DocPurgeResult, error) {
 	}
 	res.Blobs = len(shas)
 	sort.Strings(res.Also)
-	if afterPurgeCommit != nil {
-		afterPurgeCommit()
+	if s.afterPurgeCommit != nil {
+		s.afterPurgeCommit()
 	}
 	for _, sha := range shas {
 		if err := os.Remove(s.blobPath(sha)); err != nil && !errors.Is(err, os.ErrNotExist) {
@@ -1101,7 +1098,7 @@ func (s *Store) CopyDocs(dir string) (copied int, err error) {
 		// No stamp, so the next pass tries again.
 		return copied, firstErr
 	}
-	return copied, os.WriteFile(stamp, []byte(ts(now())), 0o600)
+	return copied, os.WriteFile(stamp, []byte(ts(s.now())), 0o600)
 }
 
 func copyFile(src, dst string) error {

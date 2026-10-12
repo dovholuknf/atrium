@@ -147,7 +147,7 @@ func (s *Store) AddGates(repo, item string, waits []itemgate.Target, why, addedB
 		if err != nil {
 			return err
 		}
-		at := ts(now())
+		at := ts(s.now())
 		for _, w := range waits {
 			target := w.Target
 			if w.Kind == itemgate.KindItem {
@@ -252,7 +252,7 @@ func (s *Store) GateMet(id, by, why string) (bool, error) {
 	var changed bool
 	err := s.guard(func() error {
 		res, err := s.db.Exec(`UPDATE item_gate SET met_at = ?, met_by = ?, met_why = ? WHERE id = ? AND met_at = ''`,
-			ts(now()), by, itemgate.Bound(why, itemgate.MaxWhy), id)
+			ts(s.now()), by, itemgate.Bound(why, itemgate.MaxWhy), id)
 		if err != nil {
 			return err
 		}
@@ -280,7 +280,7 @@ func (s *Store) GateTold(ids []string) error {
 	if len(ids) == 0 {
 		return nil
 	}
-	at := ts(now())
+	at := ts(s.now())
 	return s.tx(func(t *sql.Tx) error {
 		for _, id := range ids {
 			if _, err := t.Exec(`UPDATE item_gate SET told_at = ? WHERE id = ? AND told_at = ''`, at, id); err != nil {
@@ -314,7 +314,7 @@ func (s *Store) RenameItem(repo, from, to, by string) (int, error) {
 		if end == from {
 			return refuse(fmt.Errorf("%s is already renamed to %s, so renaming it back would loop", to, from))
 		}
-		at := ts(now())
+		at := ts(s.now())
 		if _, err := t.Exec(`INSERT INTO item_rename (repo, from_id, to_id, at, by) VALUES (?, ?, ?, ?, ?)
 			ON CONFLICT (repo, from_id) DO UPDATE SET to_id = excluded.to_id, at = excluded.at, by = excluded.by`,
 			repo, from, end, at, by); err != nil {

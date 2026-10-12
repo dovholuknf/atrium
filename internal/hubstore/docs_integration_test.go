@@ -213,9 +213,7 @@ func TestTextOverTheCapIsRefused(t *testing.T) {
 func TestACardIsLimitedToThirtyAnHour(t *testing.T) {
 	s := open(t)
 	clock := time.Date(2026, 9, 30, 12, 0, 0, 0, time.UTC)
-	old := now
-	now = func() time.Time { return clock }
-	defer func() { now = old }()
+	s.clock = func() time.Time { return clock }
 
 	pub := func(card, body string) error {
 		_, err := s.DocAdd(DocInput{Title: "t " + body, Name: "t.md", Data: []byte(body), Origin: "card",
@@ -502,9 +500,7 @@ func TestUnknownDocumentsAreRefusedNotFatal(t *testing.T) {
 func TestListFiltersAndOrder(t *testing.T) {
 	s := open(t)
 	clock := time.Date(2026, 9, 30, 12, 0, 0, 0, time.UTC)
-	old := now
-	now = func() time.Time { clock = clock.Add(time.Second); return clock }
-	defer func() { now = old }()
+	s.clock = func() time.Time { clock = clock.Add(time.Second); return clock }
 
 	mustAdd(t, s, docIn("Usage report", "u.md", "1"))
 	mustAdd(t, s, DocInput{Title: "Eval", Name: "e.md", Data: []byte("2"), Origin: "card", By: "r-9@sg4", Card: "sg4~9"})
@@ -667,7 +663,7 @@ func TestPurgeRacingAnAddOfTheSameBytesKeepsTheNewVersion(t *testing.T) {
 	var added DocResult
 	var addErr error
 	addDone := make(chan struct{})
-	afterPurgeCommit = func() {
+	s.afterPurgeCommit = func() {
 		go func() {
 			defer close(addDone)
 			added, addErr = s.DocAdd(docIn("Racer copy", "r.md", "the shared bytes"))
@@ -675,7 +671,6 @@ func TestPurgeRacingAnAddOfTheSameBytesKeepsTheNewVersion(t *testing.T) {
 		// Long enough for an unserialised write to finish inside the gap.
 		time.Sleep(300 * time.Millisecond)
 	}
-	defer func() { afterPurgeCommit = nil }()
 	if _, err := s.DocPurge(first.Slug, 0); err != nil {
 		t.Fatal(err)
 	}

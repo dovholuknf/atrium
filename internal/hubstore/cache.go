@@ -78,7 +78,7 @@ func (s *Store) Announce(roomID string, cards []Card) (Changes, error) {
 	if err != nil {
 		return ch, err
 	}
-	at := ts(now())
+	at := ts(s.now())
 
 	err = s.tx(func(t *sql.Tx) error {
 		ch = Changes{}
@@ -180,7 +180,7 @@ func (s *Store) confirm(r *Room, clear bool) error {
 	}
 	at := ""
 	if clear {
-		at = ts(now())
+		at = ts(s.now())
 	}
 	if err := s.guard(func() error {
 		_, err := s.db.Exec(`UPDATE room SET cleared_at = ? WHERE id = ?`, at, r.ID)

@@ -25,7 +25,7 @@ func TestDefunctLocalRoomsAreDroppedAndRealOnesKept(t *testing.T) {
 		_, err := s.db.Exec(
 			`INSERT INTO room (id, name, name_key, transport, state, created_at, first_seen_at)
 			 VALUES (?, ?, ?, 'local', 'active', ?, ?)`,
-			newID(), "sg4", "sg4", ts(now()), ts(now()))
+			newID(), "sg4", "sg4", ts(s.now()), ts(s.now()))
 		return err
 	}); err != nil {
 		t.Fatal(err)
@@ -206,9 +206,8 @@ func TestAJoinStringExpires(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	real := now
-	defer func() { now = real }()
-	now = func() time.Time { return real().Add(secretLife + time.Minute) }
+	real := wallNow
+	s.clock = func() time.Time { return real().Add(secretLife + time.Minute) }
 
 	if ok, _, err := s.Outstanding(r.ID); err != nil || ok {
 		t.Fatalf("an expired join string still reads as outstanding (%v, %v)", ok, err)
@@ -252,16 +251,15 @@ func TestTheFirstTimeARoomConnectedDoesNotMove(t *testing.T) {
 	s := open(t)
 	r := added(t, s, "sparta")
 
-	real := now
-	defer func() { now = real }()
+	real := wallNow
 	first := real()
-	now = func() time.Time { return first }
+	s.clock = func() time.Time { return first }
 	if err := s.Seen(r.ID, "box", "v1"); err != nil {
 		t.Fatal(err)
 	}
 
 	later := first.Add(3 * time.Hour)
-	now = func() time.Time { return later }
+	s.clock = func() time.Time { return later }
 	if err := s.Seen(r.ID, "box", "v1"); err != nil {
 		t.Fatal(err)
 	}
@@ -301,10 +299,8 @@ func TestARoomHeardFromRecentlyReadsAsStillThere(t *testing.T) {
 		t.Fatal("a room heard from a moment ago does not read as attached")
 	}
 
-	real := now
-	defer func() { now = real }()
-	now = func() time.Time { return real().Add(Lively + time.Second) }
-	if got, _ := s.Get(r.ID); got.LikelyAttached() {
+	real := wallNow
+	if got, _ := s.Get(r.ID); got.LikelyAttachedAt(real().Add(Lively + time.Second)) {
 		t.Fatal("a room nobody has heard from still reads as attached")
 	}
 }

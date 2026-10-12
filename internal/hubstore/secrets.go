@@ -53,7 +53,7 @@ func (s *Store) Mint(roomID string) (string, error) {
 	secret := base64.RawURLEncoding.EncodeToString(raw[:])
 	sum := sha256.Sum256([]byte(secret))
 
-	made, expires := now(), now().Add(secretLife)
+	made, expires := s.now(), s.now().Add(secretLife)
 	if err := s.guard(func() error {
 		_, err := s.db.Exec(
 			`INSERT INTO room_secret (room_id, hash, created_at, expires_at)
@@ -91,7 +91,7 @@ func (s *Store) Outstanding(roomID string) (bool, time.Time, error) {
 		return false, time.Time{}, err
 	}
 	at := parseOrNil(expires)
-	if at == nil || !now().Before(*at) {
+	if at == nil || !s.now().Before(*at) {
 		return false, time.Time{}, nil
 	}
 	return true, *at, nil
@@ -129,7 +129,7 @@ func (s *Store) Spend(secret string) (*Room, error) {
 		return nil, err
 	}
 	at := parseOrNil(expires)
-	if at == nil || !now().Before(*at) {
+	if at == nil || !s.now().Before(*at) {
 		// EXPIRED IS SPENT. Deleted here rather than left, because a row that
 		// can never succeed is one more thing on a list of things somebody has
 		// to reason about.
@@ -183,7 +183,7 @@ func (s *Store) Spend(secret string) (*Room, error) {
 // never got round to connecting.
 func (s *Store) Sweep() error {
 	return s.guard(func() error {
-		_, err := s.db.Exec(`DELETE FROM room_secret WHERE expires_at < ?`, ts(now()))
+		_, err := s.db.Exec(`DELETE FROM room_secret WHERE expires_at < ?`, ts(s.now()))
 		return err
 	})
 }

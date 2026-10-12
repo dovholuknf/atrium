@@ -639,7 +639,7 @@ func (s *Store) migrate() error {
 		}
 		if _, err := tx.Exec(
 			`INSERT INTO schema_migration (name, applied_at) VALUES (?, ?)`,
-			m.name, ts(now())); err != nil {
+			m.name, ts(s.now())); err != nil {
 			tx.Rollback()
 			return fmt.Errorf("record %s: %w", m.name, err)
 		}

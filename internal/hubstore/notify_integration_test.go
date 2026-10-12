@@ -72,21 +72,19 @@ func TestNotifyCardLeavingAndReturningDoesNotRefire(t *testing.T) {
 func TestNotifyPruneMeasuresAbsence(t *testing.T) {
 	s := open(t)
 	r := added(t, s, "sparta")
-	was := now
-	defer func() { now = was }()
 	base := time.Date(2026, 9, 1, 12, 0, 0, 0, time.UTC)
-	now = func() time.Time { return base }
+	s.clock = func() time.Time { return base }
 	_, _ = s.NotifyRecord(r.ID, map[string]string{"gone": "g|input|1", "here": "h|input|1"},
 		[]string{"gone", "here"}, false)
 
 	// Six days on: nothing is old enough.
-	now = func() time.Time { return base.Add(6 * 24 * time.Hour) }
+	s.clock = func() time.Time { return base.Add(6 * 24 * time.Hour) }
 	_, _ = s.NotifyRecord(r.ID, map[string]string{"here": "h|input|1"}, []string{"here"}, false)
 	if n, _ := s.NotifyPrune(); n != 0 {
 		t.Fatalf("pruned %d rows at six days", n)
 	}
 	// Eight days on: the absent one has been gone eight days, the present one was seen just now.
-	now = func() time.Time { return base.Add(8 * 24 * time.Hour) }
+	s.clock = func() time.Time { return base.Add(8 * 24 * time.Hour) }
 	_, _ = s.NotifyRecord(r.ID, map[string]string{"here": "h|input|1"}, []string{"here"}, false)
 	if n, _ := s.NotifyPrune(); n != 1 {
 		t.Fatalf("pruned %d rows at eight days, want the one absent card", n)
@@ -133,14 +131,12 @@ func notifyAt(t *testing.T, s *Store, room, card string) string {
 func TestNotifyPresentWithoutIdentityRefreshes(t *testing.T) {
 	s := open(t)
 	r := added(t, s, "sparta")
-	was := now
-	defer func() { now = was }()
 	base := time.Date(2026, 9, 1, 12, 0, 0, 0, time.UTC)
-	now = func() time.Time { return base }
+	s.clock = func() time.Time { return base }
 	_, _ = s.NotifyRecord(r.ID, map[string]string{"a": "a|input|1"}, []string{"a"}, false)
 
 	// Inside notifyTouch: no write.
-	now = func() time.Time { return base.Add(notifyTouch - time.Minute) }
+	s.clock = func() time.Time { return base.Add(notifyTouch - time.Minute) }
 	_, _ = s.NotifyRecord(r.ID, map[string]string{}, []string{"a"}, false)
 	if got := notifyAt(t, s, r.ID, "a"); got != ts(base) {
 		t.Fatalf("a fresh row was rewritten: at %s, want %s", got, ts(base))
@@ -148,7 +144,7 @@ func TestNotifyPresentWithoutIdentityRefreshes(t *testing.T) {
 
 	// Past it: the row's at moves, and the identity stays so the card does not fire when it returns.
 	later := base.Add(6 * 24 * time.Hour)
-	now = func() time.Time { return later }
+	s.clock = func() time.Time { return later }
 	fire, _ := s.NotifyRecord(r.ID, map[string]string{}, []string{"a"}, false)
 	if len(fire) != 0 {
 		t.Fatalf("a card with no identity fired %v", fire)
@@ -158,7 +154,7 @@ func TestNotifyPresentWithoutIdentityRefreshes(t *testing.T) {
 	}
 
 	// Eight days on from the start, the six day refresh keeps it.
-	now = func() time.Time { return base.Add(8 * 24 * time.Hour) }
+	s.clock = func() time.Time { return base.Add(8 * 24 * time.Hour) }
 	if n, _ := s.NotifyPrune(); n != 0 {
 		t.Fatalf("pruned %d rows of a card that was present at six days", n)
 	}
@@ -172,15 +168,13 @@ func TestNotifyPresentWithoutIdentityRefreshes(t *testing.T) {
 func TestNotifyUnchangedIdentityRefreshes(t *testing.T) {
 	s := open(t)
 	r := added(t, s, "sparta")
-	was := now
-	defer func() { now = was }()
 	base := time.Date(2026, 9, 1, 12, 0, 0, 0, time.UTC)
-	now = func() time.Time { return base }
+	s.clock = func() time.Time { return base }
 	ids := map[string]string{"a": "a|input|1"}
 	_, _ = s.NotifyRecord(r.ID, ids, []string{"a"}, false)
 
 	later := base.Add(2 * notifyTouch)
-	now = func() time.Time { return later }
+	s.clock = func() time.Time { return later }
 	fire, _ := s.NotifyRecord(r.ID, ids, []string{"a", "ghost"}, false)
 	if len(fire) != 0 {
 		t.Fatalf("an unchanged identity fired %v", fire)

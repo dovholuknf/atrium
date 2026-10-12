@@ -90,7 +90,7 @@ func (s *Store) PushAdd(p PushSub) (id string, added bool, err error) {
 		}
 		id, added = newID(), true
 		_, e := t.Exec(`INSERT INTO push_subscription (`+pushCols+`) VALUES (?, ?, ?, ?, ?, ?, ?, 0, '')`,
-			id, p.Endpoint, p.P256dh, p.Auth, p.Label, p.Origin, ts(now()))
+			id, p.Endpoint, p.P256dh, p.Auth, p.Label, p.Origin, ts(s.now()))
 		return e
 	})
 	if errors.Is(err, ErrPushFull) {

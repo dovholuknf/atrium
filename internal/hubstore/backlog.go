@@ -147,7 +147,7 @@ func (s *Store) ItemFile(in ItemNew) (BacklogItem, error) {
 	if why := in.Check(); why != "" {
 		return BacklogItem{}, refuse(errors.New(why))
 	}
-	at := ts(now())
+	at := ts(s.now())
 	in.Priority, _ = NormPriority(in.Priority)
 	var out BacklogItem
 	err := s.tx(func(t *sql.Tx) error {
@@ -251,7 +251,7 @@ func (s *Store) ItemSetStatus(id, status, by string) (BacklogItem, error) {
 	var out BacklogItem
 	err := s.tx(func(t *sql.Tx) error {
 		res, err := t.Exec(`UPDATE backlog_item SET status = ?, changed_at = ?, changed_by = ? WHERE id = ?`,
-			status, ts(now()), by, id)
+			status, ts(s.now()), by, id)
 		if err != nil {
 			return err
 		}
@@ -279,7 +279,7 @@ func (s *Store) ItemSetPriority(id, priority, by string) (BacklogItem, error) {
 	var out BacklogItem
 	err := s.tx(func(t *sql.Tx) error {
 		res, err := t.Exec(`UPDATE backlog_item SET priority = ?, changed_at = ?, changed_by = ? WHERE id = ?`,
-			p, ts(now()), by, id)
+			p, ts(s.now()), by, id)
 		if err != nil {
 			return err
 		}
@@ -363,7 +363,7 @@ func (s *Store) ReportAdd(in ReportNew) (DirectorReport, error) {
 		id := fmt.Sprintf("rp_%d", top+1)
 		if _, err := t.Exec(`INSERT INTO director_report (n, id, to_dept, from_by, from_room, subject, body, at)
 			VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-			top+1, id, in.ToDept, in.FromBy, fold(in.FromRoom), in.Subject, in.Body, ts(now())); err != nil {
+			top+1, id, in.ToDept, in.FromBy, fold(in.FromRoom), in.Subject, in.Body, ts(s.now())); err != nil {
 			return err
 		}
 		var err error
@@ -435,7 +435,7 @@ func (s *Store) ReportRead(id, by string) (DirectorReport, error) {
 	var out DirectorReport
 	err := s.tx(func(t *sql.Tx) error {
 		if _, err := t.Exec(`UPDATE director_report SET read_at = ?, read_by = ? WHERE id = ? AND read_at = ''`,
-			ts(now()), by, id); err != nil {
+			ts(s.now()), by, id); err != nil {
 			return err
 		}
 		var err error

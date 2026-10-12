@@ -76,7 +76,7 @@ func (s *Store) ItemUpsert(in ItemNew, status string) (BacklogItem, string, erro
 	var out BacklogItem
 	how := "unchanged"
 	err := s.tx(func(t *sql.Tx) error {
-		at := ts(now())
+		at := ts(s.now())
 		prior, err := scanItem(t.QueryRow(`SELECT `+itemCols+` FROM backlog_item WHERE id = ?`, in.ID))
 		switch {
 		case errors.Is(err, sql.ErrNoRows):
@@ -113,7 +113,7 @@ func (s *Store) ItemLink(id, card, by string) (BacklogItem, error) {
 	var out BacklogItem
 	err := s.tx(func(t *sql.Tx) error {
 		res, err := t.Exec(`UPDATE backlog_item SET status = ?, card = ?, changed_at = ?, changed_by = ? WHERE id = ?`,
-			ItemInProgress, card, ts(now()), by, id)
+			ItemInProgress, card, ts(s.now()), by, id)
 		if err != nil {
 			return err
 		}
@@ -162,7 +162,7 @@ func (s *Store) ItemFollow(card, report, by string) (BacklogItem, bool, error) {
 		}
 		found = true
 		if _, err := t.Exec(`UPDATE backlog_item SET status = ?, changed_at = ?, changed_by = ? WHERE id = ?`,
-			status, ts(now()), by, prior.ID); err != nil {
+			status, ts(s.now()), by, prior.ID); err != nil {
 			return err
 		}
 		out, err = scanItem(t.QueryRow(`SELECT `+itemCols+` FROM backlog_item WHERE id = ?`, prior.ID))

@@ -65,7 +65,7 @@ func (s *Store) Log(r *Room, kind, detail string) {
 		if _, err := s.db.Exec(
 			`INSERT INTO room_audit (id, at, room_id, room_name, kind, detail)
 			 VALUES (?, ?, ?, ?, ?, ?)`,
-			newID(), ts(now()), id, name, kind, detail); err != nil {
+			newID(), ts(s.now()), id, name, kind, detail); err != nil {
 			return err
 		}
 		// THE ROLLING TRIM, in the same guard as the insert so it retries

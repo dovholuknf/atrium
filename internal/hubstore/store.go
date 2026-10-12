@@ -68,6 +68,10 @@ var ErrNoSuchRoom = errors.New("no room by that name")
 // Store owns the hub's database, and whether it has halted.
 type Store struct {
 	db *sql.DB
+	// clock, when set, replaces the wall clock for this store. A seam for tests.
+	clock func() time.Time
+	// afterPurgeCommit, when set, runs between a purge's commit and its file removal. A seam for tests.
+	afterPurgeCommit func()
 	// docsDir is where document bytes live, beside the database. See docs.go.
 	docsDir string
 	// docMu serialises a document write with a purge. See DocAdd.
@@ -363,9 +367,17 @@ func (s *Store) tx(fn func(*sql.Tx) error) error {
 
 func newID() string { return uuid.Must(uuid.NewV7()).String() }
 
-// now is a variable so a test can move time forward rather than sleep through
-// a window it is trying to measure.
-var now = func() time.Time { return time.Now().UTC().Truncate(time.Millisecond) }
+// wallNow is the clock a Store reads unless a test gave it its own. See `Store.now`.
+func wallNow() time.Time { return time.Now().UTC().Truncate(time.Millisecond) }
+
+// now is the store's clock. A test sets `clock` on its Store so it can move time forward rather than sleep through a
+// window it is trying to measure.
+func (s *Store) now() time.Time {
+	if s.clock != nil {
+		return s.clock()
+	}
+	return wallNow()
+}
 
 func ts(t time.Time) string { return t.UTC().Format(TimeFormat) }
 

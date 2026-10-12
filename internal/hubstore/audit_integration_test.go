@@ -18,9 +18,7 @@ func TestAuditWhereFiltersAndOrdersNewestFirst(t *testing.T) {
 	// rather than a tie broken by id.
 	base := time.Date(2026, 9, 19, 12, 0, 0, 0, time.UTC)
 	var tick int
-	old := now
-	now = func() time.Time { tick++; return base.Add(time.Duration(tick) * time.Second) }
-	t.Cleanup(func() { now = old })
+	s.clock = func() time.Time { tick++; return base.Add(time.Duration(tick) * time.Second) }
 
 	s.Log(&Room{Name: "alpha"}, "room-attached", "first")
 	s.Log(nil, "hub-started", "a hub-level line")
@@ -82,9 +80,7 @@ func TestAuditIsTrimmedToTheCap(t *testing.T) {
 
 	base := time.Date(2026, 9, 19, 12, 0, 0, 0, time.UTC)
 	var tick int
-	old := now
-	now = func() time.Time { tick++; return base.Add(time.Duration(tick) * time.Millisecond) }
-	t.Cleanup(func() { now = old })
+	s.clock = func() time.Time { tick++; return base.Add(time.Duration(tick) * time.Millisecond) }
 
 	over := auditCap + 25
 	for i := 0; i < over; i++ {

@@ -215,7 +215,7 @@ func (s *Store) SetHubSetting(name, value string) error {
 			`INSERT INTO hub_setting (name, value, updated_at) VALUES (?, ?, ?)
 			 ON CONFLICT(name) DO UPDATE SET value = excluded.value,
 			                                 updated_at = excluded.updated_at`,
-			name, value, ts(now()))
+			name, value, ts(s.now()))
 		return err
 	})
 }
@@ -293,7 +293,7 @@ func (s *Store) BoardAuto() (bool, *time.Time, error) {
 		// A value that will not parse is not a licence to approve everything.
 		return false, nil, nil
 	}
-	if !now().Before(deadline) {
+	if !s.now().Before(deadline) {
 		return false, &deadline, nil
 	}
 	return true, &deadline, nil

@@ -144,7 +144,7 @@ func (s *Store) SetRoomSpec(room string, raw []byte, by string) (RoomSpec, error
 	}
 	sum := sha256.Sum256(raw)
 	sp := RoomSpec{Room: r.Name, YAML: string(raw), SHA256: hex.EncodeToString(sum[:]), SetBy: strings.TrimSpace(by),
-		SetAt: now()}
+		SetAt: s.now()}
 	err = s.guard(func() error {
 		_, err := s.db.Exec(
 			`INSERT INTO room_spec (room_id, yaml, sha256, set_by, set_at) VALUES (?, ?, ?, ?, ?)
@@ -194,7 +194,7 @@ func (s *Store) PutRoomLock(room string, raw []byte) (RoomLock, error) {
 	if err := CheckRoomLock(raw); err != nil {
 		return RoomLock{}, refuse(err)
 	}
-	lk := RoomLock{Room: r.Name, Lock: json.RawMessage(raw), ReceivedAt: now()}
+	lk := RoomLock{Room: r.Name, Lock: json.RawMessage(raw), ReceivedAt: s.now()}
 	err = s.guard(func() error {
 		_, err := s.db.Exec(
 			`INSERT INTO room_lock (room_id, lock_json, received_at) VALUES (?, ?, ?)

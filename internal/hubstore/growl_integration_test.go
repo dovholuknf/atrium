@@ -178,10 +178,8 @@ func TestGrowlUndismissOnlyWhileTheReasonStands(t *testing.T) {
 func TestGrowlSnoozeWakesAndEndsWithItsReason(t *testing.T) {
 	s := open(t)
 	r := added(t, s, "sparta")
-	old := now
 	base := time.Date(2026, 9, 30, 12, 0, 0, 0, time.UTC)
-	now = func() time.Time { return base }
-	t.Cleanup(func() { now = old })
+	s.clock = func() time.Time { return base }
 
 	a := growlFor("sparta", "a", GrowlQuestion, "1")
 	b := growlFor("sparta", "b", GrowlQuestion, "1")
@@ -201,13 +199,13 @@ func TestGrowlSnoozeWakesAndEndsWithItsReason(t *testing.T) {
 	if got, _ := s.GrowlGet(b.ID); got.State != GrowlResolved {
 		t.Fatalf("a snoozed growler whose reason ended is %q", got.State)
 	}
-	now = func() time.Time { return base.Add(16 * time.Minute) }
+	s.clock = func() time.Time { return base.Add(16 * time.Minute) }
 	woke, _ := s.GrowlWake()
 	if len(woke) != 1 || woke[0] != a.ID {
 		t.Fatalf("woke %v, want only a", woke)
 	}
 	got, _ := s.GrowlGet(a.ID)
-	if got.State != GrowlOpen || got.Until != nil || got.Reminders != 0 || !got.RaisedAt.Equal(now()) {
+	if got.State != GrowlOpen || got.Until != nil || got.Reminders != 0 || !got.RaisedAt.Equal(s.now()) {
 		t.Fatalf("a woken growler is %+v, want open, raised now, no reminders", got)
 	}
 }
@@ -217,10 +215,8 @@ func TestGrowlSnoozeWakesAndEndsWithItsReason(t *testing.T) {
 func TestGrowlPrune(t *testing.T) {
 	s := open(t)
 	r := added(t, s, "sparta")
-	old := now
 	base := time.Date(2026, 9, 1, 12, 0, 0, 0, time.UTC)
-	now = func() time.Time { return base }
-	t.Cleanup(func() { now = old })
+	s.clock = func() time.Time { return base }
 
 	if _, err := s.Announce(r.ID, []Card{{ID: "live", Status: "needs-input", Payload: []byte(`{}`)}}); err != nil {
 		t.Fatal(err)
@@ -233,11 +229,11 @@ func TestGrowlPrune(t *testing.T) {
 	_, _ = s.GrowlAct(dismissed.ID, GrowlDismissed, time.Time{}, "board", "")
 	_, _, _ = s.GrowlSync(r.ID, cardReasons, []Growl{dismissed, vanished}, all)
 
-	now = func() time.Time { return base.Add(6 * 24 * time.Hour) }
+	s.clock = func() time.Time { return base.Add(6 * 24 * time.Hour) }
 	if n, _ := s.GrowlPrune(); n != 0 {
 		t.Fatalf("pruned %d rows at six days", n)
 	}
-	now = func() time.Time { return base.Add(8 * 24 * time.Hour) }
+	s.clock = func() time.Time { return base.Add(8 * 24 * time.Hour) }
 	if n, _ := s.GrowlPrune(); n != 2 {
 		t.Fatalf("pruned %d rows at eight days, want the ended one and the vanished card", n)
 	}

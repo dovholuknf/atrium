@@ -147,7 +147,7 @@ func (s *Store) GrowlSync(roomID string, reasons []string, want []Growl, present
 	if len(reasons) == 0 {
 		return nil, false, nil
 	}
-	at := now()
+	at := s.now()
 	err = s.tx(func(t *sql.Tx) error {
 		raised, changed = nil, false
 		marks := strings.TrimSuffix(strings.Repeat("?,", len(reasons)), ",")
@@ -219,7 +219,7 @@ func (s *Store) GrowlSync(roomID string, reasons []string, want []Growl, present
 // g's title, body and subject. Off ends the current one. A room that did not
 // answer is never passed here: silence is neither.
 func (s *Store) GrowlRoom(roomID, reason string, on bool, g Growl) (raised, changed bool, err error) {
-	at := now()
+	at := s.now()
 	err = s.tx(func(t *sql.Tx) error {
 		raised, changed = false, false
 		had, err := queryGrowls(t, `g.room_id = ? AND g.reason = ? AND g.ended_at = ''`, roomID, reason)
@@ -267,7 +267,7 @@ func (s *Store) GrowlRoom(roomID, reason string, on bool, g Growl) (raised, chan
 // it ends only when GrowlEnd says its reason did, or a human handles it. An id that was ever raised is not raised
 // again, ended or not, so a request that is finished does not come back as a growler.
 func (s *Store) GrowlRaise(roomID string, g Growl) (raised bool, err error) {
-	at := now()
+	at := s.now()
 	err = s.tx(func(t *sql.Tx) error {
 		raised = false
 		res, err := t.Exec(`INSERT INTO growl (id, room_id, reason, title, body, subject, raised_at, state,
@@ -286,7 +286,7 @@ func (s *Store) GrowlRaise(roomID string, g Growl) (raised bool, err error) {
 // GrowlEnd ends a growler's reason by id, whatever a human did with it. Reports whether a screen would change. An
 // id the hub never held, or one already ended, is not an error.
 func (s *Store) GrowlEnd(id string) (changed bool, err error) {
-	at := now()
+	at := s.now()
 	err = s.tx(func(t *sql.Tx) error {
 		changed = false
 		had, err := queryGrowls(t, `g.id = ? AND g.ended_at = ''`, id)
@@ -360,7 +360,7 @@ func (s *Store) GrowlAct(id, state string, until time.Time, via, tab string) (Gr
 		return Growl{}, errors.New("a growler can be dismissed, snoozed, acted on or undismissed")
 	}
 	var g Growl
-	at := now()
+	at := s.now()
 	err := s.tx(func(t *sql.Tx) error {
 		var err error
 		g, err = scanGrowl(t.QueryRow(`SELECT `+growlCols+growlFrom+` WHERE g.id = ?`, id))
@@ -400,7 +400,7 @@ func (s *Store) GrowlAct(id, state string, until time.Time, via, tab string) (Gr
 // GrowlWake ends every snooze that is due. A woken growler comes back as if
 // new: open, raised now, no reminders yet. It returns the ids woken.
 func (s *Store) GrowlWake() ([]string, error) {
-	at := now()
+	at := s.now()
 	var woke []string
 	err := s.tx(func(t *sql.Tx) error {
 		woke = nil
@@ -431,7 +431,7 @@ func (s *Store) GrowlReminded(id string, n int) error {
 // GrowlPrune drops what nobody will look at again. See the header.
 func (s *Store) GrowlPrune() (int64, error) {
 	var n int64
-	cut := ts(now().Add(-growlKeep))
+	cut := ts(s.now().Add(-growlKeep))
 	err := s.guard(func() error {
 		res, err := s.db.Exec(`DELETE FROM growl WHERE
 			(ended_at != '' AND ended_at < ? AND state NOT IN ('open','snoozed'))

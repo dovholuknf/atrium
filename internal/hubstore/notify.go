@@ -47,7 +47,7 @@ const notifyTouch = time.Hour
 // avoid a flood.
 func (s *Store) NotifyRecord(roomID string, ids map[string]string, present []string, silent bool) ([]string, error) {
 	var fire []string
-	at := now()
+	at := s.now()
 	err := s.tx(func(t *sql.Tx) error {
 		fire = nil
 		rows, err := t.Query(`SELECT card_id, identity, at FROM notify_sent WHERE room_id = ?`, roomID)
@@ -130,7 +130,7 @@ func (s *Store) NotifyRecord(roomID string, ids map[string]string, present []str
 func (s *Store) NotifyPrune() (int64, error) {
 	var n int64
 	err := s.guard(func() error {
-		res, err := s.db.Exec(`DELETE FROM notify_sent WHERE at < ?`, ts(now().Add(-notifyKeep)))
+		res, err := s.db.Exec(`DELETE FROM notify_sent WHERE at < ?`, ts(s.now().Add(-notifyKeep)))
 		if err != nil {
 			return err
 		}
