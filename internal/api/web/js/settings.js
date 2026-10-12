@@ -250,7 +250,7 @@ function paintGroupSegs() {
   // The strip is the third. It is rebuilt wholesale on every render, so it
   // calls this afterwards rather than relying on having been painted once.
   // EACH STRIP SHOWS ITS OWN TAB'S SETTING.
-  [["stack-group", "stack"], ["board-group", "board"], ["term-group", "terms"], ["term-group-tray", "terms"]].forEach(([id, view]) => {
+  [["stack-group", "stack"], ["board-group", "board"], ["term-group", "terms"], ["term-drawer-group", "terms"]].forEach(([id, view]) => {
     const el = document.getElementById(id);
     if (!el) return;
     const p = groupingPrefs(view);

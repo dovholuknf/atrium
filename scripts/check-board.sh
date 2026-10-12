@@ -294,6 +294,18 @@ elif ! node "$here/scripts/test-board-headless.js"; then
   fail=1
 fi
 
+# The filter drawer on the stack, the board and the terminals tab, in a real browser: closed on load, ctrl-/ to the
+# search box, a click opens it over the list without moving it, a chip applies at once, an outside click closes it and
+# is swallowed, Esc gives the focus back, each tab keeps its own settings, and at 390px a finger pulls it down, with the
+# nine steps of docs/backlog/ui/u-011-interview.md. Skips itself, exit 0, without Playwright. Left out by SKIP_HEADLESS=1
+# like the run above, since it needs the same browser.
+if [ "${SKIP_HEADLESS:-}" != "1" ]; then
+  if ! node "$here/scripts/check-board-drawer.js"; then
+    echo "the filter drawer does not behave as the interview says. see above." >&2
+    fail=1
+  fi
+fi
+
 # The card's invariants. All of them are about one thing: the text on a card is
 # there to be copied. Dragging a card between columns made that impossible for
 # as long as it existed, and the same two attributes would do it again.

@@ -91,126 +91,94 @@ document.addEventListener("pointerout", e => {
   if (row && !row.contains(e.relatedTarget)) clearTimeout(prewarmTimer);
 });
 
-// ── hiding the agent-launched doers ──────────────────────────────────────────
-//
-// A DOER IS AN AGENT-LAUNCHED SESSION, and the mark that says so is the
-// `origin:agent` tag the hub stamps on every card it starts through the launch
-// API (see internal/link/control_mcp.go, OriginTag). The launch cap does not
-// count it: the cap counts only running cards tagged `atrium:subagent`
-// (SubagentTag). A human's own terminal, or one started from the board's launch
-// dialog, self registers and never carries it. Matched trimmed and
-// case-insensitively, exactly as the daemon's `hasOriginTag` does, so the board
-// and the hub agree on what a doer is rather than keeping a second definition
-// that can drift. A tag, not a dedicated field, because that is the durable
-// structural signal the board actually receives per card.
-// DOER_TAG and isDoer live in js/cardrules.js.
-
-// HIDE, NOT COLLAPSE-INTO-A-GROUP, and here is why the plainer of the two won.
-// A collapsed "N doers" group would have to be a heading, and the strip already
-// has two heading systems fighting for the top level (the path tree and the
-// grouper). A doer group under `by tag` or `by pile` lands a card in several
-// places at once, so "the doers" stops being one foldable thing. A flat hide
-// filters the input list before any of that runs, so it means the same thing in
-// every GROUP mode and on the phone: the doers are simply not in the list, and
-// a count in the header says how many.
-//
-// TWO INDEPENDENT TOGGLES, ONE PILL. The strip holds two kinds of session, and
-// each gets its own hide toggle. A SUBAGENT is a worker (the
-// `atrium:subagent` tag, `isSubagent`), not every agent-launched doer. An AGENT is everything else: a human's own
-// top-level terminal, the sessions clint starts himself. The two toggles are
-// independent, so an operator can hide the subagents, the inactive agents, both,
-// or neither. They read as one segmented control (see `termHideControlsHTML`)
-// and behave as two switches.
-//
-// BOTH TOGGLES SAY "HIDE INACTIVE", BUT INACTIVE MEANS A DIFFERENT THING PER
-// KIND. Each toggle keeps the sessions of its kind still worth a glance and drops
-// the rest; what counts as inactive differs because the two kinds are watched
-// differently:
-//   - A SUBAGENT is inactive when it is NOT WORKING RIGHT NOW (`workingNow`):
-//     idle, waiting on input, OR exited. The subagents toggle keeps ONLY the ones
-//     actively computing, since a board fills with atrium's launched doers and
-//     the operator wants to see the ones doing something, not the idle husks.
-//   - An AGENT is inactive when it has EXITED (`termCold`: not supervised and
-//     not running, ready or asking). The agents toggle keeps every live one, EVEN idle or
-//     waiting on you (connected at a prompt is still a session you can go to), and
-//     drops only the dead ones.
-// `none` shows every session of that kind. The attached one is never hidden by
-// either toggle (see `sessionHiddenBy`). A pinned one is: with a toggle on, a
-// pinned row whose runner has gone hides like any other inactive row.
-//
-// TWO SIGNALS. The agents rule reads `termCold`, the same test the row reads to
-// draw itself grey (see `termRow`), so the toggle hides exactly the grey agents. The subagents rule reads `workingNow`, the same live-activity test the
-// board's activity chip makes. So an idle-but-connected session is INACTIVE to
-// the subagents toggle but ALIVE to the agents toggle - deliberately, because the
-// two kinds are triaged differently.
-//
-// DEVICE-SCOPED, like the strip's other view prefs (see `termDeviceKey`): a
-// wall-mounted board and a laptop want different answers and neither should
-// write over the other. The subagents side DEFAULTS ON (a board fills with
-// atrium's launched doers and their dead husks, and hiding those by default
-// keeps the strip about the human sessions); the agents side defaults off, so a
-// human's own sessions are never hidden until asked.
-const HIDE_SUBAGENTS_KEY = "atrium.hidesubagents"; // the atrium-launched doers
-const HIDE_AGENTS_KEY = "atrium.hideagents";       // the human/top-level sessions
-const HIDE_MODES = ["none", "on"];
-// A prior build stored the subagents toggle under `atrium.hidedoers`, with values
-// that meant a different thing (a liveness-gated hide, or an older tri-state).
-// The subagents toggle now hides on the `workingNow` signal and DEFAULTS ON, so a
-// stale value there would show a prior test click instead of the intended
-// default. Drop the legacy key (both device variants) once, so the new key's
-// default takes.
-(function clearLegacyHideKey() {
-  try {
-    localStorage.removeItem("atrium.hidedoers");
-    localStorage.removeItem("atrium.hidedoers.mobile");
-  } catch (e) {}
-})();
-function hideModeFrom(key, dflt) {
-  try {
-    const v = localStorage.getItem(termDeviceKey(key));
-    if (HIDE_MODES.includes(v)) return v;
-    // Old stored values map to the surviving on-state. The subagents key's binary
-    // "1" and the agents key's "inactive" both meant "this toggle is engaged",
-    // which is now `on`. The dropped tri-state `active` hid the working ones, a
-    // thing neither toggle offers now, so it falls through to this kind's default
-    // rather than flip to hiding the opposite set behind the operator's back.
-    if (v === "1" || v === "inactive") return "on";
-    return dflt;
-  } catch (e) { return dflt; }
-}
-function setHideMode(key, mode) {
-  if (!HIDE_MODES.includes(mode)) mode = "none";
-  try { localStorage.setItem(termDeviceKey(key), mode); } catch (e) {}
-  paintTermGear();
-  renderTermList();
-}
-// The subagents side defaults ON, the agents side OFF: see the note above.
-function hideSubagentsMode() { return hideModeFrom(HIDE_SUBAGENTS_KEY, "on"); }
-function hideAgentsMode() { return hideModeFrom(HIDE_AGENTS_KEY, "none"); }
-function setHideSubagents(mode) { setHideMode(HIDE_SUBAGENTS_KEY, mode); }
-function setHideAgents(mode) { setHideMode(HIDE_AGENTS_KEY, mode); }
-function toggleHideSubagents() {
-  setHideSubagents(hideSubagentsMode() === "none" ? "on" : "none");
-}
-function toggleHideAgents() {
-  setHideAgents(hideAgentsMode() === "none" ? "on" : "none");
-}
-
-// SHOW STOPPED, the third pill of the hide control. Off by default: a card that was stopped (the menu's `stop`) is
-// out of the list until this is on. Device-scoped like the two hide keys.
-const SHOW_STOPPED_KEY = "atrium.showstopped";
-function showStoppedOn() {
-  try { return localStorage.getItem(termDeviceKey(SHOW_STOPPED_KEY)) === "on"; } catch (e) { return false; }
-}
 // The ended group's open rooms (see termEndedHTML). Defined up here because prefLive below reads it at load.
 const TERM_ENDED_KEY = "atrium.termended";
 const CLOSED_TAG = "atrium:closed";
 const termClosedGone = t => !t.supervised && (t.tags || []).includes(CLOSED_TAG);
-function toggleShowStopped() {
-  try { localStorage.setItem(termDeviceKey(SHOW_STOPPED_KEY), showStoppedOn() ? "off" : "on"); } catch (e) {}
-  paintTermGear();
+
+// ── what the list shows: the drawer's chips ──────────────────────────────────
+//
+// A DOER IS AN AGENT-LAUNCHED SESSION, tagged `origin:agent` by the hub (DOER_TAG and isDoer live in js/cardrules.js),
+// and a SUBAGENT is one tagged `atrium:subagent`. Those are what the list nests under their parent (see `termNest`).
+//
+// THE HIDE TOGGLES ARE GONE. `hide inactive` (agents, subagents) and `show stopped` read three different signals and
+// said "hide" about each, and nobody could tell what a lit one was taking out. They are replaced by the three chips of
+// the filter drawer (js/filter-drawer.js, docs/backlog/ui/u-011-interview.md):
+//   - `running` and `ready` sessions are ALWAYS listed. They get no chip.
+//   - `shelved N`: cards that were stopped (the menu's `stop`), listed cold so a click resumes them. Off by default.
+//   - `dead N`: pinned rows whose runner has gone, and the `ended` group of finished cards. Off by default.
+//   - `subagents`: off, every parent row starts FOLDED with a count on its chevron and a child that needs you still
+//     shows through the fold. On, parents start expanded. Off by default.
+// The attached session is never taken out by a chip, so turning one off cannot pull the pane out from under you.
+//
+// STORED per device (see `termDeviceKey`) as the list of chips that are ON, so no stored value is the default.
+const TERM_SHOW_KEY = "atrium.terms.show";
+const TERM_CHIPS = ["shelved", "dead", "subagents"];
+// The keys the old controls kept, cleared on load (both device variants) so a stale `hide inactive` does not outlive
+// the control that wrote it. `atrium.hidedoers` is older still.
+(function clearLegacyHideKey() {
+  try {
+    ["atrium.hidedoers", "atrium.hideagents", "atrium.hidesubagents", "atrium.termtray", "atrium.showstopped"]
+      .forEach(k => { localStorage.removeItem(k); localStorage.removeItem(k + ".mobile"); });
+  } catch (e) {}
+})();
+
+function termShow() {
+  try {
+    const v = JSON.parse(localStorage.getItem(termDeviceKey(TERM_SHOW_KEY)) || "null");
+    if (Array.isArray(v)) return new Set(v.filter(x => TERM_CHIPS.includes(x)));
+  } catch (e) {}
+  return new Set();
+}
+function termSubsOn() { return termShow().has("subagents"); }
+
+function toggleTermShow(id) {
+  if (!TERM_CHIPS.includes(id)) return;
+  const on = termShow();
+  if (on.has(id)) on.delete(id); else on.add(id);
+  try {
+    if (on.size) localStorage.setItem(termDeviceKey(TERM_SHOW_KEY), JSON.stringify([...on]));
+    else localStorage.removeItem(termDeviceKey(TERM_SHOW_KEY));
+    // A parent's fold means the opposite on each side of the subagents chip (see `termRow`), so the entries written
+    // under the other meaning are dropped and every parent starts the way the chip says.
+    if (id === "subagents") {
+      localStorage.setItem("atrium.folded", JSON.stringify(foldedColumns().filter(k => !k.startsWith("kids:"))));
+    }
+  } catch (e) {}
+  paintTermShow();
   renderTermList();
 }
+
+// The chips, painted on change and once at load. The counts are written into them by `renderTermList`, so the button
+// under the pointer is not replaced every poll.
+function paintTermShow() {
+  const el = document.getElementById("term-show");
+  if (!el) return;
+  const on = termShow();
+  el.innerHTML =
+    fdChip("shelved", on.has("shelved"), "toggleTermShow('shelved')",
+      "cards you stopped, listed cold so a click starts them again", "shelved") +
+    fdChip("dead", on.has("dead"), "toggleTermShow('dead')",
+      "pinned rows whose session has exited, and the ended group. a click starts one again", "dead") +
+    fdChip("subagents", on.has("subagents"), "toggleTermShow('subagents')",
+      "off: a parent's subagents are folded under it, with a count. one that needs you still shows. on: parents start open", "subagents");
+}
+prefLive([TERM_SHOW_KEY + "*"], () => { paintTermShow(); renderTermList(); });
+
+// WHICH KIND OF ROW A CARD IS, to the chips:
+//   `gone`    a closed card with no session. Nothing to resume, listed only while it is the attached one.
+//   `shelved` stopped. Behind the shelved chip.
+//   `live`    a runner is up, or it was joined from the operator's own terminal. Always listed.
+//   `dead`    pinned, with its runner gone. Behind the dead chip.
+//   ``        not a row of the list.
+function termRowKind(t) {
+  if (termClosedGone(t)) return "gone";
+  if (t.status === "shelved") return "shelved";
+  if (t.supervised || termJoined(t)) return "live";
+  if (t.pinned) return "dead";
+  return "";
+}
+
 
 // IS THIS SESSION WORKING RIGHT NOW. The one live-activity guard the whole
 // strip reads from: the doer filter's hide-inactive test, the runner mark that
@@ -283,105 +251,20 @@ async function joinedClick(id) {
   toast("sent", t.display_title);
 }
 
-// Whether this session is hidden by its kind's toggle, honouring what is never
-// hidden (see `renderTermList`): the attached one, and whatever its kind's rule
-// keeps. A subagent (`isSubagent`) answers to the subagents toggle, everything else
-// to the agents toggle. Kept as one predicate so the count in the header and the
-// rows removed from the list are the same answer rather than two that can drift.
-// The two toggles both mean "hide inactive", but read DIFFERENT signals: a
-// subagent is inactive unless it is working right now (`workingNow`), so an idle
-// or exited one hides; an agent is inactive when it is cold (`termCold`), so only
-// a dead one hides.
-//
-// A PINNED SESSION HIDES LIKE ANY OTHER when its toggle is on. With the toggles
-// off a pinned row still outlives its runner, drawn cold; turning a toggle on is
-// the operator asking for the inactive ones to go, pinned or not.
-function sessionHiddenBy(t, keep) {
-  if (keep(t)) return false;
-  if (isSubagent(t)) return !workingNow(t) && hideSubagentsMode() !== "none";
-  return termCold(t) && hideAgentsMode() !== "none";
+// Whether a chip being off is what would take this row out, and only the attached one is spared it: the pane is never
+// pulled out from under the operator. Such a row is drawn as it is, with a chip that says why it is still here.
+function termKept(t, show) {
+  if (!termTask || t.id !== termTask.id) return false;
+  const k = termRowKind(t);
+  return k === "gone" || (k === "shelved" && !show.has("shelved")) || (k === "dead" && !show.has("dead"));
 }
 
-// THE HIDE CONTROL, a pair of pills in the gear's `hide inactive` field, drawn
-// like the sort pair above it, but each pill is an INDEPENDENT on/off toggle:
-// hide the inactive agents, the inactive subagents, both, or neither, so both
-// can be lit at once.
+// ── the sort, and the gear's copy of it ──────────────────────────────────────
 //
-// A PRESSED SEGMENT is lit and carries the
-// count it is hiding right now in parentheses - `agents (3)` - so the pill says
-// how much is out of view. INACTIVE MEANS A DIFFERENT THING PER SIDE (see the note above),
-// so the tooltips differ: an agent is inactive when it has EXITED (no live
-// connection), a subagent is inactive when it is NOT WORKING right now (idle,
-// waiting, or exited). The attached one always stays, whatever is pressed.
-//
-// ALWAYS DRAWN. It lives in the controls tray (see `termTrayHTML`) and in the gear's
-// `terminal list` section (see `paintTermGear`). Its caption is the row's label.
-function termHideControlsHTML(c) {
-  const aOn = hideAgentsMode() !== "none";
-  const sOn = hideSubagentsMode() !== "none";
-  const seg = (name, on, hidden, fn, title) => {
-    const label = on && hidden ? `${name} (${hidden})` : name;
-    return `<button class="${on ? "on" : ""}" onclick="${fn}"
-        data-tip="${esc(title)}">${esc(label)}</button>`;
-  };
-  // Agents: inactive = exited (no live connection). A live agent stays, even idle
-  // or waiting on you.
-  const agentTitle = aOn
-    ? "inactive agents are hidden (exited, no live connection). click to show " +
-      "them. connected agents and the attached one always stay"
-    : "hide the inactive agents (exited, no live connection). connected agents " +
-      "and the attached one always stay";
-  // Subagents: inactive = not working right now. Only the actively-computing ones
-  // stay; idle, waiting, or exited subagents hide. The tooltip also names what a
-  // subagent IS, since the word is atrium's own: the sessions atrium launched
-  // (the `atrium:subagent` tag), not any a human started.
-  const subNote = "subagents are the sessions atrium launched itself " +
-    "(atrium:subagent), not ones you started";
-  const subTitle = (sOn
-    ? "inactive subagents are hidden (idle, waiting, or exited - not working right " +
-      "now). click to show them. only actively-working subagents and the attached " +
-      "one stay"
-    : "hide the inactive subagents (idle, waiting, or exited - not working right " +
-      "now). only actively-working subagents and the attached one stay") +
-    ". " + subNote;
-  return `<div class="seg trayseg termhide">${
-      seg("agents", aOn, c.agentHidden, "toggleHideAgents()", agentTitle)
-    }${
-      seg("subagents", sOn, c.subHidden, "toggleHideSubagents()", subTitle)
-    }${
-      `<button class="${showStoppedOn() ? "on" : ""}" onclick="toggleShowStopped()"
-        data-tip="${showStoppedOn()
-          ? "stopped cards are listed, cold. click to hide them again"
-          : "list the cards you stopped (the menu's stop), so they can be resumed"}">show stopped</button>`
-    }</div>`;
-}
-
-// ── the controls tray, and the gear's copy of it ────────────────────────────
-//
-// THE SORT, HIDE AND GROUP CONTROLS LIVE IN TWO PLACES, ONE STATE. The tray above
-// the rows and the gear's `terminal list` section (index.html) draw the same
-// markup (`termSortHTML`, `termHideControlsHTML`, `paintGroupSegs`) bound to the
-// same handlers, so a change made in either place is what the other shows. The
-// settings keys are `atrium.termSort`, the two hide keys and the grouping prefs.
-//
-// THE TRAY IS A PANEL ABOVE THE LIST, NOT A HEADER OVER IT: its own box in normal
-// flow, with the cards scrolling in `.termscroll` beneath it.
-//
-// IT ROLLS UP. Folded, it is one line saying what the controls are set to, so
-// the state is readable without spending three rows on it. Open, it shows the
-// controls. Which of the two is remembered per device, like the strip's other
-// view prefs (see `termDeviceKey`), and defaults to folded.
-const TERM_TRAY_KEY = "atrium.termtray";
-function termTrayOpen() {
-  try { return localStorage.getItem(termDeviceKey(TERM_TRAY_KEY)) === "open"; }
-  catch (e) { return false; }
-}
-function toggleTermTray() {
-  try {
-    localStorage.setItem(termDeviceKey(TERM_TRAY_KEY), termTrayOpen() ? "closed" : "open");
-  } catch (e) {}
-  renderTermList();
-}
+// THE SORT AND GROUP LIVE IN TWO PLACES, ONE STATE. The filter drawer's rows (`#term-sort`, `#term-drawer-group`) and
+// the gear's `terminal list` section (index.html) draw the same markup (`termSortHTML`, `paintGroupSegs`) bound to the
+// same handlers, so a change made in either place is what the other shows. The settings keys are `atrium.termSort` and
+// the grouping prefs.
 
 // The sort as a pair rather than a chip that names its own state.
 function setTermSort(byActivity) {
@@ -398,55 +281,15 @@ function termSortHTML() {
         data-tip="newest card first, by when it was started">started</button>`;
 }
 
-// What the folded tray says: the sort, the grouping, and what is being hidden,
-// in the words the controls use.
-const TRAY_GROUP_WORDS = { project: "project", window: "pile", tag: "tag", custom: "group", recency: "age", repo: "repo", room: "room", status: "status", runner: "runner", prefix: "tag prefix", code: "code" };
-function termTraySummary(c) {
-  const p = typeof groupingPrefs === "function" ? groupingPrefs("terms") : { on: false };
-  const mode = p.on ? (p.mode || "project") : "off";
-  const hid = [];
-  if (hideAgentsMode() !== "none") hid.push("agents");
-  if (hideSubagentsMode() !== "none") hid.push("subagents");
-  const n = c.agentHidden + c.subHidden;
-  return [
-    termSortStarted ? "sorted by started" : sortByActivity ? "sorted by activity" : "sorted by name",
-    mode === "off" ? "ungrouped" : "by " + (TRAY_GROUP_WORDS[mode] || mode),
-    hid.length ? `hiding inactive ${hid.join(", ")}${n ? ` (${n})` : ""}` : "hiding nothing"
-  ].join(" · ");
-}
-
-let termGearCounts = { agentHidden: 0, subHidden: 0 };
-function paintTermGear(c) {
-  if (c) termGearCounts = c;
+function paintTermGear() {
   const sort = document.getElementById("gear-term-sort");
   if (sort) setHTML(sort, termSortHTML());
-  const hide = document.getElementById("gear-term-hide");
-  if (hide) setHTML(hide, termHideControlsHTML(termGearCounts));
+  const drawer = document.getElementById("term-sort");
+  if (drawer) setHTML(drawer, termSortHTML());
   if (typeof paintGroupSegs === "function") paintGroupSegs();
 }
-
-// The tray. The bar is the summary, which is the fold toggle, and the list's
-// width buttons at its end, drawn in both states since they are about the list
-// and not about the controls. The body is `inert` while folded so its buttons
-// are out of the tab order as well as out of sight.
-function termTrayHTML(c) {
-  c = c || termGearCounts;
-  const open = termTrayOpen();
-  return `<div class="termtray${open ? " open" : ""}">
-      <div class="traybar">
-        <button class="traytoggle" onclick="toggleTermTray()" aria-expanded="${open}"
-          data-tip="${open ? "fold the controls away" : "show the sort, hide inactive and group controls"}"
-          ><span class="traychev">&#9656;</span
-          ><span class="traysum">${esc(termTraySummary(c))}</span></button>
-      </div>
-      <div class="traybody"${open ? "" : " inert"}><div class="trayinner"><div class="trayrows">
-        <div class="trayrow"><span class="barlabel">sort</span><div class="seg trayseg sortseg">${termSortHTML()}</div></div>
-        <div class="trayrow"><span class="barlabel">hide inactive</span>${termHideControlsHTML(c)}</div>
-        <div class="trayrow termgroups"><span class="barlabel">group</span
-          ><div class="seg trayseg groupseg" id="term-group-tray"></div></div>
-      </div></div></div>
-    </div>`;
-}
+paintTermShow();
+paintTermGear();
 
 // ── the phone dropdown ───────────────────────────────────────────────────────
 //
@@ -674,9 +517,9 @@ function setTermListMode(mode) {
   requestAnimationFrame(onTermResize);
 }
 
-// Another window of this browser changed how the list looks: its mode and width, the tray, the two hides, the folded
-// groups. Read again and drawn the way the control in that window drew it.
-prefLive(["atrium.termlist.*", "atrium.termtray*", "atrium.termfolded", TERM_ENDED_KEY + "*", HIDE_SUBAGENTS_KEY + "*", HIDE_AGENTS_KEY + "*"], () => {
+// Another window of this browser changed how the list looks: its mode and width, the folded groups, the ended group.
+// Read again and drawn the way the control in that window drew it. The chips have their own (see `paintTermShow`).
+prefLive(["atrium.termlist.*", "atrium.termfolded", TERM_ENDED_KEY + "*"], () => {
   const mode = localStorage.getItem("atrium.termlist.mode") || "full";
   termListMode = TERM_LIST_MODES.includes(mode) ? mode : "full";
   termListW = Number(localStorage.getItem("atrium.termlist.w")) || 260;
@@ -1226,17 +1069,17 @@ function termRow(t, deep, kid) {
   const secondary = named ? path : "";
   // The hover keeps the whole address and the name whatever the row had room to draw.
   const hover = named ? named + " · " + full + tail : full + tail;
-  // KEPT AGAINST THE FILTER. The open pane is never hidden (see `sessionHiddenBy`), so with hide inactive on, a cold
+  // KEPT AGAINST THE FILTER. The open pane is never hidden (see `termKept`), so with the chip for its kind off, a cold
   // row still listed is this one. Grey means the filter would take the row out, and this one is not going anywhere,
   // so it is NOT drawn grey. It wears a chip that says it is kept and why.
-  const keptOpen = on && termCold(t) && sessionHiddenBy(t, () => false);
+  const keptOpen = on && termCold(t) && termKept(t, termShow());
   const keptWord = attachIsInFlight(t.id) ? "opening" : "attached";
   const keptChip = keptOpen
-    ? `<span class="chip accent kept" aria-label="${keptWord}. hide inactive would hide it" data-tip="${
-      keptWord === "opening" ? "being started again here, so hide inactive keeps it listed"
-        : "open in the pane, so hide inactive keeps it listed"}">${keptWord}</span>` : "";
+    ? `<span class="chip accent kept" aria-label="${keptWord}. the filter would hide it" data-tip="${
+      keptWord === "opening" ? "being started again here, so the filter keeps it listed"
+        : "open in the pane, so the filter keeps it listed"}">${keptWord}</span>` : "";
   const allKids = termKids.get(t.id) || [];
-  const shut = allKids.length > 0 && isFolded(termKidsKey(t));
+  const shut = allKids.length > 0 && termKidsShut(t);
   const shown = shut ? allKids.filter(termKidWaits) : allKids;
   const kids = shown.map(k => termRow(k, false, true)).join("");
   return `
@@ -1249,7 +1092,7 @@ function termRow(t, deep, kid) {
            termCold(t) && !keptOpen ? " cold" : keptOpen ? " kept" : ""}${wear.cls}${newCardClass(t)}"
          data-id="${t.id}"
          data-tip="${esc(hover + (termCold(t) ? "\nthis one has exited. click to start it again here" +
-           (keptOpen ? "\nhide inactive would hide it, but it is open in the pane, so it stays until you switch away" : "")
+           (keptOpen ? "\nthe filter would hide it, but it is open in the pane, so it stays until you switch away" : "")
            : t.starting && !t.supervised ? "\natrium is starting this one. its runner is not up yet"
            : termJoined(t) ? "\njoined from your own terminal. atrium cannot attach to it. click for what you can do" : ""))}"
          style="${style}"
@@ -1285,8 +1128,11 @@ function termRow(t, deep, kid) {
 let termKids = new Map();
 
 // A parent's fold lives in the same list as the group folds, keyed by the bare id so a room-set change keeps it.
-// Like the groups it records what is NOT as it comes: a parent comes expanded, so an entry means folded.
+// Like the groups it records what is NOT as it comes, and what it comes as is the subagents chip's say: off, a parent
+// comes folded and an entry means expanded, on, it comes expanded and an entry means folded. A chip change clears them
+// (see `toggleTermShow`).
 function termKidsKey(t) { return "kids:" + bareId(t.id); }
+function termKidsShut(t) { return termSubsOn() ? isFolded(termKidsKey(t)) : !isFolded(termKidsKey(t)); }
 
 // Does this child, or anything nested under it, need the human? A folded parent still shows those, so a question is
 // findable without unfolding.
@@ -1678,10 +1524,10 @@ function toggleTermGroup(path) {
 // The count is on the heading because a folded group has to say what is inside
 // it or folding loses information rather than hiding it.
 //
-// SHOWN OUT OF HOW MANY. When `hide inactive` is taking rows out of a group the
-// count reads `7/15`, so a short group says it is short because of the toggle
+// SHOWN OUT OF HOW MANY. When the search is taking rows out of a group the
+// count reads `7/15`, so a short group says it is short because of the search
 // and not because the sessions are gone. A group with nothing hidden reads its
-// plain count. The totals are the same grouping run over the unfiltered list,
+// plain count. The totals are the same grouping run over the unsearched list,
 // set by `renderTermList` into `termTotals` and keyed by the heading's path.
 //
 // `group` names a group, and gives the heading the board's group menu (see
@@ -1694,7 +1540,7 @@ function toggleTermGroup(path) {
 function termHeading(name, path, count, folded, group, style, movable, rows) {
   const total = termTotals.get(path);
   const shown = total > count ? `${count}/${total}` : `${count}`;
-  const tip = total > count ? ` (${total - count} hidden by hide inactive)` : "";
+  const tip = total > count ? ` (${total - count} hidden by the search)` : "";
   // The apostrophe, on top of the HTML escaping. A group name is free text now
   // that these headings can come from tags and from operator-written code, and
   // HTML escaping is not JavaScript escaping: `it's mine` closes the quoted
@@ -1920,6 +1766,13 @@ function termOrder(tasks) {
   return tasks;
 }
 
+// The line under the title bar, in words: `running + ready 5 · activity · by project`, with the chips that are on.
+function termSummary(show, n) {
+  const what = ["running + ready", ...["shelved", "dead", "subagents"].filter(k => show.has(k))].join(" + ") + " " + n;
+  const g = typeof groupingPrefs === "function" ? groupingPrefs("terms") : { on: false };
+  return [what, termSortStarted ? "started" : sortByActivity ? "activity" : "name", groupWords(g)].join(" \u00b7 ");
+}
+
 async function renderTermList() {
   // Cheap and idempotent, and it means the mode survives a reload without
   // finding a second place to call it from.
@@ -1975,49 +1828,19 @@ async function renderTermList() {
   // were already safe; this is about the pinned ones.
   // A live joined card (see `termJoined`) is listed too, unattachable. A parked
   // or exited one is cold, so only a pin keeps it here.
-  // A STOPPED CARD (`stop` in the menu, the board's shelved) is left out unless `show stopped` is on, pinned or not,
-  // and then it is listed cold, so a click resumes it. The attached one stays, like every other hide here.
-  // A CLOSED CARD (it carries `atrium:closed`, which a close writes) is not listed while it has no session, whatever
-  // `show stopped` says: a close freed its folder, so there is nothing to resume. The attached one stays.
-  const tasks = all.filter(t => !t.offline && (termClosedGone(t)
-    ? !!(termTask && t.id === termTask.id)
-    : t.status === "shelved"
-    ? showStoppedOn() || !!(termTask && t.id === termTask.id)
-    : (t.supervised || t.pinned || termJoined(t))));
-  // The badge counts what is actually attachable, since it is a count of live
-  // terminals rather than of rows. It counts over the WHOLE set, before the
-  // doers are hidden: the nav badge is a fact about the board, not about how
-  // this one screen chose to read the strip.
-  badge("c-term", tasks.filter(t => t.supervised).length);
-
-  // HIDE THE INACTIVE SESSIONS, per kind, when asked. Two independent toggles
-  // (see `termHideControlsHTML`), and each reads a DIFFERENT inactive signal: the
-  // subagents side drops the doers that are not working right now (idle, waiting,
-  // or exited), the agents side drops the human sessions with no live connection
-  // (dead), so neither kind buries the other. The ATTACHED one is kept whatever
-  // the toggles say, since hiding must never yank the pane out from under whatever
-  // is open (the teardown below keys off this same list); a live agent is kept by
-  // its own rule, an actively-working subagent by its own (see `sessionHiddenBy`).
-  // A pinned session is NOT kept: with a toggle on it hides like any other (see
-  // `sessionHiddenBy`). What is removed is counted per kind so the pill can say
-  // how many, and everything downstream draws `shown` rather than `tasks`.
-  const keep = t => !!(termTask && t.id === termTask.id);
-  const hideable = tasks.filter(t => sessionHiddenBy(t, keep));
-  const shown = hideable.length
-    ? tasks.filter(t => !sessionHiddenBy(t, keep)) : tasks;
-  // What each segment could hide (an inactive, un-kept session of its kind) and
-  // what it is hiding right now: the first decides whether a segment is worth
-  // offering while its toggle is off, the second is the count a lit segment
-  // shows. Each uses its own kind's inactive signal - agents on `termCold`,
-  // subagents on working-right-now - so the offer and the act agree.
-  const inactiveAgent = t => !keep(t) && termCold(t);
-  const inactiveSub = t => !keep(t) && !workingNow(t);
-  const hideCounts = {
-    agentHideable: tasks.filter(t => !isSubagent(t) && inactiveAgent(t)).length,
-    subHideable: tasks.filter(t => isSubagent(t) && inactiveSub(t)).length,
-    agentHidden: hideable.filter(t => !isSubagent(t)).length,
-    subHidden: hideable.filter(t => isSubagent(t)).length
-  };
+  // WHICH ROWS THE LIST CAN HOLD AT ALL is `termRowKind`: live ones always, a stopped card or a pinned row whose runner
+  // is gone only while its chip is on, a closed card (`atrium:closed`, nothing left to resume) only while it is the
+  // attached one. The attached one stays whatever is off, so turning a chip off never pulls the pane out from under you.
+  const show = termShow();
+  const pool = all.filter(t => !t.offline);
+  const tasks = pool.filter(t => {
+    const k = termRowKind(t);
+    return k === "live" || (k !== "" && (termKept(t, show) || (k === "shelved" && show.has("shelved")) ||
+      (k === "dead" && show.has("dead"))));
+  });
+  // The badge counts what is actually attachable, since it is a count of live terminals rather than of rows. Over the
+  // whole pool, whatever the chips say: the nav badge is a fact about the board, not about how this screen reads it.
+  badge("c-term", pool.filter(t => termRowKind(t) === "live" && t.supervised).length);
 
   // The attached session is gone, so the pane showing it is stale.
   //
@@ -2053,13 +1876,18 @@ async function renderTermList() {
   // is re-resolved to the form the hub serves now rather than looped on.
   reconcileAttached(tasks);
 
+  // THE SEARCH narrows what is drawn, the attached row included: it is a row like the rest, and the pane does not need
+  // it listed. The chips decided `tasks`; this decides `shown`.
+  const q = fdSearchText("terms");
+  const shown = q ? tasks.filter(t => cardMatchesText(t, q)) : tasks;
   termOrder(shown);
   // Spawned cards move under their parent row, so the lists below hold top rows only. See `termNest`.
   const nest = termNest(shown);
   termKids = nest.kids;
   const top = shown.filter(t => !nest.nested.has(t.id));
-  // What each heading would hold with nothing hidden, so it can say `7/15`.
-  termTotals = termCountTotals(tasks.filter(t => !nest.nested.has(t.id) && (!t.pinned || termFiled(t))));
+  // What each heading would hold with nothing searched away, so it can say `7/15`.
+  const nestAll = q ? termNest(tasks) : nest;
+  termTotals = termCountTotals(tasks.filter(t => !nestAll.nested.has(t.id) && (!t.pinned || termFiled(t))));
   // Before anything is drawn, and over the rows that will BE drawn: a card
   // filtered out above cannot be confused with one on screen.
   termNoteDuplicates(shown);
@@ -2070,9 +1898,8 @@ async function renderTermList() {
   // The phone's collapsed switcher, hidden by CSS on a desktop and while nothing
   // is attached. It names the attached session and opens the list over the
   // terminal. See `termDropHTML`.
-  // THE BAR, THEN THE ROWS IN A BOX OF THEIR OWN. The width bar (see
-  // `termTrayHTML`) sits in flow at the top and `.termscroll` under it is the
-  // box that scrolls, so no card ever passes under the controls.
+  // THE ROWS IN A BOX OF THEIR OWN. `.termscroll` is the box that scrolls. The filter line is not in here: it is the
+  // drawer under the title bar (js/filter-drawer.js), over the list rather than in it.
   //
   // THE TRIGGER STAYS IN FLOW; THE BODY CAN FLOAT. On a phone the trigger is the
   // one row you always see and `.termbody` is what the caret opens OVER the
@@ -2081,12 +1908,31 @@ async function renderTermList() {
   // the list directly. The board card, its shape and class, is unchanged:
   // this list is a switcher, and what it drops (the status chip, the duration)
   // it drops because the board says those better.
-  const ended = all.filter(termEnded);
-  setHTML(host, tasks.length || ended.length
-    ? termDropHTML() + `<div class="termbody">` + termTrayHTML(hideCounts) +
+  // THE ENDED GROUP IS THE DEAD CHIP'S TOO: with it off the group is not drawn, and its count is the chip's.
+  const endedAll = pool.filter(termEnded);
+  const ended = show.has("dead") ? (q ? endedAll.filter(t => cardMatchesText(t, q)) : endedAll) : [];
+  const deadCold = pool.filter(t => termRowKind(t) === "dead");
+  const nestPool = termNest(tasks);
+  const counts = {
+    shelved: pool.filter(t => termRowKind(t) === "shelved").length,
+    dead: deadCold.length + endedAll.length,
+    subagents: nestPool.nested.size
+  };
+  pillCounts("term-show", counts);
+  const listed = shown.length + ended.length;
+  fdStatus("terms", {
+    summary: termSummary(show, shown.length + ended.length),
+    changed: show.size + (sortByActivity && !termSortStarted ? 0 : 1) + groupChanged("terms"),
+    match: q && listed !== tasks.length + (show.has("dead") ? endedAll.length : 0)
+      ? `${listed} of ${tasks.length + (show.has("dead") ? endedAll.length : 0)}` : ""
+  });
+  // Pinned rows the dead chip keeps out of the bucket, so an empty bucket can say why.
+  const deadPinned = show.has("dead") ? 0 : deadCold.length;
+  setHTML(host, tasks.length || ended.length || endedAll.length || deadCold.length
+    ? termDropHTML() + `<div class="termbody">` +
       `<div class="termscroll">` +
       termBucketHTML(pinnedTasks, tasks.filter(t => t.pinned).length,
-        termFolded().has(PINNED_FOLD)) +
+        termFolded().has(PINNED_FOLD), deadPinned) +
       termGroupsHTML(top.filter(t => !t.pinned || termFiled(t))) +
       termEndedHTML(ended) +
       `</div><div class="tlcorner">${termListButtons()}</div></div>`
@@ -2116,7 +1962,7 @@ async function renderTermList() {
   if (typeof paintGroupSegs === "function") paintGroupSegs();
   // The gear's terminal list section follows the list. The cache summary there is
   // event driven like the stack's. See js/keepalive.js.
-  paintTermGear(hideCounts);
+  paintTermGear();
   if (typeof paintCacheLine === "function") paintCacheLine("cache-line-gear", shown);
 }
 
@@ -2257,18 +2103,20 @@ let pinnedNow = [];
 // onto it goes on the end, which is the same thing dropping past the last row
 // does when it is open.
 //
-// SHOWN OUT OF HOW MANY, like every group heading (see `termHeading`). `hide
-// inactive` reaches into the bucket, so `total` is every pinned row and the
+// SHOWN OUT OF HOW MANY, like every group heading (see `termHeading`). The search
+// reaches into the bucket, so `total` is every pinned row listed and the
 // count reads `5/15` while any are hidden. A bucket whose rows are all hidden
 // says so rather than inviting a first drag.
-function termBucketHTML(pinned, total, folded) {
+function termBucketHTML(pinned, total, folded, deadHidden) {
   const rows = folded ? "" : pinned.map(t => termRow(t, false)).join("");
   const hidden = total - pinned.length;
   const empty = folded ? "" : hidden > 0
-    ? `<div class="empty bucketdrop">${hidden} hidden by hide inactive</div>`
+    ? `<div class="empty bucketdrop">${hidden} hidden by the search</div>`
+    : deadHidden > 0
+    ? `<div class="empty bucketdrop">${deadHidden} dead, behind the dead filter. drag a terminal here to keep it</div>`
     : `<div class="empty bucketdrop">drag a terminal here to keep it</div>`;
   const count = hidden > 0 ? `${pinned.length}/${total}` : `${pinned.length}`;
-  const tip = hidden > 0 ? ` (${hidden} hidden by hide inactive)` : "";
+  const tip = hidden > 0 ? ` (${hidden} hidden by the search)` : "";
   return `<div class="termbucket${folded ? " folded" : ""}" data-bucket="1">
       <button class="tgroup pinnedhead${folded && pinned.some(termHoldsOn) ? " carries" : ""}" onclick="toggleTermGroup('${PINNED_FOLD}')"
         data-tip="${folded ? "show" : "hide"} the pinned terminals${tip}"

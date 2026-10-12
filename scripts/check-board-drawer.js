@@ -1,0 +1,492 @@
+// The filter drawer, in a real browser with every endpoint mocked (docs/backlog/ui/u-011-interview.md).
+//
+//   NODE_PATH=<dir with playwright> node scripts/check-board-drawer.js
+//
+// The nine steps the interview asks for, on the stack, the board and the terminals tab, at 1280px with a mouse and at
+// 390px with a finger. Skips itself, exit 0, when Playwright is not installed, like the other browser checks.
+//
+//   1  no stored state: the drawer is closed, the line shows the summary and the search box, the defaults are in force
+//   2  ctrl-/ with nothing focused: the search box has focus, the drawer is still closed, typing narrows the list
+//   3  a click on the line outside the search box opens it over the list, which did not move or resize
+//   4  a click on a chip applies at once, its count is right, the drawer stays open, `filters N` went up by one
+//   5  a click on a card below the drawer closes it and the card did NOT open (and does when the drawer is shut)
+//   6  open it again and Esc: it closes and focus is back where it was
+//   7  each tab keeps its own sort, show and group across a tab switch (and a reload)
+//   8  390px, touch: a quarter of the way down snaps back, half opens, a swipe up closes, a drag on the list scrolls
+//   9  with an xterm focused, ctrl-/ goes to the terminal and not the search box
+
+const http = require("http");
+const fs = require("fs");
+const path = require("path");
+const { wholeBoard } = require("./board-source.js");
+
+let chromium;
+try { ({ chromium } = require("@playwright/test")); } catch (e) {
+  try { ({ chromium } = require("playwright")); } catch (e2) { console.log("playwright is not installed"); process.exit(0); }
+}
+
+const WEB = path.join(__dirname, "..", "internal", "api", "web");
+const HTML = wholeBoard();
+const TYPES = { ".js": "text/javascript", ".css": "text/css", ".png": "image/png", ".svg": "image/svg+xml",
+  ".gif": "image/gif", ".woff2": "font/woff2" };
+
+// ── the cards ───────────────────────────────────────────────────────────────
+const at = mins => new Date(Date.now() - mins * 60000).toISOString();
+const card = (id, title, status, extra) => Object.assign({
+  id, display_title: title, status, runner: "claude", rank: 1, worktree: "/w/" + id, why: "", idle_seconds: 0,
+  wait_seconds: 0, created_at: at(600), last_activity_at: at(5), tags: [], supervised: false, offline: false,
+  pinned: false, auto_approve: false
+}, extra || {});
+const SUB = "atrium:subagent";
+const TASKS = [
+  card("r1", "alpha ready one", "needs-input", { supervised: true, last_activity_at: at(1) }),
+  card("r2", "beta ready two", "needs-input", { supervised: true, last_activity_at: at(2) }),
+  card("r3", "gamma ready three", "needs-input", { supervised: true, last_activity_at: at(3) }),
+  ...Array.from({ length: 14 }, (_, i) => card("f" + i, "filler " + i, "needs-input", { supervised: true, last_activity_at: at(10 + i) })),
+  card("p1", "parent run", "needs-input", { supervised: true, last_activity_at: at(1), worktree: "/w/parent" }),
+  card("c1", "child one", "running", { supervised: true, tags: [SUB], spawned_by_id: "p1", worktree: "/w/parent/c1" }),
+  card("c2", "child two", "running", { supervised: true, tags: [SUB], spawned_by_id: "p1", worktree: "/w/parent/c2" }),
+  card("n1", "second runner", "running", { supervised: true }),
+  card("w1", "needs permission", "needs-permission", { supervised: true }),
+  card("i1", "inbox item", "backlog"),
+  card("d1", "finished one", "done"),
+  card("d2", "finished two", "done"),
+  card("s1", "shelved one", "shelved"),
+  card("s2", "shelved two", "shelved"),
+  card("k1", "pinned and gone", "dead", { pinned: true }),
+  card("e1", "ended worker", "done", { worktree: "/w/ended" })
+];
+const byStatus = (...ss) => TASKS.filter(t => ss.includes(t.status) && !(t.tags || []).includes(SUB));
+
+// ── the server ──────────────────────────────────────────────────────────────
+let cardGets = [];
+const server = http.createServer((req, res) => {
+  const p = new URL(req.url, "http://x").pathname;
+  const json = o => { res.writeHead(200, { "Content-Type": "application/json" }); res.end(JSON.stringify(o)); };
+  if (p === "/" || p === "/index.html") { res.writeHead(200, { "Content-Type": "text/html" }); return res.end(HTML); }
+  if ((p.startsWith("/vendor/") || p.startsWith("/css/") || p === "/working.gif") && !p.includes("..")) {
+    const f = path.join(WEB, p);
+    if (fs.existsSync(f) && fs.statSync(f).isFile()) {
+      res.writeHead(200, { "Content-Type": TYPES[path.extname(f)] || "application/octet-stream" });
+      return res.end(fs.readFileSync(f));
+    }
+    res.writeHead(404); return res.end("");
+  }
+  if (p.startsWith("/v1/events")) { res.writeHead(200, { "Content-Type": "text/event-stream" }); return res.write(": open\n\n"); }
+  if (p === "/v1/tasks") return json({ tasks: TASKS });
+  const one = /^\/v1\/tasks\/([^/]+)$/.exec(p);
+  if (one) { cardGets.push(one[1]); const t = TASKS.find(x => x.id === one[1]); return t ? json(t) : json({}); }
+  if (p === "/v1/health") return json({ build: "check", settling: false, halted: false });
+  if (p === "/v1/settings") return json({ global_auto: false, board_skin: "harbour", board_skins: ["harbour"], scrollback_lines: 5000 });
+  if (p === "/v1/permissions") return json({ permissions: [] });
+  if (p === "/v1/harnesses") return json({ harnesses: [] });
+  return json({});
+});
+
+let failed = 0;
+const check = (ok, what) => { console.log((ok ? "ok   " : "FAIL ") + what); if (!ok) failed++; };
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+// ── what each tab is, to the steps ──────────────────────────────────────────
+// `rows` are the cards a person would click, `chip` the one step 4 presses and what its count must read.
+const TABS = {
+  stack: {
+    view: "stack", host: "fd-stack", q: "stack-q", rows: "#stack-list .stackrow",
+    chip: { v: "running", count: byStatus("running").length, rowsAfter: null },
+    sort: { id: "stack-sort", to: "name" },
+    defaults: async page => ({ on: await chipsOn(page, "stack-seg") }),
+    wantDefault: ["needs-input"]
+  },
+  board: {
+    view: "board", host: "board-bar", q: "board-q", rows: "#board .card[data-id]",
+    chip: { v: "finished", count: byStatus("done", "dead").length },
+    sort: { id: "board-sort", to: "name" },
+    wantDefault: ["backlog", "needs-permission", "needs-input", "running", "finished", "shelved"]
+  },
+  terms: {
+    view: "terms", host: "fd-terms", q: "term-q", rows: "#term-list .card.tab",
+    chip: { v: "shelved", count: byStatus("shelved").length },
+    sort: { id: "term-sort", to: "name" },
+    wantDefault: []
+  }
+};
+
+async function chipsOn(page, seg) {
+  return page.evaluate(id => [...document.querySelectorAll("#" + id + " button.on")].map(b => b.dataset.v), seg);
+}
+const sameSet = (a, b) => a.length === b.length && a.every(x => b.includes(x));
+
+// One finger or one mouse, whichever the width calls for.
+function pointer(page, mobile) {
+  return {
+    async click(x, y) { if (mobile) await page.touchscreen.tap(x, y); else await page.mouse.click(x, y); await sleep(250); }
+  };
+}
+
+const state = page => page.evaluate(() => {
+  const h = [...document.querySelectorAll(".fdrawer")].filter(e => e.offsetParent !== null)[0];
+  if (!h) return null;
+  const panel = h.querySelector(".fpanel"), line = h.querySelector(".fline"), q = h.querySelector(".fq");
+  const r = e => { const b = e.getBoundingClientRect(); return { x: b.x, y: b.y, w: b.width, h: b.height, b: b.bottom }; };
+  return {
+    tab: h.dataset.tab, open: h.classList.contains("open"), inert: panel.inert,
+    panelVisible: getComputedStyle(panel).visibility === "visible" && panel.offsetHeight > 0,
+    panel: r(panel), line: r(line), q: r(q), qid: q.id,
+    sum: h.querySelector(".fsum").textContent, sumHidden: h.querySelector(".fsum").hidden,
+    count: Number(h.querySelector(".fcount").textContent || 0),
+    active: document.activeElement ? (document.activeElement.id || document.activeElement.tagName) : "",
+    activeIsQ: document.activeElement === q
+  };
+});
+
+const geometry = (page, sel) => page.evaluate(s => {
+  const e = document.querySelector(s); if (!e) return null;
+  const b = e.getBoundingClientRect(); return [Math.round(b.x), Math.round(b.y), Math.round(b.width), Math.round(b.height)].join(",");
+}, sel);
+
+async function open(browser, width, mobile) {
+  const ctx = await browser.newContext(mobile
+    ? { viewport: { width, height: 844 }, hasTouch: true, isMobile: true, deviceScaleFactor: 2 }
+    : { viewport: { width, height: 900 } });
+  // A real phone is sent to /m/ (the separate phone app, which has none of these tabs). This is the board at phone width.
+  if (mobile) await ctx.addInitScript(() => { try { sessionStorage.setItem("atrium.m.desktop", "1"); } catch (e) {} });
+  const page = await ctx.newPage();
+  page.on("pageerror", e => check(false, "page error: " + e.message));
+  await page.goto("http://127.0.0.1:" + server.address().port + "/");
+  await page.waitForFunction(() => typeof switchView === "function" && document.querySelectorAll(".card, .stackrow").length > 0, null, { timeout: 15000 });
+  return { ctx, page };
+}
+
+async function goto(page, view) {
+  await page.evaluate(v => switchView(v), view);
+  await sleep(700);
+}
+
+// The point on the line that is not the search box: the line's own padding at the left on a desktop, where the summary
+// fills the room. At phone width the search box takes everything the summary gave up, so it is the filters button.
+async function linePoint(page) {
+  const s = await state(page);
+  if (s.sumHidden || s.q.x < s.line.x + 40) {
+    const b = await page.evaluate(() => {
+      const h = [...document.querySelectorAll(".fdrawer")].filter(e => e.offsetParent !== null)[0];
+      const r = h.querySelector(".filtersbtn").getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+    });
+    return b;
+  }
+  return { x: s.line.x + 3, y: s.line.y + s.line.h / 2 };
+}
+
+// Puts focus on a visible button that is not part of the drawer, and marks it, so "back where it was" can be told.
+async function focusSomething(page) {
+  const ok = await page.evaluate(() => {
+    const b = [...document.querySelectorAll("header button, .tab, button")]
+      .find(e => e.offsetParent !== null && !e.closest(".fdrawer") && e.tabIndex >= 0 && e.tagName === "BUTTON");
+    if (!b) return false;
+    b.dataset.checkFocus = "1"; b.focus(); return document.activeElement === b;
+  });
+  if (!ok) {
+    check(false, "there is a visible button to put focus on");
+    if (process.env.DRAWER_SHOT) await page.screenshot({ path: process.env.DRAWER_SHOT + page.viewportSize().width + ".png" });
+  }
+}
+
+async function steps(browser, width, mobile, tabName) {
+  const T = TABS[tabName];
+  const tag = `${width}px ${tabName}`;
+  const { ctx, page } = await open(browser, width, mobile);
+  const mouse = pointer(page, mobile);
+  await goto(page, T.view);
+
+  // 1: no stored state ----------------------------------------------------------------------------
+  let s = await state(page);
+  check(!!s && s.tab === T.view, `${tag} 1: the drawer for this tab is on screen`);
+  check(s && !s.open && s.inert && !s.panelVisible, `${tag} 1: closed on load, and its panel is out of reach`);
+  check(s && s.q.w > 40 && s.q.h > 10, `${tag} 1: the search box is on the collapsed line`);
+  check(s && (mobile ? s.sum.length > 0 : s.sum.length > 0 && !s.sumHidden), `${tag} 1: the line says what the tab is set to ("${s && s.sum}")`);
+  check(s && s.count === 0, `${tag} 1: nothing differs from the defaults (filters ${s && s.count})`);
+  let wantChips = null;
+  if (tabName === "stack" || tabName === "board") {
+    const seg = tabName === "stack" ? "stack-seg" : "board-seg";
+    const on = await chipsOn(page, seg);
+    check(sameSet(on, T.wantDefault), `${tag} 1: the default chips are ${JSON.stringify(T.wantDefault)} (${JSON.stringify(on)})`);
+    wantChips = on;
+  } else {
+    const on = await chipsOn(page, "term-show");
+    check(on.length === 0, `${tag} 1: no terminals chip is on by default (${JSON.stringify(on)})`);
+    const rows = await page.$$eval("#term-list .card.tab", els => els.map(e => e.dataset.id));
+    check(!rows.includes("s1") && !rows.includes("s2") && !rows.includes("k1"), `${tag} 1: no shelved or dead rows (${rows.join(",")})`);
+    check(await page.$$eval("#term-list .endedrow, #term-list .termended", e => e.length) === 0, `${tag} 1: no ended group`);
+    const folded = await page.$$eval("#term-list .tkidfold.shut", e => e.length);
+    check(folded === 1, `${tag} 1: the parent starts folded, with its count on the chevron (${folded})`);
+    check(!rows.includes("c1") && !rows.includes("c2"), `${tag} 1: its subagents are not rows`);
+  }
+  if (tabName === "stack" || tabName === "board") {
+    const subs = await page.evaluate(() => [...document.querySelectorAll(".chip.subs")].map(e => e.textContent));
+    check(subs.length > 0 && /2 subagents/.test(subs[0]), `${tag} 1: the parent says "2 subagents" and the children are not cards (${subs})`);
+  }
+
+  // 2: ctrl-/ ----------------------------------------------------------------------------------------
+  await page.evaluate(() => document.activeElement && document.activeElement.blur());
+  const before = await page.$$eval(T.rows, e => e.length);
+  await page.keyboard.press("Control+/");
+  s = await state(page);
+  check(s && s.activeIsQ && !s.open, `${tag} 2: ctrl-/ puts focus in the search box and leaves the drawer shut (${s && s.active})`);
+  await page.keyboard.type("alpha");
+  await sleep(300);
+  const after = await page.$$eval(T.rows, e => e.length);
+  check(after > 0 && after < before, `${tag} 2: typing narrows the list (${before} -> ${after})`);
+  s = await state(page);
+  check(s && !s.open, `${tag} 2: typing did not open the drawer`);
+  // Esc clears the text, a second one leaves the box.
+  await page.keyboard.press("Escape");
+  check((await page.$eval("#" + T.q, e => e.value)) === "", `${tag} 2: Esc in the box clears it`);
+  s = await state(page);
+  check(s.activeIsQ, `${tag} 2: and stays in the box`);
+  await page.keyboard.press("Escape");
+  s = await state(page);
+  check(!s.activeIsQ, `${tag} 2: a second Esc leaves the box`);
+  await sleep(300);
+  check((await page.$$eval(T.rows, e => e.length)) === before, `${tag} 2: the list is whole again (${before})`);
+
+  // 3: a click on the line opens it, over the list ---------------------------------------------------------
+  const listBox = T.view === "terms" ? "#term-list" : T.view === "stack" ? "#stack-list" : "#board";
+  const geoBefore = await geometry(page, listBox);
+  await focusSomething(page);
+  let p = await linePoint(page);
+  await mouse.click(p.x, p.y);
+  s = await state(page);
+  check(s && s.open && s.panelVisible && !s.inert, `${tag} 3: a click on the line opens the drawer`);
+  check(s && s.panel.y >= s.line.b - 2, `${tag} 3: it hangs under the line`);
+  const geoOpen = await geometry(page, listBox);
+  check(geoBefore === geoOpen, `${tag} 3: the list's box did not move or resize (${geoBefore} / ${geoOpen})`);
+  const covers = await page.evaluate(() => {
+    const p = document.querySelector(".fdrawer.open .fpanel").getBoundingClientRect();
+    const e = document.elementFromPoint(p.x + p.width / 2, p.y + Math.min(30, p.height / 2));
+    return !!(e && e.closest(".fpanel"));
+  });
+  check(covers, `${tag} 3: it is over the list, not beside it`);
+  const countBefore = s.count;
+
+  // 4: a chip ----------------------------------------------------------------------------------------------
+  const chip = page.locator(`.fdrawer.open .seg button[data-v="${T.chip.v}"]`).first();
+  const chipBox = await chip.boundingBox();
+  await mouse.click(chipBox.x + chipBox.width / 2, chipBox.y + chipBox.height / 2);
+  s = await state(page);
+  check(s && s.open, `${tag} 4: a click inside the drawer leaves it open`);
+  check(s && s.count === countBefore + 1, `${tag} 4: filters N went up by one (${countBefore} -> ${s && s.count})`);
+  const n = await page.$eval(`.fdrawer.open .seg button[data-v="${T.chip.v}"] .pillcount`, e => e.textContent);
+  check(Number(n) === T.chip.count, `${tag} 4: the ${T.chip.v} chip counts ${T.chip.count} (${n})`);
+  const lit = await page.$eval(`.fdrawer.open .seg button[data-v="${T.chip.v}"]`, e => e.classList.contains("on"));
+  if (tabName === "board") check(!lit, `${tag} 4: the chip went off`); else check(lit, `${tag} 4: the chip lit`);
+  if (tabName === "stack") {
+    const rows = await page.$$eval("#stack-list .stackrow", els => els.length);
+    check(rows === byStatus("needs-input", "running").length, `${tag} 4: the list now holds ready and running (${rows})`);
+  }
+  if (tabName === "terms") {
+    const rows = await page.$$eval("#term-list .card.tab", els => els.map(e => e.dataset.id));
+    check(rows.includes("s1") && rows.includes("s2"), `${tag} 4: the shelved rows are listed (${rows.join(",")})`);
+  }
+
+  let control = null;
+  // 5: a click below the drawer is swallowed ----------------------------------------------------------------
+  const target = await page.evaluate(rowsSel => {
+    const p = document.querySelector(".fdrawer.open .fpanel").getBoundingClientRect();
+    const rows = [...document.querySelectorAll(rowsSel)].filter(e => e.offsetParent !== null);
+    const r = rows.map(e => ({ e, b: e.getBoundingClientRect() }))
+      .find(x => x.b.top > p.bottom + 6 && x.b.bottom < innerHeight - 4 && x.b.left >= 0 && x.b.right <= innerWidth + 2);
+    return r ? { id: r.e.dataset.id || "", x: r.b.left + Math.min(40, r.b.width / 3), y: r.b.top + Math.min(14, r.b.height / 2) } : null;
+  }, T.rows);
+  check(!!target, `${tag} 5: there is a card below the drawer to click`);
+  if (target) {
+    // A mouse resting on a terminal row warms its card with a fetch (js/terminal-list.js), so rest first and count from there.
+    if (!mobile) { await page.mouse.move(target.x, target.y); await sleep(400); }
+    cardGets = [];
+    await mouse.click(target.x, target.y);
+    s = await state(page);
+    check(s && !s.open, `${tag} 5: the click outside closes the drawer`);
+    const opened = () => page.evaluate(() => !!document.querySelector("dialog[open]") || (typeof termTask !== "undefined" && !!termTask));
+    check(cardGets.length === 0 && !(await opened()), `${tag} 5: and the card did not open (fetched: ${cardGets.join(",") || "nothing"})`);
+    control = target;
+
+  }
+
+  // 6: Esc closes it and gives the focus back --------------------------------------------------------------
+  await focusSomething(page);
+  p = await linePoint(page);
+  await mouse.click(p.x, p.y);
+  s = await state(page);
+  check(s && s.open, `${tag} 6: opened again`);
+  await page.keyboard.press("Escape");
+  await sleep(200);
+  s = await state(page);
+  check(s && !s.open, `${tag} 6: Esc closes it`);
+  check(await page.evaluate(() => !!(document.activeElement && document.activeElement.dataset.checkFocus)), `${tag} 6: and focus is back where it was (${s && s.active})`);
+
+  // 9: a focused terminal keeps ctrl-/ --------------------------------------------------------------------------
+  if (tabName === "terms") {
+    await page.evaluate(() => {
+      const host = document.createElement("div");
+      host.id = "check-xterm";
+      host.style.cssText = "position:fixed;left:0;bottom:0;width:300px;height:80px;z-index:1";
+      document.body.appendChild(host);
+      const t = new Terminal({ rows: 4, cols: 40 });
+      t.open(host);
+      t.focus();
+    });
+    const inX = await page.evaluate(() => !!(document.activeElement && document.activeElement.closest(".xterm")));
+    check(inX, `${tag} 9: an xterm has focus`);
+    await page.keyboard.press("Control+/");
+    s = await state(page);
+    check(s && !s.activeIsQ && !s.open, `${tag} 9: ctrl-/ did not take focus from the terminal (${s && s.active})`);
+    check(await page.evaluate(() => !!document.activeElement.closest(".xterm")), `${tag} 9: the terminal still has it`);
+  }
+  // 5, the control, last because opening a card re-lays the page out for good: the same click with the drawer shut DOES
+  // open it, or the swallow above proved nothing.
+  if (control) {
+    await page.evaluate(() => { const x = document.getElementById("check-xterm"); if (x) x.remove(); });
+    if (!mobile) { await page.mouse.move(control.x, control.y); await sleep(400); }
+    cardGets = [];
+    await mouse.click(control.x, control.y);
+    await sleep(300);
+    const opened = await page.evaluate(() => !!document.querySelector("dialog[open]") || (typeof termTask !== "undefined" && !!termTask));
+    check(cardGets.length > 0 || opened, `${tag} 5: the same click with the drawer shut does open it (fetched: ${cardGets.join(",") || "nothing"})`);
+  }
+  await ctx.close();
+}
+
+// 7: each tab keeps its own ------------------------------------------------------------------------------------
+async function keeps(browser, width, mobile) {
+  const tag = `${width}px`;
+  const { ctx, page } = await open(browser, width, mobile);
+  const press = async (view, sel) => {
+    await goto(page, view);
+    const p = await linePoint(page);
+    await pointer(page, mobile).click(p.x, p.y);
+    const b = await page.locator(`.fdrawer.open ${sel}`).first().boundingBox();
+    await pointer(page, mobile).click(b.x + b.width / 2, b.y + b.height / 2);
+  };
+  await press("stack", '#stack-sort button[data-sort="name"]');
+  await press("stack", '#stack-seg button[data-v="finished"]');
+  await press("stack", '#stack-group button[data-group="off"]');
+  await press("board", '#board-sort button[data-sort="manual"]');
+  await press("board", '#board-seg button[data-v="shelved"]');
+  await press("board", '#board-group button[data-group="tag"]');
+  await press("terms", '#term-sort button:nth-child(3)');
+  await press("terms", '#term-show button[data-v="dead"]');
+  await press("terms", '#term-drawer-group button[data-group="recency"]');
+
+  const read = () => page.evaluate(() => {
+    const on = id => [...document.querySelectorAll("#" + id + " button.on")].map(b => b.dataset.v || b.dataset.sort || b.dataset.group || b.textContent.trim()).join("|");
+    return {
+      stack: [on("stack-sort"), on("stack-seg"), on("stack-group")].join(" / "),
+      board: [on("board-sort"), on("board-seg"), on("board-group")].join(" / "),
+      terms: [on("term-sort"), on("term-show"), on("term-drawer-group")].join(" / ")
+    };
+  });
+  const want = {
+    stack: "name / needs-input|finished / off",
+    board: "manual / backlog|needs-permission|needs-input|running|finished / tag",
+    terms: "started / dead / recency"
+  };
+  const got = await read();
+  check(got.stack.startsWith("name / ") && got.stack.endsWith(" / off") && got.stack.includes("finished") && got.stack.includes("needs-input"),
+    `${tag} 7: stack kept name, ready+finished, off (${got.stack})`);
+  check(got.board.startsWith("manual / ") && got.board.endsWith(" / tag") && !got.board.includes("shelved"),
+    `${tag} 7: board kept manual, no shelved column, by tag (${got.board})`);
+  check(got.terms === want.terms, `${tag} 7: terminals kept started, dead, by age (${got.terms})`);
+  // Away and back, then a reload.
+  await goto(page, "board"); await goto(page, "stack"); await goto(page, "terms");
+  const again = await read();
+  check(JSON.stringify(again) === JSON.stringify(got), `${tag} 7: a switch from tab to tab changes none of them`);
+  await page.reload();
+  await page.waitForFunction(() => typeof switchView === "function" && document.querySelectorAll(".card, .stackrow").length > 0, null, { timeout: 15000 });
+  await sleep(500);
+  const reloaded = await read();
+  check(JSON.stringify(reloaded) === JSON.stringify(got), `${tag} 7: a reload keeps them (${JSON.stringify(reloaded)})`);
+  const nOpen = await page.evaluate(() => document.querySelectorAll(".fdrawer.open").length);
+  check(nOpen === 0, `${tag} 7: and the drawer is shut again after it`);
+  // The search text is the session's, per tab.
+  await goto(page, "stack");
+  await page.fill("#stack-q", "beta");
+  await goto(page, "board");
+  check((await page.$eval("#board-q", e => e.value)) === "", `${tag} 7: the board's search box did not inherit the stack's`);
+  await goto(page, "stack");
+  check((await page.$eval("#stack-q", e => e.value)) === "beta", `${tag} 7: the stack's search text is still there`);
+  await ctx.close();
+}
+
+// 8: the finger ----------------------------------------------------------------------------------------------------
+async function touch(browser, tabName) {
+  const T = TABS[tabName];
+  const tag = `390px ${tabName}`;
+  const { ctx, page } = await open(browser, 390, true);
+  const cdp = await ctx.newCDPSession(page);
+  await goto(page, T.view);
+  const send = (type, x, y) => cdp.send("Input.dispatchTouchEvent", { type, touchPoints: type === "touchEnd" ? [] : [{ x, y }] });
+  const drag = async (x, y0, y1, steps) => {
+    await send("touchStart", x, y0);
+    for (let i = 1; i <= steps; i++) { await send("touchMove", x, y0 + (y1 - y0) * i / steps); await sleep(16); }
+    await send("touchEnd");
+    await sleep(350);
+  };
+  let s = await state(page);
+  const panelH = await page.evaluate(() => document.querySelector(".fdrawer:not([hidden]) .fpanel") && [...document.querySelectorAll(".fdrawer")].filter(e => e.offsetParent !== null)[0].querySelector(".fpanel").offsetHeight);
+  const p = await linePoint(page);
+  check(panelH > 60, `${tag} 8: the panel has a height to pull (${panelH})`);
+
+  await drag(p.x, p.y, p.y + panelH * 0.25, 6);
+  s = await state(page);
+  check(s && !s.open, `${tag} 8: a quarter of the way down snaps back`);
+  await drag(p.x, p.y, p.y + panelH * 0.5, 8);
+  s = await state(page);
+  check(s && s.open, `${tag} 8: half way opens it`);
+  check(s && s.panelVisible, `${tag} 8: and it is drawn`);
+  const cap = await page.evaluate(() => [...document.querySelectorAll(".fdrawer")].filter(e => e.offsetParent !== null)[0].querySelector(".fpanel").offsetHeight / innerHeight);
+  check(cap <= 0.71, `${tag} 8: the open drawer is capped at 70% of the screen (${cap.toFixed(2)})`);
+  // Swipe up on the drawer.
+  const mid = { x: s.panel.x + s.panel.w / 2, y: s.panel.y + Math.min(s.panel.h - 10, 40) };
+  await drag(mid.x, mid.y + 20, mid.y - 60, 6);
+  s = await state(page);
+  check(s && !s.open, `${tag} 8: a swipe up on the drawer closes it`);
+  // A drag that starts on the list scrolls and never opens it.
+  const r = await page.evaluate(rowsSel => {
+    const e = [...document.querySelectorAll(rowsSel)].filter(x => x.offsetParent !== null)[1];
+    if (!e) return null; const b = e.getBoundingClientRect(); return { x: b.left + 40, y: b.top + 10 };
+  }, T.rows);
+  if (r) {
+    await drag(r.x, r.y, r.y + 160, 8);
+    s = await state(page);
+    check(s && !s.open, `${tag} 8: a drag down that starts on the list does not open the drawer`);
+    await drag(r.x, Math.min(r.y + 300, 800), r.y, 8);
+    s = await state(page);
+    check(s && !s.open, `${tag} 8: a drag up that starts on the list does not open it either`);
+  }
+  // The pull-to-refresh is off on the line.
+  const ob = await page.evaluate(() => getComputedStyle([...document.querySelectorAll(".fdrawer")].filter(e => e.offsetParent !== null)[0].querySelector(".fline")).overscrollBehaviorY);
+  check(ob === "none", `${tag} 8: overscroll-behavior is off on the line (${ob})`);
+  // A tap on the search box only types.
+  const q = (await state(page)).q;
+  await page.touchscreen.tap(q.x + q.w / 2, q.y + q.h / 2);
+  await sleep(250);
+  s = await state(page);
+  check(s && s.activeIsQ && !s.open, `${tag} 8: a tap on the search box focuses it and does not open the drawer`);
+  await ctx.close();
+}
+
+(async () => {
+  await new Promise(r => server.listen(0, "127.0.0.1", r));
+  const browser = await chromium.launch();
+  try {
+    for (const [width, mobile] of [[1280, false], [390, true]]) {
+      for (const tab of Object.keys(TABS)) await steps(browser, width, mobile, tab);
+      await keeps(browser, width, mobile);
+    }
+    for (const tab of Object.keys(TABS)) await touch(browser, tab);
+  } catch (e) {
+    check(false, "the check itself threw: " + (e && e.stack || e));
+  }
+  await browser.close();
+  server.close();
+  console.log(failed ? `${failed} check(s) failed` : "the filter drawer holds.");
+  process.exit(failed ? 1 : 0);
+})();

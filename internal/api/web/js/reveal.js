@@ -37,7 +37,9 @@ function revealFolds(t) {
   const chain = revealChain(t);
 
   // The rows of the cards that launched it.
-  chain.slice(1).forEach(up => open(termKidsKey(up)));
+  // A parent's fold means the opposite on each side of the terminals' subagents chip (see `termKidsShut`).
+  const subsOn = typeof termSubsOn === "function" ? termSubsOn() : true;
+  chain.slice(1).forEach(up => (subsOn ? open : openInverted)(termKidsKey(up)));
 
   const col = COLUMNS.find(c => c.statuses.includes(t.status));
   const bg = typeof grouper === "function" ? grouper("board") : null;
