@@ -106,3 +106,29 @@ func TestScopeHubRemoteRepairsDoubleUrl(t *testing.T) {
 		t.Fatalf("main urls = %q", got)
 	}
 }
+
+func TestScopeHubRemoteWorktreeAddedAfterTheMove(t *testing.T) {
+	main := t.TempDir()
+	hubWtGit(t, main, "init", "-q", "-b", "main")
+	hubWtGit(t, main, "commit", "-q", "--allow-empty", "-m", "x")
+	a := "http://127.0.0.1:7787/git/hub/github/o/r.git"
+	b := "http://127.0.0.1:7777/git/hub/github/o/r.git"
+	hubWtGit(t, main, "remote", "add", "hub", a)
+	first := filepath.Join(t.TempDir(), "first")
+	hubWtGit(t, main, "worktree", "add", "-q", "-b", "f", first)
+	d := &Daemon{}
+	d.hubGit.agent = "127.0.0.1:7777"
+	d.scopeHubRemote(first) // the move: .git/config loses the url
+
+	late := filepath.Join(t.TempDir(), "late")
+	hubWtGit(t, main, "worktree", "add", "-q", "-b", "l", late)
+	// some git versions copy main's config.worktree into a new worktree: make it start with none either way
+	hubWtGit(t, late, "config", "--worktree", "--unset-all", "remote.hub.url")
+	d.scopeHubRemote(late)
+
+	for dir, want := range map[string]string{late: b, first: b, main: a} {
+		if got := hubWtGit(t, dir, "config", "--get-all", "remote.hub.url"); got != want {
+			t.Fatalf("%s urls = %q, want %q", dir, got, want)
+		}
+	}
+}
