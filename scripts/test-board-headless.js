@@ -24346,6 +24346,9 @@ async function termRowBleedSection(browser, base) {
   if (!bad) console.log("termRowBleed ok");
 }
 
+// The list's box after the tray went: the filter drawer's line sits above the list and the pane, so the list holds only
+// its rows and the width buttons, at any width, grouped or not. The drawer's sort and group rows drive the same state the
+// gear's copy shows, and the line says it in words.
 async function termBoxSection(browser, base) {
   const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 } });
   const p = await ctx.newPage();
@@ -24353,7 +24356,7 @@ async function termBoxSection(browser, base) {
   p.on("pageerror", e => errors.push(e.message));
   try {
     await p.goto(base + "/", { waitUntil: "domcontentloaded" });
-    await p.waitForFunction(() => typeof termTrayHTML === "function" && typeof renderTermList === "function",
+    await p.waitForFunction(() => typeof toggleTermShow === "function" && typeof renderTermList === "function",
       null, { timeout: slow(15000) });
     await p.evaluate(() => switchView("terms"));
     for (const w of [260, 150]) {
@@ -24367,91 +24370,78 @@ async function termBoxSection(browser, base) {
             card("jn", "needs-input")],
           allHidden: [card("x1", "done", { pinned: true }), card("x2", "dead", { pinned: true })]
         };
-        localStorage.setItem(termDeviceKey("atrium.termtray"), "open");
         const res = {};
-        for (const hide of ["none", "on"]) {
+        for (const chips of [[], ["shelved", "dead", "subagents"]]) {
           for (const group of [true, false]) {
             for (const [name, cards] of Object.entries(sets)) {
               boardCards = async () => cards;
-              setHideAgents(hide);
-              setHideSubagents(hide);
+              if (chips.length) localStorage.setItem(termDeviceKey("atrium.terms.show"), JSON.stringify(chips));
+              else localStorage.removeItem(termDeviceKey("atrium.terms.show"));
               setGroupMode(group ? "project" : "off");
               await renderTermList();
               setTermW(w);
               await new Promise(r => requestAnimationFrame(r));
-              const tray = document.querySelector("#term-list .termtray");
               const r = el => el.getBoundingClientRect();
-              const tb = tray ? r(tray) : null;
-              const toggle = tray && tray.querySelector(".traytoggle");
               const listBox = r(document.getElementById("term-list"));
               const arrows = [...document.querySelectorAll("#term-list .tlcorner .tlcycle")];
-              const btns = tray ? [...tray.querySelectorAll(".trayrows button")] : [];
-              res[`${hide}/${group ? "grouped" : "flat"}/${name}`] = tray ? {
-                sum: (tray.querySelector(".traysum") || {}).textContent || "",
-                sort: tray.querySelectorAll(".trayrow .seg:not(.termhide):not(.groupseg) button").length,
-                hide: tray.querySelectorAll(".termhide button").length,
-                group: tray.querySelectorAll("#term-drawer-group button").length,
+              const line = document.querySelector("#fd-terms .fline");
+              res[`${chips.length ? "all" : "none"}/${group ? "grouped" : "flat"}/${name}`] = {
+                tray: document.querySelectorAll("#term-list .termtray, #term-list .traysum").length,
                 arrows: arrows.length,
-                overrun: btns.filter(b => r(b).right > tb.right + 1 || r(b).left < tb.left - 1).length,
-                summaryOverArrow: false,
-                // The width buttons sit in the list's lower left corner, inside its box, and not on the tray.
+                // The width buttons sit in the list's lower left corner, inside its box.
                 arrowOut: arrows.some(a => r(a).left < listBox.left || r(a).right > listBox.left + listBox.width / 2 ||
                   r(a).bottom > listBox.bottom + 1 || r(a).top < listBox.bottom - 40),
-                wide: Math.round(tb.width)
-              } : null;
+                wide: Math.round(listBox.width),
+                lineOver: !!line && r(line).right > window.innerWidth + 1,
+                sum: (document.querySelector("#fd-terms .fsum") || {}).textContent || ""
+              };
             }
           }
         }
-        setHideAgents("none"); setHideSubagents("none"); setGroupMode("project");
+        localStorage.removeItem(termDeviceKey("atrium.terms.show")); setGroupMode("project");
         return res;
       }, w);
       for (const [k, v] of Object.entries(out)) {
         const tag = "termBox " + w + "px " + k + ": ";
-        if (!v) { fail(tag + "no tray is drawn."); continue; }
-        if (!/^sorted by/.test(v.sum)) fail(tag + "the summary line is missing: " + JSON.stringify(v.sum));
-        if (v.sort !== 3 || v.hide !== 3 || v.group < 6) fail(tag + "the tray lacks sort, hide or group: " + JSON.stringify(v));
+        if (v.tray) fail(tag + "a tray is still drawn in the list.");
         if (!v.arrows) fail(tag + "the width buttons are gone.");
         if (w === 150 && v.wide > 160) fail(tag + "the list is not at its narrowest, so the overrun check proves nothing: " + v.wide);
-        if (v.overrun || v.summaryOverArrow || v.arrowOut) fail(tag + "the tray overruns the box or the shrink button: " + JSON.stringify(v));
-        if (k.startsWith("on/") && k.endsWith("allHidden") && !/hiding inactive agents, subagents \(2\)/.test(v.sum)) {
-          fail(tag + "the summary does not count what is hidden: " + JSON.stringify(v.sum));
-        }
-        if (k.startsWith("none/") && !/hiding nothing/.test(v.sum)) fail(tag + "the summary says something is hidden: " + JSON.stringify(v.sum));
-        if (k.includes("/flat/") && !/ungrouped/.test(v.sum)) fail(tag + "the summary does not say ungrouped: " + JSON.stringify(v.sum));
+        if (v.arrowOut) fail(tag + "the width buttons are not in the list's lower left corner: " + JSON.stringify(v));
+        if (v.lineOver) fail(tag + "the filter line runs off the page.");
+        if (k.includes("/flat/") && !/ungrouped/.test(v.sum)) fail(tag + "the line does not say ungrouped: " + JSON.stringify(v.sum));
+        if (k.includes("/grouped/") && !/by project/.test(v.sum)) fail(tag + "the line does not say by project: " + JSON.stringify(v.sum));
       }
     }
-    // The tray's controls drive the same state the gear's copy shows, and the summary folds the tray.
+    // The drawer's rows drive the same state the gear's copy shows.
     const click = await p.evaluate(async () => {
       boardCards = async () => [{ id: "sv", status: "running", supervised: true, pinned: false, title: "sv",
         display_title: "sv", tags: [] }];
-      setHideAgents("none"); setHideSubagents("none"); setGroupMode("project");
+      localStorage.removeItem(termDeviceKey("atrium.terms.show")); setGroupMode("project");
       if (sortByActivity) toggleTermSort();
       await renderTermList();
-      const tray = () => document.querySelector("#term-list .termtray");
+      fdSet("terms", true);
       const press = async (sel, text) => {
-        [...tray().querySelectorAll(sel)].find(b => b.textContent.trim().startsWith(text)).click();
+        [...document.querySelectorAll(sel)].find(b => b.textContent.trim().startsWith(text)).click();
         await new Promise(r => setTimeout(r, 50));
       };
-      await press(".trayrow button", "activity");
+      await press("#term-sort button", "activity");
       const sort = sortByActivity;
-      await press(".termhide button", "agents");
-      const hide = hideAgentsMode();
+      await press("#term-show button", "shelved");
+      const shelved = termShow().has("shelved");
       await press("#term-drawer-group button", "off");
-      const grouped = groupingPrefs().on;
+      const grouped = groupingPrefs("terms").on;
       paintTermGear();
       const gear = {
         sort: sortByActivity === ([...document.querySelectorAll("#gear-term-sort button.on")][0] || { textContent: "" })
           .textContent.trim().startsWith("activity"),
-        hide: document.querySelectorAll("#gear-term-hide button.on").length
+        group: document.querySelectorAll("#term-group button.on").length
       };
-      const was = termTrayOpen();
-      tray().querySelector(".traytoggle").click();
-      const folded = termTrayOpen() !== was;
-      setHideAgents("none"); setGroupMode("project"); if (sortByActivity) toggleTermSort();
-      return { sort, hide, grouped, gear, folded };
+      fdSet("terms", false);
+      localStorage.removeItem(termDeviceKey("atrium.terms.show")); setGroupMode("project"); if (sortByActivity) toggleTermSort();
+      return { sort, shelved, grouped, gear };
     });
-    if (!click.sort || click.hide !== "on" || click.grouped || !click.gear.sort || click.gear.hide < 1 || !click.folded) {
-      fail("termBox: the tray's clicks do not drive the same state as the gear: " + JSON.stringify(click));
+    if (!click.sort || !click.shelved || click.grouped || !click.gear.sort || click.gear.group < 1) {
+      fail("termBox: the drawer's clicks do not drive the same state as the gear: " + JSON.stringify(click));
     }
     if (errors.length) fail("termBox: page errors: " + errors.join(" | "));
   } finally { await ctx.close(); }
@@ -24474,12 +24464,12 @@ async function gearTermListSection(browser, base) {
       const f = await p.evaluate(() => ({
         shown: [...document.querySelectorAll("#settings .pane")].some(x => x.dataset.name === "terminal list" && !x.hidden),
         sort: document.querySelectorAll("#gear-term-sort button").length,
-        hide: document.querySelectorAll("#gear-term-hide button").length,
+        hide: document.querySelectorAll("#gear-term-hide, .termhide").length,
         group: document.querySelectorAll("#term-group button").length,
         cache: !!document.getElementById("cache-line-gear"),
         inList: document.querySelectorAll("#term-list .cacheline").length
       }));
-      if (!f.shown || f.sort !== 3 || f.hide !== 3 || f.group < 6 || !f.cache) fail(tag + "the section is wrong: " + JSON.stringify(f));
+      if (!f.shown || f.sort !== 3 || f.hide !== 0 || f.group < 6 || !f.cache) fail(tag + "the section is wrong: " + JSON.stringify(f));
       if (f.inList) fail(tag + "the list still has the old row or line.");
       const a = await p.evaluate(() => {
         const was = sortByActivity;
@@ -24489,14 +24479,8 @@ async function gearTermListSection(browser, base) {
         return out;
       });
       if (!a.flipped || a.lit !== 1) fail(tag + "the sort control did not change the list: " + JSON.stringify(a));
-      const hd = await p.evaluate(() => {
-        const was = hideSubagentsMode();
-        [...document.querySelectorAll("#gear-term-hide button")][1].click();
-        const now = hideSubagentsMode();
-        [...document.querySelectorAll("#gear-term-hide button")][1].click();
-        return { was, now, back: hideSubagentsMode() };
-      });
-      if (hd.now === hd.was || hd.back !== hd.was) fail(tag + "the hide control did not toggle: " + JSON.stringify(hd));
+      // The hide toggles are gone from the gear: the chips live in the drawer only.
+      if (f.hide) fail(tag + "the gear still carries the old hide controls.");
       if (errors.length) fail(tag + "page errors: " + errors.join(" | "));
     } finally { await ctx.close(); }
   }
@@ -24549,7 +24533,7 @@ async function phoneBoardCompactSection(browser, base) {
       const first = document.querySelector("#stack .stackrow, #stack .card").getBoundingClientRect();
       const btn = document.querySelector("#stack .filtersbtn");
       return { btn: vis(btn), expanded: btn && btn.getAttribute("aria-expanded"), btnH: btn ? Math.round(btn.getBoundingClientRect().height) : 0,
-        rows: ["stack-seg", "stack-sort", "stack-group"].filter(id => vis(document.getElementById(id))), q: vis(document.getElementById("stack-q")),
+        rows: document.querySelector("#stack .fpanel").inert ? [] : ["stack-seg", "stack-sort", "stack-group"], q: vis(document.getElementById("stack-q")),
         firstTop: Math.round(first.top), count: btn && btn.querySelector(".fcount") ? btn.querySelector(".fcount").textContent : "" };
     });
     if (!f.btn || f.expanded !== "false") fail(tag + "the filters button is missing or open: " + JSON.stringify(f));
@@ -24647,9 +24631,9 @@ async function phoneBoardCompactSection(browser, base) {
     await p.waitForTimeout(300);
     await p.tap("#stack .filtersbtn");
     await p.waitForTimeout(200);
-    const open = await p.evaluate(() => ["stack-seg", "stack-sort", "stack-group"].every(id => document.getElementById(id).getBoundingClientRect().height > 0) && document.querySelector("#stack .filtersbtn").getAttribute("aria-expanded") === "true");
+    const open = await p.evaluate(() => !document.querySelector("#stack .fpanel").inert && ["stack-seg", "stack-sort", "stack-group"].every(id => document.getElementById(id).getBoundingClientRect().height > 0) && document.querySelector("#stack .filtersbtn").getAttribute("aria-expanded") === "true");
     if (!open) fail(tag + "the button did not open the rows");
-    await p.tap('#stack-seg button[data-v=""]');
+    await p.tap('#stack-seg button:not([data-v=""]):not([data-v="subagents"])');
     await p.waitForTimeout(200);
     await shot("stack-open");
     await p.tap("#stack .filtersbtn");
@@ -31142,8 +31126,9 @@ async function prefsEverywhereSection(browser, base) {
       ["board sort", () => setBoardSort("name"), () => boardSortMode() === "name"],
       ["stack filter", () => setStackShow(new Set(["done", "needs-input"])), () => stackShow().has("done") && stackShow().size === 2],
       ["terminal list mode", () => setTermListMode("mini"), () => termListMode === "mini" && document.getElementById("term-layout").classList.contains("tl-mini")],
-      ["hide subagents", () => setHideSubagents("none"), () => hideSubagentsMode() === "none"],
-      ["terminal tray", () => toggleTermTray(), () => termTrayOpen() === true],
+      ["terminals subagents chip", () => toggleTermShow("subagents"),
+        () => termSubsOn() === true && document.querySelector('#term-show button[data-v="subagents"]').classList.contains("on")],
+      ["terminals shelved chip", () => toggleTermShow("shelved"), () => termShow().has("shelved") && termSubsOn()],
       ["terminals kept hidden", () => setTermKeep(KEEP_N_KEY, 3), () => document.getElementById("s-termkeep").value === "3"],
       ["sound mute", () => alerting.set({ muted: true }), () => alerting.get().muted === true],
       ["sound volume", () => alerting.set({ volume: 0.9 }), () => alerting.get().volume === 0.9 && document.getElementById("s-vol").value === "90"],
