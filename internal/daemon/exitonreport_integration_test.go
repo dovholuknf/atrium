@@ -18,6 +18,11 @@ func watchExits(t *testing.T, d *Daemon, launcherID string, fail error) chan [2]
 	exitOnReportDelay = 10 * time.Millisecond
 	got := make(chan [2]any, 4)
 	stopAfterReport = func(dd *Daemon, id string) error {
+		// stopAfterReport is a package variable: a timer an earlier test's report left running fires into this
+		// test's recorder with that test's closed daemon. Only this test's daemon is its business.
+		if dd != d {
+			return nil
+		}
 		got <- [2]any{id, len(pendingFrom(t, dd, launcherID))}
 		return fail
 	}
