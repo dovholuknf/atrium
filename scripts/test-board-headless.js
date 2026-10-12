@@ -18302,6 +18302,13 @@ async function cardUrlWinNameSection(browser, base) {
       const n2 = await r.page.evaluate(() => window.name);
       if (n2 !== "atrium-term-land-b") fail("cardUrlWinName: after the reload onto another card the window is named " + n2);
     } finally { await r.ctx.close(); }
+    const h = await cuOpen(browser, base, "/#term=land-a", {});
+    try {
+      // Named as the boot reads its address, before any card is fetched, so the name is what to wait for.
+      await h.page.waitForFunction(() => window.name === "atrium-term-land-a", null, { timeout: slow(15000) }).catch(() => {});
+      const n3 = await h.page.evaluate(() => window.name);
+      if (n3 !== "atrium-term-land-a") fail("cardUrlWinName: a #term window is named " + n3 + ", not atrium-term-land-a");
+    } finally { await h.ctx.close(); }
   } finally {
     landList = []; landPerms = [];
     tasksMode = was;
@@ -18357,13 +18364,13 @@ async function popoutRaiseSection(browser, base) {
       await pasted.waitForTimeout(1500);
       const nameless = await page.evaluate(() => { popOuts.clear(); return poppedOut("land-a"); });
       if (!nameless) fail("popoutRaise: the pasted-url window did not claim the card");
+      // The window was named on boot, so the board finds it by name and raises it: no second window, nothing closed.
       const last = await click("pasted url");
       await page.waitForTimeout(1000);
-      if (last !== "opened") fail("popoutRaise: the click past an unnamed window answered " + last);
-      if (!pasted.isClosed()) fail("popoutRaise: the unnamed window was not asked to close");
+      if (last !== "raised") fail("popoutRaise: the click on a named #term window answered " + last);
+      if (pasted.isClosed()) fail("popoutRaise: the #term window was closed by a click that could raise it");
       const out = popups();
-      if (out.length !== 1) fail("popoutRaise: " + out.length + " pop-outs after replacing an unnamed one");
-      else if (await out[0].evaluate(() => window.name) !== "atrium-term-land-a") fail("popoutRaise: the replacement is not named for the card");
+      if (out.length !== 1) fail("popoutRaise: " + out.length + " pop-outs after raising a #term window");
     } finally { await r.ctx.close(); }
   } finally {
     landList = []; landPerms = [];

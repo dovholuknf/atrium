@@ -248,6 +248,7 @@ async function popOutTask(id) {
       // that ignored it is an older build, and it says plainly that it can be closed.
       await stillOutThere(id);
       soloHeld.delete(id);
+      handOver(id);
     }
   }
 
@@ -293,6 +294,24 @@ function reopenByName(id) {
   }
   w.close();
   return null;
+}
+
+// The board's own handover of a card, written just before it opens the window that replaces a held one.
+//
+// The click was the user's choice to have the terminal here, so the window it opens must not ask again.
+// `takeSoloCard` would, the moment a holder that ignored `solo-yield` (an older build, or one that has not
+// let go yet) answers the roll call. One use, and it expires, so a later attach still asks.
+const soloHandoverFor = 15000;
+function handOver(id) {
+  try { localStorage.setItem("atrium.handover." + bareId(id), String(Date.now())); } catch (e) {}
+}
+function handedOver(id) {
+  const k = "atrium.handover." + bareId(id);
+  try {
+    const at = Number(localStorage.getItem(k) || 0);
+    localStorage.removeItem(k);
+    return at > 0 && Date.now() - at < soloHandoverFor;
+  } catch (e) { return false; }
 }
 
 // How long the board waits for one window to answer for one card.
@@ -405,6 +424,13 @@ function rememberPopOutSize(id, w, h, alsoDefault) {
 async function takeSoloCard(id) {
   if (!id) return true;
   if (!(await stillOutThere(id))) return true;
+  // The board opened this window to take the card from a holder it had already asked to let go, and the user
+  // clicked pop out to get here. So the holder is told again and this window attaches without a question.
+  if (handedOver(id)) {
+    if (soloBus) soloBus.postMessage({ type: "solo-yield", task: id });
+    soloHeld.delete(id);
+    return true;
+  }
 
   // Said in the title bar too, because this window may already be behind
   // something by the time the dialog is up, and the title is what alt-tab
@@ -498,6 +524,8 @@ async function bootTerminalOnly() {
   let want, found = null;
   if (/^#term=/.test(location.hash)) {
     want = decodeURIComponent(location.hash.slice("#term=".length));
+    // Named like the others, so the board can raise it by name once it has a card to find it by.
+    window.name = "atrium-term-" + bareId(want);
   } else {
     found = await cardUrlOpen(cardUrlShape());
     if (!found) return;
