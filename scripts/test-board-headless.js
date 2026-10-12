@@ -28759,309 +28759,183 @@ async function main() {
     await page.evaluate(() => localStorage.removeItem("atrium.grouping"));
     tasksMode = "first";
 
-    // ── the two independent "hide inactive" toggles (agents and subagents) ────
-    // The strip carries a WORKING SUBAGENT, an IDLE (supervised, not computing)
-    // SUBAGENT and a DEAD (cold, pinned) subagent, plus an IDLE-BUT-LIVE AGENT and
-    // a DEAD (cold, pinned) agent. The control is one segmented pill with two
-    // segments that toggle independently. The two segments read DIFFERENT inactive
-    // signals: the subagents segment keeps only the WORKING subagent and hides the
-    // idle AND the dead one (not-working-right-now), while the agents segment keeps
-    // any LIVE agent - the idle one included - and hides only the dead one (no
-    // live connection). The idle subagent hiding while the idle agent stays is the
-    // whole point: same idle state, different rule. Pinning exempts nothing: the
-    // dead rows are pinned and still hide. And the agents toggle hides exactly the
-    // agent rows drawn grey (`.cold`), never more or fewer. The on/off combinations are
-    // each asserted, so the two toggles are proven independent. Driven through the
-    // board's own functions so the device-scoped persistence for BOTH keys is
-    // exercised, not faked.
+    // ── the terminals tab's chips: shelved, dead and subagents ────────────────
+    // Replaces the two `hide inactive` toggles and `show stopped`. The strip carries a live agent (AGLIVE) with three
+    // subagents launched from it (an idle one, a working one and one that is asking), a shelved card, and a pinned
+    // agent and subagent whose runners are gone. With no key set: the live agent is a row, its subagents are folded
+    // under it behind a count (the asking one still shows through the fold), and the shelved and dead rows are not
+    // listed. Each chip brings its own rows back and the stored list is what survives a reload. Driven through the
+    // board's own functions so the device-scoped key is exercised, not faked.
     tasksMode = "doers";
-    const hideState = () => page.evaluate(() => {
+    const chipState = () => page.evaluate(() => {
       const has = id => !!document.querySelector(`#term-list .card.tab[data-id="${id}"]`);
-      const seg = which => {
-        const btns = [...document.querySelectorAll("#gear-term-hide .termhide button")];
-        return btns.find(b => new RegExp("^" + which + "\\b").test(b.textContent.trim())) || null;
-      };
-      const a = seg("agents"), s = seg("subagents");
+      const chip = v => document.querySelector(`#term-show button[data-v="${v}"]`);
+      const count = v => ((chip(v) || {}).querySelector && (chip(v).querySelector(".pillcount") || {}).textContent) || "";
+      const fold = document.querySelector("#term-list .tkidfold");
       return {
-        idleSub: has("sublive"), workingSub: has("subwork"), deadSub: has("subdead"),
-        liveAgent: has("aglive"), deadAgent: has("agdead"),
-        // Agent (non-doer) rows drawn grey right now. With the agents toggle on
-        // this must be empty: grey and hidden are one predicate.
-        coldAgents: [...document.querySelectorAll("#term-list .card.tab.cold")]
-          .map(c => c.dataset.id).filter(id => id === "aglive" || id === "agdead"),
-        // The pinned bucket's heading count and its empty line, and every other
-        // heading's count, for the shown/total checks.
-        pinnedCount: (document.querySelector("#term-list .pinnedhead .tgcount") || {})
-          .textContent || "",
-        pinnedEmpty: ((document.querySelector("#term-list .termbucket .bucketdrop") || {})
-          .textContent || "").trim(),
-        groupCounts: [...document.querySelectorAll(
-          "#term-list .tgroup:not(.pinnedhead) .tgcount")].map(c => c.textContent.trim()),
-        agentMode: hideAgentsMode(), subMode: hideSubagentsMode(),
-        agentLit: !!(a && a.classList.contains("on")),
-        subLit: !!(s && s.classList.contains("on")),
-        agentLabel: a ? a.textContent.trim() : "",
-        subLabel: s ? s.textContent.trim() : "",
-        subTitle: s ? s.dataset.tip || "" : "",
-        onePill: document.querySelectorAll("#gear-term-hide .termhide").length === 1,
-        segCount: document.querySelectorAll("#gear-term-hide .termhide button").length
+        live: has("aglive"), idleSub: has("sublive"), workingSub: has("subwork"), askingSub: has("subask"),
+        shelved: has("shelved1"), deadSub: has("subdead"), deadAgent: has("agdead"),
+        shut: !!(fold && fold.classList.contains("shut")),
+        foldCount: ((document.querySelector("#term-list .tkidfold .tkidn") || {}).textContent || ""),
+        lit: ["shelved", "dead", "subagents"].filter(v => chip(v) && chip(v).classList.contains("on")),
+        counts: { shelved: count("shelved"), dead: count("dead"), subagents: count("subagents") },
+        stored: localStorage.getItem(termDeviceKey("atrium.terms.show")),
+        changed: document.querySelector("#fd-terms .fcount").textContent,
+        pinnedCount: (document.querySelector("#term-list .pinnedhead .tgcount") || {}).textContent || "",
+        pinnedEmpty: ((document.querySelector("#term-list .termbucket .bucketdrop") || {}).textContent || "").trim(),
+        cold: [...document.querySelectorAll("#term-list .card.tab.cold")].map(c => c.dataset.id).sort().join(","),
+        oldControls: document.querySelectorAll("#gear-term-hide, .termhide, .termtray").length
       };
     });
+    const reload = () => page.evaluate(async () => { await loadCards().catch(() => {}).then(renderTermList); });
 
-    // DEFAULT, with neither key ever set: the subagents side is ON and the agents
-    // side OFF. So the idle and the dead (pinned) subagent are hidden out of the
-    // box (count 2), the working one stays, and both agent rows stay (the
-    // idle-but-live one and the dead one). This is the "subagents default on,
-    // agents default off" contract. A stale value is written under the legacy `atrium.hidedoers`
-    // key to prove it does NOT override the new default: the toggle now reads the
-    // renamed `atrium.hidesubagents` key, so a prior test click under the old name
-    // is inert and the intended default shows.
+    // The old keys are cleared on load, both device variants, and a stale one does not mean anything any more.
     await page.evaluate(async () => {
-      try {
-        localStorage.setItem(termDeviceKey("atrium.hidedoers"), "none");
-        localStorage.removeItem(termDeviceKey("atrium.hidesubagents"));
-        localStorage.removeItem(termDeviceKey("atrium.hideagents"));
-      } catch (e) {}
+      for (const k of ["atrium.hideagents", "atrium.hidesubagents", "atrium.termtray", "atrium.showstopped", "atrium.hidedoers"]) {
+        localStorage.setItem(k, "on"); localStorage.setItem(k + ".mobile", "on");
+      }
+      clearLegacyHideKey();
+      localStorage.removeItem(termDeviceKey("atrium.terms.show"));
       await loadCards().catch(() => {}).then(renderTermList);
     });
-    await page.waitForSelector('#term-list .card.tab[data-id="subwork"]',
-      { state: "attached", timeout: slow(15000) });
-    const hDef = await hideState();
-    if (hDef.subMode !== "on" || hDef.agentMode !== "none") {
-      fail("the hide defaults are not subagents-on / agents-off when unset: " +
-        JSON.stringify(hDef));
+    await page.waitForSelector('#term-list .card.tab[data-id="aglive"]', { state: "attached", timeout: slow(15000) });
+    const legacy = await page.evaluate(() => ["atrium.hideagents", "atrium.hidesubagents", "atrium.termtray", "atrium.showstopped", "atrium.hidedoers"]
+      .filter(k => localStorage.getItem(k) !== null || localStorage.getItem(k + ".mobile") !== null));
+    if (legacy.length) fail("the old hide keys were not cleared on load: " + legacy.join(", "));
+
+    // DEFAULT: no key. Live rows only, subagents folded behind a count, nothing shelved or dead.
+    const cDef = await chipState();
+    if (!cDef.live || !cDef.askingSub) {
+      fail("by default the live agent, or the subagent that is asking, is not listed: " + JSON.stringify(cDef));
     }
-    if (hDef.idleSub || hDef.deadSub) {
-      fail("the subagents side did not default on: an idle or dead (pinned) " +
-        "subagent was still shown: " + JSON.stringify(hDef));
+    if (cDef.idleSub || cDef.workingSub) {
+      fail("by default a subagent is a row of its own: its parent should start folded: " + JSON.stringify(cDef));
     }
-    if (!hDef.workingSub || !hDef.liveAgent || !hDef.deadAgent) {
-      fail("the default state hid a row it should not have (the working subagent, " +
-        "or an agent): " + JSON.stringify(hDef));
+    if (cDef.shelved || cDef.deadSub || cDef.deadAgent) {
+      fail("by default a shelved or dead row is listed: " + JSON.stringify(cDef));
     }
-    if (!hDef.subLit || hDef.agentLit || !/^subagents \(2\)$/.test(hDef.subLabel)) {
-      fail("the default did not light the subagents segment alone with a count of " +
-        "2 (idle, dead): " + JSON.stringify(hDef));
+    if (!cDef.shut || cDef.foldCount !== "3") {
+      fail("the parent does not start folded with its three subagents counted on the chevron: " + JSON.stringify(cDef));
     }
-    // The pinned heading counts shown out of total: the dead pinned subagent is
-    // hidden, the dead pinned agent is not, so `1/2`.
-    if (hDef.pinnedCount !== "1/2") {
-      fail("the pinned heading does not read shown/total (1/2) with a pinned row " +
-        "hidden: " + JSON.stringify(hDef));
+    if (cDef.lit.length || cDef.stored !== null || cDef.changed !== "") {
+      fail("with no key set a chip is lit, or the handle counts a change: " + JSON.stringify(cDef));
     }
-    // The subagents segment says, in its tooltip, that a subagent is an
-    // atrium-launched session, so the word is not left to guess at.
-    if (!/atrium/i.test(hDef.subTitle) || !/atrium:subagent/.test(hDef.subTitle)) {
-      fail("the subagents segment tooltip does not explain these are atrium " +
-        "(atrium:subagent) subagents: " + JSON.stringify(hDef.subTitle));
+    if (cDef.counts.shelved !== "1" || cDef.counts.dead !== "2" || cDef.counts.subagents !== "3") {
+      fail("the chips do not carry their counts (shelved 1, dead 2, subagents 3): " + JSON.stringify(cDef.counts));
+    }
+    // The pinned bucket says why it is empty rather than offering a first drag.
+    if (cDef.pinnedCount !== "0" || !/^2 dead, behind the dead filter/.test(cDef.pinnedEmpty)) {
+      fail("the empty pinned bucket does not say its two rows are behind the dead filter: " + JSON.stringify(cDef));
+    }
+    if (cDef.oldControls) fail("the old hide controls (or the tray) are still on the page: " + JSON.stringify(cDef));
+
+    // SHELVED on: the stopped card is listed, cold, and nothing else moves.
+    await page.evaluate(async () => { toggleTermShow("shelved"); await loadCards().catch(() => {}).then(renderTermList); });
+    const cShelved = await chipState();
+    if (!cShelved.shelved || cShelved.deadSub || cShelved.deadAgent || cShelved.workingSub) {
+      fail("the shelved chip did not list the shelved card alone: " + JSON.stringify(cShelved));
+    }
+    if (!/(^|,)shelved1(,|$)/.test(cShelved.cold)) fail("a shelved row is not drawn cold: " + JSON.stringify(cShelved));
+    if (cShelved.changed !== "1" || cShelved.lit.join() !== "shelved" || cShelved.stored !== '["shelved"]') {
+      fail("the shelved chip did not light alone, count one change and be stored: " + JSON.stringify(cShelved));
     }
 
-    // NEITHER on: every row is drawn, both segments unlit, and it is ONE pill of
-    // three segments (show stopped joined them in card-menu) rather than two loose buttons.
+    // DEAD on as well: the pinned rows come back into their bucket, cold, as `2`.
+    await page.evaluate(async () => { toggleTermShow("dead"); await loadCards().catch(() => {}).then(renderTermList); });
+    const cDead = await chipState();
+    if (!cDead.deadSub || !cDead.deadAgent || !cDead.shelved) {
+      fail("the dead chip did not list the pinned rows whose runners are gone: " + JSON.stringify(cDead));
+    }
+    if (cDead.pinnedCount !== "2" || cDead.changed !== "2" || cDead.lit.join() !== "shelved,dead") {
+      fail("with dead on the bucket does not read 2, or the handle does not count two: " + JSON.stringify(cDead));
+    }
+
+    // SUBAGENTS on: every parent starts expanded. A chip change clears the folds written under the other meaning.
     await page.evaluate(async () => {
-      setHideSubagents("none"); setHideAgents("none");
+      localStorage.setItem("atrium.folded", JSON.stringify(["kids:aglive", "g:other"]));
+      toggleTermShow("subagents");
       await loadCards().catch(() => {}).then(renderTermList);
     });
-    const hNone = await hideState();
-    if (!hNone.idleSub || !hNone.workingSub || !hNone.deadSub ||
-        !hNone.liveAgent || !hNone.deadAgent) {
-      fail("with neither toggle on the strip did not draw all five rows: " +
-        JSON.stringify(hNone));
+    const cSubs = await chipState();
+    if (!cSubs.idleSub || !cSubs.workingSub || !cSubs.askingSub || cSubs.shut) {
+      fail("the subagents chip did not expand the parent over its three subagents: " + JSON.stringify(cSubs));
     }
-    // The dead pinned agent is drawn grey, and it is the only grey agent: this is
-    // the set the agents toggle must take out below.
-    if (hNone.coldAgents.join() !== "agdead") {
-      fail("with neither toggle on the grey agent rows are not exactly the dead " +
-        "one: " + JSON.stringify(hNone.coldAgents));
+    const foldsLeft = await page.evaluate(() => JSON.parse(localStorage.getItem("atrium.folded") || "[]"));
+    if (foldsLeft.some(k => k.startsWith("kids:")) || !foldsLeft.includes("g:other")) {
+      fail("a subagents chip change did not clear the parents' folds and leave the groups': " + JSON.stringify(foldsLeft));
     }
-    // Nothing hidden, so every heading reads its plain count.
-    if (hNone.pinnedCount !== "2" || hNone.groupCounts.some(c => c.includes("/"))) {
-      fail("with nothing hidden a heading still reads shown/total: " +
-        JSON.stringify(hNone));
-    }
-    if (hNone.agentMode !== "none" || hNone.subMode !== "none" ||
-        hNone.agentLit || hNone.subLit) {
-      fail("the hide pill was not in the unlit `none`/`none` state: " +
-        JSON.stringify(hNone));
-    }
-    if (!hNone.onePill || hNone.segCount !== 3) {
-      fail("the hide control is not one pill with exactly three segments (agents, subagents, show stopped): " +
-        JSON.stringify(hNone));
-    }
-    if (!/^agents$/.test(hNone.agentLabel) || !/^subagents$/.test(hNone.subLabel)) {
-      fail("the hide segments are not labelled 'agents' and 'subagents': " +
-        JSON.stringify(hNone));
+    // And the fold now means the other thing: a click on the chevron folds this one.
+    await page.evaluate(async () => { toggleKids("aglive"); await loadCards().catch(() => {}).then(renderTermList); });
+    const cFold = await chipState();
+    if (cFold.idleSub || cFold.workingSub || !cFold.askingSub || !cFold.shut) {
+      fail("with subagents on, folding a parent did not fold it behind its count: " + JSON.stringify(cFold));
     }
 
-    // SUBAGENTS on, agents off: the idle subagent goes (not working right now), and
-    // so does the dead one, pin or no pin. The working one stays. Both agent rows
-    // stay (the agents toggle is off). The subagents segment lights with its
-    // hidden count of 2; the agents segment stays unlit. Independence on one side,
-    // plus the idle-subagent-hides-but-idle-agent-stays proof.
-    await page.evaluate(async () => { setHideSubagents("on"); await loadCards().catch(() => {}).then(renderTermList); });
-    const hSub = await hideState();
-    if (hSub.idleSub) {
-      fail("the subagents toggle left an idle subagent in the strip: an unpinned " +
-        "subagent that is not working right now must hide.");
-    }
-    if (hSub.deadSub) {
-      fail("the subagents toggle left a PINNED subagent that exited in the strip: " +
-        "a pin does not exempt a row from hide inactive.");
-    }
-    if (!hSub.workingSub) {
-      fail("the subagents toggle hid the WORKING subagent: an actively-computing " +
-        "subagent must stay.");
-    }
-    if (!hSub.liveAgent || !hSub.deadAgent) {
-      fail("the subagents toggle also hid an AGENT row: the two toggles are not " +
-        "independent: " + JSON.stringify(hSub));
-    }
-    if (hSub.subMode !== "on" || !hSub.subLit || hSub.agentLit ||
-        hSub.agentMode !== "none") {
-      fail("the subagents toggle did not light its own segment alone: " +
-        JSON.stringify(hSub));
-    }
-    if (!/^subagents \(2\)$/.test(hSub.subLabel)) {
-      fail("the lit subagents segment did not show its hidden count of 2 (idle, " +
-        "dead) in parens: " + JSON.stringify(hSub));
-    }
-
-    // AGENTS on too: now BOTH are on. The dead agent goes although it is pinned,
-    // the idle-but-live agent stays (its own rule is liveness, not working-now),
-    // the working subagent still stays, and both inactive subagents stay hidden.
-    // No grey agent row is left. Both segments are lit at once, which
-    // agent|shell (one-of-two) cannot do.
-    await page.evaluate(async () => { setHideAgents("on"); await loadCards().catch(() => {}).then(renderTermList); });
-    const hBoth = await hideState();
-    if (hBoth.idleSub || hBoth.deadSub) {
-      fail("with both toggles on an inactive subagent survived: " + JSON.stringify(hBoth));
-    }
-    if (hBoth.deadAgent || hBoth.coldAgents.length) {
-      fail("with both toggles on a grey (cold, pinned) agent was still listed: " +
-        JSON.stringify(hBoth));
-    }
-    if (!hBoth.workingSub || !hBoth.liveAgent) {
-      fail("with both toggles on the working subagent or the live agent was " +
-        "hidden: " + JSON.stringify(hBoth));
-    }
-    if (!hBoth.agentLit || !hBoth.subLit ||
-        hBoth.agentMode !== "on" || hBoth.subMode !== "on") {
-      fail("both segments are not lit with both toggles on: " + JSON.stringify(hBoth));
-    }
-    if (!/^agents \(1\)$/.test(hBoth.agentLabel) ||
-        !/^subagents \(2\)$/.test(hBoth.subLabel)) {
-      fail("the two lit segments did not show hidden counts of 1 (dead agent) " +
-        "and 2 (idle, dead subagent): " + JSON.stringify(hBoth));
-    }
-    // Both pinned rows hidden: the bucket reads `0/2` and says why it is empty
-    // rather than offering a first drag. The idle subagent is unpinned, so some
-    // group heading below also reads shown/total.
-    if (hBoth.pinnedCount !== "0/2" || !/^2 hidden by hide inactive$/.test(hBoth.pinnedEmpty)) {
-      fail("with every pinned row hidden the bucket does not read 0/2 and say so: " +
-        JSON.stringify(hBoth));
-    }
-    // Grouped by age every unpinned row lands in one bucket: three rows, the idle
-    // subagent hidden, so `2/3`.
-    const byAge = await page.evaluate(async () => {
-      const prev = localStorage.getItem(GROUPING_KEY);
-      localStorage.setItem(GROUPING_KEY, JSON.stringify({ on: true, mode: "recency", by: "" }));
+    // THE SEARCH narrows the rows, and says how many of how many.
+    await page.evaluate(async () => {
+      toggleKids("aglive");
+      fdSetSearch("terms", "my terminal");
       await loadCards().catch(() => {}).then(renderTermList);
-      const counts = [...document.querySelectorAll(
-        "#term-list .tgroup:not(.pinnedhead) .tgcount")].map(c => c.textContent.trim());
-      if (prev === null) localStorage.removeItem(GROUPING_KEY);
-      else localStorage.setItem(GROUPING_KEY, prev);
-      await loadCards().catch(() => {}).then(renderTermList);
-      return counts;
     });
-    if (byAge.join() !== "2/3") {
-      fail("grouped by age with the idle subagent hidden, the one group heading " +
-        "does not read 2/3: " + JSON.stringify(byAge));
+    const cFind = await page.evaluate(() => ({
+      rows: [...document.querySelectorAll("#term-list .card.tab:not(.kid)")].map(c => c.dataset.id).sort().join(","),
+      match: (document.getElementById("term-match") || {}).textContent || ""
+    }));
+    if (cFind.rows !== "agdead,aglive" || !/^\d+ of \d+$/.test(cFind.match)) {
+      fail("searching `my terminal` did not narrow the strip to the two rows that match, with `N of M`: " + JSON.stringify(cFind));
+    }
+    await page.evaluate(async () => { fdSetSearch("terms", ""); await loadCards().catch(() => {}).then(renderTermList); });
+
+    // All three off again: the key is gone (no stored value is the default) and every row goes back where it was.
+    await page.evaluate(async () => {
+      ["shelved", "dead", "subagents"].forEach(toggleTermShow);
+      await loadCards().catch(() => {}).then(renderTermList);
+    });
+    const cBack = await chipState();
+    if (cBack.stored !== null || cBack.lit.length || cBack.shelved || cBack.deadAgent || cBack.idleSub || !cBack.shut) {
+      fail("turning the three chips off did not restore the default view and clear the key: " + JSON.stringify(cBack));
     }
 
-    // AGENTS on, subagents off: the other independence check. Turning the
-    // subagents side back off restores the idle subagent while the agents toggle
-    // stays lit. So the agents toggle held its state across the subagents toggle
-    // flipping, which is the two-keys-persist-independently proof.
-    await page.evaluate(async () => { toggleHideSubagents(); await loadCards().catch(() => {}).then(renderTermList); });
-    const hAgent = await hideState();
-    if (!hAgent.idleSub || !hAgent.workingSub || !hAgent.deadSub) {
-      fail("turning the subagents toggle off did not restore the subagent rows: " +
-        JSON.stringify(hAgent));
-    }
-    if (hAgent.deadAgent || hAgent.coldAgents.length) {
-      fail("the agents toggle left a grey (cold, pinned) agent in the strip: " +
-        JSON.stringify(hAgent));
-    }
-    if (!hAgent.liveAgent) {
-      fail("the agents-only state hid the alive agent: " + JSON.stringify(hAgent));
-    }
-    if (hAgent.agentMode !== "on" || !hAgent.agentLit ||
-        hAgent.subMode !== "none" || hAgent.subLit) {
-      fail("the agents-only state did not light the agents segment alone: " +
-        JSON.stringify(hAgent));
-    }
-
-    // Both off again: every row comes back, so hiding is a view, not a deletion.
-    await page.evaluate(async () => { toggleHideAgents(); await loadCards().catch(() => {}).then(renderTermList); });
-    const hBack = await hideState();
-    if (!hBack.idleSub || !hBack.workingSub || !hBack.deadSub ||
-        !hBack.liveAgent || !hBack.deadAgent ||
-        hBack.agentMode !== "none" || hBack.subMode !== "none") {
-      fail("turning both toggles off did not restore every row and reset both " +
-        "segments: " + JSON.stringify(hBack));
-    }
-
-    // ── the controls tray ────────────────────────────────────────────────────
-    // The sort/hide/group controls are a panel of their own at the top of the
-    // list, in flow, and the rows scroll in `.termscroll` beneath it, so no card
-    // passes under the controls. It rolls up to one summary line (the default)
-    // and down to the controls, and the choice is kept per device.
-    // On the terminals view, so the geometry below is measured on a laid-out
-    // list, and with the hide toggles back at their defaults.
+    // ── the line under the title bar, and the list's own box ──────────────────
+    // The sort and group live in the drawer (js/filter-drawer.js), over the list, so nothing sits above the rows
+    // but the row box itself: `.termscroll` is what scrolls, in a list that does not. The drawer is checked in
+    // scripts/check-board-drawer.js.
     await page.click('.tab[data-view="terms"]');
-    await page.evaluate(async () => {
-      localStorage.removeItem(termDeviceKey("atrium.termtray"));
-      localStorage.removeItem(termDeviceKey("atrium.hidesubagents"));
-      localStorage.removeItem(termDeviceKey("atrium.hideagents"));
-      await loadCards().catch(() => {}).then(renderTermList);
-    });
+    await page.evaluate(async () => { await loadCards().catch(() => {}).then(renderTermList); });
     const trayShut = await page.evaluate(() => {
-      const tray = document.querySelector("#term-list .termtray");
       const scroll = document.querySelector("#term-list .termscroll");
       const list = document.getElementById("term-list");
+      const line = document.querySelector("#fd-terms .fline");
+      const panel = document.querySelector("#fd-terms .fpanel");
       return {
-        tray: !!tray, scroll: !!scroll,
-        trayInScroll: !!(tray && scroll && scroll.contains(tray)),
-        trayFirst: !!(tray && scroll && (tray.compareDocumentPosition(scroll) &
-          Node.DOCUMENT_POSITION_FOLLOWING)),
-        trayPos: tray ? getComputedStyle(tray).position : "",
+        scroll: !!scroll, tray: !!list.querySelector(".termtray"),
         listOverflow: getComputedStyle(list).overflowY,
         scrollOverflow: scroll ? getComputedStyle(scroll).overflowY : "",
         widthBtns: list.querySelectorAll(".tlcorner .tlcycle").length,
         cacheLine: list.querySelectorAll(".cacheline").length,
-        folded: !!list.querySelector(".termtray:not(.open)"),
-        sum: ((tray && tray.querySelector(".traysum")) || {}).textContent || "",
-        bodyInert: !!list.querySelector(".termtray .traybody[inert]")
+        line: !!line, sum: ((document.querySelector("#fd-terms .fsum") || {}).textContent || ""),
+        search: !!document.getElementById("term-q"),
+        panelShut: !!panel && panel.inert && getComputedStyle(panel).visibility === "hidden",
+        rows: [...document.querySelectorAll("#fd-terms .frow .barlabel")].map(l => l.textContent.trim()).join("|")
       };
     });
-    if (!trayShut.tray || !trayShut.scroll || trayShut.trayInScroll || !trayShut.trayFirst) {
-      fail("the width bar is not above a separate scrolling box of rows: " + JSON.stringify(trayShut));
+    if (!trayShut.scroll || trayShut.tray || trayShut.listOverflow !== "hidden" || trayShut.scrollOverflow !== "auto") {
+      fail("the list is not one scrolling box of rows with nothing above it: " + JSON.stringify(trayShut));
     }
-    if (trayShut.trayPos === "sticky" || trayShut.listOverflow !== "hidden" ||
-        trayShut.scrollOverflow !== "auto") {
-      fail("the list still scrolls under its bar: " + JSON.stringify(trayShut));
+    if (!trayShut.line || !/^running \+ ready \d+ · /.test(trayShut.sum) || !trayShut.search || !trayShut.panelShut) {
+      fail("the line under the title bar does not say what the strip is set to, with a search box and a shut drawer: " + JSON.stringify(trayShut));
     }
-    if (!trayShut.folded || !/^sorted by/.test(trayShut.sum) || !trayShut.bodyInert) {
-      fail("the tray is not folded to its summary line by default: " + JSON.stringify(trayShut));
+    if (trayShut.rows !== "show|sort by|group") {
+      fail("the terminals drawer does not have show, sort by and group rows: " + JSON.stringify(trayShut));
     }
     if (trayShut.cacheLine) {
       fail("the list still carries the cache line, which lives in the gear: " + JSON.stringify(trayShut));
     }
     if (trayShut.widthBtns < 1) {
-      fail("the list's width buttons are not on its bar: " + JSON.stringify(trayShut));
+      fail("the list's width buttons are not on its corner: " + JSON.stringify(trayShut));
     }
 
-    // The same controls are in the gear, in a `terminal list` section.
+    // The gear keeps the sort and group in its `terminal list` section, and they are the same setting as the drawer's.
     await page.evaluate(() => document.getElementById("gear").click());
     await page.evaluate(() => showSettingsPane("terminal list"));
     const gearSec = await page.evaluate(() => {
@@ -29071,17 +28945,16 @@ async function main() {
         pane: !!pane, shown: !!pane && !pane.hidden,
         labels: pane ? [...pane.querySelectorAll(".eyebrow")].map(l => l.textContent.trim()) : [],
         sortOn: [...f("gear-term-sort").querySelectorAll("button.on")].map(b => b.textContent.trim()),
-        hide: [...f("gear-term-hide").querySelectorAll("button")].map(b => b.textContent.trim() + (b.classList.contains("on") ? "*" : "")),
+        hide: !!f("gear-term-hide"),
         groupPills: f("term-group").querySelectorAll("button").length
       };
     });
-    if (!gearSec.pane || !gearSec.shown || gearSec.labels.join("|") !== "sort|hide inactive|group|cache") {
-      fail("the gear has no terminal list section with sort, hide inactive, group and cache: " + JSON.stringify(gearSec));
+    if (!gearSec.pane || !gearSec.shown || gearSec.labels.join("|") !== "sort|group|cache" || gearSec.hide) {
+      fail("the gear has no terminal list section with sort, group and cache, and no hide: " + JSON.stringify(gearSec));
     }
-    if (gearSec.sortOn.length !== 1 || gearSec.groupPills < 6 || gearSec.hide.join("|") !== "agents|subagents (2)*|show stopped") {
+    if (gearSec.sortOn.length !== 1 || gearSec.groupPills < 6) {
       fail("the gear's terminal list controls do not show the defaults: " + JSON.stringify(gearSec));
     }
-    // Changing them there changes the list the way the old row did, and the gear follows.
     const gearActs = await page.evaluate(async () => {
       const click = (id, text) => [...document.getElementById(id).querySelectorAll("button")]
         .find(b => b.textContent.trim().startsWith(text)).click();
@@ -29089,65 +28962,46 @@ async function main() {
       click("gear-term-sort", was ? "name" : "activity");
       const sortKey = localStorage.getItem("atrium.termSort");
       const sortLit = [...document.getElementById("gear-term-sort").querySelectorAll("button.on")].map(b => b.textContent.trim())[0];
+      const drawerLit = [...document.getElementById("term-sort").querySelectorAll("button.on")].map(b => b.textContent.trim())[0];
       click("gear-term-sort", was ? "activity" : "name");
-      click("gear-term-hide", "subagents");
-      const off = hideSubagentsMode();
-      const hideLit = document.getElementById("gear-term-hide").querySelectorAll("button.on").length;
-      click("gear-term-hide", "subagents");
-      return { was, sortKey, sortLit, off, hideLit, back: hideSubagentsMode(), sortBack: sortByActivity === was };
+      return { was, sortKey, sortLit, drawerLit, sortBack: sortByActivity === was };
     });
-    if (gearActs.sortLit !== (gearActs.was ? "name" : "activity") || gearActs.off !== "none" || gearActs.hideLit !== 0 ||
-        gearActs.back !== "on" || !gearActs.sortBack) {
-      fail("the gear's sort or hide control did not act on the list: " + JSON.stringify(gearActs));
+    if (gearActs.sortLit !== (gearActs.was ? "name" : "activity") || gearActs.drawerLit !== gearActs.sortLit || !gearActs.sortBack) {
+      fail("the gear's sort did not act on the list, or the drawer did not follow it: " + JSON.stringify(gearActs));
     }
     await page.evaluate(() => document.getElementById("settings").close());
 
-    // NOTHING PASSES UNDER IT. Squeeze the list so the rows overflow, scroll the
-    // row box to the bottom, and every row's visible part is below the tray: the
-    // scroll box starts where the tray ends, and it is the scroll box that clips.
+    // NOTHING PASSES UNDER IT. Squeeze the list so the rows overflow and scroll the row box to the bottom: it scrolls.
     const under = await page.evaluate(async () => {
       const host = document.getElementById("term-list");
       host.style.maxHeight = "220px";
       await loadCards().catch(() => {}).then(renderTermList);
       const scroll = host.querySelector(".termscroll");
       scroll.scrollTop = scroll.scrollHeight;
-      const tray = host.querySelector(".termtray").getBoundingClientRect();
-      const sr = scroll.getBoundingClientRect();
-      const out = {
-        scrolled: scroll.scrollTop > 0,
-        scrollBelowTray: sr.top >= tray.bottom - 0.5
-      };
+      const out = { scrolled: scroll.scrollTop > 0 };
       host.style.maxHeight = "";
       return out;
     });
-    if (!under.scrolled || !under.scrollBelowTray) {
-      fail("the rows do not scroll in their own box below the tray: " + JSON.stringify(under));
+    if (!under.scrolled) {
+      fail("the rows do not scroll in their own box: " + JSON.stringify(under));
     }
 
-    // In `mini` the tray keeps only the width buttons, so the way back is there.
+    // In `mini` the list keeps the width buttons, so the way back is there.
     const mini = await page.evaluate(async () => {
       setTermListMode("mini");
-      const tray = document.querySelector("#term-list .termtray");
       const vis = el => !!el && getComputedStyle(el).display !== "none";
       const out = {
         widen: [...document.querySelectorAll("#term-list .tlcorner .tlcycle")].some(vis)
       };
       setTermListMode("full");
-      localStorage.removeItem(termDeviceKey("atrium.termtray"));
       await loadCards().catch(() => {}).then(renderTermList);
       return out;
     });
     if (!mini.widen) {
-      fail("in mini the bar has lost the width buttons: " + JSON.stringify(mini));
+      fail("in mini the list has lost the width buttons: " + JSON.stringify(mini));
     }
 
-    await page.evaluate(() => {
-      try {
-        localStorage.removeItem(termDeviceKey("atrium.hidedoers"));
-        localStorage.removeItem(termDeviceKey("atrium.hidesubagents"));
-        localStorage.removeItem(termDeviceKey("atrium.hideagents"));
-      } catch (e) {}
-    });
+    await page.evaluate(() => { try { localStorage.removeItem(termDeviceKey("atrium.terms.show")); } catch (e) {} });
     tasksMode = "first";
 
     // ── the terminals tab is not blank at phone width ───────────────────────
