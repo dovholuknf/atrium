@@ -243,3 +243,33 @@ func TestFullSetLaunchIsStillAudited(t *testing.T) {
 		t.Fatalf("audit lines = %+v, want a ctl-launch by boss@alpha", *h.audits)
 	}
 }
+
+func TestAResidentCallerGetsResidentEndingWords(t *testing.T) {
+	h := newClassHarness(t, []map[string]any{
+		{"id": "r1", "wire_name": "minion", "status": "working", "tags": []string{"atrium:subagent", "atrium:resident"}},
+		{"id": "w1", "wire_name": "worker1", "status": "working", "tags": []string{"atrium:subagent"}},
+	})
+	descOf := func(s *mcp.ClientSession, tool string) string {
+		res, err := s.ListTools(context.Background(), nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, tl := range res.Tools {
+			if tl.Name == tool {
+				return tl.Description
+			}
+		}
+		return ""
+	}
+	r := h.connect(t, "minion", "alpha")
+	if d := descOf(r, "atrium_done"); !strings.HasPrefix(d, "Report that this task is finished") {
+		t.Errorf("a resident's atrium_done reads %q", d)
+	}
+	if d := descOf(r, "atrium_blocked"); !strings.HasPrefix(d, "Report that something stops this task") {
+		t.Errorf("a resident's atrium_blocked reads %q", d)
+	}
+	sameNames(t, "resident", toolNames(t, r), workerSeven)
+	if d := descOf(h.connect(t, "worker1", "alpha"), "atrium_done"); !strings.HasPrefix(d, "End your work") {
+		t.Errorf("a plain worker's atrium_done reads %q", d)
+	}
+}

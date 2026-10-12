@@ -634,6 +634,8 @@ type LaunchInput struct {
 	// Runner names a configured harness. Empty means claude.
 	Runner string   `json:"runner,omitempty" jsonschema:"which configured runner to start. default claude"`
 	Tags   []string `json:"tags,omitempty" jsonschema:"free text labels, used for grouping and filtering"`
+	// Resident marks a long-lived card. See link.ResidentTag.
+	Resident bool `json:"resident,omitempty" jsonschema:"a long-lived card: atrium_done and atrium_blocked report a task and leave it open, and it is never exited or culled for a done"`
 	// The launch options, as the hub's atrium_launch takes them. See
 	// docs/runtime/launch-options-design.md.
 	Model  string            `json:"model,omitempty" jsonschema:"which model the runner starts on, in the shape its runner row declares. not checked against any list. empty is the runner's default"`
@@ -745,7 +747,11 @@ func launchHandler(ctx context.Context, _ *mcp.CallToolRequest, in LaunchInput) 
 		if err != nil {
 			return nil, out, err
 		}
-		prompt = briefPrompt(prompt)
+		if in.Resident {
+			prompt = daemon.ResidentBriefPrompt(briefFile, prompt)
+		} else {
+			prompt = briefPrompt(prompt)
+		}
 		out.Brief = path
 	}
 	// THE SAME LINEAGE THE HUB'S atrium_launch RECORDS, for the parts that are this room's: who
@@ -753,10 +759,15 @@ func launchHandler(ctx context.Context, _ *mcp.CallToolRequest, in LaunchInput) 
 	// filed every stdio launch as the board's own dialog (`@human`), so the worker had no launcher
 	// and its reports and notices reached nobody. The hub's launch cap stays the hub's.
 	me := strings.TrimSpace(os.Getenv("ATRIUM_AGENT_NAME"))
+	callerTags := in.Tags
+	if in.Resident {
+		callerTags = append(append([]string{}, in.Tags...), link.ResidentTag)
+	}
+	tags := link.WithLauncherDept(link.AgentLaunchTags(callerTags), myTags(ctx, me))
 	req := map[string]any{
 		"harness": harness, "cwd": in.Cwd, "title": in.Title,
-		"why": in.Why, "prompt": link.WithReportLine(prompt),
-		"tags":  link.WithLauncherDept(link.AgentLaunchTags(in.Tags), myTags(ctx, me)),
+		"why": in.Why, "prompt": link.WithReportLine(prompt, in.Resident),
+		"tags":  tags,
 		"model": in.Model, "effort": in.Effort, "args": in.Args, "env": in.Env,
 		"lean_agents": in.LeanAgents, "lean_skills": in.LeanSkills, "lifetime": in.Lifetime,
 	}

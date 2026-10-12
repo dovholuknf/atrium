@@ -39,6 +39,14 @@ const blockedToolDesc = "End your work: something stops you and you cannot go on
 	"refused, not cut. Details go in REPORT.md, not here. Never end a turn while a command you started is still running. " +
 	"Stop after the call: say nothing more and do no more work. Write nothing else: the human sees the tool call."
 
+// What a resident card hears from the same two tools: a task is reported and the card stays open.
+const residentDoneToolDesc = "Report that this task is finished. Your card stays open: after the call, say nothing more " +
+	"and wait for the next message. Give exactly one of sha or artifact, and an optional line of up to 20 words. " +
+	"Details go in REPORT.md."
+
+const residentBlockedToolDesc = "Report that something stops this task, in up to 50 words. Your card stays open: " +
+	"after the call, say nothing more and wait for the next message."
+
 type doneInput struct {
 	SHA      string `json:"sha,omitempty" jsonschema:"sha or artifact location. the commit the work landed as: 7 to 40 hex characters"`
 	Artifact string `json:"artifact,omitempty" jsonschema:"sha or artifact location. a path or URL to what you made, when there is no commit"`

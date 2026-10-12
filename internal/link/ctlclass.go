@@ -32,6 +32,9 @@ const (
 	classFull ctlClass = iota
 	// classWorker is the tools a worker uses to talk and to report.
 	classWorker
+	// classWorkerResident and classFullResident are those two with the done and blocked words of a card that stays open.
+	classWorkerResident
+	classFullResident
 )
 
 // workerTools is the whole of the worker set, by name.
@@ -67,8 +70,11 @@ var workerTools = map[string]bool{
 
 // inClass reports whether a tool is served to a class.
 func inClass(name string, class ctlClass) bool {
-	return class == classFull || workerTools[name]
+	return class == classFull || class == classFullResident || workerTools[name]
 }
+
+// residentClass is whether a class hears the resident words for atrium_done and atrium_blocked.
+func residentClass(c ctlClass) bool { return c == classWorkerResident || c == classFullResident }
 
 // addTool is `mcp.AddTool` for the class being built: it registers the tool when
 // the class includes it and does nothing otherwise.
@@ -169,8 +175,15 @@ func (c *controlMCP) lookupClass(ctx context.Context, room, agent string) (ctlCl
 	if best == nil {
 		return classFull, false
 	}
+	resident := hasTag(best.Tags, ResidentTag) || hasTag(best.Tags, DirectorTag) || hasTag(best.Tags, "atrium:orchestrator")
 	if hasTag(best.Tags, SubagentTag) && !hasTag(best.Tags, DirectorTag) {
+		if resident {
+			return classWorkerResident, true
+		}
 		return classWorker, true
+	}
+	if resident {
+		return classFullResident, true
 	}
 	return classFull, true
 }

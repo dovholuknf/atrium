@@ -175,3 +175,37 @@ func TestARepeatDoneAfterALauncherStopIsSilent(t *testing.T) {
 		t.Fatalf("%d held on the launcher", n)
 	}
 }
+
+// A resident card's done reports a task and leaves the card open, and a silent stop after a launcher prompt is not
+// a failure to report.
+func TestAResidentDoneNeitherExitsNorRingsOnSilence(t *testing.T) {
+	d := testDaemon(t)
+	launcher, worker := launchedPair(t, d)
+	if err := d.st.SetTags(worker.ID, []string{"sdk", OriginAgentTag, ResidentTag}); err != nil {
+		t.Fatal(err)
+	}
+	stubCommits(t, true, false)
+	task, _ := d.st.Get(worker.ID)
+	if d.exitsOnReport(task, FinishRequest{Status: ReportDone, SHA: "abc1234"}) {
+		t.Fatal("a resident's done exits its runner")
+	}
+	if rec, out := finishWith(t, d, FinishRequest{Agent: "worker", Status: ReportDone, SHA: "abc1234", Ended: true}); rec.Code != http.StatusOK {
+		t.Fatalf("code %d: %v", rec.Code, out)
+	}
+	var ids []string
+	for _, m := range pendingFrom(t, d, launcher.ID) {
+		ids = append(ids, m.ID)
+	}
+	if err := d.st.MarkDelivered(launcher.ID, "terminal", ids); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(5 * time.Millisecond)
+	prompt(t, d, worker.ID)
+	stopSilently(t, d, "worker")
+	if n := len(pendingFrom(t, d, launcher.ID)); n != 0 {
+		t.Fatalf("a silent stop rang the launcher about a resident: %d pending", n)
+	}
+	if n := len(heldOn(t, d, launcher.ID)); n != 0 {
+		t.Fatalf("%d held on the launcher", n)
+	}
+}

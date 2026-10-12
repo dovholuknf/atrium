@@ -139,17 +139,15 @@ func newControl(board string, hub *Hub, audit func(room, kind, detail string)) *
 
 // handler is the MCP server over HTTP.
 //
-// TWO SERVERS, BUILT ONCE, and `getServer` picks one per request by the caller's
+// FOUR SERVERS, BUILT ONCE, and `getServer` picks one per request by the caller's
 // class. See ctlclass.go, which says why this is tidiness and not a boundary.
 func (c *controlMCP) handler() http.Handler {
-	full, worker := c.server(classFull), c.server(classWorker)
+	servers := map[ctlClass]*mcp.Server{}
+	for _, class := range []ctlClass{classFull, classWorker, classFullResident, classWorkerResident} {
+		servers[class] = c.server(class)
+	}
 	return mcp.NewStreamableHTTPHandler(
-		func(r *http.Request) *mcp.Server {
-			if c.classOf(r) == classWorker {
-				return worker
-			}
-			return full
-		},
+		func(r *http.Request) *mcp.Server { return servers[c.classOf(r)] },
 		// STATELESS, so no Mcp-Session-Id is validated and a temporary session is
 		// used per request. Every session POSTs to the same URL carrying its own
 		// identity headers, which is the whole point: one endpoint, many callers,
@@ -242,8 +240,12 @@ func (c *controlMCP) server(class ctlClass) *mcp.Server {
 	}, c.reportHandler)
 
 	end := EndDoor{Report: c.endReport}
-	addTool(s, class, &mcp.Tool{Name: "atrium_done", Description: doneToolDesc}, end.Done)
-	addTool(s, class, &mcp.Tool{Name: "atrium_blocked", Description: blockedToolDesc}, end.Blocked)
+	doneDesc, blockedDesc := doneToolDesc, blockedToolDesc
+	if residentClass(class) {
+		doneDesc, blockedDesc = residentDoneToolDesc, residentBlockedToolDesc
+	}
+	addTool(s, class, &mcp.Tool{Name: "atrium_done", Description: doneDesc}, end.Done)
+	addTool(s, class, &mcp.Tool{Name: "atrium_blocked", Description: blockedDesc}, end.Blocked)
 
 	addTool(s, class, &mcp.Tool{
 		Name: "atrium_task",
@@ -1268,6 +1270,12 @@ const reportLine = "Before you end your turn, tell your launcher either:\n" +
 	"Run tests and builds in the foreground, with a longer command timeout if needed. If a command must run in the background, wait for it in the same turn. Never end a turn while a command you started is still running.\n" +
 	"Report to your launcher, never to the operator, unless your launcher is the operator. Your commit is read from your worktree or any hub branch, so never ask where to push and never offer a push to origin. A launcher's \"stop\" is a valid end: answer it with atrium_done and your last sha."
 
+// residentReportLine is how a resident card is told to end a task: the same tools, with the words that leave the card
+// open. The same text as daemon.ResidentEndingLine, which a test keeps equal.
+const residentReportLine = "You are resident: your card stays open between tasks. When a task is finished, call atrium_done <sha or artifact> [one line]. When something stops you, call atrium_blocked <up to 50 words>. Either one tells your launcher and leaves your card open. Then wait for the next message. Never call atrium_exit on yourself.\n" +
+	"Run tests and builds in the foreground, with a longer command timeout if needed. If a command must run in the background, wait for it in the same turn. Never end a turn while a command you started is still running.\n" +
+	"Report to your launcher, never to the operator, unless your launcher is the operator. Never ask where to push."
+
 // AgentLaunchTags is what an agent launch's tags become: the caller's own, the origin marker,
 // and a WORKER marker unless the caller says it is a director or already a subagent. The
 // merged-cull only ever touches workers, so the default has to be the one that can be culled
@@ -1275,7 +1283,7 @@ const reportLine = "Before you end your turn, tell your launcher either:\n" +
 // one (internal/cli), so the two cannot drift.
 func AgentLaunchTags(callerTags []string) []string {
 	tags := append(append([]string{}, callerTags...), OriginTag)
-	if !hasTag(callerTags, DirectorTag) && !hasTag(callerTags, SubagentTag) {
+	if !hasTag(callerTags, DirectorTag) && !hasTag(callerTags, ResidentTag) && !hasTag(callerTags, SubagentTag) {
 		tags = append(tags, SubagentTag)
 	}
 	return tags
@@ -1336,12 +1344,19 @@ func (c *controlMCP) launcherTags(ctx context.Context, callerRoom, who string) [
 // ReportLine is how a launch prompt ends, for a test outside the package.
 const ReportLine = reportLine
 
+// ResidentReportLine is how a resident launch prompt ends, for a test outside the package.
+const ResidentReportLine = residentReportLine
+
 // WithReportLine ends a launch prompt with the one line of the worker contract a prompt most
 // often leaves out. An empty prompt stays empty: there is nothing to scope.
-func WithReportLine(prompt string) string {
+func WithReportLine(prompt string, resident bool) string {
+	line := reportLine
+	if resident {
+		line = residentReportLine
+	}
 	prompt = strings.TrimSpace(prompt)
-	if prompt != "" && !strings.HasSuffix(prompt, reportLine) {
-		prompt += "\n\n" + reportLine
+	if prompt != "" && !strings.HasSuffix(prompt, line) {
+		prompt += "\n\n" + line
 	}
 	return prompt
 }
@@ -1356,6 +1371,9 @@ const SubagentTag = "atrium:subagent"
 // DirectorTag is what a launch asks for to be left alone by the merged-cull and
 // not to count against the launch cap: an orchestrator, not a worker.
 const DirectorTag = "atrium:director"
+
+// ResidentTag marks a long-lived card: atrium_done and atrium_blocked report a task and leave it open.
+const ResidentTag = "atrium:resident"
 
 // hasOriginTag reports whether a card carries the agent-launch marker.
 func hasOriginTag(tags []string) bool { return hasTag(tags, OriginTag) }
@@ -1493,6 +1511,8 @@ type launchInput struct {
 	Brief  string   `json:"brief,omitempty" jsonschema:"context to hand the new session. written to BRIEF.md in its directory on the room and read before it starts, so it survives compaction and can be re-read"`
 	Runner string   `json:"runner,omitempty" jsonschema:"which configured runner to start. default claude"`
 	Tags   []string `json:"tags,omitempty" jsonschema:"free text labels, used for grouping and filtering"`
+	// Resident marks a long-lived card. See ResidentTag.
+	Resident bool `json:"resident,omitempty" jsonschema:"a long-lived card: atrium_done and atrium_blocked report a task and leave it open, and it is never exited or culled for a done"`
 	// Theme names the terminal palette the new session comes up in. Empty leaves
 	// it to the board, which colours a themeless card from its repo, so an
 	// agent-driven launch looks the same as a board-dialog one without this.
@@ -1655,7 +1675,11 @@ func (c *controlMCP) launchOnRoom(ctx context.Context, in launchInput, harness, 
 	// stores it without knowing what it is (see OriginTag). It is how an agent
 	// launch is told apart from a human's hand-started session. The cap counts
 	// SubagentTag instead, which the caller supplies in its own tags.
-	tags := WithLauncherDept(AgentLaunchTags(in.Tags), c.launcherTags(ctx, callerRoom, spawnedBy))
+	callerTags := in.Tags
+	if in.Resident {
+		callerTags = append(append([]string{}, in.Tags...), ResidentTag)
+	}
+	tags := WithLauncherDept(AgentLaunchTags(callerTags), c.launcherTags(ctx, callerRoom, spawnedBy))
 	// WHO IS LAUNCHING, from the caller's own identity header, so the room can
 	// record the lineage and route the worker's reports back. See
 	// docs/runtime/a2a-reliability-design.md.
@@ -1663,7 +1687,7 @@ func (c *controlMCP) launchOnRoom(ctx context.Context, in launchInput, harness, 
 	// The prompt ends with the one line of the worker contract a launch prompt
 	// most often leaves out. A launch prompt that lists steps scopes the turn to
 	// those steps, and the worker stops without a word.
-	prompt := WithReportLine(in.Prompt)
+	prompt := WithReportLine(in.Prompt, hasTag(tags, ResidentTag) || hasTag(tags, DirectorTag))
 	brief := strings.TrimSpace(in.Brief)
 	if isInterview(in.Kind) {
 		// AN INTERVIEWER'S TURNS END ON A QUESTION, so it is not told to end each one with a report. The rules go into

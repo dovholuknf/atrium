@@ -252,3 +252,17 @@ func TestALaunchedOutsideCodeCardsBriefFileHasNoGitURLLine(t *testing.T) {
 		}
 	}
 }
+
+// A resident launch closes on the resident words and never carries the ones that end a card.
+func TestAResidentLaunchEndsOnTheResidentLine(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
+	t.Parallel()
+	d := testDaemon(t)
+	got := promptSeenBy(t, d, LaunchRequest{Prompt: "do it" + "\n\n" + LaunchEndingLine, Brief: "context",
+		Tags: []string{ResidentTag}})
+	if !strings.HasSuffix(got, ResidentEndingLine) || strings.Contains(got, LaunchEndingLine) {
+		t.Fatalf("prompt %q", got)
+	}
+}

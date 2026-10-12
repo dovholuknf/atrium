@@ -21,6 +21,9 @@ func TestTheLaunchLineNamesDoneAndBlockedAndNotAtriumReport(t *testing.T) {
 	if reportLine != daemon.LaunchEndingLine {
 		t.Errorf("the hub's ending and the room's differ:\n%q\n%q", reportLine, daemon.LaunchEndingLine)
 	}
+	if residentReportLine != daemon.ResidentEndingLine {
+		t.Errorf("the hub's resident ending and the room's differ:\n%q\n%q", residentReportLine, daemon.ResidentEndingLine)
+	}
 }
 
 func TestARelayedFyiKeepsItsKind(t *testing.T) {

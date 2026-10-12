@@ -42,7 +42,7 @@ func (d *Daemon) exitsOnReport(task *store.Task, in FinishRequest) bool {
 	if strings.TrimSpace(task.SpawnedByID) == "" {
 		return false
 	}
-	for _, tag := range []string{DirectorTag, OrchestratorTag, ParkIdleTag, HoldNoticesTag} {
+	for _, tag := range []string{ResidentTag, DirectorTag, OrchestratorTag, ParkIdleTag, HoldNoticesTag} {
 		if hasTag(task.Tags, tag) {
 			return false
 		}
@@ -51,6 +51,15 @@ func (d *Daemon) exitsOnReport(task *store.Task, in FinishRequest) bool {
 		return false
 	}
 	return true
+}
+
+// ResidentTag marks a card that stays open between tasks: a done or a blocked reports a task and never ends it. The
+// same tag as link.ResidentTag.
+const ResidentTag = "atrium:resident"
+
+// isResident says whether a set of tags is a resident card's: the tag itself, or a director or the orchestrator.
+func isResident(t []string) bool {
+	return hasTag(t, ResidentTag) || hasTag(t, DirectorTag) || hasTag(t, OrchestratorTag)
 }
 
 // KeepOpenTag and InvestigationTag are the two tags that say a card is not closed by a done report and is never
@@ -63,7 +72,7 @@ const (
 
 // staysOpen says whether a card is tagged to stay open or is an investigation.
 func staysOpen(t *store.Task) bool {
-	return t != nil && (hasTag(t.Tags, KeepOpenTag) || hasTag(t.Tags, InvestigationTag))
+	return t != nil && (hasTag(t.Tags, KeepOpenTag) || hasTag(t.Tags, InvestigationTag) || hasTag(t.Tags, ResidentTag))
 }
 
 // LinkTagPrefix marks a card a link opened (`link:<key>`, internal/api/open.go). Its lifetime is the link's: a done

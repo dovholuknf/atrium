@@ -961,7 +961,11 @@ func (d *Daemon) launchLocked(req LaunchRequest) (*store.Task, error) {
 		if hasTag(req.Tags, InterviewTag) {
 			wanted = briefPromptEnding(briefFileName, wanted, "")
 		} else {
-			wanted = briefPrompt(wanted)
+			if isResident(req.Tags) {
+				wanted = briefPromptEnding(briefFileName, wanted, ResidentEndingLine)
+			} else {
+				wanted = briefPrompt(wanted)
+			}
 			if !outside {
 				vctx, vcancel := context.WithTimeout(context.Background(), gitsync.CommandBound)
 				if l := d.visibleLauncher(vctx, task, req.SpawnedByID, req.SpawnedBy, req.SpawnedByDir, cwd); l != nil {
@@ -1741,6 +1745,12 @@ const LaunchEndingLine = "Before you end your turn, tell your launcher either:\n
 	"Run tests and builds in the foreground, with a longer command timeout if needed. If a command must run in the background, wait for it in the same turn. Never end a turn while a command you started is still running.\n" +
 	"Report to your launcher, never to the operator, unless your launcher is the operator. Your commit is read from your worktree or any hub branch, so never ask where to push and never offer a push to origin. A launcher's \"stop\" is a valid end: answer it with atrium_done and your last sha."
 
+// ResidentEndingLine is how a resident card is told to end a task, kept equal to link.residentReportLine by a test in
+// internal/link.
+const ResidentEndingLine = "You are resident: your card stays open between tasks. When a task is finished, call atrium_done <sha or artifact> [one line]. When something stops you, call atrium_blocked <up to 50 words>. Either one tells your launcher and leaves your card open. Then wait for the next message. Never call atrium_exit on yourself.\n" +
+	"Run tests and builds in the foreground, with a longer command timeout if needed. If a command must run in the background, wait for it in the same turn. Never end a turn while a command you started is still running.\n" +
+	"Report to your launcher, never to the operator, unless your launcher is the operator. Never ask where to push."
+
 // BriefPrompt is the launch text of a session with a brief file: read it, do what it describes, and how to end.
 // ONE CODE for the room's launch and the stdio atrium_launch. A launcher's prompt that only says to read the brief
 // and do it is not repeated after "Then:", and the ending is never doubled.
@@ -1748,10 +1758,15 @@ func BriefPrompt(file, prompt string) string {
 	return briefPromptEnding(file, prompt, LaunchEndingLine)
 }
 
+// ResidentBriefPrompt is BriefPrompt for a resident card, which closes on ResidentEndingLine.
+func ResidentBriefPrompt(file, prompt string) string {
+	return briefPromptEnding(file, prompt, ResidentEndingLine)
+}
+
 // briefPromptEnding is BriefPrompt with the ending it closes on. An interview closes on none: its turns end on a
 // question, and its rules for finishing are in the brief.
 func briefPromptEnding(file, prompt, ending string) string {
-	body := strings.TrimSpace(strings.TrimSuffix(strings.TrimSpace(prompt), LaunchEndingLine))
+	body := strings.TrimSpace(strings.TrimSuffix(strings.TrimSuffix(strings.TrimSpace(prompt), LaunchEndingLine), ResidentEndingLine))
 	then := "Then: do as " + file + " describes."
 	if body != "" && !onlyReadTheBrief(body, file) {
 		then = "Then: " + body
