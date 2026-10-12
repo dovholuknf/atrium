@@ -56,12 +56,29 @@ function keepPage(t, restore) {
   if (last < 0) return;
   const sig = rows.slice(0, last + 1).join("\n");
   if (sig === t._atriumPushed) return true;
+  // The rows kept belong to the page they were taken from: a reset that clears `_atriumPushed` drops them.
+  const lastRows = t._atriumRowsOf === t._atriumPushed ? t._atriumRows : null;
   t._atriumPushed = sig;
+  // Rows still showing what the last push filed, with nothing scrolled since, are the old page left under a repaint
+  // that has not reached them yet. They are already in history before the new text, so they are blanked in the copy
+  // that is pushed, not filed again. The daemon's keepPage does the same.
+  if (!t._atriumScrollHook) {
+    t._atriumScrollHook = true;
+    t.onScroll(() => { if (!t._atriumPushing) t._atriumRows = null; });
+  }
+  const stale = lastRows;
+  t._atriumRows = rows;
+  t._atriumRowsOf = sig;
+  let upto = last;
+  if (stale) while (upto >= 0 && (!rows[upto].trim() || rows[upto] === stale[upto])) upto--;
+  if (upto < 0) return true;
   const saved = restore ? [] : null;
   if (saved) for (let i = 0; i < t.rows; i++) saved.push(b.lines.get(b.ybase + i).clone());
   const y = b.y;
   b.y = t.rows - 1;
-  for (let i = 0; i <= last; i++) ih.lineFeed();
+  t._atriumPushing = true;
+  for (let i = 0; i <= upto; i++) ih.lineFeed();
+  t._atriumPushing = false;
   b.y = y;
   if (saved) for (let i = 0; i < t.rows; i++) b.lines.get(b.ybase + i).copyFrom(saved[i]);
   return true;
@@ -1091,6 +1108,7 @@ function openTerm(task) {
     if (n === 3) return true;
     if (n !== 2) return false;
     keepPage(mine, false);
+    mine._atriumRows = null;
     return false;
   });
   // THE CLEAR MARK. A clear on Windows reaches here as ConPTY's repaint in

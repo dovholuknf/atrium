@@ -112,6 +112,9 @@ type screen struct {
 	rep *repairWatch
 	// pushed is the text of the page `keepPage` last put into history.
 	pushed string
+	// pushedRows is each row's text at that push, and pushedLive is whether the grid has not scrolled or shifted since.
+	pushedRows []string
+	pushedLive bool
 }
 
 // region is the rows a line feed scrolls between, inclusive.
@@ -225,6 +228,7 @@ func (s *screen) grow(toRow int) {
 // fold and are discarded. The alternate screen has no scrollback, by definition.
 func (s *screen) scroll() {
 	top, bot := s.region()
+	s.pushedLive = false
 	if top == 0 && !s.alt {
 		s.history = append(s.history, s.cells[0])
 	}
@@ -471,6 +475,7 @@ func (s *screen) eraseDisplay(mode int) {
 		for i := 0; i < s.rows; i++ {
 			s.cells[i] = blankRow(s.cols)
 		}
+		s.pushedLive = false
 	}
 }
 
@@ -514,11 +519,20 @@ func (s *screen) keepPage() {
 		return
 	}
 	s.pushed = sig.String()
+	// A row still showing exactly what the last push filed, with nothing scrolled since, is the old page left under a
+	// repaint that has not reached it yet. It is already in history, before the new text, so it is not filed again.
+	rows := make([]string, len(s.cells))
 	for i := 0; i < s.rows && i < len(s.cells); i++ {
-		if !rowIsBlank(s.cells[i]) {
-			s.history = append(s.history, append([]cell(nil), s.cells[i]...))
+		if rowIsBlank(s.cells[i]) {
+			continue
 		}
+		rows[i] = rowText(s.cells[i])
+		if s.pushedLive && i < len(s.pushedRows) && rows[i] == s.pushedRows[i] {
+			continue
+		}
+		s.history = append(s.history, append([]cell(nil), s.cells[i]...))
 	}
+	s.pushedRows, s.pushedLive = rows, true
 }
 
 // insertLines is `CSI L`, and deleteLines is `CSI M`. Both move the lines below
@@ -531,6 +545,7 @@ func (s *screen) insertLines(n int) {
 		return
 	}
 	n = minInt(n, bot-s.row+1)
+	s.pushedLive = false
 	for k := 0; k < n; k++ {
 		copy(s.cells[s.row+1:bot+1], s.cells[s.row:bot])
 		s.cells[s.row] = blankRow(s.cols)
@@ -545,6 +560,7 @@ func (s *screen) deleteLines(n int) {
 		return
 	}
 	n = minInt(n, bot-s.row+1)
+	s.pushedLive = false
 	for k := 0; k < n; k++ {
 		// The line leaving is not history: it is being removed from a view the
 		// application is rearranging, and it was never below the fold.
@@ -978,6 +994,7 @@ func (s *screen) resizeRows(rows int) {
 	if rows == s.rows {
 		return
 	}
+	s.pushedLive = false
 	// A terminal resets the region when its height changes.
 	s.resetRegion()
 	s.altRegSet = false
