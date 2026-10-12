@@ -1,8 +1,24 @@
 # A hub file drop: a card on any room hands files to a card on any other
 
-Status: design, 2026-10-12. Nothing here is built. Written for f-hub-file-drop (high). It replaces the 2026-10-10 draft
-of this file, which left six questions open for clint and planned six phases. Every question is decided below, with
-its reason, and the build is four phases a worker can follow without a judgment call.
+Status: built, 2026-10-12, all four phases on claude/hub-file-drop-build. Written for f-hub-file-drop (high). It
+replaces the 2026-10-10 draft of this file, which left six questions open for clint and planned six phases. Every
+question is decided below, with its reason, and the build is four phases a worker can follow without a judgment call.
+
+Where the build departed from the text below:
+
+- The migration is `0017_hub_files`, the next free number after `0016`.
+- `PUT files/drop` on the room does not make `.atrium/incoming` when a `dest` is given, it uses a `dropRoot` helper
+  instead of `uploadTargetIn`.
+- `GET /v1/usage/export` is registered unconditionally in `api.go`, so there is no "same condition" as the drop route.
+- `store.SessionUsageSince` keeps the callback's error out of the store's guard, or a failing callback would halt the
+  store.
+- `TestFilesToolGetExpiredIs410` became `TestFilesToolGetOfAMissingOrGoneFileIs404Or410`: the link package cannot
+  move the hub store's clock, and expiry itself is covered by `TestFilesExpireAndSweep` in hubstore.
+- `atrium_export` with no `rooms` pulls from online rooms only. A named room that is offline or unknown is listed in
+  `skipped`.
+- An upload answers 201, like the document routes, and the settings `PUT` body is `{"caps": {...}}`.
+- The board's files mock rides the `boardDocs` flag of the headless test. The page is a Files tab on the desktop
+  board and a `files` button on the phone, both over one module, `m/js/files.js`.
 
 ## The problem
 
