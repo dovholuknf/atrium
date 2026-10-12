@@ -32,27 +32,18 @@ func found(names ...string) func(string) (string, error) {
 	}
 }
 
-func pickWith(t *testing.T, look func(string) (string, error)) (string, []string) {
+func pickWith(t *testing.T, look func(string) (string, error)) (*Picker, string, []string) {
 	t.Helper()
 	if runtime.GOOS != "windows" {
 		t.Skip("the order under test is the Windows one")
 	}
-	// The package resolves once and caches, which is right in a daemon and
-	// useless in a test, so both are reset around each case.
-	prev := lookPath
-	lookPath = look
-	pickCmd, pickArgs = "", nil
-	once = resetOnce()
-	t.Cleanup(func() {
-		lookPath = prev
-		pickCmd, pickArgs = "", nil
-		once = resetOnce()
-	})
-	return Pick()
+	p := &Picker{look: look}
+	cmd, args := p.Pick()
+	return p, cmd, args
 }
 
 func TestPowerShell7IsPreferredWhenItIsThere(t *testing.T) {
-	cmd, args := pickWith(t, found("pwsh.exe", "powershell.exe"))
+	_, cmd, args := pickWith(t, found("pwsh.exe", "powershell.exe"))
 	if cmd != "pwsh.exe" {
 		t.Fatalf("opened %q with both installed", cmd)
 	}
@@ -65,7 +56,7 @@ func TestPowerShell7IsPreferredWhenItIsThere(t *testing.T) {
 // missing on a stock Windows. Falling to cmd here skips the shell that is
 // always present, which is the original bug wearing a newer coat.
 func TestWindowsPowerShellIsUsedWhenSevenIsMissing(t *testing.T) {
-	cmd, _ := pickWith(t, found("powershell.exe"))
+	_, cmd, _ := pickWith(t, found("powershell.exe"))
 	if cmd != "powershell.exe" {
 		t.Fatalf("skipped 5.1 and opened %q", cmd)
 	}
@@ -75,7 +66,7 @@ func TestWindowsPowerShellIsUsedWhenSevenIsMissing(t *testing.T) {
 // nothing to report.
 func TestTheCommandShellIsTheFloor(t *testing.T) {
 	t.Setenv("COMSPEC", `C:\Windows\System32\cmd.exe`)
-	cmd, _ := pickWith(t, found())
+	_, cmd, _ := pickWith(t, found())
 	if cmd != `C:\Windows\System32\cmd.exe` {
 		t.Fatalf("with no PowerShell at all it chose %q", cmd)
 	}
@@ -85,7 +76,7 @@ func TestTheCommandShellIsTheFloor(t *testing.T) {
 // default shell pointed at a `pwsh.exe` that was not installed, and the
 // session came up on 5.1 with nothing saying why.
 func TestAPwshThatIsNotInstalledIsNotChosen(t *testing.T) {
-	cmd, _ := pickWith(t, found("powershell.exe"))
+	_, cmd, _ := pickWith(t, found("powershell.exe"))
 	if cmd == "pwsh.exe" {
 		t.Fatal("chose a shell that is not on this machine")
 	}
@@ -99,10 +90,10 @@ func TestTheAnswerIsResolvedOnce(t *testing.T) {
 		calls++
 		return exec.LookPath(name)
 	}
-	pickWith(t, counting)
+	p, _, _ := pickWith(t, counting)
 	first := calls
-	Pick()
-	Pick()
+	p.Pick()
+	p.Pick()
 	if calls != first {
 		t.Fatalf("looked at PATH again on later calls: %d then %d", first, calls)
 	}
@@ -111,12 +102,12 @@ func TestTheAnswerIsResolvedOnce(t *testing.T) {
 // The arguments are copied out, so a caller that appends to what it was given
 // cannot reach into the cached answer and change what everybody else gets.
 func TestTheCallerCannotEditTheCachedAnswer(t *testing.T) {
-	_, args := pickWith(t, found("pwsh.exe"))
+	p, _, args := pickWith(t, found("pwsh.exe"))
 	if len(args) == 0 {
 		t.Skip("nothing to scribble on")
 	}
 	args[0] = "-Command"
-	_, again := Pick()
+	_, again := p.Pick()
 	if again[0] != "-NoLogo" {
 		t.Fatalf("a caller changed the shared answer to %v", again)
 	}

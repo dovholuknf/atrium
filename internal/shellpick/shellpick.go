@@ -49,29 +49,30 @@ var windowsOrder = []struct {
 // pointed at a `pwsh.exe` that was not installed there, and the session came
 // up on 5.1 with nothing saying why. A chooser that tests the platform and
 // trusts the answer produces exactly that, one layer further in.
-var lookPath = exec.LookPath
+// Picker resolves the shell once and keeps the answer. A test builds its own with a `look` of its own.
+type Picker struct {
+	look func(string) (string, error)
+	once sync.Once
+	cmd  string
+	args []string
+}
+
+// std is the one the daemon asks, which looks at the machine.
+var std = &Picker{look: exec.LookPath}
 
 // RESOLVED ONCE. This is a scan of every directory on PATH and it runs on the
 // path a shell is opened from, which is a person waiting. The answer cannot
 // change while the process lives: a shell installed after the daemon started
 // is found by the next restart, and the setting is the override for anybody
 // who cannot wait for one.
-var (
-	once     = resetOnce()
-	pickCmd  string
-	pickArgs []string
-)
-
-// resetOnce hands back a fresh latch. Only the test uses it, and it lives here
-// rather than in the test file so the reason is next to the thing it defeats:
-// resolving once is correct in a daemon and useless in a test that has to ask
-// several times with a different machine underneath it each time.
-func resetOnce() *sync.Once { return new(sync.Once) }
 
 // Pick is the shell to open, and the arguments to open it with.
-func Pick() (string, []string) {
-	once.Do(resolve)
-	return pickCmd, append([]string(nil), pickArgs...)
+func Pick() (string, []string) { return std.Pick() }
+
+// Pick is the shell this picker resolved, and the arguments to open it with.
+func (p *Picker) Pick() (string, []string) {
+	p.once.Do(p.resolve)
+	return p.cmd, append([]string(nil), p.args...)
 }
 
 // Chosen is what Pick decided, for a line in the log at startup. Somebody
@@ -85,26 +86,26 @@ func Chosen() string {
 	return cmd + " " + strings.Join(args, " ")
 }
 
-func resolve() {
+func (p *Picker) resolve() {
 	if runtime.GOOS != "windows" {
 		if v := strings.TrimSpace(os.Getenv("SHELL")); v != "" {
-			pickCmd = v
+			p.cmd = v
 			return
 		}
-		pickCmd = "/bin/sh"
+		p.cmd = "/bin/sh"
 		return
 	}
 	for _, c := range windowsOrder {
-		if _, err := lookPath(c.cmd); err == nil {
-			pickCmd, pickArgs = c.cmd, c.args
+		if _, err := p.look(c.cmd); err == nil {
+			p.cmd, p.args = c.cmd, c.args
 			return
 		}
 	}
 	// The floor. `COMSPEC` before the literal, because a machine that has
 	// moved its command shell has said so there.
 	if v := strings.TrimSpace(os.Getenv("COMSPEC")); v != "" {
-		pickCmd = v
+		p.cmd = v
 		return
 	}
-	pickCmd = "cmd.exe"
+	p.cmd = "cmd.exe"
 }
