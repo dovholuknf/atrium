@@ -144,8 +144,7 @@
        is the LAYOUT viewport, which on a phone is taller than the screen once the browser's bottom bar or the
        keyboard is up, and the rows below the screen's bottom edge were clipped by main with no way to scroll to
        them. A column like the desktop list: the
-       tray on top, folded to its one line until tapped, and the rows scrolling
-       in `.termscroll` under it. */
+       rows scrolling in `.termscroll`. The filters are the drawer's line above the view, not part of this. */
     .term-layout.has-term.tl-open .termbody {
       display: flex; flex-direction: column; position: absolute; top: 100%; left: 0; right: 0;
       max-height: 70vh; max-height: min(70vh, calc(100cqh - 100%)); overflow: hidden; z-index: 40;
