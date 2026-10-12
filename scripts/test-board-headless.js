@@ -260,7 +260,7 @@ const SUBWORK = Object.assign({}, SUBLIVE, {
 });
 // A supervised subagent that is waiting on the operator: it shows through a folded parent.
 const SUBASK = Object.assign({}, SUBLIVE, {
-  id: "subask", display_title: "asking subagent", status: "needs-input"
+  id: "subask", display_title: "asking subagent", status: "needs-permission"
 });
 // Runner gone, held by its pin, drawn cold: behind the dead chip.
 const SUBDEAD = Object.assign({}, SUBLIVE, {
@@ -1308,6 +1308,8 @@ async function termWearSection(browser, base) {
     localStorage.setItem("atrium.skipconfirm", JSON.stringify(all));
     // This section is about the switches one at a time, from the old starting point. The default is `themePicker`'s.
     if (localStorage.getItem("atrium.termWear.idle") === null) localStorage.setItem("atrium.termWear.idle", "0");
+    // The exited rows are pinned and cold, so they are behind the dead chip.
+    localStorage.setItem("atrium.terms.show", '["dead"]');
   });
   const was = tasksMode;
   const live = (id, theme) => Object.assign({}, T1, {
@@ -4892,7 +4894,8 @@ async function toastsTopSection(browser, base) {
       await p.evaluate(s => applySkin(s), skin);
       await p.waitForTimeout(150);
       w = await where(p);
-      if (!w.top || w.boxes.some(b => b.top < w.barBottom || b.bottom > w.h / 2)) {
+      // Three toasts by now, hanging under the filter line as well as the bar, so the floor is 60%.
+      if (!w.top || w.boxes.some(b => b.top < w.barBottom || b.bottom > w.h * 0.6)) {
         fail("in " + skin + " the terminals view's toasts are not top right: " + JSON.stringify(w));
       }
     }
@@ -28618,6 +28621,8 @@ async function main() {
     // about the tab that reveals it.
     tasksMode = "pinned";
     resetPin();
+    // A cold pinned row is behind the dead chip, so the chip is on for this part.
+    await page.evaluate(() => { localStorage.setItem(termDeviceKey("atrium.terms.show"), '["dead"]'); });
     await page.evaluate(() => loadCards().catch(() => {}).then(renderTermList));
     // Attached, not visible: the terminals view is hidden while the test sits on
     // another tab, and this is about what the strip draws, not whether it shows.
@@ -28685,6 +28690,7 @@ async function main() {
           "drop it from the strip for good, not hide it once.");
       }
     }
+    await page.evaluate(() => { localStorage.removeItem(termDeviceKey("atrium.terms.show")); });
     tasksMode = "first";
 
     // ── a pinned card filed into one of your groups is drawn in it ───────────
@@ -28847,7 +28853,7 @@ async function main() {
     // THE SEARCH narrows the rows, and says how many of how many.
     await page.evaluate(async () => {
       toggleKids("aglive");
-      fdSetSearch("terms", "my terminal");
+      fdSetSearch("terms", "terminal");
       await loadCards().catch(() => {}).then(renderTermList);
     });
     const cFind = await page.evaluate(() => ({
@@ -28855,7 +28861,7 @@ async function main() {
       match: (document.getElementById("term-match") || {}).textContent || ""
     }));
     if (cFind.rows !== "agdead,aglive" || !/^\d+ of \d+$/.test(cFind.match)) {
-      fail("searching `my terminal` did not narrow the strip to the two rows that match, with `N of M`: " + JSON.stringify(cFind));
+      fail("searching `terminal` did not narrow the strip to the two rows that match, with `N of M`: " + JSON.stringify(cFind));
     }
     await page.evaluate(async () => { fdSetSearch("terms", ""); await loadCards().catch(() => {}).then(renderTermList); });
 
@@ -28944,10 +28950,10 @@ async function main() {
     }
     await page.evaluate(() => document.getElementById("settings").close());
 
-    // NOTHING PASSES UNDER IT. Squeeze the list so the rows overflow and scroll the row box to the bottom: it scrolls.
+    // NOTHING PASSES UNDER IT. Squeeze the list to a row and a half so the rows overflow and scroll the row box to the bottom: it scrolls.
     const under = await page.evaluate(async () => {
       const host = document.getElementById("term-list");
-      host.style.maxHeight = "220px";
+      host.style.maxHeight = "70px";
       await loadCards().catch(() => {}).then(renderTermList);
       const scroll = host.querySelector(".termscroll");
       scroll.scrollTop = scroll.scrollHeight;
@@ -28991,6 +28997,8 @@ async function main() {
     await page.setViewportSize({ width: 390, height: 780 });
     tasksMode = "pinned";
     resetPin();
+    // The pinned card is cold, so it is behind the dead chip: on for this part.
+    await page.evaluate(() => { localStorage.setItem(termDeviceKey("atrium.terms.show"), '["dead"]'); });
     await page.click('.tab[data-view="terms"]');
     await page.evaluate(() => loadCards().catch(() => {}).then(renderTermList));
     await page.waitForSelector('#term-list .card.tab[data-id="pin1"]',
@@ -29105,6 +29113,7 @@ async function main() {
     }
     await page.evaluate(() => {
       setTermListOpen(false); paintPaneBg(null);
+      localStorage.removeItem(termDeviceKey("atrium.terms.show"));
     });
 
     // Put the width, the view and the data back for the sections below.
