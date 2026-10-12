@@ -6781,6 +6781,84 @@ async function pasteBigSection(browser, base) {
   tasksMode = was;
 }
 
+// ── a big paste shows the spinner until its last byte is written ──────────
+// A 500KB log pasted into a terminal on the hub board. The socket holds the frame for a slow link, then the room
+// answers `in-done` once the pty write returned. The box must be up the whole time bytes are still on the way and
+// down once the room has said so.
+async function pasteLandsSection(browser, base) {
+  const was = tasksMode, wasHub = hubMode;
+  tasksMode = "land";
+  hubMode = true;
+  landCard("land-live", { supervised: true, created_at: "2026-09-19T12:00:00Z" });
+  landList = [LAND["land-live"]];
+  landPerms = [];
+  const errors = [];
+  const ctx = await landContext(browser);
+  await ctx.addInitScript(() => {
+    const Real = window.WebSocket;
+    window.__link = { drain: 1200, write: 1500, after: 0 };
+    window.WebSocket = function (url, protocols) {
+      if (!/\/attach(\?|$)/.test(url)) return new Real(url, protocols);
+      const s = { url, readyState: 0, binaryType: "arraybuffer", bufferedAmount: 0,
+        onopen: null, onclose: null, onmessage: null, onerror: null,
+        send(str) {
+          this.bufferedAmount += str.length;
+          const m = str.length > 1000 && JSON.parse(str);
+          setTimeout(() => {
+            this.bufferedAmount = Math.max(0, this.bufferedAmount - str.length);
+            if (!m || !m.id) return;
+            setTimeout(() => this.onmessage && this.onmessage({ data: JSON.stringify({ t: "in-done", id: m.id }) }),
+              window.__link.write);
+            setTimeout(() => { let k = 0; const iv = setInterval(() => { if (++k > window.__link.after / 100 || !this.onmessage) { clearInterval(iv); return; } this.onmessage({ data: new ArrayBuffer(4096) }); }, 100); }, window.__link.write);
+          }, m ? window.__link.drain : 0);
+        },
+        close() { this.readyState = 3; } };
+      setTimeout(() => { s.readyState = 1; if (s.onopen) s.onopen({}); }, 0);
+      return s;
+    };
+    Object.assign(window.WebSocket, { CONNECTING: 0, OPEN: 1, CLOSING: 2, CLOSED: 3 });
+  });
+  try {
+    const p = await ctx.newPage();
+    p.on("pageerror", e => errors.push(String(e)));
+    await p.goto(base, { waitUntil: "domcontentloaded" });
+    await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
+    await p.evaluate(() => attachTask("land-live"));
+    await p.waitForFunction(() => termSock && termSock.readyState === 1 && termTask && termTask.id === "land-live", null,
+      { timeout: slow(10000) });
+    await p.waitForTimeout(300);
+    for (const [name, link] of [["slow link", { drain: 1200, write: 1500 }], ["fast link", { drain: 20, write: 30, after: 0 }], ["fast link, runner still printing the paste back", { drain: 20, write: 30, after: 1500 }]]) {
+      const got = await p.evaluate(([link, n]) => new Promise(done => {
+        window.__link.drain = link.drain; window.__link.write = link.write; window.__link.after = link.after || 0;
+        pasteEnd();
+        const vis = () => { const el = document.getElementById("t-pasting"); return !!(el && !el.hidden); };
+        const t0 = performance.now();
+        let lastUp = -1, firstUp = -1;
+        const loop = () => {
+          const t = performance.now() - t0;
+          if (vis()) { lastUp = t; if (firstUp < 0) firstUp = t; }
+          if (t < link.drain + link.write + (link.after || 0) + 1200) { requestAnimationFrame(loop); return; }
+          done({ firstUp: Math.round(firstUp), lastUp: Math.round(lastUp) });
+        };
+        requestAnimationFrame(loop);
+        const dt = new DataTransfer();
+        dt.setData("text/plain", "ok   github.com/x/y 0.1s\n".repeat(Math.ceil(n / 25)));
+        document.getElementById("t-screen").dispatchEvent(
+          new ClipboardEvent("paste", { clipboardData: dt, bubbles: true, cancelable: true }));
+      }), [link, 500 * 1024]);
+      const end = link.drain + link.write + (link.after || 0);
+      if (got.firstUp < 0 || got.firstUp > 300) fail(name + ": a 500KB paste did not show the box at once: " + JSON.stringify(got));
+      else if (got.lastUp < end - 150 && !(link.after === 0)) fail(name + ": the box went down before the last byte was written (" + end + "ms): " + JSON.stringify(got));
+      else if (got.lastUp > end + 600) fail(name + ": the box stayed up after the last byte was written (" + end + "ms): " + JSON.stringify(got));
+    }
+  } finally {
+    await ctx.close();
+  }
+  if (errors.length) fail("the paste lands page threw: " + errors.join(" | "));
+  landList = []; landPerms = [];
+  tasksMode = was; hubMode = wasHub;
+}
+
 // ── a pasted image with no bytes is never uploaded ────────────────────────
 // A delay-rendered clipboard image reaches the paste event as a 0-byte File. It must not become a file on disk
 // whose path is pasted to the agent: no upload request, and a toast saying to paste again.
@@ -28214,7 +28292,7 @@ async function main() {
       groupDrag: groupDragSection, tooltip: tooltipSection, linkTip: linkTipSection, fileOpenOutside: fileOpenOutsideSection, readTabSize: readTabSizeSection, readWidthSkin: readWidthSkinSection, popoutTagFlip: popoutTagFlipSection, prefsEverywhere: prefsEverywhereSection, mPrefsEverywhere: (b) => mPrefsEverywhereSection(b), idleRate: idleRateSection, foldStill: foldStillSection,
       untaggedSort: untaggedSortSection, newCard: newCardSection, themePreview: themePreviewSection, themeLab: themeLabSection, land: landSection, reselect: reselectSection, clearKeepsPage: clearKeepsPageSection, clearMark: clearMarkSection, clearLine: clearLineSection,
       resumeSpinner: resumeSpinnerSection, toastsTop: toastsTopSection, sayWhen: sayWhenSection, pasteSpinner: pasteSpinnerSection,
-      pasteBig: pasteBigSection, pasteEmpty: pasteEmptySection, pasteBusy: pasteBusySection, typing: typingSection, alias: aliasSection, askAgain: askAgainSection, copySelect: copySelectSection, busyGuard: busyGuardSection, keepalive: keepaliveSection, idlePark: idleParkSection, restartMenu: restartMenuSection,
+      pasteBig: pasteBigSection, pasteLands: pasteLandsSection, pasteEmpty: pasteEmptySection, pasteBusy: pasteBusySection, typing: typingSection, alias: aliasSection, askAgain: askAgainSection, copySelect: copySelectSection, busyGuard: busyGuardSection, keepalive: keepaliveSection, idlePark: idleParkSection, restartMenu: restartMenuSection,
       stuck: stuckSection, blockerMark: blockerMarkSection, carryLink: carryLinkSection,
       skinScope: skinScopeSection, skinHeal: skinHealSection, toastLives: toastLivesSection,
       history: historySection, contextSize: contextSizeSection, ctxLine: ctxLineSection, ctxLimitLayers: ctxLimitLayersSection, contextCycle: contextCycleSection, landThePlane: landThePlaneSection, peekEverywhere: peekEverywhereSection, peekOneHover: peekOneHoverSection, peekStatusTruth: peekStatusTruthSection, peekHoverRest: peekHoverRestSection, cardRoute: cardRouteSection,
@@ -30253,6 +30331,7 @@ async function main() {
     await unit("resumeSpinner", () => resumeSpinnerSection(browser, base));
     await unit("pasteSpinner", () => pasteSpinnerSection(browser, base));
     await unit("pasteBig", () => pasteBigSection(browser, base));
+    await unit("pasteLands", () => pasteLandsSection(browser, base));
     await unit("pasteEmpty", () => pasteEmptySection(browser, base));
     await unit("pasteBusy", () => pasteBusySection(browser, base));
     // ── the typing gate readout, off until switched on ─────────────────────
