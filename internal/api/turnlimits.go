@@ -39,6 +39,11 @@ type TurnLimitReport struct {
 // CheckTurnLimits is the findings for one day's rows. The operator's own turns are not a cause to flag. Tokens are
 // counted as the usage tab counts them, cache reads apart. Findings come out most turns first.
 func CheckTurnLimits(rows []store.CostRow, day string, lim store.TurnLimits) []TurnFinding {
+	return checkTurnLimits(rows, day, lim, turnCauseItems)
+}
+
+// checkTurnLimits is CheckTurnLimits with the backlog items that name a cause given.
+func checkTurnLimits(rows []store.CostRow, day string, lim store.TurnLimits, items map[string]string) []TurnFinding {
 	out := []TurnFinding{}
 	if lim.Off {
 		return out
@@ -75,7 +80,7 @@ func CheckTurnLimits(rows []store.CostRow, day string, lim store.TurnLimits) []T
 			over = "tokens"
 		}
 		out = append(out, TurnFinding{Kind: kind, Turns: s.turns, Tokens: s.tokens, LimitTurns: l.Turns,
-			LimitTokens: l.Tokens, Over: over, Item: turnCauseItems[kind]})
+			LimitTokens: l.Tokens, Over: over, Item: items[kind]})
 	}
 	sort.Slice(out, func(i, j int) bool {
 		if out[i].Turns != out[j].Turns {

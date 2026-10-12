@@ -295,7 +295,7 @@ func (s *Server) closePreview(ctx context.Context, t *store.Task) (*closePreview
 		case store.ResPort:
 			it.Note = "released"
 		case store.ResOverlay:
-			if inCards(r.Ref) == "" {
+			if s.inCards(r.Ref) == "" {
 				it.Action, it.Note = "keep", "outside the cards folder, so a close does not delete it. the sweep lists it"
 				break
 			}
@@ -457,7 +457,7 @@ func (s *Server) closeCard(t *store.Task, pv *closePreview, answers map[string]s
 
 	// 1c. overlays, once their tunnelers and quickstart are stopped above: the folder, its PKI and its identities
 	for _, r := range of(store.ResOverlay) {
-		home := inCards(r.Ref)
+		home := s.inCards(r.Ref)
 		if home == "" {
 			continue
 		}

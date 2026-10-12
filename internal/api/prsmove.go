@@ -30,8 +30,8 @@ import (
 // out, since the fetch step makes it again from the hub when the run resumes. Nothing in an archive is a link, and
 // every file on both sides goes through internal/safepath.
 
-// PRArchiveCap bounds an archive, both as sent and as unpacked. A variable so a test need not make 64 MiB.
-var PRArchiveCap int64 = 64 << 20
+// PRArchiveCap bounds an archive, both as sent and as unpacked. A test sets `hk.prArchiveCap` on its server so it need not make 64 MiB.
+const PRArchiveCap int64 = 64 << 20
 
 // maxArchiveEntries bounds the entries an import will read.
 const maxArchiveEntries = 20000
@@ -84,9 +84,9 @@ func (s *Server) exportPR(w http.ResponseWriter, r *http.Request) {
 		prError(w, http.StatusInternalServerError, "export_failed", err.Error(), nil)
 		return
 	}
-	if total > PRArchiveCap {
+	if total > s.archiveCap() {
 		prError(w, http.StatusRequestEntityTooLarge, "too_big",
-			fmt.Sprintf("the review's folder is %d bytes, over the %d the archive is capped at", total, PRArchiveCap), nil)
+			fmt.Sprintf("the review's folder is %d bytes, over the %d the archive is capped at", total, s.archiveCap()), nil)
 		return
 	}
 	t, err := s.st.PRTransferOf(p.ID)
@@ -222,7 +222,7 @@ func badArchive(format string, a ...any) error {
 
 // POST /v1/prs/import
 func (s *Server) importPR(w http.ResponseWriter, r *http.Request) {
-	body := http.MaxBytesReader(w, r.Body, PRArchiveCap)
+	body := http.MaxBytesReader(w, r.Body, s.archiveCap())
 	prOpMu.Lock()
 	defer prOpMu.Unlock()
 	row, created, err := s.importArchive(body)
@@ -237,7 +237,7 @@ func (s *Server) importPR(w http.ResponseWriter, r *http.Request) {
 		var mb *http.MaxBytesError
 		if errors.As(err, &mb) {
 			prError(w, http.StatusRequestEntityTooLarge, "too_big",
-				fmt.Sprintf("the archive is over the %d bytes it is capped at", PRArchiveCap), nil)
+				fmt.Sprintf("the archive is over the %d bytes it is capped at", s.archiveCap()), nil)
 			return
 		}
 		prError(w, http.StatusInternalServerError, "import_failed", err.Error(), nil)
@@ -286,7 +286,7 @@ func (s *Server) importArchive(in io.Reader) (*store.PRReview, bool, error) {
 		_ = os.RemoveAll(dir)
 		return nil, false, err
 	}
-	if err := unpackRunFiles(tr, dir); err != nil {
+	if err := unpackRunFiles(tr, dir, s.archiveCap()); err != nil {
 		return fail(err)
 	}
 	row, err := s.st.ImportPR(t, filepath.ToSlash(dir))
@@ -338,8 +338,8 @@ func (s *Server) freshRunFolder(t store.PRTransfer) (string, error) {
 
 // unpackRunFiles writes the archive's files into dir. A link, a device, a name that leaves the folder, a repeated
 // name, more entries than the cap or more bytes than it all end the import with a refusal.
-func unpackRunFiles(tr *tar.Reader, dir string) error {
-	left := PRArchiveCap
+func unpackRunFiles(tr *tar.Reader, dir string, limit int64) error {
+	left := limit
 	for n := 0; ; n++ {
 		hdr, err := tr.Next()
 		if err == io.EOF {
@@ -371,7 +371,7 @@ func unpackRunFiles(tr *tar.Reader, dir string) error {
 		case tar.TypeReg:
 			if hdr.Size < 0 || hdr.Size > left {
 				return &errArchive{http.StatusRequestEntityTooLarge, "too_big",
-					fmt.Sprintf("the archive is over the %d bytes it is capped at", PRArchiveCap)}
+					fmt.Sprintf("the archive is over the %d bytes it is capped at", limit)}
 			}
 			if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil {
 				return err

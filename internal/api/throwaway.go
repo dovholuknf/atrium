@@ -46,7 +46,7 @@ func (s *Server) promoteCard(w http.ResponseWriter, r *http.Request) {
 
 	// Keep the throwaway flag until the move succeeds. While the runner holds
 	// the directory open, record only the destination.
-	if IsSupervised != nil && IsSupervised(id) {
+	if sup := s.supervised(); sup != nil && sup(id) {
 		if err := s.st.SetPromoteTo(id, to); err != nil {
 			s.fail(w, err)
 			return
@@ -58,7 +58,7 @@ func (s *Server) promoteCard(w http.ResponseWriter, r *http.Request) {
 		}
 		s.PublishTask(t)
 		writeJSON(w, http.StatusOK, map[string]any{
-			"task": toView(t), "to": to, "when": "the session ends",
+			"task": s.toView(t), "to": to, "when": "the session ends",
 		})
 		return
 	}
@@ -77,7 +77,7 @@ func (s *Server) promoteCard(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.PublishTask(t)
-	writeJSON(w, http.StatusOK, map[string]any{"task": toView(t), "to": to, "when": "now"})
+	writeJSON(w, http.StatusOK, map[string]any{"task": s.toView(t), "to": to, "when": "now"})
 }
 
 // promoteTarget requires an absolute, unused destination before moving files.

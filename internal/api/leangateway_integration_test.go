@@ -73,9 +73,7 @@ func TestSettingsLeanWorkerGatewayShowsOnTheCard(t *testing.T) {
 
 func TestSettingsLeanWorkerGatewayUnknownNameIsRefusedOnSave(t *testing.T) {
 	srv, st, _ := fileServer(t)
-	old := CheckLeanGateway
-	t.Cleanup(func() { CheckLeanGateway = old })
-	CheckLeanGateway = func(name string) error {
+	srv.hk.checkLeanGateway = func(name string) error {
 		if name == "mercurius-worker" {
 			return nil
 		}

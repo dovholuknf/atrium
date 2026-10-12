@@ -56,24 +56,33 @@ func git(t *testing.T, dir string, args ...string) string {
 	return strings.TrimSpace(string(out))
 }
 
-var (
-	upstreamOnce sync.Once
-	upstreamErr  error
-)
+// upstreamRepo is the one upstream repo the package builds, on the first ask. Its folder is removed by TestMain.
+var upstreamRepo upstreamFixture
+
+type upstreamFixture struct {
+	once sync.Once
+	dir  string
+	err  error
+}
 
 // upstream is a local repo with one commit and refs/pull/7/head one commit further on. It is built once for the
 // package, which costs eight git runs, and each test gets its own copy because some of them add branches to it.
 func upstream(t *testing.T) string {
 	t.Helper()
-	upstreamOnce.Do(func() {
+	return upstreamRepo.copyTo(t)
+}
+
+func (f *upstreamFixture) copyTo(t *testing.T) string {
+	t.Helper()
+	f.once.Do(func() {
 		tmpl, err := os.MkdirTemp("", "atrium-api-upstream-")
 		if err != nil {
-			upstreamErr = err
+			f.err = err
 			return
 		}
-		upstreamTemplateDir = tmpl
+		f.dir = tmpl
 		up := filepath.Join(tmpl, "up")
-		if upstreamErr = os.Mkdir(up, 0o755); upstreamErr != nil {
+		if f.err = os.Mkdir(up, 0o755); f.err != nil {
 			return
 		}
 		for _, args := range [][]string{
@@ -88,16 +97,16 @@ func upstream(t *testing.T) string {
 			cmd := exec.Command("git", append([]string{"-c", "user.email=t@t", "-c", "user.name=t"}, args...)...)
 			cmd.Dir = up
 			if out, err := cmd.CombinedOutput(); err != nil {
-				upstreamErr = fmt.Errorf("git %v: %v\n%s", args, err, out)
+				f.err = fmt.Errorf("git %v: %v\n%s", args, err, out)
 				return
 			}
 		}
 	})
-	if upstreamErr != nil {
-		t.Fatal(upstreamErr)
+	if f.err != nil {
+		t.Fatal(f.err)
 	}
 	up := filepath.Join(t.TempDir(), "up")
-	if err := os.CopyFS(up, os.DirFS(filepath.Join(upstreamTemplateDir, "up"))); err != nil {
+	if err := os.CopyFS(up, os.DirFS(filepath.Join(f.dir, "up"))); err != nil {
 		t.Fatal(err)
 	}
 	return up

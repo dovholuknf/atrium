@@ -241,10 +241,8 @@ func TestAnImportRefusesWhatLeavesTheFolderALinkOrADuplicate(t *testing.T) {
 }
 
 func TestAnImportOverTheCapIsRefused(t *testing.T) {
-	was := PRArchiveCap
-	PRArchiveCap = 1 << 10
-	defer func() { PRArchiveCap = was }()
 	s, st, _ := prServer(t)
+	s.hk.prArchiveCap = 1 << 10
 	s.PRRunner = &fakePRRunner{st: st}
 	// Zeros compress to nothing, so the entry is over the cap unpacked and under it as sent.
 	w := importTo(s, hand(tar.Header{Name: "files/big.bin", Mode: 0o644, Typeflag: tar.TypeReg, Size: 4 << 10}))
@@ -258,9 +256,7 @@ func TestAnImportOverTheCapIsRefused(t *testing.T) {
 
 func TestAnExportOverTheCapIsRefused(t *testing.T) {
 	a, _, _ := movedRoom(t)
-	was := PRArchiveCap
-	PRArchiveCap = 10
-	defer func() { PRArchiveCap = was }()
+	a.hk.prArchiveCap = 10
 	if w := exportOf(t, a, prKey); w.Code != http.StatusRequestEntityTooLarge {
 		t.Fatalf("%d %s", w.Code, w.Body)
 	}

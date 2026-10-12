@@ -6,8 +6,7 @@ import "testing"
 
 func TestTheScrollbackTotalCountsRunnersAndShells(t *testing.T) {
 	srv, _, _ := fileServer(t)
-	t.Cleanup(func() { LiveRings = nil })
-	LiveRings = func() (int, int) { return 8, 2 }
+	srv.hk.liveRings = func() (int, int) { return 8, 2 }
 
 	if rec := settingsPost(t, srv, `{"scrollback_mb":"64"}`); rec.Code != 200 {
 		t.Fatalf("setting the megabytes answered %d: %s", rec.Code, rec.Body.String())
@@ -30,8 +29,7 @@ func TestTheScrollbackTotalCountsRunnersAndShells(t *testing.T) {
 // the rings rather than zero.
 func TestTheScrollbackTotalUsesWhatIsInForce(t *testing.T) {
 	srv, _, _ := fileServer(t)
-	t.Cleanup(func() { LiveRings = nil })
-	LiveRings = func() (int, int) { return 3, 0 }
+	srv.hk.liveRings = func() (int, int) { return 3, 0 }
 
 	if got := settingsGet(t, srv)["scrollback_mb_total"]; got != float64(defaultScrollbackMB*3) {
 		t.Errorf("an unset box gave a total of %v, wanted %d", got, defaultScrollbackMB*3)
@@ -42,8 +40,6 @@ func TestTheScrollbackTotalUsesWhatIsInForce(t *testing.T) {
 // a missing field the board would have to guess at.
 func TestTheScrollbackTotalIsZeroWithNoSupervision(t *testing.T) {
 	srv, _, _ := fileServer(t)
-	t.Cleanup(func() { LiveRings = nil })
-	LiveRings = nil
 
 	out := settingsGet(t, srv)
 	if got := out["scrollback_mb_total"]; got != float64(0) {

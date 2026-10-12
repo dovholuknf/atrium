@@ -18,9 +18,7 @@ func TestNoticesReadClearsTheHeldCountOnTheRow(t *testing.T) {
 	srv, st, dir := fileServer(t)
 	card := cardIn(t, st, dir)
 
-	old := HeldNoticesOf
-	t.Cleanup(func() { HeldNoticesOf = old })
-	HeldNoticesOf = func(t *store.Task) (int, string) {
+	srv.hk.heldNoticesOf = func(t *store.Task) (int, string) {
 		n, at, _ := st.HeldNoticeStats(t.ID)
 		if n == 0 {
 			return 0, ""

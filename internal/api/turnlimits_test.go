@@ -39,9 +39,8 @@ func TestTurnLimitFiresPastTheTokenLimitAndNamesTheItem(t *testing.T) {
 		t.Fatalf("findings %+v", got)
 	}
 	// A kind with an open item names it.
-	turnCauseItems["notice"] = "r-some-open-item"
-	defer delete(turnCauseItems, "notice")
-	if got := CheckTurnLimits(rows, "d", lim); len(got) != 1 || got[0].Item != "r-some-open-item" {
+	items := map[string]string{"notice": "r-some-open-item"}
+	if got := checkTurnLimits(rows, "d", lim, items); len(got) != 1 || got[0].Item != "r-some-open-item" {
 		t.Fatalf("a kind with an item: %+v", got)
 	}
 }

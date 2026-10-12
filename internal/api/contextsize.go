@@ -35,11 +35,14 @@ var RunnerCompactAtK func(t *store.Task) int
 // RunnerCeilingK is the most a card's limit may be, in thousands of tokens, or 0 for no ceiling. Atrium wants
 // the runner's compaction to land 10 percent AFTER its own cycle point (autocompactK in the daemon), so the
 // ceiling is the runner's compaction point less that 10 percent. A runner that compacts at 220k gives 200k.
-func RunnerCeilingK(t *store.Task) int {
-	if RunnerCompactAtK == nil || t == nil {
+func RunnerCeilingK(t *store.Task) int { return runnerCeilingK(RunnerCompactAtK, t) }
+
+// runnerCeilingK is RunnerCeilingK for the compaction point `compactAtK` reads.
+func runnerCeilingK(compactAtK func(*store.Task) int, t *store.Task) int {
+	if compactAtK == nil || t == nil {
 		return 0
 	}
-	at := RunnerCompactAtK(t)
+	at := compactAtK(t)
 	if at <= 0 {
 		return 0
 	}
@@ -67,6 +70,11 @@ type ContextLimit struct {
 // ContextLimitOf resolves a card's limit: the smaller of the card's own (else the hub's for its harness, else
 // the built-in one) and the runner's ceiling.
 func ContextLimitOf(st *store.Store, t *store.Task) ContextLimit {
+	return contextLimitWith(st, t, RunnerCompactAtK)
+}
+
+// contextLimitWith is ContextLimitOf for the compaction point `compactAtK` reads.
+func contextLimitWith(st *store.Store, t *store.Task, compactAtK func(*store.Task) int) ContextLimit {
 	var out ContextLimit
 	if t == nil {
 		return out
@@ -89,7 +97,7 @@ func ContextLimitOf(st *store.Store, t *store.Task) ContextLimit {
 		}
 	}
 	if out.K > 0 {
-		if c := RunnerCeilingK(t); c > 0 {
+		if c := runnerCeilingK(compactAtK, t); c > 0 {
 			out.CeilingK = c
 			if out.K > c {
 				out.WantedK, out.WantedFrom = out.K, out.From

@@ -59,8 +59,7 @@ func TestPromotingAnIdleThrowawayMovesItNow(t *testing.T) {
 func TestPromotingALiveThrowawayWaitsForTheSession(t *testing.T) {
 	s, st, dir := fileServer(t)
 	task := throwawayCard(t, st, dir)
-	IsSupervised = func(string) bool { return true }
-	t.Cleanup(func() { IsSupervised = nil })
+	s.hk.isSupervised = func(string) bool { return true }
 	to := filepath.Join(t.TempDir(), "kept")
 
 	r := httptest.NewRequest("POST", "/v1/tasks/"+task.ID+"/promote",

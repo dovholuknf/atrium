@@ -96,7 +96,7 @@ func (s *Server) postOverlay(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, err)
 		return
 	}
-	if strings.TrimSpace(CardsDir) == "" {
+	if strings.TrimSpace(s.cardsRoot()) == "" {
 		writeErr(w, http.StatusServiceUnavailable, errors.New("this room has no cards folder, so it cannot hold an overlay"))
 		return
 	}
@@ -116,17 +116,17 @@ func (s *Server) postOverlay(w http.ResponseWriter, r *http.Request) {
 }
 
 // overlayHome is where a card's overlay of that name lives, inside CardsDir.
-func overlayHome(card, name string) (string, error) {
-	root := filepath.Clean(CardsDir)
+func (s *Server) overlayHome(card, name string) (string, error) {
+	root := filepath.Clean(s.cardsRoot())
 	return safepath.Contained(root, filepath.Join(root, card, "overlay", name))
 }
 
 // inCards is the path when it is under CardsDir, so a close may delete it, else "".
-func inCards(path string) string {
-	if strings.TrimSpace(CardsDir) == "" || strings.TrimSpace(path) == "" {
+func (s *Server) inCards(path string) string {
+	if strings.TrimSpace(s.cardsRoot()) == "" || strings.TrimSpace(path) == "" {
 		return ""
 	}
-	root := filepath.Clean(CardsDir)
+	root := filepath.Clean(s.cardsRoot())
 	real, err := safepath.Contained(root, filepath.FromSlash(path))
 	if err != nil || eqPath(real, root) {
 		return ""
@@ -158,7 +158,7 @@ func (s *Server) overlayUp(w http.ResponseWriter, ctx context.Context, t *store.
 		writeErr(w, http.StatusBadRequest, errors.New("ziti is not on this room's PATH, so it cannot start an overlay"))
 		return
 	}
-	home, err := overlayHome(t.ID, name)
+	home, err := s.overlayHome(t.ID, name)
 	if err != nil {
 		writeErr(w, http.StatusBadRequest, err)
 		return
@@ -567,7 +567,7 @@ func (s *Server) overlayDown(w http.ResponseWriter, t *store.Task, name string) 
 		writeErr(w, http.StatusBadRequest, err)
 		return
 	}
-	home := inCards(ov.Ref)
+	home := s.inCards(ov.Ref)
 	if home == "" {
 		writeErr(w, http.StatusBadRequest, errors.New(ov.Ref+" is outside the cards folder, so it is not deleted here"))
 		return

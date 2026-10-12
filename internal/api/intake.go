@@ -110,7 +110,7 @@ func (s *Server) listOffered(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"tasks": toViews(tasks)})
+	writeJSON(w, http.StatusOK, map[string]any{"tasks": s.toViews(tasks)})
 }
 
 // history answers "what have I had running here", which the board cannot.
@@ -134,7 +134,7 @@ func (s *Server) history(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
-		"tasks": toViews(tasks), "total": total, "offset": offset,
+		"tasks": s.toViews(tasks), "total": total, "offset": offset,
 	})
 }
 

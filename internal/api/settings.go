@@ -143,7 +143,7 @@ func globalAutoView(s *Server) map[string]any {
 	// Report total scrollback capacity across live runners and shells.
 	// This is the upper bound if every ring fills, not current memory usage.
 	// Send separate values so the board can format the explanation.
-	runners, shells := liveRings()
+	runners, shells := s.rings()
 	out["scrollback_runners"] = runners
 	out["scrollback_shells"] = shells
 	out["scrollback_mb_total"] = scrollbackMB(s.st) * (runners + shells)
@@ -725,8 +725,8 @@ func (s *Server) setSettings(w http.ResponseWriter, r *http.Request) {
 				"lean_worker_gateway is a server NAME from the runner's mcp.json, like mercurius-worker, never a URL. got %q", v))
 			return
 		}
-		if v != "" && CheckLeanGateway != nil {
-			if err := CheckLeanGateway(v); err != nil {
+		if check := s.leanGatewayCheck(); v != "" && check != nil {
+			if err := check(v); err != nil {
 				writeErr(w, http.StatusBadRequest, err)
 				return
 			}

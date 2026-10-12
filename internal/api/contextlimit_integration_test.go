@@ -206,8 +206,8 @@ func TestTheContextCycleSettingsSaveAndReadBack(t *testing.T) {
 // PATCH naming the ceiling, and a hub limit above it is cut and says so.
 func TestTheRunnersCompactionPointIsACeilingOnTheLimit(t *testing.T) {
 	srv, st, _ := fileServer(t)
-	RunnerCompactAtK = func(*store.Task) int { return 220 }
-	t.Cleanup(func() { RunnerCompactAtK = nil })
+	compactAt := func(*store.Task) int { return 220 }
+	srv.hk.runnerCompactAtK = func(t *store.Task) int { return compactAt(t) }
 	task, _, err := st.Register(store.Observed{WireName: "c9", Worktree: "/tmp/c9", Runner: "claude"})
 	if err != nil {
 		t.Fatal(err)
@@ -218,7 +218,7 @@ func TestTheRunnersCompactionPointIsACeilingOnTheLimit(t *testing.T) {
 			strings.NewReader(`{"overrides":{"context_limit_k":"`+v+`"}}`)))
 		return rec
 	}
-	if c := RunnerCeilingK(task); c != 200 {
+	if c := runnerCeilingK(compactAt, task); c != 200 {
 		t.Fatalf("ceiling %d, want 200", c)
 	}
 	if rec := patch("200"); rec.Code != http.StatusOK {
@@ -229,7 +229,7 @@ func TestTheRunnersCompactionPointIsACeilingOnTheLimit(t *testing.T) {
 		!strings.Contains(rec.Body.String(), "220k") {
 		t.Fatalf("900k gave %d %s, want a 400 naming the ceiling", rec.Code, rec.Body)
 	}
-	if l := ContextLimitOf(st, mustGet(t, st, task.ID)); l.K != 200 || l.From != LimitFromCard || l.OwnK != 200 {
+	if l := contextLimitWith(st, mustGet(t, st, task.ID), compactAt); l.K != 200 || l.From != LimitFromCard || l.OwnK != 200 {
 		t.Fatalf("refused value changed the card: %+v", l)
 	}
 	if rec := patch(""); rec.Code != http.StatusOK {
@@ -239,13 +239,13 @@ func TestTheRunnersCompactionPointIsACeilingOnTheLimit(t *testing.T) {
 	if err := st.SetSetting(store.SettingContextLimits, `{"claude":900}`); err != nil {
 		t.Fatal(err)
 	}
-	l := ContextLimitOf(st, mustGet(t, st, task.ID))
+	l := contextLimitWith(st, mustGet(t, st, task.ID), compactAt)
 	if l.K != 200 || l.From != LimitFromRunner || l.WantedK != 900 || l.WantedFrom != LimitFromHub || l.CeilingK != 200 {
 		t.Fatalf("hub 900k under a 220k runner gave %+v, want 200 from runner, wanted 900 from hub", l)
 	}
 	// A card whose runner has no known compaction point is not held to anything.
-	RunnerCompactAtK = func(*store.Task) int { return 0 }
-	if l := ContextLimitOf(st, mustGet(t, st, task.ID)); l.K != 900 || l.From != LimitFromHub || l.CeilingK != 0 {
+	compactAt = func(*store.Task) int { return 0 }
+	if l := contextLimitWith(st, mustGet(t, st, task.ID), compactAt); l.K != 900 || l.From != LimitFromHub || l.CeilingK != 0 {
 		t.Fatalf("no known compaction point gave %+v", l)
 	}
 }

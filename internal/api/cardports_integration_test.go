@@ -76,9 +76,7 @@ func TestPortsAreHandedOutOnceAndComeBackOnClose(t *testing.T) {
 	if err := oh.srv.st.SetSetting(SettingCardPorts, strconv.Itoa(lo)+"-"+strconv.Itoa(busy+2)); err != nil {
 		t.Fatal(err)
 	}
-	was := excludedPorts
-	excludedPorts = func() []cardproc.Range { return []cardproc.Range{{Lo: lo + 1, Hi: lo + 1}} }
-	defer func() { excludedPorts = was }()
+	oh.srv.hk.excludedPorts = func() []cardproc.Range { return []cardproc.Range{{Lo: lo + 1, Hi: lo + 1}} }
 
 	a := cardIn(t, oh.srv.st, t.TempDir())
 	code, got := askPorts(t, oh, a.ID, 2)

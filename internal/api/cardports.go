@@ -163,7 +163,7 @@ func (s *Server) takePorts(card string, n int) ([]int, cardproc.Range, error) {
 	}
 	portMu.Lock()
 	defer portMu.Unlock()
-	held, reserved := s.heldPorts(), excludedPorts()
+	held, reserved := s.heldPorts(), s.excluded()
 	var got []int
 	for p := rng.Lo; p <= rng.Hi && len(got) < n; p++ {
 		if held[p] || inRanges(reserved, p) || !bindsFree(p) {

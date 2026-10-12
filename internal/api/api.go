@@ -30,6 +30,8 @@ import (
 
 // Server serves the human-facing API.
 type Server struct {
+	// hk is the seams a test sets on one server. See serverhooks.go.
+	hk  serverHooks
 	st  *store.Store
 	bus *bus
 	// pend coalesces PublishTask per card.
@@ -1103,7 +1105,7 @@ var HeldNoticesOf func(t *store.Task) (int, string)
 // an orphan kept on the worker's own row. See internal/daemon/owed.go.
 var OwedOf func(t *store.Task) (int, string, bool)
 
-func toView(t *store.Task) view {
+func (s *Server) toView(t *store.Task) view {
 	v := view{
 		Task:         t,
 		Row:          1,
@@ -1112,8 +1114,8 @@ func toView(t *store.Task) view {
 		IdleSeconds:  int64(time.Since(t.LastActivityAt).Seconds()),
 		Observed:     t.Observed(),
 	}
-	if IsSupervised != nil {
-		v.Supervised = IsSupervised(t.ID)
+	if sup := s.supervised(); sup != nil {
+		v.Supervised = sup(t.ID)
 	}
 	if IsStarting != nil && !v.Supervised {
 		v.Starting = IsStarting(t.ID)
@@ -1154,11 +1156,11 @@ func toView(t *store.Task) view {
 	if OutputAtOf != nil {
 		v.OutputAt = OutputAtOf(t.ID)
 	}
-	if HeldNoticesOf != nil {
-		v.HeldNotices, v.OldestHeldAt = HeldNoticesOf(t)
+	if held := s.heldNotices(); held != nil {
+		v.HeldNotices, v.OldestHeldAt = held(t)
 	}
-	if OwedOf != nil {
-		v.Owed, v.OwedSince, v.OwedNoLauncher = OwedOf(t)
+	if owed := s.owed(); owed != nil {
+		v.Owed, v.OwedSince, v.OwedNoLauncher = owed(t)
 	}
 	if t.WaitingSince != nil {
 		v.WaitSeconds = int64(time.Since(*t.WaitingSince).Seconds())
@@ -1166,10 +1168,10 @@ func toView(t *store.Task) view {
 	return v
 }
 
-func toViews(ts []*store.Task) []view {
+func (s *Server) toViews(ts []*store.Task) []view {
 	out := make([]view, 0, len(ts))
 	for _, t := range ts {
-		out = append(out, toView(t))
+		out = append(out, s.toView(t))
 	}
 	return out
 }
@@ -1222,7 +1224,7 @@ func (s *Server) withAskCounts(vs []view) []view {
 // card's worth of queries. A failed decoration query is swallowed, as in
 // withAskCounts.
 func (s *Server) taskEvent(t *store.Task) view {
-	v := toView(t)
+	v := s.toView(t)
 	v.LauncherID = s.st.LauncherID(t)
 	v.Mercurius = store.MercuriusFor(t.Tags, s.st.LeanWorkerGateway())
 	if n, err := s.st.RepliesOwedFor(t.ID); err == nil {
@@ -1458,7 +1460,7 @@ func (s *Server) listTasks(w http.ResponseWriter, r *http.Request) {
 		if t := s.st.LocalCard(name); t != nil {
 			one = append(one, t)
 		}
-		writeJSON(w, http.StatusOK, map[string]any{"tasks": s.withAskCounts(toViews(one))})
+		writeJSON(w, http.StatusOK, map[string]any{"tasks": s.withAskCounts(s.toViews(one))})
 		return
 	}
 	tasks, err := s.st.List(statuses...)
@@ -1466,7 +1468,7 @@ func (s *Server) listTasks(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"tasks": s.withAskCounts(toViews(tasks))})
+	writeJSON(w, http.StatusOK, map[string]any{"tasks": s.withAskCounts(s.toViews(tasks))})
 }
 
 func (s *Server) waiting(w http.ResponseWriter, r *http.Request) {
@@ -1475,7 +1477,7 @@ func (s *Server) waiting(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"tasks": s.withAskCounts(toViews(tasks))})
+	writeJSON(w, http.StatusOK, map[string]any{"tasks": s.withAskCounts(s.toViews(tasks))})
 }
 
 // listAsks answers with the questions a card is still waiting on.
@@ -1501,7 +1503,7 @@ func (s *Server) getTask(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, err)
 		return
 	}
-	v := s.withSeen([]view{toView(t)})[0]
+	v := s.withSeen([]view{s.toView(t)})[0]
 	v.DiskBytes = s.cardDisk(t.ID)
 	writeJSON(w, http.StatusOK, v)
 }
@@ -1776,10 +1778,10 @@ func (s *Server) patchTask(w http.ResponseWriter, r *http.Request) {
 			// Refused, not capped, so a number typed in is never quietly not the number in force. A limit the
 			// runner would compact before is a cycle that never gets to run.
 			if k, _ := strconv.Atoi(clean); k > 0 && before != nil {
-				if c := RunnerCeilingK(before); c > 0 && k > c {
+				if c := runnerCeilingK(s.compactAtK(), before); c > 0 && k > c {
 					writeErr(w, http.StatusBadRequest, fmt.Errorf("context_limit_k %dk is above this card's ceiling of %dk: "+
 						"its runner compacts on its own at %dk, so atrium has to cycle it first. use %dk or less, or empty "+
-						"for the hub's limit", k, c, RunnerCompactAtK(before), c))
+						"for the hub's limit", k, c, s.compactAtK()(before), c))
 					return
 				}
 			}
@@ -1812,7 +1814,7 @@ func (s *Server) patchTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.PublishTask(t)
-	out := toView(t)
+	out := s.toView(t)
 	out.LauncherID = s.st.LauncherID(t)
 	if canceled > 0 {
 		s.Broadcast("permission", map[string]any{"canceled": canceled, "task": id})
@@ -2476,7 +2478,7 @@ func (s *Server) launch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.PublishTask(task)
-	writeJSON(w, http.StatusOK, toView(task))
+	writeJSON(w, http.StatusOK, s.toView(task))
 }
 
 // queueDispatch files a launch for another machine.
@@ -2689,7 +2691,7 @@ func (s *Server) restartRunner(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.PublishTask(task)
-	writeJSON(w, http.StatusOK, toView(task))
+	writeJSON(w, http.StatusOK, s.toView(task))
 }
 
 // events is the SSE stream every live client subscribes to.

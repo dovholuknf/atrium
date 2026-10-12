@@ -18,9 +18,7 @@ func TestOwedOnTheRowAndADismissFromTheHostClosesIt(t *testing.T) {
 	srv, st, dir := fileServer(t)
 	host := cardIn(t, st, dir)
 
-	old := OwedOf
-	t.Cleanup(func() { OwedOf = old })
-	OwedOf = func(t *store.Task) (int, string, bool) {
+	srv.hk.owedOf = func(t *store.Task) (int, string, bool) {
 		items, _ := st.OpenOwedItems()
 		n := 0
 		for _, it := range items {

@@ -20,7 +20,7 @@ import (
 // process standing in for the quickstart.
 func fakeOverlay(t *testing.T, oh *openHarness, card, name string) (home string, proc *exec.Cmd) {
 	t.Helper()
-	home, err := overlayHome(card, name)
+	home, err := oh.srv.overlayHome(card, name)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -53,11 +53,10 @@ func fakeOverlay(t *testing.T, oh *openHarness, card, name string) (home string,
 	return home, proc
 }
 
-func withCardsDir(t *testing.T) {
+func withCardsDir(t *testing.T, s *Server) {
 	t.Helper()
-	was := CardsDir
-	CardsDir = t.TempDir()
-	t.Cleanup(func() { CardsDir = was })
+	dir := t.TempDir()
+	s.hk.cardsDir = &dir
 }
 
 func liveKinds(t *testing.T, oh *openHarness, card string) map[string]int {
@@ -77,8 +76,8 @@ func liveKinds(t *testing.T, oh *openHarness, card string) map[string]int {
 
 // CLOSING THE CARD STOPS ITS OVERLAY, then deletes the folder, PKI and identities with it.
 func TestCloseStopsAndDeletesTheCardsOverlay(t *testing.T) {
-	withCardsDir(t)
 	oh := newOpenHarness(t, &fakeForge{})
+	withCardsDir(t, oh.srv)
 	card := cardIn(t, oh.srv.st, t.TempDir())
 	home, proc := fakeOverlay(t, oh, card.ID, "o1")
 
@@ -96,8 +95,8 @@ func TestCloseStopsAndDeletesTheCardsOverlay(t *testing.T) {
 
 // A DOWN STOPS ONE OVERLAY and leaves the card's others running.
 func TestOverlayDownStopsOnlyThatOne(t *testing.T) {
-	withCardsDir(t)
 	oh := newOpenHarness(t, &fakeForge{})
+	withCardsDir(t, oh.srv)
 	card := cardIn(t, oh.srv.st, t.TempDir())
 	home1, p1 := fakeOverlay(t, oh, card.ID, "o1")
 	home2, p2 := fakeOverlay(t, oh, card.ID, "o2")
@@ -128,8 +127,8 @@ func TestOverlayDownStopsOnlyThatOne(t *testing.T) {
 
 // A TUNNELER IN TUN MODE IS REFUSED with the command to ask clint to run elevated. atrium never elevates.
 func TestATunModeTunnelerIsRefusedWithTheCommand(t *testing.T) {
-	withCardsDir(t)
 	oh := newOpenHarness(t, &fakeForge{})
+	withCardsDir(t, oh.srv)
 	card := cardIn(t, oh.srv.st, t.TempDir())
 	fakeOverlay(t, oh, card.ID, "o1")
 	rec := post(t, oh.h, "/v1/tasks/"+card.ID+"/overlay", map[string]any{"action": "tunnel", "identity": "alice", "mode": "tun"})
@@ -148,15 +147,16 @@ func TestATunModeTunnelerIsRefusedWithTheCommand(t *testing.T) {
 
 // A name is a folder name, and a card with no cards folder holds no overlay.
 func TestOverlayNamesAreFolderNames(t *testing.T) {
-	withCardsDir(t)
 	oh := newOpenHarness(t, &fakeForge{})
+	withCardsDir(t, oh.srv)
 	card := cardIn(t, oh.srv.st, t.TempDir())
 	for _, name := range []string{"../up", "A", "a b", strings.Repeat("x", 33)} {
 		if rec := post(t, oh.h, "/v1/tasks/"+card.ID+"/overlay", map[string]any{"action": "up", "name": name}); rec.Code != 400 {
 			t.Errorf("%q: %d", name, rec.Code)
 		}
 	}
-	CardsDir = ""
+	none := ""
+	oh.srv.hk.cardsDir = &none
 	if rec := post(t, oh.h, "/v1/tasks/"+card.ID+"/overlay", map[string]any{"action": "up"}); rec.Code != 503 {
 		t.Errorf("no cards folder: %d", rec.Code)
 	}
@@ -164,8 +164,8 @@ func TestOverlayNamesAreFolderNames(t *testing.T) {
 
 // The sweep frees an overlay and an identity whose files are gone.
 func TestSweepFreesAGoneOverlay(t *testing.T) {
-	withCardsDir(t)
 	oh := newOpenHarness(t, &fakeForge{})
+	withCardsDir(t, oh.srv)
 	card := cardIn(t, oh.srv.st, t.TempDir())
 	home, proc := fakeOverlay(t, oh, card.ID, "o1")
 	_ = proc.Process.Kill()
@@ -194,8 +194,8 @@ func TestARealOverlayComesUpAndGoesWithTheCard(t *testing.T) {
 	if _, err := zitiBin(); err != nil {
 		t.Skip("ziti is not on the PATH")
 	}
-	withCardsDir(t)
 	oh := newOpenHarness(t, &fakeForge{})
+	withCardsDir(t, oh.srv)
 	card := cardIn(t, oh.srv.st, t.TempDir())
 	rec := post(t, oh.h, "/v1/tasks/"+card.ID+"/overlay", map[string]any{"action": "up"})
 	var up struct {
