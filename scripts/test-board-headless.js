@@ -28999,7 +28999,7 @@ async function main() {
       const vw = window.innerWidth;
       const list = document.getElementById("term-list");
       const lr = list.getBoundingClientRect();
-      const groups = document.querySelector("#term-list .termtray");
+      const groups = document.querySelector("#fd-terms .fline");
       const gr = groups ? groups.getBoundingClientRect() : null;
       const cards = [...document.querySelectorAll("#term-list .card.tab")]
         .map(c => c.getBoundingClientRect());
@@ -29011,7 +29011,7 @@ async function main() {
         // the side the way the horizontal strip pushed all of them.
         cardsOnScreen: cards.length > 0 &&
           cards.every(r => r.left >= -1 && r.right <= vw + 1),
-        // The controls tray is above the first card, at the top of the list,
+        // The filter line is above the first card, at the top of the view,
         // rather than stranded in the blank space the missing cards left.
         groupsAboveCards: !!(gr && first && gr.top <= first.top + 1),
         // The document itself does not scroll sideways.
@@ -29024,7 +29024,7 @@ async function main() {
         "blank-tab bug.");
     }
     if (!phoneTerm.groupsAboveCards) {
-      fail("the controls tray is not at the top of the terminals list at 390px: " +
+      fail("the filter line is not above the terminals list at 390px: " +
         "it is stranded in the blank space the off-screen cards left behind.");
     }
     if (phoneTerm.listFills < 200) {
@@ -29042,12 +29042,11 @@ async function main() {
     // desktop `off` flyout floats the list over the pane, so the terminal is a
     // stable surface with no shared split to drag. `paintPaneBg` with a theme is
     // what a real attach runs, and it is what sets `has-term`. Inside the open
-    // flyout the controls tray is folded to its one line until tapped, and the
-    // rows scroll in their own box below it.
+    // flyout the rows scroll in their own box, with no tray: the filters are the
+    // drawer's line above the view.
     await page.evaluate(() =>
       paintPaneBg({ background: "#101828", foreground: "#e6e6e6", cursor: "#4ea1ff" }));
     const decoupled = await page.evaluate(async () => {
-      localStorage.removeItem(termDeviceKey("atrium.termtray"));
       await loadCards().catch(() => {}).then(renderTermList);
       const layout = document.getElementById("term-layout");
       const paneH = () => document.getElementById("term-pane").getBoundingClientRect().height;
@@ -29071,17 +29070,14 @@ async function main() {
       const openBody = bodyDisp();
       const openPos = bodyPos();
       const paneOpen = paneH();
-      // The tray is on the flyout, folded, above a scroll box of its own; a tap
-      // rolls it down.
-      const tray = document.querySelector("#term-list .termbody .termtray");
-      const trayShown = !!tray && getComputedStyle(tray).display !== "none";
+      // The flyout is the rows in a scroll box of their own, with no tray in it.
+      const tray = document.querySelector("#term-list .termtray");
       const scroll = document.querySelector("#term-list .termbody .termscroll");
-      const scrollBelow = !!(tray && scroll &&
-        scroll.getBoundingClientRect().top >= tray.getBoundingClientRect().bottom - 0.5);
+      const scrollOnly = !tray && !!scroll;
       return {
         dropShown, collapsedBody, openBody, openPos,
         paneStable: Math.abs(paneOpen - paneCollapsed) <= 2,
-        trayShown, scrollBelow,
+        scrollOnly,
         gripHidden: getComputedStyle(document.getElementById("term-grip")).display === "none"
       };
     });
@@ -29103,8 +29099,8 @@ async function main() {
     if (!decoupled.gripHidden) {
       fail("the width grip is shown on a phone: there is no tied split to drag there.");
     }
-    if (!decoupled.trayShown || !decoupled.scrollBelow) {
-      fail("the phone flyout does not show the bar above its own scrolling rows: " +
+    if (!decoupled.scrollOnly) {
+      fail("the phone flyout is not its own scrolling rows with no tray: " +
         JSON.stringify(decoupled));
     }
     await page.evaluate(() => {
