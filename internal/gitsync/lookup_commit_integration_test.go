@@ -41,8 +41,7 @@ func TestARepositoryWithoutTheCommitIsSkippedAndNotSearched(t *testing.T) {
 	x.must(x.push(roomCard("sg4", "C1"), hubRepo, "claude/item-w:refs/heads/claude/item-w"))
 
 	var searched []string
-	onContains = func(dir string) { searched = append(searched, dir) }
-	t.Cleanup(func() { onContains = nil })
+	x.h.hk.onContains = func(dir string) { searched = append(searched, dir) }
 	if a := x.h.Lookup(bg, URLQuery{Commit: first}); a.State != URLFound || a.Repo != hubRepo || a.Branch == "" {
 		t.Fatalf("%+v", a)
 	}

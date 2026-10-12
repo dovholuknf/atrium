@@ -56,11 +56,11 @@ func TestHTTPBackendServesAFetchWithNoWindow(t *testing.T) {
 
 	var mu sync.Mutex
 	var started []*exec.Cmd
-	cgiStarted = func(cmd *exec.Cmd) { mu.Lock(); started = append(started, cmd); mu.Unlock() }
-	t.Cleanup(func() { cgiStarted = nil })
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		serveCGI(gitCGI(exe, bare, [][2]string{{"http.receivepack", "false"}}, cgiEnv()), w, r)
+		h := gitCGI(exe, bare, [][2]string{{"http.receivepack", "false"}}, cgiEnv())
+		h.started = func(cmd *exec.Cmd) { mu.Lock(); started = append(started, cmd); mu.Unlock() }
+		serveCGI(h, w, r)
 	}))
 	defer srv.Close()
 

@@ -44,11 +44,8 @@ import (
 // StorePrefix is where the store is served, on the link's git kind and on the board.
 const StorePrefix = "/git/hub/"
 
-// inStoreWideLock, when set, runs inside the store-wide lock after the case check. Tests widen the window with it.
-var inStoreWideLock func()
-
-// maxPush is the most a push may carry. The same figure is receive.maxInputSize. A variable for the tests.
-var maxPush int64 = 500 << 20
+// maxPush is the most a push may carry, for a forwarder that has no hub. A hub reads `pushLimit`.
+const maxPush = defaultMaxPush
 
 // maxPushCommands bounds the command list read ahead of the pack.
 const maxPushCommands = 1 << 20
@@ -213,14 +210,14 @@ func fetchConfig(hooks string) [][2]string {
 	return append(baseConfig(hooks), [2]string{"http.receivepack", "false"})
 }
 
-func pushConfig(hooks string) [][2]string {
+func pushConfig(hooks string, limit int64) [][2]string {
 	return append(baseConfig(hooks),
 		[2]string{"http.receivepack", "true"},
 		[2]string{"receive.denyNonFastForwards", "true"},
 		[2]string{"receive.denyDeletes", "true"},
 		[2]string{"receive.denyDeleteCurrent", "true"},
 		[2]string{"receive.fsckObjects", "true"},
-		[2]string{"receive.maxInputSize", strconv.FormatInt(maxPush, 10)},
+		[2]string{"receive.maxInputSize", strconv.FormatInt(limit, 10)},
 		[2]string{"receive.advertisePushOptions", "false"},
 		[2]string{"receive.shallowUpdate", "false"},
 	)
@@ -374,7 +371,7 @@ func (rc *Receiver) advertisePush(w http.ResponseWriter, r *http.Request, ref Re
 			return
 		}
 	}
-	serveCGI(gitCGI(exe, dir, pushConfig(hooks), cgiEnv()), w, forGit(r, dir, "/info/refs"))
+	serveCGI(gitCGI(exe, dir, pushConfig(hooks, rc.h.pushLimit()), cgiEnv()), w, forGit(r, dir, "/info/refs"))
 }
 
 // cannotCreate says why a push could not make this repository, or "". A repository that is in the store
@@ -401,8 +398,8 @@ func (rc *Receiver) cannotCreate(ref Ref, operator bool) string {
 // ── push ────────────────────────────────────────────────
 
 // spool copies the request body to a temporary file, undoing gzip, up to the cap.
-func spool(r *http.Request) (*os.File, int64, error) {
-	if r.ContentLength > maxPush {
+func spool(r *http.Request, limit int64) (*os.File, int64, error) {
+	if r.ContentLength > limit {
 		return nil, 0, errTooBig
 	}
 	rd, err := bodyReader(r)
@@ -413,8 +410,8 @@ func spool(r *http.Request) (*os.File, int64, error) {
 	if err != nil {
 		return nil, 0, err
 	}
-	n, err := io.Copy(f, io.LimitReader(rd, maxPush+1))
-	if err == nil && n > maxPush {
+	n, err := io.Copy(f, io.LimitReader(rd, limit+1))
+	if err == nil && n > limit {
 		err = errTooBig
 	}
 	if err != nil {
@@ -469,7 +466,7 @@ func (rc *Receiver) push(w http.ResponseWriter, r *http.Request, ref Ref, exe st
 		http.Error(w, "this hub keeps no push log, so it takes no pushes", http.StatusServiceUnavailable)
 		return
 	}
-	f, size, err := spool(r)
+	f, size, err := spool(r, rc.h.pushLimit())
 	if err != nil {
 		rc.badBody(w, err)
 		return
@@ -601,8 +598,8 @@ func (rc *Receiver) push(w http.ResponseWriter, r *http.Request, ref Ref, exe st
 		gl.Lock()
 		hit := rc.h.Store().collision(ref)
 		_, statErr := os.Stat(dir)
-		if inStoreWideLock != nil {
-			inStoreWideLock()
+		if rc.h.hk.inStoreWideLock != nil {
+			rc.h.hk.inStoreWideLock()
 		}
 		var mkErr error
 		if hit == "" && statErr != nil {
@@ -674,7 +671,7 @@ func (rc *Receiver) push(w http.ResponseWriter, r *http.Request, ref Ref, exe st
 	out.Header.Del("Content-Encoding")
 	out.Header.Set("Content-Length", strconv.FormatInt(size, 10))
 
-	serveCGI(gitCGI(exe, dir, pushConfig(hooks), cgiEnv()), resp, out)
+	serveCGI(gitCGI(exe, dir, pushConfig(hooks, rc.h.pushLimit()), cgiEnv()), resp, out)
 	defer rc.h.Store().RefreshView()
 
 	// THE REFS ARE THE RESULT. Whatever git said, a push is settled for exactly the refs that now hold the

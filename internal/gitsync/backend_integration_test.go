@@ -40,18 +40,23 @@ func commit(t *testing.T, dir, file, body string) string {
 // machine with a virus scanner and each fixture costs seconds.
 func newServed(t *testing.T) *served {
 	t.Helper()
-	sharedOnce.Do(func() {
+	return shared.get(t)
+}
+
+// get builds the fixture on the first ask and hands out the same one after.
+func (f *sharedFixture) get(t *testing.T) *served {
+	f.once.Do(func() {
 		root, err := os.MkdirTemp("", "gitsync-shared")
 		if err != nil {
 			t.Fatal(err)
 		}
-		sharedRoot = root
-		shared = buildServed(t, root)
+		f.root = root
+		f.srv = buildServed(t, root)
 	})
-	if shared == nil {
+	if f.srv == nil {
 		t.Fatal("the shared fixture failed to build")
 	}
-	return shared
+	return f.srv
 }
 
 // freshServed is a private copy, for a test that changes it.

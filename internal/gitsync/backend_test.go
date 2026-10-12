@@ -18,11 +18,14 @@ type served struct {
 	visibleClaud string
 }
 
-var (
-	sharedOnce sync.Once
-	shared     *served
-	sharedRoot string
-)
+// sharedFixture is the one repository every read-only test serves. Its fields are set once, under `once`.
+type sharedFixture struct {
+	once sync.Once
+	srv  *served
+	root string
+}
+
+var shared sharedFixture
 
 func TestMain(m *testing.M) {
 	// The git every test here runs ignores the operator's own git config. See internal/testguard.
@@ -31,11 +34,11 @@ func TestMain(m *testing.M) {
 	if gitDir != "" {
 		_ = os.RemoveAll(gitDir)
 	}
-	if shared != nil {
-		shared.srv.Close()
+	if shared.srv != nil {
+		shared.srv.srv.Close()
 	}
-	if sharedRoot != "" {
-		_ = os.RemoveAll(sharedRoot)
+	if shared.root != "" {
+		_ = os.RemoveAll(shared.root)
 	}
 	os.Exit(code)
 }

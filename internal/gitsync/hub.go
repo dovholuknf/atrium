@@ -37,6 +37,8 @@ type Rooms interface {
 // it, collects each room's claude/* branches back, and delivers them into the checkout.
 // Every transfer is a fetch, and no receive-pack runs anywhere.
 type Hub struct {
+	// hk is the seams a test sets on one hub. See hooks.go.
+	hk hubHooks
 	// Dir is the hub's atrium directory. A bare repository lives at `<Dir>/git/<name>.git`.
 	Dir string
 	// Repos is the current `git_repos` setting, read on every pass so a change takes effect

@@ -34,6 +34,8 @@ type cgiHandler struct {
 	Args       []string // `http-backend`
 	Env        []string // extra environment, as "key=value"
 	InheritEnv []string // environment variables taken from this process, by name
+	// started, when set, is told each child ServeHTTP started. A seam for tests.
+	started func(*exec.Cmd)
 }
 
 // cgiDefaultEnv is what net/http/cgi always takes from the host on Windows. Elsewhere it is a loader
@@ -41,9 +43,6 @@ type cgiHandler struct {
 var cgiDefaultEnv = []string{"SystemRoot", "COMSPEC", "PATHEXT", "WINDIR"}
 
 var trailingPort = regexp.MustCompile(`:([0-9]+)$`)
-
-// cgiStarted is told each child ServeHTTP started. Nil except in a test.
-var cgiStarted func(*exec.Cmd)
 
 // command is the child for one request, before its streams are set.
 func (h *cgiHandler) command(req *http.Request) *exec.Cmd {
@@ -185,7 +184,7 @@ func (h *cgiHandler) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 		log.Printf("CGI error: %v", err)
 		return
 	}
-	if hook := cgiStarted; hook != nil {
+	if hook := h.started; hook != nil {
 		hook(cmd)
 	}
 	defer cmd.Wait()

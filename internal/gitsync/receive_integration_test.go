@@ -1081,9 +1081,7 @@ func TestAnOversizePushIsRefusedAndNothingIsKept(t *testing.T) {
 	}
 	x := newRecv(t)
 	x.seedMain(hubRepo)
-	old := maxPush
-	maxPush = 1 << 20
-	t.Cleanup(func() { maxPush = old })
+	x.h.hk.maxPush = 1 << 20
 	// Spool files go to the temp directory, so give the test its own and look only there.
 	tmp := t.TempDir()
 	t.Setenv("TMPDIR", tmp)
@@ -1799,9 +1797,7 @@ func TestHandBuiltPushesAreRefusedBeforeGit(t *testing.T) {
 func TestADeclaredOversizeBodyIsNotRead(t *testing.T) {
 	x := newRecv(t)
 	x.seedMain(hubRepo)
-	old := maxPush
-	maxPush = 1 << 20
-	t.Cleanup(func() { maxPush = old })
+	x.h.hk.maxPush = 1 << 20
 	body := &countingReader{r: bytes.NewReader(make([]byte, 2<<20))}
 	req := httptest.NewRequest(http.MethodPost, StorePrefix+hubRepo+".git/git-receive-pack", body)
 	req.ContentLength = 2 << 20
@@ -1847,8 +1843,7 @@ func TestTwoCaseTwinRepositoriesMadeAtOnceLeaveOne(t *testing.T) {
 	x := newRecv(t)
 	x.create.Store(true)
 	// Wide enough that, without the lock, both pushes pass the case check before either has made a directory.
-	inStoreWideLock = func() { time.Sleep(150 * time.Millisecond) }
-	t.Cleanup(func() { inStoreWideLock = nil })
+	x.h.hk.inStoreWideLock = func() { time.Sleep(150 * time.Millisecond) }
 	for i := 0; i < 3; i++ {
 		a := fmt.Sprintf("github/Own%d/r", i)
 		b := fmt.Sprintf("github/own%d/r2", i)
@@ -2008,9 +2003,7 @@ func TestAPushAsksOwnersForABoundedTimeInAll(t *testing.T) {
 	}
 	x := newRecv(t)
 	x.seedMain(hubRepo)
-	old := ownerAskTotal
-	ownerAskTotal = 300 * time.Millisecond
-	t.Cleanup(func() { ownerAskTotal = old })
+	x.h.hk.ownerAskTotal = 300 * time.Millisecond
 	var asks atomic.Int32
 	x.h.Cards = func(ctx context.Context, room, card string) (CardState, error) {
 		asks.Add(1)
@@ -2048,7 +2041,7 @@ func TestRefNamesAreCheckedBeforeTheRepositoryLockIsTaken(t *testing.T) {
 	x.branch("fix/x", "x.txt")
 	l := x.h.lock("store:" + strings.ToLower(hubRepo))
 	var calls, held atomic.Int32
-	inNameCheck = func() {
+	x.h.hk.inNameCheck = func() {
 		calls.Add(1)
 		if !l.TryLock() {
 			held.Add(1)
@@ -2056,7 +2049,6 @@ func TestRefNamesAreCheckedBeforeTheRepositoryLockIsTaken(t *testing.T) {
 		}
 		l.Unlock()
 	}
-	t.Cleanup(func() { inNameCheck = nil })
 	x.must(x.push(roomCard("sg4", "C1"), hubRepo, "fix/x:refs/heads/fix/x"))
 	if calls.Load() == 0 {
 		t.Fatal("no ref name was checked")

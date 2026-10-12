@@ -68,9 +68,6 @@ func (h *Hub) lookupCommit(ctx context.Context, q URLQuery) URLAnswer {
 	return URLAnswer{State: URLNotFound, Note: "no branch on the hub has commit " + sha}
 }
 
-// onContains is told of each repository whose branches are searched, which is only one that has the object. Tests only.
-var onContains func(dir string)
-
 // branchContaining is a branch of a bare repository that has sha (hex, 7 to 40) in its history, and its tip, or "".
 func (s *Store) branchContaining(ctx context.Context, dir, sha string) (string, string) {
 	if dir == "" || !isHex(sha) {
@@ -79,8 +76,8 @@ func (s *Store) branchContaining(ctx context.Context, dir, sha string) (string, 
 	if _, err := s.git(ctx, dir, "cat-file", "-e", sha+"^{commit}"); err != nil {
 		return "", ""
 	}
-	if onContains != nil {
-		onContains(dir)
+	if s.h.hk.onContains != nil {
+		s.h.hk.onContains(dir)
 	}
 	out, err := s.git(ctx, dir, "for-each-ref", "--contains", sha, "--format=%(refname:lstrip=2) %(objectname)", "refs/heads")
 	if err != nil {

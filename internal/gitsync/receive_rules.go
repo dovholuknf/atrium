@@ -111,21 +111,19 @@ func kin(p Pusher, ref, room, card string) bool {
 }
 
 // What one push may ask of the link, in all: how many owners' rooms, and for how long. Past either, the owners
-// not asked are treated as unreachable, which keeps their branches owned and says so. Variables for the tests.
-var (
-	maxOwnerAsks  = 8
-	ownerAskTotal = 10 * time.Second
-)
+// not asked are treated as unreachable, which keeps their branches owned and says so. A test shortens the time with
+// the hub's `hk.ownerAskTotal`.
+const maxOwnerAsks = 8
 
 // askOwners puts the one question a push may need answered, BEFORE the lock: for each branch the push
 // updates that is owned by another card, is that card finished? One push asks at most maxOwnerAsks rooms
-// and for ownerAskTotal, so it cannot hold a link connection for long.
+// and for defaultOwnerAskTotal, so it cannot hold a link connection for long.
 func (rc *Receiver) askOwners(ctx context.Context, repo string, p Pusher, req pushRequest) map[string]ownerVerdict {
 	asked := map[string]ownerVerdict{}
 	if p.Operator {
 		return asked
 	}
-	ctx, cancel := context.WithTimeout(ctx, ownerAskTotal)
+	ctx, cancel := context.WithTimeout(ctx, rc.h.ownerAskLimit())
 	defer cancel()
 	count := 0
 	for _, u := range req.Updates {
@@ -150,10 +148,6 @@ func (rc *Receiver) askOwners(ctx context.Context, repo string, p Pusher, req pu
 	return asked
 }
 
-// inNameCheck, when set, runs before each `git check-ref-format`. Tests use it to see whether the repository's
-// lock is held at that moment.
-var inNameCheck func()
-
 // checkNames is the verdict on each ref's NAME, made before the lock: the name does not depend on anything the lock
 // holds, and `git check-ref-format` is a process per ref. A ref that is fine has no entry.
 func (rc *Receiver) checkNames(ctx context.Context, req pushRequest) map[string]string {
@@ -172,8 +166,8 @@ func (rc *Receiver) checkNames(ctx context.Context, req pushRequest) map[string]
 			bad[u.Ref] = why
 			continue
 		}
-		if inNameCheck != nil {
-			inNameCheck()
+		if rc.h.hk.inNameCheck != nil {
+			rc.h.hk.inNameCheck()
 		}
 		if _, err := rc.h.Store().git(ctx, "", "check-ref-format", u.Ref); err != nil {
 			bad[u.Ref] = "git does not take " + label + " as a ref name"
