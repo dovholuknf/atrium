@@ -44,8 +44,10 @@ func captureEnv(prepare, cwd string) (map[string]string, error) {
 	// dump succeeds, so the launch reports nothing and the agent starts
 	// without the tools it was prepared for.
 	//
-	// -AsArray so a prepare command that somehow leaves one variable still
-	// produces a list rather than a bare object.
+	// @() through -InputObject so a prepare command that somehow leaves one
+	// variable still produces a list rather than a bare object. -AsArray would
+	// say the same but exists only in PowerShell 7, and Windows PowerShell 5.1
+	// rejects it.
 	//
 	// The dump is fenced because the profile and the command may both print.
 	// See fenced.
@@ -54,7 +56,7 @@ func captureEnv(prepare, cwd string) (map[string]string, error) {
 	script := `$ErrorActionPreference = 'Stop'
 ` + prepare + `
 Write-Output ` + fence + `
-Get-ChildItem env: | Select-Object Name,Value | ConvertTo-Json -Compress -Depth 2 -AsArray
+ConvertTo-Json -Compress -Depth 2 -InputObject @(Get-ChildItem env: | Select-Object Name,Value)
 Write-Output ` + fence
 
 	ctx, cancel := context.WithTimeout(context.Background(), prepareTimeout)
