@@ -199,12 +199,8 @@ if (soloBus) {
     // nothing itself.
     if (m.type === "win-toast" && m.win === thisWindowSays) {
       // A ready alert for the card this window is reading is not said here,
-      // whoever raised it. Logged.
-      if (m.ready && termWatching(m.taskFor)) {
-        logKind = m.kind || "";
-        try { recordToLog(m.title || "", m.body || "", "stack", "", m.taskFor); } finally { logKind = ""; }
-        return;
-      }
+      // whoever raised it. Not logged either.
+      if (m.ready && termWatching(m.taskFor)) return;
       logKind = m.kind || "";
       try { toast(m.title || "", m.body || "", m.goTo || "", m.key || null, m.taskFor || null); } finally { logKind = ""; }
       return;
@@ -1156,13 +1152,11 @@ const alerting = (() => {
     // as seen: they were announced, by the window that owns them.
     fresh = fresh.filter(i => !poppedOut(i.task_id || i.id));
     // A FOCUSED WINDOW SHOWING THE CARD SAYS NOTHING ABOUT IT, in every window:
-    // no toast, no sound, and none forwarded. See `readySilenced`. Logged, since
-    // the log is the record.
+    // no toast, no sound, and none forwarded. See `readySilenced`. Not logged
+    // either, since the bell counts what you did not see.
     if (kind === "waiting" || kind === "looksidle") {
       fresh = fresh.filter(i => {
         if (!readySilenced(i.task_id || i.id)) return true;
-        const q = describe(i);
-        recordToLog(q.title, q.body, "stack", "", i.task_id || i.id);
         return false;
       });
     }

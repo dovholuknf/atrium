@@ -524,7 +524,7 @@ async function termSettings(e) {
       tip: "This card's window opens at whatever size it is right now.",
       act: () => {
         rememberPopOutSize(t.id, outerWidth, outerHeight, false);
-        toast("size remembered", `${Math.round(outerWidth)} by ${Math.round(outerHeight)}`);
+        toastUnlogged("size remembered", `${Math.round(outerWidth)} by ${Math.round(outerHeight)}`);
       }
     } : null,
     termOnly() ? {
@@ -532,7 +532,7 @@ async function termSettings(e) {
       tip: "Every card without a size of its own opens at this one.",
       act: () => {
         rememberPopOutSize(t.id, outerWidth, outerHeight, true);
-        toast("default size set", `${Math.round(outerWidth)} by ${Math.round(outerHeight)}`);
+        toastUnlogged("default size set", `${Math.round(outerWidth)} by ${Math.round(outerHeight)}`);
       }
     } : null,
     own ? {
@@ -540,7 +540,7 @@ async function termSettings(e) {
       tip: "Falls back to the default size.",
       act: () => {
         try { localStorage.removeItem("atrium.popout." + t.id); } catch (err) {}
-        toast("forgotten", "this card opens at the default size now");
+        toastUnlogged("forgotten", "this card opens at the default size now");
       }
     } : null
   ];
@@ -1352,7 +1352,7 @@ function copySelection(quiet) {
   if (!term || !term.hasSelection()) return;
   const text = term.getSelection();
   navigator.clipboard.writeText(text)
-    .then(() => { if (!quiet) toast("copied", `${text.length} characters`); })
+    .then(() => { if (!quiet) toastUnlogged("copied", `${text.length} characters`); })
     .catch(() => { if (!quiet) toast("could not copy", "the browser refused clipboard access"); });
 }
 
@@ -1712,7 +1712,7 @@ async function uploadIntoTerm(files) {
   if (paths && typeof tcomposeInsert === "function" && tcomposeInsert(paths)) pasteEnd("the paths going into the message box");
   else if (paths) sendInput(pre + paths + " ", false, true);
   else pasteEnd("no path back");
-  toast(pastePrefs && pastePrefs.paste_keep === "scrap"
+  toastUnlogged(pastePrefs && pastePrefs.paste_keep === "scrap"
     ? "in the scratch folder" : "in the working directory", paths);
 }
 
@@ -1778,7 +1778,7 @@ async function copyPath(el) {
     toast("could not copy it", e.message);
     return;
   }
-  toast("copied", path);
+  toastUnlogged("copied", path);
 }
 
 // Sorting by most recent activity, so whichever agent just asked for something

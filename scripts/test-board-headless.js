@@ -17536,11 +17536,11 @@ async function readyPopoutSection(browser, base) {
       return out;
     });
     const j = JSON.stringify(got);
-    if (got.pfocus || !got.pfocusLog) fail("readyPopout: a focused pop-out toasted its own card or left no log line: " + j);
+    if (got.pfocus || got.pfocusLog) fail("readyPopout: a focused pop-out toasted its own card or logged it: " + j);
     if (!got.pblur || !got.pblurLog) fail("readyPopout: an unfocused pop-out did not ring for its card: " + j);
     if (got.pbusyEarly || got.pbusyMid) fail("readyPopout: pty output inside the quiet did not delay the ring: " + j);
     if (!got.pbusy) fail("readyPopout: the ring never came after the output went quiet: " + j);
-    if (got.board || !got.boardLog) fail("readyPopout: the focused board toasted the card it shows: " + j);
+    if (got.board || got.boardLog) fail("readyPopout: the focused board toasted or logged the card it shows: " + j);
     if (!got.boardOther) fail("readyPopout: the board went quiet for a card it is not showing: " + j);
     if (errors.length) fail("readyPopout: the page threw: " + errors.join(" | "));
   } finally {
@@ -17791,7 +17791,7 @@ async function readyTwoWindowsSection(browser, base) {
     await b.waitForTimeout(1000);
     const a1 = await state(a), b1 = await state(b);
     if (a1.toasted || a1.osc || b1.toasted || b1.osc) fail("readyTwoWindows: the focused board's card rang in a window: " + JSON.stringify({ a1, b1 }));
-    if (!await logged(b)) fail("readyTwoWindows: the unfocused board left no log line");
+    if (await logged(b)) fail("readyTwoWindows: the focused card's ready was logged");
 
     // 2. A pop-out of X, unfocused, while the board is focused on X.
     await b.evaluate(() => {
@@ -31733,7 +31733,7 @@ async function growlQuietSection(browser, base) {
     // leaving the set is one line
     await h.say([]);
     l = await log();
-    if (l.filter(t => t === "growler ended: permission a").length !== 1) fail("growlQuiet: ending logged " + JSON.stringify(l));
+    if (l.some(t => /^growler ended/.test(t))) fail("growlQuiet: ending logged " + JSON.stringify(l));
     // a snooze coming back open is raised again
     await h.say([Object.assign({}, row, { state: "snoozed" })]);
     // the hub resets raised_at when a snooze ends
@@ -32109,6 +32109,7 @@ async function growlOnItSection(browser, base) {
   const heard = () => p.evaluate(() => ({ osc: window.__osc, notes: window.__notes.length }));
   const drawn = () => p.evaluate(() => !!document.querySelector("#growl .gr-full, #growl .gr-row, #growl") && /\S/.test((document.getElementById("growl") || {}).textContent || ""));
   const logged = t => p.evaluate(t0 => toastLog().some(e => e.title === t0), t);
+  const count = () => p.evaluate(() => toastLog().filter(e => e.at > toastLogSeen()).length);
   // The card attached on the terminals view, and the window state, set the way the page itself would hold them.
   const stage = (card, focus, vis) => p.evaluate(([c, f, v]) => {
     term = new Proxy({}, { get: (_, k) => k === "element" ? null : () => {} }); termTask = { id: c };
@@ -32134,7 +32135,13 @@ async function growlOnItSection(browser, base) {
     await stage("c", true);
     let r = await raise("question");
     if (r.drawn || r.rang || r.noted) fail("growlOnIt: a question for the attached, focused card was " + JSON.stringify(r));
-    if (!(await logged("growler: question c"))) fail("growlOnIt: the quiet question left no log line.");
+    if (await logged("growler: question c") || await count()) fail("growlOnIt: the quiet question entered the log.");
+    // the paste confirmation and the ready alert for the card you are on do not count either
+    await p.evaluate(() => toastUnlogged("in the working directory", "/x/y"));
+    await p.evaluate(() => alerting.check("waiting", [], t => ({ title: t.id + " is ready", body: "" })));
+    await p.evaluate(() => alerting.check("waiting", [{ id: "c", task_id: "c", status: "needs-input", waiting_since: "Z1" }], t => ({ title: t.id + " is ready", body: "" })));
+    await p.waitForTimeout(600);
+    if (await count()) fail("growlOnIt: a paste toast or the focused card's ready counted on the bell.");
     r = await raise("blocked");
     if (r.drawn || r.rang || r.noted) fail("growlOnIt: a blocked card for the attached, focused card was " + JSON.stringify(r));
     // the one false each time: it alerts as today
@@ -32162,6 +32169,7 @@ async function growlOnItSection(browser, base) {
     await h.say([Object.assign({}, r.g, { reminders: 1 })], { remind: [r.g.id] });
     await p.waitForTimeout(200);
     if (!(await drawn())) fail("growlOnIt: a reminder with you elsewhere did not bring the question back.");
+    if (!(await logged("growler: question c"))) fail("growlOnIt: the question that came back was not logged.");
     // with no reminder involved, "you are on it" ending draws the hidden growler, and rings nothing
     const comesBack = async (what, change) => {
       await stage("c", true);
@@ -32193,6 +32201,7 @@ async function growlOnItSection(browser, base) {
     // an empty set first, since a window's first event only seeds
     await h.say([]);
     await pop.waitForTimeout(300);
+    await p.evaluate(() => { localStorage.removeItem("atrium.toastlog"); paintToastLogBadge(); });
     const bh0 = await p.evaluate(() => window.__notes.length);
     const osc0 = await p.evaluate(() => window.__osc);
     const q = GR("c", "question", ++n);
@@ -32201,7 +32210,7 @@ async function growlOnItSection(browser, base) {
     if (await drawn()) fail("growlOnIt: the board drew a question for a card whose pop-out is focused.");
     const inPop = await pop.evaluate(() => /\S/.test((document.getElementById("growl") || {}).textContent || ""));
     if (inPop) fail("growlOnIt: the focused pop-out drew a question for its own card.");
-    if (!(await logged("growler: question c"))) fail("growlOnIt: the pop-out case left no log line.");
+    if (await logged("growler: question c")) fail("growlOnIt: the pop-out case logged a growler you were on.");
     const bh = await heard();
     if (bh.osc !== osc0 || bh.notes !== bh0) fail("growlOnIt: the board rang for the pop-out's card: " + JSON.stringify(bh));
     // the pop-out blurs: the hidden growler is drawn on the board, with no reminder and no ring

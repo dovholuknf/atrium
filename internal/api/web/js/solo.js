@@ -782,12 +782,9 @@ function soloSpeak(kind, item) {
     return;
   }
   // A focused window on this card, this one or another, has nothing to say
-  // about it, not even a toast. Logged. With none focused on it this window
+  // about it, not even a toast, and it is not logged. With none focused on it this window
   // rings, since it owns the card.
-  if (kind === "ready" && readySilenced(soloID)) {
-    recordToLog(title, body, "stack", "", soloID);
-    return;
-  }
+  if (kind === "ready" && readySilenced(soloID)) return;
   alerting.play(kind === "perm" ? "permission" : "waiting", soloTask && soloTask.sound);
   // THIS WINDOW NO LONGER DECIDES THE FORM ON ITS OWN, and that is the fix.
   //

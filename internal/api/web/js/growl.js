@@ -80,7 +80,7 @@ function growlDrawn() {
 
 // NOT DRAWN, BECAUSE YOU ARE ALREADY ON IT. A question or a blocked card raised while its own terminal is attached,
 // the tab visible and the window focused repeats what is on screen, so it is not drawn, not rung and not notified.
-// It is still logged, once, as a raise always is. The ids are the growlers hidden that way, kept until the growler
+// It is not logged either, since the bell counts what you did not see: it is logged if it later draws. The ids are the growlers hidden that way, kept until the growler
 // leaves the set or a reminder finds you looking elsewhere, when it draws like any other. Permissions, halts and
 // deploy holds are never quiet: a permission blocks the card, and the other two are not about one terminal.
 const growlQuiet = new Set();
@@ -99,7 +99,11 @@ function growlRecheck() {
   let back = false;
   growlQuiet.forEach(id => {
     const g = growlSet.find(x => x.id === id);
-    if (!g || g.state !== "open" || !growlOnIt(g)) { growlQuiet.delete(id); back = true; }
+    if (!g || g.state !== "open" || !growlOnIt(g)) {
+      growlQuiet.delete(id);
+      back = true;
+      if (g && g.state === "open") growlLog("growler", g);
+    }
   });
   if (back) { growlDraw(); growlAttention(); }
 }
@@ -149,13 +153,9 @@ function growlApply(next, seed, remind) {
     next.forEach(g => {
       const w = was.get(g.id);
       if (g.state === "open" && (!w || w.state !== "open")) {
-        growlLog("growler", g);
-        if (growlOnIt(g)) growlQuiet.add(g.id); else { growlQuiet.delete(g.id); raised.push(g); }
+        if (growlOnIt(g)) growlQuiet.add(g.id); else { growlQuiet.delete(g.id); growlLog("growler", g); raised.push(g); }
       }
       if (g.state === "snoozed" && w && w.state === "open") growlLog("growler snoozed", g);
-    });
-    growlSet.forEach(g => {
-      if (g.state === "open" && !now.has(g.id)) growlLog("growler ended", g);
     });
   }
   growlSet = next;

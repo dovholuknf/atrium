@@ -93,6 +93,13 @@ toast = function (title, body, goTo, key, taskFor) {
   return rawToast(title, body, goTo, key, taskFor);
 };
 
+// A toast that confirms what you just did, on a screen you are looking at, is not a thing you missed, so it is
+// shown and not logged.
+function toastUnlogged(title, body) {
+  if (phoneToasts()) { nudgeBell("bell"); return phoneToastStub; }
+  return rawToast(title, body);
+}
+
 // HOW MANY HAVE ARRIVED SINCE YOU LAST LOOKED, which is the number that says
 // whether opening this is worth it. Stored rather than counted from the list,
 // because the list is trimmed and a count that shrinks when old entries fall
