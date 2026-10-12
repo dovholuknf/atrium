@@ -808,6 +808,24 @@
   .peek-scale { letter-spacing: 0; }
   .peek-scale span { overflow: hidden; text-overflow: ellipsis; }
   .peek-scale span:first-child { flex: none; }
+  /* DRAWERS (peekDrawers, js/peek.js): a header line with a one-line summary, the section under it when open. */
+  .peek-drawer { margin: 0 0 4px; }
+  .peek-drawer[hidden] { display: none; }
+  .peek-dh {
+    display: flex; align-items: baseline; gap: 8px; min-width: 0; padding: 2px 0; cursor: pointer;
+    font: var(--fs-xxs) var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--dim);
+  }
+  .peek-dh::before { content: "\25B8"; flex: none; width: 1em; }
+  .peek-drawer.open > .peek-dh::before { content: "\25BE"; }
+  .peek-dh:hover, .peek-dh:focus-visible { color: var(--head); }
+  .peek-dh b { flex: none; font-weight: 600; }
+  .peek-drawer[data-key="need"] > .peek-dh b { color: var(--warn); }
+  .peek-dsum { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-transform: none; letter-spacing: 0; font: var(--fs-sm) var(--sans); color: var(--body); }
+  .peek-drawer.open > .peek-dh .peek-dsum { display: none; }
+  .peek-dbody { padding-left: 1em; }
+  .peek-dbody > .peek-sec, .peek-dbody > .peek-recap { margin-bottom: 4px; }
+  .peek-dbody .chat-title { display: none; }
+  .peek-dbody > .peek-sec.chatter { margin-top: 0; }
   .peek-acts { display: flex; gap: 6px; margin-top: 8px; }
   .peek-act {
     padding: 3px 10px; font: inherit; font-size: var(--fs-xs); color: var(--dim);
