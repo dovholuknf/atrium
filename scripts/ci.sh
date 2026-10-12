@@ -98,6 +98,8 @@ step "go build"
 # would be blocked by the repository's own hook is a script nobody can run
 # locally, which is the one thing this file exists to avoid.
 check "go build" go build -o build.claude/ ./...
+# No test assigns a package variable: a hook, delay, limit or clock belongs on the struct that uses it.
+check "test globals" go run scripts/check-test-globals.go
 
 step "go test"
 # 20 minutes, not go test's 10. internal/daemon is about 1600 tests and takes
