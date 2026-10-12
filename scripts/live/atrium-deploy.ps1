@@ -99,6 +99,18 @@ function Report {
   Say "could not say the result to ${ReportTo}: $($Error[0].Exception.Message)"
 }
 
+# Test-Unheld answers whether a room that came back has lifted its deploy hold, within 30s. A room left held refuses
+# every launch and every agent's next call, so it is not a success however healthy it looks (2026-10-12: claude-sg4).
+function Test-Unheld([string]$Url, [hashtable]$Headers = @{}) {
+  if ($WhatIf) { return $true }
+  for ($i = 0; $i -lt 6; $i++) {
+    try { if (-not (Invoke-RestMethod $Url -Headers $Headers -TimeoutSec 10).hold) { return $true } } catch {}
+    Start-Sleep -Seconds 5
+  }
+  return $false
+}
+$heldMsg = 'failed - came back but its deploy hold is still on, so it refuses launches'
+
 # 1. Build, once, from a clean claude/main. build-deploy.ps1 refuses anything else.
 if (-not $NoBuild) {
   & "$PSScriptRoot\build-deploy.ps1" -WhatIf:$WhatIf
@@ -167,7 +179,9 @@ foreach ($name in $remoteNames) {
   $RoomName = $name
   $back = Wait-RoomAttached $start
   $RoomName = $saved
-  $results[$name] = if ($back) { 'success' } else { 'failed - restarted but not back on the hub' }
+  $results[$name] = if (-not $back) { 'failed - restarted but not back on the hub' }
+    elseif (-not (Test-Unheld 'http://127.0.0.1:7778/v1/hold' @{ 'X-Atrium-Room' = $name })) { $heldMsg }
+    else { 'success' }
 }
 
 # 3. The hub, with claude-sg4 when it is named. Run as child scripts, so their own checks and reverts apply.
@@ -182,6 +196,7 @@ if ($want -contains 'claude-sg4') {
     default { $results['claude-sg4'] = "failed - exit $code, see deploy-batch.log"
       if ($results.Contains('hub')) { $results['hub'] = "failed - exit $code, see deploy-batch.log" } }
   }
+  if ($code -eq 0 -and -not (Test-Unheld $RoomHoldUrl)) { $results['claude-sg4'] = $heldMsg }
 } elseif ($want -contains 'hub') {
   & "$PSScriptRoot\deploy-hub-only.ps1" -WhatIf:$WhatIf -NoGate
   $code = $LASTEXITCODE
@@ -202,8 +217,10 @@ if ($want -contains 'sg4-control') {
       Select-Object -Skip 3 | ForEach-Object { Remove-Item $_.FullName -Force -ErrorAction SilentlyContinue }
   }
   & "$PSScriptRoot\start-atrium-control.ps1" -WhatIf:$WhatIf
-  $results['sg4-control'] = if ($WhatIf) { 'success (WhatIf)' } elseif (Test-Up $CtlHealth) { 'success' }
-    else { 'failed - not answering after start, see ctl\room.err' }
+  $results['sg4-control'] = if ($WhatIf) { 'success (WhatIf)' }
+    elseif (-not (Test-Up $CtlHealth)) { 'failed - not answering after start, see ctl\room.err' }
+    elseif (-not (Test-Unheld 'http://127.0.0.1:7791/v1/hold')) { $heldMsg }
+    else { 'success' }
 }
 
 Say "commit $($commit.Substring(0, 8))"

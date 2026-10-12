@@ -57,6 +57,22 @@ func TestADeployHoldRefusesAHeldCallAndNotTheDeployers(t *testing.T) {
 	}
 }
 
+// A held card removed before the lift (a throwaway that ended) must not keep the room held: on 2026-10-12 one did, and
+// every launch on claude-sg4 was refused until the hold ran out.
+func TestAHoldLiftsWhenAHeldCardWasRemoved(t *testing.T) {
+	t.Parallel()
+	d, worker, _ := heldRoom(t)
+	if err := d.st.Forget(worker.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := d.liftDeployHold(HoldOutcomeCancelled, "merge", "stale"); err != nil {
+		t.Fatalf("lift: %v", err)
+	}
+	if hs, _ := d.st.RoomHolds(); len(hs) != 0 {
+		t.Fatalf("still held: %+v", hs)
+	}
+}
+
 func TestAnExemptCardIsNotHeld(t *testing.T) {
 	t.Parallel()
 	d := testDaemon(t)

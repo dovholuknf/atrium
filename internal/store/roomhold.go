@@ -218,9 +218,10 @@ func (s *Store) LiftRoomHold(kind, id, outcome string, wakes map[string]string) 
 			if !lifted.Holds(card) {
 				continue
 			}
+			// A held card removed since (a throwaway, a close) has nothing to tell, and must not keep the hold on.
 			if _, err := s.appendEventOn(tx, card, EventNotified, map[string]any{
 				"by": EventHoldLifted, "hold": lifted.ID, "outcome": outcome,
-			}); err != nil {
+			}); err != nil && !errors.Is(err, sql.ErrNoRows) {
 				return err
 			}
 		}
@@ -233,7 +234,7 @@ func (s *Store) LiftRoomHold(kind, id, outcome string, wakes map[string]string) 
 			}
 			if _, err := s.appendEventOn(tx, card, EventNotified, map[string]any{
 				"by": EventResumeContinue, "hold": lifted.ID,
-			}); err != nil {
+			}); err != nil && !errors.Is(err, sql.ErrNoRows) {
 				return err
 			}
 		}
