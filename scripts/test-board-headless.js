@@ -22113,6 +22113,8 @@ async function termEndedSection(browser, base) {
         card("ex", "done", { display_title: "plain exit", last_activity_at: h(50) }),
         card("r2~rm", "done", { room: "r2", display_title: "remote ended", report_sha: "abcdef0123456789", last_activity_at: h(1) })];
       boardCards = async () => window.__cards;
+      // The ended group is the dead chip's, so the chip is on to see it.
+      localStorage.setItem(termDeviceKey("atrium.terms.show"), '["dead"]');
       });
       await p.waitForTimeout(1500);
       await p.evaluate(async () => { switchView("terms"); await renderTermList(); });
@@ -28493,7 +28495,7 @@ async function main() {
       coverPoll: coverPollSection, coverSteps: coverStepsSection, termBox: termBoxSection, termRowBleed: termRowBleedSection,
       termDebug: termDebugSection, termDebugPerCard: termDebugPerCardSection, termLag: termLagSection, termHiddenRedraw: termHiddenRedrawSection, termLastRead: termLastReadSection, termSortStarted: termSortStartedSection,
       noReadyChildren: noReadyChildrenSection, childUnderParent: childUnderParentSection, topNav: topNavSection, boardUsage: boardUsageSection, tabsOrder: tabsOrderSection,
-      u002: u002Section, childFold: childFoldSection, liveHome: liveHomeSection,
+      u002: u002Section, childFold: childFoldSection, liveHome: liveHomeSection, toastsTop: toastsTopSection, groupBridge: groupBridgeSection, revealFolds: revealFoldsSection,
       pulls: pullsSection, prMove: prMoveSection, quickPaste: quickPasteSection, recogniserRepo: recogniserRepoSection, hubRepos: hubReposSection, hubReposShelf: hubReposShelfSection, hubReposLedger: hubReposLedgerSection, hubReposFeed: hubReposFeedSection, changeReq: changeReqSection, mChangeReq: mChangeReqSection, trayHead: trayHeadSection, pullsAbsent: pullsAbsentSection, pullsPanelStage: pullsPanelStageSection, oneTooltip: oneTooltipSection, burnChart: burnChartSection, burnReadout: burnReadoutSection, switchPrewarm: switchPrewarmSection, attachAtOnce: attachAtOnceSection, fileView: fileViewSection, keepAlive: keepAliveSection, switchBackCost: switchBackCostSection, keepMemory: keepMemorySection, pullsDrawer: pullsDrawerSection };
     try {
       const unknown = ONLY.split(",").filter(n => typeof only[n] !== "function");
