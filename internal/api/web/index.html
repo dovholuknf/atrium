@@ -75,6 +75,7 @@
 <link rel="stylesheet" href="/css/cardurl.css">
 <link rel="stylesheet" href="/m/compose.css">
 <link rel="stylesheet" href="/m/docs.css">
+<link rel="stylesheet" href="/m/files.css">
 <!-- SWITCHING ROOMS IS A RELOAD, AND A RELOAD IS TWO VIEWS.
      The board comes up on the stack, because that is what the markup says, and
      then the script puts you back on the view you were reading. Between those
@@ -168,6 +169,7 @@
       <div class="tab" data-view="history">history</div>
       <div class="tab" data-view="usage">usage</div>
       <div class="tab" data-view="docs" hidden>documents</div>
+      <div class="tab" data-view="files" hidden>files</div>
       <!-- Put machine configuration and the permissions audit after the daily work views.
            Called `rooms` because a room is the machine, and everything under this tab is a
            fact about one: its runners, its fixtures, its sources, its recognisers, its
@@ -3880,6 +3882,7 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
 <script src="/m/js/util.js"></script>
 <script src="/m/js/md.js"></script>
 <script src="/m/js/docs.js"></script>
+<script src="/m/js/files.js"></script>
 <script src="/js/tcompose.js"></script>
 <script src="/js/walk.js"></script>
 <script src="/js/turn-limits.js"></script>

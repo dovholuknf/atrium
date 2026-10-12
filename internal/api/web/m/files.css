@@ -1,0 +1,14 @@
+/* The hub file drop's table. The sheet, its header, buttons and usage meter are docs.css's. See js/files.js. */
+.f-rows { display: flex; flex-direction: column; gap: 2px; }
+.f-row { display: grid; grid-template-columns: minmax(0, 3fr) 5em minmax(0, 2fr) 6em 6em auto; align-items: center; gap: 8px; padding: 6px 10px; border-radius: 10px; background: var(--card-0, #16324d); box-shadow: 0 0 0 1px var(--stroke-dim, #25506f); }
+.f-row.f-h { background: none; box-shadow: none; color: var(--dim, #5e819c); font-size: calc(var(--m-fs, 14px) * .85); }
+.f-row.soon .f-exp { color: var(--warn, #ffc64d); font-weight: 600; }
+.f-c { min-width: 0; overflow-wrap: anywhere; }
+.f-name { display: flex; flex-direction: column; gap: 2px; }
+.f-dl { color: var(--teal, #00e3b0); }
+.f-note { color: var(--dim, #5e819c); font-size: calc(var(--m-fs, 14px) * .85); }
+@media (max-width: 640px) {
+  .f-row { grid-template-columns: 1fr 1fr; }
+  .f-row.f-h { display: none; }
+  .f-name, .f-act { grid-column: 1 / -1; }
+}

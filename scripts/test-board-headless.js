@@ -324,7 +324,8 @@ let typingPolls = [];
 // Every PATCH that set a card's alias. See `aliasSection`.
 let aliasWrites = [];
 
-let boardDocs = false;     // whether the mock answers /_hub/docs, as a hub with documents does
+const filesDeleted = [];  // what the mock's /_hub/files delete was asked for
+let boardDocs = false;    // whether the mock answers /_hub/docs, as a hub with documents does
 let tasksMode = "first";   // first | hang | second | pinned | loop | worn | untagged | land
 // One card per shipped terminal theme, filled in from the page's own table by
 // the card-colours section, plus one with no theme that takes the repo default.
@@ -936,6 +937,20 @@ const server = http.createServer((req, res) => {
     if (url.startsWith("/_hub/docs/board-doc/raw")) { res.writeHead(200, { "Content-Type": "application/octet-stream" }); res.end("# Board doc\n\nhello"); return; }
     if (url === "/_hub/docs/board-doc") { sendJSON(res, { slug: "board-doc", title: "Board doc", created: v.at, deleted: null, versions: [v] }); return; }
     if (url.startsWith("/_hub/docs")) { sendJSON(res, { docs: [{ slug: "board-doc", title: "Board doc", created: v.at, updated: v.at, versions: 1, latest: v, deleted: null }], usage: { bytes: 14, cap: 1000000 } }); return; }
+  }
+  if (url.startsWith("/_hub/files")) {
+    // The hub file drop, for the board's files tab. It rides the documents flag: a hub with one has the other.
+    if (!boardDocs) { res.writeHead(404); res.end("not a hub"); return; }
+    if (url === "/_hub/files" && req.method === "GET") {
+      const now = Date.now();
+      sendJSON(res, { files: [
+        { name: "report.pdf", size: 2048, origin: "card", by: "card-a", room: "box", note: "the numbers", at: new Date(now - 3600000).toISOString(), expires: new Date(now + 5 * 86400000).toISOString() },
+        { name: "old log.txt", size: 512, origin: "local", by: "", room: "", note: "", at: new Date(now - 86400000).toISOString(), expires: new Date(now + 3600000 * 5).toISOString() },
+      ], usage: { bytes: 2560, cap: 1000000 } });
+      return;
+    }
+    if (url.endsWith("/delete") && req.method === "POST") { filesDeleted.push(decodeURIComponent(url.split("/")[3])); sendJSON(res, { ok: true }); return; }
+    res.writeHead(404); res.end("no such files route"); return;
   }
   if (url === "/_hub/rooms") {
     if (!hubMode) { res.writeHead(404); res.end("not a hub"); return; }
@@ -24659,6 +24674,58 @@ async function phoneBoardCompactSection(browser, base) {
   if (!bad) console.log("phoneBoardCompact ok");
 }
 
+// The desktop board's files tab, the hub file drop. Hidden on a board with no /_hub/files.
+async function boardFilesSection(browser, base) {
+  const was = tasksMode, wasDocs = boardDocs;
+  tasksMode = "land";
+  landList = [];
+  landPerms = [];
+  try {
+    for (const on of [false, true]) {
+      boardDocs = on;
+      const tag = "boardFiles " + (on ? "with" : "without") + " a hub: ";
+      const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+      await ctx.addInitScript(() => localStorage.setItem("atrium.skipconfirm", JSON.stringify({ "width-floor": true })));
+      const p = await ctx.newPage();
+      const errors = [];
+      p.on("pageerror", e => errors.push(String(e)));
+      await p.goto(base, { waitUntil: "domcontentloaded" });
+      await p.waitForSelector('header nav .tab[data-view="stack"]', { timeout: slow(15000) });
+      await p.waitForTimeout(800);
+      const shown = await p.evaluate(() => { const t = document.querySelector('.tab[data-view="files"]'); return !!t && !t.hidden; });
+      if (shown !== on) fail(tag + "the files tab is " + (shown ? "shown" : "hidden"));
+      if (on) {
+        await p.evaluate(() => document.querySelector('.tab[data-view="files"]').click());
+        await p.waitForSelector("#m-files .f-row:not(.f-h)", { timeout: slow(5000) });
+        const rows = await p.evaluate(() => [...document.querySelectorAll("#m-files .f-row:not(.f-h)")].map(r => ({ soon: r.classList.contains("soon"), href: r.querySelector("a.f-dl").getAttribute("href"), text: r.textContent })));
+        if (rows.length !== 2) fail(tag + "expected two rows, got " + rows.length);
+        else {
+          if (rows[0].href !== "/_hub/files/report.pdf/raw") fail(tag + "the download link is " + rows[0].href);
+          if (rows[1].href !== "/_hub/files/old%20log.txt/raw") fail(tag + "the download link of a spaced name is " + rows[1].href);
+          if (rows[0].soon || !rows[1].soon) fail(tag + "only the file going within a day is marked: " + JSON.stringify(rows.map(r => r.soon)));
+          if (!/the numbers/.test(rows[0].text) || !/card-a@box/.test(rows[0].text)) fail(tag + "the note or the origin is not drawn: " + rows[0].text);
+        }
+        if (!/used/.test(await p.textContent("#m-files .d-usage"))) fail(tag + "no usage line");
+        // delete asks in the page first, and keeping it asks nothing of the hub
+        await p.click("#m-files .f-row:not(.f-h) .f-act button");
+        await p.waitForSelector("#m-files .d-sure", { timeout: slow(3000) });
+        await p.click("#m-files .d-sure button:last-child");
+        if (filesDeleted.length) fail(tag + "keep it still deleted something");
+        await p.click("#m-files .f-row:not(.f-h) .f-act button");
+        await p.click("#m-files .d-sure .d-warn");
+        await p.waitForFunction(() => true, null, { timeout: slow(1000) });
+        await p.waitForTimeout(400);
+        if (filesDeleted[0] !== "report.pdf") fail(tag + "delete asked for " + JSON.stringify(filesDeleted));
+        await p.click("#m-files .d-back");
+        await p.waitForFunction(() => document.getElementById("m-files").hidden, null, { timeout: slow(3000) });
+      }
+      if (errors.length) fail(tag + "page errors: " + errors.join(" | "));
+      await ctx.close();
+    }
+  } finally { tasksMode = was; boardDocs = wasDocs; filesDeleted.length = 0; }
+  if (!bad) console.log("boardFiles ok");
+}
+
 // The desktop board's documents tab and panel, shared with /m. Off on a board with no /_hub/docs.
 async function boardDocsSection(browser, base) {
   const was = tasksMode, wasDocs = boardDocs;
@@ -28407,7 +28474,7 @@ async function main() {
   // HEADLESS_ONLY=termWear,bridge, or `node scripts/test-board-headless.js termWear bridge`, runs just those sections, for working on one.
   // An unknown name exits 2 and runs nothing.
   const ONLY = process.env.HEADLESS_ONLY || process.argv.slice(2).join(",");
-  if (ONLY) {    const only = { closeOneDialog: closeOneDialogSection, boardDocs: boardDocsSection, phoneBoardCompact: phoneBoardCompactSection, termWear: termWearSection, bridge: bridgeSection, detailsHover: detailsHoverSection, detailsSide: detailsSideBySideSection, chatter: chatterSection, chatterTab: chatterTabSection, settingsOnce: settingsOnceSection,
+  if (ONLY) {    const only = { closeOneDialog: closeOneDialogSection, boardDocs: boardDocsSection, boardFiles: boardFilesSection, phoneBoardCompact: phoneBoardCompactSection, termWear: termWearSection, bridge: bridgeSection, detailsHover: detailsHoverSection, detailsSide: detailsSideBySideSection, chatter: chatterSection, chatterTab: chatterTabSection, settingsOnce: settingsOnceSection,
       groupRemove: groupRemoveSection, worn: wornSection, restartGate: restartGateSection, restartStays: restartStaysSection, atriumDown: atriumDownSection,
       toastStays: toastStaysSection, groupColor: groupColorSection,
       groupDrag: groupDragSection, tooltip: tooltipSection, linkTip: linkTipSection, fileOpenOutside: fileOpenOutsideSection, readTabSize: readTabSizeSection, readWidthSkin: readWidthSkinSection, popoutTagFlip: popoutTagFlipSection, prefsEverywhere: prefsEverywhereSection, mPrefsEverywhere: (b) => mPrefsEverywhereSection(b), idleRate: idleRateSection, foldStill: foldStillSection,
@@ -30579,6 +30646,7 @@ async function main() {
     await unit("mHomeLive", () => mHomeLiveSection(browser));
     await unit("soundPhone", () => soundPhoneSection(browser, base));
     await unit("boardDocs", () => boardDocsSection(browser, base));
+    await unit("boardFiles", () => boardFilesSection(browser, base));
     await unit("switcherRank", () => switcherRankSection(browser, base));
     await unit("revealFolds", () => revealFoldsSection(browser, base));
     await unit("groupBridge", () => groupBridgeSection(browser, base));
