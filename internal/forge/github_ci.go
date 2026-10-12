@@ -218,7 +218,7 @@ func (g *github) Download(ctx context.Context, ref Ref, runID int64, name, dest 
 			release()
 		}
 	}()
-	PruneDownloads(dest, pruneAge, pruneBytes)
+	PruneDownloads(dest, pruneAge, g.pruneBytes)
 	if d, err := scanDir(dir, maxBytes); err == nil && len(d.Files) > 0 {
 		// A hit is a use: it keeps the folder from aging out.
 		now := time.Now()
@@ -349,11 +349,8 @@ const (
 	tmpMark       = ".dl-"
 )
 
-// pruneAge and pruneBytes are the bounds a download prunes by. Variables so a test can make them small.
-var (
-	pruneAge   = ArtifactMaxAge
-	pruneBytes = int64(ArtifactStoreBytes)
-)
+// pruneAge is how old a download may get. A test makes the byte bound small with `github.pruneBytes`.
+var pruneAge = ArtifactMaxAge
 
 var (
 	useMu sync.Mutex

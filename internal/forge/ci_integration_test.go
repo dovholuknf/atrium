@@ -248,11 +248,9 @@ func TestCIConcurrentDownloadsOfOneArtifactDoNotRace(t *testing.T) {
 // A DOWNLOAD IN USE IS NEVER PRUNED: another download's prune, with a cap that would take it, leaves it alone, and takes
 // it once it is released.
 func TestPruneNeverTakesADownloadInUse(t *testing.T) {
-	old := pruneBytes
-	pruneBytes = 1
-	t.Cleanup(func() { pruneBytes = old })
 	f := &fakeGH{dl: map[string]string{"summary.txt": "some bytes\n"}}
 	g := newGitHub("", f.run)
+	g.pruneBytes = 1
 	dest := t.TempDir()
 	a, err := g.Download(context.Background(), ciRef, 1, "ci", dest, 0)
 	if err != nil {

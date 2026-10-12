@@ -226,9 +226,8 @@ func TestBrokenRulesRefuseToLoad(t *testing.T) {
 
 // A check that panics denies the call rather than letting it through.
 func TestPanicDenies(t *testing.T) {
-	checks["boom"] = func(*evalCtx, *Rule) (bool, string) { panic("kaboom") }
-	defer delete(checks, "boom")
-	rs, err := Load([]byte(`{"rules":[{"id":"b","check":"boom","tools":["shell"],"reason":"r"}]}`))
+	table := map[string]checkFunc{"boom": func(*evalCtx, *Rule) (bool, string) { panic("kaboom") }}
+	rs, err := loadWith([]byte(`{"rules":[{"id":"b","check":"boom","tools":["shell"],"reason":"r"}]}`), table)
 	if err != nil {
 		t.Fatal(err)
 	}

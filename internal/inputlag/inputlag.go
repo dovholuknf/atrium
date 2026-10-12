@@ -36,15 +36,22 @@ const Env = "ATRIUM_DEBUG_INPUTLAG"
 // is eating the budget before it adds up.
 const defaultThreshold = 20 * time.Millisecond
 
-// threshold is read on every keystroke hop and written by a settings save on
-// another goroutine, so it is atomic. Nanoseconds, zero meaning off.
-var threshold atomic.Int64
+// Switch is the logging switch. The threshold is read on every keystroke hop and written by a settings save on
+// another goroutine, so it is atomic. Nanoseconds, zero meaning off. `pinned` is whether the variable was set at
+// start, which is what makes it an override rather than a default. A test builds its own.
+type Switch struct {
+	threshold atomic.Int64
+	pinned    bool
+}
 
-// pinned is whether the variable was set at start, which is what makes it an
-// override rather than a default.
-var pinned = strings.TrimSpace(os.Getenv(Env)) != ""
+// std is the process's switch, read from the variable once at start.
+var std = newSwitch(os.Getenv(Env))
 
-func init() { threshold.Store(int64(parse(os.Getenv(Env)))) }
+func newSwitch(env string) *Switch {
+	sw := &Switch{pinned: strings.TrimSpace(env) != ""}
+	sw.threshold.Store(int64(parse(env)))
+	return sw
+}
 
 // parse turns the variable into a threshold, zero meaning off.
 //
@@ -67,30 +74,39 @@ func parse(v string) time.Duration {
 }
 
 // On reports whether the logging is switched on.
-func On() bool { return threshold.Load() > 0 }
+func On() bool { return std.On() }
+
+// On reports whether this switch is on.
+func (sw *Switch) On() bool { return sw.threshold.Load() > 0 }
 
 // Over reports whether a hop took long enough to log. Always false when off.
-func Over(d time.Duration) bool {
-	t := threshold.Load()
+func Over(d time.Duration) bool { return std.Over(d) }
+
+// Over reports whether a hop took long enough to log on this switch. Always false when off.
+func (sw *Switch) Over(d time.Duration) bool {
+	t := sw.threshold.Load()
 	return t > 0 && int64(d) >= t
 }
 
 // Pinned reports whether the environment variable decides, so a settings
 // screen can say why its checkbox changes nothing.
-func Pinned() bool { return pinned }
+func Pinned() bool { return std.pinned }
 
 // SetLive switches the logging from a setting, at the default threshold. It
 // does nothing when the variable is set, and reports whether it took. A change
 // is written to the log, so the lines that follow it have a start.
-func SetLive(on bool) bool {
-	if pinned {
+func SetLive(on bool) bool { return std.SetLive(on) }
+
+// SetLive is the package SetLive for this switch.
+func (sw *Switch) SetLive(on bool) bool {
+	if sw.pinned {
 		return false
 	}
 	var t int64
 	if on {
 		t = int64(defaultThreshold)
 	}
-	if threshold.Swap(t) != t {
+	if sw.threshold.Swap(t) != t {
 		if on {
 			log.Printf("[inputlag] on from settings, logging any hop over %s", Ms(defaultThreshold))
 		} else {

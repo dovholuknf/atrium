@@ -56,6 +56,8 @@ type Params struct {
 // Rules is a loaded, checked rule set.
 type Rules struct {
 	List []*Rule
+	// table is the checks a rule may name. It is the package `checks`, or the one a test loaded the rules with.
+	table map[string]checkFunc
 }
 
 // Builtin is the rule set compiled into atrium. It is checked by a test, so a
@@ -67,7 +69,10 @@ func Builtin() (*Rules, error) {
 // Load reads and checks rule data. Every problem is an error: a rule set the
 // guard only half understands is not loaded at all. See the failure posture in
 // docs/changes/r-hooks-all-in-atrium.md.
-func Load(raw []byte) (*Rules, error) {
+func Load(raw []byte) (*Rules, error) { return loadWith(raw, checks) }
+
+// loadWith is Load for the table of checks given.
+func loadWith(raw []byte, table map[string]checkFunc) (*Rules, error) {
 	var doc struct {
 		Rules []*Rule `json:"rules"`
 	}
@@ -88,7 +93,7 @@ func Load(raw []byte) (*Rules, error) {
 			return nil, fmt.Errorf("rule %s appears twice", r.ID)
 		}
 		seen[r.ID] = true
-		if _, ok := checks[r.Check]; !ok {
+		if _, ok := table[r.Check]; !ok {
 			return nil, fmt.Errorf("rule %s: there is no check called %q", r.ID, r.Check)
 		}
 		if len(r.Tools) == 0 {
@@ -112,7 +117,7 @@ func Load(raw []byte) (*Rules, error) {
 			r.patterns = append(r.patterns, re)
 		}
 	}
-	return &Rules{List: doc.Rules}, nil
+	return &Rules{List: doc.Rules, table: table}, nil
 }
 
 // Input is the part of Claude Code's PreToolUse payload the guard reads.
@@ -157,7 +162,7 @@ func (rs *Rules) Evaluate(in Input, env Env) (d Decision) {
 			continue
 		}
 		current = r
-		hit, name := checks[r.Check](ctx, r)
+		hit, name := rs.table[r.Check](ctx, r)
 		if hit {
 			return Decision{Action: r.Decision, Rule: r.ID, Reason: strings.ReplaceAll(r.Reason, "{name}", name)}
 		}

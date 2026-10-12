@@ -19,13 +19,15 @@ const (
 type github struct {
 	cmd string
 	run Runner
+	// pruneBytes bounds the downloads kept, ArtifactStoreBytes unless a test makes it small.
+	pruneBytes int64
 }
 
 func newGitHub(cmd string, run Runner) *github {
 	if cmd == "" {
 		cmd = "gh"
 	}
-	return &github{cmd: cmd, run: run}
+	return &github{cmd: cmd, run: run, pruneBytes: int64(ArtifactStoreBytes)}
 }
 
 func (g *github) Kind() string { return GitHub }
