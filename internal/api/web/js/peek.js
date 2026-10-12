@@ -214,10 +214,9 @@ function peekRows(t) {
   const age = t.recap ? peekRecapAge(t) : "";
   const recap = t.recap || (t.status === "done" ? "finished without saying what it did" : "");
   // One short word: atrium_launch_worker cards are exited when their branch merges. A kept card says nothing.
-  const needSum = (fn("isBlocker", t) || fn("isStuck", t)) ? "blocked or stuck" : peekHasQuestions(t) ? "a question" : "waiting on you";
-  return (need.length ? `<div class="peek-sec need" data-drawer="need" data-label="needs you" data-sum="${esc(needSum)}">${need.join("")}</div>` : "") +
+  return (need.length ? `<div class="peek-sec need">${need.join("")}</div>` : "") +
     (t.lifetime ? `<div class="peek-sec">${row("lifetime", t.lifetime)}</div>` : "") +
-    (recap ? `<div class="peek-recap" data-drawer="recap" data-label="recap" data-sum="${esc(recap.split("\n")[0])}">${age ? `<div class="peek-rage">${esc(age)}</div>` : ""}<div class="peek-rtext">${esc(recap)}</div>` +
+    (recap ? `<div class="peek-recap">${age ? `<div class="peek-rage">${esc(age)}</div>` : ""}<div class="peek-rtext">${esc(recap)}</div>` +
       `<button type="button" class="peek-more" hidden>more</button></div>` : "");
 }
 
@@ -257,7 +256,7 @@ function peekBody(t, v) {
   const land = !loading && ctx >= limit;
   const state = land ? "land the plane" : warn ? "past the line" : "context";
   return head + rows +
-    `<div class="peek-ctx${warn ? " warn" : ""}${land ? " hot" : ""}" data-drawer="ctx" data-label="context" data-sum="${loading ? "" : esc(usageTokens(ctx).replace(/\.0k$/, "k") + " of " + usageTokens(limit).replace(/\.0k$/, "k"))}">
+    `<div class="peek-ctx${warn ? " warn" : ""}${land ? " hot" : ""}">
       ${ctxMeter(ctx, limit, "", loading ? "" : landTip({ context_size: { tokens: ctx, threshold_k: k, source: limitSource(t) }, telemetry: t && t.telemetry }))}
       <div class="peek-scale"><span class="peek-num"><b>${loading ? "&nbsp;" : usageTokens(ctx)}</b> ${state}</span>` +
         `<span>${landK !== Number(k) ? `warns at ${limitFrom(t)}, lands ${landK}k` : `warns and lands at ${limitFrom(t)}`}</span></div>
@@ -355,12 +354,7 @@ function peekChatter(box, id, first) {
   const sec = document.createElement("div");
   sec.className = "peek-sec chatter";
   sec.hidden = true;
-  sec.dataset.drawer = "chatter";
-  sec.dataset.label = "chatter";
   box.appendChild(sec);
-  peekDrawers(box);
-  const drawer = sec.closest(".peek-drawer");
-  drawer.hidden = true;
   const paint = (page, replace) => {
     if (!page || !page.says) return;
     if (replace) sec.textContent = "";
@@ -373,9 +367,6 @@ function peekChatter(box, id, first) {
     sec.querySelector(".chat-more")?.remove();
     for (const s of page.says) sec.appendChild(peekChatterRow(id, s));
     sec.hidden = !sec.querySelector(".chat-row");
-    drawer.hidden = sec.hidden;
-    const n = sec.querySelectorAll(".chat-row").length;
-    drawer.querySelector(".peek-dsum").textContent = n + (n === 1 ? " say" : " says") + (page.more ? " or more" : "");
     if (page.more && page.says.length) {
       const more = document.createElement("button");
       more.type = "button";
@@ -392,75 +383,6 @@ function peekChatter(box, id, first) {
     }
   };
   first.then(page => { if (sec.isConnected) paint(page, true); });
-}
-
-// DRAWERS. Every section under the header is a drawer with a one-line summary in its header: NEEDS YOU open, the rest
-// shut. The open or shut state is kept per SECTION (not per card) in `atrium.peekDrawers`, a JSON object of
-// key -> boolean, every read and write inside try/catch. A section marks itself with data-drawer="key", data-label and
-// data-sum, and `peekDrawers` wraps it after the body is drawn, so the body's markup stays what it was. The header
-// and the actions row are not drawers. Closed bodies are `hidden`, not removed, so their text is still in the box.
-const PEEK_DRAWER_KEY = "atrium.peekDrawers";
-const PEEK_DRAWERS_OPEN = { need: true };
-function peekDrawerState() {
-  let o = {};
-  try { o = JSON.parse(localStorage.getItem(PEEK_DRAWER_KEY) || "{}") || {}; } catch (e) {}
-  return o && typeof o === "object" ? o : {};
-}
-function peekDrawerOpen(key) {
-  const v = peekDrawerState()[key];
-  return typeof v === "boolean" ? v : !!PEEK_DRAWERS_OPEN[key];
-}
-function peekDrawerSet(key, open) {
-  const o = peekDrawerState();
-  o[key] = open;
-  try { localStorage.setItem(PEEK_DRAWER_KEY, JSON.stringify(o)); } catch (e) {}
-}
-function peekDrawerWrap(node) {
-  const key = node.dataset.drawer;
-  const d = document.createElement("div");
-  d.className = "peek-drawer";
-  d.dataset.key = key;
-  const head = document.createElement("div");
-  head.className = "peek-dh";
-  head.setAttribute("role", "button");
-  head.tabIndex = 0;
-  const label = document.createElement("b");
-  label.textContent = node.dataset.label || key;
-  const sum = document.createElement("span");
-  sum.className = "peek-dsum";
-  sum.textContent = node.dataset.sum || "";
-  head.append(label, sum);
-  const body = document.createElement("div");
-  body.className = "peek-dbody";
-  const set = open => {
-    d.classList.toggle("open", open);
-    head.setAttribute("aria-expanded", String(open));
-    body.hidden = !open;
-  };
-  const flip = () => {
-    const open = !d.classList.contains("open");
-    set(open);
-    peekDrawerSet(key, open);
-    peekRecap(d);
-  };
-  // A drag that selected text is not a click on the header.
-  head.addEventListener("click", () => {
-    const sel = window.getSelection && window.getSelection();
-    if (sel && !sel.isCollapsed && head.contains(sel.anchorNode)) return;
-    flip();
-  });
-  head.addEventListener("keydown", e => {
-    if (e.key !== "Enter" && e.key !== " ") return;
-    e.preventDefault();
-    flip();
-  });
-  node.replaceWith(d);
-  body.appendChild(node);
-  d.append(head, body);
-  set(peekDrawerOpen(key));
-}
-function peekDrawers(box) {
-  for (const n of box.querySelectorAll("[data-drawer]")) if (!n.closest(".peek-drawer")) peekDrawerWrap(n);
 }
 
 // The recap's tail behind a click: shown only where the text runs past its four lines.
