@@ -243,43 +243,42 @@ const FILED = Object.assign({}, PIN, {
 // A live, unpinned, ungrouped row beside it, for the drag case.
 const LOOSE = Object.assign({}, T1, { id: "loose1", display_title: "loose card", supervised: true });
 
-// The hide-strip, exercising the two independent "hide inactive" toggles. The
-// two kinds read DIFFERENT inactive signals: an AGENT is inactive when it has no
-// live connection (`supervised`), so a connected agent stays whether it is
-// thinking or idle at a prompt; a SUBAGENT is inactive when it is not working
-// right now (`workingNow`), so only an actively-computing subagent stays and an
-// idle OR exited one hides.
-//
-// SUBAGENTS carry the `atrium:subagent` tag the launch cap counts; AGENTS do not (a
-// human's own session). A dead UNPINNED session is not in the strip at all
-// (nothing to switch to), so the dead rows are PINNED, drawn cold, which also
-// proves a pinned session hides like any other once its toggle is on. The
-// subagent side has three rows to separate its rule from the agents' rule:
-// WORKING (stays), IDLE (supervised but not computing, hides - the difference
-// from the agents rule) and DEAD (pinned, hides). The agent side has an
-// IDLE-BUT-LIVE row (stays) and a DEAD row (pinned, cold, hides).
+// The terminals strip, exercising the shelved, dead and subagents chips. AGLIVE is a live agent (a human's own
+// session, no `atrium:subagent` tag) with three subagents launched from it (`spawned_by_id`): SUBLIVE idle, SUBWORK
+// working and SUBASK asking, which shows through the fold. SHELVED1 is a stopped card. A dead UNPINNED session is not
+// in the strip at all (nothing to switch to), so the dead rows are PINNED, drawn cold: SUBDEAD and AGDEAD, which the
+// dead chip counts and lists.
 const SUBLIVE = {
   id: "sublive", status: "running", display_title: "idle subagent", runner: "claude",
   rank: 1, worktree: "/tmp/sublive", why: "", idle_seconds: 0, wait_seconds: 0,
   created_at: "2026-09-19T12:00:00Z", last_activity_at: "2026-09-19T12:00:00Z",
-  tags: ["origin:agent", "atrium:subagent"], supervised: true, offline: false, pinned: false, auto_approve: false
+  tags: ["origin:agent", "atrium:subagent"], supervised: true, offline: false, pinned: false, auto_approve: false,
+  spawned_by_id: "aglive"
 };
 const SUBWORK = Object.assign({}, SUBLIVE, {
   id: "subwork", display_title: "working subagent", activity: { what: "thinking" }
 });
-// Runner gone, held by its pin, drawn cold: not working (and exited), so the
-// subagents toggle hides it despite the pin.
+// A supervised subagent that is waiting on the operator: it shows through a folded parent.
+const SUBASK = Object.assign({}, SUBLIVE, {
+  id: "subask", display_title: "asking subagent", status: "needs-input"
+});
+// Runner gone, held by its pin, drawn cold: behind the dead chip.
 const SUBDEAD = Object.assign({}, SUBLIVE, {
   id: "subdead", display_title: "dead subagent", status: "dead",
-  supervised: false, pinned: true, pid: 0
+  supervised: false, pinned: true, pid: 0, spawned_by_id: ""
 });
 const AGLIVE = Object.assign({}, SUBLIVE, {
-  id: "aglive", display_title: "my terminal", tags: []
+  id: "aglive", display_title: "my terminal", tags: [], spawned_by_id: ""
 });
-// A dead agent (no tag), pinned cold: the agents toggle hides it despite the pin.
+// A dead agent (no tag), pinned cold: behind the dead chip.
 const AGDEAD = Object.assign({}, SUBLIVE, {
   id: "agdead", display_title: "my dead terminal", tags: [],
-  status: "dead", supervised: false, pinned: true, pid: 0
+  status: "dead", supervised: false, pinned: true, pid: 0, spawned_by_id: ""
+});
+// A stopped card: behind the shelved chip.
+const SHELVED1 = Object.assign({}, SUBLIVE, {
+  id: "shelved1", display_title: "shelved card", status: "shelved", tags: [],
+  supervised: false, pinned: false, spawned_by_id: ""
 });
 
 // Four live untagged cards served in ADDRESS order, which is not name order and
@@ -590,10 +589,9 @@ function mockTasks(reading) {
     return untaggedTag
       ? list.map(t => Object.assign({}, t, { id: untaggedTag + "~" + t.id })) : list;
   }
-  // The hide strip: an alive idle subagent, an alive working subagent, a dead
-  // (cold, pinned) subagent, an alive agent and a dead (cold, pinned) agent.
+  // The terminals strip: a live agent with three subagents, a shelved card, and a dead (cold, pinned) agent and subagent.
   if (tasksMode === "doers") {
-    return [SUBLIVE, SUBWORK, SUBDEAD, AGLIVE, AGDEAD];
+    return [AGLIVE, SUBLIVE, SUBWORK, SUBASK, SUBDEAD, AGDEAD, SHELVED1];
   }
   // The attach-loop repro. The cached LIST lags the live card: it carries the
   // loop card WITHOUT `supervised` (so a render finds the pane stale and tears
@@ -16775,23 +16773,23 @@ async function termMenuSection(browser, base) {
     if (await dialogUp().count()) fail("termMenu: stop asked before stopping.");
     if (!patches.some(x => /land-tm-run/.test(x) && /"status":"shelved"/.test(x))) fail("termMenu: stop did not shelve the card: " + JSON.stringify(patches));
 
-    // a stopped card is not in the list until show stopped is on.
+    // a stopped card is not in the list until the shelved chip is on.
     const listed = () => p.evaluate(() => !!document.querySelector('#term-list [oncontextmenu*="land-tm-stop"]'));
     const closedListed = () => p.evaluate(() => !!document.querySelector('#term-list [oncontextmenu*="land-tm-closed"]'));
-    if (await listed()) fail("termMenu: a stopped card is listed with show stopped off.");
-    if (await closedListed()) fail("termMenu: a closed card is listed with show stopped off.");
-    await p.evaluate(() => toggleShowStopped());
+    if (await listed()) fail("termMenu: a stopped card is listed with the shelved chip off.");
+    if (await closedListed()) fail("termMenu: a closed card is listed with the shelved chip off.");
+    await p.evaluate(() => toggleTermShow("shelved"));
     await p.waitForSelector('#term-list [oncontextmenu*="land-tm-stop"]', { timeout: slow(5000) })
-      .catch(() => fail("termMenu: show stopped did not list the stopped card."));
+      .catch(() => fail("termMenu: the shelved chip did not list the stopped card."));
     m = await openMenu("land-tm-stop");
     if (m.labels[0] !== "resume" || m.labels.includes("stop") || m.labels.includes("restart")) {
       fail("termMenu: a stopped card's menu is " + JSON.stringify(m.labels));
     }
-    // a closed card stays off the list even with show stopped on: its folder was freed, so there is nothing to resume.
-    if (await closedListed()) fail("termMenu: a closed card is listed with show stopped on.");
+    // a closed card stays off the list even with the shelved chip on: its folder was freed, so there is nothing to resume.
+    if (await closedListed()) fail("termMenu: a closed card is listed with the shelved chip on.");
     await p.keyboard.press("Escape");
-    await p.evaluate(() => toggleShowStopped());
-    if (await listed()) fail("termMenu: show stopped off did not hide the stopped card again.");
+    await p.evaluate(() => toggleTermShow("shelved"));
+    if (await listed()) fail("termMenu: the shelved chip off did not hide the stopped card again.");
 
     // terminate and clean up, nothing at risk: no question, one close with confirm.
     asks = [];
@@ -20993,12 +20991,12 @@ async function groupingPerViewSection(browser, base) {
     await view("stack");
     await check("on the stack");
     if ((await pill("stack-group")) !== "window") fail(tag + "the stack pills show " + await pill("stack-group"));
-    if ((await pill("term-group-tray")) !== "project") fail(tag + "the terminal pills show " + await pill("term-group-tray"));
+    if ((await pill("term-drawer-group")) !== "project") fail(tag + "the terminal pills show " + await pill("term-group-tray"));
     if ((await pill("board-group")) !== "tag") fail(tag + "the board pills show " + await pill("board-group"));
     await view("terms");
     await check("back on terminals");
-    const sum = await p.evaluate(() => document.querySelector(".traysum") ? document.querySelector(".traysum").textContent : "");
-    if (sum && !/by project/.test(sum)) fail(tag + "the folded tray summary is not the terminals' own: " + sum);
+    const sum = await p.evaluate(() => (document.querySelector("#fd-terms .fsum") || {}).textContent || "");
+    if (sum && !/by project/.test(sum)) fail(tag + "the terminals line does not carry the terminals' own: " + sum);
 
     // The settings dialog names the tab and sets only it.
     await p.evaluate(() => { groupViewPick = "stack"; paintGrouping(); });
@@ -22163,35 +22161,34 @@ async function joinedLiveSection(browser, base) {
   p.on("pageerror", e => errors.push(e.message));
   try {
     await p.goto(base + "/", { waitUntil: "domcontentloaded" });
-    await p.waitForFunction(() => typeof termCold === "function" && typeof sessionHiddenBy === "function",
+    await p.waitForFunction(() => typeof termCold === "function" && typeof termRowKind === "function",
       null, { timeout: slow(15000) });
     const r = await p.evaluate(() => {
-      setHideAgents("on");
-      const keep = () => false;
-      const card = (id, status, supervised) => ({ id, status, supervised, title: id, display_title: id, tags: [] });
+      const card = (id, status, supervised, extra) => ({ id, status, supervised, title: id, display_title: id, tags: [], ...extra });
       const joined = card("jn", "needs-input", false), exited = card("ex", "done", false);
       const dead = card("dd", "dead", false), running = card("rn", "running", true);
       const parked = { ...card("pk", "needs-input", false), parked_at: "2026-09-30T10:00:00Z" };
-      const out = {
-        joinedHidden: sessionHiddenBy(joined, keep), exitedHidden: sessionHiddenBy(exited, keep),
-        deadHidden: sessionHiddenBy(dead, keep), runningHidden: sessionHiddenBy(running, keep),
-        joinedCold: termCold(joined), exitedCold: termCold(exited),
-        parkedCold: termCold(parked), parkedHidden: sessionHiddenBy(parked, keep),
-        parkedRow: termRow(parked, false), joinedRow: termRow(joined, false), exitedRow: termRow(exited, false)
+      return {
+        joinedKind: termRowKind(joined), exitedKind: termRowKind(exited), deadKind: termRowKind(dead),
+        runningKind: termRowKind(running), pinnedDeadKind: termRowKind({ ...dead, pinned: true }),
+        parkedKind: termRowKind(parked), pinnedParkedKind: termRowKind({ ...parked, pinned: true }),
+        joinedCold: termCold(joined), exitedCold: termCold(exited), parkedCold: termCold(parked),
+        parkedRow: termRow({ ...parked, pinned: true }, false), joinedRow: termRow(joined, false), exitedRow: termRow(exited, false)
       };
-      setHideAgents("none");
-      return out;
     });
-    if (r.joinedHidden || r.joinedCold) fail("joinedLive: a joined live card is hidden or grey: " + JSON.stringify(r));
-    if (!r.exitedHidden || !r.deadHidden || !r.exitedCold) fail("joinedLive: an exited card is not hidden: " + JSON.stringify(r));
-    if (r.runningHidden) fail("joinedLive: a supervised running card is hidden.");
-    if (!r.parkedCold || !r.parkedHidden || !/resumePinned\('pk'\)/.test(r.parkedRow) || /joined/.test(r.parkedRow)) {
+    if (r.joinedKind !== "live" || r.joinedCold) fail("joinedLive: a joined live card is not a live row, or is grey: " + JSON.stringify(r));
+    if (r.exitedKind !== "" || r.deadKind !== "" || !r.exitedCold) fail("joinedLive: an unpinned exited card is a row: " + JSON.stringify(r));
+    if (r.runningKind !== "live") fail("joinedLive: a supervised running card is not a live row.");
+    if (r.pinnedDeadKind !== "dead" || r.pinnedParkedKind !== "dead" || r.parkedKind !== "") {
+      fail("joinedLive: a pinned card whose runner is gone is not behind the dead chip: " + JSON.stringify(r));
+    }
+    if (!r.parkedCold || !/resumePinned\('pk'\)/.test(r.parkedRow) || /joined/.test(r.parkedRow)) {
       fail("joinedLive: a parked needs-input card reads joined, not cold: " + JSON.stringify(r.parkedRow));
     }
     if (/ cold/.test(r.joinedRow) || !/cannot attach/.test(r.joinedRow) || /attachTask\(/.test(r.joinedRow)) {
       fail("joinedLive: the joined row is grey, or offers an attach it cannot do.");
     }
-    // The whole strip, over unpinned cards: a joined live one is listed, an exited one is not.
+    // The whole strip, over unpinned cards: a joined live one is listed, an exited one is not, with no chip on.
     const s = await p.evaluate(async () => {
       const card = (id, status, extra) => ({ id, status, supervised: false, pinned: false, title: id,
         display_title: id, tags: [], ...extra });
@@ -22199,23 +22196,16 @@ async function joinedLiveSection(browser, base) {
         card("sv", "running", { supervised: true })];
       boardCards = async () => cards;
       const row = id => document.querySelector('#term-list .card.tab[data-id="' + id + '"]');
-      const seen = () => ["jl", "xd", "pk2", "sv"].filter(id => row(id));
-      setHideAgents("none");
       await renderTermList();
-      const off = seen();
+      const seen = ["jl", "xd", "pk2", "sv"].filter(id => row(id));
       const chip = row("jl") ? row("jl").textContent.includes("joined") : false;
       const click = row("jl") ? row("jl").getAttribute("onclick") : null;
-      setHideAgents("on");
-      await renderTermList();
-      const on = seen();
-      setHideAgents("none");
-      return { off, on, chip, click };
+      return { seen, chip, click };
     });
-    if (!s.off.includes("jl") || s.off.includes("xd") || s.off.includes("pk2") || !s.off.includes("sv")) {
+    if (s.seen.join() !== "jl,sv") {
       fail("joinedLive: the strip does not list exactly the joined and supervised cards: " + JSON.stringify(s));
     }
     if (!s.chip || s.click !== "joinedClick('jl')") fail("joinedLive: the unpinned joined row lacks its chip or does not open the joined dialog: " + JSON.stringify(s));
-    if (!s.on.includes("jl") || !s.on.includes("sv")) fail("joinedLive: hide agents dropped a live row: " + JSON.stringify(s));
     if (errors.length) fail("joinedLive: page errors: " + errors.join(" | "));
   } finally { await ctx.close(); }
   if (!bad) console.log("joinedLive ok");
@@ -22257,7 +22247,7 @@ async function termSortStartedSection(browser, base) {
       res.stored = localStorage.getItem("atrium.termSort");
       res.gearBtns = [...document.querySelectorAll("#gear-term-sort button")].map(b => b.textContent.trim() +
         (b.classList.contains("on") ? "*" : ""));
-      res.summary = (document.querySelector("#term-list .traysum") || {}).textContent || "";
+      res.summary = (document.querySelector("#fd-terms .fsum") || {}).textContent || "";
       setGroupMode("project");
       return res;
     });
@@ -22270,7 +22260,7 @@ async function termSortStartedSection(browser, base) {
     }
     if (out.stored !== "started") fail("termSortStarted: the choice is not stored under atrium.termSort: " + out.stored);
     if (out.gearBtns.join("|") !== "name|activity|started*") fail("termSortStarted: the gear's sort row is wrong: " + out.gearBtns.join("|"));
-    if (!/^sorted by started/.test(out.summary)) fail("termSortStarted: the summary does not say it: " + out.summary);
+    if (!/ · started( · |$)/.test(out.summary)) fail("termSortStarted: the summary does not say it: " + out.summary);
 
     // Remembered across a reload, and a stored value that means nothing falls back to activity.
     await p.reload({ waitUntil: "domcontentloaded" });
@@ -22359,8 +22349,8 @@ async function childUnderParentSection(browser, base) {
         sub("kid-b", "2026-09-29T10:00:00Z", "par"), sub("orph", "2026-09-28T10:00:00Z", "gone"),
         card("zed", "2026-09-27T10:00:00Z", { display_title: "zed" })];
       boardCards = async () => cards;
-      // Idle subagents are hidden by default, and these are idle, so show them.
-      setHideSubagents("none");
+      // Subagents are folded under their parent by default, so turn the chip on to list them.
+      if (!termSubsOn()) toggleTermShow("subagents");
       const res = {};
       for (const sort of ["name", "activity", "started"]) {
         for (const grp of ["off", "project", "recency", "tag"]) {
@@ -22396,7 +22386,7 @@ async function childUnderParentSection(browser, base) {
 
 // A parent row folds its spawned cards. A card that needs the human stays drawn, the fold is remembered per card and
 // followed by a second window, and a bad stored value reads as expanded.
-// u-002: a pinned cold agent hides under `hide inactive agents`, and the one exception, the card open in the pane,
+// u-002: a pinned cold agent hides with the dead chip off, and the one exception, the card open in the pane,
 // stays drawn grey and says why. The `? 2` chip on a cold card says nothing can reply to it.
 // U002_SHOTS=<dir> draws the rows, for the before and after PNGs.
 async function u002Section(browser, base) {
@@ -22406,7 +22396,7 @@ async function u002Section(browser, base) {
   p.on("pageerror", e => errors.push(e.message));
   try {
     await p.goto(base + "/", { waitUntil: "domcontentloaded" });
-    await p.waitForFunction(() => typeof setHideAgents === "function" && typeof renderTermList === "function",
+    await p.waitForFunction(() => typeof toggleTermShow === "function" && typeof renderTermList === "function",
       null, { timeout: slow(15000) });
     await p.evaluate(() => {
       const card = (id, title, extra) => ({ id, status: "running", supervised: true, pinned: false, title,
@@ -22416,8 +22406,7 @@ async function u002Section(browser, base) {
           seen: { answered: false, open_questions: ["keep the old tunnel?", "which cluster?"] } }),
         card("live1", "my live terminal", {})];
       boardCards = async () => cards;
-      localStorage.setItem(termDeviceKey("atrium.hidesubagents"), "none");
-      localStorage.setItem(termDeviceKey("atrium.hideagents"), "none");
+      localStorage.setItem(termDeviceKey("atrium.terms.show"), '["dead","subagents"]');
       switchView("terms");
     });
     const look = () => p.evaluate(async () => {
@@ -22441,15 +22430,15 @@ async function u002Section(browser, base) {
     };
     let v = await look();
     if (!v.has || !v.cold || v.kept) {
-      fail("u002: with hide inactive off the pinned cold row is not drawn grey, or wears the kept mark: " + JSON.stringify(v));
+      fail("u002: with the dead chip on the pinned cold row is not drawn grey, or wears the kept mark: " + JSON.stringify(v));
     }
     if (v.q !== "? 2" || !/exited/.test(v.qTip) || /clears when you reply/.test(v.qTip)) {
       fail("u002: the `? 2` chip on a cold card does not say it cannot be replied to: " + JSON.stringify(v));
     }
     await shot("off");
-    await p.evaluate(() => setHideAgents("on"));
+    await p.evaluate(() => toggleTermShow("dead"));
     v = await look();
-    if (v.has) fail("u002: hide inactive agents left the pinned cold row drawn: " + JSON.stringify(v));
+    if (v.has) fail("u002: the dead chip off left the pinned cold row drawn: " + JSON.stringify(v));
     await shot("hidden");
     // The card open in the pane, or being started again by a click on its grey row, is never hidden.
     await p.evaluate(() => { termTask = { id: "cold1" }; markAttachInFlight("cold1"); });
@@ -22462,15 +22451,15 @@ async function u002Section(browser, base) {
     v = await look();
     await p.evaluate(() => { reconcileAttached = window.__reconcile; });
     if (v.cold || v.kept !== "attached") fail("u002: the kept open row does not say `attached`: " + JSON.stringify(v));
-    if (!/hide inactive would hide it, but it is open in the pane/.test(v.tip)) {
+    if (!/the filter would hide it, but it is open in the pane/.test(v.tip)) {
       fail("u002: the kept row does not say why it is still listed: " + JSON.stringify(v));
     }
     await shot("kept");
     // Filter off again: the same row is a plain cold row, grey, with no mark.
-    await p.evaluate(() => setHideAgents("none"));
+    await p.evaluate(() => toggleTermShow("dead"));
     v = await look();
-    if (!v.cold || v.kept) fail("u002: with the filter off the open cold row is not plain grey: " + JSON.stringify(v));
-    await p.evaluate(() => { clearAttachInFlight(); termTask = null; setHideAgents("none"); });
+    if (!v.cold || v.kept) fail("u002: with the dead chip on the open cold row is not plain grey: " + JSON.stringify(v));
+    await p.evaluate(() => { clearAttachInFlight(); termTask = null; });
     if (errors.length) fail("u002: page errors: " + errors.join(" | "));
   } finally { await ctx.close(); }
 }
@@ -22492,8 +22481,8 @@ async function childFoldSection(browser, base) {
         sub("kid-b", "2026-09-29T10:00:00Z", "par"), sub("kid-p", "2026-09-28T10:00:00Z", "par", "needs-permission"),
         card("lone", "2026-09-27T10:00:00Z")];
       boardCards = async () => cards;
-      // Idle subagents are hidden by default, and these are idle, so show them.
-      setHideSubagents("none");
+      // Subagents are folded under their parent by default, so turn the chip on to list them.
+      if (!termSubsOn()) toggleTermShow("subagents");
       switchView("terms");
     });
     return p;
@@ -24401,7 +24390,7 @@ async function termBoxSection(browser, base) {
                 sum: (tray.querySelector(".traysum") || {}).textContent || "",
                 sort: tray.querySelectorAll(".trayrow .seg:not(.termhide):not(.groupseg) button").length,
                 hide: tray.querySelectorAll(".termhide button").length,
-                group: tray.querySelectorAll("#term-group-tray button").length,
+                group: tray.querySelectorAll("#term-drawer-group button").length,
                 arrows: arrows.length,
                 overrun: btns.filter(b => r(b).right > tb.right + 1 || r(b).left < tb.left - 1).length,
                 summaryOverArrow: false,
@@ -24447,7 +24436,7 @@ async function termBoxSection(browser, base) {
       const sort = sortByActivity;
       await press(".termhide button", "agents");
       const hide = hideAgentsMode();
-      await press("#term-group-tray button", "off");
+      await press("#term-drawer-group button", "off");
       const grouped = groupingPrefs().on;
       paintTermGear();
       const gear = {
