@@ -42,10 +42,10 @@ func TestOpenOnTheHubGoesToTheHolderElseTheLeastBusyRoom(t *testing.T) {
 	pr := seedRow("github-pull-request", 10,
 		`^https?://(?P<host>github\.com)/(?P<org>[A-Za-z0-9_.-]+)/(?P<repo>[A-Za-z0-9_.-]+)/pull/(?P<num>\d+)(?:[/?#].*)?$`)
 	pr.Tags = "pull-request,{repo}"
-	withSeed(t, pr)
 	x := newClaimHub(t, map[string]int{"alpha": 3, "beta": 0})
 	defer x.done()
 	x.proxy.SetForge(&memSettings{m: map[string]string{}}, nil)
+	seedHub(x, pr)
 
 	// nobody holds it: the least busy room
 	code, placed, out := x.openVia(t, "", "https://github.com/openziti/zrok/pull/11")
@@ -82,10 +82,10 @@ func TestOpenOnTheHubPrefersARoomThatHoldsTheRepo(t *testing.T) {
 	pr := seedRow("github-pull-request", 10,
 		`^https?://(?P<host>github\.com)/(?P<org>[A-Za-z0-9_.-]+)/(?P<repo>[A-Za-z0-9_.-]+)/pull/(?P<num>\d+)(?:[/?#].*)?$`)
 	pr.Tags = "pull-request,{repo}"
-	withSeed(t, pr)
 	x := newClaimHub(t, map[string]int{"alpha": 3, "beta": 0})
 	defer x.done()
 	x.proxy.SetForge(&memSettings{m: map[string]string{}}, nil)
+	seedHub(x, pr)
 	x.rooms["alpha"].holds = map[string]bool{"github.com/openziti/ziti-console": true}
 	x.rooms["beta"].holds = map[string]bool{}
 
@@ -118,10 +118,10 @@ func TestOpenOnTheHubRoutesARepastedIssueOrBranchToItsClaim(t *testing.T) {
 	branch := seedRow("github-branch", 30,
 		`^https?://(?P<host>github\.com)/(?P<org>[A-Za-z0-9_.-]+)/(?P<repo>[A-Za-z0-9_.-]+)/tree/(?P<ref>[A-Za-z0-9_./-]+)$`)
 	branch.Tags, branch.Branch, branch.Kind = "branch", "{ref}", "github"
-	withSeed(t, pr, issue, branch)
 	x := newClaimHub(t, map[string]int{"alpha": 3, "beta": 0})
 	defer x.done()
 	x.proxy.SetForge(&memSettings{m: map[string]string{}}, nil)
+	seedHub(x, pr, issue, branch)
 
 	for _, c := range []struct{ key, url string }{
 		{"github.com/openziti/zrok/i12", "https://github.com/openziti/zrok/issues/12"},

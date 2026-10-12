@@ -31,7 +31,7 @@ func (p *Proxy) SetRunningCommit(commit string) {
 // deployQueue reads the queue now. The caller has checked that deploy-ready is on.
 func (p *Proxy) deployQueue(ctx context.Context) deployready.Queue {
 	st := p.deployReady()
-	bctx, cancel := context.WithTimeout(ctx, deployReadyBound)
+	bctx, cancel := context.WithTimeout(ctx, st.bound)
 	defer cancel()
 	repo, err := p.repoFor("")
 	if err != nil {

@@ -45,20 +45,28 @@ type HubRecognisers struct {
 	Recognisers []*store.Recogniser `json:"recognisers"`
 }
 
-// recogniserSeed is the built-in rows. A seam for tests.
-var recogniserSeed = recognisers.Seed
+// seedFunc reads the built-in rows. A hubForge holds one so a test can give a hub its own.
+type seedFunc func() ([]store.Recogniser, error)
+
+// seedRows is the built-in rows, or the ones this forge was given instead.
+func (f *hubForge) seedRows() seedFunc {
+	if f.seed != nil {
+		return f.seed
+	}
+	return recognisers.Seed
+}
 
 // recognisersMu serialises the read, seed and write of the two settings.
 var recognisersMu sync.Mutex
 
 // hubRecogniserRows reads the hub's rows, seeding any built-in row it has never held.
-func hubRecogniserRows(st ForgeSettings) ([]*store.Recogniser, error) {
+func hubRecogniserRows(st ForgeSettings, seed seedFunc) ([]*store.Recogniser, error) {
 	recognisersMu.Lock()
 	defer recognisersMu.Unlock()
-	return hubRecogniserRowsLocked(st)
+	return hubRecogniserRowsLocked(st, seed)
 }
 
-func hubRecogniserRowsLocked(st ForgeSettings) ([]*store.Recogniser, error) {
+func hubRecogniserRowsLocked(st ForgeSettings, seedRows seedFunc) ([]*store.Recogniser, error) {
 	rows, err := readRecogniserRows(st)
 	if err != nil {
 		return nil, err
@@ -73,7 +81,7 @@ func hubRecogniserRowsLocked(st ForgeSettings) ([]*store.Recogniser, error) {
 			seeded[id] = true
 		}
 	}
-	seed, err := recogniserSeed()
+	seed, err := seedRows()
 	if err != nil {
 		// A broken seed is a broken build, and the operator's rows still work.
 		log.Printf("[hub] the built-in recognisers do not read: %v", err)
@@ -176,14 +184,14 @@ func sortedRecognisers(rows []*store.Recogniser) []*store.Recogniser {
 
 // saveHubRecogniser checks and stores one row. What atrium observed of the row (failures, last use) is kept from
 // the row it replaces and never taken from the request, the same rule the room's table follows.
-func saveHubRecogniser(st ForgeSettings, in store.Recogniser) (*store.Recogniser, error) {
+func saveHubRecogniser(st ForgeSettings, seed seedFunc, in store.Recogniser) (*store.Recogniser, error) {
 	in, err := store.CheckRecogniser(in)
 	if err != nil {
 		return nil, err
 	}
 	recognisersMu.Lock()
 	defer recognisersMu.Unlock()
-	rows, err := hubRecogniserRowsLocked(st)
+	rows, err := hubRecogniserRowsLocked(st, seed)
 	if err != nil {
 		return nil, err
 	}
@@ -211,10 +219,10 @@ func saveHubRecogniser(st ForgeSettings, in store.Recogniser) (*store.Recogniser
 }
 
 // deleteHubRecogniser removes one row. A built-in row stays deleted: its id is in the seeded list.
-func deleteHubRecogniser(st ForgeSettings, id string) error {
+func deleteHubRecogniser(st ForgeSettings, seed seedFunc, id string) error {
 	recognisersMu.Lock()
 	defer recognisersMu.Unlock()
-	rows, err := hubRecogniserRowsLocked(st)
+	rows, err := hubRecogniserRowsLocked(st, seed)
 	if err != nil {
 		return err
 	}
@@ -229,7 +237,7 @@ func deleteHubRecogniser(st ForgeSettings, id string) error {
 
 // serveForgeRecognisers answers a room's question for the rows.
 func (p *Proxy) serveForgeRecognisers(w http.ResponseWriter, f *hubForge) {
-	rows, err := hubRecogniserRows(f.st)
+	rows, err := hubRecogniserRows(f.st, f.seedRows())
 	if err != nil {
 		forgeFail(w, http.StatusInternalServerError, &forge.HubError{Code: forge.CodeOther,
 			Message: "the hub's recognisers do not read: " + err.Error()})
@@ -255,7 +263,7 @@ func (p *Proxy) hubRecognisersRoute(w http.ResponseWriter, r *http.Request) bool
 	id := strings.TrimPrefix(strings.TrimPrefix(r.URL.Path, pre), "/")
 	switch {
 	case id == "" && (r.Method == http.MethodGet || r.Method == http.MethodHead):
-		rows, err := hubRecogniserRows(f.st)
+		rows, err := hubRecogniserRows(f.st, f.seedRows())
 		if err != nil {
 			crFail(w, http.StatusInternalServerError, err.Error())
 			return true
@@ -272,7 +280,7 @@ func (p *Proxy) hubRecognisersRoute(w http.ResponseWriter, r *http.Request) bool
 			return true
 		}
 		rec.ID = id
-		saved, err := saveHubRecogniser(f.st, rec)
+		saved, err := saveHubRecogniser(f.st, f.seedRows(), rec)
 		if err != nil {
 			crFail(w, http.StatusBadRequest, err.Error())
 			return true
@@ -284,7 +292,7 @@ func (p *Proxy) hubRecognisersRoute(w http.ResponseWriter, r *http.Request) bool
 			crFail(w, http.StatusForbidden, "a page on another origin cannot write here")
 			return true
 		}
-		if err := deleteHubRecogniser(f.st, id); err != nil {
+		if err := deleteHubRecogniser(f.st, f.seedRows(), id); err != nil {
 			crFail(w, http.StatusInternalServerError, err.Error())
 			return true
 		}

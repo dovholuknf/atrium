@@ -27,7 +27,9 @@ import (
 
 // Hub accepts rooms and proxies to them.
 type Hub struct {
-	T Timings
+	// peerKey, when set, replaces the package `peerKey` for this hub. A seam for tests.
+	peerKey func(net.Conn) string
+	T       Timings
 	// Enrol answers a room that is joining for the first time and has no
 	// certificate yet. Supplied by the transport, because what a credential IS
 	// is the transport's business and not this file's. Nil refuses enrolment.
@@ -435,7 +437,7 @@ func (h *Hub) control(ctx context.Context, name string, hi hello, conn net.Conn,
 	// the browser instead. Comparing the certificate's public key means a
 	// reconnect is the same room proving it is the same room, and a different
 	// key under a taken name is refused rather than obeyed.
-	a.key = peerKey(conn)
+	a.key = h.keyOf(conn)
 	// Held until the welcome is written, below. See `wmu`.
 	a.wmu.Lock()
 	welcomed := false
@@ -893,6 +895,14 @@ func (h *Hub) Only() string {
 // can be distinguished from an impersonation. Set by the transport, for the
 // same reason `identify` is.
 var peerKey = func(net.Conn) string { return "" }
+
+// keyOf is the key a connection presented, read through the hub's own `peerKey` when a test set one.
+func (h *Hub) keyOf(c net.Conn) string {
+	if h.peerKey != nil {
+		return h.peerKey(c)
+	}
+	return peerKey(c)
+}
 
 // identify asks the transport who authenticated, as a name.
 //

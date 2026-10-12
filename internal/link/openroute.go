@@ -86,7 +86,7 @@ func (p *Proxy) openTarget(r *http.Request) (key, repo string) {
 	if f == nil {
 		return "", ""
 	}
-	rows, err := hubRecogniserRows(f.st)
+	rows, err := hubRecogniserRows(f.st, f.seedRows())
 	if err != nil {
 		return "", ""
 	}

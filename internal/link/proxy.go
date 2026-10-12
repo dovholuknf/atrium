@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"net/http/httputil"
 	"net/url"
+	"os"
 	"path"
 	"strings"
 	"sync"
@@ -46,6 +47,15 @@ import (
 
 // Proxy serves the board from a hub.
 type Proxy struct {
+	// hostname is the machine the hub runs on, spelled the way a room spells its own `Host`: both come from
+	// os.Hostname. A test gives it a name of its own.
+	hostname func() (string, error)
+	// launchProbe is how long a room has to say whether it has a launch directory, launchProbeWait unless a test
+	// shortens it.
+	launchProbe time.Duration
+	// warnGrace is how long a claim's room must stay offline before the board is warned, prWarnGrace unless a test
+	// shortens it.
+	warnGrace time.Duration
 	// resourcesDir is the state dir resources.md is read from. See resources_mcp.go.
 	resourcesDir string
 	hub          *Hub
@@ -164,7 +174,8 @@ type Proxy struct {
 // `boardID` is the hash of the board being served. Empty turns the rewrite off,
 // which is right for a test and wrong for a running hub.
 func NewProxy(hub *Hub, board fs.FS, boardID string, room func() string) *Proxy {
-	p := &Proxy{hub: hub, board: board, boardID: boardID, room: room}
+	p := &Proxy{hub: hub, board: board, boardID: boardID, room: room,
+		hostname: os.Hostname, launchProbe: launchProbeWait, warnGrace: prWarnGrace}
 	if board != nil {
 		p.assets = webasset.New(board)
 	}

@@ -406,9 +406,9 @@ func (p *Proxy) servePRClaims(w http.ResponseWriter, r *http.Request, sub string
 
 // ── the warning ─────────────────────────────────────────
 
-// prWarnGrace is how long a claim's room must stay offline before the board is warned. A variable so a test need not
-// wait.
-var prWarnGrace = 2 * time.Minute
+// prWarnGrace is how long a claim's room must stay offline before the board is warned. A test sets `warnGrace` on its
+// Proxy instead of waiting.
+const prWarnGrace = 2 * time.Minute
 
 func prWaitID(key string, n int) string { return "prwait|" + key + "|" + itoaN(n) }
 
@@ -452,7 +452,7 @@ func (p *Proxy) prWarnSweep(g *Growler) bool {
 		}
 		since := gone[c.Key]
 		p.mu.Unlock()
-		offline = offline && at.Sub(since) >= prWarnGrace
+		offline = offline && at.Sub(since) >= p.warnGrace
 		switch {
 		case offline && !c.Warned:
 			n, flipped, err := st.PRClaimWarn(c.Key, true)

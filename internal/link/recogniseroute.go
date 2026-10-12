@@ -62,7 +62,7 @@ func (p *Proxy) hubRecognise(w http.ResponseWriter, r *http.Request) bool {
 		crFail(w, http.StatusBadRequest, err.Error())
 		return true
 	}
-	rows, err := hubRecogniserRows(f.st)
+	rows, err := hubRecogniserRows(f.st, f.seedRows())
 	if err != nil {
 		w.Header().Set("Content-Type", "application/json")
 		crFail(w, http.StatusInternalServerError, "the hub's recognisers do not read: "+err.Error())
@@ -180,7 +180,7 @@ func (p *Proxy) deafAnswer(status int, body, paste []byte) bool {
 	if f == nil || json.Unmarshal(paste, &in) != nil {
 		return false
 	}
-	rows, err := hubRecogniserRows(f.st)
+	rows, err := hubRecogniserRows(f.st, f.seedRows())
 	if err != nil {
 		return false
 	}

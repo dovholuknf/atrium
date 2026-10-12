@@ -54,8 +54,8 @@ const (
 )
 
 // deployReadyBound is how long one pass may spend on git and on asking the binary its version. A board is waiting on
-// it, and git is killed at the bound. A variable so a test need not wait five seconds.
-var deployReadyBound = 5 * time.Second
+// it, and git is killed at the bound. A field on the state (`bound`) so a test need not wait five seconds.
+const deployReadyBound = 5 * time.Second
 
 var fullSHA = regexp.MustCompile(`^[0-9a-f]{40}$`)
 
@@ -75,7 +75,9 @@ type deployReadyState struct {
 
 	// Seams for a test. In production both are the real thing.
 	installed func(ctx context.Context, p *Proxy) (string, error)
-	spawn     func(script, tip string) (*deployProc, error)
+	// bound is how long one pass may run, deployReadyBound unless a test shortens it.
+	bound time.Duration
+	spawn func(script, tip string) (*deployProc, error)
 	// clearing is the new contexts under way. Nil means ask the attached rooms.
 	clearing func(ctx context.Context) []newContextRun
 
@@ -110,7 +112,7 @@ type deployProc struct {
 func (p *Proxy) SetDeployReady() {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	p.ready = &deployReadyState{installed: installedCommit, spawn: spawnDeployScript, run: deployRun{State: "idle"}}
+	p.ready = &deployReadyState{bound: deployReadyBound, installed: installedCommit, spawn: spawnDeployScript, run: deployRun{State: "idle"}}
 }
 
 func (p *Proxy) deployReady() *deployReadyState {
@@ -221,12 +223,12 @@ func (p *Proxy) readyReport(ctx context.Context, fresh bool) deployready.Report 
 	st.inflight = true
 	st.mu.Unlock()
 
-	bctx, cancel := context.WithTimeout(ctx, deployReadyBound)
+	bctx, cancel := context.WithTimeout(ctx, st.bound)
 	rep := p.computeReady(bctx, st)
 	timedOut := bctx.Err() != nil
 	cancel()
 	if timedOut {
-		rep = readyUnknown("timed out after %s reading git, the next ask continues from what was read", deployReadyBound)
+		rep = readyUnknown("timed out after %s reading git, the next ask continues from what was read", st.bound)
 	}
 
 	st.mu.Lock()

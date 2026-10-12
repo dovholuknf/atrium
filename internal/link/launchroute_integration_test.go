@@ -62,10 +62,6 @@ func (f *fakeRoom) handler() http.Handler {
 // rooms attaches the fake rooms to one hub, and says the hub runs on `hubHost`.
 func rooms(t *testing.T, hubHost string, fakes ...*fakeRoom) (*httptest.Server, func()) {
 	t.Helper()
-	oldHost, oldWait := hubHostname, launchProbeFor
-	hubHostname = func() (string, error) { return hubHost, nil }
-	launchProbeFor = 600 * time.Millisecond
-
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
@@ -88,12 +84,14 @@ func rooms(t *testing.T, hubHost string, fakes ...*fakeRoom) (*httptest.Server, 
 		}
 		return true
 	})
-	front := httptest.NewServer(NewProxy(hub, nil, "", nil))
+	proxy := NewProxy(hub, nil, "", nil)
+	proxy.hostname = func() (string, error) { return hubHost, nil }
+	proxy.launchProbe = 600 * time.Millisecond
+	front := httptest.NewServer(proxy)
 	return front, func() {
 		front.Close()
 		stop()
 		ln.Close()
-		hubHostname, launchProbeFor = oldHost, oldWait
 	}
 }
 

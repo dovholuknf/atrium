@@ -411,10 +411,8 @@ func TestOfflineOwnerWarnsAndDoesNotMove(t *testing.T) {
 	if testing.Short() {
 		t.Skip("slow: a real link, hub and git rig over loopback")
 	}
-	old := prWarnGrace
-	prWarnGrace = 0
-	defer func() { prWarnGrace = old }()
 	x := newClaimHub(t, map[string]int{"alpha": 3, "beta": 0})
+	x.proxy.warnGrace = 0
 	defer x.done()
 	x.pasteVia(t, "alpha", prURL)
 	key := "github.com/openziti/tlsuv/pull/378"
@@ -453,10 +451,8 @@ func TestManualMoveUpdatesTheClaim(t *testing.T) {
 	if testing.Short() {
 		t.Skip("slow: a real link, hub and git rig over loopback")
 	}
-	old := prWarnGrace
-	prWarnGrace = 0
-	defer func() { prWarnGrace = old }()
 	x := newClaimHub(t, map[string]int{"alpha": 3, "beta": 0})
+	x.proxy.warnGrace = 0
 	defer x.done()
 	x.pasteVia(t, "alpha", prURL)
 	key := "github.com/openziti/tlsuv/pull/378"

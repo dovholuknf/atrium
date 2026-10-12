@@ -21,9 +21,20 @@ type rigSnap struct {
 var (
 	passSnap, urlSnap rigSnap
 
-	snapRoots   []string
-	snapRootsMu sync.Mutex
+	snaps snapRoots
 )
+
+// snapRoots is the folders the snapshots were copied into, kept to remove them when the run ends.
+type snapRoots struct {
+	mu   sync.Mutex
+	dirs []string
+}
+
+func (s *snapRoots) add(dir string) {
+	s.mu.Lock()
+	s.dirs = append(s.dirs, dir)
+	s.mu.Unlock()
+}
 
 // start is the snapshot when there is one. When there is not, the caller is the one to build it, holds every other
 // caller off until publish or abandon, and gets building true.
@@ -54,9 +65,7 @@ func (s *rigSnap) publish(t *testing.T, root string, names, sha []string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	snapRootsMu.Lock()
-	snapRoots = append(snapRoots, dir)
-	snapRootsMu.Unlock()
+	snaps.add(dir)
 	for _, n := range names {
 		copyTree(t, filepath.Join(root, n), filepath.Join(dir, n))
 	}
@@ -65,9 +74,9 @@ func (s *rigSnap) publish(t *testing.T, root string, names, sha []string) {
 }
 
 func removeSnapshots() {
-	snapRootsMu.Lock()
-	defer snapRootsMu.Unlock()
-	for _, d := range snapRoots {
+	snaps.mu.Lock()
+	defer snaps.mu.Unlock()
+	for _, d := range snaps.dirs {
 		_ = os.RemoveAll(d)
 	}
 }

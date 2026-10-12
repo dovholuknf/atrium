@@ -90,9 +90,9 @@ const (
 	notifyTabIDMaxSize = 128
 )
 
-// notifyTimeout is a variable so a test can prove a timeout kills the process
+// notifyTimeout is how long a command may run. A test sets `Timeout` on its sink to prove a timeout kills the process
 // without waiting ten seconds.
-var notifyTimeout = 10 * time.Second
+const notifyTimeout = 10 * time.Second
 
 // Notice is what a sink is given. These four fields are the whole payload.
 type Notice struct {
@@ -407,6 +407,8 @@ func (p *presence) Count() int {
 type CommandSink struct {
 	// Argv is read on every send, so a changed command applies at once.
 	Argv func() []string
+	// Timeout bounds one run. Zero means notifyTimeout.
+	Timeout time.Duration
 }
 
 // Send runs the command once, bounded the way a source is: a timeout with the
@@ -421,7 +423,11 @@ func (c CommandSink) Send(ctx context.Context, n Notice) Result {
 		res.Output = res.Err
 		return done()
 	}
-	runCtx, cancel := context.WithTimeout(ctx, notifyTimeout)
+	limit := c.Timeout
+	if limit <= 0 {
+		limit = notifyTimeout
+	}
+	runCtx, cancel := context.WithTimeout(ctx, limit)
 	defer cancel()
 	cmd := exec.CommandContext(runCtx, argv[0], argv[1:]...)
 	hideWindow(cmd)
@@ -455,7 +461,7 @@ func (c CommandSink) Send(ctx context.Context, n Notice) Result {
 	}
 	switch {
 	case runCtx.Err() == context.DeadlineExceeded:
-		res.Err = fmt.Sprintf("took longer than %s and was stopped", notifyTimeout)
+		res.Err = fmt.Sprintf("took longer than %s and was stopped", limit)
 	case err == nil:
 		res.OK, res.ExitCode = true, 0
 	default:

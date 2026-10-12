@@ -458,18 +458,16 @@ func TestOldPathCannotTakeAnAttachedProvenName(t *testing.T) {
 func TestAKeylessAttachCannotReplaceAKeyedRoom(t *testing.T) {
 	var mu sync.Mutex
 	keys := map[net.Conn]string{}
-	was := peerKey
-	peerKey = func(c net.Conn) string {
+
+	h := NewHub(Timings{Beat: time.Hour, Silence: time.Hour, Warm: 1})
+	h.peerKey = func(c net.Conn) string {
 		mu.Lock()
 		defer mu.Unlock()
 		if k, ok := keys[c]; ok {
 			return k
 		}
-		return was(c)
+		return peerKey(c)
 	}
-	t.Cleanup(func() { peerKey = was })
-
-	h := NewHub(Timings{Beat: time.Hour, Silence: time.Hour, Warm: 1})
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
 	dial := func(key string) welcome {

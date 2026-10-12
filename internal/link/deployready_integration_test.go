@@ -361,14 +361,11 @@ func (g *slowGit) GitInput(ctx context.Context, dir string, _ []byte, a ...strin
 }
 
 func TestDeployReadyGetAnswersAtOnceWhileGitIsSlowAndGivesUpAtTheBound(t *testing.T) {
-	old := deployReadyBound
-	deployReadyBound = 400 * time.Millisecond
-	defer func() { deployReadyBound = old }()
-
 	r := newReadyRepo(t)
 	base := r.commit("base", map[string]string{"internal/a.go": "a"})
 	p, _ := readyProxy(t, r, base, scriptFile(t))
 	st := p.deployReady()
+	st.bound = 400 * time.Millisecond
 	slow := &slowGit{}
 	st.checker = &deployready.Checker{Git: slow, Dir: r.dir, Branch: "claude/main"}
 

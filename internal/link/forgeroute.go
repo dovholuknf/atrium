@@ -59,6 +59,8 @@ type hubForge struct {
 	run forge.Runner
 	// forgeOf, when set, picks the forge for a host instead of the entries. A seam for tests.
 	forgeOf func(host string) (forge.Forge, error)
+	// seed, when set, is the built-in recogniser rows instead of the shipped ones. A seam for tests.
+	seed seedFunc
 
 	mu sync.Mutex
 	// open is the growler id of each raised alert, by `tool@host`.

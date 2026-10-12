@@ -7,7 +7,6 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"os"
 	"sort"
 	"strings"
 	"sync"
@@ -34,15 +33,6 @@ import (
 // room that does not answer in this time is not a match, so one silent machine
 // cannot hold up a launch that another room can take.
 const launchProbeWait = 4 * time.Second
-
-// The seams. A test replaces these.
-var (
-	// hubHostname is the machine the hub runs on, spelled the way a room spells its
-	// own `Host`: both come from os.Hostname.
-	hubHostname = os.Hostname
-	// launchProbeFor is `launchProbeWait`, or a test's shorter one.
-	launchProbeFor = launchProbeWait
-)
 
 // placeLaunch picks the room for an unscoped `POST /v1/launch`, or answers it.
 //
@@ -77,7 +67,7 @@ func (p *Proxy) placeLaunch(w http.ResponseWriter, r *http.Request) (*http.Reque
 		return r, false
 	}
 
-	cands := launchCandidates(r, p.leavingOut(rooms))
+	cands := launchCandidates(r, p.leavingOut(rooms), p.hostname)
 	// NOTHING TO ASK, as when every room is on its way out: the old question.
 	if len(cands) == 0 {
 		needsARoom(w, rooms)
@@ -195,11 +185,11 @@ func (p *Proxy) leavingOut(rooms []Attached) []Attached {
 // A host filter that matches no room is no filter, for the same reason. Rooms
 // that never reported a host, or spell it otherwise, would otherwise make every
 // launch fail on a machine that has the directory.
-func launchCandidates(r *http.Request, rooms []Attached) []Attached {
+func launchCandidates(r *http.Request, rooms []Attached, hostname func() (string, error)) []Attached {
 	if !edge.LocalOperator(r) {
 		return rooms
 	}
-	here, err := hubHostname()
+	here, err := hostname()
 	if err != nil || strings.TrimSpace(here) == "" {
 		return rooms
 	}
@@ -244,7 +234,7 @@ func (p *Proxy) roomsWithDir(ctx context.Context, rooms []Attached, dir string) 
 // roomHasDir asks one room. `answered` is false for anything but a clean answer:
 // a room that is slow, gone, or too old to have the route.
 func (p *Proxy) roomHasDir(ctx context.Context, room, dir string) (isDir, answered bool) {
-	ctx, cancel := context.WithTimeout(ctx, launchProbeFor)
+	ctx, cancel := context.WithTimeout(ctx, p.launchProbe)
 	defer cancel()
 	u := "http://" + hostFor(room) + "/v1/launch/cwd?path=" + url.QueryEscape(dir)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
