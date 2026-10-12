@@ -253,6 +253,17 @@ func (c *controlMCP) putHandler(ctx context.Context, req *mcp.CallToolRequest, i
 		}
 	}
 
+	// Content is checked against the cap before it is hashed or scanned.
+	if hasContent {
+		set, err := st.FileSettings()
+		if err != nil {
+			return nil, out, err
+		}
+		if int64(len(data)) > set.Caps.File {
+			return nil, out, &docsRefusal{Status: http.StatusRequestEntityTooLarge, Msg: fmt.Sprintf(
+				"that is %d bytes, over the %d byte cap for a drop file", len(data), set.Caps.File)}
+		}
+	}
 	row, err := st.FileAdd(hubstore.FileInput{
 		Name: name, Note: in.Note, Origin: "card", By: callerName(req), Card: tagFor(room, card.ID), Room: room,
 		Data: data, TTLDays: in.TTLDays, Rate: true,

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -45,6 +46,10 @@ func dropRoot(t *store.Task) (string, error) {
 // this refuses them before anything resolves, so the answer does not depend on what is on the disk.
 func destEscapes(dest string) bool {
 	if filepath.IsAbs(filepath.FromSlash(dest)) || strings.HasPrefix(dest, "/") || strings.HasPrefix(dest, `\`) {
+		return true
+	}
+	// A colon is a drive letter, a stream name or a device on Windows, and none of them is a path inside the card.
+	if strings.Contains(dest, ":") {
 		return true
 	}
 	for _, seg := range strings.FieldsFunc(dest, func(r rune) bool { return r == '/' || r == '\\' }) {
@@ -138,8 +143,9 @@ func (s *Server) dropIn(w http.ResponseWriter, r *http.Request) {
 	if err := s.st.AppendEvent(task.ID, store.EventNotified, map[string]any{
 		"by": "drop", "files": []string{path},
 	}); err != nil {
-		s.fail(w, err)
-		return
+		// THE FILE IS ALREADY WRITTEN, so a failed event is logged and the answer is still 200. A 500 here would
+		// make the caller retry a drop that landed.
+		log.Printf("drop: %s was written but its event was not: %v", path, err)
 	}
 	rel, _ := realRelative(task.Worktree, target)
 	writeJSON(w, http.StatusOK, map[string]any{"path": path, "rel": rel})

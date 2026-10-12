@@ -36,7 +36,10 @@ import (
 const (
 	SettingFiles = "files_settings"
 
-	DefaultFileCap         int64 = 32 << 20
+	DefaultFileCap int64 = 32 << 20
+	// MaxFileCap is the most the operator can raise the cap to: the room takes a file of 32 MiB and no more, so a larger
+	// hub cap would store files that atrium_get cannot fetch.
+	MaxFileCap             int64 = 32 << 20
 	DefaultFileTotalCap    int64 = 512 << 20
 	DefaultFilePerCardHour       = 30
 	DefaultFileTTLDays           = 7
@@ -78,7 +81,7 @@ func (s *Store) FileSettings() (FileSettings, error) {
 		return out, nil
 	}
 	if got.Caps.File > 0 {
-		out.Caps.File = got.Caps.File
+		out.Caps.File = min(got.Caps.File, MaxFileCap)
 	}
 	if got.Caps.Total > 0 {
 		out.Caps.Total = got.Caps.Total
@@ -106,7 +109,7 @@ func (s *Store) SetFileSettings(p FileCaps) (FileSettings, error) {
 		return cur, &DocError{Kind: DocBad, Msg: "a cap has to be more than zero"}
 	}
 	if p.File > 0 {
-		cur.Caps.File = p.File
+		cur.Caps.File = min(p.File, MaxFileCap)
 	}
 	if p.Total > 0 {
 		cur.Caps.Total = p.Total

@@ -308,3 +308,18 @@ func TestFilesListByCardAndNoteCut(t *testing.T) {
 		t.Fatalf("list = %+v", list)
 	}
 }
+
+func TestFilesCapIsClampedToWhatTheRoomTakes(t *testing.T) {
+	s := open(t)
+	set, err := s.SetFileSettings(FileCaps{File: 64 << 20})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if set.Caps.File != MaxFileCap {
+		t.Fatalf("cap = %d", set.Caps.File)
+	}
+	got, err := s.FileSettings()
+	if err != nil || got.Caps.File != MaxFileCap {
+		t.Fatalf("stored cap = %d, %v", got.Caps.File, err)
+	}
+}

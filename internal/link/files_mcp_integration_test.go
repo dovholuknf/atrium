@@ -452,3 +452,14 @@ func TestFilesToolsAreAudited(t *testing.T) {
 		t.Errorf("the refused put wrote %d lines\n%s", refused, joined)
 	}
 }
+
+func TestFilesToolPutContentOverTheCapIs413(t *testing.T) {
+	h := newFilesHarness(t)
+	if _, err := h.st.SetFileSettings(hubstore.FileCaps{File: 10}); err != nil {
+		t.Fatal(err)
+	}
+	_, err := h.put("r-031", putInput{Content: "01234567890", Name: "big.txt"})
+	if refusalOf(t, err).Status != 413 {
+		t.Fatalf("err %v", err)
+	}
+}

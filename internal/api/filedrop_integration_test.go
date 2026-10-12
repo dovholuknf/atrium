@@ -245,3 +245,50 @@ func TestDropInCaseFoldedEscapeIsRefused(t *testing.T) {
 		t.Fatal("something was written outside the card")
 	}
 }
+
+// closeAtEOF closes the store when the body has been read, so the file is written and the event cannot be.
+type closeAtEOF struct {
+	*bytes.Reader
+	st *store.Store
+}
+
+func (c closeAtEOF) Read(p []byte) (int, error) {
+	n, err := c.Reader.Read(p)
+	if err != nil {
+		c.st.Close()
+	}
+	return n, err
+}
+
+func TestDropInAnswers200WhenTheEventCannotBeWritten(t *testing.T) {
+	t.Parallel()
+	s, st, work := fileServer(t)
+	task := cardIn(t, st, work)
+	r := dropReq(task.ID, "dest=out.txt", nil)
+	r.Body = http.NoBody
+	r.Body = readCloser{closeAtEOF{bytes.NewReader([]byte("hello")), st}}
+	w := httptest.NewRecorder()
+	s.dropIn(w, r)
+	if w.Code != http.StatusOK {
+		t.Fatalf("answered %d: %s", w.Code, w.Body.String())
+	}
+	if b, err := os.ReadFile(filepath.Join(work, "out.txt")); err != nil || string(b) != "hello" {
+		t.Fatalf("file = %q, %v", b, err)
+	}
+}
+
+type readCloser struct{ r closeAtEOF }
+
+func (c readCloser) Read(p []byte) (int, error) { return c.r.Read(p) }
+func (c readCloser) Close() error               { return nil }
+
+func TestDropInRefusesAColonInDest(t *testing.T) {
+	t.Parallel()
+	s, st, work := fileServer(t)
+	task := cardIn(t, st, work)
+	for _, dest := range []string{"C:/x", "C:x", "a/b:stream", "sub/name.txt:ads"} {
+		if w := dropDo(s, task.ID, "dest="+url.QueryEscape(dest), []byte("x")); w.Code != http.StatusForbidden {
+			t.Errorf("dest %q answered %d", dest, w.Code)
+		}
+	}
+}
