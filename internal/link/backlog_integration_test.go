@@ -191,11 +191,13 @@ func TestBacklogAndReportsToolsReachTheHub(t *testing.T) {
 	}
 }
 
+// The backlog is the full class's. Reports are filed by workers too, for the work ledger.
 func TestBacklogToolsAreForTheFullClassOnly(t *testing.T) {
-	for _, name := range []string{"atrium_backlog", "atrium_reports"} {
-		if inClass(name, classWorker) || !inClass(name, classFull) {
-			t.Errorf("%s is in the wrong classes", name)
-		}
+	if inClass("atrium_backlog", classWorker) || !inClass("atrium_backlog", classFull) {
+		t.Errorf("atrium_backlog is in the wrong classes")
+	}
+	if !inClass("atrium_reports", classWorker) || !inClass("atrium_reports", classFull) {
+		t.Errorf("atrium_reports is in the wrong classes")
 	}
 }
 

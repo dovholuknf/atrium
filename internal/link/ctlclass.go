@@ -61,6 +61,8 @@ var workerTools = map[string]bool{
 	"atrium_resources": true,
 	// And the ones that clear up cards, which otherwise script the API by hand. See closeHandler.
 	"atrium_close": true,
+	// And the ones that file what a run cost and what slowed it, for the work ledger. See backlog_mcp.go.
+	"atrium_reports": true,
 }
 
 // inClass reports whether a tool is served to a class.
