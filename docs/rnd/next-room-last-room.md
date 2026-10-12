@@ -1,389 +1,619 @@
 # The next room and the last room: deploy beside the old build, never over it
 
-Status: design, for clint's approval. Written 2026-10-10 by a worker on `claude/next-room-design`. Nothing is built.
-The item is backlog `f-next-room-last-room` (HIGH, clint 2026-10-08).
+Status: design, 2026-10-12. Nothing here is built. Written for `f-next-room-last-room` (high). It replaces the
+2026-10-10 draft of this file, which left six questions open for clint, assumed `pty_host` already kept runners
+across a deploy, and had the hub route between two generations. Every question is decided below with its reason. The
+build is eight phases, filed as `f-blue-green-1` to `f-blue-green-8`, each one a worker can follow without a judgment
+call.
 
-## 0. The answer
+## The problem
 
-Give every machine two **slots**, A and B, and let a room run in either. A deploy starts the new build in the free slot
-as NEXT, beside LAST, and never touches LAST. Each slot has its own ports, its own address file, its own database and
-its own pty host, and the two share only the room's key and its name. When NEXT has attached and passed its own checks
-the hub **flips**: every new launch, resume and new card goes to NEXT, and `room: m1mini` means whichever generation is
-current. LAST keeps every runner it has. Nothing is moved, resumed or typed into. As each one ends or parks, LAST's
-work is done, and when it holds nothing live it hands its remaining cards to NEXT and exits.
+clint, 2026-10-08: "we still deploy rooms so often we really need to have a 'the last room' and 'the next room' idea so
+that we can just START THE NEXT ROOM up and then just start using that new room and eventually decom the 'old room' on
+those machines... and as always if NOTHING is running on a room - it can ALWAYS be redeployed immediately".
 
-Three decisions carry the design:
+Today a deploy stops the one room on a machine and starts the new build in its place. On 2026-10-12 at 15:20 a deploy
+interrupted a build worker mid-phase (it resumed) and a launch made during the restart came up with no prompt typed
+(`r-launch-prompt-lost-in-deploy`). Both come from the same fact: for some seconds or minutes there is no room, and
+every runner the room owned ends with it.
 
-1. **A runner's hooks follow the generation that launched it, for life.** Each runner is launched with
-   `ATRIUM_LOCATION` naming its own slot's address file, not the machine's. The machine's file becomes a pointer that
-   the current generation owns (section 2.2).
-2. **One store per generation.** Two processes on one database is a halt waiting to happen and two builds on one
-   schema is worse (section 2.3). The cost is a way to carry cards from one store to the next. Because the two stores
-   are on one machine and LAST never moves a running card, that carry is an **adoption by the same id**, which is far
-   cheaper than room handoff's successor card (section 4).
-3. **Turn `pty_host` on first.** It gives most of the pain relief in a fraction of the work, and blue-green is then
-   the second layer for what it cannot do: rollback, a gap-free flip and a migration that can fail without taking the
-   room down (section 3).
+What is wanted, per machine: a LAST generation (the old build) and a NEXT one (the new build). A deploy starts NEXT
+beside LAST and never stops LAST. New launches, resumes and new cards go to NEXT once it is up. `room: m1mini` means
+m1mini's current generation. LAST keeps its running cards until each ends, parks or moves, and exits when nothing runs
+on it. The board shows one room, with LAST's cards marked "old build".
 
-## 1. Today, in one paragraph
+## What exists
 
-A machine runs one room, `atrium room` (`internal/cli/roomrun.go`, `runRoom`), and a deploy replaces it. The room binds
-the fixed ports from `internal/cli/atrium_defaults.go` (agents 7777, its own board 7781) and writes its address to the
-machine's one location file (`daemon.DefaultLocationPath`, `writeLocation` in `internal/daemon/whereami.go`). It also
-sets `ATRIUM_LOCATION` in its own environment, which every runner inherits, so a runner's hooks always find "the file",
-and `writeLocation` refuses to take that file while another live pid owns it (`takingOver`). The hub keys rooms by
-name, and a second attach under a name from the same key evicts the first (`internal/link/hub.go`,
-`h.rooms[keyOf(name)]` and `old.close("replaced by a newer connection ...")`), and `RoomCheckIn`
-(`internal/daemon/rooms.go`) replaces that room's whole card list on every heartbeat. The room owns one sqlite store whose open runs every migration and refuses to
-start on failure, and whose first non-contention error halts the process (`internal/store/store.go` header, tiers one
-and three). A deploy (`scripts/live/deploy-ready.ps1`, `Start-Room` in `live-common.ps1`) stops that room and starts the
-new one, and it waits for the board to be idle first because every supervised runner dies with the room unless
-`pty_host` is on (`internal/daemon/hostterm.go`, `docs/rnd/rolling-restart-design.md`). `pty_host` is built and off on
-every live room. Moving a card between rooms is design only (`docs/rnd/room-handoff-design.md`, M1 partly built).
+- **One room per machine** (`internal/cli/roomrun.go`, `runRoom`). It binds the fixed ports in
+  `internal/cli/atrium_defaults.go` (agents 7777, its own board 7781), opens one sqlite store (`defaultRoomDB`), and
+  sets `ATRIUM_LOCATION` in its own environment to the machine's one address file (`roomLocationEnv`), which every
+  runner inherits. `writeLocation` (`internal/daemon/whereami.go`) refuses to take that file while another live pid
+  holds it (`takingOver`). `--isolated` puts a second room's file beside its `--dir` instead. A daemon given
+  `Options.LocationFile` already passes that file to its runners (`tellWhereIAm`).
+- **The store** (`internal/store/store.go` header). Open runs every migration and a failure refuses to start (tier
+  one). The first error that is not contention halts the store and closes the agent listener (tier three). Migrations
+  are forward only.
+- **The hub** keys attached rooms by name (`internal/link/hub.go`, `h.rooms[keyOf(name)]`). A second attach under the
+  same name with the same certificate key replaces the first and closes it, killing its in-flight requests
+  (`old.close("replaced by a newer connection from the same room")`). A different key is refused. About forty hub
+  callers iterate `h.Rooms()` and dial a room by name, and every one of them assumes one link per name.
+- **The room's announcement** (`internal/link/announce.go`) reads the room's own `GET /v1/tasks` and the hub caches it
+  by room name. The control MCP finds a caller's card by listing the room's `/v1/tasks` through the hub
+  (`callerCard`, `internal/link/docs_mcp.go`).
+- **`pty_host`** is built and off on every live room (`internal/ptyhost`, `internal/daemon/hostterm.go`). The host
+  keeps each pty and drains it while no daemon is connected, and a starting daemon reattaches (`reattachRuns`). The
+  host's `probe` already reports `in_job` (design gap G5). **But a graceful stop still ends every runner, host or
+  not**: `shutdown` in `internal/daemon/daemon.go` calls `stopSupervised`, which winds down every runner with its exit
+  keys, and nothing there skips a host-held one. Only a daemon that is killed or crashes leaves its host runners up.
+  Stage 2 of `docs/rnd/rolling-restart-design.md` (the stop that leaves runners up, the short gate, the
+  re-derivation list, the 30 second permission retry) and stage 3 (the G5 refusal, the service changes, turning it on)
+  are not built. I found no retry across a restart in `internal/cli/hook_permission.go`.
+- **The deploy hold** (`docs/rnd/room-deploy-hold-design.md`, built) makes every agent end its turn before a deploy and
+  wakes them after. It exists because a deploy ends every runner.
+- **Room handoff** (`docs/rnd/room-handoff-design.md`) moves a card between rooms. M1, the room side, is built
+  (`internal/daemon/move.go`, `moveroutes.go`): freeze, capture, park, `moved_to`. M2 and M3 are not.
+- **The deploy** (`scripts/live/atrium-deploy.ps1`) cross-builds, copies, runs `atrium stop`, waits for port 7781 to be
+  free, swaps the binary keeping `atrium.prev`, starts the room, and checks it is back on the hub and unheld.
 
-## 2. The recommended design
+## Does `pty_host` everywhere give most of this sooner
 
-### 2.1 Slots and generations
+**Yes, once its stage 2 and 3 are built, and that is phase 1.** Turning the setting on today gives nothing for a
+deploy, because the deploy's `atrium stop` winds down the host's runners too. With stage 2 and 3 built and the setting
+on, a deploy is a daemon restart of a few seconds that ends no runner, resumes nothing, needs no deploy hold for
+running cards, and keeps a half-typed input line. That is the larger half of the pain in the item (the interrupted
+build worker) and it is a week of work on a design that is already decided.
+
+What blue-green adds beyond it:
+
+| | `pty_host` on, stage 2 and 3 built | Blue-green on top |
+| --- | --- | --- |
+| Runners survive a deploy | yes | yes |
+| A gap with no room | a few seconds: hooks lost, a permission long-poll retried, a launch in flight cut | none: LAST answers until NEXT has taken over |
+| A launch made during the deploy | can land in the gap (`r-launch-prompt-lost-in-deploy`) | lands on LAST or NEXT, both are up |
+| A bad build | is already the room. Rollback is another restart onto `atrium.prev` | is checked before it takes anything. Before the handover, abort is free |
+| A migration that fails | tier one, the room is down until fixed | NEXT refuses to start, LAST keeps serving |
+| In-memory state (idle marks, activity counts, wake signals) | re-derived after reattach, some of it guessed | never lost: LAST keeps it for its own cards |
+| Upgrading the pty host itself | the per-card idle move (rolling-restart section 6) | a new slot has its own host |
+| Cost | the stage 2 and 3 work | two slots, a store handover, a room-side forwarder, a small hub change |
+
+So the two compose. Phase 1 is `pty_host` finished and on, and it is useful alone. Blue-green is phases 3 to 8. It
+also leans on phase 1 once: the bootstrap deploy, the first one onto a slotted build, is an ordinary restart, and
+phase 1 makes that lossless.
+
+## Decisions
+
+Each is decided here, because clint is away and the brief says to decide.
+
+1. **Phase 1 is `pty_host` finished and turned on everywhere.** Reason above: most of the pain, soonest, on a design
+   clint already approved (rolling-restart section 10).
+
+2. **Two fixed slots per machine, A and B, and a deploy always takes the free one.** Slot A is today's layout exactly,
+   so a machine that has never heard of slots is already in slot A with no migration. Slot B is the same layout under
+   `<dir of the room db>/slot-b/` with both room ports shifted by +100: 7877 for agents and 7881 for its board, and on
+   sg4-control 7887 and 7891. Fixed ports beat port 0 because the escape-hatch board and every script that names a
+   port keep meaning something, and +100 was checked against sg4-control's 7787 and 7791 so it never lands on 7777.
+   The hub's ports do not move, since the hub is not a room.
+
+3. **One store per generation.** Two processes on one sqlite file means each meets the other's locks and checkpoints,
+   two reapers and two idle clocks act on one set of rows, and the first error that is not contention halts a
+   generation whose agents are mid-turn. Worse, the moment NEXT opens a shared file its migrations change the schema
+   under LAST. One store per generation means NEXT migrates a file LAST never opens, and a migration that fails is
+   tier one on NEXT only. Rolling-restart section 8 refused the shared store for the same reasons. Slot A's store is
+   today's file. Slot B's is `slot-b/atrium.db`. The pty host's socket is derived from the store's directory
+   (`hostStateDir`), so each slot gets its own host with no new code.
+
+4. **Cards move between the stores by one primitive, cede, and never while they run.** LAST cedes a set of card ids to
+   NEXT: it marks them ceded, takes a `VACUUM INTO` snapshot, and NEXT opens a copy of that snapshot with its own
+   `store.Open` (so every NEXT migration runs on the copy), then copies every row belonging to those ids into its own
+   store in one transaction, idempotent by id. Card ids, aliases and wire names do not change, so `room~id`, `name@room`,
+   `report_to` and every handle a sender holds stay valid and no `moved_to` chain is needed. The handover cedes every
+   card that is not live. A cede loop on LAST cedes each card the moment it stops being live. When LAST holds nothing,
+   it exits. So a parked card on LAST is on NEXT before anyone resumes it, and LAST never keeps a card that does not
+   need it.
+
+5. **NEXT's store starts as a migrated snapshot of LAST's, not empty.** At the handover NEXT's store is the snapshot,
+   migrated, with the rows of LAST's live cards deleted and those cards' ids, aliases and wire names written to a new
+   table, `gen_held`. NEXT starts with the board's whole history and every setting, and it never allocates a name a
+   live card on LAST holds. Settings are NEXT's from then on.
+
+6. **"Live" has one definition**, used by the handover, the cede loop and retirement. A card is live on a generation
+   when its status is `running`, `needs-input` or `needs-permission`, or that generation's supervisor holds a runner or
+   a shell for it, or a new-context cycle is in flight for it (`d.nctx`), or a `restart_wake` row is owed to it, or a
+   `card_resources` row of kind `proc`, `port` or `overlay` names it. Everything else (done, dead, shelved, backlog,
+   parked) is not live and is ceded.
+
+7. **A runner's hooks follow the generation that launched it, for life.** Each generation writes its own address file
+   (`slot-a/daemon.json`, `slot-b/daemon.json`, both beside the slot's store) and passes it as `ATRIUM_LOCATION` to every
+   runner it launches, through the existing `Options.LocationFile` and `tellWhereIAm`. A runner's hook reads that file
+   on every fire, so it reaches LAST for as long as LAST lives and NEXT can never capture it.
+
+8. **The machine's address file becomes a pointer the current generation owns.** It is what sessions atrium did not
+   start, the CLI, `atrium join` and the control MCP read. NEXT takes it at the handover by an explicit act, never by
+   `takingOver`'s accident rule, and records `slot` and `last` (LAST's agent and board addresses and pid) in it.
+   Runners that predate slots carry the machine's file and their hooks therefore arrive at NEXT after the handover.
+   Decision 9 forwards them, so the bootstrap needs no special case and the forwarder is permanent rather than a
+   bridge to remove later.
+
+9. **The hub routes by machine, and the current generation fronts the other one.** This is the decision the 2026-10-10
+   draft got the other way round. The hub keeps one link per room name, exactly as today, and that link is NEXT's
+   after the handover. NEXT answers for LAST's cards over loopback:
+   - A request on NEXT's board or agent listener that names a card id in `gen_held` (in the path, in a launch body's
+     `task_id`, or in a hook body's `task_id`) is reverse-proxied to LAST's matching listener, websockets included.
+   - `GET /v1/tasks` on NEXT appends LAST's live cards, read from LAST over loopback, each with `"generation": "last"`
+     and `"build": "<LAST's commit, 8 hex>"`.
+   - NEXT relays LAST's event stream into its own, for LAST's cards only, with the same two fields.
+
+   Because every hub caller (the board's lists and stream, the announcement cache, `callerCard`, `placeCard`,
+   `placeByName`, the launch cap) reads the room through those same routes, none of the forty `h.Rooms()` callers
+   changes. Two links per name would have touched every one of them, and each is a place a card could be listed twice
+   or not at all.
+
+10. **The hub changes in one place: the second link of a room drains the first instead of killing it.** The hello
+    gains `gen` (`a` or `b`). In `control`, a new link with the same key and a different non-empty `gen` takes the
+    name, and the old link is moved to `h.draining[name]` and left open until it hangs up or two minutes pass, so a
+    request in flight on it finishes. Same key and same `gen` is a reconnect and closes the old one as today. A
+    different key is refused as today. `Attached` gains `LastCommit`, so the room row can show both builds. A
+    retiring LAST never redials the hub.
+
+11. **The handover order is fixed, and nothing is lost in it.** Before it, LAST is the room and NEXT has proved itself
+    on a throwaway copy (decision 12). Then: LAST marks every non-live card ceded and answers a write to a ceded card
+    with 503 and `Retry-After: 2` ("this card is moving to the new build"), LAST snapshots, NEXT seeds its store from
+    the snapshot, LAST starts forwarding ceded cards and room-level writes to NEXT instead of 503, NEXT takes the
+    machine pointer, NEXT dials the hub. The 503 window lasts as long as a snapshot and a migrated open, seconds, and
+    touches only cards that are not running, so it costs a retry and never a write. A running card is never paused.
+
+12. **NEXT proves itself before it takes anything, and abort is free until the seed.** NEXT's checks: open and migrate
+    a trial snapshot (deleted after), bind both slot listeners, write its slot address file, and answer its own canary (a
+    `GET /v1/health` on both listeners, and a hook post to its agent listener naming a card id in `gen_held`, which
+    must come back with LAST's answer, so the forward path is proved too). Any failure ends NEXT with the reason and LAST has not changed.
+    A failure after LAST has marked cards ceded and before NEXT dialed the hub makes LAST clear the marks and stay the
+    room.
+
+13. **Rollback is roll forward.** After the handover the bad build is the room. Ceding cards back to LAST would need
+    LAST to open a snapshot at NEXT's newer schema, which an older build cannot do. So there is no swap. The checks in
+    decision 12 are the guard, and a bad NEXT is fixed by deploying a good build once LAST has retired, exactly as
+    today with `atrium.prev`. A NEXT that crashes is restarted in its own slot by the room's usual start, and its
+    runners survive if `pty_host` is on (phase 1).
+
+14. **A third deploy while LAST still lives is refused, naming LAST's live cards.** Never end a card automatically,
+    since a card that runs for days is doing what it was asked. The board gives each old-build card the existing end
+    action. With nothing live on LAST, LAST is already gone, which is the item's "if NOTHING is running it can ALWAYS be
+    redeployed immediately": the handover cedes every card and LAST exits in the same breath.
+
+15. **Room identity and the certificate are the machine's, shared by both slots.** Both generations read the one
+    `room/` directory (key, hub-signed certificate, `room.json`), so both dial as the same room with the same key, which
+    is what the hub's same-key check already accepts. A re-join or a new certificate written while two generations run
+    applies to each on its next dial. `ATRIUM_ROOM` stays the room name in every runner, and a runner never needs to
+    know it is on an old build.
+
+16. **NEXT's launch cap counts LAST's live cards.** The cap is per room and both generations share one machine, so a cap
+    that counted only NEXT would let a machine hold ten agents during a drain. The hub reads the room's `/v1/tasks`,
+    which now includes LAST's cards (decision 9), so the hub cap needs no change. Phase 5 checks it with a test.
+
+17. **LAST retires when it holds nothing.** Every card ceded, its `relay_outbox` empty (it owes nothing to other
+    rooms), no `card_resources` process row of its own. It removes its slot address file, closes its store and exits.
+    NEXT sees the `last` pid gone and clears `last` from the pointer and the forwarder's table. LAST's pty host exits on
+    its own idle rule.
+
+## The picture
 
 ```
-  machine m1mini                                        hub
-  +-----------------------------------------------+     +----------------------+
-  | slot A  (LAST)  build 41  ports 7777 / 7781   |     | room "m1mini"        |
-  |   db room.db   addr slot-a/daemon.json        | <-> |   gen A  old build   |
-  |   pty host a   runners: c1 c2 c3 (running)    |     |   gen B  current     |
-  |                                               |     |                      |
-  | slot B  (NEXT)  build 42  ports 7877 / 7881   | <-> | new work  -> gen B   |
-  |   db room-b.db addr slot-b/daemon.json        |     | card ~id  -> its gen |
-  |   pty host b   runners: c4 (new)              |     +----------------------+
-  |                                               |
-  | daemon.json (the machine pointer) -> slot B   |
-  +-----------------------------------------------+
+  machine m1mini                                                     hub
+  +------------------------------------------------------------+     +-------------------------+
+  | slot A  LAST  build 41f0  ports 7777 / 7781                |     | rooms["m1mini"]         |
+  |   atrium.db   slot-a/daemon.json   pty host A               |     |   -> link gen b (NEXT)  |
+  |   runners c1 c2 (ATRIUM_LOCATION = slot-a file)            |     | draining["m1mini"]      |
+  |   cede loop: c3 ended -> ceded to B                        |     |   -> link gen a, closes |
+  |        ^ loopback: cards in gen_held, hooks of c1 c2        |     |      when it hangs up   |
+  |        |          from pre-slot runners                     |     +-----------^-------------+
+  | slot B  NEXT  build 52c1  ports 7877 / 7881                |                 |
+  |   slot-b/atrium.db (seeded from A)  slot-b/daemon.json     | ----------------+
+  |   pty host B   runners c4 (new)                            |   the room's one link
+  |   GET /v1/tasks = B's cards + A's live cards, "old build"  |
+  |                                                            |
+  | daemon.json (machine pointer): slot b, last = A            |
+  +------------------------------------------------------------+
 ```
 
-- A **slot** is a fixed layout: ports, a directory holding the database, the address file, the logs and the pty host's
-  socket. Slot A is today's layout exactly, so a machine that has never heard of slots is already in slot A with no
-  migration. Slot B is the same layout in `<state>/room-b/` with both ports shifted by +100 (7877 and 7881). A fixed
-  shift is chosen over a random port because the escape-hatch board at `:7781` and every script that matches on a port
-  keep meaning something. The shift is +100 rather than -10 so a second room on the machine that already uses 7787 and
-  7791 (sg4-control) lands on 7887 and 7891 and not on 7777.
-- A **generation** is the daemon that holds a slot. The hello it sends the hub gains `gen` (the slot and the build
-  commit) and `state`: `warming`, `current` or `retiring`. A deploy always takes the free slot. If both are held, the
-  deploy refuses and names the cards that keep LAST alive (open question 3).
-- The room's key, certificate and name are shared. Both generations dial as the same room with the same key, which is
-  what the hub's same-key check already accepts, and the second one no longer evicts the first.
-
-### 2.2 How a runner's hook finds the generation that owns it
-
-Today every runner inherits one `ATRIUM_LOCATION`, and that is why a second room on a machine used to steal hooks
-(`LocationPath` says so at length). The fix is to stop sharing it:
-
-- **Each generation writes its own address file** (`slot-a/daemon.json`, `slot-b/daemon.json`) and sets
-  `ATRIUM_LOCATION` to it in the environment of every runner it launches. `tellWhereIAm` in `whereami.go` already does
-  exactly this when a daemon has its own `LocationFile`, so the supervised-runner path exists. It becomes the rule
-  rather than the exception. A runner's hook reads that file on every fire, so it reaches LAST for as long as LAST
-  lives and can never be captured by NEXT. A runner that resumes later on the same slot reads the same file.
-- **The machine's file is a pointer, owned by the current generation.** It is what a session atrium did not start, the
-  CLI, `atrium join` and the control MCP read (`ReadLocation`). `takingOver` refuses to take it while another live pid
-  is recorded, which is right for an accident and wrong for a flip. The flip is an explicit act: NEXT writes the
-  pointer with a `take_default` option, atomically, and only after the hub has flipped. The pointer also records the
-  other generation's address as `last`, so a tool can find both.
-- **The same-box shared copy** (`ATRIUM_SHARED_LOCATION`) is not written by a room, isolated or not (`roomLocationEnv`),
-  so nothing changes there.
-- **Runners that are already running when the first slotted deploy happens** carry the machine's file, not a slot
-  file, and the environment of a live process cannot be changed. When NEXT takes the pointer their hooks would arrive at
-  a room that does not know their card. NEXT therefore forwards, for one generation only: a hook or permission post on
-  its agent listener that names an `ATRIUM_TASK_ID` NEXT's store does not hold goes to the `last` address in the
-  pointer, long-poll included. It is a few dozen lines, it only ever fires for pre-slot runners, and it is removed once
-  every live runner carries a slot file (phase 1 builds it, a later release deletes it).
-- **Permission requests in flight at the flip** are not a gap, which is something the pty-host restart cannot say.
-  LAST keeps answering the requests it has, from its own store, on its own listener.
-- `ATRIUM_ROOM` stays the machine's room name in every runner. The control MCP scopes by room name and the hub then
-  decides the generation, so a runner needs no idea that it is on an old build.
-
-### 2.3 One store per generation
-
-**Recommended: one store per generation.** The two rules that decide it, both from `internal/store/store.go`:
-
-- **The halt rule.** The first error that is not contention halts the store and closes the agent listener so every
-  session parks. That posture assumes one writer. LAST and NEXT sharing a file means each process meets the other's
-  locks, the other's checkpoints and, worse, the other's schema, and any resulting error halts one of them while
-  agents are mid-turn. It also puts two reapers, two sweeps and two idle clocks on one set of rows, which
-  `rolling-restart-design.md` section 8 already ruled out for the same reason.
-- **Migrations are forward only and run at open.** If NEXT's build carries migration 0N+1, then the moment NEXT opens
-  the shared file LAST's queries meet a schema it was not built for. A per-generation store means NEXT migrates a file
-  LAST has never seen and LAST's file is never opened by a newer build while LAST is alive. A migration that fails is
-  tier one: NEXT refuses to start, LAST is untouched and still serving, and the deploy says so. Today the same failure
-  leaves the room down.
-
-What NEXT's store starts with, and how cards move between the stores, is one primitive, **adopt**:
-
-1. LAST takes a consistent snapshot of its own file (`VACUUM INTO`, a read, which never blocks its writers for long).
-2. NEXT copies the snapshot, opens the copy with its own `store.Open` (so every migration runs on the copy and a failure
-   is tier one on a throwaway file), and for a named set of card ids copies every row that belongs to each card into
-   its own store in one transaction, idempotent by card id.
-3. LAST marks those ids `ceded` after NEXT acknowledges and stops reporting them. A ceded id is never reported by two
-   generations, so the hub's merge never sees one card twice.
-
-Which table rows belong to a card is a list kept in one place with a guard test that fails when a new table with a card
-key is added and is in neither the adopt list nor an explicit exempt list. This is the same list
-`f-card-move-inventory` needs, so it is built once (section 4).
-
-Adopt runs twice in a deploy:
-
-- **At seed.** Every card that is not live (done, backlog, review, the settings and tables that are not card rows) is
-  adopted, so NEXT opens with the board's whole history and LAST keeps only the cards it is actually running. "Live"
-  means a running or needs-input status, a runner process, a new-context cycle in flight or a restart wake owed.
-- **At retirement.** When LAST holds nothing live, it takes a final snapshot after its writers are quiet, NEXT adopts
-  the remainder (the cards that ended on LAST since the seed, and the parked ones), and LAST exits. This is also how a
-  **parked card on LAST "moves to NEXT on resume"**, with one refinement: it moves at retirement, or sooner when it is
-  resumed, so a card that stays parked for a week does not keep LAST alive. Resume on LAST of a parked card runs a
-  one-card adopt first and then the ordinary resume on NEXT.
-
-Settings are copied at seed and are NEXT's from then on. A setting changed on the board after the flip goes to NEXT,
-the current generation, and LAST does not see it. That is the correct behaviour for a generation that is on its way
-out and the board says so on LAST's rows.
-
-### 2.4 The hub and the board
-
-- `h.rooms` keeps its key (the room name) but each entry holds up to two attached links by `gen`. The eviction rule
-  becomes: the same key and the same `gen` replaces the older link (a reconnect), the same key and a different `gen`
-  coexists. A third gen is refused with the room's current two named.
-- **Routing.** A request that names a card id (`room~id`, `internal/link/proxy.go`) goes to the generation whose last
-  report holds that card. A request that names only the room goes to the current generation. A launch, a resume of a
-  card whose rows are in NEXT, a new card and a cross-room `atrium_say` to a bare `name@m1mini` all follow that rule.
-  Two generations never hold the same id (section 2.3), so there is no tie. A say to a card on LAST is delivered by
-  LAST. This is what `room~id` stability needs and it needs no `moved_to` chain, because ids do not change.
-- **Nothing routes to NEXT until it is `current`.** NEXT's hello is `warming`, and the hub flips it only when NEXT
-  says it passed its own checks (store open and migrated, both listeners bound, its address file written, a
-  self-posted canary hook answered). Until then new work still goes to LAST, so a NEXT that never comes up costs
-  nothing. LAST is told `retiring` at the flip and refuses launches itself with "this generation is retiring, use
-  `<NEXT>`" as a second line of defence, reusing the `startsNothing` idea.
-- **The board draws one room.** The room's row is the union of both generations' cards. LAST's cards carry an
-  "old build" mark with the build commit and the age of the generation. The room row shows both builds while both
-  live. Each generation's heartbeat still replaces only its own cards, which is why a union is safe: `RoomCheckIn`
-  already keys the replace on one report, and the hub now keys the cache on `(room, gen)`.
-- **The room-wide caps** (`launch cap of 5`, handoff check 9) count both generations on the machine. A cap that
-  counted only NEXT would let a machine hold ten agents during a deploy.
-
-### 2.5 A deploy, start to finish
+A deploy, start to finish:
 
 ```
-  deploy start      NEXT starts in the free slot, db seeded by adopt, warming
-       |
-       v
-  NEXT attaches --> checks pass --> hub flips: NEXT current, LAST retiring, pointer moves
-       |                                       |
-       |                                       v
-       |                            LAST drains: runs its cards, refuses launches
-       |                                       |
-       |                    each card on LAST ends or parks (or an operator ends it)
-       |                                       |
-       v                                       v
-  NEXT is the room            LAST holds nothing live: final snapshot, NEXT adopts the rest, LAST exits
+  atrium room next
+    |
+    v
+  NEXT starts in the free slot -> trial snapshot migrated, listeners bound, canary answered
+    |                              (any failure: NEXT exits, nothing changed)
+    v
+  handover: LAST cedes every non-live card -> snapshot -> NEXT seeds -> LAST forwards to NEXT
+    |        -> NEXT takes the pointer -> NEXT dials the hub, which drains LAST's link
+    v
+  LAST drains: its runners work on, each card that stops being live is ceded to NEXT
+    |
+    v
+  LAST holds nothing -> exits                 (nothing live at the start: this happens at once)
 ```
 
-- **Nothing running on the room is an immediate redeploy.** With no live card, the seed adopts everything, the flip
-  happens, LAST has nothing to drain and retires in the same breath. That is the sentence in the item: if nothing is
-  running it can always be redeployed immediately. There is no idle wait and `deploy-ready`'s whole gate goes away
-  for rooms on slots.
-- **LAST's retirement waits for more than cards.** Inventory kinds that live in LAST's process tree (`proc`,
-  `overlay`, `port` held by a process LAST started, `docs/rnd/card-lifecycle-design.md` section 6) die when LAST exits
-  unless they are also pty hosted. They count as live for LAST until freed. Until card inventory is built this is
-  empty, and the retirement check reads the inventory table when it exists.
-- **Rollback is the same operation reversed.** NEXT is bad. Before the flip, kill it and nothing has changed. After the
-  flip, deploy the good build into the free slot as the new NEXT. The bad generation becomes LAST and drains. No
-  special path exists, and the one thing that cannot be undone, a migration, only ever ran on NEXT's own file.
-- **The pty host.** Each slot has its own pty host (its socket is derived from the state dir, which differs per slot,
-  `rolling-restart-design.md` section 3.2). It is optional here. LAST does not need a host to keep its runners, since
-  LAST does not stop. The host is for the day a generation crashes, and for the bootstrap deploy that goes from the
-  unslotted room to slot A (section 6, phase 1).
+## The wire
 
-### 2.6 What stays the same on purpose
+### Slot layout
 
-Card ids, handles, `name@room` addresses, the hub's view of the room's identity and its key, `report_to` links, the
-git sync (one clone per machine is shared by both generations, both being the same machine's room) and the board's
-terminal attach (an attach names a card and the hub sends it to that card's generation). Nothing that a sender, a
-script or a card holds becomes stale across a deploy, which is the property the rolling-restart design called out and
-room handoff cannot have across machines.
+| | Slot A | Slot B |
+| --- | --- | --- |
+| store | `defaultRoomDB()`, today's file | `<dir of defaultRoomDB()>/slot-b/atrium.db` |
+| address file | `<dir of the store>/slot-a/daemon.json` | `<dir of defaultRoomDB()>/slot-b/daemon.json` |
+| agent, board | the flags as given (7777, 7781 by default) | each flag's port + 100 |
+| pty host | derived from the store's dir, as today | derived from `slot-b/`, so a second host |
+| room dir | `roomDir()`, shared | `roomDir()`, shared |
 
-## 3. Does `pty_host` everywhere give most of this sooner
+`--slot` is `a` or `b`. Absent means `a` with today's behaviour exactly, including writing the machine file directly,
+so a room started by any existing script is unchanged until phase 8 moves the scripts.
 
-**Yes, most of the pain, and it should go first.** The pain in the item is "we deploy so often and every deploy waits
-for the room to be idle or kills agents". With `pty_host` on:
+### The machine pointer
 
-- a daemon restart does not end any runner, so no deploy waits for idle, none resumes anything and none loses a
-  half-written input line (`rolling-restart-design.md` section 4),
-- the restart is a few seconds of gap rather than a gate on every card,
-- it is built, tested and gated behind a setting, so it can be on this week.
+`daemon.Location` gains three fields, all omitted when empty so an older reader is unaffected:
 
-What stands between it and "on everywhere" is not design. It is the gates the spike left open
-(`rolling-restart-design.md` Appendix, "Open gates"): the Windows task's job object must allow breakaway (G5), systemd
-`KillMode`, launchd on m1mini, and a daemon that refuses a restart that would end an in-job host.
+```json
+{"agent": "127.0.0.1:7877", "board": "127.0.0.1:7881", "pid": 4120, "slot": "b",
+ "last": {"agent": "127.0.0.1:7777", "board": "127.0.0.1:7781", "pid": 3301, "slot": "a"}}
+```
 
-**What blue-green adds beyond it:**
+### Store additions (room)
 
-- **Hooks and the permission long-poll.** A pty host restart has a gap of a few seconds, bridged by a 30 second retry
-  that needs f-006. A flip has none, because LAST keeps answering what it was asked.
-- **A bad build.** After a host restart the new daemon already is the room and rollback is another restart. NEXT is
-  checked before it takes anything and rollback is a flip.
-- **A failed migration.** On one store it is tier one and the room is down until fixed. On NEXT's own file LAST keeps
-  serving. A forward-only schema change cannot be rolled back at all in the first case, and in the second LAST is
-  kept until the new build is trusted.
-- **Upgrading the host itself.** The first needs the rare per-card idle move (section 6 of that design). A new slot
-  builds its own host and needs nothing.
-- **In-memory state** (idle marks, activity counts, wake start signals). The first must re-derive it at reattach
-  (section 5 of that design). Under slots LAST holds it and it is never lost.
-- **Runners survive.** Both, though the first needs a host that got out of the job object and slots need no host.
-- **Cards that never idle.** Not a problem for the first. Under slots they keep LAST alive, the one cost (question 3).
-- **Cost.** A host, a protocol and an OS-specific survival story, against two slots, a hub that routes by generation
-  and adopt.
+Migration `gen_handover`, appended at the end of the room store's migrations:
 
-So the two are not rivals. `pty_host` is the cheap, near-term answer to "deploys kill agents" and it should be done
-first. Blue-green is the answer to "deploys are risky and visible", and it removes the whole class of hazards that come
-from a restart having a gap. They compose: the pty host also saves a generation that crashes, and slot A's bootstrap
-deploy (the one that introduces slots) is exactly a `pty_host` restart.
+```sql
+CREATE TABLE IF NOT EXISTS gen_held (
+    task_id TEXT PRIMARY KEY,
+    alias   TEXT NOT NULL DEFAULT '',
+    wire    TEXT NOT NULL DEFAULT '',
+    since   TEXT NOT NULL
+)
+CREATE TABLE IF NOT EXISTS gen_ceded (
+    task_id TEXT PRIMARY KEY,
+    at      TEXT NOT NULL,
+    acked   INTEGER NOT NULL DEFAULT 0
+)
+```
 
-## 4. How this fits room handoff and `f-card-move-inventory`
+`gen_held` is written only on NEXT and lists LAST's live cards. `gen_ceded` is written only on LAST and lists cards it
+has handed over (`acked` 0 while the 503 window is open, 1 once NEXT has them).
 
-**Room handoff solves a harder problem than this one.** It moves a running card across machines, which needs a freeze,
-a handoff capture, a branch and transcript carry, a successor with a new id and a forwarding chain
-(`room-handoff-design.md` sections 3 and 5). This design never moves a running card. A running card on LAST ends or
-parks where it is. So the heavy half of handoff is not on this design's path.
+### Generation routes (room, loopback only, on the agent listener)
 
-The parts that are shared:
+All refuse a caller that fails the check `shutdownAllowed` makes (`internal/daemon/shutdown.go`), so only a process of
+the same user on the same machine can drive a handover.
 
-- **The idle-park rule** (`idleParkEligible`, r-007) decides when a LAST card may be parked and is also the freeze's
-  precondition in handoff. One predicate, two callers.
-- **`resolvePeer` preferring the card a `moved_to` names** is handoff's. Here ids never change, so it is not needed and
-  nothing in this design adds a `moved_to` to a LAST card.
-- **The same-machine case** that handoff section 7 reduces to "section 3 without steps 5 and 6" is what a deploy would
-  be if a deploy moved cards. This design takes the cheaper road for the same case: adopt keeps the id because the
-  source is parked or ended and the destination is the same machine with the same disk, so there is nothing to chain.
-  Handoff's `moved_to` stays for the cross-machine case and for a card moved while it is running.
-- **Move may later reuse adopt.** If handoff's M1 wanted a cheap same-machine card move between two rooms (the
-  hand-run `move.sh` case of r-new-move-card), adopt is the row-copy half of it.
+| Route | Who answers | What it does |
+| --- | --- | --- |
+| `POST /v1/gen/snapshot {path, cede: [ids]}` | LAST | marks `cede` ids in `gen_ceded` with `acked 0`, then `VACUUM INTO path`. Answers `{live: [{task_id, alias, wire}], schema}` |
+| `POST /v1/gen/adopt {path, ids}` | NEXT | opens a copy of `path` with `store.Open`, copies every card row for `ids` in one transaction, deletes those ids from `gen_held`. Answers `{adopted: n}` |
+| `POST /v1/gen/acked {ids}` | LAST | sets `acked 1` and starts forwarding those ids to NEXT |
+| `POST /v1/gen/release {ids}` | LAST | the abort: deletes those `gen_ceded` rows |
+| `POST /v1/gen/retiring {next: {agent, board}}` | LAST | from now on room-level writes go to NEXT, and the link does not redial |
+| `GET /v1/gen/held` | LAST | its live cards, for a refused third deploy |
 
-`f-card-move-inventory` is item 12 in the card lifecycle plan and is "last". Its same-machine half is nearly free
-under this design. A card's inventory is `card_resources` rows (`card-lifecycle-design.md` section 6) naming
-worktrees, branches, dirs, ports, procs and overlays. On one machine the paths are valid for both generations, so
-adopting the card adopts its inventory rows and nothing is rebuilt. What is not free is the process-shaped rows
-(`proc`, `overlay`, `port`): they belong to LAST's process tree and are stopped or re-offered, exactly as that doc
-says for any move. They also hold LAST open (section 2.5). So the build order is:
+### Hub (link protocol)
 
-1. the adopt list in section 2.3 is made table-driven and guarded, so `card_resources` joins it the day it exists,
-2. inventory's process kinds are given an owner generation, and the retirement check reads it,
-3. the cross-machine half of `f-card-move-inventory` stays with room handoff, where it was.
+`hello` gains `Gen string \`json:"gen,omitempty"\``. `attached` gains `gen string`. `Hub` gains
+`draining map[string]*attached`. `Attached` gains `LastCommit string \`json:"last_commit,omitempty"\``. Nothing else
+in the link package changes.
 
-## 5. Alternatives rejected
+## Build plan
 
-- **One store shared by both generations.** The smallest change on paper (no adopt) and the one the item might first
-  suggest. Rejected for the halt and migration rules above. A discipline of "migrations must be additive while two
-  generations are live" cannot be enforced, two reapers and two idle clocks on one set of rows still double-act, and the
-  first error that is not contention halts a generation that is mid-turn. It is also the design
-  `rolling-restart-design.md` section 8 already refused for the same reason.
-- **A shared store with a lock so only one generation writes.** The idle one would have to proxy every write to the
-  other, which is a second room link inside the machine. Strictly more code than adopt for a worse failure mode.
-- **Move every running card across at its idle moment** (f-011's candidate A). Rejected there and still rejected. It
-  needs the whole of room handoff on the critical path of every deploy and still leaves a card that never idles on
-  the old build with no good answer.
-- **Dynamic ports.** Bind port 0 and publish it in the address file. It works for hooks and loses the stable
-  `:7781` escape hatch and every script that names a port. Two fixed slots cost one constant.
-- **Hub-side per-card routing keyed on a new card id** (the successor model for a deploy). It would make `room~id`
-  change across every deploy and put a forwarding chain on the hot path for no gain over keeping ids.
-- **A forwarding hook shim for every runner** (the hook asks a router which generation owns its card). It adds a hop
-  to every hook, several a second per runner, forever. The slot file gives the same answer with no hop. The shim is
-  kept only as the one-generation bridge for runners that predate slots.
-- **Waiting for the pty host and skipping this.** `pty_host` does not give a gap-free flip, a safe migration or a
-  rollback, and those are what make a deploy cheap to do often. It is the first step and not the whole design.
+Eight phases. Each lands alone with its tests passing, and nothing earlier breaks if a later one never lands. Phase 1
+and 2 are the `pty_host` track. Phases 3 to 8 are blue-green. Phases 3, 4 and 6 touch different packages and may run in
+parallel. Phase 5 needs 3 and 4. Phase 7 needs 5 and 6. Phase 8 needs 7 and 2.
 
-## 6. Phases
+Every new Go file follows the comment style of the file it is modelled on. No new dependency.
 
-Each phase is one worker's job, lands on its own, and is useful alone.
+**How it is tested without the live hub.** Every phase's tests run in one process with temp directories and port 0:
+the daemon tests already start two daemons on one machine (`internal/daemon/hostterm_integration_test.go` starts `d1`
+then `d2` on one host), and the link tests already run a hub and rooms in process
+(`internal/link/link_integration_test.go`). A blue-green test is two daemons, one per slot, in temp state dirs, with
+`Options.LocationFile` set per slot, and an in-process `link.Hub` they dial. Runners are the fake runners the
+supervisor tests already use. Nothing touches 7777, 7778, a live store or a live hub. Phase 2 and phase 8 are the only
+ones that touch real machines, and they say which.
 
-**Phase 0. `pty_host` on, everywhere (@fabric with @terminal, about 2 days).** Close the open gates in
-`rolling-restart-design.md` (Task Scheduler job policy on sg4, systemd on cdzrok, launchd on m1mini), make the
-in-job refusal (G5) real in `restart_atrium` and `provision-room.ps1 -Restart`, and turn the setting on per room.
-*Done when* a deploy of sg4, sg3 and m1mini each ends with every running card still running and no card resumed, and
-the board shows "pty host: survives a daemon restart" on each.
+### Phase 1: `pty_host` stage 2, the stop that leaves runners up (`f-blue-green-1`, runtime, `internal/daemon`, `internal/cli`)
 
-**Phase 1. Slots on one room (@runtime, about 3 days).** `--slot a|b`, the slot layout (ports, directory, database,
-address file, host socket), each generation writing its own address file and launching its runners with that as
-`ATRIUM_LOCATION`, the machine pointer with `take_default` and `last`, and the one-generation hook forwarder for runners
-that carry the machine's file. The hub is untouched: slot B runs `--isolated`-style with a different room name in
-tests. *Done when* two rooms on one machine run in slot A and slot B, a runner launched by A keeps reporting to A after
-B takes the pointer, a pre-slot runner's hook and a permission long-poll in flight are answered by A through B's
-forwarder, and the machine pointer and `atrium status` name both.
+This is rolling-restart sections 3.4, 4 and 5 as decided there. Read that design first.
 
-**Phase 2. The hub knows generations (@fabric, about 3 days). After phase 1.** `gen` and `state` in the hello, two
-attached links per room, the eviction rule, the `(room, gen)` report cache, routing by owning generation for a card id
-and by current generation for a room name, the refusal of a third generation, the cap counted across both, and the
-board drawing the union with "old build" on LAST. *Done when* two generations of one test room are attached to one
-hub, a launch to the room name lands on the current one, a say to a card id lands on its owner, a heartbeat from one
-never removes the other's cards, and the board shows both builds on one row.
+1. `internal/daemon/daemon.go` `stopSupervised`: skip every runner where `hostOf(r) != nil` unless the daemon was
+   asked to stop runners. Add `Daemon.stopRunners atomic.Bool`, set by the stop path when asked. The skipped runners
+   are not wound down, not written to the carryover and not written to the reopen list (`saveCarryover` and
+   `saveReopen` get only the in-process ones). `stopShells` skips host-held shells the same way.
+2. `atrium stop --runners` (the cobra command that sends the stop, found with `grep -n '"stop"' internal/cli`) sets a
+   field in the shutdown request body, `{"runners": true}`, and the shutdown handler in `internal/daemon/shutdown.go`
+   sets `stopRunners` from it. Plain `atrium stop` leaves host runners up (rolling-restart decision 1).
+3. The short gate before a stop that leaves runners up (rolling-restart section 5): wait while `d.nctx` is busy, any
+   card's `injectMu` or `pasteMu` is held, the launch lock is held, or a restart wake is mid-delivery. Poll each every
+   250 ms, give up after 2 minutes and log which card held it and why, then stop anyway.
+4. The re-derivation MUSTs of rolling-restart section 5, in `adoptLive` in `hostterm.go`: a reattached card is not
+   idle-parkable until its runner has posted a fresh `Stop` (a `reattached` flag on the runner, cleared by the `Stop`
+   hook), the reattach counts as `SessionStart` for a restart wake (call the same function the `SessionStart` hook
+   calls for wakes, after the settle delay), and the card's typed line is treated as not empty until the screen model
+   sees it cleared or the operator presses Enter.
+5. `internal/cli/hook_permission.go`: any answer that is not a decision (refused, reset, timeout, non-2xx, a 2xx with
+   no decision) is retried with the same `tool_use_id` every second for up to 30 seconds, then fails open as today
+   without recording an allow.
+6. G5 (rolling-restart appendix): the daemon reads `InJob` from the host's `probe` at connect and keeps it. A stop that
+   would leave runners up on a daemon whose host is in a job refuses with "the pty host would die with this room's
+   task, so this restart would end every agent. stop with --runners, or fix the task's job policy" unless
+   `--runners` is given. `GET /v1/preflight` adds `pty_host: {on, in_job, build}`.
+7. Tests, in `internal/daemon` beside `hostterm_integration_test.go`, each with `pty_host` on and a host from the
+   test's own binary as those tests start it:
+   - `TestStopLeavesHostRunnersUp`: start a card, stop the daemon, the runner's pid is alive, a second daemon
+     reattaches it and the card is still `running`, never resumed, with no reopen row.
+   - `TestStopRunnersEndsHostRunners`: the same with `runners: true`, the runner ends and is filed once.
+   - `TestReattachedCardIsNotIdleParkableUntilStop`, `TestReattachCountsAsStartForAWake`,
+     `TestReattachedLineIsNotEmpty`.
+   - `TestStopRefusedWhenHostInJob`: a fake probe answering `in_job` refuses, `runners: true` proceeds.
+   - `TestStopWaitsForANewContextCycle`: a busy `d.nctx` holds the stop until it ends.
+   - In `internal/cli`: `TestPermissionHookRetriesThroughARestart`: a server that resets twice then decides is
+     answered by its decision, and one that never answers fails open after the bound (the bound is a variable the test
+     sets to 2 seconds).
 
-**Phase 3. Adopt (@runtime, about 3 days). After phase 1, parallel with phase 2.** The snapshot, the migrated copy
-opened with `store.Open`, the table-driven per-card row list with its guard test, idempotent adoption by card id in
-one transaction, `ceded` marking and reporting. *Done when* a snapshot of a store full of done, parked and running
-cards seeds a fresh one at a newer schema with every non-live card present, the running ones absent and marked
-LAST's, a second adopt of the same ids changes nothing, a migration made to fail refuses cleanly and leaves the source
-file byte for byte as it was, and the guard test fails when a card-keyed table is added without a list entry.
+   Run: `go test ./internal/daemon -run 'TestStop|TestReattach' -count=1` and
+   `go test ./internal/cli -run TestPermissionHook -count=1`
 
-**Phase 4. The lifecycle (@fabric with @runtime, about 3 days). After phases 2 and 3.** `atrium room next` (and the
-hub tool it sits behind): start NEXT in the free slot, seed, warm, canary, ask for the flip, tell LAST `retiring`,
-refuse launches on LAST, watch LAST for "nothing live" including inventory process kinds, final snapshot and adopt,
-exit. The one-card adopt on resume of a parked card on LAST. The explicit abort before the flip. *Done when* a real
-deploy on a test machine with three running cards flips with none touched, a new card launched during the drain
-lands on NEXT, a card that ends on LAST moves to NEXT's board history at retirement, a parked card resumes on NEXT with
-its same id and alias, a failing NEXT before the flip changes nothing, and a flipped-then-bad NEXT is replaced by a
-good one that takes the other slot and drains the bad one.
+### Phase 2: `pty_host` on, everywhere (`f-blue-green-2`, fabric with the operator, real machines)
 
-**Phase 5. The scripts and the board (@fabric with @ui, about 2 days). After phase 4.** `deploy-ready.ps1`,
-`deploy-batch.ps1` and `restart_atrium` call phase 4 for a room on slots and drop the idle gate, the room row shows
-both builds and the age of the old one with a button to end a card that is holding LAST, and
-`scripts/live/README.md` is rewritten. *Done when* a deploy while every card is busy needs no wait, a deploy while
-nothing is running takes effect at once, and an operator can see from the board which cards keep the old build alive.
+1. Close the open gates in rolling-restart's appendix, in this order, each written into that appendix as passed or
+   failed with the evidence: systemd on cdzrok (check 8, steps 1 to 4), launchd on m1mini (`launchctl bootout` of a
+   LaunchAgent running the host), and the Task Scheduler job on a Windows room whose task runs as a user (check 6).
+2. For each live room: if its gate passed, set `pty_host` on (`POST /v1/settings {"pty_host": true}` through the hub
+   with `X-Atrium-Room`), then run `atrium-deploy.ps1 -Rooms <room>` while one test card is running. Pass when the test
+   card is still running afterwards with the same pid and was not resumed, and `/v1/preflight` says `in_job: false`.
+   If a gate failed, leave that room off and write why in the appendix.
+3. `atrium-deploy.ps1` and `deploy-batch.ps1`: skip the deploy hold for a room whose preflight says `pty_host.on` and
+   not `in_job`, since its runners survive. Keep it for the rest.
 
-**Phase 6. Inventory and handoff reuse (@runtime, later).** `card_resources` joins the adopt list, process kinds carry
-an owner generation, and handoff's same-machine card move is rebuilt on adopt if it is still wanted. *Done when* a
-card with a worktree, a registered port and a process survives a deploy with its inventory intact and a finish on
-NEXT frees what LAST made.
+   Done when sg4-control, claude-sg4, sg3 and m1mini each pass step 2, or the appendix names the gate that stops one.
 
-The order that gets clint something soonest is phase 0, then 1 and 3 together, then 2, 4 and 5. Phase 4 is where the
-feature arrives, and phase 5 is where it feels like one.
+### Phase 3: slots (`f-blue-green-3`, runtime, `internal/cli`, `internal/daemon`)
 
-## 7. Risks worth saying out loud
+1. `internal/cli/roomrun.go`: a `--slot` flag on `atrium room`, values `a` or `b`, default empty. Pass it to `runRoom`
+   and to `roomLaunch` so a hub-asked restart keeps the slot.
+2. New `internal/cli/slot.go` with `func slotLayout(slot, db, human, agent string) (dbOut, humanOut, agentOut,
+   locFile string, err error)`: empty slot returns its inputs and an empty `locFile`. `a` returns the inputs and
+   `<dir of db>/slot-a/daemon.json`. `b` returns `<dir of db>/slot-b/atrium.db`, both addresses with the port + 100
+   (parse with `net.SplitHostPort`, an unparseable address is an error), and `<dir of db>/slot-b/daemon.json`. Any
+   other value is an error naming `a` and `b`. Create the slot directory with mode 0700.
+3. `runRoom`: with a slot, do not set `ATRIUM_LOCATION` from `roomLocationEnv`. Set `daemon.Options.LocationFile` to
+   the slot's file instead, so `writeLocation` writes it and `tellWhereIAm` hands it to every runner. Add
+   `Options.Slot string` and put it in `Location` as `slot`.
+4. `internal/daemon/whereami.go`: add `Location.Slot` and `Location.Last *Location`, both `omitempty`. Add
+   `func (d *Daemon) TakeMachinePointer(last *Location) error` that writes the machine file
+   (`DefaultLocationPath`) with this daemon's location plus `last`, through `putLocation`, with no `takingOver`
+   check. Add `func (d *Daemon) ClearLast() error` that rewrites it with `last` removed when this daemon owns it.
+   `removeLocation` also removes the slot file.
+5. `link.Room` gains `Gen string`, sent in the hello as `gen` (the field itself lands in phase 6, so here add it to
+   `hello` in `internal/link/protocol.go` with `omitempty` and set it from the slot). An older hub ignores it.
+6. `atrium status` (and `atrium room status` if it exists) prints the machine pointer's `slot` and, when `last` is
+   set, the last generation's addresses and pid.
+7. Tests:
+   - `internal/cli`: `TestSlotLayout` (empty, `a`, `b`, a bad slot, an unparseable address).
+   - `internal/daemon`: `TestSlotRunnerGetsSlotLocation`: a daemon with a slot launches a fake runner whose
+     environment has `ATRIUM_LOCATION` equal to the slot file. `TestTakeMachinePointerWritesLast`: two daemons, the
+     second takes the pointer with the first as `last`, the file names both, `ClearLast` removes `last`.
+     `TestRunnerOfSlotAKeepsReportingToSlotA`: daemon A launches a fake runner, daemon B takes the pointer, the
+     runner's hook (posted to the address in its own `ATRIUM_LOCATION`) arrives at A.
 
-- **Adopt is the new thing that can lose a card.** It is a database copy with a migration in the middle, so it is
-  guarded the way the rest of the store is: one transaction, idempotent by id, the source never deleted until the
-  destination acknowledges, and a guard test on the table list. A card is in two files for a moment and never in
-  neither.
-- **Two generations on one machine use twice the memory and twice the idle CPU** for as long as LAST lives. The cap
-  of five launches is counted across both, but the housekeeping of two rooms is real.
-- **Settings drift.** A setting changed during the drain applies to NEXT only. That is the intended behaviour and it
-  must be visible, so the board marks LAST's settings pane as "old build, read only".
-- **A long-lived LAST** is the cost of never stopping it. The design chooses to show it, not to kill it (question 3).
-- **Disk.** Two databases and their snapshots live for the length of a drain. A snapshot is deleted on a successful
-  adopt and kept on a failed one.
+   Run: `go test ./internal/cli -run TestSlot -count=1` and
+   `go test ./internal/daemon -run 'TestSlot|TestTakeMachinePointer|TestRunnerOfSlotA' -count=1`
 
-## 8. Open questions for clint
+### Phase 4: cede, in the store (`f-blue-green-4`, runtime, `internal/store`)
 
-Each with the answer this design recommends.
+1. The migration `gen_handover` above, appended at the end of the store's migrations.
+2. New `internal/store/gen.go`:
+   - `var CardTables []CardTable`, where `CardTable{Name, Column string}` names a table and the column that holds its
+     card id. `var CardExempt []string` names the tables that are machine-wide and copied only at the seed:
+     `schema_migration`, `setting`, `harness`, `provider`, `provider_repo`, `recogniser`, `perm_rule`, `term_theme`,
+     `pr_recipe`, `source`, `gen_held`, `gen_ceded`. Fill `CardTables` by running the guard test below, which prints
+     every table it finds unlisted, and put each printed table in `CardTables` with the column the test names. A table
+     with no card column that is not in `CardExempt` also goes in `CardExempt`, with a one-line comment why.
+   - `func (s *Store) Snapshot(path string) error`: `VACUUM INTO ?` with a path that must not exist.
+   - `func (s *Store) LiveCards() ([]HeldCard, error)`: the store half of decision 6, the cards whose status is
+     `running`, `needs-input` or `needs-permission`, or that a `restart_wake` row or a `card_resources` row of kind
+     `proc`, `port` or `overlay` names. `HeldCard{TaskID, Alias, Wire string}`. The daemon adds the in-memory half.
+   - `func (s *Store) Cede(ids []string) error`, `func (s *Store) Acked(ids []string) error`,
+     `func (s *Store) Release(ids []string) error`, `func (s *Store) Ceded(id string) (acked, ok bool)`,
+     `func (s *Store) CededAll() ([]string, error)`, on `gen_ceded`.
+   - `func Adopt(dst *Store, snapshot string, ids []string) (int, error)`: copy `snapshot` to a temp file beside it,
+     `Open` the copy (every migration runs on it, and a failure returns that error with nothing written to `dst`),
+     close it, then on `dst` in one transaction `ATTACH` the copy, and for each `CardTables` entry
+     `INSERT OR REPLACE INTO main.<t> SELECT * FROM src.<t> WHERE <col> IN (<ids>)` with the column list read from
+     `PRAGMA table_info` of `main.<t>` on both sides of the select, then `DELETE FROM gen_held WHERE task_id IN (...)`,
+     commit, `DETACH`, remove the copy. Running it twice with the same ids gives the same rows.
+   - `func Seed(dstPath, snapshot string, live []HeldCard) error`: copy the snapshot to `dstPath`, `Open` it, and in
+     one transaction delete every `CardTables` row for the `live` ids and insert one `gen_held` row each. A `dstPath`
+     that exists is an error, so a seed never overwrites a store.
+   - `func (s *Store) Held() ([]HeldCard, error)` and `func (s *Store) IsHeld(id string) bool` on `gen_held`.
+3. The alias and wire-name allocators (`internal/store/alias.go` and wherever a wire name is made unique) also treat a
+   name in `gen_held` as taken.
+4. Tests, new `internal/store/gen_integration_test.go`:
+   - `TestCardTablesCoverEverySchemaTable` (the guard): read every table from `sqlite_master` of a freshly opened
+     store, and for each that has a column named `task_id`, `card_id` or `card` and is in neither `CardTables` nor
+     `CardExempt`, fail with `table <t> has card column <c>: add it to CardTables or CardExempt`. Also fail for a table
+     with none of those columns that is in neither list.
+   - `TestSeedDropsLiveAndHoldsTheirNames`: a store with done, parked and running cards, snapshot, seed. The done and
+     parked cards are present with all their events and messages, the running one is absent and is in `gen_held`.
+   - `TestAdoptIsIdempotent`, `TestAdoptMigratesTheSnapshot` (a snapshot from a store with the last migration removed
+     from the list is adopted at the full schema), `TestAdoptFailingMigrationWritesNothing` (a migration made to fail
+     leaves `dst` and the snapshot byte for byte as they were).
+   - `TestAliasAvoidsHeldNames`.
+   - `TestCedeAckRelease`.
 
-1. **Ports for slot B.** Fixed (+100 from the default, so 7877 and 7881) or a free port chosen at start? Recommend
-   **fixed**, so the escape-hatch board and every script that names a port keep working, and the hub never needs to be
-   told a port.
-2. **The bootstrap.** The first slotted deploy meets runners that predate slots and carry the machine's file. Build the
-   one-generation hook forwarder (phase 1), or make the first slotted deploy an ordinary restart that ends or parks
-   them? Recommend **build the forwarder**, since it is small and it is what makes the first deploy as painless as every
-   later one. Phase 0 makes this a restart that loses nothing either way.
-3. **A third deploy while LAST still has a card that never ends.** Refuse and name the cards, wait, or end the stuck
-   cards on request? Recommend **refuse and name them**, with an "end this card" button on the board's old-build mark.
-   Never end a card automatically, since a card that runs for days is doing what it was asked.
-4. **Who flips.** NEXT flips on its own after its checks pass, or a human or the deploy gate confirms? Recommend **on
-   its own**, because the checks are mechanical and the flip is reversible by deploying a good build into the other
-   slot. A deploy that wants a human can use `deploy-ready.ps1`'s existing hold before it starts NEXT.
-5. **Do phase 0 first or in parallel?** Recommend **first, and short**. It is the cheapest big win and it removes the
-   hazard that makes the bootstrap deploy lossy. Phases 1 and 3 can start the same day.
-6. **History of cards that ended on LAST.** Adopt them into NEXT at retirement so the board has one history (this
-   design), or leave LAST's database as a read-only archive the board reads when asked? Recommend **adopt**, because an
-   archive file per deploy is a growing pile that nothing reads, and adopt is needed for parked cards anyway.
+   Run: `go test ./internal/store -run 'TestCardTables|TestSeed|TestAdopt|TestAlias|TestCede' -count=1`
+
+### Phase 5: the front, NEXT answers for LAST (`f-blue-green-5`, runtime, `internal/daemon`, `internal/api`)
+
+1. New `internal/daemon/gen.go` holding the generation state: `type genPeer struct{ agent, board string; pid int;
+   commit string }`, `d.last atomic.Pointer[genPeer]` (set on NEXT), `d.next atomic.Pointer[genPeer]` (set on LAST
+   once retiring), and `d.retiring atomic.Bool`.
+2. New `internal/daemon/genforward.go`, a middleware wrapped around both the agent mux and `d.BoardHandler()` where
+   `agentSrv` and `humanSrv` are built (`daemon.go`, near line 1168):
+   - On NEXT (`d.last` set): find the card a request names. Path `/v1/tasks/{id}/...` (use the same segment rule as
+     `cardIDIn` in `internal/link`), a launch body's `task_id`, or for a `POST` on the agent listener a JSON body's
+     `task_id` (read at most 1 MiB and put it back, as `launchCardIn` in `internal/link/cardroute.go` does). If
+     `d.st.IsHeld(id)`, reverse-proxy the request with `httputil.ReverseProxy` to LAST's same listener (agent to
+     agent, board to board), which carries a websocket upgrade unchanged. A launch forwarded this way that LAST answers
+     with 409 and `{"ceded": true}` is run again locally, once.
+   - On LAST (`d.next` set): a request naming a card in `gen_ceded` with `acked 1`, and every `POST /v1/launch`
+     without a `task_id`, goes to NEXT the same way. A request naming a card in `gen_ceded` with `acked 0` answers 503
+     with `Retry-After: 2` and `{"error": "this card is moving to the new build, try again in a moment"}`. Settings
+     writes answer 409 "this is the old build, change settings on the current one".
+   - Everything else is untouched.
+3. `GET /v1/tasks` on NEXT: after the local list, fetch LAST's `GET /v1/tasks` over loopback (2 second timeout, cached
+   for 2 seconds), keep only ids in `gen_held`, set `generation: "last"` and `build` on each, append. A failed fetch
+   appends nothing and logs once a minute. Add `Generation string \`json:"generation,omitempty"\`` and
+   `Build string \`json:"build,omitempty"\`` to the task JSON in `internal/api`.
+4. Events: on NEXT, a goroutine holds `GET /v1/events` on LAST's board over loopback, reconnecting every 2 seconds
+   while `d.last` is set, and republishes each event whose card id is in `gen_held` through `d.ap.Broadcast` with
+   the two fields added to the task payload.
+5. Says: the local say path (`sayGate` and `forwardMoved` in `move.go` show the shape) delivers a say to a card in
+   `gen_held` (on NEXT) or in `gen_ceded` with `acked 1` (on LAST) by posting it to the other generation's agent
+   listener, the way `forwardMoved` posts across rooms.
+6. Live, the daemon half: `func (d *Daemon) liveCards() ([]store.HeldCard, error)` is `d.st.LiveCards()` plus every
+   card `d.sup.all()` holds a runner or shell for, plus every card `d.nctx` is busy on.
+7. The cede loop on LAST, `func (d *Daemon) cedeLoop(ctx)`, every 30 seconds while `d.retiring`: the held cards that
+   `liveCards` no longer lists are ceded with `POST /v1/gen/snapshot` on itself, `POST /v1/gen/adopt` on NEXT and
+   `Acked`. A failure releases them and retries on the next tick.
+8. The routes in "Generation routes" above, registered on the agent listener in a new `internal/daemon/genroutes.go`.
+9. Tests, new `internal/daemon/gen_integration_test.go`, two daemons A and B in temp dirs with slot location files,
+   B seeded from A, `d.last` set on B and `d.next` on A:
+   - `TestFrontForwardsAHeldCardsRequest`: `GET /v1/tasks/<A's live id>` on B answers A's card.
+   - `TestFrontForwardsAHook`: a hook body with A's live id posted to B's agent listener arrives at A.
+   - `TestFrontForwardsTheTerminal`: a websocket attach to A's card through B replays A's ring.
+   - `TestFrontListsBothWithGeneration`: B's `/v1/tasks` has B's cards and A's live ones with `generation: "last"`.
+   - `TestFrontRelaysEvents`: a status change on A's card appears on B's event stream.
+   - `TestLastForwardsNewLaunchesToNext`, `TestLastAnswers503WhileCeding`, `TestLastRefusesSettings`.
+   - `TestResumeOfACededCardRunsOnNext`: A's card stops being live, a launch naming it through B ends with the card
+     running on B under the same id and alias.
+   - `TestSayCrossesGenerations` both ways.
+   - `TestLaunchCapCountsBothGenerations`: a hub in process with a cap of 2, one live card on A and one on B, a third
+     launch through the hub is refused.
+
+   Run: `go test ./internal/daemon -run 'TestFront|TestLast|TestResumeOfACeded|TestSayCrosses|TestLaunchCapCounts'
+   -count=1`
+
+### Phase 6: the hub drains the old link (`f-blue-green-6`, fabric, `internal/link`, board)
+
+1. `internal/link/protocol.go`: `hello.Gen` (if phase 3 has not added it). `internal/link/hub.go`: `attached.gen`,
+   set from `hi.Gen` in `control`. `Hub.draining map[string]*attached`, made in `NewHub`.
+2. In `control`, where `taken` is handled today: if `taken && old.key == a.key && old.gen != "" && a.gen != "" &&
+   old.gen != a.gen`, do not call `old.close`. Instead put `old` in `h.draining[keyOf(name)]` (closing any link already
+   there), log `room %q: generation %s drains, %s is current`, and start a goroutine that waits on `old.done` or 2
+   minutes, then calls `old.close("its generation was replaced")` and deletes it from `draining` if it is still the
+   one there. Otherwise behave exactly as today. `forget` is unchanged: it only removes `h.rooms` entries that are
+   still the link it was given.
+3. `Rooms()`: set `LastCommit` on a room's entry from `h.draining[key].commit` when one is there.
+4. `link.Room` (the room side): a `Retiring func() bool`. When it answers true, the dial loop does not redial after the
+   link closes. The daemon sets it to `d.retiring.Load`.
+5. The board: where a card's room tag is drawn (find it with `grep -rn "room" internal/api/web/m/js/card.js` and the
+   same in the desktop board's card renderer), draw a chip `old build <build>` when the task has
+   `generation === "last"`, with the title "this card runs on the previous build of this room until it ends". The
+   room row draws `LastCommit` beside the commit when present. `scripts/test-board-headless.js`: one mock card with
+   `generation: "last"`, and a check that the chip is drawn.
+6. Tests, in `internal/link` beside `link_integration_test.go`:
+   - `TestSecondGenerationDrainsTheFirst`: a room attaches with gen `a`, a request is held open on it, the same key
+     attaches with gen `b`, a new request goes to `b`, the held one finishes on `a`, and `a` closes after it hangs up.
+   - `TestSameGenerationStillReplaces` and `TestNoGenerationStillReplaces` (today's behaviour).
+   - `TestDifferentKeyStillRefusedWithAGen`.
+   - `TestRoomsReportsLastCommit`.
+   - `TestRetiringRoomDoesNotRedial`.
+
+   Run: `go test ./internal/link -run 'TestSecondGeneration|TestSameGeneration|TestNoGeneration|TestDifferentKey|
+   TestRoomsReportsLastCommit|TestRetiringRoom' -count=1` and, where node is installed,
+   `node scripts/test-board-headless.js`
+
+### Phase 7: `atrium room next`, the lifecycle (`f-blue-green-7`, fabric with runtime, `internal/cli`, `internal/daemon`)
+
+1. New `internal/cli/roomnext.go`, `atrium room next [--binary <path>] [--dry-run]`:
+   - Read the machine pointer. Current slot is its `slot`, or `a` when absent. Next is the other.
+   - If the next slot's address file names a live pid, refuse: ask that generation `GET /v1/gen/held` and print
+     "the last generation still runs <alias or id>, ... end them or wait, then deploy again". Exit 3.
+   - Start `<binary> room --slot <next> --next-of <current agent address> --detach` with the same `--dir`, `--db` and
+     address flags the current one was started with (read from the pointer's `room_dir`, `db`, `agent_listen` and
+     `board_listen`). Wait up to 3 minutes for the next slot's file to name a live pid that answers
+     `GET /v1/health`, and print each step NEXT logs.
+2. `runRoom` with `--next-of`: before `daemon.New`, run the checks of decision 12 against LAST (trial snapshot through
+   `POST /v1/gen/snapshot` with an empty `cede`, `store.Adopt` dry run of the trial by opening a copy, then delete it).
+   Then the handover of decision 11, in order: `POST /v1/gen/snapshot` with `cede` set to every non-live card (LAST
+   computes the list as `all cards minus liveCards`, ignore what NEXT sends and use LAST's own list, sent back as
+   `ceded`), `store.Seed` into the slot's store path, `daemon.New` on it, bind, the canary, `POST /v1/gen/acked`,
+   `POST /v1/gen/retiring`, `TakeMachinePointer(last)`, then start the link with `Gen` set. Any failure before
+   `retiring` calls `POST /v1/gen/release` for the ceded ids, deletes the seeded store, and exits non-zero with the
+   reason.
+3. LAST, on `retiring`: `d.retiring` true, `d.next` set, the cede loop started, and a retirement check every 30 seconds:
+   no card in `liveCards` that is not ceded, `relay_outbox` empty, no own `card_resources` process row. Then remove the
+   slot file, close the store, exit 0. NEXT, seeing the `last` pid gone (checked on the same 30 second tick), calls
+   `ClearLast` and sets `d.last` to nil, and from then on `gen_held` is empty.
+4. The hub's `restart_atrium` path (`OnRestart` in `roomrun.go`) on a room started with `--slot` runs the same
+   sequence as `atrium room next` with the running binary, instead of a stop and start.
+5. Tests, new `internal/cli/roomnext_integration_test.go`, with the test binary re-exec'd as the room the way
+   `roomrestart_integration_test.go` does, an in-process hub, temp dirs, port 0 made into fixed test ports:
+   - `TestNextWithNothingRunningRetiresAtOnce`: LAST holds only done cards, `room next` ends with NEXT current on the
+     hub, LAST exited, every card on NEXT with the same ids.
+   - `TestNextLeavesRunningCardsOnLast`: three running fake runners on LAST stay on LAST with the same pids, a new
+     launch through the hub lands on NEXT, one LAST card ends and is on NEXT within one cede tick, and when the last
+     one ends LAST exits.
+   - `TestNextWithAFailingMigrationChangesNothing`: a NEXT build with a migration made to fail exits with the reason,
+     LAST is still the room, no card is ceded.
+   - `TestThirdDeployIsRefusedWithNames`.
+   - `TestBadCanaryReleasesTheCededCards`.
+
+   Run: `go test ./internal/cli -run 'TestNext|TestThirdDeploy|TestBadCanary' -count=1`
+
+### Phase 8: the scripts (`f-blue-green-8`, fabric, `scripts/live`, real machines)
+
+1. `scripts/live/atrium-deploy.ps1`: for a remote room, the swap no longer stops the room. It copies the binary to
+   `atrium.next[.exe]` and runs `atrium room next --binary <that path>`, and on exit 0 renames it over `atrium`
+   keeping `atrium.prev`. The wait for port 7781 to be free goes. Exit 3 is reported as
+   `failed - the last generation still runs <names>`. The hub and sg4-control follow the same change in
+   `deploy-batch.ps1` and the sg4-control block.
+2. The deploy hold is skipped for a room on slots, since nothing is stopped.
+3. `scripts/live/README.md`: the deploy section rewritten for slots, with the two port pairs.
+4. The bootstrap, once per room: the first deploy onto a build with phases 3 to 7 is an ordinary restart with
+   `--slot a` added to the room's start line (`provision-room.ps1` and the remote swap lines). With phase 2 on that
+   room it loses nothing. Every later deploy is `room next`.
+
+   Done when, on m1mini and then sg3: a deploy while three cards run needs no wait and leaves all three running on the
+   old build with "old build" on the board, a card started during the deploy lands on the new build with its prompt
+   typed, a deploy while nothing runs takes effect at once, and the old build exits when its last card ends.
+
+## How this fits room handoff
+
+Room handoff moves a running card across machines, which needs a freeze, a capture, a branch and transcript carry, a
+successor with a new id and a `moved_to` chain. This design never moves a running card: a card on LAST ends or parks
+where it is, and only then is it ceded, under the same id. So the heavy half of handoff is not on this path. What they
+share:
+
+- The cede's table list (`CardTables`, phase 4) is the inventory of a card's rows that `f-card-move-inventory` needs.
+  Built once here, with its guard test.
+- A same-machine `atrium move` between two rooms (the hand-run case of r-new-move-card) can later be a cede, since the
+  disk and paths are the same. Not built here.
+- `followMoved` stays handoff's. Nothing here writes `moved_to`.
+
+## Out of scope
+
+- A swap back to LAST after the handover (decision 13).
+- LAST taking the room back when NEXT crashes. NEXT is restarted in its own slot by the room's usual start.
+- Moving a running card to NEXT. A card that never ends keeps LAST alive, and the board shows which.
+- More than two generations.
+- The hub's own blue-green. The hub holds no work and restarts in seconds.
+- The cross-machine half of `f-card-move-inventory`, which stays with room handoff.
+
+## Risks
+
+- **Cede is the new thing that can lose a card.** It is a database copy with a migration in the middle. One
+  transaction, idempotent by id, the source row kept until NEXT acknowledges, and a guard test on the table list. A
+  card is in two stores for a moment and never in neither.
+- **The front is in NEXT's process.** If NEXT is down, LAST's cards are unreachable from the hub until NEXT is back,
+  though LAST's runners and LAST's own board on its slot port keep working.
+- **Two generations use twice the memory and idle CPU** for the length of a drain.
+- **A schema rename breaks `INSERT ... SELECT *` with matched columns.** Adopt reads the column list from `main`, and a
+  rename migrates the snapshot copy too, so both sides match. A migration that drops a card table must also drop it
+  from `CardTables`, and the guard test catches the reverse.
+- **Disk.** A snapshot per cede batch, deleted after adopt. On a large store the 30 second cede tick may be too often,
+  and the tick is a constant to raise if a snapshot takes more than a few seconds.
