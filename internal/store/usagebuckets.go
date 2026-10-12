@@ -81,7 +81,7 @@ func (s *Store) UsageBuckets(since, until time.Time, bucketSecs int, card string
 func (s *Store) UsageBucketsBy(since, until time.Time, bucketSecs int, card, group string) (*UsageSeries, error) {
 	until = until.UTC()
 	if until.IsZero() {
-		until = now()
+		until = s.now()
 	}
 	since = since.UTC()
 	if floor := until.Add(-UsageMaxBack); since.IsZero() || since.Before(floor) {

@@ -137,7 +137,7 @@ func (s *Store) SetRoomHold(h RoomHold) error {
 				return nil
 			}
 		}
-		if err := writeRoomHoldsOn(tx, append(holds, h)); err != nil {
+		if err := s.writeRoomHoldsOn(tx, append(holds, h)); err != nil {
 			return err
 		}
 		for _, id := range h.Cards {
@@ -179,7 +179,7 @@ func (s *Store) MarkHoldWorking(kind, taskID string) (bool, error) {
 		if !wrote {
 			return nil
 		}
-		return writeRoomHoldsOn(tx, holds)
+		return s.writeRoomHoldsOn(tx, holds)
 	})
 	return wrote && err == nil, err
 }
@@ -211,7 +211,7 @@ func (s *Store) LiftRoomHold(kind, id, outcome string, wakes map[string]string) 
 		if lifted == nil {
 			return nil
 		}
-		if err := writeRoomHoldsOn(tx, kept); err != nil {
+		if err := s.writeRoomHoldsOn(tx, kept); err != nil {
 			return err
 		}
 		for _, card := range lifted.Cards {
@@ -274,7 +274,7 @@ func (s *Store) addRestartWakeOn(tx *Tx, taskID, text, by string) error {
 	if len(text) > MaxRestartWake {
 		text = text[:MaxRestartWake]
 	}
-	at := now()
+	at := s.now()
 	if _, err := tx.Exec(`INSERT INTO restart_wake (task_id, text, queued_by, queued_at, expires_at, expired_at)
 		VALUES (?, ?, ?, ?, ?, NULL)
 		ON CONFLICT (task_id) DO UPDATE SET text = excluded.text, queued_by = excluded.queued_by,
@@ -300,7 +300,7 @@ func roomHoldsOn(q querier) ([]RoomHold, error) {
 	return parseRoomHolds(v)
 }
 
-func writeRoomHoldsOn(q querier, holds []RoomHold) error {
+func (s *Store) writeRoomHoldsOn(q querier, holds []RoomHold) error {
 	v := ""
 	if len(holds) > 0 {
 		raw, err := json.Marshal(holds)
@@ -311,6 +311,6 @@ func writeRoomHoldsOn(q querier, holds []RoomHold) error {
 	}
 	_, err := q.Exec(`INSERT INTO setting (key, value, updated_at) VALUES (?, ?, ?)
 		ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
-		SettingRoomHold, v, ts(now()))
+		SettingRoomHold, v, ts(s.now()))
 	return err
 }

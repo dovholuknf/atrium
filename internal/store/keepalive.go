@@ -147,7 +147,7 @@ func (s *Store) KeepaliveCards() ([]*KeepaliveCard, error) {
 // SetKeepaliveState writes a card's switch and stamps it now. A card that does
 // not exist is not given a row.
 func (s *Store) SetKeepaliveState(taskID, state string) (*KeepaliveCard, error) {
-	return s.SetKeepaliveStateAt(taskID, state, now())
+	return s.SetKeepaliveStateAt(taskID, state, s.now())
 }
 
 // SetKeepaliveStateAt is SetKeepaliveState on the caller's clock. The daemon's
@@ -190,7 +190,7 @@ func (s *Store) AddKeepaliveRefresh(r *KeepaliveRefresh) error {
 		r.ID = newID()
 	}
 	if r.At.IsZero() {
-		r.At = now()
+		r.At = s.now()
 	}
 	return s.guard(func() error {
 		_, err := s.db.Exec(`INSERT INTO keepalive_refresh (id, task_id, resume_id, fork_session, at, model,

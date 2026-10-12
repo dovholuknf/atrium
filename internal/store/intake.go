@@ -212,7 +212,7 @@ func (s *Store) Offer(item IntakeItem) (*Task, bool, error) {
 		if err != nil {
 			return err
 		}
-		n := now()
+		n := s.now()
 		t := &Task{
 			ID: newID(), Title: item.Title, Why: item.Why,
 			Worktree: item.SuggestedCwd, Runner: item.Runner,
@@ -276,7 +276,7 @@ func (s *Store) refreshOffered(t *Task, item IntakeItem) error {
 	}
 	if _, err := s.db.Exec(`UPDATE task SET title = ?, why = ?, prompt = ?, url = ?,
 		external_id = ?, tags = ?, last_activity_at = ? WHERE id = ?`,
-		title, why, prompt, url, ext, string(raw), ts(now()), t.ID); err != nil {
+		title, why, prompt, url, ext, string(raw), ts(s.now()), t.ID); err != nil {
 		return err
 	}
 	t.Title, t.Why, t.Prompt, t.URL, t.ExternalID, t.Tags = title, why, prompt, url, ext, tags
@@ -336,7 +336,7 @@ func (s *Store) WithdrawOffered(taskID, reason string) (bool, error) {
 		if t.Status != StatusBacklog || t.ArchivedAt != nil {
 			return nil
 		}
-		n := now()
+		n := s.now()
 		if _, err := s.db.Exec(`UPDATE task SET archived_at = ?, intake_key = '', last_activity_at = ?
 			WHERE id = ?`, ts(n), ts(n), taskID); err != nil {
 			return err

@@ -63,9 +63,8 @@ func TestStaleDecisionIsNotReplayed(t *testing.T) {
 
 	// Time moved on past the window, the way it does between two deliberate
 	// runs of the same command.
-	restore := now
-	now = func() time.Time { return restore().Add(ReplayWindow + time.Minute) }
-	defer func() { now = restore }()
+	restore := wallNow
+	s.clock = func() time.Time { return restore().Add(ReplayWindow + time.Minute) }
 
 	again, decided, err := s.RecordPermission(task.ID, "Bash", "grep x", "key-2", "")
 	if err != nil {
@@ -95,9 +94,8 @@ func TestPendingRequestIsAlwaysTheSameQuestion(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	restore := now
-	now = func() time.Time { return restore().Add(ReplayWindow * 10) }
-	defer func() { now = restore }()
+	restore := wallNow
+	s.clock = func() time.Time { return restore().Add(ReplayWindow * 10) }
 
 	again, decided, err := s.RecordPermission(task.ID, "Bash", "sleep 100", "key-3", "")
 	if err != nil {

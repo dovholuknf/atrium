@@ -306,7 +306,7 @@ func (s *Store) SaveTermTheme(t TermTheme) (*TermTheme, error) {
 			 VALUES (?, ?, ?, ?)
 			 ON CONFLICT(name) DO UPDATE SET palette = excluded.palette,
 			                                 updated_at = excluded.updated_at`,
-			t.Name, string(raw), ts(now()), ts(now()))
+			t.Name, string(raw), ts(s.now()), ts(s.now()))
 		return err
 	})
 	if err != nil {

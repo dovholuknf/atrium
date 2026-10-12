@@ -77,7 +77,7 @@ func TestSayRecordLifecycle(t *testing.T) {
 func TestSayRecordSweepKeepsOpenOwed(t *testing.T) {
 	t.Parallel()
 	s := openTestStore(t)
-	old := ts(now().Add(-SayKeep - 1))
+	old := ts(s.now().Add(-SayKeep - 1))
 	mk := func(reply bool) string {
 		id, err := s.RecordSay(Say{FromWire: "a", ToTask: "t", ToInput: "t", Via: "handle", Door: "say",
 			State: SayQueued, ReplyWant: reply, SentAt: old}, "hi")
@@ -132,7 +132,7 @@ func TestSayKeepsBoundedTextAndPagesBack(t *testing.T) {
 			text = long
 		}
 		id, err := s.RecordSay(Say{FromTask: a.ID, FromWire: "alice", ToTask: b.ID, ToWire: "bob", ToInput: "bob",
-			Via: "handle", Door: "say", State: SayDelivered, SentAt: ts(now().Add(-time.Duration(10-i) * time.Minute))}, text)
+			Via: "handle", Door: "say", State: SayDelivered, SentAt: ts(s.now().Add(-time.Duration(10-i) * time.Minute))}, text)
 		if err != nil {
 			t.Fatal(err)
 		}

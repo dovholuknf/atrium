@@ -157,12 +157,10 @@ func TestAWithdrawnItemIsNeverHandedOut(t *testing.T) {
 
 // moveOn winds the store's clock forward for the rest of the test. Waiting out
 // a five minute lease is not a test anybody runs.
-func moveOn(t *testing.T, by time.Duration) {
+func moveOn(t *testing.T, s *Store, by time.Duration) {
 	t.Helper()
-	restore := now
-	base := restore()
-	now = func() time.Time { return base.Add(by) }
-	t.Cleanup(func() { now = restore })
+	base := wallNow()
+	s.clock = func() time.Time { return base.Add(by) }
 }
 
 func TestAClaimThatIsNeverAnsweredGoesBackAndThenGivesUp(t *testing.T) {
@@ -174,7 +172,7 @@ func TestAClaimThatIsNeverAnsweredGoesBackAndThenGivesUp(t *testing.T) {
 		t.Fatalf("first claim: %d", len(first))
 	}
 	// Nothing comes back, and the lease runs out.
-	moveOn(t, DispatchLease+time.Minute)
+	moveOn(t, s, DispatchLease+time.Minute)
 	if _, err := s.ExpireDispatchClaims(DispatchLease); err != nil {
 		t.Fatalf("expire: %v", err)
 	}
@@ -191,7 +189,7 @@ func TestAClaimThatIsNeverAnsweredGoesBackAndThenGivesUp(t *testing.T) {
 	if len(second) != 1 {
 		t.Fatalf("second claim: %d", len(second))
 	}
-	moveOn(t, 2*(DispatchLease+time.Minute))
+	moveOn(t, s, 2*(DispatchLease+time.Minute))
 	if _, err := s.ExpireDispatchClaims(DispatchLease); err != nil {
 		t.Fatalf("expire twice: %v", err)
 	}
@@ -284,7 +282,7 @@ func TestSweepingLeavesOpenItemsAlone(t *testing.T) {
 	if _, err := s.SettleDispatch(settled.ID, token, DispatchFailed, "", "", "no such directory"); err != nil {
 		t.Fatalf("settle: %v", err)
 	}
-	moveOn(t, 48*time.Hour)
+	moveOn(t, s, 48*time.Hour)
 	if _, err := s.SweepDispatch(24 * time.Hour); err != nil {
 		t.Fatalf("sweep: %v", err)
 	}

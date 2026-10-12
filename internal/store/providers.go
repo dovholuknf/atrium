@@ -268,7 +268,7 @@ func (st *Store) SaveProvider(p Provider) (*Provider, error) {
 	}
 
 	err := st.guard(func() error {
-		stamp := ts(now())
+		stamp := ts(st.now())
 		created := stamp
 		row := st.db.QueryRow(`SELECT created_at FROM provider WHERE name_key = ?`,
 			providerKey(p.Name))
@@ -340,7 +340,7 @@ func (st *Store) RecordProviderScan(name, summary, failed string) error {
 		_, err := st.db.Exec(
 			`UPDATE provider SET last_scan = ?, last_error = ?, last_scan_at = ?
 			   WHERE name_key = ?`,
-			summary, failed, ts(now()), providerKey(name))
+			summary, failed, ts(st.now()), providerKey(name))
 		return err
 	})
 }
@@ -418,7 +418,7 @@ func (st *Store) SaveProviderRepo(r ProviderRepo) (*ProviderRepo, error) {
 		return nil, errors.New("an org and a repo are one path segment each, with no slashes")
 	}
 	err = st.guard(func() error {
-		adopted := ts(now())
+		adopted := ts(st.now())
 		row := st.db.QueryRow(`SELECT adopted_at FROM provider_repo
 			WHERE provider = ? AND org_key = ? AND repo_key = ?`,
 			r.Provider, providerKey(r.Org), providerKey(r.Repo))
@@ -443,7 +443,7 @@ func (st *Store) SaveProviderRepo(r ProviderRepo) (*ProviderRepo, error) {
 	if err != nil {
 		return nil, err
 	}
-	r.AdoptedAt = now()
+	r.AdoptedAt = st.now()
 	r.Path = ProviderPath(p.Root, r.Org, r.Repo)
 	return &r, nil
 }
@@ -492,7 +492,7 @@ func (st *Store) AdoptProviderRepos(name string, found []ProviderRepo) (int, err
 	added := 0
 	err = st.guard(func() error {
 		added = 0
-		adopted := ts(now())
+		adopted := ts(st.now())
 		for _, r := range found {
 			org, repo := strings.TrimSpace(r.Org), strings.TrimSpace(r.Repo)
 			if repo == "" {

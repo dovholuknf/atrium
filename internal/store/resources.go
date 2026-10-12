@@ -55,7 +55,7 @@ func (st *Store) AddResource(card, kind, ref, detail string) (*CardResource, err
 	if card == "" || kind == "" || ref == "" {
 		return nil, errors.New("a resource needs a card, a kind and a ref")
 	}
-	row := &CardResource{Card: card, Kind: kind, Ref: ref, Detail: detail, MadeAt: ts(now()), Bytes: -1}
+	row := &CardResource{Card: card, Kind: kind, Ref: ref, Detail: detail, MadeAt: ts(st.now()), Bytes: -1}
 	err := st.guard(func() error {
 		tx, err := st.db.Begin()
 		if err != nil {
@@ -132,7 +132,7 @@ func (st *Store) LiveResources() ([]*CardResource, error) {
 func (st *Store) FreeResource(card string, seq int, freedErr string) error {
 	return st.guard(func() error {
 		res, err := st.db.Exec(`UPDATE card_resources SET freed_at = ?, freed_err = ? WHERE card = ? AND seq = ?`,
-			ts(now()), freedErr, card, seq)
+			ts(st.now()), freedErr, card, seq)
 		if err != nil {
 			return err
 		}
@@ -180,7 +180,7 @@ func (st *Store) MoveResources(from, to string) error {
 func (st *Store) SetResourceBytes(card string, seq int, bytes int64) error {
 	return st.guard(func() error {
 		_, err := st.db.Exec(`UPDATE card_resources SET bytes = ?, measured_at = ? WHERE card = ? AND seq = ?`,
-			bytes, ts(now()), card, seq)
+			bytes, ts(st.now()), card, seq)
 		return err
 	})
 }

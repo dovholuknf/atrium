@@ -367,5 +367,5 @@ func (s *Store) BackfillDefaultAliases() (int, error) {
 			n++
 		}
 	}
-	return n, s.SetSetting(settingAliasBackfill, ts(now()))
+	return n, s.SetSetting(settingAliasBackfill, ts(s.now()))
 }

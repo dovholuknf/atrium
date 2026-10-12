@@ -112,7 +112,7 @@ func (s *Store) AddAsk(taskID, text, peer string) (*Ask, error) {
 	}
 	a := &Ask{
 		ID: newID(), TaskID: taskID, Text: text,
-		Peer: strings.TrimSpace(peer), AskedAt: now(),
+		Peer: strings.TrimSpace(peer), AskedAt: s.now(),
 	}
 	err := s.guard(func() error {
 		if err := s.enforceAskCap(taskID); err != nil {
@@ -125,7 +125,7 @@ func (s *Store) AddAsk(taskID, text, peer string) (*Ask, error) {
 			return err
 		}
 		if _, err := s.db.Exec(
-			`UPDATE task SET last_activity_at = ? WHERE id = ?`, ts(now()), taskID); err != nil {
+			`UPDATE task SET last_activity_at = ? WHERE id = ?`, ts(s.now()), taskID); err != nil {
 			return err
 		}
 		return s.mirrorAsk(taskID)
@@ -146,7 +146,7 @@ func (s *Store) enforceAskCap(taskID string) error {
 	for i := 0; i <= len(open)-MaxOpenAsks; i++ {
 		if _, err := s.db.Exec(
 			`UPDATE ask SET answered_at = ?, answered_by = ? WHERE id = ?`,
-			ts(now()), askDropped, open[i].ID); err != nil {
+			ts(s.now()), askDropped, open[i].ID); err != nil {
 			return err
 		}
 		if err := s.appendEvent(taskID, EventSubmitted, map[string]any{
@@ -272,7 +272,7 @@ func (s *Store) AnswerAsk(askID, by string) (bool, error) {
 		}
 		res, err := s.db.Exec(
 			`UPDATE ask SET answered_at = ?, answered_by = ? WHERE id = ? AND answered_at = ''`,
-			ts(now()), by, askID)
+			ts(s.now()), by, askID)
 		if err != nil {
 			return err
 		}
@@ -314,7 +314,7 @@ func (s *Store) answerMatching(taskID, by string, match func(*Ask) bool) ([]*Ask
 		if err != nil {
 			return err
 		}
-		at := ts(now())
+		at := ts(s.now())
 		for _, a := range open {
 			if !match(a) {
 				continue

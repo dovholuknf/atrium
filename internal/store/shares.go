@@ -77,7 +77,7 @@ func (s *Store) PutCardShare(c CardShare) error {
 	}
 	created := c.CreatedAt
 	if created == "" {
-		created = ts(now())
+		created = ts(s.now())
 	}
 	return s.guard(func() error {
 		_, err := s.db.Exec(

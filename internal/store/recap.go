@@ -37,7 +37,7 @@ const MaxRecap = 2000
 func (s *Store) SetRecap(id, recap string) error {
 	// On a rune boundary, so truncating never produces invalid UTF-8 in a
 	// field the board renders.
-	recap, at := boundRecap(recap)
+	recap, at := s.boundRecap(recap)
 	return s.guard(func() error {
 		_, err := s.db.Exec(`UPDATE task SET recap = ?, recap_at = ? WHERE id = ?`,
 			recap, at, id)

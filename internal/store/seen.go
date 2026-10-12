@@ -223,7 +223,7 @@ func (s *Store) SeenAll() (map[string]*Seen, error) {
 // text could not be read, KEEPS them: a turn that ran because a peer reported
 // in has not answered what the operator was asked.
 func (s *Store) NoteTurnEnded(taskID string, q TurnQuestions) error {
-	at := ts(now())
+	at := ts(s.now())
 	return s.guard(func() error {
 		if err := s.ensureSeen(taskID); err != nil {
 			return err
@@ -269,7 +269,7 @@ func (s *Store) MarkSeen(taskID, via string, shown *time.Time) (bool, error) {
 			return nil
 		}
 		if _, err := s.db.Exec(`UPDATE turn_seen SET seen_at = ?, seen_via = ? WHERE task_id = ?`,
-			ts(now()), via, taskID); err != nil {
+			ts(s.now()), via, taskID); err != nil {
 			return err
 		}
 		changed = true
@@ -290,7 +290,7 @@ func (s *Store) MarkAnswered(taskID, via string) (bool, error) {
 		if err != nil || cur == nil {
 			return err
 		}
-		at := ts(now())
+		at := ts(s.now())
 		if cur.Asked() && !cur.Answered() {
 			if _, err := s.db.Exec(`UPDATE turn_seen SET answered_at = ?, answered_via = ? WHERE task_id = ?`,
 				at, via, taskID); err != nil {
@@ -327,7 +327,7 @@ func (s *Store) DismissQuestions(taskID string, shown time.Time) (dismissed, sta
 		res, err := s.db.Exec(`UPDATE turn_seen SET answered_at = ?, answered_via = ?
 			WHERE task_id = ? AND questions_at != '' AND questions_at <= ?
 			AND (answered_at = '' OR answered_at < questions_at)`,
-			ts(now()), SeenDismissed, taskID, ts(shown))
+			ts(s.now()), SeenDismissed, taskID, ts(shown))
 		if err != nil {
 			return err
 		}

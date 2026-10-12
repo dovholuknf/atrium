@@ -104,7 +104,7 @@ func (s *Store) RecordSay(v Say, text string) (string, error) {
 	v.Note = cutRunes(v.Note, sayNoteLen)
 	v.Text = cutRunes(text, SayTextLen)
 	if v.SentAt == "" {
-		v.SentAt = ts(now())
+		v.SentAt = ts(s.now())
 	}
 	if v.State == SayQueued && v.QueuedAt == "" {
 		v.QueuedAt = v.SentAt
@@ -142,7 +142,7 @@ func (s *Store) RecordSay(v Say, text string) (string, error) {
 func (s *Store) SayQueuedAs(id, messageID string) error {
 	return s.guard(func() error {
 		_, err := s.db.Exec(`UPDATE say SET state = ?, message_id = ?, queued_at = ? WHERE id = ? AND state != ?`,
-			SayQueued, messageID, ts(now()), id, SayDelivered)
+			SayQueued, messageID, ts(s.now()), id, SayDelivered)
 		return err
 	})
 }
@@ -152,7 +152,7 @@ func (s *Store) SayQueuedAs(id, messageID string) error {
 func (s *Store) SayDeliveredAs(id, channel string) error {
 	return s.guard(func() error {
 		_, err := s.db.Exec(`UPDATE say SET state = ?, channel = ?, delivered_at = ? WHERE id = ?`,
-			SayDelivered, channel, ts(now()), id)
+			SayDelivered, channel, ts(s.now()), id)
 		return err
 	})
 }
@@ -187,8 +187,8 @@ func sayChannel(via string) string {
 
 // markSaysDelivered is MarkDelivered's half: every delivery path goes through it,
 // so no call site has to remember.
-func markSaysDelivered(db *sql.DB, via string, ids []string) error {
-	n := ts(now())
+func (s *Store) markSaysDelivered(db *sql.DB, via string, ids []string) error {
+	n := ts(s.now())
 	for _, id := range ids {
 		if _, err := db.Exec(`UPDATE say SET state = ?, channel = ?, delivered_at = ? WHERE message_id = ?`,
 			SayDelivered, sayChannel(via), n, id); err != nil {
@@ -310,7 +310,7 @@ func (s *Store) AnswerSaysFrom(toTask, fromTask string) (int, error) {
 	n := 0
 	err := s.guard(func() error {
 		res, err := s.db.Exec(`UPDATE say SET replied_at = ? WHERE to_task = ? AND from_task = ?
-			AND reply_wanted = 1 AND replied_at = '' AND lapsed = 0`, ts(now()), toTask, fromTask)
+			AND reply_wanted = 1 AND replied_at = '' AND lapsed = 0`, ts(s.now()), toTask, fromTask)
 		if err != nil {
 			return err
 		}
@@ -349,7 +349,7 @@ func (s *Store) RepliesOwed() (map[string]int, error) {
 // NoteContextReset stamps the says a card has received that the reset may have
 // erased: delivered, and either owed a reply or delivered in the last ten minutes.
 func (s *Store) NoteContextReset(taskID, kind string) error {
-	n := now()
+	n := s.now()
 	return s.guard(func() error {
 		_, err := s.db.Exec(`UPDATE say SET reset_at = ?, reset_kind = ?
 			WHERE to_task = ? AND state = ? AND reset_at = ''
@@ -374,7 +374,7 @@ func (s *Store) SweepSays() (int, error) {
 	n := 0
 	err := s.guard(func() error {
 		n = 0
-		t := now()
+		t := s.now()
 		if _, err := s.db.Exec(`UPDATE say SET lapsed = 1 WHERE reply_wanted = 1 AND replied_at = ''
 			AND lapsed = 0 AND sent_at < ?`, ts(t.Add(-SayOwedFor))); err != nil {
 			return err

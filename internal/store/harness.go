@@ -379,7 +379,7 @@ func (s *Store) SaveHarness(h Harness) (*Harness, error) {
 		if err != nil {
 			return err
 		}
-		created := ts(now())
+		created := ts(s.now())
 		if existing.Next() {
 			if err := existing.Scan(&created); err != nil {
 				existing.Close()

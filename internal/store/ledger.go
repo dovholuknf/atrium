@@ -293,7 +293,7 @@ func (s *Store) CreateWorkItem(t *Task, in NewWorkItem) (bool, error) {
 	made := false
 	err := s.inTx(func(tx *Tx) error {
 		made = false
-		n := ts(now())
+		n := ts(s.now())
 		launcherHandle := t.SpawnedBy
 		res, err := tx.Exec(`INSERT INTO work_item (task_id, handle, title, worktree, launcher_id,
 				launcher_handle, arbiter_id, arbiter_handle, brief, brief_path, state, state_at, state_by,
@@ -390,7 +390,7 @@ const LedgerClosedFor = 7 * 24 * time.Hour
 func (s *Store) Ledger() (*LedgerView, error) {
 	var out *LedgerView
 	err := s.guard(func() error {
-		v, err := ledgerOn(s.db, now())
+		v, err := ledgerOn(s.db, s.now())
 		out = v
 		return err
 	})
@@ -575,7 +575,7 @@ func (s *Store) insertLog(tx *Tx, taskID string, r logRow) (string, error) {
 	if r.clientID != "" {
 		client = r.clientID
 	}
-	at := now()
+	at := s.now()
 	if !r.at.IsZero() {
 		at = r.at
 	}
@@ -715,7 +715,7 @@ func (s *Store) ledgerRunning(tx *Tx, w *WorkItem, payload map[string]any) error
 	if prompted, _ := payload["prompted"].(bool); w.State == WorkEnded && prompted {
 		if _, err := tx.Exec(`UPDATE work_item SET generation = ?, state = ?, state_at = ?, state_by = ?,
 				revision = revision + 1 WHERE task_id = ?`,
-			gen, WorkOpen, ts(now()), ByAtrium, w.TaskID); err != nil {
+			gen, WorkOpen, ts(s.now()), ByAtrium, w.TaskID); err != nil {
 			return err
 		}
 		if _, err := s.insertLog(tx, w.TaskID, logRow{kind: LogAtrium, by: ByAtrium,
@@ -763,7 +763,7 @@ func (s *Store) ledgerEnded(tx *Tx, w *WorkItem, payload map[string]any, at time
 	if moved {
 		if _, err := tx.Exec(`UPDATE work_item SET ended_generation = generation, state = ?, state_at = ?,
 				state_by = ?, revision = revision + 1 WHERE task_id = ?`,
-			WorkEnded, ts(now()), ByAtrium, w.TaskID); err != nil {
+			WorkEnded, ts(s.now()), ByAtrium, w.TaskID); err != nil {
 			return err
 		}
 	} else if _, err := tx.Exec(`UPDATE work_item SET ended_generation = generation WHERE task_id = ?`,
@@ -774,7 +774,7 @@ func (s *Store) ledgerEnded(tx *Tx, w *WorkItem, payload map[string]any, at time
 	if moved {
 		text = fmt.Sprintf("ended without a final report (%s), generation %d", how, w.Generation)
 	}
-	if err := failpoint("ended-item"); err != nil {
+	if err := s.failpoint("ended-item"); err != nil {
 		return err
 	}
 	if _, err := s.insertLog(tx, w.TaskID, logRow{kind: LogAtrium, by: ByAtrium, text: text}); err != nil {
@@ -786,7 +786,7 @@ func (s *Store) ledgerEnded(tx *Tx, w *WorkItem, payload map[string]any, at time
 			return err
 		}
 		body := endedNotice(w, how, at, last)
-		if err := failpoint("ended-notice"); err != nil {
+		if err := s.failpoint("ended-notice"); err != nil {
 			return err
 		}
 		if _, err := s.queueNotice(tx, w, NoticeEnded, strconv.Itoa(w.Generation), body); err != nil {
@@ -888,7 +888,7 @@ func (s *Store) queueNotice(tx *Tx, w *WorkItem, source, key, body string) (*Led
 	} else if err != nil {
 		return nil, err
 	}
-	fresh, err := claimNotice(tx, w.TaskID, source, key)
+	fresh, err := s.claimNotice(tx, w.TaskID, source, key)
 	if err != nil || !fresh {
 		return nil, err
 	}
@@ -912,7 +912,7 @@ func (s *Store) queueNotice(tx *Tx, w *WorkItem, source, key, body string) (*Led
 	// A REPORT WAITS FOR THE END OF THE ARBITER'S TURN, as a say with when done does, so it is typed whole and
 	// never merged into a turn that will not read it.
 	waitTurn := source == "report"
-	m := &Message{ID: newID(), TaskID: w.ArbiterID, Text: body, CreatedAt: now(), FromPeer: from, WaitTurn: waitTurn}
+	m := &Message{ID: newID(), TaskID: w.ArbiterID, Text: body, CreatedAt: s.now(), FromPeer: from, WaitTurn: waitTurn}
 	// A frozen arbiter keeps the notice in its freeze queue. See enqueueFrozenOn.
 	held, err := enqueueFrozenOn(tx, m)
 	if err != nil {
@@ -945,9 +945,9 @@ func (s *Store) queueNotice(tx *Tx, w *WorkItem, source, key, body string) (*Led
 
 // claimNotice is the once-per-(worker, source, key) claim, and whether this
 // is the first.
-func claimNotice(tx *Tx, workerID, source, key string) (bool, error) {
+func (s *Store) claimNotice(tx *Tx, workerID, source, key string) (bool, error) {
 	res, err := tx.Exec(`INSERT INTO a2a_notice (worker_id, source, key, created_at) VALUES (?,?,?,?)
-		ON CONFLICT (worker_id, source, key) DO NOTHING`, workerID, source, key, ts(now()))
+		ON CONFLICT (worker_id, source, key) DO NOTHING`, workerID, source, key, ts(s.now()))
 	if err != nil {
 		return false, err
 	}
@@ -972,7 +972,7 @@ func (s *Store) relayNotice(tx *Tx, w *WorkItem, source, key, body string) error
 		log.Printf("store: %s notice for %s has no arbiter card to go to", source, w.TaskID)
 		return nil
 	}
-	fresh, err := claimNotice(tx, w.TaskID, source, key)
+	fresh, err := s.claimNotice(tx, w.TaskID, source, key)
 	if err != nil || !fresh {
 		return err
 	}
@@ -989,13 +989,11 @@ func (s *Store) relayNotice(tx *Tx, w *WorkItem, source, key, body string) error
 
 // failpoint lets a test fail a change between two of its writes. Nil in a
 // running daemon.
-var failpointHook func(step string) error
-
-func failpoint(step string) error {
-	if failpointHook == nil {
+func (s *Store) failpoint(step string) error {
+	if s.failpointHook == nil {
 		return nil
 	}
-	return failpointHook(step)
+	return s.failpointHook(step)
 }
 
 // ── reports ─────────────────────────────────────────────────────────────────────
@@ -1055,7 +1053,7 @@ type ReportResult struct {
 // RecordReport writes a report, the card's own fields and the ledger's, in
 // one transaction. A failure between any two of them rolls all of them back.
 func (s *Store) RecordReport(r ReportWrite) (*ReportResult, error) {
-	recap, recapAt := boundRecap(r.Recap)
+	recap, recapAt := s.boundRecap(r.Recap)
 	var out *ReportResult
 	err := s.inTx(func(tx *Tx) error {
 		out = &ReportResult{}
@@ -1063,7 +1061,7 @@ func (s *Store) RecordReport(r ReportWrite) (*ReportResult, error) {
 			recap, recapAt, r.TaskID); err != nil {
 			return err
 		}
-		if err := failpoint("recap"); err != nil {
+		if err := s.failpoint("recap"); err != nil {
 			return err
 		}
 		if r.SetSHA {
@@ -1077,13 +1075,13 @@ func (s *Store) RecordReport(r ReportWrite) (*ReportResult, error) {
 				return err
 			}
 		}
-		if err := failpoint("sha"); err != nil {
+		if err := s.failpoint("sha"); err != nil {
 			return err
 		}
 		if _, err := s.appendEventOn(tx, r.TaskID, EventSubmitted, r.Event); err != nil {
 			return err
 		}
-		if err := failpoint("event"); err != nil {
+		if err := s.failpoint("event"); err != nil {
 			return err
 		}
 		if r.MoveStatus {
@@ -1091,18 +1089,18 @@ func (s *Store) RecordReport(r ReportWrite) (*ReportResult, error) {
 				return err
 			}
 		}
-		if err := failpoint("status"); err != nil {
+		if err := s.failpoint("status"); err != nil {
 			return err
 		}
 		// STAMPED ONLY WHEN SOMEBODY IS TOLD. A report nobody was queued to hear is not a report
 		// the board may call sent: "report waiting" with a launcher that heard nothing was the
 		// r-scm-clone failure. See docs/backlog/runtime/r-new-report-no-launcher.md.
 		if r.Notice != nil || r.Relay != nil || !r.UnheardIsUnsent {
-			if _, err := tx.Exec(`UPDATE task SET reported_at = ? WHERE id = ?`, ts(now()), r.TaskID); err != nil {
+			if _, err := tx.Exec(`UPDATE task SET reported_at = ? WHERE id = ?`, ts(s.now()), r.TaskID); err != nil {
 				return err
 			}
 		}
-		if err := failpoint("reported"); err != nil {
+		if err := s.failpoint("reported"); err != nil {
 			return err
 		}
 		// The log keeps the report to its own bound, MaxWorkText, rather than
@@ -1110,7 +1108,7 @@ func (s *Store) RecordReport(r ReportWrite) (*ReportResult, error) {
 		if err := s.ledgerReport(tx, r, strings.TrimSpace(r.Recap), out); err != nil {
 			return err
 		}
-		if err := failpoint("ledger"); err != nil {
+		if err := s.failpoint("ledger"); err != nil {
 			return err
 		}
 		if r.Notice != nil && !out.Duplicate {
@@ -1184,7 +1182,7 @@ func (s *Store) ledgerReport(tx *Tx, r ReportWrite, summary string, out *ReportR
 		}
 		if _, err := tx.Exec(`UPDATE work_item SET state = ?, state_at = ?, state_by = ?, revision = revision + 1,
 				latest_report_id = ?, outputs = ? WHERE task_id = ?`,
-			WorkReported, ts(now()), ByWorker, id, o, r.TaskID); err != nil {
+			WorkReported, ts(s.now()), ByWorker, id, o, r.TaskID); err != nil {
 			return err
 		}
 	}
@@ -1225,14 +1223,14 @@ func (s *Store) queueReportNotice(tx *Tx, taskID string, n NoticeSpec) (*LedgerN
 }
 
 // boundRecap is SetRecap's bound and timestamp, shared with RecordReport.
-func boundRecap(recap string) (string, string) {
+func (s *Store) boundRecap(recap string) (string, string) {
 	recap = strings.TrimSpace(recap)
 	if len(recap) > MaxRecap {
 		recap = strings.TrimSpace(cutRunes(recap, MaxRecap)) + "..."
 	}
 	at := ""
 	if recap != "" {
-		at = ts(now())
+		at = ts(s.now())
 	}
 	return recap, at
 }
@@ -1283,7 +1281,7 @@ func (s *Store) LogWorkMessage(fromID, toID, byHandle, text string) (bool, error
 					// New work from the launcher reopens an item that ended without a report.
 					if _, err := tx.Exec(`UPDATE work_item SET state = ?, state_at = ?, state_by = ?,
 							revision = revision + 1 WHERE task_id = ?`,
-						WorkOpen, ts(now()), ByAtrium, p.item); err != nil {
+						WorkOpen, ts(s.now()), ByAtrium, p.item); err != nil {
 						return err
 					}
 				}

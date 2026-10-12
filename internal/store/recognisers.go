@@ -244,7 +244,7 @@ func (st *Store) SaveRecogniser(r Recogniser) (*Recogniser, error) {
 	}
 
 	err = st.guard(func() error {
-		created := ts(now())
+		created := ts(st.now())
 		wasEnabled := false
 		row := st.db.QueryRow(`SELECT created_at, enabled FROM recogniser WHERE id = ?`, r.ID)
 		var enabledNow int
@@ -364,7 +364,7 @@ func (st *Store) DeleteRecogniser(id string) error {
 // captures. Losing the fetched title is a worse card. Losing the card is worse
 // than that.
 func (st *Store) RecogniserFetched(id string, fetchErr error) error {
-	n := ts(now())
+	n := ts(st.now())
 	if fetchErr == nil {
 		return st.guard(func() error {
 			_, err := st.db.Exec(`UPDATE recogniser SET

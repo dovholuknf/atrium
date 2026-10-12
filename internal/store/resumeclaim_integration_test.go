@@ -113,7 +113,7 @@ func TestRegisterWillNotMatchAnArchivedCardByADirectoryName(t *testing.T) {
 	t.Parallel()
 	s := openTestStore(t)
 	card := claimCard(t, s, "atriumx")
-	if _, err := s.db.Exec(`UPDATE task SET archived_at = ? WHERE id = ?`, ts(now()), card.ID); err != nil {
+	if _, err := s.db.Exec(`UPDATE task SET archived_at = ? WHERE id = ?`, ts(s.now()), card.ID); err != nil {
 		t.Fatal(err)
 	}
 	if _, _, err := s.Register(Observed{WireName: "atriumx", NameSource: NameFromDir}); !errors.Is(err, ErrStaleName) {

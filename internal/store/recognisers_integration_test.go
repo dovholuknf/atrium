@@ -382,7 +382,7 @@ func TestABadPatternInTheTableDoesNotBlockTheRestOfIt(t *testing.T) {
 	}
 	if err := s.guard(func() error {
 		_, err := s.db.Exec(`INSERT INTO recogniser (id, label, enabled, rank, pattern, created_at)
-			VALUES ('broken','broken',1,1,'(?P<org>[^/]+', ?)`, ts(now()))
+			VALUES ('broken','broken',1,1,'(?P<org>[^/]+', ?)`, ts(s.now()))
 		return err
 	}); err != nil {
 		t.Fatal(err)

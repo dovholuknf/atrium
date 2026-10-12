@@ -78,7 +78,7 @@ func (s *Store) AddSessionUsage(u *SessionUsage) error {
 		u.ID = newID()
 	}
 	if u.Ended.IsZero() {
-		u.Ended = now()
+		u.Ended = s.now()
 	}
 	if u.Started.IsZero() {
 		u.Started = u.Ended

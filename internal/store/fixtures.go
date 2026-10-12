@@ -119,7 +119,7 @@ func (s *Store) SaveFixture(f *Fixture) (*Fixture, error) {
 		f.ID = newID()
 	}
 	if f.CreatedAt == "" {
-		f.CreatedAt = ts(now())
+		f.CreatedAt = ts(s.now())
 	}
 	resume, enabled := 0, 0
 	if f.Resume {
@@ -154,7 +154,7 @@ func (s *Store) SaveFixture(f *Fixture) (*Fixture, error) {
 func (s *Store) NoteFixtureRun(id, reason string) error {
 	return s.guard(func() error {
 		_, err := s.db.Exec(`UPDATE fixture SET last_error = ?, last_run_at = ? WHERE id = ?`,
-			strings.TrimSpace(reason), ts(now()), id)
+			strings.TrimSpace(reason), ts(s.now()), id)
 		return err
 	})
 }

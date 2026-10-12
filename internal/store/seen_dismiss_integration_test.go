@@ -7,8 +7,8 @@ import "testing"
 // Dismissing answers the questions and nothing else: the turn stays unseen,
 // because a dismissed question is not a read turn.
 func TestDismissQuestionsAnswersAndLeavesSeen(t *testing.T) {
-	stepClock(t)
 	s := open(t)
+	stepClock(t, s)
 	task := askCard(t, s, "orchestrator")
 	if err := s.NoteTurnEnded(task.ID, TurnQuestions{Known: true, Block: true, List: []string{"a", "b"}}); err != nil {
 		t.Fatal(err)
@@ -43,8 +43,8 @@ func TestDismissQuestionsAnswersAndLeavesSeen(t *testing.T) {
 // A chip drawn before newer questions arrived names an older set, and must not
 // dismiss the newer one.
 func TestDismissQuestionsRefusesAnOlderShownSet(t *testing.T) {
-	stepClock(t)
 	s := open(t)
+	stepClock(t, s)
 	task := askCard(t, s, "orchestrator")
 	if err := s.NoteTurnEnded(task.ID, TurnQuestions{Known: true, Block: true, List: []string{"a"}}); err != nil {
 		t.Fatal(err)

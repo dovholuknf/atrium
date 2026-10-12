@@ -37,7 +37,7 @@ type ItemsUsage struct {
 // AcceptedItemUsage answers the tokens of each item accepted at or after since.
 func (s *Store) AcceptedItemUsage(since time.Time) (*ItemsUsage, error) {
 	since = since.UTC()
-	if floor := now().Add(-UsageMaxBack); since.IsZero() || since.Before(floor) {
+	if floor := s.now().Add(-UsageMaxBack); since.IsZero() || since.Before(floor) {
 		since = floor
 	}
 	out := &ItemsUsage{Items: []*ItemUsage{}}

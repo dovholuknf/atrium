@@ -159,7 +159,7 @@ func (st *Store) SaveSource(s Source) (*Source, error) {
 	}
 
 	err = st.guard(func() error {
-		created := ts(now())
+		created := ts(st.now())
 		wasEnabled := false
 		row := st.db.QueryRow(`SELECT created_at, enabled FROM source WHERE id = ?`, s.ID)
 		var enabledNow int
@@ -210,7 +210,7 @@ func (st *Store) DeleteSource(id string) error {
 // Returns whether this call is what switched it off, so the caller can say so
 // once rather than on every tick afterwards.
 func (st *Store) SourceRan(id string, count int, runErr error) (disabled bool, err error) {
-	n := ts(now())
+	n := ts(st.now())
 	if runErr == nil {
 		return false, st.guard(func() error {
 			_, err := st.db.Exec(`UPDATE source SET

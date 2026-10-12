@@ -587,6 +587,10 @@ type Permission struct {
 // Store owns the database, and whether it has halted.
 type Store struct {
 	db *sql.DB
+	// clock, when set, replaces the wall clock for this store. A seam for tests.
+	clock func() time.Time
+	// failpointHook, when set, can fail a change between two of its writes. A seam for tests.
+	failpointHook func(step string) error
 
 	mu        sync.RWMutex
 	haltCause error
@@ -849,7 +853,15 @@ func newID() string { return uuid.Must(uuid.NewV7()).String() }
 // Everything time-dependent in here is a window measured against a stored
 // timestamp, and the only honest way to test a two minute window is to be on
 // the other side of it. Sleeping for two minutes is not a test anybody runs.
-var now = func() time.Time { return time.Now().UTC().Truncate(time.Millisecond) }
+func wallNow() time.Time { return time.Now().UTC().Truncate(time.Millisecond) }
+
+// now is the store's clock: the wall clock, or the `clock` a test gave this store.
+func (s *Store) now() time.Time {
+	if s.clock != nil {
+		return s.clock()
+	}
+	return wallNow()
+}
 
 func ts(t time.Time) string { return t.UTC().Format(TimeFormat) }
 

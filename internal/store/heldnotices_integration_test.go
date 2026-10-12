@@ -41,7 +41,7 @@ func TestHeldNoticeStatsCountUnreadHeldNoticesOnly(t *testing.T) {
 	}
 
 	time.Sleep(5 * time.Millisecond)
-	through := ts(now())
+	through := ts(s.now())
 	changed, err := s.MarkNoticesRead(card.ID, through)
 	if err != nil || !changed {
 		t.Fatalf("read: %v %v", changed, err)

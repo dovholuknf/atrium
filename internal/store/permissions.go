@@ -98,7 +98,7 @@ func (s *Store) RecordPermission(taskID, tool, command, dedupKey, details string
 					// runs apart, and this one can.
 					p, decided = existing, true
 					return nil
-				case now().Sub(*existing.DecidedAt) <= ReplayWindow:
+				case s.now().Sub(*existing.DecidedAt) <= ReplayWindow:
 					p, decided = existing, true
 					return nil
 				default:
@@ -111,7 +111,7 @@ func (s *Store) RecordPermission(taskID, tool, command, dedupKey, details string
 				}
 			}
 		}
-		n := now()
+		n := s.now()
 		rec := &Permission{
 			ID: newID(), TaskID: taskID, Tool: tool, Command: command,
 			RequestedAt: n, DedupKey: dedupKey, Details: details,
@@ -227,7 +227,7 @@ func (s *Store) DecidePermissionBy(id, decision, reason, by string) (*Permission
 			p = existing
 			return nil
 		}
-		n := now()
+		n := s.now()
 		if _, err := s.db.Exec(
 			`UPDATE permission SET decided_at = ?, decision = ?, reason = ?, decided_by = ?
 			 WHERE id = ?`,

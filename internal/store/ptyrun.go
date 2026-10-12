@@ -55,7 +55,7 @@ func (s *Store) RecordRun(r PtyRun) error {
 		return errors.New("a run is a runner or a shell")
 	}
 	if r.Started.IsZero() {
-		r.Started = now()
+		r.Started = s.now()
 	}
 	return s.guard(func() error {
 		_, err := s.db.Exec(
@@ -94,7 +94,7 @@ const PtyRunKeep = 7 * 24 * time.Hour
 func (s *Store) PrunePtyRuns(keep time.Duration) (int, error) {
 	n := 0
 	err := s.guard(func() error {
-		res, err := s.db.Exec(`DELETE FROM pty_run WHERE filed_at != '' AND started_at < ?`, ts(now().Add(-keep)))
+		res, err := s.db.Exec(`DELETE FROM pty_run WHERE filed_at != '' AND started_at < ?`, ts(s.now().Add(-keep)))
 		if err != nil {
 			return err
 		}
@@ -139,7 +139,7 @@ func (s *Store) FileExit(f ExitFiling) (bool, error) {
 			if kind == "" {
 				kind = RunKindRunner
 			}
-			n := now()
+			n := s.now()
 			if _, err := tx.Exec(
 				`INSERT OR IGNORE INTO pty_run (run_id, task_id, kind, host, started_at, filed_at)
 				 VALUES (?, ?, ?, '', ?, '')`, f.RunID, f.TaskID, kind, ts(n)); err != nil {
@@ -157,7 +157,7 @@ func (s *Store) FileExit(f ExitFiling) (bool, error) {
 		}
 		if f.Why != "" {
 			if _, err := tx.Exec(`UPDATE task SET why = ?, last_activity_at = ? WHERE id = ?`,
-				f.Why, ts(now()), f.TaskID); err != nil {
+				f.Why, ts(s.now()), f.TaskID); err != nil {
 				return err
 			}
 		}

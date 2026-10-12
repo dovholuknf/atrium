@@ -344,7 +344,7 @@ func (s *Store) refreshObservedAt(t *Task, obs Observed, move bool) error {
 			return err
 		}
 	}
-	n := now()
+	n := s.now()
 	_, err := s.db.Exec(`UPDATE task SET worktree = ?, repo = ?, runner = ?, hostname = ?,
 		pid = ?, wire_name = ?, last_activity_at = ? WHERE id = ?`,
 		obs.Worktree, obs.Repo, obs.Runner, obs.Hostname, obs.PID,
@@ -407,7 +407,7 @@ func (s *Store) Observe(taskID string, obs Observed) (*Task, error) {
 }
 
 func (s *Store) create(obs Observed) (*Task, error) {
-	n := now()
+	n := s.now()
 	// What repository this is, asked of the directory rather than guessed from
 	// its name. See gitinfo.go: the wire name is the last path segment, which
 	// is the subdirectory for a session started inside one and the branch for
@@ -726,7 +726,7 @@ func (s *Store) setStatusOn(q querier, id, status, reason string) error {
 	if prev.Status == status {
 		return nil
 	}
-	n := now()
+	n := s.now()
 	var waiting any
 	why := ""
 	if status == StatusNeedsInput || status == StatusNeedsPermission {
@@ -819,7 +819,7 @@ func (s *Store) SetOverrides(id string, patch map[string]string) error {
 			return err
 		}
 		_, err = s.db.Exec(`UPDATE task SET overrides = ?, last_activity_at = ? WHERE id = ?`,
-			string(blob), ts(now()), id)
+			string(blob), ts(s.now()), id)
 		return err
 	})
 }
@@ -828,7 +828,7 @@ func (s *Store) SetOverrides(id string, patch map[string]string) error {
 func (s *Store) SetWhy(id, why string) error {
 	return s.guard(func() error {
 		_, err := s.db.Exec(`UPDATE task SET why = ?, last_activity_at = ? WHERE id = ?`,
-			why, ts(now()), id)
+			why, ts(s.now()), id)
 		return err
 	})
 }
@@ -838,7 +838,7 @@ func (s *Store) SetWhy(id, why string) error {
 func (s *Store) BackdateActivity(id string, by time.Duration) error {
 	return s.guard(func() error {
 		_, err := s.db.Exec(`UPDATE task SET last_activity_at = ? WHERE id = ?`,
-			ts(now().Add(-by)), id)
+			ts(s.now().Add(-by)), id)
 		return err
 	})
 }
@@ -899,7 +899,7 @@ func (s *Store) ExitAsked(taskID string) (bool, error) {
 // SetExitAsked records that somebody asked this card's runner to exit.
 func (s *Store) SetExitAsked(taskID string) error {
 	return s.guard(func() error {
-		_, err := s.db.Exec(`UPDATE task SET exit_asked_at = ? WHERE id = ?`, ts(now()), taskID)
+		_, err := s.db.Exec(`UPDATE task SET exit_asked_at = ? WHERE id = ?`, ts(s.now()), taskID)
 		return err
 	})
 }
@@ -1349,7 +1349,7 @@ func (s *Store) Prune(olderThan time.Duration, statuses ...string) (int, error) 
 	var n int
 	err := s.guard(func() error {
 		args := append([]any{}, keep...)
-		args = append(args, ts(now().Add(-olderThan)))
+		args = append(args, ts(s.now().Add(-olderThan)))
 		res, err := s.db.Exec(
 			// Inclusive, because timestamps are stored to the second. With a
 			// zero age the cutoff is now, and a card that finished this second
@@ -1397,7 +1397,7 @@ func (s *Store) SetGated(id string, on bool) error {
 			v = 1
 		}
 		_, err := s.db.Exec(`UPDATE task SET gated = ?, last_activity_at = ? WHERE id = ?`,
-			v, ts(now()), id)
+			v, ts(s.now()), id)
 		return err
 	})
 }
@@ -1429,7 +1429,7 @@ func (s *Store) SetAutoApproveUntil(id string, on bool, until *time.Time) error 
 		}
 		_, err := s.db.Exec(
 			`UPDATE task SET auto_approve = ?, auto_until = ?, last_activity_at = ? WHERE id = ?`,
-			v, deadline, ts(now()), id)
+			v, deadline, ts(s.now()), id)
 		return err
 	})
 }
@@ -1625,7 +1625,7 @@ func (s *Store) GatedByWireName(name string) (bool, error) {
 // Touch marks activity without changing status.
 func (s *Store) Touch(id string) error {
 	return s.guard(func() error {
-		_, err := s.db.Exec(`UPDATE task SET last_activity_at = ? WHERE id = ?`, ts(now()), id)
+		_, err := s.db.Exec(`UPDATE task SET last_activity_at = ? WHERE id = ?`, ts(s.now()), id)
 		return err
 	})
 }
@@ -1684,7 +1684,7 @@ func (s *Store) appendEventOn(q querier, taskID, kind string, payload any) (*Eve
 		}
 		blob = b
 	}
-	e := &Event{ID: newID(), TaskID: taskID, At: now(), Kind: kind, Payload: json.RawMessage(blob)}
+	e := &Event{ID: newID(), TaskID: taskID, At: s.now(), Kind: kind, Payload: json.RawMessage(blob)}
 	// A kind routed cold-only never reaches the db. configureColdKinds only
 	// allows that when a cold sink exists, so the event still lands somewhere.
 	if !s.coldOnly[kind] {
@@ -1826,9 +1826,9 @@ func (s *Store) Archive(olderThan time.Duration, statuses ...string) (int, error
 	}
 	var n int
 	err := s.guard(func() error {
-		args := []any{ts(now())}
+		args := []any{ts(s.now())}
 		args = append(args, keep...)
-		args = append(args, ts(now().Add(-olderThan)))
+		args = append(args, ts(s.now().Add(-olderThan)))
 		res, err := s.db.Exec(
 			`UPDATE task SET archived_at = ?
 			 WHERE archived_at = ''

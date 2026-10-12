@@ -242,7 +242,7 @@ func TestTheMigrationCarriesAnAskFromTheOldColumns(t *testing.T) {
 	// not yet recorded.
 	if _, err := s.db.Exec(
 		`UPDATE task SET ask = ?, ask_at = ?, ask_peer = ? WHERE id = ?`,
-		"which of these two schemas is authoritative", ts(now()), "helper", task.ID); err != nil {
+		"which of these two schemas is authoritative", ts(s.now()), "helper", task.ID); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := s.db.Exec(`DELETE FROM ask`); err != nil {
@@ -336,7 +336,7 @@ func TestTheAskMigrationAgainstACopyOfALiveDatabase(t *testing.T) {
 	}
 	if _, err := s.db.Exec(
 		`UPDATE task SET ask = ?, ask_at = ?, ask_peer = ? WHERE id = ?`,
-		"which of these two schemas is authoritative", ts(now()), "helper", id); err != nil {
+		"which of these two schemas is authoritative", ts(s.now()), "helper", id); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := s.db.Exec(`DELETE FROM ask WHERE task_id = ?`, id); err != nil {

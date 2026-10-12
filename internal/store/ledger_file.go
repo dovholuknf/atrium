@@ -179,10 +179,10 @@ func ReadLedger(dbPath string) (*LedgerView, error) {
 	var name string
 	err = db.QueryRow(`SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'work_item'`).Scan(&name)
 	if errors.Is(err, sql.ErrNoRows) {
-		return &LedgerView{At: now()}, nil
+		return &LedgerView{At: wallNow()}, nil
 	}
 	if err != nil {
 		return nil, err
 	}
-	return ledgerOn(db, now())
+	return ledgerOn(db, wallNow())
 }

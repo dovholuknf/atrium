@@ -97,7 +97,7 @@ func (s *Store) RecordDelivery(d *Delivery) error {
 		d.ID = newID()
 	}
 	if d.At.IsZero() {
-		d.At = now()
+		d.At = s.now()
 	}
 	return s.guard(func() error { return insertDelivery(s.db, d) })
 }
@@ -110,7 +110,7 @@ func insertDelivery(db *sql.DB, d *Delivery) error {
 
 // recordMessageDeliveries is MarkDelivered's half: every message that reached a session is a delivery. An operator
 // message typed in at the terminal is left to the prompt hook, which sees it as it is submitted.
-func recordMessageDeliveries(db *sql.DB, taskID, via string, ids []string) error {
+func (s *Store) recordMessageDeliveries(db *sql.DB, taskID, via string, ids []string) error {
 	for _, id := range ids {
 		var from, cause string
 		if err := db.QueryRow(`SELECT from_peer, cause FROM message WHERE id = ?`, id).Scan(&from, &cause); err != nil {
@@ -124,7 +124,7 @@ func recordMessageDeliveries(db *sql.DB, taskID, via string, ids []string) error
 			continue
 		}
 		if err := insertDelivery(db, &Delivery{
-			ID: newID(), TaskID: taskID, From: from, Kind: kind, At: now(), MessageID: id}); err != nil {
+			ID: newID(), TaskID: taskID, From: from, Kind: kind, At: s.now(), MessageID: id}); err != nil {
 			return err
 		}
 	}
@@ -172,7 +172,7 @@ func (s *Store) CostDeliveriesFirst(taskID string, upTo time.Time, c TurnCost) (
 		if err := rows.Err(); err != nil || len(ids) == 0 {
 			return err
 		}
-		at := ts(now())
+		at := ts(s.now())
 		for i, id := range ids {
 			if i == 0 {
 				_, err = s.db.Exec(`UPDATE delivery SET costed_at = ?, model = ?, replies = ?, input = ?, output = ?,

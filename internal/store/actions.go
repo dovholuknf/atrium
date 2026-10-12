@@ -167,7 +167,7 @@ func (s *Store) SaveCardAction(a CardAction) (*CardAction, error) {
 	a.Runner = strings.TrimSpace(a.Runner)
 
 	err := s.guard(func() error {
-		created := ts(now())
+		created := ts(s.now())
 		var existing string
 		if err := s.db.QueryRow(
 			`SELECT created_at FROM card_action WHERE id = ?`, a.ID).Scan(&existing); err == nil {

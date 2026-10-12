@@ -11,9 +11,6 @@ import (
 // `through` reaches the store from a JSON round trip of an event's `at`, and RFC3339Nano drops
 // trailing zeros: ".12Z" and "Z" for a notice held at .120 and at .000. Both must still stamp.
 func TestMarkNoticesReadTakesAnAtFromAJSONRoundTrip(t *testing.T) {
-	old := now
-	t.Cleanup(func() { now = old })
-
 	for _, at := range []string{"2026-01-01T00:00:01.120Z", "2026-01-01T00:00:02.000Z"} {
 		s := openTestStore(t)
 		card, _, err := s.Register(Observed{WireName: "orch", Worktree: "D:/tmp/orch", Runner: "claude"})
@@ -24,11 +21,11 @@ func TestMarkNoticesReadTakesAnAtFromAJSONRoundTrip(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		now = func() time.Time { return when }
+		s.clock = func() time.Time { return when }
 		if err := s.AppendEvent(card.ID, EventNotified, HeldNoticePayload("fyi", "w", "w1", "one")); err != nil {
 			t.Fatal(err)
 		}
-		now = old
+		s.clock = nil
 
 		events, err := s.Events(card.ID, 100)
 		if err != nil {
@@ -76,7 +73,7 @@ func TestMarkNoticesReadStopsAtWhatWasRead(t *testing.T) {
 		t.Fatal(err)
 	}
 	time.Sleep(5 * time.Millisecond)
-	through := ts(now())
+	through := ts(s.now())
 	time.Sleep(5 * time.Millisecond)
 	if err := s.AppendEvent(card.ID, EventNotified, HeldNoticePayload("fyi", "w", "w1", "two")); err != nil {
 		t.Fatal(err)
@@ -96,7 +93,7 @@ func TestMarkNoticesReadStopsAtWhatWasRead(t *testing.T) {
 	if n, _, _ := s.HeldNoticeStats(card.ID); n != 1 {
 		t.Fatalf("%d unread, want the one held after the stamp", n)
 	}
-	if changed, _ := s.MarkNoticesRead(card.ID, ts(now().Add(-time.Hour))); changed {
+	if changed, _ := s.MarkNoticesRead(card.ID, ts(s.now().Add(-time.Hour))); changed {
 		t.Fatal("an older stamp reported a change")
 	}
 	if n, _, _ := s.HeldNoticeStats(card.ID); n != 1 {

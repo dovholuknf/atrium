@@ -68,7 +68,7 @@ func (s *Store) QueueUnexpectedExit(taskID, text string) (*RestartWake, bool, er
 	}
 	var w *RestartWake
 	err := s.inTx(func(tx *Tx) error {
-		w = &RestartWake{TaskID: taskID, Text: text, By: UnexpectedExitBy, QueuedAt: now()}
+		w = &RestartWake{TaskID: taskID, Text: text, By: UnexpectedExitBy, QueuedAt: s.now()}
 		res, err := tx.Exec(`INSERT INTO restart_wake (task_id, text, queued_by, queued_at, expires_at, expired_at)
 			SELECT ?, ?, ?, ?, ?, NULL WHERE EXISTS (SELECT 1 FROM task WHERE id = ?)
 			ON CONFLICT (task_id) DO NOTHING`,

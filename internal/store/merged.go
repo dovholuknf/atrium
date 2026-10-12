@@ -28,7 +28,7 @@ func (s *Store) MarkMerged(taskID, into, sha, branch string, cullAt time.Time) (
 	marked := false
 	err := s.inTx(func(tx *Tx) error {
 		marked = false
-		n := now()
+		n := s.now()
 		res, err := tx.Exec(`UPDATE work_item SET merged_at = ?, merged_into = ?, merged_sha = ?,
 				merged_branch = ?, cull_at = ?
 			WHERE task_id = ? AND held_by = '' AND cull_at = ''
@@ -154,7 +154,7 @@ func (s *Store) MergedViewFor(taskID string) (*MergedView, error) {
 		if err != nil {
 			return err
 		}
-		out = w.mergedView(now())
+		out = w.mergedView(s.now())
 		return nil
 	})
 	return out, err
@@ -168,7 +168,7 @@ func (s *Store) MergedViews() (map[string]*MergedView, error) {
 		if err != nil {
 			return err
 		}
-		at := now()
+		at := s.now()
 		for _, w := range items {
 			out[w.TaskID] = w.mergedView(at)
 		}
@@ -183,7 +183,7 @@ func (s *Store) MergedViews() (map[string]*MergedView, error) {
 func (s *Store) ArchiveCulled(taskID, why string) error {
 	return s.guard(func() error {
 		res, err := s.db.Exec(`UPDATE task SET archived_at = ? WHERE id = ? AND archived_at = ''`,
-			ts(now()), taskID)
+			ts(s.now()), taskID)
 		if err != nil {
 			return err
 		}
@@ -226,7 +226,7 @@ func (s *Store) AcceptMerged(taskID string) error {
 	return s.inTx(func(tx *Tx) error {
 		res, err := tx.Exec(`UPDATE work_item SET state = ?, state_at = ?, state_by = ?,
 				revision = revision + 1, accepted_report_id = latest_report_id, cull_at = ''
-			WHERE task_id = ? AND state IN `+openStatesSQL, WorkAccepted, ts(now()), ByAtrium, taskID)
+			WHERE task_id = ? AND state IN `+openStatesSQL, WorkAccepted, ts(s.now()), ByAtrium, taskID)
 		if err != nil {
 			return err
 		}

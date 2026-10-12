@@ -121,7 +121,7 @@ func (s *Store) SetLauncher(id, handle, parentID string) error {
 // MarkReported stamps the moment a card said something to its launcher.
 func (s *Store) MarkReported(id string) error {
 	return s.guard(func() error {
-		_, err := s.db.Exec(`UPDATE task SET reported_at = ? WHERE id = ?`, ts(now()), id)
+		_, err := s.db.Exec(`UPDATE task SET reported_at = ? WHERE id = ?`, ts(s.now()), id)
 		return err
 	})
 }
@@ -162,7 +162,7 @@ func (s *Store) SawHook(id, which string) error {
 		return nil
 	}
 	return s.guard(func() error {
-		_, err := s.db.Exec(`UPDATE task SET `+col+` = ? WHERE id = ? AND `+col+` = ''`, ts(now()), id)
+		_, err := s.db.Exec(`UPDATE task SET `+col+` = ? WHERE id = ? AND `+col+` = ''`, ts(s.now()), id)
 		return err
 	})
 }
@@ -177,7 +177,7 @@ func (s *Store) RecordNotice(workerID, source, key string) (bool, error) {
 	fresh := false
 	err := s.guard(func() error {
 		res, err := s.db.Exec(`INSERT OR IGNORE INTO a2a_notice (worker_id, source, key, created_at)
-			VALUES (?, ?, ?, ?)`, workerID, source, key, ts(now()))
+			VALUES (?, ?, ?, ?)`, workerID, source, key, ts(s.now()))
 		if err != nil {
 			return err
 		}

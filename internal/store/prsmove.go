@@ -123,7 +123,7 @@ func (st *Store) ImportPR(t PRTransfer, runDir string) (*PRReview, error) {
 		t.RunError = ""
 	}
 	if t.CreatedAt == "" {
-		t.CreatedAt = ts(now())
+		t.CreatedAt = ts(st.now())
 	}
 	id := newID()
 	err := st.guard(func() error {
@@ -149,7 +149,7 @@ func (st *Store) ImportPR(t PRTransfer, runDir string) (*PRReview, error) {
 func (st *Store) ArchivePR(id string) (*PRReview, error) {
 	err := st.guard(func() error {
 		res, err := st.db.Exec(`UPDATE pr_review SET archived_at = CASE WHEN archived_at = '' THEN ? ELSE archived_at END
-			WHERE id = ?`, ts(now()), id)
+			WHERE id = ?`, ts(st.now()), id)
 		if err != nil {
 			return err
 		}

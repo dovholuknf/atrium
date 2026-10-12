@@ -52,7 +52,7 @@ type RelaySpec struct {
 
 // HoldRelay writes one owed message and returns it.
 func (s *Store) HoldRelay(r RelayRow) (*RelayRow, error) {
-	r.ID, r.CreatedAt = newID(), now()
+	r.ID, r.CreatedAt = newID(), s.now()
 	if r.Source == "" {
 		r.Source = RelaySourceSay
 	}
@@ -76,7 +76,7 @@ func insertRelay(q querier, r *RelayRow) error {
 // holdRelayOn writes a notice row inside a transaction.
 func (s *Store) holdRelayOn(tx *Tx, spec RelaySpec) error {
 	r := RelayRow{
-		ID: newID(), CreatedAt: now(), Source: RelaySourceNotice,
+		ID: newID(), CreatedAt: s.now(), Source: RelaySourceNotice,
 		FromTask: spec.FromTask, FromWire: spec.FromWire,
 		ToRoom: spec.ToRoom, ToName: spec.ToName, ToCard: spec.ToCard, Text: spec.Text,
 	}

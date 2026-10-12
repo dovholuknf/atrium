@@ -217,7 +217,7 @@ func (s *Store) QueueDispatch(d Dispatch) (*Dispatch, error) {
 		_, err := s.db.Exec(`INSERT INTO dispatch (`+dispatchColumns+`)
 			VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 			d.ID, d.Room, d.Harness, d.Cwd, d.Title, d.Prompt, d.Why, string(tags),
-			d.Window, d.State, "", 0, "", "", "", ts(now()), "", "")
+			d.Window, d.State, "", 0, "", "", "", ts(s.now()), "", "")
 		return err
 	})
 	if err != nil {
@@ -327,7 +327,7 @@ func (s *Store) ClaimDispatches(room string, max int) ([]*Dispatch, error) {
 			res, err := s.db.Exec(
 				`UPDATE dispatch SET state = ?, token = ?, attempts = attempts + 1,
 					claimed_at = ? WHERE id = ? AND state = ?`,
-				DispatchClaimed, token, ts(now()), id, DispatchQueued)
+				DispatchClaimed, token, ts(s.now()), id, DispatchQueued)
 			if err != nil {
 				return err
 			}
@@ -380,7 +380,7 @@ func (s *Store) SettleDispatch(id, token, state, cardID, cardURL, why string) (*
 		res, err := s.db.Exec(
 			`UPDATE dispatch SET state = ?, card_id = ?, card_url = ?, error = ?,
 				settled_at = ?, token = '' WHERE id = ? AND token = ? AND state = ?`,
-			state, cardID, cardURL, firstLineOf(why), ts(now()), id, token, DispatchClaimed)
+			state, cardID, cardURL, firstLineOf(why), ts(s.now()), id, token, DispatchClaimed)
 		if err != nil {
 			return err
 		}
@@ -423,7 +423,7 @@ func (s *Store) CancelDispatch(id string) error {
 		took = false
 		res, err := s.db.Exec(
 			`UPDATE dispatch SET state = ?, settled_at = ?, token = '' WHERE id = ? AND state = ?`,
-			DispatchCancelled, ts(now()), id, DispatchQueued)
+			DispatchCancelled, ts(s.now()), id, DispatchQueued)
 		if err != nil {
 			return err
 		}
@@ -453,7 +453,7 @@ func (s *Store) ExpireDispatchClaims(lease time.Duration) (int, error) {
 	if lease <= 0 {
 		lease = DispatchLease
 	}
-	cutoff := ts(now().Add(-lease))
+	cutoff := ts(s.now().Add(-lease))
 	moved := 0
 	err := s.guard(func() error {
 		moved = 0
@@ -472,7 +472,7 @@ func (s *Store) ExpireDispatchClaims(lease time.Duration) (int, error) {
 		res, err = s.db.Exec(
 			`UPDATE dispatch SET state = ?, token = '', settled_at = ?, error = ?
 				WHERE state = ? AND claimed_at != '' AND claimed_at < ? AND attempts >= ?`,
-			DispatchFailed, ts(now()),
+			DispatchFailed, ts(s.now()),
 			"handed over twice and never heard back. that room took it and said nothing",
 			DispatchClaimed, cutoff, MaxDispatchAttempts)
 		if err != nil {
@@ -498,7 +498,7 @@ func (s *Store) SweepDispatch(age time.Duration) (int, error) {
 		n = 0
 		res, err := s.db.Exec(
 			`DELETE FROM dispatch WHERE state NOT IN (?, ?) AND settled_at != '' AND settled_at < ?`,
-			DispatchQueued, DispatchClaimed, ts(now().Add(-age)))
+			DispatchQueued, DispatchClaimed, ts(s.now().Add(-age)))
 		if err != nil {
 			return err
 		}

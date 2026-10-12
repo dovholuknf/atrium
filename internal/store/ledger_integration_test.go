@@ -435,18 +435,17 @@ func TestACrashBetweenTheMoveAndTheNoticeLosesNothing(t *testing.T) {
 		t.Fatal(err)
 	}
 	launcher, worker, _ := ledgerPair(t, s)
-	failpointHook = func(step string) error {
+	s.failpointHook = func(step string) error {
 		if step == "ended-notice" {
 			return errors.New("disk fell off")
 		}
 		return nil
 	}
-	defer func() { failpointHook = nil }()
 	if err := s.AppendEvent(worker.ID, EventExited, map[string]any{"by": "reaper"}); err == nil {
 		t.Fatal("the failed change reported success")
 	}
 	s.Close()
-	failpointHook = nil
+	s.failpointHook = nil
 
 	s, err = Open(path)
 	if err != nil {
@@ -487,7 +486,7 @@ func TestAReportFailingBetweenWritesLeavesNothing(t *testing.T) {
 				t.Fatal(err)
 			}
 			launcher, worker, _ := ledgerPair(t, s)
-			failpointHook = func(at string) error {
+			s.failpointHook = func(at string) error {
 				if at == step {
 					return errors.New("failed at " + at)
 				}
@@ -500,7 +499,7 @@ func TestAReportFailingBetweenWritesLeavesNothing(t *testing.T) {
 				Notice: &NoticeSpec{ToID: launcher.ID, From: worker.WireName, Source: "report",
 					Key: "k", Text: "report from worker"},
 			})
-			failpointHook = nil
+			s.failpointHook = nil
 			if err == nil {
 				t.Fatal("the failed report reported success")
 			}
@@ -639,7 +638,7 @@ func TestTheBackfillIsInferredBoundedAndRunsOnce(t *testing.T) {
 		if err := s.SetLineage(c.ID, "orchestrator", launcher.ID); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := s.db.Exec(`UPDATE task SET created_at = ? WHERE id = ?`, ts(now().Add(-age)), c.ID); err != nil {
+		if _, err := s.db.Exec(`UPDATE task SET created_at = ? WHERE id = ?`, ts(s.now().Add(-age)), c.ID); err != nil {
 			t.Fatal(err)
 		}
 		return c

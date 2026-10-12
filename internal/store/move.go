@@ -119,7 +119,7 @@ func (s *Store) Freeze(id, moveID string, lease time.Duration) (*Freeze, error) 
 		if err != nil {
 			return err
 		}
-		n := now()
+		n := s.now()
 		if f != nil && f.MoveID != moveID {
 			return refuse(ErrFrozenByOther)
 		}
@@ -157,10 +157,10 @@ func (s *Store) RenewFreeze(id, moveID string, lease time.Duration) error {
 		if err != nil {
 			return err
 		}
-		if t.MovedTo == "" && f.Expired(now()) {
+		if t.MovedTo == "" && f.Expired(s.now()) {
 			return refuse(ErrLeaseExpired)
 		}
-		_, err = tx.Exec(`UPDATE card_freeze SET lease_until = ? WHERE task_id = ?`, ts(now().Add(lease)), id)
+		_, err = tx.Exec(`UPDATE card_freeze SET lease_until = ? WHERE task_id = ?`, ts(s.now().Add(lease)), id)
 		return err
 	})
 }
@@ -379,7 +379,7 @@ func (s *Store) SetMovedTo(id, moveID, to string) error {
 		if f == nil || f.MoveID != moveID {
 			return refuse(ErrNotFrozen)
 		}
-		if f.Expired(now()) {
+		if f.Expired(s.now()) {
 			return refuse(ErrLeaseExpired)
 		}
 		_, err = tx.Exec(`UPDATE task SET moved_to = ? WHERE id = ?`, to, id)
@@ -416,7 +416,7 @@ func (s *Store) SeenMove(msgID, taskID string) (bool, error) {
 	fresh := false
 	err := s.guard(func() error {
 		res, err := s.db.Exec(`INSERT OR IGNORE INTO move_seen (msg_id, task_id, seen_at) VALUES (?,?,?)`,
-			msgID, taskID, ts(now()))
+			msgID, taskID, ts(s.now()))
 		if err != nil {
 			return err
 		}

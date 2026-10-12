@@ -36,7 +36,7 @@ type LimitReading struct {
 // card's last one of that kind. It reports whether a row was written.
 func (s *Store) AddLimitReading(r LimitReading) (bool, error) {
 	if r.At.IsZero() {
-		r.At = now()
+		r.At = s.now()
 	}
 	wrote := false
 	err := s.guard(func() error {

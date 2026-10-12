@@ -99,7 +99,7 @@ func (s *Store) QueueCaused(taskID, text, fromPeer, kind, cause string, waitTurn
 func (s *Store) queueMessage(taskID, text, fromPeer, kind string, waitTurn bool) (*Message, error) {
 	m := &Message{
 		ID: newID(), TaskID: taskID, Text: text,
-		CreatedAt: now(), FromPeer: fromPeer, WaitTurn: waitTurn,
+		CreatedAt: s.now(), FromPeer: fromPeer, WaitTurn: waitTurn,
 	}
 	wait := 0
 	if waitTurn {
@@ -167,7 +167,7 @@ func (s *Store) PendingMessages(taskID string) ([]*Message, error) {
 // alternative is a test that sleeps for a quarter of an hour.
 func (s *Store) BackdateMessage(id string, by time.Duration) error {
 	return s.guard(func() error {
-		_, err := s.db.Exec(`UPDATE message SET created_at = ? WHERE id = ?`, ts(now().Add(-by)), id)
+		_, err := s.db.Exec(`UPDATE message SET created_at = ? WHERE id = ?`, ts(s.now().Add(-by)), id)
 		return err
 	})
 }
@@ -178,7 +178,7 @@ func (s *Store) MarkDelivered(taskID, via string, ids []string) error {
 		return nil
 	}
 	return s.guard(func() error {
-		n := ts(now())
+		n := ts(s.now())
 		for _, id := range ids {
 			if _, err := s.db.Exec(
 				`UPDATE message SET delivered_at = ?, via = ? WHERE id = ?`, n, via, id); err != nil {
@@ -187,12 +187,12 @@ func (s *Store) MarkDelivered(taskID, via string, ids []string) error {
 		}
 		// The say record, when this message was one. Every delivery path comes
 		// through here. See say.go.
-		if err := markSaysDelivered(s.db, via, ids); err != nil {
+		if err := s.markSaysDelivered(s.db, via, ids); err != nil {
 			return err
 		}
 		// And a delivery, which the turn that follows is costed against. Best effort: the cost report is not
 		// worth a message that stays queued.
-		_ = recordMessageDeliveries(s.db, taskID, via, ids)
+		_ = s.recordMessageDeliveries(s.db, taskID, via, ids)
 		return s.appendEvent(taskID, EventPrompted, map[string]any{
 			"delivered": len(ids), "via": via,
 		})

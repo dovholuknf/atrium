@@ -32,7 +32,7 @@ func (s *Store) Park(id, was string, extra map[string]any) (bool, error) {
 		if prev.ParkedAt != nil {
 			return nil
 		}
-		n := now()
+		n := s.now()
 		status := prev.Status
 		if was != "" && was != prev.Status {
 			status = was

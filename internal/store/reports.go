@@ -93,7 +93,7 @@ func (s *Store) LatestAgentReports() (map[string]AgentReport, error) {
 			`SELECT task_id, at, payload FROM event
 			 WHERE kind = ? AND at >= ?
 			 ORDER BY at DESC, id DESC LIMIT ?`,
-			EventSubmitted, ts(now().Add(-reportWindow)), reportScan)
+			EventSubmitted, ts(s.now().Add(-reportWindow)), reportScan)
 		if err != nil {
 			return err
 		}

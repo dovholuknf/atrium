@@ -75,7 +75,7 @@ func (s *Store) CloseOwedItem(workerID string) (bool, error) {
 	if err := s.SetSetting(owedPrefix+workerID, ""); err != nil {
 		return false, err
 	}
-	raw, _ := json.Marshal(OwedClosed{At: now(), Reason: it.Reason, Since: it.Since})
+	raw, _ := json.Marshal(OwedClosed{At: s.now(), Reason: it.Reason, Since: it.Since})
 	return true, s.SetSetting(closePrefix+workerID, string(raw))
 }
 
@@ -114,7 +114,7 @@ const reportedPrefix = "owed_reported:"
 // SetOwedReported records that a report of the worker's went to the orchestrator because it had
 // no launcher. That report IS the item: it must not open another.
 func (s *Store) SetOwedReported(workerID string) error {
-	return s.SetSetting(reportedPrefix+workerID, ts(now()))
+	return s.SetSetting(reportedPrefix+workerID, ts(s.now()))
 }
 
 // OwedReportedAt is when that was, zero if never.
@@ -171,7 +171,7 @@ type OwedAsk struct {
 
 // SetOwedAsk records that a worker asked its launcher something.
 func (s *Store) SetOwedAsk(workerID, text string) error {
-	raw, _ := json.Marshal(OwedAsk{At: now(), Text: text})
+	raw, _ := json.Marshal(OwedAsk{At: s.now(), Text: text})
 	return s.SetSetting(askPrefix+workerID, string(raw))
 }
 

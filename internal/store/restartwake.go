@@ -63,7 +63,7 @@ func (s *Store) SetRestartWake(taskID, text, by string) (*RestartWake, *RestartW
 			return err
 		}
 		old = prev
-		w = &RestartWake{TaskID: taskID, Text: text, By: strings.TrimSpace(by), QueuedAt: now()}
+		w = &RestartWake{TaskID: taskID, Text: text, By: strings.TrimSpace(by), QueuedAt: s.now()}
 		if _, err := tx.Exec(`INSERT INTO restart_wake (task_id, text, queued_by, queued_at, expires_at, expired_at)
 			VALUES (?, ?, ?, ?, ?, NULL)
 			ON CONFLICT (task_id) DO UPDATE SET text = excluded.text, queued_by = excluded.queued_by,

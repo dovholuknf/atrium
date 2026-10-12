@@ -54,7 +54,7 @@ func (s *Store) BackfillWorkLedger(liveness func(*Task) Liveness) (*BackfillResu
 		cards = nil
 		rows, err := s.db.Query(`SELECT `+taskColumns+` FROM task
 			WHERE created_at >= ? AND spawned_by != '' AND spawned_by != ?
-			ORDER BY created_at ASC`, ts(now().Add(-LedgerBackfillWindow)), HumanLauncher)
+			ORDER BY created_at ASC`, ts(s.now().Add(-LedgerBackfillWindow)), HumanLauncher)
 		if err != nil {
 			return err
 		}
@@ -96,7 +96,7 @@ func (s *Store) BackfillWorkLedger(liveness func(*Task) Liveness) (*BackfillResu
 			}
 		}
 	}
-	if err := s.SetSetting(SettingLedgerBackfill, ts(now())); err != nil {
+	if err := s.SetSetting(SettingLedgerBackfill, ts(s.now())); err != nil {
 		return res, err
 	}
 	return res, nil
@@ -180,7 +180,7 @@ func (s *Store) backfillOne(t *Task, live Liveness) (bool, string, error) {
 		if live == Gone {
 			ended = 1
 		}
-		n := ts(now())
+		n := ts(s.now())
 		res, err := tx.Exec(`INSERT INTO work_item (task_id, handle, title, worktree, launcher_id,
 				launcher_handle, arbiter_id, arbiter_handle, state, state_at, state_by, ended_generation,
 				inferred, created_at)

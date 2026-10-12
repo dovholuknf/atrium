@@ -179,7 +179,7 @@ func (s *Store) SetSetting(key, value string) error {
 			`INSERT INTO setting (key, value, updated_at) VALUES (?, ?, ?)
 			 ON CONFLICT(key) DO UPDATE SET value = excluded.value,
 			                                updated_at = excluded.updated_at`,
-			key, value, ts(now()))
+			key, value, ts(s.now()))
 		return err
 	})
 }
@@ -227,7 +227,7 @@ func (s *Store) GlobalAutoUntil() (bool, *time.Time) {
 		// A value that will not parse is not a licence to approve everything.
 		return false, nil
 	}
-	if !now().Before(deadline) {
+	if !s.now().Before(deadline) {
 		return false, &deadline
 	}
 	return true, &deadline

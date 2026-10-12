@@ -160,7 +160,7 @@ func (st *Store) CreatePR(in NewPR) (*PRReview, bool, error) {
 			(id, run_dir, url, why, host, org, repo, number, reviewed_head, created_at, claim)
 			VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
 			id, in.RunDir, strings.TrimSpace(in.URL), in.Why, in.Host, in.Org, in.Repo,
-			in.Number, strings.ToLower(in.Head), ts(now()), in.Claim)
+			in.Number, strings.ToLower(in.Head), ts(st.now()), in.Claim)
 		if err != nil {
 			return err
 		}
@@ -344,7 +344,7 @@ func (st *Store) MovePR(id string, from []string, state, runState, runErr string
 	if state != PRFailed {
 		runErr = ""
 	}
-	n := ts(now())
+	n := ts(st.now())
 	guardSQL, guardArgs := stateGuard(from)
 	missed := false
 	err := st.guard(func() error {
@@ -400,7 +400,7 @@ func (st *Store) SetPRFetched(id, head, title, author, runDir string) (*PRReview
 		res, err := st.db.Exec(`UPDATE pr_review SET reviewed_head = ?, observed_head = ?,
 			observed_title = ?, observed_author = ?, checked_at = ?,
 			run_dir = CASE WHEN ? = '' THEN run_dir ELSE ? END WHERE id = ?`,
-			strings.ToLower(head), strings.ToLower(head), title, author, ts(now()),
+			strings.ToLower(head), strings.ToLower(head), title, author, ts(st.now()),
 			runDir, runDir, id)
 		if err != nil {
 			return err
@@ -836,7 +836,7 @@ func (st *Store) SavePRRecipe(r PRRecipe) (*PRRecipe, error) {
 				walker_brief = excluded.walker_brief, budget_usd = excluded.budget_usd,
 				turns_cap = excluded.turns_cap, updated_at = excluded.updated_at`,
 			r.Name, r.Match, r.Harness, r.Panel, r.VerifyAt, r.Critics, r.Second,
-			r.WalkerBrief, r.BudgetUSD, r.TurnsCap, ts(now()))
+			r.WalkerBrief, r.BudgetUSD, r.TurnsCap, ts(st.now()))
 		return err
 	})
 	if err != nil {

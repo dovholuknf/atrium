@@ -191,7 +191,7 @@ func TestPruningRunRowsKeepsUnfiledAndRecentOnes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	old := now().Add(-30 * 24 * time.Hour)
+	old := s.now().Add(-30 * 24 * time.Hour)
 	oldFiled, oldLive, newFiled := NewRunID(), NewRunID(), NewRunID()
 	for _, r := range []PtyRun{
 		{RunID: oldFiled, TaskID: card.ID, Kind: RunKindRunner, Started: old},

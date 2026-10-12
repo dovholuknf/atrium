@@ -483,7 +483,7 @@ func (s *Store) addRule(tool, prefix, decision, reason, scope, kind string, allo
 	}
 	r := &Rule{
 		ID: newID(), Tool: tool, Prefix: prefix, Decision: decision,
-		Reason: reason, Scope: scope, Kind: kind, CreatedAt: now(),
+		Reason: reason, Scope: scope, Kind: kind, CreatedAt: s.now(),
 	}
 	err := s.guard(func() error {
 		// Kind is part of the identity: the same string is both a valid command

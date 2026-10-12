@@ -9,13 +9,11 @@ import (
 
 // stepClock moves `now` forward by a second on every call, so the order of
 // events is the order of timestamps and nothing depends on the wall clock.
-func stepClock(t *testing.T) {
+func stepClock(t *testing.T, s *Store) {
 	t.Helper()
 	base := time.Date(2026, 9, 23, 12, 0, 0, 0, time.UTC)
-	prev := now
 	n := 0
-	now = func() time.Time { n++; return base.Add(time.Duration(n) * time.Second) }
-	t.Cleanup(func() { now = prev })
+	s.clock = func() time.Time { n++; return base.Add(time.Duration(n) * time.Second) }
 }
 
 func seenOf(t *testing.T, s *Store, id string) *Seen {
@@ -46,9 +44,9 @@ func TestNoTurnMeansNothingToSee(t *testing.T) {
 }
 
 func TestATurnEndingIsUnseenUntilSeen(t *testing.T) {
-	stepClock(t)
 	s := open(t)
 	task := askCard(t, s, "orchestrator")
+	stepClock(t, s)
 
 	if err := s.NoteTurnEnded(task.ID, TurnQuestions{Known: true}); err != nil {
 		t.Fatal(err)
@@ -80,9 +78,9 @@ func TestATurnEndingIsUnseenUntilSeen(t *testing.T) {
 // A board that has not heard about the newest turn cannot mark it seen, since
 // what it was showing was the turn before.
 func TestAStaleBoardDoesNotSeeANewerTurn(t *testing.T) {
-	stepClock(t)
 	s := open(t)
 	task := askCard(t, s, "orchestrator")
+	stepClock(t, s)
 	if err := s.NoteTurnEnded(task.ID, TurnQuestions{Known: true}); err != nil {
 		t.Fatal(err)
 	}
@@ -104,9 +102,9 @@ func TestAStaleBoardDoesNotSeeANewerTurn(t *testing.T) {
 }
 
 func TestQuestionsReplaceKeepAndAnswer(t *testing.T) {
-	stepClock(t)
 	s := open(t)
 	task := askCard(t, s, "orchestrator")
+	stepClock(t, s)
 
 	four := TurnQuestions{Known: true, Block: true, List: []string{"a", "b", "c", "d"}}
 	if err := s.NoteTurnEnded(task.ID, four); err != nil {
@@ -164,9 +162,9 @@ func TestQuestionsReplaceKeepAndAnswer(t *testing.T) {
 }
 
 func TestAHeadingWithNoReadableItemsIsStillAsked(t *testing.T) {
-	stepClock(t)
 	s := open(t)
 	task := askCard(t, s, "orchestrator")
+	stepClock(t, s)
 	if err := s.NoteTurnEnded(task.ID, TurnQuestions{Known: true, Block: true}); err != nil {
 		t.Fatal(err)
 	}
@@ -177,9 +175,9 @@ func TestAHeadingWithNoReadableItemsIsStillAsked(t *testing.T) {
 }
 
 func TestQuestionsAreBounded(t *testing.T) {
-	stepClock(t)
 	s := open(t)
 	task := askCard(t, s, "orchestrator")
+	stepClock(t, s)
 	long := make([]byte, MaxAsk*3)
 	for i := range long {
 		long[i] = 'q'
@@ -203,9 +201,9 @@ func TestQuestionsAreBounded(t *testing.T) {
 }
 
 func TestSeenIsListedAndGoesWithTheCard(t *testing.T) {
-	stepClock(t)
 	s := open(t)
 	task := askCard(t, s, "orchestrator")
+	stepClock(t, s)
 	if err := s.NoteTurnEnded(task.ID, TurnQuestions{Known: true, Block: true, List: []string{"a"}}); err != nil {
 		t.Fatal(err)
 	}
