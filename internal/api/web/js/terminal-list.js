@@ -574,6 +574,8 @@ function placeTabBridge() {
   });
 }
 
+const FUNNEL_FLARE = 7;
+
 function placeOneBridge(bridge, card) {
   const lay = document.getElementById("term-layout");
   if (lay) lay.classList.add("bridged");
@@ -617,8 +619,19 @@ function placeOneBridge(bridge, card) {
   bridge.hidden = false;
   bridge.style.left = (from - l.left) + "px";
   bridge.style.width = (to - from) + "px";
-  bridge.style.top = (Math.max(c.top, lr.top) - l.top) + "px";
-  bridge.style.height = (Math.min(c.bottom, lr.bottom) - Math.max(c.top, lr.top)) + "px";
+  // A shut group's bridge is a funnel: the heading's height at the heading, FLARE taller each side where it meets the pane.
+  const funnel = card.classList.contains("tgroup");
+  const up = funnel ? Math.max(0, Math.min(FUNNEL_FLARE, c.top - lr.top)) : 0;
+  const down = funnel ? Math.max(0, Math.min(FUNNEL_FLARE, lr.bottom - c.bottom)) : 0;
+  const top = Math.max(c.top - up, lr.top), bottom = Math.min(c.bottom + down, lr.bottom);
+  bridge.style.top = (top - l.top) + "px";
+  bridge.style.height = (bottom - top) + "px";
+  bridge.classList.toggle("funnel", funnel);
+  if (funnel) {
+    const w = to - from, h = bottom - top, bw = parseFloat(getComputedStyle(card).getPropertyValue("--framew")) || 1;
+    const x = w * 0.4, y0 = Math.max(0, up), y1 = h - Math.max(0, down), k = bw / 2;
+    bridge.innerHTML = `<svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" style="overflow:visible"><polygon style="fill:var(--tabbg)" points="0,${y0} ${x},${y0} ${w},0 ${w},${h} ${x},${y1} 0,${y1}"/><path style="fill:none;stroke:var(--tabc);stroke-width:var(--tabw)" d="M0,${y0 + k} L${x},${y0 + k} L${w},${k} M0,${y1 - k} L${x},${y1 - k} L${w},${h - k}"/></svg>`;
+  } else if (bridge.firstChild) bridge.textContent = "";
   // The colours are the card's, whatever theme it is wearing.
   const cs = getComputedStyle(card);
   // A skin's card is a gradient, which has no background colour to copy. Its row says what to use.
@@ -1177,6 +1190,17 @@ function termRunnerMark(t) {
 // row draws its LEAF alone, which is the whole point of the headings: the
 // shared prefix moves up and stops being drawn once per row.
 //
+// The class and the custom properties a row is drawn with: `--tabc` and `--tabbg` for the bridge, and the worn palette.
+// A shut group's heading wears the same when it stands in for the attached row.
+function termRowWear(t) {
+  const given = themeSource(t);
+  const th = given || themeFor(t);
+  const on = termTask && t.id === termTask.id;
+  const wear = given ? termWear(t, on, termCold(t)) : on ? { cls: " plain", style: "" } : NO_WEAR;
+  return { cls: wear.cls, vars: (given ? `--tabc:${th.cursor || th.foreground};` : "") + `--tabbg:${th.background}` +
+    (wear.style ? ";" + wear.style : "") };
+}
+
 function termRow(t, deep, kid) {
   // THE ENTRY WEARS ITS OWN TERMINAL'S COLOURS, so the list reads as a row of
   // tabs onto the panes behind it rather than as a list of names. Amber for
@@ -1184,13 +1208,10 @@ function termRow(t, deep, kid) {
   // signal that is actually per session.
   // A card nobody coloured has no theme of its own here: it wears the skin's card whether it is attached or not, and its
   // terminal's neutral palette only reaches the bridge, through `--tabbg`.
-  const given = themeSource(t);
-  const th = given || themeFor(t);
   const on = termTask && t.id === termTask.id;
-  const wear = given ? termWear(t, on, termCold(t)) : on ? { cls: " plain", style: "" } : NO_WEAR;
+  const wear = termRowWear(t);
   if (on) themeTrace("row", t);
-  const style = (given ? `--tabc:${th.cursor || th.foreground};` : "") + `--tabbg:${th.background}` +
-    (wear.style ? ";" + wear.style : "");
+  const style = wear.vars;
   const full = terminalLabel(t) || t.display_title;
   const leaf = termPathOf(t).leaf;
   const tail = termSuffix.get(t.id) || "";
@@ -1686,7 +1707,10 @@ function termHeading(name, path, count, folded, group, style, movable, rows) {
     : group ? ". right click to recolor it. groups reorder by hand in the custom grouping" : "";
   // A SHUT GROUP HOLDING THE ATTACHED SESSION IS WHERE ITS BRIDGE GOES. See `placeTabBridge`.
   const carries = folded && rows && rows.some(termHoldsOn);
-  return `<button class="tgroup${style ? " hued" : ""}${movable ? " movable" : ""}${carries ? " carries" : ""}"${style || ""}${
+  // It wears the attached row's colours, so the heading, the bridge and the pane frame are one colour.
+  const wear = carries ? termRowWear(termTask) : null;
+  if (wear) style = ` style="${(style || "").replace(/^ style="|"$/g, "")};${wear.vars}"`;
+  return `<button class="tgroup${style ? " hued" : ""}${movable ? " movable" : ""}${carries ? " carries" + wear.cls : ""}"${style || ""}${
       movable ? ` draggable="true" data-ghead="${esc(group)}"` : ""}
       onclick="toggleTermGroup('${arg}')"${menu}
       data-tip="${folded ? "show" : "hide"} ${esc(name)}${tip}${how}"
