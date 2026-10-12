@@ -351,16 +351,19 @@ function peekChatterRow(id, s) {
 }
 
 // `first` is the page read when the fill began. A repaint of the same box reuses it rather than asking again.
-function peekChatter(box, id, first) {
+function peekChatter(box, id, first, drawers) {
   const sec = document.createElement("div");
   sec.className = "peek-sec chatter";
   sec.hidden = true;
-  sec.dataset.drawer = "chatter";
-  sec.dataset.label = "chatter";
   box.appendChild(sec);
-  peekDrawers(box);
-  const drawer = sec.closest(".peek-drawer");
-  drawer.hidden = true;
+  let drawer = null;
+  if (drawers) {
+    sec.dataset.drawer = "chatter";
+    sec.dataset.label = "chatter";
+    peekDrawers(box);
+    drawer = sec.closest(".peek-drawer");
+    drawer.hidden = true;
+  }
   const paint = (page, replace) => {
     if (!page || !page.says) return;
     if (replace) sec.textContent = "";
@@ -373,9 +376,11 @@ function peekChatter(box, id, first) {
     sec.querySelector(".chat-more")?.remove();
     for (const s of page.says) sec.appendChild(peekChatterRow(id, s));
     sec.hidden = !sec.querySelector(".chat-row");
-    drawer.hidden = sec.hidden;
-    const n = sec.querySelectorAll(".chat-row").length;
-    drawer.querySelector(".peek-dsum").textContent = n + (n === 1 ? " say" : " says") + (page.more ? " or more" : "");
+    if (drawer) {
+      drawer.hidden = sec.hidden;
+      const n = sec.querySelectorAll(".chat-row").length;
+      drawer.querySelector(".peek-dsum").textContent = n + (n === 1 ? " say" : " says") + (page.more ? " or more" : "");
+    }
     if (page.more && page.says.length) {
       const more = document.createElement("button");
       more.type = "button";
@@ -518,12 +523,13 @@ async function peekSay(id) {
 
 // Fills `box` with card `id`'s details: the card at once, the numbers when
 // the read answers. `still` says whether the answer is still wanted.
-async function peekFill(box, id, still) {
+async function peekFill(box, id, still, drawers) {
   const t = peekCard(id);
   const chat = peekChatterLoad(id);
   box.innerHTML = peekBody(t, null);
   peekDocs(box, id);
-  peekChatter(box, id, chat);
+  peekChatter(box, id, chat, drawers);
+  if (drawers) peekDrawers(box);
   peekActions(box, id);
   peekRecap(box);
   box.classList.toggle("loading", peekReadable(t));
@@ -538,7 +544,8 @@ async function peekFill(box, id, still) {
   box.classList.remove("loading");
   box.innerHTML = peekBody(peekCard(id) || t, v);
   peekDocs(box, id);
-  peekChatter(box, id, chat);
+  peekChatter(box, id, chat, drawers);
+  if (drawers) peekDrawers(box);
   peekActions(box, id);
   peekRecap(box);
 }
@@ -604,7 +611,7 @@ function openPeek(id, anchor, mode) {
     if (seq !== peekSeq) return;
     if (anchor) peekPlace(anchor, at);
   };
-  peekFill(box, id, () => seq === peekSeq && peekFor === id).then(replace);
+  peekFill(box, id, () => seq === peekSeq && peekFor === id, true).then(replace);
   replace();
   el.classList.add("on");
 }
