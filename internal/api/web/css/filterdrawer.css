@@ -1,0 +1,82 @@
+  /* THE FILTER DRAWER (js/filter-drawer.js): the one line under the title bar and the panel that rolls down from it.
+
+     The line is in flow and one row high. The panel is NOT: it hangs off the line's bottom edge inside `.fwrap`, which
+     clips it to the part below the line, so it slides out from under the line and never resizes the list, the board or
+     a terminal beneath it. Closed, the panel is `visibility: hidden` and `inert`, so it is out of the tab order and out
+     of every click. */
+  .fdrawer { position: relative; flex: 0 0 auto; margin: 0 0 10px; z-index: 45; }
+  #terms > .fdrawer { margin: 0 0 8px; }
+  .fline {
+    display: flex; align-items: center; gap: var(--sp-3); min-height: 40px; box-sizing: border-box; padding: 4px 8px 4px 12px;
+    background: var(--shell-1); border: 1px solid var(--stroke-dim); border-radius: var(--r-md);
+    cursor: pointer; user-select: none; -webkit-user-select: none;
+    overscroll-behavior: none; touch-action: none;
+  }
+  .fdrawer.open .fline { border-bottom-left-radius: 0; border-bottom-right-radius: 0; border-color: var(--stroke); }
+  .fsum {
+    flex: 1 1 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    font: var(--fs-sm)/1.4 var(--mono); color: var(--dim);
+  }
+  .fsum[hidden] { display: none; }
+  .fline .fq {
+    flex: 0 1 280px; min-width: 120px; cursor: text; user-select: text; -webkit-user-select: text; touch-action: manipulation;
+    font: var(--fs-sm)/1.4 var(--mono); color: var(--head);
+    background: rgba(var(--sink-rgb),.6); border: 1px solid var(--stroke-dim);
+    border-radius: var(--r-sm); padding: 5px 10px;
+  }
+  .fline .fq:focus { outline: none; border-color: var(--blue); }
+  .fline .matchcount { margin-left: 0; flex: none; }
+  .fline .matchcount:empty { display: none; }
+  .filtersbtn {
+    display: inline-flex; align-items: center; gap: 6px; flex: none; min-height: 28px; padding: 0 12px; border-radius: var(--r-sm);
+    border: 1px solid var(--stroke-dim); background: var(--chip); color: var(--label); font: 600 var(--fs-sm)/1 var(--sans);
+  }
+  .fdrawer.open .filtersbtn { border-color: var(--teal); color: var(--head); }
+  .filtersbtn .fcount { min-width: 18px; padding: 1px 5px; box-sizing: border-box; border-radius: 9px; background: var(--teal); color: var(--bg-2); font: 700 11px/16px var(--sans); text-align: center; }
+  .filtersbtn .fcount[hidden] { display: none; }
+
+  .fwrap { position: absolute; top: 100%; left: 0; right: 0; overflow: hidden; pointer-events: none; z-index: 2; }
+  .fdrawer.open .fwrap { pointer-events: auto; }
+  .fpanel {
+    display: flex; flex-direction: column; gap: var(--sp-3); box-sizing: border-box;
+    max-height: min(70vh, calc(100vh - 140px)); overflow-y: auto; overflow-x: hidden;
+    padding: 12px 12px 0; outline: none;
+    background: var(--shell-1); border: 1px solid var(--stroke); border-top: 0;
+    border-radius: 0 0 var(--r-md) var(--r-md); box-shadow: var(--shadow-pop);
+    visibility: hidden; opacity: 0; transform: translateY(-100%);
+    transition: transform .16s ease, opacity .12s ease, visibility 0s linear .16s;
+  }
+  .fdrawer.open .fpanel { visibility: visible; opacity: 1; transform: none; transition-delay: 0s; }
+  .fdrawer.fdragging .fpanel { visibility: visible; opacity: 1; transition: none; }
+  @media (prefers-reduced-motion: reduce) { .fpanel { transition: none; } }
+  .frow { display: flex; align-items: center; gap: var(--sp-3); flex-wrap: wrap; min-width: 0; }
+  .frow .barlabel { min-width: 52px; }
+  .frow .seg { flex-wrap: wrap; min-width: 0; }
+  /* The handle at the drawer's bottom edge. The whole strip is the target, the grip is what you see. */
+  .fhandle {
+    display: flex; align-items: center; justify-content: center; width: 100%; height: 26px; flex: none; margin-top: 2px; padding: 0;
+    background: transparent; border: 0; border-radius: 0; cursor: pointer; color: var(--dimmest);
+  }
+  .fhandle i { display: block; width: 44px; height: 4px; border-radius: 2px; background: currentColor; opacity: .7; }
+  @media (hover: hover) { .fhandle:hover { transform: none; background: transparent; color: var(--head); } }
+
+  /* The board and the terminals have their own sort and group rows, which are a pair or a few modes each. */
+  .fpanel .seg button { position: relative; }
+
+  /* A subagent roll-up badge on a parent's card or row: `3 subagents`. */
+  .chip.subs { white-space: nowrap; }
+
+  @media (max-width: 520px) {
+    .fdrawer { margin-bottom: 8px; }
+    .fline { gap: var(--sp-2); padding: 4px 6px 4px 8px; min-height: 44px; }
+    .fline .fq { flex: 1 1 0; min-width: 0; padding: 8px 10px; font-size: 16px; }
+    .fsum { flex: 0 1 auto; max-width: 38%; }
+    .filtersbtn { min-height: 40px; padding: 0 12px; }
+    .fpanel { max-height: 70vh; max-height: 70dvh; }
+    /* a 40px hit area on the pills: the pad is a transparent layer of the button itself */
+    .fpanel .seg button::after { content: ""; position: absolute; left: 0; right: 0; top: 50%; height: 40px; transform: translateY(-50%); }
+    .frow { align-items: flex-start; flex-direction: column; gap: 6px; }
+    .frow .seg { max-width: 100%; }
+  }
+  /* A full screen terminal and a pop-out window have no room for it, and no tab to carry it. */
+  body.term-full #fd-terms, body.solo #fd-terms, body.term-phone #fd-terms { display: none; }

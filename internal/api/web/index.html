@@ -63,6 +63,7 @@
 <link rel="stylesheet" href="/css/changereq.css">
 <link rel="stylesheet" href="/css/dialogs.css">
 <link rel="stylesheet" href="/css/phone.css">
+<link rel="stylesheet" href="/css/filterdrawer.css">
 <link rel="stylesheet" href="/css/themes.css">
 <link rel="stylesheet" href="/css/expose2.css">
 <link rel="stylesheet" href="/css/expose3.css">
@@ -275,46 +276,19 @@
        there was nothing to explain.
        Both controls sit here rather than in the gear: they change what you are
        looking at, and a control that does that belongs next to the thing. -->
-  <div class="filters" id="board-bar" hidden>
-    <button type="button" class="filtersbtn" data-for="board" aria-expanded="false">filters <b class="fcount" hidden></b></button>
-    <span class="barlabel">group</span>
-    <div class="seg groupseg" id="board-group"></div>
-    <span class="barlabel">sort</span>
-    <div class="seg" id="board-sort"></div>
-  </div>
+  <!-- The filter drawer's line and panel (js/filter-drawer.js): search, show, sort and group for the board. -->
+  <div id="board-bar" hidden></div>
   <div id="board" class="board" hidden></div>
   <!-- Every card as one list. The board answers "what is where"; this answers
        "what should I look at next", which is the question with an order. -->
   <div id="stack">
-    <div class="filters">
-      <span class="barlabel">show</span>
-      <!-- Counts are filled in by paintStack. A filter you can see is empty
-           before clicking it is one you do not click. -->
-      <!-- One pill per column, and they add up rather than replacing each
-           other. The board's columns already are the set of answers to "what
-           kind of attention does this want", so a second vocabulary here was
-           two names for one idea and neither of them the board's.
-
-           Ready alone by default. That is the list this view exists for: work
-           that has stopped and is waiting on you. Everything else is here when
-           you ask for it. Filled in by paintStackShow. -->
-      <div class="seg multi" id="stack-seg"></div>
-      <input type="search" id="stack-q"
-        placeholder="name, path, runner or tag. #tag for one tag"
-        spellcheck="false">
-      <button type="button" class="filtersbtn" data-for="stack" aria-expanded="false">filters <b class="fcount" hidden></b></button>
-      <span class="matchcount" id="stack-match"></span>
-    </div>
-    <!-- Sort and group are two different questions, so two controls. Sorting
-         orders the rows; grouping decides whether they are cut into projects
-         first. Folding grouping into the sort pills would make picking a group
-         rule mean giving up the sort. -->
-    <div class="filters">
-      <span class="barlabel">sort by</span>
-      <div class="seg" id="stack-sort"></div>
-      <span class="barlabel">group</span>
-      <div class="seg groupseg" id="stack-group"></div>
-    </div>
+    <!-- The filter drawer (js/filter-drawer.js). Its show pills are one per column and add up rather than replacing each
+         other: the board's columns already are the set of answers to "what kind of attention does this want", so a
+         second vocabulary here was two names for one idea. Ready alone by default, which is the list this view exists
+         for. Counts are filled in by paintStack, so a filter you can see is empty before it is clicked. Sort and group
+         are two questions, so two rows: sorting orders the rows, grouping decides whether they are cut into projects
+         first. Painted by paintStackShow, paintStackSort and paintGroupSegs. -->
+    <div id="fd-stack"></div>
     <!-- The cache summary (u-032). One line over the rows below, and a button to
          the keep-alive setting. Filled in by paintCacheLine. -->
     <button type="button" class="cacheline" id="cache-line-stack" hidden
@@ -418,6 +392,9 @@ Exports honor whatever filter is applied.">?</span>
   <!-- Terminals are a view, not a modal. A modal is the wrong shape for
        something you switch between and leave open while doing other things. -->
   <div id="terms" hidden>
+    <!-- The filter drawer's line, across the session list and the terminal pane both. Its panel is an overlay, so the
+         terminal is never reflowed. See js/filter-drawer.js. -->
+    <div id="fd-terms"></div>
     <!-- Atrium text that caused more turns than its daily limit. See js/turn-limits.js. -->
     <div class="term-limits" id="term-limits" hidden></div>
     <div class="term-layout" id="term-layout">
@@ -2127,10 +2104,6 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
       <div class="seg trayseg sortseg" id="gear-term-sort"></div>
     </div>
     <div class="field">
-      <span class="eyebrow">hide inactive</span>
-      <div id="gear-term-hide"></div>
-    </div>
-    <div class="field">
       <span class="eyebrow">group</span>
       <div class="seg trayseg groupseg" id="term-group"></div>
     </div>
@@ -3819,6 +3792,7 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
 <script src="/js/cardrules.js"></script>
 <script src="/js/sounds.js"></script>
 <script src="/js/core.js"></script>
+<script src="/js/filter-drawer.js"></script>
 <!-- cardurl.js second: it defines termOnly and cardUrlIsCard, which a dozen later files ask, some from a network
      callback that can run between two script tags. It runs nothing at load. -->
 <script src="/js/cardurl.js"></script>
@@ -3852,7 +3826,6 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
 <script src="/js/alias.js"></script>
 <script src="/js/heldline.js"></script>
 <script src="/js/phone-bell.js"></script>
-<script src="/js/phone-filters.js"></script>
 <script src="/js/settings.js"></script>
 <script src="/js/overlays.js"></script>
 <script src="/js/expose2.js"></script>

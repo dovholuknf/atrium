@@ -422,10 +422,12 @@ function switchView(name) {
   // The board's toolbar is a sibling of the board rather than a child, so that
   // redrawing the columns does not take the control you just clicked with it.
   document.getElementById("board-bar").hidden = name !== "board";
+  // The filter drawer starts shut on every tab and every switch. See js/filter-drawer.js.
+  fdReset();
   // Painted on the way in rather than once at boot. The group pills are drawn
   // by `paintGroupMode`, which runs whenever the mode changes and therefore may
   // never have run; this needs the same, and the bar is cheap to redraw.
-  if (name === "board") paintBoardSort();
+  if (name === "board") { paintBoardShow(); paintBoardSort(); }
   // Fetched when you go there rather than on every poll. It is a question you
   // go looking for, and a query against a table that only grows has no
   // business running every few seconds while you are reading something else.
@@ -793,6 +795,7 @@ function cardHTML(t, wearAs) {
         t.pinned ? '<span class="pin on" data-tip="pinned">&#9733;</span>' : ""}${
         runnerMark(t.runner)}${esc(t.display_title)}</div>
       <div class="chips">
+      ${subsBadgeHTML(boardSubBadge.get(t.id))}
       ${openingChip(t)}
       ${newCardChip(t)}
       ${typeof aliasChip === "function" ? aliasChip(t) : ""}
@@ -1820,15 +1823,33 @@ async function renderBoard(signal) {
   // carries its own count.
   const everything = tasks || [];
   disambiguateTitles(everything);
-  const all = everything.filter(t => !t.offline);
-  const offline = everything.filter(t => t.offline);
+  const live = everything.filter(t => !t.offline);
   lastTasks = everything;
+  // THE DRAWER'S FILTERS: the search text, and the subagents that roll up into their parent's card (`N subagents`).
+  // The rollup is worked out over every live card before the search, so a parent's badge does not move with what was
+  // typed. The columns are filtered below, where they are drawn.
+  const q = fdSearchText("board");
+  const roll = subagentRollup(live, boardSubsOn());
+  boardSubBadge = roll.badge;
+  const keepCard = t => !roll.rolled.has(t.id) && cardMatchesText(t, q);
+  const all = live.filter(keepCard);
+  const offline = everything.filter(t => t.offline && cardMatchesText(t, q));
+  const showCols = boardShow();
+  paintBoardCounts(live.filter(t => !roll.rolled.has(t.id) && cardMatchesText(t, q)), roll.rollable);
+  fdStatus("board", {
+    summary: boardSummary(showCols),
+    changed: boardChanged(showCols),
+    match: all.length === live.length - roll.rolled.size && offline.length === everything.filter(t => t.offline).length
+      ? "" : `${all.length} of ${live.length - roll.rolled.size}`
+  });
   if (typeof ulOnCards === "function") ulOnCards();
   newCardNote(everything);
-  paintWorking(all);
+  paintWorking(live);
   const g = grouper("board");
 
   const html = COLUMNS.filter(col => {
+    // A column whose chip is off is not drawn, and the others take its width.
+    if (!showCols.has(col.id)) return false;
     // The inbox is the one column that should not be there when it is empty.
     //
     // Every other column earns its header while empty: it is somewhere a card
@@ -1962,6 +1983,82 @@ async function renderBoard(signal) {
     toast("grouping code", groupingFault);
     groupingFault = "";
   }
+}
+
+// ── the drawer on the board ─────────────────────────────────────────────────
+//
+// SHOW is one chip per column, all on by default. Turning one off removes the column and the rest take its width.
+// Turning off the last one brings every column back, so it is never an empty board with no explanation. Stored as the
+// ids that are on, and cleared when that is all of them, so a stored value always means it differs from the default.
+const BOARD_SHOW_KEY = "atrium.board.show";
+const BOARD_SUBS_KEY = "atrium.board.subagents";
+let boardSubBadge = new Map();
+
+function boardShow() {
+  try {
+    const v = JSON.parse(localStorage.getItem(BOARD_SHOW_KEY) || "null");
+    if (Array.isArray(v)) {
+      const on = new Set(v.filter(id => COLUMNS.some(c => c.id === id)));
+      if (on.size) return on;
+    }
+  } catch (e) {}
+  return new Set(COLUMNS.map(c => c.id));
+}
+function toggleBoardShow(id) {
+  const on = boardShow();
+  if (on.has(id)) on.delete(id); else on.add(id);
+  try {
+    if (!on.size || on.size === COLUMNS.length) localStorage.removeItem(BOARD_SHOW_KEY);
+    else localStorage.setItem(BOARD_SHOW_KEY, JSON.stringify([...on]));
+  } catch (e) {}
+  paintBoardShow();
+  repaintLists();
+}
+function boardSubsOn() {
+  try { return localStorage.getItem(BOARD_SUBS_KEY) === "on"; } catch (e) { return false; }
+}
+function toggleBoardSubs() {
+  try {
+    if (boardSubsOn()) localStorage.removeItem(BOARD_SUBS_KEY); else localStorage.setItem(BOARD_SUBS_KEY, "on");
+  } catch (e) {}
+  paintBoardShow();
+  repaintLists();
+}
+prefLive([BOARD_SHOW_KEY, BOARD_SUBS_KEY], () => { paintBoardShow(); repaintLists(); });
+
+function paintBoardShow() {
+  const el = document.getElementById("board-seg");
+  if (!el) return;
+  const on = boardShow();
+  setHTML(el, COLUMNS.map(c => fdChip(c.label, on.has(c.id), `toggleBoardShow('${esc(c.id)}')`,
+    c.label + ": click to show or hide this column", c.id)).join("") +
+    fdChip("subagents", boardSubsOn(), "toggleBoardSubs()",
+      "a subagent is not a card of its own: its parent's card says how many it has. one that needs you still shows", "subagents"));
+  boardPillCounts();
+}
+// The chips' counts, written onto the pills by `paintBoardCounts` as each render learns them and kept here so a repaint
+// of the pills does not blank them until the next poll.
+let boardCounts = {};
+function paintBoardCounts(cards, rollable) {
+  boardCounts = { subagents: rollable };
+  COLUMNS.forEach(c => { boardCounts[c.id] = cards.filter(t => c.statuses.includes(t.status)).length; });
+  boardPillCounts();
+}
+function boardPillCounts() { pillCounts("board-seg", boardCounts); }
+
+function boardSummary(show) {
+  const g = groupingPrefs("board");
+  const parts = [groupWords(g), BOARD_SORTS[boardSortMode()].label];
+  if (show.size < COLUMNS.length) parts.unshift(show.size + " of " + COLUMNS.length + " columns");
+  if (boardSubsOn()) parts.push("subagents");
+  return parts.join(" \u00b7 ");
+}
+// Settings in the drawer that differ from the board's defaults: every column on, subagents off, by activity, by project.
+function boardChanged(show) {
+  let n = COLUMNS.length - show.size;
+  if (boardSubsOn()) n++;
+  if (boardSortMode() !== "activity") n++;
+  return n + groupChanged("board");
 }
 
 // What order the cards come out in, inside whatever they are grouped by.
