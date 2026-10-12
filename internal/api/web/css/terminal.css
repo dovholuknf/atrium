@@ -287,6 +287,9 @@
     box-sizing: border-box;
   }
   .tabbridge[hidden] { display: none; }
+  /* A shut group's bridge draws its own flared outline, see `placeOneBridge`. */
+  .tabbridge.funnel { background: none; border: 0; }
+  .tabbridge.funnel svg { display: block; }
   /* One line, cut at the front. This column is a few hundred pixels, so cutting at the end gave
      `github/dovholuknf/dotfil…`: every entry truncated inside the org name they all share, throwing away the
      leaf that tells them apart. Wrapping to two lines said it and cost the row height. Cutting at the front
@@ -858,14 +861,19 @@
   /* A shut group holding the attached session wears the attached row's frame, and `placeTabBridge` runs the bridge
      from it. Full width like a row, open toward the pane like the tab it is. */
   .term-list .tgroup.carries, .term-list .tgroup.carries:hover {
-    --framew: 3px;
+    --framew: 3px; --fc: var(--tabc, var(--head)); --fbg: var(--tabbg, var(--shell-0));
     width: 100%; box-sizing: border-box; padding: 3px 6px 3px 2px;
-    color: var(--head); background: var(--shell-0);
-    border: 1px solid var(--head); border-right-color: transparent;
+    color: var(--fc); background: var(--fbg);
+    border: 1px solid var(--fc); border-right-color: transparent;
     border-top-right-radius: 0; border-bottom-right-radius: 0;
-    box-shadow: inset 0 calc(var(--framew) - 1px) 0 var(--head), inset 0 calc(1px - var(--framew)) 0 var(--head),
-      inset calc(var(--framew) - 1px) 0 0 var(--head);
+    box-shadow: inset 0 calc(var(--framew) - 1px) 0 var(--fc), inset 0 calc(1px - var(--framew)) 0 var(--fc),
+      inset calc(var(--framew) - 1px) 0 0 var(--fc);
   }
+  /* As the attached row does: worn, bare and plain frame in `--head`, the bare and plain ones on the skin's card. */
+  .term-list .tgroup.carries.worn, .term-list .tgroup.carries.bare, .term-list .tgroup.carries.plain {
+    --fc: var(--head);
+  }
+  .term-list .tgroup.carries.bare, .term-list .tgroup.carries.plain { --fbg: var(--shell-0); }
 
   /* ── the terminals list's own three switches ────────────
      `termWear` in js/themes.js. `.bare` is the attached row with its theme switched off: the skin's card, with

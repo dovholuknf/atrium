@@ -24637,9 +24637,10 @@ async function groupBridgeSection(browser, base) {
     const shots = process.env.GROUP_BRIDGE_SHOTS || "";
     const shot = async name => { if (shots) { fs.mkdirSync(shots, { recursive: true }); await p.screenshot({ path: path.join(shots, name + ".png") }); } };
     const level = (g, el, what) => {
+      const flare = el === "head" ? 8 : 0;   // a shut group's bridge flares toward the pane
       if (!g[el]) return fail("groupBridge: " + what + " is not drawn");
       if (g.bridges.length !== 1) return fail("groupBridge: want one bridge " + what + ", got " + g.bridges.length);
-      if (g.bridges[0].top < g[el].top - 2 || g.bridges[0].bottom > g[el].bottom + 2) {
+      if (g.bridges[0].top < g[el].top - 2 - flare || g.bridges[0].bottom > g[el].bottom + 2 + flare) {
         fail("groupBridge: the bridge " + JSON.stringify(g.bridges[0]) + " is not level with " + what + " " + JSON.stringify(g[el]));
       }
     };
@@ -24652,6 +24653,7 @@ async function groupBridgeSection(browser, base) {
     await p.evaluate(() => repaintTermList());
     await settle();
     level(await read(), "card", "the row");
+    const cardFrame = await p.evaluate(() => getComputedStyle(document.querySelector("#term-list .card.on")).borderTopColor);
     await shot("group-bridge-before");
     // Shut the outermost group: the bridge moves to its heading and the group stays as it is left.
     await p.evaluate(t => toggleTermGroup(t), top);
@@ -24662,6 +24664,17 @@ async function groupBridgeSection(browser, base) {
     if (await p.$(row)) fail("groupBridge: the row is drawn inside a shut group");
     if (!g.folded.includes(top)) fail("groupBridge: the group was opened");
     level(g, "head", "the shut group's heading");
+    // The heading wears the attached card's frame, and the bridge is a funnel: taller at the pane than at the heading.
+    await p.waitForTimeout(500);   // the heading eases its border in
+    const fun = await p.evaluate(() => {
+      const h = document.querySelector("#term-list .tgroup.carries"), hr = h.getBoundingClientRect();
+      const b = [...document.querySelectorAll("#term-layout .tabbridge")].find(x => !x.hidden), br = b.getBoundingClientRect();
+      const path = b.querySelector("svg path");
+      const ys = path ? path.getAttribute("d").match(/[ML]([\d.]+),([\d.]+)/g).map(m => parseFloat(m.split(",")[1])) : [];
+      return { frame: getComputedStyle(h).borderTopColor, bridge: br.height, head: hr.height, funnel: b.classList.contains("funnel"), ys };
+    });
+    if (fun.frame !== cardFrame) fail("groupBridge: the heading frame " + fun.frame + " is not the attached card's " + cardFrame);
+    if (!fun.funnel || fun.bridge <= fun.head + 2) fail("groupBridge: the bridge is not a funnel " + JSON.stringify(fun));
     await shot("group-bridge-after");
     // Attaching again, which is what going to the card does, leaves it shut.
     await p.evaluate(() => revealCard("u-disc"));
