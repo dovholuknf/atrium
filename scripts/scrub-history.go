@@ -22,9 +22,10 @@ import (
 	"io"
 	"os"
 	"os/exec"
-	"regexp"
 	"strings"
 	"time"
+
+	"github.com/dovholuknf/atrium/internal/land"
 )
 
 var (
@@ -38,47 +39,9 @@ var (
 	filter  = flag.Bool("filter", false, "scrub one message from stdin to stdout and exit, as a filter-branch --msg-filter")
 )
 
-// rules run in order. A branch prefix goes first, so what remains is a word in a sentence.
-var rules = []struct {
-	re   *regexp.Regexp
-	with string
-}{
-	{regexp.MustCompile(`\b([A-Za-z0-9_-]+)/claude/`), "$1/"},
-	{regexp.MustCompile(`claude/main`), "main"},
-	{regexp.MustCompile(`claude/`), ""},
-	{regexp.MustCompile(`CLAUDE\.md`), "AGENTS.md"},
-	{regexp.MustCompile(`build\.claude`), "the build directory"},
-	{regexp.MustCompile(`CLAUDEVM`), "WORKVM"},
-	{regexp.MustCompile(`(?i)claudevm`), "workvm"},
-	{regexp.MustCompile(`claudeAuthCheck`), "authCheck"},
-	{regexp.MustCompile(`(?i)claude-code`), "agent-cli"},
-	{regexp.MustCompile(`(?i)Claude Code`), "the agent CLI"},
-	{regexp.MustCompile(`claude-landing`), "landing"},
-	{regexp.MustCompile(`claudeconf`), "agentconf"},
-	{regexp.MustCompile(`CLAUDE`), "AGENT"},
-	{regexp.MustCompile(`Claude`), "Agent"},
-	{regexp.MustCompile(`(?i)claude`), "agent"},
-}
+func scrub(msg string) string { return land.Scrub(msg) }
 
-// dropLine is a trailer naming a co-author or the vendor. The whole line goes.
-var dropLine = regexp.MustCompile(`(?i)^\s*co.authored.by:|anthropic`)
-
-// banned is checked in every message afterwards.
-var banned = regexp.MustCompile(`(?i)claude|anthropic|co.authored.by`)
-
-func scrub(msg string) string {
-	var keep []string
-	for _, l := range strings.Split(msg, "\n") {
-		if dropLine.MatchString(l) {
-			continue
-		}
-		for _, r := range rules {
-			l = r.re.ReplaceAllString(l, r.with)
-		}
-		keep = append(keep, l)
-	}
-	return strings.TrimRight(strings.Join(keep, "\n"), "\n \t") + "\n"
-}
+var banned = land.Banned
 
 type commit struct {
 	sha, tree           string
