@@ -517,6 +517,7 @@ func serveAtrium(f atriumFlags, up atriumUp) error {
 	// announce, so its file grows and never shrinks on its own. A no-op
 	// on an older store not in incremental mode. See internal/hubstore.
 	go store.VacuumLoop(ctx)
+	go store.FileSweepLoop(ctx)
 
 	srv := &http.Server{
 		Addr: board,

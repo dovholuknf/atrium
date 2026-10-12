@@ -603,6 +603,31 @@ var migrations = []struct {
 				)`,
 		},
 	},
+	{
+		// THE HUB FILE DROP: a card on any room hands files to a card on any other. One row per name, bytes in
+		// <hub dir>/files/<sha256>. See files.go and docs/rnd/hub-file-drop.md.
+		name: "0017_hub_files",
+		stmts: []string{
+			`CREATE TABLE IF NOT EXISTS hub_files (
+				name      TEXT PRIMARY KEY,
+				class     TEXT NOT NULL DEFAULT 'drop' CHECK (class IN ('drop','artifact')),
+				size      INTEGER NOT NULL,
+				sha       TEXT NOT NULL,
+				origin    TEXT NOT NULL CHECK (origin IN ('local','share','card')),
+				by        TEXT NOT NULL DEFAULT '',
+				card      TEXT NOT NULL DEFAULT '',
+				room      TEXT NOT NULL DEFAULT '',
+				note      TEXT NOT NULL DEFAULT '',
+				at        TEXT NOT NULL,
+				expires   TEXT NOT NULL,
+				downloads INTEGER NOT NULL DEFAULT 0,
+				last_get  TEXT NOT NULL DEFAULT ''
+			)`,
+			`CREATE INDEX IF NOT EXISTS hub_files_sha ON hub_files (sha)`,
+			`CREATE INDEX IF NOT EXISTS hub_files_card ON hub_files (card, at)`,
+			`CREATE INDEX IF NOT EXISTS hub_files_expires ON hub_files (expires)`,
+		},
+	},
 }
 
 func (s *Store) migrate() error {

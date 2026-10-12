@@ -417,20 +417,25 @@ func (s *Store) DocsDir() string { return s.docsDir }
 
 func (s *Store) blobPath(sha string) string { return filepath.Join(s.docsDir, sha) }
 
-// writeBlob puts the bytes where their hash says, through a temp file and a
-// rename. One already there with the right size is left alone: same name, same
-// bytes.
+// writeBlob puts the bytes where their hash says, in the documents folder.
 func (s *Store) writeBlob(sha string, data []byte) error {
-	dst := s.blobPath(sha)
+	return writeBlobIn(s.docsDir, sha, data)
+}
+
+// writeBlobIn puts the bytes in dir where their hash says, through a temp file and
+// a rename. One already there with the right size is left alone: same name, same
+// bytes. The file drop writes to its own folder through this.
+func writeBlobIn(dir, sha string, data []byte) error {
+	dst := filepath.Join(dir, sha)
 	if st, err := os.Stat(dst); err == nil && st.Size() == int64(len(data)) {
 		return nil
 	}
-	if err := os.MkdirAll(s.docsDir, 0o700); err != nil {
+	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return err
 	}
 	var rnd [6]byte
 	_, _ = rand.Read(rnd[:])
-	tmp := filepath.Join(s.docsDir, ".tmp-"+hex.EncodeToString(rnd[:]))
+	tmp := filepath.Join(dir, ".tmp-"+hex.EncodeToString(rnd[:]))
 	f, err := os.OpenFile(tmp, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
 	if err != nil {
 		return err

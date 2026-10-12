@@ -76,6 +76,10 @@ type Store struct {
 	docsDir string
 	// docMu serialises a document write with a purge. See DocAdd.
 	docMu sync.Mutex
+	// filesDir is where file drop bytes live, beside the database. See files.go.
+	filesDir string
+	// filesMu serialises a drop write with a delete and the sweep. See FileAdd.
+	filesMu sync.Mutex
 	// gitPushClock is the clock the push log takes its row ids from. Nil is time.Now. A test sets it to model
 	// a machine whose clock is behind.
 	gitPushClock func() time.Time
@@ -181,7 +185,8 @@ func Open(path string) (*Store, error) {
 	if !fresh && !incremental {
 		log.Printf("[hub] %s is not in incremental auto_vacuum mode; freed pages will not shrink the file", path)
 	}
-	s := &Store{db: db, fresh: fresh, incrementalVacuum: incremental, docsDir: filepath.Join(filepath.Dir(path), "docs")}
+	s := &Store{db: db, fresh: fresh, incrementalVacuum: incremental, docsDir: filepath.Join(filepath.Dir(path), "docs"),
+		filesDir: filepath.Join(filepath.Dir(path), "files")}
 	if err := s.migrate(); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("migrate: %w", err)
