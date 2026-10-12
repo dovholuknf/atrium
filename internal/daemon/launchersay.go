@@ -25,6 +25,11 @@ func (d *Daemon) isLauncherOf(from string, target *store.Task) bool {
 	if from == "" || target == nil {
 		return false
 	}
+	// A launcher on another room is not in this store: the worker records it as SpawnedBy, `name@room`, and a say
+	// from it arrives under that same address.
+	if target.Launched() && sameAddress(from, target.SpawnedBy) {
+		return true
+	}
 	sender, err := d.st.GetByWireName(from)
 	if err != nil {
 		if sender, err = d.st.GetByWireName(d.st.Qualify(from)); err != nil {
