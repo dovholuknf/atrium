@@ -3,6 +3,7 @@
 package store
 
 import (
+	"errors"
 	"testing"
 	"time"
 )
@@ -84,5 +85,39 @@ func TestSessionUsageMigrationReruns(t *testing.T) {
 	}
 	if err := s.migrate(); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// SessionUsageSince is every row that ended at or after the time, oldest first, and an error from the callback stops
+// it.
+func TestSessionUsageSince(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real sqlite database on disk")
+	}
+	t.Parallel()
+	s := openTestStore(t)
+	card, _, err := s.Register(Observed{WireName: "spender", Worktree: "/w"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	base := time.Date(2026, 9, 28, 10, 0, 0, 0, time.UTC)
+	for i := 0; i < 3; i++ {
+		end := base.Add(time.Duration(i) * time.Hour)
+		if err := s.AddSessionUsage(&SessionUsage{TaskID: card.ID, Started: end, Ended: end, Input: int64(i + 1)}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var got []int64
+	err = s.SessionUsageSince(base.Add(time.Hour), func(u *SessionUsage) error {
+		got = append(got, u.Input)
+		return nil
+	})
+	if err != nil || len(got) != 2 || got[0] != 2 || got[1] != 3 {
+		t.Fatalf("got %v, %v", got, err)
+	}
+	stop := errors.New("stop")
+	n := 0
+	if err := s.SessionUsageSince(base, func(*SessionUsage) error { n++; return stop }); err != stop || n != 1 {
+		t.Fatalf("the callback's error did not stop it: %d, %v", n, err)
 	}
 }

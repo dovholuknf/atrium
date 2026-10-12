@@ -222,3 +222,33 @@ func (s *Store) lastUsage(where, taskID, resumeID string, causes ...any) (*Sessi
 	})
 	return out, err
 }
+
+// SessionUsageSince calls each with every row that ended at or after since, oldest first, and stops at the first
+// error each returns. For the hub's export, which wants rows and not buckets.
+func (s *Store) SessionUsageSince(since time.Time, each func(*SessionUsage) error) error {
+	// The callback's error is the caller's, so it is kept out of guard, which would take it for a failed disk.
+	var stop error
+	err := s.guard(func() error {
+		stop = nil
+		rows, err := s.db.Query(`SELECT `+usageColumns+` FROM session_usage WHERE ended_at >= ?
+			ORDER BY ended_at, id`, ts(since))
+		if err != nil {
+			return err
+		}
+		defer rows.Close()
+		for rows.Next() {
+			u, err := scanUsage(rows)
+			if err != nil {
+				return err
+			}
+			if stop = each(u); stop != nil {
+				return nil
+			}
+		}
+		return rows.Err()
+	})
+	if err != nil {
+		return err
+	}
+	return stop
+}

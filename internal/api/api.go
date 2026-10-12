@@ -564,6 +564,7 @@ func (s *Server) Handler() http.Handler {
 	// docs/runtime/file-transfer-design.md.
 	mux.HandleFunc("POST /v1/tasks/{id}/files", s.uploadFiles)
 	mux.HandleFunc("GET /v1/tasks/{id}/files", s.downloadFile)
+	mux.HandleFunc("PUT /v1/tasks/{id}/files/drop", s.dropIn)
 	// Finding a file so it can be taken back out. Bounded to the card's own
 	// directory, and carried by whatever already carries the board.
 	mux.HandleFunc("GET /v1/tasks/{id}/files/list", s.listFiles)
@@ -817,6 +818,7 @@ func (s *Server) Handler() http.Handler {
 		mux.HandleFunc("GET /v1/tasks/{id}/changes", s.cardChanges)
 	}
 	mux.HandleFunc("GET /v1/usage", s.roomUsage)
+	mux.HandleFunc("GET /v1/usage/export", s.usageExport)
 	mux.HandleFunc("GET /v1/usage/limits", s.roomLimits)
 	mux.HandleFunc("GET /v1/usage/items", s.roomUsageItems)
 	mux.HandleFunc("GET /v1/usage/turns", s.roomTurnCost)
