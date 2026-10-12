@@ -19,6 +19,10 @@ import (
 const (
 	HeaderCard  = "X-Atrium-Card"
 	HeaderChain = "X-Atrium-Card-Chain"
+	// HeaderLaunchBranch is the branch the card was launched on and HeaderKin is its launcher's id, then the earlier
+	// cards that launcher launched on that branch, nearest first. See kin in receive_rules.go.
+	HeaderLaunchBranch = "X-Atrium-Card-Branch"
+	HeaderKin          = "X-Atrium-Card-Kin"
 )
 
 // MaxChain is how many ids a chain may hold, the card included.
@@ -64,6 +68,10 @@ type Pusher struct {
 	Card     string
 	// Chain is Card then its predecessors, nearest first. Honoured only against an owner on the same room.
 	Chain []string
+	// LaunchBranch and Kin are what the room said about the branch the card was launched on and the cards that handed
+	// it over. Honoured only against an owner on the same room, and only for LaunchBranch.
+	LaunchBranch string
+	Kin          []string
 }
 
 // Label is how a refusal or an audit line names the pusher.
@@ -103,7 +111,8 @@ func pusherFrom(r *http.Request, c Caller) (Pusher, string) {
 		}
 		// ONE VALUE EACH. The forwarder sets these, and a client that sent its own and had them added to rather than
 		// replaced must fail loudly, not have the first value win.
-		if len(r.Header.Values(HeaderCard)) > 1 || len(r.Header.Values(HeaderChain)) > 1 {
+		if len(r.Header.Values(HeaderCard)) > 1 || len(r.Header.Values(HeaderChain)) > 1 ||
+			len(r.Header.Values(HeaderLaunchBranch)) > 1 || len(r.Header.Values(HeaderKin)) > 1 {
 			return Pusher{}, "the request names its card more than once, which only a forwarder that adds to the card headers does. it has to set them"
 		}
 		card := strings.TrimSpace(r.Header.Get(HeaderCard))
@@ -135,7 +144,25 @@ func pusherFrom(r *http.Request, c Caller) (Pusher, string) {
 				chain = append(chain, p)
 			}
 		}
-		return Pusher{Room: c.Room, Card: card, Chain: chain}, ""
+		p := Pusher{Room: c.Room, Card: card, Chain: chain}
+		// A branch that is not a good ref name is ignored, and so is a kin list that holds a bad id: neither refuses
+		// the push, they only grant nothing.
+		if b := strings.TrimSpace(r.Header.Get(HeaderLaunchBranch)); b != "" && checkRefName(headsPrefix+b) == "" {
+			var kin []string
+			for _, k := range strings.Split(r.Header.Get(HeaderKin), ",") {
+				if k = strings.TrimSpace(k); k != "" {
+					kin = append(kin, k)
+				}
+			}
+			ok := len(kin) <= MaxChain
+			for _, k := range kin {
+				ok = ok && ValidCardID(k)
+			}
+			if ok {
+				p.LaunchBranch, p.Kin = b, kin
+			}
+		}
+		return p, ""
 	}
 	return Pusher{}, "the hub cannot tell who is pushing. push through a room's hub remote, or as the operator on the hub"
 }

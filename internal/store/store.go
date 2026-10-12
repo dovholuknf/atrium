@@ -303,6 +303,8 @@ type Task struct {
 	// SpawnedByDir is where a launcher on ANOTHER room works, as the hub read it from that card. Never a path to
 	// read, only one to ask git about.
 	SpawnedByDir string `json:"spawned_by_dir,omitempty"`
+	// LaunchBranch is the branch the card's checkout was on when an agent launched it. Empty for any other card.
+	LaunchBranch string `json:"launch_branch,omitempty"`
 	// ReportedAt is the last time this card said something to its launcher: a
 	// structured report, or a peer message to it. See
 	// docs/runtime/a2a-reliability-design.md.

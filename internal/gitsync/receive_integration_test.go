@@ -23,6 +23,9 @@ type who struct {
 	caller string
 	card   string
 	chain  string
+	// branch and kin are what the room says of the branch the card was launched on and who handed it over.
+	branch string
+	kin    string
 }
 
 var operator = who{caller: "operator"}
@@ -136,6 +139,10 @@ func (x *recvFix) run(dir string, w who, args ...string) (string, error) {
 	}
 	if w.chain != "" {
 		full = append(full, "-c", "http.extraHeader="+HeaderChain+": "+w.chain)
+	}
+	if w.branch != "" {
+		full = append(full, "-c", "http.extraHeader="+HeaderLaunchBranch+": "+w.branch,
+			"-c", "http.extraHeader="+HeaderKin+": "+w.kin)
 	}
 	out, err := Default.GitEnv(bg, dir, []string{"GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_NOSYSTEM=1"},
 		append(full, args...)...)
@@ -261,6 +268,10 @@ func (x *recvFix) stamp(req *http.Request, w who) {
 	}
 	if w.chain != "" {
 		req.Header.Set(HeaderChain, w.chain)
+	}
+	if w.branch != "" {
+		req.Header.Set(HeaderLaunchBranch, w.branch)
+		req.Header.Set(HeaderKin, w.kin)
 	}
 }
 
@@ -491,6 +502,65 @@ func TestTheOwnersSuccessorByChainPushesAndTakesTheBranchOver(t *testing.T) {
 	x.grow("fix/x", "again.txt")
 	if out, err := x.push(roomCard("sg4", "C1"), hubRepo, "fix/x:refs/heads/fix/x"); err == nil {
 		t.Fatalf("the old owner pushed after it was succeeded:\n%s", out)
+	}
+}
+
+// The card launched on a branch takes it from its launcher, who pushed it first, when the room says so.
+func TestALaunchedCardTakesItsLaunchBranchFromItsLauncher(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: git subprocesses and a real smart-HTTP rig")
+	}
+	t.Parallel()
+	x := newRecv(t)
+	x.seedMain(hubRepo)
+	x.branch("claude/x", "x.txt")
+	x.must(x.push(roomCard("sg4", "L"), hubRepo, "claude/x:refs/heads/claude/x"))
+	sha2 := x.grow("claude/x", "more.txt")
+
+	w := roomCard("sg4", "W")
+	w.branch, w.kin = "claude/x", "L"
+	x.must(x.push(w, hubRepo, "claude/x:refs/heads/claude/x"))
+	if got := x.refOn(hubRepo, "refs/heads/claude/x"); got != sha2 {
+		t.Fatalf("the launched card's push did not land: %s", got)
+	}
+	if o, c, ok, _ := x.log.Owner(bg, hubRepo, "refs/heads/claude/x"); !ok || o != "sg4" || c != "W" {
+		t.Fatalf("the owner is %s %s %v, want sg4 W", o, c, ok)
+	}
+	rows := x.pushRows()
+	if last := rows[len(rows)-1]; last.Card != "W" || !strings.Contains(last.ReleasedBy, "launched on this branch") {
+		t.Fatalf("the row for the takeover: %+v", last)
+	}
+}
+
+// The kin reaches the one branch the card was launched on and the room it came from, and no other.
+func TestKinDoesNotReachAnotherBranchOrRoom(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: git subprocesses and a real smart-HTTP rig")
+	}
+	t.Parallel()
+	x := newRecv(t)
+	x.seedMain(hubRepo)
+	x.branch("claude/y", "y.txt")
+	x.must(x.push(roomCard("sg4", "L"), hubRepo, "claude/y:refs/heads/claude/y"))
+	x.grow("claude/y", "more.txt")
+
+	// Launched on claude/x, pushing claude/y.
+	w := roomCard("sg4", "W")
+	w.branch, w.kin = "claude/x", "L"
+	if out, err := x.push(w, hubRepo, "claude/y:refs/heads/claude/y"); err == nil {
+		t.Fatalf("a card launched on claude/x took claude/y:\n%s", out)
+	}
+	// Another room's card with the same id as the owner's launcher.
+	m := roomCard("m1mini", "W")
+	m.branch, m.kin = "claude/y", "L"
+	if out, err := x.push(m, hubRepo, "claude/y:refs/heads/claude/y"); err == nil {
+		t.Fatalf("m1mini's card took sg4's L's branch:\n%s", out)
+	}
+	// An owner that is not in the kin.
+	o := roomCard("sg4", "W")
+	o.branch, o.kin = "claude/y", "other"
+	if out, err := x.push(o, hubRepo, "claude/y:refs/heads/claude/y"); err == nil {
+		t.Fatalf("a card whose kin does not name the owner took the branch:\n%s", out)
 	}
 }
 

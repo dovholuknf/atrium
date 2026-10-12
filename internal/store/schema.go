@@ -2202,6 +2202,14 @@ var migrations = []struct {
 			`ALTER TABLE task ADD COLUMN spawned_by_dir TEXT NOT NULL DEFAULT ''`,
 		},
 	},
+	{
+		// THE BRANCH A CARD WAS LAUNCHED ON, read from its checkout at launch. The card launched on a branch may push
+		// it among its launcher's family. See daemon/hubremote.go pushKin.
+		name: "0097_task_launch_branch",
+		stmts: []string{
+			`ALTER TABLE task ADD COLUMN launch_branch TEXT NOT NULL DEFAULT ''`,
+		},
+	},
 }
 
 // migrate applies any migration not already recorded. This runs before the

@@ -887,8 +887,11 @@ func (d *Daemon) launchLocked(req LaunchRequest) (*store.Task, error) {
 	}
 	// AN AGENT'S OUTPUT BELONGS IN GIT. A fresh agent launch outside a claude/* checkout is refused unless it says
 	// `scratch`. A throwaway is a scratch directory by definition, and the board's own launches are not an agent's.
+	launchBranch := ""
 	if task == nil && req.Resume == "" && !throwaway && !req.Scratch && hasTag(req.Tags, OriginAgentTag) {
-		if why := agentCheckoutRefusal(cwd); why != "" {
+		branch, why := agentCheckoutBranch(cwd)
+		launchBranch = branch
+		if why != "" {
 			return nil, fmt.Errorf("%s. launch it in a worktree on a claude/* branch, or pass scratch: true if this is "+
 				"throwaway work", why)
 		}
@@ -1364,6 +1367,9 @@ func (d *Daemon) launchLocked(req LaunchRequest) (*store.Task, error) {
 			return nil, err
 		}
 		reportedTo = reportCard.ID
+	}
+	if err := d.st.SetLaunchBranch(created.ID, launchBranch); err != nil {
+		return nil, err
 	}
 	if by := strings.TrimSpace(req.SpawnedBy); by != "" {
 		parentID := ""

@@ -233,9 +233,11 @@ func TestAClientsOwnCardHeadersNeverReachTheHub(t *testing.T) {
 	// git sends two more headers of the same names from the client's own config, as another card would.
 	// UNDER THE FORWARDER'S OWN SCOPE: a bare http.extraHeader is dropped by git when a more specific key is set, and
 	// would leave the forwarder's Del and Set untested.
-	env = append(env, "GIT_CONFIG_COUNT=3",
+	env = append(env, "GIT_CONFIG_COUNT=5",
 		"GIT_CONFIG_KEY_1="+ExtraHeaderKey(f.base), "GIT_CONFIG_VALUE_1="+HeaderCard+": evil-card",
-		"GIT_CONFIG_KEY_2="+ExtraHeaderKey(f.base), "GIT_CONFIG_VALUE_2="+HeaderChain+": evil-card,C1")
+		"GIT_CONFIG_KEY_2="+ExtraHeaderKey(f.base), "GIT_CONFIG_VALUE_2="+HeaderChain+": evil-card,C1",
+		"GIT_CONFIG_KEY_3="+ExtraHeaderKey(f.base), "GIT_CONFIG_VALUE_3="+HeaderLaunchBranch+": fix/x",
+		"GIT_CONFIG_KEY_4="+ExtraHeaderKey(f.base), "GIT_CONFIG_VALUE_4="+HeaderKin+": evil-card")
 	out, err := f.git(env, f.work, "push", "hub", "fix/x")
 	f.must(out, err)
 	if len(f.rt.hdrs) == 0 {
@@ -247,6 +249,13 @@ func TestAClientsOwnCardHeadersNeverReachTheHub(t *testing.T) {
 		}
 		if v := h.Values(HeaderChain); len(v) != 1 || v[0] != "C1" {
 			t.Fatalf("%s reached the hub as %q, want only the forwarder's C1", HeaderChain, v)
+		}
+		// This forwarder has no Kin, so a client's own branch and kin never arrive.
+		if v := h.Values(HeaderLaunchBranch); len(v) != 0 {
+			t.Fatalf("%s reached the hub as %q", HeaderLaunchBranch, v)
+		}
+		if v := h.Values(HeaderKin); len(v) != 0 {
+			t.Fatalf("%s reached the hub as %q", HeaderKin, v)
 		}
 	}
 	if rows := f.pushRows(); rows[len(rows)-1].Card != "C1" {

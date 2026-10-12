@@ -30,16 +30,22 @@ const interviewSystemPrompt = `You are an interviewer launched through atrium. Y
 // directory that is not a checkout on a claude/* branch is where an interview writeup was lost, so the launch is
 // refused unless the caller says `scratch: true`.
 func agentCheckoutRefusal(cwd string) string {
+	_, why := agentCheckoutBranch(cwd)
+	return why
+}
+
+// agentCheckoutBranch is the claude/* branch cwd is on, or why it is not on one.
+func agentCheckoutBranch(cwd string) (branch, why string) {
 	branch, err := gitIn(cwd, "symbolic-ref", "--short", "-q", "HEAD")
 	switch {
 	case err != nil && !isGitCheckout(cwd):
-		return fmt.Sprintf("%s is not a git checkout, so what the agent writes there is not kept in git", cwd)
+		return "", fmt.Sprintf("%s is not a git checkout, so what the agent writes there is not kept in git", cwd)
 	case err != nil || branch == "":
-		return fmt.Sprintf("%s is a git checkout that is not on a branch, so what the agent commits there is not on a claude/* branch", cwd)
+		return "", fmt.Sprintf("%s is a git checkout that is not on a branch, so what the agent commits there is not on a claude/* branch", cwd)
 	case !strings.HasPrefix(branch, "claude/"):
-		return fmt.Sprintf("%s is on %s, not a claude/* branch, so the agent's work would not be kept on one", cwd, branch)
+		return "", fmt.Sprintf("%s is on %s, not a claude/* branch, so the agent's work would not be kept on one", cwd, branch)
 	}
-	return ""
+	return branch, ""
 }
 
 func isGitCheckout(dir string) bool {

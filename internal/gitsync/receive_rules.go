@@ -94,6 +94,22 @@ func inherits(p Pusher, room, card string) bool {
 	return false
 }
 
+// kin says whether the pusher was launched on this branch by the owner or an earlier card of the owner's launcher: the
+// same room, the branch is the one the card was launched on, and the owner is in the kin the room named. The launcher
+// made the worktree and handed it over, so the handover is its word that the card owns the branch. A room is trusted
+// for its own cards and no others, as for `inherits`.
+func kin(p Pusher, ref, room, card string) bool {
+	if p.Operator || p.Room != room || p.LaunchBranch == "" || trimHead(ref) != p.LaunchBranch {
+		return false
+	}
+	for _, k := range p.Kin {
+		if k == card {
+			return true
+		}
+	}
+	return false
+}
+
 // What one push may ask of the link, in all: how many owners' rooms, and for how long. Past either, the owners
 // not asked are treated as unreachable, which keeps their branches owned and says so. Variables for the tests.
 var (
@@ -117,7 +133,7 @@ func (rc *Receiver) askOwners(ctx context.Context, repo string, p Pusher, req pu
 			continue
 		}
 		room, card, ok, err := rc.h.PushLog.Owner(ctx, repo, u.Ref)
-		if err != nil || !ok || room == "" || inherits(p, room, card) || (p.Room == room && p.Card == card) {
+		if err != nil || !ok || room == "" || inherits(p, room, card) || kin(p, u.Ref, room, card) || (p.Room == room && p.Card == card) {
 			continue
 		}
 		key := ownerKey(room, card)
@@ -307,6 +323,10 @@ func (rc *Receiver) checkOwner(ctx context.Context, d *decision, repo string, p 
 		// The successor takes the branch over, so the log says the new owner and a later card is asked about
 		// the successor and not the card that moved on.
 		d.releases = append(d.releases, release{ref: ref, by: "moved to " + p.Card})
+		return
+	}
+	if kin(p, ref, room, card) {
+		d.releases = append(d.releases, release{ref: ref, by: "launched on this branch"})
 		return
 	}
 	owned := fmt.Sprintf("%s is owned by %s's %s, fetch it and push under another name", label, room, card)

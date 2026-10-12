@@ -21,7 +21,8 @@ const HubRemotePrefix = StorePrefix
 //
 //   - It takes the card from the card's own token and refuses a request without one, with its own sentence, before
 //     anything is sent to the hub. The hub refuses too.
-//   - It sends the card to the hub in X-Atrium-Card and X-Atrium-Card-Chain. A copy of either (or of the token
+//   - It sends the card to the hub in X-Atrium-Card and X-Atrium-Card-Chain, and the branch it was launched on in
+//     X-Atrium-Card-Branch and X-Atrium-Card-Kin. A copy of either (or of the token
 //     header) that the client sent is DELETED first and the forwarder's own is Set, never Added: the hub reads the
 //     card from these and a client must not choose it.
 //   - It does not touch git's bytes, in either direction. The hub's pre-receive reads the ref commands from the
@@ -37,6 +38,9 @@ type HubForwarder struct {
 	// Chain is the card then its `moved_to` predecessors, nearest first, at most MaxChain. Nil is the card alone,
 	// which is all there is until atrium move lands.
 	Chain func(card string) []string
+	// Kin is the branch the card was launched on and the ids that handed it over: its launcher, then the earlier
+	// cards that launcher launched on that branch. An empty branch sends nothing.
+	Kin func(card string) (branch string, kin []string)
 }
 
 // ServeHTTP implements http.Handler.
@@ -100,6 +104,12 @@ func (h *HubForwarder) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	var launchBranch string
+	var kin []string
+	if h.Kin != nil {
+		launchBranch, kin = h.Kin(card)
+	}
+
 	limit := int64(maxRequest)
 	if service == "git-receive-pack" {
 		limit = maxPush + maxPushCommands
@@ -113,9 +123,15 @@ func (h *HubForwarder) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			// DELETE, THEN SET. A client's own card headers never get through, and the token is not the hub's.
 			pr.Out.Header.Del(HeaderCard)
 			pr.Out.Header.Del(HeaderChain)
+			pr.Out.Header.Del(HeaderLaunchBranch)
+			pr.Out.Header.Del(HeaderKin)
 			pr.Out.Header.Del(HeaderCardToken)
 			pr.Out.Header.Set(HeaderCard, card)
 			pr.Out.Header.Set(HeaderChain, strings.Join(chain, ","))
+			if launchBranch != "" && len(kin) > 0 {
+				pr.Out.Header.Set(HeaderLaunchBranch, launchBranch)
+				pr.Out.Header.Set(HeaderKin, strings.Join(kin, ","))
+			}
 		},
 		Transport: rt,
 		// Streamed, not buffered: a pack is not held whole.

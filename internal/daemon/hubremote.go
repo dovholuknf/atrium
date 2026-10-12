@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/http"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -64,6 +65,7 @@ func (d *Daemon) hubRemote() http.Handler {
 	return &gitsync.HubForwarder{
 		Auth: d.hubGit.cards,
 		Push: d.st.GitPush,
+		Kin:  d.pushKin,
 		Transport: func() (http.RoundTripper, error) {
 			d.hubGit.mu.Lock()
 			t := d.hubGit.transport
@@ -74,6 +76,38 @@ func (d *Daemon) hubRemote() http.Handler {
 			return t()
 		},
 	}
+}
+
+// pushKin is the branch a card was launched on and who handed it over: its launcher, then each earlier card the
+// launcher launched on that branch, newest first, at most gitsync.MaxChain in all. "" when the card was not launched on
+// a branch or has no launcher, so a lookup that fails sends nothing and the hub's own rule stands.
+func (d *Daemon) pushKin(card string) (string, []string) {
+	t, err := d.st.Get(card)
+	if err != nil || t.LaunchBranch == "" || t.SpawnedByID == "" {
+		return "", nil
+	}
+	kin := []string{t.SpawnedByID}
+	ids, err := d.st.WorkerIDs(t.SpawnedByID)
+	if err != nil {
+		return t.LaunchBranch, kin
+	}
+	var earlier []*store.Task
+	for _, id := range ids {
+		if id == card {
+			continue
+		}
+		if o, err := d.st.Get(id); err == nil && o.LaunchBranch == t.LaunchBranch && o.CreatedAt.Before(t.CreatedAt) {
+			earlier = append(earlier, o)
+		}
+	}
+	sort.Slice(earlier, func(i, j int) bool { return earlier[i].CreatedAt.After(earlier[j].CreatedAt) })
+	for _, o := range earlier {
+		if len(kin) >= gitsync.MaxChain {
+			break
+		}
+		kin = append(kin, o.ID)
+	}
+	return t.LaunchBranch, kin
 }
 
 type hubErr string

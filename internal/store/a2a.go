@@ -56,6 +56,18 @@ func (s *Store) SetSpawnedByDir(id, dir string) error {
 	})
 }
 
+// SetLaunchBranch keeps the branch a card was launched on. An empty branch writes nothing.
+func (s *Store) SetLaunchBranch(id, branch string) error {
+	branch = strings.TrimSpace(branch)
+	if branch == "" {
+		return nil
+	}
+	return s.guard(func() error {
+		_, err := s.db.Exec(`UPDATE task SET launch_branch = ? WHERE id = ?`, branch, id)
+		return err
+	})
+}
+
 // SetReportTo keeps the name a launch was told to report to, as given.
 func (s *Store) SetReportTo(id, name string) error {
 	name = strings.TrimSpace(name)

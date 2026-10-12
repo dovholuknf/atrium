@@ -235,7 +235,7 @@ func cgiEnv() []string {
 // directory.
 func forGit(r *http.Request, dir, svc string) *http.Request {
 	out := r.Clone(r.Context())
-	for _, h := range []string{"Git-Protocol", HeaderCard, HeaderChain, "Authorization", "Cookie"} {
+	for _, h := range []string{"Git-Protocol", HeaderCard, HeaderChain, HeaderLaunchBranch, HeaderKin, "Authorization", "Cookie"} {
 		out.Header.Del(h)
 	}
 	out.URL.Path = "/" + filepath.Base(dir) + svc
