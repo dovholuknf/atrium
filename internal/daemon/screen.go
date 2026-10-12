@@ -527,10 +527,17 @@ func (s *screen) keepPage() {
 			continue
 		}
 		rows[i] = rowText(s.cells[i])
-		if s.pushedLive && i < len(s.pushedRows) && rows[i] == s.pushedRows[i] {
-			continue
+	}
+	// Only the stale tail is left out. A stale row above new text, such as a separator rule that sits at the same row
+	// in both frames, stays, because it is part of the new page's layout. The board's keepPage trims the same way.
+	upto := min(s.rows, len(s.cells)) - 1
+	for s.pushedLive && upto >= 0 && (rows[upto] == "" || (upto < len(s.pushedRows) && rows[upto] == s.pushedRows[upto])) {
+		upto--
+	}
+	for i := 0; i <= upto; i++ {
+		if !rowIsBlank(s.cells[i]) {
+			s.history = append(s.history, append([]cell(nil), s.cells[i]...))
 		}
-		s.history = append(s.history, append([]cell(nil), s.cells[i]...))
 	}
 	s.pushedRows, s.pushedLive = rows, true
 }

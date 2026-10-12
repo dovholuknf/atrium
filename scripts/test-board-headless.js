@@ -4620,7 +4620,7 @@ async function clearMarkSection(browser, base) {
   const ctx = await landContext(browser);
   try {
     const p = await ctx.newPage();
-    p.on("pageerror", e => errors.push(String(e)));
+    p.on("pageerror", e => errors.push(String(e.stack || e)));
     await p.goto(base, { waitUntil: "domcontentloaded" });
     await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
     await p.evaluate(() => attachTask("land-mark"));
@@ -4630,6 +4630,7 @@ async function clearMarkSection(browser, base) {
       const w = d => new Promise(r => term.write(d, r));
       if (fresh) { term.reset(); term._atriumPushed = ""; }
       await w(seq);
+      await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
       const b = term.buffer.normal, above = [], shown = [];
       for (let i = 0; i < b.baseY; i++) above.push(b.getLine(i).translateToString(true));
       for (let i = 0; i < term.rows; i++) shown.push(b.getLine(b.baseY + i).translateToString(true));
@@ -4658,6 +4659,12 @@ async function clearMarkSection(browser, base) {
     // The mark and then the 2J a restart sends over the same page: one copy.
     got = await run(OLD + MARK + "\x1b[2J\x1b[3J\x1b[Hnew\r\n", true);
     if (got.above.filter(l => l === "old line 1").length !== 1) fail("clearMark: the mark then a 2J stacked the page: " + JSON.stringify(got.above));
+
+    // The mark, a repaint in place that has not reached the rows below its text, then the 2J: those rows are the old
+    // page again and are not filed a second time after the new text.
+    got = await run("old line 1\r\nold line 2\r\nold line 3\r\nold line 4" + MARK + "\x1b[Hnew 1\x1b[K\r\nnew 2\x1b[K\r\n\x1b[2J\x1b[3J\x1b[Hnew 1\r\n", true);
+    if (got.above.filter(l => l === "old line 3").length !== 1) fail("clearMark: a 2J mid-repaint filed the old rows again: " + JSON.stringify(got.above));
+    if (got.above.lastIndexOf("old line 4") > got.above.indexOf("new 1")) fail("clearMark: an old row sits after the new text: " + JSON.stringify(got.above));
 
     // A replay is the same bytes through a reset terminal.
     await p.evaluate(() => { term.reset(); term._atriumPushed = ""; });
