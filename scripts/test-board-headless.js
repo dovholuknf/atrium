@@ -24550,9 +24550,9 @@ async function switcherRankSection(browser, base) {
   if (!bad) console.log("switcherRank ok");
 }
 
-// GOING TO A CARD OPENS EVERY FOLD IT SITS IN. The card's heading path in the terminals list, its project group and its
-// column on the board are all folded, then the switcher goes to it: every one is open afterwards, the stores say so, and
-// the row is on screen.
+// GOING TO A CARD OPENS EVERY FOLD IT SITS IN, except the terminals list's headings. Its heading path, its project group
+// and its column on the board are all folded, then the switcher goes to it: the board's are open afterwards and the
+// list's stay shut, carrying the bridge.
 async function revealFoldsSection(browser, base) {
   const was = tasksMode;
   tasksMode = "untagged";
@@ -24587,19 +24587,15 @@ async function revealFoldsSection(browser, base) {
     await p.fill("#sw-q", "discourse-6101");
     await p.waitForSelector('#sw-list .swrow[data-id="u-disc"]', { timeout: slow(5000) });
     await p.press("#sw-q", "Enter");
-    await p.waitForSelector(row, { state: "visible", timeout: slow(5000) })
-      .catch(() => fail("revealFolds: going to the card did not open the headings above it"));
-    const after = await p.evaluate(() => {
-      const el = document.querySelector('#term-list .card.tab[data-id="u-disc"]');
-      const box = document.querySelector("#term-list .termscroll");
-      const r = el && el.getBoundingClientRect(), b = box && box.getBoundingClientRect();
-      return { termfolded: JSON.parse(localStorage.getItem("atrium.termfolded") || "[]"), folded: JSON.parse(localStorage.getItem("atrium.folded") || "[]"),
-        inView: !!(r && b && r.top >= b.top - 1 && r.bottom <= b.bottom + 1) };
-    });
+    // The terminals list's headings are left as the operator set them: the heading carries the bridge instead.
+    await p.waitForSelector("#term-list .tgroup.carries", { state: "attached", timeout: slow(5000) })
+      .catch(() => fail("revealFolds: going to the card did not leave its shut group carrying the bridge"));
+    if (await p.$(row)) fail("revealFolds: going to the card opened a heading in the terminals list");
+    const after = await p.evaluate(() => ({
+      termfolded: JSON.parse(localStorage.getItem("atrium.termfolded") || "[]"), folded: JSON.parse(localStorage.getItem("atrium.folded") || "[]") }));
     if (shots) await p.screenshot({ path: path.join(shots, "reveal-" + (process.env.REVEAL_TAG || "after") + ".png") });
-    for (const k of folded.termKeys) if (after.termfolded.includes(k)) fail("revealFolds: the heading " + k + " is still recorded as folded");
+    for (const k of folded.termKeys) if (!after.termfolded.includes(k)) fail("revealFolds: the heading " + k + " was opened");
     for (const k of folded.keys) if (after.folded.includes(k)) fail("revealFolds: " + k + " is still recorded as folded");
-    if (!after.inView) fail("revealFolds: the row is not scrolled into view");
     // The board's column is open too, so the card is there.
     await p.evaluate(() => document.querySelector('.tab[data-view="board"]').click());
     await p.waitForSelector('#board [data-id="u-disc"]', { state: "visible", timeout: slow(5000) })
@@ -24607,6 +24603,86 @@ async function revealFoldsSection(browser, base) {
     if (errors.length) fail("revealFolds: page errors: " + errors.join(" | "));
   } finally { tasksMode = was; await ctx.close(); }
   if (!bad) console.log("revealFolds ok");
+}
+
+// THE BRIDGE RUNS FROM A SHUT GROUP. The attached card sits in a group the operator left shut: the group stays shut, the
+// bridge is level with its heading and the heading wears the attached frame. Opening the group moves the bridge to the
+// card's row and shutting it again moves it back to the heading.
+async function groupBridgeSection(browser, base) {
+  const was = tasksMode;
+  tasksMode = "untagged";
+  const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+  try {
+    const p = await ctx.newPage();
+    const errors = [];
+    p.on("pageerror", e => errors.push(String(e)));
+    await p.addInitScript(() => localStorage.setItem("atrium.skipconfirm", JSON.stringify({ "width-floor": true })));
+    await p.goto(base, { waitUntil: "domcontentloaded" });
+    await p.evaluate(() => document.querySelector('.tab[data-view="terms"]').click());
+    const row = '#term-list .card.tab[data-id="u-disc"]';
+    await p.waitForSelector(row, { state: "visible", timeout: slow(15000) });
+    const settle = () => p.evaluate(() => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(() => {
+      placeTabBridge(); r();
+    }))));
+    const read = () => p.evaluate(() => {
+      const bridges = [...document.querySelectorAll("#term-layout .tabbridge")].filter(b => !b.hidden)
+        .map(b => b.getBoundingClientRect());
+      const mid = r => (r.top + r.bottom) / 2;
+      const head = document.querySelector("#term-list .tgroup.carries");
+      const card = document.querySelector("#term-list .card.on");
+      const at = el => { if (!el) return null; const r = el.getBoundingClientRect(); return { top: r.top, bottom: r.bottom }; };
+      return { bridges: bridges.map(r => ({ top: r.top, bottom: r.bottom, mid: mid(r) })), head: at(head), card: at(card),
+        folded: JSON.parse(localStorage.getItem("atrium.termfolded") || "[]"), shotHead: head && head.textContent.trim() };
+    });
+    const shots = process.env.GROUP_BRIDGE_SHOTS || "";
+    const shot = async name => { if (shots) { fs.mkdirSync(shots, { recursive: true }); await p.screenshot({ path: path.join(shots, name + ".png") }); } };
+    const level = (g, el, what) => {
+      if (!g[el]) return fail("groupBridge: " + what + " is not drawn");
+      if (g.bridges.length !== 1) return fail("groupBridge: want one bridge " + what + ", got " + g.bridges.length);
+      if (g.bridges[0].top < g[el].top - 2 || g.bridges[0].bottom > g[el].bottom + 2) {
+        fail("groupBridge: the bridge " + JSON.stringify(g.bridges[0]) + " is not level with " + what + " " + JSON.stringify(g[el]));
+      }
+    };
+    const top = await p.evaluate(() => {
+      const t = lastTasks.find(x => x.id === "u-disc");
+      termTask = t; term = term || { options: {}, dispose() {} };
+      return termPathOf(t).segs[0];
+    });
+    if (!top) fail("groupBridge: the card sits under no heading, so nothing is tested");
+    await p.evaluate(() => repaintTermList());
+    await settle();
+    level(await read(), "card", "the row");
+    await shot("group-bridge-before");
+    // Shut the outermost group: the bridge moves to its heading and the group stays as it is left.
+    await p.evaluate(t => toggleTermGroup(t), top);
+    await p.waitForSelector("#term-list .tgroup.carries", { state: "attached", timeout: slow(5000) })
+      .catch(() => fail("groupBridge: the shut group does not carry the bridge"));
+    await settle();
+    let g = await read();
+    if (await p.$(row)) fail("groupBridge: the row is drawn inside a shut group");
+    if (!g.folded.includes(top)) fail("groupBridge: the group was opened");
+    level(g, "head", "the shut group's heading");
+    await shot("group-bridge-after");
+    // Attaching again, which is what going to the card does, leaves it shut.
+    await p.evaluate(() => revealCard("u-disc"));
+    await settle();
+    g = await read();
+    if (!g.folded.includes(top)) fail("groupBridge: going to the card opened the group");
+    level(g, "head", "the shut group's heading");
+    // Open it: back at the row.
+    await p.evaluate(t => toggleTermGroup(t), top);
+    await p.waitForSelector(row, { state: "visible", timeout: slow(5000) });
+    await settle();
+    g = await read();
+    if (g.head) fail("groupBridge: an open group still carries the bridge");
+    level(g, "card", "the row");
+    // And shut again: the heading.
+    await p.evaluate(t => toggleTermGroup(t), top);
+    await settle();
+    level(await read(), "head", "the heading, shut again");
+    if (errors.length) fail("groupBridge: page errors: " + errors.join(" | "));
+  } finally { tasksMode = was; await ctx.close(); }
+  if (!bad) console.log("groupBridge ok");
 }
 
 // THE DOCUMENTS PAGE, laid out: one centred column, a header row with the count, the card-or-every switch and a search,
@@ -30284,6 +30360,7 @@ async function main() {
     await unit("boardDocs", () => boardDocsSection(browser, base));
     await unit("switcherRank", () => switcherRankSection(browser, base));
     await unit("revealFolds", () => revealFoldsSection(browser, base));
+    await unit("groupBridge", () => groupBridgeSection(browser, base));
     await unit("docsPage", () => docsPageSection(browser, base));
     await unit("phoneBoardCompact", () => phoneBoardCompactSection(browser, base));
     await unit("phoneBell", () => phoneBellSection(browser, base));
