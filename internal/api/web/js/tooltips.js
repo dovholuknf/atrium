@@ -115,9 +115,8 @@ paintCopyMode();
 wireFilters("rules-seg", "rules-q", paintRules);
 wireFilters("hist-seg", "hist-q", paintHistory);
 // The show pills are built and wired by paintStackShow, since each is a
-// toggle rather than one of a set. Only the search box needs wiring here.
+// toggle rather than one of a set. The search box is wired by the drawer (js/filter-drawer.js).
 paintStackShow();
-document.getElementById("stack-q").addEventListener("input", paintStack);
 paintStackSort();
 paintGroupSegs();
 wireSeg("d-ev-seg", paintTimeline);

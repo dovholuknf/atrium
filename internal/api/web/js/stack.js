@@ -84,7 +84,21 @@ function stackShow() {
   return new Set(["needs-input"]);
 }
 
-prefLive(STACK_SHOW_KEY, () => { paintStackShow(); paintStack(); });
+// The subagents chip, off by default (js/filter-drawer.js `subagentRollup`). Stored as "on" and cleared when it goes
+// off, so a stored value always means it differs from the default.
+const STACK_SUBS_KEY = "atrium.stack.subagents";
+function stackSubsOn() {
+  try { return localStorage.getItem(STACK_SUBS_KEY) === "on"; } catch (e) { return false; }
+}
+function toggleStackSubs() {
+  try {
+    if (stackSubsOn()) localStorage.removeItem(STACK_SUBS_KEY); else localStorage.setItem(STACK_SUBS_KEY, "on");
+  } catch (e) {}
+  paintStackShow();
+  paintStack();
+}
+
+prefLive([STACK_SHOW_KEY, STACK_SUBS_KEY], () => { paintStackShow(); paintStack(); });
 
 function setStackShow(next) {
   localStorage.setItem(STACK_SHOW_KEY, JSON.stringify([...next]));
@@ -128,7 +142,9 @@ function paintStackShow() {
       `<button class="${on.has(c.id) ? "on" : ""}" data-v="${esc(c.id)}"
         onclick="toggleStackShow('${esc(c.id)}')"
         data-tip="${esc(c.label)}: click to add or remove"
-        >${esc(c.label)} <i class="pillcount"></i></button>`).join("");
+        >${esc(c.label)} <i class="pillcount"></i></button>`).join("") +
+    fdChip("subagents", stackSubsOn(), "toggleStackSubs()",
+      "a subagent is not a row of its own: its parent's row says how many it has. one that needs you still shows", "subagents");
 }
 
 // Activity by default. This is the "what has been going on" view, and the
@@ -224,29 +240,45 @@ async function renderStack(signal) {
 // Drawn in its own group at the bottom and counted nowhere.
 let offlineStack = [];
 
+// The parents' `N subagents` badges, set by paintStack for stackRow to read.
+let stackSubBadge = new Map();
+
+// The line under the title bar, in words: `ready 34 · name ↑ · by age`.
+function stackSummary(show, n) {
+  const ids = COLUMNS.filter(c => show.has(c.id) && !STACK_PILL_SKIP.includes(c.id)).map(c => c.label);
+  const what = (show.size === 0 ? "all" : ids.join(" + ")) + " " + n;
+  const s = STACK_SORTS[stackSort] || STACK_SORTS.activity;
+  const g = typeof groupingPrefs === "function" ? groupingPrefs("stack") : { on: false };
+  return [what + (stackSubsOn() ? " + subagents" : ""), s.label + (stackDesc ? " \u2193" : " \u2191"), groupWords(g)].join(" \u00b7 ");
+}
+
+// How many settings in the drawer differ from the stack's defaults: ready alone, last active, by project, subagents
+// off. Each chip that is not as it comes counts, and so does the sort and the group.
+function stackChanged(show) {
+  const dflt = new Set(["needs-input"]);
+  let n = 0;
+  new Set([...show, ...dflt]).forEach(id => { if (show.has(id) !== dflt.has(id)) n++; });
+  if (stackSubsOn()) n++;
+  if (stackSort !== "activity" || stackDesc) n++;
+  return n + groupChanged("stack");
+}
+
 function paintStack() {
-  const q = (document.getElementById("stack-q").value || "").toLowerCase();
+  const q = fdSearchText("stack");
   const show = stackShow();
   // Which statuses the chosen columns hold, resolved from COLUMNS so the two
   // views cannot disagree about what a column contains.
   const wanted = new Set();
   COLUMNS.forEach(c => { if (show.has(c.id)) c.statuses.forEach(s => wanted.add(s)); });
 
-  // `#tag` means that tag exactly, so filtering to `#prs` does not also drag
-  // in a card whose path happens to contain the letters. Anything else is a
-  // plain substring across everything a card carries, tags included.
-  const matchesText = t => {
-    if (!q) return true;
-    if (q.startsWith("#")) {
-      const want = q.slice(1).trim();
-      return want ? (t.tags || []).includes(want) : true;
-    }
-    return (t.display_title + " " + (t.worktree || "") + " " + (t.runner || "") + " " +
-      (t.why || "") + " " + (t.ask || "") + " " +
-      (t.tags || []).join(" ")).toLowerCase().includes(q);
-  };
+  // SUBAGENTS ROLL UP INTO THEIR PARENT unless the chip is on. Worked out over everything, before the search and the
+  // columns, so a parent's badge does not change with what you typed.
+  const roll = subagentRollup(allStack, stackSubsOn());
+  stackSubBadge = roll.badge;
+  const matchesText = t => cardMatchesText(t, q);
 
   const list = allStack.filter(t => {
+    if (roll.rolled.has(t.id)) return false;
     // No column chosen means every card, which is what the `everything` pill
     // sets. See toggleStackShow: an empty list with no explanation reads as
     // broken.
@@ -256,8 +288,8 @@ function paintStack() {
 
   // What each pill would ADD, counted against the same search text. A count
   // that described the current list would be the same number on every pill.
-  const searched = allStack.filter(matchesText);
-  const counts = { "": searched.length };
+  const searched = allStack.filter(t => !roll.rolled.has(t.id) && matchesText(t));
+  const counts = { "": searched.length, subagents: roll.rollable };
   COLUMNS.forEach(c => {
     counts[c.id] = searched.filter(t => c.statuses.includes(t.status)).length;
   });
@@ -266,8 +298,12 @@ function paintStack() {
   // name or runner would be the same total written four more times.
   pillCounts("stack-sort", { waited: searched.filter(isWaiting).length });
 
-  document.getElementById("stack-match").textContent =
-    list.length === allStack.length ? "" : `${list.length} of ${allStack.length}`;
+  const visible = allStack.length - roll.rolled.size;
+  fdStatus("stack", {
+    summary: stackSummary(show, list.length),
+    changed: stackChanged(show),
+    match: list.length === visible ? "" : `${list.length} of ${visible}`
+  });
   // The cache summary, over the rows this list shows. See js/keepalive.js.
   if (typeof paintCacheLine === "function") paintCacheLine("cache-line-stack", list);
 
@@ -487,6 +523,7 @@ function stackRow(t) {
       ${t.why ? `<span class="why">${esc(t.why)}</span>` : ""}
     </div>
     <div class="chips">
+      ${subsBadgeHTML(stackSubBadge.get(t.id))}
       ${stuckMark(t)}
       ${openingChip(t)}
       ${newCardChip(t)}
@@ -851,9 +888,7 @@ function inertURL(raw) {
 // Types a tag into the stack's search box, which already filters on it.
 function filterByTag(tag) {
   switchView("stack");
-  const q = document.getElementById("stack-q");
-  if (!q) return;
-  q.value = "#" + tag;
+  fdSetSearch("stack", "#" + tag);
   paintStack();
 }
 
