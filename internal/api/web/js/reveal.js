@@ -31,13 +31,11 @@ function revealChain(t) {
 // What is in the way of this card, as edits to the two stores. Returns true when anything changed.
 function revealFolds(t) {
   const list = foldedColumns();
-  const termSet = termFolded();
   let changed = false;
   const open = key => { const i = list.indexOf(key); if (i >= 0) { list.splice(i, 1); changed = true; } };
   const openInverted = key => { if (!list.includes(key)) { list.push(key); changed = true; } };
-  const openTermFold = key => { if (termSet.delete(key)) changed = true; };
   const chain = revealChain(t);
-  
+
   // The rows of the cards that launched it.
   chain.slice(1).forEach(up => open(termKidsKey(up)));
 
@@ -65,10 +63,7 @@ function revealFolds(t) {
   // `placeTabBridge`.
 
   if (!changed) return false;
-  try {
-    localStorage.setItem("atrium.folded", JSON.stringify(list));
-    localStorage.setItem(TERM_FOLDED, JSON.stringify([...termSet]));
-  } catch (e) {}
+  try { localStorage.setItem("atrium.folded", JSON.stringify(list)); } catch (e) {}
   return true;
 }
 

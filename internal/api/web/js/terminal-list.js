@@ -1823,12 +1823,13 @@ function termNodeHTML(node, depth, path, folded) {
   return node.name ? out + `<div class="tnest">${inner}</div>` : out + inner + loose;
 }
 
-// How many sessions are under a heading, at any depth. A folded group has to
-// say what is inside it, or folding loses information rather than hiding it.
+// Every row under a heading, at any depth.
 function termNodeRows(node) {
   return [...node.rows, ...[...node.kids.values()].flatMap(termNodeRows)];
 }
 
+// How many sessions are under a heading, at any depth. A folded group has to
+// say what is inside it, or folding loses information rather than hiding it.
 function termCount(node) {
   let n = node.rows.length;
   for (const kid of node.kids.values()) n += termCount(kid);
