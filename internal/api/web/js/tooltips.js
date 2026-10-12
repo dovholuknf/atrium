@@ -118,6 +118,8 @@ wireFilters("hist-seg", "hist-q", paintHistory);
 // toggle rather than one of a set. The search box is wired by the drawer (js/filter-drawer.js).
 paintStackShow();
 paintStackSort();
+paintBoardShow();
+paintBoardSort();
 paintGroupSegs();
 wireSeg("d-ev-seg", paintTimeline);
 loadGlobalAuto();

@@ -85,7 +85,7 @@
        tab rendered blank with the toolbar stranded mid-screen. Down the page,
        the same markup that works on the desktop works here. */
     .term-layout { flex-direction: column; }
-    /* The rows scroll in `.termscroll`, under the tray, as on a desktop. */
+    /* The rows scroll in `.termscroll`, in a box of their own, as on a desktop. */
     .term-list {
       flex: 1 1 auto; flex-direction: column; width: 100%;
       min-height: 0; max-height: none; overflow: hidden;
@@ -98,7 +98,7 @@
        hidden. `mini` and `off`, the modes they reach, are held off the layout at
        this width in `applyTermList`. */
     .term-rail, .term-grip { display: none; }
-    /* The width buttons on the tray's bar reach `mini` and `off` too, which a
+    /* The list's width buttons reach `mini` and `off` too, which a
        phone ignores, so they would be buttons that do nothing. */
     .tlcorner { display: none; }
 
@@ -557,28 +557,6 @@
     .stackrow > .chips:not(:has(*)) { display: none; }
     .stackrow .who b { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .stackrow .who .why { white-space: normal; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
-  }
-
-  /* ── the board on a phone: filters folded, the sound hint out of the way ──────────────────────────────── */
-  .filtersbtn { display: none; }
-  @media (max-width: 520px) and (pointer: coarse) {
-    .filtersbtn {
-      display: inline-flex; align-items: center; gap: 6px; min-height: 40px; padding: 0 14px; border-radius: var(--r-sm);
-      border: 1px solid var(--stroke-dim); background: var(--chip); color: var(--label); font: 600 var(--fs-sm)/1 var(--sans);
-    }
-    .filtersbtn[aria-expanded="true"] { border-color: var(--teal); color: var(--head); }
-    .filtersbtn .fcount { min-width: 18px; padding: 1px 5px; box-sizing: border-box; border-radius: 9px; background: var(--teal); color: var(--bg-2); font: 700 11px/16px var(--sans); text-align: center; }
-    .filtersbtn .fcount[hidden] { display: none; }
-    /* The pills keep their look and grow a 40px hit area: the pad is a transparent layer of the button itself. */
-    .seg button { position: relative; }
-    .seg button::after { content: ""; position: absolute; left: 0; right: 0; top: 50%; height: 40px; transform: translateY(-50%); }
-    /* Closed, the pill rows are gone: the search box and the button are all that is left above the first card. */
-    body:not(.filters-open) :is(#stack, #board-bar) .barlabel,
-    body:not(.filters-open) :is(#stack, #board-bar) .seg { display: none; }
-    body:not(.filters-open) #stack .filters:has(#stack-sort) { display: none; }
-    body:not(.filters-open) #stack .filters:first-of-type { flex-wrap: nowrap; }
-    #stack-q { flex: 1 1 0; min-width: 0; }
-    #stack .matchcount:empty { display: none; }
   }
 
   /* Cards on a phone: tighter padding and chip rows, so two or three fit a screen. */
