@@ -31,7 +31,7 @@ func TestAnEndingReachesALauncherOnAnotherRoomByWayOfTheHub(t *testing.T) {
 			f.set(func(RelaySay) (RelayResult, error) { return RelayResult{}, ErrRelayDown })
 
 			rec, out := finishWith(t, d, c.in)
-			if rec.Code != http.StatusOK || out["launcher_told"] != true {
+			if rec.Code != http.StatusOK || out["launcher_told"] != "relayed" {
 				t.Fatalf("code %d, out %v", rec.Code, out)
 			}
 			// Held first, so a hub that is down loses nothing.
@@ -86,8 +86,8 @@ func TestAnEndingIsQueuedForTurnEndOnAHoldNoticesLaunchersCard(t *testing.T) {
 			stubCommits(t, true, false)
 
 			rec, out := finishWith(t, d, c.in)
-			if rec.Code != http.StatusOK || out["launcher_told"] != true {
-				t.Fatalf("code %d, want launcher_told true: %s", rec.Code, rec.Body)
+			if rec.Code != http.StatusOK || out["launcher_told"] != "queued" {
+				t.Fatalf("code %d, want launcher_told queued: %s", rec.Code, rec.Body)
 			}
 			msgs := pendingFrom(t, d, launcher.ID)
 			if len(msgs) != 1 || !msgs[0].WaitTurn || !strings.Contains(msgs[0].Text, c.want) {
@@ -115,7 +115,7 @@ func TestAnEndingResumesNoHoldNoticesLauncherAndQueuesForAnOrchestratorOne(t *te
 	launcher, _ := holdingPair(t, d, HoldNoticesTag)
 	stubCommits(t, true, false)
 	if _, out := finishWith(t, d, FinishRequest{Agent: "worker", Status: ReportBlocked, Ask: "need a token",
-		Ended: true}); out["launcher_told"] != true {
+		Ended: true}); out["launcher_told"] != "queued" {
 		t.Fatalf("out %v", out)
 	}
 	got, _ := d.st.Get(launcher.ID)
@@ -126,7 +126,7 @@ func TestAnEndingResumesNoHoldNoticesLauncherAndQueuesForAnOrchestratorOne(t *te
 	d2 := testDaemon(t)
 	l2, _ := holdingPair(t, d2, OrchestratorTag)
 	if _, out := finishWith(t, d2, FinishRequest{Agent: "worker", Status: ReportBlocked, Ask: "need a token",
-		Ended: true}); out["launcher_told"] != true {
+		Ended: true}); out["launcher_told"] != "queued" {
 		t.Fatalf("out %v", out)
 	}
 	msgs := pendingFrom(t, d2, l2.ID)
@@ -207,5 +207,56 @@ func TestAResidentDoneNeitherExitsNorRingsOnSilence(t *testing.T) {
 	}
 	if n := len(heldOn(t, d, launcher.ID)); n != 0 {
 		t.Fatalf("%d held on the launcher", n)
+	}
+}
+
+// A done queued for an idle orchestrator is typed into its terminal when the gate is open, and leaves its queue.
+func TestADoneIsTypedIntoAnIdleOrchestratorsTerminal(t *testing.T) {
+	d := testDaemon(t)
+	launcher, _ := holdingPair(t, d, OrchestratorTag)
+	r, f := typedRunner(t, d, launcher.ID)
+	stubCommits(t, true, false)
+	if err := d.st.SetStatus(launcher.ID, store.StatusNeedsInput); err != nil {
+		t.Fatal(err)
+	}
+	// Emptied and quiet past the idle window: the gate is open.
+	r.noteOperatorTyped([]byte("ls\r"))
+	r.typeMu.Lock()
+	r.lastTyped = time.Now().Add(-peerGateIdle - time.Second)
+	r.typeMu.Unlock()
+
+	rec, out := finishWith(t, d, FinishRequest{Agent: "worker", Status: ReportDone, SHA: "abc1234", Ended: true})
+	if rec.Code != http.StatusOK || out["launcher_told"] != "queued" {
+		t.Fatalf("code %d, want launcher_told queued: %s", rec.Code, rec.Body)
+	}
+	d.pending.attempt(launcher.ID)
+	got := f.written()
+	if !strings.Contains(got, "done abc1234") || !strings.HasSuffix(got, "\r") {
+		t.Fatalf("the done was not typed and submitted: %q", got)
+	}
+	if n := len(pendingFrom(t, d, launcher.ID)); n != 0 {
+		t.Fatalf("%d still pending after it was typed", n)
+	}
+	if n := len(heldOn(t, d, launcher.ID)); n != 0 {
+		t.Fatalf("%d held", n)
+	}
+}
+
+// A done queued for an orchestrator with no terminal to type into is carried by its Stop hook instead, never lost. A
+// terminal that holds it for the typist keeps it off the hooks on purpose, so this is the hook's own route.
+func TestADoneToABusyOrchestratorIsCarriedByItsStopHook(t *testing.T) {
+	d := testDaemon(t)
+	launcher, _ := holdingPair(t, d, OrchestratorTag)
+	stubCommits(t, true, false)
+
+	rec, out := finishWith(t, d, FinishRequest{Agent: "worker", Status: ReportDone, SHA: "abc1234", Ended: true})
+	if rec.Code != http.StatusOK || out["launcher_told"] != "queued" {
+		t.Fatalf("code %d, want launcher_told queued: %s", rec.Code, rec.Body)
+	}
+	if n := len(pendingFrom(t, d, launcher.ID)); n != 1 {
+		t.Fatalf("%d queued for the launcher, want 1", n)
+	}
+	if reason := stopTurn(t, d, "orchestrator"); !strings.Contains(reason, "done abc1234") {
+		t.Fatalf("the Stop hook answered %q, want it to carry the done", reason)
 	}
 }

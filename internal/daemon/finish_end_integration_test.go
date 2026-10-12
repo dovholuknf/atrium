@@ -46,7 +46,7 @@ func TestAnEndingDoneTakesACommitTheHubHasAndTellsTheLauncherWithNoNudge(t *test
 	stubCommits(t, false, true)
 	rec, out := finishWith(t, d, FinishRequest{Agent: "worker", Status: ReportDone, SHA: "abc1234",
 		Recap: "done abc1234", Ended: true})
-	if rec.Code != 200 || out["launcher_told"] != true {
+	if rec.Code != 200 || out["launcher_told"] != "queued" {
 		t.Fatalf("code %d, out %v", rec.Code, out)
 	}
 	msgs := pendingFrom(t, d, launcher.ID)

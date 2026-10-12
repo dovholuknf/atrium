@@ -319,7 +319,7 @@ func TestAReportReachesALauncherOnAnotherRoom(t *testing.T) {
 	f.set(func(RelaySay) (RelayResult, error) { return RelayResult{}, ErrRelayDown })
 
 	rec, out := finishWith(t, d, FinishRequest{Agent: "worker", Status: "progress", Recap: "half way"})
-	if rec.Code != http.StatusOK || out["launcher_told"] != true {
+	if rec.Code != http.StatusOK || out["launcher_told"] != "relayed" {
 		t.Fatalf("%d %+v", rec.Code, out)
 	}
 	settle(d)

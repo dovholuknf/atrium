@@ -203,7 +203,7 @@ func TestAReportIsNotASilentStop(t *testing.T) {
 	launcher, _ := launchedPair(t, d)
 	rec, out := finishWith(t, d, FinishRequest{Agent: "worker", Status: ReportDone,
 		NoCommit: "research only", Recap: "the matrix is written up"})
-	if rec.Code != http.StatusOK || out["launcher_told"] != true {
+	if rec.Code != http.StatusOK || out["launcher_told"] != "queued" {
 		t.Fatalf("report answered %d: %s", rec.Code, rec.Body)
 	}
 	stopTurn(t, d, "worker")

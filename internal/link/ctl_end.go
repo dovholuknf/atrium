@@ -61,8 +61,12 @@ type blockedInput struct {
 const HeldNote = "held on your launcher's card, not delivered. it reads its notices when it asks, " +
 	"so do not say it has been told."
 
-// Told is the room's launcher_told: true when the launcher was handed the report, "held" when it was kept on the
-// launcher's card for it to read, and false when nobody was told. A worker that read `true` for a held report said
+// QueuedNote is what a worker is told when its ending is in its launcher's queue and not yet typed.
+const QueuedNote = "queued for your launcher. it is typed when its turn ends. stop now."
+
+// Told is the room's launcher_told: "queued" when the report is in the launcher's queue and will be typed at its turn
+// end, "relayed" when it went to another room's launcher, "held" when it was kept on the launcher's card for it to
+// read, true as an older room answered for a queued one, and false when nobody was told. A worker that read `true` for a held report said
 // "the orchestrator has been told", and nobody had. See daemon/finish.go.
 type Told string
 
@@ -70,6 +74,9 @@ const (
 	ToldNobody Told = ""
 	ToldYes    Told = "true"
 	ToldHeld   Told = "held"
+	// ToldQueued and ToldRelayed are what finish answers now: true is never answered for a queue row.
+	ToldQueued  Told = "queued"
+	ToldRelayed Told = "relayed"
 )
 
 // UnmarshalJSON takes the bool older rooms answer as well as "held".
@@ -79,6 +86,10 @@ func (t *Told) UnmarshalJSON(b []byte) error {
 		*t = ToldYes
 	case "held":
 		*t = ToldHeld
+	case "queued":
+		*t = ToldQueued
+	case "relayed":
+		*t = ToldRelayed
 	default:
 		*t = ToldNobody
 	}
@@ -88,10 +99,11 @@ func (t *Told) UnmarshalJSON(b []byte) error {
 // Any is whether anybody was told, held or not.
 func (t Told) Any() bool { return t != ToldNobody }
 
-// Value is what a tool answers: true, false or "held".
+// Value is what a tool answers: "queued", "relayed", "held", true or false.
 func (t Told) Value() any {
-	if t == ToldHeld {
-		return "held"
+	switch t {
+	case ToldHeld, ToldQueued, ToldRelayed:
+		return string(t)
 	}
 	return t == ToldYes
 }

@@ -73,8 +73,8 @@ func TestAnFYIReportIsQueuedForTurnEndForBothTags(t *testing.T) {
 
 		rec, out := finishWith(t, d, FinishRequest{Agent: "worker", Status: ReportProgress, Kind: "fyi",
 			Recap: "the matrix is written up"})
-		if rec.Code != http.StatusOK || out["launcher_told"] != true {
-			t.Fatalf("%s: report answered %d, want launcher_told true: %s", tag, rec.Code, rec.Body)
+		if rec.Code != http.StatusOK || out["launcher_told"] != "queued" {
+			t.Fatalf("%s: report answered %d, want launcher_told queued: %s", tag, rec.Code, rec.Body)
 		}
 		msgs := pendingFrom(t, d, launcher.ID)
 		if len(msgs) != 1 || !strings.Contains(msgs[0].Text, "the matrix") || !msgs[0].WaitTurn {

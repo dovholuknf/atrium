@@ -478,9 +478,16 @@ func (d *Daemon) finish(task *store.Task, in FinishRequest) (map[string]any, int
 	// A worker with no Stop hook never records its spend otherwise. See usage.go.
 	d.recordUsage(task.ID)
 	// A report kept on the launcher's card is not a report delivered: the worker is told so, and says so.
-	var told any = res.Notice != nil || res.Relayed
+	// "queued" is a row in the launcher's queue, typed at its turn end. Never true: nothing here has landed.
+	told := any(false)
+	if res.Notice != nil {
+		told = "queued"
+	}
 	if res.Notice != nil && res.Notice.Held {
 		told = "held"
+	}
+	if res.Relayed {
+		told = "relayed"
 	}
 	if d.exitsOnReport(task, in) {
 		go d.exitAfterReport(task.ID)

@@ -1048,9 +1048,12 @@ func (c *controlMCP) endReport(ctx context.Context, req *mcp.CallToolRequest, bo
 	if res.Recorded {
 		c.followItem(ctx, room, id, fmt.Sprint(body["status"]), me)
 	}
-	if res.LauncherTold == ToldHeld {
+	switch {
+	case res.LauncherTold == ToldHeld:
 		out.Note = HeldNote
-	} else if !res.LauncherTold.Any() {
+	case res.LauncherTold == ToldQueued:
+		out.Note = QueuedNote
+	case !res.LauncherTold.Any():
 		out.Note = "recorded on your card. nobody launched you, so there was nobody else to tell."
 	}
 	return out, nil

@@ -73,7 +73,7 @@ func TestAReportFromAReportToCardReachesItsLauncher(t *testing.T) {
 	task := launchTo(t, d, "review")
 	rec, out := finishWith(t, d, FinishRequest{Agent: task.WireName, TaskID: task.ID, Status: ReportDone,
 		NoCommit: "review only", Recap: "looks fine"})
-	if rec.Code != 200 || out["launcher_told"] != true {
+	if rec.Code != 200 || out["launcher_told"] != "queued" {
 		t.Fatalf("report answered %d: %s", rec.Code, rec.Body)
 	}
 	msgs := pendingFrom(t, d, rev.ID)
@@ -155,7 +155,7 @@ func TestARelaunchedTargetIsReachedByItsAliasAndTheStoredIDIsTheFallback(t *test
 	}
 	rec, out := finishWith(t, d, FinishRequest{Agent: task.WireName, TaskID: task.ID, Status: ReportDone,
 		NoCommit: "x", Recap: "second"})
-	if rec.Code != 200 || out["launcher_told"] != true {
+	if rec.Code != 200 || out["launcher_told"] != "queued" {
 		t.Fatalf("report answered %d: %s", rec.Code, rec.Body)
 	}
 
@@ -178,7 +178,7 @@ func TestARelaunchedTargetIsReachedByItsAliasAndTheStoredIDIsTheFallback(t *test
 		t.Fatal(err)
 	}
 	if _, out := finishWith(t, d2, FinishRequest{Agent: task2.WireName, TaskID: task2.ID, Status: ReportDone,
-		NoCommit: "x", Recap: "third"}); out["launcher_told"] != true {
+		NoCommit: "x", Recap: "third"}); out["launcher_told"] != "queued" {
 		t.Fatalf("with the name gone the report was not delivered: %v", out)
 	}
 	if n := len(pendingFrom(t, d2, only.ID)); n != 1 {

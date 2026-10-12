@@ -53,7 +53,7 @@ func TestADoneReportIsReportedNotFinished(t *testing.T) {
 	if rec.Code != 200 {
 		t.Fatalf("finish answered %d: %s", rec.Code, rec.Body)
 	}
-	if out["work_state"] != store.WorkReported || out["launcher_told"] != true {
+	if out["work_state"] != store.WorkReported || out["launcher_told"] != "queued" {
 		t.Fatalf("finish said %v", out)
 	}
 	card, _ := d.st.Get(worker.ID)
@@ -77,7 +77,7 @@ func TestAReportWithNoWorkItemStillReachesTheLauncher(t *testing.T) {
 	d := testDaemon(t)
 	launcher, _ := launchedPair(t, d)
 	_, out := finishWith(t, d, FinishRequest{Agent: "worker", Status: ReportProgress, Recap: "half"})
-	if out["launcher_told"] != true || out["work_state"] != nil {
+	if out["launcher_told"] != "queued" || out["work_state"] != nil {
 		t.Fatalf("finish said %v", out)
 	}
 	if msgs := pendingFrom(t, d, launcher.ID); len(msgs) != 1 {

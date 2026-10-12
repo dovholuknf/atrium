@@ -89,8 +89,8 @@ func TestHoldNoticesTagHoldsNoticesAndReports(t *testing.T) {
 	rec, out := finishWith(t, d, FinishRequest{Agent: "worker", Status: ReportDone,
 		NoCommit: "research only", Recap: "the matrix is written up"})
 	// A report is queued for the turn end, never parked on the card. Only the silent stop is held.
-	if rec.Code != http.StatusOK || out["launcher_told"] != true {
-		t.Fatalf("report answered %d, want launcher_told true: %s", rec.Code, rec.Body)
+	if rec.Code != http.StatusOK || out["launcher_told"] != "queued" {
+		t.Fatalf("report answered %d, want launcher_told queued: %s", rec.Code, rec.Body)
 	}
 	if msgs := pendingFrom(t, d, launcher.ID); len(msgs) != 1 || !strings.Contains(msgs[0].Text, "the matrix is written up") {
 		t.Fatalf("the launcher has %+v, want the report", msgs)
@@ -108,7 +108,7 @@ func TestTheOrchestratorTagAloneStillHasReportsQueued(t *testing.T) {
 
 	rec, out := finishWith(t, d, FinishRequest{Agent: "worker", Status: ReportDone,
 		NoCommit: "research only", Recap: "the matrix is written up"})
-	if rec.Code != http.StatusOK || out["launcher_told"] != true {
+	if rec.Code != http.StatusOK || out["launcher_told"] != "queued" {
 		t.Fatalf("report answered %d: %s", rec.Code, rec.Body)
 	}
 	msgs := pendingFrom(t, d, launcher.ID)
