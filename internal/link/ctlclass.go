@@ -54,6 +54,11 @@ var workerTools = map[string]bool{
 	"atrium_alias":   true,
 	// Workers write the reports, so a worker publishes. See docs_mcp.go.
 	"atrium_publish": true,
+	// Workers hand files between rooms. See files_mcp.go.
+	"atrium_put":    true,
+	"atrium_get":    true,
+	"atrium_files":  true,
+	"atrium_export": true,
 	// The cards that push to the hub are workers. See git_hub.go.
 	"atrium_git_push": true,
 	// And the ones that read code that is not in their cwd. See git_url.go.

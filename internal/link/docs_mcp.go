@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"path"
 	"strings"
+	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
@@ -224,10 +225,18 @@ func docRoomName(room string) string {
 func (c *controlMCP) readCardFile(ctx context.Context, room string, card *ctlCard, p string, limit int64) (
 	[]byte, string, error) {
 
+	return c.readCardFileWith(ctx, c.client, controlTimeout, room, card, p, limit)
+}
+
+// readCardFileWith is readCardFile through a client and under a timeout of the caller's choosing. The file drop reads
+// up to 32 MiB over a link, which c.client cuts off at its own eight seconds.
+func (c *controlMCP) readCardFileWith(ctx context.Context, client *http.Client, timeout time.Duration, room string,
+	card *ctlCard, p string, limit int64) ([]byte, string, error) {
+
 	if card.Worktree == "" {
 		return nil, "", &docsRefusal{Status: http.StatusBadRequest, Msg: "your card has no directory to read a path from. pass content"}
 	}
-	ctx, cancel := context.WithTimeout(ctx, controlTimeout)
+	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	u := "/v1/tasks/" + url.PathEscape(card.ID) + "/files?path=" + url.QueryEscape(p)
 	hr, err := http.NewRequestWithContext(ctx, http.MethodGet, c.board+u, nil)
@@ -237,7 +246,7 @@ func (c *controlMCP) readCardFile(ctx context.Context, room string, card *ctlCar
 	if room != "" {
 		hr.Header.Set(RoomHeader, room)
 	}
-	res, err := c.client.Do(hr)
+	res, err := client.Do(hr)
 	if err != nil {
 		return nil, "", &boardError{code: http.StatusBadGateway,
 			msg: fmt.Sprintf("could not reach the board at %s: %v", c.board, err)}

@@ -59,6 +59,10 @@ going to use. Put the entry above in that file.
 | `atrium_alias` | Read or set a card's alias, the short `@name` that `atrium_say` and `atrium_peers` take. |
 | `atrium_model` | Switch a live session's model now, by typing `/model` when its line is clear. |
 | `atrium_publish` | Publish a document on the hub, with a stable `/d/<slug>` link that outlives the card. |
+| `atrium_put` | Leave a file in the hub's drop for a card on another room or the board, by path from your own card or as content. |
+| `atrium_files` | List the drop, newest first: who put each file, from which room, and when it expires. |
+| `atrium_get` | Fetch a drop file into your own card, under `.atrium/incoming/` or at a `dest` inside the card. |
+| `atrium_export` | Pull every online room's usage rows or card list into the drop in one call, with no card needed on those rooms. |
 | `atrium_backlog` | The backlog, kept on the hub, so an item filed on one room is seen on every room. |
 | `atrium_reports` | Director reports, kept on the hub, append-only and marked read once read. |
 | `atrium_deps` | Work items that wait on other work: other items, a room attached, a commit landed. |
@@ -69,11 +73,30 @@ going to use. Put the entry above in that file.
 
 A worker, a card tagged `atrium:subagent` and not a director, gets only the tools it needs to talk, report and
 push: `atrium_status`, `atrium_peers`, `atrium_say`, `atrium_report`, `atrium_task`, `atrium_alias`,
-`atrium_publish`, `atrium_git_push`, `atrium_git_url`, `atrium_ci` and `atrium_resources`. Everyone else gets them all.
+`atrium_publish`, the four file drop tools, `atrium_git_push`, `atrium_git_url`, `atrium_ci` and `atrium_resources`.
+Everyone else gets them all.
 
 `atrium control`, the stdio server for a session that does not reach the hub, carries `atrium_status`,
 `restart_atrium`, the peer tools, `atrium_git_push`, `atrium_git_url`, `atrium_ci`, and two of its own: `atrium_git_clone`, which
 returns a clone of a repository on this room and makes it if it is missing, and `atrium_open`.
+
+### The file drop
+
+`atrium_put`, `atrium_files`, `atrium_get` and `atrium_export` hand files between rooms through the hub. A put reads
+a file from your own card by `path`, through its room, or takes `content` with a `name`, and answers the name it was
+stored under: a name already taken gets a suffix, `usage-2.jsonl`, and nothing is replaced. A get writes only into your
+own card, and never into another or outside yours. Without `dest` it lands in `.atrium/incoming/`. With `dest`, a
+relative path inside the card, it makes the folders, and it will not replace a file unless `replace` is true.
+
+`atrium_export` has the hub read each online room's usage rows (`what: usage`, since a time, default 7 days) or card
+list (`what: tasks`) and store one file per room. It answers rows and never a raw database. A room that is offline or
+too old is listed under `skipped` and the rest still land.
+
+Every file in the drop is readable by every card and by anyone past the board's password, so a private file does not
+belong there. A file is kept 7 days unless `ttl_days` says up to 30, is at most 32 MiB, and a card may put 30 an hour.
+The secret checks are a speed bump: a file named like a secret, or text holding a key or token, is refused, and a
+secret in a binary format or a screenshot is not seen. The Files page on the board lists, downloads, deletes and
+uploads.
 
 ### Talking, not typing
 
