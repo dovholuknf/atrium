@@ -676,7 +676,13 @@ func (d *Daemon) tellByTyping(target *store.Task, from, text, kind string, waitT
 	// outside the markers so its grey label renders rather than arriving as
 	// literal paste text.
 	body := "\"" + text + "\""
-	if d.bracketedPasteFor(target.ID, false) {
+	banner := peerBanner(from)
+	if d.isLauncherOf(from, target) {
+		// A say from the card's own launcher is typed as keystrokes, not a paste, so the worker reads it as an
+		// instruction. See launchersay.go.
+		banner = launcherBanner(from)
+		body = launcherSayBody(target.ID, text)
+	} else if d.bracketedPasteFor(target.ID, false) {
 		body = bracketedPaste(body)
 	}
 	// injectPeer types and submits ONLY when the gate is open right now: an empty
@@ -684,7 +690,7 @@ func (d *Daemon) tellByTyping(target *store.Task, from, text, kind string, waitT
 	// and never blocks the operator's keystrokes. A closed gate writes nothing,
 	// and the caller defers the message onto the backoff. See injectPeer and
 	// pendingInjector.
-	wrote, err := run.injectPeer(peerBanner(from), body)
+	wrote, err := run.injectPeer(banner, body)
 	if err != nil || !wrote {
 		return false, ""
 	}
