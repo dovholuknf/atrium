@@ -843,6 +843,7 @@ const alerting = (() => {
   const rung = new Map();
   const RUNG_KEEP_MS = 3600000;
   const RUNG_CAP = 1000;
+  const ARRIVED_KEEP_MS = 86400000;
   const held = new Map();
   const lastActive = new Map();
   let liveWaits = new Set();
@@ -1029,6 +1030,7 @@ const alerting = (() => {
       holdWaits(fresh, describe);
       return;
     }
+    if (kind === "arrived") rememberRung(kind, fresh);
     deliver(kind, fresh, describe);
   }
 
@@ -1048,6 +1050,8 @@ const alerting = (() => {
   function rungKey(kind, i) {
     if (kind === "waiting") return bareId(i.id) + "|" + (i.waiting_since || "");
     if (kind === "looksidle") return bareId(i.id);
+    // AN ARRIVAL IS KEYED ON THE CARD ALONE. A card that leaves the list for one poll and returns is not new.
+    if (kind === "arrived") return "a:" + bareId(i.id);
     return "";
   }
   function rungHas(kind, i) {
@@ -1059,7 +1063,7 @@ const alerting = (() => {
   }
   // Every pass: what is waiting now, and which remembered waits are over.
   function trackWaits(kind, items) {
-    if (kind !== "waiting" && kind !== "looksidle") return;
+    if (kind !== "waiting" && kind !== "looksidle" && kind !== "arrived") return;
     const now = Date.now();
     const live = new Set(items.map(i => rungKey(kind, i)));
     const liveIds = new Set(items.map(i => bareId(i.task_id || i.id)));
@@ -1068,9 +1072,13 @@ const alerting = (() => {
       held.forEach((h, k) => { if (!live.has(k)) { clearTimeout(h.timer); held.delete(k); } });
     }
     live.forEach(k => { if (rung.has(k)) rung.set(k, now); });
-    const mine = k => kind === "waiting" ? k.includes("|") : !k.includes("|");
+    const mine = k => kind === "arrived" ? k.startsWith("a:")
+      : kind === "waiting" ? k.includes("|") : !k.includes("|") && !k.startsWith("a:");
     rung.forEach((at, k) => {
       if (!mine(k) || live.has(k)) return;
+      // An arrival key is kept while the card is merely absent from a poll, and dropped only after it has been
+      // gone ARRIVED_KEEP_MS. A card that was there is never "the same card in another wait".
+      if (kind === "arrived") { if (now - at > ARRIVED_KEEP_MS) rung.delete(k); return; }
       const id = k.split("|")[0];
       // The card is here under a different wait, or has been gone a while.
       if (liveIds.has(id) || now - at > RUNG_KEEP_MS) rung.delete(k);

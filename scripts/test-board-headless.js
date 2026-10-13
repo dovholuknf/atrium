@@ -18066,6 +18066,49 @@ async function readyOnceSection(browser, base) {
   }
 }
 
+// ── an arrival rings once per card, however often the card leaves the list and returns ──────────────────────
+// `rungKey` returned "" for "arrived", so a card out of the list for one poll came back fresh and "X is on the
+// board" rang again. Keyed on "a:" + bare id now, and trackWaits keeps arrival keys.
+async function arrivedOnceSection(browser, base) {
+  const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+  const page = await ctx.newPage();
+  const errors = [];
+  page.on("pageerror", e => errors.push(String(e)));
+  await page.addInitScript(() => { Document.prototype.hasFocus = () => true; });
+  try {
+    await page.goto(base, { waitUntil: "domcontentloaded" });
+    await page.waitForFunction(() => typeof alerting !== "undefined", null, { timeout: slow(15000) });
+    await page.waitForTimeout(1500);
+    const got = await page.evaluate(() => {
+      localStorage.removeItem("atrium.toastlog");
+      alerting.set({ debounce: 0, muted: true });
+      const made = new Date(Date.now() + 60000).toISOString();
+      const c = id => ({ id, task_id: id, created_at: made });
+      const say = i => ({ title: i.id + " is on the board", body: "new" });
+      const check = items => alerting.check("arrived", items, say);
+      const rings = id => toastLog().filter(e => e.title === id + " is on the board").reduce((n, e) => n + (e.n || 1), 0);
+      const out = {};
+      check([]);
+      check([c("ao-a")]);
+      out.first = rings("ao-a");
+      // Gone for one poll, back under a room prefix.
+      check([]);
+      check([c("room~ao-a")]);
+      out.flap = rings("ao-a") + rings("room~ao-a");
+      // A genuinely new card still rings.
+      check([c("ao-a"), c("ao-b")]);
+      out.fresh = rings("ao-b");
+      return out;
+    });
+    if (got.first !== 1) fail("arrivedOnce: a new card did not ring once: " + JSON.stringify(got));
+    if (got.flap !== 1) fail("arrivedOnce: a card gone one poll and back rang again: " + JSON.stringify(got));
+    if (got.fresh !== 1) fail("arrivedOnce: a genuinely new card did not ring: " + JSON.stringify(got));
+    if (errors.length) fail("arrivedOnce: the page threw: " + errors.join(" | "));
+  } finally {
+    await ctx.close();
+  }
+}
+
 // ── a window reading a card's terminal says nothing about its ready, and its quiet is pty quiet ──────────
 // A focused pop-out (or the board with the terminal attached and showing) gets no toast for its own card's
 // ready, only the log line. An unfocused one rings. Output inside the quiet delays it.
@@ -29194,7 +29237,7 @@ async function main() {
       eventDriven: eventDrivenSection, idleBudget: idleBudgetSection, pollsGone: pollsGoneSection,
       terminalTopGap: terminalTopGapSection, phoneListFit: phoneListFitSection, termListLastRow: termListLastRowSection, phoneNudge: phoneNudgeSection,
       growlStack: growlStackSection, growlActions: growlActionsSection, growlModal: growlModalSection, growlQuiet: growlQuietSection, growlAttention: growlAttentionSection, growlPhone: growlPhoneSection, mGrowl: mGrowlSection, growlPopout: growlPopoutSection, growlOff: growlOffSection, growlRemind: growlRemindSection,
-      cacheChip: cacheChipSection, mHome: mHomeSection, mCard: mCardSection, mServe: mServeSection, phoneKeyLabel: phoneKeyLabelSection, phoneKeyLit: phoneKeyLitSection, shiftMenu: shiftMenuSection, termMenu: termMenuSection, notifyCommand: notifyCommandSection, presence: presenceSection, tallPty: tallPtySection, roomsMachine: roomsMachineSection, readyOnce: readyOnceSection, readyPopout: readyPopoutSection, popoutNotify: popoutNotifySection, readyTwoWindows: readyTwoWindowsSection,
+      cacheChip: cacheChipSection, mHome: mHomeSection, mCard: mCardSection, mServe: mServeSection, phoneKeyLabel: phoneKeyLabelSection, phoneKeyLit: phoneKeyLitSection, shiftMenu: shiftMenuSection, termMenu: termMenuSection, notifyCommand: notifyCommandSection, presence: presenceSection, tallPty: tallPtySection, roomsMachine: roomsMachineSection, readyOnce: readyOnceSection, arrivedOnce: arrivedOnceSection, readyPopout: readyPopoutSection, popoutNotify: popoutNotifySection, readyTwoWindows: readyTwoWindowsSection,
       cardUrlTable: cardUrlTableSection, cardUrlClash: cardUrlClashSection, cardUrlLinks: cardUrlLinksSection, cardUrlRoom: cardUrlRoomSection, mCardUrl: (b) => mCardUrlSection(b), cardUrlNotify: cardUrlNotifySection,
       clock: clockSection,
       composeImages: composeImagesSection, composePaste: composePasteSection, mComposeImages: mComposeImagesSection,
@@ -31116,6 +31159,7 @@ async function main() {
     await unit("cacheChip", () => cacheChipSection(browser, base));
     await unit("peekLaunch", () => peekLaunchSection(browser, base));
     await unit("readyOnce", () => readyOnceSection(browser, base));
+    await unit("arrivedOnce", () => arrivedOnceSection(browser, base));
     await unit("readyPopout", () => readyPopoutSection(browser, base));
     // ── a pop-out's bell is its own: the card's switch and mute, never the board's ──
     await unit("popoutNotify", () => popoutNotifySection(browser, base));
