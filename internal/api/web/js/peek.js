@@ -364,7 +364,8 @@ function peekChatter(box, id, first, drawers) {
   let drawer = null;
   if (drawers) {
     sec.dataset.drawer = "chatter";
-    sec.dataset.label = "chatter";
+    sec.dataset.label = "messages between agents";
+    sec.dataset.help = "Messages other agent sessions sent this card, and what it sent them. Folded because they rarely need you. Your own typing is not counted.";
     peekDrawers(box);
     drawer = sec.closest(".peek-drawer");
     drawer.hidden = true;
@@ -375,7 +376,7 @@ function peekChatter(box, id, first, drawers) {
     if (!sec.querySelector(".chat-title")) {
       const t = document.createElement("div");
       t.className = "chat-title";
-      t.textContent = "chatter";
+      t.textContent = "messages between agents";
       sec.appendChild(t);
     }
     sec.querySelector(".chat-more")?.remove();
@@ -384,7 +385,7 @@ function peekChatter(box, id, first, drawers) {
     if (drawer) {
       drawer.hidden = sec.hidden;
       const n = sec.querySelectorAll(".chat-row").length;
-      drawer.querySelector(".peek-dsum").textContent = n + (n === 1 ? " say" : " says") + (page.more ? " or more" : "");
+      drawer.querySelector(".peek-dsum").textContent = n + (page.more ? " or more" : "");
     }
     if (page.more && page.says.length) {
       const more = document.createElement("button");
@@ -445,6 +446,17 @@ function peekDrawerWrap(node) {
   sum.className = "peek-dsum";
   sum.textContent = node.dataset.sum || "";
   head.append(label, sum);
+  if (node.dataset.help) {
+    // The board's usual "?" bubble. It sits in a header that toggles, so neither a click nor a key on it may.
+    const help = document.createElement("span");
+    help.className = "help";
+    help.tabIndex = 0;
+    help.dataset.tip = node.dataset.help;
+    help.textContent = "?";
+    help.addEventListener("click", e => e.stopPropagation());
+    help.addEventListener("keydown", e => e.stopPropagation());
+    head.appendChild(help);
+  }
   const body = document.createElement("div");
   body.className = "peek-dbody";
   const set = open => {
