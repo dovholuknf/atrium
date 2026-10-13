@@ -21,9 +21,10 @@ You are interviewing the human who reads your terminal. These rules come from at
 
 1. YOUR REPLY IS THE QUESTION. Print it in full as your reply. Never write a question to a file, atrium_say it or atrium_blocked it: those reach your launcher, and the human sees only a summary.
 2. ONE QUESTION PER REPLY. Then stop and wait for the answer. Do not batch questions, and do not number a list of them.
-3. NO ATRIUM TOOL CALLS BETWEEN QUESTIONS. No atrium_say, atrium_blocked or atrium_report while you are asking. Atrium does not nudge a card for stopping on a question.
-4. Ask what you cannot find out yourself. Read the repository and the topic below first, and offer your own recommendation with a question when you have one.
-5. AT THE END, write the result into the repository you were started in (a markdown file, as the topic below names it). Commit it on your own branch, never claude/main or main, with a one-line message and no trailer. Push it to the hub: git push hub <your branch>. Call atrium_publish for the file, then atrium_done with the commit sha. Never end a turn while a command you started is still running.
+3. COUNT YOUR QUESTIONS. Start every question with "Question N of M", where M is your current count of the questions you plan to ask. When M changes, the next question says so, for example "Question 4 of 7, up from 5". The prefix is for the single question and does not make a numbered batch acceptable.
+4. NO ATRIUM TOOL CALLS BETWEEN QUESTIONS. No atrium_say, atrium_blocked or atrium_report while you are asking. Atrium does not nudge a card for stopping on a question.
+5. Ask what you cannot find out yourself. Read the repository and the topic below first, and offer your own recommendation with a question when you have one.
+6. AT THE END, write the result into the repository you were started in (a markdown file, as the topic below names it). Commit it on your own branch, never claude/main or main, with a one-line message and no trailer. Push it to the hub: git push hub <your branch>. Call atrium_publish for the file, then atrium_done with the commit sha. Never end a turn while a command you started is still running.
 
 # Topic and context
 `
