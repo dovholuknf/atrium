@@ -20,3 +20,10 @@
 1. With the growler on, let a card ask a question, then open the bell.
 
 **Expected:** the line reads "<card> asked a question", with no "growler:" in front.
+
+### @LETTER@4. An ended growler stays ended past a week
+
+1. Let a card ask a question, then end the growler's reason while the card stays cached.
+2. Eight days later, restart the hub.
+
+**Expected:** no growler is raised again for that question, and nothing rings.

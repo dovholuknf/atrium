@@ -283,3 +283,36 @@ func TestGrowlRaiseIsOnceUntouchedByCardSyncAndEndsByID(t *testing.T) {
 		t.Fatalf("act on an ended question: %v", err)
 	}
 }
+
+// AN ENDED ROW STAYS WHILE ITS CARD IS CACHED (2026-10-13). A question growler ended, its card kept the same question,
+// and seven days on the prune deleted the row, so the next sync inserted the same identity as a new raise: a week-old
+// question rang a minute after a hub start, whose first tick prunes. The row is what says that spell was already told.
+func TestGrowlPruneKeepsAnEndedRowWhileItsCardIsCached(t *testing.T) {
+	s := open(t)
+	r := added(t, s, "sparta")
+	base := time.Date(2026, 10, 6, 9, 0, 0, 0, time.UTC)
+	s.clock = func() time.Time { return base }
+	if _, err := s.Announce(r.ID, []Card{{ID: "q", Status: "needs-input", Payload: []byte(`{}`)}}); err != nil {
+		t.Fatal(err)
+	}
+	q := growlFor("sparta", "q", GrowlQuestion, "1")
+	present := map[string]bool{"q": true}
+	if raised, _, err := s.GrowlSync(r.ID, cardReasons, []Growl{q}, present); err != nil || len(raised) != 1 {
+		t.Fatalf("first raise: %v %v", raised, err)
+	}
+	// Its reason ends, and the card wants the same spell again: that is not a raise.
+	_, _, _ = s.GrowlSync(r.ID, cardReasons, nil, present)
+	if raised, _, _ := s.GrowlSync(r.ID, cardReasons, []Growl{q}, present); len(raised) != 0 {
+		t.Fatalf("the same spell was raised again: %v", raised)
+	}
+	s.clock = func() time.Time { return base.Add(8 * 24 * time.Hour) }
+	if n, err := s.GrowlPrune(); err != nil || n != 0 {
+		t.Fatalf("pruned %d rows (%v) whose card is still cached", n, err)
+	}
+	if raised, _, _ := s.GrowlSync(r.ID, cardReasons, []Growl{q}, present); len(raised) != 0 {
+		t.Fatalf("a week-old spell was raised as new after the prune: %v", raised)
+	}
+	if live := liveIDs(t, s); len(live) != 0 {
+		t.Fatalf("a growler is live again: %v", live)
+	}
+}
