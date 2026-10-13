@@ -60,22 +60,26 @@ func newGitFixture(t *testing.T, hubSaysGit, roomSaysGit bool, roomHandler http.
 	t.Helper()
 	gitSlot(t)
 	root := t.TempDir()
+	fromTemplate(t, "git-fixture", root, func(t *testing.T, dir string) {
+		work := filepath.Join(dir, "work")
+		if err := os.MkdirAll(work, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		run(t, work, "init", "-q", "-b", "claude/main")
+		if err := os.WriteFile(filepath.Join(work, "a"), []byte("a"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		run(t, work, "add", "-A")
+		run(t, work, "-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false", "commit", "-q", "-m", "one")
+		bare := filepath.Join(dir, "git", "github", "o", "r.git")
+		if err := os.MkdirAll(bare, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		run(t, bare, "init", "-q", "--bare")
+		run(t, work, "push", "-q", bare, "claude/main:refs/heads/claude/main")
+	})
 	work := filepath.Join(root, "work")
-	if err := os.MkdirAll(work, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	run(t, work, "init", "-q", "-b", "claude/main")
-	if err := os.WriteFile(filepath.Join(work, "a"), []byte("a"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	run(t, work, "add", "-A")
-	run(t, work, "-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false", "commit", "-q", "-m", "one")
 	bare := filepath.Join(root, "git", "github", "o", "r.git")
-	if err := os.MkdirAll(bare, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	run(t, bare, "init", "-q", "--bare")
-	run(t, work, "push", "-q", bare, "claude/main:refs/heads/claude/main")
 
 	hub := NewHub(Timings{Beat: 200 * time.Millisecond, Silence: time.Second, Warm: 1})
 	if hubSaysGit {

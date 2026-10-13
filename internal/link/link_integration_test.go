@@ -80,6 +80,9 @@ var gitSlots = make(chan struct{}, 4)
 // A test that builds two rigs calls it twice and is let through the second time.
 func gitSlot(t *testing.T) {
 	t.Helper()
+	if testing.Short() {
+		t.Skip("slow: builds a git fixture; runs in the full set, not under -short")
+	}
 	if _, again := slotted.LoadOrStore(t, true); again {
 		return
 	}

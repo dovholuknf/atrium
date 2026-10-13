@@ -63,7 +63,14 @@ type crRig struct {
 
 func newCRRig(t *testing.T) *crRig {
 	t.Helper()
-	x := &crRig{pushFix: newPushFix(t), rp: newRelayPair(t), audit: &crAudit{}, roomTips: map[string]string{}}
+	x := &crRig{pushFix: newPushFixFrom(t, "cr-work", func(t *testing.T, dir string) {
+		w := &pushFix{work: dir}
+		gitRun(t, dir, "init", "-q", "-b", "main")
+		w.commit(t, "base.txt", "base")
+		for _, n := range []string{"one", "two", "three"} {
+			w.commit(t, n+".txt", n)
+		}
+	}), rp: newRelayPair(t), audit: &crAudit{}, roomTips: map[string]string{}}
 	t.Cleanup(x.rp.stop)
 	x.repo(t, boardRepo)
 	dir, err := x.g.Store().Path(boardRepo)
@@ -71,10 +78,7 @@ func newCRRig(t *testing.T) *crRig {
 		t.Fatal(err)
 	}
 	x.dir = dir
-	x.c = []string{gitRun(t, x.work, "rev-parse", "HEAD")}
-	for _, n := range []string{"one", "two", "three"} {
-		x.c = append(x.c, x.commit(t, n+".txt", n))
-	}
+	x.c = strings.Fields(gitRun(t, x.work, "rev-list", "--reverse", "HEAD"))
 	st, err := hubstore.Open(filepath.Join(t.TempDir(), "hub.db"))
 	if err != nil {
 		t.Fatal(err)
