@@ -47,8 +47,23 @@
     const mode = own.mode !== undefined ? own.mode : shared.mode;
     const groups = mode === "custom" && Array.isArray(shared.groups) ? shared.groups : [];
     const mine = t.tags || [];
-    return { all: groups, inside: groups.filter(g => mine.indexOf(g) >= 0), tags: mine };
+    return { custom: mode === "custom", all: groups, inside: groups.filter(g => mine.indexOf(g) >= 0), tags: mine,
+      made: shared.made || {} };
   }
+
+  // Makes a group, as the board's `createGroupFor` does, and files the card in it. A name already a group only files the card.
+  function createGroup(id, g, raw) {
+    const name = groupNameOf(raw);
+    if (!name) return Promise.resolve();
+    if (g.all.indexOf(name) < 0) {
+      const shared = readKey("atrium.grouping");
+      shared.groups = (Array.isArray(shared.groups) ? shared.groups : []).concat(name);
+      shared.made = Object.assign({}, shared.made, { [name]: Date.now() });
+      try { localStorage.setItem("atrium.grouping", JSON.stringify(shared)); } catch (e) {}
+    }
+    return g.tags.indexOf(name) >= 0 ? Promise.resolve() : patch(id, { tags: g.tags.concat(name) });
+  }
+  const tagOf = (g, name) => groupIsNew(name, g.made) ? "new" : "";
 
   function items(id, t) {
     const over = ["done", "dead", "shelved"].indexOf(t.status) >= 0;
@@ -72,16 +87,17 @@
         help: "Has the agent commit, write a handoff note, clear its context, then carry on from the note.",
         act: () => post(id, "new-context").then(done)
       } : null,
-      g.all.length ? {
+      g.custom ? {
         label: "add to group",
         help: "Files this card into one of your named groups.",
-        pick: g.all.map(name => ({ label: name, on: g.tags.indexOf(name) >= 0,
+        pick: groupMenuNames(g.all).map(name => ({ label: name, tag: tagOf(g, name), on: g.tags.indexOf(name) >= 0,
           act: () => patch(id, { tags: g.tags.indexOf(name) >= 0 ? g.tags.filter(x => x !== name) : g.tags.concat(name) }).then(done) }))
+          .concat({ label: "create group...", create: true, act: name => createGroup(id, g, name).then(done) })
       } : null,
       g.inside.length ? {
         label: "remove from group",
         help: "Takes the card out of its group. Nothing else about it changes.",
-        pick: g.inside.length > 1 ? g.inside.map(name => ({ label: name, act: () => patch(id, { tags: g.tags.filter(x => x !== name) }).then(done) })) : null,
+        pick: g.inside.length > 1 ? groupMenuNames(g.inside).map(name => ({ label: name, tag: tagOf(g, name), act: () => patch(id, { tags: g.tags.filter(x => x !== name) }).then(done) })) : null,
         act: () => patch(id, { tags: g.tags.filter(x => x !== g.inside[0]) }).then(done)
       } : null,
       { sep: true },
@@ -162,7 +178,12 @@
         return;
       }
       const pick = e.target.closest("[data-pick]");
-      if (pick) { const it = current[Number(pick.dataset.i)].pick[Number(pick.dataset.j)]; close(); it.act(); return; }
+      if (pick) {
+        const it = current[Number(pick.dataset.i)].pick[Number(pick.dataset.j)];
+        if (it.create) { askName(pick, it); return; }
+        close(); it.act(); return;
+      }
+      if (e.target.closest(".rmenu-newgroup")) return;
       const b = e.target.closest("[data-i]");
       if (!b || b.disabled) return;
       const it = current[Number(b.dataset.i)];
@@ -177,6 +198,26 @@
   }
 
   let current = [];
+
+  // "create group..." turns into a name field in place. Enter makes the group and files the card, Esc or "cancel" puts the entry back.
+  function askName(btn, it) {
+    const form = document.createElement("form");
+    form.className = "rmenu-newgroup";
+    form.innerHTML = '<input type="text" class="rmenu-name-in" aria-label="group name" placeholder="group name" autocapitalize="none" autocomplete="off">' +
+      '<button type="submit" class="rmenu-item">create</button><button type="button" class="rmenu-item rmenu-nocreate">cancel</button>';
+    const input = form.querySelector("input");
+    const back = () => { form.replaceWith(btn); };
+    form.addEventListener("submit", e => {
+      e.preventDefault();
+      const name = input.value;
+      if (!groupNameOf(name)) { input.focus(); return; }
+      close(); Promise.resolve(it.act(name)).catch(err => openSheet(openFor, String(err && err.message || err)));
+    });
+    form.querySelector(".rmenu-nocreate").addEventListener("click", back);
+    input.addEventListener("keydown", e => { if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); back(); } });
+    btn.replaceWith(form);
+    input.focus();
+  }
 
   function open(id) { openSheet(id, ""); }
 
@@ -196,7 +237,7 @@
         '</button><button type="button" class="rmenu-q" aria-label="what is ' + esc(it.label) + '?">?</button></div>' +
         '<p class="rmenu-help" hidden>' + esc(it.help || "") + (it.off ? " It cannot be resumed: " + esc(it.off) + "." : "") + "</p>" +
         (it.pick ? '<div class="rmenu-picks" data-i="' + i + '" hidden>' + it.pick.map((p, j) =>
-          '<button type="button" class="rmenu-item sub' + (p.on ? " on" : "") + '" data-pick="1" data-i="' + i + '" data-j="' + j + '">' + esc(p.label) + "</button>").join("") + "</div>" : "");
+          '<button type="button" class="rmenu-item sub' + (p.on ? " on" : "") + '" data-pick="1" data-i="' + i + '" data-j="' + j + '">' + esc(p.label) + (p.tag ? ' <span class="newtag">' + esc(p.tag) + "</span>" : "") + "</button>").join("") + "</div>" : "");
     }).join("");
     sheet.innerHTML = '<div class="rmenu-back" data-close="1"></div>' +
       '<div class="rmenu-box" role="dialog" aria-label="card actions"><p class="rmenu-name"></p>' + rows +

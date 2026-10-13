@@ -16694,6 +16694,220 @@ async function shiftMenuSection(browser, base) {
   if (errors.length) fail("shiftMenu: the page threw: " + errors.join(" | "));
 }
 
+// ── group menus (u-010, u-012) ────────────────────────────────────────────
+// "add to group" ends in "create group...", which asks for a name and makes the group and files the card in one step; Esc
+// makes nothing; a name that is already a group only files the card. Both group submenus list names A to Z, and a group made
+// in the last ten minutes wears "new" and stops wearing it after. `GROUP_MENUS_SHOTS=<dir> GROUP_MENUS_TAG=before|after`.
+async function groupMenusSection(browser, base) {
+  const was = tasksMode;
+  tasksMode = "land";
+  landCard("land-gm-a", { supervised: true, status: "running", tags: [], created_at: "2026-09-19T12:00:00Z" });
+  landCard("land-gm-b", { supervised: true, status: "running", tags: [], created_at: "2026-09-19T12:01:00Z" });
+  landList = [LAND["land-gm-a"], LAND["land-gm-b"]];
+  landPerms = [];
+  const errors = [];
+  const shots = process.env.GROUP_MENUS_SHOTS, shotTag = process.env.GROUP_MENUS_TAG || "after";
+  try {
+    const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+    await ctx.addInitScript(() => {
+      if (localStorage.getItem("gm-seeded")) return;
+      localStorage.setItem("gm-seeded", "1");
+      const min = 60 * 1000;
+      localStorage.setItem("atrium.grouping", JSON.stringify({ mode: "custom", groups: ["prs", "active", "orchestrators", "discourse", "atrium:subagent"],
+        made: { discourse: Date.now() - 3 * min, prs: Date.now() - 30 * min } }));
+      localStorage.setItem("atrium.grouping.terms", JSON.stringify({ on: true, mode: "custom" }));
+    });
+    const patches = [];
+    await ctx.route("**/v1/tasks/*", route => {
+      const r = route.request();
+      if (r.method() !== "PATCH") return route.fallback();
+      const id = decodeURIComponent(new URL(r.url()).pathname.split("/").pop());
+      const body = JSON.parse(r.postData() || "{}");
+      patches.push(id + " " + r.postData());
+      if (LAND[id]) Object.assign(LAND[id], body);
+      return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(LAND[id] || {}) });
+    });
+    const p = await ctx.newPage();
+    p.on("pageerror", e => errors.push(String(e)));
+    await p.goto(base, { waitUntil: "domcontentloaded" });
+    await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
+    await p.evaluate(() => switchView("terms"));
+    const row = id => '#term-list [oncontextmenu*="' + id + '"]';
+    await p.waitForSelector(row("land-gm-a"), { timeout: slow(10000) });
+    const groupsNow = () => p.evaluate(() => JSON.parse(localStorage.getItem("atrium.grouping")).groups);
+    // Open the card menu and its flyout, and read the flyout: the labels, and which of them wear "new".
+    const flyout = async (id, label) => {
+      await p.evaluate(i => document.querySelector('#term-list [oncontextmenu*="' + i + '"]')
+        .dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: 70, clientY: 90 })), id);
+      await p.waitForSelector("#cardmenu.on > button", { timeout: slow(5000) });
+      const btn = p.locator("#cardmenu > button", { hasText: label }).first();
+      if (!await btn.count()) return null;
+      await btn.hover();
+      await p.waitForSelector("#cardmenu button.subopen .subitem", { state: "visible", timeout: slow(3000) }).catch(() => {});
+      return p.evaluate(() => [...document.querySelectorAll("#cardmenu button.subopen .subitem")].map(s => ({
+        label: s.firstChild.textContent.trim(), tag: (s.querySelector(".newtag") || {}).textContent || "" })));
+    };
+    const shut = () => p.keyboard.press("Escape");
+
+    // A to Z, "new" on the group made three minutes ago and not on the one made thirty, "create group..." last.
+    let fly = await flyout("land-gm-a", "add to group");
+    if (shots) { fs.mkdirSync(shots, { recursive: true }); await p.screenshot({ path: path.join(shots, shotTag + "-desktop-add.png") }); }
+    if (!fly) return fail("groupMenus: the card menu has no \"add to group\"");
+    const names = fly.map(f => f.label);
+    if (names.join("|") !== "active|atrium:subagent|discourse|orchestrators|prs|create group...") fail("groupMenus: the add to group list is " + JSON.stringify(names));
+    const tags = fly.filter(f => f.tag).map(f => f.label + ":" + f.tag);
+    if (tags.join() !== "discourse:new") fail("groupMenus: the new tags are " + JSON.stringify(tags));
+    await shut();
+
+    // Esc makes nothing.
+    await flyout("land-gm-a", "add to group");
+    await p.locator("#cardmenu .subitem", { hasText: "create group..." }).click();
+    await p.locator("dialog[open] #ask-input").waitFor({ state: "visible", timeout: slow(5000) });
+    await p.locator("dialog[open] #ask-input").fill("nope");
+    await p.keyboard.press("Escape");
+    await p.waitForTimeout(300);
+    if ((await groupsNow()).includes("nope") || patches.length) fail("groupMenus: Esc still made a group: " + JSON.stringify([await groupsNow(), patches]));
+
+    // Create: the group exists, the card is in it, and it is still there after a reload.
+    await flyout("land-gm-a", "add to group");
+    await p.locator("#cardmenu .subitem", { hasText: "create group..." }).click();
+    await p.locator("dialog[open] #ask-input").fill("  Zeta ");
+    await p.locator("dialog[open] button", { hasText: /^ok$/ }).click();
+    await p.waitForFunction(() => JSON.parse(localStorage.getItem("atrium.grouping")).groups.includes("zeta"), null, { timeout: slow(5000) })
+      .catch(() => fail("groupMenus: create group... did not make the group zeta"));
+    if (!patches.some(x => /^land-gm-a /.test(x) && /"zeta"/.test(x))) fail("groupMenus: the card was not filed into zeta: " + JSON.stringify(patches));
+    const under = () => p.evaluate(() => {
+      const h = document.querySelector('#term-list .tgroup[data-ghead="zeta"]');
+      if (!h) return "";
+      const folded = JSON.parse(localStorage.getItem("atrium.termfolded") || "[]");
+      return folded.length ? "folded" : (document.querySelector('#term-list [oncontextmenu*="land-gm-a"]') ? "zeta" : "empty");
+    });
+    await p.waitForFunction(() => !!document.querySelector('#term-list .tgroup[data-ghead="zeta"]'), null, { timeout: slow(8000) })
+      .catch(() => fail("groupMenus: the new group is not drawn on the terminals tab"));
+    await p.reload({ waitUntil: "domcontentloaded" });
+    await p.evaluate(() => switchView("terms"));
+    await p.waitForSelector('#term-list .tgroup[data-ghead="zeta"]', { timeout: slow(10000) })
+      .catch(() => fail("groupMenus: the new group did not survive a reload"));
+    if (!(await groupsNow()).includes("zeta") || !LAND["land-gm-a"].tags.includes("zeta")) fail("groupMenus: zeta or the card's tag is gone after the reload");
+    if (await under() === "empty") fail("groupMenus: the card is not under zeta after the reload");
+
+    // The new one is "new", and sorted in. Remove from group lists A to Z too, with the same tag.
+    LAND["land-gm-b"].tags = ["prs", "zeta", "discourse"];
+    await p.evaluate(() => refresh());
+    await p.waitForTimeout(500);
+    fly = await flyout("land-gm-b", "remove from group");
+    if (shots) await p.screenshot({ path: path.join(shots, shotTag + "-desktop-remove.png") });
+    if (!fly) fail("groupMenus: no \"remove from group\" on a card in three groups");
+    else {
+      if (fly.map(f => f.label).join() !== "discourse,prs,zeta") fail("groupMenus: remove from group is " + JSON.stringify(fly));
+      if (fly.filter(f => f.tag).map(f => f.label).join() !== "discourse,zeta") fail("groupMenus: remove from group's new tags are " + JSON.stringify(fly));
+    }
+    await shut();
+
+    // An existing name (any case) files the card there and makes no second group.
+    const before = (await groupsNow()).length;
+    await flyout("land-gm-b", "add to group");
+    await p.locator("#cardmenu .subitem", { hasText: "create group..." }).click();
+    await p.locator("dialog[open] #ask-input").fill("ACTIVE");
+    await p.locator("dialog[open] button", { hasText: /^ok$/ }).click();
+    await p.waitForFunction(() => true);
+    await p.waitForTimeout(500);
+    const after = await groupsNow();
+    if (after.length !== before || after.filter(n => n === "active").length !== 1) fail("groupMenus: an existing name made a duplicate: " + JSON.stringify(after));
+    if (!LAND["land-gm-b"].tags.includes("active")) fail("groupMenus: an existing name did not file the card: " + JSON.stringify(LAND["land-gm-b"].tags));
+
+    // Eleven minutes on, discourse and zeta are no longer new. The clock is the page's Date.now.
+    await p.evaluate(() => { const real = Date.now.bind(Date); Date.now = () => real() + 11 * 60 * 1000; });
+    fly = await flyout("land-gm-a", "add to group");
+    if (fly && fly.some(f => f.tag)) fail("groupMenus: \"new\" is still shown eleven minutes later: " + JSON.stringify(fly.filter(f => f.tag)));
+    await shut();
+    // And before the ten minutes are up, still new: nine minutes after the make.
+    await p.evaluate(() => { const real = Date.now.bind(Date); Date.now = () => real() - 2 * 60 * 1000; });
+    fly = await flyout("land-gm-a", "add to group");
+    if (!fly || !fly.some(f => f.label === "zeta" && f.tag === "new")) fail("groupMenus: zeta is not new nine minutes after it was made: " + JSON.stringify(fly));
+    await shut();
+    await ctx.close();
+  } finally {
+    tasksMode = was;
+  }
+  if (errors.length) fail("groupMenus: the page threw: " + errors.join(" | "));
+  if (!bad) console.log("groupMenus ok");
+}
+
+// The same on the phone sheet: A to Z with the "new" tag, "create group..." as a name field in place, Enter makes it and files
+// the card, Esc puts the entry back.
+async function mGroupMenusSection(browser) {
+  const tag = "mGroupMenus: ";
+  const st = mServer({});
+  st.tasks = [mCard("gm-1", { alias: "big conversation", display_title: "big conversation", supervised: true, tags: ["prs"] })];
+  st.patches = [];
+  await st.open();
+  const shots = process.env.GROUP_MENUS_SHOTS, shotTag = process.env.GROUP_MENUS_TAG || "after";
+  try {
+    const { ctx, p, errors } = await mPage(browser, st, M_VIEWS[0], "");
+    await p.evaluate(() => {
+      localStorage.setItem("atrium.grouping", JSON.stringify({ mode: "custom", groups: ["prs", "active", "orchestrators", "discourse"],
+        made: { discourse: Date.now() - 3 * 60 * 1000, prs: Date.now() - 30 * 60 * 1000 } }));
+    });
+    await p.tap("#m-seg-all");
+    const sel = '#m-list .row[data-id="gm-1"]';
+    await p.waitForSelector(sel, { timeout: slow(10000) });
+    const sheetOpen = () => p.evaluate(() => { const e = document.getElementById("m-rmenu"); return !!e && !e.hidden; });
+    const longPress = () => p.evaluate(() => {
+      const el = document.querySelector('#m-list .row[data-id="gm-1"]'), r = el.getBoundingClientRect();
+      const ev = type => el.dispatchEvent(new PointerEvent(type, { bubbles: true, pointerType: "touch", clientX: r.left + 40, clientY: r.top + 30, isPrimary: true }));
+      ev("pointerdown");
+      return new Promise(res => setTimeout(() => { ev("pointerup"); res(); }, 800));
+    });
+    const openAdd = async () => {
+      await longPress();
+      await p.waitForFunction(() => { const e = document.getElementById("m-rmenu"); return e && !e.hidden; }, null, { timeout: slow(5000) });
+      await p.locator("#m-rmenu .rmenu-item", { hasText: "add to group" }).tap();
+    };
+    await openAdd();
+    const read = () => p.evaluate(() => [...document.querySelectorAll('#m-rmenu .rmenu-picks[data-i] [data-pick]')].filter(b => b.offsetParent).map(b => ({
+      label: b.firstChild.textContent.trim(), tag: (b.querySelector(".newtag") || {}).textContent || "" })));
+    const got = await read();
+    if (shots) { fs.mkdirSync(shots, { recursive: true }); await p.waitForTimeout(300); await p.screenshot({ path: path.join(shots, shotTag + "-phone-add.png") }); }
+    if (got.map(g => g.label).join("|") !== "active|discourse|orchestrators|prs|create group...") fail(tag + "the add to group sheet lists " + JSON.stringify(got));
+    if (got.filter(g => g.tag).map(g => g.label).join() !== "discourse") fail(tag + "the new tags are " + JSON.stringify(got));
+    // Esc puts the entry back and makes nothing.
+    await p.locator("#m-rmenu [data-pick]", { hasText: "create group..." }).tap();
+    await p.locator("#m-rmenu .rmenu-name-in").fill("nope");
+    await p.keyboard.press("Escape");
+    if (await p.locator("#m-rmenu .rmenu-name-in").count() || !await p.locator("#m-rmenu [data-pick]", { hasText: "create group..." }).count()) fail(tag + "Esc did not put create group... back");
+    if (!await sheetOpen()) fail(tag + "Esc closed the sheet");
+    if (st.patches.length) fail(tag + "Esc still patched: " + JSON.stringify(st.patches));
+    // Enter makes it.
+    await p.locator("#m-rmenu [data-pick]", { hasText: "create group..." }).tap();
+    await p.locator("#m-rmenu .rmenu-name-in").fill(" Zeta ");
+    if (shots) await p.screenshot({ path: path.join(shots, shotTag + "-phone-create.png") });
+    await p.keyboard.press("Enter");
+    await p.waitForFunction(() => JSON.parse(localStorage.getItem("atrium.grouping")).groups.includes("zeta"), null, { timeout: slow(5000) })
+      .catch(() => fail(tag + "the group was not made"));
+    await p.waitForTimeout(400);
+    if (!st.patches.some(x => /gm-1/.test(x) && /"prs","zeta"/.test(x))) fail(tag + "the card was not filed into zeta: " + JSON.stringify(st.patches));
+    const made = await p.evaluate(() => JSON.parse(localStorage.getItem("atrium.grouping")).made.zeta);
+    if (!(Date.now() - made < 60000)) fail(tag + "no creation time on zeta");
+    // After a reload the group is still there, and the sheet lists it as new, after the clock moves on it is not.
+    await p.reload({ waitUntil: "domcontentloaded" });
+    await p.tap("#m-seg-all");
+    await p.waitForSelector(sel, { timeout: slow(10000) });
+    await openAdd();
+    const again = await read();
+    if (!again.some(g => g.label === "zeta" && g.tag === "new")) fail(tag + "zeta is not new after the reload: " + JSON.stringify(again));
+    await p.evaluate(() => { const real = Date.now.bind(Date); Date.now = () => real() + 11 * 60 * 1000; });
+    await p.tap("#m-rmenu .rmenu-x");
+    await openAdd();
+    if ((await read()).some(g => g.tag)) fail(tag + "\"new\" is still shown eleven minutes later");
+    if (errors.length) fail(tag + "the page threw: " + errors.join(" | "));
+    await ctx.close();
+  } finally {
+    await st.close();
+  }
+  if (!bad) console.log("mGroupMenus ok");
+}
+
 // ── the terminals tab menu (card-menu) ────────────────────────────────────
 // Right click a row. The menu is what clint settled in docs/interviews/INTERVIEW-card-menu-2026-10-09.md: restart,
 // resume (stopped only), new context, then settings, then stop and terminate and clean up. Every item has its (?), none
@@ -28495,6 +28709,7 @@ async function main() {
       coverPoll: coverPollSection, coverSteps: coverStepsSection, termBox: termBoxSection, termRowBleed: termRowBleedSection,
       termDebug: termDebugSection, termDebugPerCard: termDebugPerCardSection, termLag: termLagSection, termHiddenRedraw: termHiddenRedrawSection, termLastRead: termLastReadSection, termSortStarted: termSortStartedSection,
       noReadyChildren: noReadyChildrenSection, childUnderParent: childUnderParentSection, topNav: topNavSection, boardUsage: boardUsageSection, tabsOrder: tabsOrderSection,
+      groupMenus: groupMenusSection, mGroupMenus: mGroupMenusSection,
       u002: u002Section, childFold: childFoldSection, liveHome: liveHomeSection, toastsTop: toastsTopSection, groupBridge: groupBridgeSection, revealFolds: revealFoldsSection,
       pulls: pullsSection, prMove: prMoveSection, quickPaste: quickPasteSection, recogniserRepo: recogniserRepoSection, hubRepos: hubReposSection, hubReposShelf: hubReposShelfSection, hubReposLedger: hubReposLedgerSection, hubReposFeed: hubReposFeedSection, changeReq: changeReqSection, mChangeReq: mChangeReqSection, trayHead: trayHeadSection, pullsAbsent: pullsAbsentSection, pullsPanelStage: pullsPanelStageSection, oneTooltip: oneTooltipSection, burnChart: burnChartSection, burnReadout: burnReadoutSection, switchPrewarm: switchPrewarmSection, attachAtOnce: attachAtOnceSection, fileView: fileViewSection, keepAlive: keepAliveSection, switchBackCost: switchBackCostSection, keepMemory: keepMemorySection, pullsDrawer: pullsDrawerSection };
     try {
@@ -30484,6 +30699,8 @@ async function main() {
     await unit("switcherRank", () => switcherRankSection(browser, base));
     await unit("revealFolds", () => revealFoldsSection(browser, base));
     await unit("groupBridge", () => groupBridgeSection(browser, base));
+    await unit("groupMenus", () => groupMenusSection(browser, base));
+    await unit("mGroupMenus", () => mGroupMenusSection(browser));
     await unit("docsPage", () => docsPageSection(browser, base));
     await unit("phoneBoardCompact", () => phoneBoardCompactSection(browser, base));
     await unit("phoneBell", () => phoneBellSection(browser, base));
@@ -30846,6 +31063,19 @@ function mServer(state) {
       const chunks = [];
       req.on("data", c => chunks.push(c));
       req.on("end", () => state.docsApi(req, res, u, p, json, Buffer.concat(chunks)));
+      return;
+    }
+    const pm = p.match(/^\/v1\/tasks\/([^/]+)$/);
+    if (pm && req.method === "PATCH") {
+      const chunks = [];
+      req.on("data", c => chunks.push(c));
+      req.on("end", () => {
+        const body = JSON.parse(Buffer.concat(chunks).toString() || "{}");
+        (state.patches = state.patches || []).push(decodeURIComponent(pm[1]) + " " + JSON.stringify(body));
+        const t = state.tasks.find(x => x.id === decodeURIComponent(pm[1]));
+        if (t) Object.assign(t, body);
+        json(200, t || {});
+      });
       return;
     }
     const m = p.match(/^\/v1\/tasks\/([^/]+)\/replies$/);
