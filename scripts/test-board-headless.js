@@ -22728,7 +22728,7 @@ async function joinedLiveSection(browser, base) {
     const s = await p.evaluate(async () => {
       const card = (id, status, extra) => ({ id, status, supervised: false, pinned: false, title: id,
         display_title: id, tags: [], ...extra });
-      const cards = [card("jl", "needs-input"), card("xd", "done"), card("pk2", "needs-input", { parked_at: "2026-09-30T10:00:00Z" }),
+      const cards = [card("jl", "needs-input", { pid: 4242 }), card("xd", "done"), card("pk2", "needs-input", { parked_at: "2026-09-30T10:00:00Z" }),
         card("sv", "running", { supervised: true })];
       boardCards = async () => cards;
       const row = id => document.querySelector('#term-list .card.tab[data-id="' + id + '"]');
