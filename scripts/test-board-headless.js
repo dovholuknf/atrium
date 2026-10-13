@@ -7823,6 +7823,49 @@ async function heldLineSection(browser, base) {
       await ctx.close();
     }
     if (errors.length) fail("heldLine threw: " + errors.join(" | "));
+
+    // u-013: hover the chip, "Let it through" copies the line and asks the room to do the four steps. The room is a
+    // fake here: /typing says what it reads and /let-through is recorded, so what the BOARD does is what is checked.
+    // The room's own four steps are checked against a fake terminal in letthrough_integration_test.go.
+    for (const exact of [true, false]) {
+      const tag = "letThrough" + (exact ? "" : " (unreadable line)") + ": ";
+      const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+      await ctx.addInitScript(() => localStorage.setItem("atrium.skipconfirm", JSON.stringify({ "width-floor": true })));
+      await ctx.addInitScript(fakeSock);
+      await ctx.addInitScript(() => {
+        window.__clip = [];
+        Object.defineProperty(navigator, "clipboard", { value: { writeText: async (t) => { window.__clip.push(t); } }, configurable: true });
+      });
+      const p = await open(ctx);
+      const calls = [];
+      await p.route("**/v1/tasks/land-live/typing", r => r.fulfill({ contentType: "application/json",
+        body: JSON.stringify({ line: "fix the\nthing", count: 13, open: false, exact }) }));
+      await p.route("**/v1/tasks/land-live/let-through", r => {
+        calls.push(JSON.parse(r.request().postData() || "{}"));
+        r.fulfill({ contentType: "application/json", body: JSON.stringify({ delivered: 2, restored: true }) });
+      });
+      await setAct(p, { held_peer: true, held_for: "line", held_count: 2 });
+      const menu = () => p.evaluate(() => getComputedStyle(document.querySelector("#t-heldline .hl-menu")).display);
+      if (await menu() !== "none") fail(tag + "the menu is open before the chip is hovered");
+      await p.hover("#t-heldline .hl-text");
+      if (await menu() === "none") fail(tag + "hovering the chip did not open the menu");
+      const item = await p.textContent("#t-heldline .hl-item");
+      if (item.trim() !== "Let it through") fail(tag + "menu item reads " + JSON.stringify(item));
+      await p.click("#t-heldline .hl-item");
+      await p.waitForFunction(() => window.__clip.length > 0, null, { timeout: slow(5000) }).catch(() => {});
+      const clip = await p.evaluate(() => window.__clip);
+      if (clip.length !== 1 || clip[0] !== "fix the\nthing") fail(tag + "the line was not copied: " + JSON.stringify(clip));
+      if (exact) {
+        for (let i = 0; i < 50 && !calls.length; i++) await p.waitForTimeout(100);
+        if (calls.length !== 1 || calls[0].line !== "fix the\nthing") fail(tag + "the room was not asked: " + JSON.stringify(calls));
+      } else {
+        await p.waitForFunction(() => /your text is on the clipboard/.test(document.getElementById("toasts").textContent),
+          null, { timeout: slow(5000) }).catch(() => fail(tag + "no clipboard toast"));
+        if (calls.length) fail(tag + "asked the room to retype a line atrium cannot read");
+      }
+      await ctx.close();
+    }
+    if (errors.length) fail("letThrough threw: " + errors.join(" | "));
   } finally {
     tasksMode = was;
   }

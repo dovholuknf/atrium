@@ -160,6 +160,9 @@ type Server struct {
 	// terminal and whether the peer gate is open, for the board's typing
 	// readout.
 	TypingState http.HandlerFunc
+	// LetThrough is the operator's "let it through" on the held messages chip: clear the typed line, deliver what is
+	// waiting, type the line back. See internal/daemon/letthrough.go.
+	LetThrough http.HandlerFunc
 	// DismissAsks takes every outstanding question off a card without telling
 	// the session anything.
 	//
@@ -726,6 +729,9 @@ func (s *Server) Handler() http.Handler {
 	// Polled by the board only while its typing readout is switched on.
 	if s.TypingState != nil {
 		mux.HandleFunc("GET /v1/tasks/{id}/typing", s.TypingState)
+	}
+	if s.LetThrough != nil {
+		mux.HandleFunc("POST /v1/tasks/{id}/let-through", s.LetThrough)
 	}
 	if s.OpenShell != nil {
 		mux.HandleFunc("POST /v1/tasks/{id}/shell", s.OpenShell)

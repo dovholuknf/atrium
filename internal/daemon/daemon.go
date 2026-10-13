@@ -464,6 +464,7 @@ func newWith(opts Options, tune func(*hooks)) (*Daemon, error) {
 	d.ap.RawScrollback = d.handleRawScrollback
 	d.ap.TextScrollback = d.handleTextScrollback
 	d.ap.TypingState = d.handleTypingState
+	d.ap.LetThrough = d.handleLetThrough
 	d.ap.DismissAsks = d.handleDismissAsks
 	d.ap.Message = d.handleMessage
 	d.ap.Say = d.handleSay
