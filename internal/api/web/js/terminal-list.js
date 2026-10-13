@@ -170,12 +170,15 @@ prefLive([TERM_SHOW_KEY + "*"], () => { paintTermShow(); renderTermList(); });
 //   `gone`    a closed card with no session. Nothing to resume, listed only while it is the attached one.
 //   `shelved` stopped. Behind the shelved chip.
 //   `live`    a runner is up, or it was joined from the operator's own terminal. Always listed.
+//   `parked`  idle-parked: no process, the conversation kept. Always listed, grey, with a resume on the row. Parking
+//             frees the process, it does not take the card off the list of terminals.
 //   `dead`    pinned, with its runner gone. Behind the dead chip.
 //   ``        not a row of the list.
 function termRowKind(t) {
   if (termClosedGone(t)) return "gone";
   if (t.status === "shelved") return "shelved";
   if (t.supervised || termJoined(t)) return "live";
+  if (t.parked_at) return "parked";
   if (t.pinned) return "dead";
   return "";
 }
@@ -258,6 +261,13 @@ function termKept(t, show) {
   if (!termTask || t.id !== termTask.id) return false;
   const k = termRowKind(t);
   return k === "gone" || (k === "shelved" && !show.has("shelved")) || (k === "dead" && !show.has("dead"));
+}
+
+// Whether the list holds this card at all, given the chips. Live and parked rows always, the rest by their chip.
+function termListed(t, show) {
+  const k = termRowKind(t);
+  return k === "live" || k === "parked" || (k !== "" && (termKept(t, show) || (k === "shelved" && show.has("shelved")) ||
+    (k === "dead" && show.has("dead"))));
 }
 
 // ── the sort, and the gear's copy of it ──────────────────────────────────────
@@ -1093,13 +1103,14 @@ function termRow(t, deep, kid) {
            // the session again where it was.
            termCold(t) && !keptOpen ? " cold" : keptOpen ? " kept" : ""}${wear.cls}${newCardClass(t)}"
          data-id="${t.id}"
-         data-tip="${esc(hover + (termCold(t) ? "\nthis one has exited. click to start it again here" +
+         data-tip="${esc(hover + (termCold(t) ? (t.parked_at ? "\nparked after sitting idle. click to resume the same conversation"
+           : "\nthis one has exited. click to start it again here") +
            (keptOpen ? "\nthe filter would hide it, but it is open in the pane, so it stays until you switch away" : "")
            : t.starting && !t.supervised ? "\natrium is starting this one. its runner is not up yet"
            : termJoined(t) ? "\njoined from your own terminal. atrium cannot attach to it. click for what you can do" : ""))}"
          style="${style}"
          onclick="${termCold(t)
-           ? `resumePinned('${t.id}')`
+           ? (t.parked_at ? `resumeParked('${t.id}')` : `resumePinned('${t.id}')`)
            : termJoined(t) ? `joinedClick('${t.id}')` : `attachTask('${t.id}')`}"
          oncontextmenu="termMenu(event, '${t.id}')">
       ${ctxLine(t)}
@@ -1227,7 +1238,11 @@ function termRowChips(t, lead) {
     : termJoined(t) ? `<span class="chip">joined</span>` : "";
   // The past-the-limit mark, which the strip did not draw. A card cycling its context shows that instead.
   const lim = t.new_context ? "" : ctxWarnMark(t);
-  const inner = (lead || "") + stuck + newCardChip(t) + lim + ncx + seenChips(t) + cache + held + room + popped + joined;
+  const resume = t.parked_at && !t.supervised
+    ? `<button type="button" class="chip accent termresume" aria-label="resume this parked card"
+         data-tip="parked after sitting idle. resume the same conversation"
+         onclick="event.stopPropagation();resumeParked('${t.id}')">resume</button>` : "";
+  const inner = (lead || "") + resume + stuck + newCardChip(t) + lim + ncx + seenChips(t) + cache + held + room + popped + joined;
   return inner ? `<div class="chips">${inner}</div>` : "";
 }
 
@@ -1836,11 +1851,7 @@ async function renderTermList() {
   // attached one. The attached one stays whatever is off, so turning a chip off never pulls the pane out from under you.
   const show = termShow();
   const pool = all.filter(t => !t.offline);
-  const tasks = pool.filter(t => {
-    const k = termRowKind(t);
-    return k === "live" || (k !== "" && (termKept(t, show) || (k === "shelved" && show.has("shelved")) ||
-      (k === "dead" && show.has("dead"))));
-  });
+  const tasks = pool.filter(t => termListed(t, show));
   // The badge counts what is actually attachable, since it is a count of live terminals rather than of rows. Over the
   // whole pool, whatever the chips say: the nav badge is a fact about the board, not about how this screen reads it.
   badge("c-term", pool.filter(t => termRowKind(t) === "live" && t.supervised).length);
