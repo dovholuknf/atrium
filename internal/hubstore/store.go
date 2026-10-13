@@ -39,6 +39,7 @@
 package hubstore
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"fmt"
@@ -264,6 +265,16 @@ func transient(err error) bool {
 		strings.Contains(msg, "database table is locked")
 }
 
+// abandoned reports whether an error is a caller's context ending: cancelled, past its deadline, or the
+// interrupt the driver raises for either. The database said nothing about itself.
+func abandoned(err error) bool {
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return true
+	}
+	var se *sqlite.Error
+	return errors.As(err, &se) && se.Code() == sqlite3.SQLITE_INTERRUPT
+}
+
 const (
 	retryAttempts = 12
 	retryBase     = 2 * time.Millisecond
@@ -291,6 +302,11 @@ func (s *Store) guard(op func() error) error {
 		// Anything this package raises deliberately is wrapped by `refuse`;
 		// everything else arrived from the driver and is a real failure.
 		if errors.Is(err, sql.ErrNoRows) || isConstraint(err) || deliberate(err) {
+			return err
+		}
+		// A CALLER THAT GAVE UP IS NOT A BROKEN DISK. A request whose client went away cancels its context, and
+		// a query on that context answers "context canceled". Halting on it took every room down once (f-001).
+		if abandoned(err) {
 			return err
 		}
 		if !transient(err) {

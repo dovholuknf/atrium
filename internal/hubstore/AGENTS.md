@@ -30,6 +30,11 @@ Storage failure halts the hub, exactly as `internal/store` halts a room. Every m
 retries contention (12 attempts, backing off from 2ms) and halts on anything else. Contention that never clears halts
 too. Once halted, every call returns `ErrHalted` and `OnHalt` tells the hub.
 
+**A caller that gave up is not a broken database.** `guard` hands back `context.Canceled`, `DeadlineExceeded` and
+SQLite's interrupt without halting (f-001: a dropped request once halted the hub and every room was let go). Writes
+that take a context run on `detached(ctx)`, so they land whoever stopped waiting. A halted hub keeps the rooms it
+knew attached, from memory, in `internal/cli/atrium_hubrooms.go`.
+
 **A deliberate refusal must be wrapped in `refuse(...)`.** `guard` lets through `sql.ErrNoRows`, a constraint
 violation, and anything wrapped by `refuse`. Any other error returned from inside a guarded operation is treated as
 the database breaking, and the hub halts. A new validation error returned bare is a typo that takes the hub down.

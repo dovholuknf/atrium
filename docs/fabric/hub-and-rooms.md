@@ -51,7 +51,10 @@ store of its own (`internal/hubstore`, `hub.db`). That store holds:
   `docs/fabric/hub-forge-design.md`).
 
 A store failure stops the hub. A hub that cannot remember which rooms exist would mint a second room under a name it
-forgot, and the work is safe on the rooms anyway, so the halt costs little.
+forgot, and the work is safe on the rooms anyway, so the halt costs little. The halt is a broken database only: a
+caller that gave up (a cancelled or timed-out request) never halts it, and push-log writes run detached from the
+request. A halted hub keeps its room listener open and keeps the rooms it already knew attached, from memory, so
+every session's control tools still reach it. A room it did not know is refused. See f-001.
 
 `atrium run` starts the hub, and when no room answers on this machine it starts `atrium room` in the background. The
 first time, it also makes the room: it names it after the machine and enrols it over its own link, so one machine
