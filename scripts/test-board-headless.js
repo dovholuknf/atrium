@@ -10572,11 +10572,13 @@ async function cacheChipSection(browser, base) {
       null, { timeout: slow(8000) }).catch(() => fail("cacheChip flip: the chip did not flip to cold by itself"));
     if (reqs.length !== n0) fail("cacheChip flip: the flip made " + (reqs.length - n0) + " requests: " + reqs.slice(n0).join(" "));
     // A throttled tab is put right when it becomes visible again.
-    await p.evaluate(() => {
-      const t = KA_SEEN.get("cc-flip");
-      t.keepalive = Object.assign({}, t.keepalive, { warm_until: new Date(Date.now() + 90 * 60000).toISOString() });
+    // The cold card is no longer remembered, so the card is handed back as it would be by a list.
+    const back = JSON.parse(JSON.stringify(LAND["cc-flip"]));
+    back.keepalive.warm_until = new Date(Date.now() + 90 * 60000).toISOString();
+    await p.evaluate(t => {
+      KA_SEEN.set(t.id, t);
       document.dispatchEvent(new Event("visibilitychange"));
-    });
+    }, back);
     if (!/^\u2744 warm/.test(await p.evaluate(() => document.querySelector('#stack-list [data-cid="cc-flip"] .cfull').textContent))) {
       fail("cacheChip: visibilitychange did not repaint the chip");
     }
@@ -10698,96 +10700,6 @@ async function cacheChipSection(browser, base) {
     try { await ctx.close(); } catch (e) {}
   }
   if (errors.length) fail("cacheChip: the page threw: " + errors.join(" | "));
-}
-
-async function cacheLineSection(browser, base) {
-  const was = tasksMode;
-  tasksMode = "land";
-  const errors = [];
-  const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
-  const wasSettings = kaSettings;
-  kaSettings = { cache_keepalive_default: true, cache_keepalive_week_refreshes: 83 };
-  try {
-    const p = await ctx.newPage();
-    p.on("pageerror", e => errors.push(String(e)));
-    const soon = m => new Date(Date.now() + m * 60000).toISOString();
-    kaFix("cl-warm1", { why: "not idle", warm_until: soon(20) });
-    kaFix("cl-warm2", { why: "not due", warm_until: soon(20) });
-    kaFix("cl-kept1", { refreshes: 2, why: "not due", warm_until: soon(30) });
-    kaFix("cl-cold1", { why: "parked", warm_until: soon(-30) });
-    kaFix("cl-cold2", { state: "stopped:miss", warm_until: soon(-5) });
-    kaFix("cl-cold3", { why: "no session id yet" });
-    kaFix("cl-off", { state: "off", warm_until: soon(10) });
-    kaFix("cl-arch", { why: "not idle", warm_until: soon(20) }, { archived_at: "2026-09-28T00:00:00Z" });
-    landCard("cl-shell", { supervised: true, created_at: "2026-09-19T12:00:00Z", runner: "shell" });
-    const ids = ["cl-warm1", "cl-warm2", "cl-kept1", "cl-cold1", "cl-cold2", "cl-cold3", "cl-off", "cl-arch", "cl-shell"];
-    landList = ids.map(i => LAND[i]);
-    landPerms = [];
-    await p.goto(base, { waitUntil: "domcontentloaded" });
-    await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
-    await p.evaluate(() => setStackShow(new Set()));
-    const read = id => p.evaluate(i => { const e = document.getElementById(i); return e && !e.hidden ? e.innerText.trim() : null; }, id);
-    const line = "cache: 3 warm \u00b7 1 kept warm \u00b7 3 cold \u00b7 keep-alive 83 refreshes this week";
-    await p.waitForFunction(l => { const e = document.getElementById("cache-line-stack"); return e && e.innerText.trim() === l; }, line,
-      { timeout: slow(10000) }).catch(async () => fail("cacheLine stack: reads " + JSON.stringify(await read("cache-line-stack")) + ", wanted " + line));
-    if (/tokens today/.test(await read("cache-line-stack") || "")) fail("cacheLine: a spend today was drawn with no field for it");
-    // The same state function: the line's counts are the chips' own buckets.
-    const agree = await p.evaluate(() => {
-      const c = { warm: 0, kept: 0, cold: 0 };
-      document.querySelectorAll("#stack-list .stackrow .chip.cache").forEach(e => c[e.dataset.bucket]++);
-      return c;
-    });
-    if (agree.warm !== 3 || agree.kept !== 1 || agree.cold !== 3) fail("cacheLine: the chips' buckets disagree with the line " + JSON.stringify(agree));
-    // A narrowed list counts only what it shows.
-    await p.evaluate(() => { const q = document.getElementById("stack-q"); q.value = "cl warm"; q.dispatchEvent(new Event("input")); });
-    await p.waitForFunction(() => /^cache: 2 warm \u00b7 0 kept warm \u00b7 0 cold/.test(document.getElementById("cache-line-stack").innerText.trim()),
-      null, { timeout: slow(5000) }).catch(async () => fail("cacheLine: a search did not narrow it: " + await read("cache-line-stack")));
-    await p.evaluate(() => { const q = document.getElementById("stack-q"); q.value = ""; q.dispatchEvent(new Event("input")); });
-
-    // A keepalive event moves a card: cl-warm1 goes cold. The line follows through the stream and the refetch.
-    LAND["cl-warm1"].keepalive = Object.assign({}, LAND["cl-warm1"].keepalive, { warm_until: soon(-2), why: "parked" });
-    openStreams.forEach(r => { try { r.write("event: keepalive\ndata: " + JSON.stringify({ task_id: "cl-warm1", state: "on" }) + "\n\n"); } catch (e) {} });
-    await p.waitForFunction(l => document.getElementById("cache-line-stack").innerText.trim() === l,
-      "cache: 2 warm \u00b7 1 kept warm \u00b7 4 cold \u00b7 keep-alive 83 refreshes this week",
-      { timeout: slow(10000) }).catch(async () => fail("cacheLine: an event did not move the line: " + await read("cache-line-stack")));
-    // A refresh outcome asks for the week's figure again, and the spend today when the daemon sends one.
-    kaSettings.cache_keepalive_week_refreshes = 84;
-    kaSettings.cache_keepalive_today_tokens = 365000;
-    openStreams.forEach(r => { try { r.write("event: keepalive\ndata: " + JSON.stringify({ task_id: "cl-warm1", outcome: "warmed" }) + "\n\n"); } catch (e) {} });
-    await p.waitForFunction(() => /84 refreshes this week \u00b7 365k tokens today$/.test(document.getElementById("cache-line-stack").innerText.trim()),
-      null, { timeout: slow(10000) }).catch(async () => fail("cacheLine: the week and today figures did not follow the settings: " + await read("cache-line-stack")));
-
-    // A card running out of cache moves the counts with no request.
-    kaFix("cl-tick", { why: "not idle", warm_until: new Date(Date.now() + 5000).toISOString() });
-    landList = [LAND["cl-tick"]];
-    await p.evaluate(() => tasksSoon());
-    await p.waitForFunction(() => /^cache: 1 warm/.test(document.getElementById("cache-line-stack").innerText.trim()), null, { timeout: slow(10000) });
-    // let tasksSoon's own read finish first, on a loaded machine it lands after the line already shows
-    await p.waitForTimeout(1200);
-    const reqs = [];
-    p.on("request", r => reqs.push(r.url()));
-    await p.waitForFunction(() => /^cache: 0 warm \u00b7 0 kept warm \u00b7 1 cold/.test(document.getElementById("cache-line-stack").innerText.trim()),
-      null, { timeout: slow(8000) }).catch(() => fail("cacheLine: the line did not tick to cold by itself"));
-    if (reqs.length) fail("cacheLine: the tick made requests " + reqs.join(" "));
-
-    // The gear's terminal list section carries the same line, and the list itself has none.
-    landList = ids.map(i => LAND[i]);
-    await p.evaluate(() => switchView("terms"));
-    await p.waitForFunction(() => { const e = document.getElementById("cache-line-gear"); return e && !e.hidden && /^cache: \d+ warm/.test(e.textContent.trim()); },
-      null, { timeout: slow(10000) }).catch(async () => fail("cacheLine gear: " + await read("cache-line-gear")));
-    if (await p.evaluate(() => !!document.querySelector("#term-list .cacheline"))) fail("cacheLine: the terminal list still carries the cache line");
-    // and it follows an event with no request, like the stack's
-    kaFix("cl-tick", { why: "not idle", warm_until: new Date(Date.now() + 60000).toISOString() });
-    landList = [LAND["cl-tick"]];
-    await p.evaluate(() => tasksSoon());
-    await p.waitForFunction(() => /^cache: 1 warm/.test(document.getElementById("cache-line-gear").textContent.trim()), null, { timeout: slow(10000) })
-      .catch(async () => fail("cacheLine gear did not follow the list: " + await read("cache-line-gear")));
-  } finally {
-    tasksMode = was;
-    kaSettings = wasSettings;
-    await ctx.close();
-  }
-  if (errors.length) fail("cacheLine: the page threw: " + errors.join(" | "));
 }
 
 // ── the board skin follows the room-picker scope ────────────────────────
@@ -24699,12 +24611,9 @@ async function gearTermListSection(browser, base) {
         shown: [...document.querySelectorAll("#settings .pane")].some(x => x.dataset.name === "terminal list" && !x.hidden),
         sort: document.querySelectorAll("#gear-term-sort button").length,
         hide: document.querySelectorAll("#gear-term-hide, .termhide").length,
-        group: document.querySelectorAll("#term-group button").length,
-        cache: !!document.getElementById("cache-line-gear"),
-        inList: document.querySelectorAll("#term-list .cacheline").length
+        group: document.querySelectorAll("#term-group button").length
       }));
-      if (!f.shown || f.sort !== 3 || f.hide !== 0 || f.group < 6 || !f.cache) fail(tag + "the section is wrong: " + JSON.stringify(f));
-      if (f.inList) fail(tag + "the list still has the old row or line.");
+      if (!f.shown || f.sort !== 3 || f.hide !== 0 || f.group < 6) fail(tag + "the section is wrong: " + JSON.stringify(f));
       const a = await p.evaluate(() => {
         const was = sortByActivity;
         [...document.querySelectorAll("#gear-term-sort button")].find(b => !b.classList.contains("on")).click();
@@ -28697,7 +28606,7 @@ async function main() {
       eventDriven: eventDrivenSection, idleBudget: idleBudgetSection, pollsGone: pollsGoneSection,
       terminalTopGap: terminalTopGapSection, phoneListFit: phoneListFitSection, termListLastRow: termListLastRowSection, phoneNudge: phoneNudgeSection,
       growlStack: growlStackSection, growlActions: growlActionsSection, growlModal: growlModalSection, growlQuiet: growlQuietSection, growlAttention: growlAttentionSection, growlPhone: growlPhoneSection, mGrowl: mGrowlSection, growlPopout: growlPopoutSection, growlOff: growlOffSection, growlRemind: growlRemindSection,
-      cacheChip: cacheChipSection, cacheLine: cacheLineSection, mHome: mHomeSection, mCard: mCardSection, mServe: mServeSection, phoneKeyLabel: phoneKeyLabelSection, phoneKeyLit: phoneKeyLitSection, shiftMenu: shiftMenuSection, termMenu: termMenuSection, notifyCommand: notifyCommandSection, presence: presenceSection, tallPty: tallPtySection, roomsMachine: roomsMachineSection, readyOnce: readyOnceSection, readyPopout: readyPopoutSection, popoutNotify: popoutNotifySection, readyTwoWindows: readyTwoWindowsSection,
+      cacheChip: cacheChipSection, mHome: mHomeSection, mCard: mCardSection, mServe: mServeSection, phoneKeyLabel: phoneKeyLabelSection, phoneKeyLit: phoneKeyLitSection, shiftMenu: shiftMenuSection, termMenu: termMenuSection, notifyCommand: notifyCommandSection, presence: presenceSection, tallPty: tallPtySection, roomsMachine: roomsMachineSection, readyOnce: readyOnceSection, readyPopout: readyPopoutSection, popoutNotify: popoutNotifySection, readyTwoWindows: readyTwoWindowsSection,
       cardUrlTable: cardUrlTableSection, cardUrlClash: cardUrlClashSection, cardUrlLinks: cardUrlLinksSection, cardUrlRoom: cardUrlRoomSection, mCardUrl: (b) => mCardUrlSection(b), cardUrlNotify: cardUrlNotifySection,
       clock: clockSection,
       composeImages: composeImagesSection, composePaste: composePasteSection, mComposeImages: mComposeImagesSection,
@@ -28705,7 +28614,7 @@ async function main() {
       mAgentIdle: mAgentIdleSection, mResume: mResumeSection, mHome: mHomeSection, mCard: mCardSection, mServe: mServeSection,
       phoneKeyLabel: phoneKeyLabelSection, phoneKeyLit: phoneKeyLitSection,
       notifyCommand: notifyCommandSection, presence: presenceSection, shiftMenu: shiftMenuSection, tallPty: tallPtySection,
-      cacheChip: cacheChipSection, cacheLine: cacheLineSection, roomsMachine: roomsMachineSection,
+      cacheChip: cacheChipSection, roomsMachine: roomsMachineSection,
       u001Audit: u001AuditSection,
       pasteStart: pasteStartSection, pasteDone: pasteDoneSection, pasteOldRoom: pasteOldRoomSection, pasteClose: pasteCloseSection,
       growlQuestionShots: growlQuestionShotsSection, growlQuestionBody: growlQuestionBodySection, growlReplyGrow: growlReplyGrowSection, growlChoices: growlChoicesSection, replies: repliesSection, repliesOf: repliesOfSection, repliesShots: repliesShotsSection, growlStable: growlStableSection, growlOnIt: growlOnItSection, mGrowlQuestion: mGrowlQuestionSection,
@@ -29123,7 +29032,6 @@ async function main() {
         listOverflow: getComputedStyle(list).overflowY,
         scrollOverflow: scroll ? getComputedStyle(scroll).overflowY : "",
         widthBtns: list.querySelectorAll(".tlcorner .tlcycle").length,
-        cacheLine: list.querySelectorAll(".cacheline").length,
         line: !!line, sum: ((document.querySelector("#fd-terms .fsum") || {}).textContent || ""),
         search: !!document.getElementById("term-q"),
         panelShut: !!panel && panel.inert && getComputedStyle(panel).visibility === "hidden",
@@ -29138,9 +29046,6 @@ async function main() {
     }
     if (trayShut.rows !== "show|sort by|group") {
       fail("the terminals drawer does not have show, sort by and group rows: " + JSON.stringify(trayShut));
-    }
-    if (trayShut.cacheLine) {
-      fail("the list still carries the cache line, which lives in the gear: " + JSON.stringify(trayShut));
     }
     if (trayShut.widthBtns < 1) {
       fail("the list's width buttons are not on its corner: " + JSON.stringify(trayShut));
@@ -30619,7 +30524,6 @@ async function main() {
     await unit("termListLastRow", () => termListLastRowSection(browser, base));
     await unit("phoneNudge", () => phoneNudgeSection(browser, base));
     await unit("cacheChip", () => cacheChipSection(browser, base));
-    await unit("cacheLine", () => cacheLineSection(browser, base));
     await unit("peekLaunch", () => peekLaunchSection(browser, base));
     await unit("readyOnce", () => readyOnceSection(browser, base));
     await unit("readyPopout", () => readyPopoutSection(browser, base));

@@ -306,8 +306,6 @@ function paintStack() {
     changed: stackChanged(show),
     match: list.length === visible ? "" : `${list.length} of ${visible}`
   });
-  // The cache summary, over the rows this list shows. See js/keepalive.js.
-  if (typeof paintCacheLine === "function") paintCacheLine("cache-line-stack", list);
 
   const s = STACK_SORTS[stackSort] || STACK_SORTS.activity;
   // The tiebreak is applied here rather than written into each cmp, so every

@@ -289,10 +289,6 @@
          are two questions, so two rows: sorting orders the rows, grouping decides whether they are cut into projects
          first. Painted by paintStackShow, paintStackSort and paintGroupSegs. -->
     <div id="fd-stack"></div>
-    <!-- The cache summary (u-032). One line over the rows below, and a button to
-         the keep-alive setting. Filled in by paintCacheLine. -->
-    <button type="button" class="cacheline" id="cache-line-stack" hidden
-      onclick="openKeepaliveSetting()" data-tip="open the keep-alive setting"></button>
     <div id="stack-list"></div>
   </div>
   <!-- Built once. Only the list bodies are refreshed, so a filter you are
@@ -2096,7 +2092,7 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
     </div>
 
     <!-- The terminal list's sort and group (the filter drawer's rows show the same two). Filled in by
-         paintTermGear and paintCacheLine, on each list render and when the gear opens.
+         paintTermGear, on each list render and when the gear opens.
          The group pills are the same setting the board and the stack have. -->
     <h3 class="s-section">terminal list</h3>
     <div class="field">
@@ -2109,7 +2105,6 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
     </div>
     <div class="field">
       <span class="eyebrow">cache</span>
-      <span class="hintline" id="cache-line-gear" hidden></span>
       <span class="hintline">The keep-alive default is in the next section.</span>
     </div>
 
