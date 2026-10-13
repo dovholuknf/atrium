@@ -23834,7 +23834,8 @@ async function quickPasteSection(browser, base) {
     await paste(dew);
     if (!st.calls.some(c => c.indexOf("POST /v1/recognise") === 0)) fail("quickPaste: a pasted link was not read");
     const pasted = st.calls.filter(c => c.indexOf("POST /v1/open") === 0);
-    if (pasted.length !== 1 || JSON.parse(pasted[0].split(" ").slice(2).join(" ")).url !== dew)
+    const dewBody = pasted.length === 1 ? JSON.parse(pasted[0].split(" ").slice(2).join(" ")) : {};
+    if (pasted.length !== 1 || dewBody.url !== dew || dewBody.title !== "review desktop-edge-win#1095" || !dewBody.progress)
       fail("quickPaste: a pasted link opened as " + pasted.join(" | "));
     if (st.calls.some(c => c.indexOf("/v1/launch") >= 0)) fail("quickPaste: a pasted link launched the old way");
     if (!st.cardReads) fail("quickPaste: a pasted link's card was never read to attach");

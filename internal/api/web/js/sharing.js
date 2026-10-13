@@ -772,12 +772,12 @@ async function cleanupOffer(row) {
   closeCardAsk(row.id, row);
 }
 
-// What the close dialog calls each inventory row's kind (store.Res* in internal/store/resources.go). The hub's own
-// branch has two spellings here because its row is being built beside this change and its name is not settled.
+// What the close dialog calls each inventory row's kind (store.Res* in internal/store/resources.go). `hubbranch` is the
+// hub branch inventory's row, named here ahead of it so it lists the day it lands.
 const CLOSE_KIND_WORDS = {
   worktree: "the worktree", branch: "the branch here", ref: "the ref", dir: "the folder", review: "the review's source copy",
   proc: "the process", port: "the port", overlay: "the overlay folder", identity: "the identity",
-  hubbranch: "the branch on the hub", "hub-branch": "the branch on the hub", clone: "the clone it made"
+  hubbranch: "the branch on the hub", clone: "the clone it made"
 };
 
 // via {owner, room} closes what an owner with no card holds, through the sweep (internal/api/sweep.go).

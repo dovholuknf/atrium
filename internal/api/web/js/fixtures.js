@@ -1825,8 +1825,7 @@ async function launchNow(opening) {
     task_id: launchTarget.task_id || "",
     // No resume id means no resume arguments, so the daemon starts fresh.
     resume: resumeOff ? "" : launchTarget.resume,
-
-    cwd: document.getElementById("l-cwd").value.trim(),
+    cwd:document.getElementById("l-cwd").value.trim(),
     title: document.getElementById("l-title").value.trim(),
     why: document.getElementById("l-why").value.trim(),
     // Split on commas and never on spaces, the same rule everywhere else: a
@@ -1865,6 +1864,8 @@ async function launchNow(opening) {
     method: "POST", headers, body: JSON.stringify(body)
   });
   document.getElementById("launch").close();
+  // The room a launch went to is the default the next link opens on (linkRoomFor), whichever way it launched.
+  rememberLaunchRoom(room, task && task.id);
 
   // Straight to the terminal you just started. Landing on the board instead
   // means finding the new card and clicking attach, which is two steps to get
