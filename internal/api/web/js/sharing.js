@@ -1023,8 +1023,31 @@ async function pruneColumnNow(status) {
 function foldedColumns() {
   try {
     const list = JSON.parse(localStorage.getItem("atrium.folded") || "[]");
-    return Array.isArray(list) ? list : [];
+    if (!Array.isArray(list)) return [];
+    return migrateLaneFolds(list);
   } catch (e) { return []; }
+}
+
+// A board group used to be folded by name across the whole board ("proj:web", "proj:pinned"). It is folded per lane
+// now ("proj:<lane>|web", "pin:<lane>"). An old entry is spread over every lane once, so a group somebody had shut
+// is still shut wherever it appears, and can then be opened lane by lane. The stack's keys ("proj:stack:...") and
+// everything else are left alone. Runs once per stored list: the list is written back migrated, so a later read finds
+// nothing old in it.
+function migrateLaneFolds(list) {
+  const old = k => typeof k === "string" && k.startsWith("proj:") && !k.startsWith("proj:stack:") && !k.includes("|");
+  if (!list.some(old)) return list;
+  const lanes = [...new Set(COLUMNS.flatMap(c => [c.id, ...c.statuses]))];
+  const out = [];
+  for (const k of list) {
+    if (!old(k)) { if (!out.includes(k)) out.push(k); continue; }
+    const name = k.slice(5);
+    for (const lane of lanes) {
+      const nk = name === "pinned" ? "pin:" + lane : "proj:" + lane + "|" + name;
+      if (!out.includes(nk)) out.push(nk);
+    }
+  }
+  try { localStorage.setItem("atrium.folded", JSON.stringify(out)); } catch (e) {}
+  return out;
 }
 
 function toggleColumn(id) {

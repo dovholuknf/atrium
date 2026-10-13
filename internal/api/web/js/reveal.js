@@ -49,13 +49,15 @@ function revealFolds(t) {
     if (t.offline) openInverted("offline:" + col.id);
   }
   if (t.offline) openInverted("offline:stack");
+  const lane = col ? (col.statuses.length > 1 ? t.status : col.id) : "";
   const projects = (g, prefix, c) => {
-    if (t.pinned && prefix === "proj:") { open("proj:pinned"); return; }
+    if (t.pinned && prefix === "proj:") { open(pinFoldKey(lane)); return; }
     let names = [];
     try { names = g ? g.of(c) || [] : []; } catch (e) { names = []; }
     names.filter(Boolean).forEach(name => {
       const shutByDefault = prefix === "proj:" && name === UNTAGGED && groupingPrefs(g.view).mode === "custom";
-      if (shutByDefault) openInverted(prefix + name); else open(prefix + name);
+      const key = prefix === "proj:" ? laneFoldKey(lane, name) : prefix + name;
+      if (shutByDefault) openInverted(key); else open(key);
     });
   };
   projects(bg, "proj:", t);
