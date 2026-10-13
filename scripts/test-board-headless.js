@@ -22701,7 +22701,7 @@ async function joinedLiveSection(browser, base) {
       null, { timeout: slow(15000) });
     const r = await p.evaluate(() => {
       const card = (id, status, supervised, extra) => ({ id, status, supervised, title: id, display_title: id, tags: [], ...extra });
-      const joined = card("jn", "needs-input", false), exited = card("ex", "done", false);
+      const joined = card("jn", "needs-input", false, { pid: 4242 }), exited = card("ex", "done", false);
       const dead = card("dd", "dead", false), running = card("rn", "running", true);
       const parked = { ...card("pk", "needs-input", false), parked_at: "2026-09-30T10:00:00Z" };
       return {
@@ -25033,9 +25033,9 @@ async function termBoxSection(browser, base) {
           display_title: id, tags: [], ...extra });
         const sets = {
           supervisedOnly: [card("sv", "running", { supervised: true })],
-          joinedUnpinned: [card("jn", "needs-input")],
+          joinedUnpinned: [card("jn", "needs-input", { pid: 4242 })],
           someHidden: [card("sv", "running", { supervised: true }), card("xp", "done", { pinned: true }),
-            card("jn", "needs-input")],
+            card("jn", "needs-input", { pid: 4242 })],
           allHidden: [card("x1", "done", { pinned: true }), card("x2", "dead", { pinned: true })]
         };
         const res = {};
