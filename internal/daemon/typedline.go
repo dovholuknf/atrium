@@ -105,6 +105,12 @@ func (l *typedLine) empty() bool {
 	return len(l.text) == 0 && l.dropped == 0 && l.unsure == ""
 }
 
+// exactLocked is whether the text is certainly the whole line: non empty, followed to the last key, nothing cut
+// off the front, and not inside a paste whose end has not been seen.
+func (l *typedLine) exactLocked() bool {
+	return len(l.text) > 0 && l.dropped == 0 && l.unsure == "" && !l.inPaste && len(l.pending) == 0
+}
+
 func (l *typedLine) count() int { return l.dropped + len(l.text) }
 
 func (l *typedLine) clear() {

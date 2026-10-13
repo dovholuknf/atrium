@@ -1251,6 +1251,10 @@ type typingState struct {
 	SinceMS int64  `json:"since_ms"`
 	Open    bool   `json:"open"`
 	Reason  string `json:"reason"`
+	// Exact is true only when `Line` is certainly, character for character, what is on the prompt: something is
+	// there, no key took the model out of what it can follow, nothing was pushed off the front, and no paste is open.
+	// "Let it through" retypes the line only when this is true. See letthrough.go.
+	Exact bool `json:"exact"`
 }
 
 // typing reads the state under typeMu. Only the readout asks, and only while
@@ -1269,6 +1273,7 @@ func (r *runner) typing() typingState {
 		s.SinceMS = time.Since(r.lastTyped).Milliseconds()
 	}
 	s.Open, s.Reason = r.gateLocked()
+	s.Exact = r.line.exactLocked()
 	return s
 }
 
