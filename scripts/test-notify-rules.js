@@ -30,10 +30,10 @@ const make = new Function(`
   const bareId = id => String(id).replace(/^[^~]*~/, "");
   const sameCard = (a, b) => !!a && !!b && bareId(a) === bareId(b);
   let term = null, termTask = null;
-  const DOER_TAG = "origin:agent";
-  ${fn(rules, "isDoer")}
-  ${fn(rules, "cardHasOpenQuestion")}
-  ${fn(rules, "agentIdle")}
+  const NO_CONTACT_AFTER_SECONDS = 20 * 60, LIVE_STATUSES = ["running", "needs-input", "needs-permission"];
+  const cardIdleAge = () => 0;
+  ${fn(rules, "runnerGone")}
+  ${fn(rules, "cardWaiting")}
   ${fn(cards, "waitingRow")}
   ${fn(cards, "hasRunningChild")}
   ${fn(cards, "cardsReady")}
@@ -55,11 +55,14 @@ const row = o => Object.assign({ id: "sg4~c", status: "needs-input", wire_name: 
   const worker = row({ id: "sg4~issue-20674", tags: ["origin:agent", "atrium:subagent"], waiting_since: "T1" });
   const mine = row({ id: "sg4~mine", waiting_since: "T0" });
   b.setCards([worker, mine]);
-  if (b.waitingRow(worker)) fail("the badge's waitingRow now counts an idle agent-launched card, which it must not");
+  if (!b.waitingRow(worker)) fail("a running agent-launched card waiting on the operator is not waiting: grey means not running, nothing else");
+  const gone = row({ id: "sg4~gone", tags: ["origin:agent"], supervised: false });
+  if (b.waitingRow(gone)) fail("a card whose runner is gone (supervised false, no pid) counts as waiting");
+  if (!b.waitingRow(row({ supervised: false, pid: 42 }))) fail("a joined terminal with a pid is not waiting");
   const ids = b.cardsReady().map(t => t.id);
   if (!ids.includes("sg4~issue-20674")) fail("an agent-launched card that ended its turn is not in the ready set: " + ids);
   if (ids.join() !== "sg4~mine,sg4~issue-20674") fail("the ready set is not oldest wait first: " + ids);
-  if (b.cardsWaiting().length !== 1) fail("cardsWaiting changed: it must still leave the idle agent out");
+  if (b.cardsWaiting().length !== 2) fail("cardsWaiting must count the agent-launched card waiting on the operator");
   for (const gone of [{ status: "running" }, { archived_at: "x" }, { offline: true }, { wire_name: "" }]) {
     if (b.cardsReady([row(gone)]).length) fail("a card that is not at rest is ready: " + JSON.stringify(gone));
   }

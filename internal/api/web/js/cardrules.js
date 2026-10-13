@@ -107,16 +107,34 @@ function isSubagent(t) {
     t.tags.some(x => String(x).trim().toLowerCase() === SUBAGENT_TAG));
 }
 
-// AN AGENT-LAUNCHED CARD THAT ENDED A TURN WITH NO OPEN QUESTION IS IDLE, not waiting for the operator: its launcher is who
-// it answers to. This is the one test every surface shares (board, /m, counts, bell). A question, a permission ask (its
-// own status) or an operator-launched card (no origin:agent tag) is still waiting.
+// A CARD'S OPEN QUESTION, from the parsed list, an unparsed one, or a question put to the operator (asks_open).
 function cardHasOpenQuestion(t) {
   const s = t && t.seen;
   const open = !!s && s.answered === false && ((Array.isArray(s.open_questions) && s.open_questions.length > 0) || !!s.questions_unparsed);
   return open || ((t && t.asks_open) || 0) > 0;
 }
-function agentIdle(t) {
-  return !!t && t.status === "needs-input" && isDoer(t) && !cardHasOpenQuestion(t);
+
+// GREY MEANS NOT RUNNING, AND NOTHING ELSE. A card with a live runner that is waiting for the operator is orange, whatever its
+// origin tag says: an agent-launched interview is waiting on a person like any other. The one rule every surface shares
+// (stack, terminals, phone, counts, bell) is `runnerGone`, and a card is grey exactly when it is over or its runner is gone.
+//
+// A runner is gone when the status still says it is alive (running, needs-input, needs-permission) and nothing vouches for it:
+// atrium does not hold its terminal (`supervised`, api.go Supervised), it is not being launched (`starting`), and no process id
+// was reported for the reaper to ask the OS about (`pid`, daemon/reaper.go only files a card dead whose pid is gone, and
+// exempts a waiting card with no pid, because it is quiet and not necessarily gone). A joined terminal has a pid, so it is live.
+// A running card with no pid is given the no-contact window before it counts as gone, since hooks may still be reaching it.
+const NO_CONTACT_AFTER_SECONDS = 20 * 60;
+const LIVE_STATUSES = ["running", "needs-input", "needs-permission"];
+function runnerGone(t) {
+  if (!t || !LIVE_STATUSES.includes(t.status)) return false;
+  // `supervised` absent is unknown, not gone: the daemon always sends it, so only an explicit false counts.
+  if (t.supervised !== false || t.starting || t.offline || t.pid > 0) return false;
+  if (t.parked_at) return true;
+  return t.status !== "running" || cardIdleAge(t) > NO_CONTACT_AFTER_SECONDS;
+}
+// Waiting on the operator: a waiting status and a runner there to answer.
+function cardWaiting(t) {
+  return !!t && (t.status === "needs-input" || t.status === "needs-permission") && !runnerGone(t);
 }
 
 // The project rule as a callable, compiled from the same source the settings dialog shows and cached.

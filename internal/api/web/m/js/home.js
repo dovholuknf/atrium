@@ -45,7 +45,7 @@
   // The reasons this card needs the operator, each {kind, text (html), since (ms, 0 when unknown)}.
   function reasons(t, perms, now) {
     if (!t || t.archived_at || t.offline) return [];
-    if (t.status === "dead" || t.status === "shelved" || t.status === "backlog") return [];
+    if (t.status === "dead" || t.status === "shelved" || t.status === "backlog" || runnerGone(t)) return [];
     now = now || Date.now();
     const out = [];
     const mine = permsFor(t, perms || []);
@@ -80,13 +80,13 @@
         text: n === 1 ? "1 message held for it" : n + " messages held for it",
       });
     }
-    if (s.unseen && s.turn_ended_at && !agentIdle(t)) {
+    if (s.unseen && s.turn_ended_at && !runnerGone(t)) {
       const at = U.ts(s.turn_ended_at);
       const age = U.ago(now - at);
       out.push({ kind: "unseen", since: at,
         text: (age === "now" ? "finished just now" : "finished " + age + " ago") + ", not read" });
     }
-    if (t.status === "needs-input" && !out.length && !agentIdle(t)) {
+    if (t.status === "needs-input" && !out.length && !runnerGone(t)) {
       out.push({
         kind: "ready", since: U.ts(t.waiting_since),
         text: t.waiting_reason === "started" ? "started, waiting for its first prompt" : "waiting for you",
@@ -186,8 +186,8 @@
 
   // All mode: working, waiting, idle.
   function groupOf(t) {
+    if (runnerGone(t)) return "idle";
     if (t.status === "running") return "working";
-    if (agentIdle(t)) return "idle";
     if (t.status === "needs-input" || t.status === "needs-permission") return "waiting";
     return "idle";
   }

@@ -72,16 +72,15 @@ function dropCard(id) {
 // adopted session with none can be watched and not answered), not archived,
 // oldest wait first. A card from a room that is not answering is left out, as
 // the hub's fan-out of `/v1/waiting` left it out.
-function waitingRow(t, idleAgents) {
-  return (t.status === "needs-input" || t.status === "needs-permission") && (idleAgents || !agentIdle(t)) &&
+function waitingRow(t) {
+  return cardWaiting(t) &&
     !!t.wire_name && !t.archived_at && !t.offline;
 }
-// WHAT THE READY ALERT WATCHES: every card at rest, an agent-launched one that ended its turn included. `waitingRow`
-// leaves that one out because the badge and the counts are about what the operator owes an answer, but the alert is
-// about a turn that is over, and a worker that finished (issue-20674@claude-sg4, 2026-10-13) is news to the board
-// that is not on it. Whether a card with a running child is done is the caller's (`hasRunningChild`).
+// WHAT THE READY ALERT WATCHES: every card at rest with a runner there, an agent-launched one that ended its turn included
+// (a worker that finished, issue-20674@claude-sg4, 2026-10-13, is news to the board). Whether a card with a running child is
+// done is the caller's (`hasRunningChild`).
 function cardsReady(list) {
-  return (list || cardList()).filter(t => waitingRow(t, true))
+  return (list || cardList()).filter(waitingRow)
     .sort((a, b) => String(a.waiting_since || "").localeCompare(String(b.waiting_since || "")));
 }
 // A card that launched another still running is not waiting on the human, whatever its own status says. The ready

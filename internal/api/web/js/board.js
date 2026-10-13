@@ -339,7 +339,7 @@ function firstSeen(iso) {
     : `${date} ${t.getFullYear()}`;
 }
 
-const isWaiting = (t) => (t.status === "needs-input" || t.status === "needs-permission") && !agentIdle(t);
+const isWaiting = cardWaiting;
 
 const VIEWS = ["board", "stack", "perms", "runners", "terms", "history", "usage", "audit", "chatter", "pulls", "hubrepos", "backlog"];
 
@@ -749,7 +749,6 @@ function fmtTokens(n) {
 // The label is about what atrium knows, not about what the agent is doing.
 // Guessing at the agent's state and being wrong is what makes a board stop
 // being believed.
-const NO_CONTACT_AFTER_SECONDS = 20 * 60;
 const isOutOfContact = (t) =>
   t.status === "running" && !t.pid && cardIdleAge(t) > NO_CONTACT_AFTER_SECONDS;
 

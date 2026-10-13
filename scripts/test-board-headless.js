@@ -22701,7 +22701,7 @@ async function joinedLiveSection(browser, base) {
       null, { timeout: slow(15000) });
     const r = await p.evaluate(() => {
       const card = (id, status, supervised, extra) => ({ id, status, supervised, title: id, display_title: id, tags: [], ...extra });
-      const joined = card("jn", "needs-input", false), exited = card("ex", "done", false);
+      const joined = card("jn", "needs-input", false, { pid: 4242 }), exited = card("ex", "done", false);
       const dead = card("dd", "dead", false), running = card("rn", "running", true);
       const parked = { ...card("pk", "needs-input", false), parked_at: "2026-09-30T10:00:00Z" };
       return {
@@ -22728,7 +22728,7 @@ async function joinedLiveSection(browser, base) {
     const s = await p.evaluate(async () => {
       const card = (id, status, extra) => ({ id, status, supervised: false, pinned: false, title: id,
         display_title: id, tags: [], ...extra });
-      const cards = [card("jl", "needs-input"), card("xd", "done"), card("pk2", "needs-input", { parked_at: "2026-09-30T10:00:00Z" }),
+      const cards = [card("jl", "needs-input", { pid: 4242 }), card("xd", "done"), card("pk2", "needs-input", { parked_at: "2026-09-30T10:00:00Z" }),
         card("sv", "running", { supervised: true })];
       boardCards = async () => cards;
       const row = id => document.querySelector('#term-list .card.tab[data-id="' + id + '"]');
@@ -25033,9 +25033,9 @@ async function termBoxSection(browser, base) {
           display_title: id, tags: [], ...extra });
         const sets = {
           supervisedOnly: [card("sv", "running", { supervised: true })],
-          joinedUnpinned: [card("jn", "needs-input")],
+          joinedUnpinned: [card("jn", "needs-input", { pid: 4242 })],
           someHidden: [card("sv", "running", { supervised: true }), card("xp", "done", { pinned: true }),
-            card("jn", "needs-input")],
+            card("jn", "needs-input", { pid: 4242 })],
           allHidden: [card("x1", "done", { pinned: true }), card("x2", "dead", { pinned: true })]
         };
         const res = {};
@@ -26707,8 +26707,7 @@ async function mHomeLiveSection(browser) {
   await st.open();
   // ── the expectations ──
   const ms = x => Date.parse(x);
-  const agentIdleOf = t => { const s = t.seen || {};
-    return t.status === "needs-input" && t.tags.includes("origin:agent") && !(s.answered === false && ((s.open_questions || []).length || s.questions_unparsed)) && !(t.asks_open > 0); };
+  const agentIdleOf = t => (t.status === "needs-input" || t.status === "needs-permission") && t.supervised === false && !t.starting && !t.offline && !(t.pid > 0);
   const needSince = t => {
     const s = t.seen || {};
     const out = [];
@@ -29133,7 +29132,7 @@ async function main() {
       clock: clockSection,
       composeImages: composeImagesSection, composePaste: composePasteSection, mComposeImages: mComposeImagesSection,
       usageTab: usageTabSection, usageWeekReset: usageWeekResetSection,
-      mAgentIdle: mAgentIdleSection, mResume: mResumeSection, mHome: mHomeSection, mCard: mCardSection, mServe: mServeSection,
+      mAgentIdle: mAgentIdleSection, greyMeansDead: greyMeansDeadSection, mResume: mResumeSection, mHome: mHomeSection, mCard: mCardSection, mServe: mServeSection,
       phoneKeyLabel: phoneKeyLabelSection, phoneKeyLit: phoneKeyLitSection,
       notifyCommand: notifyCommandSection, presence: presenceSection, shiftMenu: shiftMenuSection, tallPty: tallPtySection,
       cacheChip: cacheChipSection, roomsMachine: roomsMachineSection,
@@ -31150,6 +31149,7 @@ async function main() {
     await unit("phoneBell", () => phoneBellSection(browser, base));
     await unit("mBell", () => mBellSection(browser));
     await unit("mAgentIdle", () => mAgentIdleSection(browser));
+    await unit("greyMeansDead", () => greyMeansDeadSection(browser, base));
     await unit("phoneRedirect", () => phoneRedirectSection(browser, base));
     await unit("gearTermList", () => gearTermListSection(browser, base));
     await unit("growlLinks", () => growlLinksSection(browser, base));
@@ -31706,13 +31706,75 @@ async function mResumeSection(browser) {
   if (!bad) console.log("mResume ok");
 }
 
+// GREY MEANS NOT RUNNING, NOTHING ELSE. One rule (`runnerGone` in js/cardrules.js) decides it for the stack and the terminals
+// tab; the phone page reads the same rule and is checked in mAgentIdle. GREY_SHOTS=<dir> writes a PNG of the rows.
+async function greyMeansDeadSection(browser, base) {
+  const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+  const p = await ctx.newPage();
+  const errors = [];
+  p.on("pageerror", e => errors.push(String(e && e.message || e)));
+  const tag = "greyMeansDead: ";
+  try {
+    await p.goto(base + "/raw", { waitUntil: "load" });
+    await p.waitForTimeout(1000);
+    const card = (id, over) => Object.assign({ id, title: id, display_title: id, status: "needs-input", wire_name: "w/" + id,
+      tags: ["origin:agent"], worktree: "/w/" + id, repo: "r", runner: "claude", supervised: true, pid: 0, seen: {}, activity: {},
+      created_at: "2026-10-13T10:00:00Z", last_activity_at: new Date().toISOString(), waiting_since: new Date().toISOString() }, over);
+    const cards = [
+      card("interview-live"),
+      card("interview-gone", { supervised: false }),
+      card("operator-live", { tags: [] }),
+      card("operator-gone", { tags: [], supervised: false }),
+      card("perm-gone", { status: "needs-permission", supervised: false }),
+      card("joined-pid", { supervised: false, pid: 4242 }),
+      card("ended", { status: "dead", supervised: false }),
+      card("finished", { status: "done", supervised: false }),
+    ];
+    const got = await p.evaluate((cs) => {
+      const out = {};
+      for (const t of cs) {
+        const stack = document.createElement("div"); stack.innerHTML = stackRow(t);
+        const term = document.createElement("div"); term.innerHTML = termRow(t, false, false);
+        out[t.id] = { attn: stack.firstElementChild.classList.contains("attn"),
+          cold: !!term.querySelector(".card.tab.cold"), waiting: isWaiting(t), gone: typeof runnerGone === "function" && runnerGone(t) };
+      }
+      const shots = document.createElement("div");
+      shots.id = "grey-shots"; shots.style.cssText = "position:fixed;top:0;left:0;width:900px;z-index:99999;background:#111";
+      shots.innerHTML = '<div id="stack-list" style="display:block">' + cs.map(stackRow).join("") + "</div>" +
+        '<div id="term-list" style="display:block;width:300px">' + cs.map(t => termRow(t, false, false)).join("") + "</div>";
+      document.body.appendChild(shots);
+      return out;
+    }, cards);
+    const want = {
+      "interview-live": { attn: true, cold: false }, "interview-gone": { attn: false, cold: true },
+      "operator-live": { attn: true, cold: false }, "operator-gone": { attn: false, cold: true },
+      "perm-gone": { attn: false, cold: true }, "joined-pid": { attn: true, cold: false },
+      ended: { attn: false, cold: true }, finished: { attn: false, cold: true },
+    };
+    for (const id of Object.keys(want)) {
+      const g = got[id];
+      if (g.attn !== want[id].attn) fail(tag + id + " on the stack: orange=" + g.attn + ", want " + want[id].attn);
+      if (g.cold !== want[id].cold) fail(tag + id + " on the terminals tab: grey=" + g.cold + ", want " + want[id].cold);
+      if (g.waiting !== want[id].attn) fail(tag + id + " isWaiting=" + g.waiting);
+    }
+    if (process.env.GREY_SHOTS) {
+      fs.mkdirSync(process.env.GREY_SHOTS, { recursive: true });
+      await p.locator("#grey-shots").screenshot({ path: path.join(process.env.GREY_SHOTS, "grey-shot.png") });
+    }
+    if (errors.length) fail(tag + "page errors: " + errors.join(" | "));
+  } finally { await ctx.close(); }
+  if (!bad) console.log("greyMeansDead ok");
+}
+
 async function mAgentIdleSection(browser) {
   const tag = "mAgentIdle: ";
   const agent = (id, over) => mCard(id, Object.assign({ alias: id, display_title: id, tags: ["origin:agent", "atrium:director"], status: "needs-input",
-    waiting_since: mIso(5 * M_MIN), waiting_reason: "turn" }, over || {}));
+    waiting_since: mIso(5 * M_MIN), waiting_reason: "turn", supervised: true }, over || {}));
   const st = mServer({});
   st.tasks = [
     agent("a-idle"),
+    agent("a-gone", { supervised: false }),
+    mCard("op-gone", { alias: "op-gone", display_title: "op-gone", status: "needs-input", supervised: false, waiting_since: mIso(6 * M_MIN) }),
     agent("a-ask", { seen: { answered: false, open_questions: ["land it?"], questions_at: mIso(4 * M_MIN) } }),
     agent("a-perm", { status: "needs-permission" }),
     mCard("op-wait", { alias: "op-wait", display_title: "op-wait", status: "needs-input", waiting_since: mIso(6 * M_MIN), waiting_reason: "turn" }),
@@ -31726,16 +31788,16 @@ async function mAgentIdleSection(browser) {
     await p.waitForSelector("#m-list .row", { timeout: slow(10000) });
     await p.waitForFunction(() => window.mNet.loaded(), null, { timeout: slow(8000) });
     const names = await p.$$eval("#m-list .row .name b", e => e.map(x => x.textContent).sort());
-    if (names.join(",") !== "a-ask,a-perm,op-wait") fail(tag + "the needs list is " + names.join(","));
-    if (!/^\(3\)/.test(await p.title())) fail(tag + "the tab title count is " + (await p.title()));
+    if (names.join(",") !== "a-ask,a-idle,a-perm,op-wait") fail(tag + "the needs list is " + names.join(","));
+    if (!/^\(4\)/.test(await p.title())) fail(tag + "the tab title count is " + (await p.title()));
     const said = await p.evaluate(() => {
       const c = id => window.mStore.card(id);
-      return ["a-idle", "a-ask", "op-wait"].map(id => window.mUtil.activityText(c(id)));
+      return ["a-idle", "a-ask", "op-wait", "a-gone", "op-gone"].map(id => window.mUtil.activityText(c(id)));
     });
-    if (said[0] !== "idle") fail(tag + "an idle agent card reads " + said[0]);
-    if (said[1] !== "waiting for you" || said[2] !== "waiting for you") fail(tag + "a question or operator card reads " + said.join("|"));
-    const rows = await p.evaluate(() => ["a-idle", "a-ask", "op-wait"].map(id => agentIdle(window.mStore.card(id))));
-    if (rows.join() !== "true,false,false") fail(tag + "the shared predicate says " + rows.join());
+    if (said.slice(0, 3).some(x => x !== "waiting for you")) fail(tag + "a running card waiting on the operator reads " + said.join("|"));
+    if (said[3] !== "its runner is gone" || said[4] !== "its runner is gone") fail(tag + "a card with no runner reads " + said.join("|"));
+    const rows = await p.evaluate(() => ["a-idle", "a-ask", "op-wait", "a-gone", "op-gone"].map(id => runnerGone(window.mStore.card(id))));
+    if (rows.join() !== "false,false,false,true,true") fail(tag + "the shared predicate says " + rows.join());
     await p.tap("#m-seg-all");
     await p.waitForSelector("#m-list h2.grp", { timeout: slow(5000) });
     const grp = await p.evaluate(() => {
@@ -31749,7 +31811,8 @@ async function mAgentIdleSection(browser) {
       return Object.keys(by).map(g => g + ":" + by[g]);
     });
     const waitingGrp = grp.find(g => /^Waiting/.test(g)) || "", idleGrp = grp.find(g => /^Idle/.test(g)) || "";
-    if (/a-idle/.test(waitingGrp) || !/a-idle/.test(idleGrp)) fail(tag + "the idle agent card is not under Idle: " + grp.join(" | "));
+    if (!/a-idle/.test(waitingGrp) || /a-gone|op-gone/.test(waitingGrp)) fail(tag + "a live agent card is not under Waiting, or a gone one is: " + grp.join(" | "));
+    if (!/a-gone/.test(idleGrp) || !/op-gone/.test(idleGrp)) fail(tag + "a card with no runner is not under Idle: " + grp.join(" | "));
     if (!/a-ask/.test(waitingGrp) || !/op-wait/.test(waitingGrp)) fail(tag + "a question or operator card left Waiting: " + grp.join(" | "));
     // the bell: a card that goes idle rings nothing, an operator card and a question do
     // the permission ask above already rang once; what follows is counted from there
@@ -31759,11 +31822,13 @@ async function mAgentIdleSection(browser) {
     if ((await waits()).length) fail(tag + "the first load rang for a wait: " + (await waits()).join("|"));
     const push = async (t) => { st.tasks.push(t); st.send("task", t); await p.waitForTimeout(800); };
     await push(agent("a-new-idle", { waiting_since: mIso(0) }));
-    if ((await waits()).length) fail(tag + "an idle agent card rang the bell: " + (await waits()).join("|"));
+    if ((await waits()).length !== 1) fail(tag + "a live agent card waiting on the operator did not ring the bell: " + (await waits()).join("|"));
+    await push(agent("a-new-gone", { waiting_since: mIso(0), supervised: false }));
+    if ((await waits()).length !== 1) fail(tag + "a card with no runner rang the bell: " + (await waits()).join("|"));
     await push(agent("a-new-ask", { waiting_since: mIso(0), seen: { answered: false, open_questions: ["ok?"] } }));
-    if ((await waits()).length !== 1) fail(tag + "an agent card with a question did not ring the bell: " + (await waits()).join("|"));
+    if ((await waits()).length !== 2) fail(tag + "an agent card with a question did not ring the bell: " + (await waits()).join("|"));
     await push(mCard("op-new", { alias: "op-new", display_title: "op-new", status: "needs-input", waiting_since: mIso(0) }));
-    if ((await waits()).length !== 2) fail(tag + "an operator-launched card did not ring the bell: " + (await waits()).join("|"));
+    if ((await waits()).length !== 3) fail(tag + "an operator-launched card did not ring the bell: " + (await waits()).join("|"));
     if (errors.length) fail(tag + "page errors: " + errors.join(" | "));
     await ctx.close();
   } finally { await st.close(); }

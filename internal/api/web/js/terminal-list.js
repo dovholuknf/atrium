@@ -213,7 +213,7 @@ function termCold(t) {
   if (t && t.supervised) return false;
   // A parked card keeps its status but its process is gone.
   if (t && t.parked_at) return true;
-  return !(t && TERM_LIVE_STATUS.includes(t.status));
+  return !(t && TERM_LIVE_STATUS.includes(t.status)) || runnerGone(t);
 }
 // Live but not attachable: joined from a terminal atrium does not hold.
 function termJoined(t) { return !!t && !t.supervised && !termCold(t); }
