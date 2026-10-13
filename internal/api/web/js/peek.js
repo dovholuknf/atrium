@@ -233,8 +233,13 @@ function peekBody(t, v) {
   const where = t && typeof terminalLabel === "function" ? terminalLabel(t) : "";
   const cold = t && typeof termCold === "function" && termCold(t)
     ? "this one has exited. click it to start it again here" : "";
+  // A folded parent draws none of its children, so the warn chip on its row has to be explained here.
+  const kidsWait = t && typeof termKidsShut === "function" && (termKids.get(t.id) || []).length && termKidsShut(t)
+    ? termKidsCount(t.id, isWaiting) : 0;
   const head = `<div class="peek-head"><span class="peek-title">${esc(title)}</span>` +
     (st ? `<div class="peek-status ${st.cls}"><b>${esc(st.word)}</b>${st.why ? `<span>${esc(st.why)}</span>` : ""}</div>` : "") +
+    (kidsWait ? `<div class="peek-status ps-ask peek-kidwait"><b>${kidsWait} ${kidsWait === 1 ? "card" : "cards"}</b><span>under this one ${
+      kidsWait === 1 ? "needs" : "need"} you</span></div>` : "") +
     `<div class="peek-meta">` +
     (where && where !== title ? `<span class="peek-path">${esc(where)}</span>` : "") +
     (sub ? `<span class="peek-sub">${esc(sub)}</span>` : "") + `</div>` +

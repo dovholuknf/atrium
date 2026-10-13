@@ -22664,7 +22664,31 @@ async function childFoldSection(browser, base) {
     // Nothing under it is working in this fixture, so the folded row says the count and the one that needs you.
     if (v.run !== "" || v.runCls) fail("childFold: a running chip with nothing running: " + JSON.stringify(v));
     if (!/^1/.test(v.wait)) fail("childFold: folded row does not count the waiting child: " + JSON.stringify(v.wait));
-    if (!/1 card under this one needs you/.test(v.tip)) fail("childFold: the folded popup does not explain the chip: " + JSON.stringify(v.tip));
+    if (/needs you.*needs you/.test(v.tip)) fail("childFold: the chevron tip says it twice: " + JSON.stringify(v.tip));
+    // The explanation is in the card's hover popup, one line, singular for one.
+    const pop = await p.evaluate(async () => {
+      const par = (await boardCards()).find(c => c.id === "par");
+      const d = document.createElement("div"); d.innerHTML = peekBody(par, null);
+      const el = d.querySelector(".peek-kidwait"); return el ? el.textContent : "";
+    });
+    if (pop !== "1 cardunder this one needs you") fail("childFold: the folded parent's popup line is " + JSON.stringify(pop));
+    await p.evaluate(async () => { // a second waiting child makes it plural, and an open parent says nothing
+      (await boardCards()).find(c => c.id === "kid-a").status = "needs-permission"; await renderTermList();
+    });
+    const pop2 = await p.evaluate(async () => {
+      const d = document.createElement("div"); d.innerHTML = peekBody((await boardCards()).find(c => c.id === "par"), null);
+      return (d.querySelector(".peek-kidwait") || {}).textContent || "";
+    });
+    if (pop2 !== "2 cardsunder this one need you") fail("childFold: plural popup line is " + JSON.stringify(pop2));
+    await p.evaluate(async () => { (await boardCards()).find(c => c.id === "kid-a").status = "running"; await renderTermList(); });
+    if (process.env.CHILDFOLD_SHOTS) {
+      await p.hover('#term-list .card.tab[data-id="par"] .tname');
+      await p.waitForSelector(".peek-kidwait", { timeout: slow(5000) }).catch(() => fail("childFold: hover popup never showed the line"));
+      await p.waitForTimeout(500);
+      fs.mkdirSync(process.env.CHILDFOLD_SHOTS, { recursive: true });
+      await p.screenshot({ path: path.join(process.env.CHILDFOLD_SHOTS, "after-popup.png") });
+      await p.mouse.move(5, 5);
+    }
     // A working child, deep or not, shows on the folded parent.
     await p.evaluate(async () => {
       const all = await boardCards();

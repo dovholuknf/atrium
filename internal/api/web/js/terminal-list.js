@@ -1150,8 +1150,7 @@ function termKidsToggle(t, total, hidden, shut) {
   const wait = shut ? termKidsCount(t.id, isWaiting) : 0;
   const base = shut ? "show the cards this one launched" : "hide the cards this one launched";
   const say = [run && run + " running", wait && wait + " need" + (wait === 1 ? "s" : "") + " you"].filter(Boolean);
-  const tip = shut ? `${total} under this one${say.length ? ": " + say.join(", ") : ""}. click to show them${
-    wait ? `\n${wait} ${wait === 1 ? "card" : "cards"} under this one ${wait === 1 ? "needs" : "need"} you (the ! chip)` : ""}` : base;
+  const tip = shut ? `${total} under this one${say.length ? ": " + say.join(", ") : ""}. click to show them` : base;
   return `<button type="button" class="tkidfold${shut ? " shut" : ""}${run ? " running" : ""}" aria-expanded="${shut ? "false" : "true"}"
     aria-label="${tip}" data-tip="${tip}"
     onclick="event.stopPropagation();toggleKids('${t.id}')"
