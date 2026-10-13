@@ -1437,7 +1437,9 @@ function termFlatGroupsHTML(list, g, folded) {
     // disagree about what nothing is called.
     const shown = name || "uncategorized";
     const at = "g:" + shown;
-    const off = folded.has(at);
+    // An empty group starts shut, and `open:` + the heading records somebody opening it.
+    const nobody = by.get(name).length === 0;
+    const off = nobody ? !folded.has("open:" + at) : folded.has(at);
     // A group you made keeps the order you set, not the strip's sort. See
     // `byRank` on the board. It is also a drop target, see `wireTermDrag`.
     const mine = g.handOrdered && name && name !== UNTAGGED && typeof byRank === "function";
@@ -1452,7 +1454,7 @@ function termFlatGroupsHTML(list, g, folded) {
     // made with `+ new group` here could never be taken away from here.
     // `untagged` is the absence of a group and gets no menu.
     const menu = name && name !== UNTAGGED ? name : "";
-    const head = termHeading(shown, at, by.get(name).length, off, menu, style, mine, by.get(name));
+    const head = termHeading(shown, at, by.get(name).length, off, menu, style, mine, by.get(name), nobody);
     if (off) return head;
     const rows = by.get(name);
     if (mine) rows.sort(byRank);
@@ -1461,7 +1463,7 @@ function termFlatGroupsHTML(list, g, folded) {
     const out = g.handOrdered && name === UNTAGGED ? ` data-ungroup="1"` : "";
     return head + `<div class="tnest${hue === null ? "" : " hued"}"${style}${out}${
       mine ? ` data-group="${esc(name)}"` : ""}>${rows.length
-      ? rows.map(t => termRow(t, false)).join("") : emptyGroupHint()}</div>`;
+      ? rows.map(t => termRow(t, false)).join("") : emptyGroupHint(shown)}</div>`;
   }).join("");
 }
 
@@ -1506,8 +1508,9 @@ function termFolded() {
   catch (e) { return new Set(); }
 }
 
-function toggleTermGroup(path) {
+function toggleTermGroup(path, empty) {
   const folded = termFolded();
+  if (empty) path = "open:" + path;
   if (folded.has(path)) folded.delete(path);
   else folded.add(path);
   try { localStorage.setItem(TERM_FOLDED, JSON.stringify([...folded])); } catch (e) {}
@@ -1539,7 +1542,7 @@ function toggleTermGroup(path) {
 // it is the one mode whose order is yours to write (`p.groups`). Every other
 // mode sorts its groups by a rule, so a drag there would be undone by the next
 // paint, and the heading says where reordering lives instead of offering it.
-function termHeading(name, path, count, folded, group, style, movable, rows) {
+function termHeading(name, path, count, folded, group, style, movable, rows, empty) {
   const total = termTotals.get(path);
   const shown = total > count ? `${count}/${total}` : `${count}`;
   const tip = total > count ? ` (${total - count} hidden by the search)` : "";
@@ -1560,7 +1563,7 @@ function termHeading(name, path, count, folded, group, style, movable, rows) {
   if (wear) style = ` style="${(style || "").replace(/^ style="|"$/g, "")};${wear.vars}"`;
   return `<button class="tgroup${style ? " hued" : ""}${movable ? " movable" : ""}${carries ? " carries" + wear.cls : ""}"${style || ""}${
       movable ? ` draggable="true" data-ghead="${esc(group)}"` : ""}
-      onclick="toggleTermGroup('${arg}')"${menu}
+      onclick="toggleTermGroup('${arg}'${empty ? ", true" : ""})"${menu}
       data-tip="${folded ? "show" : "hide"} ${esc(name)}${tip}${how}"
       >${movable ? `<span class="tgrip" aria-hidden="true">&#10303;</span>` : ""}<span
         class="tcaret">${folded ? "&#9656;" : "&#9662;"}</span

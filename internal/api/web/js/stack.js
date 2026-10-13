@@ -405,14 +405,17 @@ function stackGroupsHTML(list, g) {
     // board had a fold key that moved under a card and this never did. Sharing
     // the key now would silently fold the stack from the board and back.
     const fold = "proj:" + key;
-    const shut = isFolded(fold) ? "" : " open";
+    // An empty group starts shut. The list records what differs from how it comes, as on the board, and
+    // `data-fold-shut` tells the toggle listener this one is inverted.
+    const empty = mine.length === 0;
+    const shut = (isFolded(fold) === empty) ? " open" : "";
     return `<details class="stackgroup"${shut} style="--ghue:${groupHue(name)}"
-      data-morph-key="${esc(key)}" data-fold="${esc(fold)}">
+      data-morph-key="${esc(key)}" data-fold="${esc(fold)}"${empty ? ` data-fold-shut="1"` : ""}>
       <summary oncontextmenu="groupMenu(event, '${esc(name).replace(/'/g, "&#39;")}')">
         <span class="gname" data-tip="${esc(name)} &mdash; right click to recolor">${esc(name)}</span>
         <span class="gn">${mine.length}</span>
       </summary>
-      <div class="panel">${mine.length ? stackRows(mine) : emptyGroupHint()}</div>
+      <div class="panel">${mine.length ? stackRows(mine) : emptyGroupHint(name)}</div>
     </details>`;
   }).join("");
 }
