@@ -30,7 +30,7 @@ LDFLAGS  := -X github.com/dovholuknf/atrium/internal/cli.Version=$(VERSION) \
 # the board is one HTML file with a large script block in it, and the PowerShell
 # scripts register scheduled tasks, so neither can be verified by trying it.
 check: test
-	bash scripts/check-board.sh
+	FULL_SUITE=1 bash scripts/check-board.sh
 	bash scripts/check-skins.sh
 	node scripts/check-contrast.js internal/api/web/css
 	pwsh -NoProfile -File scripts/check-powershell.ps1 || \

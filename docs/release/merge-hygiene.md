@@ -33,7 +33,7 @@ Two separate failures, one root cause.
 
 4. **`go build` is not enough after a merge.** It cannot see a duplicated DOM id or a resurrected setting. After
    any non-trivial merge, run:
-   - `bash scripts/check-board.sh` for duplicate ids and duplicate settings or runner panes.
+   - `FULL_SUITE=1 bash scripts/check-board.sh` for duplicate ids and duplicate settings or runner panes.
    - a grep for every symbol the destination branch DELETED (for example a removed setting like
      `worktree_command`), because a merge from an older branch can quietly bring it back.
 

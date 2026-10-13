@@ -45,6 +45,8 @@ try {
     # A room's own location settings would point the harness at the live room.
     Remove-Item Env:ATRIUM_LOCATION, Env:ATRIUM_DEBUG_INPUTLAG, Env:ATRIUM_REAL_SCROLLBACK -ErrorAction SilentlyContinue
     $env:ATRIUM_SUITE_REMOTE = '1'
+    # The other half already refused a whole-suite run that did not set FULL_SUITE=1, and ssh does not carry it here.
+    $env:FULL_SUITE = '1'
     Set-Location $wt
     Write-Host "board-suite on $env:COMPUTERNAME $($env:NUMBER_OF_PROCESSORS) cores: node scripts/test-board-sharded.js --local $suiteArgs"
     & node scripts/test-board-sharded.js --local @suiteArgs 2>&1 | ForEach-Object { Write-Host $_ }

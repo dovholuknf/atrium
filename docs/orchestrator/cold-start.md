@@ -44,7 +44,7 @@ Workers CANNOT land: `claude/main` is checked out in `D:\git\github\dovholuknf\a
 it anywhere else. I land. A worker branch that fast-forwards gets `git merge --ff-only <sha>` in that checkout.
 One that does not gets `git cherry-pick`. `CHANGELOG.md` collides on nearly every cherry-pick: keep both entries.
 
-Verify before any deploy: `bash scripts/check-board.sh`, `bash scripts/check-skins.sh`, `go vet ./...`, and
+Verify before any deploy: `FULL_SUITE=1 bash scripts/check-board.sh`, `bash scripts/check-skins.sh`, `go vet ./...`, and
 `go test` with `ATRIUM_LOCATION` cleared and `ATRIUM_DEBUG_INPUTLAG` unset (a leftover value in the shell fails
 `TestLagConnTimesNothingWhenOff`). `internal/link` has flaked under load; rerun once before believing it.
 

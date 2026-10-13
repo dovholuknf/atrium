@@ -193,6 +193,14 @@ function dispatchRemote(opt) {
 
 async function main() {
   const opt = parseArgs(process.argv.slice(2));
+  // Every unit is the whole suite, which is for after landing, the same refusal test-board-headless.js makes. Each shard
+  // is started with HEADLESS_UNITS, so without this a full run here would never meet that one.
+  if (!opt.units && !opt.list && process.env.FULL_SUITE !== "1") {
+    console.error("test-board-sharded.js with no --units runs the whole board suite, and refuses to without FULL_SUITE=1.\n" +
+      "before handing back, run scripts/test-touched.sh, which runs what your diff touched.\n" +
+      "a few units: node scripts/test-board-sharded.js --local --units a,b");
+    return 2;
+  }
   const remoteCode = dispatchRemote(opt);
   if (remoteCode !== null) return remoteCode;
   const list = listUnits();
