@@ -58,3 +58,31 @@ func TestBoardUsageUpsertSpansDays(t *testing.T) {
 		t.Fatalf("totals are %+v", got)
 	}
 }
+
+// The totals are read from a snapshot that a write drops, so a count posted after a read still shows on the next one.
+func TestBoardUsageSnapshotFollowsWrites(t *testing.T) {
+	srv, st, _ := fileServer(t)
+	read := func() string {
+		rec := httptest.NewRecorder()
+		srv.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/usage/board", nil))
+		return rec.Body.String()
+	}
+	post := func(body string) {
+		srv.Handler().ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodPost, "/v1/usage", strings.NewReader(body)))
+	}
+	post(`{"counts":{"tab:cards":2}}`)
+	if first := read(); !strings.Contains(first, `"n":2`) {
+		t.Fatalf("first read %s", first)
+	}
+	// A write behind the snapshot's back is not seen: the read is the snapshot and not the table.
+	if err := st.AddBoardUsage("tab:cards", "2026-10-10", 5); err != nil {
+		t.Fatal(err)
+	}
+	if again := read(); !strings.Contains(again, `"n":2`) {
+		t.Fatalf("second read %s is not the snapshot", again)
+	}
+	post(`{"counts":{"tab:cards":1}}`)
+	if after := read(); !strings.Contains(after, `"n":8`) {
+		t.Fatalf("read after a post %s, want the total 8", after)
+	}
+}
