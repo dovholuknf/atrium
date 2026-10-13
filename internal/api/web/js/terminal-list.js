@@ -1962,10 +1962,8 @@ async function renderTermList() {
   // header at all, and the board's painter writes into whichever of its three
   // hosts it finds.
   if (typeof paintGroupSegs === "function") paintGroupSegs();
-  // The gear's terminal list section follows the list. The cache summary there is
-  // event driven like the stack's. See js/keepalive.js.
+  // The gear's terminal list section follows the list.
   paintTermGear();
-  if (typeof paintCacheLine === "function") paintCacheLine("cache-line-gear", shown);
 }
 
 // ── the ended cards ──────────────────────────────────────────────────────────
