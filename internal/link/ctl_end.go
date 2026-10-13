@@ -47,6 +47,20 @@ const residentDoneToolDesc = "Report that this task is finished. Your card stays
 const residentBlockedToolDesc = "Report that something stops this task, in up to 50 words. Your card stays open: " +
 	"after the call, say nothing more and wait for the next message."
 
+// What an item worker hears from the same two tools: the same ending with no launcher in the words.
+const itemDoneToolDesc = "End your work: it is finished. THIS IS HOW TO END. Nothing else is needed. Give exactly one of " +
+	"`sha` or `artifact`: sha or artifact location. `sha` is the commit the work landed as (7 to 40 hex " +
+	"characters, and it has to exist in your directory or on any hub branch, or the call is refused and nothing is " +
+	"recorded). `artifact` is a path or URL to what you made, for work with no commit, and a path has to exist on " +
+	"your own room. Details go in REPORT.md, not here. Never end a turn while a command you started is still running. " +
+	"Stop after the call: say nothing more and do no more work. Write nothing else: the human sees the tool call. " +
+	"If you are asked to stop, answer with this and your last sha."
+
+const itemBlockedToolDesc = "End your work: something stops you and you cannot go on. THIS IS HOW TO END. " +
+	"Nothing else is needed. Give `reason`, what stops you and what you need, in up to 50 words. A longer reason is " +
+	"refused, not cut. Details go in REPORT.md, not here. Never end a turn while a command you started is still running. " +
+	"Stop after the call: say nothing more and do no more work. Write nothing else: the human sees the tool call."
+
 type doneInput struct {
 	SHA      string `json:"sha,omitempty" jsonschema:"sha or artifact location. the commit the work landed as: 7 to 40 hex characters"`
 	Artifact string `json:"artifact,omitempty" jsonschema:"sha or artifact location. a path or URL to what you made, when there is no commit"`

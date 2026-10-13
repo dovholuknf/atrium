@@ -35,6 +35,9 @@ const (
 	// classWorkerResident and classFullResident are those two with the done and blocked words of a card that stays open.
 	classWorkerResident
 	classFullResident
+	// classWorkerItem is the worker set of an item: no say, no peers, no task and no report, and the done and blocked
+	// words that name no launcher. See ItemTag.
+	classWorkerItem
 )
 
 // workerTools is the whole of the worker set, by name.
@@ -73,8 +76,18 @@ var workerTools = map[string]bool{
 	"atrium_reports": true,
 }
 
+// itemWithheld is what an item worker loses from the worker set: every way to talk to anything but the tool that ends
+// its work. The same four the say endpoint refuses for, so a worker that reached one by lying about its class meets
+// the refusal there.
+var itemWithheld = map[string]bool{
+	"atrium_say": true, "atrium_peers": true, "atrium_task": true, "atrium_report": true,
+}
+
 // inClass reports whether a tool is served to a class.
 func inClass(name string, class ctlClass) bool {
+	if class == classWorkerItem {
+		return workerTools[name] && !itemWithheld[name]
+	}
 	return class == classFull || class == classFullResident || workerTools[name]
 }
 
@@ -179,6 +192,9 @@ func (c *controlMCP) lookupClass(ctx context.Context, room, agent string) (ctlCl
 	best := pickCard(body.Tasks, agent)
 	if best == nil {
 		return classFull, false
+	}
+	if hasTag(best.Tags, ItemTag) && hasTag(best.Tags, SubagentTag) && !hasTag(best.Tags, DirectorTag) {
+		return classWorkerItem, true
 	}
 	resident := hasTag(best.Tags, ResidentTag) || hasTag(best.Tags, DirectorTag) || hasTag(best.Tags, "atrium:orchestrator")
 	if hasTag(best.Tags, SubagentTag) && !hasTag(best.Tags, DirectorTag) {

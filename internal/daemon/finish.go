@@ -427,9 +427,18 @@ func (d *Daemon) finish(task *store.Task, in FinishRequest) (map[string]any, int
 	// A REPORT TO A LAUNCHER THAT HOLDS ITS NOTICES IS STILL TYPED, at the end of its turn. A done or a blocked
 	// report is never parked: the launcher is the one who has to act on it. See fyi.go.
 	if launcher != nil {
+		key := time.Now().UTC().Format(time.RFC3339Nano)
+		if isItem(task) {
+			// AN ITEM'S RESULT IS ONE NOTICE PER GENERATION: a re-delivery of it is the same key. See itemResultKey.
+			gen := 1
+			if w, err := d.st.WorkItem(task.ID); err == nil {
+				gen = w.Generation
+			}
+			key = itemResultKey(task.ID, gen, in.Status)
+		}
 		write.Notice = &store.NoticeSpec{
 			ToID: launcher.ID, From: task.WireName, Source: NoticeReport,
-			Key:  time.Now().UTC().Format(time.RFC3339Nano),
+			Key:  key,
 			Text: truncatePeer(reportBody(task, in.Status, sha, unverified, recap)),
 		}
 	} else if !in.viaSay {

@@ -34,6 +34,7 @@ type RelayLaunch struct {
 	Env                                    map[string]string
 	LeanAgents, LeanSkills                 []string
 	Lifetime                               string
+	Item                                   bool
 }
 
 // roomLaunchIn is the body of `POST /v1/peers/launch`: the launch the stdio atrium_launch
@@ -55,6 +56,7 @@ type roomLaunchIn struct {
 	LeanAgents []string          `json:"lean_agents"`
 	LeanSkills []string          `json:"lean_skills"`
 	Lifetime   string            `json:"lifetime"`
+	Item       bool              `json:"item"`
 }
 
 // handleRoomLaunch is `POST /v1/peers/launch`: start a session on another room, through
@@ -91,7 +93,7 @@ func (d *Daemon) handleRoomLaunch(w http.ResponseWriter, r *http.Request) {
 	res, err := rl.Launch(cctx, RelayLaunch{
 		From: from, Room: other, Cwd: in.Cwd, Title: in.Title, Why: in.Why, Prompt: in.Prompt, Brief: in.Brief,
 		Runner: in.Runner, Tags: in.Tags, Model: in.Model, Effort: in.Effort, Args: in.Args, Env: in.Env,
-		LeanAgents: in.LeanAgents, LeanSkills: in.LeanSkills, Lifetime: in.Lifetime,
+		LeanAgents: in.LeanAgents, LeanSkills: in.LeanSkills, Lifetime: in.Lifetime, Item: in.Item,
 	})
 	code, body := launchAnswer(other, res, err)
 	if code >= 400 {
