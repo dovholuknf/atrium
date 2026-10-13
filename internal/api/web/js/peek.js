@@ -604,13 +604,7 @@ function peekPlace(anchor, at) {
     const r = anchor.getBoundingClientRect ? anchor.getBoundingClientRect() : null;
     at = r ? { x: r.left, y: r.bottom } : { x: anchor.x, y: anchor.y };
   }
-  const w = el.offsetWidth, h = el.offsetHeight, pad = 8, gap = 12;
-  let x = at.x + 4, y = at.y + gap;
-  if (y + h > innerHeight - pad) y = at.y - h - gap;
-  x = Math.min(Math.max(x, pad), Math.max(pad, innerWidth - w - pad));
-  y = Math.min(Math.max(y, pad), Math.max(pad, innerHeight - h - pad));
-  el.style.left = Math.round(x) + "px";
-  el.style.top = Math.round(y) + "px";
+  popFit(el, { x: at.x + 4, y: at.y }, { gap: 12, slide: true });
 }
 
 function openPeek(id, anchor, mode) {

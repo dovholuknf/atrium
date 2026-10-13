@@ -20983,6 +20983,186 @@ async function peekLaunchSection(browser, base) {
   if (!bad) console.log("peekLaunch ok");
 }
 
+// POPUPS STAY ON SCREEN. Every menu, flyout, hover popup and tooltip on the board is placed by js/popfit.js, and each
+// must end inside the viewport on all four edges whatever it was opened against. A small window (420x300) and nine
+// spots, the four corners, the four edge middles and the centre, for each kind of popup. A flyout taller than the
+// window must scroll inside itself rather than run off.
+// POPUP_SHOTS=<dir> writes the group flyout of a card menu in a short window, POPUP_BEFORE=1 with the flyout's fitting
+// switched off (the way it was drawn before popfit.js), as popup-<before|after>.png.
+async function popupFitSection(browser, base) {
+  const V = { w: 420, h: 300 };
+  const ctx = await browser.newContext({ viewport: { width: V.w, height: V.h } });
+  const errors = [];
+  try {
+    const p = await ctx.newPage();
+    p.on("pageerror", e => errors.push(String(e)));
+    await p.goto(base + "/", { waitUntil: "domcontentloaded" });
+    await p.waitForFunction(() => typeof popFit === "function" && typeof showMenu === "function" && typeof placeTip === "function", null, { timeout: slow(15000) });
+    const spots = [];
+    for (const y of [0, 150, 299]) for (const x of [0, 210, 419]) spots.push({ x, y });
+    const inside = r => r.left >= -0.5 && r.top >= -0.5 && r.right <= V.w + 0.5 && r.bottom <= V.h + 0.5;
+    const check = (kind, at, name, r) => {
+      const where = "popupFit: " + kind + " at " + at.x + "," + at.y + ": " + name;
+      if (!r) return fail(where + " was not there");
+      if (!(r.right - r.left > 0) || !(r.bottom - r.top > 0)) return fail(where + " has no size");
+      if (!inside(r)) fail(where + " is outside the " + V.w + "x" + V.h + " window: " +
+        ["left", "top", "right", "bottom"].map(k => k + " " + Math.round(r[k])).join(", "));
+    };
+    const RECT = "(el) => { const r = el.getBoundingClientRect(); return { left: r.left, top: r.top, right: r.right, bottom: r.bottom }; }";
+
+    // The card menu, and a flyout of forty entries (taller than the window) and one of three.
+    for (const [n, count] of [["tall flyout", 40], ["short flyout", 3]]) {
+      for (const at of spots) {
+        const got = await p.evaluate(({ at, count, RECT }) => {
+          const rect = eval(RECT);
+          const sub = Array.from({ length: count }, (_, i) => ({ label: "destination number " + i, act() {} }));
+          showMenu({ clientX: at.x, clientY: at.y, preventDefault() {} }, [{ label: "restart", act() {} }, { label: "add to group", sub }, { label: "stop", act() {} }]);
+          const row = cardMenuEl.querySelectorAll(":scope > button")[1];
+          row.dispatchEvent(new PointerEvent("pointerenter"));
+          const s = row.querySelector(".sub");
+          // Drawn, not just placed: a menu that scrolls or clips would hide a flyout that sits inside the window.
+          const sr = s.getBoundingClientRect(), hit = document.elementFromPoint((sr.left + sr.right) / 2, (sr.top + sr.bottom) / 2);
+          const out = { menu: rect(cardMenuEl), sub: rect(s), seen: !!(hit && s.contains(hit)), scrolls: s.scrollHeight > s.clientHeight + 1, overflowY: getComputedStyle(s).overflowY };
+          closeCardMenu();
+          return out;
+        }, { at, count, RECT });
+        check(n, at, "the menu", got.menu);
+        check(n, at, "the flyout", got.sub);
+        if (!got.seen) fail("popupFit: " + n + " at " + at.x + "," + at.y + ": the flyout is placed but not drawn (clipped by something)");
+        if (count > 20 && !got.scrolls) fail("popupFit: " + n + " at " + at.x + "," + at.y + " does not scroll though forty entries cannot fit " + V.h + "px");
+        if (count > 20 && got.overflowY !== "auto") fail("popupFit: " + n + " is taller than the window and its overflow is " + got.overflowY);
+      }
+    }
+
+    // A tooltip, against a bubble at each spot.
+    for (const at of spots) {
+      const r = await p.evaluate(({ at, RECT }) => {
+        const rect = eval(RECT);
+        const a = document.createElement("span");
+        a.style.cssText = "position:fixed;width:18px;height:18px;left:" + Math.min(at.x, innerWidth - 18) + "px;top:" + Math.min(at.y, innerHeight - 18) + "px";
+        document.body.appendChild(a);
+        placeTip(a, "a long explanation that wraps over several lines, ".repeat(6));
+        const out = rect(document.getElementById("tip"));
+        hideTip(); a.remove();
+        return out;
+      }, { at, RECT });
+      check("tooltip", at, "the tooltip", r);
+    }
+
+    // The card details popover, with content taller than the window.
+    for (const at of spots) {
+      const r = await p.evaluate(({ at, RECT }) => {
+        const rect = eval(RECT);
+        const el = peekPop();
+        el.classList.add("on");
+        el.querySelector(".peek-body").innerHTML = '<div style="height:700px;width:260px">tall</div>';
+        peekPlace({ x: at.x, y: at.y }, { x: at.x, y: at.y });
+        const out = rect(el);
+        el.classList.remove("on");
+        return out;
+      }, { at, RECT });
+      check("details popover", at, "the popover", r);
+    }
+
+    // The room picker, hung off its chip moved to each spot.
+    for (const at of spots) {
+      const r = await p.evaluate(({ at, RECT }) => {
+        const rect = eval(RECT);
+        const chip = document.getElementById("rooms"), menu = document.getElementById("rooms-menu");
+        if (!chip || !menu) return null;
+        const was = chip.style.cssText, hid = chip.hidden;
+        chip.hidden = false;
+        chip.style.cssText = "position:fixed;display:block;width:40px;height:20px;left:" + Math.min(at.x, innerWidth - 40) + "px;top:" + Math.min(at.y, innerHeight - 20) + "px";
+        menu.hidden = true;
+        openRooms();
+        const out = rect(menu);
+        menu.hidden = true; chip.style.cssText = was; chip.hidden = hid;
+        return out;
+      }, { at, RECT });
+      check("room picker", at, "the picker", r);
+    }
+
+    // The phone's long press key label.
+    for (const at of spots) {
+      const r = await p.evaluate(({ at, RECT }) => {
+        const rect = eval(RECT);
+        const b = document.createElement("button");
+        b.setAttribute("aria-label", "a rather long label for the key");
+        b.style.cssText = "position:fixed;width:30px;height:24px;left:" + Math.min(at.x, innerWidth - 30) + "px;top:" + Math.min(at.y, innerHeight - 24) + "px";
+        document.body.appendChild(b);
+        phoneKeyLabel(b);
+        const out = rect(document.getElementById("t-keylabel"));
+        phoneKeyLabel(null); b.remove();
+        return out;
+      }, { at, RECT });
+      check("key label", at, "the label", r);
+    }
+
+    // The held-line menu, an absolute child that opens under its line and is fitted by popFly.
+    for (const at of spots) {
+      const r = await p.evaluate(({ at, RECT }) => {
+        const rect = eval(RECT);
+        const hl = document.createElement("div");
+        hl.className = "heldline";
+        hl.style.cssText = "position:fixed;width:120px;height:24px;left:" + Math.min(at.x, innerWidth - 120) + "px;top:" + Math.min(at.y, innerHeight - 24) + "px";
+        hl.innerHTML = '<span class="hl-text">held</span><span class="hl-menu" style="display:block;position:absolute;top:100%;right:0;width:200px;height:60px">menu</span>';
+        document.body.appendChild(hl);
+        const m = hl.querySelector(".hl-menu");
+        popFly(m);
+        const out = rect(m);
+        hl.remove();
+        return out;
+      }, { at, RECT });
+      check("held-line menu", at, "the menu", r);
+    }
+
+    // The helper itself: tall, above, beside, and shrunk into the larger side.
+    for (const [n, opts, w, h] of [["below", {}, 160, 120], ["tall", {}, 160, 900], ["beside", { axis: "x", gap: 10 }, 160, 120],
+        ["beside tall", { axis: "x" }, 160, 900], ["above", { prefer: "above", align: "center", gap: 8 }, 120, 40], ["shrunk", { shrink: true, gap: 8 }, 160, 900]]) {
+      for (const at of spots) {
+        const got = await p.evaluate(({ at, opts, w, h, RECT }) => {
+          const rect = eval(RECT);
+          const el = document.createElement("div");
+          el.style.cssText = "position:fixed;z-index:99;width:" + w + "px;max-width:none";
+          el.innerHTML = "<div style=\"height:" + h + "px\"></div>";
+          document.body.appendChild(el);
+          const a = { left: Math.min(at.x, innerWidth - 24), top: Math.min(at.y, innerHeight - 24) };
+          a.right = a.left + 24; a.bottom = a.top + 24;
+          popFit(el, a, opts);
+          const out = { r: rect(el), oy: getComputedStyle(el).overflowY, tall: h > innerHeight };
+          el.remove();
+          return out;
+        }, { at, opts, w, h, RECT });
+        check("popFit " + n, at, "the box", got.r);
+        if (got.tall && got.oy !== "auto") fail("popupFit: popFit " + n + " is taller than the window and its overflow is " + got.oy);
+      }
+    }
+
+    if (process.env.POPUP_SHOTS) {
+      const s = await browser.newContext({ viewport: { width: 700, height: 420 } });
+      try {
+        const q = await s.newPage();
+        await q.goto(base + "/", { waitUntil: "domcontentloaded" });
+        await q.waitForFunction(() => typeof popFit === "function", null, { timeout: slow(15000) });
+        await q.evaluate(before => {
+          if (before) window.popFly = () => {};
+          const names = ["active", "atrium:interview", "atrium:subagent", "directors", "discourse", "interviews", "orchestrators", "prs", "r&d", "reviews", "shipping", "triage", "ui", "workers"];
+          showMenu({ clientX: 70, clientY: 150, preventDefault() {} }, [{ label: "restart", help: "restart this runner", act() {} },
+            { label: "new context", help: "a fresh conversation", act() {} },
+            { label: "add to group", help: "file this card in a group", sub: names.map(n => ({ label: n, act() {} })) },
+            { sep: true }, { label: "settings", act() {} }, { sep: true }, { label: "stop", help: "stop it", act() {} }, { label: "terminate and clean up", act() {} }]);
+          cardMenuEl.querySelectorAll(":scope > button")[2].dispatchEvent(new PointerEvent("pointerenter"));
+        }, !!process.env.POPUP_BEFORE);
+        await q.screenshot({ path: path.join(process.env.POPUP_SHOTS, "popup-" + (process.env.POPUP_BEFORE ? "before" : "after") + ".png") });
+      } finally { await s.close(); }
+    }
+  } finally {
+    await ctx.close();
+  }
+  if (errors.length) fail("popupFit: the page threw: " + errors.join(" | "));
+  if (!bad) console.log("popupFit ok");
+}
+
 // u-dropdowns-instant: the launch dialog opens WITH its room and runner options in place, whatever the network is doing.
 // Every API answer is held for 500ms. The board has read the runners and rooms at start, so the open is one frame: the
 // dialog is showing, both selects hold their options, and nothing is rebuilt in the next half second.
@@ -28766,7 +28946,7 @@ async function main() {
       u001Audit: u001AuditSection,
       pasteStart: pasteStartSection, pasteDone: pasteDoneSection, pasteOldRoom: pasteOldRoomSection, pasteClose: pasteCloseSection,
       growlQuestionShots: growlQuestionShotsSection, growlQuestionBody: growlQuestionBodySection, growlReplyGrow: growlReplyGrowSection, growlChoices: growlChoicesSection, replies: repliesSection, repliesOf: repliesOfSection, repliesShots: repliesShotsSection, growlStable: growlStableSection, growlOnIt: growlOnItSection, mGrowlQuestion: mGrowlQuestionSection,
-      roomsSetup: roomsSetupSection, discreteGroup: discreteGroupSection, groupingPerView: groupingPerViewSection, repoColors: repoColorsSection, themePicker: themePickerSection, themePickerShots: themePickerShotsSection, borderColourLag: borderColourLagSection, bootClean: bootCleanSection, dropdownsInstant: dropdownsInstantSection, peekLaunch: peekLaunchSection, mReload: mReloadSection, mReconnect: mReconnectSection, mActivityRead: mActivityReadSection, mReadRetry: mReadRetrySection, mWorking: mWorkingSection, mOwnMessages: mOwnMessagesSection, mBubbles: mBubblesSection, mRecapSheet: mRecapSheetSection,
+      roomsSetup: roomsSetupSection, discreteGroup: discreteGroupSection, groupingPerView: groupingPerViewSection, repoColors: repoColorsSection, themePicker: themePickerSection, themePickerShots: themePickerShotsSection, borderColourLag: borderColourLagSection, bootClean: bootCleanSection, popupFit: popupFitSection, dropdownsInstant: dropdownsInstantSection, peekLaunch: peekLaunchSection, mReload: mReloadSection, mReconnect: mReconnectSection, mActivityRead: mActivityReadSection, mReadRetry: mReadRetrySection, mWorking: mWorkingSection, mOwnMessages: mOwnMessagesSection, mBubbles: mBubblesSection, mRecapSheet: mRecapSheetSection,
       mHomeOrder: mHomeOrderSection, cardUrlWayOut: cardUrlWayOutSection, phoneBoot: phoneBootSection, sayEnter: sayEnterSection, sendArrow: sendArrowSection, mTables: mTablesSection, mMarkdown: mMarkdownSection, mHostile: mHostileSection, mPictures: mPicturesSection, soundPhone: soundPhoneSection, phoneBell: phoneBellSection, mBell: mBellSection,
       mHomeOrder: mHomeOrderSection, cardUrlWayOut: cardUrlWayOutSection, phoneBoot: phoneBootSection, sayEnter: sayEnterSection, sendArrow: sendArrowSection, mTables: mTablesSection, mMarkdown: mMarkdownSection, mHostile: mHostileSection, mPictures: mPicturesSection, phoneRedirect: phoneRedirectSection,
       mHomeOrder: mHomeOrderSection, cardUrlWayOut: cardUrlWayOutSection, phoneBoot: phoneBootSection, sayEnter: sayEnterSection, sendArrow: sendArrowSection, mTables: mTablesSection, mMarkdown: mMarkdownSection, mHostile: mHostileSection, mPictures: mPicturesSection, mHidden: mHiddenSection, soundPhone: soundPhoneSection, phoneBell: phoneBellSection, mBell: mBellSection,
@@ -30735,6 +30915,7 @@ async function main() {
     await unit("themePickerShots", () => themePickerShotsSection(browser, base));
     await unit("borderColourLag", () => borderColourLagSection(browser, base));
     await unit("bootClean", () => bootCleanSection(browser, base));
+    await unit("popupFit", () => popupFitSection(browser, base));
     await unit("dropdownsInstant", () => dropdownsInstantSection(browser, base));
     await unit("mWorking", () => mWorkingSection(browser));
     await unit("mReload", () => mReloadSection(browser));

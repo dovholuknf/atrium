@@ -311,12 +311,8 @@ function openRooms() {
   // Placed from the chip rather than anchored to it, because the menu lives at
   // the end of the body and not inside the header. Clamped to the left so a
   // long room name cannot push it off the edge of a narrow window.
-  const at = document.getElementById("rooms").getBoundingClientRect();
-  menu.style.top = (at.bottom + 8) + "px";
   // The tiles can be taller than a phone, so the panel scrolls inside itself.
-  menu.style.maxHeight = Math.max(160, window.innerHeight - at.bottom - 16) + "px";
-  menu.style.left = Math.max(8, Math.min(at.right - menu.offsetWidth,
-    window.innerWidth - menu.offsetWidth - 8)) + "px";
+  popFit(menu, document.getElementById("rooms"), { gap: 8, align: "end", shrink: true });
 }
 
 // refreshRoomsMenu repaints the OPEN picker when the attached-room set changes.

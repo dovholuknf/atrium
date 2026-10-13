@@ -3124,10 +3124,7 @@ function phoneKeyLabel(btn) {
   }
   el.textContent = btn.getAttribute("aria-label") || btn.textContent;
   el.classList.add("on");
-  const r = btn.getBoundingClientRect(), w = el.offsetWidth, h = el.offsetHeight, vw = document.documentElement.clientWidth;
-  const left = Math.max(8, Math.min(vw - 8 - w, r.left + r.width / 2 - w / 2));
-  el.style.left = left + "px";
-  el.style.top = Math.max(8, r.top - h - 8) + "px";
+  popFit(el, btn, { prefer: "above", align: "center", gap: 8 });
 }
 
 // THE KEYBOARD SIZES THE LAYOUT (u-019). `--vvh` and `--vvt` are the visual viewport's height and offset, and the
