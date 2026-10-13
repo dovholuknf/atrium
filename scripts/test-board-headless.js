@@ -1918,7 +1918,7 @@ async function chatterTabSection(browser, base) {
     await dp.waitForTimeout(900);
     // The tab starts in the ... menu whatever the width, and the arrange dialog can put it in the bar and back.
     const tab = await dp.$eval('.tab[data-view="chatter"]', t => ({ text: t.textContent, menu: t.classList.contains("umenu") }));
-    if (tab.text !== "chatter" || !tab.menu) fail("the chatter tab is not in the menu by default: " + JSON.stringify(tab));
+    if (tab.text !== "messages between agents" || !tab.menu) fail("the chatter tab is not in the menu by default: " + JSON.stringify(tab));
     await dp.evaluate(() => window.openTabsArrange());
     await dp.waitForSelector("#tabsdlg[open]");
     const sel = '#tabsdlg-list .tabsdlg-row[data-view="chatter"] select';
@@ -12703,7 +12703,7 @@ async function peekDrawersSection(browser, base) {
       if (!d.recap.open || !d.recap.bodyShown || d.recap.sumShown) fail("peekDrawers: the recap is not open on the first open: " + JSON.stringify(d.recap));
       if (!d.ctx.open || !d.ctx.bodyShown || d.ctx.sumShown) fail("peekDrawers: the context is not open on the first open: " + JSON.stringify(d.ctx));
       if (!d.chatter || d.chatter.open || d.chatter.bodyShown || d.chatter.aria !== "false") fail("peekDrawers: chatter is not folded on the first open: " + JSON.stringify(d.chatter));
-      if (d.chatter && d.chatter.sum !== "3 says") fail("peekDrawers: the folded chatter summary is " + JSON.stringify(d.chatter.sum) + ", want '3 says'");
+      if (d.chatter && d.chatter.sum !== "3") fail("peekDrawers: the folded chatter summary is " + JSON.stringify(d.chatter.sum) + ", want '3'");
       if (!(await p.locator(".peek.on .peek-ctx .peek-bar").count())) fail("peekDrawers: the open context shows no bar");
     }
     const notDrawers = await p.evaluate(() => ({ head: !!document.querySelector(".peek.on .peek-head").closest(".peek-drawer"),
@@ -12754,12 +12754,12 @@ async function peekDrawersSection(browser, base) {
     await p.evaluate(() => localStorage.removeItem("atrium.peekDrawers"));
     await show("sg4-control~oh2");
     const sb = await p.locator(head("chatter") + " .peek-dsum").boundingBox();
-    await p.mouse.move(sb.x + 4, sb.y + sb.height / 2);
+    await p.mouse.move(sb.x + 1, sb.y + sb.height / 2);
     await p.mouse.down();
     await p.mouse.move(sb.x + Math.min(sb.width - 4, 120), sb.y + sb.height / 2, { steps: 6 });
     await p.mouse.up();
     const sel = await p.evaluate(() => String(window.getSelection()));
-    if (!sel.trim()) fail("peekDrawers: the drag selected nothing, so it proves nothing");
+    if (!sel.trim()) fail("peekDrawers: the drag selected nothing, so it proves nothing " + JSON.stringify(sb));
     d = await drawers();
     if (d.chatter.open) fail("peekDrawers: a drag-select in chatter's header toggled it");
     // Text inside an open drawer: selecting it leaves it open.

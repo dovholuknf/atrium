@@ -183,7 +183,7 @@
            See js/audit.js and js/rooms.js. -->
       <div class="tab" data-view="audit" hidden>audit</div>
       <!-- Every say between sessions, from every room. Read on open, see js/chatter.js. -->
-      <div class="tab" data-view="chatter">chatter</div>
+      <div class="tab" data-view="chatter">messages between agents</div>
       <!-- Hub only, revealed with the audit tab. See js/hubrepos.js. -->
       <div class="tab" data-view="hubrepos" hidden>repos</div>
       <!-- Hub only, revealed with the audit tab. See js/backlog.js. -->
@@ -853,12 +853,12 @@ Read-only. It says what happened, it does not change anything. Filter by room to
 
   <div id="chatter" hidden>
     <div class="col-head" style="margin:0 0 10px">
-      <span>what the sessions said to each other</span>
-      <span class="help" tabindex="0" data-tip="Every say from one session to another, from every room, newest first.
+      <span>messages between agents</span>
+      <span class="help" tabindex="0" data-tip="Every message from one session to another, from every room, newest first.
 
 A row opens to the full text, and both names open their cards. Filter by one agent (what it sent, what it received, or both), by room, or by how far back to look.
 
-Read when you open the tab and when you press more, it does not update on its own. A room keeps the last 30 days and 2000 says.">?</span>
+Read when you open the tab and when you press more, it does not update on its own. A room keeps the last 30 days and 2000 messages.">?</span>
     </div>
     <div class="filters" style="margin-bottom:12px">
       <span class="barlabel">agent</span>
