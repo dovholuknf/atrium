@@ -453,6 +453,7 @@ func newWith(opts Options, tune func(*hooks)) (*Daemon, error) {
 	d.ap.SCMClone = d.prWorktreeClone
 	d.ap.SCMHas = d.prWorktreeHas
 	d.ap.Stash = d.StashTo
+	d.ap.HubDelete = d.HubDeleteBranch
 	d.ap.RunAction = d.handleRunAction
 	d.ap.CancelPending = d.CancelPending
 	d.ap.Settling = d.Settling

@@ -165,7 +165,7 @@ const preReceive = `#!/bin/sh
 bad=0
 while read old new ref; do
 	case "$old" in *[!0]*) ;; *) continue ;; esac
-	case "$new" in *[!0]*) ;; *) echo "atrium: $ref cannot be deleted by a push" >&2; bad=1; continue ;; esac
+	case "$new" in *[!0]*) ;; *) continue ;; esac
 	if ! git merge-base --is-ancestor "$old" "$new" 2>/dev/null; then
 		echo "atrium: $ref is not a fast-forward of what the hub has. fetch, merge or rebase, and push again" >&2
 		bad=1
@@ -214,7 +214,8 @@ func pushConfig(hooks string, limit int64) [][2]string {
 	return append(baseConfig(hooks),
 		[2]string{"http.receivepack", "true"},
 		[2]string{"receive.denyNonFastForwards", "true"},
-		[2]string{"receive.denyDeletes", "true"},
+		// Off: the hub's own rules (receive_rules.go) take a delete only of a branch the pusher owns, before git runs.
+		[2]string{"receive.denyDeletes", "false"},
 		[2]string{"receive.denyDeleteCurrent", "true"},
 		[2]string{"receive.fsckObjects", "true"},
 		[2]string{"receive.maxInputSize", strconv.FormatInt(limit, 10)},
@@ -639,7 +640,7 @@ func (rc *Receiver) push(w http.ResponseWriter, r *http.Request, ref Ref, exe st
 	now := time.Now().UTC()
 	var rows []PushRow
 	for _, u := range req.Updates {
-		if cur[u.Ref] == u.New {
+		if cur[u.Ref] == u.New || u.New == zeroSHA {
 			continue
 		}
 		row := PushRow{Repo: name, Ref: u.Ref, Old: u.Old, New: u.New, Room: who.Room, Card: who.Card, At: now}
@@ -706,6 +707,17 @@ func (rc *Receiver) push(w http.ResponseWriter, r *http.Request, ref Ref, exe st
 			rc.h.audit(who.Room, "git-hub-branch-released", fmt.Sprintf("%s %s by=%s", name, row.Ref, row.ReleasedBy))
 		}
 		rc.h.audit(who.Room, "git-hub-push", fmt.Sprintf("%s %s %s..%s card=%s", name, row.Ref, short(row.Old), short(row.New), who.Card))
+	}
+	// A branch the push deleted and that is gone has no owner from here, so its next push is a new branch.
+	for _, ref := range dec.deletes {
+		if after[ref] != "" {
+			continue
+		}
+		if err := rc.h.PushLog.Release(ctx, name, ref, "deleted by push"); err != nil {
+			rc.h.audit(who.Room, "git-hub-push-unsettled", fmt.Sprintf("%s %s the push log could not release a deleted branch", name, ref))
+			continue
+		}
+		rc.h.audit(who.Room, "git-hub-branch-deleted", fmt.Sprintf("%s %s card=%s", name, ref, who.Card))
 	}
 	if len(landed) == 0 && len(rows) > 0 {
 		rc.h.audit(who.Room, "git-hub-push-failed", fmt.Sprintf("%s refs=%d card=%s", name, len(req.Updates), who.Card))

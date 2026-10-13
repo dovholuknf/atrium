@@ -159,6 +159,20 @@ func sanitizeURL(u string) string {
 // which atrium does not touch without the operator's yes. "" refuses it as before. A clone whose hub remote points
 // somewhere else is refused whatever name says.
 func PushToHub(ctx context.Context, r *Runner, dir, forwarderBase, token, branch, name string) (string, error) {
+	return pushSpecToHub(ctx, r, dir, forwarderBase, token, branch, name, false)
+}
+
+// DeleteFromHub is PushToHub's twin for deleting a branch with a push: the refspec is `:refs/heads/<branch>`, under
+// every rule PushToHub holds. Only a claude/* branch other than claude/main is asked for here. The hub takes the
+// delete only of a branch the card pushed (receive_rules.go), so this is the room asking and the hub deciding.
+func DeleteFromHub(ctx context.Context, r *Runner, dir, forwarderBase, token, branch, name string) (string, error) {
+	if !strings.HasPrefix(branch, "claude/") || branch == "claude/main" {
+		return "", fmt.Errorf("only a claude/* branch other than claude/main is deleted from the hub, not %s", branch)
+	}
+	return pushSpecToHub(ctx, r, dir, forwarderBase, token, branch, name, true)
+}
+
+func pushSpecToHub(ctx context.Context, r *Runner, dir, forwarderBase, token, branch, name string, del bool) (string, error) {
 	if why := CheckPushBranch(branch); why != "" {
 		return "", fmt.Errorf("%s", why)
 	}
@@ -176,6 +190,9 @@ func PushToHub(ctx context.Context, r *Runner, dir, forwarderBase, token, branch
 		return "", err
 	}
 	spec := "refs/heads/" + branch + ":refs/heads/" + branch
+	if del {
+		spec = ":refs/heads/" + branch
+	}
 	args := []string{"-c", "push.followTags=false"}
 	if !byURL {
 		args = append(args, "-c", "remote."+remote+".mirror=false", "-c", "remote."+remote+".proxy=")

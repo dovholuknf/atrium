@@ -47,6 +47,8 @@ type decision struct {
 	bad      map[string]string
 	order    []string
 	releases []release
+	// deletes are the branches the push deletes and may, which the log releases once they are gone.
+	deletes []string
 }
 
 func (d *decision) fail(ref, why string) {
@@ -218,7 +220,28 @@ func (rc *Receiver) decide(ctx context.Context, repo string, p Pusher, req pushR
 		have := cur[ref]
 		switch {
 		case u.New == zeroSHA:
-			d.fail(ref, "deleting "+label+" is not done by a push")
+			// A DELETE IS TAKEN ONLY FOR A BRANCH THE PUSHER OWNS: a card for one the push log says it pushed, the
+			// operator for any branch that is not main. Tags, notes, stash and the rest are never deleted by a push.
+			switch {
+			case !strings.HasPrefix(ref, headsPrefix):
+				d.fail(ref, "deleting "+label+" is not done by a push. only a branch is")
+			case isMainRef(ref):
+				d.fail(ref, label+" is never deleted by a push")
+			case have == "" || u.Old != have:
+				d.fail(ref, label+" is not where your push expected it. someone moved it, or it is not there. fetch and push again")
+			case !p.Operator:
+				room, card, ok, err := rc.h.PushLog.Owner(ctx, repo, ref)
+				switch {
+				case err != nil:
+					d.fail(ref, "the hub could not read who owns "+label)
+				case !ok || room != p.Room || card != p.Card:
+					d.fail(ref, "deleting "+label+" is refused. a card deletes only a branch it pushed")
+				default:
+					d.deletes = append(d.deletes, ref)
+				}
+			default:
+				d.deletes = append(d.deletes, ref)
+			}
 			continue
 		case strings.HasPrefix(ref, tagsPrefix):
 			switch {

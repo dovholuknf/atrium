@@ -32,6 +32,9 @@ const (
 	// ResClone is a clone a card's open made because the room had none. ref: its path. Freed by deleting it, and only
 	// while no other worktree hangs off it and it holds nothing that is not on a remote. Otherwise kept and said.
 	ResClone = "clone"
+	// ResHubBranch is a claude/* branch the card pushed to the hub. ref: the branch. detail: the hub repository. Freed
+	// by asking the hub to delete it with a push, which the hub takes only for a branch the card pushed.
+	ResHubBranch = "hubbranch"
 )
 
 // CardResource is one row of a card's inventory.
