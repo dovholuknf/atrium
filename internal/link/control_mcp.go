@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -1698,6 +1699,9 @@ func (c *controlMCP) launchOnRoom(ctx context.Context, in launchInput, harness, 
 		// BRIEF.md from the binary, ahead of the caller's topic, and the tag is what the room reads.
 		prompt = strings.TrimSpace(in.Prompt)
 		brief = interviewBrief(in.Brief)
+		// Never a worker: the board files a subagent under its launcher and raises no toasts for it, and an interview
+		// belongs in the operator's interview group. It does not count against the launch cap either.
+		tags = slices.DeleteFunc(tags, func(t string) bool { return strings.TrimSpace(t) == SubagentTag })
 		tags = append(tags, InterviewTag)
 	}
 	reqBody := map[string]any{

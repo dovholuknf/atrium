@@ -648,7 +648,12 @@ func (s *Server) closeCard(t *store.Task, pv *closePreview, answers map[string]s
 	// A close the operator made is the clean up a "clean up when done" mark asks for, so the mark goes before the card
 	// reaches done and no board offers the close a second time. See cleanupWhenDone in js/sharing.js.
 	// The closed mark goes on in the same write. The terminals tab leaves a card with it out of the list.
-	kept := withoutCleanupTags(t.Tags)
+	// The tags as they are now: a close walks resources for a long while, and the card may have been tagged since t was read.
+	now := t.Tags
+	if cur, err := s.st.Get(t.ID); err == nil {
+		now = cur.Tags
+	}
+	kept := withoutCleanupTags(now)
 	if !slices.Contains(kept, ClosedTag) {
 		kept = append(kept, ClosedTag)
 	}

@@ -235,7 +235,7 @@ async function restartTermNow(t, full) {
     try {
       await api(`/v1/tasks/${t.id}`, {
         method: "PATCH", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ tags: unleanTags(t) })
+        body: JSON.stringify({ tags: unleanTags(await api(`/v1/tasks/${t.id}`).catch(() => t)) })
       });
     } catch (e) { toast("could not take lean off", e.message); return; }
   }

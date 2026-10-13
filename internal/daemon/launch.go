@@ -1079,8 +1079,9 @@ func (d *Daemon) launchLocked(req LaunchRequest) (*store.Task, error) {
 	retag := false
 	if req.Lean != nil || len(req.LeanAgents) > 0 || len(req.LeanSkills) > 0 {
 		base := req.Tags
-		if len(base) == 0 && task != nil {
-			base = task.Tags
+		if task != nil {
+			// The card's own tags stay under whatever the launch carried.
+			base = mergeTags(task.Tags, req.Tags)
 		}
 		if req.Lean == nil || *req.Lean {
 			// A new list replaces the card's, so the old marks come off first.
@@ -1332,7 +1333,18 @@ func (d *Daemon) launchLocked(req LaunchRequest) (*store.Task, error) {
 		}
 	}
 	if len(req.Tags) > 0 || retag {
-		if err := d.st.SetTags(created.ID, req.Tags); err != nil {
+		// A launch is a machine writing, so it ADDS to the tags the card has now, read here and not at the top of the
+		// launch. Replacing them dropped atrium:interview off a card relaunched with only fresh launch tags. Only the
+		// lean marks are the launch's to take off, and req.Tags already holds the ones that stay.
+		tags := req.Tags
+		if cur, err := d.st.Get(created.ID); err == nil {
+			kept := cur.Tags
+			if req.Lean != nil || len(req.LeanAgents) > 0 || len(req.LeanSkills) > 0 {
+				kept, _ = withoutLeanTags(kept)
+			}
+			tags = mergeTags(kept, req.Tags)
+		}
+		if err := d.st.SetTags(created.ID, tags); err != nil {
 			return nil, err
 		}
 	}
