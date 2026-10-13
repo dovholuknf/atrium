@@ -114,6 +114,7 @@ func (d *Daemon) redeliverHeldFyis() {
 		log.Printf("[atrium] delivered %d fyi(s) that were parked on a card", n)
 	}
 }
+
 // heldNoticesFor is how many held notices a card has not read and when the oldest was held,
 // for the board's row. A card that does not hold notices has none.
 func (d *Daemon) heldNoticesFor(t *store.Task) (int, string) {

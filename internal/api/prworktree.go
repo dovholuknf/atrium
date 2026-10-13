@@ -251,6 +251,10 @@ func (s *Server) haveCheckout(p *store.Provider, host, org, repo string) bool {
 func (s *Server) repoCheckout(ctx context.Context, p *store.Provider, host, org, repo string) (repoPath, wtRoot string, status int, err error) {
 	if p != nil {
 		repoPath, wtRoot = store.ProviderPath(p.Root, org, repo), p.WorktreeRoot
+		// A pasted link's case is not the folder's: the lower-case folder is the same repo on a case-sensitive disk.
+		if lower := store.ProviderPath(p.Root, strings.ToLower(org), strings.ToLower(repo)); !isCheckout(filepath.FromSlash(repoPath)) && isCheckout(filepath.FromSlash(lower)) {
+			repoPath = lower
+		}
 	}
 	if repoPath == "" || !isCheckout(filepath.FromSlash(repoPath)) {
 		if s.SCMClone == nil {
