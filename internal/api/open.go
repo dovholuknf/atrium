@@ -173,6 +173,9 @@ func (s *Server) open(w http.ResponseWriter, r *http.Request) {
 			own(store.ResBranch, wt.Branch, wt.Repo)
 		}
 	}
+	if wt.Cloned {
+		own(store.ResClone, wt.Repo, "")
+	}
 
 	// 4. the review row, claimed for this room
 	steps.begin("review", "starting the review")

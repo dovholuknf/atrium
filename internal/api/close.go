@@ -280,6 +280,18 @@ func (s *Server) closePreview(ctx context.Context, t *store.Task) (*closePreview
 			}
 		case store.ResStash:
 			it.Action, it.Note = "keep", "on the hub. nothing here frees it"
+		case store.ResClone:
+			if _, err := os.Stat(filepath.FromSlash(r.Ref)); err != nil {
+				it.Note = "already gone from disk"
+				break
+			}
+			wts, branches := cardOwnOf(rows, r.Ref)
+			if why := cloneKeepReason(ctx, r.Ref, wts, branches); why != "" {
+				it.Action, it.Note = "keep", "kept: "+why
+				pv.Kept = append(pv.Kept, "the clone it made, "+r.Ref+": "+why)
+				break
+			}
+			it.Note = "the clone this card's open made, deleted after its worktree. kept if its worktree is"
 		case store.ResDir:
 			if s.inScratch(r.Ref) == "" {
 				it.Action, it.Note = "keep", "a folder outside the scratch folder is not freed by a close. the sweep lists it"
@@ -574,6 +586,9 @@ func (s *Server) closeCard(t *store.Task, pv *closePreview, answers map[string]s
 		}
 		freed(r)
 	}
+
+	// 5a. the clone the card's open made, once nothing of the card hangs off it
+	s.freeClones(of(store.ResClone), steps, failed, freed, warn)
 
 	// 5b. scratch folders, only under the scratch root
 	for _, r := range of(store.ResDir) {

@@ -17091,7 +17091,10 @@ async function closeOneDialogSection(browser, base) {
     if (first.title !== "close openziti/ziti-console #967?") fail("closeOne: the title is " + first.title);
     if (first.buttons !== "cancel,close it") fail("closeOne: the buttons are " + first.buttons);
     if (first.rows !== 1 || first.checked !== "stash") fail("closeOne: rows " + first.rows + ", chosen " + first.checked);
-    if (!/ziti-console \(470 MB\)/.test(first.body) || !/Frees \(480 MB\)/.test(first.body)) fail("closeOne: the dialog does not say the worktree's real size: " + first.body);
+    if (!/ziti-console \(470 MB\)/.test(first.body) || !/Closing deletes \(480 MB\)/.test(first.body)) fail("closeOne: the dialog does not say the worktree's real size: " + first.body);
+    // u-005: what goes is said before it goes, with work on no remote said first
+    if (!/one folder holds work that is on no remote/.test(first.body)) fail("closeOne: the dialog does not warn of unpushed work: " + first.body);
+    if (!/the branch here claude\/x/.test(first.body)) fail("closeOne: the branch is not named in words: " + first.body);
     if (/work only this worktree has/.test(first.body)) fail("closeOne: the old second dialog's words are in it");
     await shot(p, "close-dialog");
     // STASH IS THE DEFAULT (f-close-stash-default): the stash choice has the focus, so Enter takes it
@@ -23525,7 +23528,8 @@ async function quickPasteSection(browser, base) {
     const p = new URL(req.url()).pathname, m = req.method();
     if (m === "GET" && p === "/v1/prs") return json(route, 200, { prs: [], counts: {}, nav_count: 0 });
     if (m === "GET" && p === "/v1/providers") return json(route, 200, { providers: [{ name: "gh", host: "github.com", worktrees: true }] });
-    if (m === "GET" && p === "/v1/tasks/t-q") return json(route, 200, { id: "t-q", status: "running", title: "review zrok#12" });
+    if (m === "GET" && p === "/v1/tasks/t-q") { st.cardReads = (st.cardReads || 0) + 1;
+      return json(route, 200, { id: "t-q", status: "running", title: "review zrok#12" }); }
     st.calls.push(m + " " + p + " " + (req.postData() || ""));
     if (p === "/v1/open") {
       const url = JSON.parse(req.postData() || "{}").url || "";
@@ -23556,9 +23560,10 @@ async function quickPasteSection(browser, base) {
           vars: { org: "openziti", repo: "zrok", num: n, host: "github.com" } });
       }
       if (!/github\.com/.test(url)) return json(route, 404, { error: "no recogniser matches " + url });
+      const [, org, repo, num] = /github\.com\/([^/]+)\/([^/]+)\/pull\/(\d+)/.exec(url) || [, "openziti", "zrok", "12"];
       return json(route, 200, { recogniser: "github-pr", label: "github pull request", url, host: "github.com",
-        cwd: "/wt/zrok-12", title: "review zrok#12", prompt: "review the pull request", tags: ["pull-request"],
-        vars: { org: "openziti", repo: "zrok", num: "12", host: "github.com" } });
+        cwd: "/wt/" + repo + "-" + num, title: "review " + repo + "#" + num, prompt: "review the pull request",
+        tags: ["pull-request"], vars: { org, repo, num, host: "github.com" } });
     }
     if (p === "/v1/providers/gh/pr-worktree") return json(route, 200, { path: "/wt/zrok-12", existed: false });
     if (p === "/v1/prs") return json(route, 200, { pr: row, created: true });
@@ -23641,16 +23646,17 @@ async function quickPasteSection(browser, base) {
     if (st.calls.some(c => c.indexOf("/v1/launch") >= 0)) fail("quickPaste: shift-enter launched: " + st.calls.join(" | "));
     if (await p.inputValue("#l-url") !== "https://github.com/openziti/zrok/pull/12") fail("quickPaste: shift-enter lost the link");
     await shot(p, "edit-first");
-    // "more" is shut however much a recogniser filled in, and says what is in it
-    if (await p.evaluate(() => document.getElementById("l-more").open)) fail("quickPaste: more was open by default");
-    if (!/filled in/.test(await p.textContent("#l-more-note"))) fail("quickPaste: more did not say what it held");
-    // a link has the clean up tick (off) and the choice to stop being asked (on)
-    if (await p.evaluate(() => document.getElementById("l-cleanup-field").hidden || document.getElementById("l-cleanup-on").checked))
-      fail("quickPaste: the clean up tick was missing or on");
-    if (await p.evaluate(() => document.getElementById("l-direct-field").hidden || !document.getElementById("l-direct").checked))
-      fail("quickPaste: the don't ask again tick was missing or off");
+    // u-005: no throwaway, no clean up tick, no "don't ask again", no fold, no second link box. Every card cleans up when
+    // closed, and the first instruction is always in sight.
+    const gone = await p.evaluate(() => ["l-more", "l-throwaway-on", "l-cleanup-field", "l-cleanup-on", "l-direct-field",
+      "l-direct", "l-recognise", "open-progress"].filter(id => document.getElementById(id)));
+    if (gone.length) fail("quickPaste: the dialog still has " + gone.join());
+    const shown = await p.evaluate(() => ["l-url", "l-title", "l-tags", "l-why"].filter(id => {
+      const e = document.getElementById(id); return e && e.type !== "hidden" && e.getClientRects().length; }));
+    if (shown.length) fail("quickPaste: the dialog shows " + shown.join());
+    if (!await p.isVisible("#l-prompt")) fail("quickPaste: the first instruction was not in sight");
     // hover never changes layout in the dialog: the same box before and over
-    for (const sel of ["#l-go", "#l-more > summary", "#l-cwd", "#l-harness"]) {
+    for (const sel of ["#l-go", "#l-cwd", "#l-harness"]) {
       const box = async () => JSON.stringify(await p.evaluate(s => { const r = document.querySelector(s).getBoundingClientRect();
         return [r.x, r.y, r.width, r.height]; }, sel));
       await p.mouse.move(2, 2);
@@ -23765,7 +23771,8 @@ async function quickPasteSection(browser, base) {
     if (!await p.evaluate(() => document.getElementById("l-repo-field").hidden)) fail("quickPaste: a pull request showed the repo field");
     await p.evaluate(() => document.getElementById("launch").close());
 
-    // a slow open names its step in the strip, with the launch dialog never shown, and the strip goes when it ends
+    // a slow open is a card from the keypress on, naming its step, with the launch dialog never shown, and the card
+    // goes when the open answers with the real one
     let release;
     st.hold = new Promise(res => { release = res; });
     st.calls = [];
@@ -23780,33 +23787,68 @@ async function quickPasteSection(browser, base) {
     const heldBody = held ? JSON.parse(held.split(" ").slice(2).join(" ")) : {};
     if (!heldBody.progress) fail("quickPaste: the open sent no progress id: " + held);
     await p.evaluate(id => onOpenProgress({ data: JSON.stringify({ id, step: "fetching the head" }) }), heldBody.progress);
-    const strip = await p.evaluate(() => { const e = document.getElementById("open-progress");
-      return e && !e.hidden ? e.textContent : ""; });
-    if (!/fetching the head/.test(strip)) fail("quickPaste: the strip said " + JSON.stringify(strip));
+    const pending = await p.evaluate(id => { const e = document.querySelector(`.card.linkopen[data-linkopen="${id}"]`);
+      return e ? e.textContent : ""; }, heldBody.progress);
+    if (!/fetching the head/.test(pending) || !/review zrok#14/.test(pending))
+      fail("quickPaste: the opening card said " + JSON.stringify(pending));
     if (await p.evaluate(open("launch"))) fail("quickPaste: a slow open showed the launch dialog");
+    if (await p.evaluate(() => !!document.getElementById("open-progress"))) fail("quickPaste: the old strip is back");
+    await shot(p, "opening-card");
     release();
-    await p.waitForFunction(() => { const e = document.getElementById("open-progress"); return !e || e.hidden; },
-      null, { timeout: slow(5000) }).catch(() => fail("quickPaste: the strip stayed after the open ended"));
+    await p.waitForFunction(() => !document.querySelector(".card.linkopen"),
+      null, { timeout: slow(5000) }).catch(() => fail("quickPaste: the opening card stayed after the open ended"));
     st.hold = null;
 
-    // an open that fails reopens the launch dialog with the reason, not a dialog shown first
+    // an open that fails stays as its card with the reason, and no dialog comes up
     await enter("https://github.com/openziti/zrok/pull/13");
+    await p.waitForFunction(() => { const e = document.querySelector(".card.linkopen.failed");
+      return e && /boom/.test(e.textContent); }, null, { timeout: slow(5000) })
+      .catch(() => fail("quickPaste: a failed open did not stay as a card with the reason"));
+    if (await p.evaluate(open("launch"))) fail("quickPaste: a failed open showed the launch dialog");
+    await shot(p, "failed-card");
+    // its edit is the dialog, filled in
+    await p.evaluate(() => document.querySelector('.card.linkopen.failed [data-op-act="edit"]').click());
     await p.waitForFunction(() => document.getElementById("launch").open &&
-      /boom/.test(document.getElementById("l-link-note").textContent), null, { timeout: slow(5000) })
-      .catch(() => fail("quickPaste: a failed open did not reopen the dialog with the reason"));
+      document.getElementById("l-url").value.endsWith("/pull/13"), null, { timeout: slow(5000) })
+      .catch(() => fail("quickPaste: edit on a failed card did not bring the dialog up filled in"));
+    if (await p.evaluate(() => !!document.querySelector(".card.linkopen"))) fail("quickPaste: edit left the failed card");
     await p.evaluate(() => document.getElementById("launch").close());
 
-    // a plain paste of a link opens the box with it and not the launch dialog
-    await p.evaluate(() => document.querySelectorAll("dialog[open]").forEach(d => d.close()));
-    await p.evaluate(() => {
-      const dt = new DataTransfer();
-      dt.setData("text/plain", "https://github.com/openziti/zrok/pull/12");
-      document.body.dispatchEvent(new ClipboardEvent("paste", { clipboardData: dt, bubbles: true, cancelable: true }));
-    });
+    // A PLAIN PASTE OF A LINK OPENS IT AT ONCE (u-005): no bar, no dialog, one /v1/open, and its card attached.
+    // The acceptance link, github.com/openziti/desktop-edge-win/pull/1095.
+    const paste = async (url, wait = true) => {
+      st.calls = [];
+      st.cardReads = 0;
+      await p.evaluate(() => document.querySelectorAll("dialog[open]").forEach(d => d.close()));
+      await p.evaluate(u => {
+        window.__sawLaunch = false;
+        const dt = new DataTransfer();
+        dt.setData("text/plain", u);
+        document.body.dispatchEvent(new ClipboardEvent("paste", { clipboardData: dt, bubbles: true, cancelable: true }));
+      }, url);
+      const until = Date.now() + slow(8000);
+      while (wait && !st.cardReads && Date.now() < until) await p.waitForTimeout(25);
+      await p.waitForTimeout(200);
+    };
+    const dew = "https://github.com/openziti/desktop-edge-win/pull/1095";
+    await paste(dew);
+    if (!st.calls.some(c => c.indexOf("POST /v1/recognise") === 0)) fail("quickPaste: a pasted link was not read");
+    const pasted = st.calls.filter(c => c.indexOf("POST /v1/open") === 0);
+    const dewBody = pasted.length === 1 ? JSON.parse(pasted[0].split(" ").slice(2).join(" ")) : {};
+    if (pasted.length !== 1 || dewBody.url !== dew || dewBody.title !== "review desktop-edge-win#1095" || !dewBody.progress)
+      fail("quickPaste: a pasted link opened as " + pasted.join(" | "));
+    if (st.calls.some(c => c.indexOf("/v1/launch") >= 0)) fail("quickPaste: a pasted link launched the old way");
+    if (!st.cardReads) fail("quickPaste: a pasted link's card was never read to attach");
+    if (await p.evaluate(() => window.__sawLaunch || document.getElementById("launch").open))
+      fail("quickPaste: a pasted link showed the launch dialog");
+    if (await p.evaluate(open("switcher"))) fail("quickPaste: a pasted link opened the bar");
+    if (await p.evaluate(() => !!document.querySelector(".card.linkopen"))) fail("quickPaste: the pasted link's card stayed pending");
+    // a link nothing knows comes back to the bar with the reason
+    await paste("https://nowhere.example/y", false);
     await p.waitForFunction(() => document.getElementById("switcher").open &&
-      document.getElementById("sw-q").value === "https://github.com/openziti/zrok/pull/12", null, { timeout: slow(5000) })
-      .catch(() => fail("quickPaste: a pasted link did not open the box with it"));
-    if (await p.evaluate(open("launch"))) fail("quickPaste: a pasted link opened the launch dialog");
+      /nothing here knows/.test(document.getElementById("sw-open").textContent), null, { timeout: slow(5000) })
+      .catch(() => fail("quickPaste: an unknown pasted link did not come back to the bar"));
+    await p.evaluate(() => closeSwitcher());
     // clean up when done: a marked card reaching done is offered the card's own close, once, with the mark taken off
     const cleaned = await p.evaluate(async () => {
       const asked = [], patched = [];

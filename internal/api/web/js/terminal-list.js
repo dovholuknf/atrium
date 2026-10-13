@@ -1961,6 +1961,8 @@ async function renderTermList() {
   if (typeof paintGroupSegs === "function") paintGroupSegs();
   // The gear's terminal list section follows the list.
   paintTermGear();
+  // A link still being opened sits at the top of the list too (js/link-opening.js).
+  if (typeof linkOpeningPaint === "function") linkOpeningPaint();
 }
 
 // ── the ended cards ──────────────────────────────────────────────────────────

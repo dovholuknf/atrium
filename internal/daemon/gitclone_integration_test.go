@@ -137,3 +137,46 @@ func TestGitCloneDeniedLeavesTheCloneAlone(t *testing.T) {
 		t.Fatalf("remotes = %q", got)
 	}
 }
+
+// A pasted link has no card to ask on, so the clone the operator made is adopted on the spot (u-005 decision 6): the
+// hub remote goes in, origin's push is guarded, the adoption is written into the clone, and nothing is asked.
+func TestPRWorktreeAdoptsAnOperatorsCloneWithoutAsking(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: git subprocesses")
+	}
+	t.Parallel()
+	d := testDaemon(t)
+	root := t.TempDir()
+	if err := d.st.SetSetting(gitsync.SettingSCMRoot, root); err != nil {
+		t.Fatal(err)
+	}
+	clone := filepath.Join(root, "github", "acme", "widget")
+	if err := os.MkdirAll(clone, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	git := func(args ...string) string {
+		c := exec.Command("git", args...)
+		c.Dir = clone
+		out, _ := c.CombinedOutput()
+		return strings.TrimSpace(string(out))
+	}
+	git("init", "-q")
+	git("remote", "add", "origin", "https://github.com/acme/widget.git")
+
+	res, err := d.prWorktreeClone(t.Context(), "https://github.com/acme/widget")
+	if err != nil {
+		t.Fatalf("the clone was not adopted: %v", err)
+	}
+	if res.State != "existing" || res.Path != filepath.ToSlash(clone) {
+		t.Fatalf("result = %+v", res)
+	}
+	if got := git("config", "atrium.adopted"); got != "yes" {
+		t.Fatalf("atrium.adopted = %q", got)
+	}
+	if got := git("config", "remote.origin.pushurl"); got != gitsync.OriginPushURL {
+		t.Fatalf("origin pushurl = %q", got)
+	}
+	if perms, _ := d.st.PendingPermissions(); len(perms) != 0 {
+		t.Fatalf("a question was asked: %+v", perms)
+	}
+}
