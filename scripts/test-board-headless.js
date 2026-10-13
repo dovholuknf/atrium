@@ -12697,6 +12697,9 @@ async function peekDrawersSection(browser, base) {
   const errors = [];
   p.on("pageerror", e => errors.push(String(e)));
   await ctx.route("**/v1/tasks/*/usage*", route => route.fulfill({ json: CTX_USAGE["cx-big"] }));
+  const says = [0, 1, 2].map(i => ({ id: "say" + (9 - i), from_task: "sg4-control~oh2", from: "oh2", to_task: "other-2", to: "other", to_input: "other",
+    sent_at: new Date(Date.now() - i * 60000).toISOString(), state: "delivered", channel: "terminal", preview: "say " + i, chars: 5, text: "say " + i }));
+  await ctx.route("**/v1/tasks/*/says*", route => route.fulfill({ json: { says, more: false } }));
   await ctx.addInitScript(() => { try { localStorage.setItem("atrium.termlist.w", "640"); } catch (e) {} });
   const was = tasksMode;
   tasksMode = "onehover";
@@ -12730,48 +12733,60 @@ async function peekDrawersSection(browser, base) {
     if (!d.need || !d.recap || !d.ctx) fail("peekDrawers: want need, recap and ctx drawers, got " + Object.keys(d).join(","));
     else {
       if (!d.need.open || !d.need.bodyShown || d.need.aria !== "true") fail("peekDrawers: NEEDS YOU is not open by default: " + JSON.stringify(d.need));
-      if (d.recap.open || d.recap.bodyShown || d.recap.aria !== "false") fail("peekDrawers: the recap is not shut by default: " + JSON.stringify(d.recap));
-      if (d.ctx.open || d.ctx.bodyShown) fail("peekDrawers: the context is not shut by default: " + JSON.stringify(d.ctx));
-      if (!d.recap.sumShown || !/^Moved the peek's size rules/.test(d.recap.sum)) fail("peekDrawers: the shut recap does not show its first line: " + JSON.stringify(d.recap));
-      if (!d.ctx.sumShown || d.ctx.sum !== "212k of 200k") fail("peekDrawers: the shut context summary is " + JSON.stringify(d.ctx.sum) + ", want '212k of 200k'");
+      if (!d.recap.open || !d.recap.bodyShown || d.recap.sumShown) fail("peekDrawers: the recap is not open on the first open: " + JSON.stringify(d.recap));
+      if (!d.ctx.open || !d.ctx.bodyShown || d.ctx.sumShown) fail("peekDrawers: the context is not open on the first open: " + JSON.stringify(d.ctx));
+      if (!d.chatter || d.chatter.open || d.chatter.bodyShown || d.chatter.aria !== "false") fail("peekDrawers: chatter is not folded on the first open: " + JSON.stringify(d.chatter));
+      if (d.chatter && d.chatter.sum !== "3 says") fail("peekDrawers: the folded chatter summary is " + JSON.stringify(d.chatter.sum) + ", want '3 says'");
+      if (!(await p.locator(".peek.on .peek-ctx .peek-bar").count())) fail("peekDrawers: the open context shows no bar");
     }
     const notDrawers = await p.evaluate(() => ({ head: !!document.querySelector(".peek.on .peek-head").closest(".peek-drawer"),
       acts: !!document.querySelector(".peek.on .peek-acts").closest(".peek-drawer") }));
     if (notDrawers.head || notDrawers.acts) fail("peekDrawers: the header or the actions row is a drawer: " + JSON.stringify(notDrawers));
 
-    // Click opens the recap, and its "more" now measures.
-    await p.click(head("recap"));
-    d = await drawers();
-    if (!d.recap.open || !d.recap.bodyShown || d.recap.sumShown) fail("peekDrawers: a click did not open the recap: " + JSON.stringify(d.recap));
+    // Recap and context cannot be folded: a click, Enter and Space leave them open, and nothing is stored for them.
     if (!(await p.locator(".peek.on .peek-more:not([hidden])").count())) fail("peekDrawers: the open long recap has no 'more'");
-    // Enter and Space on a focused header toggle it.
-    await p.focus(head("ctx"));
+    for (const k of ["recap", "ctx"]) {
+      await p.click(head(k));
+      await p.focus(head(k)).catch(() => {});
+      await p.keyboard.press("Enter");
+      await p.keyboard.press("Space");
+    }
+    d = await drawers();
+    if (!d.recap.open || !d.recap.bodyShown || !d.ctx.open || !d.ctx.bodyShown) fail("peekDrawers: a click or key folded the recap or the context: " + JSON.stringify(d));
+    // Chatter opens on a click and shuts on another; NEEDS YOU shuts on a click.
+    await p.click(head("chatter"));
+    d = await drawers();
+    if (!d.chatter.open || !d.chatter.bodyShown) fail("peekDrawers: a click did not open chatter: " + JSON.stringify(d.chatter));
+    await p.focus(head("chatter"));
     await p.keyboard.press("Enter");
     d = await drawers();
-    if (!d.ctx.open || !d.ctx.bodyShown) fail("peekDrawers: Enter did not open the context: " + JSON.stringify(d.ctx));
-    await p.keyboard.press("Space");
-    d = await drawers();
-    if (d.ctx.open) fail("peekDrawers: Space did not shut the context: " + JSON.stringify(d.ctx));
-    await p.keyboard.press("Enter");
+    if (d.chatter.open) fail("peekDrawers: Enter did not shut chatter: " + JSON.stringify(d.chatter));
+    await p.click(head("chatter"));
     await p.click(head("need"));
     d = await drawers();
     if (d.need.open) fail("peekDrawers: a click did not shut NEEDS YOU: " + JSON.stringify(d.need));
 
-    // The state is per section: the other card shows the same drawers as left (need shut, recap and ctx open).
+    // The state is kept for NEEDS YOU only: the other card, and the first card again, open with chatter folded.
     await show("sg4-control~oh1");
     d = await drawers();
     if (d.need && d.need.open) fail("peekDrawers: NEEDS YOU is open on the second card after it was shut: " + JSON.stringify(d.need));
-    if (!d.ctx || !d.ctx.open) fail("peekDrawers: the context was open and is shut on the second card: " + JSON.stringify(d.ctx));
+    if (!d.ctx || !d.ctx.open) fail("peekDrawers: the context is shut on the second card: " + JSON.stringify(d.ctx));
+    if (d.chatter && d.chatter.open) fail("peekDrawers: chatter was open on the second card after a click on another: " + JSON.stringify(d.chatter));
     const saved = await p.evaluate(() => JSON.parse(localStorage.getItem("atrium.peekDrawers") || "{}"));
-    if (saved.need !== false || saved.recap !== true || saved.ctx !== true) fail("peekDrawers: the kept state is " + JSON.stringify(saved));
+    if (JSON.stringify(saved) !== '{"need":false}') fail("peekDrawers: the kept state is " + JSON.stringify(saved) + ", want only need");
     await show("sg4-control~oh2");
     d = await drawers();
-    if (d.need.open || !d.recap.open || !d.ctx.open) fail("peekDrawers: back on the first card the drawers moved: " + JSON.stringify(d));
+    if (d.need.open || !d.recap.open || !d.ctx.open || d.chatter.open) fail("peekDrawers: back on the first card the drawers moved: " + JSON.stringify(d));
+    // Old stored state cannot fold the recap or open chatter.
+    await p.evaluate(() => localStorage.setItem("atrium.peekDrawers", JSON.stringify({ recap: false, ctx: false, chatter: true })));
+    await show("sg4-control~oh2");
+    d = await drawers();
+    if (!d.recap.open || !d.ctx.open || d.chatter.open) fail("peekDrawers: old stored state moved the drawers: " + JSON.stringify(d));
 
     // A drag that selects text in a header toggles nothing, and a click after it does.
     await p.evaluate(() => localStorage.removeItem("atrium.peekDrawers"));
     await show("sg4-control~oh2");
-    const sb = await p.locator(head("recap") + " .peek-dsum").boundingBox();
+    const sb = await p.locator(head("chatter") + " .peek-dsum").boundingBox();
     await p.mouse.move(sb.x + 4, sb.y + sb.height / 2);
     await p.mouse.down();
     await p.mouse.move(sb.x + Math.min(sb.width - 4, 120), sb.y + sb.height / 2, { steps: 6 });
@@ -12779,7 +12794,7 @@ async function peekDrawersSection(browser, base) {
     const sel = await p.evaluate(() => String(window.getSelection()));
     if (!sel.trim()) fail("peekDrawers: the drag selected nothing, so it proves nothing");
     d = await drawers();
-    if (d.recap.open) fail("peekDrawers: a drag-select in the recap's header toggled it");
+    if (d.chatter.open) fail("peekDrawers: a drag-select in chatter's header toggled it");
     // Text inside an open drawer: selecting it leaves it open.
     await p.click(head("need"));
     await p.click(head("need"));
