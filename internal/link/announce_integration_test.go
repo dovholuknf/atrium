@@ -30,6 +30,9 @@ type roomState struct {
 	// read its own store. Empty means answer normally.
 	broken string
 	code   int
+	// streams counts the event streams that have started listening. A change made before one is listening is
+	// never seen by it, so a test that changes the state waits for one first.
+	streams int
 }
 
 func newRoomState(cards ...map[string]any) *roomState {
@@ -80,9 +83,14 @@ func (s *roomState) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewEncoder(w).Encode(map[string]any{"cards": cards})
 	case "/v1/events":
 		w.Header().Set("Content-Type", "text/event-stream")
+		first := true
 		for {
 			s.mu.Lock()
 			wait := s.bump
+			if first {
+				s.streams++ // taken with the channel, so a change after the count is a change this stream hears
+				first = false
+			}
 			s.mu.Unlock()
 			select {
 			case <-r.Context().Done():
@@ -130,6 +138,15 @@ func caching(t *testing.T, state http.Handler) (*Hub, *[]announcement, *sync.Mut
 	}
 	go func() { _ = room.Run(ctx) }()
 	waitFor(t, announceWait, func() bool { return hub.Has("testroom") })
+	// The room watches the event stream after its first announcement, and on a loaded machine that is later than
+	// the test's first look. A change made before the watch is listening wakes nobody.
+	if rs, ok := state.(*roomState); ok {
+		waitFor(t, announceWait, func() bool {
+			rs.mu.Lock()
+			defer rs.mu.Unlock()
+			return rs.streams > 0
+		})
+	}
 
 	return hub, &got, &mu, func() { stop(); ln.Close() }
 }
