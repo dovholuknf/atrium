@@ -88,6 +88,18 @@ while read -r kind rest; do
   esac
 done <<<"$actions"
 
+# Playwright, for the headless units and for the node checks that drive a browser too.
+if [ -n "$units" ] || [ ${#nodes[@]} -gt 0 ]; then
+  # Playwright: NODE_PATH, then this checkout, then any worktree beside it that has it, as merge-check.ps1 looks.
+  if ! node -e 'require.resolve("playwright")' >/dev/null 2>&1 && ! node -e 'require.resolve("@playwright/test")' >/dev/null 2>&1; then
+    for nm in "${ATRIUM_NODE_PATH:-}" "$here/node_modules" "$here"/../*/node_modules; do
+      if [ -n "$nm" ] && { [ -d "$nm/playwright" ] || [ -d "$nm/@playwright/test" ]; }; then
+        export NODE_PATH="$(cd "$nm" && pwd)"; echo "test-touched: playwright from $NODE_PATH"; break
+      fi
+    done
+  fi
+fi
+
 for f in ${jschecks[@]+"${jschecks[@]}"}; do step "node --check $f" node --check "$f"; done
 for f in ${shchecks[@]+"${shchecks[@]}"}; do step "bash -n $f" bash -n "$f"; done
 [ "$gobuild" = 1 ] && step "go build ./..." go build -o /dev/null ./...
@@ -98,14 +110,6 @@ for g in ${govet[@]+"${govet[@]}"}; do step "go vet $g" go vet "$g"; done
 for n in ${nodes[@]+"${nodes[@]}"}; do step "node $n" node "$n"; done
 
 if [ -n "$units" ]; then
-  # Playwright: NODE_PATH, then this checkout, then any worktree beside it that has it, as merge-check.ps1 looks.
-  if ! node -e 'require.resolve("playwright")' >/dev/null 2>&1 && ! node -e 'require.resolve("@playwright/test")' >/dev/null 2>&1; then
-    for nm in "${ATRIUM_NODE_PATH:-}" "$here/node_modules" "$here"/../*/node_modules; do
-      if [ -n "$nm" ] && { [ -d "$nm/playwright" ] || [ -d "$nm/@playwright/test" ]; }; then
-        export NODE_PATH="$(cd "$nm" && pwd)"; echo "test-touched: playwright from $NODE_PATH"; break
-      fi
-    done
-  fi
   n=$(echo "$units" | tr ',' '\n' | grep -c .)
   shards=$(( n < 4 ? n : 4 ))
   out="$(mktemp)"

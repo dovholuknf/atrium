@@ -303,6 +303,7 @@ function plan(files, opts) {
     }
     if (rel === HARNESS) {
       board = true;
+      p.jscheck.push(rel);
       const ranges = opts.harnessLines || [];
       if (!ranges.length) { p.warnings.push(HARNESS + " changed but no line ranges were given, so only bootClean runs"); continue; }
       const { hit, shared } = unitsForHarnessLines(ix, ranges);
