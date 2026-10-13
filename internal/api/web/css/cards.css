@@ -823,6 +823,8 @@
   }
   .peek-dh::before { content: "\25B8"; flex: none; width: 1em; }
   .peek-drawer.open > .peek-dh::before { content: "\25BE"; }
+  .peek-drawer.fixed > .peek-dh { cursor: default; }
+  .peek-drawer.fixed > .peek-dh::before { content: none; }
   .peek-dh:hover, .peek-dh:focus-visible { color: var(--head); }
   .peek-dh b { flex: none; font-weight: 600; }
   .peek-drawer[data-key="need"] > .peek-dh b { color: var(--warn); }
