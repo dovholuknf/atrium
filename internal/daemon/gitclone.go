@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -22,6 +23,8 @@ import (
 // where they answer everything else and no new request type exists. It is keyed exactly, so an
 // answer holds for as long as the row does (the 2-minute replay window would ask again). The tool
 // call returns at once with "asked"; the card calls again after the operator has answered.
+//
+// A pasted link asks nothing: see prWorktreeClone, which adopts the operator's clone itself.
 
 // cloneTimeout bounds one request. The runner bounds each git command on its own.
 const cloneTimeout = 12 * time.Minute
@@ -115,12 +118,6 @@ func (d *Daemon) handleGitClone(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(res)
 }
 
-// errPRCloneAdopt is what a PR worktree answers for a clone the operator made and has not said yes to. There is no
-// card to ask on, so the one yes comes from a card's atrium_git_clone.
-var errPRCloneAdopt = errors.New("the clone of this repo in the scm folder was made by the operator and atrium has " +
-	"not been given a yes to add its remotes to it. Run atrium_git_clone for it from a card, answer the question " +
-	"on the board, and ask again")
-
 // prWorktreeHas is whether the scm folder already holds the clone a PR worktree would hang off. It makes nothing.
 func (d *Daemon) prWorktreeHas(url string) bool {
 	ref, err := gitsync.ParseURL(url)
@@ -136,9 +133,18 @@ func (d *Daemon) prWorktreeHas(url string) bool {
 }
 
 // prWorktreeClone is the scm clone path for a pull request's worktree: the clone with its `hub` remote and `origin`
-// push guarded, the same as atrium_git_clone. A clone the operator made is not touched without the yes.
+// push guarded, the same as atrium_git_clone.
+//
+// A CLONE THE OPERATOR MADE IS ADOPTED WITHOUT A QUESTION, the way gwt hangs its worktrees off whatever clone is
+// there. A pasted link has no card to ask on, and a question with nowhere to answer it was a dead end that sent the
+// operator to run atrium_git_clone from some other card. The adoption is recorded in the clone itself
+// (`atrium.adopted=yes`, which atrium_git_clone reads as the yes already given) and in the room's log.
 func (d *Daemon) prWorktreeClone(ctx context.Context, url string) (gitsync.SCMResult, error) {
 	s := d.scm(nil)
-	s.Yes = func(context.Context, string) error { return errPRCloneAdopt }
+	s.Yes = func(_ context.Context, clone string) error {
+		log.Printf("[atrium scm] adopting the operator's clone at %s for a pasted link: atrium's hub remote goes in "+
+			"and origin's push url is guarded", filepath.ToSlash(clone))
+		return nil
+	}
 	return s.Clone(ctx, url)
 }

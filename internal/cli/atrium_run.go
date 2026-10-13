@@ -193,21 +193,20 @@ func serveAtrium(f atriumFlags, up atriumUp) error {
 	}
 	defer ln.Close()
 
-	// WHAT A HALT DOES, and it is the daemon's posture one level up.
+	// WHAT A HALT DOES. The store refuses every call from then on, and the
+	// board stays up to say what broke.
 	//
-	// The room listener closes and stays closed, so rooms see a refused
-	// connection, which is the one failure their client already absorbs
-	// silently: every one parks on the backoff it already has and burns
-	// nothing. The board stays up to say what broke, because a hub that
-	// vanishes explains nothing.
-	//
-	// The work is untouched. Every session is on a room, on a machine
-	// this process does not own.
+	// THE ROOM LISTENER STAYS OPEN. It used to close, on the room's
+	// posture, but the hub is not the room: it holds no work, and every
+	// session's control tools reach the hub through its room's link. Closing
+	// it cut every session off from atrium at once (f-001). The rooms the
+	// hub knew keep attaching and keep being routed to, from memory, and
+	// nothing the halted store would have to write is attempted. See
+	// `hubRooms`.
 	store.OnHalt = func(cause error) {
 		log.Printf("[hub] THE STORE HAS HALTED: %v", cause)
-		log.Printf("[hub] rooms can no longer attach. the board stays up. " +
-			"the agents on every room are unaffected and keep running")
-		_ = ln.Close()
+		log.Printf("[hub] nothing more is written. rooms this hub already knew stay attached and may reattach, " +
+			"a room it did not know is refused. the agents on every room are unaffected and keep running")
 	}
 
 	h := link.NewHub(link.Timings{})
@@ -299,15 +298,7 @@ func serveAtrium(f atriumFlags, up atriumUp) error {
 			"taken on trust and checked against the list. `%s` says who, and refuses them "+
 			"once everyone has re-joined", transport, atriumCmd("rooms legacy"))
 	}
-	h.Attaching = func(name, host, ver string) error {
-		r, err := store.ByName(name)
-		if err != nil {
-			return fmt.Errorf("this hub has no room called %q. "+
-				"`%s %s` on the hub makes one, and prints "+
-				"the string to paste here", name, atriumCmd("rooms add"), name)
-		}
-		return store.Seen(r.ID, host, ver)
-	}
+	h.Attaching = newHubRooms(store).attaching
 	// THE NOTIFY TRIGGER. Built here so the announcement hook below can call
 	// it, started and mounted once the context and the proxy exist.
 	notifier := link.NewNotifier(notifyStore{store})
@@ -319,6 +310,10 @@ func serveAtrium(f atriumFlags, up atriumUp) error {
 	// rather than being silent. See `Announce` in internal/hubstore.
 	h.Cached = func(name string, cards []link.CardState) error {
 		r, err := store.ByName(name)
+		if errors.Is(err, hubstore.ErrHalted) {
+			// Attaching already let it in from memory. See below.
+			return nil
+		}
 		if err != nil {
 			return err
 		}
@@ -329,6 +324,11 @@ func serveAtrium(f atriumFlags, up atriumUp) error {
 			})
 		}
 		_, err = store.Announce(r.ID, out)
+		if errors.Is(err, hubstore.ErrHalted) {
+			// The cache is never authoritative. A halted store keeps the room
+			// attached on the index alone rather than turn it away.
+			return nil
+		}
 		if err == nil {
 			roomsChanged()
 			// AFTER THE CACHE IS WRITTEN AND NEVER WAITING ON THE SINK: the

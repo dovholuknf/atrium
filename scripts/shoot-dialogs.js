@@ -125,7 +125,6 @@ const SHOTS = {
   harness: async () => { await renderRunners(); await renderFixtures(); await editHarness("claude"); },
   fixture: async () => { await renderRunners(); await renderFixtures(); await editFixture("fx1"); },
   launch: () => openLaunch(),
-  "launch-more": async () => { await openLaunch(); document.getElementById("l-more").open = true; },
   pickrepo: () => openPickRepo("l-cwd"),
   pickwhere: async () => { await openPickRepo("l-cwd"); await openWhere("dovholuknf", "atrium", "D:/git/github/dovholuknf/atrium"); },
   browse: () => openBrowse(),

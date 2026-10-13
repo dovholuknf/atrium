@@ -304,8 +304,11 @@ func (d *Daemon) GitPush(taskID, branch string) (any, error) {
 			return map[string]any{"card": t.ID, "branch": strings.TrimSpace(branch), "report": msg}, nil
 		}
 	}
-	report, err := gitsync.PushToHub(ctx, gitsync.Default, dir, base, tok, strings.TrimSpace(branch),
-		gitsync.HubNameOf(ctx, gitsync.Default, dir, d.cloneRoots()...))
+	hubName := gitsync.HubNameOf(ctx, gitsync.Default, dir, d.cloneRoots()...)
+	report, err := gitsync.PushToHub(ctx, gitsync.Default, dir, base, tok, strings.TrimSpace(branch), hubName)
+	if err == nil {
+		d.recordHubBranch(t.ID, strings.TrimSpace(branch), hubName)
+	}
 	if err != nil {
 		// git's own words, which carry the hub's `remote: atrium: ...` sentence.
 		if strings.TrimSpace(report) != "" {

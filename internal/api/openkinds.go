@@ -191,6 +191,9 @@ func (s *Server) openOther(w http.ResponseWriter, r *http.Request, in openReques
 			own(store.ResBranch, wt.Branch, wt.Repo)
 		}
 	}
+	if wt.Cloned {
+		own(store.ResClone, wt.Repo, "")
+	}
 
 	// 4. the card
 	steps.begin("card", "starting the card")
@@ -295,11 +298,11 @@ func (s *Server) branchWorktree(ctx context.Context, p *store.Provider, host, or
 	if err := checkBranchName(ctx, branch); err != nil {
 		return res, http.StatusBadRequest, err
 	}
-	repoPath, wtRoot, status, err := s.repoCheckout(ctx, p, host, org, repo)
+	repoPath, wtRoot, cloned, status, err := s.repoCheckout(ctx, p, host, org, repo)
 	if err != nil {
 		return res, status, err
 	}
-	res.Repo = repoPath
+	res.Repo, res.Cloned = repoPath, cloned
 	for _, wt := range worktreesOf(repoPath) {
 		if strings.EqualFold(wt.Branch, branch) {
 			res.Path, res.Existed, res.Branch = wt.Path, true, wt.Branch

@@ -1046,10 +1046,11 @@ function clearResolved(url) {
   if (box) box.value = url || "";
   const note = document.getElementById("l-link-note");
   if (note) {
-    note.textContent = "Optional. A recogniser turns it into the fields below, " +
-      "and nothing starts until you press launch.";
+    note.textContent = url || "";
     note.classList.remove("warn");
   }
+  const field = document.getElementById("l-link-field");
+  if (field) field.hidden = !url;
 }
 
 // Paste a link, fill the form in.
@@ -1109,28 +1110,80 @@ async function recogniseLink(known) {
   // same way here: something to go and do before pressing launch.
   note.classList.toggle("warn", !!(problem || got.fetch_error));
   fillLaunchRepo();
-  if (opens) leastBusyRoom();
-  // The recogniser just filled fields that live behind the fold, and the fold
-  // is where the operator is standing. Without this the title and the prompt it
-  // wrote would be out of sight at the moment they most want reading.
+  if (opens) linkRoomDefault(got);
   syncMore();
   return got;
 }
 
-// A pull request with the room left to the hub. The room box otherwise starts on its first machine, which would be a
-// choice nobody made. Choosing another machine in the box still wins.
-function leastBusyRoom() {
-  const field = document.getElementById("l-room-field");
-  const sel = document.getElementById("l-room");
-  if (!field || field.hidden || !sel || sel.querySelector('option[value=""]')) return;
-  sel.insertAdjacentHTML("afterbegin", '<option value="">least busy</option>');
-  sel.value = "";
+// WHICH ROOM A LAUNCH GOES TO WHEN NOBODY SAID (u-005, decision 3). A board scoped to a room launches there and is
+// never asked. On the hub's ALL view the room box starts on the room that already holds the link's repo, a clone or a
+// worktree of it, else on the room this board last launched on. Never "least busy": a choice nobody made, which put a
+// pull request on a machine with no clone of it while the one with the clone sat there.
+const LAUNCH_ROOM_STORE = "atrium.launch.room";
+
+function lastLaunchRoom() {
+  try { return localStorage.getItem(LAUNCH_ROOM_STORE) || ""; } catch (e) { return ""; }
 }
 
-// A link pasted on the board, outside any box, is a link to open: the paste box comes up on it, and Enter opens it at
-// once (clone if needed, worktree, card) while Shift-Enter stops at the launch dialog filled in. The launch dialog is
-// never the first thing seen. A link nothing recognises comes back to the box with the reason. Pasting into a box,
-// a terminal or while a dialog is open is the page's own business.
+// Remembered from what a launch answered: the room an open says it went to, else the room tag on the card's id, else
+// the room the request named.
+function rememberLaunchRoom(room, id) {
+  let r = String(room || "");
+  const s = String(id || "");
+  if (!r && s.indexOf("~") > 0) r = s.slice(0, s.indexOf("~"));
+  if (!r) return;
+  try { localStorage.setItem(LAUNCH_ROOM_STORE, r); } catch (e) {}
+}
+
+// The rooms that hold host/org/repo, asked of each room at once (`/v1/scm/has`, the same question the hub's own
+// placement asks). A room that does not answer in time does not hold it.
+async function roomsHolding(repo) {
+  const rooms = (typeof hubRooms === "undefined" ? [] : hubRooms) || [];
+  if (!repo || !rooms.length) return [];
+  const ask = r => Promise.race([
+    api("/v1/scm/has?repo=" + encodeURIComponent(repo), { headers: { "X-Atrium-Room": r.name } })
+      .then(x => (x && x.has ? r.name : ""), () => ""),
+    new Promise(res => setTimeout(() => res(""), 2500))
+  ]);
+  return (await Promise.all(rooms.map(ask))).filter(Boolean);
+}
+
+function linkRepoOf(got) {
+  const v = (got && got.vars) || {};
+  const host = String(v.host || (got && got.host) || "").toLowerCase();
+  return host && v.org && v.repo ? host + "/" + v.org + "/" + v.repo : "";
+}
+
+// The room box, for a recognised link: the holder when there is one, else what fillLaunchRoom already put there (the
+// last room). Changed by hand in the meantime, it is left alone.
+async function linkRoomDefault(got) {
+  const field = document.getElementById("l-room-field");
+  const sel = document.getElementById("l-room");
+  if (!field || field.hidden || !sel) return;
+  const before = sel.value;
+  const holders = await roomsHolding(linkRepoOf(got));
+  if (!holders.length || sel.value !== before || launchResolved !== got) return;
+  if (holders.includes(sel.value)) return;
+  sel.value = holders[0];
+  if (typeof sel.onchange === "function") sel.onchange();
+}
+
+// The room an open with no dialog goes to on the ALL view, by the same rule. "" leaves it to the hub, which puts a
+// link a room already claimed on that room.
+async function linkRoomFor(got) {
+  const rooms = (typeof hubRooms === "undefined" ? [] : hubRooms) || [];
+  const scoped = typeof roomNow === "function" ? roomNow() : "";
+  if (!hubIsHub || scoped || rooms.length < 2) return "";
+  const holders = await roomsHolding(linkRepoOf(got));
+  if (holders.length) return holders[0];
+  const last = lastLaunchRoom();
+  return rooms.some(r => r.name === last) ? last : "";
+}
+
+// A LINK PASTED ON THE BOARD, outside any box, OPENS AT ONCE (u-005, decision 1): clone if needed, worktree, card, and
+// the card is on the board from the paste on (js/link-opening.js). No bar and no form. Shift-Enter in the switcher is
+// the way to the launch dialog first. A link nothing recognises comes back to the bar with the reason. Pasting into a
+// box, a terminal or while a dialog is open is the page's own business.
 document.addEventListener("paste", async e => {
   const t = e.target;
   if ((t && (t.closest ? t.closest("input, textarea, select, [contenteditable], .xterm") : null)) ||
@@ -1138,44 +1191,19 @@ document.addEventListener("paste", async e => {
   const text = ((e.clipboardData && e.clipboardData.getData("text")) || "").trim();
   if (!/^https?:\/\/\S+$/.test(text)) return;
   e.preventDefault();
-  await openQuickPaste(text);
+  await quickPasteGo(text, false);
 });
 
-// WHAT AN OPEN IS DOING, in a line over the board and never in a dialog. The server says each step of a pasted link
-// (reading the pull request, finding the clone, fetching the head, making the worktree) as an `open-progress` event
-// carrying the id this open sent, so a slow step is named while it runs. When the launch dialog is open, as it is after
-// Shift-Enter, the same line goes in its note.
+// WHAT AN OPEN IS DOING, on the card it is becoming (js/link-opening.js) and never in a line over the board. The server
+// says each step of a pasted link (reading the pull request, finding the clone, fetching the head, making the worktree)
+// as an `open-progress` event carrying the id this open sent, so a slow step is named while it runs.
 let openProgressId = "";
-
-function openProgressSay(text) {
-  let el = document.getElementById("open-progress");
-  if (!el) {
-    el = document.createElement("div");
-    el.id = "open-progress";
-    el.setAttribute("role", "status");
-    document.body.appendChild(el);
-  }
-  el.textContent = text;
-  el.hidden = false;
-  const dlg = document.getElementById("launch");
-  const note = document.getElementById("l-link-note");
-  if (dlg && dlg.open && note) {
-    note.classList.remove("warn");
-    note.textContent = text + "...";
-  }
-}
-
-function openProgressEnd() {
-  openProgressId = "";
-  const el = document.getElementById("open-progress");
-  if (el) el.hidden = true;
-}
 
 function onOpenProgress(e) {
   let d;
   try { d = JSON.parse(e.data); } catch (err) { return; }
-  if (!d || !openProgressId || d.id !== openProgressId || !d.step) return;
-  openProgressSay(d.step);
+  if (!d || !d.id || !d.step) return;
+  linkOpeningStep(d.id, d.step);
 }
 
 // setLaunchModel clears the field when the dialog opens or the runner changes.
@@ -1231,20 +1259,6 @@ function paintModelPick() {
   pick.querySelectorAll("button").forEach(b =>
     b.classList.toggle("on", b.dataset.model === now));
 }
-
-// setThrowaway disables directory selection because atrium creates the path.
-// Preserve the typed value so unticking the box restores it.
-function setThrowaway(on) {
-  const cwd = document.getElementById("l-cwd");
-  if (!cwd) return;
-  cwd.disabled = on;
-}
-
-document.getElementById("l-throwaway-on").addEventListener("change", e => {
-  setThrowaway(e.target.checked);
-  // A throwaway has nothing of a link's to clean up.
-  syncMore();
-});
 
 // Typing an id by hand lights the matching button, and typing something else
 // lights none.
@@ -1447,9 +1461,9 @@ async function openLaunch(id, resume, cwd, ontoTask, prefill, where) {
   //
   // An offered card is the OPPOSITE case and the third place the design names
   // a url gets pasted. An intake item arrives carrying a link and usually no
-  // directory, so its url is put in the box already, and one press turns "here
-  // is a thing" into "here is a card ready to start".
-  document.getElementById("l-link-field").hidden = !!resume;
+  // directory, so its url is held already, and one press turns "here is a thing"
+  // into "here is a card ready to start".
+  if (resume) document.getElementById("l-link-field").hidden = true;
 
   // A resumed conversation already has its instruction, and the daemon refuses
   // both. Hidden rather than disabled, so there is nothing to wonder about.
@@ -1465,15 +1479,6 @@ async function openLaunch(id, resume, cwd, ontoTask, prefill, where) {
     document.getElementById("l-resume-note").textContent =
       "unchecked, this starts a fresh conversation in the same directory.";
   }
-
-  // Reset throwaway on every open. Only offer it for a new directory choice;
-  // resumed conversations and existing cards already have directories.
-  const ta = document.getElementById("l-throwaway-field");
-  ta.hidden = !!resume || !!ontoTask;
-  document.getElementById("l-throwaway-on").checked = false;
-  setThrowaway(false);
-  // Off every time, like the model: deleting what a link made is asked for each time it is wanted.
-  document.getElementById("l-cleanup-on").checked = false;
 
   // THE MODEL CONTROL RESETS EVERY TIME, and that is the whole of "one time
   // only". Unticked, the box emptied and hidden, whatever was chosen last.
@@ -1538,48 +1543,24 @@ function fillLaunchRoom(ontoTask) {
   sel.innerHTML = rooms.map(r =>
     `<option value="${esc(r.name)}">${esc(r.name)}${r.host ? " — " + esc(r.host) : ""}</option>`
   ).join("");
+  // The room this board last launched on, when it is still here. A link's repo held by a room moves it there once the
+  // link is read (linkRoomDefault).
+  const last = lastLaunchRoom();
+  if (rooms.some(r => r.name === last)) sel.value = last;
   // Changing the machine re-draws the runner list, because a runner offered
   // here is one the selected room can actually start. See refreshLaunchRunners.
   sel.onchange = () => refreshLaunchRunners(launchTarget && launchTarget.harness);
   field.hidden = false;
 }
 
-// Open the optional half when something is already in it.
-//
-// The fold exists so the form opens showing what has to be answered. An intake
-// item arrives carrying a title, a prompt and tags, and a recogniser fills the
-// same fields from a link, so a form that opened shut over them would hide what
-// is about to be launched. That is worse than the noise the fold removes.
-//
-// Called on every open and after a recognise. NOT remembered between opens: a
-// form that remembers being open is a form that is open, and the complaint
-// comes back.
+// What the dialog shows of a link: the line naming it, shown only when there is one. The fold that held title, tags,
+// why and a second paste box is gone (u-005, decision 5): those are derived, and the first instruction is in plain
+// sight. Called on every open and after a recognise, as it was.
 function syncMore() {
-  const more = document.getElementById("l-more");
-  if (!more) return;
-  // SHUT ON EVERY OPEN, whatever a recogniser filled in. It fills the title, the prompt and the tags of every link,
-  // so opening on those meant it was never shut. What is in it is counted on the heading instead, so a launch is
-  // not made over fields nobody was told about. The throwaway tick is not in here any more, it is above.
-  const filled = [["l-model", "model"], ["l-effort", "effort"], ["l-title", "title"], ["l-tags", "tags"],
-    ["l-why", "why"], ["l-prompt", "first instruction"]]
-    .filter(([id]) => {
-      const el = document.getElementById(id);
-      return el && !el.closest("[hidden]") && String(el.value || "").trim() !== "";
-    }).map(([, name]) => name);
-  // Shut when the dialog is coming up, and left as the operator has it once it is there (a recognise calls this too).
-  if (!document.getElementById("launch").open) more.open = false;
-  const note = document.getElementById("l-more-note");
-  if (note) note.textContent = filled.length ? " (" + filled.join(", ") + " filled in)" : "";
-  // What only a link has: the clean up tick, and the choice to stop being asked.
   const link = String((document.getElementById("l-url") || {}).value || "").trim() !== "";
-  const away = document.getElementById("l-throwaway-on");
-  const cleanup = document.getElementById("l-cleanup-field");
-  if (cleanup) cleanup.hidden = !link || !!(away && away.checked);
-  const direct = document.getElementById("l-direct-field");
-  if (direct) {
-    direct.hidden = !link;
-    document.getElementById("l-direct").checked = quickPasteDirect();
-  }
+  const field = document.getElementById("l-link-field");
+  if (field && !document.getElementById("l-resume-field").hidden) field.hidden = true;
+  else if (field) field.hidden = !link;
 }
 
 // `renderRecentDirs` stood here and drew six buttons under the directory field,
@@ -1765,40 +1746,42 @@ function doLaunch() {
   return busyWhile("l-go", launchNow, "starting…");
 }
 
-async function launchNow() {
+async function launchNow(opening) {
   const picker = document.getElementById("l-harness");
   const resumeOff = !document.getElementById("l-resume-field").hidden &&
     !document.getElementById("l-resume-on").checked;
-  // Send an empty directory for throwaways. The daemon ignores the flag when
-  // a directory is supplied, so a previous field value must not carry through.
-  const throwaway = !document.getElementById("l-throwaway-field").hidden &&
-    document.getElementById("l-throwaway-on").checked;
-  const cleanup = !document.getElementById("l-cleanup-field").hidden &&
-    document.getElementById("l-cleanup-on").checked;
   // Every recognised link goes to the open verb unless the directory was typed over, which names a place to start in.
-  const opening = !throwaway && launchResolved &&
+  const opening_ = !!launchResolved &&
     document.getElementById("l-cwd").value.trim() === (launchResolved.shownCwd || "");
-  // WHICH MACHINE IT STARTS ON. Unset, the hub picks: the room that holds the link, else the least busy one.
+  // WHICH MACHINE IT STARTS ON: the room box when it is shown, else what the caller worked out (linkRoomFor), else the
+  // hub decides, which keeps a link a room already claimed on that room.
   const headers = { "Content-Type": "application/json" };
   const roomField = document.getElementById("l-room-field");
-  if (roomField && !roomField.hidden) {
-    const want = document.getElementById("l-room").value;
-    if (want) headers["X-Atrium-Room"] = want;
-  }
+  let room = "";
+  if (roomField && !roomField.hidden) room = document.getElementById("l-room").value;
+  else if (opening && opening.room) room = opening.room;
+  if (room) headers["X-Atrium-Room"] = room;
   // A PASTED LINK IS ONE CALL: the worktree (or a scratch folder), the card, and for a pull request the review row and
   // the walker, made on the room and undone there if a step fails. What the dialog let somebody change first goes with
   // it. A link that names no piece of work is refused as not_openable and launches the old way below. See
   // internal/api/open.go and openkinds.go.
+  //
+  // THE CARD IS ON THE BOARD FROM HERE (js/link-opening.js): the dialog shuts at once and the steps are said on the
+  // card. A failure stays on that card with the reason, and its `edit` brings this dialog back.
   let out = null;
-  if (opening) {
-    // The id the server's steps are said under, so the line over the board names the one that is running.
-    openProgressId = "op-" + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
-    openProgressSay("opening the link");
+  if (opening_) {
+    const url = launchResolved.url || document.getElementById("l-url").value.trim();
+    const id = (opening && opening.id) || linkOpeningId();
+    openProgressId = id;
+    if (!linkOpenings.has(id)) linkOpeningBegin(id, url, launchResolved.title || "");
+    else linkOpeningName(id, launchResolved.title || "");
+    const launch = document.getElementById("launch");
+    if (launch.open) launch.close();
     try {
       out = await api("/v1/open", {
         method: "POST", headers, body: JSON.stringify({
-          progress: openProgressId,
-          url: launchResolved.url || document.getElementById("l-url").value.trim(),
+          progress: id,
+          url,
           why: document.getElementById("l-why").value.trim(),
           harness: document.getElementById("l-pick-field").hidden ? launchTarget.harness : picker.value,
           title: document.getElementById("l-title").value.trim(),
@@ -1809,24 +1792,24 @@ async function launchNow() {
         })
       });
     } catch (e) {
-      if (!(e.body && e.body.code === "not_openable")) throw e;
+      if (!(e.body && e.body.code === "not_openable")) {
+        linkOpeningFail(id, (e && e.message) || String(e));
+        return;
+      }
     } finally {
-      openProgressEnd();
+      if (openProgressId === id) openProgressId = "";
     }
+    linkOpeningEnd(id);
   }
   if (out) {
-    document.getElementById("launch").close();
+    rememberLaunchRoom(out.room || room, out.card);
     if (out.created === false) {
       const pr = pastedPR();
       toast(pr ? pr.org + "/" + pr.repo + "#" + pr.number : out.title || out.key || "that link",
         out.pr ? "already under review, attached its card" : "already open, attached its card");
     }
     const card = out.card ? await api("/v1/tasks/" + encodeURIComponent(out.card)) : null;
-    // Clean up when the work is done: the card is marked, and its close does the rest. See cleanupWhenDone.
-    if (card && cleanup && !(card.tags || []).includes(CLEANUP_TAG)) {
-      try { await patchTask(card.id, { tags: (card.tags || []).concat(CLEANUP_TAG) }); }
-      catch (e) { toast("clean up was not set", e.message); }
-    }
+    if (typeof refresh === "function") refresh();
     if (!card) { switchView("board"); return; }
     if (launchWhere === "window") { popOutTask(card.id); return; }
     switchView("terms");
@@ -1842,14 +1825,13 @@ async function launchNow() {
     task_id: launchTarget.task_id || "",
     // No resume id means no resume arguments, so the daemon starts fresh.
     resume: resumeOff ? "" : launchTarget.resume,
-    throwaway,
-    cwd: throwaway ? "" : document.getElementById("l-cwd").value.trim(),
+    cwd:document.getElementById("l-cwd").value.trim(),
     title: document.getElementById("l-title").value.trim(),
     why: document.getElementById("l-why").value.trim(),
     // Split on commas and never on spaces, the same rule everywhere else: a
     // tag with a space in it is one tag.
     tags: document.getElementById("l-tags").value
-      .split(",").map(x => x.trim()).filter(Boolean).concat(cleanup ? [CLEANUP_TAG] : []),
+      .split(",").map(x => x.trim()).filter(Boolean),
     // Empty while resuming, since the field is hidden and the daemon refuses
     // a prompt and a resume together.
     prompt: resumeOff || !launchTarget.resume
@@ -1882,6 +1864,8 @@ async function launchNow() {
     method: "POST", headers, body: JSON.stringify(body)
   });
   document.getElementById("launch").close();
+  // The room a launch went to is the default the next link opens on (linkRoomFor), whichever way it launched.
+  rememberLaunchRoom(room, task && task.id);
 
   // Straight to the terminal you just started. Landing on the board instead
   // means finding the new card and clicking attach, which is two steps to get

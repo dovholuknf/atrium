@@ -64,6 +64,11 @@ func (s *Store) nextID(src *idSource) string {
 	return fmt.Sprintf("%020d", n)
 }
 
+// detached is the context a WRITE runs on: the caller's values, never its cancellation. A push that git already
+// made has to be written down whether or not the request that asked is still waiting, and a caller going away
+// half way through a transaction is not something the log should have to survive. Reads keep the caller's context.
+func detached(ctx context.Context) context.Context { return context.WithoutCancel(ctx) }
+
 func (s *Store) insertPush(ctx context.Context, x pushTx, src *idSource, r gitsync.PushRow, state, batch string) (string, error) {
 	at := r.At
 	if at.IsZero() {
@@ -87,6 +92,7 @@ func (s *Store) Append(ctx context.Context, rows ...gitsync.PushRow) error {
 	if len(rows) == 0 {
 		return nil
 	}
+	ctx = detached(ctx)
 	return s.guard(func() error {
 		tx, err := s.db.BeginTx(ctx, nil)
 		if err != nil {
@@ -111,6 +117,7 @@ func (s *Store) Begin(ctx context.Context, rows ...gitsync.PushRow) (string, err
 	if len(rows) == 0 {
 		return "", nil
 	}
+	ctx = detached(ctx)
 	var batch string
 	err := s.guard(func() error {
 		tx, err := s.db.BeginTx(ctx, nil)
@@ -144,6 +151,7 @@ func (s *Store) Settle(ctx context.Context, batch string, landed ...string) erro
 	for _, ref := range landed {
 		did[ref] = true
 	}
+	ctx = detached(ctx)
 	return s.guard(func() error {
 		tx, err := s.db.BeginTx(ctx, nil)
 		if err != nil {
@@ -265,6 +273,7 @@ func ownerOf(ctx context.Context, q pushTx, repo, ref string) (room, card string
 // Release lets a branch go: a marker row naming the owner that was released. A branch with no owner has
 // nothing to release and gets no row.
 func (s *Store) Release(ctx context.Context, repo, ref, by string) error {
+	ctx = detached(ctx)
 	return s.guard(func() error {
 		tx, err := s.db.BeginTx(ctx, nil)
 		if err != nil {

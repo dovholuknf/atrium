@@ -91,6 +91,9 @@ type closeAsk struct {
 	Unpushed int    `json:"unpushed"`
 	// Bytes is what the worktree holds on disk now, ignored trees (node_modules) included.
 	Bytes int64 `json:"bytes"`
+	// Hub is a branch on the hub that is not merged, asked about with keep or delete. Path is the repository and Branch
+	// the branch.
+	Hub bool `json:"hub,omitempty"`
 }
 
 type closePreview struct {
@@ -207,6 +210,10 @@ func (s *Server) closeFlow(w http.ResponseWriter, r *http.Request, t *store.Task
 		if ans == "" {
 			missing = append(missing, a.Path)
 		}
+		if ans == CloseStash && a.Hub {
+			prError(w, http.StatusBadRequest, "bad_request", "a branch on the hub is kept or deleted, not stashed: "+a.Path, nil)
+			return
+		}
 		if ans == CloseStash && !pv.CanStash {
 			prError(w, http.StatusBadRequest, "no_stash", "this room cannot stash to a hub. keep or delete "+a.Path, nil)
 			return
@@ -243,6 +250,8 @@ func (s *Server) closePreview(ctx context.Context, t *store.Task) (*closePreview
 	if cardRunning(t) {
 		pv.Warnings = append(pv.Warnings, "the session is still running. it is stopped first")
 	}
+	// A pull request's card: its hub branches count as merged once the forge's main has them (closehub.go).
+	prCard := len(s.walkedOutside(t.ID, nil)) > 0
 	for _, r := range rows {
 		it := closeItem{Seq: r.Seq, Kind: r.Kind, Ref: r.Ref, Detail: r.Detail, Action: "free", Bytes: r.Bytes,
 			Err: r.FreedErr}
@@ -280,6 +289,27 @@ func (s *Server) closePreview(ctx context.Context, t *store.Task) (*closePreview
 			}
 		case store.ResStash:
 			it.Action, it.Note = "keep", "on the hub. nothing here frees it"
+		case store.ResClone:
+			if _, err := os.Stat(filepath.FromSlash(r.Ref)); err != nil {
+				it.Note = "already gone from disk"
+				break
+			}
+			wts, branches := cardOwnOf(rows, r.Ref)
+			if why := cloneKeepReason(ctx, r.Ref, wts, branches); why != "" {
+				it.Action, it.Note = "keep", "kept: "+why
+				pv.Kept = append(pv.Kept, "the clone it made, "+r.Ref+": "+why)
+				break
+			}
+			it.Note = "the clone this card's open made, deleted after its worktree. kept if its worktree is"
+		case store.ResHubBranch:
+			it.Note = hubBranchNote(r)
+			if !hubBranchMerged(ctx, t.Worktree, r.Ref, prCard) {
+				it.Action, it.Note = "ask", "not merged into claude/main, so it is asked about: keep or delete"
+				if prCard {
+					it.Note = "not merged into claude/main or the forge's main, so it is asked about: keep or delete"
+				}
+				pv.Asks = append(pv.Asks, closeAsk{Seq: r.Seq, Path: r.Detail + " " + r.Ref, Branch: r.Ref, Hub: true})
+			}
 		case store.ResDir:
 			if s.inScratch(r.Ref) == "" {
 				it.Action, it.Note = "keep", "a folder outside the scratch folder is not freed by a close. the sweep lists it"
@@ -492,6 +522,9 @@ func (s *Server) closeCard(t *store.Task, pv *closePreview, answers map[string]s
 		freed(r)
 	}
 
+	// 2b. the card's branches on the hub, pushed from its worktree, so before the worktree goes
+	s.freeHubBranches(t, rows, asked, answers, steps, failed, freed, warn)
+
 	// 3. worktrees. A kept one keeps its branch: repo and branch name.
 	keptBranch := map[string]bool{}
 	for _, r := range of(store.ResWorktree) {
@@ -574,6 +607,9 @@ func (s *Server) closeCard(t *store.Task, pv *closePreview, answers map[string]s
 		}
 		freed(r)
 	}
+
+	// 5a. the clone the card's open made, once nothing of the card hangs off it
+	s.freeClones(of(store.ResClone), steps, failed, freed, warn)
 
 	// 5b. scratch folders, only under the scratch root
 	for _, r := range of(store.ResDir) {
