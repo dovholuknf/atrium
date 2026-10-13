@@ -772,6 +772,14 @@ async function cleanupOffer(row) {
   closeCardAsk(row.id, row);
 }
 
+// What the close dialog calls each inventory row's kind (store.Res* in internal/store/resources.go). The hub's own
+// branch has two spellings here because its row is being built beside this change and its name is not settled.
+const CLOSE_KIND_WORDS = {
+  worktree: "the worktree", branch: "the branch here", ref: "the ref", dir: "the folder", review: "the review's source copy",
+  proc: "the process", port: "the port", overlay: "the overlay folder", identity: "the identity",
+  hubbranch: "the branch on the hub", "hub-branch": "the branch on the hub", clone: "the clone it made"
+};
+
 // via {owner, room} closes what an owner with no card holds, through the sweep (internal/api/sweep.go).
 function closeCardAsk(id, t, via) { return oneAtATime("close:" + id, () => closeCardNow(id, t, via)); }
 
@@ -791,11 +799,18 @@ async function closeCardNow(id, t, via) {
   // ONE DIALOG. The summary, each asked worktree as a row with its choice inline (stash when the room can, else keep,
   // never delete unasked), and one button. Pressed, the dialog stays up and names each step as the server says it
   // (close-progress, see onCloseProgress), shut by itself when done and left open on a step that failed.
+  //
+  // EVERY CARD CLEANS UP WHEN CLOSED (u-005, decision 4), so this says what goes before it goes: "Closing deletes" and
+  // the list, with work that is on no remote said first. A row's kind is named in words, and a kind not named here
+  // shows as itself, so a new inventory row (the hub's branch, from the hub branch inventory) lists without a change.
   const sized = n => (typeof diskLabel === "function" && n ? ` (${esc(diskLabel(n))})` : "");
   const going = (pv.items || []).filter(it => it.action === "free" || it.action === "ask")
-    .map(it => `<li>${esc(it.kind)} ${esc(it.ref)}${it.kind === "worktree" ? sized(it.bytes) : ""}</li>`).join("");
+    .map(it => `<li>${esc(CLOSE_KIND_WORDS[it.kind] || it.kind)} ${esc(it.ref)}${it.kind === "worktree" ? sized(it.bytes) : ""}</li>`).join("");
   const kept = (pv.kept || []).map(k => `<li>${esc(k)}</li>`).join("");
-  const warns = (pv.warnings || []).map(w => `<li>${esc(w)}</li>`).join("");
+  const unpushed = (pv.asks || []).filter(a => a.unpushed > 0 || a.dirty > 0);
+  const warns = (unpushed.length ? [`<li class="warn">${unpushed.length === 1 ? "one folder holds" : unpushed.length +
+    " folders hold"} work that is on no remote and not on the hub. pick what happens to it below</li>`] : [])
+    .concat((pv.warnings || []).map(w => `<li>${esc(w)}</li>`)).join("");
   const pick = (a, v, label, cls) => `<label${cls ? ` class="${cls}"` : ""}><input type="radio" name="cw-${esc(String(a.seq))}" ` +
     `value="${v}"${v === (pv.can_stash ? "stash" : "keep") ? " checked" : ""}> ${label}</label>`;
   const rows = (pv.asks || []).map(a =>
@@ -807,7 +822,7 @@ async function closeCardNow(id, t, via) {
     ((pv.asks || []).length && !pv.can_stash
       ? `<div class="cw-note">This room cannot stash to the hub, so keep is the answer unless you pick delete.</div>` : "");
   const body =
-    (going ? `Frees${sized(pv.disk_bytes)}:<ul>${going}</ul>` : "Nothing on disk to free.<br>") +
+    (going ? `Closing deletes${sized(pv.disk_bytes)}:<ul>${going}</ul>` : "Nothing on disk to delete.<br>") +
     (warns ? `<ul>${warns}</ul>` : "") + rows +
     `Kept:<ul>${kept}</ul>` +
     (via ? "No card holds these." : "The card goes to <b>done</b>. A re-paste of the link starts a fresh card.") +

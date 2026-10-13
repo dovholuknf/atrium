@@ -618,12 +618,11 @@ async function board(browser, vp) {
     await shoot(p, "launch-scrolled");
     await p.evaluate(() => { const b = document.querySelector("#launch .dlg-body"); if (b) b.scrollTop = 0; });
     await keyboard(p, "launch-cwd", "#l-cwd", "#l-go");
-    // The first instruction sits under the "more" fold.
-    await p.evaluate(() => { const m = document.getElementById("l-more"); if (m) m.open = true; });
+    // The first instruction is always shown (u-005).
     await p.waitForTimeout(300);
     const pr = await p.$("#l-prompt");
     if (pr && await pr.isVisible()) await keyboard(p, "launch-prompt", "#l-prompt", "#l-go");
-    else record("launch-prompt-kb", { stepError: "#l-prompt not visible with #l-more open" });
+    else record("launch-prompt-kb", { stepError: "#l-prompt not visible" });
     await p.evaluate(() => openBrowse()).catch(() => {});
     await p.waitForTimeout(500);
     if (await p.$("#browse[open]")) { await shoot(p, "launch-browse"); await p.evaluate(() => document.getElementById("browse").close()); }
