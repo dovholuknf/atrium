@@ -910,11 +910,19 @@ func TestDeleteTagNotesAndStashFromACardAreRefusedAndNothingMoves(t *testing.T) 
 			}
 		}
 	}
-	x.must(x.push(roomCard("sg4", "C1"), hubRepo, ":refs/heads/fix/x"))
-	if x.refOn(hubRepo, "refs/heads/fix/x") != "" {
+	// Its own branch that is not claude/* stays: a card deletes only the claude/* branches it pushed.
+	if out, err := x.push(card, hubRepo, ":refs/heads/fix/x"); err == nil {
+		t.Fatalf("a card deleted a branch outside claude/*:\n%s", out)
+	}
+	x.must(x.push(card, hubRepo, "fix/x:refs/heads/claude/x"))
+	if out, err := x.push(roomCard("sg4", "C2"), hubRepo, ":refs/heads/claude/x"); err == nil {
+		t.Fatalf("a card deleted a claude/* branch another card pushed:\n%s", out)
+	}
+	x.must(x.push(card, hubRepo, ":refs/heads/claude/x"))
+	if x.refOn(hubRepo, "refs/heads/claude/x") != "" {
 		t.Fatal("the owner's delete did not land")
 	}
-	if _, _, ok, _ := x.log.Owner(bg, hubRepo, "refs/heads/fix/x"); ok {
+	if _, _, ok, _ := x.log.Owner(bg, hubRepo, "refs/heads/claude/x"); ok {
 		t.Fatal("a deleted branch still has an owner")
 	}
 	// The operator deletes a branch any card pushed, and may push a tag.
@@ -1749,6 +1757,7 @@ func TestDeleteAndTagRefusalsAreTheHubsSentences(t *testing.T) {
 		want string
 	}{
 		{roomCard("sg4", "C2"), ":refs/heads/fix/x", "a card deletes only a branch it pushed"},
+		{roomCard("sg4", "C1"), ":refs/heads/fix/x", "a card deletes only a claude/* branch it pushed"},
 		{roomCard("sg4", "C1"), ":refs/heads/main", "is never deleted by a push"},
 		{operator, ":refs/heads/main", "is never deleted by a push"},
 		{roomCard("sg4", "C1"), ":refs/tags/v1", "is not done by a push"},

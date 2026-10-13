@@ -250,6 +250,8 @@ func (s *Server) closePreview(ctx context.Context, t *store.Task) (*closePreview
 	if cardRunning(t) {
 		pv.Warnings = append(pv.Warnings, "the session is still running. it is stopped first")
 	}
+	// A pull request's card: its hub branches count as merged once the forge's main has them (closehub.go).
+	prCard := len(s.walkedOutside(t.ID, nil)) > 0
 	for _, r := range rows {
 		it := closeItem{Seq: r.Seq, Kind: r.Kind, Ref: r.Ref, Detail: r.Detail, Action: "free", Bytes: r.Bytes,
 			Err: r.FreedErr}
@@ -301,8 +303,11 @@ func (s *Server) closePreview(ctx context.Context, t *store.Task) (*closePreview
 			it.Note = "the clone this card's open made, deleted after its worktree. kept if its worktree is"
 		case store.ResHubBranch:
 			it.Note = hubBranchNote(r)
-			if !hubBranchMerged(ctx, t.Worktree, r.Ref) {
+			if !hubBranchMerged(ctx, t.Worktree, r.Ref, prCard) {
 				it.Action, it.Note = "ask", "not merged into claude/main, so it is asked about: keep or delete"
+				if prCard {
+					it.Note = "not merged into claude/main or the forge's main, so it is asked about: keep or delete"
+				}
 				pv.Asks = append(pv.Asks, closeAsk{Seq: r.Seq, Path: r.Detail + " " + r.Ref, Branch: r.Ref, Hub: true})
 			}
 		case store.ResDir:

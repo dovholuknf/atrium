@@ -220,8 +220,9 @@ func (rc *Receiver) decide(ctx context.Context, repo string, p Pusher, req pushR
 		have := cur[ref]
 		switch {
 		case u.New == zeroSHA:
-			// A DELETE IS TAKEN ONLY FOR A BRANCH THE PUSHER OWNS: a card for one the push log says it pushed, the
-			// operator for any branch that is not main. Tags, notes, stash and the rest are never deleted by a push.
+			// A DELETE IS TAKEN ONLY FOR A BRANCH THE PUSHER OWNS: a card for a claude/* branch the push log says it
+			// pushed, the operator for any branch that is not main. Tags, notes, stash and the rest are never deleted
+			// by a push.
 			switch {
 			case !strings.HasPrefix(ref, headsPrefix):
 				d.fail(ref, "deleting "+label+" is not done by a push. only a branch is")
@@ -236,6 +237,8 @@ func (rc *Receiver) decide(ctx context.Context, repo string, p Pusher, req pushR
 					d.fail(ref, "the hub could not read who owns "+label)
 				case !ok || room != p.Room || card != p.Card:
 					d.fail(ref, "deleting "+label+" is refused. a card deletes only a branch it pushed")
+				case !strings.HasPrefix(label, "claude/"):
+					d.fail(ref, "deleting "+label+" is refused. a card deletes only a claude/* branch it pushed")
 				default:
 					d.deletes = append(d.deletes, ref)
 				}

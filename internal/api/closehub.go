@@ -58,19 +58,40 @@ func (s *Server) freeHubBranches(t *store.Task, rows []*store.CardResource, aske
 	}
 }
 
-// hubBranchMerged says whether a branch is an ancestor of the integration branch, as the card's own clone sees it. A
-// branch or a clone that cannot be read is NOT merged, so the close asks rather than deletes.
-func hubBranchMerged(ctx context.Context, dir, branch string) bool {
+// hubBranchMerged says whether a branch is an ancestor of the integration branch, as the card's own clone sees it, or
+// for a pull request's card of the forge's main, since that work lands there and never on claude/main. The tip is the
+// local branch, else the hub's copy of it as last fetched. A branch or a clone that cannot be read is NOT merged, so
+// the close asks rather than deletes.
+func hubBranchMerged(ctx context.Context, dir, branch string, pr bool) bool {
 	if strings.TrimSpace(dir) == "" {
 		return false
 	}
 	ctx, cancel := context.WithTimeout(ctx, closeGitWait)
 	defer cancel()
-	for _, base := range []string{"refs/heads/claude/main", "refs/remotes/hub/claude/main", "refs/heads/hub-main"} {
-		if _, err := gitIn(ctx, dir, "rev-parse", "--verify", "--quiet", base); err != nil {
+	has := func(ref string) bool {
+		_, err := gitIn(ctx, dir, "rev-parse", "--verify", "--quiet", ref+"^{commit}")
+		return err == nil
+	}
+	tip := ""
+	for _, ref := range []string{"refs/heads/" + branch, "refs/remotes/hub/" + branch, "refs/remotes/atrium-hub/" + branch} {
+		if has(ref) {
+			tip = ref
+			break
+		}
+	}
+	if tip == "" {
+		return false
+	}
+	bases := []string{"refs/heads/claude/main", "refs/remotes/hub/claude/main", "refs/remotes/atrium-hub/claude/main",
+		"refs/heads/hub-main"}
+	if pr {
+		bases = append(bases, "refs/remotes/origin/HEAD", "refs/remotes/origin/main", "refs/remotes/origin/master")
+	}
+	for _, base := range bases {
+		if !has(base) {
 			continue
 		}
-		if _, err := gitIn(ctx, dir, "merge-base", "--is-ancestor", "refs/heads/"+branch, base); err == nil {
+		if _, err := gitIn(ctx, dir, "merge-base", "--is-ancestor", tip, base); err == nil {
 			return true
 		}
 	}
