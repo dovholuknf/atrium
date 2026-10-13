@@ -22643,6 +22643,7 @@ async function childFoldSection(browser, base) {
       count: btn ? (btn.querySelector(".tkidn") || {}).textContent || "" : "",
       run: btn ? (btn.querySelector(".tkidrun") || {}).textContent || "" : "",
       wait: btn ? (btn.querySelector(".tkidwait") || {}).textContent || "" : "",
+      tip: btn ? btn.dataset.tip || "" : "",
       runCls: btn ? btn.classList.contains("running") : false,
       loneBtn: !!(row("lone") && row("lone").querySelector("button.tkidfold")),
       tag: btn ? btn.tagName : ""
@@ -22658,11 +22659,36 @@ async function childFoldSection(browser, base) {
     await p.evaluate(() => document.querySelector("#term-list button.tkidfold").focus());
     await p.keyboard.press("Enter");
     v = await look(p);
-    if (v.expanded !== "false" || v.kids !== "kid-p") fail("childFold: fold did not hide the running kids: " + JSON.stringify(v));
+    if (v.expanded !== "false" || v.kids !== "") fail("childFold: fold did not hide every kid, the waiting one included: " + JSON.stringify(v));
     if (v.count !== "3") fail("childFold: folded count is " + JSON.stringify(v.count));
     // Nothing under it is working in this fixture, so the folded row says the count and the one that needs you.
     if (v.run !== "" || v.runCls) fail("childFold: a running chip with nothing running: " + JSON.stringify(v));
     if (!/^1/.test(v.wait)) fail("childFold: folded row does not count the waiting child: " + JSON.stringify(v.wait));
+    if (/needs you.*needs you/.test(v.tip)) fail("childFold: the chevron tip says it twice: " + JSON.stringify(v.tip));
+    // The explanation is in the card's hover popup, one line, singular for one.
+    const pop = await p.evaluate(async () => {
+      const par = (await boardCards()).find(c => c.id === "par");
+      const d = document.createElement("div"); d.innerHTML = peekBody(par, null);
+      const el = d.querySelector(".peek-kidwait"); return el ? el.textContent : "";
+    });
+    if (pop !== "1 cardunder this one needs you") fail("childFold: the folded parent's popup line is " + JSON.stringify(pop));
+    await p.evaluate(async () => { // a second waiting child makes it plural, and an open parent says nothing
+      (await boardCards()).find(c => c.id === "kid-a").status = "needs-permission"; await renderTermList();
+    });
+    const pop2 = await p.evaluate(async () => {
+      const d = document.createElement("div"); d.innerHTML = peekBody((await boardCards()).find(c => c.id === "par"), null);
+      return (d.querySelector(".peek-kidwait") || {}).textContent || "";
+    });
+    if (pop2 !== "2 cardsunder this one need you") fail("childFold: plural popup line is " + JSON.stringify(pop2));
+    await p.evaluate(async () => { (await boardCards()).find(c => c.id === "kid-a").status = "running"; await renderTermList(); });
+    if (process.env.CHILDFOLD_SHOTS) {
+      await p.hover('#term-list .card.tab[data-id="par"] .tname');
+      await p.waitForSelector(".peek-kidwait", { timeout: slow(5000) }).catch(() => fail("childFold: hover popup never showed the line"));
+      await p.waitForTimeout(500);
+      fs.mkdirSync(process.env.CHILDFOLD_SHOTS, { recursive: true });
+      await p.screenshot({ path: path.join(process.env.CHILDFOLD_SHOTS, "after-popup.png") });
+      await p.mouse.move(5, 5);
+    }
     // A working child, deep or not, shows on the folded parent.
     await p.evaluate(async () => {
       const all = await boardCards();
@@ -22695,7 +22721,7 @@ async function childFoldSection(browser, base) {
     for (const sort of ["name", "activity", "started"]) {
       await p.evaluate(s => setTermSortMode(s), sort);
       v = await look(p);
-      if (v.expanded !== "false" || v.kids !== "kid-p") fail("childFold " + sort + ": " + JSON.stringify(v));
+      if (v.expanded !== "false" || v.kids !== "") fail("childFold " + sort + ": " + JSON.stringify(v));
     }
     // A bogus stored value reads as expanded.
     for (const val of ["not json", "{\"a\":1}", "5", "null"]) {
