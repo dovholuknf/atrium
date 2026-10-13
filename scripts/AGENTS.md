@@ -37,8 +37,8 @@ From `scripts/live/README.md`, and they hold for anything here that stops or swa
 - **Swap a binary by two renames, never a copy over the live name.**
 - **Run stop and start from a shell atrium does not supervise.** A room stopping takes the scripts in its terminals
   with it.
-- **The live scripts RUN from a deployed copy**, not from this checkout. After a change lands, `install-live-scripts.ps1`
-  copies them over.
+- **The live scripts RUN from a deployed copy**, not from this checkout. After a change lands,
+  `install-live-scripts.ps1` copies them over.
 - **A hub-only deploy asks `hub-restart-gate.ps1` first**, which waits until no board is in use. Exit 0 is go, 3 and 4
   are do not restart.
 
