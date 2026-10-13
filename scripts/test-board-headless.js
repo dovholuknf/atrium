@@ -22716,6 +22716,7 @@ async function childFoldSection(browser, base) {
       count: btn ? (btn.querySelector(".tkidn") || {}).textContent || "" : "",
       run: btn ? (btn.querySelector(".tkidrun") || {}).textContent || "" : "",
       wait: btn ? (btn.querySelector(".tkidwait") || {}).textContent || "" : "",
+      tip: btn ? btn.dataset.tip || "" : "",
       runCls: btn ? btn.classList.contains("running") : false,
       loneBtn: !!(row("lone") && row("lone").querySelector("button.tkidfold")),
       tag: btn ? btn.tagName : ""
@@ -22731,11 +22732,12 @@ async function childFoldSection(browser, base) {
     await p.evaluate(() => document.querySelector("#term-list button.tkidfold").focus());
     await p.keyboard.press("Enter");
     v = await look(p);
-    if (v.expanded !== "false" || v.kids !== "kid-p") fail("childFold: fold did not hide the running kids: " + JSON.stringify(v));
+    if (v.expanded !== "false" || v.kids !== "") fail("childFold: fold did not hide every kid, the waiting one included: " + JSON.stringify(v));
     if (v.count !== "3") fail("childFold: folded count is " + JSON.stringify(v.count));
     // Nothing under it is working in this fixture, so the folded row says the count and the one that needs you.
     if (v.run !== "" || v.runCls) fail("childFold: a running chip with nothing running: " + JSON.stringify(v));
     if (!/^1/.test(v.wait)) fail("childFold: folded row does not count the waiting child: " + JSON.stringify(v.wait));
+    if (!/1 card under this one needs you/.test(v.tip)) fail("childFold: the folded popup does not explain the chip: " + JSON.stringify(v.tip));
     // A working child, deep or not, shows on the folded parent.
     await p.evaluate(async () => {
       const all = await boardCards();
@@ -22768,7 +22770,7 @@ async function childFoldSection(browser, base) {
     for (const sort of ["name", "activity", "started"]) {
       await p.evaluate(s => setTermSortMode(s), sort);
       v = await look(p);
-      if (v.expanded !== "false" || v.kids !== "kid-p") fail("childFold " + sort + ": " + JSON.stringify(v));
+      if (v.expanded !== "false" || v.kids !== "") fail("childFold " + sort + ": " + JSON.stringify(v));
     }
     // A bogus stored value reads as expanded.
     for (const val of ["not json", "{\"a\":1}", "5", "null"]) {

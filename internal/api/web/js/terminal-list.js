@@ -162,7 +162,7 @@ function paintTermShow() {
     fdChip("dead", on.has("dead"), "toggleTermShow('dead')",
       "pinned rows whose session has exited, and the ended group. a click starts one again", "dead") +
     fdChip("subagents", on.has("subagents"), "toggleTermShow('subagents')",
-      "off: a parent's subagents are folded under it, with a count. one that needs you still shows. on: parents start open", "subagents");
+      "off: a parent's subagents are folded under it, with a count. a count and a ! chip say what needs you. on: parents start open", "subagents");
 }
 prefLive([TERM_SHOW_KEY + "*"], () => { paintTermShow(); renderTermList(); });
 
@@ -1081,8 +1081,8 @@ function termRow(t, deep, kid) {
         : "open in the pane, so the filter keeps it listed"}">${keptWord}</span>` : "";
   const allKids = termKids.get(t.id) || [];
   const shut = allKids.length > 0 && termKidsShut(t);
-  // A folded parent still shows a child that needs you, and the one holding the attached terminal (`termHoldsOn`).
-  const shown = shut ? allKids.filter(k => termKidWaits(k) || termHoldsOn(k)) : allKids;
+  // A fold hides every child, one that needs you included: the warn chip on the parent is the signal (`termKidsToggle`).
+  const shown = shut ? [] : allKids;
   const kids = shown.map(k => termRow(k, false, true)).join("");
   return `
     <div class="card tab ${on ? "on" : ""}${kid ? " kid" : ""}${
@@ -1136,12 +1136,6 @@ let termKids = new Map();
 function termKidsKey(t) { return "kids:" + bareId(t.id); }
 function termKidsShut(t) { return termSubsOn() ? isFolded(termKidsKey(t)) : !isFolded(termKidsKey(t)); }
 
-// Does this child, or anything nested under it, need the human? A folded parent still shows those, so a question is
-// findable without unfolding.
-function termKidWaits(k) {
-  return isWaiting(k) || (termKids.get(k.id) || []).some(termKidWaits);
-}
-
 // How many cards under this one, at any depth, satisfy `pred`.
 function termKidsCount(id, pred) {
   return (termKids.get(id) || []).reduce((n, k) => n + (pred(k) ? 1 : 0) + termKidsCount(k.id, pred), 0);
@@ -1149,14 +1143,15 @@ function termKidsCount(id, pred) {
 
 // The chevron on a parent row. A real button so it takes focus and Enter/Space. Folded, it is a count of what is
 // under the row (the direct cards), then how many cards at any depth are running and how many need the human, drawn
-// as chips like the row's other badges. A waiting child is also kept drawn under the row, and still counted here.
+// as chips like the row's other badges. Nothing under a folded row is drawn, a waiting child included: the chip is how it is found.
 function termKidsToggle(t, total, hidden, shut) {
   if (!total) return "";
   const run = shut ? termKidsCount(t.id, workingNow) : 0;
   const wait = shut ? termKidsCount(t.id, isWaiting) : 0;
   const base = shut ? "show the cards this one launched" : "hide the cards this one launched";
   const say = [run && run + " running", wait && wait + " need" + (wait === 1 ? "s" : "") + " you"].filter(Boolean);
-  const tip = shut ? `${total} under this one${say.length ? ": " + say.join(", ") : ""}. click to show them` : base;
+  const tip = shut ? `${total} under this one${say.length ? ": " + say.join(", ") : ""}. click to show them${
+    wait ? `\n${wait} ${wait === 1 ? "card" : "cards"} under this one ${wait === 1 ? "needs" : "need"} you (the ! chip)` : ""}` : base;
   return `<button type="button" class="tkidfold${shut ? " shut" : ""}${run ? " running" : ""}" aria-expanded="${shut ? "false" : "true"}"
     aria-label="${tip}" data-tip="${tip}"
     onclick="event.stopPropagation();toggleKids('${t.id}')"
