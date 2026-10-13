@@ -5,8 +5,11 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 	"unicode/utf8"
+
+	"github.com/dovholuknf/atrium/internal/store"
 )
 
 // The board counts clicks on its own controls and sends the counts here in batches. See js/usage-board.js.
@@ -28,6 +31,7 @@ func (s *Server) postBoardUsage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	day := time.Now().Format("2006-01-02")
+	changed := false
 	for name, n := range body.Counts {
 		name = strings.TrimSpace(name)
 		if name == "" || len(name) > usageControlMax || !utf8.ValidString(name) || n < 1 || n > usageCountMax {
@@ -37,13 +41,45 @@ func (s *Server) postBoardUsage(w http.ResponseWriter, r *http.Request) {
 			s.fail(w, err)
 			return
 		}
+		changed = true
+	}
+	if changed {
+		s.usageSnap.drop()
 	}
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// getBoardUsage is every control ever used, most used first, for the "controls used" view.
+// boardUsageSnap is the totals as of the last write. Reading them is a GROUP BY over every day of every control, which
+// is what made "controls used" slow to open, so it is done once per batch that changed something and not once per
+// request. A write drops it and the next read rebuilds it.
+type boardUsageSnap struct {
+	mu   sync.Mutex
+	rows []store.BoardUsage
+	ok   bool
+}
+
+func (b *boardUsageSnap) drop() {
+	b.mu.Lock()
+	b.ok = false
+	b.mu.Unlock()
+}
+
+func (b *boardUsageSnap) get(read func() ([]store.BoardUsage, error)) ([]store.BoardUsage, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if !b.ok {
+		rows, err := read()
+		if err != nil {
+			return nil, err
+		}
+		b.rows, b.ok = rows, true
+	}
+	return b.rows, nil
+}
+
+// getBoardUsage is every control ever used, most used first, for the "controls used" view. Served from the snapshot.
 func (s *Server) getBoardUsage(w http.ResponseWriter, r *http.Request) {
-	rows, err := s.st.BoardUsageTotals()
+	rows, err := s.usageSnap.get(s.st.BoardUsageTotals)
 	if err != nil {
 		s.fail(w, err)
 		return

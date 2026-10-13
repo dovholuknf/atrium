@@ -1147,6 +1147,11 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
     <div class="grow"><div class="dlg-eyebrow">this room</div><h2>controls used</h2></div>
   </div>
   <div class="dlg-body">
+    <div class="usagedlg-row usagedlg-head" data-usage-skip>
+      <button type="button" id="usagedlg-h-name" class="name" data-usage-skip>control</button>
+      <button type="button" id="usagedlg-h-n" class="n" data-usage-skip>used</button>
+      <span class="last">last</span>
+    </div>
     <div id="usagedlg-list" class="usagedlg-list"></div>
     <span class="hintline">Counts of clicks on the board's own controls, kept in this room and never sent anywhere
       else. A control in a menu that is closed is not known until the menu has been opened.</span>

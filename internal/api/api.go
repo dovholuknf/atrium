@@ -34,6 +34,8 @@ type Server struct {
 	hk  serverHooks
 	st  *store.Store
 	bus *bus
+	// The "controls used" totals, rebuilt after a write. See boardusage.go.
+	usageSnap boardUsageSnap
 	// pend coalesces PublishTask per card.
 	pend taskPending
 	// sweep holds the last sweep of the inventory. See sweep.go.

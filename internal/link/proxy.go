@@ -780,6 +780,14 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				room = first
 			}
 		}
+		// THE BOARD'S CLICK COUNTS HAVE NO ROOM TO BELONG TO in the ALL view, and a beacon cannot carry a
+		// header, so both halves asked and were refused: nothing was stored and "controls used" read back
+		// empty. They land on the first room, the same one every time. See js/usage-board.js.
+		if room == "" && boardUsagePath(r) {
+			if first := p.firstRoom(); first != "" {
+				room = first
+			}
+		}
 		// A write, or a read nothing knows how to merge, with more than one room
 		// attached and no room named. A question.
 		//
@@ -1651,4 +1659,10 @@ func (p *Proxy) serveHubAPI(w http.ResponseWriter, r *http.Request) {
 	default:
 		http.NotFound(w, r)
 	}
+}
+
+// boardUsagePath is the board counting its own controls: the batch it posts and the totals it reads back.
+func boardUsagePath(r *http.Request) bool {
+	return (r.Method == http.MethodPost && r.URL.Path == "/v1/usage") ||
+		(r.Method == http.MethodGet && r.URL.Path == "/v1/usage/board")
 }

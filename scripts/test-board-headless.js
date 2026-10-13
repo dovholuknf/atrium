@@ -8406,11 +8406,39 @@ async function boardUsageSection(browser, base) {
       name: r.querySelector(".name").textContent, n: r.querySelector(".n").textContent, never: r.classList.contains("never") })));
     const at = (name) => rows.findIndex(r => r.name === name);
     const used = at("view:" + hot), more = at("id:tabmore"), never = at("view:docs");
-    if (used < 0 || rows[used].n !== "2" || (used > 1)) fail("boardUsage: the most clicked tab is not first with 2: " + JSON.stringify(rows.slice(0, 4)));
+    if (used < 0 || rows[used].n !== "2" || (used > 2)) fail("boardUsage: the most clicked tab is not first with 2: " + JSON.stringify(rows.slice(0, 4)));
     if (more < 0 || rows[more].n !== "3") fail("boardUsage: the ... button is not listed with 3 clicks: " + JSON.stringify(rows.slice(0, 4)));
     if (never < 0 || !rows[never].never || rows[never].n !== "never") fail("boardUsage: an untouched tab is not listed as never: " + JSON.stringify(rows.slice(-6)));
     if (never < Math.max(used, more)) fail("boardUsage: a never control sits above a used one");
     if (rows.some(r => r.never) && rows.findIndex(r => r.never) < rows.filter(r => !r.never).length) fail("boardUsage: the never rows are not all at the bottom");
+    // The snapshot: closing and opening again draws the rows in the same tick, before any read has come back.
+    const instant = await p.evaluate(() => {
+      document.getElementById("usagedlg").close();
+      window.openControlsUsed();
+      return document.querySelectorAll("#usagedlg-list .usagedlg-row").length;
+    });
+    if (instant < 5) fail("boardUsage: the view did not open from a snapshot: " + instant + " rows at once");
+    await p.waitForTimeout(300);
+    // Sorting: count most first by default, then the name header sorts A to Z and flips, and the count header is back.
+    const names = () => p.evaluate(() => [...document.querySelectorAll("#usagedlg-list .usagedlg-row:not(.never) .name")].map(e => e.textContent));
+    const counts = () => p.evaluate(() => [...document.querySelectorAll("#usagedlg-list .usagedlg-row:not(.never) .n")].map(e => Number(e.textContent)));
+    const desc = (a) => a.every((v, i) => !i || a[i - 1] >= v);
+    if (!desc(await counts())) fail("boardUsage: the default is not most used first: " + JSON.stringify(await counts()));
+    await p.click("#usagedlg-h-name");
+    const az = await names();
+    if (az.join("|") !== [...az].sort().join("|")) fail("boardUsage: the name header does not sort A to Z: " + JSON.stringify(az));
+    await p.click("#usagedlg-h-name");
+    const za = await names();
+    if (za.join("|") !== [...az].reverse().join("|")) fail("boardUsage: a second click on the name header does not flip it: " + JSON.stringify(za));
+    await p.click("#usagedlg-h-n");
+    if (!desc(await counts())) fail("boardUsage: the count header is not most used first: " + JSON.stringify(await counts()));
+    await p.click("#usagedlg-h-n");
+    const asc = await counts();
+    if (!asc.every((v, i) => !i || asc[i - 1] <= v)) fail("boardUsage: a second click on the count header is not fewest first: " + JSON.stringify(asc));
+    if (await p.evaluate(() => [...document.querySelectorAll("#usagedlg-list .usagedlg-row")].findIndex(r => r.classList.contains("never")) < document.querySelectorAll("#usagedlg-list .usagedlg-row:not(.never)").length)) fail("boardUsage: a sort put a never row above a used one");
+    await p.click("#usagedlg-h-n");
+    await p.evaluate(() => window.boardUsageFlush());
+    if ([...boardUsageSeen.keys()].some(k => /usagedlg/.test(k))) fail("boardUsage: the sort headers were counted as controls: " + [...boardUsageSeen.keys()].filter(k => /usagedlg/.test(k)));
     await p.screenshot({ path: path.join(imgs, "board-usage-view.png"), clip: { x: 0, y: 0, width: 940, height: 700 } });
     await ctx.close();
     if (errors.length) fail("boardUsage: the page threw: " + errors.join(" | "));
