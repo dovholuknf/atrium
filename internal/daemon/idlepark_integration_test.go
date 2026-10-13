@@ -153,3 +153,23 @@ func TestIdleParkNeverSubjectsFixturesOrThrowaways(t *testing.T) {
 		t.Fatal("an agent card is not subject")
 	}
 }
+
+// An interview is an agent's card waiting on a human with a plain-text question, so the asked/answered check cannot
+// hold it and the idle clock would park it with no process while clint reads. It is never subject to the clock.
+func TestInterviewIsNeverIdleParked(t *testing.T) {
+	t.Parallel()
+	d := testDaemon(t)
+	card := peerCard(t, d, "interview")
+	if err := d.st.SetTags(card.ID, []string{OriginAgentTag}); err != nil {
+		t.Fatal(err)
+	}
+	if !mayPark(t, d, card.ID) {
+		t.Fatal("control: an origin:agent card is meant to be parkable")
+	}
+	if err := d.st.SetTags(card.ID, []string{OriginAgentTag, InterviewTag}); err != nil {
+		t.Fatal(err)
+	}
+	if mayPark(t, d, card.ID) {
+		t.Fatal("an interview card was subject to the idle park")
+	}
+}

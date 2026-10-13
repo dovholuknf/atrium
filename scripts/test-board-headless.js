@@ -21345,6 +21345,46 @@ async function popupFitSection(browser, base) {
   if (!bad) console.log("popupFit ok");
 }
 
+// An interview card is a top-level row in its group: it never nests under the card that launched it (terminals, stack
+// and board all use one rule, `nestsUnderLauncher`), and a launcher whose children are not drawn still wears a chevron.
+async function interviewTopSection(browser, base) {
+  const ctx = await browser.newContext({ viewport: { width: 900, height: 600 } });
+  const errors = [];
+  try {
+    const p = await ctx.newPage();
+    p.on("pageerror", e => errors.push(String(e)));
+    await p.goto(base + "/", { waitUntil: "domcontentloaded" });
+    await p.waitForFunction(() => typeof termNest === "function" && typeof subagentRollup === "function" && typeof termKidsToggle === "function", null, { timeout: slow(15000) });
+    const got = await p.evaluate(() => {
+      const mk = (id, tags, by) => ({ id, tags, spawned_by_id: by || "", status: "running", display_title: id });
+      const parent = mk("p1", ["origin:agent"]);
+      const worker = mk("w1", ["atrium:subagent"], "p1");
+      const iv = mk("i1", ["atrium:subagent", "atrium:interview"], "p1");
+      const nest = termNest([parent, worker, iv]);
+      const roll = subagentRollup([parent, worker, iv], false);
+      termKids = new Map();
+      const lone = termKidsToggle({ id: "p1" }, 0, 0, false);
+      return { nested: [...nest.nested], rolled: [...roll.rolled], rollable: roll.rollable, lone, rule: typeof nestsUnderLauncher };
+    });
+    if (got.rule !== "function") fail("interviewTop: nestsUnderLauncher is not defined");
+    if (got.nested.includes("i1")) fail("interviewTop: the interview nested under its launcher in the terminals list: " + got.nested);
+    if (!got.nested.includes("w1")) fail("interviewTop: an ordinary subagent stopped nesting: " + got.nested);
+    if (got.rolled.includes("i1")) fail("interviewTop: the interview was rolled up under its launcher in the stack/board: " + got.rolled);
+    if (!got.rolled.includes("w1")) fail("interviewTop: an ordinary subagent stopped rolling up: " + got.rolled);
+    // A launcher with children that are filtered out of the list still has a chevron: the total counts them.
+    const chev = await p.evaluate(() => {
+      const t = { id: "p1" };
+      return { filtered: termKidsToggle(t, 2, 2, true), none: termKidsToggle(t, 0, 0, false), pool: typeof termKidTotal };
+    });
+    if (!chev.filtered.includes("tkidfold")) fail("interviewTop: no chevron on a launcher whose children are hidden");
+    if (chev.none !== "") fail("interviewTop: a chevron on a card with no children");
+    if (chev.pool !== "function") fail("interviewTop: termKidTotal (children in the whole pool, drawn or not) is not defined");
+    if (errors.length) fail("interviewTop: page errors: " + errors.join("; "));
+    else console.log("interviewTop ok");
+  } finally { await ctx.close(); }
+}
+
+
 // u-dropdowns-instant: the launch dialog opens WITH its room and runner options in place, whatever the network is doing.
 // Every API answer is held for 500ms. The board has read the runners and rooms at start, so the open is one frame: the
 // dialog is showing, both selects hold their options, and nothing is rebuilt in the next half second.
@@ -29166,7 +29206,7 @@ async function main() {
       u001Audit: u001AuditSection,
       pasteStart: pasteStartSection, pasteDone: pasteDoneSection, pasteOldRoom: pasteOldRoomSection, pasteClose: pasteCloseSection,
       growlQuestionShots: growlQuestionShotsSection, growlQuestionBody: growlQuestionBodySection, growlReplyGrow: growlReplyGrowSection, growlChoices: growlChoicesSection, replies: repliesSection, repliesOf: repliesOfSection, repliesShots: repliesShotsSection, growlStable: growlStableSection, growlOnIt: growlOnItSection, mGrowlQuestion: mGrowlQuestionSection,
-      roomsSetup: roomsSetupSection, discreteGroup: discreteGroupSection, groupingPerView: groupingPerViewSection, repoColors: repoColorsSection, themePicker: themePickerSection, themePickerShots: themePickerShotsSection, borderColourLag: borderColourLagSection, bootClean: bootCleanSection, popupFit: popupFitSection, dropdownsInstant: dropdownsInstantSection, peekLaunch: peekLaunchSection, mReload: mReloadSection, mReconnect: mReconnectSection, mActivityRead: mActivityReadSection, mReadRetry: mReadRetrySection, mWorking: mWorkingSection, mOwnMessages: mOwnMessagesSection, mBubbles: mBubblesSection, mRecapSheet: mRecapSheetSection,
+      roomsSetup: roomsSetupSection, discreteGroup: discreteGroupSection, groupingPerView: groupingPerViewSection, repoColors: repoColorsSection, themePicker: themePickerSection, themePickerShots: themePickerShotsSection, borderColourLag: borderColourLagSection, bootClean: bootCleanSection, interviewTop: interviewTopSection, popupFit: popupFitSection, dropdownsInstant: dropdownsInstantSection, peekLaunch: peekLaunchSection, mReload: mReloadSection, mReconnect: mReconnectSection, mActivityRead: mActivityReadSection, mReadRetry: mReadRetrySection, mWorking: mWorkingSection, mOwnMessages: mOwnMessagesSection, mBubbles: mBubblesSection, mRecapSheet: mRecapSheetSection,
       mHomeOrder: mHomeOrderSection, cardUrlWayOut: cardUrlWayOutSection, phoneBoot: phoneBootSection, sayEnter: sayEnterSection, sendArrow: sendArrowSection, mTables: mTablesSection, mMarkdown: mMarkdownSection, mHostile: mHostileSection, mPictures: mPicturesSection, soundPhone: soundPhoneSection, phoneBell: phoneBellSection, mBell: mBellSection,
       mHomeOrder: mHomeOrderSection, cardUrlWayOut: cardUrlWayOutSection, phoneBoot: phoneBootSection, sayEnter: sayEnterSection, sendArrow: sendArrowSection, mTables: mTablesSection, mMarkdown: mMarkdownSection, mHostile: mHostileSection, mPictures: mPicturesSection, phoneRedirect: phoneRedirectSection,
       mHomeOrder: mHomeOrderSection, cardUrlWayOut: cardUrlWayOutSection, phoneBoot: phoneBootSection, sayEnter: sayEnterSection, sendArrow: sendArrowSection, mTables: mTablesSection, mMarkdown: mMarkdownSection, mHostile: mHostileSection, mPictures: mPicturesSection, mHidden: mHiddenSection, soundPhone: soundPhoneSection, phoneBell: phoneBellSection, mBell: mBellSection,
@@ -31137,6 +31177,7 @@ async function main() {
     await unit("themePickerShots", () => themePickerShotsSection(browser, base));
     await unit("borderColourLag", () => borderColourLagSection(browser, base));
     await unit("bootClean", () => bootCleanSection(browser, base));
+    await unit("interviewTop", () => interviewTopSection(browser, base));
     await unit("popupFit", () => popupFitSection(browser, base));
     await unit("dropdownsInstant", () => dropdownsInstantSection(browser, base));
     await unit("mWorking", () => mWorkingSection(browser));
