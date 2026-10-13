@@ -1,0 +1,9 @@
+/* The phone page does not load the board's rows.css. The runner mark rules it would need, copied from there
+   (rows.css .rmark and .rmark.working), so the "before" phone and the "after" phone draw it the same way. */
+.rmark { flex: none; width: 39px; height: 39px; display: grid; place-items: center; border-radius: 12px;
+  color: var(--label); background: var(--lift); }
+.rmark svg { width: 22px; height: 22px; display: block; }
+.rmark.working { position: relative; }
+.rmark.working::after { content: ""; position: absolute; inset: -3px; border-radius: inherit;
+  background: url("../../../../internal/api/web/working.gif") center / 62% 62% no-repeat; }
+.rmark.working svg { opacity: 0; }

@@ -1,0 +1,115 @@
+/* The shared card from docs/rnd/unified-card.md, layered over the real board CSS for the "after" mockups.
+   Only what the design adds or changes is here. Everything else (tokens, skins, chips, the runner mark, the
+   working gif) is the board's own stylesheet, loaded first. */
+
+/* One orange, its own token, never remapped by a theme wear. */
+:root { --wait: #C8601A; --wait-rgb: 200,96,26; --wait-bg: rgba(200,96,26,.12); --wait-stroke: rgba(200,96,26,.45); }
+
+/* ── the card ─────────────────────────────────────────── */
+.uc {
+  position: relative; display: grid; grid-template-columns: auto minmax(0, 1fr) auto;
+  column-gap: var(--sp-3); row-gap: 3px; align-items: center;
+  background: linear-gradient(180deg, var(--card-0), var(--card-1));
+  border: 1px solid var(--stroke); border-radius: var(--r-md);
+  padding: 7px 10px 7px 12px; margin-bottom: var(--vs-2); box-shadow: var(--shadow-card); cursor: pointer;
+}
+.uc::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 3px; border-radius: 3px 0 0 3px; }
+.uc .uc-mark { grid-row: 1; }
+.uc .uc-title {
+  grid-row: 1; color: var(--head); font-weight: 600; font-size: var(--fs-md);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0;
+}
+.uc .uc-title .star { color: var(--dim); margin-right: 5px; }
+.uc .uc-state { grid-row: 1; justify-self: end; }
+.uc .uc-chips { grid-column: 2 / -1; display: flex; flex-wrap: wrap; gap: var(--sp-2); align-items: center; }
+.uc .uc-why {
+  grid-column: 2 / -1; font-size: var(--fs-xs); color: var(--dim); font-style: italic;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.uc .uc-path { grid-column: 2 / -1; font: var(--fs-xs) var(--mono); color: var(--dimmest);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.uc .uc-ask { grid-column: 2 / -1; font-size: var(--fs-xs); color: var(--wait); font-weight: 600;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* The runner mark is neutral. Its shape says which runner, never its colour. */
+.uc .rmark, .uc .rmark[data-runner] { width: 24px; height: 24px; border-radius: var(--r-sm);
+  color: var(--label); background: var(--lift); }
+.uc .rmark svg { width: 16px; height: 16px; }
+
+/* The state chip: the status word and its age. */
+.uc-state.chip { font-weight: 600; }
+
+/* waiting on clint: orange, whoever launched it */
+.uc.s-waiting::before { background: var(--wait); }
+.uc.s-waiting .uc-state.chip { background: var(--wait-bg); color: var(--wait); border-color: var(--wait-stroke); }
+.uc.s-waiting .rmark { color: var(--wait); background: var(--wait-bg); }
+/* working: the one running mark, the runner mark spinning. Nothing else moves. */
+.uc.s-working .uc-state.chip { color: var(--body); }
+/* live and quiet: the skin's own colours, nothing grey */
+/* not running: grey, and only this */
+.uc.s-off { filter: grayscale(1); opacity: .55; box-shadow: none; }
+.uc.s-off .uc-title { font-weight: 500; }
+/* a room not answering: not grey, because nothing says it stopped */
+.uc.s-unreach { border-style: dashed; box-shadow: none; }
+
+/* Actions are not drawn at rest. */
+.uc .uc-act { display: none; }
+.uc:hover .uc-act { display: inline-flex; }
+
+/* ── the board ────────────────────────────────────────── */
+.ub { display: flex; gap: var(--sp-5); padding: 10px 14px; height: calc(100vh - 54px); box-sizing: border-box; }
+.ub .col { flex: 1 1 268px; min-width: 268px; display: flex; flex-direction: column; }
+.ub .col.done { flex: 0 0 300px; min-width: 300px; }
+.ub .col.stopped { flex: 0 1 330px; }
+.ub .col .cards { overflow: hidden; display: block; }
+.ub-sum { display: flex; gap: 18px; align-items: baseline; padding: 14px 18px 0; font: 600 var(--fs-sm) var(--sans);
+  color: var(--label); letter-spacing: .02em; }
+.ub-sum b { color: var(--head); font-size: var(--fs-lg); }
+.ub-sum .w b { color: var(--wait); }
+.ub .col-head.needs { color: var(--wait); }
+/* A group is a heading, not a band. */
+.ugroup { margin: 4px 0 10px; }
+.ugroup > .uh { display: flex; gap: 8px; align-items: baseline; padding: 4px 2px 5px; margin-bottom: 5px;
+  border-bottom: 1px solid var(--hairline); font: 600 var(--fs-sm) var(--mono); color: var(--label); }
+.ugroup > .uh .n { color: var(--dimmest); font-weight: 400; }
+.ugroup > .uh::before { content: "\25BE"; color: var(--dimmest); }
+.ugroup.shut > .uh::before { content: "\25B8"; }
+.umore { display: block; padding: 8px 10px; border: 1px dashed var(--stroke); border-radius: var(--r-md);
+  color: var(--label); font-size: var(--fs-sm); text-align: center; }
+.umore b { color: var(--head); }
+
+/* ── the stack ────────────────────────────────────────── */
+.us { padding: 6px 14px; }
+.us .urow { display: grid; grid-template-columns: 74px minmax(0, 1fr) 14ch; gap: var(--sp-4); align-items: center; }
+.us .urow .big { font: 600 var(--fs-lg) var(--mono); text-align: right; color: var(--body); font-variant-numeric: tabular-nums; }
+.us .urow.s-waiting .big { color: var(--wait); }
+.us .urow.s-off .big { color: var(--dimmest); }
+.us .urow .since { font: var(--fs-xxs) var(--mono); color: var(--dimmest); text-align: right; }
+.us .urow .uc { margin-bottom: 6px; }
+
+/* ── the terminals list ───────────────────────────────── */
+.ut { width: 400px; padding: 8px 10px; }
+.ut .uc { grid-template-columns: auto minmax(0, 1fr) auto auto; }
+.ut .uc .uc-path, .ut .uc .uc-why { grid-column: 2 / 4; }
+.ut .uc .uc-side { grid-row: 1 / span 2; grid-column: 4; display: flex; gap: 6px; align-items: center; }
+/* A worn row keeps its own background and text. The orange edge and the grey rule are not its to change. */
+.ut .uc.worn { background: var(--wbg); border-color: transparent; }
+.ut .uc.worn .uc-title { color: var(--whead); }
+.ut .uc.worn .uc-path { color: var(--wdim); }
+.ut .uc.worn .rmark { background: rgba(255,255,255,.08); color: var(--whead); }
+.ut .uc.worn.s-waiting .rmark { color: var(--wait); background: var(--wait-bg); }
+.ut .uc.worn .chip:not(.uc-state) { background: rgba(255,255,255,.08); color: var(--whead); border-color: rgba(255,255,255,.18); }
+.ut .uc.worn.s-waiting .uc-state.chip { background: rgba(200,96,26,.9); color: #fff; border-color: transparent; }
+.ut .uc.on { outline: 2px solid var(--head); outline-offset: 1px; }
+.ut .uh { font: 600 var(--fs-xs) var(--mono); color: var(--label); text-transform: uppercase; padding: 8px 2px 4px; }
+.ut .uh .n { color: var(--dimmest); }
+
+/* ── the phone ────────────────────────────────────────── */
+body.m .row .glyph .rmark { width: 40px; height: 40px; border-radius: 12px; color: var(--label); background: var(--lift); }
+body.m .row .glyph .rmark svg { width: 22px; height: 22px; }
+body.m .row.s-waiting { box-shadow: inset 4px 0 0 var(--wait), 0 1px 0 var(--hairline) inset, 0 6px 18px rgba(var(--shadow-rgb), .22); }
+body.m .row.s-waiting .glyph .rmark { color: var(--wait); background: var(--wait-bg); }
+body.m .row.s-waiting .why { color: var(--wait); font-weight: 600; }
+body.m .row.s-off { filter: grayscale(1); opacity: .55; box-shadow: none; }
+body.m .row .meta .age { font-family: var(--mono); }
+body.m .row.s-waiting .meta .age { color: var(--wait); font-weight: 600; }
