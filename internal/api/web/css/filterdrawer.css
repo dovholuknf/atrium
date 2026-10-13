@@ -82,3 +82,50 @@
      attached (`body.term-phone`) is neither: the line stays above the terminal and the session list, so attaching never
      resizes anything, and the drawer is an overlay over the terminal like everywhere else. */
   body.term-full #fd-terms, body.solo #fd-terms { display: none; }
+
+  /* THE STRIP (stack and board). An accordion, not an overlay: a thin full-width strip right under the tab row, the header's
+     own background, the summary at the left and a chevron after it. Opening it pushes the content below down. It bleeds
+     out of `main`'s padding to reach the edges. The terminals tab keeps the overlay look above, so none of this applies there. */
+  .fdrawer.fstrip { margin: -20px -26px 12px; z-index: auto; }
+  #terms > .fdrawer.fstrip { margin: -20px -26px 8px; z-index: 45; }
+  .fstrip .fline {
+    min-height: 34px; padding: 2px var(--row-x); gap: var(--sp-3);
+    background: rgb(var(--bg1-rgb)); border: 0; border-bottom: 1px solid var(--stroke-dim); border-radius: 0;
+  }
+  .fdrawer.fstrip.open .fline { border-bottom-color: var(--stroke-dim); border-radius: 0; }
+  .fstrip .fsum { flex: 0 1 auto; }
+  .fstrip .fline .fq { margin-left: auto; padding: 3px 10px; }
+  .fstrip .filtersbtn {
+    order: 0; min-height: 28px; min-width: 32px; padding: 0 6px; gap: 4px; justify-content: center;
+    border: 0; background: transparent; color: var(--label);
+  }
+  .fstrip .fchev { display: block; width: 20px; height: 20px; flex: none; transition: transform .16s ease; }
+  .fdrawer.fstrip.open .fchev { transform: rotate(180deg); }
+  .fdrawer.fstrip.open .filtersbtn { border: 0; color: var(--head); }
+  @media (hover: hover) { .fstrip .fline:hover .filtersbtn { color: var(--head); } }
+  .fstrip .matchcount { order: 2; }
+  .fstrip .fq { order: 1; }
+  .fstrip:not(.foverlay) .fwrap {
+    position: static; display: grid; grid-template-rows: 0fr; overflow: hidden; pointer-events: none;
+    transition: grid-template-rows .16s ease;
+  }
+  .fdrawer.fstrip:not(.foverlay).open .fwrap { grid-template-rows: 1fr; pointer-events: auto; }
+  .fdrawer.fstrip:not(.foverlay).fdragging .fwrap { transition: none; }
+  .fstrip .fpanel {
+    border: 0; border-bottom: 1px solid var(--stroke-dim); border-radius: 0;
+    background: rgb(var(--bg1-rgb)); padding: 12px var(--row-x) 0; max-height: min(70vh, calc(100vh - 180px));
+  }
+  .fstrip:not(.foverlay) .fpanel { min-height: 0; transform: none; box-shadow: none; transition: opacity .12s ease, visibility 0s linear .16s; }
+  .fdrawer.fstrip:not(.foverlay).open .fpanel, .fdrawer.fstrip:not(.foverlay).fdragging .fpanel { transform: none; transition-delay: 0s; }
+  /* The terminals tab keeps the overlay: the strip is one row in flow and the panel hangs over the terminal's top rows,
+     so the terminal keeps its row count (no fit, no resize to the pty) and stays anchored at the bottom. */
+  @media (max-width: 520px) {
+    .fdrawer.fstrip, #terms > .fdrawer.fstrip { margin: -14px -12px 8px; }
+    .fstrip .fline { min-height: 44px; padding: 2px 12px; }
+    .fstrip .fsum { max-width: 60%; }
+    .fstrip .filtersbtn { min-height: 40px; min-width: 44px; }
+    .fstrip .fpanel { padding: 12px 12px 0; }
+  }
+  body.term-phone .fdrawer.fstrip, body.term-phone #terms > .fdrawer.fstrip { margin-top: 0; }
+  /* The strip reaches past the stack's box into main's padding, so the stack must not clip it. The list scrolls itself. */
+  main > #stack { overflow: visible; }

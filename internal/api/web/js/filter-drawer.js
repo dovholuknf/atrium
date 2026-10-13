@@ -72,13 +72,19 @@ function fdMount(tab) {
   host.dataset.mounted = "1";
   host.classList.add("fdrawer");
   host.dataset.tab = tab;
+  // All three tabs are the strip (the header's colours, a chevron after the summary). Stack and board are an accordion
+  // that pushes the content down; the terminals tab is the same strip with the panel as an overlay, so the terminal keeps
+  // its row count while it is open.
+  host.classList.add("fstrip");
+  host.classList.toggle("foverlay", tab === "terms");
+  const btn = `<button type="button" class="filtersbtn" tabindex="-1" aria-expanded="false" aria-controls="${cfg.host}-panel" aria-label="filters"
+        ><svg class="fchev" viewBox="0 0 20 20" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 7.5 10 13l5.5-5.5"/></svg><b class="fcount" hidden></b></button>`;
+  const qm = `<input type="search" class="fq" id="${cfg.q}" aria-label="search this list" placeholder="${esc(cfg.placeholder)}"
+        spellcheck="false" autocomplete="off">
+      <span class="matchcount" id="${cfg.match}"></span>`;
   host.innerHTML = `<div class="fline">
       <span class="fsum"></span>
-      <input type="search" class="fq" id="${cfg.q}" aria-label="search this list" placeholder="${esc(cfg.placeholder)}"
-        spellcheck="false" autocomplete="off">
-      <span class="matchcount" id="${cfg.match}"></span>
-      <button type="button" class="filtersbtn" tabindex="-1" aria-expanded="false" aria-controls="${cfg.host}-panel"
-        >filters <b class="fcount" hidden></b></button>
+      ${btn + qm}
     </div>
     <div class="fwrap"><div class="fpanel" id="${cfg.host}-panel" tabindex="-1" inert role="group" aria-label="filters">
       ${cfg.rows.map(([label, id, cls]) => `<div class="frow"><span class="barlabel">${esc(label)}</span><div class="${cls}" id="${id}"></div></div>`).join("")}
@@ -285,6 +291,8 @@ document.addEventListener("keydown", e => {
 function fdWireDrag(tab, host) {
   const line = host.querySelector(".fline");
   const panel = host.querySelector(".fpanel");
+  const wrap = host.querySelector(".fwrap");
+  const strip = !host.classList.contains("foverlay");
   let d = null;
   line.addEventListener("touchstart", e => {
     if (e.touches.length !== 1 || (e.target.closest && e.target.closest(".fq")) || fdIsOpen(tab)) { d = null; return; }
@@ -302,12 +310,13 @@ function fdWireDrag(tab, host) {
       fdCloseAll(tab);
       fdState[tab].prev = document.activeElement;
       host.classList.add("fdragging");
-      d.h = panel.offsetHeight;
+      d.h = strip ? Math.min(panel.scrollHeight, parseFloat(getComputedStyle(panel).maxHeight) || Infinity) : panel.offsetHeight;
     }
     if (e.cancelable) e.preventDefault();
     const y = Math.max(0, Math.min(d.h, dy));
     d.y1 = y;
-    panel.style.transform = "translateY(" + (y - d.h) + "px)";
+    if (strip) wrap.style.gridTemplateRows = y + "px";
+    else panel.style.transform = "translateY(" + (y - d.h) + "px)";
   }, { passive: false });
   const end = () => {
     if (!d || !d.on) { d = null; return; }
@@ -316,6 +325,7 @@ function fdWireDrag(tab, host) {
     fdDraggedAt = Date.now();
     host.classList.remove("fdragging");
     panel.style.transform = "";
+    wrap.style.gridTemplateRows = "";
     if (open) fdSet(tab, true);
   };
   line.addEventListener("touchend", end, { passive: true });
