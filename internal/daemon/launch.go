@@ -194,6 +194,9 @@ type LaunchRequest struct {
 	// Lifetime is `work` for a launch from atrium_launch_worker: atrium exits the runner once the card's branch
 	// merges. Empty leaves a relaunched card's own value and gives a new card none. Anything but `work` is refused.
 	Lifetime string `json:"lifetime,omitempty"`
+	// Item starts the card as an item: the ItemTag, an ending that names no launcher, atrium as the opening prompt's
+	// sender, and no say. See item.go.
+	Item bool `json:"item,omitempty"`
 }
 
 // TerminalTemplate wraps a command so it opens in a real terminal window.
@@ -736,6 +739,10 @@ func (d *Daemon) Launch(req LaunchRequest) (*store.Task, error) {
 	if lt := strings.TrimSpace(req.Lifetime); lt != "" && lt != store.LifetimeWork {
 		return nil, fmt.Errorf("lifetime %q is not one atrium knows. the only one is %q", lt, store.LifetimeWork)
 	}
+	// AN ITEM CARRIES ITS TAG, wherever the request came from: the tag is what the rest reads. See item.go.
+	if req.Item && !hasTag(req.Tags, ItemTag) {
+		req.Tags = append(append([]string{}, req.Tags...), ItemTag)
+	}
 	keys := launchKeys(req.TaskID, req.Resume)
 	if req.MovedFrom != "" {
 		keys = append(keys, "move:"+req.MovedFrom)
@@ -964,12 +971,14 @@ func (d *Daemon) launchLocked(req LaunchRequest) (*store.Task, error) {
 		if hasTag(req.Tags, InterviewTag) {
 			wanted = briefPromptEnding(briefFileName, wanted, "")
 		} else {
-			if isResident(req.Tags) {
+			if req.Item || hasTag(req.Tags, ItemTag) {
+				wanted = ItemBriefPrompt(briefFileName, wanted)
+			} else if isResident(req.Tags) {
 				wanted = briefPromptEnding(briefFileName, wanted, ResidentEndingLine)
 			} else {
 				wanted = briefPrompt(wanted)
 			}
-			if !outside {
+			if !outside && !req.Item && !hasTag(req.Tags, ItemTag) {
 				vctx, vcancel := context.WithTimeout(context.Background(), gitsync.CommandBound)
 				if l := d.visibleLauncher(vctx, task, req.SpawnedByID, req.SpawnedBy, req.SpawnedByDir, cwd); l != nil {
 					wanted = withCommitVisible(wanted, commitVisibleLine(l.WireName))
@@ -1510,7 +1519,7 @@ func (d *Daemon) launchLocked(req LaunchRequest) (*store.Task, error) {
 		// whether the prompt is owed to a launcher. A reopen by the operator
 		// asks as nobody. See store.promptOwes.
 		ev := map[string]any{"text": prompt, "via": "launch"}
-		if by := strings.TrimSpace(req.SpawnedBy); by != "" && by != store.HumanLauncher {
+		if by := openingSender(req); by != "" {
 			ev["from_peer"] = by
 		}
 		if err := d.st.AppendEvent(created.ID, store.EventPrompted, ev); err != nil {
@@ -1784,7 +1793,7 @@ func ResidentBriefPrompt(file, prompt string) string {
 // briefPromptEnding is BriefPrompt with the ending it closes on. An interview closes on none: its turns end on a
 // question, and its rules for finishing are in the brief.
 func briefPromptEnding(file, prompt, ending string) string {
-	body := strings.TrimSpace(strings.TrimSuffix(strings.TrimSuffix(strings.TrimSpace(prompt), LaunchEndingLine), ResidentEndingLine))
+	body := strings.TrimSpace(strings.TrimSuffix(strings.TrimSuffix(strings.TrimSuffix(strings.TrimSpace(prompt), LaunchEndingLine), ResidentEndingLine), ItemEndingLine))
 	then := "Then: do as " + file + " describes."
 	if body != "" && !onlyReadTheBrief(body, file) {
 		then = "Then: " + body

@@ -39,13 +39,15 @@ type classHarness struct {
 	board   *httptest.Server
 	lookups *atomic.Int32
 	audits  *[]auditLine
-	mu      sync.Mutex
-	clock   time.Time
+	// launches is every body posted to /v1/launch.
+	launches *[]map[string]any
+	mu       sync.Mutex
+	clock    time.Time
 }
 
 func newClassHarness(t *testing.T, tasks []map[string]any) *classHarness {
 	t.Helper()
-	h := &classHarness{lookups: &atomic.Int32{}, clock: time.Now()}
+	h := &classHarness{lookups: &atomic.Int32{}, clock: time.Now(), launches: &[]map[string]any{}}
 	h.board = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		switch {
@@ -53,6 +55,11 @@ func newClassHarness(t *testing.T, tasks []map[string]any) *classHarness {
 			h.lookups.Add(1)
 			_ = json.NewEncoder(w).Encode(map[string]any{"tasks": tasks})
 		case r.Method == http.MethodPost && r.URL.Path == "/v1/launch":
+			var body map[string]any
+			_ = json.NewDecoder(r.Body).Decode(&body)
+			h.mu.Lock()
+			*h.launches = append(*h.launches, body)
+			h.mu.Unlock()
 			_ = json.NewEncoder(w).Encode(map[string]any{"id": "new1", "wire_name": "kid"})
 		default:
 			http.NotFound(w, r)

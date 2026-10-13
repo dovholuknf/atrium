@@ -214,6 +214,10 @@ func (d *Daemon) handleSay(w http.ResponseWriter, r *http.Request) {
 		writeJSONErr(w, http.StatusBadRequest, err)
 		return
 	}
+	if d.itemSayRefused(in.From) {
+		writeItemSayRefused(w)
+		return
+	}
 	name, room, err := SplitAddress(in.To)
 	if err != nil {
 		writeJSONErr(w, http.StatusBadRequest, err)

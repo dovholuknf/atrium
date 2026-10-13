@@ -531,6 +531,11 @@ func (d *Daemon) handleMessage(w http.ResponseWriter, r *http.Request) {
 	}
 	taskID := r.PathValue("id")
 	from := strings.TrimSpace(body.From)
+	// A RUNNING ITEM CARD SAYS NOTHING, by whichever door. See item.go.
+	if d.itemSayRefused(from) {
+		writeItemSayRefused(w)
+		return
+	}
 	// A card that reports to a named card has its launcher resolved again before
 	// this message can make it owe a report. See reportto.go.
 	if from != "" {

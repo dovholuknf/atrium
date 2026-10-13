@@ -48,7 +48,9 @@ against and the operator chose on purpose.
 - **The control MCP's class is NOT a boundary** (`ctlclass.go`). It comes from `X-Atrium-Agent`, which anything on
   loopback can set, and a failed lookup serves the full set. Every handler keeps every check. The worker set is the
   `workerTools` map and only that map, so a new tool lands in `full` alone unless it is named there. Some file headers
-  disagree with the map about which tools workers get. Trust the map.
+  disagree with the map about which tools workers get. Trust the map. An item worker (`atrium:item`, `classWorkerItem`) gets the map less `itemWithheld`
+  (`atrium_say`, `atrium_peers`, `atrium_task`, `atrium_report`) and done and blocked words that name no launcher. The
+  room's say endpoints refuse its says as well.
 - **The tool list is fixed at the first request.** MCP clients read `tools/list` once, so a retag lands at the next
   session start.
 - **Audit lines record a claim, never a proof, and never a payload** (`ctlaudit.go`). Mutating tools are wrapped in

@@ -636,6 +636,8 @@ type LaunchInput struct {
 	Tags   []string `json:"tags,omitempty" jsonschema:"free text labels, used for grouping and filtering"`
 	// Resident marks a long-lived card. See link.ResidentTag.
 	Resident bool `json:"resident,omitempty" jsonschema:"a long-lived card: atrium_done and atrium_blocked report a task and leave it open, and it is never exited or culled for a done"`
+	// Item starts the worker as an item. See link.ItemTag.
+	Item bool `json:"item,omitempty" jsonschema:"start the worker as an ITEM: a task whose only routing is to tell whoever wanted it when it is done. its ending lines never mention a launcher, its opening prompt comes from atrium, it has no atrium_say, atrium_peers, atrium_task or atrium_report, and atrium refuses any say from it. leave it out for an ordinary worker, which is unchanged"`
 	// The launch options, as the hub's atrium_launch takes them. See
 	// docs/runtime/launch-options-design.md.
 	Model  string            `json:"model,omitempty" jsonschema:"which model the runner starts on, in the shape its runner row declares. not checked against any list. empty is the runner's default"`
@@ -747,7 +749,9 @@ func launchHandler(ctx context.Context, _ *mcp.CallToolRequest, in LaunchInput) 
 		if err != nil {
 			return nil, out, err
 		}
-		if in.Resident {
+		if in.Item {
+			prompt = daemon.ItemBriefPrompt(briefFile, prompt)
+		} else if in.Resident {
 			prompt = daemon.ResidentBriefPrompt(briefFile, prompt)
 		} else {
 			prompt = briefPrompt(prompt)
@@ -770,6 +774,11 @@ func launchHandler(ctx context.Context, _ *mcp.CallToolRequest, in LaunchInput) 
 		"tags":  tags,
 		"model": in.Model, "effort": in.Effort, "args": in.Args, "env": in.Env,
 		"lean_agents": in.LeanAgents, "lean_skills": in.LeanSkills, "lifetime": in.Lifetime,
+	}
+	if in.Item {
+		req["tags"] = append(tags, link.ItemTag)
+		req["prompt"] = link.WithItemReportLine(prompt)
+		req["item"] = true
 	}
 	// A hand-run session has no name to attribute a launch to, and is left unattributed rather
 	// than filed under a blank one.

@@ -114,6 +114,7 @@ type RelayLaunchSpec struct {
 	LeanAgents []string          `json:"lean_agents,omitempty"`
 	LeanSkills []string          `json:"lean_skills,omitempty"`
 	Lifetime   string            `json:"lifetime,omitempty"`
+	Item       bool              `json:"item,omitempty"`
 }
 
 // RelayAnswer is the hub's answer.
