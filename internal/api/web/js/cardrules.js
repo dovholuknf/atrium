@@ -76,6 +76,21 @@ function groupOrderCmp(order, cardsOf) {
   return byName;
 }
 
+// THE GROUP SUBMENUS ("add to group", "remove from group") list names A to Z, whatever order the view keeps them in,
+// and a group made in the last ten minutes wears a "new" tag. A group is only a name in the browser's `groups` list, so
+// when it was made is kept beside it in `made`, a name to epoch milliseconds. A group with no entry there (made before
+// this was recorded, or typed into the settings by hand) is not new.
+const GROUP_NEW_MS = 10 * 60 * 1000;
+function groupMenuNames(names) {
+  return (names || []).slice().sort((a, b) => a.localeCompare(b));
+}
+function groupIsNew(name, made, now) {
+  const at = made && made[name];
+  return typeof at === "number" && (now === undefined ? Date.now() : now) - at < GROUP_NEW_MS;
+}
+// The group name a person typed, as the tag it becomes: trimmed and lower case.
+function groupNameOf(raw) { return String(raw || "").trim().toLowerCase(); }
+
 // A DOER IS AN AGENT-LAUNCHED SESSION, see the note in js/terminal-list.js. Matched exactly as the daemon's `hasOriginTag` does.
 const DOER_TAG = "origin:agent";
 function isDoer(t) {
