@@ -20850,6 +20850,54 @@ async function heldLinkSection(browser, base) {
   if (!bad) console.log("heldLink ok");
 }
 
+// A CLONE THE OPERATOR MADE: the open stops with clone_adopt, the dialog stays up with the one-time button, and the
+// button's press sends the yes with the retry. Nothing launches before it.
+async function cloneAdoptSection(browser, base) {
+  const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+  const json = (route, body, status) => route.fulfill({ status: status || 200, contentType: "application/json", body: JSON.stringify(body) });
+  const calls = [];
+  const link = "https://github.com/openziti/zrok/pull/12";
+  try {
+    const p = await ctx.newPage();
+    const errors = [];
+    p.on("pageerror", e => errors.push(e.message));
+    await p.route(/\/v1\/(recognise|open|tasks\/t-a)(\?|$)/, async r => {
+      const req = r.request(), u = new URL(req.url());
+      calls.push(req.method() + " " + u.pathname + " " + (req.postData() || ""));
+      if (u.pathname === "/v1/recognise") return json(r, { recogniser: "github-pr", label: "github pull request", url: link, host: "github.com",
+        cwd: "/wt/zrok-12", title: "review zrok#12", prompt: "review", tags: ["pull-request"], org: "openziti", repo: "zrok",
+        vars: { org: "openziti", repo: "zrok", num: "12", host: "github.com" } });
+      if (u.pathname === "/v1/open") {
+        if (!JSON.parse(req.postData() || "{}").adopt_clone) return json(r, { error: "the clone was made by the operator", code: "clone_adopt",
+          step: "worktree", clone: "D:/scm/github.com/openziti/zrok" }, 409);
+        return json(r, { key: "github.com/openziti/zrok/12", kind: "pr", card: "t-a", created: true });
+      }
+      return json(r, { id: "t-a", status: "running", title: "review zrok#12" });
+    });
+    await p.goto(base + "/", { waitUntil: "domcontentloaded" });
+    await p.waitForFunction(() => typeof openLaunch === "function" && typeof recogniseLink === "function", null, { timeout: slow(15000) });
+    await p.evaluate(url => { openLaunch(null, "", "", null, null); document.getElementById("l-url").value = url; return recogniseLink(); }, link);
+    await p.evaluate(() => doLaunch());
+    await p.waitForFunction(() => !document.getElementById("l-adopt").hidden, null, { timeout: slow(5000) })
+      .catch(() => fail("cloneAdopt: the one-time button did not show: " + calls.join(" | ")));
+    const text = await p.textContent("#l-adopt");
+    if (text !== "atrium will add its hub remote to D:/scm/github.com/openziti/zrok and guard pushes to origin: yes, and launch")
+      fail("cloneAdopt: the button read " + text);
+    if (!await p.evaluate(() => document.getElementById("launch").open)) fail("cloneAdopt: the dialog closed on the question");
+    if (calls.some(c => c.indexOf("/v1/launch") >= 0)) fail("cloneAdopt: it launched before the yes");
+    await p.click("#l-adopt");
+    await p.waitForFunction(() => !document.getElementById("launch").open, null, { timeout: slow(5000) })
+      .catch(() => fail("cloneAdopt: the dialog stayed open after the yes: " + calls.join(" | ")));
+    const opens = calls.filter(c => c.indexOf("POST /v1/open") === 0).map(c => JSON.parse(c.split(" ").slice(2).join(" ")));
+    if (opens.length !== 2 || opens[0].adopt_clone || opens[1].adopt_clone !== true)
+      fail("cloneAdopt: the opens were " + JSON.stringify(opens.map(o => o.adopt_clone)));
+    if (await p.evaluate(() => !document.getElementById("l-adopt").hidden)) fail("cloneAdopt: the button stayed after the launch");
+    if (errors.length) fail("cloneAdopt: page errors: " + errors.join(" | "));
+  } finally {
+    await ctx.close();
+  }
+  if (!bad) console.log("cloneAdopt ok");
+}
 async function dropdownsInstantSection(browser, base) {
   const wasHub = hubMode, wasSgg = sggAttached;
   hubMode = true;
@@ -28554,7 +28602,7 @@ async function main() {
       coverPoll: coverPollSection, coverSteps: coverStepsSection, termBox: termBoxSection, termRowBleed: termRowBleedSection,
       termDebug: termDebugSection, termDebugPerCard: termDebugPerCardSection, termLag: termLagSection, termHiddenRedraw: termHiddenRedrawSection, termLastRead: termLastReadSection, termSortStarted: termSortStartedSection,
       noReadyChildren: noReadyChildrenSection, childUnderParent: childUnderParentSection, topNav: topNavSection, boardUsage: boardUsageSection, tabsOrder: tabsOrderSection,
-      u002: u002Section, childFold: childFoldSection, liveHome: liveHomeSection, toastsTop: toastsTopSection, heldLink: heldLinkSection, groupBridge: groupBridgeSection, revealFolds: revealFoldsSection,
+      u002: u002Section, childFold: childFoldSection, liveHome: liveHomeSection, toastsTop: toastsTopSection, heldLink: heldLinkSection, cloneAdopt: cloneAdoptSection, groupBridge: groupBridgeSection, revealFolds: revealFoldsSection,
       pulls: pullsSection, prMove: prMoveSection, quickPaste: quickPasteSection, recogniserRepo: recogniserRepoSection, hubRepos: hubReposSection, hubReposShelf: hubReposShelfSection, hubReposLedger: hubReposLedgerSection, hubReposFeed: hubReposFeedSection, changeReq: changeReqSection, mChangeReq: mChangeReqSection, trayHead: trayHeadSection, pullsAbsent: pullsAbsentSection, pullsPanelStage: pullsPanelStageSection, oneTooltip: oneTooltipSection, burnChart: burnChartSection, burnReadout: burnReadoutSection, switchPrewarm: switchPrewarmSection, attachAtOnce: attachAtOnceSection, fileView: fileViewSection, keepAlive: keepAliveSection, switchBackCost: switchBackCostSection, keepMemory: keepMemorySection, pullsDrawer: pullsDrawerSection };
     try {
       const unknown = ONLY.split(",").filter(n => typeof only[n] !== "function");
@@ -30514,6 +30562,7 @@ async function main() {
     await unit("bootClean", () => bootCleanSection(browser, base));
     await unit("dropdownsInstant", () => dropdownsInstantSection(browser, base));
     await unit("heldLink", () => heldLinkSection(browser, base));
+    await unit("cloneAdopt", () => cloneAdoptSection(browser, base));
     await unit("mWorking", () => mWorkingSection(browser));
     await unit("mReload", () => mReloadSection(browser));
     await unit("mReconnect", () => mReconnectSection(browser));

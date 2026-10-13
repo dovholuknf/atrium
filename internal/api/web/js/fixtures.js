@@ -1041,6 +1041,9 @@ let launchResolved = null;
 
 function clearResolved(url) {
   launchResolved = null;
+  launchAdoptClone = "";
+  const adopt = document.getElementById("l-adopt");
+  if (adopt) adopt.hidden = true;
   fillLaunchRepo();
   const box = document.getElementById("l-url");
   if (box) box.value = url || "";
@@ -1798,6 +1801,27 @@ async function setPastedWalker(row, task, room, at) {
   }
 }
 
+// THE OPERATOR'S YES TO A CLONE THEY MADE, asked once in the dialog. The clone it is for is held here only until the
+// retry; the room writes the yes into the clone, so a later launch on it never asks. See gitsync.AdoptError.
+let launchAdoptClone = "";
+
+function askToAdopt(clone) {
+  launchAdoptClone = clone;
+  const dlg = document.getElementById("launch");
+  if (dlg && !dlg.open) dlg.showModal();
+  // The link and its note live in the fold, so it opens for the question.
+  const more = document.getElementById("l-more");
+  if (more) more.open = true;
+  const b = document.getElementById("l-adopt");
+  b.textContent = "atrium will add its hub remote to " + clone + " and guard pushes to origin: yes, and launch";
+  b.hidden = false;
+}
+
+function adoptAndLaunch() {
+  if (!launchAdoptClone) return;
+  return doLaunch();
+}
+
 // Through `busyWhile`, so the press shows and a second one, by click or by
 // Enter, is refused while the first is starting. See js/core.js.
 function doLaunch() {
@@ -1847,10 +1871,16 @@ async function launchNow() {
           effort: document.getElementById("l-effort").value.trim(),
           repo: launchRepoNow(),
           // A room chosen by name takes a link another room holds, unless that room has a card live on it.
-          pick: !!headers["X-Atrium-Room"]
+          pick: !!headers["X-Atrium-Room"],
+          adopt_clone: !!launchAdoptClone
         })
       });
     } catch (e) {
+      if (e.body && e.body.code === "clone_adopt") {
+        askToAdopt(e.body.clone || "that clone");
+        e.message = "the clone at " + (e.body.clone || "this repo") + " was made by you. say yes below to go on";
+        throw e;
+      }
       if (!(e.body && e.body.code === "not_openable")) throw e;
     } finally {
       openProgressEnd();
@@ -1858,6 +1888,8 @@ async function launchNow() {
   }
   if (out) {
     document.getElementById("launch").close();
+    launchAdoptClone = "";
+    document.getElementById("l-adopt").hidden = true;
     if (out.live) {
       // The holder has a card live on it: that card comes up, here or in its own window, and nothing was launched.
       toast(out.title || out.key || "that link", "already running on " + (out.held_by || "another room"));
