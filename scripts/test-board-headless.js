@@ -2103,7 +2103,7 @@ async function groupColorSection(browser, base) {
     const tn = document.querySelector('#term-list .tgroup[data-ghead="active"] .tgname');
     return {
       stack: hue('.stackgroup[data-morph-key="stack:active"] .gname'),
-      board: hue('.cardgroup.project[data-fold="proj:active"] .gname'),
+      board: hue('.cardgroup.project[data-fold$="|active"] .gname'),
       term: hue('#term-list .tgroup[data-ghead="active"]'),
       nest: hue('#term-list .tnest[data-group="active"]'),
       termColor: tn ? getComputedStyle(tn).color : "missing",
@@ -3690,16 +3690,16 @@ async function foldStillSection(browser, base) {
     await ctx.clock.install();
     const a = await open("a");
     const b = await open("b");
-    await a.waitForSelector('details.cardgroup[data-fold="proj:untagged"]', { state: "attached", timeout: slow(10000) });
+    await a.waitForSelector('details.cardgroup[data-fold$="|untagged"]', { state: "attached", timeout: slow(10000) });
     // Open it by hand, the way a click on its summary does.
-    await a.evaluate(() => { document.querySelector('details.cardgroup[data-fold="proj:untagged"]').open = true; });
+    await a.evaluate(() => { document.querySelector('details.cardgroup[data-fold$="|untagged"]').open = true; });
     await beats(3);
     const reset = p => p.evaluate(() => { window.__writes = []; window.__toggles = 0; });
     await reset(a); await reset(b);
     await beats(+(process.env.FOLD_STILL_SECONDS || 10));
     const got = await Promise.all([a, b].map(p => p.evaluate(() => ({
       writes: window.__writes, toggles: window.__toggles,
-      open: !!(document.querySelector('details.cardgroup[data-fold="proj:untagged"]') || {}).open
+      open: !!(document.querySelector('details.cardgroup[data-fold$="|untagged"]') || {}).open
     }))));
     if (process.env.DEBUG_HEADLESS) console.log("fold still: " + JSON.stringify(got));
     got.forEach((g, i) => {
@@ -3713,13 +3713,13 @@ async function foldStillSection(browser, base) {
     if (!got[0].open) fail("the untagged group, opened by hand in custom mode, did not stay open.");
 
     // And shut again, which is its default, so the entry goes and stays gone.
-    await a.evaluate(() => { document.querySelector('details.cardgroup[data-fold="proj:untagged"]').open = false; });
+    await a.evaluate(() => { document.querySelector('details.cardgroup[data-fold$="|untagged"]').open = false; });
     await beats(3);
     await reset(a); await reset(b);
     await beats(4);
     const shut = await Promise.all([a, b].map(p => p.evaluate(() => ({
       writes: window.__writes.length,
-      open: !!(document.querySelector('details.cardgroup[data-fold="proj:untagged"]') || {}).open
+      open: !!(document.querySelector('details.cardgroup[data-fold$="|untagged"]') || {}).open
     }))));
     if (shut.some(s => s.open)) fail("the untagged group, shut again by hand, came back open: " + JSON.stringify(shut));
     if (shut.some(s => s.writes)) fail("shutting the untagged group left windows writing storage: " + JSON.stringify(shut));
@@ -3727,6 +3727,130 @@ async function foldStillSection(browser, base) {
   } finally {
     LOOSE.display_title = "loose card";
     await ctx.close();
+    tasksMode = was;
+  }
+}
+
+// A GROUP FOLDS IN ITS OWN LANE, and the stack's pinned and rest halves fold too.
+//
+// The board's project groups were folded by name across the whole board, so shutting `alpha` in one column shut it in
+// every column. Now it is per lane and group. This drives both halves of the change: one lane's group folds alone,
+// collapse all and expand all reach every lane, an old board-wide key still loads (spread over every lane), the stack's
+// pinned and rest sections collapse and survive a reload, and each tab keeps its own state.
+const LANE_CARDS = () => {
+  const c = (id, status, extra) => Object.assign({}, T1, { id, status, display_title: "lane " + id,
+    tags: ["alpha"], worktree: "/tmp/lane/" + id, supervised: true }, extra || {});
+  return [c("ln-run1", "running"), c("ln-run2", "running"), c("ln-rdy1", "needs-input"), c("ln-rdy2", "needs-input"),
+    c("ln-pin1", "needs-input", { pinned: true, rank: 1 }), c("ln-pin2", "running", { pinned: true, rank: 2 })];
+};
+// LANE_SHOTS=dir saves the board after one lane's group is folded, and the stack after its pinned half is, for the
+// before and after pictures in docs/changes.
+async function laneShotAt(p, which) {
+  if (!process.env.LANE_SHOTS) return;
+  await p.screenshot({ path: process.env.LANE_SHOTS + "/" + which + ".png" });
+}
+async function laneFoldSection(browser, base) {
+  const laneShot = laneShotAt;
+  const was = tasksMode;
+  tasksMode = "worn";
+  wornTasks = LANE_CARDS();
+  const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+  const errors = [];
+  await ctx.addInitScript(() => {
+    if (!sessionStorage.getItem("primed")) {
+      sessionStorage.setItem("primed", "1");
+      localStorage.setItem("atrium.skipconfirm", JSON.stringify({ "width-floor": true }));
+      localStorage.setItem("atrium.grouping", JSON.stringify({ on: true, mode: "custom", groups: ["alpha"] }));
+      localStorage.setItem("atrium.stack.show", "[]");
+    }
+  });
+  const folds = p => p.evaluate(() => JSON.parse(localStorage.getItem("atrium.folded") || "[]"));
+  const grp = (p, lane) => p.evaluate(lane => {
+    const el = document.querySelector('#board details.cardgroup[data-fold="proj:' + lane + '|alpha"]');
+    return el ? el.open : "missing";
+  }, lane);
+  const pin = (p, lane) => p.evaluate(lane => {
+    const el = document.querySelector('#board details.cardgroup[data-fold="pin:' + lane + '"]');
+    return el ? el.open : "missing";
+  }, lane);
+  const sect = (p, kind) => p.evaluate(kind => {
+    const el = [...document.querySelectorAll('#stack-list details[data-fold^="sect:' + kind + ':"]')][0];
+    return el ? el.open : "missing";
+  }, kind);
+  const toBoard = async p => { await p.click('.tab[data-view="board"]'); await p.waitForSelector("#board details.cardgroup", { timeout: slow(10000) }); };
+  const toStack = async p => { await p.click('.tab[data-view="stack"]'); await p.waitForSelector("#stack-list .stackrow", { state: "attached", timeout: slow(10000) }); };
+  try {
+    const p = await ctx.newPage();
+    p.on("pageerror", e => errors.push(String(e)));
+    await p.goto(base, { waitUntil: "domcontentloaded" });
+    await toBoard(p);
+    if (await grp(p, "running") !== true || await grp(p, "needs-input") !== true) {
+      fail("laneFold: alpha did not start open in both lanes: " + JSON.stringify([await grp(p, "running"), await grp(p, "needs-input")]));
+    }
+    // One lane's group folds alone.
+    await p.evaluate(() => { document.querySelector('#board details.cardgroup[data-fold="proj:running|alpha"] > summary').click(); });
+    await p.waitForTimeout(400);
+    await laneShot(p, "board");
+    if (await grp(p, "running") !== false) fail("laneFold: clicking the running lane's alpha did not fold it.");
+    if (await grp(p, "needs-input") !== true) fail("laneFold: folding alpha in running folded it in the ready lane too.");
+    if (!(await folds(p)).includes("proj:running|alpha")) fail("laneFold: the fold was not stored per lane: " + JSON.stringify(await folds(p)));
+    // And the pinned group of one lane.
+    await p.evaluate(() => { document.querySelector('#board details.cardgroup[data-fold="pin:running"] > summary').click(); });
+    await p.waitForTimeout(400);
+    if (await pin(p, "running") !== false || await pin(p, "needs-input") !== true) {
+      fail("laneFold: the pinned group did not fold in one lane alone: " + JSON.stringify([await pin(p, "running"), await pin(p, "needs-input")]));
+    }
+    // Collapse all reaches every lane, expand all undoes it.
+    await p.click("#board-collapse-all");
+    await p.waitForTimeout(400);
+    const shut = await p.evaluate(() => [...document.querySelectorAll("#board details[data-fold]")].filter(d => d.open).map(d => d.dataset.fold));
+    if (shut.length) fail("laneFold: collapse all left groups open: " + shut.join(", "));
+    await p.reload({ waitUntil: "domcontentloaded" });
+    await toBoard(p);
+    const still = await p.evaluate(() => [...document.querySelectorAll("#board details[data-fold]")].filter(d => d.open).length);
+    if (still) fail("laneFold: collapse all did not survive a reload (" + still + " open).");
+    await p.click("#board-expand-all");
+    await p.waitForTimeout(400);
+    const closed = await p.evaluate(() => [...document.querySelectorAll("#board details[data-fold]")].filter(d => !d.open).map(d => d.dataset.fold));
+    if (closed.length) fail("laneFold: expand all left groups shut: " + closed.join(", "));
+
+    // THE STACK: pinned and the rest each fold, persist, and are separate from the board's state.
+    await toStack(p);
+    if (await sect(p, "pinned") !== true || await sect(p, "rest") !== true) {
+      fail("laneFold: the stack's pinned and rest sections did not start open: " + JSON.stringify([await sect(p, "pinned"), await sect(p, "rest")]));
+    }
+    await p.evaluate(() => { document.querySelector('#stack-list details[data-fold^="sect:pinned:"] > summary').click(); });
+    await p.waitForTimeout(400);
+    await laneShot(p, "stack");
+    if (await sect(p, "pinned") !== false || await sect(p, "rest") !== true) fail("laneFold: folding the stack's pinned section did not fold it alone.");
+    await p.evaluate(() => { document.querySelector('#stack-list details[data-fold^="sect:rest:"] > summary').click(); });
+    await p.waitForTimeout(400);
+    if (await sect(p, "rest") !== false) fail("laneFold: the stack's rest section did not fold.");
+    await p.reload({ waitUntil: "domcontentloaded" });
+    await toStack(p);
+    if (await sect(p, "pinned") !== false || await sect(p, "rest") !== false) {
+      fail("laneFold: the stack's folds did not survive a reload: " + JSON.stringify([await sect(p, "pinned"), await sect(p, "rest")]));
+    }
+    // Each tab keeps its own: the stack's folds did not touch the board, which was left expanded.
+    await toBoard(p);
+    if (await grp(p, "running") !== true || await pin(p, "running") !== true) fail("laneFold: the stack's folds leaked into the board.");
+    // An old board-wide key still loads, and is spread over the lanes.
+    await p.evaluate(() => localStorage.setItem("atrium.folded", JSON.stringify(["proj:alpha", "proj:pinned", "proj:stack:alpha"])));
+    await p.reload({ waitUntil: "domcontentloaded" });
+    await toBoard(p);
+    if (await grp(p, "running") !== false || await grp(p, "needs-input") !== false || await pin(p, "running") !== false) {
+      fail("laneFold: an old board-wide fold did not carry over to the lanes.");
+    }
+    const migrated = await folds(p);
+    if (migrated.includes("proj:alpha") || !migrated.includes("proj:stack:alpha")) fail("laneFold: the old key was not migrated cleanly: " + JSON.stringify(migrated));
+    // ...and a lane can be opened alone afterwards.
+    await p.evaluate(() => { document.querySelector('#board details.cardgroup[data-fold="proj:running|alpha"] > summary').click(); });
+    await p.waitForTimeout(400);
+    if (await grp(p, "running") !== true || await grp(p, "needs-input") !== false) fail("laneFold: a migrated fold could not be opened lane by lane.");
+    if (errors.length) fail("laneFold: the page threw: " + errors.join(" | "));
+  } finally {
+    await ctx.close();
+    wornTasks = [];
     tasksMode = was;
   }
 }
@@ -3760,7 +3884,7 @@ async function untaggedOrder(p, view) {
   return p.evaluate(view => {
     const sel = {
       stack: 'details.stackgroup[data-fold="proj:stack:untagged"] .stackrow[data-id]',
-      board: 'details.cardgroup[data-fold="proj:untagged"] .card[data-id]',
+      board: 'details.cardgroup[data-fold$="|untagged"] .card[data-id]',
       terms: '#term-list [data-ungroup="1"] .card.tab[data-id]'
     }[view];
     return [...document.querySelectorAll(sel)].map(e => e.dataset.id).join(",");
@@ -28991,7 +29115,7 @@ async function main() {
   if (ONLY) {    const only = { closeOneDialog: closeOneDialogSection, boardDocs: boardDocsSection, boardFiles: boardFilesSection, phoneBoardCompact: phoneBoardCompactSection, termWear: termWearSection, bridge: bridgeSection, detailsHover: detailsHoverSection, detailsSide: detailsSideBySideSection, chatter: chatterSection, chatterTab: chatterTabSection, settingsOnce: settingsOnceSection,
       groupRemove: groupRemoveSection, worn: wornSection, restartGate: restartGateSection, restartStays: restartStaysSection, atriumDown: atriumDownSection,
       toastStays: toastStaysSection, groupColor: groupColorSection,
-      groupDrag: groupDragSection, tooltip: tooltipSection, linkTip: linkTipSection, fileOpenOutside: fileOpenOutsideSection, readTabSize: readTabSizeSection, readWidthSkin: readWidthSkinSection, popoutTagFlip: popoutTagFlipSection, prefsEverywhere: prefsEverywhereSection, mPrefsEverywhere: (b) => mPrefsEverywhereSection(b), idleRate: idleRateSection, foldStill: foldStillSection,
+      groupDrag: groupDragSection, tooltip: tooltipSection, linkTip: linkTipSection, fileOpenOutside: fileOpenOutsideSection, readTabSize: readTabSizeSection, readWidthSkin: readWidthSkinSection, popoutTagFlip: popoutTagFlipSection, prefsEverywhere: prefsEverywhereSection, mPrefsEverywhere: (b) => mPrefsEverywhereSection(b), idleRate: idleRateSection, foldStill: foldStillSection, laneFold: laneFoldSection,
       untaggedSort: untaggedSortSection, newCard: newCardSection, themePreview: themePreviewSection, themeLab: themeLabSection, land: landSection, reselect: reselectSection, clearKeepsPage: clearKeepsPageSection, clearMark: clearMarkSection, clearLine: clearLineSection,
       resumeSpinner: resumeSpinnerSection, toastsTop: toastsTopSection, sayWhen: sayWhenSection, pasteSpinner: pasteSpinnerSection,
       pasteBig: pasteBigSection, pasteLands: pasteLandsSection, pasteEmpty: pasteEmptySection, pasteBusy: pasteBusySection, typing: typingSection, alias: aliasSection, askAgain: askAgainSection, copySelect: copySelectSection, busyGuard: busyGuardSection, keepalive: keepaliveSection, idlePark: idleParkSection, restartMenu: restartMenuSection,
@@ -30821,6 +30945,8 @@ async function main() {
     await unit("idleRate", () => idleRateSection(browser, base));
     // ── a group opened by hand stays put, and idle windows write nothing ───
     await unit("foldStill", () => foldStillSection(browser, base));
+    // ── a group folds in its own lane, collapse all, and the stack's pinned and rest fold ─
+    await unit("laneFold", () => laneFoldSection(browser, base));
     // ── untagged follows the sort pill in all three views ──────────────────
     await unit("untaggedSort", () => untaggedSortSection(browser, base));
     // ── a card this window has not seen says so, once ──────────────────────

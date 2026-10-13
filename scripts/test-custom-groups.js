@@ -36,6 +36,7 @@ const stubs = {
   cardTieBreak: (a, b) => String(a.id).localeCompare(String(b.id)),
   groupingPrefs: () => ({ mode: "custom", groups: ["one", "two", "active"] }),
   isFolded: () => false,
+  laneFoldKey: (prefix, name) => "proj:" + prefix + "|" + name,
   groupHue: () => 0,
   UNTAGGED: "untagged",
 };
@@ -62,7 +63,7 @@ const html = cardsHTML([
 ], g, "col");
 
 const section = name => {
-  const i = html.indexOf(`data-fold="proj:${name}"`);
+  const i = html.indexOf(`data-fold="proj:col|${name}"`);
   if (i < 0) return null;
   const j = html.indexOf("</details>", i);
   return html.slice(i, j);
@@ -74,7 +75,7 @@ else if (!active.includes("Nothing has the 'active' tag")) fail("the empty group
 
 // AN EMPTY GROUP STARTS SHUT and a group with cards does not. The opening tag is what carries `open`.
 const opening = name => {
-  const i = html.indexOf(`data-fold="proj:${name}"`);
+  const i = html.indexOf(`data-fold="proj:col|${name}"`);
   return html.slice(html.lastIndexOf("<details", i), html.indexOf(">", i));
 };
 if (/\sopen[\s>]/.test(opening("active") + ">")) fail("the empty group `active` is drawn open on first paint");
@@ -88,7 +89,7 @@ for (const name of ["one", "two"]) {
 const untagged = section("untagged");
 if (!untagged || !untagged.includes("<card loose>")) fail("a card in no group is missing from untagged");
 
-const order = groups.concat("untagged").map(n => html.indexOf(`data-fold="proj:${n}"`));
+const order = groups.concat("untagged").map(n => html.indexOf(`data-fold="proj:col|${n}"`));
 if (order.some((v, i) => i && v < order[i - 1])) fail("the groups are not in the order the list names them: " + order);
 
 // THE SORT DOES NOT REACH A GROUP YOU MADE. The cards arrive in the sort's

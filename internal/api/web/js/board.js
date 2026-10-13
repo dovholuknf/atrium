@@ -1573,7 +1573,7 @@ function pickGroupHue(name) {
 function pinnedGroupHTML(pins, keyPrefix) {
   if (!pins.length) return "";
   const key = keyPrefix + ": pinned";
-  const fold = "proj:pinned";
+  const fold = pinFoldKey(keyPrefix);
   const shut = isFolded(fold) ? "" : " open";
   // A fixed hue rather than one derived from a name. Every other group takes
   // its color from what it is called; this one is not a project and borrowing
@@ -1628,12 +1628,11 @@ function cardsHTML(cards, g, keyPrefix) {
     if (g.handOrdered && name !== UNTAGGED) mine.sort(byRank);
     if (!name) return mine.map(t => cardHTML(t)).join("");
     const key = keyPrefix + ":" + name;
-    // FOLDED BY NAME, BOARD WIDE, and not by name-within-column. A card that
-    // changes status moves to another column, where a group of the same name
-    // is a different group and used to be drawn open. So collapsing a project
-    // and then watching one of its cards block read as the board deciding to
-    // pop the group back open, which is exactly what it looked like.
-    const fold = "proj:" + name;
+    // FOLDED BY LANE AND NAME. It used to be by name alone, board wide, so shutting `web` in one column shut it
+    // in every column, and the operator could not read one lane while folding another. A card that changes
+    // status moves to another lane and is drawn there under that lane's own fold, which is the price of folds
+    // being per lane. See `laneFoldKey`.
+    const fold = laneFoldKey(keyPrefix, name);
     // UNTAGGED IN `custom` MODE STARTS SHUT, the way the offline group does.
     // The point of a curated view is to see the buckets you built, not a heap
     // of every card that lands in none of them. The fold list records what
@@ -1682,6 +1681,35 @@ function seedGroups(byName, g) {
 // the callers), so this is read once somebody opens it.
 function emptyGroupHint(tag) {
   return `<div class="empty groupempty">Nothing has the '${esc(tag)}' tag</div>`;
+}
+
+// The fold key of one group in one lane. `keyPrefix` is the column id, or the status inside a column that holds
+// several, so two lanes never share a key. The name goes after a `|`, which `migrateLaneFolds` also uses to tell
+// these from the board-wide keys older versions wrote ("proj:<name>").
+function laneFoldKey(keyPrefix, name) { return "proj:" + keyPrefix + "|" + name; }
+function pinFoldKey(keyPrefix) { return "pin:" + keyPrefix; }
+
+// Every group the board has drawn, shut or open, as the elements carrying a fold key.
+function boardGroupEls() {
+  return [...document.querySelectorAll("#board details[data-fold]")];
+}
+
+// COLLAPSE ALL / EXPAND ALL for the board tab. Writes the fold list in one go and repaints once, rather than
+// setting `open` on each element and leaving a `toggle` event per group to do the same thing one repaint at a
+// time. The list records what differs from how a group comes, so for the groups that come shut the entry means
+// open, exactly as the toggle listener reads it.
+function foldAllGroups(shut) {
+  const list = foldedColumns();
+  for (const el of boardGroupEls()) {
+    const key = el.dataset.fold;
+    const inverted = key.startsWith("offline:") || el.dataset.foldShut === "1";
+    const want = inverted ? !shut : shut;
+    const i = list.indexOf(key);
+    if (want && i < 0) list.push(key);
+    if (!want && i >= 0) list.splice(i, 1);
+  }
+  localStorage.setItem("atrium.folded", JSON.stringify(list));
+  repaintLists();
 }
 
 // Is this group shut?

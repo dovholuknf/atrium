@@ -82,9 +82,13 @@ function fdMount(tab) {
   const qm = `<input type="search" class="fq" id="${cfg.q}" aria-label="search this list" placeholder="${esc(cfg.placeholder)}"
         spellcheck="false" autocomplete="off">
       <span class="matchcount" id="${cfg.match}"></span>`;
+  // The board's groups fold per lane, so it is the one tab with a way to fold every lane at once.
+  const foldAll = tab === "board"
+    ? `<span class="foldall"><button type="button" tabindex="-1" id="board-collapse-all" data-tip="fold every group in every lane" onclick="foldAllGroups(true)">collapse all</button><button type="button" tabindex="-1" id="board-expand-all" data-tip="open every group in every lane" onclick="foldAllGroups(false)">expand all</button></span>`
+    : "";
   host.innerHTML = `<div class="fline">
       <span class="fsum"></span>
-      ${btn + qm}
+      ${foldAll + btn + qm}
     </div>
     <div class="fwrap"><div class="fpanel" id="${cfg.host}-panel" tabindex="-1" inert role="group" aria-label="filters">
       ${cfg.rows.map(([label, id, cls]) => `<div class="frow"><span class="barlabel">${esc(label)}</span><div class="${cls}" id="${id}"></div></div>`).join("")}
@@ -109,7 +113,7 @@ function fdMount(tab) {
   const line = host.querySelector(".fline");
   line.addEventListener("pointerdown", () => { fdState[tab].prev = document.activeElement; }, true);
   line.addEventListener("click", e => {
-    if (e.target.closest(".fq")) return;
+    if (e.target.closest(".fq, .foldall")) return;
     if (e.detail === 0) return;   // no key opens it
     if (Date.now() - fdDraggedAt < 400) return;
     fdSet(tab, !fdIsOpen(tab));
