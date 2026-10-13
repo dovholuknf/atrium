@@ -637,24 +637,12 @@ function showMenu(e, items) {
   wireFlyouts();
 
   // Placed after it has a size, so a card near an edge does not open a menu
-  // off screen.
+  // off screen. Its flyouts are fitted the moment each one opens (wireFlyouts),
+  // when there is a real size to measure instead of a guess at the widest.
   cardMenuEl.style.left = "0px";
   cardMenuEl.style.top = "0px";
   cardMenuEl.classList.add("on");
-  const r = cardMenuEl.getBoundingClientRect();
-  const x = Math.min(e.clientX, window.innerWidth - r.width - 8);
-  const y = Math.min(e.clientY, window.innerHeight - r.height - 8);
-  cardMenuEl.style.left = Math.max(8, x) + "px";
-  cardMenuEl.style.top = Math.max(8, y) + "px";
-  // A flyout opens to the right unless there is no right left. Measured
-  // against the widest one this menu holds rather than a guess, so a long
-  // destination name does not hang off the screen.
-  // A guess, but a generous one. The sharing flyout carries section headings
-  // and a full sentence, so the old 190 flipped too late and hung it off the
-  // right edge on a window that was only just too narrow.
-  const widest = items.reduce((w, it) => it.sub ? Math.max(w, 230) : w, 0);
-  cardMenuEl.classList.toggle("flip",
-    widest > 0 && Math.max(8, x) + r.width + widest > window.innerWidth);
+  popFit(cardMenuEl, { x: e.clientX, y: e.clientY });
 }
 
 // A flyout that forgives a slip.
@@ -684,6 +672,8 @@ function wireFlyouts() {
         if (o !== b) o.classList.remove("subopen");
       });
       b.classList.add("subopen");
+      // Measured now that it is showing: flips left, slides up, scrolls inside itself (js/popfit.js).
+      popFly(b.querySelector(".sub"), { flip: "flipx" });
     });
     b.addEventListener("pointerleave", () => {
       clearTimeout(flyoutTimer);

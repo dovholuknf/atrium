@@ -83,3 +83,12 @@ document.addEventListener("click", e => {
   const b = e.target && e.target.closest && e.target.closest("#t-heldline [data-act=let-through]");
   if (b) letItThrough();
 });
+
+// The menu opens by CSS on hover or focus, so it is fitted when either happens, once it is showing (js/popfit.js).
+for (const ev of ["pointerover", "focusin"]) {
+  document.addEventListener(ev, e => {
+    const hl = e.target.closest && e.target.closest(".heldline");
+    const menu = hl && hl.querySelector(".hl-menu");
+    if (menu) requestAnimationFrame(() => popFly(menu));
+  });
+}

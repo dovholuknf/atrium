@@ -216,9 +216,8 @@
     if (!menu.hidden) return closeMenu();
     fillMenu();
     const r = more.getBoundingClientRect();
-    menu.style.top = Math.round(r.bottom + 6) + "px";
-    menu.style.left = Math.max(8, Math.min(Math.round(r.left), innerWidth - 180)) + "px";
     menu.hidden = false;
+    popFit(menu, r, { gap: 6 });
     more.setAttribute("aria-expanded", "true");
   };
   document.addEventListener("click", (e) => { if (!menu.hidden && !menu.contains(e.target)) closeMenu(); });

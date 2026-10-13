@@ -572,8 +572,8 @@
     display: block; padding: 5px 11px 7px; white-space: nowrap;
     font-size: var(--fs-sm); color: var(--dimmest); font-style: italic;
   }
-  /* Off the right edge, the flyout goes left instead. */
-  #cardmenu.flip .sub { left: auto; right: 100%; margin-left: 0; margin-right: -6px; }
+  /* Off the right edge, the flyout goes left instead. Set per flyout by `popFly`, which also caps and slides it. */
+  #cardmenu .sub.flipx { left: auto; right: 100%; margin-left: 0; margin-right: -6px; }
   #cardmenu .sep { height: 1px; margin: 5px 8px; background: var(--stroke-dim); }
 
   /* Recoloring a group. Hues only, at the lightness the board draws them at, so every swatch is a color a group

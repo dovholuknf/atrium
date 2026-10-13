@@ -14,22 +14,8 @@ function placeTip(anchor, text) {
   // Never wider than the window, so the panel cannot introduce a horizontal
   // scrollbar no matter how long the text is.
   tipEl.style.maxWidth = Math.min(420, window.innerWidth - pad * 2) + "px";
-  const a = anchor.getBoundingClientRect();
-  const t = tipEl.getBoundingClientRect();
-
-  let left = a.left;
-  // Slide back inside rather than letting it spill off the right edge.
-  if (left + t.width > window.innerWidth - pad) left = window.innerWidth - t.width - pad;
-  if (left < pad) left = pad;
-
-  // Below by default, above when there is no room below but there is above.
-  let top = a.bottom + 9;
-  const roomBelow = window.innerHeight - a.bottom;
-  if (roomBelow < t.height + pad && a.top > t.height + pad) top = a.top - t.height - 9;
-  if (top < pad) top = pad;
-
-  tipEl.style.left = Math.round(left) + "px";
-  tipEl.style.top = Math.round(top) + "px";
+  // Below by default, above when there is no room below, never off any edge (js/popfit.js).
+  popFit(tipEl, anchor, { pad, gap: 9, slide: true });
 }
 
 function hideTip() { tipEl.classList.remove("on"); tipSoon(null); tipAt = null; }

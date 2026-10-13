@@ -232,15 +232,8 @@ function qaFlyPlace() {
   const el = qaFlyEl();
   const host = (peekEl && peekEl.classList.contains("on") ? peekEl : document.getElementById("t-drawer"));
   const r = host ? host.getBoundingClientRect() : { left: innerWidth / 2 - 180, right: innerWidth / 2 + 180, top: 80, bottom: 200 };
-  const w = Math.min(360, innerWidth - 16), gap = 10;
-  let x = r.right + gap;
-  if (x + w > innerWidth - 8) x = r.left - gap - w;
-  if (x < 8) x = Math.max(8, Math.min(r.left, innerWidth - w - 8));
-  const h = el.offsetHeight || 280;
-  const y = Math.min(Math.max(8, r.top), Math.max(8, innerHeight - h - 8));
-  el.style.width = w + "px";
-  el.style.left = Math.round(x) + "px";
-  el.style.top = Math.round(y) + "px";
+  el.style.width = Math.min(360, innerWidth - 16) + "px";
+  popFit(el, r, { axis: "x", gap: 10 });
 }
 
 function qaFlyGo(n) {
