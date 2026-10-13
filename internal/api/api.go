@@ -96,6 +96,9 @@ type Server struct {
 	// top, and answers the hub branch and repository. A close calls it for a worktree it was told to stash. Nil is
 	// a room that cannot stash. See close.go.
 	Stash func(ctx context.Context, card, dir, branch string) (hubBranch, hubRepo string, err error)
+	// HubDelete deletes a claude/* branch the card pushed from the hub, by a push the hub takes only for a branch that
+	// card pushed. A close calls it for each hub-branch row. Nil is a room with no hub remote. See closehub.go.
+	HubDelete func(ctx context.Context, card, dir, hubRepo, branch string) error
 	// StashRetentionDays is how long the hub keeps a stash before it removes it, for the expiry date a close names. Nil
 	// is 30, the hub's default. The room does not hear the hub's setting, so a hub set to another number removes it
 	// on its own date and this one is what the close could say. 0 is never.

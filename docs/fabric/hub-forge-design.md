@@ -116,7 +116,9 @@ Revision 1's @review findings still apply where their parts remain:
 `git receive-pack`, served through the same `http-backend` setup as git-sync 4.4 with `http.receivepack=true` for
 this route only. The settings are passed in the CGI environment, never written into the repo:
 - `receive.denyNonFastForwards=true`;
-- `receive.denyDeletes=true`;
+- `receive.denyDeletes=false`, because the hub's own rules decide a delete before git runs: a card deletes only a branch
+  the push log says it pushed, the operator any branch but main, and no push deletes main, claude/main, a tag or
+  anything outside `refs/heads`;
 - `receive.fsckObjects=true`;
 - `receive.advertisePushOptions=false`.
 
