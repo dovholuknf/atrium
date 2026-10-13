@@ -65,6 +65,16 @@ func TestAnInterviewLaunchWritesTheRulesAheadOfTheTopic(t *testing.T) {
 	}
 }
 
+func TestAnInterviewLaunchIsNeverAWorker(t *testing.T) {
+	got, err := launchSeen(t, launchInput{Cwd: "/work/dir", Kind: "interview", Brief: "Topic: x"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if hasTag(got.Tags, SubagentTag) || !hasTag(got.Tags, InterviewTag) {
+		t.Errorf("tags = %v, want %s and not %s", got.Tags, InterviewTag, SubagentTag)
+	}
+}
+
 func TestAnOrdinaryLaunchIsNotAnInterview(t *testing.T) {
 	got, err := launchSeen(t, launchInput{Cwd: "/work/dir", Brief: "do it", Prompt: "go"})
 	if err != nil {
