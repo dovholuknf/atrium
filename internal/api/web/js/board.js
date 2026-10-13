@@ -1639,7 +1639,11 @@ function cardsHTML(cards, g, keyPrefix) {
     // of every card that lands in none of them. The fold list records what
     // was CHANGED from the default, so an entry there re-opens it and the
     // shape reads the same as every other fold.
-    const shutByDefault = name === UNTAGGED && groupingPrefs(g.view).mode === "custom";
+    //
+    // AN EMPTY GROUP STARTS SHUT TOO, by the same mechanism: nothing to look at until it gains a card, and an
+    // explicit open is the entry that records it.
+    const shutByDefault = mine.length === 0
+      || (name === UNTAGGED && groupingPrefs(g.view).mode === "custom");
     const shut = (isFolded(fold) === shutByDefault) ? " open" : "";
     // Work you started and left. Drawn back rather than hidden: the point of
     // the bucket is that it is findable, and the point of greying it is that
@@ -1654,7 +1658,7 @@ function cardsHTML(cards, g, keyPrefix) {
         <span class="gname" data-tip="${esc(name)} &mdash; right click to recolor">${esc(name)}</span>
         <span class="gn">${mine.length}</span>
       </summary>
-      ${mine.length ? mine.map(t => cardHTML(t)).join("") : emptyGroupHint()}
+      ${mine.length ? mine.map(t => cardHTML(t)).join("") : emptyGroupHint(name)}
     </details>`;
   }).join("");
 }
@@ -1674,11 +1678,10 @@ function seedGroups(byName, g) {
   }
 }
 
-// What an empty group says. There is no dragging onto a group, by design (see
-// "moving a card by hand"), so it names the menu entry that files a card.
-function emptyGroupHint() {
-  return `<div class="empty groupempty">nothing in it yet. file a card here with
-    <b>into group</b> on the card's menu</div>`;
+// What an empty group says: the tag it is made from, which is its name. An empty group also starts SHUT (see
+// the callers), so this is read once somebody opens it.
+function emptyGroupHint(tag) {
+  return `<div class="empty groupempty">Nothing has the '${esc(tag)}' tag</div>`;
 }
 
 // Is this group shut?
