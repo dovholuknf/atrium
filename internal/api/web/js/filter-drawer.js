@@ -385,7 +385,7 @@ function fdAttached(t) {
 function subagentRollup(cards, on) {
   const byBare = new Map(cards.map(t => [bareId(t.id), t]));
   const parentOf = t => {
-    if (!isSubagent(t) || !t.spawned_by_id) return null;
+    if (!nestsUnderLauncher(t) || !t.spawned_by_id) return null;
     const p = byBare.get(bareId(t.spawned_by_id));
     return p && p !== t ? p : null;
   };

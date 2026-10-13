@@ -39,11 +39,16 @@ func (d *Daemon) fixtureCards() map[string]bool {
 
 // idleParkSubject reports whether a card is one the idle clock may park:
 // an agent's card, or one of the operator's that opted in, or the orchestrator.
-// Never a fixture, a throwaway, or a card with a lent session in use. A shell is
+// Never an interview: it is waiting on a human with a plain-text question, which
+// the asked/answered check does not see, and parking it kills the process the
+// human is about to answer. Never a fixture, a throwaway, or a card with a lent session in use. A shell is
 // not a card's runner (it lives in the supervisor's other map), so it never gets
 // here.
 func (d *Daemon) idleParkSubject(t *store.Task) bool {
 	if t == nil || t.Throwaway || d.fixtureCards()[t.ID] || d.guests.get(t.ID) != nil {
+		return false
+	}
+	if hasTag(t.Tags, InterviewTag) {
 		return false
 	}
 	return hasTag(t.Tags, OriginAgentTag) || hasTag(t.Tags, ParkIdleTag) || hasTag(t.Tags, OrchestratorTag)

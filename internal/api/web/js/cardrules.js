@@ -107,6 +107,16 @@ function isSubagent(t) {
     t.tags.some(x => String(x).trim().toLowerCase() === SUBAGENT_TAG));
 }
 
+// AN INTERVIEW IS NEVER NESTED. A card tagged `atrium:interview` shows in its own tag group, a top row, whoever launched it:
+// the human has to find it, and a fold under its launcher hid it. THE ONE RULE every list that nests a card under the card
+// that launched it asks (terminals `termNest`, stack and board `subagentRollup`).
+const INTERVIEW_TAG = "atrium:interview";
+function isInterview(t) {
+  return !!(t && Array.isArray(t.tags) &&
+    t.tags.some(x => String(x).trim().toLowerCase() === INTERVIEW_TAG));
+}
+function nestsUnderLauncher(t) { return isSubagent(t) && !isInterview(t); }
+
 // A CARD'S OPEN QUESTION, from the parsed list, an unparsed one, or a question put to the operator (asks_open).
 function cardHasOpenQuestion(t) {
   const s = t && t.seen;

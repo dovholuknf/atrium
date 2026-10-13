@@ -1080,7 +1080,7 @@ function termRow(t, deep, kid) {
       keptWord === "opening" ? "being started again here, so the filter keeps it listed"
         : "open in the pane, so the filter keeps it listed"}">${keptWord}</span>` : "";
   const allKids = termKids.get(t.id) || [];
-  const shut = allKids.length > 0 && termKidsShut(t);
+  const shut = termKidTotal(t) > 0 && termKidsShut(t);
   // A fold hides every child, one that needs you included: the warn chip on the parent is the signal (`termKidsToggle`).
   const shown = shut ? [] : allKids;
   const kids = shown.map(k => termRow(k, false, true)).join("");
@@ -1121,13 +1121,17 @@ function termRow(t, deep, kid) {
                 : ""
             }</span>
         </div>
-        ${termRowChips(t, keptChip)}${termKidsToggle(t, allKids.length, allKids.length - shown.length, shut)}
+        ${termRowChips(t, keptChip)}${termKidsToggle(t, termKidTotal(t), termKidTotal(t) - shown.length, shut)}
       </div>
     </div>${kids ?`<div class="tkids">${kids}</div>` : ""}`;
 }
 
 // The spawned cards drawn under each parent row, by parent id. Rebuilt on every render by `termNest`.
 let termKids = new Map();
+// The same, over every card the list could hold, drawn or not: a chip, the search or a cold row can leave a parent's
+// children out of `termKids`, and the parent still has them. Its chevron is drawn for these.
+let termKidsPool = new Map();
+function termKidTotal(t) { return Math.max((termKids.get(t.id) || []).length, (termKidsPool.get(t.id) || []).length); }
 
 // A parent's fold lives in the same list as the group folds, keyed by the bare id so a room-set change keeps it.
 // Like the groups it records what is NOT as it comes, and what it comes as is the subagents chip's say: off, a parent
@@ -1181,7 +1185,7 @@ addEventListener("storage", e => {
 function termNest(list) {
   const byBare = new Map(list.map(t => [bareId(t.id), t]));
   const parentOf = t => {
-    if (!(t.tags || []).includes("atrium:subagent") || !t.spawned_by_id || t.pinned) return null;
+    if (!nestsUnderLauncher(t) || !t.spawned_by_id || t.pinned) return null;
     const p = byBare.get(bareId(t.spawned_by_id));
     return p && p !== t ? p : null;
   };
@@ -1883,6 +1887,7 @@ async function renderTermList() {
   // Spawned cards move under their parent row, so the lists below hold top rows only. See `termNest`.
   const nest = termNest(shown);
   termKids = nest.kids;
+  termKidsPool = termNest(all.filter(t => !t.offline)).kids;
   const top = shown.filter(t => !nest.nested.has(t.id));
   // What each heading would hold with nothing searched away, so it can say `7/15`.
   const nestAll = q ? termNest(tasks) : nest;
