@@ -1515,8 +1515,23 @@ async function openLaunch(id, resume, cwd, ontoTask, prefill, where) {
   if (!pre.quiet) {
     document.getElementById("launch").showModal();
     document.getElementById("l-cwd").focus();
+    launchRestTerminal();
   }
   return true;
+}
+
+// THE TERMINAL BEHIND THE DIALOG STOPS BEING DRAWN BY THE GPU WHILE IT IS OPEN. A visible WebGL terminal keeps every frame
+// costly, so a press on ROOM or RUNNER was answered 35 to 60ms late and the dialog took 400ms to show (see
+// docs/backlog/ui/launch-dialog-notes.md). The pane is covered by the modal, its output is still written, and it takes its
+// GPU context again when the dialog closes.
+function launchRestTerminal() {
+  const dlg = document.getElementById("launch");
+  const t = typeof term !== "undefined" ? term : null;
+  if (!t || !t._atriumGl) return;
+  dropWebgl(t);
+  dlg.addEventListener("close", () => {
+    if (typeof term !== "undefined" && term === t && !t._atriumGl) useWebgl(t);
+  }, { once: true });
 }
 
 // Which machine this card starts on, asked only when it is a question.

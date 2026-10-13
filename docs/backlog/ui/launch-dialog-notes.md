@@ -35,5 +35,19 @@ Findings:
 Cause: a visible WebGL terminal keeps the page's frames expensive while a native select is opened over a modal dialog, so the
 press is answered late and the list drops late. The terminals behind the dialog are covered by it and need no drawing at all.
 
+After (same script, default headless software WebGL, terminals view):
+
+| board | press on ROOM p50 (was) | press on RUNNER p50 (was) | dialog showing p50 (was) |
+|---|---|---|---|
+| 1 terminal, 3 lines per 40ms | 38 ms (38) | 8 ms (0 to 34) | 374 ms (415) |
+| 1 terminal, 40 lines per 40ms | 36 ms (37) | 7 ms (33) | 370 ms (403) |
+| 6 terminals, 40 lines per 40ms | 8 ms (36) | 7 ms (32) | 347 ms (393) |
+
+It is a partial fix, and it says so: the press that follows the first one is answered in 7 to 8 ms instead of 32, but the first
+press after the dialog shows still waits about 38 ms while the GPU context is handed back, and the click on `+ new agent` still
+waits 350 to 400 ms because it is answered BEFORE the dialog exists to rest the terminal. Neither is a 1 to 2 second delay, and
+that delay is not reproduced here (see above). What would remove the rest is the terminal being cheap to draw in the first
+place, which on this machine class is a question for a real-GPU measurement, not a headless one. Open question for clint.
+
 Fix: while the launch dialog is open, drawing of the visible terminal is handed back to xterm's DOM renderer (the covered pane,
 output still written), and the GPU renderer is taken again when the dialog closes.
