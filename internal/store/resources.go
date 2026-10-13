@@ -29,6 +29,9 @@ const (
 	// ResStash is work a close pushed to the hub instead of deleting. ref: the hub branch. detail: the hub repository.
 	// It is held off every room, so nothing frees it here: it stays live and listed until somebody fetches it back.
 	ResStash = "stash"
+	// ResHubBranch is a claude/* branch the card pushed to the hub. ref: the branch. detail: the hub repository. Freed
+	// by asking the hub to delete it with a push, which the hub takes only for a branch the card pushed.
+	ResHubBranch = "hubbranch"
 )
 
 // CardResource is one row of a card's inventory.
