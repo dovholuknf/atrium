@@ -249,6 +249,40 @@ func TestOpenNeedsNoProviderRow(t *testing.T) {
 	}
 }
 
+// A CLONE THE OPERATOR MADE has no yes yet: the open stops with clone_adopt and the clone's folder, launches nothing, and
+// the retry that carries adopt_clone goes on.
+func TestOpenOnAnOperatorsCloneStopsForTheYesAndGoesOnWithIt(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real server with git worktrees and a database")
+	}
+	t.Parallel()
+	oh := newOpenHarness(t, &fakeForge{pr: forge.PR{HeadRef: "main", FromFork: true}})
+	if err := oh.srv.st.DeleteProvider("github"); err != nil {
+		t.Fatal(err)
+	}
+	scm := filepath.Join(t.TempDir(), "scm")
+	clone := filepath.Join(scm, "github.com", "o", "r")
+	mkDir(t, filepath.Dir(clone))
+	git(t, scm, "clone", "-q", oh.up, clone)
+	asked := 0
+	oh.srv.SCMClone = func(ctx context.Context, _ string) (gitsync.SCMResult, error) {
+		if !AdoptCloneYes(ctx) {
+			asked++
+			return gitsync.SCMResult{}, &gitsync.AdoptError{Clone: filepath.ToSlash(clone)}
+		}
+		return gitsync.SCMResult{Path: clone, State: "existing"}, nil
+	}
+	code, out := oh.open(t, openURL)
+	if code != 409 || out["code"] != "clone_adopt" || out["clone"] != filepath.ToSlash(clone) || out["step"] != "worktree" ||
+		len(oh.launched) != 0 {
+		t.Fatalf("without the yes: %d %v, launched %d", code, out, len(oh.launched))
+	}
+	rec := post(t, oh.h, "/v1/open", map[string]any{"url": openURL, "adopt_clone": true})
+	if rec.Code != 201 || asked != 1 || len(oh.launched) != 1 {
+		t.Fatalf("with the yes: %d %s, asked %d", rec.Code, rec.Body.String(), asked)
+	}
+}
+
 // A PASTED LINK IS RECOGNISED ONCE. Recognising reads the forge, and the open used to do it again for the review row.
 func TestOpenRecognisesTheLinkOnce(t *testing.T) {
 	if testing.Short() {

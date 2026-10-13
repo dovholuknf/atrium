@@ -92,6 +92,15 @@ var ErrNoSCMRoot = errors.New("this room has no scm folder, so atrium has nowher
 var ErrAsked = errors.New("this clone was made by the operator, so atrium asked on the board before it adds its " +
 	"remotes to it. Nothing was changed. Ask again once the operator has answered")
 
+// AdoptError is what a pull request's worktree answers for a clone the operator made when there is no card to ask on:
+// the launch dialog asks the operator once and sends the yes with its retry. Clone is the clone's folder.
+type AdoptError struct{ Clone string }
+
+func (e *AdoptError) Error() string {
+	return "the clone at " + e.Clone + " was made by the operator, and atrium has not been given a yes to add its " +
+		"remotes to it"
+}
+
 // ErrDenied is what a clone answers when the operator said no. The clone is left as it was.
 var ErrDenied = errors.New("the operator said no to atrium adding its remotes to this clone, so it was left as it was")
 

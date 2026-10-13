@@ -63,6 +63,23 @@ type openRequest struct {
 	// Pick says the room this lands on was picked by name in the launch dialog. A link another room holds then goes on
 	// here and its claim moves here, unless that room has a live card on it. See the claim's Take.
 	Pick bool `json:"pick"`
+	// AdoptClone is the operator's yes to atrium adding its hub remote to a clone the operator made, and guarding pushes
+	// to origin there. Without it a launch on such a clone stops with the code clone_adopt. See gitsync.AdoptError.
+	AdoptClone bool `json:"adopt_clone"`
+}
+
+// adoptCloneKey carries the operator's yes of an open to the room's clone step.
+type adoptCloneKey struct{}
+
+// WithAdoptClone marks ctx as carrying the operator's yes to adopt a clone, for the daemon's SCMClone.
+func WithAdoptClone(ctx context.Context, yes bool) context.Context {
+	return context.WithValue(ctx, adoptCloneKey{}, yes)
+}
+
+// AdoptCloneYes is whether ctx carries the operator's yes to adopt a clone.
+func AdoptCloneYes(ctx context.Context) bool {
+	yes, _ := ctx.Value(adoptCloneKey{}).(bool)
+	return yes
 }
 
 // openTakeKey marks the review row's claim as a pick, for postPR.
@@ -132,6 +149,9 @@ func (s *Server) open(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if in.AdoptClone {
+		r = r.WithContext(WithAdoptClone(r.Context(), true))
+	}
 	steps := s.newOpSteps(strings.TrimSpace(in.Progress), in.URL)
 	defer steps.end()
 

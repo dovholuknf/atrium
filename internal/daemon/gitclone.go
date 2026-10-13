@@ -115,12 +115,6 @@ func (d *Daemon) handleGitClone(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(res)
 }
 
-// errPRCloneAdopt is what a PR worktree answers for a clone the operator made and has not said yes to. There is no
-// card to ask on, so the one yes comes from a card's atrium_git_clone.
-var errPRCloneAdopt = errors.New("the clone of this repo in the scm folder was made by the operator and atrium has " +
-	"not been given a yes to add its remotes to it. Run atrium_git_clone for it from a card, answer the question " +
-	"on the board, and ask again")
-
 // prWorktreeHas is whether the scm folder already holds the clone a PR worktree would hang off. It makes nothing.
 func (d *Daemon) prWorktreeHas(url string) bool {
 	ref, err := gitsync.ParseURL(url)
@@ -139,6 +133,6 @@ func (d *Daemon) prWorktreeHas(url string) bool {
 // push guarded, the same as atrium_git_clone. A clone the operator made is not touched without the yes.
 func (d *Daemon) prWorktreeClone(ctx context.Context, url string) (gitsync.SCMResult, error) {
 	s := d.scm(nil)
-	s.Yes = func(context.Context, string) error { return errPRCloneAdopt }
+	// There is no card to ask on, so the launch dialog asks and the retry carries the yes (api.WithAdoptClone). The yes\r\n	// is then written into the clone, and a later launch on it never asks.\r\n	s.Yes = func(ctx context.Context, clone string) error {\r\n		if api.AdoptCloneYes(ctx) {\r\n			return nil\r\n		}\r\n		return &gitsync.AdoptError{Clone: filepath.ToSlash(clone)}\r\n	}
 	return s.Clone(ctx, url)
 }

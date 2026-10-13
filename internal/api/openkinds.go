@@ -405,6 +405,12 @@ func noSCMRoot(err error) bool {
 
 // worktreeFail answers a worktree step that failed. A room with no scm folder says so with its own code and status.
 func worktreeFail(w http.ResponseWriter, status int, err error) {
+	var adopt *gitsync.AdoptError
+	if errors.As(err, &adopt) {
+		// Not a failure to hide: the dialog asks once, and the retry carries the yes (adopt_clone).
+		prError(w, http.StatusConflict, "clone_adopt", err.Error(), map[string]any{"step": "worktree", "clone": adopt.Clone})
+		return
+	}
 	if noSCMRoot(err) {
 		openFail(w, http.StatusUnprocessableEntity, "worktree", gitsync.NoSCMRootCode, err.Error())
 		return
