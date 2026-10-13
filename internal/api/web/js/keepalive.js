@@ -74,11 +74,9 @@ const KA_PIE_STEP = 15;
 // A pie this full says it is about to fire.
 const KA_DUE_AT = 0.92;
 
-// Every card a chip or a line has drawn, by id, so a tick can redraw a chip from
+// Every card a chip has drawn, by id, so a tick can redraw a chip from
 // what it was drawn from. Cold ones are dropped when the timer is re-armed.
 const KA_SEEN = new Map();
-const KA_LINES = new Map();
-const KA_LINE_IDS = new Set();
 
 function kaNow() { return Date.now(); }
 
@@ -235,7 +233,7 @@ function keepaliveChip(t) {
 // ── keeping the words true without a fetch ───────────────────────────────────
 //
 // ONE timeout, for the soonest moment a drawn card's words change, re-armed after
-// every repaint. It redraws chips and lines from what they already hold: a label
+// every repaint. It redraws chips from what they already hold: a label
 // tick, no request. Never an interval. A background tab throttles timers, so a tab
 // that becomes visible repaints too, and so does every card list.
 
@@ -257,7 +255,7 @@ function kaArm() {
   for (const [id, t] of KA_SEEN) {
     const m = kaModel(t, now);
     if (!m || !m.flip) {
-      if (!KA_LINE_IDS.has(id)) KA_SEEN.delete(id);
+      KA_SEEN.delete(id);
       continue;
     }
     soon(m.flip);
@@ -269,7 +267,7 @@ function kaArm() {
   kaTimer = setTimeout(kaTick, Math.min(Math.max(soonest - now + 50, 250), 2147483000));
 }
 
-// Redraw every chip and line in place from the cards they were drawn from.
+// Redraw every chip in place from the cards they were drawn from.
 function kaRepaint() {
   document.querySelectorAll(".chip.cache[data-cid]").forEach(el => {
     const t = KA_SEEN.get(el.dataset.cid);
@@ -281,7 +279,6 @@ function kaRepaint() {
     const fresh = tpl.content.firstElementChild;
     if (fresh && fresh.outerHTML !== el.outerHTML) el.replaceWith(fresh);
   });
-  for (const [id, list] of KA_LINES) paintCacheLine(id, list, true);
 }
 
 function kaTick() {
@@ -307,74 +304,6 @@ function cacheRefresh(cards) {
 document.addEventListener("visibilitychange", () => {
   if (!document.hidden) kaTick();
 });
-
-// ── the summary line ─────────────────────────────────────────────────────────
-//
-// `cache: 5 warm · 2 kept warm · 9 cold · keep-alive 83 refreshes this week`, over
-// the Claude cards a list shows, not archived. Counted from `kaModel`'s bucket, the
-// same value the chip carries, so the two cannot disagree. The week figure is the
-// daemon's setting. The spend today is drawn only when the daemon sends it as
-// `cache_keepalive_today_tokens`: the board holds no usage for today without a fetch.
-
-function cacheLineText(list) {
-  const c = { warm: 0, kept: 0, cold: 0 };
-  let any = 0;
-  const now = kaNow();
-  for (const t of list || []) {
-    if (!t || !t.keepalive || over(t) || t.archived_at || t.offline) continue;
-    const m = kaModel(t, now);
-    if (!m) continue;
-    any++;
-    c[m.bucket]++;
-  }
-  if (!any) return "";
-  const s = typeof pastePrefs !== "undefined" && pastePrefs ? pastePrefs : {};
-  const parts = [`${c.warm} warm`, `${c.kept} kept warm`, `${c.cold} cold`];
-  const wk = s.cache_keepalive_week_refreshes;
-  if (typeof wk === "number") parts.push(`keep-alive ${wk} refresh${wk === 1 ? "" : "es"} this week`);
-  const today = s.cache_keepalive_today_tokens;
-  if (typeof today === "number") {
-    parts.push(`${typeof usageTokens === "function" ? usageTokens(today) : today} tokens today`);
-  }
-  return "cache: " + parts.join(" · ");
-}
-
-// Writes the line into `#id`, which may not exist yet: the terminals list is
-// rebuilt on every paint, so the same call is made after it.
-function paintCacheLine(id, list, quiet) {
-  KA_LINES.set(id, list);
-  for (const t of list || []) {
-    if (t && t.keepalive) { KA_SEEN.set(t.id, t); KA_LINE_IDS.add(t.id); }
-  }
-  // The week figure lives in the settings, which nothing loads at boot. Asked once, cached by
-  // `pasteSettings`, then the lines are painted again with it.
-  if (typeof pastePrefs !== "undefined" && !pastePrefs && typeof pasteSettings === "function" && !quiet) {
-    pasteSettings().then(() => kaRepaint());
-  }
-  const el = document.getElementById(id);
-  if (el) {
-    const txt = cacheLineText(list);
-    if (el.textContent !== txt) el.textContent = txt;
-    el.hidden = !txt;
-  }
-  if (!quiet) kaSchedule();
-}
-
-// The line opens the gear on the keep-alive setting.
-function openKeepaliveSetting() {
-  const gear = document.getElementById("gear");
-  if (gear) gear.click();
-  const field = document.getElementById("s-keepalive");
-  const pane = field && field.closest(".pane");
-  if (pane && typeof showSettingsPane === "function") showSettingsPane(pane.dataset.name);
-  if (!field) return;
-  const box = field.closest(".field") || field;
-  box.scrollIntoView({ block: "center" });
-  box.classList.remove("flash");
-  void box.offsetWidth;
-  box.classList.add("flash");
-  field.focus();
-}
 
 // The card menu's switch. Null for a card with no switch, which is every card
 // that is not Claude.

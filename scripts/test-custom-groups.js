@@ -70,7 +70,16 @@ const section = name => {
 
 const active = section("active");
 if (!active) fail("the empty group `active` was not drawn at all");
-else if (!active.includes("nothing in it yet")) fail("the empty group `active` has no hint: " + active);
+else if (!active.includes("Nothing has the 'active' tag")) fail("the empty group `active` has no hint naming its tag: " + active);
+
+// AN EMPTY GROUP STARTS SHUT and a group with cards does not. The opening tag is what carries `open`.
+const opening = name => {
+  const i = html.indexOf(`data-fold="proj:${name}"`);
+  return html.slice(html.lastIndexOf("<details", i), html.indexOf(">", i));
+};
+if (/\sopen[\s>]/.test(opening("active") + ">")) fail("the empty group `active` is drawn open on first paint");
+if (!opening("active").includes('data-fold-shut="1"')) fail("the empty group `active` does not mark itself as coming shut");
+if (!/\sopen[\s>]/.test(opening("one") + ">")) fail("the group `one` holds a card and should be drawn open");
 
 for (const name of ["one", "two"]) {
   const s = section(name);

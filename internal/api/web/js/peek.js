@@ -406,16 +406,21 @@ function peekChatter(box, id, first, drawers) {
 // and the actions row are not drawers. Closed bodies are `hidden`, not removed, so their text is still in the box.
 const PEEK_DRAWER_KEY = "atrium.peekDrawers";
 const PEEK_DRAWERS_OPEN = { need: true };
+// recap and context are always open (no toggle); chatter starts folded every time and is never kept.
+const PEEK_DRAWERS_FIXED = { recap: true, ctx: true }, PEEK_DRAWERS_FORGET = { chatter: true };
 function peekDrawerState() {
   let o = {};
   try { o = JSON.parse(localStorage.getItem(PEEK_DRAWER_KEY) || "{}") || {}; } catch (e) {}
   return o && typeof o === "object" ? o : {};
 }
 function peekDrawerOpen(key) {
+  if (PEEK_DRAWERS_FIXED[key]) return true;
+  if (PEEK_DRAWERS_FORGET[key]) return false;
   const v = peekDrawerState()[key];
   return typeof v === "boolean" ? v : !!PEEK_DRAWERS_OPEN[key];
 }
 function peekDrawerSet(key, open) {
+  if (PEEK_DRAWERS_FORGET[key]) return;
   const o = peekDrawerState();
   o[key] = open;
   try { localStorage.setItem(PEEK_DRAWER_KEY, JSON.stringify(o)); } catch (e) {}
@@ -448,6 +453,16 @@ function peekDrawerWrap(node) {
     peekDrawerSet(key, open);
     peekRecap(d);
   };
+  if (PEEK_DRAWERS_FIXED[key]) {
+    d.classList.add("fixed");
+    head.removeAttribute("role");
+    head.removeAttribute("tabindex");
+    node.replaceWith(d);
+    body.appendChild(node);
+    d.append(head, body);
+    set(true);
+    return;
+  }
   // A drag that selected text is not a click on the header.
   head.addEventListener("click", () => {
     const sel = window.getSelection && window.getSelection();

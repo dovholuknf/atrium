@@ -386,14 +386,6 @@
   .chip.cache.pie { width: 14px; height: 14px; background: conic-gradient(var(--teal) var(--pie, 0deg), transparent 0); }
   .chip.cache.pie.due { border-color: var(--warn); background: conic-gradient(var(--warn) var(--pie, 0deg), transparent 0); }
   .chip.cache.stopped { width: 14px; height: 14px; background: linear-gradient(to top right, transparent calc(50% - 1px), var(--warn) calc(50% - 1px), var(--warn) calc(50% + 1px), transparent calc(50% + 1px)); }
-  /* The cache summary line over the stack and the terminals list. A button, so it can open the setting. */
-  .cacheline {
-    display: block; width: 100%; text-align: left; background: none; border: 0; padding: 2px 8px;
-    color: var(--label); font: inherit; font-size: .85em; cursor: pointer; overflow: hidden;
-    text-overflow: ellipsis; white-space: nowrap;
-  }
-  .cacheline[hidden] { display: none; }
-  .cacheline:hover { color: var(--teal); }
   .chip.attach {
     background: var(--chip-accent); border: 1px solid var(--chip-accent-stroke);
     color: var(--chip-accent-text); cursor: pointer;
@@ -823,6 +815,8 @@
   }
   .peek-dh::before { content: "\25B8"; flex: none; width: 1em; }
   .peek-drawer.open > .peek-dh::before { content: "\25BE"; }
+  .peek-drawer.fixed > .peek-dh { cursor: default; }
+  .peek-drawer.fixed > .peek-dh::before { content: none; }
   .peek-dh:hover, .peek-dh:focus-visible { color: var(--head); }
   .peek-dh b { flex: none; font-weight: 600; }
   .peek-drawer[data-key="need"] > .peek-dh b { color: var(--warn); }
