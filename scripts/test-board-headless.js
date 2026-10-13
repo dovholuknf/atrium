@@ -20,6 +20,18 @@ const os = require("os");
 const crypto = require("crypto");
 const { wholeBoard } = require("./board-source.js");
 
+// THE WHOLE SUITE IS FOR AFTER LANDING. Every unit in one run is most of a quarter of an hour, and before handing back
+// a worker runs scripts/test-touched.sh, which runs the units its diff touched. A run of some units (HEADLESS_UNITS,
+// HEADLESS_ONLY, section names as arguments) or a listing is always allowed. The whole run takes FULL_SUITE=1.
+if (process.env.FULL_SUITE !== "1" && !process.env.HEADLESS_UNITS && !process.env.HEADLESS_LIST &&
+    !process.env.HEADLESS_ONLY && !process.argv.slice(2).length) {
+  console.error("test-board-headless.js runs the whole board suite, and refuses to without FULL_SUITE=1.\n" +
+    "before handing back, run scripts/test-touched.sh, which runs what your diff touched.\n" +
+    "a few units: HEADLESS_UNITS=a,b node scripts/test-board-headless.js\n" +
+    "the whole suite, after landing: FULL_SUITE=1 node scripts/test-board-headless.js");
+  process.exit(2);
+}
+
 // One clock for the whole suite, so no section depends on the time of day the
 // run happens to start. A fixture built from Date.now() and checked as HH:MM
 // broke whenever the real time sat near midnight, because the board then

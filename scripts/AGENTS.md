@@ -21,6 +21,10 @@ Most take `-WhatIf`, `-Check` or a dry run by default.
 - `test-time-guard.sh` fails a package over 60s or a test over 5s unless `test-time-allow.txt` names it.
 - `check-test-globals.go` fails on a `_test.go` file assigning a package-level var. Hooks, delays and clocks belong on
   the struct that uses them.
+- **`test-touched.sh` is what a worker runs before handing back**: the Go packages, headless units and node tests
+  its diff touched, each with the reason it was picked (`test-touched-plan.js` makes the plan,
+  `test-touched-selftest.js` checks it). The whole board suite is for after landing: `check-board.sh`,
+  `test-board-headless.js` and `test-board-sharded.js` refuse a full run without `FULL_SUITE=1`.
 - `check-board.sh` syntax-checks the board, which nothing else parses before a browser does. `check-powershell.ps1`
   checks every `.ps1` parses, Windows job only. The `test-*.ps1` files are tests of scripts and run on Windows only.
 - **`merge-check.ps1` is every check a merge needs**, and refuses a branch that adds a `CLAUDE.md`. Those are

@@ -91,7 +91,8 @@ assignment replaces; `addEventListener` is not. The file picker uses assignment 
 ## What checks it
 
 ```bash
-bash scripts/check-board.sh
+# the whole suite, after landing. before handing back, scripts/test-touched.sh runs what the diff touched
+FULL_SUITE=1 bash scripts/check-board.sh
 ```
 
 Two of the things it runs are about this:

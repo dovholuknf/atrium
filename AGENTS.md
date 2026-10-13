@@ -211,6 +211,21 @@ CRITICAL. Do not weaken them without an explicit reason.
    one and resolves it through `internal/safepath`, which follows symlinks on both sides. Everything outside a
    card answers `403` whether or not it exists, so the endpoint is not an oracle for what is on the machine.
 
+## Testing
+
+Before handing back, run `bash scripts/test-touched.sh` (or `scripts/test-touched.ps1`) and nothing else. It diffs
+against `claude/main` (`--base REF` for another) and runs the changed Go packages, the headless board units mapped
+from the changed board files plus `bootClean`, and the node tests whose subject changed. It prints what it picked and
+why, and exits non-zero on any failure. `--plan` prints the plan and stops.
+
+The whole suite runs after landing, by whoever lands. A red there is a follow-up, not a reason to run it all first.
+`check-board.sh`, `test-board-headless.js` and `test-board-sharded.js` refuse a full run without `FULL_SUITE=1`,
+which CI (`scripts/ci.sh`), `make check` and `merge-check.ps1` set.
+
+To run a few headless units by hand, name them: `HEADLESS_UNITS=bootClean,pulls node scripts/test-board-headless.js`,
+or `node scripts/test-board-sharded.js --local --units bootClean,pulls` for parallel shards. `HEADLESS_LIST=1` lists
+the units.
+
 ## Branching and landing work
 
 A feature is not done until it lands cleanly on `dovholuknf/atrium:main`. That is the bar, not "it works on my

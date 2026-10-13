@@ -26,7 +26,7 @@ For each SHA a doer reported as HUB-ONLY and I have not yet landed:
 ```
 cd D:\worktrees\claude\atrium\orchestrator
 git cherry-pick -x <sha>
-bash scripts/check-board.sh        # exit 0 required; the skin-reconcile test is flaky, rerun once to confirm
+FULL_SUITE=1 bash scripts/check-board.sh   # exit 0 required; the skin-reconcile test is flaky, rerun once to confirm
 go build -o build.claude\atrium.exe ./cmd/atrium
 ```
 

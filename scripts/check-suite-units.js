@@ -7,6 +7,8 @@ const path = require("path");
 const HERE = __dirname;
 const real = path.join(HERE, "test-board-headless.js");
 const probe = path.join(HERE, "_unit-guard-probe.js");
+// process.exit inside the try below skips its finally, so the probe is removed on exit too, or it is left in the tree.
+process.on("exit", () => { try { fs.unlinkSync(probe); } catch (e) {} });
 const list = env => spawnSync(process.execPath, [path.join(HERE, "test-board-sharded.js"), "--list", "--local"], { env: Object.assign({}, process.env, env), encoding: "utf8" });
 try {
   const src = fs.readFileSync(real, "utf8");

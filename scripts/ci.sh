@@ -313,7 +313,8 @@ fi
 
 if step board "the board"; then
   # Includes the headless browser run. Any screenshots it takes go under build.claude/ and are not compared.
-  check "board" bash scripts/check-board.sh
+  # The whole suite, so it says so: check-board.sh refuses a full run without FULL_SUITE=1.
+  check "board" env FULL_SUITE=1 bash scripts/check-board.sh
 fi
 
 if step skins "the skins"; then
@@ -370,10 +371,11 @@ if step powershell "the PowerShell scripts parse"; then
 fi
 
 if step ps-tests "the PowerShell tests"; then
-  # The test-*.ps1 scripts, on Windows only. test-groups.ps1 runs the Go suite in groups and is not a test of its own.
+  # The test-*.ps1 scripts, on Windows only. test-groups.ps1 runs the Go suite in groups and test-touched.ps1 runs what a
+  # diff touched, so neither is a test of its own.
   if [ "$os" = windows ] && command -v pwsh >/dev/null 2>&1; then
     for t in scripts/test-*.ps1; do
-      [ "$(basename "$t")" = test-groups.ps1 ] && continue
+      case "$(basename "$t")" in test-groups.ps1|test-touched.ps1) continue ;; esac
       check "$(basename "$t")" pwsh -NoProfile -File "$t"
     done
   elif [ "$os" = windows ]; then
