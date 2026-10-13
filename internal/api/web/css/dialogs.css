@@ -793,6 +793,7 @@
   .close-wt { margin: 8px 0; padding: 8px 10px; border: 1px solid rgba(var(--stroke-rgb), .6); border-radius: 6px; }
   .close-wt .cw-what { font: 500 var(--fs-sm)/1.4 var(--sans); }
   .close-wt .cw-why { color: var(--dim); font: var(--fs-sm)/1.4 var(--sans); margin-top: 2px; }
+  #ask-body li.warn { color: rgb(var(--warn-rgb)); }
   .close-wt .cw-pick { display: flex; gap: 14px; margin-top: 6px; flex-wrap: wrap; }
   .close-wt .cw-pick label { cursor: pointer; }
   .close-wt .cw-pick label.cw-del { color: var(--danger); }

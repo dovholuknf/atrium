@@ -17048,7 +17048,10 @@ async function closeOneDialogSection(browser, base) {
     if (first.title !== "close openziti/ziti-console #967?") fail("closeOne: the title is " + first.title);
     if (first.buttons !== "cancel,close it") fail("closeOne: the buttons are " + first.buttons);
     if (first.rows !== 1 || first.checked !== "stash") fail("closeOne: rows " + first.rows + ", chosen " + first.checked);
-    if (!/ziti-console \(470 MB\)/.test(first.body) || !/Frees \(480 MB\)/.test(first.body)) fail("closeOne: the dialog does not say the worktree's real size: " + first.body);
+    if (!/ziti-console \(470 MB\)/.test(first.body) || !/Closing deletes \(480 MB\)/.test(first.body)) fail("closeOne: the dialog does not say the worktree's real size: " + first.body);
+    // u-005: what goes is said before it goes, with work on no remote said first
+    if (!/one folder holds work that is on no remote/.test(first.body)) fail("closeOne: the dialog does not warn of unpushed work: " + first.body);
+    if (!/the branch here claude\/x/.test(first.body)) fail("closeOne: the branch is not named in words: " + first.body);
     if (/work only this worktree has/.test(first.body)) fail("closeOne: the old second dialog's words are in it");
     await shot(p, "close-dialog");
     // STASH IS THE DEFAULT (f-close-stash-default): the stash choice has the focus, so Enter takes it
