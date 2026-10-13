@@ -354,23 +354,12 @@
      pushed to the far end, so the label and its caret stay together. */
   details > summary { list-style: none; }
   details > summary::-webkit-details-marker { display: none; }
-  /* The launch dialog's optional half. The marker is suppressed above for every summary on the board, so this
-     draws its own caret and turns it, the way the card groups do. Styled as a quiet row rather than a button:
-     it is a thing to walk past, and the fields it hides are ones most launches never answer. */
-  #l-more > summary {
-    display: flex; align-items: center; gap: var(--sp-2); cursor: pointer;
-    font: 600 var(--fs-xxs)/1 var(--sans); letter-spacing: .16em; text-transform: uppercase;
-    color: var(--label); padding: 0 0 12px; user-select: none;
-  }
-  #l-more > summary:hover { color: var(--head); }
-  #l-more[open] > summary { color: var(--chip-accent-text); padding-bottom: 16px; }
-  /* A shut panel is its heading and nothing else, so it is no taller than one. */
-  #l-more.dlg-sec:not([open]) { padding-bottom: 4px; background: transparent; border-style: dashed; }
-  #l-more > summary::before {
-    content: "\25B8"; display: inline-block; transition: transform .12s; color: var(--dimmest);
-  }
-  #l-more[open] > summary::before { transform: rotate(90deg); }
-  #l-more > summary .more-note { text-transform: none; letter-spacing: 0; font-weight: 500; color: var(--dimmest); }
+  /* The launch dialog's model and effort: one line under the runner, two boxes sharing it. */
+  #launch .l-opts { display: flex; gap: var(--sp-2); }
+  #launch .l-opts > span { flex: 1 1 0; min-width: 0; }
+  #launch .l-opts > span[hidden] { display: none; }
+  #launch .l-opts input { width: 100%; }
+  #launch #l-runner-opts:has(#l-model-field[hidden]):has(#l-effort-field[hidden]):has(#l-model-pick[hidden]) { display: none; }
   /* HOVER NEVER CHANGES LAYOUT HERE. A button's lift (`transform` above) moved the control under the pointer by a pixel,
      which at the edge of a button flips the hover off and on, and a field that shifted as the mouse crossed it read as
      the form jumping. Hover is colour only in this dialog: no size, border width, padding, margin or offset. */
@@ -789,14 +778,16 @@
   /* What a number is counted in, said beside the box at the size of a hint. */
   dialog .picker > .unit { font-size: var(--fs-sm); color: var(--dim); white-space: nowrap; }
 
-  /* The step a pasted link is on, over the board while it opens. A line and not a dialog: the screen stays where it was. */
-  #open-progress {
-    position: fixed; left: 50%; bottom: 22px; transform: translateX(-50%); z-index: 60;
-    max-width: min(80vw, 640px); padding: 8px 14px; border: 1px solid var(--stroke-dim); border-radius: 8px;
-    background: var(--lift); color: var(--head); font: 500 var(--fs-sm)/1.3 var(--sans);
-    box-shadow: 0 6px 20px rgba(0,0,0,.28); pointer-events: none;
-  }
-  #open-progress[hidden] { display: none; }
+  /* A pasted link while it opens, drawn as the card it is becoming (js/link-opening.js). */
+  .card.linkopen { border-style: dashed; cursor: default; }
+  .card.linkopen.failed { border-color: var(--warn); border-style: solid; }
+  .linkopen-url { color: var(--dimmest); font: var(--fs-xs)/1.3 var(--mono); overflow-wrap: anywhere; margin-top: 2px; }
+  .linkopen-say { display: flex; align-items: center; gap: 8px; color: var(--dim); font: 500 var(--fs-sm)/1.35 var(--sans); margin-top: 6px; }
+  .linkopen-say.warn { color: var(--warn); overflow-wrap: anywhere; }
+  .linkopen-spin { width: 10px; height: 10px; flex: none; border-radius: 50%; border: 2px solid var(--stroke-dim);
+    border-top-color: var(--teal); animation: linkopen-spin .9s linear infinite; }
+  @keyframes linkopen-spin { to { transform: rotate(360deg); } }
+  .linkopen-acts { display: flex; gap: 6px; margin-top: 8px; }
 
   /* THE CLOSE DIALOG: the summary, a row per asked worktree with its choice inline, then the steps as they run. */
   .close-wt { margin: 8px 0; padding: 8px 10px; border: 1px solid rgba(var(--stroke-rgb), .6); border-radius: 6px; }
