@@ -31,7 +31,7 @@ all_steps="machine toolchain gofmt go-vet go-build go-test go-race time-guard go
 only=""
 while [ $# -gt 0 ]; do
   case "$1" in
-    --only) only="${2:-}"; shift 2 || break ;;
+    --only) [ $# -ge 2 ] && [ -n "$2" ] || { echo "--only needs a step name. steps: $all_steps" >&2; exit 2; }; only="$2"; shift 2 ;;
     --only=*) only="${1#--only=}"; shift ;;
     --list) echo $all_steps | tr ' ' '\n'; exit 0 ;;
     -h|--help) sed -n '2,8p' "$0"; exit 0 ;;
@@ -61,8 +61,14 @@ mark_fail() { fail=1; nfail=$((nfail + 1)); }
 # stream, every failed package's whole output, every test's time, the goroutine dumps a failing test writes, and
 # summary.md.
 artefacts="build.claude/ci"
+# --only keeps the last go-test.json unless go-test is being rerun, so time-guard can read it.
+kept=""
+if [ -n "$only" ] && [ -f "$artefacts/go-test.json" ]; then
+  case ",$only," in *",go-test,"*) ;; *) kept="$(mktemp)"; cp "$artefacts/go-test.json" "$kept" ;; esac
+fi
 rm -rf "$artefacts"
 mkdir -p "$artefacts/goroutines"
+if [ -n "$kept" ]; then mv "$kept" "$artefacts/go-test.json"; fi
 steps_tsv="$artefacts/steps.tsv"
 : > "$steps_tsv"
 # Read by internal/testdiag. An absolute path, because each test binary runs in its own package's folder.
@@ -294,7 +300,8 @@ if step time-guard "test time guard"; then
   if [ -f "$artefacts/go-test.json" ]; then
     check "test time guard" bash scripts/test-time-guard.sh "$artefacts/go-test.json"
   else
-    echo "skipped: no $artefacts/go-test.json, run the go-test step first."
+    echo "FAILED: no $artefacts/go-test.json to read. run the go-test step first." >&2
+    mark_fail
   fi
 fi
 
