@@ -1867,6 +1867,8 @@ function connect() {
     // here and the next health poll either confirms it or clears it a few
     // seconds later.
     alerting.settling(true);
+    // The growlers the reopened stream says first were open before it dropped, so they seed rather than ring.
+    if (typeof growlReseed === "function") growlReseed();
     // AND PULL THE CARDS NOW, not at the next poll. The stream reopening is the
     // first sign the daemon is back, and without this the board sat on whatever
     // it held when the hub went, for up to a poll interval, while the badge

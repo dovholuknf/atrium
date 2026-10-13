@@ -22476,6 +22476,73 @@ async function noReadyChildrenSection(browser, base) {
   if (!bad) console.log("noReadyChildren ok");
 }
 
+// ── a wait found, not happened, never rings ──────────────────────────────────
+// 2026-10-13: a minute after a hub deploy the operator was told about a card whose turn ended a week before. Only a
+// turn that ends while the board is open is news. A card waiting since days ago is quiet whether it is there at load,
+// arrives after a hub start served no cards, or starts counting later (an idle agent card cardsReady now takes in).
+// Nobody is looking, so every alert would reach the OS notification, and each one is also in the bell's log.
+async function readyNoSeedSection(browser, base) {
+  const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+  const page = await ctx.newPage();
+  const errors = [];
+  page.on("pageerror", e => errors.push(String(e)));
+  await page.addInitScript(() => {
+    window.__atriumReadyQuietMs = 300;
+    Document.prototype.hasFocus = () => false;
+    window.__notes = [];
+    window.Notification = function (title, o) { this.title = title; this.o = o; window.__notes.push(this); };
+    window.Notification.permission = "granted";
+    window.Notification.requestPermission = async () => "granted";
+    window.Notification.prototype.close = function () {};
+  });
+  const week = new Date(Date.now() - 7 * 86400000).toISOString();
+  const card = (id, status, extra) => ({ id, wire_name: id, status, supervised: true, tags: [], title: id,
+    display_title: id, created_at: "2026-09-01T10:00:00Z", ...extra });
+  const old = card("rns-old", "needs-input", { waiting_since: week });
+  const late = card("rns-late", "needs-input", { waiting_since: week });
+  const idle = card("rns-idle", "needs-input", { waiting_since: week, tags: ["origin:agent"] });
+  const turn = card("rns-turn", "running");
+  let rows = [old, turn];
+  await page.route(u => new URL(u).pathname === "/v1/tasks", route =>
+    route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ tasks: rows }) }));
+  try {
+    await page.goto(base, { waitUntil: "domcontentloaded" });
+    await page.waitForFunction(() => typeof alerting !== "undefined" && typeof refresh === "function", null,
+      { timeout: slow(15000) });
+    await page.waitForTimeout(1500);
+    await page.evaluate(() => alerting.set({ debounce: 0, muted: true, desktop: true }));
+    const step = async list => {
+      rows = list;
+      await page.evaluate(() => refresh());
+      await page.waitForTimeout(800);
+    };
+    const said = () => page.evaluate(() => ({
+      notes: window.__notes.map(n => n.title).filter(t => /^rns-/.test(t)),
+      toasts: [...document.querySelectorAll("#toasts .toast")].map(t => t.textContent).filter(t => /rns-/.test(t)),
+      log: toastLog().filter(e => /^rns-/.test(e.title)).map(e => e.title + " x" + (e.n || 1))
+    }));
+    const none = (what, s) => { if (s.notes.length || s.toasts.length || s.log.length) fail("readyNoSeed: " + what + ": " + JSON.stringify(s)); };
+    await step([old, turn]);
+    none("a card waiting a week at load was announced", await said());
+    // a hub start served the board before its room came back, then the room's cards arrive, a week old
+    await step([]);
+    await step([old, late, turn]);
+    none("a week-old wait arriving after the first pass was announced", await said());
+    // an idle agent card that only starts counting on a later poll
+    await step([old, late, idle, turn]);
+    none("an idle agent card counted by a later poll was announced", await said());
+    // a turn that ends now is the one event: one line in the log, said once as a notification or a toast
+    await step([old, late, idle, card("rns-turn", "needs-input", { waiting_since: new Date().toISOString() })]);
+    await page.waitForTimeout(600);
+    const s = await said();
+    if (s.log.join() !== "rns-turn is ready x1" || s.notes.length + s.toasts.length !== 1) {
+      fail("readyNoSeed: a turn that ended while the board was open was not exactly one notification: " + JSON.stringify(s));
+    }
+    if (errors.length) fail("readyNoSeed: page errors: " + errors.join(" | "));
+  } finally { await ctx.close(); }
+  if (!bad) console.log("readyNoSeed ok");
+}
+
 // A spawned card is drawn under its parent's row, under every sort and group mode. An orphan stays a row.
 async function childUnderParentSection(browser, base) {
   const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 } });
@@ -28658,7 +28725,7 @@ async function main() {
       mPull: mPullSection, joinedLive: joinedLiveSection, termEnded: termEndedSection, joinedClick: joinedClickSection,
       coverPoll: coverPollSection, coverSteps: coverStepsSection, termBox: termBoxSection, termRowBleed: termRowBleedSection,
       termDebug: termDebugSection, termDebugPerCard: termDebugPerCardSection, termLag: termLagSection, termHiddenRedraw: termHiddenRedrawSection, termLastRead: termLastReadSection, termSortStarted: termSortStartedSection,
-      noReadyChildren: noReadyChildrenSection, childUnderParent: childUnderParentSection, topNav: topNavSection, boardUsage: boardUsageSection, tabsOrder: tabsOrderSection,
+      noReadyChildren: noReadyChildrenSection, readyNoSeed: readyNoSeedSection, childUnderParent: childUnderParentSection, topNav: topNavSection, boardUsage: boardUsageSection, tabsOrder: tabsOrderSection,
       groupMenus: groupMenusSection, mGroupMenus: mGroupMenusSection,
       u002: u002Section, childFold: childFoldSection, liveHome: liveHomeSection, toastsTop: toastsTopSection, groupBridge: groupBridgeSection, revealFolds: revealFoldsSection,
       pulls: pullsSection, prMove: prMoveSection, quickPaste: quickPasteSection, recogniserRepo: recogniserRepoSection, hubRepos: hubReposSection, hubReposShelf: hubReposShelfSection, hubReposLedger: hubReposLedgerSection, hubReposFeed: hubReposFeedSection, changeReq: changeReqSection, mChangeReq: mChangeReqSection, trayHead: trayHeadSection, pullsAbsent: pullsAbsentSection, pullsPanelStage: pullsPanelStageSection, oneTooltip: oneTooltipSection, burnChart: burnChartSection, burnReadout: burnReadoutSection, switchPrewarm: switchPrewarmSection, attachAtOnce: attachAtOnceSection, fileView: fileViewSection, keepAlive: keepAliveSection, switchBackCost: switchBackCostSection, keepMemory: keepMemorySection, pullsDrawer: pullsDrawerSection };
@@ -30693,6 +30760,7 @@ async function main() {
     await unit("pullsAbsent",() => pullsAbsentSection(browser, base));
     await unit("oneTooltip", () => oneTooltipSection(browser, base));
     await unit("noReadyChildren", () => noReadyChildrenSection(browser, base));
+    await unit("readyNoSeed", () => readyNoSeedSection(browser, base));
     await unit("childUnderParent", () => childUnderParentSection(browser, base));
     await unit("childFold", () => childFoldSection(browser, base));
     await unit("liveHome", () => liveHomeSection(browser, base));
@@ -31937,7 +32005,7 @@ async function growlOffSection(browser, base) {
       if (await p.$("#growl-phone:not([hidden]) *")) fail("growlOff: a " + reason + " drew the phone strip.");
       const after = await heard();
       if (after.osc !== before.osc) fail("growlOff: a " + reason + " rang a growler tone.");
-      if (!(await logged("growler: " + reason + " c"))) fail("growlOff: a " + reason + " left no line in the bell log.");
+      if (!(await logged(reason + " c"))) fail("growlOff: a " + reason + " left no line in the bell log.");
       if (await p.evaluate(() => growlMark !== "")) fail("growlOff: a " + reason + " put the growler dot on the favicon.");
       // the existing notify setting decides the desktop notification
       if (after.notes !== before.notes + 1) fail("growlOff: a " + reason + " raised " + (after.notes - before.notes) + " desktop notifications with notify on.");
@@ -31949,17 +32017,22 @@ async function growlOffSection(browser, base) {
     await h.say([GR("c", "question", 2)]);
     await p.waitForTimeout(300);
     if ((await heard()).notes !== n0) fail("growlOff: a desktop notification came through with notify switched off.");
-    if (!(await logged("growler: question c"))) fail("growlOff: the held question left no log line.");
+    if (!(await logged("question c"))) fail("growlOff: the held question left no log line.");
     await p.evaluate(() => setNotifyOff(false));
     // a reminder from the hub rings nothing and draws nothing, but keeps the desktop notification
     const q = GR("c", "question", 3);
     await h.say([q]);
     const r0 = await heard();
+    const times = t => p.evaluate(t0 => toastLog().filter(e => e.title === t0).reduce((s, e) => s + (e.n || 1), 0), t);
+    const q0 = await times("question c");
     await h.say([Object.assign({}, q, { reminders: 1 })], { remind: [q.id] });
     await p.waitForTimeout(300);
     const r1 = await heard();
     if (await drawn() || r1.osc !== r0.osc) fail("growlOff: a hub reminder drew or rang: " + JSON.stringify([r0, r1]));
-    if (!(await logged("growler reminder: question c"))) fail("growlOff: a hub reminder was not logged.");
+    if (!(await times("question c") > q0)) fail("growlOff: a hub reminder was not logged.");
+    // the bell is read by a person: the growler's title alone, never this file's name for the event in front of it
+    const prefixed = await p.evaluate(() => toastLog().map(e => e.title).filter(t => /^growler/.test(t)));
+    if (prefixed.length) fail("growlOff: the bell log carries an internal prefix: " + JSON.stringify(prefixed));
     // a dismissal draws no undo bar
     await p.evaluate(g => growlPost(g, { do: "dismiss" }, true), q);
     await p.waitForTimeout(300);
@@ -31972,7 +32045,7 @@ async function growlOffSection(browser, base) {
     await p.waitForTimeout(300);
     if (await drawn()) fail("growlOff: a permission drew a growler.");
     if ((await heard()).osc !== b0.osc) fail("growlOff: a permission rang the growler's tone.");
-    if (!(await logged("growler: permission a"))) fail("growlOff: a permission left no log line.");
+    if (!(await logged("permission a"))) fail("growlOff: a permission left no log line.");
     if (await p.evaluate(g => growlHas(g.subject), pr)) fail("growlOff: growlHas still held the permission's nag back.");
     // and a real pending permission, through the ordinary path: its keyed toast stays and its tone rings
     await p.evaluate(() => { alerting.set({ debounce: 0, muted: false }); Document.prototype.hasFocus = () => true; window.dispatchEvent(new Event("focus")); });
@@ -32036,13 +32109,13 @@ async function growlRemindSection(browser, base) {
     const rows = () => p.evaluate(() => [...document.querySelectorAll("#toastlog-list .tlrow")].map(r => ({
       t: r.querySelector("b").textContent, btns: [...r.querySelectorAll(".tlremind")].map(b => b.textContent) })));
     let r = await rows();
-    const mine = r.find(x => x.t.startsWith("growler: question c"));
+    const mine = r.find(x => x.t.startsWith("question c"));
     if (!mine || mine.btns.join() !== "remind me") fail("growlRemind: the open growler's bell row was " + JSON.stringify(mine));
-    const ended = r.find(x => x.t.startsWith("growler: question e"));
+    const ended = r.find(x => x.t.startsWith("question e"));
     if (!ended || ended.btns.length) fail("growlRemind: an ended growler's bell row offered a control: " + JSON.stringify(ended));
     await p.click('#toastlog-list .tlremind[data-remind="menu"]');
     r = await rows();
-    if (r.find(x => x.t.startsWith("growler: question c")).btns.join() !== "15 min,1 h,tomorrow 9am") fail("growlRemind: the options were " + JSON.stringify(r));
+    if (r.find(x => x.t.startsWith("question c")).btns.join() !== "15 min,1 h,tomorrow 9am") fail("growlRemind: the options were " + JSON.stringify(r));
     await p.click('#toastlog-list .tlremind[data-remind="60"]');
     await p.waitForTimeout(300);
     const post = h.posts.find(x => x.id === q.id);
@@ -32085,7 +32158,7 @@ async function growlQuietSection(browser, base) {
     await h.say([row]);
     // a growler appearing is one log line, and so is it leaving
     let l = await log();
-    if (l.filter(t => t === "growler: permission a").length !== 1) fail("growlQuiet: raising logged " + JSON.stringify(l));
+    if (l.filter(t => t === "permission a").length !== 1) fail("growlQuiet: raising logged " + JSON.stringify(l));
     // the nag steps aside for a permission with a growler
     const old = { id: "perm-a", requested_at: new Date(Date.now() - 3 * 60000).toISOString(), tool: "Bash", command: "rm -rf build", agent: "x", task_id: "a" };
     const before = l.length;
@@ -32115,7 +32188,7 @@ async function growlQuietSection(browser, base) {
     // the hub resets raised_at when a snooze ends
     await h.say([Object.assign({}, row, { raised_at: new Date(GR_T0 + 99 * 60000).toISOString() })], { remind: [row.id] });
     l = await log();
-    if (l.filter(t => t === "growler: permission a").length !== 2) fail("growlQuiet: a snooze ending did not log a new raise: " + JSON.stringify(l));
+    if (l.filter(t => t === "permission a").length !== 2) fail("growlQuiet: a snooze ending did not log a new raise: " + JSON.stringify(l));
     // a hub never asks for the set, at load or later
     await p.waitForTimeout(1500);
     if (h.gets) fail("growlQuiet: the board fetched /_hub/growls " + h.gets + " times.");
@@ -32177,7 +32250,7 @@ async function growlAttentionSection(browser, base) {
     if (!s.osc) fail("growlAttention: a raise made no sound.");
     let notes = await p.evaluate(() => window.__notes);
     if (notes.length !== 1 || notes[0].tag !== "atrium-growl:" + a.id || notes[0].req !== true) fail("growlAttention: the notification was " + JSON.stringify(notes));
-    if ((await log()).filter(t => t === "growler: permission a").length !== 1) fail("growlAttention: the raise was not one log line: " + JSON.stringify(await log()));
+    if ((await log()).filter(t => t === "permission a").length !== 1) fail("growlAttention: the raise was not one log line: " + JSON.stringify(await log()));
 
     // the tab title alternates and the favicon wears the count
     await p.waitForFunction(() => /^! /.test(document.title), null, { timeout: slow(3000) })
@@ -32200,10 +32273,13 @@ async function growlAttentionSection(browser, base) {
     // a reminder rings the tone and notifies under the same tag again
     await focus(false);
     const before = await n();
+    const said = () => p.evaluate(() => toastLog().filter(e => e.title === "permission a").reduce((s, e) => s + (e.n || 1), 0));
+    const said0 = await said();
     await h.say([old, Object.assign({}, a, { reminders: 1 }), GR("b", "question", 2)], { remind: [a.id] });
     s = await n();
     if (s.osc <= before.osc || s.notes !== before.notes + 1) fail("growlAttention: a reminder was " + JSON.stringify([before, s]));
-    if (!(await log()).includes("growler reminder: permission a")) fail("growlAttention: the reminder was not logged.");
+    if (!(await said() > said0)) fail("growlAttention: the reminder was not logged.");
+    if ((await log()).some(t => /^growler/.test(t))) fail("growlAttention: the bell log carries an internal prefix: " + JSON.stringify(await log()));
     notes = await p.evaluate(() => window.__notes);
     if (notes[notes.length - 1].tag !== "atrium-growl:" + a.id || notes[notes.length - 1].renotify !== true) fail("growlAttention: the reminder notification was " + JSON.stringify(notes[notes.length - 1]));
 
@@ -32511,7 +32587,7 @@ async function growlOnItSection(browser, base) {
     await stage("c", true);
     let r = await raise("question");
     if (r.drawn || r.rang || r.noted) fail("growlOnIt: a question for the attached, focused card was " + JSON.stringify(r));
-    if (await logged("growler: question c") || await count()) fail("growlOnIt: the quiet question entered the log.");
+    if (await logged("question c") || await count()) fail("growlOnIt: the quiet question entered the log.");
     // the paste confirmation and the ready alert for the card you are on do not count either
     await p.evaluate(() => toastUnlogged("in the working directory", "/x/y"));
     await p.evaluate(() => alerting.check("waiting", [], t => ({ title: t.id + " is ready", body: "" })));
@@ -32545,7 +32621,7 @@ async function growlOnItSection(browser, base) {
     await h.say([Object.assign({}, r.g, { reminders: 1 })], { remind: [r.g.id] });
     await p.waitForTimeout(200);
     if (!(await drawn())) fail("growlOnIt: a reminder with you elsewhere did not bring the question back.");
-    if (!(await logged("growler: question c"))) fail("growlOnIt: the question that came back was not logged.");
+    if (!(await logged("question c"))) fail("growlOnIt: the question that came back was not logged.");
     // with no reminder involved, "you are on it" ending draws the hidden growler, and rings nothing
     const comesBack = async (what, change) => {
       await stage("c", true);
@@ -32586,7 +32662,7 @@ async function growlOnItSection(browser, base) {
     if (await drawn()) fail("growlOnIt: the board drew a question for a card whose pop-out is focused.");
     const inPop = await pop.evaluate(() => /\S/.test((document.getElementById("growl") || {}).textContent || ""));
     if (inPop) fail("growlOnIt: the focused pop-out drew a question for its own card.");
-    if (await logged("growler: question c")) fail("growlOnIt: the pop-out case logged a growler you were on.");
+    if (await logged("question c")) fail("growlOnIt: the pop-out case logged a growler you were on.");
     const bh = await heard();
     if (bh.osc !== osc0 || bh.notes !== bh0) fail("growlOnIt: the board rang for the pop-out's card: " + JSON.stringify(bh));
     // the pop-out blurs: the hidden growler is drawn on the board, with no reminder and no ring

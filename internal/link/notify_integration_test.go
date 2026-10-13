@@ -832,3 +832,50 @@ func TestChangesReachTheOwningRoomWithTheQueryIntact(t *testing.T) {
 		}
 	}
 }
+
+// A HUB START IS NOT A TURN END (2026-10-13). The store remembers what the last process notified about, and a deploy
+// that starts counting cards it left out (ad0f1582 took in idle agent cards) found identities it had never stored and
+// fired them all a minute after the restart, one of them a week old. The first plan after a start seeds every room,
+// whatever the store says, and only a transition after that notifies: for a normal card and an origin:agent one.
+func TestNotifyFirstPlanAfterRestartSeedsEveryReadyCard(t *testing.T) {
+	before, st, was := armed(t)
+	before.Announced("sparta", nil)
+	normal := ncard("a", `,"status":"needs-input","waiting_since":"T1","seen":{"turn_ended_at":"T0"}`)
+	before.Announced("sparta", []CardState{normal})
+	until(t, "the first process's notice", func() bool { return was.count() == 1 })
+
+	// The restart: a new notifier over the same store, the room still marked seeded in it. A normal card waiting since
+	// before, another whose identity the store lost, and an idle agent card the old rule never stored.
+	n := NewNotifier(st)
+	rs := &recSink{}
+	n.SetSink(rs)
+	ctx, stop := context.WithCancel(context.Background())
+	t.Cleanup(stop)
+	n.Start(ctx)
+	other := ncard("b", `,"status":"needs-input","waiting_since":"T1","seen":{"turn_ended_at":"T0"}`)
+	agent := ncard("w", idleAgent)
+	n.Announced("sparta", []CardState{normal, other, agent})
+	settle()
+	if rs.count() != 0 {
+		t.Fatalf("the first plan after a restart notified %d times: %+v", rs.count(), rs.got)
+	}
+	n.Announced("sparta", []CardState{normal, other, agent})
+	settle()
+	if rs.count() != 0 {
+		t.Fatalf("the second plan with nothing changed notified %d times", rs.count())
+	}
+
+	// A normal card's turn ends.
+	n.Announced("sparta", []CardState{normal, other, agent,
+		ncard("c", `,"status":"needs-input","waiting_since":"T2","seen":{"turn_ended_at":"T2"}`)})
+	until(t, "the normal card's notice", func() bool { return rs.count() == 1 })
+	// The agent card's next turn ends.
+	agent2 := ncard("w", `,"status":"needs-input","waiting_since":"T3","tags":["origin:agent"],"seen":{"turn_ended_at":"T3"}`)
+	n.Announced("sparta", []CardState{normal, other, agent2,
+		ncard("c", `,"status":"needs-input","waiting_since":"T2","seen":{"turn_ended_at":"T2"}`)})
+	until(t, "the agent card's notice", func() bool { return rs.count() == 2 })
+	settle()
+	if rs.count() != 2 || rs.got[0].Card != "sparta~c" || rs.got[1].Card != "sparta~w" {
+		t.Fatalf("the transitions notified %+v", rs.got)
+	}
+}
