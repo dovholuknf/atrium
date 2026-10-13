@@ -503,6 +503,7 @@ function peekDrawers(box) {
 // The recap's tail behind a click: shown only where the text runs past its four lines.
 function peekRecap(box) {
   const text = box.querySelector(".peek-rtext"), more = box.querySelector(".peek-more");
+  if (typeof qaClamp === "function") qaClamp(box);
   if (!text || !more) return;
   more.hidden = !(text.scrollHeight > text.clientHeight + 1);
   more.onclick = () => {
@@ -610,13 +611,20 @@ document.addEventListener("pointermove", e => {
 // pushed in from any edge it would cross, and above the pointer when there is
 // no room below. With no pointer known (a menu opened from the keyboard) it
 // goes under the anchor, the card's element or a point.
+let peekLast = null;
 function peekPlace(anchor, at) {
   const el = peekPop();
+  peekLast = { anchor, at };
   if (!at) {
     const r = anchor.getBoundingClientRect ? anchor.getBoundingClientRect() : null;
     at = r ? { x: r.left, y: r.bottom } : { x: anchor.x, y: anchor.y };
   }
   popFit(el, { x: at.x + 4, y: at.y }, { gap: 12, slide: true });
+}
+
+// Fit the popup again where it was, after its content changed size (a question opened to its full text).
+function peekRefit() {
+  if (peekLast && peekEl && peekEl.classList.contains("on")) peekPlace(peekLast.anchor, peekLast.at);
 }
 
 function openPeek(id, anchor, mode) {

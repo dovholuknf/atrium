@@ -12783,6 +12783,33 @@ async function peekOneHoverSection(browser, base) {
     await p.evaluate(() => closePeek());
     await p.setViewportSize({ width: W, height: H });
 
+    // A long question shows three lines and "click to expand". Opening it grows the popup, which stays on screen,
+    // and nothing in the popup scrolls.
+    await p.evaluate(() => {
+      const t = peekCard("sg4-control~oh2");
+      t.seen = Object.assign({}, t.seen, { open_questions: ["Where should the Config builder link go in the ziti-doc sidebar? ".repeat(8).trim()] });
+    });
+    await p.evaluate(() => openPeek("sg4-control~oh2", document.querySelector('#term-list .card.tab[data-id="sg4-control~oh2"]'), "hover"));
+    await new Promise(r => setTimeout(r, 600));
+    const lq = () => p.evaluate(() => {
+      const pop = document.querySelector(".peek.on"), x = pop.querySelector(".qa-qx"), e = pop.querySelector(".qa-exp"), r = pop.getBoundingClientRect();
+      const lh = parseFloat(getComputedStyle(x).lineHeight) || 18;
+      const scrolling = [...pop.querySelectorAll("*")].filter(n => { const o = getComputedStyle(n).overflowY; return (o === "auto" || o === "scroll") && n.scrollHeight > n.clientHeight + 1; }).length;
+      return { lines: Math.round(x.getBoundingClientRect().height / lh), exp: e && !e.hidden ? e.textContent : "", scrolling, top: r.top, bottom: r.bottom, vh: innerHeight, h: r.height };
+    });
+    if (shots) await p.screenshot({ path: shots + "/" + (process.env.ONEHOVER_NAME || "peek") + "-longq.png" });
+    const lq1 = await lq();
+    if (lq1.lines > 3 || lq1.exp !== "click to expand" || lq1.scrolling) fail("onehover: a long question is not cut to 3 lines with a way to expand: " + JSON.stringify(lq1));
+    await p.click(".peek.on .qa-exp");
+    await new Promise(r => setTimeout(r, 300));
+    const lq2 = await lq();
+    if (lq2.lines <= 3 || lq2.exp !== "show less" || lq2.scrolling || lq2.h <= lq1.h) fail("onehover: expanding a question did not grow the popup without scrolling: " + JSON.stringify(lq2));
+    if (lq2.top < 0 || lq2.bottom > lq2.vh) fail("onehover: the expanded popup left the viewport: " + JSON.stringify(lq2));
+    if (shots) await p.screenshot({ path: shots + "/" + (process.env.ONEHOVER_NAME || "peek") + "-longq-open.png" });
+    await p.evaluate(() => closePeek());
+    await p.mouse.move(W / 2, 3);
+    await new Promise(r => setTimeout(r, 400));
+
     const [firstSel, first] = hovered[0] || ["", ""];
     for (const [sel, text] of hovered) {
       if (text !== first) fail("onehover: the details over " + sel + " differ from those over " + firstSel + ":\n  " + text + "\n  " + first);
