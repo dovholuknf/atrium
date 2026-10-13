@@ -159,6 +159,9 @@ function growlApply(next, seed, remind) {
     });
   }
   growlSet = next;
+  // The first set a page hears is what was already open, and a question for the terminal being typed in is not drawn
+  // because the page was reloaded or the stream reopened under it. Quiet like one raised now: nothing logged, nothing rung.
+  if (seed) next.forEach(g => { if (g.state === "open" && growlOnIt(g)) growlQuiet.add(g.id); });
   // An open bell shows each growler's control, so it follows the set.
   const bell = document.getElementById("toastlog");
   if (!seed && bell && bell.open && typeof openToastLog === "function") openToastLog();

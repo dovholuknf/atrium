@@ -270,6 +270,12 @@ if ! node "$here/scripts/test-seen.js"; then
   fail=1
 fi
 
+# The turn-end notification rules, RUN: an idle agent-launched card is a ready alert, and a card being typed in never is.
+if ! node "$here/scripts/test-notify-rules.js"; then
+  echo "a turn end would go unannounced, or a card being typed in would alert. see above." >&2
+  fail=1
+fi
+
 # The same guards in a real browser: that the live-style board paints its task
 # and history lists from the daemon's answers, and that a fetch which hangs
 # forever does not leave the board frozen blank (the watchdog runs a later pass

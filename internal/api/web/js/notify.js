@@ -116,7 +116,10 @@ function watchedCard() {
 // other window: the sound, the toast and the toast forwarded to it.
 function readySilenced(id) {
   if (!id) return false;
-  if (focusIsHere()) return termWatching(id);
+  if (focusIsHere()) {
+    if (termWatching(id)) { noteEngaged(id); return true; }
+    return engagedWith(id);
+  }
   return !!focusIsElsewhere() && !!focusedElsewhere.watch && focusedElsewhere.watch === bareId(id);
 }
 

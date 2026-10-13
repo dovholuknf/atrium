@@ -1367,7 +1367,7 @@ function connectTerm(taskID) {
     }
     const report = isAutoReport(d);
     const lagT = lagKeyDown(report);
-    if (!report) noteTyped(d);
+    if (!report) { noteTyped(d); noteEngaged(termTask && termTask.id); }
     sendInput(d, report);
     lagKeySent(lagT, d.length);
   });
