@@ -450,3 +450,62 @@ func TestAMirrorsIntegrationBranchAndMainAnswerReadOnly(t *testing.T) {
 		t.Errorf("claude/main was pushed: %v\n%s", err, out)
 	}
 }
+
+// ── a room asking its hub over the link ─────────────────────────────────────────────────────────────────────
+
+// A hub that answers the lookup over the link is taken at its word, and the query reaches it whole.
+func TestAskHubLookupTakesTheHubsAnswer(t *testing.T) {
+	var asked []string
+	rt := rtFunc(func(r *http.Request) (*http.Response, error) {
+		asked = append(asked, r.URL.String())
+		return &http.Response{StatusCode: 200, Header: http.Header{}, Body: io.NopCloser(strings.NewReader(
+			`{"state":"found","repo":"github/o/r","branch":"claude/x","branches":[{"name":"claude/x","sources":[{"source":"hub","url":"http://hub/git/hub/github/o/r.git","sha":"` + sha1h + `"}]}]}`))}, nil
+	})
+	ans, err := AskHubLookup(context.Background(), rt, URLQuery{Repo: "o/r", Branch: " claude/x ", Room: "sg4"})
+	if err != nil || ans.State != URLFound || ans.Branches[0].Sources[0].SHA != sha1h {
+		t.Fatalf("answer = %+v %v", ans, err)
+	}
+	if len(asked) != 1 || asked[0] != LinkBase+LinkLookupPath+"?branch=claude%2Fx&repo=o%2Fr&room=sg4" {
+		t.Fatalf("asked %v", asked)
+	}
+}
+
+// A hub older than the lookup answers 404 to it, and the room reads the hub's store instead: its branches,
+// main among them, on the hub's URL, and a note that no room was asked.
+func TestAskHubLookupReadsTheStoreOfAnOlderHub(t *testing.T) {
+	var asked []string
+	rt := rtFunc(func(r *http.Request) (*http.Response, error) {
+		asked = append(asked, r.URL.Path)
+		if r.URL.Path == StorePrefix+"github/o/r.git/info/refs" && r.URL.Query().Get("service") == "git-upload-pack" {
+			body := advert(sha1h+" refs/heads/main", sha2h+" refs/heads/claude/x", sha2h+" refs/tags/v1")
+			return &http.Response{StatusCode: 200, Header: http.Header{}, Body: io.NopCloser(strings.NewReader(string(body)))}, nil
+		}
+		return &http.Response{StatusCode: 404, Header: http.Header{}, Body: io.NopCloser(strings.NewReader("404 page not found"))}, nil
+	})
+	ctx := context.Background()
+	ans, err := AskHubLookup(ctx, rt, URLQuery{Repo: "github.com/o/r", Branch: "claude/x"})
+	if err != nil || ans.State != URLFound || ans.Repo != "github/o/r" || len(ans.Branches) != 1 {
+		t.Fatalf("answer = %+v %v", ans, err)
+	}
+	src := ans.Branches[0].Sources
+	if len(src) != 1 || src[0].Source != "hub" || src[0].SHA != sha2h || src[0].URL != LinkBase+"/git/hub/github/o/r.git" {
+		t.Fatalf("sources = %+v", src)
+	}
+	if !strings.Contains(ans.Note, HubOnlyNote) || len(asked) != 2 || asked[0] != LinkLookupPath {
+		t.Fatalf("note %q, asked %v", ans.Note, asked)
+	}
+	all, _ := AskHubLookup(ctx, rt, URLQuery{Repo: "o/r"})
+	var names []string
+	for _, b := range all.Branches {
+		names = append(names, b.Name)
+	}
+	if sort.Strings(names); strings.Join(names, " ") != "claude/x main" {
+		t.Fatalf("every branch = %v", names)
+	}
+	if ans, _ = AskHubLookup(ctx, rt, URLQuery{Repo: "o/nope"}); ans.State != URLNotFound || !strings.Contains(ans.Note, HubOnlyNote) {
+		t.Fatalf("a repository the hub has not = %+v", ans)
+	}
+	if ans, _ = AskHubLookup(ctx, rt, URLQuery{Repo: "r"}); ans.State != URLNotFound || !strings.Contains(ans.Note, "<owner>/<repo>") {
+		t.Fatalf("a bare name = %+v", ans)
+	}
+}
