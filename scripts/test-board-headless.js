@@ -21428,6 +21428,40 @@ async function interviewTopSection(browser, base) {
 }
 
 
+// A parked card (idle-parked: no process, status parked, parked_at set) stays in the Terminals list, in its own tag
+// group, grey, with a one-click resume on its row. An interview card stays top level and is never nested.
+async function parkedStaysSection(browser, base) {
+  const ctx = await browser.newContext({ viewport: { width: 900, height: 600 } });
+  const errors = [];
+  try {
+    const p = await ctx.newPage();
+    p.on("pageerror", e => errors.push(String(e)));
+    await p.goto(base + "/", { waitUntil: "domcontentloaded" });
+    await p.waitForFunction(() => typeof termListed === "function" && typeof termRow === "function", null, { timeout: slow(15000) });
+    const got = await p.evaluate(() => {
+      const mk = (id, tags, extra) => Object.assign({ id, tags, spawned_by_id: "", status: "parked", parked_at: "2026-10-13T10:00:00Z",
+        resume_id: "r-" + id, supervised: false, display_title: id }, extra || {});
+      const iv = mk("i1", ["atrium:subagent", "atrium:interview"], { spawned_by_id: "p1" });
+      const parent = { id: "p1", tags: ["origin:agent"], status: "running", supervised: true, display_title: "p1" };
+      const plain = mk("a1", ["origin:agent"]);
+      const show = termShow();
+      const listed = [iv, plain].map(t => termListed(t, show));
+      const pool = [parent, iv];
+      termKids = new Map(); termKidsPool = new Map();
+      const nest = termNest(pool);
+      const html = termRow(iv, false, false);
+      return { listed, nested: [...nest.nested], html };
+    });
+    if (got.listed.some(x => !x)) fail("parkedStays: a parked card is not in the Terminals list: " + got.listed);
+    if (got.nested.includes("i1")) fail("parkedStays: the parked interview nested under its launcher");
+    if (!/class="card tab[^"]*\bcold\b/.test(got.html)) fail("parkedStays: the parked row is not grey (cold)");
+    if (!got.html.includes("resumeParked('i1')")) fail("parkedStays: no one-click resume on the parked row");
+    if (errors.length) fail("parkedStays: page errors: " + errors.join("; "));
+    else console.log("parkedStays ok");
+  } finally { await ctx.close(); }
+}
+
+
 // u-dropdowns-instant: the launch dialog opens WITH its room and runner options in place, whatever the network is doing.
 // Every API answer is held for 500ms. The board has read the runners and rooms at start, so the open is one frame: the
 // dialog is showing, both selects hold their options, and nothing is rebuilt in the next half second.
@@ -29249,7 +29283,7 @@ async function main() {
       u001Audit: u001AuditSection,
       pasteStart: pasteStartSection, pasteDone: pasteDoneSection, pasteOldRoom: pasteOldRoomSection, pasteClose: pasteCloseSection,
       growlQuestionShots: growlQuestionShotsSection, growlQuestionBody: growlQuestionBodySection, growlReplyGrow: growlReplyGrowSection, growlChoices: growlChoicesSection, replies: repliesSection, repliesOf: repliesOfSection, repliesShots: repliesShotsSection, growlStable: growlStableSection, growlOnIt: growlOnItSection, mGrowlQuestion: mGrowlQuestionSection,
-      roomsSetup: roomsSetupSection, discreteGroup: discreteGroupSection, groupingPerView: groupingPerViewSection, repoColors: repoColorsSection, themePicker: themePickerSection, themePickerShots: themePickerShotsSection, borderColourLag: borderColourLagSection, bootClean: bootCleanSection, interviewTop: interviewTopSection, popupFit: popupFitSection, dropdownsInstant: dropdownsInstantSection, peekLaunch: peekLaunchSection, mReload: mReloadSection, mReconnect: mReconnectSection, mActivityRead: mActivityReadSection, mReadRetry: mReadRetrySection, mWorking: mWorkingSection, mOwnMessages: mOwnMessagesSection, mBubbles: mBubblesSection, mRecapSheet: mRecapSheetSection,
+      roomsSetup: roomsSetupSection, discreteGroup: discreteGroupSection, groupingPerView: groupingPerViewSection, repoColors: repoColorsSection, themePicker: themePickerSection, themePickerShots: themePickerShotsSection, borderColourLag: borderColourLagSection, bootClean: bootCleanSection, interviewTop: interviewTopSection, parkedStays: parkedStaysSection, popupFit: popupFitSection, dropdownsInstant: dropdownsInstantSection, peekLaunch: peekLaunchSection, mReload: mReloadSection, mReconnect: mReconnectSection, mActivityRead: mActivityReadSection, mReadRetry: mReadRetrySection, mWorking: mWorkingSection, mOwnMessages: mOwnMessagesSection, mBubbles: mBubblesSection, mRecapSheet: mRecapSheetSection,
       mHomeOrder: mHomeOrderSection, cardUrlWayOut: cardUrlWayOutSection, phoneBoot: phoneBootSection, sayEnter: sayEnterSection, sendArrow: sendArrowSection, mTables: mTablesSection, mMarkdown: mMarkdownSection, mHostile: mHostileSection, mPictures: mPicturesSection, soundPhone: soundPhoneSection, phoneBell: phoneBellSection, mBell: mBellSection,
       mHomeOrder: mHomeOrderSection, cardUrlWayOut: cardUrlWayOutSection, phoneBoot: phoneBootSection, sayEnter: sayEnterSection, sendArrow: sendArrowSection, mTables: mTablesSection, mMarkdown: mMarkdownSection, mHostile: mHostileSection, mPictures: mPicturesSection, phoneRedirect: phoneRedirectSection,
       mHomeOrder: mHomeOrderSection, cardUrlWayOut: cardUrlWayOutSection, phoneBoot: phoneBootSection, sayEnter: sayEnterSection, sendArrow: sendArrowSection, mTables: mTablesSection, mMarkdown: mMarkdownSection, mHostile: mHostileSection, mPictures: mPicturesSection, mHidden: mHiddenSection, soundPhone: soundPhoneSection, phoneBell: phoneBellSection, mBell: mBellSection,
@@ -31222,6 +31256,7 @@ async function main() {
     await unit("borderColourLag", () => borderColourLagSection(browser, base));
     await unit("bootClean", () => bootCleanSection(browser, base));
     await unit("interviewTop", () => interviewTopSection(browser, base));
+    await unit("parkedStays", () => parkedStaysSection(browser, base));
     await unit("popupFit", () => popupFitSection(browser, base));
     await unit("dropdownsInstant", () => dropdownsInstantSection(browser, base));
     await unit("mWorking", () => mWorkingSection(browser));
