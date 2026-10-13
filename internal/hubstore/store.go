@@ -423,3 +423,7 @@ func fold(s string) string {
 	}
 	return string(out)
 }
+
+// SetClock replaces the store's clock, for a test in another package that has to move time past a window. Nil is the
+// wall clock again.
+func (s *Store) SetClock(f func() time.Time) { s.clock = f }

@@ -29,9 +29,10 @@ import (
 // ── pruning ─────────────────────────────────────────────
 //
 // A row goes seven days after its reason ended, when a human is no longer
-// looking at it. A row whose reason never ended is kept while its card is
-// still cached, because deleting it would raise a dismissed growler again on
-// the next announcement. A card gone from the cache for seven days, or a room
+// looking at it, AND ITS CARD IS NO LONGER CACHED. Any row is kept while its
+// card is still cached, because deleting it would raise the same spell again
+// on the next announcement: a dismissed growler, or a question that ended and
+// came back with the same identity, which rang a week late on 2026-10-13. A card gone from the cache for seven days, or a room
 // removed, takes its rows with it.
 
 // Growl reasons, as the CHECK constraint spells them.
@@ -433,8 +434,10 @@ func (s *Store) GrowlPrune() (int64, error) {
 	var n int64
 	cut := ts(s.now().Add(-growlKeep))
 	err := s.guard(func() error {
+		// An ended card row is kept while its card is cached: it is what stops the same spell being raised again.
 		res, err := s.db.Exec(`DELETE FROM growl WHERE
-			(ended_at != '' AND ended_at < ? AND state NOT IN ('open','snoozed'))
+			(ended_at != '' AND ended_at < ? AND state NOT IN ('open','snoozed') AND (card_id = '' OR NOT EXISTS (
+				SELECT 1 FROM room_card c WHERE c.room_id = growl.room_id AND c.card_id = growl.card_id)))
 			OR (card_id != '' AND changed_at < ? AND NOT EXISTS (
 				SELECT 1 FROM room_card c WHERE c.room_id = growl.room_id AND c.card_id = growl.card_id))
 			OR NOT EXISTS (SELECT 1 FROM room r WHERE r.id = growl.room_id)`, cut, cut)

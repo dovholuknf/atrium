@@ -598,3 +598,37 @@ func TestGrowlFillGivesUp(t *testing.T) {
 		t.Fatalf("the room was asked %d times for a request it never lists", n)
 	}
 }
+
+// A QUESTION ALREADY TOLD IS NOT RAISED AGAIN A WEEK LATER (2026-10-13). Its growler ended while the card kept the
+// question, seven days passed, and the first tick after a hub start pruned the row, so the next sync raised the same
+// spell as new and the board rang "asked 2 questions" for a turn that ended a week before.
+func TestGrowlEndedQuestionIsNotReraisedAfterThePrune(t *testing.T) {
+	rig := newGrowlRig(t)
+	rig.st.SetClock(rig.g.now)
+	t.Cleanup(func() { rig.st.SetClock(nil) })
+	q := growlQuestionCard("q")
+	rig.announce(t, q)
+	if live := rig.live(t); len(live) != 1 {
+		t.Fatalf("the question raised %d growlers", len(live))
+	}
+	rig.announce(t, growlCard("q", `{"title":"worker q","status":"done"}`))
+	rig.announce(t, q)
+	if live := rig.live(t); len(live) != 0 {
+		t.Fatalf("the same spell came back live: %+v", live)
+	}
+	rig.advance(8 * 24 * time.Hour)
+	rig.mu.Lock()
+	before := len(rig.events)
+	rig.mu.Unlock()
+	rig.g.tick(context.Background())
+	rig.g.tick(context.Background())
+	if live := rig.live(t); len(live) != 0 {
+		t.Fatalf("a week-old question was raised again after the prune: %+v", live)
+	}
+	rig.mu.Lock()
+	after := len(rig.events)
+	rig.mu.Unlock()
+	if after != before {
+		t.Fatalf("the ticks said %d growls events for nothing new", after-before)
+	}
+}

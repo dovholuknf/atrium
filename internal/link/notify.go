@@ -819,24 +819,18 @@ func notifyPlan(cards []CardState) (ids map[string]string, info map[string]notif
 	return ids, info, present
 }
 
+// isSeeded is whether THIS PROCESS has seen the room's first plan. In memory only, so the first plan after a hub
+// start seeds silently. It read the stored mark, and a start that counted cards the last process left out (an idle
+// agent card, ad0f1582) found identities it had never stored and fired every one, a week-old wait among them
+// (2026-10-13). A transition while the hub was down is not told: a start is not a turn end.
 func (n *Notifier) isSeeded(room string) bool {
 	key := strings.ToLower(room)
 	n.mu.Lock()
-	if n.seeded[key] {
-		n.mu.Unlock()
-		return true
-	}
-	n.mu.Unlock()
-	v, _ := n.st.Setting(settingNotifySeeded + key)
-	if v == "" {
-		return false
-	}
-	n.mu.Lock()
-	n.seeded[key] = true
-	n.mu.Unlock()
-	return true
+	defer n.mu.Unlock()
+	return n.seeded[key]
 }
 
+// markSeeded also writes when, as a record. Nothing reads it back to decide.
 func (n *Notifier) markSeeded(room string) {
 	key := strings.ToLower(room)
 	n.mu.Lock()
