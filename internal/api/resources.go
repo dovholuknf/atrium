@@ -83,7 +83,7 @@ func (s *Server) measureResources(ctx context.Context, id string) {
 		}
 		dir := ""
 		switch r.Kind {
-		case store.ResWorktree, store.ResDir:
+		case store.ResWorktree, store.ResDir, store.ResClone:
 			dir = r.Ref
 		case store.ResReview:
 			if p, err := s.st.PRByID(r.Ref); err == nil && p.RunDir != "" {
