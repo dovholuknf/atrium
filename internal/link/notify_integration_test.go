@@ -267,6 +267,66 @@ func TestNotifyOriginAgentIsSkipped(t *testing.T) {
 	}
 }
 
+const idleAgent = `,"status":"needs-input","waiting_since":"T","tags":["origin:agent"],"seen":{"turn_ended_at":"T0"}`
+
+// An agent-launched card at the end of a turn notifies once, as input.
+func TestNotifyIdleAgentCardTurnEndNotifiesOnce(t *testing.T) {
+	n, _, rs := armed(t)
+	n.Announced("sparta", nil)
+	for i := 0; i < 3; i++ {
+		n.Announced("sparta", []CardState{ncard("a", idleAgent)})
+	}
+	until(t, "the agent card's notice", func() bool { return rs.count() == 1 })
+	settle()
+	if rs.count() != 1 {
+		t.Fatalf("an idle agent card notified %d times", rs.count())
+	}
+	if got := rs.got[0]; got.Reason != "input" || got.Card != "sparta~a" {
+		t.Fatalf("notice %+v", got)
+	}
+}
+
+// A card with a running child is not at a turn end, and notifies once the child ends.
+func TestNotifyIdleAgentCardWithRunningChildIsHeldBack(t *testing.T) {
+	n, _, rs := armed(t)
+	n.Announced("sparta", nil)
+	n.Announced("sparta", []CardState{ncard("a", idleAgent),
+		ncard("kid", `,"status":"running","spawned_by_id":"sparta~a","tags":["origin:agent"]`)})
+	settle()
+	if rs.count() != 0 {
+		t.Fatalf("an agent card with a running child notified")
+	}
+	n.Announced("sparta", []CardState{ncard("a", idleAgent),
+		ncard("kid", `,"status":"done","spawned_by_id":"a","tags":["origin:agent"]`)})
+	until(t, "the notice once the child ended", func() bool { return rs.count() == 1 })
+}
+
+// An agent card that is not at rest, or whose reason is a permission or a question, stays the launcher's.
+func TestNotifyAgentCardsNotAtRestOrAskingStayQuiet(t *testing.T) {
+	for name, extra := range map[string]string{
+		"running":  `,"status":"running","tags":["origin:agent"],"seen":{"turn_ended_at":"T0","unseen":false}`,
+		"question": `,"status":"needs-input","waiting_since":"T","tags":["origin:agent"],"seen":{"turn_ended_at":"T0","questions_at":"Q","open_questions":["q?"]}`,
+	} {
+		n, _, rs := armed(t)
+		n.Announced("sparta", nil)
+		n.Announced("sparta", []CardState{ncard("a", extra)})
+		settle()
+		if rs.count() != 0 {
+			t.Errorf("%s: an agent card notified", name)
+		}
+	}
+}
+
+// A normal card behaves as before: input notifies whatever its children do.
+func TestNotifyNormalCardWithRunningChildStillNotifies(t *testing.T) {
+	n, _, rs := armed(t)
+	n.Announced("sparta", nil)
+	n.Announced("sparta", []CardState{
+		ncard("a", `,"status":"needs-input","waiting_since":"T","seen":{"turn_ended_at":"T0"}`),
+		ncard("kid", `,"status":"running","spawned_by_id":"a"`)})
+	until(t, "the normal card's notice", func() bool { return rs.count() == 1 })
+}
+
 func TestNotifyCardLeavingAndReturningDoesNotRefire(t *testing.T) {
 	n, _, rs := armed(t)
 	n.Announced("sparta", nil)

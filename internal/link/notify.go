@@ -174,14 +174,43 @@ type notifySeen struct {
 // so the same waiting spell republished is one identity and a second spell is
 // another.
 //
-// origin:agent cards are skipped: an agent started another agent, and the
-// operator is told about the one that started it (item 44).
+// origin:agent cards are skipped (item 44: an agent started another agent, and
+// the operator is told about the one that started it) EXCEPT FOR A TURN END: one
+// at rest in needs-input notifies as input, as the board's ready alert does. Its
+// permissions and questions stay the launcher's. Whether it still has a running
+// child is for notifyPlan, which sees the room's other cards.
 func NotifyIdentity(id string, payload json.RawMessage) (notifyCard, bool) {
 	nc, ok := cardReason(id, payload)
-	if !ok || nc.Agent {
+	if !ok || (nc.Agent && nc.Reason != ReasonInput) {
 		return notifyCard{}, false
 	}
 	return nc, true
+}
+
+// bareCardID drops a room prefix, `room~id`, as the board's bareId does.
+func bareCardID(id string) string {
+	if i := strings.Index(id, "~"); i > 0 {
+		return id[i+1:]
+	}
+	return id
+}
+
+// runningParents is the bare ids of the cards that launched a card still
+// running: they are not at a turn end whatever their own status says.
+func runningParents(cards []CardState) map[string]bool {
+	out := map[string]bool{}
+	for _, c := range cards {
+		var p struct {
+			Status      string `json:"status"`
+			SpawnedByID string `json:"spawned_by_id"`
+			ArchivedAt  string `json:"archived_at"`
+		}
+		if json.Unmarshal(c.Payload, &p) != nil || p.SpawnedByID == "" || p.Status != "running" || p.ArchivedAt != "" {
+			continue
+		}
+		out[bareCardID(p.SpawnedByID)] = true
+	}
+	return out
 }
 
 // freshCard is how long after it was created a card that has recorded no turn
@@ -776,9 +805,13 @@ func (n *Notifier) Remind(x Notice) {
 
 func notifyPlan(cards []CardState) (ids map[string]string, info map[string]notifyCard, present []string) {
 	ids, info = map[string]string{}, map[string]notifyCard{}
+	parents := runningParents(cards)
 	for _, c := range cards {
 		present = append(present, c.ID)
 		if nc, ok := NotifyIdentity(c.ID, c.Payload); ok {
+			if nc.Agent && parents[bareCardID(c.ID)] {
+				continue
+			}
 			ids[c.ID] = nc.Identity
 			info[c.ID] = nc
 		}
