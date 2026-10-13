@@ -1082,7 +1082,7 @@ const GROUPING_KEY = "atrium.grouping";
 // `mode` is what a group IS: a project read out of the path, or a tag you
 // applied. `by` and `order` stay the escape hatch for anyone who wants
 // something neither of those describes.
-const GROUPING_DEFAULTS = { on: true, mode: "project", by: "", order: "", orderBy: "", picked: false, hues: {}, groups: [] };
+const GROUPING_DEFAULTS = { on: true, mode: "project", by: "", order: "", orderBy: "", picked: false, hues: {}, groups: [], made: {} };
 
 // A card with no tags still has to land somewhere when grouping by tag, and
 // "" would sort it in with a group whose name is empty.
@@ -1479,7 +1479,7 @@ async function addCustomGroup() {
     "tag. Anything already carrying the tag lands in it right away.",
     "", "e.g. discourse");
   if (raw === null) return;
-  const name = String(raw).trim().toLowerCase();
+  const name = groupNameOf(raw);
   if (!name) return;
   const p = groupingPrefs();
   const groups = Array.isArray(p.groups) ? p.groups.slice() : [];
@@ -1488,13 +1488,15 @@ async function addCustomGroup() {
     return;
   }
   groups.push(name);
-  setGrouping({ groups });
+  setGrouping({ groups, made: Object.assign({}, p.made, { [name]: Date.now() }) });
 }
 
 function removeCustomGroup(name) {
   const p = groupingPrefs();
   const groups = (p.groups || []).filter(x => x !== name);
-  setGrouping({ groups });
+  const made = Object.assign({}, p.made);
+  delete made[name];
+  setGrouping({ groups, made });
 }
 
 function moveCustomGroup(name, delta) {
@@ -1519,7 +1521,9 @@ async function renameCustomGroup(name) {
   if (!next || next === name) return;
   const p = groupingPrefs();
   const groups = (p.groups || []).map(x => x === name ? next : x);
-  setGrouping({ groups });
+  const made = Object.assign({}, p.made);
+  if (name in made) { made[next] = made[name]; delete made[name]; }
+  setGrouping({ groups, made });
 }
 
 function setGroupHue(name, hue) {

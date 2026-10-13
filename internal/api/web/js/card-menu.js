@@ -581,22 +581,44 @@ function groupItem(id, t, terms) {
   const p = groupingPrefs();
   if (p.mode !== "custom") return null;
   const groups = Array.isArray(p.groups) ? p.groups : [];
-  if (!groups.length) return null;
+  if (!groups.length && !terms) return null;
   const mine = new Set(t.tags || []);
+  const sub = groupMenuNames(groups).map(name => ({
+    label: name,
+    tag: groupIsNew(name, p.made) ? "new" : "",
+    on: mine.has(name),
+    act: () => {
+      const next = new Set(mine);
+      if (next.has(name)) next.delete(name); else next.add(name);
+      patchTask(id, { tags: [...next] }).then(refresh);
+    }
+  }));
+  // The last entry makes a group and files the card into it in one step. A name that is already a group only files
+  // the card, so typing one twice never makes a duplicate. Esc, or cancel, makes nothing.
+  if (terms) sub.push({ label: "create group...", act: () => createGroupFor(id, t) });
   return {
     label: terms ? "add to group" : "into group",
     help: "Files this card into one of your named buckets. It is the same as " +
       "putting the group's tag on the card.",
-    sub: groups.map(name => ({
-      label: name,
-      on: mine.has(name),
-      act: () => {
-        const next = new Set(mine);
-        if (next.has(name)) next.delete(name); else next.add(name);
-        patchTask(id, { tags: [...next] }).then(refresh);
-      }
-    }))
+    sub
   };
+}
+
+async function createGroupFor(id, t) {
+  const raw = await askText("create a group",
+    "The card goes into it as soon as it is made. A name that is already a group just files the card there.",
+    "", "e.g. discourse");
+  const name = groupNameOf(raw);
+  if (raw === null || !name) return;
+  const p = groupingPrefs();
+  const groups = Array.isArray(p.groups) ? p.groups.slice() : [];
+  if (!groups.includes(name)) {
+    groups.push(name);
+    setGrouping({ groups, made: Object.assign({}, p.made, { [name]: Date.now() }) });
+  }
+  const tags = t.tags || [];
+  if (!tags.includes(name)) await patchTask(id, { tags: tags.concat(name) });
+  refresh();
 }
 
 // Take this card OUT of a group, said as its own entry. `into group` already
@@ -611,14 +633,15 @@ function outOfGroupItem(id, t, terms) {
   const inside = (Array.isArray(p.groups) ? p.groups : []).filter(n => tags.includes(n));
   if (!inside.length) return null;
   const out = name => () => patchTask(id, { tags: tags.filter(x => x !== name) }).then(refresh);
+  const subOf = names => groupMenuNames(names).map(name => ({ label: name, tag: groupIsNew(name, p.made) ? "new" : "", act: out(name) }));
   const help = "Takes the group's tag off this card. Nothing else about the card changes.";
   if (terms) {
     return inside.length === 1
       ? { label: "remove from group", help, act: out(inside[0]) }
-      : { label: "remove from group", help, sub: inside.map(name => ({ label: name, act: out(name) })) };
+      : { label: "remove from group", help, sub: subOf(inside) };
   }
   if (inside.length === 1) return { label: "out of " + inside[0], help, act: out(inside[0]) };
-  return { label: "out of group", help, sub: inside.map(name => ({ label: name, act: out(name) })) };
+  return { label: "out of group", help, sub: subOf(inside) };
 }
 
 async function cardMenu(e, id) {

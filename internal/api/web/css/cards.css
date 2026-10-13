@@ -560,6 +560,12 @@
   #cardmenu button .help { margin-left: 7px; }
   #cardmenu .subitem:hover { background: var(--lift); color: var(--head); }
   #cardmenu .subitem svg { flex: none; }
+  /* "new" on a group made in the last ten minutes. */
+  .newtag {
+    margin-left: auto; padding: 0 6px; border-radius: 8px; font-size: 10px; line-height: 15px;
+    letter-spacing: .04em; text-transform: uppercase; color: var(--head); background: var(--lift);
+    border: 1px solid var(--label);
+  }
   /* A group inside a flyout, and a line saying what a group cannot do. Neither is a target, because a heading
      that lights up under the pointer is a heading somebody will click. */
   #cardmenu .subhead {

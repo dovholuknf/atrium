@@ -583,7 +583,7 @@ function showMenu(e, items) {
           : s.quiet
             ? `<span class="subnote">${esc(s.quiet)}</span>`
             : `<span class="subitem" data-i="${i}" data-j="${j}"
-                >${s.icon || ""}${esc(s.label)}</span>`).join("")}</span>` : ""}</button>`
+                >${s.icon || ""}${esc(s.label)}${s.tag ? `<span class="newtag">${esc(s.tag)}</span>` : ""}</span>`).join("")}</span>` : ""}</button>`
   ).join("");
   // DIRECT CHILDREN ONLY. A stepper row holds two buttons of its own, and
   // they carry no `data-i`, so reaching them here would look up `items[NaN]`
