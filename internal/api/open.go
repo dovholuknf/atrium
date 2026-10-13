@@ -60,7 +60,13 @@ type openRequest struct {
 	// Progress is an id the board made up. Each step of the open is broadcast as an `open-progress` event carrying it,
 	// so the board can name the step that is running. Empty says nothing.
 	Progress string `json:"progress"`
+	// Pick says the room this lands on was picked by name in the launch dialog. A link another room holds then goes on
+	// here and its claim moves here, unless that room has a live card on it. See the claim's Take.
+	Pick bool `json:"pick"`
 }
+
+// openTakeKey marks the review row's claim as a pick, for postPR.
+type openTakeKey struct{}
 
 // openAnswer is the card a link opened. On a hub `room` is filled and `card` and `pr` carry the room's tag. Kind is
 // pr, issue, branch or support. Repo is "host/org/repo" of the worktree, "" for a scratch folder.
@@ -74,6 +80,30 @@ type openAnswer struct {
 	Repo       string `json:"repo"`
 	Created    bool   `json:"created"`
 	Title      string `json:"title,omitempty"`
+	// Live says nothing was launched: another room holds the link and has this card live on it. HeldBy is that room, and
+	// the hub tags Card with it, since the card is not on the room that answered.
+	Live   bool   `json:"live,omitempty"`
+	HeldBy string `json:"held_by,omitempty"`
+}
+
+// liveAnswer is the answer to a link whose holder has a card live on it. The room is the holder's.
+func liveAnswer(ans openAnswer, owner, card string) openAnswer {
+	ans.Card, ans.Live, ans.HeldBy, ans.Created = card, true, owner, false
+	return ans
+}
+
+// GET /v1/open/live?key=: the card this room has live for a link's claim key, for the hub's pick of another room.
+func (s *Server) openLive(w http.ResponseWriter, r *http.Request) {
+	key := strings.TrimSpace(r.URL.Query().Get("key"))
+	if key == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "key is required"})
+		return
+	}
+	if t := s.liveLinkCard(key); t != nil {
+		writeJSON(w, http.StatusOK, map[string]string{"card": t.ID, "worktree": t.Worktree})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"card": ""})
 }
 
 // openFail is a refusal with the step it came from, so the board can say which part did not happen.
@@ -180,6 +210,12 @@ func (s *Server) open(w http.ResponseWriter, r *http.Request) {
 	if row == nil {
 		undoPRWorktree(wt)
 		disown()
+		if failBody != nil && failBody["code"] == "live" {
+			owner, _ := failBody["held_by"].(string)
+			card, _ := failBody["live_card"].(string)
+			writeJSON(w, http.StatusOK, liveAnswer(ans, owner, card))
+			return
+		}
 		if failBody == nil {
 			failBody = map[string]any{"error": "the review row was not made", "code": "row_failed"}
 		}
@@ -285,6 +321,9 @@ func (s *Server) liveWalker(p *store.PRReview) *store.Task {
 func (s *Server) openRow(r *http.Request, in openRequest, got *store.Resolved) (row *store.PRReview, created bool, status int, body map[string]any) {
 	raw, _ := json.Marshal(map[string]string{"url": in.URL, "why": in.Why})
 	ctx := context.WithValue(r.Context(), openHeldKey{}, true)
+	if in.Pick {
+		ctx = context.WithValue(ctx, openTakeKey{}, true)
+	}
 	req := httptest.NewRequest(http.MethodPost, "/v1/prs", bytes.NewReader(raw)).
 		WithContext(context.WithValue(ctx, openRecognisedKey{}, got))
 	req.Header.Set("Content-Type", "application/json")
@@ -294,10 +333,14 @@ func (s *Server) openRow(r *http.Request, in openRequest, got *store.Resolved) (
 		PR      *store.PRReview `json:"pr"`
 		Created bool            `json:"created"`
 		HeldBy  string          `json:"held_by"`
+		Live    string          `json:"live_card"`
 	}
 	_ = json.Unmarshal(rec.Body.Bytes(), &out)
 	_ = json.Unmarshal(rec.Body.Bytes(), &body)
 	switch {
+	case out.HeldBy != "" && out.Live != "":
+		// The holder has a card live on it: that card is the answer.
+		return nil, false, http.StatusOK, map[string]any{"code": "live", "held_by": out.HeldBy, "live_card": out.Live}
 	case out.HeldBy != "":
 		// Another room claimed the link between the hub's placement and here. Its card is there.
 		return nil, false, http.StatusConflict, map[string]any{"code": "held", "held_by": out.HeldBy,

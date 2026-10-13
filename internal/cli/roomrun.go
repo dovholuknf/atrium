@@ -418,7 +418,7 @@ func runRoom(keys link.Keys, db, human, agent string, restartAfter time.Duration
 			return api.PRClaimReply{}, err
 		}
 		return api.PRClaimReply{Owner: ans.Owner, Mine: strings.EqualFold(ans.Owner, room.Name),
-			Forwarded: ans.Forwarded, ForwardStatus: ans.ForwardStatus, Forward: ans.Forward}, nil
+			Forwarded: ans.Forwarded, ForwardStatus: ans.ForwardStatus, Forward: ans.Forward, Live: ans.Live}, nil
 	})
 	d.SetRelay(linkRelay{room: room})
 	// THE HUB RUNS THE FORGE. This room asks it about pull requests and issues and never runs gh or bb itself.

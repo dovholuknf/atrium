@@ -111,9 +111,13 @@ func (s *Server) openOther(w http.ResponseWriter, r *http.Request, in openReques
 	// and the next paste of the link goes to this room. A hub that cannot be asked is the same as no hub.
 	if s.ClaimPR != nil {
 		ctx, cancel := context.WithTimeout(r.Context(), prClaimWait)
-		rep, err := s.ClaimPR(ctx, PRClaimAsk{Key: strings.ToLower(key), Source: "open", Held: true})
+		rep, err := s.ClaimPR(ctx, PRClaimAsk{Key: strings.ToLower(key), Source: "open", Held: true, Take: in.Pick})
 		cancel()
 		if err == nil && !rep.Mine {
+			if rep.Live != "" {
+				writeJSON(w, http.StatusOK, liveAnswer(ans, rep.Owner, rep.Live))
+				return
+			}
 			openFail(w, http.StatusConflict, "claim", "held", "that link is held by "+rep.Owner+". open it there")
 			return
 		}
@@ -221,7 +225,7 @@ func (s *Server) liveLinkCard(key string) *store.Task {
 			continue
 		}
 		for _, g := range t.Tags {
-			if g == tag {
+			if strings.EqualFold(g, tag) {
 				return t
 			}
 		}

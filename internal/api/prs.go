@@ -226,7 +226,7 @@ func (s *Server) postPR(w http.ResponseWriter, r *http.Request) {
 		}
 		var answered bool
 		claim, answered = s.claimPR(w, r, PRClaimAsk{Key: store.PRKey(host, org, repo, num), URL: body.URL,
-			Why: body.Why, Head: body.Head, Held: held})
+			Why: body.Why, Head: body.Head, Held: held, Take: r.Context().Value(openTakeKey{}) != nil})
 		if answered {
 			return
 		}

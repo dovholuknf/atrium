@@ -5,6 +5,8 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
@@ -191,6 +193,64 @@ func TestOpenAnIssueClaimsItsKeyAndRefusesOneAnotherRoomHolds(t *testing.T) {
 	code, out = oh.open(t, "https://github.com/o/r/tree/feat/y")
 	if code != 409 || out["code"] != "held" || len(oh.launched) != 1 {
 		t.Errorf("a held link: %d %v, launched %d", code, out, len(oh.launched))
+	}
+}
+
+// A LINK ANOTHER ROOM HOLDS, OPENED ON A ROOM PICKED BY NAME: the pick is sent to the hub as a take. When the claim moved
+// here the link launches here. When the holder has a card live on it, that card is the answer and nothing launches.
+func TestOpenAHeldLinkOnAPickedRoomLaunchesHereOrAnswersTheLiveCard(t *testing.T) {
+	// one harness for each, since a link with a live card answers before any claim is asked
+	run := func(reply PRClaimReply, pick bool) (*openHarness, []PRClaimAsk, int, map[string]any) {
+		oh := newOpenHarness(t, &fakeForge{})
+		oh.checkout(t, "o", "r")
+		var asked []PRClaimAsk
+		oh.srv.ClaimPR = func(_ context.Context, a PRClaimAsk) (PRClaimReply, error) {
+			asked = append(asked, a)
+			return reply, nil
+		}
+		rec := post(t, oh.h, "/v1/open", map[string]any{"url": "https://github.com/o/r/issues/3", "pick": pick})
+		var out map[string]any
+		_ = json.Unmarshal(rec.Body.Bytes(), &out)
+		return oh, asked, rec.Code, out
+	}
+	// the hub moved the claim here
+	oh, asked, code, out := run(PRClaimReply{Owner: "alpha", Mine: true}, true)
+	if code != 201 || len(asked) != 1 || !asked[0].Take || len(oh.launched) != 1 {
+		t.Fatalf("a pick the hub granted: %d %v, asked %+v", code, out, asked)
+	}
+	// no pick, no take
+	_, asked, _, _ = run(PRClaimReply{Owner: "alpha", Mine: true}, false)
+	if len(asked) != 1 || asked[0].Take {
+		t.Errorf("an open with no pick asked to take the claim: %+v", asked)
+	}
+	oh, _, code, out = run(PRClaimReply{Owner: "beta", Live: "c9"}, true)
+	if code != 200 || out["live"] != true || out["held_by"] != "beta" || out["card"] != "c9" || out["created"] != false ||
+		len(oh.launched) != 0 {
+		t.Errorf("a live card at the holder: %d %v, launched %d", code, out, len(oh.launched))
+	}
+}
+
+// THE LIVE CARD OF A LINK, as the hub asks for it: found by the link's tag whatever the key's case, and not once done.
+func TestOpenLiveAnswersTheLiveCardOfAKey(t *testing.T) {
+	oh := newOpenHarness(t, &fakeForge{})
+	oh.checkout(t, "O", "R")
+	_, out := oh.open(t, "https://github.com/O/R/issues/3")
+	card, _ := out["card"].(string)
+	if card == "" {
+		t.Fatalf("no card: %v", out)
+	}
+	live := func(key string) string {
+		rec := httptest.NewRecorder()
+		oh.h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/open/live?key="+key, nil))
+		var got map[string]string
+		_ = json.Unmarshal(rec.Body.Bytes(), &got)
+		return got["card"]
+	}
+	if got := live("github.com/o/r/i3"); got != card {
+		t.Errorf("live for the lower-case key = %q, want %q", got, card)
+	}
+	if got := live("github.com/o/r/i4"); got != "" {
+		t.Errorf("live for another key = %q", got)
 	}
 }
 
