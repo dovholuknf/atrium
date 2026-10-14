@@ -51,6 +51,9 @@ type Params struct {
 	Env      string   `json:"env,omitempty"`
 	Allow    []string `json:"allow,omitempty"`
 	Dir      string   `json:"dir,omitempty"`
+	// Scope narrows what reply-pattern reads: "fence" is only the text inside
+	// a ``` code fence, and empty is the whole reply.
+	Scope string `json:"scope,omitempty"`
 }
 
 // Rules is a loaded, checked rule set.
@@ -109,6 +112,9 @@ func loadWith(raw []byte, table map[string]checkFunc) (*Rules, error) {
 		default:
 			return nil, fmt.Errorf("rule %s: decision %q is neither deny nor allow", r.ID, r.Decision)
 		}
+		if err := checkReplyTools(r); err != nil {
+			return nil, err
+		}
 		for _, p := range r.Params.Patterns {
 			re, err := regexp.Compile(p)
 			if err != nil {
@@ -131,6 +137,9 @@ type Input struct {
 		NewString    string `json:"new_string"`
 		SubagentType string `json:"subagent_type"`
 	} `json:"tool_input"`
+	// LastAssistantMessage is the Stop payload's reply text, read only when
+	// ToolName is "reply". See ReplyTool.
+	LastAssistantMessage string `json:"last_assistant_message"`
 }
 
 // Decision is the guard's answer. An empty Action lets the call through
@@ -144,11 +153,18 @@ type Decision struct {
 // Evaluate runs the rules in order against one tool call. The first rule that
 // matches answers. A check that panics denies the call: a guard that waves a
 // command through because it broke on it is not a guard.
+//
+// A REPLY IS THE OPPOSITE. ToolName "reply" is a Stop payload, and a Stop that
+// blocks keeps a session working, so a check that panics there answers nothing.
 func (rs *Rules) Evaluate(in Input, env Env) (d Decision) {
 	ctx := &evalCtx{in: in, env: env}
 	var current *Rule
 	defer func() {
 		if p := recover(); p != nil {
+			if in.ToolName == ReplyTool {
+				d = Decision{}
+				return
+			}
 			id := "?"
 			if current != nil {
 				id = current.ID
@@ -182,6 +198,9 @@ type evalCtx struct {
 }
 
 func (c *evalCtx) toolMatches(r *Rule) bool {
+	if c.in.ToolName == ReplyTool {
+		return len(r.Tools) == 1 && r.Tools[0] == ReplyTool
+	}
 	for _, t := range r.Tools {
 		if t == "shell" && c.in.ToolInput.Command != "" {
 			return true
@@ -208,4 +227,27 @@ func (c *evalCtx) Script() *Script {
 		c.script = Parse(c.in.ToolInput.Command, shell, dir, c.env)
 	}
 	return c.script
+}
+
+// ReplyTool is the tool name Evaluate takes for a Stop payload. A rule that
+// names it checks what the model said and nothing else.
+const ReplyTool = "reply"
+
+// checkReplyTools keeps the two kinds of rule apart: a rule about a reply and
+// a rule about a tool call never share a tools list, and reply-pattern only
+// reads a reply.
+func checkReplyTools(r *Rule) error {
+	reply := 0
+	for _, t := range r.Tools {
+		if strings.EqualFold(t, ReplyTool) {
+			reply++
+		}
+	}
+	if reply > 0 && reply != len(r.Tools) {
+		return fmt.Errorf("rule %s names %q and a tool call in the same set", r.ID, ReplyTool)
+	}
+	if (r.Check == "reply-pattern") != (reply > 0) {
+		return fmt.Errorf("rule %s: reply-pattern and the %q tool go together", r.ID, ReplyTool)
+	}
+	return nil
 }

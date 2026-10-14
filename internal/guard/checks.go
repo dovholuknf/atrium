@@ -18,6 +18,7 @@ var checks map[string]checkFunc
 func init() {
 	checks = map[string]checkFunc{
 		"drive-root":             checkDriveRoot,
+		"reply-pattern":          checkReplyPattern,
 		"subagent":               checkSubagent,
 		"phrase":                 checkPhrase,
 		"go-build":               checkGoBuild,
@@ -380,4 +381,55 @@ func checkFileName(c *evalCtx, r *Rule) (bool, string) {
 		}
 	}
 	return false, ""
+}
+
+// checkReplyPattern matches the rule's patterns against what the model said.
+// Params.Scope "fence" reads only the text inside ``` fences, so a command
+// quoted in prose passes. A match on a line holding any Except string is
+// let go. It returns the matched text for `{name}`.
+func checkReplyPattern(c *evalCtx, r *Rule) (bool, string) {
+	text := c.in.LastAssistantMessage
+	if text == "" {
+		return false, ""
+	}
+	if r.Params.Scope == "fence" {
+		text = fencedText(text)
+	}
+	for _, line := range strings.Split(text, "\n") {
+		if lineHasAny(line, r.Params.Except) {
+			continue
+		}
+		for _, re := range r.patterns {
+			if m := re.FindString(line); m != "" {
+				return true, m
+			}
+		}
+	}
+	return false, ""
+}
+
+// fencedText is the lines between ``` fences, fence lines left out. An
+// unclosed fence runs to the end.
+func fencedText(s string) string {
+	var out []string
+	in := false
+	for _, line := range strings.Split(strings.ReplaceAll(s, "\r\n", "\n"), "\n") {
+		if strings.HasPrefix(strings.TrimSpace(line), "```") {
+			in = !in
+			continue
+		}
+		if in {
+			out = append(out, line)
+		}
+	}
+	return strings.Join(out, "\n")
+}
+
+func lineHasAny(line string, subs []string) bool {
+	for _, s := range subs {
+		if s != "" && strings.Contains(strings.ToLower(line), strings.ToLower(s)) {
+			return true
+		}
+	}
+	return false
 }
