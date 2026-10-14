@@ -231,6 +231,10 @@ type attached struct {
 	want int
 
 	lastBeat time.Time
+	// lastData is when the last data connection was filed into the pool, and
+	// starvedSaid whether the hub has logged that none is arriving. See starved.
+	lastData    time.Time
+	starvedSaid bool
 	// idleCPU is the idle percent the room last said on a beat, valid when haveIdle.
 	idleCPU  float64
 	haveIdle bool
@@ -606,8 +610,42 @@ func (h *Hub) watch(ctx context.Context, a *attached) {
 				h.forget(a.name, a, "no heartbeat")
 				return
 			}
+			// SAID ON THE CHANGE, both ways, and the board told. A room whose
+			// control connection is up while no data connection arrives beats on
+			// time and serves nothing, and it must not read as attached.
+			starved := h.starved(a, time.Now())
+			a.mu.Lock()
+			changed := starved != a.starvedSaid
+			a.starvedSaid = starved
+			a.mu.Unlock()
+			if changed {
+				if starved {
+					log.Printf("[hub] room %q is attached but no data connection has arrived in %s. "+
+						"the board cannot reach it. its data dials are failing", a.name, h.T.Starve)
+				} else {
+					log.Printf("[hub] room %q: data connections are arriving again", a.name)
+				}
+				h.changedNow()
+			}
 		}
 	}
+}
+
+// starved is a room whose pool is empty and has had no data connection filed
+// for Starve, since it attached or since the last one. The hub asks for more on
+// every request that finds the pool short, so a pool that stays empty is a room
+// whose data dials are not getting here.
+func (h *Hub) starved(a *attached, now time.Time) bool {
+	if len(a.idle) > 0 {
+		return false
+	}
+	a.mu.Lock()
+	last := a.since
+	if a.lastData.After(last) {
+		last = a.lastData
+	}
+	a.mu.Unlock()
+	return now.Sub(last) > h.T.Starve
 }
 
 // data files a fresh connection into a room's pool.
@@ -629,6 +667,9 @@ func (h *Hub) data(name string, hi hello, conn net.Conn, br *bufio.Reader) {
 		conn.Close()
 		return
 	}
+	a.mu.Lock()
+	a.lastData = time.Now()
+	a.mu.Unlock()
 	select {
 	case a.idle <- &buffered{Conn: conn, br: br}:
 	default:
@@ -813,6 +854,10 @@ type Attached struct {
 	// it is not on its first choice. See docs/rnd/room-transport-order.md.
 	Via      string `json:"via,omitempty"`
 	Fallback bool   `json:"fallback,omitempty"`
+	// Starved is a room whose control connection is up while no data connection
+	// has arrived for Timings.Starve: attached in name, unreachable from the
+	// board. Its data dials are going somewhere the hub is not.
+	Starved bool `json:"starved,omitempty"`
 }
 
 // unprovenOver names the overlay a connection took the old path on, or "".
@@ -867,7 +912,9 @@ func (h *Hub) Rooms() []Attached {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	out := make([]Attached, 0, len(h.rooms))
+	now := time.Now()
 	for _, a := range h.rooms {
+		starved := h.starved(a, now)
 		a.mu.Lock()
 		beat := a.lastBeat
 		var idle *float64
@@ -880,7 +927,7 @@ func (h *Hub) Rooms() []Attached {
 			Name: a.name, Version: a.version, Host: a.host, Commit: a.commit,
 			Since: a.since, Idle: len(a.idle), Beat: beat,
 			OS: a.os, Arch: a.arch, Proven: a.unproven == "", Git: a.git, IdleCPU: idle,
-			Via: a.via, Fallback: a.fallback,
+			Via: a.via, Fallback: a.fallback, Starved: starved,
 		})
 	}
 	return out

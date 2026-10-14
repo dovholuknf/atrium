@@ -1147,7 +1147,10 @@ type Known struct {
 	// it is not attached. See docs/rnd/room-transport-order.md.
 	Via      string `json:"via,omitempty"`
 	Fallback bool   `json:"fallback,omitempty"`
-	State    string `json:"state"`
+	// Starved is attached in name only: no data connection is arriving, so the
+	// board cannot reach it. See Attached.Starved.
+	Starved bool   `json:"starved,omitempty"`
+	State   string `json:"state"`
 	// Attached is the live half, from this hub's own connection list rather
 	// than from anything written down.
 	Attached bool `json:"attached"`

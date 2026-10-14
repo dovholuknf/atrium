@@ -103,6 +103,10 @@ type Timings struct {
 	// ProbeEvery is how often a room on a fallback transport tries the better
 	// ones. Two good probes in a row move it back up. See ladder.go.
 	ProbeEvery time.Duration
+	// Starve is how long an attached room's pool may sit empty with no data
+	// connection arriving before the hub says so. The control connection being
+	// up is not the room serving anything.
+	Starve time.Duration
 }
 
 // DefaultTimings are what both sides use unless something says otherwise.
@@ -136,6 +140,9 @@ func DefaultTimings() Timings {
 		// costs what a hub restart costs, so a path that flaps must not drag a
 		// room back and forth. See docs/rnd/room-transport-order.md.
 		ProbeEvery: 2 * time.Minute,
+		// Three of the hub's own DialWait, so a room on a slow overlay that is
+		// still bringing its warm pool up is not called starved.
+		Starve: 30 * time.Second,
 	}
 }
 
@@ -162,6 +169,9 @@ func (t Timings) fill() Timings {
 	}
 	if t.ProbeEvery <= 0 {
 		t.ProbeEvery = d.ProbeEvery
+	}
+	if t.Starve <= 0 {
+		t.Starve = d.Starve
 	}
 	return t
 }

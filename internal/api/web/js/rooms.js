@@ -479,6 +479,11 @@ function transportBadge(t, fallback) {
 
 // roomState is the one chip that says how the room is doing.
 function roomState(r) {
+  // ATTACHED IN NAME ONLY. The control connection beats while no data connection
+  // arrives, so nothing on this board can reach the room. Not "attached".
+  if (r.attached && r.starved) {
+    return `<span class="chip warn" data-tip="its control connection is up but no data connection is reaching the hub, so the board cannot reach it. see the room's log">attached, unreachable</span>`;
+  }
   if (r.attached) return `<span class="chip live idle">attached ${esc(shortTime(r.since))}</span>`;
   // THE HUB'S OWN ROOM IS OFF, NOT MISSING. Nothing has failed to connect: this
   // is the machine the board is served from, and running agents on it is a

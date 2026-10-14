@@ -79,6 +79,12 @@ type Room struct {
 	claimRT http.RoundTripper
 	since   time.Time
 	lastErr string
+	// dataErr is the last data dial that failed, cleared by one that works, and
+	// dataSaid is when one was last logged. A control connection that is up
+	// while every data dial fails is a room that looks attached and serves
+	// nothing, and before this it said nothing at all.
+	dataErr  string
+	dataSaid time.Time
 	// taking makes sure one offer is acted on once, however many times the hub
 	// repeats it across reconnects.
 	taking taker
@@ -433,9 +439,11 @@ func (r *Room) open(ctx context.Context, n int, session string) {
 				// One failed data dial is not a reason to tear the link down.
 				// The hub will ask again when it still has no connection, and
 				// the control connection is the thing that decides whether the
-				// link is alive.
+				// link is alive. But it is said, see dataFailed.
+				r.dataFailed(err)
 				return
 			}
+			r.dataWorked()
 			br := bufio.NewReader(conn)
 			if _, err := sayHello(conn, br, hello{
 				Kind: "data", Room: r.Name, Session: session,
@@ -452,6 +460,38 @@ func (r *Room) open(ctx context.Context, n int, session string) {
 				conn.Close()
 			}
 		}()
+	}
+}
+
+// dataSayEvery bounds the data dial failure line. The hub asks again on every
+// request that finds the pool short, and a board open on a starved room would
+// otherwise write one line per request.
+const dataSayEvery = time.Minute
+
+// dataFailed records a data dial that failed and logs it, at most once a
+// dataSayEvery.
+func (r *Room) dataFailed(err error) {
+	r.mu.Lock()
+	r.dataErr = err.Error()
+	say := time.Since(r.dataSaid) >= dataSayEvery
+	if say {
+		r.dataSaid = time.Now()
+	}
+	r.mu.Unlock()
+	if say {
+		log.Printf("[link] a data connection to hub %s failed: %v. the control connection is up, "+
+			"so the room looks attached and serves nothing until one gets through", r.Dial.Describe(), err)
+	}
+}
+
+// dataWorked clears the failure once a data dial gets through.
+func (r *Room) dataWorked() {
+	r.mu.Lock()
+	was := r.dataErr
+	r.dataErr, r.dataSaid = "", time.Time{}
+	r.mu.Unlock()
+	if was != "" {
+		log.Printf("[link] data connections to hub %s get through again", r.Dial.Describe())
 	}
 }
 
@@ -475,6 +515,9 @@ type State struct {
 	Transport string `json:"transport,omitempty"`
 	// Fallback says it is on a transport below its first choice.
 	Fallback bool `json:"fallback,omitempty"`
+	// DataError is the last data dial that failed while the control connection
+	// is up. Empty once one gets through.
+	DataError string `json:"data_error,omitempty"`
 }
 
 // State reports the link, for the room's own board to draw. A room whose hub is
@@ -487,7 +530,7 @@ func (r *Room) State() State {
 		s.Transport, s.Fallback = cl.Transport(), cl.Fallback()
 	}
 	if r.up {
-		s.Since = r.since
+		s.Since, s.DataError = r.since, r.dataErr
 	}
 	return s
 }

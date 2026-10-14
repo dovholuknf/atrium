@@ -19,11 +19,15 @@ import (
 // See docs/rnd/room-transport-order.md.
 
 type switchable struct {
-	addr string
-	down atomic.Bool
+	addr  string
+	down  atomic.Bool
+	tries atomic.Int32
 }
 
+func (s *switchable) n() int32 { return s.tries.Load() }
+
 func (s *switchable) Dial(ctx context.Context) (net.Conn, error) {
+	s.tries.Add(1)
 	if s.down.Load() {
 		return nil, errors.New("connection refused")
 	}
@@ -149,3 +153,124 @@ func TestARefusalDoesNotFallBack(t *testing.T) {
 		t.Fatalf("a refusal on direct sent the room to ziti %d times", n)
 	}
 }
+
+// claude-sg4 on 2026-10-14. The room joined at the address it reaches the hub on,
+// and the hub's welcome advertised one from a network the hub had left. Learning
+// that list must not move a single data dial off the address the control
+// connection reached, or the pool never fills while the room looks attached.
+func TestDataFollowsTheControlWhenTheHubAdvertisesAnotherAddress(t *testing.T) {
+	lightSlot(t)
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	const stale = "192.168.1.68:7779"
+	hub := NewHub(Timings{Beat: 100 * time.Millisecond, Silence: time.Second, Warm: 2})
+	hub.Paths = func() []Path { return []Path{{Transport: "direct", Addr: stale}} }
+	ctx, stop := context.WithCancel(context.Background())
+	defer stop()
+	go func() { _ = hub.ServeVia(ctx, ln, "direct") }()
+
+	dialers := map[string]Dialer{ln.Addr().String(): &switchable{addr: ln.Addr().String()}}
+	gone := &switchable{addr: stale}
+	gone.down.Store(true)
+	dialers[stale] = gone
+	rungsFor := func(saved Saved, tr RoomTransports) []Rung {
+		ps, _ := Candidates(saved, tr)
+		var out []Rung
+		for _, p := range ps {
+			out = append(out, Rung{Path: p, Dial: dialers[p.Addr]})
+		}
+		return out
+	}
+	saved := Saved{Transport: "direct", Hub: ln.Addr().String(), Room: "claude-sg4"}
+	ladder := NewLadder(rungsFor(saved, RoomTransports{}))
+	// What learnHubPaths does: the hub's list written down and the ladder rebuilt.
+	// Before the fix the advertise replaced the joined address right here.
+	learn := func(ps []Path) {
+		ladder.Set(rungsFor(saved, RoomTransports{Hub: ps}))
+	}
+	room := &Room{
+		Name: "claude-sg4", Dial: ladder,
+		Handler: http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte("ok")) }),
+		T:       Timings{Beat: 100 * time.Millisecond, Warm: 2, Backoff: 20 * time.Millisecond, DialWait: 200 * time.Millisecond},
+		OnPaths: learn,
+	}
+	go func() { _ = room.Run(ctx) }()
+	waitFor(t, 5*time.Second, func() bool { return hub.Has("claude-sg4") })
+
+	// The hub asks for more, as a board request does, after the room learnt.
+	dctx, dcancel := context.WithTimeout(ctx, 3*time.Second)
+	defer dcancel()
+	for i := 0; i < 3; i++ {
+		c, err := hub.Dial(dctx, "claude-sg4")
+		if err != nil {
+			t.Fatalf("data connection %d never arrived: %v (the room dialled the advertise %d times)",
+				i, err, gone.n())
+		}
+		c.Close()
+	}
+	if n := gone.n(); n != 0 {
+		t.Fatalf("the room dialled the hub's stale advertise %d times", n)
+	}
+}
+
+// A room whose control connection is up while every data dial fails is flagged
+// by the hub, not counted as reachable, and says why on its own state.
+func TestTheHubFlagsARoomWhoseDataDialsFail(t *testing.T) {
+	lightSlot(t)
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	hub := NewHub(Timings{Beat: 50 * time.Millisecond, Silence: time.Second, Warm: 1, Starve: 300 * time.Millisecond})
+	ctx, stop := context.WithCancel(context.Background())
+	defer stop()
+	go func() { _ = hub.ServeVia(ctx, ln, "direct") }()
+
+	d := &onlyFirst{addr: ln.Addr().String()}
+	room := &Room{
+		Name: "starved", Dial: d, Handler: http.NotFoundHandler(),
+		T: Timings{Beat: 50 * time.Millisecond, Warm: 1, Backoff: 20 * time.Millisecond, DialWait: 200 * time.Millisecond},
+	}
+	go func() { _ = room.Run(ctx) }()
+	waitFor(t, 5*time.Second, func() bool {
+		a, ok := attachedAs(hub, "starved")
+		return ok && a.Starved
+	})
+	if s := room.State(); !s.Up || s.DataError == "" {
+		t.Fatalf("the room's own state says %+v, want up with the data dial's error", s)
+	}
+
+	// Data dials get through again, and the next ask fills the pool.
+	d.open.Store(true)
+	dctx, dcancel := context.WithTimeout(ctx, 3*time.Second)
+	defer dcancel()
+	if c, err := hub.Dial(dctx, "starved"); err != nil {
+		t.Fatal(err)
+	} else {
+		c.Close()
+	}
+	waitFor(t, 5*time.Second, func() bool {
+		a, ok := attachedAs(hub, "starved")
+		return ok && !a.Starved && room.State().DataError == ""
+	})
+}
+
+// onlyFirst lets the first dial through, the control connection, and refuses
+// every one after it until open.
+type onlyFirst struct {
+	addr  string
+	first atomic.Bool
+	open  atomic.Bool
+}
+
+func (o *onlyFirst) Dial(ctx context.Context) (net.Conn, error) {
+	if o.first.Swap(true) && !o.open.Load() {
+		return nil, errors.New("dial tcp 192.168.1.68:7779: i/o timeout")
+	}
+	var d net.Dialer
+	return d.DialContext(ctx, "tcp", o.addr)
+}
+
+func (o *onlyFirst) Describe() string { return o.addr }

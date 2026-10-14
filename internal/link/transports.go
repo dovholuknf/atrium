@@ -195,8 +195,17 @@ func merge(dst, src Path, from string) Path {
 // told to the room on its own machine. Ordered by the room's order, else the
 // hub's, else DefaultOrder. A path that cannot dial is left out and named in
 // `skipped` so the log can say why there is no fallback.
+//
+// A DIRECT ADDRESS IS NEVER LAID OVER ANOTHER ONE. Each distinct address is its
+// own rung: a local one first, then the one the room joined with, then the hub's
+// advertise. The advertise is where the hub thinks it can be reached, and a hub
+// that moved network keeps saying the old one. Laying it over the join turned a
+// room that reached its hub on 127.0.0.1 into one whose every data dial went to
+// an address that timed out, while its control connection, dialled before the
+// hub had spoken, stayed up and made the room look attached.
 func Candidates(joined Saved, t RoomTransports) (rungs []Path, skipped []string) {
 	by := map[string]Path{}
+	var direct []Path
 	add := func(p Path, from string) {
 		k := strings.ToLower(strings.TrimSpace(p.Transport))
 		if k == "openziti" {
@@ -205,11 +214,31 @@ func Candidates(joined Saved, t RoomTransports) (rungs []Path, skipped []string)
 		if !knownKind(k) {
 			return
 		}
+		if k == "direct" {
+			by[k] = Path{Transport: k}
+			addr := strings.TrimSpace(p.Addr)
+			if addr == "" {
+				return
+			}
+			for _, d := range direct {
+				if equalFold(d.Addr, addr) {
+					return
+				}
+			}
+			direct = append(direct, Path{Transport: k, Addr: addr, From: from})
+			return
+		}
 		cur, ok := by[k]
 		if !ok {
 			cur = Path{Transport: k}
 		}
 		by[k] = merge(cur, p, from)
+	}
+	// A direct address typed on this machine is tried before the join's.
+	for _, p := range t.Paths {
+		if strings.EqualFold(strings.TrimSpace(p.Transport), "direct") {
+			add(p, "local")
+		}
 	}
 	if joined.Transport != "" {
 		add(Path{Transport: joined.Transport, Addr: joined.Hub, Service: joined.Service,
@@ -231,10 +260,12 @@ func Candidates(joined Saved, t RoomTransports) (rungs []Path, skipped []string)
 		}
 		switch k {
 		case "direct":
-			if p.Addr == "" {
+			if len(direct) == 0 {
 				skipped = append(skipped, "direct: no hub address")
 				continue
 			}
+			rungs = append(rungs, direct...)
+			continue
 		case "ziti":
 			if p.Service == "" {
 				p.Service = DefaultZitiService

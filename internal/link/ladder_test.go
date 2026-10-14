@@ -76,16 +76,82 @@ func TestCandidatesLayerJoinHubAndLocalInThatOrder(t *testing.T) {
 		Paths: []Path{{Transport: "ziti", Identity: "/id.json", Service: "local-svc"}},
 	}
 	got, _ := Candidates(saved, tr)
-	if kinds(got) != "ziti,direct" {
+	if kinds(got) != "ziti,direct,direct" {
 		t.Fatalf("the hub's order applies with no local one: got %s", kinds(got))
 	}
-	if got[0].Service != "local-svc" || got[1].Addr != "new:7779" {
-		t.Fatalf("local wins over the hub and the hub over the join: %+v", got)
+	if got[0].Service != "local-svc" {
+		t.Fatalf("local wins over the hub: %+v", got)
+	}
+	if got[1].Addr != "old:7779" || got[1].From != "join" || got[2].Addr != "new:7779" || got[2].From != "hub" {
+		t.Fatalf("the joined address and the hub's advertise are two rungs, the join first: %+v", got)
 	}
 	tr.Order = []string{"direct"}
 	got, _ = Candidates(saved, tr)
-	if kinds(got) != "direct,ziti" {
+	if kinds(got) != "direct,direct,ziti" {
 		t.Fatalf("a local order wins over the hub's: got %s", kinds(got))
+	}
+}
+
+// claude-sg4 on 2026-10-14: joined at 127.0.0.1:7779, on the hub's own machine,
+// while the hub advertised 192.168.1.68:7779 from a network it had left. The
+// advertise replaced the join, every data dial timed out, and the room looked
+// attached because the control connection had been dialled first.
+func TestCandidatesNeverLayTheHubsAdvertiseOverTheJoinedAddress(t *testing.T) {
+	saved := Saved{Transport: "direct", Hub: "127.0.0.1:7779", Room: "claude-sg4"}
+	tr := RoomTransports{Hub: []Path{{Transport: "direct", Addr: "192.168.1.68:7779"}}}
+	got, _ := Candidates(saved, tr)
+	if len(got) != 2 || got[0].Addr != "127.0.0.1:7779" || got[1].Addr != "192.168.1.68:7779" {
+		t.Fatalf("got %+v, want the joined address first and the advertise after it", got)
+	}
+	// The same address from both is one rung.
+	tr.Hub[0].Addr = "127.0.0.1:7779"
+	if got, _ = Candidates(saved, tr); len(got) != 1 {
+		t.Fatalf("one address said twice made %d rungs", len(got))
+	}
+	// An address typed on the machine is tried before the join's, and keeps it.
+	tr.Paths = []Path{{Transport: "direct", Addr: "10.20.40.118:7779"}}
+	got, _ = Candidates(saved, tr)
+	if len(got) != 2 || got[0].Addr != "10.20.40.118:7779" || got[0].From != "local" || got[1].Addr != "127.0.0.1:7779" {
+		t.Fatalf("got %+v, want local then join", got)
+	}
+}
+
+// The ladder stands on the rung the control connection reached, so a Set that
+// drops that rung (the hub's list replaced it) does not move a single data dial.
+func TestSetKeepsTheRungTheControlConnectionReached(t *testing.T) {
+	here, gone := &fakeDial{name: "127.0.0.1:7779"}, &fakeDial{name: "192.168.1.68:7779"}
+	gone.fail.Store(true)
+	l := NewLadder([]Rung{{Path: Path{Transport: "direct", Addr: "127.0.0.1:7779"}, Dial: here}})
+	if c, err := l.Climb(context.Background(), time.Second); err != nil {
+		t.Fatal(err)
+	} else {
+		c.Close()
+	}
+	l.Set([]Rung{{Path: Path{Transport: "direct", Addr: "192.168.1.68:7779"}, Dial: gone}})
+	c, err := l.Dial(context.Background())
+	if err != nil {
+		t.Fatalf("a data dial after Set went to the dropped address: %v", err)
+	}
+	c.Close()
+	if gone.n.Load() != 0 {
+		t.Fatal("a data dial went to an address the control connection never reached")
+	}
+	if !l.Fallback() {
+		t.Fatal("standing on a rung the list no longer has is not the first choice")
+	}
+	// Two direct rungs: Set with both keeps the one that was reached, by address.
+	l = NewLadder([]Rung{
+		{Path: Path{Transport: "direct", Addr: "192.168.1.68:7779"}, Dial: gone},
+		{Path: Path{Transport: "direct", Addr: "127.0.0.1:7779"}, Dial: here},
+	})
+	if c, err := l.Climb(context.Background(), time.Second); err != nil {
+		t.Fatal(err)
+	} else {
+		c.Close()
+	}
+	l.Set(l.Rungs())
+	if l.Describe() != "127.0.0.1:7779" {
+		t.Fatalf("on %s after Set, want the address that answered", l.Describe())
 	}
 }
 

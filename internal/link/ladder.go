@@ -27,38 +27,65 @@ type Rung struct {
 }
 
 // Ladder is a Dialer over several transports.
+//
+// IT STANDS ON A RUNG, NOT ON A KIND. Two direct rungs at two addresses are two
+// rungs, and every later dial uses the one the control connection reached. A Set
+// that leaves that rung out keeps standing on it, because the control connection
+// is still on it and a data connection that went anywhere else is a pool that
+// never fills.
 type Ladder struct {
 	mu    sync.Mutex
 	rungs []Rung
-	at    int
+	on    Rung
+	has   bool
 }
 
 // NewLadder makes a ladder over rungs, best first, standing on the top one.
-func NewLadder(rungs []Rung) *Ladder { return &Ladder{rungs: rungs} }
+func NewLadder(rungs []Rung) *Ladder {
+	l := &Ladder{rungs: rungs}
+	if len(rungs) > 0 {
+		l.on, l.has = rungs[0], true
+	}
+	return l
+}
 
-// Set replaces the rungs, staying on the same transport when it is still there.
+// samePath is whether two paths are the one rung.
+func samePath(a, b Path) bool {
+	return a.Transport == b.Transport && equalFold(a.Addr, b.Addr) && a.Service == b.Service &&
+		a.Share == b.Share && a.Identity == b.Identity
+}
+
+// index is where p is in the rungs, or -1. Called with mu held.
+func (l *Ladder) index(p Path) int {
+	for i, r := range l.rungs {
+		if samePath(r.Path, p) {
+			return i
+		}
+	}
+	return -1
+}
+
+// Set replaces the rungs, staying on the same rung. Where the new list still has
+// it, its new dialer is taken. Where it does not, the old one is kept until the
+// next climb.
 func (l *Ladder) Set(rungs []Rung) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	on := ""
-	if l.at < len(l.rungs) {
-		on = l.rungs[l.at].Path.Transport
-	}
-	l.rungs, l.at = rungs, 0
-	for i, r := range rungs {
-		if r.Path.Transport == on {
-			l.at = i
-		}
+	l.rungs = rungs
+	if i := l.index(l.on.Path); i >= 0 {
+		l.on = rungs[i]
+	} else if !l.has && len(rungs) > 0 {
+		l.on, l.has = rungs[0], true
 	}
 }
 
 func (l *Ladder) current() (Rung, int, bool) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	if l.at >= len(l.rungs) {
+	if !l.has {
 		return Rung{}, 0, false
 	}
-	return l.rungs[l.at], l.at, true
+	return l.on, l.index(l.on.Path), true
 }
 
 // Dial opens one connection on the rung the ladder is on.
@@ -85,10 +112,10 @@ func (l *Ladder) Transport() string {
 	return r.Path.Transport
 }
 
-// Fallback says it is on a rung below the first.
+// Fallback says it is on a rung below the first, or on one the list no longer has.
 func (l *Ladder) Fallback() bool {
 	_, at, ok := l.current()
-	return ok && at > 0
+	return ok && at != 0
 }
 
 // Rungs is a copy of the rungs, best first.
@@ -106,18 +133,15 @@ func (l *Ladder) Climb(ctx context.Context, wait time.Duration) (net.Conn, error
 		return nil, errors.New("this room has no transport to reach its hub")
 	}
 	var why []string
-	for i, r := range rungs {
+	for _, r := range rungs {
 		c, err := dialWithin(ctx, r.Dial, wait)
 		if err == nil {
 			l.mu.Lock()
 			// The rungs may have been Set while this dialled. Stand on the same
-			// transport in whatever the list is now.
-			l.at = i
-			for j, now := range l.rungs {
-				if now.Path.Transport == r.Path.Transport {
-					l.at = j
-					break
-				}
+			// rung in whatever the list is now, or on the one that answered.
+			l.on, l.has = r, true
+			if j := l.index(r.Path); j >= 0 {
+				l.on = l.rungs[j]
 			}
 			l.mu.Unlock()
 			return c, nil
@@ -132,9 +156,14 @@ func (l *Ladder) Climb(ctx context.Context, wait time.Duration) (net.Conn, error
 
 // Probe dials every rung above the current one and says whether any answered.
 // It closes what it opened and never moves the ladder: only a climb does that.
+// Standing on a rung the list no longer has, every rung is above it.
 func (l *Ladder) Probe(ctx context.Context, wait time.Duration) bool {
 	l.mu.Lock()
-	above := append([]Rung(nil), l.rungs[:min(l.at, len(l.rungs))]...)
+	at := l.index(l.on.Path)
+	if at < 0 {
+		at = len(l.rungs)
+	}
+	above := append([]Rung(nil), l.rungs[:at]...)
 	l.mu.Unlock()
 	for _, r := range above {
 		if c, err := dialWithin(ctx, r.Dial, wait); err == nil {
