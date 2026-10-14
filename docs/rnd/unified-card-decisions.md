@@ -28,6 +28,8 @@ collapsible.
 clint also said "blocked might be a status". Not settled here. Where a blocked card would sit was asked and not
 answered, so it is open for a later design.
 
+A blocked card sits in 'working' while its owner is an agent, and moves to 'needs you' when the owner is human or a stuck alert has fired.
+
 ## 3. Shelved
 
 Chosen: **A.** Since clint put shelved in done (choice 1), the question became how shelved is told apart in done.

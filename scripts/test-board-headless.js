@@ -576,6 +576,28 @@ function walkRoute(req, res, url) {
   return true;
 }
 
+// THE UNIFIED CARD (docs/rnd/unified-card.md): one card per state, and 111 finished ones for the cap.
+const UC_AT = new Date(Date.UTC(2026, 8, 19, 12, 0, 0)).toISOString();
+const ucCard = (id, status, more) => Object.assign({
+  id, status, display_title: id, runner: "claude", rank: 1, worktree: "/tmp/" + id, why: "", idle_seconds: 30, wait_seconds: 0,
+  waiting_since: UC_AT, created_at: UC_AT, last_activity_at: UC_AT, tags: [], supervised: false, offline: false, pinned: false,
+  auto_approve: false, pid: 0
+}, more || {});
+const UC_CARDS = [
+  ucCard("uc-ready", "needs-input", { supervised: true, pid: 11 }),
+  ucCard("uc-agent", "needs-input", { supervised: true, pid: 12, tags: ["origin:agent"] }),
+  ucCard("uc-perm", "needs-permission", { supervised: true, pid: 13 }),
+  ucCard("uc-work", "running", { supervised: true, pid: 14, activity: { what: "thinking" } }),
+  ucCard("uc-quiet", "running", { supervised: true, pid: 15 }),
+  ucCard("uc-gone", "needs-input", { supervised: false }),
+  ucCard("uc-parked", "needs-input", { supervised: false, parked_at: UC_AT }),
+  ucCard("uc-shelved", "shelved"),
+  ucCard("uc-done", "done"),
+  ucCard("uc-dead", "dead"),
+];
+const UC_MANY = Array.from({ length: 111 }, (_, i) => ucCard("ud" + i, "done", {
+  pinned: i < 17, last_activity_at: new Date(Date.UTC(2026, 8, 19, 12, 0, 0) - i * 3600e3).toISOString() }));
+
 function sendJSON(res, obj) {
   const body = JSON.stringify(obj);
   res.writeHead(200, { "Content-Type": "application/json" });
@@ -612,6 +634,8 @@ function mockTasks(reading) {
   // state, where the list agrees the card is attachable and nothing tears it
   // down. Pinned so the row is present either way, the way a real lagging
   // list keeps the row while dropping the live flag.
+  if (tasksMode === "unified") { return UC_CARDS; }
+  if (tasksMode === "unifiedMany") { return UC_MANY; }
   if (tasksMode === "worn") { return wornTasks; }
   if (tasksMode === "keepalive") { return KA_CARDS; }
   if (tasksMode === "stuck") { return stuckCards(); }
@@ -22898,6 +22922,92 @@ async function joinedLiveSection(browser, base) {
   if (!bad) console.log("joinedLive ok");
 }
 
+// THE UNIFIED CARD ON THE BOARD: columns follow cardState (needs you, working, done), one count line, grey only for off,
+// the one orange for waiting, a neutral runner mark, chips that wrap, and a capped done column with no pinned group.
+async function unifiedCardSection(browser, base) {
+  const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+  const p = await ctx.newPage();
+  const errors = [];
+  p.on("pageerror", e => errors.push(e.message));
+  const was = tasksMode;
+  try {
+    tasksMode = "unified";
+    await p.goto(base + "/", { waitUntil: "domcontentloaded" });
+    await p.waitForFunction(() => typeof renderBoard === "function" && typeof cardsLoaded !== "undefined" && cardsLoaded,
+      null, { timeout: slow(15000) });
+    await p.evaluate(() => { setGrouping({ on: false }, "board"); switchView("board"); });
+    await p.waitForSelector('#board .col .card', { timeout: slow(10000) });
+    const r = await p.evaluate(() => {
+      const ids = sel => [...document.querySelectorAll(sel)].map(c => c.dataset.id).sort();
+      const px = v => { const e = document.createElement("i"); e.style.color = v; document.body.appendChild(e);
+        const c = getComputedStyle(e).color; e.remove(); return c; };
+      const card = id => document.querySelector('#board .card[data-id="' + id + '"]');
+      const wait = px("var(--wait)"), label = px("var(--label)");
+      const stateChip = id => card(id).querySelector(".chip.state");
+      const grey = [...document.querySelectorAll("#board .card")].map(c => [c.dataset.id, getComputedStyle(c).filter]);
+      const chips = card("uc-quiet").querySelector(".card-line > .chips");
+      return {
+        cols: [...document.querySelectorAll("#board .col")].map(c => c.dataset.column),
+        needs: ids('#board [data-column="needs-you"] .card'), working: ids('#board [data-column="working"] .card'),
+        done: ids('#board [data-column="done"] .card'),
+        count: (document.getElementById("board-count") || {}).textContent || "",
+        pulses: document.querySelectorAll("#board .pulse").length, pins: document.querySelectorAll("#board .pins").length,
+        grey, wait, label,
+        edge: getComputedStyle(card("uc-agent"), "::before").backgroundColor,
+        chipColor: stateChip("uc-agent") ? getComputedStyle(stateChip("uc-agent")).color : "none",
+        permColor: stateChip("uc-perm") ? getComputedStyle(stateChip("uc-perm")).color : "none",
+        quietChip: stateChip("uc-quiet") ? getComputedStyle(stateChip("uc-quiet")).color : "none",
+        quietMark: getComputedStyle(card("uc-quiet").querySelector(".rmark")).color,
+        waitMark: getComputedStyle(card("uc-ready").querySelector(".rmark")).color,
+        wrap: getComputedStyle(chips).flexWrap, overflowX: getComputedStyle(chips).overflowX,
+        workMarks: document.querySelectorAll("#board .rmark.working").length,
+        liveDots: [...document.querySelectorAll("#board .chip.live")].filter(e => getComputedStyle(e, "::before").animationName !== "none").length
+      };
+    });
+    const eq = (what, got, want) => { if (JSON.stringify(got) !== JSON.stringify(want)) fail("unifiedCard: " + what + " is " + JSON.stringify(got) + ", want " + JSON.stringify(want)); };
+    eq("columns", r.cols, ["needs-you", "working", "done"]);
+    eq("needs you", r.needs, ["uc-agent", "uc-perm", "uc-ready"]);
+    eq("working", r.working, ["uc-quiet", "uc-work"]);
+    eq("done holds every card with no runner, a gone ready card included", r.done, ["uc-dead", "uc-done", "uc-gone", "uc-parked", "uc-shelved"]);
+    if (!/^5 running: 3 need you, 2 working/.test(r.count) || !/5 done/.test(r.count)) fail("unifiedCard: count line is '" + r.count + "'");
+    eq("pulse dots", r.pulses, 0);
+    eq("pinned groups", r.pins, 0);
+    for (const [id, f] of r.grey) {
+      const off = ["uc-gone", "uc-parked", "uc-shelved", "uc-done", "uc-dead"].includes(id);
+      if (off !== f.includes("grayscale")) fail("unifiedCard: " + id + " filter is '" + f + "': grey is for off cards and nothing else");
+    }
+    eq("the agent-launched waiting card's edge is the one orange", r.edge, r.wait);
+    eq("its state chip is the one orange", r.chipColor, r.wait);
+    eq("a permission chip is the one orange", r.permColor, r.wait);
+    if (r.quietChip === r.wait) fail("unifiedCard: a live quiet card's chip uses the waiting orange");
+    eq("a live claude mark is neutral", r.quietMark, r.label);
+    eq("a waiting claude mark takes the orange", r.waitMark, r.wait);
+    eq("chips wrap", r.wrap, "wrap");
+    if (r.overflowX === "auto" || r.overflowX === "scroll") fail("unifiedCard: the chip row scrolls sideways, so it clips");
+    eq("working marks", r.workMarks, 1);
+    eq("animated live dots", r.liveDots, 0);
+
+    // 111 finished: capped, with a more row, and not wider than a quiet column.
+    tasksMode = "unifiedMany";
+    await p.evaluate(async () => { await loadCards(); renderBoard(); });
+    await p.waitForSelector('#board [data-column="done"] .card', { timeout: slow(10000) });
+    const m = await p.evaluate(() => {
+      const col = document.querySelector('#board [data-column="done"]');
+      return { n: col.querySelectorAll(".card").length, more: (col.querySelector(".more") || {}).textContent || "",
+        head: col.querySelector(".col-head .n").textContent, pins: document.querySelectorAll("#board .pins").length,
+        first: col.querySelector(".card").dataset.id, w: col.getBoundingClientRect().width };
+    });
+    if (m.n > 12 || m.n < 6) fail("unifiedCard: done draws " + m.n + " cards, want 6 to 12");
+    if (!new RegExp("^" + (111 - m.n) + " more finished, 17 of them pinned").test(m.more.trim())) fail("unifiedCard: more row says '" + m.more.trim() + "'");
+    eq("done header keeps the total", m.head, "111");
+    eq("a pinned card is first in done", m.first, "ud0");
+    eq("pinned groups with 111 done", m.pins, 0);
+    if (m.w > 360) fail("unifiedCard: done is " + m.w + "px wide, it must not grow with its count");
+    if (errors.length) fail("unifiedCard: page errors: " + errors.join(" | "));
+  } finally { tasksMode = was; await ctx.close(); }
+  if (!bad) console.log("unifiedCard ok");
+}
+
 // The gear's terminal list section: the list's controls, and the cache summary that follows the list on an event.
 // The terminals list's third sort, `started`: newest card first, a stable tiebreak on the id, remembered, and held
 // inside every group mode. The gear's sort row offers it.
@@ -31331,6 +31441,7 @@ async function main() {
     await unit("popoutRaise", () => popoutRaiseSection(browser, base));
     await unit("gearHosts", () => gearHostsSection(browser, base));
     await unit("joinedLive", () => joinedLiveSection(browser, base));
+    await unit("unifiedCard", () => unifiedCardSection(browser, base));
     await unit("termEnded", () => termEndedSection(browser, base));
     await unit("joinedClick", () => joinedClickSection(browser, base));
     await unit("coverPoll", () => coverPollSection(browser, base));

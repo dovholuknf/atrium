@@ -184,18 +184,7 @@ function termRowKind(t) {
 }
 
 
-// IS THIS SESSION WORKING RIGHT NOW. The one live-activity guard the whole
-// strip reads from: the doer filter's hide-inactive test, the runner mark that
-// animates, and the `by activity` sort all ask this and get the same answer,
-// rather than three copies that drift. It is the same test the board's
-// `activityChip` makes (board.js): a live `activity.what` that is not idle, on a
-// card that is not waiting on you, not shelved, and whose activity is not stale
-// (a done or dead card can still carry a `thinking` that outlived its status).
-function workingNow(t) {
-  const a = t && t.activity;
-  return !!(a && a.what && a.what !== "idle" && !a.looks_idle &&
-    !isWaiting(t) && t.status !== "shelved" && !staleActivity(t));
-}
+// IS THIS SESSION WORKING RIGHT NOW is `workingNow`, in js/cardrules.js.
 
 // IS THIS ROW COLD: no live connection. `supervised` is set while atrium holds a
 // runner for the card and drops when that runner exits or disconnects. Idle and
