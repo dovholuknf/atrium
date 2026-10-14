@@ -37,7 +37,6 @@ param([string[]]$Rooms = @('local'), [switch]$NoBuild, [switch]$WhatIf, [switch]
 $ErrorActionPreference = 'Continue'
 $LiveTag = 'DEPLOY'
 . "$PSScriptRoot\refuse-supervised.ps1"
-Assert-NotSupervised
 Assert-ControlOptIn -Control:$Control -IKnowItKillsMyShell:$IKnowItKillsMyShell `
   -Named:(($Rooms -split ',' | ForEach-Object { $_.Trim() }) -contains 'sg4-control')
 . "$PSScriptRoot\live-common.ps1"
@@ -47,6 +46,9 @@ $remoteNames = 'sg3', 'm1mini', 'sgg'
 try { $want = Resolve-DeployRooms -Rooms $Rooms -Control:$Control -IKnowItKillsMyShell:$IKnowItKillsMyShell }
 catch { Say "FATAL: $($_.Exception.Message)"; exit 1 }
 $local = @($want | Where-Object { $_ -in 'hub', 'claude-sg4', 'sg4-control' })
+# Only a deploy that stops something on this machine can end the shell it runs in. A deploy of only sg3, m1mini or sgg
+# stops nothing here, so it runs from any shell, a room's included.
+if ($local.Count) { Assert-NotSupervised }
 
 if (-not $ReportTo -and $env:ATRIUM_TASK_ID) {
   $ReportTo = if ($env:ATRIUM_ROOM) { "$env:ATRIUM_TASK_ID@$env:ATRIUM_ROOM" } else { $env:ATRIUM_TASK_ID }

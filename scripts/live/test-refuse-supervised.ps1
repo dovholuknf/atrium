@@ -56,8 +56,13 @@ $fakeRoom = '"C:\Users\claude\.atrium\bin\atrium.exe" room --dir C:\Users\claude
 function Run([string]$Script, [string[]]$More, [string]$Ancestors, [string]$Job = '0') {
   $env:ATRIUM_LIVE_FAKE_JOB = $Job
   $env:ATRIUM_LIVE_FAKE_ANCESTORS = $Ancestors
+  # A deploy that is allowed to run would say its WhatIf result to the card that runs this test.
+  $task = $env:ATRIUM_TASK_ID; $env:ATRIUM_TASK_ID = $null
   try { $out = & pwsh -NoProfile -File (Join-Path $PSScriptRoot $Script) -WhatIf @More 2>&1 | Out-String }
-  finally { Remove-Item Env:ATRIUM_LIVE_FAKE_ANCESTORS, Env:ATRIUM_LIVE_FAKE_JOB -ErrorAction SilentlyContinue }
+  finally {
+    Remove-Item Env:ATRIUM_LIVE_FAKE_ANCESTORS, Env:ATRIUM_LIVE_FAKE_JOB -ErrorAction SilentlyContinue
+    $env:ATRIUM_TASK_ID = $task
+  }
   [pscustomobject]@{ Code = $LASTEXITCODE; Out = $out }
 }
 $scripts = @{
@@ -68,6 +73,15 @@ foreach ($s in $scripts.Keys | Sort-Object) {
   $r = Run $s $scripts[$s] (ConvertTo-Json -InputObject @($fakeRoom) -Compress)
   Check "$s refuses under a room" ($r.Code -eq 1 -and $r.Out -match 'not under atrium')
   Check "$s says what to do" ($r.Out -match 'wt\.exe')
+}
+$roomShell = ConvertTo-Json -InputObject @($fakeRoom) -Compress
+foreach ($rooms in 'claude-sg4', 'hub', 'local', 'all', 'm1mini,hub') {
+  $r = Run 'atrium-deploy.ps1' @('-NoBuild', '-Rooms', $rooms) $roomShell
+  Check "atrium-deploy -Rooms $rooms refuses under a room" ($r.Code -eq 1 -and $r.Out -match 'not under atrium')
+}
+foreach ($rooms in 'm1mini', 'sg3', 'sgg', 'sg3,m1mini') {
+  $r = Run 'atrium-deploy.ps1' @('-NoBuild', '-Rooms', $rooms) $roomShell
+  Check "atrium-deploy -Rooms $rooms runs under a room, nothing local to stop" ($r.Out -notmatch 'not under atrium')
 }
 foreach ($s in 'atrium-deploy.ps1', 'stop-atrium.ps1', 'start-atrium.ps1') {
   $r = Run $s @('-Control') '[]'
