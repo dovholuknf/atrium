@@ -89,4 +89,4 @@ It also refuses from inside a job object that holds a room and no desktop (no te
 process whose parent has already exited. Not from any job: on sg4 the whole interactive session is one job. The start
 scripts start the hub and rooms with `CREATE_BREAKAWAY_FROM_JOB` (`Start-Breakaway` in `live-common.ps1`).
 
-A room that answers a stop with 409 (its pty host would die with it) is never stopped with --runners by these scripts on their own. The stop fails, says how many runners are held and nothing has changed. Pass -KillRunners to deploy-batch.ps1, trium-deploy.ps1 or stop-atrium.ps1 to end them anyway. 	est-stop-room-409.ps1 covers it.
+A room that answers a stop with 409 (its pty host would die with it) is never stopped with --runners by these scripts on their own. The stop fails, says how many runners are held and nothing has changed. Pass -KillRunners to deploy-batch.ps1, atrium-deploy.ps1 or stop-atrium.ps1 to end them anyway. test-stop-room-409.ps1 covers it.

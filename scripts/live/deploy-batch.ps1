@@ -60,7 +60,11 @@ $revert = Save-Revert
 
 # 1. Stop the room gracefully first, so it parks its runners and saves what to reopen. A room that refuses because its
 #    pty host would die with it stops the deploy here, before anything has changed. Only -KillRunners ends them.
-if (-not (Stop-Room)) { Say 'FATAL: the room refused to stop without ending its runners. nothing changed. pass -KillRunners to end them'; exit 1 }
+if (-not (Stop-Room)) {
+  # Nothing was stopped, so the hold set above must not keep every card waiting.
+  try { Invoke-RestMethod -Method Post -Uri $RoomHoldUrl -ContentType 'application/json' -Body '{"action":"lift","by":"deploy-batch","outcome":"cancelled"}' -TimeoutSec 15 | Out-Null } catch { Say "could not lift the deploy hold: $($_.Exception.Message)" }
+  Say 'FATAL: the room refused to stop without ending its runners. nothing changed, the deploy hold is lifted. pass -KillRunners to end them'; exit 1
+}
 
 # 2. Stop the hub, unless this is a room-only deploy.
 if ($RoomOnly) { Say 'room only: the hub is left running' } else { Stop-Hub }
