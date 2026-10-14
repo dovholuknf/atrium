@@ -1285,6 +1285,20 @@ function paintModelPick() {
     b.classList.toggle("on", b.dataset.model === now));
 }
 
+// setThrowaway disables the directory box because atrium makes the path. The typed value is kept, so unticking the box
+// restores it and the path is asked for again.
+function setThrowaway(on) {
+  const cwd = document.getElementById("l-cwd");
+  if (!cwd) return;
+  cwd.disabled = on;
+}
+
+document.getElementById("l-throwaway-on").addEventListener("change", e => {
+  setThrowaway(e.target.checked);
+  // A throwaway has nothing of a link's to clean up.
+  syncMore();
+});
+
 // Typing an id by hand lights the matching button, and typing something else
 // lights none.
 document.getElementById("l-model").addEventListener("input", paintModelPick);
@@ -1494,6 +1508,14 @@ async function openLaunch(id, resume, cwd, ontoTask, prefill, where) {
   // both. Hidden rather than disabled, so there is nothing to wonder about.
   document.getElementById("l-prompt-field").hidden = !!resume;
 
+  // Reset throwaway on every open. Only offer it for a new directory choice;
+  // resumed conversations and existing cards already have directories.
+  document.getElementById("l-throwaway-field").hidden = !!resume || !!ontoTask;
+  document.getElementById("l-throwaway-on").checked = false;
+  setThrowaway(false);
+  // Off every time, like the model: deleting what a link made is asked for each time it is wanted.
+  document.getElementById("l-cleanup-on").checked = false;
+
   // Resuming is opt-out. Where there is a conversation to pick up, continuing
   // it is nearly always the intent, and starting fresh by accident discards
   // everything the session worked out.
@@ -1601,6 +1623,10 @@ function syncMore() {
   const field = document.getElementById("l-link-field");
   if (field && !document.getElementById("l-resume-field").hidden) field.hidden = true;
   else if (field) field.hidden = !link;
+  // What only a link has: the clean up tick. A throwaway has nothing of a link's to clean up.
+  const away = document.getElementById("l-throwaway-on");
+  const cleanup = document.getElementById("l-cleanup-field");
+  if (cleanup) cleanup.hidden = !link || !!(away && away.checked);
 }
 
 // `renderRecentDirs` stood here and drew six buttons under the directory field,
@@ -1790,8 +1816,14 @@ async function launchNow(opening) {
   const picker = document.getElementById("l-harness");
   const resumeOff = !document.getElementById("l-resume-field").hidden &&
     !document.getElementById("l-resume-on").checked;
+  // Send an empty directory for throwaways. The daemon ignores the flag when
+  // a directory is supplied, so a previous field value must not carry through.
+  const throwaway = !document.getElementById("l-throwaway-field").hidden &&
+    document.getElementById("l-throwaway-on").checked;
+  const cleanup = !document.getElementById("l-cleanup-field").hidden &&
+    document.getElementById("l-cleanup-on").checked;
   // Every recognised link goes to the open verb unless the directory was typed over, which names a place to start in.
-  const opening_ = !!launchResolved &&
+  const opening_ = !throwaway && !!launchResolved &&
     document.getElementById("l-cwd").value.trim() === (launchResolved.shownCwd || "");
   // WHICH MACHINE IT STARTS ON: the room box when it is shown, else what the caller worked out (linkRoomFor), else the
   // hub decides, which keeps a link a room already claimed on that room.
@@ -1877,13 +1909,14 @@ async function launchNow(opening) {
     task_id: launchTarget.task_id || "",
     // No resume id means no resume arguments, so the daemon starts fresh.
     resume: resumeOff ? "" : launchTarget.resume,
-    cwd:document.getElementById("l-cwd").value.trim(),
+    throwaway,
+    cwd: throwaway ? "" : document.getElementById("l-cwd").value.trim(),
     title: document.getElementById("l-title").value.trim(),
     why: document.getElementById("l-why").value.trim(),
     // Split on commas and never on spaces, the same rule everywhere else: a
     // tag with a space in it is one tag.
     tags: document.getElementById("l-tags").value
-      .split(",").map(x => x.trim()).filter(Boolean),
+      .split(",").map(x => x.trim()).filter(Boolean).concat(cleanup ? [CLEANUP_TAG] : []),
     // Empty while resuming, since the field is hidden and the daemon refuses
     // a prompt and a resume together.
     prompt: resumeOff || !launchTarget.resume

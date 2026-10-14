@@ -3250,6 +3250,28 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
         <button onclick="openBrowse()">browse</button>
       </div>
     </div>
+    <!-- WITH THE DIRECTORY, because it is an answer to the directory question: ticking it says "I am not going to pick
+         one", and the path box above goes quiet. -->
+    <div class="field" id="l-throwaway-field">
+      <label class="check">
+        <input type="checkbox" id="l-throwaway-on">
+        <span>throw it away when the session ends</span>
+      </label>
+      <span class="hintline">Atrium makes a temporary directory and starts here. When the
+        session ends the directory, the card and the conversation are all deleted. If it turns
+        out to matter, promote it from the card's menu and it moves somewhere you choose.</span>
+    </div>
+    <!-- A LINK'S WORK IS MADE ON DISK (a worktree, maybe a clone, claude/* branches), and this is the way to have it
+         taken away again. Shown for a link only. Wired to the card's own close (js/sharing.js, cleanupWhenDone). -->
+    <div class="field" id="l-cleanup-field" hidden>
+      <label class="check">
+        <input type="checkbox" id="l-cleanup-on">
+        <span>clean up when the work is done</span>
+      </label>
+      <span class="hintline">When the card is done, atrium offers to close it, and closing deletes what it made:
+        the worktree, a clone it had to make and its claude/* branches here and on the hub, and the space comes
+        back. You are shown what goes first, and a worktree with work nowhere else is asked about.</span>
+    </div>
     <!-- Only for a link that names no repo, a ticket or a topic. The open makes a worktree of the repo picked here, or
          a scratch folder of the card's own for "no repo". Nothing is read off the ticket to choose it. Filled by
          fillLaunchRepo in js/fixtures.js. -->

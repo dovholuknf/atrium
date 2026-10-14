@@ -22149,6 +22149,59 @@ async function termHeaderSizeSection(browser, base) {
   } finally { await ctx.close(); }
 }
 
+// THE TEMPORARY-DIRECTORY TICK in the new-agent dialog: ticked, the path box goes quiet and the launch carries
+// throwaway:true with no directory (and no clean-up tick, a throwaway has nothing of a link's to clean up). Unticked, the
+// path is back and is what is sent. A resume does not offer it. THROWAWAY_SHOTS=<dir> writes the dialog, light and dark.
+async function launchThrowawaySection(browser, base) {
+  const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+  const bodies = [];
+  try {
+    const p = await ctx.newPage();
+    const errors = [];
+    p.on("pageerror", e => errors.push(e.message));
+    await p.route(/\/v1\/launch(\?|$)/, async r => {
+      bodies.push(JSON.parse(r.request().postData() || "{}"));
+      await r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ id: "t1", status: "running" }) });
+    });
+    await p.goto(base + "/", { waitUntil: "domcontentloaded" });
+    await p.waitForFunction(() => typeof openLaunch === "function" && typeof doLaunch === "function");
+    const state = () => p.evaluate(() => ({
+      field: !!document.getElementById("l-throwaway-field") && !document.getElementById("l-throwaway-field").hidden, on: !!(document.getElementById("l-throwaway-on") || {}).checked,
+      cwdOff: document.getElementById("l-cwd").disabled, cwd: document.getElementById("l-cwd").value,
+      cleanup: !!document.getElementById("l-cleanup-field") && !document.getElementById("l-cleanup-field").hidden }));
+    await p.evaluate(async () => { await openLaunch(null, "", "/work/here", null, null); });
+    let s = await state();
+    if (!s.field || s.on || s.cwdOff || s.cwd !== "/work/here") fail("launchThrowaway: a fresh dialog " + JSON.stringify(s));
+    if (process.env.THROWAWAY_SHOTS) {
+      for (const theme of ["light", "dark"]) {
+        await p.emulateMedia({ colorScheme: theme });
+        await p.evaluate(t => { document.documentElement.dataset.theme = t; }, theme);
+        await p.locator("dialog#launch").screenshot({ path: process.env.THROWAWAY_SHOTS + "/launch-" + (process.env.THROWAWAY_TAG || "after") + "-" + theme + ".png" });
+      }
+    }
+    await p.click("#l-throwaway-on");
+    s = await state();
+    if (!s.on || !s.cwdOff || s.cwd !== "/work/here") fail("launchThrowaway: ticking left the path box live or lost its value " + JSON.stringify(s));
+    await p.evaluate(() => doLaunch());
+    await p.waitForFunction(() => !document.getElementById("launch").open, null, { timeout: slow(5000) }).catch(() => fail("launchThrowaway: the dialog stayed open"));
+    if (bodies.length !== 1 || bodies[0].throwaway !== true || bodies[0].cwd !== "") fail("launchThrowaway: ticked body " + JSON.stringify(bodies));
+    await p.evaluate(async () => { await openLaunch(null, "", "/work/here", null, null); });
+    s = await state();
+    if (s.on || s.cwdOff) fail("launchThrowaway: the tick carried over to the next open " + JSON.stringify(s));
+    await p.evaluate(() => doLaunch());
+    await p.waitForFunction(() => !document.getElementById("launch").open, null, { timeout: slow(5000) }).catch(() => fail("launchThrowaway: the dialog stayed open"));
+    const b = bodies[1] || {};
+    if (b.throwaway || b.cwd !== "/work/here") fail("launchThrowaway: unticked body " + JSON.stringify(bodies));
+    await p.evaluate(async () => { await openLaunch(null, "abc", "/work/here", null, null); });
+    if ((await state()).field) fail("launchThrowaway: a resume offered a throwaway");
+    await p.evaluate(() => document.getElementById("launch").close());
+    if (errors.length) fail("launchThrowaway: page errors " + errors.join(" | "));
+  } finally {
+    await ctx.close();
+  }
+  if (!bad) console.log("launchThrowaway ok");
+}
+
 // u-dropdowns-instant: the launch dialog opens WITH its room and runner options in place, whatever the network is doing.
 // Every API answer is held for 500ms. The board has read the runners and rooms at start, so the open is one frame: the
 // dialog is showing, both selects hold their options, and nothing is rebuilt in the next half second.
@@ -24773,9 +24826,9 @@ async function quickPasteSection(browser, base) {
     if (st.calls.some(c => c.indexOf("/v1/launch") >= 0)) fail("quickPaste: shift-enter launched: " + st.calls.join(" | "));
     if (await p.inputValue("#l-url") !== "https://github.com/openziti/zrok/pull/12") fail("quickPaste: shift-enter lost the link");
     await shot(p, "edit-first");
-    // u-005: no throwaway, no clean up tick, no "don't ask again", no fold, no second link box. Every card cleans up when
-    // closed, and the first instruction is always in sight.
-    const gone = await p.evaluate(() => ["l-more", "l-throwaway-on", "l-cleanup-field", "l-cleanup-on", "l-direct-field",
+    // u-005: no "don't ask again", no fold, no second link box. The temporary-directory and clean up ticks are back (they are
+    // answers to the directory), and the first instruction is always in sight.
+    const gone = await p.evaluate(() => ["l-more", "l-direct-field",
       "l-direct", "l-recognise", "open-progress"].filter(id => document.getElementById(id)));
     if (gone.length) fail("quickPaste: the dialog still has " + gone.join());
     const shown = await p.evaluate(() => ["l-url", "l-title", "l-tags", "l-why"].filter(id => {
@@ -30130,7 +30183,7 @@ async function main() {
       termDebug: termDebugSection, termDebugPerCard: termDebugPerCardSection, termLag: termLagSection, termHiddenRedraw: termHiddenRedrawSection, termLastRead: termLastReadSection, termSortStarted: termSortStartedSection,
       noReadyChildren: noReadyChildrenSection, readyNoSeed: readyNoSeedSection, childUnderParent: childUnderParentSection, topNav: topNavSection, boardUsage: boardUsageSection, tabsOrder: tabsOrderSection,
       groupMenus: groupMenusSection, mGroupMenus: mGroupMenusSection,
-      u002: u002Section, childFold: childFoldSection, liveHome: liveHomeSection, toastsTop: toastsTopSection, heldLink: heldLinkSection, groupBridge: groupBridgeSection, revealFolds: revealFoldsSection,
+      u002: u002Section, childFold: childFoldSection, liveHome: liveHomeSection, toastsTop: toastsTopSection, heldLink: heldLinkSection, launchThrowaway: launchThrowawaySection, groupBridge: groupBridgeSection, revealFolds: revealFoldsSection,
       pulls: pullsSection, prMove: prMoveSection, quickPaste: quickPasteSection, recogniserRepo: recogniserRepoSection, hubRepos: hubReposSection, hubReposShelf: hubReposShelfSection, hubReposLedger: hubReposLedgerSection, hubReposFeed: hubReposFeedSection, changeReq: changeReqSection, mChangeReq: mChangeReqSection, trayHead: trayHeadSection, pullsAbsent: pullsAbsentSection, pullsPanelStage: pullsPanelStageSection, oneTooltip: oneTooltipSection, burnChart: burnChartSection, burnReadout: burnReadoutSection, switchPrewarm: switchPrewarmSection, attachAtOnce: attachAtOnceSection, fileView: fileViewSection, keepAlive: keepAliveSection, switchBackCost: switchBackCostSection, keepMemory: keepMemorySection, pullsDrawer: pullsDrawerSection };
     try {
       const unknown = ONLY.split(",").filter(n => typeof only[n] !== "function");
@@ -32108,6 +32161,7 @@ async function main() {
     await unit("popupFit", () => popupFitSection(browser, base));
     await unit("dropdownsInstant", () => dropdownsInstantSection(browser, base));
     await unit("heldLink", () => heldLinkSection(browser, base));
+    await unit("launchThrowaway", () => launchThrowawaySection(browser, base));
     await unit("mWorking", () => mWorkingSection(browser));
     await unit("mReload", () => mReloadSection(browser));
     await unit("mReconnect", () => mReconnectSection(browser));
