@@ -43,8 +43,22 @@ $CtlHealth    = 'http://127.0.0.1:7791/v1/health'
 $CtlShutdown  = 'http://127.0.0.1:7791/v1/shutdown'
 
 # The exact command lines. The hub's directory flag is --atrium-dir, because `run` also takes the room's --dir.
+# The address rooms are told to dial: ATRIUM_LINK_ADVERTISE (host:port) when set, else this machine's IPv4 address on the
+# interface of the default route, so a changed LAN address needs no edit here. A fixed address went stale on 2026-10-14.
+function Get-LinkAdvertise {
+  if ($env:ATRIUM_LINK_ADVERTISE) { return $env:ATRIUM_LINK_ADVERTISE }
+  try {
+    $r = Get-NetRoute -DestinationPrefix '0.0.0.0/0' -ErrorAction Stop |
+      Sort-Object { $_.RouteMetric + $_.InterfaceMetric } | Select-Object -First 1
+    $ip = Get-NetIPAddress -InterfaceIndex $r.InterfaceIndex -AddressFamily IPv4 -ErrorAction Stop |
+      Where-Object { $_.IPAddress -notlike '169.254.*' } | Select-Object -First 1 -ExpandProperty IPAddress
+    if ($ip) { return "${ip}:7779" }
+  } catch { }
+  throw 'cannot derive the hub link address from the default route; set ATRIUM_LINK_ADVERTISE=host:7779'
+}
+$LinkAdvertise = Get-LinkAdvertise
 $HubArgs = @('run', '--no-room', '--addr', '127.0.0.1:7778', '--link', '0.0.0.0:7779',
-  '--link-advertise', '192.168.1.68:7779', '--atrium-dir', $HubDir)
+  '--link-advertise', $LinkAdvertise, '--atrium-dir', $HubDir)
 # The hub serves the board from the main checkout, so a board change merged to claude/main is live on a browser
 # refresh with no build. clint 2026-10-07: "i'd like this hub to be switched over to allowing live edits".
 $HubArgs += @('--board', (Join-Path $Repo 'internal\api\web'))
