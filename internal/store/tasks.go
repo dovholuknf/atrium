@@ -732,6 +732,9 @@ func (s *Store) setStatusOn(q querier, id, status, reason string) error {
 	if status == StatusNeedsInput || status == StatusNeedsPermission {
 		if prev.WaitingSince != nil {
 			waiting = ts(*prev.WaitingSince)
+		} else if carried, ok := carriedWaitOn(q, id); ok {
+			// Back from a deploy or a restart with nothing new said to it.
+			waiting = carried
 		} else {
 			waiting = ts(n)
 		}
@@ -765,6 +768,17 @@ func (s *Store) setStatusOn(q querier, id, status, reason string) error {
 	archived := ""
 	if status == StatusDone || status == StatusDead {
 		archived = tsOrEmpty(prev.ArchivedAt)
+	}
+	// Going down while waiting: remember the wait, so a resume can pick it up. See waitcarry.go.
+	if (status == StatusDead || status == StatusDone) && prev.WaitingSince != nil {
+		if err := carryWaitOn(q, id, *prev.WaitingSince); err != nil {
+			return err
+		}
+	} else if (status == StatusDead || status == StatusDone) && prev.Status == StatusRunning {
+		// It was working, not waiting: whatever was carried is stale.
+		if _, err := q.Exec(`DELETE FROM waiting_carry WHERE task_id = ?`, id); err != nil {
+			return err
+		}
 	}
 	if _, err := q.Exec(
 		`UPDATE task SET status = ?, waiting_since = ?, last_activity_at = ?, archived_at = ?,

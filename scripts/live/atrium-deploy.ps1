@@ -81,7 +81,9 @@ function Report {
   # The hub routes /v1/* to the room in X-Atrium-Room, and refuses a request that names none.
   $card, $room = $ReportTo -split '@', 2
   $headers = @{}
-  if ($room) { $headers['X-Atrium-Room'] = $room }
+  # A bare card id means the local room, which is where this script runs.
+  if (-not $room) { $room = 'sg4-control' }
+  $headers['X-Atrium-Room'] = $room
   $body = @{ to = $card; from = 'atrium-deploy'; text = $text; kind = 'fyi'; wake = $true } | ConvertTo-Json -Compress
   # Retried while the hub or the room is coming back. A 4xx is an answer, not an outage.
   for ($i = 0; $i -lt 30; $i++) {
