@@ -12,7 +12,7 @@
 #
 # -WhatIf says what it would stop and stops nothing. -KeepControl is accepted and ignored. The claude-sg4 room first
 # asks its working cards to wrap up (up to its restart_wrap_wait_s). -Immediate skips that.
-param([switch]$KeepControl, [switch]$Force, [switch]$WhatIf, [switch]$Immediate, [switch]$Control,
+param([switch]$KeepControl, [switch]$Force, [switch]$WhatIf, [switch]$Immediate, [switch]$KillRunners, [switch]$Control,
   [switch]$IKnowItKillsMyShell)
 
 $ErrorActionPreference = 'Continue'
@@ -30,7 +30,7 @@ if ($env:ATRIUM_TASK_ID -and -not $Force -and -not $WhatIf) {
 
 $withControl = $Control -and $IKnowItKillsMyShell
 if ($withControl) { Stop-Control }
-Stop-Room
+if (-not (Stop-Room)) { Say 'the room refused to stop without ending its runners. nothing was stopped. pass -KillRunners to end them'; exit 1 }
 Stop-Hub
 
 if (-not $WhatIf) {

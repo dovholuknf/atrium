@@ -376,32 +376,56 @@ function Install-Atrium([string]$From = $AtriumNew) {
 function Get-WrapWait {
   try { return [int](Invoke-RestMethod $RoomServes -TimeoutSec 5).restart_wrap_wait_s } catch { return 300 }
 }
+#
+# A 409 from the room means the pty host would die with the room's task, so this stop would end every runner and
+# whatever is typed and unsent in them. That is never done on its own: Stop-Room says so, changes nothing and returns
+# $false, and the caller stops. Only -KillRunners on the calling script ($KillRunners) posts {"runners":true}.
+function Invoke-ShutdownPost([string]$Uri, [string]$Body) {
+  if ($Body) { Invoke-RestMethod $Uri -Method Post -ContentType 'application/json' -Body $Body -TimeoutSec 8 | Out-Null }
+  else { Invoke-RestMethod $Uri -Method Post -TimeoutSec 8 | Out-Null }
+}
+function Get-ShutdownStatus($err) {
+  if ($err.Exception.Response) { return [int]$err.Exception.Response.StatusCode }
+  return 0
+}
 function Stop-Room {
   $room = Find-Atrium room
-  if (-not $room) { Say 'no running room found'; return }
+  if (-not $room) { Say 'no running room found'; return $true }
   $post = $RoomShutdown
   $wait = 45
   if ($Immediate) { $post = "$RoomShutdown`?now=1" } else { $wait = 45 + (Get-WrapWait) }
+  $script:StopRoomRefused = $false
   foreach ($p in $room) {
     Invoke-Step "stop room pid $($p.ProcessId): POST $post, wait up to ${wait}s, then force" {
-      try { Invoke-RestMethod $post -Method Post -TimeoutSec 8 | Out-Null }
+      try { Invoke-ShutdownPost $post '' }
       catch {
         Say "room shutdown post: $($_.Exception.Message)"
-        # A host inside the room task's job refuses a stop that would leave runners up, because they would end
-        # anyway. The deploy hold was set for that case, so ask for the stop that ends them.
-        if ($_.Exception.Response -and [int]$_.Exception.Response.StatusCode -eq 409) {
-          Say 'the pty host would die with the room, stopping with --runners'
-          try { Invoke-RestMethod $post -Method Post -ContentType 'application/json' -Body '{"runners":true}' -TimeoutSec 8 | Out-Null }
-          catch { Say "room shutdown post: $($_.Exception.Message)" }
+        if ((Get-ShutdownStatus $_) -eq 409) {
+          if ($KillRunners) {
+            Say 'the pty host would die with the room. -KillRunners was passed, stopping with --runners'
+            try { Invoke-ShutdownPost $post '{"runners":true}' }
+            catch { Say "room shutdown post: $($_.Exception.Message)" }
+          } else {
+            $script:StopRoomRefused = $true
+            Say 'REFUSED: the pty host would die with the room, so this stop would end every runner and lose any text typed and not sent. nothing was stopped.'
+            try {
+              $pf = Invoke-RestMethod $RoomPreflightUrl -TimeoutSec 5
+              Say "  runners held by the pty host: $($pf.runners.host), in the room's own process: $($pf.runners.in_process). typed text is not exposed, so ask whoever is at the terminals."
+            } catch { Say "  could not read $RoomPreflightUrl for the runner counts: $($_.Exception.Message)" }
+            Say '  to end them anyway, run again with -KillRunners'
+          }
         }
       }
+      if ($script:StopRoomRefused) { return }
       try { Wait-Process -Id $p.ProcessId -Timeout $wait -ErrorAction Stop } catch {}
       if (Get-Process -Id $p.ProcessId -ErrorAction SilentlyContinue) {
         Say "room still up after ${wait}s, force stop"
         Stop-Process -Id $p.ProcessId -Force
       }
     }
+    if ($script:StopRoomRefused) { return $false }
   }
+  return $true
 }
 
 # Stop-Control winds the sg4-control room down the same way Stop-Room does claude-sg4.

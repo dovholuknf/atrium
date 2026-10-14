@@ -15,8 +15,9 @@
 # A deploy hold is set on the room first and waited out, so the room that comes back wakes every card that was
 # working. -NoHold skips it, and so does a room that keeps its runners (Test-RunnersSurvive). Do not send the "commit and wait" say as well: a card told to wait by a say is idle at
 # the hold and is correctly not woken.
-# -RoomOnly leaves the hub running: only the room stops and starts, the hub keeps its process and the image it loaded.
-param([switch]$NoLagLog, [switch]$WhatIf, [switch]$NoHold, [switch]$Immediate, [switch]$RoomOnly)
+# -KillRunners lets a room whose pty host would die with it be stopped anyway, ending every runner and any typed text.
+# Without it that refusal stops the deploy. -RoomOnly leaves the hub running: only the room stops and starts, the hub keeps its process and the image it loaded.
+param([switch]$NoLagLog, [switch]$WhatIf, [switch]$NoHold, [switch]$Immediate, [switch]$RoomOnly, [switch]$KillRunners)
 
 $ErrorActionPreference = 'Continue'
 $LiveTag = 'BATCH'
@@ -57,8 +58,9 @@ Write-DeployQueue
 # 0. Snapshot the outgoing binary under its build id.
 $revert = Save-Revert
 
-# 1. Stop the room gracefully first, so it parks its runners and saves what to reopen.
-Stop-Room
+# 1. Stop the room gracefully first, so it parks its runners and saves what to reopen. A room that refuses because its
+#    pty host would die with it stops the deploy here, before anything has changed. Only -KillRunners ends them.
+if (-not (Stop-Room)) { Say 'FATAL: the room refused to stop without ending its runners. nothing changed. pass -KillRunners to end them'; exit 1 }
 
 # 2. Stop the hub, unless this is a room-only deploy.
 if ($RoomOnly) { Say 'room only: the hub is left running' } else { Stop-Hub }

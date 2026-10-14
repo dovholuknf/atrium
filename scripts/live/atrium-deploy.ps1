@@ -31,7 +31,7 @@
 #
 # Remote rooms are built for their platform with the same stamp, copied over with scp, stopped with `atrium stop`, and
 # swapped with the old binary kept as atrium.prev. m1mini runs through `zsh -lic`, or the room cannot find claude.
-param([string[]]$Rooms = @('local'), [switch]$NoBuild, [switch]$WhatIf, [switch]$Immediate, [switch]$Detached,
+param([string[]]$Rooms = @('local'), [switch]$NoBuild, [switch]$WhatIf, [switch]$Immediate, [switch]$KillRunners, [switch]$Detached,
   [string]$ReportTo, [switch]$Control, [switch]$IKnowItKillsMyShell)
 
 $ErrorActionPreference = 'Continue'
@@ -59,6 +59,7 @@ if ($env:ATRIUM_TASK_ID -and $local.Count -and -not $Detached -and -not $WhatIf)
   if ($ReportTo) { $argv += '-ReportTo', $ReportTo }
   if ($NoBuild) { $argv += '-NoBuild' }
   if ($Immediate) { $argv += '-Immediate' }
+  if ($KillRunners) { $argv += '-KillRunners' }
   Start-Process pwsh -ArgumentList $argv -WindowStyle Hidden
   Say "detached: deploying $($want -join ', '). the result is said to this card when it ends"
   exit 0
@@ -279,7 +280,7 @@ foreach ($name in $remoteNames) {
 
 # 3. The hub, with claude-sg4 when it is named. Run as child scripts, so their own checks and reverts apply.
 if ($want -contains 'claude-sg4') {
-  & "$PSScriptRoot\deploy-batch.ps1" -WhatIf:$WhatIf -Immediate:$Immediate -RoomOnly:(-not ($want -contains 'hub'))
+  & "$PSScriptRoot\deploy-batch.ps1" -WhatIf:$WhatIf -Immediate:$Immediate -KillRunners:$KillRunners -RoomOnly:(-not ($want -contains 'hub'))
   $code = $LASTEXITCODE
   $ok = if ($WhatIf) { 'success (WhatIf)' } else { 'success' }
   switch ($code) {
