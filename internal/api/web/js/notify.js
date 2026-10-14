@@ -596,22 +596,40 @@ const alerting = (() => {
   // pointerdown and touchstart do not activate the page, its touchend, pointerup and click do, and iOS only lets
   // a context start from inside one of those. So every one of them tries, and the first that the browser accepts
   // wins. Listening to pointerdown alone left a phone locked until its second touch, or for good.
+  //
+  // CONSTRUCTING THE CONTEXT IS THE EXPENSIVE PART, once: the first `new AudioContext()` in a page takes 60ms
+  // headless and about 200ms on a real machine (Chrome starting its audio service), and doing it inside the first
+  // pointerdown showed up as a 199ms violation. A context made outside a gesture is simply born suspended, so it is
+  // built in an idle moment after load and the gesture only has to `resume()` it, which is cheap. And once it is
+  // running there is nothing left for the five listeners to do, so they come off rather than running on every
+  // pointerdown on the board for the rest of the session.
+  const makeCtx = () => {
+    if (ctx) return;
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return;
+    ctx = new AC();
+    if (ctx.addEventListener) ctx.addEventListener("statechange", () => { paintAudioState(); dropUnlock(); });
+  };
+  const unlockEvents = ["pointerdown", "pointerup", "touchend", "click", "keydown"];
+  // Off while running, back on if the browser suspends it again (a phone does when the app is backgrounded).
+  function dropUnlock() {
+    if (!ctx) return;
+    const on = ctx.state !== "running";
+    unlockEvents.forEach(t => on
+      ? document.addEventListener(t, unlock, { capture: true, passive: true })
+      : document.removeEventListener(t, unlock, { capture: true }));
+  }
   const unlock = () => {
-    if (!ctx) {
-      const AC = window.AudioContext || window.webkitAudioContext;
-      if (AC) {
-        ctx = new AC();
-        if (ctx.addEventListener) ctx.addEventListener("statechange", () => paintAudioState());
-      }
-    }
+    makeCtx();
     if (ctx && ctx.state === "suspended") {
       const r = ctx.resume();
-      if (r && r.then) r.then(paintAudioState, () => {});
+      if (r && r.then) r.then(() => { paintAudioState(); dropUnlock(); }, () => {});
     }
     paintAudioState();
+    dropUnlock();
   };
-  ["pointerdown", "pointerup", "touchend", "click", "keydown"].forEach(t =>
-    document.addEventListener(t, unlock, { capture: true, passive: true }));
+  unlockEvents.forEach(t => document.addEventListener(t, unlock, { capture: true, passive: true }));
+  (window.requestIdleCallback || (f => setTimeout(f, 1500)))(() => { try { makeCtx(); } catch (e) {} paintAudioState(); }, { timeout: 5000 });
   // A reload resets the audio context, and a browser will not let it start
   // until the page has been interacted with. Without a visible signal, silence
   // looks like a broken feature rather than a browser rule.

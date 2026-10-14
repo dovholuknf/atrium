@@ -1768,6 +1768,9 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
         would defeat it.</span>
     </div>
 
+    <!-- A form only so the browser stops warning about password fields outside one. Nothing submits it, and
+         display:contents keeps the layout exactly what it was. -->
+    <form id="auth-form" style="display:contents" onsubmit="return false" autocomplete="off">
     <!-- A NAME AND A PASSWORD, for a board with no provider in front of it.
          The flow below is the better answer and it needs a provider, a client
          registered with it, and a redirect matching the published address
@@ -1831,6 +1834,7 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
         with open registration, the whole internet with an extra step.</span>
       <span class="hintline" id="auth-said"></span>
     </div>
+    </form>
 
     <!-- The names the hub answers besides its own. Hidden until the hub answers, so a board with no hub never
          draws it. See js/hubhosts.js. -->

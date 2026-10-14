@@ -23246,6 +23246,52 @@ async function themePickerShotsSection(browser, base) {
   }
 }
 
+// ── a hub that is down is noticed once, and the board holds its other pollers ──
+async function hubGateSection(browser, base) {
+  const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+  const p = await ctx.newPage();
+  let down = false, bad503 = 0, healthAsks = 0, readsWhileDown = 0;
+  const logged = [];
+  await p.route(/\/(v1|_hub)\//, async r => {
+    const u = new URL(r.request().url());
+    if (u.pathname === "/v1/health") {
+      healthAsks++;
+      if (down) return r.fulfill({ status: 503, body: "down" });
+      return r.continue();
+    }
+    if (down && r.request().method() === "GET" && !/\/v1\/(events|stream)|\/attach/.test(u.pathname)) return r.fulfill({ status: 503, body: "hub is restarting" });
+    return r.continue();
+  });
+  p.on("response", res => { if (res.status() === 503 && !/\/v1\/health/.test(res.url())) { bad503++; if (process.env.GATE_DEBUG) console.log("503", res.url()); } });
+  p.on("console", m => { if (m.type() === "error" && /503/.test(m.text())) logged.push(m.text()); });
+  try {
+    await p.goto(base + "/raw", { waitUntil: "load" });
+    await p.waitForTimeout(1500);
+    // The auth fields live in a form, so the browser stops warning about them.
+    const loose = await p.evaluate(() => ["auth-pass", "auth-secret"].filter(id => { const e = document.getElementById(id); return !e || !e.form; }));
+    if (loose.length) fail("hubGate: password fields outside a form: " + loose.join(", "));
+    // The hub goes down, then a burst of every kind of poller reads at once.
+    down = true; bad503 = 0; logged.length = 0;
+    // Pollers fire on their own timers, so the first one finds out and the rest are behind it.
+    await p.evaluate(() => { api("/v1/tasks").catch(() => {}); });
+    await p.waitForTimeout(300);
+    await p.evaluate(() => { for (const u of ["/v1/settings", "/v1/harnesses", "/v1/providers", "/v1/permissions", "/v1/themes", "/v1/shares"]) api(u).catch(() => {}); });
+    await p.waitForTimeout(300);
+    const first = bad503;
+    await p.evaluate(() => { for (const u of ["/v1/tasks", "/v1/settings", "/v1/harnesses", "/v1/providers", "/v1/prs", "/v1/usage/turn-limits"]) api(u).catch(() => {}); });
+    await p.waitForTimeout(2500);
+    if (bad503 !== first) fail("hubGate: pollers kept asking a hub known to be down (" + first + " then " + bad503 + ")");
+    if (first > 1) fail("hubGate: the first burst logged " + first + " failures, wanted 1");
+    // One probe answers, and the held reads go out and finish.
+    down = false;
+    const done = await p.evaluate(async () => { try { await api("/v1/settings"); return true; } catch (e) { return String(e && e.message); } });
+    if (done !== true) fail("hubGate: reads did not resume once the hub answered: " + done);
+  } finally {
+    await ctx.close();
+  }
+  if (!bad) console.log("hubGate ok");
+}
+
 async function bootCleanSection(browser, base) {
   const raw = fs.readFileSync(path.join(WEB_ROOT, "index.html"));
   const views = [{ w: 1400, h: 900 }, { w: 390, h: 844, phone: true }, { w: 412, h: 915, phone: true }];
@@ -30509,7 +30555,7 @@ async function main() {
       u001Audit: u001AuditSection,
       pasteStart: pasteStartSection, pasteDone: pasteDoneSection, pasteOldRoom: pasteOldRoomSection, pasteClose: pasteCloseSection,
       growlQuestionShots: growlQuestionShotsSection, growlQuestionBody: growlQuestionBodySection, growlReplyGrow: growlReplyGrowSection, growlChoices: growlChoicesSection, replies: repliesSection, repliesOf: repliesOfSection, repliesShots: repliesShotsSection, growlStable: growlStableSection, growlOnIt: growlOnItSection, mGrowlQuestion: mGrowlQuestionSection,
-      roomsSetup: roomsSetupSection, discreteGroup: discreteGroupSection, groupingPerView: groupingPerViewSection, repoColors: repoColorsSection, themePicker: themePickerSection, themePickerShots: themePickerShotsSection, borderColourLag: borderColourLagSection, bootClean: bootCleanSection, interviewTop: interviewTopSection, parkedStays: parkedStaysSection, noResumeButton: noResumeButtonSection, terminalsOneLine: terminalsOneLineSection, controlsCompact: controlsCompactSection, offCardActions: offCardActionsSection, termHeaderSize: termHeaderSizeSection, popupFit: popupFitSection, dropdownsInstant: dropdownsInstantSection, peekLaunch: peekLaunchSection, mReload: mReloadSection, mReconnect: mReconnectSection, mActivityRead: mActivityReadSection, mReadRetry: mReadRetrySection, mWorking: mWorkingSection, mOwnMessages: mOwnMessagesSection, mBubbles: mBubblesSection, mRecapSheet: mRecapSheetSection,
+      roomsSetup: roomsSetupSection, discreteGroup: discreteGroupSection, groupingPerView: groupingPerViewSection, repoColors: repoColorsSection, themePicker: themePickerSection, themePickerShots: themePickerShotsSection, borderColourLag: borderColourLagSection, bootClean: bootCleanSection, hubGate: hubGateSection, interviewTop: interviewTopSection, parkedStays: parkedStaysSection, noResumeButton: noResumeButtonSection, terminalsOneLine: terminalsOneLineSection, controlsCompact: controlsCompactSection, offCardActions: offCardActionsSection, termHeaderSize: termHeaderSizeSection, popupFit: popupFitSection, dropdownsInstant: dropdownsInstantSection, peekLaunch: peekLaunchSection, mReload: mReloadSection, mReconnect: mReconnectSection, mActivityRead: mActivityReadSection, mReadRetry: mReadRetrySection, mWorking: mWorkingSection, mOwnMessages: mOwnMessagesSection, mBubbles: mBubblesSection, mRecapSheet: mRecapSheetSection,
       mHomeOrder: mHomeOrderSection, cardUrlWayOut: cardUrlWayOutSection, phoneBoot: phoneBootSection, sayEnter: sayEnterSection, sendArrow: sendArrowSection, mTables: mTablesSection, mMarkdown: mMarkdownSection, mHostile: mHostileSection, mPictures: mPicturesSection, soundPhone: soundPhoneSection, phoneBell: phoneBellSection, mBell: mBellSection,
       mHomeOrder: mHomeOrderSection, cardUrlWayOut: cardUrlWayOutSection, phoneBoot: phoneBootSection, sayEnter: sayEnterSection, sendArrow: sendArrowSection, mTables: mTablesSection, mMarkdown: mMarkdownSection, mHostile: mHostileSection, mPictures: mPicturesSection, phoneRedirect: phoneRedirectSection,
       mHomeOrder: mHomeOrderSection, cardUrlWayOut: cardUrlWayOutSection, phoneBoot: phoneBootSection, sayEnter: sayEnterSection, sendArrow: sendArrowSection, mTables: mTablesSection, mMarkdown: mMarkdownSection, mHostile: mHostileSection, mPictures: mPicturesSection, mHidden: mHiddenSection, soundPhone: soundPhoneSection, phoneBell: phoneBellSection, mBell: mBellSection,
@@ -32494,6 +32540,7 @@ async function main() {
     await unit("themePickerShots", () => themePickerShotsSection(browser, base));
     await unit("borderColourLag", () => borderColourLagSection(browser, base));
     await unit("bootClean", () => bootCleanSection(browser, base));
+    await unit("hubGate", () => hubGateSection(browser, base));
     await unit("interviewTop", () => interviewTopSection(browser, base));
     await unit("nestCrossRoom", () => nestCrossRoomSection(browser, base));
     await unit("parkedStays", () => parkedStaysSection(browser, base));
