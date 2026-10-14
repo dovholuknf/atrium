@@ -34,4 +34,6 @@ func addBacklogTools(s *mcp.Server) {
 	link.AddRoomBacklogTools(s, call, me, room)
 	// atrium_item rides the same way to the hub. See link/items_mcp.go.
 	link.AddRoomItemTools(s, call, me, room)
+	// And atrium_publish, which every worker prompt names. See link/docs_mcp.go.
+	link.AddRoomPublishTool(s, call, me)
 }
