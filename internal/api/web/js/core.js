@@ -345,8 +345,10 @@ function hubGateTrip() {
   let open;
   hubGateP = new Promise(res => { open = res; });
   (async () => {
-    for (;;) {
-      await new Promise(res => setTimeout(res, HUB_GATE_PROBE_MS));
+    // The first probe is at once, so a read that failed for a reason of its own (a navigation abort, one bad route) opens
+    // the gate again in a moment. Only a hub that does not answer holds the pollers, and then the probes are a second apart.
+    for (let first = true; ; first = false) {
+      if (!first) await new Promise(res => setTimeout(res, HUB_GATE_PROBE_MS));
       let timer = 0;
       try {
         const ctrl = new AbortController();
