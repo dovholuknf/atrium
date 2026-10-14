@@ -266,3 +266,13 @@ Each step lands alone with its tests, and the trial does not start until step 7.
 4. Should the Stop guard be on for every session once it exists, or only the orchestrator's? This design makes it per
    settings file, like every Stop hook, and offers it by name.
 5. Who files a wrong answer in the trial, the orchestrator through `--wrong`, or you when you notice one in a reply?
+
+## Decisions (orchestrator, 2026-10-14)
+
+- `claude -p` with Haiku first.
+- The deploy rule lives in the memory files `deploy-rules.md` and `run-it-yourself-first.md`. The pattern is any deploy script
+  named inside a code fence.
+- Keep `atrium rules ask`, with "written" in its help.
+- The Stop guard is on for the orchestrator only during the trial.
+- The orchestrator files wrong answers.
+- Nothing is built yet.

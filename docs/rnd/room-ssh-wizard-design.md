@@ -346,3 +346,11 @@ Each step lands alone. Steps 1 to 4 come first and are what unblocks the sg4 to 
    `docs/room-accounts.md` treats as admin equivalent?
 4. May the Linux leg import and unregister a throwaway WSL distro on sg4, where wslrelay already owns `127.0.0.1:22`?5. Is a board that can run fixes after a local `arm` what you meant by a wizard, or must every write stay in the terminal
    as `ssh-via-hub.md` decided? Without arm the board wizard is read only plus copy buttons.
+
+## Decisions (orchestrator, 2026-10-14)
+
+- Yes to keys on the hub plus a managed authorized_keys block, with the room filtering by `from`. Clint asked for exactly that.
+- One key per room.
+- Yes to the arm-token board fixes.
+- Q3 (Hyper-V checkpoint rights) and Q4 (a WSL distro on sg4) wait on clint.
+- Nothing is built yet.
