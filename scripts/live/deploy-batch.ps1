@@ -19,6 +19,8 @@ param([switch]$NoLagLog, [switch]$WhatIf, [switch]$NoHold, [switch]$Immediate)
 
 $ErrorActionPreference = 'Continue'
 $LiveTag = 'BATCH'
+. "$PSScriptRoot\refuse-supervised.ps1"
+Assert-NotSupervised
 . "$PSScriptRoot\live-common.ps1"
 $LiveLog = Join-Path $Base 'deploy-batch.log'
 

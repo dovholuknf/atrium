@@ -1,14 +1,16 @@
-# Deploy claude/main everywhere in one command: build, the remote rooms, the hub with claude-sg4, then sg4-control.
+# Deploy claude/main everywhere in one command: build, the remote rooms, the hub with claude-sg4, and sg4-control on request.
 #
 #   pwsh -NoProfile -File C:\Users\claude\.atrium2\scripts\atrium-deploy.ps1
 #   pwsh -NoProfile -File ...\atrium-deploy.ps1 -Rooms hub              # hub only, rooms untouched
 #   pwsh -NoProfile -File ...\atrium-deploy.ps1 -Rooms sg3,m1mini,sgg   # remote rooms only
 #   pwsh -NoProfile -File ...\atrium-deploy.ps1 -Rooms all -WhatIf      # say every step, change nothing
 #
-# -Rooms takes any of hub, claude-sg4, sg4-control, sg3, m1mini, sgg, or `local` (hub, claude-sg4, sg4-control, the
-# default) or `all`. The order is fixed whatever order they are given in: remote rooms first, because they touch no
-# terminal here, then the hub and claude-sg4 (deploy-batch.ps1, or deploy-hub-only.ps1 when claude-sg4 is not named),
-# then sg4-control, which holds the orchestrator's terminal.
+# -Rooms takes any of hub, claude-sg4, sg3, m1mini, sgg, or `local` (hub, claude-sg4, the default) or `all`. The order
+# is fixed whatever order they are given in: remote rooms first, because they touch no terminal here, then the hub and
+# claude-sg4 (deploy-batch.ps1, or deploy-hub-only.ps1 when claude-sg4 is not named), then sg4-control.
+#
+# sg4-control is OPT-IN. It is in no default and not in `all`, and takes both -Control and -IKnowItKillsMyShell,
+# because stopping it kills the shell of the orchestrator that holds its terminal. One without the other is refused.
 #
 # THE RESULT is one line per room, printed last and logged:
 #
@@ -18,34 +20,28 @@
 # Run from an atrium card, the same lines are said to that card when the deploy ends, so the card that asked for it
 # hears the result with nothing to read. -ReportTo <card>@<room> names another card.
 #
-# RUN FROM AN ATRIUM CARD IT DETACHES ITSELF. Stopping sg4-control ends the terminal that started it, so when
-# ATRIUM_TASK_ID is set and a room here is named, it starts itself again as a hidden process and returns at once. The
-# steps are logged to C:\Users\claude\.atrium2\atrium-deploy.log.
+# IT REFUSES TO RUN UNDER AN ATRIUM ROOM (refuse-supervised.ps1): stopping the room ends the shell that runs it. Run it
+# from a terminal that is not under atrium, such as a fresh wt.exe window. A shell that carries ATRIUM_TASK_ID with no
+# room above it still detaches itself and returns at once. The steps are logged to
+# C:\Users\claude\.atrium2\atrium-deploy.log.
 #
 # Remote rooms are built for their platform with the same stamp, copied over with scp, stopped with `atrium stop`, and
 # swapped with the old binary kept as atrium.prev. m1mini runs through `zsh -lic`, or the room cannot find claude.
 param([string[]]$Rooms = @('local'), [switch]$NoBuild, [switch]$WhatIf, [switch]$Immediate, [switch]$Detached,
-  [string]$ReportTo)
+  [string]$ReportTo, [switch]$Control, [switch]$IKnowItKillsMyShell)
 
 $ErrorActionPreference = 'Continue'
 $LiveTag = 'DEPLOY'
+. "$PSScriptRoot\refuse-supervised.ps1"
+Assert-NotSupervised
+Assert-ControlOptIn -Control:$Control -IKnowItKillsMyShell:$IKnowItKillsMyShell `
+  -Named:(($Rooms -split ',' | ForEach-Object { $_.Trim() }) -contains 'sg4-control')
 . "$PSScriptRoot\live-common.ps1"
 $LiveLog = Join-Path $Base 'atrium-deploy.log'
 
 $remoteNames = 'sg3', 'm1mini', 'sgg'
-$known = @('hub', 'claude-sg4', 'sg4-control') + $remoteNames
-$want = @()
-foreach ($r in ($Rooms -split ',' | ForEach-Object { $_.Trim() } | Where-Object { $_ })) {
-  switch ($r) {
-    'local' { $want += 'hub', 'claude-sg4', 'sg4-control' }
-    'all' { $want += $known }
-    default {
-      if ($known -notcontains $r) { Say "FATAL: unknown room '$r'. known: $($known -join ', '), local, all"; exit 1 }
-      $want += $r
-    }
-  }
-}
-$want = @($known | Where-Object { $_ -in $want })
+try { $want = Resolve-DeployRooms -Rooms $Rooms -Control:$Control -IKnowItKillsMyShell:$IKnowItKillsMyShell }
+catch { Say "FATAL: $($_.Exception.Message)"; exit 1 }
 $local = @($want | Where-Object { $_ -in 'hub', 'claude-sg4', 'sg4-control' })
 
 if (-not $ReportTo -and $env:ATRIUM_TASK_ID) {
