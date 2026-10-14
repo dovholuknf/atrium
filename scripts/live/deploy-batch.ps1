@@ -75,7 +75,7 @@ $roomStart = Get-Date
 $null = Start-Room
 $attached = $false
 if (-not $WhatIf) {
-  # THIS room, by name, seen by the hub and by the room, and still attached 30s later. Not a room count.
+  # THIS room, by name, seen by the hub and by the room, and still attached StaySeconds later. Not a room count.
   $r = Wait-RoomAttached $roomStart
   $attached = [bool]$r
   $h = Wait-Hub 5
@@ -93,9 +93,9 @@ if (-not $WhatIf) {
   $serves = Test-RoomServes
   Say "room serves ${RoomServes}: $serves"
   if ($serves) {
-    Start-Sleep -Seconds 30
+    Start-Sleep -Seconds $StaySeconds
     $serves = Test-RoomServes
-    Say "room serves $RoomServes 30s later: $serves"
+    Say "room serves $RoomServes ${StaySeconds}s later: $serves"
   }
   if (-not $serves) {
     Say "ROOM IS NOT SERVING. reverting to $revert. last lines of room.err:"

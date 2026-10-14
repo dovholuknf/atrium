@@ -258,10 +258,13 @@ function Get-HubRoom {
   } catch { $null }
 }
 
+# How long a room must stay attached, and how long before its second health check. One constant for both.
+$StaySeconds = 10
+
 # Wait-RoomAttached waits for THIS room to be attached, by name, on a connection made after $After, as the hub sees it
 # AND as the room sees it, and then for it to STAY that way for $Hold seconds on the same connection. A five-second
 # attach that the hub then refused passed the old check at 17:05:43 on 2026-09-29. Returns the hub's entry or $null.
-function Wait-RoomAttached([datetime]$After, [int]$Seconds = 150, [int]$Hold = 30) {
+function Wait-RoomAttached([datetime]$After, [int]$Seconds = 150, [int]$Hold = $StaySeconds) {
   $dl = (Get-Date).AddSeconds($Seconds)
   $afterUtc = $After.ToUniversalTime()
   while ((Get-Date) -lt $dl) {
