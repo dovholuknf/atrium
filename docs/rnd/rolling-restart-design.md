@@ -616,6 +616,9 @@ pipe buffer (writes loop, and the spike never sent more than a few KB).
 
 ### Open gates
 
+Status as of blue-green 1+2 (2026-10-14): none of the three platform gates has been run. systemd (cdzrok), launchd
+(m1mini) and Task Scheduler stay open, and each must pass before `pty_host` is turned on for that room.
+
 - **Open, half finished: check 8 on cdzrok.** Steps 1 to 4 under check 8 can run there as user `ubuntu` with a uniquely
   named unit in a scratch directory. Not done, so the `KillMode` hazard is still from reading, not evidence.
 - **The Task Scheduler path itself stays untested**, because only `clint` has a session on sg4. The
