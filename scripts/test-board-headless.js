@@ -21490,6 +21490,61 @@ async function parkedStaysSection(browser, base) {
   } finally { await ctx.close(); }
 }
 
+// TERMINALS ROWS ARE ONE LINE: a running card and a parked one (resume chip, room chip, other chips) are the same
+// height and neither wraps its chips under the title. ONELINE_SHOTS=<dir> writes the list as a png.
+async function terminalsOneLineSection(browser, base) {
+  // Wide viewport: under 900px the phone rules apply and a `.tab` card turns inline-flex, which is another test.
+  const ctx = await browser.newContext({ viewport: { width: 1400, height: 800 } });
+  const errors = [];
+  try {
+    const p = await ctx.newPage();
+    p.on("pageerror", e => errors.push(String(e)));
+    await p.goto(base + "/", { waitUntil: "domcontentloaded" });
+    await p.waitForFunction(() => typeof termRow === "function", null, { timeout: slow(15000) });
+    for (const width of [320, 270]) {
+      const got = await p.evaluate((width) => {
+        const mk = (id, extra) => Object.assign({ id, tags: ["origin:agent"], spawned_by_id: "", status: "running", supervised: true,
+          display_title: "card " + id + " with a fairly long name to squeeze", cwd: "github/dovholuknf/atrium/some/deep/path" }, extra || {});
+        const parked = { status: "parked", parked_at: "2026-10-13T10:00:00Z", resume_id: "x", supervised: false };
+        const rows = [
+          mk("r1"),
+          mk("r2", { new_context: { step: "failed", reason: "no ack" } }),
+          mk("r3"),
+          mk("p1", parked),
+          mk("p2", Object.assign({ display_title: "short" }, parked)),
+        ];
+        termKidsPool = new Map([["r3", [{ id: "kid" }]]]);
+        try { window.roomOf = () => "claude-sg4"; } catch (e) {}
+        const old = document.getElementById("oneline-host");
+        if (old) old.remove();
+        const host = document.createElement("div");
+        host.id = "oneline-host";
+        host.style.cssText = "position:fixed;left:0;top:0;width:" + width + "px;z-index:99999;background:#fff";
+        host.innerHTML = '<div class="term-list" style="position:static;width:' + width + 'px;flex:none">' + rows.map(t => termRow(t, false, false)).join("") + "</div>";
+        document.body.appendChild(host);
+        return [...host.querySelectorAll(".card")].map(c => {
+          const cr = c.getBoundingClientRect();
+          const tops = [...c.querySelectorAll(".chips .chip, .tkidfold")].map(x => Math.round(x.getBoundingClientRect().top));
+          const right = Math.max(...[...c.querySelectorAll(".chips .chip, .tkidfold")].map(x => x.getBoundingClientRect().right), 0);
+          return { h: Math.round(cr.height), tops, overflow: Math.round(right - cr.right), cw: Math.round(cr.width),
+            titleBottom: Math.round(c.querySelector(".title").getBoundingClientRect().bottom) };
+        });
+      }, width);
+      if (process.env.ONELINE_SHOTS) await p.screenshot({ path: process.env.ONELINE_SHOTS + "/terminals-oneline-" + width + ".png", clip: { x: 0, y: 0, width: width + 10, height: 330 } });
+      const tag = "terminalsOneLine " + width + "px: ";
+      if (got.length !== 5) fail(tag + "expected 5 rows, drew " + got.length);
+      if (new Set(got.map(r => r.h)).size !== 1) fail(tag + "rows differ in height: " + JSON.stringify(got.map(r => r.h)));
+      for (const r of got) {
+        if (r.tops.length && Math.max(...r.tops) - Math.min(...r.tops) > 3) fail(tag + "chips sit on more than one line: " + JSON.stringify(r));
+        if (r.tops.length && r.tops[0] >= r.titleBottom) fail(tag + "chips wrapped under the title: " + JSON.stringify(r));
+        if (r.overflow > 0) fail(tag + "chips run past the card: " + JSON.stringify(r));
+      }
+    }
+    if (errors.length) fail("terminalsOneLine: page errors: " + errors.join("; "));
+    else console.log("terminalsOneLine ok");
+  } finally { await ctx.close(); }
+}
+
 
 // u-dropdowns-instant: the launch dialog opens WITH its room and runner options in place, whatever the network is doing.
 // Every API answer is held for 500ms. The board has read the runners and rooms at start, so the open is one frame: the
@@ -21523,7 +21578,8 @@ async function heldLinkSection(browser, base) {
     });
     await p.goto(base + "/", { waitUntil: "domcontentloaded" });
     await p.waitForFunction(() => typeof hubRooms !== "undefined" && hubRooms.length >= 2, null, { timeout: slow(15000) });
-    await p.evaluate(url => { openLaunch(null, "", "", null, null); document.getElementById("l-url").value = url; return recogniseLink(); }, link);
+    // Awaited: openLaunch reads the runners first when the board has not yet, then clears the link, which wiped a recognise sent meanwhile.
+    await p.evaluate(async url => { await openLaunch(null, "", "", null, null); document.getElementById("l-url").value = url; return recogniseLink(); }, link);
     await p.waitForFunction(() => /already working on this/.test(document.getElementById("l-link-note").textContent), null, { timeout: slow(5000) })
       .catch(() => fail("heldLink: the dialog did not say who holds the link: " + calls.join(" | ")));
     const note = await p.textContent("#l-link-note");
@@ -29457,7 +29513,7 @@ async function main() {
       u001Audit: u001AuditSection,
       pasteStart: pasteStartSection, pasteDone: pasteDoneSection, pasteOldRoom: pasteOldRoomSection, pasteClose: pasteCloseSection,
       growlQuestionShots: growlQuestionShotsSection, growlQuestionBody: growlQuestionBodySection, growlReplyGrow: growlReplyGrowSection, growlChoices: growlChoicesSection, replies: repliesSection, repliesOf: repliesOfSection, repliesShots: repliesShotsSection, growlStable: growlStableSection, growlOnIt: growlOnItSection, mGrowlQuestion: mGrowlQuestionSection,
-      roomsSetup: roomsSetupSection, discreteGroup: discreteGroupSection, groupingPerView: groupingPerViewSection, repoColors: repoColorsSection, themePicker: themePickerSection, themePickerShots: themePickerShotsSection, borderColourLag: borderColourLagSection, bootClean: bootCleanSection, interviewTop: interviewTopSection, parkedStays: parkedStaysSection, popupFit: popupFitSection, dropdownsInstant: dropdownsInstantSection, peekLaunch: peekLaunchSection, mReload: mReloadSection, mReconnect: mReconnectSection, mActivityRead: mActivityReadSection, mReadRetry: mReadRetrySection, mWorking: mWorkingSection, mOwnMessages: mOwnMessagesSection, mBubbles: mBubblesSection, mRecapSheet: mRecapSheetSection,
+      roomsSetup: roomsSetupSection, discreteGroup: discreteGroupSection, groupingPerView: groupingPerViewSection, repoColors: repoColorsSection, themePicker: themePickerSection, themePickerShots: themePickerShotsSection, borderColourLag: borderColourLagSection, bootClean: bootCleanSection, interviewTop: interviewTopSection, parkedStays: parkedStaysSection, terminalsOneLine: terminalsOneLineSection, popupFit: popupFitSection, dropdownsInstant: dropdownsInstantSection, peekLaunch: peekLaunchSection, mReload: mReloadSection, mReconnect: mReconnectSection, mActivityRead: mActivityReadSection, mReadRetry: mReadRetrySection, mWorking: mWorkingSection, mOwnMessages: mOwnMessagesSection, mBubbles: mBubblesSection, mRecapSheet: mRecapSheetSection,
       mHomeOrder: mHomeOrderSection, cardUrlWayOut: cardUrlWayOutSection, phoneBoot: phoneBootSection, sayEnter: sayEnterSection, sendArrow: sendArrowSection, mTables: mTablesSection, mMarkdown: mMarkdownSection, mHostile: mHostileSection, mPictures: mPicturesSection, soundPhone: soundPhoneSection, phoneBell: phoneBellSection, mBell: mBellSection,
       mHomeOrder: mHomeOrderSection, cardUrlWayOut: cardUrlWayOutSection, phoneBoot: phoneBootSection, sayEnter: sayEnterSection, sendArrow: sendArrowSection, mTables: mTablesSection, mMarkdown: mMarkdownSection, mHostile: mHostileSection, mPictures: mPicturesSection, phoneRedirect: phoneRedirectSection,
       mHomeOrder: mHomeOrderSection, cardUrlWayOut: cardUrlWayOutSection, phoneBoot: phoneBootSection, sayEnter: sayEnterSection, sendArrow: sendArrowSection, mTables: mTablesSection, mMarkdown: mMarkdownSection, mHostile: mHostileSection, mPictures: mPicturesSection, mHidden: mHiddenSection, soundPhone: soundPhoneSection, phoneBell: phoneBellSection, mBell: mBellSection,
@@ -31437,6 +31493,7 @@ async function main() {
     await unit("bootClean", () => bootCleanSection(browser, base));
     await unit("interviewTop", () => interviewTopSection(browser, base));
     await unit("parkedStays", () => parkedStaysSection(browser, base));
+    await unit("terminalsOneLine", () => terminalsOneLineSection(browser, base));
     await unit("popupFit", () => popupFitSection(browser, base));
     await unit("dropdownsInstant", () => dropdownsInstantSection(browser, base));
     await unit("heldLink", () => heldLinkSection(browser, base));
