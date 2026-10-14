@@ -316,7 +316,11 @@ func (r *Room) attach(ctx context.Context) error {
 	// ON A FALLBACK, KEEP ASKING THE BETTER ONES. Closing the control
 	// connection is how the reader below learns it is time to move.
 	var moving atomic.Bool
-	if climbs && cl.Fallback() {
+	//
+	// Always started on a climbing dialer, not only when attached on a fallback: the
+	// hub's order can change while this room stands on the top rung, and the rung
+	// it stands on is then no longer the first. The probe looks at that each tick.
+	if climbs {
 		go r.probe(ctx, cl, func() {
 			moving.Store(true)
 			_ = conn.Close()
@@ -399,6 +403,10 @@ func (r *Room) probe(ctx context.Context, cl climber, move func()) {
 		case <-ctx.Done():
 			return
 		case <-t.C:
+		}
+		if !cl.Fallback() {
+			good = 0
+			continue
 		}
 		if cl.Probe(ctx, r.T.DialWait) {
 			good++

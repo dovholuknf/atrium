@@ -207,6 +207,7 @@ func serveAtrium(f atriumFlags, up atriumUp) error {
 			continue
 		}
 		defer ln.Close()
+		log.Printf("[hub] listening for rooms over %s: %s", s.kind, s.says)
 		lns = append(lns, ln)
 		kept = append(kept, s)
 	}

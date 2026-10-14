@@ -274,3 +274,66 @@ func (o *onlyFirst) Dial(ctx context.Context) (net.Conn, error) {
 }
 
 func (o *onlyFirst) Describe() string { return o.addr }
+
+// The hub's order changes while the room stands on what is now the second rung.
+// The room was not on a fallback when it attached, so nothing was probing.
+func TestRoomFollowsAChangedOrder(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		topAnswer bool
+	}{{"top rung answers, room moves", true}, {"top rung silent, room stays", false}} {
+		t.Run(tc.name, func(t *testing.T) {
+			lightSlot(t)
+			lnD, err := net.Listen("tcp", "127.0.0.1:0")
+			if err != nil {
+				t.Fatal(err)
+			}
+			lnZ, err := net.Listen("tcp", "127.0.0.1:0")
+			if err != nil {
+				t.Fatal(err)
+			}
+			hub := NewHub(Timings{Beat: 100 * time.Millisecond, Silence: time.Second, Warm: 1})
+			ctx, stop := context.WithCancel(context.Background())
+			defer stop()
+			go func() { _ = hub.ServeVia(ctx, lnD, "direct") }()
+			go func() { _ = hub.ServeVia(ctx, lnZ, "ziti") }()
+
+			direct := &switchable{addr: lnD.Addr().String()}
+			ziti := &switchable{addr: lnZ.Addr().String()}
+			rungs := func(first string) []Rung {
+				d := Rung{Path: Path{Transport: "direct"}, Dial: direct}
+				z := Rung{Path: Path{Transport: "ziti"}, Dial: ziti}
+				if first == "ziti" {
+					return []Rung{z, d}
+				}
+				return []Rung{d, z}
+			}
+			ladder := NewLadder(rungs("ziti"))
+			room := &Room{
+				Name: "claude-sg4", Dial: ladder, Handler: http.NotFoundHandler(),
+				T: Timings{Beat: 100 * time.Millisecond, Warm: 1, Backoff: 20 * time.Millisecond,
+					DialWait: 200 * time.Millisecond, ProbeEvery: 50 * time.Millisecond},
+			}
+			go func() { _ = room.Run(ctx) }()
+			waitFor(t, 5*time.Second, func() bool {
+				a, ok := attachedAs(hub, "claude-sg4")
+				return ok && a.Via == "ziti"
+			})
+
+			direct.down.Store(!tc.topAnswer)
+			ladder.Set(rungs("direct"))
+			if tc.topAnswer {
+				waitFor(t, 10*time.Second, func() bool {
+					a, ok := attachedAs(hub, "claude-sg4")
+					return ok && a.Via == "direct" && !a.Fallback
+				})
+				return
+			}
+			// Probed, never answered: still on ziti.
+			waitFor(t, 5*time.Second, func() bool { return direct.n() >= 3 })
+			if a, ok := attachedAs(hub, "claude-sg4"); !ok || a.Via != "ziti" {
+				t.Fatalf("attached %+v ok=%v, want still on ziti", a, ok)
+			}
+		})
+	}
+}
