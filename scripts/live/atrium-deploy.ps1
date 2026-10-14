@@ -139,7 +139,13 @@ $probeCap = 60; $scpCap = 300; $diagCap = 30
 function Invoke-Ssh([string]$Label, [string[]]$SshArgs, [int]$Cap = $probeCap) {
   Invoke-CappedRetry $Label $ssh ($sshOpts + $SshArgs) $Cap
 }
-function Get-HungMsg([string]$Label, [int]$Cap) { "failed - $Label hung twice past ${Cap}s and was killed" }
+function Invoke-SshOnce([string]$Label, [string[]]$SshArgs, [int]$Cap) {
+  # The swap is not idempotent: run twice, it stops the new room and finds no atrium.new. A hang is never retried.
+  $r = Invoke-Capped $ssh ($sshOpts + $SshArgs) $Cap
+  if ($r.TimedOut) { Say "$Label hung past ${Cap}s, killed. not retried" }
+  $r
+}
+function Get-HungMsg([string]$Label, [int]$Cap) { "failed - $Label hung past ${Cap}s and was killed" }
 $built = @()
 
 # 2. Remote rooms. Each: reach it, cross-build, copy, stop, swap, start detached, check it is back on the hub.
@@ -236,14 +242,14 @@ foreach ($name in $remoteNames) {
   $swapCap = $portWait + 120
   $swapRes = $null
   Invoke-Step "ssh ${name}: stop, wait up to ${portWait}s for the port, swap (old kept as atrium.prev), start" {
-    $script:swapRes = Invoke-Ssh "ssh $name swap" @($name, $r.Swap) $swapCap
+    $script:swapRes = Invoke-SshOnce "ssh $name swap" @($name, $r.Swap) $swapCap
     $script:swapOut = @($swapRes.Out -split "`r?`n" | Where-Object { $_ })
     $swapOut | ForEach-Object { Say "  ${name}: $_" }
   }
   if ($WhatIf) { $results[$name] = 'success (WhatIf)'; continue }
   # A swap call that hung is not a verdict either way: the hub decides below whether the room came back.
   $swapHung = $swapRes.TimedOut
-  if ($swapHung) { Say "${name}: the swap call hung twice past ${swapCap}s. checking the hub for the room anyway" }
+  if ($swapHung) { Say "${name}: the swap call hung past ${swapCap}s. checking the hub for the room anyway" }
   if ($swapOut -contains $portTimeout) {
     $results[$name] = "failed - the room still held its port after ${portWait}s, so nothing was swapped or started"
     continue
@@ -251,7 +257,7 @@ foreach ($name in $remoteNames) {
   # The old room can outlive the port check by a moment and answer the detach: wait for the port again, detach once more.
   if (($swapOut -join "`n") -match 'left it running|not attached') {
     Say "${name}: detach found the old room still running. retrying once"
-    $retryRes = Invoke-Ssh "ssh $name detach retry" @($name, $r.Retry) $swapCap
+    $retryRes = Invoke-SshOnce "ssh $name detach retry" @($name, $r.Retry) $swapCap
     $retryOut = @($retryRes.Out -split "`r?`n" | Where-Object { $_ })
     $retryOut | ForEach-Object { Say "  ${name}: $_" }
     if ($retryOut -contains $portTimeout) {

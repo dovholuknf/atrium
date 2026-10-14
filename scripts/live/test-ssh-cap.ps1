@@ -59,6 +59,17 @@ exit [int]$env:FAKE_EXIT
   Check 'the message names the call' (($said -join "`n") -match 'ssh m1mini probe hung past 8s \(attempt 2 of 2\)')
   Check 'only two attempts were made' ((Get-Content $count) -eq '2')
 
+  # The swap is not idempotent, so it never retries: a hung call runs once, and the deploy uses Invoke-SshOnce for it.
+  Reset 1
+  $r = Invoke-Capped $pwsh $fakeArgs 8
+  Check 'a hung call run once is killed and run exactly once' ($r.TimedOut -and (Get-Content $count) -eq '1')
+  $deploy = Get-Content -Raw "$PSScriptRoot\atrium-deploy.ps1"
+  Check 'the swap and the detach retry use the no-retry call' ($deploy -match 'Invoke-SshOnce "ssh \$name swap"' -and
+    $deploy -match 'Invoke-SshOnce "ssh \$name detach retry"')
+  Check 'the no-retry call does not go through the retrying helper' (
+    $deploy -match '(?s)function Invoke-SshOnce.*?Invoke-Capped \$ssh.*?\n\}' -and
+    $deploy -notmatch '(?s)function Invoke-SshOnce[^}]*Invoke-CappedRetry')
+
   # --- the verdict comes from the hub's rooms, by since and commit ---
   $HubRooms = 'fake'
   $after = [datetime]'2026-10-14T10:00:00Z'
