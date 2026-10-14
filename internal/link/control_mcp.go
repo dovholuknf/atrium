@@ -1606,6 +1606,43 @@ type launchOutput struct {
 	Model  string `json:"model,omitempty"`
 	Effort string `json:"effort,omitempty"`
 	Note   string `json:"note,omitempty"`
+	// Recovered is a card found on the room after the launch's answer was lost, not one the answer named.
+	Recovered bool `json:"-"`
+}
+
+// launchTimeout bounds the post to a room's /v1/launch. Under the 45 s the launching room waits on the hub, so
+// the answer reaches it, and long enough for a room that trusts the worktree and starts the runner first.
+const launchTimeout = 30 * time.Second
+
+// LaunchRecoveredNote is what a launch says when its answer was lost but the card was found on the room.
+const LaunchRecoveredNote = "NOTE: the room's answer was slow, so the card was found by looking. it is running: do NOT launch it again. " +
+	LaunchStartedNote
+
+// findLaunched is the card a launch made in `cwd` since `since`, or nil. It is how a launch whose answer
+// was lost is told from one that never started.
+func (c *controlMCP) findLaunched(ctx context.Context, room, cwd string, since time.Time) *ctlCard {
+	var body struct {
+		Tasks []ctlCard `json:"tasks"`
+	}
+	if err := c.ask(ctx, http.MethodGet, "/v1/tasks", room, nil, &body); err != nil {
+		return nil
+	}
+	norm := func(p string) string {
+		return strings.ToLower(strings.TrimRight(strings.ReplaceAll(strings.TrimSpace(p), "\\", "/"), "/"))
+	}
+	want := norm(cwd)
+	var best *ctlCard
+	for i := range body.Tasks {
+		t := &body.Tasks[i]
+		made, err := time.Parse(time.RFC3339Nano, t.Created)
+		if err != nil || made.Before(since.Add(-2*time.Second)) || norm(t.Worktree) != want {
+			continue
+		}
+		if best == nil || t.Created > best.Created {
+			best = t
+		}
+	}
+	return best
 }
 
 // LifetimeWork is the lifetime atrium_launch_worker stamps. It is store.LifetimeWork, which this package does not
@@ -1765,8 +1802,23 @@ func (c *controlMCP) launchOnRoom(ctx context.Context, in launchInput, harness, 
 		reqBody["spawned_by_dir"] = spawnedByDir
 	}
 	var t ctlCard
-	if err := c.ask(ctx, http.MethodPost, "/v1/launch", room, reqBody, &t); err != nil {
-		return out, err
+	started := time.Now()
+	// A launch waits on the room trusting the worktree and starting the runner, which is longer
+	// than the 8 s every other call here is bounded by.
+	long := &controlMCP{board: c.board, client: &http.Client{Timeout: launchTimeout, Transport: c.client.Transport}}
+	if err := long.ask(ctx, http.MethodPost, "/v1/launch", room, reqBody, &t); err != nil {
+		// THE ANSWER MAY BE LOST WHILE THE CARD EXISTS. Look for it before reporting a failure, so
+		// a retry is not a duplicate worker in the same directory.
+		var be *boardError
+		if !errors.As(err, &be) || be.code != http.StatusBadGateway {
+			return out, err
+		}
+		found := c.findLaunched(ctx, room, in.Cwd, started)
+		if found == nil {
+			return out, err
+		}
+		t = *found
+		out.Recovered = true
 	}
 	out.Model, out.Effort = t.Model, t.Effort
 	out.Card, out.Handle, out.Title, out.Status = t.ID, t.Wire, t.Title, t.Status
@@ -1786,6 +1838,9 @@ func (c *controlMCP) launchOnRoom(ctx context.Context, in launchInput, harness, 
 	// it, because the fragment form is not guessable.
 	out.Watch = c.board + "/#term=" + url.PathEscape(t.ID)
 	out.Note = LaunchStartedNote
+	if out.Recovered {
+		out.Note = LaunchRecoveredNote
+	}
 	// A room older than launch options drops the fields without a word.
 	missed := LaunchOptionsDropped(in.Model, in.Effort, in.Args, in.Env,
 		t.Model, t.Effort, t.LaunchArgs, t.LaunchEnvKeys)
