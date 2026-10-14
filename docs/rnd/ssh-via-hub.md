@@ -1,6 +1,7 @@
 # ssh to a room's machine through the hub
 
-Status: design, closed 2026-10-14. Nothing here is built. Every point is decided below with its reason.
+Status: design closed 2026-10-14, built on branch `claude/ssh-via-hub` (`docs/changes/ssh-via-hub.md` has the manual
+scenario). Every point is decided below with its reason.
 
 ## The ask
 
@@ -281,8 +282,24 @@ machine itself) and the one clint asked for now.
     No port is opened on the calling machine: `ProxyCommand` speaks stdio. ssh has no SNI, so nothing on the wire
     tells rooms apart, and one `Host` block per room is how they are told apart.
 
-    Atrium never edits `~/.ssh/config`. `HostKeyAlias` keeps the room's host key apart from a LAN entry for the same
-    machine.
+    Atrium never edits `~/.ssh/config` on its own, and `--print-config` only prints. There is ONE opt-in exception, and
+    it is narrow: `atrium ssh config add <room>|--all` (below) writes the same blocks to its own file,
+    `~/.ssh/atrium_config`, and adds one line, `Include atrium_config`, at the top of `~/.ssh/config` when that line is
+    missing, after a timestamped backup beside it. It touches nothing else in that file. `HostKeyAlias` keeps the
+    room's host key apart from a LAN entry for the same machine.
+
+    ```
+    atrium ssh config add <room>... | --all      write the blocks, and the Include line if it is missing
+    atrium ssh config rm <room>... | --all       remove blocks from atrium_config. Never removes the Include line
+    atrium ssh config show                       what is configured, and whether ~/.ssh/config includes it
+    ```
+
+    It is run by a person and by nothing else. A missing `~/.ssh/config` is created holding just the Include line, and
+    a config that already has the line is left alone, with no second copy and no second backup. `--all` lists rooms
+    from the hub's loopback `/_hub/rooms`, so on a machine with no hub it says to name the rooms instead. Each block is
+    right for the OS that runs the command, as `--print-config` is. The board's room facts row has a copy button that
+    gives the block for the machine viewing the board, the quoted `"atrium.exe"` form on Windows and plain `atrium`
+    elsewhere, assuming atrium is on that machine's PATH.
 
 ## Settings at a glance
 
@@ -291,6 +308,7 @@ machine itself) and the one clint asked for now.
 | room `remote_access.json` | on or off, port, `from` | `atrium room remote-access on --from hub,m1mini`, there only |
 | room environment | force off | `ATRIUM_REMOTE_ACCESS=off` |
 | caller's ssh config | how ssh reaches it | `atrium ssh-proxy --print-config sg3`, pasted by the operator |
+| caller's `~/.ssh/atrium_config` | the same blocks, opt in | `atrium ssh config add sg3` or `--all`, `rm`, `show`. Adds one `Include` line to `~/.ssh/config` |
 | hub | nothing | the hub stores no part of it and has no setting for it |
 
 ## Build outline
@@ -318,7 +336,9 @@ refused without the room seeing anything.
 
 ## Out of scope
 
-- Holding, minting, moving or installing any ssh credential, and editing `authorized_keys` or `~/.ssh/config`.
+- Holding, minting, moving or installing any ssh credential, and editing `authorized_keys`.
+- Editing `~/.ssh/config`, with one opt-in exception: `atrium ssh config add` adds the single line
+  `Include atrium_config` at its top, after a backup, and writes everything else to its own file, `~/.ssh/atrium_config`.
 - Any address but the room machine's own loopback sshd. Other hosts are `ssh_targets.json` and the across-rooms design.
 - Turning remote access on from the hub, the board, the room spec, an environment variable or the control MCP.
 - An ssh terminal in the browser.

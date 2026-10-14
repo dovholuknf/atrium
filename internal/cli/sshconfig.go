@@ -1,0 +1,200 @@
+package cli
+
+import (
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"net/http"
+	"os"
+	"runtime"
+	"sort"
+	"strings"
+	"time"
+
+	"github.com/spf13/cobra"
+
+	"github.com/dovholuknf/atrium/internal/sshcfg"
+)
+
+// sshConfigCmd is `atrium ssh config add|rm|show`: the opt-in helper that writes the Host blocks `atrium ssh-proxy
+// --print-config` prints. See docs/rnd/ssh-via-hub.md.
+//
+// THE ONE EXCEPTION to atrium never editing ~/.ssh/config, and a narrow one. It writes its own file,
+// ~/.ssh/atrium_config, and adds one `Include atrium_config` line at the top of ~/.ssh/config when that is missing,
+// after a timestamped backup. Nothing else in that file is touched, and `rm` never removes the Include. It is
+// not run by anything but a person typing it.
+func sshConfigCmd() *cobra.Command {
+	var hub string
+	home := func() (string, error) {
+		h, err := os.UserHomeDir()
+		if err != nil || h == "" {
+			return "", errors.New("could not find this account's home directory")
+		}
+		return h, nil
+	}
+	c := &cobra.Command{
+		Use:   "config",
+		Short: "Write the ssh Host blocks that reach rooms through the hub, into ~/.ssh/atrium_config",
+		Long: "Writes the blocks `atrium ssh-proxy --print-config` prints, for this machine's OS, into\n" +
+			"~/.ssh/atrium_config (%USERPROFILE%\\.ssh\\atrium_config on Windows), and adds one line,\n" +
+			"`Include atrium_config`, at the top of ~/.ssh/config if it is missing, after a timestamped backup.\n" +
+			"It touches nothing else in that file, and remove never takes the Include line out.",
+	}
+
+	var all bool
+	add := &cobra.Command{
+		Use:   "add <room>... | --all",
+		Short: "Write the Host block for each room",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			rooms, err := roomsToConfigure(args, all, hub, true)
+			if err != nil {
+				return err
+			}
+			h, err := home()
+			if err != nil {
+				return err
+			}
+			exe, err := os.Executable()
+			if err != nil {
+				return err
+			}
+			res, err := sshcfg.Add(h, exe, runtime.GOOS, rooms)
+			if err != nil {
+				return err
+			}
+			out := cmd.OutOrStdout()
+			_, cfg, own := sshcfg.Paths(h)
+			if !res.Changed {
+				fmt.Fprintf(out, "nothing to change: %s already has %s\n", own, strings.Join(rooms, ", "))
+				return nil
+			}
+			fmt.Fprintf(out, "wrote %s for %s\n", own, strings.Join(rooms, ", "))
+			switch {
+			case res.Created:
+				fmt.Fprintf(out, "created %s with the line: %s\n", cfg, sshcfg.IncludeLine)
+			case res.Include:
+				fmt.Fprintf(out, "added to the top of %s: %s\n", cfg, sshcfg.IncludeLine)
+				fmt.Fprintf(out, "backed it up first as %s\n", res.Backup)
+			}
+			fmt.Fprintf(out, "try it: ssh <user>@%s\n", rooms[0])
+			return nil
+		},
+	}
+	add.Flags().BoolVar(&all, "all", false, "every room this machine's hub lists (the hub's machine only)")
+	add.Flags().StringVar(&hub, "hub", "", "the hub's loopback board, when it is not the recorded or default one")
+
+	var rmAll bool
+	rm := &cobra.Command{
+		Use:   "rm <room>... | --all",
+		Short: "Remove the Host block for each room (never the Include line)",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if !rmAll && len(args) == 0 {
+				return errors.New("name the rooms to remove, or --all")
+			}
+			if rmAll && len(args) > 0 {
+				return errors.New("name the rooms or use --all, not both")
+			}
+			h, err := home()
+			if err != nil {
+				return err
+			}
+			removed, missing, err := sshcfg.Remove(h, args)
+			if err != nil {
+				return err
+			}
+			out := cmd.OutOrStdout()
+			if len(removed) > 0 {
+				fmt.Fprintf(out, "removed %s from %s\n", strings.Join(removed, ", "), pathOwn(h))
+			}
+			if len(missing) > 0 {
+				fmt.Fprintf(out, "not there: %s\n", strings.Join(missing, ", "))
+			}
+			if len(removed) == 0 && len(missing) == 0 {
+				fmt.Fprintln(out, "nothing configured")
+			}
+			return nil
+		},
+	}
+	rm.Flags().BoolVar(&rmAll, "all", false, "every block atrium wrote")
+
+	show := &cobra.Command{
+		Use:   "show",
+		Short: "What is configured, and whether ~/.ssh/config includes it",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			h, err := home()
+			if err != nil {
+				return err
+			}
+			s, err := sshcfg.Show(h)
+			if err != nil {
+				return err
+			}
+			out := cmd.OutOrStdout()
+			_, cfg, own := sshcfg.Paths(h)
+			if len(s.Rooms) == 0 {
+				fmt.Fprintf(out, "no rooms configured in %s\n", own)
+			} else {
+				fmt.Fprintf(out, "%s has: %s\n\n%s\n", own, strings.Join(s.Rooms, ", "), s.Text)
+			}
+			switch {
+			case !s.ConfigExists:
+				fmt.Fprintf(out, "%s does not exist, so ssh does not read atrium_config yet\n", cfg)
+			case s.Included:
+				fmt.Fprintf(out, "%s includes it\n", cfg)
+			default:
+				fmt.Fprintf(out, "%s does not include it yet. atrium ssh config add adds the line: %s\n", cfg, sshcfg.IncludeLine)
+			}
+			return nil
+		},
+	}
+	c.AddCommand(add, rm, show)
+	return c
+}
+
+func pathOwn(home string) string {
+	_, _, own := sshcfg.Paths(home)
+	return own
+}
+
+// roomsToConfigure is the rooms named, or every room the hub on this machine lists.
+func roomsToConfigure(args []string, all bool, hub string, need bool) ([]string, error) {
+	if all && len(args) > 0 {
+		return nil, errors.New("name the rooms or use --all, not both")
+	}
+	if !all {
+		if len(args) == 0 && need {
+			return nil, errors.New("name the rooms, or use --all on the machine that runs the hub")
+		}
+		return args, nil
+	}
+	cl := &http.Client{Timeout: 3 * time.Second}
+	resp, err := cl.Get(boardAddress(hub) + "/_hub/rooms")
+	if err != nil {
+		return nil, errors.New("--all needs the hub on this machine, and none answers here. name the rooms instead: " +
+			"atrium ssh config add sg3 m1mini")
+	}
+	defer resp.Body.Close()
+	b, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	var v struct {
+		Rooms []struct {
+			Name string `json:"name"`
+		} `json:"rooms"`
+	}
+	if resp.StatusCode != http.StatusOK || json.Unmarshal(b, &v) != nil {
+		return nil, errors.New("--all needs the hub on this machine, and what answers here is not the hub. " +
+			"name the rooms instead: atrium ssh config add sg3 m1mini")
+	}
+	var names []string
+	for _, r := range v.Rooms {
+		if r.Name != "" {
+			names = append(names, r.Name)
+		}
+	}
+	sort.Strings(names)
+	if len(names) == 0 {
+		return nil, errors.New("the hub lists no rooms")
+	}
+	return names, nil
+}

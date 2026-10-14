@@ -433,7 +433,7 @@ func TestOldPathCannotTakeAnAttachedProvenName(t *testing.T) {
 	}
 	r.attach("alpha", Proven{Dialer: plain{addr: r.addr}, Keys: rk})
 	waitFor(t, 5*time.Second, func() bool { return r.hub.Has("alpha") })
-	for _, kind := range []string{"control", "data", relayKind, announceKind, upgradeKind, gitKind} {
+	for _, kind := range []string{"control", "data", relayKind, announceKind, upgradeKind, gitKind, streamKind} {
 		w, err := r.rawHello(false, kind, "alpha")
 		if err != nil {
 			t.Fatalf("%s: %v", kind, err)

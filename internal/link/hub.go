@@ -129,6 +129,11 @@ type Hub struct {
 	// order reaches the next room that attaches. Nil says nothing, and a room
 	// keeps what it last heard.
 	Paths func() []Path
+	// OnStream records an ssh stream's open, close or refusal as an audit line under the target room. Nil records
+	// nothing. NewProxy wires it to the hub's audit log. See stream.go.
+	OnStream func(room, kind, detail string)
+	// LastSeen says when an offline room was last heard from, for the sentence a refused stream gets. Nil says nothing.
+	LastSeen func(room string) (time.Time, bool)
 
 	mu    sync.Mutex
 	rooms map[string]*attached
@@ -229,6 +234,10 @@ type attached struct {
 	idle chan net.Conn
 	// want is how many spare connections to keep. Grows with load.
 	want int
+	// access is what the room last said about its remote access switch, nil until it says. Observed, in memory only.
+	// streams is how many ssh streams the hub has open to it. Both under mu.
+	access  *RemoteAccess
+	streams int
 
 	lastBeat time.Time
 	// lastData is when the last data connection was filed into the pool, and
@@ -372,7 +381,7 @@ func (h *Hub) take(ctx context.Context, conn net.Conn, via string) {
 	case "control":
 		h.control(ctx, name, hi, conn, br, via)
 	case "data":
-		h.data(name, hi, conn, br)
+		h.data(name, hi, conn, br, via)
 	case announceKind:
 		// A ROOM SAYING WHAT IT IS HOLDING. Its own connection rather than a
 		// line on the control one, because a card list is not small. See
@@ -395,6 +404,11 @@ func (h *Hub) take(ctx context.Context, conn net.Conn, via string) {
 		// after the hub said Git. See `git.go`.
 		defer conn.Close()
 		h.serveGit(name, hi.Session, conn, br)
+	case streamKind:
+		// A ROOM ASKING FOR AN SSH STREAM TO ANOTHER ROOM'S SSHD. Dialled by the room, named by its certificate, then
+		// raw bytes. See stream.go.
+		defer conn.Close()
+		h.serveStream(name, conn, br)
 	case roomSpecKind:
 		// CERTIFICATE ONLY. Every other kind falls back to the name in the hello for a connection that has no
 		// certificate to read, which is right for them and wrong for a spec: a peer the overlay admits could name a
@@ -542,6 +556,13 @@ func (h *Hub) control(ctx context.Context, name string, hi hello, conn net.Conn,
 		if err := readJSON(br, &n); err != nil {
 			break
 		}
+		if n.Access != nil {
+			acc := *n.Access
+			a.mu.Lock()
+			a.access = &acc
+			a.mu.Unlock()
+			h.changedNow()
+		}
 		if n.Beat > 0 {
 			a.mu.Lock()
 			a.lastBeat = time.Now()
@@ -649,7 +670,7 @@ func (h *Hub) starved(a *attached, now time.Time) bool {
 }
 
 // data files a fresh connection into a room's pool.
-func (h *Hub) data(name string, hi hello, conn net.Conn, br *bufio.Reader) {
+func (h *Hub) data(name string, hi hello, conn net.Conn, br *bufio.Reader, via string) {
 	h.mu.Lock()
 	a := h.rooms[keyOf(name)]
 	h.mu.Unlock()
@@ -671,7 +692,7 @@ func (h *Hub) data(name string, hi hello, conn net.Conn, br *bufio.Reader) {
 	a.lastData = time.Now()
 	a.mu.Unlock()
 	select {
-	case a.idle <- &buffered{Conn: conn, br: br}:
+	case a.idle <- &buffered{Conn: conn, br: br, via: via}:
 	default:
 		// More than the pool wants. Closed rather than queued: a connection
 		// nobody will use is a file handle on both machines.
@@ -858,6 +879,9 @@ type Attached struct {
 	// has arrived for Timings.Starve: attached in name, unreachable from the
 	// board. Its data dials are going somewhere the hub is not.
 	Starved bool `json:"starved,omitempty"`
+	// RemoteAccess is what the room said about its ssh switch. Nil is a room that never says, which reads as unknown.
+	// Observed, never trusted for granting, and the hub cannot change it. See stream.go.
+	RemoteAccess *RemoteAccess `json:"remote_access,omitempty"`
 }
 
 // unprovenOver names the overlay a connection took the old path on, or "".
@@ -922,12 +946,17 @@ func (h *Hub) Rooms() []Attached {
 			v := a.idleCPU
 			idle = &v
 		}
+		var acc *RemoteAccess
+		if a.access != nil {
+			v := *a.access
+			acc = &v
+		}
 		a.mu.Unlock()
 		out = append(out, Attached{
 			Name: a.name, Version: a.version, Host: a.host, Commit: a.commit,
 			Since: a.since, Idle: len(a.idle), Beat: beat,
 			OS: a.os, Arch: a.arch, Proven: a.unproven == "", Git: a.git, IdleCPU: idle,
-			Via: a.via, Fallback: a.fallback, Starved: starved,
+			Via: a.via, Fallback: a.fallback, Starved: starved, RemoteAccess: acc,
 		})
 	}
 	return out

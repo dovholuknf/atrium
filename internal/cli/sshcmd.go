@@ -82,6 +82,6 @@ func newSSH() *cobra.Command {
 			return nil
 		},
 	}
-	c.AddCommand(add, rm, ls)
+	c.AddCommand(add, rm, ls, sshConfigCmd())
 	return c
 }

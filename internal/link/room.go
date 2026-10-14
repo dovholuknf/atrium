@@ -63,6 +63,16 @@ type Room struct {
 	// welcome carries one, in its own goroutine. It is how the room writes the
 	// fallback down for a start when the hub cannot be reached. Nil ignores it.
 	OnPaths func([]Path)
+	// RemoteDir is the room's key directory, where remote_access.json and its log live. Empty means remote access is
+	// off and nothing is recorded. See stream.go.
+	RemoteDir string
+
+	// smu guards streams, the ssh streams this room is carrying, and accessPoke wakes the switch watcher when one
+	// opens or closes. wmu serialises writes on the control connection, which the beat and the watcher share.
+	smu        sync.Mutex
+	streams    map[string]*openStream
+	accessPoke chan struct{}
+	wmu        sync.Mutex
 
 	// conns carries dialled connections to the listener's Accept. Buffered by
 	// one so a dial that wins a race is not thrown away.
@@ -135,13 +145,15 @@ func (r *restarter) finish() {
 func (r *Room) Run(ctx context.Context) error {
 	r.T = r.T.fill()
 	r.conns = make(chan net.Conn, 1)
+	r.accessPoke = make(chan struct{}, 1)
 
 	// The board server, on connections we dialled. Started once and left
 	// running: it takes connections off the channel for the life of the room,
 	// across any number of hub restarts, because an http.Server does not care
 	// where its listener gets sockets from.
 	srv := &http.Server{
-		Handler: r.Handler,
+		// THE BOARD'S HANDLER WITH `/_link/ssh` IN FRONT, on the link only. See linkHandler.
+		Handler: r.linkHandler(),
 		// EVERY TIMEOUT HERE IS ZERO, AND THAT IS THE WHOLE POINT OF THIS
 		// COMMENT, because setting one looks obviously correct and breaks the
 		// feature in a way that takes an evening to find.
@@ -283,6 +295,8 @@ func (r *Room) attach(ctx context.Context) error {
 	ctx, stop := context.WithCancel(ctx)
 	defer stop()
 	go r.beat(ctx, conn)
+	// WHAT THE REMOTE ACCESS SWITCH SAYS, at attach and on every change. See stream.go.
+	go r.watchAccess(ctx, func(n note) error { return r.say(conn, n) })
 	// WHAT IS HERE, SAID ONCE ON ATTACHING AND THEN ON CHANGE. The hub caches
 	// it so a board can still show this room when it is not answering. It ends
 	// with the attachment, because the next one starts by saying everything
@@ -413,7 +427,7 @@ func (r *Room) beat(ctx context.Context, conn net.Conn) {
 					n.IdleCPU = &v
 				}
 			}
-			if err := writeJSON(conn, n); err != nil {
+			if err := r.say(conn, n); err != nil {
 				// Closing is how the reader above finds out. Returning quietly
 				// would leave it blocked on a socket nothing will ever write
 				// to, which is the half-open case the beat exists to catch.
@@ -422,6 +436,13 @@ func (r *Room) beat(ctx context.Context, conn net.Conn) {
 			}
 		}
 	}
+}
+
+// say writes one frame on the control connection, never through the middle of another.
+func (r *Room) say(conn net.Conn, n note) error {
+	r.wmu.Lock()
+	defer r.wmu.Unlock()
+	return writeJSON(conn, n)
 }
 
 // open dials n data connections and hands them to the listener.
@@ -571,6 +592,14 @@ func (a hubAddr) String() string  { return string(a) }
 type buffered struct {
 	net.Conn
 	br *bufio.Reader
+	// via is the transport whose listener took a pooled data connection, set by the hub. Empty elsewhere.
+	via string
 }
 
 func (b *buffered) Read(p []byte) (int, error) { return b.br.Read(p) }
+
+// CloseWrite half closes the connection under the buffer where it can, so a stream end passes through intact.
+func (b *buffered) CloseWrite() error {
+	closeWrite(b.Conn)
+	return nil
+}

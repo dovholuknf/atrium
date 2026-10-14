@@ -183,6 +183,10 @@ func NewProxy(hub *Hub, board fs.FS, boardID string, room func() string) *Proxy 
 		p.assets = webasset.New(board)
 	}
 	p.feeds = newFeeds(p)
+	// An ssh stream's open, close and refusal are audit lines under the target room.
+	if hub.OnStream == nil {
+		hub.OnStream = p.RecordAudit
+	}
 	hub.every.mu.Lock()
 	hub.every.onChange = p.feeds.everywhereChanged
 	hub.every.mu.Unlock()
@@ -538,6 +542,15 @@ func (p *Proxy) rememberCardRoom(bare, room string) {
 
 // ServeHTTP is the rule.
 func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	// THE ROOM'S SSH ROUTE IS NOT REACHABLE FROM A BOARD REQUEST, and neither are the headers it trusts. Everything
+	// under `/_link/` is a 404 here, and the two headers the hub sets itself on a stream are dropped from whatever is
+	// forwarded, so no request can reach the route or forge who is calling. See stream.go.
+	r.Header.Del("X-Atrium-Caller")
+	r.Header.Del("X-Atrium-Stream")
+	if r.URL.Path == "/_link" || strings.HasPrefix(r.URL.Path, "/_link/") {
+		http.NotFound(w, r)
+		return
+	}
 	// A BOARD VIEW IS NAMED BY THE HOST, `<name>.localhost`, and carried on the
 	// context so the files and every `build` answer come from that view. The rest
 	// of the hub is the same for every view. See views.go.
@@ -1172,6 +1185,8 @@ type Known struct {
 	Cards int `json:"cards"`
 	// Waiting is a join string minted and not yet used.
 	Waiting bool `json:"waiting"`
+	// RemoteAccess is what an attached room said about its ssh switch. Observed, and the hub cannot change it.
+	RemoteAccess *RemoteAccess `json:"remote_access,omitempty"`
 }
 
 // Inventory is a hub that knows which rooms exist, not only which are here.
@@ -1276,6 +1291,21 @@ type ShareAuth struct {
 // before. See autoapprove.go.
 func (p *Proxy) SetInventory(s Inventory) {
 	p.hub.every.setHolding(s)
+	// WHEN AN OFFLINE ROOM WAS LAST HEARD, for the sentence a refused ssh stream gets.
+	if p.hub.LastSeen == nil {
+		p.hub.LastSeen = func(room string) (time.Time, bool) {
+			known, err := s.Known()
+			if err != nil {
+				return time.Time{}, false
+			}
+			for _, k := range known {
+				if strings.EqualFold(k.Name, room) && k.LastSeen != nil {
+					return *k.LastSeen, true
+				}
+			}
+			return time.Time{}, false
+		}
+	}
 	p.mu.Lock()
 	p.stock = s
 	if p.approver == nil {
@@ -1565,6 +1595,10 @@ func (p *Proxy) serveHubAPI(w http.ResponseWriter, r *http.Request) {
 	sub := strings.TrimPrefix(r.URL.Path, "/_hub/")
 	if sub == "restart" || strings.HasPrefix(sub, "restart/") {
 		p.serveRestart(w, r, strings.TrimPrefix(strings.TrimPrefix(sub, "restart"), "/"))
+		return
+	}
+	if strings.HasPrefix(sub, "ssh/") {
+		p.serveSSH(w, r, strings.TrimPrefix(sub, "ssh/"))
 		return
 	}
 	if sub == "files" || strings.HasPrefix(sub, "files/") {

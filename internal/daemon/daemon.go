@@ -212,6 +212,8 @@ type Daemon struct {
 	// relays is the way to other rooms, through the hub, and the drain of what
 	// is owed to them. Empty on a daemon that is not a room. See relay.go.
 	relays relayState
+	// streams is the room's link for ssh streams to another room's sshd. See stream.go.
+	streams streamHolder
 	// itemPush is the one pass at a time that carries items to the hub. See item_hub.go.
 	itemPush itemPush
 
@@ -1177,6 +1179,9 @@ func (d *Daemon) Run(ctx context.Context) error {
 	// talking is the forum's job, not this one's.
 	agentMux.HandleFunc("/peers", d.handlePeers)
 	agentMux.HandleFunc("/tell", d.handleTell)
+	// AN SSH STREAM to another room's sshd through the hub, upgraded to raw bytes. See stream.go.
+	agentMux.HandleFunc("/stream", d.handleStream)
+	agentMux.HandleFunc("/stream/status", d.handleStreamStatus)
 	agentMux.HandleFunc("/hooks-changed", d.handleHooksChanged)
 	// The room's stable hub remote: a card's git reaches the hub's store through here, on its own token, and
 	// the token opens this route and no other. See hubremote.go.
