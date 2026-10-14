@@ -271,6 +271,7 @@ func roomCmd() *cobra.Command {
 	c.AddCommand(roomTransportsLocalCmd())
 	c.AddCommand(roomHubCmd())
 	c.AddCommand(roomRemoteAccessCmd())
+	c.AddCommand(roomSSHCmd())
 	return c
 }
 
@@ -440,6 +441,7 @@ func runRoom(keys link.Keys, db, human, agent string, restartAfter time.Duration
 	// SSH STREAMS: this room's switch lives beside its certificate, and the link carries the streams. See internal/link/stream.go.
 	room.RemoteDir = keys.Dir
 	d.SetStreamer(room)
+	d.SetSSHWizard(sshWizardHandler(keys.Dir))
 	// THE HUB RUNS THE FORGE. This room asks it about pull requests and issues and never runs gh or bb itself.
 	d.SetHubForge(forge.NewRemote(room.Forge))
 	// The room's stable hub remote forwards over the same link's git kind.

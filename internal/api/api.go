@@ -380,8 +380,11 @@ type Server struct {
 	// and pressing nothing here creates anything: a room exists exactly when
 	// it checks in. RoomForget drops one early, which is the same thing time
 	// does and is equally not durable.
-	RoomJoin   func() any
-	HubLink    func() any
+	RoomJoin func() any
+	HubLink  func() any
+	// SSHWizard runs the read only checks for turning ssh on, `GET /v1/ssh/wizard`. A check only reads, so the
+	// route is served on every board including through the hub. Nothing on this surface writes. 404 on a daemon.
+	SSHWizard  func(r *http.Request) any
 	RoomForget func(w http.ResponseWriter, r *http.Request)
 
 	// The other direction: work queued for another machine, which rides the
@@ -506,6 +509,14 @@ func (s *Server) Handler() http.Handler {
 			return
 		}
 		writeJSON(w, http.StatusOK, s.HubLink())
+	})
+	// WHAT TURNING SSH ON WOULD DO, as the wizard's steps. Read only: it never writes the switch, a key or a file.
+	mux.HandleFunc("GET /v1/ssh/wizard", func(w http.ResponseWriter, r *http.Request) {
+		if s.SSHWizard == nil {
+			http.NotFound(w, r)
+			return
+		}
+		writeJSON(w, http.StatusOK, s.SSHWizard(r))
 	})
 	if s.RoomJoin != nil {
 		// Before the wildcard, or `join` is read as a room called join. Go's

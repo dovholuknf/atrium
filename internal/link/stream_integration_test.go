@@ -495,3 +495,52 @@ func TestTheRoomsOwnBoardHasNoStreamRoute(t *testing.T) {
 		t.Fatalf("%d, the board handler was asked %d times", rec.Code, seen.Load())
 	}
 }
+
+// f-ssh-wslrelay-loopback: the room dials the address its switch names, not always 127.0.0.1. sshd answers on a second
+// loopback address and nothing answers on 127.0.0.1 at that port, so only the right dial reaches the banner.
+func TestTheRoomDialsTheAddrItsSwitchNames(t *testing.T) {
+	lightSlot(t)
+	ln, err := net.Listen("tcp", "127.0.0.2:0")
+	if err != nil {
+		t.Skipf("no second loopback address here: %v", err)
+	}
+	defer ln.Close()
+	go func() {
+		for {
+			c, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			go func() { defer c.Close(); _, _ = io.WriteString(c, "SSH-2.0-fake\r\n"); _, _ = io.Copy(io.Discard, c) }()
+		}
+	}()
+	port := ln.Addr().(*net.TCPAddr).Port
+	if l, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", port)); err == nil {
+		l.Close()
+	} else {
+		t.Skip("the port is taken on 127.0.0.1 too")
+	}
+
+	s := newStreamRig(t, 100*time.Millisecond, "sg3")
+	dir := s.rooms["sg3"].dir
+	save := func(addr string) {
+		st := remoteaccess.State{Version: remoteaccess.Version, On: true, Addr: addr, Port: port, From: []string{"hub"}}
+		if err := remoteaccess.Save(dir, st); err != nil {
+			t.Fatal(err)
+		}
+	}
+	save("")
+	s.heard("sg3", true)
+	_, _, resp := s.door("sg3")
+	if body := streamBody(t, resp); resp.StatusCode != http.StatusBadGateway ||
+		!strings.Contains(body, fmt.Sprintf("on 127.0.0.1:%d", port)) {
+		t.Fatalf("with no addr the room dials 127.0.0.1: %d %s", resp.StatusCode, body)
+	}
+
+	save("127.0.0.2")
+	c, br, resp := s.door("sg3")
+	if resp.StatusCode != http.StatusSwitchingProtocols {
+		t.Fatalf("status %d: %s", resp.StatusCode, streamBody(t, resp))
+	}
+	readBanner(t, br, c)
+}

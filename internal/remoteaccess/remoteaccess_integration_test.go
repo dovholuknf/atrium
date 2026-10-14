@@ -113,3 +113,43 @@ func TestLogAppendsRotatesAndReadsNewestFirst(t *testing.T) {
 		t.Fatalf("the live log is %d bytes", fi.Size())
 	}
 }
+
+func TestAddrDefaultsRoundTripsAndIsValidated(t *testing.T) {
+	dir := t.TempDir()
+	if err := Save(dir, State{On: true, From: []string{"hub"}}); err != nil {
+		t.Fatal(err)
+	}
+	s, err := Load(dir)
+	if err != nil || s.Host() != "127.0.0.1" || s.Addr != "" {
+		t.Fatalf("a file with no addr dials 127.0.0.1: %+v %v", s, err)
+	}
+	for _, a := range []string{"192.168.1.147", "::1", "sg3.lan", "fe80::1"} {
+		if err := Save(dir, State{On: true, Addr: a, From: []string{"hub"}}); err != nil {
+			t.Fatal(err)
+		}
+		if s, err := Load(dir); err != nil || s.Host() != a {
+			t.Fatalf("%s: %+v %v", a, s, err)
+		}
+	}
+	for _, bad := range []string{"a b", "-x", "host:22", "[::1]", "a/b"} {
+		if ValidAddr(bad) {
+			t.Fatalf("%q passed as an address", bad)
+		}
+		if err := Save(dir, State{On: true, Addr: bad}); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := Load(dir); err == nil {
+			t.Fatalf("a file with addr %q loaded", bad)
+		}
+	}
+}
+
+func TestDescribeNamesANonDefaultAddr(t *testing.T) {
+	if got := (Status{State: State{On: true, Port: 22, From: []string{"hub"}}}).Describe(); got != "on, port 22, from hub" {
+		t.Fatal(got)
+	}
+	got := (Status{State: State{On: true, Addr: "::1", Port: 22, From: []string{"hub"}}}).Describe()
+	if got != "on, [::1]:22, from hub" {
+		t.Fatal(got)
+	}
+}
