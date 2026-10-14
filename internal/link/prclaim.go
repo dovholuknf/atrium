@@ -249,6 +249,9 @@ type prClaimAsk struct {
 	Source string `json:"source"`
 	// Held says the asker already has a live row for the key, so it is the owner when nothing else is.
 	Held bool `json:"held"`
+	// Take says the operator picked the asking room for this link by name. The claim moves to the asker, unless the
+	// room that holds it has a live card for the key.
+	Take bool `json:"take"`
 }
 
 // PRClaimAnswer is the hub's answer to a claim. Forward is the owner's own answer to the paste, when the hub handed
@@ -260,6 +263,21 @@ type PRClaimAnswer struct {
 	Forwarded     bool            `json:"forwarded,omitempty"`
 	ForwardStatus int             `json:"forward_status,omitempty"`
 	Forward       json.RawMessage `json:"forward,omitempty"`
+	// Live is the card the owner has live for the key, the id on the owner's room, when a Take found one. The claim did
+	// not move, and nothing is to be launched.
+	Live string `json:"live,omitempty"`
+}
+
+// roomLive is the live card a room has for a claim key, or "". A room on a build with no such question reads as having
+// none: the claim then moves, as the operator picked.
+func (p *Proxy) roomLive(ctx context.Context, room, key string) string {
+	var body struct {
+		Card string `json:"card"`
+	}
+	if !p.roomGet(ctx, room, "/v1/open/live?key="+url.QueryEscape(key), &body) {
+		return ""
+	}
+	return body.Card
 }
 
 func (p *Proxy) servePRClaim(w http.ResponseWriter, r *http.Request) {
@@ -291,6 +309,25 @@ func (p *Proxy) claimPR(ctx context.Context, st *hubstore.Store, asker string, a
 	ans := PRClaimAnswer{Key: ask.Key}
 	if c, err := st.PRClaimOf(ask.Key); err == nil {
 		ans.Owner = c.Room
+		if ask.Take && keyOf(c.Room) != keyOf(asker) {
+			// THE ROOM THE OPERATOR PICKED WINS, unless the owner has a card on the link that is live: that card is the
+			// answer, and nothing is made beside it.
+			if card := p.roomLive(ctx, c.Room, ask.Key); card != "" {
+				ans.Live = card
+				return ans, nil
+			}
+			if _, err := p.MovePRClaimWith(ctx, ask.Key, asker, ""); err != nil {
+				// An owner that is offline cannot hand its review over, and the pick still stands: the claim moves alone.
+				if mv, err2 := st.MovePRClaim(ask.Key, asker); err2 == nil {
+					ans.Owner = mv.Room
+				} else {
+					return ans, err2
+				}
+			} else {
+				ans.Owner = asker
+			}
+			p.RecordAudit(asker, "link-claim-taken", ask.Key+" from "+c.Room)
+		}
 		return ans, nil
 	} else if !errors.Is(err, hubstore.ErrNoPRClaim) {
 		return ans, err
@@ -370,6 +407,19 @@ func (p *Proxy) servePRClaims(w http.ResponseWriter, r *http.Request, sub string
 			list = []hubstore.PRClaim{}
 		}
 		crJSON(w, http.StatusOK, map[string]any{"claims": list})
+	case rest == "holder" && r.Method == http.MethodGet:
+		// WHO HOLDS A LINK, for the launch dialog to say before "go": the room, and the card it has live on it if any.
+		key, _ := p.openTargetOf(r.URL.Query().Get("url"), r.URL.Query().Get("repo"))
+		out := map[string]string{"key": key, "owner": "", "card": ""}
+		if key != "" {
+			if c, err := st.PRClaimOf(strings.ToLower(key)); err == nil {
+				out["owner"] = c.Room
+				ctx, cancel := context.WithTimeout(r.Context(), placeLoadWait)
+				out["card"] = p.roomLive(ctx, c.Room, strings.ToLower(key))
+				cancel()
+			}
+		}
+		crJSON(w, http.StatusOK, out)
 	case rest == "move" && r.Method == http.MethodPost:
 		if err := docsCrossOrigin.Check(r); err != nil {
 			crFail(w, http.StatusForbidden, "a page on another origin cannot move a pr here")

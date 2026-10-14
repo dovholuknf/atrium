@@ -1110,7 +1110,7 @@ async function recogniseLink(known) {
   // same way here: something to go and do before pressing launch.
   note.classList.toggle("warn", !!(problem || got.fetch_error));
   fillLaunchRepo();
-  if (opens) linkRoomDefault(got);
+  if (opens) { linkRoomDefault(got); noteHolder(); }
   syncMore();
   return got;
 }
@@ -1166,6 +1166,31 @@ async function linkRoomDefault(got) {
   if (holders.includes(sel.value)) return;
   sel.value = holders[0];
   if (typeof sel.onchange === "function") sel.onchange();
+}
+
+// WHO HOLDS THE LINK, said in the dialog before go. Asked of the hub for the link and the room chosen: when another room
+// holds it, the note says so, and says go brings its card up when that room has one live. Hub only: elsewhere the ask is
+// a 404 and nothing is said. A newer ask wins, so a slow answer never writes over the room just picked.
+let holderAsk = 0;
+
+async function noteHolder() {
+  const ask = ++holderAsk;
+  const note = document.getElementById("l-link-note");
+  const field = document.getElementById("l-room-field");
+  const url = launchResolved && launchResolved.url;
+  if (!note || !url || !field || field.hidden || !pastedOpenKind()) return;
+  let h;
+  try {
+    h = await api("/_hub/pr-claims/holder?url=" + encodeURIComponent(url) +
+      "&repo=" + encodeURIComponent(launchRepoNow()));
+  } catch (e) { return; }
+  if (ask !== holderAsk || !h || !h.owner) return;
+  const room = document.getElementById("l-room").value;
+  if (room && h.owner === room) return;
+  const live = !!h.card;
+  note.classList.add("warn");
+  note.textContent = h.owner + " is already working on this" +
+    (live ? ", go brings its card up" : (room ? ", go moves it to " + room : ""));
 }
 
 // The room an open with no dialog goes to on the ALL view, by the same rule. "" leaves it to the hub, which puts a
@@ -1520,8 +1545,23 @@ async function openLaunch(id, resume, cwd, ontoTask, prefill, where) {
   if (!pre.quiet) {
     document.getElementById("launch").showModal();
     document.getElementById("l-cwd").focus();
+    launchRestTerminal();
   }
   return true;
+}
+
+// THE TERMINAL BEHIND THE DIALOG STOPS BEING DRAWN BY THE GPU WHILE IT IS OPEN. A visible WebGL terminal keeps every frame
+// costly, so a press on ROOM or RUNNER was answered 35 to 60ms late and the dialog took 400ms to show (see
+// docs/backlog/ui/launch-dialog-notes.md). The pane is covered by the modal, its output is still written, and it takes its
+// GPU context again when the dialog closes.
+function launchRestTerminal() {
+  const dlg = document.getElementById("launch");
+  const t = typeof term !== "undefined" ? term : null;
+  if (!t || !t._atriumGl) return;
+  dropWebgl(t);
+  dlg.addEventListener("close", () => {
+    if (typeof term !== "undefined" && term === t && !t._atriumGl) useWebgl(t);
+  }, { once: true });
 }
 
 // Which machine this card starts on, asked only when it is a question.
@@ -1549,7 +1589,7 @@ function fillLaunchRoom(ontoTask) {
   if (rooms.some(r => r.name === last)) sel.value = last;
   // Changing the machine re-draws the runner list, because a runner offered
   // here is one the selected room can actually start. See refreshLaunchRunners.
-  sel.onchange = () => refreshLaunchRunners(launchTarget && launchTarget.harness);
+  sel.onchange = () => { refreshLaunchRunners(launchTarget && launchTarget.harness); noteHolder(); };
   field.hidden = false;
 }
 
@@ -1788,7 +1828,9 @@ async function launchNow(opening) {
           prompt: document.getElementById("l-prompt").value.trim(),
           model: document.getElementById("l-model").value.trim(),
           effort: document.getElementById("l-effort").value.trim(),
-          repo: launchRepoNow()
+          repo: launchRepoNow(),
+          // A room chosen by name takes a link another room holds, unless that room has a card live on it.
+          pick: !!(roomField && !roomField.hidden && room)
         })
       });
     } catch (e) {
@@ -1802,6 +1844,16 @@ async function launchNow(opening) {
     linkOpeningEnd(id);
   }
   if (out) {
+    if (out.live) {
+      // The holder has a card live on it: that card comes up, here or in its own window, and nothing was launched.
+      toast(out.title || out.key || "that link", "already running on " + (out.held_by || "another room"));
+      const live = out.card ? await api("/v1/tasks/" + encodeURIComponent(out.card)) : null;
+      if (!live) { switchView("board"); return; }
+      if (poppedOut(live.id)) { popOutTask(live.id); return; }
+      switchView("terms");
+      openTerm(live);
+      return;
+    }
     rememberLaunchRoom(out.room || room, out.card);
     if (out.created === false) {
       const pr = pastedPR();

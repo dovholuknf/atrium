@@ -22,6 +22,8 @@ type PRClaimAsk struct {
 	Head   string `json:"head,omitempty"`
 	Source string `json:"source,omitempty"`
 	Held   bool   `json:"held,omitempty"`
+	// Take is the operator's pick of this room for the link: the claim moves here unless the holder has a live card.
+	Take bool `json:"take,omitempty"`
 }
 
 // PRClaimReply is the hub's answer. Mine is whether this room owns the key. Forward is the owner's own answer to the
@@ -32,6 +34,8 @@ type PRClaimReply struct {
 	Forwarded     bool
 	ForwardStatus int
 	Forward       json.RawMessage
+	// Live is the owner's live card for the key (its id on the owner's room) when a Take found one.
+	Live string
 }
 
 // prClaimWait bounds the ask. A hub that does not answer is the same as no hub.
@@ -54,6 +58,9 @@ func (s *Server) claimPR(w http.ResponseWriter, r *http.Request, ask PRClaimAsk)
 	}
 	body := map[string]any{"created": false, "key": ask.Key, "held_by": rep.Owner,
 		"claim": "folded into " + rep.Owner}
+	if rep.Live != "" {
+		body["live_card"] = rep.Live
+	}
 	if rep.Forwarded {
 		body["owner_status"] = rep.ForwardStatus
 		if len(rep.Forward) > 0 {

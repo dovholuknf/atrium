@@ -21495,6 +21495,65 @@ async function parkedStaysSection(browser, base) {
 // Every API answer is held for 500ms. The board has read the runners and rooms at start, so the open is one frame: the
 // dialog is showing, both selects hold their options, and nothing is rebuilt in the next half second.
 // DROPDOWNS_SHOTS=<dir> writes the dialog with the room select focused.
+// A LINK ANOTHER ROOM HOLDS: the dialog says who holds it before go, a room picked by name is sent as a pick, and a
+// live card at the holder is brought up (here, or raised in its window) with nothing launched.
+async function heldLinkSection(browser, base) {
+  const wasHub = hubMode, wasSgg = sggAttached;
+  hubMode = true;
+  sggAttached = true;
+  const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+  const json = (route, body, status) => route.fulfill({ status: status || 200, contentType: "application/json", body: JSON.stringify(body) });
+  const calls = [];
+  const holder = { owner: "sgg", card: "live-1" };
+  const link = "https://github.com/openziti/zrok/issues/5";
+  try {
+    const p = await ctx.newPage();
+    const errors = [];
+    p.on("pageerror", e => errors.push(e.message));
+    await p.route(/\/(v1\/(recognise|open|tasks\/live-1)|_hub\/pr-claims\/holder)(\?|$)/, async r => {
+      const req = r.request(), u = new URL(req.url());
+      calls.push(req.method() + " " + u.pathname + " " + (req.postData() || ""));
+      if (u.pathname === "/_hub/pr-claims/holder") return json(r, holder);
+      if (u.pathname === "/v1/recognise") return json(r, { recogniser: "github-issue", label: "github issue", url: link, host: "github.com",
+        cwd: "/wt/issue-5", title: "issue 5", prompt: "investigate", tags: ["issue"], branch: "issue-5", org: "openziti", repo: "zrok",
+        vars: { org: "openziti", repo: "zrok", num: "5", host: "github.com" } });
+      if (u.pathname === "/v1/open") return json(r, { key: "github.com/openziti/zrok/i5", kind: "issue", card: "live-1", live: true,
+        held_by: "sgg", created: false, title: "issue 5" });
+      return json(r, { id: "live-1", status: "running", title: "issue 5" });
+    });
+    await p.goto(base + "/", { waitUntil: "domcontentloaded" });
+    await p.waitForFunction(() => typeof hubRooms !== "undefined" && hubRooms.length >= 2, null, { timeout: slow(15000) });
+    await p.evaluate(url => { openLaunch(null, "", "", null, null); document.getElementById("l-url").value = url; return recogniseLink(); }, link);
+    await p.waitForFunction(() => /already working on this/.test(document.getElementById("l-link-note").textContent), null, { timeout: slow(5000) })
+      .catch(() => fail("heldLink: the dialog did not say who holds the link: " + calls.join(" | ")));
+    const note = await p.textContent("#l-link-note");
+    if (!/sgg is already working on this, go brings its card up/.test(note)) fail("heldLink: the note read " + note);
+    // picking the holder's own room says nothing
+    await p.selectOption("#l-room", "sgg");
+    await p.evaluate(() => { document.getElementById("l-link-note").textContent = "clear"; return noteHolder(); });
+    if (await p.textContent("#l-link-note") !== "clear") fail("heldLink: the holder's own room was told it was held by itself");
+    // the other room is sent as a pick, and the live card comes up with nothing launched
+    const other = await p.evaluate(() => [...document.querySelectorAll("#l-room option")].map(o => o.value).find(v => v && v !== "sgg"));
+    await p.selectOption("#l-room", other);
+    calls.length = 0;
+    await p.evaluate(() => doLaunch());
+    await p.waitForFunction(() => !document.getElementById("launch").open, null, { timeout: slow(5000) })
+      .catch(() => fail("heldLink: the dialog stayed open after a live answer"));
+    const o = calls.find(c => c.indexOf("POST /v1/open") === 0);
+    const sent = o ? JSON.parse(o.split(" ").slice(2).join(" ")) : {};
+    if (sent.pick !== true) fail("heldLink: the open did not carry the pick: " + o);
+    await p.waitForFunction(() => typeof termTask !== "undefined" && termTask && termTask.id === "live-1", null, { timeout: slow(5000) })
+      .catch(() => fail("heldLink: the live card was not brought up"));
+    if (calls.some(c => c.indexOf("/v1/launch") >= 0)) fail("heldLink: a live card still launched");
+    if (errors.length) fail("heldLink: page errors: " + errors.join(" | "));
+  } finally {
+    hubMode = wasHub;
+    sggAttached = wasSgg;
+    await ctx.close();
+  }
+  if (!bad) console.log("heldLink ok");
+}
+
 async function dropdownsInstantSection(browser, base) {
   const wasHub = hubMode, wasSgg = sggAttached;
   hubMode = true;
@@ -29414,7 +29473,7 @@ async function main() {
       termDebug: termDebugSection, termDebugPerCard: termDebugPerCardSection, termLag: termLagSection, termHiddenRedraw: termHiddenRedrawSection, termLastRead: termLastReadSection, termSortStarted: termSortStartedSection,
       noReadyChildren: noReadyChildrenSection, readyNoSeed: readyNoSeedSection, childUnderParent: childUnderParentSection, topNav: topNavSection, boardUsage: boardUsageSection, tabsOrder: tabsOrderSection,
       groupMenus: groupMenusSection, mGroupMenus: mGroupMenusSection,
-      u002: u002Section, childFold: childFoldSection, liveHome: liveHomeSection, toastsTop: toastsTopSection, groupBridge: groupBridgeSection, revealFolds: revealFoldsSection,
+      u002: u002Section, childFold: childFoldSection, liveHome: liveHomeSection, toastsTop: toastsTopSection, heldLink: heldLinkSection, groupBridge: groupBridgeSection, revealFolds: revealFoldsSection,
       pulls: pullsSection, prMove: prMoveSection, quickPaste: quickPasteSection, recogniserRepo: recogniserRepoSection, hubRepos: hubReposSection, hubReposShelf: hubReposShelfSection, hubReposLedger: hubReposLedgerSection, hubReposFeed: hubReposFeedSection, changeReq: changeReqSection, mChangeReq: mChangeReqSection, trayHead: trayHeadSection, pullsAbsent: pullsAbsentSection, pullsPanelStage: pullsPanelStageSection, oneTooltip: oneTooltipSection, burnChart: burnChartSection, burnReadout: burnReadoutSection, switchPrewarm: switchPrewarmSection, attachAtOnce: attachAtOnceSection, fileView: fileViewSection, keepAlive: keepAliveSection, switchBackCost: switchBackCostSection, keepMemory: keepMemorySection, pullsDrawer: pullsDrawerSection };
     try {
       const unknown = ONLY.split(",").filter(n => typeof only[n] !== "function");
@@ -31380,6 +31439,7 @@ async function main() {
     await unit("parkedStays", () => parkedStaysSection(browser, base));
     await unit("popupFit", () => popupFitSection(browser, base));
     await unit("dropdownsInstant", () => dropdownsInstantSection(browser, base));
+    await unit("heldLink", () => heldLinkSection(browser, base));
     await unit("mWorking", () => mWorkingSection(browser));
     await unit("mReload", () => mReloadSection(browser));
     await unit("mReconnect", () => mReconnectSection(browser));

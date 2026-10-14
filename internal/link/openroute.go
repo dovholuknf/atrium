@@ -82,6 +82,13 @@ func (p *Proxy) openTarget(r *http.Request) (key, repo string) {
 	if json.Unmarshal(raw, &in) != nil || strings.TrimSpace(in.URL) == "" {
 		return "", ""
 	}
+	return p.openTargetOf(in.URL, in.Repo)
+}
+
+// openTargetOf is openTarget for a link and the request's `repo` already in hand.
+func (p *Proxy) openTargetOf(link, pickedRepo string) (key, repo string) {
+	var in struct{ URL, Repo string }
+	in.URL, in.Repo = link, pickedRepo
 	f := p.forgeSide()
 	if f == nil {
 		return "", ""
@@ -138,6 +145,12 @@ func (p *Proxy) retagOpen(res *http.Response, room string) error {
 	if err := json.Unmarshal(raw, &obj); err != nil {
 		res.Body = io.NopCloser(bytes.NewReader(raw))
 		return nil
+	}
+	// A link whose holder has a card live on it answers that card, which is on the holder's room, not the one asked.
+	if live, _ := obj["live"].(bool); live {
+		if owner, _ := obj["held_by"].(string); owner != "" {
+			room = owner
+		}
 	}
 	obj["room"] = room
 	for _, field := range []string{"card", "pr"} {

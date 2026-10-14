@@ -66,6 +66,8 @@ type claimRoom struct {
 	// holds is the repos ("host/org/repo") this room has a checkout of, as GET /v1/scm/has answers. A room with no
 	// list at all answers 404, as a room built before the question does.
 	holds map[string]bool
+	// live is the live card this room has per claim key, as GET /v1/open/live answers.
+	live map[string]string
 }
 
 func (c *claimRoom) reviewCalls() (imported []byte, archived, walkers []string) {
@@ -108,6 +110,11 @@ func (c *claimRoom) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		c.mu.Unlock()
 		w.WriteHeader(http.StatusUnprocessableEntity)
 		_, _ = w.Write([]byte(`{"error":"no recogniser matches this","code":"no_recogniser","step":"recognise"}`))
+	case r.URL.Path == "/v1/open/live":
+		c.mu.Lock()
+		card := c.live[r.URL.Query().Get("key")]
+		c.mu.Unlock()
+		_ = json.NewEncoder(w).Encode(map[string]string{"card": card})
 	case r.URL.Path == "/v1/scm/has":
 		if c.holds == nil {
 			http.NotFound(w, r)
