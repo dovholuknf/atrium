@@ -128,3 +128,43 @@ func TestRemoteAccessOnTakesAnAddr(t *testing.T) {
 		t.Fatal("a bad addr was accepted")
 	}
 }
+
+func runSSHSetup(t *testing.T, dir string, args ...string) (string, error) {
+	t.Helper()
+	c := sshSetupCmd()
+	var out bytes.Buffer
+	c.SetOut(&out)
+	c.SetErr(&out)
+	c.SetArgs(append(args, "--dir", dir))
+	err := c.Execute()
+	return out.String(), err
+}
+
+// Only --check is built, and it changes nothing: not the switch, and no file in the key directory.
+func TestSSHSetupCheckReadsAndWritesNothing(t *testing.T) {
+	dir := t.TempDir()
+	if _, err := runSSHSetup(t, dir); err == nil {
+		t.Fatal("setup without --check ran")
+	}
+	// A directory that never joined: step 1 fails in words and the rest wait. Failed is a non zero exit.
+	out, err := runSSHSetup(t, dir, "--check", "--no-self-test")
+	if err == nil {
+		t.Fatal("a failed step exited zero")
+	}
+	for _, sub := range []string{"1. ", "Where am I", "has not joined a hub yet", "11. ", "waiting", "waits for step 1"} {
+		if !strings.Contains(out, sub) {
+			t.Fatalf("missing %q in:\n%s", sub, out)
+		}
+	}
+	if left, _ := filepath.Glob(filepath.Join(dir, "*")); len(left) != 0 {
+		t.Fatalf("--check wrote %v", left)
+	}
+
+	js, _ := runSSHSetup(t, dir, "--check", "--json", "--no-self-test")
+	if !strings.Contains(js, `"status": "failed"`) || !strings.Contains(js, `"ready": false`) || strings.Count(js, `"key":`) != 11 {
+		t.Fatalf("json:\n%s", js)
+	}
+	if _, err := runSSHSetup(t, dir, "--check", "--from", "a b"); err == nil {
+		t.Fatal("a bad --from was accepted")
+	}
+}
