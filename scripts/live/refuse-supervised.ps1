@@ -40,13 +40,65 @@ function Find-SupervisingRoom([int]$StartPid = $PID, $Processes) {
   }
 }
 
+# Find-RoomJob answers whether the job this process is in is a ROOM'S: the job holds a room process and no desktop (no
+# terminal, no shell). A parent that has exited breaks the ancestor walk, but not this: on 2026-10-14 a hub whose
+# parent was gone died with its room. -JobPids is the pids in the job, read from the machine when not given. Returns
+# the room, or nothing.
+#
+# NOT "any job". On this machine the whole interactive session is one job (hub, both rooms, Windows Terminal, hundreds
+# of processes), so membership alone would refuse everything, a fresh window included.
+# ATRIUM_LIVE_FAKE_JOB=1 or 0 stands in for the answer, for tests.
+function Find-RoomJob([int[]]$JobPids, $Processes) {
+  if ($env:ATRIUM_LIVE_FAKE_JOB) {
+    if ($env:ATRIUM_LIVE_FAKE_JOB -eq '1') { return [pscustomobject]@{ ProcessId = 0; CommandLine = '(a faked room job)' } }
+    return
+  }
+  if ($null -eq $JobPids) { $JobPids = Get-CurrentJobPids }
+  if (-not $JobPids) { return }
+  if ($null -eq $Processes) { $Processes = Get-CimInstance Win32_Process }
+  $byId = @{}
+  foreach ($p in $Processes) { $byId[[int]$p.ProcessId] = $p }
+  foreach ($id in $JobPids) {
+    $r = $byId[[int]$id]
+    if (-not $r -or -not $r.CommandLine -or $r.CommandLine -notmatch $script:SupervisorPattern) { continue }
+    # The session's job holds the terminal and the shell, a room's does not. Descent is no test: the hub of 2026-10-14
+    # had a parent that had exited, and every process tree ends at an exited parent.
+    $whole = $true
+    foreach ($m in $JobPids) {
+      $mp = $byId[[int]$m]
+      if ($mp -and $mp.CommandLine -match '(?i)WindowsTerminal\.exe|explorer\.exe') { $whole = $false; break }
+    }
+    if ($whole) { return $r }
+  }
+}
+
+# Get-CurrentJobPids lists the pids in the job object this process is in, empty when it is in none.
+function Get-CurrentJobPids {
+  if ($PSVersionTable.PSEdition -eq 'Core' -and -not $IsWindows) { return @() }
+  if (-not ('AtriumLive.JobList' -as [type])) {
+    Add-Type -Namespace AtriumLive -Name JobList -MemberDefinition @'
+[DllImport("kernel32.dll")] public static extern bool QueryInformationJobObject(System.IntPtr job, int cls, byte[] buf, int len, out int ret);
+'@
+  }
+  # JobObjectBasicProcessIdList: two counts, then the ids as pointer-sized values. Null job means this process's own.
+  $size = 8 + 8 * 4096
+  $b = New-Object byte[] $size; $n = 0
+  if (-not [AtriumLive.JobList]::QueryInformationJobObject([IntPtr]::Zero, 3, $b, $size, [ref]$n)) { return @() }
+  $cnt = [BitConverter]::ToUInt32($b, 4)
+  return @(0..($cnt - 1) | ForEach-Object { [int][BitConverter]::ToUInt64($b, 8 + 8 * $_) })
+}
+
 # Assert-NotSupervised ends the script with exit 1 and a plain message when it runs under a room.
 function Assert-NotSupervised {
   $room = Find-SupervisingRoom
-  if (-not $room) { return }
-  Write-Host ("refusing: this shell is not under atrium's control, and this script stops or starts atrium. It is running " +
-    "inside an atrium room (pid $($room.ProcessId): $($room.CommandLine)), and stopping that room ends this shell " +
-    "and this script with it, halfway through.")
+  if ($room) {
+    Write-Host ("refusing: this shell is not under atrium's control, and this script stops or starts atrium. It is " +
+      "running inside an atrium room (pid $($room.ProcessId): $($room.CommandLine)), and stopping that room ends this " +
+      "shell and this script with it, halfway through.")
+  } elseif ($jobRoom = Find-RoomJob) {
+    Write-Host ("refusing: this process is inside a Windows job object, which is how a room holds what it started, even " +
+      "when no room is among its parents. Stopping the room ends the job, and this script and anything it starts with it.")
+  } else { return }
   Write-Host 'run it from a terminal that is not under atrium, such as a fresh window: wt.exe pwsh -NoProfile'
   exit 1
 }

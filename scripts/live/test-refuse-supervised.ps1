@@ -53,10 +53,11 @@ Check 'Resolve-DeployRooms refuses sg4-control by name without the switches' $th
 
 # --- the scripts themselves, run for real with -WhatIf and a fake ancestor ---
 $fakeRoom = '"C:\Users\claude\.atrium\bin\atrium.exe" room --dir C:\Users\claude\.atrium2\room'
-function Run([string]$Script, [string[]]$More, [string]$Ancestors) {
+function Run([string]$Script, [string[]]$More, [string]$Ancestors, [string]$Job = '0') {
+  $env:ATRIUM_LIVE_FAKE_JOB = $Job
   $env:ATRIUM_LIVE_FAKE_ANCESTORS = $Ancestors
   try { $out = & pwsh -NoProfile -File (Join-Path $PSScriptRoot $Script) -WhatIf @More 2>&1 | Out-String }
-  finally { Remove-Item Env:ATRIUM_LIVE_FAKE_ANCESTORS -ErrorAction SilentlyContinue }
+  finally { Remove-Item Env:ATRIUM_LIVE_FAKE_ANCESTORS, Env:ATRIUM_LIVE_FAKE_JOB -ErrorAction SilentlyContinue }
   [pscustomobject]@{ Code = $LASTEXITCODE; Out = $out }
 }
 $scripts = @{
@@ -73,5 +74,25 @@ foreach ($s in 'atrium-deploy.ps1', 'stop-atrium.ps1', 'start-atrium.ps1') {
   Check "$s -Control alone refuses" ($r.Code -eq 1 -and $r.Out -match 'IKnowItKillsMyShell')
 }
 
+
+# --- the job object: a parent that has exited breaks the ancestor walk, but the job still holds the process ---
+$jobTable = @((Proc 80 1 $room), (Proc 100 90 'pwsh.exe'), (Proc 7 1 '"C:\Windows\explorer.exe"'),
+  (Proc 8 1 '"C:\Program Files\WindowsTerminal.exe"'))
+Check 'a parent that has exited leaves the ancestor walk empty' (-not (Find-SupervisingRoom -StartPid 100 -Processes $jobTable))
+Check 'a job with a room and an orphan of it is a room job' ([bool](Find-RoomJob -JobPids 80, 100 -Processes $jobTable))
+Check 'a job with a room and the desktop is the session job, not a room job' (-not (Find-RoomJob -JobPids 80, 100, 7 -Processes $jobTable))
+Check 'a job with a room and the terminal is not a room job' (-not (Find-RoomJob -JobPids 80, 8 -Processes $jobTable))
+Check 'a job with no room in it is not' (-not (Find-RoomJob -JobPids 100 -Processes $jobTable))
+$env:ATRIUM_LIVE_FAKE_JOB = '1'
+Check 'Find-RoomJob sees a faked job' ([bool](Find-RoomJob))
+$env:ATRIUM_LIVE_FAKE_JOB = '0'
+Check 'Find-RoomJob sees a faked no-job' (-not (Find-RoomJob))
+Remove-Item Env:ATRIUM_LIVE_FAKE_JOB
+$jobScripts = 'atrium-deploy.ps1', 'deploy-batch.ps1', 'stop-atrium.ps1', 'start-atrium.ps1', 'start-atrium-hub.ps1',
+  'start-atrium-room.ps1', 'start-atrium-control.ps1'
+foreach ($s in $jobScripts) {
+  $r = Run $s $scripts[$s] '[]' '1'
+  Check "$s refuses inside a job object even with no room ancestor" ($r.Code -eq 1 -and $r.Out -match 'job object' -and $r.Out -match 'wt\.exe')
+}
 if ($fail) { Write-Host "$fail FAILED"; exit 1 }
 Write-Host 'all passed'

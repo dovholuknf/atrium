@@ -84,3 +84,7 @@ when an ancestor process is an atrium room (matched by command line, never image
 is not under atrium, such as a fresh `wt.exe` window. The check is `refuse-supervised.ps1`, and
 `test-refuse-supervised.ps1` tests it with fake processes. sg4-control is in no default and takes both `-Control` and
 `-IKnowItKillsMyShell`, or neither.
+
+It also refuses from inside a job object that holds a room and no desktop (no terminal or shell), which catches a
+process whose parent has already exited. Not from any job: on sg4 the whole interactive session is one job. The start
+scripts start the hub and rooms with `CREATE_BREAKAWAY_FROM_JOB` (`Start-Breakaway` in `live-common.ps1`).

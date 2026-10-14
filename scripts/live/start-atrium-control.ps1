@@ -45,8 +45,9 @@ Invoke-Step "start sg4-control: $CtlExe $shown" {
   Get-ChildItem env: | Where-Object { $_.Name -like 'CLAUDE_CODE_*' -or $_.Name -like 'CLAUDECODE*' } |
     ForEach-Object { Remove-Item "Env:$($_.Name)" }
   New-Item -ItemType Directory -Force $CtlDir | Out-Null
-  Start-Process -FilePath $CtlExe -ArgumentList $argv -WindowStyle Hidden `
-    -RedirectStandardOutput (Join-Path $CtlDir 'room.out') -RedirectStandardError (Join-Path $CtlDir 'room.err')
+  # Outside any job object, through cmd for the redirects.
+  $q = $argv | ForEach-Object { if ($_ -match '\s') { "`"$_`"" } else { $_ } }
+  $null = Start-Breakaway "cmd.exe /c `"`"$CtlExe`" $($q -join ' ') > $CtlDir\room.out 2> $CtlDir\room.err`""
 }
 
 if (-not $WhatIf) {

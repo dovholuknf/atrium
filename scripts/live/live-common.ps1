@@ -412,6 +412,41 @@ function Set-LiveHosts($h) {
   if ($h.Value) { $env:ATRIUM_HOSTS = $h.Value } else { Remove-Item Env:ATRIUM_HOSTS -ErrorAction SilentlyContinue }
 }
 
+# Start-Breakaway starts a command line OUTSIDE any job object this process is in: CREATE_BREAKAWAY_FROM_JOB, no
+# window, its own process group, this process's environment. Start-Process cannot do it, so a hub started that way
+# belonged to the job of the room whose shell ran the script, and died when that room was stopped (2026-10-14).
+# Returns the new pid. Throws when the job does not allow breakaway, rather than start something that would not
+# outlive it.
+function Start-Breakaway([string]$CommandLine) {
+  if (-not ('AtriumLive.Spawn' -as [type])) {
+    Add-Type -Namespace AtriumLive -Name Spawn -MemberDefinition @'
+[StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+public struct STARTUPINFO { public int cb; public string lpReserved, lpDesktop, lpTitle; public int dwX, dwY, dwXSize,
+  dwYSize, dwXCountChars, dwYCountChars, dwFillAttribute, dwFlags; public short wShowWindow, cbReserved2;
+  public System.IntPtr lpReserved2, hStdInput, hStdOutput, hStdError; }
+[StructLayout(LayoutKind.Sequential)]
+public struct PROCESS_INFORMATION { public System.IntPtr hProcess, hThread; public int dwProcessId, dwThreadId; }
+[DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+public static extern bool CreateProcessW(string app, System.Text.StringBuilder cmd, System.IntPtr pa, System.IntPtr ta,
+  bool inherit, uint flags, System.IntPtr env, string cwd, ref STARTUPINFO si, out PROCESS_INFORMATION pi);
+[DllImport("kernel32.dll")] public static extern bool CloseHandle(System.IntPtr h);
+'@
+  }
+  $si = New-Object AtriumLive.Spawn+STARTUPINFO
+  $si.cb = [Runtime.InteropServices.Marshal]::SizeOf($si)
+  $pi = New-Object AtriumLive.Spawn+PROCESS_INFORMATION
+  # CREATE_BREAKAWAY_FROM_JOB | CREATE_NEW_PROCESS_GROUP | CREATE_NO_WINDOW
+  $flags = 0x01000000 -bor 0x00000200 -bor 0x08000000
+  $sb = New-Object Text.StringBuilder $CommandLine
+  if (-not [AtriumLive.Spawn]::CreateProcessW([NullString]::Value, $sb, [IntPtr]::Zero, [IntPtr]::Zero, $false, $flags, [IntPtr]::Zero,
+      [NullString]::Value, [ref]$si, [ref]$pi)) {
+    throw "could not start outside the job object, Win32 error $([Runtime.InteropServices.Marshal]::GetLastWin32Error()): $CommandLine"
+  }
+  [AtriumLive.Spawn]::CloseHandle($pi.hProcess) | Out-Null
+  [AtriumLive.Spawn]::CloseHandle($pi.hThread) | Out-Null
+  return $pi.dwProcessId
+}
+
 # Start-Hub starts the atrium detached, through cmd so the redirect appends and the caller's output can end.
 #
 # ATRIUM_HOSTS FROM THE USER ENVIRONMENT (Machine when User is unset), never the caller's. It names the extra
@@ -428,7 +463,7 @@ function Start-Hub {
     Clear-SessionEnv
     Set-LiveHosts $h
     Add-Content (Join-Path $Base 'hub.err') ("===== hub start {0} ({1}) =====" -f (Get-Date -Format o), $said)
-    Start-Process -FilePath 'cmd.exe' -WindowStyle Hidden -ArgumentList '/c', $line
+    $null = Start-Breakaway "cmd.exe /c $line"
   }
 }
 
@@ -445,8 +480,8 @@ function Start-Room {
   Invoke-Step "start room: $AtriumBin $($RoomArgs -join ' ')" {
     Clear-SessionEnv
     Set-LiveHosts $h
-    Start-Process -FilePath $AtriumBin -ArgumentList $RoomArgs -WindowStyle Hidden `
-      -RedirectStandardOutput (Join-Path $Base 'room.out') -RedirectStandardError (Join-Path $Base 'room.err')
+    # Through cmd for the redirects, and outside any job object, so stopping a room never takes this one with it.
+    $null = Start-Breakaway "cmd.exe /c `"`"$AtriumBin`" $($RoomArgs -join ' ') > $Base\room.out 2> $Base\room.err`""
   }
   return $true
 }
