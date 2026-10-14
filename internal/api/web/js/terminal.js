@@ -373,6 +373,19 @@ function wireCopyOnSelect(screen) {
   }, true);
 }
 
+// THE MOUSE SIDE BUTTONS (3 back, 4 forward) ARE THE BROWSER'S, and xterm would take them.
+//
+// A browser steps history on the up of button 3 or 4 unless the page cancelled the press. xterm cancels every
+// mousedown on its screen whatever the button, and once a runner turns mouse reporting on it cancels every mouseup on
+// the document too. A terminal left in mouse mode therefore ate back and forward for the whole page, and only closing
+// the browser brought them back. xterm gets these two events for buttons 0 to 2 only. Capture phase on the window, so
+// this runs ahead of xterm's own listeners and nothing it does can cancel the navigation.
+for (const type of ["mousedown", "mouseup"]) {
+  window.addEventListener(type, e => {
+    if (e.button === 3 || e.button === 4) e.stopImmediatePropagation();
+  }, true);
+}
+
 function wireHoverFocus(screen) {
   if (screen.dataset.hoverWired) return;
   screen.dataset.hoverWired = "1";
