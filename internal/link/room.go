@@ -597,3 +597,9 @@ type buffered struct {
 }
 
 func (b *buffered) Read(p []byte) (int, error) { return b.br.Read(p) }
+
+// CloseWrite half closes the connection under the buffer where it can, so a stream end passes through intact.
+func (b *buffered) CloseWrite() error {
+	closeWrite(b.Conn)
+	return nil
+}
