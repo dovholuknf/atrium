@@ -15360,6 +15360,61 @@ async function usageGroupsSection(browser, base) {
 // for nothing while it repaints. Then that `?demo=rooms` is the only way in:
 // a plain board and a guest page run none of it. ROOMS_DASH_SHOTS=<dir> saves
 // the open menu at desktop and phone width, in the default skin and paper.
+// transportChips: the Rooms tab's transport chip wears a colour and an icon per transport, and the warning colour
+// with the word "fallback" when the room is on a later rung. TRANSPORT_SHOTS=dir writes the light and dark PNGs.
+async function transportChipsSection(browser, base) {
+  const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+  const p = await ctx.newPage();
+  const errors = [];
+  p.on("pageerror", e => errors.push(String(e)));
+  await p.addInitScript(() => localStorage.setItem("atrium.skipconfirm", JSON.stringify({ "width-floor": true })));
+  try {
+    await p.goto(base + "/?demo=rooms", { waitUntil: "domcontentloaded" });
+    await p.waitForFunction(() => typeof transportBadge === "function" && !document.getElementById("rooms").hidden,
+      null, { timeout: slow(15000) });
+    const got = await p.evaluate(() => {
+      const host = document.createElement("div");
+      host.id = "tp-probe";
+      host.style.cssText = "position:fixed;left:20px;top:20px;z-index:99999;padding:12px;display:flex;gap:10px;" +
+        "background:var(--bg-1);";
+      host.innerHTML = [["ziti"], ["direct"], ["zrok"], ["ziti", true], ["direct", true], ["local"]]
+        .map(a => transportBadge(a[0], a[1])).join("");
+      document.body.appendChild(host);
+      return [...host.children].map(c => {
+        const cs = getComputedStyle(c);
+        return { cls: c.className, text: c.textContent.trim(), svg: c.querySelectorAll("svg").length,
+          color: cs.color, bg: cs.backgroundColor };
+      });
+    });
+    const [ziti, mtls, zrok, zitiFb, mtlsFb, local] = got;
+    if (!ziti.cls.includes("tp-ziti") || ziti.svg !== 1 || ziti.text !== "ziti") fail("ziti chip: " + JSON.stringify(ziti));
+    if (!mtls.cls.includes("tp-mtls") || mtls.svg !== 1 || mtls.text !== "mTLS") fail("mTLS chip: " + JSON.stringify(mtls));
+    if (!zrok.cls.includes("tp-zrok") || zrok.svg !== 1 || zrok.text !== "zrok") fail("zrok chip: " + JSON.stringify(zrok));
+    if (new Set([ziti.color, mtls.color, zrok.color]).size !== 3) fail("the three transports share a colour: " + JSON.stringify(got));
+    for (const f of [zitiFb, mtlsFb]) {
+      if (!f.cls.includes("warn") || !/fallback$/.test(f.text)) fail("a fallback chip lacks warn or the word: " + JSON.stringify(f));
+    }
+    if (zitiFb.color !== mtlsFb.color) fail("fallback chips do not share the warning colour: " + JSON.stringify([zitiFb, mtlsFb]));
+    if (zitiFb.color === ziti.color) fail("a fallback ziti chip still wears the ziti colour");
+    if (local.svg !== 0 || local.cls.includes("tp-")) fail("the local chip should stay plain: " + JSON.stringify(local));
+
+    const shots = process.env.TRANSPORT_SHOTS || "";
+    for (const skin of ["", "paper"]) {
+      await p.evaluate(sk => applySkin(sk), skin);
+      const probe = await p.evaluate(() => [...document.querySelectorAll("#tp-probe .chip.tp-ziti:not(.warn), #tp-probe .chip.tp-mtls:not(.warn), #tp-probe .chip.tp-zrok:not(.warn)")]
+        .map(c => getComputedStyle(c).color));
+      if (new Set(probe).size !== 3) fail("skin " + (skin || "default") + " collapsed the transport colours: " + probe);
+      if (shots) {
+        fs.mkdirSync(shots, { recursive: true });
+        await p.locator("#tp-probe").screenshot({ path: path.join(shots, `transport-chips-${skin ? "light" : "dark"}.png`) });
+      }
+    }
+    if (errors.length) fail("page errors: " + errors.join("; "));
+  } finally {
+    await ctx.close();
+  }
+}
+
 async function roomsDashSection(browser, base) {
   const skip = () => localStorage.setItem("atrium.skipconfirm", JSON.stringify({ "width-floor": true }));
   const shots = process.env.ROOMS_DASH_SHOTS || "";
@@ -30008,7 +30063,7 @@ async function main() {
       history: historySection, contextSize: contextSizeSection, ctxLine: ctxLineSection, ctxLimitLayers: ctxLimitLayersSection, contextCycle: contextCycleSection, landThePlane: landThePlaneSection, peekEverywhere: peekEverywhereSection, peekOneHover: peekOneHoverSection, peekDrawers: peekDrawersSection,peekStatusTruth: peekStatusTruthSection, peekHoverRest: peekHoverRestSection, cardRoute: cardRouteSection,
       quietDoer: quietDoerSection, autoPerm: autoPermSection, looksIdle: looksIdleSection, notifyOff: notifyOffSection,
       questionsClick: questionsClickSection, walk: walkSection, walkContext: walkContextSection, linkReuse: linkReuseSection,
-      usageCacheReads: usageCacheReadsSection, usageTurns: usageTurnsSection, turnLimits: turnLimitsSection, roomsDash: roomsDashSection, phoneView: phoneViewSection, heldLine: heldLineSection, u016: u016Section, phoneHeader: phoneHeaderSection, phoneFocus: phoneFocusSection, phoneTermBar: phoneTermBarSection, phoneShare: phoneShareSection, phonePan: phonePanSection, phoneFollow: phoneFollowSection, phoneTap: phoneTapSection, phoneKeyboard: phoneKeyboardSection, phoneCompose: phoneComposeSection, mCompose: mComposeSection, mPerms: mPermsSection, mReview: mReviewSection, usagePolish: usagePolishSection, usageLimits: usageLimitsSection, usageGroups: usageGroupsSection,
+      usageCacheReads: usageCacheReadsSection, usageTurns: usageTurnsSection, turnLimits: turnLimitsSection, roomsDash: roomsDashSection, transportChips: transportChipsSection, phoneView: phoneViewSection, heldLine: heldLineSection, u016: u016Section, phoneHeader: phoneHeaderSection, phoneFocus: phoneFocusSection, phoneTermBar: phoneTermBarSection, phoneShare: phoneShareSection, phonePan: phonePanSection, phoneFollow: phoneFollowSection, phoneTap: phoneTapSection, phoneKeyboard: phoneKeyboardSection, phoneCompose: phoneComposeSection, mCompose: mComposeSection, mPerms: mPermsSection, mReview: mReviewSection, usagePolish: usagePolishSection, usageLimits: usageLimitsSection, usageGroups: usageGroupsSection,
       eventDriven: eventDrivenSection, idleBudget: idleBudgetSection, pollsGone: pollsGoneSection,
       terminalTopGap: terminalTopGapSection, phoneListFit: phoneListFitSection, termListLastRow: termListLastRowSection, phoneNudge: phoneNudgeSection,
       growlStack: growlStackSection, growlActions: growlActionsSection, growlModal: growlModalSection, growlQuiet: growlQuietSection, growlAttention: growlAttentionSection, growlPhone: growlPhoneSection, mGrowl: mGrowlSection, growlPopout: growlPopoutSection, growlOff: growlOffSection, growlRemind: growlRemindSection,
@@ -31858,6 +31913,7 @@ async function main() {
     await unit("usageTurns", () => usageTurnsSection(browser, base));
   await unit("turnLimits", () => turnLimitsSection(browser, base));
     await unit("roomsDash", () => roomsDashSection(browser, base));
+    await unit("transportChips", () => transportChipsSection(browser, base));
     await unit("phoneView", () => phoneViewSection(browser, base));
     await unit("heldLine", () => heldLineSection(browser, base));
     await unit("u016", () => u016Section(browser, base));
