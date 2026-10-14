@@ -7358,6 +7358,65 @@ async function carryLinkSection(browser, base) {
   tasksMode = was;
 }
 
+// ── a pane never dials another card's terminal (attach-crossed-pane) ──────
+// A reconnect timer scheduled while card A was the pane fired after the pane had moved to card B, and dialled A under
+// B's header: keystrokes went to the wrong session. Every retry must find the pane still showing the card it was for,
+// and a socket naming another card must never carry input.
+async function crossedPaneSection(browser, base) {
+  const was = tasksMode;
+  tasksMode = "land";
+  landCard("cross-a", { supervised: true, created_at: "2026-09-19T12:00:00Z" });
+  landCard("cross-b", { supervised: true, created_at: "2026-09-19T12:00:01Z" });
+  landList = [LAND["cross-a"], LAND["cross-b"]];
+  landPerms = [];
+  const errors = [];
+  const ctx = await landContext(browser);
+  await ctx.addInitScript(() => {
+    const Real = window.WebSocket;
+    window.__socks = [];
+    window.WebSocket = function (url, protocols) {
+      if (!/\/attach(\?|$)/.test(url)) return new Real(url, protocols);
+      const s = { url, readyState: 0, binaryType: "arraybuffer", bufferedAmount: 0, sent: [],
+        onopen: null, onclose: null, onmessage: null, onerror: null,
+        send(d) { this.sent.push(d); }, close() { this.readyState = 3; } };
+      window.__socks.push(s);
+      if (!/cross-a/.test(url)) setTimeout(() => { s.readyState = 1; if (s.onopen) s.onopen({}); }, 0);
+      return s;
+    };
+    Object.assign(window.WebSocket, { CONNECTING: 0, OPEN: 1, CLOSING: 2, CLOSED: 3 });
+  });
+  try {
+    const p = await ctx.newPage();
+    p.on("pageerror", e => errors.push(String(e)));
+    await p.goto(base, { waitUntil: "domcontentloaded" });
+    await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
+    // A never opens, so it closes and schedules its retry.
+    await p.evaluate(() => attachTask("cross-a"));
+    await p.waitForFunction(() => termTask && termTask.id === "cross-a" && window.__socks.length, null, { timeout: slow(10000) });
+    await p.evaluate(() => { const s = termSock; s.readyState = 3; s.onclose({ code: 1006, reason: "" }); });
+    // The pane moves to B before the retry fires.
+    await p.evaluate(() => attachTask("cross-b"));
+    await p.waitForFunction(() => termSock && termSock.readyState === 1 && termTask && termTask.id === "cross-b", null,
+      { timeout: slow(10000) });
+    await p.waitForTimeout(slow(3500));
+    const st = await p.evaluate(() => ({
+      title: termTask && termTask.id, sock: termSock && termSock.url,
+      urls: window.__socks.map(s => s.url.replace(/^.*\/v1\/tasks\//, "")) }));
+    if (st.title !== "cross-b" || !/cross-b/.test(st.sock || "")) {
+      fail("the pane shows cross-b but its socket is for another card: " + JSON.stringify(st));
+    }
+    // A socket for another card is never typed into: it is closed and the pane says so.
+    await p.evaluate(() => { termSock.url = termSock.url.replace("cross-b", "cross-a"); window.__before = termSock.sent.length; sendInput("x", false); });
+    const typed = await p.evaluate(() => ({ sent: termSock ? termSock.sent.length - window.__before : 0, task: termTask && termTask.id }));
+    if (typed.sent) fail("input went down a socket naming a different card than the pane: " + JSON.stringify(typed));
+  } finally {
+    await ctx.close();
+  }
+  if (errors.length) fail("the crossed pane page threw: " + errors.join(" | "));
+  landList = []; landPerms = [];
+  tasksMode = was;
+}
+
 // ── the file-link tip survives a repaint of its row (backlog-2 t-001) ─────
 // xterm drops the link under the pointer when its row is redrawn, which fires
 // `leave` and then `hover` again. The tip used to hide on `leave` and come back
@@ -29492,7 +29551,7 @@ async function main() {
       untaggedSort: untaggedSortSection, newCard: newCardSection, themePreview: themePreviewSection, themeLab: themeLabSection, land: landSection, reselect: reselectSection, clearKeepsPage: clearKeepsPageSection, clearMark: clearMarkSection, clearLine: clearLineSection,
       resumeSpinner: resumeSpinnerSection, toastsTop: toastsTopSection, sayWhen: sayWhenSection, pasteSpinner: pasteSpinnerSection,
       pasteBig: pasteBigSection, pasteLands: pasteLandsSection, pasteEmpty: pasteEmptySection, pasteBusy: pasteBusySection, typing: typingSection, alias: aliasSection, askAgain: askAgainSection, copySelect: copySelectSection, busyGuard: busyGuardSection, keepalive: keepaliveSection, idlePark: idleParkSection, restartMenu: restartMenuSection,
-      stuck: stuckSection, blockerMark: blockerMarkSection, carryLink: carryLinkSection,
+      stuck: stuckSection, blockerMark: blockerMarkSection, carryLink: carryLinkSection, crossedPane: crossedPaneSection,
       skinScope: skinScopeSection, skinHeal: skinHealSection, toastLives: toastLivesSection,
       history: historySection, contextSize: contextSizeSection, ctxLine: ctxLineSection, ctxLimitLayers: ctxLimitLayersSection, contextCycle: contextCycleSection, landThePlane: landThePlaneSection, peekEverywhere: peekEverywhereSection, peekOneHover: peekOneHoverSection, peekDrawers: peekDrawersSection,peekStatusTruth: peekStatusTruthSection, peekHoverRest: peekHoverRestSection, cardRoute: cardRouteSection,
       quietDoer: quietDoerSection, autoPerm: autoPermSection, looksIdle: looksIdleSection, notifyOff: notifyOffSection,
@@ -31403,6 +31462,7 @@ async function main() {
     await unit("copySelect", () => copySelectSection(browser, base));
     // ── the not-replayed notice opens or loads the pre-restart history ─────
     await unit("carryLink", () => carryLinkSection(browser, base));
+    await unit("crossedPane", () => crossedPaneSection(browser, base));
     // ── a second press fires nothing ──────────────────────────────────────
     await unit("busyGuard", () => busyGuardSection(browser, base));
     // ── keep-alive chips, the card switch, and the break-even toast ────────
