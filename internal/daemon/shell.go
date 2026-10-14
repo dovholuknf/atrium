@@ -358,6 +358,15 @@ func (d *Daemon) CloseShell(taskID string) {
 // stopShells closes every shell, for shutdown.
 func (d *Daemon) stopShells() {
 	live := d.sup.allShells()
+	if !d.stopRunners.Load() {
+		kept := live[:0:0]
+		for _, r := range live {
+			if hostOf(r) == nil {
+				kept = append(kept, r)
+			}
+		}
+		live = kept
+	}
 	if len(live) == 0 {
 		return
 	}

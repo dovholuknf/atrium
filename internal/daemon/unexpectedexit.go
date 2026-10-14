@@ -81,7 +81,8 @@ func (d *Daemon) noteStopMidTurn() {
 	}
 	at := time.Now()
 	if d.st.UnexpectedExitOn() {
-		for _, r := range d.sup.all() {
+		// A runner this stop leaves up was not interrupted, and "your session was resumed" would be untrue.
+		for _, r := range d.stoppable(d.sup.all()) {
 			t, err := d.st.Get(r.taskID)
 			if err != nil || !wasMidTurn(t) {
 				continue

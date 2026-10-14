@@ -138,6 +138,11 @@ func (d *Daemon) idleParkEligible(t *store.Task, wakes map[string]bool) bool {
 		return false
 	}
 	id := t.ID
+	// Picked up from the pty host after a restart: its subagent and background counts began at zero here, so it
+	// stays put until its next Stop has refilled them.
+	if r := d.sup.get(id); r != nil && r.reattached.Load() {
+		return false
+	}
 	if d.holdingMessages(id) || d.deployHeld(id) || d.act.midTurn(id) || d.act.dialogOpen(id) || d.act.onSubagents(id) {
 		return false
 	}

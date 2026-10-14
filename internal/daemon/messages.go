@@ -346,6 +346,10 @@ func (d *Daemon) handleStop(w http.ResponseWriter, r *http.Request) {
 	// waiting on them and not on the operator. See turnPaused.
 	d.act.setBackground(task.ID, in.SubagentsRunning)
 	d.act.setBackgroundWork(task.ID, in.BackgroundRunning)
+	// A runner picked up from the pty host has now said what it is running, so idle parking may judge it.
+	if run := d.sup.get(task.ID); run != nil {
+		run.reattached.Store(false)
+	}
 	// What the turn spent, read off its transcript once it settles. Every Stop
 	// ends a row, the one a message is about to continue included. See usage.go.
 	spent := *task

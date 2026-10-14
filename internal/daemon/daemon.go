@@ -143,6 +143,13 @@ type Daemon struct {
 
 	// The pty host link. See hostterm.go.
 	ph hostLink
+	// stopRunners is set by a stop that was asked to end every runner, host-held ones included (`atrium stop
+	// --runners`). Unset, a stop leaves the runners the pty host holds up. See stopSupervised.
+	stopRunners atomic.Bool
+	// hostInJob and hostBuild are what the host's probe said when this daemon connected. A host inside the room
+	// task's job object dies with it, so a stop that leaves runners up would end them anyway. See stopkeep.go.
+	hostInJob atomic.Bool
+	hostBuild atomic.Value
 
 	// humanTouched is when each card's human touch was last written, so a run
 	// of keystrokes costs one map lookup each and one store write a minute. See
@@ -496,6 +503,7 @@ func newWith(opts Options, tune func(*hooks)) (*Daemon, error) {
 	d.ap.Shutdown = d.handleShutdown
 	d.ap.RestartWrap = d.handleRestartWrap
 	d.ap.Preflight = d.handlePreflight
+	d.ap.HostState = d.handleHostState
 	d.ap.ForgeAccess = d.ForgeAlerts
 	d.ap.Shelve = d.Shelve
 	d.ap.StopRunner = d.StopRunner
@@ -1469,6 +1477,9 @@ func (d *Daemon) shutdown(servers ...*http.Server) {
 	// Which runners were mid-turn, read before they are stopped: a runner that
 	// exits files its card dead or done. See unexpectedexit.go.
 	d.noteStopMidTurn()
+
+	// A stop that leaves runners up waits first for the work that lives only in this process. See stopkeep.go.
+	d.shortGate()
 
 	// Runners atrium owns get a real chance to wind up before their terminal
 	// closes underneath them. Ten seconds because an agent mid-turn may be
