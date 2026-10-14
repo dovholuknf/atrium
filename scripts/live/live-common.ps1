@@ -109,6 +109,17 @@ function Set-DeployHold([string]$Why = 'deploy-batch') {
   }
 }
 
+# Test-RunnersSurvive says whether a stop of this room leaves every runner running, so a deploy hold has nothing to
+# protect. It reads GET /v1/preflight: the pty host is on, it would not die with the room's task (in_job false), and no
+# runner lives in the room's own process (one started before the setting went on does, and ends with it). Any doubt,
+# an old room with no such route included, answers $false and the hold is kept.
+# See docs/rnd/next-room-last-room.md, phase 2.
+$RoomPreflightUrl = 'http://127.0.0.1:7781/v1/preflight'
+function Test-RunnersSurvive([string]$Url = $RoomPreflightUrl, [hashtable]$Headers = @{}) {
+  try { $r = Invoke-RestMethod $Url -Headers $Headers -TimeoutSec 10 } catch { return $false }
+  return [bool]($r.pty_host -and $r.pty_host.on -and -not $r.pty_host.in_job -and $r.runners -and $r.runners.in_process -eq 0)
+}
+
 # Wait-HoldQuiet waits for every held card to end its turn, the way `atrium_deploy wait` does, up to -MaxSeconds.
 # Names the cards still working while it waits. Returns $true when the room is quiet, $false when the bound ran out.
 function Wait-HoldQuiet([int]$MaxSeconds = 300) {
@@ -353,7 +364,16 @@ function Stop-Room {
   foreach ($p in $room) {
     Invoke-Step "stop room pid $($p.ProcessId): POST $post, wait up to ${wait}s, then force" {
       try { Invoke-RestMethod $post -Method Post -TimeoutSec 8 | Out-Null }
-      catch { Say "room shutdown post: $($_.Exception.Message)" }
+      catch {
+        Say "room shutdown post: $($_.Exception.Message)"
+        # A host inside the room task's job refuses a stop that would leave runners up, because they would end
+        # anyway. The deploy hold was set for that case, so ask for the stop that ends them.
+        if ($_.Exception.Response -and [int]$_.Exception.Response.StatusCode -eq 409) {
+          Say 'the pty host would die with the room, stopping with --runners'
+          try { Invoke-RestMethod $post -Method Post -ContentType 'application/json' -Body '{"runners":true}' -TimeoutSec 8 | Out-Null }
+          catch { Say "room shutdown post: $($_.Exception.Message)" }
+        }
+      }
       try { Wait-Process -Id $p.ProcessId -Timeout $wait -ErrorAction Stop } catch {}
       if (Get-Process -Id $p.ProcessId -ErrorAction SilentlyContinue) {
         Say "room still up after ${wait}s, force stop"
