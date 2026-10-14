@@ -114,6 +114,8 @@ const harness = new Function("hooks", `
 const capSrc =
   region("const API_MAX_INFLIGHT", "\nlet apiFailStreak") +
   "\nlet apiFailStreak = 0;\n" +
+  // The hub-health gate is its own concern (the hubGate headless unit). Stubbed open here so this stays about the cap.
+  "\nlet hubGateP = null; const hubGateStatus = () => false; function hubGateTrip() {}\n" +
   region("async function cappedFetch", "\nconst esc");
 
 const cap = new Function(`
