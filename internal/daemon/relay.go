@@ -183,7 +183,10 @@ func (d *Daemon) relay() Relay {
 }
 
 // RelayAttached is the link saying it is back. What is owed goes now.
-func (d *Daemon) RelayAttached() { d.kickRelays() }
+func (d *Daemon) RelayAttached() {
+	d.kickRelays()
+	d.kickItems()
+}
 
 // ── the doors ───────────────────────────────────────────────────────────────
 

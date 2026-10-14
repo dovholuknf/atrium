@@ -396,6 +396,8 @@ func serveAtrium(f atriumFlags, up atriumUp) error {
 	proxy.SetChangeRequests(store)
 	// THE BACKLOG AND DIRECTOR REPORTS EVERY ROOM SHARES, rows in the store. See link/backlog.go.
 	proxy.SetBacklog(store)
+	// ITEMS, WHICH THE HUB OWNS. See link/items.go.
+	proxy.SetItems(store)
 	// THE REPOSITORY THE MERGE FLOW READS an item's stage from: the hub setting flow.repo, as `github.com/o/r`. Unset,
 	// the stage is what was reported. See link/flow_git.go.
 	proxy.SetFlowGit(flowGit{store: store, hub: gitHub})

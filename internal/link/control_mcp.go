@@ -434,6 +434,7 @@ func (c *controlMCP) server(class ctlClass) *mcp.Server {
 	c.registerGit(s, class)
 	c.registerDeps(s, class)
 	c.registerBacklog(s, class)
+	c.registerItems(s, class)
 	c.registerFlow(s, class)
 	c.registerDocs(s, class)
 	c.registerFiles(s, class)
@@ -1287,6 +1288,9 @@ const residentReportLine = "You are resident: your card stays open between tasks
 // ItemTag marks a card launched with `item`. See daemon.ItemTag.
 const ItemTag = "atrium:item"
 
+// ItemOwnerTag carries the owner an item launch asked for. See daemon.ItemOwnerTag.
+const ItemOwnerTag = "atrium:item-owner:"
+
 // itemReportLine is how an item worker is told to end: the same text as daemon.ItemEndingLine, which a test keeps
 // equal. No launcher is named in it.
 const itemReportLine = "Before you end your turn, call either:\n" +
@@ -1568,7 +1572,8 @@ type launchInput struct {
 	// Scratch lets the launch start outside a git checkout.
 	Scratch bool `json:"scratch,omitempty" jsonschema:"start in a directory that is not a git checkout on a claude/* branch. without this such a launch is refused, because what an agent writes there is not kept in git. say it only for throwaway work"`
 	// Item starts the worker as an item. See ItemTag.
-	Item bool `json:"item,omitempty" jsonschema:"start the worker as an ITEM: a task whose only routing is to tell whoever wanted it when it is done. its ending lines never mention a launcher, its opening prompt comes from atrium, it has no atrium_say, atrium_peers, atrium_task or atrium_report, and atrium refuses any say from it. it ends with atrium_done or atrium_blocked and nothing else. leave it out for an ordinary worker, which is unchanged"`
+	ItemOwner string `json:"item_owner,omitempty" jsonschema:"with item: who owns the item and hears when it is blocked or finished. empty is you, the creating session. orchestrator, merger or director is whoever holds that role when it ends. human is the person at the board, and no session is told. tester is refused, it has several holders"`
+	Item      bool   `json:"item,omitempty" jsonschema:"start the worker as an ITEM: a task whose only routing is to tell whoever wanted it when it is done. its ending lines never mention a launcher, its opening prompt comes from atrium, it has no atrium_say, atrium_peers, atrium_task or atrium_report, and atrium refuses any say from it. it ends with atrium_done or atrium_blocked and nothing else. leave it out for an ordinary worker, which is unchanged"`
 	// Lifetime is not a parameter: atrium_launch_worker sets it to `work`, atrium_launch leaves it empty.
 	Lifetime string `json:"-"`
 }
@@ -1725,6 +1730,9 @@ func (c *controlMCP) launchOnRoom(ctx context.Context, in launchInput, harness, 
 	if in.Item {
 		// AN ITEM: tagged, and told to end without a launcher in the words. See ItemTag.
 		tags = append(tags, ItemTag)
+		if o := strings.TrimSpace(in.ItemOwner); o != "" {
+			tags = append(tags, ItemOwnerTag+o)
+		}
 		prompt = WithItemReportLine(in.Prompt)
 	}
 	brief := strings.TrimSpace(in.Brief)

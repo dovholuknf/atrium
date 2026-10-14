@@ -743,6 +743,10 @@ func (d *Daemon) Launch(req LaunchRequest) (*store.Task, error) {
 	if req.Item && !hasTag(req.Tags, ItemTag) {
 		req.Tags = append(append([]string{}, req.Tags...), ItemTag)
 	}
+	// AN OWNER THAT CANNOT BE is refused here, before a card or a worktree exists. See item_hub.go.
+	if err := checkItemLaunch(req); err != nil {
+		return nil, err
+	}
 	keys := launchKeys(req.TaskID, req.Resume)
 	if req.MovedFrom != "" {
 		keys = append(keys, "move:"+req.MovedFrom)
@@ -1436,6 +1440,14 @@ func (d *Daemon) launchLocked(req LaunchRequest) (*store.Task, error) {
 			if _, err := d.st.CreateWorkItem(t, store.NewWorkItem{
 				Brief: briefHead(req.Brief, req.Prompt), BriefPath: briefPath,
 			}); err != nil {
+				return nil, err
+			}
+		}
+	}
+	// AN ITEM, for a fresh item launch: its mirror row, its owner and the push the hub is owed. See item_hub.go.
+	if req.Resume == "" && (req.Item || hasTag(req.Tags, ItemTag)) {
+		if t, err := d.st.Get(created.ID); err == nil {
+			if _, err := d.createItem(t, itemOwnerSpec(req.Tags)); err != nil {
 				return nil, err
 			}
 		}

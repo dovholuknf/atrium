@@ -220,6 +220,9 @@ type Server struct {
 	// HubAsk is atrium_backlog and atrium_reports for a session here, `POST /v1/hub/ask`, asked of the hub over the
 	// link. Owned by the daemon. See internal/daemon/hubask.go.
 	HubAsk http.HandlerFunc
+	// ItemAct is `POST /v1/items/{id}/{unblock|cancel}`, which the hub calls for an item's owner. Owned by the daemon.
+	// See internal/daemon/item_hub.go.
+	ItemAct http.HandlerFunc
 	// Hold reads, sets or lifts the room deploy hold. Owned by the daemon, which
 	// runs the permission chain it acts in. See internal/daemon/roomhold.go.
 	Hold http.HandlerFunc
@@ -771,6 +774,9 @@ func (s *Server) Handler() http.Handler {
 	}
 	if s.HubAsk != nil {
 		mux.HandleFunc("POST /v1/hub/ask", s.HubAsk)
+	}
+	if s.ItemAct != nil {
+		mux.HandleFunc("POST /v1/items/{id}/{act}", s.ItemAct)
 	}
 	if s.Say != nil {
 		mux.HandleFunc("POST /v1/say", s.Say)

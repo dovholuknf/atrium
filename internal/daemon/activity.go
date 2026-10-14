@@ -859,6 +859,7 @@ func (d *Daemon) onActivity(in ActivityEvent) string {
 		// What started this turn, for the usage record. See usage.go.
 		cause := d.promptCause(taskID)
 		d.usage.prompted(taskID, cause)
+		d.itemTurnStarted(taskID, cause == store.UsageOperator)
 		if cause == store.UsageOperator {
 			d.noteDelivery(taskID, "", store.DeliveryOperator)
 			d.humanTouch(taskID, ViaPrompt)

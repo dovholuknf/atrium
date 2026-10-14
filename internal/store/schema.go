@@ -2210,6 +2210,39 @@ var migrations = []struct {
 			`ALTER TABLE task ADD COLUMN launch_branch TEXT NOT NULL DEFAULT ''`,
 		},
 	},
+	{
+		// THE ROOM'S MIRROR OF ITS ITEMS, and the outbox that carries each revision to the hub, which owns them. An
+		// outbox row is keyed (item_id, revision, state), so a replayed push is the same row. See item.go.
+		name: "0098_item_mirror",
+		stmts: []string{
+			`CREATE TABLE IF NOT EXISTS item_mirror (
+				item_id           TEXT PRIMARY KEY,
+				task_id           TEXT NOT NULL,
+				generation        INTEGER NOT NULL DEFAULT 1,
+				state             TEXT NOT NULL CHECK (state IN ('queued','running','blocked','finished')),
+				revision          INTEGER NOT NULL,
+				owner_kind        TEXT NOT NULL CHECK (owner_kind IN ('session','role','human')),
+				owner             TEXT NOT NULL DEFAULT '',
+				created_by        TEXT NOT NULL DEFAULT '',
+				note              TEXT NOT NULL DEFAULT '',
+				unblock_msg       TEXT NOT NULL DEFAULT '',
+				unblock_delivered INTEGER NOT NULL DEFAULT 0,
+				created_at        TEXT NOT NULL,
+				updated_at        TEXT NOT NULL
+			)`,
+			`CREATE INDEX IF NOT EXISTS item_mirror_task ON item_mirror (task_id, created_at)`,
+			`CREATE TABLE IF NOT EXISTS item_outbox (
+				item_id    TEXT NOT NULL,
+				revision   INTEGER NOT NULL,
+				state      TEXT NOT NULL,
+				body       TEXT NOT NULL,
+				created_at TEXT NOT NULL,
+				attempts   INTEGER NOT NULL DEFAULT 0,
+				last_error TEXT NOT NULL DEFAULT '',
+				PRIMARY KEY (item_id, revision, state)
+			)`,
+		},
+	},
 }
 
 // migrate applies any migration not already recorded. This runs before the

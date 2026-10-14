@@ -1018,6 +1018,13 @@ const server = http.createServer((req, res) => {
       body: "done and tested", at: "2026-09-30T12:00:00Z", read_at: null, read_by: null }] });
     return;
   }
+  // The items a human owns that are blocked or finished. See js/backlog.js.
+  if (url.startsWith("/_hub/items")) {
+    if (!hubMode) { res.writeHead(404); res.end("not a hub"); return; }
+    sendJSON(res, { items: [{ item_id: "it-aa11", room: "sg4", card: "c1", state: "blocked", revision: 2,
+      owner_kind: "human", updated_at: "2026-10-13T12:00:00Z" }] });
+    return;
+  }
   // The operational audit feed, newest first and filterable by room and kind the
   // same way the hub serves it, so the pane's filters can be driven against a
   // real response. See js/audit.js.
@@ -30607,6 +30614,12 @@ async function main() {
         fail("the backlog tab did not draw the open items, the built status and the report read-only: " +
           JSON.stringify(backlog));
       }
+      // A blocked item the human owns is listed, read-only: no button, no field.
+      await hub.waitForFunction(() => document.querySelectorAll('#backlog-owned .aud-row[data-item="it-aa11"]').length === 1,
+        null, { timeout: slow(15000) });
+      const owned = await hub.evaluate(() => ({ writes: document.querySelectorAll("#backlog-owned button, #backlog-owned input, #backlog-owned textarea").length,
+        state: document.querySelector("#backlog-owned .aud-when").textContent }));
+      if (owned.writes || owned.state !== "blocked") fail("the human-owned item was not drawn read-only: " + JSON.stringify(owned));
       // A click on a header sorts by it and a second reverses it; a priority chip narrows the list; the default order is
       // priority high to low, then newest. See js/backlog.js.
       const ids = () => hub.evaluate(() => [...document.querySelectorAll("#backlog-items .aud-row[data-id]")].map(r => r.dataset.id).join());

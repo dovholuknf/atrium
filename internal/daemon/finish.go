@@ -329,6 +329,9 @@ func (d *Daemon) finish(task *store.Task, in FinishRequest) (map[string]any, int
 		}
 		d.markEnded(task.ID, in.Status)
 	}
+	// AN ITEM WITH A MIRROR ROW IS MOVED BY ITS ENDING, before the report is recorded, and its owner is told by the
+	// item's own notice and nobody else. See item_hub.go.
+	itemEnd := d.itemEnded(task, in)
 
 	status := store.StatusDone
 	reason := ""
@@ -401,7 +404,7 @@ func (d *Daemon) finish(task *store.Task, in FinishRequest) (map[string]any, int
 		SetSHA: status == store.StatusDone, SHA: sha, Unverified: unverified,
 		MoveStatus: task.Status != store.StatusShelved && status != task.Status,
 		Status:     status, Reason: reason,
-		ReportStatus: in.Status, UnheardIsUnsent: agentLaunched(task),
+		ReportStatus: in.Status, UnheardIsUnsent: agentLaunched(task) && itemEnd == nil,
 		SayReport: in.Ended && (in.Status == ReportDone || in.Status == ReportBlocked),
 	}
 	if status == store.StatusDone {
@@ -421,7 +424,7 @@ func (d *Daemon) finish(task *store.Task, in FinishRequest) (map[string]any, int
 	// crash cannot record the report and lose the notice. Keyed on the moment,
 	// so every report is sent once. A card nobody launched has nobody to tell.
 	launcher := d.launcherOf(task)
-	if in.viaSay {
+	if in.viaSay || itemEnd != nil {
 		launcher = nil
 	}
 	// A REPORT TO A LAUNCHER THAT HOLDS ITS NOTICES IS STILL TYPED, at the end of its turn. A done or a blocked
@@ -441,7 +444,7 @@ func (d *Daemon) finish(task *store.Task, in FinishRequest) (map[string]any, int
 			Key:  key,
 			Text: truncatePeer(reportBody(task, in.Status, sha, unverified, recap)),
 		}
-	} else if !in.viaSay {
+	} else if !in.viaSay && itemEnd == nil {
 		// A launcher on another room hears it the same way, held in the relay
 		// outbox inside the same transaction. See relay.go.
 		write.Relay = d.launcherRelay(task, reportBody(task, in.Status, sha, unverified, recap))
@@ -464,6 +467,9 @@ func (d *Daemon) finish(task *store.Task, in FinishRequest) (map[string]any, int
 	if res.Relayed {
 		d.kickRelays()
 	}
+	if itemEnd != nil && itemEnd.changed {
+		d.itemNotify(task, itemEnd.item, itemNoticeText(task, itemEnd.item, in, sha, recap))
+	}
 	// A QUESTION IN A REPORT is owed an answer until the launcher gives one; any report without
 	// one withdraws it. See owed.go.
 	if ask := strings.TrimSpace(in.Ask); ask != "" {
@@ -475,7 +481,7 @@ func (d *Daemon) finish(task *store.Task, in FinishRequest) (map[string]any, int
 	}
 	// A REPORT THAT REACHED NOBODY is made visible, to the orchestrator, held. Before, it stamped
 	// reported_at and left the board saying a report was waiting.
-	if res.Notice == nil && !res.Relayed && in.Status != ReportProgress && agentLaunched(task) && !in.viaSay {
+	if res.Notice == nil && !res.Relayed && in.Status != ReportProgress && agentLaunched(task) && !in.viaSay && itemEnd == nil {
 		d.orphanReport(task, reportBody(task, in.Status, sha, unverified, recap))
 	}
 	if status == store.StatusDone || in.Status == store.StatusNeedsInput {

@@ -51,6 +51,9 @@ against and the operator chose on purpose.
   disagree with the map about which tools workers get. Trust the map. An item worker (`atrium:item`, `classWorkerItem`) gets the map less `itemWithheld`
   (`atrium_say`, `atrium_peers`, `atrium_task`, `atrium_report`) and done and blocked words that name no launcher. The
   room's say endpoints refuse its says as well.
+- **`atrium_item` (get, list, unblock, cancel) is for owners and is in no worker set** (`items_mcp.go`, `items.go`). The hub owns the
+  items and forwards an unblock or cancel to the item's room. `/_hub/items/sync` takes a room's outbox, a replay a no-op,
+  and the room name comes from the link. `docs/changes/items-stage2a.md`.
 - **The tool list is fixed at the first request.** MCP clients read `tools/list` once, so a retag lands at the next
   session start.
 - **Audit lines record a claim, never a proof, and never a payload** (`ctlaudit.go`). Mutating tools are wrapped in

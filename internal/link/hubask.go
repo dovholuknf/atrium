@@ -34,7 +34,7 @@ func hubAskPath(p string) bool {
 	if base == "/_hub/backlog/follow" || base == "/_hub/backlog/follow/" {
 		return false
 	}
-	for _, root := range []string{"/_hub/backlog", "/_hub/reports"} {
+	for _, root := range []string{"/_hub/backlog", "/_hub/reports", "/_hub/items"} {
 		if base == root || strings.HasPrefix(base, root+"/") {
 			return true
 		}
@@ -49,7 +49,7 @@ func (c *controlMCP) hubAsk(ctx context.Context, from string, req RelayRequest) 
 		return RelayAnswer{Code: http.StatusBadRequest, Error: "the hub relays GET and POST only"}
 	}
 	if !hubAskPath(req.Path) {
-		return RelayAnswer{Code: http.StatusBadRequest, Error: "the hub relays the backlog and reports endpoints only"}
+		return RelayAnswer{Code: http.StatusBadRequest, Error: "the hub relays the backlog, reports and items endpoints only"}
 	}
 	var body any
 	if method == http.MethodPost {
@@ -64,7 +64,8 @@ func (c *controlMCP) hubAsk(ctx context.Context, from string, req RelayRequest) 
 		}
 		// FROM THE LINK, never from the room's word. See above.
 		// `room` is only a field of a new row, and the endpoints refuse a field they do not know.
-		if base, _, _ := strings.Cut(req.Path, "?"); base == "/_hub/backlog" || base == "/_hub/reports" {
+		if base, _, _ := strings.Cut(req.Path, "?"); base == "/_hub/backlog" || base == "/_hub/reports" ||
+			base == "/_hub/items/sync" {
 			m["room"] = from
 		} else {
 			delete(m, "room")
