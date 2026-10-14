@@ -10,8 +10,8 @@ A room reaches its hub over exactly one transport today, the one its join string
 room retries the same path forever. m1mini and sg3 are in that state now: direct mTLS to the hub stopped answering
 and they cannot re-attach, even though an OpenZiti service could reach the same hub.
 
-What is wanted: the hub holds an ORDERED list of transports (clint's default is direct first, openziti second),
-every room tries them in that order, and a room can override the order locally.
+What is wanted: the hub holds an ORDERED list of transports (asked first as direct then openziti, changed on
+2026-10-14 to openziti first), every room tries them in that order, and a room can override the order locally.
 
 ## The transports, and what is built now
 
@@ -30,7 +30,7 @@ hand its share token to rooms. Giving a share token to an authenticated room fro
    value keeps today's behaviour. Each listener is served by the same `Hub`, and every connection is tagged with the
    transport whose listener accepted it. Rooms that are already attached are not affected by a second listener.
 2. **The hub's order is a hub setting, `room_transport_order`, in `hub_setting`.** A comma list of kinds. Unset
-   reads as `direct,ziti,zrok`, which is clint's default with zrok last. Set with `atrium rooms transports
+   reads as `ziti,direct,zrok`, which is clint's default with zrok last. Set with `atrium rooms transports
    direct,ziti` on the hub machine, read at every attach, so a change needs no restart. It orders, it does not
    enable: a kind the hub is not listening on is skipped, and a kind it listens on that the order leaves out goes
    last.
@@ -46,7 +46,7 @@ hand its share token to rooms. Giving a share token to an authenticated room fro
    - `hub`: the hub's list as last heard, in the hub's order, rewritten when it changes. This is how a room that is
      cut off from the hub still knows where the fallback is on its next start.
 5. **The ladder is built from, in rising precedence: the join in `room.json`, the hub's list, the local paths.**
-   Ordered by the local `order`, else the hub's order, else `direct,ziti,zrok`. A ziti rung with no identity is
+   Ordered by the local `order`, else the hub's order, else `ziti,direct,zrok`. A ziti rung with no identity is
    left out and said so in the log, since it cannot dial. A direct address is never laid over another: each one is
    its own rung, a local one first, then the joined one, then the hub's advertise. The first cut merged the advertise
    over the join, and on 2026-10-14 claude-sg4 sent every data dial to an address its hub had left while its control

@@ -44,10 +44,12 @@ ziti edge create service-policy atrium-hub-dial Dial --service-roles '#atrium-hu
 ziti edge create identity atrium-hub-sg4 -a atrium-hubs -o atrium-hub-sg4.jwt
 ziti edge create identity atrium-room-m1mini -a atrium-rooms -o atrium-room-m1mini.jwt
 ziti edge create identity atrium-room-sg3 -a atrium-rooms -o atrium-room-sg3.jwt
-ziti edge enroll atrium-hub-sg4.jwt -o C:\Users\claude\.ziti\identities\atrium-hub-sg4.json
+ziti edge enroll atrium-hub-sg4.jwt -o C:\Users\claude\.ziti\identities\atrium\atrium-hub-sg4.json
 ```
 
-The JWTs and the enrolled identity live in `C:\Users\claude\.ziti\identities\` on sg4 and never in the repo. A JWT is
+These are done. The service, both policies and the identities exist on the network, with `atrium-room-claude-sg4` as
+a third room identity beside m1mini and sg3. The JWTs and the enrolled identity live in
+`C:\Users\claude\.ziti\identities\atrium\` on sg4 and never in the repo. A JWT is
 single use and it expires. When one has expired before its machine enrolled it, mint another:
 
 ```
@@ -55,11 +57,13 @@ ziti edge delete enrollment <id from: ziti edge list enrollments 'identity.name=
 ziti edge create enrollment ott atrium-room-sg3 -o atrium-room-sg3.jwt
 ```
 
+The JWTs minted on 2026-10-14 expire at 16:13 UTC that day.
+
 ### 2. Hub (sg4)
 
 The live scripts carry the ziti side. `scripts/live/live-common.ps1` adds `--transport direct,ziti --atrium-identity
-C:\Users\claude\.ziti\identities\atrium-hub-sg4.json --atrium-service atrium-hub` to the hub's arguments whenever that
-file is there, and `start-atrium-hub.ps1`, `deploy-hub-only.ps1` and `atrium-deploy.ps1` all start the hub through it.
+C:\Users\claude\.ziti\identities\atrium\atrium-hub-sg4.json --atrium-service atrium-hub` to the hub's arguments
+whenever that file is there, and `start-atrium-hub.ps1`, `deploy-hub-only.ps1` and `atrium-deploy.ps1` all start the hub through it.
 
 RESTART THE HUB THROUGH THE LIVE SCRIPTS, NEVER `atrium stop`, and from a fresh Windows Terminal window (`wt.exe`) that
 no room supervises. The scripts refuse to run under a room. Copy the scripts in first, since the live copies are what
@@ -71,16 +75,25 @@ pwsh -File C:\Users\claude\.atrium2\scripts\deploy-hub-only.ps1 -NoGate
 ```
 
 `deploy-hub-only.ps1` installs `D:\git\github\dovholuknf\atrium\build.claude\atrium.exe`, so build the merged branch
-there first. `atrium-deploy.ps1` does the hub and claude-sg4 together, with the same arguments. Then, still on sg4:
+there first. claude-sg4 already has its ziti identity (`atrium room transports ziti --identity
+...\atrium-room-claude-sg4.jwt --service atrium-hub --dir C:\Users\claude\.atrium2\room`, done on 2026-10-14), and
+reads it at its next start. To take the hub and claude-sg4 together, which builds from a clean `claude/main` itself:
 
 ```
-atrium rooms transports direct,ziti
-atrium rooms transports
+pwsh -NoProfile -File C:\Users\claude\.atrium2\scripts\atrium-deploy.ps1 -Rooms hub,claude-sg4
+```
+
+Then, still on sg4:
+
+```
+atrium rooms transports --atrium-dir C:\Users\claude\.atrium2\hub
 Select-String -Path C:\Users\claude\.atrium2\hub.err -Pattern 'ziti' | Select-Object -Last 5
 ```
 
-The second prints `direct,ziti`, the order rooms are told. It is read at every attach, so changing it needs no
-restart. `hub.err` names the ziti service `atrium-hub` among the room listeners. A line saying `not listening for
+The first prints `ziti,direct,zrok   (the default)`. Unset, rooms are told ziti first and direct second, which is the
+order wanted, so nothing is set. `--transport direct,ziti` says which listeners to open, never the order.
+`atrium rooms transports direct,ziti` would put direct first. The order is read at every attach, so changing it needs
+no restart. `hub.err` names the ziti service `atrium-hub` among the room listeners. A line saying `not listening for
 rooms over ziti` means the identity or the bind policy is wrong, and the hub carries on over direct.
 
 ### 3. Each room (m1mini, sg3)
@@ -89,7 +102,7 @@ Neither can reach the hub, so the hub cannot hand them anything: no upgrade offe
 go across by hand. A JWT is one line of text, so print it on sg4 and paste it into a file on the room:
 
 ```
-Get-Content C:\Users\claude\.ziti\identities\atrium-room-sg3.jwt
+Get-Content C:\Users\claude\.ziti\identities\atrium\atrium-room-sg3.jwt
 ```
 
 Build the binary on the room from `main` once this has landed there (or `scp` it from sg4 where ssh reaches). The key
@@ -131,25 +144,27 @@ atrium room transports
 atrium room --detach
 ```
 
-`atrium stop --url 127.0.0.1:7781` asks the room's own board. Without `--url`, `atrium stop` asks `localhost:7778`,
-which on a room machine is nothing, or a hub. If the machine normally starts its room another way (a service, a login
-item), start it that way instead of `atrium room --detach`.
+`atrium stop --url 127.0.0.1:7781` asks the room's own board. Without `--url`, `atrium stop` asks the address this
+account last recorded, which is not always the room, so say it. If the machine normally starts its room another way
+(a service, a login item), start it that way instead of `atrium room --detach`.
 
 `atrium room transports ziti --identity <jwt>` enrolls the JWT into `<room dir>/identities/` and records it, so the JWT
 file can be deleted afterwards. An identity `.json` that is already enrolled is used where it is. The settings are in
 `<room dir>/transports.json`, by default `~/.atrium/room/transports.json` (`%USERPROFILE%\.atrium\room\transports.json`
-on Windows). `atrium room transports` lists direct (the joined address) first, then ziti with the identity path.
+on Windows). `atrium room transports` lists ziti with the identity path first, then direct (the joined address).
 
 ### 4. Verify
 
-- Room log: the direct rung fails (`no answer within 10s`), then `[link] attached to hub ziti:atrium-hub as "sg3"`
-  (or `"m1mini"`).
-- On sg4: `curl http://127.0.0.1:7778/_hub/rooms` shows the room with `"via":"ziti"`, `"fallback":true`, a non-zero
-  `"idle"`, and no `"starved"`.
-- Board: the room's transport badge reads `ziti` in the warning colour, its state chip says "attached" (not "attached,
-  unreachable"), and its settings say "connects over ziti (fallback)".
-- When direct is repaired, the room moves back by itself within about four minutes (two good probes, two minutes
-  apart) and the badge returns to `mTLS` in the plain colour.
+- Room log: `[link] will try ziti ziti:atrium-hub (local), then direct ...`, then `[link] attached to hub
+  ziti:atrium-hub as "sg3"` (or `"m1mini"`). Ziti is the first rung, so direct is not tried while ziti answers.
+- On sg4: `curl http://127.0.0.1:7778/_hub/rooms` shows the room with `"via":"ziti"`, no `"fallback"`, a non-zero
+  `"idle"`, and no `"starved"`. `hub.err` says `room "sg3" attached from ziti-edge-router ...`.
+- Board: the room's transport badge reads `ziti` in the plain colour, its state chip says "attached" (not "attached,
+  unreachable"), and its settings say "connects over ziti".
+- A warning-coloured `ziti` badge and `"fallback":true` mean the room's own order put direct first and direct did not
+  answer. `atrium room transports order --clear` puts the room back on the hub's order.
+- claude-sg4 after its restart: the same, `"via":"ziti"` for `claude-sg4` in `/_hub/rooms`, and
+  `C:\Users\claude\.atrium2\room.err` says `attached to hub ziti:atrium-hub`.
 
 ## Test plan
 
@@ -158,25 +173,29 @@ on Windows). `atrium room transports` lists direct (the joined address) first, t
 ### @LETTER@1. The hub serves two transports in order
 
 1. Start the hub with `atrium run --transport direct,ziti --atrium-identity <hub.json> --atrium-service atrium-hub`.
-2. Run `atrium rooms transports direct,ziti`, then `atrium rooms transports`.
+2. Run `atrium rooms transports`.
 
-**Expected:** the hub logs a listener for each transport. The second command prints `direct,ziti`.
+**Expected:** the hub logs a listener for each transport. The command prints `ziti,direct,zrok   (the default)`.
 
-### @LETTER@2. A room configured for ziti attaches over direct first
+### @LETTER@2. A room configured for ziti attaches over ziti first
 
-1. On a room that reaches the hub directly, run `atrium room transports ziti --identity <room.jwt>`.
+1. On a room that also reaches the hub directly, run `atrium room transports ziti --identity <room.jwt> --service
+   atrium-hub`.
 2. Run `atrium room transports`, then restart the room.
 
-**Expected:** the ladder lists direct then ziti. The room attaches over direct. Its badge reads `mTLS` in the plain
-colour.
+**Expected:** the ladder lists ziti then direct. The room attaches over ziti. `/_hub/rooms` shows `"via":"ziti"` and
+no `"fallback"`. Its badge reads `ziti` in the plain colour.
 
-### @LETTER@3. Direct does not answer
+### @LETTER@3. Direct first, and direct does not answer
 
-1. Block the hub's direct link port from that room (a firewall rule), and restart the room.
+1. On that room, run `atrium room transports order direct,ziti`.
+2. Block the hub's direct link port from that room (a firewall rule, or a hub started with `--transport ziti` alone),
+   and restart the room.
 
-**Expected:** the room log says direct failed and then `attached to hub ziti:atrium-hub`. `/_hub/rooms` shows
-`"via":"ziti","fallback":true`. The badge reads `ziti` in the warning colour with the tip "on ziti because its first
-choice did not answer", and the room's settings say "connects over ziti (fallback)".
+**Expected:** the room log says `will try direct ..., then ziti ...` and then `attached to hub ziti:atrium-hub`.
+`/_hub/rooms` shows `"via":"ziti","fallback":true` with a non-zero `idle`. The badge reads `ziti` in the warning
+colour with the tip "on ziti because its first choice did not answer", and the room's settings say "connects over ziti
+(fallback)".
 
 ### @LETTER@4. Direct comes back
 
@@ -184,19 +203,18 @@ choice did not answer", and the room's settings say "connects over ziti (fallbac
 
 **Expected:** the room reattaches over direct by itself. The badge returns to `mTLS` in the plain colour.
 
-### @LETTER@5. A local order wins
+### @LETTER@5. Back to the hub's order
 
-1. On the room, run `atrium room transports order ziti,direct` and restart it.
-2. Run `atrium room transports order --clear` and restart it again.
+1. On the room, run `atrium room transports order --clear` and restart it.
 
-**Expected:** after step 1 the room attaches over ziti with no warning colour, since ziti is its first choice. After
-step 2 it follows the hub's order again and attaches over direct.
+**Expected:** the room follows the hub's order again and attaches over ziti with no warning colour, since ziti is its
+first choice.
 
 ### @LETTER@6. A refusal does not fall back
 
 1. Mark the room for deletion on the hub (`atrium rooms mark <room>`), with both transports reachable.
 
-**Expected:** the room is refused on direct and does not try ziti. It backs off as it always has.
+**Expected:** the room is refused on ziti and does not try direct. It backs off as it always has.
 
 ### @LETTER@7. The hub's advertise does not take the room off the address it joined at
 
