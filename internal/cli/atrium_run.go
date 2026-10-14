@@ -541,6 +541,13 @@ func serveAtrium(f atriumFlags, up atriumUp) error {
 	// most recent fifty answers only the first.
 	go store.BackUp(ctx, backupsIn(keys.Dir, db))
 
+	// THE ADDRESS A DIRECT ROOM DIALS, checked against this machine's own. See advertisecheck.go.
+	for _, s := range set.sides {
+		if s.kind == "direct" {
+			go watchAdvertise(ctx, s.path.Addr)
+		}
+	}
+
 	// HANDING FREED PAGES BACK TO DISK, a bounded batch at a time while
 	// the hub stays live. The room cache is rewritten wholesale on every
 	// announce, so its file grows and never shrinks on its own. A no-op
