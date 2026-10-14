@@ -1,7 +1,8 @@
 # blue-green 1+2: a stop that leaves host runners up
 
-With `pty_host` on, `atrium stop --runners` (or `POST /v1/shutdown` with `{"runners":true}`) stops the daemon and
-leaves host-held runners alive. The next daemon adopts them, so a deploy no longer kills a mid-turn card.
+With `pty_host` on, a plain `atrium stop` stops the daemon and leaves host-held runners alive. The next daemon adopts
+them, so a deploy no longer kills a mid-turn card. `atrium stop --runners` (or `POST /v1/shutdown` with
+`{"runners":true}`) ends them too.
 `GET /v1/preflight` reports `pty_host{on,in_job,build}` and `runners{host,in_process}`. A stop is refused with 409
 when the host sits inside the daemon's job. The permission hook retries for up to 30s while the daemon is away.
 
@@ -25,12 +26,12 @@ when the host sits inside the daemon's job. The permission hook retries for up t
 ### @LETTER@2. Stop keeps runners
 
 1. Start a card that is mid-turn.
-2. Run `atrium stop --runners`, then start the daemon.
+2. Run a plain `atrium stop`, then start the daemon.
 
 **Expected:** the card keeps its pid, is not resumed, and finishes its turn.
 
-### @LETTER@3. Plain stop
+### @LETTER@3. Stop with --runners
 
-1. Run `atrium stop` with no flag.
+1. Run `atrium stop --runners`.
 
-**Expected:** host runners are left up and in-process runners stop as before.
+**Expected:** host runners end with their exit keys, and in-process runners stop as before.

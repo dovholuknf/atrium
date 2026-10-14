@@ -243,3 +243,40 @@ func TestStopWaitsForANewContextCycle(t *testing.T) {
 		t.Fatalf("the gate waited %s past its bound", took)
 	}
 }
+
+func TestHostStateCountsHostRunners(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
+	t.Parallel()
+	dir, _ := hostFixture(t)
+	d := daemonAt(t, dir)
+	hostRunnerCard(t, d, "preflight-host")
+
+	get := func() (on, inJob bool, host, local int) {
+		w := httptest.NewRecorder()
+		d.handleHostState(w, httptest.NewRequest("GET", "/v1/preflight", nil))
+		var got struct {
+			PtyHost struct {
+				On    bool `json:"on"`
+				InJob bool `json:"in_job"`
+			} `json:"pty_host"`
+			Runners struct {
+				Host      int `json:"host"`
+				InProcess int `json:"in_process"`
+			} `json:"runners"`
+		}
+		if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil {
+			t.Fatal(err)
+		}
+		return got.PtyHost.On, got.PtyHost.InJob, got.Runners.Host, got.Runners.InProcess
+	}
+	on, inJob, host, local := get()
+	if !on || inJob || host != 1 || local != 0 {
+		t.Fatalf("preflight on=%v in_job=%v host=%d in_process=%d, want on, not in a job, 1 and 0", on, inJob, host, local)
+	}
+	d.hostInJob.Store(true)
+	if _, inJob, _, _ := get(); !inJob {
+		t.Fatal("in_job did not follow the probe")
+	}
+}
