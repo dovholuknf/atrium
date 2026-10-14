@@ -160,7 +160,7 @@ The main ones. `atrium --help` lists the rest.
 | `atrium tell <handle> <msg>` | Say something to another session. QUEUED, never typed: atrium owns a terminal a human may be mid-command in, and a peer is not that human. An unknown handle answers with the list of ones that would have worked. |
 | `atrium name [<name>]` | Name this atrium, once. Prefixes every wire name so two machines cannot collide. |
 | `atrium version` | What this binary is: the tag, the commit, the board hash, the platform. Stamped by the linker, `dev` when it is not. |
-| `atrium launch` | Start a runner in a directory you have already prepared. Takes `--tags`, `--prompt` and `--external` so a script can produce a card that is already filed, and `--item` to start it as an item (`docs/changes/items-stage1.md`). |
+| `atrium launch` | Start a runner in a directory you have already prepared. Takes `--tags`, `--prompt` and `--external` so a script can produce a card that is already filed, and `--item` (with `--item-owner`) to start it as an item (`docs/changes/items-stage1.md`, `docs/changes/items-stage2a.md`). |
 | `atrium control` | Stdio MCP server. Registered at USER scope against an INSTALLED copy of the binary, never `build.claude/`, which an MCP server holds open and would block every build. |
 
 ## The permission chain -- order is critical

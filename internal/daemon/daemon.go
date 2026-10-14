@@ -212,6 +212,8 @@ type Daemon struct {
 	// relays is the way to other rooms, through the hub, and the drain of what
 	// is owed to them. Empty on a daemon that is not a room. See relay.go.
 	relays relayState
+	// itemPush is the one pass at a time that carries items to the hub. See item_hub.go.
+	itemPush itemPush
 
 	// pending retries the on-screen delivery of peer messages the gate would not
 	// take right now, on a widening backoff. In memory, because the durable copy
@@ -482,6 +484,7 @@ func newWith(opts Options, tune func(*hooks)) (*Daemon, error) {
 	d.ap.HubGitURL = d.handleHubGitURL
 	d.ap.HubCI = d.handleHubCI
 	d.ap.HubAsk = d.handleHubAsk
+	d.ap.ItemAct = d.handleItemAct
 	d.ap.RestartWake = d.handleRestartWake
 	d.ap.Hold = d.handleHold
 	d.ap.NewContext = d.handleNewContext

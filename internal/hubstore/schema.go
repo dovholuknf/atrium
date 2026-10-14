@@ -628,6 +628,36 @@ var migrations = []struct {
 			`CREATE INDEX IF NOT EXISTS hub_files_expires ON hub_files (expires)`,
 		},
 	},
+	{
+		// ITEMS, OWNED HERE: one assignment of work, pushed by the room that runs it. item_event holds every
+		// (item_id, revision, state) ever applied, which is what makes a replayed push a no-op. See item.go.
+		name: "0018_item",
+		stmts: []string{
+			`CREATE TABLE IF NOT EXISTS item (
+				item_id    TEXT PRIMARY KEY,
+				room       TEXT NOT NULL,
+				card       TEXT NOT NULL,
+				generation INTEGER NOT NULL DEFAULT 1,
+				state      TEXT NOT NULL CHECK (state IN ('queued','running','blocked','finished')),
+				revision   INTEGER NOT NULL,
+				owner_kind TEXT NOT NULL CHECK (owner_kind IN ('session','role','human')),
+				owner      TEXT NOT NULL DEFAULT '',
+				created_by TEXT NOT NULL DEFAULT '',
+				note       TEXT NOT NULL DEFAULT '',
+				created_at TEXT NOT NULL,
+				updated_at TEXT NOT NULL
+			)`,
+			`CREATE INDEX IF NOT EXISTS item_owner ON item (owner_kind, owner, state)`,
+			`CREATE INDEX IF NOT EXISTS item_room ON item (room, updated_at)`,
+			`CREATE TABLE IF NOT EXISTS item_event (
+				item_id  TEXT NOT NULL,
+				revision INTEGER NOT NULL,
+				state    TEXT NOT NULL,
+				at       TEXT NOT NULL,
+				PRIMARY KEY (item_id, revision, state)
+			)`,
+		},
+	},
 }
 
 func (s *Store) migrate() error {

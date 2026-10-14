@@ -154,7 +154,10 @@ type Proxy struct {
 	cr *changeRequests
 	// backlog is the hub-wide backlog and director reports. Nil answers 404. See backlog.go.
 	backlog *hubstore.Store
-	flowGit FlowGit
+	// items is where the hub owns items. Nil answers 404. itemRoomCall replaces the call to a room in a test. See items.go.
+	items        *hubstore.Store
+	itemRoomCall itemRoomCallFunc
+	flowGit      FlowGit
 	// specs is the store of room specs and locks. See roomspec.go.
 	specs *hubstore.Store
 	// prc is the PR claim table. See prclaim.go.
@@ -1586,6 +1589,10 @@ func (p *Proxy) serveHubAPI(w http.ResponseWriter, r *http.Request) {
 	}
 	if sub == "backlog" || strings.HasPrefix(sub, "backlog/") || sub == "reports" || strings.HasPrefix(sub, "reports/") {
 		p.serveBacklog(w, r, sub)
+		return
+	}
+	if sub == "items" || strings.HasPrefix(sub, "items/") {
+		p.serveItems(w, r, sub)
 		return
 	}
 	if sub == "flow" || strings.HasPrefix(sub, "flow/") {

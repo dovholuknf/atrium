@@ -43,6 +43,8 @@ type launchOpts struct {
 	quiet bool
 	// item starts the card as an item. See daemon.ItemTag.
 	item bool
+	// itemOwner is who owns the item: empty, human, or a single-holder role. See daemon.ItemOwnerTag.
+	itemOwner string
 }
 
 func newLaunch() *cobra.Command {
@@ -107,6 +109,7 @@ func newLaunch() *cobra.Command {
 	c.Flags().StringVar(&o.onto, "onto", "",
 		"start the runner on this existing card, named by its handle, alias, name@room or id. "+
 			"without --cwd it runs in the card's own directory")
+	c.Flags().StringVar(&o.itemOwner, "item-owner", "", "with --item: who owns it. empty is the creating session, human, or orchestrator, merger or director")
 	c.Flags().BoolVar(&o.item, "item", false,
 		"start the card as an item: its ending never mentions a launcher, its opening prompt comes from atrium, "+
 			"it has no atrium_say, atrium_peers, atrium_task or atrium_report, and atrium refuses any say from it")
@@ -200,6 +203,9 @@ func launchBody(o launchOpts, cwd string) error {
 	// ONLY WHEN ASKED FOR, so a launch without the flag posts what it always did.
 	if o.item {
 		fields["item"] = true
+		if so := strings.TrimSpace(o.itemOwner); so != "" {
+			fields["tags"] = append(append([]string{}, o.tags...), link.ItemOwnerTag+so)
+		}
 		fields["prompt"] = link.WithItemReportLine(o.prompt)
 	}
 	body, err := json.Marshal(fields)
