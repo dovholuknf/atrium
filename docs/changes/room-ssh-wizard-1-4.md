@@ -11,7 +11,8 @@ What this adds, and nothing here writes a key, an `authorized_keys` or an ssh co
   `ssh_host_*_key.pub`), not by a process name. A banner that names another system is supporting text only.
 - The eleven steps as read only checks, and `atrium room ssh setup --check` (also `atrium ssh setup --check`) with
   `--json`. `GET /v1/ssh/wizard` on the room serves the same result. Steps that read the hub's ssh record, which does
-  not exist yet, say so and are skipped.
+  not exist yet, say so and are skipped. The route leaves the self test off unless `self_test=1`, so a reload or
+  prefetch never makes the room ssh into itself. The CLI still runs it by default.
 
 ## Test plan
 

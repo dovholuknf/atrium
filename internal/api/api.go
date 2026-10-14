@@ -516,6 +516,13 @@ func (s *Server) Handler() http.Handler {
 			http.NotFound(w, r)
 			return
 		}
+		// The self test makes the room ssh into itself, so a GET, a reload or a prefetch must not start it: only
+		// self_test=1 does.
+		q := r.URL.Query()
+		if q.Get("self_test") != "1" {
+			q.Set("self_test", "0")
+			r.URL.RawQuery = q.Encode()
+		}
 		writeJSON(w, http.StatusOK, s.SSHWizard(r))
 	})
 	if s.RoomJoin != nil {

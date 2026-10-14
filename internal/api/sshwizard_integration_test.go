@@ -34,7 +34,7 @@ func TestSSHWizardRouteIsReadOnlyAndAbsentWithoutARoom(t *testing.T) {
 	}
 	rec = httptest.NewRecorder()
 	srv.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/ssh/wizard?user=claude", nil))
-	if rec.Code != 200 || !strings.Contains(rec.Body.String(), `"ready":false`) || asked != "user=claude" {
+	if rec.Code != 200 || !strings.Contains(rec.Body.String(), `"ready":false`) || asked != "self_test=0&user=claude" {
 		t.Fatalf("%d %s %q", rec.Code, rec.Body.String(), asked)
 	}
 	for _, verb := range []string{http.MethodPost, http.MethodPut, http.MethodDelete} {
