@@ -271,6 +271,8 @@ func TestHostStateCountsHostRunners(t *testing.T) {
 		}
 		return got.PtyHost.On, got.PtyHost.InJob, got.Runners.Host, got.Runners.InProcess
 	}
+	// The probe reports the test process's own job: a test run from a supervised room shell is in one.
+	d.hostInJob.Store(false)
 	on, inJob, host, local := get()
 	if !on || inJob || host != 1 || local != 0 {
 		t.Fatalf("preflight on=%v in_job=%v host=%d in_process=%d, want on, not in a job, 1 and 0", on, inJob, host, local)
