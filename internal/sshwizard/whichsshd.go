@@ -22,6 +22,7 @@ import (
 	"runtime"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -246,9 +247,17 @@ type Finding struct {
 // machine's name when it resolves to a matching key, and only then a literal address.
 func Which(ctx context.Context, env Env, port int) Finding {
 	f := Finding{Port: port, Local: HostKeys(env)}
-	for _, a := range Candidates(env) {
-		f.Probes = append(f.Probes, ProbeAddr(ctx, env, a, port))
+	cands := Candidates(env)
+	f.Probes = make([]Probe, len(cands))
+	var wg sync.WaitGroup
+	for i, a := range cands {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			f.Probes[i] = ProbeAddr(ctx, env, a, port)
+		}()
 	}
+	wg.Wait()
 	for _, p := range f.Probes {
 		v := p.Verdict(f.Local)
 		if v == Mine && f.Chosen == "" {

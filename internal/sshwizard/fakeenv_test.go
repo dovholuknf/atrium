@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 )
 
 // fakeEnv answers for a machine. Scans maps "host:port" to what ssh-keyscan would print, and a missing entry is a
@@ -19,12 +20,15 @@ type fakeEnv struct {
 	scans     map[string]string
 	owners    map[string]string
 	scanCalls []string
+	mu        sync.Mutex
 }
 
 func (f *fakeEnv) GOOS() string { return f.goos }
 func (f *fakeEnv) Keyscan(_ context.Context, host string, port int) (string, error) {
 	k := fmt.Sprintf("%s:%d", host, port)
+	f.mu.Lock()
 	f.scanCalls = append(f.scanCalls, k)
+	f.mu.Unlock()
 	if out, ok := f.scans[k]; ok {
 		return out, nil
 	}
