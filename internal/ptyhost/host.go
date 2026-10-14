@@ -9,7 +9,6 @@ import (
 	"log"
 	"net"
 	"os"
-	"os/exec"
 	"sort"
 	"sync"
 	"sync/atomic"
@@ -494,7 +493,7 @@ func (c *client) spawn(q *Request) {
 	ringN = min(ringN, maxRing)
 	// Resolved on the host's PATH BEFORE the working directory is set: go-pty resolves relative to Dir, so a bare
 	// `claude` would be looked for inside the repository being worked in.
-	resolved, err := exec.LookPath(q.Argv[0])
+	resolved, err := lookPathIn(q.Argv[0], q.Env)
 	if err != nil {
 		c.fail(q, "%s is not on PATH: %v", q.Argv[0], err)
 		return

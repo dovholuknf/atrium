@@ -116,7 +116,7 @@ if (-not $WhatIf) {
     Say "ROOM IS NOT SERVING. reverting to $revert. last lines of room.err:"
     Get-Content (Join-Path $Base 'room.err') -Tail 20 | ForEach-Object { Say "  $_" }
     # A frozen room does not answer the shutdown post either. Stop-Room forces after its 45s.
-    Stop-Room
+    if (-not (Stop-Room)) { Say 'FATAL: the room refused to stop (its pty host would die with it), so the revert is not installed over a room that is still running. nothing was changed. pass -KillRunners to end its runners'; exit 1 }
     if (-not $RoomOnly) { Stop-Hub }
     if (-not (Install-Atrium $revert)) { Say 'FATAL: revert install failed. nothing is running'; exit 1 }
     if (-not $RoomOnly) { Start-Hub; $null = Wait-Hub 25 }
