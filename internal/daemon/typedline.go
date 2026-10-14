@@ -82,6 +82,11 @@ const (
 	// a sequence is taken as that sequence's tail. A person does not press Esc and
 	// then another key inside this.
 	escRejoin = 50 * time.Millisecond
+	// escRejoinFocus is the same for a frame that is exactly the tail of a focus
+	// report, `[I` or `[O`. A slow link can cut the report after its Esc and deliver
+	// the rest far later, and left alone the tail is typed as two characters on a
+	// line that looks empty. Nobody presses Esc and then types `[I` by hand.
+	escRejoinFocus = 2 * time.Second
 	// pendingStale is how long a held partial sequence waits for its tail before it
 	// is read as what it is so far (alt-[ is `ESC [` and nothing more).
 	pendingStale = 250 * time.Millisecond
@@ -242,7 +247,11 @@ func (l *typedLine) feed(p []byte) (keyed bool) {
 func (l *typedLine) rejoinEsc(p []byte, now time.Time) []byte {
 	live := l.loneLive
 	l.loneLive = false
-	if !live || p[0] == 0x1b || now.Sub(l.loneAt) >= escRejoin {
+	window := escRejoin
+	if len(p) == 2 && p[0] == '[' && (p[1] == 'I' || p[1] == 'O') {
+		window = escRejoinFocus
+	}
+	if !live || p[0] == 0x1b || now.Sub(l.loneAt) >= window {
 		return p
 	}
 	l.escAt = l.loneUndo
