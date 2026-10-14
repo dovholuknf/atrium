@@ -45,7 +45,7 @@
   .fwrap { position: absolute; top: 100%; left: 0; right: 0; overflow: hidden; pointer-events: none; z-index: 2; }
   .fdrawer.open .fwrap { pointer-events: auto; }
   .fpanel {
-    display: block; box-sizing: border-box; font-size: 0;
+    display: flex; flex-direction: row; flex-wrap: wrap; align-items: center; gap: 6px var(--sp-4); box-sizing: border-box;
     max-height: min(70vh, calc(100vh - 140px)); overflow-y: auto; overflow-x: hidden;
     padding: 8px 12px 0; outline: none;
     background: var(--shell-1); border: 1px solid var(--stroke); border-top: 0;
@@ -58,12 +58,12 @@
   @media (prefers-reduced-motion: reduce) { .fpanel { transition: none; } }
   /* The rows flow inline: on a wide window SHOW, SORT BY and GROUP share a line. Each is a label and its chips that never
      come apart (nowrap), and a row only wraps its chips when it is alone on a line and still too long (max-width). */
-  .frow { display: inline-flex; vertical-align: top; align-items: center; gap: var(--sp-3); flex-wrap: nowrap; min-width: 0; max-width: 100%; margin: 0 var(--sp-4) 6px 0; font-size: var(--fs-sm); }
+  .frow { display: flex; align-items: center; gap: var(--sp-3); flex-wrap: nowrap; flex: 0 1 auto; min-width: 0; max-width: 100%; }
   .frow .barlabel { min-width: 0; flex: none; }
   .frow .seg { flex-wrap: wrap; min-width: 0; }
   /* The handle at the drawer's bottom edge. The whole strip is the target, the grip is what you see. */
   .fhandle {
-    display: flex; align-items: center; justify-content: center; width: 100%; height: 12px; flex: none; margin: 0; padding: 0;
+    display: flex; align-items: center; justify-content: center; width: 100%; height: 12px; flex: 0 0 100%; margin: 0; padding: 0;
     background: transparent; border: 0; border-radius: 0; cursor: pointer; color: var(--dimmest);
   }
   .fhandle i { display: block; width: 44px; height: 4px; border-radius: 2px; background: currentColor; opacity: .7; }
