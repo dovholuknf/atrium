@@ -176,9 +176,11 @@ link and a symlink. Linux: `ps -o comm` in sg4-wsl.
 
 ## Risks
 
-- **The Windows firewall prompts per program path. VOID, see Decisions.** This said the hub listens on `0.0.0.0:7779`.
-  That is wrong for the live link: rooms come in over ziti and the default bind is `127.0.0.1`, so nothing listens on
-  TCP 7779 for the network and a new program path meets no inbound firewall prompt.
+- **The Windows firewall prompts per program path.** The hub listens on `0.0.0.0:7779` (the room link). A first run of
+  `atrium.hub.exe` is a new program to the firewall, and an existing allow rule for `atrium.exe` does not cover it. A
+  rule written for the path has to be added once per machine, or the link silently does not accept. This is the biggest
+  real risk. The spike must run the hub from a link on sg4 and watch for it. The room's listeners are loopback and are
+  not affected.
 - **The hook binary.** Step 3 above. If a runner's hook config ever names `atrium.room.exe`, every swap fails on a held
   image. The test and the canonicalisation exist for this alone.
 - **A stale link.** Prevented by comparing identity at spawn time. It is why the deploy is not the place to make them.
@@ -203,8 +205,9 @@ link and a symlink. Linux: `ps -o comm` in sg4-wsl.
 ## Decisions (orchestrator, 2026-10-14)
 
 - Option A as written. All three roles get names, in the dot form: `atrium.hub.exe`, `atrium.room.exe`, `atrium.ptyhost.exe`.
-- The firewall risk is void. The live link does not listen on TCP 7779: rooms come in over ziti, and the default bind is
-  `127.0.0.1`. The "0.0.0.0:7779" claim in Risks above was wrong and is corrected. Open question 1 falls with it.
+- The firewall risk stands. The live hub runs `--link 0.0.0.0:7779 --transport direct,ziti`, and sgg attaches over direct
+  TCP, so a new program path can meet an inbound firewall prompt. The spike runs the hub from a link on sg4 and checks
+  whether the firewall prompts. Open question 1 stays open until it has.
 - The m1mini spike is allowed, on spare ports only. No real room is touched.
 - No version resource (open question 4 is no).
 - The spike answers open question 5: whether the three identical rows were a room with `pty_host` off.
