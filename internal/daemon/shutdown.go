@@ -97,6 +97,14 @@ func (d *Daemon) handleShutdown(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	from := r.RemoteAddr
+	runners := wantsRunners(r)
+	// A host inside the room task's job dies with the task, so leaving its runners up would be a promise the stop
+	// cannot keep. Refused before anything changes, with the way out.
+	if d.hostInJob.Load() && d.leavesRunnersUp(runners) {
+		http.Error(w, hostInJobRefusal, http.StatusConflict)
+		return
+	}
+	d.stopRunners.Store(runners)
 	now := truthy(r.URL.Query().Get("now"))
 	wait := d.st.RestartWrapWait()
 	w.Header().Set("Content-Type", "application/json")
@@ -117,6 +125,13 @@ func (d *Daemon) handleShutdown(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	log.Printf("[atrium] shutdown requested by %s", from)
+	// Nothing is ended by this stop unless a runner is in this process or runners were asked for, so there is
+	// nothing for a session to wrap up before. See restartwrap.go.
+	if !runners && d.allRunnersSurvive() {
+		log.Printf("[atrium] every runner is held by the pty host and stays up, no wrap-up")
+		go d.stop.request(reason)
+		return
+	}
 	// Off the request goroutine, so the response is written and the connection
 	// free before the listener starts closing. The wrap-up is bounded by the wait.
 	go func() {

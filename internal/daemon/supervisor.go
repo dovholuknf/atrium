@@ -891,6 +891,11 @@ type runner struct {
 	// keystroke), and a plain bool under `r.mu` there would put every keystroke
 	// behind whatever else holds `r.mu`, which is the lag this fix removes.
 	echoPeers atomic.Bool
+	// reattached is set when a daemon picked this runner up from the pty host instead of starting it. Its activity
+	// counts (subagents, background work) began at zero in this process, which reads as idle, so it is not idle
+	// parkable until its runner posts a fresh Stop, and reattachedAt is when this daemon took it over. See adoptLive.
+	reattached   atomic.Bool
+	reattachedAt time.Time
 }
 
 // closePTY closes the pseudo terminal, at most once.
@@ -1231,6 +1236,11 @@ func (r *runner) resetLineAtStop() bool {
 	r.typeMu.Lock()
 	defer r.typeMu.Unlock()
 	if r.line.empty() && len(r.line.pending) == 0 && !r.line.inPaste {
+		return false
+	}
+	// A line atrium lost sight of in a restart is not known to have been sent by this turn. Enter or control-c
+	// clears it.
+	if r.line.unsure == reattachLineKey {
 		return false
 	}
 	if r.keySeq > r.promptSeq {
@@ -2582,8 +2592,12 @@ func (d *Daemon) fileExitChecked(x runExit) (bool, error) {
 // A runner in the middle of writing a file deserves the chance to finish. It
 // does not deserve to hold shutdown open indefinitely, so the wait is bounded
 // and narrated, the same way the rest of shutdown is.
+//
+// A runner the pty host holds is left up unless the stop was asked to end runners (`atrium stop --runners`): the
+// next daemon reattaches it, and nothing here is written for it, since it is not ending. Its card is not filed,
+// carried over or put on the reopen list.
 func (d *Daemon) stopSupervised(grace time.Duration) {
-	live := d.sup.all()
+	live := d.stoppable(d.sup.all())
 	if len(live) == 0 {
 		return
 	}
@@ -2625,6 +2639,21 @@ func (d *Daemon) stopSupervised(grace time.Duration) {
 			log.Printf("[atrium] could not record the terminal size for %s: %v", r.taskID, err)
 		}
 	}
+}
+
+// stoppable is the runners this stop ends: all of them when it was asked to end runners, and otherwise only the
+// ones the pty host does not hold, since those would not survive this process.
+func (d *Daemon) stoppable(all []*runner) []*runner {
+	if d.stopRunners.Load() {
+		return all
+	}
+	out := all[:0:0]
+	for _, r := range all {
+		if hostOf(r) == nil {
+			out = append(out, r)
+		}
+	}
+	return out
 }
 
 // noteCause records why atrium is ending this runner. See runner.cause.

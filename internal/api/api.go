@@ -247,6 +247,9 @@ type Server struct {
 	// Shutdown winds the daemon down. Supplied by the daemon, which is the only
 	// thing that can stop itself and owns the access rules for doing so.
 	Shutdown http.HandlerFunc
+	// HostState answers `GET /v1/preflight` with whether the pty host is on, whether it would die with the room's
+	// task, and its build. Supplied by the daemon.
+	HostState http.HandlerFunc
 	// RestartWrap asks the working sessions to wrap up before a restart, and answers when they have or the wait
 	// is out. Supplied by the daemon, with Shutdown's access rules.
 	RestartWrap http.HandlerFunc
@@ -660,6 +663,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /v1/browse", s.browse)
 	if s.Preflight != nil {
 		mux.HandleFunc("POST /v1/preflight", s.Preflight)
+	}
+	if s.HostState != nil {
+		mux.HandleFunc("GET /v1/preflight", s.HostState)
 	}
 	if s.Shutdown != nil {
 		mux.HandleFunc("POST /v1/shutdown", s.Shutdown)

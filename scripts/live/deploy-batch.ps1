@@ -13,7 +13,7 @@
 # The room is stopped gracefully: each working card is asked to wrap up and is woken after. -Immediate skips that.
 #
 # A deploy hold is set on the room first and waited out, so the room that comes back wakes every card that was
-# working. -NoHold skips it. Do not send the "commit and wait" say as well: a card told to wait by a say is idle at
+# working. -NoHold skips it, and so does a room that keeps its runners (Test-RunnersSurvive). Do not send the "commit and wait" say as well: a card told to wait by a say is idle at
 # the hold and is correctly not woken.
 param([switch]$NoLagLog, [switch]$WhatIf, [switch]$NoHold, [switch]$Immediate)
 
@@ -36,7 +36,11 @@ if (-not $WhatIf) {
 # Hold the room, so a card working now is told to continue after the restart and one waiting for a human is left
 # alone. The hold's own wake replaces the "commit and wait" say. -NoHold skips it. The restart then wakes only a card
 # that is mid-turn at the wind-down, and a card that ended its turn on a say is not woken.
-if ($NoHold) {
+# A room whose runners survive the stop (pty_host on, host out of the task's job, nothing in the room's own process)
+# has no turn to protect: the restart ends no agent, so the hold is skipped and nothing is woken.
+if (-not $NoHold -and -not $WhatIf -and (Test-RunnersSurvive)) {
+  Say 'no deploy hold: this room keeps its runners across the restart (pty_host on, host outside the task job)'
+} elseif ($NoHold) {
   Say 'WARNING: -NoHold, no deploy hold set. nothing will be woken but a card mid-turn at the wind-down'
 } elseif ($WhatIf) {
   Say 'WHATIF: set a deploy hold on the room and wait for it to go quiet'

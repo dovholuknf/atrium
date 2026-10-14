@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -288,6 +289,7 @@ func TestPermDecisions(t *testing.T) {
 
 func TestPermFailuresFailOpen(t *testing.T) {
 	permEnv(t, "force")
+	shortPermRetry(t, 300*time.Millisecond)
 	for name, c := range map[string]struct {
 		status int
 		body   string
@@ -374,5 +376,68 @@ func TestPermissionHookFailsOpenOnADeadAddress(t *testing.T) {
 	}
 	if time.Since(start) > 4*time.Second {
 		t.Fatalf("the hook waited %s on a dead address", time.Since(start))
+	}
+}
+
+// shortPermRetry makes the retry bound a test's own, and puts it back.
+func shortPermRetry(t *testing.T, bound time.Duration) {
+	t.Helper()
+	oldFor, oldEvery := permRetryFor, permRetryEvery
+	permRetryFor, permRetryEvery = bound, 50*time.Millisecond
+	t.Cleanup(func() { permRetryFor, permRetryEvery = oldFor, oldEvery })
+}
+
+// A restart resets the long poll a couple of times and then the new room decides: the hook gets that decision, with
+// the same dedup key each time. A room that never answers fails open after the bound and records nothing.
+func TestPermissionHookRetriesThroughARestart(t *testing.T) {
+	permEnv(t, "force")
+	shortPermRetry(t, 2*time.Second)
+
+	var mu sync.Mutex
+	var keys []string
+	posts := 0
+	mux := http.NewServeMux()
+	mux.HandleFunc("/gate", func(w http.ResponseWriter, r *http.Request) { _, _ = w.Write([]byte(`{"gate":true}`)) })
+	mux.HandleFunc("/permission", func(w http.ResponseWriter, r *http.Request) {
+		raw, _ := io.ReadAll(r.Body)
+		var m map[string]any
+		_ = json.Unmarshal(raw, &m)
+		mu.Lock()
+		posts++
+		n := posts
+		keys = append(keys, m["dedup_key"].(string))
+		mu.Unlock()
+		if n <= 2 {
+			// Reset, as a daemon exiting under the request does.
+			conn, _, _ := w.(http.Hijacker).Hijack()
+			_ = conn.Close()
+			return
+		}
+		_, _ = w.Write([]byte(`{"decision":"block","reason":"no"}`))
+	})
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	out := runPermissionHook(srv.URL, []byte(bashPayload), 1)
+	if out == nil || !strings.Contains(string(out), `"deny"`) {
+		t.Fatalf("expected the decision after two resets, got %q", out)
+	}
+	mu.Lock()
+	if posts != 3 || keys[0] != keys[1] || keys[1] != keys[2] || keys[0] != "toolu_1" {
+		t.Fatalf("posts %d keys %v, want three with one key", posts, keys)
+	}
+	mu.Unlock()
+
+	// Never answers: silent after the bound.
+	never := newFakeHub(t, true, 503, `down`)
+	start := time.Now()
+	if out := runPermissionHook(never.srv.URL, []byte(bashPayload), 1); out != nil {
+		t.Fatalf("expected silence, got %q", out)
+	}
+	if took := time.Since(start); took < time.Second || took > 4*time.Second {
+		t.Fatalf("gave up after %s, want about the 2s bound", took)
+	}
+	if len(never.posts) < 3 {
+		t.Fatalf("retried %d times", len(never.posts))
 	}
 }

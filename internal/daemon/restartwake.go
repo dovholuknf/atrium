@@ -303,13 +303,19 @@ func (d *Daemon) tryWake(w *store.RestartWake, now time.Time) {
 // while the old runner is still alive, and typing into it would be the forced
 // turn this is not.
 func (d *Daemon) wakeRunnerReady(w *store.RestartWake, run *runner, now time.Time) bool {
-	if !run.started.After(w.QueuedAt) {
+	// A runner picked up from the pty host after a restart is the runner the wake was queued for, since the restart
+	// did not end it. It counts from when this daemon took it over.
+	started := run.started
+	if !run.reattachedAt.IsZero() {
+		started = run.reattachedAt
+	}
+	if !started.After(w.QueuedAt) && run.reattachedAt.IsZero() {
 		return false
 	}
-	if at, ok := d.wake.sessionStarted(w.TaskID); ok && !at.Before(run.started) {
+	if at, ok := d.wake.sessionStarted(w.TaskID); ok && !at.Before(started) {
 		return now.Sub(at) >= wakeSettle
 	}
-	return now.Sub(run.started) >= wakeNoHook
+	return now.Sub(started) >= wakeNoHook
 }
 
 // handleRestartWake is `/v1/tasks/{id}/restart-wake`: POST queues, GET reads,

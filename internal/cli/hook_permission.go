@@ -122,21 +122,8 @@ func permissionHook(hubURL string, stdin []byte, pidOf func() int) []byte {
 		return nil
 	}
 
-	client := &http.Client{Timeout: permPostTimeout()}
-	resp, err := client.Post(base+"/permission", "application/json", bytes.NewReader(body))
-	if err != nil {
-		return nil
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return nil
-	}
-	var ans struct {
-		Decision string `json:"decision"`
-		Reason   string `json:"reason"`
-		Command  string `json:"command"`
-	}
-	if json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&ans) != nil {
+	ans, ok := postPermission(base, body)
+	if !ok {
 		return nil
 	}
 
@@ -171,6 +158,57 @@ func permissionHook(hubURL string, stdin []byte, pidOf func() int) []byte {
 		return nil
 	}
 	return b
+}
+
+// permRetryFor and permRetryEvery bound the retry of a permission request that got no decision. A room restart
+// takes a few seconds and the daemon upserts the request row by its dedup key before it waits, so asking again with
+// the same key is answered once by the new daemon. Variables so a test can shorten them.
+var (
+	permRetryFor   = 30 * time.Second
+	permRetryEvery = time.Second
+)
+
+type permissionAnswer struct {
+	Decision string `json:"decision"`
+	Reason   string `json:"reason"`
+	Command  string `json:"command"`
+}
+
+// postPermission asks the room for a decision. ANY answer that is not one is retried with the same body, so the
+// same dedup key: a refused or reset connection, a timeout, a non-2xx status, or a 2xx with no decision in it, which
+// are what a room on its way down or not yet migrated gives. After permRetryFor it gives up and the caller fails
+// open, recording an allow nowhere.
+func postPermission(base string, body []byte) (permissionAnswer, bool) {
+	client := &http.Client{Timeout: permPostTimeout()}
+	deadline := time.Now().Add(permRetryFor)
+	for {
+		if ans, ok := postPermissionOnce(client, base, body); ok {
+			return ans, true
+		}
+		if !time.Now().Add(permRetryEvery).Before(deadline) {
+			return permissionAnswer{}, false
+		}
+		time.Sleep(permRetryEvery)
+	}
+}
+
+func postPermissionOnce(client *http.Client, base string, body []byte) (permissionAnswer, bool) {
+	var ans permissionAnswer
+	resp, err := client.Post(base+"/permission", "application/json", bytes.NewReader(body))
+	if err != nil {
+		return ans, false
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return ans, false
+	}
+	if json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&ans) != nil {
+		return ans, false
+	}
+	if ans.Decision != "approve" && ans.Decision != "block" {
+		return ans, false
+	}
+	return ans, true
 }
 
 // probeGate asks /gate whether this session is joined. ok is false when atrium

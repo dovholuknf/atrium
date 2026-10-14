@@ -116,6 +116,8 @@ func (d *Daemon) connectHost(dir, addr string, takeover, start bool, so ptyhost.
 		_ = cl.Close()
 		return nil, fmt.Errorf("the pty host speaks protocol %d and this daemon speaks %d", pr.Proto, ptyhost.Proto)
 	}
+	d.hostInJob.Store(pr.InJob)
+	d.hostBuild.Store(pr.Build)
 	if pr.Daemon && !takeover {
 		_ = cl.Close()
 		return nil, errors.New("another daemon is connected to the pty host")
@@ -500,12 +502,16 @@ func (d *Daemon) adoptLive(cl *ptyhost.Client, addr string, row *store.PtyRun, t
 	shell := row.Kind == store.RunKindShell
 	r := &runner{
 		taskID: row.TaskID, runID: row.RunID, started: startedOf(att.Info), pid: att.Info.Pid,
-		dir: task.Worktree, buf: buf,
+		reattachedAt: time.Now(),
+		dir:          task.Worktree, buf: buf,
 		watchers: map[chan []byte]struct{}{}, done: make(chan struct{}),
 	}
 	if !shell {
 		r.onSized = d.noteRoomSize
 		r.line.escClears = clearsOnEsc(task.Runner)
+		// What this daemon never saw: the activity counts and the operator's line. See reattachLineKey.
+		r.reattached.Store(true)
+		r.line.lost(reattachLineKey)
 	}
 	t := newHostTerm(cl, addr, row.RunID, att.Info.Pid, att, false)
 	r.adopt(t)
@@ -515,6 +521,9 @@ func (d *Daemon) adoptLive(cl *ptyhost.Client, addr string, row *store.PtyRun, t
 	} else {
 		d.sup.add(r)
 		d.EnsureCardShare(row.TaskID)
+		// The reattach is this runner's session start as far as a restart wake can tell: no SessionStart hook is
+		// coming, and the wake would otherwise wait out wakeNoHook. The wake's own settle delay follows.
+		d.wakeSawSession(row.TaskID, "")
 	}
 	go func() {
 		chunk := make([]byte, 8192)
