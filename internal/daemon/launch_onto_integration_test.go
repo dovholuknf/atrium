@@ -76,7 +76,7 @@ func TestALaunchOntoAShelvedCardIsRefused(t *testing.T) {
 	if err == nil {
 		t.Fatal("a runner was started onto a shelved card")
 	}
-	if !strings.Contains(err.Error(), "unshelve") {
+	if !strings.Contains(err.Error(), "resume") {
 		t.Fatalf("the refusal does not name the way through: %v", err)
 	}
 }
@@ -198,7 +198,7 @@ func TestTheLaunchPathRefusesAShelvedCard(t *testing.T) {
 	if err == nil {
 		t.Fatal("a launch onto a shelved card succeeded")
 	}
-	if !strings.Contains(err.Error(), "shelved") {
+	if !strings.Contains(err.Error(), "paused") {
 		t.Fatalf("the refusal does not say why: %v", err)
 	}
 	after, err := d.st.Get(task.ID)

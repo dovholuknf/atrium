@@ -137,7 +137,7 @@ func TestItemOfTaskIsTheLatest(t *testing.T) {
 }
 
 func TestItemStuckMigrationIsLast(t *testing.T) {
-	if last := migrations[len(migrations)-1].name; last != "0099_item_stuck" {
+	if last := migrations[len(migrations)-1].name; last != "0101_status_paused" {
 		t.Fatalf("the last migration is %q", last)
 	}
 }

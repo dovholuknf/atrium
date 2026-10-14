@@ -218,7 +218,7 @@ func (s *Store) Register(obs Observed) (*Task, bool, error) {
 			task = t
 		}
 		if task == nil && obs.PID != 0 && obs.Worktree != "" {
-			t, err := s.getBy(`pid = ? AND worktree = ? AND status NOT IN ('done','paused','paused','dead')`,
+			t, err := s.getBy(`pid = ? AND worktree = ? AND status NOT IN ('done','paused','dead')`,
 				obs.PID, obs.Worktree)
 			if err != nil && !errors.Is(err, sql.ErrNoRows) {
 				return err
