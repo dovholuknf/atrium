@@ -469,13 +469,14 @@ function roomRow(r) {
 let zitiLogoSeq = 0;
 function zitiLogo() {
   const id = "zlg" + (++zitiLogoSeq);
-  return `<svg class="zlogo" viewBox="0 0 201.4 201.4" aria-hidden="true">
-    <linearGradient id="${id}" gradientUnits="userSpaceOnUse" x1="154.4149" y1="206.1329" x2="43.0052" y2="-12.521">
-      <stop offset="0.004" stop-color="#FC0147"/><stop offset="0.039" stop-color="#F4044D"/><stop offset="0.9" stop-color="#0068F9"/>
-    </linearGradient>
-    <circle fill="url(#${id})" cx="100.7" cy="100.7" r="100.7"/>
-    <path fill="#fff" d="M101.1,10.6L44.7,96.4l32,20.9l5.3-8.1L98.7,189l55.5-86.3l-31.1-20.4l-5.3,8.2L101.1,10.6z M126.4,96.7l13.7,9.2l-36.5,55.9L86.8,82l-13.6,20.8L59.8,94l36.7-56.1l16.6,79.2L126.4,96.7z"/>
-  </svg>`;
+  // No whitespace between the tags: it would become text nodes in the chip and show up in its textContent.
+  return `<svg class="zlogo" viewBox="0 0 201.4 201.4" aria-hidden="true">` +
+    `<linearGradient id="${id}" gradientUnits="userSpaceOnUse" x1="154.4149" y1="206.1329" x2="43.0052" y2="-12.521">` +
+    `<stop offset="0.004" stop-color="#FC0147"/><stop offset="0.039" stop-color="#F4044D"/><stop offset="0.9" stop-color="#0068F9"/>` +
+    `</linearGradient>` +
+    `<circle fill="url(#${id})" cx="100.7" cy="100.7" r="100.7"/>` +
+    `<path fill="#fff" d="M101.1,10.6L44.7,96.4l32,20.9l5.3-8.1L98.7,189l55.5-86.3l-31.1-20.4l-5.3,8.2L101.1,10.6z M126.4,96.7l13.7,9.2l-36.5,55.9L86.8,82l-13.6,20.8L59.8,94l36.7-56.1l16.6,79.2L126.4,96.7z"/>` +
+    `</svg>`;
 }
 
 function transportBadge(t, fallback) {
