@@ -97,7 +97,7 @@ func TestMCPRuleChainOrder(t *testing.T) {
 
 	// A shelved card blocks even an approved tool.
 	shelved := mcpTask(t, d, "gw-shelved")
-	if err := d.st.SetStatus(shelved.ID, store.StatusShelved); err != nil {
+	if err := d.st.SetStatus(shelved.ID, store.StatusPaused); err != nil {
 		t.Fatal(err)
 	}
 	_, auto = ask(t, d, "gw-shelved", mcpSearch, `{}`)

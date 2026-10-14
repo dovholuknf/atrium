@@ -105,7 +105,8 @@ const termClosedGone = t => !t.supervised && (t.tags || []).includes(CLOSED_TAG)
 // said "hide" about each, and nobody could tell what a lit one was taking out. They are replaced by the three chips of
 // the filter drawer (js/filter-drawer.js, docs/backlog/ui/u-011-interview.md):
 //   - `running` and `ready` sessions are ALWAYS listed. They get no chip.
-//   - `shelved N`: cards that were stopped (the menu's `stop`), listed cold so a click resumes them. Off by default.
+//   - `paused N`: cards with no agent running that CAN be resumed: stopped from the menu (`stop`) or parked after sitting
+//     idle. Listed cold. Off by default, and a hidden one is hidden at every nesting level.
 //   - `dead N`: pinned rows whose runner has gone, and the `ended` group of finished cards. Off by default.
 //   - `subagents`: off, every parent row starts FOLDED with a count on its chevron and a child that needs you still
 //     shows through the fold. On, parents start expanded. Off by default.
@@ -113,7 +114,7 @@ const termClosedGone = t => !t.supervised && (t.tags || []).includes(CLOSED_TAG)
 //
 // STORED per device (see `termDeviceKey`) as the list of chips that are ON, so no stored value is the default.
 const TERM_SHOW_KEY = "atrium.terms.show";
-const TERM_CHIPS = ["shelved", "dead", "subagents"];
+const TERM_CHIPS = ["paused", "dead", "subagents"];
 // The keys the old controls kept, cleared on load (both device variants) so a stale `hide inactive` does not outlive
 // the control that wrote it. `atrium.hidedoers` is older still.
 function clearLegacyHideKey() {
@@ -127,7 +128,8 @@ clearLegacyHideKey();
 function termShow() {
   try {
     const v = JSON.parse(localStorage.getItem(termDeviceKey(TERM_SHOW_KEY)) || "null");
-    if (Array.isArray(v)) return new Set(v.filter(x => TERM_CHIPS.includes(x)));
+    // `shelved` was this chip's old name, and a device may still hold it.
+    if (Array.isArray(v)) return new Set(v.map(x => x === "shelved" ? "paused" : x).filter(x => TERM_CHIPS.includes(x)));
   } catch (e) {}
   return new Set();
 }
@@ -157,8 +159,8 @@ function paintTermShow() {
   if (!el) return;
   const on = termShow();
   el.innerHTML =
-    fdChip("shelved", on.has("shelved"), "toggleTermShow('shelved')",
-      "cards you stopped, listed cold so a click starts them again", "shelved") +
+    fdChip("paused", on.has("paused"), "toggleTermShow('paused')",
+      "cards with no agent running that you can resume: ones you paused, and idle ones that were parked", "paused") +
     fdChip("dead", on.has("dead"), "toggleTermShow('dead')",
       "pinned rows whose session has exited, and the ended group. a click starts one again", "dead") +
     fdChip("subagents", on.has("subagents"), "toggleTermShow('subagents')",
@@ -168,17 +170,16 @@ prefLive([TERM_SHOW_KEY + "*"], () => { paintTermShow(); renderTermList(); });
 
 // WHICH KIND OF ROW A CARD IS, to the chips:
 //   `gone`    a closed card with no session. Nothing to resume, listed only while it is the attached one.
-//   `shelved` stopped. Behind the shelved chip.
 //   `live`    a runner is up, or it was joined from the operator's own terminal. Always listed.
-//   `parked`  idle-parked: no process, the conversation kept. Always listed, grey, with a resume on the row. Parking
-//             frees the process, it does not take the card off the list of terminals.
+//   `paused`  stopped, or idle-parked: no process, and it CAN be resumed (a dead one cannot). Behind the paused chip.
+//             Parking frees the process and the chip is what lists it.
 //   `dead`    pinned, with its runner gone. Behind the dead chip.
 //   ``        not a row of the list.
 function termRowKind(t) {
   if (termClosedGone(t)) return "gone";
-  if (t.status === "shelved") return "shelved";
+  if (t.status === "paused") return "paused";
   if (t.supervised || termJoined(t)) return "live";
-  if (t.parked_at) return "parked";
+  if (t.parked_at) return "paused";
   if (t.pinned) return "dead";
   return "";
 }
@@ -249,13 +250,13 @@ async function joinedClick(id) {
 function termKept(t, show) {
   if (!termTask || t.id !== termTask.id) return false;
   const k = termRowKind(t);
-  return k === "gone" || (k === "shelved" && !show.has("shelved")) || (k === "dead" && !show.has("dead"));
+  return k === "gone" || (k === "paused" && !show.has("paused")) || (k === "dead" && !show.has("dead"));
 }
 
-// Whether the list holds this card at all, given the chips. Live and parked rows always, the rest by their chip.
+// Whether the list holds this card at all, given the chips. Live rows always, the rest by their chip.
 function termListed(t, show) {
   const k = termRowKind(t);
-  return k === "live" || k === "parked" || (k !== "" && (termKept(t, show) || (k === "shelved" && show.has("shelved")) ||
+  return k === "live" || (k !== "" && (termKept(t, show) || (k === "paused" && show.has("paused")) ||
     (k === "dead" && show.has("dead"))));
 }
 
@@ -689,8 +690,8 @@ async function termMenu(e, id) {
 // The items, apart from the drawing so a test and the phone sheet read the same list.
 function termMenuItems(id, t) {
   // A finished card has nothing to restart or stop, and offering them produced a dialog that failed.
-  const over = ["done", "dead", "shelved"].includes(t.status);
-  const stopped = t.status === "shelved";
+  const over = ["done", "dead", "paused"].includes(t.status);
+  const stopped = t.status === "paused";
   return [
     // The one used nearly every time. Only where atrium owns the terminal, since it types the exit keys, or on a
     // parked card, which restarts as a resume.
@@ -702,7 +703,7 @@ function termMenuItems(id, t) {
         "new context.",
       act: () => restartCard(id)
     } : null,
-    // A stopped card. `stop` shelves it, and shelved is the status with no runner whose request block is still up, so
+    // A stopped card. `stop` pauses it, and paused is the status with no runner whose request block is still up, so
     // resuming it lifts the block and starts the runner. Any other card with no runner and a conversation resumes by
     // the same two entries the board has.
     stopped ? {
@@ -710,7 +711,7 @@ function termMenuItems(id, t) {
       help: "Starts this card's runner again and picks the conversation back up where it stopped.",
       limited: !!cannotResume(t),
       tip: cannotResume(t) || "",
-      act: () => cannotResume(t) ? toast("cannot resume", cannotResume(t)) : unshelveCard(id)
+      act: () => cannotResume(t) ? toast("cannot resume", cannotResume(t)) : resumePausedCard(id)
     } : t.parked_at ? {
       label: "resume",
       help: "This card was parked after sitting idle, so nothing is running. Starting it again resumes the same " +
@@ -736,13 +737,13 @@ function termMenuItems(id, t) {
     // Everything about what this card is, the context limit included (settings-spine.js).
     { label: "settings", act: () => openTask(id) },
     { sep: true },
-    // What the board calls shelved. It stops the runner and the card keeps its place, hidden from this list unless
-    // the shelved filter is on. Resume starts it again.
+    // What the board calls paused. It stops the runner and the card keeps its place, hidden from this list unless
+    // the paused filter is on. Resume starts it again.
     t.supervised && !over ? {
       label: "stop",
       help: "Stops the agent so it can be resumed later. The card stays on the board, and is left out of this " +
-        "list unless the shelved filter is on.",
-      act: () => oneAtATime("shelve:" + id, () => patchTask(id, { status: "shelved" }).then(refresh))
+        "list unless the paused filter is on.",
+      act: () => oneAtATime("pause:" + id, () => patchTask(id, { status: "paused" }).then(refresh))
     } : null,
     // A COLD ROW IS ONLY HERE BECAUSE IT IS PINNED, so dismissing it is unpinning it. Without this a dead terminal's
     // menu holds nothing that removes it from the list, since stop needs a runner.
@@ -1008,7 +1009,7 @@ function termTree(list) {
 //
 // The state is `t.activity.what`, which is what the board's `activityChip`
 // reads, and the guards are the same: nothing is drawn as working for a card
-// that is waiting on you, finished, or shelved. Activity is held in memory and
+// that is waiting on you, finished, or paused. Activity is held in memory and
 // outlives the status change that filed the card, so a card in `done` can
 // still be carrying a stale `thinking`.
 function termRunnerMark(t) {
@@ -1127,7 +1128,7 @@ function termRow(t, deep, kid) {
 // The spawned cards drawn under each parent row, by parent id. Rebuilt on every render by `termNest`.
 let termKids = new Map();
 // The same, over every card the list could hold, drawn or not: a chip, the search or a cold row can leave a parent's
-// children out of `termKids`, and the parent still has them. Its chevron is drawn for these.
+// children out of `termKids`, and the parent still has them. The popup's children section reads these (`termChildInfo`).
 let termKidsPool = new Map();
 function termKidTotal(t) { return Math.max((termKids.get(t.id) || []).length, (termKidsPool.get(t.id) || []).length); }
 
@@ -1767,9 +1768,9 @@ function termOrder(tasks) {
   return tasks;
 }
 
-// The line under the title bar, in words: `running + ready 5 · activity · by project`, with the chips that are on.
+// The line under the title bar, in words: `5 shown · activity · by project`. The chips say what is in the five.
 function termSummary(show, n) {
-  const what = ["running + ready", ...["shelved", "dead", "subagents"].filter(k => show.has(k))].join(" + ") + " " + n;
+  const what = n + " shown";
   const g = typeof groupingPrefs === "function" ? groupingPrefs("terms") : { on: false };
   return [what, termSortStarted ? "started" : sortByActivity ? "activity" : "name", groupWords(g)].join(" \u00b7 ");
 }
@@ -1912,7 +1913,7 @@ async function renderTermList() {
   const deadCold = pool.filter(t => termRowKind(t) === "dead");
   const nestPool = termNest(tasks);
   const counts = {
-    shelved: pool.filter(t => termRowKind(t) === "shelved").length,
+    paused: pool.filter(t => termRowKind(t) === "paused").length,
     dead: deadCold.length + endedAll.length,
     subagents: nestPool.nested.size
   };
@@ -1972,7 +1973,7 @@ async function renderTermList() {
 // default, and each row says what it was, when it ended, how, and offers the one thing worth doing: resume.
 //
 // ENDED IS `done` OR `dead` WITH NO RUNNER, and nothing the strip already shows: a pinned card stays in its bucket,
-// a stopped one has the shelved filter, a closed one has no folder to resume into. It ignores the two hide toggles,
+// a stopped one has the paused filter, a closed one has no folder to resume into. It ignores the two hide toggles,
 // since those are about the live rows and a worker's husk is exactly what the group is for.
 //
 // HOW IT ENDED comes from what the card already holds: the commit a done report named, the `needs:` line a blocked

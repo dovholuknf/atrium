@@ -25,7 +25,7 @@ func TestSelectLiveServesRunningAndWaitingAndParkedCardsAndNoOthers(t *testing.T
 		parked,
 		// Not live.
 		card(store.StatusDone, "fix/done"),
-		card(store.StatusShelved, "fix/shelved"),
+		card(store.StatusPaused, "fix/shelved"),
 		card(store.StatusDead, "fix/dead"),
 		card(store.StatusBacklog, "fix/backlog"),
 		// No branch, and another repository.

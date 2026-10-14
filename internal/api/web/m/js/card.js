@@ -835,7 +835,7 @@
     if (set.has("all")) return true;
     const rs = window.mHome.reasons(t, window.mStore.perms());
     return (set.has("running") && t.status === "running") || (set.has("needs") && rs.some(r => r.kind !== "ready")) ||
-      (set.has("ready") && t.status === "needs-input") || (set.has("done") && (t.status === "done" || t.status === "dead" || t.status === "shelved"));
+      (set.has("ready") && t.status === "needs-input") || (set.has("done") && (t.status === "done" || t.status === "dead" || t.status === "paused"));
   }
 
   function menuClose() {

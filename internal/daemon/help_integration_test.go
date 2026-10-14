@@ -139,7 +139,7 @@ func TestAShelvedCardIsNotDraggedBack(t *testing.T) {
 	t.Parallel()
 	d := testDaemon(t)
 	task := cardFor(t, d, "shelved-one")
-	if err := d.st.SetStatus(task.ID, store.StatusShelved); err != nil {
+	if err := d.st.SetStatus(task.ID, store.StatusPaused); err != nil {
 		t.Fatal(err)
 	}
 	askOf(t, d, HelpRequest{Agent: "shelved-one", Ask: "anybody there", Blocked: true})
@@ -148,7 +148,7 @@ func TestAShelvedCardIsNotDraggedBack(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.Status != store.StatusShelved {
+	if got.Status != store.StatusPaused {
 		t.Fatalf("asking for help unshelved a card: %q", got.Status)
 	}
 }

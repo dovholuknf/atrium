@@ -512,7 +512,7 @@ func liveBranches(d *daemon.Daemon, name string) []string {
 
 // selectLive picks the branches of the live cards in a repository. LIVE IS THE CARD'S STATUS, not whether a process
 // is running: a card is live while it is running or waiting on somebody, and a PARKED card (no process, its status
-// kept) is still live, so a review it owes keeps being served until it ends. A done, shelved, dead or backlog card
+// kept) is still live, so a review it owes keeps being served until it ends. A done, paused, dead or backlog card
 // is not live (a backlog card has no branch of its own yet). A card is matched to its repository by gitsync.RepoMatches.
 func selectLive(name string, tasks []*store.Task) []string {
 	var out []string

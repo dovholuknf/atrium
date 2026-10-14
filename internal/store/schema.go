@@ -13,6 +13,8 @@ import (
 var migrations = []struct {
 	name  string
 	stmts []string
+	// fn runs after stmts inside the same transaction, for a step SQL text cannot say.
+	fn func(tx *sql.Tx) error
 }{
 	{
 		name: "0001_initial",
@@ -2268,6 +2270,56 @@ var migrations = []struct {
 			)`,
 		},
 	},
+	{
+		// `shelved` becomes `paused`: no agent running, and it CAN be resumed (a dead card cannot).
+		//
+		// The status CHECK in 0001 lists the old word and SQLite cannot alter one, while a rebuild of `task` would
+		// fire the ON DELETE CASCADE of every child table (see 0025). So the CHECK text in sqlite_master is widened
+		// in place, which is the procedure SQLite documents for this, and the rows are then rewritten. Tolerant: a
+		// CHECK that already lists `paused` is left alone, rows already `paused` are untouched, and every status
+		// that is not `shelved` is never read.
+		name: "0101_status_paused",
+		fn:   migratePausedStatus,
+	},
+}
+
+// migratePausedStatus widens task.status's CHECK to accept 'paused' and renames the stored value.
+func migratePausedStatus(tx *sql.Tx) error {
+	var def string
+	err := tx.QueryRow(`SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'task'`).Scan(&def)
+	if err != nil {
+		return err
+	}
+	if !strings.Contains(def, "'paused'") && strings.Contains(def, "'shelved'") {
+		widened := strings.Replace(def, "'shelved'", "'shelved','paused'", 1)
+		var ver int
+		if err := tx.QueryRow(`PRAGMA schema_version`).Scan(&ver); err != nil {
+			return err
+		}
+		if _, err := tx.Exec(`PRAGMA writable_schema = ON`); err != nil {
+			return err
+		}
+		if _, err := tx.Exec(`UPDATE sqlite_master SET sql = ? WHERE type = 'table' AND name = 'task'`, widened); err != nil {
+			return err
+		}
+		if _, err := tx.Exec(fmt.Sprintf(`PRAGMA schema_version = %d`, ver+1)); err != nil {
+			return err
+		}
+		if _, err := tx.Exec(`PRAGMA writable_schema = OFF`); err != nil {
+			return err
+		}
+	}
+	_, err = tx.Exec(`UPDATE task SET status = 'paused' WHERE status = 'shelved'`)
+	return err
+}
+
+// NormalizeStatus maps the old name of a status to its current one, so input that still says `shelved` (an old
+// script, a flag, a stored link) means `paused`.
+func NormalizeStatus(status string) string {
+	if status == "shelved" {
+		return StatusPaused
+	}
+	return status
 }
 
 // migrate applies any migration not already recorded. This runs before the
@@ -2300,6 +2352,12 @@ func (s *Store) migrate() error {
 				if strings.Contains(strings.ToLower(err.Error()), "duplicate column name") {
 					continue
 				}
+				tx.Rollback()
+				return fmt.Errorf("%s: %w", m.name, err)
+			}
+		}
+		if m.fn != nil {
+			if err := m.fn(tx); err != nil {
 				tx.Rollback()
 				return fmt.Errorf("%s: %w", m.name, err)
 			}

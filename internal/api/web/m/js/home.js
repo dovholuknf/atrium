@@ -45,7 +45,7 @@
   // The reasons this card needs the operator, each {kind, text (html), since (ms, 0 when unknown)}.
   function reasons(t, perms, now) {
     if (!t || t.archived_at || t.offline) return [];
-    if (t.status === "dead" || t.status === "shelved" || t.status === "backlog" || runnerGone(t)) return [];
+    if (t.status === "dead" || t.status === "paused" || t.status === "backlog" || runnerGone(t)) return [];
     now = now || Date.now();
     const out = [];
     const mine = permsFor(t, perms || []);

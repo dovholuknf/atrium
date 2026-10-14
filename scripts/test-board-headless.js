@@ -255,7 +255,7 @@ const FILED = Object.assign({}, PIN, {
 // A live, unpinned, ungrouped row beside it, for the drag case.
 const LOOSE = Object.assign({}, T1, { id: "loose1", display_title: "loose card", supervised: true });
 
-// The terminals strip, exercising the shelved, dead and subagents chips. AGLIVE is a live agent (a human's own
+// The terminals strip, exercising the paused, dead and subagents chips. AGLIVE is a live agent (a human's own
 // session, no `atrium:subagent` tag) with three subagents launched from it (`spawned_by_id`): SUBLIVE idle, SUBWORK
 // working and SUBASK asking, which shows through the fold. SHELVED1 is a stopped card. A dead UNPINNED session is not
 // in the strip at all (nothing to switch to), so the dead rows are PINNED, drawn cold: SUBDEAD and AGDEAD, which the
@@ -287,9 +287,9 @@ const AGDEAD = Object.assign({}, SUBLIVE, {
   id: "agdead", display_title: "my dead terminal", tags: [],
   status: "dead", supervised: false, pinned: true, pid: 0, spawned_by_id: ""
 });
-// A stopped card: behind the shelved chip.
+// A stopped card: behind the paused chip.
 const SHELVED1 = Object.assign({}, SUBLIVE, {
-  id: "shelved1", display_title: "shelved card", status: "shelved", tags: [],
+  id: "paused1", display_title: "paused card", status: "paused", tags: [],
   supervised: false, pinned: false, spawned_by_id: ""
 });
 
@@ -591,7 +591,7 @@ const UC_CARDS = [
   ucCard("uc-quiet", "running", { supervised: true, pid: 15 }),
   ucCard("uc-gone", "needs-input", { supervised: false }),
   ucCard("uc-parked", "needs-input", { supervised: false, parked_at: UC_AT }),
-  ucCard("uc-shelved", "shelved"),
+  ucCard("uc-paused", "paused"),
   ucCard("uc-done", "done"),
   ucCard("uc-dead", "dead"),
 ];
@@ -623,7 +623,7 @@ function mockTasks(reading) {
     return untaggedTag
       ? list.map(t => Object.assign({}, t, { id: untaggedTag + "~" + t.id })) : list;
   }
-  // The terminals strip: a live agent with three subagents, a shelved card, and a dead (cold, pinned) agent and subagent.
+  // The terminals strip: a live agent with three subagents, a paused card, and a dead (cold, pinned) agent and subagent.
   if (tasksMode === "doers") {
     return [AGLIVE, SUBLIVE, SUBWORK, SUBASK, SUBDEAD, AGDEAD, SHELVED1];
   }
@@ -3868,7 +3868,7 @@ async function laneFoldSection(browser, base) {
     await p.goto(base, { waitUntil: "domcontentloaded" });
     await toBoard(p);
     if (await grp(p, "working") !== false || await grp(p, "needs-you") !== false) {
-      fail("laneFold: an old board-wide fold did not carry over to the lanes: " + JSON.stringify([await grp(p, "working"), await grp(p, "needs-you"), (await folds(p)).filter(k => /alpha/.test(k) && !/proj:(backlog|needs-permission|needs-input|running|finished|done|dead|shelved)\|/.test(k))]));
+      fail("laneFold: an old board-wide fold did not carry over to the lanes: " + JSON.stringify([await grp(p, "working"), await grp(p, "needs-you"), (await folds(p)).filter(k => /alpha/.test(k) && !/proj:(backlog|needs-permission|needs-input|running|finished|done|dead|paused)\|/.test(k))]));
     }
     const migrated = await folds(p);
     if (migrated.includes("proj:alpha") || !migrated.includes("proj:stack:alpha")) fail("laneFold: the old key was not migrated cleanly: " + JSON.stringify(migrated));
@@ -11889,7 +11889,7 @@ async function ctxLineSection(browser, base) {
     wornTasks = [row("cl-40", 60000), row("cl-70", 105000), row("cl-90", 135000), row("cl-warm", 170000),
       row("cl-over", 201000, { telemetry: { window: 1000000 } }),
       row("cl-long", 135000, { display_title: "a very long card title that has to wrap onto a second line in a narrow list" }),
-      row("cl-none", null), row("cl-shelf", 201000, { status: "shelved" }),
+      row("cl-none", null), row("cl-shelf", 201000, { status: "paused" }),
       row("cl-cycle", 201000, { new_context: { step: "clear", n: 2, of: 4, label: "clearing" } })];
     tasksMode = "worn";
     await wp.goto(base, { waitUntil: "domcontentloaded" });
@@ -12088,7 +12088,7 @@ async function ctxLineSection(browser, base) {
     }    if (r["cl-warm"] && (!r["cl-warm"].chip || r["cl-warm"].landchip)) fail("between warn and land the row must have the amber mark and no badge.");
     if (r["cl-70"] && (r["cl-70"].chip || r["cl-70"].landchip)) fail("a card under the warn line has a mark.");
     if (r["cl-none"]) fail("a row with no context_size has a line.");
-    if (r["cl-shelf"]) fail("a shelved card has a line.");
+    if (r["cl-shelf"]) fail("a paused card has a line.");
     if (!r["cl-long"]) fail("the long-title row has no context line.");
     else if (r["cl-long"].clash.length) fail("a two-line title overlaps the context line: " + r["cl-long"].clash.join(", "));
     // Tight density and a small text size shrink the row's padding: the line must still sit clear of the path and chips.
@@ -17167,12 +17167,12 @@ async function mGroupMenusSection(browser) {
 // Right click a row. The menu is what clint settled in docs/interviews/INTERVIEW-card-menu-2026-10-09.md: restart,
 // resume (stopped only), new context, then settings, then stop and terminate and clean up. Every item has its (?), none
 // has a grey line, and nothing asks "are you sure?" but a clean up of work that exists nowhere else, which has a
-// "never show me this again" tick. Stopped cards stay out of the list until the shelved filter is on.
+// "never show me this again" tick. Stopped cards stay out of the list until the paused filter is on.
 async function termMenuSection(browser, base) {
   const was = tasksMode;
   tasksMode = "land";
   landCard("land-tm-run", { supervised: true, status: "running", created_at: "2026-09-19T12:00:00Z" });
-  landCard("land-tm-stop", { supervised: false, status: "shelved", resume_id: "r-1", worktree: "/tmp/stopped",
+  landCard("land-tm-stop", { supervised: false, status: "paused", resume_id: "r-1", worktree: "/tmp/stopped",
     created_at: "2026-09-19T12:01:00Z" });
   // A closed card: done, no session, pinned (the case that kept it listed), carrying the mark a close writes.
   landCard("land-tm-closed", { supervised: false, status: "done", pinned: true, tags: ["atrium:closed"],
@@ -17239,29 +17239,29 @@ async function termMenuSection(browser, base) {
     if (m.notes) fail("termMenu: the menu still draws " + m.notes + " grey sub-lines.");
     if (process.env.TERMMENU_SHOT) await p.screenshot({ path: process.env.TERMMENU_SHOT });
 
-    // stop: no question, PATCHes shelved.
+    // stop: no question, PATCHes paused.
     await pick("stop");
     await p.waitForTimeout(400);
     if (await dialogUp().count()) fail("termMenu: stop asked before stopping.");
-    if (!patches.some(x => /land-tm-run/.test(x) && /"status":"shelved"/.test(x))) fail("termMenu: stop did not shelve the card: " + JSON.stringify(patches));
+    if (!patches.some(x => /land-tm-run/.test(x) && /"status":"paused"/.test(x))) fail("termMenu: stop did not pause the card: " + JSON.stringify(patches));
 
-    // a stopped card is not in the list until the shelved chip is on.
+    // a stopped card is not in the list until the paused chip is on.
     const listed = () => p.evaluate(() => !!document.querySelector('#term-list [oncontextmenu*="land-tm-stop"]'));
     const closedListed = () => p.evaluate(() => !!document.querySelector('#term-list [oncontextmenu*="land-tm-closed"]'));
-    if (await listed()) fail("termMenu: a stopped card is listed with the shelved chip off.");
-    if (await closedListed()) fail("termMenu: a closed card is listed with the shelved chip off.");
-    await p.evaluate(() => toggleTermShow("shelved"));
+    if (await listed()) fail("termMenu: a stopped card is listed with the paused chip off.");
+    if (await closedListed()) fail("termMenu: a closed card is listed with the paused chip off.");
+    await p.evaluate(() => toggleTermShow("paused"));
     await p.waitForSelector('#term-list [oncontextmenu*="land-tm-stop"]', { timeout: slow(5000) })
-      .catch(() => fail("termMenu: the shelved chip did not list the stopped card."));
+      .catch(() => fail("termMenu: the paused chip did not list the stopped card."));
     m = await openMenu("land-tm-stop");
     if (m.labels[0] !== "resume" || m.labels.includes("stop") || m.labels.includes("restart")) {
       fail("termMenu: a stopped card's menu is " + JSON.stringify(m.labels));
     }
-    // a closed card stays off the list even with the shelved chip on: its folder was freed, so there is nothing to resume.
-    if (await closedListed()) fail("termMenu: a closed card is listed with the shelved chip on.");
+    // a closed card stays off the list even with the paused chip on: its folder was freed, so there is nothing to resume.
+    if (await closedListed()) fail("termMenu: a closed card is listed with the paused chip on.");
     await p.keyboard.press("Escape");
-    await p.evaluate(() => toggleTermShow("shelved"));
-    if (await listed()) fail("termMenu: the shelved chip off did not hide the stopped card again.");
+    await p.evaluate(() => toggleTermShow("paused"));
+    if (await listed()) fail("termMenu: the paused chip off did not hide the stopped card again.");
 
     // terminate and clean up, nothing at risk: no question, one close with confirm.
     asks = [];
@@ -21522,7 +21522,7 @@ async function interviewTopSection(browser, base) {
 }
 
 
-// A parked card (idle-parked: no process, status parked, parked_at set) stays in the Terminals list, in its own tag
+// A parked card (idle-parked: no process, status parked, parked_at set) is in the Terminals list while the paused chip is on, in its own tag
 // group, grey, with a one-click resume on its row. An interview card stays top level and is never nested.
 async function parkedStaysSection(browser, base) {
   const ctx = await browser.newContext({ viewport: { width: 900, height: 600 } });
@@ -21538,7 +21538,7 @@ async function parkedStaysSection(browser, base) {
       const iv = mk("i1", ["atrium:subagent", "atrium:interview"], { spawned_by_id: "p1" });
       const parent = { id: "p1", tags: ["origin:agent"], status: "running", supervised: true, display_title: "p1" };
       const plain = mk("a1", ["origin:agent"]);
-      const show = termShow();
+      const show = new Set(["paused"]); // a parked card is paused, so the paused chip lists it (and hides it when off)
       const listed = [iv, plain].map(t => termListed(t, show));
       const pool = [parent, iv];
       termKids = new Map(); termKidsPool = new Map();
@@ -21687,6 +21687,116 @@ async function offCardActionsSection(browser, base) {
     }
     if (errors.length) fail("offCardActions: page errors: " + errors.join("; "));
     else console.log("offCardActions ok");
+  } finally { await ctx.close(); }
+}
+
+// PAUSED IS NOT DEAD. A paused card (stopped, or parked with no process) can be resumed: its popup has a resume row and no
+// `new agent here`. A dead card whose folder is still there has `new agent here` and no resume row. A parked card reads
+// paused, never ready, and the paused chip is what lists it. The Terminals header counts what is shown.
+async function pausedDeadSection(browser, base) {
+  const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+  const errors = [];
+  try {
+    const p = await ctx.newPage();
+    p.on("pageerror", e => errors.push(String(e)));
+    await p.goto(base + "/", { waitUntil: "domcontentloaded" });
+    await p.waitForFunction(() => typeof peekActions === "function" && typeof cardPaused === "function" && typeof termRowKind === "function", null, { timeout: slow(15000) });
+    const got = await p.evaluate(() => {
+      const mk = (id, extra) => Object.assign({ id, display_title: id, status: "needs-input", supervised: false, pid: 0, worktree: "/w/" + id,
+        resume_id: "r-" + id, tags: [] }, extra);
+      const cards = {
+        paused: mk("paused", { status: "paused" }),
+        parked: mk("parked", { parked_at: "2026-10-13T10:00:00Z" }),
+        dead: mk("dead", { status: "dead" }),
+        closed: mk("closed", { status: "dead", tags: ["atrium:closed"] }),
+        running: mk("running", { status: "running", supervised: true, pid: 9 }),
+      };
+      lastTasks = Object.values(cards);
+      const out = { kinds: {}, listed: {}, listedOn: {}, status: {}, popup: {} };
+      const on = new Set(["paused"]);
+      for (const [k, t] of Object.entries(cards)) {
+        const box = document.createElement("div");
+        peekActions(box, t.id);
+        out.popup[k] = [...box.querySelectorAll(".peek-act")].map(b => b.textContent);
+        out.kinds[k] = termRowKind(t);
+        out.listed[k] = termListed(t, new Set());
+        out.listedOn[k] = termListed(t, on);
+        const st = peekStatus(t);
+        out.status[k] = st && st.word;
+      }
+      out.summary = termSummary(new Set(["paused", "dead"]), 7);
+      out.label = cardStatusLabel(cards.parked);
+      return out;
+    });
+    const has = (k, w) => got.popup[k].includes(w);
+    for (const k of ["paused", "parked"]) {
+      if (!has(k, "resume")) fail("pausedDead: the " + k + " card's popup has no resume row: " + JSON.stringify(got.popup[k]));
+      if (has(k, "new agent here")) fail("pausedDead: the " + k + " card's popup offers new agent here: " + JSON.stringify(got.popup[k]));
+      if (got.status[k] !== "paused") fail("pausedDead: the " + k + " card reads '" + got.status[k] + "', want paused (never ready)");
+      if (got.kinds[k] !== "paused") fail("pausedDead: the " + k + " row kind is '" + got.kinds[k] + "', want paused");
+      if (got.listed[k]) fail("pausedDead: the " + k + " card is listed with the paused chip off");
+      if (!got.listedOn[k]) fail("pausedDead: the " + k + " card is not listed with the paused chip on");
+    }
+    if (!has("dead", "new agent here")) fail("pausedDead: a dead card with its folder has no new agent here row: " + JSON.stringify(got.popup.dead));
+    if (has("dead", "resume")) fail("pausedDead: a dead card's popup has a resume row: " + JSON.stringify(got.popup.dead));
+    if (has("closed", "new agent here") || has("closed", "resume")) fail("pausedDead: a dead card with no folder offers a way back: " + JSON.stringify(got.popup.closed));
+    if (has("running", "resume") || has("running", "new agent here")) fail("pausedDead: a running card's popup offers resume or new agent here: " + JSON.stringify(got.popup.running));
+    if (got.label !== "paused") fail("pausedDead: cardStatusLabel of a parked card is '" + got.label + "'");
+    if (!got.summary.startsWith("7 shown")) fail("pausedDead: the header reads '" + got.summary + "', want '7 shown ...'");
+    if (/shelved|paused \d|dead \d/.test(got.summary)) fail("pausedDead: the header still counts chips: " + got.summary);
+    if (errors.length) fail("pausedDead: page errors: " + errors.join("; "));
+    else console.log("pausedDead ok");
+  } finally { await ctx.close(); }
+}
+
+// HIDDEN MEANS HIDDEN AT EVERY LEVEL. With the paused and dead chips off, a paused or dead child does not show nested under a
+// visible parent, nor under a visible grandparent, nor does its own child. With the paused chip on they come back.
+async function hiddenEveryLevelSection(browser, base) {
+  const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+  const errors = [];
+  try {
+    const p = await ctx.newPage();
+    p.on("pageerror", e => errors.push(String(e)));
+    await p.goto(base + "/", { waitUntil: "domcontentloaded" });
+    await p.waitForFunction(() => typeof termNest === "function" && typeof termRow === "function", null, { timeout: slow(15000) });
+    const got = await p.evaluate(() => {
+      const live = (id, parent, extra) => Object.assign({ id, display_title: id, status: "running", supervised: true, pid: 9, tags: ["atrium:subagent"],
+        spawned_by_id: parent || "", worktree: "/w" }, extra);
+      const gone = (id, parent, extra) => Object.assign(live(id, parent), { supervised: false, pid: 0, resume_id: "r" }, extra);
+      const pool = [
+        live("gp", "", { tags: ["origin:agent"] }),
+        live("par", "gp"),
+        gone("kidParked", "par", { status: "needs-input", parked_at: "2026-10-13T10:00:00Z" }),
+        gone("kidPaused", "par", { status: "paused" }),
+        gone("kidDead", "par", { status: "dead" }),
+        gone("gkidParked", "gp", { status: "needs-input", parked_at: "2026-10-13T10:00:00Z" }),
+        live("kidLive", "par"),
+        gone("deepParked", "kidLive", { status: "needs-input", parked_at: "2026-10-13T10:00:00Z" }),
+        gone("deepDead", "kidLive", { status: "done" }),
+      ];
+      const draw = chips => {
+        localStorage.setItem(termDeviceKey(TERM_SHOW_KEY), JSON.stringify(["subagents"].concat(chips)));
+        const show = termShow();
+        const shown = pool.filter(t => termListed(t, show));
+        const nest = termNest(shown);
+        termKids = nest.kids; termKidsPool = termNest(pool).kids;
+        const top = shown.filter(t => !nest.nested.has(t.id));
+        const host = document.createElement("div");
+        host.innerHTML = top.map(t => termRow(t, false, false)).join("");
+        return [...host.querySelectorAll(".card[data-id]")].map(c => c.dataset.id);
+      };
+      const off = draw([]);
+      const on = draw(["paused"]);
+      localStorage.removeItem(termDeviceKey(TERM_SHOW_KEY));
+      return { off, on };
+    });
+    const hidden = ["kidParked", "kidPaused", "kidDead", "gkidParked", "deepParked", "deepDead"];
+    for (const id of hidden) if (got.off.includes(id)) fail("hiddenEveryLevel: " + id + " is drawn with the paused and dead chips off: " + JSON.stringify(got.off));
+    for (const id of ["gp", "par", "kidLive"]) if (!got.off.includes(id)) fail("hiddenEveryLevel: the live " + id + " is not drawn: " + JSON.stringify(got.off));
+    for (const id of ["kidParked", "kidPaused", "gkidParked", "deepParked"]) if (!got.on.includes(id)) fail("hiddenEveryLevel: " + id + " is not drawn with the paused chip on: " + JSON.stringify(got.on));
+    for (const id of ["kidDead", "deepDead"]) if (got.on.includes(id)) fail("hiddenEveryLevel: the dead " + id + " is nested with only the paused chip on: " + JSON.stringify(got.on));
+    if (errors.length) fail("hiddenEveryLevel: page errors: " + errors.join("; "));
+    else console.log("hiddenEveryLevel ok");
   } finally { await ctx.close(); }
 }
 
@@ -23269,12 +23379,12 @@ async function unifiedCardSection(browser, base) {
     eq("columns", r.cols, ["needs-you", "working", "done"]);
     eq("needs you", r.needs, ["uc-agent", "uc-perm", "uc-ready"]);
     eq("working", r.working, ["uc-quiet", "uc-work"]);
-    eq("done holds every card with no runner, a gone ready card included", r.done, ["uc-dead", "uc-done", "uc-gone", "uc-parked", "uc-shelved"]);
+    eq("done holds every card with no runner, a gone ready card included", r.done, ["uc-dead", "uc-done", "uc-gone", "uc-parked", "uc-paused"]);
     if (!/^5 running: 3 need you, 2 working/.test(r.count) || !/5 done/.test(r.count)) fail("unifiedCard: count line is '" + r.count + "'");
     eq("pulse dots", r.pulses, 0);
     eq("pinned groups", r.pins, 0);
     for (const [id, f] of r.grey) {
-      const off = ["uc-gone", "uc-parked", "uc-shelved", "uc-done", "uc-dead"].includes(id);
+      const off = ["uc-gone", "uc-parked", "uc-paused", "uc-done", "uc-dead"].includes(id);
       if (off !== f.includes("grayscale")) fail("unifiedCard: " + id + " filter is '" + f + "': grey is for off cards and nothing else");
     }
     eq("the agent-launched waiting card's edge is the one orange", r.edge, r.wait);
@@ -25601,7 +25711,7 @@ async function termBoxSection(browser, base) {
           allHidden: [card("x1", "done", { pinned: true }), card("x2", "dead", { pinned: true })]
         };
         const res = {};
-        for (const chips of [[], ["shelved", "dead", "subagents"]]) {
+        for (const chips of [[], ["paused", "dead", "subagents"]]) {
           for (const group of [true, false]) {
             for (const [name, cards] of Object.entries(sets)) {
               boardCards = async () => cards;
@@ -25656,8 +25766,8 @@ async function termBoxSection(browser, base) {
       };
       await press("#term-sort button", "activity");
       const sort = sortByActivity;
-      await press("#term-show button", "shelved");
-      const shelved = termShow().has("shelved");
+      await press("#term-show button", "paused");
+      const paused = termShow().has("paused");
       await press("#term-drawer-group button", "off");
       const grouped = groupingPrefs("terms").on;
       paintTermGear();
@@ -25668,9 +25778,9 @@ async function termBoxSection(browser, base) {
       };
       fdSet("terms", false);
       localStorage.removeItem(termDeviceKey("atrium.terms.show")); setGroupMode("project"); if (sortByActivity) toggleTermSort();
-      return { sort, shelved, grouped, gear };
+      return { sort, paused, grouped, gear };
     });
-    if (!click.sort || !click.shelved || click.grouped || !click.gear.sort || click.gear.group < 1) {
+    if (!click.sort || !click.paused || click.grouped || !click.gear.sort || click.gear.group < 1) {
       fail("termBox: the drawer's clicks do not drive the same state as the gear: " + JSON.stringify(click));
     }
     if (errors.length) fail("termBox: page errors: " + errors.join(" | "));
@@ -29962,11 +30072,11 @@ async function main() {
     await page.evaluate(() => localStorage.removeItem("atrium.grouping"));
     tasksMode = "first";
 
-    // ── the terminals tab's chips: shelved, dead and subagents ────────────────
+    // ── the terminals tab's chips: paused, dead and subagents ────────────────
     // Replaces the two `hide inactive` toggles and `show stopped`. The strip carries a live agent (AGLIVE) with three
-    // subagents launched from it (an idle one, a working one and one that is asking), a shelved card, and a pinned
+    // subagents launched from it (an idle one, a working one and one that is asking), a paused card, and a pinned
     // agent and subagent whose runners are gone. With no key set: the live agent is a row, its subagents are folded
-    // under it behind a count (the asking one still shows through the fold), and the shelved and dead rows are not
+    // under it behind a count (the asking one still shows through the fold), and the paused and dead rows are not
     // listed. Each chip brings its own rows back and the stored list is what survives a reload. Driven through the
     // board's own functions so the device-scoped key is exercised, not faked.
     tasksMode = "doers";
@@ -29977,11 +30087,11 @@ async function main() {
       const fold = document.querySelector("#term-list .tkidfold");
       return {
         live: has("aglive"), idleSub: has("sublive"), workingSub: has("subwork"), askingSub: has("subask"),
-        shelved: has("shelved1"), deadSub: has("subdead"), deadAgent: has("agdead"),
+        paused: has("paused1"), deadSub: has("subdead"), deadAgent: has("agdead"),
         shut: !!(fold && fold.classList.contains("shut")),
         foldCount: ((document.querySelector("#term-list .tkidfold .tkidn") || {}).textContent || ""),
-        lit: ["shelved", "dead", "subagents"].filter(v => chip(v) && chip(v).classList.contains("on")),
-        counts: { shelved: count("shelved"), dead: count("dead"), subagents: count("subagents") },
+        lit: ["paused", "dead", "subagents"].filter(v => chip(v) && chip(v).classList.contains("on")),
+        counts: { paused: count("paused"), dead: count("dead"), subagents: count("subagents") },
         stored: localStorage.getItem(termDeviceKey("atrium.terms.show")),
         changed: document.querySelector("#fd-terms .fcount").textContent,
         pinnedCount: (document.querySelector("#term-list .pinnedhead .tgcount") || {}).textContent || "",
@@ -30006,7 +30116,7 @@ async function main() {
       .filter(k => localStorage.getItem(k) !== null || localStorage.getItem(k + ".mobile") !== null));
     if (legacy.length) fail("the old hide keys were not cleared on load: " + legacy.join(", "));
 
-    // DEFAULT: no key. Live rows only, subagents folded behind a count, nothing shelved or dead.
+    // DEFAULT: no key. Live rows only, subagents folded behind a count, nothing paused or dead.
     const cDef = await chipState();
     if (!cDef.live || !cDef.askingSub) {
       fail("by default the live agent, or the subagent that is asking, is not listed: " + JSON.stringify(cDef));
@@ -30014,8 +30124,8 @@ async function main() {
     if (cDef.idleSub || cDef.workingSub) {
       fail("by default a subagent is a row of its own: its parent should start folded: " + JSON.stringify(cDef));
     }
-    if (cDef.shelved || cDef.deadSub || cDef.deadAgent) {
-      fail("by default a shelved or dead row is listed: " + JSON.stringify(cDef));
+    if (cDef.paused || cDef.deadSub || cDef.deadAgent) {
+      fail("by default a paused or dead row is listed: " + JSON.stringify(cDef));
     }
     if (!cDef.shut || cDef.foldCount !== "3") {
       fail("the parent does not start folded with its three subagents counted on the chevron: " + JSON.stringify(cDef));
@@ -30023,8 +30133,8 @@ async function main() {
     if (cDef.lit.length || cDef.stored !== null || cDef.changed !== "") {
       fail("with no key set a chip is lit, or the handle counts a change: " + JSON.stringify(cDef));
     }
-    if (cDef.counts.shelved !== "1" || cDef.counts.dead !== "2" || cDef.counts.subagents !== "3") {
-      fail("the chips do not carry their counts (shelved 1, dead 2, subagents 3): " + JSON.stringify(cDef.counts));
+    if (cDef.counts.paused !== "1" || cDef.counts.dead !== "2" || cDef.counts.subagents !== "3") {
+      fail("the chips do not carry their counts (paused 1, dead 2, subagents 3): " + JSON.stringify(cDef.counts));
     }
     // The pinned bucket says why it is empty rather than offering a first drag.
     if (cDef.pinnedCount !== "0" || !/^2 dead, behind the dead filter/.test(cDef.pinnedEmpty)) {
@@ -30033,23 +30143,23 @@ async function main() {
     if (cDef.oldControls) fail("the old hide controls (or the tray) are still on the page: " + JSON.stringify(cDef));
 
     // SHELVED on: the stopped card is listed, cold, and nothing else moves.
-    await page.evaluate(async () => { toggleTermShow("shelved"); await loadCards().catch(() => {}).then(renderTermList); });
-    const cShelved = await chipState();
-    if (!cShelved.shelved || cShelved.deadSub || cShelved.deadAgent || cShelved.workingSub) {
-      fail("the shelved chip did not list the shelved card alone: " + JSON.stringify(cShelved));
+    await page.evaluate(async () => { toggleTermShow("paused"); await loadCards().catch(() => {}).then(renderTermList); });
+    const cPaused = await chipState();
+    if (!cPaused.paused || cPaused.deadSub || cPaused.deadAgent || cPaused.workingSub) {
+      fail("the paused chip did not list the paused card alone: " + JSON.stringify(cPaused));
     }
-    if (!/(^|,)shelved1(,|$)/.test(cShelved.cold)) fail("a shelved row is not drawn cold: " + JSON.stringify(cShelved));
-    if (cShelved.changed !== "1" || cShelved.lit.join() !== "shelved" || cShelved.stored !== '["shelved"]') {
-      fail("the shelved chip did not light alone, count one change and be stored: " + JSON.stringify(cShelved));
+    if (!/(^|,)paused1(,|$)/.test(cPaused.cold)) fail("a paused row is not drawn cold: " + JSON.stringify(cPaused));
+    if (cPaused.changed !== "1" || cPaused.lit.join() !== "paused" || cPaused.stored !== '["paused"]') {
+      fail("the paused chip did not light alone, count one change and be stored: " + JSON.stringify(cPaused));
     }
 
     // DEAD on as well: the pinned rows come back into their bucket, cold, as `2`.
     await page.evaluate(async () => { toggleTermShow("dead"); await loadCards().catch(() => {}).then(renderTermList); });
     const cDead = await chipState();
-    if (!cDead.deadSub || !cDead.deadAgent || !cDead.shelved) {
+    if (!cDead.deadSub || !cDead.deadAgent || !cDead.paused) {
       fail("the dead chip did not list the pinned rows whose runners are gone: " + JSON.stringify(cDead));
     }
-    if (cDead.pinnedCount !== "2" || cDead.changed !== "2" || cDead.lit.join() !== "shelved,dead") {
+    if (cDead.pinnedCount !== "2" || cDead.changed !== "2" || cDead.lit.join() !== "paused,dead") {
       fail("with dead on the bucket does not read 2, or the handle does not count two: " + JSON.stringify(cDead));
     }
 
@@ -30091,11 +30201,11 @@ async function main() {
 
     // All three off again: the key is gone (no stored value is the default) and every row goes back where it was.
     await page.evaluate(async () => {
-      ["shelved", "dead", "subagents"].forEach(toggleTermShow);
+      ["paused", "dead", "subagents"].forEach(toggleTermShow);
       await loadCards().catch(() => {}).then(renderTermList);
     });
     const cBack = await chipState();
-    if (cBack.stored !== null || cBack.lit.length || cBack.shelved || cBack.deadAgent || cBack.idleSub || !cBack.shut) {
+    if (cBack.stored !== null || cBack.lit.length || cBack.paused || cBack.deadAgent || cBack.idleSub || !cBack.shut) {
       fail("turning the three chips off did not restore the default view and clear the key: " + JSON.stringify(cBack));
     }
 
@@ -31684,6 +31794,8 @@ async function main() {
     await unit("parkedStays", () => parkedStaysSection(browser, base));
     await unit("terminalsOneLine", () => terminalsOneLineSection(browser, base));
     await unit("offCardActions", () => offCardActionsSection(browser, base));
+    await unit("pausedDead", () => pausedDeadSection(browser, base));
+    await unit("hiddenEveryLevel", () => hiddenEveryLevelSection(browser, base));
     await unit("termHeaderSize", () => termHeaderSizeSection(browser, base));
     await unit("popupFit", () => popupFitSection(browser, base));
     await unit("dropdownsInstant", () => dropdownsInstantSection(browser, base));
@@ -32168,10 +32280,10 @@ const M_PERMS = () => [{ id: "p1", task_id: "new-1", tool: "Bash", command: "go 
 // reason, and a scroll or a short tap does not open the sheet. `RESUME_SHOTS=<dir>` writes the pictures.
 async function mResumeSection(browser) {
   const tag = "mResume: ";
-  const shelved = over => mCard("shelf-1", Object.assign({ alias: "big conversation", display_title: "big conversation", status: "done",
+  const paused = over => mCard("shelf-1", Object.assign({ alias: "big conversation", display_title: "big conversation", status: "done",
     supervised: false, resume_id: "sess-1", runner: "claude", worktree: "/tmp/res" }, over || {}));
   const st = mServer({});
-  st.tasks = [shelved(), mCard("live-1", { display_title: "already running", supervised: true })];
+  st.tasks = [paused(), mCard("live-1", { display_title: "already running", supervised: true })];
   await st.open();
   const shots = process.env.RESUME_SHOTS, shotTag = process.env.RESUME_TAG || "after";
   try {
@@ -32245,7 +32357,7 @@ async function mResumeSection(browser) {
     if (!(await p.$(sel + " .opening .m-spin"))) fail(tag + "the spinner ended when the launch answered, before any output");
 
     // 4. First output (the card runs and moves) ends it.
-    const t2 = shelved({ supervised: true, status: "running", last_activity_at: mIso(0) });
+    const t2 = paused({ supervised: true, status: "running", last_activity_at: mIso(0) });
     st.tasks = [t2, st.tasks[1]];
     st.send("task", t2);
     await p.waitForFunction(() => !document.querySelector('#m-list .row[data-id="shelf-1"] .opening'), null, { timeout: slow(5000) })
@@ -32253,7 +32365,7 @@ async function mResumeSection(browser) {
     await shot("m4-output");
 
     // 5. No output inside the bound: the reason, and a resume is allowed again.
-    st.tasks = [shelved(), st.tasks[1]];
+    st.tasks = [paused(), st.tasks[1]];
     st.send("task", st.tasks[0]);
     await p.waitForTimeout(300);
     st.launchGate = null;
@@ -32452,7 +32564,7 @@ async function prefsEverywhereSection(browser, base) {
       ["terminal list mode", () => setTermListMode("mini"), () => termListMode === "mini" && document.getElementById("term-layout").classList.contains("tl-mini")],
       ["terminals subagents chip", () => toggleTermShow("subagents"),
         () => termSubsOn() === true && document.querySelector('#term-show button[data-v="subagents"]').classList.contains("on")],
-      ["terminals shelved chip", () => toggleTermShow("shelved"), () => termShow().has("shelved") && termSubsOn()],
+      ["terminals paused chip", () => toggleTermShow("paused"), () => termShow().has("paused") && termSubsOn()],
       ["terminals kept hidden", () => setTermKeep(KEEP_N_KEY, 3), () => document.getElementById("s-termkeep").value === "3"],
       ["sound mute", () => alerting.set({ muted: true }), () => alerting.get().muted === true],
       ["sound volume", () => alerting.set({ volume: 0.9 }), () => alerting.get().volume === 0.9 && document.getElementById("s-vol").value === "90"],

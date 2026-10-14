@@ -75,7 +75,7 @@ const roomBusyHeartbeat = 2 * time.Second
 //
 // Nothing here acknowledges. The hub hands a decision over on a check-in and
 // the room applies it to its OWN daemon, which may refuse it: the request may
-// have been answered on that machine a moment earlier, or the card shelved, or
+// have been answered on that machine a moment earlier, or the card paused, or
 // that daemon's store halted. An entry that has been handed over and has not
 // made the request go away is therefore not proof of anything, so it expires
 // and the request becomes answerable from this board again.

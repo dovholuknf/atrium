@@ -29,7 +29,7 @@ func TestPruneTakesFinishedAndSparesTheRest(t *testing.T) {
 	t.Parallel()
 	s := open(t)
 	live := mk(t, s, "live", StatusRunning)
-	shelved := mk(t, s, "shelved", StatusShelved)
+	shelved := mk(t, s, "shelved", StatusPaused)
 	mk(t, s, "done", StatusDone)
 	mk(t, s, "dead", StatusDead)
 
@@ -54,9 +54,9 @@ func TestPruneRefusesShelved(t *testing.T) {
 	}
 	t.Parallel()
 	s := open(t)
-	id := mk(t, s, "shelved", StatusShelved)
+	id := mk(t, s, "shelved", StatusPaused)
 
-	n, err := s.Prune(0, StatusShelved)
+	n, err := s.Prune(0, StatusPaused)
 	if err != nil {
 		t.Fatalf("prune: %v", err)
 	}

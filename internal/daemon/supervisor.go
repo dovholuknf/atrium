@@ -2562,7 +2562,7 @@ func (d *Daemon) fileExitChecked(x runExit) (bool, error) {
 
 	// A card put down by hand stays where it was put.
 	if t, err := d.st.Get(x.taskID); err == nil &&
-		t.Status != store.StatusShelved && t.Status != store.StatusDone && !isParked(t) {
+		t.Status != store.StatusPaused && t.Status != store.StatusDone && !isParked(t) {
 		if err := d.st.SetStatus(x.taskID, store.StatusDead); err != nil {
 			log.Printf("[atrium] status after exit for %s: %v", x.taskID, err)
 		}

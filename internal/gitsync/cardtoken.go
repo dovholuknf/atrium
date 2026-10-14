@@ -34,7 +34,7 @@ type CardAuth interface {
 // Tokens do not survive a restart of the room: a card launched before it must be relaunched to push.
 type CardTokens struct {
 	// Live, when set, says whether a card may still use its token. The room answers from the card's status, so a
-	// card that ended, was shelved or was culled loses its token even if nobody called Revoke.
+	// card that ended, was paused or was culled loses its token even if nobody called Revoke.
 	Live func(card string) bool
 
 	mu sync.Mutex

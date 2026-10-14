@@ -123,14 +123,14 @@ func busyAgents(board string) ([]busyCard, error) {
 		}
 		// A SESSION THAT SAID IT WAS OVER IS NOT WORKING.
 		//
-		// `done` and `dead` are terminal, and `shelved` is the operator having
+		// `done` and `dead` are terminal, and `paused` is the operator having
 		// put the work down. None of them is a session mid-tool, and a card in
 		// one of them never moves back to `needs-input` on its own, so
 		// counting them as busy made them busy FOREVER: the restart asked them
 		// to stop, they replied, replying is a turn, a turn sets activity, and
 		// activity is what the check reads. Asking a session to stop was the
 		// thing keeping it busy.
-		if t.Status == "done" || t.Status == "dead" || t.Status == "shelved" {
+		if t.Status == "done" || t.Status == "dead" || t.Status == "paused" {
 			continue
 		}
 		doing := ""

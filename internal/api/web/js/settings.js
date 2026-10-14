@@ -67,7 +67,7 @@ document.getElementById("s-prune").addEventListener("change", async e => {
     if (!await confirmUser("delete finished cards " + label + "?",
       "Every done or dead card older than that is deleted, along with its whole audit log: what " +
       "the session ran, what it was allowed to do, and what answered each request. There is no " +
-      "other copy.<br><br>Shelved cards and the inbox are never touched.",
+      "other copy.<br><br>Paused cards and the inbox are never touched.",
       "delete them")) {
       loadHousekeeping();
       return;
@@ -376,7 +376,7 @@ async function toggleGlobalAutoNow() {
       title: "approve everything, from every session?",
       body: "Every request from every session on this machine is approved without asking, " +
         "including sessions that have not started yet." +
-        "<br><br>Everything is still recorded, and <b>never</b> rules and shelved cards still " +
+        "<br><br>Everything is still recorded, and <b>never</b> rules and paused cards still " +
         "block. Read what any session did with <b>what did it do?</b>" +
         "<br><br>How long for?",
       buttons: [

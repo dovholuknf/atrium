@@ -32,7 +32,7 @@ import (
 //     never a guess and never the room's own "no rows".
 //
 // ONLY THE LAUNCH READS ITS BODY. Every other call that names a card (reopen,
-// restart, unshelve, message, exit, a group or tag change) names it in the path.
+// restart, resume, message, exit, a group or tag change) names it in the path.
 // `/v1/intake` and `/v1/dispatch` make new work and name no existing card.
 
 // launchBodyLimit is the room's own limit on a launch body. See `launch` in

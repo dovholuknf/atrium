@@ -59,7 +59,7 @@ func TestPruningDeletesWhatIsOldEnoughAndNothingElse(t *testing.T) {
 	old := finishedCard(t, d, "prune-old", store.StatusDone, 72*time.Hour)
 	recent := finishedCard(t, d, "prune-recent", store.StatusDone, time.Hour)
 	dead := finishedCard(t, d, "prune-dead", store.StatusDead, 72*time.Hour)
-	shelved := finishedCard(t, d, "prune-shelved", store.StatusShelved, 72*time.Hour)
+	shelved := finishedCard(t, d, "prune-shelved", store.StatusPaused, 72*time.Hour)
 	running := finishedCard(t, d, "prune-running", store.StatusRunning, 72*time.Hour)
 
 	if err := d.pruneOld(); err != nil {

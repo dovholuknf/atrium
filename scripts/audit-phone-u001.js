@@ -54,7 +54,7 @@ const CARDS = [
     seen: { unseen: true, turn_ended_at: iso(2 * MIN) } }),
   card("idle1", { status: "done", display_title: "docs sweep", supervised: false, idle_seconds: 7200,
     recap: "Swept the docs for em-dashes and fixed 14 files." }),
-  card("shelf1", { status: "shelved", display_title: "parked experiment", supervised: false }),
+  card("shelf1", { status: "paused", display_title: "parked experiment", supervised: false }),
   card("codex1", { status: "running", runner: "codex", display_title: "codex review", tags: ["review"] })
 ];
 const PERMS = [

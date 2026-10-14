@@ -3,7 +3,7 @@
 // reading it, and closing it again.
 const cardMenuEl = document.getElementById("cardmenu");
 
-// Why a shelved card cannot be started again, or "" when it can.
+// Why a paused card cannot be started again, or "" when it can.
 //
 // Both answers come off the card itself: `resume_id` is the session's own id
 // for its conversation, and `runner` is which harness to start. Neither needs
@@ -108,16 +108,16 @@ function readyBecause(t) {
     : "finished its turn and wants your next instruction";
 }
 
-// Takes a card off the shelf, and puts it where the truth is.
+// Takes a card back, and puts it where the truth is.
 //
-// Unshelving does two things: it lifts the standing block on the card's
+// Resuming does two things: it lifts the standing block on the card's
 // requests, and it starts the runner. When the second cannot happen there is
 // no process, so `running` would be a card describing something that is not
 // there. It goes to `finished` instead, which is what it is, and can be
 // launched fresh or forgotten from there.
 //
 // Keyed with resume and launch, because it starts the runner too.
-function unshelveCard(id) {
+function resumePausedCard(id) {
   return oneAtATime("launch:" + bareId(id), async () => {
     await patchTask(id, { status: "running" });
     refresh();
@@ -472,17 +472,17 @@ async function openDesktopTerminal(id) {
   toast("opening a terminal", "on the machine this card's directory is on");
 }
 
-function unshelveItem(id, t) {
+function resumePausedItem(id, t) {
   const why = cannotResume(t);
   return {
-    label: why ? "unshelve" : "unshelve and resume",
+    label: "resume",
     note: why ? "cannot resume" : "",
     limited: !!why,
     tip: why
-      ? "The card comes off the shelf and stops refusing its requests, but " +
+      ? "The card comes back and stops refusing its requests, but " +
         "nothing starts, so it lands in finished: " + why
       : "Starts the runner again from where the conversation left off.",
-    act: () => unshelveCard(id)
+    act: () => resumePausedCard(id)
   };
 }
 
@@ -711,9 +711,9 @@ async function cardMenu(e, id) {
   await loadHarnesses();
 
   // A card that is finished has nothing to terminate, and offering it produced
-  // a dialog that failed and changed nothing. Auto mode and shelving are the
+  // a dialog that failed and changed nothing. Auto mode and pausing are the
   // same: they answer future requests from a session that will not make any.
-  const over = ["done", "dead", "shelved"].includes(t.status);
+  const over = ["done", "dead", "paused"].includes(t.status);
 
   // A card is a place as much as a session: it carries a worktree, and that
   // outlives whatever ran in it. So the menu is ordered by what you came to
@@ -908,26 +908,26 @@ async function cardMenu(e, id) {
       help: t.auto_approve
         ? "Approving without asking. Everything is still recorded."
         : "Approve this card's requests without asking. A standing never rule " +
-          "and a shelved card still win.",
+          "and a paused card still win.",
       act: () => patchTask(id, { auto_approve: !t.auto_approve }).then(refresh)
     },
-    // Shelving stops a runner, so it needs a runner atrium owns. Shown and
+    // Pausing stops a runner, so it needs a runner atrium owns. Shown and
     // dimmed rather than hidden: the entry disappearing on some cards and not
     // others is a rule you have to infer, and the reason is one line.
     //
-    // Unshelving is never dimmed, whatever the card is. A shelved card refuses
+    // Resuming is never dimmed, whatever the card is. A paused card refuses
     // every request its session makes and has to be liftable wherever you find
     // it. Only its second half, starting the runner again, can fail.
-    t.status === "shelved" ? unshelveItem(id, t)
+    t.status === "paused" ? resumePausedItem(id, t)
       : over ? null
         : t.supervised
-          ? { label: "shelve", note: "stops its runner",
-              act: () => oneAtATime("shelve:" + id, () => patchTask(id, { status: "shelved" }).then(refresh)) }
-          : { label: "shelve", note: "atrium does not own this process",
+          ? { label: "pause", note: "stops its runner",
+              act: () => oneAtATime("pause:" + id, () => patchTask(id, { status: "paused" }).then(refresh)) }
+          : { label: "pause", note: "atrium does not own this process",
               limited: true,
-              tip: "Shelving stops the runner, and atrium can only stop one it " +
+              tip: "Pausing stops the runner, and atrium can only stop one it " +
                 "started. This session is running somewhere else.",
-              act: () => toast("cannot shelve",
+              act: () => toast("cannot pause",
                 "atrium does not own this process, so it cannot stop it") },
     // MAY ANOTHER SESSION TYPE INTO THIS TERMINAL.
     //
@@ -957,7 +957,7 @@ async function cardMenu(e, id) {
       act: () => resumeParked(id)
     } : null,
     // The same conversation, a fresh process. Only where atrium owns the terminal, since it types the exit
-    // keys. Shown and dimmed elsewhere, with the reason, like shelve.
+    // keys. Shown and dimmed elsewhere, with the reason, like pause.
     // Left out where atrium cannot do it: a session it does not own has no terminal to type into, and a
     // parked card restarts as a resume, which needs the conversation id.
     !over && cardState(t) !== "off" && (t.supervised || (t.parked_at && t.resume_id)) ? {

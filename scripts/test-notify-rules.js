@@ -36,7 +36,7 @@ const make = new Function(`
   ${fn(rules, "cardWaiting")}
   ${fn(rules, "cardLive")}
   ${fn(rules, "cardState")}
-  const isWaiting = cardWaiting, staleActivity = t => !t || t.status === "dead" || (!t.supervised && ["done", "dead", "shelved"].includes(t.status));
+  const isWaiting = cardWaiting, staleActivity = t => !t || t.status === "dead" || (!t.supervised && ["done", "dead", "paused"].includes(t.status));
   ${fn(rules, "workingNow")}
   ${fn(cards, "waitingRow")}
   ${fn(cards, "hasRunningChild")}
@@ -90,7 +90,7 @@ const row = o => Object.assign({ id: "sg4~c", status: "needs-input", wire_name: 
   want("a quiet running card", st({ status: "running", supervised: true }), "live");
   want("a starting card", st({ status: "running", supervised: false, starting: true }), "live");
   want("a parked card", st({ supervised: false, parked_at: "x" }), "off");
-  for (const s of ["shelved", "done", "dead", "backlog"]) want("a " + s + " card", st({ status: s }), "off");
+  for (const s of ["paused", "done", "dead", "backlog"]) want("a " + s + " card", st({ status: s }), "off");
   want("an offline card", st({ supervised: true, offline: true }), "unreachable");
 }
 

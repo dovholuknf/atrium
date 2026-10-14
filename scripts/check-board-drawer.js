@@ -55,8 +55,8 @@ const TASKS = [
   card("i1", "inbox item", "backlog"),
   card("d1", "finished one", "done"),
   card("d2", "finished two", "done"),
-  card("s1", "shelved one", "shelved"),
-  card("s2", "shelved two", "shelved"),
+  card("s1", "paused one", "paused"),
+  card("s2", "paused two", "paused"),
   card("k1", "pinned and gone", "dead", { pinned: true }),
   card("e1", "ended worker", "done", { worktree: "/w/ended" })
 ];
@@ -105,11 +105,11 @@ const TABS = {
     view: "board", host: "board-bar", q: "board-q", rows: "#board .card[data-id]",
     chip: { v: "finished", count: byStatus("done", "dead").length },
     sort: { id: "board-sort", to: "name" },
-    wantDefault: ["backlog", "needs-permission", "needs-input", "running", "finished", "shelved"]
+    wantDefault: ["backlog", "needs-permission", "needs-input", "running", "finished", "paused"]
   },
   terms: {
     view: "terms", host: "fd-terms", q: "term-q", rows: "#term-list .card.tab",
-    chip: { v: "shelved", count: byStatus("shelved").length },
+    chip: { v: "paused", count: byStatus("paused").length },
     sort: { id: "term-sort", to: "name" },
     wantDefault: []
   }
@@ -218,7 +218,7 @@ async function steps(browser, width, mobile, tabName) {
     const on = await chipsOn(page, "term-show");
     check(on.length === 0, `${tag} 1: no terminals chip is on by default (${JSON.stringify(on)})`);
     const rows = await page.$$eval("#term-list .card.tab", els => els.map(e => e.dataset.id));
-    check(!rows.includes("s1") && !rows.includes("s2") && !rows.includes("k1"), `${tag} 1: no shelved or dead rows (${rows.join(",")})`);
+    check(!rows.includes("s1") && !rows.includes("s2") && !rows.includes("k1"), `${tag} 1: no paused or dead rows (${rows.join(",")})`);
     check(await page.$$eval("#term-list .endedrow, #term-list .termended", e => e.length) === 0, `${tag} 1: no ended group`);
     const folded = await page.$$eval("#term-list .tkidfold.shut", e => e.length);
     check(folded === 1, `${tag} 1: the parent starts folded, with its count on the chevron (${folded})`);
@@ -296,7 +296,7 @@ async function steps(browser, width, mobile, tabName) {
   }
   if (tabName === "terms") {
     const rows = await page.$$eval("#term-list .card.tab", els => els.map(e => e.dataset.id));
-    check(rows.includes("s1") && rows.includes("s2"), `${tag} 4: the shelved rows are listed (${rows.join(",")})`);
+    check(rows.includes("s1") && rows.includes("s2"), `${tag} 4: the paused rows are listed (${rows.join(",")})`);
   }
 
   let control = null;
@@ -389,7 +389,7 @@ async function keeps(browser, width, mobile) {
   await press("stack", '#stack-seg button[data-v="finished"]');
   await press("stack", '#stack-group button[data-group="off"]');
   await press("board", '#board-sort button[data-sort="manual"]');
-  await press("board", '#board-seg button[data-v="shelved"]');
+  await press("board", '#board-seg button[data-v="paused"]');
   await press("board", '#board-group button[data-group="tag"]');
   await press("terms", '#term-sort button:nth-child(3)');
   await press("terms", '#term-show button[data-v="dead"]');
@@ -411,8 +411,8 @@ async function keeps(browser, width, mobile) {
   const got = await read();
   check(got.stack.startsWith("name / ") && got.stack.endsWith(" / off") && got.stack.includes("finished") && got.stack.includes("needs-input"),
     `${tag} 7: stack kept name, ready+finished, off (${got.stack})`);
-  check(got.board.startsWith("manual / ") && got.board.endsWith(" / tag") && !got.board.includes("shelved"),
-    `${tag} 7: board kept manual, no shelved column, by tag (${got.board})`);
+  check(got.board.startsWith("manual / ") && got.board.endsWith(" / tag") && !got.board.includes("paused"),
+    `${tag} 7: board kept manual, no paused column, by tag (${got.board})`);
   check(got.terms === want.terms, `${tag} 7: terminals kept started, dead, by age (${got.terms})`);
   // Away and back, then a reload.
   await goto(page, "board"); await goto(page, "stack"); await goto(page, "terms");
@@ -619,7 +619,7 @@ async function phoneAttached(browser) {
     return !!(e && e.closest(".fpanel"));
   });
   check(top, `${tag}: it is over the terminal, not under it`);
-  const chip = page.locator('.fdrawer.open .seg button[data-v="shelved"]').first();
+  const chip = page.locator('.fdrawer.open .seg button[data-v="paused"]').first();
   const cb = await chip.boundingBox();
   await page.touchscreen.tap(cb.x + cb.width / 2, cb.y + cb.height / 2);
   await sleep(250);

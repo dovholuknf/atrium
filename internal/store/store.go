@@ -46,7 +46,7 @@ const (
 	StatusNeedsInput      = "needs-input"
 	StatusNeedsPermission = "needs-permission"
 	StatusDone            = "done"
-	StatusShelved         = "shelved"
+	StatusPaused          = "paused"
 	StatusDead            = "dead"
 )
 
@@ -254,7 +254,7 @@ type Task struct {
 	// asking. Everything is still recorded, and the audit log is read
 	// afterwards to see what was let through.
 	//
-	// It does not override a standing never rule or a shelved card: auto mode
+	// It does not override a standing never rule or a paused card: auto mode
 	// stops new questions, it does not discard answers already given.
 	AutoApprove bool `json:"auto_approve"`
 	// AutoUntil is when auto mode stops for this card, or nil for no deadline.

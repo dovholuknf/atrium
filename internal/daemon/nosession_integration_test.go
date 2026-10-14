@@ -66,7 +66,7 @@ func TestOnlyAnOverCardWithNoProcessIsGone(t *testing.T) {
 		{store.StatusDead, 0, true},
 		{store.StatusDone, os.Getpid(), false},
 		{store.StatusNeedsInput, 0, false},
-		{store.StatusShelved, 0, false},
+		{store.StatusPaused, 0, false},
 	} {
 		d := testDaemon(t)
 		if got := d.sessionGone(&store.Task{ID: "none", Status: c.status, PID: c.pid}); got != c.gone {

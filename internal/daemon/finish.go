@@ -394,7 +394,7 @@ func (d *Daemon) finish(task *store.Task, in FinishRequest) (map[string]any, int
 	// left a card half reported. See store.RecordReport.
 	//
 	// A card put down by hand stays put. Shelving is an answer, and a session
-	// inside a shelved worktree announcing it is done does not overrule it.
+	// inside a paused worktree announcing it is done does not overrule it.
 	//
 	// A worker's `done` still moves its card to `done`: the column is what the
 	// session is doing. Its work item goes to `reported`, which is NOT finished.
@@ -402,7 +402,7 @@ func (d *Daemon) finish(task *store.Task, in FinishRequest) (map[string]any, int
 	write := store.ReportWrite{
 		TaskID: task.ID, Recap: recap, Event: ev,
 		SetSHA: status == store.StatusDone, SHA: sha, Unverified: unverified,
-		MoveStatus: task.Status != store.StatusShelved && status != task.Status,
+		MoveStatus: task.Status != store.StatusPaused && status != task.Status,
 		Status:     status, Reason: reason,
 		ReportStatus: in.Status, UnheardIsUnsent: agentLaunched(task) && itemEnd == nil,
 		SayReport: in.Ended && (in.Status == ReportDone || in.Status == ReportBlocked),

@@ -102,7 +102,7 @@ const PruneDefaultAfter = 30 * 24 * time.Hour
 // the obvious reason: one takes a card off a screen and the other destroys
 // evidence.
 //
-// `done` and `dead` only. Shelved is refused by the store whatever it is asked,
+// `done` and `dead` only. Paused is refused by the store whatever it is asked,
 // and `backlog` is left out deliberately: an offered item nobody started is
 // still work somebody found, and deleting it on a schedule would make the
 // inbox quietly lossy.

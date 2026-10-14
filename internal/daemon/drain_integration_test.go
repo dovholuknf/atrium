@@ -67,7 +67,7 @@ func TestDrainLeavesAShelvedCardAlone(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := d.st.SetStatus(task.ID, store.StatusShelved); err != nil {
+	if err := d.st.SetStatus(task.ID, store.StatusPaused); err != nil {
 		t.Fatal(err)
 	}
 

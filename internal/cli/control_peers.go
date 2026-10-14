@@ -350,7 +350,7 @@ func peersHandler(ctx context.Context, _ *mcp.CallToolRequest, in PeersInput) (
 		// A card with no session is a place, not somebody to talk to. Kept out
 		// unless asked for, because the list is long and the useful part of it
 		// is short.
-		live := t.Status != "done" && t.Status != "dead" && t.Status != "shelved"
+		live := t.Status != "done" && t.Status != "dead" && t.Status != "paused"
 		if !in.All && !live {
 			continue
 		}

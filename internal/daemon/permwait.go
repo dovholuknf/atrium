@@ -76,7 +76,7 @@ type PermissionResponse struct {
 }
 
 // AutoDecision is the permission chain's answer to a request that never
-// reaches a human: a replay, a message, a shelved card, a rule, auto mode.
+// reaches a human: a replay, a message, a paused card, a rule, auto mode.
 type AutoDecision struct {
 	Decision string
 	Reason   string

@@ -38,7 +38,7 @@ const TASKS = [
   card("n1", "second runner", "running", { supervised: true }),
   card("w1", "needs permission", "needs-permission", { supervised: true }),
   card("d1", "finished one", "done"),
-  card("s1", "shelved one", "shelved")
+  card("s1", "paused one", "paused")
 ];
 const server = http.createServer((req, res) => {
   const p = new URL(req.url, "http://x").pathname;

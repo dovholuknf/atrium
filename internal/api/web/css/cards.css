@@ -467,7 +467,7 @@
   #cardmenu button:hover { background: var(--lift); color: var(--head); }
   #cardmenu button.danger { color: var(--warn); }
   /* An entry that still works but does less than its name suggests. Dimmed and not disabled, because disabling
-     unshelve would strand a card on the shelf. */
+     resume would strand a card in paused. */
   #cardmenu button.limited { color: var(--dim); }
   #cardmenu button .note {
     display: block; font-size: var(--fs-xs); color: var(--dimmest); margin-top: 2px;

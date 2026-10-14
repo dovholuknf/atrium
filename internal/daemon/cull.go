@@ -234,7 +234,7 @@ func shortRef(s string) string {
 
 func finishedStatus(s string) bool {
 	switch s {
-	case store.StatusDone, store.StatusDead, store.StatusShelved:
+	case store.StatusDone, store.StatusDead, store.StatusPaused:
 		return true
 	}
 	return false

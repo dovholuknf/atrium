@@ -681,7 +681,7 @@ func (p *Proxy) crOwner(ctx context.Context, g *gitsync.Hub, repo, room, branch 
 	var found []string
 	for _, t := range body.Tasks {
 		switch t.Status {
-		case "done", "dead", "shelved":
+		case "done", "dead", "paused", "shelved":
 			continue
 		}
 		if t.Worktree != "" && path.Base(filepath.ToSlash(t.Worktree)) == tail {

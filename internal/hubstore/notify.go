@@ -20,7 +20,7 @@ import (
 // ── what is NOT deleted, and when a row goes ────────────
 //
 // A ROW IS NOT DELETED BECAUSE ITS CARD LEFT THE CACHE. A room restarting, a
-// card shelved and unshelved, or a room offline for an afternoon all take a card
+// card paused and resumed, or a room offline for an afternoon all take a card
 // out of the cache and put it back, and a card that comes back with the same
 // identity must not fire a second time. The row stays until its identity
 // changes. The only prune is a row whose card has been absent for more than

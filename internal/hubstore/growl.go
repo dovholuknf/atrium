@@ -23,7 +23,7 @@ import (
 //     waiting spell on the same card be a new row.
 //   - A CARD MISSING FROM AN ANNOUNCEMENT IS NOT A REASON ENDED. Only a card
 //     the room still announces, with no reason any more, ends its growler. This
-//     is notify_sent's rule: a room offline, restarting or a card shelved all
+//     is notify_sent's rule: a room offline, restarting or a card paused all
 //     take a card out of the cache and put it back.
 //
 // ── pruning ─────────────────────────────────────────────

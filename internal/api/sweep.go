@@ -30,7 +30,7 @@ import (
 //	POST /v1/sweep/close {owner, confirm, answers}   close what an owner with no card holds, as a card's close does
 //
 // It runs once when the room starts and when the board asks. It walks every row not freed yet:
-//   - a row of a live card (running, waiting, backlog, shelved) is left alone, except a process that exited.
+//   - a row of a live card (running, waiting, backlog, paused) is left alone, except a process that exited.
 //   - a row whose thing is gone (its path, its branch, its ref, its review row) is marked freed, with why.
 //   - a stash is left alone: it is on the hub, and nothing on a room frees it.
 //   - the rest are LEFTOVERS, grouped by owner, of a card that is done or dead and was never closed, or of an owner

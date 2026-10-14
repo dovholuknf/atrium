@@ -98,9 +98,9 @@ const COLUMNS = [
       "Clear deletes a group and its history."
   },
   {
-    id: "shelved", label: "shelved", statuses: ["shelved"], takes: "shelved",
+    id: "paused", label: "paused", statuses: ["paused"], takes: "paused",
     why: "Put down on purpose, to come back to.\n\n" +
-      "Requests from a shelved session are refused until you unshelve it, and " +
+      "Requests from a paused session are refused until you resume it, and " +
       "clear never takes one."
   }
 ];
@@ -132,7 +132,7 @@ const BOARD_COLUMNS = [
   {
     id: "done", label: "done", takes: "done",
     why: "Every card with no agent running: finished, dead, an agent that went " +
-      "away, parked, or shelved.\n\n" +
+      "away, parked, or paused.\n\n" +
       "The state chip on each card says which. Pinned cards come first. Only " +
       "the recent few are drawn here, the rest are one click away in the stack."
   }

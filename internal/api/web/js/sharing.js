@@ -996,7 +996,7 @@ async function forgetNow(id, title) {
 }
 
 // Deletes every card in a finished column. Only done and dead offer this; the
-// daemon refuses to sweep a shelved card even when asked.
+// daemon refuses to sweep a paused card even when asked.
 // One at a time: see oneAtATime in js/core.js.
 function pruneColumn(status) { return oneAtATime("prune:" + status, () => pruneColumnNow(status)); }
 

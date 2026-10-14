@@ -1302,7 +1302,7 @@ func (p *Proxy) inventory() Inventory {
 // marked for deletion.
 //
 // A SHORT LIST OF PATHS, NOT EVERY WRITE. Marking is not read-only mode: a card
-// already on that machine can still be renamed, tagged, answered, shelved and
+// already on that machine can still be renamed, tagged, answered, paused and
 // finished, because the whole point is that work in flight is worked out
 // normally. What stops is arriving.
 //

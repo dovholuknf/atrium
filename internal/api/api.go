@@ -1599,6 +1599,10 @@ func (s *Server) patchTask(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, err)
 		return
 	}
+	if body.Status != nil {
+		norm := store.NormalizeStatus(*body.Status)
+		body.Status = &norm
+	}
 	// One read up front so the ordering log lines below can say old→new, and
 	// so a card this room does not hold is a 404 that says so, not the store's
 	// "sql: no rows" from whichever write below tried first.
@@ -1609,7 +1613,7 @@ func (s *Server) patchTask(w http.ResponseWriter, r *http.Request) {
 	}
 	logOrderPatch(id, before, &body)
 	canceled := 0
-	// Whether unshelving started the runner again, and why not when it did not.
+	// Whether resuming started the runner again, and why not when it did not.
 	// Returned to the caller so the board can say so rather than leaving the
 	// operator to notice nothing happened.
 	resumed := false
@@ -1621,8 +1625,8 @@ func (s *Server) patchTask(w http.ResponseWriter, r *http.Request) {
 		// operator has already walked away from.
 		if *body.Status != store.StatusNeedsPermission && s.CancelPending != nil {
 			reason := fmt.Sprintf("the operator moved this task to %s in atrium", *body.Status)
-			if *body.Status == store.StatusShelved {
-				reason = "this task was shelved in atrium. unshelve it to answer requests from it."
+			if *body.Status == store.StatusPaused {
+				reason = "this task was paused in atrium. resume it to answer requests from it."
 			}
 			n, err := s.CancelPending(id, reason)
 			if err != nil {
@@ -1632,10 +1636,10 @@ func (s *Server) patchTask(w http.ResponseWriter, r *http.Request) {
 			canceled = n
 		}
 		// Shelving stops the runner. The card, its history and its resume id
-		// stay, so unshelving starts the same conversation again. Before the
+		// stay, so resuming starts the same conversation again. Before the
 		// status changes, or the runner's own exit would race it and land the
 		// card in dead.
-		if *body.Status == store.StatusShelved && s.Shelve != nil {
+		if *body.Status == store.StatusPaused && s.Shelve != nil {
 			if err := s.Shelve(id); err != nil {
 				s.fail(w, err)
 				return
@@ -1650,9 +1654,9 @@ func (s *Server) patchTask(w http.ResponseWriter, r *http.Request) {
 
 		// Coming back off the shelf starts the runner again. After the status
 		// change, so a relaunch that fails leaves the card where the operator
-		// asked for it rather than stuck in shelved.
-		if was != nil && was.Status == store.StatusShelved &&
-			*body.Status != store.StatusShelved && s.Unshelve != nil {
+		// asked for it rather than stuck in paused.
+		if was != nil && was.Status == store.StatusPaused &&
+			*body.Status != store.StatusPaused && s.Unshelve != nil {
 			started, why, err := s.Unshelve(id)
 			if err != nil {
 				s.fail(w, err)
@@ -1949,7 +1953,7 @@ func (s *Server) pinOrder(w http.ResponseWriter, r *http.Request) {
 }
 
 // pruneTasks clears out finished cards in one go. Done and dead only: a sweep
-// never touches a shelved card, however long it has sat there.
+// never touches a paused card, however long it has sat there.
 func (s *Server) pruneTasks(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		// OlderThanHours defaults to now, meaning every finished card goes.

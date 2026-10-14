@@ -71,7 +71,7 @@ import (
 //
 // ── what it does NOT override ────────────────────────────
 //
-// The chain still runs on the room first. A queued message, a shelved card and a
+// The chain still runs on the room first. A queued message, a paused card and a
 // standing `never` rule all decide a request inside `onPermRequest` before it can
 // ever become pending, so anything this sees in `/v1/permissions` has already
 // cleared them. Approving a pending request is therefore the same last-resort

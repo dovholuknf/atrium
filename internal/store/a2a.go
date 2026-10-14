@@ -18,7 +18,7 @@ import (
 const HumanLauncher = "@human"
 
 // SetLineage records who launched a card. WRITTEN ONCE: it writes only while
-// both columns are still empty, so a reopen or an unshelve, which runs the
+// both columns are still empty, so a reopen or an resume, which runs the
 // launch again, cannot overwrite the parent with whoever pressed the button
 // the second time.
 //

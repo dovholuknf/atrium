@@ -29,7 +29,7 @@ import (
 //
 // The chain puts shelving and standing rules AHEAD of auto mode, so a drain
 // that approved indiscriminately would mean the switch quietly overrode
-// answers already given. A card can be shelved after its request was recorded,
+// answers already given. A card can be paused after its request was recorded,
 // and a never rule can be written while a request sits in the queue, so both
 // have to be checked here rather than assumed impossible.
 //
@@ -47,7 +47,7 @@ func (d *Daemon) drainForAuto() (int, error) {
 			continue
 		}
 		// A standing no. Putting work down is an answer, and it outranks this.
-		if task.Status == store.StatusShelved {
+		if task.Status == store.StatusPaused {
 			continue
 		}
 		// A never rule is an answer already given, which auto mode does not

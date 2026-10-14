@@ -152,7 +152,7 @@ func TestFinishingDoesNotUnshelveACard(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := d.st.SetStatus(task.ID, store.StatusShelved); err != nil {
+	if err := d.st.SetStatus(task.ID, store.StatusPaused); err != nil {
 		t.Fatal(err)
 	}
 
@@ -162,7 +162,7 @@ func TestFinishingDoesNotUnshelveACard(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.Status != store.StatusShelved {
+	if got.Status != store.StatusPaused {
 		t.Fatalf("a shelved card was moved to %s by its session", got.Status)
 	}
 	// The recap is still kept. What it said is worth having even though the

@@ -558,7 +558,7 @@ func BusyCard(supervised bool, status string, idle time.Duration, activity strin
 		return false
 	}
 	switch status {
-	case store.StatusNeedsInput, store.StatusNeedsPermission, store.StatusDone, store.StatusDead, store.StatusShelved:
+	case store.StatusNeedsInput, store.StatusNeedsPermission, store.StatusDone, store.StatusDead, store.StatusPaused:
 		return false
 	}
 	return idle <= BusyIdleAfter && activity != ActivityThinking

@@ -74,7 +74,7 @@ var knownRunners = []candidate{
 		ID: "ollama", Label: "ollama", Cmd: "ollama",
 		Args: []string{"run"}, ExitKeys: []string{"ctrl-d"},
 		Confirm: "ollama needs a model after run, and has no concept of resuming a " +
-			"conversation, so a shelved ollama card starts fresh.",
+			"conversation, so a paused ollama card starts fresh.",
 	},
 	{
 		ID: "aider", Label: "aider", Cmd: "aider",

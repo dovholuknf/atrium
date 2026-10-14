@@ -175,7 +175,7 @@ Report to your launcher, never to the operator, unless your launcher is the oper
 // A request that says `lean: false` wins over the card. A card an agent
 // launched lean can become somebody's own session, and they want their whole
 // setup back (backlog-2 item 64). Absent leaves it to the card, so a reopen, a
-// restart and an unshelve keep what the card was started with.
+// restart and an resume keep what the card was started with.
 //
 // The card's tags are the one list the room keeps for them. A tag edit writes
 // that list, so a card whose tags no longer carry LeanTag starts with the full

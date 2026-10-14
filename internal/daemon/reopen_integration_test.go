@@ -118,7 +118,7 @@ func TestOnlyCardsWorthReopeningAreChosen(t *testing.T) {
 
 	dir := t.TempDir()
 	good := mk(t, "worth-reopening", "claude", dir, "")
-	shelved := mk(t, "put-down-on-purpose", "claude", dir, store.StatusShelved)
+	shelved := mk(t, "put-down-on-purpose", "claude", dir, store.StatusPaused)
 	noRunner := mk(t, "no-runner-recorded", "", dir, "")
 	noDir := mk(t, "no-directory-recorded", "claude", "", "")
 

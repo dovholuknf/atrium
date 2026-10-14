@@ -171,7 +171,7 @@ func TestSessionEndLeavesShelvedAlone(t *testing.T) {
 		t.Fatal(err)
 	}
 	tasks, _ := d.Store().List()
-	if err := d.Store().SetStatus(tasks[0].ID, store.StatusShelved); err != nil {
+	if err := d.Store().SetStatus(tasks[0].ID, store.StatusPaused); err != nil {
 		t.Fatal(err)
 	}
 	ev.Event = "end"
@@ -182,7 +182,7 @@ func TestSessionEndLeavesShelvedAlone(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if after.Status != store.StatusShelved {
+	if after.Status != store.StatusPaused {
 		t.Fatalf("status is %q, want the card to stay shelved", after.Status)
 	}
 }

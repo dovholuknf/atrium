@@ -660,7 +660,7 @@ func (s *Server) closeCard(t *store.Task, pv *closePreview, answers map[string]s
 	if err := s.st.SetTags(t.ID, kept); err != nil {
 		warn("the closed mark did not go on: %v", err)
 	}
-	if t.Status != store.StatusShelved {
+	if t.Status != store.StatusPaused {
 		if err := s.st.SetStatusBecause(t.ID, store.StatusDone, "closed"); err != nil {
 			warn("the card did not move to done: %v", err)
 		}

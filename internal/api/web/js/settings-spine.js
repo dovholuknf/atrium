@@ -551,7 +551,7 @@ async function openTask(id) {
   lc.onclick = e => { e.preventDefault(); e.stopPropagation(); copyLogRow(lc, launchFull(current)); };
   document.getElementById("d-auto-note").textContent = current.auto_approve
     ? "requests from this session are approved without asking. everything is still recorded, " +
-      "and never rules and shelving still block."
+      "and never rules and paused cards still block."
     : "";
 
   paintCardCycle(current);
@@ -818,7 +818,7 @@ function decidedHow(d) {
     case "orphaned": return "the session went away";
     case "you": case "": case undefined: return "you";
     case "message": return "a message you queued";
-    case "shelved": return "the card was shelved";
+    case "paused": return "the card was paused";
     default: return `rule ${d.by}`;
   }
 }
@@ -841,7 +841,7 @@ async function toggleAuto() {
   if (on) {
     const ok = await confirmUser("let this session run unattended?",
       `Requests from <b>${esc(current.display_title)}</b> will be approved without asking you.` +
-      `<br><br>Everything is still recorded, and <b>never</b> rules and shelving still block. ` +
+      `<br><br>Everything is still recorded, and <b>never</b> rules and paused cards still block. ` +
       `Read what it did afterwards with <b>what did it do?</b>`,
       "turn auto mode on");
     if (!ok) return;
@@ -897,7 +897,7 @@ async function openReview() {
 }
 
 // Patches the card the detail dialog is open on. Goes through patchTask so
-// shelving and unshelving report what happened to the runner either way.
+// pausing and resuming report what happened to the runner either way.
 async function patch(body) {
   if (!current) return;
   await patchTask(current.id, body);
@@ -915,8 +915,8 @@ async function move(status) {
     } catch (e) {}
     if (pending.length) {
       const what = pending.length === 1 ? "1 request" : `${pending.length} requests`;
-      const extra = status === "shelved"
-        ? " While it stays shelved, anything else it asks for is blocked too, " +
+      const extra = status === "paused"
+        ? " While it stays paused, anything else it asks for is blocked too, " +
           "with the same explanation."
         : "";
       if (!await confirmUser(`this is holding ${what}`,

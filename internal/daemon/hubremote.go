@@ -117,7 +117,7 @@ func (e hubErr) Error() string { return string(e) }
 const errNoHub = hubErr("this room is not attached to a hub")
 
 // cardLive says whether a card may still use its git token: it exists and has not ended. A card that finished,
-// was shelved or died loses the token even before anything revokes it.
+// was paused or died loses the token even before anything revokes it.
 func (d *Daemon) cardLive(id string) bool {
 	if _, ok := d.hubGit.stashing.Load(id); ok {
 		return true

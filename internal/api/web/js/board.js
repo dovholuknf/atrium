@@ -522,8 +522,8 @@ function activityChip(t) {
   // outlasts the status change that filed the card, so this is a second line
   // of defence rather than the fix: whatever put a live session in `done` is
   // the bug, and this stops it looking like a feature.
-  if (a && a.looks_idle && !isWaiting(t) && t.status !== "shelved" && !staleActivity(t)) return looksIdleChip(a);
-  if (!a || !a.what || isWaiting(t) || t.status === "shelved" || staleActivity(t)) return "";
+  if (a && a.looks_idle && !isWaiting(t) && t.status !== "paused" && !staleActivity(t)) return looksIdleChip(a);
+  if (!a || !a.what || isWaiting(t) || t.status === "paused" || staleActivity(t)) return "";
   const label = a.what === "tool"
     ? (a.tool ? `running ${esc(a.tool)}` : "running a tool")
     : esc(a.what);
@@ -647,7 +647,7 @@ function contextChip(t) {
   // Nothing a finished card burned is worth drawing. The daemon forgets a
   // card's telemetry when its session ends, so this is a second line of
   // defence rather than the fix, in the same shape as the activity chip.
-  if (!c || over(t) || t.status === "shelved") return "";
+  if (!c || over(t) || t.status === "paused") return "";
   // The limits are drawn whether or not a context figure came with them. A
   // session that has just started has burned nothing and the account it is
   // running on can still be about to stop, which is the more urgent of the
@@ -663,7 +663,7 @@ function contextChip(t) {
 // (ctxLine) turns danger at the land-the-plane line. Never stored. The number is also in the card's details.
 function ctxWarnMark(t) {
   const c = t.context_size;
-  if (!c || over(t) || t.status === "shelved") return "";
+  if (!c || over(t) || t.status === "paused") return "";
   if (!c.warn) return "";
   const tip = `past its context limit, ${limitFrom(t)} tokens. ` +
     (c.cycle ? `atrium is cycling its context. ` : `its context cycle is off. `) +
@@ -683,7 +683,7 @@ const CTX_LINE_WARM = 0.6;
 const CTX_LINE_HOT = 0.85;
 function ctxLine(t) {
   const c = t.context_size;
-  if (!c || over(t) || t.status === "shelved" || typeof ctxMeter !== "function") return "";
+  if (!c || over(t) || t.status === "paused" || typeof ctxMeter !== "function") return "";
   const land = landOver(t);
   // Colour by the fraction of the limit: the theme's good colour, yellow from 60%, red from 85%.
   const frac = Number(c.tokens) / (landThePlaneK(t) * 1000);
@@ -784,7 +784,7 @@ function cardHTML(t, wearAs) {
   // `wearAs` is the theme preview's: a palette from `wearOf`, or null for the skin's own look, whatever the setting says.
   const wear = wearAs === undefined ? cardWear(t) : wearAs;
   // Clickable for the actions done most, because the alternative was opening
-  // the detail dialog for every shelve and every attach.
+  // the detail dialog for every pause and every attach.
   //
   // NOT draggable. A card is text you copy off far more often than a thing you
   // move, and `draggable` is not a hint: it takes the pointerdown, so the
@@ -824,7 +824,7 @@ function cardHTML(t, wearAs) {
              : t.status === "done" ? "how long since you marked it done"
              : t.status === "running" ? "how long since it last did anything"
              : "how long since anything was heard from it"}"
-             >${esc(statusLabel(runnerGone(t) ? "stopped" : t.status))} ${ago(cardIdleAge(t))}</span>`}
+             >${esc(cardPaused(t) ? "paused" : statusLabel(runnerGone(t) ? "stopped" : t.status))} ${ago(cardIdleAge(t))}</span>`}
       ${t.auto_approve ? `<span class="chip auto"
         data-tip="auto mode: requests from this session are approved without asking, and recorded"
         >auto</span>` : ""}
@@ -1884,7 +1884,7 @@ async function renderBoard(signal) {
     const shown = mine.length;
     // Approving everything means nothing can arrive here, so an empty
     // permissions column is not "nothing is blocked right now", it is a column
-    // that cannot fill. It still shows if something IS in it: a shelved card
+    // that cannot fill. It still shows if something IS in it: a paused card
     // or a never rule still blocks, and one of those sitting there while the
     // header says everything is approved is the single most confusing thing
     // the board could hide.
@@ -1893,7 +1893,7 @@ async function renderBoard(signal) {
     // entirely rather than narrowed: a strip saying `empty` under a header
     // saying APPROVING EVERYTHING is a place for your eye to go for no reason.
     //
-    // Only while it is empty. A shelved card or a never rule still blocks, and
+    // Only while it is empty. A paused card or a never rule still blocks, and
     // one of those sitting here while the header says everything is approved is
     // the single most confusing thing the board could hide, so `mine.length`
     // is part of the test and not an afterthought.
@@ -1960,7 +1960,7 @@ async function renderBoard(signal) {
         <span class="help" tabindex="0" onclick="event.stopPropagation()"
           data-tip="${esc(col.why)}">?</span>
         ${col.id === "done" && mine.some(t => PRUNABLE.includes(t.status))
-          ? `<span class="chip sweep" data-tip="delete every finished and dead card. shelved and parked cards stay"
+          ? `<span class="chip sweep" data-tip="delete every finished and dead card. paused and parked cards stay"
                onclick="event.stopPropagation();pruneFinished()">clear</span>` : ""}
         <span class="n">${mine.length}</span>
       </div>
@@ -2075,7 +2075,7 @@ function doneMoreHTML(all, drawn) {
     pins ? `, ${pins} of them pinned` : ""} \u00b7 open in the stack</div>`;
 }
 function openDoneInStack() {
-  setStackShow(new Set(["finished", "shelved"]));
+  setStackShow(new Set(["finished", "paused"]));
   switchView("stack");
 }
 async function pruneFinished() {
@@ -2083,7 +2083,7 @@ async function pruneFinished() {
   const n = (tasks || []).filter(t => PRUNABLE.includes(t.status)).length;
   if (!n) return;
   const ok = await confirmUser(`clear ${n} finished card${n === 1 ? "" : "s"}?`,
-    "Their history goes with them. Anything still running, parked or shelved is untouched.", "clear");
+    "Their history goes with them. Anything still running, parked or paused is untouched.", "clear");
   if (!ok) return;
   const res = await api("/v1/tasks/prune", { method: "POST", body: JSON.stringify({ statuses: PRUNABLE }) });
   toast("cleared", `${res.removed} card${res.removed === 1 ? "" : "s"} gone`);
@@ -2272,16 +2272,16 @@ function groupHTML(status, cards, g) {
 // the board turns up here without anybody remembering to, and `accepts: false`
 // keeps one out for the reason it always had.
 //
-// `shelved` is left out although it accepts a card, because shelving costs
-// something: it stops the runner, and the `shelve` entry is where that is
-// said. Two ways to shelve is how two descriptions of it drift apart.
+// `paused` is left out although it accepts a card, because pausing costs
+// something: it stops the runner, and the `pause` entry is where that is
+// said. Two ways to pause is how two descriptions of it drift apart.
 //
 // Labelled by STATUS rather than by column, because the status is what the
 // card becomes and `finished` is a column holding two of them. Filing into it
 // means `done`, and an entry reading `finished` would not say which.
 function moveItem(id, t) {
   const to = COLUMNS
-    .filter(c => c.accepts !== false && c.id !== "shelved")
+    .filter(c => c.accepts !== false && c.id !== "paused")
     .map(c => c.takes || c.statuses[0])
     .filter(s => s !== t.status);
   if (!to.length) return null;
@@ -2395,9 +2395,9 @@ async function patchTask(id, body) {
       method: "PATCH", headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body)
     });
-    // Shelving stops a runner and unshelving starts it again, neither of which
+    // Pausing stops a runner and resuming starts it again, neither of which
     // is visible from a card moving between columns.
-    if (body.status === "shelved") toast("shelved", "its runner was stopped");
+    if (body.status === "paused") toast("paused", "its runner was stopped");
     if (res && res.resumed) { toast("resumed", "picked up where it left off"); return res; }
     if (res && res.resume_note) {
       // Nothing started. A card in `running` with no process is the lie this
@@ -2409,7 +2409,7 @@ async function patchTask(id, body) {
           method: "PATCH", headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ status: "dead" })
         });
-        toast("off the shelf, but not running", res.resume_note);
+        toast("back, but not running", res.resume_note);
       } else {
         toast("not resumed", res.resume_note);
       }

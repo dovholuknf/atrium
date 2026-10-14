@@ -338,7 +338,7 @@ func (d *Daemon) onSession(in SessionEvent) error {
 		}); err != nil {
 			return err
 		}
-		if task.Status != store.StatusShelved && task.Status != store.StatusDone {
+		if task.Status != store.StatusPaused && task.Status != store.StatusDone {
 			if err := d.st.SetStatus(task.ID, store.StatusDone); err != nil {
 				return err
 			}
@@ -369,7 +369,7 @@ func (d *Daemon) onSession(in SessionEvent) error {
 		// compaction and a turn that starts by thinking, that is a real
 		// stretch of the board being wrong.
 		//
-		// `turnResumed` only lifts from `needs-input`, so a shelved, done or
+		// `turnResumed` only lifts from `needs-input`, so a paused, done or
 		// dead card is untouched and nothing is dragged back out of a column
 		// somebody put it in.
 		d.turnResumed(task.ID)
@@ -431,7 +431,7 @@ func (d *Daemon) onSession(in SessionEvent) error {
 			}
 		}
 		// A card put down by hand stays where it was put.
-		if task.Status != store.StatusShelved && task.Status != store.StatusDone {
+		if task.Status != store.StatusPaused && task.Status != store.StatusDone {
 			if err := d.st.SetStatus(task.ID, endedAs(task)); err != nil {
 				return err
 			}
@@ -469,9 +469,9 @@ func (d *Daemon) onSession(in SessionEvent) error {
 		// session actually does something. See activity.go.
 		//
 		// A card put down by hand stays put: shelving is an answer, and a
-		// session starting inside a shelved worktree does not overrule it.
+		// session starting inside a paused worktree does not overrule it.
 		switch task.Status {
-		case store.StatusShelved:
+		case store.StatusPaused:
 		default:
 			// Ready because it has not started, which is the opposite of the
 			// other way into this column. Without the reason the board told

@@ -417,7 +417,7 @@ func (d *Daemon) handleStop(w http.ResponseWriter, r *http.Request) {
 // turnEnded moves a card to needs-input, because the agent stopped and nothing
 // else will move until the operator says something.
 //
-// A card the operator put somewhere by hand stays put: shelved, done and dead
+// A card the operator put somewhere by hand stays put: paused, done and dead
 // are all decisions, and a turn ending is not grounds to overrule one. A card
 // waiting on a permission also stays, since that is a more specific answer to
 // "what does this need" than needs-input is.
@@ -488,7 +488,7 @@ func (d *Daemon) turnResumed(taskID string) {
 	if err != nil {
 		return
 	}
-	// Only from waiting. A shelved or finished card is where it was put, and a
+	// Only from waiting. A paused or finished card is where it was put, and a
 	// permission request is answered through its own path.
 	if t.Status != store.StatusNeedsInput {
 		return

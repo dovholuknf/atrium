@@ -218,7 +218,7 @@ func (s *Store) Register(obs Observed) (*Task, bool, error) {
 			task = t
 		}
 		if task == nil && obs.PID != 0 && obs.Worktree != "" {
-			t, err := s.getBy(`pid = ? AND worktree = ? AND status NOT IN ('done','shelved','dead')`,
+			t, err := s.getBy(`pid = ? AND worktree = ? AND status NOT IN ('done','paused','paused','dead')`,
 				obs.PID, obs.Worktree)
 			if err != nil && !errors.Is(err, sql.ErrNoRows) {
 				return err
@@ -627,7 +627,7 @@ func (s *Store) List(statuses ...string) ([]*Task, error) {
 		if len(statuses) > 0 {
 			q += ` AND status IN (` + placeholders(len(statuses)) + `)`
 			for _, st := range statuses {
-				args = append(args, st)
+				args = append(args, NormalizeStatus(st))
 			}
 		}
 		q += ` ORDER BY rank ASC, created_at ASC`
@@ -719,6 +719,7 @@ func (s *Store) SetStatusBecause(id, status, reason string) error {
 // setStatusOn is SetStatusBecause on a given connection, so a report can move
 // its card in the same transaction as everything else it records.
 func (s *Store) setStatusOn(q querier, id, status, reason string) error {
+	status = NormalizeStatus(status)
 	prev, err := getByOn(q, `id = ?`, id)
 	if err != nil {
 		return err
@@ -990,7 +991,7 @@ type ResumeClaim struct {
 //   - No other card holds the id: stored.
 //   - A bound claim and the other holder is not live (`live` says so): the id
 //     MOVES. It is cleared on the old card and stored on this one, which is what
-//     resuming onto a new card, unshelving and adopting a fixture all are.
+//     resuming onto a new card, resuming and adopting a fixture all are.
 //   - Anything else: refused, and nothing changes. Refused is the live holder.
 //
 // A nil `live` counts every holder as live, which is the safe answer.
@@ -1336,8 +1337,8 @@ func (s *Store) BySourceExternal(source, externalID string) (*Task, error) {
 
 // PrunableStatuses are the only statuses a sweep will ever delete.
 //
-// Shelved is absent: shelving says the work is coming back, so a sweep that
-// took shelved cards would discard the ones kept on purpose.
+// Paused is absent: shelving says the work is coming back, so a sweep that
+// took paused cards would discard the ones kept on purpose.
 var PrunableStatuses = []string{StatusDone, StatusDead}
 
 // Prune deletes finished cards that have been sitting untouched. Returns how
@@ -1629,7 +1630,7 @@ func (s *Store) GatedByWireName(name string) (bool, error) {
 			return err
 		}
 		// A card put down is not a session to gate. Its requests are refused
-		// by the shelved rule instead.
+		// by the paused rule instead.
 		gated = t.Gated && t.Status != StatusDone && t.Status != StatusDead
 		return nil
 	})

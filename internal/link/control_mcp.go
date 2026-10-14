@@ -716,7 +716,7 @@ func (c *controlMCP) peersHandler(ctx context.Context, req *mcp.CallToolRequest,
 		// A card with no session is a place, not somebody to talk to. Kept out
 		// unless asked for, because the list is long and the useful part of it is
 		// short.
-		live := t.Status != "done" && t.Status != "dead" && t.Status != "shelved"
+		live := t.Status != "done" && t.Status != "dead" && t.Status != "paused"
 		if !in.All && !live {
 			continue
 		}
@@ -1472,7 +1472,7 @@ func (c *controlMCP) capOf(room string) int {
 // ONLY SUBAGENTS. OriginTag is on every atrium_launch card, orchestrators and
 // the resident merger as much as their workers, so it is not what the cap
 // counts. A card without SubagentTag never consumes the cap, whoever started
-// it. A done/dead/shelved card has no running runner and a backlog card has not
+// it. A done/dead/paused card has no running runner and a backlog card has not
 // started one, so none of them count, and the launch being attempted is not
 // present yet so it is never counted.
 func (c *controlMCP) runningForCap(ctx context.Context, room string) (int, error) {
@@ -1488,7 +1488,7 @@ func (c *controlMCP) runningForCap(ctx context.Context, room string) (int, error
 			continue
 		}
 		switch t.Status {
-		case "done", "dead", "shelved", "backlog":
+		case "done", "dead", "paused", "shelved", "backlog":
 			continue
 		}
 		if !hasTag(t.Tags, SubagentTag) {

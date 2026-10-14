@@ -73,7 +73,7 @@ async function landableCard(id, superseded) {
 // minute, not over, not in the inbox, and not a card on another machine that
 // is offline.
 function terminalComing(t) {
-  if (t.offline || ["done", "dead", "shelved", "backlog"].includes(t.status)) return false;
+  if (t.offline || ["done", "dead", "paused", "backlog"].includes(t.status)) return false;
   const born = Date.parse(t.created_at || "");
   return !isNaN(born) && Date.now() - born < 60000;
 }

@@ -15,7 +15,7 @@ import (
 //
 // Before this, only fixtures did. A fixture is a standing decision, "this
 // terminal exists every day", and everything else was left behind: a card
-// launched from a pull request, an unshelved piece of work, anything started
+// launched from a pull request, an resumed piece of work, anything started
 // by hand. The daemon stopped, four of six terminals came back, and the two
 // that did not were the two nobody had written a fixture for.
 //
@@ -213,7 +213,7 @@ func (d *Daemon) reopenWanted() []*store.Task {
 		// undo that by way of a restart. Shelving already refuses on the
 		// agent's behalf in the permission chain, so a reopened runner would
 		// sit blocked behind a card nobody is looking at.
-		if t.Status == store.StatusShelved {
+		if t.Status == store.StatusPaused {
 			continue
 		}
 		// AN ASKED EXIT IS KEPT. Not `done`: a wind-down ends every session and

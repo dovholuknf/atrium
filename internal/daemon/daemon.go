@@ -980,18 +980,18 @@ func (d *Daemon) onPermRequest(req PermissionRequest) (string, *AutoDecision, er
 		return p.ID, &AutoDecision{Decision: "block", Reason: reason}, nil
 	}
 
-	// A shelved card is a standing no. Putting work down has to answer for that
+	// A paused card is a standing no. Putting work down has to answer for that
 	// work, or the agent asks, gets nothing, and freezes behind a card nobody
 	// is looking at any more.
-	if task.Status == store.StatusShelved {
-		if _, err := d.st.DecidePermissionBy(p.ID, "block", shelvedReason, "shelved"); err != nil {
+	if task.Status == store.StatusPaused {
+		if _, err := d.st.DecidePermissionBy(p.ID, "block", shelvedReason, "paused"); err != nil {
 			return "", nil, err
 		}
 		return p.ID, &AutoDecision{Decision: "block", Reason: shelvedReason}, nil
 	}
 
 	// A room deploy hold refuses every held card's next call, so every agent is
-	// idle with nothing in flight when the room restarts. After shelved, whose own
+	// idle with nothing in flight when the room restarts. After paused, whose own
 	// no is more specific, and before rules and auto mode, which it overrides. See
 	// roomhold.go.
 	if h := d.deployHold(); h.Holds(task.ID) {
@@ -1032,7 +1032,7 @@ func (d *Daemon) onPermRequest(req PermissionRequest) (string, *AutoDecision, er
 	//
 	// Last, after messages, shelving and standing rules. Auto mode stops new
 	// questions; it does not discard answers already given, so a never rule and
-	// a shelved card both still block. What it lets through goes to the same
+	// a paused card both still block. What it lets through goes to the same
 	// audit log as every other decision, marked auto, and the review reads it.
 	//
 	// Global auto is the same thing for every session at once, including ones
@@ -1088,8 +1088,8 @@ const autoReason = "auto mode: approved without asking, and recorded"
 const globalAutoReason = "global auto mode: every session is approved without asking, and recorded"
 
 // shelvedReason is handed back to an agent whose request was refused because
-// its card is shelved, so the agent is told why rather than left waiting.
-const shelvedReason = "this task is shelved in atrium. unshelve it to answer requests from it."
+// its card is paused, so the agent is told why rather than left waiting.
+const shelvedReason = "this task is paused in atrium. resume it to answer requests from it."
 
 // CancelPending answers every outstanding request on a task with a block.
 //

@@ -39,7 +39,7 @@
     running: "running",
     done: "done",
     dead: "gone",
-    shelved: "shelved",
+    paused: "paused",
     backlog: "offered",
   };
   function statusLabel(t) { return STATUS[t && t.status] || String((t && t.status) || ""); }
@@ -47,7 +47,7 @@
   // What the runner is doing right now, in words. Nothing when it is not doing anything worth saying.
   function activityText(t) {
     const a = t && t.activity;
-    if (!t || t.status === "dead" || t.status === "done" || t.status === "shelved") return "";
+    if (!t || t.status === "dead" || t.status === "done" || t.status === "paused") return "";
     if (runnerGone(t)) return "its runner is gone";
     if (t.status === "needs-permission") return "waiting on a permission";
     if (t.status === "needs-input") return "waiting for you";

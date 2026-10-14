@@ -33,7 +33,7 @@ type ReviewEntry struct {
 	ID       string `json:"id"`
 	Command  string `json:"command"`
 	Decision string `json:"decision"`
-	// By is who or what answered: a person, a rule pattern, auto, shelved.
+	// By is who or what answered: a person, a rule pattern, auto, paused.
 	By string `json:"by"`
 	At string `json:"at"`
 	// Unattended marks a decision no person saw.

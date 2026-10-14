@@ -103,7 +103,7 @@ func (s *Store) Announce(roomID string, cards []Card) (Changes, error) {
 			//
 			// It is lifted into its own column for the board to group on, so a
 			// room whose only announcement is that a card moved from running to
-			// shelved would otherwise be recorded as nothing having happened.
+			// paused would otherwise be recorded as nothing having happened.
 			// That is the single most interesting kind of change there is.
 			case old.status != c.Status || old.payload != payloadOf(c):
 				ch.Changed++

@@ -36,7 +36,7 @@ const STACK_SORTS = {
       const rank = t => t.status === "needs-permission" ? 0
         : t.status === "needs-input" ? 1
         : t.status === "running" ? 2
-        : t.status === "shelved" ? 3 : 4;
+        : t.status === "paused" ? 3 : 4;
       return rank(a) - rank(b) || cardActivityCmp(a, b);
     }
   },
@@ -79,7 +79,8 @@ const STACK_SHOW_KEY = "atrium.stack.show";
 function stackShow() {
   try {
     const v = JSON.parse(localStorage.getItem(STACK_SHOW_KEY) || "null");
-    if (Array.isArray(v)) return new Set(v);
+    // `shelved` was this column's old name, and a device may still hold it.
+    if (Array.isArray(v)) return new Set(v.map(x => x === "shelved" ? "paused" : x));
   } catch (e) {}
   return new Set(["needs-input"]);
 }
@@ -601,7 +602,7 @@ function stateChip(t, w) {
   // forever without costing anything, and a question has somebody's work
   // behind it.
   const label = wasAsked(t) ? "asked you"
-    : askedAPeer(t) ? "asked a peer" : statusLabel(t.status);
+    : askedAPeer(t) ? "asked a peer" : cardStatusLabel(t);
   const asking = wasAsked(t) || askedAPeer(t);
   return `<span class="chip ${asking ? "warn asked" : w ? "warn" : over(t) ? "" : "accent"}"
     data-tip="${esc(wasAsked(t) ? "it put a question to you and is waiting"

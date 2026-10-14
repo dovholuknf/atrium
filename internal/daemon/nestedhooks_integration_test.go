@@ -115,7 +115,7 @@ func TestANestedPermissionIsGatedButDoesNotMoveTheParentsPid(t *testing.T) {
 	d, _, cancel, errCh := startDaemon(t)
 	defer func() { cancel(); <-errCh }()
 	parent := nestedParent(t, d)
-	if err := d.st.SetStatus(parent.ID, store.StatusShelved); err != nil {
+	if err := d.st.SetStatus(parent.ID, store.StatusPaused); err != nil {
 		t.Fatal(err)
 	}
 

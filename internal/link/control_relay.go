@@ -243,7 +243,7 @@ func (c *controlMCP) peersElsewhere(ctx context.Context, besides string, all boo
 			continue
 		}
 		for _, t := range body.Tasks {
-			live := t.Status != "done" && t.Status != "dead" && t.Status != "shelved"
+			live := t.Status != "done" && t.Status != "dead" && t.Status != "paused"
 			if (!all && !live) || t.Wire == "" {
 				continue
 			}

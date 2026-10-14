@@ -125,7 +125,7 @@ func TestAutoModeDoesNotOverrideShelving(t *testing.T) {
 	d, _, cancel, _ := startDaemon(t)
 	defer cancel()
 	task := autoTask(t, d, "auto-4")
-	if err := d.st.SetStatus(task.ID, store.StatusShelved); err != nil {
+	if err := d.st.SetStatus(task.ID, store.StatusPaused); err != nil {
 		t.Fatal(err)
 	}
 

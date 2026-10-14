@@ -66,8 +66,8 @@
   const tagOf = (g, name) => groupIsNew(name, g.made) ? "new" : "";
 
   function items(id, t) {
-    const over = ["done", "dead", "shelved"].indexOf(t.status) >= 0;
-    const stopped = t.status === "shelved";
+    const over = ["done", "dead", "paused"].indexOf(t.status) >= 0;
+    const stopped = t.status === "paused";
     const g = groupsOf(t);
     const why = cannotResumeCard(t);
     const done = () => window.mNet.refresh();
@@ -107,8 +107,8 @@
       { sep: true },
       t.supervised && !over ? {
         label: "stop",
-        help: "Stops the agent so it can be resumed later. The card is left out of the list unless the shelved filter is on.",
-        act: () => patch(id, { status: "shelved" }).then(done)
+        help: "Stops the agent so it can be resumed later. The card is left out of the list unless the paused filter is on.",
+        act: () => patch(id, { status: "paused" }).then(done)
       } : null,
       {
         label: "terminate and clean up", danger: true,

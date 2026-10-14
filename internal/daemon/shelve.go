@@ -18,7 +18,7 @@ import (
 // is recorded on every session event, so stopping the process loses the
 // terminal and not the thread. See store.SetResumeID.
 
-// shelveGrace is how long a runner gets to wind up when its card is shelved.
+// shelveGrace is how long a runner gets to wind up when its card is paused.
 //
 // Shorter than shutdown's ten seconds, because shutdown is stopping everything
 // at once and this is one card the operator is putting down while watching.
@@ -67,7 +67,7 @@ func (d *Daemon) StopRunnerBy(taskID, by string) error {
 // Shelve puts a card down and stops its runner.
 //
 // The card, its history and its resume id all stay. Requests already waiting
-// are answered by the caller before this runs, since a shelved card is a
+// are answered by the caller before this runs, since a paused card is a
 // standing no and leaving a question pending would freeze the agent behind a
 // card nobody is looking at.
 func (d *Daemon) Shelve(taskID string) error {
@@ -80,12 +80,12 @@ func (d *Daemon) Shelve(taskID string) error {
 	stopped := d.stopOne(taskID, d.hk.shelveGrace)
 	if stopped {
 		if err := d.st.AppendEvent(taskID, store.EventExited, map[string]any{
-			"by": "shelved", "resume": t.ResumeID, "cause": store.CauseShelved,
+			"by": "paused", "resume": t.ResumeID, "cause": store.CauseShelved,
 		}); err != nil {
 			return err
 		}
 		d.act.forget(taskID)
-		log.Printf("[atrium] %s shelved, its runner stopped", t.DisplayTitle())
+		log.Printf("[atrium] %s paused, its runner stopped", t.DisplayTitle())
 		return nil
 	}
 
@@ -94,18 +94,18 @@ func (d *Daemon) Shelve(taskID string) error {
 	// it, and killing either from here would be reaching into a process atrium
 	// was never given.
 	if t.PID > 0 {
-		log.Printf("[atrium] %s shelved. atrium does not own its process, so it keeps running",
+		log.Printf("[atrium] %s paused. atrium does not own its process, so it keeps running",
 			t.DisplayTitle())
 	}
 	return nil
 }
 
-// Unshelve picks a shelved card back up, starting its runner again from where
+// Unshelve picks a paused card back up, starting its runner again from where
 // the conversation left off.
 //
 // Returns the reason when it cannot, so the caller can move the card anyway and
 // say why nothing started. Failing to relaunch must not leave the card stuck in
-// shelved: the operator asked for it back.
+// paused: the operator asked for it back.
 func (d *Daemon) Unshelve(taskID string) (started bool, why string, err error) {
 	t, err := d.st.Get(taskID)
 	if err != nil {
@@ -132,6 +132,6 @@ func (d *Daemon) Unshelve(taskID string) (started bool, why string, err error) {
 	}); err != nil {
 		return false, fmt.Sprintf("could not start it again: %v", err), nil
 	}
-	log.Printf("[atrium] %s unshelved and resumed", t.DisplayTitle())
+	log.Printf("[atrium] %s resumed and resumed", t.DisplayTitle())
 	return true, "", nil
 }

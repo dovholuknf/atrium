@@ -140,11 +140,11 @@ func TestArchiveNeverTakesShelved(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := s.SetStatus(task.ID, StatusShelved); err != nil {
+	if err := s.SetStatus(task.ID, StatusPaused); err != nil {
 		t.Fatal(err)
 	}
 
-	if _, err := s.Archive(0, StatusShelved, StatusDead, StatusDone); err != nil {
+	if _, err := s.Archive(0, StatusPaused, StatusDead, StatusDone); err != nil {
 		t.Fatal(err)
 	}
 	got, err := s.Get(task.ID)

@@ -9,7 +9,7 @@ import (
 
 // Actions on a card, written by the operator.
 //
-// A card can be terminated, shelved, attached to and messaged. All of those
+// A card can be terminated, paused, attached to and messaged. All of those
 // are things ATRIUM does. None of them is the thing a person does repeatedly,
 // which is send the same instruction to whichever agent is in front of them.
 //

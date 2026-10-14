@@ -83,7 +83,7 @@ func TestShelvedTaskBlocksNewRequests(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := st.SetStatus(task.ID, store.StatusShelved); err != nil {
+	if err := st.SetStatus(task.ID, store.StatusPaused); err != nil {
 		t.Fatal(err)
 	}
 
@@ -129,7 +129,7 @@ func TestUnshelvedTaskAsksAgain(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := st.SetStatus(task.ID, store.StatusShelved); err != nil {
+	if err := st.SetStatus(task.ID, store.StatusPaused); err != nil {
 		t.Fatal(err)
 	}
 	if err := st.SetStatus(task.ID, store.StatusRunning); err != nil {

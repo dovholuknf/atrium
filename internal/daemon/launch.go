@@ -621,7 +621,7 @@ func handOverTo(ifRunning string, live bool) runningVerdict {
 //     the finished column with nothing able to move it.
 //   - backlog: an offered item nobody had started. Starting it is what the
 //     inbox is for, so it comes back.
-//   - shelved: REFUSED. See ontoRefusal.
+//   - paused: REFUSED. See ontoRefusal.
 //
 // It lands in `needs-input` with `started` rather than in `running`, which is
 // where session.go puts a session that has only just come up, and for the same
@@ -642,17 +642,17 @@ func statusAfterLaunchOnto(status string) (string, bool) {
 // ontoRefusal is when a runner may NOT be started onto an existing card.
 //
 // A SHELVED CARD IS A STANDING NO, and the permission chain in daemon.go is
-// where that is spent: every request from a shelved card is refused unanswered,
+// where that is spent: every request from a paused card is refused unanswered,
 // so a runner started onto one asks, gets a refusal it did not earn, and
 // freezes behind a card nobody is looking at. The other way out is worse. A
-// launch that quietly moved the card out of shelved would overturn the
+// launch that quietly moved the card out of paused would overturn the
 // operator putting the work down, which is a decision, not a stale value, and
 // it is the one status here that somebody chose by hand.
 //
 // So neither, and the launch is refused with the way through named. Unshelving
-// still works: the board moves the card out of shelved and THEN asks for the
+// still works: the board moves the card out of paused and THEN asks for the
 // runner (see api.patchTask), so by the time this is asked the card is no
-// longer shelved. This refuses the other callers, which are the adopt path and
+// longer paused. This refuses the other callers, which are the adopt path and
 // anything posting `task_id` at /v1/launch.
 //
 // A live runner is refused for the reason `handOverTo` already refuses it: two
@@ -664,10 +664,10 @@ func ontoRefusal(t *store.Task, live bool) error {
 			"to one directory and the card describes whichever spoke last. attach to that "+
 			"one, or terminate it and start again", t.DisplayTitle())
 	}
-	if t.Status == store.StatusShelved {
-		return fmt.Errorf("%s is shelved, and a shelved card is a standing no: every "+
+	if t.Status == store.StatusPaused {
+		return fmt.Errorf("%s is paused, and a paused card is a standing no: every "+
 			"permission request from it is refused unanswered, so a runner started onto it "+
-			"freezes behind a card nobody is looking at. unshelve it, which starts the same "+
+			"freezes behind a card nobody is looking at. resume it, which starts the same "+
 			"conversation again", t.DisplayTitle())
 	}
 	return nil
@@ -929,8 +929,8 @@ func (d *Daemon) launchLocked(req LaunchRequest) (*store.Task, error) {
 					cwd, t.DisplayTitle())
 				return t, nil
 			case startOnto:
-				// `AdoptableTask` excludes done and dead and NOT shelved, so
-				// this is a real way to reach a shelved card. Adopting one
+				// `AdoptableTask` excludes done and dead and NOT paused, so
+				// this is a real way to reach a paused card. Adopting one
 				// would start a runner every request of which is refused
 				// unanswered, so it is refused here instead, by name.
 				if err := ontoRefusal(t, false); err != nil {
@@ -948,7 +948,7 @@ func (d *Daemon) launchLocked(req LaunchRequest) (*store.Task, error) {
 	// what the source guessed.
 	//
 	// Not on a resume. The prompt stays on the card after the first start, so
-	// that a start which failed can be repeated, and unshelving an
+	// that a start which failed can be repeated, and resuming an
 	// intake-raised card is a resume onto a conversation that has already been
 	// given it. Falling back here would refuse that launch for carrying an
 	// instruction the operator never asked to send twice.
@@ -1001,7 +1001,7 @@ func (d *Daemon) launchLocked(req LaunchRequest) (*store.Task, error) {
 		wanted = withResourcesLine(wanted)
 	}
 	// THE CARD'S MODEL IS THE FALLBACK, exactly as its prompt is, and for a
-	// different reason: a relaunch or an unshelve of a card that was started
+	// different reason: a relaunch or an resume of a card that was started
 	// on a model has to come back on that model, or the session changes
 	// underneath somebody because they pressed start twice.
 	//
@@ -1242,7 +1242,7 @@ func (d *Daemon) launchLocked(req LaunchRequest) (*store.Task, error) {
 	//
 	// `on` makes the runner's PreToolUse gate post every tool call to
 	// /permission, where the same chain every joined session runs decides it: a
-	// standing rule, a shelved card, per-session auto and board-wide auto all
+	// standing rule, a paused card, per-session auto and board-wide auto all
 	// apply. With auto off it still gates to the operator exactly as a joined
 	// session does, so this routes the approvals without weakening them.
 	//

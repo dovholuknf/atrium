@@ -137,7 +137,7 @@ function peekHasQuestions(t) {
 // stored column can still read needs-input for a moment after a new prompt, and the live activity is the truth.
 function peekRunning(t) {
   const a = t && t.activity;
-  return !!(a && a.what && a.what !== "idle" && !a.looks_idle && t.status !== "shelved" &&
+  return !!(a && a.what && a.what !== "idle" && !a.looks_idle && t.status !== "paused" &&
     typeof staleActivity === "function" && !staleActivity(t));
 }
 function peekStatus(t) {
@@ -160,6 +160,10 @@ function peekStatus(t) {
       return { cls: "ps-ask", word: "needs you", why: (n ? n + (n === 1 ? " question" : " questions") : "a question") + since() };
     }
     return { cls: "ps-turn", word: "your move", why: "its turn ended, nothing asked" + since() };
+  }
+  // A parked or paused card has no agent running: it is paused, whatever status it kept. Never "ready".
+  if (typeof cardPaused === "function" && cardPaused(t)) {
+    return { cls: "ps-plain", word: "paused", why: "no agent running. it can be resumed" };
   }
   const label = typeof statusLabel === "function" ? statusLabel(t.status) : t.status;
   return label ? { cls: "ps-plain", word: label, why: "" } : null;
@@ -232,7 +236,8 @@ function peekBody(t, v) {
   // (see peekOwnsTip), so what it said is here. Title on one line, address and status under it on one.
   const where = t && typeof terminalLabel === "function" ? terminalLabel(t) : "";
   const cold = t && typeof termCold === "function" && termCold(t)
-    ? "this one has exited. resume it from the right-click menu" : "";
+    ? (cardPaused(t) ? "paused: nothing is running. resume it below or from the right-click menu"
+      : "this one has exited. start a new agent in its folder from below") : "";
   // A folded parent draws none of its children, so the warn chip on its row has to be explained here.
   const kidsWait = t && typeof termKidsShut === "function" && (termKids.get(t.id) || []).length && termKidsShut(t)
     ? termKidsCount(t.id, isWaiting) : 0;
@@ -531,6 +536,16 @@ function peekActions(box, id) {
     row.appendChild(b);
   };
   add("open", t.supervised ? "attach its terminal" : "open the card", () => t.supervised ? attachTask(id) : openTask(id));
+  // PAUSED CAN BE RESUMED, DEAD CANNOT. A paused card has one row to resume it and no "new agent here", since its own
+  // conversation is the thing to pick up. A dead card whose folder is still there has "new agent here" and no resume,
+  // since there is no conversation to go back to. `cardPaused`, js/cardrules.js.
+  if (cardPaused(t)) {
+    add("resume", "start its agent again on the conversation it had", () =>
+      cannotResume(t) ? toast("cannot resume", cannotResume(t)) : t.status === "paused" ? resumePausedCard(id) : resumeParked(id));
+  } else if (cardState(t) === "off" && !t.supervised && t.worktree && !termClosedGone(t)) {
+    add("new agent here", "start a fresh agent in this card's folder, on this card", () =>
+      openLaunch(t.runner || null, "", t.worktree, id, null, "here"));
+  }
   // Nothing runs on an off card (cardState, js/cardrules.js): no one to say it to and nothing to restart.
   const running = cardState(t) !== "off";
   if (running) add("say", "queue a message for it", () => peekSay(id));

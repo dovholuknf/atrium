@@ -177,7 +177,7 @@ func (d *Daemon) handleHelp(w http.ResponseWriter, r *http.Request) {
 	// simply ran out of things to do. That is the exact distinction
 	// `WaitingAsked` exists for, and the asking-tool path already writes it.
 	moved := false
-	if in.Blocked && task.Status != store.StatusShelved &&
+	if in.Blocked && task.Status != store.StatusPaused &&
 		task.Status != store.StatusNeedsInput {
 		if err := d.st.SetStatusBecause(task.ID, store.StatusNeedsInput,
 			store.WaitingAsked); err != nil {

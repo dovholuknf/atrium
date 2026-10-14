@@ -820,7 +820,7 @@ func expectedEnd(payload map[string]any) (string, bool) {
 	case CauseIdlePark:
 		return "parked after sitting idle", true
 	case CauseShelved:
-		return "shelved by " + orKeep(by, "the operator"), true
+		return "paused by " + orKeep(by, "the operator"), true
 	case CauseKilled:
 		return "terminated by " + orKeep(by, "the operator"), true
 	}

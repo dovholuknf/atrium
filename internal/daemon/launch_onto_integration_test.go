@@ -72,7 +72,7 @@ func TestALaunchDoesNotReopenACardThatIsAlreadyWorking(t *testing.T) {
 // Neither, and it says which way through.
 func TestALaunchOntoAShelvedCardIsRefused(t *testing.T) {
 	t.Parallel()
-	err := ontoRefusal(ontoCard(store.StatusShelved), false)
+	err := ontoRefusal(ontoCard(store.StatusPaused), false)
 	if err == nil {
 		t.Fatal("a runner was started onto a shelved card")
 	}
@@ -84,7 +84,7 @@ func TestALaunchOntoAShelvedCardIsRefused(t *testing.T) {
 // And it must never do it by moving the card instead.
 func TestShelvedIsNeverQuietlyUnshelved(t *testing.T) {
 	t.Parallel()
-	if _, move := statusAfterLaunchOnto(store.StatusShelved); move {
+	if _, move := statusAfterLaunchOnto(store.StatusPaused); move {
 		t.Fatal("a launch unshelved a card the operator had put down")
 	}
 }
@@ -190,7 +190,7 @@ func TestTheLaunchPathRefusesAShelvedCard(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := d.st.SetStatus(task.ID, store.StatusShelved); err != nil {
+	if err := d.st.SetStatus(task.ID, store.StatusPaused); err != nil {
 		t.Fatal(err)
 	}
 
@@ -205,7 +205,7 @@ func TestTheLaunchPathRefusesAShelvedCard(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if after.Status != store.StatusShelved {
+	if after.Status != store.StatusPaused {
 		t.Fatalf("a refused launch moved the card to %q", after.Status)
 	}
 }

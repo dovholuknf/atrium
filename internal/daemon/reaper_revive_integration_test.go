@@ -119,7 +119,7 @@ func TestTheReaperLeavesAShelvedCardAlone(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := st.SetStatus(task.ID, store.StatusShelved); err != nil {
+	if err := st.SetStatus(task.ID, store.StatusPaused); err != nil {
 		t.Fatal(err)
 	}
 	d.sup.add(&runner{taskID: task.ID, done: make(chan struct{})})
@@ -133,7 +133,7 @@ func TestTheReaperLeavesAShelvedCardAlone(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.Status != store.StatusShelved {
+	if got.Status != store.StatusPaused {
 		t.Fatalf("the reaper unshelved a card the operator put down: now %q", got.Status)
 	}
 }
