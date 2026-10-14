@@ -40,6 +40,12 @@ const FD_TABS = {
 const FD_NARROW = "(max-width: 520px)";
 // How far a drag has to carry the drawer, as a fraction of its height, for it to stay open when let go.
 const FD_SNAP = 1 / 3;
+// THE ONE SWITCH for the terminals tab. true: the drawer is an accordion like stack and board, pushing the terminal down,
+// with a real fit and a pty resize on open and on close. false: the drawer is an overlay over the terminal's top rows and
+// the terminal keeps its row count (no fit, no resize), the path docs/backlog/ui/filter-drawer-strip-notes.md describes.
+// A var so a test can flip it; nothing else reads it but `fdOverlay`.
+var FD_TERMS_PUSH = true;
+function fdOverlay(tab) { return tab === "terms" && !FD_TERMS_PUSH; }
 
 const fdState = {};   // tab -> { open, prev, status }
 let fdSwallow = 0;    // when a swallowed pointerdown happened, so its click is eaten and a stray flag times out
@@ -73,10 +79,10 @@ function fdMount(tab) {
   host.classList.add("fdrawer");
   host.dataset.tab = tab;
   // All three tabs are the strip (the header's colours, a chevron after the summary). Stack and board are an accordion
-  // that pushes the content down; the terminals tab is the same strip with the panel as an overlay, so the terminal keeps
-  // its row count while it is open.
+  // that pushes the content down; the terminals tab is too unless FD_TERMS_PUSH is off, which makes its panel an overlay
+  // so the terminal keeps its row count while it is open.
   host.classList.add("fstrip");
-  host.classList.toggle("foverlay", tab === "terms");
+  host.classList.toggle("foverlay", fdOverlay(tab));
   const btn = `<button type="button" class="filtersbtn" tabindex="-1" aria-expanded="false" aria-controls="${cfg.host}-panel" aria-label="filters"
         ><svg class="fchev" viewBox="0 0 20 20" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 7.5 10 13l5.5-5.5"/></svg><b class="fcount" hidden></b></button>`;
   const qm = `<input type="search" class="fq" id="${cfg.q}" aria-label="search this list" placeholder="${esc(cfg.placeholder)}"
@@ -131,8 +137,10 @@ function fdSet(tab, open, restore) {
   if (open) fdCloseAll(tab);
   st.open = !!open;
   const panel = host.querySelector(".fpanel");
+  host.classList.toggle("foverlay", fdOverlay(tab));
   host.classList.toggle("open", st.open);
   host.classList.remove("fdragging");
+  if (tab === "terms" && !fdOverlay(tab)) fdRefitTerms(host);
   panel.style.transform = "";
   panel.inert = !st.open;
   host.querySelector(".filtersbtn").setAttribute("aria-expanded", st.open ? "true" : "false");
@@ -151,6 +159,18 @@ function fdSet(tab, open, restore) {
       }
     }
   }
+}
+
+// The pane moves with the drawer, so the terminal needs a fit and the pty a resize. The ResizeObserver on the screen does
+// most of it frame by frame; this is the explicit one, now and when the slide ends, so the last size is always sent.
+function fdRefitTerms(host) {
+  const again = () => { if (typeof onTermResize === "function") onTermResize(); };
+  again();
+  const wrap = host.querySelector(".fwrap");
+  let done = false;
+  const end = () => { if (done) return; done = true; wrap.removeEventListener("transitionend", end); again(); };
+  wrap.addEventListener("transitionend", end);
+  setTimeout(end, 260);
 }
 
 function fdCloseAll(except) {
@@ -296,7 +316,7 @@ function fdWireDrag(tab, host) {
   const line = host.querySelector(".fline");
   const panel = host.querySelector(".fpanel");
   const wrap = host.querySelector(".fwrap");
-  const strip = !host.classList.contains("foverlay");
+  const stripNow = () => !host.classList.contains("foverlay");
   let d = null;
   line.addEventListener("touchstart", e => {
     if (e.touches.length !== 1 || (e.target.closest && e.target.closest(".fq")) || fdIsOpen(tab)) { d = null; return; }
@@ -314,12 +334,12 @@ function fdWireDrag(tab, host) {
       fdCloseAll(tab);
       fdState[tab].prev = document.activeElement;
       host.classList.add("fdragging");
-      d.h = strip ? Math.min(panel.scrollHeight, parseFloat(getComputedStyle(panel).maxHeight) || Infinity) : panel.offsetHeight;
+      d.h = stripNow() ? Math.min(panel.scrollHeight, parseFloat(getComputedStyle(panel).maxHeight) || Infinity) : panel.offsetHeight;
     }
     if (e.cancelable) e.preventDefault();
     const y = Math.max(0, Math.min(d.h, dy));
     d.y1 = y;
-    if (strip) wrap.style.gridTemplateRows = y + "px";
+    if (stripNow()) wrap.style.gridTemplateRows = y + "px";
     else panel.style.transform = "translateY(" + (y - d.h) + "px)";
   }, { passive: false });
   const end = () => {

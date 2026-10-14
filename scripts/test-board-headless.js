@@ -21804,6 +21804,52 @@ async function hiddenEveryLevelSection(browser, base) {
 // listed, shows 2 collapsed and 2 expanded, with no "hidden" text on the row. Its popup says 5 in all, 2 shown, what hides
 // the other 3, how many run, and names the ones that need you, each a button that opens that card. A card with no
 // children has no children section.
+async function termsDrawerPushSection(browser, base) {
+  const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+  const errors = [];
+  try {
+    const p = await ctx.newPage();
+    p.on("pageerror", e => errors.push(String(e)));
+    await p.goto(base + "/", { waitUntil: "domcontentloaded" });
+    await p.waitForFunction(() => typeof fdSet === "function" && typeof onTermResize === "function", null, { timeout: slow(15000) });
+    const got = await p.evaluate(async () => {
+      switchView("terms");
+      const wait = ms => new Promise(r => setTimeout(r, ms));
+      const calls = [];
+      const orig = window.onTermResize;
+      window.onTermResize = function () { calls.push(1); return orig.apply(this, arguments); };
+      const paneH = () => Math.round(document.getElementById("term-layout").getBoundingClientRect().height);
+      const run = async push => {
+        window.FD_TERMS_PUSH = push;
+        fdSet("terms", true);
+        fdSet("terms", false);
+        await wait(400);
+        const host = document.getElementById("fd-terms");
+        const shut = paneH();
+        calls.length = 0;
+        fdSet("terms", true);
+        await wait(500);
+        const open = paneH(), openCalls = calls.length, overlay = host.classList.contains("foverlay");
+        calls.length = 0;
+        fdSet("terms", false);
+        await wait(500);
+        return { shut, open, openCalls, overlay, back: paneH(), closeCalls: calls.length };
+      };
+      const push = await run(true), fixed = await run(false);
+      window.FD_TERMS_PUSH = true;
+      return { push, fixed };
+    });
+    const a = got.push, b = got.fixed;
+    if (a.overlay) fail("termsDrawerPush: the drawer is still an overlay with push on");
+    if (!(a.open < a.shut - 5)) fail("termsDrawerPush: opening did not shrink the terminal pane: " + JSON.stringify(a));
+    if (a.back !== a.shut) fail("termsDrawerPush: closing did not restore the pane: " + JSON.stringify(a));
+    if (a.openCalls < 1 || a.closeCalls < 1) fail("termsDrawerPush: no resize on open or close: " + JSON.stringify(a));
+    if (!b.overlay || b.open !== b.shut || b.back !== b.shut) fail("termsDrawerPush: flipping the constant does not bring back the fixed-row overlay: " + JSON.stringify(b));
+    if (errors.length) fail("termsDrawerPush: page errors: " + errors.join("; "));
+  } finally { await ctx.close(); }
+  if (!bad) console.log("termsDrawerPush ok");
+}
+
 async function kidCountsSection(browser, base) {
   const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 } });
   const errors = [];
@@ -31863,6 +31909,7 @@ async function main() {
     await unit("offCardActions", () => offCardActionsSection(browser, base));
     await unit("pausedDead", () => pausedDeadSection(browser, base));
     await unit("hiddenEveryLevel", () => hiddenEveryLevelSection(browser, base));
+    await unit("termsDrawerPush", () => termsDrawerPushSection(browser, base));
     await unit("kidCounts", () => kidCountsSection(browser, base));
     await unit("termHeaderSize", () => termHeaderSizeSection(browser, base));
     await unit("popupFit", () => popupFitSection(browser, base));
