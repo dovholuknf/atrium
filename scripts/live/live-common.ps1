@@ -55,7 +55,7 @@ $HubArgs += @('--board-views', 'D:\worktrees')
 # sg3 cannot reach 7779 and attach over ziti only. The identity is enrolled outside the repo and never committed. Only
 # added while it is there, so a machine without it starts the hub on direct as before, and a ziti controller that is down
 # leaves the hub up on direct (a later transport that cannot listen is left out). See docs/changes/room-transport-order.md.
-$HubZitiIdentity = 'C:\Users\claude\.ziti\identities\atrium-hub-sg4.json'
+$HubZitiIdentity = 'C:\Users\claude\.ziti\identities\atrium\atrium-hub-sg4.json'
 $HubZitiService  = 'atrium-hub'
 if (Test-Path $HubZitiIdentity) {
   $HubArgs += @('--transport', 'direct,ziti', '--atrium-identity', $HubZitiIdentity, '--atrium-service', $HubZitiService)

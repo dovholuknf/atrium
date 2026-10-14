@@ -29,8 +29,8 @@ func runHubTransports(t *testing.T, dir string, args ...string) (string, error) 
 func TestRoomsTransportsSetsTheHubOrder(t *testing.T) {
 	dir := t.TempDir()
 	out, err := runHubTransports(t, dir)
-	if err != nil || !strings.HasPrefix(out, "direct,ziti,zrok") {
-		t.Fatalf("default: %q, %v, want direct,ziti,zrok", out, err)
+	if err != nil || !strings.HasPrefix(out, "ziti,direct,zrok") {
+		t.Fatalf("default: %q, %v, want ziti,direct,zrok", out, err)
 	}
 	if out, err = runHubTransports(t, dir, "openziti,direct"); err != nil || !strings.HasPrefix(out, "ziti,direct") {
 		t.Fatalf("set: %q, %v", out, err)
@@ -71,7 +71,8 @@ func TestHubPathsFollowTheOrderAndSayNoSecret(t *testing.T) {
 }
 
 // A room that joined over direct, with a ziti identity configured by hand, gets
-// a ziti rung wrapped in its certificate, so the hub still knows its name.
+// a ziti rung wrapped in its certificate, so the hub still knows its name. Ziti
+// comes first, the default order.
 func TestRoomLadderWrapsTheZitiFallbackInTheRoomCertificate(t *testing.T) {
 	keys := link.Keys{Dir: t.TempDir()}
 	writeStrayRoomCert(t, keys)
@@ -82,14 +83,14 @@ func TestRoomLadderWrapsTheZitiFallbackInTheRoomCertificate(t *testing.T) {
 		t.Fatalf("%v %v", err, skipped)
 	}
 	rs := l.Rungs()
-	if len(rs) != 2 || rs[0].Path.Transport != "direct" || rs[1].Path.Transport != "ziti" {
-		t.Fatalf("rungs %+v, want direct then ziti", rs)
+	if len(rs) != 2 || rs[0].Path.Transport != "ziti" || rs[1].Path.Transport != "direct" {
+		t.Fatalf("rungs %+v, want ziti then direct, the default", rs)
 	}
-	if _, ok := rs[0].Dial.(link.Direct); !ok {
-		t.Fatalf("direct rung is %T", rs[0].Dial)
+	if _, ok := rs[1].Dial.(link.Direct); !ok {
+		t.Fatalf("direct rung is %T", rs[1].Dial)
 	}
-	if _, ok := rs[1].Dial.(link.Proven); !ok {
-		t.Fatalf("the ziti fallback is %T, want it inside the room's certificate", rs[1].Dial)
+	if _, ok := rs[0].Dial.(link.Proven); !ok {
+		t.Fatalf("the ziti rung is %T, want it inside the room's certificate", rs[0].Dial)
 	}
 }
 

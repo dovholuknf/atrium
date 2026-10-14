@@ -55,6 +55,11 @@ func newStop() *cobra.Command {
 // somebody other than the daemon.
 func boardAddress(override string) string {
 	if override != "" {
+		// A bare host:port is what people type, and Go's URL parser reads the
+		// host as a scheme and refuses it.
+		if !strings.Contains(override, "://") {
+			override = "http://" + override
+		}
 		return strings.TrimRight(override, "/")
 	}
 	if v := os.Getenv("ATRIUM_BOARD_URL"); v != "" {

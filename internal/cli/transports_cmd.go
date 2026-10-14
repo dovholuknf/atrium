@@ -28,7 +28,7 @@ func roomTransportsCmd(prefix string) *cobra.Command {
 		Long: "Every room is told, when it attaches, the transports this hub listens on in\n" +
 			"this order, and writes them down. A room that cannot reach the hub on the first\n" +
 			"tries the next, and moves back up when the first answers again.\n\n" +
-			"With no argument this prints the order. Unset is direct,ziti,zrok. A transport\n" +
+			"With no argument this prints the order. Unset is ziti,direct,zrok. A transport\n" +
 			"the hub is not listening on is skipped, so this never turns one on. A room can\n" +
 			"override it on its own machine with `atrium room transports order`.",
 		Args: cobra.MaximumNArgs(1),

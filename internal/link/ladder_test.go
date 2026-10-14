@@ -41,26 +41,26 @@ func TestArrangeFollowsTheOrderAndPutsTheRestLast(t *testing.T) {
 	if got := kinds(Arrange(ps, []string{"ziti"})); got != "ziti,direct,zrok" {
 		t.Fatalf("got %s, want ziti first and the rest in the default order", got)
 	}
-	if got := kinds(Arrange(ps, nil)); got != "direct,ziti,zrok" {
+	if got := kinds(Arrange(ps, nil)); got != "ziti,direct,zrok" {
 		t.Fatalf("no order is the default order, got %s", got)
 	}
 }
 
 // A room joined over direct that was told about a ziti identity locally climbs
-// direct then ziti, with nothing heard from the hub. This is m1mini and sg3.
+// ziti then direct, with nothing heard from the hub. This is m1mini and sg3.
 func TestCandidatesWithoutTheHubUseTheJoinAndTheLocalPaths(t *testing.T) {
 	saved := Saved{Transport: "direct", Hub: "sg4:7779", Room: "m1mini"}
 	got, skipped := Candidates(saved, RoomTransports{
 		Paths: []Path{{Transport: "ziti", Identity: "/r/m1mini.json"}},
 	})
-	if kinds(got) != "direct,ziti" {
-		t.Fatalf("got %s, want direct,ziti", kinds(got))
+	if kinds(got) != "ziti,direct" {
+		t.Fatalf("got %s, want ziti,direct (the default puts ziti first)", kinds(got))
 	}
-	if got[0].Addr != "sg4:7779" || got[0].From != "join" {
-		t.Fatalf("direct rung %+v, want the joined address from the join", got[0])
+	if got[1].Addr != "sg4:7779" || got[1].From != "join" {
+		t.Fatalf("direct rung %+v, want the joined address from the join", got[1])
 	}
-	if got[1].Service != DefaultZitiService || got[1].From != "local" {
-		t.Fatalf("ziti rung %+v, want the default service and a local identity", got[1])
+	if got[0].Service != DefaultZitiService || got[0].From != "local" {
+		t.Fatalf("ziti rung %+v, want the default service and a local identity", got[0])
 	}
 	if len(skipped) != 0 {
 		t.Fatalf("nothing should be skipped: %v", skipped)

@@ -33,8 +33,9 @@ type Path struct {
 	From string `json:"from,omitempty"`
 }
 
-// DefaultOrder is the order with nothing said: direct, then openziti, then zrok.
-var DefaultOrder = []string{"direct", "ziti", "zrok"}
+// DefaultOrder is the order with nothing said: openziti, then direct, then zrok.
+// clint 2026-10-14: ziti first, direct second.
+var DefaultOrder = []string{"ziti", "direct", "zrok"}
 
 // DefaultZitiService is the service a ziti rung dials when nothing names one. The
 // same default `atrium run --atrium-service` has.
