@@ -547,3 +547,22 @@ func TestACardWithNoLauncherTellsNobodyAboutItsMenu(t *testing.T) {
 		}
 	}
 }
+
+// A card a restart brought back, by reopening it or by reattaching its terminal, is idle at its prompt and not
+// launched: it must not be called "no activity since launch". A real fresh launch still is.
+func TestRespawnIsNotALaunch(t *testing.T) {
+	t.Parallel()
+	d := testDaemon(t)
+	task, run := stuckWorker(t, d, "idle at the prompt\r\n", 15*time.Hour, 15*time.Hour)
+	if x := d.launchStuck(task, time.Now()); x == nil || x.Source != NoticeLaunchIdle {
+		t.Fatalf("fresh launch got %+v, want launch-idle", x)
+	}
+	// reopened with no conversation id to resume
+	if req := d.reopenRequest(task); req.Resume != "" || !req.Respawn {
+		t.Fatalf("reopen request %+v, want Respawn with no resume id", req)
+	}
+	run.resumed = true
+	if x := d.launchStuck(task, time.Now()); x != nil {
+		t.Fatalf("respawned card got %+v, want nothing", x)
+	}
+}

@@ -105,6 +105,7 @@ func (d *Daemon) reopenRequest(t *store.Task) LaunchRequest {
 		Harness: t.Runner,
 		Cwd:     t.Worktree,
 		TaskID:  t.ID,
+		Respawn: true,
 		Resume:  d.reopenResume(t),
 		Model:   t.Model,
 		Effort:  t.Effort,

@@ -29,6 +29,10 @@ type LaunchRequest struct {
 	// Resume picks a conversation back up instead of starting a new one. The
 	// value is the runner's own session id, recorded by the session hooks.
 	Resume string `json:"resume"`
+	// Respawn marks a launch rebuilt from an existing card (a reopen after a restart, an unpark, a runner restart).
+	// It is not a first launch even when no conversation id could be passed, so the launch-inactivity notice stays
+	// quiet. Never set from the wire.
+	Respawn bool `json:"-"`
 	// TaskID starts a runner onto a card that already exists, instead of making
 	// one. Unshelving uses it: the card, its history and its resume id are the
 	// reason to pick the work back up, so a second card would defeat the point.
@@ -1287,7 +1291,7 @@ func (d *Daemon) launchLocked(req LaunchRequest) (*store.Task, error) {
 			}
 			fresh = &launchSpec{cmd: h.Exe(), args: freshArgs, cwd: cwd, env: env}
 		}
-		sp, err := d.spawnPTYRunner(task.ID, h.Exe(), args, cwd, env, req.Resume != "", fresh)
+		sp, err := d.spawnPTYRunner(task.ID, h.Exe(), args, cwd, env, req.Resume != "" || req.Respawn, fresh)
 		if err != nil {
 			// The card was created before the process, so a failure to start
 			// has to move it. Left in `running` it describes a process that

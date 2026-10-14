@@ -503,7 +503,9 @@ func (d *Daemon) adoptLive(cl *ptyhost.Client, addr string, row *store.PtyRun, t
 	r := &runner{
 		taskID: row.TaskID, runID: row.RunID, started: startedOf(att.Info), pid: att.Info.Pid,
 		reattachedAt: time.Now(),
-		dir:          task.Worktree, buf: buf,
+		// A terminal this daemon found already running is not a launch: its start predates this process.
+		resumed: true,
+		dir:     task.Worktree, buf: buf,
 		watchers: map[chan []byte]struct{}{}, done: make(chan struct{}),
 	}
 	if !shell {
