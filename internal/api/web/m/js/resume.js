@@ -72,7 +72,7 @@
     const why = cannotResumeCard(t);
     const done = () => window.mNet.refresh();
     return [
-      !over && (t.supervised || (t.parked_at && t.resume_id)) ? {
+      !over && cardState(t) !== "off" && (t.supervised || (t.parked_at && t.resume_id)) ? {
         label: "restart",
         help: "Stops the agent and starts it again on the same conversation, with the same model and settings.",
         act: () => post(id, t.supervised ? "restart" : "resume").then(done)

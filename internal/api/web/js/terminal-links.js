@@ -936,7 +936,26 @@ async function showTerminal(kind) {
   openTerm(task);
 }
 
+// A RETRY ONLY FOR THE CARD THE PANE STILL SHOWS.
+//
+// Every reconnect is a timer that closed over the card it was scheduled for, and the pane can move on before it
+// fires. A hub restart makes this the common case: retries are pending for seconds, and clicking another session
+// in that time left the old one's timer to dial its card under the new one's header, so keystrokes went to a
+// different session than the one named above the terminal. The timer asked only whether SOME terminal existed.
+function redialTerm(taskID) {
+  if (!term || !termTask || bareId(termTask.id) !== bareId(taskID)) return;
+  connectTerm(taskID);
+}
+
+// The card a socket was dialled for, read off its own URL, so it is what the wire says rather than a field kept beside it.
+function sockCard(sock) {
+  const m = sock && /\/v1\/tasks\/([^/?]+)\/attach/.exec(sock.url || "");
+  return m ? decodeURIComponent(m[1]) : "";
+}
+
 function connectTerm(taskID) {
+  // The same rule for every caller: never dial a card the pane is not showing.
+  if (termTask && bareId(termTask.id) !== bareId(taskID)) return;
   const proto = location.protocol === "https:" ? "wss:" : "ws:";
   // ONE SOCKET PER PANE, ALWAYS.
   //
@@ -1140,7 +1159,7 @@ function connectTerm(taskID) {
       if (!attachSince) attachSince = Date.now();
       if (Date.now() - attachSince < attachRetryFor) {
         termWait("restarting " + waitName(termTask) + ". reconnecting…");
-        setTimeout(() => { if (term) connectTerm(taskID); }, attachRetryDelay());
+        setTimeout(() => { redialTerm(taskID); }, attachRetryDelay());
         return;
       }
     }
@@ -1166,7 +1185,7 @@ function connectTerm(taskID) {
       if (!attachSince) attachSince = Date.now();
       if (Date.now() - attachSince < attachRetryFor) {
         termWait("atrium is restarting. reconnecting to " + waitName(termTask) + "…");
-        setTimeout(() => { if (term) connectTerm(taskID); }, attachRetryDelay());
+        setTimeout(() => { redialTerm(taskID); }, attachRetryDelay());
         return;
       }
     }
@@ -1259,7 +1278,7 @@ function connectTerm(taskID) {
           ? "atrium is restarting. reconnecting to " + waitName(termTask) + "…"
           : "reconnecting to " + waitName(termTask) + "…");
       }
-      setTimeout(() => { if (term) connectTerm(taskID); }, attachRetryDelay());
+      setTimeout(() => { redialTerm(taskID); }, attachRetryDelay());
       return;
     }
 
@@ -1271,7 +1290,7 @@ function connectTerm(taskID) {
           "\x1b[0m\r\n");
       }
       termWait("atrium is restarting. reconnecting to " + waitName(termTask) + "…");
-      setTimeout(() => { if (term) connectTerm(taskID); }, attachRetryDelay());
+      setTimeout(() => { redialTerm(taskID); }, attachRetryDelay());
       return;
     }
 
@@ -1297,7 +1316,7 @@ function connectTerm(taskID) {
           "\x1b[0m\r\n");
       }
       termWait("waiting for " + waitName(termTask) + " to come back…");
-      setTimeout(() => { if (term) connectTerm(taskID); }, attachRetryDelay());
+      setTimeout(() => { redialTerm(taskID); }, attachRetryDelay());
       return;
     }
 
@@ -1382,6 +1401,16 @@ function send(msg) {
 // A frame already serialised, for a big paste that had to be measured first.
 function sendFrame(s) {
   if (!termSock || termSock.readyState !== WebSocket.OPEN) return;
+  // THE HEADER AND THE SOCKET MUST NAME THE SAME CARD. If they ever do not, nothing is sent: typing into a
+  // session other than the one on screen is worse than a pane that closes. See `redialTerm`.
+  const wired = sockCard(termSock);
+  if (wired && termTask && bareId(wired) !== bareId(termTask.id)) {
+    const shown = termTask.id;
+    if (term) term.write("\r\n\x1b[38;5;203m[atrium] this pane was attached to another session, so it was closed. pick " + shown + " again\x1b[0m\r\n");
+    rlog("pane for", shown, "had a socket for", wired, "- closed");
+    closeTerm(true);
+    return;
+  }
   traceIn(s);
   termSock.send(s);
 }

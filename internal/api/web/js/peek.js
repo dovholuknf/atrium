@@ -531,10 +531,12 @@ function peekActions(box, id) {
     row.appendChild(b);
   };
   add("open", t.supervised ? "attach its terminal" : "open the card", () => t.supervised ? attachTask(id) : openTask(id));
-  add("say", "queue a message for it", () => peekSay(id));
+  // Nothing runs on an off card (cardState, js/cardrules.js): no one to say it to and nothing to restart.
+  const running = cardState(t) !== "off";
+  if (running) add("say", "queue a message for it", () => peekSay(id));
   if (t.supervised && t.status !== "done") {
     add("exit", "ask it to exit with its own keys. its card stays", () => oneAtATime("kill:" + bareId(id), () => exitTermNow(t)));
-    add("restart", "exit it with its own keys and resume the same conversation on this card", () => restartCard(id));
+    if (running) add("restart", "exit it with its own keys and resume the same conversation on this card", () => restartCard(id));
   }
   box.appendChild(row);
 }
