@@ -435,6 +435,8 @@ func runRoom(keys link.Keys, db, human, agent string, restartAfter time.Duration
 			Forwarded: ans.Forwarded, ForwardStatus: ans.ForwardStatus, Forward: ans.Forward, Live: ans.Live}, nil
 	})
 	d.SetRelay(linkRelay{room: room})
+	// THE LINK'S OWN STATE on this room's board, which is the only place a room that cannot dial its hub can say so.
+	d.SetHubLink(func() any { return room.State() })
 	// SSH STREAMS: this room's switch lives beside its certificate, and the link carries the streams. See internal/link/stream.go.
 	room.RemoteDir = keys.Dir
 	d.SetStreamer(room)

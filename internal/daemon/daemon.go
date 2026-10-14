@@ -1575,6 +1575,9 @@ func (d *Daemon) SetPRClaim(f func(ctx context.Context, ask api.PRClaimAsk) (api
 	d.ap.ClaimPR = f
 }
 
+// SetHubLink says how to read the state of this room's link to its hub, for GET /v1/hub-link.
+func (d *Daemon) SetHubLink(f func() any) { d.ap.HubLink = f }
+
 // ReconcilePRClaims asks the hub about the PR rows made while it could not be reached. The room's attach calls it.
 func (d *Daemon) ReconcilePRClaims() { d.ap.ReconcilePRClaims() }
 

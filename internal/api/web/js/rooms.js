@@ -377,7 +377,7 @@ async function hubAttachedRows() {
   // in the page and unreachable. The daemon IS the hub with its own room, which
   // is decision 3, and this is what that looks like on a machine running one
   // atrium by itself.
-  if (!hubIsHub) return thisMachineRow();
+  if (!hubIsHub) return thisMachineRow(await loadHubLink());
   const rest = hubInventory;
 
   if (!rest.length) {
@@ -413,7 +413,7 @@ async function hubAttachedRows() {
 // machine, and a name would be a label for a set of one. No transport badge and
 // no state chip either, for the same reason. What it carries is the cog, which
 // is the whole point of drawing it.
-function thisMachineRow() {
+function thisMachineRow(link) {
   return `<div class="panel roomlist"><div class="roomrow has-hint">
     <div class="roomrow-top">
       <b class="roomname">this machine</b>
@@ -422,7 +422,32 @@ function thisMachineRow() {
         >&#9881;</button>
     </div>
     <div class="hintline">Editor, paste, shell and scrollback settings are behind the cog.</div>
+    ${hubLinkLine(link)}
   </div></div>`;
+}
+
+// loadHubLink asks this room how its link to its hub is doing. Null on a plain daemon, which answers 404 because it has
+// no hub, and on any failure: this line is an extra and must never stop the pane drawing.
+async function loadHubLink() {
+  try {
+    const res = await plainFetch("/v1/hub-link");
+    return res.ok ? await res.json() : null;
+  } catch (e) {
+    return null;
+  }
+}
+
+// hubLinkLine says a room is NOT attached to its hub and why, with the address it tried.
+//
+// The hub cannot say this, because a room that never dials is a row it has no news of. Only the room knows its dial
+// timed out, so its own board is where it shows. Nothing at all while attached: a line that says all is well under every
+// row is the noise `roomLine` leaves out.
+function hubLinkLine(link) {
+  if (!link || link.up) return "";
+  const tried = link.hub ? ` Tried <code>${esc(link.hub)}</code>.` : "";
+  const why = link.error ? ` ${esc(link.error)}.` : "";
+  return `<div class="hintline hublink-down">Not attached to its hub.${tried}${why}
+    If the hub moved, <code>atrium room hub &lt;host:port&gt;</code> points this room at its new address.</div>`;
 }
 
 // roomRow is one room, however it is doing.

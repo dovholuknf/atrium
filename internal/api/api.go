@@ -381,6 +381,7 @@ type Server struct {
 	// it checks in. RoomForget drops one early, which is the same thing time
 	// does and is equally not durable.
 	RoomJoin   func() any
+	HubLink    func() any
 	RoomForget func(w http.ResponseWriter, r *http.Request)
 
 	// The other direction: work queued for another machine, which rides the
@@ -497,6 +498,15 @@ func (s *Server) Handler() http.Handler {
 	if s.RoomDecide != nil {
 		mux.HandleFunc("POST /v1/rooms/{room}/permissions/{id}/decide", s.RoomDecide)
 	}
+	// HOW THIS ROOM'S LINK TO ITS HUB IS DOING, for the room's own board. Read per request because the room
+	// sets it after the server is built, and 404 on a plain daemon, which has no hub to be down.
+	mux.HandleFunc("GET /v1/hub-link", func(w http.ResponseWriter, r *http.Request) {
+		if s.HubLink == nil {
+			http.NotFound(w, r)
+			return
+		}
+		writeJSON(w, http.StatusOK, s.HubLink())
+	})
 	if s.RoomJoin != nil {
 		// Before the wildcard, or `join` is read as a room called join. Go's
 		// mux prefers the more specific pattern, but stating it here keeps the
