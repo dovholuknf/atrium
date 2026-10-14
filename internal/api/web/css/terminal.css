@@ -281,7 +281,11 @@
      the one thing on the entry that changes what a click does. Narrowing the list shrank it to nothing, so
      the click that would have raised that window landed on the card and did something else. The name gives
      way instead, which it can afford to, since it is already truncating. */
-  .term-list .card .card-line > .chips { flex: none; overflow: visible; }
+  .term-list .card .card-line > .chips { flex: none; overflow: visible; flex-wrap: nowrap; }
+  /* ONE LINE, running or parked. The board's card line wraps (be49b743) so a busy card grows a line, which here put
+     the chips under a long path and made a parked row, with its resume chip, taller than a running one. The title
+     already truncates, so it gives way and the chips stay beside it. */
+  .term-list .card .card-line { flex-wrap: nowrap; }
   /* Mini. These come after the single-line rules above so those do not undo them.
      The entry is an icon and a short name, so both are centred in the column rather than left-aligned against
      an edge a few pixels away. `.tname` stops being rtl here: a short name is not truncated, and an rtl box
