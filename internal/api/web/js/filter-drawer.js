@@ -405,9 +405,8 @@ function fdAttached(t) {
 function subagentRollup(cards, on) {
   const byBare = new Map(cards.map(t => [bareId(t.id), t]));
   const parentOf = t => {
-    if (!nestsUnderLauncher(t) || !t.spawned_by_id) return null;
-    const p = byBare.get(bareId(t.spawned_by_id));
-    return p && p !== t ? p : null;
+    if (!nestsUnderLauncher(t)) return null;
+    return launcherOf(t, cards, byBare);
   };
   // The attached card is not rollable: it stays a row of its own, and is not counted in its parent's badge.
   const rollable = new Set(cards.filter(t => parentOf(t) && !isWaiting(t) && !fdAttached(t)).map(t => t.id));

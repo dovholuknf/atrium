@@ -1211,9 +1211,8 @@ addEventListener("storage", e => {
 function termNest(list) {
   const byBare = new Map(list.map(t => [bareId(t.id), t]));
   const parentOf = t => {
-    if (!nestsUnderLauncher(t) || !t.spawned_by_id || t.pinned) return null;
-    const p = byBare.get(bareId(t.spawned_by_id));
-    return p && p !== t ? p : null;
+    if (!nestsUnderLauncher(t) || t.pinned) return null;
+    return launcherOf(t, list, byBare);
   };
   const kids = new Map();
   const nested = new Set();

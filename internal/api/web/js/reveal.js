@@ -18,8 +18,8 @@
 function revealChain(t) {
   const out = [t];
   const seen = new Set([t.id]);
-  for (let cur = t; cur && cur.spawned_by_id;) {
-    const up = lastTasks.find(x => x.id === cur.spawned_by_id || bareId(x.id) === bareId(cur.spawned_by_id));
+  for (let cur = t; cur && (cur.spawned_by_id || cur.spawned_by);) {
+    const up = launcherOf(cur, lastTasks);
     if (!up || seen.has(up.id)) break;
     seen.add(up.id);
     out.push(up);

@@ -87,8 +87,9 @@ function cardsReady(list) {
 // alert reads this to hold back until the last child ends. Matched on the bare id, as the board does everywhere.
 function hasRunningChild(t, all) {
   const me = bareId(t.task_id || t.id);
-  return (all || []).some(c => c.spawned_by_id && c.status === "running" && !c.archived_at &&
-    bareId(c.spawned_by_id) === me);
+  return (all || []).some(c => (c.spawned_by_id || c.spawned_by) && c.status === "running" && !c.archived_at &&
+    (c.spawned_by_id && bareId(c.spawned_by_id) === me ||
+      (l => !!l && bareId(l.id) === me)(launcherOf(c, all))));
 }
 function cardsWaiting() {
   return cardList().filter(waitingRow)
