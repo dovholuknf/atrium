@@ -181,6 +181,7 @@ func (s *Server) open(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ans.Worktree = wt.Path
+	wt.BriefFile = writePRBriefFile(ctx, wt, in.URL)
 
 	// THE INVENTORY, held under a pending owner until the card exists, then handed to it. A worktree that was already
 	// there is somebody else's and is not recorded. See resources.go.
@@ -380,7 +381,7 @@ func (s *Server) openLaunchBody(in openRequest, got *store.Resolved, wt prWorktr
 		title = fmt.Sprintf("%s/%s#%d", org, repo, num)
 	}
 	body, _ := json.Marshal(map[string]any{
-		"harness": harness, "cwd": wt.Path, "title": title, "why": in.Why, "prompt": or(in.Prompt, got.Prompt),
+		"harness": harness, "cwd": wt.Path, "title": title, "why": in.Why, "prompt": or(in.Prompt, got.Prompt) + prBrief(wt.PR, wt.BriefFile),
 		"tags": tags, "model": strings.TrimSpace(in.Model), "effort": strings.TrimSpace(in.Effort),
 		"repo": repo, "org": org, "host": got.Host, "branch": wt.Branch, "window": got.Window, "theme": got.Theme,
 		"source_kind": got.Kind, "source_url": in.URL,

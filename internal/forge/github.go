@@ -57,16 +57,19 @@ type ghView struct {
 	Author struct {
 		Login string `json:"login"`
 	} `json:"author"`
-	HeadRefOid        string `json:"headRefOid"`
-	HeadRefName       string `json:"headRefName"`
-	BaseRefName       string `json:"baseRefName"`
-	IsCrossRepository bool   `json:"isCrossRepository"`
-	Files             []File `json:"files"`
+	HeadRefOid        string   `json:"headRefOid"`
+	HeadRefName       string   `json:"headRefName"`
+	BaseRefName       string   `json:"baseRefName"`
+	IsCrossRepository bool     `json:"isCrossRepository"`
+	Files             []File   `json:"files"`
+	Body              string   `json:"body"`
+	Comments          []ghNote `json:"comments"`
+	Reviews           []ghNote `json:"reviews"`
 }
 
 func (g *github) View(ctx context.Context, ref Ref) (*PR, error) {
 	out, err := g.do(ctx, ref, ghJSONLimit, "pr", "view", fmt.Sprint(ref.Number), "--repo", repoArg(ref), "--json",
-		"title,author,headRefOid,headRefName,baseRefName,isCrossRepository,files")
+		"title,author,body,comments,reviews,headRefOid,headRefName,baseRefName,isCrossRepository,files")
 	if err != nil {
 		return nil, err
 	}
@@ -78,7 +81,8 @@ func (g *github) View(ctx context.Context, ref Ref) (*PR, error) {
 		return nil, fmt.Errorf("%s pr view gave no head", g.cmd)
 	}
 	return &PR{Title: v.Title, Author: v.Author.Login, Head: v.HeadRefOid, HeadRef: v.HeadRefName,
-		BaseRef: v.BaseRefName, FromFork: v.IsCrossRepository, Files: v.Files}, nil
+		BaseRef: v.BaseRefName, FromFork: v.IsCrossRepository, Files: v.Files, Body: v.Body,
+		Discussion: discussion(v.Comments, v.Reviews)}, nil
 }
 
 func (g *github) Diff(ctx context.Context, ref Ref) ([]byte, error) {
@@ -112,4 +116,48 @@ func (g *github) FetchSpec(ref Ref) FetchSpec {
 
 func (g *github) PRURL(ref Ref) string {
 	return fmt.Sprintf("https://%s/%s/%s/pull/%d", host(ref), ref.Org, ref.Repo, ref.Number)
+}
+
+// ghNote is one comment or review of a pull request.
+type ghNote struct {
+	Author struct {
+		Login string `json:"login"`
+	} `json:"author"`
+	Body  string `json:"body"`
+	State string `json:"state"`
+}
+
+// discussionLimit bounds the discussion text, which a long review thread would otherwise make as large as the repo.
+const discussionLimit = 64 << 10
+
+// discussion is the comments, then the reviews, one block each: who, what they decided, and what they said. A review
+// with no words and no verdict worth naming is left out.
+func discussion(comments, reviews []ghNote) string {
+	var b strings.Builder
+	add := func(kind string, n ghNote) {
+		body := strings.TrimSpace(n.Body)
+		if body == "" && (n.State == "" || n.State == "COMMENTED") {
+			return
+		}
+		who := n.Author.Login
+		if who == "" {
+			who = "someone"
+		}
+		b.WriteString("### " + who + " (" + kind)
+		if n.State != "" {
+			b.WriteString(", " + strings.ToLower(n.State))
+		}
+		b.WriteString(")\n\n" + body + "\n\n")
+	}
+	for _, c := range comments {
+		add("comment", c)
+	}
+	for _, r := range reviews {
+		add("review", r)
+	}
+	out := b.String()
+	if len(out) > discussionLimit {
+		out = out[:discussionLimit] + "\n\n[the discussion is longer than this and was cut]\n"
+	}
+	return strings.TrimSpace(out)
 }

@@ -89,8 +89,9 @@ type bbEnd struct {
 }
 
 type bbPR struct {
-	Title  string `json:"title"`
-	Author struct {
+	Title       string `json:"title"`
+	Description string `json:"description"`
+	Author      struct {
 		Nickname    string `json:"nickname"`
 		DisplayName string `json:"display_name"`
 	} `json:"author"`
@@ -163,7 +164,7 @@ func (b *bitbucket) View(ctx context.Context, ref Ref) (*PR, error) {
 		author = v.Author.DisplayName
 	}
 	pr := &PR{Title: v.Title, Author: author, Head: v.Source.Commit.Hash, HeadRef: v.Source.Branch.Name,
-		BaseRef: v.Destination.Branch.Name, FromFork: v.fromFork(), Files: files}
+		BaseRef: v.Destination.Branch.Name, FromFork: v.fromFork(), Files: files, Body: v.Description}
 
 	// Bitbucket has no pull/N/head ref. FetchSpec runs nothing, so what View learned is kept for it.
 	spec := FetchSpec{Remote: bbClone(ref, ref.Org+"/"+ref.Repo), Refspec: v.Source.Branch.Name}

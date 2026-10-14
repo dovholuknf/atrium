@@ -11,7 +11,7 @@
     "cwd": "D:/worktrees/bitbucket/{org}/{repo}/pr-{num}",
     "window": "pull-requests",
     "branch": "{headRefName}",
-    "prompt": "Review the pull request at {url}. The worktree is already on its branch.",
+    "prompt": "Review the pull request at {url}.\n\nThe worktree is already on its branch. Read the diff against the merge base first, then the description. Report what you would block on and what is only a preference.",
     "fetch": "forge",
     "fetch_args": [
       "pr"

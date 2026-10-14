@@ -96,7 +96,8 @@ func TestOpenMakesTheWorktreeTheRowAndTheCardAndTiesThem(t *testing.T) {
 		t.Skip("slow: a real server with git worktrees and a database")
 	}
 	t.Parallel()
-	oh := newOpenHarness(t, &fakeForge{pr: forge.PR{HeadRef: "feat/x"}})
+	oh := newOpenHarness(t, &fakeForge{pr: forge.PR{HeadRef: "feat/x", Title: "Fix the thing", BaseRef: "main",
+		MergeBase: "abc123def456", Body: "the description", Discussion: "### lee (comment)\n\nlooks odd"}})
 	oh.checkout(t, "o", "r")
 	code, out := oh.open(t, openURL)
 	if code != 201 || out["created"] != true || out["key"] != "github.com/o/r/7" {
@@ -118,10 +119,23 @@ func TestOpenMakesTheWorktreeTheRowAndTheCardAndTiesThem(t *testing.T) {
 		SourceURL                       string `json:"source_url"`
 	}
 	_ = json.Unmarshal(oh.launched[0], &sent)
-	if sent.Cwd != path || sent.Prompt != "review it" || sent.Title != "review o/r#7" || sent.Why != "look" ||
+	if sent.Cwd != path || !strings.HasPrefix(sent.Prompt, "review it") || sent.Title != "review o/r#7" || sent.Why != "look" ||
 		sent.Branch != "feat/x" || sent.SourceURL != openURL ||
 		strings.Join(sent.Tags, ",") != "pull-request,pr,pr:o/r#7,link:github.com/o/r/7" {
 		t.Errorf("the launch was %s", oh.launched[0])
+	}
+	for _, want := range []string{"Fix the thing", "Base branch: main", "abc123def456", "Do not fetch, pull or run gh",
+		prBriefFile} {
+		if !strings.Contains(sent.Prompt, want) {
+			t.Errorf("the prompt lacks %q: %s", want, sent.Prompt)
+		}
+	}
+	md, err := os.ReadFile(filepath.Join(filepath.FromSlash(path), ".atrium", "PR.md"))
+	if err != nil || !strings.Contains(string(md), "the description") || !strings.Contains(string(md), "looks odd") {
+		t.Errorf("PR.md is %v %q", err, md)
+	}
+	if st := git(t, path, "status", "--porcelain"); strings.Contains(st, ".atrium") {
+		t.Errorf("the brief file shows in git status: %q", st)
 	}
 	row, err := oh.srv.st.PRByID(out["pr"].(string))
 	if err != nil || row.WalkerTask != out["card"] {

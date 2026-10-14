@@ -323,6 +323,7 @@ func (p *Proxy) forgePR(ctx context.Context, f *hubForge, ask forge.HubAsk) (for
 			return ans, wrap(err)
 		}
 		ans.Store, ans.Ref = name, forge.PRRef(ask.Number)
+		ans.PR.MergeBase = g.Store().PRMergeBase(ctx, name, ask.Number)
 	}
 	return ans, nil
 }

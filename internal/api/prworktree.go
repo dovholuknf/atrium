@@ -41,6 +41,10 @@ type prWorktreeResult struct {
 	Repo          string `json:"-"`
 	// Cloned is whether Repo was cloned for this worktree, so the card that gets it owns the clone too.
 	Cloned bool `json:"-"`
+	// PR is what the forge said about the pull request, for the card's brief.
+	PR *forge.PR `json:"-"`
+	// BriefFile is whether the description and discussion were written into the worktree.
+	BriefFile bool `json:"-"`
 }
 
 // makePRWorktree makes a worktree for a pull request at `<worktree_root>/<org>/<repo>/<branch>`. See prWorktree.
@@ -148,6 +152,7 @@ func (s *Server) prWorktree(ctx context.Context, p *store.Provider, req prWorktr
 	if s.ForgeWorked != nil {
 		s.ForgeWorked(f.Kind(), host)
 	}
+	res.PR = pr
 	branch := pr.HeadRef
 	if pr.FromFork || strings.TrimSpace(branch) == "" {
 		branch = "pr-" + strconv.Itoa(req.Number)

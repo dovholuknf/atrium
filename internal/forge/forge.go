@@ -54,6 +54,12 @@ type PR struct {
 	// FromFork is true when the head lives in another repository.
 	FromFork bool   `json:"from_fork"`
 	Files    []File `json:"files"`
+	// Body is the description and Discussion the comments and reviews, as text. MergeBase is the commit the head
+	// forked from the base branch, which only the hub can name: it holds the base. Together they let a review run
+	// with nothing fetched.
+	Body       string `json:"body,omitempty"`
+	Discussion string `json:"discussion,omitempty"`
+	MergeBase  string `json:"merge_base,omitempty"`
 }
 
 // FetchSpec is how git gets the head: fetch Refspec from Remote. Hub, when set, is the repository's name in the hub's

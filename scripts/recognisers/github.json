@@ -56,7 +56,7 @@
     "cwd": "D:/worktrees/github/{org}/{repo}/pr-{num}",
     "branch": "{headRefName}",
     "window": "pull-requests",
-    "prompt": "Review the pull request at {url}.\n\nThe worktree is already on its branch. Read the diff against the base branch first, then the description, then the discussion. Report what you would block on and what is only a preference.",
+    "prompt": "Review the pull request at {url}.\n\nThe worktree is already on its branch. Read the diff against the merge base first, then the description, then the discussion. Report what you would block on and what is only a preference.",
     "fetch": "forge",
     "fetch_args": [
       "pr"

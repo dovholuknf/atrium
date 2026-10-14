@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -16,6 +17,10 @@ import (
 
 // PRRefPrefix is where the store keeps pull request heads.
 const PRRefPrefix = "refs/atrium/pr/"
+
+// PRBaseRefPrefix is where the base branch's tip goes beside a head, so the merge-base can be named and a room that
+// reads the head has the commit to diff against without asking any forge.
+const PRBaseRefPrefix = "refs/atrium/prbase/"
 
 // Hold makes sure the store holds the repository at a forge URL, as Init does, and answers its name. It is what a
 // room's PR worktree or clone asks for, so a repository a room needs is in the store before the room reads it.
@@ -75,6 +80,11 @@ func (s *Store) FetchPR(ctx context.Context, name, remote, refspec, dst, base, h
 			specs = append(specs, "+refs/heads/"+base+":"+MainRef)
 		}
 	}
+	if base != "" && strings.HasPrefix(dst, PRRefPrefix) {
+		if _, err := s.git(ctx, "", "check-ref-format", "refs/heads/"+base); err == nil {
+			specs = append(specs, "+refs/heads/"+base+":"+PRBaseRefPrefix+strings.TrimPrefix(dst, PRRefPrefix))
+		}
+	}
 	if _, err := s.git(ctx, dir, prFetchArgs(remote, helper, specs)...); err != nil {
 		return "", s.fetchFailed(ref, err)
 	}
@@ -119,4 +129,23 @@ func (s *Store) fetchFailed(ref Ref, err error) error {
 		line = ge.First()
 	}
 	return &FetchError{Msg: "the hub could not fetch the head of that pull request: " + s.scrub(line)}
+}
+
+// PRMergeBase is the commit a pull request's head forked from its base branch: the one a review diffs against. It is
+// read from the refs FetchPR wrote for number n, and is empty when the base was not fetched or shares no history.
+func (s *Store) PRMergeBase(ctx context.Context, name string, n int) string {
+	ref, err := ParseName(name)
+	if err != nil {
+		return ""
+	}
+	dir, ok := (&Receiver{h: s.h}).dir(ref)
+	if !ok {
+		return ""
+	}
+	num := strconv.Itoa(n)
+	out, err := s.git(ctx, dir, "merge-base", PRRefPrefix+num, PRBaseRefPrefix+num)
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(out)
 }

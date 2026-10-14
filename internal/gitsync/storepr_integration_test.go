@@ -41,6 +41,10 @@ func TestFetchPRPutsTheHeadUnderTheAtriumRef(t *testing.T) {
 	if sha := git(t, dir, "rev-parse", PRRefPrefix+"7"); sha != head {
 		t.Fatalf("%s7 = %s, want %s", PRRefPrefix, sha, head)
 	}
+	// The merge base is named, for a card to diff against with nothing fetched.
+	if mb := x.s.PRMergeBase(bg, name, 7); mb != main {
+		t.Fatalf("merge base = %q, want %s", mb, main)
+	}
 	// MAIN IS LEFT ALONE when it is already there: the base is only fetched into an empty main.
 	if sha := git(t, dir, "rev-parse", MainRef); sha != main {
 		t.Fatalf("main = %s, want %s", sha, main)
