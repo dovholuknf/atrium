@@ -1303,7 +1303,7 @@ function termRoomChip(t) {
 // (`held_turn` "asked") or the runner's ("runner"), and only that one. Blaming
 // the line for a turn wait told the operator to clear a line that was already
 // empty. A room older than `held_for` gets the line wording it always had. The
-// chip counts, `! 2`, like `? N`.
+// chip counts, `✉︎ 2`, like `? N`. The `!` is kept for what needs you.
 //
 // ONE SHAPE FOR EVERY REASON: how many, how long, what blocks them, and what
 // to do. The sender is not in it: the count and the reason are what decide
@@ -1318,7 +1318,7 @@ function termHeldChip(t) {
     return `<span class="chip queued" onclick="event.stopPropagation()"
       data-tip="${esc(termQueuedTip(count, secs, a.held_turn, a.held_escalate_min))}">&#9993;&#xFE0E;${n}</span>`;
   }
-  const label = count > 1 ? `! ${count}` : "!";
+  const label = "&#9993;&#xFE0E;" + (count > 1 ? " " + count : "");
   return `<span class="chip held" onclick="event.stopPropagation()"
     data-tip="${esc(termHeldTip(count, secs, a.held_for, a.held_turn))}">${label}</span>`;
 }

@@ -5088,7 +5088,7 @@ async function toastsTopSection(browser, base) {
 // note) sits an "immediately" button: send posts `when: "done"`, which waits
 // for the turn to end, and immediately posts `when: "immediate"`. The held `!`
 // chip names what is holding a message (the line, the turn, or a dialog) and
-// counts them, `! 2`. The runner form carries the mid-turn setting.
+// counts them, `✉︎ 2`. The runner form carries the mid-turn setting.
 async function sayWhenSection(browser, base) {
   const errors = [];
   const ctx = await browser.newContext();
@@ -5211,7 +5211,7 @@ async function sayWhenSection(browser, base) {
           ", wanted " + JSON.stringify(want[k]));
       }
     }
-    if (chips.turn.text !== "! 2" || chips.line.text !== "!") {
+    if (chips.turn.text !== "✉︎ 2" || chips.line.text !== "✉︎") {
       fail("the held chip does not count: " + JSON.stringify(chips));
     }
     if (chips.ages.join(",") !== "16s,2m 5s,1h 0m 3s") {
@@ -5242,10 +5242,10 @@ async function sayWhenSection(browser, base) {
       runner: ["chip queued", "✉︎ 2",
         "2 messages queued for this agent for 1m 30s, because this runner does not take input mid-turn. " +
         "They go in when the turn ends, or after 15 minutes if the turn runs that long"],
-      overdue: ["chip held", "!",
+      overdue: ["chip held", "✉︎",
         "1 message has been waiting to be delivered to this agent for 1h 2m 3s and is blocked by " +
         "the session's turn, which it was sent to wait for. It goes in when the turn ends"],
-      byRunner: ["chip held", "!",
+      byRunner: ["chip held", "✉︎",
         "1 message has been waiting to be delivered to this agent for 1m 30s and is blocked by " +
         "the session's turn, because this runner does not take input mid-turn. It goes in when the turn ends"],
     };
