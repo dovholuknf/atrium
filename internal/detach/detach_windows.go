@@ -39,6 +39,11 @@ func Start(exe string, args []string, out *os.File) (*os.Process, error) {
 	}
 	p, err := start(base | breakawayFromJob)
 	if err != nil && errors.Is(err, syscall.ERROR_ACCESS_DENIED) {
+		// The job refuses breakaway. Staying in it means the child ends with the job, so try to be made by a process
+		// outside it first, and only then fall back to starting inside.
+		if q, oerr := startOutsideJob(exe, args, out); oerr == nil {
+			return q, nil
+		}
 		return start(base)
 	}
 	return p, err
