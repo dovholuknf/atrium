@@ -81,6 +81,24 @@ func (c *controlMCP) registerDocs(s *mcp.Server, class ctlClass) {
 		audited(c, "ctl-publish", describePublish, c.publishHandler))
 }
 
+// AddRoomPublishTool is atrium_publish on a room's stdio server. The tool is the hub's: call asks the hub over the room's
+// link (see hubAsk) and the hub names the caller from the link, never from here.
+func AddRoomPublishTool(s *mcp.Server, call func(ctx context.Context, method, path string, body, out any) error, by string) {
+	mcp.AddTool(s, &mcp.Tool{Name: "atrium_publish", Description: publishToolDesc},
+		func(ctx context.Context, _ *mcp.CallToolRequest, in publishInput) (*mcp.CallToolResult, publishOutput, error) {
+			var out publishOutput
+			if by == "" {
+				return nil, out, &refusedError{"this session has no ATRIUM_AGENT_NAME, so the hub cannot say which card " +
+					"is publishing. a document records the card that wrote it"}
+			}
+			err := call(ctx, http.MethodPost, hubPublishPath, in, &out)
+			return nil, out, err
+		})
+}
+
+// hubPublishPath is the one relayed path that is not an HTTP endpoint of the hub: hubAsk answers it in process.
+const hubPublishPath = "/_hub/publish"
+
 func describePublish(req *mcp.CallToolRequest, in publishInput, out publishOutput) (string, string, bool) {
 	what := "publish " + strings.TrimSpace(in.Title)
 	if out.Slug != "" {
@@ -119,6 +137,14 @@ func publishError(err error) error {
 func (c *controlMCP) publishHandler(ctx context.Context, req *mcp.CallToolRequest, in publishInput) (
 	*mcp.CallToolResult, publishOutput, error) {
 
+	return c.publishFor(ctx, agentOf(req), roomOf(req), callerName(req), in)
+}
+
+// publishFor is atrium_publish for a caller already named: agent on room, by `by`. The HTTP control server names the
+// caller from its headers and a room's stdio server from the link (hubAsk), and both end here.
+func (c *controlMCP) publishFor(ctx context.Context, agent, room, by string, in publishInput) (
+	*mcp.CallToolResult, publishOutput, error) {
+
 	var out publishOutput
 	if c.docs == nil || c.docs() == nil {
 		return nil, out, &refusedError{"this hub has no document store"}
@@ -139,7 +165,6 @@ func (c *controlMCP) publishHandler(ctx context.Context, req *mcp.CallToolReques
 	if slug == "" && strings.TrimSpace(in.Title) == "" {
 		return nil, out, &docsRefusal{Status: http.StatusBadRequest, Msg: "a new document needs a title"}
 	}
-	agent, room := agentOf(req), roomOf(req)
 	if agent == "" {
 		return nil, out, &refusedError{"this call carries no " + AgentHeader + ", so the hub cannot say which card " +
 			"is publishing. a document records the card that wrote it"}
@@ -186,7 +211,7 @@ func (c *controlMCP) publishHandler(ctx context.Context, req *mcp.CallToolReques
 
 	res, err := st.DocAdd(hubstore.DocInput{
 		Slug: slug, Title: in.Title, Name: name, Data: data,
-		Origin: "card", By: callerName(req), Card: tagFor(room, card.ID),
+		Origin: "card", By: by, Card: tagFor(room, card.ID),
 		Rate: true,
 	})
 	if err != nil {

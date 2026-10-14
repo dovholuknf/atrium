@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 )
 
@@ -51,4 +52,23 @@ func agentCheckoutBranch(cwd string) (branch, why string) {
 func isGitCheckout(dir string) bool {
 	_, err := gitIn(dir, "rev-parse", "--git-dir")
 	return err == nil
+}
+
+// PromptToolNames is every atrium_* tool the lean worker prompt and the interviewer prompt name, sorted. A test on each
+// control path keeps the set a lean worker is served a superset of it.
+func PromptToolNames() []string {
+	seen := map[string]bool{}
+	var out []string
+	for _, p := range []string{leanSystemPrompt, interviewSystemPrompt} {
+		for _, w := range strings.FieldsFunc(p, func(r rune) bool {
+			return !(r == '_' || r >= 'a' && r <= 'z' || r >= '0' && r <= '9')
+		}) {
+			if strings.HasPrefix(w, "atrium_") && !seen[w] {
+				seen[w] = true
+				out = append(out, w)
+			}
+		}
+	}
+	sort.Strings(out)
+	return out
 }
