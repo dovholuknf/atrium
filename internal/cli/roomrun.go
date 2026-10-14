@@ -269,6 +269,7 @@ func roomCmd() *cobra.Command {
 	c.AddCommand(roomSpecPullCmd())
 	c.AddCommand(roomSetupCmd())
 	c.AddCommand(roomTransportsLocalCmd())
+	c.AddCommand(roomHubCmd())
 	c.AddCommand(roomRemoteAccessCmd())
 	return c
 }

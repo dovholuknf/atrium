@@ -565,6 +565,34 @@ func (k Keys) Joined() (Saved, error) {
 	return s, nil
 }
 
+// SetHub points a direct room at a new hub address, which is what a hub moving by DHCP needs
+// and nothing else about the join. Everything else in room.json is kept as it was, and the file as it
+// was is kept beside it first, so a wrong address is one rename from undone. Returns the backup's path.
+func (k Keys) SetHub(addr string) (string, error) {
+	raw, err := os.ReadFile(k.path("room.json"))
+	if err != nil {
+		return "", errors.New(
+			"this machine has not joined a hub yet. run `atrium room join <join string>`")
+	}
+	var m map[string]string
+	if err := json.Unmarshal(raw, &m); err != nil {
+		return "", err
+	}
+	if t := m["transport"]; t != "" && t != "direct" {
+		return "", errors.New("this room joined over " + t + ", which has no hub address to change")
+	}
+	backup := k.path("room.json.bak-" + time.Now().UTC().Format("20060102T150405Z"))
+	if err := os.WriteFile(backup, raw, 0o600); err != nil {
+		return "", err
+	}
+	m["hub"] = addr
+	out, err := json.MarshalIndent(m, "", "  ")
+	if err != nil {
+		return "", err
+	}
+	return backup, os.WriteFile(k.path("room.json"), out, 0o600)
+}
+
 // ── file helpers ─────────────────────────────────────────
 
 func (k Keys) writeCert(name string, der []byte) error {
