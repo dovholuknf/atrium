@@ -414,9 +414,18 @@ func byteCount(n int64) string {
 type RemoteAccess struct {
 	On     bool     `json:"on"`
 	From   []string `json:"from,omitempty"`
+	Addr   string   `json:"addr,omitempty"`
 	Port   int      `json:"port,omitempty"`
 	Open   int      `json:"open"`
 	Forced bool     `json:"forced,omitempty"`
+}
+
+// host is the address the room dials for its own sshd.
+func (r RemoteAccess) host() string {
+	if r.Addr == "" {
+		return remoteaccess.DefaultAddr
+	}
+	return r.Addr
 }
 
 func (r *RemoteAccess) allows(caller string) bool {
@@ -479,7 +488,7 @@ func readAccess(dir string) RemoteAccess {
 		return RemoteAccess{}
 	}
 	st := remoteaccess.Effective(dir)
-	return RemoteAccess{On: st.On, From: st.From, Port: st.Port, Forced: st.Forced}
+	return RemoteAccess{On: st.On, From: st.From, Addr: st.Addr, Port: st.Port, Forced: st.Forced}
 }
 
 // serveSSH is (B) and (C): the hub asking this room for its own sshd.
@@ -502,7 +511,7 @@ func (r *Room) serveSSH(w http.ResponseWriter, req *http.Request) {
 		r.streamRefusal(w, id, caller, http.StatusForbidden, r.Name+" does not offer ssh to "+caller)
 		return
 	}
-	addr := net.JoinHostPort("127.0.0.1", fmt.Sprint(st.Port))
+	addr := net.JoinHostPort(st.host(), fmt.Sprint(st.Port))
 	d := net.Dialer{Timeout: 10 * time.Second}
 	sshd, err := d.DialContext(req.Context(), "tcp", addr)
 	if err != nil {

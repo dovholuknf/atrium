@@ -29,7 +29,7 @@ func roomRemoteAccessCmd() *cobra.Command {
 		Short: "Whether the hub may carry an ssh connection to this machine's sshd",
 		Long: "Prints the state: on or off, the port, who may open it and how many streams are open.\n\n" +
 			"Off unless a person at this machine turns it on. When it is on, the hub forwards a TCP\n" +
-			"stream to 127.0.0.1:<port> on this machine and nothing else. Atrium carries bytes only:\n" +
+			"stream to this machine's sshd (127.0.0.1:<port>, or --addr)  and nothing else. Atrium carries bytes only:\n" +
 			"the login is sshd's, and no key, password or agent socket passes through atrium.",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
@@ -52,6 +52,7 @@ func roomRemoteAccessCmd() *cobra.Command {
 
 	var from string
 	var port int
+	var addr string
 	on := &cobra.Command{
 		Use:   "on",
 		Short: "Let the hub carry ssh to this machine's sshd",
@@ -69,12 +70,18 @@ func roomRemoteAccessCmd() *cobra.Command {
 			if port < 1 || port > 65535 {
 				return errors.New("--port must be 1 to 65535")
 			}
-			s := remoteaccess.State{On: true, Port: port, From: list, SetBy: remoteWho()}
+			if addr != "" && !remoteaccess.ValidAddr(addr) {
+				return errors.New("--addr must be an IP address or a host name")
+			}
+			if addr == remoteaccess.DefaultAddr {
+				addr = ""
+			}
+			s := remoteaccess.State{On: true, Addr: addr, Port: port, From: list, SetBy: remoteWho()}
 			if err := remoteaccess.Save(where(), s); err != nil {
 				return err
 			}
 			out := cmd.OutOrStdout()
-			fmt.Fprintf(out, "remote access: on, port %d, from %s\n", port, strings.Join(list, ", "))
+			fmt.Fprintln(out, "remote access: "+remoteaccess.Status{State: s}.Describe())
 			if remoteaccess.Effective(where()).Forced {
 				fmt.Fprintln(out, "but "+remoteaccess.EnvForce+"=off is set in this environment, so it stays off")
 			}
@@ -84,6 +91,7 @@ func roomRemoteAccessCmd() *cobra.Command {
 	}
 	on.Flags().StringVar(&from, "from", "*", "who may open it: hub, room names, or * for the hub and every proven room")
 	on.Flags().IntVar(&port, "port", remoteaccess.DefaultPort, "the port of sshd on 127.0.0.1")
+	on.Flags().StringVar(&addr, "addr", "", "where sshd answers on this machine, an IP address or a host name (default 127.0.0.1)")
 
 	off := &cobra.Command{
 		Use:   "off",

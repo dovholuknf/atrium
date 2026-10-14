@@ -104,3 +104,27 @@ func TestRemoteAccessLogPrintsNewestFirst(t *testing.T) {
 	}
 	_ = filepath.Join
 }
+
+func TestRemoteAccessOnTakesAnAddr(t *testing.T) {
+	t.Setenv("ATRIUM_TASK_ID", "")
+	t.Setenv("ATRIUM_AGENT_NAME", "")
+	t.Setenv(remoteaccess.EnvForce, "")
+	dir := t.TempDir()
+	if out, err := runRemoteAccess(t, dir, "on", "--addr", "192.168.1.147", "--from", "hub"); err != nil ||
+		!strings.Contains(out, "on, 192.168.1.147:22, from hub") {
+		t.Fatalf("on --addr: %q %v", out, err)
+	}
+	if s, _ := remoteaccess.Load(dir); s.Addr != "192.168.1.147" {
+		t.Fatalf("saved: %+v", s)
+	}
+	// The default address is stored as none, so the file stays as it was for every room that never set one.
+	if _, err := runRemoteAccess(t, dir, "on", "--addr", "127.0.0.1"); err != nil {
+		t.Fatal(err)
+	}
+	if s, _ := remoteaccess.Load(dir); s.Addr != "" {
+		t.Fatalf("default addr stored: %+v", s)
+	}
+	if _, err := runRemoteAccess(t, dir, "on", "--addr", "a b"); err == nil {
+		t.Fatal("a bad addr was accepted")
+	}
+}

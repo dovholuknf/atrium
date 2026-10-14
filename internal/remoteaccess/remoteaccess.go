@@ -13,6 +13,8 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"net"
+	"net/netip"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -35,14 +37,37 @@ const (
 	DefaultPort = 22
 )
 
-// State is the file. Host is not here: it is always 127.0.0.1.
+// DefaultAddr is the address of sshd when the file names none.
+const DefaultAddr = "127.0.0.1"
+
+// State is the file. Addr is where this machine's own sshd answers: 127.0.0.1 unless the which-sshd probe found that
+// loopback belongs to something else (wslrelay).
 type State struct {
 	Version int      `json:"version"`
 	On      bool     `json:"on"`
+	Addr    string   `json:"addr,omitempty"`
 	Port    int      `json:"port"`
 	From    []string `json:"from"`
 	SetAt   string   `json:"set_at,omitempty"`
 	SetBy   string   `json:"set_by,omitempty"`
+}
+
+var hostRE = regexp.MustCompile(`^[A-Za-z0-9]([A-Za-z0-9._-]{0,253}[A-Za-z0-9])?$`)
+
+// ValidAddr says whether s is an IP address or a host name. An IPv6 address is written without brackets.
+func ValidAddr(s string) bool {
+	if _, err := netip.ParseAddr(s); err == nil {
+		return true
+	}
+	return hostRE.MatchString(s)
+}
+
+// Host is the address to dial, the default when the file names none.
+func (s State) Host() string {
+	if s.Addr == "" {
+		return DefaultAddr
+	}
+	return s.Addr
 }
 
 var fromRE = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$`)
@@ -89,6 +114,9 @@ func Load(dir string) (State, error) {
 	}
 	if s.Port < 1 || s.Port > 65535 {
 		return State{}, fmt.Errorf("%s has a port that is not 1 to 65535", Path(dir))
+	}
+	if s.Addr != "" && !ValidAddr(s.Addr) {
+		return State{}, fmt.Errorf("%s has an addr that is not an IP address or a host name", Path(dir))
 	}
 	for _, f := range s.From {
 		if f != "*" && !fromRE.MatchString(f) {
@@ -186,5 +214,9 @@ func (s Status) Describe() string {
 	case !s.On:
 		return "off"
 	}
-	return fmt.Sprintf("on, port %d, from %s", s.Port, strings.Join(s.From, ", "))
+	where := fmt.Sprintf("port %d", s.Port)
+	if s.Host() != DefaultAddr {
+		where = net.JoinHostPort(s.Host(), fmt.Sprint(s.Port))
+	}
+	return fmt.Sprintf("on, %s, from %s", where, strings.Join(s.From, ", "))
 }
