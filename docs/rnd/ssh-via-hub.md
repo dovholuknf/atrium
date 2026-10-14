@@ -1,13 +1,13 @@
 # ssh to a room's machine through the hub
 
-Status: design, 2026-10-14. Nothing here is built. Every point is decided below with its reason. The few that need
+Status: design, 2026-10-14. Nothing here is built. Every point is decided below with its reason. The one that need
 clint are under "Open for clint" at the end.
 
 ## The ask
 
-clint wants to ssh to a room's machine THROUGH the hub, over the link that room already holds (direct mTLS, OpenZiti,
-or whichever rung of `docs/rnd/room-transport-order.md` it is on). m1mini and sg3 are the case in point: the hub
-machine cannot reach either by TCP, and both reach the hub.
+clint wants to ssh to a room's machine THROUGH the hub, over the links that room already holds (direct mTLS, OpenZiti,
+zrok, as `docs/rnd/room-transport-order.md` and `docs/rnd/room-transport-all-at-once.md` describe). m1mini and sg3
+are the case in point: the hub machine cannot reach either by TCP, and both reach the hub.
 
 ```
 ssh -o ProxyCommand="atrium ssh-proxy sg3" claude@sg3
@@ -44,10 +44,10 @@ machine itself) and the one clint asked for now.
 ### The stream
 
 1. **One stream rides one link connection, with no multiplexing.** The hub takes a data connection from the target
-   room's pool (`Hub.Dial`), as every board request does, and spends it on the stream. A data connection is already
-   whatever the room's control connection reached (`room-transport-order.md` decision 8), so the stream inherits the
-   transport for free: mTLS over TCP on direct, mutual TLS inside a ziti or zrok connection on an overlay rung
-   (`link.Proven`). Nothing in this design names a transport. A multiplexed channel on the control connection was
+   room's pool (`Hub.Dial`), as every board request does, and spends it on the stream. A room keeps every transport it
+   has connected at once (`room-transport-all-at-once.md`), so its pool can hold connections on more than one, and the
+   one the hub takes decides the transport. The stream inherits it for free: mTLS over TCP on direct, mutual TLS
+   inside a ziti or zrok connection on an overlay (`link.Proven`). Nothing in this design names or picks a transport. A multiplexed channel on the control connection was
    rejected: it would need atrium's own flow control windows, and one slow `scp` would stall the room's beats.
 
 2. **Framing is one HTTP upgrade per hop and then raw bytes.** There are three hops:
@@ -90,14 +90,15 @@ machine itself) and the one clint asked for now.
    to the pool.
 
 5. **What ends a stream, and what does not.**
-   - A hub restart, a room restart (with or without `pty_host`), or the link dropping ends every stream on it. ssh
-     says `Connection closed`. Nothing retries. Whoever ran ssh runs it again.
+   - **A stream rides one transport and ends with it.** TCP cannot migrate between transports, so if the transport
+     carrying a stream drops, that stream ends and ssh says `Connection closed`, even though the room is still
+     attached on its other transports. Nothing retries or moves it. Whoever ran ssh runs it again, and the new stream
+     takes a data connection on whichever transport is up. A hub restart or a room restart (with or without
+     `pty_host`) ends every stream on that room.
    - **There is no idle timeout.** An ssh session may sit quiet for an hour. `ServerAliveInterval` in the caller's
      ssh config finds a dead path, and the link's own beats find a dead link.
-   - **A voluntary climb to a better rung waits while a stream is open.** `room-transport-order.md` decision 9 closes
-     the control connection on purpose after two good probes. With a stream open the room logs `staying on ziti:
-     1 ssh stream open` and keeps probing, and climbs at the first probe after the last stream ends. A rung that
-     FAILS still ends the streams, which is no worse than today.
+   - **Nothing waits on a stream.** Every transport is already connected, so there is no climb to a better one and
+     nothing for an open stream to hold back.
    - Turning remote access off ends every open stream on that room within ten seconds (decision 11).
    - Deadlines set on the data connection while it was pooled are cleared before the splice.
 
@@ -108,6 +109,11 @@ machine itself) and the one clint asked for now.
      `Connection: Upgrade` and `Upgrade: atrium-stream` to the hub's loopback board listener. The hub answers only
      when `edge.LocalOperator` holds (loopback peer, loopback Host, no forwarding header), the same rule as every
      hub-machine-only setting (notify command, extra hosts, launch caps). The caller is recorded as `hub`.
+
+   Loopback on the hub machine is enough to call as `hub`, and that is decided. The point is a bridge, so that sshd
+   never opens through a firewall, and sshd owns all the auth: a stream still needs a key sshd accepts. Atrium adds no
+   second auth layer to the hub-loopback door. A token file readable only by the hub's account was considered and
+   rejected, as one more thing to set up that guards nothing sshd does not already guard.
    - **Another room's machine.** `atrium ssh-proxy sg3` on m1mini sends the same upgrade to its own room's agent
      listener (`:7777`, `POST /stream`, loopback, the door every agent command already uses). The room dials the hub
      with its own dialer, says `hello{Kind: "stream"}`, then one JSON line `{"room": "sg3"}`, and the hub answers one
@@ -216,7 +222,7 @@ machine itself) and the one clint asked for now.
     | `ssh-refused` | `<stream id> m1mini -> sg3: sg3 does not offer ssh to m1mini` |
 
     The room appends one JSON line per open, close and refusal to `remote_access.log` in its key directory (rotated
-    at 1 MiB, one old file kept) and logs the same sentence to its log. Fields: `id`, `caller`, `via` (the rung),
+    at 1 MiB, one old file kept) and logs the same sentence to its log. Fields: `id`, `caller`, `via` (the transport),
     `start`, `end`, `bytes_in`, `bytes_out`, `ended_by`, `error`. Not the room's store, so a store halt never blocks
     reading what was reached, and the record sits beside the switch it is a record of.
 
@@ -283,9 +289,7 @@ For whoever plans the build. Each step lands alone with its tests.
    route around `Room.Handler`. The proxy's `/_link/` refusal and header strip.
 3. `internal/link`: the hub side. The `stream` kind in `hearHello` and the kind switch, the loopback
    `/_hub/ssh/<room>` route behind `edge.LocalOperator` with the `Origin` refusal and 404 off loopback, the cap, the
-   `access` note and `remote_access` in `/_hub/rooms`, the audit. The room defers a voluntary climb while a stream is
-   open.
-4. `internal/daemon` and `internal/cli`: `POST /stream` on the agent listener, `atrium ssh-proxy` with both doors and
+   `access` note and `remote_access` in `/_hub/rooms`, the audit.4. `internal/daemon` and `internal/cli`: `POST /stream` on the agent listener, `atrium ssh-proxy` with both doors and
    `--print-config`.
 5. The board: the `ssh` badge and the facts row in `rooms.js` and `rooms-dash.js`.
 6. `docs/changes/ssh-via-hub.md` with a manual scenario: `ssh`, `scp` and `ssh -L` from sg4 to sg3 over ziti, then
@@ -310,11 +314,5 @@ refused without the room seeing anything.
 
 ## Open for clint
 
-1. **Is loopback on the hub machine enough to call as `hub`?** Decided yes, matching every other hub-machine-only
-   setting. It means any local account on sg4 can open a stream to a room whose `from` has `hub`, and still needs a
-   key sshd accepts. If sg4 has other users who should not, the alternative is a token file readable only by the hub's
-   account, at the cost of one more thing to set up.
-2. **Default `from` when turned on with no `--from`.** Decided `hub` only. The other choice is `*`, every proven room,
+1. **Default `from` when turned on with no `--from`.** Decided `hub` only. The other choice is `*`, every proven room,
    which is handier for a fleet and a wider grant made by omission.
-3. **Should a climb wait for open streams (decision 5)?** Decided yes, so an ssh session does not die because ziti
-   came back. The cost is a room staying on a fallback rung for as long as someone stays logged in.
