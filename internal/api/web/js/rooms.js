@@ -462,13 +462,29 @@ function roomRow(r) {
 // A FALLBACK IS WORTH A COLOUR. A room on a later transport in its order is
 // attached and working, and also one repair away from its first choice, which
 // is something to notice without being an alarm.
+// zitiLogo is the OpenZiti logo mark, vendored inline so the board needs no fetch and works offline or over an
+// overlay. Source: github.com/openziti/branding, images/logos/Ziti.svg (MIT licence, the repo's LICENSE), the
+// gradient disc with the white bolt, paths unchanged. The gradient id is unique per badge: a shared id breaks
+// the moment the first copy is hidden or removed.
+let zitiLogoSeq = 0;
+function zitiLogo() {
+  const id = "zlg" + (++zitiLogoSeq);
+  return `<svg class="zlogo" viewBox="0 0 201.4 201.4" aria-hidden="true">
+    <linearGradient id="${id}" gradientUnits="userSpaceOnUse" x1="154.4149" y1="206.1329" x2="43.0052" y2="-12.521">
+      <stop offset="0.004" stop-color="#FC0147"/><stop offset="0.039" stop-color="#F4044D"/><stop offset="0.9" stop-color="#0068F9"/>
+    </linearGradient>
+    <circle fill="url(#${id})" cx="100.7" cy="100.7" r="100.7"/>
+    <path fill="#fff" d="M101.1,10.6L44.7,96.4l32,20.9l5.3-8.1L98.7,189l55.5-86.3l-31.1-20.4l-5.3,8.2L101.1,10.6z M126.4,96.7l13.7,9.2l-36.5,55.9L86.8,82l-13.6,20.8L59.8,94l36.7-56.1l16.6,79.2L126.4,96.7z"/>
+  </svg>`;
+}
+
 function transportBadge(t, fallback) {
   const svg = d => `<svg viewBox="0 0 12 12" aria-hidden="true">${d}</svg>`;
   const icons = {
     // a padlock: mutual TLS
     mtls: svg('<rect x="2.5" y="5.5" width="7" height="5" rx="1"/><path d="M4 5.5V4a2 2 0 0 1 4 0v1.5"/>'),
-    // a ring with a node: an overlay service
-    ziti: svg('<circle cx="6" cy="6" r="4"/><circle cx="6" cy="6" r="1" fill="currentColor"/>'),
+    // the OpenZiti mark: an overlay service
+    ziti: zitiLogo(),
     // two arrows: a share
     zrok: svg('<path d="M2 4.5h6.5M6.5 2.5l2 2-2 2M10 7.5H3.5M5.5 5.5l-2 2 2 2"/>'),
   };
