@@ -267,6 +267,17 @@ machine itself) and the one clint asked for now.
       CheckHostIP no
     ```
 
+    On macOS and Linux ssh runs `ProxyCommand` through the user's shell, so the path is plain and unquoted. The
+    command picks the form from the OS it runs on, so the block is right for the machine that will use it:
+
+    ```
+    Host sg3
+      ProxyCommand /Users/claude/.atrium/bin/atrium ssh-proxy %h
+      HostKeyAlias sg3.atrium
+      ServerAliveInterval 30
+      CheckHostIP no
+    ```
+
     No port is opened on the calling machine: `ProxyCommand` speaks stdio. ssh has no SNI, so nothing on the wire
     tells rooms apart, and one `Host` block per room is how they are told apart.
 
@@ -295,8 +306,10 @@ For whoever plans the build. Each step lands alone with its tests.
    `access` note and `remote_access` in `/_hub/rooms`, the audit.4. `internal/daemon` and `internal/cli`: `POST /stream` on the agent listener, `atrium ssh-proxy` with both doors and
    `--print-config`.
 5. The board: the `ssh` badge and the facts row in `rooms.js` and `rooms-dash.js`.
-6. `docs/changes/ssh-via-hub.md` with a manual scenario: `ssh`, `scp` and `ssh -L` from sg4 to sg3 over ziti, then
-   from m1mini to sg3, then `remote-access off` mid-session.
+6. `docs/changes/ssh-via-hub.md` with a manual scenario: `ssh`, `scp` and `ssh -L` from sg3 as target, run as the
+   caller from each OS in turn: Windows (sg4), macOS (m1mini) and Linux (sg4-wsl, test only). Paste the
+   `--print-config sg3` block that machine prints, and check it is the Windows quoted `.exe` form on sg4 and the
+   plain path on m1mini and sg4-wsl. Then `remote-access off` mid-session from each.
 
 Tests are Go on one machine with a fake sshd (a listener that writes `SSH-2.0-fake\r\n` and echoes), the real `Hub`
 and `Room`s over loopback mTLS, and the overlay pipe in `overlaytls_integration_test.go` with `stream` added to its
