@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"os"
 	"sort"
 	"strings"
@@ -287,5 +288,50 @@ func Candidates(joined Saved, t RoomTransports) (rungs []Path, skipped []string)
 	if len(order) == 0 {
 		order = hubOrder
 	}
-	return Arrange(rungs, order), skipped
+	return loopbackFirst(Arrange(rungs, order)), skipped
+}
+
+// loopbackFirst lifts a direct rung on this machine's own loopback above every
+// other rung, whatever the order says. A room dialling 127.0.0.1 is on the hub's
+// machine, and sending its traffic round an overlay costs the overlay's round trip
+// (85ms against 1ms) on every board call and keystroke. The overlay stays below it
+// as the fallback. Order among the rest is untouched.
+func loopbackFirst(ps []Path) []Path {
+	// A direct rung that already sits above every overlay (an address typed on this machine) keeps its place.
+	first := -1
+	for i, p := range ps {
+		if p.Transport != "direct" {
+			first = i
+			break
+		}
+	}
+	if first < 0 {
+		return ps
+	}
+	out := append([]Path(nil), ps[:first]...)
+	var rest []Path
+	for _, p := range ps[first:] {
+		if isLoopbackDirect(p) {
+			out = append(out, p)
+		} else {
+			rest = append(rest, p)
+		}
+	}
+	return append(out, rest...)
+}
+
+func isLoopbackDirect(p Path) bool {
+	if p.Transport != "direct" {
+		return false
+	}
+	host, _, err := net.SplitHostPort(strings.TrimSpace(p.Addr))
+	if err != nil {
+		host = strings.TrimSpace(p.Addr)
+	}
+	host = strings.Trim(host, "[]")
+	if strings.EqualFold(host, "localhost") {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
 }

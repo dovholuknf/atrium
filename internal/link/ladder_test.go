@@ -116,6 +116,39 @@ func TestCandidatesNeverLayTheHubsAdvertiseOverTheJoinedAddress(t *testing.T) {
 	}
 }
 
+// claude-sg4 runs on the hub's own machine and still attached over ziti, so every board call and keystroke paid the
+// overlay's 85ms where loopback is 1ms. A direct rung on this machine's loopback climbs first whatever the order
+// says, and ziti stays below it as the fallback.
+func TestALoopbackDirectRungClimbsBeforeZitiWhateverTheOrderSays(t *testing.T) {
+	saved := Saved{Transport: "direct", Hub: "127.0.0.1:7779", Room: "claude-sg4"}
+	tr := RoomTransports{
+		Hub:   []Path{{Transport: "ziti"}, {Transport: "direct", Addr: "192.168.1.68:7779"}},
+		Paths: []Path{{Transport: "ziti", Identity: "/id.json"}},
+		Order: []string{"ziti", "direct"},
+	}
+	got, _ := Candidates(saved, tr)
+	if kinds(got) != "direct,ziti,direct" || got[0].Addr != "127.0.0.1:7779" || got[2].Addr != "192.168.1.68:7779" {
+		t.Fatalf("got %+v, want loopback direct, then ziti, then the advertised direct", got)
+	}
+	// A hub on another machine keeps the order it was given.
+	saved.Hub = "sg4:7779"
+	tr.Hub = nil
+	if got, _ = Candidates(saved, tr); kinds(got) != "ziti,direct" {
+		t.Fatalf("a remote hub reordered to %s, want ziti,direct", kinds(got))
+	}
+	for addr, want := range map[string]bool{
+		"127.0.0.1:7779": true, "localhost:7779": true, "[::1]:7779": true, "127.0.0.1": true,
+		"192.168.1.68:7779": false, "sg4:7779": false, "": false,
+	} {
+		if got := isLoopbackDirect(Path{Transport: "direct", Addr: addr}); got != want {
+			t.Errorf("isLoopbackDirect(%q) = %v, want %v", addr, got, want)
+		}
+	}
+	if isLoopbackDirect(Path{Transport: "ziti", Addr: "127.0.0.1:1"}) {
+		t.Error("a ziti rung is never lifted for its address")
+	}
+}
+
 // The ladder stands on the rung the control connection reached, so a Set that
 // drops that rung (the hub's list replaced it) does not move a single data dial.
 func TestSetKeepsTheRungTheControlConnectionReached(t *testing.T) {

@@ -56,6 +56,8 @@ function lagAnyOn() {
 let lagPending = null;
 let lagSamples = [];
 let lagFresh = 0;
+// The route of the latest sample, for the summary line.
+let lagRoutes = "";
 let lagStalls = [];
 let lagTimer = 0;
 let lagObserver = null;
@@ -68,6 +70,22 @@ let lagBacklog = 0;
 // logs, which print the same shape.
 function lagClock() {
   return new Date().toISOString().slice(11, 23);
+}
+
+// Which room the card is in and how that room reaches the hub, "claude-sg4 via ziti". The wire number is meaningless
+// without it: the same keystroke is 1ms on a room dialled over loopback and 85ms over an overlay. Empty on a board
+// that is one room, where there is no hop to name. `via` is what the room is on now, `transport` what it joined with.
+function lagRoute(rooms, task) {
+  const name = task && task.room;
+  if (!name) return "";
+  const r = (rooms || []).find(x => x && x.name === name);
+  const how = r && (r.attached && r.via ? r.via : r.transport);
+  return how ? `${name} via ${how}` : name;
+}
+
+// The wire part of a key line: `wire 87.0ms (claude-sg4 via ziti)`.
+function lagWireText(s) {
+  return `wire ${(s.echo - s.sent).toFixed(1)}ms${s.route ? ` (${s.route})` : ""}`;
 }
 
 function lagFetches() {
@@ -96,6 +114,7 @@ function lagKeySent(t0, bytes) {
   lagPending = {
     t0, sent: performance.now(), bytes, coalesced: 0,
     task: termTask ? termTask.id : "",
+    route: lagRoute(typeof hubRooms === "undefined" ? [] : hubRooms, termTask),
     buffered: lagBacklog,
     fetches: lagFetches(),
   };
@@ -126,9 +145,10 @@ function lagFinish(s) {
   lagSamples.push(total);
   if (lagSamples.length > LAG_WINDOW) lagSamples.shift();
   lagFresh++;
+  lagRoutes = s.route;
   const f = n => n.toFixed(1);
   const line = `[atrium inputlag] ${lagClock()} key ${f(total)}ms` +
-    ` (send ${f(s.sent - s.t0)}, wire ${f(s.echo - s.sent)}, parse ${f(s.parsed - s.echo)},` +
+    ` (send ${f(s.sent - s.t0)}, ${lagWireText(s)}, parse ${f(s.parsed - s.echo)},` +
     ` paint ${f(s.paint - s.parsed)})` +
     (stalled ? ` | main thread blocked ${f(stalled)}ms of it` : "") +
     (s.coalesced ? ` | ${s.coalesced} more keys while waiting` : "") +
@@ -181,7 +201,7 @@ function lagSummary() {
   if (!lagFresh || !lagSamples.length) return;
   lagFresh = 0;
   const s = lagSamples.slice().sort((a, b) => a - b);
-  console.info(`[atrium inputlag] ${lagClock()} last ${s.length} keys:` +
+  console.info(`[atrium inputlag] ${lagClock()} last ${s.length} keys${lagRoutes ? ` (${lagRoutes})` : ""}:` +
     ` p50 ${lagPercentile(s, 0.5).toFixed(1)}ms,` +
     ` p95 ${lagPercentile(s, 0.95).toFixed(1)}ms,` +
     ` max ${s[s.length - 1].toFixed(1)}ms`);
@@ -236,6 +256,7 @@ function lagStop() {
   lagPending = null;
   lagPaste = null;
   lagSamples = [];
+  lagRoutes = "";
   lagStalls = [];
 }
 
