@@ -107,11 +107,11 @@ func localSSHMachine(dir string) sshwizard.LocalMachine {
 }
 
 // sshWizardHandler is `GET /v1/ssh/wizard` on the room: the same checks, read only, as JSON. The query takes the
-// same choices as the flags: port, user, from and self_test=0.
+// same choices as the flags: port, user and from, and self_test=1 to run the self test, which is off here.
 func sshWizardHandler(dir string) func(r *http.Request) any {
 	return func(r *http.Request) any {
 		q := r.URL.Query()
-		opt := sshwizard.Options{User: q.Get("user"), SelfTest: q.Get("self_test") != "0"}
+		opt := sshwizard.Options{User: q.Get("user"), SelfTest: q.Get("self_test") == "1"}
 		if p, err := strconv.Atoi(q.Get("port")); err == nil && p > 0 && p < 65536 {
 			opt.Port = p
 		}
