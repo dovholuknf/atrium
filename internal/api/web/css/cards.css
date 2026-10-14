@@ -220,7 +220,7 @@
   /* The name and its chips share a row. `why` is a sentence, so it stays off that row: in a flex line with the
      chips it became a third item squeezed against the right edge with nowhere to wrap. */
   .card .card-line {
-    display: flex; align-items: center; gap: var(--sp-3);
+    display: flex; align-items: center; gap: var(--sp-3); flex-wrap: wrap;
   }
   /* A card hovers in its group's color. With a single blue, the card you were pointing at stopped saying which
      project it was in. --ghue is inherited from the group, so a card outside one falls back to blue. */
@@ -236,7 +236,7 @@
     transition: opacity .16s;
   }
   .card:hover::before { opacity: 1; }
-  .card.waiting::before { opacity: 1; background: var(--warn); }
+  .card.waiting::before { opacity: 1; background: var(--wait); }
   /* A card inherits the board's size. Everything on it is a fraction of that. */
   .card .title {
     color: var(--head); font-weight: 600; font-size: var(--fs-md);
@@ -253,11 +253,13 @@
   .card .title .rmark svg { width: 15px; height: 15px; }
   .card .card-line > .chips {
     margin-left: auto; flex: 0 1 auto; min-width: 0;
-    flex-wrap: nowrap; overflow-x: auto; overflow-y: hidden;
-    scrollbar-width: none;
+    /* WRAPS rather than clipping: a card with many chips grows a line, and nothing is hidden. */
+    flex-wrap: wrap; justify-content: flex-end; overflow: visible;
   }
-  .card .card-line > .chips::-webkit-scrollbar { display: none; }
   .card .card-line > .chips .chip { flex: none; }
+  /* Actions show on hover and in the card menu, and take no chip width at rest. */
+  .card .chip.hoveronly { display: none; }
+  .card:hover .chip.hoveronly { display: inline-block; }
   .pulse {
     width: 7px; height: 7px; border-radius: 50%; background: var(--warn); flex: none;
     animation: pulse 1.9s ease-in-out infinite;
@@ -392,25 +394,26 @@
   }
   /* Live activity. A running tool breathes, so a moving card reads as moving from across a whole board. */
   .chip.live { background: rgba(var(--teal-rgb),.10); color: var(--teal); }
-  /* Distinct motion for the tool, thinking and compacting states. Animate only transform and opacity, to avoid
-     per-frame layout and paint work. Finished, dead and shelved cards have no activity chip. */
-  .chip.live.tool::before,
-  .chip.live.thinking::before,
-  .chip.live.compacting::before {
-    content: ""; display: inline-block; width: 6px; height: 6px; margin-right: 5px;
-    border-radius: 50%; background: currentColor; vertical-align: middle;
+  /* No motion on the chip: the runner mark is the one running mark (docs/rnd/unified-card.md). */
+  /* THE ONE ORANGE: --wait is a live runner waiting on the operator and nothing else. */
+  .chip.wait { background: var(--wait-bg); color: var(--wait); border-color: var(--wait-stroke); }
+  .card.s-waiting .rmark { color: var(--wait); background: var(--wait-bg); }
+  /* GREY MEANS NOT RUNNING AND NOTHING ELSE: a card with no runner is grey, whole. */
+  .card.s-off { filter: grayscale(1); opacity: .55; }
+  .card.s-off:hover { opacity: 1; }
+  .card.s-unreachable { outline: 1px dashed var(--stroke); outline-offset: -1px; }
+  .board .col.fixed { flex: 0 0 300px; min-width: 268px; }
+  .board .col.fixed.folded { flex: 0 0 auto; min-width: 0; }
+  .board .col .more {
+    padding: 8px 10px; color: var(--dim); font: 500 var(--fs-xs)/1.5 var(--mono); cursor: pointer;
+    border: 1px dashed var(--stroke-dim); border-radius: var(--r-sm); text-align: center;
   }
-  @keyframes livebreathe { 0%, 100% { transform: scale(1); opacity: 1; } 50% { transform: scale(.5); opacity: .45; } }
-  @keyframes livebob { 0%, 100% { transform: translateY(-1.5px); } 50% { transform: translateY(1.5px); } }
-  @keyframes livesqueeze { 0%, 100% { transform: scaleX(1); opacity: .95; } 50% { transform: scaleX(.2); opacity: .6; } }
-  .chip.live.tool::before { animation: livebreathe 1.8s ease-in-out infinite; }
-  .chip.live.thinking::before { animation: livebob 1.5s ease-in-out infinite; }
-  /* A squeezing bar for compaction, still in the live teal, so current activity stays apart from the context
-     warning that predicts compaction. */
-  .chip.live.compacting::before {
-    width: 9px; height: 3px; border-radius: 1px;
-    animation: livesqueeze 1.2s ease-in-out infinite;
+  .board .col .more:hover { color: var(--head); border-color: var(--stroke); }
+  .board-count {
+    display: flex; justify-content: space-between; align-items: baseline; padding: 6px 2px 0;
+    font: 500 var(--fs-xs)/1.5 var(--mono); color: var(--label);
   }
+  .board-count .done { color: var(--dimmest); }
   .chip.live.idle { background: var(--hairline); color: var(--dimmest); animation: none; }
   /* No activity animation in a hidden tab. `stillWhenHidden` sets the class. */
   body.tabhidden .chip.live::before { animation: none; }

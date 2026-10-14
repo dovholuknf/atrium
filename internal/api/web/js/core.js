@@ -105,6 +105,39 @@ const COLUMNS = [
   }
 ];
 
+// THE BOARD'S COLUMNS, which follow the card's state and not its stored status (`boardColumnOf`, js/cardrules.js). `COLUMNS`
+// above is still the stored statuses, which the stack's pills, the move-to menu and the reveal use. A board column holds a card
+// when `boardColumnOf` says so, and `takes` is the status a card moved into it by hand lands in.
+const BOARD_COLUMNS = [
+  {
+    id: "backlog", label: "inbox", takes: "backlog", accepts: false, hideWhenEmpty: true,
+    why: "Work a source found that nobody has started.\n\n" +
+      "There is no runner behind these, so nothing here is costing an agent " +
+      "anything. Press start to give one a runner.\n\n" +
+      "Hidden until you wire up a source."
+  },
+  {
+    id: "needs-you", label: "needs you", accepts: false,
+    why: "A live agent is waiting for you, whoever launched it.\n\n" +
+      "A permission is first, because that agent is frozen. Then a question, " +
+      "then a turn that ended and is your move. Longest wait first.\n\n" +
+      "A ready card whose agent is gone is not here: it is done."
+  },
+  {
+    id: "working", label: "working", accepts: false,
+    why: "A live agent that is not waiting on you.\n\n" +
+      "Mid-turn, or sitting at a prompt with nothing to say. The runner mark " +
+      "spins while it works."
+  },
+  {
+    id: "done", label: "done", takes: "done",
+    why: "Every card with no agent running: finished, dead, an agent that went " +
+      "away, parked, or shelved.\n\n" +
+      "The state chip on each card says which. Pinned cards come first. Only " +
+      "the recent few are drawn here, the rest are one click away in the stack."
+  }
+];
+
 // What a status is called, as opposed to what it is stored as.
 //
 // The stored names are the schema's and they are not changing: they are in

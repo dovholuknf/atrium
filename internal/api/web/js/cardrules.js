@@ -172,6 +172,22 @@ function cardState(t) {
   return "off";
 }
 
+// WHICH BOARD COLUMN A CARD IS IN (docs/rnd/unified-card-decisions.md). The board's columns follow the state, not the stored
+// status: `needs you` holds a live runner waiting on the operator, `working` a live runner doing or ready to do something,
+// and `done` every card with no agent running (finished, dead, runner gone, parked, shelved). A ready card whose runner is
+// gone is done, never needs you. The inbox is the stored status `backlog`. A card on a room that is not answering is
+// `unreachable`, which says nothing about its runner, so it is filed by the status it last had.
+function boardColumnOf(t) {
+  if (!t || t.status === "backlog") return "backlog";
+  const s = cardState(t);
+  if (s === "waiting") return "needs-you";
+  if (s === "working" || s === "live") return "working";
+  if (s === "unreachable") {
+    return t.status === "needs-input" || t.status === "needs-permission" ? "needs-you" : t.status === "running" ? "working" : "done";
+  }
+  return "done";
+}
+
 // The project rule as a callable, compiled from the same source the settings dialog shows and cached.
 let cardProjectRule;
 function cardProjectOf(task) {
