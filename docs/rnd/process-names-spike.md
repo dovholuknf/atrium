@@ -40,3 +40,12 @@ while the link hub, started at the same moment, did not. Likely a startup race b
 
 Cleanup: both processes stopped, no process left with a pn-spike path, scratch folder deleted, repo has no changes
 (only BRIEF.md untracked, not committed).
+
+Third run, same LAN (result relayed from sg4's session): atrium.hub.exe (hard link) on 0.0.0.0:17779 and plain
+atrium.exe on 0.0.0.0:17789, started 8 seconds apart and held open about 10 minutes. m1mini (192.168.1.119, same /24,
+ping to sg3 OK at 3.6ms, port 135 open, 445 filtered) probed 192.168.1.147 with `nc -vz -G 5 -w 5`. Both ports TIMED
+OUT, and sg3 saw no connection arrive on either. So inbound is filtered for both names on these spare ports. A new name
+is no worse than plain atrium.exe, and neither is allowed on an arbitrary port.
+
+Not determined: whether the live hub's port 7779 has a port-based allow rule (rules could not be read without
+elevation), so this does not settle whether the hub needs a per-path rule.
