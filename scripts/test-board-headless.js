@@ -21549,9 +21549,42 @@ async function parkedStaysSection(browser, base) {
     if (got.listed.some(x => !x)) fail("parkedStays: a parked card is not in the Terminals list: " + got.listed);
     if (got.nested.includes("i1")) fail("parkedStays: the parked interview nested under its launcher");
     if (!/class="card tab[^"]*\bcold\b/.test(got.html)) fail("parkedStays: the parked row is not grey (cold)");
-    if (!got.html.includes("resumeParked('i1')")) fail("parkedStays: no one-click resume on the parked row");
+    if (got.html.includes("resumeParked") || got.html.includes("termresume")) fail("parkedStays: the parked row carries a resume button or click");
     if (errors.length) fail("parkedStays: page errors: " + errors.join("; "));
     else console.log("parkedStays ok");
+  } finally { await ctx.close(); }
+}
+
+// NO RESUME BUTTON, AND A CLICK ON A DEAD CARD DOES NOT RESUME IT. Resume is the right-click menu's.
+async function noResumeButtonSection(browser, base) {
+  const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+  const errors = [];
+  try {
+    const p = await ctx.newPage();
+    p.on("pageerror", e => errors.push(String(e)));
+    const reqs = [];
+    await p.route("**/v1/**", r => { const q = r.request(); if (q.method() !== "GET") reqs.push(q.method() + " " + q.url()); r.continue(); });
+    await p.goto(base + "/", { waitUntil: "domcontentloaded" });
+    await p.waitForFunction(() => typeof termRow === "function" && typeof termEndedRow === "function" && typeof termMenuItems === "function", null, { timeout: slow(15000) });
+    const got = await p.evaluate(() => {
+      const base = { supervised: false, tags: ["origin:agent"], resume_id: "r1", worktree: "w" };
+      const parked = Object.assign({ id: "pk", status: "needs-input", parked_at: "2026-10-13T10:00:00Z", display_title: "pk" }, base);
+      const exited = Object.assign({ id: "ex", status: "done", pinned: true, display_title: "ex" }, base);
+      const rows = [parked, exited].map(t => termRow(t, false, false));
+      const ended = termEndedRow(exited);
+      const board = typeof parkedChip === "function" ? parkedChip(parked) : "";
+      let menu = [];
+      try { menu = termMenuItems(parked).map(i => i && i.label); } catch (e) { menu = ["error " + e.message]; }
+      return { rows, ended, board, menu };
+    });
+    for (const h of [...got.rows, got.ended]) {
+      if (/termresume|endedresume|resumeParked|resumePinned|>resume</.test(h)) fail("noResumeButton: a list view has a resume button or click: " + h.slice(0, 300));
+    }
+    if (!got.rows.every(h => h.includes("onclick=\"attachTask('"))) fail("noResumeButton: a cold row click is not open/select");
+    if (!got.rows.every(h => /right-click menu/.test(h))) fail("noResumeButton: the hover does not point at the right-click menu");
+    if (!got.menu.includes("resume")) fail("noResumeButton: the right-click menu lost resume: " + got.menu);
+    if (errors.length) fail("noResumeButton: page errors: " + errors.join("; "));
+    else console.log("noResumeButton ok");
   } finally { await ctx.close(); }
 }
 
@@ -23127,9 +23160,7 @@ async function termEndedSection(browser, base) {
     if (!await p.$(".termended[data-ended-room=\"\"] .endedrow")) fail("termEnded: the open group did not come back after a reload");
     await shot("terminals-ended-open.png");
     await p.click(".termended[data-ended-room='r2'] .endedhead");
-    await p.click(".endedrow[data-ended-id='r2~rm'] .endedresume");
-    await p.waitForTimeout(300);
-    if (posted.join() !== "POST /v1/tasks/r2~rm/resume" && posted.join() !== "POST /v1/tasks/r2%7Erm/resume") fail("termEnded: resume posted " + posted.join());
+    if (await p.$(".endedresume")) fail("termEnded: an ended row still has a resume button");
     if (errors.length) fail("termEnded: page errors: " + errors.join(" | "));
   } finally { await ctx.close(); }
   if (!bad) console.log("termEnded ok");
@@ -29670,7 +29701,7 @@ async function main() {
       u001Audit: u001AuditSection,
       pasteStart: pasteStartSection, pasteDone: pasteDoneSection, pasteOldRoom: pasteOldRoomSection, pasteClose: pasteCloseSection,
       growlQuestionShots: growlQuestionShotsSection, growlQuestionBody: growlQuestionBodySection, growlReplyGrow: growlReplyGrowSection, growlChoices: growlChoicesSection, replies: repliesSection, repliesOf: repliesOfSection, repliesShots: repliesShotsSection, growlStable: growlStableSection, growlOnIt: growlOnItSection, mGrowlQuestion: mGrowlQuestionSection,
-      roomsSetup: roomsSetupSection, discreteGroup: discreteGroupSection, groupingPerView: groupingPerViewSection, repoColors: repoColorsSection, themePicker: themePickerSection, themePickerShots: themePickerShotsSection, borderColourLag: borderColourLagSection, bootClean: bootCleanSection, interviewTop: interviewTopSection, parkedStays: parkedStaysSection, terminalsOneLine: terminalsOneLineSection, offCardActions: offCardActionsSection, termHeaderSize: termHeaderSizeSection, popupFit: popupFitSection, dropdownsInstant: dropdownsInstantSection, peekLaunch: peekLaunchSection, mReload: mReloadSection, mReconnect: mReconnectSection, mActivityRead: mActivityReadSection, mReadRetry: mReadRetrySection, mWorking: mWorkingSection, mOwnMessages: mOwnMessagesSection, mBubbles: mBubblesSection, mRecapSheet: mRecapSheetSection,
+      roomsSetup: roomsSetupSection, discreteGroup: discreteGroupSection, groupingPerView: groupingPerViewSection, repoColors: repoColorsSection, themePicker: themePickerSection, themePickerShots: themePickerShotsSection, borderColourLag: borderColourLagSection, bootClean: bootCleanSection, interviewTop: interviewTopSection, parkedStays: parkedStaysSection, noResumeButton: noResumeButtonSection, terminalsOneLine: terminalsOneLineSection, offCardActions: offCardActionsSection, termHeaderSize: termHeaderSizeSection, popupFit: popupFitSection, dropdownsInstant: dropdownsInstantSection, peekLaunch: peekLaunchSection, mReload: mReloadSection, mReconnect: mReconnectSection, mActivityRead: mActivityReadSection, mReadRetry: mReadRetrySection, mWorking: mWorkingSection, mOwnMessages: mOwnMessagesSection, mBubbles: mBubblesSection, mRecapSheet: mRecapSheetSection,
       mHomeOrder: mHomeOrderSection, cardUrlWayOut: cardUrlWayOutSection, phoneBoot: phoneBootSection, sayEnter: sayEnterSection, sendArrow: sendArrowSection, mTables: mTablesSection, mMarkdown: mMarkdownSection, mHostile: mHostileSection, mPictures: mPicturesSection, soundPhone: soundPhoneSection, phoneBell: phoneBellSection, mBell: mBellSection,
       mHomeOrder: mHomeOrderSection, cardUrlWayOut: cardUrlWayOutSection, phoneBoot: phoneBootSection, sayEnter: sayEnterSection, sendArrow: sendArrowSection, mTables: mTablesSection, mMarkdown: mMarkdownSection, mHostile: mHostileSection, mPictures: mPicturesSection, phoneRedirect: phoneRedirectSection,
       mHomeOrder: mHomeOrderSection, cardUrlWayOut: cardUrlWayOutSection, phoneBoot: phoneBootSection, sayEnter: sayEnterSection, sendArrow: sendArrowSection, mTables: mTablesSection, mMarkdown: mMarkdownSection, mHostile: mHostileSection, mPictures: mPicturesSection, mHidden: mHiddenSection, soundPhone: soundPhoneSection, phoneBell: phoneBellSection, mBell: mBellSection,

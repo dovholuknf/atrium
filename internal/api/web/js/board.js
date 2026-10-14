@@ -843,12 +843,6 @@ function cardHTML(t, wearAs) {
           ". anyone with that address types into it as you would. right click to stop.")}"
         oncontextmenu="stopSharingChip(event, '${t.id}')"
         >shared</span>` : ""}
-      ${t.status === "shelved" && !t.offline ? `<span class="chip attach"
-        data-tip="${cannotResume(t)
-          ? esc("comes off the shelf, but nothing starts: " + cannotResume(t))
-          : "start it again from where the conversation left off"}"
-        onclick="event.stopPropagation();unshelveCard('${t.id}')"
-        >${cannotResume(t) ? "unshelve" : "resume"}</span>` : ""}
       ${t.status === "backlog" && !t.offline ? `<span class="chip attach"
         data-tip="open the launch dialog with what the source already knew filled in.
                this card is the target, so starting it does not make a second one"
@@ -1000,7 +994,7 @@ const NEW_CONTEXT_WORDS = { limit: "waiting for ack", clear: "clearing", wake: "
 function parkedChip(t) {
   if (!t.parked_at) return "";
   return `<span class="chip" data-tip="${esc("parked: idle with no process since " +
-    new Date(t.parked_at).toLocaleTimeString() + ". press a key in its terminal, or use resume")}"
+    new Date(t.parked_at).toLocaleTimeString() + ". press a key in its terminal, or resume it from the right-click menu")}"
     >parked</span>`;
 }
 

@@ -232,7 +232,7 @@ function peekBody(t, v) {
   // (see peekOwnsTip), so what it said is here. Title on one line, address and status under it on one.
   const where = t && typeof terminalLabel === "function" ? terminalLabel(t) : "";
   const cold = t && typeof termCold === "function" && termCold(t)
-    ? "this one has exited. click it to start it again here" : "";
+    ? "this one has exited. resume it from the right-click menu" : "";
   // A folded parent draws none of its children, so the warn chip on its row has to be explained here.
   const kidsWait = t && typeof termKidsShut === "function" && (termKids.get(t.id) || []).length && termKidsShut(t)
     ? termKidsCount(t.id, isWaiting) : 0;
