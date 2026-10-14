@@ -62,7 +62,7 @@ func newRun() *cobra.Command {
 			l.isolated = isolated
 			l.upgrades = acceptUpgrades
 			return serveAtrium(f, func(store *hubstore.Store, _ link.Keys, side *hubSide) error {
-				return ensureRoom(store, side, f.transport, l)
+				return ensureRoom(store, side, side.kind, l)
 			})
 		},
 	}

@@ -390,7 +390,7 @@ function roomTileHTML(room, snap, on) {
     <div class="rt-head">
       <span class="dot live"></span><strong>${name}</strong>
       <span class="rt-meta" data-tip="${meta.join(" &middot; ")}">${meta.join(" &middot; ")}</span>
-      ${notHub}${typeof transportBadge === "function" ? transportBadge(room.transport) : ""}
+      ${notHub}${typeof transportBadge === "function" ? transportBadge(room.via || room.transport, room.fallback) : ""}
       <span class="grow"></span>
       <span class="roomcog" role="button" aria-label="settings for ${name}" data-tip="settings for ${name}"
         onclick="event.stopPropagation();openRoomCog('${q}')">&#9881;</span>
@@ -518,7 +518,7 @@ function roomNeedsYou(name) {
 
 const ROOMS_DEMO_HUB_BUILD = "a91c2de";
 const ROOMS_DEMO_SET = [
-  { name: "sg3", host: "sg3", os: "windows", transport: "direct", version: "3b578f0",
+  { name: "sg3", host: "sg3", os: "windows", transport: "direct", via: "ziti", fallback: true, version: "3b578f0",
     up: 4 * 3600 + 12 * 60, cpu: 71, mem: 32e9, used: 21e9, disk: 512e9, free: 392e9, rate: 41000,
     path: "D:\\git", worktrees: 38, cards: { running: 7, idle: 2, asks: 1, done: 12 },
     runners: [["claude", true], ["codex", true], ["ollama", false]] },
@@ -673,7 +673,8 @@ function roomsDemoHub() {
   const since = new Date(Date.now() - 3600000).toISOString();
   hubIsHub = true;
   hubRooms = ROOMS_DEMO_SET.filter(r => !roomsDemoForgot.has(r.name)).map(r => ({
-    name: r.name, host: r.host, os: r.os, transport: r.transport, version: r.version, since }))
+    name: r.name, host: r.host, os: r.os, transport: r.transport, via: r.via, fallback: r.fallback,
+    version: r.version, since }))
     .sort((a, b) => String(a.name).localeCompare(String(b.name)));
   const away = roomsDemoForgot.has(ROOMS_DEMO_AWAY.name) ? [] : [Object.assign({}, ROOMS_DEMO_AWAY, {
     attached: false, first_seen: "2026-09-01T09:00:00Z",

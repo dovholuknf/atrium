@@ -437,7 +437,7 @@ function roomRow(r) {
   return `<div class="roomrow${line ? " has-hint" : ""}">
     <div class="roomrow-top">
       <b class="roomname">${esc(r.name)}</b>
-      ${transportBadge(r.transport)}
+      ${transportBadge(r.attached && r.via ? r.via : r.transport, r.attached && r.fallback)}
       ${roomState(r)}
       ${r.marked || r.state === "marked-for-deletion"
         ? `<span class="chip no">marked for deletion</span>` : ""}
@@ -457,7 +457,11 @@ function roomRow(r) {
 //
 // A BADGE AND NOTHING MORE. Worth seeing at a glance, never worth a column:
 // transport is ancillary noise and must not become a concept in the UI.
-function transportBadge(t) {
+//
+// A FALLBACK IS WORTH A COLOUR. A room on a later transport in its order is
+// attached and working, and also one repair away from its first choice, which
+// is something to notice without being an alarm.
+function transportBadge(t, fallback) {
   const marks = {
     direct: ["mTLS", "a direct connection, over mutual TLS"],
     ziti: ["ziti", "over an OpenZiti service"],
@@ -466,6 +470,10 @@ function transportBadge(t) {
     local: ["here", "this hub's own machine, over a pipe inside one process"],
   };
   const m = marks[t] || [t || "?", "how this room reaches the hub"];
+  if (fallback) {
+    return `<span class="chip warn" data-tip="${esc(`${m[1]}: on ${m[0]} because its first choice did not answer`)}"
+      >${esc(m[0])}</span>`;
+  }
   return `<span class="chip" data-tip="${esc(m[1])}">${esc(m[0])}</span>`;
 }
 
@@ -613,7 +621,8 @@ function paintRoomFacts(r) {
   const facts = [
     ["name", esc(r.name) + ` <span class="by">what the board calls it</span>`],
     ["calls itself", esc(r.self_name || "hasn't connected yet")],
-    ["connects over", esc(r.transport || "")],
+    ["connects over", esc((r.attached && r.via) || r.transport || "") +
+      (r.attached && r.fallback ? ` <span class="by">(fallback)</span>` : "")],
     ["version", esc(r.version || "unknown")],
     ["first seen", esc(when(r.first_seen))],
     ["last seen", esc(when(r.last_seen))],

@@ -268,6 +268,7 @@ func roomCmd() *cobra.Command {
 	c.AddCommand(roomSettingCmds()...)
 	c.AddCommand(roomSpecPullCmd())
 	c.AddCommand(roomSetupCmd())
+	c.AddCommand(roomTransportsLocalCmd())
 	return c
 }
 
@@ -307,13 +308,22 @@ func runRoom(keys link.Keys, db, human, agent string, restartAfter time.Duration
 	if err != nil {
 		return err
 	}
-	dial, err := roomDialer(link.Join{
-		Transport: saved.Transport, Addr: saved.Hub,
-		Service: saved.Service, ShareToken: saved.Share,
-	}, keys, saved.Identity)
+	// EVERY TRANSPORT THIS ROOM CAN REACH ITS HUB ON, best first. A file that
+	// cannot be read is said and left out: the join alone still makes a ladder.
+	// See docs/rnd/room-transport-order.md.
+	tr, err := keys.Transports()
+	if err != nil {
+		log.Printf("[link] %v. using the join alone", err)
+		tr = link.RoomTransports{}
+	}
+	dial, skipped, err := roomLadder(keys, saved, tr)
+	for _, s := range skipped {
+		log.Printf("[link] not a way to the hub: %s", s)
+	}
 	if err != nil {
 		return err
 	}
+	log.Printf("[link] will try %s", ladderSays(dial.Rungs()))
 	if strings.TrimSpace(db) == "" {
 		db = defaultRoomDB()
 	}
@@ -373,8 +383,10 @@ func runRoom(keys link.Keys, db, human, agent string, restartAfter time.Duration
 	// hub is down is a room with nobody watching it, which is exactly what it
 	// was before anybody built a hub.
 	room := &link.Room{
-		Name:    saved.Room,
-		Dial:    dial,
+		Name: saved.Room,
+		Dial: dial,
+		// THE HUB'S LIST, written down for a start when the hub cannot be reached.
+		OnPaths: func(ps []link.Path) { learnHubPaths(keys, saved, dial, ps) },
 		Version: Version,
 		Commit:  runningCommit(),
 		Host:    hostname(),

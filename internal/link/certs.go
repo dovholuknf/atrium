@@ -510,11 +510,18 @@ func (k Keys) SaveOverlayRoom(j Join, room, identity string) error {
 	if err := os.MkdirAll(k.Dir, 0o700); err != nil {
 		return err
 	}
-	raw, err := json.MarshalIndent(map[string]string{
+	m := map[string]string{
 		"transport": j.Transport, "room": room,
 		"service": j.Service, "share": j.ShareToken,
 		"identity": identity, "hub": j.Addr,
-	}, "", "  ")
+	}
+	// PROVEN IS WRITTEN DOWN, because the join string that said so is gone by the
+	// time `atrium room` starts, and a proven room that dialled without its
+	// certificate would be refused under its own name.
+	if j.Proven() {
+		m["proven"] = "true"
+	}
+	raw, err := json.MarshalIndent(m, "", "  ")
 	if err != nil {
 		return err
 	}
@@ -529,6 +536,9 @@ type Saved struct {
 	Service   string
 	Share     string
 	Identity  string
+	// Proven says an overlay join enrolled a certificate, so its overlay dials
+	// run inside it. A direct join always has one.
+	Proven bool
 }
 
 // Joined reads back what a room saved, so `atrium2 room` needs no arguments.
@@ -546,6 +556,7 @@ func (k Keys) Joined() (Saved, error) {
 	s = Saved{
 		Transport: m["transport"], Room: m["room"], Hub: m["hub"],
 		Service: m["service"], Share: m["share"], Identity: m["identity"],
+		Proven: m["proven"] == "true",
 	}
 	if s.Transport == "" {
 		// Written before there was more than one.

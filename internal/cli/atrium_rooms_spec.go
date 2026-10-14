@@ -140,13 +140,13 @@ func roomLinkFor(dir string) (string, link.Dialer, error) {
 	if err != nil {
 		return "", nil, err
 	}
-	d, err := roomDialer(link.Join{
-		Transport: saved.Transport, Addr: saved.Hub, Service: saved.Service, ShareToken: saved.Share,
-	}, keys, saved.Identity)
+	// THE SAME LADDER THE ROOM CLIMBS, so a room on its fallback can still be set up.
+	tr, _ := keys.Transports()
+	l, _, err := roomLadder(keys, saved, tr)
 	if err != nil {
 		return "", nil, err
 	}
-	return saved.Room, d, nil
+	return saved.Room, climbing{l}, nil
 }
 
 // PostRoomLock sends a room.lock (a JSON object with "version": 1) to the hub this machine joined, over the room's

@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bufio"
+	"context"
 	"errors"
 	"fmt"
 	"log"
@@ -30,6 +31,9 @@ var transports = []string{"direct", "ziti", "zrok"}
 
 // hubSide is everything a hub needs to start on one transport.
 type hubSide struct {
+	// kind is the transport, and path is what rooms are told about it.
+	kind   string
+	path   link.Path
 	listen func() (net.Listener, error)
 	// enrol is nil for a transport that carries its own identity.
 	enrol func(conn net.Conn, br *bufio.Reader) (string, error)
@@ -75,6 +79,7 @@ func openHub(kind string, keys link.Keys, linkAddr, advertise, service string,
 		}
 		d := link.Direct{Addr: linkAddr, Keys: keys, Spend: spend}
 		return &hubSide{
+			kind: "direct", path: link.Path{Transport: "direct", Addr: adv},
 			listen: d.Listen,
 			enrol:  d.ServeEnrolment,
 			auth:   link.DirectAuthenticated,
@@ -92,6 +97,7 @@ func openHub(kind string, keys link.Keys, linkAddr, advertise, service string,
 			return nil, err
 		}
 		return &hubSide{
+			kind: "ziti", path: link.Path{Transport: "ziti", Service: service},
 			listen: overlayListen(z.Listen, d, "ziti"),
 			// THE CERTIFICATE NAMES THE ROOM, as it does over direct. The overlay
 			// decides only who may reach this service, so enrolment runs inside it.
@@ -120,6 +126,7 @@ func openHub(kind string, keys link.Keys, linkAddr, advertise, service string,
 			log.Printf("[hub] could not write the share down for `rooms token`: %v", err)
 		}
 		return &hubSide{
+			kind: "zrok", path: link.Path{Transport: "zrok"},
 			listen: overlayListen(z.Listen, d, "zrok"),
 			enrol:  d.ServeEnrolment,
 			auth:   link.OverlayAuthenticated,
@@ -144,11 +151,113 @@ func openHub(kind string, keys link.Keys, linkAddr, advertise, service string,
 //
 // The hub certificate names no host: a room's `clientTLS` checks the issuer and
 // ignores the address, so no name matters over an overlay.
+//
+// AN AUTHORITY ALREADY THERE IS LEFT ALONE. `EnsureCA` re-mints the hub's own
+// certificate against the hosts it is given, and a hub serving direct beside the
+// overlay minted it with the hosts direct needs.
 func overlayDirect(keys link.Keys, spend func(string) (string, error)) (link.Direct, error) {
-	if err := keys.EnsureCA(nil); err != nil {
-		return link.Direct{}, fmt.Errorf("could not set this hub up: %w", err)
+	if _, _, err := keys.CA(); err != nil {
+		if err := keys.EnsureCA(nil); err != nil {
+			return link.Direct{}, fmt.Errorf("could not set this hub up: %w", err)
+		}
 	}
 	return link.Direct{Keys: keys, Spend: spend}, nil
+}
+
+// hubSet is a hub on every transport `--transport` named, at once. The first is
+// the primary: join strings are minted for it, and a hub on one transport is a
+// set of one. See docs/rnd/room-transport-order.md.
+type hubSet struct {
+	sides []*hubSide
+}
+
+// openHubs opens a side for each transport in a comma list, `direct,ziti`.
+func openHubs(kinds string, keys link.Keys, linkAddr, advertise, service string,
+	spend func(string) (string, error)) (hubSet, error) {
+	order, err := link.ParseOrder(kinds)
+	if err != nil {
+		return hubSet{}, err
+	}
+	if len(order) == 0 {
+		order = []string{"direct"}
+	}
+	var set hubSet
+	for _, k := range order {
+		side, err := openHub(k, keys, linkAddr, advertise, service, spend)
+		if err != nil {
+			set.release()
+			return hubSet{}, err
+		}
+		set.sides = append(set.sides, side)
+	}
+	return set, nil
+}
+
+func (s hubSet) primary() *hubSide { return s.sides[0] }
+
+func (s hubSet) release() {
+	for _, side := range s.sides {
+		side.release()
+	}
+}
+
+// says names where rooms dial in, every transport.
+func (s hubSet) says() string {
+	out := make([]string, len(s.sides))
+	for i, side := range s.sides {
+		out[i] = side.says
+	}
+	return strings.Join(out, ", and ")
+}
+
+// overlay says whether any side is an overlay, which is when a room may arrive
+// on the old, certificate-less path.
+func (s hubSet) overlay() bool {
+	for _, side := range s.sides {
+		if side.kind != "direct" {
+			return true
+		}
+	}
+	return false
+}
+
+// auth is `Hub.Authenticated` for the whole set. One side keeps its own. More
+// than one with an overlay takes the overlay's, which asks the certificate of a
+// direct connection exactly as direct does.
+func (s hubSet) auth() func(net.Conn) bool {
+	if len(s.sides) == 1 || !s.overlay() {
+		return s.primary().auth
+	}
+	return link.OverlayAuthenticated
+}
+
+// paths is what a welcome tells rooms: every side but zrok, in `order`, and never
+// a credential. zrok's share reaching an authenticated room is a later job.
+func (s hubSet) paths(order []string) []link.Path {
+	var out []link.Path
+	for _, side := range s.sides {
+		if side.kind == "zrok" {
+			continue
+		}
+		p := side.path
+		p.Share, p.Identity, p.From = "", "", ""
+		out = append(out, p)
+	}
+	return link.Arrange(out, order)
+}
+
+// hubOrder reads the hub's order from its store. A stored order that no longer
+// parses is the default, because a typo must not leave rooms with no list.
+func hubOrder(read func() (string, error)) []string {
+	v, err := read()
+	if err != nil {
+		return nil
+	}
+	order, err := link.ParseOrder(v)
+	if err != nil {
+		return nil
+	}
+	return order
 }
 
 // overlayListen wraps an overlay's ROOM-LINK listener so it serves certificate
@@ -237,4 +346,134 @@ func rawRoomDialer(j link.Join, keys link.Keys, identity string) (link.Dialer, e
 		return &link.Zrok{Token: j.ShareToken}, nil
 	}
 	return nil, fmt.Errorf("no transport called %q", j.Transport)
+}
+
+// roomLadder is every transport this room can reach its hub on, best first.
+//
+// Built from the join, the hub's list as last heard and what was told to this
+// room on its own machine (`atrium room transports`). `skipped` names what could
+// not be a rung and why, for the log. See docs/rnd/room-transport-order.md.
+func roomLadder(keys link.Keys, saved link.Saved, tr link.RoomTransports) (*link.Ladder, []string, error) {
+	rungs, skipped := roomRungs(keys, saved, tr, nil)
+	if len(rungs) == 0 {
+		return nil, skipped, fmt.Errorf("this room has no transport it can reach its hub on: %s",
+			strings.Join(skipped, "; "))
+	}
+	return link.NewLadder(rungs), skipped, nil
+}
+
+// roomRungs builds the rungs, reusing a dialer from `had` for a path that has not
+// changed, so learning the hub's list does not open a second ziti session.
+func roomRungs(keys link.Keys, saved link.Saved, tr link.RoomTransports, had []link.Rung) ([]link.Rung, []string) {
+	paths, skipped := link.Candidates(saved, tr)
+	var rungs []link.Rung
+	for _, p := range paths {
+		if d := reuse(had, p); d != nil {
+			rungs = append(rungs, link.Rung{Path: p, Dial: d})
+			continue
+		}
+		d, err := rungDialer(keys, saved, p)
+		if err != nil {
+			skipped = append(skipped, p.Transport+": "+err.Error())
+			continue
+		}
+		rungs = append(rungs, link.Rung{Path: p, Dial: d})
+	}
+	return rungs, skipped
+}
+
+func reuse(had []link.Rung, p link.Path) link.Dialer {
+	for _, r := range had {
+		q := r.Path
+		if q.Transport == p.Transport && q.Addr == p.Addr && q.Service == p.Service &&
+			q.Share == p.Share && q.Identity == p.Identity {
+			return r.Dial
+		}
+	}
+	return nil
+}
+
+// rungDialer is one rung's dialer.
+//
+// AN OVERLAY RUNG RUNS INSIDE THE ROOM'S CERTIFICATE when this room's certificate
+// is this hub's: it joined over direct, or over an overlay with a proven string.
+// The hub refuses a name that enrolled a certificate on the old path, so a
+// direct room falling back to ziti without it would be turned away by name. An
+// old-form overlay join never wraps, for the reason `roomDialer` gives.
+func rungDialer(keys link.Keys, saved link.Saved, p link.Path) (link.Dialer, error) {
+	d, err := rawRoomDialer(link.Join{
+		Transport: p.Transport, Addr: p.Addr, Service: p.Service, ShareToken: p.Share,
+	}, keys, p.Identity)
+	if err != nil {
+		return nil, err
+	}
+	if p.Transport != "direct" && (saved.Transport == "direct" || saved.Proven) && keys.HasRoomCert() {
+		return link.Proven{Dialer: d, Keys: keys}, nil
+	}
+	return d, nil
+}
+
+// climbing is a ladder for a one-off connection, from a command rather than the
+// running room: every dial climbs from the top, since nothing has climbed yet.
+type climbing struct{ l *link.Ladder }
+
+func (c climbing) Dial(ctx context.Context) (net.Conn, error) {
+	return c.l.Climb(ctx, link.DefaultTimings().DialWait)
+}
+
+func (c climbing) Describe() string { return c.l.Describe() }
+
+// ladderSays is the rungs in one line, best first, for the log and `room transports`.
+func ladderSays(rungs []link.Rung) string {
+	out := make([]string, len(rungs))
+	for i, r := range rungs {
+		out[i] = r.Path.Transport + " " + r.Dial.Describe()
+		if r.Path.From != "" {
+			out[i] += " (" + r.Path.From + ")"
+		}
+	}
+	return strings.Join(out, ", then ")
+}
+
+// learnHubPaths writes the hub's list down when it changed and rebuilds the
+// ladder from it, so the next start knows the fallback even when the hub cannot
+// be reached. Best effort: a room that cannot write keeps what it has.
+func learnHubPaths(keys link.Keys, saved link.Saved, l *link.Ladder, ps []link.Path) {
+	tr, err := keys.Transports()
+	if err != nil {
+		log.Printf("[link] could not read %s: %v", keys.TransportsPath(), err)
+		return
+	}
+	for i := range ps {
+		ps[i].From = ""
+	}
+	if samePaths(tr.Hub, ps) {
+		return
+	}
+	tr.Hub = ps
+	if err := keys.SaveTransports(tr); err != nil {
+		log.Printf("[link] could not write the hub's transports down: %v", err)
+	}
+	rungs, skipped := roomRungs(keys, saved, tr, l.Rungs())
+	for _, s := range skipped {
+		log.Printf("[link] not a way to the hub: %s", s)
+	}
+	if len(rungs) > 0 {
+		l.Set(rungs)
+		log.Printf("[link] the hub's transports changed. will try %s", ladderSays(rungs))
+	}
+}
+
+func samePaths(a, b []link.Path) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		x, y := a[i], b[i]
+		x.From, y.From = "", ""
+		if x != y {
+			return false
+		}
+	}
+	return true
 }

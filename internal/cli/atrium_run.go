@@ -72,7 +72,7 @@ func (f *atriumFlags) bind(c *cobra.Command, prefix string) {
 	c.Flags().StringVar(&f.db, prefix+"db", "",
 		"the hub's own store: which rooms exist and what they last said (default: under --"+prefix+"dir)")
 	c.Flags().StringVar(&f.transport, "transport", "direct",
-		"how rooms reach this hub: direct, ziti or zrok")
+		"how rooms reach this hub: direct, ziti or zrok, or a comma list such as direct,ziti to listen on each. the first mints join strings")
 	c.Flags().StringVar(&f.service, prefix+"service", "atrium-hub", "the ziti service, with --transport ziti")
 	c.Flags().StringVar(&f.identity, prefix+"identity", "", "the ziti identity file, with --transport ziti")
 	c.Flags().StringVar(&f.files, "board", "",
@@ -173,7 +173,11 @@ func serveAtrium(f atriumFlags, up atriumUp) error {
 	// is the only thing that can answer it. Handed to the transport
 	// rather than reached for, so `internal/link` never learns the hub
 	// has a database.
-	side, err := openHub(transport, keys, port, advertise, service,
+	//
+	// EVERY TRANSPORT `--transport` NAMES, AT ONCE, so a room that cannot reach
+	// this hub on one comes in on the next. The first is the primary: join
+	// strings are minted for it. See docs/rnd/room-transport-order.md.
+	set, err := openHubs(transport, keys, port, advertise, service,
 		func(secret string) (string, error) {
 			r, err := store.Spend(secret)
 			if err != nil {
@@ -185,13 +189,19 @@ func serveAtrium(f atriumFlags, up atriumUp) error {
 	if err != nil {
 		return err
 	}
-	defer side.release()
+	defer set.release()
+	side := set.primary()
+	side.says = set.says()
 
-	ln, err := side.listen()
-	if err != nil {
-		return err
+	lns := make([]net.Listener, len(set.sides))
+	for i, s := range set.sides {
+		ln, err := s.listen()
+		if err != nil {
+			return fmt.Errorf("listening for rooms over %s: %w", s.kind, err)
+		}
+		defer ln.Close()
+		lns[i] = ln
 	}
-	defer ln.Close()
 
 	// WHAT A HALT DOES. The store refuses every call from then on, and the
 	// board stays up to say what broke.
@@ -267,7 +277,10 @@ func serveAtrium(f atriumFlags, up atriumUp) error {
 	}
 	h.Enrol = side.enrol
 	// Every room proves who it is with a certificate this hub signed.
-	h.Authenticated = side.auth
+	h.Authenticated = set.auth()
+	// WHAT ROOMS ARE TOLD, in the order the store holds, read at every attach so
+	// `atrium rooms transports` needs no restart.
+	h.Paths = func() []link.Path { return set.paths(hubOrder(store.RoomTransportOrder)) }
 	// A ROOM THIS HUB HAS NO RECORD OF DOES NOT ATTACH, even holding a
 	// certificate this hub signed, because a certificate is not a
 	// record: a room that was forced out still has its papers. The
@@ -292,7 +305,7 @@ func serveAtrium(f atriumFlags, up atriumUp) error {
 		// that turns every overlay room away.
 		return err == nil && refused
 	}
-	if transport != "" && transport != "direct" && !h.LegacyRefused() {
+	if set.overlay() && !h.LegacyRefused() {
 		log.Printf("[hub] rooms over %s that joined with a certificate are named by it. "+
 			"a room on an older join string still attaches without one, and its name is "+
 			"taken on trust and checked against the list. `%s` says who, and refuses them "+
@@ -497,11 +510,13 @@ func serveAtrium(f atriumFlags, up atriumUp) error {
 	// EACH ROOM'S SETUP, read on attach and every few minutes, for the rooms pill. See internal/link/setupwatch.go.
 	go proxy.RunSetupWatch(ctx)
 
-	go func() {
-		if err := h.Serve(ctx, ln); err != nil && ctx.Err() == nil {
-			log.Printf("[hub] the room listener stopped: %v", err)
-		}
-	}()
+	for i, ln := range lns {
+		go func(ln net.Listener, via string) {
+			if err := h.ServeVia(ctx, ln, via); err != nil && ctx.Err() == nil {
+				log.Printf("[hub] the room listener over %s stopped: %v", via, err)
+			}
+		}(ln, set.sides[i].kind)
+	}
 
 	// SNAPSHOTS OF ITS OWN STORE, because a halt on a corrupt database
 	// is only tolerable if there is something to go back to. Without

@@ -15315,11 +15315,14 @@ async function roomsDashSection(browser, base) {
           cache: n('[data-v="r.sg3.cache"]'), five: lim(t("sg3"), "5h"), week: lim(t("sg3"), "week"),
           seen: /highest seen/.test(t("sg3").textContent), hot: t("sg3").classList.contains("hot"),
           build: (t("sg3").querySelector(".rd-build") || {}).dataset,
+          via: [...t("sg3").querySelectorAll(".rt-head .chip")].map(c => c.textContent +
+            (c.classList.contains("warn") ? "+warn" : "") + (/first choice did not answer/.test(c.dataset.tip || "") ? "+tip" : "")),
           off: t("sg3").querySelectorAll(".rd-kinds .off").length },
         sg4: { tokDash: !!t("sg4").querySelector(".rd-band.tokens > .rd-row .rd-dash"),
           diskDash: /disk\s*\u2014/.test(t("sg4").querySelector(".rd-band.machine").textContent),
           hot: t("sg4").classList.contains("hot"), five: lim(t("sg4"), "5h"),
-          build: !!t("sg4").querySelector(".rd-build") },
+          build: !!t("sg4").querySelector(".rd-build"),
+          via: [...t("sg4").querySelectorAll(".rt-head .chip")].map(c => c.textContent + (c.classList.contains("warn") ? "+warn" : "")) },
         mini: { five: lim(t("m1mini"), "5h"), week: lim(t("m1mini"), "week") },
         all: { run: n('[data-v="all.run"]'), idle: n('[data-v="all.idle"]'), need: n('[data-v="all.need"]'),
           done: n('[data-v="all.done"]'), rate: n('[data-v="all.rate"]'), day: n('[data-v="all.24h"]'),
@@ -15340,6 +15343,9 @@ async function roomsDashSection(browser, base) {
       fail("sg3's not the hub's build chip does not name both builds: " + JSON.stringify(got.sg3.build));
     }
     want("sg3 runners not resolving", got.sg3.off, 1);
+    // sg3 asks for direct first, and is on ziti because direct did not answer.
+    if (!got.sg3.via.includes("ziti+warn+tip")) fail("sg3 fell back to ziti and its tile does not say so: " + JSON.stringify(got.sg3.via));
+    if (!got.sg4.via.includes("ziti")) fail("sg4 is on its first choice, ziti, and its chip is not plain: " + JSON.stringify(got.sg4.via));
     if (!got.sg4.tokDash || !got.sg4.diskDash) fail("sg4's absent tokens and disk did not draw dashes: " + JSON.stringify(got.sg4));
     if (!got.sg4.hot) fail("sg4 is at 95% cpu and waiting and does not pulse");
     if (got.sg4.build) fail("sg4 runs the hub's build and wears the not the hub's build chip");

@@ -124,6 +124,11 @@ type Hub struct {
 	// connection, at ForgePrefix. The room is the one the hello named, set by serveGit. Nil answers 404, which a room
 	// reads as a hub that cannot be asked. See forgeroute.go.
 	Forge http.Handler
+	// Paths are the transports this hub listens on, in the order rooms should
+	// try them, said in every welcome. Asked at each attach, so a change to the
+	// order reaches the next room that attaches. Nil says nothing, and a room
+	// keeps what it last heard.
+	Paths func() []Path
 
 	mu    sync.Mutex
 	rooms map[string]*attached
@@ -194,8 +199,12 @@ type attached struct {
 	unproven string
 	session  string
 	// git is whether this room said, in its hello, that it takes git syncs.
-	git   bool
-	since time.Time
+	git bool
+	// via is the transport whose listener took the control connection, the hub's
+	// own observation. fallback is the room's word that it is not its first choice.
+	via      string
+	fallback bool
+	since    time.Time
 	// key identifies the credential this room attached with, so a reconnect
 	// can be told from somebody else claiming the same name. Empty on a
 	// transport that carries no key of its own, where the network has already
@@ -239,7 +248,12 @@ func NewHub(t Timings) *Hub {
 //
 // The listener is whatever the transport handed over: a TLS listener today, a
 // ziti or zrok one later. This function does not know and must not learn.
-func (h *Hub) Serve(ctx context.Context, ln net.Listener) error {
+func (h *Hub) Serve(ctx context.Context, ln net.Listener) error { return h.ServeVia(ctx, ln, "") }
+
+// ServeVia is Serve for one of several listeners, naming the transport it is, so
+// the board can say which one each room came in on. A hub may serve any number
+// at once. See docs/rnd/room-transport-order.md.
+func (h *Hub) ServeVia(ctx context.Context, ln net.Listener, via string) error {
 	go func() {
 		<-ctx.Done()
 		_ = ln.Close()
@@ -252,12 +266,12 @@ func (h *Hub) Serve(ctx context.Context, ln net.Listener) error {
 			}
 			return err
 		}
-		go h.take(ctx, conn)
+		go h.take(ctx, conn, via)
 	}
 }
 
 // take handles one freshly accepted connection, whichever kind it is.
-func (h *Hub) take(ctx context.Context, conn net.Conn) {
+func (h *Hub) take(ctx context.Context, conn net.Conn, via string) {
 	br := bufio.NewReader(conn)
 	hi, err := hearHello(conn, br)
 	if err != nil {
@@ -352,7 +366,7 @@ func (h *Hub) take(ctx context.Context, conn net.Conn) {
 
 	switch hi.Kind {
 	case "control":
-		h.control(ctx, name, hi, conn, br)
+		h.control(ctx, name, hi, conn, br, via)
 	case "data":
 		h.data(name, hi, conn, br)
 	case announceKind:
@@ -396,7 +410,7 @@ func (h *Hub) take(ctx context.Context, conn net.Conn) {
 }
 
 // control adopts a room and holds its control connection.
-func (h *Hub) control(ctx context.Context, name string, hi hello, conn net.Conn, br *bufio.Reader) {
+func (h *Hub) control(ctx context.Context, name string, hi hello, conn net.Conn, br *bufio.Reader, via string) {
 	// ASKED BEFORE ANYTHING IS ADOPTED, so a room the hub has no record of is
 	// turned away rather than half joined. Refusing later would mean it is in
 	// the map, being proxied to, while the hub says it does not exist.
@@ -415,6 +429,7 @@ func (h *Hub) control(ctx context.Context, name string, hi hello, conn net.Conn,
 		os: hi.OS, arch: hi.Arch, git: hi.Git,
 		since: time.Now(), control: conn,
 		unproven: unprovenOver(conn),
+		via:      via, fallback: hi.Fallback,
 		// Room for a burst plus the terminals a board is likely to hold open.
 		idle:     make(chan net.Conn, 64),
 		want:     h.T.Warm,
@@ -488,7 +503,7 @@ func (h *Hub) control(ctx context.Context, name string, hi hello, conn net.Conn,
 	_ = conn.SetWriteDeadline(time.Now().Add(handshakeWait))
 	err := writeJSON(conn, welcome{
 		OK: true, Session: session, Warm: h.T.Warm, Caches: h.Cached != nil,
-		Git: h.Git != nil,
+		Git: h.Git != nil, Paths: h.paths(),
 	})
 	_ = conn.SetWriteDeadline(time.Time{})
 	welcomed = true
@@ -793,6 +808,11 @@ type Attached struct {
 	// Setup is what the hub last read of this room's setup, nil before the first read. Filled by the proxy, never by
 	// the room. See setupwatch.go.
 	Setup *RoomSetup `json:"setup,omitempty"`
+	// Via is the transport this room is attached over, from the listener that took
+	// it. Empty from a hub serving one unnamed listener. Fallback is the room saying
+	// it is not on its first choice. See docs/rnd/room-transport-order.md.
+	Via      string `json:"via,omitempty"`
+	Fallback bool   `json:"fallback,omitempty"`
 }
 
 // unprovenOver names the overlay a connection took the old path on, or "".
@@ -860,6 +880,7 @@ func (h *Hub) Rooms() []Attached {
 			Name: a.name, Version: a.version, Host: a.host, Commit: a.commit,
 			Since: a.since, Idle: len(a.idle), Beat: beat,
 			OS: a.os, Arch: a.arch, Proven: a.unproven == "", Git: a.git, IdleCPU: idle,
+			Via: a.via, Fallback: a.fallback,
 		})
 	}
 	return out
@@ -938,3 +959,11 @@ func lowerASCII(s string) string {
 }
 
 var _ = http.StatusOK
+
+// paths is what the welcome says about how this hub can be reached.
+func (h *Hub) paths() []Path {
+	if h.Paths == nil {
+		return nil
+	}
+	return h.Paths()
+}
