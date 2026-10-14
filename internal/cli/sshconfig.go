@@ -59,7 +59,7 @@ func sshConfigCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			res, err := sshcfg.Add(h, exe, runtime.GOOS, rooms)
+			res, err := sshcfg.AddHub(h, exe, runtime.GOOS, hubForConfig(hub), rooms)
 			if err != nil {
 				return err
 			}
@@ -156,6 +156,38 @@ func sshConfigCmd() *cobra.Command {
 func pathOwn(home string) string {
 	_, _, own := sshcfg.Paths(home)
 	return own
+}
+
+// hubForConfig is the hub board to write into a ProxyCommand, or "" when the hub is on its default board and the proxy
+// finds it unaided. An explicit --hub is written as given. Otherwise the boards the proxy would try are asked in its
+// order, and the first that answers as a hub is the one found.
+func hubForConfig(flag string) string {
+	if flag != "" {
+		if b := boardAddress(flag); !sameBoard(b, defaultHubBoard) {
+			return b
+		}
+		return ""
+	}
+	first, alt := hubDoors("")
+	cl := &http.Client{Timeout: 3 * time.Second}
+	for _, b := range []string{first, alt} {
+		if b == "" {
+			continue
+		}
+		resp, err := cl.Get(b + "/_hub/rooms")
+		if err != nil {
+			continue
+		}
+		resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			continue
+		}
+		if sameBoard(b, defaultHubBoard) {
+			return ""
+		}
+		return b
+	}
+	return ""
 }
 
 // roomsToConfigure is the rooms named, or every room the hub on this machine lists.

@@ -131,3 +131,32 @@ func TestARoomsRefusalIsSaidAsTheRoomSaidIt(t *testing.T) {
 		t.Fatalf("code %d stdout %q stderr %q", code, out, errs)
 	}
 }
+
+// A HUB ON THE DEFAULT PORT IS FOUND even when what boardAddress finds is something else (a room's own board).
+func TestTheProxyFallsBackToTheAltHubDoor(t *testing.T) {
+	var seen atomic.Value
+	hub := fakeDoor(t, http.StatusSwitchingProtocols, "", nil, &seen)
+	other := fakeDoor(t, http.StatusNotFound, "", nil, nil)
+	code, out, errs := runProxyT(t, proxyOpts{room: "sg3", hub: other.URL, hubAlt: hub.URL, room2: deadAddr}, "x")
+	if code != 0 || out != "SSH-2.0-fake\r\nx" || errs != "" {
+		t.Fatalf("code %d stdout %q stderr %q", code, out, errs)
+	}
+	if got := seen.Load(); got == nil {
+		t.Fatal("the alt hub door was never asked")
+	}
+}
+
+func TestHubDoorsHonourTheFlagTheEnvAndTheDefault(t *testing.T) {
+	t.Setenv("ATRIUM_BOARD_URL", "")
+	if first, alt := hubDoors("127.0.0.1:9999"); first != "http://127.0.0.1:9999" || alt != "" {
+		t.Fatalf("flag: %q %q", first, alt)
+	}
+	t.Setenv("ATRIUM_BOARD_URL", "http://127.0.0.1:7781")
+	if first, alt := hubDoors(""); first != "http://127.0.0.1:7781" || alt != defaultHubBoard {
+		t.Fatalf("env: %q %q", first, alt)
+	}
+	t.Setenv("ATRIUM_BOARD_URL", "http://localhost:7778")
+	if _, alt := hubDoors(""); alt != "" {
+		t.Fatalf("the default board needs no second try, got %q", alt)
+	}
+}

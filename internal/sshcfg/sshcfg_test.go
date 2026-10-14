@@ -221,3 +221,18 @@ func TestABadRoomNameIsRefusedBeforeAnythingIsWritten(t *testing.T) {
 		t.Fatal("a refused name still wrote something")
 	}
 }
+
+func TestBlockHubWritesHubIntoTheProxyCommand(t *testing.T) {
+	if got := ProxyCommandHub("/usr/bin/atrium", "linux", ""); got != "/usr/bin/atrium ssh-proxy %h" {
+		t.Fatalf("no hub: %q", got)
+	}
+	if got := ProxyCommandHub("/usr/bin/atrium", "linux", "http://127.0.0.1:7790"); got != "/usr/bin/atrium ssh-proxy --hub http://127.0.0.1:7790 %h" {
+		t.Fatalf("hub: %q", got)
+	}
+	if got := ProxyCommandHub(`C:\Program Files\atrium.exe`, "windows", "http://127.0.0.1:7790"); got != `"C:\Program Files\atrium.exe" ssh-proxy --hub http://127.0.0.1:7790 %h` {
+		t.Fatalf("windows: %q", got)
+	}
+	if !strings.Contains(BlockHub("sg3", "atrium", "linux", "http://h:1"), "ProxyCommand atrium ssh-proxy --hub http://h:1 %h\n") {
+		t.Fatal("block lacks --hub")
+	}
+}
