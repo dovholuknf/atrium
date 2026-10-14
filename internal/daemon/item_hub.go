@@ -232,6 +232,7 @@ func (d *Daemon) itemNotify(task *store.Task, it *store.ItemRow, text string) {
 	case store.ItemOwnerRole:
 		if !d.itemNotifyHolder(task, it, key, text) {
 			d.orphanReport(task, text)
+			d.itemUnreached(task, it)
 		}
 		return
 	}
@@ -244,10 +245,20 @@ func (d *Daemon) itemNotify(task *store.Task, it *store.ItemRow, text string) {
 			store.RelaySourceNotice); err != nil {
 			log.Printf("[atrium] could not hold item %s's notice for %s: %v", it.ID, spec.ToRoom, err)
 			d.orphanReport(task, text)
+			d.itemUnreached(task, it)
 		}
 		return
 	}
 	d.orphanReport(task, text)
+	d.itemUnreached(task, it)
+}
+
+// itemUnreached alerts for a blocked item whose notice found nobody. The report held for the orchestrator is the
+// notice, and this is the stuck alert the spec asks for when nothing resolves at delivery.
+func (d *Daemon) itemUnreached(task *store.Task, it *store.ItemRow) {
+	if it.State == store.ItemBlocked {
+		d.itemAlert(task, it, ItemStuckOwnerGone)
+	}
 }
 
 // itemQueue queues the notice on a card here, and resumes it when it is parked: the owner is the one who has to act.
@@ -358,7 +369,7 @@ func (d *Daemon) itemUnblock(id, answer, by string) (map[string]any, int, error)
 	if err != nil {
 		return nil, http.StatusGone, errors.New("the card that runs item " + id + " is gone")
 	}
-	text := "answer to your blocked question: " + answer
+	text := itemAnswerPrefix + answer
 	typed, mid, err := d.deliverPeerCaused(target, store.ReservedHandle, text, "", "", d.waitsForTurn(target.ID, WhenImmediate))
 	if err != nil {
 		return nil, http.StatusInternalServerError, err
@@ -366,7 +377,7 @@ func (d *Daemon) itemUnblock(id, answer, by string) (map[string]any, int, error)
 	if typed {
 		mid = "typed"
 	}
-	if err := d.st.ItemAwaitUnblock(id, mid); err != nil {
+	if err := d.st.ItemAwaitUnblock(id, mid, answer); err != nil {
 		return nil, http.StatusInternalServerError, err
 	}
 	if typed {

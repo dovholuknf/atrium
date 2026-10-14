@@ -53,8 +53,18 @@ type ItemRow struct {
 	// worker. The item is still blocked until a turn starts from it.
 	UnblockMsg       string
 	UnblockDelivered bool
-	CreatedAt        string
-	UpdatedAt        string
+	// UnblockText is the answer, UnblockAt when it was given and RetypedAt when it was typed a second time. Part 2b.
+	UnblockText string
+	UnblockAt   string
+	RetypedAt   string
+	// StuckAlerted is why the human was alerted for this revision, or "". One alert per stall, because a new revision
+	// clears it.
+	StuckAlerted string
+	// MissedOwner and MissedWorker say the notice, or the answer, was handed back once after a context clear.
+	MissedOwner  bool
+	MissedWorker bool
+	CreatedAt    string
+	UpdatedAt    string
 }
 
 // ItemOwed is one outbox row: a push the hub has not taken.
@@ -69,16 +79,18 @@ type ItemOwed struct {
 }
 
 const itemRowCols = `item_id, task_id, generation, state, revision, owner_kind, owner, created_by, note, unblock_msg,
-	unblock_delivered, created_at, updated_at`
+	unblock_delivered, unblock_text, unblock_at, retyped_at, stuck_alerted, missed_owner, missed_worker, created_at,
+	updated_at`
 
 func scanItemRow(sc interface{ Scan(...any) error }) (*ItemRow, error) {
 	var it ItemRow
-	var del int
+	var del, mo, mw int
 	if err := sc.Scan(&it.ID, &it.TaskID, &it.Generation, &it.State, &it.Revision, &it.OwnerKind, &it.Owner, &it.CreatedBy,
-		&it.Note, &it.UnblockMsg, &del, &it.CreatedAt, &it.UpdatedAt); err != nil {
+		&it.Note, &it.UnblockMsg, &del, &it.UnblockText, &it.UnblockAt, &it.RetypedAt, &it.StuckAlerted, &mo, &mw,
+		&it.CreatedAt, &it.UpdatedAt); err != nil {
 		return nil, err
 	}
-	it.UnblockDelivered = del != 0
+	it.UnblockDelivered, it.MissedOwner, it.MissedWorker = del != 0, mo != 0, mw != 0
 	return &it, nil
 }
 
@@ -125,7 +137,7 @@ func (s *Store) ItemCreate(it ItemRow) (*ItemRow, error) {
 	var out *ItemRow
 	err := s.inTx(func(tx *Tx) error {
 		now := ts(s.now())
-		res, err := tx.Exec(`INSERT INTO item_mirror (`+itemRowCols+`) VALUES (?,?,?,?,?,?,?,?,?,?,0,?,?)
+		res, err := tx.Exec(`INSERT INTO item_mirror (`+itemRowCols+`) VALUES (?,?,?,?,?,?,?,?,?,?,0,'','','','',0,0,?,?)
 			ON CONFLICT (item_id) DO NOTHING`, it.ID, it.TaskID, it.Generation, it.State, it.Revision, it.OwnerKind,
 			it.Owner, it.CreatedBy, it.Note, "", now, now)
 		if err != nil {
@@ -164,9 +176,12 @@ func (s *Store) ItemTransition(id, state, note string) (*ItemRow, bool, error) {
 		}
 		cur.State, cur.Note, cur.Revision = state, note, cur.Revision+1
 		cur.UnblockMsg, cur.UnblockDelivered = "", false
+		cur.UnblockText, cur.UnblockAt, cur.RetypedAt, cur.StuckAlerted = "", "", "", ""
+		cur.MissedOwner, cur.MissedWorker = false, false
 		now := ts(s.now())
 		if _, err := tx.Exec(`UPDATE item_mirror SET state = ?, note = ?, revision = ?, unblock_msg = '',
-			unblock_delivered = 0, updated_at = ? WHERE item_id = ?`, state, note, cur.Revision, now, id); err != nil {
+			unblock_delivered = 0, unblock_text = '', unblock_at = '', retyped_at = '', stuck_alerted = '',
+			missed_owner = 0, missed_worker = 0, updated_at = ? WHERE item_id = ?`, state, note, cur.Revision, now, id); err != nil {
 			return err
 		}
 		cur.UpdatedAt = now
@@ -252,9 +267,12 @@ func (s *Store) ItemPushFailed(id string, revision int, state, why string) error
 }
 
 // ItemAwaitUnblock records the message that carries the owner's answer. The item stays blocked.
-func (s *Store) ItemAwaitUnblock(id, messageID string) error {
+//
+// The answer and the time it was given are kept for the stuck timers, which may type it once more.
+func (s *Store) ItemAwaitUnblock(id, messageID, answer string) error {
 	err := s.guard(func() error {
-		res, err := s.db.Exec(`UPDATE item_mirror SET unblock_msg = ?, unblock_delivered = 0 WHERE item_id = ?`, messageID, id)
+		res, err := s.db.Exec(`UPDATE item_mirror SET unblock_msg = ?, unblock_delivered = 0, unblock_text = ?,
+			unblock_at = ?, retyped_at = '' WHERE item_id = ?`, messageID, answer, ts(s.now()), id)
 		if err != nil {
 			return err
 		}
@@ -302,4 +320,64 @@ func (s *Store) ItemNotice(workerID, toID, key, text string) (*LedgerNotice, err
 		return err
 	})
 	return out, err
+}
+
+// ItemsBlocked is every blocked item that has not been alerted for, which is all the stuck timers look at.
+func (s *Store) ItemsBlocked() ([]*ItemRow, error) {
+	var out []*ItemRow
+	err := s.guard(func() error {
+		out = nil
+		rows, err := s.db.Query(`SELECT ` + itemRowCols + ` FROM item_mirror WHERE state = 'blocked' AND stuck_alerted = ''`)
+		if err != nil {
+			return err
+		}
+		defer rows.Close()
+		for rows.Next() {
+			it, err := scanItemRow(rows)
+			if err != nil {
+				return err
+			}
+			out = append(out, it)
+		}
+		return rows.Err()
+	})
+	return out, err
+}
+
+// ItemStuck records the alert for a revision and says whether this call was the one that did, so an alert is once per
+// stall however many ticks or paths find it. Only a blocked item at that revision can be alerted for.
+func (s *Store) ItemStuck(id string, revision int, why string) (bool, error) {
+	return s.itemFlip(`UPDATE item_mirror SET stuck_alerted = ? WHERE item_id = ? AND revision = ? AND state = 'blocked'
+		AND stuck_alerted = ''`, why, id, revision)
+}
+
+// ItemRetyped records that the answer was typed a second time, and when. Once per revision.
+func (s *Store) ItemRetyped(id string, revision int, at string) (bool, error) {
+	return s.itemFlip(`UPDATE item_mirror SET retyped_at = ? WHERE item_id = ? AND revision = ? AND state = 'blocked'
+		AND retyped_at = ''`, at, id, revision)
+}
+
+// ItemMissed records that the notice (owner) or the answer (worker) was handed back after a context clear, and says
+// whether this call was the first. Once per revision and side.
+func (s *Store) ItemMissed(id string, revision int, worker bool) (bool, error) {
+	col := "missed_owner"
+	if worker {
+		col = "missed_worker"
+	}
+	return s.itemFlip(`UPDATE item_mirror SET `+col+` = 1 WHERE item_id = ? AND revision = ? AND `+col+` = 0`, id, revision)
+}
+
+func (s *Store) itemFlip(q string, args ...any) (bool, error) {
+	first := false
+	err := s.guard(func() error {
+		first = false
+		res, err := s.db.Exec(q, args...)
+		if err != nil {
+			return err
+		}
+		n, _ := res.RowsAffected()
+		first = n > 0
+		return nil
+	})
+	return first, err
 }

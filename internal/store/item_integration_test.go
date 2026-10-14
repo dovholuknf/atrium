@@ -100,7 +100,7 @@ func TestItemUnblockIsAwaitedNotApplied(t *testing.T) {
 	s := open(t)
 	s.ItemCreate(newItem("it-1"))
 	s.ItemTransition("it-1", ItemBlocked, "stuck")
-	if err := s.ItemAwaitUnblock("it-1", "msg-1"); err != nil {
+	if err := s.ItemAwaitUnblock("it-1", "msg-1", "the answer"); err != nil {
 		t.Fatal(err)
 	}
 	it, _ := s.ItemGet("it-1")
@@ -136,8 +136,41 @@ func TestItemOfTaskIsTheLatest(t *testing.T) {
 	}
 }
 
-func TestItemMirrorMigrationIsLast(t *testing.T) {
-	if last := migrations[len(migrations)-1].name; last != "0098_item_mirror" {
+func TestItemStuckMigrationIsLast(t *testing.T) {
+	if last := migrations[len(migrations)-1].name; last != "0099_item_stuck" {
 		t.Fatalf("the last migration is %q", last)
+	}
+}
+
+// THE STUCK MARKS ARE ONCE PER REVISION, AND A NEW REVISION CLEARS THEM.
+func TestItemStuckMarksAreOncePerRevision(t *testing.T) {
+	s := open(t)
+	it, _ := s.ItemCreate(newItem("it-1"))
+	if first, _ := s.ItemStuck(it.ID, it.Revision, "owner-silent"); first {
+		t.Fatal("a running item was alerted for")
+	}
+	blocked, _, _ := s.ItemTransition(it.ID, ItemBlocked, "")
+	if first, _ := s.ItemStuck(it.ID, blocked.Revision, "owner-silent"); !first {
+		t.Fatal("the first alert was not recorded")
+	}
+	if first, _ := s.ItemStuck(it.ID, blocked.Revision, "owner-gone"); first {
+		t.Fatal("alerted twice for one stall")
+	}
+	if first, _ := s.ItemMissed(it.ID, blocked.Revision, true); !first {
+		t.Fatal("the first hand back was not recorded")
+	}
+	if first, _ := s.ItemMissed(it.ID, blocked.Revision, true); first {
+		t.Fatal("handed back twice")
+	}
+	if first, _ := s.ItemMissed(it.ID, blocked.Revision, false); !first {
+		t.Fatal("the owner side is its own")
+	}
+	if left, _ := s.ItemsBlocked(); len(left) != 0 {
+		t.Fatalf("an alerted item is still read: %d", len(left))
+	}
+	again, _, _ := s.ItemTransition(it.ID, ItemRunning, "")
+	blockedAgain, _, _ := s.ItemTransition(again.ID, ItemBlocked, "")
+	if blockedAgain.StuckAlerted != "" || blockedAgain.MissedWorker {
+		t.Fatalf("a new stall kept the old marks: %+v", blockedAgain)
 	}
 }

@@ -2243,6 +2243,19 @@ var migrations = []struct {
 			)`,
 		},
 	},
+	{
+		// ITEMS, PART 2b: what the stuck timers and the one-time re-delivery need to remember, per revision. They are
+		// cleared when the item moves, because a new revision is a new stall. See item.go.
+		name: "0099_item_stuck",
+		stmts: []string{
+			`ALTER TABLE item_mirror ADD COLUMN unblock_text   TEXT NOT NULL DEFAULT ''`,
+			`ALTER TABLE item_mirror ADD COLUMN unblock_at     TEXT NOT NULL DEFAULT ''`,
+			`ALTER TABLE item_mirror ADD COLUMN retyped_at     TEXT NOT NULL DEFAULT ''`,
+			`ALTER TABLE item_mirror ADD COLUMN stuck_alerted  TEXT NOT NULL DEFAULT ''`,
+			`ALTER TABLE item_mirror ADD COLUMN missed_owner   INTEGER NOT NULL DEFAULT 0`,
+			`ALTER TABLE item_mirror ADD COLUMN missed_worker  INTEGER NOT NULL DEFAULT 0`,
+		},
+	},
 }
 
 // migrate applies any migration not already recorded. This runs before the
