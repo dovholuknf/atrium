@@ -1036,7 +1036,7 @@ function foldedColumns() {
 function migrateLaneFolds(list) {
   const old = k => typeof k === "string" && k.startsWith("proj:") && !k.startsWith("proj:stack:") && !k.includes("|");
   if (!list.some(old)) return list;
-  const lanes = [...new Set(COLUMNS.flatMap(c => [c.id, ...c.statuses]))];
+  const lanes = [...new Set(COLUMNS.flatMap(c => [c.id, ...c.statuses]).concat(BOARD_COLUMNS.map(c => c.id)))];
   const out = [];
   for (const k of list) {
     if (!old(k)) { if (!out.includes(k)) out.push(k); continue; }

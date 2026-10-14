@@ -3815,22 +3815,18 @@ async function laneFoldSection(browser, base) {
     p.on("pageerror", e => errors.push(String(e)));
     await p.goto(base, { waitUntil: "domcontentloaded" });
     await toBoard(p);
-    if (await grp(p, "running") !== true || await grp(p, "needs-input") !== true) {
-      fail("laneFold: alpha did not start open in both lanes: " + JSON.stringify([await grp(p, "running"), await grp(p, "needs-input")]));
+    if (await grp(p, "working") !== true || await grp(p, "needs-you") !== true) {
+      fail("laneFold: alpha did not start open in both lanes: " + JSON.stringify([await grp(p, "working"), await grp(p, "needs-you")]));
     }
     // One lane's group folds alone.
-    await p.evaluate(() => { document.querySelector('#board details.cardgroup[data-fold="proj:running|alpha"] > summary').click(); });
+    await p.evaluate(() => { document.querySelector('#board details.cardgroup[data-fold="proj:working|alpha"] > summary').click(); });
     await p.waitForTimeout(400);
     await laneShot(p, "board");
-    if (await grp(p, "running") !== false) fail("laneFold: clicking the running lane's alpha did not fold it.");
-    if (await grp(p, "needs-input") !== true) fail("laneFold: folding alpha in running folded it in the ready lane too.");
-    if (!(await folds(p)).includes("proj:running|alpha")) fail("laneFold: the fold was not stored per lane: " + JSON.stringify(await folds(p)));
-    // And the pinned group of one lane.
-    await p.evaluate(() => { document.querySelector('#board details.cardgroup[data-fold="pin:running"] > summary').click(); });
-    await p.waitForTimeout(400);
-    if (await pin(p, "running") !== false || await pin(p, "needs-input") !== true) {
-      fail("laneFold: the pinned group did not fold in one lane alone: " + JSON.stringify([await pin(p, "running"), await pin(p, "needs-input")]));
-    }
+    if (await grp(p, "working") !== false) fail("laneFold: clicking the running lane's alpha did not fold it.");
+    if (await grp(p, "needs-you") !== true) fail("laneFold: folding alpha in running folded it in the ready lane too.");
+    if (!(await folds(p)).includes("proj:working|alpha")) fail("laneFold: the fold was not stored per lane: " + JSON.stringify(await folds(p)));
+    // A pin is a star and a sort key now, not a group (docs/rnd/unified-card-decisions.md).
+    if (await pin(p, "working") !== "missing" || await pin(p, "needs-you") !== "missing") fail("laneFold: the board still draws a pinned group.");
     // Collapse all reaches every lane, expand all undoes it.
     await p.click("#board-collapse-all");
     await p.waitForTimeout(400);
@@ -3864,20 +3860,22 @@ async function laneFoldSection(browser, base) {
     }
     // Each tab keeps its own: the stack's folds did not touch the board, which was left expanded.
     await toBoard(p);
-    if (await grp(p, "running") !== true || await pin(p, "running") !== true) fail("laneFold: the stack's folds leaked into the board.");
+    if (await grp(p, "working") !== true) fail("laneFold: the stack's folds leaked into the board.");
     // An old board-wide key still loads, and is spread over the lanes.
+    // Written from a page that runs none of the board, which would otherwise migrate the old keys itself before the reload.
+    await p.goto(base + "/v1/health", { waitUntil: "domcontentloaded" });
     await p.evaluate(() => localStorage.setItem("atrium.folded", JSON.stringify(["proj:alpha", "proj:pinned", "proj:stack:alpha"])));
-    await p.reload({ waitUntil: "domcontentloaded" });
+    await p.goto(base, { waitUntil: "domcontentloaded" });
     await toBoard(p);
-    if (await grp(p, "running") !== false || await grp(p, "needs-input") !== false || await pin(p, "running") !== false) {
-      fail("laneFold: an old board-wide fold did not carry over to the lanes.");
+    if (await grp(p, "working") !== false || await grp(p, "needs-you") !== false) {
+      fail("laneFold: an old board-wide fold did not carry over to the lanes: " + JSON.stringify([await grp(p, "working"), await grp(p, "needs-you"), (await folds(p)).filter(k => /alpha/.test(k) && !/proj:(backlog|needs-permission|needs-input|running|finished|done|dead|shelved)\|/.test(k))]));
     }
     const migrated = await folds(p);
     if (migrated.includes("proj:alpha") || !migrated.includes("proj:stack:alpha")) fail("laneFold: the old key was not migrated cleanly: " + JSON.stringify(migrated));
     // ...and a lane can be opened alone afterwards.
-    await p.evaluate(() => { document.querySelector('#board details.cardgroup[data-fold="proj:running|alpha"] > summary').click(); });
+    await p.evaluate(() => { document.querySelector('#board details.cardgroup[data-fold="proj:working|alpha"] > summary').click(); });
     await p.waitForTimeout(400);
-    if (await grp(p, "running") !== true || await grp(p, "needs-input") !== false) fail("laneFold: a migrated fold could not be opened lane by lane.");
+    if (await grp(p, "working") !== true || await grp(p, "needs-you") !== false) fail("laneFold: a migrated fold could not be opened lane by lane.");
     if (errors.length) fail("laneFold: the page threw: " + errors.join(" | "));
   } finally {
     await ctx.close();
