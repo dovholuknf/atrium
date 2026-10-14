@@ -1849,6 +1849,9 @@ async function chatterSection(browser, base) {
       termDrawerOpen = true;
       peekFill(document.getElementById("t-drawer-body"), "me-1", () => true);
     });
+    // The chatter is a drawer, folded until it is opened (the same one the peek has).
+    await dp.waitForSelector('#t-drawer-body .peek-drawer[data-key="chatter"]:not([hidden]) > .peek-dh', { timeout: slow(8000) });
+    await dp.click('#t-drawer-body .peek-drawer[data-key="chatter"] > .peek-dh');
     await dp.waitForSelector("#t-drawer-body .chat-row", { timeout: slow(8000) });
     let rows = await dp.$$eval("#t-drawer-body .chat-row", r => r.length);
     if (rows !== 20) fail("the first page of chatter has " + rows + " rows, not 20.");
@@ -13330,6 +13333,72 @@ async function peekKidsSection(browser, base) {
   } finally {
     await ctx.close();
   }
+}
+
+// ONE DETAILS RENDERER: the terminal's details drawer and the peek popup are the same function (peekFill), so for the same
+// card they draw the same sections in the same order with the same summaries, and the messages between agents list is a
+// folded drawer in both rather than a long open list in one. DETAILS_SHOTS=<dir> writes the drawer as a png.
+async function detailsOneSection(browser, base) {
+  const ctx = await browser.newContext({ viewport: { width: 1400, height: 1000 } });
+  const p = await ctx.newPage();
+  const errors = [];
+  p.on("pageerror", e => errors.push(String(e)));
+  const says = [];
+  for (let i = 0; i < 6; i++) {
+    says.push({ id: "say" + i, from_task: i % 2 ? "one-1" : "other-2", to_task: i % 2 ? "other-2" : "one-1", from: "other", to: "one",
+      sent_at: new Date(Date.now() - i * 3600e3).toISOString(), state: "delivered", channel: "terminal", preview: "say number " + i, chars: 12, text: "say number " + i });
+  }
+  await ctx.route("**/v1/tasks/*/says*", route => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ says, more: false }) }));
+  try {
+    await p.addInitScript(() => localStorage.removeItem("atrium.peekDrawers"));
+    await p.goto(base, { waitUntil: "domcontentloaded" });
+    await p.waitForFunction(() => typeof peekFill === "function" && typeof openPeek === "function", null, { timeout: slow(15000) });
+    await p.click('.tab[data-view="terms"]');
+    await p.waitForSelector("#t-expando", { state: "attached", timeout: slow(15000) });
+    await p.evaluate(() => { for (let n = document.getElementById("t-expando"); n; n = n.parentElement) n.hidden = false; });
+    await p.evaluate(async () => {
+      const kid = (id, st) => ({ id, title: id, display_title: id, status: st, supervised: true, pid: 9 });
+      const card = { id: "one-1", title: "one", display_title: "own the style-model experiment", wire_name: "one", status: "needs-input",
+        waiting_since: new Date(Date.now() - 300000).toISOString(), recap: "Re-explained the blind test.\nneeds: clint: mark it",
+        seen: { answered: false, open_questions: ["Point 3: keep, retype, or cut?"] }, supervised: true, pid: 9 };
+      const list = [kid("kid-a", "needs-permission"), kid("kid-b", "running")];
+      lastTasks = [card, { id: "other-2", title: "other", wire_name: "other", status: "running" }].concat(list);
+      window.termChildInfo = () => ({ total: 2, shown: 2, hidden: 0, paused: 0, running: 1, waiting: [list[0]], list });
+      window.__sig = box => ({
+        drawers: [...box.querySelectorAll(".peek-drawer")].map(d => d.dataset.key + "|" + d.querySelector(".peek-dh b").textContent + "|" +
+          d.querySelector(".peek-dsum").textContent + "|" + d.classList.contains("open")),
+        need: (box.querySelector(".peek-sec.need") || {}).textContent || null,
+        recap: (box.querySelector(".peek-rtext") || {}).textContent || null,
+        status: (box.querySelector(".peek-status") || {}).textContent || null,
+        head: (box.querySelector(".peek-title") || {}).textContent || null,
+        acts: [...box.querySelectorAll(".peek-act")].map(b => b.textContent),
+      });
+      document.getElementById("t-drawer").classList.add("open");
+      termDrawerOpen = true;
+      await peekFill(document.getElementById("t-drawer-body"), "one-1", () => true);
+      window.__pop = document.createElement("div");
+      window.__pop.className = "peek-body";
+      document.body.appendChild(window.__pop);
+      await peekFill(window.__pop, "one-1", () => true);
+    });
+    await p.waitForTimeout(300);
+    const s = await p.evaluate(() => {
+      const r = { drawer: __sig(document.getElementById("t-drawer-body")), peek: __sig(__pop) };
+      __pop.remove();
+      return r;
+    });
+    if (JSON.stringify(s.drawer) !== JSON.stringify(s.peek)) fail("detailsOne: the details drawer and the peek differ:\n" + JSON.stringify(s.drawer) + "\n" + JSON.stringify(s.peek));
+    const keys = s.drawer.drawers.map(d => d.split("|")[0]);
+    for (const k of ["need", "kids", "recap", "chatter"]) if (!keys.includes(k)) fail("detailsOne: the details drawer has no " + k + " section: " + keys);
+    if (!/^need\|needs you\|/.test(s.drawer.drawers[0] || "")) fail("detailsOne: NEEDS YOU is not first: " + s.drawer.drawers[0]);
+    const chat = s.drawer.drawers.find(d => d.startsWith("chatter|")) || "";
+    if (!/\|messages between agents\|6\|false$/.test(chat)) fail("detailsOne: messages between agents is not one folded drawer: " + chat);
+    const rowsShown = await p.evaluate(() => [...document.querySelectorAll("#t-drawer-body .chat-row")].filter(r => r.offsetParent).length);
+    if (rowsShown) fail("detailsOne: " + rowsShown + " message rows show in the folded details drawer");
+    if (process.env.DETAILS_SHOTS) await p.locator("#t-drawer").screenshot({ path: process.env.DETAILS_SHOTS + "/details-" + (process.env.DETAILS_TAG || "after") + ".png" });
+    if (errors.length) fail("detailsOne: page errors: " + errors.join(" | "));
+    else console.log("detailsOne ok");
+  } finally { await ctx.close(); }
 }
 
 async function peekStatusTruthSection(browser, base) {
@@ -30490,7 +30559,7 @@ async function main() {
       pasteBig: pasteBigSection, pasteLands: pasteLandsSection, pasteEmpty: pasteEmptySection, pasteBusy: pasteBusySection, typing: typingSection, alias: aliasSection, askAgain: askAgainSection, copySelect: copySelectSection, busyGuard: busyGuardSection, keepalive: keepaliveSection, idlePark: idleParkSection, sshBadge: sshBadgeSection, restartMenu: restartMenuSection,
       stuck: stuckSection, blockerMark: blockerMarkSection, carryLink: carryLinkSection, crossedPane: crossedPaneSection,
       skinScope: skinScopeSection, skinHeal: skinHealSection, toastLives: toastLivesSection,
-      history: historySection, contextSize: contextSizeSection, ctxLine: ctxLineSection, ctxLimitLayers: ctxLimitLayersSection, contextCycle: contextCycleSection, landThePlane: landThePlaneSection, peekEverywhere: peekEverywhereSection, peekOneHover: peekOneHoverSection, peekDrawers: peekDrawersSection,peekStatusTruth: peekStatusTruthSection, peekKids: peekKidsSection, peekHoverRest: peekHoverRestSection, cardRoute: cardRouteSection,
+      history: historySection, contextSize: contextSizeSection, ctxLine: ctxLineSection, ctxLimitLayers: ctxLimitLayersSection, contextCycle: contextCycleSection, landThePlane: landThePlaneSection, peekEverywhere: peekEverywhereSection, peekOneHover: peekOneHoverSection, peekDrawers: peekDrawersSection,peekStatusTruth: peekStatusTruthSection, peekKids: peekKidsSection, detailsOne: detailsOneSection, peekHoverRest: peekHoverRestSection, cardRoute: cardRouteSection,
       quietDoer: quietDoerSection, autoPerm: autoPermSection, looksIdle: looksIdleSection, notifyOff: notifyOffSection,
       questionsClick: questionsClickSection, walk: walkSection, walkContext: walkContextSection, linkReuse: linkReuseSection, linkBoard: linkBoardSection,
       usageCacheReads: usageCacheReadsSection, usageTurns: usageTurnsSection, turnLimits: turnLimitsSection, roomsDash: roomsDashSection, transportChips: transportChipsSection, zitiLogo: zitiLogoSection, phoneView: phoneViewSection, heldLine: heldLineSection, u016: u016Section, phoneHeader: phoneHeaderSection, phoneFocus: phoneFocusSection, phoneTermBar: phoneTermBarSection, phoneShare: phoneShareSection, phonePan: phonePanSection, phoneFollow: phoneFollowSection, phoneTap: phoneTapSection, phoneKeyboard: phoneKeyboardSection, phoneCompose: phoneComposeSection, mCompose: mComposeSection, mPerms: mPermsSection, mReview: mReviewSection, usagePolish: usagePolishSection, usageLimits: usageLimitsSection, usageGroups: usageGroupsSection,
@@ -32424,6 +32493,7 @@ async function main() {
     await unit("peekDrawers", () => peekDrawersSection(browser, base));
     await unit("peekStatusTruth", () => peekStatusTruthSection(browser, base));
     await unit("peekKids", () => peekKidsSection(browser, base));
+    await unit("detailsOne", () => detailsOneSection(browser, base));
     await unit("peekHoverRest", () => peekHoverRestSection(browser, base));
     await unit("phoneListFit", () => phoneListFitSection(browser, base));
     await unit("termListLastRow", () => termListLastRowSection(browser, base));
