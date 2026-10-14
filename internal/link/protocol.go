@@ -55,6 +55,10 @@ type hello struct {
 	// Git says this room takes git syncs: it serves /v1/git/sync and its own claude/*
 	// branches. The hub never asks a room that did not say so. See git.go.
 	Git bool `json:"git,omitempty"`
+	// Fallback says this room is on a transport below the first it would try,
+	// because the ones above did not answer. The room's word: the hub knows which
+	// listener took the connection and not what the room would rather be on.
+	Fallback bool `json:"fallback,omitempty"`
 }
 
 // welcome is the hub's answer to a hello.
@@ -81,6 +85,9 @@ type welcome struct {
 	// Git says this hub serves repositories on the `git` connection kind. A room never
 	// dials that kind at a hub that did not say so. See git.go.
 	Git bool `json:"git,omitempty"`
+	// Paths are the ways this hub can be reached, in the hub's order, so a room
+	// cut off on one knows the next on its next start. Never a credential.
+	Paths []Path `json:"paths,omitempty"`
 }
 
 // note is a line on the control connection, after the handshake. One struct

@@ -44,7 +44,7 @@ func hubRoomsCmd(use, prefix string) *cobra.Command {
 	}
 	c.AddCommand(roomAddCmd(prefix), roomListCmd(prefix), roomTokenCmd(prefix), roomMarkCmd(prefix),
 		roomRemoveCmd(prefix), roomLogCmd(prefix), roomLegacyCmd(prefix), roomGitCmd(prefix),
-		roomSpecCmd(prefix), roomLockCmd(prefix))
+		roomSpecCmd(prefix), roomLockCmd(prefix), roomTransportsCmd(prefix))
 	return c
 }
 

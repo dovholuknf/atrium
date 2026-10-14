@@ -477,7 +477,7 @@ func TestAKeylessAttachCannotReplaceAKeyedRoom(t *testing.T) {
 		mu.Lock()
 		keys[srv] = key
 		mu.Unlock()
-		go h.control(ctx, "alpha", hello{V: Version, Kind: "control", Room: "alpha"}, srv, bufio.NewReader(srv))
+		go h.control(ctx, "alpha", hello{V: Version, Kind: "control", Room: "alpha"}, srv, bufio.NewReader(srv), "")
 		var w welcome
 		_ = cli.SetDeadline(time.Now().Add(5 * time.Second))
 		br := bufio.NewReader(cli)

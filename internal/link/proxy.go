@@ -1142,7 +1142,12 @@ type Known struct {
 	SelfName string `json:"self_name,omitempty"`
 	// Transport earns a badge and never a column. See docs/hub-room-requirements.
 	Transport string `json:"transport"`
-	State     string `json:"state"`
+	// Via and Fallback are the live half of the transport: what the room is
+	// attached over right now, and whether that is its first choice. Empty while
+	// it is not attached. See docs/rnd/room-transport-order.md.
+	Via      string `json:"via,omitempty"`
+	Fallback bool   `json:"fallback,omitempty"`
+	State    string `json:"state"`
 	// Attached is the live half, from this hub's own connection list rather
 	// than from anything written down.
 	Attached bool `json:"attached"`

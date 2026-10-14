@@ -70,6 +70,21 @@ func (s *Store) OverlayLegacyRefused() (bool, error) {
 	return strings.EqualFold(strings.TrimSpace(v), OverlayLegacyRefuse), nil
 }
 
+// SettingRoomTransportOrder names the order rooms are told to try the hub's
+// transports in, a comma list of kinds such as `direct,ziti`. Empty reads as the
+// default, direct then ziti then zrok. It orders, it does not enable: the hub
+// listens on what `--transport` says. Validated by the caller, which knows the
+// kinds. See docs/rnd/room-transport-order.md.
+const SettingRoomTransportOrder = "room_transport_order"
+
+// RoomTransportOrder reads the order as written, "" when unset.
+func (s *Store) RoomTransportOrder() (string, error) { return s.HubSetting(SettingRoomTransportOrder) }
+
+// SetRoomTransportOrder writes it.
+func (s *Store) SetRoomTransportOrder(v string) error {
+	return s.SetHubSetting(SettingRoomTransportOrder, v)
+}
+
 // SettingBoardAuto names the hub's board-wide auto-approve flag in the setting
 // table.
 //

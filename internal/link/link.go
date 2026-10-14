@@ -100,6 +100,9 @@ type Timings struct {
 	// answering, and the ceiling it grows to.
 	Backoff    time.Duration
 	BackoffMax time.Duration
+	// ProbeEvery is how often a room on a fallback transport tries the better
+	// ones. Two good probes in a row move it back up. See ladder.go.
+	ProbeEvery time.Duration
 }
 
 // DefaultTimings are what both sides use unless something says otherwise.
@@ -129,6 +132,10 @@ func DefaultTimings() Timings {
 		// down for hours. At five seconds that is 720 connect attempts an
 		// hour, each one a TCP handshake that fails immediately. Nothing.
 		BackoffMax: 5 * time.Second,
+		// TWO MINUTES, and two in a row before moving. A move is a reattach and
+		// costs what a hub restart costs, so a path that flaps must not drag a
+		// room back and forth. See docs/rnd/room-transport-order.md.
+		ProbeEvery: 2 * time.Minute,
 	}
 }
 
@@ -152,6 +159,9 @@ func (t Timings) fill() Timings {
 	}
 	if t.BackoffMax <= 0 {
 		t.BackoffMax = d.BackoffMax
+	}
+	if t.ProbeEvery <= 0 {
+		t.ProbeEvery = d.ProbeEvery
 	}
 	return t
 }

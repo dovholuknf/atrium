@@ -252,7 +252,7 @@ func TestARoomWhoseRecordGoesIsLetGo(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
-	go h.control(ctx, "sparta", hello{}, hub, bufio.NewReader(hub))
+	go h.control(ctx, "sparta", hello{}, hub, bufio.NewReader(hub), "")
 
 	waitFor(t, 5*time.Second, func() bool { return h.Has("sparta") })
 
@@ -280,7 +280,7 @@ func TestARoomWithNoRecordIsTurnedAway(t *testing.T) {
 	defer hub.Close()
 	defer room.Close()
 
-	go h.control(t.Context(), "athens", hello{}, hub, bufio.NewReader(hub))
+	go h.control(t.Context(), "athens", hello{}, hub, bufio.NewReader(hub), "")
 
 	_ = room.SetDeadline(time.Now().Add(10 * time.Second))
 	var w welcome

@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"runtime"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -58,6 +59,10 @@ type Room struct {
 	// IdleCPU reads this machine's idle CPU percent for the beat to carry to the hub. Nil, or ok false, says
 	// nothing and the hub counts the room as unknown.
 	IdleCPU func() (float64, bool)
+	// OnPaths is handed the hub's list of transports, in its order, each time a
+	// welcome carries one, in its own goroutine. It is how the room writes the
+	// fallback down for a start when the hub cannot be reached. Nil ignores it.
+	OnPaths func([]Path)
 
 	// conns carries dialled connections to the listener's Accept. Buffered by
 	// one so a dial that wins a race is not thrown away.
@@ -173,6 +178,14 @@ func (r *Room) Run(ctx context.Context) error {
 		if ctx.Err() != nil {
 			return nil
 		}
+		// MOVING UP IS NOT A FAILURE. The room let go on purpose because a better
+		// transport answered, so it climbs again straight away.
+		if errors.Is(err, errMovingUp) {
+			r.setDown(nil)
+			log.Printf("[link] a better transport than %s answers, moving to it", r.Dial.Describe())
+			wait = r.T.Backoff
+			continue
+		}
 		r.setDown(err)
 		// BACK TO THE FLOOR AFTER A LINK THAT ACTUALLY WORKED, and this matters
 		// more here than in most backoffs.
@@ -210,9 +223,18 @@ func (r *Room) Run(ctx context.Context) error {
 
 // attach runs one control connection until it fails.
 func (r *Room) attach(ctx context.Context) error {
-	dialCtx, cancel := context.WithTimeout(ctx, r.T.DialWait)
-	conn, err := r.Dial.Dial(dialCtx)
-	cancel()
+	var conn net.Conn
+	var err error
+	cl, climbs := r.Dial.(climber)
+	if climbs {
+		// MORE THAN ONE TRANSPORT. Walked from the best down, each bounded by
+		// DialWait, and every later connection follows the one that answered.
+		conn, err = cl.Climb(ctx, r.T.DialWait)
+	} else {
+		dialCtx, cancel := context.WithTimeout(ctx, r.T.DialWait)
+		conn, err = r.Dial.Dial(dialCtx)
+		cancel()
+	}
 	if err != nil {
 		return err
 	}
@@ -220,7 +242,8 @@ func (r *Room) attach(ctx context.Context) error {
 
 	br := bufio.NewReader(conn)
 	w, err := sayHello(conn, br, hello{
-		Kind: "control", Room: r.Name, Version: r.Version, Host: r.Host, Commit: r.Commit,
+		Fallback: climbs && cl.Fallback(),
+		Kind:     "control", Room: r.Name, Version: r.Version, Host: r.Host, Commit: r.Commit,
 		// What this room would run, and whether it is willing to be told about
 		// a newer one. Neither gives the hub any power: a hub cannot install
 		// anything, and this only saves it from offering a Linux room a
@@ -267,10 +290,25 @@ func (r *Room) attach(ctx context.Context) error {
 	if r.OnAttach != nil {
 		go r.OnAttach()
 	}
+	if r.OnPaths != nil && len(w.Paths) > 0 {
+		go r.OnPaths(w.Paths)
+	}
+	// ON A FALLBACK, KEEP ASKING THE BETTER ONES. Closing the control
+	// connection is how the reader below learns it is time to move.
+	var moving atomic.Bool
+	if climbs && cl.Fallback() {
+		go r.probe(ctx, cl, func() {
+			moving.Store(true)
+			_ = conn.Close()
+		})
+	}
 
 	for {
 		var n note
 		if err := readJSON(br, &n); err != nil {
+			if moving.Load() {
+				return errMovingUp
+			}
 			if ctx.Err() != nil {
 				return nil
 			}
@@ -312,6 +350,44 @@ func (r *Room) attach(ctx context.Context) error {
 				defer r.restarting.finish()
 				r.OnRestart(ask)
 			}(*n.Restart)
+		}
+	}
+}
+
+// climber is a Dialer over more than one transport. `Ladder` is the one there is.
+type climber interface {
+	Climb(ctx context.Context, wait time.Duration) (net.Conn, error)
+	Probe(ctx context.Context, wait time.Duration) bool
+	Fallback() bool
+	Transport() string
+}
+
+// errMovingUp is the room letting go of a fallback on purpose.
+var errMovingUp = errors.New("moving to a better transport")
+
+// probeNeed is how many good probes in a row move a room back up.
+const probeNeed = 2
+
+// probe tries the better transports every ProbeEvery and calls `move` once
+// enough of them in a row answered. A failed probe starts the count again.
+func (r *Room) probe(ctx context.Context, cl climber, move func()) {
+	t := time.NewTicker(r.T.ProbeEvery)
+	defer t.Stop()
+	good := 0
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+		}
+		if cl.Probe(ctx, r.T.DialWait) {
+			good++
+		} else {
+			good = 0
+		}
+		if good >= probeNeed {
+			move()
+			return
 		}
 	}
 }
@@ -394,6 +470,11 @@ type State struct {
 	Hub   string    `json:"hub"`
 	Since time.Time `json:"since,omitempty"`
 	Error string    `json:"error,omitempty"`
+	// Transport is the kind the room is on, or last tried. Empty for a room with
+	// one transport, which has nothing to choose between.
+	Transport string `json:"transport,omitempty"`
+	// Fallback says it is on a transport below its first choice.
+	Fallback bool `json:"fallback,omitempty"`
 }
 
 // State reports the link, for the room's own board to draw. A room whose hub is
@@ -402,6 +483,9 @@ func (r *Room) State() State {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	s := State{Up: r.up, Hub: r.Dial.Describe(), Error: r.lastErr}
+	if cl, ok := r.Dial.(climber); ok {
+		s.Transport, s.Fallback = cl.Transport(), cl.Fallback()
+	}
 	if r.up {
 		s.Since = r.since
 	}
