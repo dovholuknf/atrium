@@ -64,6 +64,7 @@ func (i inventory) Known() ([]link.Known, error) {
 			// HOW IT IS ATTACHED RIGHT NOW, beside how it was added. See
 			// docs/rnd/room-transport-order.md.
 			k.Via, k.Fallback, k.Starved = a.Via, a.Fallback, a.Starved
+			k.RemoteAccess = a.RemoteAccess
 			// PREFERRED OVER WHAT IS WRITTEN DOWN, because a live connection is
 			// telling us right now and the record is what it said last time.
 			// This is the only direction that rule runs in: the observed fields

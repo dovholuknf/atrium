@@ -114,6 +114,9 @@ type note struct {
 	// other agents, spawns a detached restarter and winds down. See RestartAsk
 	// and the room's OnRestart.
 	Restart *RestartAsk `json:"restart,omitempty"`
+	// Access is a room saying what its remote access switch says, at attach and on every change. Observed, and never
+	// trusted for granting: the room checks its own file again at every stream. See stream.go.
+	Access *RemoteAccess `json:"access,omitempty"`
 }
 
 // RestartAsk is a hub asking a room to turn itself off and on again.
@@ -254,10 +257,10 @@ func hearHello(conn net.Conn, br *bufio.Reader) (hello, error) {
 		return h, fmt.Errorf("link version %d, wanted %d", h.V, Version)
 	}
 	switch h.Kind {
-	case "control", "data", "enrol", upgradeKind, announceKind, relayKind, gitKind, roomSpecKind:
+	case "control", "data", "enrol", upgradeKind, announceKind, relayKind, gitKind, roomSpecKind, streamKind:
 	default:
 		_ = writeJSON(conn, welcome{OK: false,
-			Error: "a connection is control, data, enrol, upgrade, announce, relay, git or roomspec"})
+			Error: "a connection is control, data, enrol, upgrade, announce, relay, git, roomspec or stream"})
 		return h, fmt.Errorf("unknown connection kind %q", h.Kind)
 	}
 	return h, conn.SetDeadline(time.Time{})

@@ -107,6 +107,9 @@ type Timings struct {
 	// connection arriving before the hub says so. The control connection being
 	// up is not the room serving anything.
 	Starve time.Duration
+	// Access is how often a room looks at its remote access switch, and ends the ssh streams it no longer allows. See
+	// stream.go.
+	Access time.Duration
 }
 
 // DefaultTimings are what both sides use unless something says otherwise.
@@ -143,6 +146,8 @@ func DefaultTimings() Timings {
 		// Three of the hub's own DialWait, so a room on a slow overlay that is
 		// still bringing its warm pool up is not called starved.
 		Starve: 30 * time.Second,
+		// Ten seconds: turning remote access off ends every open stream within this.
+		Access: 10 * time.Second,
 	}
 }
 
@@ -172,6 +177,9 @@ func (t Timings) fill() Timings {
 	}
 	if t.Starve <= 0 {
 		t.Starve = d.Starve
+	}
+	if t.Access <= 0 {
+		t.Access = d.Access
 	}
 	return t
 }
