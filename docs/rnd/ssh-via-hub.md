@@ -1,7 +1,6 @@
 # ssh to a room's machine through the hub
 
-Status: design, 2026-10-14. Nothing here is built. Every point is decided below with its reason. The one that needs
-clint is under "Open for clint" at the end.
+Status: design, closed 2026-10-14. Nothing here is built. Every point is decided below with its reason.
 
 ## The ask
 
@@ -140,7 +139,8 @@ machine itself) and the one clint asked for now.
 
 9. **Authorisation is the room's `from` list, checked twice, decided once.** `from` names who may open the room's
    sshd: `hub`, room names, or `*` for every proven room. Default when remote access is turned on without `--from`:
-   `hub` only. The hub checks the room's last reported switch and list before borrowing a connection, so a refusal is
+   `*`, the hub plus every proven room. Authentication is sshd's and atrium only bridges, so the list narrows who can
+   reach the port and is not what keeps anyone out. The hub checks the room's last reported switch and list before borrowing a connection, so a refusal is
    quick and costs the room nothing. The ROOM checks again against its file at the moment of `/_link/ssh`, and the
    room's answer is the one that counts: a hub with a stale or wrong view can only refuse early, never grant. sshd's
    `authorized_keys` is the third, independent yes.
@@ -267,6 +267,9 @@ machine itself) and the one clint asked for now.
       CheckHostIP no
     ```
 
+    No port is opened on the calling machine: `ProxyCommand` speaks stdio. ssh has no SNI, so nothing on the wire
+    tells rooms apart, and one `Host` block per room is how they are told apart.
+
     Atrium never edits `~/.ssh/config`. `HostKeyAlias` keeps the room's host key apart from a LAN entry for the same
     machine.
 
@@ -314,5 +317,4 @@ refused without the room seeing anything.
 
 ## Open for clint
 
-1. **Default `from` when turned on with no `--from`.** Decided `hub` only. The other choice is `*`, every proven room,
-   which is handier for a fleet and a wider grant made by omission.
+Nothing. The default `from` is `*`, decided by clint: auth is sshd's, atrium only bridges.
