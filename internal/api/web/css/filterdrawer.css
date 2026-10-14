@@ -45,9 +45,9 @@
   .fwrap { position: absolute; top: 100%; left: 0; right: 0; overflow: hidden; pointer-events: none; z-index: 2; }
   .fdrawer.open .fwrap { pointer-events: auto; }
   .fpanel {
-    display: flex; flex-direction: column; gap: var(--sp-3); box-sizing: border-box;
+    display: flex; flex-direction: row; flex-wrap: wrap; align-items: center; gap: 6px var(--sp-4); box-sizing: border-box;
     max-height: min(70vh, calc(100vh - 140px)); overflow-y: auto; overflow-x: hidden;
-    padding: 12px 12px 0; outline: none;
+    padding: 8px 12px 0; outline: none;
     background: var(--shell-1); border: 1px solid var(--stroke); border-top: 0;
     border-radius: 0 0 var(--r-md) var(--r-md); box-shadow: var(--shadow-pop);
     visibility: hidden; opacity: 0; transform: translateY(-100%);
@@ -56,12 +56,14 @@
   .fdrawer.open .fpanel { visibility: visible; opacity: 1; transform: none; transition-delay: 0s; }
   .fdrawer.fdragging .fpanel { visibility: visible; opacity: 1; transition: none; }
   @media (prefers-reduced-motion: reduce) { .fpanel { transition: none; } }
-  .frow { display: flex; align-items: center; gap: var(--sp-3); flex-wrap: wrap; min-width: 0; }
-  .frow .barlabel { min-width: 52px; }
+  /* The rows flow inline: on a wide window SHOW, SORT BY and GROUP share a line. Each is a label and its chips that never
+     come apart (nowrap), and a row only wraps its chips when it is alone on a line and still too long (max-width). */
+  .frow { display: flex; align-items: center; gap: var(--sp-3); flex-wrap: nowrap; flex: 0 1 auto; min-width: 0; max-width: 100%; }
+  .frow .barlabel { min-width: 0; flex: none; }
   .frow .seg { flex-wrap: wrap; min-width: 0; }
   /* The handle at the drawer's bottom edge. The whole strip is the target, the grip is what you see. */
   .fhandle {
-    display: flex; align-items: center; justify-content: center; width: 100%; height: 26px; flex: none; margin-top: 2px; padding: 0;
+    display: flex; align-items: center; justify-content: center; width: 100%; height: 12px; flex: 0 0 100%; margin: 0; padding: 0;
     background: transparent; border: 0; border-radius: 0; cursor: pointer; color: var(--dimmest);
   }
   .fhandle i { display: block; width: 44px; height: 4px; border-radius: 2px; background: currentColor; opacity: .7; }
@@ -82,8 +84,10 @@
     .fpanel { max-height: 70vh; max-height: 70dvh; }
     /* a 40px hit area on the pills: the pad is a transparent layer of the button itself */
     .fpanel .seg button::after { content: ""; position: absolute; left: 0; right: 0; top: 50%; height: 40px; transform: translateY(-50%); }
-    .frow { align-items: flex-start; flex-direction: column; gap: 6px; }
+    .fpanel { flex-direction: column; flex-wrap: nowrap; align-items: stretch; gap: var(--sp-3); }
+    .frow { align-items: flex-start; flex-direction: column; flex: none; gap: 6px; }
     .frow .seg { max-width: 100%; }
+    .fhandle { flex: none; height: 26px; margin-top: 2px; }
   }
   /* A full screen terminal and a pop-out window have no room for it, and no tab to carry it. A phone with a terminal
      attached (`body.term-phone`) is neither: the line stays above the terminal and the session list, so attaching never
@@ -120,7 +124,7 @@
   .fdrawer.fstrip:not(.foverlay).fdragging .fwrap { transition: none; }
   .fstrip .fpanel {
     border: 0; border-bottom: 1px solid var(--stroke-dim); border-radius: 0;
-    background: rgb(var(--bg1-rgb)); padding: 12px var(--row-x) 0; max-height: min(70vh, calc(100vh - 180px));
+    background: rgb(var(--bg1-rgb)); padding: 8px var(--row-x) 0; max-height: min(70vh, calc(100vh - 180px));
   }
   .fstrip:not(.foverlay) .fpanel { min-height: 0; transform: none; box-shadow: none; transition: opacity .12s ease, visibility 0s linear .16s; }
   .fdrawer.fstrip:not(.foverlay).open .fpanel, .fdrawer.fstrip:not(.foverlay).fdragging .fpanel { transform: none; transition-delay: 0s; }

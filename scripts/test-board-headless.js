@@ -21926,6 +21926,71 @@ async function noResumeButtonSection(browser, base) {
   } finally { await ctx.close(); }
 }
 
+// THE CONTROLS DRAWER IS COMPACT ON A WIDE WINDOW: SHOW, SORT BY and GROUP share a line, each label sits with its own
+// chips, the drag handle is a few px with no empty band under it, and a phone keeps the stacked rows. Every tab with
+// the drawer is checked on its own. DRAWER_SHOTS=<dir> writes a png per width.
+async function controlsCompactSection(browser, base) {
+  for (const v of [{ w: 2360, h: 900, wide: true }, { w: 1400, h: 900, wide: true }, { w: 900, h: 900, wide: true }, { w: 390, h: 844, phone: true }]) {
+    const ctx = await browser.newContext(v.phone
+      ? { viewport: { width: v.w, height: v.h }, hasTouch: true, isMobile: true }
+      : { viewport: { width: v.w, height: v.h } });
+    const errors = [];
+    try {
+      const p = await ctx.newPage();
+      p.on("pageerror", e => errors.push(String(e)));
+      await p.goto(base + "/", { waitUntil: "domcontentloaded" });
+      await p.waitForFunction(() => typeof fdSet === "function" && document.getElementById("stack-seg"), null, { timeout: slow(15000) });
+      for (const tab of ["stack", "board", "terms"]) {
+        const tag = "controlsCompact " + v.w + "px " + tab + ": ";
+        await p.evaluate(t => { fdCloseAll(); const b = document.querySelector('.tab[data-view="' + t + '"]'); if (b) b.click(); }, tab);
+        await p.waitForTimeout(200);
+        const got = await p.evaluate(async t => {
+          const host = document.getElementById(FD_TABS[t].host);
+          if (!host || !host.offsetParent) return { hidden: true };
+          fdSet(t, true);
+          await new Promise(r => setTimeout(r, 400));
+          const panel = host.querySelector(".fpanel");
+          const rows = [...panel.querySelectorAll(".frow")].map(r => {
+            const b = r.getBoundingClientRect(), l = r.querySelector(".barlabel").getBoundingClientRect(), s = r.querySelector(".seg").getBoundingClientRect();
+            const btns = [...r.querySelectorAll(".seg button")].map(x => Math.round(x.getBoundingClientRect().top));
+            return { top: Math.round(b.top), bottom: Math.round(b.bottom), left: Math.round(b.left), right: Math.round(b.right), labelTop: Math.round(l.top), labelBottom: Math.round(l.bottom), segTop: Math.round(s.top), segBottom: Math.round(s.bottom), btnTops: btns };
+          });
+          const h = panel.querySelector(".fhandle").getBoundingClientRect(), pr = panel.getBoundingClientRect();
+          const last = Math.max(...rows.map(r => r.bottom));
+          return { rows, handleH: Math.round(h.height), band: Math.round(h.top - last), panelH: Math.round(pr.height), panelW: Math.round(pr.width),
+            overflowX: panel.scrollWidth - panel.clientWidth, labels: [...panel.querySelectorAll(".frow .barlabel")].map(x => x.textContent.trim()).join("|") };
+        }, tab);
+        if (got.hidden) continue;
+        if (process.env.DRAWER_SHOTS && tab === "stack") await p.screenshot({ path: process.env.DRAWER_SHOTS + "/drawer-" + v.w + ".png", clip: { x: 0, y: 0, width: v.w, height: Math.min(v.h, 260) } });
+        if (got.labels !== { stack: "show|sort by|group", board: "show|sort|group", terms: "show|sort by|group" }[tab]) fail(tag + "rows changed: " + got.labels);
+        if (got.overflowX > 0) fail(tag + "the drawer scrolls sideways: " + JSON.stringify(got));
+        if (!v.phone && got.handleH > 14) fail(tag + "the drag handle is " + got.handleH + "px, not a few: " + JSON.stringify(got));
+        if (!v.phone && got.band > 6) fail(tag + "an empty band of " + got.band + "px sits above the handle: " + JSON.stringify(got));
+        for (const r of got.rows) {
+          // a label always sits on the line of its own first chip
+          if (!v.phone && Math.abs(r.labelTop - r.segTop) > 12 && r.btnTops.length) fail(tag + "a label is parted from its chips: " + JSON.stringify(r));
+        }
+        if (v.w >= 2000) {
+          const tops = { size: Math.max(...got.rows.map(r => r.top)) - Math.min(...got.rows.map(r => r.top)) > 3 ? 2 : 1 };
+          if (tops.size !== 1) fail(tag + "show, sort and group are not on one line: " + JSON.stringify(got.rows));
+          if (got.panelH > 90) fail(tag + "the drawer is " + got.panelH + "px tall on a wide window: " + JSON.stringify(got));
+        }
+        if (v.phone) {
+          const lefts = new Set(got.rows.map(r => r.left));
+          if (lefts.size !== 1 || new Set(got.rows.map(r => r.top)).size !== got.rows.length) fail(tag + "the phone's rows are not stacked: " + JSON.stringify(got.rows));
+        }
+        await p.evaluate(() => fdCloseAll());
+      }
+      // each tab keeps its own settings: a chip flipped on the stack does not move the board's.
+      const sep = await p.evaluate(() => FD_TABS.stack.rows.map(r => r[1]).concat(FD_TABS.board.rows.map(r => r[1]), FD_TABS.terms.rows.map(r => r[1])));
+      if (new Set(sep).size !== sep.length) fail("controlsCompact: two tabs share a row id: " + sep.join(","));
+      if (errors.length) fail("controlsCompact " + v.w + ": page errors: " + errors.join("; "));
+    } finally { await ctx.close(); }
+  }
+  if (!bad) console.log("controlsCompact ok");
+}
+
+
 // TERMINALS ROWS ARE ONE LINE: a running card and a parked one (resume chip, room chip, other chips) are the same
 // height and neither wraps its chips under the title. ONELINE_SHOTS=<dir> writes the list as a png.
 async function terminalsOneLineSection(browser, base) {
@@ -30313,7 +30378,7 @@ async function main() {
       u001Audit: u001AuditSection,
       pasteStart: pasteStartSection, pasteDone: pasteDoneSection, pasteOldRoom: pasteOldRoomSection, pasteClose: pasteCloseSection,
       growlQuestionShots: growlQuestionShotsSection, growlQuestionBody: growlQuestionBodySection, growlReplyGrow: growlReplyGrowSection, growlChoices: growlChoicesSection, replies: repliesSection, repliesOf: repliesOfSection, repliesShots: repliesShotsSection, growlStable: growlStableSection, growlOnIt: growlOnItSection, mGrowlQuestion: mGrowlQuestionSection,
-      roomsSetup: roomsSetupSection, discreteGroup: discreteGroupSection, groupingPerView: groupingPerViewSection, repoColors: repoColorsSection, themePicker: themePickerSection, themePickerShots: themePickerShotsSection, borderColourLag: borderColourLagSection, bootClean: bootCleanSection, interviewTop: interviewTopSection, parkedStays: parkedStaysSection, noResumeButton: noResumeButtonSection, terminalsOneLine: terminalsOneLineSection, offCardActions: offCardActionsSection, termHeaderSize: termHeaderSizeSection, popupFit: popupFitSection, dropdownsInstant: dropdownsInstantSection, peekLaunch: peekLaunchSection, mReload: mReloadSection, mReconnect: mReconnectSection, mActivityRead: mActivityReadSection, mReadRetry: mReadRetrySection, mWorking: mWorkingSection, mOwnMessages: mOwnMessagesSection, mBubbles: mBubblesSection, mRecapSheet: mRecapSheetSection,
+      roomsSetup: roomsSetupSection, discreteGroup: discreteGroupSection, groupingPerView: groupingPerViewSection, repoColors: repoColorsSection, themePicker: themePickerSection, themePickerShots: themePickerShotsSection, borderColourLag: borderColourLagSection, bootClean: bootCleanSection, interviewTop: interviewTopSection, parkedStays: parkedStaysSection, noResumeButton: noResumeButtonSection, terminalsOneLine: terminalsOneLineSection, controlsCompact: controlsCompactSection, offCardActions: offCardActionsSection, termHeaderSize: termHeaderSizeSection, popupFit: popupFitSection, dropdownsInstant: dropdownsInstantSection, peekLaunch: peekLaunchSection, mReload: mReloadSection, mReconnect: mReconnectSection, mActivityRead: mActivityReadSection, mReadRetry: mReadRetrySection, mWorking: mWorkingSection, mOwnMessages: mOwnMessagesSection, mBubbles: mBubblesSection, mRecapSheet: mRecapSheetSection,
       mHomeOrder: mHomeOrderSection, cardUrlWayOut: cardUrlWayOutSection, phoneBoot: phoneBootSection, sayEnter: sayEnterSection, sendArrow: sendArrowSection, mTables: mTablesSection, mMarkdown: mMarkdownSection, mHostile: mHostileSection, mPictures: mPicturesSection, soundPhone: soundPhoneSection, phoneBell: phoneBellSection, mBell: mBellSection,
       mHomeOrder: mHomeOrderSection, cardUrlWayOut: cardUrlWayOutSection, phoneBoot: phoneBootSection, sayEnter: sayEnterSection, sendArrow: sendArrowSection, mTables: mTablesSection, mMarkdown: mMarkdownSection, mHostile: mHostileSection, mPictures: mPicturesSection, phoneRedirect: phoneRedirectSection,
       mHomeOrder: mHomeOrderSection, cardUrlWayOut: cardUrlWayOutSection, phoneBoot: phoneBootSection, sayEnter: sayEnterSection, sendArrow: sendArrowSection, mTables: mTablesSection, mMarkdown: mMarkdownSection, mHostile: mHostileSection, mPictures: mPicturesSection, mHidden: mHiddenSection, soundPhone: soundPhoneSection, phoneBell: phoneBellSection, mBell: mBellSection,
@@ -32300,6 +32365,7 @@ async function main() {
     await unit("nestCrossRoom", () => nestCrossRoomSection(browser, base));
     await unit("parkedStays", () => parkedStaysSection(browser, base));
     await unit("terminalsOneLine", () => terminalsOneLineSection(browser, base));
+    await unit("controlsCompact", () => controlsCompactSection(browser, base));
     await unit("offCardActions", () => offCardActionsSection(browser, base));
     await unit("pausedDead", () => pausedDeadSection(browser, base));
     await unit("hiddenEveryLevel", () => hiddenEveryLevelSection(browser, base));
