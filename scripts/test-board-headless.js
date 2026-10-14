@@ -21800,6 +21800,73 @@ async function hiddenEveryLevelSection(browser, base) {
   } finally { await ctx.close(); }
 }
 
+// THE COUNT ON A ROW IS WHAT EXPANDING IT SHOWS, and the popup explains the rest. A parent with 5 children, 2 of them
+// listed, shows 2 collapsed and 2 expanded, with no "hidden" text on the row. Its popup says 5 in all, 2 shown, what hides
+// the other 3, how many run, and names the ones that need you, each a button that opens that card. A card with no
+// children has no children section.
+async function kidCountsSection(browser, base) {
+  const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+  const errors = [];
+  try {
+    const p = await ctx.newPage();
+    p.on("pageerror", e => errors.push(String(e)));
+    await p.goto(base + "/", { waitUntil: "domcontentloaded" });
+    await p.waitForFunction(() => typeof termChildInfo === "function" && typeof peekBody === "function", null, { timeout: slow(15000) });
+    const got = await p.evaluate(() => {
+      const kid = (id, extra) => Object.assign({ id, display_title: id, status: "running", supervised: true, pid: 9, tags: ["atrium:subagent"],
+        spawned_by_id: "P", worktree: "/w", activity: { what: "tool", tool: "Bash" } }, extra);
+      const gone = (id, extra) => kid(id, Object.assign({ supervised: false, pid: 0, resume_id: "r", activity: null }, extra));
+      const pool = [
+        { id: "P", display_title: "the parent", status: "running", supervised: true, pid: 9, tags: ["origin:agent"], worktree: "/w" },
+        kid("runner"),
+        kid("asker", { status: "needs-input", activity: null, ask: "which one?" }),
+        gone("pausedA", { status: "paused" }),
+        gone("parkedB", { status: "needs-input", parked_at: "2026-10-13T10:00:00Z" }),
+        gone("deadC", { status: "dead" }),
+        { id: "lonely", display_title: "lonely", status: "running", supervised: true, pid: 9, tags: [], worktree: "/w" },
+      ];
+      lastTasks = pool;
+      const rows = {};
+      for (const chip of [[], ["subagents"]]) {
+        localStorage.setItem(termDeviceKey(TERM_SHOW_KEY), JSON.stringify(chip));
+        const show = termShow();
+        const shown = pool.filter(t => termListed(t, show));
+        const nest = termNest(shown);
+        termKids = nest.kids; termKidsPool = termNest(pool).kids;
+        const host = document.createElement("div");
+        host.innerHTML = termRow(pool[0], false, false);
+        rows[chip.length ? "open" : "shut"] = {
+          n: (host.querySelector(".tkidn") || {}).textContent || null,
+          drawn: [...host.querySelectorAll(".tkids .card[data-id]")].map(c => c.dataset.id),
+          text: host.textContent,
+        };
+      }
+      localStorage.removeItem(termDeviceKey(TERM_SHOW_KEY));
+      const box = document.createElement("div");
+      box.innerHTML = peekBody(pool[0], null);
+      peekDrawers(box);
+      const sec = box.querySelector(".peek-sec.kids");
+      const btns = sec ? [...sec.querySelectorAll("button.peek-kid")].map(b => ({ id: b.dataset.id, text: b.textContent })) : [];
+      const lone = document.createElement("div");
+      lone.innerHTML = peekBody(pool[6], null);
+      return { rows, text: sec ? sec.textContent : null, btns, loneSection: !!lone.querySelector(".peek-sec.kids"), opens: typeof peekOpenKid };
+    });
+    if (got.rows.shut.n !== "2") fail("kidCounts: the folded row counts " + got.rows.shut.n + ", want the 2 listed children");
+    if (got.rows.open.drawn.length !== 2) fail("kidCounts: the open row draws " + JSON.stringify(got.rows.open.drawn) + ", want 2");
+    if (got.rows.open.drawn.length !== Number(got.rows.shut.n)) fail("kidCounts: the folded count and the open rows disagree");
+    if (/hidden/i.test(got.rows.shut.text)) fail("kidCounts: the row carries hidden text: " + got.rows.shut.text);
+    const t = got.text || "";
+    if (!/5 cards under this one, 2 shown/.test(t)) fail("kidCounts: the popup does not give total and shown: " + JSON.stringify(t));
+    if (!/3 by the filters: paused 2, dead 1/.test(t)) fail("kidCounts: the popup does not say what hides the rest: " + JSON.stringify(t));
+    if (!/running\s*1/.test(t)) fail("kidCounts: the popup does not say how many run: " + JSON.stringify(t));
+    if (got.btns.length !== 1 || got.btns[0].id !== "asker" || got.btns[0].text !== "asker") fail("kidCounts: the need-you names are " + JSON.stringify(got.btns));
+    if (got.loneSection) fail("kidCounts: a card with no children has a children section");
+    if (got.opens !== "function") fail("kidCounts: peekOpenKid is not defined");
+    if (errors.length) fail("kidCounts: page errors: " + errors.join("; "));
+    else console.log("kidCounts ok");
+  } finally { await ctx.close(); }
+}
+
 // TERMINALS GROUP HEADERS READ AT A GLANCE: bigger than the old 10.5px / 1px-padding strip, still under a card title, and the
 // chevron and grip grew with the text. At a normal width and at ~270px. HEADER_SHOTS=<dir> writes the list as a png.
 async function termHeaderSizeSection(browser, base) {
@@ -31796,6 +31863,7 @@ async function main() {
     await unit("offCardActions", () => offCardActionsSection(browser, base));
     await unit("pausedDead", () => pausedDeadSection(browser, base));
     await unit("hiddenEveryLevel", () => hiddenEveryLevelSection(browser, base));
+    await unit("kidCounts", () => kidCountsSection(browser, base));
     await unit("termHeaderSize", () => termHeaderSizeSection(browser, base));
     await unit("popupFit", () => popupFitSection(browser, base));
     await unit("dropdownsInstant", () => dropdownsInstantSection(browser, base));

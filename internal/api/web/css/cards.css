@@ -753,6 +753,9 @@
   .peek-row b { flex: 0 0 7.6em; font-weight: 600; color: var(--head); overflow-wrap: anywhere; }
   .peek-row span { min-width: 0; color: var(--body); white-space: pre-line; overflow-wrap: anywhere; }
   .peek-sec.need .peek-row b { color: var(--warn); }
+  .peek-kid { background: none; border: 0; padding: 0; font: inherit; color: var(--warn); cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
+  .peek-kid:hover, .peek-kid:focus-visible { color: var(--head); }
+  .peek-sec.kids .peek-row b { color: var(--head); }
   .peek-sub, .peek-scale {
     font-family: var(--mono); letter-spacing: .08em;
   }

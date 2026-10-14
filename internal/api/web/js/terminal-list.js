@@ -1130,7 +1130,10 @@ let termKids = new Map();
 // The same, over every card the list could hold, drawn or not: a chip, the search or a cold row can leave a parent's
 // children out of `termKids`, and the parent still has them. The popup's children section reads these (`termChildInfo`).
 let termKidsPool = new Map();
-function termKidTotal(t) { return Math.max((termKids.get(t.id) || []).length, (termKidsPool.get(t.id) || []).length); }
+// THE COUNT ON A ROW IS WHAT EXPANDING IT SHOWS. A collapsed parent said 3 while its open row listed 1, because the other
+// two were hidden by a chip. So this counts the children that are drawn, and nothing about the hidden ones goes on the
+// row: the popup says how many there are and what hides them.
+function termKidTotal(t) { return (termKids.get(t.id) || []).length; }
 
 // A parent's fold lives in the same list as the group folds, keyed by the bare id so a room-set change keeps it.
 // Like the groups it records what is NOT as it comes, and what it comes as is the subagents chip's say: off, a parent
@@ -1140,8 +1143,32 @@ function termKidsKey(t) { return "kids:" + bareId(t.id); }
 function termKidsShut(t) { return termSubsOn() ? isFolded(termKidsKey(t)) : !isFolded(termKidsKey(t)); }
 
 // How many cards under this one, at any depth, satisfy `pred`.
-function termKidsCount(id, pred) {
-  return (termKids.get(id) || []).reduce((n, k) => n + (pred(k) ? 1 : 0) + termKidsCount(k.id, pred), 0);
+function termKidsCount(id, pred, kids) {
+  const map = kids || termKids;
+  return (map.get(id) || []).reduce((n, k) => n + (pred(k) ? 1 : 0) + termKidsCount(k.id, pred, map), 0);
+}
+
+// WHAT THE ROW'S BADGES MEAN, for the popup's children section. `pool` is every card, `t` the parent. The visible tree is
+// the one the list draws: the cards the chips list, nested by `termNest`, so its counts are the row's. Everything else under
+// the parent is hidden, and says by what: `paused` (no agent, can be resumed: the paused chip) or `dead` (no agent, cannot
+// be revived: it is listed only in the ended group). `waiting` is every card under this one at any depth that needs you,
+// the row's `!` count, so each can be named and opened.
+function termChildInfo(t, pool) {
+  const cards = (pool || []).filter(c => !c.offline);
+  const show = termShow();
+  const direct = termNest(cards).kids.get(t.id) || [];
+  if (!direct.length) return null;
+  const visible = termNest(cards.filter(c => c.id === t.id || termListed(c, show))).kids;
+  const shown = visible.get(t.id) || [];
+  const shownIds = new Set(shown.map(c => c.id));
+  const hidden = direct.filter(c => !shownIds.has(c.id));
+  const paused = hidden.filter(cardPaused).length;
+  return { total: direct.length, shown: shown.length, hidden: hidden.length, paused, dead: hidden.length - paused,
+    running: termKidsCount(t.id, workingNow, visible), waiting: collectKids(t.id, isWaiting, visible) };
+}
+// The cards under `id`, at any depth, that satisfy `pred`.
+function collectKids(id, pred, kids) {
+  return (kids.get(id) || []).flatMap(k => (pred(k) ? [k] : []).concat(collectKids(k.id, pred, kids)));
 }
 
 // The chevron on a parent row. A real button so it takes focus and Enter/Space. Folded, it is a count of what is
