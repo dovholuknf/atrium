@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -13,6 +14,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/dovholuknf/atrium/internal/remoteaccess"
+	"github.com/dovholuknf/atrium/internal/sshwizard"
 )
 
 // roomRemoteAccessCmd is `atrium room remote-access`, this room's switch for letting the hub carry an ssh stream to
@@ -38,6 +40,11 @@ func roomRemoteAccessCmd() *cobra.Command {
 			fmt.Fprintln(out, "remote access: "+st.Describe())
 			if st.Err == nil && st.On && st.SetAt != "" {
 				fmt.Fprintf(out, "turned on %s by %s\n", st.SetAt, orDefaultWord(st.SetBy, "unknown"))
+			}
+			if st.On {
+				ctx, cancel := context.WithTimeout(context.Background(), 6*time.Second)
+				fmt.Fprintln(out, sshwizard.Describe(ctx, sshwizard.OSEnv{}, st.Host(), st.Port))
+				cancel()
 			}
 			if n, ok := openStreams(); ok {
 				fmt.Fprintf(out, "streams open: %d\n", n)
