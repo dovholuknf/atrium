@@ -18077,6 +18077,91 @@ async function presenceSection(browser, base) {
   // And an idle board adds no request per minute: idleBudget is run beside this one and still has to pass.
 }
 
+// ── browser back and forward: the mouse side buttons (3 and 4) belong to the browser, always ──
+// A browser navigates on the up of button 3 or 4 unless the page cancelled it. xterm cancels every mousedown on its
+// screen and, once a runner turns mouse reporting on, every mouseup on the document, whatever the button. So a
+// terminal left in mouse mode ate back and forward until the browser was closed. The board must never swallow them,
+// with the terminal focused or not, mouse reporting on or off, and its own history entries must still step.
+async function backForwardSection(browser, base) {
+  const was = tasksMode;
+  tasksMode = "land";
+  landCard("land-live", { supervised: true, created_at: "2026-09-19T12:00:00Z" });
+  landList = [LAND["land-live"]];
+  landPerms = [];
+  const errors = [];
+  const ctx = await browser.newContext({ viewport: { width: 1280, height: 700 } });
+  try {
+    await ctx.addInitScript(() => {
+      localStorage.setItem("atrium.skipconfirm", JSON.stringify({ "width-floor": true }));
+      localStorage.setItem("atrium.termphone", "0");
+      const Real = window.WebSocket;
+      window.WebSocket = function (url, protocols) {
+        if (!/\/attach(\?|$)/.test(url)) return new Real(url, protocols);
+        const s = { url, readyState: 0, binaryType: "arraybuffer", bufferedAmount: 0,
+          onopen: null, onclose: null, onmessage: null, onerror: null, send() {}, close() { this.readyState = 3; } };
+        setTimeout(() => { s.readyState = 1; if (s.onopen) s.onopen({}); }, 0);
+        return s;
+      };
+      Object.assign(window.WebSocket, { CONNECTING: 0, OPEN: 1, CLOSING: 2, CLOSED: 3 });
+    });
+    const p = await ctx.newPage();
+    p.on("pageerror", e => errors.push(String(e.stack || e)));
+    await p.goto(base, { waitUntil: "domcontentloaded" });
+    await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
+    await p.evaluate(() => attachTask("land-live"));
+    await p.waitForFunction(() => termSock && termSock.readyState === 1 && termTask && termTask.id === "land-live",
+      null, { timeout: slow(10000) });
+    await p.waitForTimeout(300);
+    const put = async (s) => { await p.evaluate((x) => termSock.onmessage({ data: x }), s); await p.waitForTimeout(200); };
+
+    // Press and release a side button on `sel` and answer which of its events the page cancelled.
+    const side = (sel, button) => p.evaluate(({ sel, button }) => {
+      const el = document.querySelector(sel), r = el.getBoundingClientRect();
+      const at = { clientX: r.left + 40, clientY: r.top + 40, bubbles: true, cancelable: true, composed: true, button, buttons: 1 << button };
+      const out = [];
+      for (const [type, ctor] of [["pointerdown", PointerEvent], ["mousedown", MouseEvent], ["pointerup", PointerEvent],
+        ["mouseup", MouseEvent], ["auxclick", MouseEvent]]) {
+        const ev = new ctor(type, Object.assign({}, at, type.endsWith("up") || type === "auxclick" ? { buttons: 0 } : {}));
+        el.dispatchEvent(ev);
+        if (ev.defaultPrevented) out.push(type);
+      }
+      return out;
+    }, { sel, button });
+
+    for (const mode of ["reporting off", "reporting on"]) {
+      if (mode === "reporting on") await put("\x1b[?1000h\x1b[?1002h\x1b[?1006h");
+      for (const sel of ["#t-screen .xterm-screen", "#t-screen", "body"]) {
+        for (const button of [3, 4]) {
+          const swallowed = await side(sel, button);
+          if (swallowed.length) fail("backForward: " + mode + ", button " + button + " on " + sel + " was cancelled (" + swallowed.join(", ") + "), the browser would not step history");
+        }
+      }
+      // a left press right after must still do xterm's own work
+      const left = await p.evaluate(() => { const ev = new MouseEvent("mousedown", { button: 0, bubbles: true, cancelable: true }); document.querySelector("#t-screen .xterm-screen").dispatchEvent(ev); return ev.defaultPrevented; });
+      if (!left) fail("backForward: " + mode + ", a left press is no longer xterm's");
+      await p.mouse.up();
+    }
+    await put("\x1b[?1000l\x1b[?1002l\x1b[?1006l");
+
+    // The board's own history: entries pushed by moving about step back and forward, and none is lost or doubled.
+    await p.evaluate(() => { switchView("board"); });
+    await p.evaluate(() => { switchView("stack"); });
+    await p.evaluate(() => { switchView("runners"); });
+    const view = () => p.evaluate(() => history.state && history.state.view);
+    if ((await view()) !== "runners") fail("backForward: the pushed entry is not the view just opened: " + (await view()));
+    await p.goBack(); await p.waitForTimeout(150);
+    if ((await view()) !== "stack") fail("backForward: back from runners did not land on stack: " + (await view()));
+    await p.goBack(); await p.waitForTimeout(150);
+    if ((await view()) !== "board") fail("backForward: back from stack did not land on board: " + (await view()));
+    await p.goForward(); await p.waitForTimeout(150);
+    await p.goForward(); await p.waitForTimeout(150);
+    if ((await view()) !== "runners") fail("backForward: forward twice did not return to runners: " + (await view()));
+    const shown = await p.evaluate(() => VIEWS.find(isViewing));
+    if (shown !== "runners") fail("backForward: history said runners but the board shows " + shown);
+  } finally { await ctx.close(); tasksMode = was; }
+  if (errors.length) fail("backForward: the page threw: " + errors.join(" | "));
+}
+
 // ── t-003c: the pty is taller than the pane, so the board draws all of it and clips to the cursor ──
 // Test plan @LETTER@ in docs/changes/u-033.md. A desktop pane, a size frame with more rows than the pane fits.
 async function tallPtySection(browser, base) {
@@ -32493,6 +32578,7 @@ async function main() {
     await unit("themePicker", () => themePickerSection(browser, base));
     await unit("themePickerShots", () => themePickerShotsSection(browser, base));
     await unit("borderColourLag", () => borderColourLagSection(browser, base));
+    await unit("backForward", () => backForwardSection(browser, base));
     await unit("bootClean", () => bootCleanSection(browser, base));
     await unit("interviewTop", () => interviewTopSection(browser, base));
     await unit("nestCrossRoom", () => nestCrossRoomSection(browser, base));
