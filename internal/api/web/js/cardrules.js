@@ -117,6 +117,32 @@ function isInterview(t) {
 }
 function nestsUnderLauncher(t) { return isSubagent(t) && !isInterview(t); }
 
+// THE CARD THAT LAUNCHED `t`, from `cards`, or null. Every list that nests a child under its launcher asks this one
+// function (terminals `termNest`, stack and board `subagentRollup`, reveal, the usage groups), so a child on another room
+// nests exactly like a same-room one. A launcher on the same room is named by `spawned_by_id`, matched on the bare id.
+// One on ANOTHER room is only known by its handle, `spawned_by` = "name@room" (the hub qualifies it), so that is read as
+// the launcher's wire name (or alias) on the card whose id is tagged `room~`. `byBare` is an optional prebuilt
+// bare-id index, so a list does not rescan itself for every child.
+function launcherOf(t, cards, byBare) {
+  if (!t) return null;
+  let p = null;
+  if (t.spawned_by_id) {
+    const want = bareId(t.spawned_by_id);
+    p = byBare ? byBare.get(want) : (cards || []).find(x => bareId(x.id) === want);
+  }
+  if (!p && t.spawned_by) {
+    const at = String(t.spawned_by).lastIndexOf("@");
+    const name = at > 0 ? t.spawned_by.slice(0, at) : "";
+    const room = at > 0 ? t.spawned_by.slice(at + 1) : "";
+    if (name && room) {
+      const local = s => { const i = String(s).lastIndexOf("/"); return i >= 0 ? String(s).slice(i + 1) : String(s); };
+      p = (cards || []).find(x => x !== t && roomOf(x.id) === room &&
+        (x.wire_name === name || (x.wire_name && local(x.wire_name) === local(name)) || (x.alias && x.alias === name)));
+    }
+  }
+  return p && p !== t ? p : null;
+}
+
 // A CARD'S OPEN QUESTION, from the parsed list, an unparsed one, or a question put to the operator (asks_open).
 function cardHasOpenQuestion(t) {
   const s = t && t.seen;

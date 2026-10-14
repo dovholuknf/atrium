@@ -21677,6 +21677,41 @@ async function interviewTopSection(browser, base) {
 }
 
 
+// A child launched from ANOTHER room carries only the launcher's handle, spawned_by "name@room", and no usable id. It nests
+// under that launcher on every list exactly as a same-room child does (`launcherOf`), and a same-named card on a third room
+// is not mistaken for it.
+async function nestCrossRoomSection(browser, base) {
+  const ctx = await browser.newContext({ viewport: { width: 900, height: 600 } });
+  const errors = [];
+  try {
+    const p = await ctx.newPage();
+    p.on("pageerror", e => errors.push(String(e)));
+    await p.goto(base + "/", { waitUntil: "domcontentloaded" });
+    await p.waitForFunction(() => typeof termNest === "function" && typeof subagentRollup === "function", null, { timeout: slow(15000) });
+    const got = await p.evaluate(() => {
+      const mk = (id, wire, extra) => Object.assign({ id, wire_name: wire, tags: [], status: "running", display_title: id }, extra || {});
+      const boss = mk("sg4~b1", "sg4/boss", { tags: ["origin:agent"] });
+      const decoy = mk("kc~b2", "kc/boss", { tags: ["origin:agent"] });
+      const kid = mk("kc~k1", "kc/kid", { tags: ["atrium:subagent"], spawned_by: "boss@sg4" });
+      const all = [decoy, kid, boss];
+      const nest = termNest(all);
+      const roll = subagentRollup(all, false);
+      return {
+        kids: [...nest.kids].map(([k, v]) => [k, v.map(x => x.id)]), nested: [...nest.nested],
+        rolled: [...roll.rolled], badge: [...roll.badge],
+        chain: revealChain(kid).map(x => x.id).join(">"), running: hasRunningChild(boss, all)
+      };
+    });
+    const k = got.kids.find(e => e[0] === "sg4~b1");
+    if (!k || k[1].join() !== "kc~k1") fail("nestCrossRoom: the child did not nest under its launcher on the other room: " + JSON.stringify(got.kids));
+    if (got.kids.some(e => e[0] === "kc~b2")) fail("nestCrossRoom: the child nested under a same-named card on the wrong room");
+    if (!got.rolled.includes("kc~k1") || !got.badge.some(e => e[0] === "sg4~b1" && e[1] === 1)) fail("nestCrossRoom: stack/board did not roll the child up under its launcher: " + JSON.stringify(got));
+    if (got.running !== true) fail("nestCrossRoom: hasRunningChild missed the cross-room child");
+    if (errors.length) fail("nestCrossRoom: page errors: " + errors.join("; "));
+    else console.log("nestCrossRoom ok");
+  } finally { await ctx.close(); }
+}
+
 // A parked card (idle-parked: no process, status parked, parked_at set) is in the Terminals list while the paused chip is on, in its own tag
 // group, grey, with a one-click resume on its row. An interview card stays top level and is never nested.
 async function parkedStaysSection(browser, base) {
@@ -32061,6 +32096,7 @@ async function main() {
     await unit("borderColourLag", () => borderColourLagSection(browser, base));
     await unit("bootClean", () => bootCleanSection(browser, base));
     await unit("interviewTop", () => interviewTopSection(browser, base));
+    await unit("nestCrossRoom", () => nestCrossRoomSection(browser, base));
     await unit("parkedStays", () => parkedStaysSection(browser, base));
     await unit("terminalsOneLine", () => terminalsOneLineSection(browser, base));
     await unit("offCardActions", () => offCardActionsSection(browser, base));

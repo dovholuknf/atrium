@@ -118,7 +118,7 @@ function ucCardGroup(room, id) {
   const name = c => c.alias || c.wire_name || "";
   if (tags.includes("atrium:director")) return name(t);
   if (!t.spawned_by && !t.spawned_by_id) return "";
-  const p = t.spawned_by_id && all.find(x => x.id === t.spawned_by_id || bareId(x.id) === bareId(t.spawned_by_id));
+  const p = launcherOf(t, all);
   return p ? name(p) : (t.spawned_by || "");
 }
 
