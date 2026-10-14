@@ -957,7 +957,12 @@ func (d *Daemon) activityFor(taskID string) any {
 	if a.HeldPeer != "" {
 		// A hold with nothing pending behind it is a delivered message the injector has not been told of yet. The
 		// board must not read it as queued, whichever path delivered it.
-		if pending, err := d.st.PendingMessages(taskID); err == nil && len(pending) == 0 {
+		if d.pending != nil {
+			d.pending.reconcile(taskID)
+			if a = d.act.get(taskID); a == nil || a.HeldPeer == "" {
+				return a
+			}
+		} else if pending, err := d.st.PendingMessages(taskID); err == nil && len(pending) == 0 {
 			d.act.clearHeld(taskID)
 			return d.act.get(taskID)
 		}

@@ -231,13 +231,54 @@ func (pi *pendingInjector) noteHeld(taskID string, why string) {
 			}
 		}
 	}
-	pi.mu.Unlock()
 	if r.from == "" {
 		r.from = "you"
 	}
-	if pi.d.act.setHeld(taskID, r) {
+	// Set under the same lock that drop clears under. Set after unlocking, a retry that read the entries
+	// just before a hook delivered them would set the chip AFTER drop cleared it, with nothing left pending.
+	changed := pi.d.act.setHeld(taskID, r)
+	pi.mu.Unlock()
+	if changed {
 		pi.d.publishTask(taskID)
 	}
+}
+
+// reconcile recomputes a card's held chip from what is actually still pending, and is what every reader of the
+// chip calls rather than trusting the last write. The injector's entries are pruned to the pending set, a card
+// with none left (or no injector entry at all, which is a restart or a stopAll) loses the chip, and otherwise
+// the count and reason are redone. Without it a chip outlived any message that left the queue by a path that
+// did not tell the injector, until a retry tick that can be hours away.
+func (pi *pendingInjector) reconcile(taskID string) {
+	pending, err := pi.d.st.PendingMessages(taskID)
+	if err != nil {
+		return
+	}
+	live := map[string]bool{}
+	for _, m := range pending {
+		live[m.ID] = true
+	}
+	pi.mu.Lock()
+	ht := pi.by[taskID]
+	var oldest pendingMsg
+	if ht != nil {
+		kept := ht.entries[:0]
+		for _, e := range ht.entries {
+			if live[e.msgID] {
+				kept = append(kept, e)
+			}
+		}
+		ht.entries = kept
+		if len(kept) > 0 {
+			oldest = kept[0]
+		}
+	}
+	empty := ht == nil || len(ht.entries) == 0
+	pi.mu.Unlock()
+	if empty {
+		pi.drop(taskID)
+		return
+	}
+	pi.noteHeld(taskID, pi.heldFor(taskID, oldest))
 }
 
 // attempt is one retry: reconcile against the store, try to drain what is still
@@ -466,11 +507,11 @@ func (pi *pendingInjector) drop(taskID string) {
 		}
 		delete(pi.by, taskID)
 	}
+	pi.d.act.clearHeld(taskID)
 	pi.mu.Unlock()
 	if run := pi.d.sup.get(taskID); run != nil {
 		run.onKey.Store(nil)
 	}
-	pi.d.act.clearHeld(taskID)
 	pi.d.publishTask(taskID)
 }
 
