@@ -80,6 +80,25 @@ func (s *Server) listFiles(w http.ResponseWriter, r *http.Request) {
 	}
 	fi, err := os.Stat(dir)
 	if err != nil {
+		// Already known to be inside the card, so saying it is missing leaks
+		// nothing. An empty list, because the board asks for folders such as
+		// findings on every card and most do not have one yet.
+		if os.IsNotExist(err) {
+			parent := ""
+			if !sameDir(dir, root) {
+				if up, err := safepath.Contained(root, filepath.Dir(dir)); err == nil {
+					parent = filepath.ToSlash(up)
+				}
+			}
+			writeJSON(w, http.StatusOK, map[string]any{
+				"path":      filepath.ToSlash(dir),
+				"root":      filepath.ToSlash(root),
+				"parent":    parent,
+				"entries":   []fileEntry{},
+				"truncated": false,
+			})
+			return
+		}
 		writeErr(w, http.StatusNotFound, errors.New("no such directory"))
 		return
 	}

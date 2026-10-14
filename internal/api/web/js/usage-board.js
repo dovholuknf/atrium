@@ -122,8 +122,10 @@
   }
   async function refresh() {
     await flush();
+    if (typeof hubGateHold === "function") await hubGateHold();
     try {
       const r = await fetch("/v1/usage/board");
+      if (typeof hubGateStatus === "function" && hubGateStatus(r.status)) hubGateTrip();
       if (r.ok) snap.used = (await r.json()).controls || [];
     } catch (_) { /* keeps the last totals */ }
     snap.known = knownNow();

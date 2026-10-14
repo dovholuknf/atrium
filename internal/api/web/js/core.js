@@ -328,9 +328,51 @@ const api = async (path, opts) => {
 // not: an upload may take as long as it takes.
 const API_READ_TIMEOUT = 15000;
 
+// ONE HUB-HEALTH GATE FOR EVERY POLLER.
+//
+// A hub restart used to answer every poller on the board with its own 503: themes,
+// settings, harnesses, providers, prs, permissions, rooms, shares, usage, tasks,
+// each logging a failure for a thing that was already known. A read that comes
+// back 502/503/504 (or never reaches the hub at all) closes this gate, and from
+// then on every read waits here instead of asking. One probe of `/v1/health`,
+// which the hub answers itself, opens it again. Writes are never held: a person
+// who clicked something should see it fail.
+let hubGateP = null;
+const HUB_GATE_PROBE_MS = 1000;
+const hubGateStatus = (s) => s === 502 || s === 503 || s === 504;
+function hubGateTrip() {
+  if (hubGateP) return;
+  let open;
+  hubGateP = new Promise(res => { open = res; });
+  (async () => {
+    for (;;) {
+      await new Promise(res => setTimeout(res, HUB_GATE_PROBE_MS));
+      let timer = 0;
+      try {
+        const ctrl = new AbortController();
+        timer = setTimeout(() => ctrl.abort(), 4000);
+        const r = await window.fetch("/v1/health", { cache: "no-store", signal: ctrl.signal });
+        clearTimeout(timer);
+        if (r.ok) break;
+      } catch (e) { clearTimeout(timer); }
+    }
+    hubGateP = null;
+    open();
+  })();
+}
+
+// For a poller that reads with a bare fetch and so cannot go through api(): wait here while the hub is down.
+async function hubGateHold() { while (hubGateP) await hubGateP; }
+
 const apiFetch = async (path, opts) => {
-  await apiSlot();
   const read = !opts || !opts.method || opts.method === "GET";
+  for (;;) {
+    if (read) while (hubGateP) await hubGateP;
+    await apiSlot();
+    // The gate may have closed while this waited for a slot.
+    if (!read || !hubGateP) break;
+    apiRelease();
+  }
   let timer = 0, timedOut = false;
   if (read && typeof AbortController !== "undefined") {
     const ctrl = new AbortController();
@@ -351,11 +393,13 @@ const apiFetch = async (path, opts) => {
     // pool run dry shows up, and where an aborted superseded fetch lands too.
     // A read that timed out is the wire failing, not a pass being superseded.
     if (timedOut || !(err && err.name === "AbortError")) apiFailStreak++;
+    if (read && !(err && err.name === "AbortError")) hubGateTrip();
     apiRelease();
     throw timedOut ? new Error(path + " did not answer in " + API_READ_TIMEOUT / 1000 + "s") : err;
   }
   clearTimeout(timer);
   apiFailStreak = 0;
+  if (read && hubGateStatus(res.status)) hubGateTrip();
   try {
     return await apiFinish(res);
   } finally {
@@ -409,14 +453,24 @@ const apiFinish = async (res) => {
 // through this door. `read` runs while the slot is still held, so the socket is
 // counted until its body is drained, not just until the headers arrive.
 async function cappedFetch(fetchFn, path, opts, read) {
-  await apiSlot();
+  const isRead = !opts || !opts.method || opts.method === "GET";
+  for (;;) {
+    if (isRead) while (hubGateP) await hubGateP;
+    await apiSlot();
+    if (!isRead || !hubGateP) break;
+    apiRelease();
+  }
   try {
     const res = await fetchFn(path, opts);
+    if (isRead && hubGateStatus(res.status)) hubGateTrip();
     const out = read ? await read(res) : res;
     apiFailStreak = 0;
     return out;
   } catch (err) {
-    if (!(err && err.name === "AbortError")) apiFailStreak++;
+    if (!(err && err.name === "AbortError")) {
+      apiFailStreak++;
+      if (isRead) hubGateTrip();
+    }
     throw err;
   } finally {
     apiRelease();

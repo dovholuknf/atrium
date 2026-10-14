@@ -180,6 +180,22 @@ func TestListingOutsideAndMissingAnswerTheSame(t *testing.T) {
 	}
 }
 
+// A folder the card has not made yet, such as findings, is an empty list and
+// not a 404 in the console.
+func TestListingAMissingFolderInsideTheCardIsEmpty(t *testing.T) {
+	t.Parallel()
+	s, st, work := fileServer(t)
+	task := cardIn(t, st, work)
+
+	got, code := doList(t, s, task.ID, "findings")
+	if code != http.StatusOK {
+		t.Fatalf("answered %d", code)
+	}
+	if len(got.Entries) != 0 {
+		t.Fatalf("listed %d entries in a folder that is not there", len(got.Entries))
+	}
+}
+
 // A working directory with a node_modules in it has more entries than anybody
 // is going to read. The answer is a shorter list that says so, not a slow
 // board.
