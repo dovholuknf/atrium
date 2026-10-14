@@ -1092,15 +1092,13 @@ function termRow(t, deep, kid) {
            // the session again where it was.
            termCold(t) && !keptOpen ? " cold" : keptOpen ? " kept" : ""}${wear.cls}${newCardClass(t)}"
          data-id="${t.id}"
-         data-tip="${esc(hover + (termCold(t) ? (t.parked_at ? "\nparked after sitting idle. click to resume the same conversation"
-           : "\nthis one has exited. click to start it again here") +
+         data-tip="${esc(hover + (termCold(t) ? (t.parked_at ? "\nparked after sitting idle. resume it from the right-click menu"
+           : "\nthis one has exited. resume it from the right-click menu") +
            (keptOpen ? "\nthe filter would hide it, but it is open in the pane, so it stays until you switch away" : "")
            : t.starting && !t.supervised ? "\natrium is starting this one. its runner is not up yet"
            : termJoined(t) ? "\njoined from your own terminal. atrium cannot attach to it. click for what you can do" : ""))}"
          style="${style}"
-         onclick="${termCold(t)
-           ? (t.parked_at ? `resumeParked('${t.id}')` : `resumePinned('${t.id}')`)
-           : termJoined(t) ? `joinedClick('${t.id}')` : `attachTask('${t.id}')`}"
+         onclick="${termJoined(t) ? `joinedClick('${t.id}')` : `attachTask('${t.id}')`}"
          oncontextmenu="termMenu(event, '${t.id}')">
       ${ctxLine(t)}
       <div class="card-line">
@@ -1227,11 +1225,7 @@ function termRowChips(t, lead) {
     : termJoined(t) ? `<span class="chip">joined</span>` : "";
   // The past-the-limit mark, which the strip did not draw. A card cycling its context shows that instead.
   const lim = t.new_context ? "" : ctxWarnMark(t);
-  const resume = t.parked_at && !t.supervised
-    ? `<button type="button" class="chip accent termresume" aria-label="resume this parked card"
-         data-tip="parked after sitting idle. resume the same conversation"
-         onclick="event.stopPropagation();resumeParked('${t.id}')">resume</button>` : "";
-  const inner = (lead || "") + resume + stuck + newCardChip(t) + lim + ncx + seenChips(t) + cache + held + room + popped + joined;
+  const inner = (lead || "") + stuck + newCardChip(t) + lim + ncx + seenChips(t) + cache + held + room + popped + joined;
   return inner ? `<div class="chips">${inner}</div>` : "";
 }
 
@@ -2029,8 +2023,6 @@ function termEndedRow(t) {
         <span class="endedhow" data-tip="${esc(how)}">${esc(how)}</span>
       </div>
       <span class="endedwhen">${esc(when)}</span>
-      <button class="endedresume" onclick="resumeParked('${esc(id)}')"
-        data-tip="start it again on the same conversation">resume</button>
     </div>`;
 }
 
