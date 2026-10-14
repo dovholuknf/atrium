@@ -22215,6 +22215,7 @@ async function termsDrawerPushSection(browser, base) {
     p.on("pageerror", e => errors.push(String(e)));
     await p.goto(base + "/", { waitUntil: "domcontentloaded" });
     await p.waitForFunction(() => typeof fdSet === "function" && typeof onTermResize === "function", null, { timeout: slow(15000) });
+    await p.waitForTimeout(1500);   // boot ends with its own switchView, which shuts the drawer: let it land first
     const got = await p.evaluate(async () => {
       switchView("terms");
       const wait = ms => new Promise(r => setTimeout(r, ms));
