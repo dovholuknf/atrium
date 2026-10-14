@@ -531,3 +531,48 @@ function Write-DeployQueue {
   foreach ($l in ($md -split "`r?`n")) { if ($l.Trim()) { Say "queue: $l" } }
   Say "deploy queue saved to $out for HANDOFF"
 }
+
+# Invoke-Capped runs one process with a wall-clock cap and returns @{ Code; Out; TimedOut }. ssh's ConnectTimeout bounds
+# only the connect: a session that connects and then stalls has no bound (2026-10-14: an `echo ok` hung 26 minutes and
+# a log tail 46, both on m1mini). A process still running at the cap is killed with its whole tree. Output is read
+# asynchronously so a full pipe cannot hold it, and stderr is folded into Out.
+function Invoke-Capped([string]$Exe, [string[]]$ArgList, [int]$TimeoutSec) {
+  $psi = [System.Diagnostics.ProcessStartInfo]::new($Exe)
+  foreach ($a in $ArgList) { $psi.ArgumentList.Add($a) }
+  $psi.RedirectStandardOutput = $true; $psi.RedirectStandardError = $true; $psi.RedirectStandardInput = $true
+  $psi.UseShellExecute = $false
+  $p = [System.Diagnostics.Process]::Start($psi)
+  $p.StandardInput.Close()
+  $o = $p.StandardOutput.ReadToEndAsync(); $e = $p.StandardError.ReadToEndAsync()
+  $timedOut = -not $p.WaitForExit($TimeoutSec * 1000)
+  if ($timedOut) {
+    try { $p.Kill($true) } catch {}
+    $null = $p.WaitForExit(5000)
+  }
+  # A killed ssh can leave a grandchild holding the pipes, so the reads are bounded too.
+  $null = [System.Threading.Tasks.Task]::WaitAll(@($o, $e), 5000)
+  $text = $(if ($o.IsCompleted) { $o.Result } else { '' }) + $(if ($e.IsCompleted) { $e.Result } else { '' })
+  [pscustomobject]@{ Code = $(if ($timedOut) { -1 } else { $p.ExitCode }); TimedOut = $timedOut; Out = $text }
+}
+
+# Invoke-CappedRetry is Invoke-Capped that, on a cap overrun only, runs the call once more. A call that exits non-zero
+# is an answer and is not retried. A second overrun comes back with TimedOut set, for the caller to fail the step on,
+# naming $Label. The attempts are said, so a log shows the hang rather than a silent minute.
+function Invoke-CappedRetry([string]$Label, [string]$Exe, [string[]]$ArgList, [int]$TimeoutSec) {
+  for ($try = 1; $try -le 2; $try++) {
+    $r = Invoke-Capped $Exe $ArgList $TimeoutSec
+    if (-not $r.TimedOut) { return $r }
+    Say "$Label hung past ${TimeoutSec}s (attempt $try of 2), killed$(if ($try -eq 1) { '. retrying once' })"
+  }
+  return $r
+}
+
+# Test-RoomBackOnHub is the verdict on a room that was restarted, from the hub alone: attached on a connection made
+# after $After and, when $Commit is given, running that commit. Never from an ssh call's exit or output.
+function Test-RoomBackOnHub([string]$Name, [datetime]$After, [string]$Commit = '') {
+  try { $r = (Invoke-RestMethod $HubRooms -TimeoutSec 3).rooms | Where-Object { $_.name -eq $Name } | Select-Object -First 1 }
+  catch { return $false }
+  if (-not $r -or ([datetime]$r.since).ToUniversalTime() -lt $After.ToUniversalTime()) { return $false }
+  if ($Commit -and $r.commit -and -not ($r.commit.StartsWith($Commit.Substring(0, [Math]::Min(7, $Commit.Length))))) { return $false }
+  return $true
+}
