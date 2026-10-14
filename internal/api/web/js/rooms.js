@@ -463,19 +463,27 @@ function roomRow(r) {
 // attached and working, and also one repair away from its first choice, which
 // is something to notice without being an alarm.
 function transportBadge(t, fallback) {
-  const marks = {
-    direct: ["mTLS", "a direct connection, over mutual TLS"],
-    ziti: ["ziti", "over an OpenZiti service"],
-    zrok: ["zrok", "over a private zrok share"],
-    "zrok-public": ["zrok", "over a public zrok share"],
-    local: ["here", "this hub's own machine, over a pipe inside one process"],
+  const svg = d => `<svg viewBox="0 0 12 12" aria-hidden="true">${d}</svg>`;
+  const icons = {
+    // a padlock: mutual TLS
+    mtls: svg('<rect x="2.5" y="5.5" width="7" height="5" rx="1"/><path d="M4 5.5V4a2 2 0 0 1 4 0v1.5"/>'),
+    // a ring with a node: an overlay service
+    ziti: svg('<circle cx="6" cy="6" r="4"/><circle cx="6" cy="6" r="1" fill="currentColor"/>'),
+    // two arrows: a share
+    zrok: svg('<path d="M2 4.5h6.5M6.5 2.5l2 2-2 2M10 7.5H3.5M5.5 5.5l-2 2 2 2"/>'),
   };
-  const m = marks[t] || [t || "?", "how this room reaches the hub"];
-  if (fallback) {
-    return `<span class="chip warn" data-tip="${esc(`${m[1]}: on ${m[0]} because its first choice did not answer`)}"
-      >${esc(m[0])}</span>`;
-  }
-  return `<span class="chip" data-tip="${esc(m[1])}">${esc(m[0])}</span>`;
+  const marks = {
+    direct: ["mTLS", "a direct connection, over mutual TLS", "mtls"],
+    ziti: ["ziti", "over an OpenZiti service", "ziti"],
+    zrok: ["zrok", "over a private zrok share", "zrok"],
+    "zrok-public": ["zrok", "over a public zrok share", "zrok"],
+    local: ["here", "this hub's own machine, over a pipe inside one process", ""],
+  };
+  const m = marks[t] || [t || "?", "how this room reaches the hub", ""];
+  const cls = "chip tp" + (m[2] ? " tp-" + m[2] : "") + (fallback ? " warn" : "");
+  const tip = fallback ? `${m[1]}: on ${m[0]} because its first choice did not answer` : m[1];
+  return `<span class="${cls}" data-tip="${esc(tip)}">${icons[m[2]] || ""}${esc(m[0])}${
+    fallback ? ` <span class="tp-fb">fallback</span>` : ""}</span>`;
 }
 
 // sshList says who a room's remote access is open to, as a sentence part: `hub and m1mini`.
