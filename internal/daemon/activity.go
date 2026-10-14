@@ -863,6 +863,10 @@ func (d *Daemon) onActivity(in ActivityEvent) string {
 		if cause == store.UsageOperator {
 			d.noteDelivery(taskID, "", store.DeliveryOperator)
 			d.humanTouch(taskID, ViaPrompt)
+			// A person spoke, so the next wait is a new one and may ring. See store/waitcarry.go.
+			if err := d.st.ClearCarriedWait(taskID); err != nil {
+				log.Printf("[atrium] clear carried wait on %s: %v", taskID, err)
+			}
 		}
 		// And it saw the turn and answered its questions, unless the prompt
 		// was a peer's message atrium typed in. See seen.go.

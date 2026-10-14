@@ -2256,6 +2256,18 @@ var migrations = []struct {
 			`ALTER TABLE item_mirror ADD COLUMN missed_worker  INTEGER NOT NULL DEFAULT 0`,
 		},
 	},
+	{
+		// A WAIT A RESTART CAN GIVE BACK: the `waiting_since` a card had when it went dead or done. A resume comes up
+		// through running and back to waiting, and each of those cleared the clock, so every deploy re-rang every card
+		// that was already waiting. Cleared when a person speaks to the card. See waitcarry.go.
+		name: "0100_waiting_carry",
+		stmts: []string{
+			`CREATE TABLE IF NOT EXISTS waiting_carry (
+				task_id TEXT PRIMARY KEY REFERENCES task(id) ON DELETE CASCADE,
+				since   TEXT NOT NULL
+			)`,
+		},
+	},
 }
 
 // migrate applies any migration not already recorded. This runs before the
