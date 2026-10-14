@@ -48,13 +48,20 @@ $CtlShutdown  = 'http://127.0.0.1:7791/v1/shutdown'
 function Get-LinkAdvertise {
   if ($env:ATRIUM_LINK_ADVERTISE) { return $env:ATRIUM_LINK_ADVERTISE }
   try {
-    $r = Get-NetRoute -DestinationPrefix '0.0.0.0/0' -ErrorAction Stop |
-      Sort-Object { $_.RouteMetric + $_.InterfaceMetric } | Select-Object -First 1
-    $ip = Get-NetIPAddress -InterfaceIndex $r.InterfaceIndex -AddressFamily IPv4 -ErrorAction Stop |
-      Where-Object { $_.IPAddress -notlike '169.254.*' } | Select-Object -First 1 -ExpandProperty IPAddress
-    if ($ip) { return "${ip}:7779" }
+    # Default routes by cost, skipping a tunnel (the ziti-edge-tunnel adapter, addresses in 100.64.0.0/10).
+    $routes = Get-NetRoute -DestinationPrefix '0.0.0.0/0' -ErrorAction Stop |
+      Sort-Object { $_.RouteMetric + $_.InterfaceMetric }
+    foreach ($r in $routes) {
+      if ((Get-NetAdapter -InterfaceIndex $r.InterfaceIndex -ErrorAction SilentlyContinue).Name -match 'ziti') { continue }
+      $ip = Get-NetIPAddress -InterfaceIndex $r.InterfaceIndex -AddressFamily IPv4 -ErrorAction SilentlyContinue |
+        Where-Object { $_.IPAddress -notlike '169.254.*' -and $_.IPAddress -notmatch '^100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\.' } |
+        Select-Object -First 1 -ExpandProperty IPAddress
+      if ($ip) { return "${ip}:7779" }
+    }
   } catch { }
-  throw 'cannot derive the hub link address from the default route; set ATRIUM_LINK_ADVERTISE=host:7779'
+  # Not fatal: every live script dot-sources this, and only a direct room on another machine needs the address.
+  Write-Warning 'cannot derive the hub link address from the default route; advertising 127.0.0.1:7779 (set ATRIUM_LINK_ADVERTISE=host:7779)'
+  return '127.0.0.1:7779'
 }
 $LinkAdvertise = Get-LinkAdvertise
 $HubArgs = @('run', '--no-room', '--addr', '127.0.0.1:7778', '--link', '0.0.0.0:7779',
