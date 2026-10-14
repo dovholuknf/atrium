@@ -705,6 +705,10 @@ func (d *Daemon) watchWorkers(now time.Time) error {
 				x = d.longTurn(t, now)
 			}
 		}
+		// A blocked item that was alerted for keeps the card's stuck flag while it stays blocked.
+		if x == nil {
+			x = d.itemStuckEscalation(t)
+		}
 		live[t.ID] = true
 		if d.esc.put(t.ID, x) {
 			d.publishTask(t.ID)

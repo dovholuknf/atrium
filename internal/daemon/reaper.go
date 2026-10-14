@@ -212,6 +212,8 @@ func (d *Daemon) reap(ctx context.Context, every time.Duration) {
 		// Agent-launched work nobody has heard from. Same tick, after liveness,
 		// so a card the reaper just marked dead is not reported as stuck. See
 		// a2a.go.
+		// Blocked items that are not moving. Before the watch, which puts them on the card. See item_stuck.go.
+		d.sweepItems(time.Now())
 		if err := d.watchWorkers(time.Now()); err != nil {
 			log.Printf("[atrium] watching launched sessions: %v", err)
 		}
