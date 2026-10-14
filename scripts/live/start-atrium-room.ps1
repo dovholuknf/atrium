@@ -9,6 +9,8 @@ param([switch]$NoLagLog, [switch]$WhatIf)
 
 $ErrorActionPreference = 'Continue'
 $LiveTag = 'START-ROOM'
+. "$PSScriptRoot\refuse-supervised.ps1"
+Assert-NotSupervised
 . "$PSScriptRoot\live-common.ps1"
 $LiveLog = Join-Path $Base 'room-restart.log'
 

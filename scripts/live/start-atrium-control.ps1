@@ -12,6 +12,8 @@ param([string]$Join, [switch]$WhatIf)
 
 $ErrorActionPreference = 'Continue'
 $LiveTag = 'START-CONTROL'
+. "$PSScriptRoot\refuse-supervised.ps1"
+Assert-NotSupervised
 . "$PSScriptRoot\live-common.ps1"
 $LiveLog = Join-Path $Base 'control-start.log'
 

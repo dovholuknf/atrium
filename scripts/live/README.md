@@ -33,7 +33,7 @@ Before the reboot:
 pwsh -File C:\Users\claude\.atrium2\scripts\stop-atrium.ps1
 ```
 
-It asks sg4-control, then claude-sg4, to wind down (runners are parked and what to reopen is saved), forces each one
+It asks claude-sg4 (and sg4-control first, only with -Control -IKnowItKillsMyShell), to wind down (runners are parked and what to reopen is saved), forces each one
 only after 45 seconds, and then stops the hub. Rooms on other machines lose the hub until it is back. Their runners
 wait on the backoff they already have and reattach by themselves.
 
@@ -43,7 +43,7 @@ After you log in again:
 pwsh -File C:\Users\claude\.atrium2\scripts\start-atrium.ps1
 ```
 
-It starts the hub, then claude-sg4, then sg4-control, and leaves alone any of them that is already running. Then open
+It starts the hub, then claude-sg4 (sg4-control only with -Control -IKnowItKillsMyShell), and leaves alone any of them that is already running. Then open
 http://127.0.0.1:7778 and resume the cards you want back. The orchestrator is on sg4-control.
 
 Both scripts take `-WhatIf`, which says what they would do and does nothing.
@@ -52,8 +52,8 @@ Both scripts take `-WhatIf`, which says what they would do and does nothing.
 
 | Script | What it does |
 | --- | --- |
-| `start-atrium.ps1` | Hub, claude-sg4, sg4-control, in that order. `-NoControl` skips sg4-control. |
-| `stop-atrium.ps1` | sg4-control, claude-sg4, hub, in that order. `-KeepControl` leaves sg4-control up. |
+| `start-atrium.ps1` | Hub, claude-sg4, and sg4-control only with both `-Control` and `-IKnowItKillsMyShell`. |
+| `stop-atrium.ps1` | claude-sg4, hub. sg4-control too, first, only with both `-Control` and `-IKnowItKillsMyShell`. |
 | `start-atrium-hub.ps1` | The hub alone. |
 | `start-atrium-room.ps1` | The claude-sg4 room alone, when the hub is up and the room is not. |
 | `start-atrium-control.ps1` | The sg4-control room alone. `-Join '<join string>'` on its first run on a machine. |
@@ -76,3 +76,11 @@ Both scripts take `-WhatIf`, which says what they would do and does nothing.
 
 - The scheduled task `atrium2-watchdog` points at `C:\Users\claude\.atrium2\start-atrium2.ps1`, which no longer
   exists. It starts nothing. Boot autostart is shelved, see `docs/release/packaging.md` before adding one.
+
+## Refusing to run under a room
+
+`atrium-deploy.ps1`, `deploy-batch.ps1`, `stop-atrium.ps1` and every `start-atrium*.ps1` refuse, even under `-WhatIf`,
+when an ancestor process is an atrium room (matched by command line, never image name). Run them from a terminal that
+is not under atrium, such as a fresh `wt.exe` window. The check is `refuse-supervised.ps1`, and
+`test-refuse-supervised.ps1` tests it with fake processes. sg4-control is in no default and takes both `-Control` and
+`-IKnowItKillsMyShell`, or neither.
