@@ -244,7 +244,7 @@ foreach ($name in $remoteNames) {
 
 # 3. The hub, with claude-sg4 when it is named. Run as child scripts, so their own checks and reverts apply.
 if ($want -contains 'claude-sg4') {
-  & "$PSScriptRoot\deploy-batch.ps1" -WhatIf:$WhatIf -Immediate:$Immediate
+  & "$PSScriptRoot\deploy-batch.ps1" -WhatIf:$WhatIf -Immediate:$Immediate -RoomOnly:(-not ($want -contains 'hub'))
   $code = $LASTEXITCODE
   $ok = if ($WhatIf) { 'success (WhatIf)' } else { 'success' }
   switch ($code) {

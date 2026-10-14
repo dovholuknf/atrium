@@ -15,7 +15,8 @@
 # A deploy hold is set on the room first and waited out, so the room that comes back wakes every card that was
 # working. -NoHold skips it, and so does a room that keeps its runners (Test-RunnersSurvive). Do not send the "commit and wait" say as well: a card told to wait by a say is idle at
 # the hold and is correctly not woken.
-param([switch]$NoLagLog, [switch]$WhatIf, [switch]$NoHold, [switch]$Immediate)
+# -RoomOnly leaves the hub running: only the room stops and starts, the hub keeps its process and the image it loaded.
+param([switch]$NoLagLog, [switch]$WhatIf, [switch]$NoHold, [switch]$Immediate, [switch]$RoomOnly)
 
 $ErrorActionPreference = 'Continue'
 $LiveTag = 'BATCH'
@@ -59,18 +60,22 @@ $revert = Save-Revert
 # 1. Stop the room gracefully first, so it parks its runners and saves what to reopen.
 Stop-Room
 
-# 2. Stop the hub.
-Stop-Hub
+# 2. Stop the hub, unless this is a room-only deploy.
+if ($RoomOnly) { Say 'room only: the hub is left running' } else { Stop-Hub }
 
 # 3. Swap the binary: stage, then two renames. Hooks in flight keep the image they loaded.
 if (-not (Install-Atrium)) { exit 1 }
 
 # 4. Start the hub with its exact args, then wait for health.
-Backup 'hub.err'
-Start-Hub
-if (-not $WhatIf) {
-  $h = Wait-Hub 25
-  if ($h) { Say "hub up build $($h.build)" } else { Say 'FATAL: hub did not come healthy'; exit 1 }
+if ($RoomOnly) {
+  if (-not $WhatIf -and -not (Wait-Hub 5)) { Say 'FATAL: room only, but the hub is not answering'; exit 1 }
+} else {
+  Backup 'hub.err'
+  Start-Hub
+  if (-not $WhatIf) {
+    $h = Wait-Hub 25
+    if ($h) { Say "hub up build $($h.build)" } else { Say 'FATAL: hub did not come healthy'; exit 1 }
+  }
 }
 
 # 5. Start the room with its exact args, then wait for it to reattach.
@@ -106,10 +111,9 @@ if (-not $WhatIf) {
     Get-Content (Join-Path $Base 'room.err') -Tail 20 | ForEach-Object { Say "  $_" }
     # A frozen room does not answer the shutdown post either. Stop-Room forces after its 45s.
     Stop-Room
-    Stop-Hub
+    if (-not $RoomOnly) { Stop-Hub }
     if (-not (Install-Atrium $revert)) { Say 'FATAL: revert install failed. nothing is running'; exit 1 }
-    Start-Hub
-    $null = Wait-Hub 25
+    if (-not $RoomOnly) { Start-Hub; $null = Wait-Hub 25 }
     $revertStart = Get-Date
     $null = Start-Room
     $back = [bool](Wait-RoomAttached $revertStart)
