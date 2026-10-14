@@ -261,14 +261,22 @@ async function steps(browser, width, mobile, tabName) {
   s = await state(page);
   check(s && s.open && s.panelVisible && !s.inert, `${tag} 3: a click on the line opens the drawer`);
   check(s && s.panel.y >= s.line.b - 2, `${tag} 3: it hangs under the line`);
+  await sleep(300);   // the accordion's slide
+  s = await state(page);
   const geoOpen = await geometry(page, listBox);
-  check(geoBefore === geoOpen, `${tag} 3: the list's box did not move or resize (${geoBefore} / ${geoOpen})`);
+  if (T.view === "terms") check(geoBefore === geoOpen, `${tag} 3: the list's box did not move or resize (${geoBefore} / ${geoOpen})`);
+  else {
+    // The stack and the board are an accordion: the list is pushed down by the drawer, not covered by it.
+    const top = g => Number(g.split(",")[1]);
+    check(top(geoOpen) - top(geoBefore) >= s.panel.h - 16 && top(geoOpen) >= s.panel.b - 16,
+      `${tag} 3: the list is pushed down by the drawer's height (${geoBefore} / ${geoOpen}, drawer ${s.panel.h})`);
+  }
   const covers = await page.evaluate(() => {
     const p = document.querySelector(".fdrawer.open .fpanel").getBoundingClientRect();
     const e = document.elementFromPoint(p.x + p.width / 2, p.y + Math.min(30, p.height / 2));
     return !!(e && e.closest(".fpanel"));
   });
-  check(covers, `${tag} 3: it is over the list, not beside it`);
+  if (T.view === "terms") check(covers, `${tag} 3: it is over the list, not beside it`);
   const countBefore = s.count;
 
   // 4: a chip ----------------------------------------------------------------------------------------------
@@ -348,6 +356,14 @@ async function steps(browser, width, mobile, tabName) {
   // open it, or the swallow above proved nothing.
   if (control) {
     await page.evaluate(() => { const x = document.getElementById("check-xterm"); if (x) x.remove(); });
+    // The stack and the board are an accordion: with the drawer shut the card sits higher, so find it again by id.
+    if (control.id) {
+      const now = await page.evaluate(id => {
+        const e = [...document.querySelectorAll('[data-id="' + id + '"]')].find(x => x.offsetParent !== null);
+        if (!e) return null; const b = e.getBoundingClientRect(); return { x: b.left + Math.min(40, b.width / 3), y: b.top + Math.min(14, b.height / 2) };
+      }, control.id);
+      if (now) { control.x = now.x; control.y = now.y; }
+    }
     if (!mobile) { await page.mouse.move(control.x, control.y); await sleep(400); }
     cardGets = [];
     await mouse.click(control.x, control.y);
@@ -434,7 +450,7 @@ async function touch(browser, tabName) {
     await sleep(350);
   };
   let s = await state(page);
-  const panelH = await page.evaluate(() => document.querySelector(".fdrawer:not([hidden]) .fpanel") && [...document.querySelectorAll(".fdrawer")].filter(e => e.offsetParent !== null)[0].querySelector(".fpanel").offsetHeight);
+  const panelH = await page.evaluate(() => document.querySelector(".fdrawer:not([hidden]) .fpanel") && [...document.querySelectorAll(".fdrawer")].filter(e => e.offsetParent !== null)[0].querySelector(".fpanel").scrollHeight);
   const p = await linePoint(page);
   check(panelH > 60, `${tag} 8: the panel has a height to pull (${panelH})`);
 

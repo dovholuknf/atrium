@@ -9,6 +9,9 @@
 // Sending is a say to the card (POST /v1/tasks/{id}/message), so it is queued and never typed over a human.
 
 const QA_SAVE_MS = 350;
+// A question in the peek shows three lines, and the rest behind "click to expand". Which ones are open is kept
+// here, by card and question, so a repaint of the block does not shut them.
+const qaOpenSet = new Set();
 
 let qaFly = null;
 // What the flyout is on: the card, and the group and question it shows. `groups` is the working copy.
@@ -112,7 +115,9 @@ function peekQuestionsHtml(t) {
     const a = String(g.a[i] || "").trim();
     return `<button type="button" class="qa-q${a ? " has" : ""}" data-gi="${gi}" data-qi="${i}">` +
       `<i class="qa-n">${a ? "&#10003;" : i + 1}</i>` +
-      `<span class="qa-t">${esc(g.qs[i])}${a ? `<em>${esc(a)}</em>` : ""}</span></button>`;
+      `<span class="qa-t"><span class="qa-qx${qaOpenSet.has(`${t.id}:${gi}:${i}`) ? " open" : ""}">${esc(g.qs[i])}</span>` +
+      `${a ? `<em>${esc(a)}</em>` : ""}</span></button>` +
+      `<button type="button" class="qa-exp" data-gi="${gi}" data-qi="${i}" hidden></button>`;
   };
   let html = "";
   groups.forEach((g, gi) => {
@@ -137,6 +142,19 @@ function qaRepaint(id) {
     const row = el.closest(".peek-qrow");
     if (row) row.outerHTML = peekQuestionsHtml(t);
   });
+  qaClamp(document);
+}
+
+// Offers "click to expand" under each question that runs past its three lines, and "show less" under an open one.
+// Only measurable while shown, so it runs again whenever a drawer opens.
+function qaClamp(root) {
+  for (const x of (root || document).querySelectorAll(".peek-qa .qa-qx")) {
+    const btn = x.closest(".qa-q"), exp = btn && btn.nextElementSibling;
+    if (!exp || !exp.classList.contains("qa-exp")) continue;
+    const open = x.classList.contains("open");
+    exp.hidden = !open && !(x.scrollHeight > x.clientHeight + 1);
+    exp.textContent = open ? "show less" : "click to expand";
+  }
 }
 
 // ── the flyout ──────────────────────────────────────────────────────────────
@@ -232,15 +250,8 @@ function qaFlyPlace() {
   const el = qaFlyEl();
   const host = (peekEl && peekEl.classList.contains("on") ? peekEl : document.getElementById("t-drawer"));
   const r = host ? host.getBoundingClientRect() : { left: innerWidth / 2 - 180, right: innerWidth / 2 + 180, top: 80, bottom: 200 };
-  const w = Math.min(360, innerWidth - 16), gap = 10;
-  let x = r.right + gap;
-  if (x + w > innerWidth - 8) x = r.left - gap - w;
-  if (x < 8) x = Math.max(8, Math.min(r.left, innerWidth - w - 8));
-  const h = el.offsetHeight || 280;
-  const y = Math.min(Math.max(8, r.top), Math.max(8, innerHeight - h - 8));
-  el.style.width = w + "px";
-  el.style.left = Math.round(x) + "px";
-  el.style.top = Math.round(y) + "px";
+  el.style.width = Math.min(360, innerWidth - 16) + "px";
+  popFit(el, r, { axis: "x", gap: 10 });
 }
 
 function qaFlyGo(n) {
@@ -322,7 +333,16 @@ document.addEventListener("click", async e => {
   const b = e.target.closest && e.target.closest(".peek-qa button");
   if (!b) return;
   const id = b.closest(".peek-qa").dataset.id;
-  if (b.classList.contains("qa-q")) {
+  if (b.classList.contains("qa-exp")) {
+    e.stopPropagation();
+    const key = `${id}:${b.dataset.gi}:${b.dataset.qi}`;
+    if (!qaOpenSet.delete(key)) qaOpenSet.add(key);
+    const x = b.previousElementSibling.querySelector(".qa-qx");
+    x.classList.toggle("open", qaOpenSet.has(key));
+    qaClamp(b.parentElement);
+    // The popup grows to the text and is fitted again rather than scrolling.
+    if (typeof peekRefit === "function") peekRefit();
+  } else if (b.classList.contains("qa-q")) {
     e.stopPropagation();
     qaOpenFly(id, Number(b.dataset.gi), Number(b.dataset.qi));
   } else if (b.hasAttribute("data-qa-send")) {

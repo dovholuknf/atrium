@@ -300,6 +300,10 @@ pre.screen { margin: 0; font: 12px/1.4 var(--mono); color: var(--head); overflow
 .rmenu-help { margin: 0; color: var(--dim); font-size: 13px; }
 .rmenu-help[hidden], .rmenu-picks[hidden] { display: none; }
 .rmenu-picks { display: flex; flex-direction: column; gap: 6px; }
+.rmenu-newgroup { display: flex; gap: 6px; }
+.rmenu-newgroup input { flex: 1; min-width: 0; font-size: 16px; padding: 8px 10px; }
+.newtag { margin-left: 8px; padding: 0 6px; border-radius: 8px; font-size: 10px; line-height: 15px; letter-spacing: .04em;
+  text-transform: uppercase; border: 1px solid currentColor; opacity: .85; }
 .rmenu-sep { height: 1px; background: var(--lift); margin: 2px 0; }
 .rmenu-asks { margin: 0; padding-left: 18px; font-size: 13px; color: var(--dim); }
 .rmenu-tick { display: flex; gap: 8px; align-items: center; font-size: 14px; }

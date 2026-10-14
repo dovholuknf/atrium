@@ -583,7 +583,7 @@ function showMenu(e, items) {
           : s.quiet
             ? `<span class="subnote">${esc(s.quiet)}</span>`
             : `<span class="subitem" data-i="${i}" data-j="${j}"
-                >${s.icon || ""}${esc(s.label)}</span>`).join("")}</span>` : ""}</button>`
+                >${s.icon || ""}${esc(s.label)}${s.tag ? `<span class="newtag">${esc(s.tag)}</span>` : ""}</span>`).join("")}</span>` : ""}</button>`
   ).join("");
   // DIRECT CHILDREN ONLY. A stepper row holds two buttons of its own, and
   // they carry no `data-i`, so reaching them here would look up `items[NaN]`
@@ -637,24 +637,12 @@ function showMenu(e, items) {
   wireFlyouts();
 
   // Placed after it has a size, so a card near an edge does not open a menu
-  // off screen.
+  // off screen. Its flyouts are fitted the moment each one opens (wireFlyouts),
+  // when there is a real size to measure instead of a guess at the widest.
   cardMenuEl.style.left = "0px";
   cardMenuEl.style.top = "0px";
   cardMenuEl.classList.add("on");
-  const r = cardMenuEl.getBoundingClientRect();
-  const x = Math.min(e.clientX, window.innerWidth - r.width - 8);
-  const y = Math.min(e.clientY, window.innerHeight - r.height - 8);
-  cardMenuEl.style.left = Math.max(8, x) + "px";
-  cardMenuEl.style.top = Math.max(8, y) + "px";
-  // A flyout opens to the right unless there is no right left. Measured
-  // against the widest one this menu holds rather than a guess, so a long
-  // destination name does not hang off the screen.
-  // A guess, but a generous one. The sharing flyout carries section headings
-  // and a full sentence, so the old 190 flipped too late and hung it off the
-  // right edge on a window that was only just too narrow.
-  const widest = items.reduce((w, it) => it.sub ? Math.max(w, 230) : w, 0);
-  cardMenuEl.classList.toggle("flip",
-    widest > 0 && Math.max(8, x) + r.width + widest > window.innerWidth);
+  popFit(cardMenuEl, { x: e.clientX, y: e.clientY });
 }
 
 // A flyout that forgives a slip.
@@ -684,6 +672,8 @@ function wireFlyouts() {
         if (o !== b) o.classList.remove("subopen");
       });
       b.classList.add("subopen");
+      // Measured now that it is showing: flips left, slides up, scrolls inside itself (js/popfit.js).
+      popFly(b.querySelector(".sub"), { flip: "flipx" });
     });
     b.addEventListener("pointerleave", () => {
       clearTimeout(flyoutTimer);
@@ -782,6 +772,14 @@ async function cleanupOffer(row) {
   closeCardAsk(row.id, row);
 }
 
+// What the close dialog calls each inventory row's kind (store.Res* in internal/store/resources.go). `hubbranch` is the
+// hub branch inventory's row, named here ahead of it so it lists the day it lands.
+const CLOSE_KIND_WORDS = {
+  worktree: "the worktree", branch: "the branch here", ref: "the ref", dir: "the folder", review: "the review's source copy",
+  proc: "the process", port: "the port", overlay: "the overlay folder", identity: "the identity",
+  hubbranch: "the branch on the hub", clone: "the clone it made"
+};
+
 // via {owner, room} closes what an owner with no card holds, through the sweep (internal/api/sweep.go).
 function closeCardAsk(id, t, via) { return oneAtATime("close:" + id, () => closeCardNow(id, t, via)); }
 
@@ -801,11 +799,18 @@ async function closeCardNow(id, t, via) {
   // ONE DIALOG. The summary, each asked worktree as a row with its choice inline (stash when the room can, else keep,
   // never delete unasked), and one button. Pressed, the dialog stays up and names each step as the server says it
   // (close-progress, see onCloseProgress), shut by itself when done and left open on a step that failed.
+  //
+  // EVERY CARD CLEANS UP WHEN CLOSED (u-005, decision 4), so this says what goes before it goes: "Closing deletes" and
+  // the list, with work that is on no remote said first. A row's kind is named in words, and a kind not named here
+  // shows as itself, so a new inventory row (the hub's branch, from the hub branch inventory) lists without a change.
   const sized = n => (typeof diskLabel === "function" && n ? ` (${esc(diskLabel(n))})` : "");
   const going = (pv.items || []).filter(it => it.action === "free" || it.action === "ask")
-    .map(it => `<li>${esc(it.kind)} ${esc(it.ref)}${it.kind === "worktree" ? sized(it.bytes) : ""}</li>`).join("");
+    .map(it => `<li>${esc(CLOSE_KIND_WORDS[it.kind] || it.kind)} ${esc(it.ref)}${it.kind === "worktree" ? sized(it.bytes) : ""}</li>`).join("");
   const kept = (pv.kept || []).map(k => `<li>${esc(k)}</li>`).join("");
-  const warns = (pv.warnings || []).map(w => `<li>${esc(w)}</li>`).join("");
+  const unpushed = (pv.asks || []).filter(a => a.unpushed > 0 || a.dirty > 0);
+  const warns = (unpushed.length ? [`<li class="warn">${unpushed.length === 1 ? "one folder holds" : unpushed.length +
+    " folders hold"} work that is on no remote and not on the hub. pick what happens to it below</li>`] : [])
+    .concat((pv.warnings || []).map(w => `<li>${esc(w)}</li>`)).join("");
   const pick = (a, v, label, cls) => `<label${cls ? ` class="${cls}"` : ""}><input type="radio" name="cw-${esc(String(a.seq))}" ` +
     `value="${v}"${v === (pv.can_stash ? "stash" : "keep") ? " checked" : ""}> ${label}</label>`;
   const rows = (pv.asks || []).map(a =>
@@ -817,7 +822,7 @@ async function closeCardNow(id, t, via) {
     ((pv.asks || []).length && !pv.can_stash
       ? `<div class="cw-note">This room cannot stash to the hub, so keep is the answer unless you pick delete.</div>` : "");
   const body =
-    (going ? `Frees${sized(pv.disk_bytes)}:<ul>${going}</ul>` : "Nothing on disk to free.<br>") +
+    (going ? `Closing deletes${sized(pv.disk_bytes)}:<ul>${going}</ul>` : "Nothing on disk to delete.<br>") +
     (warns ? `<ul>${warns}</ul>` : "") + rows +
     `Kept:<ul>${kept}</ul>` +
     (via ? "No card holds these." : "The card goes to <b>done</b>. A re-paste of the link starts a fresh card.") +
@@ -1018,8 +1023,31 @@ async function pruneColumnNow(status) {
 function foldedColumns() {
   try {
     const list = JSON.parse(localStorage.getItem("atrium.folded") || "[]");
-    return Array.isArray(list) ? list : [];
+    if (!Array.isArray(list)) return [];
+    return migrateLaneFolds(list);
   } catch (e) { return []; }
+}
+
+// A board group used to be folded by name across the whole board ("proj:web", "proj:pinned"). It is folded per lane
+// now ("proj:<lane>|web", "pin:<lane>"). An old entry is spread over every lane once, so a group somebody had shut
+// is still shut wherever it appears, and can then be opened lane by lane. The stack's keys ("proj:stack:...") and
+// everything else are left alone. Runs once per stored list: the list is written back migrated, so a later read finds
+// nothing old in it.
+function migrateLaneFolds(list) {
+  const old = k => typeof k === "string" && k.startsWith("proj:") && !k.startsWith("proj:stack:") && !k.includes("|");
+  if (!list.some(old)) return list;
+  const lanes = [...new Set(COLUMNS.flatMap(c => [c.id, ...c.statuses]).concat(BOARD_COLUMNS.map(c => c.id)))];
+  const out = [];
+  for (const k of list) {
+    if (!old(k)) { if (!out.includes(k)) out.push(k); continue; }
+    const name = k.slice(5);
+    for (const lane of lanes) {
+      const nk = name === "pinned" ? "pin:" + lane : "proj:" + lane + "|" + name;
+      if (!out.includes(nk)) out.push(nk);
+    }
+  }
+  try { localStorage.setItem("atrium.folded", JSON.stringify(out)); } catch (e) {}
+  return out;
 }
 
 function toggleColumn(id) {

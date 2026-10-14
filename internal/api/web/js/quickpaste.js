@@ -3,26 +3,24 @@
 // A link is typed or pasted into the switcher (js/switcher.js) like anything else it is asked, and the top result
 // says what Enter would open: "open PR review zrok#12". There is no second box. Ctrl+Alt+R, the link button in the
 // header and the "paste a link" button in the switcher all open that same bar, so the key somebody learned still
-// works and so does a click. A link pasted on the board comes up in it too.
+// works and so does a click. A link pasted on the board skips the bar and opens at once (js/fixtures.js).
 // The recogniser fills the launch dialog, and the dialog's own launch is what starts the card, pull request chain and
-// all (`launchNow` in js/fixtures.js). On Enter the dialog is filled in out of sight and never shown, so the screen
-// stays the board and a line over it names the step that is running. The rest of the board stays usable meanwhile.
-// Nothing here knows what a link is.
+// all (`launchNow` in js/fixtures.js). On Enter the dialog is filled in out of sight and never shown, and the card is
+// on the board from the keypress on, naming the step that is running (js/link-opening.js). The rest of the board
+// stays usable meanwhile. Nothing here knows what a link is.
 //
 // ENTER STARTS AT ONCE, SHIFT-ENTER STOPS FOR EDITING. Enter is "open this", a
 // pull request, an issue, a branch or a ticket in its own worktree, which is
 // what the key is for nine times in ten. Shift-Enter opens the launch dialog
 // filled in and leaves it there, for the prompt, the room, or a ticket's repo
 // somebody wants to change first. A link that leaves something to fix (a hole in a
-// template, a fetch that failed, a room with no runner) stops at the dialog
-// either way, because starting a card that is already wrong is not quicker.
-// Somebody who would rather always see the dialog unticks "enter opens at once" in it, and that is kept here
-// (`QUICKPASTE_DIRECT_STORE`). Not asking is the default.
+// template, a fetch that failed, a room with no runner) fails on its card with the
+// reason, and the card's `edit` is the dialog. There is no setting to always ask:
+// shift-enter is that, once.
 //
 // The board's, not the machine's. It works while the page has focus, inside a
 // terminal too, and nowhere else.
 const QUICKPASTE_KEY = "ctrl+alt+KeyR";
-const QUICKPASTE_DIRECT_STORE = "atrium.open.direct";
 
 // Capture on `window`, and stopped there, for the switcher's reason: xterm
 // listens on its own textarea, so letting the keystroke through would open the
@@ -168,49 +166,54 @@ async function quickPasteFromClipboard(force) {
   }
 }
 
-function quickPasteDirect() {
-  try { return localStorage.getItem(QUICKPASTE_DIRECT_STORE) !== "0"; } catch (e) { return true; }
-}
-
+// A LINK OPENS AS A CARD (u-005). Plain Enter, or a paste on the board, draws the card at once (js/link-opening.js),
+// fills the launch dialog in out of sight with the defaults it would have had, and opens the link: clone if needed,
+// worktree, card. A link that leaves something to fix fails on that card with the reason, and its `edit` is the way
+// to the dialog. Shift-Enter (`edit`) is the dialog first, filled in and left open.
 async function quickPasteGo(url, edit) {
   clearTimeout(quickPasteTimer);
   quickPasteSeq++;
   if (!QUICKPASTE_URL.test(url)) return;
   closeSwitcher();
-  // PLAIN ENTER NEVER SHOWS THE LAUNCH DIALOG, unless somebody said they want it to. It is filled in out of sight with
-  // the defaults it would have had, and the link is opened: clone if needed, worktree, card. Shift-Enter shows it, and
-  // an error brings it up, filled in, so it can be fixed.
-  edit = !!edit || !quickPasteDirect();
   const known = quickPasteKnown && quickPasteKnown.url === url ? quickPasteKnown.got : null;
-  // No runner enabled: openLaunch said so and went to the runners pane.
-  if (!await openLaunch(null, "", "", null, { url, quiet: !edit })) return;
-  const launch = document.getElementById("launch");
-  if (!edit && !known) openProgressSay("recognising the link");
-  const got = await recogniseLink(known || undefined);
-  if (!edit) openProgressEnd();
-  if (got === "none") {
-    if (launch.open) launch.close();
-    openQuickPaste(url, document.getElementById("l-link-note").textContent);
+  if (edit) {
+    if (!await openLaunch(null, "", "", null, { url })) return;
+    if (await recogniseLink(known || undefined) === "none") {
+      const launch = document.getElementById("launch");
+      if (launch.open) launch.close();
+      openQuickPaste(url, document.getElementById("l-link-note").textContent);
+    }
     return;
   }
-  if (edit) return;
-  // Not read, or a link with something left to fix: the dialog, with the reason in it.
+  const id = linkOpeningId();
+  linkOpeningBegin(id, url);
+  // No runner enabled: openLaunch said so and went to the runners pane.
+  if (!await openLaunch(null, "", "", null, { url, quiet: true })) { linkOpeningEnd(id); return; }
+  linkOpeningStep(id, "recognising the link");
+  const got = await recogniseLink(known || undefined);
+  const note = document.getElementById("l-link-note").textContent;
+  if (got === "none") {
+    linkOpeningEnd(id);
+    openQuickPaste(url, note);
+    return;
+  }
+  if (got && got.title) linkOpeningName(id, got.title);
+  // Not read, or a link with something left to fix: said on the card, never by throwing the dialog up.
   // A missing worktree is a problem the launch itself solves for every kind the open verb takes.
   const go = document.getElementById("l-go");
   if (!got || ((got.problem || got.fetch_error) && !pastedOpenKind()) || (go && go.disabled)) {
-    if (!launch.open) launch.showModal();
+    linkOpeningFail(id, note || "the link could not be read");
     return;
   }
+  const room = await linkRoomFor(got);
   await oneAtATime("quickpaste-open", async () => {
     try {
-      await launchNow();
+      await launchNow({ id, room });
+      // A link the open verb does not take launched the old way, which knows nothing of the card drawn for it.
+      const o = linkOpenings.get(id);
+      if (o && !o.error) linkOpeningEnd(id);
     } catch (e) {
-      // THE DIALOG COMES UP FILLED IN, with what went wrong beside the link, so it can be fixed and pressed again.
-      openProgressEnd();
-      if (!launch.open) launch.showModal();
-      const note = document.getElementById("l-link-note");
-      note.classList.add("warn");
-      note.textContent = (e && e.message) || String(e);
+      linkOpeningFail(id, (e && e.message) || String(e));
     }
   });
 }

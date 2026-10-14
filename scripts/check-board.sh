@@ -34,6 +34,18 @@ if ! command -v node >/dev/null 2>&1; then
   exit 0
 fi
 
+# THE WHOLE SUITE IS FOR AFTER LANDING. Its headless run is most of a quarter of an hour, and before handing back a
+# worker runs scripts/test-touched.sh, which runs only what the diff touched. Whoever lands runs this with FULL_SUITE=1.
+# HEADLESS_UNITS=a,b runs these checks with just those headless units, and SKIP_HEADLESS=1 with none, so both stay
+# allowed.
+if [ "${FULL_SUITE:-}" != "1" ] && [ -z "${HEADLESS_UNITS:-}" ] && [ "${SKIP_HEADLESS:-}" != "1" ]; then
+  echo "check-board.sh runs the whole board suite, and refuses to without FULL_SUITE=1." >&2
+  echo "before handing back, run scripts/test-touched.sh, which runs what your diff touched." >&2
+  echo "the whole suite runs after landing: FULL_SUITE=1 bash scripts/check-board.sh" >&2
+  echo "a few headless units: HEADLESS_UNITS=a,b bash scripts/check-board.sh" >&2
+  exit 2
+fi
+
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
 
@@ -270,6 +282,12 @@ if ! node "$here/scripts/test-seen.js"; then
   fail=1
 fi
 
+# The turn-end notification rules, RUN: an idle agent-launched card is a ready alert, and a card being typed in never is.
+if ! node "$here/scripts/test-notify-rules.js"; then
+  echo "a turn end would go unannounced, or a card being typed in would alert. see above." >&2
+  fail=1
+fi
+
 # The same guards in a real browser: that the live-style board paints its task
 # and history lists from the daemon's answers, and that a fetch which hangs
 # forever does not leave the board frozen blank (the watchdog runs a later pass
@@ -285,7 +303,10 @@ if [ "${SKIP_HEADLESS:-}" = "1" ]; then
   echo "headless run skipped (SKIP_HEADLESS=1)."
 elif [ "${HEADLESS_SHARDED:-}" = "1" ]; then
   # the same suite in parallel shards, one merged report: scripts/test-board-sharded.js (docs/test-plan.md, HV)
-  if ! node "$here/scripts/test-board-sharded.js"; then
+  # each shard sets its own HEADLESS_UNITS, so the ones asked for here go as --units
+  units_arg=()
+  [ -n "${HEADLESS_UNITS:-}" ] && units_arg=(--units "$HEADLESS_UNITS")
+  if ! node "$here/scripts/test-board-sharded.js" ${units_arg[@]+"${units_arg[@]}"}; then
     echo "the sharded headless board run failed. see above." >&2
     fail=1
   fi

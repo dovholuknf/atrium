@@ -1704,6 +1704,7 @@ async function pass(signal) {
   // learn about rooms later.
   jobs.push(Promise.all([cards, permsJob, painted]).then(() => {
     const waiting = cardsLoaded ? cardsWaiting() : null;
+    const ready = cardsLoaded ? cardsReady() : null;
     const local = permsLoaded ? permsLocal : null;
     const remote = remoteLocal;
     // A local queue never read stays null, so the badge and the title keep
@@ -1717,7 +1718,7 @@ async function pass(signal) {
       // without ringing; fixtures-started reports startup failures separately.
       // A card waiting on its own running children is not waiting on you, so it is left out until the last one ends.
       const every = cardList();
-      alerting.check("waiting", waiting.filter(t =>
+      alerting.check("waiting", ready.filter(t =>
         t.status !== "needs-permission" && !justStarted(t) && !hasRunningChild(t, every)), t => ({
         title: wasAsked(t)
           ? `${t.display_title} asked you something`
@@ -1809,7 +1810,7 @@ async function pass(signal) {
     }
     // Retire any toast whose request or task has since been answered.
     if (waiting && perms) {
-      reapToasts(new Set([...waiting.map(t => t.id), ...perms.map(p => p.id),
+      reapToasts(new Set([...waiting.map(t => t.id), ...ready.map(t => t.id), ...perms.map(p => p.id),
         ...lastTasks.filter(isBlocker).map(t => `${t.id}#${t.escalation.source}#${t.escalation.count}`)]));
     }
     // Cards that are ready, plus requests waiting to be answered. The waiting
@@ -1866,6 +1867,8 @@ function connect() {
     // here and the next health poll either confirms it or clears it a few
     // seconds later.
     alerting.settling(true);
+    // The growlers the reopened stream says first were open before it dropped, so they seed rather than ring.
+    if (typeof growlReseed === "function") growlReseed();
     // AND PULL THE CARDS NOW, not at the next poll. The stream reopening is the
     // first sign the daemon is back, and without this the board sat on whatever
     // it held when the hub went, for up to a poll interval, while the badge

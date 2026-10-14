@@ -20,6 +20,18 @@ const os = require("os");
 const crypto = require("crypto");
 const { wholeBoard } = require("./board-source.js");
 
+// THE WHOLE SUITE IS FOR AFTER LANDING. Every unit in one run is most of a quarter of an hour, and before handing back
+// a worker runs scripts/test-touched.sh, which runs the units its diff touched. A run of some units (HEADLESS_UNITS,
+// HEADLESS_ONLY, section names as arguments) or a listing is always allowed. The whole run takes FULL_SUITE=1.
+if (process.env.FULL_SUITE !== "1" && !process.env.HEADLESS_UNITS && !process.env.HEADLESS_LIST &&
+    !process.env.HEADLESS_ONLY && !process.argv.slice(2).length) {
+  console.error("test-board-headless.js runs the whole board suite, and refuses to without FULL_SUITE=1.\n" +
+    "before handing back, run scripts/test-touched.sh, which runs what your diff touched.\n" +
+    "a few units: HEADLESS_UNITS=a,b node scripts/test-board-headless.js\n" +
+    "the whole suite, after landing: FULL_SUITE=1 node scripts/test-board-headless.js");
+  process.exit(2);
+}
+
 // One clock for the whole suite, so no section depends on the time of day the
 // run happens to start. A fixture built from Date.now() and checked as HH:MM
 // broke whenever the real time sat near midnight, because the board then
@@ -564,6 +576,28 @@ function walkRoute(req, res, url) {
   return true;
 }
 
+// THE UNIFIED CARD (docs/rnd/unified-card.md): one card per state, and 111 finished ones for the cap.
+const UC_AT = new Date(Date.UTC(2026, 8, 19, 12, 0, 0)).toISOString();
+const ucCard = (id, status, more) => Object.assign({
+  id, status, display_title: id, runner: "claude", rank: 1, worktree: "/tmp/" + id, why: "", idle_seconds: 30, wait_seconds: 0,
+  waiting_since: UC_AT, created_at: UC_AT, last_activity_at: UC_AT, tags: [], supervised: false, offline: false, pinned: false,
+  auto_approve: false, pid: 0
+}, more || {});
+const UC_CARDS = [
+  ucCard("uc-ready", "needs-input", { supervised: true, pid: 11 }),
+  ucCard("uc-agent", "needs-input", { supervised: true, pid: 12, tags: ["origin:agent"] }),
+  ucCard("uc-perm", "needs-permission", { supervised: true, pid: 13 }),
+  ucCard("uc-work", "running", { supervised: true, pid: 14, activity: { what: "thinking" } }),
+  ucCard("uc-quiet", "running", { supervised: true, pid: 15 }),
+  ucCard("uc-gone", "needs-input", { supervised: false }),
+  ucCard("uc-parked", "needs-input", { supervised: false, parked_at: UC_AT }),
+  ucCard("uc-shelved", "shelved"),
+  ucCard("uc-done", "done"),
+  ucCard("uc-dead", "dead"),
+];
+const UC_MANY = Array.from({ length: 111 }, (_, i) => ucCard("ud" + i, "done", {
+  pinned: i < 17, last_activity_at: new Date(Date.UTC(2026, 8, 19, 12, 0, 0) - i * 3600e3).toISOString() }));
+
 function sendJSON(res, obj) {
   const body = JSON.stringify(obj);
   res.writeHead(200, { "Content-Type": "application/json" });
@@ -600,6 +634,8 @@ function mockTasks(reading) {
   // state, where the list agrees the card is attachable and nothing tears it
   // down. Pinned so the row is present either way, the way a real lagging
   // list keeps the row while dropping the live flag.
+  if (tasksMode === "unified") { return UC_CARDS; }
+  if (tasksMode === "unifiedMany") { return UC_MANY; }
   if (tasksMode === "worn") { return wornTasks; }
   if (tasksMode === "keepalive") { return KA_CARDS; }
   if (tasksMode === "stuck") { return stuckCards(); }
@@ -1004,6 +1040,13 @@ const server = http.createServer((req, res) => {
     }
     sendJSON(res, { reports: [{ id: "rp_1", to_dept: "", from_by: "fabric", from_room: "sg4", subject: "f-003 built",
       body: "done and tested", at: "2026-09-30T12:00:00Z", read_at: null, read_by: null }] });
+    return;
+  }
+  // The items a human owns that are blocked or finished. See js/backlog.js.
+  if (url.startsWith("/_hub/items")) {
+    if (!hubMode) { res.writeHead(404); res.end("not a hub"); return; }
+    sendJSON(res, { items: [{ item_id: "it-aa11", room: "sg4", card: "c1", state: "blocked", revision: 2,
+      owner_kind: "human", updated_at: "2026-10-13T12:00:00Z" }] });
     return;
   }
   // The operational audit feed, newest first and filterable by room and kind the
@@ -1906,7 +1949,7 @@ async function chatterTabSection(browser, base) {
     await dp.waitForTimeout(900);
     // The tab starts in the ... menu whatever the width, and the arrange dialog can put it in the bar and back.
     const tab = await dp.$eval('.tab[data-view="chatter"]', t => ({ text: t.textContent, menu: t.classList.contains("umenu") }));
-    if (tab.text !== "chatter" || !tab.menu) fail("the chatter tab is not in the menu by default: " + JSON.stringify(tab));
+    if (tab.text !== "messages between agents" || !tab.menu) fail("the chatter tab is not in the menu by default: " + JSON.stringify(tab));
     await dp.evaluate(() => window.openTabsArrange());
     await dp.waitForSelector("#tabsdlg[open]");
     const sel = '#tabsdlg-list .tabsdlg-row[data-view="chatter"] select';
@@ -2091,7 +2134,7 @@ async function groupColorSection(browser, base) {
     const tn = document.querySelector('#term-list .tgroup[data-ghead="active"] .tgname');
     return {
       stack: hue('.stackgroup[data-morph-key="stack:active"] .gname'),
-      board: hue('.cardgroup.project[data-fold="proj:active"] .gname'),
+      board: hue('.cardgroup.project[data-fold$="|active"] .gname'),
       term: hue('#term-list .tgroup[data-ghead="active"]'),
       nest: hue('#term-list .tnest[data-group="active"]'),
       termColor: tn ? getComputedStyle(tn).color : "missing",
@@ -3678,16 +3721,16 @@ async function foldStillSection(browser, base) {
     await ctx.clock.install();
     const a = await open("a");
     const b = await open("b");
-    await a.waitForSelector('details.cardgroup[data-fold="proj:untagged"]', { state: "attached", timeout: slow(10000) });
+    await a.waitForSelector('details.cardgroup[data-fold$="|untagged"]', { state: "attached", timeout: slow(10000) });
     // Open it by hand, the way a click on its summary does.
-    await a.evaluate(() => { document.querySelector('details.cardgroup[data-fold="proj:untagged"]').open = true; });
+    await a.evaluate(() => { document.querySelector('details.cardgroup[data-fold$="|untagged"]').open = true; });
     await beats(3);
     const reset = p => p.evaluate(() => { window.__writes = []; window.__toggles = 0; });
     await reset(a); await reset(b);
     await beats(+(process.env.FOLD_STILL_SECONDS || 10));
     const got = await Promise.all([a, b].map(p => p.evaluate(() => ({
       writes: window.__writes, toggles: window.__toggles,
-      open: !!(document.querySelector('details.cardgroup[data-fold="proj:untagged"]') || {}).open
+      open: !!(document.querySelector('details.cardgroup[data-fold$="|untagged"]') || {}).open
     }))));
     if (process.env.DEBUG_HEADLESS) console.log("fold still: " + JSON.stringify(got));
     got.forEach((g, i) => {
@@ -3701,13 +3744,13 @@ async function foldStillSection(browser, base) {
     if (!got[0].open) fail("the untagged group, opened by hand in custom mode, did not stay open.");
 
     // And shut again, which is its default, so the entry goes and stays gone.
-    await a.evaluate(() => { document.querySelector('details.cardgroup[data-fold="proj:untagged"]').open = false; });
+    await a.evaluate(() => { document.querySelector('details.cardgroup[data-fold$="|untagged"]').open = false; });
     await beats(3);
     await reset(a); await reset(b);
     await beats(4);
     const shut = await Promise.all([a, b].map(p => p.evaluate(() => ({
       writes: window.__writes.length,
-      open: !!(document.querySelector('details.cardgroup[data-fold="proj:untagged"]') || {}).open
+      open: !!(document.querySelector('details.cardgroup[data-fold$="|untagged"]') || {}).open
     }))));
     if (shut.some(s => s.open)) fail("the untagged group, shut again by hand, came back open: " + JSON.stringify(shut));
     if (shut.some(s => s.writes)) fail("shutting the untagged group left windows writing storage: " + JSON.stringify(shut));
@@ -3715,6 +3758,128 @@ async function foldStillSection(browser, base) {
   } finally {
     LOOSE.display_title = "loose card";
     await ctx.close();
+    tasksMode = was;
+  }
+}
+
+// A GROUP FOLDS IN ITS OWN LANE, and the stack's pinned and rest halves fold too.
+//
+// The board's project groups were folded by name across the whole board, so shutting `alpha` in one column shut it in
+// every column. Now it is per lane and group. This drives both halves of the change: one lane's group folds alone,
+// collapse all and expand all reach every lane, an old board-wide key still loads (spread over every lane), the stack's
+// pinned and rest sections collapse and survive a reload, and each tab keeps its own state.
+const LANE_CARDS = () => {
+  const c = (id, status, extra) => Object.assign({}, T1, { id, status, display_title: "lane " + id,
+    tags: ["alpha"], worktree: "/tmp/lane/" + id, supervised: true }, extra || {});
+  return [c("ln-run1", "running"), c("ln-run2", "running"), c("ln-rdy1", "needs-input"), c("ln-rdy2", "needs-input"),
+    c("ln-pin1", "needs-input", { pinned: true, rank: 1 }), c("ln-pin2", "running", { pinned: true, rank: 2 })];
+};
+// LANE_SHOTS=dir saves the board after one lane's group is folded, and the stack after its pinned half is, for the
+// before and after pictures in docs/changes.
+async function laneShotAt(p, which) {
+  if (!process.env.LANE_SHOTS) return;
+  await p.screenshot({ path: process.env.LANE_SHOTS + "/" + which + ".png" });
+}
+async function laneFoldSection(browser, base) {
+  const laneShot = laneShotAt;
+  const was = tasksMode;
+  tasksMode = "worn";
+  wornTasks = LANE_CARDS();
+  const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+  const errors = [];
+  await ctx.addInitScript(() => {
+    if (!sessionStorage.getItem("primed")) {
+      sessionStorage.setItem("primed", "1");
+      localStorage.setItem("atrium.skipconfirm", JSON.stringify({ "width-floor": true }));
+      localStorage.setItem("atrium.grouping", JSON.stringify({ on: true, mode: "custom", groups: ["alpha"] }));
+      localStorage.setItem("atrium.stack.show", "[]");
+    }
+  });
+  const folds = p => p.evaluate(() => JSON.parse(localStorage.getItem("atrium.folded") || "[]"));
+  const grp = (p, lane) => p.evaluate(lane => {
+    const el = document.querySelector('#board details.cardgroup[data-fold="proj:' + lane + '|alpha"]');
+    return el ? el.open : "missing";
+  }, lane);
+  const pin = (p, lane) => p.evaluate(lane => {
+    const el = document.querySelector('#board details.cardgroup[data-fold="pin:' + lane + '"]');
+    return el ? el.open : "missing";
+  }, lane);
+  const sect = (p, kind) => p.evaluate(kind => {
+    const el = [...document.querySelectorAll('#stack-list details[data-fold^="sect:' + kind + ':"]')][0];
+    return el ? el.open : "missing";
+  }, kind);
+  const toBoard = async p => { await p.click('.tab[data-view="board"]'); await p.waitForSelector("#board details.cardgroup", { timeout: slow(10000) }); };
+  const toStack = async p => { await p.click('.tab[data-view="stack"]'); await p.waitForSelector("#stack-list .stackrow", { state: "attached", timeout: slow(10000) }); };
+  try {
+    const p = await ctx.newPage();
+    p.on("pageerror", e => errors.push(String(e)));
+    await p.goto(base, { waitUntil: "domcontentloaded" });
+    await toBoard(p);
+    if (await grp(p, "working") !== true || await grp(p, "needs-you") !== true) {
+      fail("laneFold: alpha did not start open in both lanes: " + JSON.stringify([await grp(p, "working"), await grp(p, "needs-you")]));
+    }
+    // One lane's group folds alone.
+    await p.evaluate(() => { document.querySelector('#board details.cardgroup[data-fold="proj:working|alpha"] > summary').click(); });
+    await p.waitForTimeout(400);
+    await laneShot(p, "board");
+    if (await grp(p, "working") !== false) fail("laneFold: clicking the running lane's alpha did not fold it.");
+    if (await grp(p, "needs-you") !== true) fail("laneFold: folding alpha in running folded it in the ready lane too.");
+    if (!(await folds(p)).includes("proj:working|alpha")) fail("laneFold: the fold was not stored per lane: " + JSON.stringify(await folds(p)));
+    // A pin is a star and a sort key now, not a group (docs/rnd/unified-card-decisions.md).
+    if (await pin(p, "working") !== "missing" || await pin(p, "needs-you") !== "missing") fail("laneFold: the board still draws a pinned group.");
+    // Collapse all reaches every lane, expand all undoes it.
+    await p.click("#board-collapse-all");
+    await p.waitForTimeout(400);
+    const shut = await p.evaluate(() => [...document.querySelectorAll("#board details[data-fold]")].filter(d => d.open).map(d => d.dataset.fold));
+    if (shut.length) fail("laneFold: collapse all left groups open: " + shut.join(", "));
+    await p.reload({ waitUntil: "domcontentloaded" });
+    await toBoard(p);
+    const still = await p.evaluate(() => [...document.querySelectorAll("#board details[data-fold]")].filter(d => d.open).length);
+    if (still) fail("laneFold: collapse all did not survive a reload (" + still + " open).");
+    await p.click("#board-expand-all");
+    await p.waitForTimeout(400);
+    const closed = await p.evaluate(() => [...document.querySelectorAll("#board details[data-fold]")].filter(d => !d.open).map(d => d.dataset.fold));
+    if (closed.length) fail("laneFold: expand all left groups shut: " + closed.join(", "));
+
+    // THE STACK: pinned and the rest each fold, persist, and are separate from the board's state.
+    await toStack(p);
+    if (await sect(p, "pinned") !== true || await sect(p, "rest") !== true) {
+      fail("laneFold: the stack's pinned and rest sections did not start open: " + JSON.stringify([await sect(p, "pinned"), await sect(p, "rest")]));
+    }
+    await p.evaluate(() => { document.querySelector('#stack-list details[data-fold^="sect:pinned:"] > summary').click(); });
+    await p.waitForTimeout(400);
+    await laneShot(p, "stack");
+    if (await sect(p, "pinned") !== false || await sect(p, "rest") !== true) fail("laneFold: folding the stack's pinned section did not fold it alone.");
+    await p.evaluate(() => { document.querySelector('#stack-list details[data-fold^="sect:rest:"] > summary').click(); });
+    await p.waitForTimeout(400);
+    if (await sect(p, "rest") !== false) fail("laneFold: the stack's rest section did not fold.");
+    await p.reload({ waitUntil: "domcontentloaded" });
+    await toStack(p);
+    if (await sect(p, "pinned") !== false || await sect(p, "rest") !== false) {
+      fail("laneFold: the stack's folds did not survive a reload: " + JSON.stringify([await sect(p, "pinned"), await sect(p, "rest")]));
+    }
+    // Each tab keeps its own: the stack's folds did not touch the board, which was left expanded.
+    await toBoard(p);
+    if (await grp(p, "working") !== true) fail("laneFold: the stack's folds leaked into the board.");
+    // An old board-wide key still loads, and is spread over the lanes.
+    // Written from a page that runs none of the board, which would otherwise migrate the old keys itself before the reload.
+    await p.goto(base + "/v1/health", { waitUntil: "domcontentloaded" });
+    await p.evaluate(() => localStorage.setItem("atrium.folded", JSON.stringify(["proj:alpha", "proj:pinned", "proj:stack:alpha"])));
+    await p.goto(base, { waitUntil: "domcontentloaded" });
+    await toBoard(p);
+    if (await grp(p, "working") !== false || await grp(p, "needs-you") !== false) {
+      fail("laneFold: an old board-wide fold did not carry over to the lanes: " + JSON.stringify([await grp(p, "working"), await grp(p, "needs-you"), (await folds(p)).filter(k => /alpha/.test(k) && !/proj:(backlog|needs-permission|needs-input|running|finished|done|dead|shelved)\|/.test(k))]));
+    }
+    const migrated = await folds(p);
+    if (migrated.includes("proj:alpha") || !migrated.includes("proj:stack:alpha")) fail("laneFold: the old key was not migrated cleanly: " + JSON.stringify(migrated));
+    // ...and a lane can be opened alone afterwards.
+    await p.evaluate(() => { document.querySelector('#board details.cardgroup[data-fold="proj:working|alpha"] > summary').click(); });
+    await p.waitForTimeout(400);
+    if (await grp(p, "working") !== true || await grp(p, "needs-you") !== false) fail("laneFold: a migrated fold could not be opened lane by lane.");
+    if (errors.length) fail("laneFold: the page threw: " + errors.join(" | "));
+  } finally {
+    await ctx.close();
+    wornTasks = [];
     tasksMode = was;
   }
 }
@@ -3748,7 +3913,7 @@ async function untaggedOrder(p, view) {
   return p.evaluate(view => {
     const sel = {
       stack: 'details.stackgroup[data-fold="proj:stack:untagged"] .stackrow[data-id]',
-      board: 'details.cardgroup[data-fold="proj:untagged"] .card[data-id]',
+      board: 'details.cardgroup[data-fold$="|untagged"] .card[data-id]',
       terms: '#term-list [data-ungroup="1"] .card.tab[data-id]'
     }[view];
     return [...document.querySelectorAll(sel)].map(e => e.dataset.id).join(",");
@@ -7811,6 +7976,49 @@ async function heldLineSection(browser, base) {
       await ctx.close();
     }
     if (errors.length) fail("heldLine threw: " + errors.join(" | "));
+
+    // u-013: hover the chip, "Let it through" copies the line and asks the room to do the four steps. The room is a
+    // fake here: /typing says what it reads and /let-through is recorded, so what the BOARD does is what is checked.
+    // The room's own four steps are checked against a fake terminal in letthrough_integration_test.go.
+    for (const exact of [true, false]) {
+      const tag = "letThrough" + (exact ? "" : " (unreadable line)") + ": ";
+      const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+      await ctx.addInitScript(() => localStorage.setItem("atrium.skipconfirm", JSON.stringify({ "width-floor": true })));
+      await ctx.addInitScript(fakeSock);
+      await ctx.addInitScript(() => {
+        window.__clip = [];
+        Object.defineProperty(navigator, "clipboard", { value: { writeText: async (t) => { window.__clip.push(t); } }, configurable: true });
+      });
+      const p = await open(ctx);
+      const calls = [];
+      await p.route("**/v1/tasks/land-live/typing", r => r.fulfill({ contentType: "application/json",
+        body: JSON.stringify({ line: "fix the\nthing", count: 13, open: false, exact }) }));
+      await p.route("**/v1/tasks/land-live/let-through", r => {
+        calls.push(JSON.parse(r.request().postData() || "{}"));
+        r.fulfill({ contentType: "application/json", body: JSON.stringify({ delivered: 2, restored: true }) });
+      });
+      await setAct(p, { held_peer: true, held_for: "line", held_count: 2 });
+      const menu = () => p.evaluate(() => getComputedStyle(document.querySelector("#t-heldline .hl-menu")).display);
+      if (await menu() !== "none") fail(tag + "the menu is open before the chip is hovered");
+      await p.hover("#t-heldline .hl-text");
+      if (await menu() === "none") fail(tag + "hovering the chip did not open the menu");
+      const item = await p.textContent("#t-heldline .hl-item");
+      if (item.trim() !== "Let it through") fail(tag + "menu item reads " + JSON.stringify(item));
+      await p.click("#t-heldline .hl-item");
+      await p.waitForFunction(() => window.__clip.length > 0, null, { timeout: slow(5000) }).catch(() => {});
+      const clip = await p.evaluate(() => window.__clip);
+      if (clip.length !== 1 || clip[0] !== "fix the\nthing") fail(tag + "the line was not copied: " + JSON.stringify(clip));
+      if (exact) {
+        for (let i = 0; i < 50 && !calls.length; i++) await p.waitForTimeout(100);
+        if (calls.length !== 1 || calls[0].line !== "fix the\nthing") fail(tag + "the room was not asked: " + JSON.stringify(calls));
+      } else {
+        await p.waitForFunction(() => /your text is on the clipboard/.test(document.getElementById("toasts").textContent),
+          null, { timeout: slow(5000) }).catch(() => fail(tag + "no clipboard toast"));
+        if (calls.length) fail(tag + "asked the room to retype a line atrium cannot read");
+      }
+      await ctx.close();
+    }
+    if (errors.length) fail("letThrough threw: " + errors.join(" | "));
   } finally {
     tasksMode = was;
   }
@@ -8351,11 +8559,39 @@ async function boardUsageSection(browser, base) {
       name: r.querySelector(".name").textContent, n: r.querySelector(".n").textContent, never: r.classList.contains("never") })));
     const at = (name) => rows.findIndex(r => r.name === name);
     const used = at("view:" + hot), more = at("id:tabmore"), never = at("view:docs");
-    if (used < 0 || rows[used].n !== "2" || (used > 1)) fail("boardUsage: the most clicked tab is not first with 2: " + JSON.stringify(rows.slice(0, 4)));
+    if (used < 0 || rows[used].n !== "2" || (used > 2)) fail("boardUsage: the most clicked tab is not first with 2: " + JSON.stringify(rows.slice(0, 4)));
     if (more < 0 || rows[more].n !== "3") fail("boardUsage: the ... button is not listed with 3 clicks: " + JSON.stringify(rows.slice(0, 4)));
     if (never < 0 || !rows[never].never || rows[never].n !== "never") fail("boardUsage: an untouched tab is not listed as never: " + JSON.stringify(rows.slice(-6)));
     if (never < Math.max(used, more)) fail("boardUsage: a never control sits above a used one");
     if (rows.some(r => r.never) && rows.findIndex(r => r.never) < rows.filter(r => !r.never).length) fail("boardUsage: the never rows are not all at the bottom");
+    // The snapshot: closing and opening again draws the rows in the same tick, before any read has come back.
+    const instant = await p.evaluate(() => {
+      document.getElementById("usagedlg").close();
+      window.openControlsUsed();
+      return document.querySelectorAll("#usagedlg-list .usagedlg-row").length;
+    });
+    if (instant < 5) fail("boardUsage: the view did not open from a snapshot: " + instant + " rows at once");
+    await p.waitForTimeout(300);
+    // Sorting: count most first by default, then the name header sorts A to Z and flips, and the count header is back.
+    const names = () => p.evaluate(() => [...document.querySelectorAll("#usagedlg-list .usagedlg-row:not(.never) .name")].map(e => e.textContent));
+    const counts = () => p.evaluate(() => [...document.querySelectorAll("#usagedlg-list .usagedlg-row:not(.never) .n")].map(e => Number(e.textContent)));
+    const desc = (a) => a.every((v, i) => !i || a[i - 1] >= v);
+    if (!desc(await counts())) fail("boardUsage: the default is not most used first: " + JSON.stringify(await counts()));
+    await p.click("#usagedlg-h-name");
+    const az = await names();
+    if (az.join("|") !== [...az].sort().join("|")) fail("boardUsage: the name header does not sort A to Z: " + JSON.stringify(az));
+    await p.click("#usagedlg-h-name");
+    const za = await names();
+    if (za.join("|") !== [...az].reverse().join("|")) fail("boardUsage: a second click on the name header does not flip it: " + JSON.stringify(za));
+    await p.click("#usagedlg-h-n");
+    if (!desc(await counts())) fail("boardUsage: the count header is not most used first: " + JSON.stringify(await counts()));
+    await p.click("#usagedlg-h-n");
+    const asc = await counts();
+    if (!asc.every((v, i) => !i || asc[i - 1] <= v)) fail("boardUsage: a second click on the count header is not fewest first: " + JSON.stringify(asc));
+    if (await p.evaluate(() => [...document.querySelectorAll("#usagedlg-list .usagedlg-row")].findIndex(r => r.classList.contains("never")) < document.querySelectorAll("#usagedlg-list .usagedlg-row:not(.never)").length)) fail("boardUsage: a sort put a never row above a used one");
+    await p.click("#usagedlg-h-n");
+    await p.evaluate(() => window.boardUsageFlush());
+    if ([...boardUsageSeen.keys()].some(k => /usagedlg/.test(k))) fail("boardUsage: the sort headers were counted as controls: " + [...boardUsageSeen.keys()].filter(k => /usagedlg/.test(k)));
     await p.screenshot({ path: path.join(imgs, "board-usage-view.png"), clip: { x: 0, y: 0, width: 940, height: 700 } });
     await ctx.close();
     if (errors.length) fail("boardUsage: the page threw: " + errors.join(" | "));
@@ -10572,11 +10808,13 @@ async function cacheChipSection(browser, base) {
       null, { timeout: slow(8000) }).catch(() => fail("cacheChip flip: the chip did not flip to cold by itself"));
     if (reqs.length !== n0) fail("cacheChip flip: the flip made " + (reqs.length - n0) + " requests: " + reqs.slice(n0).join(" "));
     // A throttled tab is put right when it becomes visible again.
-    await p.evaluate(() => {
-      const t = KA_SEEN.get("cc-flip");
-      t.keepalive = Object.assign({}, t.keepalive, { warm_until: new Date(Date.now() + 90 * 60000).toISOString() });
+    // The cold card is no longer remembered, so the card is handed back as it would be by a list.
+    const back = JSON.parse(JSON.stringify(LAND["cc-flip"]));
+    back.keepalive.warm_until = new Date(Date.now() + 90 * 60000).toISOString();
+    await p.evaluate(t => {
+      KA_SEEN.set(t.id, t);
       document.dispatchEvent(new Event("visibilitychange"));
-    });
+    }, back);
     if (!/^\u2744 warm/.test(await p.evaluate(() => document.querySelector('#stack-list [data-cid="cc-flip"] .cfull').textContent))) {
       fail("cacheChip: visibilitychange did not repaint the chip");
     }
@@ -10698,96 +10936,6 @@ async function cacheChipSection(browser, base) {
     try { await ctx.close(); } catch (e) {}
   }
   if (errors.length) fail("cacheChip: the page threw: " + errors.join(" | "));
-}
-
-async function cacheLineSection(browser, base) {
-  const was = tasksMode;
-  tasksMode = "land";
-  const errors = [];
-  const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
-  const wasSettings = kaSettings;
-  kaSettings = { cache_keepalive_default: true, cache_keepalive_week_refreshes: 83 };
-  try {
-    const p = await ctx.newPage();
-    p.on("pageerror", e => errors.push(String(e)));
-    const soon = m => new Date(Date.now() + m * 60000).toISOString();
-    kaFix("cl-warm1", { why: "not idle", warm_until: soon(20) });
-    kaFix("cl-warm2", { why: "not due", warm_until: soon(20) });
-    kaFix("cl-kept1", { refreshes: 2, why: "not due", warm_until: soon(30) });
-    kaFix("cl-cold1", { why: "parked", warm_until: soon(-30) });
-    kaFix("cl-cold2", { state: "stopped:miss", warm_until: soon(-5) });
-    kaFix("cl-cold3", { why: "no session id yet" });
-    kaFix("cl-off", { state: "off", warm_until: soon(10) });
-    kaFix("cl-arch", { why: "not idle", warm_until: soon(20) }, { archived_at: "2026-09-28T00:00:00Z" });
-    landCard("cl-shell", { supervised: true, created_at: "2026-09-19T12:00:00Z", runner: "shell" });
-    const ids = ["cl-warm1", "cl-warm2", "cl-kept1", "cl-cold1", "cl-cold2", "cl-cold3", "cl-off", "cl-arch", "cl-shell"];
-    landList = ids.map(i => LAND[i]);
-    landPerms = [];
-    await p.goto(base, { waitUntil: "domcontentloaded" });
-    await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
-    await p.evaluate(() => setStackShow(new Set()));
-    const read = id => p.evaluate(i => { const e = document.getElementById(i); return e && !e.hidden ? e.innerText.trim() : null; }, id);
-    const line = "cache: 3 warm \u00b7 1 kept warm \u00b7 3 cold \u00b7 keep-alive 83 refreshes this week";
-    await p.waitForFunction(l => { const e = document.getElementById("cache-line-stack"); return e && e.innerText.trim() === l; }, line,
-      { timeout: slow(10000) }).catch(async () => fail("cacheLine stack: reads " + JSON.stringify(await read("cache-line-stack")) + ", wanted " + line));
-    if (/tokens today/.test(await read("cache-line-stack") || "")) fail("cacheLine: a spend today was drawn with no field for it");
-    // The same state function: the line's counts are the chips' own buckets.
-    const agree = await p.evaluate(() => {
-      const c = { warm: 0, kept: 0, cold: 0 };
-      document.querySelectorAll("#stack-list .stackrow .chip.cache").forEach(e => c[e.dataset.bucket]++);
-      return c;
-    });
-    if (agree.warm !== 3 || agree.kept !== 1 || agree.cold !== 3) fail("cacheLine: the chips' buckets disagree with the line " + JSON.stringify(agree));
-    // A narrowed list counts only what it shows.
-    await p.evaluate(() => { const q = document.getElementById("stack-q"); q.value = "cl warm"; q.dispatchEvent(new Event("input")); });
-    await p.waitForFunction(() => /^cache: 2 warm \u00b7 0 kept warm \u00b7 0 cold/.test(document.getElementById("cache-line-stack").innerText.trim()),
-      null, { timeout: slow(5000) }).catch(async () => fail("cacheLine: a search did not narrow it: " + await read("cache-line-stack")));
-    await p.evaluate(() => { const q = document.getElementById("stack-q"); q.value = ""; q.dispatchEvent(new Event("input")); });
-
-    // A keepalive event moves a card: cl-warm1 goes cold. The line follows through the stream and the refetch.
-    LAND["cl-warm1"].keepalive = Object.assign({}, LAND["cl-warm1"].keepalive, { warm_until: soon(-2), why: "parked" });
-    openStreams.forEach(r => { try { r.write("event: keepalive\ndata: " + JSON.stringify({ task_id: "cl-warm1", state: "on" }) + "\n\n"); } catch (e) {} });
-    await p.waitForFunction(l => document.getElementById("cache-line-stack").innerText.trim() === l,
-      "cache: 2 warm \u00b7 1 kept warm \u00b7 4 cold \u00b7 keep-alive 83 refreshes this week",
-      { timeout: slow(10000) }).catch(async () => fail("cacheLine: an event did not move the line: " + await read("cache-line-stack")));
-    // A refresh outcome asks for the week's figure again, and the spend today when the daemon sends one.
-    kaSettings.cache_keepalive_week_refreshes = 84;
-    kaSettings.cache_keepalive_today_tokens = 365000;
-    openStreams.forEach(r => { try { r.write("event: keepalive\ndata: " + JSON.stringify({ task_id: "cl-warm1", outcome: "warmed" }) + "\n\n"); } catch (e) {} });
-    await p.waitForFunction(() => /84 refreshes this week \u00b7 365k tokens today$/.test(document.getElementById("cache-line-stack").innerText.trim()),
-      null, { timeout: slow(10000) }).catch(async () => fail("cacheLine: the week and today figures did not follow the settings: " + await read("cache-line-stack")));
-
-    // A card running out of cache moves the counts with no request.
-    kaFix("cl-tick", { why: "not idle", warm_until: new Date(Date.now() + 5000).toISOString() });
-    landList = [LAND["cl-tick"]];
-    await p.evaluate(() => tasksSoon());
-    await p.waitForFunction(() => /^cache: 1 warm/.test(document.getElementById("cache-line-stack").innerText.trim()), null, { timeout: slow(10000) });
-    // let tasksSoon's own read finish first, on a loaded machine it lands after the line already shows
-    await p.waitForTimeout(1200);
-    const reqs = [];
-    p.on("request", r => reqs.push(r.url()));
-    await p.waitForFunction(() => /^cache: 0 warm \u00b7 0 kept warm \u00b7 1 cold/.test(document.getElementById("cache-line-stack").innerText.trim()),
-      null, { timeout: slow(8000) }).catch(() => fail("cacheLine: the line did not tick to cold by itself"));
-    if (reqs.length) fail("cacheLine: the tick made requests " + reqs.join(" "));
-
-    // The gear's terminal list section carries the same line, and the list itself has none.
-    landList = ids.map(i => LAND[i]);
-    await p.evaluate(() => switchView("terms"));
-    await p.waitForFunction(() => { const e = document.getElementById("cache-line-gear"); return e && !e.hidden && /^cache: \d+ warm/.test(e.textContent.trim()); },
-      null, { timeout: slow(10000) }).catch(async () => fail("cacheLine gear: " + await read("cache-line-gear")));
-    if (await p.evaluate(() => !!document.querySelector("#term-list .cacheline"))) fail("cacheLine: the terminal list still carries the cache line");
-    // and it follows an event with no request, like the stack's
-    kaFix("cl-tick", { why: "not idle", warm_until: new Date(Date.now() + 60000).toISOString() });
-    landList = [LAND["cl-tick"]];
-    await p.evaluate(() => tasksSoon());
-    await p.waitForFunction(() => /^cache: 1 warm/.test(document.getElementById("cache-line-gear").textContent.trim()), null, { timeout: slow(10000) })
-      .catch(async () => fail("cacheLine gear did not follow the list: " + await read("cache-line-gear")));
-  } finally {
-    tasksMode = was;
-    kaSettings = wasSettings;
-    await ctx.close();
-  }
-  if (errors.length) fail("cacheLine: the page threw: " + errors.join(" | "));
 }
 
 // ── the board skin follows the room-picker scope ────────────────────────
@@ -12664,6 +12812,33 @@ async function peekOneHoverSection(browser, base) {
     await p.evaluate(() => closePeek());
     await p.setViewportSize({ width: W, height: H });
 
+    // A long question shows three lines and "click to expand". Opening it grows the popup, which stays on screen,
+    // and nothing in the popup scrolls.
+    await p.evaluate(() => {
+      const t = peekCard("sg4-control~oh2");
+      t.seen = Object.assign({}, t.seen, { open_questions: ["Where should the Config builder link go in the ziti-doc sidebar? ".repeat(8).trim()] });
+    });
+    await p.evaluate(() => openPeek("sg4-control~oh2", document.querySelector('#term-list .card.tab[data-id="sg4-control~oh2"]'), "hover"));
+    await new Promise(r => setTimeout(r, 600));
+    const lq = () => p.evaluate(() => {
+      const pop = document.querySelector(".peek.on"), x = pop.querySelector(".qa-qx"), e = pop.querySelector(".qa-exp"), r = pop.getBoundingClientRect();
+      const lh = parseFloat(getComputedStyle(x).lineHeight) || 18;
+      const scrolling = [...pop.querySelectorAll("*")].filter(n => { const o = getComputedStyle(n).overflowY; return (o === "auto" || o === "scroll") && n.scrollHeight > n.clientHeight + 1; }).length;
+      return { lines: Math.round(x.getBoundingClientRect().height / lh), exp: e && !e.hidden ? e.textContent : "", scrolling, top: r.top, bottom: r.bottom, vh: innerHeight, h: r.height };
+    });
+    if (shots) await p.screenshot({ path: shots + "/" + (process.env.ONEHOVER_NAME || "peek") + "-longq.png" });
+    const lq1 = await lq();
+    if (lq1.lines > 3 || lq1.exp !== "click to expand" || lq1.scrolling) fail("onehover: a long question is not cut to 3 lines with a way to expand: " + JSON.stringify(lq1));
+    await p.click(".peek.on .qa-exp");
+    await new Promise(r => setTimeout(r, 300));
+    const lq2 = await lq();
+    if (lq2.lines <= 3 || lq2.exp !== "show less" || lq2.scrolling || lq2.h <= lq1.h) fail("onehover: expanding a question did not grow the popup without scrolling: " + JSON.stringify(lq2));
+    if (lq2.top < 0 || lq2.bottom > lq2.vh) fail("onehover: the expanded popup left the viewport: " + JSON.stringify(lq2));
+    if (shots) await p.screenshot({ path: shots + "/" + (process.env.ONEHOVER_NAME || "peek") + "-longq-open.png" });
+    await p.evaluate(() => closePeek());
+    await p.mouse.move(W / 2, 3);
+    await new Promise(r => setTimeout(r, 400));
+
     const [firstSel, first] = hovered[0] || ["", ""];
     for (const [sel, text] of hovered) {
       if (text !== first) fail("onehover: the details over " + sel + " differ from those over " + firstSel + ":\n  " + text + "\n  " + first);
@@ -12697,6 +12872,9 @@ async function peekDrawersSection(browser, base) {
   const errors = [];
   p.on("pageerror", e => errors.push(String(e)));
   await ctx.route("**/v1/tasks/*/usage*", route => route.fulfill({ json: CTX_USAGE["cx-big"] }));
+  const says = [0, 1, 2].map(i => ({ id: "say" + (9 - i), from_task: "sg4-control~oh2", from: "oh2", to_task: "other-2", to: "other", to_input: "other",
+    sent_at: new Date(Date.now() - i * 60000).toISOString(), state: "delivered", channel: "terminal", preview: "say " + i, chars: 5, text: "say " + i }));
+  await ctx.route("**/v1/tasks/*/says*", route => route.fulfill({ json: { says, more: false } }));
   await ctx.addInitScript(() => { try { localStorage.setItem("atrium.termlist.w", "640"); } catch (e) {} });
   const was = tasksMode;
   tasksMode = "onehover";
@@ -12730,56 +12908,68 @@ async function peekDrawersSection(browser, base) {
     if (!d.need || !d.recap || !d.ctx) fail("peekDrawers: want need, recap and ctx drawers, got " + Object.keys(d).join(","));
     else {
       if (!d.need.open || !d.need.bodyShown || d.need.aria !== "true") fail("peekDrawers: NEEDS YOU is not open by default: " + JSON.stringify(d.need));
-      if (d.recap.open || d.recap.bodyShown || d.recap.aria !== "false") fail("peekDrawers: the recap is not shut by default: " + JSON.stringify(d.recap));
-      if (d.ctx.open || d.ctx.bodyShown) fail("peekDrawers: the context is not shut by default: " + JSON.stringify(d.ctx));
-      if (!d.recap.sumShown || !/^Moved the peek's size rules/.test(d.recap.sum)) fail("peekDrawers: the shut recap does not show its first line: " + JSON.stringify(d.recap));
-      if (!d.ctx.sumShown || d.ctx.sum !== "212k of 200k") fail("peekDrawers: the shut context summary is " + JSON.stringify(d.ctx.sum) + ", want '212k of 200k'");
+      if (!d.recap.open || !d.recap.bodyShown || d.recap.sumShown) fail("peekDrawers: the recap is not open on the first open: " + JSON.stringify(d.recap));
+      if (!d.ctx.open || !d.ctx.bodyShown || d.ctx.sumShown) fail("peekDrawers: the context is not open on the first open: " + JSON.stringify(d.ctx));
+      if (!d.chatter || d.chatter.open || d.chatter.bodyShown || d.chatter.aria !== "false") fail("peekDrawers: chatter is not folded on the first open: " + JSON.stringify(d.chatter));
+      if (d.chatter && d.chatter.sum !== "3") fail("peekDrawers: the folded chatter summary is " + JSON.stringify(d.chatter.sum) + ", want '3'");
+      if (!(await p.locator(".peek.on .peek-ctx .peek-bar").count())) fail("peekDrawers: the open context shows no bar");
     }
     const notDrawers = await p.evaluate(() => ({ head: !!document.querySelector(".peek.on .peek-head").closest(".peek-drawer"),
       acts: !!document.querySelector(".peek.on .peek-acts").closest(".peek-drawer") }));
     if (notDrawers.head || notDrawers.acts) fail("peekDrawers: the header or the actions row is a drawer: " + JSON.stringify(notDrawers));
 
-    // Click opens the recap, and its "more" now measures.
-    await p.click(head("recap"));
-    d = await drawers();
-    if (!d.recap.open || !d.recap.bodyShown || d.recap.sumShown) fail("peekDrawers: a click did not open the recap: " + JSON.stringify(d.recap));
+    // Recap and context cannot be folded: a click, Enter and Space leave them open, and nothing is stored for them.
     if (!(await p.locator(".peek.on .peek-more:not([hidden])").count())) fail("peekDrawers: the open long recap has no 'more'");
-    // Enter and Space on a focused header toggle it.
-    await p.focus(head("ctx"));
+    for (const k of ["recap", "ctx"]) {
+      await p.click(head(k));
+      await p.focus(head(k)).catch(() => {});
+      await p.keyboard.press("Enter");
+      await p.keyboard.press("Space");
+    }
+    d = await drawers();
+    if (!d.recap.open || !d.recap.bodyShown || !d.ctx.open || !d.ctx.bodyShown) fail("peekDrawers: a click or key folded the recap or the context: " + JSON.stringify(d));
+    // Chatter opens on a click and shuts on another; NEEDS YOU shuts on a click.
+    await p.click(head("chatter"));
+    d = await drawers();
+    if (!d.chatter.open || !d.chatter.bodyShown) fail("peekDrawers: a click did not open chatter: " + JSON.stringify(d.chatter));
+    await p.focus(head("chatter"));
     await p.keyboard.press("Enter");
     d = await drawers();
-    if (!d.ctx.open || !d.ctx.bodyShown) fail("peekDrawers: Enter did not open the context: " + JSON.stringify(d.ctx));
-    await p.keyboard.press("Space");
-    d = await drawers();
-    if (d.ctx.open) fail("peekDrawers: Space did not shut the context: " + JSON.stringify(d.ctx));
-    await p.keyboard.press("Enter");
+    if (d.chatter.open) fail("peekDrawers: Enter did not shut chatter: " + JSON.stringify(d.chatter));
+    await p.click(head("chatter"));
     await p.click(head("need"));
     d = await drawers();
     if (d.need.open) fail("peekDrawers: a click did not shut NEEDS YOU: " + JSON.stringify(d.need));
 
-    // The state is per section: the other card shows the same drawers as left (need shut, recap and ctx open).
+    // The state is kept for NEEDS YOU only: the other card, and the first card again, open with chatter folded.
     await show("sg4-control~oh1");
     d = await drawers();
     if (d.need && d.need.open) fail("peekDrawers: NEEDS YOU is open on the second card after it was shut: " + JSON.stringify(d.need));
-    if (!d.ctx || !d.ctx.open) fail("peekDrawers: the context was open and is shut on the second card: " + JSON.stringify(d.ctx));
+    if (!d.ctx || !d.ctx.open) fail("peekDrawers: the context is shut on the second card: " + JSON.stringify(d.ctx));
+    if (d.chatter && d.chatter.open) fail("peekDrawers: chatter was open on the second card after a click on another: " + JSON.stringify(d.chatter));
     const saved = await p.evaluate(() => JSON.parse(localStorage.getItem("atrium.peekDrawers") || "{}"));
-    if (saved.need !== false || saved.recap !== true || saved.ctx !== true) fail("peekDrawers: the kept state is " + JSON.stringify(saved));
+    if (JSON.stringify(saved) !== '{"need":false}') fail("peekDrawers: the kept state is " + JSON.stringify(saved) + ", want only need");
     await show("sg4-control~oh2");
     d = await drawers();
-    if (d.need.open || !d.recap.open || !d.ctx.open) fail("peekDrawers: back on the first card the drawers moved: " + JSON.stringify(d));
+    if (d.need.open || !d.recap.open || !d.ctx.open || d.chatter.open) fail("peekDrawers: back on the first card the drawers moved: " + JSON.stringify(d));
+    // Old stored state cannot fold the recap or open chatter.
+    await p.evaluate(() => localStorage.setItem("atrium.peekDrawers", JSON.stringify({ recap: false, ctx: false, chatter: true })));
+    await show("sg4-control~oh2");
+    d = await drawers();
+    if (!d.recap.open || !d.ctx.open || d.chatter.open) fail("peekDrawers: old stored state moved the drawers: " + JSON.stringify(d));
 
     // A drag that selects text in a header toggles nothing, and a click after it does.
     await p.evaluate(() => localStorage.removeItem("atrium.peekDrawers"));
     await show("sg4-control~oh2");
-    const sb = await p.locator(head("recap") + " .peek-dsum").boundingBox();
-    await p.mouse.move(sb.x + 4, sb.y + sb.height / 2);
+    const sb = await p.locator(head("chatter") + " .peek-dsum").boundingBox();
+    await p.mouse.move(sb.x + 1, sb.y + sb.height / 2);
     await p.mouse.down();
     await p.mouse.move(sb.x + Math.min(sb.width - 4, 120), sb.y + sb.height / 2, { steps: 6 });
     await p.mouse.up();
     const sel = await p.evaluate(() => String(window.getSelection()));
-    if (!sel.trim()) fail("peekDrawers: the drag selected nothing, so it proves nothing");
+    if (!sel.trim()) fail("peekDrawers: the drag selected nothing, so it proves nothing " + JSON.stringify(sb));
     d = await drawers();
-    if (d.recap.open) fail("peekDrawers: a drag-select in the recap's header toggled it");
+    if (d.chatter.open) fail("peekDrawers: a drag-select in chatter's header toggled it");
     // Text inside an open drawer: selecting it leaves it open.
     await p.click(head("need"));
     await p.click(head("need"));
@@ -16694,6 +16884,220 @@ async function shiftMenuSection(browser, base) {
   if (errors.length) fail("shiftMenu: the page threw: " + errors.join(" | "));
 }
 
+// ── group menus (u-010, u-012) ────────────────────────────────────────────
+// "add to group" ends in "create group...", which asks for a name and makes the group and files the card in one step; Esc
+// makes nothing; a name that is already a group only files the card. Both group submenus list names A to Z, and a group made
+// in the last ten minutes wears "new" and stops wearing it after. `GROUP_MENUS_SHOTS=<dir> GROUP_MENUS_TAG=before|after`.
+async function groupMenusSection(browser, base) {
+  const was = tasksMode;
+  tasksMode = "land";
+  landCard("land-gm-a", { supervised: true, status: "running", tags: [], created_at: "2026-09-19T12:00:00Z" });
+  landCard("land-gm-b", { supervised: true, status: "running", tags: [], created_at: "2026-09-19T12:01:00Z" });
+  landList = [LAND["land-gm-a"], LAND["land-gm-b"]];
+  landPerms = [];
+  const errors = [];
+  const shots = process.env.GROUP_MENUS_SHOTS, shotTag = process.env.GROUP_MENUS_TAG || "after";
+  try {
+    const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+    await ctx.addInitScript(() => {
+      if (localStorage.getItem("gm-seeded")) return;
+      localStorage.setItem("gm-seeded", "1");
+      const min = 60 * 1000;
+      localStorage.setItem("atrium.grouping", JSON.stringify({ mode: "custom", groups: ["prs", "active", "orchestrators", "discourse", "atrium:subagent"],
+        made: { discourse: Date.now() - 3 * min, prs: Date.now() - 30 * min } }));
+      localStorage.setItem("atrium.grouping.terms", JSON.stringify({ on: true, mode: "custom" }));
+    });
+    const patches = [];
+    await ctx.route("**/v1/tasks/*", route => {
+      const r = route.request();
+      if (r.method() !== "PATCH") return route.fallback();
+      const id = decodeURIComponent(new URL(r.url()).pathname.split("/").pop());
+      const body = JSON.parse(r.postData() || "{}");
+      patches.push(id + " " + r.postData());
+      if (LAND[id]) Object.assign(LAND[id], body);
+      return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(LAND[id] || {}) });
+    });
+    const p = await ctx.newPage();
+    p.on("pageerror", e => errors.push(String(e)));
+    await p.goto(base, { waitUntil: "domcontentloaded" });
+    await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
+    await p.evaluate(() => switchView("terms"));
+    const row = id => '#term-list [oncontextmenu*="' + id + '"]';
+    await p.waitForSelector(row("land-gm-a"), { timeout: slow(10000) });
+    const groupsNow = () => p.evaluate(() => JSON.parse(localStorage.getItem("atrium.grouping")).groups);
+    // Open the card menu and its flyout, and read the flyout: the labels, and which of them wear "new".
+    const flyout = async (id, label) => {
+      await p.evaluate(i => document.querySelector('#term-list [oncontextmenu*="' + i + '"]')
+        .dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: 70, clientY: 90 })), id);
+      await p.waitForSelector("#cardmenu.on > button", { timeout: slow(5000) });
+      const btn = p.locator("#cardmenu > button", { hasText: label }).first();
+      if (!await btn.count()) return null;
+      await btn.hover();
+      await p.waitForSelector("#cardmenu button.subopen .subitem", { state: "visible", timeout: slow(3000) }).catch(() => {});
+      return p.evaluate(() => [...document.querySelectorAll("#cardmenu button.subopen .subitem")].map(s => ({
+        label: s.firstChild.textContent.trim(), tag: (s.querySelector(".newtag") || {}).textContent || "" })));
+    };
+    const shut = () => p.keyboard.press("Escape");
+
+    // A to Z, "new" on the group made three minutes ago and not on the one made thirty, "create group..." last.
+    let fly = await flyout("land-gm-a", "add to group");
+    if (shots) { fs.mkdirSync(shots, { recursive: true }); await p.screenshot({ path: path.join(shots, shotTag + "-desktop-add.png") }); }
+    if (!fly) return fail("groupMenus: the card menu has no \"add to group\"");
+    const names = fly.map(f => f.label);
+    if (names.join("|") !== "active|atrium:subagent|discourse|orchestrators|prs|create group...") fail("groupMenus: the add to group list is " + JSON.stringify(names));
+    const tags = fly.filter(f => f.tag).map(f => f.label + ":" + f.tag);
+    if (tags.join() !== "discourse:new") fail("groupMenus: the new tags are " + JSON.stringify(tags));
+    await shut();
+
+    // Esc makes nothing.
+    await flyout("land-gm-a", "add to group");
+    await p.locator("#cardmenu .subitem", { hasText: "create group..." }).click();
+    await p.locator("dialog[open] #ask-input").waitFor({ state: "visible", timeout: slow(5000) });
+    await p.locator("dialog[open] #ask-input").fill("nope");
+    await p.keyboard.press("Escape");
+    await p.waitForTimeout(300);
+    if ((await groupsNow()).includes("nope") || patches.length) fail("groupMenus: Esc still made a group: " + JSON.stringify([await groupsNow(), patches]));
+
+    // Create: the group exists, the card is in it, and it is still there after a reload.
+    await flyout("land-gm-a", "add to group");
+    await p.locator("#cardmenu .subitem", { hasText: "create group..." }).click();
+    await p.locator("dialog[open] #ask-input").fill("  Zeta ");
+    await p.locator("dialog[open] button", { hasText: /^ok$/ }).click();
+    await p.waitForFunction(() => JSON.parse(localStorage.getItem("atrium.grouping")).groups.includes("zeta"), null, { timeout: slow(5000) })
+      .catch(() => fail("groupMenus: create group... did not make the group zeta"));
+    if (!patches.some(x => /^land-gm-a /.test(x) && /"zeta"/.test(x))) fail("groupMenus: the card was not filed into zeta: " + JSON.stringify(patches));
+    const under = () => p.evaluate(() => {
+      const h = document.querySelector('#term-list .tgroup[data-ghead="zeta"]');
+      if (!h) return "";
+      const folded = JSON.parse(localStorage.getItem("atrium.termfolded") || "[]");
+      return folded.length ? "folded" : (document.querySelector('#term-list [oncontextmenu*="land-gm-a"]') ? "zeta" : "empty");
+    });
+    await p.waitForFunction(() => !!document.querySelector('#term-list .tgroup[data-ghead="zeta"]'), null, { timeout: slow(8000) })
+      .catch(() => fail("groupMenus: the new group is not drawn on the terminals tab"));
+    await p.reload({ waitUntil: "domcontentloaded" });
+    await p.evaluate(() => switchView("terms"));
+    await p.waitForSelector('#term-list .tgroup[data-ghead="zeta"]', { timeout: slow(10000) })
+      .catch(() => fail("groupMenus: the new group did not survive a reload"));
+    if (!(await groupsNow()).includes("zeta") || !LAND["land-gm-a"].tags.includes("zeta")) fail("groupMenus: zeta or the card's tag is gone after the reload");
+    if (await under() === "empty") fail("groupMenus: the card is not under zeta after the reload");
+
+    // The new one is "new", and sorted in. Remove from group lists A to Z too, with the same tag.
+    LAND["land-gm-b"].tags = ["prs", "zeta", "discourse"];
+    await p.evaluate(() => refresh());
+    await p.waitForTimeout(500);
+    fly = await flyout("land-gm-b", "remove from group");
+    if (shots) await p.screenshot({ path: path.join(shots, shotTag + "-desktop-remove.png") });
+    if (!fly) fail("groupMenus: no \"remove from group\" on a card in three groups");
+    else {
+      if (fly.map(f => f.label).join() !== "discourse,prs,zeta") fail("groupMenus: remove from group is " + JSON.stringify(fly));
+      if (fly.filter(f => f.tag).map(f => f.label).join() !== "discourse,zeta") fail("groupMenus: remove from group's new tags are " + JSON.stringify(fly));
+    }
+    await shut();
+
+    // An existing name (any case) files the card there and makes no second group.
+    const before = (await groupsNow()).length;
+    await flyout("land-gm-b", "add to group");
+    await p.locator("#cardmenu .subitem", { hasText: "create group..." }).click();
+    await p.locator("dialog[open] #ask-input").fill("ACTIVE");
+    await p.locator("dialog[open] button", { hasText: /^ok$/ }).click();
+    await p.waitForFunction(() => true);
+    await p.waitForTimeout(500);
+    const after = await groupsNow();
+    if (after.length !== before || after.filter(n => n === "active").length !== 1) fail("groupMenus: an existing name made a duplicate: " + JSON.stringify(after));
+    if (!LAND["land-gm-b"].tags.includes("active")) fail("groupMenus: an existing name did not file the card: " + JSON.stringify(LAND["land-gm-b"].tags));
+
+    // Eleven minutes on, discourse and zeta are no longer new. The clock is the page's Date.now.
+    await p.evaluate(() => { const real = Date.now.bind(Date); Date.now = () => real() + 11 * 60 * 1000; });
+    fly = await flyout("land-gm-a", "add to group");
+    if (fly && fly.some(f => f.tag)) fail("groupMenus: \"new\" is still shown eleven minutes later: " + JSON.stringify(fly.filter(f => f.tag)));
+    await shut();
+    // And before the ten minutes are up, still new: nine minutes after the make.
+    await p.evaluate(() => { const real = Date.now.bind(Date); Date.now = () => real() - 2 * 60 * 1000; });
+    fly = await flyout("land-gm-a", "add to group");
+    if (!fly || !fly.some(f => f.label === "zeta" && f.tag === "new")) fail("groupMenus: zeta is not new nine minutes after it was made: " + JSON.stringify(fly));
+    await shut();
+    await ctx.close();
+  } finally {
+    tasksMode = was;
+  }
+  if (errors.length) fail("groupMenus: the page threw: " + errors.join(" | "));
+  if (!bad) console.log("groupMenus ok");
+}
+
+// The same on the phone sheet: A to Z with the "new" tag, "create group..." as a name field in place, Enter makes it and files
+// the card, Esc puts the entry back.
+async function mGroupMenusSection(browser) {
+  const tag = "mGroupMenus: ";
+  const st = mServer({});
+  st.tasks = [mCard("gm-1", { alias: "big conversation", display_title: "big conversation", supervised: true, tags: ["prs"] })];
+  st.patches = [];
+  await st.open();
+  const shots = process.env.GROUP_MENUS_SHOTS, shotTag = process.env.GROUP_MENUS_TAG || "after";
+  try {
+    const { ctx, p, errors } = await mPage(browser, st, M_VIEWS[0], "");
+    await p.evaluate(() => {
+      localStorage.setItem("atrium.grouping", JSON.stringify({ mode: "custom", groups: ["prs", "active", "orchestrators", "discourse"],
+        made: { discourse: Date.now() - 3 * 60 * 1000, prs: Date.now() - 30 * 60 * 1000 } }));
+    });
+    await p.tap("#m-seg-all");
+    const sel = '#m-list .row[data-id="gm-1"]';
+    await p.waitForSelector(sel, { timeout: slow(10000) });
+    const sheetOpen = () => p.evaluate(() => { const e = document.getElementById("m-rmenu"); return !!e && !e.hidden; });
+    const longPress = () => p.evaluate(() => {
+      const el = document.querySelector('#m-list .row[data-id="gm-1"]'), r = el.getBoundingClientRect();
+      const ev = type => el.dispatchEvent(new PointerEvent(type, { bubbles: true, pointerType: "touch", clientX: r.left + 40, clientY: r.top + 30, isPrimary: true }));
+      ev("pointerdown");
+      return new Promise(res => setTimeout(() => { ev("pointerup"); res(); }, 800));
+    });
+    const openAdd = async () => {
+      await longPress();
+      await p.waitForFunction(() => { const e = document.getElementById("m-rmenu"); return e && !e.hidden; }, null, { timeout: slow(5000) });
+      await p.locator("#m-rmenu .rmenu-item", { hasText: "add to group" }).tap();
+    };
+    await openAdd();
+    const read = () => p.evaluate(() => [...document.querySelectorAll('#m-rmenu .rmenu-picks[data-i] [data-pick]')].filter(b => b.offsetParent).map(b => ({
+      label: b.firstChild.textContent.trim(), tag: (b.querySelector(".newtag") || {}).textContent || "" })));
+    const got = await read();
+    if (shots) { fs.mkdirSync(shots, { recursive: true }); await p.waitForTimeout(300); await p.screenshot({ path: path.join(shots, shotTag + "-phone-add.png") }); }
+    if (got.map(g => g.label).join("|") !== "active|discourse|orchestrators|prs|create group...") fail(tag + "the add to group sheet lists " + JSON.stringify(got));
+    if (got.filter(g => g.tag).map(g => g.label).join() !== "discourse") fail(tag + "the new tags are " + JSON.stringify(got));
+    // Esc puts the entry back and makes nothing.
+    await p.locator("#m-rmenu [data-pick]", { hasText: "create group..." }).tap();
+    await p.locator("#m-rmenu .rmenu-name-in").fill("nope");
+    await p.keyboard.press("Escape");
+    if (await p.locator("#m-rmenu .rmenu-name-in").count() || !await p.locator("#m-rmenu [data-pick]", { hasText: "create group..." }).count()) fail(tag + "Esc did not put create group... back");
+    if (!await sheetOpen()) fail(tag + "Esc closed the sheet");
+    if (st.patches.length) fail(tag + "Esc still patched: " + JSON.stringify(st.patches));
+    // Enter makes it.
+    await p.locator("#m-rmenu [data-pick]", { hasText: "create group..." }).tap();
+    await p.locator("#m-rmenu .rmenu-name-in").fill(" Zeta ");
+    if (shots) await p.screenshot({ path: path.join(shots, shotTag + "-phone-create.png") });
+    await p.keyboard.press("Enter");
+    await p.waitForFunction(() => JSON.parse(localStorage.getItem("atrium.grouping")).groups.includes("zeta"), null, { timeout: slow(5000) })
+      .catch(() => fail(tag + "the group was not made"));
+    await p.waitForTimeout(400);
+    if (!st.patches.some(x => /gm-1/.test(x) && /"prs","zeta"/.test(x))) fail(tag + "the card was not filed into zeta: " + JSON.stringify(st.patches));
+    const made = await p.evaluate(() => JSON.parse(localStorage.getItem("atrium.grouping")).made.zeta);
+    if (!(Date.now() - made < 60000)) fail(tag + "no creation time on zeta");
+    // After a reload the group is still there, and the sheet lists it as new, after the clock moves on it is not.
+    await p.reload({ waitUntil: "domcontentloaded" });
+    await p.tap("#m-seg-all");
+    await p.waitForSelector(sel, { timeout: slow(10000) });
+    await openAdd();
+    const again = await read();
+    if (!again.some(g => g.label === "zeta" && g.tag === "new")) fail(tag + "zeta is not new after the reload: " + JSON.stringify(again));
+    await p.evaluate(() => { const real = Date.now.bind(Date); Date.now = () => real() + 11 * 60 * 1000; });
+    await p.tap("#m-rmenu .rmenu-x");
+    await openAdd();
+    if ((await read()).some(g => g.tag)) fail(tag + "\"new\" is still shown eleven minutes later");
+    if (errors.length) fail(tag + "the page threw: " + errors.join(" | "));
+    await ctx.close();
+  } finally {
+    await st.close();
+  }
+  if (!bad) console.log("mGroupMenus ok");
+}
+
 // ── the terminals tab menu (card-menu) ────────────────────────────────────
 // Right click a row. The menu is what clint settled in docs/interviews/INTERVIEW-card-menu-2026-10-09.md: restart,
 // resume (stopped only), new context, then settings, then stop and terminate and clean up. Every item has its (?), none
@@ -16895,7 +17299,10 @@ async function closeOneDialogSection(browser, base) {
     if (first.title !== "close openziti/ziti-console #967?") fail("closeOne: the title is " + first.title);
     if (first.buttons !== "cancel,close it") fail("closeOne: the buttons are " + first.buttons);
     if (first.rows !== 1 || first.checked !== "stash") fail("closeOne: rows " + first.rows + ", chosen " + first.checked);
-    if (!/ziti-console \(470 MB\)/.test(first.body) || !/Frees \(480 MB\)/.test(first.body)) fail("closeOne: the dialog does not say the worktree's real size: " + first.body);
+    if (!/ziti-console \(470 MB\)/.test(first.body) || !/Closing deletes \(480 MB\)/.test(first.body)) fail("closeOne: the dialog does not say the worktree's real size: " + first.body);
+    // u-005: what goes is said before it goes, with work on no remote said first
+    if (!/one folder holds work that is on no remote/.test(first.body)) fail("closeOne: the dialog does not warn of unpushed work: " + first.body);
+    if (!/the branch here claude\/x/.test(first.body)) fail("closeOne: the branch is not named in words: " + first.body);
     if (/work only this worktree has/.test(first.body)) fail("closeOne: the old second dialog's words are in it");
     await shot(p, "close-dialog");
     // STASH IS THE DEFAULT (f-close-stash-default): the stash choice has the focus, so Enter takes it
@@ -17683,6 +18090,49 @@ async function readyOnceSection(browser, base) {
     if (got.settled !== 1) fail("readyOnce: a wait did not ring after the activity went quiet: " + JSON.stringify(got));
     if (got.pile !== 1 || got.single !== 0) fail("readyOnce: two quiet waits were not one alert: " + JSON.stringify(got));
     if (errors.length) fail("readyOnce: the page threw: " + errors.join(" | "));
+  } finally {
+    await ctx.close();
+  }
+}
+
+// ── an arrival rings once per card, however often the card leaves the list and returns ──────────────────────
+// `rungKey` returned "" for "arrived", so a card out of the list for one poll came back fresh and "X is on the
+// board" rang again. Keyed on "a:" + bare id now, and trackWaits keeps arrival keys.
+async function arrivedOnceSection(browser, base) {
+  const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+  const page = await ctx.newPage();
+  const errors = [];
+  page.on("pageerror", e => errors.push(String(e)));
+  await page.addInitScript(() => { Document.prototype.hasFocus = () => true; });
+  try {
+    await page.goto(base, { waitUntil: "domcontentloaded" });
+    await page.waitForFunction(() => typeof alerting !== "undefined", null, { timeout: slow(15000) });
+    await page.waitForTimeout(1500);
+    const got = await page.evaluate(() => {
+      localStorage.removeItem("atrium.toastlog");
+      alerting.set({ debounce: 0, muted: true });
+      const made = new Date(Date.now() + 60000).toISOString();
+      const c = id => ({ id, task_id: id, created_at: made });
+      const say = i => ({ title: i.id + " is on the board", body: "new" });
+      const check = items => alerting.check("arrived", items, say);
+      const rings = id => toastLog().filter(e => e.title === id + " is on the board").reduce((n, e) => n + (e.n || 1), 0);
+      const out = {};
+      check([]);
+      check([c("ao-a")]);
+      out.first = rings("ao-a");
+      // Gone for one poll, back under a room prefix.
+      check([]);
+      check([c("room~ao-a")]);
+      out.flap = rings("ao-a") + rings("room~ao-a");
+      // A genuinely new card still rings.
+      check([c("ao-a"), c("ao-b")]);
+      out.fresh = rings("ao-b");
+      return out;
+    });
+    if (got.first !== 1) fail("arrivedOnce: a new card did not ring once: " + JSON.stringify(got));
+    if (got.flap !== 1) fail("arrivedOnce: a card gone one poll and back rang again: " + JSON.stringify(got));
+    if (got.fresh !== 1) fail("arrivedOnce: a genuinely new card did not ring: " + JSON.stringify(got));
+    if (errors.length) fail("arrivedOnce: the page threw: " + errors.join(" | "));
   } finally {
     await ctx.close();
   }
@@ -20787,6 +21237,260 @@ async function peekLaunchSection(browser, base) {
   if (!bad) console.log("peekLaunch ok");
 }
 
+// POPUPS STAY ON SCREEN. Every menu, flyout, hover popup and tooltip on the board is placed by js/popfit.js, and each
+// must end inside the viewport on all four edges whatever it was opened against. A small window (420x300) and nine
+// spots, the four corners, the four edge middles and the centre, for each kind of popup. A flyout taller than the
+// window must scroll inside itself rather than run off.
+// POPUP_SHOTS=<dir> writes the group flyout of a card menu in a short window, POPUP_BEFORE=1 with the flyout's fitting
+// switched off (the way it was drawn before popfit.js), as popup-<before|after>.png.
+async function popupFitSection(browser, base) {
+  const V = { w: 420, h: 300 };
+  const ctx = await browser.newContext({ viewport: { width: V.w, height: V.h } });
+  const errors = [];
+  try {
+    const p = await ctx.newPage();
+    p.on("pageerror", e => errors.push(String(e)));
+    await p.goto(base + "/", { waitUntil: "domcontentloaded" });
+    await p.waitForFunction(() => typeof popFit === "function" && typeof showMenu === "function" && typeof placeTip === "function", null, { timeout: slow(15000) });
+    const spots = [];
+    for (const y of [0, 150, 299]) for (const x of [0, 210, 419]) spots.push({ x, y });
+    const inside = r => r.left >= -0.5 && r.top >= -0.5 && r.right <= V.w + 0.5 && r.bottom <= V.h + 0.5;
+    const check = (kind, at, name, r) => {
+      const where = "popupFit: " + kind + " at " + at.x + "," + at.y + ": " + name;
+      if (!r) return fail(where + " was not there");
+      if (!(r.right - r.left > 0) || !(r.bottom - r.top > 0)) return fail(where + " has no size");
+      if (!inside(r)) fail(where + " is outside the " + V.w + "x" + V.h + " window: " +
+        ["left", "top", "right", "bottom"].map(k => k + " " + Math.round(r[k])).join(", "));
+    };
+    const RECT = "(el) => { const r = el.getBoundingClientRect(); return { left: r.left, top: r.top, right: r.right, bottom: r.bottom }; }";
+
+    // The card menu, and a flyout of forty entries (taller than the window) and one of three.
+    for (const [n, count] of [["tall flyout", 40], ["short flyout", 3]]) {
+      for (const at of spots) {
+        const got = await p.evaluate(({ at, count, RECT }) => {
+          const rect = eval(RECT);
+          const sub = Array.from({ length: count }, (_, i) => ({ label: "destination number " + i, act() {} }));
+          showMenu({ clientX: at.x, clientY: at.y, preventDefault() {} }, [{ label: "restart", act() {} }, { label: "add to group", sub }, { label: "stop", act() {} }]);
+          const row = cardMenuEl.querySelectorAll(":scope > button")[1];
+          row.dispatchEvent(new PointerEvent("pointerenter"));
+          const s = row.querySelector(".sub");
+          // Drawn, not just placed: a menu that scrolls or clips would hide a flyout that sits inside the window.
+          const sr = s.getBoundingClientRect(), hit = document.elementFromPoint((sr.left + sr.right) / 2, (sr.top + sr.bottom) / 2);
+          const out = { menu: rect(cardMenuEl), sub: rect(s), seen: !!(hit && s.contains(hit)), scrolls: s.scrollHeight > s.clientHeight + 1, overflowY: getComputedStyle(s).overflowY };
+          closeCardMenu();
+          return out;
+        }, { at, count, RECT });
+        check(n, at, "the menu", got.menu);
+        check(n, at, "the flyout", got.sub);
+        if (!got.seen) fail("popupFit: " + n + " at " + at.x + "," + at.y + ": the flyout is placed but not drawn (clipped by something)");
+        if (count > 20 && !got.scrolls) fail("popupFit: " + n + " at " + at.x + "," + at.y + " does not scroll though forty entries cannot fit " + V.h + "px");
+        if (count > 20 && got.overflowY !== "auto") fail("popupFit: " + n + " is taller than the window and its overflow is " + got.overflowY);
+      }
+    }
+
+    // A tooltip, against a bubble at each spot.
+    for (const at of spots) {
+      const r = await p.evaluate(({ at, RECT }) => {
+        const rect = eval(RECT);
+        const a = document.createElement("span");
+        a.style.cssText = "position:fixed;width:18px;height:18px;left:" + Math.min(at.x, innerWidth - 18) + "px;top:" + Math.min(at.y, innerHeight - 18) + "px";
+        document.body.appendChild(a);
+        placeTip(a, "a long explanation that wraps over several lines, ".repeat(6));
+        const out = rect(document.getElementById("tip"));
+        hideTip(); a.remove();
+        return out;
+      }, { at, RECT });
+      check("tooltip", at, "the tooltip", r);
+    }
+
+    // The card details popover, with content taller than the window.
+    for (const at of spots) {
+      const r = await p.evaluate(({ at, RECT }) => {
+        const rect = eval(RECT);
+        const el = peekPop();
+        el.classList.add("on");
+        el.querySelector(".peek-body").innerHTML = '<div style="height:700px;width:260px">tall</div>';
+        peekPlace({ x: at.x, y: at.y }, { x: at.x, y: at.y });
+        const out = rect(el);
+        el.classList.remove("on");
+        return out;
+      }, { at, RECT });
+      check("details popover", at, "the popover", r);
+    }
+
+    // The room picker, hung off its chip moved to each spot.
+    for (const at of spots) {
+      const r = await p.evaluate(({ at, RECT }) => {
+        const rect = eval(RECT);
+        const chip = document.getElementById("rooms"), menu = document.getElementById("rooms-menu");
+        if (!chip || !menu) return null;
+        const was = chip.style.cssText, hid = chip.hidden;
+        chip.hidden = false;
+        chip.style.cssText = "position:fixed;display:block;width:40px;height:20px;left:" + Math.min(at.x, innerWidth - 40) + "px;top:" + Math.min(at.y, innerHeight - 20) + "px";
+        menu.hidden = true;
+        openRooms();
+        const out = rect(menu);
+        menu.hidden = true; chip.style.cssText = was; chip.hidden = hid;
+        return out;
+      }, { at, RECT });
+      check("room picker", at, "the picker", r);
+    }
+
+    // The phone's long press key label.
+    for (const at of spots) {
+      const r = await p.evaluate(({ at, RECT }) => {
+        const rect = eval(RECT);
+        const b = document.createElement("button");
+        b.setAttribute("aria-label", "a rather long label for the key");
+        b.style.cssText = "position:fixed;width:30px;height:24px;left:" + Math.min(at.x, innerWidth - 30) + "px;top:" + Math.min(at.y, innerHeight - 24) + "px";
+        document.body.appendChild(b);
+        phoneKeyLabel(b);
+        const out = rect(document.getElementById("t-keylabel"));
+        phoneKeyLabel(null); b.remove();
+        return out;
+      }, { at, RECT });
+      check("key label", at, "the label", r);
+    }
+
+    // The held-line menu, an absolute child that opens under its line and is fitted by popFly.
+    for (const at of spots) {
+      const r = await p.evaluate(({ at, RECT }) => {
+        const rect = eval(RECT);
+        const hl = document.createElement("div");
+        hl.className = "heldline";
+        hl.style.cssText = "position:fixed;width:120px;height:24px;left:" + Math.min(at.x, innerWidth - 120) + "px;top:" + Math.min(at.y, innerHeight - 24) + "px";
+        hl.innerHTML = '<span class="hl-text">held</span><span class="hl-menu" style="display:block;position:absolute;top:100%;right:0;width:200px;height:60px">menu</span>';
+        document.body.appendChild(hl);
+        const m = hl.querySelector(".hl-menu");
+        popFly(m);
+        const out = rect(m);
+        hl.remove();
+        return out;
+      }, { at, RECT });
+      check("held-line menu", at, "the menu", r);
+    }
+
+    // The helper itself: tall, above, beside, and shrunk into the larger side.
+    for (const [n, opts, w, h] of [["below", {}, 160, 120], ["tall", {}, 160, 900], ["beside", { axis: "x", gap: 10 }, 160, 120],
+        ["beside tall", { axis: "x" }, 160, 900], ["above", { prefer: "above", align: "center", gap: 8 }, 120, 40], ["shrunk", { shrink: true, gap: 8 }, 160, 900]]) {
+      for (const at of spots) {
+        const got = await p.evaluate(({ at, opts, w, h, RECT }) => {
+          const rect = eval(RECT);
+          const el = document.createElement("div");
+          el.style.cssText = "position:fixed;z-index:99;width:" + w + "px;max-width:none";
+          el.innerHTML = "<div style=\"height:" + h + "px\"></div>";
+          document.body.appendChild(el);
+          const a = { left: Math.min(at.x, innerWidth - 24), top: Math.min(at.y, innerHeight - 24) };
+          a.right = a.left + 24; a.bottom = a.top + 24;
+          popFit(el, a, opts);
+          const out = { r: rect(el), oy: getComputedStyle(el).overflowY, tall: h > innerHeight };
+          el.remove();
+          return out;
+        }, { at, opts, w, h, RECT });
+        check("popFit " + n, at, "the box", got.r);
+        if (got.tall && got.oy !== "auto") fail("popupFit: popFit " + n + " is taller than the window and its overflow is " + got.oy);
+      }
+    }
+
+    if (process.env.POPUP_SHOTS) {
+      const s = await browser.newContext({ viewport: { width: 700, height: 420 } });
+      try {
+        const q = await s.newPage();
+        await q.goto(base + "/", { waitUntil: "domcontentloaded" });
+        await q.waitForFunction(() => typeof popFit === "function", null, { timeout: slow(15000) });
+        await q.evaluate(before => {
+          if (before) window.popFly = () => {};
+          const names = ["active", "atrium:interview", "atrium:subagent", "directors", "discourse", "interviews", "orchestrators", "prs", "r&d", "reviews", "shipping", "triage", "ui", "workers"];
+          showMenu({ clientX: 70, clientY: 150, preventDefault() {} }, [{ label: "restart", help: "restart this runner", act() {} },
+            { label: "new context", help: "a fresh conversation", act() {} },
+            { label: "add to group", help: "file this card in a group", sub: names.map(n => ({ label: n, act() {} })) },
+            { sep: true }, { label: "settings", act() {} }, { sep: true }, { label: "stop", help: "stop it", act() {} }, { label: "terminate and clean up", act() {} }]);
+          cardMenuEl.querySelectorAll(":scope > button")[2].dispatchEvent(new PointerEvent("pointerenter"));
+        }, !!process.env.POPUP_BEFORE);
+        await q.screenshot({ path: path.join(process.env.POPUP_SHOTS, "popup-" + (process.env.POPUP_BEFORE ? "before" : "after") + ".png") });
+      } finally { await s.close(); }
+    }
+  } finally {
+    await ctx.close();
+  }
+  if (errors.length) fail("popupFit: the page threw: " + errors.join(" | "));
+  if (!bad) console.log("popupFit ok");
+}
+
+// An interview card is a top-level row in its group: it never nests under the card that launched it (terminals, stack
+// and board all use one rule, `nestsUnderLauncher`), and a launcher whose children are not drawn still wears a chevron.
+async function interviewTopSection(browser, base) {
+  const ctx = await browser.newContext({ viewport: { width: 900, height: 600 } });
+  const errors = [];
+  try {
+    const p = await ctx.newPage();
+    p.on("pageerror", e => errors.push(String(e)));
+    await p.goto(base + "/", { waitUntil: "domcontentloaded" });
+    await p.waitForFunction(() => typeof termNest === "function" && typeof subagentRollup === "function" && typeof termKidsToggle === "function", null, { timeout: slow(15000) });
+    const got = await p.evaluate(() => {
+      const mk = (id, tags, by) => ({ id, tags, spawned_by_id: by || "", status: "running", display_title: id });
+      const parent = mk("p1", ["origin:agent"]);
+      const worker = mk("w1", ["atrium:subagent"], "p1");
+      const iv = mk("i1", ["atrium:subagent", "atrium:interview"], "p1");
+      const nest = termNest([parent, worker, iv]);
+      const roll = subagentRollup([parent, worker, iv], false);
+      termKids = new Map();
+      const lone = termKidsToggle({ id: "p1" }, 0, 0, false);
+      return { nested: [...nest.nested], rolled: [...roll.rolled], rollable: roll.rollable, lone, rule: typeof nestsUnderLauncher };
+    });
+    if (got.rule !== "function") fail("interviewTop: nestsUnderLauncher is not defined");
+    if (got.nested.includes("i1")) fail("interviewTop: the interview nested under its launcher in the terminals list: " + got.nested);
+    if (!got.nested.includes("w1")) fail("interviewTop: an ordinary subagent stopped nesting: " + got.nested);
+    if (got.rolled.includes("i1")) fail("interviewTop: the interview was rolled up under its launcher in the stack/board: " + got.rolled);
+    if (!got.rolled.includes("w1")) fail("interviewTop: an ordinary subagent stopped rolling up: " + got.rolled);
+    // A launcher with children that are filtered out of the list still has a chevron: the total counts them.
+    const chev = await p.evaluate(() => {
+      const t = { id: "p1" };
+      return { filtered: termKidsToggle(t, 2, 2, true), none: termKidsToggle(t, 0, 0, false), pool: typeof termKidTotal };
+    });
+    if (!chev.filtered.includes("tkidfold")) fail("interviewTop: no chevron on a launcher whose children are hidden");
+    if (chev.none !== "") fail("interviewTop: a chevron on a card with no children");
+    if (chev.pool !== "function") fail("interviewTop: termKidTotal (children in the whole pool, drawn or not) is not defined");
+    if (errors.length) fail("interviewTop: page errors: " + errors.join("; "));
+    else console.log("interviewTop ok");
+  } finally { await ctx.close(); }
+}
+
+
+// A parked card (idle-parked: no process, status parked, parked_at set) stays in the Terminals list, in its own tag
+// group, grey, with a one-click resume on its row. An interview card stays top level and is never nested.
+async function parkedStaysSection(browser, base) {
+  const ctx = await browser.newContext({ viewport: { width: 900, height: 600 } });
+  const errors = [];
+  try {
+    const p = await ctx.newPage();
+    p.on("pageerror", e => errors.push(String(e)));
+    await p.goto(base + "/", { waitUntil: "domcontentloaded" });
+    await p.waitForFunction(() => typeof termListed === "function" && typeof termRow === "function", null, { timeout: slow(15000) });
+    const got = await p.evaluate(() => {
+      const mk = (id, tags, extra) => Object.assign({ id, tags, spawned_by_id: "", status: "parked", parked_at: "2026-10-13T10:00:00Z",
+        resume_id: "r-" + id, supervised: false, display_title: id }, extra || {});
+      const iv = mk("i1", ["atrium:subagent", "atrium:interview"], { spawned_by_id: "p1" });
+      const parent = { id: "p1", tags: ["origin:agent"], status: "running", supervised: true, display_title: "p1" };
+      const plain = mk("a1", ["origin:agent"]);
+      const show = termShow();
+      const listed = [iv, plain].map(t => termListed(t, show));
+      const pool = [parent, iv];
+      termKids = new Map(); termKidsPool = new Map();
+      const nest = termNest(pool);
+      const html = termRow(iv, false, false);
+      return { listed, nested: [...nest.nested], html };
+    });
+    if (got.listed.some(x => !x)) fail("parkedStays: a parked card is not in the Terminals list: " + got.listed);
+    if (got.nested.includes("i1")) fail("parkedStays: the parked interview nested under its launcher");
+    if (!/class="card tab[^"]*\bcold\b/.test(got.html)) fail("parkedStays: the parked row is not grey (cold)");
+    if (!got.html.includes("resumeParked('i1')")) fail("parkedStays: no one-click resume on the parked row");
+    if (errors.length) fail("parkedStays: page errors: " + errors.join("; "));
+    else console.log("parkedStays ok");
+  } finally { await ctx.close(); }
+}
+
+
 // u-dropdowns-instant: the launch dialog opens WITH its room and runner options in place, whatever the network is doing.
 // Every API answer is held for 500ms. The board has read the runners and rooms at start, so the open is one frame: the
 // dialog is showing, both selects hold their options, and nothing is rebuilt in the next half second.
@@ -20850,54 +21554,6 @@ async function heldLinkSection(browser, base) {
   if (!bad) console.log("heldLink ok");
 }
 
-// A CLONE THE OPERATOR MADE: the open stops with clone_adopt, the dialog stays up with the one-time button, and the
-// button's press sends the yes with the retry. Nothing launches before it.
-async function cloneAdoptSection(browser, base) {
-  const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
-  const json = (route, body, status) => route.fulfill({ status: status || 200, contentType: "application/json", body: JSON.stringify(body) });
-  const calls = [];
-  const link = "https://github.com/openziti/zrok/pull/12";
-  try {
-    const p = await ctx.newPage();
-    const errors = [];
-    p.on("pageerror", e => errors.push(e.message));
-    await p.route(/\/v1\/(recognise|open|tasks\/t-a)(\?|$)/, async r => {
-      const req = r.request(), u = new URL(req.url());
-      calls.push(req.method() + " " + u.pathname + " " + (req.postData() || ""));
-      if (u.pathname === "/v1/recognise") return json(r, { recogniser: "github-pr", label: "github pull request", url: link, host: "github.com",
-        cwd: "/wt/zrok-12", title: "review zrok#12", prompt: "review", tags: ["pull-request"], org: "openziti", repo: "zrok",
-        vars: { org: "openziti", repo: "zrok", num: "12", host: "github.com" } });
-      if (u.pathname === "/v1/open") {
-        if (!JSON.parse(req.postData() || "{}").adopt_clone) return json(r, { error: "the clone was made by the operator", code: "clone_adopt",
-          step: "worktree", clone: "D:/scm/github.com/openziti/zrok" }, 409);
-        return json(r, { key: "github.com/openziti/zrok/12", kind: "pr", card: "t-a", created: true });
-      }
-      return json(r, { id: "t-a", status: "running", title: "review zrok#12" });
-    });
-    await p.goto(base + "/", { waitUntil: "domcontentloaded" });
-    await p.waitForFunction(() => typeof openLaunch === "function" && typeof recogniseLink === "function", null, { timeout: slow(15000) });
-    await p.evaluate(url => { openLaunch(null, "", "", null, null); document.getElementById("l-url").value = url; return recogniseLink(); }, link);
-    await p.evaluate(() => doLaunch());
-    await p.waitForFunction(() => !document.getElementById("l-adopt").hidden, null, { timeout: slow(5000) })
-      .catch(() => fail("cloneAdopt: the one-time button did not show: " + calls.join(" | ")));
-    const text = await p.textContent("#l-adopt");
-    if (text !== "atrium will add its hub remote to D:/scm/github.com/openziti/zrok and guard pushes to origin: yes, and launch")
-      fail("cloneAdopt: the button read " + text);
-    if (!await p.evaluate(() => document.getElementById("launch").open)) fail("cloneAdopt: the dialog closed on the question");
-    if (calls.some(c => c.indexOf("/v1/launch") >= 0)) fail("cloneAdopt: it launched before the yes");
-    await p.click("#l-adopt");
-    await p.waitForFunction(() => !document.getElementById("launch").open, null, { timeout: slow(5000) })
-      .catch(() => fail("cloneAdopt: the dialog stayed open after the yes: " + calls.join(" | ")));
-    const opens = calls.filter(c => c.indexOf("POST /v1/open") === 0).map(c => JSON.parse(c.split(" ").slice(2).join(" ")));
-    if (opens.length !== 2 || opens[0].adopt_clone || opens[1].adopt_clone !== true)
-      fail("cloneAdopt: the opens were " + JSON.stringify(opens.map(o => o.adopt_clone)));
-    if (await p.evaluate(() => !document.getElementById("l-adopt").hidden)) fail("cloneAdopt: the button stayed after the launch");
-    if (errors.length) fail("cloneAdopt: page errors: " + errors.join(" | "));
-  } finally {
-    await ctx.close();
-  }
-  if (!bad) console.log("cloneAdopt ok");
-}
 async function dropdownsInstantSection(browser, base) {
   const wasHub = hubMode, wasSgg = sggAttached;
   hubMode = true;
@@ -22277,7 +22933,7 @@ async function joinedLiveSection(browser, base) {
       null, { timeout: slow(15000) });
     const r = await p.evaluate(() => {
       const card = (id, status, supervised, extra) => ({ id, status, supervised, title: id, display_title: id, tags: [], ...extra });
-      const joined = card("jn", "needs-input", false), exited = card("ex", "done", false);
+      const joined = card("jn", "needs-input", false, { pid: 4242 }), exited = card("ex", "done", false);
       const dead = card("dd", "dead", false), running = card("rn", "running", true);
       const parked = { ...card("pk", "needs-input", false), parked_at: "2026-09-30T10:00:00Z" };
       return {
@@ -22304,7 +22960,7 @@ async function joinedLiveSection(browser, base) {
     const s = await p.evaluate(async () => {
       const card = (id, status, extra) => ({ id, status, supervised: false, pinned: false, title: id,
         display_title: id, tags: [], ...extra });
-      const cards = [card("jl", "needs-input"), card("xd", "done"), card("pk2", "needs-input", { parked_at: "2026-09-30T10:00:00Z" }),
+      const cards = [card("jl", "needs-input", { pid: 4242 }), card("xd", "done"), card("pk2", "needs-input", { parked_at: "2026-09-30T10:00:00Z" }),
         card("sv", "running", { supervised: true })];
       boardCards = async () => cards;
       const row = id => document.querySelector('#term-list .card.tab[data-id="' + id + '"]');
@@ -22321,6 +22977,92 @@ async function joinedLiveSection(browser, base) {
     if (errors.length) fail("joinedLive: page errors: " + errors.join(" | "));
   } finally { await ctx.close(); }
   if (!bad) console.log("joinedLive ok");
+}
+
+// THE UNIFIED CARD ON THE BOARD: columns follow cardState (needs you, working, done), one count line, grey only for off,
+// the one orange for waiting, a neutral runner mark, chips that wrap, and a capped done column with no pinned group.
+async function unifiedCardSection(browser, base) {
+  const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+  const p = await ctx.newPage();
+  const errors = [];
+  p.on("pageerror", e => errors.push(e.message));
+  const was = tasksMode;
+  try {
+    tasksMode = "unified";
+    await p.goto(base + "/", { waitUntil: "domcontentloaded" });
+    await p.waitForFunction(() => typeof renderBoard === "function" && typeof cardsLoaded !== "undefined" && cardsLoaded,
+      null, { timeout: slow(15000) });
+    await p.evaluate(() => { setGrouping({ on: false }, "board"); switchView("board"); });
+    await p.waitForSelector('#board .col .card', { timeout: slow(10000) });
+    const r = await p.evaluate(() => {
+      const ids = sel => [...document.querySelectorAll(sel)].map(c => c.dataset.id).sort();
+      const px = v => { const e = document.createElement("i"); e.style.color = v; document.body.appendChild(e);
+        const c = getComputedStyle(e).color; e.remove(); return c; };
+      const card = id => document.querySelector('#board .card[data-id="' + id + '"]');
+      const wait = px("var(--wait)"), label = px("var(--label)");
+      const stateChip = id => card(id).querySelector(".chip.state");
+      const grey = [...document.querySelectorAll("#board .card")].map(c => [c.dataset.id, getComputedStyle(c).filter]);
+      const chips = card("uc-quiet").querySelector(".card-line > .chips");
+      return {
+        cols: [...document.querySelectorAll("#board .col")].map(c => c.dataset.column),
+        needs: ids('#board [data-column="needs-you"] .card'), working: ids('#board [data-column="working"] .card'),
+        done: ids('#board [data-column="done"] .card'),
+        count: (document.getElementById("board-count") || {}).textContent || "",
+        pulses: document.querySelectorAll("#board .pulse").length, pins: document.querySelectorAll("#board .pins").length,
+        grey, wait, label,
+        edge: getComputedStyle(card("uc-agent"), "::before").backgroundColor,
+        chipColor: stateChip("uc-agent") ? getComputedStyle(stateChip("uc-agent")).color : "none",
+        permColor: stateChip("uc-perm") ? getComputedStyle(stateChip("uc-perm")).color : "none",
+        quietChip: stateChip("uc-quiet") ? getComputedStyle(stateChip("uc-quiet")).color : "none",
+        quietMark: getComputedStyle(card("uc-quiet").querySelector(".rmark")).color,
+        waitMark: getComputedStyle(card("uc-ready").querySelector(".rmark")).color,
+        wrap: getComputedStyle(chips).flexWrap, overflowX: getComputedStyle(chips).overflowX,
+        workMarks: document.querySelectorAll("#board .rmark.working").length,
+        liveDots: [...document.querySelectorAll("#board .chip.live")].filter(e => getComputedStyle(e, "::before").animationName !== "none").length
+      };
+    });
+    const eq = (what, got, want) => { if (JSON.stringify(got) !== JSON.stringify(want)) fail("unifiedCard: " + what + " is " + JSON.stringify(got) + ", want " + JSON.stringify(want)); };
+    eq("columns", r.cols, ["needs-you", "working", "done"]);
+    eq("needs you", r.needs, ["uc-agent", "uc-perm", "uc-ready"]);
+    eq("working", r.working, ["uc-quiet", "uc-work"]);
+    eq("done holds every card with no runner, a gone ready card included", r.done, ["uc-dead", "uc-done", "uc-gone", "uc-parked", "uc-shelved"]);
+    if (!/^5 running: 3 need you, 2 working/.test(r.count) || !/5 done/.test(r.count)) fail("unifiedCard: count line is '" + r.count + "'");
+    eq("pulse dots", r.pulses, 0);
+    eq("pinned groups", r.pins, 0);
+    for (const [id, f] of r.grey) {
+      const off = ["uc-gone", "uc-parked", "uc-shelved", "uc-done", "uc-dead"].includes(id);
+      if (off !== f.includes("grayscale")) fail("unifiedCard: " + id + " filter is '" + f + "': grey is for off cards and nothing else");
+    }
+    eq("the agent-launched waiting card's edge is the one orange", r.edge, r.wait);
+    eq("its state chip is the one orange", r.chipColor, r.wait);
+    eq("a permission chip is the one orange", r.permColor, r.wait);
+    if (r.quietChip === r.wait) fail("unifiedCard: a live quiet card's chip uses the waiting orange");
+    eq("a live claude mark is neutral", r.quietMark, r.label);
+    eq("a waiting claude mark takes the orange", r.waitMark, r.wait);
+    eq("chips wrap", r.wrap, "wrap");
+    if (r.overflowX === "auto" || r.overflowX === "scroll") fail("unifiedCard: the chip row scrolls sideways, so it clips");
+    eq("working marks", r.workMarks, 1);
+    eq("animated live dots", r.liveDots, 0);
+
+    // 111 finished: capped, with a more row, and not wider than a quiet column.
+    tasksMode = "unifiedMany";
+    await p.evaluate(async () => { await loadCards(); renderBoard(); });
+    await p.waitForSelector('#board [data-column="done"] .card', { timeout: slow(10000) });
+    const m = await p.evaluate(() => {
+      const col = document.querySelector('#board [data-column="done"]');
+      return { n: col.querySelectorAll(".card").length, more: (col.querySelector(".more") || {}).textContent || "",
+        head: col.querySelector(".col-head .n").textContent, pins: document.querySelectorAll("#board .pins").length,
+        first: col.querySelector(".card").dataset.id, w: col.getBoundingClientRect().width };
+    });
+    if (m.n > 12 || m.n < 6) fail("unifiedCard: done draws " + m.n + " cards, want 6 to 12");
+    if (!new RegExp("^" + (111 - m.n) + " more finished, 17 of them pinned").test(m.more.trim())) fail("unifiedCard: more row says '" + m.more.trim() + "'");
+    eq("done header keeps the total", m.head, "111");
+    eq("a pinned card is first in done", m.first, "ud0");
+    eq("pinned groups with 111 done", m.pins, 0);
+    if (m.w > 360) fail("unifiedCard: done is " + m.w + "px wide, it must not grow with its count");
+    if (errors.length) fail("unifiedCard: page errors: " + errors.join(" | "));
+  } finally { tasksMode = was; await ctx.close(); }
+  if (!bad) console.log("unifiedCard ok");
 }
 
 // The gear's terminal list section: the list's controls, and the cache summary that follows the list on an event.
@@ -22440,6 +23182,73 @@ async function noReadyChildrenSection(browser, base) {
     if (errors.length) fail("noReadyChildren: page errors: " + errors.join(" | "));
   } finally { await ctx.close(); }
   if (!bad) console.log("noReadyChildren ok");
+}
+
+// ── a wait found, not happened, never rings ──────────────────────────────────
+// 2026-10-13: a minute after a hub deploy the operator was told about a card whose turn ended a week before. Only a
+// turn that ends while the board is open is news. A card waiting since days ago is quiet whether it is there at load,
+// arrives after a hub start served no cards, or starts counting later (an idle agent card cardsReady now takes in).
+// Nobody is looking, so every alert would reach the OS notification, and each one is also in the bell's log.
+async function readyNoSeedSection(browser, base) {
+  const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+  const page = await ctx.newPage();
+  const errors = [];
+  page.on("pageerror", e => errors.push(String(e)));
+  await page.addInitScript(() => {
+    window.__atriumReadyQuietMs = 300;
+    Document.prototype.hasFocus = () => false;
+    window.__notes = [];
+    window.Notification = function (title, o) { this.title = title; this.o = o; window.__notes.push(this); };
+    window.Notification.permission = "granted";
+    window.Notification.requestPermission = async () => "granted";
+    window.Notification.prototype.close = function () {};
+  });
+  const week = new Date(Date.now() - 7 * 86400000).toISOString();
+  const card = (id, status, extra) => ({ id, wire_name: id, status, supervised: true, tags: [], title: id,
+    display_title: id, created_at: "2026-09-01T10:00:00Z", ...extra });
+  const old = card("rns-old", "needs-input", { waiting_since: week });
+  const late = card("rns-late", "needs-input", { waiting_since: week });
+  const idle = card("rns-idle", "needs-input", { waiting_since: week, tags: ["origin:agent"] });
+  const turn = card("rns-turn", "running");
+  let rows = [old, turn];
+  await page.route(u => new URL(u).pathname === "/v1/tasks", route =>
+    route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ tasks: rows }) }));
+  try {
+    await page.goto(base, { waitUntil: "domcontentloaded" });
+    await page.waitForFunction(() => typeof alerting !== "undefined" && typeof refresh === "function", null,
+      { timeout: slow(15000) });
+    await page.waitForTimeout(1500);
+    await page.evaluate(() => alerting.set({ debounce: 0, muted: true, desktop: true }));
+    const step = async list => {
+      rows = list;
+      await page.evaluate(() => refresh());
+      await page.waitForTimeout(800);
+    };
+    const said = () => page.evaluate(() => ({
+      notes: window.__notes.map(n => n.title).filter(t => /^rns-/.test(t)),
+      toasts: [...document.querySelectorAll("#toasts .toast")].map(t => t.textContent).filter(t => /rns-/.test(t)),
+      log: toastLog().filter(e => /^rns-/.test(e.title)).map(e => e.title + " x" + (e.n || 1))
+    }));
+    const none = (what, s) => { if (s.notes.length || s.toasts.length || s.log.length) fail("readyNoSeed: " + what + ": " + JSON.stringify(s)); };
+    await step([old, turn]);
+    none("a card waiting a week at load was announced", await said());
+    // a hub start served the board before its room came back, then the room's cards arrive, a week old
+    await step([]);
+    await step([old, late, turn]);
+    none("a week-old wait arriving after the first pass was announced", await said());
+    // an idle agent card that only starts counting on a later poll
+    await step([old, late, idle, turn]);
+    none("an idle agent card counted by a later poll was announced", await said());
+    // a turn that ends now is the one event: one line in the log, said once as a notification or a toast
+    await step([old, late, idle, card("rns-turn", "needs-input", { waiting_since: new Date().toISOString() })]);
+    await page.waitForTimeout(600);
+    const s = await said();
+    if (s.log.join() !== "rns-turn is ready x1" || s.notes.length + s.toasts.length !== 1) {
+      fail("readyNoSeed: a turn that ended while the board was open was not exactly one notification: " + JSON.stringify(s));
+    }
+    if (errors.length) fail("readyNoSeed: page errors: " + errors.join(" | "));
+  } finally { await ctx.close(); }
+  if (!bad) console.log("readyNoSeed ok");
 }
 
 // A spawned card is drawn under its parent's row, under every sort and group mode. An orphan stays a row.
@@ -22609,6 +23418,7 @@ async function childFoldSection(browser, base) {
       count: btn ? (btn.querySelector(".tkidn") || {}).textContent || "" : "",
       run: btn ? (btn.querySelector(".tkidrun") || {}).textContent || "" : "",
       wait: btn ? (btn.querySelector(".tkidwait") || {}).textContent || "" : "",
+      tip: btn ? btn.dataset.tip || "" : "",
       runCls: btn ? btn.classList.contains("running") : false,
       loneBtn: !!(row("lone") && row("lone").querySelector("button.tkidfold")),
       tag: btn ? btn.tagName : ""
@@ -22624,11 +23434,36 @@ async function childFoldSection(browser, base) {
     await p.evaluate(() => document.querySelector("#term-list button.tkidfold").focus());
     await p.keyboard.press("Enter");
     v = await look(p);
-    if (v.expanded !== "false" || v.kids !== "kid-p") fail("childFold: fold did not hide the running kids: " + JSON.stringify(v));
+    if (v.expanded !== "false" || v.kids !== "") fail("childFold: fold did not hide every kid, the waiting one included: " + JSON.stringify(v));
     if (v.count !== "3") fail("childFold: folded count is " + JSON.stringify(v.count));
     // Nothing under it is working in this fixture, so the folded row says the count and the one that needs you.
     if (v.run !== "" || v.runCls) fail("childFold: a running chip with nothing running: " + JSON.stringify(v));
     if (!/^1/.test(v.wait)) fail("childFold: folded row does not count the waiting child: " + JSON.stringify(v.wait));
+    if (/needs you.*needs you/.test(v.tip)) fail("childFold: the chevron tip says it twice: " + JSON.stringify(v.tip));
+    // The explanation is in the card's hover popup, one line, singular for one.
+    const pop = await p.evaluate(async () => {
+      const par = (await boardCards()).find(c => c.id === "par");
+      const d = document.createElement("div"); d.innerHTML = peekBody(par, null);
+      const el = d.querySelector(".peek-kidwait"); return el ? el.textContent : "";
+    });
+    if (pop !== "1 cardunder this one needs you") fail("childFold: the folded parent's popup line is " + JSON.stringify(pop));
+    await p.evaluate(async () => { // a second waiting child makes it plural, and an open parent says nothing
+      (await boardCards()).find(c => c.id === "kid-a").status = "needs-permission"; await renderTermList();
+    });
+    const pop2 = await p.evaluate(async () => {
+      const d = document.createElement("div"); d.innerHTML = peekBody((await boardCards()).find(c => c.id === "par"), null);
+      return (d.querySelector(".peek-kidwait") || {}).textContent || "";
+    });
+    if (pop2 !== "2 cardsunder this one need you") fail("childFold: plural popup line is " + JSON.stringify(pop2));
+    await p.evaluate(async () => { (await boardCards()).find(c => c.id === "kid-a").status = "running"; await renderTermList(); });
+    if (process.env.CHILDFOLD_SHOTS) {
+      await p.hover('#term-list .card.tab[data-id="par"] .tname');
+      await p.waitForSelector(".peek-kidwait", { timeout: slow(5000) }).catch(() => fail("childFold: hover popup never showed the line"));
+      await p.waitForTimeout(500);
+      fs.mkdirSync(process.env.CHILDFOLD_SHOTS, { recursive: true });
+      await p.screenshot({ path: path.join(process.env.CHILDFOLD_SHOTS, "after-popup.png") });
+      await p.mouse.move(5, 5);
+    }
     // A working child, deep or not, shows on the folded parent.
     await p.evaluate(async () => {
       const all = await boardCards();
@@ -22661,7 +23496,7 @@ async function childFoldSection(browser, base) {
     for (const sort of ["name", "activity", "started"]) {
       await p.evaluate(s => setTermSortMode(s), sort);
       v = await look(p);
-      if (v.expanded !== "false" || v.kids !== "kid-p") fail("childFold " + sort + ": " + JSON.stringify(v));
+      if (v.expanded !== "false" || v.kids !== "") fail("childFold " + sort + ": " + JSON.stringify(v));
     }
     // A bogus stored value reads as expanded.
     for (const val of ["not json", "{\"a\":1}", "5", "null"]) {
@@ -23163,7 +23998,8 @@ async function quickPasteSection(browser, base) {
     const p = new URL(req.url()).pathname, m = req.method();
     if (m === "GET" && p === "/v1/prs") return json(route, 200, { prs: [], counts: {}, nav_count: 0 });
     if (m === "GET" && p === "/v1/providers") return json(route, 200, { providers: [{ name: "gh", host: "github.com", worktrees: true }] });
-    if (m === "GET" && p === "/v1/tasks/t-q") return json(route, 200, { id: "t-q", status: "running", title: "review zrok#12" });
+    if (m === "GET" && p === "/v1/tasks/t-q") { st.cardReads = (st.cardReads || 0) + 1;
+      return json(route, 200, { id: "t-q", status: "running", title: "review zrok#12" }); }
     st.calls.push(m + " " + p + " " + (req.postData() || ""));
     if (p === "/v1/open") {
       const url = JSON.parse(req.postData() || "{}").url || "";
@@ -23194,9 +24030,10 @@ async function quickPasteSection(browser, base) {
           vars: { org: "openziti", repo: "zrok", num: n, host: "github.com" } });
       }
       if (!/github\.com/.test(url)) return json(route, 404, { error: "no recogniser matches " + url });
+      const [, org, repo, num] = /github\.com\/([^/]+)\/([^/]+)\/pull\/(\d+)/.exec(url) || [, "openziti", "zrok", "12"];
       return json(route, 200, { recogniser: "github-pr", label: "github pull request", url, host: "github.com",
-        cwd: "/wt/zrok-12", title: "review zrok#12", prompt: "review the pull request", tags: ["pull-request"],
-        vars: { org: "openziti", repo: "zrok", num: "12", host: "github.com" } });
+        cwd: "/wt/" + repo + "-" + num, title: "review " + repo + "#" + num, prompt: "review the pull request",
+        tags: ["pull-request"], vars: { org, repo, num, host: "github.com" } });
     }
     if (p === "/v1/providers/gh/pr-worktree") return json(route, 200, { path: "/wt/zrok-12", existed: false });
     if (p === "/v1/prs") return json(route, 200, { pr: row, created: true });
@@ -23279,16 +24116,17 @@ async function quickPasteSection(browser, base) {
     if (st.calls.some(c => c.indexOf("/v1/launch") >= 0)) fail("quickPaste: shift-enter launched: " + st.calls.join(" | "));
     if (await p.inputValue("#l-url") !== "https://github.com/openziti/zrok/pull/12") fail("quickPaste: shift-enter lost the link");
     await shot(p, "edit-first");
-    // "more" is shut however much a recogniser filled in, and says what is in it
-    if (await p.evaluate(() => document.getElementById("l-more").open)) fail("quickPaste: more was open by default");
-    if (!/filled in/.test(await p.textContent("#l-more-note"))) fail("quickPaste: more did not say what it held");
-    // a link has the clean up tick (off) and the choice to stop being asked (on)
-    if (await p.evaluate(() => document.getElementById("l-cleanup-field").hidden || document.getElementById("l-cleanup-on").checked))
-      fail("quickPaste: the clean up tick was missing or on");
-    if (await p.evaluate(() => document.getElementById("l-direct-field").hidden || !document.getElementById("l-direct").checked))
-      fail("quickPaste: the don't ask again tick was missing or off");
+    // u-005: no throwaway, no clean up tick, no "don't ask again", no fold, no second link box. Every card cleans up when
+    // closed, and the first instruction is always in sight.
+    const gone = await p.evaluate(() => ["l-more", "l-throwaway-on", "l-cleanup-field", "l-cleanup-on", "l-direct-field",
+      "l-direct", "l-recognise", "open-progress"].filter(id => document.getElementById(id)));
+    if (gone.length) fail("quickPaste: the dialog still has " + gone.join());
+    const shown = await p.evaluate(() => ["l-url", "l-title", "l-tags", "l-why"].filter(id => {
+      const e = document.getElementById(id); return e && e.type !== "hidden" && e.getClientRects().length; }));
+    if (shown.length) fail("quickPaste: the dialog shows " + shown.join());
+    if (!await p.isVisible("#l-prompt")) fail("quickPaste: the first instruction was not in sight");
     // hover never changes layout in the dialog: the same box before and over
-    for (const sel of ["#l-go", "#l-more > summary", "#l-cwd", "#l-harness"]) {
+    for (const sel of ["#l-go", "#l-cwd", "#l-harness"]) {
       const box = async () => JSON.stringify(await p.evaluate(s => { const r = document.querySelector(s).getBoundingClientRect();
         return [r.x, r.y, r.width, r.height]; }, sel));
       await p.mouse.move(2, 2);
@@ -23403,7 +24241,8 @@ async function quickPasteSection(browser, base) {
     if (!await p.evaluate(() => document.getElementById("l-repo-field").hidden)) fail("quickPaste: a pull request showed the repo field");
     await p.evaluate(() => document.getElementById("launch").close());
 
-    // a slow open names its step in the strip, with the launch dialog never shown, and the strip goes when it ends
+    // a slow open is a card from the keypress on, naming its step, with the launch dialog never shown, and the card
+    // goes when the open answers with the real one
     let release;
     st.hold = new Promise(res => { release = res; });
     st.calls = [];
@@ -23418,33 +24257,68 @@ async function quickPasteSection(browser, base) {
     const heldBody = held ? JSON.parse(held.split(" ").slice(2).join(" ")) : {};
     if (!heldBody.progress) fail("quickPaste: the open sent no progress id: " + held);
     await p.evaluate(id => onOpenProgress({ data: JSON.stringify({ id, step: "fetching the head" }) }), heldBody.progress);
-    const strip = await p.evaluate(() => { const e = document.getElementById("open-progress");
-      return e && !e.hidden ? e.textContent : ""; });
-    if (!/fetching the head/.test(strip)) fail("quickPaste: the strip said " + JSON.stringify(strip));
+    const pending = await p.evaluate(id => { const e = document.querySelector(`.card.linkopen[data-linkopen="${id}"]`);
+      return e ? e.textContent : ""; }, heldBody.progress);
+    if (!/fetching the head/.test(pending) || !/review zrok#14/.test(pending))
+      fail("quickPaste: the opening card said " + JSON.stringify(pending));
     if (await p.evaluate(open("launch"))) fail("quickPaste: a slow open showed the launch dialog");
+    if (await p.evaluate(() => !!document.getElementById("open-progress"))) fail("quickPaste: the old strip is back");
+    await shot(p, "opening-card");
     release();
-    await p.waitForFunction(() => { const e = document.getElementById("open-progress"); return !e || e.hidden; },
-      null, { timeout: slow(5000) }).catch(() => fail("quickPaste: the strip stayed after the open ended"));
+    await p.waitForFunction(() => !document.querySelector(".card.linkopen"),
+      null, { timeout: slow(5000) }).catch(() => fail("quickPaste: the opening card stayed after the open ended"));
     st.hold = null;
 
-    // an open that fails reopens the launch dialog with the reason, not a dialog shown first
+    // an open that fails stays as its card with the reason, and no dialog comes up
     await enter("https://github.com/openziti/zrok/pull/13");
+    await p.waitForFunction(() => { const e = document.querySelector(".card.linkopen.failed");
+      return e && /boom/.test(e.textContent); }, null, { timeout: slow(5000) })
+      .catch(() => fail("quickPaste: a failed open did not stay as a card with the reason"));
+    if (await p.evaluate(open("launch"))) fail("quickPaste: a failed open showed the launch dialog");
+    await shot(p, "failed-card");
+    // its edit is the dialog, filled in
+    await p.evaluate(() => document.querySelector('.card.linkopen.failed [data-op-act="edit"]').click());
     await p.waitForFunction(() => document.getElementById("launch").open &&
-      /boom/.test(document.getElementById("l-link-note").textContent), null, { timeout: slow(5000) })
-      .catch(() => fail("quickPaste: a failed open did not reopen the dialog with the reason"));
+      document.getElementById("l-url").value.endsWith("/pull/13"), null, { timeout: slow(5000) })
+      .catch(() => fail("quickPaste: edit on a failed card did not bring the dialog up filled in"));
+    if (await p.evaluate(() => !!document.querySelector(".card.linkopen"))) fail("quickPaste: edit left the failed card");
     await p.evaluate(() => document.getElementById("launch").close());
 
-    // a plain paste of a link opens the box with it and not the launch dialog
-    await p.evaluate(() => document.querySelectorAll("dialog[open]").forEach(d => d.close()));
-    await p.evaluate(() => {
-      const dt = new DataTransfer();
-      dt.setData("text/plain", "https://github.com/openziti/zrok/pull/12");
-      document.body.dispatchEvent(new ClipboardEvent("paste", { clipboardData: dt, bubbles: true, cancelable: true }));
-    });
+    // A PLAIN PASTE OF A LINK OPENS IT AT ONCE (u-005): no bar, no dialog, one /v1/open, and its card attached.
+    // The acceptance link, github.com/openziti/desktop-edge-win/pull/1095.
+    const paste = async (url, wait = true) => {
+      st.calls = [];
+      st.cardReads = 0;
+      await p.evaluate(() => document.querySelectorAll("dialog[open]").forEach(d => d.close()));
+      await p.evaluate(u => {
+        window.__sawLaunch = false;
+        const dt = new DataTransfer();
+        dt.setData("text/plain", u);
+        document.body.dispatchEvent(new ClipboardEvent("paste", { clipboardData: dt, bubbles: true, cancelable: true }));
+      }, url);
+      const until = Date.now() + slow(8000);
+      while (wait && !st.cardReads && Date.now() < until) await p.waitForTimeout(25);
+      await p.waitForTimeout(200);
+    };
+    const dew = "https://github.com/openziti/desktop-edge-win/pull/1095";
+    await paste(dew);
+    if (!st.calls.some(c => c.indexOf("POST /v1/recognise") === 0)) fail("quickPaste: a pasted link was not read");
+    const pasted = st.calls.filter(c => c.indexOf("POST /v1/open") === 0);
+    const dewBody = pasted.length === 1 ? JSON.parse(pasted[0].split(" ").slice(2).join(" ")) : {};
+    if (pasted.length !== 1 || dewBody.url !== dew || dewBody.title !== "review desktop-edge-win#1095" || !dewBody.progress)
+      fail("quickPaste: a pasted link opened as " + pasted.join(" | "));
+    if (st.calls.some(c => c.indexOf("/v1/launch") >= 0)) fail("quickPaste: a pasted link launched the old way");
+    if (!st.cardReads) fail("quickPaste: a pasted link's card was never read to attach");
+    if (await p.evaluate(() => window.__sawLaunch || document.getElementById("launch").open))
+      fail("quickPaste: a pasted link showed the launch dialog");
+    if (await p.evaluate(open("switcher"))) fail("quickPaste: a pasted link opened the bar");
+    if (await p.evaluate(() => !!document.querySelector(".card.linkopen"))) fail("quickPaste: the pasted link's card stayed pending");
+    // a link nothing knows comes back to the bar with the reason
+    await paste("https://nowhere.example/y", false);
     await p.waitForFunction(() => document.getElementById("switcher").open &&
-      document.getElementById("sw-q").value === "https://github.com/openziti/zrok/pull/12", null, { timeout: slow(5000) })
-      .catch(() => fail("quickPaste: a pasted link did not open the box with it"));
-    if (await p.evaluate(open("launch"))) fail("quickPaste: a pasted link opened the launch dialog");
+      /nothing here knows/.test(document.getElementById("sw-open").textContent), null, { timeout: slow(5000) })
+      .catch(() => fail("quickPaste: an unknown pasted link did not come back to the bar"));
+    await p.evaluate(() => closeSwitcher());
     // clean up when done: a marked card reaching done is offered the card's own close, once, with the mark taken off
     const cleaned = await p.evaluate(async () => {
       const asked = [], patched = [];
@@ -24477,9 +25351,9 @@ async function termBoxSection(browser, base) {
           display_title: id, tags: [], ...extra });
         const sets = {
           supervisedOnly: [card("sv", "running", { supervised: true })],
-          joinedUnpinned: [card("jn", "needs-input")],
+          joinedUnpinned: [card("jn", "needs-input", { pid: 4242 })],
           someHidden: [card("sv", "running", { supervised: true }), card("xp", "done", { pinned: true }),
-            card("jn", "needs-input")],
+            card("jn", "needs-input", { pid: 4242 })],
           allHidden: [card("x1", "done", { pinned: true }), card("x2", "dead", { pinned: true })]
         };
         const res = {};
@@ -24577,12 +25451,9 @@ async function gearTermListSection(browser, base) {
         shown: [...document.querySelectorAll("#settings .pane")].some(x => x.dataset.name === "terminal list" && !x.hidden),
         sort: document.querySelectorAll("#gear-term-sort button").length,
         hide: document.querySelectorAll("#gear-term-hide, .termhide").length,
-        group: document.querySelectorAll("#term-group button").length,
-        cache: !!document.getElementById("cache-line-gear"),
-        inList: document.querySelectorAll("#term-list .cacheline").length
+        group: document.querySelectorAll("#term-group button").length
       }));
-      if (!f.shown || f.sort !== 3 || f.hide !== 0 || f.group < 6 || !f.cache) fail(tag + "the section is wrong: " + JSON.stringify(f));
-      if (f.inList) fail(tag + "the list still has the old row or line.");
+      if (!f.shown || f.sort !== 3 || f.hide !== 0 || f.group < 6) fail(tag + "the section is wrong: " + JSON.stringify(f));
       const a = await p.evaluate(() => {
         const was = sortByActivity;
         [...document.querySelectorAll("#gear-term-sort button")].find(b => !b.classList.contains("on")).click();
@@ -26154,8 +27025,7 @@ async function mHomeLiveSection(browser) {
   await st.open();
   // ── the expectations ──
   const ms = x => Date.parse(x);
-  const agentIdleOf = t => { const s = t.seen || {};
-    return t.status === "needs-input" && t.tags.includes("origin:agent") && !(s.answered === false && ((s.open_questions || []).length || s.questions_unparsed)) && !(t.asks_open > 0); };
+  const agentIdleOf = t => (t.status === "needs-input" || t.status === "needs-permission") && t.supervised === false && !t.starting && !t.offline && !(t.pid > 0);
   const needSince = t => {
     const s = t.seen || {};
     const out = [];
@@ -28562,7 +29432,7 @@ async function main() {
   if (ONLY) {    const only = { closeOneDialog: closeOneDialogSection, boardDocs: boardDocsSection, boardFiles: boardFilesSection, phoneBoardCompact: phoneBoardCompactSection, termWear: termWearSection, bridge: bridgeSection, detailsHover: detailsHoverSection, detailsSide: detailsSideBySideSection, chatter: chatterSection, chatterTab: chatterTabSection, settingsOnce: settingsOnceSection,
       groupRemove: groupRemoveSection, worn: wornSection, restartGate: restartGateSection, restartStays: restartStaysSection, atriumDown: atriumDownSection,
       toastStays: toastStaysSection, groupColor: groupColorSection,
-      groupDrag: groupDragSection, tooltip: tooltipSection, linkTip: linkTipSection, fileOpenOutside: fileOpenOutsideSection, readTabSize: readTabSizeSection, readWidthSkin: readWidthSkinSection, popoutTagFlip: popoutTagFlipSection, prefsEverywhere: prefsEverywhereSection, mPrefsEverywhere: (b) => mPrefsEverywhereSection(b), idleRate: idleRateSection, foldStill: foldStillSection,
+      groupDrag: groupDragSection, tooltip: tooltipSection, linkTip: linkTipSection, fileOpenOutside: fileOpenOutsideSection, readTabSize: readTabSizeSection, readWidthSkin: readWidthSkinSection, popoutTagFlip: popoutTagFlipSection, prefsEverywhere: prefsEverywhereSection, mPrefsEverywhere: (b) => mPrefsEverywhereSection(b), idleRate: idleRateSection, foldStill: foldStillSection, laneFold: laneFoldSection,
       untaggedSort: untaggedSortSection, newCard: newCardSection, themePreview: themePreviewSection, themeLab: themeLabSection, land: landSection, reselect: reselectSection, clearKeepsPage: clearKeepsPageSection, clearMark: clearMarkSection, clearLine: clearLineSection,
       resumeSpinner: resumeSpinnerSection, toastsTop: toastsTopSection, sayWhen: sayWhenSection, pasteSpinner: pasteSpinnerSection,
       pasteBig: pasteBigSection, pasteLands: pasteLandsSection, pasteEmpty: pasteEmptySection, pasteBusy: pasteBusySection, typing: typingSection, alias: aliasSection, askAgain: askAgainSection, copySelect: copySelectSection, busyGuard: busyGuardSection, keepalive: keepaliveSection, idlePark: idleParkSection, restartMenu: restartMenuSection,
@@ -28575,19 +29445,19 @@ async function main() {
       eventDriven: eventDrivenSection, idleBudget: idleBudgetSection, pollsGone: pollsGoneSection,
       terminalTopGap: terminalTopGapSection, phoneListFit: phoneListFitSection, termListLastRow: termListLastRowSection, phoneNudge: phoneNudgeSection,
       growlStack: growlStackSection, growlActions: growlActionsSection, growlModal: growlModalSection, growlQuiet: growlQuietSection, growlAttention: growlAttentionSection, growlPhone: growlPhoneSection, mGrowl: mGrowlSection, growlPopout: growlPopoutSection, growlOff: growlOffSection, growlRemind: growlRemindSection,
-      cacheChip: cacheChipSection, cacheLine: cacheLineSection, mHome: mHomeSection, mCard: mCardSection, mServe: mServeSection, phoneKeyLabel: phoneKeyLabelSection, phoneKeyLit: phoneKeyLitSection, shiftMenu: shiftMenuSection, termMenu: termMenuSection, notifyCommand: notifyCommandSection, presence: presenceSection, tallPty: tallPtySection, roomsMachine: roomsMachineSection, readyOnce: readyOnceSection, readyPopout: readyPopoutSection, popoutNotify: popoutNotifySection, readyTwoWindows: readyTwoWindowsSection,
+      cacheChip: cacheChipSection, mHome: mHomeSection, mCard: mCardSection, mServe: mServeSection, phoneKeyLabel: phoneKeyLabelSection, phoneKeyLit: phoneKeyLitSection, shiftMenu: shiftMenuSection, termMenu: termMenuSection, notifyCommand: notifyCommandSection, presence: presenceSection, tallPty: tallPtySection, roomsMachine: roomsMachineSection, readyOnce: readyOnceSection, arrivedOnce: arrivedOnceSection, readyPopout: readyPopoutSection, popoutNotify: popoutNotifySection, readyTwoWindows: readyTwoWindowsSection,
       cardUrlTable: cardUrlTableSection, cardUrlClash: cardUrlClashSection, cardUrlLinks: cardUrlLinksSection, cardUrlRoom: cardUrlRoomSection, mCardUrl: (b) => mCardUrlSection(b), cardUrlNotify: cardUrlNotifySection,
       clock: clockSection,
       composeImages: composeImagesSection, composePaste: composePasteSection, mComposeImages: mComposeImagesSection,
       usageTab: usageTabSection, usageWeekReset: usageWeekResetSection,
-      mAgentIdle: mAgentIdleSection, mResume: mResumeSection, mHome: mHomeSection, mCard: mCardSection, mServe: mServeSection,
+      mAgentIdle: mAgentIdleSection, greyMeansDead: greyMeansDeadSection, mResume: mResumeSection, mHome: mHomeSection, mCard: mCardSection, mServe: mServeSection,
       phoneKeyLabel: phoneKeyLabelSection, phoneKeyLit: phoneKeyLitSection,
       notifyCommand: notifyCommandSection, presence: presenceSection, shiftMenu: shiftMenuSection, tallPty: tallPtySection,
-      cacheChip: cacheChipSection, cacheLine: cacheLineSection, roomsMachine: roomsMachineSection,
+      cacheChip: cacheChipSection, roomsMachine: roomsMachineSection,
       u001Audit: u001AuditSection,
       pasteStart: pasteStartSection, pasteDone: pasteDoneSection, pasteOldRoom: pasteOldRoomSection, pasteClose: pasteCloseSection,
       growlQuestionShots: growlQuestionShotsSection, growlQuestionBody: growlQuestionBodySection, growlReplyGrow: growlReplyGrowSection, growlChoices: growlChoicesSection, replies: repliesSection, repliesOf: repliesOfSection, repliesShots: repliesShotsSection, growlStable: growlStableSection, growlOnIt: growlOnItSection, mGrowlQuestion: mGrowlQuestionSection,
-      roomsSetup: roomsSetupSection, discreteGroup: discreteGroupSection, groupingPerView: groupingPerViewSection, repoColors: repoColorsSection, themePicker: themePickerSection, themePickerShots: themePickerShotsSection, borderColourLag: borderColourLagSection, bootClean: bootCleanSection, dropdownsInstant: dropdownsInstantSection, peekLaunch: peekLaunchSection, mReload: mReloadSection, mReconnect: mReconnectSection, mActivityRead: mActivityReadSection, mReadRetry: mReadRetrySection, mWorking: mWorkingSection, mOwnMessages: mOwnMessagesSection, mBubbles: mBubblesSection, mRecapSheet: mRecapSheetSection,
+      roomsSetup: roomsSetupSection, discreteGroup: discreteGroupSection, groupingPerView: groupingPerViewSection, repoColors: repoColorsSection, themePicker: themePickerSection, themePickerShots: themePickerShotsSection, borderColourLag: borderColourLagSection, bootClean: bootCleanSection, interviewTop: interviewTopSection, parkedStays: parkedStaysSection, popupFit: popupFitSection, dropdownsInstant: dropdownsInstantSection, peekLaunch: peekLaunchSection, mReload: mReloadSection, mReconnect: mReconnectSection, mActivityRead: mActivityReadSection, mReadRetry: mReadRetrySection, mWorking: mWorkingSection, mOwnMessages: mOwnMessagesSection, mBubbles: mBubblesSection, mRecapSheet: mRecapSheetSection,
       mHomeOrder: mHomeOrderSection, cardUrlWayOut: cardUrlWayOutSection, phoneBoot: phoneBootSection, sayEnter: sayEnterSection, sendArrow: sendArrowSection, mTables: mTablesSection, mMarkdown: mMarkdownSection, mHostile: mHostileSection, mPictures: mPicturesSection, soundPhone: soundPhoneSection, phoneBell: phoneBellSection, mBell: mBellSection,
       mHomeOrder: mHomeOrderSection, cardUrlWayOut: cardUrlWayOutSection, phoneBoot: phoneBootSection, sayEnter: sayEnterSection, sendArrow: sendArrowSection, mTables: mTablesSection, mMarkdown: mMarkdownSection, mHostile: mHostileSection, mPictures: mPicturesSection, phoneRedirect: phoneRedirectSection,
       mHomeOrder: mHomeOrderSection, cardUrlWayOut: cardUrlWayOutSection, phoneBoot: phoneBootSection, sayEnter: sayEnterSection, sendArrow: sendArrowSection, mTables: mTablesSection, mMarkdown: mMarkdownSection, mHostile: mHostileSection, mPictures: mPicturesSection, mHidden: mHiddenSection, soundPhone: soundPhoneSection, phoneBell: phoneBellSection, mBell: mBellSection,
@@ -28601,8 +29471,9 @@ async function main() {
       mPull: mPullSection, joinedLive: joinedLiveSection, termEnded: termEndedSection, joinedClick: joinedClickSection,
       coverPoll: coverPollSection, coverSteps: coverStepsSection, termBox: termBoxSection, termRowBleed: termRowBleedSection,
       termDebug: termDebugSection, termDebugPerCard: termDebugPerCardSection, termLag: termLagSection, termHiddenRedraw: termHiddenRedrawSection, termLastRead: termLastReadSection, termSortStarted: termSortStartedSection,
-      noReadyChildren: noReadyChildrenSection, childUnderParent: childUnderParentSection, topNav: topNavSection, boardUsage: boardUsageSection, tabsOrder: tabsOrderSection,
-      u002: u002Section, childFold: childFoldSection, liveHome: liveHomeSection, toastsTop: toastsTopSection, heldLink: heldLinkSection, cloneAdopt: cloneAdoptSection, groupBridge: groupBridgeSection, revealFolds: revealFoldsSection,
+      noReadyChildren: noReadyChildrenSection, readyNoSeed: readyNoSeedSection, childUnderParent: childUnderParentSection, topNav: topNavSection, boardUsage: boardUsageSection, tabsOrder: tabsOrderSection,
+      groupMenus: groupMenusSection, mGroupMenus: mGroupMenusSection,
+      u002: u002Section, childFold: childFoldSection, liveHome: liveHomeSection, toastsTop: toastsTopSection, heldLink: heldLinkSection, groupBridge: groupBridgeSection, revealFolds: revealFoldsSection,
       pulls: pullsSection, prMove: prMoveSection, quickPaste: quickPasteSection, recogniserRepo: recogniserRepoSection, hubRepos: hubReposSection, hubReposShelf: hubReposShelfSection, hubReposLedger: hubReposLedgerSection, hubReposFeed: hubReposFeedSection, changeReq: changeReqSection, mChangeReq: mChangeReqSection, trayHead: trayHeadSection, pullsAbsent: pullsAbsentSection, pullsPanelStage: pullsPanelStageSection, oneTooltip: oneTooltipSection, burnChart: burnChartSection, burnReadout: burnReadoutSection, switchPrewarm: switchPrewarmSection, attachAtOnce: attachAtOnceSection, fileView: fileViewSection, keepAlive: keepAliveSection, switchBackCost: switchBackCostSection, keepMemory: keepMemorySection, pullsDrawer: pullsDrawerSection };
     try {
       const unknown = ONLY.split(",").filter(n => typeof only[n] !== "function");
@@ -29000,7 +29871,6 @@ async function main() {
         listOverflow: getComputedStyle(list).overflowY,
         scrollOverflow: scroll ? getComputedStyle(scroll).overflowY : "",
         widthBtns: list.querySelectorAll(".tlcorner .tlcycle").length,
-        cacheLine: list.querySelectorAll(".cacheline").length,
         line: !!line, sum: ((document.querySelector("#fd-terms .fsum") || {}).textContent || ""),
         search: !!document.getElementById("term-q"),
         panelShut: !!panel && panel.inert && getComputedStyle(panel).visibility === "hidden",
@@ -29015,9 +29885,6 @@ async function main() {
     }
     if (trayShut.rows !== "show|sort by|group") {
       fail("the terminals drawer does not have show, sort by and group rows: " + JSON.stringify(trayShut));
-    }
-    if (trayShut.cacheLine) {
-      fail("the list still carries the cache line, which lives in the gear: " + JSON.stringify(trayShut));
     }
     if (trayShut.widthBtns < 1) {
       fail("the list's width buttons are not on its corner: " + JSON.stringify(trayShut));
@@ -29914,6 +30781,12 @@ async function main() {
         fail("the backlog tab did not draw the open items, the built status and the report read-only: " +
           JSON.stringify(backlog));
       }
+      // A blocked item the human owns is listed, read-only: no button, no field.
+      await hub.waitForFunction(() => document.querySelectorAll('#backlog-owned .aud-row[data-item="it-aa11"]').length === 1,
+        null, { timeout: slow(15000) });
+      const owned = await hub.evaluate(() => ({ writes: document.querySelectorAll("#backlog-owned button, #backlog-owned input, #backlog-owned textarea").length,
+        state: document.querySelector("#backlog-owned .aud-when").textContent }));
+      if (owned.writes || owned.state !== "blocked") fail("the human-owned item was not drawn read-only: " + JSON.stringify(owned));
       // A click on a header sorts by it and a second reverses it; a priority chip narrows the list; the default order is
       // priority high to low, then newest. See js/backlog.js.
       const ids = () => hub.evaluate(() => [...document.querySelectorAll("#backlog-items .aud-row[data-id]")].map(r => r.dataset.id).join());
@@ -30395,6 +31268,8 @@ async function main() {
     await unit("idleRate", () => idleRateSection(browser, base));
     // ── a group opened by hand stays put, and idle windows write nothing ───
     await unit("foldStill", () => foldStillSection(browser, base));
+    // ── a group folds in its own lane, collapse all, and the stack's pinned and rest fold ─
+    await unit("laneFold", () => laneFoldSection(browser, base));
     // ── untagged follows the sort pill in all three views ──────────────────
     await unit("untaggedSort", () => untaggedSortSection(browser, base));
     // ── a card this window has not seen says so, once ──────────────────────
@@ -30496,9 +31371,9 @@ async function main() {
     await unit("termListLastRow", () => termListLastRowSection(browser, base));
     await unit("phoneNudge", () => phoneNudgeSection(browser, base));
     await unit("cacheChip", () => cacheChipSection(browser, base));
-    await unit("cacheLine", () => cacheLineSection(browser, base));
     await unit("peekLaunch", () => peekLaunchSection(browser, base));
     await unit("readyOnce", () => readyOnceSection(browser, base));
+    await unit("arrivedOnce", () => arrivedOnceSection(browser, base));
     await unit("readyPopout", () => readyPopoutSection(browser, base));
     // ── a pop-out's bell is its own: the card's switch and mute, never the board's ──
     await unit("popoutNotify", () => popoutNotifySection(browser, base));
@@ -30560,9 +31435,11 @@ async function main() {
     await unit("themePickerShots", () => themePickerShotsSection(browser, base));
     await unit("borderColourLag", () => borderColourLagSection(browser, base));
     await unit("bootClean", () => bootCleanSection(browser, base));
+    await unit("interviewTop", () => interviewTopSection(browser, base));
+    await unit("parkedStays", () => parkedStaysSection(browser, base));
+    await unit("popupFit", () => popupFitSection(browser, base));
     await unit("dropdownsInstant", () => dropdownsInstantSection(browser, base));
     await unit("heldLink", () => heldLinkSection(browser, base));
-    await unit("cloneAdopt", () => cloneAdoptSection(browser, base));
     await unit("mWorking", () => mWorkingSection(browser));
     await unit("mReload", () => mReloadSection(browser));
     await unit("mReconnect", () => mReconnectSection(browser));
@@ -30593,11 +31470,14 @@ async function main() {
     await unit("switcherRank", () => switcherRankSection(browser, base));
     await unit("revealFolds", () => revealFoldsSection(browser, base));
     await unit("groupBridge", () => groupBridgeSection(browser, base));
+    await unit("groupMenus", () => groupMenusSection(browser, base));
+    await unit("mGroupMenus", () => mGroupMenusSection(browser));
     await unit("docsPage", () => docsPageSection(browser, base));
     await unit("phoneBoardCompact", () => phoneBoardCompactSection(browser, base));
     await unit("phoneBell", () => phoneBellSection(browser, base));
     await unit("mBell", () => mBellSection(browser));
     await unit("mAgentIdle", () => mAgentIdleSection(browser));
+    await unit("greyMeansDead", () => greyMeansDeadSection(browser, base));
     await unit("phoneRedirect", () => phoneRedirectSection(browser, base));
     await unit("gearTermList", () => gearTermListSection(browser, base));
     await unit("growlLinks", () => growlLinksSection(browser, base));
@@ -30619,6 +31499,7 @@ async function main() {
     await unit("popoutRaise", () => popoutRaiseSection(browser, base));
     await unit("gearHosts", () => gearHostsSection(browser, base));
     await unit("joinedLive", () => joinedLiveSection(browser, base));
+    await unit("unifiedCard", () => unifiedCardSection(browser, base));
     await unit("termEnded", () => termEndedSection(browser, base));
     await unit("joinedClick", () => joinedClickSection(browser, base));
     await unit("coverPoll", () => coverPollSection(browser, base));
@@ -30640,6 +31521,7 @@ async function main() {
     await unit("pullsAbsent",() => pullsAbsentSection(browser, base));
     await unit("oneTooltip", () => oneTooltipSection(browser, base));
     await unit("noReadyChildren", () => noReadyChildrenSection(browser, base));
+    await unit("readyNoSeed", () => readyNoSeedSection(browser, base));
     await unit("childUnderParent", () => childUnderParentSection(browser, base));
     await unit("childFold", () => childFoldSection(browser, base));
     await unit("liveHome", () => liveHomeSection(browser, base));
@@ -30957,6 +31839,19 @@ function mServer(state) {
       req.on("end", () => state.docsApi(req, res, u, p, json, Buffer.concat(chunks)));
       return;
     }
+    const pm = p.match(/^\/v1\/tasks\/([^/]+)$/);
+    if (pm && req.method === "PATCH") {
+      const chunks = [];
+      req.on("data", c => chunks.push(c));
+      req.on("end", () => {
+        const body = JSON.parse(Buffer.concat(chunks).toString() || "{}");
+        (state.patches = state.patches || []).push(decodeURIComponent(pm[1]) + " " + JSON.stringify(body));
+        const t = state.tasks.find(x => x.id === decodeURIComponent(pm[1]));
+        if (t) Object.assign(t, body);
+        json(200, t || {});
+      });
+      return;
+    }
     const m = p.match(/^\/v1\/tasks\/([^/]+)\/replies$/);
     if (m) {
       const before = u.searchParams.get("before");
@@ -31140,13 +32035,75 @@ async function mResumeSection(browser) {
   if (!bad) console.log("mResume ok");
 }
 
+// GREY MEANS NOT RUNNING, NOTHING ELSE. One rule (`runnerGone` in js/cardrules.js) decides it for the stack and the terminals
+// tab; the phone page reads the same rule and is checked in mAgentIdle. GREY_SHOTS=<dir> writes a PNG of the rows.
+async function greyMeansDeadSection(browser, base) {
+  const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+  const p = await ctx.newPage();
+  const errors = [];
+  p.on("pageerror", e => errors.push(String(e && e.message || e)));
+  const tag = "greyMeansDead: ";
+  try {
+    await p.goto(base + "/raw", { waitUntil: "load" });
+    await p.waitForTimeout(1000);
+    const card = (id, over) => Object.assign({ id, title: id, display_title: id, status: "needs-input", wire_name: "w/" + id,
+      tags: ["origin:agent"], worktree: "/w/" + id, repo: "r", runner: "claude", supervised: true, pid: 0, seen: {}, activity: {},
+      created_at: "2026-10-13T10:00:00Z", last_activity_at: new Date().toISOString(), waiting_since: new Date().toISOString() }, over);
+    const cards = [
+      card("interview-live"),
+      card("interview-gone", { supervised: false }),
+      card("operator-live", { tags: [] }),
+      card("operator-gone", { tags: [], supervised: false }),
+      card("perm-gone", { status: "needs-permission", supervised: false }),
+      card("joined-pid", { supervised: false, pid: 4242 }),
+      card("ended", { status: "dead", supervised: false }),
+      card("finished", { status: "done", supervised: false }),
+    ];
+    const got = await p.evaluate((cs) => {
+      const out = {};
+      for (const t of cs) {
+        const stack = document.createElement("div"); stack.innerHTML = stackRow(t);
+        const term = document.createElement("div"); term.innerHTML = termRow(t, false, false);
+        out[t.id] = { attn: stack.firstElementChild.classList.contains("attn"),
+          cold: !!term.querySelector(".card.tab.cold"), waiting: isWaiting(t), gone: typeof runnerGone === "function" && runnerGone(t) };
+      }
+      const shots = document.createElement("div");
+      shots.id = "grey-shots"; shots.style.cssText = "position:fixed;top:0;left:0;width:900px;z-index:99999;background:#111";
+      shots.innerHTML = '<div id="stack-list" style="display:block">' + cs.map(stackRow).join("") + "</div>" +
+        '<div id="term-list" style="display:block;width:300px">' + cs.map(t => termRow(t, false, false)).join("") + "</div>";
+      document.body.appendChild(shots);
+      return out;
+    }, cards);
+    const want = {
+      "interview-live": { attn: true, cold: false }, "interview-gone": { attn: false, cold: true },
+      "operator-live": { attn: true, cold: false }, "operator-gone": { attn: false, cold: true },
+      "perm-gone": { attn: false, cold: true }, "joined-pid": { attn: true, cold: false },
+      ended: { attn: false, cold: true }, finished: { attn: false, cold: true },
+    };
+    for (const id of Object.keys(want)) {
+      const g = got[id];
+      if (g.attn !== want[id].attn) fail(tag + id + " on the stack: orange=" + g.attn + ", want " + want[id].attn);
+      if (g.cold !== want[id].cold) fail(tag + id + " on the terminals tab: grey=" + g.cold + ", want " + want[id].cold);
+      if (g.waiting !== want[id].attn) fail(tag + id + " isWaiting=" + g.waiting);
+    }
+    if (process.env.GREY_SHOTS) {
+      fs.mkdirSync(process.env.GREY_SHOTS, { recursive: true });
+      await p.locator("#grey-shots").screenshot({ path: path.join(process.env.GREY_SHOTS, "grey-shot.png") });
+    }
+    if (errors.length) fail(tag + "page errors: " + errors.join(" | "));
+  } finally { await ctx.close(); }
+  if (!bad) console.log("greyMeansDead ok");
+}
+
 async function mAgentIdleSection(browser) {
   const tag = "mAgentIdle: ";
   const agent = (id, over) => mCard(id, Object.assign({ alias: id, display_title: id, tags: ["origin:agent", "atrium:director"], status: "needs-input",
-    waiting_since: mIso(5 * M_MIN), waiting_reason: "turn" }, over || {}));
+    waiting_since: mIso(5 * M_MIN), waiting_reason: "turn", supervised: true }, over || {}));
   const st = mServer({});
   st.tasks = [
     agent("a-idle"),
+    agent("a-gone", { supervised: false }),
+    mCard("op-gone", { alias: "op-gone", display_title: "op-gone", status: "needs-input", supervised: false, waiting_since: mIso(6 * M_MIN) }),
     agent("a-ask", { seen: { answered: false, open_questions: ["land it?"], questions_at: mIso(4 * M_MIN) } }),
     agent("a-perm", { status: "needs-permission" }),
     mCard("op-wait", { alias: "op-wait", display_title: "op-wait", status: "needs-input", waiting_since: mIso(6 * M_MIN), waiting_reason: "turn" }),
@@ -31160,16 +32117,16 @@ async function mAgentIdleSection(browser) {
     await p.waitForSelector("#m-list .row", { timeout: slow(10000) });
     await p.waitForFunction(() => window.mNet.loaded(), null, { timeout: slow(8000) });
     const names = await p.$$eval("#m-list .row .name b", e => e.map(x => x.textContent).sort());
-    if (names.join(",") !== "a-ask,a-perm,op-wait") fail(tag + "the needs list is " + names.join(","));
-    if (!/^\(3\)/.test(await p.title())) fail(tag + "the tab title count is " + (await p.title()));
+    if (names.join(",") !== "a-ask,a-idle,a-perm,op-wait") fail(tag + "the needs list is " + names.join(","));
+    if (!/^\(4\)/.test(await p.title())) fail(tag + "the tab title count is " + (await p.title()));
     const said = await p.evaluate(() => {
       const c = id => window.mStore.card(id);
-      return ["a-idle", "a-ask", "op-wait"].map(id => window.mUtil.activityText(c(id)));
+      return ["a-idle", "a-ask", "op-wait", "a-gone", "op-gone"].map(id => window.mUtil.activityText(c(id)));
     });
-    if (said[0] !== "idle") fail(tag + "an idle agent card reads " + said[0]);
-    if (said[1] !== "waiting for you" || said[2] !== "waiting for you") fail(tag + "a question or operator card reads " + said.join("|"));
-    const rows = await p.evaluate(() => ["a-idle", "a-ask", "op-wait"].map(id => agentIdle(window.mStore.card(id))));
-    if (rows.join() !== "true,false,false") fail(tag + "the shared predicate says " + rows.join());
+    if (said.slice(0, 3).some(x => x !== "waiting for you")) fail(tag + "a running card waiting on the operator reads " + said.join("|"));
+    if (said[3] !== "its runner is gone" || said[4] !== "its runner is gone") fail(tag + "a card with no runner reads " + said.join("|"));
+    const rows = await p.evaluate(() => ["a-idle", "a-ask", "op-wait", "a-gone", "op-gone"].map(id => runnerGone(window.mStore.card(id))));
+    if (rows.join() !== "false,false,false,true,true") fail(tag + "the shared predicate says " + rows.join());
     await p.tap("#m-seg-all");
     await p.waitForSelector("#m-list h2.grp", { timeout: slow(5000) });
     const grp = await p.evaluate(() => {
@@ -31183,7 +32140,8 @@ async function mAgentIdleSection(browser) {
       return Object.keys(by).map(g => g + ":" + by[g]);
     });
     const waitingGrp = grp.find(g => /^Waiting/.test(g)) || "", idleGrp = grp.find(g => /^Idle/.test(g)) || "";
-    if (/a-idle/.test(waitingGrp) || !/a-idle/.test(idleGrp)) fail(tag + "the idle agent card is not under Idle: " + grp.join(" | "));
+    if (!/a-idle/.test(waitingGrp) || /a-gone|op-gone/.test(waitingGrp)) fail(tag + "a live agent card is not under Waiting, or a gone one is: " + grp.join(" | "));
+    if (!/a-gone/.test(idleGrp) || !/op-gone/.test(idleGrp)) fail(tag + "a card with no runner is not under Idle: " + grp.join(" | "));
     if (!/a-ask/.test(waitingGrp) || !/op-wait/.test(waitingGrp)) fail(tag + "a question or operator card left Waiting: " + grp.join(" | "));
     // the bell: a card that goes idle rings nothing, an operator card and a question do
     // the permission ask above already rang once; what follows is counted from there
@@ -31193,11 +32151,13 @@ async function mAgentIdleSection(browser) {
     if ((await waits()).length) fail(tag + "the first load rang for a wait: " + (await waits()).join("|"));
     const push = async (t) => { st.tasks.push(t); st.send("task", t); await p.waitForTimeout(800); };
     await push(agent("a-new-idle", { waiting_since: mIso(0) }));
-    if ((await waits()).length) fail(tag + "an idle agent card rang the bell: " + (await waits()).join("|"));
+    if ((await waits()).length !== 1) fail(tag + "a live agent card waiting on the operator did not ring the bell: " + (await waits()).join("|"));
+    await push(agent("a-new-gone", { waiting_since: mIso(0), supervised: false }));
+    if ((await waits()).length !== 1) fail(tag + "a card with no runner rang the bell: " + (await waits()).join("|"));
     await push(agent("a-new-ask", { waiting_since: mIso(0), seen: { answered: false, open_questions: ["ok?"] } }));
-    if ((await waits()).length !== 1) fail(tag + "an agent card with a question did not ring the bell: " + (await waits()).join("|"));
+    if ((await waits()).length !== 2) fail(tag + "an agent card with a question did not ring the bell: " + (await waits()).join("|"));
     await push(mCard("op-new", { alias: "op-new", display_title: "op-new", status: "needs-input", waiting_since: mIso(0) }));
-    if ((await waits()).length !== 2) fail(tag + "an operator-launched card did not ring the bell: " + (await waits()).join("|"));
+    if ((await waits()).length !== 3) fail(tag + "an operator-launched card did not ring the bell: " + (await waits()).join("|"));
     if (errors.length) fail(tag + "page errors: " + errors.join(" | "));
     await ctx.close();
   } finally { await st.close(); }
@@ -31871,7 +32831,7 @@ async function growlOffSection(browser, base) {
       if (await p.$("#growl-phone:not([hidden]) *")) fail("growlOff: a " + reason + " drew the phone strip.");
       const after = await heard();
       if (after.osc !== before.osc) fail("growlOff: a " + reason + " rang a growler tone.");
-      if (!(await logged("growler: " + reason + " c"))) fail("growlOff: a " + reason + " left no line in the bell log.");
+      if (!(await logged(reason + " c"))) fail("growlOff: a " + reason + " left no line in the bell log.");
       if (await p.evaluate(() => growlMark !== "")) fail("growlOff: a " + reason + " put the growler dot on the favicon.");
       // the existing notify setting decides the desktop notification
       if (after.notes !== before.notes + 1) fail("growlOff: a " + reason + " raised " + (after.notes - before.notes) + " desktop notifications with notify on.");
@@ -31883,17 +32843,22 @@ async function growlOffSection(browser, base) {
     await h.say([GR("c", "question", 2)]);
     await p.waitForTimeout(300);
     if ((await heard()).notes !== n0) fail("growlOff: a desktop notification came through with notify switched off.");
-    if (!(await logged("growler: question c"))) fail("growlOff: the held question left no log line.");
+    if (!(await logged("question c"))) fail("growlOff: the held question left no log line.");
     await p.evaluate(() => setNotifyOff(false));
     // a reminder from the hub rings nothing and draws nothing, but keeps the desktop notification
     const q = GR("c", "question", 3);
     await h.say([q]);
     const r0 = await heard();
+    const times = t => p.evaluate(t0 => toastLog().filter(e => e.title === t0).reduce((s, e) => s + (e.n || 1), 0), t);
+    const q0 = await times("question c");
     await h.say([Object.assign({}, q, { reminders: 1 })], { remind: [q.id] });
     await p.waitForTimeout(300);
     const r1 = await heard();
     if (await drawn() || r1.osc !== r0.osc) fail("growlOff: a hub reminder drew or rang: " + JSON.stringify([r0, r1]));
-    if (!(await logged("growler reminder: question c"))) fail("growlOff: a hub reminder was not logged.");
+    if (!(await times("question c") > q0)) fail("growlOff: a hub reminder was not logged.");
+    // the bell is read by a person: the growler's title alone, never this file's name for the event in front of it
+    const prefixed = await p.evaluate(() => toastLog().map(e => e.title).filter(t => /^growler/.test(t)));
+    if (prefixed.length) fail("growlOff: the bell log carries an internal prefix: " + JSON.stringify(prefixed));
     // a dismissal draws no undo bar
     await p.evaluate(g => growlPost(g, { do: "dismiss" }, true), q);
     await p.waitForTimeout(300);
@@ -31906,7 +32871,7 @@ async function growlOffSection(browser, base) {
     await p.waitForTimeout(300);
     if (await drawn()) fail("growlOff: a permission drew a growler.");
     if ((await heard()).osc !== b0.osc) fail("growlOff: a permission rang the growler's tone.");
-    if (!(await logged("growler: permission a"))) fail("growlOff: a permission left no log line.");
+    if (!(await logged("permission a"))) fail("growlOff: a permission left no log line.");
     if (await p.evaluate(g => growlHas(g.subject), pr)) fail("growlOff: growlHas still held the permission's nag back.");
     // and a real pending permission, through the ordinary path: its keyed toast stays and its tone rings
     await p.evaluate(() => { alerting.set({ debounce: 0, muted: false }); Document.prototype.hasFocus = () => true; window.dispatchEvent(new Event("focus")); });
@@ -31970,13 +32935,13 @@ async function growlRemindSection(browser, base) {
     const rows = () => p.evaluate(() => [...document.querySelectorAll("#toastlog-list .tlrow")].map(r => ({
       t: r.querySelector("b").textContent, btns: [...r.querySelectorAll(".tlremind")].map(b => b.textContent) })));
     let r = await rows();
-    const mine = r.find(x => x.t.startsWith("growler: question c"));
+    const mine = r.find(x => x.t.startsWith("question c"));
     if (!mine || mine.btns.join() !== "remind me") fail("growlRemind: the open growler's bell row was " + JSON.stringify(mine));
-    const ended = r.find(x => x.t.startsWith("growler: question e"));
+    const ended = r.find(x => x.t.startsWith("question e"));
     if (!ended || ended.btns.length) fail("growlRemind: an ended growler's bell row offered a control: " + JSON.stringify(ended));
     await p.click('#toastlog-list .tlremind[data-remind="menu"]');
     r = await rows();
-    if (r.find(x => x.t.startsWith("growler: question c")).btns.join() !== "15 min,1 h,tomorrow 9am") fail("growlRemind: the options were " + JSON.stringify(r));
+    if (r.find(x => x.t.startsWith("question c")).btns.join() !== "15 min,1 h,tomorrow 9am") fail("growlRemind: the options were " + JSON.stringify(r));
     await p.click('#toastlog-list .tlremind[data-remind="60"]');
     await p.waitForTimeout(300);
     const post = h.posts.find(x => x.id === q.id);
@@ -32019,7 +32984,7 @@ async function growlQuietSection(browser, base) {
     await h.say([row]);
     // a growler appearing is one log line, and so is it leaving
     let l = await log();
-    if (l.filter(t => t === "growler: permission a").length !== 1) fail("growlQuiet: raising logged " + JSON.stringify(l));
+    if (l.filter(t => t === "permission a").length !== 1) fail("growlQuiet: raising logged " + JSON.stringify(l));
     // the nag steps aside for a permission with a growler
     const old = { id: "perm-a", requested_at: new Date(Date.now() - 3 * 60000).toISOString(), tool: "Bash", command: "rm -rf build", agent: "x", task_id: "a" };
     const before = l.length;
@@ -32049,7 +33014,7 @@ async function growlQuietSection(browser, base) {
     // the hub resets raised_at when a snooze ends
     await h.say([Object.assign({}, row, { raised_at: new Date(GR_T0 + 99 * 60000).toISOString() })], { remind: [row.id] });
     l = await log();
-    if (l.filter(t => t === "growler: permission a").length !== 2) fail("growlQuiet: a snooze ending did not log a new raise: " + JSON.stringify(l));
+    if (l.filter(t => t === "permission a").length !== 2) fail("growlQuiet: a snooze ending did not log a new raise: " + JSON.stringify(l));
     // a hub never asks for the set, at load or later
     await p.waitForTimeout(1500);
     if (h.gets) fail("growlQuiet: the board fetched /_hub/growls " + h.gets + " times.");
@@ -32111,7 +33076,7 @@ async function growlAttentionSection(browser, base) {
     if (!s.osc) fail("growlAttention: a raise made no sound.");
     let notes = await p.evaluate(() => window.__notes);
     if (notes.length !== 1 || notes[0].tag !== "atrium-growl:" + a.id || notes[0].req !== true) fail("growlAttention: the notification was " + JSON.stringify(notes));
-    if ((await log()).filter(t => t === "growler: permission a").length !== 1) fail("growlAttention: the raise was not one log line: " + JSON.stringify(await log()));
+    if ((await log()).filter(t => t === "permission a").length !== 1) fail("growlAttention: the raise was not one log line: " + JSON.stringify(await log()));
 
     // the tab title alternates and the favicon wears the count
     await p.waitForFunction(() => /^! /.test(document.title), null, { timeout: slow(3000) })
@@ -32134,10 +33099,13 @@ async function growlAttentionSection(browser, base) {
     // a reminder rings the tone and notifies under the same tag again
     await focus(false);
     const before = await n();
+    const said = () => p.evaluate(() => toastLog().filter(e => e.title === "permission a").reduce((s, e) => s + (e.n || 1), 0));
+    const said0 = await said();
     await h.say([old, Object.assign({}, a, { reminders: 1 }), GR("b", "question", 2)], { remind: [a.id] });
     s = await n();
     if (s.osc <= before.osc || s.notes !== before.notes + 1) fail("growlAttention: a reminder was " + JSON.stringify([before, s]));
-    if (!(await log()).includes("growler reminder: permission a")) fail("growlAttention: the reminder was not logged.");
+    if (!(await said() > said0)) fail("growlAttention: the reminder was not logged.");
+    if ((await log()).some(t => /^growler/.test(t))) fail("growlAttention: the bell log carries an internal prefix: " + JSON.stringify(await log()));
     notes = await p.evaluate(() => window.__notes);
     if (notes[notes.length - 1].tag !== "atrium-growl:" + a.id || notes[notes.length - 1].renotify !== true) fail("growlAttention: the reminder notification was " + JSON.stringify(notes[notes.length - 1]));
 
@@ -32445,7 +33413,7 @@ async function growlOnItSection(browser, base) {
     await stage("c", true);
     let r = await raise("question");
     if (r.drawn || r.rang || r.noted) fail("growlOnIt: a question for the attached, focused card was " + JSON.stringify(r));
-    if (await logged("growler: question c") || await count()) fail("growlOnIt: the quiet question entered the log.");
+    if (await logged("question c") || await count()) fail("growlOnIt: the quiet question entered the log.");
     // the paste confirmation and the ready alert for the card you are on do not count either
     await p.evaluate(() => toastUnlogged("in the working directory", "/x/y"));
     await p.evaluate(() => alerting.check("waiting", [], t => ({ title: t.id + " is ready", body: "" })));
@@ -32479,7 +33447,7 @@ async function growlOnItSection(browser, base) {
     await h.say([Object.assign({}, r.g, { reminders: 1 })], { remind: [r.g.id] });
     await p.waitForTimeout(200);
     if (!(await drawn())) fail("growlOnIt: a reminder with you elsewhere did not bring the question back.");
-    if (!(await logged("growler: question c"))) fail("growlOnIt: the question that came back was not logged.");
+    if (!(await logged("question c"))) fail("growlOnIt: the question that came back was not logged.");
     // with no reminder involved, "you are on it" ending draws the hidden growler, and rings nothing
     const comesBack = async (what, change) => {
       await stage("c", true);
@@ -32520,7 +33488,7 @@ async function growlOnItSection(browser, base) {
     if (await drawn()) fail("growlOnIt: the board drew a question for a card whose pop-out is focused.");
     const inPop = await pop.evaluate(() => /\S/.test((document.getElementById("growl") || {}).textContent || ""));
     if (inPop) fail("growlOnIt: the focused pop-out drew a question for its own card.");
-    if (await logged("growler: question c")) fail("growlOnIt: the pop-out case logged a growler you were on.");
+    if (await logged("question c")) fail("growlOnIt: the pop-out case logged a growler you were on.");
     const bh = await heard();
     if (bh.osc !== osc0 || bh.notes !== bh0) fail("growlOnIt: the board rang for the pop-out's card: " + JSON.stringify(bh));
     // the pop-out blurs: the hidden growler is drawn on the board, with no reminder and no ring

@@ -738,7 +738,7 @@ func (d *Daemon) runNewContext(taskID string, gen uint64) {
 	file, start, by := cur.file, cur.step, newContextBy
 	// What reached the card in its latest turn is in the context about to be cleared, and the model is told to write
 	// a handoff, not to act on it. Handed back once the wake is typed. See contextlog.go.
-	carried := d.takeInContext(taskID)
+	carried := d.itemMissed(taskID, d.takeInContext(taskID))
 	if cur.auto {
 		by = cycleBy
 	}

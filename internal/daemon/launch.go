@@ -194,6 +194,9 @@ type LaunchRequest struct {
 	// Lifetime is `work` for a launch from atrium_launch_worker: atrium exits the runner once the card's branch
 	// merges. Empty leaves a relaunched card's own value and gives a new card none. Anything but `work` is refused.
 	Lifetime string `json:"lifetime,omitempty"`
+	// Item starts the card as an item: the ItemTag, an ending that names no launcher, atrium as the opening prompt's
+	// sender, and no say. See item.go.
+	Item bool `json:"item,omitempty"`
 }
 
 // TerminalTemplate wraps a command so it opens in a real terminal window.
@@ -736,6 +739,14 @@ func (d *Daemon) Launch(req LaunchRequest) (*store.Task, error) {
 	if lt := strings.TrimSpace(req.Lifetime); lt != "" && lt != store.LifetimeWork {
 		return nil, fmt.Errorf("lifetime %q is not one atrium knows. the only one is %q", lt, store.LifetimeWork)
 	}
+	// AN ITEM CARRIES ITS TAG, wherever the request came from: the tag is what the rest reads. See item.go.
+	if req.Item && !hasTag(req.Tags, ItemTag) {
+		req.Tags = append(append([]string{}, req.Tags...), ItemTag)
+	}
+	// AN OWNER THAT CANNOT BE is refused here, before a card or a worktree exists. See item_hub.go.
+	if err := checkItemLaunch(req); err != nil {
+		return nil, err
+	}
 	keys := launchKeys(req.TaskID, req.Resume)
 	if req.MovedFrom != "" {
 		keys = append(keys, "move:"+req.MovedFrom)
@@ -964,12 +975,14 @@ func (d *Daemon) launchLocked(req LaunchRequest) (*store.Task, error) {
 		if hasTag(req.Tags, InterviewTag) {
 			wanted = briefPromptEnding(briefFileName, wanted, "")
 		} else {
-			if isResident(req.Tags) {
+			if req.Item || hasTag(req.Tags, ItemTag) {
+				wanted = ItemBriefPrompt(briefFileName, wanted)
+			} else if isResident(req.Tags) {
 				wanted = briefPromptEnding(briefFileName, wanted, ResidentEndingLine)
 			} else {
 				wanted = briefPrompt(wanted)
 			}
-			if !outside {
+			if !outside && !req.Item && !hasTag(req.Tags, ItemTag) {
 				vctx, vcancel := context.WithTimeout(context.Background(), gitsync.CommandBound)
 				if l := d.visibleLauncher(vctx, task, req.SpawnedByID, req.SpawnedBy, req.SpawnedByDir, cwd); l != nil {
 					wanted = withCommitVisible(wanted, commitVisibleLine(l.WireName))
@@ -1079,8 +1092,9 @@ func (d *Daemon) launchLocked(req LaunchRequest) (*store.Task, error) {
 	retag := false
 	if req.Lean != nil || len(req.LeanAgents) > 0 || len(req.LeanSkills) > 0 {
 		base := req.Tags
-		if len(base) == 0 && task != nil {
-			base = task.Tags
+		if task != nil {
+			// The card's own tags stay under whatever the launch carried.
+			base = mergeTags(task.Tags, req.Tags)
 		}
 		if req.Lean == nil || *req.Lean {
 			// A new list replaces the card's, so the old marks come off first.
@@ -1332,7 +1346,18 @@ func (d *Daemon) launchLocked(req LaunchRequest) (*store.Task, error) {
 		}
 	}
 	if len(req.Tags) > 0 || retag {
-		if err := d.st.SetTags(created.ID, req.Tags); err != nil {
+		// A launch is a machine writing, so it ADDS to the tags the card has now, read here and not at the top of the
+		// launch. Replacing them dropped atrium:interview off a card relaunched with only fresh launch tags. Only the
+		// lean marks are the launch's to take off, and req.Tags already holds the ones that stay.
+		tags := req.Tags
+		if cur, err := d.st.Get(created.ID); err == nil {
+			kept := cur.Tags
+			if req.Lean != nil || len(req.LeanAgents) > 0 || len(req.LeanSkills) > 0 {
+				kept, _ = withoutLeanTags(kept)
+			}
+			tags = mergeTags(kept, req.Tags)
+		}
+		if err := d.st.SetTags(created.ID, tags); err != nil {
 			return nil, err
 		}
 	}
@@ -1419,6 +1444,14 @@ func (d *Daemon) launchLocked(req LaunchRequest) (*store.Task, error) {
 			}
 		}
 	}
+	// AN ITEM, for a fresh item launch: its mirror row, its owner and the push the hub is owed. See item_hub.go.
+	if req.Resume == "" && (req.Item || hasTag(req.Tags, ItemTag)) {
+		if t, err := d.st.Get(created.ID); err == nil {
+			if _, err := d.createItem(t, itemOwnerSpec(req.Tags)); err != nil {
+				return nil, err
+			}
+		}
+	}
 	// WHICH MODEL THIS CARD IS RUNNING ON, written after the runner is up
 	// rather than before, so a launch that was refused leaves nothing behind.
 	//
@@ -1498,7 +1531,7 @@ func (d *Daemon) launchLocked(req LaunchRequest) (*store.Task, error) {
 		// whether the prompt is owed to a launcher. A reopen by the operator
 		// asks as nobody. See store.promptOwes.
 		ev := map[string]any{"text": prompt, "via": "launch"}
-		if by := strings.TrimSpace(req.SpawnedBy); by != "" && by != store.HumanLauncher {
+		if by := openingSender(req); by != "" {
 			ev["from_peer"] = by
 		}
 		if err := d.st.AppendEvent(created.ID, store.EventPrompted, ev); err != nil {
@@ -1772,7 +1805,7 @@ func ResidentBriefPrompt(file, prompt string) string {
 // briefPromptEnding is BriefPrompt with the ending it closes on. An interview closes on none: its turns end on a
 // question, and its rules for finishing are in the brief.
 func briefPromptEnding(file, prompt, ending string) string {
-	body := strings.TrimSpace(strings.TrimSuffix(strings.TrimSuffix(strings.TrimSpace(prompt), LaunchEndingLine), ResidentEndingLine))
+	body := strings.TrimSpace(strings.TrimSuffix(strings.TrimSuffix(strings.TrimSuffix(strings.TrimSpace(prompt), LaunchEndingLine), ResidentEndingLine), ItemEndingLine))
 	then := "Then: do as " + file + " describes."
 	if body != "" && !onlyReadTheBrief(body, file) {
 		then = "Then: " + body

@@ -306,8 +306,6 @@ function paintStack() {
     changed: stackChanged(show),
     match: list.length === visible ? "" : `${list.length} of ${visible}`
   });
-  // The cache summary, over the rows this list shows. See js/keepalive.js.
-  if (typeof paintCacheLine === "function") paintCacheLine("cache-line-stack", list);
 
   const s = STACK_SORTS[stackSort] || STACK_SORTS.activity;
   // The tiebreak is applied here rather than written into each cmp, so every
@@ -372,7 +370,7 @@ function stackOfflineHTML(rows) {
     <div class="hintline">What ${rooms.length === 1 ? "that machine" : "those machines"} last
       said. Nothing here can be opened or changed until
       ${rooms.length === 1 ? "it is" : "they are"} back.</div>
-    <div class="panel">${stackRows(rows)}</div>
+    <div class="panel">${stackRows(rows, "offline")}</div>
   </details>`;
 }
 
@@ -407,14 +405,17 @@ function stackGroupsHTML(list, g) {
     // board had a fold key that moved under a card and this never did. Sharing
     // the key now would silently fold the stack from the board and back.
     const fold = "proj:" + key;
-    const shut = isFolded(fold) ? "" : " open";
+    // An empty group starts shut. The list records what differs from how it comes, as on the board, and
+    // `data-fold-shut` tells the toggle listener this one is inverted.
+    const empty = mine.length === 0;
+    const shut = (isFolded(fold) === empty) ? " open" : "";
     return `<details class="stackgroup"${shut} style="--ghue:${groupHue(name)}"
-      data-morph-key="${esc(key)}" data-fold="${esc(fold)}">
+      data-morph-key="${esc(key)}" data-fold="${esc(fold)}"${empty ? ` data-fold-shut="1"` : ""}>
       <summary oncontextmenu="groupMenu(event, '${esc(name).replace(/'/g, "&#39;")}')">
         <span class="gname" data-tip="${esc(name)} &mdash; right click to recolor">${esc(name)}</span>
         <span class="gn">${mine.length}</span>
       </summary>
-      <div class="panel">${mine.length ? stackRows(mine) : emptyGroupHint()}</div>
+      <div class="panel">${mine.length ? stackRows(mine, name) : emptyGroupHint(name)}</div>
     </details>`;
   }).join("");
 }
@@ -496,12 +497,30 @@ function bigNumberAtMeans(t) {
 //
 // Only when there is something on both sides: a heading over an empty set, or
 // over everything, names nothing.
-function stackRows(list) {
+//
+// BOTH SIDES FOLD, like every other group on the stack. `scope` says which panel they are in ("all" when the stack is
+// not grouped, otherwise the group's name), so shutting the pinned half of one project leaves the others alone. The
+// keys are `sect:pinned:<scope>` and `sect:rest:<scope>`, shut when present, in the same list as every other fold.
+function stackRows(list, scope) {
   const pinned = list.filter(t => t.pinned).length;
   if (!pinned || pinned === list.length) return list.map(stackRow).join("");
-  return `<div class="pinbreak"><span>pinned</span></div>` + list.map((t, i) =>
-    (i === pinned ? `<div class="pinbreak"><span>the rest</span></div>` : "")
-    + stackRow(t)).join("");
+  scope = scope || "all";
+  return stackSectionHTML("pinned", scope, 41, list.slice(0, pinned))
+    + stackSectionHTML("the rest", scope, 210, list.slice(pinned));
+}
+
+function stackSectionHTML(label, scope, hue, rows) {
+  const kind = label === "pinned" ? "pinned" : "rest";
+  const fold = "sect:" + kind + ":" + scope;
+  const open = isFolded(fold) ? "" : " open";
+  return `<details class="stackgroup stacksec"${open} style="--ghue:${hue}"
+    data-morph-key="${esc(fold)}" data-fold="${esc(fold)}">
+    <summary>
+      <span class="gname">${label}</span>
+      <span class="gn">${rows.length}</span>
+    </summary>
+    ${rows.map(stackRow).join("")}
+  </details>`;
 }
 
 function stackRow(t) {

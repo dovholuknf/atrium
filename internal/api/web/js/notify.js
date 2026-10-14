@@ -116,7 +116,10 @@ function watchedCard() {
 // other window: the sound, the toast and the toast forwarded to it.
 function readySilenced(id) {
   if (!id) return false;
-  if (focusIsHere()) return termWatching(id);
+  if (focusIsHere()) {
+    if (termWatching(id)) { noteEngaged(id); return true; }
+    return engagedWith(id);
+  }
   return !!focusIsElsewhere() && !!focusedElsewhere.watch && focusedElsewhere.watch === bareId(id);
 }
 
@@ -543,6 +546,16 @@ const alerting = (() => {
   // room set changes. See the header on `reseed`.
   const RESEED = "\0reseed";
 
+  // When this page loaded, and whether a timestamp is older. An unreadable one is taken as new, the answer `check`
+  // gave before it read the time at all.
+  const loadedAt = Date.now();
+  function beganBeforeLoad(ts) {
+    if (!ts) return false;
+    let t = Date.parse(ts);
+    if (isNaN(t)) t = Date.parse(ts + "Z");
+    return !isNaN(t) && t < loadedAt;
+  }
+
   // A pop-out mutes its own card and leaves the board's sound alone.
   const muted = () => inPopout() ? popoutSoundMuted() : !!prefs.muted;
 
@@ -830,6 +843,7 @@ const alerting = (() => {
   const rung = new Map();
   const RUNG_KEEP_MS = 3600000;
   const RUNG_CAP = 1000;
+  const ARRIVED_KEEP_MS = 86400000;
   const held = new Map();
   const lastActive = new Map();
   let liveWaits = new Set();
@@ -996,12 +1010,27 @@ const alerting = (() => {
     // A WAIT THAT HAS RUNG NEVER RINGS AGAIN. Membership flaps (a card out of
     // the set for one pass and back) make a card look fresh with the same wait.
     fresh = fresh.filter(i => !rungHas(kind, i));
+    // A WAIT THAT BEGAN BEFORE THIS PAGE LOADED IS NOT AN EVENT, however it got into the list. The first pass seeds
+    // what it sees, but a card can join the list later with a wait that is days old: a room attaching after the
+    // first pass, a hub start that served no cards yet, or a rule change that starts counting a card it left out
+    // (cardsReady took in idle agent cards, and one dormant for a week rang a minute after the deploy, 2026-10-13).
+    // Only a turn that ends while the board is open rings. Remembered as rung so it stays quiet. An arrival is the
+    // same: a card made before the page loaded is one the board had not been shown yet, not a new card.
+    const began = kind === "waiting" ? i => i.waiting_since : kind === "arrived" ? i => i.created_at : null;
+    if (began) {
+      const old = fresh.filter(i => beganBeforeLoad(began(i)));
+      if (old.length) {
+        rememberRung(kind, old);
+        fresh = fresh.filter(i => !old.includes(i));
+      }
+    }
     if (!fresh.length) return;
     // A READY ALERT IS HELD UNTIL THE CARD HAS BEEN QUIET. See `holdWaits`.
     if (kind === "waiting") {
       holdWaits(fresh, describe);
       return;
     }
+    if (kind === "arrived") rememberRung(kind, fresh);
     deliver(kind, fresh, describe);
   }
 
@@ -1021,6 +1050,8 @@ const alerting = (() => {
   function rungKey(kind, i) {
     if (kind === "waiting") return bareId(i.id) + "|" + (i.waiting_since || "");
     if (kind === "looksidle") return bareId(i.id);
+    // AN ARRIVAL IS KEYED ON THE CARD ALONE. A card that leaves the list for one poll and returns is not new.
+    if (kind === "arrived") return "a:" + bareId(i.id);
     return "";
   }
   function rungHas(kind, i) {
@@ -1032,7 +1063,7 @@ const alerting = (() => {
   }
   // Every pass: what is waiting now, and which remembered waits are over.
   function trackWaits(kind, items) {
-    if (kind !== "waiting" && kind !== "looksidle") return;
+    if (kind !== "waiting" && kind !== "looksidle" && kind !== "arrived") return;
     const now = Date.now();
     const live = new Set(items.map(i => rungKey(kind, i)));
     const liveIds = new Set(items.map(i => bareId(i.task_id || i.id)));
@@ -1041,9 +1072,13 @@ const alerting = (() => {
       held.forEach((h, k) => { if (!live.has(k)) { clearTimeout(h.timer); held.delete(k); } });
     }
     live.forEach(k => { if (rung.has(k)) rung.set(k, now); });
-    const mine = k => kind === "waiting" ? k.includes("|") : !k.includes("|");
+    const mine = k => kind === "arrived" ? k.startsWith("a:")
+      : kind === "waiting" ? k.includes("|") : !k.includes("|") && !k.startsWith("a:");
     rung.forEach((at, k) => {
       if (!mine(k) || live.has(k)) return;
+      // An arrival key is kept while the card is merely absent from a poll, and dropped only after it has been
+      // gone ARRIVED_KEEP_MS. A card that was there is never "the same card in another wait".
+      if (kind === "arrived") { if (now - at > ARRIVED_KEEP_MS) rung.delete(k); return; }
       const id = k.split("|")[0];
       // The card is here under a different wait, or has been gone a while.
       if (liveIds.has(id) || now - at > RUNG_KEEP_MS) rung.delete(k);

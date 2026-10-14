@@ -21,6 +21,7 @@ A new agent: `docs/agents.md`, `docs/how-atrium-works.md`, `docs/fabric/hub-and-
 | `agents.md` | an agent starting work on atrium | the bring-up, and which docs to trust |
 | `how-atrium-works.md` | a contributor or an agent | the one architecture page: processes, ports, cards, hooks, the permission chain, state |
 | `fabric/hub-and-rooms.md` | a contributor or an agent | the hub, rooms, joining, ports, cross-room addressing, as built |
+| `security/` | a contributor, an agent or the operator | the product security audit, and what stops an agent from committing as itself or reaching a remote |
 | `story.md` | anyone | how atrium got here, each step with what broke and the archived doc behind it |
 | `runtime/wiring-a-runner.md` | an agent wiring up a new runner | the hook contract, measured |
 | `user-guide.md` | a human using atrium | the working patterns, until they move to the site |

@@ -162,7 +162,7 @@ function paintTermShow() {
     fdChip("dead", on.has("dead"), "toggleTermShow('dead')",
       "pinned rows whose session has exited, and the ended group. a click starts one again", "dead") +
     fdChip("subagents", on.has("subagents"), "toggleTermShow('subagents')",
-      "off: a parent's subagents are folded under it, with a count. one that needs you still shows. on: parents start open", "subagents");
+      "off: a parent's subagents are folded under it, with a count. a count and a ! chip say what needs you. on: parents start open", "subagents");
 }
 prefLive([TERM_SHOW_KEY + "*"], () => { paintTermShow(); renderTermList(); });
 
@@ -170,29 +170,21 @@ prefLive([TERM_SHOW_KEY + "*"], () => { paintTermShow(); renderTermList(); });
 //   `gone`    a closed card with no session. Nothing to resume, listed only while it is the attached one.
 //   `shelved` stopped. Behind the shelved chip.
 //   `live`    a runner is up, or it was joined from the operator's own terminal. Always listed.
+//   `parked`  idle-parked: no process, the conversation kept. Always listed, grey, with a resume on the row. Parking
+//             frees the process, it does not take the card off the list of terminals.
 //   `dead`    pinned, with its runner gone. Behind the dead chip.
 //   ``        not a row of the list.
 function termRowKind(t) {
   if (termClosedGone(t)) return "gone";
   if (t.status === "shelved") return "shelved";
   if (t.supervised || termJoined(t)) return "live";
+  if (t.parked_at) return "parked";
   if (t.pinned) return "dead";
   return "";
 }
 
 
-// IS THIS SESSION WORKING RIGHT NOW. The one live-activity guard the whole
-// strip reads from: the doer filter's hide-inactive test, the runner mark that
-// animates, and the `by activity` sort all ask this and get the same answer,
-// rather than three copies that drift. It is the same test the board's
-// `activityChip` makes (board.js): a live `activity.what` that is not idle, on a
-// card that is not waiting on you, not shelved, and whose activity is not stale
-// (a done or dead card can still carry a `thinking` that outlived its status).
-function workingNow(t) {
-  const a = t && t.activity;
-  return !!(a && a.what && a.what !== "idle" && !a.looks_idle &&
-    !isWaiting(t) && t.status !== "shelved" && !staleActivity(t));
-}
+// IS THIS SESSION WORKING RIGHT NOW is `workingNow`, in js/cardrules.js.
 
 // IS THIS ROW COLD: no live connection. `supervised` is set while atrium holds a
 // runner for the card and drops when that runner exits or disconnects. Idle and
@@ -213,7 +205,7 @@ function termCold(t) {
   if (t && t.supervised) return false;
   // A parked card keeps its status but its process is gone.
   if (t && t.parked_at) return true;
-  return !(t && TERM_LIVE_STATUS.includes(t.status));
+  return !(t && TERM_LIVE_STATUS.includes(t.status)) || runnerGone(t);
 }
 // Live but not attachable: joined from a terminal atrium does not hold.
 function termJoined(t) { return !!t && !t.supervised && !termCold(t); }
@@ -258,6 +250,13 @@ function termKept(t, show) {
   if (!termTask || t.id !== termTask.id) return false;
   const k = termRowKind(t);
   return k === "gone" || (k === "shelved" && !show.has("shelved")) || (k === "dead" && !show.has("dead"));
+}
+
+// Whether the list holds this card at all, given the chips. Live and parked rows always, the rest by their chip.
+function termListed(t, show) {
+  const k = termRowKind(t);
+  return k === "live" || k === "parked" || (k !== "" && (termKept(t, show) || (k === "shelved" && show.has("shelved")) ||
+    (k === "dead" && show.has("dead"))));
 }
 
 // ── the sort, and the gear's copy of it ──────────────────────────────────────
@@ -1080,9 +1079,9 @@ function termRow(t, deep, kid) {
       keptWord === "opening" ? "being started again here, so the filter keeps it listed"
         : "open in the pane, so the filter keeps it listed"}">${keptWord}</span>` : "";
   const allKids = termKids.get(t.id) || [];
-  const shut = allKids.length > 0 && termKidsShut(t);
-  // A folded parent still shows a child that needs you, and the one holding the attached terminal (`termHoldsOn`).
-  const shown = shut ? allKids.filter(k => termKidWaits(k) || termHoldsOn(k)) : allKids;
+  const shut = termKidTotal(t) > 0 && termKidsShut(t);
+  // A fold hides every child, one that needs you included: the warn chip on the parent is the signal (`termKidsToggle`).
+  const shown = shut ? [] : allKids;
   const kids = shown.map(k => termRow(k, false, true)).join("");
   return `
     <div class="card tab ${on ? "on" : ""}${kid ? " kid" : ""}${
@@ -1093,13 +1092,14 @@ function termRow(t, deep, kid) {
            // the session again where it was.
            termCold(t) && !keptOpen ? " cold" : keptOpen ? " kept" : ""}${wear.cls}${newCardClass(t)}"
          data-id="${t.id}"
-         data-tip="${esc(hover + (termCold(t) ? "\nthis one has exited. click to start it again here" +
+         data-tip="${esc(hover + (termCold(t) ? (t.parked_at ? "\nparked after sitting idle. click to resume the same conversation"
+           : "\nthis one has exited. click to start it again here") +
            (keptOpen ? "\nthe filter would hide it, but it is open in the pane, so it stays until you switch away" : "")
            : t.starting && !t.supervised ? "\natrium is starting this one. its runner is not up yet"
            : termJoined(t) ? "\njoined from your own terminal. atrium cannot attach to it. click for what you can do" : ""))}"
          style="${style}"
          onclick="${termCold(t)
-           ? `resumePinned('${t.id}')`
+           ? (t.parked_at ? `resumeParked('${t.id}')` : `resumePinned('${t.id}')`)
            : termJoined(t) ? `joinedClick('${t.id}')` : `attachTask('${t.id}')`}"
          oncontextmenu="termMenu(event, '${t.id}')">
       ${ctxLine(t)}
@@ -1121,13 +1121,17 @@ function termRow(t, deep, kid) {
                 : ""
             }</span>
         </div>
-        ${termRowChips(t, keptChip)}${termKidsToggle(t, allKids.length, allKids.length - shown.length, shut)}
+        ${termRowChips(t, keptChip)}${termKidsToggle(t, termKidTotal(t), termKidTotal(t) - shown.length, shut)}
       </div>
     </div>${kids ?`<div class="tkids">${kids}</div>` : ""}`;
 }
 
 // The spawned cards drawn under each parent row, by parent id. Rebuilt on every render by `termNest`.
 let termKids = new Map();
+// The same, over every card the list could hold, drawn or not: a chip, the search or a cold row can leave a parent's
+// children out of `termKids`, and the parent still has them. Its chevron is drawn for these.
+let termKidsPool = new Map();
+function termKidTotal(t) { return Math.max((termKids.get(t.id) || []).length, (termKidsPool.get(t.id) || []).length); }
 
 // A parent's fold lives in the same list as the group folds, keyed by the bare id so a room-set change keeps it.
 // Like the groups it records what is NOT as it comes, and what it comes as is the subagents chip's say: off, a parent
@@ -1136,12 +1140,6 @@ let termKids = new Map();
 function termKidsKey(t) { return "kids:" + bareId(t.id); }
 function termKidsShut(t) { return termSubsOn() ? isFolded(termKidsKey(t)) : !isFolded(termKidsKey(t)); }
 
-// Does this child, or anything nested under it, need the human? A folded parent still shows those, so a question is
-// findable without unfolding.
-function termKidWaits(k) {
-  return isWaiting(k) || (termKids.get(k.id) || []).some(termKidWaits);
-}
-
 // How many cards under this one, at any depth, satisfy `pred`.
 function termKidsCount(id, pred) {
   return (termKids.get(id) || []).reduce((n, k) => n + (pred(k) ? 1 : 0) + termKidsCount(k.id, pred), 0);
@@ -1149,7 +1147,7 @@ function termKidsCount(id, pred) {
 
 // The chevron on a parent row. A real button so it takes focus and Enter/Space. Folded, it is a count of what is
 // under the row (the direct cards), then how many cards at any depth are running and how many need the human, drawn
-// as chips like the row's other badges. A waiting child is also kept drawn under the row, and still counted here.
+// as chips like the row's other badges. Nothing under a folded row is drawn, a waiting child included: the chip is how it is found.
 function termKidsToggle(t, total, hidden, shut) {
   if (!total) return "";
   const run = shut ? termKidsCount(t.id, workingNow) : 0;
@@ -1187,7 +1185,7 @@ addEventListener("storage", e => {
 function termNest(list) {
   const byBare = new Map(list.map(t => [bareId(t.id), t]));
   const parentOf = t => {
-    if (!(t.tags || []).includes("atrium:subagent") || !t.spawned_by_id || t.pinned) return null;
+    if (!nestsUnderLauncher(t) || !t.spawned_by_id || t.pinned) return null;
     const p = byBare.get(bareId(t.spawned_by_id));
     return p && p !== t ? p : null;
   };
@@ -1229,7 +1227,11 @@ function termRowChips(t, lead) {
     : termJoined(t) ? `<span class="chip">joined</span>` : "";
   // The past-the-limit mark, which the strip did not draw. A card cycling its context shows that instead.
   const lim = t.new_context ? "" : ctxWarnMark(t);
-  const inner = (lead || "") + stuck + newCardChip(t) + lim + ncx + seenChips(t) + cache + held + room + popped + joined;
+  const resume = t.parked_at && !t.supervised
+    ? `<button type="button" class="chip accent termresume" aria-label="resume this parked card"
+         data-tip="parked after sitting idle. resume the same conversation"
+         onclick="event.stopPropagation();resumeParked('${t.id}')">resume</button>` : "";
+  const inner = (lead || "") + resume + stuck + newCardChip(t) + lim + ncx + seenChips(t) + cache + held + room + popped + joined;
   return inner ? `<div class="chips">${inner}</div>` : "";
 }
 
@@ -1437,7 +1439,9 @@ function termFlatGroupsHTML(list, g, folded) {
     // disagree about what nothing is called.
     const shown = name || "uncategorized";
     const at = "g:" + shown;
-    const off = folded.has(at);
+    // An empty group starts shut, and `open:` + the heading records somebody opening it.
+    const nobody = by.get(name).length === 0;
+    const off = nobody ? !folded.has("open:" + at) : folded.has(at);
     // A group you made keeps the order you set, not the strip's sort. See
     // `byRank` on the board. It is also a drop target, see `wireTermDrag`.
     const mine = g.handOrdered && name && name !== UNTAGGED && typeof byRank === "function";
@@ -1452,7 +1456,7 @@ function termFlatGroupsHTML(list, g, folded) {
     // made with `+ new group` here could never be taken away from here.
     // `untagged` is the absence of a group and gets no menu.
     const menu = name && name !== UNTAGGED ? name : "";
-    const head = termHeading(shown, at, by.get(name).length, off, menu, style, mine, by.get(name));
+    const head = termHeading(shown, at, by.get(name).length, off, menu, style, mine, by.get(name), nobody);
     if (off) return head;
     const rows = by.get(name);
     if (mine) rows.sort(byRank);
@@ -1461,7 +1465,7 @@ function termFlatGroupsHTML(list, g, folded) {
     const out = g.handOrdered && name === UNTAGGED ? ` data-ungroup="1"` : "";
     return head + `<div class="tnest${hue === null ? "" : " hued"}"${style}${out}${
       mine ? ` data-group="${esc(name)}"` : ""}>${rows.length
-      ? rows.map(t => termRow(t, false)).join("") : emptyGroupHint()}</div>`;
+      ? rows.map(t => termRow(t, false)).join("") : emptyGroupHint(shown)}</div>`;
   }).join("");
 }
 
@@ -1506,8 +1510,9 @@ function termFolded() {
   catch (e) { return new Set(); }
 }
 
-function toggleTermGroup(path) {
+function toggleTermGroup(path, empty) {
   const folded = termFolded();
+  if (empty) path = "open:" + path;
   if (folded.has(path)) folded.delete(path);
   else folded.add(path);
   try { localStorage.setItem(TERM_FOLDED, JSON.stringify([...folded])); } catch (e) {}
@@ -1539,7 +1544,7 @@ function toggleTermGroup(path) {
 // it is the one mode whose order is yours to write (`p.groups`). Every other
 // mode sorts its groups by a rule, so a drag there would be undone by the next
 // paint, and the heading says where reordering lives instead of offering it.
-function termHeading(name, path, count, folded, group, style, movable, rows) {
+function termHeading(name, path, count, folded, group, style, movable, rows, empty) {
   const total = termTotals.get(path);
   const shown = total > count ? `${count}/${total}` : `${count}`;
   const tip = total > count ? ` (${total - count} hidden by the search)` : "";
@@ -1560,7 +1565,7 @@ function termHeading(name, path, count, folded, group, style, movable, rows) {
   if (wear) style = ` style="${(style || "").replace(/^ style="|"$/g, "")};${wear.vars}"`;
   return `<button class="tgroup${style ? " hued" : ""}${movable ? " movable" : ""}${carries ? " carries" + wear.cls : ""}"${style || ""}${
       movable ? ` draggable="true" data-ghead="${esc(group)}"` : ""}
-      onclick="toggleTermGroup('${arg}')"${menu}
+      onclick="toggleTermGroup('${arg}'${empty ? ", true" : ""})"${menu}
       data-tip="${folded ? "show" : "hide"} ${esc(name)}${tip}${how}"
       >${movable ? `<span class="tgrip" aria-hidden="true">&#10303;</span>` : ""}<span
         class="tcaret">${folded ? "&#9656;" : "&#9662;"}</span
@@ -1835,11 +1840,7 @@ async function renderTermList() {
   // attached one. The attached one stays whatever is off, so turning a chip off never pulls the pane out from under you.
   const show = termShow();
   const pool = all.filter(t => !t.offline);
-  const tasks = pool.filter(t => {
-    const k = termRowKind(t);
-    return k === "live" || (k !== "" && (termKept(t, show) || (k === "shelved" && show.has("shelved")) ||
-      (k === "dead" && show.has("dead"))));
-  });
+  const tasks = pool.filter(t => termListed(t, show));
   // The badge counts what is actually attachable, since it is a count of live terminals rather than of rows. Over the
   // whole pool, whatever the chips say: the nav badge is a fact about the board, not about how this screen reads it.
   badge("c-term", pool.filter(t => termRowKind(t) === "live" && t.supervised).length);
@@ -1886,6 +1887,7 @@ async function renderTermList() {
   // Spawned cards move under their parent row, so the lists below hold top rows only. See `termNest`.
   const nest = termNest(shown);
   termKids = nest.kids;
+  termKidsPool = termNest(all.filter(t => !t.offline)).kids;
   const top = shown.filter(t => !nest.nested.has(t.id));
   // What each heading would hold with nothing searched away, so it can say `7/15`.
   const nestAll = q ? termNest(tasks) : nest;
@@ -1962,10 +1964,10 @@ async function renderTermList() {
   // header at all, and the board's painter writes into whichever of its three
   // hosts it finds.
   if (typeof paintGroupSegs === "function") paintGroupSegs();
-  // The gear's terminal list section follows the list. The cache summary there is
-  // event driven like the stack's. See js/keepalive.js.
+  // The gear's terminal list section follows the list.
   paintTermGear();
-  if (typeof paintCacheLine === "function") paintCacheLine("cache-line-gear", shown);
+  // A link still being opened sits at the top of the list too (js/link-opening.js).
+  if (typeof linkOpeningPaint === "function") linkOpeningPaint();
 }
 
 // ── the ended cards ──────────────────────────────────────────────────────────

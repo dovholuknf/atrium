@@ -183,7 +183,10 @@ func (d *Daemon) relay() Relay {
 }
 
 // RelayAttached is the link saying it is back. What is owed goes now.
-func (d *Daemon) RelayAttached() { d.kickRelays() }
+func (d *Daemon) RelayAttached() {
+	d.kickRelays()
+	d.kickItems()
+}
 
 // ── the doors ───────────────────────────────────────────────────────────────
 
@@ -212,6 +215,10 @@ func (d *Daemon) handleSay(w http.ResponseWriter, r *http.Request) {
 	var in sayIn
 	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&in); err != nil {
 		writeJSONErr(w, http.StatusBadRequest, err)
+		return
+	}
+	if d.itemSayRefused(in.From) {
+		writeItemSayRefused(w)
 		return
 	}
 	name, room, err := SplitAddress(in.To)

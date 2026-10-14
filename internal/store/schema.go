@@ -2210,6 +2210,64 @@ var migrations = []struct {
 			`ALTER TABLE task ADD COLUMN launch_branch TEXT NOT NULL DEFAULT ''`,
 		},
 	},
+	{
+		// THE ROOM'S MIRROR OF ITS ITEMS, and the outbox that carries each revision to the hub, which owns them. An
+		// outbox row is keyed (item_id, revision, state), so a replayed push is the same row. See item.go.
+		name: "0098_item_mirror",
+		stmts: []string{
+			`CREATE TABLE IF NOT EXISTS item_mirror (
+				item_id           TEXT PRIMARY KEY,
+				task_id           TEXT NOT NULL,
+				generation        INTEGER NOT NULL DEFAULT 1,
+				state             TEXT NOT NULL CHECK (state IN ('queued','running','blocked','finished')),
+				revision          INTEGER NOT NULL,
+				owner_kind        TEXT NOT NULL CHECK (owner_kind IN ('session','role','human')),
+				owner             TEXT NOT NULL DEFAULT '',
+				created_by        TEXT NOT NULL DEFAULT '',
+				note              TEXT NOT NULL DEFAULT '',
+				unblock_msg       TEXT NOT NULL DEFAULT '',
+				unblock_delivered INTEGER NOT NULL DEFAULT 0,
+				created_at        TEXT NOT NULL,
+				updated_at        TEXT NOT NULL
+			)`,
+			`CREATE INDEX IF NOT EXISTS item_mirror_task ON item_mirror (task_id, created_at)`,
+			`CREATE TABLE IF NOT EXISTS item_outbox (
+				item_id    TEXT NOT NULL,
+				revision   INTEGER NOT NULL,
+				state      TEXT NOT NULL,
+				body       TEXT NOT NULL,
+				created_at TEXT NOT NULL,
+				attempts   INTEGER NOT NULL DEFAULT 0,
+				last_error TEXT NOT NULL DEFAULT '',
+				PRIMARY KEY (item_id, revision, state)
+			)`,
+		},
+	},
+	{
+		// ITEMS, PART 2b: what the stuck timers and the one-time re-delivery need to remember, per revision. They are
+		// cleared when the item moves, because a new revision is a new stall. See item.go.
+		name: "0099_item_stuck",
+		stmts: []string{
+			`ALTER TABLE item_mirror ADD COLUMN unblock_text   TEXT NOT NULL DEFAULT ''`,
+			`ALTER TABLE item_mirror ADD COLUMN unblock_at     TEXT NOT NULL DEFAULT ''`,
+			`ALTER TABLE item_mirror ADD COLUMN retyped_at     TEXT NOT NULL DEFAULT ''`,
+			`ALTER TABLE item_mirror ADD COLUMN stuck_alerted  TEXT NOT NULL DEFAULT ''`,
+			`ALTER TABLE item_mirror ADD COLUMN missed_owner   INTEGER NOT NULL DEFAULT 0`,
+			`ALTER TABLE item_mirror ADD COLUMN missed_worker  INTEGER NOT NULL DEFAULT 0`,
+		},
+	},
+	{
+		// A WAIT A RESTART CAN GIVE BACK: the `waiting_since` a card had when it went dead or done. A resume comes up
+		// through running and back to waiting, and each of those cleared the clock, so every deploy re-rang every card
+		// that was already waiting. Cleared when a person speaks to the card. See waitcarry.go.
+		name: "0100_waiting_carry",
+		stmts: []string{
+			`CREATE TABLE IF NOT EXISTS waiting_carry (
+				task_id TEXT PRIMARY KEY REFERENCES task(id) ON DELETE CASCADE,
+				since   TEXT NOT NULL
+			)`,
+		},
+	},
 }
 
 // migrate applies any migration not already recorded. This runs before the

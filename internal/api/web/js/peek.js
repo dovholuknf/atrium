@@ -233,8 +233,13 @@ function peekBody(t, v) {
   const where = t && typeof terminalLabel === "function" ? terminalLabel(t) : "";
   const cold = t && typeof termCold === "function" && termCold(t)
     ? "this one has exited. click it to start it again here" : "";
+  // A folded parent draws none of its children, so the warn chip on its row has to be explained here.
+  const kidsWait = t && typeof termKidsShut === "function" && (termKids.get(t.id) || []).length && termKidsShut(t)
+    ? termKidsCount(t.id, isWaiting) : 0;
   const head = `<div class="peek-head"><span class="peek-title">${esc(title)}</span>` +
     (st ? `<div class="peek-status ${st.cls}"><b>${esc(st.word)}</b>${st.why ? `<span>${esc(st.why)}</span>` : ""}</div>` : "") +
+    (kidsWait ? `<div class="peek-status ps-ask peek-kidwait"><b>${kidsWait} ${kidsWait === 1 ? "card" : "cards"}</b><span>under this one ${
+      kidsWait === 1 ? "needs" : "need"} you</span></div>` : "") +
     `<div class="peek-meta">` +
     (where && where !== title ? `<span class="peek-path">${esc(where)}</span>` : "") +
     (sub ? `<span class="peek-sub">${esc(sub)}</span>` : "") + `</div>` +
@@ -359,7 +364,8 @@ function peekChatter(box, id, first, drawers) {
   let drawer = null;
   if (drawers) {
     sec.dataset.drawer = "chatter";
-    sec.dataset.label = "chatter";
+    sec.dataset.label = "messages between agents";
+    sec.dataset.help = "Messages other agent sessions sent this card, and what it sent them. Folded because they rarely need you. Your own typing is not counted.";
     peekDrawers(box);
     drawer = sec.closest(".peek-drawer");
     drawer.hidden = true;
@@ -370,7 +376,7 @@ function peekChatter(box, id, first, drawers) {
     if (!sec.querySelector(".chat-title")) {
       const t = document.createElement("div");
       t.className = "chat-title";
-      t.textContent = "chatter";
+      t.textContent = "messages between agents";
       sec.appendChild(t);
     }
     sec.querySelector(".chat-more")?.remove();
@@ -379,7 +385,7 @@ function peekChatter(box, id, first, drawers) {
     if (drawer) {
       drawer.hidden = sec.hidden;
       const n = sec.querySelectorAll(".chat-row").length;
-      drawer.querySelector(".peek-dsum").textContent = n + (n === 1 ? " say" : " says") + (page.more ? " or more" : "");
+      drawer.querySelector(".peek-dsum").textContent = n + (page.more ? " or more" : "");
     }
     if (page.more && page.says.length) {
       const more = document.createElement("button");
@@ -406,16 +412,21 @@ function peekChatter(box, id, first, drawers) {
 // and the actions row are not drawers. Closed bodies are `hidden`, not removed, so their text is still in the box.
 const PEEK_DRAWER_KEY = "atrium.peekDrawers";
 const PEEK_DRAWERS_OPEN = { need: true };
+// recap and context are always open (no toggle); chatter starts folded every time and is never kept.
+const PEEK_DRAWERS_FIXED = { recap: true, ctx: true }, PEEK_DRAWERS_FORGET = { chatter: true };
 function peekDrawerState() {
   let o = {};
   try { o = JSON.parse(localStorage.getItem(PEEK_DRAWER_KEY) || "{}") || {}; } catch (e) {}
   return o && typeof o === "object" ? o : {};
 }
 function peekDrawerOpen(key) {
+  if (PEEK_DRAWERS_FIXED[key]) return true;
+  if (PEEK_DRAWERS_FORGET[key]) return false;
   const v = peekDrawerState()[key];
   return typeof v === "boolean" ? v : !!PEEK_DRAWERS_OPEN[key];
 }
 function peekDrawerSet(key, open) {
+  if (PEEK_DRAWERS_FORGET[key]) return;
   const o = peekDrawerState();
   o[key] = open;
   try { localStorage.setItem(PEEK_DRAWER_KEY, JSON.stringify(o)); } catch (e) {}
@@ -435,6 +446,17 @@ function peekDrawerWrap(node) {
   sum.className = "peek-dsum";
   sum.textContent = node.dataset.sum || "";
   head.append(label, sum);
+  if (node.dataset.help) {
+    // The board's usual "?" bubble. It sits in a header that toggles, so neither a click nor a key on it may.
+    const help = document.createElement("span");
+    help.className = "help";
+    help.tabIndex = 0;
+    help.dataset.tip = node.dataset.help;
+    help.textContent = "?";
+    help.addEventListener("click", e => e.stopPropagation());
+    help.addEventListener("keydown", e => e.stopPropagation());
+    head.appendChild(help);
+  }
   const body = document.createElement("div");
   body.className = "peek-dbody";
   const set = open => {
@@ -448,6 +470,16 @@ function peekDrawerWrap(node) {
     peekDrawerSet(key, open);
     peekRecap(d);
   };
+  if (PEEK_DRAWERS_FIXED[key]) {
+    d.classList.add("fixed");
+    head.removeAttribute("role");
+    head.removeAttribute("tabindex");
+    node.replaceWith(d);
+    body.appendChild(node);
+    d.append(head, body);
+    set(true);
+    return;
+  }
   // A drag that selected text is not a click on the header.
   head.addEventListener("click", () => {
     const sel = window.getSelection && window.getSelection();
@@ -471,6 +503,7 @@ function peekDrawers(box) {
 // The recap's tail behind a click: shown only where the text runs past its four lines.
 function peekRecap(box) {
   const text = box.querySelector(".peek-rtext"), more = box.querySelector(".peek-more");
+  if (typeof qaClamp === "function") qaClamp(box);
   if (!text || !more) return;
   more.hidden = !(text.scrollHeight > text.clientHeight + 1);
   more.onclick = () => {
@@ -578,19 +611,20 @@ document.addEventListener("pointermove", e => {
 // pushed in from any edge it would cross, and above the pointer when there is
 // no room below. With no pointer known (a menu opened from the keyboard) it
 // goes under the anchor, the card's element or a point.
+let peekLast = null;
 function peekPlace(anchor, at) {
   const el = peekPop();
+  peekLast = { anchor, at };
   if (!at) {
     const r = anchor.getBoundingClientRect ? anchor.getBoundingClientRect() : null;
     at = r ? { x: r.left, y: r.bottom } : { x: anchor.x, y: anchor.y };
   }
-  const w = el.offsetWidth, h = el.offsetHeight, pad = 8, gap = 12;
-  let x = at.x + 4, y = at.y + gap;
-  if (y + h > innerHeight - pad) y = at.y - h - gap;
-  x = Math.min(Math.max(x, pad), Math.max(pad, innerWidth - w - pad));
-  y = Math.min(Math.max(y, pad), Math.max(pad, innerHeight - h - pad));
-  el.style.left = Math.round(x) + "px";
-  el.style.top = Math.round(y) + "px";
+  popFit(el, { x: at.x + 4, y: at.y }, { gap: 12, slide: true });
+}
+
+// Fit the popup again where it was, after its content changed size (a question opened to its full text).
+function peekRefit() {
+  if (peekLast && peekEl && peekEl.classList.contains("on")) peekPlace(peekLast.anchor, peekLast.at);
 }
 
 function openPeek(id, anchor, mode) {

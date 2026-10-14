@@ -180,6 +180,8 @@ if (-not $NoUI) {
   }
   if ($SkipHeadless -or $np) {
     if ($np) { $env:NODE_PATH = $np }
+    # A merge is landing, which is when the whole suite runs. check-board.sh refuses a full run without this.
+    $env:FULL_SUITE = '1'
     $out = & bash scripts/check-board.sh 2>&1 | Out-String
     $rc = $LASTEXITCODE
     $headless = ($SkipHeadless -or $out -notmatch 'so the headless board\s+check is skipped|headless board check is skipped')

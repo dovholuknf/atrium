@@ -154,7 +154,10 @@ type Proxy struct {
 	cr *changeRequests
 	// backlog is the hub-wide backlog and director reports. Nil answers 404. See backlog.go.
 	backlog *hubstore.Store
-	flowGit FlowGit
+	// items is where the hub owns items. Nil answers 404. itemRoomCall replaces the call to a room in a test. See items.go.
+	items        *hubstore.Store
+	itemRoomCall itemRoomCallFunc
+	flowGit      FlowGit
 	// specs is the store of room specs and locks. See roomspec.go.
 	specs *hubstore.Store
 	// prc is the PR claim table. See prclaim.go.
@@ -776,6 +779,14 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		// scoping to the room they mean. Writing one is still refused, because
 		// that is the question `needsARoom` exists to ask.
 		if r.Method == http.MethodGet && borrowed[r.URL.Path] {
+			if first := p.firstRoom(); first != "" {
+				room = first
+			}
+		}
+		// THE BOARD'S CLICK COUNTS HAVE NO ROOM TO BELONG TO in the ALL view, and a beacon cannot carry a
+		// header, so both halves asked and were refused: nothing was stored and "controls used" read back
+		// empty. They land on the first room, the same one every time. See js/usage-board.js.
+		if room == "" && boardUsagePath(r) {
 			if first := p.firstRoom(); first != "" {
 				room = first
 			}
@@ -1580,6 +1591,10 @@ func (p *Proxy) serveHubAPI(w http.ResponseWriter, r *http.Request) {
 		p.serveBacklog(w, r, sub)
 		return
 	}
+	if sub == "items" || strings.HasPrefix(sub, "items/") {
+		p.serveItems(w, r, sub)
+		return
+	}
 	if sub == "flow" || strings.HasPrefix(sub, "flow/") {
 		p.serveFlow(w, r, sub)
 		return
@@ -1651,4 +1666,10 @@ func (p *Proxy) serveHubAPI(w http.ResponseWriter, r *http.Request) {
 	default:
 		http.NotFound(w, r)
 	}
+}
+
+// boardUsagePath is the board counting its own controls: the batch it posts and the totals it reads back.
+func boardUsagePath(r *http.Request) bool {
+	return (r.Method == http.MethodPost && r.URL.Path == "/v1/usage") ||
+		(r.Method == http.MethodGet && r.URL.Path == "/v1/usage/board")
 }

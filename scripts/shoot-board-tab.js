@@ -35,8 +35,13 @@ const card0 = (id, title, more) => Object.assign({
 const card = card0;
 const SKIN = process.env.SKIN || "daylight";
 const list = [];
-for (let i = 0; i < 40; i++) list.push(card("r" + i, "ready card number " + i + " with a reasonably long title to wrap", { status: "needs-input", supervised: true, tags: ["alpha", "beta"], rank: i }));
-for (let i = 0; i < 3; i++) list.push(card("u" + i, "running card " + i, { status: "running", supervised: true, rank: 100 + i }));
+// A mix of every state, for the unified card (docs/changes/unified-card.md): waiting with a runner (one agent-launched), a
+// permission, working, live and quiet, ready with its runner gone, finished, and shelved.
+for (let i = 0; i < 6; i++) list.push(card("r" + i, "ready card number " + i + " with a reasonably long title to wrap", { status: "needs-input", supervised: true, pid: 100 + i, tags: ["alpha", "beta"], rank: i, ...(i === 1 ? { tags: ["origin:agent", "alpha"] } : {}) }));
+list.push(card("p0", "wants to run a command", { status: "needs-permission", supervised: true, pid: 90, rank: 50 }));
+for (let i = 0; i < 3; i++) list.push(card("u" + i, "running card " + i, { status: "running", supervised: true, pid: 200 + i, rank: 100 + i, activity: i === 0 ? { what: "thinking" } : undefined }));
+for (let i = 0; i < 8; i++) list.push(card("g" + i, "ready but its runner is gone " + i, { status: "needs-input", supervised: false, rank: 300 + i }));
+for (let i = 0; i < 10; i++) list.push(card("d" + i, "finished card " + i, { status: "done", rank: 400 + i, pinned: i < 2 }));
 list.push(card("s0", "shelved card", { status: "shelved", rank: 200 }));
 const server = http.createServer((req, res) => {
   const p = new URL(req.url, "http://x").pathname;
@@ -64,7 +69,7 @@ const server = http.createServer((req, res) => {
   await page.goto("http://127.0.0.1:" + server.address().port + "/");
   await page.waitForFunction(() => typeof renderBoard === "function" && cardsLoaded);
   await page.evaluate(skin => { document.documentElement.setAttribute("data-skin", skin); setGrouping({ on: false }, "board"); switchView("board"); }, SKIN);
-  await page.waitForSelector('[data-column="needs-input"] .card');
+  await page.waitForSelector('#board .col .card');
   await page.waitForTimeout(800);
   const m = await page.evaluate(() => [...document.querySelectorAll(".card")].slice(0, 3).map(c => c.getBoundingClientRect().height));
   console.log("card heights", m, "skin", await page.evaluate(() => document.documentElement.dataset.skin));

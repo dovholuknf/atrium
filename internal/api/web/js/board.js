@@ -339,7 +339,7 @@ function firstSeen(iso) {
     : `${date} ${t.getFullYear()}`;
 }
 
-const isWaiting = (t) => (t.status === "needs-input" || t.status === "needs-permission") && !agentIdle(t);
+const isWaiting = cardWaiting;
 
 const VIEWS = ["board", "stack", "perms", "runners", "terms", "history", "usage", "audit", "chatter", "pulls", "hubrepos", "backlog"];
 
@@ -422,6 +422,7 @@ function switchView(name) {
   // The board's toolbar is a sibling of the board rather than a child, so that
   // redrawing the columns does not take the control you just clicked with it.
   document.getElementById("board-bar").hidden = name !== "board";
+  document.getElementById("board-count").hidden = name !== "board";
   // The filter drawer starts shut on every tab and every switch. See js/filter-drawer.js.
   fdReset();
   // Painted on the way in rather than once at boot. The group pills are drawn
@@ -749,9 +750,15 @@ function fmtTokens(n) {
 // The label is about what atrium knows, not about what the agent is doing.
 // Guessing at the agent's state and being wrong is what makes a board stop
 // being believed.
-const NO_CONTACT_AFTER_SECONDS = 20 * 60;
 const isOutOfContact = (t) =>
   t.status === "running" && !t.pid && cardIdleAge(t) > NO_CONTACT_AFTER_SECONDS;
+
+// The mark of a card: the runner's shape, spinning while the card is working. THE ONE RUNNING MARK.
+function cardMark(t, state) {
+  const mark = runnerMark(t.runner);
+  if ((state || cardState(t)) !== "working") return mark;
+  return mark.replace('class="rmark"', `class="rmark working ${esc((t.activity && t.activity.what) || "")}"`);
+}
 
 // The runner is a mark rather than the word. "claude" on every card in a
 // column of claude sessions spent the widest chip there saying nothing.
@@ -773,7 +780,7 @@ const isOutOfContact = (t) =>
 // markup belong out here, where they can use whatever punctuation they like.
 function cardHTML(t, wearAs) {
   const w = isWaiting(t);
-  const dark = isOutOfContact(t);
+  const state = cardState(t);
   // `wearAs` is the theme preview's: a palette from `wearOf`, or null for the skin's own look, whatever the setting says.
   const wear = wearAs === undefined ? cardWear(t) : wearAs;
   // Clickable for the actions done most, because the alternative was opening
@@ -783,7 +790,7 @@ function cardHTML(t, wearAs) {
   // move, and `draggable` is not a hint: it takes the pointerdown, so the
   // selection never starts. `data-rank` stays because the menu's up and down
   // are computed from the ranks on screen.
-  return `<div class="card ${w ? "waiting" : ""}${dark ? " nocontact" : ""}${
+  return `<div class="card s-${state}${w ? " waiting" : ""}${
       t.auto_approve ? " autoon" : ""}${wear ? wear.cls : ""}${newCardClass(t)}"${
       wear ? ` style="${wear.style}"` : ""}
     onclick="cardMenu(event, '${t.id}')"
@@ -791,9 +798,9 @@ function cardHTML(t, wearAs) {
     oncontextmenu="cardMenu(event, '${t.id}')">
     ${ctxLine(t)}
     <div class="card-line">
-      <div class="title">${w ? '<span class="pulse"></span>' : ""}${
+      <div class="title">${
         t.pinned ? '<span class="pin on" data-tip="pinned">&#9733;</span>' : ""}${
-        runnerMark(t.runner)}${esc(t.display_title)}</div>
+        cardMark(t, state)}${esc(t.display_title)}</div>
       <div class="chips">
       ${subsBadgeHTML(boardSubBadge.get(t.id))}
       ${openingChip(t)}
@@ -808,19 +815,16 @@ function cardHTML(t, wearAs) {
       ${ctxWarnMark(t)}
       ${contextChip(t)}
       ${seenChips(t)}
-      ${dark ? `<span class="chip nocontact"
-        data-tip="atrium cannot tell whether this is alive. nothing has been heard from the session, and there is no process id to ask the operating system about. it may be working, or it may have ended without saying so. moved to finished after three hours, and brought back the moment it says anything"
-        >no contact</span>` : ""}
       ${w
-        ? `<span class="chip warn" data-tip="${t.status === "needs-permission"
+        ? `<span class="chip state owed" data-tip="${t.status === "needs-permission"
               ? "how long this agent has been frozen waiting to be answered"
               : "how long since it finished its turn and asked for you"}"
              >${esc(statusLabel(t.status))} ${ago(cardSecs(cardWaitSeconds(t)))}</span>`
-        : `<span class="chip" data-tip="${t.status === "dead" ? "how long since this stopped"
+        : `<span class="chip state" data-tip="${t.status === "dead" ? "how long since this stopped"
              : t.status === "done" ? "how long since you marked it done"
              : t.status === "running" ? "how long since it last did anything"
              : "how long since anything was heard from it"}"
-             >${esc(statusLabel(t.status))} ${ago(cardIdleAge(t))}</span>`}
+             >${esc(statusLabel(runnerGone(t) ? "stopped" : t.status))} ${ago(cardIdleAge(t))}</span>`}
       ${t.auto_approve ? `<span class="chip auto"
         data-tip="auto mode: requests from this session are approved without asking, and recorded"
         >auto</span>` : ""}
@@ -852,9 +856,9 @@ function cardHTML(t, wearAs) {
       ${t.offline ? `<span class="chip nocontact"
         data-tip="${esc("room " + (t.room || "") + " is offline. cannot restore terminal")}"
         >&#128683;</span>` : ""}
-      ${t.supervised && !t.offline ? `<span class="chip attach"
+      ${t.supervised && !t.offline ? `<span class="chip attach hoveronly"
         onclick="event.stopPropagation();attachTask('${t.id}')">attach</span>
-      <span class="chip attach icon"
+      <span class="chip attach icon hoveronly"
         aria-label="open this terminal in its own window" data-tip="open this terminal in its own window"
         onclick="event.stopPropagation();popOutTask('${t.id}')">${popIcon()}</span>` : ""}
       </div>
@@ -1082,7 +1086,7 @@ const GROUPING_KEY = "atrium.grouping";
 // `mode` is what a group IS: a project read out of the path, or a tag you
 // applied. `by` and `order` stay the escape hatch for anyone who wants
 // something neither of those describes.
-const GROUPING_DEFAULTS = { on: true, mode: "project", by: "", order: "", orderBy: "", picked: false, hues: {}, groups: [] };
+const GROUPING_DEFAULTS = { on: true, mode: "project", by: "", order: "", orderBy: "", picked: false, hues: {}, groups: [], made: {} };
 
 // A card with no tags still has to land somewhere when grouping by tag, and
 // "" would sort it in with a group whose name is empty.
@@ -1479,7 +1483,7 @@ async function addCustomGroup() {
     "tag. Anything already carrying the tag lands in it right away.",
     "", "e.g. discourse");
   if (raw === null) return;
-  const name = String(raw).trim().toLowerCase();
+  const name = groupNameOf(raw);
   if (!name) return;
   const p = groupingPrefs();
   const groups = Array.isArray(p.groups) ? p.groups.slice() : [];
@@ -1488,13 +1492,15 @@ async function addCustomGroup() {
     return;
   }
   groups.push(name);
-  setGrouping({ groups });
+  setGrouping({ groups, made: Object.assign({}, p.made, { [name]: Date.now() }) });
 }
 
 function removeCustomGroup(name) {
   const p = groupingPrefs();
   const groups = (p.groups || []).filter(x => x !== name);
-  setGrouping({ groups });
+  const made = Object.assign({}, p.made);
+  delete made[name];
+  setGrouping({ groups, made });
 }
 
 function moveCustomGroup(name, delta) {
@@ -1519,7 +1525,9 @@ async function renameCustomGroup(name) {
   if (!next || next === name) return;
   const p = groupingPrefs();
   const groups = (p.groups || []).map(x => x === name ? next : x);
-  setGrouping({ groups });
+  const made = Object.assign({}, p.made);
+  if (name in made) { made[next] = made[name]; delete made[name]; }
+  setGrouping({ groups, made });
 }
 
 function setGroupHue(name, hue) {
@@ -1549,58 +1557,20 @@ function pickGroupHue(name) {
 }
 
 // Renders a list of cards, split into project groups when grouping is on.
-// A pinned card is in the pinned group, and in no other.
 //
-// The board never ordered by pinned at all: the stack has done it since
-// pinning existed, and the board drew whatever order the API returned, so a
-// pinned card could sit at the BOTTOM of its column, which is the one place it
-// was promised never to be.
-//
-// Sorting it to the top of its own project group was the first fix and it was
-// not enough. Pinning says "keep this where I can see it", and a card at the
-// top of a group four screens down is not where you can see it. So pinned is a
-// group of its own, at the top, and a pinned card leaves whatever group it
-// would otherwise have been in. Being in two places at once would make the
-// counts lie and the card appear twice.
-//
-// Per column rather than board-wide, because a column is a bucket of your
-// attention and a pinned card that is BLOCKED is a different fact from a
-// pinned card that is idle.
-function pinnedGroupHTML(pins, keyPrefix) {
-  if (!pins.length) return "";
-  const key = keyPrefix + ": pinned";
-  const fold = "proj:pinned";
-  const shut = isFolded(fold) ? "" : " open";
-  // A fixed hue rather than one derived from a name. Every other group takes
-  // its color from what it is called; this one is not a project and borrowing
-  // a project's color would say it was.
-  return `<details class="cardgroup project pins"${shut} style="--ghue:41"
-    data-morph-key="${esc(key)}" data-fold="${esc(fold)}">
-    <summary>
-      <span class="gname">&#9733; pinned</span>
-      <span class="gn">${pins.length}</span>
-    </summary>
-    ${pins.map(t => cardHTML(t)).join("")}
-  </details>`;
+// A PINNED CARD IS NOT A GROUP. It was, and a column then held a "pinned 17" block inside "done 111". A pin is the star on the
+// card and a sort key: `pinnedFirst` puts pinned cards first in the column, and the sort is stable, so a pinned card is also
+// first inside whatever project group it falls in.
+function pinnedFirst(cards) {
+  const pins = cards.filter(t => t.pinned).sort(byRank);
+  return pins.concat(cards.filter(t => !t.pinned));
 }
 
 function cardsHTML(cards, g, keyPrefix) {
   if (!cards.length) return '<div class="empty">empty</div>';
 
-  // Taken out before anything else looks at them, so they cannot also appear
-  // under a project.
-  //
-  // BY RANK, ALWAYS, and never by the board sort. `columnOrder` has already run
-  // over the whole column by the time we get here, so the pins arrive in
-  // activity or name order like everything else. But pinning is the one order a
-  // person set by hand, so it is held to rank the way manual mode is: rank is
-  // what the move up and move down write and the only field that survives a
-  // card going quiet. Sorting here rather than trusting the API order restores
-  // it after `columnOrder` disturbed it. `cardTieBreak` keeps two equal ranks
-  // from swapping between polls.
-  const pins = cards.filter(t => t.pinned).sort(byRank);
-  const rest = cards.filter(t => !t.pinned);
-  const head = pinnedGroupHTML(pins, keyPrefix);
+  const rest = cards;
+  const head = "";
 
   if (!g) return head + rest.map(t => cardHTML(t)).join("");
 
@@ -1624,18 +1594,21 @@ function cardsHTML(cards, g, keyPrefix) {
     if (g.handOrdered && name !== UNTAGGED) mine.sort(byRank);
     if (!name) return mine.map(t => cardHTML(t)).join("");
     const key = keyPrefix + ":" + name;
-    // FOLDED BY NAME, BOARD WIDE, and not by name-within-column. A card that
-    // changes status moves to another column, where a group of the same name
-    // is a different group and used to be drawn open. So collapsing a project
-    // and then watching one of its cards block read as the board deciding to
-    // pop the group back open, which is exactly what it looked like.
-    const fold = "proj:" + name;
+    // FOLDED BY LANE AND NAME. It used to be by name alone, board wide, so shutting `web` in one column shut it
+    // in every column, and the operator could not read one lane while folding another. A card that changes
+    // status moves to another lane and is drawn there under that lane's own fold, which is the price of folds
+    // being per lane. See `laneFoldKey`.
+    const fold = laneFoldKey(keyPrefix, name);
     // UNTAGGED IN `custom` MODE STARTS SHUT, the way the offline group does.
     // The point of a curated view is to see the buckets you built, not a heap
     // of every card that lands in none of them. The fold list records what
     // was CHANGED from the default, so an entry there re-opens it and the
     // shape reads the same as every other fold.
-    const shutByDefault = name === UNTAGGED && groupingPrefs(g.view).mode === "custom";
+    //
+    // AN EMPTY GROUP STARTS SHUT TOO, by the same mechanism: nothing to look at until it gains a card, and an
+    // explicit open is the entry that records it.
+    const shutByDefault = mine.length === 0
+      || (name === UNTAGGED && groupingPrefs(g.view).mode === "custom");
     const shut = (isFolded(fold) === shutByDefault) ? " open" : "";
     // Work you started and left. Drawn back rather than hidden: the point of
     // the bucket is that it is findable, and the point of greying it is that
@@ -1650,7 +1623,7 @@ function cardsHTML(cards, g, keyPrefix) {
         <span class="gname" data-tip="${esc(name)} &mdash; right click to recolor">${esc(name)}</span>
         <span class="gn">${mine.length}</span>
       </summary>
-      ${mine.length ? mine.map(t => cardHTML(t)).join("") : emptyGroupHint()}
+      ${mine.length ? mine.map(t => cardHTML(t)).join("") : emptyGroupHint(name)}
     </details>`;
   }).join("");
 }
@@ -1670,11 +1643,39 @@ function seedGroups(byName, g) {
   }
 }
 
-// What an empty group says. There is no dragging onto a group, by design (see
-// "moving a card by hand"), so it names the menu entry that files a card.
-function emptyGroupHint() {
-  return `<div class="empty groupempty">nothing in it yet. file a card here with
-    <b>into group</b> on the card's menu</div>`;
+// What an empty group says: the tag it is made from, which is its name. An empty group also starts SHUT (see
+// the callers), so this is read once somebody opens it.
+function emptyGroupHint(tag) {
+  return `<div class="empty groupempty">Nothing has the '${esc(tag)}' tag</div>`;
+}
+
+// The fold key of one group in one lane. `keyPrefix` is the column id, or the status inside a column that holds
+// several, so two lanes never share a key. The name goes after a `|`, which `migrateLaneFolds` also uses to tell
+// these from the board-wide keys older versions wrote ("proj:<name>").
+function laneFoldKey(keyPrefix, name) { return "proj:" + keyPrefix + "|" + name; }
+function pinFoldKey(keyPrefix) { return "pin:" + keyPrefix; }
+
+// Every group the board has drawn, shut or open, as the elements carrying a fold key.
+function boardGroupEls() {
+  return [...document.querySelectorAll("#board details[data-fold]")];
+}
+
+// COLLAPSE ALL / EXPAND ALL for the board tab. Writes the fold list in one go and repaints once, rather than
+// setting `open` on each element and leaving a `toggle` event per group to do the same thing one repaint at a
+// time. The list records what differs from how a group comes, so for the groups that come shut the entry means
+// open, exactly as the toggle listener reads it.
+function foldAllGroups(shut) {
+  const list = foldedColumns();
+  for (const el of boardGroupEls()) {
+    const key = el.dataset.fold;
+    const inverted = key.startsWith("offline:") || el.dataset.foldShut === "1";
+    const want = inverted ? !shut : shut;
+    const i = list.indexOf(key);
+    if (want && i < 0) list.push(key);
+    if (!want && i >= 0) list.splice(i, 1);
+  }
+  localStorage.setItem("atrium.folded", JSON.stringify(list));
+  repaintLists();
 }
 
 // Is this group shut?
@@ -1836,10 +1837,11 @@ async function renderBoard(signal) {
   const offline = everything.filter(t => t.offline && cardMatchesText(t, q));
   // A column holding the attached card is drawn whatever its chip says (`fdAttached`).
   const showCols = boardShow();
-  const heldCol = COLUMNS.find(c => live.some(t => fdAttached(t) && c.statuses.includes(t.status)));
+  const heldCol = BOARD_COLUMNS.find(c => live.some(t => fdAttached(t) && boardColumnOf(t) === c.id));
   const drawCols = new Set(showCols);
   if (heldCol) drawCols.add(heldCol.id);
   paintBoardCounts(live.filter(t => !roll.rolled.has(t.id) && cardMatchesText(t, q)), roll.rollable);
+  paintBoardCount(everything.filter(t => !roll.rolled.has(t.id)));
   fdStatus("board", {
     summary: boardSummary(showCols),
     changed: boardChanged(showCols),
@@ -1851,7 +1853,7 @@ async function renderBoard(signal) {
   paintWorking(live);
   const g = grouper("board");
 
-  const html = COLUMNS.filter(col => {
+  const html = BOARD_COLUMNS.filter(col => {
     // A column whose chip is off is not drawn, and the others take its width.
     if (!drawCols.has(col.id)) return false;
     // The inbox is the one column that should not be there when it is empty.
@@ -1864,10 +1866,13 @@ async function renderBoard(signal) {
     // Work on a machine that is not answering still earns the column its
     // header. The inbox vanishing while it holds a shut laptop's cards would
     // be the board hiding the thing it was asked to remember.
-    return all.some(t => col.statuses.includes(t.status)) ||
-      offline.some(t => col.statuses.includes(t.status));
+    return all.some(t => boardColumnOf(t) === col.id) ||
+      offline.some(t => boardColumnOf(t) === col.id);
   }).map(col => {
-    const mine = columnOrder(all.filter(t => col.statuses.includes(t.status)));
+    const inCol = columnOrder(all.filter(t => boardColumnOf(t) === col.id));
+    const mine = col.id === "needs-you" ? needsYouOrder(inCol) : pinnedFirst(inCol);
+    // DONE IS THE RECORD, NOT WORK: only the recent few are drawn, the rest are one click away in the stack.
+    const drawn = col.id === "done" ? doneCap(mine) : mine;
     const folded = foldedColumns().includes(col.id) ? " folded" : "";
     // A column with nothing to SHOW gives its width back rather than holding
     // an equal share for nothing. On a normal morning three of the five are
@@ -1882,9 +1887,7 @@ async function renderBoard(signal) {
     // The header stays either way. A column that vanished when it emptied
     // would take with it the answer to what is in it, and "nothing needs
     // permission" is worth being able to see.
-    const shown = col.statuses.length === 1
-      ? mine.length
-      : col.statuses.filter(s => !foldedColumns().includes("group:" + s)).length;
+    const shown = mine.length;
     // Approving everything means nothing can arrive here, so an empty
     // permissions column is not "nothing is blocked right now", it is a column
     // that cannot fill. It still shows if something IS in it: a shelved card
@@ -1900,8 +1903,6 @@ async function renderBoard(signal) {
     // one of those sitting here while the header says everything is approved is
     // the single most confusing thing the board could hide, so `mine.length`
     // is part of the test and not an afterthought.
-    const moot = col.id === "needs-permission" && globalAuto && mine.length === 0;
-    if (moot) return "";
     // Nothing in it, which is not the same question `shown` answers.
     //
     // `shown` counts the groups that are OPEN, so a column holding several
@@ -1922,13 +1923,8 @@ async function renderBoard(signal) {
     // What this column holds from rooms that are not answering, drawn under
     // everything live in one group of its own. Worked out here because the
     // split happened at the top: nothing below this line has to know.
-    const lost = offline.filter(t => col.statuses.includes(t.status));
-    const body = ((bare && !lost.length && col.statuses.length > 1)
-      ? `<div class="empty">empty</div>`
-      : col.statuses.length === 1
-        ? cardsHTML(mine, g, col.id)
-        : col.statuses.map(s =>
-            groupHTML(s, all.filter(t => t.status === s), g)).join("")) +
+    const lost = offline.filter(t => boardColumnOf(t) === col.id);
+    const body = (bare && !lost.length ? `<div class="empty">empty</div>` : cardsHTML(drawn, g, col.id) + doneMoreHTML(mine, drawn)) +
       (lost.length ? offlineGroupHTML(lost, g, col.id) : "");
 
     // Width follows how much is in it.
@@ -1960,17 +1956,18 @@ async function renderBoard(signal) {
     // The comment that used to sit here said the basis was ZERO and justified
     // the cap of two with it. That has been false since the basis became 268,
     // and the stylesheet says so at length where `.board .col` is declared.
-    const weight = Math.min(4, Math.max(1, Math.sqrt(mine.length)));
+    // Done is a fixed width, so only the columns that need you or are working share the surplus.
+    const weight = col.id === "done" ? 0 : Math.min(4, Math.max(1, Math.sqrt(mine.length)));
 
-    return `<section class="col${folded}${vacant}" data-column="${col.id}"
-      ${vacant ? "" : `style="flex-grow:${weight.toFixed(2)}"`}>
+    return `<section class="col${folded}${vacant}${col.id === "done" ? " fixed" : ""}" data-column="${col.id}"
+      ${vacant || col.id === "done" ? "" : `style="flex-grow:${weight.toFixed(2)}"`}>
       <div class="col-head" onclick="toggleColumn('${col.id}')">
         <span><span class="fold">&#9662;</span>${esc(col.label)}</span>
         <span class="help" tabindex="0" onclick="event.stopPropagation()"
           data-tip="${esc(col.why)}">?</span>
-        ${col.statuses.length === 1 && PRUNABLE.includes(col.statuses[0]) && mine.length
-          ? `<span class="chip sweep" data-tip="delete every card in this column"
-               onclick="event.stopPropagation();pruneColumn('${col.statuses[0]}')">clear</span>` : ""}
+        ${col.id === "done" && mine.some(t => PRUNABLE.includes(t.status))
+          ? `<span class="chip sweep" data-tip="delete every finished and dead card. shelved and parked cards stay"
+               onclick="event.stopPropagation();pruneFinished()">clear</span>` : ""}
         <span class="n">${mine.length}</span>
       </div>
       <div class="cards">${body}</div>
@@ -1980,6 +1977,8 @@ async function renderBoard(signal) {
   // markup, so it comes back with the card. The listeners this used to attach
   // on every redraw were the drag ones, and there are none.
   setHTML(document.getElementById("board"), html);
+  // A link still being opened is drawn over what was just written (js/link-opening.js).
+  if (typeof linkOpeningPaint === "function") linkOpeningPaint();
 
   // Reported after the render, so a broken function shows an error and a board
   // drawn with the defaults rather than a blank page.
@@ -2002,17 +2001,17 @@ function boardShow() {
   try {
     const v = JSON.parse(localStorage.getItem(BOARD_SHOW_KEY) || "null");
     if (Array.isArray(v)) {
-      const on = new Set(v.filter(id => COLUMNS.some(c => c.id === id)));
+      const on = new Set(v.filter(id => BOARD_COLUMNS.some(c => c.id === id)));
       if (on.size) return on;
     }
   } catch (e) {}
-  return new Set(COLUMNS.map(c => c.id));
+  return new Set(BOARD_COLUMNS.map(c => c.id));
 }
 function toggleBoardShow(id) {
   const on = boardShow();
   if (on.has(id)) on.delete(id); else on.add(id);
   try {
-    if (!on.size || on.size === COLUMNS.length) localStorage.removeItem(BOARD_SHOW_KEY);
+    if (!on.size || on.size === BOARD_COLUMNS.length) localStorage.removeItem(BOARD_SHOW_KEY);
     else localStorage.setItem(BOARD_SHOW_KEY, JSON.stringify([...on]));
   } catch (e) {}
   paintBoardShow();
@@ -2034,7 +2033,7 @@ function paintBoardShow() {
   const el = document.getElementById("board-seg");
   if (!el) return;
   const on = boardShow();
-  setHTML(el, COLUMNS.map(c => fdChip(c.label, on.has(c.id), `toggleBoardShow('${esc(c.id)}')`,
+  setHTML(el, BOARD_COLUMNS.map(c => fdChip(c.label, on.has(c.id), `toggleBoardShow('${esc(c.id)}')`,
     c.label + ": click to show or hide this column", c.id)).join("") +
     fdChip("subagents", boardSubsOn(), "toggleBoardSubs()",
       "a subagent is not a card of its own: its parent's card says how many it has. one that needs you still shows", "subagents"));
@@ -2045,21 +2044,70 @@ function paintBoardShow() {
 let boardCounts = {};
 function paintBoardCounts(cards, rollable) {
   boardCounts = { subagents: rollable };
-  COLUMNS.forEach(c => { boardCounts[c.id] = cards.filter(t => c.statuses.includes(t.status)).length; });
+  BOARD_COLUMNS.forEach(c => { boardCounts[c.id] = cards.filter(t => boardColumnOf(t) === c.id).length; });
   boardPillCounts();
 }
+// THE COUNT LINE above the board: `6 running: 3 need you, 3 working` and `111 done` at the right. Both come from `boardColumnOf`, so
+// they cannot disagree with the columns. "Running" is a runner being alive, which is what the two live columns hold.
+function paintBoardCount(cards) {
+  const el = document.getElementById("board-count");
+  if (!el) return;
+  const n = id => cards.filter(t => boardColumnOf(t) === id).length;
+  const need = n("needs-you"), work = n("working");
+  setHTML(el, `<span class="running">${need + work} running: ${need} need you, ${work} working</span>` +
+    `<span class="done">${n("done")} done</span>`);
+}
+
+// Who comes first in needs you: a permission (that agent is frozen), then an open question, then a turn that ended. Longest
+// wait first inside each. Not the board's sort: this column is ordered by what is owed.
+function needsYouOrder(cards) {
+  const rank = t => t.status === "needs-permission" ? 0 : cardHasOpenQuestion(t) ? 1 : 2;
+  const now = Date.now();
+  return cards.slice().sort((a, b) => rank(a) - rank(b) || cardWaitSeconds(b, now) - cardWaitSeconds(a, now) || cardTieBreak(a, b));
+}
+
+// DONE DRAWS THE RECENT FEW: the 6 most recent, or every one finished in the last 24 hours, at most 12. Pinned cards are
+// first in the list, so they come first under the same cap.
+const DONE_MIN = 6, DONE_MAX = 12;
+function doneCap(cards) {
+  const day = cards.filter(t => cardIdleAge(t) < 86400).length;
+  return cards.slice(0, Math.min(DONE_MAX, Math.max(DONE_MIN, day)));
+}
+function doneMoreHTML(all, drawn) {
+  const more = all.length - drawn.length;
+  if (more <= 0) return "";
+  const pins = all.filter(t => t.pinned).length;
+  return `<div class="more" onclick="openDoneInStack()" data-tip="open the stack with only finished cards shown">${more} more finished${
+    pins ? `, ${pins} of them pinned` : ""} \u00b7 open in the stack</div>`;
+}
+function openDoneInStack() {
+  setStackShow(new Set(["finished", "shelved"]));
+  switchView("stack");
+}
+async function pruneFinished() {
+  const tasks = await boardCards();
+  const n = (tasks || []).filter(t => PRUNABLE.includes(t.status)).length;
+  if (!n) return;
+  const ok = await confirmUser(`clear ${n} finished card${n === 1 ? "" : "s"}?`,
+    "Their history goes with them. Anything still running, parked or shelved is untouched.", "clear");
+  if (!ok) return;
+  const res = await api("/v1/tasks/prune", { method: "POST", body: JSON.stringify({ statuses: PRUNABLE }) });
+  toast("cleared", `${res.removed} card${res.removed === 1 ? "" : "s"} gone`);
+  refresh();
+}
+
 function boardPillCounts() { pillCounts("board-seg", boardCounts); }
 
 function boardSummary(show) {
   const g = groupingPrefs("board");
   const parts = [groupWords(g), BOARD_SORTS[boardSortMode()].label];
-  if (show.size < COLUMNS.length) parts.unshift(show.size + " of " + COLUMNS.length + " columns");
+  if (show.size < BOARD_COLUMNS.length) parts.unshift(show.size + " of " + BOARD_COLUMNS.length + " columns");
   if (boardSubsOn()) parts.push("subagents");
   return parts.join(" \u00b7 ");
 }
 // Settings in the drawer that differ from the board's defaults: every column on, subagents off, by activity, by project.
 function boardChanged(show) {
-  let n = COLUMNS.length - show.size;
+  let n = BOARD_COLUMNS.length - show.size;
   if (boardSubsOn()) n++;
   if (boardSortMode() !== "activity") n++;
   return n + groupChanged("board");

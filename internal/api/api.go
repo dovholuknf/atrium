@@ -34,6 +34,8 @@ type Server struct {
 	hk  serverHooks
 	st  *store.Store
 	bus *bus
+	// The "controls used" totals, rebuilt after a write. See boardusage.go.
+	usageSnap boardUsageSnap
 	// pend coalesces PublishTask per card.
 	pend taskPending
 	// sweep holds the last sweep of the inventory. See sweep.go.
@@ -96,6 +98,9 @@ type Server struct {
 	// top, and answers the hub branch and repository. A close calls it for a worktree it was told to stash. Nil is
 	// a room that cannot stash. See close.go.
 	Stash func(ctx context.Context, card, dir, branch string) (hubBranch, hubRepo string, err error)
+	// HubDelete deletes a claude/* branch the card pushed from the hub, by a push the hub takes only for a branch that
+	// card pushed. A close calls it for each hub-branch row. Nil is a room with no hub remote. See closehub.go.
+	HubDelete func(ctx context.Context, card, dir, hubRepo, branch string) error
 	// StashRetentionDays is how long the hub keeps a stash before it removes it, for the expiry date a close names. Nil
 	// is 30, the hub's default. The room does not hear the hub's setting, so a hub set to another number removes it
 	// on its own date and this one is what the close could say. 0 is never.
@@ -160,6 +165,9 @@ type Server struct {
 	// terminal and whether the peer gate is open, for the board's typing
 	// readout.
 	TypingState http.HandlerFunc
+	// LetThrough is the operator's "let it through" on the held messages chip: clear the typed line, deliver what is
+	// waiting, type the line back. See internal/daemon/letthrough.go.
+	LetThrough http.HandlerFunc
 	// DismissAsks takes every outstanding question off a card without telling
 	// the session anything.
 	//
@@ -212,6 +220,9 @@ type Server struct {
 	// HubAsk is atrium_backlog and atrium_reports for a session here, `POST /v1/hub/ask`, asked of the hub over the
 	// link. Owned by the daemon. See internal/daemon/hubask.go.
 	HubAsk http.HandlerFunc
+	// ItemAct is `POST /v1/items/{id}/{unblock|cancel}`, which the hub calls for an item's owner. Owned by the daemon.
+	// See internal/daemon/item_hub.go.
+	ItemAct http.HandlerFunc
 	// Hold reads, sets or lifts the room deploy hold. Owned by the daemon, which
 	// runs the permission chain it acts in. See internal/daemon/roomhold.go.
 	Hold http.HandlerFunc
@@ -728,6 +739,9 @@ func (s *Server) Handler() http.Handler {
 	if s.TypingState != nil {
 		mux.HandleFunc("GET /v1/tasks/{id}/typing", s.TypingState)
 	}
+	if s.LetThrough != nil {
+		mux.HandleFunc("POST /v1/tasks/{id}/let-through", s.LetThrough)
+	}
 	if s.OpenShell != nil {
 		mux.HandleFunc("POST /v1/tasks/{id}/shell", s.OpenShell)
 		mux.HandleFunc("DELETE /v1/tasks/{id}/shell", s.ShutShell)
@@ -761,6 +775,9 @@ func (s *Server) Handler() http.Handler {
 	}
 	if s.HubAsk != nil {
 		mux.HandleFunc("POST /v1/hub/ask", s.HubAsk)
+	}
+	if s.ItemAct != nil {
+		mux.HandleFunc("POST /v1/items/{id}/{act}", s.ItemAct)
 	}
 	if s.Say != nil {
 		mux.HandleFunc("POST /v1/say", s.Say)

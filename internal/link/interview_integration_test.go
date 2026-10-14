@@ -57,8 +57,21 @@ func TestAnInterviewLaunchWritesTheRulesAheadOfTheTopic(t *testing.T) {
 	if rules < 0 || topic < 0 || rules > topic {
 		t.Errorf("the brief has the rules at %d and the topic at %d:\n%s", rules, topic, got.Brief)
 	}
+	if !strings.Contains(got.Brief, "Question N of M") || !strings.Contains(got.Brief, "up from 5") {
+		t.Errorf("the brief lacks the question count rule:\n%s", got.Brief)
+	}
 	if strings.Contains(got.Prompt, "atrium_blocked") {
 		t.Errorf("an interviewer was told to end each turn with a report: %q", got.Prompt)
+	}
+}
+
+func TestAnInterviewLaunchIsNeverAWorker(t *testing.T) {
+	got, err := launchSeen(t, launchInput{Cwd: "/work/dir", Kind: "interview", Brief: "Topic: x"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if hasTag(got.Tags, SubagentTag) || !hasTag(got.Tags, InterviewTag) {
+		t.Errorf("tags = %v, want %s and not %s", got.Tags, InterviewTag, SubagentTag)
 	}
 }
 

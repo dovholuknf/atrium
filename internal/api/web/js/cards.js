@@ -73,8 +73,15 @@ function dropCard(id) {
 // oldest wait first. A card from a room that is not answering is left out, as
 // the hub's fan-out of `/v1/waiting` left it out.
 function waitingRow(t) {
-  return (t.status === "needs-input" || t.status === "needs-permission") && !agentIdle(t) &&
+  return cardWaiting(t) &&
     !!t.wire_name && !t.archived_at && !t.offline;
+}
+// WHAT THE READY ALERT WATCHES: every card at rest with a runner there, an agent-launched one that ended its turn included
+// (a worker that finished, issue-20674@claude-sg4, 2026-10-13, is news to the board). Whether a card with a running child is
+// done is the caller's (`hasRunningChild`).
+function cardsReady(list) {
+  return (list || cardList()).filter(waitingRow)
+    .sort((a, b) => String(a.waiting_since || "").localeCompare(String(b.waiting_since || "")));
 }
 // A card that launched another still running is not waiting on the human, whatever its own status says. The ready
 // alert reads this to hold back until the last child ends. Matched on the bare id, as the board does everywhere.

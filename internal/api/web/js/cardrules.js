@@ -76,6 +76,21 @@ function groupOrderCmp(order, cardsOf) {
   return byName;
 }
 
+// THE GROUP SUBMENUS ("add to group", "remove from group") list names A to Z, whatever order the view keeps them in,
+// and a group made in the last ten minutes wears a "new" tag. A group is only a name in the browser's `groups` list, so
+// when it was made is kept beside it in `made`, a name to epoch milliseconds. A group with no entry there (made before
+// this was recorded, or typed into the settings by hand) is not new.
+const GROUP_NEW_MS = 10 * 60 * 1000;
+function groupMenuNames(names) {
+  return (names || []).slice().sort((a, b) => a.localeCompare(b));
+}
+function groupIsNew(name, made, now) {
+  const at = made && made[name];
+  return typeof at === "number" && (now === undefined ? Date.now() : now) - at < GROUP_NEW_MS;
+}
+// The group name a person typed, as the tag it becomes: trimmed and lower case.
+function groupNameOf(raw) { return String(raw || "").trim().toLowerCase(); }
+
 // A DOER IS AN AGENT-LAUNCHED SESSION, see the note in js/terminal-list.js. Matched exactly as the daemon's `hasOriginTag` does.
 const DOER_TAG = "origin:agent";
 function isDoer(t) {
@@ -92,16 +107,85 @@ function isSubagent(t) {
     t.tags.some(x => String(x).trim().toLowerCase() === SUBAGENT_TAG));
 }
 
-// AN AGENT-LAUNCHED CARD THAT ENDED A TURN WITH NO OPEN QUESTION IS IDLE, not waiting for the operator: its launcher is who
-// it answers to. This is the one test every surface shares (board, /m, counts, bell). A question, a permission ask (its
-// own status) or an operator-launched card (no origin:agent tag) is still waiting.
+// AN INTERVIEW IS NEVER NESTED. A card tagged `atrium:interview` shows in its own tag group, a top row, whoever launched it:
+// the human has to find it, and a fold under its launcher hid it. THE ONE RULE every list that nests a card under the card
+// that launched it asks (terminals `termNest`, stack and board `subagentRollup`).
+const INTERVIEW_TAG = "atrium:interview";
+function isInterview(t) {
+  return !!(t && Array.isArray(t.tags) &&
+    t.tags.some(x => String(x).trim().toLowerCase() === INTERVIEW_TAG));
+}
+function nestsUnderLauncher(t) { return isSubagent(t) && !isInterview(t); }
+
+// A CARD'S OPEN QUESTION, from the parsed list, an unparsed one, or a question put to the operator (asks_open).
 function cardHasOpenQuestion(t) {
   const s = t && t.seen;
   const open = !!s && s.answered === false && ((Array.isArray(s.open_questions) && s.open_questions.length > 0) || !!s.questions_unparsed);
   return open || ((t && t.asks_open) || 0) > 0;
 }
-function agentIdle(t) {
-  return !!t && t.status === "needs-input" && isDoer(t) && !cardHasOpenQuestion(t);
+
+// GREY MEANS NOT RUNNING, AND NOTHING ELSE. A card with a live runner that is waiting for the operator is orange, whatever its
+// origin tag says: an agent-launched interview is waiting on a person like any other. The one rule every surface shares
+// (stack, terminals, phone, counts, bell) is `runnerGone`, and a card is grey exactly when it is over or its runner is gone.
+//
+// A runner is gone when the status still says it is alive (running, needs-input, needs-permission) and nothing vouches for it:
+// atrium does not hold its terminal (`supervised`, api.go Supervised), it is not being launched (`starting`), and no process id
+// was reported for the reaper to ask the OS about (`pid`, daemon/reaper.go only files a card dead whose pid is gone, and
+// exempts a waiting card with no pid, because it is quiet and not necessarily gone). A joined terminal has a pid, so it is live.
+// A running card with no pid is given the no-contact window before it counts as gone, since hooks may still be reaching it.
+const NO_CONTACT_AFTER_SECONDS = 20 * 60;
+const LIVE_STATUSES = ["running", "needs-input", "needs-permission"];
+function runnerGone(t) {
+  if (!t || !LIVE_STATUSES.includes(t.status)) return false;
+  // `supervised` absent is unknown, not gone: the daemon always sends it, so only an explicit false counts.
+  if (t.supervised !== false || t.starting || t.offline || t.pid > 0) return false;
+  if (t.parked_at) return true;
+  return t.status !== "running" || cardIdleAge(t) > NO_CONTACT_AFTER_SECONDS;
+}
+// Waiting on the operator: a waiting status and a runner there to answer.
+function cardWaiting(t) {
+  return !!t && (t.status === "needs-input" || t.status === "needs-permission") && !runnerGone(t);
+}
+
+// A runner is up: being launched, or alive by its status with nothing saying it went.
+function cardLive(t) {
+  return !!t && (!!t.starting || (LIVE_STATUSES.includes(t.status) && !runnerGone(t)));
+}
+// IS THIS SESSION WORKING RIGHT NOW: a live `activity.what` that is not idle, on a card that is not waiting on the operator,
+// not shelved, and whose activity is not stale. The board, the stack and the terminals all ask this one function.
+function workingNow(t) {
+  const a = t && t.activity;
+  return !!(a && a.what && a.what !== "idle" && !a.looks_idle &&
+    !cardWaiting(t) && t.status !== "shelved" && !staleActivity(t));
+}
+// ONE WORD FOR HOW A CARD IS DRAWN, EVERYWHERE (docs/rnd/unified-card.md). Grey is "off" and nothing else.
+//   unreachable  its room is not answering, so nothing says it stopped
+//   waiting      a live runner is waiting on the operator, whoever launched it
+//   working      a live runner is mid-turn
+//   live         a live runner that is neither
+//   off          no runner: gone, parked, shelved, done, dead, an inbox card
+function cardState(t) {
+  if (!t) return "off";
+  if (t.offline) return "unreachable";
+  if (cardWaiting(t)) return "waiting";
+  if (cardLive(t)) return workingNow(t) ? "working" : "live";
+  return "off";
+}
+
+// WHICH BOARD COLUMN A CARD IS IN (docs/rnd/unified-card-decisions.md). The board's columns follow the state, not the stored
+// status: `needs you` holds a live runner waiting on the operator, `working` a live runner doing or ready to do something,
+// and `done` every card with no agent running (finished, dead, runner gone, parked, shelved). A ready card whose runner is
+// gone is done, never needs you. The inbox is the stored status `backlog`. A card on a room that is not answering is
+// `unreachable`, which says nothing about its runner, so it is filed by the status it last had.
+function boardColumnOf(t) {
+  if (!t || t.status === "backlog") return "backlog";
+  const s = cardState(t);
+  if (s === "waiting") return "needs-you";
+  if (s === "working" || s === "live") return "working";
+  if (s === "unreachable") {
+    return t.status === "needs-input" || t.status === "needs-permission" ? "needs-you" : t.status === "running" ? "working" : "done";
+  }
+  return "done";
 }
 
 // The project rule as a callable, compiled from the same source the settings dialog shows and cached.

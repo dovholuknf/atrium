@@ -92,3 +92,7 @@
   .usagedlg-row .n { min-width: 4em; text-align: right; }
   .usagedlg-row .last { min-width: 7em; opacity: .7; }
   .usagedlg-row.never { opacity: .5; }
+  .usagedlg-head { margin-bottom: var(--sp-1); opacity: .8; }
+  .usagedlg-head button { background: none; border: 0; padding: 0; font: inherit; color: inherit; cursor: pointer; text-align: left; }
+  .usagedlg-head button.n { text-align: right; }
+  .usagedlg-head button::after { content: " " attr(data-arrow); }

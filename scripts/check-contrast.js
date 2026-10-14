@@ -410,6 +410,7 @@ const PAIRS = [
   { what: "an accent chip's text", kind: "text", fg: "var(--chip-accent-text)",
     on: [...CARD, "var(--chip-accent)"], floor: READ },
   { what: "a warn chip's text", kind: "text", fg: "var(--warn)", on: [...CARD, "var(--warn-bg)"], floor: LABEL },
+  { what: "a waiting chip's text", kind: "text", fg: "var(--wait)", on: [...CARD, "var(--wait-bg)"], floor: LABEL },
   { what: "a shell runner chip's text", kind: "text", fg: "var(--warn)",
     on: [...CARD, "rgba(var(--warn-rgb),.10)"], floor: LABEL },
   { what: "a live chip's text", kind: "text", fg: "var(--teal)",

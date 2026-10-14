@@ -139,7 +139,7 @@
     padding: 3px 6px; border-radius: var(--r-sm); font: var(--fs-xxs)/1.4 var(--sans); color: var(--label);
   }
   .endedrow:hover { background: var(--lift); }
-  .endedmain { display: flex; flex-direction: column; min-width: 0; }
+  .endedmain { grid-row: 1 / span 2; display: flex; flex-direction: column; min-width: 0; }
   .endedtitle { color: var(--head); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .endedhow { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; opacity: .8; }
   .endedwhen { grid-column: 2; grid-row: 1; opacity: .65; white-space: nowrap; }

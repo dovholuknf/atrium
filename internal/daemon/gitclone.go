@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -22,6 +23,8 @@ import (
 // where they answer everything else and no new request type exists. It is keyed exactly, so an
 // answer holds for as long as the row does (the 2-minute replay window would ask again). The tool
 // call returns at once with "asked"; the card calls again after the operator has answered.
+//
+// A pasted link asks nothing: see prWorktreeClone, which adopts the operator's clone itself.
 
 // cloneTimeout bounds one request. The runner bounds each git command on its own.
 const cloneTimeout = 12 * time.Minute
@@ -130,9 +133,18 @@ func (d *Daemon) prWorktreeHas(url string) bool {
 }
 
 // prWorktreeClone is the scm clone path for a pull request's worktree: the clone with its `hub` remote and `origin`
-// push guarded, the same as atrium_git_clone. A clone the operator made is not touched without the yes.
+// push guarded, the same as atrium_git_clone.
+//
+// A CLONE THE OPERATOR MADE IS ADOPTED WITHOUT A QUESTION, the way gwt hangs its worktrees off whatever clone is
+// there. A pasted link has no card to ask on, and a question with nowhere to answer it was a dead end that sent the
+// operator to run atrium_git_clone from some other card. The adoption is recorded in the clone itself
+// (`atrium.adopted=yes`, which atrium_git_clone reads as the yes already given) and in the room's log.
 func (d *Daemon) prWorktreeClone(ctx context.Context, url string) (gitsync.SCMResult, error) {
 	s := d.scm(nil)
-	// There is no card to ask on, so the launch dialog asks and the retry carries the yes (api.WithAdoptClone). The yes\r\n	// is then written into the clone, and a later launch on it never asks.\r\n	s.Yes = func(ctx context.Context, clone string) error {\r\n		if api.AdoptCloneYes(ctx) {\r\n			return nil\r\n		}\r\n		return &gitsync.AdoptError{Clone: filepath.ToSlash(clone)}\r\n	}
+	s.Yes = func(_ context.Context, clone string) error {
+		log.Printf("[atrium scm] adopting the operator's clone at %s for a pasted link: atrium's hub remote goes in "+
+			"and origin's push url is guarded", filepath.ToSlash(clone))
+		return nil
+	}
 	return s.Clone(ctx, url)
 }

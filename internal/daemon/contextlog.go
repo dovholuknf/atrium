@@ -81,7 +81,7 @@ func (d *Daemon) takeInContext(taskID string) []deliveredSay {
 func (d *Daemon) requeueCarried(taskID string, carried []deliveredSay) {
 	for _, s := range carried {
 		text := s.text
-		if !strings.HasPrefix(text, carriedNote) {
+		if !strings.HasPrefix(text, carriedNote) && !strings.HasPrefix(text, inCaseYouMissedIt) {
 			text = carriedNote + text
 		}
 		// A repeat is never a new ask: it owes no report, whoever sent it. The launcher's

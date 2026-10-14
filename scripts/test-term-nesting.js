@@ -92,8 +92,8 @@ const foldKey = page.slice(foldKeyAt, page.indexOf("\n", foldKeyAt));
 // `let` between two of them and comes along with the one above it.
 const names = ["shortLabel", "termPathOf", "termExtraName", "termRowName",
   "termNoteDuplicates", "termTree", "workingNow", "termRunnerMark", "termHeldAge", "termHeldTip", "termHeldChip",
-  "termRoomChip", "termRowChips", "termCold", "termJoined", "termRow", "termKidsKey", "termKidWaits", "termKidsCount", "termKidsToggle",
-  "termHeading", "termFolded", "termNodeHTML", "termCount", "termGroupsHTML",
+  "termRoomChip", "termRowChips", "termCold", "termJoined", "termRow", "termKidsKey", "termKidsCount", "termKidsToggle",
+  "termHeading", "termHoldsOn", "termNodeRows", "termFolded", "termNodeHTML", "termCount", "termGroupsHTML",
   "termFlatGroupsHTML"];
 // Whatever sits between two functions comes along with the one above it, so
 // the key may already be in there. Declaring it twice is a syntax error, which

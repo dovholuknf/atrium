@@ -1,0 +1,77 @@
+# scripts/
+
+Everything that is not the Go binary: the test and CI runners, the board checks, release and packaging, room
+provisioning, sg4's live start, stop and deploy scripts, and seed data. Read a script's header before running it.
+Most take `-WhatIf`, `-Check` or a dry run by default.
+
+## Tests and CI
+
+- **`test.sh` is the one way to run Go tests**, for a person and for CI. `unit` (the default), `all` adds
+  `-tags integration`, `full` adds `-tags integration,git`. A file named `*_integration_test.go` starts with
+  `//go:build integration` and does not compile without the tag. CI is the only place integration tests run as a
+  matter of course.
+- **A unit test is under 10ms.** `unit-budget.go` prints each test over 10ms and fails the run on one over 20ms. The
+  fix is to move the test into an integration file, not to raise the number.
+- **Every run is kept** under `build.claude/test-runs/` (the raw `-json` stream and a table, slowest first), so the
+  time of a test is never a reason to run the suite again.
+- **`ci.sh` holds all of CI's logic.** `.github/workflows/ci.yml` only checks out, installs Go and node, and calls it.
+  It runs on Linux, macOS and Windows with Git Bash, so nothing in it may assume a tool Git Bash lacks. `--only` runs
+  one step and `--list` names them. `ci-linux.sh` runs it in docker as a non-root user with no pwsh.
+- **CI ends by checking the tree is as it was.** A test that rewrites a tracked file or leaves a new one fails it.
+- `test-time-guard.sh` fails a package over 60s or a test over 5s unless `test-time-allow.txt` names it.
+- `check-test-globals.go` fails on a `_test.go` file assigning a package-level var. Hooks, delays and clocks belong on
+  the struct that uses them.
+- **`test-touched.sh` is what a worker runs before handing back**: the Go packages, headless units and node tests
+  its diff touched, each with the reason it was picked (`test-touched-plan.js` makes the plan,
+  `test-touched-selftest.js` checks it). The whole board suite is for after landing: `check-board.sh`,
+  `test-board-headless.js` and `test-board-sharded.js` refuse a full run without `FULL_SUITE=1`.
+- `check-board.sh` syntax-checks the board, which nothing else parses before a browser does. `check-powershell.ps1`
+  checks every `.ps1` parses, Windows job only. The `test-*.ps1` files are tests of scripts and run on Windows only.
+- **`merge-check.ps1` is every check a merge needs**, and refuses a branch that adds a `CLAUDE.md`. Those are
+  untracked links into dotagents. `new-worktree.ps1` links them into a new worktree, and `setup-merge-worktree.ps1`
+  makes the worktree merges happen in, so the main checkout is not locked.
+
+## Rules for the scripts that touch a running atrium
+
+From `scripts/live/README.md`, and they hold for anything here that stops or swaps atrium:
+
+- **A kill is not a stop.** Stop a room with `POST /v1/shutdown` or `atrium stop`.
+- **Match a process by its directory and subcommand, never by image name.** `atrium.exe` is also the binary every
+  Claude Code hook runs, several times a second.
+- **Swap a binary by two renames, never a copy over the live name.**
+- **Run stop and start from a shell atrium does not supervise.** A room stopping takes the scripts in its terminals
+  with it.
+- **The live scripts RUN from a deployed copy**, not from this checkout. After a change lands,
+  `install-live-scripts.ps1` copies them over.
+- **A hub-only deploy asks `hub-restart-gate.ps1` first**, which waits until no board is in use. Exit 0 is go, 3 and 4
+  are do not restart.
+
+## Credentials
+
+**Atrium holds the name of a command and never a credential.** A source (`sources/`) is an argv and an interval, and a
+notify command (`notify/`) gets four fields in its environment and stdin, never a token in its argv. Neither may print
+a token.
+
+## Release
+
+`cut-release.sh` is a dry run unless `--execute`, and each refusal has its own exit code, which `check-release.sh`
+asserts. `release.sh` builds every platform and hashes the results. The `package-*` scripts build the installers from
+that.
+
+## The layout
+
+| | |
+| --- | --- |
+| `test.sh` / `unit-budget.go` / `test-time-guard*.sh` / `ci-report.go` | running the Go suite, and its budgets |
+| `ci.sh` / `ci-linux.sh` | everything CI runs, and the same on Linux in docker |
+| `check-*.{sh,js,ps1,go}` | checks that no compiler makes: the board, skins, titles, PowerShell, test globals |
+| `test-*.js` / `shoot-*.js` / `measure-*.js` / `board-*` | board tests, screenshots, measurements, the sharded suite |
+| `merge-check.ps1` / `new-worktree.ps1` / `setup-merge-worktree.ps1` | merging, and worktrees with their `CLAUDE.md` links |
+| `install-git-hooks.ps1` | the `post-merge` hook that runs `atrium merged`, never failing a merge |
+| `provision-room.ps1` / `room-*.ps1` | making a machine a room over ssh: toolchain, account, folders, gate, spec, start, check |
+| `live/` | sg4's own start, stop and deploy scripts. Its README is the rules |
+| `release.sh` / `cut-release.sh` / `publish-release.sh` / `package-*` | building and publishing a release |
+| `scrub-history.go` / `land-history.go` | rewriting messages and authors before a push to GitHub. Never pushes |
+| `fold-changes.ps1` / `backlog-*.ps1` | folding change files into the test plan, and the backlog's file layout |
+| `sources/` / `notify/` / `recognisers/` | example sources and notify commands, and the recogniser rows a hub seeds |
+| `atrium-service.*` / `atrium-autostart.ps1` / `start-atrium.ps1` | running atrium as a scheduled task or service |

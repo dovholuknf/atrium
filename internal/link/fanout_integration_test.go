@@ -647,3 +647,43 @@ func TestAPermissionDecideNeedsTheRoomHeader(t *testing.T) {
 		t.Fatalf("with the other room's header: %d %s", code, body)
 	}
 }
+
+// The board's click counts reach a room from the ALL view, where no room is named and a beacon could not name one.
+// They used to be refused with a 409 asking for a room, so nothing was stored and "controls used" read back empty.
+func TestBoardUsageLandsOnTheFirstRoomInTheAllView(t *testing.T) {
+	var got []string
+	mk := func(name string) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			b, _ := io.ReadAll(r.Body)
+			got = append(got, name+" "+r.Method+" "+r.URL.Path+" "+string(b))
+			if r.Method == http.MethodGet {
+				_, _ = w.Write([]byte(`{"controls":[]}`))
+				return
+			}
+			w.WriteHeader(http.StatusNoContent)
+		})
+	}
+	front, _, done := two(t, mk("alpha"), mk("beta"))
+	defer done()
+
+	resp, err := http.Post(front.URL+"/v1/usage", "application/json", strings.NewReader(`{"counts":{"a":1}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusNoContent {
+		t.Fatalf("POST /v1/usage with no room named answered %d, want 204", resp.StatusCode)
+	}
+	resp, err = http.Get(front.URL + "/v1/usage/board")
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("GET /v1/usage/board with no room named answered %d, want 200", resp.StatusCode)
+	}
+	want := []string{`alpha POST /v1/usage {"counts":{"a":1}}`, `alpha GET /v1/usage/board `}
+	if strings.Join(got, "|") != strings.Join(want, "|") {
+		t.Fatalf("rooms saw %q, want %q", got, want)
+	}
+}

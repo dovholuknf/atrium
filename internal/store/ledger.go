@@ -244,6 +244,9 @@ type LedgerNotice struct {
 // Notice sources the ledger writes, for the a2a_notice dedupe.
 const NoticeEnded = "ended"
 
+// NoticeItem is the source of an item's blocked or finished notice, from atrium, queued for the end of the owner's turn.
+const NoticeItem = "item"
+
 // HeldNoticePayload is the `notified` event a held notice leaves on the card it
 // was for. `held` is what a reader filters on. The one shape, so the ledger's
 // notices and the daemon's read alike.
@@ -911,7 +914,7 @@ func (s *Store) queueNotice(tx *Tx, w *WorkItem, source, key, body string) (*Led
 	}
 	// A REPORT WAITS FOR THE END OF THE ARBITER'S TURN, as a say with when done does, so it is typed whole and
 	// never merged into a turn that will not read it.
-	waitTurn := source == "report"
+	waitTurn := source == "report" || source == NoticeItem
 	m := &Message{ID: newID(), TaskID: w.ArbiterID, Text: body, CreatedAt: s.now(), FromPeer: from, WaitTurn: waitTurn}
 	// A frozen arbiter keeps the notice in its freeze queue. See enqueueFrozenOn.
 	held, err := enqueueFrozenOn(tx, m)

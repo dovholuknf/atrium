@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -143,7 +144,7 @@ func newControl(board string, hub *Hub, audit func(room, kind, detail string)) *
 // class. See ctlclass.go, which says why this is tidiness and not a boundary.
 func (c *controlMCP) handler() http.Handler {
 	servers := map[ctlClass]*mcp.Server{}
-	for _, class := range []ctlClass{classFull, classWorker, classFullResident, classWorkerResident} {
+	for _, class := range []ctlClass{classFull, classWorker, classFullResident, classWorkerResident, classWorkerItem} {
 		servers[class] = c.server(class)
 	}
 	return mcp.NewStreamableHTTPHandler(
@@ -243,6 +244,9 @@ func (c *controlMCP) server(class ctlClass) *mcp.Server {
 	doneDesc, blockedDesc := doneToolDesc, blockedToolDesc
 	if residentClass(class) {
 		doneDesc, blockedDesc = residentDoneToolDesc, residentBlockedToolDesc
+	}
+	if class == classWorkerItem {
+		doneDesc, blockedDesc = itemDoneToolDesc, itemBlockedToolDesc
 	}
 	addTool(s, class, &mcp.Tool{Name: "atrium_done", Description: doneDesc}, end.Done)
 	addTool(s, class, &mcp.Tool{Name: "atrium_blocked", Description: blockedDesc}, end.Blocked)
@@ -430,6 +434,7 @@ func (c *controlMCP) server(class ctlClass) *mcp.Server {
 	c.registerGit(s, class)
 	c.registerDeps(s, class)
 	c.registerBacklog(s, class)
+	c.registerItems(s, class)
 	c.registerFlow(s, class)
 	c.registerDocs(s, class)
 	c.registerFiles(s, class)
@@ -1280,6 +1285,33 @@ const residentReportLine = "You are resident: your card stays open between tasks
 	"Run tests and builds in the foreground, with a longer command timeout if needed. If a command must run in the background, wait for it in the same turn. Never end a turn while a command you started is still running.\n" +
 	"Report to your launcher, never to the operator, unless your launcher is the operator. Never ask where to push."
 
+// ItemTag marks a card launched with `item`. See daemon.ItemTag.
+const ItemTag = "atrium:item"
+
+// ItemOwnerTag carries the owner an item launch asked for. See daemon.ItemOwnerTag.
+const ItemOwnerTag = "atrium:item-owner:"
+
+// itemReportLine is how an item worker is told to end: the same text as daemon.ItemEndingLine, which a test keeps
+// equal. No launcher is named in it.
+const itemReportLine = "Before you end your turn, call either:\n" +
+	"- atrium_done <sha or artifact> [one line] when the work is finished\n" +
+	"- atrium_blocked <up to 50 words> when something stops you, such as a question you need answered, a tool you need installed, or a permission you need.\n" +
+	"Then stop. Say nothing more.\n" +
+	"Run tests and builds in the foreground, with a longer command timeout if needed. If a command must run in the background, wait for it in the same turn. Never end a turn while a command you started is still running.\n" +
+	"Your commit is read from your worktree or any hub branch, so never ask where to push and never offer a push to origin. If you are asked to stop, answer with atrium_done and your last sha."
+
+// ItemReportLine is itemReportLine for the stdio control server and the tests.
+const ItemReportLine = itemReportLine
+
+// WithItemReportLine is WithReportLine for an item.
+func WithItemReportLine(prompt string) string {
+	prompt = strings.TrimSpace(prompt)
+	if prompt != "" && !strings.HasSuffix(prompt, itemReportLine) {
+		prompt += "\n\n" + itemReportLine
+	}
+	return prompt
+}
+
 // AgentLaunchTags is what an agent launch's tags become: the caller's own, the origin marker,
 // and a WORKER marker unless the caller says it is a director or already a subagent. The
 // merged-cull only ever touches workers, so the default has to be the one that can be culled
@@ -1539,6 +1571,9 @@ type launchInput struct {
 	Kind string `json:"kind,omitempty" jsonschema:"what sort of session to start. empty is an ordinary worker. interview starts an interviewer: atrium writes the interviewer rules into BRIEF.md ahead of your brief (put the topic and context in brief), tags the card atrium:interview, and does not nudge it for stopping on a question. its questions reach the human in its terminal, so tell the human to watch its card. it runs on opus unless model says otherwise"`
 	// Scratch lets the launch start outside a git checkout.
 	Scratch bool `json:"scratch,omitempty" jsonschema:"start in a directory that is not a git checkout on a claude/* branch. without this such a launch is refused, because what an agent writes there is not kept in git. say it only for throwaway work"`
+	// Item starts the worker as an item. See ItemTag.
+	ItemOwner string `json:"item_owner,omitempty" jsonschema:"with item: who owns the item and hears when it is blocked or finished. empty is you, the creating session. orchestrator, merger or director is whoever holds that role when it ends. human is the person at the board, and no session is told. tester is refused, it has several holders"`
+	Item      bool   `json:"item,omitempty" jsonschema:"start the worker as an ITEM: a task whose only routing is to tell whoever wanted it when it is done. its ending lines never mention a launcher, its opening prompt comes from atrium, it has no atrium_say, atrium_peers, atrium_task or atrium_report, and atrium refuses any say from it. it ends with atrium_done or atrium_blocked and nothing else. leave it out for an ordinary worker, which is unchanged"`
 	// Lifetime is not a parameter: atrium_launch_worker sets it to `work`, atrium_launch leaves it empty.
 	Lifetime string `json:"-"`
 }
@@ -1692,12 +1727,23 @@ func (c *controlMCP) launchOnRoom(ctx context.Context, in launchInput, harness, 
 	// most often leaves out. A launch prompt that lists steps scopes the turn to
 	// those steps, and the worker stops without a word.
 	prompt := WithReportLine(in.Prompt, hasTag(tags, ResidentTag) || hasTag(tags, DirectorTag))
+	if in.Item {
+		// AN ITEM: tagged, and told to end without a launcher in the words. See ItemTag.
+		tags = append(tags, ItemTag)
+		if o := strings.TrimSpace(in.ItemOwner); o != "" {
+			tags = append(tags, ItemOwnerTag+o)
+		}
+		prompt = WithItemReportLine(in.Prompt)
+	}
 	brief := strings.TrimSpace(in.Brief)
 	if isInterview(in.Kind) {
 		// AN INTERVIEWER'S TURNS END ON A QUESTION, so it is not told to end each one with a report. The rules go into
 		// BRIEF.md from the binary, ahead of the caller's topic, and the tag is what the room reads.
 		prompt = strings.TrimSpace(in.Prompt)
 		brief = interviewBrief(in.Brief)
+		// Never a worker: the board files a subagent under its launcher and raises no toasts for it, and an interview
+		// belongs in the operator's interview group. It does not count against the launch cap either.
+		tags = slices.DeleteFunc(tags, func(t string) bool { return strings.TrimSpace(t) == SubagentTag })
 		tags = append(tags, InterviewTag)
 	}
 	reqBody := map[string]any{
@@ -1708,6 +1754,9 @@ func (c *controlMCP) launchOnRoom(ctx context.Context, in launchInput, harness, 
 		"lean": leanLaunch(in, harness), "mcp": in.MCP, "lean_agents": in.LeanAgents, "lean_skills": in.LeanSkills,
 		"model": strings.TrimSpace(in.Model), "effort": strings.TrimSpace(in.Effort),
 		"args": in.Args, "env": in.Env, "lifetime": in.Lifetime,
+	}
+	if in.Item {
+		reqBody["item"] = true
 	}
 	if spawnedByID != "" {
 		reqBody["spawned_by_id"] = spawnedByID

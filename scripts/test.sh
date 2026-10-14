@@ -62,7 +62,7 @@ for a in "$@"; do
   case "$a" in -json|-test.json) wrap=0 ;; -v|-test.v) vflag=(-v) ;; -timeout*|-test.timeout*) timeout=() ;; esac
 done
 # go test's own default is 10m PER PACKAGE, and gitsync alone takes longer than that.
-set -- "${timeout[@]}" "$@"
+set -- ${timeout[@]+"${timeout[@]}"} "$@"
 budget=true
 [ "$mode" = all ] && budget=false
 

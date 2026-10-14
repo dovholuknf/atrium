@@ -145,6 +145,9 @@ function onGrowlsEvent(e) {
   growlHeard = true;
 }
 
+// The stream opened again: the hub went and came back, so its first set is what was already open, not a raise.
+function growlReseed() { growlHeard = false; }
+
 function growlApply(next, seed, remind) {
   const was = new Map(growlSet.map(g => [g.id, g]));
   const now = new Map(next.map(g => [g.id, g]));
@@ -159,6 +162,9 @@ function growlApply(next, seed, remind) {
     });
   }
   growlSet = next;
+  // The first set a page hears is what was already open, and a question for the terminal being typed in is not drawn
+  // because the page was reloaded or the stream reopened under it. Quiet like one raised now: nothing logged, nothing rung.
+  if (seed) next.forEach(g => { if (g.state === "open" && growlOnIt(g)) growlQuiet.add(g.id); });
   // An open bell shows each growler's control, so it follows the set.
   const bell = document.getElementById("toastlog");
   if (!seed && bell && bell.open && typeof openToastLog === "function") openToastLog();
@@ -192,7 +198,9 @@ function growlOnce(key) {
 
 function growlLog(what, g, extra) {
   if (!growlOnce(what + "|" + g.id + "|" + g.raised_at + "|" + (extra || ""))) return;
-  if (typeof recordToLog === "function") recordToLog(what + ": " + g.title, g.body || "", "", null, null, g.id);
+  // The title alone. `what` is this file's name for the event, and the bell is read by a person: the tray said
+  // "growler: ziti-fips/fix-fips asked 2 questions". It stays in the key above, so a raise and a reminder are two lines.
+  if (typeof recordToLog === "function") recordToLog(g.title, g.body || "", "", null, null, g.id);
 }
 
 // The card in the form the board's own list uses: `room~id` once two rooms are attached, bare before.

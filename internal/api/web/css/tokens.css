@@ -18,6 +18,9 @@
     --stroke-dim-rgb: 37,80,111;
     --teal-rgb: 0,227,176;
     --warn-rgb: 255,198,77;
+    /* THE ONE ORANGE: a live runner waiting on the operator, whoever launched it, and nothing else. A warning stays
+       --warn. Held 25 degrees of hue from --warn and --teal in every skin (docs/changes/unified-card.md). */
+    --wait-rgb: 255,122,26;
     --danger-rgb: 255,107,107;
     --path-rgb: 157,180,255;
     /* What a shadow is made of, which on a dark board is darker than anything the shadow falls on. */
@@ -32,6 +35,9 @@
     --stroke-dim: rgb(var(--stroke-dim-rgb));
     --teal: rgb(var(--teal-rgb));
     --warn: rgb(var(--warn-rgb));
+    --wait: rgb(var(--wait-rgb));
+    --wait-bg: rgba(var(--wait-rgb),.13);
+    --wait-stroke: rgba(var(--wait-rgb),.35);
     --danger: rgb(var(--danger-rgb));
     /* Text on a solid danger fill: the page's darkest colour on a dark skin, white on a light one (set in its block). */
     --on-danger: var(--bg-0);

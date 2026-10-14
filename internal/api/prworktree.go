@@ -39,6 +39,8 @@ type prWorktreeResult struct {
 	Branch        string `json:"branch"`
 	CreatedBranch bool   `json:"created_branch"`
 	Repo          string `json:"-"`
+	// Cloned is whether Repo was cloned for this worktree, so the card that gets it owns the clone too.
+	Cloned bool `json:"-"`
 }
 
 // makePRWorktree makes a worktree for a pull request at `<worktree_root>/<org>/<repo>/<branch>`. See prWorktree.
@@ -117,6 +119,7 @@ func (s *Server) prWorktree(ctx context.Context, p *store.Provider, req prWorktr
 	// answers its own sentence before anything is cloned.
 	type found struct {
 		repoPath, wtRoot string
+		cloned           bool
 		status           int
 		err              error
 	}
@@ -125,7 +128,7 @@ func (s *Server) prWorktree(ctx context.Context, p *store.Provider, req prWorktr
 		early = make(chan found, 1)
 		go func() {
 			var o found
-			o.repoPath, o.wtRoot, o.status, o.err = s.repoCheckout(ctx, p, host, req.Org, req.Repo)
+			o.repoPath, o.wtRoot, o.cloned, o.status, o.err = s.repoCheckout(ctx, p, host, req.Org, req.Repo)
 			early <- o
 		}()
 	}
@@ -156,14 +159,14 @@ func (s *Server) prWorktree(ctx context.Context, p *store.Provider, req prWorktr
 		co = <-early
 	} else {
 		steps.begin("checkout", "cloning "+req.Org+"/"+req.Repo+" (the first time only)")
-		co.repoPath, co.wtRoot, co.status, co.err = s.repoCheckout(ctx, p, host, req.Org, req.Repo)
+		co.repoPath, co.wtRoot, co.cloned, co.status, co.err = s.repoCheckout(ctx, p, host, req.Org, req.Repo)
 	}
 	repoPath, wtRoot, status, err := co.repoPath, co.wtRoot, co.status, co.err
 	if err != nil {
 		steps.end()
 		return res, status, err
 	}
-	res.Repo = repoPath
+	res.Repo, res.Cloned = repoPath, co.cloned
 
 	for _, wt := range worktreesOf(repoPath) {
 		if strings.EqualFold(wt.Branch, branch) {
@@ -247,27 +250,31 @@ func (s *Server) haveCheckout(p *store.Provider, host, org, repo string) bool {
 
 // repoCheckout is the checkout of host/org/repo a worktree hangs off, and the folder its worktrees go under: the
 // provider's when it has one, else the scm clone, cloned when it is not there, with its worktrees under the scm
-// folder's `worktrees/<host>`.
-func (s *Server) repoCheckout(ctx context.Context, p *store.Provider, host, org, repo string) (repoPath, wtRoot string, status int, err error) {
+// folder's `worktrees/<host>`. cloned is whether this call made the clone, which the card then owns (store.ResClone).
+func (s *Server) repoCheckout(ctx context.Context, p *store.Provider, host, org, repo string) (repoPath, wtRoot string, cloned bool, status int, err error) {
 	if p != nil {
 		repoPath, wtRoot = store.ProviderPath(p.Root, org, repo), p.WorktreeRoot
+		// A pasted link's case is not the folder's: the lower-case folder is the same repo on a case-sensitive disk.
+		if lower := store.ProviderPath(p.Root, strings.ToLower(org), strings.ToLower(repo)); !isCheckout(filepath.FromSlash(repoPath)) && isCheckout(filepath.FromSlash(lower)) {
+			repoPath = lower
+		}
 	}
 	if repoPath == "" || !isCheckout(filepath.FromSlash(repoPath)) {
 		if s.SCMClone == nil {
-			return "", "", http.StatusServiceUnavailable, errors.New("this room cannot clone")
+			return "", "", false, http.StatusServiceUnavailable, errors.New("this room cannot clone")
 		}
 		cl, err := s.SCMClone(ctx, "https://"+host+"/"+org+"/"+repo)
 		if err != nil {
-			return "", "", http.StatusBadRequest, err
+			return "", "", false, http.StatusBadRequest, err
 		}
-		repoPath = filepath.ToSlash(cl.Path)
+		repoPath, cloned = filepath.ToSlash(cl.Path), cl.State == "cloned"
 	}
 	if wtRoot == "" {
 		// The clone is <scm>/<host>/<org>/<repo>.
 		scm := filepath.Dir(filepath.Dir(filepath.Dir(filepath.FromSlash(repoPath))))
 		wtRoot = filepath.ToSlash(filepath.Join(scm, "worktrees", host))
 	}
-	return repoPath, wtRoot, http.StatusOK, nil
+	return repoPath, wtRoot, cloned, http.StatusOK, nil
 }
 
 // undoPRWorktree removes a worktree prWorktree made, and the branch when it made that too. A found worktree is

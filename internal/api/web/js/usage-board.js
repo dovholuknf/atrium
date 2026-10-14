@@ -63,25 +63,28 @@
   }, true);
   document.addEventListener("change", (e) => { if (e.target && e.target.tagName === "SELECT") count(e.target); }, true);
 
-  function flush(beacon) {
-    if (!pending.size) return;
+  // Always a keepalive fetch, which survives the page closing and, unlike a beacon, carries the room header the board
+  // adds to every fetch. A beacon went to the hub with no room named and was refused with several rooms attached.
+  function flush() {
+    if (!pending.size) return Promise.resolve();
     const body = JSON.stringify({ counts: Object.fromEntries(pending) });
     pending.clear();
     try {
-      if (beacon && navigator.sendBeacon) {
-        navigator.sendBeacon("/v1/usage", new Blob([body], { type: "application/json" }));
-      } else {
-        fetch("/v1/usage", { method: "POST", headers: { "Content-Type": "application/json" }, body, keepalive: true }).catch(() => {});
-      }
-    } catch (_) { /* dropped */ }
+      return fetch("/v1/usage", { method: "POST", headers: { "Content-Type": "application/json" }, body, keepalive: true }).catch(() => {});
+    } catch (_) { return Promise.resolve(); /* dropped */ }
   }
-  window.boardUsageFlush = () => flush(false);
-  setInterval(() => flush(false), 10000);
-  addEventListener("pagehide", () => flush(true));
+  window.boardUsageFlush = () => flush();
+  setInterval(() => flush(), 10000);
+  addEventListener("pagehide", () => flush());
 
-  // The view: what was used, most first, then what the board has but nobody has used.
+  // The view: what was used, then what the board has but nobody has used. Opens at once from a SNAPSHOT of the last
+  // read (the totals) and of the last look at the DOM (the known controls), then reads again and repaints if it changed.
+  // Sorted by count, most first, or by name; a click on the same header flips it. Never rows stay at the bottom.
   const dlg = document.getElementById("usagedlg");
   const list = document.getElementById("usagedlg-list");
+  const heads = { name: document.getElementById("usagedlg-h-name"), n: document.getElementById("usagedlg-h-n") };
+  const snap = { used: null, known: null, at: 0 };
+  const sort = { key: "n", dir: -1 };
   function knownNow() {
     const out = new Set();
     for (const el of document.querySelectorAll(PICK)) {
@@ -91,27 +94,57 @@
     }
     return out;
   }
-  async function paint() {
-    list.replaceChildren();
-    flush(false);
-    let used = [];
+  function byName(x, y) { return x.name < y.name ? -1 : x.name > y.name ? 1 : 0; }
+  function order(rows, never) {
+    const k = sort.key === "n" && !never ? (x, y) => sort.dir * (x.total - y.total) || byName(x, y)
+      : (x, y) => (sort.key === "name" ? sort.dir : 1) * byName(x, y);
+    return rows.slice().sort(k);
+  }
+  function draw() {
+    const used = (snap.used || []).map(u => ({ name: u.control, total: u.n, last: u.last }));
+    const seen = new Set(used.map(u => u.name));
+    const never = [...(snap.known || [])].filter(n => !seen.has(n)).map(name => ({ name, total: 0, last: "" }));
+    const row = (r, isNever) => {
+      const d = document.createElement("div");
+      d.className = "usagedlg-row" + (isNever ? " never" : "");
+      const a = document.createElement("span"); a.className = "name"; a.textContent = r.name;
+      const b = document.createElement("span"); b.className = "n"; b.textContent = isNever ? "never" : String(r.total);
+      const c = document.createElement("span"); c.className = "last"; c.textContent = isNever ? "" : r.last;
+      d.append(a, b, c);
+      return d;
+    };
+    list.replaceChildren(...order(used, false).map(r => row(r, false)), ...order(never, true).map(r => row(r, true)));
+    for (const k of ["name", "n"]) {
+      const on = sort.key === k;
+      heads[k].setAttribute("aria-sort", on ? (sort.dir < 0 ? "descending" : "ascending") : "none");
+      heads[k].dataset.arrow = on ? (sort.dir < 0 ? "\u25BC" : "\u25B2") : "";
+    }
+  }
+  async function refresh() {
+    await flush();
     try {
       const r = await fetch("/v1/usage/board");
-      if (r.ok) used = (await r.json()).controls || [];
-    } catch (_) { /* shows the never list alone */ }
-    const seen = new Set(used.map(u => u.control));
-    const row = (name, total, last, never) => {
-      const d = document.createElement("div");
-      d.className = "usagedlg-row" + (never ? " never" : "");
-      const a = document.createElement("span"); a.className = "name"; a.textContent = name;
-      const b = document.createElement("span"); b.className = "n"; b.textContent = never ? "never" : String(total);
-      const c = document.createElement("span"); c.className = "last"; c.textContent = never ? "" : last;
-      d.append(a, b, c);
-      list.append(d);
-    };
-    for (const u of used) row(u.control, u.n, u.last, false);
-    for (const n of [...knownNow()].sort()) if (!seen.has(n)) row(n, 0, "", true);
+      if (r.ok) snap.used = (await r.json()).controls || [];
+    } catch (_) { /* keeps the last totals */ }
+    snap.known = knownNow();
+    snap.at = Date.now();
+    if (dlg.open) draw();
   }
-  window.openControlsUsed = () => { paint(); if (!dlg.open) dlg.showModal(); };
+  function sortBy(key) {
+    if (sort.key === key) sort.dir = -sort.dir;
+    else { sort.key = key; sort.dir = key === "n" ? -1 : 1; }
+    draw();
+  }
+  heads.name.onclick = () => sortBy("name");
+  heads.n.onclick = () => sortBy("n");
+  window.boardUsageSort = (key, dir) => { sort.key = key; sort.dir = dir; draw(); };
+  window.openControlsUsed = () => {
+    if (snap.used) draw();
+    if (!dlg.open) dlg.showModal();
+    refresh();
+  };
   document.getElementById("usagedlg-close").onclick = () => dlg.close();
+  // A snapshot is ready before anyone asks: once the page has settled, and again whenever the room's counts may have moved.
+  const idle = window.requestIdleCallback || ((f) => setTimeout(f, 1500));
+  setTimeout(() => idle(refresh), 4000);
 })();

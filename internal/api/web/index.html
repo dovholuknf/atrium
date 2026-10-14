@@ -183,7 +183,7 @@
            See js/audit.js and js/rooms.js. -->
       <div class="tab" data-view="audit" hidden>audit</div>
       <!-- Every say between sessions, from every room. Read on open, see js/chatter.js. -->
-      <div class="tab" data-view="chatter">chatter</div>
+      <div class="tab" data-view="chatter">messages between agents</div>
       <!-- Hub only, revealed with the audit tab. See js/hubrepos.js. -->
       <div class="tab" data-view="hubrepos" hidden>repos</div>
       <!-- Hub only, revealed with the audit tab. See js/backlog.js. -->
@@ -278,6 +278,7 @@
        looking at, and a control that does that belongs next to the thing. -->
   <!-- The filter drawer's line and panel (js/filter-drawer.js): search, show, sort and group for the board. -->
   <div id="board-bar" hidden></div>
+  <div id="board-count" class="board-count" hidden></div>
   <div id="board" class="board" hidden></div>
   <!-- Every card as one list. The board answers "what is where"; this answers
        "what should I look at next", which is the question with an order. -->
@@ -289,10 +290,6 @@
          are two questions, so two rows: sorting orders the rows, grouping decides whether they are cut into projects
          first. Painted by paintStackShow, paintStackSort and paintGroupSegs. -->
     <div id="fd-stack"></div>
-    <!-- The cache summary (u-032). One line over the rows below, and a button to
-         the keep-alive setting. Filled in by paintCacheLine. -->
-    <button type="button" class="cacheline" id="cache-line-stack" hidden
-      onclick="openKeepaliveSetting()" data-tip="open the keep-alive setting"></button>
     <div id="stack-list"></div>
   </div>
   <!-- Built once. Only the list bodies are refreshed, so a filter you are
@@ -830,6 +827,8 @@ Tokens only, except the turns atrium caused, which carry an estimated dollar fig
       <div class="seg multi" id="backlog-prios" role="group" aria-label="priority"></div>
     </div>
     <p class="pane-lead" id="backlog-note" role="status"></p>
+    <!-- Items the human owns that are blocked or finished. Read-only: the answer is typed into the worker's terminal. -->
+    <div id="backlog-owned" hidden></div>
     <div id="backlog-items"></div>
     <div class="col-head" style="margin:16px 0 10px"><span>director reports</span></div>
     <div id="backlog-reports"></div>
@@ -857,12 +856,12 @@ Read-only. It says what happened, it does not change anything. Filter by room to
 
   <div id="chatter" hidden>
     <div class="col-head" style="margin:0 0 10px">
-      <span>what the sessions said to each other</span>
-      <span class="help" tabindex="0" data-tip="Every say from one session to another, from every room, newest first.
+      <span>messages between agents</span>
+      <span class="help" tabindex="0" data-tip="Every message from one session to another, from every room, newest first.
 
 A row opens to the full text, and both names open their cards. Filter by one agent (what it sent, what it received, or both), by room, or by how far back to look.
 
-Read when you open the tab and when you press more, it does not update on its own. A room keeps the last 30 days and 2000 says.">?</span>
+Read when you open the tab and when you press more, it does not update on its own. A room keeps the last 30 days and 2000 messages.">?</span>
     </div>
     <div class="filters" style="margin-bottom:12px">
       <span class="barlabel">agent</span>
@@ -1151,6 +1150,11 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
     <div class="grow"><div class="dlg-eyebrow">this room</div><h2>controls used</h2></div>
   </div>
   <div class="dlg-body">
+    <div class="usagedlg-row usagedlg-head" data-usage-skip>
+      <button type="button" id="usagedlg-h-name" class="name" data-usage-skip>control</button>
+      <button type="button" id="usagedlg-h-n" class="n" data-usage-skip>used</button>
+      <span class="last">last</span>
+    </div>
     <div id="usagedlg-list" class="usagedlg-list"></div>
     <span class="hintline">Counts of clicks on the board's own controls, kept in this room and never sent anywhere
       else. A control in a menu that is closed is not known until the menu has been opened.</span>
@@ -2096,7 +2100,7 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
     </div>
 
     <!-- The terminal list's sort and group (the filter drawer's rows show the same two). Filled in by
-         paintTermGear and paintCacheLine, on each list render and when the gear opens.
+         paintTermGear, on each list render and when the gear opens.
          The group pills are the same setting the board and the stack have. -->
     <h3 class="s-section">terminal list</h3>
     <div class="field">
@@ -2109,7 +2113,6 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
     </div>
     <div class="field">
       <span class="eyebrow">cache</span>
-      <span class="hintline" id="cache-line-gear" hidden></span>
       <span class="hintline">The keep-alive default is in the next section.</span>
     </div>
 
@@ -3201,6 +3204,25 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
            See refreshLaunchRunners in js/fixtures.js. -->
       <span class="hintline" id="l-pick-note" hidden></span>
     </div>
+    <!-- MODEL AND EFFORT, ONE LINE UNDER THE RUNNER, because both are answers about the runner. This launch only: empty
+         every time this opens and empty IS the runner's own default. The card keeps what it started on, so a restart
+         comes back on the same model. The list is what has been typed here before, never a catalog, and the buttons
+         are the operator's own `modelPicker` (internal/claudeconf/models.go). Each half hides for a runner with no way
+         to take it. -->
+    <div class="field" id="l-runner-opts">
+      <div class="l-opts">
+        <span id="l-model-field">
+          <input type="text" id="l-model" list="l-model-seen" spellcheck="false" aria-label="model"
+            placeholder="model: the runner's default">
+          <datalist id="l-model-seen"></datalist>
+        </span>
+        <span id="l-effort-field">
+          <input type="text" id="l-effort" spellcheck="false" aria-label="effort"
+            placeholder="effort: the runner's default">
+        </span>
+      </div>
+      <div class="toolbar" id="l-model-pick" hidden></div>
+    </div>
     <div class="field">
       <label class="eyebrow" for="l-cwd">working directory</label>
       <!-- `repo` first, because it is the control that answers this field. It
@@ -3242,30 +3264,9 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
          going to pick one". Under `more` it was three fields below the box it
          empties, so the way to avoid choosing a directory was hidden behind a
          fold you opened to look for something else. -->
-    <div class="field" id="l-throwaway-field">
-      <label class="check">
-        <input type="checkbox" id="l-throwaway-on">
-        <span>throw it away when the session ends</span>
-      </label>
-      <span class="hintline">Atrium makes a temporary directory and starts here. When the
-        session ends the directory, the card and the conversation are all deleted. If it turns
-        out to matter, promote it from the card's menu and it moves somewhere you choose.</span>
-    </div>
-    <!-- A LINK'S WORK IS MADE ON DISK (a worktree, maybe a clone, claude/* branches), and this is the way to have it
-         taken away again. Shown for a link only. Wired to the card's own close (js/sharing.js, cleanupWhenDone), which
-         is what frees an inventory today: nothing here deletes anything itself. -->
-    <div class="field" id="l-cleanup-field" hidden>
-      <label class="check">
-        <input type="checkbox" id="l-cleanup-on">
-        <span>clean up when the work is done</span>
-      </label>
-      <span class="hintline">When the card is done, atrium offers to close it, and closing deletes what it made:
-        the worktree, a clone it had to make and its claude/* branches here and on the hub, and the space comes
-        back. You are shown what goes first, and a worktree with work nowhere else is asked about.</span>
-    </div>
     <!-- Only shown when there is a conversation to pick up. Checked by
          default: if you had one, continuing it is almost always the intent.
-         NOT folded, unlike everything below it. It appears only when it
+         NOT folded. It appears only when it
          applies, it is on by default, and a default-on control hidden behind a
          disclosure is a decision made for you out of sight. -->
     <div class="field" id="l-resume-field" hidden>
@@ -3275,96 +3276,17 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
       </label>
       <span class="hintline" id="l-resume-note"></span>
     </div>
-    </section>
-
-    <!-- EVERYTHING BELOW IS OPTIONAL AND SAYS SO BY BEING SHUT.
-         Ten controls, one of which has to be answered. The other nine were the
-         same size in the same column with the same label treatment, so reading
-         the form meant reading nine things to find out none of them applied.
-         Most were added so a SCRIPT could pass them: `atrium launch` takes
-         --tags, --prompt, --why and the rest, and the dialog grew a field per
-         flag, operated by a human who has none of those answers yet.
-         Folded, not deleted. Every one is reachable from the CLI and from an
-         intake item, and this dialog is the only place a human can see what a
-         recogniser or a script filled in. `openMore` opens it when anything
-         inside is non-empty, so an arriving intake item is never launched from
-         behind a closed fold. The state is deliberately not remembered: a form
-         that remembers being open is a form that is open.
-         See docs/backlog/backlog-2026-09-14-004.md. -->
-    <details id="l-more" class="dlg-sec">
-      <summary>more<span class="more-note" id="l-more-note"></span></summary>
-    <div class="dlg-grid">
-    <!-- Paste a pull request, an issue or a ticket and the rest of this form
-         fills itself in. Atrium learns nothing about the system it came from:
-         a recogniser is a pattern and a set of templates, and whoever wrote
-         the row did the understanding.
-         This leaves entirely once backlog-2026-09-14-003 gives it its own
-         door. Folded until then rather than removed, because nothing else can
-         do it yet. -->
-    <div class="field span" id="l-link-field">
-      <label class="eyebrow" for="l-url">paste a link</label>
-      <div class="picker">
-        <input type="text" id="l-url" spellcheck="false"
-          placeholder="a pull request, an issue, a ticket">
-        <button id="l-recognise" onclick="busyWhile(this, recogniseLink)">recognise</button>
-      </div>
-      <span class="hintline" id="l-link-note">Optional. A recogniser turns it into the fields
-        below, and nothing starts until you press launch.</span>
-      <!-- A clone the operator made, asked once: atrium adds its hub remote there and guards pushes to origin. Shown by
-           launchNow on the answer clone_adopt, over any "don't ask again". -->
-      <button type="button" id="l-adopt" hidden onclick="adoptAndLaunch()"></button>
-    </div>
-    <!-- Which model, for THIS launch and nothing else.
-         Empty every time this opens, and nothing is written to the runner's
-         row. Empty IS the runner's own default, which is why nothing guards
-         this field: a tickbox in front of it asks you to say twice what one
-         empty box already says. The card keeps what it started on, so a
-         restart brings the session back on the same model, but the form never
-         remembers: a one-time choice you have to clear again is not a one-time
-         choice.
-         The list is what has been typed here before, never a catalog. Atrium
-         does not know which models exist and a list written into it would ship
-         out of date within months. -->
-    <div class="field" id="l-model-field">
-      <label class="eyebrow" for="l-model">model</label>
-      <!-- BUTTONS WHEN THE OPERATOR HAS A PICKER, and the box either way.
-           Comparing two models means launching the same work on each, which is
-           two launches where the only difference is a string typed from memory:
-           `claude-opus-4-7`, not `Opus 4.7`. A task that fiddly quietly stops
-           happening.
-           The names are not atrium's. They are read out of the operator's own
-           `modelPicker` in Claude Code's settings, so they are whatever they
-           decided and they change when they change it. Nothing here is a
-           catalog, which is the rule `discover.go` sets out at length. -->
-      <div class="toolbar" id="l-model-pick" hidden></div>
-      <input type="text" id="l-model" list="l-model-seen" spellcheck="false"
-        placeholder="empty runs the runner's own default">
-      <datalist id="l-model-seen"></datalist>
-      <span class="hintline" id="l-model-note">This launch only. The card remembers it so a
-        restart comes back on the same model, and this field is empty again next time.</span>
-    </div>
-    <!-- Thinking effort, the same way: this launch only, text handed to the
-         runner in the shape its row declares, never a list of levels. -->
-    <div class="field" id="l-effort-field">
-      <label class="eyebrow" for="l-effort">effort</label>
-      <input type="text" id="l-effort" spellcheck="false"
-        placeholder="empty runs the runner's own default, such as low or high">
-      <span class="hintline">This launch only, kept on the card like the model. A runner with no
-        way to take an effort refuses the launch.</span>
-    </div>
-    <div class="field">
-      <label class="eyebrow" for="l-title">title</label>
-      <input type="text" id="l-title" spellcheck="false" placeholder="what is this one for">
-    </div>
-    <div class="field">
-      <label class="eyebrow" for="l-tags">tags</label>
-      <input type="text" id="l-tags" spellcheck="false" placeholder="comma separated, or leave empty">
-      <span class="hintline">Free text. Split on commas and never on spaces, so a tag with a space
-        in it is one tag.</span>
-    </div>
-    <div class="field span">
-      <label class="eyebrow" for="l-why">why</label>
-      <input type="text" id="l-why" spellcheck="false" placeholder="read this in a week and remember">
+    <!-- WHAT A LINK FILLED IN, held rather than asked. The title and the tags come from the recogniser and the open
+         derives them again on the room, so a box for each was two questions nobody had an answer to. The link is the one
+         that was pasted: there is no second paste box here, the switcher and a paste on the board are the doors. `why`
+         stays as a hidden value because an intake item and the CLI still carry one. -->
+    <input type="hidden" id="l-url">
+    <input type="hidden" id="l-title">
+    <input type="hidden" id="l-tags">
+    <input type="hidden" id="l-why">
+    <div class="field span" id="l-link-field" hidden>
+      <label class="eyebrow">link</label>
+      <span class="hintline" id="l-link-note"></span>
     </div>
     <!-- Handed to the runner as its first instruction. Hidden while resuming,
          because that conversation already has one and the daemon refuses
@@ -3373,11 +3295,8 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
       <label class="eyebrow" for="l-prompt">first instruction</label>
       <textarea id="l-prompt" rows="3" spellcheck="false"
         placeholder="what it should start on. leave empty to start at a bare prompt"></textarea>
-      <span class="hintline" id="l-prompt-note">Sent as the runner's opening
-        argument. A runner with no way to take one will say so.</span>
     </div>
-    </div>
-    </details>
+    </section>
   </div>
   <!-- `launch`, which is the verb. It said `start it`, a sentence where every
        other button here is a word, and `atrium launch` is what the CLI calls
@@ -3400,12 +3319,6 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
     <button class="no" id="l-terminate" hidden>terminate</button>
     <button class="no" id="l-forget" hidden>remove</button>
     <span class="grow"></span>
-    <!-- Only for a link. Ticked is the default: Enter in the switcher opens a link at once and never shows this
-         dialog. Unticking it is "ask me every time". See js/quickpaste.js. -->
-    <label class="check" id="l-direct-field" hidden>
-      <input type="checkbox" id="l-direct" onchange="try { localStorage.setItem(QUICKPASTE_DIRECT_STORE, this.checked ? '1' : '0'); } catch (e) {}">
-      <span>don't ask again: enter opens a link at once</span>
-    </label>
     <button class="go big" id="l-go" onclick="doLaunch()">launch</button>
   </div>
 </dialog>
@@ -3790,6 +3703,7 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
   <div class="dlg-body" id="rev-body"></div>
 </dialog>
 
+<script src="/js/popfit.js"></script>
 <script src="/js/dragclick.js"></script>
 <script src="/js/prefs-live.js"></script>
 <script src="/js/cardrules.js"></script>
@@ -3850,6 +3764,7 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
 <script src="/js/termcursor.js"></script>
 <script src="/js/terminal-list.js"></script>
 <script src="/js/seen.js"></script>
+<script src="/js/engaged.js"></script>
 <script src="/js/newcard.js"></script>
 <script src="/js/terminal-links.js"></script>
 <script src="/js/lastread.js"></script>
@@ -3878,6 +3793,7 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
 <script src="/js/solo.js"></script>
 <script src="/js/switcher.js"></script>
 <script src="/js/reveal.js"></script>
+<script src="/js/link-opening.js"></script>
 <script src="/js/quickpaste.js"></script>
 <script src="/js/dictate.js"></script>
 <script src="/js/hubrestart.js"></script>

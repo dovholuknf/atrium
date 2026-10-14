@@ -81,7 +81,9 @@ function Report {
   # The hub routes /v1/* to the room in X-Atrium-Room, and refuses a request that names none.
   $card, $room = $ReportTo -split '@', 2
   $headers = @{}
-  if ($room) { $headers['X-Atrium-Room'] = $room }
+  # A bare card id means the local room, which is where this script runs.
+  if (-not $room) { $room = 'sg4-control' }
+  $headers['X-Atrium-Room'] = $room
   $body = @{ to = $card; from = 'atrium-deploy'; text = $text; kind = 'fyi'; wake = $true } | ConvertTo-Json -Compress
   # Retried while the hub or the room is coming back. A 4xx is an answer, not an outage.
   for ($i = 0; $i -lt 30; $i++) {
@@ -133,30 +135,57 @@ $built = @()
 
 # 2. Remote rooms. Each: reach it, cross-build, copy, stop, swap, start detached, check it is back on the hub.
 # `atrium stop` returns before the room lets go of its board port, and a start that finds the port answering
-# leaves it alone and exits. So each swap waits up to a minute for 127.0.0.1:7781 to stop listening.
-$waitFree = '$n = 0 ; while ($n -lt 60) { $c = New-Object Net.Sockets.TcpClient ; ' +
+# leaves it alone and exits. So each swap waits for 127.0.0.1:7781 to stop listening, as long as the room's wrap-up can
+# take (restart_wrap_wait_s, read from the room here, 300 by default) plus a margin. A port still held when that runs
+# out prints $portTimeout and exits before the swap, so the old room is neither swapped nor detached over.
+$portWait = (Get-WrapWait) + 60
+$portTimeout = 'PORT-WAIT-TIMEOUT'
+$waitFree = '$n = 0 ; while ($n -lt ' + $portWait + ') { $c = New-Object Net.Sockets.TcpClient ; ' +
   'try { if (-not $c.ConnectAsync(''127.0.0.1'', 7781).Wait(500)) { break } } catch { break } ' +
-  'finally { $c.Dispose() } ; Start-Sleep 1 ; $n++ } ; '
-$winSwap = '$e = Join-Path $HOME ''.atrium\toolchain\room-env.ps1'' ; if (Test-Path $e) { . $e } ; ' +
-  '$b = Join-Path $HOME ''.atrium\bin\atrium.exe'' ; & $b stop ; ' +
+  'finally { $c.Dispose() } ; Start-Sleep 1 ; $n++ } ; ' +
+  'if ($n -ge ' + $portWait + ') { ''' + $portTimeout + ''' ; exit 3 } ; '
+$winEnv = '$e = Join-Path $HOME ''.atrium\toolchain\room-env.ps1'' ; if (Test-Path $e) { . $e } ; ' +
+  '$b = Join-Path $HOME ''.atrium\bin\atrium.exe'' ; '
+$winSwap = $winEnv + '& $b stop ; ' +
   $waitFree +
   'Move-Item -Force $b ($b -replace ''atrium.exe$'', ''atrium.prev.exe'') ; ' +
   'Move-Item -Force (Join-Path $HOME ''atrium.new.exe'') $b ; & $b room --detach'
+$sg3Detach = 'C:/Users/claude/.atrium/bin/atrium.exe room --detach --dir C:/Users/claude/.atrium/room ' +
+  '--db C:/Users/claude/.atrium/atrium.db'
+$macWait = 'for i in {1..' + $portWait + '}; do lsof -iTCP:7781 -sTCP:LISTEN >/dev/null || break ; sleep 1 ; done ; ' +
+  'if lsof -iTCP:7781 -sTCP:LISTEN >/dev/null ; then echo ' + $portTimeout + ' ; exit 3 ; fi ; '
+$macDetach = '~/.local/bin/atrium room --detach --dir /Users/claude/.atrium/room --db /Users/claude/.atrium/atrium.db ' +
+  '--agent 127.0.0.1:7777 --http 127.0.0.1:7781'
+# Retry is run when the detach after the swap found the old room still answering. It waits for the port again, then detaches.
+# Log is how to read the room's own log over ssh, for Get-RoomLink.
 $remote = @{
   'sg3'    = @{ GOOS = 'windows'; GOARCH = 'amd64'; Dest = 'atrium.new.exe'
     Swap = 'C:/Users/claude/.atrium/bin/atrium.exe stop ; ' + $waitFree +
       'Move-Item -Force C:/Users/claude/.atrium/bin/atrium.exe C:/Users/claude/.atrium/bin/atrium.prev.exe ; ' +
-      'Move-Item -Force C:/Users/claude/atrium.new.exe C:/Users/claude/.atrium/bin/atrium.exe ; ' +
-      'C:/Users/claude/.atrium/bin/atrium.exe room --detach --dir C:/Users/claude/.atrium/room ' +
-      '--db C:/Users/claude/.atrium/atrium.db' }
-  'sgg'    = @{ GOOS = 'windows'; GOARCH = 'amd64'; Dest = 'atrium.new.exe'; Swap = $winSwap }
+      'Move-Item -Force C:/Users/claude/atrium.new.exe C:/Users/claude/.atrium/bin/atrium.exe ; ' + $sg3Detach
+    Retry = $waitFree + $sg3Detach
+    Log = 'Get-Content C:/Users/claude/.atrium/room/room.log -Tail 300' }
+  'sgg'    = @{ GOOS = 'windows'; GOARCH = 'amd64'; Dest = 'atrium.new.exe'; Swap = $winSwap
+    Retry = $winEnv + $waitFree + '& $b room --detach'
+    Log = 'Get-Content (Join-Path $HOME ''.atrium\room\room.log'') -Tail 300' }
   'm1mini' = @{ GOOS = 'darwin'; GOARCH = 'arm64'; Dest = '.local/bin/atrium.new'
-    Swap = 'zsh -lic "~/.local/bin/atrium stop ; ' +
-      'for i in {1..60}; do lsof -iTCP:7781 -sTCP:LISTEN >/dev/null || break ; sleep 1 ; done ; ' +
+    Swap = 'zsh -lic "~/.local/bin/atrium stop ; ' + $macWait +
       'mv -f ~/.local/bin/atrium ~/.local/bin/atrium.prev && ' +
-      'mv -f ~/.local/bin/atrium.new ~/.local/bin/atrium && chmod +x ~/.local/bin/atrium && ' +
-      '~/.local/bin/atrium room --detach --dir /Users/claude/.atrium/room --db /Users/claude/.atrium/atrium.db ' +
-      '--agent 127.0.0.1:7777 --http 127.0.0.1:7781"' }
+      'mv -f ~/.local/bin/atrium.new ~/.local/bin/atrium && chmod +x ~/.local/bin/atrium && ' + $macDetach + '"'
+    Retry = 'zsh -lic "' + $macWait + $macDetach + '"'
+    Log = 'tail -n 300 ~/.atrium/room/room.log' }
+}
+
+# Get-RoomLink here shadows live-common's, which reads the local room.err. For a remote room, $RoomName is that room's
+# name while Wait-RoomAttached runs, and its link lines are in its own room.log on its own machine, read over ssh.
+$localRoomLink = ${function:Get-RoomLink}
+function Get-RoomLink {
+  if (-not $remote.Contains($RoomName)) { return & $localRoomLink }
+  $lines = & $ssh @sshOpts $RoomName $remote[$RoomName].Log 2>$null
+  $last = $lines | Select-String -Pattern '\[link\] (attached to hub|hub \S+: )' | Select-Object -Last 1
+  if (-not $last) { return '' }
+  if ($last.Line -match '\[link\] attached to hub') { return 'up' }
+  return 'down'
 }
 foreach ($name in $remoteNames) {
   if ($want -notcontains $name) { continue }
@@ -179,10 +208,26 @@ foreach ($name in $remoteNames) {
   Invoke-Step "scp $out -> ${name}:$($r.Dest)" { & $scp -q @sshOpts $out "${name}:$($r.Dest)" }
   if (-not $WhatIf -and $LASTEXITCODE -ne 0) { $results[$name] = 'failed - scp failed'; continue }
   $start = Get-Date
-  Invoke-Step "ssh ${name}: stop, swap (old kept as atrium.prev), start" {
-    & $ssh @sshOpts $name $r.Swap 2>&1 | ForEach-Object { Say "  ${name}: $_" }
+  $swapOut = @()
+  Invoke-Step "ssh ${name}: stop, wait up to ${portWait}s for the port, swap (old kept as atrium.prev), start" {
+    $script:swapOut = @(& $ssh @sshOpts $name $r.Swap 2>&1 | ForEach-Object { "$_" })
+    $swapOut | ForEach-Object { Say "  ${name}: $_" }
   }
   if ($WhatIf) { $results[$name] = 'success (WhatIf)'; continue }
+  if ($swapOut -contains $portTimeout) {
+    $results[$name] = "failed - the room still held its port after ${portWait}s, so nothing was swapped or started"
+    continue
+  }
+  # The old room can outlive the port check by a moment and answer the detach: wait for the port again, detach once more.
+  if (($swapOut -join "`n") -match 'left it running|not attached') {
+    Say "${name}: detach found the old room still running. retrying once"
+    $retryOut = @(& $ssh @sshOpts $name $r.Retry 2>&1 | ForEach-Object { "$_" })
+    $retryOut | ForEach-Object { Say "  ${name}: $_" }
+    if ($retryOut -contains $portTimeout) {
+      $results[$name] = "failed - the room still held its port after ${portWait}s more, so it was not started"
+      continue
+    }
+  }
   $saved = $RoomName
   $RoomName = $name
   $back = Wait-RoomAttached $start

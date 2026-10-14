@@ -261,7 +261,7 @@ func sweepYoung(madeAt string) bool {
 // sweepGone says why a row's thing is no longer there, or "" when it is, or when that cannot be told.
 func (s *Server) sweepGone(ctx context.Context, r *store.CardResource) string {
 	switch r.Kind {
-	case store.ResWorktree, store.ResDir:
+	case store.ResWorktree, store.ResDir, store.ResClone:
 		if _, err := os.Stat(filepath.FromSlash(r.Ref)); errors.Is(err, os.ErrNotExist) {
 			return "gone from disk, found by the sweep"
 		}

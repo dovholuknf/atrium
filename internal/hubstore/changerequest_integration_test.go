@@ -300,34 +300,37 @@ func TestChangeRequestMigrationToleratesBeingThere(t *testing.T) {
 // priority), 0015 (the merge flow) 0016 (its epochs) and 0017 (the file drop, the last) come after.
 func TestChangeRequestMigrationIsAtTheEnd(t *testing.T) {
 	n := len(migrations)
-	if got := migrations[n-1].name; got != "0017_hub_files" {
+	if got := migrations[n-1].name; got != "0018_item" {
 		t.Fatalf("the last migration is %q", got)
 	}
-	if got := migrations[n-2].name; got != "0016_flow_epoch" {
+	if got := migrations[n-2].name; got != "0017_hub_files" {
 		t.Fatalf("the one before it is %q", got)
 	}
-	if got := migrations[n-3].name; got != "0015_merge_flow" {
+	if got := migrations[n-3].name; got != "0016_flow_epoch" {
+		t.Fatalf("the one before it is %q", got)
+	}
+	if got := migrations[n-4].name; got != "0015_merge_flow" {
 		t.Fatalf("the one before that is %q", got)
 	}
-	if got := migrations[n-4].name; got != "0014_backlog_priority" {
+	if got := migrations[n-5].name; got != "0014_backlog_priority" {
 		t.Fatalf("the one before that is %q", got)
 	}
-	if got := migrations[n-5].name; got != "0013_room_spec" {
+	if got := migrations[n-6].name; got != "0013_room_spec" {
 		t.Fatalf("the one before that is %q", got)
 	}
-	if got := migrations[n-6].name; got != "0012_backlog_reports" {
+	if got := migrations[n-7].name; got != "0012_backlog_reports" {
 		t.Fatalf("the one before that is %q", got)
 	}
-	if got := migrations[n-7].name; got != "0011_push_subscription" {
+	if got := migrations[n-8].name; got != "0011_push_subscription" {
 		t.Fatalf("the one before that is %q", got)
 	}
-	if got := migrations[n-8].name; got != "0010_pr_claim" {
+	if got := migrations[n-9].name; got != "0010_pr_claim" {
 		t.Fatalf("the one before that is %q", got)
 	}
-	if got := migrations[n-9].name; got != "0009_change_request" {
+	if got := migrations[n-10].name; got != "0009_change_request" {
 		t.Fatalf("the one before that is %q", got)
 	}
-	if got := migrations[n-10].name; got != "0008_git_push" {
+	if got := migrations[n-11].name; got != "0008_git_push" {
 		t.Fatalf("the one before that is %q", got)
 	}
 }

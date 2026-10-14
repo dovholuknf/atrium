@@ -42,20 +42,23 @@ function revealFolds(t) {
   chain.slice(1).forEach(up => (subsOn ? open : openInverted)(termKidsKey(up)));
 
   const col = COLUMNS.find(c => c.statuses.includes(t.status));
+  const bcol = boardColumnOf(t);
   const bg = typeof grouper === "function" ? grouper("board") : null;
   if (col) {
     open(col.id);
+    open(bcol);
     if (col.statuses.length > 1) open("group:" + t.status);
     if (t.offline) openInverted("offline:" + col.id);
   }
   if (t.offline) openInverted("offline:stack");
+  const lane = bcol;
   const projects = (g, prefix, c) => {
-    if (t.pinned && prefix === "proj:") { open("proj:pinned"); return; }
     let names = [];
     try { names = g ? g.of(c) || [] : []; } catch (e) { names = []; }
     names.filter(Boolean).forEach(name => {
       const shutByDefault = prefix === "proj:" && name === UNTAGGED && groupingPrefs(g.view).mode === "custom";
-      if (shutByDefault) openInverted(prefix + name); else open(prefix + name);
+      const key = prefix === "proj:" ? laneFoldKey(lane, name) : prefix + name;
+      if (shutByDefault) openInverted(key); else open(key);
     });
   };
   projects(bg, "proj:", t);

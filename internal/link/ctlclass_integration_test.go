@@ -39,13 +39,15 @@ type classHarness struct {
 	board   *httptest.Server
 	lookups *atomic.Int32
 	audits  *[]auditLine
-	mu      sync.Mutex
-	clock   time.Time
+	// launches is every body posted to /v1/launch.
+	launches *[]map[string]any
+	mu       sync.Mutex
+	clock    time.Time
 }
 
 func newClassHarness(t *testing.T, tasks []map[string]any) *classHarness {
 	t.Helper()
-	h := &classHarness{lookups: &atomic.Int32{}, clock: time.Now()}
+	h := &classHarness{lookups: &atomic.Int32{}, clock: time.Now(), launches: &[]map[string]any{}}
 	h.board = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		switch {
@@ -53,6 +55,11 @@ func newClassHarness(t *testing.T, tasks []map[string]any) *classHarness {
 			h.lookups.Add(1)
 			_ = json.NewEncoder(w).Encode(map[string]any{"tasks": tasks})
 		case r.Method == http.MethodPost && r.URL.Path == "/v1/launch":
+			var body map[string]any
+			_ = json.NewDecoder(r.Body).Decode(&body)
+			h.mu.Lock()
+			*h.launches = append(*h.launches, body)
+			h.mu.Unlock()
 			_ = json.NewEncoder(w).Encode(map[string]any{"id": "new1", "wire_name": "kid"})
 		default:
 			http.NotFound(w, r)
@@ -119,7 +126,7 @@ var workerSeven = []string{"atrium_alias", "atrium_blocked", "atrium_ci", "atriu
 // fullFifteen is f-021's eleven, f-019's two git tools, atrium_deps and atrium_deploy, and atrium_model, and atrium_publish,
 // all full-only. The name is the count it had before atrium_model.
 var fullFifteen = []string{"atrium_alias", "atrium_backlog", "atrium_blocked", "atrium_ci", "atrium_close", "atrium_cull", "atrium_deploy", "atrium_deps", "atrium_done", "atrium_exit", "atrium_export", "atrium_files",
-	"atrium_flow", "atrium_get", "atrium_git_collect", "atrium_git_push", "atrium_git_sync", "atrium_git_url", "atrium_launch", "atrium_launch_worker", "atrium_model", "atrium_peers", "atrium_publish", "atrium_put", "atrium_report", "atrium_reports", "atrium_resources",
+	"atrium_flow", "atrium_get", "atrium_git_collect", "atrium_git_push", "atrium_git_sync", "atrium_git_url", "atrium_item", "atrium_launch", "atrium_launch_worker", "atrium_model", "atrium_peers", "atrium_publish", "atrium_put", "atrium_report", "atrium_reports", "atrium_resources",
 	"atrium_say", "atrium_status", "atrium_task", "atrium_wake_after_restart", "restart_atrium"}
 
 func sameNames(t *testing.T, who string, got, want []string) {

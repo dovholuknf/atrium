@@ -318,12 +318,8 @@
     color: var(--label); background: var(--chip);
   }
   .rmark svg { width: 26px; height: 26px; display: block; }
-  /* Claude's own color rather than the board's accent. A mark that means "which harness" has to look like the
-     harness. */
-  .rmark[data-runner="claude"] { color: #E8825A; background: rgba(232,130,90,.14); }
-  .rmark[data-runner="codex"]  { color: #A8BEFF; background: rgba(140,170,255,.14); }
-  .rmark[data-runner="ollama"] { color: #D9A8FF; background: rgba(214,140,255,.13); }
-  .rmark[data-runner="shell"]  { color: var(--warn); background: rgba(var(--warn-rgb),.10); }
+  /* NEUTRAL: every runner is --label on the chip tint, told apart by its shape. Orange belongs to waiting alone, so the
+     claude mark no longer wears it (docs/rnd/unified-card.md 2.4). */
 
   /* ── the mark moves while the runner does ────────────────────────────────
      The mark itself says whether a session is working, so a row in the strip carries that without spending
@@ -427,6 +423,13 @@
   /* The same block treatment the board's groups get, from the same two variables. With only the bar down the
      left, the two views coloured one grouping differently and the stack read as a flat list with coloured
      headings in it. */
+  /* The pinned half and the rest of a stack panel, each folding on its own. Sits inside the panel, so it carries
+     no block of its own: the panel already has one. */
+  .stackgroup.stacksec { margin-bottom: 0; }
+  .stackgroup.stacksec > summary { padding: 2px 3px 2px 6px; }
+  .stackgroup.stacksec > summary .gname {
+    font: 600 var(--fs-xxs)/1 var(--sans); letter-spacing: .12em; text-transform: uppercase; color: var(--label);
+  }
   .stackgroup > .panel {
     border: 1px solid hsl(var(--ghue) 60% 55% / var(--group-edge));
     border-left: 3px solid hsl(var(--ghue) 65% 55% / .75);

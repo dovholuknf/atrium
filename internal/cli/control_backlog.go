@@ -22,7 +22,7 @@ const hubAskWait = 60 * time.Second
 func addBacklogTools(s *mcp.Server) {
 	me := strings.TrimSpace(os.Getenv("ATRIUM_AGENT_NAME"))
 	room := strings.TrimSpace(os.Getenv("ATRIUM_ROOM"))
-	link.AddRoomBacklogTools(s, func(ctx context.Context, method, path string, body, out any) error {
+	call := func(ctx context.Context, method, path string, body, out any) error {
 		err := askFor(ctx, hubAskWait, http.MethodPost, "/v1/hub/ask",
 			map[string]any{"from": me, "method": method, "path": path, "body": body}, out)
 		if olderRoom(err) {
@@ -30,5 +30,10 @@ func addBacklogTools(s *mcp.Server) {
 				"control server. update the room"}
 		}
 		return err
-	}, me, room)
+	}
+	link.AddRoomBacklogTools(s, call, me, room)
+	// atrium_item rides the same way to the hub. See link/items_mcp.go.
+	link.AddRoomItemTools(s, call, me, room)
+	// And atrium_publish, which every worker prompt names. See link/docs_mcp.go.
+	link.AddRoomPublishTool(s, call, me)
 }

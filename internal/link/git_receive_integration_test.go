@@ -44,6 +44,16 @@ func gitAs(t *testing.T, dir string, headers []string, args ...string) (string, 
 
 func newPushFix(t *testing.T) *pushFix {
 	t.Helper()
+	return newPushFixFrom(t, "push-work", func(t *testing.T, dir string) {
+		x := &pushFix{work: dir}
+		gitRun(t, dir, "init", "-q", "-b", "main")
+		x.commit(t, "base.txt", "base")
+	})
+}
+
+// newPushFixFrom is a push fixture whose work repository is a copy of the one build makes once per test binary.
+func newPushFixFrom(t *testing.T, key string, build func(t *testing.T, dir string)) *pushFix {
+	t.Helper()
 	gitSlot(t)
 	x := &pushFix{log: &gitsync.MemPushLog{}, tmp: t.TempDir()}
 	x.g = &gitsync.Hub{Dir: filepath.Join(x.tmp, "hub"), Runner: gitsync.NewRunner(), PushLog: x.log,
@@ -54,8 +64,7 @@ func newPushFix(t *testing.T) *pushFix {
 	if err := os.MkdirAll(x.work, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	gitRun(t, x.work, "init", "-q", "-b", "main")
-	x.commit(t, "base.txt", "base")
+	fromTemplate(t, key, x.work, build)
 	return x
 }
 

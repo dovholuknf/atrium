@@ -112,6 +112,10 @@ func (d *Daemon) markDelivered(taskID, via string, ids []string) error {
 	if d.pending != nil {
 		d.pending.deliveredElsewhere(taskID, ids)
 	}
+	// An item's answer reaching its worker is a fact, and not yet a turn. See itemTurnStarted.
+	for _, id := range ids {
+		_, _ = d.st.ItemUnblockDelivered(id)
+	}
 	d.publishTask(taskID)
 	return nil
 }
@@ -369,6 +373,9 @@ func (d *Daemon) handleStop(w http.ResponseWriter, r *http.Request) {
 	var msgs []*store.Message
 	if !in.StopHookActive {
 		msgs, err = d.takeMessages(task.ID, "stop")
+		if err == nil {
+			d.itemCarried(task.ID, msgs)
+		}
 	}
 	if err != nil || len(msgs) == 0 {
 		// Not over while a subagent is out. The Stop that follows its report
@@ -531,6 +538,11 @@ func (d *Daemon) handleMessage(w http.ResponseWriter, r *http.Request) {
 	}
 	taskID := r.PathValue("id")
 	from := strings.TrimSpace(body.From)
+	// A RUNNING ITEM CARD SAYS NOTHING, by whichever door. See item.go.
+	if d.itemSayRefused(from) {
+		writeItemSayRefused(w)
+		return
+	}
 	// A card that reports to a named card has its launcher resolved again before
 	// this message can make it owe a report. See reportto.go.
 	if from != "" {

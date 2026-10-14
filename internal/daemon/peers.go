@@ -402,6 +402,12 @@ func (d *Daemon) handleTell(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// A RUNNING ITEM CARD SAYS NOTHING. See item.go.
+	if d.itemSayRefused(in.From) {
+		writeItemSayRefused(w)
+		return
+	}
+
 	// A SECOND WORD OF AN END THE WORKER ALREADY MADE is not sent. See endonce.go.
 	if d.endSayDropped(in.From, in.Text) {
 		writeEndSayDropped(w)
