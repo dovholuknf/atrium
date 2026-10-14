@@ -960,7 +960,7 @@ async function cardMenu(e, id) {
     // keys. Shown and dimmed elsewhere, with the reason, like shelve.
     // Left out where atrium cannot do it: a session it does not own has no terminal to type into, and a
     // parked card restarts as a resume, which needs the conversation id.
-    !over && (t.supervised || (t.parked_at && t.resume_id)) ? {
+    !over && cardState(t) !== "off" && (t.supervised || (t.parked_at && t.resume_id)) ? {
       label: "restart", note: isLeanCard(t) ? "comes back lean" : "stop the session and start it again, same conversation",
       help: "Types the runner's exit keys (claude: ctrl-d twice), waits for it to leave, then starts it again " +
         "on this card, resuming the same conversation with the same model, effort, arguments and settings. " +

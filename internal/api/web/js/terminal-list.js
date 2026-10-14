@@ -694,7 +694,7 @@ function termMenuItems(id, t) {
   return [
     // The one used nearly every time. Only where atrium owns the terminal, since it types the exit keys, or on a
     // parked card, which restarts as a resume.
-    !over && (t.supervised || (t.parked_at && t.resume_id)) ? {
+    !over && cardState(t) !== "off" && (t.supervised || (t.parked_at && t.resume_id)) ? {
       label: "restart",
       help: "Types the runner's exit keys (claude: ctrl-d twice), waits for it to leave, then starts it again " +
         "on this card, resuming the same conversation with the same model, effort, arguments and settings. " +

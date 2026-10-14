@@ -507,14 +507,15 @@
      distance between a heading and its own first row as between two unrelated groups, and then each heading
      added a top margin on top of that. The space now belongs to `.tnest`, which is the thing that ends. */
   .tgroup {
-    display: flex; width: fit-content; align-items: center; gap: 1px;
-    padding: 1px 6px 1px 2px;
+    display: flex; width: fit-content; align-items: center; gap: 3px;
+    padding: 5px 8px 5px 3px; min-height: calc(26px * var(--uiscale));
     border: none; border-radius: var(--r-sm); background: transparent;
     color: var(--label); cursor: pointer;
-    font: 600 var(--fs-xxs)/1 var(--sans); letter-spacing: .1em; text-transform: uppercase;
+    /* Read at a glance beside a card title (--fs-md), and never bigger than it. */
+    font: 600 var(--fs-base)/1.2 var(--sans); letter-spacing: .08em; text-transform: uppercase;
   }
   .tgroup:hover { background: var(--lift); color: var(--head); }
-  .tgroup .tcaret { font-size: 11px; opacity: 1; width: 11px; text-align: center; }
+  .tgroup .tcaret { font-size: 14px; opacity: 1; width: 14px; text-align: center; }
   .tgroup .tgname { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   /* How much a fold is hiding. It inherits the heading's own font and colour rather than being styled: as a
      nine pixel pill in the chip colours it was the quietest thing on the row, and a count nobody can read is a
@@ -532,6 +533,6 @@
   .tnest.hued { border-left-color: hsl(var(--ghue) 65% 55% / .6); }
   /* A heading that drags. The grip is the tell, and it is only on the headings whose order is yours to set. */
   .tgroup.movable { cursor: grab; }
-  .tgroup .tgrip { font-size: 10px; width: 9px; opacity: .45; }
+  .tgroup .tgrip { font-size: 14px; width: 12px; opacity: .45; }
   .tgroup.movable:hover .tgrip { opacity: .9; }
   .tgroup.dragging { opacity: .5; }
