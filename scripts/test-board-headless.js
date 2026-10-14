@@ -15558,7 +15558,7 @@ async function roomsDashSection(browser, base) {
     }
     want("sg3 runners not resolving", got.sg3.off, 1);
     // sg3 asks for direct first, and is on ziti because direct did not answer.
-    if (!got.sg3.via.includes("ziti+warn+tip")) fail("sg3 fell back to ziti and its tile does not say so: " + JSON.stringify(got.sg3.via));
+    if (!got.sg3.via.includes("ziti fallback+warn+tip")) fail("sg3 fell back to ziti and its tile does not say so: " + JSON.stringify(got.sg3.via));
     if (!got.sg4.via.includes("ziti")) fail("sg4 is on its first choice, ziti, and its chip is not plain: " + JSON.stringify(got.sg4.via));
     if (!got.sg4.tokDash || !got.sg4.diskDash) fail("sg4's absent tokens and disk did not draw dashes: " + JSON.stringify(got.sg4));
     if (!got.sg4.hot) fail("sg4 is at 95% cpu and waiting and does not pulse");
