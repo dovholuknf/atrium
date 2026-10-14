@@ -28,6 +28,12 @@ bound fine. A real test needs a second machine connecting to 192.168.1.147:17779
 
 Also not determined: Win32_Process CommandLine/ExecutablePath (CIM denied).
 
+Second run, cross-machine (open item, INCONCLUSIVE): atrium.hub.exe on 0.0.0.0:17779 and plain atrium.exe on
+0.0.0.0:17789 were held open for about 10 minutes. From sg4 (192.168.102.41, Wi-Fi) a TCP connect to 192.168.1.147 on
+both ports failed, but ping to 192.168.1.147 also timed out, so sg4 cannot reach that subnet at all. That is not a
+firewall result. No connection from another host was seen on sg3 either. It still needs a test from a host on
+192.168.1.x, or a read of sg3's firewall profile and rules from an elevated session.
+
 Incidental: the plain atrium.exe hub on 17789 logged "THE STORE HAS HALTED: table schema_migration already exists"
 while the link hub, started at the same moment, did not. Likely a startup race between two hubs started together
 (separate db files), not related to the link. Listener stayed up. Not chased.
