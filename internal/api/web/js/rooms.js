@@ -438,6 +438,7 @@ function roomRow(r) {
     <div class="roomrow-top">
       <b class="roomname">${esc(r.name)}</b>
       ${transportBadge(r.attached && r.via ? r.via : r.transport, r.attached && r.fallback)}
+      ${sshBadge(r)}
       ${roomState(r)}
       ${r.marked || r.state === "marked-for-deletion"
         ? `<span class="chip no">marked for deletion</span>` : ""}
@@ -475,6 +476,52 @@ function transportBadge(t, fallback) {
       >${esc(m[0])}</span>`;
   }
   return `<span class="chip" data-tip="${esc(m[1])}">${esc(m[0])}</span>`;
+}
+
+// sshList says who a room's remote access is open to, as a sentence part: `hub and m1mini`.
+function sshList(a) {
+  const f = (a.from || []).map(x => x === "*" ? "the hub and every room" : x);
+  if (f.length < 2) return f[0] || "nobody";
+  return f.slice(0, -1).join(", ") + " and " + f[f.length - 1];
+}
+
+// sshBadge is on when the room says it carries an ssh stream to its own sshd, and draws nothing otherwise.
+//
+// OBSERVED, NEVER A SWITCH. The room says it, and only a person at that machine can change it, so there is no
+// control here. The count is how many streams are open right now. See docs/rnd/ssh-via-hub.md.
+function sshBadge(r) {
+  const a = r && r.attached && r.remote_access;
+  if (!a || !a.on) return "";
+  return `<span class="chip" data-tip="${esc("remote access on, from " + (a.from || []).join(", "))}"
+    >ssh${a.open ? " " + esc(a.open) : ""}</span>`;
+}
+
+// sshFact is the room's facts row, in words, for every state the hub can know it in.
+function sshFact(r) {
+  if (!r.attached) return null;
+  const a = r.remote_access;
+  if (!a) return `unknown <span class="by">this room is older than remote access</span>`;
+  if (a.forced) return `off <span class="by">forced by ATRIUM_REMOTE_ACCESS in the room's environment</span>`;
+  if (!a.on) {
+    return `off. turned on at the room's machine with <code>atrium room remote-access on</code>`;
+  }
+  const n = a.open || 0;
+  return esc(`on, port ${a.port || 22}, from ${sshList(a)}. ${n} stream${n === 1 ? "" : "s"} open`);
+}
+
+// sshConfigBlock is the Host block that reaches a room from the machine VIEWING the board, which is the machine that
+// will paste it. Windows OpenSSH runs ProxyCommand without a shell, so the command is quoted there. It assumes atrium
+// is on that machine's PATH, and `atrium ssh-proxy --print-config <room>` prints the absolute-path form when it is not.
+function sshConfigBlock(room, platform) {
+  const win = /^win/i.test(platform || "");
+  return `Host ${room}\n  ProxyCommand ${win ? '"atrium.exe"' : "atrium"} ssh-proxy %h\n` +
+    `  HostKeyAlias ${room}.atrium\n  ServerAliveInterval 30\n  CheckHostIP no\n`;
+}
+
+// copySshConfig puts that block on the clipboard, and the button says so for a moment.
+function copySshConfig(btn) {
+  const room = btn && btn.dataset ? btn.dataset.room : "";
+  return copyAliasHandle(btn, "", sshConfigBlock(room, navigator.platform));
 }
 
 // roomState is the one chip that says how the room is doing.
@@ -632,6 +679,14 @@ function paintRoomFacts(r) {
     ["first seen", esc(when(r.first_seen))],
     ["last seen", esc(when(r.last_seen))],
   ];
+  // REMOTE ACCESS, said and never set from here. The button copies the ssh config block for the machine this board is
+  // open on.
+  const ssh = sshFact(r);
+  if (ssh) {
+    facts.splice(3, 0, ["remote access", ssh + ` <button type="button" class="copybit ssh-copy" data-room="${esc(r.name)}"
+      data-tip="copy the ssh config block for this machine" aria-label="copy the ssh config block"
+      onclick="copySshConfig(this)">${copyIcon()}</button>`]);
+  }
   setHTML(table, facts
     .map(f => `<tr><td class="by">${f[0]}</td><td>${f[1]}</td></tr>`).join(""));
 

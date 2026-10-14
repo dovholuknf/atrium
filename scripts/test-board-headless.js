@@ -10520,6 +10520,106 @@ async function idleParkSection(browser, base) {
   }
 }
 
+// REMOTE ACCESS ON A ROOM, SAID AND NEVER SET. An `ssh` badge beside the transport badge when the room carries ssh to its
+// own sshd (with the open count when it is not zero), none when it is off, a facts row in words for each state, and a
+// copy button that puts the ssh config block for the machine VIEWING the board on the clipboard: the quoted `.exe` form on
+// Windows and the plain command elsewhere. There is no toggle anywhere. Set SSH_SHOTS to a directory for a picture, named
+// by SSH_NAME (default ssh-badge-after). See js/rooms.js and docs/rnd/ssh-via-hub.md.
+async function sshBadgeSection(browser, base) {
+  const wasHub = hubMode, was = ALPHA.remote_access;
+  hubMode = true;
+  ALPHA.remote_access = { on: true, from: ["hub", "m1mini"], port: 22, open: 1 };
+  const shots = process.env.SSH_SHOTS || "", name = process.env.SSH_NAME || "ssh-badge-after";
+  const errors = [];
+  const look = async platform => {
+    const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+    const p = await ctx.newPage();
+    p.on("pageerror", e => errors.push(String(e)));
+    await p.addInitScript(plat => {
+      Object.defineProperty(Navigator.prototype, "platform", { get: () => plat });
+      window.__clip = [];
+      Object.defineProperty(navigator, "clipboard", { value: { writeText: t => { window.__clip.push(t); return Promise.resolve(); } } });
+    }, platform);
+    await p.goto(base, { waitUntil: "domcontentloaded" });
+    await p.waitForFunction(() => typeof openRoomCog === "function" && typeof loadHubRooms === "function",
+      null, { timeout: slow(15000) });
+    await p.evaluate(() => loadHubRooms());
+    await p.click('.tab[data-view="runners"]');
+    await p.waitForSelector("#room-list .roomrow", { timeout: slow(10000) });
+    return { ctx, p };
+  };
+  const facts = p => p.evaluate(() => {
+    const rows = {};
+    document.querySelectorAll("#rc-facts tr").forEach(tr => { rows[tr.cells[0].textContent.trim()] = tr.cells[1].textContent.replace(/\s+/g, " ").trim(); });
+    return rows;
+  });
+  const badge = p => p.evaluate(() => {
+    const row = Array.from(document.querySelectorAll("#room-list .roomrow")).find(r => /alpha/.test(r.textContent));
+    const chip = row && Array.from(row.querySelectorAll(".chip")).find(c => /^ssh/.test(c.textContent.trim()));
+    return chip ? { text: chip.textContent.trim(), tip: chip.dataset.tip } : null;
+  });
+  try {
+    // On a Windows machine.
+    let { ctx, p } = await look("Win32");
+    let b = await badge(p);
+    if (!b || b.text !== "ssh 1" || !/from hub, m1mini/.test(b.tip)) fail("the on badge is wrong: " + JSON.stringify(b));
+    if (shots) await p.locator("#room-list").screenshot({ path: path.join(shots, name + "-row.png") }).catch(() => {});
+    await p.evaluate(() => openRoomCog("alpha"));
+    await p.waitForSelector("#roomcfg[open]", { timeout: slow(8000) });
+    let f = await facts(p);
+    if (f["remote access"] !== "on, port 22, from hub and m1mini. 1 stream open") {
+      fail("the on facts row is wrong: " + JSON.stringify(f["remote access"]));
+    }
+    if (shots) await p.locator("#rc-facts-field").screenshot({ path: path.join(shots, name + "-facts.png") });
+    if (await p.locator("#roomcfg input[type=checkbox][id*=ssh], #roomcfg [id*=remote-access]").count()) {
+      fail("remote access has a control on the board, and it must have none.");
+    }
+    await p.locator(".ssh-copy").click();
+    let clip = await p.evaluate(() => window.__clip);
+    const win = 'Host alpha\n  ProxyCommand "atrium.exe" ssh-proxy %h\n  HostKeyAlias alpha.atrium\n  ServerAliveInterval 30\n  CheckHostIP no\n';
+    if (clip.length !== 1 || clip[0] !== win) fail("the Windows copy is wrong: " + JSON.stringify(clip));
+    await ctx.close();
+
+    // On a Mac.
+    ({ ctx, p } = await look("MacIntel"));
+    await p.evaluate(() => openRoomCog("alpha"));
+    await p.waitForSelector("#roomcfg[open]", { timeout: slow(8000) });
+    await p.locator(".ssh-copy").click();
+    clip = await p.evaluate(() => window.__clip);
+    if (clip.length !== 1 || clip[0] !== win.replace('"atrium.exe"', "atrium")) fail("the macOS copy is wrong: " + JSON.stringify(clip));
+    await ctx.close();
+
+    // Off, with nothing open: no badge, and a row that says where it is turned on.
+    ALPHA.remote_access = { on: false, port: 22, open: 0 };
+    ({ ctx, p } = await look("Win32"));
+    if (await badge(p)) fail("an off room wears the ssh badge.");
+    await p.evaluate(() => openRoomCog("alpha"));
+    await p.waitForSelector("#roomcfg[open]", { timeout: slow(8000) });
+    f = await facts(p);
+    if (f["remote access"] !== "off. turned on at the room's machine with atrium room remote-access on") {
+      fail("the off facts row is wrong: " + JSON.stringify(f["remote access"]));
+    }
+    if (shots) await p.locator("#rc-facts-field").screenshot({ path: path.join(shots, name + "-off.png") });
+    await ctx.close();
+
+    // A room that never says is older than remote access, and says so.
+    delete ALPHA.remote_access;
+    ({ ctx, p } = await look("Win32"));
+    if (await badge(p)) fail("a room that never said wears the ssh badge.");
+    await p.evaluate(() => openRoomCog("alpha"));
+    await p.waitForSelector("#roomcfg[open]", { timeout: slow(8000) });
+    f = await facts(p);
+    if (!/^unknown/.test(f["remote access"] || "") || !/older than remote access/.test(f["remote access"])) {
+      fail("an old room's facts row is wrong: " + JSON.stringify(f["remote access"]));
+    }
+    await ctx.close();
+    if (errors.length) fail("page errors: " + errors.join("; "));
+  } finally {
+    hubMode = wasHub;
+    if (was === undefined) delete ALPHA.remote_access; else ALPHA.remote_access = was;
+  }
+}
+
 // THE CACHE KEEP-ALIVE ON THE BOARD. The switch in the gear's settings sets the
 // default for new cards and saves it, a suspension shows with a clear button,
 // each card draws the right chip, the card menu's switch posts to the card, and
@@ -29648,7 +29748,7 @@ async function main() {
       groupDrag: groupDragSection, tooltip: tooltipSection, linkTip: linkTipSection, fileOpenOutside: fileOpenOutsideSection, readTabSize: readTabSizeSection, readWidthSkin: readWidthSkinSection, popoutTagFlip: popoutTagFlipSection, prefsEverywhere: prefsEverywhereSection, mPrefsEverywhere: (b) => mPrefsEverywhereSection(b), idleRate: idleRateSection, foldStill: foldStillSection, laneFold: laneFoldSection,
       untaggedSort: untaggedSortSection, newCard: newCardSection, themePreview: themePreviewSection, themeLab: themeLabSection, land: landSection, reselect: reselectSection, clearKeepsPage: clearKeepsPageSection, clearMark: clearMarkSection, clearLine: clearLineSection,
       resumeSpinner: resumeSpinnerSection, toastsTop: toastsTopSection, sayWhen: sayWhenSection, pasteSpinner: pasteSpinnerSection,
-      pasteBig: pasteBigSection, pasteLands: pasteLandsSection, pasteEmpty: pasteEmptySection, pasteBusy: pasteBusySection, typing: typingSection, alias: aliasSection, askAgain: askAgainSection, copySelect: copySelectSection, busyGuard: busyGuardSection, keepalive: keepaliveSection, idlePark: idleParkSection, restartMenu: restartMenuSection,
+      pasteBig: pasteBigSection, pasteLands: pasteLandsSection, pasteEmpty: pasteEmptySection, pasteBusy: pasteBusySection, typing: typingSection, alias: aliasSection, askAgain: askAgainSection, copySelect: copySelectSection, busyGuard: busyGuardSection, keepalive: keepaliveSection, idlePark: idleParkSection, sshBadge: sshBadgeSection, restartMenu: restartMenuSection,
       stuck: stuckSection, blockerMark: blockerMarkSection, carryLink: carryLinkSection, crossedPane: crossedPaneSection,
       skinScope: skinScopeSection, skinHeal: skinHealSection, toastLives: toastLivesSection,
       history: historySection, contextSize: contextSizeSection, ctxLine: ctxLineSection, ctxLimitLayers: ctxLimitLayersSection, contextCycle: contextCycleSection, landThePlane: landThePlaneSection, peekEverywhere: peekEverywhereSection, peekOneHover: peekOneHoverSection, peekDrawers: peekDrawersSection,peekStatusTruth: peekStatusTruthSection, peekHoverRest: peekHoverRestSection, cardRoute: cardRouteSection,
@@ -31566,6 +31666,7 @@ async function main() {
     // ── keep-alive chips, the card switch, and the break-even toast ────────
     await unit("keepalive", () => keepaliveSection(browser, base));
     await unit("idlePark", () => idleParkSection(browser, base));
+    await unit("sshBadge", () => sshBadgeSection(browser, base));
     await unit("restartMenu", () => restartMenuSection(browser, base));
     // ── a stuck card wears a mark, and the gear decides whether it rings ───
     await unit("stuck", () => stuckSection(browser, base));
