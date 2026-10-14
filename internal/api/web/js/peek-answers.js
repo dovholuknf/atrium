@@ -130,7 +130,7 @@ function peekQuestionsHtml(t) {
       `${all ? "send to agent now" : "send answers to agent"}${all ? "" : ` &middot; ${done} of ${total}`}</button>` +
       `<button type="button" class="qa-drop" data-qa-drop data-tip="throw the drafts away. nothing is sent">discard</button></div>`;
   }
-  return `<div class="peek-row peek-qrow"><b>open questions</b><div class="peek-qa" data-id="${esc(t.id)}">${html}</div></div>`;
+  return `<div class="peek-row peek-qrow"><div class="peek-qa" data-id="${esc(t.id)}">${html}</div></div>`;
 }
 
 // Draws the block again wherever a peek or drawer shows this card.

@@ -790,6 +790,10 @@
   .peek-row span { min-width: 0; color: var(--body); white-space: pre-line; overflow-wrap: anywhere; }
   .peek-sec.need .peek-row b { color: var(--warn); }
   .peek-kid { background: none; border: 0; padding: 0; font: inherit; color: var(--warn); cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
+  .peek-kidrow { display: flex; gap: 8px; justify-content: space-between; align-items: baseline; font-size: var(--fs-sm); line-height: 1.3; }
+  .peek-kidrow .peek-kid { min-width: 0; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .peek-kidst { flex: none; color: var(--body); }
+  .peek-kidst.ps-ask { color: var(--warn); }
   .peek-kid:hover, .peek-kid:focus-visible { color: var(--head); }
   .peek-sec.kids .peek-row b { color: var(--head); }
   .peek-sub, .peek-scale {

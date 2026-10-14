@@ -1162,9 +1162,12 @@ function termChildInfo(t, pool) {
   const shown = visible.get(t.id) || [];
   const shownIds = new Set(shown.map(c => c.id));
   const hidden = direct.filter(c => !shownIds.has(c.id));
+  const waiting = collectKids(t.id, isWaiting, visible);
   const paused = hidden.filter(cardPaused).length;
   return { total: direct.length, shown: shown.length, hidden: hidden.length, paused, dead: hidden.length - paused,
-    running: termKidsCount(t.id, workingNow, visible), waiting: collectKids(t.id, isWaiting, visible) };
+    running: termKidsCount(t.id, workingNow, visible), waiting,
+    // What the popup lists, one per line: the cards that need you at any depth first, then the shown direct children.
+    list: waiting.concat(shown.filter(c => !waiting.includes(c))) };
 }
 // The cards under `id`, at any depth, that satisfy `pred`.
 function collectKids(id, pred, kids) {

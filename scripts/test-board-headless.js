@@ -13169,6 +13169,89 @@ const PS_LONG = Object.assign({}, PS_BASE, { id: "sg4-control~ps6", status: "nee
   waiting_since: PS_AGO(300000), recap: "Short recap.",
   seen: { answered: false, open_questions: ["Do you want `" + PS_LONGWORD + "` or /docs/" + PS_LONGWORD + "/config-builder in the unified config? Tell me where."] } });
 
+// The peek's NEEDS YOU and CHILDREN sections: questions sit under the heading with no sub-label, and the children section is a
+// shut drawer whose heading is the summary, opening to one linked child per line, needs-you first, duplicates told apart.
+async function peekKidsSection(browser, base) {
+  const ctx = await browser.newContext({ viewport: { width: 1400, height: 1000 } });
+  const p = await ctx.newPage();
+  const errors = [];
+  p.on("pageerror", e => errors.push(String(e)));
+  try {
+    await p.goto(base, { waitUntil: "domcontentloaded" });
+    await p.waitForFunction(() => typeof peekKidsHtml === "function" && typeof peekRows === "function", null, { timeout: slow(15000) });
+    await p.evaluate(() => localStorage.removeItem("atrium.peekDrawers"));
+    // PEEKKIDS_SHOTS=<dir>: pictures of the peek's two sections as the real stylesheet draws them, for a review.
+    if (process.env.PEEKKIDS_SHOTS) {
+      for (const [name, kids] of [["many", 40], ["one", 1]]) {
+        await p.evaluate(([n, total]) => {
+          const mk = (id, title, o) => Object.assign({ id, title, display_title: title, status: "idle" }, o || {});
+          const wait = ["review the plan", "pick a name", "same title"].slice(0, total > 1 ? 3 : 0).map((t, i) =>
+            mk("w" + i, t, { status: "needs-permission", waiting_since: new Date(Date.now() - 60000).toISOString() }));
+          const idle = total > 1 ? [mk("r1", "worker one", { status: "idle" }), mk("r2", "same title", { status: "idle", wire_name: "box/beta" })] : [mk("r1", "only child")];
+          const list = wait.concat(idle);
+          window.termChildInfo = () => ({ total, shown: list.length, hidden: total - list.length, paused: total > 1 ? 8 : 0, running: total > 1 ? 1 : 0, waiting: wait, list });
+          const root = document.createElement("div");
+          root.id = "shot-root";
+          root.className = "peek on";
+          root.style.cssText = "position:fixed;left:20px;top:20px;width:520px;z-index:99999;display:block";
+          root.innerHTML = '<div class="peek-body"></div>';
+          document.body.appendChild(root);
+          root.firstChild.innerHTML = peekRows({ id: "orch", status: "needs-input", waiting_since: new Date(Date.now() - 600000).toISOString(),
+            seen: { answered: false, open_questions: ["Which branch should this land on?", "Do you want the old popup kept?"] }, recap: "Orchestrating the peek cleanup." });
+          peekDrawers(root);
+        }, [name, kids]);
+        await p.locator("#shot-root").screenshot({ path: process.env.PEEKKIDS_SHOTS + "/" + name + "-closed.png" });
+        await p.evaluate(() => { const h = document.querySelector('#shot-root .peek-drawer[data-key="kids"] > .peek-dh'); if (h) h.click(); });
+        await p.locator("#shot-root").screenshot({ path: process.env.PEEKKIDS_SHOTS + "/" + name + "-open.png" });
+        await p.evaluate(() => { document.getElementById("shot-root").remove(); localStorage.removeItem("atrium.peekDrawers"); });
+      }
+    }
+    const got = await p.evaluate(() => {
+      const kid = (id, title, o) => Object.assign({ id, title, display_title: title, status: "idle" }, o || {});
+      const ask = kid("k1", "needs one", { status: "needs-permission", waiting_since: new Date(Date.now() - 60000).toISOString() });
+      const dup1 = kid("k2", "same title", { wire_name: "box/alpha" }), dup2 = kid("k3", "same title", { wire_name: "box/beta" });
+      const info = { total: 40, shown: 3, hidden: 37, paused: 8, running: 1, waiting: [ask], list: [ask, dup1, dup2] };
+      const box = document.createElement("div");
+      box.innerHTML = peekKidsHtml(info);
+      document.body.appendChild(box);
+      peekDrawers(box);
+      const d = box.querySelector(".peek-drawer");
+      const one = document.createElement("div");
+      one.innerHTML = peekKidsHtml({ total: 1, shown: 1, hidden: 0, paused: 0, running: 0, waiting: [], list: [dup1] });
+      const q = document.createElement("div");
+      q.innerHTML = peekRows({ id: "q1", status: "needs-input", waiting_since: new Date(Date.now() - 60000).toISOString(),
+        seen: { answered: false, open_questions: ["which way?"] } });
+      const r = {
+        shut: !d.classList.contains("open"), sum: d.querySelector(".peek-dsum").textContent, label: d.querySelector(".peek-dh b").textContent,
+        sumShown: getComputedStyle(d.querySelector(".peek-dsum")).display !== "none",
+        rows: [...d.querySelectorAll(".peek-kidrow")].map(x => ({ name: x.querySelector(".peek-kid").textContent, id: x.querySelector(".peek-kid").dataset.id, st: x.querySelector(".peek-kidst").textContent })),
+        keyRows: d.querySelectorAll(".peek-row").length,
+        oneSum: one.querySelector("[data-sum]").dataset.sum, oneRows: one.querySelectorAll(".peek-kidrow").length,
+        needText: q.textContent.replace(/\s+/g, " "), needLabels: [...q.querySelectorAll(".peek-sec.need b")].map(b => b.textContent),
+        none: peekKidsHtml(null)
+      };
+      d.querySelector(".peek-dh").click();
+      r.openAfterClick = d.classList.contains("open");
+      box.remove();
+      return r;
+    });
+    if (!got.shut) fail("peekKids: the children drawer is open by default.");
+    if (got.label !== "children" || got.sum !== "40 · 1 need you · 1 running · 8 paused · 29 dead" || !got.sumShown)
+      fail("peekKids: the shut heading is not the summary: " + JSON.stringify([got.label, got.sum, got.sumShown]));
+    if (got.rows.length !== 3 || got.rows[0].id !== "k1" || got.rows[0].st !== "needs you") fail("peekKids: the needs-you child is not first with its word: " + JSON.stringify(got.rows));
+    if (got.rows[1].name !== "same title (alpha)" || got.rows[2].name !== "same title (beta)") fail("peekKids: duplicate titles are not told apart: " + JSON.stringify(got.rows));
+    if (got.keyRows) fail("peekKids: the children are key/value rows.");
+    if (got.oneSum !== "1" || got.oneRows !== 1) fail("peekKids: a card with one child: " + JSON.stringify([got.oneSum, got.oneRows]));
+    if (got.none !== "") fail("peekKids: a card with no children draws a section.");
+    if (!got.openAfterClick) fail("peekKids: a click did not open the children drawer.");
+    if (/open questions/i.test(got.needText) || got.needLabels.includes("open questions")) fail("peekKids: the questions still carry an 'open questions' label: " + got.needText);
+    if (!/which way\?/.test(got.needText)) fail("peekKids: the question is not under NEEDS YOU: " + got.needText);
+    if (errors.length) fail("peekKids: page errors: " + errors.join(" | "));
+  } finally {
+    await ctx.close();
+  }
+}
+
 async function peekStatusTruthSection(browser, base) {
   const W = 1400, H = 1000;
   const ctx = await browser.newContext({ viewport: { width: W, height: H } });
@@ -22150,17 +22233,15 @@ async function kidCountsSection(browser, base) {
       const btns = sec ? [...sec.querySelectorAll("button.peek-kid")].map(b => ({ id: b.dataset.id, text: b.textContent })) : [];
       const lone = document.createElement("div");
       lone.innerHTML = peekBody(pool[6], null);
-      return { rows, text: sec ? sec.textContent : null, btns, loneSection: !!lone.querySelector(".peek-sec.kids"), opens: typeof peekOpenKid };
+      return { rows, text: (box.querySelector('.peek-drawer[data-key="kids"] .peek-dsum') || {}).textContent || null, btns, loneSection: !!lone.querySelector(".peek-sec.kids"), opens: typeof peekOpenKid };
     });
     if (got.rows.shut.n !== "2") fail("kidCounts: the folded row counts " + got.rows.shut.n + ", want the 2 listed children");
     if (got.rows.open.drawn.length !== 2) fail("kidCounts: the open row draws " + JSON.stringify(got.rows.open.drawn) + ", want 2");
     if (got.rows.open.drawn.length !== Number(got.rows.shut.n)) fail("kidCounts: the folded count and the open rows disagree");
     if (/hidden/i.test(got.rows.shut.text)) fail("kidCounts: the row carries hidden text: " + got.rows.shut.text);
     const t = got.text || "";
-    if (!/5 cards under this one, 2 shown/.test(t)) fail("kidCounts: the popup does not give total and shown: " + JSON.stringify(t));
-    if (!/3 by the filters: paused 2, dead 1/.test(t)) fail("kidCounts: the popup does not say what hides the rest: " + JSON.stringify(t));
-    if (!/running\s*1/.test(t)) fail("kidCounts: the popup does not say how many run: " + JSON.stringify(t));
-    if (got.btns.length !== 1 || got.btns[0].id !== "asker" || got.btns[0].text !== "asker") fail("kidCounts: the need-you names are " + JSON.stringify(got.btns));
+    if (t !== "5 · 1 need you · 1 running · 2 paused · 1 dead") fail("kidCounts: the children heading is " + JSON.stringify(t));
+    if (got.btns.length !== 2 || got.btns[0].id !== "asker" || got.btns[0].text !== "asker") fail("kidCounts: the need-you names are " + JSON.stringify(got.btns));
     if (got.loneSection) fail("kidCounts: a card with no children has a children section");
     if (got.opens !== "function") fail("kidCounts: peekOpenKid is not defined");
     if (errors.length) fail("kidCounts: page errors: " + errors.join("; "));
@@ -30213,7 +30294,7 @@ async function main() {
       pasteBig: pasteBigSection, pasteLands: pasteLandsSection, pasteEmpty: pasteEmptySection, pasteBusy: pasteBusySection, typing: typingSection, alias: aliasSection, askAgain: askAgainSection, copySelect: copySelectSection, busyGuard: busyGuardSection, keepalive: keepaliveSection, idlePark: idleParkSection, sshBadge: sshBadgeSection, restartMenu: restartMenuSection,
       stuck: stuckSection, blockerMark: blockerMarkSection, carryLink: carryLinkSection, crossedPane: crossedPaneSection,
       skinScope: skinScopeSection, skinHeal: skinHealSection, toastLives: toastLivesSection,
-      history: historySection, contextSize: contextSizeSection, ctxLine: ctxLineSection, ctxLimitLayers: ctxLimitLayersSection, contextCycle: contextCycleSection, landThePlane: landThePlaneSection, peekEverywhere: peekEverywhereSection, peekOneHover: peekOneHoverSection, peekDrawers: peekDrawersSection,peekStatusTruth: peekStatusTruthSection, peekHoverRest: peekHoverRestSection, cardRoute: cardRouteSection,
+      history: historySection, contextSize: contextSizeSection, ctxLine: ctxLineSection, ctxLimitLayers: ctxLimitLayersSection, contextCycle: contextCycleSection, landThePlane: landThePlaneSection, peekEverywhere: peekEverywhereSection, peekOneHover: peekOneHoverSection, peekDrawers: peekDrawersSection,peekStatusTruth: peekStatusTruthSection, peekKids: peekKidsSection, peekHoverRest: peekHoverRestSection, cardRoute: cardRouteSection,
       quietDoer: quietDoerSection, autoPerm: autoPermSection, looksIdle: looksIdleSection, notifyOff: notifyOffSection,
       questionsClick: questionsClickSection, walk: walkSection, walkContext: walkContextSection, linkReuse: linkReuseSection, linkBoard: linkBoardSection,
       usageCacheReads: usageCacheReadsSection, usageTurns: usageTurnsSection, turnLimits: turnLimitsSection, roomsDash: roomsDashSection, transportChips: transportChipsSection, phoneView: phoneViewSection, heldLine: heldLineSection, u016: u016Section, phoneHeader: phoneHeaderSection, phoneFocus: phoneFocusSection, phoneTermBar: phoneTermBarSection, phoneShare: phoneShareSection, phonePan: phonePanSection, phoneFollow: phoneFollowSection, phoneTap: phoneTapSection, phoneKeyboard: phoneKeyboardSection, phoneCompose: phoneComposeSection, mCompose: mComposeSection, mPerms: mPermsSection, mReview: mReviewSection, usagePolish: usagePolishSection, usageLimits: usageLimitsSection, usageGroups: usageGroupsSection,
@@ -32145,6 +32226,7 @@ async function main() {
     await unit("peekOneHover", () => peekOneHoverSection(browser, base));
     await unit("peekDrawers", () => peekDrawersSection(browser, base));
     await unit("peekStatusTruth", () => peekStatusTruthSection(browser, base));
+    await unit("peekKids", () => peekKidsSection(browser, base));
     await unit("peekHoverRest", () => peekHoverRestSection(browser, base));
     await unit("phoneListFit", () => phoneListFitSection(browser, base));
     await unit("termListLastRow", () => termListLastRowSection(browser, base));

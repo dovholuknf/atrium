@@ -184,7 +184,7 @@ function peekRecapAge(t) {
 // whether its cache is warm. Read from the card as the board last drew it, so it needs no request and cannot differ
 // between the board, the stack and the terminals list.
 function peekRows(t) {
-  const row = (k, v) => v ? `<div class="peek-row"><b>${esc(k)}</b><span>${esc(v)}</span></div>` : "";
+  const row = (k, v) => v ? `<div class="peek-row">${k ? `<b>${esc(k)}</b>` : ""}<span>${esc(v)}</span></div>` : "";
   const fn = (name, ...a) => typeof window[name] === "function" ? window[name](...a) : undefined;
   const clock = iso => { const d = new Date(iso); return isNaN(d) ? "" : d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }); };
   const n = t.new_context;
@@ -210,7 +210,7 @@ function peekRows(t) {
   if (s.answered === false && qs.length && typeof peekQuestionsHtml === "function") {
     need.push(peekQuestionsHtml(t));
   } else if (hasQs) {
-    need.push(row("open questions", qs.length ? qs.map((q, i) => (i + 1) + ". " + q).join("\n") : "its last turn asked questions atrium could not read"));
+    need.push(row("", qs.length ? qs.map((q, i) => (i + 1) + ". " + q).join("\n") : "its last turn asked questions atrium could not read"));
   }
   if (n && n.step === "failed") need.push(row("new context failed", (n.reason || "") + ". nothing further was typed"));
   if (t.report_unverified) need.push(row("sha unverified", "it reported done at " + (t.report_sha || "") + ", and that commit is not in its worktree"));
@@ -221,31 +221,36 @@ function peekRows(t) {
   // One short word: atrium_launch_worker cards are exited when their branch merges. A kept card says nothing.
   const needSum = (fn("isBlocker", t) || fn("isStuck", t)) ? "blocked or stuck" : peekHasQuestions(t) ? "a question" : "waiting on you";
   return (need.length ? `<div class="peek-sec need" data-drawer="need" data-label="needs you" data-sum="${esc(needSum)}">${need.join("")}</div>` : "") +
-    peekKidsHtml(kids, row) +
+    peekKidsHtml(kids) +
     (t.lifetime ? `<div class="peek-sec">${row("lifetime", t.lifetime)}</div>` : "") +
     (recap ? `<div class="peek-recap" data-drawer="recap" data-label="recap" data-sum="${esc(recap.split("\n")[0])}">${age ? `<div class="peek-rage">${esc(age)}</div>` : ""}<div class="peek-rtext">${esc(recap)}</div>` +
       `<button type="button" class="peek-more" hidden>more</button></div>` : "");
 }
 
-// THE CHILDREN SECTION: what the badges on the card's row mean. The row says a count and a `!`, and this says how many cards
-// are under the card in all, how many the list shows, how many are hidden and by what (`paused`, `dead`), how many run, and
-// the ones that need you BY NAME, each a button that opens that card. A card with no children has no section.
-// `info` is `termChildInfo`.
-function peekKidsHtml(info, row) {
+// THE CHILDREN SECTION: what the badges on the card's row mean. It is SHUT by default and its heading is the summary,
+// `children  40 · 3 need you · 1 running · 8 paused · 28 dead`, a part left out when it is zero. Open, it is one child per
+// line, the ones that need you first, each a link that opens its card with a short status word at the right. Children the
+// filters hide are counted in the summary and not listed. A card with no children has no section. `info` is `termChildInfo`.
+function peekKidsSummary(info) {
+  const dead = info.hidden - info.paused;
+  return [info.total, info.waiting.length && info.waiting.length + " need you", info.running && info.running + " running",
+    info.paused && info.paused + " paused", dead && dead + " dead"].filter(Boolean).join(" · ");
+}
+// A child's title, with where it lives added when another child in the list has the same one.
+function peekKidName(c, list) {
+  const title = c.display_title || c.title || c.id;
+  if (list.filter(o => (o.display_title || o.title || o.id) === title).length < 2) return title;
+  const who = c.wire_name && typeof localWire === "function" ? localWire(c.wire_name) : (typeof roomOf === "function" && roomOf(c.id)) || c.room || "";
+  return who && title.indexOf("(" + who + ")") < 0 ? title + " (" + who + ")" : title;
+}
+function peekKidsHtml(info) {
   if (!info) return "";
-  const noun = n => n + (n === 1 ? " card" : " cards");
-  const hid = [info.paused && "paused " + info.paused, info.dead && "dead " + info.dead].filter(Boolean).join(", ");
-  const lines = [
-    row("children", noun(info.total) + " under this one, " + info.shown + " shown"),
-    info.hidden ? row("hidden", info.hidden + " by the filters: " + hid) : "",
-    info.running ? row("running", String(info.running)) : "",
-    info.waiting.length
-      ? `<div class="peek-row peek-kidneed"><b>need you</b><span>${info.waiting.map(c =>
-        `<button type="button" class="peek-kid link" data-id="${esc(c.id)}" data-tip="open its card" onclick="peekOpenKid(this.dataset.id)">${
-          esc(c.display_title || c.title || c.id)}</button>`).join(", ")}</span></div>` : ""
-  ].join("");
-  const sum = info.total + " · " + info.shown + " shown" + (info.waiting.length ? " · " + info.waiting.length + " need you" : "");
-  return `<div class="peek-sec kids" data-drawer="kids" data-label="children" data-sum="${esc(sum)}">${lines}</div>`;
+  const lines = info.list.map(c => {
+    const st = typeof peekStatus === "function" ? peekStatus(c) : null;
+    return `<div class="peek-kidrow"><button type="button" class="peek-kid link" data-id="${esc(c.id)}" data-tip="open its card" onclick="peekOpenKid(this.dataset.id)">${
+      esc(peekKidName(c, info.list))}</button>${st ? `<span class="peek-kidst ${esc(st.cls)}">${esc(st.word)}</span>` : ""}</div>`;
+  }).join("");
+  return `<div class="peek-sec kids" data-drawer="kids" data-label="children" data-sum="${esc(peekKidsSummary(info))}">${lines}</div>`;
 }
 // A child named in the section opens its card: attached where it has a terminal, its settings where it has not.
 function peekOpenKid(id) {
@@ -445,7 +450,7 @@ function peekChatter(box, id, first, drawers) {
 // data-sum, and `peekDrawers` wraps it after the body is drawn, so the body's markup stays what it was. The header
 // and the actions row are not drawers. Closed bodies are `hidden`, not removed, so their text is still in the box.
 const PEEK_DRAWER_KEY = "atrium.peekDrawers";
-const PEEK_DRAWERS_OPEN = { need: true, kids: true };
+const PEEK_DRAWERS_OPEN = { need: true };
 // recap and context are always open (no toggle); chatter starts folded every time and is never kept.
 const PEEK_DRAWERS_FIXED = { recap: true, ctx: true }, PEEK_DRAWERS_FORGET = { chatter: true };
 function peekDrawerState() {
