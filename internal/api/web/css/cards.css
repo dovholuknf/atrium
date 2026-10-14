@@ -396,7 +396,7 @@
   .chip.live { background: rgba(var(--teal-rgb),.10); color: var(--teal); }
   /* No motion on the chip: the runner mark is the one running mark (docs/rnd/unified-card.md). */
   /* THE ONE ORANGE: --wait is a live runner waiting on the operator and nothing else. */
-  .chip.wait { background: var(--wait-bg); color: var(--wait); border-color: var(--wait-stroke); }
+  .chip.owed { background: var(--wait-bg); color: var(--wait); border-color: var(--wait-stroke); }
   .card.s-waiting .rmark { color: var(--wait); background: var(--wait-bg); }
   /* GREY MEANS NOT RUNNING AND NOTHING ELSE: a card with no runner is grey, whole. */
   .card.s-off { filter: grayscale(1); opacity: .55; }

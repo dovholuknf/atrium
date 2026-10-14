@@ -816,7 +816,7 @@ function cardHTML(t, wearAs) {
       ${contextChip(t)}
       ${seenChips(t)}
       ${w
-        ? `<span class="chip state wait" data-tip="${t.status === "needs-permission"
+        ? `<span class="chip state owed" data-tip="${t.status === "needs-permission"
               ? "how long this agent has been frozen waiting to be answered"
               : "how long since it finished its turn and asked for you"}"
              >${esc(statusLabel(t.status))} ${ago(cardSecs(cardWaitSeconds(t)))}</span>`
