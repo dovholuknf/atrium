@@ -15643,6 +15643,56 @@ async function transportChipsSection(browser, base) {
   }
 }
 
+// zitiLogo: a ziti transport badge wears the vendored OpenZiti mark (an inline gradient disc, no fetch) in place of
+// the ring glyph, at the badge's text height, with its own gradient id per badge; mTLS and zrok keep their icons.
+// On the demo rooms page the ziti rooms' cards carry it. ZITI_LOGO_SHOTS=dir writes the rooms page.
+async function zitiLogoSection(browser, base) {
+  const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+  const p = await ctx.newPage();
+  const errors = [];
+  const fetched = [];
+  p.on("pageerror", e => errors.push(String(e)));
+  p.on("request", r => { if (/ziti|logo/i.test(r.url()) && /\.(svg|png)/i.test(r.url())) fetched.push(r.url()); });
+  await p.addInitScript(() => localStorage.setItem("atrium.skipconfirm", JSON.stringify({ "width-floor": true })));
+  try {
+    await p.goto(base + "/?demo=rooms", { waitUntil: "domcontentloaded" });
+    await p.waitForFunction(() => typeof transportBadge === "function" && !document.getElementById("rooms").hidden,
+      null, { timeout: slow(15000) });
+    const got = await p.evaluate(() => {
+      const host = document.createElement("div");
+      host.id = "zl-probe";
+      host.style.cssText = "position:fixed;left:20px;top:20px;z-index:99999;display:flex;gap:10px;";
+      host.innerHTML = [["ziti"], ["ziti"], ["direct"], ["zrok"], ["ziti", true]].map(a => transportBadge(a[0], a[1])).join("");
+      document.body.appendChild(host);
+      return [...host.children].map(c => {
+        const s = c.querySelector("svg");
+        const r = s && s.getBoundingClientRect();
+        const g = s && s.querySelector("linearGradient");
+        return { logo: !!(s && s.classList.contains("zlogo")), w: r && r.width, h: r && r.height,
+          fs: parseFloat(getComputedStyle(c).fontSize), gid: g && g.id,
+          fill: s && s.querySelector("circle") && getComputedStyle(s.querySelector("circle")).fill };
+      });
+    });
+    const [z1, z2, mtls, zrok, zfb] = got;
+    for (const z of [z1, z2, zfb]) {
+      if (!z.logo || !(z.h >= z.fs - 1 && z.h <= z.fs + 4) || !/^url\(/.test(z.fill || "")) fail("ziti badge lacks the logo: " + JSON.stringify(z));
+    }
+    if (z1.gid === z2.gid) fail("two ziti badges share a gradient id: " + z1.gid);
+    if (mtls.logo || zrok.logo) fail("mTLS or zrok wears the ziti logo: " + JSON.stringify([mtls, zrok]));
+    if (fetched.length) fail("the logo was fetched: " + fetched.join(", "));
+    const shots = process.env.ZITI_LOGO_SHOTS || "";
+    if (shots) {
+      fs.mkdirSync(shots, { recursive: true });
+      await p.evaluate(() => { document.getElementById("zl-probe").remove(); openRooms(); });
+      await p.waitForTimeout(600);
+      await p.screenshot({ path: path.join(shots, "rooms-page.png") });
+    }
+    if (errors.length) fail("page errors: " + errors.join("; "));
+  } finally {
+    await ctx.close();
+  }
+}
+
 async function roomsDashSection(browser, base) {
   const skip = () => localStorage.setItem("atrium.skipconfirm", JSON.stringify({ "width-floor": true }));
   const shots = process.env.ROOMS_DASH_SHOTS || "";
@@ -30377,7 +30427,7 @@ async function main() {
       history: historySection, contextSize: contextSizeSection, ctxLine: ctxLineSection, ctxLimitLayers: ctxLimitLayersSection, contextCycle: contextCycleSection, landThePlane: landThePlaneSection, peekEverywhere: peekEverywhereSection, peekOneHover: peekOneHoverSection, peekDrawers: peekDrawersSection,peekStatusTruth: peekStatusTruthSection, peekKids: peekKidsSection, peekHoverRest: peekHoverRestSection, cardRoute: cardRouteSection,
       quietDoer: quietDoerSection, autoPerm: autoPermSection, looksIdle: looksIdleSection, notifyOff: notifyOffSection,
       questionsClick: questionsClickSection, walk: walkSection, walkContext: walkContextSection, linkReuse: linkReuseSection, linkBoard: linkBoardSection,
-      usageCacheReads: usageCacheReadsSection, usageTurns: usageTurnsSection, turnLimits: turnLimitsSection, roomsDash: roomsDashSection, transportChips: transportChipsSection, phoneView: phoneViewSection, heldLine: heldLineSection, u016: u016Section, phoneHeader: phoneHeaderSection, phoneFocus: phoneFocusSection, phoneTermBar: phoneTermBarSection, phoneShare: phoneShareSection, phonePan: phonePanSection, phoneFollow: phoneFollowSection, phoneTap: phoneTapSection, phoneKeyboard: phoneKeyboardSection, phoneCompose: phoneComposeSection, mCompose: mComposeSection, mPerms: mPermsSection, mReview: mReviewSection, usagePolish: usagePolishSection, usageLimits: usageLimitsSection, usageGroups: usageGroupsSection,
+      usageCacheReads: usageCacheReadsSection, usageTurns: usageTurnsSection, turnLimits: turnLimitsSection, roomsDash: roomsDashSection, transportChips: transportChipsSection, zitiLogo: zitiLogoSection, phoneView: phoneViewSection, heldLine: heldLineSection, u016: u016Section, phoneHeader: phoneHeaderSection, phoneFocus: phoneFocusSection, phoneTermBar: phoneTermBarSection, phoneShare: phoneShareSection, phonePan: phonePanSection, phoneFollow: phoneFollowSection, phoneTap: phoneTapSection, phoneKeyboard: phoneKeyboardSection, phoneCompose: phoneComposeSection, mCompose: mComposeSection, mPerms: mPermsSection, mReview: mReviewSection, usagePolish: usagePolishSection, usageLimits: usageLimitsSection, usageGroups: usageGroupsSection,
       eventDriven: eventDrivenSection, idleBudget: idleBudgetSection, pollsGone: pollsGoneSection,
       terminalTopGap: terminalTopGapSection, phoneListFit: phoneListFitSection, termListLastRow: termListLastRowSection, phoneNudge: phoneNudgeSection,
       growlStack: growlStackSection, growlActions: growlActionsSection, growlModal: growlModalSection, growlQuiet: growlQuietSection, growlAttention: growlAttentionSection, growlPhone: growlPhoneSection, mGrowl: mGrowlSection, growlPopout: growlPopoutSection, growlOff: growlOffSection, growlRemind: growlRemindSection,
@@ -32229,6 +32279,7 @@ async function main() {
   await unit("turnLimits", () => turnLimitsSection(browser, base));
     await unit("roomsDash", () => roomsDashSection(browser, base));
     await unit("transportChips", () => transportChipsSection(browser, base));
+    await unit("zitiLogo", () => zitiLogoSection(browser, base));
     await unit("phoneView", () => phoneViewSection(browser, base));
     await unit("heldLine", () => heldLineSection(browser, base));
     await unit("u016", () => u016Section(browser, base));

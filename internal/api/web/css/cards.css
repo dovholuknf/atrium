@@ -307,6 +307,7 @@
   .chip.tp { display: inline-flex; align-items: center; gap: 4px; }
   .chip.tp svg { width: 11px; height: 11px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.6;
     stroke-linecap: round; stroke-linejoin: round; }
+  .chip.tp svg.zlogo { width: 13px; height: 13px; stroke: none; }
   .chip.tp .tp-fb { font-weight: 600; }
   .chip.tp-ziti { --tp-rgb: 177,140,255; }
   .chip.tp-mtls { --tp-rgb: 45,212,191; }
