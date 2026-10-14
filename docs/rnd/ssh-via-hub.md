@@ -1,7 +1,7 @@
 # ssh to a room's machine through the hub
 
-Status: design, 2026-10-14. Nothing here is built. Every point is decided below with its reason. The one that need
-clint are under "Open for clint" at the end.
+Status: design, 2026-10-14. Nothing here is built. Every point is decided below with its reason. The one that needs
+clint is under "Open for clint" at the end.
 
 ## The ask
 
