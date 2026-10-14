@@ -39,7 +39,38 @@ type proxyOpts struct {
 	via string
 	// hub is the hub's loopback board, room the agent listener of this machine's own room.
 	hub, room2 string
-	claim      string
+	// hubAlt is the hub door tried after hub when hub is not there: the default board, when hub was found elsewhere.
+	hubAlt string
+	claim  string
+}
+
+// defaultHubBoard is where `atrium run` serves the hub's board unless told otherwise.
+const defaultHubBoard = "http://127.0.0.1:7778"
+
+// hubDoors is the hub board to try first and the one after it. An explicit --hub is the only one. Otherwise the first
+// is what boardAddress finds (ATRIUM_BOARD_URL, or the board a local daemon or room recorded, which may be a room's own
+// board and not the hub's) and the second is the default hub board, so a hub on its default port is found even when
+// something else recorded itself.
+func hubDoors(flag string) (first, alt string) {
+	first = boardAddress(flag)
+	if flag != "" || sameBoard(first, defaultHubBoard) {
+		return first, ""
+	}
+	return first, defaultHubBoard
+}
+
+// sameBoard is whether two board addresses are the same loopback port.
+func sameBoard(a, b string) bool {
+	ua, ea := url.Parse(a)
+	ub, eb := url.Parse(b)
+	if ea != nil || eb != nil {
+		return a == b
+	}
+	loop := func(h string) bool { return h == "localhost" || h == "127.0.0.1" || h == "::1" }
+	if ua.Port() != ub.Port() {
+		return false
+	}
+	return ua.Hostname() == ub.Hostname() || (loop(ua.Hostname()) && loop(ub.Hostname()))
 }
 
 func newSSHProxy() *cobra.Command {
@@ -69,8 +100,8 @@ func newSSHProxy() *cobra.Command {
 				fmt.Fprintln(cmd.ErrOrStderr(), "--via is hub or room")
 				os.Exit(proxyExit)
 			}
-			o := proxyOpts{room: args[0], via: via, claim: callerClaim(),
-				hub: boardAddress(hub), room2: hubAddress("")}
+			o := proxyOpts{room: args[0], via: via, claim: callerClaim(), room2: hubAddress("")}
+			o.hub, o.hubAlt = hubDoors(hub)
 			code := runProxy(os.Stdin, os.Stdout, cmd.ErrOrStderr(), o)
 			os.Exit(code)
 			return nil
@@ -113,6 +144,9 @@ func runProxy(stdin io.Reader, stdout, stderr io.Writer, o proxyOpts) int {
 	var hubErr error
 	if tryHub {
 		conn, br, err = openDoor(o.hub, "/_hub/ssh/"+url.PathEscape(o.room), o)
+		if errors.Is(err, errNoDoor) && o.hubAlt != "" {
+			conn, br, err = openDoor(o.hubAlt, "/_hub/ssh/"+url.PathEscape(o.room), o)
+		}
 		hubErr = err
 		// The hub door says it is not there with a refused connection or a 404. Anything else is an answer.
 		if err != nil && !errors.Is(err, errNoDoor) {

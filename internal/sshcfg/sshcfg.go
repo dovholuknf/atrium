@@ -27,22 +27,40 @@ const (
 // ProxyCommand is how ssh runs atrium for a room. Windows OpenSSH runs ProxyCommand without a shell, so the absolute
 // path is quoted. On every other OS ssh runs it through the user's shell, so the path is plain, quoted only when it
 // holds a space or a character the shell reads.
-func ProxyCommand(exe, goos string) string {
+func ProxyCommand(exe, goos string) string { return ProxyCommandHub(exe, goos, "") }
+
+// ProxyCommandHub is ProxyCommand with `--hub <hub>` when hub is not empty: the hub's board is somewhere other than
+// the default, and the proxy would not find it on its own.
+func ProxyCommandHub(exe, goos, hub string) string {
+	tail := " ssh-proxy"
+	if hub != "" {
+		tail += " --hub " + shellWord(hub, goos)
+	}
+	tail += " %h"
 	if goos == "windows" {
-		return `"` + exe + `" ssh-proxy %h`
+		return `"` + exe + `"` + tail
 	}
-	if strings.ContainsAny(exe, " \t'\"\\$`&;|<>()*?[]{}#~!") {
-		exe = "'" + strings.ReplaceAll(exe, "'", `'\''`) + "'"
+	return shellWord(exe, goos) + tail
+}
+
+// shellWord quotes a word for the shell ssh runs ProxyCommand through, when it holds a character the shell reads.
+// Windows runs it without a shell and the word is left alone.
+func shellWord(w, goos string) string {
+	if goos != "windows" && strings.ContainsAny(w, " \t'\"\\$`&;|<>()*?[]{}#~!") {
+		return "'" + strings.ReplaceAll(w, "'", `'\''`) + "'"
 	}
-	return exe + " ssh-proxy %h"
+	return w
 }
 
 // Block is the Host block for one room, the same text `atrium ssh-proxy --print-config` prints. No port is opened on
 // this machine: ProxyCommand speaks stdio. HostKeyAlias keeps the room's host key apart from a LAN entry for the same
 // machine.
-func Block(room, exe, goos string) string {
+func Block(room, exe, goos string) string { return BlockHub(room, exe, goos, "") }
+
+// BlockHub is Block with the hub's board named in the ProxyCommand when it is not the default.
+func BlockHub(room, exe, goos, hub string) string {
 	return "Host " + room + "\n" +
-		"  ProxyCommand " + ProxyCommand(exe, goos) + "\n" +
+		"  ProxyCommand " + ProxyCommandHub(exe, goos, hub) + "\n" +
 		"  HostKeyAlias " + room + ".atrium\n" +
 		"  ServerAliveInterval 30\n" +
 		"  CheckHostIP no\n"
@@ -127,6 +145,11 @@ func readOwn(home string) ([]block, error) {
 // room, and makes sure the user's config includes that file. Calling it again with the same input changes nothing,
 // makes no second backup and writes no second Include.
 func Add(home, exe, goos string, rooms []string) (Result, error) {
+	return AddHub(home, exe, goos, "", rooms)
+}
+
+// AddHub is Add with the hub's board written into each ProxyCommand when hub is not empty.
+func AddHub(home, exe, goos, hub string, rooms []string) (Result, error) {
 	var res Result
 	for _, r := range rooms {
 		if err := ValidRoom(r); err != nil {
@@ -139,7 +162,7 @@ func Add(home, exe, goos string, rooms []string) (Result, error) {
 	}
 	next := append([]block(nil), have...)
 	for _, r := range rooms {
-		nb := block{room: r, text: Block(r, exe, goos)}
+		nb := block{room: r, text: BlockHub(r, exe, goos, hub)}
 		found := false
 		for i := range next {
 			if strings.EqualFold(next[i].room, r) {
