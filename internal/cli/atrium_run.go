@@ -190,18 +190,29 @@ func serveAtrium(f atriumFlags, up atriumUp) error {
 		return err
 	}
 	defer set.release()
-	side := set.primary()
-	side.says = set.says()
-
-	lns := make([]net.Listener, len(set.sides))
+	// A LATER TRANSPORT THAT CANNOT LISTEN IS LEFT OUT, NOT FATAL. The first is
+	// what join strings are minted for and still refuses to start without. A
+	// ziti controller that is down when the hub restarts must not keep the hub
+	// down for the rooms that reach it directly. A side left out is not told to
+	// rooms either, since nothing answers on it.
+	var lns []net.Listener
+	var kept []*hubSide
 	for i, s := range set.sides {
 		ln, err := s.listen()
 		if err != nil {
-			return fmt.Errorf("listening for rooms over %s: %w", s.kind, err)
+			if i == 0 {
+				return fmt.Errorf("listening for rooms over %s: %w", s.kind, err)
+			}
+			log.Printf("[hub] not listening for rooms over %s, the hub runs without it: %v", s.kind, err)
+			continue
 		}
 		defer ln.Close()
-		lns[i] = ln
+		lns = append(lns, ln)
+		kept = append(kept, s)
 	}
+	set.sides = kept
+	side := set.primary()
+	side.says = set.says()
 
 	// WHAT A HALT DOES. The store refuses every call from then on, and the
 	// board stays up to say what broke.

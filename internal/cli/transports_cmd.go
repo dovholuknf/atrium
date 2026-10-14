@@ -214,7 +214,7 @@ func roomTransportsLocalCmd() *cobra.Command {
 	var addr string
 	direct := &cobra.Command{
 		Use:   "direct --addr <host:port>",
-		Short: "Reach the hub by direct mutual TLS at this address, over what the join and the hub said",
+		Short: "Reach the hub by direct mutual TLS at this address first, before the joined address and the hub's",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			keys := keysOf()

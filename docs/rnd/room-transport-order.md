@@ -47,7 +47,10 @@ hand its share token to rooms. Giving a share token to an authenticated room fro
      cut off from the hub still knows where the fallback is on its next start.
 5. **The ladder is built from, in rising precedence: the join in `room.json`, the hub's list, the local paths.**
    Ordered by the local `order`, else the hub's order, else `direct,ziti,zrok`. A ziti rung with no identity is
-   left out and said so in the log, since it cannot dial.
+   left out and said so in the log, since it cannot dial. A direct address is never laid over another: each one is
+   its own rung, a local one first, then the joined one, then the hub's advertise. The first cut merged the advertise
+   over the join, and on 2026-10-14 claude-sg4 sent every data dial to an address its hub had left while its control
+   connection stayed up on 127.0.0.1 (`docs/changes/room-transport-order.md`).
 6. **Every rung after a direct join runs mutual TLS inside the overlay** (`link.Proven`). The room's name comes from
    its hub-signed certificate on every rung, which the hub already requires: a name that enrolled a certificate is
    refused on the old certificate-less overlay path. A room that joined with a proven overlay string is wrapped the
@@ -59,7 +62,9 @@ hand its share token to rooms. Giving a share token to an authenticated room fro
    deletion, version) is the same answer on every transport, so it ends the attempt and the normal backoff applies.
    When every rung fails the room backs off as it always has (one to five seconds) and climbs from the top again.
 8. **Every connection a room opens uses the rung the control connection is on.** Data, announce, relay, git and
-   upgrade connections all go through the one dialer, so none can wander to another transport.
+   upgrade connections all go through the one dialer, so none can wander to another transport. The ladder stands on
+   the rung itself, address and all, not on its kind, and a new list from the hub that leaves that rung out does not
+   move it until the next climb.
 9. **Coming back to a better transport.** Every reattach climbs from the top, so after any drop the best rung that
    answers wins. While attached below the top, the room probes every better rung every two minutes (a dial and a
    TLS handshake, closed straight away, nothing said to the hub). Two probes in a row that succeed on a better rung
@@ -69,7 +74,9 @@ hand its share token to rooms. Giving a share token to an authenticated room fro
 10. **The hub records which transport each attached room is on and whether that is a fallback.** `via` is the
     transport of the listener that accepted the control connection, the hub's own observation. `fallback` is the
     room's own word, in the hello, that it is not on its first rung. Both are in `/_hub/rooms`, `/_hub/inventory`
-    and the `rooms` event.
+    and the `rooms` event. So is `starved`: the hub's own observation that the pool has been empty, with no data
+    connection arriving, for 30 seconds (`Timings.Starve`). A control connection that beats is not a room the board
+    can reach, and the rooms tab says "attached, unreachable" rather than "attached".
 11. **The board shows it as the transport badge it already draws, never a column.** An attached room's badge names
     `via` rather than the transport it was added with. A room on a fallback gets the warning colour and a tip saying
     so: "on ziti because its first choice did not answer". The room's facts table says "connects over ziti
