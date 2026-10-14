@@ -14702,6 +14702,71 @@ async function linkReuseSection(browser, base) {
   if (errors.length) fail("linkReuse: the page threw: " + errors.join(" | "));
 }
 
+// A URL on the board's own origin routes in the board: in place with no window, to the main board from a popped-out
+// terminal, and every foreign URL opens as it always did.
+async function linkBoardSection(browser, base) {
+  const was = tasksMode;
+  tasksMode = "land";
+  landCard("land-live", { supervised: true, created_at: "2026-09-19T12:00:00Z" });
+  landList = [LAND["land-live"]];
+  landPerms = [];
+  const errors = [];
+  const ctx = await landContext(browser);
+  await ctx.addInitScript(() => {
+    window.__opens = [];
+    window.open = (url, name) => { window.__opens.push({ url, name }); return { focus() {}, opener: null }; };
+  });
+  try {
+    const p = await ctx.newPage();
+    p.on("pageerror", e => errors.push(String(e)));
+    await p.goto(base, { waitUntil: "domcontentloaded" });
+    await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
+    // In place: no window, and the one handler an alert click uses is asked.
+    const inPlace = await p.evaluate(async () => {
+      window.__landed = [];
+      window.landOnAlert = (id) => { window.__landed.push(id); };
+      openTermURL({ preventDefault() {} }, location.origin + "/#term=land-live");
+      openTermURL({ preventDefault() {} }, location.origin.replace("127.0.0.1", "localhost") + "/#term=land-b");
+      return { opens: window.__opens.length, landed: window.__landed.slice() };
+    });
+    if (inPlace.opens !== 0) fail("linkBoard: a board link opened a window: " + JSON.stringify(inPlace));
+    if (inPlace.landed.join() !== "land-live,land-b") fail("linkBoard: a board link did not route in place: " + JSON.stringify(inPlace));
+    // A foreign URL, and a board-looking one on another port, open as before.
+    const foreign = await p.evaluate(() => {
+      window.__opens.length = 0;
+      openTermURL({ preventDefault() {} }, "https://example.com/#term=land-live");
+      openTermURL({ preventDefault() {} }, "http://127.0.0.1:1/#term=land-live");
+      return { opens: window.__opens.map(o => o.url), landed: window.__landed.length };
+    });
+    if (foreign.opens.length !== 2 || foreign.landed !== 2) fail("linkBoard: a foreign url did not open as today: " + JSON.stringify(foreign));
+    // A popped-out terminal posts to the main board and opens nothing while one answers.
+    const solo = await p.evaluate(async () => {
+      window.__opens.length = 0;
+      window.termOnly = () => true;
+      const main = new BroadcastChannel("atrium-solo");
+      const seen = [];
+      main.onmessage = e => {
+        const m = e.data || {};
+        if (m.type === "land") { seen.push(m.taskFor); if (m.ack) main.postMessage({ type: "landed", taskFor: m.taskFor }); }
+      };
+      openTermURL({ preventDefault() {} }, location.origin + "/#term=land-live");
+      await new Promise(r => setTimeout(r, 1000));
+      const withMain = { seen: seen.slice(), opens: window.__opens.length };
+      main.onmessage = null; main.close();
+      // No main board: one is opened, landing on the card.
+      openTermURL({ preventDefault() {} }, location.origin + "/#term=land-live");
+      await new Promise(r => setTimeout(r, 1000));
+      return { withMain, alone: window.__opens.map(o => o.url) };
+    });
+    if (solo.withMain.seen.join() !== "land-live" || solo.withMain.opens !== 0) fail("linkBoard: a popped-out link did not go to main: " + JSON.stringify(solo));
+    if (solo.alone.length !== 1 || !/[/][?]land=land-live$/.test(solo.alone[0])) fail("linkBoard: no main board and no fallback window: " + JSON.stringify(solo));
+  } finally {
+    await ctx.close();
+    tasksMode = was;
+  }
+  if (errors.length) fail("linkBoard: the page threw: " + errors.join(" | "));
+}
+
 // The usage tab's turns atrium caused: tokens and an estimated dollar figure by kind, per card and per day, the
 // costliest turns, and the noise line. TURNCOST_SHOT=<file.png> also writes a screenshot of the section.
 async function usageTurnsSection(browser, base) {
@@ -30150,7 +30215,7 @@ async function main() {
       skinScope: skinScopeSection, skinHeal: skinHealSection, toastLives: toastLivesSection,
       history: historySection, contextSize: contextSizeSection, ctxLine: ctxLineSection, ctxLimitLayers: ctxLimitLayersSection, contextCycle: contextCycleSection, landThePlane: landThePlaneSection, peekEverywhere: peekEverywhereSection, peekOneHover: peekOneHoverSection, peekDrawers: peekDrawersSection,peekStatusTruth: peekStatusTruthSection, peekHoverRest: peekHoverRestSection, cardRoute: cardRouteSection,
       quietDoer: quietDoerSection, autoPerm: autoPermSection, looksIdle: looksIdleSection, notifyOff: notifyOffSection,
-      questionsClick: questionsClickSection, walk: walkSection, walkContext: walkContextSection, linkReuse: linkReuseSection,
+      questionsClick: questionsClickSection, walk: walkSection, walkContext: walkContextSection, linkReuse: linkReuseSection, linkBoard: linkBoardSection,
       usageCacheReads: usageCacheReadsSection, usageTurns: usageTurnsSection, turnLimits: turnLimitsSection, roomsDash: roomsDashSection, transportChips: transportChipsSection, phoneView: phoneViewSection, heldLine: heldLineSection, u016: u016Section, phoneHeader: phoneHeaderSection, phoneFocus: phoneFocusSection, phoneTermBar: phoneTermBarSection, phoneShare: phoneShareSection, phonePan: phonePanSection, phoneFollow: phoneFollowSection, phoneTap: phoneTapSection, phoneKeyboard: phoneKeyboardSection, phoneCompose: phoneComposeSection, mCompose: mComposeSection, mPerms: mPermsSection, mReview: mReviewSection, usagePolish: usagePolishSection, usageLimits: usageLimitsSection, usageGroups: usageGroupsSection,
       eventDriven: eventDrivenSection, idleBudget: idleBudgetSection, pollsGone: pollsGoneSection,
       terminalTopGap: terminalTopGapSection, phoneListFit: phoneListFitSection, termListLastRow: termListLastRowSection, phoneNudge: phoneNudgeSection,
@@ -31997,6 +32062,7 @@ async function main() {
     await unit("walk", () => walkSection(browser, base));
     await unit("walkContext", () => walkContextSection(browser, base));
     await unit("linkReuse", () => linkReuseSection(browser, base));
+    await unit("linkBoard", () => linkBoardSection(browser, base));
     await unit("usageCacheReads", () => usageCacheReadsSection(browser, base));
     await unit("usageTurns", () => usageTurnsSection(browser, base));
   await unit("turnLimits", () => turnLimitsSection(browser, base));

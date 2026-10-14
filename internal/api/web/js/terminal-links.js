@@ -464,7 +464,67 @@ function useWebLinks(t) {
 // rather than opening a new one per click.
 function openTermURL(ev, uri) {
   ev.preventDefault();
+  if (openAtriumLink(uri)) return;
   openLinkReused(uri);
+}
+
+// ── a link to this board stays in the board ──────────────────────────────
+//
+// `http://127.0.0.1:7778/#term=<id>` printed in a terminal is an address of atrium's own, and `window.open` on it
+// lands in an ordinary browser tab beside the installed app window the board runs in. So a URL on this board's
+// origin that names a card is routed through the one handler every alert click already uses, `landOnAlert`, and
+// no window is opened. A popped-out terminal hands it to the main board over the solo channel instead.
+
+// Whether `u` (a URL) is served by the same board: this origin, or the same port on another loopback spelling.
+function sameBoardOrigin(u) {
+  if (u.origin === location.origin) return true;
+  const loop = h => h === "127.0.0.1" || h === "localhost" || h === "[::1]";
+  return loop(u.hostname) && loop(location.hostname) && u.port === location.port && u.protocol === location.protocol;
+}
+
+// What card a board URL names: `{ id }` for `#term=<id>`, `{ path }` for a card's readable address, else null.
+function atriumLinkRoute(url) {
+  let u;
+  try { u = new URL(url); } catch (e) { return null; }
+  if (u.protocol !== "http:" && u.protocol !== "https:") return null;
+  if (!sameBoardOrigin(u)) return null;
+  if (/^#term=./.test(u.hash)) {
+    try { return { id: decodeURIComponent(u.hash.slice("#term=".length)) }; } catch (e) { return null; }
+  }
+  const s = cardUrlShape(u.pathname);
+  if (s && s.kind !== "room") return { path: cardUrlLookupPath(s) };
+  return null;
+}
+
+// How long a popped-out window waits for a main board to say it took the link, before opening one itself.
+const atriumLinkWaitMs = 600;
+
+// Routes a board link in place. True when it was taken (or is being), false for anything the caller should open
+// as an ordinary link.
+function openAtriumLink(url) {
+  const r = atriumLinkRoute(url);
+  if (!r) return false;
+  if (termOnly()) {
+    if (!soloBus) return false;
+    const ask = r.id ? Promise.resolve(r.id) : api(r.path).then(t => t.id).catch(() => "");
+    ask.then(id => {
+      if (!id) { openLinkReused(url); return; }
+      let taken = false;
+      const on = e => { if ((e.data || {}).type === "landed" && sameCard(e.data.taskFor, id)) taken = true; };
+      soloBus.addEventListener("message", on);
+      soloBus.postMessage({ type: "land", taskFor: id, goTo: "", key: "", ack: true });
+      try { if (window.opener && !window.opener.closed) window.opener.focus(); } catch (e) {}
+      setTimeout(() => {
+        soloBus.removeEventListener("message", on);
+        // No main board answered: open one, which lands on the card (`landFromURL`).
+        if (!taken) openLinkReused(location.origin + "/?land=" + encodeURIComponent(id));
+      }, atriumLinkWaitMs);
+    });
+    return true;
+  }
+  if (r.id) landOnAlert(r.id, "", "");
+  else api(r.path).then(t => landOnAlert(t.id, "", ""), () => openLinkReused(url));
+  return true;
 }
 
 // The name of the window a link opens into. One per pull request for

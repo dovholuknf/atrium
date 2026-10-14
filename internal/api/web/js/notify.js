@@ -213,6 +213,8 @@ if (soloBus) {
     if (m.type === "land") {
       if (!termOnly()) {
         closeOpenDialogs().then(ok => { if (ok) landOnAlert(m.taskFor || "", m.goTo || "", m.key || ""); });
+        // A popped-out window that sent a link waits to hear someone took it, or opens a board of its own.
+        if (m.ack) soloBus.postMessage({ type: "landed", taskFor: m.taskFor || "" });
       }
       return;
     }
