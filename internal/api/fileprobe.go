@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 
 	"github.com/dovholuknf/atrium/internal/safepath"
@@ -94,6 +95,23 @@ func (s *Server) probeFiles(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"found": hits})
 }
 
+// probeAlias spells a path the way this machine does. An agent in WSL or Git Bash prints `/d/work/x` for
+// `D:/work/x`, and any agent prints `~/x` for the home directory. Neither means anything to the Go filesystem
+// calls, and both are only ever a way of naming a place the containment check then judges as usual.
+func probeAlias(want string) string {
+	if want == "~" || strings.HasPrefix(want, "~/") || strings.HasPrefix(want, `~\`) {
+		if home, err := os.UserHomeDir(); err == nil {
+			return filepath.Join(home, want[1:])
+		}
+		return want
+	}
+	if runtime.GOOS == "windows" && len(want) >= 3 && want[0] == '/' && want[2] == '/' &&
+		(want[1]|0x20 >= 'a' && want[1]|0x20 <= 'z') {
+		return strings.ToUpper(want[1:2]) + ":" + want[2:]
+	}
+	return want
+}
+
 // probeOne answers for a single candidate.
 //
 // An absolute path is allowed IF IT LANDS INSIDE THE CARD, which is the common
@@ -102,7 +120,7 @@ func (s *Server) probeFiles(w http.ResponseWriter, r *http.Request) {
 // on both sides, so a link pointing out of the worktree is refused the same as
 // a `..` would be.
 func probeOne(root, want string) (probeHit, bool) {
-	full, err := safepath.Contained(root, want)
+	full, err := safepath.Contained(root, probeAlias(want))
 	if err != nil {
 		return probeHit{}, false
 	}

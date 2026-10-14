@@ -340,7 +340,9 @@ function cellAt(line, off) {
 // stuck to it, and probing it whole finds nothing.
 function fileCandidates(text) {
   const out = [];
-  const re = /[^\s"'`()\[\]{}<>,;|]+/g;
+  // The curly quotes and the box-drawing bar are cut at too: a reply's prose and a table both wrap a path in them,
+  // and Claude Code draws a code span with the backticks gone, so what is left to cut at is whatever styled it.
+  const re = /[^\s"'`()\[\]{}<>,;|‘’“”│]+/g;
   let m;
   while ((m = re.exec(text))) {
     const lead = (m[0].match(/^[('"`\[{<*]+/) || [""])[0].length;
@@ -353,7 +355,8 @@ function fileCandidates(text) {
 
 // The punctuation stuck to the end of a path, taken off.
 function trimCandidate(tok) {
-  tok = tok.replace(/[)'"`\]}>]+$/, "");
+  // `*` is markdown bold or italics closing over the path, `**path**`.
+  tok = tok.replace(/[)'"`\]}>*]+$/, "");
   // `internal/api/api.go:248:1`, which is how a compiler, a vet run and a test
   // failure all say where they are. The line number is not part of the name,
   // and leaving it on means none of those ever link.

@@ -109,6 +109,19 @@ has(`cd d:\\worktrees\\atrium`,
   "A Windows path has a colon in it that is not a line number, and dropping it " +
   "leaves a drive letter that resolves to nothing.");
 
+for (const [line, want] of [
+  ["the file is `D:\\worktrees\\ziti-doc\\RESEARCH.md` in it", "D:\\worktrees\\ziti-doc\\RESEARCH.md"],
+  ["see `D:/work/a.go:42:7`.", "D:/work/a.go"],
+  ["wsl `/d/work/a.go`", "/d/work/a.go"],
+  ["home (`~/notes/todo.md:5`)", "~/notes/todo.md"],
+  ["bold **src/a.go** ok", "src/a.go"],
+  ["curly \u2018src/a.go\u2019 ok", "src/a.go"],
+  ["table \u2502 src/a.go:8 \u2502", "src/a.go"]
+]) {
+  has(line, want, "A path in a code span, quotes, brackets or bold is still the path, and none of those " +
+    "characters is part of it.");
+}
+
 has("Makefile",
   "Makefile",
   "A file with no extension and no separator is still a file. Requiring a dot " +

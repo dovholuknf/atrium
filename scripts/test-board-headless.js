@@ -7546,6 +7546,86 @@ async function linkTipSection(browser, base) {
   }
 }
 
+// ── a path wrapped in backticks, quotes, parens or bold is still a link, and the wrapper is not in it ──
+// Claude Code puts paths in code spans and prose puts them in quotes and brackets. The link has to cover the path
+// and stop short of every character around it, whatever the path's shape and with or without a :line.
+async function backtickPathLinksSection(browser, base) {
+  const was = tasksMode;
+  tasksMode = "land";
+  landCard("land-live", { supervised: true, created_at: "2026-09-19T12:00:00Z" });
+  landList = [LAND["land-live"]];
+  landPerms = [];
+  const errors = [];
+  const ctx = await landContext(browser);
+  await ctx.addInitScript(() => {
+    const Real = window.WebSocket;
+    window.WebSocket = function (url, protocols) {
+      if (!/\/attach(\?|$)/.test(url)) return new Real(url, protocols);
+      const s = { url, readyState: 0, binaryType: "arraybuffer", bufferedAmount: 0,
+        onopen: null, onclose: null, onmessage: null, onerror: null,
+        send() {}, close() { this.readyState = 3; } };
+      setTimeout(() => { s.readyState = 1; if (s.onopen) s.onopen({}); }, 0);
+      return s;
+    };
+    Object.assign(window.WebSocket, { CONNECTING: 0, OPEN: 1, CLOSING: 2, CLOSED: 3 });
+  });
+  // Whatever has a separator is a file, so the only thing that can fail is what the board offers.
+  await ctx.route("**/files/probe", route => {
+    const paths = JSON.parse(route.request().postData() || "{}").paths || [];
+    const found = paths.filter(p => /[\/\\]/.test(p)).map(p => ({ path: p, rel: p, size: 1, dir: false }));
+    route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ found }) });
+  });
+  const B = "`";
+  const exact = "D:\\worktrees\\github\\openziti\\ziti-doc\\hashnode-research\\RESEARCH.md";
+  const cases = [
+    ["the file is " + B + exact + B + " in the doc", exact],
+    ["See " + B + "D:/work/a/b.go" + B + ".", "D:/work/a/b.go"],
+    ["at " + B + "D:\\work\\a\\b.go:42" + B + " now", "D:\\work\\a\\b.go"],
+    ["at (" + B + "D:/work/a/b.go:42:7" + B + ")", "D:/work/a/b.go"],
+    ["wsl " + B + "/d/work/a/b.go" + B, "/d/work/a/b.go"],
+    ["wsl \"/d/work/a/b.go:9\", done", "/d/work/a/b.go"],
+    ["posix " + B + "/usr/local/x.go" + B + " ok", "/usr/local/x.go"],
+    ["posix '/usr/local/x.go:3' ok", "/usr/local/x.go"],
+    ["home " + B + "~/notes/todo.md" + B + " ok", "~/notes/todo.md"],
+    ["home (~/notes/todo.md:5) ok", "~/notes/todo.md"],
+    ["bold **src/a/b.go** ok", "src/a/b.go"],
+    ["curly \u2018src/a/b.go\u2019 and \u201csrc/c/d.go\u201d", "src/a/b.go"],
+    ["table \u2502 src/a/b.go:8 \u2502 ok", "src/a/b.go"],
+    ["nested [" + B + "src/a/b.go" + B + "]", "src/a/b.go"]
+  ];
+  try {
+    const p = await ctx.newPage();
+    p.on("pageerror", e => errors.push(String(e)));
+    await p.goto(base, { waitUntil: "domcontentloaded" });
+    await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
+    await p.evaluate(() => attachTask("land-live"));
+    await p.waitForFunction(() => termSock && termSock.readyState === 1 && termTask && termTask.id === "land-live", null,
+      { timeout: slow(10000) });
+    await p.waitForTimeout(300);
+    const lines = cases.map(c => c[0]);
+    await p.evaluate(rows => new Promise(res => term.write("\x1b[2J\x1b[H" + rows.join("\r\n") + "\r\n", res)), lines);
+    for (let i = 0; i < cases.length; i++) {
+      const got = await p.evaluate(y => new Promise(res => {
+        provideFileLinks(term, termTask.id, y, links => {
+          const row = term.buffer.active.getLine(y - 1).translateToString(false);
+          res((links || []).map(l => row.slice(l.range.start.x - 1, l.range.end.x)));
+        });
+      }), i + 1);
+      if (!got.includes(cases[i][1])) {
+        fail("the path in " + JSON.stringify(cases[i][0]) + " was not linked as " + JSON.stringify(cases[i][1]) +
+          ", the links were " + JSON.stringify(got));
+      }
+      if (got.some(g => /^[`"'()\[\]*~\u2018\u2019\u201c\u201d\u2502]/.test(g) && !/^~\//.test(g) || /[`"'()\[\]*\u2018\u2019\u201c\u201d\u2502]$/.test(g))) {
+        fail("a link in " + JSON.stringify(cases[i][0]) + " took in the characters around the path: " + JSON.stringify(got));
+      }
+    }
+    if (errors.length) fail("the backtick path page threw: " + errors.join(" | "));
+  } finally {
+    tasksMode = was;
+    await ctx.close();
+  }
+}
+
 // ── a file link asks where to open, and a .md renders in a tab (u-file-open-outside) ──
 // Clicking a file path in the terminal offers atrium's editor, a tab, and, only when that room has an
 // editor_command, the machine it opens on. The tab renders markdown from the room's bytes, and the markdown
@@ -30288,7 +30368,7 @@ async function main() {
   if (ONLY) {    const only = { closeOneDialog: closeOneDialogSection, boardDocs: boardDocsSection, boardFiles: boardFilesSection, phoneBoardCompact: phoneBoardCompactSection, termWear: termWearSection, bridge: bridgeSection, detailsHover: detailsHoverSection, detailsSide: detailsSideBySideSection, chatter: chatterSection, chatterTab: chatterTabSection, settingsOnce: settingsOnceSection,
       groupRemove: groupRemoveSection, worn: wornSection, restartGate: restartGateSection, restartStays: restartStaysSection, atriumDown: atriumDownSection,
       toastStays: toastStaysSection, groupColor: groupColorSection,
-      groupDrag: groupDragSection, tooltip: tooltipSection, linkTip: linkTipSection, fileOpenOutside: fileOpenOutsideSection, readTabSize: readTabSizeSection, readWidthSkin: readWidthSkinSection, popoutTagFlip: popoutTagFlipSection, prefsEverywhere: prefsEverywhereSection, mPrefsEverywhere: (b) => mPrefsEverywhereSection(b), idleRate: idleRateSection, foldStill: foldStillSection, laneFold: laneFoldSection,
+      groupDrag: groupDragSection, tooltip: tooltipSection, linkTip: linkTipSection, backtickPathLinks: backtickPathLinksSection, fileOpenOutside: fileOpenOutsideSection, readTabSize: readTabSizeSection, readWidthSkin: readWidthSkinSection, popoutTagFlip: popoutTagFlipSection, prefsEverywhere: prefsEverywhereSection, mPrefsEverywhere: (b) => mPrefsEverywhereSection(b), idleRate: idleRateSection, foldStill: foldStillSection, laneFold: laneFoldSection,
       untaggedSort: untaggedSortSection, newCard: newCardSection, themePreview: themePreviewSection, themeLab: themeLabSection, land: landSection, reselect: reselectSection, clearKeepsPage: clearKeepsPageSection, clearMark: clearMarkSection, clearLine: clearLineSection,
       resumeSpinner: resumeSpinnerSection, toastsTop: toastsTopSection, sayWhen: sayWhenSection, pasteSpinner: pasteSpinnerSection,
       pasteBig: pasteBigSection, pasteLands: pasteLandsSection, pasteEmpty: pasteEmptySection, pasteBusy: pasteBusySection, typing: typingSection, alias: aliasSection, askAgain: askAgainSection, copySelect: copySelectSection, busyGuard: busyGuardSection, keepalive: keepaliveSection, idlePark: idleParkSection, sshBadge: sshBadgeSection, restartMenu: restartMenuSection,
@@ -32285,6 +32365,7 @@ async function main() {
     await unit("changeReq", () => changeReqSection(browser, base));
     await unit("mChangeReq", () => mChangeReqSection(browser));
     await unit("trayHead", () => trayHeadSection(browser, base));
+    await unit("backtickPathLinks", () => backtickPathLinksSection(browser, base));
     await unit("fileOpenOutside", () => fileOpenOutsideSection(browser, base));
     await unit("roomsSetup", () => roomsSetupSection(browser, base));
     await unit("readTabSize", () => readTabSizeSection(browser, base));
