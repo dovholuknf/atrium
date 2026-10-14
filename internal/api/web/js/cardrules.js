@@ -147,6 +147,31 @@ function cardWaiting(t) {
   return !!t && (t.status === "needs-input" || t.status === "needs-permission") && !runnerGone(t);
 }
 
+// A runner is up: being launched, or alive by its status with nothing saying it went.
+function cardLive(t) {
+  return !!t && (!!t.starting || (LIVE_STATUSES.includes(t.status) && !runnerGone(t)));
+}
+// IS THIS SESSION WORKING RIGHT NOW: a live `activity.what` that is not idle, on a card that is not waiting on the operator,
+// not shelved, and whose activity is not stale. The board, the stack and the terminals all ask this one function.
+function workingNow(t) {
+  const a = t && t.activity;
+  return !!(a && a.what && a.what !== "idle" && !a.looks_idle &&
+    !cardWaiting(t) && t.status !== "shelved" && !staleActivity(t));
+}
+// ONE WORD FOR HOW A CARD IS DRAWN, EVERYWHERE (docs/rnd/unified-card.md). Grey is "off" and nothing else.
+//   unreachable  its room is not answering, so nothing says it stopped
+//   waiting      a live runner is waiting on the operator, whoever launched it
+//   working      a live runner is mid-turn
+//   live         a live runner that is neither
+//   off          no runner: gone, parked, shelved, done, dead, an inbox card
+function cardState(t) {
+  if (!t) return "off";
+  if (t.offline) return "unreachable";
+  if (cardWaiting(t)) return "waiting";
+  if (cardLive(t)) return workingNow(t) ? "working" : "live";
+  return "off";
+}
+
 // The project rule as a callable, compiled from the same source the settings dialog shows and cached.
 let cardProjectRule;
 function cardProjectOf(task) {

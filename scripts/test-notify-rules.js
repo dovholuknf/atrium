@@ -34,6 +34,10 @@ const make = new Function(`
   const cardIdleAge = () => 0;
   ${fn(rules, "runnerGone")}
   ${fn(rules, "cardWaiting")}
+  ${fn(rules, "cardLive")}
+  ${fn(rules, "cardState")}
+  const isWaiting = cardWaiting, staleActivity = t => !t || t.status === "dead" || (!t.supervised && ["done", "dead", "shelved"].includes(t.status));
+  ${fn(rules, "workingNow")}
   ${fn(cards, "waitingRow")}
   ${fn(cards, "hasRunningChild")}
   ${fn(cards, "cardsReady")}
@@ -41,7 +45,7 @@ const make = new Function(`
   let cardList = () => [];
   ${js("engaged.js")}
   return {
-    waitingRow, hasRunningChild, cardsReady, cardsWaiting, noteEngaged, engagedWith,
+    cardState, waitingRow, hasRunningChild, cardsReady, cardsWaiting, noteEngaged, engagedWith,
     setCards: l => { cardList = () => l; },
     set: o => { if ("term" in o) term = o.term; if ("termTask" in o) termTask = o.termTask; },
   };
@@ -72,6 +76,22 @@ const row = o => Object.assign({ id: "sg4~c", status: "needs-input", wire_name: 
   if (b.hasRunningChild(mine, [mine, row({ id: "sg4~kid", status: "needs-input", spawned_by_id: "sg4~mine" })])) {
     fail("a card whose child has ended is still held back");
   }
+}
+
+// (1b) cardState: one word per card, grey is "off" and nothing else (docs/rnd/unified-card.md)
+{
+  const st = o => b.cardState(row(o));
+  const want = (what, got, exp) => { if (got !== exp) fail("cardState: " + what + " is " + got + ", want " + exp); };
+  want("a ready card with a runner", st({ supervised: true }), "waiting");
+  want("a ready agent-launched card", st({ supervised: true, tags: ["origin:agent"] }), "waiting");
+  want("a permission card", st({ status: "needs-permission", supervised: true }), "waiting");
+  want("a ready card whose runner is gone", st({ supervised: false }), "off");
+  want("a mid-turn card", st({ status: "running", supervised: true, activity: { what: "thinking" } }), "working");
+  want("a quiet running card", st({ status: "running", supervised: true }), "live");
+  want("a starting card", st({ status: "running", supervised: false, starting: true }), "live");
+  want("a parked card", st({ supervised: false, parked_at: "x" }), "off");
+  for (const s of ["shelved", "done", "dead", "backlog"]) want("a " + s + " card", st({ status: s }), "off");
+  want("an offline card", st({ supervised: true, offline: true }), "unreachable");
 }
 
 // (2) the card you are typing in
