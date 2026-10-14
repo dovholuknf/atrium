@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/dovholuknf/atrium/internal/guard"
 	"github.com/spf13/cobra"
 )
 
@@ -206,6 +207,13 @@ func turnEnded(hubURL, event, name, runner string) string {
 	// has nothing to say.
 	if in.HookEventName != "" && !strings.EqualFold(in.HookEventName, "Stop") {
 		return keepGoing
+	}
+
+	// The reply guard, checked here where the message is, so the message never
+	// leaves this process. A block is answered without posting: the turn is
+	// going on, so the room is not told it ended.
+	if out := replyGuard(in, guard.OSEnv{}); out != keepGoing {
+		return out
 	}
 
 	cwd := in.CWD

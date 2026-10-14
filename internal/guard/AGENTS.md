@@ -22,6 +22,15 @@ built-in set, so that build does not pass. Run it.
 What fails open is decided by Claude Code, not here: a hook that passes Claude Code's own timeout, and a payload that
 is empty or does not parse. The guard never exits non-zero. It always answers through the PreToolUse JSON on stdout.
 
+## The reply check is the opposite again
+
+`reply-pattern` rules name the tool `reply` and run from the Stop hook (`atrium turn`, `internal/cli/turn_reply.go`)
+against `last_assistant_message`. **That path FAILS OPEN.** A Stop that blocks keeps a session working, so a guard
+that failed closed there is a session that never stops. A rule set that does not load, a panic and a payload with no
+message all end the turn as before, with one line on stderr. It blocks at most once a turn (`stop_hook_active` lets
+the answer go), and it corrects rather than prevents, since the reply is written before the Stop fires. A rule naming
+`reply` and a tool call in one set fails the load, and `reply` rules never answer a tool call.
+
 ## Invariants
 
 1. **OFF unless `ATRIUM_GUARD` says on.** Only `on`, `1`, `true` or `yes` turn it on. Switching a machine over is the

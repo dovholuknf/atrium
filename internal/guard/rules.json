@@ -1,6 +1,16 @@
 {
   "rules": [
     {
+      "id": "reply-hands-deploy-command",
+      "check": "reply-pattern",
+      "tools": ["reply"],
+      "params": {
+        "scope": "fence",
+        "patterns": ["atrium-deploy\\.ps1", "deploy-batch\\.ps1", "deploy-hub-only\\.ps1", "Start-Process\\s+pwsh[^\\n]*deploy"]
+      },
+      "reason": "Do not hand clint a deploy command to run ({name} is in a code block in your last reply). Withdraw it: run the deploy yourself with the deploy tool, or say what is needed and ask. Written from the memory files deploy-rules.md and run-it-yourself-first.md."
+    },
+    {
       "id": "drive-root",
       "check": "drive-root",
       "tools": ["shell", "Write", "Edit", "NotebookEdit"],
