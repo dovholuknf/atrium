@@ -260,9 +260,11 @@
   /* Actions show on hover and in the card menu, and take no chip width at rest. */
   .card .chip.hoveronly { display: none; }
   .card:hover .chip.hoveronly { display: inline-block; }
+  /* Three pulses and then still, like the sound button: an infinite loop holds the compositor at 60 fps for as long
+     as one waiting card is on screen, which was most of an idle board's GPU. */
   .pulse {
     width: 7px; height: 7px; border-radius: 50%; background: var(--warn); flex: none;
-    animation: pulse 1.9s ease-in-out infinite;
+    animation: pulse 1.9s ease-in-out 3;
   }
   /* Opacity only. Animating a box-shadow ripple forced a full repaint every frame. Opacity composites on the
      GPU for near-zero CPU. */
@@ -385,7 +387,7 @@
   .chip.held {
     background: var(--warn-bg); color: var(--warn); border-color: var(--warn-stroke);
     font-weight: 700; text-align: center; min-width: 1.4em;
-    animation: pulse 1.4s ease-in-out infinite;
+    animation: pulse 1.4s ease-in-out 3;
   }
   body.tabhidden .chip.held { animation: none; }
   /* A message waiting for the turn to end because that is what was asked. The neutral chip, no pulse and no

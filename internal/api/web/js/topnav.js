@@ -223,14 +223,21 @@
   document.addEventListener("click", (e) => { if (!menu.hidden && !menu.contains(e.target)) closeMenu(); });
   document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeMenu(); });
 
-  const ro = new ResizeObserver(layout);
+  // Observers fire in bursts, and `layout` reads widths, which forces a reflow each time. Coalesce a burst into one run
+  // a frame later. A hidden tab runs no frames, so it catches up when shown.
+  let laid = 0;
+  function layoutSoon() {
+    if (laid) return;
+    laid = requestAnimationFrame(() => { laid = 0; layout(); });
+  }
+  const ro = new ResizeObserver(layoutSoon);
   ro.observe(bar);
   ro.observe(nav);
   for (const el of bar.children) if (el !== nav && el !== grow && el !== more) ro.observe(el);
   nav.querySelectorAll(".tab").forEach(t => ro.observe(t));
-  new MutationObserver(layout).observe(nav, { attributes: true, subtree: true, attributeFilter: ["class", "hidden"] });
+  new MutationObserver(layoutSoon).observe(nav, { attributes: true, subtree: true, attributeFilter: ["class", "hidden"] });
   // A count that changes is what lets a hidden tab through, and what the `...` badge sums.
-  new MutationObserver(layout).observe(nav, { childList: true, characterData: true, subtree: true });
+  new MutationObserver(layoutSoon).observe(nav, { childList: true, characterData: true, subtree: true });
   desktop.addEventListener("change", layout);
   layout();
 })();

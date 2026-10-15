@@ -34,13 +34,16 @@ const dock = {
 };
 
 // A card is a tenant's when its probe says so. Called from `openTerm` for every attach.
+// Cards whose probe failed (a 404 for a card this room does not hold). Asked once, not on every attach.
+const walkProbeFailed = new Set();
 async function walkProbe(task) {
   dockReset();
   const btn = document.getElementById("t-walk");
   if (!btn || !task) return;
   const gen = dock.gen;
   let yes = false;
-  try { yes = await walkTenant.probe(task); } catch (e) { yes = false; }
+  if (walkProbeFailed.has(task.id)) return;
+  try { yes = await walkTenant.probe(task); } catch (e) { yes = false; walkProbeFailed.add(task.id); }
   if (gen !== dock.gen || !termTask || termTask.id !== task.id) return;
   btn.hidden = !yes;
   if (!yes) return;

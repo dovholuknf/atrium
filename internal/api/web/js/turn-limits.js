@@ -6,6 +6,7 @@
 // nothing, and stays that way.
 
 const TURN_LIMIT_POLL_MS = 60000;
+const TURN_LIMIT_FAIL_MS = 600000;
 const TURN_LIMIT_DISMISS_KEY = "atrium.turnlimits.dismissed";
 let turnLimits = { at: 0, day: "", findings: [] };
 
@@ -66,7 +67,9 @@ async function renderTurnLimits() {
     turnLimits = { at: turnLimits.at, day: r.day || "", findings: r.findings || [] };
   } catch (e) {
     // An old room has no such route, and a room that does not answer is not a finding.
-    turnLimits = { at: turnLimits.at, day: "", findings: [] };
+    // Asked again in ten minutes rather than one: a 409 (the room is ambiguous or not answering) does not clear in a
+    // minute, and each retry is a failed request in the console.
+    turnLimits = { at: Date.now() + TURN_LIMIT_FAIL_MS - TURN_LIMIT_POLL_MS, day: "", findings: [] };
   }
   paintTurnLimits();
 }

@@ -22196,7 +22196,7 @@ async function noResumeButtonSection(browser, base) {
       const ended = termEndedRow(exited);
       const board = typeof parkedChip === "function" ? parkedChip(parked) : "";
       let menu = [];
-      try { menu = termMenuItems(parked).map(i => i && i.label); } catch (e) { menu = ["error " + e.message]; }
+      try { menu = termMenuItems(parked.id, parked).map(i => i && i.label); } catch (e) { menu = ["error " + e.message]; }
       return { rows, ended, board, menu };
     });
     for (const h of [...got.rows, got.ended]) {
@@ -32725,6 +32725,7 @@ async function main() {
     await unit("interviewTop", () => interviewTopSection(browser, base));
     await unit("nestCrossRoom", () => nestCrossRoomSection(browser, base));
     await unit("parkedStays", () => parkedStaysSection(browser, base));
+    await unit("noResumeButton", () => noResumeButtonSection(browser, base));
     await unit("terminalsOneLine", () => terminalsOneLineSection(browser, base));
     await unit("controlsCompact", () => controlsCompactSection(browser, base));
     await unit("offCardActions", () => offCardActionsSection(browser, base));
