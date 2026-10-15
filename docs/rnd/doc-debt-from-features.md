@@ -206,28 +206,28 @@ being there already, per `AGENTS.md`.
 
 ## 6. Decisions
 
-Nothing here is decided. Each answer is recommended, not yet decided, and is the answer to the same-numbered question
-in section 5, restated against the item lifecycle (section 2.8).
+Decided 2026-10-15 by the orchestrator: every recommendation below, as written. Each answer is the answer to the
+same-numbered question in section 5, restated against the item lifecycle (section 2.8).
 
-1. **Recommended, not yet decided: one item for what is left.** The feature fixes `cli.md` in its branch and leaves
+1. **one item for what is left.** The feature fixes `cli.md` in its branch and leaves
    `README.md` wrong, so it files one `d-` item whose `stale:` names only `README.md` and whose `updated:` names
    `cli.md`. A feature that fixed everything files nothing and writes `Docs: none, <why>` in its test plan, which is
    what stops the "docs: not said" note.
-2. **Recommended, not yet decided: keep the threshold.** 8 open items, or 3 with the oldest at 10 days, counted from
+2. **keep the threshold.** 8 open items, or 3 with the oldest at 10 days, counted from
    `landed`. Seven features open for 12 days fire on day 10. Both numbers are hub settings, so changing them is not a
    release.
-3. **Recommended, not yet decided: show the hint, do not auto-close.** "Page changed since" appears and the item stays
+3. **show the hint, do not auto-close.** "Page changed since" appears and the item stays
    open until a doc worker closes it. This departs from the original ask, which was that items close when the page
    changes, because a typo fix would erase real debt. If the answer is auto-close, the minimum safe form is: close
    only when EVERY `stale:` path changed since `landed`, with a one-click reopen.
-4. **Recommended, not yet decided: warn, never refuse.** The fold warns (phase 2) and the landed check notes (phase 5).
+4. **warn, never refuse.** The fold warns (phase 2) and the landed check notes (phase 5).
    Nothing is blocked. Refusing `atrium_done` was in the original idea and is dropped: a worker that cannot name a stale
    page would be stopped over a line, and atrium would learn nothing it could not learn from the warning.
-5. **Recommended, not yet decided: ten at a time, oldest first.** Grouped by page, and the next press takes the next
+5. **ten at a time, oldest first.** Grouped by page, and the next press takes the next
    ten. The doc worker's item is `kind: doc`, one backlog id per press, so its cost and steps show on the items tab like
    any other work.
-6. **Recommended, not yet decided: no backfill.** The meter starts at zero once `doc-overhaul-plan.md` batch 9 lands
+6. **no backfill.** The meter starts at zero once `doc-overhaul-plan.md` batch 9 lands
    and counts features that land after that. The 365 earlier changelog fragments are the overhaul's job.
-7. **Recommended, not yet decided: the meter waits on housekeeping for its drawing.** Phases 1, 2, 4 and 5 and the
+7. **the meter waits on housekeeping for its drawing.** Phases 1, 2, 4 and 5 and the
    endpoint of phase 3 do not wait. If housekeeping is not built when phase 3 is wanted, the answer to "draw it
    anyway?" is no, and `atrium backlog ls --dept docs` is the meter until it is.
