@@ -7797,6 +7797,111 @@ async function fileOpenOutsideSection(browser, base) {
   }
 }
 
+// ── a file link that was a miss comes back, and an image opens without asking (bug-term-file-links) ──
+// A path hovered before the file exists is a miss; the miss must expire so the link appears once the file does.
+// A click on an image (or any file the editor cannot show) opens a tab at once, with no menu.
+// TLATE_SHOTS=dir writes the PNGs.
+async function termLinkLateSection(browser, base) {
+  const was = tasksMode;
+  tasksMode = "land";
+  landCard("land-live", { supervised: true, room: "sg4", created_at: "2026-09-19T12:00:00Z" });
+  landList = [LAND["land-live"]];
+  landPerms = [];
+  const errors = [];
+  const shots = process.env.TLATE_SHOTS || "";
+  const shot = (pg, name) => shots ? pg.screenshot({ path: path.join(shots, name + ".png") }) : null;
+  const exists = new Set();
+  const ctx = await landContext(browser);
+  await ctx.addInitScript(() => {
+    const Real = window.WebSocket;
+    window.WebSocket = function (url, protocols) {
+      if (!/\/attach(\?|$)/.test(url)) return new Real(url, protocols);
+      const s = { url, readyState: 0, binaryType: "arraybuffer", bufferedAmount: 0,
+        onopen: null, onclose: null, onmessage: null, onerror: null,
+        send() {}, close() { this.readyState = 3; } };
+      setTimeout(() => { s.readyState = 1; if (s.onopen) s.onopen({}); }, 0);
+      return s;
+    };
+    Object.assign(window.WebSocket, { CONNECTING: 0, OPEN: 1, CLOSING: 2, CLOSED: 3 });
+    window.__tabs = [];
+    window.open = (u) => { window.__tabs.push(u); return null; };
+  });
+  await ctx.route("**/files/probe", route => {
+    const paths = JSON.parse(route.request().postData() || "{}").paths || [];
+    const found = paths.filter(p => exists.has(p)).map(p => ({ path: p, rel: p, size: 1234, dir: false }));
+    route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ found }) });
+  });
+  await ctx.route("**/v1/settings", route => route.fulfill({ status: 200, contentType: "application/json",
+    body: JSON.stringify(Object.assign({}, settingsBody(""), { editor_command: "" })) }));
+  try {
+    const p = await ctx.newPage();
+    p.on("pageerror", e => errors.push(String(e)));
+    await p.goto(base, { waitUntil: "domcontentloaded" });
+    await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
+    await p.evaluate(() => attachTask("land-live"));
+    await p.waitForFunction(() => termSock && termSock.readyState === 1 && termTask && termTask.id === "land-live", null,
+      { timeout: slow(10000) });
+    await p.waitForTimeout(300);
+    await p.evaluate(() => { probeMissTtl = 400; });
+    await p.evaluate(() => termSock.onmessage({ data: "wrote out/late.md here\r\n.atrium/incoming/shot.png\r\n" }));
+    await p.waitForTimeout(200);
+    const box = await p.locator("#t-screen .xterm-screen").boundingBox();
+    const cell = await p.evaluate(() => {
+      const d = term._core._renderService.dimensions.css.cell;
+      return { w: d.width, h: d.height };
+    });
+    const at = (col, r) => [box.x + cell.w * (col + 0.5), box.y + cell.h * (r + 0.5)];
+    const menuOn = () => p.evaluate(() => document.getElementById("cardmenu").classList.contains("on"));
+    const hover = async (col, r) => {
+      await p.mouse.move(...at(40, 5));
+      await p.mouse.move(...at(col, r), { steps: 3 });
+      await p.waitForTimeout(500);
+    };
+
+    // 1. the file is not there yet: plain text, a click does nothing.
+    await hover(10, 0);
+    await shot(p, "late-1-missing");
+    await p.mouse.click(...at(10, 0));
+    await p.waitForTimeout(300);
+    if (await menuOn()) fail("a missing file's path was a link");
+
+    // 2. the file appears, and past the expiry the same path links.
+    exists.add("out/late.md");
+    await p.waitForTimeout(600);
+    await hover(10, 0);
+    await shot(p, "late-2-appeared");
+    await p.mouse.click(...at(10, 0));
+    await p.waitForTimeout(300);
+    if (!await menuOn()) fail("a path that was missing, then written, did not become a link after the miss expired");
+    await p.keyboard.press("Escape");
+
+    // 3. a hit is kept: it still links after the expiry with the file's probe answering nothing.
+    exists.delete("out/late.md");
+    await p.waitForTimeout(600);
+    await hover(10, 0);
+    await p.mouse.click(...at(10, 0));
+    await p.waitForTimeout(300);
+    if (!await menuOn()) fail("a hit was forgotten when the miss ttl passed");
+    await p.keyboard.press("Escape");
+
+    // 4. an image opens in a tab at once, no menu.
+    exists.add(".atrium/incoming/shot.png");
+    await hover(3, 1);
+    await shot(p, "image-hover");
+    await p.mouse.click(...at(3, 1));
+    await p.waitForTimeout(400);
+    await shot(p, "image-click");
+    if (await menuOn()) fail("clicking an image showed the menu");
+    const tabs = await p.evaluate(() => window.__tabs);
+    const want = "/v1/tasks/land-live/files/view?path=.atrium%2Fincoming%2Fshot.png";
+    if (tabs.length !== 1 || tabs[0] !== want) fail("an image click opened " + JSON.stringify(tabs) + ", want " + want);
+    if (errors.length) fail("the page threw: " + errors.join(" | "));
+  } finally {
+    tasksMode = was;
+    await ctx.close();
+  }
+}
+
 // ── the read tab's own text size and scrollbar (u-read-tab-text-size) ────
 // A long document must scroll in the read tab, and A-/A+ must size the document text only, under a key of
 // its own, surviving a reload and never touching the board's origin zoom. RTS_SHOTS=<dir> takes pictures;
@@ -30966,7 +31071,7 @@ async function main() {
   if (ONLY) {    const only = { closeOneDialog: closeOneDialogSection, boardDocs: boardDocsSection, boardFiles: boardFilesSection, phoneBoardCompact: phoneBoardCompactSection, termWear: termWearSection, bridge: bridgeSection, detailsHover: detailsHoverSection, detailsSide: detailsSideBySideSection, chatter: chatterSection, chatterTab: chatterTabSection, settingsOnce: settingsOnceSection,
       groupRemove: groupRemoveSection, worn: wornSection, restartGate: restartGateSection, restartStays: restartStaysSection, atriumDown: atriumDownSection,
       toastStays: toastStaysSection, groupColor: groupColorSection,
-      groupDrag: groupDragSection, tooltip: tooltipSection, linkTip: linkTipSection, backtickPathLinks: backtickPathLinksSection, fileOpenOutside: fileOpenOutsideSection, readTabSize: readTabSizeSection, readWidthSkin: readWidthSkinSection, popoutTagFlip: popoutTagFlipSection, prefsEverywhere: prefsEverywhereSection, alertKinds: alertKindsSection, mPrefsEverywhere: (b) => mPrefsEverywhereSection(b), idleRate: idleRateSection, foldStill: foldStillSection, laneFold: laneFoldSection,
+      groupDrag: groupDragSection, tooltip: tooltipSection, linkTip: linkTipSection, backtickPathLinks: backtickPathLinksSection, fileOpenOutside: fileOpenOutsideSection, termLinkLate: termLinkLateSection, readTabSize: readTabSizeSection, readWidthSkin: readWidthSkinSection, popoutTagFlip: popoutTagFlipSection, prefsEverywhere: prefsEverywhereSection, alertKinds: alertKindsSection, mPrefsEverywhere: (b) => mPrefsEverywhereSection(b), idleRate: idleRateSection, foldStill: foldStillSection, laneFold: laneFoldSection,
       untaggedSort: untaggedSortSection, newCard: newCardSection, themePreview: themePreviewSection, themeLab: themeLabSection, land: landSection, reselect: reselectSection, clearKeepsPage: clearKeepsPageSection, clearMark: clearMarkSection, clearLine: clearLineSection,
       resumeSpinner: resumeSpinnerSection, toastsTop: toastsTopSection, sayWhen: sayWhenSection, pasteSpinner: pasteSpinnerSection,
       pasteBig: pasteBigSection, pasteLands: pasteLandsSection, pasteEmpty: pasteEmptySection, pasteBusy: pasteBusySection, typing: typingSection, alias: aliasSection, askAgain: askAgainSection, copySelect: copySelectSection, busyGuard: busyGuardSection, keepalive: keepaliveSection, idlePark: idleParkSection, sshBadge: sshBadgeSection, restartMenu: restartMenuSection,
@@ -32968,6 +33073,7 @@ async function main() {
     await unit("trayHead", () => trayHeadSection(browser, base));
     await unit("backtickPathLinks", () => backtickPathLinksSection(browser, base));
     await unit("fileOpenOutside", () => fileOpenOutsideSection(browser, base));
+    await unit("termLinkLate", () => termLinkLateSection(browser, base));
     await unit("roomsSetup", () => roomsSetupSection(browser, base));
     await unit("readTabSize", () => readTabSizeSection(browser, base));
     await unit("readWidthSkin", () => readWidthSkinSection(browser, base));

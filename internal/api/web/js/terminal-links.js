@@ -21,16 +21,35 @@
 // which opens where the click happened, and that is the whole reason the
 // board is worth using from another machine.
 
-// What the daemon has already answered, for one card. A miss is remembered as
-// firmly as a hit: `the` is not a file, and it should be asked about once
-// rather than once per line it appears on.
+// What the daemon has already answered, for one card. A hit is kept for the
+// card's life. A miss is kept only briefly: `the` is not a file and should not be
+// asked about once per line, but a path hovered before the agent wrote it (a
+// summary, an attachment named in a table) becomes one a moment later, and a
+// miss held until the card changed left it plain text for good.
 let probeCache = { id: "", known: new Map() };
+
+// How long a miss stands, in milliseconds. `let` so a test can shorten it.
+let probeMissTtl = 3000;
+const probeMiss = Symbol("miss");
 
 // The cache for a card, emptied if the card changed. Switching cards changes
 // which directory a word is measured against, so nothing carries over.
 function probeKnown(id) {
   if (probeCache.id !== id) probeCache = { id, known: new Map() };
   return probeCache.known;
+}
+
+// Whether `tok` has an answer worth using: a hit, or a miss still inside its ttl.
+function probeFresh(known, tok) {
+  if (!known.has(tok)) return false;
+  const v = known.get(tok);
+  return !(v && v[probeMiss] && Date.now() - v.at > probeMissTtl);
+}
+
+// The hit for `tok`, or null for a miss or nothing.
+function probeHit(known, tok) {
+  const v = known.get(tok);
+  return v && !v[probeMiss] ? v : null;
 }
 
 // The daemon's own bound, repeated here so a wide line is cut before it is
@@ -76,14 +95,14 @@ async function provideFileLinks(t, id, y, done) {
     // words nobody is pointing at.
     if (y < start.y || y > end.y) continue;
     spans.push({ token: c.token, range: { start, end } });
-    if (!known.has(c.token) && !ask.includes(c.token)) ask.push(c.token);
+    if (!probeFresh(known, c.token) && !ask.includes(c.token)) ask.push(c.token);
   }
   if (ask.length) await askProbe(id, ask);
   if (!termTask || termTask.id !== id) { done(undefined); return; }
 
   const links = [];
   for (const s of spans) {
-    const hit = probeKnown(id).get(s.token);
+    const hit = probeHit(probeKnown(id), s.token);
     if (hit) links.push(fileLink(id, s.range, hit));
   }
   done(links.length ? links : undefined);
@@ -111,7 +130,8 @@ async function askProbe(id, paths) {
   // EVERY path asked about is written down, not just the ones that came back.
   // Remembering only the hits means every word that is not a file is asked
   // about again on the next hover, which is most of the words.
-  for (const p of batch) known.set(p, hits.get(p) || null);
+  const now = Date.now();
+  for (const p of batch) known.set(p, hits.get(p) || { [probeMiss]: true, at: now });
 }
 
 // One link, with somewhere to go and something to say on the way.
@@ -150,8 +170,10 @@ function fileLink(id, range, hit) {
       ev.preventDefault();
       linkTipHide();
       hideTip();
-      // A directory has one place to go. A file asks, because there are three.
+      // A directory has one place to go. So does a file the editor cannot show
+      // (an image, any binary): a tab, at once. A text file asks, because there are three.
       if (hit.dir) openFromTerminal(id, hit);
+      else if (notEditable(hit.rel)) openFileTabFor(id, hit.rel);
       else fileLinkMenu(ev, id, hit);
     },
     hover: (ev) => {
@@ -203,6 +225,11 @@ function linkTipHide() {
 
 // The pointer leaving the terminal is leaving, not a repaint.
 document.getElementById("t-screen").addEventListener("mouseleave", linkTipHide);
+
+// A file the editor cannot show, judged by its name: the probe does not say what is inside. Images are what the
+// view route streams as an image, and the rest are formats that are bytes, not text.
+const binaryExt = /\.(png|jpe?g|gif|webp|bmp|ico|tiff?|avif|heic|pdf|zip|gz|tgz|bz2|xz|7z|rar|tar|exe|dll|so|dylib|bin|o|a|class|jar|wasm|mp3|mp4|m4a|wav|ogg|mov|avi|mkv|webm|woff2?|ttf|otf|eot|docx?|xlsx?|pptx?|db|sqlite3?)$/i;
+function notEditable(rel) { return binaryExt.test(rel || ""); }
 
 // A clicked file asks where it should open, and the answer is one of three.
 //
