@@ -293,13 +293,55 @@ function Get-HubRoom {
 # How long a room must stay attached, and how long before its second health check. One constant for both.
 $StaySeconds = 10
 
+# How long a deploy waits for a room to reattach to the hub. A ziti reattach after a hub restart took about five minutes
+# (sg3, 2026-10-15), so this accepts minutes and a verdict of failed means this budget ran out. The one place it is named.
+$ReattachBudget = 600
+$ReattachSayEvery = 15
+
+# How long a swap waits for the old room to let go of its store (atrium.db) after `atrium stop`. The port check passes
+# while the process still holds the file, and the new room then exits "store held by another process" (sgg).
+$StoreBudget = 120
+
+# New-StoreWaitScript builds the remote snippet that waits for the old room to let go of its store, which is what
+# matters, not the board port. $Kind is 'windows' (PowerShell) or 'mac' (zsh). $DbExpr is the db path as that shell
+# writes it. It names what it waits on, and past $Budget seconds prints $StoreTimeout with the pid still holding the
+# store and exits 4. Windows: the db opens exclusively. Mac: lsof lists no holder.
+$StoreTimeout = 'STORE-WAIT-TIMEOUT'
+function New-StoreWaitScript([string]$Kind, [string]$DbExpr, [int]$Budget = $StoreBudget) {
+  if ($Kind -eq 'mac') {
+    # No double quotes, $ or backticks: the Swap this lands in is itself inside zsh -lic "...", which the ssh shell
+    # would expand first. $DbExpr is a plain path, ~ allowed.
+    return 'echo ''waiting for the old room to release ' + $DbExpr + ' (up to ' + $Budget + 's)'' ; ' +
+      'for i in {1..' + $Budget + '}; do lsof ' + $DbExpr + ' >/dev/null 2>&1 || break ; sleep 1 ; done ; ' +
+      'if lsof ' + $DbExpr + ' >/dev/null 2>&1 ; then echo -n ''' + $StoreTimeout + ' '' ; ' +
+      'lsof -t ' + $DbExpr + ' | tr ''\n'' '' '' ; echo ; exit 4 ; fi ; '
+  }
+  return '$db = ' + $DbExpr + ' ; $held = $true ; $n = 0 ; ' +
+    '$pids = @(Get-CimInstance Win32_Process -Filter "Name like ''atrium%''" -EA SilentlyContinue | ' +
+    'Where-Object { $_.CommandLine -match '' room'' } | ForEach-Object { $_.ProcessId }) ; ' +
+    '"waiting for the old room (pid $($pids -join '','')) to release $db (up to ' + $Budget + 's)" ; ' +
+    'while ($n -lt ' + $Budget + ') { ' +
+    'if (-not (Test-Path -LiteralPath $db)) { $held = $false ; break } ; ' +
+    'try { $f = [IO.File]::Open($db, ''Open'', ''ReadWrite'', ''None'') ; $f.Dispose() ; $held = $false ; break } catch {} ; ' +
+    'Start-Sleep 1 ; $n++ } ; ' +
+    'if ($held) { $still = @($pids | Where-Object { Get-Process -Id $_ -EA SilentlyContinue }) ; ' +
+    '''' + $StoreTimeout + ' pid '' + ($still -join '','') ; exit 4 } ; '
+}
+
 # Wait-RoomAttached waits for THIS room to be attached, by name, on a connection made after $After, as the hub sees it
 # AND as the room sees it, and then for it to STAY that way for $Hold seconds on the same connection. A five-second
 # attach that the hub then refused passed the old check at 17:05:43 on 2026-09-29. Returns the hub's entry or $null.
 function Wait-RoomAttached([datetime]$After, [int]$Seconds = 150, [int]$Hold = $StaySeconds) {
-  $dl = (Get-Date).AddSeconds($Seconds)
+  $t0 = Get-Date
+  $dl = $t0.AddSeconds($Seconds)
   $afterUtc = $After.ToUniversalTime()
+  $nextSay = $t0
   while ((Get-Date) -lt $dl) {
+    # Polling the hub is silent, and a ziti reattach takes minutes, so say where the wait stands every $ReattachSayEvery s.
+    if ((Get-Date) -ge $nextSay) {
+      Say "waiting for $RoomName to reattach ($([int]((Get-Date) - $t0).TotalSeconds)s of ${Seconds}s)"
+      $nextSay = (Get-Date).AddSeconds($ReattachSayEvery)
+    }
     $r = Get-HubRoom
     if ($r -and ([datetime]$r.since).ToUniversalTime() -ge $afterUtc -and (Get-RoomLink) -eq 'up') {
       $since = $r.since
@@ -316,7 +358,7 @@ function Wait-RoomAttached([datetime]$After, [int]$Seconds = 150, [int]$Hold = $
           break
         }
       }
-      if ($held) { return $r }
+      if ($held) { Say "$RoomName reattached after $([int]((Get-Date) - $t0).TotalSeconds)s"; return $r }
     }
     Start-Sleep -Seconds 2
   }

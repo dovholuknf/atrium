@@ -162,10 +162,15 @@ $waitFree = '$n = 0 ; while ($n -lt ' + $portWait + ') { $c = New-Object Net.Soc
   'try { if (-not $c.ConnectAsync(''127.0.0.1'', 7781).Wait(500)) { break } } catch { break } ' +
   'finally { $c.Dispose() } ; Start-Sleep 1 ; $n++ } ; ' +
   'if ($n -ge ' + $portWait + ') { ''' + $portTimeout + ''' ; exit 3 } ; '
-$winEnv = '$e = Join-Path $HOME ''.atrium\toolchain\room-env.ps1'' ; if (Test-Path $e) { . $e } ; ' +
+# The port going quiet is not the room letting go of its store: the old room can still hold atrium.db, and the new one
+# then exits "store held by another process" (sgg). So each swap also waits, up to $StoreBudget, for the store itself.
+$winWaitStore = New-StoreWaitScript 'windows' '(Join-Path $HOME ''.atrium\atrium.db'')'
+$sg3WaitStore = New-StoreWaitScript 'windows' '''C:/Users/claude/.atrium/atrium.db'''
+$macWaitStore = New-StoreWaitScript 'mac' '~/.atrium/atrium.db'
+$winEnv ='$e = Join-Path $HOME ''.atrium\toolchain\room-env.ps1'' ; if (Test-Path $e) { . $e } ; ' +
   '$b = Join-Path $HOME ''.atrium\bin\atrium.exe'' ; '
 $winSwap = $winEnv + '& $b stop ; ' +
-  $waitFree +
+  $waitFree + $winWaitStore +
   'Move-Item -Force $b ($b -replace ''atrium.exe$'', ''atrium.prev.exe'') ; ' +
   'Move-Item -Force (Join-Path $HOME ''atrium.new.exe'') $b ; & $b room --detach'
 $sg3Detach = 'C:/Users/claude/.atrium/bin/atrium.exe room --detach --dir C:/Users/claude/.atrium/room ' +
@@ -178,19 +183,19 @@ $macDetach = '~/.local/bin/atrium room --detach --dir /Users/claude/.atrium/room
 # Log is how to read the room's own log over ssh, for Get-RoomLink.
 $remote = @{
   'sg3'    = @{ GOOS = 'windows'; GOARCH = 'amd64'; Dest = 'atrium.new.exe'
-    Swap = 'C:/Users/claude/.atrium/bin/atrium.exe stop ; ' + $waitFree +
+    Swap = 'C:/Users/claude/.atrium/bin/atrium.exe stop ; ' + $waitFree + $sg3WaitStore +
       'Move-Item -Force C:/Users/claude/.atrium/bin/atrium.exe C:/Users/claude/.atrium/bin/atrium.prev.exe ; ' +
       'Move-Item -Force C:/Users/claude/atrium.new.exe C:/Users/claude/.atrium/bin/atrium.exe ; ' + $sg3Detach
-    Retry = $waitFree + $sg3Detach
+    Retry = $waitFree + $sg3WaitStore + $sg3Detach
     Log = 'Get-Content C:/Users/claude/.atrium/room/room.log -Tail 300' }
   'sgg'    = @{ GOOS = 'windows'; GOARCH = 'amd64'; Dest = 'atrium.new.exe'; Swap = $winSwap
-    Retry = $winEnv + $waitFree + '& $b room --detach'
+    Retry = $winEnv + $waitFree + $winWaitStore + '& $b room --detach'
     Log = 'Get-Content (Join-Path $HOME ''.atrium\room\room.log'') -Tail 300' }
   'm1mini' = @{ GOOS = 'darwin'; GOARCH = 'arm64'; Dest = '.local/bin/atrium.new'
-    Swap = 'zsh -lic "~/.local/bin/atrium stop ; ' + $macWait +
+    Swap = 'zsh -lic "~/.local/bin/atrium stop ; ' + $macWait + $macWaitStore +
       'mv -f ~/.local/bin/atrium ~/.local/bin/atrium.prev && ' +
       'mv -f ~/.local/bin/atrium.new ~/.local/bin/atrium && chmod +x ~/.local/bin/atrium && ' + $macDetach + '"'
-    Retry = 'zsh -lic "' + $macWait + $macDetach + '"'
+    Retry = 'zsh -lic "' + $macWait + $macWaitStore + $macDetach + '"'
     Log = 'tail -n 300 ~/.atrium/room/room.log' }
 }
 
@@ -257,12 +262,22 @@ foreach ($name in $remoteNames) {
     $results[$name] = "failed - the room still held its port after ${portWait}s, so nothing was swapped or started"
     continue
   }
+  $storeLine = $swapOut | Where-Object { $_ -like "$StoreTimeout*" } | Select-Object -First 1
+  if ($storeLine) {
+    $results[$name] = "failed - the old room still held its store after ${StoreBudget}s ($($storeLine -replace "^$StoreTimeout ", 'pid ')), so the new room was not started"
+    continue
+  }
   # The old room can outlive the port check by a moment and answer the detach: wait for the port again, detach once more.
   if (($swapOut -join "`n") -match 'left it running|not attached') {
     Say "${name}: detach found the old room still running. retrying once"
     $retryRes = Invoke-SshOnce "ssh $name detach retry" @($name, $r.Retry) $swapCap
     $retryOut = @($retryRes.Out -split "`r?`n" | Where-Object { $_ })
     $retryOut | ForEach-Object { Say "  ${name}: $_" }
+    $retryStore = $retryOut | Where-Object { $_ -like "$StoreTimeout*" } | Select-Object -First 1
+    if ($retryStore) {
+      $results[$name] = "failed - the old room still held its store after ${StoreBudget}s more ($($retryStore -replace "^$StoreTimeout ", 'pid ')), so it was not started"
+      continue
+    }
     if ($retryOut -contains $portTimeout) {
       $results[$name] = "failed - the room still held its port after ${portWait}s more, so it was not started"
       continue
@@ -270,11 +285,11 @@ foreach ($name in $remoteNames) {
   }
   $saved = $RoomName
   $RoomName = $name
-  $back = Wait-RoomAttached $start
+  $back = Wait-RoomAttached $start $ReattachBudget
   $RoomName = $saved
   if (-not $back) { Show-RoomLog $name }
   $results[$name] = if (-not $back -and $swapHung) { Get-HungMsg 'ssh swap' $swapCap }
-    elseif (-not $back) { 'failed - restarted but not back on the hub' }
+    elseif (-not $back) { "failed - restarted but not back on the hub after ${ReattachBudget}s" }
     elseif (-not (Test-Unheld 'http://127.0.0.1:7778/v1/hold' @{ 'X-Atrium-Room' = $name })) { $heldMsg }
     elseif ($keeps) { 'success (runners kept)' }
     else { 'success' }
