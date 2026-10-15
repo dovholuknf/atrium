@@ -274,7 +274,7 @@ function peekBody(t, v) {
       : "this one has exited. start a new agent in its folder from below") : "";
   // A folded parent draws none of its children, so the warn chip on its row has to be explained here.
   const kidsWait = t && typeof termKidsShut === "function" && (termKids.get(t.id) || []).length && termKidsShut(t)
-    ? termKidsCount(t.id, isWaiting) : 0;
+    ? termKidsCount(t.id, termOwesHuman) : 0;
   const head = `<div class="peek-head"><span class="peek-title">${esc(title)}</span>` +
     (st ? `<div class="peek-status ${st.cls}"><b>${esc(st.word)}</b>${st.why ? `<span>${esc(st.why)}</span>` : ""}</div>` : "") +
     (kidsWait ? `<div class="peek-status ps-ask peek-kidwait"><b>${kidsWait} ${kidsWait === 1 ? "card" : "cards"}</b><span>under this one ${

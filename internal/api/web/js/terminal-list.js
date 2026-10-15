@@ -1142,6 +1142,16 @@ function termKidTotal(t) { return (termKids.get(t.id) || []).length; }
 function termKidsKey(t) { return "kids:" + bareId(t.id); }
 function termKidsShut(t) { return termSubsOn() ? isFolded(termKidsKey(t)) : !isFolded(termKidsKey(t)); }
 
+// IS THE HUMAN OWED SOMETHING BY THIS CARD. The one predicate behind a folded parent's `N need you` chip, its hover line and
+// the popup's children summary and list. A worker that ended its turn for the agent that launched it is needs-input too,
+// but it is waiting on that agent, so `isWaiting` alone overcounts. Owed to the human: a permission prompt, an open question
+// the launcher has not taken (`seen.seen_via` `launcher` means a report already reached it), or a blocked or stuck notice.
+function termOwesHuman(t) {
+  if (!t || !isWaiting(t)) return false;
+  if (t.status === "needs-permission" || isBlocker(t) || isStuck(t)) return true;
+  return cardHasOpenQuestion(t) && !(t.seen && t.seen.seen_via === "launcher");
+}
+
 // How many cards under this one, at any depth, satisfy `pred`.
 function termKidsCount(id, pred, kids) {
   const map = kids || termKids;
@@ -1162,7 +1172,7 @@ function termChildInfo(t, pool) {
   const shown = visible.get(t.id) || [];
   const shownIds = new Set(shown.map(c => c.id));
   const hidden = direct.filter(c => !shownIds.has(c.id));
-  const waiting = collectKids(t.id, isWaiting, visible);
+  const waiting = collectKids(t.id, termOwesHuman, visible);
   const paused = hidden.filter(cardPaused).length;
   return { total: direct.length, shown: shown.length, hidden: hidden.length, paused, dead: hidden.length - paused,
     running: termKidsCount(t.id, workingNow, visible), waiting,
@@ -1180,7 +1190,7 @@ function collectKids(id, pred, kids) {
 function termKidsToggle(t, total, hidden, shut) {
   if (!total) return "";
   const run = shut ? termKidsCount(t.id, workingNow) : 0;
-  const wait = shut ? termKidsCount(t.id, isWaiting) : 0;
+  const wait = shut ? termKidsCount(t.id, termOwesHuman) : 0;
   const base = shut ? "show the cards this one launched" : "hide the cards this one launched";
   const say = [run && run + " running", wait && wait + " need" + (wait === 1 ? "s" : "") + " you"].filter(Boolean);
   const tip = shut ? `${total} under this one${say.length ? ": " + say.join(", ") : ""}. click to show them` : base;

@@ -24708,6 +24708,31 @@ async function childFoldSection(browser, base) {
     });
     if (pop2 !== "2 cardsunder this one need you") fail("childFold: plural popup line is " + JSON.stringify(pop2));
     await p.evaluate(async () => { (await boardCards()).find(c => c.id === "kid-a").status = "running"; await renderTermList(); });
+    // A child that ended its turn for its LAUNCHER is needs-input and owes the human nothing. Only a question the human
+    // still holds counts, so the chip, the hover line and the popup list all agree.
+    const owed = async setup => p.evaluate(async setup => {
+      const all = await boardCards();
+      const b = all.find(c => c.id === "kid-b");
+      b.status = "needs-input"; b.seen = undefined; b.escalation = undefined;
+      eval(setup);
+      await renderTermList();
+      const par = all.find(c => c.id === "par");
+      const d = document.createElement("div"); d.innerHTML = peekBody(par, null);
+      const btn = document.querySelector('#term-list .card.tab[data-id="par"] button.tkidfold');
+      return { chip: (btn.querySelector(".tkidwait") || {}).textContent || "", line: (d.querySelector(".peek-kidwait") || {}).textContent || "",
+        info: termChildInfo(par, all).waiting.map(c => c.id).sort().join() };
+    }, setup);
+    let o = await owed("");
+    if (!/^1/.test(o.chip) || o.info !== "kid-p") fail("childFold: a child waiting on its launcher was counted as needing you: " + JSON.stringify(o));
+    o = await owed("b.seen = { answered: false, open_questions: ['land it?'] }");
+    if (!/^2/.test(o.chip) || o.info !== "kid-b,kid-p" || o.line !== "2 cardsunder this one need you") {
+      fail("childFold: a child with an open question for the human was not counted: " + JSON.stringify(o));
+    }
+    o = await owed("b.seen = { answered: false, open_questions: ['land it?'], seen_via: 'launcher' }");
+    if (!/^1/.test(o.chip) || o.info !== "kid-p") fail("childFold: a question its launcher already took was counted: " + JSON.stringify(o));
+    o = await owed("b.escalation = { source: 'launch-prompt', prompt: 'login', text: 'x', count: 1 }");
+    if (!/^2/.test(o.chip)) fail("childFold: a blocked child was not counted: " + JSON.stringify(o));
+    await p.evaluate(async () => { const b = (await boardCards()).find(c => c.id === "kid-b"); b.status = "running"; b.escalation = undefined; b.seen = undefined; await renderTermList(); });
     if (process.env.CHILDFOLD_SHOTS) {
       await p.hover('#term-list .card.tab[data-id="par"] .tname');
       await p.waitForSelector(".peek-kidwait", { timeout: slow(5000) }).catch(() => fail("childFold: hover popup never showed the line"));
