@@ -1,4 +1,4 @@
-﻿## Test plan
+## Test plan
 
 ## @LETTER@. The launch dialog's repo list, just pick
 
@@ -6,8 +6,8 @@
 
 1. Open the launch dialog on a room with checkouts, with hub repos the room lacks, then press `repo`.
 
-**Expected:** one list, a row per repository (a repo with a main checkout and worktrees is one row), showing the repo
-name only. No "on the hub" badge and no clone button. The filter narrows it.
+**Expected:** one list, a row per repository (a repo with a main checkout and worktrees is one row), showing the
+host/org/repo slug only (a checkout with no slug, its folder name). No "on the hub" badge and no clone button. The filter narrows it.
 
 ### @LETTER@2. Pick
 

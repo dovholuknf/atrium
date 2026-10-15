@@ -7,7 +7,7 @@
 //                           use first. Picking one fills the working directory.
 //   the hub's repos         GET /_hub/git/repos, the same data as the repos tab (js/hubrepos.js). One this room has a
 //                           list, deduplicated by host/org/repo with the checkouts: ONE LIST, one row per repository,
-//                           the repo name and nothing else.
+//                           the host/org/repo slug and nothing else (a checkout with no slug, its folder name).
 //
 // PICKING A ROW FILLS THE DIRECTORY, whatever the row is (docs/changes/repo-picker-just-pick.md):
 //   a repo the room has        its checkout.
@@ -68,12 +68,12 @@ function launchRepoRows(memo) {
   (memo.checkouts || []).forEach(c => {
     const key = launchRepoKey(c.slug) || "path:" + (c.root || c.path);
     const i = at.get(key);
-    if (i === undefined) { at.set(key, rows.length); rows.push({ key, name: c.repo, tip: c.slug || c.path, path: c.path, linked: !!c.linked }); return; }
+    if (i === undefined) { at.set(key, rows.length); rows.push({ key, name: c.slug || c.repo, tip: c.slug || c.path, path: c.path, linked: !!c.linked }); return; }
     if (rows[i].linked && !c.linked) Object.assign(rows[i], { path: c.path, linked: false });
   });
   (memo.hub || []).forEach(r => {
     const key = launchRepoSlug(r);
-    if (!at.has(key)) { at.set(key, rows.length); rows.push({ key, name: r.repo, tip: r.host + "/" + r.owner + "/" + r.repo, slug: r.host + "/" + r.owner + "/" + r.repo }); }
+    if (!at.has(key)) { at.set(key, rows.length); rows.push({ key, name: r.host + "/" + r.owner + "/" + r.repo, tip: r.host + "/" + r.owner + "/" + r.repo, slug: r.host + "/" + r.owner + "/" + r.repo }); }
   });
   return rows;
 }

@@ -22981,12 +22981,12 @@ async function newWorkDialogSection(browser, base) {
       await p.waitForFunction(() => document.querySelectorAll("#l-nw-list .pvrepo").length, null, { timeout: slow(5000) });
     };
 
-    // ONE list, one row per repository, the name and nothing else: this room's checkouts newest first (a repo with a
+    // ONE list, one row per repository, the host/org/repo slug and nothing else, a checkout with no slug its folder name: this room's checkouts newest first (a repo with a
     // main checkout and a worktree is one row), then the hub's repos it has none of. No badge, no clone button.
     await openList();
     let s = await seen();
     if (!s.launch || s.ask || !s.panel) fail("repoList: the panel did not open inline " + JSON.stringify(s));
-    const want = ["ziti|", "scratch|", "widget|"];
+    const want = ["github/openziti/ziti|", "scratch|", "github/acme/widget|"];
     if (s.rows.join() !== want.join()) fail("repoList: the rows were " + JSON.stringify(s.rows));
     if (s.text.includes("/work/") || s.text.includes("fix/it") || s.text.includes("worktree")) fail("repoList: a row shows more than the repo name: " + s.text);
     if (/on the hub|clone from hub/.test(s.text) || await p.locator("#l-nw-list button, #l-nw-list .chip").count()) fail("repoList: the hub badge or the clone button is still drawn: " + s.text);
@@ -23001,7 +23001,7 @@ async function newWorkDialogSection(browser, base) {
     if (s.rows.join() !== "scratch|" || listed.length !== before) fail("repoList: the filter " + JSON.stringify(s.rows) + " reads " + (listed.length - before));
     await p.fill("#l-nw-filter", "acme");
     s = await seen();
-    if (s.rows.join() !== "widget|") fail("repoList: the filter did not find the hub repo " + JSON.stringify(s.rows));
+    if (s.rows.join() !== "github/acme/widget|") fail("repoList: the filter did not find the hub repo " + JSON.stringify(s.rows));
     await p.fill("#l-nw-filter", "zzz");
     if (!(await seen()).text.includes("nothing matches")) fail("repoList: an empty filter does not say so");
     await p.fill("#l-nw-filter", "");
@@ -23068,14 +23068,14 @@ async function newWorkDialogSection(browser, base) {
     // the room control decides the list and where a clone lands
     await p.evaluate(() => { document.getElementById("l-room").value = "w2"; });
     await p.click("#l-nw-btn");
-    await p.waitForFunction(() => [...document.querySelectorAll("#l-nw-list .pvrepo .nm")].some(e => e.textContent === "other"), null, { timeout: slow(5000) })
+    await p.waitForFunction(() => [...document.querySelectorAll("#l-nw-list .pvrepo .nm")].some(e => e.textContent === "github/o/r"), null, { timeout: slow(5000) })
       .catch(() => fail("repoList: the room control did not change the list"));
     if (!listed.includes("w2")) fail("repoList: w2's checkouts were never asked for: " + JSON.stringify(listed));
     await p.evaluate(() => { document.getElementById("l-room").value = ""; document.getElementById("l-room").dispatchEvent(new Event("change", { bubbles: true })); });
     await p.waitForFunction(() => [...document.querySelectorAll("#l-nw-list .pvrepo .nm")].some(e => e.textContent === "scratch"), null, { timeout: slow(5000) })
       .catch(() => fail("repoList: changing the room control did not repaint an open list"));
     await p.evaluate(() => { document.getElementById("l-room").value = "w2"; document.getElementById("l-room").dispatchEvent(new Event("change", { bubbles: true })); });
-    await p.waitForFunction(() => [...document.querySelectorAll("#l-nw-list .pvrepo .nm")].some(e => e.textContent === "widget"), null, { timeout: slow(5000) });
+    await p.waitForFunction(() => [...document.querySelectorAll("#l-nw-list .pvrepo .nm")].some(e => e.textContent === "github/acme/widget"), null, { timeout: slow(5000) });
     await p.locator("#l-nw-list .pvrepo", { hasText: "widget" }).click();
     await p.waitForFunction(() => document.getElementById("l-cwd").value === "/work/git/github/acme/widget" && document.getElementById("l-nw").hidden, null, { timeout: slow(5000) });
     const last = cloned[cloned.length - 1];
