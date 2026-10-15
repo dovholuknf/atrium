@@ -379,9 +379,12 @@ the table that wants an A/B on the ziti path before it is the default.
   design must degrade to "zrok: unlistened" and not to a hub that fails to start. It already does.
 - **A black hole test is timing sensitive.** Use a fake clock for the unit and generous bounds for the integration run.
 
-## Open questions for clint
+## Decisions
 
-Each with the answer I recommend. None blocks phase 1.
+The orchestrator decided these on 2026-10-15, about 18:40: **every recommended answer below is taken.** Two of them in
+specific terms. For 4, there is no domain for the hub today, so every room gets a ziti identity (phase 4 does it for
+sgg). For 5, ziti stays first globally and `loopbackFirst` gains the 5 millisecond direct rule. clint approves the
+design as a whole before any phase is built. The questions are kept as they were asked, so the reasoning stays.
 
 1. **Is 15 seconds to notice a dead path acceptable?** Faster is possible (three beats at a 2 second beat is 6 seconds)
    but a ziti circuit over a slow link produces false positives, and a false positive costs a full reattach and a data
