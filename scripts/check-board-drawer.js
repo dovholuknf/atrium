@@ -453,6 +453,7 @@ async function touch(browser, tabName) {
   const drag = async (x, y0, y1, steps) => {
     await send("touchStart", x, y0);
     for (let i = 1; i <= steps; i++) { await send("touchMove", x, y0 + (y1 - y0) * i / steps); await sleep(16); }
+    await sleep(120);   // a finger that stops before it lifts leaves no fling, and a tap during one is eaten
     await send("touchEnd");
     await sleep(350);
   };
@@ -581,6 +582,7 @@ async function swallowEdges(browser) {
     if (r) {
       await send("touchStart", r.x, r.y);
       for (let i = 1; i <= 6; i++) { await send("touchMove", r.x, r.y + i * 8); await sleep(16); }
+      await sleep(120);   // as in `drag`: stopped before it lifts, so no fling eats the next tap
       await send("touchEnd");
       await sleep(200);
       s = await state(page);

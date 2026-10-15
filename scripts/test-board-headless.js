@@ -16,6 +16,11 @@
 const http = require("http");
 const fs = require("fs");
 const path = require("path");
+// Doc screenshots go under build.claude/ so a run never rewrites a tracked file. REFRESH_DOC_IMAGES=1 writes the
+// committed ones in the repo.
+const docImgDir = (...tracked) => process.env.REFRESH_DOC_IMAGES === "1"
+  ? path.join(__dirname, "..", ...tracked)
+  : path.join(__dirname, "..", "build.claude", "doc-images", ...tracked.slice(1));
 const os = require("os");
 const crypto = require("crypto");
 const { wholeBoard } = require("./board-source.js");
@@ -8750,7 +8755,7 @@ async function phoneHeaderSection(browser, base) {
 const boardUsageSeen = new Map();
 async function boardUsageSection(browser, base) {
   const errors = [];
-  const imgs = path.join(__dirname, "..", "docs", "changes", "img");
+  const imgs = docImgDir("docs", "changes", "img");
   const stage = process.env.BOARDUSAGE_SHOT || "";
   try {
     fs.mkdirSync(imgs, { recursive: true });
@@ -8858,7 +8863,7 @@ async function topNavSection(browser, base) {
   landList = [];
   landPerms = [];
   const errors = [];
-  const shots = path.join(__dirname, "..", "docs", "backlog", "ui", "img", "top-nav");
+  const shots = docImgDir("docs", "backlog", "ui", "img", "top-nav");
   const fill = (p) => p.evaluate(() => {
     // The board repaints these on its own events, which would put the chips back the way a quiet board has them.
     window.paintWorking = () => {};
@@ -8961,7 +8966,7 @@ async function tabsOrderSection(browser, base) {
   landList = [];
   landPerms = [];
   const errors = [];
-  const imgs = path.join(__dirname, "..", "docs", "changes", "img");
+  const imgs = docImgDir("docs", "changes", "img");
   const stage = process.env.TABS_SHOT || "";
   const view = (p) => p.evaluate(() => {
     const nav = document.querySelector("header nav");
@@ -27644,6 +27649,11 @@ async function revealFoldsSection(browser, base) {
 async function groupBridgeSection(browser, base) {
   const was = tasksMode;
   tasksMode = "untagged";
+  // The card has to wear its repo's colour: a plain card keeps a hairline frame while its group's heading wears the
+  // attached frame, and that is not what this unit measures. An earlier unit can leave the colours emptied, and the
+  // serial run keeps what each one leaves.
+  const colorsWas = cardColorsMock;
+  cardColorsMock = { default: "", repos: Object.assign({}, colorsWas.repos, { "github/openziti/ziti": "teal-dusk" }) };
   const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
   try {
     const p = await ctx.newPage();
@@ -27727,7 +27737,7 @@ async function groupBridgeSection(browser, base) {
     await settle();
     level(await read(), "head", "the heading, shut again");
     if (errors.length) fail("groupBridge: page errors: " + errors.join(" | "));
-  } finally { tasksMode = was; await ctx.close(); }
+  } finally { tasksMode = was; cardColorsMock = colorsWas; await ctx.close(); }
   if (!bad) console.log("groupBridge ok");
 }
 
