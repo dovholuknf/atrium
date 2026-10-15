@@ -135,7 +135,7 @@ fallback, and put an explicit map on top.
    matching a bucket's `sources` selects that bucket. Examples: `internal/api/web/js/pulls.js`, `css/pulls.css`,
    `m/js/...` map to `pulls`, `m-*` as declared, `internal/api/prs*.go` maps to the room `/v1` `prs` bucket,
    `internal/link/pulls.go` to hub `pulls`, `internal/link/items_mcp.go` to control MCP `items`.
-2. **Shared files fan out by declaration, not by guess.** `core.js`, `boot.js`, `cards.js` and `index.html` are listed as
+2. **Shared files fan out by declaration, not by guess.** `core.js`, `boot.js`, `cards.js`, `index.html` are listed as
    `shared`. A change there selects `boot` plus the buckets whose `needs` list names that file, and says why.
 3. **Inferred second.** A file in no bucket's `sources` goes through today's token mapper, unchanged, and the plan
    says "inferred, add it to test-buckets.json". A lint in CI fails when a file under `internal/api/web`, `internal/api`
