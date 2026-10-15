@@ -172,6 +172,9 @@
       <div class="tab" data-view="terms">terminals<span class="count zero" id="c-term"
            data-tip="terminals atrium is supervising"></span></div>
       <div class="tab" data-view="chat">chat</div>
+      <!-- Hub only, revealed with the audit tab. It sits with the daily work, not at the end, so it is in the bar and not the overflow menu. The count is items blocked on you. See js/items.js. -->
+      <div class="tab" data-view="items" hidden>items<span class="count zero" id="c-items"
+           data-tip="items blocked on you"></span></div>
       <div class="tab" data-view="pulls" hidden>pulls<span class="count zero" id="c-pulls"
            data-tip="reviews that are ready to walk or failed"></span></div>
       <div class="tab" data-view="history">history</div>
@@ -195,9 +198,6 @@
       <div class="tab" data-view="hubrepos" hidden>repos</div>
       <!-- Hub only, revealed with the audit tab. See js/backlog.js. -->
       <div class="tab" data-view="backlog" hidden>backlog</div>
-      <!-- Hub only, revealed with the audit tab. The count is items blocked on you. See js/items.js. -->
-      <div class="tab" data-view="items" hidden>items<span class="count zero" id="c-items"
-           data-tip="items blocked on you"></span></div>
     </nav>
     <!-- Desktop only (css/topnav.css, js/topnav.js): the tabs that have no room, whole, in a menu. -->
     <button type="button" id="tabmore" class="tabmore" hidden aria-haspopup="true" aria-expanded="false"

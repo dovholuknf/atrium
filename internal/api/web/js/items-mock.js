@@ -42,8 +42,8 @@
       owner_kind: "human", owner: "clint", card: "c-designer-3", cards: [{ name: "designer-3", id: "c-designer-3", room: "sg4" }],
       created_at: ago(130), updated_at: ago(12),
       body: "One backlog item shown from designed to pushed: its steps, the cards on it and what each cost.",
-      ask: { who: "approval", text: "The design is ready. Approve it with the open questions in section 11, or send it back?", since: ago(12),
-        options: ["Approve it", "Send it back"] },
+      ask: { who: "approval", kind: "approval", sha: "e3a91c0", text: "The design is ready. Approve it with the open questions in section 11, or send it back?", since: ago(12),
+        options: [] },
       steps: steps({ 0: done(130, 25, { cards: [who("designer-3", "designer")], sha: "e3a91c0", strength: "reported", fact: "docs/rnd/item-lifecycle-design.md",
           usd: 1.84, tokens: tok(38, 11, 330, 33) }),
         1: { state: "blocked", from: ago(25), cards: [who("clint", "human")], fact: "waiting on your approval", usd: 0, tokens: null } }),
@@ -75,21 +75,21 @@
         2: { state: "active", from: ago(184), cards: [who("builder-handoff", "builder")], usd: 5.02, tokens: tok(76, 12, 1400, 56) } }),
       tokens: tok(96, 0, 1700, 74), usd: 6.12, coord_usd: 0.48 }),
 
-    row({ id: "u-chat-tab", title: "Chat tab: terminals list beside the phone conversation view", priority: "normal", dept: "ui", state: "running",
+    row({ id: "u-chat-tab", title: "Chat tab: terminals list beside the phone conversation view", priority: "medium", dept: "ui", state: "running",
       card: "c-builder-chat", cards: [{ name: "builder-chat", id: "c-builder-chat", room: "sg4" }, { name: "reviewer-2", id: "c-reviewer-2", room: "sg4" }],
       created_at: ago(400), updated_at: ago(6),
       steps: steps({ 0: done(400, 380, { usd: 0.4 }), 1: done(380, 372, { usd: 0 }), 2: done(372, 90, { usd: 1.6 }), 3: done(90, 70, { usd: 0.3 }),
         4: done(70, 6, { usd: 0.77 }), 5: { state: "active", from: ago(6), usd: null } }),
       tokens: tok(51, 0, 890, 45), usd: 3.07, coord_usd: 0.19 }),
 
-    row({ id: "r-usage-export", title: "Usage export per card and turn for the hub", priority: "normal", dept: "rnd", state: "running",
+    row({ id: "r-usage-export", title: "Usage export per card and turn for the hub", priority: "medium", dept: "rnd", state: "running",
       card: "c-builder-usage", cards: [{ name: "builder-usage", id: "c-builder-usage", room: "sg4" }],
       created_at: ago(1925), updated_at: ago(30),
       steps: steps({ 0: done(1520, 1500, {}), 1: done(1500, 1490, {}), 2: done(1490, 300, {}), 3: done(300, 280, {}), 4: done(280, 200, {}), 5: done(200, 190, {}),
         6: { state: "active", from: ago(190), note: "deployed to 2 of 3 rooms" } }),
       tokens: tok(33, 0, 575, 32), usd: 2.11, coord_usd: 0.12 }),
 
-    row({ id: "f-hub-forge-push", title: "Hub forge: push claude/main to origin from the hub", priority: "normal", dept: "fabric", state: "queued",
+    row({ id: "f-hub-forge-push", title: "Hub forge: push claude/main to origin from the hub", priority: "medium", dept: "fabric", state: "queued",
       cards: [], created_at: ago(20), updated_at: ago(20), steps: steps({ 0: { state: "active", from: ago(20) } }),
       tokens: null, usd: 0, coord_usd: null }),
 
@@ -123,10 +123,10 @@
   u.detailOnly = true;
 
   const finished = [
-    row({ id: "u-items-tab-v1", title: "Items tab on the hub board: grouped list, answer, cancel", priority: "normal", dept: "ui", state: "finished",
+    row({ id: "u-items-tab-v1", title: "Items tab on the hub board: grouped list, answer, cancel", priority: "medium", dept: "ui", state: "finished",
       card: "c-builder-items-1", cards: [{ name: "builder-items", id: "c-builder-items-1", room: "sg4" }], created_at: ago(900), updated_at: ago(60),
       steps: steps({}).map(s => Object.assign(s, { state: "done" })), tokens: tok(60, 0, 1000, 48), usd: 3.55, coord_usd: 0.25 }),
-    row({ id: "r-new-item-deps", title: "Items can depend on other items", priority: "normal", dept: "rnd", state: "finished", card: "c-builder-deps",
+    row({ id: "r-new-item-deps", title: "Items can depend on other items", priority: "medium", dept: "rnd", state: "finished", card: "c-builder-deps",
       cards: [{ name: "builder-deps", id: "c-builder-deps", room: "sg4" }], created_at: ago(2400), updated_at: ago(1440),
       steps: steps({}).map(s => Object.assign(s, { state: "done" })), tokens: tok(40, 0, 650, 30), usd: 2.30, coord_usd: 0.14 }),
   ];
@@ -162,6 +162,18 @@
       const r = rows.find(x => x.id === id);
       if (!r) throw new Error("no such item");
       if (body.do === "unblock") { r.state = "running"; r.ask = null; r.steps.forEach(s => { if (s.state === "blocked") s.state = "active"; }); }
+      else if (body.do === "approve") {
+        const a = r.steps[1], b = r.steps[2];
+        a.state = "done"; a.to = ago(0); a.strength = "observed"; a.fact = "approved at " + ((r.ask && r.ask.sha) || "the design sha");
+        b.state = "active"; b.from = ago(0);
+        r.state = "running"; r.ask = null;
+      } else if (body.do === "send_back") {
+        if (!body.note) throw new Error("a design is sent back with a note, which is typed to the designer");
+        const a = r.steps[1], d = r.steps[0];
+        a.state = "pending"; a.from = null; a.fact = "";
+        d.state = "active"; d.to = null; d.fact = "sent back: " + body.note;
+        r.state = "running"; r.ask = null;
+      }
       else if (body.do === "cancel") { r.state = "finished"; r.note = "cancelled by owner"; }
       r.updated_at = ago(0);
       return { ok: true };

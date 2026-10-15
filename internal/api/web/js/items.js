@@ -47,7 +47,8 @@ const ITEM_STEP_VERB = { designed: "designing", approved: "waiting", building: "
 function paintItemsTab() {
   const tab = document.querySelector('.tab[data-view="items"]');
   if (!tab) return;
-  tab.hidden = typeof hubIsHub === "undefined" ? true : !hubIsHub;
+  // The fixtures (`?itemsmock=1`) show the tab on a board with no hub, so the views can be read without one.
+  tab.hidden = itemsMockOn() ? false : typeof hubIsHub === "undefined" ? true : !hubIsHub;
   if (!tab.hidden) loadItemsBadge();
 }
 
@@ -248,11 +249,19 @@ function itemRow(it) {
     '<div class="it-age" data-tip="' + esc(it.updated_at || "") + '">' + esc(age) + "</div>";
   if (blocked) {
     const ask = it.ask || { text: it.note || "(no reason given)" };
+    const approval = itemAwaitsApproval(it);
+    // The worker's own suggested answers are buttons on the row, so a click answers without opening anything. A design waiting on
+    // approval has the two acts instead, and `send back` needs its note, so it opens the box.
+    const opts = approval ? "" : (ask.options || []).slice(0, 3).map((o, n) => '<button type="button" class="it-btn it-opt' + (n === 0 ? " go" : "") + '" data-act="option" data-id="' + id +
+      '" data-i="' + n + '">' + esc(o) + "</button>").join("");
     h += '<div class="it-ask"><b>asks you</b><span class="it-q">' + esc(ask.brief || ask.text) + "</span>" +
-      '<button type="button" class="it-btn go" data-act="ask" data-id="' + id + '" aria-expanded="' + !!itemsAsking[it.id] + '">answer</button></div>';
+      (approval ? '<button type="button" class="it-btn go" data-act="approve" data-id="' + id + '">approve</button>' +
+        '<button type="button" class="it-btn" data-act="ask" data-id="' + id + '" aria-expanded="' + !!itemsAsking[it.id] + '">send back</button>'
+        : opts + '<button type="button" class="it-btn' + (opts ? "" : " go") + '" data-act="ask" data-id="' + id + '" aria-expanded="' + !!itemsAsking[it.id] + '">' + (opts ? "other" : "answer") + "</button>") + "</div>";
     if (itemsAsking[it.id]) {
-      h += '<div class="it-answer"><input type="text" class="it-answer-box" data-id="' + id + '" placeholder="answer" aria-label="answer for ' + id +
-        '" value="' + esc(itemsDraft[it.id] || "") + '"><button type="button" class="it-btn go it-send" data-act="answer" data-id="' + id + '">send</button></div>';
+      h += '<div class="it-answer"><input type="text" class="it-answer-box" data-id="' + id + '" placeholder="' + (approval ? "what the designer should change" : "answer") + '" aria-label="' +
+        (approval ? "note for " : "answer for ") + id + '" value="' + esc(itemsDraft[it.id] || "") + '"><button type="button" class="it-btn' + (approval ? "" : " go") + ' it-send" data-act="' + (approval ? "sendback" : "answer") +
+        '" data-id="' + id + '">send</button></div>';
     }
   }
   return h + "</div>";
@@ -362,11 +371,16 @@ function itemQuestionHtml(it) {
   const id = esc(it.id);
   const since = ask.since ? " · blocked " + itemDur(ask.since) : "";
   const opts = (ask.options || []).slice(0, 3);
-  return '<div class="it-qbox"><h2>asks you' + (ask.who ? " · " + esc(ask.who) : "") + esc(since) + '</h2><p class="it-q">' + esc(ask.text) + "</p>" +
-    (opts.length ? '<div class="it-opts">' + opts.map((o, n) => '<button type="button" class="it-btn' + (n === 0 ? " go" : "") + '" data-act="option" data-id="' + id +
-      '" data-i="' + n + '">' + esc(o) + "</button>").join("") + "</div>" : "") +
-    '<div class="it-ans"><input type="text" class="it-answer-box" data-id="' + id + '" placeholder="or type an answer to the worker" aria-label="answer for ' + id +
-    '" value="' + esc(itemsDraft[it.id] || "") + '"><button type="button" class="it-btn go it-send" data-act="answer" data-id="' + id + '">send</button></div></div>';
+  const approval = itemAwaitsApproval(it);
+  // The first suggested answer, the worker's own recommendation, is the orange one. For a design the orange one is `approve`.
+  const buttons = approval
+    ? '<div class="it-opts"><button type="button" class="it-btn go" data-act="approve" data-id="' + id + '">approve</button></div>'
+    : opts.length ? '<div class="it-opts">' + opts.map((o, n) => '<button type="button" class="it-btn' + (n === 0 ? " go" : "") + '" data-act="option" data-id="' + id +
+      '" data-i="' + n + '">' + esc(o) + "</button>").join("") + "</div>" : "";
+  return '<div class="it-qbox"><h2>asks you' + (ask.who ? " · " + esc(ask.who) : "") + esc(since) + '</h2><p class="it-q">' + esc(ask.text) + "</p>" + buttons +
+    '<div class="it-ans"><input type="text" class="it-answer-box" data-id="' + id + '" placeholder="' + (approval ? "or send it back: what the designer should change" : "or type an answer to the worker") +
+    '" aria-label="' + (approval ? "note for " : "answer for ") + id + '" value="' + esc(itemsDraft[it.id] || "") + '"><button type="button" class="it-btn' + (approval ? "" : " go") + ' it-send" data-act="' + (approval ? "sendback" : "answer") +
+    '" data-id="' + id + '">' + (approval ? "send back" : "send") + "</button></div></div>";
 }
 
 function itemDetailHtml(it) {
@@ -421,10 +435,14 @@ function itemsNote(text) {
   if (n) n.textContent = text || "";
 }
 
+function itemById(id) {
+  return itemsDetail && itemsDetail.id === id ? itemsDetail : itemsList.find(x => x.id === id) || null;
+}
+
 async function itemsAct(id, body) {
   itemsNote("");
   try {
-    await itemsData.act(id, body);
+    await itemsData.act(id, body, (itemById(id) || {}).backlog);
     return true;
   } catch (e) {
     itemsNote("Could not " + body.do + " " + id + ": " + e.message);
@@ -441,6 +459,37 @@ async function itemsAnswer(id, text) {
     delete itemsAsking[id];
     // The room moves the item to running only once the worker's turn starts, so say what happened rather than wait.
     itemsNote("Sent the answer for " + id + ". It shows as running once the worker starts its turn.");
+  }
+  loadItems();
+}
+
+// The Enter key in an answer box: the answer for a worker's question, the note for a design that is being sent back.
+function itemsSubmit(id) {
+  if (itemAwaitsApproval(itemById(id))) itemsSendBack(id); else itemsAnswer(id);
+}
+
+// Approve names the design sha the human was shown, so a design that moved since is refused by the hub rather than approved unread.
+async function itemsApprove(id) {
+  const it = itemById(id);
+  if (!it) return;
+  const sha = it.ask && it.ask.sha ? it.ask.sha : "";
+  if (await itemsAct(id, sha ? { do: "approve", sha } : { do: "approve" })) {
+    delete itemsDraft[id];
+    delete itemsAsking[id];
+    itemsNote("Approved " + (it.backlog || id) + (sha ? " at " + sha.slice(0, 7) : "") + ". The build step is next.");
+  }
+  loadItems();
+}
+
+async function itemsSendBack(id) {
+  const it = itemById(id);
+  const box = document.querySelector('.it-answer-box[data-id="' + CSS.escape(id) + '"]');
+  const note = (box ? box.value : itemsDraft[id] || "").trim();
+  if (!note) { itemsNote("A design is sent back with a note: type what the designer should change."); if (box) box.focus(); return; }
+  if (await itemsAct(id, { do: "send_back", note })) {
+    delete itemsDraft[id];
+    delete itemsAsking[id];
+    itemsNote("Sent " + ((it && it.backlog) || id) + " back. The note is typed to the designer, and the item shows as running once its turn starts.");
   }
   loadItems();
 }
@@ -522,6 +571,8 @@ document.addEventListener("DOMContentLoaded", () => {
       if (el) el.focus();
     }
     else if (act === "answer") itemsAnswer(b.dataset.id);
+    else if (act === "approve") itemsApprove(b.dataset.id);
+    else if (act === "sendback") itemsSendBack(b.dataset.id);
     else if (act === "option") {
       const it = itemsDetail && itemsDetail.id === b.dataset.id ? itemsDetail : itemsList.find(x => x.id === b.dataset.id);
       const o = it && it.ask && it.ask.options ? it.ask.options[+b.dataset.i] : "";
@@ -533,7 +584,7 @@ document.addEventListener("DOMContentLoaded", () => {
     else if (act === "open") itemsToggle(b.dataset.id);
   });
   box.addEventListener("keydown", ev => {
-    if (ev.target.classList.contains("it-answer-box") && ev.key === "Enter") { ev.preventDefault(); itemsAnswer(ev.target.dataset.id); }
+    if (ev.target.classList.contains("it-answer-box") && ev.key === "Enter") { ev.preventDefault(); itemsSubmit(ev.target.dataset.id); }
     else if (ev.target.classList.contains("it-main") && (ev.key === "Enter" || ev.key === " ")) { ev.preventDefault(); itemsToggle(ev.target.dataset.id); }
   });
   box.addEventListener("input", ev => {

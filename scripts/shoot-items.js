@@ -29,6 +29,14 @@ const server = http.createServer((req, res) => {
   const u = new URL(req.url, "http://x");
   const p = u.pathname;
   const json = (o, code) => { res.writeHead(code || 200, { "Content-Type": "application/json" }); res.end(JSON.stringify(o)); };
+  // The phone page and what it loads, straight off disk.
+  if ((p === "/m/" || p.startsWith("/m/") || p.startsWith("/js/") || p.startsWith("/css/")) && !p.includes("..")) {
+    const file = path.join(ROOT, "internal", "api", "web", p === "/m/" ? "m/index.html" : p);
+    if (fs.existsSync(file) && fs.statSync(file).isFile()) {
+      const type = file.endsWith(".css") ? "text/css" : file.endsWith(".html") ? "text/html" : "application/javascript";
+      res.writeHead(200, { "Content-Type": type }); return res.end(fs.readFileSync(file));
+    }
+  }
   if (p === "/" || p === "/index.html") { res.writeHead(200, { "Content-Type": "text/html" }); return res.end(HTML); }
   if (p.startsWith("/v1/events")) { res.writeHead(200, { "Content-Type": "text/event-stream" }); return res.write(": open"); }
   if (p === "/_hub/rooms") return json({ rooms: [{ name: "sg4" }] });
@@ -86,6 +94,25 @@ const VIEWS = [
       console.log(file, width + "x" + h);
       await ctx.close();
     }
+  }
+  // THE PHONE: the list, and the blocked item's page, at 390 wide.
+  const PHONE = [{ name: "phone-list", open: null }, { name: "phone-blocked", open: "f-ptyhost-reconnect" }, { name: "phone-design", open: "rd-item-lifecycle" }];
+  for (const v of PHONE) {
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, deviceScaleFactor: 2, timezoneId: "UTC" });
+    const page = await ctx.newPage();
+    page.on("pageerror", e => errors.push(v.name + ": " + e));
+    await page.clock.install({ time: new Date("2026-10-15T13:30:00Z") });
+    await page.goto(base + "/m/?itemsmock=1");
+    await page.waitForFunction(() => { const b = document.getElementById("m-items-btn"); return b && !b.hidden; });
+    await page.click("#m-items-btn");
+    await page.waitForSelector("#m-items .im-row");
+    if (v.open) { await page.click('#m-items .im-row[data-item="' + v.open + '"] .im-main'); await page.waitForSelector("#m-items .im-step"); }
+    await page.addStyleTag({ content: ".it-mockbar { display: none !important; }" });
+    await page.waitForTimeout(150);
+    const file = path.join(OUT, v.name + "-" + NAME + ".png");
+    await page.screenshot({ path: file });
+    console.log(file, "390x844");
+    await ctx.close();
   }
   if (errors.length) { console.log("page errors:", errors.join(" | ")); process.exitCode = 1; }
   await browser.close(); server.close();

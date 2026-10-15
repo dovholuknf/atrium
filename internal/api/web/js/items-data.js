@@ -11,11 +11,16 @@
 //   steps       eight of { name, state, from, to, note, when, cards:[{name, role, coord}], sha, strength, fact, reason, usd, tokens }
 //               state is done | active | blocked | stale | skipped | pending, tokens is { in, cw, cr, out } or null
 //   ask         { who, text, brief, since, options:[] } or null, the question a blocked item is waiting on (`brief` is its one line for the list)
+//               `kind: "approval"` (with the design `sha`) is a design waiting on the human: its answers are `approve` and `send back`, not text
+//               typed to a worker. `options` is up to three answers the worker suggested, the first its own recommendation
 //   tokens, usd, coord_usd     the item's steps, and the coordination dollars apart. `usd` null is "unpriced", drawn "?"
 //   coordination, prices, price_table   (detail only) [{ name, note, usd }], [{ k, v }], "v3, list prices"
 //
 // A list answer is { items, stats } and a detail answer is one item. `stats` is optional and derived from the rows when the
 // hub sends none. Money is an ESTIMATE from real token counts (clint, section 11 answer 4): the tokens are always kept.
+//
+// L7: `/_hub/work` (L2) is read beside the items and its steps are laid over the row with the same backlog id (`itemWithWork`), and a design
+// the engine is waiting on the human for becomes the approval question. Both are best effort: an older hub's 404 leaves the one step below.
 //
 // TODAY the hub's `/_hub/items` rows are the older shape (item_id, card, state, note) with no steps, so `fromHub` makes the one
 // step it can honestly say, `building`, as the backfill of section 9 does. A row that already carries `steps` is taken as it is.
@@ -98,6 +103,47 @@ function itemCurrent(it) {
   return i < 0 ? s.length - 1 : i;
 }
 
+// A design waiting on the human's click: the question is the approval, and its answers are `approve` and `send back`, which are
+// POSTs to /_hub/work/<backlog id> (L2), not a line typed to a worker.
+function itemAwaitsApproval(it) { return !!it && it.state === "blocked" && !!it.ask && it.ask.kind === "approval"; }
+
+// What /_hub/work (L2) says of one backlog id, laid over the item: its steps, and the approval when the human is the party. A
+// step row is { step, state, party, started_at, ended_at, sha, cards, reason }, `cards` a JSON list. The item row stays whatever
+// the hub's `/_hub/items` said unless the engine is waiting on the human for the design.
+function itemWithWork(it, w) {
+  if (!w || !Array.isArray(w.steps) || !w.steps.length) return it;
+  const by = {};
+  for (const s of w.steps) by[s.step] = s;
+  const steps = itemsBlankSteps().map(b => {
+    const s = by[b.name];
+    if (!s) return b;
+    let cards = [];
+    try { cards = (typeof s.cards === "string" ? JSON.parse(s.cards || "[]") : s.cards || []).map(c => ({ name: c.name || c.card || "", role: c.role || "", coord: !!c.coord })); } catch (e) { /* none */ }
+    if (s.party === "human") cards = [{ name: "you", role: "human", coord: false }];
+    return Object.assign(b, { state: s.state || "pending", from: s.started_at || null, to: s.ended_at || null, sha: s.sha || "", cards,
+      reason: s.state === "skipped" ? s.reason || "" : "", note: s.state === "active" ? s.reason || "" : "" });
+  });
+  const out = Object.assign({}, it, { steps });
+  const ap = by.approved;
+  if (ap && (ap.state === "active" || ap.state === "stale") && ap.party === "human") {
+    out.state = "blocked"; out.owner_kind = "human";
+    out.ask = { who: "approval", kind: "approval", sha: ap.sha || "", since: ap.started_at || it.updated_at || null, options: [],
+      text: "The design is ready" + (ap.sha ? " at " + ap.sha.slice(0, 7) : "") + (ap.state === "stale" ? ", and the doc has moved since it was read" : "") +
+        ". Approve it, or send it back with a note for the designer." };
+  }
+  return out;
+}
+
+// The engine's rows by backlog id, or none when the hub has no such route yet (an older hub answers 404 and the tab carries on).
+async function itemsWorkByBacklog() {
+  try {
+    const a = await itemsFetch("/_hub/work");
+    const m = {};
+    for (const w of (a && a.items) || (a && a.work) || []) m[w.backlog_id] = w;
+    return m;
+  } catch (e) { return {}; }
+}
+
 const itemsData = {
   async list() {
     if (itemsMockOn()) {
@@ -105,26 +151,33 @@ const itemsData = {
       const items = (a.items || []).map(itemFromAnswer);
       return { items, stats: itemsStatsFrom(items, a.stats) };
     }
-    const a = await itemsFetch("/_hub/items");
-    const items = ((a && a.items) || []).map(itemFromAnswer);
+    const [a, work] = await Promise.all([itemsFetch("/_hub/items"), itemsWorkByBacklog()]);
+    const items = ((a && a.items) || []).map(itemFromAnswer).map(it => itemWithWork(it, work[it.backlog]));
     return { items, stats: itemsStatsFrom(items, a && a.stats) };
   },
   // The count of items blocked on the human, for the tab's badge, when the tab is not the one on screen.
   async blockedCount() {
-    if (itemsMockOn()) return (await this.list()).items.filter(it => it.state === "blocked" && it.owner_kind === "human").length;
-    const a = await itemsFetch("/_hub/items?owner_kind=human&state=blocked");
-    return ((a && a.items) || []).length;
+    // A design waiting for approval is blocked on the human too, and only the step engine says so, so the count reads the list.
+    return (await this.list()).items.filter(it => it.state === "blocked" && it.owner_kind === "human").length;
   },
   async detail(id) {
     if (itemsMockOn()) return itemFromAnswer(await window.itemsMock.detail(id));
     const a = await itemsFetch("/_hub/items/" + encodeURIComponent(id));
     const it = itemFromAnswer(a && a.item ? Object.assign({}, a.item, a, { item: undefined }) : a);
     if (a && a.history) it.history = a.history;
-    return it;
+    let w = null;
+    try { w = await itemsFetch("/_hub/work/" + encodeURIComponent(it.backlog)); } catch (e) { /* an older hub: the one step it can say */ }
+    return itemWithWork(it, w);
   },
   // { do: "unblock", answer } or { do: "cancel" }, as the board, which the hub takes from its own machine only.
-  async act(id, body) {
+  async act(id, body, backlog) {
     if (itemsMockOn()) return window.itemsMock.act(id, body);
+    // The human's two acts on a design are the step engine's, one route per backlog id: {do: approve, sha?} or {do: send_back, note}.
+    if (body.do === "approve" || body.do === "send_back") {
+      return itemsFetch("/_hub/work/" + encodeURIComponent(backlog || id), {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(Object.assign({ by: "board" }, body))
+      });
+    }
     return itemsFetch("/_hub/items/" + encodeURIComponent(id), {
       method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(Object.assign({ by: "board" }, body))
     });

@@ -26559,9 +26559,114 @@ async function itemsMockSection(browser, base) {
     await p.fill('.it-answer-box[data-id="' + id + '"]', "go ahead");
     await p.click('.it-row[data-item="' + id + '"] .it-send');
     await p.waitForFunction(i => { const it = itemsList.find(x => x.id === i); return it && it.state !== "blocked"; }, id, { timeout: slow(10000) });
+    // THE QUESTION ON THE ROW: a worker's suggested answers are buttons on the row, the first one orange, and a click types that answer.
+    await p.evaluate(() => loadItems());
+    const opts = await p.evaluate(() => ({ rows: document.querySelectorAll(".it-row.st-blocked").length,
+      btns: [...document.querySelectorAll(".it-row.st-blocked .it-opt")].map(b => b.textContent + (b.classList.contains("go") ? "*" : "")) }));
+    if (opts.rows !== 1 || opts.btns.length !== 0) fail("itemsMock: after the first answer the rows are " + JSON.stringify(opts));
+    // APPROVE and SEND BACK go in the same box for a design waiting on the human, and are not an answer to a worker.
+    const dsn = await p.evaluate(() => { const r = document.querySelector(".it-row.st-blocked"); return { id: r.dataset.item, approve: !!r.querySelector("[data-act=approve]"),
+      send: !!r.querySelector('[data-act=ask]'), opts: r.querySelectorAll(".it-opt").length }; });
+    if (dsn.id !== "rd-item-lifecycle" || !dsn.approve || !dsn.send || dsn.opts) fail("itemsMock: the design's row is " + JSON.stringify(dsn));
+    // A design is sent back with a note, so an empty box is refused with words, and nothing is sent.
+    await p.click('.it-row[data-item="rd-item-lifecycle"] [data-act=ask]');
+    await p.click('.it-row[data-item="rd-item-lifecycle"] [data-act=sendback]');
+    await p.waitForFunction(() => /sent back with a note/.test(document.getElementById("items-note").textContent), null, { timeout: slow(5000) });
+    if (await p.evaluate(() => itemsList.find(x => x.id === "rd-item-lifecycle").state) !== "blocked") fail("itemsMock: an empty send back went through");
+    await p.fill('.it-answer-box[data-id="rd-item-lifecycle"]', "cover the failure case");
+    await p.click('.it-row[data-item="rd-item-lifecycle"] [data-act=sendback]');
+    await p.waitForFunction(() => { const it = itemsList.find(x => x.id === "rd-item-lifecycle"); return it && it.state === "running" && it.steps[0].state === "active"; }, null, { timeout: slow(10000) });
+    if (!/Sent rd-item-lifecycle back/.test(await p.textContent("#items-note"))) fail("itemsMock: no notice after a send back");
+    // THE WORKER'S QUESTION in the detail: its three suggested answers, the first orange, and a click answers.
+    await p.reload({ waitUntil: "domcontentloaded" });
+    await p.waitForFunction(() => { const t = document.querySelector('.tab[data-view="items"]'); return t && !t.hidden; }, null, { timeout: slow(15000) });
+    await p.waitForTimeout(1000);
+    await p.evaluate(() => switchView("items"));
+    await p.waitForSelector('.it-row[data-item="f-ptyhost-reconnect"] .it-opt');
+    const rowOpts = await p.$$eval('.it-row[data-item="f-ptyhost-reconnect"] .it-opt', e => e.map(b => b.textContent + (b.classList.contains("go") ? "*" : "")));
+    if (rowOpts.join("|") !== "Fresh host, accept the loss*|Keep a stub pipe|Ask me later") fail("itemsMock: the row's suggested answers are " + rowOpts.join("|"));
+    await p.click('.it-row[data-item="f-ptyhost-reconnect"] .it-title');
+    await p.waitForSelector(".it-detail .it-qbox .it-opts .it-btn");
+    const above = await p.evaluate(() => { const q = document.querySelector(".it-qbox"), t = document.querySelector(".it-tl");
+      return { above: !!(q.compareDocumentPosition(t) & Node.DOCUMENT_POSITION_FOLLOWING), n: q.querySelectorAll(".it-opts .it-btn").length, first: q.querySelector(".it-opts .it-btn").classList.contains("go") }; });
+    if (!above.above || above.n !== 3 || !above.first) fail("itemsMock: the question in the detail is " + JSON.stringify(above));
+    await p.click('.it-qbox [data-act=option][data-i="1"]');
+    await p.waitForFunction(() => { const it = itemsList.find(x => x.id === "f-ptyhost-reconnect"); return it && it.state === "running"; }, null, { timeout: slow(10000) });
+    if (!/Sent the answer for f-ptyhost-reconnect/.test(await p.textContent("#items-note"))) fail("itemsMock: no notice after a button answer");
+    // APPROVE from the detail.
+    await p.click("[data-act=back]");
+    await p.click('.it-row[data-item="rd-item-lifecycle"] .it-title');
+    await p.waitForSelector(".it-detail .it-qbox [data-act=approve]");
+    await p.click(".it-qbox [data-act=approve]");
+    await p.waitForFunction(() => { const it = itemsList.find(x => x.id === "rd-item-lifecycle"); return it && it.state === "running" && it.steps[1].state === "done" && it.steps[2].state === "active"; }, null, { timeout: slow(10000) });
+    if (!/Approved rd-item-lifecycle at e3a91c0/.test(await p.textContent("#items-note"))) fail("itemsMock: no notice after approving");
     if (errors.length) fail("itemsMock: page errors: " + errors.join(" | "));
   } finally { await ctx.close(); hubMode = wasHub; }
   if (!bad) console.log("itemsMock ok");
+}
+
+// THE ITEMS ON THE PHONE (/m, `?itemsmock=1`): the door shows, the list is one column with the same rows, a blocked row carries its question and
+// its suggested answers as full width buttons, an item's page has the question above the timeline, and an answer and an approval go through.
+// m/items.css holds no raw colour. Nothing here touches a hub.
+async function itemsPhoneSection(browser, base) {
+  const css = fs.readFileSync(path.join(WEB_ROOT, "m", "items.css"), "utf8").replace(/\/\*[\s\S]*?\*\//g, "");
+  const raw = (css.match(/#[0-9a-fA-F]{3,8}\b/g) || []).concat((css.match(/\b(?:rgba?|hsla?)\([^)]*\)/g) || []).filter(c => !/var\(/.test(c)));
+  if (raw.length) fail("itemsPhone: m/items.css holds raw colour: " + raw.slice(0, 5).join(" "));
+  const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+  const errors = [];
+  try {
+    const p = await ctx.newPage();
+    p.on("pageerror", e => errors.push(e.message));
+    await p.route(/\/_hub\/items|\/_hub\/work/, r => r.fulfill({ status: 500, body: "the mock must not reach the hub" }));
+    await p.goto(base + "/m/?itemsmock=1", { waitUntil: "domcontentloaded" });
+    await p.waitForFunction(() => { const b = document.getElementById("m-items-btn"); return b && !b.hidden; }, null, { timeout: slow(15000) });
+    if (!/items\s*2/.test(await p.textContent("#m-items-btn"))) fail("itemsPhone: the door does not count the two blocked items: " + await p.textContent("#m-items-btn"));
+    await p.click("#m-items-btn");
+    await p.waitForSelector("#m-items .im-row", { timeout: slow(10000) });
+    const list = await p.evaluate(() => {
+      const rows = [...document.querySelectorAll("#m-items .im-row")];
+      const lefts = new Set(rows.map(r => Math.round(r.getBoundingClientRect().left)));
+      return { rows: rows.length, oneColumn: lefts.size === 1, wide: rows.every(r => r.getBoundingClientRect().width > 300), segs: rows[0].querySelector(".im-prog").children.length,
+        stats: document.querySelectorAll("#m-items .im-stat").length, blocked: document.querySelectorAll("#m-items .im-row.st-blocked").length,
+        asks: [...document.querySelectorAll("#m-items .im-ask .im-q")].map(e => e.textContent.slice(0, 20)),
+        overflow: document.getElementById("m-items").scrollWidth > innerWidth + 1,
+        firstBlocked: document.querySelector("#m-items .im-row.st-blocked").dataset.item,
+        btns: [...document.querySelectorAll('#m-items .im-row[data-item="f-ptyhost-reconnect"] .im-opts .im-btn')].map(b => b.textContent + (b.classList.contains("go") ? "*" : "") + ":" + (b.getBoundingClientRect().width > 300)),
+        nums: document.querySelector("#m-items .im-nums").textContent };
+    });
+    if (list.rows < 6 || !list.oneColumn || !list.wide || list.segs !== 8 || list.stats !== 4 || list.blocked !== 2 || list.asks.length !== 2 || list.overflow)
+      fail("itemsPhone: the list is " + JSON.stringify(list));
+    // The oldest question is first, and its suggested answers are full width buttons, the first orange, then a way to type another.
+    if (list.firstBlocked !== "f-ptyhost-reconnect" || list.btns.join("|") !== "Fresh host, accept the loss*:true|Keep a stub pipe:true|Ask me later:true|other:true")
+      fail("itemsPhone: the blocked row is " + JSON.stringify(list));
+    if (!/tokens/.test(list.nums) || !/\$/.test(list.nums)) fail("itemsPhone: the numbers line is " + list.nums);
+    // THE PAGE: the question above the timeline, eight steps, the same buttons.
+    await p.click('#m-items .im-row[data-item="f-ptyhost-reconnect"] .im-main');
+    await p.waitForSelector("#m-items .im-page .im-step");
+    const page = await p.evaluate(() => { const q = document.querySelector("#m-items .im-qbox"), t = document.querySelector("#m-items .im-tl");
+      return { above: !!(q.compareDocumentPosition(t) & Node.DOCUMENT_POSITION_FOLLOWING), steps: t.children.length, opts: q.querySelectorAll(".im-opts .im-btn").length,
+        title: document.getElementById("m-items").querySelector(".im-title").textContent, box: !!q.querySelector(".im-box") }; });
+    if (!page.above || page.steps !== 8 || page.opts !== 3 || !page.box || page.title !== "f-ptyhost-reconnect") fail("itemsPhone: the page is " + JSON.stringify(page));
+    // A BUTTON ANSWER is sent, with a notice that does not claim the item is running yet.
+    await p.click("#m-items .im-qbox .im-opts .im-btn >> nth=1");
+    await p.waitForFunction(() => /Sent the answer for f-ptyhost-reconnect/.test(document.querySelector("#m-items .im-note").textContent), null, { timeout: slow(10000) });
+    await p.waitForFunction(() => !document.querySelector("#m-items .im-qbox"), null, { timeout: slow(10000) });
+    // Back is history: the list again, with one blocked row left.
+    await p.click("#m-items .im-back");
+    await p.waitForSelector("#m-items .im-list");
+    // The design: approve and send back, approve is orange, send back opens a note box and refuses an empty note.
+    const d = await p.evaluate(() => { const r = document.querySelector('#m-items .im-row[data-item="rd-item-lifecycle"]');
+      return [...r.querySelectorAll(".im-opts .im-btn")].map(b => b.textContent + (b.classList.contains("go") ? "*" : "")).join("|"); });
+    if (d !== "approve*|send back") fail("itemsPhone: the design's buttons are " + d);
+    await p.click('#m-items .im-row[data-item="rd-item-lifecycle"] .im-opts .im-btn >> nth=1');
+    await p.click('#m-items .im-row[data-item="rd-item-lifecycle"] .im-ans .im-btn');
+    await p.waitForFunction(() => /sent back with a note/.test(document.querySelector("#m-items .im-note").textContent), null, { timeout: slow(5000) });
+    await p.click('#m-items .im-row[data-item="rd-item-lifecycle"] .im-opts .im-btn >> nth=0');
+    await p.waitForFunction(() => { const r = document.querySelector('#m-items .im-row[data-item="rd-item-lifecycle"]'); return r && !r.classList.contains("st-blocked"); }, null, { timeout: slow(10000) });
+    if (!/Approved rd-item-lifecycle at e3a91c0/.test(await p.textContent("#m-items .im-note"))) fail("itemsPhone: no notice after approving: " + await p.textContent("#m-items .im-note"));
+    if (errors.length) fail("itemsPhone: page errors: " + errors.join(" | "));
+  } finally { await ctx.close(); }
+  if (!bad) console.log("itemsPhone ok");
 }
 
 async function hubReposSection(browser, base) {
@@ -33713,6 +33818,7 @@ async function main() {
     await unit("mGrowlQuestion", () => mGrowlQuestionSection(browser));
     await unit("itemsView", () => itemsViewSection(browser, base));
     await unit("itemsMock", () => itemsMockSection(browser, base));
+    await unit("itemsPhone", () => itemsPhoneSection(browser, base));
     await unit("hubRepos", () => hubReposSection(browser, base));
     await unit("hubReposShelf", () => hubReposShelfSection(browser, base));
     await unit("hubReposLedger", () => hubReposLedgerSection(browser, base));
