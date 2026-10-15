@@ -27300,6 +27300,96 @@ async function groupBridgeSection(browser, base) {
   if (!bad) console.log("groupBridge ok");
 }
 
+// THE BRIDGE RUNS FROM A COLLAPSED PARENT. The attached card is a hidden child of a folded row, one level down and two:
+// the folded row carries a funnel in the attached card's frame and nothing is opened. Expanded, the child's own row
+// carries the ordinary bridge. COLLAPSED_BRIDGE_SHOTS and COLLAPSED_BRIDGE_TAG write the pictures.
+async function collapsedBridgeSection(browser, base) {
+  const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+  try {
+    const p = await ctx.newPage();
+    const errors = [];
+    p.on("pageerror", e => errors.push(String(e)));
+    await p.goto(base + "/", { waitUntil: "domcontentloaded" });
+    await p.waitForFunction(() => typeof setTermSortMode === "function" && typeof renderTermList === "function",
+      null, { timeout: slow(15000) });
+    await p.evaluate(() => {
+      const card = (id, at, extra) => ({ id, status: "running", supervised: true, pinned: false, title: id,
+        display_title: id, tags: [], created_at: at, worktree: "/r/p", ...extra });
+      const sub = (id, at, by) => card(id, at, { tags: ["atrium:subagent"], spawned_by_id: by });
+      const cards = [card("par", "2026-09-01T10:00:00Z"), sub("mid", "2026-09-02T10:00:00Z", "par"),
+        sub("leaf", "2026-09-03T10:00:00Z", "mid"), card("lone", "2026-09-27T10:00:00Z")];
+      boardCards = async () => cards;
+      if (!termSubsOn()) toggleTermShow("subagents");
+      switchView("terms");
+    });
+    const settle = () => p.evaluate(async () => { await renderTermList(); await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(() => {
+      placeTabBridge(); r();
+    }))); });
+    const read = () => p.evaluate(() => {
+      const at = el => { if (!el) return null; const r = el.getBoundingClientRect(); return { top: r.top, bottom: r.bottom }; };
+      const bridges = [...document.querySelectorAll("#term-layout .tabbridge")].filter(b => !b.hidden);
+      const b = bridges[0];
+      return { n: bridges.length, funnel: !!b && b.classList.contains("funnel"), bridge: b && at(b),
+        carries: [...document.querySelectorAll("#term-list .card.carries")].map(c => c.dataset.id),
+        on: [...document.querySelectorAll("#term-list .card.on")].map(c => c.dataset.id),
+        carrier: at(document.querySelector("#term-list .card.carries")), onRow: at(document.querySelector("#term-list .card.on")),
+        shut: ["par", "mid"].filter(id => termKidsShut({ id })), frame: (() => {
+          const c = document.querySelector("#term-list .card.carries"); return c ? getComputedStyle(c).borderTopColor : "";
+        })() };
+    });
+    const shots = process.env.COLLAPSED_BRIDGE_SHOTS || "";
+    const shot = async name => { if (shots) { fs.mkdirSync(shots, { recursive: true }); await p.screenshot({ path: path.join(shots, name + ".png") }); } };
+    const tag = process.env.COLLAPSED_BRIDGE_TAG || "after";
+    const attach = id => p.evaluate(id => { termTask = lastTasks.find(x => x.id === id) || termTask; }, id);
+    const setShut = (id, shut) => p.evaluate(([id, shut]) => {
+      const key = termKidsKey({ id }), list = foldedColumns().filter(k => k !== key);
+      // On the chip's side of the default, an entry means folded.
+      if (shut === termSubsOn()) list.push(key);
+      localStorage.setItem("atrium.folded", JSON.stringify(list));
+      repaintLists();
+    }, [id, shut]);
+    const level = (g, what) => {
+      if (g.n !== 1) return fail("collapsedBridge: want one bridge " + what + ", got " + g.n);
+      if (!g.carrier) return fail("collapsedBridge: " + what + ": no row carries it");
+      if (g.bridge.top < g.carrier.top - 10 || g.bridge.bottom > g.carrier.bottom + 10) {
+        fail("collapsedBridge: " + what + ": the bridge " + JSON.stringify(g.bridge) + " is not level with " + JSON.stringify(g.carrier));
+      }
+    };
+    await p.evaluate(() => { term = term || { options: {}, dispose() {} }; });
+    // The leaf is attached, two levels under "par". Expanded, its own row carries the ordinary bridge.
+    await p.evaluate(async () => { termTask = (await boardCards()).find(c => c.id === "leaf"); });
+    await setShut("par", false); await setShut("mid", false);
+    await settle();
+    let g = await read();
+    if (g.on.join() !== "leaf" || g.carries.length || g.n !== 1 || g.funnel) fail("collapsedBridge: expanded: " + JSON.stringify(g));
+    await shot("collapsed-bridge-expanded-" + tag);
+    // One level folded: "mid" carries, "leaf" is not drawn.
+    await setShut("mid", true);
+    await settle();
+    g = await read();
+    if (g.carries.join() !== "mid" || g.on.length || !g.funnel) fail("collapsedBridge: mid folded: " + JSON.stringify(g));
+    level(g, "mid folded");
+    // Two deep: folding "par" too leaves the outermost visible row carrying it.
+    await setShut("par", true);
+    await settle();
+    g = await read();
+    if (g.carries.join() !== "par" || g.on.length || !g.funnel) fail("collapsedBridge: par folded: " + JSON.stringify(g));
+    await p.waitForTimeout(500);   // the row eases its border in
+    await shot("collapsed-bridge-" + tag);
+    level(g, "par folded, two deep");
+    const frame = await p.evaluate(() => getComputedStyle(document.querySelector("#term-list .card.carries")).borderTopColor);
+    if (/transparent|rgba\(0, 0, 0, 0\)/.test(frame)) fail("collapsedBridge: the folded row wears no frame: " + frame);
+    if (g.shut.join() !== "par,mid") fail("collapsedBridge: a fold was opened: " + JSON.stringify(g.shut));
+    // Attached a card that is not under it: the folded row carries nothing.
+    await p.evaluate(async () => { termTask = (await boardCards()).find(c => c.id === "lone"); });
+    await settle();
+    g = await read();
+    if (g.carries.length || g.on.join() !== "lone") fail("collapsedBridge: an unrelated attach: " + JSON.stringify(g));
+    if (errors.length) fail("collapsedBridge: page errors: " + errors.join(" | "));
+  } finally { await ctx.close(); }
+  if (!bad) console.log("collapsedBridge ok");
+}
+
 // THE DOCUMENTS PAGE, laid out: one centred column, a header row with the count, the card-or-every switch and a search,
 // upload as the one primary control with its title inside it, deleted as a quiet toggle, roomy rows, a usage meter at the
 // foot. Several documents are mocked at the route. DOCSPAGE_SHOTS and DOCSPAGE_TAG write the pictures.
@@ -30846,7 +30936,7 @@ async function main() {
       termDebug: termDebugSection, termDebugPerCard: termDebugPerCardSection, termLag: termLagSection, termHiddenRedraw: termHiddenRedrawSection, termLastRead: termLastReadSection, termSortStarted: termSortStartedSection,
       noReadyChildren: noReadyChildrenSection, readyNoSeed: readyNoSeedSection, childUnderParent: childUnderParentSection, topNav: topNavSection, boardUsage: boardUsageSection, tabsOrder: tabsOrderSection,
       groupMenus: groupMenusSection, mGroupMenus: mGroupMenusSection,
-      u002: u002Section, childFold: childFoldSection, liveHome: liveHomeSection, toastsTop: toastsTopSection, heldLink: heldLinkSection, launchThrowaway: launchThrowawaySection, newWorkDialog: newWorkDialogSection, groupBridge: groupBridgeSection, revealFolds: revealFoldsSection,
+      u002: u002Section, childFold: childFoldSection, liveHome: liveHomeSection, toastsTop: toastsTopSection, heldLink: heldLinkSection, launchThrowaway: launchThrowawaySection, newWorkDialog: newWorkDialogSection, groupBridge: groupBridgeSection, collapsedBridge: collapsedBridgeSection, revealFolds: revealFoldsSection,
       pulls: pullsSection, prMove: prMoveSection, quickPaste: quickPasteSection, recogniserRepo: recogniserRepoSection, hubRepos: hubReposSection, hubReposShelf: hubReposShelfSection, hubReposLedger: hubReposLedgerSection, hubReposFeed: hubReposFeedSection, changeReq: changeReqSection, mChangeReq: mChangeReqSection, trayHead: trayHeadSection, pullsAbsent: pullsAbsentSection, pullsPanelStage: pullsPanelStageSection, oneTooltip: oneTooltipSection, burnChart: burnChartSection, burnReadout: burnReadoutSection, switchPrewarm: switchPrewarmSection, attachAtOnce: attachAtOnceSection, fileView: fileViewSection, keepAlive: keepAliveSection, switchBackCost: switchBackCostSection, keepMemory: keepMemorySection, pullsDrawer: pullsDrawerSection };
     try {
       const unknown = ONLY.split(",").filter(n => typeof only[n] !== "function");
@@ -32865,6 +32955,7 @@ async function main() {
     await unit("switcherRank", () => switcherRankSection(browser, base));
     await unit("revealFolds", () => revealFoldsSection(browser, base));
     await unit("groupBridge", () => groupBridgeSection(browser, base));
+    await unit("collapsedBridge", () => collapsedBridgeSection(browser, base));
     await unit("groupMenus", () => groupMenusSection(browser, base));
     await unit("mGroupMenus", () => mGroupMenusSection(browser));
     await unit("docsPage", () => docsPageSection(browser, base));

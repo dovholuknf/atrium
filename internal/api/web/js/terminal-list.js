@@ -389,7 +389,8 @@ function placeTabBridge() {
   const first = document.getElementById("tab-bridge");
   if (!first) return;
   // A shut group holding the attached row stands in for it: its heading is the tab.
-  const cards = [...document.querySelectorAll("#term-list .card.on, #term-list .tgroup.carries")];
+  // So does a collapsed parent row holding it as a hidden child.
+  const cards = [...document.querySelectorAll("#term-list .card.on, #term-list .tgroup.carries, #term-list .card.carries")];
   const bridges = [first, ...first.parentNode.querySelectorAll(".tabbridge.extra")];
   while (bridges.length < cards.length) {
     const b = first.cloneNode(false);
@@ -464,7 +465,7 @@ function placeOneBridge(bridge, card) {
   bridge.style.left = (from - l.left) + "px";
   bridge.style.width = (to - from) + "px";
   // A shut group's bridge is a funnel: the heading's height at the heading, FLARE taller each side where it meets the pane.
-  const funnel = card.classList.contains("tgroup");
+  const funnel = card.classList.contains("tgroup") || card.classList.contains("carries");
   const up = funnel ? Math.max(0, Math.min(FUNNEL_FLARE, c.top - lr.top)) : 0;
   const down = funnel ? Math.max(0, Math.min(FUNNEL_FLARE, lr.bottom - c.bottom)) : 0;
   const top = Math.max(c.top - up, lr.top), bottom = Math.min(c.bottom + down, lr.bottom);
@@ -1053,7 +1054,10 @@ function termRow(t, deep, kid) {
   // A card nobody coloured has no theme of its own here: it wears the skin's card whether it is attached or not, and its
   // terminal's neutral palette only reaches the bridge, through `--tabbg`.
   const on = termTask && t.id === termTask.id;
-  const wear = termRowWear(t);
+  // A COLLAPSED PARENT HOLDING THE ATTACHED CARD CARRIES ITS BRIDGE, as a shut group does (`termGroupHead`). The attached
+  // card is one of its hidden children, at any depth, so the row wears that card's colours and stands in for it.
+  const carries = !on && termKidTotal(t) > 0 && termKidsShut(t) && termHoldsOn(t);
+  const wear = termRowWear(carries ? termTask : t);
   if (on) themeTrace("row", t);
   const style = wear.vars;
   const full = terminalLabel(t) || t.display_title;
@@ -1085,7 +1089,7 @@ function termRow(t, deep, kid) {
   const shown = shut ? [] : allKids;
   const kids = shown.map(k => termRow(k, false, true)).join("");
   return `
-    <div class="card tab ${on ? "on" : ""}${kid ? " kid" : ""}${
+    <div class="card tab ${on ? "on" : ""}${carries ? "carries" : ""}${kid ? " kid" : ""}${
            // COLD, NOT GONE. Only ever a pinned row, since an unpinned one
            // without a runner is not drawn at all. Greyed rather than removed
            // so the bucket keeps the shape you gave it, and it still answers
