@@ -1,6 +1,8 @@
 # Doc debt from features
 
-Status: proposed, not built. Design draft, no code. Item `m-doc-debt-from-features`.
+Status: proposed, not built. Design draft, no code. Item `m-doc-debt-from-features`. Reviewed against `claude/main`
+a292f88e on 2026-10-15: items are now the unit of work (section 2.8), the build plan is section 4 and the recommended
+answers are section 6.
 
 ## 1. Today
 
@@ -13,10 +15,17 @@ is that audit: `README.md`, the root `AGENTS.md`, `install.md`, `quick-start.md`
 change from code. The backlog is on the hub (`internal/hubstore/backlog.go`, the `atrium_backlog` tool in
 `internal/link`) and already has departments, ids by prefix (`deptPrefix` in `backlog_follow.go`), statuses (open,
 held, in-progress, done, dropped) and an age. It has no `docs` department. The nearest finding pattern is the turn-cause
-finding on the Terminals tab (`internal/api/turnlimits.go`, `web/js/turn-limits.js`, on `claude/turn-cost-limits` and
-not yet on `claude/main`): a server decides, the page draws, a dismiss hides it for the day in `localStorage`. The
-nearest report is `docs/rnd/daily-housekeeping-report.md`, a once-a-day section on top of the Terminals tab with
-dismissals that return when the facts get worse. It is a design and is not built either.
+finding on the Terminals tab (`internal/api/turnlimits.go`, `web/js/turn-limits.js`, on `claude/main`): a server decides,
+the page draws, a dismiss hides it for the day in `localStorage`. The nearest report is
+`docs/rnd/daily-housekeeping-report.md`, a once-a-day section on top of the Terminals tab with dismissals that return
+when the facts get worse. It is merged as a design and no phase of it is built.
+
+Since this draft, work is tracked as items (`docs/rnd/item-lifecycle-design.md`, L1 to L3 landed, see
+`internal/hubstore/work.go` and `workstep.go`). Every launch names a backlog id with `--item`, the hub keeps one `work`
+row per backlog id with a `kind` of `code`, `doc` or `mixed`, and derives the steps designed, approved, building, tested,
+reviewed, landed, deployed and pushed from git and the room link. `landed` carries the sha on `claude/main` and `pushed`
+the state on `origin/main`, which this draft used to ask the worker to write down. A department is free text
+(`deptRe` in `backlog.go`), so `docs` needs no registering and only its id prefix is missing.
 
 ## 2. Recommended design
 
@@ -52,13 +61,15 @@ One place holds the state, and the existing changelog stays the only place that 
 ```
 feature: <item id of the feature>
 changelog: changelog/<dept>/<date>-<item>.md
-shas: <branch tip when filed>, <merge sha once known>
+shas: <branch tip when filed>
 new: <one line each, verb, flag, endpoint, setting or tab>
 stale: <path>  <one line, what it says wrong>
 stale: <path>  ...
 updated: <paths the branch already fixed>
 ```
 
+- The merge sha is NOT written by anyone: the hub reads it from the feature item's `landed` step (section 2.8), which is
+  observed and cannot be mistyped.
 - The changelog entry is referenced by path and never copied, so nothing is written twice and `CHANGELOG.md` is not
   touched. `docs/changes/<item>.md` stays a test plan only, and gains one line, `Docs: d-<n>` or `Docs: none, <why>`.
   `scripts/fold-changes.ps1` WARNS for a file that has neither. It does not fail, see question 4.
@@ -98,7 +109,29 @@ housekeeping lands.
 The doc worker closes an item when it has fixed every `stale:` page, and says so in the close note. The hub does not
 close anything by itself. From phase 4 it adds a hint on the item, "page changed since": a `git log` of each stale path
 since the filed sha, run by the hub on the daily build over its own repository. A hint is shown in the brief and on the
-line, it closes nothing, see question 3.
+line, it closes nothing, see question 3. The sha it counts from is the feature's `landed` sha, so the hint never fires
+for commits that were part of the feature itself.
+
+### 2.8 How a doc item relates to an item and to its steps
+
+Two things carry the word, so the names are fixed. The **doc item** is a backlog item of department `docs`, the debt. A
+**doc worker's item** is the `work` row that appears when a worker is launched on a doc item's backlog id, as every
+launch now must (`--item`).
+
+- **The feature's item is named, not copied.** The block's `feature:` is the feature's backlog id, which is its `work`
+  id. The hub joins on it: `landed` sha and time and the `pushed` state come from `work_step`.
+- **Debt starts at `landed`, not at filing.** A doc item filed before its feature lands is pending: it shows on the
+  feature's detail and does not count toward the meter, because the branch may still fix the page or be cancelled. At
+  `landed` it counts and its age starts. A feature that is dropped never counts.
+- **A doc item is never a feature.** A `work` row of kind `doc` is excluded from 2.1, so fixing docs files no docs. A
+  `mixed` item is a feature and follows 2.1.
+- **The doc worker's item is `kind: doc`.** The lifecycle already skips `deployed` for it, and also skips `designed` and
+  `approved` (the doc item is the brief). `reviewed`, `landed` and `pushed` run as for any item. The website deploys on
+  push to `main`, so "landed, not pushed" reads as "not public yet". When the worker's item reaches `landed` the hub
+  offers "close d-7?" and does not close it, see 2.7.
+- **The check at `landed`.** When a feature reaches `landed` and its `docs/changes/<item>.md` on the mirror holds neither
+  a `d-` id nor `Docs: none, <why>`, the item's detail says "docs: not said". It files nothing and blocks nothing, the
+  same posture as the fold warning, and it covers a branch that merged without the fold running.
 
 ## 3. Rejected alternatives
 
@@ -118,9 +151,12 @@ line, it closes nothing, see question 3.
 - **A growler or a stand-alone strip.** Section 2.6.
 - **Page age by mtime as the meter.** Old does not mean wrong. It would flag every stable page.
 
-## 4. Phases
+## 4. Staged build plan
 
-Each phase is one worker.
+Each phase is one worker and lands on its own, leaving the board working. Smallest first. Phases 1 to 3 touch no
+schema, so none adds a migration. Phase 5 may, and says so. A migration goes at the END
+of the slice in `internal/hubstore/schema.go` (the tail today is `0024_work_paths`), with every statement tolerating
+being there already, per `AGENTS.md`.
 
 1. **d-1-docs-department-and-filing.** Add `docs` with prefix `d` to `deptPrefix` and check the dept name against the
    backlog filters and the `atrium_backlog` tool text. Write the impact block format into the tool's filing help and
@@ -132,14 +168,21 @@ Each phase is one worker.
    line. Done when: a dry run names the file, a file with `Docs: none, reason` is quiet, and the existing fold tests
    pass.
 3. **d-3-meter-and-line.** The hub computes items, pages and oldest from open `docs` items and serves
-   `GET /_hub/doc-debt`. Threshold in a hub setting (`doc_debt.items`, default 8, `doc_debt.days`, default 10). The
+   `GET /_hub/doc-debt`. An item counts from its feature's `landed` step (2.8), and age is measured from there, and an item
+   whose `feature:` has no `work` row (filed by hand) counts from filing. Threshold in a hub setting
+   (`internal/hubstore/settings.go`, `doc_debt.items`, default 8, `doc_debt.days`, default 10). The
    housekeeping line with the count-in-4s fingerprint and the Start doc worker button that launches with a generated
    brief. Done when: below threshold nothing renders, past it one line renders, Hide holds until 12 items or 7 days, and
    the button's brief lists at most 10 items grouped by page. Waits on housekeeping phase 2 for the drawing, and the
    endpoint and its tests can land first.
 4. **d-4-page-changed-hint.** The hub's daily build adds "page changed since" for each stale path, from `git log` on
-   its repository since the item's sha. Done when: touching a stale page shows the hint on the item and its line, and
-   the item stays open.
+   its repository since the feature's `landed` sha. Computed on demand and cached in memory, so no table. Done when:
+   touching a stale page shows the hint on the item and its line, and the item stays open.
+5. **d-5-landed-check.** The "docs: not said" note on a landed feature's detail (2.8), and the offer "close d-7?" when a
+   doc worker's item lands. Reads `work_step` and the mirror, writes nothing, so no migration unless the offer needs to
+   remember it was dismissed, in which case one `ADD COLUMN` on the hub's own table. Done when: a landed feature
+   with no `Docs:` line shows the note, a `Docs: none, why` line removes it, and a landed doc worker's item shows the
+   offer once. Needs item lifecycle L3 (landed), which has landed.
 
 ## 5. Open questions for clint
 
@@ -160,3 +203,31 @@ Each phase is one worker.
 6. This ships and the meter says 0 while the docs are behind, because 365 changelog fragments since 2026-09-29 have no
    doc item. Then? Recommended: no backfill. `docs/rnd/doc-overhaul-plan.md` is the reset, the meter starts at zero
    after its batch 9 lands, and from then on only new features count.
+
+## 6. Decisions
+
+Nothing here is decided. Each answer is recommended, not yet decided, and is the answer to the same-numbered question
+in section 5, restated against the item lifecycle (section 2.8).
+
+1. **Recommended, not yet decided: one item for what is left.** The feature fixes `cli.md` in its branch and leaves
+   `README.md` wrong, so it files one `d-` item whose `stale:` names only `README.md` and whose `updated:` names
+   `cli.md`. A feature that fixed everything files nothing and writes `Docs: none, <why>` in its test plan, which is
+   what stops the "docs: not said" note.
+2. **Recommended, not yet decided: keep the threshold.** 8 open items, or 3 with the oldest at 10 days, counted from
+   `landed`. Seven features open for 12 days fire on day 10. Both numbers are hub settings, so changing them is not a
+   release.
+3. **Recommended, not yet decided: show the hint, do not auto-close.** "Page changed since" appears and the item stays
+   open until a doc worker closes it. This departs from the original ask, which was that items close when the page
+   changes, because a typo fix would erase real debt. If the answer is auto-close, the minimum safe form is: close
+   only when EVERY `stale:` path changed since `landed`, with a one-click reopen.
+4. **Recommended, not yet decided: warn, never refuse.** The fold warns (phase 2) and the landed check notes (phase 5).
+   Nothing is blocked. Refusing `atrium_done` was in the original idea and is dropped: a worker that cannot name a stale
+   page would be stopped over a line, and atrium would learn nothing it could not learn from the warning.
+5. **Recommended, not yet decided: ten at a time, oldest first.** Grouped by page, and the next press takes the next
+   ten. The doc worker's item is `kind: doc`, one backlog id per press, so its cost and steps show on the items tab like
+   any other work.
+6. **Recommended, not yet decided: no backfill.** The meter starts at zero once `doc-overhaul-plan.md` batch 9 lands
+   and counts features that land after that. The 365 earlier changelog fragments are the overhaul's job.
+7. **Recommended, not yet decided: the meter waits on housekeeping for its drawing.** Phases 1, 2, 4 and 5 and the
+   endpoint of phase 3 do not wait. If housekeeping is not built when phase 3 is wanted, the answer to "draw it
+   anyway?" is no, and `atrium backlog ls --dept docs` is the meter until it is.
