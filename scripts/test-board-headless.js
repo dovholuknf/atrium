@@ -23053,6 +23053,37 @@ async function newWorkDialogSection(browser, base) {
     if (s.ask || !s.bnote.includes("cannot browse")) fail("repoList: a browse failure was not inline " + JSON.stringify(s));
     await p.evaluate(() => document.getElementById("browse").close());
 
+    // text selection: a drag-select in an input that ends on the backdrop keeps the dialog open and the selection
+    await p.evaluate(async () => { await openLaunch(null, "", "/work/some/long/path", null, null); });
+    {
+      const el = p.locator("#l-cwd");
+      await el.fill("alpha bravo charlie delta echo");
+      const bx = await el.boundingBox();
+      const y = bx.y + bx.height / 2;
+      const selOf = () => p.evaluate(() => { const e = document.getElementById("l-cwd"); return [e.selectionStart, e.selectionEnd]; });
+      await p.mouse.move(bx.x + 8, y); await p.mouse.down(); await p.mouse.move(bx.x + 120, y, { steps: 6 }); await p.mouse.up();
+      const inside = await selOf();
+      if (inside[1] - inside[0] < 3) fail("selection: a drag inside the input selected nothing " + inside);
+      await p.evaluate(() => { const e = document.getElementById("l-cwd"); e.setSelectionRange(0, 0); });
+      await p.mouse.move(bx.x + 60, y); await p.mouse.down(); await p.mouse.move(2, 2, { steps: 12 }); await p.mouse.up();
+      const out = await selOf();
+      const st = await p.evaluate(() => ({ open: document.getElementById("launch").open, focus: document.activeElement.id }));
+      if (!st.open) fail("selection: a drag ending on the backdrop closed the dialog");
+      if (out[0] !== 0 || out[1] < 3) fail("selection: a drag ending on the backdrop lost the selection " + out);
+      await p.mouse.dblclick(bx.x + 30, y);
+      const word = await selOf();
+      if (word[1] - word[0] < 3) fail("selection: a double-click did not select a word " + word);
+      await p.mouse.click(bx.x + 8, y);
+      await p.keyboard.down("Shift"); await p.mouse.click(bx.x + 100, y); await p.keyboard.up("Shift");
+      const shift = await selOf();
+      if (shift[1] - shift[0] < 3) fail("selection: shift-click did not extend " + shift);
+      const lab = p.locator("#launch .dlg-sec-h").first();
+      const lb = await lab.boundingBox();
+      await p.mouse.move(lb.x + 2, lb.y + 6); await p.mouse.down(); await p.mouse.move(lb.x + 100, lb.y + 6, { steps: 6 }); await p.mouse.up();
+      if (!(await p.evaluate(() => String(getSelection()))).length) fail("selection: label text could not be selected");
+      if (!(await p.evaluate(() => document.getElementById("launch").open))) fail("selection: selecting label text closed the dialog");
+    }
+
     // start new work: a refusal is a line in the dialog with the form still filled in, then the call
     await openList();
     await p.selectOption("#l-nw-repo", "github.com/openziti/ziti");
