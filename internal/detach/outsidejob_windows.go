@@ -14,10 +14,19 @@ import (
 // one created by another process can: WMI's Win32_Process.Create makes the child under WmiPrvSE, in no job of ours,
 // so a room task whose job is killed with the task no longer takes the pty host and every runner with it.
 //
+// WMI starts cmd.exe and the host is its child, so the pid WMI returns is cmd's. The script waits up to five seconds
+// for that child and answers its pid instead, which is the process a caller probes, waits on and kills. When none
+// appears it answers cmd's.
+//
 // The child gets the system environment and not ours. The pty host needs none of ours: a spawn carries its own env.
 func startOutsideJob(exe string, args []string, out *os.File) (*os.Process, error) {
 	script := `$r = Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{CommandLine=$env:ATRIUM_DETACH_CMD}; ` +
-		`if ($r.ReturnValue -ne 0) { exit 3 }; [Console]::Out.Write($r.ProcessId)`
+		`if ($r.ReturnValue -ne 0) { exit 3 }; ` +
+		`$p = $r.ProcessId; ` +
+		`for ($i = 0; $i -lt 50; $i++) { ` +
+		`$k = Get-CimInstance Win32_Process -Filter "ParentProcessId=$($r.ProcessId)" | Select-Object -First 1; ` +
+		`if ($k) { $p = $k.ProcessId; break }; [Threading.Thread]::Sleep(100) ` +
+		`}; [Console]::Out.Write($p)`
 	cmd := exec.Command("powershell.exe", "-NoProfile", "-NonInteractive", "-Command", script)
 	cmd.Env = append(os.Environ(), "ATRIUM_DETACH_CMD="+outsideJobCommandLine(exe, args, outName(out)))
 	got, err := cmd.Output()
