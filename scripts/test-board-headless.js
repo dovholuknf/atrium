@@ -12488,7 +12488,7 @@ const CTX_USAGE = {
 };
 // The same cards pinned, so the terminals list draws a row for each without a
 // live session behind it.
-const PEEK_CARDS = CTX_CARDS.map(t => Object.assign({}, t, { pinned: true },
+const PEEK_CARDS = CTX_CARDS.map(t => Object.assign({}, t, { pinned: true, supervised: true },
   // A name longer than the terminals list draws, and an address, for the popover's head.
   t.id === "cx-big" ? { display_title: "big context, a name the terminals list cuts short",
     worktree: "/src/atrium/one-hover", repo: "atrium", branch: "claude/one-hover" } : {}));
