@@ -11023,7 +11023,7 @@ async function sshBadgeSection(browser, base) {
     await p.waitForFunction(() => typeof openRoomCog === "function" && typeof loadHubRooms === "function",
       null, { timeout: slow(15000) });
     await p.evaluate(() => loadHubRooms());
-    await p.click('.tab[data-view="runners"]');
+    await p.evaluate(() => switchView("runners")); // the tab may sit in the `...` menu at this width
     await p.waitForSelector("#room-list .roomrow", { timeout: slow(10000) });
     return { ctx, p };
   };
@@ -18857,7 +18857,7 @@ async function roomsSetupSection(browser, base) {
       fs.mkdirSync(shots, { recursive: true });
       await p.screenshot({ path: path.join(shots, "pill-after.png"), clip: { x: 900, y: 0, width: 500, height: 60 } });
     }
-    await p.click('.tab[data-view="runners"]');
+    await p.evaluate(() => switchView("runners")); // the tab may sit in the `...` menu at this width
     await p.waitForSelector("#room-list .roomrow", { timeout: slow(10000) });
     const rows = () => p.evaluate(() => [...document.querySelectorAll("#room-list .roomrow")].map(r => ({
       name: r.querySelector(".roomname").textContent,

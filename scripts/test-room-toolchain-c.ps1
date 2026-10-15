@@ -34,15 +34,18 @@ try {
 
 $q1 = [string][char]0x2018; $q2 = [string][char]0x2019
 $weird = @("C:\work\plain", "C:\my work\it's", 'C:\a b\c', "C:\x${q2}; Write-Output INJECTED; ${q2}", "C:\${q1}x${q2}", 'C:\$env:USERNAME', 'C:\`tick', 'C:\a;b&c|d', "C:\a`nb")
+# the curly quotes come back in UTF-8 on both sides, not in a Windows console's OEM page
+$utf8Out = '[Console]::OutputEncoding = [Text.UTF8Encoding]::new($false); '
+[Console]::OutputEncoding = [Text.UTF8Encoding]::new($false)
 foreach ($w in $weird) {
-    $got = & $pwsh -NoProfile -Command ("`$v = " + (Quote-Ps $w) + '; [Console]::Out.Write($v)')
+    $got = & $pwsh -NoProfile -Command ($utf8Out + "`$v = " + (Quote-Ps $w) + '; [Console]::Out.Write($v)')
     Check "quote-ps: $($w -replace "`n", '<nl>')" ($got -join "`n") $w
 }
 # the whole head of a payload: every value comes out as it went in, and nothing ran
 $vars = @{ PathPre = $weird[3]; SdkDir = $weird[1]; Dry = '1' }
 $head = (Get-CPayload 'csdk' $vars) -split "`n" | Select-Object -First 3
 $ps1 = Join-Path $tmp 'head.ps1'
-Set-Content -LiteralPath $ps1 -Value ($head + '[Console]::Out.Write("$PathPre|$SdkDir|$Dry")')
+Set-Content -LiteralPath $ps1 -Value ($head + $utf8Out + '[Console]::Out.Write("$PathPre|$SdkDir|$Dry")')
 Check 'payload head: hostile values arrive whole, nothing runs' ((& $pwsh -NoProfile -File $ps1) -join '') "$($weird[3])|$($weird[1])|1"
 Check 'quote-sh: a quote' (Quote-Sh "it's") "'it'\''s'"
 

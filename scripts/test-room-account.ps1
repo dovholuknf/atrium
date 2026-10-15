@@ -453,7 +453,6 @@ echo "fake ssh: not expected: $*" >&2; exit 9
     Check 'provision: -Remove never runs the account step, so it is never refused by it' @(Line $r '^provision account-rights').Count 0
     $r = Pr @('-SmokeOnly')
     Check 'provision: -SmokeOnly and -Restart do not run it either' @((Line $r '^provision account-rights').Count, (@(Pr @('-Restart')) | ForEach-Object { Line $_ '^provision account-rights' }).Count) @(0, 0)
-}
 
     # macOS is not Linux: the group admin counts and the group sudo does not (the kind is passed through by every caller)
     $env:FAKE_UNAME = 'Darwin arm64'
@@ -464,6 +463,7 @@ echo "fake ssh: not expected: $*" >&2; exit 9
     Check 'mac: the group sudo is not an admin group there (toolchain)' @(Line (Tc @()) '^room-toolchain account ok svc: ').Count 1
     Check 'mac: the group sudo is not an admin group there (provision)' @(Line (Pr @()) '^provision account-rights ok svc: ').Count 1
     Remove-Item Env:FAKE_UNAME
+}
 
 # room-check.ps1 end to end: a mock hub (python3 serving /_hub/rooms with no rooms), the same fake ssh, and an atrium that has the
 # `requirements` subcommand. Skipped, and said so, where one of those is missing. The room is not attached, which is its own

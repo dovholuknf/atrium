@@ -1425,7 +1425,8 @@ async function offerCleanCopy() {
   btn.id = "cc-btn";
   btn.className = "cc-btn";
   btn.textContent = "copy clean";
-  btn.title = "copy the reply's own markdown instead of the terminal's render";
+  btn.dataset.tip = "copy the reply's own markdown instead of the terminal's render";
+  btn.setAttribute("aria-label", "copy clean");
   // The press must not clear the selection or take the terminal's focus before the click lands.
   btn.addEventListener("mousedown", e => e.preventDefault());
   btn.addEventListener("click", () => {

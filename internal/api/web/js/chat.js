@@ -45,7 +45,7 @@ function chatSelect(id) {
   if (chatId) {
     const f = document.createElement("iframe");
     f.id = "chat-frame";
-    f.title = "conversation";
+    f.setAttribute("aria-label", "conversation");
     f.dataset.card = chatId;
     f.src = "/m/?chat=1#term=" + encodeURIComponent(chatId);
     host.append(f);

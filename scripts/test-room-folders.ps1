@@ -177,9 +177,12 @@ foreach (`$d in `$args[3..(`$args.Count - 1)]) { "allowed `$d"; "trusted `$d" }
 exit 0
 "@
     $pw = (Get-Command pwsh).Source
+    # the child writes the curly quotes of the weird folders in UTF-8 and this side reads them so, not in a Windows console's OEM page
+    $utf8Out = '[Console]::OutputEncoding = [Text.UTF8Encoding]::new($false); '
+    [Console]::OutputEncoding = [Text.UTF8Encoding]::new($false)
     function Invoke-AsPs {
         param([string] $script)
-        $enc = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($script))
+        $enc = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($utf8Out + $script))
         $out = & $pw -NoProfile -NonInteractive -EncodedCommand $enc 2>&1
         [pscustomobject]@{ Out = @($out | ForEach-Object { "$_" }); Code = $LASTEXITCODE }
     }
