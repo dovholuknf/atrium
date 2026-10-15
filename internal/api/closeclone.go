@@ -29,7 +29,7 @@ func cloneKeepReason(ctx context.Context, dir string, mineWT, mineBranch []strin
 		return "atrium did not make it, so it is not atrium's to delete"
 	}
 	if top, err := gitIn(ctx, dir, "rev-parse", "--show-toplevel"); err != nil ||
-		!eqPath(filepath.FromSlash(strings.TrimSpace(top)), filepath.FromSlash(dir)) {
+		!sameRealDir(filepath.FromSlash(strings.TrimSpace(top)), filepath.FromSlash(dir)) {
 		return "git does not answer for it as a clone"
 	}
 	others := 0
@@ -39,7 +39,7 @@ func cloneKeepReason(ctx context.Context, dir string, mineWT, mineBranch []strin
 		}
 		mine := false
 		for _, m := range mineWT {
-			if eqPath(filepath.FromSlash(wt.Path), filepath.FromSlash(m)) {
+			if sameRealDir(filepath.FromSlash(wt.Path), filepath.FromSlash(m)) {
 				mine = true
 			}
 		}
@@ -69,6 +69,17 @@ func cloneKeepReason(ctx context.Context, dir string, mineWT, mineBranch []strin
 		return fmt.Sprintf("%d %s in it on no remote", n, plural(n, "commit is", "commits are"))
 	}
 	return ""
+}
+
+// sameRealDir is eqPath after resolving links, because git reports the real path: /private/var for a /var folder on a Mac,
+// and the long name for an 8.3 short one on Windows.
+func sameRealDir(a, b string) bool {
+	if eqPath(a, b) {
+		return true
+	}
+	ra, errA := filepath.EvalSymlinks(a)
+	rb, errB := filepath.EvalSymlinks(b)
+	return errA == nil && errB == nil && eqPath(ra, rb)
 }
 
 // cardOwnOf is the card's live worktree paths and branch names in the repository at dir.
