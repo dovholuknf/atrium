@@ -223,6 +223,8 @@ type Daemon struct {
 	streams streamHolder
 	// itemPush is the one pass at a time that carries items to the hub. See item_hub.go.
 	itemPush itemPush
+	// poolFeed is the one pass at a time that types queued items to a pool's idle cards. See item_pool.go.
+	poolFeed poolFeeder
 
 	// pending retries the on-screen delivery of peer messages the gate would not
 	// take right now, on a widening backoff. In memory, because the durable copy
@@ -494,6 +496,7 @@ func newWith(opts Options, tune func(*hooks)) (*Daemon, error) {
 	d.ap.HubCI = d.handleHubCI
 	d.ap.HubAsk = d.handleHubAsk
 	d.ap.ItemAct = d.handleItemAct
+	d.ap.PoolSubmit = d.handlePoolSubmit
 	d.ap.RestartWake = d.handleRestartWake
 	d.ap.Hold = d.handleHold
 	d.ap.NewContext = d.handleNewContext

@@ -84,3 +84,19 @@ func TestItemToolIsNotInTheWorkerSets(t *testing.T) {
 		t.Fatal("atrium_item is in the worker set")
 	}
 }
+
+func TestItemToolSubmitQueuesOnAPool(t *testing.T) {
+	var calls []itemCall
+	it := fakeItemTools(&calls, `{"ok":true,"item_id":"it-9","state":"running"}`)
+	_, out, err := it.itemHandler(context.Background(), nil, itemInput{Action: "submit", Pool: "reviewer", Brief: "review it"})
+	if err != nil || !strings.Contains(out.Note, "it-9") {
+		t.Fatalf("submit: %+v %v", out, err)
+	}
+	if c := calls[0]; c.method != http.MethodPost || c.path != "/_hub/items" || !strings.Contains(c.body, `"do":"submit"`) ||
+		!strings.Contains(c.body, `"pool":"reviewer"`) || !strings.Contains(c.body, `"by":"orch@sg4"`) {
+		t.Fatalf("submit: %+v", c)
+	}
+	if _, _, err := it.itemHandler(context.Background(), nil, itemInput{Action: "submit", Pool: "reviewer"}); err == nil {
+		t.Fatal("a submit with no brief was accepted")
+	}
+}

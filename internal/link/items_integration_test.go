@@ -169,3 +169,27 @@ func TestHubAskCarriesTheItemEndpointsAndNothingMore(t *testing.T) {
 		}
 	}
 }
+
+func TestSubmitCarriesAnItemToThePoolsRoom(t *testing.T) {
+	x := newItemRig(t)
+	submit := func(in map[string]any, from string) (int, string) {
+		in["do"] = "submit"
+		return x.send("POST", "/_hub/items", js(in), from)
+	}
+	code, _ := submit(map[string]any{"pool": "reviewer", "brief": "review it", "by": "orch@sg4"}, loopAddr)
+	if code != http.StatusOK || len(x.calls) != 1 ||
+		!strings.HasPrefix(x.calls[0], `sg4 /v1/pools/reviewer/items {`) || !strings.Contains(x.calls[0], `"by":"orch"`) {
+		t.Fatalf("a submit goes to the pool's room with the bare handle: %d %v", code, x.calls)
+	}
+	// the owner has to be on the pool's room
+	if code, body := submit(map[string]any{"pool": "reviewer", "brief": "x", "room": "sg3", "by": "orch@sg4"}, loopAddr); code != http.StatusBadRequest ||
+		!strings.Contains(body, "pool's room") {
+		t.Fatalf("an owner on another room: %d %s", code, body)
+	}
+	if code, _ := submit(map[string]any{"pool": "reviewer", "by": "orch@sg4"}, loopAddr); code != http.StatusBadRequest {
+		t.Fatalf("no brief: %d", code)
+	}
+	if code, _ := submit(map[string]any{"pool": "reviewer", "brief": "x", "by": "orch@sg4"}, "203.0.113.9:4000"); code != http.StatusForbidden {
+		t.Fatalf("from elsewhere: %d", code)
+	}
+}

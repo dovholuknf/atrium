@@ -7,6 +7,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -21,6 +22,9 @@ import (
 //	GET  /_hub/items/<id>                              one, with `holder` {room, card} when its owner is a role that is held
 //	POST /_hub/items/sync                              a room's push of one revision: the row as the hub's store takes it.
 //	                                                   {applied:false} for a replay or a push older than the row
+//	POST /_hub/items                                   {do: submit, room, pool, brief, owner?, by}: queue an item on a pool.
+//	                                                   Carried to the pool's room, which types it to an idle card, one item
+//	                                                   at a time per card. The hub sees the item when a card takes it
 //	POST /_hub/items/<id>                              {do: unblock|cancel, by, answer?}: an owner acts. Authorised here,
 //	                                                   then carried to the room that runs the item
 //
@@ -104,6 +108,8 @@ func (p *Proxy) serveItems(w http.ResponseWriter, r *http.Request, sub string) {
 	switch {
 	case rest == "" && !write:
 		p.itemsList(w, r, st)
+	case rest == "" && write:
+		p.itemSubmit(w, r)
 	case rest == "sync" && write:
 		p.itemSync(w, r, st)
 	case rest != "" && !strings.Contains(rest, "/") && !write:
@@ -297,6 +303,52 @@ func (p *Proxy) itemAct(w http.ResponseWriter, r *http.Request, st *hubstore.Sto
 		return
 	}
 	p.RecordAudit(it.Room, "item-"+do, it.ID)
+	w.WriteHeader(code)
+	_, _ = w.Write(resp)
+}
+
+// itemSubmit queues an item on a pool, on the room the pool is on. The submitter is the owner unless it names another,
+// and has to be a session on that room: an owner is told by its own room, and a pool lives on one.
+func (p *Proxy) itemSubmit(w http.ResponseWriter, r *http.Request) {
+	var in struct {
+		Do    string `json:"do"`
+		Room  string `json:"room"`
+		Pool  string `json:"pool"`
+		Brief string `json:"brief"`
+		Owner string `json:"owner"`
+		By    string `json:"by"`
+	}
+	if err := crDecode(r, &in); err != nil {
+		crFail(w, http.StatusBadRequest, "could not read that: "+err.Error())
+		return
+	}
+	by, byRoom, _ := strings.Cut(strings.TrimSpace(in.By), "@")
+	room := strings.TrimSpace(in.Room)
+	if room == "" {
+		room = byRoom
+	}
+	switch {
+	case strings.ToLower(strings.TrimSpace(in.Do)) != "submit":
+		crFail(w, http.StatusBadRequest, "do is submit")
+		return
+	case !validRoomName(room):
+		crFail(w, http.StatusBadRequest, "say which room the pool is on")
+		return
+	case strings.TrimSpace(in.Pool) == "" || strings.TrimSpace(in.Brief) == "":
+		crFail(w, http.StatusBadRequest, "submit needs the pool and the brief")
+		return
+	case by != "" && byRoom != "" && !strings.EqualFold(byRoom, room):
+		crFail(w, http.StatusBadRequest, "a pool's items are owned on the pool's room, and "+by+" is on "+byRoom+
+			". name `human` or a role as the owner")
+		return
+	}
+	body, _ := json.Marshal(map[string]string{"brief": in.Brief, "owner": in.Owner, "by": by})
+	code, resp, err := p.callItemRoom(r.Context(), room, "/v1/pools/"+url.PathEscape(strings.TrimSpace(in.Pool))+"/items", body)
+	if err != nil {
+		crFail(w, http.StatusBadGateway, "the room that runs that pool is not answering: "+err.Error())
+		return
+	}
+	p.RecordAudit(room, "item-submit", strings.TrimSpace(in.Pool))
 	w.WriteHeader(code)
 	_, _ = w.Write(resp)
 }

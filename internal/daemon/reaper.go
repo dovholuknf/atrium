@@ -214,6 +214,8 @@ func (d *Daemon) reap(ctx context.Context, every time.Duration) {
 		// a2a.go.
 		// Blocked items that are not moving. Before the watch, which puts them on the card. See item_stuck.go.
 		d.sweepItems(time.Now())
+		// Items waiting on a pool whose cards are idle now. See item_pool.go.
+		d.feedPools()
 		if err := d.watchWorkers(time.Now()); err != nil {
 			log.Printf("[atrium] watching launched sessions: %v", err)
 		}

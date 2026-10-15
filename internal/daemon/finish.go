@@ -79,6 +79,9 @@ type FinishRequest struct {
 	// Ended is a worker ending with atrium_done or atrium_blocked: one line, and the work is over either way, so a
 	// blocked report moves its item to reported as a done one does. See ledgerReport.
 	Ended bool `json:"ended,omitempty"`
+	// Learned is one paragraph a pool card leaves for its pool with a done, appended to LEARNINGS.md. Ignored for any
+	// card that is not in a pool. See learnings.go.
+	Learned string `json:"learned,omitempty"`
 	// viaSay is a done that was read out of a worker's own atrium_say to its launcher. The launcher has the words
 	// already, so no second notice is queued to it. Never on the wire. See doneBySay.
 	viaSay bool
@@ -466,6 +469,9 @@ func (d *Daemon) finish(task *store.Task, in FinishRequest) (map[string]any, int
 	}
 	if res.Relayed {
 		d.kickRelays()
+	}
+	if itemEnd != nil && itemEnd.changed && in.Status == ReportDone && itemEnd.item.Pool != "" && strings.TrimSpace(in.Learned) != "" {
+		d.appendLearned(task, itemEnd.item, in.Learned)
 	}
 	if itemEnd != nil && itemEnd.changed {
 		d.itemNotify(task, itemEnd.item, itemNoticeText(task, itemEnd.item, in, sha, recap))

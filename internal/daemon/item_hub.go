@@ -157,8 +157,14 @@ func (d *Daemon) moveItem(id, state, note string) (*store.ItemRow, bool) {
 		return nil, false
 	}
 	if changed {
-		d.publishTask(it.TaskID)
+		if it.TaskID != "" {
+			d.publishTask(it.TaskID)
+		}
 		d.kickItems()
+		// A pool card that finished an item is idle: the next one is typed. See item_pool.go.
+		if state == store.ItemFinished && it.Pool != "" {
+			go d.feedPool(it.Pool)
+		}
 	}
 	return it, changed
 }
@@ -173,7 +179,7 @@ type itemEnding struct {
 // here, which keeps the stage-1 behaviour. FINISHED IS TERMINAL, and the same state again is no change, so a replay is
 // one revision and one notice.
 func (d *Daemon) itemEnded(task *store.Task, in FinishRequest) *itemEnding {
-	if !in.Ended || !isItem(task) {
+	if !in.Ended || (!isItem(task) && poolOf(task) == "") {
 		return nil
 	}
 	it, err := d.st.ItemOfTask(task.ID)
@@ -234,6 +240,16 @@ func (d *Daemon) itemNotify(task *store.Task, it *store.ItemRow, text string) {
 			d.orphanReport(task, text)
 			d.itemUnreached(task, it)
 		}
+		return
+	}
+	// A POOL ITEM'S OWNER is whoever submitted it, not the pool card's launcher, which launched the card for every item.
+	if it.Pool != "" {
+		if owner, err := d.st.GetByWireName(d.st.Qualify(it.Owner)); err == nil && owner != nil {
+			d.itemQueue(task, owner.ID, key, text)
+			return
+		}
+		d.orphanReport(task, text)
+		d.itemUnreached(task, it)
 		return
 	}
 	if launcher := d.launcherOf(task); launcher != nil {
@@ -366,7 +382,7 @@ func (d *Daemon) itemUnblock(id, answer, by string) (map[string]any, int, error)
 		return nil, http.StatusConflict, errors.New("item " + id + " is " + it.State + ", not blocked")
 	}
 	target, err := d.st.Get(it.TaskID)
-	if err != nil {
+	if it.TaskID == "" || err != nil {
 		return nil, http.StatusGone, errors.New("the card that runs item " + id + " is gone")
 	}
 	text := itemAnswerPrefix + answer
@@ -400,11 +416,24 @@ func (d *Daemon) itemCancel(id, by string) (map[string]any, int, error) {
 	if moved == nil {
 		return nil, http.StatusInternalServerError, errors.New("could not cancel item " + id)
 	}
-	go func() {
-		if err := d.askExit(it.TaskID, 10*time.Second); err != nil {
-			log.Printf("[atrium] item %s cancelled by %s, and its worker was not asked to leave: %v", id, by, err)
+	switch {
+	case it.TaskID == "":
+		// Still queued: no card has it, so there is nobody to ask.
+	case it.Pool != "":
+		// A pool card stays open for the next item. It is told to put this one down, which is not a turn it owes.
+		if card, err := d.st.Get(it.TaskID); err == nil {
+			text := "item " + id + " was cancelled. stop work on it and wait for the next item."
+			if _, _, err := d.deliverPeerCaused(card, store.ReservedHandle, text, "", "", d.waitsForTurn(card.ID, WhenImmediate)); err != nil {
+				log.Printf("[atrium] item %s cancelled by %s, and its card was not told: %v", id, by, err)
+			}
 		}
-	}()
+	default:
+		go func() {
+			if err := d.askExit(it.TaskID, 10*time.Second); err != nil {
+				log.Printf("[atrium] item %s cancelled by %s, and its worker was not asked to leave: %v", id, by, err)
+			}
+		}()
+	}
 	return map[string]any{"ok": true, "item_id": id, "state": moved.State}, http.StatusOK, nil
 }
 

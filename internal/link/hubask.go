@@ -73,6 +73,8 @@ func (c *controlMCP) hubAsk(ctx context.Context, from string, req RelayRequest) 
 		if base, _, _ := strings.Cut(req.Path, "?"); base == "/_hub/backlog" || base == "/_hub/reports" ||
 			base == "/_hub/items/sync" {
 			m["room"] = from
+		} else if base == "/_hub/items" {
+			// A submit names the room its POOL is on, which is the caller's to say. `by` is still the link's.
 		} else {
 			delete(m, "room")
 		}

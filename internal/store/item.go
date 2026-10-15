@@ -63,8 +63,12 @@ type ItemRow struct {
 	// MissedOwner and MissedWorker say the notice, or the answer, was handed back once after a context clear.
 	MissedOwner  bool
 	MissedWorker bool
-	CreatedAt    string
-	UpdatedAt    string
+	// Pool and Brief are an item submitted to a pool: the pool's name, and the words typed to whichever resident card
+	// takes it. An item that was queued has no card (TaskID is empty) until one does. See item_pool.go.
+	Pool      string
+	Brief     string
+	CreatedAt string
+	UpdatedAt string
 }
 
 // ItemOwed is one outbox row: a push the hub has not taken.
@@ -79,15 +83,15 @@ type ItemOwed struct {
 }
 
 const itemRowCols = `item_id, task_id, generation, state, revision, owner_kind, owner, created_by, note, unblock_msg,
-	unblock_delivered, unblock_text, unblock_at, retyped_at, stuck_alerted, missed_owner, missed_worker, created_at,
-	updated_at`
+	unblock_delivered, unblock_text, unblock_at, retyped_at, stuck_alerted, missed_owner, missed_worker, pool, brief,
+	created_at, updated_at`
 
 func scanItemRow(sc interface{ Scan(...any) error }) (*ItemRow, error) {
 	var it ItemRow
 	var del, mo, mw int
 	if err := sc.Scan(&it.ID, &it.TaskID, &it.Generation, &it.State, &it.Revision, &it.OwnerKind, &it.Owner, &it.CreatedBy,
 		&it.Note, &it.UnblockMsg, &del, &it.UnblockText, &it.UnblockAt, &it.RetypedAt, &it.StuckAlerted, &mo, &mw,
-		&it.CreatedAt, &it.UpdatedAt); err != nil {
+		&it.Pool, &it.Brief, &it.CreatedAt, &it.UpdatedAt); err != nil {
 		return nil, err
 	}
 	it.UnblockDelivered, it.MissedOwner, it.MissedWorker = del != 0, mo != 0, mw != 0
@@ -112,6 +116,11 @@ func (it *ItemRow) pushBody() string {
 }
 
 func owe(tx *Tx, it *ItemRow, at string) error {
+	// A queued item has no card yet, and the hub takes an item only with the card that runs it. Its first push is the
+	// assignment.
+	if it.TaskID == "" {
+		return nil
+	}
 	_, err := tx.Exec(`INSERT INTO item_outbox (item_id, revision, state, body, created_at, attempts, last_error)
 		VALUES (?,?,?,?,?,0,'') ON CONFLICT (item_id, revision, state) DO NOTHING`,
 		it.ID, it.Revision, it.State, it.pushBody(), at)
@@ -121,7 +130,7 @@ func owe(tx *Tx, it *ItemRow, at string) error {
 // ItemCreate records a new item and the push it owes. An id already held is the same item: nothing changes and the
 // row comes back.
 func (s *Store) ItemCreate(it ItemRow) (*ItemRow, error) {
-	if strings.TrimSpace(it.ID) == "" || strings.TrimSpace(it.TaskID) == "" {
+	if strings.TrimSpace(it.ID) == "" || (strings.TrimSpace(it.TaskID) == "" && it.Pool == "") {
 		return nil, errors.New("an item has an id and a card")
 	}
 	if it.State == "" {
@@ -137,9 +146,9 @@ func (s *Store) ItemCreate(it ItemRow) (*ItemRow, error) {
 	var out *ItemRow
 	err := s.inTx(func(tx *Tx) error {
 		now := ts(s.now())
-		res, err := tx.Exec(`INSERT INTO item_mirror (`+itemRowCols+`) VALUES (?,?,?,?,?,?,?,?,?,?,0,'','','','',0,0,?,?)
+		res, err := tx.Exec(`INSERT INTO item_mirror (`+itemRowCols+`) VALUES (?,?,?,?,?,?,?,?,?,?,0,'','','','',0,0,?,?,?,?)
 			ON CONFLICT (item_id) DO NOTHING`, it.ID, it.TaskID, it.Generation, it.State, it.Revision, it.OwnerKind,
-			it.Owner, it.CreatedBy, it.Note, "", now, now)
+			it.Owner, it.CreatedBy, it.Note, "", it.Pool, it.Brief, now, now)
 		if err != nil {
 			return err
 		}
@@ -217,7 +226,7 @@ func (s *Store) ItemOfTask(taskID string) (*ItemRow, error) {
 	err := s.guard(func() error {
 		var err error
 		out, err = scanItemRow(s.db.QueryRow(`SELECT `+itemRowCols+` FROM item_mirror WHERE task_id = ?
-			ORDER BY created_at DESC, item_id DESC LIMIT 1`, taskID))
+			ORDER BY created_at DESC, rowid DESC LIMIT 1`, taskID))
 		return err
 	})
 	if errors.Is(err, sql.ErrNoRows) {
@@ -380,4 +389,97 @@ func (s *Store) itemFlip(q string, args ...any) (bool, error) {
 		return nil
 	})
 	return first, err
+}
+
+// ItemsQueued is a pool's items still waiting for a card, oldest first. That order is the pool's: one at a time, in
+// the order they were submitted.
+func (s *Store) ItemsQueued(pool string) ([]*ItemRow, error) {
+	var out []*ItemRow
+	err := s.guard(func() error {
+		out = nil
+		rows, err := s.db.Query(`SELECT `+itemRowCols+` FROM item_mirror WHERE pool = ? AND state = 'queued'
+			ORDER BY created_at, rowid`, pool)
+		if err != nil {
+			return err
+		}
+		defer rows.Close()
+		for rows.Next() {
+			it, err := scanItemRow(rows)
+			if err != nil {
+				return err
+			}
+			out = append(out, it)
+		}
+		return rows.Err()
+	})
+	return out, err
+}
+
+// ItemPoolsQueued is the pools that have an item waiting.
+func (s *Store) ItemPoolsQueued() ([]string, error) {
+	var out []string
+	err := s.guard(func() error {
+		out = nil
+		rows, err := s.db.Query(`SELECT DISTINCT pool FROM item_mirror WHERE pool <> '' AND state = 'queued'`)
+		if err != nil {
+			return err
+		}
+		defer rows.Close()
+		for rows.Next() {
+			var p string
+			if err := rows.Scan(&p); err != nil {
+				return err
+			}
+			out = append(out, p)
+		}
+		return rows.Err()
+	})
+	return out, err
+}
+
+// ItemCardBusy is whether a card holds an item that is not finished. A blocked item counts as busy: its worker is
+// waiting on an answer, and the card takes nothing new until the item is finished.
+func (s *Store) ItemCardBusy(taskID string) (bool, error) {
+	n := 0
+	err := s.guard(func() error {
+		return s.db.QueryRow(`SELECT COUNT(*) FROM item_mirror WHERE task_id = ? AND state IN ('running','blocked')`,
+			taskID).Scan(&n)
+	})
+	return n > 0, err
+}
+
+// ItemAssign gives a queued item to the card that was typed its brief, as running at the next revision, with the push
+// that is owed. False when the item was no longer queued, so a second feed of one item is a no-op.
+func (s *Store) ItemAssign(id, taskID string, generation int) (*ItemRow, bool, error) {
+	if generation < 1 {
+		generation = 1
+	}
+	var out *ItemRow
+	changed := false
+	err := s.inTx(func(tx *Tx) error {
+		changed = false
+		cur, err := scanItemRow(tx.QueryRow(`SELECT `+itemRowCols+` FROM item_mirror WHERE item_id = ?`, id))
+		if err != nil {
+			return err
+		}
+		if cur.State != ItemQueued {
+			out = cur
+			return nil
+		}
+		now := ts(s.now())
+		cur.TaskID, cur.Generation, cur.State, cur.Revision, cur.UpdatedAt = taskID, generation, ItemRunning, cur.Revision+1, now
+		if _, err := tx.Exec(`UPDATE item_mirror SET task_id = ?, generation = ?, state = ?, revision = ?, updated_at = ?
+			WHERE item_id = ?`, taskID, generation, ItemRunning, cur.Revision, now, id); err != nil {
+			return err
+		}
+		if err := owe(tx, cur, now); err != nil {
+			return err
+		}
+		out, changed = cur, true
+		return nil
+	})
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, false, ErrNoItem
+	}
+	return out, changed, err
 }

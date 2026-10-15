@@ -2281,6 +2281,16 @@ var migrations = []struct {
 		name: "0101_status_paused",
 		fn:   migratePausedStatus,
 	},
+	{
+		// ITEMS, STAGE 3: a pool's item waits for a card, so it names the pool and keeps the brief it will be typed.
+		// task_id is empty until a card takes it. See item.go and daemon/item_pool.go.
+		name: "0102_item_pool",
+		stmts: []string{
+			`ALTER TABLE item_mirror ADD COLUMN pool  TEXT NOT NULL DEFAULT ''`,
+			`ALTER TABLE item_mirror ADD COLUMN brief TEXT NOT NULL DEFAULT ''`,
+			`CREATE INDEX IF NOT EXISTS item_mirror_pool ON item_mirror (pool, state)`,
+		},
+	},
 }
 
 // migratePausedStatus widens task.status's CHECK to accept 'paused' and renames the stored value.

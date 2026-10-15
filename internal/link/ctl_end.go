@@ -42,7 +42,7 @@ const blockedToolDesc = "End your work: something stops you and you cannot go on
 // What a resident card hears from the same two tools: a task is reported and the card stays open.
 const residentDoneToolDesc = "Report that this task is finished. Your card stays open: after the call, say nothing more " +
 	"and wait for the next message. Give exactly one of sha or artifact, and an optional line of up to 20 words. " +
-	"Details go in REPORT.md."
+	"Details go in REPORT.md. In a pool, `learned` is one paragraph for the next item: atrium appends it to LEARNINGS.md."
 
 const residentBlockedToolDesc = "Report that something stops this task, in up to 50 words. Your card stays open: " +
 	"after the call, say nothing more and wait for the next message."
@@ -65,7 +65,11 @@ type doneInput struct {
 	SHA      string `json:"sha,omitempty" jsonschema:"sha or artifact location. the commit the work landed as: 7 to 40 hex characters"`
 	Artifact string `json:"artifact,omitempty" jsonschema:"sha or artifact location. a path or URL to what you made, when there is no commit"`
 	Line     string `json:"line,omitempty" jsonschema:"optional: one line, up to 20 words, shown after the sha"`
+	Learned  string `json:"learned,omitempty" jsonschema:"optional, for a card in a pool: one paragraph about the code and your own misses that the next item should know. atrium appends it to LEARNINGS.md"`
 }
+
+// LearnedMax is the longest `learned` atrium_done takes, in bytes: one paragraph. The room's is the same, and cuts.
+const LearnedMax = 1500
 
 type blockedInput struct {
 	Reason string `json:"reason" jsonschema:"what stops you, in up to 50 words"`
@@ -165,6 +169,10 @@ func (d EndDoor) Done(ctx context.Context, req *mcp.CallToolRequest, in doneInpu
 	if n := len(strings.Fields(line)); n > EndLineMax {
 		return nil, EndOutput{}, fmt.Errorf("the line is %d words, over %d. details go in REPORT.md", n, EndLineMax)
 	}
+	learned := strings.Join(strings.Fields(in.Learned), " ")
+	if len(learned) > LearnedMax {
+		return nil, EndOutput{}, fmt.Errorf("learned is %d bytes, over %d. one paragraph", len(learned), LearnedMax)
+	}
 	tail := ""
 	if line != "" {
 		tail = ": " + line
@@ -176,7 +184,7 @@ func (d EndDoor) Done(ctx context.Context, req *mcp.CallToolRequest, in doneInpu
 		return nil, EndOutput{}, fmt.Errorf("give sha (the commit) or artifact (a path or URL to what you made)")
 	case artifact != "":
 		out, err := d.Report(ctx, req, map[string]any{
-			"status": "done", "recap": "done " + artifact + tail, "artifact": artifact, "ended": true,
+			"status": "done", "recap": "done " + artifact + tail, "artifact": artifact, "ended": true, "learned": learned,
 		})
 		return nil, out, err
 	}
@@ -184,7 +192,7 @@ func (d EndDoor) Done(ctx context.Context, req *mcp.CallToolRequest, in doneInpu
 		return nil, EndOutput{}, fmt.Errorf("%s", why)
 	}
 	out, err := d.Report(ctx, req, map[string]any{
-		"status": "done", "recap": "done " + sha + tail, "sha": sha, "ended": true,
+		"status": "done", "recap": "done " + sha + tail, "sha": sha, "ended": true, "learned": learned,
 	})
 	return nil, out, err
 }

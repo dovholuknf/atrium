@@ -24,12 +24,19 @@ const itemToolDesc = "Items you own: work you started with `item` on a launch, o
 	"- `get {id}`: one item.\n" +
 	"- `unblock {id, answer}`: type your answer to the worker, as `atrium`. The worker never learns who you are. The " +
 	"item stays blocked until the worker's turn actually starts from your answer, and then it is running again.\n" +
-	"- `cancel {id}`: end an item that is not finished, and its worker.\n\n" +
+	"- `cancel {id}`: end an item that is not finished, and its worker.\n" +
+	"- `submit {pool, brief, owner?, room?}`: queue an item on a pool: resident cards tagged `atrium:pool:<name>`. A pool " +
+	"is fed ONE ITEM AT A TIME PER CARD, in the order submitted, and an item waits until a card is idle. You own it unless " +
+	"`owner` names `human` or a role. `room` is the pool's room, yours by default.\n\n" +
 	"Only the owner may unblock or cancel. An item the human owns has no unblock here: the human types into the worker's " +
 	"terminal."
 
 type itemInput struct {
-	Action string `json:"action" jsonschema:"list, get, unblock or cancel"`
+	Action string `json:"action" jsonschema:"list, get, unblock, cancel or submit"`
+	Pool   string `json:"pool,omitempty" jsonschema:"for submit: the pool's name"`
+	Brief  string `json:"brief,omitempty" jsonschema:"for submit: the task, typed to whichever card takes it"`
+	Owner  string `json:"owner,omitempty" jsonschema:"for submit: human, orchestrator, merger or director. empty is you"`
+	Room   string `json:"room,omitempty" jsonschema:"for submit: the room the pool is on. default is yours"`
 	ID     string `json:"id,omitempty" jsonschema:"the item id, for get, unblock and cancel"`
 	Answer string `json:"answer,omitempty" jsonschema:"for unblock: what to type to the worker"`
 	State  string `json:"state,omitempty" jsonschema:"for list: only items in this state"`
@@ -105,13 +112,27 @@ func (t ownerItemTools) itemHandler(ctx context.Context, req *mcp.CallToolReques
 			return nil, out, &refusedError{"unblock needs id and answer"}
 		}
 		return t.act(ctx, req, id, "unblock", in.Answer, "unblock typed to the worker. the item is running again once its turn starts from it")
+	case "submit":
+		if strings.TrimSpace(in.Pool) == "" || strings.TrimSpace(in.Brief) == "" {
+			return nil, out, &refusedError{"submit needs pool and brief"}
+		}
+		body := map[string]any{"do": "submit", "pool": in.Pool, "brief": in.Brief, "owner": in.Owner, "room": in.Room, "by": t.by(req)}
+		var res struct {
+			ItemID string `json:"item_id"`
+			State  string `json:"state"`
+		}
+		if err := t.call(ctx, http.MethodPost, "/_hub/items", body, &res); err != nil {
+			return nil, out, err
+		}
+		out.Note = "item " + res.ItemID + " is " + res.State + " on pool " + in.Pool + ". it is typed to a card when one is idle"
+		return nil, out, nil
 	case "cancel":
 		if id == "" {
 			return nil, out, &refusedError{"cancel needs id"}
 		}
 		return t.act(ctx, req, id, "cancel", "", "cancel asked of the worker's room")
 	}
-	return nil, out, &refusedError{fmt.Sprintf("action %q is not one of list, get, unblock, cancel", in.Action)}
+	return nil, out, &refusedError{fmt.Sprintf("action %q is not one of list, get, unblock, cancel, submit", in.Action)}
 }
 
 func (t ownerItemTools) act(ctx context.Context, req *mcp.CallToolRequest, id, do, answer, note string) (

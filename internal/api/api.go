@@ -223,6 +223,8 @@ type Server struct {
 	// ItemAct is `POST /v1/items/{id}/{unblock|cancel}`, which the hub calls for an item's owner. Owned by the daemon.
 	// See internal/daemon/item_hub.go.
 	ItemAct http.HandlerFunc
+	// PoolSubmit is `POST /v1/pools/{pool}/items`, which the hub calls to queue an item on a pool. Owned by the daemon.
+	PoolSubmit http.HandlerFunc
 	// Hold reads, sets or lifts the room deploy hold. Owned by the daemon, which
 	// runs the permission chain it acts in. See internal/daemon/roomhold.go.
 	Hold http.HandlerFunc
@@ -814,6 +816,9 @@ func (s *Server) Handler() http.Handler {
 	}
 	if s.ItemAct != nil {
 		mux.HandleFunc("POST /v1/items/{id}/{act}", s.ItemAct)
+	}
+	if s.PoolSubmit != nil {
+		mux.HandleFunc("POST /v1/pools/{pool}/items", s.PoolSubmit)
 	}
 	if s.Say != nil {
 		mux.HandleFunc("POST /v1/say", s.Say)
