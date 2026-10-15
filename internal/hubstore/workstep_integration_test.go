@@ -32,3 +32,24 @@ func TestAStepKeepsItsTimesAcrossRederivations(t *testing.T) {
 		t.Fatalf("paths = %v", p)
 	}
 }
+
+// A STEP'S TAG IS STORED (migration 0027), and the branch lookups the record route uses see an item's branch.
+func TestAStepKeepsItsTagAndABranchBelongsToOneItem(t *testing.T) {
+	s := open(t)
+	s.PutItem(onWork("a1", "sg4", "c1", "f-thing", 1))
+	if err := s.PutWorkStep(WorkStepRow{BacklogID: "f-thing", Step: "tested", State: StepDone, Tag: TagReported}); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := s.WorkSteps("f-thing"); len(got) != 1 || got[0].Tag != TagReported {
+		t.Fatalf("steps = %+v", got)
+	}
+	if err := s.SetWorkBranch("f-thing", "claude/f-thing"); err != nil {
+		t.Fatal(err)
+	}
+	if other, held, _ := s.WorkOfBranch("claude/f-thing", "f-other"); !held || other != "f-thing" {
+		t.Fatalf("holder = %q %v", other, held)
+	}
+	if _, held, _ := s.WorkOfBranch("claude/f-thing", "f-thing"); held {
+		t.Fatal("an item holds its own branch against itself")
+	}
+}

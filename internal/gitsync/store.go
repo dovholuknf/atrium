@@ -61,6 +61,9 @@ type Store struct {
 	GitVersion func(ctx context.Context) (string, error)
 	// Probe says whether this git can make a reftable repository. Nil tries one in a temp directory.
 	Probe func(ctx context.Context) bool
+	// Checker makes the verdict reader for a mirror (item lifecycle L4). Nil reads no evidence. It is a function because
+	// deployready's tests import this package, so this package cannot import deployready.
+	Checker func(g CheckerGit, dir, branch string) EvidenceChecker
 	// MainAt overrides the time shown for main. Nil is the time of the last operator push from the push
 	// log, and the commit time of main's tip when there was none.
 	MainAt func(ctx context.Context, name string, tip Tip) *time.Time
@@ -611,7 +614,7 @@ func (s *Store) whyNot(ref Ref, err error) string {
 	return "the forge could not be reached (" + line + "), so " + PushMain + " Or " + RerunInit
 }
 
-// ── what the board lists ────────────────────────────────
+// â”€â”€ what the board lists â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 // MainView is main in a repository's listing.
 type MainView struct {

@@ -44,6 +44,23 @@ func (p *Proxy) serveWork(w http.ResponseWriter, r *http.Request, sub string) {
 		return
 	}
 	rest := strings.Trim(strings.TrimPrefix(sub, "work"), "/")
+	if r.Method == http.MethodPost && rest == "record" {
+		// A CARD'S TEST. The one write here a card makes, through the hub's own tool, so it is not the operator's route: it has
+		// its own checks (work_record.go), and the same loopback and origin guards.
+		switch {
+		case docsCrossOrigin.Check(r) != nil:
+			crFail(w, http.StatusForbidden, "a page on another origin cannot write here")
+		case !edge.LocalOperator(r):
+			crFail(w, http.StatusForbidden, "records are written only from the machine the hub runs on"+edge.ProxyNote(r))
+		default:
+			p.serveWorkRecord(w, r, st)
+		}
+		return
+	}
+	if id, ok := strings.CutSuffix(rest, "/review"); ok && r.Method == http.MethodPost && id != "" && !strings.Contains(id, "/") {
+		p.serveWorkReview(w, r, st, id)
+		return
+	}
 	if r.Method == http.MethodPost && rest != "" && !strings.Contains(rest, "/") {
 		switch {
 		case docsCrossOrigin.Check(r) != nil:

@@ -53,8 +53,10 @@ var workerTools = map[string]bool{
 	// How a worker ends, in one line. See ctl_end.go.
 	"atrium_done":    true,
 	"atrium_blocked": true,
-	"atrium_task":    true,
-	"atrium_alias":   true,
+	// How a worker says what a test found, pinned to its own commit. See record_mcp.go.
+	"atrium_record": true,
+	"atrium_task":   true,
+	"atrium_alias":  true,
 	// Workers write the reports, so a worker publishes. See docs_mcp.go.
 	"atrium_publish": true,
 	// Workers hand files between rooms. See files_mcp.go.

@@ -494,6 +494,7 @@ func newWith(opts Options, tune func(*hooks)) (*Daemon, error) {
 	d.ap.RoomExit = d.handleRoomExit
 	d.ap.RoomLaunch = d.handleRoomLaunch
 	d.ap.Report = d.handleReport
+	d.ap.Stamp = d.handleStamp
 	d.ap.GitClone = d.handleGitClone
 	d.ap.HubRemote = d.HubRemoteBase
 	d.ap.HubGitURL = d.handleHubGitURL

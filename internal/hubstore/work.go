@@ -136,6 +136,30 @@ func (s *Store) WorkCards(id string) ([]WorkCard, error) {
 	return out, err
 }
 
+// WorkOfCard is the item a card is attached to, the newest attachment when it is on several. ErrNoWork when it is on none.
+func (s *Store) WorkOfCard(room, card string) (Work, error) {
+	var w Work
+	err := s.guard(func() error {
+		var err error
+		w, err = scanWork(s.db.QueryRow(`SELECT `+prefixed("w", workCols)+` FROM work w JOIN work_card c ON c.backlog_id = w.backlog_id
+			WHERE c.room = ? AND c.card = ? ORDER BY c.attached_at DESC LIMIT 1`, fold(room), strings.TrimSpace(card)))
+		return err
+	})
+	if errors.Is(err, sql.ErrNoRows) {
+		return Work{}, ErrNoWork
+	}
+	return w, err
+}
+
+// prefixed is a column list with a table alias in front of each name.
+func prefixed(alias, cols string) string {
+	parts := strings.Split(cols, ",")
+	for i, c := range parts {
+		parts[i] = alias + "." + strings.TrimSpace(c)
+	}
+	return strings.Join(parts, ", ")
+}
+
 // WorkList is every item, newest change first, at most limit of them.
 func (s *Store) WorkList(limit int) ([]Work, error) {
 	if limit <= 0 || limit > 500 {

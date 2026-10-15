@@ -17,6 +17,7 @@ import (
 
 	"github.com/dovholuknf/atrium/internal/api"
 	"github.com/dovholuknf/atrium/internal/daemon"
+	"github.com/dovholuknf/atrium/internal/deployready"
 	"github.com/dovholuknf/atrium/internal/edge"
 	"github.com/dovholuknf/atrium/internal/gitsync"
 	"github.com/dovholuknf/atrium/internal/hubstore"
@@ -511,6 +512,9 @@ func serveAtrium(f atriumFlags, up atriumUp) error {
 	}
 	// WHAT GIT AND THE BUILDS SAY of an item, read again whenever a mirror pass moved, a collect ran or a room attached,
 	// and on a timer for the rest. See link/lifecycle_git.go.
+	gitHub.Store().Checker = func(g gitsync.CheckerGit, dir, branch string) gitsync.EvidenceChecker {
+		return evidenceChecker{&deployready.Checker{Git: g, Dir: dir, Branch: branch}}
+	}
 	proxy.SetLandGit(landGit{store: store, hub: gitHub})
 	proxy.SetHubBuild(runningCommit())
 	gitHub.Observed = func() { go proxy.RefreshAllGitSteps(ctx, true) }
@@ -934,6 +938,26 @@ func (f landGit) LandFacts(ctx context.Context, branch, sha, workID string, forg
 		return f.hub.Store().LandFacts(ctx, name, branch, sha, workID, forge)
 	}
 	return gitsync.LandFacts{}, nil
+}
+
+// evidenceChecker is deployready.Checker in gitsync's words.
+type evidenceChecker struct{ c *deployready.Checker }
+
+func (e evidenceChecker) Since(ctx context.Context, from, to string) (int, error) {
+	return e.c.Since(ctx, from, to)
+}
+
+func (e evidenceChecker) Coverage(ctx context.Context, base, tip string, alsoOn ...string) (gitsync.Coverage, error) {
+	cov, err := e.c.Coverage(ctx, base, tip, alsoOn...)
+	return gitsync.Coverage{Total: cov.Total, Covered: cov.Covered, Held: cov.Held, TipCovered: cov.TipCovered}, err
+}
+
+// ItemEvidence is the tested and reviewed steps' reach into the same repository. See link.EvidenceGit.
+func (f landGit) ItemEvidence(ctx context.Context, branch string, shas []string) (gitsync.Evidence, error) {
+	if name := f.repo(); name != "" {
+		return f.hub.Store().ItemEvidence(ctx, name, branch, shas)
+	}
+	return gitsync.Evidence{}, nil
 }
 
 func (f landGit) ForgeMain(ctx context.Context, force bool) gitsync.ForgeMain {

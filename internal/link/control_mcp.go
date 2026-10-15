@@ -251,6 +251,8 @@ func (c *controlMCP) server(class ctlClass) *mcp.Server {
 	addTool(s, class, &mcp.Tool{Name: "atrium_done", Description: doneDesc}, end.Done)
 	addTool(s, class, &mcp.Tool{Name: "atrium_blocked", Description: blockedDesc}, end.Blocked)
 
+	addTool(s, class, &mcp.Tool{Name: "atrium_record", Description: recordToolDesc}, c.recordHandler)
+
 	addTool(s, class, &mcp.Tool{
 		Name: "atrium_task",
 		Description: "One card: its status, what its runner is doing right now, and its recent " +

@@ -203,6 +203,9 @@ type Server struct {
 	// hub's `atrium_report`. Owned by the daemon, which owns the launcher's
 	// queue. See internal/daemon/finish.go.
 	Report http.HandlerFunc
+	// Stamp reads a card's own directory for the hub's `atrium_record`: the commit, the dirty flag and the branch, and keeps
+	// the log. Owned by the daemon, which knows where the card is. See internal/daemon/record.go.
+	Stamp http.HandlerFunc
 	// RestartWake queues, reads or clears the prompt typed into a card once its
 	// runner is back after a restart. Owned by the daemon, which owns the
 	// terminal. See internal/daemon/restartwake.go.
@@ -862,6 +865,9 @@ func (s *Server) Handler() http.Handler {
 	}
 	if s.Report != nil {
 		mux.HandleFunc("POST /v1/tasks/{id}/report", s.Report)
+	}
+	if s.Stamp != nil {
+		mux.HandleFunc("POST /v1/tasks/{id}/stamp", s.Stamp)
 	}
 	if s.RestartWake != nil {
 		mux.HandleFunc("POST /v1/tasks/{id}/restart-wake", s.RestartWake)

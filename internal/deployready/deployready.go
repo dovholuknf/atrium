@@ -627,13 +627,20 @@ type verdictCommit struct {
 // is how a review reads: one branch tip. Without --first-parent a verdict would cover every claude/main commit that
 // was merged into the reviewed branch, none of which the reviewer read.
 func (c *Checker) verdicts(ctx context.Context) (map[string]dims, []string, bool, error) {
+	return c.verdictsOn(ctx, "refs/heads/"+c.Branch)
+}
+
+// verdictsOn is verdicts read from the named refs together, newest first across all of them. An item's own branch is read
+// beside the integration branch, since a reviewer may put the verdict commit on either.
+func (c *Checker) verdictsOn(ctx context.Context, refs ...string) (map[string]dims, []string, bool, error) {
 	max := c.MaxVerdicts
 	if max <= 0 {
 		max = DefaultMaxVerdicts
 	}
-	out, err := c.Git.Git(ctx, c.Dir, "log", "--no-merges", "--no-renames", "--name-only", "--date-order",
+	args := append([]string{"log", "--no-merges", "--no-renames", "--name-only", "--date-order",
 		"--extended-regexp", "--grep=^Atrium-Verdict:", fmt.Sprintf("--max-count=%d", max),
-		"--format=%x1e%H%x1f%B%x1f", "refs/heads/"+c.Branch)
+		"--format=%x1e%H%x1f%B%x1f"}, refs...)
+	out, err := c.Git.Git(ctx, c.Dir, args...)
 	if err != nil {
 		return nil, nil, false, err
 	}

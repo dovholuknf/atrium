@@ -833,6 +833,16 @@ var migrations = []struct {
 			)`,
 		},
 	},
+	{
+		// ITEM LIFECYCLE L4: HOW STRONG A STEP'S EVIDENCE IS. `tag` is `observed` when atrium saw it itself and `reported` when a
+		// card said so, empty where the step has no evidence yet. The index finds an item's facts of one kind (its tests, its
+		// reviews) without reading the rest.
+		name: "0027_work_step_tag",
+		stmts: []string{
+			`ALTER TABLE work_step ADD COLUMN tag TEXT NOT NULL DEFAULT ''`,
+			`CREATE INDEX IF NOT EXISTS work_fact_kind ON work_fact (backlog_id, kind)`,
+		},
+	},
 }
 
 func (s *Store) migrate() error {

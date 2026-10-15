@@ -36,7 +36,15 @@ type WorkStepRow struct {
 	Cards string `json:"cards"`
 	// Reason is the words for a step that is skipped, or active for a stated cause (the rooms still on an older build).
 	Reason string `json:"reason,omitempty"`
+	// Tag is how strong the evidence is: `observed` when atrium saw it, `reported` when a card said so, empty before any.
+	Tag string `json:"tag,omitempty"`
 }
+
+// Evidence tags.
+const (
+	TagObserved = "observed"
+	TagReported = "reported"
+)
 
 // PutWorkStep writes a step, keeping the time it started and replacing the rest. The same row again changes nothing
 // that a reader can see, so a derivation that runs on every collect is safe to repeat.
@@ -45,13 +53,13 @@ func (s *Store) PutWorkStep(r WorkStepRow) error {
 		r.Cards = "[]"
 	}
 	return s.guard(func() error {
-		_, err := s.db.Exec(`INSERT INTO work_step (backlog_id, step, state, party, started_at, ended_at, sha, cards, reason)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+		_, err := s.db.Exec(`INSERT INTO work_step (backlog_id, step, state, party, started_at, ended_at, sha, cards, reason, tag)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 			ON CONFLICT (backlog_id, step) DO UPDATE SET state = excluded.state, party = excluded.party,
 				started_at = CASE WHEN work_step.started_at = '' THEN excluded.started_at ELSE work_step.started_at END,
 				ended_at = CASE WHEN excluded.state IN ('done','skipped') AND work_step.state = excluded.state
-					AND work_step.ended_at <> '' THEN work_step.ended_at ELSE excluded.ended_at END, sha = excluded.sha, cards = excluded.cards, reason = excluded.reason`,
-			r.BacklogID, r.Step, r.State, r.Party, r.StartedAt, r.EndedAt, r.SHA, r.Cards, r.Reason)
+					AND work_step.ended_at <> '' THEN work_step.ended_at ELSE excluded.ended_at END, sha = excluded.sha, cards = excluded.cards, reason = excluded.reason, tag = excluded.tag`,
+			r.BacklogID, r.Step, r.State, r.Party, r.StartedAt, r.EndedAt, r.SHA, r.Cards, r.Reason, r.Tag)
 		return err
 	})
 }
@@ -61,7 +69,7 @@ func (s *Store) WorkSteps(id string) ([]WorkStepRow, error) {
 	var out []WorkStepRow
 	err := s.guard(func() error {
 		out = nil
-		rows, err := s.db.Query(`SELECT backlog_id, step, state, party, started_at, ended_at, sha, cards, reason FROM work_step
+		rows, err := s.db.Query(`SELECT backlog_id, step, state, party, started_at, ended_at, sha, cards, reason, tag FROM work_step
 			WHERE backlog_id = ? ORDER BY rowid`, strings.TrimSpace(id))
 		if err != nil {
 			return err
@@ -69,7 +77,7 @@ func (s *Store) WorkSteps(id string) ([]WorkStepRow, error) {
 		defer rows.Close()
 		for rows.Next() {
 			var r WorkStepRow
-			if err := rows.Scan(&r.BacklogID, &r.Step, &r.State, &r.Party, &r.StartedAt, &r.EndedAt, &r.SHA, &r.Cards, &r.Reason); err != nil {
+			if err := rows.Scan(&r.BacklogID, &r.Step, &r.State, &r.Party, &r.StartedAt, &r.EndedAt, &r.SHA, &r.Cards, &r.Reason, &r.Tag); err != nil {
 				return err
 			}
 			out = append(out, r)
@@ -100,6 +108,24 @@ func (s *Store) updateWork(query, value, id string) error {
 		return ErrNoWork
 	}
 	return err
+}
+
+// WorkOfBranch is the item that already holds a build branch, other than `except`: a branch belongs to at most one item. False
+// when none does.
+func (s *Store) WorkOfBranch(branch, except string) (string, bool, error) {
+	var id string
+	var found bool
+	err := s.guard(func() error {
+		id, found = "", false
+		err := s.db.QueryRow(`SELECT backlog_id FROM work WHERE branch = ? AND backlog_id <> ? LIMIT 1`,
+			strings.TrimSpace(branch), strings.TrimSpace(except)).Scan(&id)
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil
+		}
+		found = err == nil
+		return err
+	})
+	return id, found, err
 }
 
 // SetWorkKind says whether an item is `code`, `doc` or `mixed`. A `doc` item has no deploy.
@@ -179,14 +205,14 @@ func (s *Store) AllWorkSteps() (map[string][]WorkStepRow, error) {
 	out := map[string][]WorkStepRow{}
 	err := s.guard(func() error {
 		out = map[string][]WorkStepRow{}
-		rows, err := s.db.Query(`SELECT backlog_id, step, state, party, started_at, ended_at, sha, cards, reason FROM work_step ORDER BY rowid`)
+		rows, err := s.db.Query(`SELECT backlog_id, step, state, party, started_at, ended_at, sha, cards, reason, tag FROM work_step ORDER BY rowid`)
 		if err != nil {
 			return err
 		}
 		defer rows.Close()
 		for rows.Next() {
 			var r WorkStepRow
-			if err := rows.Scan(&r.BacklogID, &r.Step, &r.State, &r.Party, &r.StartedAt, &r.EndedAt, &r.SHA, &r.Cards, &r.Reason); err != nil {
+			if err := rows.Scan(&r.BacklogID, &r.Step, &r.State, &r.Party, &r.StartedAt, &r.EndedAt, &r.SHA, &r.Cards, &r.Reason, &r.Tag); err != nil {
 				return err
 			}
 			out[r.BacklogID] = append(out[r.BacklogID], r)

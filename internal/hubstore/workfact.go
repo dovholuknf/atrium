@@ -59,6 +59,23 @@ const (
 	FactSendBack = "send_back"
 	// FactBuildDirectly is the item being filed to skip designed and approved.
 	FactBuildDirectly = "build_directly"
+	// FactTest is a test run. at_sha and dirty are STAMPED by the room from the card's own worktree, never named by the card.
+	// ref is one record, so two runs at one commit are two facts. payload {cmd, result: pass|fail, room, duration, log, branch}.
+	// Source is `reported` for a card's run, and `seen` only when atrium ran the tests itself.
+	FactTest = "test"
+	// FactReview is a verdict on the item's branch, always `seen`: no card writes one. at_sha is the tip the hub read when it
+	// took the report, payload {verdict: ok|hold, findings, report, by}. A verdict trailer is read from git each time and is
+	// never stored as a fact, so a rebase cannot leave a stale copy of it.
+	FactReview = "review"
+)
+
+// Test results and review verdicts.
+const (
+	ResultPass = "pass"
+	ResultFail = "fail"
+
+	VerdictOK   = "ok"
+	VerdictHold = "hold"
 )
 
 // Fact sources: seen is what atrium read itself, reported is a card's say-so.

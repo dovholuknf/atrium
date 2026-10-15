@@ -147,7 +147,13 @@ func (p *Proxy) refreshWork(ctx context.Context, st *hubstore.Store, id string, 
 	if err != nil {
 		return r, err
 	}
-	r.Lifecycle = Derive(DeriveIn{Work: r.Work, Cards: r.Cards, Assignments: r.Assignments, Facts: r.Facts, Doc: r.Doc, Stored: stored})
+	ev := Evidence{}
+	if withGit {
+		ev = p.readEvidence(ctx, r.Work, r.Facts)
+	} else {
+		ev = evidenceMemo(id)
+	}
+	r.Lifecycle = Derive(DeriveIn{Work: r.Work, Cards: r.Cards, Assignments: r.Assignments, Facts: r.Facts, Doc: r.Doc, Stored: stored, Evidence: ev})
 	// ONLY THE ENGINE'S OWN FIVE ARE WRITTEN. landed, deployed and pushed are L3's rows, and this does not touch them.
 	for _, s := range r.Lifecycle.Steps {
 		if !engineStep(s.Step) {
@@ -159,6 +165,52 @@ func (p *Proxy) refreshWork(ctx context.Context, st *hubstore.Store, id string, 
 		}
 	}
 	return r, nil
+}
+
+// EvidenceGit is what the tested and reviewed steps read of the hub's repository. The same value that is a LandGit may also be
+// this one. Nil, or a branch the hub does not hold, is "git could not be read" and the steps are derived from the facts alone.
+type EvidenceGit interface {
+	ItemEvidence(ctx context.Context, branch string, shas []string) (gitsync.Evidence, error)
+}
+
+// evidenceMemos is the last evidence read for each item. A read that fails is not allowed to unsay a test that had gone stale,
+// so the last good answer stands in for it.
+var evidenceMemos sync.Map
+
+func evidenceMemo(id string) Evidence {
+	if v, ok := evidenceMemos.Load(id); ok {
+		return v.(Evidence)
+	}
+	return Evidence{}
+}
+
+// readEvidence reads the item's branch for the shas its tests and reviews name.
+func (p *Proxy) readEvidence(ctx context.Context, w hubstore.Work, facts []hubstore.WorkFact) Evidence {
+	p.mu.Lock()
+	lg := p.landGit
+	p.mu.Unlock()
+	g, ok := lg.(EvidenceGit)
+	if !ok || g == nil || w.Branch == "" {
+		return evidenceMemo(w.BacklogID)
+	}
+	seen := map[string]bool{}
+	var shas []string
+	for _, f := range facts {
+		if (f.Kind == hubstore.FactTest || f.Kind == hubstore.FactReview) && f.AtSHA != "" && !seen[f.AtSHA] {
+			seen[f.AtSHA] = true
+			shas = append(shas, f.AtSHA)
+		}
+	}
+	cctx, cancel := context.WithTimeout(ctx, 20*time.Second)
+	defer cancel()
+	got, err := g.ItemEvidence(cctx, w.Branch, shas)
+	if err != nil || got.Tip == "" {
+		return evidenceMemo(w.BacklogID)
+	}
+	ev := Evidence{Known: true, Tip: got.Tip, Since: got.Since, CoverKnown: got.CoverKnown,
+		Cover: CoverView{Total: got.Cover.Total, Covered: got.Cover.Covered, Held: len(got.Cover.Held), TipCovered: got.Cover.TipCovered}}
+	evidenceMemos.Store(w.BacklogID, ev)
+	return ev
 }
 
 // noticeDesigns writes a `design` fact for each finished designer assignment whose commit is a design the hub can see, once.
