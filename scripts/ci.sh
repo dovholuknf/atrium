@@ -315,7 +315,13 @@ fi
 if step board "the board"; then
   # Includes the headless browser run. Any screenshots it takes go under build.claude/ and are not compared.
   # The whole suite, so it says so: check-board.sh refuses a full run without FULL_SUITE=1.
-  check "board" env FULL_SUITE=1 bash scripts/check-board.sh
+  # SHARDED: the serial headless run was 25 to 30 minutes per OS. test-board-sharded.js runs the same units as parallel
+  # shards (one and a half times the runner's cores, 2 to 16) and prints one merged report. ATRIUM_SUITE_LOCAL=1 keeps it on the
+  # runner, never dispatched to another room.
+  cores="$( (nproc || sysctl -n hw.ncpu) 2>/dev/null)"
+  [ -n "$cores" ] || cores="${NUMBER_OF_PROCESSORS:-4}"
+  shards=$(( cores * 3 / 2 )); [ "$shards" -ge 2 ] || shards=2; [ "$shards" -le 16 ] || shards=16
+  check "board" env FULL_SUITE=1 HEADLESS_SHARDED=1 ATRIUM_SUITE_LOCAL=1 BOARD_SHARDS="$shards" bash scripts/check-board.sh
 fi
 
 if step skins "the skins"; then
