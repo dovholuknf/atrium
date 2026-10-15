@@ -58,6 +58,15 @@ func classifyFrame(tail []byte, cols, rows int) (bool, string) {
 	return classifyScreen(frameText(sc))
 }
 
+// framePromptEmpty is whether the screen `tail` shows Claude Code at an idle
+// prompt with nothing typed on the input line.
+func framePromptEmpty(tail []byte, cols, rows int) bool {
+	sc := newScreenSized(cols, rows)
+	sc.apply(tail)
+	idle, _, typed := classifyScreenPrompt(frameText(sc))
+	return idle && typed == ""
+}
+
 // frameText is the live grid as text, one line per row. The second cell of a wide
 // character holds contCh and is skipped, as writeRow does, so the character
 // appears once.
@@ -84,6 +93,13 @@ func isRule(ln string) bool {
 
 // classifyScreen judges rendered screen text, colour already removed.
 func classifyScreen(text string) (bool, string) {
+	idle, why, _ := classifyScreenPrompt(text)
+	return idle, why
+}
+
+// classifyScreenPrompt is classifyScreen and also the text on the prompt row,
+// past the prompt mark, which is "" for an empty input line.
+func classifyScreenPrompt(text string) (bool, string, string) {
 	var lines []string
 	for _, ln := range strings.Split(text, "\n") {
 		if ln = strings.TrimRight(ln, " \r\t"); ln != "" {
@@ -92,7 +108,7 @@ func classifyScreen(text string) (bool, string) {
 	}
 	n := len(lines)
 	if n < 4 {
-		return false, frameNoBox
+		return false, frameNoBox, ""
 	}
 	// A hint or a spinner ANYWHERE in the last rows says working. This is wider
 	// than where they are drawn on purpose: a screen rebuilt from a 64KB tail can
@@ -101,10 +117,10 @@ func classifyScreen(text string) (bool, string) {
 	// redraws its spinner every second.
 	for i := n - 1; i >= 0 && i >= n-12; i-- {
 		if strings.Contains(lines[i], frameInterrupt) {
-			return false, frameHint
+			return false, frameHint, ""
 		}
 		if strings.Contains(lines[i], "…") && strings.Contains(lines[i], "(") {
-			return false, frameSpinner
+			return false, frameSpinner, ""
 		}
 	}
 	// The bottom rule is the last rule on screen, with the footer under it. A
@@ -118,7 +134,7 @@ func classifyScreen(text string) (bool, string) {
 		}
 	}
 	if bottom < 0 {
-		return false, frameNoBox
+		return false, frameNoBox, ""
 	}
 	// Up from the bottom rule to the top one: the prompt, which may wrap.
 	top := -1
@@ -129,10 +145,10 @@ func classifyScreen(text string) (bool, string) {
 		}
 	}
 	if top < 0 {
-		return false, frameOpenBox
+		return false, frameOpenBox, ""
 	}
 	if top+1 >= bottom || !strings.HasPrefix(strings.TrimSpace(lines[top+1]), framePrompt) {
-		return false, frameNoBox
+		return false, frameNoBox, ""
 	}
-	return true, frameIdle
+	return true, frameIdle, strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(lines[top+1]), framePrompt))
 }

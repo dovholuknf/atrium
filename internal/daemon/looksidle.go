@@ -107,6 +107,7 @@ func (d *Daemon) watchLooksIdle(now time.Time) error {
 		if run == nil {
 			continue
 		}
+		d.trustReattachedLine(run, now)
 		if _, on := d.act.looksIdleMark(t.ID); on {
 			continue
 		}
@@ -125,6 +126,34 @@ func (d *Daemon) watchLooksIdle(now time.Time) error {
 		d.flagLooksIdle(t, run, silent, why, now)
 	}
 	return nil
+}
+
+// trustReattachedLine reads the screen of a runner picked up from the pty host whose typed line is unsure
+// only because of the restart. A settled idle prompt with nothing on the input line proves the line empty
+// without a keystroke, and a Stop hook lost while the room was down would otherwise hold every typed
+// prompt and queued say until a human pressed Enter. A line with anything on it stays unsure.
+func (d *Daemon) trustReattachedLine(run *runner, now time.Time) {
+	if !run.reattached.Load() || now.Sub(run.lastOutputAt()) < LooksIdleAfter || run.buf == nil ||
+		d.act.dialogOpen(run.taskID) || d.act.onSubagents(run.taskID) {
+		return
+	}
+	run.typeMu.Lock()
+	unsure := run.line.unsure == reattachLineKey
+	run.typeMu.Unlock()
+	if !unsure {
+		return
+	}
+	cols, rows := run.buf.CurrentSize()
+	if !framePromptEmpty(run.buf.Tail(frameTailBytes), cols, rows) {
+		return
+	}
+	run.typeMu.Lock()
+	defer run.typeMu.Unlock()
+	if run.line.unsure != reattachLineKey {
+		return
+	}
+	run.line.clear()
+	log.Printf("[atrium] %s: reattached, and the screen shows an empty prompt, so the line is taken as empty", run.taskID)
 }
 
 // flagLooksIdle sets the badge, arms the runner to take it down again, and logs.
