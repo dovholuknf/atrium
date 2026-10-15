@@ -10439,9 +10439,10 @@ async function copySelectSection(browser, base) {
 }
 
 // ── clean copy: a selection of a reply is copied as written ───────────────
-// A quoted block drawn with an indent, a bar and hard wraps is selected. The clipboard gets the reply's own
-// substring from the transcript, markdown kept, and a toast says so. A selection matching nothing, and a replies
-// endpoint that fails, copy exactly what getSelection() holds.
+// A quoted block drawn with an indent, a bar and hard wraps is selected. A plain copy is the render. A "copy clean"
+// button pops up beside the selection, and clicking it copies the reply's own substring, markdown kept. No toast either
+// way. The button goes on clear, scroll and Escape, and never shows for a selection no reply holds or a failed endpoint.
+// Also: an image paste no longer toasts where it landed.
 async function cleanCopySection(browser, base) {
   const was = tasksMode;
   tasksMode = "land";
@@ -10469,6 +10470,8 @@ async function cleanCopySection(browser, base) {
   const reply = "Here is the draft:\n\n> Please review the plan and tell me what is missing from it.\n\n"
     + "```go\nfunc main() {}\n```\n\nThanks.";
   let mode = "ok";
+  await ctx.route("**/v1/tasks/*/files", route => route.fulfill({
+    contentType: "application/json", body: JSON.stringify({ paths: ["/work/.atrium/pasted-1.png"] }) }));
   await ctx.route("**/v1/tasks/*/replies*", route => {
     if (mode === "fail") return route.fulfill({ status: 500, contentType: "application/json", body: '{"error":"x"}' });
     return route.fulfill({ contentType: "application/json", body: JSON.stringify({
@@ -10483,7 +10486,10 @@ async function cleanCopySection(browser, base) {
     await p.waitForFunction(() => termSock && termSock.readyState === 1 && termTask && termTask.id === "land-live", null,
       { timeout: slow(10000) });
     await p.waitForTimeout(300);
-    const copy = async (out, lines) => {
+    const toasts = () => p.evaluate(() => document.getElementById("toasts").textContent);
+    const btn = () => p.evaluate(() => { const b = document.getElementById("cc-btn"); return b ? b.getBoundingClientRect().toJSON() : null; });
+    // Selects the lines, does the plain copy (what ctrl-c does), and lets the popup lookup settle.
+    const select = async (out, lines) => {
       await p.evaluate(([out, lines]) => {
         window.__clip = [];
         term.reset();
@@ -10491,34 +10497,68 @@ async function cleanCopySection(browser, base) {
         term.selectLines(lines[0], lines[1]);
       }, [out, lines]);
       await p.waitForTimeout(100);
-      const sel = await p.evaluate(() => { const s = term.getSelection(); copySelection(true); return s; });
+      const sel = await p.evaluate(() => { const s = term.getSelection(); copySelection(); offerCleanCopy(); return s; });
       await p.waitForTimeout(400);
-      return { sel, clip: await p.evaluate(() => window.__clip.slice()) };
+      return { sel, clip: await p.evaluate(() => window.__clip.slice()), btn: await btn() };
+    };
+    const shot = async name => {
+      if (!process.env.SHOTS_DIR) return;
+      fs.mkdirSync(process.env.SHOTS_DIR, { recursive: true });
+      await p.screenshot({ path: path.join(process.env.SHOTS_DIR, name) });
     };
     const shown = "  Here is the draft:\r\n\r\n  ▎ Please review the plan and tell\r\n  ▎ me what is missing from it.\r\n";
-
-    // 1. A rendered quote: indent, bar, hard wrap.
-    const a = await copy(shown, [2, 3]);
-    if (!/▎/.test(a.sel)) fail("cleanCopy: the terminal selection holds no bar, so this proves nothing: " + JSON.stringify(a.sel));
     const want = "> Please review the plan and tell me what is missing from it.";
-    if (a.clip.length !== 1 || a.clip[0] !== want) fail("cleanCopy: the clipboard holds " + JSON.stringify(a.clip) + ", not " + JSON.stringify(want));
-    const toastText = await p.evaluate(() => document.getElementById("toasts").textContent);
-    if (!/copied as written/.test(toastText)) fail("cleanCopy: no 'copied as written' toast: " + toastText);
-    if (process.env.SHOTS_DIR) {
-      fs.mkdirSync(process.env.SHOTS_DIR, { recursive: true });
-      await p.screenshot({ path: path.join(process.env.SHOTS_DIR, "clean-copy-toast.png") });
+
+    // 1. A rendered quote: a plain copy is the render, and a button offers the clean one.
+    const a = await select(shown, [2, 3]);
+    if (!/▎/.test(a.sel)) fail("cleanCopy: the terminal selection holds no bar, so this proves nothing: " + JSON.stringify(a.sel));
+    if (a.clip.length !== 1 || a.clip[0] !== a.sel) fail("cleanCopy: a plain copy holds " + JSON.stringify(a.clip) + ", not the render " + JSON.stringify(a.sel));
+    if (!a.btn) fail("cleanCopy: no 'copy clean' button beside a selection inside a reply");
+    else {
+      const vp = await p.evaluate(() => ({ w: innerWidth, h: innerHeight }));
+      if (a.btn.left < 0 || a.btn.top < 0 || a.btn.right > vp.w || a.btn.bottom > vp.h) fail("cleanCopy: the button is off screen: " + JSON.stringify(a.btn));
     }
+    if (/copied|written/.test(await toasts())) fail("cleanCopy: a copy raised a toast: " + await toasts());
+    await shot("copy-clean-popup-after.png");
+    await p.click("#cc-btn");
+    await p.waitForTimeout(100);
+    const clicked = await p.evaluate(() => window.__clip.slice());
+    if (clicked.length !== 2 || clicked[1] !== want) fail("cleanCopy: the button copied " + JSON.stringify(clicked) + ", not " + JSON.stringify(want));
+    if (await btn()) fail("cleanCopy: the button stayed after it was clicked");
+    if (/copied|written/.test(await toasts())) fail("cleanCopy: the clean copy raised a toast: " + await toasts());
 
-    // 2. A selection of something no reply holds: exactly what was selected, and no such toast.
-    await p.evaluate(() => document.querySelectorAll("#toasts .toast").forEach(t => t.remove()));
-    const b = await copy("$ ls -la\r\ntotal 48 files in this directory\r\n", [0, 1]);
+    // 2. Gone when the selection clears, on scroll and on Escape.
+    await select(shown, [2, 3]);
+    await p.evaluate(() => term.clearSelection());
+    await p.waitForTimeout(100);
+    if (await btn()) fail("cleanCopy: the button stayed after the selection cleared");
+    await select(shown, [2, 3]);
+    await p.evaluate(() => { for (let i = 0; i < 60; i++) term.write("\r\nfiller " + i); term.scrollLines(-5); });
+    await p.waitForTimeout(150);
+    if (await btn()) fail("cleanCopy: the button stayed after a scroll");
+    await select(shown, [2, 3]);
+    await p.keyboard.press("Escape");
+    await p.waitForTimeout(100);
+    if (await btn()) fail("cleanCopy: the button stayed after Escape");
+
+    // 3. A selection of something no reply holds: the render, and no button.
+    const b = await select("$ ls -la\r\ntotal 48 files in this directory\r\n", [0, 1]);
     if (b.clip.length !== 1 || b.clip[0] !== b.sel) fail("cleanCopy: a selection matching nothing copied " + JSON.stringify(b.clip) + ", not " + JSON.stringify(b.sel));
-    if (/copied as written/.test(await p.evaluate(() => document.getElementById("toasts").textContent))) fail("cleanCopy: a fallback said 'copied as written'");
+    if (b.btn) fail("cleanCopy: a button offered for a selection no reply holds");
+    await shot("copy-clean-popup-nomatch.png");
 
-    // 3. The endpoint fails: the render, unchanged.
+    // 4. The endpoint fails: the render, no button.
     mode = "fail";
-    const c = await copy(shown, [2, 3]);
+    const c = await select(shown, [2, 3]);
     if (c.clip.length !== 1 || c.clip[0] !== c.sel) fail("cleanCopy: a failed endpoint copied " + JSON.stringify(c.clip) + ", not " + JSON.stringify(c.sel));
+    if (c.btn) fail("cleanCopy: a button offered with the replies endpoint down");
+
+    // 5. An image pasted into the terminal says nothing about where it landed: the path is already typed.
+    await p.evaluate(() => document.querySelectorAll("#toasts .toast").forEach(t => t.remove()));
+    await p.evaluate(() => uploadIntoTerm([new File([new Uint8Array([1, 2, 3])], "pasted.png", { type: "image/png" })]));
+    await p.waitForTimeout(500);
+    const pt = await toasts();
+    if (/working directory|scratch folder|\/tmp\/pasted/.test(pt)) fail("cleanCopy: a pasted image raised the landing toast: " + pt);
   } finally {
     await ctx.close();
   }

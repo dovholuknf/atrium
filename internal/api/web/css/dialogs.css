@@ -166,6 +166,15 @@
     animation: toastin .22s ease-out;
   }
   .toast:hover { border-color: var(--blue); border-left-color: var(--warn); }
+  /* The "copy clean" button beside a terminal selection that sits inside a reply. See `offerCleanCopy`. */
+  .cc-btn {
+    position: fixed; z-index: 60; cursor: pointer;
+    background: linear-gradient(180deg, var(--card-0), var(--card-1));
+    border: 1px solid var(--stroke); border-radius: var(--r-md); color: var(--head);
+    font-size: var(--fs-base); padding: 4px 10px;
+    box-shadow: 0 6px 18px rgba(var(--shadow-rgb),.6);
+  }
+  .cc-btn:hover { border-color: var(--blue); }
   .toast.leaving { animation: toastout .2s ease-in forwards; }
   /* Answered while it was up: it stays to be read, and says it needs nothing. */
   .toast.answered { border-left-color: var(--stroke); opacity: .75; }

@@ -368,7 +368,9 @@ function wireCopyOnSelect(screen) {
     // After xterm's own mouseup, which is where a drag's selection settles.
     setTimeout(() => {
       if (!term || !term.hasSelection()) return;
-      if (press.clicks >= 2 || selectionKey() !== press.was) copySelection(true);
+      const fresh = press.clicks >= 2 || selectionKey() !== press.was;
+      if (fresh && copyOnSelect) copySelection(true);
+      if (fresh) offerCleanCopy();
     }, 0);
   }, true);
 }
@@ -1108,7 +1110,8 @@ function openTerm(task) {
   // view. All of it is a no-op on a desktop. See `termPhone`.
   syncPhoneView();
   term.onWriteParsed(() => { phoneSyncTextarea(); phoneKeepSoon(); tallFollow(); });
-  term.onScroll(() => tallFollow());
+  term.onScroll(() => { tallFollow(); hideCleanCopy(); });
+  term.onSelectionChange(() => { if (ccBtn && term && !term.hasSelection()) hideCleanCopy(); });
   // Erase-display 2 keeps the page first. 3 only clears the scrollback, which
   // is the history this is here to keep, so it is swallowed without touching
   // the rows: a lone 3 (`tput E3`, some tools on resize) must not blank the
@@ -1233,6 +1236,7 @@ function openTerm(task) {
       // Not a pointer selection, but one somebody asked for, so copy on select
       // still copies it. See `wireCopyOnSelect`.
       if (copyOnSelect) copySelection(true);
+      offerCleanCopy();
       return false;
     }
 
@@ -1387,19 +1391,62 @@ function openTerm(task) {
 // endpoint, a copy that was superseded: exactly `getSelection()`, which is what this did before. A copy is never lost.
 function copySelection(quiet) {
   if (!term || !term.hasSelection()) return;
-  const text = term.getSelection();
-  const mine = term, task = termTask;
-  const edges = selectionEdges(mine);
-  const put = (out, written) => navigator.clipboard.writeText(out)
-    .then(() => {
-      if (written) toastUnlogged("copied as written", "the reply's own text, not the terminal's render");
-      else if (!quiet) toastUnlogged("copied", `${out.length} characters`);
-    })
+  navigator.clipboard.writeText(term.getSelection())
     .catch(() => { if (!quiet) toast("could not copy", "the browser refused clipboard access"); });
-  cleanCopy(text, task && task.id, edges).then(
-    raw => put(raw == null ? text : raw, raw != null),
-    () => put(text, false));
 }
+
+// THE COPY CLEAN BUTTON. A plain copy is the terminal's text as shown, and says nothing. When the selection lands inside
+// a reply `cleanCopy` can match, a small button pops up beside it, and clicking it copies the reply's raw markdown. It
+// goes when the selection clears, on scroll, on Escape, and when the terminal closes. Never a toast, either way.
+let ccBtn = null, ccSeq = 0;
+
+function hideCleanCopy() {
+  ccSeq++;
+  if (ccBtn) { ccBtn.remove(); ccBtn = null; }
+}
+
+// Called once a selection has settled (the mouseup that ends a press, ctrl-a). Looks up the reply, and shows the button
+// only on a match. A later selection, or a hide, supersedes a lookup still in flight.
+async function offerCleanCopy() {
+  hideCleanCopy();
+  if (!term || !term.hasSelection() || !termTask) return;
+  const mine = term, seq = ccSeq;
+  const text = mine.getSelection();
+  const edges = selectionEdges(mine);
+  const raw = await cleanCopy(text, termTask.id, edges);
+  if (raw == null || seq !== ccSeq || term !== mine || !mine.hasSelection()) return;
+  const pos = mine.getSelectionPosition();
+  const screen = document.querySelector("#t-screen .xterm-screen");
+  const dims = mine._core && mine._core._renderService && mine._core._renderService.dimensions;
+  if (!pos || !screen || !dims || !dims.css || !dims.css.cell) return;
+  const cell = dims.css.cell, box = screen.getBoundingClientRect();
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.id = "cc-btn";
+  btn.className = "cc-btn";
+  btn.textContent = "copy clean";
+  btn.title = "copy the reply's own markdown instead of the terminal's render";
+  // The press must not clear the selection or take the terminal's focus before the click lands.
+  btn.addEventListener("mousedown", e => e.preventDefault());
+  btn.addEventListener("click", () => {
+    navigator.clipboard.writeText(raw).catch(() => toast("could not copy", "the browser refused clipboard access"));
+    hideCleanCopy();
+    if (term) term.focus();
+  });
+  document.body.appendChild(btn);
+  const w = btn.offsetWidth, h = btn.offsetHeight;
+  const vp = mine.buffer.active.viewportY;
+  // Beside the end of the selection, a row below it, kept inside the pane.
+  let x = box.left + (pos.end.y === pos.start.y ? pos.end.x : pos.end.x) * cell.width + 8;
+  let y = box.top + (pos.end.y - vp + 1) * cell.height + 2;
+  x = Math.max(box.left, Math.min(x, box.right - w - 4));
+  y = Math.max(box.top, Math.min(y, box.bottom - h - 4));
+  btn.style.left = Math.round(x) + "px";
+  btn.style.top = Math.round(y) + "px";
+  ccBtn = btn;
+}
+
+window.addEventListener("keydown", e => { if (e.key === "Escape") hideCleanCopy(); }, true);
 
 // Whether the selection covers its first and last rendered rows from their text to their edge. Only then may a match
 // that starts or ends inside a source line take that line's markers (`> `, `- `, `## `, a closing `**`) with it.
@@ -1848,8 +1895,6 @@ async function uploadIntoTerm(files) {
   if (paths && typeof tcomposeInsert === "function" && tcomposeInsert(paths)) pasteEnd("the paths going into the message box");
   else if (paths) sendInput(pre + paths + " ", false, true);
   else pasteEnd("no path back");
-  toastUnlogged(pastePrefs && pastePrefs.paste_keep === "scrap"
-    ? "in the scratch folder" : "in the working directory", paths);
 }
 
 // Dropping a file onto the terminal is the same gesture with a different hand.

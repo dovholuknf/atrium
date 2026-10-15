@@ -365,6 +365,7 @@ function closeTerm(switching) {
 // Tears the pane down without refreshing, so it can be called from inside one.
 function clearTermPane(switching) {
   const was = termTask ? termTask.id : "";
+  hideCleanCopy();
   // The pane is going, so no attach is in flight for what it was showing. A new
   // one is marked afresh by whatever attaches next.
   clearAttachInFlight(was);
