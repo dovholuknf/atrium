@@ -19,7 +19,8 @@ import (
 // internal/hubstore/item.go for the rows and docs/changes/items-stage2a.md for the design.
 //
 //	GET  /_hub/items?room=&owner_kind=&owner=&state=   the items, newest change first
-//	GET  /_hub/items/<id>                              one, with `holder` {room, card} when its owner is a role that is held
+//	GET  /_hub/items/<id>                              one, with `holder` {room, card} when its owner is a role that is held,
+//	                                                   and `history` [{revision, state, at}] oldest first
 //	POST /_hub/items/sync                              a room's push of one revision: the row as the hub's store takes it.
 //	                                                   {applied:false} for a replay or a push older than the row
 //	POST /_hub/items                                   {do: submit, room, pool, brief, owner?, by}: queue an item on a pool.
@@ -35,8 +36,8 @@ import (
 // THE HUB DOES NOT MOVE AN ITEM WHEN AN OWNER ACTS. unblock is typed by the room, and the item is `running` again
 // only when the worker's turn starts from it, which the room pushes as the next revision.
 //
-// THE OWNER CHECK IS A CLAIM, like every control tool's: `by` is a name and not a proof. A human owner has no action
-// through here at all, since a human has no atrium_item. They type into the worker's terminal.
+// THE OWNER CHECK IS A CLAIM, like every control tool's: `by` is a name and not a proof. A human owner has no
+// atrium_item, so the board's items tab acts for them as `by: board`, from the hub's own machine (see ownerMayAct).
 
 // itemRoomCallFunc is how the hub asks a room, a function so a test need not attach one.
 type itemRoomCallFunc func(ctx context.Context, room, path string, body []byte) (int, []byte, error)
@@ -122,6 +123,12 @@ func (p *Proxy) serveItems(w http.ResponseWriter, r *http.Request, sub string) {
 		if room, card, ok, err := st.ItemHolder(it); err == nil && ok {
 			out["holder"] = map[string]string{"room": room, "card": card}
 		}
+		// Every revision the hub applied, for the board's timeline.
+		hist, _ := st.ItemHistory(it.ID)
+		if hist == nil {
+			hist = []hubstore.ItemEvent{}
+		}
+		out["history"] = hist
 		// The item's own fields at the top too, so a reader of one item and of a list read the same names.
 		flat, _ := json.Marshal(it)
 		var m map[string]any
@@ -203,6 +210,11 @@ func (p *Proxy) itemSync(w http.ResponseWriter, r *http.Request, st *hubstore.St
 // ownerMayAct is whether `by` is the owner of the item, and the sentence for a no.
 func (p *Proxy) ownerMayAct(ctx context.Context, st *hubstore.Store, it hubstore.Item, by string) (bool, string) {
 	by = strings.TrimSpace(by)
+	// THE BOARD IS THE OPERATOR. Every write here already passed edge.LocalOperator, so `board` is the human at the hub's
+	// machine and is the owner of whatever it is shown, the human-owned items included. The items tab sends it.
+	if strings.EqualFold(by, "board") {
+		return true, ""
+	}
 	switch it.OwnerKind {
 	case hubstore.OwnerHuman:
 		return false, "that item is owned by the human, who has no atrium_item. they answer it in the worker's terminal"

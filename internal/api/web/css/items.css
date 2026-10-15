@@ -1,0 +1,42 @@
+/* The items tab (js/items.js). Existing tokens only, so every skin wears it. */
+  main > #items { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
+  #items[hidden] { display: none; }
+  #items > * { flex: 0 0 auto; }
+  #items > #items-list { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 2px var(--sp-3) var(--sp-5) 2px; }
+
+  .it-group { margin: 0 0 var(--vs-3); }
+  .it-head { display: flex; align-items: center; gap: 8px; width: 100%; margin: 0 0 6px; padding: 4px 2px; background: transparent; border: 0;
+    color: var(--label); font: 700 var(--fs-xs)/1 var(--sans); text-transform: uppercase; letter-spacing: .1em; text-align: left; cursor: pointer; }
+  .it-head::before { content: "\25BE"; }
+  .it-head[aria-expanded="false"]::before { content: "\25B8"; }
+  .it-n { font: var(--fs-xs)/1 var(--mono); color: var(--teal); background: var(--teal-bg); border-radius: var(--r-pill); padding: 2px 8px; }
+  .it-group[data-state="blocked"] .it-n { color: var(--warn); background: color-mix(in srgb, var(--warn) 14%, transparent); }
+
+  .it-row { margin: 0 0 6px; border: 1px solid var(--stroke-dim); border-radius: var(--r-md); background: var(--bg-2); }
+  .it-row.st-blocked { border-color: color-mix(in srgb, var(--warn) 45%, transparent); }
+  .it-row.open { background: var(--lift); }
+  .it-main { display: grid; grid-template-columns: minmax(0, 1fr) max-content max-content max-content max-content max-content max-content;
+    align-items: center; gap: 4px 12px; padding: 8px 12px; cursor: pointer; }
+  .it-main:focus-visible { outline: 2px solid var(--teal); outline-offset: -2px; }
+  .it-title { color: var(--head); font-weight: 600; overflow-wrap: anywhere; }
+  .it-state { font: 650 var(--fs-xs)/1 var(--sans); color: var(--label); }
+  .st-blocked .it-state { color: var(--warn); }
+  .st-running .it-state { color: var(--teal); }
+  .it-owner, .it-age { color: var(--label); font-size: var(--fs-xs); white-space: nowrap; }
+  .it-id { color: var(--dim); font: var(--fs-xxs)/1 var(--mono); }
+  #items .it-card { padding: 2px 8px; font: var(--fs-xs)/1.4 var(--mono); background: transparent; border: 0; color: var(--blue); cursor: pointer; text-decoration: underline; }
+  #items .it-cancel { padding: 3px 10px; font-size: var(--fs-xs); }
+
+  .it-ask { padding: 0 12px 10px; }
+  .it-q { margin: 0 0 6px; padding: 8px 10px; border-radius: 6px; background: color-mix(in srgb, var(--warn) 10%, transparent); color: var(--body); white-space: pre-wrap; overflow-wrap: anywhere; }
+  .it-answer { display: flex; gap: 8px; }
+  .it-answer-box { flex: 1 1 auto; min-width: 0; }
+
+  .it-detail { padding: 4px 12px 12px; border-top: 1px solid var(--stroke-dim); }
+  .it-detail dl { display: grid; grid-template-columns: max-content 1fr; gap: 4px 14px; margin: 8px 0; }
+  .it-detail dt { color: var(--label); font-size: var(--fs-xs); }
+  .it-detail dd { margin: 0; color: var(--body); white-space: pre-wrap; overflow-wrap: anywhere; }
+  .it-history { margin: 6px 0 0; padding-left: 18px; color: var(--label); font-size: var(--fs-xs); }
+  .it-history b { color: var(--head); }
+
+  @media (max-width: 900px) { .it-main { grid-template-columns: 1fr max-content; } }

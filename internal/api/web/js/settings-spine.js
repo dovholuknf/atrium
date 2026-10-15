@@ -1978,6 +1978,9 @@ function connect() {
   es.addEventListener("backlog", () => {
     if (typeof onBacklogEvent === "function") onBacklogEvent();
   });
+  es.addEventListener("item", () => {
+    if (typeof onItemEvent === "function") onItemEvent();
+  });
   es.addEventListener("report", () => {
     if (typeof onBacklogEvent === "function") onBacklogEvent();
   });

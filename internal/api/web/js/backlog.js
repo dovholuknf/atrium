@@ -173,35 +173,7 @@ function backlogReportRow(r) {
     '<pre class="aud-detail">' + esc(r.body || "") + "</pre></details>";
 }
 
-// Items the human owns and that are blocked or finished, read-only. There is no unblock here on purpose: a human's
-// answer is typed into the worker's terminal, and the board only says there is something to look at.
-function backlogOwnedRow(it) {
-  const when = it.updated_at ? new Date(it.updated_at) : null;
-  const stamp = when && !isNaN(when) ? when.toLocaleString() : "";
-  return '<div class="aud-row" data-item="' + esc(it.item_id || "") + '">' +
-    '<span class="aud-when">' + esc(it.state || "") + "</span> " +
-    '<span class="aud-room">' + esc(it.room || "") + "</span> " +
-    '<span class="aud-kind">' + esc(it.item_id || "") + "</span> " +
-    '<span class="aud-detail">' + esc(it.note || "") + " " + esc(stamp) + "</span></div>";
-}
-
-async function loadOwnedItems() {
-  const box = document.getElementById("backlog-owned");
-  if (!box) return;
-  try {
-    const body = await backlogGet("/_hub/items?owner_kind=human&state=blocked,finished");
-    const list = (body && body.items) || [];
-    box.hidden = list.length === 0;
-    box.innerHTML = list.length
-      ? '<div class="col-head" style="margin:0 0 10px"><span>items for you</span></div>' + list.map(backlogOwnedRow).join("")
-      : "";
-  } catch (e) {
-    box.hidden = true;
-  }
-}
-
 async function loadBacklog() {
-  loadOwnedItems();
   const items = document.getElementById("backlog-items");
   const reps = document.getElementById("backlog-reports");
   if (!items || !reps) return;

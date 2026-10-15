@@ -124,6 +124,25 @@ func TestAHumanOwnedItemCannotBeUnblockedThroughTheHub(t *testing.T) {
 	if len(x.calls) != 0 {
 		t.Fatalf("the room was asked: %v", x.calls)
 	}
+	// The board is the human, from the hub's machine only.
+	body := js(map[string]any{"do": "unblock", "by": "board", "answer": "go"})
+	if code, _ := x.send("POST", "/_hub/items/it-1", body, "203.0.113.9:4000"); code != http.StatusForbidden {
+		t.Fatalf("board from afar: %d", code)
+	}
+	if code, _ := x.send("POST", "/_hub/items/it-1", body, loopAddr); code != 200 || len(x.calls) != 1 {
+		t.Fatalf("board: %d %v", code, x.calls)
+	}
+}
+
+func TestGetAnItemCarriesItsHistory(t *testing.T) {
+	x := newItemRig(t)
+	x.push(t, 1, "running", "human", "")
+	x.push(t, 2, "blocked", "human", "")
+	_, body := x.send("GET", "/_hub/items/it-1", "", loopAddr)
+	h, _ := obj(t, body)["history"].([]any)
+	if len(h) != 2 {
+		t.Fatalf("history: %s", body)
+	}
 }
 
 func TestCancelGoesToTheRoomForTheOwner(t *testing.T) {

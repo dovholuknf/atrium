@@ -26219,6 +26219,126 @@ async function pullsAbsentSection(browser, base) {
 
 // The hub's repos list (js/hubrepos.js): a mocked /_hub/git/repos, two repos (one empty), branches with and without a known
 // card, a released one, both clone URLs, the empty state and a failing fetch.
+// THE ITEMS TAB: grouped by state with blocked first and finished folded, the question and answer box on a blocked row,
+// cancel behind a confirm, a detail with the history, a count of what waits on the human, and a refresh on the `item`
+// event. The hub is a route here, so the POSTs it is sent can be read. See js/items.js.
+async function itemsViewSection(browser, base) {
+  const wasHub = hubMode;
+  hubMode = true;
+  const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+  const errors = [];
+  try {
+    const p = await ctx.newPage();
+    p.on("pageerror", e => errors.push(e.message));
+    const ago = m => new Date(Date.now() - m * 60000).toISOString();
+    const mk = (id, state, extra) => Object.assign({ item_id: id, room: "sg4", card: "c-" + id, state, revision: 2, generation: 1,
+      owner_kind: "human", owner: "", created_by: "orch@sg4", note: "", created_at: ago(300), updated_at: ago(5) }, extra);
+    let items = [
+      mk("it-run", "running", { owner_kind: "session", owner: "orch@sg4", updated_at: ago(90) }),
+      mk("it-blk", "blocked", { note: "which key do I use?", updated_at: ago(12) }),
+      mk("it-blk2", "blocked", { owner_kind: "session", owner: "orch@sg4", note: "not for you", updated_at: ago(30) }),
+      mk("it-q", "queued", { updated_at: ago(2000) }),
+      mk("it-done", "finished", { note: "done: abc123", updated_at: ago(600) }),
+      mk("it-can", "finished", { note: "cancelled by owner", updated_at: ago(700) })];
+    const posts = [];
+    await p.route(/\/_hub\/items(\/[^/?]+)?(\?.*)?$/, async r => {
+      const req = r.request(); const u = new URL(req.url());
+      const id = decodeURIComponent(u.pathname.split("/")[3] || "");
+      const json = o => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(o) });
+      if (req.method() === "POST") {
+        const b = JSON.parse(req.postData());
+        posts.push({ id, ...b });
+        if (b.do === "cancel") items = items.map(i => i.item_id === id ? { ...i, state: "finished", note: "cancelled by owner" } : i);
+        return json({ ok: true });
+      }
+      if (id) {
+        const it = items.find(i => i.item_id === id);
+        return it ? json({ ...it, item: it, history: [{ revision: 1, state: "running", at: ago(200) }, { revision: 2, state: it.state, at: it.updated_at }] })
+          : r.fulfill({ status: 404, contentType: "application/json", body: '{"error":"no such item"}' });
+      }
+      let list = items;
+      if (u.searchParams.get("owner_kind")) list = list.filter(i => i.owner_kind === u.searchParams.get("owner_kind"));
+      if (u.searchParams.get("state")) list = list.filter(i => u.searchParams.get("state").split(",").includes(i.state));
+      json({ items: list });
+    });
+    await p.goto(base + "/", { waitUntil: "domcontentloaded" });
+    await p.waitForFunction(() => { const t = document.querySelector('.tab[data-view="items"]'); return t && !t.hidden; }, null, { timeout: slow(15000) });
+    await p.waitForTimeout(1000);
+    // THE BADGE: only what is blocked on the human, before the tab is ever opened.
+    await p.waitForFunction(() => document.getElementById("c-items").textContent === "1", null, { timeout: slow(10000) });
+    await p.evaluate(() => {
+      lastTasks = [{ id: "c-it-blk", room: "sg4", title: "pick the signing key", display_title: "pick the signing key", wire_name: "sg4-keys", status: "working" }];
+      return switchView("items");
+    });
+    await p.waitForFunction(() => document.querySelectorAll("#items-list .it-row").length === 4, null, { timeout: slow(10000) });
+    const got = await p.evaluate(() => ({
+      groups: [...document.querySelectorAll("#items-list .it-group")].map(g => g.dataset.state),
+      rows: [...document.querySelectorAll("#items-list .it-row")].map(r => r.dataset.item),
+      finishedFolded: !document.querySelector('.it-group[data-state="finished"] .it-row'),
+      finishedN: document.querySelector('.it-group[data-state="finished"] .it-n').textContent,
+      first: document.querySelector(".it-row").textContent,
+      ask: [...document.querySelectorAll(".it-q")].map(q => q.textContent),
+      boxes: document.querySelectorAll(".it-answer-box").length
+    }));
+    if (got.groups.join() !== "blocked,running,queued,finished") fail("itemsView: group order is " + got.groups);
+    if (got.rows.join() !== "it-blk,it-blk2,it-run,it-q") fail("itemsView: row order is " + got.rows);
+    if (!got.finishedFolded || got.finishedN !== "2") fail("itemsView: finished is not folded shut with its count: " + JSON.stringify(got));
+    for (const w of ["pick the signing key", "blocked", "you", "sg4-keys@sg4", "12m", "it-blk"]) if (!got.first.includes(w)) fail("itemsView: the blocked row lacks " + w + ": " + got.first);
+    if (got.ask.join() !== "which key do I use?,not for you" || got.boxes !== 2) fail("itemsView: a blocked row lacks its question and answer box: " + JSON.stringify(got));
+    if (await p.locator("#items-list .it-row:not(.st-blocked) .it-answer-box").count()) fail("itemsView: a row that is not blocked has an answer box");
+    if (await p.locator('.it-group[data-state="finished"]').count() !== 1) fail("itemsView: no finished group");
+    if (process.env.ITEMS_SHOTS) {
+      fs.mkdirSync(process.env.ITEMS_SHOTS, { recursive: true });
+      await p.screenshot({ path: path.join(process.env.ITEMS_SHOTS, "items-after.png") });
+    }
+    // THE CARD LINK opens that card's terminal.
+    await p.evaluate(() => { window.__attached = null; window.attachTask = async id => { window.__attached = id; }; });
+    await p.click('.it-row[data-item="it-blk"] .it-main .it-card');
+    if ((await p.evaluate(() => window.__attached)) !== "c-it-blk") fail("itemsView: the card link did not attach the card");
+    await p.evaluate(() => switchView("items"));
+    await p.waitForFunction(() => document.querySelectorAll("#items-list .it-row").length === 4, null, { timeout: slow(10000) });
+    // ANSWER: an empty box sends nothing, a typed one sends unblock as the board, and it survives a repaint while typed.
+    await p.click('.it-row[data-item="it-blk"] .it-send');
+    if (posts.length) fail("itemsView: an empty answer was sent");
+    await p.fill('.it-answer-box[data-id="it-blk"]', "use KEY-9");
+    await p.evaluate(() => loadItems());
+    await p.waitForTimeout(300);
+    if ((await p.inputValue('.it-answer-box[data-id="it-blk"]')) !== "use KEY-9") fail("itemsView: a refresh ate the typed answer");
+    await p.click('.it-row[data-item="it-blk"] .it-send');
+    await p.waitForFunction(() => document.getElementById("items-note").textContent.includes("Sent the answer"), null, { timeout: slow(10000) });
+    if (!(posts[0].id === "it-blk" && posts[0].do === "unblock" && posts[0].by === "board" && posts[0].answer === "use KEY-9"))
+      fail("itemsView: the answer posted " + JSON.stringify(posts[0]));
+    // CANCEL: behind a confirm. Keeping it posts nothing, confirming posts cancel and the row moves to finished.
+    await p.click('.it-row[data-item="it-run"] .it-cancel');
+    await p.waitForSelector("#ask[open]");
+    await p.click('#ask button:has-text("keep it")');
+    if (posts.length !== 1) fail("itemsView: cancel posted before it was confirmed");
+    if (await p.locator('.it-row[data-item="it-done"] .it-cancel').count()) fail("itemsView: a finished item offers cancel");
+    await p.click('.it-row[data-item="it-run"] .it-cancel');
+    await p.waitForSelector("#ask[open]");
+    await p.click('#ask button:has-text("cancel the item")');
+    await p.waitForFunction(() => !document.querySelector('.it-row[data-item="it-run"]'), null, { timeout: slow(10000) });
+    if (posts[1].do !== "cancel" || posts[1].id !== "it-run" || posts[1].by !== "board") fail("itemsView: the cancel posted " + JSON.stringify(posts[1]));
+    // THE FOLD opens: finished shows the cancelled one by its word.
+    await p.click('.it-head[data-state="finished"]');
+    const fin = await p.evaluate(() => [...document.querySelectorAll('.it-group[data-state="finished"] .it-row')].map(r => r.dataset.item + ":" + r.querySelector(".it-state").textContent).join());
+    if (fin !== "it-run:cancelled,it-done:finished,it-can:cancelled") fail("itemsView: the finished group reads " + fin);
+    // DETAIL: a click on the row opens it with the note and the timeline, a second click shuts it.
+    await p.click('.it-row[data-item="it-done"] .it-title');
+    await p.waitForFunction(() => document.querySelectorAll('.it-detail[data-detail="it-done"] .it-history li b').length === 2, null, { timeout: slow(10000) });
+    const det = await p.evaluate(() => document.querySelector('.it-detail[data-detail="it-done"]').textContent);
+    if (!det.includes("done: abc123") || !det.includes("orch@sg4") || !det.includes("c-it-done@sg4")) fail("itemsView: the detail reads " + det);
+    await p.click('.it-row[data-item="it-done"] .it-title');
+    if (await p.locator(".it-detail").count()) fail("itemsView: a second click did not shut the detail");
+    // THE EVENT: a new blocked item shows up and the badge follows, without the tab being touched.
+    items = [mk("it-new", "blocked", { note: "again?" }), ...items];
+    await p.evaluate(() => onItemEvent());
+    await p.waitForFunction(() => !!document.querySelector('.it-row[data-item="it-new"]') && document.getElementById("c-items").textContent === "2", null, { timeout: slow(10000) });
+    if (errors.length) fail("itemsView: page errors: " + errors.join(" | "));
+  } finally { await ctx.close(); hubMode = wasHub; }
+  if (!bad) console.log("itemsView ok");
+}
+
 async function hubReposSection(browser, base) {
   const wasHub = hubMode;
   hubMode = true;
@@ -32725,12 +32845,8 @@ async function main() {
         fail("the backlog tab did not draw the open items, the built status and the report read-only: " +
           JSON.stringify(backlog));
       }
-      // A blocked item the human owns is listed, read-only: no button, no field.
-      await hub.waitForFunction(() => document.querySelectorAll('#backlog-owned .aud-row[data-item="it-aa11"]').length === 1,
-        null, { timeout: slow(15000) });
-      const owned = await hub.evaluate(() => ({ writes: document.querySelectorAll("#backlog-owned button, #backlog-owned input, #backlog-owned textarea").length,
-        state: document.querySelector("#backlog-owned .aud-when").textContent }));
-      if (owned.writes || owned.state !== "blocked") fail("the human-owned item was not drawn read-only: " + JSON.stringify(owned));
+      // The items for the human live on the items tab now, not here. See itemsViewSection.
+      if (await hub.evaluate(() => !!document.getElementById("backlog-owned"))) fail("the backlog pane still has the items-for-you list");
       // A click on a header sorts by it and a second reverses it; a priority chip narrows the list; the default order is
       // priority high to low, then newest. See js/backlog.js.
       const ids = () => hub.evaluate(() => [...document.querySelectorAll("#backlog-items .aud-row[data-id]")].map(r => r.dataset.id).join());
@@ -33369,6 +33485,7 @@ async function main() {
     await unit("growlStable", () => growlStableSection(browser, base));
     await unit("growlOnIt", () => growlOnItSection(browser, base));
     await unit("mGrowlQuestion", () => mGrowlQuestionSection(browser));
+    await unit("itemsView", () => itemsViewSection(browser, base));
     await unit("hubRepos", () => hubReposSection(browser, base));
     await unit("hubReposShelf", () => hubReposShelfSection(browser, base));
     await unit("hubReposLedger", () => hubReposLedgerSection(browser, base));

@@ -191,6 +191,36 @@ func (s *Store) ItemByID(id string) (Item, error) {
 	return it, err
 }
 
+// ItemEvent is one revision the hub has applied to an item.
+type ItemEvent struct {
+	Revision int    `json:"revision"`
+	State    string `json:"state"`
+	At       string `json:"at"`
+}
+
+// ItemHistory is every revision applied to an item, oldest first.
+func (s *Store) ItemHistory(id string) ([]ItemEvent, error) {
+	var out []ItemEvent
+	err := s.guard(func() error {
+		out = nil
+		rows, err := s.db.Query(`SELECT revision, state, at FROM item_event WHERE item_id = ? ORDER BY revision, at`,
+			strings.TrimSpace(id))
+		if err != nil {
+			return err
+		}
+		defer rows.Close()
+		for rows.Next() {
+			var e ItemEvent
+			if err := rows.Scan(&e.Revision, &e.State, &e.At); err != nil {
+				return err
+			}
+			out = append(out, e)
+		}
+		return rows.Err()
+	})
+	return out, err
+}
+
 // ItemQuery narrows Items. Every empty field matches everything.
 type ItemQuery struct {
 	Room      string

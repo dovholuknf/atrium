@@ -64,6 +64,7 @@
 <link rel="stylesheet" href="/css/walk.css">
 <link rel="stylesheet" href="/css/pulls.css">
 <link rel="stylesheet" href="/css/hubrepos.css">
+<link rel="stylesheet" href="/css/items.css">
 <link rel="stylesheet" href="/css/changereq.css">
 <link rel="stylesheet" href="/css/dialogs.css">
 <link rel="stylesheet" href="/css/phone.css">
@@ -192,6 +193,9 @@
       <div class="tab" data-view="hubrepos" hidden>repos</div>
       <!-- Hub only, revealed with the audit tab. See js/backlog.js. -->
       <div class="tab" data-view="backlog" hidden>backlog</div>
+      <!-- Hub only, revealed with the audit tab. The count is items blocked on you. See js/items.js. -->
+      <div class="tab" data-view="items" hidden>items<span class="count zero" id="c-items"
+           data-tip="items blocked on you"></span></div>
     </nav>
     <!-- Desktop only (css/topnav.css, js/topnav.js): the tabs that have no room, whole, in a menu. -->
     <button type="button" id="tabmore" class="tabmore" hidden aria-haspopup="true" aria-expanded="false"
@@ -820,6 +824,13 @@ Tokens only, except the turns atrium caused, which carry an estimated dollar fig
     <div id="hubrepos-list"></div>
   </div>
 
+  <!-- The hub's items, grouped by what they need, drawn by js/items.js. Hub only. -->
+  <div id="items" hidden>
+    <div class="col-head" style="margin:0 0 10px"><span>items</span></div>
+    <p class="pane-lead" id="items-note" role="status"></p>
+    <div id="items-list"></div>
+  </div>
+
   <!-- The hub's backlog and director reports, drawn by js/backlog.js. Hub only. -->
   <div id="backlog" hidden>
     <div class="col-head" style="margin:0 0 10px"><span>backlog</span></div>
@@ -831,8 +842,6 @@ Tokens only, except the turns atrium caused, which carry an estimated dollar fig
       <div class="seg multi" id="backlog-prios" role="group" aria-label="priority"></div>
     </div>
     <p class="pane-lead" id="backlog-note" role="status"></p>
-    <!-- Items the human owns that are blocked or finished. Read-only: the answer is typed into the worker's terminal. -->
-    <div id="backlog-owned" hidden></div>
     <div id="backlog-items"></div>
     <div class="col-head" style="margin:16px 0 10px"><span>director reports</span></div>
     <div id="backlog-reports"></div>
@@ -3707,6 +3716,7 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
 <script src="/js/chatter.js"></script>
 <script src="/js/hubrepos.js"></script>
 <script src="/js/backlog.js"></script>
+<script src="/js/items.js"></script>
 <script src="/js/changereq-mock.js"></script>
 <script src="/js/changereq-core.js"></script>
 <script src="/js/changereq.js"></script>
