@@ -48,6 +48,14 @@ itself, so a single machine needs no join string.
 `:7781` takes the human API. When storage fails, the room closes `:7777` and leaves it closed. Agents see connection
 refused and park on their existing backoff. The board stays up to say what broke.
 
+**The pty host** (`atrium ptyhost`, `internal/ptyhost`) is a third process, started by the room only when the `pty_host`
+setting is on. It is a hidden subcommand of the same binary, and it holds the pseudo terminals so they outlive the
+room. The room reaches it over a private channel, never a port: a named pipe with a DACL for the user's SID on Windows,
+a 0600 unix socket elsewhere, with newline delimited JSON frames and one room connected at a time. A room restart
+reattaches to every runner the host kept. What lived only in the room's memory does not survive: what a runner is doing
+right now is rebuilt from fresh hooks, and a half typed line is marked unsure. `atrium stop --runners`, or killing the
+host, does end the runners. `docs/fabric/hub-and-rooms.md`, `docs/terminal/ptyhost-protocol.md`.
+
 `atrium daemon` is the older single process: the same room code with the board served in-process on `:7778` and agents
 on `:7777`, and no hub. It still runs, and the service installers still default to it.
 

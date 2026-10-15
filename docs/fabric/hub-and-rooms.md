@@ -71,9 +71,32 @@ A room writes its agent address to the machine's one location file, which is how
 MCP find it without being told. A second room on the same machine must not take that file, or the first room's hooks
 start arriving at the second. `--isolated` keeps the second room's address in a private file beside its `--dir`.
 
+## The pty host
+
 With the `pty_host` setting on, a room's terminals live in a separate pty host process, so a room restart reattaches to
 running agents instead of ending them (`docs/terminal/ptyhost-protocol.md`, `internal/daemon/hostterm.go`). Without it,
 a room's terminals end with the room.
+
+The pty host (`atrium ptyhost`, `internal/ptyhost`) is a third process, and only exists with the `pty_host` setting
+on. It is a hidden subcommand of the same binary. The room starts it detached, from a copy named `atrium.ptyhost` beside
+the installed binary so a swap of a new atrium never touches the image it runs from, and its output goes to
+`ptyhost.log` in the room's state dir. It owns the pseudo terminals and the processes in them, and keeps a bounded
+ring of each one's output. The room asks it for terminals and reattaches to what it kept. If the host cannot be
+reached, the launch falls back to an in-process terminal and logs why, so the setting never fails a launch.
+
+The channel is local and private. On Windows it is a named pipe `\\.\pipe\atrium-ptyhost-<hash>` whose DACL grants
+the user's SID and nobody else. Elsewhere it is a unix socket `ptyhost-<hash>.sock` in the state dir at mode 0600
+(under `/tmp/atrium-<uid>/` when the state dir's path is too long for a socket). The hash covers the state dir and the
+user, so two rooms or two users on a machine never meet. Frames are one JSON object per line. One room is THE daemon on
+the channel at a time: a second connection is refused unless it asks to take over, which a room only does at startup.
+
+**What survives a room restart:** every runner and shell the host holds, with its output ring. `atrium stop` leaves them
+running and the next room reattaches, which is also why a plain restart keeps agents alive. **What does not:** whatever
+lived only in the room's memory. The room's view of what a runner is doing right now is rebuilt from fresh hooks, and
+the line an operator had half typed is marked unsure, since only Enter or control-c proves it empty. **What ends them
+anyway:** `atrium stop --runners`, killing the host itself, or a host that sits inside the room's job object on
+Windows, which a stop refuses rather than let it end every agent. The host exits on its own after ten idle minutes with
+no terminal and no room connected, and never while it holds one.
 
 ## Joining a room to a hub
 
