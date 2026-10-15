@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -14,6 +15,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/dovholuknf/atrium/internal/link"
 	"github.com/dovholuknf/atrium/internal/sshcfg"
 )
 
@@ -59,11 +61,18 @@ func sshConfigCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			res, err := sshcfg.AddHub(h, exe, runtime.GOOS, hubForConfig(hub), rooms)
+			users := roomLogins(cmd.Context(), hub)
+			res, err := sshcfg.AddHubUsers(h, exe, runtime.GOOS, hubForConfig(hub), rooms, users)
 			if err != nil {
 				return err
 			}
 			out := cmd.OutOrStdout()
+			var noUser []string
+			for _, r := range rooms {
+				if users[r] == "" {
+					noUser = append(noUser, r)
+				}
+			}
 			_, cfg, own := sshcfg.Paths(h)
 			if !res.Changed {
 				fmt.Fprintf(out, "nothing to change: %s already has %s\n", own, strings.Join(rooms, ", "))
@@ -77,7 +86,15 @@ func sshConfigCmd() *cobra.Command {
 				fmt.Fprintf(out, "added to the top of %s: %s\n", cfg, sshcfg.IncludeLine)
 				fmt.Fprintf(out, "backed it up first as %s\n", res.Backup)
 			}
-			fmt.Fprintf(out, "try it: ssh <user>@%s\n", rooms[0])
+			if users[rooms[0]] != "" {
+				fmt.Fprintf(out, "try it: ssh %s   (logs in as %s, the login that room published)\n", rooms[0], users[rooms[0]])
+			} else {
+				fmt.Fprintf(out, "try it: ssh <user>@%s\n", rooms[0])
+			}
+			if len(noUser) > 0 {
+				fmt.Fprintf(out, "no login user is known for %s: the hub has none from them yet, so no User line was written\n",
+					strings.Join(noUser, ", "))
+			}
 			return nil
 		},
 	}
@@ -151,6 +168,42 @@ func sshConfigCmd() *cobra.Command {
 	}
 	c.AddCommand(add, rm, show)
 	return c
+}
+
+// roomLogins is the login user each room published, by room name. Best effort and empty when nothing can say: a room
+// asks the hub over its own link, and a machine with no room asks the hub's board on loopback.
+func roomLogins(ctx context.Context, hub string) map[string]string {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	ctx, cancel := context.WithTimeout(ctx, 8*time.Second)
+	defer cancel()
+	var set []link.SSHEntry
+	if room, d, err := roomLinkFor(""); err == nil {
+		set, _ = link.FetchSSHSet(ctx, d, room)
+	}
+	if len(set) == 0 {
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, boardAddress(hub)+"/_hub/sshkeys", nil)
+		if err == nil {
+			if resp, err := (&http.Client{Timeout: 5 * time.Second}).Do(req); err == nil {
+				defer resp.Body.Close()
+				b, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+				var v struct {
+					Keys []link.SSHEntry `json:"keys"`
+				}
+				if resp.StatusCode == http.StatusOK && json.Unmarshal(b, &v) == nil {
+					set = v.Keys
+				}
+			}
+		}
+	}
+	out := map[string]string{}
+	for _, e := range set {
+		if e.User != "" {
+			out[e.Room] = e.User
+		}
+	}
+	return out
 }
 
 func pathOwn(home string) string {

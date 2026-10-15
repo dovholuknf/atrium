@@ -658,6 +658,21 @@ var migrations = []struct {
 			)`,
 		},
 	},
+	{
+		// A ROOM'S SSH LOGIN, AS PUBLISHED BY THE ROOM: the user other rooms log in as and the public key this room logs
+		// in with. Gone with the room by cascade, so a removed room's key leaves the set. See roomssh.go.
+		name: "0019_room_ssh",
+		stmts: []string{
+			`CREATE TABLE IF NOT EXISTS room_ssh (
+				room_id    TEXT PRIMARY KEY REFERENCES room(id) ON DELETE CASCADE,
+				login_user TEXT NOT NULL,
+				pubkey     TEXT NOT NULL,
+				port       INTEGER NOT NULL DEFAULT 22,
+				ssh_on     INTEGER NOT NULL DEFAULT 0,
+				updated_at TEXT NOT NULL
+			)`,
+		},
+	},
 }
 
 func (s *Store) migrate() error {

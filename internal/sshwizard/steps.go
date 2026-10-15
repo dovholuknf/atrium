@@ -45,7 +45,7 @@ type Result struct {
 type Options struct {
 	// Port is sshd's port. Zero reads the switch, then 22.
 	Port int
-	// User is the login other rooms use. Empty is the account the room runs as.
+	// User is the login other rooms use. Empty reads the room's saved choice, then claude.
 	User string
 	// From is who may open the room's sshd. Empty reads the switch.
 	From []string
@@ -114,6 +114,12 @@ func Steps() []Step {
 
 // Check runs every step's check, in order, bounded at Bound, and changes nothing.
 func Check(ctx context.Context, m Machine, opt Options) Report {
+	_, rep := pass(ctx, m, opt)
+	return rep
+}
+
+// pass is Check, and the Run it left behind with what the steps found, for the fix half to act on.
+func pass(ctx context.Context, m Machine, opt Options) (*Run, Report) {
 	ctx, cancel := context.WithTimeout(ctx, Bound)
 	defer cancel()
 	r := &Run{M: m, Opt: opt, GOOS: m.GOOS(), results: map[int]Result{}}
@@ -136,7 +142,7 @@ func Check(ctx context.Context, m Machine, opt Options) Report {
 		}
 	}
 	rep.Summary = summarize(rep)
-	return rep
+	return r, rep
 }
 
 func (r *Run) run(ctx context.Context, s Step) Result {
@@ -324,14 +330,18 @@ func checkUser(_ context.Context, r *Run) Result {
 	user := r.Opt.User
 	src := "chosen"
 	if user == "" {
-		user, src = r.Account.Name, "the account the room runs as"
+		user, src = r.State.User, "this room's setting"
+	}
+	if user == "" {
+		user, src = remoteaccess.DefaultUser, "the default"
 	}
 	r.User = user
-	if user == "" {
-		return Result{Status: Failed, Found: "the account the room runs as could not be read"}
+	if !remoteaccess.ValidUser(user) {
+		return Result{Status: Failed, Found: fmt.Sprintf("%q is not a login name", user)}
 	}
 	if !r.M.UserExists(user) {
-		return Result{Status: Failed, Found: fmt.Sprintf("there is no account %s on this machine", user)}
+		return Result{Status: Failed, Found: fmt.Sprintf("there is no account %s on this machine", user),
+			Detail: []string{"name the account other rooms log in as with --user, and the room keeps it"}}
 	}
 	return Result{Status: OK, Found: fmt.Sprintf("other rooms log in as %s (%s)", user, src)}
 }
@@ -339,7 +349,8 @@ func checkUser(_ context.Context, r *Run) Result {
 // 5. This room's key.
 func checkKey(ctx context.Context, r *Run) Result {
 	home := r.M.Home()
-	priv, pub := KeyPath(home), KeyPath(home)+".pub"
+	priv := keyPathFor(r.GOOS, home)
+	pub := priv + ".pub"
 	b, err := r.M.ReadFile(pub)
 	if err != nil {
 		if !r.M.LookPath("ssh-keygen") {
@@ -388,7 +399,7 @@ func checkPublish(ctx context.Context, r *Run) Result {
 		return Result{Status: Todo, Found: "the hub holds no key for this room"}
 	case r.PubFP == "":
 		return Result{Status: Todo, Found: "the hub holds a key, and this room has none yet to compare"}
-	case p.Fingerprint != r.PubFP || p.User != r.User || p.Port != r.port():
+	case p.Fingerprint != r.PubFP || p.User != r.User || p.Port != r.port() || p.On != r.State.On:
 		return Result{Status: Todo, Found: fmt.Sprintf("the hub holds %s as %s on port %d, which is not what this room has now", p.Fingerprint, p.User, p.Port)}
 	}
 	return Result{Status: OK, Found: fmt.Sprintf("the hub holds this room's key, login %s, port %d", p.User, p.Port)}
@@ -397,7 +408,7 @@ func checkPublish(ctx context.Context, r *Run) Result {
 // AuthorizedFile is where the login user's authorized keys live, and why. An administrator account on Windows reads
 // administrators_authorized_keys, found the way sshd finds it, in sshd_config.
 func AuthorizedFile(ctx context.Context, m Machine, user string) (path string, admin bool) {
-	home := m.Home()
+	home := m.UserHome(user)
 	if m.GOOS() != "windows" {
 		return joinFor(m.GOOS(), home, ".ssh", "authorized_keys"), false
 	}
@@ -474,30 +485,57 @@ func ManagedKeys(text string) (keys []string, found bool) {
 	return keys, found
 }
 
-// wanted is every key the managed block should hold: this room's own, for the self test, and each room the hub
+// wantKey is one key the managed block should hold, and the room it belongs to.
+type wantKey struct{ Body, Room string }
+
+// wantedKeys is every key the managed block should hold: this room's own, for the self test, and each room the hub
 // publishes that this room's from list allows. ok is false when the hub could not say.
-func (r *Run) wanted(ctx context.Context) (keys []string, peers int, ok bool) {
+//
+// A ROOM'S OWN SWITCH IS NOT READ HERE. A room that only logs in to others has ssh off and still needs its key trusted
+// by every room it logs in to. The from list is the gate on who may open this room's sshd, and sshd's own file is the
+// gate on who may log in.
+func (r *Run) wantedKeys(ctx context.Context) (keys []wantKey, ok bool) {
 	if r.PubKey != "" && r.Opt.SelfTest {
-		keys = append(keys, r.PubKey)
+		keys = append(keys, wantKey{r.PubKey, r.Joined.Room})
 	}
 	ps, err := r.M.Peers(ctx)
 	if err != nil {
-		return keys, 0, false
+		return keys, false
 	}
 	from := r.Opt.From
 	if len(from) == 0 {
 		from = r.State.From
 	}
 	for _, p := range ps {
-		if p.Room == r.Joined.Room || !p.SSHOn || !fromAllows(from, p.Room) {
+		if p.Room == r.Joined.Room || !fromAllows(from, p.Room) {
 			continue
 		}
-		if b := keyBody(p.Key); b != "" {
-			keys = append(keys, b)
+		if b := keyBody(p.Key); b != "" && !hasWant(keys, b) {
+			keys = append(keys, wantKey{b, p.Room})
+		}
+	}
+	return keys, true
+}
+
+func hasWant(l []wantKey, body string) bool {
+	for _, k := range l {
+		if k.Body == body {
+			return true
+		}
+	}
+	return false
+}
+
+// wanted is wantedKeys as bodies, and how many of them are another room's.
+func (r *Run) wanted(ctx context.Context) (keys []string, peers int, ok bool) {
+	ws, ok := r.wantedKeys(ctx)
+	for _, w := range ws {
+		keys = append(keys, w.Body)
+		if w.Room != r.Joined.Room {
 			peers++
 		}
 	}
-	return keys, peers, true
+	return keys, peers, ok
 }
 
 // fromAllows is the room's own from list applied to another room's name. `hub` names the hub and no room.

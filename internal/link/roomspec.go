@@ -79,6 +79,8 @@ func (p *Proxy) serveRoomSpec(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	switch {
+	case r.URL.Path == RoomSpecPrefix+"ssh":
+		p.serveRoomSSH(w, r, room)
 	case r.URL.Path == RoomSpecPrefix+"spec" && r.Method == http.MethodGet:
 		sp, err := st.RoomSpecOf(room)
 		if err != nil {

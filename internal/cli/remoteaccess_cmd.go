@@ -60,7 +60,7 @@ func roomRemoteAccessCmd() *cobra.Command {
 
 	var from string
 	var port int
-	var addr string
+	var addr, user string
 	on := &cobra.Command{
 		Use:   "on",
 		Short: "Let the hub carry ssh to this machine's sshd",
@@ -88,6 +88,17 @@ func roomRemoteAccessCmd() *cobra.Command {
 				addr = ""
 			}
 			s := remoteaccess.State{On: true, Addr: addr, Port: port, From: list, SetBy: remoteWho()}
+			// THE LOGIN USER IS KEPT ACROSS ON AND OFF: it is a standing choice, and turning on is not a decision to
+			// forget it. --user changes it.
+			if cur, err := remoteaccess.Load(where()); err == nil {
+				s.User = cur.User
+			}
+			if user != "" {
+				if !remoteaccess.ValidUser(user) {
+					return errors.New("--user is not a login name")
+				}
+				s.User = user
+			}
 			if err := remoteaccess.Save(where(), s); err != nil {
 				return err
 			}
@@ -103,6 +114,8 @@ func roomRemoteAccessCmd() *cobra.Command {
 	on.Flags().StringVar(&from, "from", "*", "who may open it: hub, room names, or * for the hub and every proven room")
 	on.Flags().IntVar(&port, "port", remoteaccess.DefaultPort, "the port of sshd on 127.0.0.1")
 	on.Flags().StringVar(&addr, "addr", "", "where sshd answers on this machine, an IP address or a host name (default 127.0.0.1)")
+
+	on.Flags().StringVar(&user, "user", "", "the account other rooms log in as on this machine (default: the last one set, then claude)")
 
 	off := &cobra.Command{
 		Use:   "off",

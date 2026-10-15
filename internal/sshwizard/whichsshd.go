@@ -380,3 +380,12 @@ func joinFor(goos string, parts ...string) string {
 	}
 	return strings.Join(parts, `\`)
 }
+
+// KeyFingerprint is the fingerprint of a public key line, "" when it is not one.
+func KeyFingerprint(line string) string {
+	k, ok := parseKeyLine(line)
+	if !ok {
+		return ""
+	}
+	return k.Fingerprint
+}

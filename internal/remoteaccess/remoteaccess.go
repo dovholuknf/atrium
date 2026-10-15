@@ -37,6 +37,22 @@ const (
 	DefaultPort = 22
 )
 
+// DefaultUser is the login other rooms use when the room has not said otherwise.
+const DefaultUser = "claude"
+
+// LoginUser is the account other rooms log in as.
+func (s State) LoginUser() string {
+	if s.User == "" {
+		return DefaultUser
+	}
+	return s.User
+}
+
+var userRE = regexp.MustCompile(`^[A-Za-z0-9_][A-Za-z0-9_.-]{0,63}$`)
+
+// ValidUser says whether s is a login name safe to write into an ssh config and an authorized keys file.
+func ValidUser(s string) bool { return userRE.MatchString(s) }
+
 // DefaultAddr is the address of sshd when the file names none.
 const DefaultAddr = "127.0.0.1"
 
@@ -48,8 +64,11 @@ type State struct {
 	Addr    string   `json:"addr,omitempty"`
 	Port    int      `json:"port"`
 	From    []string `json:"from"`
-	SetAt   string   `json:"set_at,omitempty"`
-	SetBy   string   `json:"set_by,omitempty"`
+	// User is the account other rooms log in as on this machine. The room's own say, published to the hub. Empty is
+	// DefaultUser.
+	User  string `json:"user,omitempty"`
+	SetAt string `json:"set_at,omitempty"`
+	SetBy string `json:"set_by,omitempty"`
 }
 
 var hostRE = regexp.MustCompile(`^[A-Za-z0-9]([A-Za-z0-9._-]{0,253}[A-Za-z0-9])?$`)
@@ -117,6 +136,9 @@ func Load(dir string) (State, error) {
 	}
 	if s.Addr != "" && !ValidAddr(s.Addr) {
 		return State{}, fmt.Errorf("%s has an addr that is not an IP address or a host name", Path(dir))
+	}
+	if s.User != "" && !ValidUser(s.User) {
+		return State{}, fmt.Errorf("%s has a user that is not a login name", Path(dir))
 	}
 	for _, f := range s.From {
 		if f != "*" && !fromRE.MatchString(f) {

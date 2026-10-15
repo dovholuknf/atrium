@@ -58,8 +58,16 @@ func shellWord(w, goos string) string {
 func Block(room, exe, goos string) string { return BlockHub(room, exe, goos, "") }
 
 // BlockHub is Block with the hub's board named in the ProxyCommand when it is not the default.
-func BlockHub(room, exe, goos, hub string) string {
-	return "Host " + room + "\n" +
+func BlockHub(room, exe, goos, hub string) string { return BlockHubUser(room, exe, goos, hub, "") }
+
+// BlockHubUser is BlockHub with `User <user>` when user is not empty: the login the room published to the hub, so
+// `ssh <room>` needs no user typed.
+func BlockHubUser(room, exe, goos, hub, user string) string {
+	u := ""
+	if user != "" {
+		u = "  User " + user + "\n"
+	}
+	return "Host " + room + "\n" + u +
 		"  ProxyCommand " + ProxyCommandHub(exe, goos, hub) + "\n" +
 		"  HostKeyAlias " + room + ".atrium\n" +
 		"  ServerAliveInterval 30\n" +
@@ -150,10 +158,21 @@ func Add(home, exe, goos string, rooms []string) (Result, error) {
 
 // AddHub is Add with the hub's board written into each ProxyCommand when hub is not empty.
 func AddHub(home, exe, goos, hub string, rooms []string) (Result, error) {
+	return AddHubUsers(home, exe, goos, hub, rooms, nil)
+}
+
+var userRE = regexp.MustCompile(`^[A-Za-z0-9_][A-Za-z0-9_.-]{0,63}$`)
+
+// AddHubUsers is AddHub with each room's login user, by room name, written into its block. A room with no entry gets
+// no User line.
+func AddHubUsers(home, exe, goos, hub string, rooms []string, users map[string]string) (Result, error) {
 	var res Result
 	for _, r := range rooms {
 		if err := ValidRoom(r); err != nil {
 			return res, err
+		}
+		if u := users[r]; u != "" && !userRE.MatchString(u) {
+			return res, fmt.Errorf("%q is not a login name", u)
 		}
 	}
 	have, err := readOwn(home)
@@ -162,7 +181,7 @@ func AddHub(home, exe, goos, hub string, rooms []string) (Result, error) {
 	}
 	next := append([]block(nil), have...)
 	for _, r := range rooms {
-		nb := block{room: r, text: BlockHub(r, exe, goos, hub)}
+		nb := block{room: r, text: BlockHubUser(r, exe, goos, hub, users[r])}
 		found := false
 		for i := range next {
 			if strings.EqualFold(next[i].room, r) {

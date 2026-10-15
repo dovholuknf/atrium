@@ -1645,6 +1645,10 @@ func (p *Proxy) serveHubAPI(w http.ResponseWriter, r *http.Request) {
 		p.serveRoomSpecBoard(w, r, sub)
 		return
 	}
+	if sub == "sshkeys" {
+		p.serveSSHKeysBoard(w, r)
+		return
+	}
 	switch sub {
 	case "git/pushed":
 		p.servePushed(w, r)

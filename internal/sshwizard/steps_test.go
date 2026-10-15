@@ -3,6 +3,7 @@ package sshwizard
 import (
 	"context"
 	"errors"
+	"os"
 	"strings"
 	"sync"
 	"testing"
@@ -37,6 +38,14 @@ type fakeMachine struct {
 	peersErr  error
 	ran       []string
 	ranMu     sync.Mutex
+	// onRun lets a test make a command do what it would: ssh-keygen leaves files.
+	onRun     func(m *fakeMachine, line string)
+	userHomes map[string]string
+	sent      []PublishRecord
+	pubSend   error
+	savedUser string
+	mkdirs    []string
+	modes     map[string]os.FileMode
 }
 
 const getService = "$s = Get-Service"
@@ -46,6 +55,9 @@ func (m *fakeMachine) Run(_ context.Context, name string, args ...string) (strin
 	m.ranMu.Lock()
 	m.ran = append(m.ran, line)
 	m.ranMu.Unlock()
+	if m.onRun != nil {
+		m.onRun(m, line)
+	}
 	// The longest key that matches wins, so a test can override one command and leave the rest.
 	best, found := "", false
 	for k := range m.runs {
@@ -70,6 +82,32 @@ func (m *fakeMachine) SSHConfig() (sshcfg.Shown, error)    { return m.shown, nil
 func (m *fakeMachine) Published(context.Context) (*Published, error) {
 	return m.published, m.pubErr
 }
+func (m *fakeMachine) UserHome(n string) string {
+	if h, ok := m.userHomes[n]; ok {
+		return h
+	}
+	return m.home
+}
+func (m *fakeMachine) MkdirAll(p string, _ os.FileMode) error {
+	m.mkdirs = append(m.mkdirs, p)
+	return nil
+}
+func (m *fakeMachine) WriteFile(p string, b []byte, mode os.FileMode) error {
+	m.fakeEnv.files[p] = string(b)
+	if m.modes == nil {
+		m.modes = map[string]os.FileMode{}
+	}
+	m.modes[p] = mode
+	return nil
+}
+func (m *fakeMachine) Publish(_ context.Context, r PublishRecord) error {
+	if m.pubSend != nil {
+		return m.pubSend
+	}
+	m.sent = append(m.sent, r)
+	return nil
+}
+func (m *fakeMachine) SaveUser(u string) error                  { m.savedUser = u; m.sw.User = u; return nil }
 func (m *fakeMachine) Peers(context.Context) ([]PeerKey, error) { return m.peers, m.peersErr }
 
 // winMachine is sg3 at the start: joined and proven, a standard user, Windows sshd running, wslrelay on loopback,
@@ -240,12 +278,18 @@ func TestStep3WhichSSHD(t *testing.T) {
 
 func TestStep4LoginUser(t *testing.T) {
 	m := winMachine()
-	want(t, m.step(t, 4, Options{}), OK, "log in as claude (the account the room runs as)")
+	want(t, m.step(t, 4, Options{}), OK, "log in as claude (the default)")
+	m.sw.User = "localai"
+	want(t, m.step(t, 4, Options{}), Failed, "no account localai")
+	m.users["localai"] = true
+	want(t, m.step(t, 4, Options{}), OK, "log in as localai (this room's setting)")
+	m.sw.User = ""
+	delete(m.users, "localai")
 	want(t, m.step(t, 4, Options{User: "localai"}), Failed, "no account localai")
 	m.users["localai"] = true
 	want(t, m.step(t, 4, Options{User: "localai"}), OK, "log in as localai (chosen)")
-	m.account.Name = ""
-	want(t, m.step(t, 4, Options{}), Failed, "could not be read")
+	delete(m.users, "claude")
+	want(t, m.step(t, 4, Options{}), Failed, "no account claude")
 }
 
 func TestStep5Key(t *testing.T) {
@@ -275,6 +319,9 @@ func TestStep6Publish(t *testing.T) {
 	m.published = &Published{User: "claude", Port: 22, Fingerprint: fp("someone else"), Enabled: true}
 	want(t, m.step(t, 6, Options{}), Todo, "not what this room has now")
 	m.published.Fingerprint = fp("mine")
+	m.sw.On = true
+	want(t, m.step(t, 6, Options{}), Todo, "not what this room has now")
+	m.published.On = true
 	want(t, m.step(t, 6, Options{}), OK, "login claude, port 22")
 }
 
@@ -290,7 +337,7 @@ func TestStep7InstallTheOthersKeys(t *testing.T) {
 	m.fakeEnv.files[auth] = block
 	want(t, m.step(t, 7, opt), OK, "not compared with the hub's set")
 
-	// With the hub's set: sg4 is allowed by from, m1mini is not, a room with ssh off is not.
+	// With the hub's set: sg4 is allowed by from, m1mini is not, a room outside the from list is not, and a room's own switch is not read.
 	m.peersErr = nil
 	m.sw.From = []string{"hub", "sg4"}
 	m.peers = []PeerKey{

@@ -236,3 +236,31 @@ func TestBlockHubWritesHubIntoTheProxyCommand(t *testing.T) {
 		t.Fatal("block lacks --hub")
 	}
 }
+
+// THE LOGIN THE ROOM PUBLISHED GOES INTO ITS BLOCK, so `ssh sg3` needs no user, and a room with none gets no line.
+func TestAddHubUsersWritesTheUserIntoTheBlock(t *testing.T) {
+	h := home(t)
+	_, err := AddHubUsers(h, exeNix, "linux", "", []string{"sg3", "sgg", "sg4"}, map[string]string{"sg3": "claude", "sgg": "localai"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _, own := Paths(h)
+	text := read(t, own)
+	for _, want := range []string{"Host sg3\n  User claude\n", "Host sgg\n  User localai\n", "Host sg4\n  ProxyCommand"} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("missing %q in:\n%s", want, text)
+		}
+	}
+	// Again with the same input changes nothing, and a user change rewrites the one block.
+	if res, _ := AddHubUsers(h, exeNix, "linux", "", []string{"sg3"}, map[string]string{"sg3": "claude"}); res.Changed {
+		t.Fatal("the same input changed the file")
+	}
+	AddHubUsers(h, exeNix, "linux", "", []string{"sg3"}, map[string]string{"sg3": "other"})
+	if text = read(t, own); !strings.Contains(text, "Host sg3\n  User other\n") || strings.Contains(text, "User claude") {
+		t.Fatalf("not replaced:\n%s", text)
+	}
+	// A user that would add a line to the config is refused.
+	if _, err := AddHubUsers(h, exeNix, "linux", "", []string{"sg3"}, map[string]string{"sg3": "x\nProxyCommand evil"}); err == nil {
+		t.Fatal("an injected user was accepted")
+	}
+}

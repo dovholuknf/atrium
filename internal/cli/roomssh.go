@@ -6,10 +6,13 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"os"
 	"strconv"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
@@ -21,11 +24,13 @@ import (
 
 // roomSSHCmd is `atrium room ssh`, the room's own side of turning ssh on. See docs/rnd/room-ssh-wizard-design.md.
 //
-// ONLY `setup --check` EXISTS, AND IT CHANGES NOTHING. It runs the wizard's checks and prints what each found. The
-// fixes, the key and the switch are later steps, so without --check this refuses rather than do half of it.
+// `setup --check` CHANGES NOTHING: it runs the wizard's checks and prints what each found. `setup` alone does the
+// fix half of steps 5 to 7: the room's key, publishing it with the login user to the hub, and writing the set the hub
+// relays into the login user's authorized keys. Everything else the wizard only checks, and a step that needs a
+// person prints the command. `setup sync` is one quiet pass of steps 6 and 7, which the room also runs on a timer.
 func roomSSHCmd() *cobra.Command {
 	c := &cobra.Command{Use: "ssh", Short: "Turn ssh on for this room, step by step"}
-	c.AddCommand(sshSetupCmd())
+	c.AddCommand(sshSetupCmd(), sshSyncCmd())
 	return c
 }
 
@@ -36,15 +41,21 @@ func sshSetupCmd() *cobra.Command {
 	var check, asJSON, noSelf bool
 	c := &cobra.Command{
 		Use:   "setup",
-		Short: "Check what turning ssh on for this room needs, and change nothing",
-		Long: "Runs the eleven steps of the ssh wizard as checks. Each one only reads this machine and says what it\n" +
-			"found, and when a person must act it prints the exact command. Nothing is written: not a key, not\n" +
-			"authorized_keys, not ssh config and not this room's switch.\n\n" +
-			"Exits non-zero when a step failed, and zero otherwise, so a script reads the steps with --json.",
+		Short: "Make this room's ssh key, publish it, and install the others' keys (--check to only look)",
+		Long: "Runs the eleven steps of the ssh wizard. Each one reads this machine and says what it found, and when\n" +
+			"a person must act it prints the exact command.\n\n" +
+			"Without --check it also does steps 5 to 7 itself: makes an ed25519 key with no passphrase (an agent\n" +
+			"cannot type one), publishes it with the login user to the hub, and writes the keys the hub relays into\n" +
+			"the login user's authorized_keys, inside a block marked `# BEGIN atrium`. Lines outside that block, a\n" +
+			"person's own keys included, are never touched. --user sets the account other rooms log in as on this\n" +
+			"machine (default claude) and the room keeps it. Not ssh config, not sshd and not this room's switch.\n\n" +
+			"With --check nothing is written. Exits non-zero when a step failed, and zero otherwise, so a script reads\n" +
+			"the steps with --json.",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			if !check {
-				return errors.New("only --check is built so far: it prints what each step finds and changes nothing")
+			if !check && (os.Getenv("ATRIUM_TASK_ID") != "" || os.Getenv("ATRIUM_AGENT_NAME") != "") {
+				// A SPEED BUMP, NOT A BOUNDARY, as `remote-access on` has.
+				return errors.New("this writes a key and authorized_keys, so a person at this machine runs it, not an agent. --check reads only")
 			}
 			opt := sshwizard.Options{Port: port, User: user, SelfTest: !noSelf}
 			if from != "" {
@@ -58,15 +69,35 @@ func sshSetupCmd() *cobra.Command {
 			if ctx == nil {
 				ctx = context.Background()
 			}
-			rep := sshwizard.Check(ctx, localSSHMachine(orDefault(dir, roomDir())), opt)
+			m := localSSHMachine(orDefault(dir, roomDir()))
+			var rep sshwizard.Report
+			var acts []sshwizard.Action
+			if check {
+				rep = sshwizard.Check(ctx, m, opt)
+			} else {
+				rep, acts = sshwizard.Fix(ctx, m, opt)
+			}
 			out := cmd.OutOrStdout()
 			if asJSON {
 				enc := json.NewEncoder(out)
 				enc.SetIndent("", "  ")
-				if err := enc.Encode(rep); err != nil {
+				if err := enc.Encode(struct {
+					sshwizard.Report
+					Did []sshwizard.Action `json:"did,omitempty"`
+				}{rep, acts}); err != nil {
 					return err
 				}
 			} else {
+				for _, a := range acts {
+					if a.Err != "" {
+						fmt.Fprintf(out, "step %d: could not %s: %s\n", a.N, a.Did, a.Err)
+					} else {
+						fmt.Fprintf(out, "step %d: %s\n", a.N, a.Did)
+					}
+				}
+				if len(acts) > 0 {
+					fmt.Fprintln(out)
+				}
 				printSSHReport(out, rep, useColour(out))
 			}
 			for _, r := range rep.Results {
@@ -78,18 +109,19 @@ func sshSetupCmd() *cobra.Command {
 		},
 	}
 	c.Flags().StringVar(&dir, "dir", "", "where this machine's room keeps its certificate")
-	c.Flags().BoolVar(&check, "check", false, "read only: print each step and what it found")
+	c.Flags().BoolVar(&check, "check", false, "read only: print each step and what it found, and change nothing")
 	c.Flags().BoolVar(&asJSON, "json", false, "print the steps as JSON")
 	c.Flags().IntVar(&port, "port", 0, "the port of sshd (default: the room's switch, then 22)")
-	c.Flags().StringVar(&user, "user", "", "the login other rooms use (default: the account this room runs as)")
+	c.Flags().StringVar(&user, "user", "", "the account other rooms log in as on this machine, kept by the room (default: the saved one, then claude)")
 	c.Flags().StringVar(&from, "from", "", "who may open this room's sshd: hub, room names, or * (default: the room's switch)")
 	c.Flags().BoolVar(&noSelf, "no-self-test", false, "leave out this room's own key and the log in to itself")
 	return c
 }
 
-// localSSHMachine is this machine and this room's key directory. The hub's ssh record does not exist yet, so the
-// steps that read it say so and are skipped.
+// localSSHMachine is this machine and this room's key directory. The hub's ssh record is read and written over the
+// room's own link, and a hub that keeps none makes the steps that need it say so and wait.
 func localSSHMachine(dir string) sshwizard.LocalMachine {
+	hub := &hubSSH{dir: dir}
 	return sshwizard.LocalMachine{
 		KeyDir: dir,
 		JoinedFn: func() sshwizard.Joined {
@@ -103,6 +135,153 @@ func localSSHMachine(dir string) sshwizard.LocalMachine {
 			}
 			return j
 		},
+		PublishFn: hub.published,
+		PeersFn:   hub.peers,
+		SendFn:    hub.publish,
+	}
+}
+
+// hubSSH is this room's reading of the hub's ssh keys, kept for one command so the steps that each ask do not each
+// dial. Publishing drops it, so the check after a fix reads what the hub holds now.
+type hubSSH struct {
+	dir string
+	mu  sync.Mutex
+	set []link.SSHEntry
+	err error
+	got bool
+}
+
+func (h *hubSSH) fetch(ctx context.Context) ([]link.SSHEntry, string, error) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	room, d, err := roomLinkFor(h.dir)
+	if err != nil {
+		return nil, "", err
+	}
+	if !h.got {
+		h.set, h.err = link.FetchSSHSet(ctx, d, room)
+		h.got = true
+	}
+	if errors.Is(h.err, link.ErrNoSSHKeys) {
+		return nil, room, sshwizard.ErrUnavailable
+	}
+	return h.set, room, h.err
+}
+
+func (h *hubSSH) published(ctx context.Context) (*sshwizard.Published, error) {
+	set, room, err := h.fetch(ctx)
+	if err != nil {
+		return nil, err
+	}
+	for _, e := range set {
+		if strings.EqualFold(e.Room, room) {
+			return &sshwizard.Published{User: e.User, Port: e.Port, Enabled: true, On: e.On,
+				Fingerprint: sshwizard.KeyFingerprint(e.Key)}, nil
+		}
+	}
+	return nil, nil
+}
+
+func (h *hubSSH) peers(ctx context.Context) ([]sshwizard.PeerKey, error) {
+	set, _, err := h.fetch(ctx)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]sshwizard.PeerKey, 0, len(set))
+	for _, e := range set {
+		out = append(out, sshwizard.PeerKey{Room: e.Room, User: e.User, Key: e.Key, Online: e.Online, SSHOn: e.On,
+			Fingerprint: sshwizard.KeyFingerprint(e.Key)})
+	}
+	return out, nil
+}
+
+func (h *hubSSH) publish(ctx context.Context, p sshwizard.PublishRecord) error {
+	room, d, err := roomLinkFor(h.dir)
+	if err != nil {
+		return err
+	}
+	err = link.PublishSSH(ctx, d, room, link.SSHPublish{User: p.User, Key: p.Key, Port: p.Port, On: p.On})
+	h.mu.Lock()
+	h.got = false
+	h.mu.Unlock()
+	if errors.Is(err, link.ErrNoSSHKeys) {
+		return sshwizard.ErrUnavailable
+	}
+	return err
+}
+
+// sshSyncCmd is `atrium room ssh setup sync`: one pass of steps 6 and 7 with no key made and nothing asked.
+func sshSyncCmd() *cobra.Command {
+	var dir string
+	return &cobra.Command{
+		Use:   "sync",
+		Short: "Publish this room's key and install the hub's relayed keys, once",
+		Long: "The pass the room runs every minute on its own: publishes this room's login user and key to the hub when\n" +
+			"they differ from what it holds, and rewrites atrium's block of authorized_keys to the hub's set. It makes no\n" +
+			"key. Run `atrium ssh setup` first.",
+		Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			if dir == "" {
+				dir = roomDir()
+			}
+			ctx := cmd.Context()
+			if ctx == nil {
+				ctx = context.Background()
+			}
+			out := cmd.OutOrStdout()
+			acts := sshSyncOnce(ctx, dir)
+			for _, a := range acts {
+				fmt.Fprintf(out, "step %d: %s %s\n", a.N, a.Did, a.Err)
+			}
+			if len(acts) == 0 {
+				fmt.Fprintln(out, "nothing to change")
+			}
+			return nil
+		},
+	}
+}
+
+// sshSyncOnce is one pass. A room with its switch on gets both steps, and a room with it off only publishes, since it
+// has no sshd for the hub to open and nothing to authorize.
+func sshSyncOnce(ctx context.Context, dir string) []sshwizard.Action {
+	st, err := remoteaccess.Load(dir)
+	if err != nil {
+		return nil
+	}
+	steps := []int{6}
+	if st.On {
+		steps = []int{6, 7}
+	}
+	_, acts := sshwizard.Sync(ctx, localSSHMachine(dir), sshwizard.Options{SelfTest: true}, steps...)
+	return acts
+}
+
+// sshSyncLoop keeps this room's published record and its authorized keys current: a room added to the hub, or removed
+// from it, reaches every room within a minute and nobody copies a key. It never makes a key, and a step that cannot
+// be done is logged once per change and tried again.
+func sshSyncLoop(ctx context.Context, dir string) {
+	t := time.NewTimer(20 * time.Second)
+	defer t.Stop()
+	last := ""
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+		}
+		cctx, cancel := context.WithTimeout(ctx, 40*time.Second)
+		var parts []string
+		for _, a := range sshSyncOnce(cctx, dir) {
+			parts = append(parts, fmt.Sprintf("step %d: %s %s", a.N, a.Did, a.Err))
+		}
+		cancel()
+		if msg := strings.Join(parts, "; "); msg != last && msg != "" {
+			log.Printf("[ssh] %s", msg)
+			last = msg
+		} else if msg == "" {
+			last = ""
+		}
+		t.Reset(time.Minute)
 	}
 }
 

@@ -135,8 +135,8 @@ func TestItemHolderResolvesARoleAtTheTime(t *testing.T) {
 // THE MIGRATION IS A NEW ONE AT THE END, and reopening a store with it recorded changes nothing.
 func TestItemMigrationIsLastAndIdempotent(t *testing.T) {
 	last := migrations[len(migrations)-1]
-	if last.name != "0018_item" {
-		t.Fatalf("the item migration is not last: %q", last.name)
+	if last.name != "0019_room_ssh" || migrations[len(migrations)-2].name != "0018_item" {
+		t.Fatalf("the item migration is not second to last: %q", last.name)
 	}
 	s := open(t)
 	s.PutItem(anItem(1, ItemStateRunning))

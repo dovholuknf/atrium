@@ -442,6 +442,8 @@ func runRoom(keys link.Keys, db, human, agent string, restartAfter time.Duration
 	room.RemoteDir = keys.Dir
 	d.SetStreamer(room)
 	d.SetSSHWizard(sshWizardHandler(keys.Dir))
+	// THE HUB'S SET OF SSH KEYS, kept current in this room's authorized_keys. Best effort, never makes a key.
+	go sshSyncLoop(ctx, keys.Dir)
 	// THE HUB RUNS THE FORGE. This room asks it about pull requests and issues and never runs gh or bb itself.
 	d.SetHubForge(forge.NewRemote(room.Forge))
 	// The room's stable hub remote forwards over the same link's git kind.
